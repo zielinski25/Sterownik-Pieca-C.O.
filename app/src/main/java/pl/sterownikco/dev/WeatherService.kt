@@ -86,8 +86,8 @@ object WeatherService {
     fun fetchWeather(
         latitude: Double = DEFAULT_LAT,
         longitude: Double = DEFAULT_LON,
-        onSuccess: (WeatherData) -> Unit,
-        onError: ((String) -> Unit)? = null
+        onError: ((String) -> Unit)? = null,
+        onSuccess: (WeatherData) -> Unit
     ) {
         fetchWeatherInternal(latitude, longitude, object : Callback {
             override fun onSuccess(data: WeatherData) = onSuccess(data)
