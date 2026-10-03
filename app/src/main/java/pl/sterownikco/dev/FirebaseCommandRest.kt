@@ -22,11 +22,13 @@ class FirebaseCommandRest {
             .put("token", commandToken)
             .put("ts", System.currentTimeMillis())
             .toString()
-        // POST creates a child under /piec/cmd/ (Firebase push)
-        // PUT would overwrite /piec/cmd and firmware's onChildAdded would never fire.
+        // PUT writes the command object directly to /piec/cmd (single-slot mailbox).
+        // Firmware polls with GET /piec/cmd and parses the object for token/cmd/id fields.
+        // POST would create /piec/cmd/{pushKey} which the simple indexOf() parser
+        // would still find, but PUT is the cleaner match for the single-object contract.
         val url = "${FirebaseDevConfig.DATABASE_URL}/piec/cmd.json?auth=${URLEncoder.encode(idToken, "UTF-8")}"
         val connection = URL(url).openConnection() as HttpURLConnection
-        connection.requestMethod = "POST"
+        connection.requestMethod = "PUT"
         connection.connectTimeout = 10000
         connection.readTimeout = 10000
         connection.doOutput = true
@@ -38,7 +40,9 @@ class FirebaseCommandRest {
     }
 
     fun readAck(idToken: String, cmdId: String): Ack? {
-        val url = "${FirebaseDevConfig.DATABASE_URL}/piec/ack/${URLEncoder.encode(cmdId, "UTF-8")}.json?auth=${URLEncoder.encode(idToken, "UTF-8")}"
+        // Firmware writes a single ACK object directly to /piec/ack (not /piec/ack/{cmdId}).
+        // GET /piec/ack.json returns: {"cmdId":"...","cmd":"...","ok":true,"error":"","ts":12345}
+        val url = "${FirebaseDevConfig.DATABASE_URL}/piec/ack.json?auth=${URLEncoder.encode(idToken, "UTF-8")}"
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
         connection.connectTimeout = 10000
@@ -47,6 +51,9 @@ class FirebaseCommandRest {
         if (connection.responseCode !in 200..299) throw IllegalStateException("Błąd odczytu ACK: HTTP ${connection.responseCode}")
         if (response.isBlank() || response == "null") return null
         val json = JSONObject(response)
+        // Verify this ACK is for our command (single-slot mailbox, may be stale)
+        val ackCmdId = json.optString("cmdId", "")
+        if (ackCmdId.isNotEmpty() && ackCmdId != cmdId) return null
         return Ack(json.optBoolean("ok", false), json.optString("error").takeIf { it.isNotBlank() })
     }
 
