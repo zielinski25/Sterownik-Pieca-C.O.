@@ -79,11 +79,6 @@ object WeatherService {
         val daily: List<DailyForecast>
     )
 
-    fun interface Callback {
-        fun onSuccess(data: WeatherData)
-        fun onError(error: String)
-    }
-
     @Volatile private var lastWeather: WeatherData? = null
 
     fun getCached(): WeatherData? = lastWeather
@@ -91,9 +86,20 @@ object WeatherService {
     fun fetchWeather(
         latitude: Double = DEFAULT_LAT,
         longitude: Double = DEFAULT_LON,
-        callback: Callback
+        onSuccess: (WeatherData) -> Unit,
+        onError: ((String) -> Unit)? = null
     ) {
-        fetchWeatherInternal(latitude, longitude, callback, retryCount = 0)
+        fetchWeatherInternal(latitude, longitude, object : Callback {
+            override fun onSuccess(data: WeatherData) = onSuccess(data)
+            override fun onError(error: String) {
+                onError?.invoke(error)
+            }
+        }, retryCount = 0)
+    }
+
+    interface Callback {
+        fun onSuccess(data: WeatherData)
+        fun onError(error: String)
     }
 
     private fun fetchWeatherInternal(

@@ -869,9 +869,9 @@ class MainActivity : Activity() {
         val cur = data.current ?: return
 
         // Hero
-        val heroTemp = weatherView.findViewWithTag<TextView>("weather_hero_temp")
-        val heroDesc = weatherView.findViewWithTag<TextView>("weather_hero_desc")
-        val heroFeels = weatherView.findViewWithTag<TextView>("weather_hero_feels")
+        val heroTemp = weatherView.findViewWithTag("weather_hero_temp") as? TextView
+        val heroDesc = weatherView.findViewWithTag("weather_hero_desc") as? TextView
+        val heroFeels = weatherView.findViewWithTag("weather_hero_feels") as? TextView
         heroTemp?.text = if (cur.temperature.isFinite()) String.format(Locale.US, "%.1f°C", cur.temperature) else "--°C"
         heroDesc?.text = WeatherService.getWeatherDescription(cur.weatherCode)
         heroFeels?.text = buildString {
@@ -885,21 +885,21 @@ class MainActivity : Activity() {
         weatherHeroAnim?.bind(cur.weatherCode, cur.isDay, cur.temperature)
 
         // Metrics
-        val humid = weatherView.findViewWithTag<LinearLayout>("weather_humid")
+        val humid = weatherView.findViewWithTag("weather_humid") as? LinearLayout
         humid?.let { updateMetricCard(it, "${cur.humidity}%") }
-        val wind = weatherView.findViewWithTag<LinearLayout>("weather_wind")
+        val wind = weatherView.findViewWithTag("weather_wind") as? LinearLayout
         wind?.let { updateMetricCard(it, "${fmtNum(cur.windSpeed)} km/h\nPorywy: ${fmtNum(cur.windGusts)} km/h") }
-        val press = weatherView.findViewWithTag<LinearLayout>("weather_press")
+        val press = weatherView.findViewWithTag("weather_press") as? LinearLayout
         press?.let { updateMetricCard(it, if (cur.pressure.isFinite()) String.format(Locale.US, "%.0f hPa", cur.pressure) else "-- hPa") }
-        val cloud = weatherView.findViewWithTag<LinearLayout>("weather_cloud")
+        val cloud = weatherView.findViewWithTag("weather_cloud") as? LinearLayout
         cloud?.let { updateMetricCard(it, if (cur.cloudCover.isFinite()) String.format(Locale.US, "%.0f%%", cur.cloudCover) else "--%") }
-        val precip = weatherView.findViewWithTag<LinearLayout>("weather_precip")
+        val precip = weatherView.findViewWithTag("weather_precip") as? LinearLayout
         precip?.let { updateMetricCard(it, String.format(Locale.US, "%.1f mm", cur.precipitation)) }
-        val uv = weatherView.findViewWithTag<LinearLayout>("weather_uv")
+        val uv = weatherView.findViewWithTag("weather_uv") as? LinearLayout
         uv?.let { updateMetricCard(it, String.format(Locale.US, "%.1f", cur.uvIndex)) }
 
         // Hourly forecast
-        val hourlyRow = weatherView.findViewWithTag<LinearLayout>("weather_hourly_row")
+        val hourlyRow = weatherView.findViewWithTag("weather_hourly_row") as? LinearLayout
         hourlyRow?.removeAllViews()
         val hourlyFmt = java.text.SimpleDateFormat("HH:mm", Locale.US)
         val nowMs = System.currentTimeMillis()
@@ -923,7 +923,7 @@ class MainActivity : Activity() {
         }
 
         // Daily forecast
-        val dailyContainer = weatherView.findViewWithTag<LinearLayout>("weather_daily_container")
+        val dailyContainer = weatherView.findViewWithTag("weather_daily_container") as? LinearLayout
         dailyContainer?.removeAllViews()
         val dayFmt = java.text.SimpleDateFormat("EEE dd.MM", Locale("pl", "PL"))
         for (d in data.daily) {
@@ -952,7 +952,7 @@ class MainActivity : Activity() {
         }
 
         // Today summary
-        val summary = weatherView.findViewWithTag<LinearLayout>("weather_summary")
+        val summary = weatherView.findViewWithTag("weather_summary") as? LinearLayout
         summary?.removeAllViews()
         if (data.daily.isNotEmpty()) {
             val today = data.daily[0]
@@ -1293,9 +1293,9 @@ class MainActivity : Activity() {
         val anyAlarm = smokeAlarm || heatAlarm || panelAlarm
         heroAlarm.text = if (anyAlarm) "ALARM" else "OK"
         heroAlarm.setTextColor(if (anyAlarm) C.err else Color.WHITE)
-        quickPumpView.findViewWithTag<TextView>("quickStatus")?.text = if (pump) "WŁĄCZONA · PRACA" else "WYŁĄCZONA"
-        quickServoView.findViewWithTag<TextView>("quickStatus")?.text = "K${flap} · S${damper} · $mode"
-        quickMixerView.findViewWithTag<TextView>("quickStatus")?.text = if (mix) "WŁĄCZONE · AKTYWNE" else "WYŁĄCZONE"
+        (quickPumpView.findViewWithTag("quickStatus") as? TextView)?.text = if (pump) "WŁĄCZONA · PRACA" else "WYŁĄCZONA"
+        (quickServoView.findViewWithTag("quickStatus") as? TextView)?.text = "K${flap} · S${damper} · $mode"
+        (quickMixerView.findViewWithTag("quickStatus") as? TextView)?.text = if (mix) "WŁĄCZONE · AKTYWNE" else "WYŁĄCZONE"
         val state = when {
             anyAlarm -> "ALARM"
             mode == "BEZPIECZNY" -> "TRYB BEZPIECZNY"
