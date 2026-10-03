@@ -20,6 +20,7 @@ import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import android.widget.*
+import android.util.Log
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.io.BufferedReader
