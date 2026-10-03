@@ -56,14 +56,14 @@ class MainActivity : Activity() {
     private var maintenanceStarted = false
     @Volatile private var lastStatusOnline = false
 
-    // Median filters for sensor data (remove spikes/anomalies)
-    private val filterOutside = MedianFilter(bufferSize = 10, maxDeviation = 5f)
-    private val filterHeating = MedianFilter(bufferSize = 10, maxDeviation = 10f)
-    private val filterBoiler = MedianFilter(bufferSize = 10, maxDeviation = 10f)
-    private val filterPanel = MedianFilter(bufferSize = 10, maxDeviation = 15f)
-    private val filterRoom = MedianFilter(bufferSize = 10, maxDeviation = 5f)
-    private val filterPressure = MedianFilter(bufferSize = 10, maxDeviation = 5f)
-    private val filterHumidity = MedianFilter(bufferSize = 10, maxDeviation = 5f)
+    // Advanced sensor filters (median + MAD + rate-limit) to remove DS18B20 spikes
+    private val filterOutside = AdvancedSensorFilter("t_zewn", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = -40f, absoluteMax = 60f)
+    private val filterHeating = AdvancedSensorFilter("t_ogrz", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerUpdate = 5f, absoluteMin = 0f, absoluteMax = 160f)
+    private val filterBoiler = AdvancedSensorFilter("t_bojler", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerUpdate = 5f, absoluteMin = 0f, absoluteMax = 160f)
+    private val filterPanel = AdvancedSensorFilter("t_panel", bufferSize = 8, maxDeviationFromMedian = 8f, maxChangePerUpdate = 10f, absoluteMin = -30f, absoluteMax = 160f)
+    private val filterRoom = AdvancedSensorFilter("t_pokoj", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = -10f, absoluteMax = 50f)
+    private val filterPressure = AdvancedSensorFilter("cisnienie", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = 900f, absoluteMax = 1100f)
+    private val filterHumidity = AdvancedSensorFilter("wilgotnosc", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerUpdate = 5f, absoluteMin = 0f, absoluteMax = 100f)
 
     private lateinit var root: FrameLayout
     private lateinit var content: FrameLayout
@@ -1357,7 +1357,8 @@ class MainActivity : Activity() {
         connectionChip.text = "● LIVE"
         connectionChip.setTextColor(C.live)
 
-        // Apply median filters to remove spikes/anomalies
+        // Apply advanced filters to remove DS18B20 spikes/anomalies
+        val timestamp = d.optLong("ts", System.currentTimeMillis())
         val rawOutside = d.optDouble("t_zewn", Double.NaN).toFloat()
         val rawHeat = d.optDouble("t_ogrz", Double.NaN).toFloat()
         val rawBoiler = d.optDouble("t_bojler", Double.NaN).toFloat()
@@ -1366,13 +1367,13 @@ class MainActivity : Activity() {
         val rawPressure = d.optDouble("cisnienie", Double.NaN).toFloat()
         val rawHumidity = d.optDouble("wilgotnosc", Double.NaN).toFloat()
         
-        val outside = filterOutside.filter(rawOutside).toDouble()
-        val heat = filterHeating.filter(rawHeat).toDouble()
-        val boiler = filterBoiler.filter(rawBoiler).toDouble()
-        val panel = filterPanel.filter(rawPanel).toDouble()
-        val room = filterRoom.filter(rawRoom).toDouble()
-        val pressure = filterPressure.filter(rawPressure).toDouble()
-        val humidity = filterHumidity.filter(rawHumidity).toDouble()
+        val outside = filterOutside.filter(rawOutside, timestamp).toDouble()
+        val heat = filterHeating.filter(rawHeat, timestamp).toDouble()
+        val boiler = filterBoiler.filter(rawBoiler, timestamp).toDouble()
+        val panel = filterPanel.filter(rawPanel, timestamp).toDouble()
+        val room = filterRoom.filter(rawRoom, timestamp).toDouble()
+        val pressure = filterPressure.filter(rawPressure, timestamp).toDouble()
+        val humidity = filterHumidity.filter(rawHumidity, timestamp).toDouble()
         val pump = d.optBoolean("pompa", false)
         val smokeAlarm = d.optBoolean("dym_alarm", false)
         val smokeOn = d.optBoolean("dym_wlaczony", false)
