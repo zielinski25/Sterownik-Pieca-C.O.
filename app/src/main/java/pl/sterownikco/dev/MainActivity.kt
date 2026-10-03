@@ -1753,7 +1753,7 @@ class MainActivity : Activity() {
     private fun roundedGradient(start: Int, end: Int, stroke1: Int, stroke2: Int, r: Int): GradientDrawable {
         return GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(start, end)).apply {
             cornerRadius = dp(r).toFloat()
-            setStroke(dp(1f), stroke1)
+            setStroke(dp(1), stroke1)
         }
     }
 
