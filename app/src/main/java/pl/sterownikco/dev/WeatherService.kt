@@ -11,11 +11,16 @@ import java.util.concurrent.Executors
 /**
  * STEROWNIK CO — Weather service (Open-Meteo API).
  * Provides current weather and forecast without API keys.
+ * Coordinates match the ESP32 firmware (51.066389, 21.509167).
  */
 object WeatherService {
 
     @Volatile private var executor: java.util.concurrent.ExecutorService? = null
     private const val TAG = "WeatherService"
+
+    // Default location — matches the firmware (DESZCZ_LAT/DESZCZ_LON)
+    const val DEFAULT_LAT = 51.066389
+    const val DEFAULT_LON = 21.509167
 
     private fun getExecutor(): java.util.concurrent.ExecutorService {
         executor?.let { if (!it.isShutdown) return it }
@@ -24,7 +29,6 @@ object WeatherService {
         return e
     }
 
-    // Fix: Memory leak — allow shutdown of thread pool
     fun shutdown() {
         executor?.shutdownNow()
         executor = null
@@ -35,15 +39,24 @@ object WeatherService {
         val feelsLike: Double,
         val humidity: Int,
         val windSpeed: Double,
+        val windGusts: Double,
+        val windDirection: Double,
         val weatherCode: Int,
-        val isDay: Boolean
+        val isDay: Boolean,
+        val cloudCover: Double,
+        val precipitation: Double,
+        val uvIndex: Double,
+        val pressure: Double
     )
 
     data class HourlyForecast(
         val time: Long,
         val temperature: Double,
         val weatherCode: Int,
-        val precipitation: Double
+        val precipitation: Double,
+        val precipitationProb: Int,
+        val cloudCover: Double,
+        val windSpeed: Double
     )
 
     data class DailyForecast(
@@ -52,7 +65,12 @@ object WeatherService {
         val tempMin: Double,
         val weatherCode: Int,
         val precipitationSum: Double,
-        val windSpeedMax: Double
+        val windSpeedMax: Double,
+        val windGustsMax: Double,
+        val sunrise: Long,
+        val sunset: Long,
+        val uvIndexMax: Double,
+        val shortwaveRadiation: Double
     )
 
     data class WeatherData(
@@ -66,18 +84,13 @@ object WeatherService {
         fun onError(error: String)
     }
 
-    /**
-     * Fetch weather for given coordinates.
-     * Default: Warsaw (52.2297, 21.0122)
-     */
-    // Fix: Weather retry with exponential backoff
-    private var lastWeather: WeatherData? = null
+    @Volatile private var lastWeather: WeatherData? = null
 
     fun getCached(): WeatherData? = lastWeather
 
     fun fetchWeather(
-        latitude: Double = 52.2297,
-        longitude: Double = 21.0122,
+        latitude: Double = DEFAULT_LAT,
+        longitude: Double = DEFAULT_LON,
         callback: Callback
     ) {
         fetchWeatherInternal(latitude, longitude, callback, retryCount = 0)
@@ -91,7 +104,18 @@ object WeatherService {
     ) {
         getExecutor().execute {
             try {
-                val currentUrl = "https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,is_day,wind_speed_10m&hourly=temperature_2m,weather_code,precipitation&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_sum,wind_speed_10m_max&timezone=Europe%2FWarsaw&forecast_days=7"
+                // Comprehensive request matching the firmware's PROGNOZA_URL
+                val currentUrl = "https://api.open-meteo.com/v1/forecast" +
+                    "?latitude=$latitude&longitude=$longitude" +
+                    "&current=temperature_2m,relative_humidity_2m,apparent_temperature," +
+                    "precipitation,cloud_cover,wind_speed_10m,wind_gusts_10m," +
+                    "wind_direction_10m,uv_index,weather_code,is_day,pressure_msl" +
+                    "&hourly=temperature_2m,precipitation_probability,precipitation," +
+                    "cloud_cover,wind_speed_10m,weather_code" +
+                    "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset," +
+                    "uv_index_max,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max," +
+                    "shortwave_radiation_sum,weather_code" +
+                    "&forecast_days=7&timezone=Europe%2FWarsaw"
 
                 val url = URL(currentUrl)
                 val connection = url.openConnection() as HttpURLConnection
@@ -119,8 +143,14 @@ object WeatherService {
                         feelsLike = currentJson.optDouble("apparent_temperature", Double.NaN),
                         humidity = currentJson.optInt("relative_humidity_2m", 0),
                         windSpeed = currentJson.optDouble("wind_speed_10m", 0.0),
+                        windGusts = currentJson.optDouble("wind_gusts_10m", 0.0),
+                        windDirection = currentJson.optDouble("wind_direction_10m", 0.0),
                         weatherCode = currentJson.optInt("weather_code", 0),
-                        isDay = currentJson.optInt("is_day", 1) == 1
+                        isDay = currentJson.optInt("is_day", 1) == 1,
+                        cloudCover = currentJson.optDouble("cloud_cover", Double.NaN),
+                        precipitation = currentJson.optDouble("precipitation", 0.0),
+                        uvIndex = currentJson.optDouble("uv_index", 0.0),
+                        pressure = currentJson.optDouble("pressure_msl", Double.NaN)
                     )
                 } else null
 
@@ -132,8 +162,11 @@ object WeatherService {
                     val temps = hourlyJson.optJSONArray("temperature_2m")
                     val codes = hourlyJson.optJSONArray("weather_code")
                     val precip = hourlyJson.optJSONArray("precipitation")
+                    val precipProb = hourlyJson.optJSONArray("precipitation_probability")
+                    val clouds = hourlyJson.optJSONArray("cloud_cover")
+                    val winds = hourlyJson.optJSONArray("wind_speed_10m")
 
-                    if (times != null && temps != null && codes != null && precip != null) {
+                    if (times != null && temps != null) {
                         val maxItems = minOf(times.length(), 48)
                         for (i in 0 until maxItems) {
                             val timeStr = times.optString(i, "")
@@ -142,8 +175,11 @@ object WeatherService {
                                 HourlyForecast(
                                     time = time,
                                     temperature = temps.optDouble(i, Double.NaN),
-                                    weatherCode = codes.optInt(i, 0),
-                                    precipitation = precip.optDouble(i, 0.0)
+                                    weatherCode = codes?.optInt(i, 0) ?: 0,
+                                    precipitation = precip?.optDouble(i, 0.0) ?: 0.0,
+                                    precipitationProb = precipProb?.optInt(i, 0) ?: 0,
+                                    cloudCover = clouds?.optDouble(i, Double.NaN) ?: Double.NaN,
+                                    windSpeed = winds?.optDouble(i, 0.0) ?: 0.0
                                 )
                             )
                         }
@@ -155,24 +191,34 @@ object WeatherService {
                 val daily = mutableListOf<DailyForecast>()
                 if (dailyJson != null) {
                     val times = dailyJson.optJSONArray("time")
-                    val max = dailyJson.optJSONArray("temperature_2m_max")
-                    val min = dailyJson.optJSONArray("temperature_2m_min")
+                    val maxT = dailyJson.optJSONArray("temperature_2m_max")
+                    val minT = dailyJson.optJSONArray("temperature_2m_min")
                     val codes = dailyJson.optJSONArray("weather_code")
-                    val precip = dailyJson.optJSONArray("precipitation_sum")
-                    val wind = dailyJson.optJSONArray("wind_speed_10m_max")
+                    val precipSum = dailyJson.optJSONArray("precipitation_sum")
+                    val windMax = dailyJson.optJSONArray("wind_speed_10m_max")
+                    val gustMax = dailyJson.optJSONArray("wind_gusts_10m_max")
+                    val sunrises = dailyJson.optJSONArray("sunrise")
+                    val sunsets = dailyJson.optJSONArray("sunset")
+                    val uvMax = dailyJson.optJSONArray("uv_index_max")
+                    val radiation = dailyJson.optJSONArray("shortwave_radiation_sum")
 
-                    if (times != null && max != null && min != null && codes != null && precip != null && wind != null) {
+                    if (times != null && maxT != null && minT != null) {
                         for (i in 0 until times.length()) {
                             val timeStr = times.optString(i, "")
                             val time = parseTime(timeStr)
                             daily.add(
                                 DailyForecast(
                                     date = time,
-                                    tempMax = max.optDouble(i, Double.NaN),
-                                    tempMin = min.optDouble(i, Double.NaN),
-                                    weatherCode = codes.optInt(i, 0),
-                                    precipitationSum = precip.optDouble(i, 0.0),
-                                    windSpeedMax = wind.optDouble(i, 0.0)
+                                    tempMax = maxT.optDouble(i, Double.NaN),
+                                    tempMin = minT.optDouble(i, Double.NaN),
+                                    weatherCode = codes?.optInt(i, 0) ?: 0,
+                                    precipitationSum = precipSum?.optDouble(i, 0.0) ?: 0.0,
+                                    windSpeedMax = windMax?.optDouble(i, 0.0) ?: 0.0,
+                                    windGustsMax = gustMax?.optDouble(i, 0.0) ?: 0.0,
+                                    sunrise = parseTime(sunrises?.optString(i, "") ?: ""),
+                                    sunset = parseTime(sunsets?.optString(i, "") ?: ""),
+                                    uvIndexMax = uvMax?.optDouble(i, 0.0) ?: 0.0,
+                                    shortwaveRadiation = radiation?.optDouble(i, 0.0) ?: 0.0
                                 )
                             )
                         }
@@ -186,17 +232,15 @@ object WeatherService {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Weather fetch failed (attempt ${retryCount + 1}/3)", e)
-                // Fix: Exponential backoff retry (3 attempts: 2s, 4s, 8s)
                 if (retryCount < 2) {
-                    val delay = (1L shl (retryCount + 1)) * 1000 // 2s, 4s
+                    val delay = (1L shl (retryCount + 1)) * 1000L
                     Thread.sleep(delay)
                     fetchWeatherInternal(latitude, longitude, callback, retryCount + 1)
                 } else {
-                    // Final error — return cached data if available
                     val cached = lastWeather
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                         if (cached != null) {
-                            callback.onSuccess(cached) // Fallback to cache
+                            callback.onSuccess(cached)
                         } else {
                             callback.onError(e.message ?: "Unknown error")
                         }
@@ -206,9 +250,6 @@ object WeatherService {
         }
     }
 
-    /**
-     * Get weather description from Open-Meteo weather code.
-     */
     fun getWeatherDescription(code: Int): String {
         return when (code) {
             0 -> "Bezchmurnie"
@@ -230,28 +271,44 @@ object WeatherService {
         }
     }
 
-    /**
-     * Get weather icon based on code and day/night.
-     */
     fun getWeatherIcon(code: Int, isDay: Boolean = true): String {
         return when (code) {
             0 -> if (isDay) "☀️" else "🌙"
-            1, 2 -> if (isDay) "⛅" else "️"
+            1, 2 -> if (isDay) "⛅" else "🌙"
             3 -> "☁️"
             45, 48 -> "🌫️"
             51, 53, 55 -> "🌦️"
             61, 63, 65 -> "🌧️"
             71, 73, 75 -> "🌨️"
             95, 96, 99 -> "⛈️"
-            else -> ""
+            else -> "🌤️"
         }
     }
 
+    fun getWindDirection(deg: Double): String {
+        val dirs = arrayOf("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
+        val idx = ((deg + 11.25) / 22.5).toInt() % 16
+        return dirs[idx]
+    }
+
     private fun parseTime(timeStr: String): Long {
+        if (timeStr.isBlank()) return 0L
         return try {
-            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm", java.util.Locale.US)
-            sdf.timeZone = java.util.TimeZone.getTimeZone("Europe/Warsaw")
-            sdf.parse(timeStr)?.time ?: 0L
+            val formats = listOf(
+                "yyyy-MM-dd'T'HH:mm",
+                "yyyy-MM-dd'T'HH:mm:ss",
+                "yyyy-MM-dd"
+            )
+            for (fmt in formats) {
+                try {
+                    val sdf = java.text.SimpleDateFormat(fmt, java.util.Locale.US)
+                    sdf.timeZone = java.util.TimeZone.getTimeZone("Europe/Warsaw")
+                    val result = sdf.parse(timeStr)
+                    if (result != null) return result.time
+                } catch (_: Exception) { }
+            }
+            0L
         } catch (e: Exception) {
             0L
         }

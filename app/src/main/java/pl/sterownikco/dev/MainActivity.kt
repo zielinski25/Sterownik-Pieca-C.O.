@@ -76,6 +76,7 @@ class MainActivity : Activity() {
     private lateinit var chartsView: ScrollView
     private lateinit var settingsView: ScrollView
     private lateinit var moreView: ScrollView
+    private lateinit var weatherView: ScrollView
     private lateinit var loginView: LinearLayout
     private lateinit var tempChart: ProfessionalTelemetryChartView
     private lateinit var servoChart: ProfessionalTelemetryChartView
@@ -142,6 +143,7 @@ class MainActivity : Activity() {
         val defs = listOf(
             NativeIconView.Icon.DASHBOARD to "Dashboard",
             NativeIconView.Icon.CHART to "Wykresy",
+            NativeIconView.Icon.OUTSIDE to "Pogoda",
             NativeIconView.Icon.SETTINGS to "Ustawienia",
             NativeIconView.Icon.MORE to "Więcej"
         )
@@ -168,13 +170,16 @@ class MainActivity : Activity() {
 
         dashboardView = buildDashboard()
         chartsView = buildCharts()
+        weatherView = buildWeather()
         settingsView = buildSettings()
         moreView = buildMore()
         content.addView(dashboardView, FrameLayout.LayoutParams(-1, -1))
         content.addView(chartsView, FrameLayout.LayoutParams(-1, -1))
+        content.addView(weatherView, FrameLayout.LayoutParams(-1, -1))
         content.addView(settingsView, FrameLayout.LayoutParams(-1, -1))
         content.addView(moreView, FrameLayout.LayoutParams(-1, -1))
         chartsView.visibility = View.GONE
+        weatherView.visibility = View.GONE
         settingsView.visibility = View.GONE
         moreView.visibility = View.GONE
     }
@@ -690,13 +695,314 @@ class MainActivity : Activity() {
         return s
     }
 
+    // ── WEATHER TAB ──────────────────────────────────────────────────────
+    private var weatherHeroAnim: WeatherView? = null
+    private var weatherLastFetchMs = 0L
+    private var weatherData: WeatherService.WeatherData? = null
+
+    private fun buildWeather(): ScrollView {
+        val s = ScrollView(this)
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(15), dp(12), dp(15), dp(100))
+        }
+
+        // ── Header
+        root.addView(label("POGODA", 26f, Color.WHITE, true))
+        val locLine = label("${String.format(Locale.US, "%.4f", WeatherService.DEFAULT_LAT)}° N · ${String.format(Locale.US, "%.4f", WeatherService.DEFAULT_LON)}° E · Open-Meteo", 9.5f, C.textDim, false, dp(3))
+        root.addView(locLine)
+
+        // ── Hero card — animated weather + current temperature
+        val heroCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = roundedGradient(C.hero, 0xFF0B2032.toInt(), 0x401A3A5C, 0x22264A6E, 20)
+        }
+        val heroLeft = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val heroTempLabel = label("--°C", 38f, Color.WHITE, true)
+        heroTempLabel.tag = "weather_hero_temp"
+        heroLeft.addView(heroTempLabel)
+        val heroDescLabel = label("Pobieram…", 13f, C.textDim, false, dp(4))
+        heroDescLabel.tag = "weather_hero_desc"
+        heroLeft.addView(heroDescLabel)
+        val heroFeelsLabel = label("", 10.5f, C.textDim2, false, dp(3))
+        heroFeelsLabel.tag = "weather_hero_feels"
+        heroLeft.addView(heroFeelsLabel)
+        heroCard.addView(heroLeft, LinearLayout.LayoutParams(0, -2, 1f))
+
+        weatherHeroAnim = WeatherView(this).apply {
+            background = rounded(0x1A00D4F5, 16, 0x2036BBD5)
+        }
+        heroCard.addView(weatherHeroAnim!!, lp(110, 110))
+        root.addView(heroCard, lp(-1, -2, 8))
+
+        // ── Metric cards grid — 2 columns
+        val metricGrid = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val metricCol1 = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val metricCol2 = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(8), 0, 0, 0) }
+
+        // Row 1: Wilgotność + Wiatr
+        val humidCard = weatherMetricCard("WILGOTNOŚĆ", "--%", "💧", C.blue)
+        humidCard.tag = "weather_humid"
+        metricCol1.addView(humidCard, lp(-1, -2, 8))
+
+        val windCard = weatherMetricCard("WIATR", "-- km/h", "💨", C.cyan)
+        windCard.tag = "weather_wind"
+        metricCol2.addView(windCard, lp(-1, -2, 8))
+
+        // Row 2: Ciśnienie + Zachmurzenie
+        val pressCard = weatherMetricCard("CIŚNIENIE", "-- hPa", "🌡️", C.violet)
+        pressCard.tag = "weather_press"
+        metricCol1.addView(pressCard, lp(-1, -2, 8))
+
+        val cloudCard = weatherMetricCard("ZACHMURZENIE", "--%", "☁️", C.textDim)
+        cloudCard.tag = "weather_cloud"
+        metricCol2.addView(cloudCard, lp(-1, -2, 8))
+
+        // Row 3: Opad + UV
+        val precipCard = weatherMetricCard("OPAD", "-- mm", "🌧️", C.blue)
+        precipCard.tag = "weather_precip"
+        metricCol1.addView(precipCard, lp(-1, -2, 8))
+
+        val uvCard = weatherMetricCard("UV INDEX", "--", "☀️", C.yellow)
+        uvCard.tag = "weather_uv"
+        metricCol2.addView(uvCard, lp(-1, -2, 8))
+
+        metricGrid.addView(metricCol1, LinearLayout.LayoutParams(0, -2, 1f))
+        metricGrid.addView(metricCol2, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(metricGrid, lp(-1, -2, 4))
+
+        // ── Hourly forecast card
+        val hourlyCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(C.surface, 18, C.border)
+        }
+        val hourlyHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        }
+        hourlyHeader.addView(label("PROGNOZA GODZINOWA", 10f, C.cyan, true))
+        hourlyHeader.addView(View(this).apply {}, LinearLayout.LayoutParams(0, 0, 1f))
+        hourlyHeader.addView(label("48h", 9f, C.textDim2, false))
+        hourlyCard.addView(hourlyHeader)
+
+        val hourlyScroll = HorizontalScrollView(this).apply {
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            setPadding(0, dp(10), 0, 0)
+        }
+        val hourlyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            tag = "weather_hourly_row"
+        }
+        hourlyScroll.addView(hourlyRow)
+        hourlyCard.addView(hourlyScroll)
+        root.addView(hourlyCard, lp(-1, -2, 10))
+
+        // ── Daily forecast card
+        val dailyCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(C.surface, 18, C.border)
+        }
+        val dailyHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        }
+        dailyHeader.addView(label("PROGNOZA 7-DNIOWA", 10f, C.cyan, true))
+        dailyHeader.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
+        dailyCard.addView(dailyHeader)
+
+        val dailyContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            tag = "weather_daily_container"
+        }
+        dailyCard.addView(dailyContainer, lp(-1, -2, 8))
+        root.addView(dailyCard, lp(-1, -2, 4))
+
+        // ── Today summary card
+        val summaryCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(C.surface, 18, C.border)
+        }
+        summaryCard.addView(label("PODSUMOWANIE DNIA", 10f, C.cyan, true))
+        val summaryGrid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            tag = "weather_summary"
+        }
+        summaryCard.addView(summaryGrid, lp(-1, -2, 6))
+        root.addView(summaryCard, lp(-1, -2, 10))
+
+        // ── Refresh button
+        val refreshBtn = action("ODŚWIEŻ DANE", C.surface2, Color.WHITE, 0)
+        refreshBtn.setOnClickListener { refreshWeatherTab(force = true) }
+        root.addView(refreshBtn, lp(-1, 48, 6))
+
+        s.addView(root)
+        return s
+    }
+
+    private fun weatherMetricCard(title: String, value: String, emoji: String, accentColor: Int): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(C.surface, 16, C.border)
+            addView(label("$emoji $title", 9f, C.textDim, true))
+            addView(label(value, 16f, Color.WHITE, true, dp(4)))
+        }
+    }
+
+    private fun refreshWeatherTab(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && weatherData != null && now - weatherLastFetchMs < 5 * 60 * 1000L) return
+        weatherLastFetchMs = now
+
+        WeatherService.fetchWeather { data ->
+            weatherData = data
+            runOnUiThread { renderWeatherTab(data) }
+        }
+    }
+
+    private fun renderWeatherTab(data: WeatherService.WeatherData) {
+        val cur = data.current ?: return
+
+        // Hero
+        val heroTemp = weatherView.findViewWithTag<TextView>("weather_hero_temp")
+        val heroDesc = weatherView.findViewWithTag<TextView>("weather_hero_desc")
+        val heroFeels = weatherView.findViewWithTag<TextView>("weather_hero_feels")
+        heroTemp?.text = if (cur.temperature.isFinite()) String.format(Locale.US, "%.1f°C", cur.temperature) else "--°C"
+        heroDesc?.text = WeatherService.getWeatherDescription(cur.weatherCode)
+        heroFeels?.text = buildString {
+            append("Odczuwalna ")
+            append(if (cur.feelsLike.isFinite()) String.format(Locale.US, "%.1f°C", cur.feelsLike) else "--")
+            append("  ·  ")
+            append(WeatherService.getWindDirection(cur.windDirection))
+            append(" ")
+            append(if (cur.windSpeed.isFinite()) String.format(Locale.US, "%.0f km/h", cur.windSpeed) else "--")
+        }
+        weatherHeroAnim?.bind(cur.weatherCode, cur.isDay, cur.temperature)
+
+        // Metrics
+        val humid = weatherView.findViewWithTag<LinearLayout>("weather_humid")
+        humid?.let { updateMetricCard(it, "${cur.humidity}%") }
+        val wind = weatherView.findViewWithTag<LinearLayout>("weather_wind")
+        wind?.let { updateMetricCard(it, "${fmtNum(cur.windSpeed)} km/h\nPorywy: ${fmtNum(cur.windGusts)} km/h") }
+        val press = weatherView.findViewWithTag<LinearLayout>("weather_press")
+        press?.let { updateMetricCard(it, if (cur.pressure.isFinite()) String.format(Locale.US, "%.0f hPa", cur.pressure) else "-- hPa") }
+        val cloud = weatherView.findViewWithTag<LinearLayout>("weather_cloud")
+        cloud?.let { updateMetricCard(it, if (cur.cloudCover.isFinite()) String.format(Locale.US, "%.0f%%", cur.cloudCover) else "--%") }
+        val precip = weatherView.findViewWithTag<LinearLayout>("weather_precip")
+        precip?.let { updateMetricCard(it, String.format(Locale.US, "%.1f mm", cur.precipitation)) }
+        val uv = weatherView.findViewWithTag<LinearLayout>("weather_uv")
+        uv?.let { updateMetricCard(it, String.format(Locale.US, "%.1f", cur.uvIndex)) }
+
+        // Hourly forecast
+        val hourlyRow = weatherView.findViewWithTag<LinearLayout>("weather_hourly_row")
+        hourlyRow?.removeAllViews()
+        val hourlyFmt = java.text.SimpleDateFormat("HH:mm", Locale.US)
+        val nowMs = System.currentTimeMillis()
+        val relevantHourly = data.hourly.filter { it.time >= nowMs - 3600000L }.take(24)
+        for (h in relevantHourly) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = rounded(C.surface2, 12, C.border)
+                minimumWidth = dp(58)
+            }
+            val timeStr = if (h.time > 0) hourlyFmt.format(java.util.Date(h.time)) else "--:--"
+            item.addView(label(timeStr, 8.5f, C.textDim2, true))
+            item.addView(label(WeatherService.getWeatherIcon(h.weatherCode, cur.isDay), 16f, Color.WHITE, false, dp(4)))
+            item.addView(label(if (h.temperature.isFinite()) String.format(Locale.US, "%.0f°", h.temperature) else "--", 11f, Color.WHITE, true, dp(3)))
+            if (h.precipitationProb > 0) {
+                item.addView(label("${h.precipitationProb}%", 8f, C.blue, true, dp(2)))
+            }
+            hourlyRow?.addView(item, LinearLayout.LayoutParams(-2, -2).apply { setMargins(0, 0, dp(6), 0) })
+        }
+
+        // Daily forecast
+        val dailyContainer = weatherView.findViewWithTag<LinearLayout>("weather_daily_container")
+        dailyContainer?.removeAllViews()
+        val dayFmt = java.text.SimpleDateFormat("EEE dd.MM", Locale("pl", "PL"))
+        for (d in data.daily) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(10), dp(10), dp(10))
+                background = rounded(C.surface2, 12, C.border)
+            }
+            val dateStr = if (d.date > 0) dayFmt.format(java.util.Date(d.date)) else "--"
+            row.addView(label(dateStr, 10.5f, C.text, true), lp(0, -2, 1f))
+            row.addView(label(WeatherService.getWeatherIcon(d.weatherCode), 14f, Color.WHITE, false))
+            // Min-max temp bar
+            val tempRange = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+                setPadding(dp(10), 0, dp(10), 0)
+            }
+            tempRange.addView(label(if (d.tempMin.isFinite()) String.format(Locale.US, "%.0f°", d.tempMin) else "--", 10f, C.blue, true))
+            tempRange.addView(label(" — ", 10f, C.textDim2, false))
+            tempRange.addView(label(if (d.tempMax.isFinite()) String.format(Locale.US, "%.0f°", d.tempMax) else "--", 10f, C.err, true))
+            row.addView(tempRange)
+            if (d.precipitationSum > 0) {
+                row.addView(label(String.format(Locale.US, "%.1fmm", d.precipitationSum), 9f, C.blue, true, dp(2)))
+            }
+            dailyContainer?.addView(row, lp(-1, -2, 5))
+        }
+
+        // Today summary
+        val summary = weatherView.findViewWithTag<LinearLayout>("weather_summary")
+        summary?.removeAllViews()
+        if (data.daily.isNotEmpty()) {
+            val today = data.daily[0]
+            val summaryItems = listOf(
+                "🌡️ Max" to if (today.tempMax.isFinite()) String.format(Locale.US, "%.1f°C", today.tempMax) else "--",
+                "🌡️ Min" to if (today.tempMin.isFinite()) String.format(Locale.US, "%.1f°C", today.tempMin) else "--",
+                "🌧️ Opad" to String.format(Locale.US, "%.1f mm", today.precipitationSum),
+                "💨 Wiatr max" to String.format(Locale.US, "%.0f km/h", today.windSpeedMax),
+                "💨 Porywy max" to String.format(Locale.US, "%.0f km/h", today.windGustsMax),
+                "☀️ UV max" to String.format(Locale.US, "%.1f", today.uvIndexMax),
+                "🌅 Wschód" to if (today.sunrise > 0) java.text.SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date(today.sunrise)) else "--",
+                "🌇 Zachód" to if (today.sunset > 0) java.text.SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date(today.sunset)) else "--",
+                "☀️ Nasłonecznienie" to String.format(Locale.US, "%.0f W/m²", today.shortwaveRadiation)
+            )
+            val gridRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val col1 = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            val col2 = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
+            summaryItems.forEachIndexed { idx, (k, v) ->
+                val item = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(8), dp(6), dp(8), dp(6))
+                }
+                item.addView(label(k, 9.5f, C.textDim, false))
+                item.addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 0, 1f))
+                item.addView(label(v, 10f, Color.WHITE, true))
+                if (idx % 2 == 0) col1.addView(item) else col2.addView(item)
+            }
+            gridRow.addView(col1, LinearLayout.LayoutParams(0, -2, 1f))
+            gridRow.addView(col2, LinearLayout.LayoutParams(0, -2, 1f))
+            summary?.addView(gridRow)
+        }
+    }
+
+    private fun updateMetricCard(card: LinearLayout, value: String) {
+        if (card.childCount >= 2) {
+            (card.getChildAt(1) as? TextView)?.text = value
+        }
+    }
+
+    private fun fmtNum(v: Double): String {
+        return if (v.isFinite()) String.format(Locale.US, "%.0f", v) else "--"
+    }
+
     private fun buildMore(): ScrollView {
         val s = ScrollView(this)
         val b = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(15), dp(12), dp(15), dp(100)) }
         b.addView(label("WIĘCEJ", 26f, Color.WHITE, true))
         b.addView(label("Moduły serwisowe i informacje", 11.0f, C.textDim, false, dp(3)))
         listOf(
-            "Pogoda" to "Prognoza i warunki zewnętrzne",
             "Logi" to "Diagnostyka zdarzeń sterownika",
             "Terminal" to "Narzędzia serwisowe",
             "OTA" to "Aktualizacja firmware",
@@ -744,8 +1050,9 @@ class MainActivity : Activity() {
     private fun navigate(index: Int) {
         dashboardView.visibility = if (index == 0) View.VISIBLE else View.GONE
         chartsView.visibility = if (index == 1) View.VISIBLE else View.GONE
-        settingsView.visibility = if (index == 2) View.VISIBLE else View.GONE
-        moreView.visibility = if (index == 3) View.VISIBLE else View.GONE
+        weatherView.visibility = if (index == 2) View.VISIBLE else View.GONE
+        settingsView.visibility = if (index == 3) View.VISIBLE else View.GONE
+        moreView.visibility = if (index == 4) View.VISIBLE else View.GONE
         navButtons.forEachIndexed { i, b ->
             val on = i == index
             b.isSelected = on
@@ -754,6 +1061,7 @@ class MainActivity : Activity() {
             (b.getChildAt(0) as? NativeIconView)?.apply { tint = if (on) C.cyan else C.textDim2; active = on; invalidate() }
         }
         if (index == 1 && currentIdToken != null && tempChart.snapshot().isEmpty()) loadHistory(24 * 3600L)
+        if (index == 2) refreshWeatherTab()
     }
 
     private fun restoreSession() {
@@ -973,7 +1281,7 @@ class MainActivity : Activity() {
         val damper = (damperDeg * 100 / 90).coerceIn(0,100)
         setTile(TileId.PUMP, if (pump) "WŁĄCZONA" else "WYŁĄCZONA", if (pump) "AKTYWNA" else "AUTO", if (pump) 1f else 0f, active=pump)
         setTile(TileId.SERVO, "K$flap • S$damper", mode, flap/100f, active=mode=="RĘCZNY")
-        val mix = d.optBoolean("mieszadloWlaczony", false)
+        val mix = d.optBoolean("mieszadlo", false)
         setTile(TileId.MIXER, if (mix) "WŁĄCZONE" else "WYŁĄCZONE", if (mix) "AKTYWNE" else "AUTO", if (mix) 1f else 0f, active=mix)
         setTile(TileId.SMOKE, when { smokeAlarm -> "ALARM"; smokeOn -> "AKTYWNY"; else -> "OK" }, if(smokeAlarm)"BEZPIECZEŃSTWO" else "MONITORING", .3f, active=smokeOn, alarm=smokeAlarm)
         setTile(TileId.CHARTS, "OTWÓRZ", "historia • 6 H / 24 H / 7 DNI / 30 DNI", .8f)
@@ -1509,7 +1817,6 @@ class MainActivity : Activity() {
     private fun showClockMenu(){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("CZAS TELEFONU",9.5f,C.textDim,true));box.addView(label(SimpleDateFormat("dd.MM.yyyy HH:mm:ss",Locale.US).format(Date()),20f,Color.WHITE,true,dp(3)));box.addView(label("Sesja zapamiętana bez hasła",12f,C.textDim,false,dp(10)));showSheet("Data i czas",box)}
     private fun showModule(name: String) {
         when (name) {
-            "Pogoda" -> showWeatherMenu()
             "Logi" -> showLogsMenu()
             "Terminal" -> showTerminalMenu()
             "OTA" -> showOtaMenu()
