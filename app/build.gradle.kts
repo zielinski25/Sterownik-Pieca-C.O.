@@ -4,12 +4,12 @@ plugins {
 
 android {
     namespace = "pl.sterownikco.dev"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "pl.sterownikco.dev"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 3005
         versionName = "0.30.5-UI-LAYOUT-FIX"
     }
