@@ -1469,9 +1469,11 @@ class MainActivity : Activity() {
       val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};
       box.addView(label("TRYB",9.5f,C.textDim,true));
       box.addView(label(when(d?.optInt("tryb_serwa")){1->"AUTO";2->"RĘCZNY";3->"BEZPIECZNY";else->"—"},19f,Color.WHITE,true,dp(3)));
-      listOf("AUTO" to "tryb_auto","RĘCZNY" to "tryb_reczny","BEZPIECZNA" to "tryb_bezpieczny").forEach{(t,c)->
-        val b=action(t,C.surface2,Color.WHITE,0);
-        b.setOnClickListener{sendCommand(c)};
+      val modeButtons=listOf("AUTO" to "tryb_auto","RĘCZNY" to "tryb_reczny","BEZPIECZNA" to "tryb_bezpieczny")
+      modeButtons.forEach{(t,c)->
+        val isActive=(when(d?.optInt("tryb_serwa")){1->"AUTO";2->"RĘCZNY";3->"BEZPIECZNA";else->""})==t
+        val b=action(t,if(isActive) C.cyan else C.surface2,if(isActive) C.bg else Color.WHITE,0)
+        b.setOnClickListener{sendCommand(c);Toast.makeText(this@MainActivity,"Tryb: $t",Toast.LENGTH_SHORT).show()}
         box.addView(b,lp(-1,48,7))
       };
       // Fix: Firmware sends degrees (0-180 for klapa, 0-90 for syberek), convert to percent
@@ -1483,7 +1485,25 @@ class MainActivity : Activity() {
       addServoSlider(box,"Syberek",syberkaPct,"syberek");
       showSheet("Serwo",box)
     }
-    private fun addServoSlider(box:LinearLayout,name:String,initial:Int,command:String){val seek=SeekBar(this).apply{max=100;progress=initial.coerceIn(0,100)};val valTxt=label("$name: ${seek.progress}%",12.5f,Color.WHITE,true,dp(9));seek.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){valTxt.text="$name: $p%"};override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}});box.addView(valTxt);box.addView(seek);val b=action("USTAW $name",C.accent,C.bg,0);b.setOnClickListener{sendCommand("$command ${seek.progress}")};box.addView(b,lp(-1,46,5))}
+    private fun addServoSlider(box:LinearLayout,name:String,initial:Int,command:String){
+      val seek=SeekBar(this).apply{max=100;progress=initial.coerceIn(0,100)}
+      val valTxt=label("$name: ${seek.progress}%",12.5f,Color.WHITE,true,dp(9))
+      var lastSent=-1
+      // Auto-send on release — no extra button needed (Home Assistant / Tado / Netatmo pattern)
+      seek.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
+        override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){valTxt.text="$name: $p%"}
+        override fun onStartTrackingTouch(s:SeekBar?){}
+        override fun onStopTrackingTouch(s:SeekBar?){
+          val v=seek.progress
+          if(v!=lastSent){
+            lastSent=v
+            sendCommand("$command $v")
+            Toast.makeText(this@MainActivity,"$name → $v%",Toast.LENGTH_SHORT).show()
+          }
+        }
+      })
+      box.addView(valTxt);box.addView(seek)
+    }
     private fun showMixerMenu(){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};listOf("WŁ." to "mieszadlo_wl","WYŁ." to "mieszadlo_wyl","AUTO" to "mieszadlo_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};showSheet("Mieszadło",box)}
     private fun showSmokeMenu(){val d=lastStatusData;val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("ODCZYT",9.5f,C.textDim,true));box.addView(label(d?.optInt("dym",0)?.toString() ?: "—",20f,Color.WHITE,true,dp(3)));box.addView(label(if(d?.optBoolean("dym_alarm") == true)"ALARM AKTYWNY" else "Brak alarmu",12f,if(d?.optBoolean("dym_alarm")==true)C.err else C.live,false,dp(8)));listOf("WYCISZ" to "wycisz","RESET" to "reset_alarmow").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};showSheet("Czujnik dymu",box)}
     private fun showClockMenu(){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("CZAS TELEFONU",9.5f,C.textDim,true));box.addView(label(SimpleDateFormat("dd.MM.yyyy HH:mm:ss",Locale.US).format(Date()),20f,Color.WHITE,true,dp(3)));box.addView(label("Sesja zapamiętana bez hasła",12f,C.textDim,false,dp(10)));showSheet("Data i czas",box)}
