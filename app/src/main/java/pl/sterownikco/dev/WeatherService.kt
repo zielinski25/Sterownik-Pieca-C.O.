@@ -86,10 +86,11 @@ object WeatherService {
     fun fetchWeather(
         latitude: Double = DEFAULT_LAT,
         longitude: Double = DEFAULT_LON,
+        days: Int = 7,
         onError: ((String) -> Unit)? = null,
         onSuccess: (WeatherData) -> Unit
     ) {
-        fetchWeatherInternal(latitude, longitude, object : Callback {
+        fetchWeatherInternal(latitude, longitude, days, object : Callback {
             override fun onSuccess(data: WeatherData) = onSuccess(data)
             override fun onError(error: String) {
                 onError?.invoke(error)
@@ -105,12 +106,13 @@ object WeatherService {
     private fun fetchWeatherInternal(
         latitude: Double,
         longitude: Double,
+        days: Int,
         callback: Callback,
         retryCount: Int
     ) {
         getExecutor().execute {
             try {
-                // Comprehensive request matching the firmware's PROGNOZA_URL
+                val daysClamped = days.coerceIn(1, 16)
                 val currentUrl = "https://api.open-meteo.com/v1/forecast" +
                     "?latitude=$latitude&longitude=$longitude" +
                     "&current=temperature_2m,relative_humidity_2m,apparent_temperature," +
@@ -121,7 +123,7 @@ object WeatherService {
                     "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset," +
                     "uv_index_max,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max," +
                     "shortwave_radiation_sum,weather_code" +
-                    "&forecast_days=7&timezone=Europe%2FWarsaw"
+                    "&forecast_days=$daysClamped&timezone=Europe%2FWarsaw"
 
                 val url = URL(currentUrl)
                 val connection = url.openConnection() as HttpURLConnection
@@ -241,7 +243,7 @@ object WeatherService {
                 if (retryCount < 2) {
                     val delay = (1L shl (retryCount + 1)) * 1000L
                     Thread.sleep(delay)
-                    fetchWeatherInternal(latitude, longitude, callback, retryCount + 1)
+                    fetchWeatherInternal(latitude, longitude, days, callback, retryCount + 1)
                 } else {
                     val cached = lastWeather
                     android.os.Handler(android.os.Looper.getMainLooper()).post {

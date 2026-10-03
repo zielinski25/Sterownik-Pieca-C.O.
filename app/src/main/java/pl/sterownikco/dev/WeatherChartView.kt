@@ -78,7 +78,7 @@ class WeatherChartView @JvmOverloads constructor(
 
         val top = dp(10f)
         val bottom = h - dp(38f)
-        val left = dp(8f)
+        val left = dp(42f)  // Increased from 8f to make room for Y-axis labels
         val right = w - dp(8f)
 
         // Grid lines
@@ -89,7 +89,8 @@ class WeatherChartView @JvmOverloads constructor(
             val value = maxVal - (maxVal - minVal) * i / gridLines
             labelPaint.textSize = dp(7.5f)
             labelPaint.textAlign = Paint.Align.RIGHT
-            c.drawText(String.format("%g%s", value, yUnit), left - dp(2f), y + dp(2.5f), labelPaint)
+            val label = String.format("%.0f%s", value, yUnit)
+            c.drawText(label, left - dp(4f), y + dp(2.5f), labelPaint)
         }
 
         // Draw area

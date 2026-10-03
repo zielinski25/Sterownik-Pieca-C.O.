@@ -699,6 +699,7 @@ class MainActivity : Activity() {
     private var weatherHeroAnim: WeatherView? = null
     private var weatherLastFetchMs = 0L
     private var weatherData: WeatherService.WeatherData? = null
+    private var weatherDays = 7
 
     private fun buildWeather(): ScrollView {
         val s = ScrollView(this)
@@ -869,6 +870,25 @@ class MainActivity : Activity() {
         summaryCard.addView(summaryGrid, lp(-1, -2, 6))
         root.addView(summaryCard, lp(-1, -2, 10))
 
+        // ── Range selector (6h, 12h, 24h, 48h, 7d)
+        val rangeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val ranges = listOf(1 to "1D", 2 to "2D", 3 to "3D", 7 to "7D", 14 to "14D")
+        ranges.forEach { (days, lbl) ->
+            val btn = action(lbl, if (days == weatherDays) C.cyan else C.surface2, if (days == weatherDays) C.bg else Color.WHITE, 0)
+            btn.setOnClickListener {
+                weatherDays = days
+                rangeRow.removeAllViews()
+                ranges.forEach { (d, l) ->
+                    val b = action(l, if (d == days) C.cyan else C.surface2, if (d == days) C.bg else Color.WHITE, 0)
+                    b.setOnClickListener { weatherDays = d; refreshWeatherTab(force = true) }
+                    rangeRow.addView(b, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(4) })
+                }
+                refreshWeatherTab(force = true)
+            }
+            rangeRow.addView(btn, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(4) })
+        }
+        root.addView(rangeRow, lp(-1, 40, 6))
+
         // ── Refresh button
         val refreshBtn = action("ODŚWIEŻ DANE", C.surface2, Color.WHITE, 0)
         refreshBtn.setOnClickListener { refreshWeatherTab(force = true) }
@@ -893,7 +913,7 @@ class MainActivity : Activity() {
         if (!force && weatherData != null && now - weatherLastFetchMs < 5 * 60 * 1000L) return
         weatherLastFetchMs = now
 
-        WeatherService.fetchWeather { data ->
+        WeatherService.fetchWeather(days = weatherDays) { data ->
             weatherData = data
             runOnUiThread { renderWeatherTab(data) }
         }
@@ -932,10 +952,17 @@ class MainActivity : Activity() {
         val uv = weatherView.findViewWithTag("weather_uv") as? LinearLayout
         uv?.let { updateMetricCard(it, String.format(Locale.US, "%.1f", cur.uvIndex)) }
 
-        // Weather charts (24h forecast)
+        // Weather charts
         val hourlyFmtChart = java.text.SimpleDateFormat("HH:mm", Locale.US)
+        val dailyFmtChart = java.text.SimpleDateFormat("dd.MM", Locale.US)
         val nowMsChart = System.currentTimeMillis()
-        val relevantHourly = data.hourly.filter { it.time >= nowMsChart - 3600000L }.take(24)
+        val maxHours = weatherDays * 24
+        val relevantHourly = data.hourly.filter { it.time >= nowMsChart - 3600000L }.take(maxHours)
+
+        val xLabels = relevantHourly.map {
+            if (weatherDays > 2) dailyFmtChart.format(java.util.Date(it.time))
+            else hourlyFmtChart.format(java.util.Date(it.time))
+        }
 
         val tempChart = weatherView.findViewWithTag("weather_chart_temp") as? WeatherChartView
         if (tempChart != null && relevantHourly.isNotEmpty()) {
@@ -943,7 +970,7 @@ class MainActivity : Activity() {
                 relevantHourly.map { if (it.temperature.isFinite()) it.temperature.toFloat() else 0f },
                 0xFF55D7FF.toInt(), "°C"
             )
-            tempChart.setXLabels(relevantHourly.map { hourlyFmtChart.format(java.util.Date(it.time)) })
+            tempChart.setXLabels(xLabels)
         }
 
         val windChart = weatherView.findViewWithTag("weather_chart_wind") as? WeatherChartView
@@ -952,7 +979,7 @@ class MainActivity : Activity() {
                 relevantHourly.map { it.windSpeed.toFloat() },
                 0xFF00D4F5.toInt(), ""
             )
-            windChart.setXLabels(relevantHourly.map { hourlyFmtChart.format(java.util.Date(it.time)) })
+            windChart.setXLabels(xLabels)
         }
 
         val cloudChart = weatherView.findViewWithTag("weather_chart_cloud") as? WeatherChartView
@@ -961,7 +988,7 @@ class MainActivity : Activity() {
                 relevantHourly.map { if (it.cloudCover.isFinite()) it.cloudCover.toFloat() else 0f },
                 0xFF8EA6BA.toInt(), "%", 0f, 100f
             )
-            cloudChart.setXLabels(relevantHourly.map { hourlyFmtChart.format(java.util.Date(it.time)) })
+            cloudChart.setXLabels(xLabels)
         }
 
         val precipChart = weatherView.findViewWithTag("weather_chart_precip") as? WeatherChartView
@@ -970,7 +997,7 @@ class MainActivity : Activity() {
                 relevantHourly.map { it.precipitation.toFloat() },
                 0xFF4ADE80.toInt(), "mm", 0f
             )
-            precipChart.setXLabels(relevantHourly.map { hourlyFmtChart.format(java.util.Date(it.time)) })
+            precipChart.setXLabels(xLabels)
         }
 
         // Hourly forecast
@@ -1416,7 +1443,7 @@ class MainActivity : Activity() {
         val field = simField(id) ?: return Pair(false, 0)
         val active = d.optBoolean("symulacja_$field", false)
         val minutes = d.optInt("symulacja_${field}_min", 0)
-        return Pair(active, minutes)
+        return Pair(active && minutes > 0, minutes)
     }
 
     private fun onTileClicked(id: TileId) {
