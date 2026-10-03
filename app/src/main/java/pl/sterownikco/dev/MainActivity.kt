@@ -1933,7 +1933,36 @@ class MainActivity : Activity() {
         showSheet(title,box)
     }
 
-    private fun showOverheatMenu(panel:Boolean){val key=if(panel)"t_panel" else "t_ogrz";val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("TEMPERATURA",9.5f,C.textDim,true));box.addView(label(valueFor(lastStatusData,key,"°C"),20f,Color.WHITE,true,dp(3)));box.addView(label(if(lastStatusData?.optBoolean(if(panel)"alarm_panel" else "alarm_ogrzewanie") == true)"ALARM AKTYWNY" else "Brak alarmu",12f,if(lastStatusData?.optBoolean(if(panel)"alarm_panel" else "alarm_ogrzewanie") == true)C.err else C.live,false,dp(8)));val set=action("USTAW PRÓG 100°C",C.accent,C.bg,0);set.setOnClickListener{sendCommand("ustaw progAlarmTemp 100")};box.addView(set,lp(-1,48,12));val mute=action("WYCISZ",C.surface2,Color.WHITE,0);mute.setOnClickListener{sendCommand("wycisz_ogrz")};box.addView(mute,lp(-1,48,7));val reset=action("RESET ALARMÓW",0xFF3A1820.toInt(),0xFFFFB2BE.toInt(),0);reset.setOnClickListener{sendCommand("reset_alarmow")};box.addView(reset,lp(-1,48,7));showSheet(if(panel)"Panel słoneczny" else "Piec C.O.",box)}
+    private fun showOverheatMenu(panel:Boolean){
+        val key=if(panel)"t_panel" else "t_ogrz"
+        val d=lastStatusData
+        val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(4),dp(4),dp(4),dp(10))}
+        box.addView(label("TEMPERATURA",9.5f,C.textDim,true))
+        box.addView(label(valueFor(d,key,"°C"),20f,Color.WHITE,true,dp(3)))
+        val isAlarm=d?.optBoolean(if(panel)"alarm_panel" else "alarm_ogrzewanie") == true
+        box.addView(label(if(isAlarm)"ALARM AKTYWNY" else "Brak alarmu przegrzania",12f,if(isAlarm)C.err else C.live,false,dp(4)))
+
+        box.addView(label("PRÓG ALARMU °C",9f,C.textDim,true,dp(10)))
+        val progRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
+        val progInp=EditText(this).apply{setText((d?.optInt("progAlarmTemp",100)?:100).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
+        progRow.addView(progInp,LinearLayout.LayoutParams(0,-2,1f))
+        val progBtn=action("USTAW",C.cyan,C.bg,0);progBtn.setOnClickListener{sendCommand("ustaw progAlarmTemp "+progInp.text)};progRow.addView(progBtn,lp(-1,42))
+        box.addView(progRow,lp(-1,-2,4))
+        box.addView(label("Histereza: piec −10°C, panel −4°C",8f,C.textDim,false,dp(2)))
+
+        box.addView(label("HISTEREZA °C",9f,C.textDim,true,dp(10)))
+        val histRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
+        val histInp=EditText(this).apply{setText((d?.optInt("histerServo",5)?:5).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
+        histRow.addView(histInp,LinearLayout.LayoutParams(0,-2,1f))
+        val histBtn=action("USTAW",C.cyan,C.bg,0);histBtn.setOnClickListener{sendCommand("ustaw histerServo "+histInp.text)};histRow.addView(histBtn,lp(-1,42))
+        box.addView(histRow,lp(-1,-2,4))
+
+        box.addView(label("AKCJE",9f,C.textDim,true,dp(14)))
+        listOf("WYCISZ BRZĘCZYK" to "wycisz_ogrz","RESET ALARMÓW" to "reset_alarmow").forEach{(t,c)->
+            val b=action(t,0xFF3A1820.toInt(),0xFFFFB2BE.toInt(),0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,6))
+        }
+        showSheet(if(panel)"Panel słoneczny — próg przegrzania" else "Piec C.O. — próg przegrzania",box)
+    }
     private fun showPumpMenu(){val d=lastStatusData;val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("STAN",9.5f,C.textDim,true));box.addView(label(if(d?.optBoolean("pompa")==true)"WŁĄCZONA" else "WYŁĄCZONA",19f,Color.WHITE,true,dp(3)));listOf("WŁ." to "pompa_wl","WYŁ." to "pompa_wyl","AUTO" to "pompa_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};box.addView(label("Strategia: ${when(d?.optInt("wybor")){1->"Trociniak";2->"Kopciuch";3->"Automatyczny";else->"—"}}",12f,C.textDim,false,dp(10)));showSheet("Pompa",box)}
     private fun showServoMenu(){
       val d=lastStatusData;
@@ -1976,7 +2005,42 @@ class MainActivity : Activity() {
       box.addView(valTxt);box.addView(seek)
     }
     private fun showMixerMenu(){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};listOf("WŁ." to "mieszadlo_wl","WYŁ." to "mieszadlo_wyl","AUTO" to "mieszadlo_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};showSheet("Mieszadło",box)}
-    private fun showSmokeMenu(){val d=lastStatusData;val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("ODCZYT",9.5f,C.textDim,true));box.addView(label(d?.optInt("dym",0)?.toString() ?: "—",20f,Color.WHITE,true,dp(3)));box.addView(label(if(d?.optBoolean("dym_alarm") == true)"ALARM AKTYWNY" else "Brak alarmu",12f,if(d?.optBoolean("dym_alarm")==true)C.err else C.live,false,dp(8)));listOf("WYCISZ" to "wycisz","RESET" to "reset_alarmow").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};showSheet("Czujnik dymu",box)}
+    private fun showSmokeMenu(){
+        val d=lastStatusData
+        val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(4),dp(4),dp(4),dp(10))}
+        box.addView(label("ODCZYT ADC",9.5f,C.textDim,true))
+        box.addView(label(d?.optInt("dym",0)?.toString() ?: "—",20f,Color.WHITE,true,dp(3)))
+        box.addView(label(if(d?.optBoolean("dym_alarm") == true)"ALARM AKTYWNY" else if(d?.optBoolean("dym_wlaczony") == true)"Aktywny — brak alarmu" else "Czujnik wyłączony (piec zimny)",11f,if(d?.optBoolean("dym_alarm")==true)C.err else if(d?.optBoolean("dym_wlaczony")==true)C.live else C.textDim,false,dp(4)))
+
+        box.addView(label("PRÓG ALARMU ADC",9f,C.textDim,true,dp(10)))
+        val progRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
+        val progInp=EditText(this).apply{setText((d?.optInt("progAlarmDym",2000)?:2000).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
+        progRow.addView(progInp,LinearLayout.LayoutParams(0,-2,1f))
+        val progBtn=action("USTAW",C.cyan,C.bg,0);progBtn.setOnClickListener{sendCommand("ustaw progAlarmDym "+progInp.text)};progRow.addView(progBtn,lp(-1,42))
+        box.addView(progRow,lp(-1,-2,4))
+
+        box.addView(label("TEMP. AKTYWACJI CZUJNIKA °C",9f,C.textDim,true,dp(10)))
+        val tempRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
+        val tempInp=EditText(this).apply{setText((d?.optInt("dymProgTemp",40)?:40).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
+        tempRow.addView(tempInp,LinearLayout.LayoutParams(0,-2,1f))
+        val tempBtn=action("USTAW",C.cyan,C.bg,0);tempBtn.setOnClickListener{sendCommand("ustaw dymProgTemp "+tempInp.text)};tempRow.addView(tempBtn,lp(-1,42))
+        box.addView(tempRow,lp(-1,-2,4))
+
+        box.addView(label("TRYB PRACY",9f,C.textDim,true,dp(10)))
+        val segRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
+        val curTryb=d?.optInt("dymTrybPracy",2)?:2
+        mapOf(0 to "Impulsowo",1 to "Ciągle",2 to "Auto").forEach{(v,n)->
+            val b=action(n,if(v==curTryb)C.cyan else C.surface2,if(v==curTryb)C.bg else Color.WHITE,0)
+            b.setOnClickListener{sendCommand("ustaw dymTrybPracy $v")};segRow.addView(b,LinearLayout.LayoutParams(0,-1,1f).apply{marginStart=dp(4)})
+        }
+        box.addView(segRow,lp(-1,42,6))
+
+        box.addView(label("AKCJE",9f,C.textDim,true,dp(14)))
+        listOf("WYCISZ BRZĘCZYK" to "wycisz","RESET ALARMÓW" to "reset_alarmow").forEach{(t,c)->
+            val b=action(t,0xFF3A1820.toInt(),0xFFFFB2BE.toInt(),0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,6))
+        }
+        showSheet("Czujnik dymu",box)
+    }
     private fun showClockMenu(){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("CZAS TELEFONU",9.5f,C.textDim,true));box.addView(label(SimpleDateFormat("dd.MM.yyyy HH:mm:ss",Locale.US).format(Date()),20f,Color.WHITE,true,dp(3)));box.addView(label("Sesja zapamiętana bez hasła",12f,C.textDim,false,dp(10)));showSheet("Data i czas",box)}
     private fun showModule(name: String) {
         when (name) {
