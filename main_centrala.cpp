@@ -1,3 +1,36 @@
+// [v3.31.25 DS18B20 HARDENING] 2026-10-03
+// 3 ulepszenia obslugi czujnikow DS18B20 na magistralach 1-Wire:
+//
+// 1. Retry logic (odczytajTemperature):
+//    - 3 proby odczytu z 10ms delay miedzy probami
+//    - Zmniejsza falszywe alarmy przy chwilowych zakloceniach EMI
+//    - Log DEBUG gdy odczyt udany po retry (zdarzenie=retry_ok)
+//
+// 2. Soft reset OneWire (dsObslugaPowerCycle):
+//    - oneWire.reset() na WSZYSTKICH 3 magistralach PRZED power-cycle
+//    - Jesli reset przywroci magistrale -> pomija fizyczne odiecie zasilania
+//    - Mniej inwazyjny, szybszy, nie wplywa na czujniki ktore dzialaja
+//    - Log INFO: zdarzenie=soft_reset_ok
+//
+// 3. Diagnostyka presence pulse (Czujnik_DS):
+//    - onewire.reset() przed requestTemperatures() sprawdza obecnosc urzadzen
+//    - Brak presence pulse -> log WARN z numerem magistrali
+//    - Pomaga diagnozowac ktory czujnik/magistrala jest problematyczny
+//    - Log WARN: zdarzenie=bus_check_fail bus=N
+//
+// Istniejace zabezpieczenia zachowane:
+// - FiltrWiarygodnosci (rate-of-change >15C -> odrzuca, czeka na potwierdzenie)
+// - spurious_85C detection (power-on-reset DS18B20)
+// - Power-cycle z backoffem (5min -> 30min max)
+// - Maszyna stanow DS_PC_*
+//
+// Diagnoza w logach firmware:
+//   DS18B20 zdarzenie=retry_ok prob=2/3           -> odczyt udany po retry
+//   DS18B20 zdarzenie=soft_reset_ok               -> OneWire reset przywrocil magistrale
+//   DS18B20 zdarzenie=bus_check_fail bus=2        -> brak presence pulse na magistrali 2
+//   DS18B20 zdarzenie=spurious_85C rom=28-XXX     -> filtr 85C zadzialal
+//   DS18B20 zdarzenie=skok_odrzucony czujnik=X    -> FiltrWiarygodnosci odrzucil skok >15C
+//
 // [v3.31.24 TEST CANDIDATE — SERVO TELEMETRY UNITS] 2026-09-30
 // TEST ONLY. Do not deploy to production.
 // Fix: pozycjaKlapa i pozycjaSyberek sa fizycznymi katami w stopniach (0..180 / 0..90),
@@ -4750,7 +4783,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.31.24";
+static const char* FIRMWARE_VERSION = "v3.31.25";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
