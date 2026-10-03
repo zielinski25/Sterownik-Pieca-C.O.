@@ -15790,6 +15790,23 @@ void dsObslugaPowerCycle() {
   unsigned long teraz = millis();
   switch (dsPowerCycleStan) {
     case DS_PC_WYLACZANIE:
+      // [ULEPSZENIE v2.0] Soft reset 1-Wire PRZED power-cycle
+      // Próbuje oneWire.reset() - mniej inwazyjne niż fizyczne odcięcie zasilania
+      // Jeśli reset się powiedzie, czujniki mogą wrócić bez power-cycle
+      {
+        bool resetOk = false;
+        resetOk |= onewire1.reset();
+        resetOk |= onewire2.reset();
+        resetOk |= onewire3.reset();
+        
+        if (resetOk) {
+          DLOGF(DC_SENSOR, DL_INFO, "DS18B20 zdarzenie=soft_reset_ok msg=\"OneWire reset przywrócił magistralę, pomijam power-cycle\"");
+          dsPowerCycleStan = DS_PC_IDLE;
+          dsBledowZRzedu = 0;
+          return;
+        }
+      }
+      // Soft reset nie pomógł - przechodzimy do power-cycle
       digitalWrite(pinZasilanieCzujnikowDS, LOW);
       dsPowerCycleCzasStanu = teraz;
       dsPowerCycleStan = DS_PC_CZEKANIE_OFF;
@@ -15974,48 +15991,61 @@ float odczytajTemperature(uint8_t* czujnik, float temp_min, float temp_max, floa
     telemetryMarkAccepted(telemetryChannel, telemetryNowMs, true);
     return symulowanaTemperatura;
   }
+  // [ULEPSZENIE v2.0] Retry logic: 3 próby odczytu z krótkim delayem
+  // Zmniejsza fałszywe alarmy przy chwilowych zakłóceniach EMI
   unsigned long start = telemetryNowMs;
   const unsigned long TIMEOUT = 800;
+  const uint8_t MAX_RETRY = 3;
+  const unsigned long RETRY_DELAY_MS = 10;
   float temp = -999;
   bool telemetryReadAttempted = false;
+  uint8_t retryCount = 0;
+  bool odczytUdany = false;
 
-  // [FIX — DS18B20 3 magistrale, diagnostyka-czujnikow-DS18B20.md, Problem 3]
-  // Kazdy czujnik odpytywany WYLACZNIE o SWOJA, jedna, fizyczna magistrale
-  // (patrz enum MagistralaCzujnika powyzej struktury FiltrWiarygodnosci).
-  // Poprzednio kod pytal jednoczesnie bus1 i bus2 o kazdy adres ROM (a
-  // Panel_Plus nigdy nie byl pytany o bus3, bo ten w ogole nie istnial —
-  // patrz Problem 1). Magistrala, na ktorej danego czujnika fizycznie nie
-  // ma, przy Match ROM nieobecnego adresu "odpada" i linia OneWire stoi
-  // wysoko (pull-up) — 9 bajtow scratchpada wychodzi jako same 0xFF, co po
-  // dekodowaniu daje ok. -0.06°C: wartosc pozornie wiarygodna (w zakresie,
-  // nie 85°C), a CRC nie jest sprawdzane w tej sciezce biblioteki, wiec nic
-  // tego nie lapalo. Stad skakanie odczytu miedzy prawdziwa wartoscia a
-  // ~0°C co cykl.
-  switch (magistrale) {
-    case BUS_1:
-      if (sensors1.available()) {
-        telemetryReadAttempted = true;
-        telemetryMarkAttempt(telemetryChannel, telemetryNowMs);
-        temp = sensors1.readTemperature(czujnik);
-        if (millis() - start > TIMEOUT) { telemetryMarkInvalid(telemetryChannel); return -1; }
-      }
-      break;
-    case BUS_2:
-      if (sensors2.available()) {
-        telemetryReadAttempted = true;
-        telemetryMarkAttempt(telemetryChannel, telemetryNowMs);
-        temp = sensors2.readTemperature(czujnik);
-        if (millis() - start > TIMEOUT) { telemetryMarkInvalid(telemetryChannel); return -1; }
-      }
-      break;
-    case BUS_3:
-      if (sensors3.available()) {
-        telemetryReadAttempted = true;
-        telemetryMarkAttempt(telemetryChannel, telemetryNowMs);
-        temp = sensors3.readTemperature(czujnik);
-        if (millis() - start > TIMEOUT) { telemetryMarkInvalid(telemetryChannel); return -1; }
-      }
-      break;
+  for (retryCount = 0; retryCount < MAX_RETRY && !odczytUdany; retryCount++) {
+    if (retryCount > 0) {
+      delay(RETRY_DELAY_MS);  // Krótka pauza między próbami
+    }
+    
+    // [FIX — DS18B20 3 magistrale, diagnostyka-czujnikow-DS18B20.md, Problem 3]
+    // Kazdy czujnik odpytywany WYLACZNIE o SWOJA, jedna, fizyczna magistrale
+    switch (magistrale) {
+      case BUS_1:
+        if (sensors1.available()) {
+          telemetryReadAttempted = true;
+          telemetryMarkAttempt(telemetryChannel, telemetryNowMs);
+          temp = sensors1.readTemperature(czujnik);
+          if (millis() - start > TIMEOUT) { telemetryMarkInvalid(telemetryChannel); return -1; }
+          odczytUdany = true;
+        }
+        break;
+      case BUS_2:
+        if (sensors2.available()) {
+          telemetryReadAttempted = true;
+          telemetryMarkAttempt(telemetryChannel, telemetryNowMs);
+          temp = sensors2.readTemperature(czujnik);
+          if (millis() - start > TIMEOUT) { telemetryMarkInvalid(telemetryChannel); return -1; }
+          odczytUdany = true;
+        }
+        break;
+      case BUS_3:
+        if (sensors3.available()) {
+          telemetryReadAttempted = true;
+          telemetryMarkAttempt(telemetryChannel, telemetryNowMs);
+          temp = sensors3.readTemperature(czujnik);
+          if (millis() - start > TIMEOUT) { telemetryMarkInvalid(telemetryChannel); return -1; }
+          odczytUdany = true;
+        }
+        break;
+    }
+  }
+  
+  if (retryCount > 1 && odczytUdany) {
+    char logMsg[120];
+    snprintf(logMsg, sizeof(logMsg),
+             "tag=DS18B20 lvl=INFO zdarzenie=retry_ok prob=%u/%u msg=\"Odczyt udany po retry\"",
+             retryCount, MAX_RETRY);
+    debugPrint(logMsg);
   }
 
   // [FIX — DS18B20 spurious 85.0°C, AUDYT CZESC 8/9/10.4] Rejestr temperatury
@@ -16109,6 +16139,18 @@ void Czujnik_DS() {
     temperaturaOgrzewania_Powrot = odczytajTemperature(czujnik_temp_C_O_powrot, -30, 120, symulowanaTemperaturaPowrot, filtrPowrot, BUS_2, symulacjaPowrotuAktywna, symulacjaPowrotuDo, "ogrz_powrot", TELEMETRY_CH_POWROT);
 
     if (!trybSymulacji) {
+      // [ULEPSZENIE v2.0] Diagnostyka magistrali PRZED requestTemperatures()
+      // OneWire::reset() sprawdza presence pulse — jeśli brak, magistrala zawieszona
+      if (sensors1.available() && !onewire1.reset()) {
+        DLOGF(DC_SENSOR, DL_WARN, "DS18B20 zdarzenie=bus_check_fail bus=1 msg=\"brak presence pulse, reset\"");
+      }
+      if (sensors2.available() && !onewire2.reset()) {
+        DLOGF(DC_SENSOR, DL_WARN, "DS18B20 zdarzenie=bus_check_fail bus=2 msg=\"brak presence pulse, reset\"");
+      }
+      if (sensors3.available() && !onewire3.reset()) {
+        DLOGF(DC_SENSOR, DL_WARN, "DS18B20 zdarzenie=bus_check_fail bus=3 msg=\"brak presence pulse, reset\"");
+      }
+      
       if (sensors1.available()) sensors1.request();
       if (sensors2.available()) sensors2.request();
       if (sensors3.available()) sensors3.request();
