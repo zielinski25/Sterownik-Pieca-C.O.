@@ -1736,7 +1736,7 @@ class MainActivity : Activity() {
     }
     private fun rounded(color:Int,r:Int,stroke:Int)=GradientDrawable().apply{
         setColor(color); cornerRadius=dp(r).toFloat()
-        if(stroke!=0)setStroke(dp(1f),stroke)
+        if(stroke!=0)setStroke(dp(1),stroke)
     }
     private fun blendColor(base:Int, overlay:Int, amount:Float):Int {
         val a=Color.alpha(base); val r=(Color.red(base)+(Color.red(overlay)-Color.red(base))*amount).roundToInt().coerceIn(0,255)

@@ -72,11 +72,11 @@ class WeatherView(context: Context) : View(context) {
         stroke.color = 0xFFFFD166.toInt()
         stroke.strokeWidth = dp(2.5f)
         for (i in 0 until 8) {
-            val a = (i * 45 + time * 360) * PI / 180f
-            val x1 = cx + cos(a) * r * 0.75f
-            val y1 = cy + sin(a) * r * 0.75f
-            val x2 = cx + cos(a) * r * 1.1f
-            val y2 = cy + sin(a) * r * 1.1f
+            val a = (i * 45 + time * 360) * PI / 180.0
+            val x1 = (cx + cos(a) * r * 0.75).toFloat()
+            val y1 = (cy + sin(a) * r * 0.75).toFloat()
+            val x2 = (cx + cos(a) * r * 1.1).toFloat()
+            val y2 = (cy + sin(a) * r * 1.1).toFloat()
             c.drawLine(x1, y1, x2, y2, stroke)
         }
     }
@@ -105,7 +105,7 @@ class WeatherView(context: Context) : View(context) {
         stroke.strokeWidth = dp(3f)
         for (i in 0 until 4) {
             val y = cy - w * 0.2f + i * w * 0.12f
-            val offset = sin(time * PI * 2 + i) * dp(3f)
+            val offset = (sin(time * PI * 2 + i) * dp(3.0)).toFloat()
             c.drawLine(cx - w * 0.3f + offset, y, cx + w * 0.3f + offset, y, stroke)
         }
     }
