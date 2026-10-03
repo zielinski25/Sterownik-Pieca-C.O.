@@ -15,6 +15,7 @@ class BoilerHeroView(context: Context) : View(context) {
     private var overheating = false
     private var alarm = false
     private var time = 0f
+    private var attached = false
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -23,6 +24,21 @@ class BoilerHeroView(context: Context) : View(context) {
         strokeJoin = Paint.Join.ROUND
     }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    // Fix: Battery drain — stop animations when view is not visible
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        attached = true
+        invalidate()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        attached = false
+    }
+
+    fun stopAnimations() { attached = false }
+    fun startAnimations() { attached = true; invalidate() }
 
     fun bind(temp: Double, overheat: Boolean, alarmState: Boolean) {
         temperature = temp
@@ -100,7 +116,8 @@ class BoilerHeroView(context: Context) : View(context) {
         c.drawText(subtitle, cx, cy + dp(26f), text)
 
         text.textAlign = Paint.Align.LEFT
-        postInvalidateDelayed(50)
+        // Fix: Battery drain — only animate when attached
+        if (attached) postInvalidateDelayed(50)
     }
 
     private fun dp(v: Float) = v * resources.displayMetrics.density

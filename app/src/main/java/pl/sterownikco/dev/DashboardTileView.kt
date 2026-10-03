@@ -29,6 +29,8 @@ class DashboardTileView @JvmOverloads constructor(
     private var flash = 0f
     private var lastValue = ""
     private var stale = false
+    private var animating = true
+    private var attached = false
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -54,6 +56,24 @@ class DashboardTileView @JvmOverloads constructor(
     }
 
     override fun performClick(): Boolean { super.performClick(); return true }
+
+    // Fix: Battery drain — stop animations when view is not visible
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        attached = true
+        if (active && !stale) postInvalidateDelayed(50)
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        attached = false
+    }
+
+    fun stopAnimations() { animating = false }
+    fun startAnimations() {
+        animating = true
+        if (attached && (active && !stale || flash > 0.01f)) invalidate()
+    }
 
     fun bind(
         kind: Kind,
@@ -180,14 +200,14 @@ class DashboardTileView @JvmOverloads constructor(
             c.drawRoundRect(dp(13f), h-dp(5f), dp(13f)+(w-dp(26f))*fraction, h-dp(2.8f), dp(2f), dp(2f), fill)
         }
 
-        // Active pulse
-        if (active && !stale) {
+        // Active pulse — only animate when attached (fix: battery drain)
+        if (active && !stale && attached && animating) {
             val t = (System.currentTimeMillis() % 1600L) / 1600f
             fill.color = Color.argb((55f * (.25f + .75f * sin(t*PI*2))).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent))
             c.drawCircle(w-dp(17f), h-dp(4f), dp(2.8f), fill)
             postInvalidateDelayed(50)
         }
-        if (flash > 0.01f) {
+        if (flash > 0.01f && attached && animating) {
             fill.color = Color.argb((flash*18f).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent))
             c.drawRoundRect(dp(2f), dp(2f), w-dp(2f), h-dp(2f), radius, radius, fill)
             flash *= .82f

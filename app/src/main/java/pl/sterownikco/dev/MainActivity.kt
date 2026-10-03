@@ -853,13 +853,38 @@ class MainActivity : Activity() {
             val d = firebase.getStatus(token)
             lastStatusData = d
             lastStatusOnline = true
+            // Fix: Cache last status for offline display
+            runCatching { LastStatusCache.save(this, d) }
             runOnUiThread { renderDashboard(d) }
         } catch (e: FirebaseAuthRest.FirebaseAuthException) {
             if (isTrulyInvalidSession(e)) handleInvalidSession()
-            else { lastStatusOnline = false; runOnUiThread { connectionChip.text = "● OFFLINE"; connectionChip.setTextColor(C.warn) } }
+            else {
+                lastStatusOnline = false
+                // Fix: Show cached data when offline
+                runOnUiThread { showOfflineFallback() }
+            }
         } catch (_: Exception) {
             lastStatusOnline = false
-            runOnUiThread { connectionChip.text = "● OFFLINE"; connectionChip.setTextColor(C.warn) }
+            // Fix: Show cached data when offline
+            runOnUiThread { showOfflineFallback() }
+        }
+    }
+
+    // Fix: Offline fallback — show last cached status when network fails
+    private fun showOfflineFallback() {
+        val cached = LastStatusCache.load(this)
+        if (cached != null) {
+            val (data, ts) = cached
+            val ageSec = (System.currentTimeMillis() - ts) / 1000L
+            lastStatusData = data
+            connectionChip.text = "● OFFLINE (${ageSec}s)"
+            connectionChip.setTextColor(C.warn)
+            subtitle.text = "OFFLINE • ostatni odczyt ${ageSec}s temu"
+            renderDashboard(data)
+        } else {
+            connectionChip.text = "● OFFLINE"
+            connectionChip.setTextColor(C.err)
+            subtitle.text = "OFFLINE • brak zapisanych danych"
         }
     }
 
@@ -1595,7 +1620,19 @@ class MainActivity : Activity() {
         return if (text.isBlank() || text == "null") null else JSONObject(text)
     }
 
+    // Fix: Command rate limiting — prevent spamming
+    private var lastCommandAtMs = 0L
+    private val commandCooldownMs = 2000L
+
     private fun sendCommand(command:String){
+        // Fix: Rate limit commands to prevent flooding Firebase/ESP32
+        val now = System.currentTimeMillis()
+        if (now - lastCommandAtMs < commandCooldownMs) {
+            val remaining = (commandCooldownMs - (now - lastCommandAtMs)) / 1000
+            Toast.makeText(this, "Poczekaj ${remaining}s przed następną komendą", Toast.LENGTH_SHORT).show()
+            return
+        }
+        lastCommandAtMs = now
         // Commands that change safety thresholds or inject fake sensor values need an explicit confirmation.
         val risky=command.startsWith("ustaw ")||command.startsWith("symuluj")
         if(!risky){dispatchCommand(command);return}
@@ -1739,11 +1776,30 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         appVisible = true
+        // Fix: Battery drain — restart animations when returning to foreground
+        heroBoiler.startAnimations()
+        tileViews.values.forEach { it.startAnimations() }
         // Refresh immediately on return instead of showing old values as STALE for a few seconds.
         if (pollingStarted && !sessionNeedsLogin) executor.execute { pollStatusOnce() }
     }
-    override fun onStop() { appVisible = false; super.onStop() }
-    override fun onDestroy(){dismissSheet();scheduler.shutdownNow();executor.shutdownNow();historyExecutor.shutdownNow();commandExecutor.shutdownNow();super.onDestroy()}
+    override fun onStop() {
+        appVisible = false
+        // Fix: Battery drain — stop all animations when app goes to background
+        heroBoiler.stopAnimations()
+        tileViews.values.forEach { it.stopAnimations() }
+        super.onStop()
+    }
+    override fun onDestroy() {
+        dismissSheet()
+        // Fix: Memory leak — shutdown external service thread pools
+        WeatherService.shutdown()
+        TelemetryCache.shutdown()
+        scheduler.shutdownNow()
+        executor.shutdownNow()
+        historyExecutor.shutdownNow()
+        commandExecutor.shutdownNow()
+        super.onDestroy()
+    }
 
     private object C {
         // Premium palette — deeper blues, refined accents
