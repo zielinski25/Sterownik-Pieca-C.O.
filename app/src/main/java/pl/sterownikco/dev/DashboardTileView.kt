@@ -43,6 +43,7 @@ class DashboardTileView @JvmOverloads constructor(
     private val text = Paint(Paint.ANTI_ALIAS_FLAG)
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val small = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var simPulse = 0f
 
     init {
         isClickable = true
@@ -99,6 +100,7 @@ class DashboardTileView @JvmOverloads constructor(
         this.fraction = fraction.coerceIn(0f, 1f)
         this.simulated = simulated
         this.simMinutes = simMinutes
+        this.simPulse = 0f
         this.stale = false
         if (value != lastValue) flash = 1f
         lastValue = value
@@ -123,21 +125,29 @@ class DashboardTileView @JvmOverloads constructor(
         val left = dp(3f); val top = dp(3f); val right = w-dp(3f); val bottom = h-dp(3f)
 
         // Rich gradient background
-        fill.shader = LinearGradient(0f, top, w, bottom, 0xFF102437.toInt(), 0xFF07131F.toInt(), Shader.TileMode.CLAMP)
+        val bgStart = if (simulated) 0xFF3A2E0A.toInt() else 0xFF102437.toInt()
+        val bgEnd = if (simulated) 0xFF1F1A05.toInt() else 0xFF07131F.toInt()
+        fill.shader = LinearGradient(0f, top, w, bottom, bgStart, bgEnd, Shader.TileMode.CLAMP)
         c.drawRoundRect(left, top, right, bottom, radius, radius, fill)
         fill.shader = null
 
         // Accent glow (subtle)
         fill.shader = RadialGradient(w*.95f, h*.08f, w*.85f,
-            Color.argb(if (alarm) 64 else if (active) 50 else 22, Color.red(accent), Color.green(accent), Color.blue(accent)),
+            Color.argb(if (alarm) 64 else if (active) 50 else if (simulated) 45 else 22, 
+                if (simulated) 234 else Color.red(accent), 
+                if (simulated) 179 else Color.green(accent), 
+                if (simulated) 8 else Color.blue(accent)),
             Color.TRANSPARENT, Shader.TileMode.CLAMP)
         c.drawRoundRect(left, top, right, bottom, radius, radius, fill)
         fill.shader = null
 
         // Border
-        stroke.strokeWidth = dp(if (alarm) 1.8f else if (pressed) 1.6f else if (active) 1.25f else 0.85f)
+        stroke.strokeWidth = dp(if (alarm) 1.8f else if (simulated) 2.2f else if (pressed) 1.6f else if (active) 1.25f else 0.85f)
         stroke.color = when {
-            simulated -> 0xFFEAB308.toInt()  // Yellow border for simulation
+            simulated -> {
+                val alpha = (200 + 55 * sin(simPulse)).toInt().coerceIn(0, 255)
+                Color.argb(alpha, 234, 179, 8)  // Pulsing yellow border
+            }
             alarm -> 0xFFFF627B.toInt()
             stale -> 0x6A7F93A3
             pressed -> Color.argb(185, Color.red(accent), Color.green(accent), Color.blue(accent))
@@ -168,15 +178,15 @@ class DashboardTileView @JvmOverloads constructor(
         // State badge
         val badgeText = if (simulated) "SYM ${simMinutes}min" else if (stale) "STALE" else state.uppercase().take(12)
         small.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        small.textSize = dp(8.0f)
+        small.textSize = if (simulated) dp(8.5f) else dp(8.0f)
         val bw = max(dp(62f), min(dp(108f), small.measureText(badgeText) + dp(28f)))
-        fill.color = when { simulated -> 0x2EEAB308.toInt(); stale -> 0x1C7F93A3; alarm -> 0x2E4B1420; active -> Color.argb(32, Color.red(accent), Color.green(accent), Color.blue(accent)); else -> 0x17213546 }
+        fill.color = when { simulated -> 0x40EAB308.toInt(); stale -> 0x1C7F93A3; alarm -> 0x2E4B1420; active -> Color.argb(32, Color.red(accent), Color.green(accent), Color.blue(accent)); else -> 0x17213546 }
         c.drawRoundRect(right-bw-dp(10f), dp(11f), right-dp(10f), dp(31f), dp(10f), dp(10f), fill)
         fill.color = when { simulated -> 0xFFFFD166.toInt(); stale -> 0xFF8298A9.toInt(); alarm -> 0xFFFF7087.toInt(); active -> accent; else -> 0xFF71879A.toInt() }
-        c.drawCircle(right-bw+dp(1f), dp(21f), dp(2.1f), fill)
+        c.drawCircle(right-bw+dp(1f), dp(21f), if (simulated) dp(2.8f) else dp(2.1f), fill)
         small.color = when { simulated -> 0xFFFFE082.toInt(); stale -> 0xFF9DB0BE.toInt(); alarm -> 0xFFFF9EAC.toInt(); active -> accent; else -> 0xFF96ABBB.toInt() }
         small.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        small.textSize = dp(8.0f)
+        small.textSize = if (simulated) dp(8.5f) else dp(8.0f)
         small.textAlign = Paint.Align.CENTER
         c.drawText(badgeText, right-bw/2f-dp(4f), dp(25f), small)
         small.textAlign = Paint.Align.LEFT
@@ -190,6 +200,11 @@ class DashboardTileView @JvmOverloads constructor(
 
         // Value
         valuePaint.color = if (simulated) 0xFFFFE082.toInt() else if (alarm) 0xFFFF7B91.toInt() else 0xFFF4F8FB.toInt()
+        if (simulated) {
+            valuePaint.setShadowLayer(dp(4f), 0f, 0f, 0x60EAB308.toInt())
+        } else {
+            valuePaint.clearShadowLayer()
+        }
         valuePaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         valuePaint.textSize = when {
             value.length > 15 -> dp(15.2f)
@@ -212,6 +227,13 @@ class DashboardTileView @JvmOverloads constructor(
             val t = (System.currentTimeMillis() % 1600L) / 1600f
             fill.color = Color.argb((55f * (.25f + .75f * sin(t * PI.toFloat() * 2f))).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent))
             c.drawCircle(w-dp(17f), h-dp(4f), dp(2.8f), fill)
+            postInvalidateDelayed(50)
+        }
+        
+        // Simulation pulse animation
+        if (simulated && attached && animating) {
+            simPulse += 0.05f
+            if (simPulse > PI.toFloat() * 2f) simPulse -= PI.toFloat() * 2f
             postInvalidateDelayed(50)
         }
         if (flash > 0.01f && attached && animating) {
