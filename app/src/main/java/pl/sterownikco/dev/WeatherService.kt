@@ -79,7 +79,7 @@ object WeatherService {
         val daily: List<DailyForecast>
     )
 
-    interface Callback {
+    fun interface Callback {
         fun onSuccess(data: WeatherData)
         fun onError(error: String)
     }
