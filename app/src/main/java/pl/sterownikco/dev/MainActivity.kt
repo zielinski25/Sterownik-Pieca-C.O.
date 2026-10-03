@@ -66,19 +66,21 @@ class MainActivity : Activity() {
     private val filterPressure = AdvancedSensorFilter("cisnienie", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerMinute = 1.5f, absoluteMin = 900f, absoluteMax = 1100f)
     private val filterHumidity = AdvancedSensorFilter("wilgotnosc", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerMinute = 5f, absoluteMin = 0f, absoluteMax = 100f)
     
-    // Sensor health monitors — thresholds based on thermal physics from real data:
-    // t_zewn: changes with weather, stagnant >60 min suspicious (sun/cloud cycle)
-    // t_ogrz: thermal mass of water+iron, can stabilize 2h when furnace off
+    // Sensor health monitors — thresholds based on thermal physics + real usage:
+    // t_zewn: changes with weather, BUT can be in stimulation/testing — allow 4h
+    // t_ogrz: thermal mass of water+iron, can stabilize 3h when furnace off
     // t_bojler: large thermal mass, 6h stable when not heating CWU — NORMAL
     // t_panel: near furnace, 3h stable OK
     // t_pokoj: thermally insulated room, 6h stable — NORMAL (observed 363 min!)
-    private val healthOutside = SensorHealthMonitor("t_zewn", maxStagnationMinutes = 60, tolerance = 0.05f)
+    // cisnienie: barely changes, 12h of same value is normal
+    // wilgotnosc: sensor works (user confirmed today), was offline in old CSV
+    private val healthOutside = SensorHealthMonitor("t_zewn", maxStagnationMinutes = 240, tolerance = 0.05f)
     private val healthHeating = SensorHealthMonitor("t_ogrz", maxStagnationMinutes = 180, tolerance = 0.05f)
     private val healthBoiler = SensorHealthMonitor("t_bojler", maxStagnationMinutes = 360, tolerance = 0.05f)
     private val healthPanel = SensorHealthMonitor("t_panel", maxStagnationMinutes = 180, tolerance = 0.05f)
     private val healthRoom = SensorHealthMonitor("t_pokoj", maxStagnationMinutes = 360, tolerance = 0.05f)
     private val healthPressure = SensorHealthMonitor("cisnienie", maxStagnationMinutes = 720, tolerance = 0.05f)
-    private val healthHumidity = SensorHealthMonitor("wilgotnosc", maxStagnationMinutes = 60, tolerance = 0.05f, offlineValues = listOf(0.0f))
+    private val healthHumidity = SensorHealthMonitor("wilgotnosc", maxStagnationMinutes = 360, tolerance = 0.5f)
 
     private lateinit var root: FrameLayout
     private lateinit var content: FrameLayout
