@@ -22,9 +22,11 @@ class FirebaseCommandRest {
             .put("token", commandToken)
             .put("ts", System.currentTimeMillis())
             .toString()
+        // POST creates a child under /piec/cmd/ (Firebase push)
+        // PUT would overwrite /piec/cmd and firmware's onChildAdded would never fire.
         val url = "${FirebaseDevConfig.DATABASE_URL}/piec/cmd.json?auth=${URLEncoder.encode(idToken, "UTF-8")}"
         val connection = URL(url).openConnection() as HttpURLConnection
-        connection.requestMethod = "PUT"
+        connection.requestMethod = "POST"
         connection.connectTimeout = 10000
         connection.readTimeout = 10000
         connection.doOutput = true
