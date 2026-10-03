@@ -56,6 +56,15 @@ class MainActivity : Activity() {
     private var maintenanceStarted = false
     @Volatile private var lastStatusOnline = false
 
+    // Median filters for sensor data (remove spikes/anomalies)
+    private val filterOutside = MedianFilter(bufferSize = 10, maxDeviation = 5f)
+    private val filterHeating = MedianFilter(bufferSize = 10, maxDeviation = 10f)
+    private val filterBoiler = MedianFilter(bufferSize = 10, maxDeviation = 10f)
+    private val filterPanel = MedianFilter(bufferSize = 10, maxDeviation = 15f)
+    private val filterRoom = MedianFilter(bufferSize = 10, maxDeviation = 5f)
+    private val filterPressure = MedianFilter(bufferSize = 10, maxDeviation = 5f)
+    private val filterHumidity = MedianFilter(bufferSize = 10, maxDeviation = 5f)
+
     private lateinit var root: FrameLayout
     private lateinit var content: FrameLayout
     private lateinit var title: TextView
@@ -1348,13 +1357,22 @@ class MainActivity : Activity() {
         connectionChip.text = "● LIVE"
         connectionChip.setTextColor(C.live)
 
-        val outside = d.optDouble("t_zewn", Double.NaN)
-        val heat = d.optDouble("t_ogrz", Double.NaN)
-        val boiler = d.optDouble("t_bojler", Double.NaN)
-        val panel = d.optDouble("t_panel", Double.NaN)
-        val room = d.optDouble("t_pokoj", Double.NaN)
-        val pressure = d.optDouble("cisnienie", Double.NaN)
-        val humidity = d.optDouble("wilgotnosc", Double.NaN)
+        // Apply median filters to remove spikes/anomalies
+        val rawOutside = d.optDouble("t_zewn", Double.NaN).toFloat()
+        val rawHeat = d.optDouble("t_ogrz", Double.NaN).toFloat()
+        val rawBoiler = d.optDouble("t_bojler", Double.NaN).toFloat()
+        val rawPanel = d.optDouble("t_panel", Double.NaN).toFloat()
+        val rawRoom = d.optDouble("t_pokoj", Double.NaN).toFloat()
+        val rawPressure = d.optDouble("cisnienie", Double.NaN).toFloat()
+        val rawHumidity = d.optDouble("wilgotnosc", Double.NaN).toFloat()
+        
+        val outside = filterOutside.filter(rawOutside).toDouble()
+        val heat = filterHeating.filter(rawHeat).toDouble()
+        val boiler = filterBoiler.filter(rawBoiler).toDouble()
+        val panel = filterPanel.filter(rawPanel).toDouble()
+        val room = filterRoom.filter(rawRoom).toDouble()
+        val pressure = filterPressure.filter(rawPressure).toDouble()
+        val humidity = filterHumidity.filter(rawHumidity).toDouble()
         val pump = d.optBoolean("pompa", false)
         val smokeAlarm = d.optBoolean("dym_alarm", false)
         val smokeOn = d.optBoolean("dym_wlaczony", false)
