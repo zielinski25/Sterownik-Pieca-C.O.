@@ -966,8 +966,11 @@ class MainActivity : Activity() {
         setTile(TileId.ROOM, temp(room), "LIVE", .5f)
         setTile(TileId.PRESSURE, if (pressure.isFinite()) String.format(Locale.US,"%.0f hPa",pressure) else "—", "LIVE", ((pressure-970)/70).toFloat().coerceIn(0f,1f))
         setTile(TileId.HUMIDITY, if (humidity.isFinite()) String.format(Locale.US,"%.0f %%",humidity) else "—", "LIVE", (humidity/100).toFloat().coerceIn(0f,1f))
-        val flap = d.optInt("klapa",0).coerceIn(0,100)
-        val damper = d.optInt("syberka",0).coerceIn(0,100)
+        // Fix: Firmware sends degrees (0-180 for klapa, 0-90 for syberek), convert to percent
+        val flapDeg = d.optInt("klapa",0)
+        val flap = (flapDeg * 100 / 180).coerceIn(0,100)
+        val damperDeg = d.optInt("syberka",0)
+        val damper = (damperDeg * 100 / 90).coerceIn(0,100)
         setTile(TileId.PUMP, if (pump) "WŁĄCZONA" else "WYŁĄCZONA", if (pump) "AKTYWNA" else "AUTO", if (pump) 1f else 0f, active=pump)
         setTile(TileId.SERVO, "K$flap • S$damper", mode, flap/100f, active=mode=="RĘCZNY")
         val mix = d.optBoolean("mieszadloWlaczony", false)
@@ -1461,7 +1464,25 @@ class MainActivity : Activity() {
 
     private fun showOverheatMenu(panel:Boolean){val key=if(panel)"t_panel" else "t_ogrz";val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("TEMPERATURA",9.5f,C.textDim,true));box.addView(label(valueFor(lastStatusData,key,"°C"),20f,Color.WHITE,true,dp(3)));box.addView(label(if(lastStatusData?.optBoolean(if(panel)"alarm_panel" else "alarm_ogrzewanie") == true)"ALARM AKTYWNY" else "Brak alarmu",12f,if(lastStatusData?.optBoolean(if(panel)"alarm_panel" else "alarm_ogrzewanie") == true)C.err else C.live,false,dp(8)));val set=action("USTAW PRÓG 100°C",C.accent,C.bg,0);set.setOnClickListener{sendCommand("ustaw progAlarmTemp 100")};box.addView(set,lp(-1,48,12));val mute=action("WYCISZ",C.surface2,Color.WHITE,0);mute.setOnClickListener{sendCommand("wycisz_ogrz")};box.addView(mute,lp(-1,48,7));val reset=action("RESET ALARMÓW",0xFF3A1820.toInt(),0xFFFFB2BE.toInt(),0);reset.setOnClickListener{sendCommand("reset_alarmow")};box.addView(reset,lp(-1,48,7));showSheet(if(panel)"Panel słoneczny" else "Piec C.O.",box)}
     private fun showPumpMenu(){val d=lastStatusData;val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("STAN",9.5f,C.textDim,true));box.addView(label(if(d?.optBoolean("pompa")==true)"WŁĄCZONA" else "WYŁĄCZONA",19f,Color.WHITE,true,dp(3)));listOf("WŁ." to "pompa_wl","WYŁ." to "pompa_wyl","AUTO" to "pompa_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};box.addView(label("Strategia: ${when(d?.optInt("wybor")){1->"Trociniak";2->"Kopciuch";3->"Automatyczny";else->"—"}}",12f,C.textDim,false,dp(10)));showSheet("Pompa",box)}
-    private fun showServoMenu(){val d=lastStatusData;val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("TRYB",9.5f,C.textDim,true));box.addView(label(when(d?.optInt("tryb_serwa")){1->"AUTO";2->"RĘCZNY";3->"BEZPIECZNY";else->"—"},19f,Color.WHITE,true,dp(3)));listOf("AUTO" to "tryb_auto","RĘCZNY" to "tryb_reczny","BEZPIECZNA" to "tryb_bezpieczny").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};addServoSlider(box,"Klapa",d?.optInt("klapa",0)?:0,"klapa");addServoSlider(box,"Syberek",d?.optInt("syberka",0)?:0,"syberek");showSheet("Serwo",box)}
+    private fun showServoMenu(){
+      val d=lastStatusData;
+      val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};
+      box.addView(label("TRYB",9.5f,C.textDim,true));
+      box.addView(label(when(d?.optInt("tryb_serwa")){1->"AUTO";2->"RĘCZNY";3->"BEZPIECZNY";else->"—"},19f,Color.WHITE,true,dp(3)));
+      listOf("AUTO" to "tryb_auto","RĘCZNY" to "tryb_reczny","BEZPIECZNA" to "tryb_bezpieczny").forEach{(t,c)->
+        val b=action(t,C.surface2,Color.WHITE,0);
+        b.setOnClickListener{sendCommand(c)};
+        box.addView(b,lp(-1,48,7))
+      };
+      // Fix: Firmware sends degrees (0-180 for klapa, 0-90 for syberek), convert to percent
+      val klapaDeg = d?.optInt("klapa",0)?:0
+      val klapaPct = (klapaDeg * 100 / 180).coerceIn(0,100)
+      addServoSlider(box,"Klapa",klapaPct,"klapa");
+      val syberkaDeg = d?.optInt("syberka",0)?:0
+      val syberkaPct = (syberkaDeg * 100 / 90).coerceIn(0,100)
+      addServoSlider(box,"Syberek",syberkaPct,"syberek");
+      showSheet("Serwo",box)
+    }
     private fun addServoSlider(box:LinearLayout,name:String,initial:Int,command:String){val seek=SeekBar(this).apply{max=100;progress=initial.coerceIn(0,100)};val valTxt=label("$name: ${seek.progress}%",12.5f,Color.WHITE,true,dp(9));seek.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){valTxt.text="$name: $p%"};override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}});box.addView(valTxt);box.addView(seek);val b=action("USTAW $name",C.accent,C.bg,0);b.setOnClickListener{sendCommand("$command ${seek.progress}")};box.addView(b,lp(-1,46,5))}
     private fun showMixerMenu(){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};listOf("WŁ." to "mieszadlo_wl","WYŁ." to "mieszadlo_wyl","AUTO" to "mieszadlo_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};showSheet("Mieszadło",box)}
     private fun showSmokeMenu(){val d=lastStatusData;val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("ODCZYT",9.5f,C.textDim,true));box.addView(label(d?.optInt("dym",0)?.toString() ?: "—",20f,Color.WHITE,true,dp(3)));box.addView(label(if(d?.optBoolean("dym_alarm") == true)"ALARM AKTYWNY" else "Brak alarmu",12f,if(d?.optBoolean("dym_alarm")==true)C.err else C.live,false,dp(8)));listOf("WYCISZ" to "wycisz","RESET" to "reset_alarmow").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};showSheet("Czujnik dymu",box)}
