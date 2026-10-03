@@ -203,7 +203,7 @@ class DashboardTileView @JvmOverloads constructor(
         // Active pulse — only animate when attached (fix: battery drain)
         if (active && !stale && attached && animating) {
             val t = (System.currentTimeMillis() % 1600L) / 1600f
-            fill.color = Color.argb((55f * (.25f + .75f * sin(t*PI*2))).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent))
+            fill.color = Color.argb((55f * (.25f + .75f * sin(t * PI.toFloat() * 2f))).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent))
             c.drawCircle(w-dp(17f), h-dp(4f), dp(2.8f), fill)
             postInvalidateDelayed(50)
         }

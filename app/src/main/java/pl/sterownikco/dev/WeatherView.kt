@@ -3,7 +3,9 @@ package pl.sterownikco.dev
 import android.content.Context
 import android.graphics.*
 import android.view.View
-import kotlin.math.*
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * STEROWNIK CO — Premium weather illustration.
@@ -68,15 +70,15 @@ class WeatherView(context: Context) : View(context) {
         // Sun body
         fill.color = 0xFFFFD166.toInt()
         c.drawCircle(cx, cy, r * 0.6f, fill)
-        // Rays
+        // Rays — all math in Float (PI.toFloat())
         stroke.color = 0xFFFFD166.toInt()
         stroke.strokeWidth = dp(2.5f)
         for (i in 0 until 8) {
-            val a = (i * 45 + time * 360) * PI / 180.0
-            val x1 = (cx + cos(a) * r * 0.75).toFloat()
-            val y1 = (cy + sin(a) * r * 0.75).toFloat()
-            val x2 = (cx + cos(a) * r * 1.1).toFloat()
-            val y2 = (cy + sin(a) * r * 1.1).toFloat()
+            val a = (i * 45 + time * 360) * PI.toFloat() / 180f
+            val x1 = cx + cos(a) * r * 0.75f
+            val y1 = cy + sin(a) * r * 0.75f
+            val x2 = cx + cos(a) * r * 1.1f
+            val y2 = cy + sin(a) * r * 1.1f
             c.drawLine(x1, y1, x2, y2, stroke)
         }
     }
@@ -105,7 +107,8 @@ class WeatherView(context: Context) : View(context) {
         stroke.strokeWidth = dp(3f)
         for (i in 0 until 4) {
             val y = cy - w * 0.2f + i * w * 0.12f
-            val offset = (sin(time * PI * 2 + i) * dp(3.0)).toFloat()
+            // All math in Float — PI.toFloat()
+            val offset = sin(time * PI.toFloat() * 2f + i) * dp(3f)
             c.drawLine(cx - w * 0.3f + offset, y, cx + w * 0.3f + offset, y, stroke)
         }
     }
@@ -115,7 +118,7 @@ class WeatherView(context: Context) : View(context) {
         stroke.strokeWidth = dp(2f)
         for (i in 0 until count) {
             val x = cx - w * 0.25f + (i * w * 0.5f / count)
-            val dropY = (cy + w * 0.1f + (time * w * 0.4f + i * w * 0.1f) % (w * 0.4f))
+            val dropY = cy + w * 0.1f + (time * w * 0.4f + i * w * 0.1f) % (w * 0.4f)
             c.drawLine(x, dropY, x - dp(2f), dropY + dp(8f), stroke)
         }
     }

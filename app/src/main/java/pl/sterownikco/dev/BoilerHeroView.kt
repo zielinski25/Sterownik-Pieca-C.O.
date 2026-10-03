@@ -86,7 +86,7 @@ class BoilerHeroView(context: Context) : View(context) {
         // Flame / energy indicator
         if (!alarm) {
             val flameColor = if (overheating) 0xFFFFB04A.toInt() else 0xFFFF9F43.toInt()
-            val flameSize = radius * (0.3f + 0.1f * sin(time * PI * 2).toFloat())
+            val flameSize = radius * (0.3f + 0.1f * sin(time * PI.toFloat() * 2f).toFloat())
             fill.color = Color.argb(80, Color.red(flameColor), Color.green(flameColor), Color.blue(flameColor))
             c.drawCircle(cx, cy + radius * 0.3f, flameSize, fill)
 
