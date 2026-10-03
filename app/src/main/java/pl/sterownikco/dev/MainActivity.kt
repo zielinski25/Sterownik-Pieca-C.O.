@@ -978,8 +978,8 @@ class MainActivity : Activity() {
         hourlyRow?.removeAllViews()
         val hourlyFmt = java.text.SimpleDateFormat("HH:mm", Locale.US)
         val nowMs = System.currentTimeMillis()
-        val relevantHourly = data.hourly.filter { it.time >= nowMs - 3600000L }.take(24)
-        for (h in relevantHourly) {
+        val hourlyItems = data.hourly.filter { it.time >= nowMs - 3600000L }.take(24)
+        for (h in hourlyItems) {
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
@@ -1769,7 +1769,7 @@ class MainActivity : Activity() {
     private fun showAlarmEditor(chart: ProfessionalTelemetryChartView) {
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         body.addView(label("Poziomy są liniami pomocniczymi na wykresie. Nie wysyłają żadnej komendy do pieca.", 10.2f, C.textDim, false))
-        fun field(hint: String): EditText = android.widget.EditText(this).apply {
+        fun field(hint: String): EditText = EditText(this).apply {
             this.hint = hint
             setHintTextColor(C.textDim2)
             setTextColor(Color.WHITE)
@@ -1944,17 +1944,17 @@ class MainActivity : Activity() {
 
         box.addView(label("PRÓG ALARMU °C",9f,C.textDim,true,dp(10)))
         val progRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        val progInp=android.widget.android.widget.EditText(this).apply{setText((d?.optInt("progAlarmTemp",100)?:100).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
+        val progInp=EditText(this).apply{setText((d?.optInt("progAlarmTemp",100)?:100).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
         progRow.addView(progInp,LinearLayout.LayoutParams(0,-2,1f))
-        val progBtn=action("USTAW",C.cyan,C.bg,0);progBtn.setOnClickListener{sendCommand("ustaw progAlarmTemp "+progInp.text)};progRow.addView(progBtn,lp(-1,42))
+        val progBtn=action("USTAW",C.cyan,C.bg,0);progBtn.setOnClickListener{sendCommand("ustaw progAlarmTemp "+progInp.text.toString())};progRow.addView(progBtn,lp(-1,42))
         box.addView(progRow,lp(-1,-2,4))
         box.addView(label("Histereza: piec −10°C, panel −4°C",8f,C.textDim,false,dp(2)))
 
         box.addView(label("HISTEREZA °C",9f,C.textDim,true,dp(10)))
         val histRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        val histInp=android.widget.EditText(this).apply{setText((d?.optInt("histerServo",5)?:5).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
+        val histInp=EditText(this).apply{setText((d?.optInt("histerServo",5)?:5).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
         histRow.addView(histInp,LinearLayout.LayoutParams(0,-2,1f))
-        val histBtn=action("USTAW",C.cyan,C.bg,0);histBtn.setOnClickListener{sendCommand("ustaw histerServo "+histInp.text)};histRow.addView(histBtn,lp(-1,42))
+        val histBtn=action("USTAW",C.cyan,C.bg,0);histBtn.setOnClickListener{sendCommand("ustaw histerServo "+histInp.text.toString())};histRow.addView(histBtn,lp(-1,42))
         box.addView(histRow,lp(-1,-2,4))
 
         box.addView(label("AKCJE",9f,C.textDim,true,dp(14)))
@@ -2014,16 +2014,16 @@ class MainActivity : Activity() {
 
         box.addView(label("PRÓG ALARMU ADC",9f,C.textDim,true,dp(10)))
         val progRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        val progInp=android.widget.EditText(this).apply{setText((d?.optInt("progAlarmDym",2000)?:2000).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
+        val progInp=EditText(this).apply{setText((d?.optInt("progAlarmDym",2000)?:2000).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
         progRow.addView(progInp,LinearLayout.LayoutParams(0,-2,1f))
-        val progBtn=action("USTAW",C.cyan,C.bg,0);progBtn.setOnClickListener{sendCommand("ustaw progAlarmDym "+progInp.text)};progRow.addView(progBtn,lp(-1,42))
+        val progBtn=action("USTAW",C.cyan,C.bg,0);progBtn.setOnClickListener{sendCommand("ustaw progAlarmDym "+progInp.text.toString())};progRow.addView(progBtn,lp(-1,42))
         box.addView(progRow,lp(-1,-2,4))
 
         box.addView(label("TEMP. AKTYWACJI CZUJNIKA °C",9f,C.textDim,true,dp(10)))
         val tempRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        val tempInp=android.widget.EditText(this).apply{setText((d?.optInt("dymProgTemp",40)?:40).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
+        val tempInp=EditText(this).apply{setText((d?.optInt("dymProgTemp",40)?:40).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
         tempRow.addView(tempInp,LinearLayout.LayoutParams(0,-2,1f))
-        val tempBtn=action("USTAW",C.cyan,C.bg,0);tempBtn.setOnClickListener{sendCommand("ustaw dymProgTemp "+tempInp.text)};tempRow.addView(tempBtn,lp(-1,42))
+        val tempBtn=action("USTAW",C.cyan,C.bg,0);tempBtn.setOnClickListener{sendCommand("ustaw dymProgTemp "+tempInp.text.toString())};tempRow.addView(tempBtn,lp(-1,42))
         box.addView(tempRow,lp(-1,-2,4))
 
         box.addView(label("TRYB PRACY",9f,C.textDim,true,dp(10)))
@@ -2308,7 +2308,7 @@ class MainActivity : Activity() {
     private fun sliderValue(sb:SeekBar,min:Float,step:Float)=String.format(Locale.US,"%.1f",min+sb.progress*step)
     private fun formatSlider(p:Int,min:Float,step:Float,u:String)=if(step>=1f)"${(min+p*step).toInt()} $u" else "${String.format(Locale.US,"%.1f",min+p*step)} $u"
 
-    private fun edit(hintText:String,password:Boolean)=android.widget.EditText(this).apply{hint=hintText;setTextColor(Color.WHITE);setHintTextColor(C.textDim2);inputType=if(password)0x81 else 33;isSingleLine=true;background=rounded(C.bg,14,C.border);setPadding(dp(15),0,dp(15),0);textSize=13.5f}
+    private fun edit(hintText:String,password:Boolean)=EditText(this).apply{hint=hintText;setTextColor(Color.WHITE);setHintTextColor(C.textDim2);inputType=if(password)0x81 else 33;isSingleLine=true;background=rounded(C.bg,14,C.border);setPadding(dp(15),0,dp(15),0);textSize=13.5f}
     private fun statusCell(name:String,value:String):Pair<View,TextView>{val cell=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(11),dp(8),dp(9),dp(8));background=rounded(C.surface2,15,C.border)};cell.addView(label(name,8.4f,C.textDim,true));val v=label(value,14.5f,Color.WHITE,true,dp(3)).apply{isSingleLine=true;ellipsize=TextUtils.TruncateAt.END};cell.addView(v);return cell to v}
     private fun pill(text:String,bg:Int,fg:Int,w:Int=0)=label(text,9.8f,fg,true).apply{gravity=Gravity.CENTER;background=rounded(bg,20,C.border);if(w>0)minimumWidth=dp(w);setPadding(dp(8),0,dp(8),0)}
     private fun selector(text:String,on:Boolean,w:Int=0)=chartChip(text,on).apply{minimumWidth=if(w>0)dp(w) else 0}
