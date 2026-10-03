@@ -67,7 +67,7 @@ class WeatherChartView @JvmOverloads constructor(
     fun setHeight(h: Int) { chartHeight = h; invalidate() }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(dp(chartHeight.toFloat()), MeasureSpec.AT_MOST))
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(dp(chartHeight.toFloat()).toInt(), MeasureSpec.AT_MOST))
     }
 
     override fun onDraw(c: Canvas) {
