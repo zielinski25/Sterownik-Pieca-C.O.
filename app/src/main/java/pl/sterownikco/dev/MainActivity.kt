@@ -57,13 +57,20 @@ class MainActivity : Activity() {
     @Volatile private var lastStatusOnline = false
 
     // Advanced sensor filters (median + MAD + rate-limit) to remove DS18B20 spikes
-    private val filterOutside = AdvancedSensorFilter("t_zewn", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = -40f, absoluteMax = 60f)
+    private val filterOutside = AdvancedSensorFilter("t_zewn", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = -30f, absoluteMax = 60f)
     private val filterHeating = AdvancedSensorFilter("t_ogrz", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerUpdate = 5f, absoluteMin = 0f, absoluteMax = 160f)
     private val filterBoiler = AdvancedSensorFilter("t_bojler", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerUpdate = 5f, absoluteMin = 0f, absoluteMax = 160f)
     private val filterPanel = AdvancedSensorFilter("t_panel", bufferSize = 8, maxDeviationFromMedian = 8f, maxChangePerUpdate = 10f, absoluteMin = -30f, absoluteMax = 160f)
     private val filterRoom = AdvancedSensorFilter("t_pokoj", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = -10f, absoluteMax = 50f)
     private val filterPressure = AdvancedSensorFilter("cisnienie", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = 900f, absoluteMax = 1100f)
     private val filterHumidity = AdvancedSensorFilter("wilgotnosc", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerUpdate = 5f, absoluteMin = 0f, absoluteMax = 100f)
+    
+    // Stagnation detectors - flag sensors stuck on same value
+    private val stagnationOutside = StagnationDetector("t_zewn", tolerance = 0.1f, maxStableReadings = 10)
+    private val stagnationHeating = StagnationDetector("t_ogrz", tolerance = 0.1f, maxStableReadings = 10)
+    private val stagnationBoiler = StagnationDetector("t_bojler", tolerance = 0.1f, maxStableReadings = 10)
+    private val stagnationPanel = StagnationDetector("t_panel", tolerance = 0.1f, maxStableReadings = 10)
+    private val stagnationRoom = StagnationDetector("t_pokoj", tolerance = 0.1f, maxStableReadings = 10)
 
     private lateinit var root: FrameLayout
     private lateinit var content: FrameLayout
@@ -1367,13 +1374,54 @@ class MainActivity : Activity() {
         val rawPressure = d.optDouble("cisnienie", Double.NaN).toFloat()
         val rawHumidity = d.optDouble("wilgotnosc", Double.NaN).toFloat()
         
-        val outside = filterOutside.filter(rawOutside, timestamp).toDouble()
-        val heat = filterHeating.filter(rawHeat, timestamp).toDouble()
-        val boiler = filterBoiler.filter(rawBoiler, timestamp).toDouble()
-        val panel = filterPanel.filter(rawPanel, timestamp).toDouble()
-        val room = filterRoom.filter(rawRoom, timestamp).toDouble()
+        // Layer 1: Spike filtering (AdvancedSensorFilter - median + rate limit)
+        var filteredOutside = filterOutside.filter(rawOutside, timestamp)
+        var filteredHeat = filterHeating.filter(rawHeat, timestamp)
+        var filteredBoiler = filterBoiler.filter(rawBoiler, timestamp)
+        var filteredPanel = filterPanel.filter(rawPanel, timestamp)
+        var filteredRoom = filterRoom.filter(rawRoom, timestamp)
         val pressure = filterPressure.filter(rawPressure, timestamp).toDouble()
         val humidity = filterHumidity.filter(rawHumidity, timestamp).toDouble()
+        
+        // Log spike rejections
+        if (filteredOutside != rawOutside && rawOutside.isFinite()) Log.d("SpikeFilter", "t_zewn: $rawOutside → $filteredOutside (${filterOutside.getLastRejectionReason()})")
+        if (filteredHeat != rawHeat && rawHeat.isFinite()) Log.d("SpikeFilter", "t_ogrz: $rawHeat → $filteredHeat (${filterHeating.getLastRejectionReason()})")
+        if (filteredBoiler != rawBoiler && rawBoiler.isFinite()) Log.d("SpikeFilter", "t_bojler: $rawBoiler → $filteredBoiler (${filterBoiler.getLastRejectionReason()})")
+        if (filteredPanel != rawPanel && rawPanel.isFinite()) Log.d("SpikeFilter", "t_panel: $rawPanel → $filteredPanel (${filterPanel.getLastRejectionReason()})")
+        if (filteredRoom != rawRoom && rawRoom.isFinite()) Log.d("SpikeFilter", "t_pokoj: $rawRoom → $filteredRoom (${filterRoom.getLastRejectionReason()})")
+        
+        // Layer 2: Stagnation detection (frozen sensor flagging)
+        // Special: -16°C = DS18B20 offline/bus error
+        if (filteredOutside == -16.0f || filteredOutside == 85.0f || filteredOutside == -127.0f) {
+            Log.w("SensorFilter", "t_zewn: WARTOŚĆ BŁĘDU DS18B20 ($filteredOutside°C) → oznaczam jako offline")
+            filteredOutside = Float.NaN
+        }
+        if (!filteredOutside.isNaN() && stagnationOutside.addReading(filteredOutside)) {
+            Log.w("Stagnation", "t_zewn: ZAMARZNIĘTY ${filteredOutside}°C × ${stagnationOutside.getStagnationCount()} → offline")
+            filteredOutside = Float.NaN
+        }
+        if (!filteredHeat.isNaN() && stagnationHeating.addReading(filteredHeat)) {
+            Log.w("Stagnation", "t_ogrz: ZAMARZNIĘTY ${filteredHeat}°C × ${stagnationHeating.getStagnationCount()} → offline")
+            filteredHeat = Float.NaN
+        }
+        if (!filteredBoiler.isNaN() && stagnationBoiler.addReading(filteredBoiler)) {
+            Log.w("Stagnation", "t_bojler: ZAMARZNIĘTY ${filteredBoiler}°C × ${stagnationBoiler.getStagnationCount()} → offline")
+            filteredBoiler = Float.NaN
+        }
+        if (!filteredPanel.isNaN() && stagnationPanel.addReading(filteredPanel)) {
+            Log.w("Stagnation", "t_panel: ZAMARZNIĘTY ${filteredPanel}°C × ${stagnationPanel.getStagnationCount()} → offline")
+            filteredPanel = Float.NaN
+        }
+        if (!filteredRoom.isNaN() && stagnationRoom.addReading(filteredRoom)) {
+            Log.w("Stagnation", "t_pokoj: ZAMARZNIĘTY ${filteredRoom}°C × ${stagnationRoom.getStagnationCount()} → offline")
+            filteredRoom = Float.NaN
+        }
+        
+        val outside = filteredOutside.toDouble()
+        val heat = filteredHeat.toDouble()
+        val boiler = filteredBoiler.toDouble()
+        val panel = filteredPanel.toDouble()
+        val room = filteredRoom.toDouble()
         val pump = d.optBoolean("pompa", false)
         val smokeAlarm = d.optBoolean("dym_alarm", false)
         val smokeOn = d.optBoolean("dym_wlaczony", false)
