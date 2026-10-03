@@ -550,13 +550,6 @@ button:focus-visible, a:focus-visible, input:focus-visible{outline:2px solid var
         <div class="kaf-dod" id="kafD-dym"></div>
       </div>
 
-      <div class="kafelek kaf-klik" id="kaf-czujniki" onclick="dpOtworzCzujniki()">
-        <div class="kaf-ikona" id="kafI-czujniki"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="#22d3ee" stroke-width="1.4"/><path d="M7 17l3.5-5 3 4 3.5-7" fill="none" stroke="#ff9f43" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="17" r="1.2" fill="#ff9f43"/><circle cx="10.5" cy="12" r="1.2" fill="#ff9f43"/><circle cx="13.5" cy="16" r="1.2" fill="#ff9f43"/><circle cx="17" cy="9" r="1.2" fill="#ff9f43"/></svg></div>
-        <div class="kaf-etykieta">Symulacja</div>
-        <div class="kaf-wartosc">⚙</div>
-        <div class="kaf-dod">podmiana odczytów</div>
-      </div>
-
       <div class="kafelek kaf-klik c-flame" id="kaf-wykresy" onclick="goTab('wykresy')">
         <div class="kaf-ikona"><svg viewBox="0 0 24 24"><rect class="slupek s1" x="3.5" y="14" width="3.4" height="6" rx=".6" fill="#00d4f5"/><rect class="slupek s2" x="10.3" y="8" width="3.4" height="12" rx=".6" fill="#ff9f43"/><rect class="slupek s3" x="17.1" y="11" width="3.4" height="9" rx=".6" fill="#ffd32a"/></svg></div>
         <div class="kaf-etykieta">Wykresy</div>
@@ -2783,19 +2776,6 @@ function dpOtworzCisnienie(){
 function dpOtworzWilgotnosc(){
   dpOtworz(symulacjaSekcjaHtml('wilgotnosc','Wilgotność','%',0,100,1), 'Wilgotność');
 }
-
-function dpOtworzCzujniki(){
-  var html = symulacjaSekcjaHtml('zewn','Zewnętrzna','°C',-30,50,0.5)
-           + symulacjaSekcjaHtml('ogrz','Piec C.O.','°C',0,160,0.5)
-           + symulacjaSekcjaHtml('bojler','Bojler','°C',0,160,0.5)
-           + symulacjaSekcjaHtml('panel','Panel słoneczny','°C',-30,160,0.5)
-           + symulacjaSekcjaHtml('pokoj','Pomieszczenie','°C',-50,50,0.5)
-           + symulacjaSekcjaHtml('cisnienie','Ciśnienie','hPa',970,1040,1)
-           + symulacjaSekcjaHtml('wilgotnosc','Wilgotność','%',0,100,1)
-           + symulacjaSekcjaHtml('dym','Czujnik dymu','ADC',0,4095,10);
-  dpOtworz(html, 'Symulacja czujników');
-}
-
 
 function dpOtworzPompa(){
   var d = _lastData || {};
