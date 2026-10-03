@@ -56,21 +56,29 @@ class MainActivity : Activity() {
     private var maintenanceStarted = false
     @Volatile private var lastStatusOnline = false
 
-    // Advanced sensor filters (median + MAD + rate-limit) to remove DS18B20 spikes
-    private val filterOutside = AdvancedSensorFilter("t_zewn", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = -30f, absoluteMax = 60f)
-    private val filterHeating = AdvancedSensorFilter("t_ogrz", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerUpdate = 5f, absoluteMin = 0f, absoluteMax = 160f)
-    private val filterBoiler = AdvancedSensorFilter("t_bojler", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerUpdate = 5f, absoluteMin = 0f, absoluteMax = 160f)
-    private val filterPanel = AdvancedSensorFilter("t_panel", bufferSize = 8, maxDeviationFromMedian = 8f, maxChangePerUpdate = 10f, absoluteMin = -30f, absoluteMax = 160f)
-    private val filterRoom = AdvancedSensorFilter("t_pokoj", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = -10f, absoluteMax = 50f)
-    private val filterPressure = AdvancedSensorFilter("cisnienie", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerUpdate = 2f, absoluteMin = 900f, absoluteMax = 1100f)
-    private val filterHumidity = AdvancedSensorFilter("wilgotnosc", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerUpdate = 5f, absoluteMin = 0f, absoluteMax = 100f)
+    // Advanced sensor filters — thresholds tuned from 1504 real measurements (1-min intervals)
+    // maxChangePerMinute = 3× observed max legitimate rate (data shows: t_zewn=0.5, rest=0.3 °C/min)
+    private val filterOutside = AdvancedSensorFilter("t_zewn", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerMinute = 1.5f, absoluteMin = -30f, absoluteMax = 60f)
+    private val filterHeating = AdvancedSensorFilter("t_ogrz", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerMinute = 1.0f, absoluteMin = 0f, absoluteMax = 160f)
+    private val filterBoiler = AdvancedSensorFilter("t_bojler", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerMinute = 1.0f, absoluteMin = 0f, absoluteMax = 160f)
+    private val filterPanel = AdvancedSensorFilter("t_panel", bufferSize = 8, maxDeviationFromMedian = 8f, maxChangePerMinute = 1.5f, absoluteMin = -30f, absoluteMax = 160f)
+    private val filterRoom = AdvancedSensorFilter("t_pokoj", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerMinute = 0.5f, absoluteMin = -10f, absoluteMax = 50f)
+    private val filterPressure = AdvancedSensorFilter("cisnienie", bufferSize = 8, maxDeviationFromMedian = 3f, maxChangePerMinute = 1.5f, absoluteMin = 900f, absoluteMax = 1100f)
+    private val filterHumidity = AdvancedSensorFilter("wilgotnosc", bufferSize = 8, maxDeviationFromMedian = 5f, maxChangePerMinute = 5f, absoluteMin = 0f, absoluteMax = 100f)
     
-    // Stagnation detectors - flag sensors stuck on same value
-    private val stagnationOutside = StagnationDetector("t_zewn", tolerance = 0.1f, maxStableReadings = 10)
-    private val stagnationHeating = StagnationDetector("t_ogrz", tolerance = 0.1f, maxStableReadings = 10)
-    private val stagnationBoiler = StagnationDetector("t_bojler", tolerance = 0.1f, maxStableReadings = 10)
-    private val stagnationPanel = StagnationDetector("t_panel", tolerance = 0.1f, maxStableReadings = 10)
-    private val stagnationRoom = StagnationDetector("t_pokoj", tolerance = 0.1f, maxStableReadings = 10)
+    // Sensor health monitors — thresholds based on thermal physics from real data:
+    // t_zewn: changes with weather, stagnant >60 min suspicious (sun/cloud cycle)
+    // t_ogrz: thermal mass of water+iron, can stabilize 2h when furnace off
+    // t_bojler: large thermal mass, 6h stable when not heating CWU — NORMAL
+    // t_panel: near furnace, 3h stable OK
+    // t_pokoj: thermally insulated room, 6h stable — NORMAL (observed 363 min!)
+    private val healthOutside = SensorHealthMonitor("t_zewn", maxStagnationMinutes = 60, tolerance = 0.05f)
+    private val healthHeating = SensorHealthMonitor("t_ogrz", maxStagnationMinutes = 180, tolerance = 0.05f)
+    private val healthBoiler = SensorHealthMonitor("t_bojler", maxStagnationMinutes = 360, tolerance = 0.05f)
+    private val healthPanel = SensorHealthMonitor("t_panel", maxStagnationMinutes = 180, tolerance = 0.05f)
+    private val healthRoom = SensorHealthMonitor("t_pokoj", maxStagnationMinutes = 360, tolerance = 0.05f)
+    private val healthPressure = SensorHealthMonitor("cisnienie", maxStagnationMinutes = 720, tolerance = 0.05f)
+    private val healthHumidity = SensorHealthMonitor("wilgotnosc", maxStagnationMinutes = 60, tolerance = 0.05f, offlineValues = listOf(0.0f))
 
     private lateinit var root: FrameLayout
     private lateinit var content: FrameLayout
@@ -1383,39 +1391,28 @@ class MainActivity : Activity() {
         val pressure = filterPressure.filter(rawPressure, timestamp).toDouble()
         val humidity = filterHumidity.filter(rawHumidity, timestamp).toDouble()
         
-        // Log spike rejections
+        // Log spike rejections (Layer 1 filter already handled DS18B20 errors: -16°C, 85°C, -127°C)
         if (filteredOutside != rawOutside && rawOutside.isFinite()) Log.d("SpikeFilter", "t_zewn: $rawOutside → $filteredOutside (${filterOutside.getLastRejectionReason()})")
         if (filteredHeat != rawHeat && rawHeat.isFinite()) Log.d("SpikeFilter", "t_ogrz: $rawHeat → $filteredHeat (${filterHeating.getLastRejectionReason()})")
         if (filteredBoiler != rawBoiler && rawBoiler.isFinite()) Log.d("SpikeFilter", "t_bojler: $rawBoiler → $filteredBoiler (${filterBoiler.getLastRejectionReason()})")
         if (filteredPanel != rawPanel && rawPanel.isFinite()) Log.d("SpikeFilter", "t_panel: $rawPanel → $filteredPanel (${filterPanel.getLastRejectionReason()})")
         if (filteredRoom != rawRoom && rawRoom.isFinite()) Log.d("SpikeFilter", "t_pokoj: $rawRoom → $filteredRoom (${filterRoom.getLastRejectionReason()})")
         
-        // Layer 2: Stagnation detection (frozen sensor flagging)
-        // Special: -16°C = DS18B20 offline/bus error
-        if (filteredOutside == -16.0f || filteredOutside == 85.0f || filteredOutside == -127.0f) {
-            Log.w("SensorFilter", "t_zewn: WARTOŚĆ BŁĘDU DS18B20 ($filteredOutside°C) → oznaczam jako offline")
-            filteredOutside = Float.NaN
-        }
-        if (!filteredOutside.isNaN() && stagnationOutside.addReading(filteredOutside)) {
-            Log.w("Stagnation", "t_zewn: ZAMARZNIĘTY ${filteredOutside}°C × ${stagnationOutside.getStagnationCount()} → offline")
-            filteredOutside = Float.NaN
-        }
-        if (!filteredHeat.isNaN() && stagnationHeating.addReading(filteredHeat)) {
-            Log.w("Stagnation", "t_ogrz: ZAMARZNIĘTY ${filteredHeat}°C × ${stagnationHeating.getStagnationCount()} → offline")
-            filteredHeat = Float.NaN
-        }
-        if (!filteredBoiler.isNaN() && stagnationBoiler.addReading(filteredBoiler)) {
-            Log.w("Stagnation", "t_bojler: ZAMARZNIĘTY ${filteredBoiler}°C × ${stagnationBoiler.getStagnationCount()} → offline")
-            filteredBoiler = Float.NaN
-        }
-        if (!filteredPanel.isNaN() && stagnationPanel.addReading(filteredPanel)) {
-            Log.w("Stagnation", "t_panel: ZAMARZNIĘTY ${filteredPanel}°C × ${stagnationPanel.getStagnationCount()} → offline")
-            filteredPanel = Float.NaN
-        }
-        if (!filteredRoom.isNaN() && stagnationRoom.addReading(filteredRoom)) {
-            Log.w("Stagnation", "t_pokoj: ZAMARZNIĘTY ${filteredRoom}°C × ${stagnationRoom.getStagnationCount()} → offline")
-            filteredRoom = Float.NaN
-        }
+        // Layer 2: Sensor health monitoring (stagnation warnings — do NOT block values!)
+        // Stagnation is OFTEN NORMAL: boiler 6h stable when not heating CWU, room 6h when insulated
+        val healthOut = healthOutside.addReading(filteredOutside, timestamp)
+        val healthHeat = healthHeating.addReading(filteredHeat, timestamp)
+        val healthBoil = healthBoiler.addReading(filteredBoiler, timestamp)
+        val healthPan = healthPanel.addReading(filteredPanel, timestamp)
+        val healthRm = healthRoom.addReading(filteredRoom, timestamp)
+        val healthHum = healthHumidity.addReading(rawHumidity, timestamp)
+        val healthPres = healthPressure.addReading(pressure.toFloat(), timestamp)
+        if (healthOut.isStagnant) Log.w("Health", healthOut.statusText)
+        if (healthHeat.isStagnant) Log.w("Health", healthHeat.statusText)
+        if (healthBoil.isStagnant) Log.w("Health", healthBoil.statusText)
+        if (healthPan.isStagnant) Log.w("Health", healthPan.statusText)
+        if (healthRm.isStagnant) Log.w("Health", healthRm.statusText)
+        if (!healthHum.isOnline) Log.w("Health", "wilgotnosc: ${healthHum.statusText}")
         
         val outside = filteredOutside.toDouble()
         val heat = filteredHeat.toDouble()
@@ -1430,13 +1427,13 @@ class MainActivity : Activity() {
         val mode = when (d.optInt("tryb_serwa", 0)) { 1 -> "AUTO"; 2 -> "RĘCZNY"; 3 -> "BEZPIECZNY"; else -> "—" }
         fun temp(v: Double) = if (v.isFinite()) String.format(Locale.US, "%.1f °C", v) else "—"
 
-        setTile(TileId.OUTSIDE, temp(outside), "LIVE", (((outside + 20) / 60).toFloat()).coerceIn(0f,1f), d=d)
-        setTile(TileId.HEATING, temp(heat), if (heatAlarm) "ALARM" else "AKTYWNY", (heat/160).toFloat().coerceIn(0f,1f), alarm=heatAlarm, d=d)
-        setTile(TileId.BOILER, temp(boiler), if (boiler > 45) "GORĄCY" else "STABILNY", ((boiler-15)/55).toFloat().coerceIn(0f,1f), d=d)
-        setTile(TileId.PANEL, temp(panel), if (panelAlarm) "ALARM" else "LIVE", .5f, alarm=panelAlarm, d=d)
-        setTile(TileId.ROOM, temp(room), "LIVE", .5f, d=d)
-        setTile(TileId.PRESSURE, if (pressure.isFinite()) String.format(Locale.US,"%.0f hPa",pressure) else "—", "LIVE", ((pressure-970)/70).toFloat().coerceIn(0f,1f), d=d)
-        setTile(TileId.HUMIDITY, if (humidity.isFinite()) String.format(Locale.US,"%.0f %%",humidity) else "—", "LIVE", (humidity/100).toFloat().coerceIn(0f,1f), d=d)
+        setTile(TileId.OUTSIDE, temp(outside), if (!healthOut.isOnline) "OFFLINE" else if (healthOut.isStagnant) "⚠ STABILNY" else "LIVE", (((outside + 20) / 60).toFloat()).coerceIn(0f,1f), d=d)
+        setTile(TileId.HEATING, temp(heat), if (heatAlarm) "ALARM" else if (!healthHeat.isOnline) "OFFLINE" else if (healthHeat.isStagnant) "⚠ STABILNY" else "AKTYWNY", (heat/160).toFloat().coerceIn(0f,1f), alarm=heatAlarm, d=d)
+        setTile(TileId.BOILER, temp(boiler), if (!healthBoil.isOnline) "OFFLINE" else if (healthBoil.isStagnant) "⚠ STABILNY" else if (boiler > 45) "GORĄCY" else "STABILNY", ((boiler-15)/55).toFloat().coerceIn(0f,1f), d=d)
+        setTile(TileId.PANEL, temp(panel), if (panelAlarm) "ALARM" else if (!healthPan.isOnline) "OFFLINE" else if (healthPan.isStagnant) "⚠ STABILNY" else "LIVE", .5f, alarm=panelAlarm, d=d)
+        setTile(TileId.ROOM, temp(room), if (!healthRm.isOnline) "OFFLINE" else if (healthRm.isStagnant) "⚠ STABILNY" else "LIVE", .5f, d=d)
+        setTile(TileId.PRESSURE, if (pressure.isFinite()) String.format(Locale.US,"%.0f hPa",pressure) else "—", if (!healthPres.isOnline) "OFFLINE" else "LIVE", ((pressure-970)/70).toFloat().coerceIn(0f,1f), d=d)
+        setTile(TileId.HUMIDITY, if (!healthHum.isOnline || humidity == 0.0) "—" else if (humidity.isFinite()) String.format(Locale.US,"%.0f %%",humidity) else "—", if (!healthHum.isOnline) "CZUJNIK BRAK" else "LIVE", (humidity/100).toFloat().coerceIn(0f,1f), d=d)
         // Fix: Firmware sends degrees (0-180 for klapa, 0-90 for syberek), convert to percent
         val flapDeg = d.optInt("klapa",0)
         val flap = (flapDeg * 100 / 180).coerceIn(0,100)
