@@ -776,7 +776,20 @@ class MainActivity : Activity() {
         metricGrid.addView(metricCol2, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(metricGrid, lp(-1, -2, 4))
 
-        // ── Weather charts card (24h forecast graphs like Piec.html)
+        // ── Range selector (1D, 2D, 3D, 7D, 14D)
+        val rangeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val ranges = listOf(1 to "1D", 2 to "2D", 3 to "3D", 7 to "7D", 14 to "14D")
+        ranges.forEach { (days, lbl) ->
+            val btn = action(lbl, if (days == weatherDays) C.cyan else C.surface2, if (days == weatherDays) C.bg else Color.WHITE, 0)
+            btn.setOnClickListener {
+                weatherDays = days
+                refreshWeatherTab(force = true)
+            }
+            rangeRow.addView(btn, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(4) })
+        }
+        root.addView(rangeRow, lp(-1, 40, 6))
+
+        // ── Weather charts card (forecast graphs)
         val chartsCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -869,25 +882,6 @@ class MainActivity : Activity() {
         }
         summaryCard.addView(summaryGrid, lp(-1, -2, 6))
         root.addView(summaryCard, lp(-1, -2, 10))
-
-        // ── Range selector (6h, 12h, 24h, 48h, 7d)
-        val rangeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val ranges = listOf(1 to "1D", 2 to "2D", 3 to "3D", 7 to "7D", 14 to "14D")
-        ranges.forEach { (days, lbl) ->
-            val btn = action(lbl, if (days == weatherDays) C.cyan else C.surface2, if (days == weatherDays) C.bg else Color.WHITE, 0)
-            btn.setOnClickListener {
-                weatherDays = days
-                rangeRow.removeAllViews()
-                ranges.forEach { (d, l) ->
-                    val b = action(l, if (d == days) C.cyan else C.surface2, if (d == days) C.bg else Color.WHITE, 0)
-                    b.setOnClickListener { weatherDays = d; refreshWeatherTab(force = true) }
-                    rangeRow.addView(b, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(4) })
-                }
-                refreshWeatherTab(force = true)
-            }
-            rangeRow.addView(btn, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(4) })
-        }
-        root.addView(rangeRow, lp(-1, 40, 6))
 
         // ── Refresh button
         val refreshBtn = action("ODŚWIEŻ DANE", C.surface2, Color.WHITE, 0)

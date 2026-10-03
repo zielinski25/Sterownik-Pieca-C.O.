@@ -35,6 +35,7 @@ class WeatherChartView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private var points: List<Point> = emptyList()
     private var minVal: Float = 0f
@@ -78,19 +79,24 @@ class WeatherChartView @JvmOverloads constructor(
 
         val top = dp(10f)
         val bottom = h - dp(38f)
-        val left = dp(42f)  // Increased from 8f to make room for Y-axis labels
+        val left = dp(8f)
         val right = w - dp(8f)
 
-        // Grid lines
+        // Grid lines with Y-axis labels (drawn inside chart area)
         val gridLines = 4
         for (i in 0..gridLines) {
             val y = top + (bottom - top) * i / gridLines
             c.drawLine(left, y, right, y, gridPaint)
             val value = maxVal - (maxVal - minVal) * i / gridLines
             labelPaint.textSize = dp(7.5f)
-            labelPaint.textAlign = Paint.Align.RIGHT
+            labelPaint.textAlign = Paint.Align.LEFT
             val label = String.format("%.0f%s", value, yUnit)
-            c.drawText(label, left - dp(4f), y + dp(2.5f), labelPaint)
+            // Draw label with semi-transparent background for readability
+            val bgRect = android.graphics.RectF(left, y - dp(6f), left + dp(32f), y + dp(4f))
+            fill.color = 0xCC0B1829.toInt()
+            c.drawRoundRect(bgRect, dp(3f), dp(3f), fill)
+            labelPaint.color = 0xFF8EA6BA.toInt()
+            c.drawText(label, left + dp(2f), y + dp(2.5f), labelPaint)
         }
 
         // Draw area
