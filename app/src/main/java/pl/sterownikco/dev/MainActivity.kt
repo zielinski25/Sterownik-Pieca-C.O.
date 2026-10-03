@@ -1715,10 +1715,32 @@ class MainActivity : Activity() {
                     ack=runCatching{commands.readAck(ensureToken(false)?:token,id)}.getOrNull()
                 }
                 runOnUiThread{
-                    if(ack?.ok==true){status.text="ACK POTWIERDZONE";status.setTextColor(C.live);s2.text="OK";s2.setTextColor(C.live);s3.text="POTWIERDZONE";s3.setTextColor(C.live);detail.text="Sterownik potwierdził przyjęcie polecenia."}
-                    else{status.text=if(ack!=null)"POLECENIE ODRZUCONE" else "BRAK POTWIERDZENIA";status.setTextColor(C.warn);s2.text=if(ack!=null)"OK" else "TIMEOUT";s2.setTextColor(C.warn);s3.text=if(ack!=null)"ODRZUCONE" else "NIE POTWIERDZONO";s3.setTextColor(C.warn);detail.text=if(ack!=null)"Sterownik odrzucił polecenie: ${ack?.error?:"brak opisu błędu"}" else "Nie pokazuję sukcesu bez ACK."}
+                    if(ack?.ok==true){
+                        status.text="ACK POTWIERDZONE"
+                        status.setTextColor(C.live)
+                        s1.text="OK";s1.setTextColor(C.live)
+                        s2.text="OK";s2.setTextColor(C.live)
+                        s3.text="POTWIERDZONE";s3.setTextColor(C.live)
+                        detail.text="Sterownik potwierdził przyjęcie polecenia."
+                        performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        // Success flash animation
+                        status.animate().alpha(0.4f).setDuration(100).withEndAction {
+                            status.animate().alpha(1f).setDuration(200).start()
+                        }.start()
+                        // Auto-close after success (like Home Assistant / Tado / Netatmo)
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            dismissSheet()
+                        }, 1100)
+                    } else{
+                        status.text=if(ack!=null)"POLECENIE ODRZUCONE" else "BRAK POTWIERDZENIA"
+                        status.setTextColor(C.warn)
+                        s2.text=if(ack!=null)"OK" else "TIMEOUT";s2.setTextColor(C.warn)
+                        s3.text=if(ack!=null)"ODRZUCONE" else "NIE POTWIERDZONO";s3.setTextColor(C.warn)
+                        detail.text=if(ack!=null)"Sterownik odrzucił polecenie: ${ack?.error?:"brak opisu błędu"}" else "Nie pokazuję sukcesu bez ACK."
+                        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    }
                 }
-            }catch(e:Exception){runOnUiThread{status.text="BŁĄD";status.setTextColor(C.err);s1.text="BŁĄD";s1.setTextColor(C.err);s2.text="ANULOWANE";s3.text="NIE WYKONANO";s3.setTextColor(C.err);detail.text=e.message?:"Nie udało się wysłać polecenia."}}
+            }catch(e:Exception){runOnUiThread{status.text="BŁĄD";status.setTextColor(C.err);s1.text="BŁĄD";s1.setTextColor(C.err);s2.text="ANULOWANE";s3.text="NIE WYKONANO";s3.setTextColor(C.err);detail.text=e.message?:"Nie udało się wysłać polecenia.";performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)}}
         }
     }
 
