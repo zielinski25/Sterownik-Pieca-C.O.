@@ -1395,7 +1395,7 @@ class MainActivity : Activity() {
 
     private fun setTile(id: TileId, value: String, extra: String, fraction: Float, active: Boolean = false, alarm: Boolean = false, d: JSONObject? = null) {
         val (sim, simMin) = if (d != null) isSimulated(id, d) else Pair(false, 0)
-        val displayValue = if (sim) value else value
+        val displayValue = value
         val displayExtra = if (sim) "SYM ${simMin}min" else extra
         tileViews[id]?.bind(kindFor(id), tileViews[id]?.contentDescription?.toString() ?: "", displayValue, displayExtra, accentFor(id), active, alarm, fraction, sim, simMin)
     }
