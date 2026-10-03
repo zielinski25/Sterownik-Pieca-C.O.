@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Premium Dark Theme - Grafana/Datadog inspired -->
+    <color name="app_bg">#060D18</color>
+    <color name="surface">#0C1829</color>
+    <color name="surface2">#111F35</color>
+    <color name="surface3">#14253A</color>
+    <color name="border">#36506D84</color>
+
+    <!-- Text hierarchy -->
+    <color name="text">#FFE6F0F7</color>
+    <color name="text_dim">#FF8EA6BA</color>
+    <color name="text_dim2">#FF5A7A99</color>
+
+    <!-- Brand & accent colors -->
+    <color name="cyan">#FF00D4F5</color>
+    <color name="orange">#FFFF9F43</color>
+    <color name="accent_soft">#26FFA23F</color>
+
+    <!-- Status colors -->
+    <color name="live">#FF4ADE80</color>
+    <color name="live_bg">#1C4ADE80</color>
+    <color name="warn">#FFFBBF24</color>
+    <color name="err">#FFFF5F78</color>
+
+    <!-- Chart series palette -->
+    <color name="series_blue">#FF55D7FF</color>
+    <color name="series_red">#FFFF5E67</color>
+    <color name="series_orange">#FFFFB04A</color>
+    <color name="series_yellow">#FFFFD166</color>
+    <color name="series_violet">#FFB28CFF</color>
+    <color name="series_pink">#FFFF6FC7</color>
+    <color name="series_green">#FF45D98B</color>
+    <color name="series_purple">#FFA879FF</color>
+    <color name="series_coral">#FFFF8B67</color>
+    <color name="series_cyan">#FF64C7FF</color>
+    <color name="series_mint">#FF4ADE80</color>
+
+    <!-- Chart & UI accents -->
+    <color name="flame">#FFFF9F43</color>
+    <color name="violet">#FFA855F7</color>
+    <color name="ok">#FF4ADE80</color>
+</resources>
