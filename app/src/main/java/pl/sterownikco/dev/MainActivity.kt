@@ -775,6 +775,40 @@ class MainActivity : Activity() {
         metricGrid.addView(metricCol2, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(metricGrid, lp(-1, -2, 4))
 
+        // ── Weather charts card (24h forecast graphs like Piec.html)
+        val chartsCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(C.surface, 18, C.border)
+        }
+        chartsCard.addView(label("WYKRESY 24H", 10f, C.cyan, true))
+
+        val tempChart = WeatherChartView(this)
+        tempChart.tag = "weather_chart_temp"
+        tempChart.setHeight(140)
+        chartsCard.addView(tempChart, lp(-1, -2, 6))
+        chartsCard.addView(label("— Temperatura (°C)", 7.5f, 0xFF55D7FF.toInt(), false, dp(2)))
+
+        val windChart = WeatherChartView(this)
+        windChart.tag = "weather_chart_wind"
+        windChart.setHeight(120)
+        chartsCard.addView(windChart, lp(-1, -2, 6))
+        chartsCard.addView(label("— Wiatr (km/h)", 7.5f, 0xFF00D4F5.toInt(), false, dp(2)))
+
+        val cloudChart = WeatherChartView(this)
+        cloudChart.tag = "weather_chart_cloud"
+        cloudChart.setHeight(120)
+        chartsCard.addView(cloudChart, lp(-1, -2, 6))
+        chartsCard.addView(label("— Zachmurzenie (%)", 7.5f, C.textDim, false, dp(2)))
+
+        val precipChart = WeatherChartView(this)
+        precipChart.tag = "weather_chart_precip"
+        precipChart.setHeight(120)
+        chartsCard.addView(precipChart, lp(-1, -2, 6))
+        chartsCard.addView(label("— Opad (mm)", 7.5f, 0xFF4ADE80.toInt(), false, dp(2)))
+
+        root.addView(chartsCard, lp(-1, -2, 8))
+
         // ── Hourly forecast card
         val hourlyCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -897,6 +931,47 @@ class MainActivity : Activity() {
         precip?.let { updateMetricCard(it, String.format(Locale.US, "%.1f mm", cur.precipitation)) }
         val uv = weatherView.findViewWithTag("weather_uv") as? LinearLayout
         uv?.let { updateMetricCard(it, String.format(Locale.US, "%.1f", cur.uvIndex)) }
+
+        // Weather charts (24h forecast)
+        val hourlyFmtChart = java.text.SimpleDateFormat("HH:mm", Locale.US)
+        val nowMsChart = System.currentTimeMillis()
+        val relevantHourly = data.hourly.filter { it.time >= nowMsChart - 3600000L }.take(24)
+
+        val tempChart = weatherView.findViewWithTag("weather_chart_temp") as? WeatherChartView
+        if (tempChart != null && relevantHourly.isNotEmpty()) {
+            tempChart.setData(
+                relevantHourly.map { if (it.temperature.isFinite()) it.temperature.toFloat() else 0f },
+                0xFF55D7FF.toInt(), "°C"
+            )
+            tempChart.setXLabels(relevantHourly.map { hourlyFmtChart.format(java.util.Date(it.time)) })
+        }
+
+        val windChart = weatherView.findViewWithTag("weather_chart_wind") as? WeatherChartView
+        if (windChart != null && relevantHourly.isNotEmpty()) {
+            windChart.setData(
+                relevantHourly.map { it.windSpeed.toFloat() },
+                0xFF00D4F5.toInt(), ""
+            )
+            windChart.setXLabels(relevantHourly.map { hourlyFmtChart.format(java.util.Date(it.time)) })
+        }
+
+        val cloudChart = weatherView.findViewWithTag("weather_chart_cloud") as? WeatherChartView
+        if (cloudChart != null && relevantHourly.isNotEmpty()) {
+            cloudChart.setData(
+                relevantHourly.map { if (it.cloudCover.isFinite()) it.cloudCover.toFloat() else 0f },
+                0xFF8EA6BA.toInt(), "%", 0f, 100f
+            )
+            cloudChart.setXLabels(relevantHourly.map { hourlyFmtChart.format(java.util.Date(it.time)) })
+        }
+
+        val precipChart = weatherView.findViewWithTag("weather_chart_precip") as? WeatherChartView
+        if (precipChart != null && relevantHourly.isNotEmpty()) {
+            precipChart.setData(
+                relevantHourly.map { it.precipitation.toFloat() },
+                0xFF4ADE80.toInt(), "mm", 0f
+            )
+            precipChart.setXLabels(relevantHourly.map { hourlyFmtChart.format(java.util.Date(it.time)) })
+        }
 
         // Hourly forecast
         val hourlyRow = weatherView.findViewWithTag("weather_hourly_row") as? LinearLayout
@@ -1267,25 +1342,25 @@ class MainActivity : Activity() {
         val mode = when (d.optInt("tryb_serwa", 0)) { 1 -> "AUTO"; 2 -> "RĘCZNY"; 3 -> "BEZPIECZNY"; else -> "—" }
         fun temp(v: Double) = if (v.isFinite()) String.format(Locale.US, "%.1f °C", v) else "—"
 
-        setTile(TileId.OUTSIDE, temp(outside), "LIVE", (((outside + 20) / 60).toFloat()).coerceIn(0f,1f))
-        setTile(TileId.HEATING, temp(heat), if (heatAlarm) "ALARM" else "AKTYWNY", (heat/160).toFloat().coerceIn(0f,1f), alarm=heatAlarm)
-        setTile(TileId.BOILER, temp(boiler), if (boiler > 45) "GORĄCY" else "STABILNY", ((boiler-15)/55).toFloat().coerceIn(0f,1f))
-        setTile(TileId.PANEL, temp(panel), if (panelAlarm) "ALARM" else "LIVE", .5f, alarm=panelAlarm)
-        setTile(TileId.ROOM, temp(room), "LIVE", .5f)
-        setTile(TileId.PRESSURE, if (pressure.isFinite()) String.format(Locale.US,"%.0f hPa",pressure) else "—", "LIVE", ((pressure-970)/70).toFloat().coerceIn(0f,1f))
-        setTile(TileId.HUMIDITY, if (humidity.isFinite()) String.format(Locale.US,"%.0f %%",humidity) else "—", "LIVE", (humidity/100).toFloat().coerceIn(0f,1f))
+        setTile(TileId.OUTSIDE, temp(outside), "LIVE", (((outside + 20) / 60).toFloat()).coerceIn(0f,1f), d=d)
+        setTile(TileId.HEATING, temp(heat), if (heatAlarm) "ALARM" else "AKTYWNY", (heat/160).toFloat().coerceIn(0f,1f), alarm=heatAlarm, d=d)
+        setTile(TileId.BOILER, temp(boiler), if (boiler > 45) "GORĄCY" else "STABILNY", ((boiler-15)/55).toFloat().coerceIn(0f,1f), d=d)
+        setTile(TileId.PANEL, temp(panel), if (panelAlarm) "ALARM" else "LIVE", .5f, alarm=panelAlarm, d=d)
+        setTile(TileId.ROOM, temp(room), "LIVE", .5f, d=d)
+        setTile(TileId.PRESSURE, if (pressure.isFinite()) String.format(Locale.US,"%.0f hPa",pressure) else "—", "LIVE", ((pressure-970)/70).toFloat().coerceIn(0f,1f), d=d)
+        setTile(TileId.HUMIDITY, if (humidity.isFinite()) String.format(Locale.US,"%.0f %%",humidity) else "—", "LIVE", (humidity/100).toFloat().coerceIn(0f,1f), d=d)
         // Fix: Firmware sends degrees (0-180 for klapa, 0-90 for syberek), convert to percent
         val flapDeg = d.optInt("klapa",0)
         val flap = (flapDeg * 100 / 180).coerceIn(0,100)
         val damperDeg = d.optInt("syberka",0)
         val damper = (damperDeg * 100 / 90).coerceIn(0,100)
-        setTile(TileId.PUMP, if (pump) "WŁĄCZONA" else "WYŁĄCZONA", if (pump) "AKTYWNA" else "AUTO", if (pump) 1f else 0f, active=pump)
-        setTile(TileId.SERVO, "K$flap • S$damper", mode, flap/100f, active=mode=="RĘCZNY")
+        setTile(TileId.PUMP, if (pump) "WŁĄCZONA" else "WYŁĄCZONA", if (pump) "AKTYWNA" else "AUTO", if (pump) 1f else 0f, active=pump, d=d)
+        setTile(TileId.SERVO, "K$flap • S$damper", mode, flap/100f, active=mode=="RĘCZNY", d=d)
         val mix = d.optBoolean("mieszadlo", false)
-        setTile(TileId.MIXER, if (mix) "WŁĄCZONE" else "WYŁĄCZONE", if (mix) "AKTYWNE" else "AUTO", if (mix) 1f else 0f, active=mix)
-        setTile(TileId.SMOKE, when { smokeAlarm -> "ALARM"; smokeOn -> "AKTYWNY"; else -> "OK" }, if(smokeAlarm)"BEZPIECZEŃSTWO" else "MONITORING", .3f, active=smokeOn, alarm=smokeAlarm)
-        setTile(TileId.CHARTS, "OTWÓRZ", "historia • 6 H / 24 H / 7 DNI / 30 DNI", .8f)
-        setTile(TileId.CLOCK, SimpleDateFormat("HH:mm", Locale.US).format(Date()), "CZAS TELEFONU", .2f)
+        setTile(TileId.MIXER, if (mix) "WŁĄCZONE" else "WYŁĄCZONE", if (mix) "AKTYWNE" else "AUTO", if (mix) 1f else 0f, active=mix, d=d)
+        setTile(TileId.SMOKE, when { smokeAlarm -> "ALARM"; smokeOn -> "AKTYWNY"; else -> "OK" }, if(smokeAlarm)"BEZPIECZEŃSTWO" else "MONITORING", .3f, active=smokeOn, alarm=smokeAlarm, d=d)
+        setTile(TileId.CHARTS, "OTWÓRZ", "historia • 6 H / 24 H / 7 DNI / 30 DNI", .8f, d=d)
+        setTile(TileId.CLOCK, SimpleDateFormat("HH:mm", Locale.US).format(Date()), "CZAS TELEFONU", .2f, d=d)
 
         heroTemp.text = temp(heat)
         heroMode.text = mode
@@ -1318,8 +1393,30 @@ class MainActivity : Activity() {
         heroBoiler.bind(heat, heat.isFinite() && heat > 45, smokeAlarm || heatAlarm || panelAlarm)
     }
 
-    private fun setTile(id: TileId, value: String, extra: String, fraction: Float, active: Boolean = false, alarm: Boolean = false) {
-        tileViews[id]?.bind(kindFor(id), tileViews[id]?.contentDescription?.toString() ?: "", value, extra, accentFor(id), active, alarm, fraction)
+    private fun setTile(id: TileId, value: String, extra: String, fraction: Float, active: Boolean = false, alarm: Boolean = false, d: JSONObject? = null) {
+        val (sim, simMin) = if (d != null) isSimulated(id, d) else Pair(false, 0)
+        val displayValue = if (sim) value else value
+        val displayExtra = if (sim) "SYM ${simMin}min" else extra
+        tileViews[id]?.bind(kindFor(id), tileViews[id]?.contentDescription?.toString() ?: "", displayValue, displayExtra, accentFor(id), active, alarm, fraction, sim, simMin)
+    }
+
+    private fun simField(id: TileId): String? = when (id) {
+        TileId.OUTSIDE -> "zewn"
+        TileId.HEATING -> "ogrz"
+        TileId.BOILER -> "bojler"
+        TileId.PANEL -> "panel"
+        TileId.ROOM -> "pokoj"
+        TileId.PRESSURE -> "cisnienie"
+        TileId.HUMIDITY -> "wilgotnosc"
+        TileId.SMOKE -> "dym"
+        else -> null
+    }
+
+    private fun isSimulated(id: TileId, d: org.json.JSONObject): Pair<Boolean, Int> {
+        val field = simField(id) ?: return Pair(false, 0)
+        val active = d.optBoolean("symulacja_$field", false)
+        val minutes = d.optInt("symulacja_${field}_min", 0)
+        return Pair(active, minutes)
     }
 
     private fun onTileClicked(id: TileId) {
@@ -1753,20 +1850,86 @@ class MainActivity : Activity() {
     private fun dismissSheet() { activeSheet?.dismiss(); activeSheet = null }
 
     private fun showSensorMenu(title:String, field:String, key:String, unit:String, min:Float, max:Float, step:Float) {
-        val box = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-        box.addView(label("AKTUALNIE",9.5f,C.textDim,true))
-        box.addView(label(valueFor(lastStatusData,key,unit),18f,Color.WHITE,true,dp(3)))
+        val d = lastStatusData
+        val isSimActive = d?.optBoolean("symulacja_$field", false) == true
+        val simMin = d?.optInt("symulacja_${field}_min", 0) ?: 0
+        val simValue = d?.optDouble(key, Double.NaN) ?: Double.NaN
+
+        val box = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(4),dp(4),dp(4),dp(10)) }
+
+        // Status bar - if simulation active, show yellow highlight
+        if (isSimActive && simMin > 0) {
+            val simBox = LinearLayout(this).apply {
+                orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL
+                background=rounded(0x1EEAB308,12,0x30EAB308); setPadding(dp(12),dp(10),dp(12),dp(10))
+            }
+            simBox.addView(label("SYMULACJA AKTYWNA",10f,0xFFFFD166.toInt(),true))
+            val countdownLbl = label("$simMin min",15f,0xFFFFE082.toInt(),true)
+            countdownLbl.tag = "sim_countdown_$field"
+            simBox.addView(View(this), LinearLayout.LayoutParams(0,0,1f))
+            simBox.addView(countdownLbl)
+            box.addView(simBox, lp(-1,-2,6))
+
+            // Countdown timer
+            val handler = android.os.Handler(android.os.Looper.getMainLooper())
+            val runnable = object : Runnable {
+                var remaining = simMin * 60
+                override fun run() {
+                    if (remaining > 0 && box.tag == "sim_active") {
+                        remaining--
+                        val m = remaining / 60; val s = remaining % 60
+                        (box.findViewWithTag("sim_countdown_$field") as? TextView)?.text = String.format("%d:%02d", m, s)
+                        handler.postDelayed(this, 1000)
+                    }
+                }
+            }
+            box.tag = "sim_active"
+            handler.post(runnable)
+        }
+
+        box.addView(label("AKTUALNIE",9.5f,C.textDim,true, if (isSimActive) dp(12) else 0))
+        val curVal = valueFor(d,key,unit)
+        val curLabel = label(curVal,20f, if (isSimActive) 0xFFFFE082.toInt() else Color.WHITE, true, dp(3))
+        curLabel.tag = "sim_current_$field"
+        box.addView(curLabel)
+
+        if (isSimActive) {
+            box.addView(label("Symulowana wartość (po zastosowaniu zmieni odczyt)",9.5f,0xFFEAB308.toInt(),false,dp(2)))
+        }
+
         val seekMax = ((max-min)/step).toInt().coerceAtLeast(1)
-        val seekProgress = ((numberFrom(lastStatusData,key,min.toDouble())-min)/step).toInt().coerceIn(0,seekMax)
+        val initialVal = if (simValue.isFinite()) simValue else numberFrom(d,key,min.toDouble())
+        val seekProgress = ((initialVal-min)/step).toInt().coerceIn(0,seekMax)
         val seek = SeekBar(this).apply { this.max=seekMax; progress=seekProgress }
         val v=label(formatSlider(seek.progress,min,step,unit),15f,Color.WHITE,true,dp(8));
         seek.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){v.text=formatSlider(p,min,step,unit)};override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}})
         box.addView(v);box.addView(seek)
-        val time=SeekBar(this).apply{this.max=35;progress=11}
-        val tl=label("Czas: 60 min",11.5f,C.textDim,false,dp(8)); time.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){tl.text="Czas: ${(p+1)*5} min"};override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}})
+
+        val initialTimeMin = if (isSimActive && simMin > 0) ((simMin / 5).coerceIn(1,36) - 1) else 11
+        val time=SeekBar(this).apply{this.max=35;progress=initialTimeMin}
+        val tl=label("Czas: ${(time.progress+1)*5} min",11.5f,C.textDim,false,dp(8));
+        time.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){tl.text="Czas: ${(p+1)*5} min"};override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}})
         box.addView(tl);box.addView(time)
-        val apply=action("ZASTOSUJ",C.accent,C.bg,0);apply.setOnClickListener{sendCommand("symuluj $field ${sliderValue(seek,min,step)} ${(time.progress+1)*5}");activeSheet?.dismiss()};box.addView(apply,lp(-1,48,10))
-        val stop=action("WYŁĄCZ SYMULACJĘ",C.surface2,Color.WHITE,0);stop.setOnClickListener{sendCommand("symuluj_stop $field");activeSheet?.dismiss()};box.addView(stop,lp(-1,48,7))
+
+        val apply=action("ZASTOSUJ",C.accent,C.bg,0)
+        apply.setOnClickListener {
+            val simVal = sliderValue(seek,min,step)
+            val simTime = (time.progress+1)*5
+            sendCommand("symuluj $field $simVal $simTime")
+            // Update UI
+            (box.findViewWithTag("sim_countdown_$field") as? TextView)?.text = "$simTime min"
+            box.tag = "sim_active"
+        }
+        box.addView(apply,lp(-1,48,10))
+
+        val stop=action("WYŁĄCZ SYMULACJĘ",C.surface2,Color.WHITE,0)
+        stop.setOnClickListener{
+            sendCommand("symuluj_stop $field")
+            box.tag = null
+            activeSheet?.dismiss()
+        }
+        box.addView(stop,lp(-1,48,7))
+
         showSheet(title,box)
     }
 

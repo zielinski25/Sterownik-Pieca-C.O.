@@ -29,6 +29,8 @@ class DashboardTileView @JvmOverloads constructor(
     private var flash = 0f
     private var lastValue = ""
     private var stale = false
+    private var simulated = false
+    private var simMinutes = 0
     private var animating = true
     private var attached = false
 
@@ -83,7 +85,9 @@ class DashboardTileView @JvmOverloads constructor(
         accent: Int,
         active: Boolean = false,
         alarm: Boolean = false,
-        fraction: Float = 0f
+        fraction: Float = 0f,
+        simulated: Boolean = false,
+        simMinutes: Int = 0
     ) {
         this.kind = kind
         this.title = title
@@ -93,6 +97,8 @@ class DashboardTileView @JvmOverloads constructor(
         this.active = active
         this.alarm = alarm
         this.fraction = fraction.coerceIn(0f, 1f)
+        this.simulated = simulated
+        this.simMinutes = simMinutes
         this.stale = false
         if (value != lastValue) flash = 1f
         lastValue = value
@@ -131,6 +137,7 @@ class DashboardTileView @JvmOverloads constructor(
         // Border
         stroke.strokeWidth = dp(if (alarm) 1.8f else if (pressed) 1.6f else if (active) 1.25f else 0.85f)
         stroke.color = when {
+            simulated -> 0xFFEAB308.toInt()  // Yellow border for simulation
             alarm -> 0xFFFF627B.toInt()
             stale -> 0x6A7F93A3
             pressed -> Color.argb(185, Color.red(accent), Color.green(accent), Color.blue(accent))
@@ -159,15 +166,15 @@ class DashboardTileView @JvmOverloads constructor(
         }
 
         // State badge
-        val badgeText = if (stale) "STALE" else state.uppercase().take(12)
+        val badgeText = if (simulated) "SYM ${simMinutes}min" else if (stale) "STALE" else state.uppercase().take(12)
         small.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         small.textSize = dp(8.0f)
         val bw = max(dp(62f), min(dp(108f), small.measureText(badgeText) + dp(28f)))
-        fill.color = when { stale -> 0x1C7F93A3; alarm -> 0x2E4B1420; active -> Color.argb(32, Color.red(accent), Color.green(accent), Color.blue(accent)); else -> 0x17213546 }
+        fill.color = when { simulated -> 0x2EEAB308.toInt(); stale -> 0x1C7F93A3; alarm -> 0x2E4B1420; active -> Color.argb(32, Color.red(accent), Color.green(accent), Color.blue(accent)); else -> 0x17213546 }
         c.drawRoundRect(right-bw-dp(10f), dp(11f), right-dp(10f), dp(31f), dp(10f), dp(10f), fill)
-        fill.color = when { stale -> 0xFF8298A9.toInt(); alarm -> 0xFFFF7087.toInt(); active -> accent; else -> 0xFF71879A.toInt() }
+        fill.color = when { simulated -> 0xFFFFD166.toInt(); stale -> 0xFF8298A9.toInt(); alarm -> 0xFFFF7087.toInt(); active -> accent; else -> 0xFF71879A.toInt() }
         c.drawCircle(right-bw+dp(1f), dp(21f), dp(2.1f), fill)
-        small.color = when { stale -> 0xFF9DB0BE.toInt(); alarm -> 0xFFFF9EAC.toInt(); active -> accent; else -> 0xFF96ABBB.toInt() }
+        small.color = when { simulated -> 0xFFFFE082.toInt(); stale -> 0xFF9DB0BE.toInt(); alarm -> 0xFFFF9EAC.toInt(); active -> accent; else -> 0xFF96ABBB.toInt() }
         small.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         small.textSize = dp(8.0f)
         small.textAlign = Paint.Align.CENTER
@@ -182,7 +189,7 @@ class DashboardTileView @JvmOverloads constructor(
         c.drawText(title.uppercase(), dp(13f), h-dp(41f), text)
 
         // Value
-        valuePaint.color = if (alarm) 0xFFFF7B91.toInt() else 0xFFF4F8FB.toInt()
+        valuePaint.color = if (simulated) 0xFFFFE082.toInt() else if (alarm) 0xFFFF7B91.toInt() else 0xFFF4F8FB.toInt()
         valuePaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         valuePaint.textSize = when {
             value.length > 15 -> dp(15.2f)
