@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Premium dark theme with modern system bars -->
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#060D18</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowBackground">#060D18</item>
+        <item name="android:colorAccent">#FF00D4F5</item>
+        <item name="android:textColorPrimary">#FFE6F0F7</item>
+        <item name="android:textColorSecondary">#FF8EA6BA</item>
+    </style>
+</resources>
