@@ -238,7 +238,6 @@ class MainActivity : Activity() {
         root.addView(loginView, FrameLayout.LayoutParams(-1, -1))
     }
 
-
     private fun buildDashboard(): ScrollView {
         val scroll = ScrollView(this).apply {
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
@@ -717,7 +716,7 @@ class MainActivity : Activity() {
         settingCard(b, "Serwo", "Tryb + Klapa + Syberek") { showServoMenu() }
         settingCard(b, "Mieszadło", "AUTO / WŁ. / WYŁ.") { showMixerMenu() }
         settingCard(b, "Alarmy", "Próg · wyciszenie · reset") { showSmokeMenu() }
-        settingCard(b, "Czujniki", "Symulacja wartości i czasu") { showSensorMenu("Zewnętrzna", "zewn", "t_zewn", "°C", -30f, 50f, .5f) }
+        settingCard(b, "Czujniki", "Symulacja wartości i czasu") { showSensorMenu("Temperatura zewnętrzna", "Zewnętrzna", "zewn", "t_zewn", "°C", -30f, 50f, .5f) }
         s.addView(b)
         return s
     }
@@ -1549,13 +1548,13 @@ class MainActivity : Activity() {
 
     private fun onTileClicked(id: TileId) {
         when (id) {
-            TileId.OUTSIDE -> showSensorMenu("Zewnętrzna", "zewn", "t_zewn", "°C", -30f, 50f, .5f)
+            TileId.OUTSIDE -> showSensorMenu("Temperatura zewnętrzna", "Zewnętrzna", "zewn", "t_zewn", "°C", -30f, 50f, .5f)
             TileId.HEATING -> showOverheatMenu(false)
-            TileId.BOILER -> showSensorMenu("Bojler", "bojler", "t_bojler", "°C", 0f, 160f, .5f)
+            TileId.BOILER -> showSensorMenu("Bojler", "Bojler", "bojler", "t_bojler", "°C", 0f, 160f, .5f)
             TileId.PANEL -> showOverheatMenu(true)
-            TileId.ROOM -> showSensorMenu("Pomieszczenie", "pokoj", "t_pokoj", "°C", -50f, 50f, .5f)
-            TileId.PRESSURE -> showSensorMenu("Ciśnienie", "cisnienie", "cisnienie", "hPa", 970f, 1040f, 1f)
-            TileId.HUMIDITY -> showSensorMenu("Wilgotność", "wilgotnosc", "wilgotnosc", "%", 0f, 100f, 1f)
+            TileId.ROOM -> showSensorMenu("Pomieszczenie", "Pomieszczenie", "pokoj", "t_pokoj", "°C", -50f, 50f, .5f)
+            TileId.PRESSURE -> showSensorMenu("Ciśnienie", "Ciśnienie", "cisnienie", "cisnienie", "hPa", 970f, 1040f, 1f)
+            TileId.HUMIDITY -> showSensorMenu("Wilgotność", "Wilgotność", "wilgotnosc", "wilgotnosc", "%", 0f, 100f, 1f)
             TileId.PUMP -> showPumpMenu()
             TileId.SERVO -> showServoMenu()
             TileId.MIXER -> showMixerMenu()
@@ -1964,6 +1963,7 @@ class MainActivity : Activity() {
             w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, sheetHeight())
             w.setGravity(Gravity.BOTTOM)
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
         }
         d.setOnDismissListener { if (activeSheet === d) activeSheet = null }
         activeSheet = d
@@ -1977,385 +1977,311 @@ class MainActivity : Activity() {
     private fun sheetHeight(): Int = minOf(dp(700), (resources.displayMetrics.heightPixels * 0.84f).toInt())
     private fun dismissSheet() { activeSheet?.dismiss(); activeSheet = null }
 
-    private fun showSensorMenu(title:String, field:String, key:String, unit:String, min:Float, max:Float, step:Float) {
-        val d = lastStatusData
-        val isSimActive = d?.optBoolean("symulacja_$field", false) == true
-        val simMin = d?.optInt("symulacja_${field}_min", 0) ?: 0
-        val simValue = d?.optDouble(key, Double.NaN) ?: Double.NaN
+    // ═══════════════════════════════════════════════════════════════════════════════════
+    //  PANELE KAFELKÓW — 1:1 z lokalnym panelem WWW na ESP (dpOtworz*() w main_centrala.cpp)
+    //  Odpowiedniki klas CSS panelu ESP:
+    //    .ust-sekcja            → sectionHeader()
+    //    .seg / .seg-btn(.on)   → segButtons()          (ustSegAktywny() podświetla aktywną wartość)
+    //    .ust-btn               → ustBtn()
+    //    .row + .ust-inp + Ustaw → numInput()           (ustSet()  → "ustaw <pole> <wartość>")
+    //    checkbox + etykieta    → checkbox()            (ustToggle() → "ustaw <pole> 0/1")
+    //    symulacjaSekcjaHtml()  → symulacjaSekcja()     (symPokaz()/symZastosuj()/symWylacz()/symZaladujStan())
+    //  Komendy idą przez skrzynkę Firebase /piec/cmd — te same, które obsługuje checkFirebaseCommands().
+    // ═══════════════════════════════════════════════════════════════════════════════════
 
-        val box = LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(4),dp(4),dp(4),dp(10)) }
-
-        // Status bar - if simulation active, show yellow highlight
-        if (isSimActive && simMin > 0) {
-            val simBox = LinearLayout(this).apply {
-                orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL
-                background=rounded(0x1EEAB308,12,0x30EAB308); setPadding(dp(12),dp(10),dp(12),dp(10))
-            }
-            simBox.addView(label("SYMULACJA AKTYWNA",10f,0xFFFFD166.toInt(),true))
-            val countdownLbl = label("$simMin min",15f,0xFFFFE082.toInt(),true)
-            countdownLbl.tag = "sim_countdown_$field"
-            simBox.addView(View(this), LinearLayout.LayoutParams(0,0,1f))
-            simBox.addView(countdownLbl)
-            box.addView(simBox, lp(-1,-2,6))
-
-            // Countdown timer
-            val handler = android.os.Handler(android.os.Looper.getMainLooper())
-            val runnable = object : Runnable {
-                var remaining = simMin * 60
-                override fun run() {
-                    if (remaining > 0 && box.tag == "sim_active") {
-                        remaining--
-                        val m = remaining / 60; val s = remaining % 60
-                        (box.findViewWithTag("sim_countdown_$field") as? TextView)?.text = String.format("%d:%02d", m, s)
-                        handler.postDelayed(this, 1000)
-                    }
-                }
-            }
-            box.tag = "sim_active"
-            handler.post(runnable)
-        }
-
-        box.addView(label("AKTUALNIE",9.5f,C.textDim,true, if (isSimActive) dp(12) else 0))
-        val curVal = valueFor(d,key,unit)
-        val curLabel = label(curVal,20f, if (isSimActive) 0xFFFFE082.toInt() else Color.WHITE, true, dp(3))
-        curLabel.tag = "sim_current_$field"
-        box.addView(curLabel)
-
-        if (isSimActive) {
-            box.addView(label("Symulowana wartość (po zastosowaniu zmieni odczyt)",9.5f,0xFFEAB308.toInt(),false,dp(2)))
-        }
-
-        val seekMax = ((max-min)/step).toInt().coerceAtLeast(1)
-        val initialVal = if (simValue.isFinite()) simValue else numberFrom(d,key,min.toDouble())
-        val seekProgress = ((initialVal-min)/step).toInt().coerceIn(0,seekMax)
-        val seek = SeekBar(this).apply { this.max=seekMax; progress=seekProgress }
-        val v=label(formatSlider(seek.progress,min,step,unit),15f,Color.WHITE,true,dp(8));
-        seek.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){v.text=formatSlider(p,min,step,unit)};override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}})
-        box.addView(v);box.addView(seek)
-
-        val initialTimeMin = if (isSimActive && simMin > 0) ((simMin / 5).coerceIn(1,36) - 1) else 11
-        val time=SeekBar(this).apply{this.max=35;progress=initialTimeMin}
-        val tl=label("Czas: ${(time.progress+1)*5} min",11.5f,C.textDim,false,dp(8));
-        time.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){tl.text="Czas: ${(p+1)*5} min"};override fun onStartTrackingTouch(s:SeekBar?){};override fun onStopTrackingTouch(s:SeekBar?){}})
-        box.addView(tl);box.addView(time)
-
-        val apply=action("ZASTOSUJ",C.accent,C.bg,0)
-        apply.setOnClickListener {
-            val simVal = sliderValue(seek,min,step)
-            val simTime = (time.progress+1)*5
-            sendCommand("symuluj $field $simVal $simTime")
-            // Update UI
-            (box.findViewWithTag("sim_countdown_$field") as? TextView)?.text = "$simTime min"
-            box.tag = "sim_active"
-        }
-        box.addView(apply,lp(-1,48,10))
-
-        val stop=action("WYŁĄCZ SYMULACJĘ",C.surface2,Color.WHITE,0)
-        stop.setOnClickListener{
-            sendCommand("symuluj_stop $field")
-            box.tag = null
-            activeSheet?.dismiss()
-        }
-        box.addView(stop,lp(-1,48,7))
-
-        showSheet(title,box)
+    // .ust-sekcja — nagłówek sekcji: wersaliki, rozstrzelone, cienka linia pod spodem
+    private fun sectionHeader(t: String): View {
+        val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(14), 0, dp(8)) }
+        val tv = label(t.uppercase(Locale.ROOT), 9f, C.textDim, true)
+        tv.letterSpacing = 0.08f
+        tv.setPadding(0, 0, 0, dp(6))
+        wrap.addView(tv)
+        wrap.addView(View(this).apply { setBackgroundColor(C.border) }, lp(-1, 1, 0))
+        return wrap
     }
 
+    // .ust-btn — przycisk akcji panelu ESP (cyjanowy tekst, półprzezroczyste tło, cienka obwódka)
+    private fun ustBtn(t: String): TextView = action(t, 0x1A00D4F5, C.cyan, 0).apply {
+        background = pressableBackground(0x1A00D4F5, 0x4000D4F5, 10)
+    }
+
+    // .seg + .seg-btn.on — segment wyboru; aktywna wartość "wciśnięta" (tło --flame, ciemny tekst)
+    private fun segButtons(options: List<Pair<Int, String>>, current: Int?, onPick: (Int) -> Unit): View {
+        val seg = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        options.forEachIndexed { i, (v, t) ->
+            val on = current != null && v == current
+            val b = action(t, if (on) C.cyan else C.surface2, if (on) 0xFF00131F.toInt() else C.textDim, 0)
+            if (on) b.background = pressableBackground(C.cyan, C.cyan, 10)
+            b.setOnClickListener { onPick(v) }
+            seg.addView(b, LinearLayout.LayoutParams(0, dp(48), 1f).apply { if (i > 0) marginStart = dp(8) })
+        }
+        return seg
+    }
+
+    // .row: [row-label / row-desc] ............ [ust-inp][Ustaw]  — ustSet(pole, input)
+    private fun numInput(name: String, desc: String, key: String, min: Int, max: Int, current: Int): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(9), 0, dp(9))
+        }
+        val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        left.addView(label(name, 11.5f, Color.WHITE, true))
+        if (desc.isNotEmpty()) left.addView(label(desc, 9.2f, C.textDim, false, dp(2)))
+        row.addView(left, LinearLayout.LayoutParams(0, -2, 1f))
+        val input = EditText(this).apply {
+            setText(current.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+            setPadding(dp(8), 0, dp(8), 0)
+            background = rounded(C.surface2, 8, C.border)
+            setTextColor(Color.WHITE); textSize = 12.5f; gravity = Gravity.CENTER
+            typeface = Typeface.MONOSPACE; setSelectAllOnFocus(true); maxLines = 1
+        }
+        row.addView(input, LinearLayout.LayoutParams(dp(72), dp(40)).apply { marginStart = dp(8) })
+        val btn = ustBtn("Ustaw")
+        btn.setOnClickListener {
+            val v = input.text.toString().trim().toIntOrNull()
+            if (v == null || v < min || v > max) {
+                Toast.makeText(this, "$name: dozwolony zakres $min–$max", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            sendCommand("ustaw $key $v")
+        }
+        row.addView(btn, LinearLayout.LayoutParams(-2, dp(40)).apply { marginStart = dp(8) })
+        return row
+    }
+
+    // checkbox + etykieta — ustToggle(pole): wysyła od razu po zmianie (0/1)
+    private fun checkbox(name: String, key: String, checked: Boolean): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(2), 0, dp(10))
+        }
+        val cb = CheckBox(this).apply {
+            isChecked = checked
+            buttonTintList = ColorStateList.valueOf(C.cyan)
+            setOnCheckedChangeListener { _, on -> sendCommand("ustaw $key ${if (on) 1 else 0}") }
+        }
+        row.addView(cb, lp(-2, -2))
+        row.addView(label(name, 11.5f, Color.WHITE, false), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(6) })
+        return row
+    }
+
+    // Wiersz "Wymuś WŁ. | Wymuś WYŁ. | Auto" (dpPompaManual()/dpMieszadloManual()) — trzy .ust-btn flex:1
+    private fun manualRow(prefix: String): View {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(14), 0, dp(14)) }
+        listOf("Wymuś WŁ." to "${prefix}_wl", "Wymuś WYŁ." to "${prefix}_wyl", "Auto" to "${prefix}_auto").forEachIndexed { i, (t, cmd) ->
+            val b = ustBtn(t)
+            b.setOnClickListener { sendCommand(cmd) }
+            row.addView(b, LinearLayout.LayoutParams(0, dp(44), 1f).apply { if (i > 0) marginStart = dp(8) })
+        }
+        return row
+    }
+
+    // Suwak ręcznej pozycji serwa (dp-manualKlapaSlider / dp-manualSyberekSlider):
+    // podgląd % na żywo, wysyłka dopiero po puszczeniu suwaka (onchange → manualServoWyslij()).
+    // Komenda Firebase: "klapa <procent>" / "syberek <procent>" (0-100).
+    private fun manualServoSlider(name: String, cmd: String): View {
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(10)) }
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        head.addView(label(name, 9.5f, C.textDim, false), LinearLayout.LayoutParams(0, -2, 1f))
+        val valTxt = label("0%", 9.5f, Color.WHITE, true)
+        head.addView(valTxt)
+        col.addView(head)
+        val seek = SeekBar(this).apply { max = 100; progress = 0 }
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) { valTxt.text = "$p%" }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) { sendCommand("$cmd ${seek.progress}") }
+        })
+        col.addView(seek, lp(-1, -2, 4))
+        return col
+    }
+
+    // ── symulacjaSekcjaHtml() + symPokaz() + symZastosuj() + symWylacz() + symZaladujStan() ──
+    // Sekcja "SYMULACJA — <etykieta>": pojedynczy przycisk-przełącznik "Symulacja" w stylu .seg-btn.
+    // Panel z suwakami jest UKRYTY, dopóki użytkownik go nie kliknie (wciśnięty = otwarty).
+    // Jeśli symulacja tego pola już trwa → panel otwarty od razu + "Aktywna — jeszcze ok. X min".
+    // Suwak Wartości startuje od aktualnego odczytu (symulowanego gdy trwa, realnego gdy nie),
+    // Czas trwania 5–180 min co 5, domyślnie 60. Przyciski: Zastosuj | Wyłącz teraz.
+    private fun symulacjaSekcja(pole: String, etykieta: String, jednostka: String, min: Float, max: Float, krok: Float, statusKey: String): View {
+        val d = lastStatusData
+        val aktywna = d?.optBoolean("symulacja_$pole", false) == true
+        val minuty = d?.optInt("symulacja_${pole}_min", 0) ?: 0
+        fun fmt(p: Int): String = if (krok >= 1f) "${(min + p * krok).toInt()}" else String.format(Locale.US, "%.1f", min + p * krok)
+
+        val sekcja = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        sekcja.addView(sectionHeader("Symulacja — $etykieta"))
+
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE; setPadding(0, dp(10), 0, 0) }
+
+        val toggle = action("Symulacja", C.surface2, C.textDim, 0)
+        fun paint(on: Boolean) {
+            toggle.background = pressableBackground(if (on) C.cyan else C.surface2, if (on) C.cyan else C.border, 10)
+            toggle.setTextColor(if (on) 0xFF00131F.toInt() else C.textDim)
+            panel.visibility = if (on) View.VISIBLE else View.GONE
+        }
+        toggle.setOnClickListener { paint(panel.visibility != View.VISIBLE) }
+        sekcja.addView(toggle, lp(-1, 48, 0))
+
+        // Wartość
+        val seekMax = ((max - min) / krok).toInt().coerceAtLeast(1)
+        val aktualna = numberFrom(d, statusKey, min.toDouble())
+        val start = (((aktualna - min) / krok) + 0.5).toInt().coerceIn(0, seekMax)
+        val wRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        wRow.addView(label("Wartość", 9.5f, C.textDim, false), LinearLayout.LayoutParams(0, -2, 1f))
+        val wVal = label("${fmt(start)} $jednostka", 9.5f, Color.WHITE, true)
+        wRow.addView(wVal)
+        panel.addView(wRow)
+        val wartosc = SeekBar(this).apply { this.max = seekMax; progress = start }
+        wartosc.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) { wVal.text = "${fmt(p)} $jednostka" }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        panel.addView(wartosc, lp(-1, -2, 4))
+
+        // Czas trwania
+        val cRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, 0) }
+        cRow.addView(label("Czas trwania", 9.5f, C.textDim, false), LinearLayout.LayoutParams(0, -2, 1f))
+        val cVal = label("60 min", 9.5f, Color.WHITE, true)
+        cRow.addView(cVal)
+        panel.addView(cRow)
+        val czas = SeekBar(this).apply { this.max = 35; progress = 11 } // 5..180 co 5 → (p+1)*5, 11 → 60 min
+        czas.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) { cVal.text = "${(p + 1) * 5} min" }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        panel.addView(czas, lp(-1, -2, 4))
+
+        // Zastosuj | Wyłącz teraz
+        val btns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(12), 0, 0) }
+        val zastosuj = ustBtn("Zastosuj")
+        zastosuj.setOnClickListener { sendCommand("symuluj $pole ${fmt(wartosc.progress)} ${(czas.progress + 1) * 5}") }
+        val wylacz = ustBtn("Wyłącz teraz")
+        wylacz.setOnClickListener { sendCommand("symuluj_stop $pole") }
+        btns.addView(zastosuj, LinearLayout.LayoutParams(0, dp(44), 1f))
+        btns.addView(wylacz, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(8) })
+        panel.addView(btns)
+        sekcja.addView(panel)
+
+        // info (sym-<pole>-info)
+        if (aktywna) sekcja.addView(label("Aktywna — jeszcze ok. $minuty min", 9.5f, C.warn, false, dp(6)))
+
+        paint(aktywna)
+        return sekcja
+    }
+
+    // dpOtworzBojler()/Pokoj()/Zewn()/Cisnienie()/Wilgotnosc() — "gołe" odczyty bez własnych
+    // ustawień, więc ich panel to WYŁĄCZNIE sekcja Symulacja.
+    private fun showSensorMenu(title: String, etykieta: String, field: String, key: String, unit: String, min: Float, max: Float, step: Float) {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), 0, dp(4), dp(10)) }
+        box.addView(symulacjaSekcja(field, etykieta, unit, min, max, step, key))
+        showSheet(title, box)
+    }
+
+    // dpOtworzPrzegrzanie(typ) — wspólny próg + symulacja TYLKO klikniętego czujnika (ogrz albo panel)
     private fun showOverheatMenu(panel: Boolean) {
         val d = lastStatusData
-        val key = if (panel) "t_panel" else "t_ogrz"
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
-        
-        // Opis
-        box.addView(label("Wspólny próg dla pieca C.O. i panelu słonecznego — histereza: piec -10°C, panel -4°C.", 9f, C.textDim, false, dp(10)))
-        
-        // Próg alarmu przegrzania
-        box.addView(label("Próg alarmu przegrzania", 10f, C.textDim, true, dp(10)))
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), 0, dp(4), dp(10)) }
+        box.addView(label("Wspólny próg dla pieca C.O. i panelu słonecznego — histereza: piec -10°C, panel -4°C.", 9.5f, C.textDim, false, dp(4)))
         box.addView(numInput("Próg alarmu przegrzania", "°C", "progAlarmTemp", 0, 100, d?.optInt("progAlarmTemp", 80) ?: 80))
-        
-        // Symulacja
-        val field = if (panel) "panel" else "ogrz"
-        val isSimActive = d?.optBoolean("symulacja_$field", false) == true
-        val simMin = d?.optInt("symulacja_${field}_min", 0) ?: 0
-        val simValue = d?.optDouble(key, Double.NaN) ?: Double.NaN
-        
-        if (isSimActive) {
-            box.addView(label("SYMULACJA AKTYWNA", 10f, 0xFFFFD166.toInt(), true, dp(10)))
-            box.addView(label("$simMin min", 15f, 0xFFFFE082.toInt(), true, dp(3)))
-            box.addView(label("Symulowana wartość (po zastosowaniu zmieni odczyt)", 9.5f, 0xFFEAB308.toInt(), false, dp(2)))
-        }
-        
-        val seekMax = ((160 - 0) / 0.5f).toInt()
-        val initialVal = if (simValue.isFinite()) simValue else 20.0
-        val seekProgress = ((initialVal - 0) / 0.5f).toInt().coerceIn(0, seekMax)
-        val seek = SeekBar(this).apply { this.max = seekMax; progress = seekProgress }
-        val v = label(formatSlider(seek.progress, 0f, 0.5f, "°C"), 15f, Color.WHITE, true, dp(8))
-        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) { v.text = formatSlider(p, 0f, 0.5f, "°C") }
-            override fun onStartTrackingTouch(s: SeekBar?) {}
-            override fun onStopTrackingTouch(s: SeekBar?) {}
-        })
-        box.addView(v)
-        box.addView(seek)
-        
-        val initialTimeMin = if (isSimActive && simMin > 0) ((simMin / 5).coerceIn(1, 36) - 1) else 11
-        val time = SeekBar(this).apply { this.max = 35; progress = initialTimeMin }
-        val tl = label("Czas: ${(time.progress + 1) * 5} min", 11.5f, C.textDim, false, dp(8))
-        time.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) { tl.text = "Czas: ${(p + 1) * 5} min" }
-            override fun onStartTrackingTouch(s: SeekBar?) {}
-            override fun onStopTrackingTouch(s: SeekBar?) {}
-        })
-        box.addView(tl)
-        box.addView(time)
-        
-        val apply = action("ZASTOSUJ", C.accent, C.bg, 0)
-        apply.setOnClickListener {
-            val simVal = sliderValue(seek, 0f, 0.5f)
-            val simTime = (time.progress + 1) * 5
-            sendCommand("symuluj $field $simVal $simTime")
-        }
-        box.addView(apply, lp(-1, 48, 10))
-        
-        val stop = action("WYŁĄCZ SYMULACJĘ", C.surface2, Color.WHITE, 0)
-        stop.setOnClickListener {
-            sendCommand("symuluj_stop $field")
-            activeSheet?.dismiss()
-        }
-        box.addView(stop, lp(-1, 48, 7))
-        
+        if (panel) box.addView(symulacjaSekcja("panel", "Panel słoneczny", "°C", -30f, 160f, .5f, "t_panel"))
+        else box.addView(symulacjaSekcja("ogrz", "Piec C.O.", "°C", 0f, 160f, .5f, "t_ogrz"))
         showSheet(if (panel) "Próg przegrzania — Panel słoneczny" else "Próg przegrzania — Piec C.O.", box)
     }
 
-    // Helper: input liczbowy z etykietą i przyciskiem Ustaw
-    private fun numInput(label: String, desc: String, key: String, min: Int, max: Int, default: Int): View {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
-        row.addView(label(label, 10f, Color.WHITE, true))
-        row.addView(label(desc, 8f, C.textDim, false))
-        val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val input = EditText(this).apply {
-            setText(default.toString())
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            background = rounded(C.surface2, 8, C.border)
-            setTextColor(Color.WHITE)
-        }
-        inputRow.addView(input, LinearLayout.LayoutParams(0, dp(40), 1f))
-        val btn = action("Ustaw", C.accent, C.bg, 0)
-        btn.setOnClickListener {
-            val v = input.text.toString().toIntOrNull() ?: default
-            sendCommand("ustaw $key $v")
-        }
-        inputRow.addView(btn, LinearLayout.LayoutParams(dp(60), dp(40)).apply { marginStart = dp(8) })
-        row.addView(inputRow, lp(-1, -2, 7))
-        return row
-    }
-    
-    // Helper: checkbox z etykietą
-    private fun checkbox(label: String, key: String, checked: Boolean): View {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
-        val cb = CheckBox(this).apply {
-            isChecked = checked
-            setOnCheckedChangeListener { _, isChecked ->
-                sendCommand(if (isChecked) "ustaw $key 1" else "ustaw $key 0")
-            }
-        }
-        row.addView(cb, lp(dp(24), dp(24)))
-        row.addView(label(label, 11f, Color.WHITE, false), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(8) })
-        return row
-    }
-
+    // dpOtworzPompa()
     private fun showPumpMenu() {
         val d = lastStatusData
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
-        
-        // Strategia pracy pompy
-        box.addView(label("Aktywna strategia pracy pompy", 9.5f, C.textDim, false, dp(8)))
-        val segBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val strategie = listOf(1 to "Trociniak", 2 to "Kopciuch", 3 to "Automatyczny")
-        strategie.forEach { (v, lbl) ->
-            val btn = action(lbl, C.surface2, Color.WHITE, 0)
-            btn.setOnClickListener { sendCommand("ustaw wybor $v") }
-            segBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
-        }
-        box.addView(segBox, lp(-1, -2, 7))
-        
-        // Wymus WŁ/WYŁ/AUTO
-        val manualBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(14), 0, 0) }
-        listOf("Wymuś WŁ." to "pompa_wl", "Wymuś WYŁ." to "pompa_wyl", "Auto" to "pompa_auto").forEach { (t, cmd) ->
-            val btn = action(t, C.surface2, Color.WHITE, 0)
-            btn.setOnClickListener { sendCommand(cmd) }
-            manualBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
-        }
-        box.addView(manualBox, lp(-1, -2, 7))
-        
-        // Tryb czasowy (Trociniak)
-        box.addView(label("Tryb czasowy (Trociniak)", 10f, C.textDim, true, dp(10)))
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), 0, dp(4), dp(10)) }
+        box.addView(label("Aktywna strategia pracy pompy", 9.5f, C.textDim, false, dp(4)))
+        box.addView(segButtons(listOf(1 to "Trociniak", 2 to "Kopciuch", 3 to "Automatyczny"), d?.optInt("wybor", -1)) { sendCommand("ustaw wybor $it") }, lp(-1, -2, 8))
+        box.addView(manualRow("pompa"))
+        box.addView(sectionHeader("Tryb czasowy (Trociniak)"))
         box.addView(numInput("Czas ON", "Minuty pracy w cyklu", "czasOn", 1, 180, d?.optInt("czasOn", 10) ?: 10))
         box.addView(numInput("Czas OFF", "Minuty postoju w cyklu", "czasOff", 1, 180, d?.optInt("czasOff", 30) ?: 30))
-        
-        // Tryb temperaturowy (Kopciuch)
-        box.addView(label("Tryb temperaturowy (Kopciuch)", 10f, C.textDim, true, dp(10)))
+        box.addView(sectionHeader("Tryb temperaturowy (Kopciuch)"))
         box.addView(numInput("Temp ON", "°C pieca — start pompy", "tempOn", 0, 100, d?.optInt("tempOn", 60) ?: 60))
         box.addView(numInput("Temp OFF", "°C pieca — stop pompy", "tempOff", 0, 100, d?.optInt("tempOff", 50) ?: 50))
-        
-        // Antystop
-        box.addView(label("Antystop", 10f, C.textDim, true, dp(10)))
-        box.addView(checkbox("Włączony", "antystopWlaczony", d?.optBoolean("antystopWlaczony", false) ?: false))
+        box.addView(sectionHeader("Antystop"))
+        box.addView(checkbox("Włączony", "antystopWlaczony", d?.optBoolean("antystopWlaczony", false) == true))
         box.addView(numInput("Dni bez ruchu", "Wymuszony puls 45s po X dniach", "antystopDni", 1, 45, d?.optInt("antystopDni", 10) ?: 10))
-        
         showSheet("Pompa", box)
-    };box.addView(label("STAN",9.5f,C.textDim,true));box.addView(label(if(d?.optBoolean("pompa")==true)"WŁĄCZONA" else "WYŁĄCZONA",19f,Color.WHITE,true,dp(3)));listOf("WŁ." to "pompa_wl","WYŁ." to "pompa_wyl","AUTO" to "pompa_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};box.addView(label("Strategia: ${when(d?.optInt("wybor")){1->"Trociniak";2->"Kopciuch";3->"Automatyczny";else->"—"}}",12f,C.textDim,false,dp(10)));showSheet("Pompa",box)}
-
-    // Helper: slider z etykietą
-    private fun slider(label: String, key: String, min: Int, max: Int, default: Int): View {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
-        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        header.addView(label(label, 10f, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
-        val valLabel = label("$default%", 11f, C.cyan, true)
-        valLabel.tag = "slider_val_$key"
-        header.addView(valLabel)
-        row.addView(header, lp(-1, -2, 7))
-        
-        val seek = SeekBar(this).apply {
-            this.max = max - min
-            progress = default - min
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
-                    (row.findViewWithTag("slider_val_$key") as? TextView)?.text = "${p + min}%"
-                }
-                override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) {
-                    val v = s?.progress?.plus(min) ?: min
-                    sendCommand("ustaw $key $v")
-                }
-            })
-        }
-        row.addView(seek, lp(-1, -2, 7))
-        return row
     }
 
+    // dpOtworzSerwo() — segment trybu; panel "Ręczna pozycja" widoczny tylko w trybie Ręcznym
+    // (dpSegTrybSerwa() pokazuje go od razu po kliknięciu "Ręczny", jeszcze przed potwierdzeniem z ESP)
     private fun showServoMenu() {
         val d = lastStatusData
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
-        
-        // Tryb pracy klapy i syberka
-        box.addView(label("Tryb pracy klapy i syberka", 9.5f, C.textDim, false, dp(8)))
-        val segBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val tryby = listOf(1 to "Auto", 2 to "Ręczny", 3 to "Bezpieczna")
-        tryby.forEach { (v, lbl) ->
-            val btn = action(lbl, C.surface2, Color.WHITE, 0)
-            btn.setOnClickListener { sendCommand("ustaw trybSerwa $v") }
-            segBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
+        val tryb = when {
+            d == null -> -1
+            d.has("trybSerwa") -> d.optInt("trybSerwa", -1)
+            else -> d.optInt("tryb_serwa", -1)
         }
-        box.addView(segBox, lp(-1, -2, 7))
-        
-        // Ręczna pozycja (tylko gdy tryb Ręczny)
-        val tryb = d?.optInt("tryb_serwa", 1) ?: 1
-        if (tryb == 2) {
-            box.addView(label("Ręczna pozycja", 10f, C.textDim, true, dp(10)))
-            val klapaVal = d?.optInt("klapa", 0) ?: 0
-            box.addView(slider("Klapa", "klapa", 0, 100, klapaVal))
-            val syberkaVal = d?.optInt("syberka", 0) ?: 0
-            box.addView(slider("Syberek", "syberka", 0, 100, syberkaVal))
-            
-            // Override info
-            val overrideMin = d?.optInt("serwo_override_min", 0) ?: 0
-            if (overrideMin > 0) {
-                box.addView(label("Ręczna pozycja jeszcze ok. $overrideMin min, potem powrót do Auto", 9f, 0xFFEAB308.toInt(), false, dp(10)))
-            }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), 0, dp(4), dp(10)) }
+        box.addView(label("Tryb pracy klapy i syberka", 9.5f, C.textDim, false, dp(4)))
+
+        val manual = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; visibility = if (tryb == 2) View.VISIBLE else View.GONE
+            setPadding(0, dp(10), 0, 0)
         }
-        
-        // Automatyka (tryb Auto)
-        box.addView(label("Automatyka (tryb Auto)", 10f, C.textDim, true, dp(10)))
+        box.addView(segButtons(listOf(1 to "Auto", 2 to "Ręczny", 3 to "Bezpieczna"), tryb) { v ->
+            manual.visibility = if (v == 2) View.VISIBLE else View.GONE
+            sendCommand("ustaw trybSerwa $v")
+        }, lp(-1, -2, 8))
+
+        manual.addView(View(this).apply { setBackgroundColor(0x14FFFFFF) }, lp(-1, 1, 0))
+        manual.addView(label("Ręczna pozycja", 11.5f, Color.WHITE, true).apply { setPadding(0, dp(10), 0, dp(6)) })
+        manual.addView(manualServoSlider("Klapa", "klapa"))
+        manual.addView(manualServoSlider("Syberek", "syberek"))
+        val overrideMin = d?.optInt("serwo_override_min", 0) ?: 0
+        if (overrideMin > 0) manual.addView(label("Ręczna pozycja jeszcze ok. $overrideMin min, potem powrót do Auto", 9.5f, C.warn, false))
+        box.addView(manual)
+
+        box.addView(sectionHeader("Automatyka (tryb Auto)"))
         box.addView(numInput("Temperatura zadana", "°C — punkt odniesienia", "tempZadServo", 0, 100, d?.optInt("tempZadServo", 20) ?: 20))
         box.addView(numInput("Histereza", "°C — pasmo bez reakcji", "histerServo", 0, 50, d?.optInt("histerServo", 2) ?: 2))
         box.addView(numInput("Skok klapy", "% na jedno wywołanie", "skokKlapy", 1, 100, d?.optInt("skokKlapy", 10) ?: 10))
         box.addView(numInput("Skok syberka", "% na jedno wywołanie", "skokSyberka", 1, 100, d?.optInt("skokSyberka", 10) ?: 10))
         box.addView(numInput("Odchylenie przyspieszające", "°C — powyżej: krok × mnożnik", "odchylTemp", 1, 50, d?.optInt("odchylTemp", 5) ?: 5))
         box.addView(numInput("Mnożnik korekty", "Mnożnik kroku przy dużym odchyleniu", "mnoznik", 1, 10, d?.optInt("mnoznik", 2) ?: 2))
-        
         showSheet("Serwo", box)
     }
-    private fun addServoSlider(box:LinearLayout,name:String,initial:Int,command:String){
-      val seek=SeekBar(this).apply{max=100;progress=initial.coerceIn(0,100)}
-      val valTxt=label("$name: ${seek.progress}%",12.5f,Color.WHITE,true,dp(9))
-      var lastSent=-1
-      // Auto-send on release — no extra button needed (Home Assistant / Tado / Netatmo pattern)
-      seek.setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
-        override fun onProgressChanged(s:SeekBar?,p:Int,f:Boolean){valTxt.text="$name: $p%"}
-        override fun onStartTrackingTouch(s:SeekBar?){}
-        override fun onStopTrackingTouch(s:SeekBar?){
-          val v=seek.progress
-          if(v!=lastSent){
-            lastSent=v
-            sendCommand("$command $v")
-            Toast.makeText(this@MainActivity,"$name → $v%",Toast.LENGTH_SHORT).show()
-          }
-        }
-      })
-      box.addView(valTxt);box.addView(seek)
-    }
+
+    // dpOtworzMieszadlo()
     private fun showMixerMenu() {
         val d = lastStatusData
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
-        
-        // Checkbox włączone
-        box.addView(checkbox("Włączone", "mieszadloWlaczony", d?.optBoolean("mieszadloWlaczony", false) ?: false))
-        
-        // Wymus WŁ/WYŁ/AUTO
-        val manualBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(14), 0, 0) }
-        listOf("Wymuś WŁ." to "mieszadlo_wl", "Wymuś WYŁ." to "mieszadlo_wyl", "Auto" to "mieszadlo_auto").forEach { (t, cmd) ->
-            val btn = action(t, C.surface2, Color.WHITE, 0)
-            btn.setOnClickListener { sendCommand(cmd) }
-            manualBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
-        }
-        box.addView(manualBox, lp(-1, -2, 7))
-        
-        // Override info
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), 0, dp(4), dp(10)) }
+        box.addView(checkbox("Włączone", "mieszadloWlaczony", d?.optBoolean("mieszadloWlaczony", false) == true))
+        box.addView(manualRow("mieszadlo"))
         val overrideMin = d?.optInt("mieszadlo_override_min", 0) ?: 0
-        if (overrideMin > 0) {
-            box.addView(label("Ręczny override jeszcze ok. $overrideMin min, potem powrót do automatyki", 9f, 0xFFEAB308.toInt(), false, dp(10)))
-        }
-        
-        // Cykl pracy
-        box.addView(label("Cykl pracy", 10f, C.textDim, true, dp(10)))
+        if (overrideMin > 0) box.addView(label("Ręczny override jeszcze ok. $overrideMin min, potem powrót do automatyki", 9.5f, C.warn, false).apply { setPadding(0, 0, 0, dp(4)) })
+        box.addView(sectionHeader("Cykl pracy"))
         box.addView(numInput("Czas ON", "s — jak długo przekaźnik załączony", "mieszadloCzasOn", 1, 255, d?.optInt("mieszadloCzasOn", 30) ?: 30))
         box.addView(numInput("Czas OFF", "min — przerwa między cyklami", "mieszadloCzasOff", 1, 180, d?.optInt("mieszadloCzasOff", 5) ?: 5))
-        
         showSheet("Mieszadło", box)
-    };listOf("WŁ." to "mieszadlo_wl","WYŁ." to "mieszadlo_wyl","AUTO" to "mieszadlo_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};showSheet("Mieszadło",box)}
+    }
+
+    // dpOtworzDym()
     private fun showSmokeMenu() {
         val d = lastStatusData
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
-        
-        // Próg alarmu
-        box.addView(label("Próg alarmu", 10f, C.textDim, true))
-        box.addView(label("Surowy odczyt ADC czujnika (0-4095)", 8f, C.textDim, false))
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), 0, dp(4), dp(10)) }
         box.addView(numInput("Próg alarmu", "Surowy odczyt ADC czujnika (0-4095)", "progAlarmDym", 0, 4095, d?.optInt("progAlarmDym", 1000) ?: 1000))
-        
-        // Aktywacja od temperatury pieca
-        box.addView(label("Aktywacja od temperatury pieca", 10f, C.textDim, true, dp(10)))
+        box.addView(sectionHeader("Aktywacja od temperatury pieca"))
         box.addView(numInput("Próg temperatury", "°C — poniżej tej temp. pieca czujnik jest wyłączony (histereza 3°C)", "dymProgTemp", 0, 200, d?.optInt("dymProgTemp", 40) ?: 40))
-        
-        // Tryb pracy po aktywacji
-        box.addView(label("Tryb pracy po aktywacji", 10f, C.textDim, true, dp(10)))
-        val segBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf(0 to "Impulsowo", 1 to "Ciągle").forEach { (v, lbl) ->
-            val btn = action(lbl, C.surface2, Color.WHITE, 0)
-            btn.setOnClickListener { sendCommand("ustaw dymTrybPracy $v") }
-            segBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
-        }
-        box.addView(segBox, lp(-1, -2, 7))
-        
-        // Cykl pracy czujnika (tryb Impulsowo)
-        box.addView(label("Cykl pracy czujnika (tryb Impulsowo)", 10f, C.textDim, true, dp(10)))
+        box.addView(label("Tryb pracy po aktywacji", 11.5f, Color.WHITE, true, dp(9)))
+        box.addView(segButtons(listOf(0 to "Impulsowo", 1 to "Ciągle"), d?.optInt("dymTrybPracy", -1)) { sendCommand("ustaw dymTrybPracy $it") }, lp(-1, -2, 8))
+        box.addView(sectionHeader("Cykl pracy czujnika (tryb Impulsowo)"))
         box.addView(numInput("Czas WŁ.", "s — rozgrzewanie + pomiar", "dymCzasOn", 20, 600, d?.optInt("dymCzasOn", 30) ?: 30))
         box.addView(numInput("Czas WYŁ.", "s — między pomiarami", "dymCzasOff", 10, 600, d?.optInt("dymCzasOff", 120) ?: 120))
         box.addView(numInput("Czas stabilizacji", "s — część Czasu WŁ. zanim odczyt zaufany (dotyczy obu trybów)", "dymCzasStabilizacji", 5, 590, d?.optInt("dymCzasStabilizacji", 10) ?: 10))
-        
+        box.addView(symulacjaSekcja("dym", "Dym", "ADC (surowy odczyt)", 0f, 4095f, 1f, "dym"))
         showSheet("Czujnik dymu", box)
     }
+
+    
+
     private fun showClockMenu(){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("CZAS TELEFONU",9.5f,C.textDim,true));box.addView(label(SimpleDateFormat("dd.MM.yyyy HH:mm:ss",Locale.US).format(Date()),20f,Color.WHITE,true,dp(3)));box.addView(label("Sesja zapamiętana bez hasła",12f,C.textDim,false,dp(10)));showSheet("Data i czas",box)}
     private fun showModule(name: String) {
         when (name) {

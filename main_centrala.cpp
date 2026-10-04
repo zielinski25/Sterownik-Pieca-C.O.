@@ -1,3 +1,20 @@
+// [v3.31.26 FB-SYMULACJA] 2026-10-04
+// Co: Payload statusu Firebase (/piec/status) dostaje 25 pol, ktore dotad
+//     istnialy TYLKO w lokalnym /api/status: symulacja_<pole> +
+//     symulacja_<pole>_min dla 10 czujnikow (dym/ogrz/bojler/panel/pokoj/
+//     zewn/ogrz_powrot/ogrz_trociny/cisnienie/wilgotnosc), pompa_override_min,
+//     serwo_override_min, mieszadlo_override_min oraz mieszadlo (stan).
+// Problem: Panel Firebase (Piec.html) i aplikacja Android czytaja te pola
+//     (odznaka "SYMULACJA · X min" na kafelku, "Aktywna — jeszcze ok. X min"
+//     w panelach dp-*, licznik override'u serwa/mieszadla), ale zdalnie
+//     nigdy ich nie dostawaly — sekcje Symulacja wygladaly jak nieaktywne
+//     nawet w trakcie trwajacej symulacji.
+// Przyczyna: [SYMULACJA-PER-CZUJNIK] dolozyl pola wylacznie do budowniczego
+//     JSON WWW (/api/status), nie do budowniczego Firebase.
+// Naprawa: ten sam wzor liczenia minut (minutyDo) i te same nazwy pol w
+//     budowniczym Firebase; FB_JSON_CAP 1536 -> 2048 (PSRAM), fallback
+//     reserve 768 -> 1280. Zadnych zmian w logice sterowania.
+//
 // [v3.31.25 DS18B20 HARDENING] 2026-10-03
 // 3 ulepszenia obslugi czujnikow DS18B20 na magistralach 1-Wire:
 //
@@ -4783,7 +4800,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.31.25";
+static const char* FIRMWARE_VERSION = "v3.31.26";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -26826,13 +26843,16 @@ void sendStatusToFirebase() {
   // to ok. 650B, wiec 1536 zostawia spory zapas na przyszle pola bez
   // ryzyka cichego obciecia (jLen + sl < FB_JSON_CAP-1 w ja() ponizej
   // po prostu przestaje dopisywac po przekroczeniu, co zepsuloby JSON).
-  const size_t FB_JSON_CAP = 1536;
+  // [v3.31.26 FB-SYMULACJA] 1536 -> 2048: dolozone 25 pol (symulacja_*/_min
+  // x10 czujnikow + 3x *_override_min + mieszadlo + dym_... juz byly) to
+  // ~+600B w najgorszym razie; 2048 zostawia ten sam zapas co dotad.
+  const size_t FB_JSON_CAP = 2048;
   char* jb = (char*)psramAllocSafe(FB_JSON_CAP);
   size_t jLen = 0;
   bool jPsram = (jb != nullptr);
   String jsonFb;
   if (jPsram) { jb[0] = '\0'; }
-  else        { jsonFb.reserve(768); }
+  else        { jsonFb.reserve(1280); }
 
   auto ja = [&](const String& s) {
     if (jPsram) {
@@ -26925,6 +26945,36 @@ void sendStatusToFirebase() {
   // dymu, "tryb" nizej to SYMULACJA/NORMALNY calej centrali.
   ja("\"dymProgTemp\":" + String(dymProgTemperatury) + ",");
   ja("\"dymTrybPracy\":" + String(dymTrybPracy) + ",");
+  // [v3.31.26 FB-SYMULACJA] Stan symulacji per czujnik + liczniki override'ow
+  // — DOKLADNIE te same pola i ten sam wzor liczenia minut, co w /api/status
+  // (patrz [SYMULACJA-PER-CZUJNIK] w budowniczym JSON WWW). Dotad istnialy
+  // tylko lokalnie, przez co panel Firebase (Piec.html) i aplikacja Android
+  // nie mialy jak pokazac "Aktywna — jeszcze ok. X min" ani odznaki
+  // SYMULACJA na kafelku, mimo ze ich kod juz te pola czytal.
+  {
+    unsigned long terazFb = millis();
+    auto minutyDoFb = [terazFb](unsigned long docelowy) -> unsigned long {
+      return (docelowy != 0 && docelowy > terazFb) ? (docelowy - terazFb) / 60000UL + 1 : 0;
+    };
+    auto symFb = [&](const char* pole, bool aktywna, unsigned long doCzasu) {
+      ja(String("\"symulacja_") + pole + "\":" + (aktywna ? "true" : "false") + ",");
+      ja(String("\"symulacja_") + pole + "_min\":" + String(minutyDoFb(doCzasu)) + ",");
+    };
+    symFb("dym",          symulacjaDymAktywna,         symulacjaDymDo);
+    symFb("ogrz",         symulacjaOgrzAktywna,        symulacjaOgrzDo);
+    symFb("bojler",       symulacjaBojleraAktywna,     symulacjaBojleraDo);
+    symFb("panel",        symulacjaPaneluAktywna,      symulacjaPaneluDo);
+    symFb("pokoj",        symulacjaPokojuAktywna,      symulacjaPokojuDo);
+    symFb("zewn",         symulacjaZewnAktywna,        symulacjaZewnDo);
+    symFb("ogrz_powrot",  symulacjaPowrotuAktywna,     symulacjaPowrotuDo);
+    symFb("ogrz_trociny", symulacjaTrocinAktywna,      symulacjaTrocinDo);
+    symFb("cisnienie",    symulacjaCisnieniaAktywna,   symulacjaCisnieniaDo);
+    symFb("wilgotnosc",   symulacjaWilgotnosciAktywna, symulacjaWilgotnosciDo);
+    ja("\"pompa_override_min\":" + String(minutyDoFb(pompaManualOverrideUntil)) + ",");
+    ja("\"serwo_override_min\":" + String(minutyDoFb(serwoManualOverrideUntil)) + ",");
+    ja("\"mieszadlo_override_min\":" + String(minutyDoFb(mieszadloManualOverrideUntil)) + ",");
+    ja("\"mieszadlo\":" + String(mieszadloAktywnyStan ? "true" : "false") + ",");
+  }
   // "tryb pracy" (plan, sekcja 2/ETAP 2A) — w tym projekcie jedyny odpowiednik
   // to flaga trybu ławkowego/symulacji (TRYB_BEZ_SPRZETU); prawdziwy
   // AUTO/MANUAL nie istnieje jeszcze jako osobna zmienna w main.cpp.
