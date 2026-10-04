@@ -54,6 +54,7 @@ class MainActivity : Activity() {
     @Volatile private var sessionNeedsLogin = false
     @Volatile private var pollingStarted = false
     @Volatile private var lastStatusAtMs = 0L
+    private var lastFilteredUpdatedAt = -1L
     private var maintenanceStarted = false
     @Volatile private var lastStatusOnline = false
 
@@ -824,7 +825,7 @@ class MainActivity : Activity() {
             setPadding(dp(14), dp(12), dp(14), dp(12))
             background = rounded(C.surface, 18, C.border)
         }
-        chartsCard.addView(label("WYKRESY 24H", 10f, C.cyan, true))
+        chartsCard.addView(label(weatherChartsTitle(), 10f, C.cyan, true).apply { tag = "weather_charts_title" })
 
         val tempChart = WeatherChartView(this)
         tempChart.tag = "weather_chart_temp"
@@ -934,9 +935,17 @@ class MainActivity : Activity() {
     private fun refreshWeatherRangeButtons() {
         weatherRangeButtons.forEach { (btn, days) ->
             val isActive = days == weatherDays
-            btn.setTextColor(if (isActive) C.cyan else C.surface2)
-            btn.setBackgroundColor(if (isActive) C.bg else Color.WHITE)
+            // Same look as at creation (action()): active = cyan pill, inactive = dark pill with border.
+            btn.background = pressableBackground(if (isActive) C.cyan else C.surface2, if (isActive) C.cyan else C.border, 14)
+            btn.setTextColor(if (isActive) C.bg else Color.WHITE)
         }
+        (weatherView.findViewWithTag("weather_charts_title") as? TextView)?.text = weatherChartsTitle()
+    }
+
+    private fun weatherChartsTitle(): String = when (weatherDays) {
+        1 -> "WYKRESY · 24H"
+        2 -> "WYKRESY · 48H"
+        else -> "WYKRESY · $weatherDays DNI"
     }
 
     private fun refreshWeatherTab(force: Boolean = false) {
@@ -990,9 +999,22 @@ class MainActivity : Activity() {
         val maxHours = weatherDays * 24
         val relevantHourly = data.hourly.filter { it.time >= nowMsChart - 3600000L }.take(maxHours)
 
-        val xLabels = relevantHourly.map {
-            if (weatherDays > 2) dailyFmtChart.format(java.util.Date(it.time))
-            else hourlyFmtChart.format(java.util.Date(it.time))
+        val xLabels = if (weatherDays <= 2) {
+            relevantHourly.map { hourlyFmtChart.format(java.util.Date(it.time)) }
+        } else {
+            // One label per day boundary (00:00); every 2nd day when the range is long.
+            val cal = java.util.Calendar.getInstance()
+            val everyNth = if (weatherDays > 8) 2 else 1
+            var dayNo = 0
+            relevantHourly.mapIndexed { i, h ->
+                cal.timeInMillis = h.time
+                val midnight = cal.get(java.util.Calendar.HOUR_OF_DAY) == 0
+                if (i == 0 || midnight) {
+                    val lbl = if (dayNo % everyNth == 0) dailyFmtChart.format(java.util.Date(h.time)) else ""
+                    dayNo++
+                    lbl
+                } else ""
+            }
         }
 
         val tempChart = weatherView.findViewWithTag("weather_chart_temp") as? WeatherChartView
@@ -1036,7 +1058,7 @@ class MainActivity : Activity() {
         hourlyRow?.removeAllViews()
         val hourlyFmt = java.text.SimpleDateFormat("HH:mm", Locale.US)
         val nowMs = System.currentTimeMillis()
-        val hourlyItems = data.hourly.filter { it.time >= nowMs - 3600000L }.take(24)
+        val hourlyItems = data.hourly.filter { it.time >= nowMs - 3600000L }.take(48)
         for (h in hourlyItems) {
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1387,6 +1409,20 @@ class MainActivity : Activity() {
 
         // Apply advanced filters to remove DS18B20 spikes/anomalies
         val timestamp = d.optLong("ts", System.currentTimeMillis())
+        // The dashboard polls every 5 s but the ESP pushes a new sample every ~15 s. Feed each
+        // ESP sample to the filters exactly once (keyed by updatedAt) — otherwise duplicates
+        // flood the median buffer and the rate check sees a bogus Δt.
+        val updatedAt = d.optLong("updatedAt", -1L)
+        val newSample = updatedAt < 0 || updatedAt != lastFilteredUpdatedAt
+        if (newSample) lastFilteredUpdatedAt = updatedAt
+        // [SYMULACJA] Same rule as the firmware's odczytajTemperature(): an active per-sensor
+        // simulation bypasses the plausibility filter — the injected value IS the reading.
+        // The filter is re-seeded so the return to the real value is not treated as a spike.
+        fun fv(f: AdvancedSensorFilter, raw: Float, simKey: String): Float = when {
+            d.optBoolean("symulacja_$simKey", false) && raw.isFinite() -> f.acceptUnfiltered(raw, timestamp)
+            newSample -> f.filter(raw, timestamp)
+            else -> f.getLastValid()
+        }
         val rawOutside = d.optDouble("t_zewn", Double.NaN).toFloat()
         val rawHeat = d.optDouble("t_ogrz", Double.NaN).toFloat()
         val rawBoiler = d.optDouble("t_bojler", Double.NaN).toFloat()
@@ -1396,13 +1432,13 @@ class MainActivity : Activity() {
         val rawHumidity = d.optDouble("wilgotnosc", Double.NaN).toFloat()
         
         // Layer 1: Spike filtering (AdvancedSensorFilter - median + rate limit)
-        var filteredOutside = filterOutside.filter(rawOutside, timestamp)
-        var filteredHeat = filterHeating.filter(rawHeat, timestamp)
-        var filteredBoiler = filterBoiler.filter(rawBoiler, timestamp)
-        var filteredPanel = filterPanel.filter(rawPanel, timestamp)
-        var filteredRoom = filterRoom.filter(rawRoom, timestamp)
-        val pressure = filterPressure.filter(rawPressure, timestamp).toDouble()
-        val humidity = filterHumidity.filter(rawHumidity, timestamp).toDouble()
+        var filteredOutside = fv(filterOutside, rawOutside, "zewn")
+        var filteredHeat = fv(filterHeating, rawHeat, "ogrz")
+        var filteredBoiler = fv(filterBoiler, rawBoiler, "bojler")
+        var filteredPanel = fv(filterPanel, rawPanel, "panel")
+        var filteredRoom = fv(filterRoom, rawRoom, "pokoj")
+        val pressure = fv(filterPressure, rawPressure, "cisnienie").toDouble()
+        val humidity = fv(filterHumidity, rawHumidity, "wilgotnosc").toDouble()
         
         // Log spike rejections (Layer 1 filter already handled DS18B20 errors: -16°C, 85°C, -127°C)
         if (filteredOutside != rawOutside && rawOutside.isFinite()) Log.d("SpikeFilter", "t_zewn: $rawOutside → $filteredOutside (${filterOutside.getLastRejectionReason()})")

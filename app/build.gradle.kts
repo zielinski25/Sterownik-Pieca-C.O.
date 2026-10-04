@@ -11,8 +11,8 @@ android {
         applicationId = "pl.sterownikco.dev"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3006
-        versionName = "0.30.6-ESP-PANELS"
+        versionCode = 3007
+        versionName = "0.30.7-SIM-FILTER-FIX"
     }
 
     compileOptions {

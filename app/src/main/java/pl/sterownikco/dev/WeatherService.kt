@@ -162,7 +162,8 @@ object WeatherService {
                     )
                 } else null
 
-                // Parse hourly forecast (next 48 hours)
+                // Parse hourly forecast — all hours of the requested forecast_days
+                // (the chart trims to the selected range; the hourly strip takes the first 48).
                 val hourlyJson = json.optJSONObject("hourly")
                 val hourly = mutableListOf<HourlyForecast>()
                 if (hourlyJson != null) {
@@ -175,7 +176,7 @@ object WeatherService {
                     val winds = hourlyJson.optJSONArray("wind_speed_10m")
 
                     if (times != null && temps != null) {
-                        val maxItems = minOf(times.length(), 48)
+                        val maxItems = times.length()
                         for (i in 0 until maxItems) {
                             val timeStr = times.optString(i, "")
                             val time = parseTime(timeStr)

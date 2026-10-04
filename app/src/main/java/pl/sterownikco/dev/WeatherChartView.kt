@@ -123,22 +123,33 @@ class WeatherChartView @JvmOverloads constructor(
         linePaint.strokeWidth = dp(1.8f)
         c.drawPath(linePath, linePaint)
 
-        // Draw dots
-        dotPaint.color = lineColor
-        for (i in points.indices) {
-            val x = left + (right - left) * i / maxOf(1, points.size - 1)
-            val y = bottom - (bottom - top) * (points[i].y - minVal) / (maxVal - minVal)
-            c.drawCircle(x, y, dp(2.2f), dotPaint)
+        // Draw dots — only when the series is sparse enough for them to be distinguishable
+        if (points.size <= 72) {
+            dotPaint.color = lineColor
+            for (i in points.indices) {
+                val x = left + (right - left) * i / maxOf(1, points.size - 1)
+                val y = bottom - (bottom - top) * (points[i].y - minVal) / (maxVal - minVal)
+                c.drawCircle(x, y, dp(2.2f), dotPaint)
+            }
         }
 
-        // X-axis labels
+        // X-axis labels. Two modes:
+        //  • dense list (every sample labelled, e.g. "13:00") → draw every Nth so ~6 fit;
+        //  • sparse list (blank entries, label only at day boundaries) → draw exactly the non-blank ones.
         if (xLabels.isNotEmpty()) {
             labelPaint.textSize = dp(7.0f)
             labelPaint.textAlign = Paint.Align.CENTER
-            val step = maxOf(1, points.size / 6)
+            val sparse = xLabels.any { it.isEmpty() }
+            val step = if (sparse) 1 else maxOf(1, points.size / 6)
             for (i in xLabels.indices step step) {
-                if (i < points.size) {
+                if (i < points.size && xLabels[i].isNotEmpty()) {
                     val x = left + (right - left) * i / maxOf(1, points.size - 1)
+                    val align = when {
+                        i == 0 -> Paint.Align.LEFT
+                        i >= points.size - 1 -> Paint.Align.RIGHT
+                        else -> Paint.Align.CENTER
+                    }
+                    labelPaint.textAlign = align
                     c.drawText(xLabels[i], x, h - dp(6f), labelPaint)
                 }
             }
