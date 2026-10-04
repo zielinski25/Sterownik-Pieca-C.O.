@@ -932,6 +932,14 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun refreshWeatherRangeButtons() {
+        weatherRangeButtons.forEach { (btn, days) ->
+            val isActive = days == weatherDays
+            btn.setTextColor(if (isActive) C.cyan else C.surface2)
+            btn.setBackgroundColor(if (isActive) C.bg else Color.WHITE)
+        }
+    }
+
     private fun refreshWeatherTab(force: Boolean = false) {
         val now = System.currentTimeMillis()
         if (!force && weatherData != null && now - weatherLastFetchMs < 5 * 60 * 1000L) return
