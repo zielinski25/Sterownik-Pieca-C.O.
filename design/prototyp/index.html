@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>STEROWNIK CO — prototyp aplikacji (design · grafika · ustawienia)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage">
+<div id="phone">
+
+  <!-- ───── pasek górny (buildMainShell) ───── -->
+  <header class="topbar">
+    <div class="brand"><h1>STEROWNIK CO</h1><div class="sub">CENTRALA • piec_co</div></div>
+    <span class="chip" id="chip">● LIVE</span>
+    <button class="iconbtn" title="Menu sesji" data-ico="more"></button>
+  </header>
+
+  <div id="content">
+
+    <!-- ═══════════ PULPIT (buildDashboard) ═══════════ -->
+    <section class="page on" id="pg-pulpit">
+      <div class="sysstrip">
+        <div class="dot" data-ico="shield"></div>
+        <div class="t"><b>CENTRALA CO</b><span>stan instalacji w czasie rzeczywistym</span></div>
+        <span class="pill live" id="heroState">CZUWANIE</span>
+      </div>
+
+      <div class="alarmbanner" id="alarmBanner"><span data-ico="shield" style="width:22px;height:22px;display:inline-flex"></span><span class="grow" id="alarmText">ALARM — sprawdź instalację</span><span data-ico="next" style="width:20px;height:20px;display:inline-flex"></span></div>
+
+      <div class="hero">
+        <div class="l">
+          <div class="k">PIEC C.O.</div>
+          <div class="temp" id="heroTemp">--.- °C</div>
+          <div class="d">temperatura główna instalacji</div>
+          <div class="minis">
+            <div class="mini"><b>TRYB</b><span id="heroMode">—</span></div>
+            <div class="mini"><b>POMPA</b><span id="heroPump">—</span></div>
+            <div class="mini"><b>BEZPIECZEŃSTWO</b><span id="heroAlarm">—</span></div>
+          </div>
+        </div>
+        <div class="heroboiler" id="heroBoiler"></div>
+      </div>
+
+      <div class="quick">
+        <div class="qcard" id="qPompa"><div class="ic" style="color:var(--cyan)" data-ico="pump"></div><div class="t"><b>POMPA</b><span>—</span></div></div>
+        <div class="qcard" id="qSerwo"><div class="ic" style="color:var(--cyan)" data-ico="servo"></div><div class="t"><b>SERWO</b><span>—</span></div></div>
+        <div class="qcard" id="qMiesz"><div class="ic" style="color:var(--cyan)" data-ico="mixer"></div><div class="t"><b>MIESZADŁO</b><span>—</span></div></div>
+      </div>
+
+      <div class="sect"><i></i><b>POMIARY</b><u></u></div>
+      <div class="grid" id="g1"></div>
+
+      <div class="sect"><i></i><b>STEROWANIE · BEZPIECZEŃSTWO</b><u></u></div>
+      <div class="grid" id="g2"></div>
+
+      <div class="sect"><i></i><b>ANALIZA I SYSTEM</b><u></u></div>
+      <div class="analysis">
+        <div class="acard" id="cardCharts" style="--ac:0,212,245"><div class="ic" id="chartsIco"></div><div class="t"><b>WYKRESY</b><span>historia • 6 H / 24 H / 7 DNI / 30 DNI</span></div><span class="nx" data-ico="next" style="width:24px;height:24px;display:inline-flex"></span></div>
+        <div class="acard" id="cardClock" style="--ac:183,196,212"><div class="ic" id="clockIco"></div><div class="t"><b id="clockVal">--:--</b><span id="clockDesc">—</span></div><span class="nx" data-ico="next" style="width:24px;height:24px;display:inline-flex"></span></div>
+      </div>
+
+      <div class="trend">
+        <div class="h"><div class="t"><b>TREND OSTATNICH POMIARÓW</b><span>szybki podgląd • źródło: telemetria</span></div><em>LIVE</em></div>
+        <canvas id="trend"></canvas>
+      </div>
+    </section>
+
+    <!-- ═══════════ WYKRESY (makieta) ═══════════ -->
+    <section class="page" id="pg-wykresy">
+      <h2>WYKRESY</h2><div class="lead">historia telemetryczna • 6 H / 24 H / 7 DNI / 30 DNI</div>
+      <div class="seg"><button class="on">6 H</button><button>24 H</button><button>7 DNI</button><button>30 DNI</button></div>
+      <div class="trend" style="margin-top:6px"><div class="h"><div class="t"><b>TEMPERATURY</b><span>piec • bojler • panel • zewn.</span></div><em>LIVE</em></div><canvas style="height:180px"></canvas></div>
+      <div class="trend"><div class="h"><div class="t"><b>CIŚNIENIE · WILGOTNOŚĆ</b><span>osobne osie</span></div><em>LIVE</em></div><canvas style="height:120px"></canvas></div>
+      <p class="note" style="margin-top:12px">Ta zakładka pozostaje bez zmian względem obecnej aplikacji — makieta tylko dla kompletności nawigacji.</p>
+    </section>
+
+    <!-- ═══════════ POGODA (makieta) ═══════════ -->
+    <section class="page" id="pg-pogoda">
+      <h2>POGODA</h2><div class="lead">52.2297° N · 21.0122° E · Open-Meteo</div>
+      <div class="hero" style="margin-top:8px"><div class="l"><div class="temp" style="font-size:38px">12°C</div><div class="d" style="font-size:13px;color:var(--text-dim)">Zachmurzenie umiarkowane</div><div class="d">odczuwalna 10°C • wiatr 14 km/h</div></div><div class="heroboiler" style="background:rgba(0,212,245,.1);border:1px solid rgba(54,187,213,.13)"><svg viewBox="0 0 24 24" style="width:80px;height:80px;overflow:visible"><g class="ico-slonce"><circle cx="9.5" cy="9.5" r="3.3" fill="#ffd94d"/><path d="M9.5 3v1.8M9.5 15.2v1M3 9.5h1.8M15.2 9.5h1M5 5l1.3 1.3M12.7 12.7l1 1M14 5l-1.3 1.3M6.3 12.7l-1 1" stroke="#ffd94d" stroke-width="1.3" stroke-linecap="round"/></g><g class="ico-chmura"><ellipse cx="14.5" cy="16.5" rx="6" ry="3" fill="#cbd5e1"/><circle cx="11.3" cy="15" r="2.4" fill="#e2e8f0"/><circle cx="15.5" cy="13.8" r="2.9" fill="#e2e8f0"/></g></svg></div></div>
+      <p class="note" style="margin-top:12px">Zakładka pogody bez zmian (poprawki zakresów 3D/7D/14D już wdrożone).</p>
+    </section>
+
+    <!-- ═══════════ USTAWIENIA (buildSettings) ═══════════ -->
+    <section class="page" id="pg-ustawienia">
+      <h2>USTAWIENIA</h2><div class="lead">Sterowanie natywne · komendy /piec/cmd · potwierdzenie ACK</div>
+      <div class="setcard" data-menu="pompa"><div class="ic" style="color:var(--cyan)" data-ico="pump"></div><div class="t"><b>Pompa</b><span>Strategia · Wymuś WŁ./WYŁ./Auto · czasy · antystop</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+      <div class="setcard" data-menu="serwo"><div class="ic" style="color:var(--cyan)" data-ico="servo"></div><div class="t"><b>Serwo</b><span>Auto / Ręczny / Bezpieczna · klapa · syberek · automatyka</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+      <div class="setcard" data-menu="mieszadlo"><div class="ic" style="color:var(--cyan)" data-ico="mixer"></div><div class="t"><b>Mieszadło</b><span>Włączone · Wymuś · cykl pracy</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+      <div class="setcard" data-menu="dym"><div class="ic" style="color:var(--err)" data-ico="shield"></div><div class="t"><b>Czujnik dymu</b><span>Próg alarmu · aktywacja od temperatury · cykl · symulacja</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+      <div class="setcard" data-menu="ogrz"><div class="ic" style="color:var(--accent)" data-ico="thermo"></div><div class="t"><b>Przegrzanie</b><span>Wspólny próg pieca i panelu · symulacja</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+      <div class="setcard" data-menu="zewn"><div class="ic" style="color:var(--yellow)" data-ico="outside"></div><div class="t"><b>Czujniki</b><span>Symulacja odczytów (zewn., bojler, pokój, ciśnienie, wilgotność)</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+    </section>
+
+    <!-- ═══════════ WIĘCEJ (buildMore) ═══════════ -->
+    <section class="page" id="pg-wiecej">
+      <h2>WIĘCEJ</h2><div class="lead">Narzędzia serwisowe</div>
+      <div class="setcard"><div class="ic" style="color:var(--text-dim)" data-ico="logs"></div><div class="t"><b>Logi</b><span>Zdarzenia sterownika</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+      <div class="setcard"><div class="ic" style="color:var(--text-dim)" data-ico="terminal"></div><div class="t"><b>Terminal</b><span>Polecenia tekstowe do /piec/cmd</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+      <div class="setcard"><div class="ic" style="color:var(--text-dim)" data-ico="upload"></div><div class="t"><b>OTA</b><span>Aktualizacja firmware</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+      <div class="setcard"><div class="ic" style="color:var(--text-dim)" data-ico="session"></div><div class="t"><b>Sesja</b><span>Konto operatora · wylogowanie</span></div><span class="nx" data-ico="next" style="width:22px;height:22px;display:inline-flex"></span></div>
+    </section>
+
+  </div>
+
+  <!-- ───── nawigacja dolna ───── -->
+  <nav class="nav">
+    <button class="on"><span data-ico="dashboard"></span>Dashboard</button>
+    <button><span data-ico="chart"></span>Wykresy</button>
+    <button><span data-ico="weather"></span>Pogoda</button>
+    <button><span data-ico="settings"></span>Ustawienia</button>
+    <button><span data-ico="more"></span>Więcej</button>
+  </nav>
+
+    <!-- arkusz dolny (showSheet) -->
+    <div id="scrim"></div>
+    <div id="sheet">
+      <div class="handle"></div>
+      <div class="hd"><div class="ic"></div><h3>Panel</h3><button class="x" id="sheetClose" data-ico="close"></button></div>
+      <div class="body"></div>
+    </div>
+
+    <!-- toast poleceń -->
+    <div id="toast"><div class="c"></div><div class="s"></div></div>
+
+    <!-- dialog potwierdzenia -->
+    <div id="dlg"><div class="box"><h4></h4><p></p><div class="acts"><button class="cancel">Anuluj</button><button class="ok primary">Wyślij</button></div></div></div>
+</div>
+</div>
+
+<button id="demoBtn">⚙ DEMO</button>
+<aside id="demo"></aside>
+
+<script src="icons.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
