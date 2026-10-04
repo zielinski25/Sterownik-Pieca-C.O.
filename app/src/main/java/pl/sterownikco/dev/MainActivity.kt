@@ -1505,12 +1505,12 @@ class MainActivity : Activity() {
         val rtcOk = d.optBoolean("rtc_ok", false)
         val clockDesc = if (rtcOk) "${d.optInt("dzien", 0)}.${d.optInt("miesiac", 0)}.${d.optInt("rok", 0)}" else "RTC niegotowy"
         
-        setTile(TileId.OUTSIDE, temp(outside), symOutside ?: if (!healthOut.isOnline) "OFFLINE" else if (healthOut.isStagnant) "⚠ STABILNY" else "", (((outside + 20) / 60).toFloat()).coerceIn(0f,1f), d=d)
+        setTile(TileId.OUTSIDE, temp(outside), symOutside ?: if (!healthOut.isOnline) "OFFLINE" else if (healthOut.isStagnant) "⚠ STABILNY" else "", (((outside + 20) / 60).toFloat()).coerceIn(0f,1f), d=d, aux=outside.toFloat())
         setTile(TileId.HEATING, temp(heat), symHeat ?: if (heatAlarm) "ALARM" else if (!healthHeat.isOnline) "OFFLINE" else if (healthHeat.isStagnant) "⚠ STABILNY" else heatDesc, (heat/160).toFloat().coerceIn(0f,1f), alarm=heatAlarm, d=d)
-        setTile(TileId.BOILER, temp(boiler), symBoiler ?: if (!healthBoil.isOnline) "OFFLINE" else if (healthBoil.isStagnant) "⚠ STABILNY" else "", ((boiler-15)/55).toFloat().coerceIn(0f,1f), d=d)
+        setTile(TileId.BOILER, temp(boiler), symBoiler ?: if (!healthBoil.isOnline) "OFFLINE" else if (healthBoil.isStagnant) "⚠ STABILNY" else "", ((boiler-15)/55).toFloat().coerceIn(0f,1f), d=d, aux=boiler.toFloat())
         setTile(TileId.PANEL, temp(panel), symPanel ?: if (panelAlarm) "ALARM" else if (!healthPan.isOnline) "OFFLINE" else if (healthPan.isStagnant) "⚠ STABILNY" else "", .5f, alarm=panelAlarm, d=d)
         setTile(TileId.ROOM, temp(room), symRoom ?: if (!healthRm.isOnline) "OFFLINE" else if (healthRm.isStagnant) "⚠ STABILNY" else "", .5f, d=d)
-        setTile(TileId.PRESSURE, if (pressure.isFinite()) String.format(Locale.US,"%.0f hPa",pressure) else "—", symPressure ?: if (!healthPres.isOnline) "OFFLINE" else "", ((pressure-970)/70).toFloat().coerceIn(0f,1f), d=d)
+        setTile(TileId.PRESSURE, if (pressure.isFinite()) String.format(Locale.US,"%.0f hPa",pressure) else "—", symPressure ?: if (!healthPres.isOnline) "OFFLINE" else "", ((pressure-970)/70).toFloat().coerceIn(0f,1f), d=d, aux=pressure.toFloat())
         setTile(TileId.HUMIDITY, if (!healthHum.isOnline || humidity == 0.0) "—" else if (humidity.isFinite()) String.format(Locale.US,"%.0f %%",humidity) else "—", symHumidity ?: if (!healthHum.isOnline) "CZUJNIK BRAK" else "", (humidity/100).toFloat().coerceIn(0f,1f), d=d)
         // Fix: Firmware sends degrees (0-180 for klapa, 0-90 for syberek), convert to percent
         val flapDeg = d.optInt("klapa",0)
@@ -1518,10 +1518,19 @@ class MainActivity : Activity() {
         val damperDeg = d.optInt("syberka",0)
         val damper = (damperDeg * 100 / 90).coerceIn(0,100)
         setTile(TileId.PUMP, if (pump) "WŁĄCZONA" else "WYŁĄCZONA", pumpDesc, if (pump) 1f else 0f, active=pump, d=d)
-        setTile(TileId.SERVO, "K$flap • S$damper", mode, flap/100f, active=mode=="RĘCZNY", d=d)
+        setTile(TileId.SERVO, "K$flap • S$damper", mode, flap/100f, active=mode=="RĘCZNY", d=d, aux=d.optInt("tryb_serwa", 0).toFloat())
         val mix = d.optBoolean("mieszadlo", false)
         setTile(TileId.MIXER, if (mix) "WŁĄCZONE" else "WYŁĄCZONE", mixerDesc, if (mix) 1f else 0f, active=mix, d=d)
-        setTile(TileId.SMOKE, when { smokeAlarm -> "ALARM"; smokeOn -> "AKTYWNY"; else -> "OK" }, symSmoke ?: if (smokeAlarm) "ALARM" else smokeDesc, .3f, active=smokeOn, alarm=smokeAlarm, d=d)
+        // Wartość 1:1 z ESP: surowy odczyt ADC gdy czujnik zasilany, "OFF" gdy piec zimny (czujnik wyłączony)
+        val smokeAdc = d.optDouble("dym", Double.NaN)
+        val smokeValue = when {
+            !smokeOn && !smokeAlarm -> "OFF"
+            smokeAlarm && !smokeAdc.isFinite() -> "ALARM"
+            smokeAdc.isFinite() -> String.format(Locale.US, "%.0f", smokeAdc)
+            else -> "AKTYWNY"
+        }
+        val smokeFraction = if (smokeAdc.isFinite()) (smokeAdc / 4095.0).toFloat().coerceIn(0f, 1f) else .3f
+        setTile(TileId.SMOKE, smokeValue, symSmoke ?: if (smokeAlarm) "ALARM" else smokeDesc, smokeFraction, active=smokeOn, alarm=smokeAlarm, d=d, disabled = !smokeOn && !smokeAlarm)
         setTile(TileId.CHARTS, "OTWÓRZ", "historia • 6 H / 24 H / 7 DNI / 30 DNI", .8f, d=d)
         setTile(TileId.CLOCK, SimpleDateFormat("HH:mm", Locale.US).format(Date()), clockDesc, .2f, d=d)
 
@@ -1556,11 +1565,15 @@ class MainActivity : Activity() {
         heroBoiler.bind(heat, heat.isFinite() && heat > 45, smokeAlarm || heatAlarm || panelAlarm)
     }
 
-    private fun setTile(id: TileId, value: String, extra: String, fraction: Float, active: Boolean = false, alarm: Boolean = false, d: JSONObject? = null) {
+    /**
+     * [aux] — surowy odczyt/tryb dla ilustracji (TileArt): bojler °C (para > 45 °C), zewn °C (mróz),
+     * serwo tryb 1/2/3 (trzepot klapy tylko w AUTO). [disabled] — czujnik fizycznie wyłączony (ikona szara).
+     */
+    private fun setTile(id: TileId, value: String, extra: String, fraction: Float, active: Boolean = false, alarm: Boolean = false, d: JSONObject? = null, aux: Float = Float.NaN, disabled: Boolean = false) {
         val (sim, simMin) = if (d != null) isSimulated(id, d) else Pair(false, 0)
         val displayValue = value
         val displayExtra = if (sim) "SYM ${simMin}min" else extra
-        tileViews[id]?.bind(kindFor(id), tileViews[id]?.contentDescription?.toString() ?: "", displayValue, displayExtra, accentFor(id), active, alarm, fraction, sim, simMin)
+        tileViews[id]?.bind(kindFor(id), tileViews[id]?.contentDescription?.toString() ?: "", displayValue, displayExtra, accentFor(id), active, alarm, fraction, sim, simMin, aux, disabled)
     }
 
     private fun simField(id: TileId): String? = when (id) {

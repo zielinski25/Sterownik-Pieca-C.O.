@@ -8,7 +8,10 @@ import kotlin.math.*
 
 /**
  * STEROWNIK CO — Premium telemetry tile.
- * Redesigned v1.0: cleaner layout, better proportions, subtle animations.
+ * v1.3: ilustracje jak na lokalnym panelu WWW ESP (TileArt) — wielokolorowe, animowane
+ * warstwa po warstwie i sterowane realnym stanem (poziom bojlera, igła manometru, obroty pompy…).
+ * Kontener ilustracji ma stany jak `.kaf-ikona` na ESP: zwykły / warn (symulacja) / err (alarm,
+ * pulsowanie + "ping") / ok (urządzenie pracuje, zielona poświata) / dis (czujnik wyłączony, szarość).
  */
 class DashboardTileView @JvmOverloads constructor(
     context: Context,
@@ -24,7 +27,9 @@ class DashboardTileView @JvmOverloads constructor(
     private var accent = 0xFFFF9F43.toInt()
     private var active = false
     private var alarm = false
+    private var disabled = false
     private var fraction = 0f
+    private var aux = Float.NaN
     private var pressed = false
     private var flash = 0f
     private var lastValue = ""
@@ -43,7 +48,19 @@ class DashboardTileView @JvmOverloads constructor(
     private val text = Paint(Paint.ANTI_ALIAS_FLAG)
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val small = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val grayLayer = Paint().apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+        alpha = 140
+    }
+    private val artState = TileArt.State()
+    private val visibleRect = Rect()
     private var simPulse = 0f
+
+    // cache shaderów tła (zależą tylko od rozmiaru i stanu) — bez alokacji co klatkę
+    private var bgShader: Shader? = null
+    private var bgKey = 0L
+    private var glowShader: Shader? = null
+    private var glowKey = 0L
 
     init {
         isClickable = true
@@ -64,7 +81,7 @@ class DashboardTileView @JvmOverloads constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         attached = true
-        if (active && !stale) postInvalidateDelayed(50)
+        postInvalidateDelayed(50)
     }
 
     override fun onDetachedFromWindow() {
@@ -72,10 +89,16 @@ class DashboardTileView @JvmOverloads constructor(
         attached = false
     }
 
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        // Powrót na zakładkę "Pulpit" (GONE → VISIBLE) — wznów pętlę animacji ilustracji.
+        if (visibility == VISIBLE && attached && animating) invalidate()
+    }
+
     fun stopAnimations() { animating = false }
     fun startAnimations() {
         animating = true
-        if (attached && (active && !stale || flash > 0.01f)) invalidate()
+        if (attached) invalidate()
     }
 
     fun bind(
@@ -88,7 +111,9 @@ class DashboardTileView @JvmOverloads constructor(
         alarm: Boolean = false,
         fraction: Float = 0f,
         simulated: Boolean = false,
-        simMinutes: Int = 0
+        simMinutes: Int = 0,
+        aux: Float = Float.NaN,
+        disabled: Boolean = false
     ) {
         this.kind = kind
         this.title = title
@@ -97,7 +122,9 @@ class DashboardTileView @JvmOverloads constructor(
         this.accent = accent
         this.active = active
         this.alarm = alarm
+        this.disabled = disabled
         this.fraction = fraction.coerceIn(0f, 1f)
+        this.aux = aux
         this.simulated = simulated
         this.simMinutes = simMinutes
         this.simPulse = 0f
@@ -123,21 +150,29 @@ class DashboardTileView @JvmOverloads constructor(
 
         val radius = dp(18f)
         val left = dp(3f); val top = dp(3f); val right = w-dp(3f); val bottom = h-dp(3f)
+        val nowMs = System.currentTimeMillis()
+        val t = ((nowMs % 3_600_000L) / 1000.0).toFloat()
 
         // Rich gradient background
         val bgStart = if (simulated) 0xFF3A2E0A.toInt() else 0xFF102437.toInt()
         val bgEnd = if (simulated) 0xFF1F1A05.toInt() else 0xFF07131F.toInt()
-        fill.shader = LinearGradient(0f, top, w, bottom, bgStart, bgEnd, Shader.TileMode.CLAMP)
+        val bk = (w.toLong() shl 32) xor (h.toLong() shl 8) xor (if (simulated) 1L else 0L)
+        if (bgShader == null || bk != bgKey) { bgShader = LinearGradient(0f, top, w, bottom, bgStart, bgEnd, Shader.TileMode.CLAMP); bgKey = bk }
+        fill.shader = bgShader
+        fill.color = Color.WHITE
         c.drawRoundRect(left, top, right, bottom, radius, radius, fill)
         fill.shader = null
 
         // Accent glow (subtle)
-        fill.shader = RadialGradient(w*.95f, h*.08f, w*.85f,
-            Color.argb(if (alarm) 64 else if (active) 50 else if (simulated) 45 else 22, 
-                if (simulated) 234 else Color.red(accent), 
-                if (simulated) 179 else Color.green(accent), 
-                if (simulated) 8 else Color.blue(accent)),
-            Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        val glowAlpha = if (alarm) 64 else if (active) 50 else if (simulated) 45 else 22
+        val glowColor = Color.argb(glowAlpha,
+            if (simulated) 234 else Color.red(accent),
+            if (simulated) 179 else Color.green(accent),
+            if (simulated) 8 else Color.blue(accent))
+        val gk = (w.toLong() shl 32) xor (h.toLong() shl 8) xor (glowColor.toLong() and 0xFFFFFFFFL)
+        if (glowShader == null || gk != glowKey) { glowShader = RadialGradient(w*.95f, h*.08f, w*.85f, glowColor, Color.TRANSPARENT, Shader.TileMode.CLAMP); glowKey = gk }
+        fill.shader = glowShader
+        fill.color = Color.WHITE
         c.drawRoundRect(left, top, right, bottom, radius, radius, fill)
         fill.shader = null
 
@@ -156,14 +191,62 @@ class DashboardTileView @JvmOverloads constructor(
         }
         c.drawRoundRect(left, top, right, bottom, radius, radius, stroke)
 
-        // Illustration area
+        // ── Ilustracja: kontener jak `.kaf-ikona` na ESP + stany warn/err/ok/dis ──
         val ix = dp(43f); val iy = dp(42f)
         val wellL = ix-dp(27f); val wellT = iy-dp(27f); val wellR = ix+dp(27f); val wellB = iy+dp(27f)
-        fill.shader = LinearGradient(wellL, wellT, wellR, wellB,
-            Color.argb(if (alarm) 44 else if (active) 38 else 28, Color.red(accent), Color.green(accent), Color.blue(accent)),
-            0x15101D2B, Shader.TileMode.CLAMP)
-        c.drawRoundRect(wellL, wellT, wellR, wellB, dp(16f), dp(16f), fill)
-        fill.shader = null
+        val wellR14 = dp(15f)
+        val okState = active && (kind == Kind.PUMP || kind == Kind.MIXER)
+        val errPulse = .5f + .5f * sin(t * 2f * PI.toFloat() / 1.5f)
+        fill.color = when {
+            alarm -> Color.argb((70 + 40 * errPulse).toInt(), 255, 95, 120)
+            simulated -> 0x2EFBBF24
+            okState -> 0x264ADE80
+            disabled -> 0x08FFFFFF
+            else -> 0x0CFFFFFF
+        }
+        c.drawRoundRect(wellL, wellT, wellR, wellB, wellR14, wellR14, fill)
+        if (!alarm && !simulated && !okState && !disabled) {
+            // delikatny odcień koloru kafelka (ESP: `.kafelek` ma kolorową poświatę, ikona neutralną)
+            fill.color = Color.argb(if (active) 30 else 18, Color.red(accent), Color.green(accent), Color.blue(accent))
+            c.drawRoundRect(wellL, wellT, wellR, wellB, wellR14, wellR14, fill)
+        }
+        if (okState) {
+            // zielona poświata wokół (ESP: `.kaf-ikona.ok` box-shadow)
+            stroke.strokeWidth = dp(5f)
+            stroke.color = 0x1A4ADE80
+            c.drawRoundRect(wellL-dp(2.5f), wellT-dp(2.5f), wellR+dp(2.5f), wellB+dp(2.5f), wellR14+dp(2.5f), wellR14+dp(2.5f), stroke)
+        }
+        if (alarm) {
+            // "ping": rozchodzący się pierścień (ESP: `.kaf-ikona.err::after`)
+            val ph = ((nowMs % 1500L) / 1500f)
+            val grow = dp(8f) * ph
+            stroke.strokeWidth = dp(1.6f)
+            stroke.color = Color.argb((190 * (1f - ph)).toInt(), 255, 107, 129)
+            c.drawRoundRect(wellL-grow, wellT-grow, wellR+grow, wellB+grow, wellR14+grow, wellR14+grow, stroke)
+        }
+        stroke.strokeWidth = dp(1f)
+        stroke.color = when {
+            alarm -> 0x8CFF6B81.toInt()
+            simulated -> 0x80FBBF24.toInt()
+            okState -> 0x734ADE80
+            else -> 0x12FFFFFF
+        }
+        c.drawRoundRect(wellL, wellT, wellR, wellB, wellR14, wellR14, stroke)
+
+        artState.fraction = fraction
+        artState.aux = aux
+        artState.active = active
+        artState.alarm = alarm
+        artState.disabled = disabled
+        artState.simulated = simulated
+        if (disabled || stale) {
+            // ESP `.dis`: grayscale + przygaszenie (tu także dla danych nieaktualnych)
+            val layer = c.saveLayer(wellL, wellT, wellR, wellB, grayLayer)
+            TileArt.draw(c, kind, ix, iy, dp(36f), t, artState)
+            c.restoreToCount(layer)
+        } else {
+            TileArt.draw(c, kind, ix, iy, dp(36f), t, artState)
+        }
 
         // Arc indicator
         stroke.strokeWidth = dp(2.1f)
@@ -199,7 +282,7 @@ class DashboardTileView @JvmOverloads constructor(
         c.drawText(title.uppercase(), dp(13f), h-dp(41f), text)
 
         // Value
-        valuePaint.color = if (simulated) 0xFFFFE082.toInt() else if (alarm) 0xFFFF7B91.toInt() else 0xFFF4F8FB.toInt()
+        valuePaint.color = if (simulated) 0xFFFFE082.toInt() else if (alarm) 0xFFFF7B91.toInt() else if (disabled) 0xFF8EA6BA.toInt() else 0xFFF4F8FB.toInt()
         if (simulated) {
             valuePaint.setShadowLayer(dp(4f), 0f, 0f, 0x60EAB308.toInt())
         } else {
@@ -222,25 +305,32 @@ class DashboardTileView @JvmOverloads constructor(
             c.drawRoundRect(dp(13f), h-dp(5f), dp(13f)+(w-dp(26f))*fraction, h-dp(2.8f), dp(2f), dp(2f), fill)
         }
 
-        // Active pulse — only animate when attached (fix: battery drain)
-        if (active && !stale && attached && animating) {
-            val t = (System.currentTimeMillis() % 1600L) / 1600f
-            fill.color = Color.argb((55f * (.25f + .75f * sin(t * PI.toFloat() * 2f))).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent))
+        // Active pulse
+        if (active && !stale) {
+            val tt = (nowMs % 1600L) / 1600f
+            fill.color = Color.argb((55f * (.25f + .75f * sin(tt * PI.toFloat() * 2f))).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent))
             c.drawCircle(w-dp(17f), h-dp(4f), dp(2.8f), fill)
-            postInvalidateDelayed(50)
         }
-        
+
         // Simulation pulse animation
-        if (simulated && attached && animating) {
+        if (simulated) {
             simPulse += 0.05f
             if (simPulse > PI.toFloat() * 2f) simPulse -= PI.toFloat() * 2f
-            postInvalidateDelayed(50)
         }
-        if (flash > 0.01f && attached && animating) {
+        if (flash > 0.01f) {
             fill.color = Color.argb((flash*18f).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent))
             c.drawRoundRect(dp(2f), dp(2f), w-dp(2f), h-dp(2f), radius, radius, fill)
             flash *= .82f
-            postInvalidateDelayed(32)
+        }
+
+        // ── Pętla animacji (fix: battery drain) ──
+        // Klatka co 50 ms tylko gdy kafelek jest naprawdę widoczny na ekranie; gdy przewinięty poza
+        // ekran — rzadkie "nasłuchiwanie" (700 ms), żeby wznowić po powrocie. Zatrzymana całkiem,
+        // gdy aplikacja w tle (stopAnimations) lub kafelek odłączony od okna.
+        if (attached && animating && isShown) {
+            val onScreen = getGlobalVisibleRect(visibleRect)
+            val needsFrames = TileArt.isAnimated(kind, artState) || alarm || simulated || (active && !stale) || flash > 0.01f
+            if (onScreen && needsFrames) postInvalidateDelayed(50) else postInvalidateDelayed(700)
         }
     }
 
