@@ -1437,6 +1437,31 @@ class MainActivity : Activity() {
         setTile(TileId.ROOM, temp(room), if (!healthRm.isOnline) "OFFLINE" else if (healthRm.isStagnant) "⚠ STABILNY" else "LIVE", .5f, d=d)
         setTile(TileId.PRESSURE, if (pressure.isFinite()) String.format(Locale.US,"%.0f hPa",pressure) else "—", if (!healthPres.isOnline) "OFFLINE" else "LIVE", ((pressure-970)/70).toFloat().coerceIn(0f,1f), d=d)
         setTile(TileId.HUMIDITY, if (!healthHum.isOnline || humidity == 0.0) "—" else if (humidity.isFinite()) String.format(Locale.US,"%.0f %%",humidity) else "—", if (!healthHum.isOnline) "CZUJNIK BRAK" else "LIVE", (humidity/100).toFloat().coerceIn(0f,1f), d=d)
+        // [SYMULACJA 1:1 z Piec.html] Pokazuje "SYMULACJA · X min" w kafelkach gdy symulacja aktywna
+        fun symStatus(sensorKey: String): String? {
+            val symActive = d.optBoolean("symulacja_$sensorKey", false)
+            return if (symActive) {
+                val mins = d.optInt("symulacja_${sensorKey}_min", 0)
+                "SYMULACJA · $mins min"
+            } else null
+        }
+        
+        val symOutside = symStatus("zewn")
+        val symHeat = symStatus("ogrz")
+        val symBoiler = symStatus("bojler")
+        val symPanel = symStatus("panel")
+        val symRoom = symStatus("pokoj")
+        val symPressure = symStatus("cisnienie")
+        val symHumidity = symStatus("wilgotnosc")
+        val symSmoke = symStatus("dym")
+        
+        setTile(TileId.OUTSIDE, temp(outside), symOutside ?: if (!healthOut.isOnline) "OFFLINE" else if (healthOut.isStagnant) "⚠ STABILNY" else "LIVE", (((outside + 20) / 60).toFloat()).coerceIn(0f,1f), d=d)
+        setTile(TileId.HEATING, temp(heat), symHeat ?: if (heatAlarm) "ALARM" else if (!healthHeat.isOnline) "OFFLINE" else if (healthHeat.isStagnant) "⚠ STABILNY" else "AKTYWNY", (heat/160).toFloat().coerceIn(0f,1f), alarm=heatAlarm, d=d)
+        setTile(TileId.BOILER, temp(boiler), symBoiler ?: if (!healthBoil.isOnline) "OFFLINE" else if (healthBoil.isStagnant) "⚠ STABILNY" else if (boiler > 45) "GORĄCY" else "STABILNY", ((boiler-15)/55).toFloat().coerceIn(0f,1f), d=d)
+        setTile(TileId.PANEL, temp(panel), symPanel ?: if (panelAlarm) "ALARM" else if (!healthPan.isOnline) "OFFLINE" else if (healthPan.isStagnant) "⚠ STABILNY" else "LIVE", .5f, alarm=panelAlarm, d=d)
+        setTile(TileId.ROOM, temp(room), symRoom ?: if (!healthRm.isOnline) "OFFLINE" else if (healthRm.isStagnant) "⚠ STABILNY" else "LIVE", .5f, d=d)
+        setTile(TileId.PRESSURE, if (pressure.isFinite()) String.format(Locale.US,"%.0f hPa",pressure) else "—", symPressure ?: if (!healthPres.isOnline) "OFFLINE" else "LIVE", ((pressure-970)/70).toFloat().coerceIn(0f,1f), d=d)
+        setTile(TileId.HUMIDITY, if (!healthHum.isOnline || humidity == 0.0) "—" else if (humidity.isFinite()) String.format(Locale.US,"%.0f %%",humidity) else "—", symHumidity ?: if (!healthHum.isOnline) "CZUJNIK BRAK" else "LIVE", (humidity/100).toFloat().coerceIn(0f,1f), d=d)
         // Fix: Firmware sends degrees (0-180 for klapa, 0-90 for syberek), convert to percent
         val flapDeg = d.optInt("klapa",0)
         val flap = (flapDeg * 100 / 180).coerceIn(0,100)
@@ -1446,7 +1471,7 @@ class MainActivity : Activity() {
         setTile(TileId.SERVO, "K$flap • S$damper", mode, flap/100f, active=mode=="RĘCZNY", d=d)
         val mix = d.optBoolean("mieszadlo", false)
         setTile(TileId.MIXER, if (mix) "WŁĄCZONE" else "WYŁĄCZONE", if (mix) "AKTYWNE" else "AUTO", if (mix) 1f else 0f, active=mix, d=d)
-        setTile(TileId.SMOKE, when { smokeAlarm -> "ALARM"; smokeOn -> "AKTYWNY"; else -> "OK" }, if(smokeAlarm)"BEZPIECZEŃSTWO" else "MONITORING", .3f, active=smokeOn, alarm=smokeAlarm, d=d)
+        setTile(TileId.SMOKE, when { smokeAlarm -> "ALARM"; smokeOn -> "AKTYWNY"; else -> "OK" }, symSmoke ?: if(smokeAlarm)"BEZPIECZEŃSTWO" else "MONITORING", .3f, active=smokeOn, alarm=smokeAlarm, d=d)
         setTile(TileId.CHARTS, "OTWÓRZ", "historia • 6 H / 24 H / 7 DNI / 30 DNI", .8f, d=d)
         setTile(TileId.CLOCK, SimpleDateFormat("HH:mm", Locale.US).format(Date()), "CZAS TELEFONU", .2f, d=d)
 
