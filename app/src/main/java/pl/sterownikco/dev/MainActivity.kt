@@ -727,6 +727,7 @@ class MainActivity : Activity() {
     private var weatherLastFetchMs = 0L
     private var weatherData: WeatherService.WeatherData? = null
     private var weatherDays = 7
+    private var weatherRangeButtons: MutableList<Pair<TextView, Int>> = mutableListOf()
 
     private fun buildWeather(): ScrollView {
         val s = ScrollView(this)
@@ -810,8 +811,10 @@ class MainActivity : Activity() {
             val btn = action(lbl, if (days == weatherDays) C.cyan else C.surface2, if (days == weatherDays) C.bg else Color.WHITE, 0)
             btn.setOnClickListener {
                 weatherDays = days
+                refreshWeatherRangeButtons()
                 refreshWeatherTab(force = true)
             }
+            weatherRangeButtons.add(btn to days)
             rangeRow.addView(btn, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = dp(4) })
         }
         root.addView(rangeRow, lp(-1, 40, 6))
