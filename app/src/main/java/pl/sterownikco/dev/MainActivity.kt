@@ -2061,57 +2061,221 @@ class MainActivity : Activity() {
         showSheet(title,box)
     }
 
-    private fun showOverheatMenu(panel:Boolean){
-        val key=if(panel)"t_panel" else "t_ogrz"
-        val d=lastStatusData
-        val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(4),dp(4),dp(4),dp(10))}
-        box.addView(label("TEMPERATURA",9.5f,C.textDim,true))
-        box.addView(label(valueFor(d,key,"°C"),20f,Color.WHITE,true,dp(3)))
-        val isAlarm=d?.optBoolean(if(panel)"alarm_panel" else "alarm_ogrzewanie") == true
-        box.addView(label(if(isAlarm)"ALARM AKTYWNY" else "Brak alarmu przegrzania",12f,if(isAlarm)C.err else C.live,false,dp(4)))
-
-        box.addView(label("PRÓG ALARMU °C",9f,C.textDim,true,dp(10)))
-        val progRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        val progInp=EditText(this).apply{setText((d?.optInt("progAlarmTemp",100)?:100).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
-        progRow.addView(progInp,LinearLayout.LayoutParams(0,-2,1f))
-        val progBtn=action("USTAW",C.cyan,C.bg,0);progBtn.setOnClickListener{sendCommand("ustaw progAlarmTemp "+progInp.text.toString())};progRow.addView(progBtn,lp(-1,42))
-        box.addView(progRow,lp(-1,-2,4))
-        box.addView(label("Histereza: piec −10°C, panel −4°C",8f,C.textDim,false,dp(2)))
-
-        box.addView(label("HISTEREZA °C",9f,C.textDim,true,dp(10)))
-        val histRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        val histInp=EditText(this).apply{setText((d?.optInt("histerServo",5)?:5).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
-        histRow.addView(histInp,LinearLayout.LayoutParams(0,-2,1f))
-        val histBtn=action("USTAW",C.cyan,C.bg,0);histBtn.setOnClickListener{sendCommand("ustaw histerServo "+histInp.text.toString())};histRow.addView(histBtn,lp(-1,42))
-        box.addView(histRow,lp(-1,-2,4))
-
-        box.addView(label("AKCJE",9f,C.textDim,true,dp(14)))
-        listOf("WYCISZ BRZĘCZYK" to "wycisz_ogrz","RESET ALARMÓW" to "reset_alarmow").forEach{(t,c)->
-            val b=action(t,0xFF3A1820.toInt(),0xFFFFB2BE.toInt(),0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,6))
+    private fun showOverheatMenu(panel: Boolean) {
+        val d = lastStatusData
+        val key = if (panel) "t_panel" else "t_ogrz"
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
+        
+        // Opis
+        box.addView(label("Wspólny próg dla pieca C.O. i panelu słonecznego — histereza: piec -10°C, panel -4°C.", 9f, C.textDim, false, dp(10)))
+        
+        // Próg alarmu przegrzania
+        box.addView(label("Próg alarmu przegrzania", 10f, C.textDim, true, dp(10)))
+        box.addView(numInput("Próg alarmu przegrzania", "°C", "progAlarmTemp", 0, 100, d?.optInt("progAlarmTemp", 80) ?: 80))
+        
+        // Symulacja
+        val field = if (panel) "panel" else "ogrz"
+        val isSimActive = d?.optBoolean("symulacja_$field", false) == true
+        val simMin = d?.optInt("symulacja_${field}_min", 0) ?: 0
+        val simValue = d?.optDouble(key, Double.NaN) ?: Double.NaN
+        
+        if (isSimActive) {
+            box.addView(label("SYMULACJA AKTYWNA", 10f, 0xFFFFD166.toInt(), true, dp(10)))
+            box.addView(label("$simMin min", 15f, 0xFFFFE082.toInt(), true, dp(3)))
+            box.addView(label("Symulowana wartość (po zastosowaniu zmieni odczyt)", 9.5f, 0xFFEAB308.toInt(), false, dp(2)))
         }
-        showSheet(if(panel)"Panel słoneczny — próg przegrzania" else "Piec C.O. — próg przegrzania",box)
+        
+        val seekMax = ((160 - 0) / 0.5f).toInt()
+        val initialVal = if (simValue.isFinite()) simValue else 20.0
+        val seekProgress = ((initialVal - 0) / 0.5f).toInt().coerceIn(0, seekMax)
+        val seek = SeekBar(this).apply { this.max = seekMax; progress = seekProgress }
+        val v = label(formatSlider(seek.progress, 0f, 0.5f, "°C"), 15f, Color.WHITE, true, dp(8))
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) { v.text = formatSlider(p, 0f, 0.5f, "°C") }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        box.addView(v)
+        box.addView(seek)
+        
+        val initialTimeMin = if (isSimActive && simMin > 0) ((simMin / 5).coerceIn(1, 36) - 1) else 11
+        val time = SeekBar(this).apply { this.max = 35; progress = initialTimeMin }
+        val tl = label("Czas: ${(time.progress + 1) * 5} min", 11.5f, C.textDim, false, dp(8))
+        time.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) { tl.text = "Czas: ${(p + 1) * 5} min" }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+        box.addView(tl)
+        box.addView(time)
+        
+        val apply = action("ZASTOSUJ", C.accent, C.bg, 0)
+        apply.setOnClickListener {
+            val simVal = sliderValue(seek, 0f, 0.5f)
+            val simTime = (time.progress + 1) * 5
+            sendCommand("symuluj $field $simVal $simTime")
+        }
+        box.addView(apply, lp(-1, 48, 10))
+        
+        val stop = action("WYŁĄCZ SYMULACJĘ", C.surface2, Color.WHITE, 0)
+        stop.setOnClickListener {
+            sendCommand("symuluj_stop $field")
+            activeSheet?.dismiss()
+        }
+        box.addView(stop, lp(-1, 48, 7))
+        
+        showSheet(if (panel) "Próg przegrzania — Panel słoneczny" else "Próg przegrzania — Piec C.O.", box)
     }
-    private fun showPumpMenu(){val d=lastStatusData;val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("STAN",9.5f,C.textDim,true));box.addView(label(if(d?.optBoolean("pompa")==true)"WŁĄCZONA" else "WYŁĄCZONA",19f,Color.WHITE,true,dp(3)));listOf("WŁ." to "pompa_wl","WYŁ." to "pompa_wyl","AUTO" to "pompa_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};box.addView(label("Strategia: ${when(d?.optInt("wybor")){1->"Trociniak";2->"Kopciuch";3->"Automatyczny";else->"—"}}",12f,C.textDim,false,dp(10)));showSheet("Pompa",box)}
-    private fun showServoMenu(){
-      val d=lastStatusData;
-      val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};
-      box.addView(label("TRYB",9.5f,C.textDim,true));
-      box.addView(label(when(d?.optInt("tryb_serwa")){1->"AUTO";2->"RĘCZNY";3->"BEZPIECZNY";else->"—"},19f,Color.WHITE,true,dp(3)));
-      val modeButtons=listOf("AUTO" to "tryb_auto","RĘCZNY" to "tryb_reczny","BEZPIECZNA" to "tryb_bezpieczny")
-      modeButtons.forEach{(t,c)->
-        val isActive=(when(d?.optInt("tryb_serwa")){1->"AUTO";2->"RĘCZNY";3->"BEZPIECZNA";else->""})==t
-        val b=action(t,if(isActive) C.cyan else C.surface2,if(isActive) C.bg else Color.WHITE,0)
-        b.setOnClickListener{sendCommand(c);Toast.makeText(this@MainActivity,"Tryb: $t",Toast.LENGTH_SHORT).show()}
-        box.addView(b,lp(-1,48,7))
-      };
-      // Fix: Firmware sends degrees (0-180 for klapa, 0-90 for syberek), convert to percent
-      val klapaDeg = d?.optInt("klapa",0)?:0
-      val klapaPct = (klapaDeg * 100 / 180).coerceIn(0,100)
-      addServoSlider(box,"Klapa",klapaPct,"klapa");
-      val syberkaDeg = d?.optInt("syberka",0)?:0
-      val syberkaPct = (syberkaDeg * 100 / 90).coerceIn(0,100)
-      addServoSlider(box,"Syberek",syberkaPct,"syberek");
-      showSheet("Serwo",box)
+
+    // Helper: input liczbowy z etykietą i przyciskiem Ustaw
+    private fun numInput(label: String, desc: String, key: String, min: Int, max: Int, default: Int): View {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
+        row.addView(label(label, 10f, Color.WHITE, true))
+        row.addView(label(desc, 8f, C.textDim, false))
+        val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val input = EditText(this).apply {
+            setText(default.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = rounded(C.surface2, 8, C.border)
+            setTextColor(Color.WHITE)
+        }
+        inputRow.addView(input, LinearLayout.LayoutParams(0, dp(40), 1f))
+        val btn = action("Ustaw", C.accent, C.bg, 0)
+        btn.setOnClickListener {
+            val v = input.text.toString().toIntOrNull() ?: default
+            sendCommand("ustaw $key $v")
+        }
+        inputRow.addView(btn, LinearLayout.LayoutParams(dp(60), dp(40)).apply { marginStart = dp(8) })
+        row.addView(inputRow, lp(-1, -2, 7))
+        return row
+    }
+    
+    // Helper: checkbox z etykietą
+    private fun checkbox(label: String, key: String, checked: Boolean): View {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
+        val cb = CheckBox(this).apply {
+            isChecked = checked
+            setOnCheckedChangeListener { _, isChecked ->
+                sendCommand(if (isChecked) "ustaw $key 1" else "ustaw $key 0")
+            }
+        }
+        row.addView(cb, lp(dp(24), dp(24)))
+        row.addView(label(label, 11f, Color.WHITE, false), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(8) })
+        return row
+    }
+
+    private fun showPumpMenu() {
+        val d = lastStatusData
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
+        
+        // Strategia pracy pompy
+        box.addView(label("Aktywna strategia pracy pompy", 9.5f, C.textDim, false, dp(8)))
+        val segBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val strategie = listOf(1 to "Trociniak", 2 to "Kopciuch", 3 to "Automatyczny")
+        strategie.forEach { (v, lbl) ->
+            val btn = action(lbl, C.surface2, Color.WHITE, 0)
+            btn.setOnClickListener { sendCommand("ustaw wybor $v") }
+            segBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
+        }
+        box.addView(segBox, lp(-1, -2, 7))
+        
+        // Wymus WŁ/WYŁ/AUTO
+        val manualBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(14), 0, 0) }
+        listOf("Wymuś WŁ." to "pompa_wl", "Wymuś WYŁ." to "pompa_wyl", "Auto" to "pompa_auto").forEach { (t, cmd) ->
+            val btn = action(t, C.surface2, Color.WHITE, 0)
+            btn.setOnClickListener { sendCommand(cmd) }
+            manualBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
+        }
+        box.addView(manualBox, lp(-1, -2, 7))
+        
+        // Tryb czasowy (Trociniak)
+        box.addView(label("Tryb czasowy (Trociniak)", 10f, C.textDim, true, dp(10)))
+        box.addView(numInput("Czas ON", "Minuty pracy w cyklu", "czasOn", 1, 180, d?.optInt("czasOn", 10) ?: 10))
+        box.addView(numInput("Czas OFF", "Minuty postoju w cyklu", "czasOff", 1, 180, d?.optInt("czasOff", 30) ?: 30))
+        
+        // Tryb temperaturowy (Kopciuch)
+        box.addView(label("Tryb temperaturowy (Kopciuch)", 10f, C.textDim, true, dp(10)))
+        box.addView(numInput("Temp ON", "°C pieca — start pompy", "tempOn", 0, 100, d?.optInt("tempOn", 60) ?: 60))
+        box.addView(numInput("Temp OFF", "°C pieca — stop pompy", "tempOff", 0, 100, d?.optInt("tempOff", 50) ?: 50))
+        
+        // Antystop
+        box.addView(label("Antystop", 10f, C.textDim, true, dp(10)))
+        box.addView(checkbox("Włączony", "antystopWlaczony", d?.optBoolean("antystopWlaczony", false) ?: false))
+        box.addView(numInput("Dni bez ruchu", "Wymuszony puls 45s po X dniach", "antystopDni", 1, 45, d?.optInt("antystopDni", 10) ?: 10))
+        
+        showSheet("Pompa", box)
+    };box.addView(label("STAN",9.5f,C.textDim,true));box.addView(label(if(d?.optBoolean("pompa")==true)"WŁĄCZONA" else "WYŁĄCZONA",19f,Color.WHITE,true,dp(3)));listOf("WŁ." to "pompa_wl","WYŁ." to "pompa_wyl","AUTO" to "pompa_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};box.addView(label("Strategia: ${when(d?.optInt("wybor")){1->"Trociniak";2->"Kopciuch";3->"Automatyczny";else->"—"}}",12f,C.textDim,false,dp(10)));showSheet("Pompa",box)}
+
+    // Helper: slider z etykietą
+    private fun slider(label: String, key: String, min: Int, max: Int, default: Int): View {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        header.addView(label(label, 10f, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+        val valLabel = label("$default%", 11f, C.cyan, true)
+        valLabel.tag = "slider_val_$key"
+        header.addView(valLabel)
+        row.addView(header, lp(-1, -2, 7))
+        
+        val seek = SeekBar(this).apply {
+            this.max = max - min
+            progress = default - min
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar?, p: Int, f: Boolean) {
+                    (row.findViewWithTag("slider_val_$key") as? TextView)?.text = "${p + min}%"
+                }
+                override fun onStartTrackingTouch(s: SeekBar?) {}
+                override fun onStopTrackingTouch(s: SeekBar?) {
+                    val v = s?.progress?.plus(min) ?: min
+                    sendCommand("ustaw $key $v")
+                }
+            })
+        }
+        row.addView(seek, lp(-1, -2, 7))
+        return row
+    }
+
+    private fun showServoMenu() {
+        val d = lastStatusData
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
+        
+        // Tryb pracy klapy i syberka
+        box.addView(label("Tryb pracy klapy i syberka", 9.5f, C.textDim, false, dp(8)))
+        val segBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val tryby = listOf(1 to "Auto", 2 to "Ręczny", 3 to "Bezpieczna")
+        tryby.forEach { (v, lbl) ->
+            val btn = action(lbl, C.surface2, Color.WHITE, 0)
+            btn.setOnClickListener { sendCommand("ustaw trybSerwa $v") }
+            segBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
+        }
+        box.addView(segBox, lp(-1, -2, 7))
+        
+        // Ręczna pozycja (tylko gdy tryb Ręczny)
+        val tryb = d?.optInt("tryb_serwa", 1) ?: 1
+        if (tryb == 2) {
+            box.addView(label("Ręczna pozycja", 10f, C.textDim, true, dp(10)))
+            val klapaVal = d?.optInt("klapa", 0) ?: 0
+            box.addView(slider("Klapa", "klapa", 0, 100, klapaVal))
+            val syberkaVal = d?.optInt("syberka", 0) ?: 0
+            box.addView(slider("Syberek", "syberka", 0, 100, syberkaVal))
+            
+            // Override info
+            val overrideMin = d?.optInt("serwo_override_min", 0) ?: 0
+            if (overrideMin > 0) {
+                box.addView(label("Ręczna pozycja jeszcze ok. $overrideMin min, potem powrót do Auto", 9f, 0xFFEAB308.toInt(), false, dp(10)))
+            }
+        }
+        
+        // Automatyka (tryb Auto)
+        box.addView(label("Automatyka (tryb Auto)", 10f, C.textDim, true, dp(10)))
+        box.addView(numInput("Temperatura zadana", "°C — punkt odniesienia", "tempZadServo", 0, 100, d?.optInt("tempZadServo", 20) ?: 20))
+        box.addView(numInput("Histereza", "°C — pasmo bez reakcji", "histerServo", 0, 50, d?.optInt("histerServo", 2) ?: 2))
+        box.addView(numInput("Skok klapy", "% na jedno wywołanie", "skokKlapy", 1, 100, d?.optInt("skokKlapy", 10) ?: 10))
+        box.addView(numInput("Skok syberka", "% na jedno wywołanie", "skokSyberka", 1, 100, d?.optInt("skokSyberka", 10) ?: 10))
+        box.addView(numInput("Odchylenie przyspieszające", "°C — powyżej: krok × mnożnik", "odchylTemp", 1, 50, d?.optInt("odchylTemp", 5) ?: 5))
+        box.addView(numInput("Mnożnik korekty", "Mnożnik kroku przy dużym odchyleniu", "mnoznik", 1, 10, d?.optInt("mnoznik", 2) ?: 2))
+        
+        showSheet("Serwo", box)
     }
     private fun addServoSlider(box:LinearLayout,name:String,initial:Int,command:String){
       val seek=SeekBar(this).apply{max=100;progress=initial.coerceIn(0,100)}
@@ -2132,42 +2296,65 @@ class MainActivity : Activity() {
       })
       box.addView(valTxt);box.addView(seek)
     }
-    private fun showMixerMenu(){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};listOf("WŁ." to "mieszadlo_wl","WYŁ." to "mieszadlo_wyl","AUTO" to "mieszadlo_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};showSheet("Mieszadło",box)}
-    private fun showSmokeMenu(){
-        val d=lastStatusData
-        val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(4),dp(4),dp(4),dp(10))}
-        box.addView(label("ODCZYT ADC",9.5f,C.textDim,true))
-        box.addView(label(d?.optInt("dym",0)?.toString() ?: "—",20f,Color.WHITE,true,dp(3)))
-        box.addView(label(if(d?.optBoolean("dym_alarm") == true)"ALARM AKTYWNY" else if(d?.optBoolean("dym_wlaczony") == true)"Aktywny — brak alarmu" else "Czujnik wyłączony (piec zimny)",11f,if(d?.optBoolean("dym_alarm")==true)C.err else if(d?.optBoolean("dym_wlaczony")==true)C.live else C.textDim,false,dp(4)))
-
-        box.addView(label("PRÓG ALARMU ADC",9f,C.textDim,true,dp(10)))
-        val progRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        val progInp=EditText(this).apply{setText((d?.optInt("progAlarmDym",2000)?:2000).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
-        progRow.addView(progInp,LinearLayout.LayoutParams(0,-2,1f))
-        val progBtn=action("USTAW",C.cyan,C.bg,0);progBtn.setOnClickListener{sendCommand("ustaw progAlarmDym "+progInp.text.toString())};progRow.addView(progBtn,lp(-1,42))
-        box.addView(progRow,lp(-1,-2,4))
-
-        box.addView(label("TEMP. AKTYWACJI CZUJNIKA °C",9f,C.textDim,true,dp(10)))
-        val tempRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
-        val tempInp=EditText(this).apply{setText((d?.optInt("dymProgTemp",40)?:40).toString());setTextColor(Color.WHITE);setBackgroundColor(0x22FFFFFF.toInt());setPadding(dp(10),dp(8),dp(10),dp(8));inputType=android.text.InputType.TYPE_CLASS_NUMBER}
-        tempRow.addView(tempInp,LinearLayout.LayoutParams(0,-2,1f))
-        val tempBtn=action("USTAW",C.cyan,C.bg,0);tempBtn.setOnClickListener{sendCommand("ustaw dymProgTemp "+tempInp.text.toString())};tempRow.addView(tempBtn,lp(-1,42))
-        box.addView(tempRow,lp(-1,-2,4))
-
-        box.addView(label("TRYB PRACY",9f,C.textDim,true,dp(10)))
-        val segRow=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-        val curTryb=d?.optInt("dymTrybPracy",2)?:2
-        mapOf(0 to "Impulsowo",1 to "Ciągle",2 to "Auto").forEach{(v,n)->
-            val b=action(n,if(v==curTryb)C.cyan else C.surface2,if(v==curTryb)C.bg else Color.WHITE,0)
-            b.setOnClickListener{sendCommand("ustaw dymTrybPracy $v")};segRow.addView(b,LinearLayout.LayoutParams(0,-1,1f).apply{marginStart=dp(4)})
+    private fun showMixerMenu() {
+        val d = lastStatusData
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
+        
+        // Checkbox włączone
+        box.addView(checkbox("Włączone", "mieszadloWlaczony", d?.optBoolean("mieszadloWlaczony", false) ?: false))
+        
+        // Wymus WŁ/WYŁ/AUTO
+        val manualBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(14), 0, 0) }
+        listOf("Wymuś WŁ." to "mieszadlo_wl", "Wymuś WYŁ." to "mieszadlo_wyl", "Auto" to "mieszadlo_auto").forEach { (t, cmd) ->
+            val btn = action(t, C.surface2, Color.WHITE, 0)
+            btn.setOnClickListener { sendCommand(cmd) }
+            manualBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
         }
-        box.addView(segRow,lp(-1,42,6))
-
-        box.addView(label("AKCJE",9f,C.textDim,true,dp(14)))
-        listOf("WYCISZ BRZĘCZYK" to "wycisz","RESET ALARMÓW" to "reset_alarmow").forEach{(t,c)->
-            val b=action(t,0xFF3A1820.toInt(),0xFFFFB2BE.toInt(),0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,6))
+        box.addView(manualBox, lp(-1, -2, 7))
+        
+        // Override info
+        val overrideMin = d?.optInt("mieszadlo_override_min", 0) ?: 0
+        if (overrideMin > 0) {
+            box.addView(label("Ręczny override jeszcze ok. $overrideMin min, potem powrót do automatyki", 9f, 0xFFEAB308.toInt(), false, dp(10)))
         }
-        showSheet("Czujnik dymu",box)
+        
+        // Cykl pracy
+        box.addView(label("Cykl pracy", 10f, C.textDim, true, dp(10)))
+        box.addView(numInput("Czas ON", "s — jak długo przekaźnik załączony", "mieszadloCzasOn", 1, 255, d?.optInt("mieszadloCzasOn", 30) ?: 30))
+        box.addView(numInput("Czas OFF", "min — przerwa między cyklami", "mieszadloCzasOff", 1, 180, d?.optInt("mieszadloCzasOff", 5) ?: 5))
+        
+        showSheet("Mieszadło", box)
+    };listOf("WŁ." to "mieszadlo_wl","WYŁ." to "mieszadlo_wyl","AUTO" to "mieszadlo_auto").forEach{(t,c)->val b=action(t,C.surface2,Color.WHITE,0);b.setOnClickListener{sendCommand(c)};box.addView(b,lp(-1,48,7))};showSheet("Mieszadło",box)}
+    private fun showSmokeMenu() {
+        val d = lastStatusData
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(10)) }
+        
+        // Próg alarmu
+        box.addView(label("Próg alarmu", 10f, C.textDim, true))
+        box.addView(label("Surowy odczyt ADC czujnika (0-4095)", 8f, C.textDim, false))
+        box.addView(numInput("Próg alarmu", "Surowy odczyt ADC czujnika (0-4095)", "progAlarmDym", 0, 4095, d?.optInt("progAlarmDym", 1000) ?: 1000))
+        
+        // Aktywacja od temperatury pieca
+        box.addView(label("Aktywacja od temperatury pieca", 10f, C.textDim, true, dp(10)))
+        box.addView(numInput("Próg temperatury", "°C — poniżej tej temp. pieca czujnik jest wyłączony (histereza 3°C)", "dymProgTemp", 0, 200, d?.optInt("dymProgTemp", 40) ?: 40))
+        
+        // Tryb pracy po aktywacji
+        box.addView(label("Tryb pracy po aktywacji", 10f, C.textDim, true, dp(10)))
+        val segBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(0 to "Impulsowo", 1 to "Ciągle").forEach { (v, lbl) ->
+            val btn = action(lbl, C.surface2, Color.WHITE, 0)
+            btn.setOnClickListener { sendCommand("ustaw dymTrybPracy $v") }
+            segBox.addView(btn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(4) })
+        }
+        box.addView(segBox, lp(-1, -2, 7))
+        
+        // Cykl pracy czujnika (tryb Impulsowo)
+        box.addView(label("Cykl pracy czujnika (tryb Impulsowo)", 10f, C.textDim, true, dp(10)))
+        box.addView(numInput("Czas WŁ.", "s — rozgrzewanie + pomiar", "dymCzasOn", 20, 600, d?.optInt("dymCzasOn", 30) ?: 30))
+        box.addView(numInput("Czas WYŁ.", "s — między pomiarami", "dymCzasOff", 10, 600, d?.optInt("dymCzasOff", 120) ?: 120))
+        box.addView(numInput("Czas stabilizacji", "s — część Czasu WŁ. zanim odczyt zaufany (dotyczy obu trybów)", "dymCzasStabilizacji", 5, 590, d?.optInt("dymCzasStabilizacji", 10) ?: 10))
+        
+        showSheet("Czujnik dymu", box)
     }
     private fun showClockMenu(){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};box.addView(label("CZAS TELEFONU",9.5f,C.textDim,true));box.addView(label(SimpleDateFormat("dd.MM.yyyy HH:mm:ss",Locale.US).format(Date()),20f,Color.WHITE,true,dp(3)));box.addView(label("Sesja zapamiętana bez hasła",12f,C.textDim,false,dp(10)));showSheet("Data i czas",box)}
     private fun showModule(name: String) {
