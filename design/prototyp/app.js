@@ -199,9 +199,11 @@
     toast.className = 'on ' + cls;
     if (cls !== 'wait') toastTimer = setTimeout(() => toast.className = '', cls === 'ok' ? 2200 : 4500);
   }
+  // Jak na WWW ESP: każde polecenie idzie od razu, status pokazuje mały toast (bez okna „Potwierdź”).
+  // Gdyby jakieś polecenie miało jednak wymagać potwierdzenia — wpisać jego pierwsze słowo tutaj.
+  const POTWIERDZAJ = new Set([]);
   function sendCommand(cmd) {
-    const risky = cmd.startsWith('ustaw ') || cmd.startsWith('symuluj');
-    if (!risky) return dispatch(cmd);
+    if (!POTWIERDZAJ.has(cmd.trim().split(/\s+/)[0])) return dispatch(cmd);
     confirmDlg('Potwierdź polecenie', 'To polecenie zmienia zachowanie sterownika:\n\n<code>' + cmd + '</code>\n\nWysłać?', () => dispatch(cmd));
   }
   function dispatch(cmd) {
