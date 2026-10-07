@@ -65,8 +65,8 @@ fun DrawScope.drawSvg(
     val root = St().apply {
         if (currentColor != Color.Unspecified) color = currentColor
     }
-    translate(offX, offY) {
-        scale(s, s) {
+    tTranslate(offX, offY) {
+        tScale(s, s, 0f, 0f) {
             svgNodes(parsed.root, parsed, root, anim, extraAlpha)
         }
     }
@@ -115,7 +115,7 @@ private fun DrawScope.svgNode(
         if (clipNodes != null) {
             val cp = Path()
             for (cn in clipNodes) shapePath(cn)?.let { cp.add(it) }
-            clipPath(cp, ClipPathOp.Intersect) { body() }
+            tClip(cp) { body() }
         } else body()
     }
 
@@ -128,17 +128,17 @@ private fun DrawScope.svgNode(
     if (a.sx != 1f || a.sy != 1f) {
         val sx = a.sx; val sy = a.sy
         val prev = inner
-        inner = { translate(px, py) { scale(sx, sy) { translate(-px, -py) { prev() } } } }
+        inner = { tTranslate(px, py) { tScale(sx, sy, px, py) { tTranslate(-px, -py) { prev() } } } }
     }
     if (a.rotDeg != 0f) {
         val r = a.rotDeg
         val prev = inner
-        inner = { rotate(r, Offset(px, py)) { prev() } }
+        inner = { tRotate(r, px, py) { prev() } }
     }
     if (a.dx != 0f || a.dy != 0f) {
         val dx = a.dx; val dy = a.dy
         val prev = inner
-        inner = { translate(dx, dy) { prev() } }
+        inner = { tTranslate(dx, dy) { prev() } }
     }
     inner = wrapTransforms(ops, inner)
     inner()
@@ -153,15 +153,15 @@ private fun wrapTransforms(ops: List<Array<String>>, inner: DrawScope.() -> Unit
     val b = head.getOrNull(2)?.toFloatOrNull() ?: 0f
     return when (t) {
         "translate" -> {
-            if (b != 0f) ({ translate(a, b) { rest() } }) else ({ translate(a, 0f) { rest() } })
+            if (b != 0f) ({ tTranslate(a, b) { rest() } }) else ({ tTranslate(a, 0f) { rest() } })
         }
-        "scale" -> ({ scale(a, if (b != 0f) b else a) { rest() } })
+        "scale" -> ({ tScale(a, if (b != 0f) b else a, 0f, 0f) { rest() } })
         "rotate" -> {
             if (head.size >= 4) {
                 val cx = head[2].toFloatOrNull() ?: 0f
                 val cy = head[3].toFloatOrNull() ?: 0f
-                ({ rotate(a, Offset(cx, cy)) { rest() } })
-            } else ({ rotate(a) { rest() } })
+                ({ tRotate(a, cx, cy) { rest() } })
+            } else ({ tRotate(a, 0f, 0f) { rest() } })
         }
         "skewX", "skewY" -> rest
         else -> rest
@@ -216,4 +216,27 @@ private fun DrawScope.drawSvgText(node: SvgNode, st: St, alpha: Float) {
         if (anchor == "end" || anchor == "right") x -= p.measureText(txt)
         c.nativeCanvas.drawText(txt, x, y, p)
     }
+}
+
+/* ── transformacje przez canvas (bez rozszerzeń DrawScope, które wymagają
+      importów — dlatego używamy bezpośrednio Canvas (save/restore)) ── */
+
+private inline fun DrawScope.tTranslate(dx: Float, dy: Float, block: DrawScope.() -> Unit) {
+    val c = drawContext.canvas
+    c.save(); c.translate(dx, dy); block(); c.restore()
+}
+
+private inline fun DrawScope.tScale(sx: Float, sy: Float, px: Float, py: Float, block: DrawScope.() -> Unit) {
+    val c = drawContext.canvas
+    c.save(); c.translate(px, py); c.scale(sx, sy); c.translate(-px, -py); block(); c.restore()
+}
+
+private inline fun DrawScope.tRotate(deg: Float, px: Float, py: Float, block: DrawScope.() -> Unit) {
+    val c = drawContext.canvas
+    c.save(); c.rotate(deg, px, py); block(); c.restore()
+}
+
+private inline fun DrawScope.tClip(path: Path, block: DrawScope.() -> Unit) {
+    val c = drawContext.canvas
+    c.save(); c.clipPath(path, ClipPathOp.Intersect); block(); c.restore()
 }
