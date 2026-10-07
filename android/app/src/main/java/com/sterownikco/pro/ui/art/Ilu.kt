@@ -353,7 +353,7 @@ object Ilu {
     fun keyFor(id: String, s: ArtState): String = when (id) {
         "zewn" -> "w_" + s.weatherCode + "_" + (if (s.night) "n" else "d")
         "ogrz" -> "ogrz_" + (if (s.alarmOgrz) "a" else "o") + "_" + (if (s.tOgrz > 40) "hot" else "cold")
-        "bojler" -> "boj_" + Math.round(if (s.tBojler > 0) s.tBojler / 5 else 10.0)
+        "bojler" -> "boj_" + Math.round(if (s.tBojler > 0f) s.tBojler / 5f else 10.0f)
         "panel" -> "sol_" + (if (s.night) "n" else "d") + (if (s.alarmPanel) "a" else "o")
         "pompa" -> "pmp_" + (if (s.pompa) "on" else "off")
         "pompa2" -> "pmp2_" + (if (s.pompa2) "on" else "off")

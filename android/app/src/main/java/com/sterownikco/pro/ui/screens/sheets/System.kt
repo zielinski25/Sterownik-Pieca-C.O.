@@ -70,9 +70,9 @@ import com.sterownikco.pro.ui.theme.Txt
 @Composable
 private fun NetBadge(text: String, kind: String) {
     val (fg, bg, bd) = when (kind) {
-        "on" -> Color(0xFF45D98B) to Color(0x3345D98B) to Color(0x4D45D98B)
-        "known" -> Pal.Cyan to Pal.rgba(0, 212, 245, .15f) to Pal.rgba(0, 212, 245, .3f)
-        else -> Color(0xFF94A3B8) to Color(0x2694A3B8) to Color(0x4094A3B8)
+        "on" -> Triple(Color(0xFF45D98B), Color(0x3345D98B), Color(0x4D45D98B))
+        "known" -> Triple(Pal.Cyan, Pal.rgba(0, 212, 245, .15f), Pal.rgba(0, 212, 245, .3f))
+        else -> Triple(Color(0xFF94A3B8), Color(0x2694A3B8), Color(0x4094A3B8))
     }
     Box(
         Modifier.background(bg, RoundedCornerShape(4.dp)).border(BorderStroke(1.dp, bd), RoundedCornerShape(4.dp))
@@ -497,14 +497,14 @@ fun TerminalSheet(m: AppModel) {
                 TermBtn("✓ Wszystkie DLOG", onClick = { m.terminalSetAllCategories(true) })
                 TermBtn("□ Wyłącz wszystkie", onClick = { m.terminalSetAllCategories(false) })
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), crossAxisSpacing = 5.dp) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 DLOG_CATEGORIES.forEach { cat ->
                     val on = m.termCats[cat] != false
                     Box(Modifier.background(if (on) Pal.rgba(0, 212, 245, .12f) else Color(0xCC111F35), RoundedCornerShape(6.dp))
                         .border(BorderStroke(1.dp, if (on) Pal.rgba(0, 212, 245, .4f) else Color(0x14FFFFFF)), RoundedCornerShape(6.dp))
                         .clickable { m.terminalSetCategory(cat, !on) }
                         .padding(horizontal = 8.dp, vertical = 3.dp)) {
-                        Text((if (on) "☑ " else "☐ ") + cat, fontSize = 10.sp, fontFamily = Txt.mono.fontFamily,
+                        Text((if (on) "☑ " else "☐ ") + cat, fontSize = 10.sp, fontFamily = Txt.mono,
                             fontWeight = FontWeight.SemiBold, color = if (on) Pal.Cyan else Pal.TextDim)
                     }
                 }
@@ -524,12 +524,12 @@ fun TerminalSheet(m: AppModel) {
             ).forEach {
                 Box(Modifier.background(Color(0x99111F35), RoundedCornerShape(6.dp))
                     .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text(it, fontSize = 10.sp, fontFamily = Txt.mono.fontFamily, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                    Text(it, fontSize = 10.sp, fontFamily = Txt.mono, fontWeight = FontWeight.Bold, color = Pal.TextDim)
                 }
             }
         }
 
-        // 5. konsola + pasek komend + подсказki
+        // 5. konsola + pasek komend + podpowiedzi
         Column(Modifier.fillMaxWidth().background(Color(0xFF040911), RoundedCornerShape(12.dp))
             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(12.dp))) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().height(300.dp).padding(14.dp)) {
@@ -542,9 +542,9 @@ fun TerminalSheet(m: AppModel) {
                     }
                     Row {
                         Box(Modifier.background(Color(0x14FFFFFF), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp)) {
-                            Text("[" + m.terminalCategory(line) + "]", fontSize = 10.sp, fontFamily = Txt.mono.fontFamily, color = c)
+                            Text("[" + m.terminalCategory(line) + "]", fontSize = 10.sp, fontFamily = Txt.mono, color = c)
                         }
-                        Text(line, fontSize = 11.5.sp, fontFamily = Txt.mono.fontFamily,
+                        Text(line, fontSize = 11.5.sp, fontFamily = Txt.mono,
                             lineHeight = 17.sp, color = c, fontWeight = if (cls == "t-err") FontWeight.Bold else FontWeight.Normal)
                     }
                 }
@@ -572,14 +572,14 @@ fun TerminalSheet(m: AppModel) {
                 TermBtn("Wyślij", variant = "primary", onClick = { m.terminalExec(cmd); cmd = "" })
             }
             FlowRow(Modifier.fillMaxWidth().background(Color(0xFF0A1728)).padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp), crossAxisSpacing = 5.dp) {
+                horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 listOf("diag remote on", "diag remote off", "pompa_wl", "pompa_wyl", "pompa_auto", "klapa 50", "syberek 50", "status", "diag status", "update_panel")
                     .forEach { c ->
                         Box(Modifier.background(Color(0x0DFFFFFF), RoundedCornerShape(5.dp))
                             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(5.dp))
                             .clickable { cmd = c; m.terminalExec(c); cmd = "" }
                             .padding(horizontal = 7.dp, vertical = 2.dp)) {
-                            Text(c, fontSize = 10.sp, fontFamily = Txt.mono.fontFamily, color = Pal.TextDim)
+                            Text(c, fontSize = 10.sp, fontFamily = Txt.mono, color = Pal.TextDim)
                         }
                     }
                 }

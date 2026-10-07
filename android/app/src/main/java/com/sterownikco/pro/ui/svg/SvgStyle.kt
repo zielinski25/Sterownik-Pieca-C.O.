@@ -185,15 +185,15 @@ internal fun brushFor(parsed: ParsedSvg, gradId: String?, fallback: Color, path:
     val grad = parsed.grads[gradId] ?: return SolidColor(fallback)
     val stops = grad.stops.sortedBy { it.first }
     if (stops.isEmpty()) return SolidColor(fallback)
-    val pairs = ArrayList<Pair<Color, Float>>()  // (Color, stop) — kolejnosc jak w @ 0..1
-    if (stops.first().first > 0f) pairs.add(stops.first().second to 0f)
-    stops.forEach { pairs.add(it.second to it.first.coerceIn(0f, 1f)) }
-    if (stops.last().first < 1f) pairs.add(stops.last().second to 1f)
+    // Brush.linearGradient/radialGradient: vararg colorStops to para (offset, Color) — offset PIERWSZY
+    val pairs = ArrayList<Pair<Float, Color>>()
+    if (stops.first().first > 0f) pairs.add(0f to stops.first().second)
+    stops.forEach { pairs.add(it.first.coerceIn(0f, 1f) to it.second) }
+    if (stops.last().first < 1f) pairs.add(1f to stops.last().second)
     val b = path.getBounds()
     val w = max(b.width, 0.001f)
     val h = max(b.height, 0.001f)
-    // Brush ma tylko przeciazenie z varargiem par (color do stop) — spread musi byc pierwszy,
-    // nazwane argumenty wolno podac dopiero po nim.
+    // Spread musi byc pierwszym argumentem — nazwane parametry dopisujemy dopiero po nim.
     val stopsArr = pairs.toTypedArray()
     return if (grad.radial) {
         Brush.radialGradient(
