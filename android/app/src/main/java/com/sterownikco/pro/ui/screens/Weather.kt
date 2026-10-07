@@ -170,8 +170,9 @@ fun WeatherPage(m: AppModel) {
                             .padding(horizontal = 8.dp, vertical = 3.dp))
                 }
                 SvgView(
-                    src = remember(heroCode, heroIsDay) { Ilu.heroBoiler(m.S.art(heroCode, heroIsDay)) },
-                    modifier = Modifier.size(88.dp)
+                    src = remember(heroCode, heroIsDay) { Ilu.weatherHero(heroCode, heroIsDay) },
+                    modifier = Modifier.size(88.dp),
+                    animFor = { t -> Ilu.anim(t, m.S.art(heroCode, heroIsDay)) }
                 )
             }
         }
@@ -478,12 +479,14 @@ private fun WCard(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (stackSub) {
                 Column(Modifier.weight(1f)) {
                     Text(title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = titleColor,
-                        letterSpacing = 0.6.sp, lineHeight = 13.sp)
-                    Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp))
+                        letterSpacing = 0.6.sp, lineHeight = 13.sp,
+                        maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                    Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp),
+                        maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
                 }
             } else {
                 Text(title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = titleColor,
@@ -504,7 +507,7 @@ private fun RowScope.RangeBtn(label: String, on: Boolean, flex: Boolean = false,
     Box(
         mod.background(if (on) Pal.rgba(0, 212, 245, .15f) else Pal.Surface2, shape)
             .border(BorderStroke(1.dp, if (on) Pal.Cyan else Pal.Border), shape)
-            .clickable { onClick() }.padding(horizontal = 6.dp, vertical = 3.dp),
+            .clickable { onClick() }.padding(horizontal = 4.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(label, fontSize = 8.sp, fontWeight = FontWeight.Bold, color = if (on) Color.White else Pal.TextDim,

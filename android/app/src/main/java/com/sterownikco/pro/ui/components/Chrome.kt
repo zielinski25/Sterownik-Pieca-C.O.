@@ -83,7 +83,7 @@ private data class ChipStyle(val text: String, val fg: Color, val bg: Color, val
 @Composable
 fun Chip(m: AppModel) {
     val st = when {
-        m.connected -> ChipStyle("● LIVE · " + m.S.ip, Pal.Live, Pal.rgba(74, 222, 128, .13f), Pal.rgba(74, 222, 128, .35f))
+        m.connected -> ChipStyle("● LIVE", Pal.Live, Pal.rgba(74, 222, 128, .13f), Pal.rgba(74, 222, 128, .35f))
         else -> ChipStyle("○ BRAK SESJI", Pal.TextDim, Pal.rgba(127, 147, 163, .12f), Pal.rgba(127, 147, 163, .3f))
     }
     val (txt, fg, bg, bd) = st
@@ -285,7 +285,7 @@ private fun DrawScope.drawTrendSeries(vals: List<Double>, color: Color, w: Float
 /** `.nav` — nawigacja dolna (5 zakładek jak PAGES w Piec.html). */
 @Composable
 fun NavBar(page: Int, onNav: (Int) -> Unit) {
-    val items = listOf("pulpit" to "PULPIT", "wykresy" to "WYKRESY", "pogoda" to "POGODA", "ustawienia" to "USTAWIENIA", "more" to "WIĘCEJ")
+    val items = listOf("dashboard" to "Dashboard", "chart" to "Wykresy", "weather" to "Pogoda", "settings" to "Ustawienia", "more" to "Więcej")
     Row(
         modifier = Modifier.fillMaxWidth().height(Dimens.navH)
             .background(Brush.linearGradient(listOf(Pal.Nav, Pal.Nav2)))
