@@ -219,6 +219,7 @@ private fun WifiRow(
 }
 
 /** `showWifiSheet()` — karta stanu, skaner, dodawanie sieci, NVS. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WifiSheet(m: AppModel) {
     var ssid by remember { mutableStateOf("") }
@@ -232,7 +233,10 @@ fun WifiSheet(m: AppModel) {
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(m.wifiActiveSsid(), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Pal.Text)
+                Text(
+                    m.wifiActiveSsid(), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Pal.Text,
+                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
                 NetBadge("POŁĄCZONO", "on")
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -240,11 +244,21 @@ fun WifiSheet(m: AppModel) {
                 WifiSig(curRssi)
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("IP: ${if (m.S.ip.isEmpty()) "—" else m.S.ip}", style = Txt.cardDesc, color = Pal.Text)
-            Text("Źródło: /api/wifi/list (centrala)", style = Txt.cardDesc)
-            Text("Tryb: STA (Klient)", style = Txt.cardDesc.copy(color = Pal.Cyan))
-            Text("MAC: 48:E7:29:B1:0A:F4", style = Txt.monoSm)
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                "IP: ${if (m.S.ip.isEmpty()) "—" else m.S.ip}", style = Txt.cardDesc, color = Pal.Text,
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+            Text("Źródło: /api/wifi/list (centrala)", style = Txt.cardDesc,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Tryb: STA (Klient)", style = Txt.cardDesc.copy(color = Pal.Cyan),
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("MAC: 48:E7:29:B1:0A:F4", style = Txt.monoSm,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 

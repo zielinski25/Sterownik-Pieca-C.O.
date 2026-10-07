@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
@@ -144,7 +145,9 @@ fun PompaSheet(m: AppModel) {
         val running = curTemp >= S.tempOn || (curTemp > S.tempOff && S.pompa)
         DiagramBox {
             DiagHead("🌡️ KOPCIUCH — PROGI TEMPERATURY PIECA", "Histereza: ${S.tempOn - S.tempOff}°C")
-            BoxWithConstraints(Modifier.fillMaxWidth().height(14.dp).padding(top = 18.dp, bottom = 12.dp)) {
+            // Padding must wrap the 14 dp gauge, not consume its height; otherwise
+            // the gradient bar and threshold markers get measured at zero height.
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 12.dp).height(14.dp)) {
                 val w = maxWidth
                 Box(Modifier.fillMaxWidth().height(14.dp)
                     .background(Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Pal.Yellow, Pal.Accent, Pal.Err)), RoundedCornerShape(7.dp)))
@@ -154,14 +157,17 @@ fun PompaSheet(m: AppModel) {
                 Box(Modifier.offset(x = w * (curPct / 100f) - 1.5.dp, y = (-4).dp).width(3.dp).height(22.dp)
                     .background(Color.White, RoundedCornerShape(2.dp)))
             }
-            Row(Modifier.fillMaxWidth()) {
-                Text("$minScale°C (zimny)", fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim, modifier = Modifier.weight(1f))
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("$minScale°C (zimny)", fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                    Text("$maxScale°C (gorący)", fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                }
                 Text(
                     "▲ Aktualnie piec: ${S.fmt1(curTemp)}°C (${if (running) "POMPA PRACUJE" else "POMPA STOI"})",
-                    fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = if (running) Pal.Live else Pal.Warn,
-                    modifier = Modifier.weight(1.4f), textAlign = TextAlign.Center
+                    fontSize = 8.sp, fontWeight = FontWeight.Bold, color = if (running) Pal.Live else Pal.Warn,
+                    modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
-                Text("$maxScale°C (gorący)", fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
             }
         }
     }
