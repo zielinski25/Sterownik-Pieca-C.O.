@@ -9,11 +9,10 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.random.Random
 
 /* ══════════════════════════════════════════════════════════════════════════
-   POGODA — `generateWeatherData` (fallback offline) + `fetchRealOpenMeteo`
-   + `getWeatherDesc/Emoji` przeniesione 1:1 z Piec.html.
+   POGODA — wylacznie prawdziwe `fetchRealOpenMeteo` + `getWeatherDesc/Emoji`
+   1:1 z Piec.html. ZERO symulacji: brak sieci = uczciwy brak danych.
    ══════════════════════════════════════════════════════════════════════════ */
 
 data class WHour(
@@ -65,58 +64,6 @@ object Weather {
         code in 71..77 -> "🌨️"
         code >= 95 -> "⛈️"
         else -> "🌤️"
-    }
-
-    /** Model synoptyczny używany, gdy Open-Meteo jest niedostępny. */
-    fun generate(days: Int): WeatherData {
-        val totalHours = days * 24
-        val nowTs = System.currentTimeMillis()
-        val hourly = ArrayList<WHour>(totalHours)
-        val baseTemp = 13.0
-        val cal = Calendar.getInstance()
-        for (h in 0 until totalHours) {
-            val ts = nowTs + h * 3600L * 1000L
-            cal.timeInMillis = ts
-            val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val isDay = hour in 6 until 20
-            val dayCycle = kotlin.math.sin((hour - 8) / 24.0 * Math.PI * 2)
-            val temp = baseTemp + dayCycle * 6.5 + (Random.nextDouble() - .5) * .8
-            val wind = max(4.0, 12.0 + kotlin.math.sin(h / 6.0) * 8 + (Random.nextDouble() - .5) * 3)
-            val cloud = min(100.0, max(0.0, 40.0 + kotlin.math.sin(h / 8.0) * 35))
-            val rain = if (cloud > 60) max(0.0, (cloud - 60) * .08) else 0.0
-            val code = when {
-                cloud > 80 && rain > 1.2 -> 65
-                cloud > 60 && rain > .1 -> 61
-                cloud > 70 -> 3
-                cloud > 30 -> 2
-                else -> 0
-            }
-            hourly.add(WHour(ts, temp, wind, cloud, rain, if (rain > 0) min(95.0, rain * 40 + 20) else cloud * .2, code, isDay))
-        }
-        val daily = ArrayList<WDay>()
-        for (day in 0 until days) {
-            val dayHours = hourly.subList(day * 24, min((day + 1) * 24, hourly.size))
-            if (dayHours.isEmpty()) break
-            val temps = dayHours.map { it.temp }
-            val rainSum = dayHours.sumOf { it.precip }
-            val codes = dayHours.map { it.code }
-            val rep = codes.firstOrNull { it > 50 } ?: codes.firstOrNull { it > 0 } ?: 0
-            val iso = isoDate(dayHours[0].time)
-            daily.add(WDay(dayHours[0].time, temps.min(), temps.max(), rainSum, rep, iso + "T06:42:00", iso + "T18:15:00"))
-        }
-        val c = hourly[0]
-        val cur = WCurrent(
-            temp = c.temp, feelsLike = c.temp - (if (c.wind > 15) 2.2 else .8), humidity = 68.0,
-            wind = c.wind, windGusts = c.wind * 1.6, windDir = "SW", pressure = 1014,
-            cloud = c.cloud, precip = c.precip, uv = 3.4, code = c.code, isDay = c.isDay
-        )
-        return WeatherData(cur, hourly, daily)
-    }
-
-    private fun isoDate(ms: Long): String {
-        val c = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
-        c.timeInMillis = ms
-        return String.format(Locale.US, "%04d-%02d-%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
     }
 
     /** `fetchRealOpenMeteo(days)` — te same parametry zapytania co w panelu. */
@@ -201,7 +148,7 @@ object Weather {
     }
 
     /** Open-Meteo zwraca czasy lokalne bez strefy — traktujemy jak lokalne. */
-    private fun parseIso(s: String): Long = try {
+    fun parseIso(s: String): Long = try {
         val s2 = s.replace("T", " ").trim()
         // Wzorzec MUSI pasowac do dlugosci: "yyyy-MM-dd HH:mm:ss" na "2026-10-07 14:00"
         // rzuca ParseException -> lapalismy 0L -> wszystkie karty "01:00" i dni "Czw 1.1".

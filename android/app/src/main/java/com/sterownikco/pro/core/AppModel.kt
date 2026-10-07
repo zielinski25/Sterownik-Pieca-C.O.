@@ -84,7 +84,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     // ── pogoda ──────────────────────────────────────────────────────────────
     var weather by mutableStateOf<WeatherData?>(null)
-    var weatherDays = 7
+    var weatherDays by mutableStateOf(7)
     var weatherBusy by mutableStateOf(false)
 
     // ── wykresy ─────────────────────────────────────────────────────────────
@@ -387,15 +387,62 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     // ── pogoda ──────────────────────────────────────────────────────────────
-    fun refreshWeather(force: Boolean) = scope.launch {
-        if (weather == null || force) weather = Weather.generate(weatherDays)
-        weatherBusy = true
+    // ── pogoda (TYLKO prawdziwe Open-Meteo — zero symulacji) ────────────────
+    fun refreshWeather(force: Boolean, announce: Boolean = false) = scope.launch {
+        if (weather == null || force) weatherBusy = true
         val lat = prefs.get(Prefs.K_LAT) ?: "51.066389"
         val lon = prefs.get(Prefs.K_LON) ?: "21.509167"
         val real = Weather.fetch(http, lat, lon, weatherDays)
-        if (real != null) { weather = real; S.bump() }
+        if (real != null) {
+            weather = real; S.bump()
+            if (announce) showToast("Pogoda", "Dane pogodowe zaktualizowane", "ok")
+        } else if (weather == null) {
+            // Pierwsze pobranie padlo: uczciwy brak danych, zadnych wymyslonych.
+            if (announce) showToast("Pogoda", "Brak połączenia z Open-Meteo", "err")
+        } else if (announce) {
+            showToast("Pogoda", "Brak połączenia — pokazuję ostatnie dane", "err")
+        }
         weatherBusy = false
-        solar.estimateForecastGain(real?.hourly ?: weather?.hourly ?: emptyList())
+        solar.estimateForecastGain(weather?.hourly ?: emptyList())
+    }
+
+    /** Zakres studia pogody (W_RANGES w HTML): zmiana dni = refetch + przerys. */
+    fun setWeatherDays(d: Int) {
+        if (weatherDays == d) return
+        weatherDays = d
+        refreshWeather(true)
+    }
+
+    /** Eksport archiwum solarnego do CSV (Pobrane) — jak `SolarAnalytics.exportCsv`. */
+    fun exportSolarCsv() = scope.launch {
+        try {
+            val csv = solar.csv()
+            val name = solar.fileName()
+            val where = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    val cv = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                        put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/csv")
+                    }
+                    val u = ctx.contentResolver.insert(
+                        android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv
+                    ) ?: throw java.io.IOException("MediaStore odmówił")
+                    ctx.contentResolver.openOutputStream(u)?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
+                        ?: throw java.io.IOException("zapis niemożliwy")
+                    "Pobrane/$name"
+                } else {
+                    @Suppress("DEPRECATION")
+                    val dir = ctx.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS)
+                        ?: throw java.io.IOException("brak katalogu")
+                    java.io.File(dir, name).writeText(csv, Charsets.UTF_8)
+                    "Dokumenty/$name"
+                }
+            }
+            showToast("Solar", "Zapisano $where", "ok")
+            addLog("SOLAR", "Eksport CSV: $where", "info")
+        } catch (e: Exception) {
+            showToast("Solar", "Eksport nieudany: ${e.message}", "err")
+        }
     }
 
     fun setWeatherLocation(lat: String, lon: String) {
