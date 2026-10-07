@@ -3,6 +3,7 @@ package com.sterownikco.pro.core
 import androidx.compose.runtime.mutableIntStateOf
 import org.json.JSONObject
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.random.Random
 
 /* ══════════════════════════════════════════════════════════════════════════

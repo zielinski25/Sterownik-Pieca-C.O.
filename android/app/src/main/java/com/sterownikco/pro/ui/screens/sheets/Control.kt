@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -66,7 +67,7 @@ private fun StratOpt(ico: String, title: String, sub: String, on: Boolean, onCli
 
 /** `.pump-diagram-box` — kontener diagramu (rgba(14,23,38,.75), radius 14). */
 @Composable
-private fun DiagramBox(content: @Composable Column.() -> Unit) {
+private fun DiagramBox(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier.fillMaxWidth().padding(vertical = 10.dp)
             .background(Color(0xBF0E1726), RoundedCornerShape(14.dp))

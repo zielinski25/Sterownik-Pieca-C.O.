@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -315,7 +316,7 @@ fun NavBar(page: Int, onNav: (Int) -> Unit) {
 
 /** `.sheet` — arkusz dolny (75% wys., radius 24, uchwyt 42×5). */
 @Composable
-fun Sheet(title: String, icon: String, onDismiss: () -> Unit, content: @Composable Column.() -> Unit) {
+fun Sheet(title: String, icon: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize().background(Pal.rgba(3, 8, 15, .62f)).clickable { onDismiss() },
         contentAlignment = Alignment.BottomCenter
@@ -369,8 +370,9 @@ fun Toast(text: String, stage: String, cls: String) {
             AppIcon(if (cls == "err") "cross" else if (cls == "wait") "refresh" else "check", size = 13.dp, tint = c)
         }
         Column(Modifier.weight(1f)) {
-            Text(text, style = Txt.pill, color = c)
-            Text(stage, style = Txt.cardDesc, color = Pal.Text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // `.c` — samo polecenie (mono, tekst-dim), potem `.s` — status
+            Text(text, style = Txt.monoSm, color = Pal.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(stage, style = Txt.pill, color = c)
         }
     }
 }

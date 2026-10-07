@@ -16,10 +16,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
-import okhttp3.MediaType.Companion.toRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -329,7 +330,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             val cmdId = Rtdb.makeFireCmdId()
             try {
                 val ack = Rtdb.sendCommand(cmdId, cmd)
-                val latency = ((System.nanoTime() - t0) / 1_000_000).roundToInt()
+                val latency = ((System.nanoTime() - t0) / 1_000_000).toInt()
                 if (ack == null) {
                     showToast(cmd, "Wysłano do bazy (oczekiwanie na piec)", "ok")
                     addLog("ACK_WARN", "Wysłano do bazy (brak natychmiastowego ACK)", "warn")
@@ -348,7 +349,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             }
         } else {
             delay(200)
-            val latency = ((System.nanoTime() - t0) / 1_000_000).roundToInt()
+            val latency = ((System.nanoTime() - t0) / 1_000_000).toInt()
             if (rLocal == true) {
                 showToast(cmd, "Lokalnie wykonano (${latency}ms)", "ok")
                 addLog("ACK", "Lokalnie (${latency}ms): $cmd", "ack")
@@ -779,7 +780,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     /** `terminalLineCategory(line)` — tag z `tag=` lub `[TAG]`, else SYSTEM. */
     fun terminalCategory(line: String): String {
-        val m = Regex("(?:^|\s)tag=([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(line)
+        val m = Regex("(?:^|\\s)tag=([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(line)
             ?: Regex("\\[([A-Za-z0-9_-]+)\\]", RegexOption.IGNORE_CASE).find(line)
         return m?.groupValues?.get(1)?.uppercase() ?: "SYSTEM"
     }
@@ -926,7 +927,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun verLabel(v: String?): String {
         val f = (v ?: "").trim()
         if (f.isEmpty()) return "—"
-        return if (f[0].lowercase() == 'v') f else "v" + f
+        return if (f[0].lowercaseChar() == 'v') f else "v" + f
     }
 
     fun fwLabel(): String = verLabel(S.firmware)
