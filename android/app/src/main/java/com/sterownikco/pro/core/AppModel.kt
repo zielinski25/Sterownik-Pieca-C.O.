@@ -460,6 +460,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** `chartDataset` — historia + dopływ próbek na żywo (prawa krawędź). */
     fun chartDataset(): List<TelemPoint> = if (chartLive.isEmpty()) telemetry else telemetry + chartLive
 
+    // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartFocus — stqd "Platform declaration clash".
+    @JvmName("hmiSetChartFocus")
     fun setChartFocus(i: Int) {
         if (chartFocus == i) return
         chartFocus = i
@@ -473,10 +475,20 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         loadRange(sec)
     }
 
+    // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartMode — stqd "Platform declaration clash".
+    @JvmName("hmiSetChartMode")
     fun setChartMode(v: String) { chartMode = v; saveChartPrefs() }
+    // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartStyle — stqd "Platform declaration clash".
+    @JvmName("hmiSetChartStyle")
     fun setChartStyle(v: String) { chartStyle = v; saveChartPrefs() }
+    // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartGlitch — stqd "Platform declaration clash".
+    @JvmName("hmiSetChartGlitch")
     fun setChartGlitch(v: Boolean) { chartGlitch = v; saveChartPrefs() }
+    // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartAreaBand — stqd "Platform declaration clash".
+    @JvmName("hmiSetChartAreaBand")
     fun setChartAreaBand(v: Boolean) { chartAreaBand = v; saveChartPrefs() }
+    // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartAlarmLines — stqd "Platform declaration clash".
+    @JvmName("hmiSetChartAlarmLines")
     fun setChartAlarmLines(v: Boolean) { chartAlarmLines = v; saveChartPrefs() }
     fun setAlarmLevel(k: String, v: Double) { alarmLevels = alarmLevels + (k to v); saveChartPrefs() }
 
@@ -540,6 +552,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         } catch (e: Exception) { /* ignore */ }
     }
 
+    // Wlasciwosc o tej samej nazwie generuje JVM-owy setLayoutMode — stqd "Platform declaration clash".
+    @JvmName("hmiSetLayoutMode")
     fun setLayoutMode(mode: String) {
         layoutMode = mode
         prefs.set(Prefs.K_LAYOUT_MODE, mode)
