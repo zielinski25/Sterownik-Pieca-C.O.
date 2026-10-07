@@ -578,7 +578,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             "• *Pompa:* " + (if (S.pompa) "🟢 PRACA" else "⚪ STOP") + " — $pumpDesc\n" +
             "• *Serwa:* Klapa " + Math.round(S.klapa / 1.8) + "% | Syberek " + Math.round(S.syberka / 0.9) + "% (Tryb: $servoMode)\n" +
             "• *Alerty:* $alarm\n" +
-            "• *WiFi:* " + (if (S.wifi_rssi != 0) S.wifi_rssi + " dBm" else "—") + " · IP: " + (S.ip.ifEmpty { "—" })
+            "• *WiFi:* " + (if (S.wifi_rssi != 0) "${S.wifi_rssi} dBm" else "—") + " · IP: " + (S.ip.ifEmpty { "—" })
     }
 
     private fun fmt1(v: Double): String = String.format(java.util.Locale.US, "%.1f", v)
