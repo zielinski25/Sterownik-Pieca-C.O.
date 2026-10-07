@@ -225,8 +225,6 @@ fun AuthModal(m: AppModel) {
                 AuthBtn("🔑 POŁĄCZ I ZALOGUJ", primary = true, enabled = !m.authBusy, onClick = {
                     m.login(email.trim(), pass, rememberCreds)
                 })
-                Box(Modifier.height(8.dp))
-                AuthBtn("🧪 TRYB SYMULACJI (OFFLINE)", primary = false, enabled = true, onClick = { m.useDemoFromAuth() })
             }
         }
     }

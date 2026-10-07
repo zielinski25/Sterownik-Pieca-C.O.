@@ -83,7 +83,6 @@ private data class ChipStyle(val text: String, val fg: Color, val bg: Color, val
 fun Chip(m: AppModel) {
     val st = when {
         m.connected -> ChipStyle("● LIVE · " + m.S.ip, Pal.Live, Pal.rgba(74, 222, 128, .13f), Pal.rgba(74, 222, 128, .35f))
-        m.demoMode -> ChipStyle("🧪 SYMULACJA", Pal.Cyan, Pal.rgba(0, 212, 245, .15f), Pal.rgba(0, 212, 245, .4f))
         else -> ChipStyle("○ BRAK SESJI", Pal.TextDim, Pal.rgba(127, 147, 163, .12f), Pal.rgba(127, 147, 163, .3f))
     }
     val (txt, fg, bg, bd) = st

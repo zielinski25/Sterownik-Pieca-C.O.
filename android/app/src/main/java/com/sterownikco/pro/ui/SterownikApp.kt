@@ -43,7 +43,6 @@ import com.sterownikco.pro.ui.screens.MorePage
 import com.sterownikco.pro.ui.screens.SheetHost
 import com.sterownikco.pro.ui.screens.SettingsPage
 import com.sterownikco.pro.ui.screens.WeatherPage
-import com.sterownikco.pro.ui.screens.demo.DemoDrawer
 import com.sterownikco.pro.ui.theme.Dimens
 import com.sterownikco.pro.ui.theme.Pal
 import com.sterownikco.pro.ui.theme.SterownikTheme
@@ -51,7 +50,7 @@ import com.sterownikco.pro.ui.theme.SterownikTheme
 /**
  * Korzeń aplikacji = `<div class="app">` z Piec.html: górny pasek, przewijana
  * strona, dolna nawigacja, a na to: scrim + arkusz (`#sheet`), toast,
- * przycisk DEMO i modal logowania.
+ * modal logowania.
  */
 @Composable
 fun SterownikApp(m: AppModel) {
@@ -84,19 +83,6 @@ fun SterownikApp(m: AppModel) {
                     NavBar(page = m.page) { m.navigate(it) }
                 }
 
-                // `#demoBtn` — stały przycisk nad nawigacją, po prawej
-                Box(
-                    Modifier.align(Alignment.BottomEnd).padding(end = 14.dp, bottom = 86.dp)
-                        .height(38.dp)
-                        .background(Pal.Surface2, RoundedCornerShape(19.dp))
-                        .border(1.dp, Pal.rgba(0, 212, 245, .6f), RoundedCornerShape(19.dp))
-                        .clickable { m.demoOpen = !m.demoOpen }
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("⚙ DEMO", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan)
-                }
-
                 // `#toast`
                 m.toast?.let { t ->
                     Box(Modifier.align(Alignment.BottomCenter)) {
@@ -106,7 +92,6 @@ fun SterownikApp(m: AppModel) {
 
                 // `#sheet` + `#scrim`
                 if (m.sheet != null) SheetHost(m)
-                if (m.demoOpen) DemoDrawer(m)
                 if (m.authOpen) AuthModal(m)
                 // Okienko alarmu w aplikacji (system nie odpala FSI na 1. planie).
                 if (m.alarmPopup != null) AlarmPopup(m)

@@ -26,7 +26,6 @@ object Pal {
     val HeroB = Color(0xFF07131F)       // gradient hero end
     val CanvasBg = Color(0xFF08101A)   // tło wykresów
     val BubbleBg = Color(0xFF0F2238)   // tło dymka Telegram
-    val DemoBg = Color(0xFF0B1526)     // tło szuflady DEMO
     val TerminalBg = Color(0xFF060E18)
 
     // ── Obramowania ──

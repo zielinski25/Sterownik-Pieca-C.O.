@@ -792,7 +792,6 @@ fun SessionSheet(m: AppModel) {
         lbl = "POŁĄCZENIE Z FIREBASE",
         value = when {
             m.connected -> "🟢 Połączono LIVE"
-            m.demoMode -> "🟡 Tryb symulacji"
             else -> "🔴 Brak sesji"
         },
         sub = "Konto: " + (m.prefs.get(Prefs.K_EMAIL) ?: "Brak") + " · IP: ${m.S.ip} · RSSI: ${m.S.wifi_rssi} dBm · CMD Token: " +

@@ -55,7 +55,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     // ── stan połączenia ─────────────────────────────────────────────────────
     var connected by mutableStateOf(false)
-    var demoMode by mutableStateOf(false)
     var lastFetchTs = 0L
     var authOpen by mutableStateOf(false)
     /** Okienko alarmu w aplikacji (gdy system nie odpali FSI na pierwszym planie). */
@@ -68,7 +67,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var authStatus by mutableStateOf("Gotowy do połączenia")
     var authStatusKind by mutableStateOf("")
     var authBusy by mutableStateOf(false)
-    var demoOpen by mutableStateOf(false)
 
     // ── nawigacja / arkusze ─────────────────────────────────────────────────
     var page by mutableIntStateOf(0)
@@ -105,7 +103,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     val seriesOn = mutableStateMapOf<String, Boolean>()
     var alarmLevels by mutableStateOf(mapOf("lolo" to 25.0, "lo" to 35.0, "hi" to 75.0, "hihi" to 85.0))
 
-    /** `--frame-w` z szuflady DEMO (360 / 412 / 480 / 768). */
+    /** Szerokość ramki w trybie szerokim (tablet / poziomo). */
     // (Przełącznik telefon/PC usunięty z APK — potrzebny tylko w Piec.html.)
     var frameWidth by mutableIntStateOf(412)
     var simSpeed = 1
@@ -179,7 +177,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 while (true) {
                     delay(2000)
                     S.tick += simSpeed
-                    S.liveTick(demoMode, isFbFresh)
+                    S.liveTick(isFbFresh)
                     if (!isFbFresh) S.bump()
                     tickCount += 1
                     recordSolar()
@@ -260,7 +258,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             Rtdb.refreshToken = j.optString("refreshToken")
             Rtdb.email = emailIn
             Rtdb.cmdToken = cmdToken
-            demoMode = false
             prefs.set(Prefs.K_API_KEY, apiKey)
             prefs.set(Prefs.K_EMAIL, emailIn)
             prefs.set(Prefs.K_CMD_TOKEN, cmdToken)
@@ -289,45 +286,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         showToast("SESJA", "Zapisano klucze zaawansowane", "ok")
     }
 
-    /** `authDemoBtn` — tryb symulacji bez konta. */
-    // (tryAutoLogin usunięty z APK — logowanie zawsze ręczne; HTML po staremu.)
-    fun useDemoFromAuth() {
-        authStatusKind = "warn"; authStatus = "Tryb symulacji offline — dane testowe"
-        enableDemoMode()
-        authOpen = false
-    }
-
-    /** `Scenariusze pogody` w szufladzie DEMO — patch `weatherData.current` + `t_zewn`. */
-    fun applyDemoWeather(scenario: String) {
-        val w = weather
-        if (w != null) {
-            val c = w.current
-            val nc = when (scenario) {
-                "rain" -> c.copy(code = 61, precip = 3.5)
-                "storm" -> c.copy(code = 95, wind = 45.0)
-                "snow" -> c.copy(code = 71, temp = -4.2)
-                else -> c.copy(code = 0, temp = 21.0)
-            }
-            weather = w.copy(current = nc)
-        }
-        val t = when (scenario) {
-            "rain" -> 14.5; "storm" -> 16.0; "snow" -> -4.2; else -> 21.0
-        }
-        S.t_zewn = t
-        S.real["t_zewn"] = t
-        S.bump()
-    }
-
-    fun enableDemoMode() {
-        demoMode = true
-        connected = false
-        authOpen = false
-        S.online = true
-        S.bump()
-        showToast("SYMULACJA", "Aktywowano tryb symulacji offline", "ok")
-        addLog("SYSTEM", "Uruchomiono lokalny tryb symulacji", "info")
-        if (page == 1) loadRange(rangeSec)
-    }
+    // (Tryb symulacji/DEMO usuniety z APK — tylko w Piec.html.)
 
     fun logout() {
         prefs.remove(Prefs.K_PASS); prefs.remove(Prefs.K_ID_TOKEN); prefs.remove(Prefs.K_REF_TOKEN)
@@ -336,7 +295,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         try { PiecWidget.clear(ctx) } catch (e: Exception) { /* ignore */ }
         alarmPopup = null
         connected = false
-        demoMode = false
         S.bump()
         showToast("SESYJA", "Wylogowano operatora", "ok")
         addLog("SYSTEM", "Zamknięto sesję operatora", "warn")
@@ -469,18 +427,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 }
             } catch (e: Exception) { /* fallback poniżej, jak w panelu */ }
         }
-        if (demoMode) {
-            val g = DemoTelemetry.generate(sec, S.night)
-            telemetry = g
-            chartPoints = g.size
-            chartStatus = "Załadowano ${g.size} próbek ($rangeName) · Tryb symulacji"
-            chartReality = "SYMULACJA"
-        } else {
-            telemetry = emptyList()
-            chartPoints = 0
-            chartStatus = "Wymagane logowanie do Firebase, aby pobrać telemetrię"
-            chartReality = "BRAK SESJI"
-        }
+        telemetry = emptyList()
+        chartPoints = 0
+        chartStatus = "Wymagane logowanie do Firebase, aby pobrać telemetrię"
+        chartReality = "BRAK SESJI"
         chartLive = emptyList()
     }
 
@@ -1192,14 +1142,13 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     /** Odświeżenie zakładki Pogoda (pobranie prognozy, gdy jeszcze nie ma danych). */
     fun refreshWeatherTab() {
-        if (weather == null) refreshWeather(true) else if (!demoMode) refreshWeather(false)
+        if (weather == null) refreshWeather(true) else refreshWeather(false)
     }
 
     // ─────────────────────────  mapowanie UI (PULPIT → arkusze) ─────────────────────────
     /** `#sysSub` z renderDashboard (Piec.html:4330-4345). */
     fun sysStripSub(): String = when {
         connected -> "stan na żywo z ESP32 (${S.ip}) · telemetria Firebase"
-        demoMode -> "tryb symulacji offline (dane testowe)"
         else -> "oczekiwanie na połączenie z Firebase"
     }
 

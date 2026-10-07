@@ -69,11 +69,10 @@ fun Dashboard(m: AppModel) {
         )
         if (!m.connected) {
             Banner(
-                text = if (m.demoMode) "Aktywny tryb symulacji offline — brak połączenia z piecem"
-                else "Brak połączenia z bazą Firebase — połącz na żywo",
-                kind = if (m.demoMode) "warn" else "warn",
-                action = if (m.demoMode) null else "🔑 POŁĄCZ",
-                onAction = if (m.demoMode) null else { { m.authOpen = true } }
+                text = "Brak połączenia z bazą Firebase — połącz na żywo",
+                kind = "warn",
+                action = "🔑 POŁĄCZ",
+                onAction = { m.authOpen = true }
             )
         }
         if (anyAl && S.online) {

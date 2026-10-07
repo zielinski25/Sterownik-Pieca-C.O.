@@ -4,7 +4,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import org.json.JSONObject
 import kotlin.math.roundToInt
 import kotlin.math.sin
-import kotlin.random.Random
 
 /* ══════════════════════════════════════════════════════════════════════════
    LUSTRO FIREBASE / ESP — przeniesione 1:1 z obiektu `S` w Piec.html
@@ -287,7 +286,7 @@ class PiecState {
     /** `liveTick()` — symulacja drgań czujników (tylko w trybie SYMULACJI). */
     var tick = 0
     var simSpeed = 1.0
-    fun liveTick(demoMode: Boolean, fbFresh: Boolean) {
+    fun liveTick(fbFresh: Boolean) {
         tick += simSpeed.toInt().coerceAtLeast(1)
         // wygasanie symulacji i override'ów
         val toDel = ArrayList<String>()
@@ -309,30 +308,7 @@ class PiecState {
             val key = k + "_override_min"
             if (num(key) > 0 && tick % 30 == 0) setNum(key, num(key) - 1)
         }
-        when {
-            fbFresh -> pushHist()
-            demoMode -> {
-                if (!symAktywna("ogrz")) {
-                    t_ogrz = (real["t_ogrz"] ?: t_ogrz) + sin(tick / 9.0) * 1.5 + (Random.nextDouble() - .5) * .2
-                    t_ogrz_sr = t_ogrz - .8
-                }
-                if (!symAktywna("bojler")) t_bojler = (real["t_bojler"] ?: t_bojler) + sin(tick / 15.0) * .7
-                if (!symAktywna("zewn")) t_zewn = (real["t_zewn"] ?: t_zewn) + sin(tick / 21.0) * .35
-                if (!symAktywna("panel")) t_panel = (real["t_panel"] ?: t_panel) + sin(tick / 12.0) * 1.1
-                if (!symAktywna("pokoj")) t_pokoj = (real["t_pokoj"] ?: t_pokoj) + sin(tick / 30.0) * .15
-                if (!symAktywna("ogrz_powrot")) t_powrot = t_ogrz - 14 + sin(tick / 14.0) * .5
-                if (!symAktywna("ogrz_trociny")) t_trociny = (real["t_trociny"] ?: t_trociny) + sin(tick / 25.0) * .3
-                if (!symAktywna("wilgotnosc")) wilgotnosc = minOf(100.0, maxOf(0.0, (real["wilgotnosc"] ?: wilgotnosc) + sin(tick / 17.0) * 2))
-                if (!symAktywna("dym")) {
-                    dym = (real["dym"] ?: dym) + sin(tick / 5.0) * 20 + Random.nextDouble() * 8
-                    if (dym_alarm) dym = progAlarmDym + 200 + Random.nextDouble() * 50
-                }
-                if (alarm_ogrzewanie && !symAktywna("ogrz")) t_ogrz = progAlarmTemp + 4 + Random.nextDouble()
-                if (alarm_panel && !symAktywna("panel")) t_panel = progAlarmTemp + 5 + Random.nextDouble()
-                dym_wlaczony = t_ogrz >= dymProgTemp || dym_alarm || symAktywna("dym")
-                pushHist()
-            }
-        }
+        if (fbFresh) pushHist()
     }
 
     /** `applyCommand(cmd)` — zwraca true albo tekst błędu (jak w oryginale). */

@@ -42,7 +42,7 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
     else "SYMULACJA " + (S.sym[pole]?.min ?: 0) + "M" to "sim"
 
     val out = ArrayList<TileSpec>()
-    val stale = !S.online && !m.demoMode && !m.connected
+    val stale = !S.online && !m.connected
 
     // ── zewn ────────────────────────────────────────────────────────────────
     val tz = S.valOf("zewn", "t_zewn")
