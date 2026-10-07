@@ -12,9 +12,29 @@ cd android
 ./gradlew :app:assembleDebug        # Android Studio: Open → folder `android`
 ```
 
-Wymagania: JDK 17, Android SDK 35 (compile/target), minSdk 26.
-`gradle/wrapper/gradle-wrapper.jar` (Gradle 8.7) jest w repozytorium, więc nie
-jest potrzebny lokalny `gradle`.
+Wymagania: **JDK 17–21** (Studio: `jbr-21`), Android SDK 35 (compile/target),
+minSdk 26, Gradle 8.9 (wrapper w repo — `gradle/wrapper/gradle-wrapper.jar`
+jest commitowany, więc lokalny `gradle` nie jest potrzebny). Zestawienie
+narzędzi: AGP 8.7.3 · Kotlin 2.0.21 · Compose BOM 2024.12.01.
+
+### „Incompatible Gradle JVM version" przy syncu
+
+Gradle 8.9 nie uruchamia się na JDK 25 (i nowszych) — komunikat
+`The project's Gradle version 8.9 is incompatible with the Gradle JVM version 25.x`.
+Rozwiązanie (jedno kliknięcie): w panelu błędu wybrać
+**„Apply compatible Gradle JDK configuration and sync"**. Ręcznie:
+
+```
+Settings → Build, Execution, Deployment → Build Tools → Gradle
+  → Gradle JDK: jbr-21 (JetBrains Runtime bundled z Studio)
+  → Apply → Sync Project with Gradle Files
+```
+
+Zostawienie `sourceCompatibility/targetCompatibility = 17` i `jvmTarget = "17"`
+jest celowe — kod ma działać na urządzeniach z bootimage JDK 17, a Gradle/Kotlin
+uruchamiają się na JDK 21. Jeżeli koniecznie chcesz budować na JDK 25, trzeba
+podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
+`gradle-wrapper.properties` wymaga zmiany `distributionUrl`.
 
 > Uwaga: w środowisku, w którym powstawał ten port, **nie było JDK/Android SDK**
 > ani dostępu do dystrybucji Gradle — kod nie był więc nigdy kompilowany.
