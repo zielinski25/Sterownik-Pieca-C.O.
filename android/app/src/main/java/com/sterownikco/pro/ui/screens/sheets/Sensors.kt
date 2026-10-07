@@ -1,0 +1,254 @@
+package com.sterownikco.pro.ui.screens.sheets
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.sterownikco.pro.core.AppModel
+import com.sterownikco.pro.core.SensorDef
+import com.sterownikco.pro.ui.components.ManualRow
+import com.sterownikco.pro.ui.components.Note
+import com.sterownikco.pro.ui.components.NumRow
+import com.sterownikco.pro.ui.components.SectionHeader
+import com.sterownikco.pro.ui.components.Seg
+import com.sterownikco.pro.ui.components.UstBtn
+import com.sterownikco.pro.ui.theme.Pal
+import com.sterownikco.pro.ui.theme.Txt
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Arkusze czujników — port `sensorModalContent()` / `symulacjaSekcjaHtml()` /
+   `MENUS.czujniki` / `MENUS.dym` / `overheat()` (Piec.html 5104-5345, 5574).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** `.status-pill` (+ `.sim`); `.ok`/`.err` korzystają z barw `.pill`. */
+@Composable
+fun StatusPill(text: String, cls: String) {
+    val (fg, bg) = when (cls) {
+        "sim" -> Pal.Cyan to Pal.rgba(0, 212, 245, .15f)
+        "err" -> Pal.Err to Pal.rgba(255, 95, 120, .18f)
+        else -> Pal.Live to Pal.rgba(74, 222, 128, .12f)
+    }
+    val bd = when (cls) {
+        "sim" -> Pal.rgba(0, 212, 245, .4f)
+        "err" -> Pal.rgba(255, 95, 120, .45f)
+        else -> Pal.rgba(74, 222, 128, .35f)
+    }
+    Box(
+        Modifier.padding(start = 6.dp)
+            .background(bg, RoundedCornerShape(999.dp))
+            .border(BorderStroke(1.dp, bd), RoundedCornerShape(999.dp))
+            .padding(horizontal = 7.dp, vertical = 3.dp)
+    ) { Text(text, style = Txt.pill, color = fg) }
+}
+
+/**
+ * `symulacjaSekcjaHtml(pole, etykieta, jednostka, min, max, krok, statusKey)` —
+ * przycisk „Symulacja” rozwijający panel z suwakami wartości / czasu.
+ */
+@Composable
+fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min: Double, max: Double, krok: Double, statusKey: String = pole) {
+    val S = m.S
+    val f: (Double) -> String = { v -> if (krok >= 1.0) Math.round(v).toString() else S.fmt1(v) }
+    var open by remember(pole) { mutableStateOf(S.symAktywna(pole)) }
+    var value by remember(pole) { mutableFloatStateOf(S.valOf(pole, statusKey).toFloat()) }
+    var czas by remember(pole) { mutableIntStateOf(S.sym[pole]?.min ?: 60) }
+
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        SectionHeader("Symulacja — $etykieta")
+        Seg(listOf(0 to "Symulacja"), current = if (open) 0 else -1, columns = 1, onPick = { open = !open })
+        if (open) {
+            Column(
+                Modifier.fillMaxWidth().padding(top = 10.dp)
+                    .background(Pal.rgba(17, 31, 53, .65f), RoundedCornerShape(12.dp))
+                    .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(12.dp))
+                    .padding(12.dp, 14.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Wartość", style = Txt.rowDesc, modifier = Modifier.weight(1f))
+                    Text("${f(value.toDouble())} $jednostka", style = Txt.monoVal, color = Pal.White)
+                }
+                Slider(
+                    value = value.coerceIn(min.toFloat(), max.toFloat()),
+                    onValueChange = { v -> value = if (krok >= 1.0) Math.round(v / krok.toFloat()) * krok.toFloat() else v },
+                    valueRange = min.toFloat()..max.toFloat(),
+                    colors = SliderDefaults.colors(thumbColor = Pal.Cyan, activeTrackColor = Pal.Cyan, inactiveTrackColor = Pal.Surface3)
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Czas trwania", style = Txt.rowDesc, modifier = Modifier.weight(1f))
+                    Text("$czas min", style = Txt.monoVal, color = Pal.White)
+                }
+                Slider(
+                    value = czas.toFloat(), onValueChange = { v -> czas = Math.round(v / 5f) * 5 },
+                    valueRange = 5f..180f,
+                    colors = SliderDefaults.colors(thumbColor = Pal.Cyan, activeTrackColor = Pal.Cyan, inactiveTrackColor = Pal.Surface3)
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    UstBtn("Zastosuj", variant = "primary", modifier = Modifier.weight(1f), onClick = {
+                        m.send("symuluj $pole ${f(value.toDouble())} $czas")
+                        open = true
+                        m.refreshSheet()
+                    })
+                    UstBtn("Wyłącz teraz", variant = "danger", modifier = Modifier.weight(1f), onClick = {
+                        m.send("symuluj_stop $pole")
+                        open = false
+                        m.refreshSheet()
+                    })
+                }
+            }
+        }
+        val info = if (S.symAktywna(pole)) "Aktywna — jeszcze ok. ${S.sym[pole]?.min ?: 0} min" else ""
+        if (info.isNotEmpty()) {
+            Text(info, style = Txt.rowDesc.copy(fontSize = 9.5.sp, fontWeight = FontWeight.Bold, lineHeight = 13.sp),
+                color = Pal.Warn, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).padding(vertical = 4.dp))
+        }
+    }
+}
+
+/** Nagłówek karty czujnika (`.sensor-full-card` → `.sensor-full-header` + stopka zakresów). */
+@Composable
+fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeader: (() -> Unit)? = null) {
+    val S = m.S
+    val cur = S.valOf(sen.id, sen.key)
+    val sim = S.symAktywna(sen.id)
+    val pill = when {
+        sim -> "SYMULACJA" to "sim"
+        listStyle -> "LIVE" to "ok"
+        sen.id == "dym" && S.dym_alarm -> "ALARM" to "err"
+        sen.id == "dym" -> "OK (q=0)" to "ok"
+        else -> "LIVE (q=0)" to "ok"
+    }
+    Column(
+        Modifier.fillMaxWidth().background(Pal.Surface2, RoundedCornerShape(14.dp))
+            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(14.dp))
+            .then(if (onClickHeader != null) Modifier.clickable { onClickHeader() } else Modifier)
+            .padding(12.dp, 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(if (sen.ico.isNotEmpty()) sen.ico else "🌡️", fontSize = 20.sp)
+                    Column {
+                        Text(sen.name, style = Txt.cardTitle)
+                        Text(
+                            if (sen.id == "dym" && !listStyle) "Przetwornik optyczny MQ-2 · ADC1 GPIO36" else sen.bus,
+                            style = Txt.cardDesc, modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    SensorDef.fmt(sen, cur) + " " + sen.unit,
+                    style = Txt.monoVal.copy(fontSize = 15.sp, color = Pal.Cyan)
+                )
+                StatusPill(pill.first, pill.second)
+            }
+        }
+        if (!listStyle) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Zakres roboczy: ${sen.min} do ${sen.max} ${sen.unit}", style = Txt.tiny)
+                Text("Magistrala: ${sen.bus.split("·")[0].trim()}", style = Txt.tiny)
+                Text("Odczyt: Prawidłowy (OK)", style = Txt.tiny.copy(color = Pal.Live))
+            }
+        }
+    }
+}
+
+/** `sensorModalContent(sen)` — karta telemetryczna + sekcja symulacji. */
+@Composable
+fun SensorModal(m: AppModel, sen: SensorDef) {
+    SensorFullCard(m, sen, listStyle = false)
+    SymUnit(m, sen.id, sen.name, sen.unit, sen.min, sen.max, sen.step, sen.key)
+}
+
+/** `MENUS.czujniki` — lista 10 czujników + podsumowanie magistral. */
+@Composable
+fun SensorListSheet(m: AppModel) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.fillMaxWidth().background(Pal.Surface2, RoundedCornerShape(12.dp))
+                .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(12.dp)).padding(12.dp, 14.dp)
+        ) {
+            Text("MAGISTRALA CZUJNIKÓW TELEMETRYCZNYCH", style = Txt.diagLbl)
+            Text("10 / 10 aktywnych", style = Txt.diagVal, modifier = Modifier.padding(top = 4.dp))
+            Text(
+                "Magistrale: 1-Wire (7 czujników DS18B20) · I²C (BME280 @ 0x76) · ADC (MQ-2 GPIO36) · Błędy CRC: 0",
+                style = Txt.diagSub, modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+        Note("Wykaz wszystkich czujników pomiarowych instalacji C.O. Kliknij przycisk „Symulacja” przy wybranym czujniku, aby rozwinąć suwaki wymuszenia wartości.")
+        SensorDef.ALL.forEach { sen ->
+            Column(Modifier.fillMaxWidth()) {
+                SensorFullCard(m, sen, listStyle = true)
+                SymUnit(m, sen.id, sen.name, sen.unit, sen.min, sen.max, sen.step, sen.key)
+            }
+        }
+    }
+}
+
+/** `MENUS.dym` — karta MQ-2 + progi alarmu + cykl pracy czujnika. */
+@Composable
+fun DymSheet(m: AppModel) {
+    val S = m.S
+    val sen = SensorDef.byId("dym")!!
+    SensorFullCard(m, sen, listStyle = false)
+    SectionHeader("Ustawienia alarmu dymu")
+    NumRow("Próg alarmu", "Surowy odczyt ADC czujnika (0-4095)", S.progAlarmDym, 0, 4095) { v ->
+        m.commitNum("Próg alarmu", "progAlarmDym", 0, 4095, v)
+    }
+    SectionHeader("Aktywacja od temperatury pieca")
+    NumRow("Próg temperatury", "°C — poniżej tej temp. pieca czujnik jest wyłączony (histereza 3°C)", S.dymProgTemp, 0, 200) { v ->
+        m.commitNum("Próg temperatury", "dymProgTemp", 0, 200, v)
+    }
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+        Text("Tryb pracy po aktywacji", style = Txt.rowLabel, modifier = Modifier.weight(1f))
+    }
+    Seg(listOf(0 to "Impulsowo", 1 to "Ciągle"), current = S.dymTrybPracy, onPick = { v ->
+        m.send("ustaw dymTrybPracy $v")
+    })
+    SectionHeader("Cykl pracy czujnika (tryb Impulsowo)")
+    NumRow("Czas WŁ.", "s — rozgrzewanie + pomiar", S.dymCzasOn, 20, 600) { v -> m.commitNum("Czas WŁ.", "dymCzasOn", 20, 600, v) }
+    NumRow("Czas WYŁ.", "s — między pomiarami", S.dymCzasOff, 10, 600) { v -> m.commitNum("Czas WYŁ.", "dymCzasOff", 10, 600, v) }
+    NumRow("Czas stabilizacji", "s — część Czasu WŁ. zanim odczyt zaufany (dotyczy obu trybów)", S.dymCzasStabilizacji, 5, 590) { v ->
+        m.commitNum("Czas stabilizacji", "dymCzasStabilizacji", 5, 590, v)
+    }
+    SymUnit(m, "dym", "Dym", "ADC", 0.0, 4095.0, 1.0)
+}
+
+/** `overheat(panel)` — próg przegrzania pieca / kolektora. */
+@Composable
+fun OverheatSheet(m: AppModel, panel: Boolean) {
+    val S = m.S
+    SectionHeader("Zabezpieczenie przed przegrzaniem")
+    Note("Wspólny próg dla pieca C.O. i panelu słonecznego — histereza: piec -10°C, panel -4°C.")
+    NumRow("Próg alarmu przegrzania", "°C", S.progAlarmTemp, 0, 100) { v ->
+        m.commitNum("Próg alarmu przegrzania", "progAlarmTemp", 0, 100, v)
+    }
+    if (panel) SymUnit(m, "panel", "Panel słoneczny", "°C", -30.0, 160.0, 0.5)
+    else SymUnit(m, "ogrz", "Piec C.O.", "°C", 0.0, 160.0, 0.5)
+}

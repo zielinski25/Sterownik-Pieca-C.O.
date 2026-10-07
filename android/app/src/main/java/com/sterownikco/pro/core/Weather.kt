@@ -1,0 +1,209 @@
+package com.sterownikco.pro.core
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Request
+import org.json.JSONObject
+import java.util.Calendar
+import java.util.Locale
+import java.util.TimeZone
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.random.Random
+
+/* ══════════════════════════════════════════════════════════════════════════
+   POGODA — `generateWeatherData` (fallback offline) + `fetchRealOpenMeteo`
+   + `getWeatherDesc/Emoji` przeniesione 1:1 z Piec.html.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+data class WHour(
+    val time: Long, val temp: Double, val wind: Double, val cloud: Double,
+    val precip: Double, val precipProb: Double, val code: Int, val isDay: Boolean
+)
+
+data class WDay(
+    val date: Long, val minT: Double, val maxT: Double, val rainSum: Double, val code: Int,
+    val sunrise: String?, val sunset: String?
+)
+
+data class WCurrent(
+    val temp: Double, val feelsLike: Double, val humidity: Double, val wind: Double,
+    val windGusts: Double, val windDir: String, val pressure: Int, val cloud: Double,
+    val precip: Double, val uv: Double, val code: Int, val isDay: Boolean
+)
+
+data class WeatherData(val current: WCurrent, val hourly: List<WHour>, val daily: List<WDay>)
+
+object Weather {
+
+    fun degToDir(deg: Double): String {
+        val v = kotlin.math.floor(deg / 22.5 + 0.5).toInt()
+        val arr = arrayOf("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
+        return arr[v.mod(16)]
+    }
+
+    fun desc(code: Int): String = when {
+        code == 0 -> "Bezchmurnie"
+        code == 1 || code == 2 -> "Częściowe zachmurzenie"
+        code == 3 -> "Pochmurno"
+        code == 45 || code == 48 -> "Mgła"
+        code in 51..57 -> "Mżawka"
+        code in 61..67 -> "Opady deszczu"
+        code in 71..77 -> "Opady śniegu"
+        code in 80..86 -> "Przelotny deszcz"
+        code >= 95 -> "Burza z piorunami"
+        else -> "Umiarkowanie"
+    }
+
+    fun emoji(code: Int, isDay: Boolean): String = when {
+        code == 0 -> if (isDay) "☀️" else "🌙"
+        code == 1 || code == 2 -> if (isDay) "⛅" else "☁️"
+        code == 3 -> "☁️"
+        code == 45 || code == 48 -> "🌫️"
+        code in 51..57 -> "🌦️"
+        code in 61..67 -> "🌧️"
+        code in 71..77 -> "🌨️"
+        code >= 95 -> "⛈️"
+        else -> "🌤️"
+    }
+
+    /** Model synoptyczny używany, gdy Open-Meteo jest niedostępny. */
+    fun generate(days: Int): WeatherData {
+        val totalHours = days * 24
+        val nowTs = System.currentTimeMillis()
+        val hourly = ArrayList<WHour>(totalHours)
+        val baseTemp = 13.0
+        val cal = Calendar.getInstance()
+        for (h in 0 until totalHours) {
+            val ts = nowTs + h * 3600L * 1000L
+            cal.timeInMillis = ts
+            val hour = cal.get(Calendar.HOUR_OF_DAY)
+            val isDay = hour in 6 until 20
+            val dayCycle = kotlin.math.sin((hour - 8) / 24.0 * Math.PI * 2)
+            val temp = baseTemp + dayCycle * 6.5 + (Random.nextDouble() - .5) * .8
+            val wind = max(4.0, 12.0 + kotlin.math.sin(h / 6.0) * 8 + (Random.nextDouble() - .5) * 3)
+            val cloud = min(100.0, max(0.0, 40.0 + kotlin.math.sin(h / 8.0) * 35))
+            val rain = if (cloud > 60) max(0.0, (cloud - 60) * .08) else 0.0
+            val code = when {
+                cloud > 80 && rain > 1.2 -> 65
+                cloud > 60 && rain > .1 -> 61
+                cloud > 70 -> 3
+                cloud > 30 -> 2
+                else -> 0
+            }
+            hourly.add(WHour(ts, temp, wind, cloud, rain, if (rain > 0) min(95.0, rain * 40 + 20) else cloud * .2, code, isDay))
+        }
+        val daily = ArrayList<WDay>()
+        for (day in 0 until days) {
+            val dayHours = hourly.subList(day * 24, min((day + 1) * 24, hourly.size))
+            if (dayHours.isEmpty()) break
+            val temps = dayHours.map { it.temp }
+            val rainSum = dayHours.sumOf { it.precip }
+            val codes = dayHours.map { it.code }
+            val rep = codes.firstOrNull { it > 50 } ?: codes.firstOrNull { it > 0 } ?: 0
+            val iso = isoDate(dayHours[0].time)
+            daily.add(WDay(dayHours[0].time, temps.min(), temps.max(), rainSum, rep, iso + "T06:42:00", iso + "T18:15:00"))
+        }
+        val c = hourly[0]
+        val cur = WCurrent(
+            temp = c.temp, feelsLike = c.temp - (if (c.wind > 15) 2.2 else .8), humidity = 68.0,
+            wind = c.wind, windGusts = c.wind * 1.6, windDir = "SW", pressure = 1014,
+            cloud = c.cloud, precip = c.precip, uv = 3.4, code = c.code, isDay = c.isDay
+        )
+        return WeatherData(cur, hourly, daily)
+    }
+
+    private fun isoDate(ms: Long): String {
+        val c = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+        c.timeInMillis = ms
+        return String.format(Locale.US, "%04d-%02d-%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+    }
+
+    /** `fetchRealOpenMeteo(days)` — te same parametry zapytania co w panelu. */
+    suspend fun fetch(client: okhttp3.OkHttpClient, lat: String, lon: String, days: Int): WeatherData? =
+        withContext(Dispatchers.IO) {
+            try {
+                val q = "latitude=" + enc(lat) + "&longitude=" + enc(lon) +
+                    "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index" +
+                    "&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,is_day" +
+                    "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum" +
+                    "&timezone=auto&forecast_days=" + enc(max(1, min(14, days)).toString())
+                val req = Request.Builder().url("https://api.open-meteo.com/v1/forecast?" + q)
+                    .header("Cache-Control", "no-store").build()
+                val body = client.newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return@withContext null
+                parse(JSONObject(body), days)
+            } catch (e: Exception) { null }
+        }
+
+    private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+
+    private fun parse(raw: JSONObject, days: Int): WeatherData? {
+        val hh = raw.optJSONObject("hourly") ?: return null
+        val times = hh.optJSONArray("time") ?: return null
+        val hourly = ArrayList<WHour>(times.length())
+        for (i in 0 until times.length()) {
+            hourly.add(
+                WHour(
+                    time = parseIso(times.optString(i)),
+                    temp = arr(hh, "temperature_2m", i, 15.0),
+                    wind = arr(hh, "wind_speed_10m", i, 10.0),
+                    cloud = arr(hh, "cloud_cover", i, 20.0),
+                    precip = arr(hh, "precipitation", i, 0.0),
+                    precipProb = arr(hh, "precipitation_probability", i, 0.0),
+                    code = arr(hh, "weather_code", i, 0.0).toInt(),
+                    isDay = if (hh.has("is_day")) arr(hh, "is_day", i, 1.0) == 1.0 else true
+                )
+            )
+        }
+        val daily = ArrayList<WDay>()
+        raw.optJSONObject("daily")?.let { dd ->
+            val dt = dd.optJSONArray("time") ?: return@let
+            for (i in 0 until dt.length()) {
+                daily.add(
+                    WDay(
+                        date = parseIso(dt.optString(i)),
+                        minT = arr(dd, "temperature_2m_min", i, 10.0),
+                        maxT = arr(dd, "temperature_2m_max", i, 20.0),
+                        rainSum = arr(dd, "precipitation_sum", i, 0.0),
+                        code = arr(dd, "weather_code", i, 0.0).toInt(),
+                        sunrise = str(dd, "sunrise", i), sunset = str(dd, "sunset", i)
+                    )
+                )
+            }
+        }
+        val curRaw = raw.optJSONObject("current") ?: JSONObject()
+        val c0 = hourly.firstOrNull()
+        val cur = WCurrent(
+            temp = if (curRaw.has("temperature_2m")) curRaw.getDouble("temperature_2m") else (c0?.temp ?: 15.0),
+            feelsLike = if (curRaw.has("apparent_temperature")) curRaw.getDouble("apparent_temperature") else ((c0?.temp ?: 15.0) - 1),
+            humidity = if (curRaw.has("relative_humidity_2m")) curRaw.getDouble("relative_humidity_2m") else 60.0,
+            wind = if (curRaw.has("wind_speed_10m")) curRaw.getDouble("wind_speed_10m") else (c0?.wind ?: 10.0),
+            windGusts = if (curRaw.has("wind_gusts_10m")) curRaw.getDouble("wind_gusts_10m") else 15.0,
+            windDir = degToDir(if (curRaw.has("wind_direction_10m")) curRaw.getDouble("wind_direction_10m") else 180.0),
+            pressure = if (curRaw.has("surface_pressure")) curRaw.getDouble("surface_pressure").toInt() else 1013,
+            cloud = if (curRaw.has("cloud_cover")) curRaw.getDouble("cloud_cover") else 30.0,
+            precip = if (curRaw.has("precipitation")) curRaw.getDouble("precipitation") else 0.0,
+            uv = if (curRaw.has("uv_index")) curRaw.getDouble("uv_index") else 3.0,
+            code = if (curRaw.has("weather_code")) curRaw.getInt("weather_code") else (c0?.code ?: 0),
+            isDay = if (curRaw.has("is_day")) curRaw.getInt("is_day") == 1 else (c0?.isDay ?: true)
+        )
+        return WeatherData(cur, hourly, daily)
+    }
+
+    private fun arr(o: JSONObject, key: String, i: Int, def: Double): Double {
+        val a = o.optJSONArray(key) ?: return def
+        return if (i < a.length() && !a.isNull(i)) a.optDouble(i, def) else def
+    }
+
+    private fun str(o: JSONObject, key: String, i: Int): String? {
+        val a = o.optJSONArray(key) ?: return null
+        return if (i < a.length() && !a.isNull(i)) a.optString(i) else null
+    }
+
+    /** Open-Meteo zwraca czasy lokalne bez strefy — traktujemy jak lokalne. */
+    private fun parseIso(s: String): Long = try {
+        val s2 = s.replace("T", " ").substring(0, min(19, s.length))
+        val f = java.text.SimpleDateFormat(if (s2.length >= 16) "yyyy-MM-dd HH:mm:ss" else "yyyy-MM-dd HH", Locale.US)
+        f.parse(s2)?.time ?: 0L
+    } catch (e: Exception) { 0L }
+}
