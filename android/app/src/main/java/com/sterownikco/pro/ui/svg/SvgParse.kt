@@ -152,7 +152,13 @@ object Svg {
             }
             ev = parser.next()
         }
-        return out
+        // Wejscie owijamy w syntetyczny <root> (wymog parsera dla fragmentow) —
+        // zwracamy DZIECI tego wezla, nie jego samego. Wczesniej zwracalismy [root],
+        // przez co build() nigdy nie znajdowal tagu "svg" (rootSvg == null) i cale
+        // body bylo jednym niemalarowalnym wezlem "root": ZADEN SvgView/AppIcon
+        // w apce nic nie rysowal (puste nawigiacja, kafelki, hero, arkusze).
+        val doc = out.firstOrNull()
+        return if (out.size == 1 && doc?.tag == "root") doc.children else out
     }
 
     // ───────────────────────────── kolory ─────────────────────────────
