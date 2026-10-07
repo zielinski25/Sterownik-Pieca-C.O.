@@ -16,7 +16,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
@@ -34,7 +38,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -171,29 +177,35 @@ fun NumRow(
     onCommit: (Int) -> Unit
 ) {
     var text by remember(value) { mutableStateOf(value.toString()) }
+    fun commit() {
+        val v = text.toIntOrNull()
+        if (v == null || v < min || v > max) onCommit(-1) else onCommit(v)
+    }
     RowLabel(name, desc) {
-        OutlinedTextField(
+        // OutlinedTextField ma minimalna wysokosc kontenera 56 dp — przy 38 dp
+        // ucinal cyfry od gory (Serwo/Pompa). BasicTextField z wlasna ramka.
+        val inter = remember { MutableInteractionSource() }
+        val focused by inter.collectIsFocusedAsState()
+        BasicTextField(
             value = text,
             onValueChange = { t -> text = t.filter { it.isDigit() || it == '-' } },
-            modifier = Modifier.size(width = 72.dp, height = 38.dp),
+            modifier = Modifier.width(76.dp).height(38.dp),
             singleLine = true,
-            textStyle = Txt.inp.copy(fontSize = 12.sp),
-            shape = RoundedCornerShape(9.dp),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            keyboardActions = KeyboardActions(onDone = {
-                val v = text.toIntOrNull()
-                if (v == null) onCommit(-1) else onCommit(v.coerceIn(min, max))
-            }),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Pal.Cyan, unfocusedBorderColor = Pal.BorderStrong,
-                focusedTextColor = Pal.White, unfocusedTextColor = Pal.White,
-                cursorColor = Pal.Cyan
-            ),
+            textStyle = Txt.inp.copy(fontSize = 13.sp, textAlign = TextAlign.Center),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { commit() }),
+            interactionSource = inter,
+            cursorBrush = SolidColor(Pal.Cyan),
+            decorationBox = { inner ->
+                Box(
+                    Modifier.background(Pal.Surface2, RoundedCornerShape(9.dp))
+                        .border(BorderStroke(1.dp, if (focused) Pal.Cyan else Pal.BorderStrong), RoundedCornerShape(9.dp))
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) { inner() }
+            }
         )
-        UstBtn("Ustaw", onClick = {
-            val v = text.toIntOrNull()
-            if (v == null || v < min || v > max) onCommit(-1) else onCommit(v)
-        }, variant = "plain")
+        UstBtn("Ustaw", onClick = { commit() }, variant = "plain")
     }
 }
 

@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -129,6 +131,7 @@ fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min:
 }
 
 /** Nagłówek karty czujnika (`.sensor-full-card` → `.sensor-full-header` + stopka zakresów). */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeader: (() -> Unit)? = null) {
     val S = m.S
@@ -170,7 +173,13 @@ fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeade
             }
         }
         if (!listStyle) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            // Trzy dlugie napisy nie mieszcza sie w jednym wierszu — Row + SpaceBetween
+            // sklejal je w "…ADCMagistrala:…MQ-2Odczyt:…". FlowRow ladnie je zawija.
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 Text("Zakres roboczy: ${sen.min} do ${sen.max} ${sen.unit}", style = Txt.tiny)
                 Text("Magistrala: ${sen.bus.split("·")[0].trim()}", style = Txt.tiny)
                 Text("Odczyt: Prawidłowy (OK)", style = Txt.tiny.copy(color = Pal.Live))

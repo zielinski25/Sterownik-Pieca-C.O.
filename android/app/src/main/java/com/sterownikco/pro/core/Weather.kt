@@ -202,8 +202,17 @@ object Weather {
 
     /** Open-Meteo zwraca czasy lokalne bez strefy — traktujemy jak lokalne. */
     private fun parseIso(s: String): Long = try {
-        val s2 = s.replace("T", " ").substring(0, min(19, s.length))
-        val f = java.text.SimpleDateFormat(if (s2.length >= 16) "yyyy-MM-dd HH:mm:ss" else "yyyy-MM-dd HH", Locale.US)
-        f.parse(s2)?.time ?: 0L
+        val s2 = s.replace("T", " ").trim()
+        // Wzorzec MUSI pasowac do dlugosci: "yyyy-MM-dd HH:mm:ss" na "2026-10-07 14:00"
+        // rzuca ParseException -> lapalismy 0L -> wszystkie karty "01:00" i dni "Czw 1.1".
+        val pat = when {
+            s2.length >= 19 -> "yyyy-MM-dd HH:mm:ss"
+            s2.length >= 16 -> "yyyy-MM-dd HH:mm"
+            s2.length >= 13 -> "yyyy-MM-dd HH"
+            else -> "yyyy-MM-dd"
+        }
+        val f = java.text.SimpleDateFormat(pat, Locale.US)
+        f.isLenient = false
+        f.parse(s2.take(pat.length))?.time ?: 0L
     } catch (e: Exception) { 0L }
 }

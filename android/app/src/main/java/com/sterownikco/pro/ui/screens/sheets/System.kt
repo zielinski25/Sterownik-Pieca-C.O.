@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.unit.sp
@@ -177,7 +178,7 @@ fun TermBtn(
             .clickable(enabled = enabled) { onClick() }
             .padding(horizontal = 12.dp, vertical = 7.dp),
         contentAlignment = Alignment.Center
-    ) { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = fg) }
+    ) { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
 /** `.wifi-row` (skaner / lista zapisanych). */
@@ -416,14 +417,15 @@ fun DiagCard(lbl: String, value: String, sub: String) {
 /** selektor `select` z paska narzędzi terminala. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Sel(label: String, options: List<Pair<String, String>>, current: String, onPick: (String) -> Unit) {
+private fun Sel(label: String, options: List<Pair<String, String>>, current: String, modifier: Modifier = Modifier, onPick: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Column(Modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
-        Box(Modifier.background(Color(0xFF091524), RoundedCornerShape(8.dp))
+        Box(Modifier.fillMaxWidth().background(Color(0xFF091524), RoundedCornerShape(8.dp))
             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(8.dp))
             .clickable { open = true }.padding(horizontal = 10.dp, vertical = 6.dp)) {
-            Text(options.firstOrNull { it.first == current }?.second ?: current, fontSize = 12.sp, color = Pal.Text)
+            Text(options.firstOrNull { it.first == current }?.second ?: current, fontSize = 12.sp, color = Pal.Text,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 options.forEach { (v, lbl) ->
                     DropdownMenuItem(text = { Text(lbl, fontSize = 12.sp, color = Pal.Text) }, onClick = {
@@ -463,28 +465,30 @@ fun TerminalSheet(m: AppModel) {
             }
         }
 
-        // 2. pasek akcji + selektory
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TermBtn("▶ Włącz Remote", variant = "primary", enabled = !m.termOpened, onClick = { m.terminalRemoteOn() })
-                    TermBtn("■ Wyłącz", variant = "danger", enabled = m.termOpened, onClick = { m.terminalRemoteOff() })
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TermBtn(if (m.termPaused) "▶ Wznów" else "Ⅱ Pauza", onClick = { m.terminalTogglePause() })
-                    TermBtn("⌫ Wyczyść", onClick = { m.terminalClear() })
-                }
+        // 2. pasek akcji + selektory, pionowo: dwie kolumny obok siebie na 360 dp
+        // sciskaly przyciski ("Wyczyść" lamal sie na "Wycz/ysc", selektory ucinaly).
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TermBtn("▶ Włącz Remote", modifier = Modifier.weight(1f), variant = "primary", enabled = !m.termOpened,
+                    onClick = { m.terminalRemoteOn() })
+                TermBtn("■ Wyłącz", modifier = Modifier.weight(1f), variant = "danger", enabled = m.termOpened,
+                    onClick = { m.terminalRemoteOff() })
             }
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TermBtn(if (m.termPaused) "▶ Wznów" else "Ⅱ Pauza", modifier = Modifier.weight(1f),
+                    onClick = { m.terminalTogglePause() })
+                TermBtn("⌫ Wyczyść", modifier = Modifier.weight(1f), onClick = { m.terminalClear() })
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Sel("SESJA", listOf(
                     "20261005_120000" to "20261005_120000 · najnowsza",
                     "20261005_100000" to "20261005_100000 · boot #14",
                     "20261004_180000" to "20261004_180000 · boot #13"
-                ), m.termSession) { m.termSession = it }
+                ), m.termSession, Modifier.weight(1f)) { m.termSession = it }
                 Sel("POZIOM DLOG", listOf(
                     "TRACE" to "TRACE (wszystko)", "DEBUG" to "DEBUG", "INFO" to "INFO",
                     "WARN" to "WARN", "ERR" to "ERR (tylko błędy)"
-                ), m.termLevel) { m.terminalSetLevel(it) }
+                ), m.termLevel, Modifier.weight(1f)) { m.terminalSetLevel(it) }
             }
         }
 
@@ -492,10 +496,12 @@ fun TerminalSheet(m: AppModel) {
         Column(Modifier.fillMaxWidth().background(Color(0x99091524), RoundedCornerShape(10.dp))
             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(10.dp)).padding(10.dp, 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("FILTR 21 KATEGORII DLOG (ESP32)", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.5.sp, modifier = Modifier.weight(1f))
-                TermBtn("✓ Wszystkie DLOG", onClick = { m.terminalSetAllCategories(true) })
-                TermBtn("□ Wyłącz wszystkie", onClick = { m.terminalSetAllCategories(false) })
+            // Etykieta nad przyciskami: w jednym wierszu dostawala ~60 dp
+            // i lamala sie na sylaby ("FILTR/21/KATEG/ORII/DLOG/(ESP3/2)").
+            Text("FILTR 21 KATEGORII DLOG (ESP32)", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.5.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TermBtn("✓ Wszystkie DLOG", modifier = Modifier.weight(1f), onClick = { m.terminalSetAllCategories(true) })
+                TermBtn("□ Wyłącz wszystkie", modifier = Modifier.weight(1f), onClick = { m.terminalSetAllCategories(false) })
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 DLOG_CATEGORIES.forEach { cat ->
@@ -511,9 +517,9 @@ fun TerminalSheet(m: AppModel) {
             }
         }
 
-        // 4. metryki
+        // 4. metryki (FlowRow: 6 kostek nie miesci sie w jednym wierszu 360 dp)
         val sec = if (m.termAutoOffAt > 0) ((m.termAutoOffAt - System.currentTimeMillis()) / 1000).coerceAtLeast(0) else -1L
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(
                 "SEQ: " + (if (m.termSeq >= 0) m.termSeq.toString() else "—"),
                 m.terminalFmtBytes(m.termBytes),
@@ -803,4 +809,13 @@ fun SessionSheet(m: AppModel) {
             m.openSheet(null)
         })
     }
+    SectionHeader("Klucze zaawansowane")
+    Note("Web API Key i token komend — zwykle nie trzeba ich ruszać (wbudowane wartości domyślne). Zmiana wymaga ponownego logowania.")
+    var advKey by remember { mutableStateOf(m.prefs.get(Prefs.K_API_KEY) ?: Prefs.DEFAULT_FB_API_KEY) }
+    var advTok by remember { mutableStateOf(m.prefs.get(Prefs.K_CMD_TOKEN) ?: Prefs.DEFAULT_CMD_TOKEN) }
+    SheetField("Firebase Web API Key", advKey, { advKey = it }, "AIzaSy...")
+    SheetField("Token komend (CMD Token)", advTok, { advTok = it }, "sterownikco-cmd-2026", password = true)
+    UstBtn("Zapisz klucze", variant = "primary", modifier = Modifier.fillMaxWidth(), onClick = {
+        m.saveKeys(advKey.trim(), advTok.trim())
+    })
 }

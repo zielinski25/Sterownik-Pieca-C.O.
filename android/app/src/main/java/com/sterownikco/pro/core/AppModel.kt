@@ -216,11 +216,15 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         if (page == 1) appendLiveFeed()
     }
 
-    fun login(apiKey: String, emailIn: String, password: String, cmdToken: String, remember: Boolean) = scope.launch {
+    /** Logowanie tylko kontem (e-mail + haslo) — klucz API i token komend ida
+     * z zapisanych ustawien (arkusz Sesja → Klucze zaawansowane) lub z domyslnych. */
+    fun login(emailIn: String, password: String, remember: Boolean) = scope.launch {
         authBusy = true; authStatusKind = "warn"; authStatus = "Logowanie do Firebase UserAuth…"
+        val apiKey = prefs.get(Prefs.K_API_KEY) ?: Prefs.DEFAULT_FB_API_KEY
+        val cmdToken = prefs.get(Prefs.K_CMD_TOKEN) ?: Prefs.DEFAULT_CMD_TOKEN
         if (apiKey.length < 20) {
-            authBusy = false; authStatusKind = "err"; authStatus = "Podaj poprawny Firebase Web API Key."
-            showToast("Logowanie", "Podaj poprawny Firebase Web API Key.", "err"); return@launch
+            authBusy = false; authStatusKind = "err"; authStatus = "Brak klucza API — ustaw w arkuszu Sesja."
+            showToast("Logowanie", "Brak klucza API — ustaw w arkuszu Sesja.", "err"); return@launch
         }
         if (!emailIn.contains("@") || password.length < 6) {
             authBusy = false; authStatusKind = "err"; authStatus = "Podaj poprawny e-mail i hasło konta."
@@ -250,6 +254,13 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             authBusy = false; authStatusKind = "err"; authStatus = e.message ?: "Logowanie nieudane"
             showToast("BŁĄD", e.message ?: "Logowanie nieudane", "err")
         }
+    }
+
+    /** Zapis kluczy z arkusza Sesja (sekcja zaawansowana). */
+    fun saveKeys(apiKey: String, cmdToken: String) {
+        if (apiKey.isNotEmpty()) { prefs.set(Prefs.K_API_KEY, apiKey); Rtdb.apiKey = apiKey }
+        if (cmdToken.isNotEmpty()) { prefs.set(Prefs.K_CMD_TOKEN, cmdToken); Rtdb.cmdToken = cmdToken }
+        showToast("SESJA", "Zapisano klucze zaawansowane", "ok")
     }
 
     fun tryAutoLogin() {
@@ -495,6 +506,65 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** `chartZoom` 1…16 (zoom +/-1.3× w arkuszu narzędzi). */
     fun zoomChart(f: Float) { chartZoom = (chartZoom * f).coerceIn(1f, 16f) }
     fun resetChartView() { chartZoom = 1f; chartOffset = 1f }
+
+    /** Rozmiar datasetu bez kosztownej konkatenacji list (gesty wywoluja to co klatke). */
+    fun chartTotal(): Int = telemetry.size + chartLive.size
+
+    private fun windowGeom(total: Int, zoom: Float): Pair<Int, Int> {
+        val vis = maxOf(4, Math.round(total / maxOf(zoom, 0.01f)))
+        return vis to maxOf(0, total - vis)
+    }
+
+    /** Biezace okno [start, end) + total — do paska pozycji pod wykresem. */
+    fun chartWindow(): Triple<Int, Int, Int> {
+        val total = chartTotal()
+        if (total <= 0) return Triple(0, 0, 0)
+        val (vis, maxStart) = windowGeom(total, chartZoom)
+        val start = maxOf(0, minOf(maxStart, Math.round(maxStart * (1 - chartOffset))))
+        return Triple(start, minOf(total, start + vis), total)
+    }
+
+    /** Zoom szczypaniem z kotwica w punkcie focusFrac (0..1 plotu). Okno 1:1
+     * z buildChartView: start = maxStart·(1−offset) — jak w Piec.html. */
+    fun pinchChart(factor: Float, focusFrac: Float) {
+        val total = chartTotal()
+        if (total < 5 || !factor.isFinite() || factor <= 0f) return
+        val f = focusFrac.coerceIn(0f, 1f)
+        val (vis, maxStart) = windowGeom(total, chartZoom)
+        val start = maxOf(0, minOf(maxStart, Math.round(maxStart * (1 - chartOffset))))
+        val anchor = start + f * maxOf(1, vis - 1)
+        val z2 = (chartZoom * factor).coerceIn(1f, 16f)
+        val (vis2, maxStart2) = windowGeom(total, z2)
+        val start2 = maxOf(0, minOf(maxStart2, Math.round(anchor - f * maxOf(1, vis2 - 1))))
+        chartZoom = z2
+        chartOffset = if (maxStart2 > 0) 1f - start2.toFloat() / maxStart2 else 1f
+    }
+
+    /** Pan: dxFrac = ulamek szerokosci plotu (dx>0 w prawo — jak drag w HTML:
+     * offset rosnie, tresc idzie za palcem). */
+    fun panChart(dxFrac: Float) {
+        if (!dxFrac.isFinite()) return
+        chartOffset = (chartOffset + dxFrac / maxOf(chartZoom, 1f)).coerceIn(0f, 1f)
+    }
+
+    /** Pasek pod wykresem: przesuniecie okna o ulamek calego datasetu
+     * (dx>0 = w strone nowszych, kciuk idzie za palcem). */
+    fun seekChartBy(dStartFrac: Float) {
+        val (start, _, total) = chartWindow()
+        if (total < 5 || !dStartFrac.isFinite()) return
+        val (_, maxStart) = windowGeom(total, chartZoom)
+        if (maxStart <= 0) return
+        chartOffset = 1f - (start + dStartFrac * total).coerceIn(0f, maxStart.toFloat()) / maxStart
+    }
+
+    /** Pasek pod wykresem: tap — srodek okna w miejsce tapa. */
+    fun seekChartCentered(frac: Float) {
+        val (_, _, total) = chartWindow()
+        if (total < 5) return
+        val (vis, maxStart) = windowGeom(total, chartZoom)
+        if (maxStart <= 0) return
+        chartOffset = 1f - (frac.coerceIn(0f, 1f) * total - vis / 2f).coerceIn(0f, maxStart.toFloat()) / maxStart
+    }
     fun chartZoomStat(): String =
         if (chartZoom <= 1.01f) "1×" else String.format(java.util.Locale.US, "%.1f×", chartZoom)
 

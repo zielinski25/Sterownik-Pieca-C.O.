@@ -989,6 +989,7 @@ body.mode-phone-frame #phone {
   border: 1px solid rgba(255, 255, 255, .06);
   border-radius: 14px;
   overflow: hidden;
+  touch-action: pan-y;
 }
 .chart-canvas-wrap canvas { width: 100%; height: 100%; display: block; }
 
@@ -1889,6 +1890,39 @@ body.mode-phone-frame #phone {
   border: 1px solid rgba(255, 255, 255, .06);
   position: relative;
   overflow: hidden;
+  touch-action: pan-y;
+}
+/* pasek pozycji pod wykresem: tor = caly zakres, kciuk = widoczne okno */
+.chscroll {
+  width: 100%;
+  height: 30px;
+  position: relative;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 8px;
+  touch-action: none;
+  cursor: pointer;
+}
+.chscroll-track {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 50%;
+  height: 6px;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, .08);
+  border-radius: 3px;
+}
+.chscroll-thumb {
+  position: absolute;
+  top: 50%;
+  height: 12px;
+  transform: translateY(-50%);
+  background: rgba(0, 212, 245, .55);
+  border: 1px solid var(--cyan);
+  border-radius: 6px;
+  min-width: 22px;
 }
 .fs-canvas-wrap canvas { width: 100%; height: 100%; display: block; }
 
@@ -3198,6 +3232,7 @@ body.mode-phone-frame #phone {
           <canvas id="chartMainCanvas"></canvas>
           <div id="chartFloatingTooltip"></div>
         </div>
+        <div class="chscroll" id="chartScrollbar"><div class="chscroll-track"></div><div class="chscroll-thumb" id="chartScrollbarThumb"></div></div>
 
         <div class="chart-phase-bar" id="chartPhaseBar">
           <span class="phase-pill" id="chartPhasePill">🔥 FAZA GRZANIA: STABILNA (58.4°C)</span>
@@ -3454,7 +3489,8 @@ body.mode-phone-frame #phone {
       <div class="fs-canvas-wrap">
         <canvas id="chartFsCanvas"></canvas>
       </div>
-      <div style="font-size:8px;color:var(--text-dim2);text-align:center;padding-top:4px">DOTKNIJ / NAJEDŹ kursor • KÓŁKO / GEST zoom • PRZECIĄGNIJ przewijanie • PODWÓJNY KLIK reset</div>
+      <div class="chscroll" id="chartFsScrollbar"><div class="chscroll-track"></div><div class="chscroll-thumb" id="chartFsScrollbarThumb"></div></div>
+      <div style="font-size:8px;color:var(--text-dim2);text-align:center;padding-top:4px">DOTKNIJ kursor • SZCZYP / KÓŁKO zoom • PASEK / PRZECIĄGNIJ oś czasu • 2× KLIK reset</div>
     </div>
   </div>
 
@@ -7736,6 +7772,81 @@ body.mode-phone-frame #phone {
     } else {
       if (tooltip) tooltip.classList.remove('on');
     }
+    updateChartScrollbars();
+  }
+
+  // ── zoom szczypaniem + pasek pozycji (wspolne dla glownego i FS) ──
+  // Kotwica w focusFrac (0..1 plotu); okno 1:1 z updateChartCanvas:
+  // startIdx = maxStart * (1 - chartOffset).
+  function pinchZoomChartBy(factor, focusFrac) {
+    const total = chartDataset.length;
+    if (total < 5 || !isFinite(factor) || factor <= 0) return;
+    const f = Math.max(0, Math.min(1, focusFrac));
+    const vis = Math.max(4, Math.round(total / Math.max(chartZoom, 0.01)));
+    const maxStart = Math.max(0, total - vis);
+    const start = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
+    const anchor = start + f * Math.max(1, vis - 1);
+    const z2 = Math.max(1.0, Math.min(16.0, chartZoom * factor));
+    const vis2 = Math.max(4, Math.round(total / Math.max(z2, 0.01)));
+    const maxStart2 = Math.max(0, total - vis2);
+    const start2 = Math.max(0, Math.min(maxStart2, Math.round(anchor - f * Math.max(1, vis2 - 1))));
+    chartZoom = z2;
+    chartOffset = maxStart2 > 0 ? 1 - start2 / maxStart2 : 1;
+    const zs = $('#chartZoomStat'); if (zs) zs.textContent = chartZoom.toFixed(1) + '×';
+  }
+
+  function chartWindowGeom() {
+    const total = chartDataset.length;
+    const vis = Math.max(4, Math.round(total / Math.max(chartZoom, 0.01)));
+    const maxStart = Math.max(0, total - vis);
+    const start = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
+    return { start, end: Math.min(total, start + vis), total, maxStart, vis };
+  }
+
+  function seekChartStartTo(startF) {
+    const g = chartWindowGeom();
+    if (g.total < 5 || g.maxStart <= 0) return;
+    chartOffset = 1 - Math.max(0, Math.min(g.maxStart, startF)) / g.maxStart;
+  }
+
+  function updateChartScrollbars() {
+    const g = chartWindowGeom();
+    [['#chartScrollbarThumb', '#chartScrollbar'], ['#chartFsScrollbarThumb', '#chartFsScrollbar']].forEach(([th, tr]) => {
+      const thumb = $(th), track = $(tr);
+      if (!thumb || !track) return;
+      const W = track.clientWidth - 12;
+      if (W <= 0 || g.total < 2) { thumb.style.display = 'none'; return; }
+      thumb.style.display = '';
+      const w = Math.max(22, W * (g.end - g.start) / g.total);
+      const x = 6 + Math.min(W - w, Math.max(0, W * g.start / g.total));
+      thumb.style.width = w + 'px';
+      thumb.style.left = x + 'px';
+    });
+  }
+
+  function bindChartScrollbar(trackSel) {
+    const track = $(trackSel);
+    if (!track || track._chscrollBound) return;
+    track._chscrollBound = true;
+    let dragging = false;
+    const fracAt = e => {
+      const r = track.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (e.clientX - r.left - 6) / Math.max(1, r.width - 12)));
+    };
+    const jump = e => {
+      const g = chartWindowGeom();
+      seekChartStartTo(fracAt(e) * g.total - g.vis / 2);
+      updateChartCanvas();
+    };
+    track.addEventListener('pointerdown', e => {
+      dragging = true;
+      try { track.setPointerCapture(e.pointerId); } catch (ex) {}
+      jump(e);
+    });
+    track.addEventListener('pointermove', e => { if (dragging) jump(e); });
+    const end = () => { dragging = false; };
+    track.addEventListener('pointerup', end);
+    track.addEventListener('pointercancel', end);
   }
 
   function initChartInteractivity() {
@@ -7743,6 +7854,8 @@ body.mode-phone-frame #phone {
       if (!wrap) return;
       let isDown = false, startX = 0, initialOffset = 1.0;
       let rafChartPending = false;
+      const pointers = new Map();
+      let pinchD0 = 0;
       function scheduleChartRedraw() {
         if (rafChartPending) return;
         rafChartPending = true;
@@ -7751,24 +7864,63 @@ body.mode-phone-frame #phone {
           updateChartCanvas(targetCanvas);
         });
       }
+      function pinchDist() {
+        const p = [...pointers.values()];
+        if (p.length < 2) return 0;
+        return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      }
 
       wrap.addEventListener('pointerdown', e => {
-        isDown = true; startX = e.clientX; initialOffset = chartOffset;
-        try { wrap.setPointerCapture(e.pointerId); } catch(ex){}
-        handlePointerCrosshair(e, targetCanvas);
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointers.size >= 2) {
+          // drugi palec: koniec pana, poczatek szczypania
+          isDown = false;
+          pinchD0 = pinchDist();
+          chartCrosshairIdx = null; chartCrosshairPos = null;
+        } else {
+          isDown = true; startX = e.clientX; initialOffset = chartOffset;
+          try { wrap.setPointerCapture(e.pointerId); } catch (ex) {}
+          handlePointerCrosshair(e, targetCanvas, wrap);
+        }
       });
       wrap.addEventListener('pointermove', e => {
+        if (!pointers.has(e.pointerId)) {
+          // hover bez dotyku (mysz): sam crosshair, jak dawniej
+          handlePointerCrosshair(e, targetCanvas, wrap);
+          scheduleChartRedraw();
+          return;
+        }
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointers.size >= 2) {
+          const d = pinchDist();
+          if (pinchD0 > 0 && d > 0) {
+            const rect = wrap.getBoundingClientRect();
+            const cx = ([...pointers.values()].reduce((sum, p) => sum + p.x, 0) / pointers.size) - rect.left;
+            const padLeft = 38, padRight = 14;
+            pinchZoomChartBy(d / pinchD0, (cx - padLeft) / Math.max(1, rect.width - padLeft - padRight));
+          }
+          pinchD0 = d;
+          scheduleChartRedraw();
+          return;
+        }
         if (isDown) {
           const dx = e.clientX - startX;
           const sensitivity = 0.003 / chartZoom;
           chartOffset = Math.max(0, Math.min(1.0, initialOffset + dx * sensitivity));
           const zs = $('#chartZoomStat'); if (zs) zs.textContent = chartZoom.toFixed(1) + '×';
         }
-        handlePointerCrosshair(e, targetCanvas);
+        handlePointerCrosshair(e, targetCanvas, wrap);
         scheduleChartRedraw();
       });
-      wrap.addEventListener('pointerup', () => { isDown = false; });
+      const endPointer = e => {
+        pointers.delete(e.pointerId);
+        if (pointers.size < 2) pinchD0 = 0;
+        if (pointers.size === 0) isDown = false;
+      };
+      wrap.addEventListener('pointerup', endPointer);
+      wrap.addEventListener('pointercancel', endPointer);
       wrap.addEventListener('pointerleave', () => {
+        if (pointers.size > 0) return;
         if (!isDown) {
           chartCrosshairIdx = null; chartCrosshairPos = null;
           const tooltip = $('#chartFloatingTooltip');
@@ -7794,9 +7946,13 @@ body.mode-phone-frame #phone {
 
     bindWrap($('#chartCanvasWrap'), $('#chartMainCanvas'));
     bindWrap($('.fs-canvas-wrap'), $('#chartFsCanvas'));
+    bindChartScrollbar('#chartScrollbar');
+    bindChartScrollbar('#chartFsScrollbar');
 
-    function handlePointerCrosshair(e) {
-      const rect = wrap.getBoundingClientRect();
+    function handlePointerCrosshair(e, targetCanvas, wrapEl) {
+      const w = wrapEl || (targetCanvas && targetCanvas.parentElement);
+      if (!w || !w.getBoundingClientRect) return;
+      const rect = w.getBoundingClientRect();
       const padLeft = 38, padRight = 14;
       const plotW = rect.width - padLeft - padRight;
       const xInPlot = e.clientX - rect.left - padLeft;

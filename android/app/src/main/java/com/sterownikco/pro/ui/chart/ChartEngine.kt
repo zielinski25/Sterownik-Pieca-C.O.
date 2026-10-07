@@ -1,10 +1,13 @@
 package com.sterownikco.pro.ui.chart
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -22,6 +25,7 @@ import com.sterownikco.pro.core.ChartSeries
 import com.sterownikco.pro.core.SeriesDef
 import com.sterownikco.pro.core.TelemPoint
 import com.sterownikco.pro.ui.theme.Pal
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
@@ -174,6 +178,87 @@ fun buildChartView(
         padLeft, padRight, anySim)
 }
 
+/**
+ * Jeden detektor gestow wykresu: tap = kursor, 2× tap = reset widoku,
+ * poziomy drag = pan osi czasu, szczypniecie = zoom z kotwica w srodku palcow.
+ * Pionowych przeciagniec NIE konsumujemy, zeby strona dalej sie przewijala.
+ */
+private suspend fun PointerInputScope.chartGestures(
+    padL: Float,
+    plotW: Float,
+    onTap: (Offset, Float, Float) -> Unit,
+    onDoubleTap: () -> Unit,
+    onPan: (Float) -> Unit,
+    onPinch: (Float, Float) -> Unit
+) {
+    val slop = viewConfiguration.touchSlop
+    val dblTimeout = viewConfiguration.doubleTapTimeoutMillis
+    var lastUpT = 0L
+    var lastUpX = 0f
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false)
+        var mode = 0 // 0=tap? 1=pan 2=pinch 3=obcy (pion/scroll)
+        var downX = 0f
+        var downY = 0f
+        var lastX = 0f
+        var d0 = 0f
+        var haveDown = false
+        do {
+            val ev = awaitPointerEvent()
+            val pressed = ev.changes.filter { it.pressed }
+            if (pressed.isEmpty()) {
+                if (haveDown && mode == 0) {
+                    val now = System.currentTimeMillis()
+                    if (now - lastUpT < dblTimeout && abs(downX - lastUpX) < slop * 2) {
+                        onDoubleTap()
+                        lastUpT = 0L
+                    } else {
+                        onTap(Offset(downX, downY), padL, plotW)
+                        lastUpT = now
+                        lastUpX = downX
+                    }
+                } else lastUpT = 0L
+                break
+            }
+            if (!haveDown) {
+                haveDown = true
+                downX = pressed[0].position.x
+                downY = pressed[0].position.y
+                lastX = downX
+            }
+            if (pressed.size >= 2) {
+                val a = pressed[0].position
+                val b = pressed[1].position
+                val d = (a - b).getDistance()
+                if (mode != 2) { mode = 2; d0 = d }
+                else if (d0 > 0f && d > 0f && plotW > 0f) {
+                    val cx = (a.x + b.x) / 2f
+                    onPinch(d / d0, ((cx - padL) / plotW).coerceIn(0f, 1f))
+                    d0 = d
+                }
+                pressed.forEach { it.consume() }
+            } else if (mode == 2 || mode == 3) {
+                // Puszczono palec w trakcie pincha — koniec gestu, bez tapa.
+                if (mode == 2) mode = 3
+                pressed.forEach { it.consume() }
+            } else {
+                val p = pressed[0]
+                if (mode == 0 && (abs(p.position.x - downX) > slop || abs(p.position.y - downY) > slop)) {
+                    mode = if (abs(p.position.x - downX) > abs(p.position.y - downY)) 1 else 3
+                    lastX = p.position.x
+                }
+                if (mode == 1) {
+                    val dx = p.position.x - lastX
+                    lastX = p.position.x
+                    if (plotW > 0f && dx != 0f) onPan(dx / plotW)
+                    p.consume()
+                }
+                // mode 3 (pion): nie konsumujemy — verticalScroll strony przejmuje
+            }
+        } while (true)
+    }
+}
+
 /** Rysowanie — odpowiednik `updateChartCanvas` na Compose Canvasie. */
 @Composable
 fun ChartCanvas(
@@ -185,20 +270,32 @@ fun ChartCanvas(
     mode: String = "COMMON",
     lineStyle: String = "SMOOTH",
     crossIdx: Int? = null,
-    onCross: (Int?) -> Unit = {}
+    onCross: (Int?) -> Unit = {},
+    onPan: (Float) -> Unit = {},
+    onPinch: (Float, Float) -> Unit = { _, _ -> },
+    onResetView: () -> Unit = {}
 ) {
     val measurer = rememberTextMeasurer()
     val famRes = androidx.compose.ui.platform.LocalFontFamilyResolver.current
+    // Gesty czytaja SWIEZY view bez restartu detektora: kluczem sa tylko pady
+    // (zoom/offset przebudowuja view co klatke — pointerInput(view) rwalo by gest).
+    val viewState = rememberUpdatedState(view)
+    val padLKey = view.padLeft
+    val padRKey = view.padRight
     Canvas(
-        modifier = modifier.pointerInput(view) {
-            detectTapGestures(
-                onTap = { pos ->
-                    val padL = view.padLeft.dp.toPx(); val padR = view.padRight.dp.toPx()
-                    val plotW = size.width - padL - padR
-                    val n = view.rows.size
-                    if (n > 1) onCross((((pos.x - padL) / max(1f, plotW)) * (n - 1)).roundToInt().coerceIn(0, n - 1))
+        modifier = modifier.pointerInput(padLKey, padRKey) {
+            val padL = padLKey.dp.toPx()
+            val plotW = size.width - padL - padRKey.dp.toPx()
+            chartGestures(
+                padL = padL,
+                plotW = plotW,
+                onTap = { pos, pl, pw ->
+                    val n = viewState.value.rows.size
+                    if (n > 1) onCross((((pos.x - pl) / max(1f, pw)) * (n - 1)).roundToInt().coerceIn(0, n - 1))
                 },
-                onDoubleTap = { onCross(null) }          // `2× klik = reset` kursora
+                onDoubleTap = { onCross(null); onResetView() },
+                onPan = onPan,
+                onPinch = onPinch
             )
         }
     ) {

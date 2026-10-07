@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
@@ -129,16 +130,17 @@ fun WeatherPage(m: AppModel) {
             )
         )
 
-        // `.weather-card` — STUDIO POGODOWE
+        // `.weather-card` — STUDIO POGODOWE (chipy zakresu pod tytulem: w naglowku
+        // tytul lamal sie na "STUDIO POGODOWE · 7/DNI", a chipy sciskaly sie).
         WCard(
             title = "STUDIO POGODOWE · " + rangeLabel(range),
-            sub = "ciągła analiza parametrów",
-            trailing = {
+            sub = "ciągła analiza parametrów"
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(24 to "24 H", 3 to "3 DNI", 7 to "7 DNI", 14 to "14 DNI").forEach { (v, lbl) ->
-                    RangeBtn(lbl, range == v) { range = v }
+                    RangeBtn(lbl, range == v, flex = true) { range = v }
                 }
             }
-        ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("temp" to "🌡️ Temperatura", "wind" to "💨 Wiatr", "precip" to "🌧️ Opady", "cloud" to "☁️ Zachmurzenie")
                     .forEach { (k, lbl) -> RangeBtn(lbl, vbl == k, flex = true) { vbl = k } }
@@ -303,10 +305,12 @@ private fun RowScope.RangeBtn(label: String, on: Boolean, flex: Boolean = false,
     Box(
         mod.background(if (on) Pal.rgba(0, 212, 245, .16f) else Pal.Surface2, RoundedCornerShape(8.dp))
             .border(BorderStroke(1.dp, if (on) Pal.Cyan else Pal.Border), RoundedCornerShape(8.dp))
-            .clickable { onClick() }.padding(horizontal = 8.dp, vertical = 5.dp),
+            .clickable { onClick() }.padding(horizontal = 6.dp, vertical = 5.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = if (on) Color.White else Pal.TextDim)
+        // Jedna linia: "Zachmurzenie" lamalo sie na "Zachmurzeni/e".
+        Text(label, fontSize = 8.sp, fontWeight = FontWeight.Bold, color = if (on) Color.White else Pal.TextDim,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -320,7 +324,7 @@ private fun SunArcCard(m: AppModel) {
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("ŁUK SŁONECZNY & POTENCJAŁ SOLARNY", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.5.sp)
+                Text("ŁUK SŁONECZNY & POTENCJAŁ SOLARNY", fontSize = 9.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.4.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("wpływ nasłonecznienia na panel słoneczny C.O.", style = Txt.cardDesc)
             }
             Text(

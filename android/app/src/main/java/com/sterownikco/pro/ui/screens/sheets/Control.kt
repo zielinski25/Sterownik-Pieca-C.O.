@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
@@ -157,7 +158,8 @@ fun PompaSheet(m: AppModel) {
                 Text("$minScale°C (zimny)", fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim, modifier = Modifier.weight(1f))
                 Text(
                     "▲ Aktualnie piec: ${S.fmt1(curTemp)}°C (${if (running) "POMPA PRACUJE" else "POMPA STOI"})",
-                    fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = if (running) Pal.Live else Pal.Warn, modifier = Modifier.weight(1.4f)
+                    fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = if (running) Pal.Live else Pal.Warn,
+                    modifier = Modifier.weight(1.4f), textAlign = TextAlign.Center
                 )
                 Text("$maxScale°C (gorący)", fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
             }

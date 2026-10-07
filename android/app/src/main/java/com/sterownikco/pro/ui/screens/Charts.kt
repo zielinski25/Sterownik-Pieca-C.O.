@@ -4,10 +4,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -187,9 +192,14 @@ fun ChartsPage(m: AppModel) {
                     mode = m.chartMode,
                     lineStyle = m.chartStyle,
                     crossIdx = cross,
-                    onCross = { cross = it }
+                    onCross = { cross = it },
+                    onPan = { m.panChart(it) },
+                    onPinch = { f, x -> m.pinchChart(f, x) },
+                    onResetView = { m.resetChartView() }
                 )
             }
+
+            ChartScrollbar(m)
 
             Box(Modifier.fillMaxWidth().background(Pal.rgba(255, 159, 67, .1f), RoundedCornerShape(8.dp))
                 .border(BorderStroke(1.dp, Pal.rgba(255, 159, 67, .25f)), RoundedCornerShape(8.dp))
@@ -220,7 +230,7 @@ fun ChartsPage(m: AppModel) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             AppIcon("info", size = 12.dp, tint = Pal.TextDim2)
-            Text("kursor = dymek z odczytem • gest/kółko = zoom • przeciągnij = oś czasu • 2× klik = reset",
+            Text("dotknij = kursor • szczypnij = zoom • pasek/przeciągnij = oś czasu • 2× tap = reset",
                 style = Txt.tiny)
         }
     }
@@ -246,15 +256,71 @@ fun ChartsPage(m: AppModel) {
                     ChartCanvas(
                         view = view, modifier = Modifier.fillMaxWidth().height(320.dp),
                         areaBand = m.chartAreaBand, alarmLines = m.chartAlarmLines, alarmLevels = m.alarmLevels,
-                        mode = m.chartMode, lineStyle = m.chartStyle, crossIdx = cross, onCross = { cross = it }
+                        mode = m.chartMode, lineStyle = m.chartStyle, crossIdx = cross, onCross = { cross = it },
+                        onPan = { m.panChart(it) }, onPinch = { f, x -> m.pinchChart(f, x) },
+                        onResetView = { m.resetChartView() }
                     )
                 }
-                Text("DOTKNIJ / NAJEDŹ kursor • KÓŁKO / GEST zoom • PRZECIĄGNIJ przewijanie • PODWÓJNY KLIK reset",
+                ChartScrollbar(m)
+                Text("DOTKNIJ kursor • SZCZYP zoom • PASEK / PRZECIĄGNIJ oś czasu • 2× TAP reset",
                     style = Txt.tiny, modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
     }
+}
+
+/**
+ * Pasek pozycji pod wykresem: tor = caly zakres, kciuk = widoczne okno.
+ * Tap = skok srodkiem okna, drag = przesuwanie. Przy zoom 1× kciuk = calosc.
+ */
+@Composable
+private fun ChartScrollbar(m: AppModel) {
+    val (start, end, total) = m.chartWindow()
+    if (total < 2) return
+    val leftF = start.toFloat() / total
+    val rightF = end.toFloat() / total
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        BoxWithConstraints(
+            Modifier.fillMaxWidth().height(30.dp)
+                .background(Pal.Surface2, RoundedCornerShape(8.dp))
+                .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(8.dp))
+                .pointerInput(total) {
+                    detectTapGestures(onTap = { pos ->
+                        m.seekChartCentered((pos.x / size.width).coerceIn(0f, 1f))
+                    })
+                }
+                .pointerInput(total) {
+                    detectHorizontalDragGestures { change, dx ->
+                        change.consume()
+                        m.seekChartBy(dx / size.width)
+                    }
+                }
+        ) {
+            val trackW = maxWidth - 12.dp
+            Box(Modifier.align(Alignment.CenterStart).offset(x = 6.dp).width(trackW).height(6.dp)
+                .background(Color(0x14FFFFFF), RoundedCornerShape(3.dp)))
+            val thumbW = (trackW * (rightF - leftF).coerceAtLeast(0.04f)).coerceAtLeast(22.dp)
+            val thumbX = (6.dp + trackW * leftF.coerceIn(0f, 1f)).coerceAtMost(6.dp + trackW - thumbW)
+            Box(Modifier.align(Alignment.CenterStart).offset(x = thumbX).width(thumbW).height(12.dp)
+                .background(Pal.rgba(0, 212, 245, .55f), RoundedCornerShape(6.dp))
+                .border(BorderStroke(1.dp, Pal.Cyan), RoundedCornerShape(6.dp)))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(winTime(m, start), style = Txt.tiny)
+            Text(winTime(m, end - 1), style = Txt.tiny)
+        }
+    }
+}
+
+private fun winTime(m: AppModel, idx: Int): String {
+    val r = m.chartDataset().getOrNull(idx) ?: return "—"
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = r.ts }
+    return String.format(
+        java.util.Locale.US, "%02d.%02d %02d:%02d",
+        c.get(java.util.Calendar.DAY_OF_MONTH), c.get(java.util.Calendar.MONTH) + 1,
+        c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE)
+    )
 }
 
 @Composable

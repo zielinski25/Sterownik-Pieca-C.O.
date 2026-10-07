@@ -127,10 +127,10 @@ fun SheetHost(m: AppModel) {
  */
 @Composable
 fun AuthModal(m: AppModel) {
-    var apiKey by remember { mutableStateOf(m.prefs.get(Prefs.K_API_KEY) ?: "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU") }
+    // Tylko konto (e-mail + haslo) — klucz API i token komend ida z zapisanych
+    // ustawien (arkusz Sesja → Klucze zaawansowane) lub z wbudowanych domyslnych.
     var email by remember { mutableStateOf(m.prefs.get(Prefs.K_EMAIL) ?: "piec_co_boot@akwarium.local") }
     var pass by remember { mutableStateOf(m.prefs.get(Prefs.K_PASS) ?: "PcTg8plOcvRrMSojv79X") }
-    var cmdToken by remember { mutableStateOf(m.prefs.get(Prefs.K_CMD_TOKEN) ?: "sterownikco-cmd-2026") }
     var rememberCreds by remember { mutableStateOf(true) }
 
     Box(
@@ -171,16 +171,9 @@ fun AuthModal(m: AppModel) {
             }
 
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                com.sterownikco.pro.ui.screens.sheets.SheetField("Firebase Web API Key", apiKey, { apiKey = it }, "AIzaSy...")
-                Box(Modifier.height(12.dp))
                 com.sterownikco.pro.ui.screens.sheets.SheetField("E-mail operatora", email, { email = it }, "twoj-email@domena.pl")
                 Box(Modifier.height(12.dp))
                 com.sterownikco.pro.ui.screens.sheets.SheetField("Hasło", pass, { pass = it }, "••••••••••••", password = true)
-                Box(Modifier.height(12.dp))
-                com.sterownikco.pro.ui.screens.sheets.SheetField(
-                    "Token autoryzacji komend (CMD Token)", cmdToken, { cmdToken = it },
-                    "Wpisz token komend /piec/cmd", password = true
-                )
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -226,7 +219,7 @@ fun AuthModal(m: AppModel) {
                 }
                 Box(Modifier.height(14.dp))
                 AuthBtn("🔑 POŁĄCZ I ZALOGUJ", primary = true, enabled = !m.authBusy, onClick = {
-                    m.login(apiKey.trim(), email.trim(), pass, cmdToken.trim(), rememberCreds)
+                    m.login(email.trim(), pass, rememberCreds)
                 })
                 Box(Modifier.height(8.dp))
                 AuthBtn("🧪 TRYB SYMULACJI (OFFLINE)", primary = false, enabled = true, onClick = { m.useDemoFromAuth() })
