@@ -97,7 +97,7 @@ fun Chip(m: AppModel) {
 }
 
 @Composable
-fun IconBtn(icon: String, title: String, onClick: () -> Unit, tint: Color = Pal.TextDim) {
+fun IconBtn(icon: String, title: String, tint: Color = Pal.TextDim, onClick: () -> Unit) {
     Box(
         modifier = Modifier.size(34.dp).background(Pal.Surface2, RoundedCornerShape(11.dp))
             .border(1.dp, Pal.Border, RoundedCornerShape(11.dp)).clickable { onClick() },
