@@ -283,7 +283,7 @@ class PiecState {
         while (hist.size > 60) hist.removeFirst()
     }
 
-    /** `liveTick()` — symulacja drgań czujników (tylko w trybie SYMULACJI). */
+    /** `liveTick()` — wygasanie wymuszen testowych sym + dopisywanie historii. */
     var tick = 0
     var simSpeed = 1.0
     fun liveTick(fbFresh: Boolean) {

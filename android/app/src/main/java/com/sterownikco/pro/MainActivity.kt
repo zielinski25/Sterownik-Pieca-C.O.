@@ -10,7 +10,7 @@ import com.sterownikco.pro.ui.SterownikApp
 /**
  * Jedyna aktywność panelu (odpowiednik `<body>` w Piec.html).
  * `onResume` / `onPause` włączają timery tak jak `setInterval` w oryginale:
- * 4 s odpytywanie statusu / 2 s tick symulacji / 15 min pogoda / 1 s arkusz.
+ * 4 s odpytywanie statusu / 2 s tick zegara / 15 min pogoda / 1 s arkusz.
  */
 class MainActivity : ComponentActivity() {
 
