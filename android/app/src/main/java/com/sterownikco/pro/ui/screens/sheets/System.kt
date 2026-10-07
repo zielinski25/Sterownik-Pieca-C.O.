@@ -278,7 +278,7 @@ fun WifiSheet(m: AppModel) {
             }
             m.wifiScanNote != null -> Text(
                 m.wifiScanNote ?: "", style = Txt.note,
-                color = if (m.wifiScanNote!!.startsWith("Centrala nieosiągalna")) Pal.Err else Pal.Warn,
+                color = if (m.wifiScanNote!!.startsWith("Centrala nieosiągalna") || m.wifiScanNote!!.startsWith("Nie udało się")) Pal.Err else Pal.Warn,
                 modifier = Modifier.padding(8.dp)
             )
             m.wifiScan.isEmpty() -> Text(
@@ -307,8 +307,10 @@ fun WifiSheet(m: AppModel) {
     SectionHeader("Zapisane sieci w pamięci NVS ESP32")
     var pending by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (m.wifiSaved.isEmpty()) {
-            Text("Brak zapisanych sieci w NVS lub centrala nieosiągalna (/api/wifi/list).", style = Txt.note, modifier = Modifier.padding(8.dp))
+        if (m.wifiSaved.isEmpty() && m.wifiLoading) {
+            Text("Pobieranie zapisanych sieci z centrali…", style = Txt.note, color = Pal.Cyan, modifier = Modifier.padding(8.dp))
+        } else if (m.wifiSaved.isEmpty() && m.wifiSavedNote == null) {
+            Text("Brak zapisanych sieci w pamięci sterownika.", style = Txt.note, modifier = Modifier.padding(8.dp))
         } else m.wifiSaved.forEach { net ->
             WifiRow(
                 net = net, showSig = true, active = net.active,

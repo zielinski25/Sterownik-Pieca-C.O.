@@ -640,6 +640,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var tgToken by mutableStateOf("")
     var tgChatId by mutableStateOf("")
     var wifiSaved by mutableStateOf<List<WifiNet>>(emptyList())
+    var wifiLoading by mutableStateOf(false)
     var wifiScan by mutableStateOf<List<WifiNet>>(emptyList())
     var wifiBusy by mutableStateOf(false)
     /** `scanStatus` — tekst pod przyciskiem Skanuj. */
@@ -719,17 +720,25 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     // ── Wi-Fi (centrala ESP32) ───────────────────────────────────────────────
     fun wifiLoad() = scope.launch {
-        wifiBusy = true
-        val arr = try { Rtdb.wifiList(S.ip) } catch (e: Exception) { null }
-        wifiSavedNote = if (arr == null)
-            "Nie mogę odczytać zapisanych sieci z centrali (poza LAN albo firmware bez CORS z v3.32.1)." else null
-        if (arr != null) {
-            wifiSaved = (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                WifiNet(o.optString("ssid"), o.optBoolean("active"), o.optInt("rssi"), o.optBoolean("hasPass"))
+        wifiLoading = true
+        wifiSavedNote = null
+        val ip = S.ip.trim()
+        try {
+            val arr = try { if (ip.isEmpty()) null else Rtdb.wifiList(ip) } catch (e: Exception) { null }
+            wifiSavedNote = when {
+                ip.isEmpty() -> "Brak adresu IP centrali — nie mogę pobrać listy zapisanych sieci."
+                arr == null -> "Nie udało się pobrać listy z http://$ip/api/wifi/list. Sprawdź połączenie telefonu z siecią centrali i dostępność endpointu w firmware."
+                else -> null
             }
+            if (arr != null) {
+                wifiSaved = (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    WifiNet(o.optString("ssid"), o.optBoolean("active"), o.optInt("rssi"), o.optBoolean("hasPass"))
+                }
+            }
+        } finally {
+            wifiLoading = false
         }
-        wifiBusy = false
     }
 
     fun wifiScanStart() = scope.launch {
@@ -744,8 +753,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         val started = try { Rtdb.wifiScanStart(ip) } catch (e: Exception) { false }
         if (!started) {
             wifiBusy = false; wifiScanStatus = "Błąd skanu"
-            wifiScanNote = "Centrala nieosiągalna pod http://" + ip +
-                " (poza LAN albo firmware bez CORS z v3.32.1). Lista sieci pozostaje pusta."
+            wifiScanNote = "Nie udało się uruchomić skanowania pod http://" + ip +
+                "/api/wifi/scan/start. Sprawdź połączenie telefonu z siecią centrali i dostępność endpointu w firmware."
             return@launch
         }
         var done: JSONObject? = null
