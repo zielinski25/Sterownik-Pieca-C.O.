@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -37,6 +38,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.ui.chart.ChartCanvas
 import com.sterownikco.pro.ui.chart.buildChartView
@@ -97,7 +100,7 @@ private fun SeriesChip(label: String, rgb: String, on: Boolean, sim: Boolean, on
 fun ChartsPage(m: AppModel) {
     val rev = m.sheetTick
     val dataset = remember(m.telemetry.size, m.chartLive.size, m.chartPoints, rev) { m.chartDataset() }
-    val cat = remember(m.chartFocus, m.seriesOn.size, rev) { m.catalogOn() }
+    val cat = m.catalogOn()
     val view = remember(dataset, cat, m.chartZoom, m.chartOffset, m.chartFocus, m.chartMode, m.chartGlitch) {
         buildChartView(dataset, cat, m.chartZoom, m.chartOffset, m.chartFocus, m.chartMode, m.chartGlitch)
     }
@@ -170,8 +173,9 @@ fun ChartsPage(m: AppModel) {
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                cat.forEach { s ->
-                    SeriesChip(label = s.label, rgb = s.rgb, on = true, sim = view.anySim,
+                m.activeCatalog().forEach { s ->
+                    SeriesChip(label = s.label, rgb = s.rgb, on = m.seriesOn[s.id] ?: s.on,
+                        sim = view.simSeries.contains(s.id),
                         onClick = { m.toggleSeries(s.id) })
                 }
                 SeriesChip(label = "USTAWIENIA", rgb = "0,212,245", on = false, sim = false,
@@ -187,7 +191,7 @@ fun ChartsPage(m: AppModel) {
                     view = view,
                     modifier = Modifier.fillMaxWidth().height(Dimens.chartH),
                     areaBand = m.chartAreaBand,
-                    alarmLines = m.chartAlarmLines,
+                    alarmLines = m.chartAlarmLines && m.chartFocus == 0,
                     alarmLevels = m.alarmLevels,
                     mode = m.chartMode,
                     lineStyle = m.chartStyle,
@@ -236,35 +240,39 @@ fun ChartsPage(m: AppModel) {
     }
 
     if (expand) {
-        Box(Modifier.fillMaxWidth()
-            .background(Pal.rgba(3, 8, 15, .92f))
-            .clickable { expand = false }) {
-            Column(
-                Modifier.fillMaxWidth().padding(14.dp).background(Pal.Surface, RoundedCornerShape(20.dp))
-                    .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(20.dp)).padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+        Dialog(onDismissRequest = { expand = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Box(Modifier.fillMaxSize()
+                .background(Pal.rgba(3, 8, 15, .92f))
+                .padding(14.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(m.fsTitle(), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(m.fsSubtitle(), style = Txt.cardDesc)
+                Column(
+                    Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(20.dp))
+                        .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(20.dp)).padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(m.fsTitle(), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(m.fsSubtitle(), style = Txt.cardDesc)
+                        }
+                        IconBtn("close", "Zamknij", onClick = { expand = false })
                     }
-                    IconBtn("close", "Zamknij", onClick = { expand = false })
+                    Box(Modifier.fillMaxWidth().height(320.dp).background(Pal.CanvasBg, RoundedCornerShape(12.dp))
+                        .border(BorderStroke(1.dp, Color(0x0FFFFFFF)), RoundedCornerShape(12.dp))) {
+                        ChartCanvas(
+                            view = view, modifier = Modifier.fillMaxWidth().height(320.dp),
+                            areaBand = m.chartAreaBand, alarmLines = m.chartAlarmLines && m.chartFocus == 0, alarmLevels = m.alarmLevels,
+                            mode = m.chartMode, lineStyle = m.chartStyle, crossIdx = cross, onCross = { cross = it },
+                            onPan = { m.panChart(it) }, onPinch = { f, x -> m.pinchChart(f, x) },
+                            onResetView = { m.resetChartView() }
+                        )
+                    }
+                    ChartScrollbar(m)
+                    Text("DOTKNIJ kursor • SZCZYP zoom • PASEK / PRZECIĄGNIJ oś czasu • 2× TAP reset",
+                        style = Txt.tiny, modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
-                Box(Modifier.fillMaxWidth().height(320.dp).background(Pal.CanvasBg, RoundedCornerShape(12.dp))
-                    .border(BorderStroke(1.dp, Color(0x0FFFFFFF)), RoundedCornerShape(12.dp))) {
-                    ChartCanvas(
-                        view = view, modifier = Modifier.fillMaxWidth().height(320.dp),
-                        areaBand = m.chartAreaBand, alarmLines = m.chartAlarmLines, alarmLevels = m.alarmLevels,
-                        mode = m.chartMode, lineStyle = m.chartStyle, crossIdx = cross, onCross = { cross = it },
-                        onPan = { m.panChart(it) }, onPinch = { f, x -> m.pinchChart(f, x) },
-                        onResetView = { m.resetChartView() }
-                    )
-                }
-                ChartScrollbar(m)
-                Text("DOTKNIJ kursor • SZCZYP zoom • PASEK / PRZECIĄGNIJ oś czasu • 2× TAP reset",
-                    style = Txt.tiny, modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
     }
@@ -481,9 +489,8 @@ private fun inspectorText(m: AppModel, view: com.sterownikco.pro.ui.chart.ChartV
         (if (m.rangeSec > 48 * 3600) " (" + p(c.get(java.util.Calendar.DAY_OF_MONTH)) + "." + p(c.get(java.util.Calendar.MONTH) + 1) + ")"
          else ":" + p(c.get(java.util.Calendar.SECOND)))
     val readout = view.cat.joinToString(" · ") { s ->
-        val v = (view.values[s.id] ?: return@joinToString "")
-        val x = v.getOrNull(cross) ?: return@joinToString ""
-        s.label + ": " + fmt1(x) + " " + s.unit
+        val x = view.values[s.id]?.getOrNull(cross)
+        s.label + ": " + (if (x != null && x.isFinite()) fmt1(x) + " " + s.unit else "—")
     }
     return "$timeStr: $readout"
 }

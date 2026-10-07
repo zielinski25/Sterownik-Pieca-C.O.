@@ -18,6 +18,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,7 +66,8 @@ class ChartView(
     val dual: Boolean, val secGroup: String?, val secMin: Double, val secMax: Double,
     val secUnit: String, val secColor: String,
     val padLeft: Float, val padRight: Float,
-    val anySim: Boolean
+    val anySim: Boolean,
+    val simSeries: Set<String>
 ) {
     val span: String
         get() = if (rows.isEmpty()) "—" else {
@@ -173,9 +175,10 @@ fun buildChartView(
             else -> { secMin = 0.0; secMax = 100.0 }
         }
     }
-    val anySim = cat.any { s -> rows.any { r -> r.sim and (1L shl s.qCh) != 0L } }
+    val simSeries = cat.filter { s -> rows.any { r -> r.sim and (1L shl s.qCh) != 0L } }.map { it.id }.toSet()
+    val anySim = simSeries.isNotEmpty()
     return ChartView(rows, cat, values, minVal, maxVal, axisUnit, dual, secGroup, secMin, secMax, secUnit, secColor,
-        padLeft, padRight, anySim)
+        padLeft, padRight, anySim, simSeries)
 }
 
 /**
@@ -304,11 +307,20 @@ fun ChartCanvas(
         val padTop = 16.dp.toPx(); val padBottom = 24.dp.toPx()
         val plotW = w - padLeft - padRight
         val plotH = h - padTop - padBottom
-        if (view.rows.size < 2 || view.cat.isEmpty()) return@Canvas
-
         val axis = TextStyle(fontSize = 8.5.sp, color = Pal.AxisText)
         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
+
+        // FIX-BRAK-DANYCH: uczciwy komunikat jak w HTML (zamiast pustego boxa)
+        val hasPts = view.values.values.any { vs -> vs.any { v -> v != null && v.isFinite() } }
+        if (view.rows.size < 2 || view.cat.isEmpty() || !hasPts) {
+            val tp = measure(
+                "Brak danych dla wybranych serii w tym oknie",
+                TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Pal.rgba(148, 163, 184, .95f))
+            )
+            drawText(tp, topLeft = Offset((w - tp.size.width) / 2f, padTop + plotH / 2f - tp.size.height / 2f))
+            return@Canvas
+        }
 
         // siatka + lewa oś Y
         val ySteps = 4
@@ -384,7 +396,7 @@ fun ChartCanvas(
                 }
             }
             if (cur.isNotEmpty()) segs.add(cur)
-            val seriesSim = view.anySim
+            val seriesSim = view.simSeries.contains(s.id)
             segs.forEach { seg ->
                 if (seg.isEmpty()) return@forEach
                 val segSim = seriesSim || seg.any { it.isSim }
@@ -439,11 +451,23 @@ fun ChartCanvas(
                 drawLine(Pal.rgba(0, 212, 245, .7f), Offset(x, padTop), Offset(x, padTop + plotH), 1.2.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())))
                 view.cat.forEach { s ->
-                    val v = (view.values[s.id] ?: return@forEach).getOrNull(idx)
+                    val vals = view.values[s.id] ?: return@forEach
+                    val v = vals.getOrNull(idx)
                     if (v != null && v.isFinite()) {
-                        val y = padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
-                        drawCircle(hexColor(s.accent), 3.2.dp.toPx(), center = Offset(x, y))
-                        drawCircle(Pal.Bg, 1.4.dp.toPx(), center = Offset(x, y))
+                        val y = when {
+                            view.dual && s.group == view.secGroup ->
+                                padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
+                            mode == "NORMALIZED" -> {
+                                val all = vals.filterNotNull()
+                                val lo = if (all.isNotEmpty()) all.min() else 0.0
+                                val hi = if (all.isNotEmpty()) all.max() else 100.0
+                                val nv = if (hi > lo) (v - lo) / (hi - lo) else 0.5
+                                padTop + plotH * (1 - nv.toFloat())
+                            }
+                            else -> padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
+                        }
+                        drawCircle(Color.White, 4.dp.toPx(), center = Offset(x, y))
+                        drawCircle(hexColor(s.accent), 3.dp.toPx(), center = Offset(x, y))
                     }
                 }
             }
