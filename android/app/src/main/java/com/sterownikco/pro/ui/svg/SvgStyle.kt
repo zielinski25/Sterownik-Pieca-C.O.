@@ -185,7 +185,7 @@ internal fun brushFor(parsed: ParsedSvg, gradId: String?, fallback: Color, path:
     val grad = parsed.grads[gradId] ?: return SolidColor(fallback)
     val stops = grad.stops.sortedBy { it.first }
     if (stops.isEmpty()) return SolidColor(fallback)
-    val pairs = ArrayList<Pair<Color, Float>>()
+    val pairs = ArrayList<Pair<Color, Float>>()  // (Color, stop) — jak oczekuje Brush
     if (stops.first().first > 0f) pairs.add(stops.first().second to 0f)
     stops.forEach { pairs.add(it.second to it.first.coerceIn(0f, 1f)) }
     if (stops.last().first < 1f) pairs.add(stops.last().second to 1f)
@@ -194,14 +194,14 @@ internal fun brushFor(parsed: ParsedSvg, gradId: String?, fallback: Color, path:
     val h = max(b.height, 0.001f)
     return if (grad.radial) {
         Brush.radialGradient(
-            *pairs.toTypedArray(),
+            colorStops = pairs,
             center = Offset(b.left + grad.cx * w, b.top + grad.cy * h),
             radius = max(grad.r * (w + h) / 2f, 0.5f),
             tileMode = TileMode.Clamp
         )
     } else {
         Brush.linearGradient(
-            *pairs.toTypedArray(),
+            colorStops = pairs,
             start = Offset(b.left + grad.x1 * w, b.top + grad.y1 * h),
             end = Offset(b.left + grad.x2 * w, b.top + grad.y2 * h),
             tileMode = TileMode.Clamp
