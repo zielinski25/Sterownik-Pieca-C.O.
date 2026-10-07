@@ -51,7 +51,10 @@ fun Dashboard(m: AppModel) {
     val weatherCode = m.weather?.current?.code ?: (if (S.valOf("zewn", "t_zewn") < 0) 71 else 0)
     val isDay = m.weather?.current?.isDay ?: (!S.night)
     val art = remember(rev, weatherCode, isDay) { S.art(weatherCode, isDay) }
-    val tiles = remember(rev, weatherCode, isDay) { buildTiles(m, weatherCode, isDay) }
+    val tiles = remember(rev, weatherCode, isDay, m.weather, m.weatherBusy) { buildTiles(m, weatherCode, isDay) }
+    val selectedTiles = tiles.filter { it.id in m.dashboardWidgets }
+    val measurementTiles = selectedTiles.filter { it.grid == 1 }
+    val controlTiles = selectedTiles.filter { it.grid == 2 }
     val to = S.valOf("ogrz", "t_ogrz")
     val tb = S.valOf("bojler", "t_bojler")
     val anyAl = anyAlarm(m)
@@ -117,10 +120,14 @@ fun Dashboard(m: AppModel) {
             )
         }
 
-        Sect("Pomiary")
-        TileGrid(tiles.filter { it.grid == 1 }, m, art)
-        Sect("Sterowanie · bezpieczeństwo")
-        TileGrid(tiles.filter { it.grid == 2 }, m, art)
+        if (measurementTiles.isNotEmpty()) {
+            Sect("Pomiary")
+            TileGrid(measurementTiles, m, art)
+        }
+        if (controlTiles.isNotEmpty()) {
+            Sect("Sterowanie · bezpieczeństwo")
+            TileGrid(controlTiles, m, art)
+        }
         Sect("Analiza i system")
 
         AnalysisCard(
@@ -148,7 +155,11 @@ private fun TileGrid(list: List<com.sterownikco.pro.core.TileSpec>, m: AppModel,
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { spec ->
                     Box(Modifier.weight(1f)) {
-                        Tile(spec = spec, art = art, onClick = { m.openSheet(m.menuForTile(spec.id)) })
+                        Tile(spec = spec, art = art, onClick = {
+                            val target = m.menuForTile(spec.id)
+                            if (target != null) m.openSheet(target)
+                            else if (spec.id == "weather") { m.page = 2; m.refreshWeatherTab() }
+                        })
                     }
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))

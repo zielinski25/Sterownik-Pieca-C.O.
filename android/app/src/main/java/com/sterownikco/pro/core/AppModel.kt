@@ -56,6 +56,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     // ── stan połączenia ─────────────────────────────────────────────────────
     var connected by mutableStateOf(false)
     var lastFetchTs = 0L
+    var dashboardWidgets by mutableStateOf(TileDefs.DEFAULT_VISIBLE_IDS)
     var authOpen by mutableStateOf(false)
     /** Okienko alarmu w aplikacji (gdy system nie odpali FSI na pierwszym planie). */
     var alarmPopup by mutableStateOf<AlarmInfo?>(null)
@@ -121,11 +122,23 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         ChartSeries.TEMP.forEach { seriesOn[it.id] = it.on }
         ChartSeries.SERVO.forEach { seriesOn[it.id] = it.on }
         loadChartPrefs()
+        loadDashboardWidgets()
         seedLogs()
         refreshWeather(false)
-        // APK: BRAK autologowania (w Piec.html zostaje jak było) — operator
-        // ZAWSZE wpisuje login i hasło ręcznie w modalu.
-        authOpen = true
+
+        // Przywróć konto po udanym wcześniejszym logowaniu; hasło jest w Android Keystore.
+        val savedPassword = prefs.getSecret(Prefs.K_PASS)
+        val rememberPref = prefs.get(Prefs.K_REMEMBER_CREDS)
+        val shouldRemember = if (rememberPref != null) prefs.getBool(Prefs.K_REMEMBER_CREDS, false)
+            else savedPassword != null
+        if (rememberPref == null && shouldRemember) prefs.setBool(Prefs.K_REMEMBER_CREDS, true)
+        if (!shouldRemember) prefs.remove(Prefs.K_PASS)
+        if (shouldRemember && !savedPassword.isNullOrBlank() && Rtdb.email.isNotBlank()) {
+            authOpen = false
+            login(Rtdb.email, savedPassword, remember = true, automatic = true)
+        } else {
+            authOpen = true
+        }
     }
 
     private fun seedLogs() {
@@ -237,19 +250,23 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         try { PiecWidget.push(ctx, d) } catch (e: Exception) { /* ignore */ }
     }
 
-    /** Logowanie tylko kontem (e-mail + haslo) — klucz API i token komend ida
-     * z zapisanych ustawien (arkusz Sesja → Klucze zaawansowane) lub z domyslnych. */
-    fun login(emailIn: String, password: String, remember: Boolean) = scope.launch {
-        authBusy = true; authStatusKind = "warn"; authStatus = "Logowanie do Firebase UserAuth…"
+    /** Logowanie kontem e-mail + hasło; zapamiętanie hasła jest opcjonalne i szyfrowane. */
+    fun login(emailIn: String, password: String, remember: Boolean, automatic: Boolean = false) = scope.launch {
+        authBusy = true; authStatusKind = "warn"
+        authStatus = if (automatic) "Przywracanie zapisanej sesji…" else "Logowanie do Firebase UserAuth…"
         val apiKey = prefs.get(Prefs.K_API_KEY) ?: Prefs.DEFAULT_FB_API_KEY
         val cmdToken = prefs.get(Prefs.K_CMD_TOKEN) ?: Prefs.DEFAULT_CMD_TOKEN
         if (apiKey.length < 20) {
-            authBusy = false; authStatusKind = "err"; authStatus = "Brak klucza API — ustaw w arkuszu Sesja."
-            showToast("Logowanie", "Brak klucza API — ustaw w arkuszu Sesja.", "err"); return@launch
+            authBusy = false; authStatusKind = "err"; authStatus = "Brak klucza API."
+            if (automatic) authOpen = true
+            else showToast("Logowanie", "Brak klucza API.", "err")
+            return@launch
         }
         if (!emailIn.contains("@") || password.length < 6) {
             authBusy = false; authStatusKind = "err"; authStatus = "Podaj poprawny e-mail i hasło konta."
-            showToast("Logowanie", "Podaj poprawny e-mail i hasło konta.", "err"); return@launch
+            if (automatic) authOpen = true
+            else showToast("Logowanie", "Podaj poprawny e-mail i hasło konta.", "err")
+            return@launch
         }
         val r = Rtdb.signIn(apiKey, emailIn, password)
         r.onSuccess { j ->
@@ -263,11 +280,18 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             prefs.set(Prefs.K_CMD_TOKEN, cmdToken)
             prefs.set(Prefs.K_ID_TOKEN, Rtdb.idToken)
             prefs.set(Prefs.K_REF_TOKEN, Rtdb.refreshToken)
-            if (remember) prefs.set(Prefs.K_PASS, password) else prefs.remove(Prefs.K_PASS)
-            showToast("FIREBASE", "Logowanie zakończone — pobieram /piec/status", "ok")
+            prefs.setBool(Prefs.K_REMEMBER_CREDS, remember)
+            val passwordSaved = if (remember) prefs.setSecret(Prefs.K_PASS, password)
+                else { prefs.remove(Prefs.K_PASS); true }
+            if (!passwordSaved) prefs.remove(Prefs.K_PASS)
+            if (!passwordSaved) showToast("SESJA", "Zalogowano, ale nie udało się bezpiecznie zapisać hasła.", "err")
+            else if (!automatic) showToast("FIREBASE", "Logowanie zakończone — pobieram /piec/status", "ok")
             addLog("SYSTEM", "Zalogowano operatora: $emailIn", "info")
             authOpen = false
-            authBusy = false; authStatusKind = "ok"; authStatus = "Zalogowano — $emailIn"
+            authBusy = false
+            authStatusKind = if (passwordSaved) "ok" else "warn"
+            authStatus = if (passwordSaved) "Zalogowano — $emailIn"
+                else "Zalogowano, ale hasło nie mogło zostać bezpiecznie zapamiętane."
             // Start czuwania w tle + prośba o zgodę na powiadomienia (Android 13+).
             try { AlarmMonitorService.start(ctx) } catch (e: Exception) { /* ignore */ }
             if (!AlarmNotify.hasPostNotifications(ctx)) askNotifPerm = true
@@ -275,15 +299,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             if (page == 1) loadRange(rangeSec)
         }.onFailure { e ->
             authBusy = false; authStatusKind = "err"; authStatus = e.message ?: "Logowanie nieudane"
-            showToast("BŁĄD", e.message ?: "Logowanie nieudane", "err")
+            if (automatic) authOpen = true
+            else showToast("BŁĄD", e.message ?: "Logowanie nieudane", "err")
         }
-    }
-
-    /** Zapis kluczy z arkusza Sesja (sekcja zaawansowana). */
-    fun saveKeys(apiKey: String, cmdToken: String) {
-        if (apiKey.isNotEmpty()) { prefs.set(Prefs.K_API_KEY, apiKey); Rtdb.apiKey = apiKey }
-        if (cmdToken.isNotEmpty()) { prefs.set(Prefs.K_CMD_TOKEN, cmdToken); Rtdb.cmdToken = cmdToken }
-        showToast("SESJA", "Zapisano klucze zaawansowane", "ok")
     }
 
     // (Tryb symulacji/DEMO usuniety z APK — tylko w Piec.html.)
@@ -631,6 +649,38 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             p.optJSONObject("tempOn")?.let { o -> for (k in o.keys()) seriesOn[k] = o.getBoolean(k) }
             p.optJSONObject("servoOn")?.let { o -> for (k in o.keys()) seriesOn[k] = o.getBoolean(k) }
         } catch (e: Exception) { /* ignore */ }
+    }
+
+    private fun loadDashboardWidgets() {
+        val raw = prefs.get(Prefs.K_DASH_WIDGETS)
+        if (raw == null) {
+            dashboardWidgets = TileDefs.DEFAULT_VISIBLE_IDS
+            return
+        }
+        try {
+            val allowed = TileDefs.TILES.map { it.id }.toSet()
+            val stored = JSONArray(raw)
+            val selected = linkedSetOf<String>()
+            for (i in 0 until stored.length()) {
+                stored.optString(i).takeIf { it in allowed }?.let(selected::add)
+            }
+            dashboardWidgets = selected
+        } catch (e: Exception) {
+            dashboardWidgets = TileDefs.DEFAULT_VISIBLE_IDS
+        }
+    }
+
+    fun setDashboardWidgetEnabled(id: String, enabled: Boolean) {
+        if (TileDefs.TILES.none { it.id == id }) return
+        val next = dashboardWidgets.toMutableSet()
+        if (enabled) next.add(id) else next.remove(id)
+        dashboardWidgets = next
+        prefs.set(Prefs.K_DASH_WIDGETS, JSONArray(next.toList()).toString())
+    }
+
+    fun resetDashboardWidgets() {
+        dashboardWidgets = TileDefs.DEFAULT_VISIBLE_IDS
+        prefs.set(Prefs.K_DASH_WIDGETS, JSONArray(dashboardWidgets.toList()).toString())
     }
 
     // (setLayoutMode usunięty z APK — przełącznik telefon/PC tylko w Piec.html.)
@@ -1165,7 +1215,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** kafelki bez pozycji w `MENUS` nie otwierają arkusza (openMenu = () => {}). */
     fun menuForTile(id: String): String? = when (id) {
         "zewn", "bojler", "pokoj", "cisnienie", "wilgotnosc", "ogrz_powrot", "ogrz_trociny", "dym",
-        "czujniki", "ogrz", "panel", "pompa", "serwo", "mieszadlo", "czas" -> id
+        "czujniki", "ogrz", "panel", "pompa", "serwo", "mieszadlo", "czas", "alarmy" -> id
+        "powrot" -> "ogrz_powrot"
+        "trociny" -> "ogrz_trociny"
+        "ogrz_sr" -> "ogrz"
         else -> null
     }
 

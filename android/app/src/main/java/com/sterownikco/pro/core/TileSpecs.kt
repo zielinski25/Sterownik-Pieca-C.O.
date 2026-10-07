@@ -23,14 +23,34 @@ data class TileSpec(
     val artKey: String = ""
 )
 
+data class DashboardTileDef(
+    val id: String,
+    val title: String,
+    val grid: Int,
+    val description: String,
+    val defaultOn: Boolean = false
+)
+
 object TileDefs {
     val TILES = listOf(
-        Triple("zewn", 1, "Zewnętrzna"), Triple("ogrz", 1, "Piec C.O."), Triple("bojler", 1, "Bojler"),
-        Triple("panel", 1, "Panel słon."), Triple("pokoj", 1, "Pomieszczenie"),
-        Triple("cisnienie", 1, "Ciśnienie"), Triple("wilgotnosc", 1, "Wilgotność"),
-        Triple("pompa", 2, "Pompa"), Triple("serwo", 2, "Serwo"),
-        Triple("mieszadlo", 2, "Mieszadło"), Triple("dym", 2, "Czujnik dymu")
+        DashboardTileDef("zewn", "Zewnętrzna", 1, "Temperatura na zewnątrz", true),
+        DashboardTileDef("ogrz", "Piec C.O.", 1, "Bieżąca temperatura pieca", true),
+        DashboardTileDef("bojler", "Bojler", 1, "Temperatura wody w bojlerze", true),
+        DashboardTileDef("panel", "Panel słoneczny", 1, "Temperatura kolektora", true),
+        DashboardTileDef("pokoj", "Pomieszczenie", 1, "Temperatura w pomieszczeniu", true),
+        DashboardTileDef("cisnienie", "Ciśnienie", 1, "Ciśnienie atmosferyczne", true),
+        DashboardTileDef("wilgotnosc", "Wilgotność", 1, "Wilgotność powietrza", true),
+        DashboardTileDef("powrot", "Powrót C.O.", 1, "Temperatura wody wracającej z instalacji"),
+        DashboardTileDef("ogrz_sr", "Średnia pieca", 1, "Uśredniony odczyt temperatury pieca"),
+        DashboardTileDef("trociny", "Temperatura trocin", 1, "Temperatura czujnika zasobnika"),
+        DashboardTileDef("weather", "Pogoda teraz", 1, "Aktualna pogoda z Open-Meteo"),
+        DashboardTileDef("pompa", "Pompa", 2, "Stan i wybrana strategia pompy", true),
+        DashboardTileDef("serwo", "Serwo", 2, "Tryb i położenie klapy", true),
+        DashboardTileDef("mieszadlo", "Mieszadło", 2, "Stan pracy mieszadła", true),
+        DashboardTileDef("dym", "Czujnik dymu", 2, "Odczyt ADC i stan czujnika", true),
+        DashboardTileDef("alarmy", "Bezpieczeństwo", 2, "Podsumowanie alarmów kotła i kolektora")
     )
+    val DEFAULT_VISIBLE_IDS: Set<String> = TILES.filter { it.defaultOn }.map { it.id }.toSet()
 }
 
 fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
@@ -132,6 +152,50 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
         )
     )
 
+    // Dodatkowe kafelki do wyboru w ustawieniach pulpitu.
+    val powrot = S.valOf("ogrz_powrot", "t_powrot")
+    out.add(
+        TileSpec(
+            id = "powrot", title = "Powrót C.O.", grid = 1, value = fmt1(powrot), unit = "°C",
+            cls = "c-fiolet", frac = powrot / 120,
+            desc = symDesc("ogrz_powrot", "temperatura powracającej wody"),
+            badge = badge("ogrz_powrot")?.first ?: "LIVE", badgeCls = badge("ogrz_powrot")?.second ?: "live",
+            sim = S.symAktywna("ogrz_powrot"), stale = stale, artKey = "ogrz"
+        )
+    )
+    val trociny = S.valOf("ogrz_trociny", "t_trociny")
+    out.add(
+        TileSpec(
+            id = "trociny", title = "Temperatura trocin", grid = 1, value = fmt1(trociny), unit = "°C",
+            cls = "c-ember", frac = trociny / 90,
+            desc = symDesc("ogrz_trociny", "czujnik zasobnika"),
+            badge = badge("ogrz_trociny")?.first ?: "LIVE", badgeCls = badge("ogrz_trociny")?.second ?: "live",
+            sim = S.symAktywna("ogrz_trociny"), stale = stale, artKey = "bojler"
+        )
+    )
+    val ogrzAvg = S.t_ogrz_sr
+    out.add(
+        TileSpec(
+            id = "ogrz_sr", title = "Średnia pieca", grid = 1, value = fmt1(ogrzAvg), unit = "°C",
+            cls = "c-ember", frac = ogrzAvg / 160,
+            desc = "uśredniony odczyt temperatury pieca", stale = stale, artKey = "ogrz"
+        )
+    )
+    val currentWeather = m.weather?.current
+    out.add(
+        TileSpec(
+            id = "weather", title = "Pogoda teraz", grid = 1,
+            value = currentWeather?.let { fmt1(it.temp) } ?: "—",
+            unit = if (currentWeather != null) "°C" else "",
+            cls = "c-flame2", frac = currentWeather?.let { ((it.temp + 20) / 60).coerceIn(0.0, 1.0) } ?: 0.0,
+            desc = currentWeather?.let { Weather.desc(it.code) } ?: if (m.weatherBusy) "pobieranie danych" else "brak danych meteo",
+            badge = if (currentWeather != null) "METEO" else if (m.weatherBusy) "ŁADOWANIE" else "BRAK DANYCH",
+            badgeCls = if (currentWeather != null) "live" else "stale",
+            state = if (currentWeather == null) "dis" else "", stale = currentWeather == null || stale,
+            artKey = "zewn"
+        )
+    )
+
     // ── pompa ───────────────────────────────────────────────────────────────
     val stratBadge = if (S.pompa) {
         when (S.wybor) { 1 -> "⏱️ CZASOWY"; 2 -> "🌡️ TEMP."; else -> "⚡ AUTO" }
@@ -202,6 +266,26 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
             else if (dymDis) "WYŁ." else if (S.dym_alarm) "ALARM" else "OK",
             badgeCls = if (S.symAktywna("dym")) "sim" else if (dymDis) "stale" else if (S.dym_alarm) "alarm" else "live",
             sim = S.symAktywna("dym"), stale = stale, artKey = "dym"
+        )
+    )
+
+    // ── skrót bezpieczeństwa ────────────────────────────────────────────────
+    val anyAlarm = S.dym_alarm || S.alarm_ogrzewanie || S.alarm_panel
+    out.add(
+        TileSpec(
+            id = "alarmy", title = "Bezpieczeństwo", grid = 2,
+            value = if (anyAlarm) "ALARM" else "OK",
+            cls = if (anyAlarm) "c-ember" else "c-ok",
+            state = if (anyAlarm) "err" else "ok",
+            desc = when {
+                S.dym_alarm -> "wykryto dym"
+                S.alarm_ogrzewanie -> "przekroczony próg temperatury pieca"
+                S.alarm_panel -> "przekroczony próg temperatury panelu"
+                else -> "brak aktywnych alarmów"
+            },
+            badge = if (anyAlarm) "UWAGA" else "BEZPIECZNIE",
+            badgeCls = if (anyAlarm) "alarm" else "live",
+            stale = stale, artKey = "dym"
         )
     )
 

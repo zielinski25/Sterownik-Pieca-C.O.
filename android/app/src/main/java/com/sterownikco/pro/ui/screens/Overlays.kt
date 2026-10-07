@@ -38,6 +38,7 @@ import com.sterownikco.pro.ui.components.Sheet
 import com.sterownikco.pro.ui.icons.AppIcon
 import com.sterownikco.pro.ui.screens.sheets.AlarmSheet
 import com.sterownikco.pro.ui.screens.sheets.CzasSheet
+import com.sterownikco.pro.ui.screens.sheets.DashboardWidgetsSheet
 import com.sterownikco.pro.ui.screens.sheets.DymSheet
 import com.sterownikco.pro.ui.screens.sheets.LogsSheet
 import com.sterownikco.pro.ui.screens.sheets.MieszadloSheet
@@ -88,6 +89,7 @@ fun SheetHost(m: AppModel) {
             "ota" -> { title = "Aktualizacja firmware (OTA & GitHub)"; icon = "upload" }
             "sesja" -> { title = "Sesja operatora & Firebase"; icon = "session" }
             "alarmy" -> { title = "Alarmy dymu i przegrzania"; icon = "warn" }
+            "widgets" -> { title = "Widżety pulpitu"; icon = "dashboard" }
             "chartSeries" -> { title = "Wybór serii wykresu"; icon = "chart" }
             "chartAxis" -> { title = "Skala i osie wykresu"; icon = "thermo" }
             "chartTools" -> { title = "Narzędzia i filtry"; icon = "shield" }
@@ -116,6 +118,7 @@ fun SheetHost(m: AppModel) {
             id == "ota" -> OtaSheet(m)
             id == "sesja" -> SessionSheet(m)
             id == "alarmy" -> AlarmSheet(m)
+            id == "widgets" -> DashboardWidgetsSheet(m)
             id == "chartSeries" -> ChartSeriesSheet(m)
             id == "chartAxis" -> ChartAxisSheet(m)
             id == "chartTools" -> ChartToolsSheet(m)
@@ -124,18 +127,13 @@ fun SheetHost(m: AppModel) {
     }
 }
 
-/**
- * `#authModal` — modal logowania Firebase UserAuth. Wartości domyślne pól
- * są takimi samymi jak w prefillu panelu HTML (`value="…"` w markupie).
- */
+/** `#authModal` — modal logowania Firebase UserAuth z opcjonalnym zapamiętaniem konta. */
 @Composable
 fun AuthModal(m: AppModel) {
-    // Tylko konto (e-mail + haslo) — klucz API i token komend ida z zapisanych
-    // ustawien (arkusz Sesja → Klucze zaawansowane) lub z wbudowanych domyslnych.
-    // APK: brak autologowania i brak podpowiedzi — login i hasło ZAWSZE do wpisania.
-    var email by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
-    var rememberCreds by remember { mutableStateOf(false) }
+    // Zapamiętane konto jest wstępnie wypełnione; hasło pochodzi z Android Keystore.
+    var email by remember { mutableStateOf(m.prefs.get(Prefs.K_EMAIL) ?: "") }
+    var pass by remember { mutableStateOf(m.prefs.getSecret(Prefs.K_PASS) ?: "") }
+    var rememberCreds by remember { mutableStateOf(m.prefs.getBool(Prefs.K_REMEMBER_CREDS, true)) }
 
     Box(
         Modifier.fillMaxSize().background(Color(0xD9040912)).clickable(enabled = false) {},
@@ -179,15 +177,20 @@ fun AuthModal(m: AppModel) {
                 Box(Modifier.height(12.dp))
                 com.sterownikco.pro.ui.screens.sheets.SheetField("Hasło", pass, { pass = it }, "••••••••••••", password = true)
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                    Modifier.fillMaxWidth().padding(vertical = 14.dp)
+                        .clickable {
+                            val next = !rememberCreds
+                            rememberCreds = next
+                            m.prefs.setBool(Prefs.K_REMEMBER_CREDS, next)
+                            if (!next) m.prefs.remove(Prefs.K_PASS)
+                        },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
                         Modifier.size(18.dp).background(
                             if (rememberCreds) Pal.Cyan else Pal.Surface2, RoundedCornerShape(5.dp)
-                        ).border(BorderStroke(1.dp, if (rememberCreds) Pal.Cyan else Pal.BorderStrong), RoundedCornerShape(5.dp))
-                            .clickable { rememberCreds = !rememberCreds },
+                        ).border(BorderStroke(1.dp, if (rememberCreds) Pal.Cyan else Pal.BorderStrong), RoundedCornerShape(5.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         if (rememberCreds) AppIcon("check", size = 12.dp, tint = Color(0xFF00131F))

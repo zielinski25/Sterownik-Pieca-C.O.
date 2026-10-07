@@ -810,10 +810,9 @@ fun SessionSheet(m: AppModel) {
             m.connected -> "🟢 Połączono LIVE"
             else -> "🔴 Brak sesji"
         },
-        sub = "Konto: " + (m.prefs.get(Prefs.K_EMAIL) ?: "Brak") + " · IP: ${m.S.ip} · RSSI: ${m.S.wifi_rssi} dBm · CMD Token: " +
-            (if (!m.prefs.get(Prefs.K_CMD_TOKEN).isNullOrEmpty()) "✓ Zdefiniowany" else "✗ Brak")
+        sub = "Konto: " + (m.prefs.get(Prefs.K_EMAIL) ?: "Brak") + " · IP: ${m.S.ip} · RSSI: ${m.S.wifi_rssi} dBm"
     )
-    Note("Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Komendy sterujące /piec/cmd są zabezpieczone osobnym tokenem.")
+    Note("Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Dane potrzebne do obsługi komend są zarządzane wewnętrznie.")
     UstBtn("🔑 Połącz / Zmień dane Firebase", variant = "primary", modifier = Modifier.fillMaxWidth(), onClick = {
         m.openSheet(null); m.authOpen = true
     })
@@ -824,13 +823,4 @@ fun SessionSheet(m: AppModel) {
             m.openSheet(null)
         })
     }
-    SectionHeader("Klucze zaawansowane")
-    Note("Web API Key i token komend — zwykle nie trzeba ich ruszać (wbudowane wartości domyślne). Zmiana wymaga ponownego logowania.")
-    var advKey by remember { mutableStateOf(m.prefs.get(Prefs.K_API_KEY) ?: Prefs.DEFAULT_FB_API_KEY) }
-    var advTok by remember { mutableStateOf(m.prefs.get(Prefs.K_CMD_TOKEN) ?: Prefs.DEFAULT_CMD_TOKEN) }
-    SheetField("Firebase Web API Key", advKey, { advKey = it }, "AIzaSy...")
-    SheetField("Token komend (CMD Token)", advTok, { advTok = it }, "sterownikco-cmd-2026", password = true)
-    UstBtn("Zapisz klucze", variant = "primary", modifier = Modifier.fillMaxWidth(), onClick = {
-        m.saveKeys(advKey.trim(), advTok.trim())
-    })
 }
