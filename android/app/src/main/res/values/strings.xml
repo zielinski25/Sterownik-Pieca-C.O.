@@ -2,4 +2,5 @@
     <string name="app_name">Sterownik CO</string>
     <string name="brand">STEROWNIK CO</string>
     <string name="brand_sub">CENTRALA • piec_co</string>
+    <string name="widget_desc">Temperatury kotła, bojlera, panelu i zewnętrzna + status alarmu</string>
 </resources>

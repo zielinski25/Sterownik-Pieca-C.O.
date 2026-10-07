@@ -56,6 +56,8 @@ fun SettingsPage(m: AppModel) {
         verticalArrangement = Arrangement.spacedBy(Dimens.gap)
     ) {
         PageHead("USTAWIENIA STEROWNIKA", "Sterowanie natywne · komendy /piec/cmd · potwierdzenie ACK")
+        MenuCard(m, "alarmy", "warn", Pal.Err, "Alarmy dymu i przegrzania",
+            "Dźwięk, drzemka, czuwanie w tle, uprawnienia")
         MenuCard(m, "firebase", "shield", Pal.Cyan, "Połączenie z bazą Firebase",
             "Logowanie kontem Firebase, token komend, stan połączenia")
         MenuCard(m, "wifi", "wifi", Pal.Cyan, "Sieci Wi-Fi & Łączność",

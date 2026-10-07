@@ -71,9 +71,7 @@ fun TopBar(m: AppModel) {
             Text("STEROWNIK CO", style = Txt.topTitle)
             Text("CENTRALA • piec_co", style = Txt.topSub)
         }
-        IconBtn(if (m.layoutMode == "phone") "desktop" else "phone", "Przełącz format (PC / Smartfon)") {
-            m.setLayoutMode(if (m.layoutMode == "phone") "desktop" else "phone")
-        }
+        // (Przełącznik PC/Smartfon usunięty z APK — tylko w Piec.html.)
         Chip(m)
         IconBtn("more", "Menu sesji") { m.openSheet("sesja") }
     }

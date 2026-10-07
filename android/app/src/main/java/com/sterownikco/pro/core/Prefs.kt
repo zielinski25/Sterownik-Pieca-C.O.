@@ -17,6 +17,12 @@ class Prefs(ctx: Context) {
     fun getInt(key: String, def: Int): Int = try { sp.getString(key, null)?.toIntOrNull() ?: def } catch (e: Exception) { def }
     fun setInt(key: String, v: Int) = sp.edit().putString(key, v.toString()).apply()
 
+    fun getLong(key: String, def: Long): Long = try { sp.getString(key, null)?.toLongOrNull() ?: def } catch (e: Exception) { def }
+    fun setLong(key: String, v: Long) = sp.edit().putString(key, v.toString()).apply()
+
+    fun getBool(key: String, def: Boolean): Boolean = try { sp.getString(key, null)?.toBooleanStrictOrNull() ?: def } catch (e: Exception) { def }
+    fun setBool(key: String, v: Boolean) = sp.edit().putString(key, v.toString()).apply()
+
     companion object {
         // poświadczenia wbudowane w firmware (main_centrala.cpp) — jak w Piec.html
         const val DEFAULT_FB_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU"
@@ -33,7 +39,6 @@ class Prefs(ctx: Context) {
         const val K_TG_TOKEN = "piec_tg_token"
         const val K_TG_CHAT = "piec_tg_chat_id"
         const val K_CHART_PREFS = "piec_chart_prefs_v2"
-        const val K_LAYOUT_MODE = "piec_ui_layout_mode"
         const val K_LAT = "piec_weather_lat"
         const val K_LON = "piec_weather_lon"
         const val K_SOLAR_ARCHIVE = "solar_archive_data"

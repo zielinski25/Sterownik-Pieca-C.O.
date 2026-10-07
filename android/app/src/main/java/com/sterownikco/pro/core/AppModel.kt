@@ -12,6 +12,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.sterownikco.pro.service.AlarmMonitorService
+import com.sterownikco.pro.widget.PiecWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -56,6 +58,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var demoMode by mutableStateOf(false)
     var lastFetchTs = 0L
     var authOpen by mutableStateOf(false)
+    /** Okienko alarmu w aplikacji (gdy system nie odpali FSI na pierwszym planie). */
+    var alarmPopup by mutableStateOf<AlarmInfo?>(null)
+    /** Jednorazowa prośba o zgodę na powiadomienia po zalogowaniu (Android 13+). */
+    var askNotifPerm by mutableStateOf(false)
+    /** Licznik odświeżeń arkusza Alarmy (stan uprawnień zmienia się w tle). */
+    var alarmUiTick by mutableIntStateOf(0)
     /** `#authStatus` + `.auth-status.ok/.err/.warn`. */
     var authStatus by mutableStateOf("Gotowy do połączenia")
     var authStatusKind by mutableStateOf("")
@@ -97,9 +105,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     val seriesOn = mutableStateMapOf<String, Boolean>()
     var alarmLevels by mutableStateOf(mapOf("lolo" to 25.0, "lo" to 35.0, "hi" to 75.0, "hihi" to 85.0))
 
-    // ── układ ( telefon / pulpit ) ──────────────────────────────────────────
-    var layoutMode by mutableStateOf("phone")
     /** `--frame-w` z szuflady DEMO (360 / 412 / 480 / 768). */
+    // (Przełącznik telefon/PC usunięty z APK — potrzebny tylko w Piec.html.)
     var frameWidth by mutableIntStateOf(412)
     var simSpeed = 1
     var tickCount = 0
@@ -113,13 +120,14 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         Rtdb.cmdToken = prefs.get(Prefs.K_CMD_TOKEN) ?: Prefs.DEFAULT_CMD_TOKEN
         Rtdb.idToken = prefs.get(Prefs.K_ID_TOKEN) ?: ""
         Rtdb.refreshToken = prefs.get(Prefs.K_REF_TOKEN) ?: ""
-        prefs.get(Prefs.K_LAYOUT_MODE)?.let { layoutMode = it }
         ChartSeries.TEMP.forEach { seriesOn[it.id] = it.on }
         ChartSeries.SERVO.forEach { seriesOn[it.id] = it.on }
         loadChartPrefs()
         seedLogs()
         refreshWeather(false)
-        tryAutoLogin()
+        // APK: BRAK autologowania (w Piec.html zostaje jak było) — operator
+        // ZAWSZE wpisuje login i hasło ręcznie w modalu.
+        authOpen = true
     }
 
     private fun seedLogs() {
@@ -184,7 +192,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     fun onPause() {
         jobs.forEach { it.cancel() }; jobs = emptyList()
-        bgJob = scope.launch { while (true) { delay(45_000); poll() } }
+        // W tle NIE odpytujemy (oszczędność baterii) — czuwanie przejmuje
+        // AlarmMonitorService na strumieniu SSE (natychmiast + bez pollingu).
+        bgJob?.cancel(); bgJob = null
     }
 
     private fun recordSolar() {
@@ -214,6 +224,19 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         S.applyIncomingData(d)
         S.bump()
         if (page == 1) appendLiveFeed()
+        // Alarmy dymu/przegrzania na pierwszym planie: dźwięk + powiadomienie
+        // (usługa w tle robi to samo — krawędź w prefs chroni przed dublem).
+        try {
+            val info = AlarmCenter.evaluate(prefs, S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym)
+            if (info != null) {
+                AlarmNotify.fire(ctx, info)
+                alarmPopup = info
+            } else if (!S.dym_alarm && !S.alarm_ogrzewanie) {
+                AlarmNotify.cancel(ctx)
+            }
+        } catch (e: Exception) { /* alarm nie może wywalić poll() */ }
+        // Widget na pulpit (throttling w środku).
+        try { PiecWidget.push(ctx, d) } catch (e: Exception) { /* ignore */ }
     }
 
     /** Logowanie tylko kontem (e-mail + haslo) — klucz API i token komend ida
@@ -248,6 +271,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             addLog("SYSTEM", "Zalogowano operatora: $emailIn", "info")
             authOpen = false
             authBusy = false; authStatusKind = "ok"; authStatus = "Zalogowano — $emailIn"
+            // Start czuwania w tle + prośba o zgodę na powiadomienia (Android 13+).
+            try { AlarmMonitorService.start(ctx) } catch (e: Exception) { /* ignore */ }
+            if (!AlarmNotify.hasPostNotifications(ctx)) askNotifPerm = true
             poll()
             if (page == 1) loadRange(rangeSec)
         }.onFailure { e ->
@@ -263,24 +289,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         showToast("SESJA", "Zapisano klucze zaawansowane", "ok")
     }
 
-    fun tryAutoLogin() {
-        val ref = prefs.get(Prefs.K_REF_TOKEN)
-        if ((prefs.get(Prefs.K_API_KEY) ?: "").isNotEmpty() && !ref.isNullOrEmpty()) {
-            scope.launch {
-                Rtdb.refreshToken = ref
-                Rtdb.refreshIdToken()
-                if (Rtdb.idToken.isNotEmpty()) {
-                    prefs.set(Prefs.K_ID_TOKEN, Rtdb.idToken)
-                    prefs.set(Prefs.K_REF_TOKEN, Rtdb.refreshToken)
-                    poll()
-                }
-            }
-        } else {
-            authOpen = !demoMode
-        }
-    }
-
     /** `authDemoBtn` — tryb symulacji bez konta. */
+    // (tryAutoLogin usunięty z APK — logowanie zawsze ręczne; HTML po staremu.)
     fun useDemoFromAuth() {
         authStatusKind = "warn"; authStatus = "Tryb symulacji offline — dane testowe"
         enableDemoMode()
@@ -322,6 +332,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun logout() {
         prefs.remove(Prefs.K_PASS); prefs.remove(Prefs.K_ID_TOKEN); prefs.remove(Prefs.K_REF_TOKEN)
         Rtdb.idToken = ""; Rtdb.refreshToken = ""
+        try { AlarmMonitorService.stop(ctx) } catch (e: Exception) { /* ignore */ }
+        try { PiecWidget.clear(ctx) } catch (e: Exception) { /* ignore */ }
+        alarmPopup = null
         connected = false
         demoMode = false
         S.bump()
@@ -622,12 +635,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         } catch (e: Exception) { /* ignore */ }
     }
 
-    // Wlasciwosc o tej samej nazwie generuje JVM-owy setLayoutMode — stqd "Platform declaration clash".
-    @JvmName("hmiSetLayoutMode")
-    fun setLayoutMode(mode: String) {
-        layoutMode = mode
-        prefs.set(Prefs.K_LAYOUT_MODE, mode)
-    }
+    // (setLayoutMode usunięty z APK — przełącznik telefon/PC tylko w Piec.html.)
 
     // ── Telegram (przez centralę / Firebase — jak w panelu) ─────────────────
     var tgEnabled by mutableStateOf(false)

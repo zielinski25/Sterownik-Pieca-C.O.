@@ -36,6 +36,7 @@ import com.sterownikco.pro.core.Prefs
 import com.sterownikco.pro.core.SensorDef
 import com.sterownikco.pro.ui.components.Sheet
 import com.sterownikco.pro.ui.icons.AppIcon
+import com.sterownikco.pro.ui.screens.sheets.AlarmSheet
 import com.sterownikco.pro.ui.screens.sheets.CzasSheet
 import com.sterownikco.pro.ui.screens.sheets.DymSheet
 import com.sterownikco.pro.ui.screens.sheets.LogsSheet
@@ -86,6 +87,7 @@ fun SheetHost(m: AppModel) {
             "logi" -> { title = "Logi sterownika"; icon = "logs" }
             "ota" -> { title = "Aktualizacja firmware (OTA & GitHub)"; icon = "upload" }
             "sesja" -> { title = "Sesja operatora & Firebase"; icon = "session" }
+            "alarmy" -> { title = "Alarmy dymu i przegrzania"; icon = "warn" }
             "chartSeries" -> { title = "Wybór serii wykresu"; icon = "chart" }
             "chartAxis" -> { title = "Skala i osie wykresu"; icon = "thermo" }
             "chartTools" -> { title = "Narzędzia i filtry"; icon = "shield" }
@@ -113,6 +115,7 @@ fun SheetHost(m: AppModel) {
             id == "logi" -> LogsSheet(m)
             id == "ota" -> OtaSheet(m)
             id == "sesja" -> SessionSheet(m)
+            id == "alarmy" -> AlarmSheet(m)
             id == "chartSeries" -> ChartSeriesSheet(m)
             id == "chartAxis" -> ChartAxisSheet(m)
             id == "chartTools" -> ChartToolsSheet(m)
@@ -129,9 +132,10 @@ fun SheetHost(m: AppModel) {
 fun AuthModal(m: AppModel) {
     // Tylko konto (e-mail + haslo) — klucz API i token komend ida z zapisanych
     // ustawien (arkusz Sesja → Klucze zaawansowane) lub z wbudowanych domyslnych.
-    var email by remember { mutableStateOf(m.prefs.get(Prefs.K_EMAIL) ?: "piec_co_boot@akwarium.local") }
-    var pass by remember { mutableStateOf(m.prefs.get(Prefs.K_PASS) ?: "PcTg8plOcvRrMSojv79X") }
-    var rememberCreds by remember { mutableStateOf(true) }
+    // APK: brak autologowania i brak podpowiedzi — login i hasło ZAWSZE do wpisania.
+    var email by remember { mutableStateOf("") }
+    var pass by remember { mutableStateOf("") }
+    var rememberCreds by remember { mutableStateOf(false) }
 
     Box(
         Modifier.fillMaxSize().background(Color(0xD9040912)).clickable(enabled = false) {},

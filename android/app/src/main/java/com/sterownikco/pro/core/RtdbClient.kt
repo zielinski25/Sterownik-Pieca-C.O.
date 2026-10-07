@@ -2,6 +2,8 @@ package com.sterownikco.pro.core
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,6 +32,16 @@ object Rtdb {
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** Klient strumienia SSE — bez limitów czasu (jedno połączenie wisi godzinami). */
+    private val streamHttp: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.SECONDS)
+            .callTimeout(0, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
     }
 
@@ -128,6 +140,42 @@ object Rtdb {
         val r = get("/piec/status.json")
         if (!r.ok) return null
         return try { if (r.body.isBlank()) null else JSONObject(r.body) } catch (e: Exception) { null }
+    }
+
+    /**
+     * Strumień SSE (EventSource) z RTDB: `Accept: text/event-stream`.
+     * Serwer sam pcha zmiany — zero odpytań = minimum baterii i alarm w ~1 s.
+     * Blokuje do anulowania korutyny / błędu sieci / `auth_revoked`.
+     * [onEvent] wołane na wątku IO: (nazwa_zdarzenia, surowy JSON z `data:`).
+     */
+    suspend fun streamEvents(path: String, onEvent: (String, String) -> Unit) = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(DB_URL + path + authQuery())
+            .header("Accept", "text/event-stream")
+            .header("Cache-Control", "no-store").build()
+        val call = streamHttp.newCall(req)
+        coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
+        call.execute().use { r ->
+            if (!r.isSuccessful) throw java.io.IOException("HTTP " + r.code)
+            val reader = r.body?.byteStream()?.bufferedReader()
+                ?: throw java.io.IOException("pusty strumień")
+            var ev = ""
+            while (true) {
+                coroutineContext.ensureActive()
+                // readLine() blokuje do następnej linii — cancel() połączenia je przerywa.
+                val line = try { reader.readLine() } catch (e: Exception) {
+                    throw java.io.IOException("strumień przerwany")
+                } ?: throw java.io.IOException("strumień zamknięty (EOF)")
+                when {
+                    line.startsWith("event:") -> ev = line.substring(6).trim()
+                    line.startsWith("data:") -> {
+                        val d = line.substring(5).trim()
+                        if (ev.isNotEmpty() && d.isNotEmpty() && d != "null") onEvent(ev, d)
+                        ev = ""
+                    }
+                    // puste linie = granice ramek SSE, ignorujemy
+                }
+            }
+        }
     }
 
     /** `POST /piec/cmd.json` + oczekiwanie na `GET /piec/ack.json` (max 12 s). */

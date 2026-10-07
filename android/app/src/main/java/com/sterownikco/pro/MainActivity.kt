@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         model = AppModel(applicationContext, lifecycleScope)
-        model.tryAutoLogin()
+        // APK: brak autologowania — modal logowania otwiera sam AppModel.
         setContent { SterownikApp(model) }
     }
 
