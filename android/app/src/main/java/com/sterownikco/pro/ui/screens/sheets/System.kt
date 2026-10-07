@@ -633,10 +633,11 @@ fun LogsSheet(m: AppModel) {
             }
         }
     }
+    val clipboard = LocalClipboardManager.current
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         UstBtn("Kopiuj logi", modifier = Modifier.weight(1f), onClick = {
             val txt = m.logs.joinToString("\n") { "[${it.ts}] [${it.tag}] ${it.msg}" }
-            LocalClipboardManager.current.setText(androidx.compose.ui.text.AnnotatedString(txt))
+            clipboard.setText(androidx.compose.ui.text.AnnotatedString(txt))
             m.showToast("logi", "Skopiowano logi do schowka", "ok")
         })
         UstBtn("Wyczyść", variant = "danger", modifier = Modifier.weight(1f), onClick = { m.clearLogs() })
@@ -706,8 +707,9 @@ fun OtaSheet(m: AppModel) {
                 Modifier.fillMaxWidth().background(Pal.TerminalBg, RoundedCornerShape(8.dp))
                     .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(8.dp)).padding(10.dp)
             ) {
-                Text(rel?.optString("body", "").ifEmpty { "Brak danych. Kliknij poniższy przycisk, aby odpytać GitHub Releases." }
-                    ?: "", style = Txt.term.copy(color = Color(0xFFCBD5E1), lineHeight = 16.sp))
+                Text(rel?.optString("body", "")?.takeIf { it.isNotEmpty() }
+                    ?: "Brak danych. Kliknij poniższy przycisk, aby odpytać GitHub Releases.",
+                    style = Txt.term.copy(color = Color(0xFFCBD5E1), lineHeight = 16.sp))
             }
             Text("Pliki binarne w wydaniu: firmware.bin (Centrala ESP32) · firmware_panel.bin (Panel LCD)",
                 style = Txt.note.copy(fontSize = 10.sp))

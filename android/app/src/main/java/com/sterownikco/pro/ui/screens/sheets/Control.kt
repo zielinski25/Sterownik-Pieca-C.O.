@@ -136,10 +136,10 @@ fun PompaSheet(m: AppModel) {
     }
     if (wybor == 2) {
         val minScale = 20; val maxScale = 90
-        val stopPct = ((S.tempOff - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0)
-        val startPct = ((S.tempOn - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0)
+        val stopPct = ((S.tempOff - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
+        val startPct = ((S.tempOn - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
         val curTemp = S.t_ogrz
-        val curPct = ((curTemp - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0)
+        val curPct = ((curTemp - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
         val running = curTemp >= S.tempOn || (curTemp > S.tempOff && S.pompa)
         DiagramBox {
             DiagHead("🌡️ KOPCIUCH — PROGI TEMPERATURY PIECA", "Histereza: ${S.tempOn - S.tempOff}°C")

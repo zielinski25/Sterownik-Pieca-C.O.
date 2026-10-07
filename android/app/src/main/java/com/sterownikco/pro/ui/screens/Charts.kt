@@ -267,7 +267,7 @@ private fun ChartRow(label: String, chips: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-private fun Kpi(t: String, v: String, c: Color) {
+private fun RowScope.Kpi(t: String, v: String, c: Color) {
     Column(
         Modifier.weight(1f).background(Pal.Surface2, RoundedCornerShape(10.dp))
             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(10.dp)).padding(6.dp, 8.dp),
@@ -279,7 +279,7 @@ private fun Kpi(t: String, v: String, c: Color) {
 }
 
 @Composable
-private fun ActBtn(tint: Color, icon: String, title: String, desc: String, onClick: () -> Unit) {
+private fun RowScope.ActBtn(tint: Color, icon: String, title: String, desc: String, onClick: () -> Unit) {
     Column(
         Modifier.weight(1f).background(Pal.Surface2, RoundedCornerShape(10.dp))
             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(10.dp))

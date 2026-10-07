@@ -199,8 +199,8 @@ fun WeatherPage(m: AppModel) {
                         val lo = w?.daily?.minOfOrNull { it.minT } ?: 0.0
                         val hi = w?.daily?.maxOfOrNull { it.maxT } ?: 30.0
                         val sp = (hi - lo).coerceAtLeast(1.0)
-                        val from = (((d.minT - lo) / sp).toFloat().coerceIn(0f, .95f)) * total
-                        val to = (((d.maxT - lo) / sp).toFloat().coerceIn(0.05f, 1f)) * total
+                        val from = total * ((d.minT - lo) / sp).toFloat().coerceIn(0f, .95f)
+                        val to = total * ((d.maxT - lo) / sp).toFloat().coerceIn(0.05f, 1f)
                         Box(Modifier.fillMaxWidth().height(6.dp).background(Color(0x14FFFFFF), RoundedCornerShape(3.dp)))
                         Box(Modifier.width(to - from).offset(x = from).height(6.dp)
                             .background(Brush.horizontalGradient(listOf(Pal.Blue, Pal.Accent)), RoundedCornerShape(3.dp)))
