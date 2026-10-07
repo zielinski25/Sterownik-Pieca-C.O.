@@ -198,7 +198,7 @@ fun anyAlarm(m: AppModel): Boolean = m.S.dym_alarm || m.S.alarm_ogrzewanie || m.
 
 @Composable
 private fun HStat(lbl: String, value: String, color: Color, modifier: Modifier = Modifier) {
-    Column(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(lbl, style = Txt.hStatLbl, maxLines = 1)
         Text(value, style = Txt.hStatVal, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -301,7 +301,7 @@ fun NavBar(page: Int, onNav: (Int) -> Unit) {
                     .background(if (on) Pal.rgba(0, 212, 245, .1f) else Color.Transparent, RoundedCornerShape(16.dp))
                     .border(1.dp, if (on) Pal.rgba(0, 212, 245, .25f) else Color.Transparent, RoundedCornerShape(16.dp))
                     .clickable { onNav(i) },
-                horizontalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
                 Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {

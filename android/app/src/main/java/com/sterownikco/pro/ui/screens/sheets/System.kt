@@ -151,7 +151,6 @@ private fun FieldBox(
             unfocusedContainerColor = Pal.rgba(6, 13, 24, .7f), focusedContainerColor = Pal.rgba(6, 13, 24, .7f),
             focusedTextColor = Pal.White, unfocusedTextColor = Pal.White, cursorColor = Pal.Cyan
         ),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp, 10.dp)
     )
 }
 
@@ -501,7 +500,7 @@ fun TerminalSheet(m: AppModel) {
                 TermBtn("✓ Wszystkie DLOG", onClick = { m.terminalSetAllCategories(true) })
                 TermBtn("□ Wyłącz wszystkie", onClick = { m.terminalSetAllCategories(false) })
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), crossAxisSpacing = 5.dp) {
                 DLOG_CATEGORIES.forEach { cat ->
                     val on = m.termCats[cat] != false
                     Box(Modifier.background(if (on) Pal.rgba(0, 212, 245, .12f) else Color(0xCC111F35), RoundedCornerShape(6.dp))
@@ -572,12 +571,11 @@ fun TerminalSheet(m: AppModel) {
                         unfocusedContainerColor = Color(0xFF040911), focusedContainerColor = Color(0xFF040911),
                         focusedTextColor = Pal.White, unfocusedTextColor = Pal.White, cursorColor = Pal.Cyan
                     ),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp, 8.dp)
                 )
                 TermBtn("Wyślij", variant = "primary", onClick = { m.terminalExec(cmd); cmd = "" })
             }
             FlowRow(Modifier.fillMaxWidth().background(Color(0xFF0A1728)).padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                horizontalArrangement = Arrangement.spacedBy(5.dp), crossAxisSpacing = 5.dp) {
                 listOf("diag remote on", "diag remote off", "pompa_wl", "pompa_wyl", "pompa_auto", "klapa 50", "syberek 50", "status", "diag status", "update_panel")
                     .forEach { c ->
                         Box(Modifier.background(Color(0x0DFFFFFF), RoundedCornerShape(5.dp))
@@ -619,7 +617,6 @@ fun LogsSheet(m: AppModel) {
                 focusedBorderColor = Pal.Cyan, unfocusedBorderColor = Pal.Border,
                 focusedTextColor = Pal.White, unfocusedTextColor = Pal.White, cursorColor = Pal.Cyan
             ),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(10.dp, 6.dp)
         )
     }
     val rows = m.logsFiltered()

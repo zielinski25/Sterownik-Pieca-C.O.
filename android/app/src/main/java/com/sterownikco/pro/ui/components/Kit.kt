@@ -189,7 +189,6 @@ fun NumRow(
                 focusedTextColor = Pal.White, unfocusedTextColor = Pal.White,
                 cursorColor = Pal.Cyan
             ),
-            contentPadding = PaddingValues(8.dp, 6.dp)
         )
         UstBtn("Ustaw", onClick = {
             val v = text.toIntOrNull()

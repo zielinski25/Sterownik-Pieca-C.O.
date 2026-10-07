@@ -208,7 +208,7 @@ fun ChartCanvas(
         if (view.rows.size < 2 || view.cat.isEmpty()) return@Canvas
 
         val axis = TextStyle(fontSize = 8.5.sp, color = Pal.AxisText)
-        val famRes = androidx.compose.ui.text.font.LocalFontFamilyResolver.current
+        val famRes = androidx.compose.ui.platform.LocalFontFamilyResolver.current
         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
 

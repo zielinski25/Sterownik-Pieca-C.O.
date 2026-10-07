@@ -49,8 +49,7 @@ fun SterownikApp(m: AppModel) {
     SterownikTheme {
         CompositionLocalProvider(LocalModel provides m) {
             BoxWithConstraints(
-                Modifier.fillMaxSize().background(Pal.Stage),
-                contentAlignment = Alignment.TopCenter
+                modifier = Modifier.fillMaxSize().background(Pal.Stage)
             ) {
                 val wide = maxWidth > 560.dp
                 LaunchedEffect(wide) { m.layoutMode = if (wide) "desktop" else "phone" }

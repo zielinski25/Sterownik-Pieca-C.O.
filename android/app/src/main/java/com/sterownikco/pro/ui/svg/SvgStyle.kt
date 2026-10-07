@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CornerRadius
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TileMode
@@ -139,7 +140,7 @@ internal fun shapePath(node: SvgNode): Path? {
             if (w <= 0f || h <= 0f) return p
             val rx = node.num("rx", Float.NaN).let { if (it.isNaN()) 0f else minOf(it, w / 2f, h / 2f) }
             val ry = node.num("ry", rx).let { if (it.isNaN()) rx else minOf(it, w / 2f, h / 2f) }
-            if (rx > 0f || ry > 0f) p.addRoundRect(Rect(x, y, x + w, y + h), rx, if (ry > 0f) ry else rx)
+            if (rx > 0f || ry > 0f) p.addRoundRect(Rect(x, y, x + w, y + h), CornerRadius(rx, if (ry > 0f) ry else rx))
             else p.addRect(x, y, x + w, y + h)
         }
         "circle" -> {
@@ -184,10 +185,10 @@ internal fun brushFor(parsed: ParsedSvg, gradId: String?, fallback: Color, path:
     val grad = parsed.grads[gradId] ?: return SolidColor(fallback)
     val stops = grad.stops.sortedBy { it.first }
     if (stops.isEmpty()) return SolidColor(fallback)
-    val pairs = ArrayList<Pair<Float, Color>>()
-    if (stops.first().first > 0f) pairs.add(0f to stops.first().second)
-    stops.forEach { pairs.add(it.first.coerceIn(0f, 1f) to it.second) }
-    if (stops.last().first < 1f) pairs.add(1f to stops.last().second)
+    val pairs = ArrayList<Pair<Color, Float>>()
+    if (stops.first().first > 0f) pairs.add(stops.first().second to 0f)
+    stops.forEach { pairs.add(it.second to it.first.coerceIn(0f, 1f)) }
+    if (stops.last().first < 1f) pairs.add(stops.last().second to 1f)
     val b = path.getBounds()
     val w = max(b.width, 0.001f)
     val h = max(b.height, 0.001f)
