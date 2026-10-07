@@ -224,7 +224,7 @@ class PiecState {
             tPokoj = valOf("pokoj", "t_pokoj").toFloat(),
             alarmOgrz = alarm_ogrzewanie, alarmPanel = alarm_panel,
             pompa = pompa, klapa = klapa.toFloat(), syberka = syberka.toFloat(),
-            trybSerwa = tryb_serwa, mieszadlo = mieszadlo, dymAlarm = dym_alarm,
+            mieszadlo = mieszadlo, dymAlarm = dym_alarm,
             klapaAktywne = tryb_serwa == 1,
             cisnienie = cisnienie.toFloat(), wilgotnosc = wilgotnosc.toFloat(),
             godz = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY),
