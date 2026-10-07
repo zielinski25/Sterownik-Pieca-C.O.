@@ -62,7 +62,7 @@ fun TelemRow.toPoint(): TelemPoint {
 }
 
 /** Opis serii wykresu — pola identyczne jak TEMP_SERIES / SERVO_SERIES. */
-class SeriesDef(
+data class SeriesDef(
     val id: String, val label: String, val ch: String, val idx: Int, val qCh: Int,
     val unit: String, val group: String, val accent: String, val rgb: String,
     var on: Boolean, val servo: Boolean = false

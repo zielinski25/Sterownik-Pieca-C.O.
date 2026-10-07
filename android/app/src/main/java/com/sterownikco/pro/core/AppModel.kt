@@ -494,7 +494,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     /** `activeSeriesCatalog().filter(s => s.on)` — serie rysowane na wykresie. */
-    fun catalogOn(): List<SeriesDef> = activeCatalog().filter { seriesOn[it.id] ?: it.on }
+    fun catalogOn(): List<SeriesDef> = activeCatalog()
+        .map { it.copy(on = seriesOn[it.id] ?: it.on) }
+        .filter { it.on }
 
     // ── UI wykresów: etykiety i sterowanie (port funkcji renderujących) ─────
     /** `chartDataset` — historia + dopływ próbek na żywo (prawa krawędź). */
