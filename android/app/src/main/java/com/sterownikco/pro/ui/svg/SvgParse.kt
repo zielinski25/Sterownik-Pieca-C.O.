@@ -34,8 +34,13 @@ object Svg {
         val grads = HashMap<String, SvgGrad>()
         val clips = HashMap<String, List<SvgNode>>()
         val body = ArrayList<SvgNode>()
-        val children = rootSvg?.children ?: all
-        walk(children, grads, clips, body)
+        // Atrybuty prezentacyjne root <svg> (fill/stroke/stroke-width/linecap/linejoin)
+        // dziedzicza WSZYSTKIE dzieci (tak robi przegladarka). Ikony z AppIcons.wrap()
+        // maja styl WYLACZNIE na root — bez tego owiniecia dostaja fill=null/stroke=null
+        // i sa calkowicie niewidoczne. Owijamy dzieci w syntetyczna grupe niosaca
+        // te atrybuty; renderer obsluguje "g" rekurencyjnie z dziedziczeniem styli.
+        val wrapped = rootSvg?.let { listOf(SvgNode("g", it.attrs, it.children, "")) } ?: all
+        walk(wrapped, grads, clips, body)
         return ParsedSvg(vb, body, grads, clips)
     }
 
@@ -51,8 +56,32 @@ object Svg {
                 "linearGradient", "radialGradient" -> readGrad(node)?.let { grads[it.first] = it.second }
                 "clipPath" -> node.attr("id")?.let { clips[it] = node.children }
                 "style", "script", "title", "filter", "use" -> Unit
-                "svg" -> walk(node.children, grads, clips, body)
+                // Zagniezdzony <svg> tez niesie atrybuty dla dzieci — owijamy jak root.
+                "svg" -> walk(listOf(SvgNode("g", node.attrs, node.children, node.text)), grads, clips, body)
+                "g", "a" -> {
+                    // Grupa (rowniez syntetyczna z root <svg>): defs/gradienty/clipy
+                    // ze srodka musza trafic do map (wczesniej top-level zbieral walk),
+                    // a sama grupa idzie do body z pelnymi dziecmi — renderer zrobi
+                    // rekurencje z dziedziczeniem styli.
+                    collectDefs(node.children, grads, clips)
+                    body.add(node)
+                }
                 else -> body.add(node)
+            }
+        }
+    }
+
+    /** Wyciaga <defs>/<linearGradient>/<radialGradient>/<clipPath> z wnetrza grup. */
+    private fun collectDefs(
+        nodes: List<SvgNode>,
+        grads: MutableMap<String, SvgGrad>,
+        clips: MutableMap<String, List<SvgNode>>
+    ) {
+        for (n in nodes) {
+            when (n.tag) {
+                "defs", "g", "a", "svg" -> collectDefs(n.children, grads, clips)
+                "linearGradient", "radialGradient" -> readGrad(n)?.let { grads[it.first] = it.second }
+                "clipPath" -> n.attr("id")?.let { clips[it] = n.children }
             }
         }
     }

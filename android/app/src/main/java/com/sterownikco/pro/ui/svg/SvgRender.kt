@@ -98,8 +98,13 @@ private fun DrawScope.svgNode(
     val alpha = st.alpha * a.alpha * alphaMul
     val body: DrawScope.() -> Unit = {
         when (node.tag) {
-            "g", "svg", "a", "clipPath" ->
+            "g", "svg", "a" ->
                 svgNodes(node.children, parsed, st, anim, alpha)
+            // Zawartosc <clipPath> (i <defs>) nigdy sie nie maluje — klipy dzialaja
+            // wylacznie przez clip-path="url(#id)". Wczesniej luzny <clipPath> na top
+            // level nie trafial do body, wiec malowanie go tutaj mijaloby sie z SVG.
+            "clipPath", "defs", "linearGradient", "radialGradient",
+            "style", "script", "title", "filter", "use" -> Unit
             "text" -> {
                 drawShape(node, st, parsed, a, alpha)
                 drawSvgText(node, st, alpha)
