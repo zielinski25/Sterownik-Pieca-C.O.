@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -109,48 +111,69 @@ fun WeatherPage(m: AppModel) {
 
     Column(
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-            .padding(start = Dimens.pagePadH, end = Dimens.pagePadH, top = Dimens.pagePad, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(Dimens.gap)
+            .padding(start = Dimens.pagePadH, end = Dimens.pagePadH, top = Dimens.pagePad, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // `.weather-topbar`
+        // `.weather-topbar`: label plus a single inline location chip, not a card.
         Row(
-            Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Pal.HeroA, Pal.HeroB)), RoundedCornerShape(Dimens.radiusTile))
-                .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(Dimens.radiusTile)).padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            Modifier.fillMaxWidth().padding(bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("METEO & OTOCZENIE KOTŁA", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.6.sp)
-                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.size(15.dp)) {
-                        com.sterownikco.pro.ui.icons.AppIcon("location", size = 15.dp, tint = Pal.Cyan)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("METEO & OTOCZENIE KOTŁA", fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold,
+                    color = Pal.Cyan, letterSpacing = 0.68.sp)
+                Row(
+                    Modifier.background(Pal.Surface2, RoundedCornerShape(20.dp))
+                        .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(Modifier.size(14.dp)) {
+                        com.sterownikco.pro.ui.icons.AppIcon("location", size = 14.dp, tint = Pal.Cyan)
                     }
-                    Column {
-                        Text("Centrala Kotłownia", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Pal.White)
-                        Text(latLon(m), style = Txt.cardDesc)
-                    }
+                    Text("Centrala Kotłownia", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Pal.White,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(latLon(m), fontSize = 8.sp, color = Pal.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             IconBtn("refresh", "Odśwież dane meteo", onClick = { m.refreshWeather(true, true) })
         }
 
-        // `.weather-hero`
-        Row(
-            Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(Dimens.radiusTile))
-                .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(Dimens.radiusTile)).padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // `.weather-hero`: gradient hero, subtle cyan glow, weather art and min/max pill.
+        val heroShape = RoundedCornerShape(22.dp)
+        Box(
+            Modifier.fillMaxWidth().shadow(12.dp, heroShape).background(
+                Brush.linearGradient(listOf(Color(0xFF102437), Color(0xFF07131F))), heroShape
+            ).border(BorderStroke(1.dp, Pal.Border), heroShape)
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(heroTempTxt, style = Txt.heroTemp)
-                Text(heroDescTxt, style = Txt.heroD)
-                Text(heroFeelsTxt, style = Txt.heroD)
-                Text("🌡️ Min: " + (d0?.minT?.let { fmt1(it) } ?: "--") + "°C · Max: " +
-                    (d0?.maxT?.let { fmt1(it) } ?: "--") + "°C",
-                    style = Txt.cardDesc, modifier = Modifier.padding(top = 8.dp))
-            }
-            SvgView(
-                src = remember(heroCode, heroIsDay) { Ilu.heroBoiler(m.S.art(heroCode, heroIsDay)) },
-                modifier = Modifier.size(96.dp)
+            Box(
+                Modifier.align(Alignment.TopEnd).size(150.dp)
+                    .background(Brush.radialGradient(listOf(Pal.rgba(0, 212, 245, .15f), Color.Transparent)))
             )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(heroTempTxt, style = Txt.heroTemp.copy(fontSize = 36.sp, lineHeight = 38.sp, letterSpacing = (-0.72).sp))
+                    Text(heroDescTxt, style = Txt.heroD.copy(fontSize = 11.sp, lineHeight = 13.sp,
+                        fontWeight = FontWeight.ExtraBold, color = Pal.Cyan), modifier = Modifier.padding(top = 3.dp, bottom = 2.dp))
+                    Text(heroFeelsTxt, style = Txt.heroD.copy(fontSize = 8.5.sp, lineHeight = 10.sp))
+                    Text("🌡️ Min: " + (d0?.minT?.let { fmt1(it) } ?: "--") + "°C · Max: " +
+                        (d0?.maxT?.let { fmt1(it) } ?: "--") + "°C",
+                        fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.White,
+                        modifier = Modifier.padding(top = 8.dp)
+                            .background(Pal.rgba(255, 255, 255, .06f), RoundedCornerShape(10.dp))
+                            .border(BorderStroke(1.dp, Pal.rgba(255, 255, 255, .08f)), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp))
+                }
+                SvgView(
+                    src = remember(heroCode, heroIsDay) { Ilu.heroBoiler(m.S.art(heroCode, heroIsDay)) },
+                    modifier = Modifier.size(88.dp)
+                )
+            }
         }
 
         // `.metric-grid` — 6 kart z warunkowymi podpisami jak w renderWeatherTab
@@ -169,16 +192,18 @@ fun WeatherPage(m: AppModel) {
             )
         )
 
-        // `.weather-card` — STUDIO POGODOWE
-        WCard(title = studioTitle(days), sub = "ciągła analiza parametrów") {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(1 to "24 H", 3 to "3 DNI", 7 to "7 DNI", 14 to "14 DNI").forEach { (v, lbl) ->
-                    RangeBtn(lbl, days == v, flex = true) { m.setWeatherDays(v) }
-                }
+        // `.weather-card` — STUDIO POGODOWE; zakres buttons share the header row in HTML.
+        WCard(title = studioTitle(days), sub = "ciągła analiza parametrów", stackSub = true, trailing = {
+            listOf(1 to "24 H", 3 to "3 DNI", 7 to "7 DNI", 14 to "14 DNI").forEach { (v, lbl) ->
+                RangeBtn(lbl, days == v) { m.setWeatherDays(v) }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        }) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 listOf("temp" to "🌡️ Temperatura", "wind" to "💨 Wiatr", "precip" to "🌧️ Opady", "cloud" to "☁️ Zachmurzenie")
-                    .forEach { (k, lbl) -> RangeBtn(lbl, vbl == k, flex = true) { vbl = k } }
+                    .forEach { (k, lbl) -> VarChip(lbl, vbl == k) { vbl = k } }
             }
             val measurer = rememberTextMeasurer()
             Box(
@@ -225,7 +250,8 @@ fun WeatherPage(m: AppModel) {
 
         // `.weather-card` — PROGNOZA GODZINOWA (48 h, tap = podglad w hero)
         WCard("PROGNOZA GODZINOWA", "dotknij godziny do podglądu") {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 hours.take(48).forEachIndexed { i, h ->
                     val on = if (hs < 0) i == 0 else hs == i
                     Column(
@@ -281,66 +307,76 @@ fun WeatherPage(m: AppModel) {
             }
         }
 
-        // `.sun-arc-card` — prawdziwe wschody/zachody z Open-Meteo
-        SunArcCard(m)
+        // In HTML the solar balance card touches the sun-arc card; group them to preserve that spacing.
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            // `.sun-arc-card` — prawdziwe wschody/zachody z Open-Meteo
+            SunArcCard(m)
 
-        // `.weather-card` — BILANS & ZYSK KOLEKTORA (+eksport CSV, siatka 7 dni)
-        val sol = m.solar
-        val dT = m.S.t_panel - m.S.t_zewn
-        WCard("☀️ BILANS & ZYSK KOLEKTORA SŁONECZNEGO",
-            "Korelacja nasłonecznienia z odczytami panelu i bojlera",
-            titleColor = SolarY,
-            trailing = {
-                Box(Modifier.background(Color(0x26FFD32A), RoundedCornerShape(8.dp))
-                    .border(BorderStroke(1.dp, Color(0x66FFD32A)), RoundedCornerShape(8.dp))
-                    .clickable { m.exportSolarCsv() }.padding(horizontal = 9.dp, vertical = 5.dp),
-                    contentAlignment = Alignment.Center) {
-                    Text("📁 Eksportuj CSV", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = SolarY)
-                }
-            }) {
-            MetricGrid(
-                listOf(
-                    MCard("⚡ ZYSK BRUTTO SŁOŃCA", "+" + fmt1(sol.accumulatedGrossGain) + "°C",
-                        "~" + fmt1(sol.estKwh()) + " kWh energii (dziś)", SolarY),
-                    MCard("🌡️ ΔT PANEL - ZEWN.", (if (dT >= 0) "+" else "") + fmt1(dT) + "°C",
-                        if (m.S.t_panel > m.S.t_zewn + 5) "🔥 aktywne grzanie" else "temperatura wyrównana",
-                        if (dT > 10) SolarY else Pal.Cyan),
-                    MCard("🚰 POBORY WODY CWU", sol.drawCount.toString() + " poborów",
-                        "skompensowano -" + fmt1(sol.accumulatedDrawDrop) + "°C", Pal.Live),
-                    MCard("🔮 PROGNOZA ZYSKU", "+" + fmt1(sol.forecastGain) + "°C",
-                        "prognoza: ~" + fmt1(sol.forecastKwh) + " kWh z meteo", Pal.Violet)
+            // `.weather-card` — BILANS & ZYSK KOLEKTORA (+eksport CSV, siatka 7 dni)
+            val sol = m.solar
+            val dT = m.S.t_panel - m.S.t_zewn
+            WCard("☀️ BILANS & ZYSK KOLEKTORA SŁONECZNEGO",
+                "Korelacja nasłonecznienia z odczytami panelu i bojlera",
+                titleColor = SolarY, stackSub = true,
+                trailing = {
+                    Box(Modifier.background(Color(0x26FFD32A), RoundedCornerShape(8.dp))
+                        .border(BorderStroke(1.dp, Color(0x66FFD32A)), RoundedCornerShape(8.dp))
+                        .clickable { m.exportSolarCsv() }.padding(horizontal = 9.dp, vertical = 5.dp),
+                        contentAlignment = Alignment.Center) {
+                        Text("📁 Eksportuj CSV", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = SolarY)
+                    }
+                }) {
+                MetricGrid(
+                    listOf(
+                        MCard("⚡ ZYSK BRUTTO SŁOŃCA", "+" + fmt1(sol.accumulatedGrossGain) + "°C",
+                            "~" + fmt1(sol.estKwh()) + " kWh energii (dziś)", SolarY),
+                        MCard("🌡️ ΔT PANEL - ZEWN.", (if (dT >= 0) "+" else "") + fmt1(dT) + "°C",
+                            if (m.S.t_panel > m.S.t_zewn + 5) "🔥 aktywne grzanie" else "temperatura wyrównana",
+                            if (dT > 10) SolarY else Pal.Cyan),
+                        MCard("🚰 POBORY WODY CWU", sol.drawCount.toString() + " poborów",
+                            "skompensowano -" + fmt1(sol.accumulatedDrawDrop) + "°C", Pal.Live),
+                        MCard("🔮 PROGNOZA ZYSKU", "+" + fmt1(sol.forecastGain) + "°C",
+                            "prognoza: ~" + fmt1(sol.forecastKwh) + " kWh z meteo", Pal.Violet)
+                    )
                 )
-            )
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI", fontSize = 9.5.sp,
-                    fontWeight = FontWeight.ExtraBold, color = SolarY, letterSpacing = 0.4.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text("model radiacji Open-Meteo", fontSize = 8.sp, color = Pal.TextDim)
-            }
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                dailies.take(7).chunked(3).forEach { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { d ->
-                            val idx = dailies.indexOf(d)
-                            SolarDayCard(
-                                m,
-                                dayLabelSolar(idx, d.date),
-                                hours.drop(idx * 24).take(24),
-                                idx == 0,
-                                Modifier.weight(1f)
-                            )
+                Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI", fontSize = 9.5.sp,
+                            fontWeight = FontWeight.ExtraBold, color = SolarY, letterSpacing = 0.4.sp,
+                            lineHeight = 12.sp, modifier = Modifier.weight(1f))
+                        Text("model radiacji Open-Meteo", fontSize = 8.sp, color = Pal.TextDim)
+                    }
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        // CSS repeat(auto-fit, minmax(110px, 1fr)) with 6px gap.
+                        val columns = ((maxWidth.value + 6f) / 116f).toInt().coerceAtLeast(1)
+                        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            dailies.take(7).chunked(columns).forEach { row ->
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    row.forEach { d ->
+                                        val idx = dailies.indexOf(d)
+                                        SolarDayCard(
+                                            m,
+                                            dayLabelSolar(idx, d.date),
+                                            hours.drop(idx * 24).take(24),
+                                            idx == 0,
+                                            Modifier.weight(1f)
+                                        )
+                                    }
+                                    repeat(columns - row.size) { Box(Modifier.weight(1f)) }
+                                }
+                            }
                         }
-                        repeat(3 - row.size) { Box(Modifier.weight(1f)) }
                     }
                 }
+                Text(
+                    "💡 Filtr poboru CWU: Algorytm automatycznie wykrywa nagłe schłodzenie bojlera przez napływ " +
+                        "zimnej wody użytkowej i kompensuje ubytek, dzięki czemu bilans zysku słonecznego nie jest zaniżany.",
+                    style = Txt.note.copy(fontSize = 9.5.sp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                        .background(Color(0x08FFFFFF), RoundedCornerShape(8.dp)).padding(10.dp, 8.dp)
+                )
             }
-            Text(
-                "💡 Filtr poboru CWU: Algorytm automatycznie wykrywa nagłe schłodzenie bojlera przez napływ " +
-                    "zimnej wody użytkowej i kompensuje ubytek, dzięki czemu bilans zysku słonecznego nie jest zaniżany.",
-                style = Txt.note.copy(fontSize = 9.5.sp),
-                modifier = Modifier.fillMaxWidth().background(Color(0x08FFFFFF), RoundedCornerShape(8.dp)).padding(10.dp, 8.dp)
-            )
         }
 
         // `.weather-card` — PODSUMOWANIE METEO (8 pozycji 1:1)
@@ -407,20 +443,21 @@ private data class MCard(val lbl: String, val val_: String, val sub: String, val
 
 @Composable
 private fun MetricGrid(items: List<MCard>) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { it2 ->
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // CSS .metric-grid: three equal columns; four solar metrics therefore flow 3 + 1.
+        items.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { item ->
                     Column(
-                        Modifier.weight(1f).background(Pal.Surface2, RoundedCornerShape(10.dp))
-                            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(10.dp)).padding(8.dp, 9.dp)
+                        Modifier.weight(1f).background(Pal.Surface, RoundedCornerShape(14.dp))
+                            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(14.dp)).padding(10.dp)
                     ) {
-                        Text(it2.lbl, style = Txt.mcardLbl)
-                        Text(it2.val_, style = Txt.mcardVal.copy(color = it2.tint))
-                        Text(it2.sub, style = Txt.mcardSub)
+                        Text(item.lbl, style = Txt.mcardLbl)
+                        Text(item.val_, style = Txt.mcardVal.copy(color = item.tint))
+                        Text(item.sub, style = Txt.mcardSub)
                     }
                 }
-                if (row.size == 1) Box(Modifier.weight(1f))
+                repeat(3 - row.size) { Box(Modifier.weight(1f)) }
             }
         }
     }
@@ -431,19 +468,28 @@ private fun WCard(
     title: String,
     sub: String,
     titleColor: Color = Pal.White,
+    stackSub: Boolean = false,
     trailing: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
         Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(Dimens.radiusTile))
-            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(Dimens.radiusTile)).padding(12.dp),
+            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(Dimens.radiusTile))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = titleColor, letterSpacing = 0.4.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(sub, style = Txt.cardDesc)
+        Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (stackSub) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = titleColor,
+                        letterSpacing = 0.6.sp, lineHeight = 13.sp)
+                    Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp))
+                }
+            } else {
+                Text(title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = titleColor,
+                    letterSpacing = 0.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
             }
             if (trailing != null) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), content = trailing)
         }
@@ -454,14 +500,29 @@ private fun WCard(
 @Composable
 private fun RowScope.RangeBtn(label: String, on: Boolean, flex: Boolean = false, onClick: () -> Unit) {
     val mod = if (flex) Modifier.weight(1f) else Modifier
+    val shape = RoundedCornerShape(6.dp)
     Box(
-        mod.background(if (on) Pal.rgba(0, 212, 245, .16f) else Pal.Surface2, RoundedCornerShape(8.dp))
-            .border(BorderStroke(1.dp, if (on) Pal.Cyan else Pal.Border), RoundedCornerShape(8.dp))
-            .clickable { onClick() }.padding(horizontal = 6.dp, vertical = 5.dp),
+        mod.background(if (on) Pal.rgba(0, 212, 245, .15f) else Pal.Surface2, shape)
+            .border(BorderStroke(1.dp, if (on) Pal.Cyan else Pal.Border), shape)
+            .clickable { onClick() }.padding(horizontal = 6.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(label, fontSize = 8.sp, fontWeight = FontWeight.Bold, color = if (on) Color.White else Pal.TextDim,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun RowScope.VarChip(label: String, on: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        Modifier.background(if (on) Pal.rgba(0, 212, 245, .14f) else Pal.Surface2, shape)
+            .border(BorderStroke(1.dp, if (on) Pal.Cyan else Pal.Border), shape)
+            .clickable { onClick() }.padding(horizontal = 9.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, fontSize = 8.5.sp, fontWeight = FontWeight.Bold,
+            color = if (on) Color.White else Pal.TextDim, maxLines = 1)
     }
 }
 
@@ -494,20 +555,25 @@ private fun SunArcCard(m: AppModel) {
         countCol = Pal.Cyan; countBd = Pal.rgba(0, 212, 245, .3f)
     }
     val dl = maxOf(0L, sunsetTs - sunriseTs)
+    val sunArcShape = RoundedCornerShape(16.dp)
     Column(
-        Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(Dimens.radiusTile))
-            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(Dimens.radiusTile)).padding(12.dp)
+        Modifier.fillMaxWidth().shadow(4.dp, sunArcShape)
+            .background(Brush.linearGradient(listOf(Pal.rgba(15, 36, 56, .6f), Pal.rgba(8, 20, 33, .8f))), sunArcShape)
+            .border(BorderStroke(1.dp, Pal.rgba(0, 212, 245, .25f)), sunArcShape)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("ŁUK SŁONECZNY & POTENCJAŁ SOLARNY", fontSize = 9.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.4.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("wpływ nasłonecznienia na panel słoneczny C.O.", style = Txt.cardDesc)
+                Text("ŁUK SŁONECZNY & POTENCJAŁ SOLARNY", fontSize = 10.5.sp, lineHeight = 14.sp,
+                    fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.6.sp)
+                Text("wpływ nasłonecznienia na panel słoneczny C.O.", style = Txt.cardDesc.copy(fontSize = 8.sp))
             }
             Text(countTxt, fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = countCol,
                 modifier = Modifier.background(countCol.copy(alpha = .12f), RoundedCornerShape(10.dp))
                     .border(BorderStroke(1.dp, countBd), RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 2.dp))
         }
-        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(Dimens.sunArcH).padding(top = 6.dp)) {
+        val sunTextMeasurer = rememberTextMeasurer()
+        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().padding(top = 8.dp).height(Dimens.sunArcH)) {
             val sx = size.width / 320f
             val sy = size.height / 68f
             fun X(v: Float) = v * sx
@@ -530,19 +596,37 @@ private fun SunArcCard(m: AppModel) {
                 drawCircle(Color(0xFFFFD94D), radius = 7.5.dp.toPx(), center = Offset(sunX, sunY))
                 drawCircle(Color.White, radius = 7.5.dp.toPx(), center = Offset(sunX, sunY), style = Stroke(1.5.dp.toPx()))
             }
+            val labelStyle = TextStyle(fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+            val sunriseLabel = sunTextMeasurer.measure(AnnotatedString(hhmm(sunriseTs) + " (Wschód)"), labelStyle)
+            val noonLabel = sunTextMeasurer.measure(AnnotatedString(hhmm(noonTs) + " (Zenit)"), labelStyle.copy(color = Pal.Yellow))
+            val sunsetLabel = sunTextMeasurer.measure(AnnotatedString(hhmm(sunsetTs) + " (Zachód)"), labelStyle)
+            drawText(sunriseLabel, topLeft = Offset(X(20f), Y(56f)))
+            drawText(noonLabel, topLeft = Offset(X(160f) - noonLabel.size.width / 2f, Y(56f)))
+            drawText(sunsetLabel, topLeft = Offset(X(300f) - sunsetLabel.size.width, Y(56f)))
         }
-        Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(hhmm(sunriseTs) + " (Wschód)", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
-            Text(hhmm(noonTs) + " (Zenit)", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Pal.Yellow)
-            Text(hhmm(sunsetTs) + " (Zachód)", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            Text("☀️ Promieniowanie: $rad W/m²", fontSize = 8.sp, color = Pal.TextDim,
+        Row(
+            Modifier.fillMaxWidth().padding(top = 6.dp).drawBehind {
+                drawLine(Color(0x0FFFFFFF), Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx())
+            }.padding(top = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(buildAnnotatedString {
+                append("☀️ Promieniowanie: ")
+                withStyle(SpanStyle(color = SolarY, fontWeight = FontWeight.Bold)) { append("$rad W/m²") }
+            }, fontSize = 8.5.sp, color = Pal.TextDim,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text("📐 Elewacja: $elevTxt", fontSize = 8.sp, color = Pal.Cyan,
+            Text(buildAnnotatedString {
+                append("📐 Elewacja słońca: ")
+                withStyle(SpanStyle(color = Pal.Cyan, fontWeight = FontWeight.Bold)) { append(elevTxt) }
+            }, fontSize = 8.5.sp, color = Pal.TextDim,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.weight(1.2f))
-            Text("⏳ Dzień: ${dl / 3600000}h ${(dl % 3600000) / 60000}m", fontSize = 8.sp, color = Color.White,
+            Text(buildAnnotatedString {
+                append("⏳ Długość dnia: ")
+                withStyle(SpanStyle(color = Color.White, fontWeight = FontWeight.Bold)) {
+                    append("${dl / 3600000}h ${(dl % 3600000) / 60000}m")
+                }
+            }, fontSize = 8.5.sp, color = Pal.TextDim,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, modifier = Modifier.weight(0.8f))
         }
     }

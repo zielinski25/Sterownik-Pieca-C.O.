@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -96,8 +97,8 @@ fun Chip(m: AppModel) {
 @Composable
 fun IconBtn(icon: String, title: String, tint: Color = Pal.TextDim, onClick: () -> Unit) {
     Box(
-        modifier = Modifier.size(34.dp).background(Pal.Surface2, RoundedCornerShape(11.dp))
-            .border(1.dp, Pal.Border, RoundedCornerShape(11.dp)).clickable { onClick() },
+        modifier = Modifier.size(36.dp).background(Pal.rgba(255, 255, 255, .04f), CircleShape)
+            .border(1.dp, Pal.Border, CircleShape).clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         AppIcon(icon, size = 18.dp, tint = tint)
