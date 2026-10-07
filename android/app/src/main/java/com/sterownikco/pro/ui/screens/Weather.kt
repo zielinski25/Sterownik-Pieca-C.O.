@@ -214,7 +214,7 @@ fun WeatherPage(m: AppModel) {
                         val padL = 36.dp.toPx()
                         val padR = 12.dp.toPx()
                         detectTapGestures(onTap = { pos ->
-                            wCross = xToWIdx(pos.x, size.width, padL, padR, hours.size)
+                            wCross = xToWIdx(pos.x, size.width.toFloat(), padL, padR, hours.size)
                         })
                     }
                     .pointerInput(hours) {
@@ -222,7 +222,7 @@ fun WeatherPage(m: AppModel) {
                         val padR = 12.dp.toPx()
                         detectHorizontalDragGestures(onHorizontalDrag = { change, _ ->
                             change.consume()
-                            wCross = xToWIdx(change.position.x, size.width, padL, padR, hours.size)
+                            wCross = xToWIdx(change.position.x, size.width.toFloat(), padL, padR, hours.size)
                         })
                     }
             ) {

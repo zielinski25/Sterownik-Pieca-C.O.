@@ -365,6 +365,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     /** Zakres studia pogody (W_RANGES w HTML): zmiana dni = refetch + przerys. */
+    @JvmName("hmiSetWeatherDays")
     fun setWeatherDays(d: Int) {
         if (weatherDays == d) return
         weatherDays = d
