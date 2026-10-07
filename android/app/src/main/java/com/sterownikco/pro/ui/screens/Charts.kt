@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -56,7 +57,7 @@ import com.sterownikco.pro.ui.theme.Txt
 
 /** `.chart-chip` (`.on` = cyan 16 % + poświata). */
 @Composable
-private fun ChartChip(label: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun RowScope.ChartChip(label: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         modifier.weight(1f).background(
             if (on) Pal.rgba(0, 212, 245, .16f) else Pal.Surface2, RoundedCornerShape(8.dp)
@@ -89,7 +90,7 @@ private fun SeriesChip(label: String, rgb: String, on: Boolean, sim: Boolean, on
 
 @Composable
 fun ChartsPage(m: AppModel) {
-    val rev = m.sheetTick.intValue
+    val rev = m.sheetTick
     val dataset = remember(m.telemetry.size, m.chartLive.size, m.chartPoints, rev) { m.chartDataset() }
     val cat = remember(m.chartFocus, m.seriesOn.size, rev) { m.catalogOn() }
     val view = remember(dataset, cat, m.chartZoom, m.chartOffset, m.chartFocus, m.chartMode, m.chartGlitch) {
@@ -257,10 +258,10 @@ fun ChartsPage(m: AppModel) {
 }
 
 @Composable
-private fun ChartRow(label: String, chips: @Composable Row.() -> Unit) {
+private fun ChartRow(label: String, chips: @Composable RowScope.() -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(label, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Pal.TextDim, letterSpacing = 0.5.sp,
-            modifier = Modifier.width48())
+            modifier = Modifier.width(48.dp))
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp), content = chips)
     }
 }

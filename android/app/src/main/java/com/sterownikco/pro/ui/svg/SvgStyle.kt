@@ -2,9 +2,9 @@ package com.sterownikco.pro.ui.svg
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CornerRadius
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TileMode
@@ -140,8 +140,8 @@ internal fun shapePath(node: SvgNode): Path? {
             if (w <= 0f || h <= 0f) return p
             val rx = node.num("rx", Float.NaN).let { if (it.isNaN()) 0f else minOf(it, w / 2f, h / 2f) }
             val ry = node.num("ry", rx).let { if (it.isNaN()) rx else minOf(it, w / 2f, h / 2f) }
-            if (rx > 0f || ry > 0f) p.addRoundRect(Rect(x, y, x + w, y + h), CornerRadius(rx, if (ry > 0f) ry else rx))
-            else p.addRect(x, y, x + w, y + h)
+            if (rx > 0f || ry > 0f) p.addRoundRect(RoundRect(x, y, x + w, y + h, rx, if (ry > 0f) ry else rx))
+            else p.addRect(Rect(x, y, x + w, y + h))
         }
         "circle" -> {
             val cx = node.num("cx", 0f).zz(); val cy = node.num("cy", 0f).zz()
@@ -185,23 +185,26 @@ internal fun brushFor(parsed: ParsedSvg, gradId: String?, fallback: Color, path:
     val grad = parsed.grads[gradId] ?: return SolidColor(fallback)
     val stops = grad.stops.sortedBy { it.first }
     if (stops.isEmpty()) return SolidColor(fallback)
-    val pairs = ArrayList<Pair<Color, Float>>()  // (Color, stop) — jak oczekuje Brush
+    val pairs = ArrayList<Pair<Color, Float>>()  // (Color, stop) — kolejnosc jak w @ 0..1
     if (stops.first().first > 0f) pairs.add(stops.first().second to 0f)
     stops.forEach { pairs.add(it.second to it.first.coerceIn(0f, 1f)) }
     if (stops.last().first < 1f) pairs.add(stops.last().second to 1f)
     val b = path.getBounds()
     val w = max(b.width, 0.001f)
     val h = max(b.height, 0.001f)
+    // Brush ma tylko przeciazenie z varargiem par (color do stop) — spread musi byc pierwszy,
+    // nazwane argumenty wolno podac dopiero po nim.
+    val stopsArr = pairs.toTypedArray()
     return if (grad.radial) {
         Brush.radialGradient(
-            colorStops = pairs,
+            *stopsArr,
             center = Offset(b.left + grad.cx * w, b.top + grad.cy * h),
             radius = max(grad.r * (w + h) / 2f, 0.5f),
             tileMode = TileMode.Clamp
         )
     } else {
         Brush.linearGradient(
-            colorStops = pairs,
+            *stopsArr,
             start = Offset(b.left + grad.x1 * w, b.top + grad.y1 * h),
             end = Offset(b.left + grad.x2 * w, b.top + grad.y2 * h),
             tileMode = TileMode.Clamp

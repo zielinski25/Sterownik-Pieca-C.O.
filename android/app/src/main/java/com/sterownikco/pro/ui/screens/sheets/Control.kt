@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -50,7 +51,7 @@ import com.sterownikco.pro.ui.theme.Txt
 
 /** `.pump-strat-opt` (`.on` = cyan 15 % + poświata `--cyan-glow`). */
 @Composable
-private fun StratOpt(ico: String, title: String, sub: String, on: Boolean, onClick: () -> Unit) {
+private fun RowScope.StratOpt(ico: String, title: String, sub: String, on: Boolean, onClick: () -> Unit) {
     Column(
         Modifier.weight(1f).background(
             if (on) Pal.rgba(0, 212, 245, .15f) else Pal.Surface2, RoundedCornerShape(12.dp)

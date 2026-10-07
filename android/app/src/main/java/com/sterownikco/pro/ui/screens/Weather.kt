@@ -298,7 +298,7 @@ private fun WCard(
 }
 
 @Composable
-private fun RangeBtn(label: String, on: Boolean, flex: Boolean = false, onClick: () -> Unit) {
+private fun RowScope.RangeBtn(label: String, on: Boolean, flex: Boolean = false, onClick: () -> Unit) {
     val mod = if (flex) Modifier.weight(1f) else Modifier
     Box(
         mod.background(if (on) Pal.rgba(0, 212, 245, .16f) else Pal.Surface2, RoundedCornerShape(8.dp))

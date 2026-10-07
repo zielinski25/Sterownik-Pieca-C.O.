@@ -4,7 +4,6 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.ClipPathOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -114,7 +113,7 @@ private fun DrawScope.svgNode(
         val clipNodes = clipRef?.removePrefix("#")?.let { parsed.clips[it] }
         if (clipNodes != null) {
             val cp = Path()
-            for (cn in clipNodes) shapePath(cn)?.let { cp.add(it) }
+            for (cn in clipNodes) shapePath(cn)?.let { cp.addPath(it, Offset.Zero) }
             tClip(cp) { body() }
         } else body()
     }
@@ -233,10 +232,10 @@ private inline fun DrawScope.tScale(sx: Float, sy: Float, px: Float, py: Float, 
 
 private inline fun DrawScope.tRotate(deg: Float, px: Float, py: Float, block: DrawScope.() -> Unit) {
     val c = drawContext.canvas
-    c.save(); c.rotate(deg, px, py); block(); c.restore()
+    c.save(); c.translate(px, py); c.rotate(deg); c.translate(-px, -py); block(); c.restore()
 }
 
 private inline fun DrawScope.tClip(path: Path, block: DrawScope.() -> Unit) {
     val c = drawContext.canvas
-    c.save(); c.clipPath(path, ClipPathOp.Intersect); block(); c.restore()
+    c.save(); c.clipPath(path); block(); c.restore()
 }

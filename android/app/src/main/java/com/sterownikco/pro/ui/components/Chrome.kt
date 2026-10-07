@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -206,7 +207,7 @@ private fun HStat(lbl: String, value: String, color: Color, modifier: Modifier =
 
 /** `.qcard` — szybka karta 3-kolumnowa. */
 @Composable
-fun QCard(title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit) {
+fun RowScope.QCard(title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit) {
     val bd = when (state) {
         "ok" -> Pal.rgba(74, 222, 128, .45f); "warn" -> Pal.rgba(251, 191, 36, .5f)
         "err" -> Pal.rgba(255, 95, 120, .55f); else -> Pal.Border
