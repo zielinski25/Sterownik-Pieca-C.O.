@@ -5873,9 +5873,51 @@ body.mode-phone-frame #phone {
     sesja: () => showSessionSheet()
   };
 
+  function solarInfoGuideCard() {
+    const card = h('div', 'diag-card');
+    return live$(card, el => {
+      const panelTemp = val('panel', 't_panel');
+      const outsideTemp = val('zewn', 't_zewn');
+      const panelSim = symAktywna('panel');
+      const outsideSim = symAktywna('zewn');
+      const sensorsReal = !_isDemoMode && receivedFields.has('t_panel') && receivedFields.has('t_zewn') && !panelSim && !outsideSim;
+      const deltaT = sensorsReal ? S.t_panel - S.t_zewn : NaN;
+      const panelText = Number.isFinite(panelTemp) ? (panelSim || _isDemoMode ? '~' : '') + fmt1(panelTemp) + '°C' : '—';
+      const outsideText = Number.isFinite(outsideTemp) ? (outsideSim || _isDemoMode ? '~' : '') + fmt1(outsideTemp) + '°C' : '—';
+      const hasSamples = SolarAnalytics.archive.length > 0 || SolarAnalytics.lastSampleTs > 0;
+      const gross = hasSamples ? '+' + fmt1(SolarAnalytics.accumulatedGrossGain) + '°C' : 'oczekiwanie na próbki';
+      const grossKwh = hasSamples ? '~' + fmt1((SolarAnalytics.accumulatedGrossGain * 200 * 4.186) / 3600) + ' kWh' : '';
+      const forecast = weatherData && weatherData.hourly && weatherData.hourly.length
+        ? SolarAnalytics.estimateForecastGain(weatherData.hourly) : null;
+      const forecastText = forecast ? '+' + fmt1(forecast.gainC) + '°C · ~' + fmt1(forecast.kwh) + ' kWh' : 'oczekiwanie na prognozę';
+      const row = (label, value, explanation) => `
+        <div style="padding:8px 0;border-top:1px solid rgba(255,255,255,.06)">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+            <b style="font-size:9px;color:var(--text)">${label}</b>
+            <b style="font-size:9px;color:#ffd32a;text-align:right">${value}</b>
+          </div>
+          <div class="sub">${explanation}</div>
+        </div>`;
+      el.innerHTML = `
+        <div class="lbl">BILANS SOLARNY — JAK CZYTAĆ WARTOŚCI</div>
+        <div class="sub">Odczyty są bieżącymi temperaturami; zysk to podsumowanie próbek, a prognozy są szacunkami. °C i kWh oznaczają różne rzeczy.</div>
+        ${row('Panel teraz / zewnątrz', panelText + ' / ' + outsideText, 'Temperatura z czujników. Znak ~ oznacza symulację lub tryb DEMO, nie rzeczywisty odczyt.')}
+        ${row('Zysk brutto słońca', gross + (grossKwh ? ' · ' + grossKwh : ''), 'Suma wykrytych przyrostów temperatury panelu lub bojlera w dostępnych próbkach podczas nasłonecznienia — niekoniecznie od północy i nie bieżąca temperatura panelu. kWh jest przybliżeniem dla ok. 200 l wody, nie pomiarem licznika energii.')}
+        ${row('ΔT panel − zewnątrz', Number.isFinite(deltaT) ? (deltaT >= 0 ? '+' : '') + fmt1(deltaT) + '°C' : 'brak rzeczywistych odczytów', 'Różnica teraz: temperatura panelu minus temperatura na zewnątrz. Dodatni wynik oznacza cieplejszy panel, ale sam nie potwierdza przekazania ciepła do bojlera.')}
+        ${row('Pobory wody C.W.U.', SolarAnalytics.waterDrawEvents.length + ' wykrytych · skompensowano −' + fmt1(SolarAnalytics.accumulatedDrawDrop) + '°C', 'Algorytm szacuje pobór po nagłym spadku temperatury. To nie jest licznik litrów; wykryty spadek bojlera jest uwzględniany w bilansie, by nie zaniżał zysku solarnego.')}
+        ${row('Prognoza zysku · model godzinowy', forecastText, 'Szacunek z godzinowych danych Open-Meteo (24 pozycje), nie pomiar. Karta DZIŚ używa osobnego modelu całego dnia, więc wyniki nie muszą być równe.')}
+        <div class="sub" style="padding-top:8px;border-top:1px solid rgba(255,255,255,.06)"><b style="color:var(--text)">Prognoza 7-dniowa:</b> +°C to modelowy możliwy przyrost temperatury, ~kWh to orientacyjna energia użyteczna (założenie: kolektor 2 m² i sprawność 65%), a „do … W/m²” to szczytowe promieniowanie oszacowane przez model — nie odczyt czujnika. Karta DZIŚ może być podniesiona do dotychczasowego zysku z próbek.</div>
+      `;
+    });
+  }
+
   function overheat(panel) {
     showSheet(panel ? 'Kolektor słoneczny próżniowy' : 'Próg przegrzania — Piec C.O.', panel ? 'panel' : 'thermo', () => {
       const b = h('div');
+      if (panel) {
+        b.appendChild(sectionHeader('Bilans kolektora — objaśnienie'));
+        b.appendChild(solarInfoGuideCard());
+      }
       b.appendChild(sectionHeader('Zabezpieczenie przed przegrzaniem'));
       b.appendChild(note('Wspólny próg dla pieca C.O. i panelu słonecznego — histereza: piec -10°C, panel -4°C.'));
       b.appendChild(numInput('Próg alarmu przegrzania', '°C', 'progAlarmTemp', 0, 100));
@@ -8551,7 +8593,7 @@ body.mode-phone-frame #phone {
       if (gVal) gVal.textContent = '+' + fmt1(this.accumulatedGrossGain) + '°C';
       if (gSub) {
         const estKwh = (this.accumulatedGrossGain * 200 * 4.186) / 3600;
-        gSub.textContent = `~${fmt1(estKwh)} kWh energii (dziś)`;
+        gSub.textContent = `~${fmt1(estKwh)} kWh (szacunek z próbek)`;
       }
 
       const curPanel = S.t_panel || 0;

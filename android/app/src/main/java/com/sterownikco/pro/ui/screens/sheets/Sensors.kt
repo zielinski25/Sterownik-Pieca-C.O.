@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
@@ -212,6 +213,7 @@ fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeade
 @Composable
 fun SensorModal(m: AppModel, sen: SensorDef) {
     SensorFullCard(m, sen, listStyle = false)
+    if (sen.id == "panel") SolarMetricsGuide(m)
     SymUnit(m, sen.id, sen.name, sen.unit, sen.min, sen.max, sen.step, sen.key)
 }
 
@@ -275,6 +277,7 @@ fun DymSheet(m: AppModel) {
 @Composable
 fun OverheatSheet(m: AppModel, panel: Boolean) {
     val S = m.S
+    if (panel) SolarMetricsGuide(m)
     SectionHeader("Zabezpieczenie przed przegrzaniem")
     Note("Wspólny próg dla pieca C.O. i panelu słonecznego — histereza: piec -10°C, panel -4°C.")
     NumRow("Próg alarmu przegrzania", "°C", S.progAlarmTemp, 0, 100, known = S.hasData("progAlarmTemp")) { v ->
@@ -282,4 +285,59 @@ fun OverheatSheet(m: AppModel, panel: Boolean) {
     }
     if (panel) SymUnit(m, "panel", "Panel słoneczny", "°C", -30.0, 160.0, 0.5)
     else SymUnit(m, "ogrz", "Piec C.O.", "°C", 0.0, 160.0, 0.5)
+}
+
+@Composable
+private fun SolarMetricsGuide(m: AppModel) {
+    val s = m.S
+    val solar = m.solar
+    val panelTemp = s.valOf("panel", "t_panel")
+    val outsideTemp = s.valOf("zewn", "t_zewn")
+    val panelSim = s.symAktywna("panel")
+    val outsideSim = s.symAktywna("zewn")
+    val deltaKnown = s.hasData("t_panel") && s.hasData("t_zewn") && !panelSim && !outsideSim
+    val delta = if (deltaKnown) s.t_panel - s.t_zewn else Double.NaN
+    val panelText = if (panelTemp.isFinite()) (if (panelSim) "~" else "") + s.fmt1(panelTemp) + "°C" else "—"
+    val outsideText = if (outsideTemp.isFinite()) (if (outsideSim) "~" else "") + s.fmt1(outsideTemp) + "°C" else "—"
+
+    SectionHeader("Bilans solarnego kolektora — jak czytać")
+    Note("To różne rzeczy: odczyty opisują temperaturę teraz, bilans podsumowuje zarejestrowane próbki, a prognozy są tylko szacunkiem pogody. °C i kWh nie są tym samym.")
+    SolarMetricInfo(
+        "Odczyty teraz · panel / zewnątrz", "$panelText / $outsideText",
+        "Temperatury z czujników. Znak ~ oznacza lokalną symulację, a nie odczyt sterownika."
+    )
+    SolarMetricInfo(
+        "Zysk brutto słońca", if (solar.hasSamples) "+${s.fmt1(solar.accumulatedGrossGain)}°C · ~${s.fmt1(solar.estKwh())} kWh" else "brak próbek",
+        "Suma wykrytych przyrostów temperatury panelu lub bojlera w dostępnych próbkach podczas nasłonecznienia — niekoniecznie od północy i nie bieżąca temperatura panelu. kWh to przybliżenie dla ok. 200 l wody, nie pomiar licznika energii."
+    )
+    SolarMetricInfo(
+        "ΔT panel − zewnątrz", if (delta.isFinite()) (if (delta >= 0) "+" else "") + s.fmt1(delta) + "°C" else "brak rzeczywistych odczytów",
+        "Różnica temperatury panelu i powietrza w tej chwili: panel minus zewnątrz. Dodatnia wartość mówi, że panel jest cieplejszy; sama nie potwierdza, ile ciepła trafiło do bojlera."
+    )
+    SolarMetricInfo(
+        "Pobory wody C.W.U.", if (solar.hasSamples) "${solar.drawCount} wykrytych · −${s.fmt1(solar.accumulatedDrawDrop)}°C" else "brak próbek",
+        "Algorytm szacuje pobór po nagłym spadku temperatury. To nie jest licznik litrów; wykryty spadek bojlera jest kompensowany w bilansie, żeby nie zaniżał zysku solarnego."
+    )
+    SolarMetricInfo(
+        "Prognoza zysku · model godzinowy", if (solar.forecastGain.isFinite() && solar.forecastKwh.isFinite())
+            "+${s.fmt1(solar.forecastGain)}°C · ~${s.fmt1(solar.forecastKwh)} kWh" else "oczekiwanie na prognozę",
+        "Szacunek z godzinowych danych Open-Meteo (24 pozycje), nie pomiar. Karta DZIŚ w prognozie 7-dniowej używa osobnego modelu całego dnia, więc wyniki nie muszą być równe."
+    )
+    SectionHeader("Karty prognozy na 7 dni")
+    Note("W każdej karcie: +°C to modelowy, możliwy przyrost temperatury; ~kWh to orientacyjna energia użyteczna (założenie: kolektor 2 m² i sprawność 65%); „do … W/m²” to oszacowane szczytowe promieniowanie, nie odczyt czujnika. W karcie DZIŚ wynik może być podniesiony do dotychczasowego zysku z próbek. Chmury i rzeczywiste uzyski mogą zmienić prognozę.")
+}
+
+@Composable
+private fun SolarMetricInfo(title: String, value: String, explanation: String) {
+    Column(
+        Modifier.fillMaxWidth().background(Pal.Surface2, RoundedCornerShape(10.dp)).padding(10.dp, 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = Txt.rowLabel.copy(fontSize = 9.5.sp, lineHeight = 12.sp), modifier = Modifier.weight(1f))
+            Text(value, style = Txt.monoVal.copy(fontSize = 9.5.sp, lineHeight = 12.sp, color = Color(0xFFFFD32A)),
+                textAlign = TextAlign.End, modifier = Modifier.padding(start = 8.dp))
+        }
+        Text(explanation, style = Txt.note.copy(fontSize = 9.sp, lineHeight = 12.sp), color = Pal.TextDim)
+    }
 }
