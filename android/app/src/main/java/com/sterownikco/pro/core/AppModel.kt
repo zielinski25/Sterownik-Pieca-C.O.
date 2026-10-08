@@ -32,6 +32,8 @@ import kotlin.math.roundToInt
    `loadTelemetryRange` + logi + toasty + timery (4 s / 45 s / 15 min / 2 s / 1 s).
    ══════════════════════════════════════════════════════════════════════════ */
 
+private const val SMOKE_ALARM_HYSTERESIS_ADC = 30
+
 val DLOG_CATEGORIES = listOf(
     "SYSTEM", "BOOT", "SENSOR", "WIFI", "FIREBASE", "TELEMETRY", "HISTORIA",
     "SPOOL", "OTA", "TERMINAL", "ALARM", "SERVO", "WEB", "WEATHER", "SD",
@@ -58,6 +60,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var authOpen by mutableStateOf(false)
     /** Okienko alarmu w aplikacji (gdy system nie odpali FSI na pierwszym planie). */
     var alarmPopup by mutableStateOf<AlarmInfo?>(null)
+    /** Krawędź lokalnego testu dymu; nie zmienia alarmowych flag sterownika ani prefs AlarmCenter. */
+    private var localSmokeAlarmLatched = false
     /** Jednorazowa prośba o zgodę na powiadomienia po zalogowaniu (Android 13+). */
     var askNotifPerm by mutableStateOf(false)
     /** Licznik odświeżeń arkusza Alarmy (stan uprawnień zmienia się w tle). */
@@ -145,10 +149,13 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     fun showToast(cmd: String, stage: String, cls: String = "ok") {
-        toast = ToastMsg(cmd, stage, cls, System.nanoTime())
+        val message = ToastMsg(cmd, stage, cls, System.nanoTime())
+        toast = message
+        // Tak jak w HTML, spinner „Wysyłanie…” zostaje aż do ACK/NACK/timeoutu.
+        if (cls == "wait") return
         scope.launch {
-            delay(if (cls == "wait") 6000 else if (cls == "ok") 2500 else 4500)
-            if (toast?.cmd == cmd && toast?.cls == cls) toast = null
+            delay(if (cls == "ok") 2500 else 4500)
+            if (toast?.id == message.id) toast = null
         }
     }
 
@@ -170,7 +177,15 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         jobs = listOf(
             scope.launch { while (true) { delay(4000); poll() } },
             scope.launch { while (true) { delay(15L * 60_000); refreshWeather(true) } },
-            scope.launch { while (true) { delay(2000); if (S.liveTick()) { S.bump(); refreshSheet() } } },
+            scope.launch {
+                while (true) {
+                    delay(2000)
+                    if (S.liveTick()) {
+                        S.bump(); refreshSheet()
+                        try { syncLocalSmokeAlarmSimulation() } catch (e: Exception) { /* test lokalny nie może wywalić timera */ }
+                    }
+                }
+            },
             scope.launch {
                 while (true) {
                     delay(1000)
@@ -238,6 +253,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 }
             }
         } catch (e: Exception) { /* alarm nie może wywalić poll() */ }
+        // Jawna symulacja dymu testuje lokalny tor alarmu, ale nie zmienia flag sterownika.
+        try { syncLocalSmokeAlarmSimulation() } catch (e: Exception) { /* test lokalny nie może wywalić poll() */ }
         // Widget na pulpit (throttling w środku).
         try { PiecWidget.push(ctx, d) } catch (e: Exception) { /* ignore */ }
     }
@@ -303,6 +320,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         Rtdb.idToken = ""; Rtdb.refreshToken = ""
         try { AlarmMonitorService.stop(ctx) } catch (e: Exception) { /* ignore */ }
         try { PiecWidget.clear(ctx) } catch (e: Exception) { /* ignore */ }
+        try { AlarmNotify.cancelSimulation(ctx) } catch (e: Exception) { /* ignore */ }
+        localSmokeAlarmLatched = false
         alarmPopup = null
         connected = false
         termStateKnown = false
@@ -329,8 +348,15 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 return false
             }
             S.bump(); refreshSheet()
+            val smokeStatus = try { syncLocalSmokeAlarmSimulation() } catch (e: Exception) { null }
             addLog("SYM", if (verb == "symuluj") "Operator włączył lokalną symulację czujnika" else "Operator wyłączył lokalną symulację czujnika", "warn")
-            showToast(command, if (verb == "symuluj") "SYM aktywne lokalnie — nie wysłano do sterownika" else "Lokalna symulacja wyłączona", "warn")
+            val simField = command.split(Regex("\\s+")).getOrNull(1)
+            val stage = when {
+                verb == "symuluj_stop" -> "Lokalna symulacja wyłączona"
+                verb == "symuluj" && simField == "dym" -> smokeStatus ?: "SYM aktywne lokalnie — nie wysłano do sterownika"
+                else -> "SYM aktywne lokalnie — nie wysłano do sterownika"
+            }
+            showToast(command, stage, "warn")
             return true
         }
         if (!connected) {
@@ -348,29 +374,94 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             val latency = ((System.nanoTime() - t0) / 1_000_000).toInt()
             when {
                 ack == null -> {
-                    showToast(command, "Brak potwierdzenia z pieca — wynik nieznany", "warn")
+                    showToast(command, "Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie", "warn")
                     addLog("ACK_WARN", "Brak potwierdzenia sterownika", "warn")
                     poll()
                     false
                 }
                 ack.ok -> {
-                    showToast(command, "Potwierdzone przez piec (ACK, ${latency}ms)", "ok")
+                    showToast(command, "Potwierdzone przez sterownik (ACK, ${latency}ms)", "ok")
                     addLog("ACK", "ACK OK (${latency}ms): $command", "ack")
                     buzz()
                     poll()
                     true
                 }
                 else -> {
-                    showToast(command, "Odrzucone: ${ack.error}", "err")
+                    showToast(command, "Sterownik odrzucił polecenie: ${ack.error}", "err")
                     addLog("NACK", "Odrzucone (${ack.error}): $command", "err")
                     false
                 }
             }
         } catch (e: Exception) {
-            showToast(command, "Błąd: ${e.message ?: "brak"}", "err")
+            showToast(command, "Błąd wysyłki: ${e.message ?: "brak"}", "err")
             addLog("CMD_ERR", "Błąd wysyłki: " + (e.message ?: "?"), "err")
             false
         }
+    }
+
+    /**
+     * Lokalny test alarmu dla ręcznie symulowanego ADC dymu. Nie modyfikuje
+     * S.dym_alarm ani sygnatur AlarmCenter, więc nie udaje ACK/telemetrii ESP.
+     */
+    private fun syncLocalSmokeAlarmSimulation(): String? {
+        val candidate = S.sym["dym"]
+        val simulated = candidate?.takeUnless {
+            it.expiresAtNanos <= android.os.SystemClock.elapsedRealtimeNanos()
+        }
+        if (candidate != null && simulated == null) S.sym.remove("dym")
+        if (simulated == null) {
+            clearLocalSmokeAlarmSimulation()
+            return null
+        }
+
+        val threshold = if (S.hasData("progAlarmDym"))
+            S.progAlarmDym.takeIf { it > SMOKE_ALARM_HYSTERESIS_ADC } else null
+        if (threshold == null) {
+            return if (localSmokeAlarmLatched) "Lokalny test alarmu dymu pozostaje aktywny"
+            else "SYM lokalna — próg alarmu dymu nieodebrany lub nieprawidłowy; test pominięty"
+        }
+        // Firmware alarmuje przy ADC > próg i kasuje dopiero poniżej progu minus histereza 30 ADC.
+        val releaseThreshold = (threshold - SMOKE_ALARM_HYSTERESIS_ADC).toDouble()
+        if (localSmokeAlarmLatched && simulated.wartosc < releaseThreshold) {
+            clearLocalSmokeAlarmSimulation()
+            return "SYM lokalna — odczyt spadł poniżej progu zwolnienia alarmu"
+        }
+        val thresholdExceeded = simulated.wartosc > threshold.toDouble()
+        if (!localSmokeAlarmLatched && !thresholdExceeded) {
+            return "SYM lokalna — odczyt nie przekracza progu $threshold ADC"
+        }
+        val realAlarmActive = (S.hasData("dym_alarm") && S.dym_alarm) ||
+            (S.hasData("alarm_ogrzewanie") && S.alarm_ogrzewanie)
+        if (realAlarmActive) {
+            localSmokeAlarmLatched = true
+            if (alarmPopup?.simulated == true) alarmPopup = null
+            try { AlarmNotify.cancelSimulation(ctx) } catch (e: Exception) { /* ignore */ }
+            return "Próg przekroczony — alarm sterownika jest już aktywny"
+        }
+        if (localSmokeAlarmLatched) return "Lokalny test alarmu dymu aktywny"
+        if (!AlarmCenter.isMonitored(prefs)) return "Próg przekroczony — monitoring alarmów jest wyłączony"
+
+        localSmokeAlarmLatched = true
+        val value = simulated.wartosc.roundToInt()
+        val info = AlarmInfo(
+            kind = "dym",
+            title = "TEST ALARMU DYMU · SYMULACJA LOKALNA",
+            msg = "Symulowany odczyt: $value ADC (próg: $threshold ADC). Test lokalny — nie pochodzi ze sterownika.",
+            sig = "SYM-DYM",
+            simulated = true
+        )
+        alarmPopup = info
+        try { AlarmNotify.fire(ctx, info) } catch (e: Exception) { /* popup pozostaje widoczny */ }
+        addLog("ALARM", "Lokalny test alarmu dymu: $value ADC (próg $threshold ADC)", "warn")
+        return "Próg $threshold ADC przekroczony — uruchomiono lokalny test alarmu"
+    }
+
+    private fun clearLocalSmokeAlarmSimulation() {
+        if (!localSmokeAlarmLatched) return
+        localSmokeAlarmLatched = false
+        if (alarmPopup?.simulated == true) alarmPopup = null
+        try { AlarmNotify.cancelSimulation(ctx) } catch (e: Exception) { /* ignore */ }
+        addLog("ALARM", "Zakończono lokalny test alarmu dymu", "info")
     }
 
     // ── pogoda ──────────────────────────────────────────────────────────────

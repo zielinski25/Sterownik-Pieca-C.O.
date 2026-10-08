@@ -31,6 +31,7 @@ import com.sterownikco.pro.receiver.AlarmReceiver
 object AlarmNotify {
     const val NOTIF_ID = 4201
     const val SVC_NOTIF_ID = 4202
+    const val SIM_NOTIF_ID = 4203
     const val CH_SVC = "piec_svc"
 
     /** id dźwięku → podpis. Kolejność = kolejność w selekcie. */
@@ -110,18 +111,14 @@ object AlarmNotify {
         return PendingIntent.getBroadcast(ctx, req, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
-    /** Odpalenie alarmu: dźwięk + wibracja + okienko (FSI) lub heads-up + akcje drzemki. */
+    /**
+     * Rzeczywiste alarmy są trwałe i mają drzemkę/FSI; lokalne testy mają
+     * osobne, zamykane powiadomienie bez akcji wyciszających prawdziwy alarm.
+     */
     fun fire(ctx: Context, info: AlarmInfo) {
         ensureChannels(ctx)
+        val simulated = info.simulated
         val sound = AlarmCenter.sound(Prefs(ctx), info.kind)
-        val full = PendingIntent.getActivity(
-            ctx, 11,
-            Intent(ctx, AlarmActivity::class.java)
-                .putExtra("kind", info.kind).putExtra("title", info.title)
-                .putExtra("msg", info.msg).putExtra("sig", info.sig)
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
         val open = PendingIntent.getActivity(
             ctx, 12,
             Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
@@ -129,29 +126,44 @@ object AlarmNotify {
         )
         val b = NotificationCompat.Builder(ctx, channelFor(sound))
             .setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setContentTitle("🚨 ${info.title}")
+            .setContentTitle((if (simulated) "🧪 " else "🚨 ") + info.title)
             .setContentText(info.msg)
             .setStyle(NotificationCompat.BigTextStyle().bigText(info.msg))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setAutoCancel(false)
-            .setOngoing(true)
+            .setAutoCancel(simulated)
+            .setOngoing(!simulated)
             .setOnlyAlertOnce(false)
             .setContentIntent(open)
-            .addAction(0, "Drzemka 10 min", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_10, 21))
-            .addAction(0, "Drzemka 1 h", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_60, 22))
-            .addAction(0, "Wycisz do następnego", actionPending(ctx, AlarmReceiver.ACT_MUTE_NEXT, 23))
-        if (canFullScreen(ctx)) b.setFullScreenIntent(full, true)
+
+        if (!simulated) {
+            val full = PendingIntent.getActivity(
+                ctx, 11,
+                Intent(ctx, AlarmActivity::class.java)
+                    .putExtra("kind", info.kind).putExtra("title", info.title)
+                    .putExtra("msg", info.msg).putExtra("sig", info.sig)
+                    .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            b.addAction(0, "Drzemka 10 min", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_10, 21))
+                .addAction(0, "Drzemka 1 h", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_60, 22))
+                .addAction(0, "Wycisz do następnego", actionPending(ctx, AlarmReceiver.ACT_MUTE_NEXT, 23))
+            if (canFullScreen(ctx)) b.setFullScreenIntent(full, true)
+        }
         try {
-            nm(ctx).notify(NOTIF_ID, b.build())
+            nm(ctx).notify(if (simulated) SIM_NOTIF_ID else NOTIF_ID, b.build())
         } catch (e: SecurityException) {
-            // Brak POST_NOTIFICATIONS — użytkownik musi je włączyć w arkuszu Alarmy.
+            // Brak POST_NOTIFICATIONS — aplikacja nadal pokazuje lokalne okienko, jeśli jest na wierzchu.
         }
     }
 
     fun cancel(ctx: Context) {
         try { nm(ctx).cancel(NOTIF_ID) } catch (e: Exception) { /* ignore */ }
+    }
+
+    fun cancelSimulation(ctx: Context) {
+        try { nm(ctx).cancel(SIM_NOTIF_ID) } catch (e: Exception) { /* ignore */ }
     }
 
     /** Ciche, stałe powiadomienie usługi monitorującej (kanał LOW = bez dźwięku). */

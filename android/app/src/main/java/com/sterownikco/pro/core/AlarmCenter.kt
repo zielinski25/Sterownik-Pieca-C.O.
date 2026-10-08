@@ -14,8 +14,14 @@ package com.sterownikco.pro.core
    • wyciszenie do następnego alarmu — nowa krawędź (inna sygnatura) dzwoni.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** Opis odpalonego alarmu — `sig` to sygnatura krawędzi ("D", "O" lub "D+O"). */
-data class AlarmInfo(val kind: String, val title: String, val msg: String, val sig: String)
+/** Opis odpalonego alarmu — `simulated` oznacza lokalny test, nie flagę z centrali. */
+data class AlarmInfo(
+    val kind: String,
+    val title: String,
+    val msg: String,
+    val sig: String,
+    val simulated: Boolean = false
+)
 
 object AlarmCenter {
     const val K_MONITOR = "piec_alarm_monitor"       // "1"/"0", domyślnie "1"

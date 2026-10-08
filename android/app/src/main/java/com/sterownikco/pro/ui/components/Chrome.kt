@@ -1,5 +1,10 @@
 package com.sterownikco.pro.ui.components
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,10 +31,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -383,7 +390,15 @@ fun Toast(text: String, stage: String, cls: String) {
         horizontalArrangement = Arrangement.spacedBy(9.dp)
     ) {
         Box(Modifier.size(22.dp).background(c.copy(alpha = .16f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-            AppIcon(when (cls) { "err" -> "cross"; "wait" -> "refresh"; "warn" -> "info"; else -> "check" }, size = 13.dp, tint = c)
+            if (cls == "wait") {
+                val transition = rememberInfiniteTransition(label = "toast-wait")
+                val rotation by transition.animateFloat(
+                    0f, 360f, animationSpec = infiniteRepeatable(tween(800), RepeatMode.Restart), label = "rotation"
+                )
+                AppIcon("refresh", modifier = Modifier.rotate(rotation), size = 13.dp, tint = c)
+            } else {
+                AppIcon(if (cls == "err" || cls == "warn") "cross" else "check", size = 13.dp, tint = c)
+            }
         }
         Column(Modifier.weight(1f)) {
             // `.c` — samo polecenie (mono, tekst-dim), potem `.s` — status

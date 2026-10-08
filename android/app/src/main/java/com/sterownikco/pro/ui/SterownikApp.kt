@@ -83,15 +83,16 @@ fun SterownikApp(m: AppModel) {
                     NavBar(page = m.page) { m.navigate(it) }
                 }
 
-                // `#toast`
+                // `#sheet` + `#scrim`
+                if (m.sheet != null) SheetHost(m)
+
+                // HTML-owy #toast ma wyższy z-index niż arkusz; Compose rysuje późniejsze dzieci na wierzchu.
                 m.toast?.let { t ->
                     Box(Modifier.align(Alignment.BottomCenter)) {
                         Toast(text = t.cmd, stage = t.stage, cls = t.cls)
                     }
                 }
 
-                // `#sheet` + `#scrim`
-                if (m.sheet != null) SheetHost(m)
                 if (m.authOpen) AuthModal(m)
                 // Okienko alarmu w aplikacji (system nie odpala FSI na 1. planie).
                 if (m.alarmPopup != null) AlarmPopup(m)
@@ -120,9 +121,10 @@ private fun AlarmPopup(m: AppModel) {
     val info = m.alarmPopup ?: return
     fun done(op: () -> Unit) {
         try { op() } catch (e: Exception) { /* ignore */ }
-        AlarmNotify.cancel(m.ctx)
+        if (info.simulated) AlarmNotify.cancelSimulation(m.ctx) else AlarmNotify.cancel(m.ctx)
         m.alarmPopup = null
     }
+    val alarmTint = if (info.simulated) Pal.Warn else Pal.Err
     Box(
         Modifier.fillMaxSize().background(Color(0xB0000000))
             .clickable(onClick = {}), // scrim zjada dotyki — wybór tylko przyciskiem
@@ -131,19 +133,23 @@ private fun AlarmPopup(m: AppModel) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 26.dp)
                 .background(Pal.Surface, RoundedCornerShape(18.dp))
-                .border(2.dp, Pal.Err, RoundedCornerShape(18.dp))
+                .border(2.dp, alarmTint, RoundedCornerShape(18.dp))
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("🚨", fontSize = 40.sp)
+            Text(if (info.simulated) "🧪" else "🚨", fontSize = 40.sp)
             Text(info.title, fontSize = 17.sp, fontWeight = FontWeight.Black,
-                color = Pal.Err, textAlign = TextAlign.Center)
+                color = alarmTint, textAlign = TextAlign.Center)
             Text(info.msg, fontSize = 13.sp, color = Pal.Text, textAlign = TextAlign.Center)
-            PopupBtn("⏸ Wycisz na 10 minut", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 10) } }
-            PopupBtn("⏸ Wycisz na 1 godzinę", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 60) } }
-            PopupBtn("🔕 Wycisz do następnego alarmu", Pal.Violet) { done { AlarmCenter.muteUntilNext(m.prefs) } }
-            PopupBtn("Zamknij podgląd", Pal.TextDim) { m.alarmPopup = null }
+            if (info.simulated) {
+                PopupBtn("Zamknij test lokalny", Pal.TextDim) { done {} }
+            } else {
+                PopupBtn("⏸ Wycisz na 10 minut", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 10) } }
+                PopupBtn("⏸ Wycisz na 1 godzinę", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 60) } }
+                PopupBtn("🔕 Wycisz do następnego alarmu", Pal.Violet) { done { AlarmCenter.muteUntilNext(m.prefs) } }
+                PopupBtn("Zamknij podgląd", Pal.TextDim) { m.alarmPopup = null }
+            }
         }
     }
 }
