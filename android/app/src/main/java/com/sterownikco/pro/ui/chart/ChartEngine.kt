@@ -6,6 +6,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.graphics.Brush
@@ -13,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
@@ -65,9 +67,7 @@ class ChartView(
     val min: Double, val max: Double, val axisUnit: String,
     val dual: Boolean, val secGroup: String?, val secMin: Double, val secMax: Double,
     val secUnit: String, val secColor: String,
-    val padLeft: Float, val padRight: Float,
-    val anySim: Boolean,
-    val simSeries: Set<String>
+    val padLeft: Float, val padRight: Float
 ) {
     val span: String
         get() = if (rows.isEmpty()) "—" else {
@@ -175,10 +175,8 @@ fun buildChartView(
             else -> { secMin = 0.0; secMax = 100.0 }
         }
     }
-    val simSeries = cat.filter { s -> rows.any { r -> r.sim and (1L shl s.qCh) != 0L } }.map { it.id }.toSet()
-    val anySim = simSeries.isNotEmpty()
     return ChartView(rows, cat, values, minVal, maxVal, axisUnit, dual, secGroup, secMin, secMax, secUnit, secColor,
-        padLeft, padRight, anySim, simSeries)
+        padLeft, padRight)
 }
 
 /**
@@ -286,9 +284,9 @@ fun ChartCanvas(
     val padLKey = view.padLeft
     val padRKey = view.padRight
     Canvas(
-        modifier = modifier.pointerInput(padLKey, padRKey) {
+        modifier = modifier.clipToBounds().pointerInput(padLKey, padRKey) {
             val padL = padLKey.dp.toPx()
-            val plotW = size.width - padL - padRKey.dp.toPx()
+            val plotW = (size.width - padL - padRKey.dp.toPx()).coerceAtLeast(0f)
             chartGestures(
                 padL = padL,
                 plotW = plotW,
@@ -305,8 +303,8 @@ fun ChartCanvas(
         val w = size.width; val h = size.height
         val padLeft = view.padLeft.dp.toPx(); val padRight = view.padRight.dp.toPx()
         val padTop = 16.dp.toPx(); val padBottom = 24.dp.toPx()
-        val plotW = w - padLeft - padRight
-        val plotH = h - padTop - padBottom
+        val plotW = (w - padLeft - padRight).coerceAtLeast(0f)
+        val plotH = (h - padTop - padBottom).coerceAtLeast(0f)
         val axis = TextStyle(fontSize = 8.5.sp, color = Pal.AxisText)
         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
@@ -388,18 +386,15 @@ fun ChartCanvas(
                         else -> padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
                     }
                     if (lastTs != 0L && r.ts - lastTs > 360_000L) { if (cur.isNotEmpty()) segs.add(cur); cur = ArrayList() }
-                    val isSim = r.sim and (1L shl s.qCh) != 0L
-                    cur.add(SegPoint(x, y, v, r.ts, idx, isSim))
+                    cur.add(SegPoint(x, y, v, r.ts, idx))
                     lastTs = r.ts
                 } else {
                     if (cur.isNotEmpty()) segs.add(cur); cur = ArrayList(); lastTs = 0L
                 }
             }
             if (cur.isNotEmpty()) segs.add(cur)
-            val seriesSim = view.simSeries.contains(s.id)
             segs.forEach { seg ->
                 if (seg.isEmpty()) return@forEach
-                val segSim = seriesSim || seg.any { it.isSim }
                 val accent = hexColor(s.accent)
                 if (areaBand && mode != "NORMALIZED" && seg.size >= 2) {
                     val path = Path()
@@ -407,10 +402,12 @@ fun ChartCanvas(
                     seg.forEach { path.lineTo(it.x, it.y) }
                     path.lineTo(seg.last().x, padTop + plotH)
                     path.close()
-                    drawPath(path, Brush.verticalGradient(
-                        listOf(accent.copy(alpha = if (segSim) .10f else .22f), accent.copy(alpha = 0f)),
-                        startY = padTop, endY = padTop + plotH
-                    ))
+                    clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
+                        drawPath(path, Brush.verticalGradient(
+                            listOf(accent.copy(alpha = .22f), accent.copy(alpha = 0f)),
+                            startY = padTop, endY = padTop + plotH
+                        ))
+                    }
                 }
                 val line = Path()
                 if (lineStyle == "STEPPED" || seg.size < 3) {
@@ -435,11 +432,12 @@ fun ChartCanvas(
                         )
                     }
                 }
-                drawPath(line, accent, style = Stroke(
-                    width = (if (segSim) 1.8f else 2.0f).dp.toPx(),
-                    pathEffect = if (segSim) PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 3.5.dp.toPx())) else null
-                ))
-                if (seg.size == 1) drawCircle(accent, 3.dp.toPx(), center = Offset(seg[0].x, seg[0].y))
+                // Catmull–Rom bezier tangents can overshoot the mapped y-range;
+                // clip paths (and singleton markers) to the plot, never the screen.
+                clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
+                    drawPath(line, accent, style = Stroke(width = 2.dp.toPx()))
+                    if (seg.size == 1) drawCircle(accent, 3.dp.toPx(), center = Offset(seg[0].x, seg[0].y))
+                }
             }
         }
 
@@ -448,26 +446,28 @@ fun ChartCanvas(
             val idx = crossIdx
             if (idx != null && idx >= 0 && idx < view.rows.size) {
                 val x = padLeft + (idx.toFloat() / max(1f, (view.rows.size - 1).toFloat())) * plotW
-                drawLine(Pal.rgba(0, 212, 245, .7f), Offset(x, padTop), Offset(x, padTop + plotH), 1.2.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())))
-                view.cat.forEach { s ->
-                    val vals = view.values[s.id] ?: return@forEach
-                    val v = vals.getOrNull(idx)
-                    if (v != null && v.isFinite()) {
-                        val y = when {
-                            view.dual && s.group == view.secGroup ->
-                                padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
-                            mode == "NORMALIZED" -> {
-                                val all = vals.filterNotNull()
-                                val lo = if (all.isNotEmpty()) all.min() else 0.0
-                                val hi = if (all.isNotEmpty()) all.max() else 100.0
-                                val nv = if (hi > lo) (v - lo) / (hi - lo) else 0.5
-                                padTop + plotH * (1 - nv.toFloat())
+                clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
+                    drawLine(Pal.rgba(0, 212, 245, .7f), Offset(x, padTop), Offset(x, padTop + plotH), 1.2.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())))
+                    view.cat.forEach { s ->
+                        val vals = view.values[s.id] ?: return@forEach
+                        val v = vals.getOrNull(idx)
+                        if (v != null && v.isFinite()) {
+                            val y = when {
+                                view.dual && s.group == view.secGroup ->
+                                    padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
+                                mode == "NORMALIZED" -> {
+                                    val all = vals.filterNotNull()
+                                    val lo = if (all.isNotEmpty()) all.min() else 0.0
+                                    val hi = if (all.isNotEmpty()) all.max() else 100.0
+                                    val nv = if (hi > lo) (v - lo) / (hi - lo) else 0.5
+                                    padTop + plotH * (1 - nv.toFloat())
+                                }
+                                else -> padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
                             }
-                            else -> padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
+                            drawCircle(Color.White, 4.dp.toPx(), center = Offset(x, y))
+                            drawCircle(hexColor(s.accent), 3.dp.toPx(), center = Offset(x, y))
                         }
-                        drawCircle(Color.White, 4.dp.toPx(), center = Offset(x, y))
-                        drawCircle(hexColor(s.accent), 3.dp.toPx(), center = Offset(x, y))
                     }
                 }
             }
@@ -475,7 +475,7 @@ fun ChartCanvas(
     }
 }
 
-private class SegPoint(val x: Float, val y: Float, val v: Double, val ts: Long, val idx: Int, val isSim: Boolean)
+private class SegPoint(val x: Float, val y: Float, val v: Double, val ts: Long, val idx: Int)
 
 /** `pad2(...) + …` — dobór formatu osi X do szerokości okna. */
 fun fmtXLabel(ts: Long, spanMs: Long): String {

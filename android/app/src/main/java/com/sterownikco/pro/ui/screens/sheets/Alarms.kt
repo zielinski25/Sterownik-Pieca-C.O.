@@ -48,14 +48,26 @@ fun AlarmSheet(m: AppModel) {
     val sound = AlarmCenter.sound(p)
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // 1. Status
+        // 1. Status — brak flag nie jest równoznaczny ze stanem bez alarmu.
         AlarmCard {
             AlarmRow("●", AlarmCenter.statusText(p),
                 if (monitored) Pal.Live else Pal.Err)
-            AlarmRow(if (m.S.dym_alarm) "🚨" else "○",
-                "Dym MQ-2: " + (if (m.S.dym_alarm) "ALARM" else "spokój") +
-                    " · Piec: " + (if (m.S.alarm_ogrzewanie) "PRZEGRZANIE" else "OK"),
-                if (m.S.dym_alarm || m.S.alarm_ogrzewanie) Pal.Err else Pal.TextDim)
+            val smokeKnown = m.S.hasData("dym_alarm")
+            val boilerKnown = m.S.hasData("alarm_ogrzewanie")
+            val active = (smokeKnown && m.S.dym_alarm) || (boilerKnown && m.S.alarm_ogrzewanie)
+            val smoke = when {
+                !smokeKnown -> "brak danych"
+                m.S.dym_alarm -> "ALARM"
+                else -> "spokój"
+            }
+            val boiler = when {
+                !boilerKnown -> "brak danych"
+                m.S.alarm_ogrzewanie -> "PRZEGRZANIE"
+                else -> "OK"
+            }
+            AlarmRow(if (active) "🚨" else if (smokeKnown && boilerKnown) "○" else "⚠",
+                "Dym MQ-2: $smoke · Piec: $boiler",
+                if (active) Pal.Err else if (smokeKnown && boilerKnown) Pal.TextDim else Pal.Warn)
         }
 
         // 2. Monitoring w tle

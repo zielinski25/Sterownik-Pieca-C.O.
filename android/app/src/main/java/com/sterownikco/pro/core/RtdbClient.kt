@@ -189,8 +189,8 @@ object Rtdb {
                 val a = get("/piec/ack.json")
                 if (a.ok && a.body.isNotBlank()) {
                     val j = JSONObject(a.body)
-                    if (j.optString("cmdId") == id) {
-                        return Ack(j.optBoolean("ok"), j.optString("error").ifEmpty { "błąd" })
+                    if (j.optString("cmdId") == id && j.opt("ok") is Boolean) {
+                        return Ack(j.getBoolean("ok"), j.optString("error").ifEmpty { "błąd" })
                     }
                 }
             } catch (e: Exception) { /* continue */ }
@@ -327,11 +327,24 @@ object Rtdb {
         if (obj == null) return null
         val arr = obj.optJSONArray("a") ?: JSONArray()
         val a = ArrayList<Double>(arr.length())
-        for (i in 0 until arr.length()) a.add(arr.optDouble(i, 0.0))
+        for (i in 0 until arr.length()) {
+            val raw = if (arr.isNull(i)) null else arr.opt(i)
+            a.add((raw as? Number)?.toDouble()?.takeIf { it.isFinite() } ?: Double.NaN)
+        }
+        val simRaw = obj.opt("sim")
+        val simFlagsValid = listOf("is_sim", "simulated").all { !obj.has(it) || obj.opt(it) is Boolean }
+        val simMaskValue = when (simRaw) {
+            is Number -> simRaw.toDouble().takeIf { it.isFinite() && it >= 0.0 && it % 1.0 == 0.0 && it < Long.MAX_VALUE.toDouble() }?.toLong()
+            is String -> simRaw.trim().toLongOrNull()?.takeIf { it >= 0L }
+            else -> null
+        }
+        val simMaskValid = !obj.has("sim") || simRaw is Boolean || simMaskValue != null
+        val rowSimulated = obj.opt("is_sim") == true || obj.opt("simulated") == true || simRaw == true || !simFlagsValid || !simMaskValid
+        val simMask = simMaskValue ?: 0L
         return TelemRow(
             id = id, seq = obj.optLong("seq", 0), ts = obj.optLong("ts", 0), mono = obj.optLong("mono", 0),
-            a = a, k = obj.optLong("k", 0), s = obj.optLong("s", 0),
-            state = obj.optLong("state", 0), q = obj.optLong("q", 0), sim = obj.optLong("sim", 0)
+            a = a, k = obj.optLong("k", -1), s = obj.optLong("s", -1),
+            state = obj.optLong("state", 0), q = obj.optLong("q", 0), sim = simMask, simulated = rowSimulated
         )
     }
 
@@ -355,6 +368,7 @@ object Rtdb {
         }
         val sorted = uniqueSort(all)
         if (sorted.isEmpty()) return null
-        return sorted.map { r -> r.toPoint() }
+        val realPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasRealValues() }.toList()
+        return realPoints.ifEmpty { null }
     }
 }

@@ -22,22 +22,26 @@ data class ArtState(
     val night: Boolean = false,
     val weatherCode: Int = 0,
     val isDay: Boolean = true,
-    val tZewn: Float = 11.8f,
-    val tOgrz: Float = 58.4f,
-    val tBojler: Float = 48.6f,
-    val tPanel: Float = 36.2f,
-    val tPokoj: Float = 22.1f,
+    val tZewn: Float = Float.NaN,
+    val tOgrz: Float = Float.NaN,
+    val tBojler: Float = Float.NaN,
+    val tPanel: Float = Float.NaN,
+    val tPokoj: Float = Float.NaN,
     val alarmOgrz: Boolean = false,
     val alarmPanel: Boolean = false,
-    val pompa: Boolean = true,
+    val pompa: Boolean = false,
+    val pompaKnown: Boolean = false,
     val pompa2: Boolean = false,
-    val klapa: Float = 90f,
-    val syberka: Float = 0f,
+    val klapa: Float = Float.NaN,
+    val klapaKnown: Boolean = false,
+    val syberka: Float = Float.NaN,
     val mieszadlo: Boolean = false,
+    val mieszadloKnown: Boolean = false,
+    val dymKnown: Boolean = false,
     val dymAlarm: Boolean = false,
     val klapaAktywne: Boolean = false,
-    val cisnienie: Float = 1013f,
-    val wilgotnosc: Float = 54f,
+    val cisnienie: Float = Float.NaN,
+    val wilgotnosc: Float = Float.NaN,
     val godz: Int = 12,
     val min: Int = 0
 ) {
@@ -64,8 +68,9 @@ object Ilu {
     private fun svg1(body: String): String =
         "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"$NS\">" + DEFS + body + "</svg>"
 
-    private fun n1(v: Double): String = String.format(Locale.US, "%.1f", v)
-    private fun n2(v: Double): String = String.format(Locale.US, "%.2f", v)
+    private fun n1(v: Double): String = if (v.isFinite()) String.format(Locale.US, "%.1f", v) else "—"
+    private fun n2(v: Double): String = if (v.isFinite()) String.format(Locale.US, "%.2f", v) else "—"
+    private fun tempLabel(v: Float): String = if (v.isFinite()) String.format(Locale.US, "%.1f", v) else "—"
 
     // ── 1. ZEWNĘTRZNA (dynamiczna pogoda meteo w kafelku) ──────────────────
     private const val SUN24 = "<circle cx=\"12\" cy=\"12\" r=\"4.2\" fill=\"#ffd166\" class=\"sun-pulse\"/>" +
@@ -107,6 +112,7 @@ object Ilu {
         val code = s.weatherCode
         val isDay = s.isDay
         val body = when {
+            code < 0 -> "<circle cx=\"12\" cy=\"12\" r=\"8\" fill=\"#131c2e\" stroke=\"#64748b\" stroke-width=\"1.2\"/><text x=\"12\" y=\"15\" text-anchor=\"middle\" font-size=\"8\" fill=\"#94a3b8\">?</text>"
             code == 0 -> if (isDay) SUN24 else MOON24
             code == 1 || code == 2 -> (if (isDay) "<g transform=\"scale(0.85) translate(2,0)\">$SUN24</g>" else MOON24) + CLOUD24
             code == 3 -> DCLOUD24 + CLOUD24
@@ -124,9 +130,9 @@ object Ilu {
     fun ogrz(s: ArtState): String {
         val t = s.tOgrz
         val isAlarm = s.alarmOgrz
-        val flameOp = if (t <= 25f) ".2" else if (t <= 45f) ".6" else "1"
-        val flameColor = if (isAlarm) "#ef4444" else if (t > 70f) "#ea580c" else "#fb923c"
-        val iskra = if (t > 40f)
+        val flameOp = if (!t.isFinite()) "0" else if (t <= 25f) ".2" else if (t <= 45f) ".6" else "1"
+        val flameColor = if (!t.isFinite()) "#64748b" else if (isAlarm) "#ef4444" else if (t > 70f) "#ea580c" else "#fb923c"
+        val iskra = if (t.isFinite() && t > 40f)
             "<circle class=\"iskra i1\" cx=\"10.8\" cy=\"11.2\" r=\".4\" fill=\"#fed7aa\"/>" +
                 "<circle class=\"iskra i2\" cx=\"13.2\" cy=\"10.6\" r=\".35\" fill=\"#fde047\"/>" +
                 "<circle class=\"iskra i3\" cx=\"12.1\" cy=\"9.8\" r=\".3\" fill=\"#ffedd5\"/>" else ""
@@ -146,11 +152,13 @@ object Ilu {
     // ── 3. BOJLER C.W.U. (zasobnik z wrzącą wodą i bąbelkami) ───────────────
     fun bojler(s: ArtState): String {
         val t = s.tBojler
-        val pct = max(.05, min(.95, (t - 15) / 55.0))
+        val known = t.isFinite()
+        val pct = if (known) max(.05, min(.95, (t - 15) / 55.0)) else 0.0
         val hVal = n1(15 * pct)
         val yVal = n1(19 - 15 * pct)
-        val col = if (t > 55) "#ea580c" else if (t > 35) "#f59e0b" else "#0284c7"
-        val bubs = if (t > 30)
+        val col = if (!known) "#475569" else if (t > 55) "#ea580c" else if (t > 35) "#f59e0b" else "#0284c7"
+        val fill = if (known) "<rect class=\"bojler-fill\" x=\"7\" y=\"$yVal\" width=\"10\" height=\"$hVal\" fill=\"$col\" opacity=\".85\"/>" else ""
+        val bubs = if (known && t > 30)
             "<circle fill=\"rgba(255,255,255,.75)\" class=\"bojler-babel bb1\" cx=\"9.5\" cy=\"15\" r=\".5\"/>" +
                 "<circle fill=\"rgba(255,255,255,.75)\" class=\"bojler-babel bb2\" cx=\"12\" cy=\"16\" r=\".4\"/>" +
                 "<circle fill=\"rgba(255,255,255,.75)\" class=\"bojler-babel bb3\" cx=\"14\" cy=\"14.5\" r=\".45\"/>" else ""
@@ -158,7 +166,7 @@ object Ilu {
             "<defs><clipPath id=\"bClip_v1\"><rect x=\"7\" y=\"4\" width=\"10\" height=\"15\" rx=\"3\"/></clipPath></defs>" +
                 "<rect x=\"7\" y=\"4\" width=\"10\" height=\"15\" rx=\"3\" fill=\"#131c2e\" stroke=\"#475569\" stroke-width=\"1.2\"/>" +
                 "<g clip-path=\"url(#bClip_v1)\">" +
-                "<rect class=\"bojler-fill\" x=\"7\" y=\"$yVal\" width=\"10\" height=\"$hVal\" fill=\"$col\" opacity=\".85\"/>" +
+                fill +
                 bubs + "</g>" +
                 "<path d=\"M10 2.5h4v1.5h-4z\" fill=\"#475569\"/>" +
                 "<path d=\"M8.5 19v2.5M15.5 19v2.5\" stroke=\"#475569\" stroke-width=\"1.2\" stroke-linecap=\"round\"/>" +
@@ -210,6 +218,10 @@ object Ilu {
 
     // ── 5. POMPA C.O. (wirnik obiegowy 360°) ────────────────────────────────
     fun pompa(s: ArtState, on: Boolean = s.pompa): String {
+        if (!s.pompaKnown) return svg1(
+            "<circle cx=\"11\" cy=\"12\" r=\"8.2\" stroke=\"#475569\" stroke-width=\"1.3\" fill=\"#0b1324\"/>" +
+                "<text x=\"11\" y=\"15\" text-anchor=\"middle\" font-size=\"7\" fill=\"#94a3b8\">?</text>"
+        )
         val flow = if (on) " przeplyw-flow" else ""
         val wir = if (on) " wirnik-spin" else ""
         return svg1(
@@ -229,6 +241,11 @@ object Ilu {
 
     // ── 6. KLAPA / MIARKOWNIK CIĄGU (serwo) ──────────────────────────────────
     fun serwo(s: ArtState): String {
+        if (!s.klapaKnown || !s.klapa.isFinite()) return svg1(
+            "<path d=\"M3 6.5h18v11H3z\" fill=\"#081423\" stroke=\"#475569\" stroke-width=\"1.2\" rx=\"2\"/>" +
+                "<circle cx=\"12\" cy=\"12\" r=\"8.2\" stroke=\"#64748b\" stroke-width=\"1.4\" fill=\"none\"/>" +
+                "<text x=\"12\" y=\"15\" text-anchor=\"middle\" font-size=\"7\" fill=\"#94a3b8\">?</text>"
+        )
         val deg = s.klapa.toDouble()
         val rot = n1(deg - 90)
         val wobble = if (s.klapaAktywne) " klapa-flutter" else ""
@@ -247,6 +264,10 @@ object Ilu {
 
     // ── 7. MIESZADŁO / PODAJNIK ──────────────────────────────────────────────
     fun mieszadlo(s: ArtState): String {
+        if (!s.mieszadloKnown) return svg1(
+            "<path d=\"M4.5 4.5h15l-1.8 14h-11.4L4.5 4.5Z\" fill=\"#081423\" stroke=\"#64748b\" stroke-width=\"1.3\"/>" +
+                "<text x=\"12\" y=\"14\" text-anchor=\"middle\" font-size=\"7\" fill=\"#94a3b8\">?</text>"
+        )
         val on = s.mieszadlo
         val col = if (on) "#4ade80" else "#475569"
         val cls = if (on) " mix-flow" else ""
@@ -265,6 +286,10 @@ object Ilu {
 
     // ── 8. CZUJNIK DYMU ─────────────────────────────────────────────────────
     fun dym(s: ArtState): String {
+        if (!s.dymKnown) return svg1(
+            "<path d=\"M12 3L4 7v6c0 5 3.5 9.5 8 10.5 4.5-1 8-5.5 8-10.5V7l-8-4Z\" fill=\"#131c2e\" stroke=\"#64748b\" stroke-width=\"1.2\"/>" +
+                "<text x=\"12\" y=\"15\" text-anchor=\"middle\" font-size=\"8\" fill=\"#94a3b8\">?</text>"
+        )
         val alarm = s.dymAlarm
         val mark = if (alarm) "<path d=\"M12 8v5M12 15.5v.5\" stroke=\"#ff5f78\" stroke-width=\"2\" stroke-linecap=\"round\"/>" else ""
         return svg1(
@@ -281,7 +306,7 @@ object Ilu {
     // ── 9. POKÓJ / TERMOSTAT ────────────────────────────────────────────────
     fun pokoj(s: ArtState): String {
         val t = s.tPokoj
-        val dot = if (t > 23) "#f59e0b" else if (t < 19) "#38bdf8" else "#ffd166"
+        val dot = if (!t.isFinite()) "#64748b" else if (t > 23) "#f59e0b" else if (t < 19) "#38bdf8" else "#ffd166"
         return svg1(
             "<path d=\"M3.5 10.5L12 4l8.5 6.5v8.5a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-8.5Z\" fill=\"#131c2e\" stroke=\"#475569\" stroke-width=\"1.2\"/>" +
                 "<rect x=\"9\" y=\"12\" width=\"6\" height=\"8\" rx=\".5\" fill=\"#1e293b\" stroke=\"#38bdf8\" stroke-width=\".9\"/>" +
@@ -294,14 +319,16 @@ object Ilu {
     // ── 10. CIŚNIENIE (barometr) ────────────────────────────────────────────
     fun cisnienie(s: ArtState): String {
         val p = s.cisnienie.toDouble()
-        val deg = max(-60.0, min(60.0, (p - 1005) * 4))
+        val needle = if (p.isFinite()) {
+            val deg = max(-60.0, min(60.0, (p - 1005) * 4))
+            "<g class=\"barom-igla\" transform=\"rotate(" + n1(deg) + " 12 12)\">" +
+                "<line x1=\"12\" y1=\"12\" x2=\"12\" y2=\"5.8\" stroke=\"#ff5f78\" stroke-width=\"1.3\" stroke-linecap=\"round\"/>" +
+                "<circle cx=\"12\" cy=\"12\" r=\"1.6\" fill=\"#f8fafc\"/></g>"
+        } else ""
         return svg1(
             "<circle cx=\"12\" cy=\"12\" r=\"9\" fill=\"#131c2e\" stroke=\"#475569\" stroke-width=\"1.2\"/>" +
                 "<circle cx=\"12\" cy=\"12\" r=\"7.2\" stroke=\"#64748b\" stroke-width=\".6\" stroke-dasharray=\"1.2 2\"/>" +
-                "<path d=\"M7 14a6 6 0 0 1 10 0\" stroke=\"#38bdf8\" stroke-width=\"1\" fill=\"none\" stroke-linecap=\"round\"/>" +
-                "<g class=\"barom-igla\" transform=\"rotate(" + n1(deg) + " 12 12)\">" +
-                "<line x1=\"12\" y1=\"12\" x2=\"12\" y2=\"5.8\" stroke=\"#ff5f78\" stroke-width=\"1.3\" stroke-linecap=\"round\"/>" +
-                "<circle cx=\"12\" cy=\"12\" r=\"1.6\" fill=\"#f8fafc\"/></g>"
+                "<path d=\"M7 14a6 6 0 0 1 10 0\" stroke=\"#38bdf8\" stroke-width=\"1\" fill=\"none\" stroke-linecap=\"round\"/>" + needle
         )
     }
 
@@ -352,16 +379,16 @@ object Ilu {
     /** Klucz treści (odpowiednik `ILU[id].key`) — do odświeżania obrazu. */
     fun keyFor(id: String, s: ArtState): String = when (id) {
         "zewn" -> "w_" + s.weatherCode + "_" + (if (s.night) "n" else "d")
-        "ogrz" -> "ogrz_" + (if (s.alarmOgrz) "a" else "o") + "_" + (if (s.tOgrz > 40) "hot" else "cold")
-        "bojler" -> "boj_" + Math.round(if (s.tBojler > 0f) s.tBojler / 5f else 10.0f)
+        "ogrz" -> if (!s.tOgrz.isFinite()) "ogrz_unknown" else "ogrz_" + (if (s.alarmOgrz) "a" else "o") + "_" + (if (s.tOgrz > 40) "hot" else "cold")
+        "bojler" -> if (!s.tBojler.isFinite()) "boj_unknown" else "boj_" + Math.round(if (s.tBojler > 0f) s.tBojler / 5f else 10.0f)
         "panel" -> "sol_" + (if (s.night) "n" else "d") + (if (s.alarmPanel) "a" else "o")
         "pompa" -> "pmp_" + (if (s.pompa) "on" else "off")
         "pompa2" -> "pmp2_" + (if (s.pompa2) "on" else "off")
         "serwo" -> "srv_" + Math.round(s.klapa)
         "mieszadlo" -> "msh_" + (if (s.mieszadlo) "on" else "off")
         "dym" -> "dym_" + (if (s.dymAlarm) "a" else "o")
-        "pokoj" -> "pok_" + Math.round(s.tPokoj)
-        "cisnienie" -> "baro_" + Math.round(s.cisnienie / 2)
+        "pokoj" -> if (!s.tPokoj.isFinite()) "pok_unknown" else "pok_" + Math.round(s.tPokoj)
+        "cisnienie" -> if (!s.cisnienie.isFinite()) "baro_unknown" else "baro_" + Math.round(s.cisnienie / 2)
         "wilgotnosc" -> "hum"
         "wykresy" -> "chk"
         "czas" -> "clk_" + s.godz + "_" + s.min
@@ -372,11 +399,14 @@ object Ilu {
     fun heroBoiler(s: ArtState): String {
         val tb = s.tBojler.toDouble()
         val to = s.tOgrz.toDouble()
-        val pct = max(.05, min(.95, (tb - 15) / 55))
+        val boilerKnown = tb.isFinite()
+        val pct = if (boilerKnown) max(.05, min(.95, (tb - 15) / 55)) else 0.0
         val fy = n1(58 - 48 * pct)
         val fh = n1(48 * pct)
-        val flameOp = if (to > 30) "1" else ".25"
-        val glow = if (s.alarmOgrz || s.dymAlarm) "url(#gl-err)" else "url(#gl-ember)"
+        val flameOp = if (!to.isFinite()) "0" else if (to > 30) "1" else ".25"
+        val glow = if (s.alarmOgrz || s.dymAlarm) "url(#gl-err)" else if (to.isFinite()) "url(#gl-ember)" else "url(#gl-ringcyan)"
+        val waterFill = if (boilerKnown) "<rect class=\"hero-fill\" x=\"34\" y=\"$fy\" width=\"44\" height=\"$fh\" fill=\"url(#heroBojlerGrad)\" opacity=\".85\"/>" else ""
+        val waterBubbles = if (boilerKnown && tb > 30) "<circle fill=\"rgba(255,255,255,.75)\" class=\"bojler-babel hb1\" cx=\"44\" cy=\"48\" r=\"1.5\"/><circle fill=\"rgba(255,255,255,.75)\" class=\"bojler-babel hb2\" cx=\"56\" cy=\"52\" r=\"1.3\"/><circle fill=\"rgba(255,255,255,.75)\" class=\"bojler-babel hb3\" cx=\"66\" cy=\"46\" r=\"1.4\"/>" else ""
         return "<svg viewBox=\"0 0 112 112\" fill=\"none\" xmlns=\"$NS\">" + DEFS +
             "<defs>" +
             "<clipPath id=\"heroBojlerClip\"><rect x=\"34\" y=\"10\" width=\"44\" height=\"48\" rx=\"10\"/></clipPath>" +
@@ -386,15 +416,12 @@ object Ilu {
             "<g class=\"hero-bojler-group\">" +
             "<rect x=\"34\" y=\"10\" width=\"44\" height=\"48\" rx=\"10\" fill=\"#0f172a\" stroke=\"#475569\" stroke-width=\"2.2\"/>" +
             "<g clip-path=\"url(#heroBojlerClip)\">" +
-            "<rect class=\"hero-fill\" x=\"34\" y=\"$fy\" width=\"44\" height=\"$fh\" fill=\"url(#heroBojlerGrad)\" opacity=\".85\"/>" +
-            "<circle fill=\"rgba(255,255,255,.75)\" class=\"bojler-babel hb1\" cx=\"44\" cy=\"48\" r=\"1.5\"/>" +
-            "<circle fill=\"rgba(255,255,255,.75)\" class=\"bojler-babel hb2\" cx=\"56\" cy=\"52\" r=\"1.3\"/>" +
-            "<circle fill=\"rgba(255,255,255,.75)\" class=\"bojler-babel hb3\" cx=\"66\" cy=\"46\" r=\"1.4\"/>" +
+            waterFill + waterBubbles +
             "</g>" +
             "<path d=\"M42 14v40\" stroke=\"rgba(255,255,255,.14)\" stroke-width=\"1.8\" stroke-linecap=\"round\"/>" +
             "<path d=\"M50 5h12v5H50z\" fill=\"#334155\" stroke=\"#475569\" stroke-width=\"1.2\"/>" +
             "<text class=\"hero-lbl-bojler\" x=\"56\" y=\"23\" text-anchor=\"middle\" font-size=\"6.5\" font-weight=\"700\" fill=\"#94a3b8\" letter-spacing=\"0.8\">BOJLER</text>" +
-            "<text class=\"hero-t-bojler\" x=\"56\" y=\"41\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"800\" fill=\"#ffffff\">" + String.format(Locale.US, "%.1f", tb) + "°C</text>" +
+            "<text class=\"hero-t-bojler\" x=\"56\" y=\"41\" text-anchor=\"middle\" font-size=\"13\" font-weight=\"800\" fill=\"#ffffff\">" + tempLabel(s.tBojler) + "°C</text>" +
             "</g>" +
             "<g class=\"hero-piec-group\">" +
             "<rect x=\"28\" y=\"58\" width=\"56\" height=\"48\" rx=\"7\" fill=\"#080e1a\" stroke=\"#334155\" stroke-width=\"2\"/>" +
@@ -405,13 +432,13 @@ object Ilu {
             "<path class=\"plomien-sr hp2\" d=\"M56.3 97c-5.5 0-9.5-4-9.5-9.5 0-4.5 3-7.8 4.6-12.2.9 3 3 4.6 3 4.6-.9-4.6 1.7-9.5 4.9-11-1.7 4.6 0 7.8 2.4 10.1 2.5 2.5 4.1 5.5 4.1 8.5 0 5.5-4 9.5-9.5 9.5Z\" fill=\"#fb923c\"/>" +
             "<path class=\"plomien-wew hp3\" d=\"M56.4 93c-2.8 0-5-2.2-5-5.2 0-2.6 1.6-4.2 2.5-6.8.5 1.6 1.6 2.6 1.6 2.6-.5-2.6 1-5.2 2.6-6.2-1 2.6 0 4.2 1.3 5.7 1.4 1.4 2.4 3 2.4 4.7 0 3-2.4 5.2-5.4 5.2Z\" fill=\"#fde047\"/>" +
             "</g>" +
-            "<circle class=\"hero-spark hs1\" cx=\"48\" cy=\"72\" r=\".9\" fill=\"#fde047\"/>" +
+            "<g opacity=\"$flameOp\"><circle class=\"hero-spark hs1\" cx=\"48\" cy=\"72\" r=\".9\" fill=\"#fde047\"/>" +
             "<circle class=\"hero-spark hs2\" cx=\"64\" cy=\"70\" r=\".8\" fill=\"#fdba74\"/>" +
-            "<circle class=\"hero-spark hs3\" cx=\"54\" cy=\"65\" r=\".7\" fill=\"#fef08a\"/>" +
+            "<circle class=\"hero-spark hs3\" cx=\"54\" cy=\"65\" r=\".7\" fill=\"#fef08a\"/></g>" +
             "<g class=\"hero-piec-badge\">" +
             "<rect x=\"35\" y=\"80\" width=\"42\" height=\"19\" rx=\"5\" fill=\"rgba(8,14,26,0.88)\" stroke=\"#f97316\" stroke-width=\"1.2\"/>" +
             "<text class=\"hero-lbl-piec\" x=\"56\" y=\"87.5\" text-anchor=\"middle\" font-size=\"5.5\" font-weight=\"800\" fill=\"#fdba74\" letter-spacing=\"0.6\">PIEC C.O.</text>" +
-            "<text class=\"hero-t-piec\" x=\"56\" y=\"96\" text-anchor=\"middle\" font-size=\"9.5\" font-weight=\"900\" fill=\"#ffffff\">" + String.format(Locale.US, "%.1f", to) + "°C</text>" +
+            "<text class=\"hero-t-piec\" x=\"56\" y=\"96\" text-anchor=\"middle\" font-size=\"9.5\" font-weight=\"900\" fill=\"#ffffff\">" + tempLabel(s.tOgrz) + "°C</text>" +
             "</g>" +
             "</g></svg>"
     }
@@ -457,6 +484,7 @@ object Ilu {
 
     fun weatherHero(code: Int, isDay: Boolean): String {
         val body = when {
+            code < 0 -> "<circle cx=\"48\" cy=\"48\" r=\"27\" fill=\"#0f172a\" stroke=\"#64748b\" stroke-width=\"2\"/><text x=\"48\" y=\"57\" text-anchor=\"middle\" font-size=\"28\" fill=\"#94a3b8\">?</text>"
             code == 0 -> if (isDay) SUN96 else MOON96
             code == 1 || code == 2 -> (if (isDay) SUN96 else MOON96) + CLOUD96
             code == 3 -> "<g transform=\"translate(-10,-8) scale(.9)\">" + DCLOUD96 + "</g>" + CLOUD96

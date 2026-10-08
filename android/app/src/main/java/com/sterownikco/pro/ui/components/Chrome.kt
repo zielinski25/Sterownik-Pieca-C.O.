@@ -169,7 +169,7 @@ fun Hero(m: AppModel, art: ArtState, alarm: Boolean, heroSub: String) {
                 Text("GŁÓWNY OBIEG KOTŁA", style = Txt.heroK)
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    m.S.fmt1(m.S.valOf("ogrz", "t_ogrz")) + " °C",
+                    (if (m.S.symAktywna("ogrz")) "~" else "") + m.S.fmt1(m.S.valOf("ogrz", "t_ogrz")) + " °C",
                     style = Txt.heroTemp,
                     color = if (alarm) Pal.Err else Pal.White
                 )
@@ -185,15 +185,26 @@ fun Hero(m: AppModel, art: ArtState, alarm: Boolean, heroSub: String) {
         }
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth().background(Pal.rgba(8, 20, 33, .55f), RoundedCornerShape(13.dp)).padding(9.dp, 7.dp)) {
-            HStat("TRYB SERWA", PiecTrybNazwa(m), if (m.S.tryb_serwa == 2) Pal.Warn else if (m.S.tryb_serwa == 3) Pal.Err else Pal.White, Modifier.weight(1f))
-            HStat("POMPA C.O.", if (m.S.pompa) "ON" else "OFF", if (m.S.pompa) Pal.Live else Pal.TextDim, Modifier.weight(1f))
-            HStat("BEZPIECZEŃSTWO", if (anyAlarm(m)) "ALARM" else "OK", if (anyAlarm(m)) Pal.Err else Pal.Live, Modifier.weight(1f))
+            HStat("TRYB SERWA", PiecTrybNazwa(m), if (!m.S.hasData("tryb_serwa")) Pal.TextDim else if (m.S.tryb_serwa == 2) Pal.Warn else if (m.S.tryb_serwa == 3) Pal.Err else Pal.White, Modifier.weight(1f))
+            HStat("POMPA C.O.", if (m.S.hasData("pompa")) if (m.S.pompa) "ON" else "OFF" else "—", if (!m.S.hasData("pompa")) Pal.TextDim else if (m.S.pompa) Pal.Live else Pal.TextDim, Modifier.weight(1f))
+            HStat("BEZPIECZEŃSTWO", alarmSummary(m), if (anyAlarm(m)) Pal.Err else if (m.S.hasAllData("dym_alarm", "alarm_ogrzewanie", "alarm_panel")) Pal.Live else Pal.TextDim, Modifier.weight(1f))
         }
     }
 }
 
-private fun PiecTrybNazwa(m: AppModel): String = com.sterownikco.pro.core.PiecState.TRYB_NAZWA[m.S.tryb_serwa] ?: "—"
-fun anyAlarm(m: AppModel): Boolean = m.S.dym_alarm || m.S.alarm_ogrzewanie || m.S.alarm_panel
+private fun PiecTrybNazwa(m: AppModel): String =
+    if (m.S.hasData("tryb_serwa") && m.S.tryb_serwa in 1..3) {
+        com.sterownikco.pro.core.PiecState.TRYB_NAZWA[m.S.tryb_serwa] ?: "—"
+    } else "—"
+fun anyAlarm(m: AppModel): Boolean =
+    (m.S.hasData("dym_alarm") && m.S.dym_alarm) ||
+        (m.S.hasData("alarm_ogrzewanie") && m.S.alarm_ogrzewanie) ||
+        (m.S.hasData("alarm_panel") && m.S.alarm_panel)
+private fun alarmSummary(m: AppModel): String = when {
+    anyAlarm(m) -> "ALARM"
+    m.S.hasAllData("dym_alarm", "alarm_ogrzewanie", "alarm_panel") -> "OK"
+    else -> "—"
+}
 
 @Composable
 private fun HStat(lbl: String, value: String, color: Color, modifier: Modifier = Modifier) {
@@ -240,9 +251,10 @@ fun Sect(title: String) {
     }
 }
 
-/** `.trend canvas` — mini-trend 60 próbek (piec / bojler / zewn.). */
+/** `.trend canvas` — mini-trend 60 rzeczywistych próbek (piec / bojler / zewn.). */
 @Composable
 fun Trend(hist: List<HistPoint>) {
+    val ready = hist.size >= 2
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
             .background(Pal.rgba(21, 34, 52, .18f), RoundedCornerShape(Dimens.radiusCard))
@@ -252,15 +264,20 @@ fun Trend(hist: List<HistPoint>) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("TREND OSTATNICH POMIARÓW", style = Txt.tileTitle)
-                Text("szybki podgląd • źródło: telemetria", style = Txt.tiny)
+                Text("rzeczywiste odczyty • źródło: telemetria", style = Txt.tiny)
             }
-            Text("LIVE", style = Txt.badge, color = Pal.Live)
+            Text(if (ready) "${hist.size} HIST." else "BRAK DANYCH", style = Txt.badge, color = if (ready) Pal.Live else Pal.TextDim)
         }
-        Canvas(Modifier.fillMaxWidth().height(Dimens.trendH).padding(top = 6.dp)) {
-            if (hist.size < 2) return@Canvas
-            drawTrendSeries(hist.map { it.o }, Color(0xFFFF9F43), size.width, 80f)
-            drawTrendSeries(hist.map { it.b }, Color(0xFFFFD166), size.width, 80f)
-            drawTrendSeries(hist.map { it.z }, Pal.Cyan, size.width, 80f)
+        if (ready) {
+            Canvas(Modifier.fillMaxWidth().height(Dimens.trendH).padding(top = 6.dp)) {
+                drawTrendSeries(hist.map { it.o }, Color(0xFFFF9F43), size.width, 80f)
+                drawTrendSeries(hist.map { it.b }, Color(0xFFFFD166), size.width, 80f)
+                drawTrendSeries(hist.map { it.z }, Pal.Cyan, size.width, 80f)
+            }
+        } else {
+            Box(Modifier.fillMaxWidth().height(Dimens.trendH), contentAlignment = Alignment.Center) {
+                Text("Oczekiwanie na co najmniej 2 rzeczywiste próbki", style = Txt.note, color = Pal.TextDim)
+            }
         }
     }
 }
@@ -357,7 +374,7 @@ fun Sheet(title: String, icon: String, onDismiss: () -> Unit, content: @Composab
 /** `.toast` — potwierdzenie polecenia (wait / ok / err). */
 @Composable
 fun Toast(text: String, stage: String, cls: String) {
-    val c = when (cls) { "err" -> Pal.Err; "wait" -> Pal.Cyan; else -> Pal.Live }
+    val c = when (cls) { "err" -> Pal.Err; "wait" -> Pal.Cyan; "warn" -> Pal.Warn; else -> Pal.Live }
     Row(
         modifier = Modifier.padding(bottom = 88.dp).widthIn(min = 260.dp, max = 380.dp)
             .background(Pal.Surface2.copy(alpha = .97f), RoundedCornerShape(14.dp))
@@ -366,7 +383,7 @@ fun Toast(text: String, stage: String, cls: String) {
         horizontalArrangement = Arrangement.spacedBy(9.dp)
     ) {
         Box(Modifier.size(22.dp).background(c.copy(alpha = .16f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-            AppIcon(if (cls == "err") "cross" else if (cls == "wait") "refresh" else "check", size = 13.dp, tint = c)
+            AppIcon(when (cls) { "err" -> "cross"; "wait" -> "refresh"; "warn" -> "info"; else -> "check" }, size = 13.dp, tint = c)
         }
         Column(Modifier.weight(1f)) {
             // `.c` — samo polecenie (mono, tekst-dim), potem `.s` — status

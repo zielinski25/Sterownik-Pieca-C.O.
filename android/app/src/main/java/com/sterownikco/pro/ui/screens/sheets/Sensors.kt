@@ -51,11 +51,13 @@ fun StatusPill(text: String, cls: String) {
     val (fg, bg) = when (cls) {
         "sim" -> Pal.Cyan to Pal.rgba(0, 212, 245, .15f)
         "err" -> Pal.Err to Pal.rgba(255, 95, 120, .18f)
+        "stale" -> Pal.TextDim to Pal.rgba(148, 163, 184, .10f)
         else -> Pal.Live to Pal.rgba(74, 222, 128, .12f)
     }
     val bd = when (cls) {
         "sim" -> Pal.rgba(0, 212, 245, .4f)
         "err" -> Pal.rgba(255, 95, 120, .45f)
+        "stale" -> Pal.rgba(148, 163, 184, .25f)
         else -> Pal.rgba(74, 222, 128, .35f)
     }
     Box(
@@ -75,7 +77,8 @@ fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min:
     val S = m.S
     val f: (Double) -> String = { v -> if (krok >= 1.0) Math.round(v).toString() else S.fmt1(v) }
     var open by remember(pole) { mutableStateOf(S.symAktywna(pole)) }
-    var value by remember(pole) { mutableFloatStateOf(S.valOf(pole, statusKey).toFloat()) }
+    val initialValue = S.valOf(pole, statusKey).takeIf { it.isFinite() } ?: (min + max) / 2.0
+    var value by remember(pole) { mutableFloatStateOf(initialValue.toFloat()) }
     var czas by remember(pole) { mutableIntStateOf(S.sym[pole]?.min ?: 60) }
 
     Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
@@ -89,13 +92,18 @@ fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min:
                     .padding(12.dp, 14.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
+                Text("Wyłącznie lokalny test oznaczony SYM — nie trafia do historii ani do sterownika.",
+                    style = Txt.tiny, color = Pal.Warn, modifier = Modifier.padding(bottom = 6.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Wartość", style = Txt.rowDesc, modifier = Modifier.weight(1f))
                     Text("${f(value.toDouble())} $jednostka", style = Txt.monoVal, color = Pal.White)
                 }
                 Slider(
                     value = value.coerceIn(min.toFloat(), max.toFloat()),
-                    onValueChange = { v -> value = if (krok >= 1.0) Math.round(v / krok.toFloat()) * krok.toFloat() else v },
+                    onValueChange = { v ->
+                        val step = krok.toFloat().coerceAtLeast(0.1f)
+                        value = min.toFloat() + Math.round((v - min.toFloat()) / step) * step
+                    },
                     valueRange = min.toFloat()..max.toFloat(),
                     colors = SliderDefaults.colors(thumbColor = Pal.Cyan, activeTrackColor = Pal.Cyan, inactiveTrackColor = Pal.Surface3)
                 )
@@ -137,12 +145,17 @@ fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeade
     val S = m.S
     val cur = S.valOf(sen.id, sen.key)
     val sim = S.symAktywna(sen.id)
+    val available = S.hasData(sen.key)
+    val stale = !m.isFbFresh || !S.online
     val pill = when {
-        sim -> "SYMULACJA" to "sim"
-        listStyle -> "LIVE" to "ok"
-        sen.id == "dym" && S.dym_alarm -> "ALARM" to "err"
-        sen.id == "dym" -> "OK (q=0)" to "ok"
-        else -> "LIVE (q=0)" to "ok"
+        sen.id == "dym" && S.hasData("dym_alarm") && S.dym_alarm -> "ALARM" to "err"
+        sen.id == "dym" && !S.hasData("dym_alarm") -> "STAN ALARMU — BRAK DANYCH" to "stale"
+        sim -> "SYMULACJA LOKALNA" to "sim"
+        sen.id == "dym" && S.hasData("dym_wlaczony") && !S.dym_wlaczony -> "WYŁ." to "stale"
+        !available -> "BRAK DANYCH" to "stale"
+        stale -> "NIEAKTUALNE" to "stale"
+        sen.id == "dym" -> "BRAK ALARMU" to "ok"
+        else -> "LIVE" to "ok"
     }
     Column(
         Modifier.fillMaxWidth().background(Pal.Surface2, RoundedCornerShape(14.dp))
@@ -166,7 +179,7 @@ fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeade
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    SensorDef.fmt(sen, cur) + " " + sen.unit,
+                    (if (sim) "~" else "") + SensorDef.fmt(sen, cur) + " " + sen.unit,
                     style = Txt.monoVal.copy(fontSize = 15.sp, color = Pal.Cyan)
                 )
                 StatusPill(pill.first, pill.second)
@@ -182,7 +195,14 @@ fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeade
             ) {
                 Text("Zakres roboczy: ${sen.min} do ${sen.max} ${sen.unit}", style = Txt.tiny)
                 Text("Magistrala: ${sen.bus.split("·")[0].trim()}", style = Txt.tiny)
-                Text("Odczyt: Prawidłowy (OK)", style = Txt.tiny.copy(color = Pal.Live))
+                Text(
+                    when {
+                        sim -> "Odczyt: SYMULACJA — nie jest danymi sterownika"
+                        available -> if (stale) "Odczyt: ostatnia odebrana wartość (nieaktualna)" else "Odczyt: odebrany ze sterownika"
+                        else -> "Odczyt: oczekiwanie na dane sterownika"
+                    },
+                    style = Txt.tiny.copy(color = if (sim) Pal.Warn else if (available && !stale) Pal.Live else Pal.TextDim)
+                )
             }
         }
     }
@@ -204,13 +224,15 @@ fun SensorListSheet(m: AppModel) {
                 .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(12.dp)).padding(12.dp, 14.dp)
         ) {
             Text("MAGISTRALA CZUJNIKÓW TELEMETRYCZNYCH", style = Txt.diagLbl)
-            Text("10 / 10 aktywnych", style = Txt.diagVal, modifier = Modifier.padding(top = 4.dp))
+            val received = SensorDef.ALL.count { m.S.hasData(it.key) }
+            Text("$received / ${SensorDef.ALL.size} odczytów odebranych", style = Txt.diagVal, modifier = Modifier.padding(top = 4.dp))
             Text(
-                "Magistrale: 1-Wire (7 czujników DS18B20) · I²C (BME280 @ 0x76) · ADC (MQ-2 GPIO36) · Błędy CRC: 0",
+                if (received == 0) "Oczekiwanie na rzeczywiste dane sterownika."
+                else "Licznik dotyczy pól z ostatniej odpowiedzi Firebase; brak pola nie jest zastępowany wartością przykładową.",
                 style = Txt.diagSub, modifier = Modifier.padding(top = 4.dp)
             )
         }
-        Note("Wykaz wszystkich czujników pomiarowych instalacji C.O. Kliknij przycisk „Symulacja” przy wybranym czujniku, aby rozwinąć suwaki wymuszenia wartości.")
+        Note("Każdy odczyt pochodzi z odpowiedzi sterownika. Opcjonalna symulacja jest ręczna, lokalna, oznaczona SYM i nigdy nie trafia do historii.")
         SensorDef.ALL.forEach { sen ->
             Column(Modifier.fillMaxWidth()) {
                 SensorFullCard(m, sen, listStyle = true)
@@ -227,23 +249,23 @@ fun DymSheet(m: AppModel) {
     val sen = SensorDef.byId("dym")!!
     SensorFullCard(m, sen, listStyle = false)
     SectionHeader("Ustawienia alarmu dymu")
-    NumRow("Próg alarmu", "Surowy odczyt ADC czujnika (0-4095)", S.progAlarmDym, 0, 4095) { v ->
+    NumRow("Próg alarmu", "Surowy odczyt ADC czujnika (0-4095)", S.progAlarmDym, 0, 4095, known = S.hasData("progAlarmDym")) { v ->
         m.commitNum("Próg alarmu", "progAlarmDym", 0, 4095, v)
     }
     SectionHeader("Aktywacja od temperatury pieca")
-    NumRow("Próg temperatury", "°C — poniżej tej temp. pieca czujnik jest wyłączony (histereza 3°C)", S.dymProgTemp, 0, 200) { v ->
+    NumRow("Próg temperatury", "°C — poniżej tej temp. pieca czujnik jest wyłączony (histereza 3°C)", S.dymProgTemp, 0, 200, known = S.hasData("dymProgTemp")) { v ->
         m.commitNum("Próg temperatury", "dymProgTemp", 0, 200, v)
     }
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
         Text("Tryb pracy po aktywacji", style = Txt.rowLabel, modifier = Modifier.weight(1f))
     }
-    Seg(listOf(0 to "Impulsowo", 1 to "Ciągle"), current = S.dymTrybPracy, onPick = { v ->
+    Seg(listOf(0 to "Impulsowo", 1 to "Ciągle"), current = if (S.hasData("dymTrybPracy")) S.dymTrybPracy else -1, onPick = { v ->
         m.send("ustaw dymTrybPracy $v")
     })
     SectionHeader("Cykl pracy czujnika (tryb Impulsowo)")
-    NumRow("Czas WŁ.", "s — rozgrzewanie + pomiar", S.dymCzasOn, 20, 600) { v -> m.commitNum("Czas WŁ.", "dymCzasOn", 20, 600, v) }
-    NumRow("Czas WYŁ.", "s — między pomiarami", S.dymCzasOff, 10, 600) { v -> m.commitNum("Czas WYŁ.", "dymCzasOff", 10, 600, v) }
-    NumRow("Czas stabilizacji", "s — część Czasu WŁ. zanim odczyt zaufany (dotyczy obu trybów)", S.dymCzasStabilizacji, 5, 590) { v ->
+    NumRow("Czas WŁ.", "s — rozgrzewanie + pomiar", S.dymCzasOn, 20, 600, known = S.hasData("dymCzasOn")) { v -> m.commitNum("Czas WŁ.", "dymCzasOn", 20, 600, v) }
+    NumRow("Czas WYŁ.", "s — między pomiarami", S.dymCzasOff, 10, 600, known = S.hasData("dymCzasOff")) { v -> m.commitNum("Czas WYŁ.", "dymCzasOff", 10, 600, v) }
+    NumRow("Czas stabilizacji", "s — część Czasu WŁ. zanim odczyt zaufany (dotyczy obu trybów)", S.dymCzasStabilizacji, 5, 590, known = S.hasData("dymCzasStabilizacji")) { v ->
         m.commitNum("Czas stabilizacji", "dymCzasStabilizacji", 5, 590, v)
     }
     SymUnit(m, "dym", "Dym", "ADC", 0.0, 4095.0, 1.0)
@@ -255,7 +277,7 @@ fun OverheatSheet(m: AppModel, panel: Boolean) {
     val S = m.S
     SectionHeader("Zabezpieczenie przed przegrzaniem")
     Note("Wspólny próg dla pieca C.O. i panelu słonecznego — histereza: piec -10°C, panel -4°C.")
-    NumRow("Próg alarmu przegrzania", "°C", S.progAlarmTemp, 0, 100) { v ->
+    NumRow("Próg alarmu przegrzania", "°C", S.progAlarmTemp, 0, 100, known = S.hasData("progAlarmTemp")) { v ->
         m.commitNum("Próg alarmu przegrzania", "progAlarmTemp", 0, 100, v)
     }
     if (panel) SymUnit(m, "panel", "Panel słoneczny", "°C", -30.0, 160.0, 0.5)

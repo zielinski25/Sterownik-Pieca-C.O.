@@ -174,12 +174,20 @@ fun NumRow(
     value: Int,
     min: Int,
     max: Int,
+    known: Boolean = true,
     onCommit: (Int) -> Unit
 ) {
-    var text by remember(value) { mutableStateOf(value.toString()) }
+    var text by remember(value, known) { mutableStateOf(if (known) value.toString() else "") }
     fun commit() {
         val v = text.toIntOrNull()
-        if (v == null || v < min || v > max) onCommit(-1) else onCommit(v)
+        if (v == null || v < min || v > max) {
+            onCommit(-1)
+        } else {
+            onCommit(v)
+            // The field reflects the last value read back from the controller,
+            // not an unacknowledged command draft.
+            text = if (known) value.toString() else ""
+        }
     }
     RowLabel(name, desc) {
         // OutlinedTextField ma minimalna wysokosc kontenera 56 dp — przy 38 dp
@@ -202,7 +210,12 @@ fun NumRow(
                         .border(BorderStroke(1.dp, if (focused) Pal.Cyan else Pal.BorderStrong), RoundedCornerShape(9.dp))
                         .padding(horizontal = 6.dp),
                     contentAlignment = Alignment.Center
-                ) { inner() }
+                ) {
+                    if (!known && text.isEmpty()) {
+                        Text("—", style = Txt.inp.copy(fontSize = 13.sp), color = Pal.TextDim)
+                    }
+                    inner()
+                }
             }
         )
         UstBtn("Ustaw", onClick = { commit() }, variant = "plain")
@@ -211,16 +224,23 @@ fun NumRow(
 
 /** `.chk` — pole zaznaczenia w stylu panelu. */
 @Composable
-fun CheckRow(name: String, desc: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+fun CheckRow(
+    name: String,
+    desc: String?,
+    checked: Boolean,
+    known: Boolean = true,
+    onChange: (Boolean) -> Unit
+) {
     RowLabel(name, desc) {
         Box(
             modifier = Modifier.size(24.dp).background(
-                if (checked) Pal.Cyan else Pal.Surface2, RoundedCornerShape(7.dp)
-            ).border(BorderStroke(1.dp, if (checked) Pal.Cyan else Pal.BorderStrong), RoundedCornerShape(7.dp))
-                .clickable { onChange(!checked) },
+                if (known && checked) Pal.Cyan else Pal.Surface2, RoundedCornerShape(7.dp)
+            ).border(BorderStroke(1.dp, if (known && checked) Pal.Cyan else Pal.BorderStrong), RoundedCornerShape(7.dp))
+                .clickable(enabled = known) { onChange(!checked) },
             contentAlignment = Alignment.Center
         ) {
-            if (checked) AppIcon("check", size = 15.dp, tint = Color(0xFF00131F))
+            if (known && checked) AppIcon("check", size = 15.dp, tint = Color(0xFF00131F))
+            else if (!known) Text("?", style = Txt.rowDesc, color = Pal.TextDim)
         }
     }
 }
@@ -235,7 +255,8 @@ fun SliderRow(
     step: Float?,
     fmt: (Float) -> String,
     onValue: (Float) -> Unit,
-    onCommit: ((Float) -> Unit)? = null
+    onCommit: ((Float) -> Unit)? = null,
+    resetOnCommit: Boolean = false
 ) {
     var v by remember(value) { mutableFloatStateOf(value) }
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
@@ -250,7 +271,10 @@ fun SliderRow(
             colors = SliderDefaults.colors(thumbColor = Pal.Cyan, activeTrackColor = Pal.Cyan, inactiveTrackColor = Pal.Surface3)
         )
         if (onCommit != null) {
-            UstBtn("Zastosuj", onClick = { onCommit(v) }, variant = "primary", modifier = Modifier.fillMaxWidth())
+            UstBtn("Zastosuj", onClick = {
+                onCommit(v)
+                if (resetOnCommit) v = value
+            }, variant = "primary", modifier = Modifier.fillMaxWidth())
         }
     }
 }

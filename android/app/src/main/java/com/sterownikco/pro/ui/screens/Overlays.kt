@@ -89,7 +89,7 @@ fun SheetHost(m: AppModel) {
             "ota" -> { title = "Aktualizacja firmware (OTA & GitHub)"; icon = "upload" }
             "sesja" -> { title = "Sesja operatora & Firebase"; icon = "session" }
             "alarmy" -> { title = "Alarmy dymu i przegrzania"; icon = "warn" }
-            "widgets" -> { title = "Widżety pulpitu"; icon = "dashboard" }
+            "widgets" -> { title = "Kafelki aplikacji"; icon = "dashboard" }
             "chartSeries" -> { title = "Wybór serii wykresu"; icon = "chart" }
             "chartAxis" -> { title = "Skala i osie wykresu"; icon = "thermo" }
             "chartTools" -> { title = "Narzędzia i filtry"; icon = "shield" }
@@ -253,4 +253,3 @@ private fun AuthBtn(label: String, primary: Boolean, enabled: Boolean, onClick: 
         )
     }
 }
-

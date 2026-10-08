@@ -56,8 +56,8 @@ fun SettingsPage(m: AppModel) {
         verticalArrangement = Arrangement.spacedBy(Dimens.gap)
     ) {
         PageHead("USTAWIENIA STEROWNIKA", "Sterowanie natywne · komendy /piec/cmd · potwierdzenie ACK")
-        MenuCard(m, "widgets", "dashboard", Pal.Cyan, "Widżety pulpitu",
-            "Wybierz widoczne pomiary, pogodę i skróty bezpieczeństwa")
+        MenuCard(m, "widgets", "dashboard", Pal.Cyan, "Kafelki aplikacji",
+            "Wybierz elementy widoczne na pulpicie wewnątrz aplikacji")
         MenuCard(m, "alarmy", "warn", Pal.Err, "Alarmy dymu i przegrzania",
             "Dźwięk, drzemka, czuwanie w tle, uprawnienia")
         MenuCard(m, "firebase", "shield", Pal.Cyan, "Połączenie z bazą Firebase",

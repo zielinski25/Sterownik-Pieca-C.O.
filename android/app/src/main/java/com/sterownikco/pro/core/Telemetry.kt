@@ -11,53 +11,63 @@ import kotlin.math.roundToInt
 /** Surowy rekord ze shardu `/piec/telemetry/1m/v1/RRRR/MM/DD`. */
 data class TelemRow(
     val id: String, val seq: Long, val ts: Long, val mono: Long,
-    val a: List<Double>, val k: Long, val s: Long, val state: Long, val q: Long, val sim: Long
+    val a: List<Double>, val k: Long, val s: Long, val state: Long, val q: Long,
+    /** Bit i oznacza, że kanał i tej próbki pochodził z symulacji. */
+    val sim: Long,
+    /** Jawny znacznik całego rekordu (`is_sim` / `simulated`). */
+    val simulated: Boolean = false
 )
 
-/** Rekord po mapowaniu kanałów (klucze identyczne jak w panelu). */
+/** Rekord po mapowaniu kanałów. Pola bez rzeczywistych odczytów są null. */
 data class TelemPoint(
     val ts: Long, val seq: Long,
     val t_zewn: Double?, val t_bojler: Double?, val t_ogrz: Double?, val t_ogrz_sr: Double?,
     val t_powrot: Double?, val t_panel: Double?, val t_pokoj: Double?, val t_trociny: Double?,
     val wilgotnosc: Double?, val cisnienie: Double?, val dym: Double?,
-    val klapa: Double?, val syberka: Double?, val pompa: Boolean,
-    val sim: Long
-)
+    val klapa: Double?, val syberka: Double?
+) {
+    fun hasRealValues(): Boolean = listOf(
+        t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot, t_panel, t_pokoj, t_trociny,
+        wilgotnosc, cisnienie, dym, klapa, syberka
+    ).any { it != null && it.isFinite() }
+}
 
 fun TelemRow.toPoint(): TelemPoint {
-    fun getVal(idx: Int, ch: Int, scale: Double, minB: Double?, maxB: Double?): Double? {
-        if (idx >= a.size) return null
-        val qVal = ((q shr (ch * 2)) and 3).toInt()
+    fun isSimulatedChannel(channel: Int): Boolean = simulated ||
+        (channel in 0..62 && (sim and (1L shl channel)) != 0L)
+
+    fun getVal(idx: Int, channel: Int, scale: Double, minB: Double?, maxB: Double?): Double? {
+        if (isSimulatedChannel(channel) || idx !in a.indices) return null
+        val qVal = ((q shr (channel * 2)) and 3).toInt()
         val raw = a[idx]
-        if (raw.isNaN() || raw.isInfinite() || qVal >= 2) return null
+        if (!raw.isFinite() || qVal >= 2) return null
         if (raw <= -1200 || raw >= 15000) return null // -1270 = odłączony DS18B20
         val v = raw * scale
         if (minB != null && v < minB) return null
         if (maxB != null && v > maxB) return null
         return (v * 10).roundToInt() / 10.0
     }
-    fun getServoVal(deg: Double, maxDeg: Double): Double? {
-        if (deg.isNaN() || deg < 0) return null
-        return maxOf(0.0, minOf(100.0, deg / maxDeg * 100)).roundToInt().toDouble()
+
+    fun getServoVal(deg: Long, maxDeg: Double, channel: Int): Double? {
+        if (isSimulatedChannel(channel) || deg < 0L || deg.toDouble() > maxDeg) return null
+        return (deg / maxDeg * 100).roundToInt().toDouble()
     }
-    val dymV = if (a.size > 10 && a[10].isFinite() && ((q shr 20) and 3).toInt() < 2) a[10] else null
+
     return TelemPoint(
         ts = ts * 1000, seq = seq,
         t_zewn = getVal(0, 0, .1, -25.0, 45.0),
         t_bojler = getVal(1, 1, .1, 10.0, 95.0),
-        t_ogrz = getVal(2, 2, .1, 10.0, 100.0),
-        t_ogrz_sr = getVal(3, 3, .1, 10.0, 100.0),
+        t_ogrz = getVal(2, 2, .1, 10.0, 99.0),
+        t_ogrz_sr = getVal(3, 3, .1, 10.0, 99.0),
         t_powrot = getVal(4, 4, .1, 10.0, 95.0),
-        t_panel = getVal(5, 5, .1, 5.0, 140.0),
+        t_panel = getVal(5, 5, .1, 0.0, 140.0),
         t_pokoj = getVal(6, 6, .1, 8.0, 45.0),
-        t_trociny = getVal(7, 7, .1, 5.0, 90.0),
+        t_trociny = getVal(7, 7, .1, 0.0, 90.0),
         wilgotnosc = getVal(8, 8, .1, 10.0, 100.0),
         cisnienie = getVal(9, 9, .1, 900.0, 1100.0),
-        dym = dymV,
-        klapa = getServoVal(k.toDouble(), 180.0),
-        syberka = getServoVal(s.toDouble(), 90.0),
-        pompa = (state and 1L) != 0L,
-        sim = sim
+        dym = getVal(10, 10, 1.0, 0.0, 4095.0),
+        klapa = getServoVal(k, 180.0, 11),
+        syberka = getServoVal(s, 90.0, 12)
     )
 }
 

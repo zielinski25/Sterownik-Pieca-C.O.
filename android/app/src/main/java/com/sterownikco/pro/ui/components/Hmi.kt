@@ -73,6 +73,7 @@ private fun badgeColors(cls: String): Pair<Color, Color> = when (cls) {
 
 @Composable
 fun Tile(spec: TileSpec, art: ArtState, onClick: () -> Unit) {
+    val displayValue = (if (spec.sim) "~" else "") + spec.value
     val accent = tileAccent(spec.cls)
     val alarm = spec.state == "err"
     val tr = rememberInfiniteTransition(label = "tile")
@@ -147,12 +148,12 @@ fun Tile(spec: TileSpec, art: ArtState, onClick: () -> Unit) {
             maxLines = 1, overflow = TextOverflow.Ellipsis
         )
         Row(
-            modifier = Modifier.align(Alignment.TopStart).padding(top = if (spec.value.length > 9) 76.dp else 72.dp, start = 10.dp, end = 10.dp),
+            modifier = Modifier.align(Alignment.TopStart).padding(top = if (displayValue.length > 9) 76.dp else 72.dp, start = 10.dp, end = 10.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             Text(
-                spec.value,
-                style = if (spec.value.length > 9) Txt.tileValueSm else Txt.tileValue,
+                displayValue,
+                style = if (displayValue.length > 9) Txt.tileValueSm else Txt.tileValue,
                 color = valueColor, maxLines = 1, overflow = TextOverflow.Ellipsis
             )
             if (spec.unit.isNotEmpty()) {

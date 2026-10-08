@@ -36,11 +36,9 @@ uruchamiają się na JDK 21. Jeżeli koniecznie chcesz budować na JDK 25, trzeb
 podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 `gradle-wrapper.properties` wymaga zmiany `distributionUrl`.
 
-> Uwaga: w środowisku, w którym powstawał ten port, **nie było JDK/Android SDK**
-> ani dostępu do dystrybucji Gradle — kod nie był więc nigdy kompilowany.
-> Jedyna wykonana weryfikacja to kontrola równowagi nawiasów/nawiasów klamrowych
-> i spójności symboli między plikami. Pierwszy `assembleDebug` może wymagać
-> drobnych poprawek (importy, nazwy argumentów).
+> Bieżący Linux sandbox nie ma JDK ani Android SDK, więc nie można tu powtórzyć
+> `./gradlew :app:assembleDebug`. Poprzedni build Windows został zgłoszony jako
+> udany na JDK 21.0.12.1; instalacja APK na urządzeniu nie została potwierdzona.
 
 ## Ekran ↔ źródło w `Piec.html`
 
@@ -53,7 +51,7 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 | Pasek górny, `sysstrip`, banery, hero, quick, sekcje, trend, arkusz, toast | 2960–3175, 4330–4425 | `ui/components/Chrome.kt` |
 | Klasy CSS tile/well/badge/analysis/nav/trend | 1200–2422 | `ui/components/Kit.kt`, `Hmi.kt` |
 | Klient Firebase (`/piec/status`, `/piec/cmd` + ACK) | 4425–5145 | `core/RtdbClient.kt`, `core/AppModel.kt` |
-| Symulacja / `symuluj …` / override | 5100–5240 | `core/PiecState.kt` (`applyCommand`, `sym`) |
+| Lokalna symulacja czujników / `symuluj …` / `symuluj_stop` | 5100–5240 | `core/PiecState.kt` (`applySimulationCommand`, `sym`) + `ui/screens/sheets/Sensors.kt` |
 | Arkusze czujników `ALL_SENSORS`, `sensorModalContent`, `symulacjaSekcjaHtml`, `MENUS.dym`, `overheat` | 5104–5345, 5574 | `core/Sensors.kt`, `ui/screens/sheets/Sensors.kt` |
 | `MENUS.pompa / serwo / mieszadlo / czas` (diagramy Trociniak/Kopciuch) | 5386–5562 | `ui/screens/sheets/Control.kt` |
 | Moduł Wi‑Fi (`/api/wifi/list`, `scan/start`, `scan/result`, `add`, `delete`) | 5591–5855 | `ui/screens/sheets/System.kt` (`WifiSheet`) |
@@ -71,7 +69,6 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 | `SolarAnalytics` (bilans, detekcja poboru CWU, CSV) | 8045–8228 | `core/SolarAnalytics.kt` |
 | Zakładka Pogoda (meteo, godziny, dni, łuk słoneczny) | 3232–3390, 8230–8430 | `ui/screens/Weather.kt`, `core/Weather.kt` |
 | Strona Ustawienia / Więcej (karty `data-menu`) | 3393–3425 | `ui/screens/Lists.kt` |
-| Szuflada DEMO (`buildDemo`, presety, suwaki) | 8861–9014 | `ui/screens/demo/DemoDrawer.kt` |
 | Modal logowania Firebase (`#authModal`) | 3458–3500 | `ui/screens/Overlays.kt` (`AuthModal`) |
 | Toast poleceń (`#toast`) | 1830–1890, 4980–5040 | `Chrome.kt` (`Toast`) |
 
@@ -82,11 +79,18 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
   `2 s` tick symulacji, `15 min` pogoda, `1 s` odświeżanie arkusza), logi,
   toasty, telemetrię i preferencje (`SharedPreferences`, klucze jak `safeStorage`
   w panelu: `piec_fb_token`, `piec_tg_token`, `piec_chart_prefs_v2`…).
-* Komendy: `sendCommand("ustaw …")` → `/piec/cmd` z ACK (12 s), tak jak w
-  oryginale; gdy brak sesji Firebase, stan zmienia się lokalnie i widać
-  efekt od razu (jak `S.applyCommand` w `Piec.html`).
-* Tryb DEMO (`⚙ DEMO`, prawy dolny róg) działa bez sieci i logowania —
-  presety i suwaki są przeniesione 1:1, łącznie z komunikatami toast.
+* Polecenia urządzeń są wysyłane do `/piec/cmd` i stan jest uznawany za
+  potwierdzony dopiero po ACK. Bez sesji Firebase polecenie nie jest wysyłane
+  ani stosowane optymistycznie lokalnie.
+* Symulacja czujników (`symuluj …` / `symuluj_stop`) jest osobną, ręczną
+  funkcją lokalną: nie wysyła nic do ESP/Firebase, jej wartości są oznaczone
+  `~`/`SYM` i nie trafiają do historii ani wykresów. Przycisk „Kafelki aplikacji”
+  steruje tylko kafelkami wewnątrz aplikacji; widget ekranu głównego jest
+  osobnym elementem Androida.
+* Natywny widget Androida (`widget/PiecWidget.kt`) ma układ 4×2 i pokazuje
+  cztery temperatury, stan alarmów oraz czas ostatniej migawki; brak lub
+  nieprawidłowa flaga alarmu pozostaje stanem nieznanym. Widget nie był jeszcze
+  zweryfikowany na launcherze.
 
 ## Świadome uproszczenia (żeby nic nie „udawało”)
 
@@ -94,14 +98,14 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
    wyłącznie centralę (`/api/wifi/*`, `/api/telegram/*`). Gdy centrala jest
    nieosiągalna, widać uczciwy komunikat (tak jak w oryginale po
    `FIX-WIFI-REAL` / `FIX-TELEGRAM-REAL`), żadnych wymyślonych SSID.
-2. **Terminal 21 DLOG**: logi startowe i próbki `generateSimulatedDLogChunk()`
-   są symulowane dokładnie jak w panelu (to samo 11 kategorii próbek);
-   strumień z `/piec/telemetry/diagnostics` nie jest nasłuchiwany ciągiem —
-   komendy `diag remote on|off|level|cat` są wysyłane do centrali.
+2. **Terminal 21 DLOG**: brak logów startowych i próbek demo. Widok pozostaje
+   pusty, dopóki aplikacja nie otrzyma rzeczywistych wpisów; bieżący port
+   obsługuje potwierdzane komendy Remote, ale nie subskrybuje jeszcze strumienia
+   `/piec/telemetry/diagnostics`.
 3. **Ręczne OTA `.bin`**: w panelu był `<input type=file>`; w aplikacji
-   podajesz ścieżkę pliku (brak natywnego pickera w tym porcie), komenda
-   `ota_upload` / `update` / `update_panel` jest kolejkowana tak samo jak
-   w oryginale (zero udawanego postępu).
+   podajesz ścieżkę pliku (brak natywnego pickera w tym porcie). Komenda
+   `update` / `update_panel` pokazuje wyłącznie ACK przyjęcia; panel nie
+   przedstawia postępu ani wyniku flashowania jako potwierdzonego.
 4. **Studio pogodowe**: wykres godzinowy jest narysowany w Canvasie
    (linia + wypełnienie) zamiast pełnego silnika `wMainChartCanvas` z
    interaktywnym tooltipem; dobór serii, zakresy i opisy są jak w oryginale.
@@ -120,8 +124,8 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 android/
 ├─ app/build.gradle.kts            # Compose BOM 2024.12.01, okhttp 4.12.0, minSdk 26
 └─ app/src/main/
-   ├─ AndroidManifest.xml          # jedna aktywność, zgoda na cleartext HTTP (LAN)
-   ├─ res/                          # ikona aplikacji, theme, strings
+   ├─ AndroidManifest.xml          # aktywność + odbiornik widgetu, cleartext HTTP (LAN)
+   ├─ res/                          # ikona, theme, strings, layout i metadane widgetu
    └─ java/com/sterownikco/pro/
       ├─ MainActivity.kt
       ├─ ui/SterownikApp.kt         # korzeń: pasek, strony, nawigacja, nakładki
@@ -133,7 +137,7 @@ android/
       ├─ ui/chart/ChartEngine.kt    # updateChartCanvas
       ├─ ui/screens/                # Dashboard, Charts, Weather, Lists, Overlays
       ├─ ui/screens/sheets/         # Sensors, Control, System (Wi‑Fi/TG/terminal/logi/OTA/sesja)
-      ├─ ui/screens/demo/           # DemoDrawer (buildDemo)
-      └─ core/                      # PiecState, RtdbClient, Telemetry, Weather,
-                                    # SolarAnalytics, AppModel, TileSpecs, Sensors, Prefs
+      ├─ core/                      # PiecState, RtdbClient, Telemetry, Weather,
+      │                              # SolarAnalytics, AppModel, TileSpecs, Sensors, Prefs
+      └─ widget/PiecWidget.kt       # natywny widget ekranu głównego Androida
 ```

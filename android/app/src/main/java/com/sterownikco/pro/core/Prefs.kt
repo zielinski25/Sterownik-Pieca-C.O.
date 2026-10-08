@@ -111,6 +111,7 @@ class Prefs(ctx: Context) {
         const val K_CHART_PREFS = "piec_chart_prefs_v2"
         const val K_LAT = "piec_weather_lat"
         const val K_LON = "piec_weather_lon"
-        const val K_SOLAR_ARCHIVE = "solar_archive_data"
+        const val K_SOLAR_ARCHIVE = "solar_archive_data" // legacy/unverified; never loaded as real telemetry
+        const val K_SOLAR_REAL_ARCHIVE = "solar_real_archive_v1"
     }
 }

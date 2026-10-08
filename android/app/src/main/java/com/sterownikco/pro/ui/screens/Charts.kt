@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -78,9 +79,9 @@ private fun RowScope.ChartChip(label: String, on: Boolean, modifier: Modifier = 
     }
 }
 
-/** `.series-chip` — kropka w kolorze serii + etykieta + plakietka SYM. */
+/** `.series-chip` — kropka w kolorze serii + etykieta. */
 @Composable
-private fun SeriesChip(label: String, rgb: String, on: Boolean, sim: Boolean, onClick: () -> Unit) {
+private fun SeriesChip(label: String, rgb: String, on: Boolean, onClick: () -> Unit) {
     val c = hexColor(rgb)
     Row(
         Modifier.background(if (on) c.copy(alpha = .12f) else Pal.Surface2, RoundedCornerShape(12.dp))
@@ -91,8 +92,6 @@ private fun SeriesChip(label: String, rgb: String, on: Boolean, sim: Boolean, on
     ) {
         Box(Modifier.size(6.dp).background(c, RoundedCornerShape(50)))
         Text(label, fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = if (on) Color.White else Pal.TextDim)
-        if (sim) Text("SYM", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Pal.Warn,
-            modifier = Modifier.background(Pal.rgba(251, 191, 36, .2f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp))
     }
 }
 
@@ -130,6 +129,8 @@ fun ChartsPage(m: AppModel) {
                     .border(BorderStroke(1.dp, Pal.rgba(0, 212, 245, .35f)), RoundedCornerShape(10.dp))
                     .padding(horizontal = 8.dp, vertical = 3.dp))
         }
+        Text("Wykresy korzystają wyłącznie z rzeczywistej telemetrii; lokalna symulacja SYM nie trafia do historii ani wykresu.",
+            style = Txt.tiny, color = Pal.TextDim)
 
         // `.chart-ctrl-card`
         Column(
@@ -175,15 +176,15 @@ fun ChartsPage(m: AppModel) {
             ) {
                 m.activeCatalog().forEach { s ->
                     SeriesChip(label = s.label, rgb = s.rgb, on = m.seriesOn[s.id] ?: s.on,
-                        sim = view.simSeries.contains(s.id),
                         onClick = { m.toggleSeries(s.id) })
                 }
-                SeriesChip(label = "USTAWIENIA", rgb = "0,212,245", on = false, sim = false,
+                SeriesChip(label = "USTAWIENIA", rgb = "0,212,245", on = false,
                     onClick = { m.openSheet("chartSeries") })
             }
 
             Box(
                 Modifier.fillMaxWidth().height(Dimens.chartH)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(Pal.CanvasBg, RoundedCornerShape(14.dp))
                     .border(BorderStroke(1.dp, Color(0x0FFFFFFF)), RoundedCornerShape(14.dp))
             ) {
@@ -258,7 +259,7 @@ fun ChartsPage(m: AppModel) {
                         }
                         IconBtn("close", "Zamknij", onClick = { expand = false })
                     }
-                    Box(Modifier.fillMaxWidth().height(320.dp).background(Pal.CanvasBg, RoundedCornerShape(12.dp))
+                    Box(Modifier.fillMaxWidth().height(320.dp).clip(RoundedCornerShape(12.dp)).background(Pal.CanvasBg, RoundedCornerShape(12.dp))
                         .border(BorderStroke(1.dp, Color(0x0FFFFFFF)), RoundedCornerShape(12.dp))) {
                         ChartCanvas(
                             view = view, modifier = Modifier.fillMaxWidth().height(320.dp),
@@ -455,10 +456,15 @@ fun ChartAnalysisSheet(m: AppModel) {
         )
     }
     SectionHeader("Wykryte cykle pracy kotła")
+    val pumpThresholdsKnown = m.S.hasAllData("tempOn", "tempOff")
     DiagCard(
         lbl = "ANALIZA CYKLI GRZANIA",
         value = "Cykliczna praca paleniska w wybranym zakresie",
-        sub = "Próg załączenia pompy: ${m.S.tempOn}°C (histereza ${m.S.tempOn - m.S.tempOff}°C)"
+        sub = if (pumpThresholdsKnown) {
+            "Próg załączenia pompy: ${m.S.tempOn}°C (histereza ${m.S.tempOn - m.S.tempOff}°C)"
+        } else {
+            "Progi pracy pompy: brak odczytu z centrali"
+        }
     )
     val cat = m.catalogOn()
     if (cat.size >= 2 && m.chartFocus == 0) {
@@ -477,7 +483,7 @@ fun ChartAnalysisSheet(m: AppModel) {
     })
 }
 
-private fun fmt1(v: Double): String = String.format(java.util.Locale.US, "%.1f", v)
+private fun fmt1(v: Double): String = if (v.isFinite()) String.format(java.util.Locale.US, "%.1f", v) else "—"
 
 /** `#chartInspectorVal` — dymek z odczytem (czas + wartości aktywnych serii). */
 private fun inspectorText(m: AppModel, view: com.sterownikco.pro.ui.chart.ChartView, cross: Int?): String {

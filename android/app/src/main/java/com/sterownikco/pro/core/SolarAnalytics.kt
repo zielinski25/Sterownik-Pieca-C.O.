@@ -30,10 +30,11 @@ class SolarAnalytics(private val prefs: Prefs) {
     var lastSampleTs = 0L
     var accumulatedGrossGain by mutableDoubleStateOf(0.0)
     var accumulatedDrawDrop by mutableDoubleStateOf(0.0)
-    var forecastGain by mutableDoubleStateOf(18.0)
-    var forecastKwh by mutableDoubleStateOf(4.5)
-    var deltaT by mutableDoubleStateOf(0.0)
+    var forecastGain by mutableDoubleStateOf(Double.NaN)
+    var forecastKwh by mutableDoubleStateOf(Double.NaN)
+    var deltaT by mutableDoubleStateOf(Double.NaN)
     var drawCount by mutableIntStateOf(0)
+    val hasSamples: Boolean get() = archive.isNotEmpty()
 
     private val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
         timeZone = java.util.TimeZone.getTimeZone("UTC")
@@ -41,21 +42,31 @@ class SolarAnalytics(private val prefs: Prefs) {
 
     init {
         try {
-            prefs.get(Prefs.K_SOLAR_ARCHIVE)?.let { raw ->
+            // Only the versioned archive written by this real-data path is trusted.
+            // Older app versions could persist local demo/simulated values under K_SOLAR_ARCHIVE.
+            prefs.get(Prefs.K_SOLAR_REAL_ARCHIVE)?.let { raw ->
                 val arr = JSONArray(raw)
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
-                    archive.add(
-                        Sample(
-                            o.optLong("ts"), o.optString("iso"), o.optDouble("t_panel"),
-                            o.optDouble("t_bojler"), o.optDouble("t_zewn"), o.optInt("rad"),
-                            o.optDouble("uv"), o.optInt("cloud"), o.optInt("isDraw"),
-                            o.optDouble("drop"), o.optDouble("gain")
-                        )
+                    val sample = Sample(
+                        o.optLong("ts"), o.optString("iso"), o.optDouble("t_panel", Double.NaN),
+                        o.optDouble("t_bojler", Double.NaN), o.optDouble("t_zewn", Double.NaN),
+                        o.optInt("rad"), o.optDouble("uv", Double.NaN), o.optInt("cloud"),
+                        o.optInt("isDraw"), o.optDouble("drop"), o.optDouble("gain")
                     )
+                    if (sample.ts > 0L && sample.tPanel.isFinite() && sample.tBojler.isFinite() && sample.tZewn.isFinite()) {
+                        archive.add(sample)
+                    }
                 }
             }
-        } catch (e: Exception) { /* puste archiwum */ }
+        } catch (e: Exception) { /* brak archiwum zweryfikowanego */ }
+        lastSampleTs = archive.lastOrNull()?.ts ?: 0L
+        accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
+        val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
+        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tBojler + it.drop, it.tBojler)) }
+        accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
+        drawCount = draws.size
+        archive.lastOrNull()?.let { deltaT = it.tPanel - it.tZewn }
     }
 
     private fun save() {
@@ -70,12 +81,13 @@ class SolarAnalytics(private val prefs: Prefs) {
                         .put("drop", it.drop).put("gain", it.gain)
                 )
             }
-            prefs.set(Prefs.K_SOLAR_ARCHIVE, arr.toString())
+            prefs.set(Prefs.K_SOLAR_REAL_ARCHIVE, arr.toString())
         } catch (e: Exception) { /* ignore */ }
     }
 
     fun recordSample(tPanel: Double, tBojler: Double, tZewn: Double, rad: Double, uv: Double, cloud: Double) {
-        if (tPanel.isNaN()) return
+        if (!listOf(tPanel, tBojler, tZewn, rad, uv, cloud).all { it.isFinite() }) return
+        if (tPanel !in 0.0..140.0 || tBojler !in 10.0..95.0 || tZewn !in -25.0..45.0 || rad < 0.0) return
         val now = System.currentTimeMillis()
         if (lastSampleTs > 0 && now - lastSampleTs < 25_000) return
         lastSampleTs = now
@@ -114,7 +126,7 @@ class SolarAnalytics(private val prefs: Prefs) {
 
     /** `estimateForecastGain(hourly)` — 1:1 (estymata radiacji z zachmurzenia). */
     fun estimateForecastGain(hourly: List<com.sterownikco.pro.core.WHour>) {
-        if (hourly.isEmpty()) { forecastGain = 18.0; forecastKwh = 4.5; return }
+        if (hourly.isEmpty()) { forecastGain = Double.NaN; forecastKwh = Double.NaN; return }
         var sumRad = 0.0
         hourly.take(24).forEach { h ->
             val estRad = (100 - h.cloud) * 8.5 * (if (h.isDay) 1 else 0)
@@ -131,15 +143,12 @@ class SolarAnalytics(private val prefs: Prefs) {
     }
 
     fun grossGain(): Double = accumulatedGrossGain
-    fun estKwh(): Double = (accumulatedGrossGain * 200 * 4.186) / 3600.0
+    fun estKwh(): Double = if (hasSamples) (accumulatedGrossGain * 200 * 4.186) / 3600.0 else Double.NaN
 
     /** `exportCsv()` — zawartość pliku CSV (nazwa: archiwum_solarno_pogodowe_RRRR-MM-DD.csv). */
     fun csv(): String {
         val sb = StringBuilder("timestamp,iso_time,t_panel,t_bojler,t_zewn,promieniowanie_W_m2,uv_index,zachmurzenie_proc,pobor_wody,spadek_poboru_C,zysk_brutto_C\n")
-        val rows = if (archive.isNotEmpty()) archive else listOf(
-            Sample(System.currentTimeMillis(), isoFmt.format(System.currentTimeMillis()), 0.0, 0.0, 0.0, 450, 3.5, 20, 0, 0.0, 2.5)
-        )
-        rows.forEach {
+        archive.forEach {
             sb.append("${it.ts},${it.iso},${it.tPanel},${it.tBojler},${it.tZewn},${it.rad},${it.uv},${it.cloud},${it.isDraw},${it.drop},${it.gain}\n")
         }
         return sb.toString()

@@ -3448,7 +3448,7 @@ body.mode-phone-frame #phone {
         <div class="titles"><h2>SERWIS & DIAGNOSTYKA</h2><div class="lead">Narzędzia operatorskie, zdalny terminal 21 DLOG i aktualizacje OTA</div></div>
       </div>
 
-      <div class="setcard" data-menu="terminal"><div class="ic" style="color:var(--cyan)" data-ico="terminal"></div><div class="t"><b>Terminal diagnostyczny (21 DLOG)</b><span>Remote LIVE streaming, wybór sesji, filtry 21 kategorii DLOG, poziomy TRACE-ERR i komendy /piec/cmd</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+      <div class="setcard" data-menu="terminal"><div class="ic" style="color:var(--cyan)" data-ico="terminal"></div><div class="t"><b>Terminal diagnostyczny (21 DLOG)</b><span>Zdalne sterowanie Remote po ACK, filtry i poziomy DLOG, wyświetlanie wyłącznie odebranych wpisów</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
       <div class="setcard" data-menu="logi"><div class="ic" style="color:var(--slonce)" data-ico="logs"></div><div class="t"><b>Logi telemetryczne</b><span>Podgląd zdarzeń sterownika na żywo · filtracja · eksport</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
       <div class="setcard" data-menu="ota"><div class="ic" style="color:var(--live)" data-ico="upload"></div><div class="t"><b>Aktualizacja firmware (OTA & GitHub)</b><span>Weryfikacja wersji GitHub Releases, aktualizacja Centrali (.bin) i Panelu</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
       <div class="setcard" data-menu="sesja"><div class="ic" style="color:var(--violet)" data-ico="session"></div><div class="t"><b>Sesja operatora & Firebase</b><span>Konto Firebase, diagnostyka sygnału RSSI i szyfrowanie</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
@@ -4103,25 +4103,27 @@ body.mode-phone-frame #phone {
   const tagNorm = t => String(t || '').trim().replace(/^v/i, '');
 
   // ───────────────────────── 1. STAN STEROWNIKA (LUSTRO FIREBASE / ESP) ─────────────────────────
-  const now = new Date();
+  // Stan pozostaje niedostępny, dopóki pole nie zostanie odebrane ze sterownika.
+  // Wartości demonstracyjne są ustawiane wyłącznie po świadomym włączeniu trybu DEMO.
+  const receivedFields = new Set();
   const S = {
-    online: true, night: false,
-    t_zewn: 11.8, t_ogrz: 58.4, t_ogrz_sr: 57.1, t_bojler: 48.6, t_panel: 36.2, t_pokoj: 21.4,
-    t_powrot: 44.2, t_trociny: 31.0,
-    cisnienie: 1009, wilgotnosc: 54, dym: 412,
-    dym_wlaczony: true, dym_swiezy: true, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
-    pompa: true, mieszadlo: false, rozpalanie: false,
-    tryb_serwa: 1, trybSerwa: 1, klapa: 81, syberka: 27,
-    wybor: 3, pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
-    rtc_ok: true, dzien: now.getDate(), miesiac: now.getMonth() + 1, rok: now.getFullYear(),
-    ip: '192.168.1.145', firmware: '', uptime: 0, appVersion: 'v0.30.5',
-    wifi_rssi: -58, wifi_quality: 92, ping_ms: 22,
-    // Ustawienia ESP
-    czasOn: 10, czasOff: 30, tempOn: 60, tempOff: 50, antystopWlaczony: true, antystopDni: 10,
-    mieszadloWlaczony: true, mieszadloCzasOn: 30, mieszadloCzasOff: 5,
-    tempZadServo: 60, histerServo: 2, skokKlapy: 10, skokSyberka: 10, odchylTemp: 5, mnoznik: 2,
-    progAlarmTemp: 80, progAlarmDym: 1000, dymCzasOn: 30, dymCzasOff: 120, dymCzasStabilizacji: 10, dymProgTemp: 40, dymTrybPracy: 0,
-    sym: {} // pole -> {wartosc, min}
+    online: false, night: false,
+    t_zewn: NaN, t_ogrz: NaN, t_ogrz_sr: NaN, t_bojler: NaN, t_panel: NaN, t_pokoj: NaN,
+    t_powrot: NaN, t_trociny: NaN,
+    cisnienie: NaN, wilgotnosc: NaN, dym: NaN,
+    dym_wlaczony: false, dym_swiezy: false, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
+    pompa: false, mieszadlo: false, rozpalanie: false,
+    tryb_serwa: 0, trybSerwa: 0, klapa: NaN, syberka: NaN,
+    wybor: 0, pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
+    rtc_ok: false, dzien: 0, miesiac: 0, rok: 0,
+    ip: '', firmware: '', uptime: NaN, appVersion: 'v0.30.5',
+    wifi_rssi: NaN, wifi_quality: NaN, ping_ms: NaN, wifi_ssid: '', weatherCode: NaN,
+    czasOn: NaN, czasOff: NaN, tempOn: NaN, tempOff: NaN, antystopWlaczony: false, antystopDni: NaN,
+    mieszadloWlaczony: false, mieszadloCzasOn: NaN, mieszadloCzasOff: NaN,
+    tempZadServo: NaN, histerServo: NaN, skokKlapy: NaN, skokSyberka: NaN, odchylTemp: NaN, mnoznik: NaN,
+    progAlarmTemp: NaN, progAlarmDym: NaN, dymCzasOn: NaN, dymCzasOff: NaN,
+    dymCzasStabilizacji: NaN, dymProgTemp: NaN, dymTrybPracy: NaN,
+    sym: {} // pole -> {wartosc, min, expiresAt}
   };
 
   const SYM_POLA = {
@@ -4136,21 +4138,27 @@ body.mode-phone-frame #phone {
     wilgotnosc: 'wilgotnosc',
     dym: 'dym'
   };
+  const SYM_BOUNDS = {
+    zewn: [-25, 45], ogrz: [10, 99], bojler: [10, 95], panel: [0, 140], pokoj: [8, 45],
+    ogrz_powrot: [10, 95], ogrz_trociny: [0, 90], cisnienie: [900, 1100],
+    wilgotnosc: [10, 100], dym: [0, 4095]
+  };
   const real = Object.assign({}, S);
   const symAktywna = pole => !!S.sym[pole];
-  const val = (pole, key) => symAktywna(pole) ? S.sym[pole].wartosc : S[key];
+  const hasData = key => receivedFields.has(key) || _isDemoMode;
+  const val = (pole, key) => symAktywna(pole) ? S.sym[pole].wartosc : hasData(key) ? S[key] : NaN;
+  function restoreRealSensor(pole) {
+    const key = SYM_POLA[pole];
+    if (!key) return;
+    S[key] = (_isDemoMode || receivedFields.has(key)) && Number.isFinite(real[key]) ? real[key] : NaN;
+  }
 
   let weatherDays = 7;
   let weatherData = null;
 
   // ───────────────────────── 2. LOGI I TERMINAL ─────────────────────────
-  const systemLogs = [
-    { ts: '10:40:02', tag: 'SYSTEM', msg: 'Sterownik CO połączony z siecią Wi-Fi (IP: 192.168.1.145, RSSI: -58 dBm)', type: 'info' },
-    { ts: '10:40:05', tag: 'RTC', msg: 'Zegar RTC zsynchronizowany: ' + pad2(now.getDate()) + '.' + pad2(now.getMonth() + 1) + '.' + now.getFullYear(), type: 'info' },
-    { ts: '10:40:12', tag: 'POMPA', msg: 'Strategia Auto: start pompy przy 60°C (histereza 10°C)', type: 'info' },
-    { ts: '10:40:30', tag: 'SERWO', msg: 'Pozycja klapy: 45%, syberek: 30% (tryb Auto)', type: 'info' },
-    { ts: '10:41:00', tag: 'TELEMETRIA', msg: 'Próbka #184 zapisana w buforze Firebase', type: 'info' }
-  ];
+  // Logi są puste na starcie; wpisy pojawiają się wyłącznie po rzeczywistym zdarzeniu.
+  const systemLogs = [];
 
   let logSearchQuery = '';
 
@@ -4206,22 +4214,24 @@ body.mode-phone-frame #phone {
   function setTile(id, o) {
     const el = tileEls[id];
     if (!el) return;
-    const isSim = !!o.sim;
-    const stale = !S.online && !isSim;
+    const isSim = !!o.sim || _isDemoMode;
+    const noData = !isSim && (o.value === '—' || o.value === 'NaN' || o.value === 'undefined');
+    const stale = !isSim && (!S.online || !_isFirebaseConnected || Date.now() - _lastFirebaseFetch >= 20000);
     el.className = 'tile ' + (o.cls || 'c-none') + (stale ? ' stale' : '') + (isSim ? ' sim' : '') + (o.state ? ' ' + o.state : '');
     const v = $('.value', el);
     if (v) {
-      const txt = o.value + (o.unit ? '<small>' + o.unit + '</small>' : '');
+      const displayValue = o.sim ? '~' + o.value : o.value;
+      const txt = displayValue + (o.unit ? '<small>' + o.unit + '</small>' : '');
       if (v.innerHTML !== txt) v.innerHTML = txt;
-      v.classList.toggle('sm', String(o.value).length > 9);
+      v.classList.toggle('sm', String(displayValue).length > 9);
       v.style.color = (!stale && o.vcol) || '';
     }
     const desc = $('.desc', el);
     if (desc) desc.textContent = o.desc || '';
     const b = $('.badge', el);
     if (b) {
-      b.textContent = isSim ? o.badge : stale ? 'STALE' : o.badge || 'LIVE';
-      b.className = 'badge ' + (isSim ? 'sim' : stale ? 'stale' : o.badgeCls || 'live');
+      b.textContent = _isDemoMode ? 'SYMULACJA' : isSim ? o.badge : noData ? 'BRAK DANYCH' : stale ? 'STALE' : o.badge || 'LIVE';
+      b.className = 'badge ' + (isSim ? 'sim' : noData || stale ? 'stale' : o.badgeCls || 'live');
     }
     const bar = $('.bar i', el);
     if (bar) bar.style.width = Math.round(Math.max(0, Math.min(1, o.frac || 0)) * 100) + '%';
@@ -4247,9 +4257,9 @@ body.mode-phone-frame #phone {
     setTile('zewn', Object.assign({
       value: fmt1(tz),
       unit: '°C',
-      cls: tz < 0 ? 'c-flame2' : tz > 15 ? 'c-ember' : 'c-flame',
-      frac: (tz + 20) / 60,
-      desc: symAktywna('zewn') ? 'symulacja (' + S.sym.zewn.min + ' min)' : tz < 0 ? 'mróz' : tz > 25 ? 'upał' : 'odczyt stabilny',
+      cls: !Number.isFinite(tz) ? 'c-none' : tz < 0 ? 'c-flame2' : tz > 15 ? 'c-ember' : 'c-flame',
+      frac: Number.isFinite(tz) ? (tz + 20) / 60 : 0,
+      desc: symAktywna('zewn') ? 'symulacja (' + S.sym.zewn.min + ' min)' : !Number.isFinite(tz) ? 'oczekiwanie na odczyt' : tz < 0 ? 'mróz' : tz > 25 ? 'upał' : 'odczyt rzeczywisty',
       vcol: tz < 0 ? '#7dd3fc' : tz > 15 ? '#ffb86b' : '',
       ill: { night: S.night, frost: tz < 0, t_zewn: tz, weatherCode: wCode, isDay: isDayNow }
     }, symBadge('zewn')));
@@ -4260,11 +4270,11 @@ body.mode-phone-frame #phone {
       unit: '°C',
       cls: 'c-ember',
       frac: to / 160,
-      desc: symAktywna('ogrz') ? 'symulacja (' + S.sym.ogrz.min + ' min)' : 'śr. ' + fmt1(S.t_ogrz_sr) + '°C',
-      state: S.alarm_ogrzewanie ? 'err' : '',
-      badge: S.alarm_ogrzewanie ? 'ALARM' : 'LIVE',
-      badgeCls: S.alarm_ogrzewanie ? 'alarm' : 'live',
-      ill: { alarm_ogrzewanie: S.alarm_ogrzewanie, alarm: S.alarm_ogrzewanie, t_ogrz: to }
+      desc: symAktywna('ogrz') ? 'symulacja (' + S.sym.ogrz.min + ' min)' : Number.isFinite(S.t_ogrz_sr) && hasData('t_ogrz_sr') ? 'śr. ' + fmt1(S.t_ogrz_sr) + '°C' : 'brak odczytu średniej',
+      state: hasData('alarm_ogrzewanie') && S.alarm_ogrzewanie ? 'err' : '',
+      badge: hasData('alarm_ogrzewanie') ? (S.alarm_ogrzewanie ? 'ALARM' : 'BRAK ALARMU') : 'ALARM? BRAK DANYCH',
+      badgeCls: hasData('alarm_ogrzewanie') ? (S.alarm_ogrzewanie ? 'alarm' : 'live') : 'stale',
+      ill: { alarm_ogrzewanie: hasData('alarm_ogrzewanie') ? S.alarm_ogrzewanie : null, alarm: hasData('alarm_ogrzewanie') ? S.alarm_ogrzewanie : null, t_ogrz: to }
     }, symBadge('ogrz')));
 
     const tb = val('bojler', 't_bojler');
@@ -4273,7 +4283,7 @@ body.mode-phone-frame #phone {
       unit: '°C',
       cls: 'c-ember',
       frac: (tb - 15) / 55,
-      desc: symAktywna('bojler') ? 'symulacja (' + S.sym.bojler.min + ' min)' : tb > 48 ? 'woda gorąca' : tb > 30 ? 'woda ciepła' : 'woda chłodna',
+      desc: symAktywna('bojler') ? 'symulacja (' + S.sym.bojler.min + ' min)' : !Number.isFinite(tb) ? 'oczekiwanie na odczyt' : tb > 48 ? 'woda gorąca' : tb > 30 ? 'woda ciepła' : 'woda chłodna',
       ill: { t_bojler: tb }
     }, symBadge('bojler')));
 
@@ -4283,11 +4293,11 @@ body.mode-phone-frame #phone {
       unit: '°C',
       cls: 'c-slonce',
       frac: tp / 120,
-      desc: symAktywna('panel') ? 'symulacja (' + S.sym.panel.min + ' min)' : S.night ? 'noc' : 'nasłonecznienie ok',
-      state: S.alarm_panel ? 'err' : '',
-      badge: S.alarm_panel ? 'ALARM' : 'LIVE',
-      badgeCls: S.alarm_panel ? 'alarm' : 'live',
-      ill: { alarm_panel: S.alarm_panel, alarm: S.alarm_panel, night: S.night, t_panel: tp }
+      desc: symAktywna('panel') ? 'symulacja (' + S.sym.panel.min + ' min)' : !Number.isFinite(tp) ? 'oczekiwanie na odczyt' : S.night ? 'noc' : 'nasłonecznienie ok',
+      state: hasData('alarm_panel') && S.alarm_panel ? 'err' : '',
+      badge: hasData('alarm_panel') ? (S.alarm_panel ? 'ALARM' : 'BRAK ALARMU') : 'ALARM? BRAK DANYCH',
+      badgeCls: hasData('alarm_panel') ? (S.alarm_panel ? 'alarm' : 'live') : 'stale',
+      ill: { alarm_panel: hasData('alarm_panel') ? S.alarm_panel : null, alarm: hasData('alarm_panel') ? S.alarm_panel : null, night: S.night, t_panel: tp }
     }, symBadge('panel')));
 
     const tr = val('pokoj', 't_pokoj');
@@ -4296,77 +4306,114 @@ body.mode-phone-frame #phone {
       unit: '°C',
       cls: 'c-ok',
       frac: (tr - 10) / 20,
-      desc: symAktywna('pokoj') ? 'symulacja (' + S.sym.pokoj.min + ' min)' : 'komfort cieplny',
+      desc: symAktywna('pokoj') ? 'symulacja (' + S.sym.pokoj.min + ' min)' : !Number.isFinite(tr) ? 'oczekiwanie na odczyt' : 'komfort cieplny',
       ill: { t_pokoj: tr }
     }, symBadge('pokoj')));
 
     const pc = val('cisnienie', 'cisnienie');
     setTile('cisnienie', Object.assign({
-      value: String(Math.round(pc)),
+      value: Number.isFinite(pc) ? String(Math.round(pc)) : '—',
       unit: 'hPa',
       cls: 'c-fiolet',
       frac: (pc - 970) / 70,
-      desc: symAktywna('cisnienie') ? 'symulacja (' + S.sym.cisnienie.min + ' min)' : pc < 1000 ? 'niż — możliwy gorszy ciąg' : pc > 1020 ? 'wyż' : 'stabilnie',
+      desc: symAktywna('cisnienie') ? 'symulacja (' + S.sym.cisnienie.min + ' min)' : !Number.isFinite(pc) ? 'oczekiwanie na odczyt' : pc < 1000 ? 'niż — możliwy gorszy ciąg' : pc > 1020 ? 'wyż' : 'stabilnie',
       ill: { cisnienie: pc }
     }, symBadge('cisnienie')));
 
     const hu = val('wilgotnosc', 'wilgotnosc');
     setTile('wilgotnosc', Object.assign({
-      value: String(Math.round(hu)),
+      value: Number.isFinite(hu) ? String(Math.round(hu)) : '—',
       unit: '%',
       cls: 'c-flame2',
       frac: hu / 100,
-      desc: symAktywna('wilgotnosc') ? 'symulacja (' + S.sym.wilgotnosc.min + ' min)' : hu > 70 ? 'podwyższona' : 'w normie',
+      desc: symAktywna('wilgotnosc') ? 'symulacja (' + S.sym.wilgotnosc.min + ' min)' : !Number.isFinite(hu) ? 'oczekiwanie na odczyt' : hu > 70 ? 'podwyższona' : 'w normie',
       ill: { wilgotnosc: hu }
     }, symBadge('wilgotnosc')));
 
-    // POMPA — Szczegółowa prezentacja strategii: Trociniak (czasowy) vs Kopciuch (temperaturowy) vs Auto
-    const stratBadge = S.pompa ? (S.wybor === 1 ? '⏱️ CZASOWY' : S.wybor === 2 ? '🌡️ TEMP.' : '⚡ AUTO') : 'POSTÓJ';
-    let stratDesc = '';
-    if (S.wybor === 1) {
-      stratDesc = `⏱️ Czasowy: ${S.czasOn}m ON / ${S.czasOff}m OFF` + (S.pompa_override_min > 0 ? ` (${S.pompa_override_min}m)` : '');
-    } else if (S.wybor === 2) {
-      stratDesc = `🌡️ Temp: ON ≥ ${S.tempOn}° / OFF ≤ ${S.tempOff}°` + (S.pompa_override_min > 0 ? ` (${S.pompa_override_min}m)` : '');
-    } else {
-      stratDesc = `⚡ Automatyczny: start przy ${S.tempOn}°C` + (S.pompa_override_min > 0 ? ` (${S.pompa_override_min}m)` : '');
+    // POMPA — nie mapuj nieznanego kodu strategii na AUTO.
+    const pumpKnown = hasData('pompa');
+    const pumpModeKnown = hasData('wybor') && Number.isInteger(S.wybor) && S.wybor >= 1 && S.wybor <= 3;
+    const stratBadge = !pumpKnown ? 'BRAK DANYCH' : !S.pompa ? 'POSTÓJ' : !pumpModeKnown ? 'PRACA' :
+      S.wybor === 1 ? '⏱️ CZASOWY' : S.wybor === 2 ? '🌡️ TEMP.' : '⚡ AUTO';
+    let stratDesc = !pumpKnown ? 'oczekiwanie na stan pompy' : !pumpModeKnown ? 'tryb pracy: brak prawidłowego odczytu' : '';
+    if (pumpKnown && pumpModeKnown && S.wybor === 1) {
+      stratDesc = hasData('czasOn') && hasData('czasOff') ? `⏱️ Czasowy: ${S.czasOn}m ON / ${S.czasOff}m OFF` : '⏱️ Czasowy · brak odczytu nastaw';
+    } else if (pumpKnown && pumpModeKnown && S.wybor === 2) {
+      stratDesc = hasData('tempOn') && hasData('tempOff') ? `🌡️ Temp: ON ≥ ${S.tempOn}° / OFF ≤ ${S.tempOff}°` : '🌡️ Temperaturowy · brak odczytu nastaw';
+    } else if (pumpKnown && pumpModeKnown && S.wybor === 3) {
+      stratDesc = hasData('tempOn') ? `⚡ Automatyczny: start przy ${S.tempOn}°C` : '⚡ Automatyczny · brak odczytu nastaw';
     }
+    if (pumpKnown && S.pompa && S.pompa_override_min > 0) stratDesc += ` (${S.pompa_override_min}m override)`;
 
     setTile('pompa', {
-      value: S.pompa ? 'WŁĄCZONA' : 'WYŁĄCZONA',
-      cls: 'c-flame',
-      state: S.pompa ? 'ok' : '',
-      frac: S.pompa ? 1 : 0,
+      value: !pumpKnown ? '—' : S.pompa ? 'WŁĄCZONA' : 'WYŁĄCZONA',
+      cls: pumpKnown ? 'c-flame' : 'c-none',
+      state: pumpKnown && S.pompa ? 'ok' : '',
+      frac: pumpKnown && S.pompa ? 1 : 0,
       desc: stratDesc,
       badge: stratBadge,
-      badgeCls: S.pompa ? 'live' : 'stale',
-      ill: { pompa: S.pompa, wybor: S.wybor }
+      badgeCls: pumpKnown ? 'live' : 'stale',
+      ill: { pompa: pumpKnown ? S.pompa : null, wybor: pumpModeKnown ? S.wybor : null }
     });
 
-    const klapaPct = Math.round(S.klapa * 100 / 180), sybPct = Math.round(S.syberka * 100 / 90);
-    setTile('serwo', { value: trybNazwa[S.tryb_serwa] || '—', cls: S.tryb_serwa === 1 ? 'c-flame' : 'c-none', state: S.tryb_serwa === 2 ? 'warn' : S.tryb_serwa === 3 ? 'err' : '', frac: klapaPct / 100, desc: 'klapa ' + S.klapa + '° • syberka ' + S.syberka + '°' + (S.serwo_override_min > 0 ? ' • ' + S.serwo_override_min + ' min' : ''), badge: 'K' + klapaPct + '% S' + sybPct + '%', badgeCls: 'active', ill: { tryb_serwa: S.tryb_serwa, klapa: S.klapa } });
+    const servoKnown = hasData('tryb_serwa') && Number.isInteger(S.tryb_serwa) && S.tryb_serwa >= 1 && S.tryb_serwa <= 3;
+    const flapKnown = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180;
+    const damperKnown = hasData('syberka') && Number.isInteger(S.syberka) && S.syberka >= 0 && S.syberka <= 90;
+    const klapaPct = flapKnown ? Math.round(S.klapa * 100 / 180) : null;
+    const sybPct = damperKnown ? Math.round(S.syberka * 100 / 90) : null;
+    setTile('serwo', {
+      value: servoKnown ? trybNazwa[S.tryb_serwa] : '—',
+      cls: servoKnown ? 'c-flame' : 'c-none',
+      state: !servoKnown ? '' : S.tryb_serwa === 2 ? 'warn' : S.tryb_serwa === 3 ? 'err' : '',
+      frac: klapaPct == null ? 0 : klapaPct / 100,
+      desc: 'klapa ' + (flapKnown ? S.klapa + '°' : '—') + ' • syberek ' + (damperKnown ? S.syberka + '°' : '—') + (S.serwo_override_min > 0 ? ' • ' + S.serwo_override_min + ' min' : ''),
+      badge: klapaPct != null && sybPct != null ? 'K' + klapaPct + '% S' + sybPct + '%' : 'BRAK DANYCH',
+      badgeCls: servoKnown && flapKnown && damperKnown ? 'active' : 'stale',
+      ill: { tryb_serwa: servoKnown ? S.tryb_serwa : null, klapa: flapKnown ? S.klapa : NaN }
+    });
 
-    setTile('mieszadlo', { value: S.mieszadlo ? 'WŁĄCZONE' : 'WYŁĄCZONE', cls: 'c-ok', state: S.mieszadlo ? 'ok' : '', frac: S.mieszadlo ? 1 : 0, desc: S.rozpalanie ? 'override: rozpalanie' : S.mieszadloWlaczony ? 'cykl ' + S.mieszadloCzasOn + ' s / ' + S.mieszadloCzasOff + ' min' : 'automatyka wyłączona', badge: S.mieszadlo ? 'PRACUJE' : 'POSTÓJ', badgeCls: S.mieszadlo ? 'live' : 'stale', ill: { mieszadlo: S.mieszadlo } });
+    const mixerKnown = hasData('mieszadlo');
+    const mixerEnabledKnown = hasData('mieszadloWlaczony');
+    setTile('mieszadlo', {
+      value: mixerKnown ? S.mieszadlo ? 'WŁĄCZONE' : 'WYŁĄCZONE' : '—',
+      cls: mixerKnown ? 'c-ok' : 'c-none',
+      state: mixerKnown && S.mieszadlo ? 'ok' : '',
+      frac: mixerKnown && S.mieszadlo ? 1 : 0,
+      desc: !mixerKnown ? 'oczekiwanie na stan mieszadła' : hasData('rozpalanie') && S.rozpalanie ? 'override: rozpalanie' : mixerEnabledKnown && S.mieszadloWlaczony ? 'automatyka aktywna' : mixerEnabledKnown ? 'automatyka wyłączona' : 'tryb automatyki nieznany',
+      badge: !mixerKnown ? 'BRAK DANYCH' : S.mieszadlo ? 'PRACUJE' : 'POSTÓJ',
+      badgeCls: mixerKnown ? 'live' : 'stale',
+      ill: { mieszadlo: mixerKnown ? S.mieszadlo : null }
+    });
 
     const dymV = val('dym', 'dym');
-    const dymDis = !S.dym_wlaczony && !symAktywna('dym');
+    const dymDataKnown = Number.isFinite(dymV);
+    const dymDis = hasData('dym_wlaczony') && !S.dym_wlaczony && !symAktywna('dym');
+    const smokeAlarmKnown = hasData('dym_alarm');
     setTile('dym', Object.assign({
-      value: dymDis ? 'OFF' : String(Math.round(dymV)),
-      unit: dymDis ? '' : 'ADC',
+      value: dymDis ? 'OFF' : dymDataKnown ? String(Math.round(dymV)) : '—',
+      unit: dymDis || !dymDataKnown ? '' : 'ADC',
       cls: 'c-none',
-      state: dymDis ? 'dis' : S.dym_alarm ? 'err' : '',
-      frac: dymDis ? 0 : dymV / 4095,
-      desc: symAktywna('dym') ? 'symulacja (' + S.sym.dym.min + ' min)' : dymDis ? 'piec zimny — czujnik wyłączony' : S.dym_alarm ? 'próg ' + S.progAlarmDym + ' ADC przekroczony' : S.dym_swiezy ? 'próg alarmu ' + S.progAlarmDym : 'ostatni pomiar',
-      badge: dymDis ? 'WYŁ.' : S.dym_alarm ? 'ALARM' : 'OK',
-      badgeCls: dymDis ? 'stale' : S.dym_alarm ? 'alarm' : 'live',
-      ill: { dym_alarm: S.dym_alarm, off: dymDis, dym: dymV }
+      state: dymDis ? 'dis' : smokeAlarmKnown && S.dym_alarm ? 'err' : '',
+      frac: dymDis || !dymDataKnown ? 0 : dymV / 4095,
+      desc: symAktywna('dym') ? 'symulacja (' + S.sym.dym.min + ' min)' : dymDis ? 'czujnik wyłączony (odczyt odebrany)' : !dymDataKnown ? 'oczekiwanie na odczyt' : smokeAlarmKnown && S.dym_alarm ? 'próg alarmu przekroczony' : !smokeAlarmKnown ? 'stan alarmu — brak danych' : hasData('dym_swiezy') && S.dym_swiezy && hasData('progAlarmDym') ? 'próg alarmu ' + S.progAlarmDym : 'odczyt odebrany',
+      badge: dymDis ? 'WYŁ.' : smokeAlarmKnown ? (S.dym_alarm ? 'ALARM' : 'BRAK ALARMU') : dymDataKnown ? 'ALARM? BRAK DANYCH' : 'BRAK DANYCH',
+      badgeCls: dymDis ? 'stale' : smokeAlarmKnown && S.dym_alarm ? 'alarm' : smokeAlarmKnown ? 'live' : 'stale',
+      ill: { dym_alarm: smokeAlarmKnown ? S.dym_alarm : null, off: dymDis, dym: dymDataKnown ? dymV : NaN }
     }, symBadge('dym')));
 
-    // Hero + Pasek + Baner
-    const anyAlarm = S.dym_alarm || S.alarm_ogrzewanie || S.alarm_panel;
+    // Hero + Pasek + Baner. Brak flag alarmowych nie oznacza stanu all-clear.
+    const alarmKnown = hasData('dym_alarm') && hasData('alarm_ogrzewanie') && hasData('alarm_panel');
+    const anyAlarm = (hasData('dym_alarm') && S.dym_alarm) ||
+      (hasData('alarm_ogrzewanie') && S.alarm_ogrzewanie) ||
+      (hasData('alarm_panel') && S.alarm_panel);
+    const localSimSuffix = Object.keys(S.sym).length ? ' · SYM LOKALNA' : '';
+    const connectionLabel = _isDemoMode ? '🧪 SYMULACJA' : !_isFirebaseConnected ? '○ BRAK SESJI' + localSimSuffix :
+      Date.now() - _lastFirebaseFetch >= 20000 ? '○ DANE NIEAKTUALNE' + localSimSuffix :
+        !S.online ? (hasData('online') ? '○ OFFLINE' : '○ BRAK TELEMETRII') + localSimSuffix : '● LIVE' + localSimSuffix;
     const ht = $('#heroTemp');
     if (ht) {
-      ht.textContent = fmt1(to) + ' °C';
-      ht.classList.toggle('err', !!S.alarm_ogrzewanie);
+      ht.textContent = (symAktywna('ogrz') ? '~' : '') + fmt1(to) + ' °C';
+      ht.classList.toggle('err', hasData('alarm_ogrzewanie') && !!S.alarm_ogrzewanie);
     }
     const hm = $('#heroMode');
     if (hm) {
@@ -4375,13 +4422,13 @@ body.mode-phone-frame #phone {
     }
     const hp = $('#heroPump');
     if (hp) {
-      hp.textContent = S.pompa ? 'ON' : 'OFF';
-      hp.className = S.pompa ? 'ok' : '';
+      hp.textContent = pumpKnown ? (S.pompa ? 'ON' : 'OFF') : '—';
+      hp.className = pumpKnown && S.pompa ? 'ok' : '';
     }
     const ha = $('#heroAlarm');
     if (ha) {
-      ha.textContent = anyAlarm ? 'ALARM' : 'OK';
-      ha.className = anyAlarm ? 'err' : 'ok';
+      ha.textContent = anyAlarm ? 'ALARM' : alarmKnown ? 'OK' : 'BRAK DANYCH';
+      ha.className = anyAlarm ? 'err' : alarmKnown ? 'ok' : '';
     }
 
     // Aktualizacja Hero Kotła SVG (oddzielnie Bojler na zbiorniku, oddzielnie Piec w ogniu)
@@ -4392,45 +4439,55 @@ body.mode-phone-frame #phone {
 
     const st = $('#heroState');
     if (st) {
-      st.textContent = !S.online ? 'BRAK ŁĄCZNOŚCI' : anyAlarm ? 'ALARM' : to > 45 ? 'GRZANIE' : 'CZUWANIE';
-      st.className = 'pill ' + (!S.online ? 'warn' : anyAlarm ? 'err' : 'live');
+      st.textContent = !_isFirebaseConnected && !_isDemoMode ? 'BRAK SESJI' : !S.online ?
+        (hasData('online') ? 'OFFLINE' : 'OCZEKIWANIE NA TELEMETRIĘ') :
+        anyAlarm ? 'ALARM' : symAktywna('ogrz') ? 'SYMULACJA LOKALNA' : !Number.isFinite(to) ? 'OCZEKIWANIE' : to > 45 ? 'GRZANIE' : 'CZUWANIE';
+      st.className = 'pill ' + (!S.online ? 'warn' : anyAlarm ? 'err' : symAktywna('ogrz') || !Number.isFinite(to) ? 'warn' : 'live');
     }
     const ab = $('#alarmBanner');
     if (ab) ab.classList.toggle('on', anyAlarm);
     const at = $('#alarmText');
-    if (at) at.textContent = S.dym_alarm ? 'ALARM DYMU — sprawdź kotłownię' : S.alarm_ogrzewanie ? 'PRZEGRZANIE PIECA — ' + fmt1(to) + ' °C' : 'PRZEGRZANIE PANELU — ' + fmt1(tp) + ' °C';
+    if (at) at.textContent = hasData('dym_alarm') && S.dym_alarm ? 'ALARM DYMU — sprawdź kotłownię' :
+      hasData('alarm_ogrzewanie') && S.alarm_ogrzewanie ? 'PRZEGRZANIE PIECA — ' + fmt1(to) + ' °C' :
+      'PRZEGRZANIE PANELU — ' + fmt1(tp) + ' °C';
 
     const chip = $('#chip');
     if (chip) {
-      chip.textContent = S.online ? '● LIVE' : '● STALE';
-      chip.className = 'chip' + (S.online ? '' : ' stale');
+      chip.textContent = connectionLabel;
+      chip.className = 'chip' + (_isDemoMode ? ' demo' : S.online ? '' : ' stale');
     }
     const pg = $('#pg-pulpit');
     if (pg) pg.classList.toggle('offline', !S.online);
 
-    // Quick Card z prezentacją trybu pompy i serwa
-    const pumpSub = S.wybor === 1 ? '⏱️ Czasowy' : S.wybor === 2 ? '🌡️ Temp.' : '⚡ Auto';
-    setQuick('qPompa', (S.pompa ? 'WŁĄCZONA' : 'WYŁĄCZONA'), S.pompa ? 'ok' : '', pumpSub);
-    
-    let serwoStatus = 'AUTO';
-    let serwoSub = 'klapa ' + S.klapa + '°';
+    // Quick Card — stan bez wartości domyślnych, tryb nieznany nie oznacza AUTO.
+    const pumpSub = !pumpKnown ? 'oczekiwanie na stan' : !pumpModeKnown ? 'tryb pracy: brak odczytu' :
+      S.wybor === 1 ? '⏱️ Czasowy' : S.wybor === 2 ? '🌡️ Temperaturowy' : '⚡ Auto';
+    setQuick('qPompa', pumpKnown ? (S.pompa ? 'WŁĄCZONA' : 'WYŁĄCZONA') : '—', pumpKnown && S.pompa ? 'ok' : '', pumpSub);
+
+    let serwoStatus = '—';
+    let serwoSub = flapKnown ? 'klapa ' + S.klapa + '°' : 'pozycja klapy: brak prawidłowego odczytu';
     let serwoCls = '';
-    if (S.tryb_serwa === 1) {
-      serwoStatus = 'AUTO (' + klapaPct + '%)';
+    if (servoKnown && S.tryb_serwa === 1) {
+      serwoStatus = 'AUTO' + (flapKnown ? ' (' + klapaPct + '%)' : '');
       serwoCls = 'ok';
-    } else if (S.tryb_serwa === 2) {
-      serwoStatus = 'RĘCZNY (' + klapaPct + '%)';
+    } else if (servoKnown && S.tryb_serwa === 2) {
+      serwoStatus = 'RĘCZNY' + (flapKnown ? ' (' + klapaPct + '%)' : '');
       serwoCls = 'warn';
-    } else if (S.tryb_serwa === 3) {
+    } else if (servoKnown && S.tryb_serwa === 3) {
       serwoStatus = 'BEZPIECZNY';
-      serwoSub = 'klapa 0° (stop)';
+      serwoSub = 'tryb bezpieczny';
       serwoCls = 'err';
     }
     setQuick('qSerwo', serwoStatus, serwoCls, serwoSub);
-    setQuick('qMiesz', S.mieszadlo ? 'WŁĄCZONE' : 'WYŁĄCZONE', S.mieszadlo ? 'ok' : '', S.mieszadlo ? 'praca aktywna' : 'ster. ręczne');
+    setQuick('qMiesz', mixerKnown ? (S.mieszadlo ? 'WŁĄCZONE' : 'WYŁĄCZONE') : '—',
+      mixerKnown && S.mieszadlo ? 'ok' : '',
+      !mixerKnown ? 'oczekiwanie na stan' : hasData('rozpalanie') && S.rozpalanie ? 'override: rozpalanie' :
+        mixerEnabledKnown ? S.mieszadloWlaczony ? 'automatyka aktywna' : 'automatyka wyłączona' : 'tryb automatyki nieznany');
 
     const cv = $('#clockVal'); if (cv) cv.textContent = pad2(new Date().getHours()) + ':' + pad2(new Date().getMinutes());
-    const cd = $('#clockDesc'); if (cd) cd.textContent = S.rtc_ok ? S.dzien + '.' + S.miesiac + '.' + S.rok : 'RTC niegotowy';
+    const rtcDateKnown = hasData('dzien') && hasData('miesiac') && hasData('rok') && S.dzien >= 1 && S.dzien <= 31 && S.miesiac >= 1 && S.miesiac <= 12 && S.rok >= 2000 && S.rok <= 2100;
+    const cd = $('#clockDesc'); if (cd) cd.textContent = !hasData('rtc_ok') ? 'oczekiwanie na odczyt RTC' :
+      !S.rtc_ok ? 'RTC niegotowy' : rtcDateKnown ? S.dzien + '.' + S.miesiac + '.' + S.rok : 'RTC gotowy · brak daty';
     drawTrend();
   }
 
@@ -4446,13 +4503,17 @@ body.mode-phone-frame #phone {
 
   // ───────────────────────── 5. MINI TREND NA PULPICIE ─────────────────────────
   const hist = [];
-  for (let i = 0; i < 60; i++) hist.push({ o: 55 + Math.sin(i / 7) * 4, b: 46 + Math.sin(i / 9) * 2, z: 11 + Math.sin(i / 11) });
   function drawTrend() {
     const c = $('#trend'); if (!c) return;
     const r = c.getBoundingClientRect(); if (!r.width) return;
     const dpr = window.devicePixelRatio || 1;
     c.width = r.width * dpr; c.height = 80 * dpr;
     const g = c.getContext('2d'); g.scale(dpr, dpr); g.clearRect(0, 0, r.width, 80);
+    if (hist.length < 2) {
+      g.fillStyle = '#718096'; g.font = '11px Roboto,sans-serif';
+      g.fillText('Oczekiwanie na rzeczywiste próbki telemetryczne', 8, 43);
+      return;
+    }
     const series = [['o', '#ff9f43'], ['b', '#ffd166'], ['z', '#00d4f5']];
     series.forEach(([k, col]) => {
       const vals = hist.map(h => h[k]); const mn = Math.min(...vals) - 1, mx = Math.max(...vals) + 1;
@@ -4599,6 +4660,7 @@ body.mode-phone-frame #phone {
   }
 
   async function pollFirebase() {
+    if (_isDemoMode) return;
     try {
       const data = await fbGet('/piec/status.json');
       if (data && typeof data === 'object') {
@@ -4613,55 +4675,119 @@ body.mode-phone-frame #phone {
   }
 
   function applyIncomingData(d) {
-    if (typeof d.t_ogrz === 'number' && !symAktywna('ogrz')) S.t_ogrz = d.t_ogrz;
-    if (typeof d.t_ogrz_sr === 'number') S.t_ogrz_sr = d.t_ogrz_sr;
-    if (typeof d.t_bojler === 'number' && !symAktywna('bojler')) S.t_bojler = d.t_bojler;
-    if (typeof d.t_zewn === 'number' && !symAktywna('zewn')) S.t_zewn = d.t_zewn;
-    if (typeof d.t_panel === 'number' && !symAktywna('panel')) S.t_panel = d.t_panel;
-    if (typeof d.t_pokoj === 'number' && !symAktywna('pokoj')) S.t_pokoj = d.t_pokoj;
-    if (typeof d.t_powrot === 'number' && !symAktywna('ogrz_powrot')) S.t_powrot = d.t_powrot;
-    if (typeof d.t_trociny === 'number' && !symAktywna('ogrz_trociny')) S.t_trociny = d.t_trociny;
-    if (typeof d.cisnienie === 'number' && !symAktywna('cisnienie')) S.cisnienie = d.cisnienie;
-    if (typeof d.wilgotnosc === 'number' && !symAktywna('wilgotnosc')) S.wilgotnosc = d.wilgotnosc;
-    if (typeof d.dym === 'number' && !symAktywna('dym')) S.dym = d.dym;
-    if (typeof d.dym_wlaczony === 'boolean') S.dym_wlaczony = d.dym_wlaczony;
-    if (typeof d.dym_alarm === 'boolean' && !symAktywna('dym')) S.dym_alarm = d.dym_alarm;
-    if (typeof d.dym_swiezy === 'boolean') S.dym_swiezy = d.dym_swiezy;
-    if (typeof d.alarm_ogrzewanie === 'boolean' && !symAktywna('ogrz')) S.alarm_ogrzewanie = d.alarm_ogrzewanie;
-    if (typeof d.alarm_panel === 'boolean' && !symAktywna('panel')) S.alarm_panel = d.alarm_panel;
-    if (typeof d.pompa === 'boolean') S.pompa = d.pompa;
-    if (typeof d.tryb_serwa === 'number') { S.tryb_serwa = d.tryb_serwa; S.trybSerwa = d.tryb_serwa; }
-    if (typeof d.klapa === 'number') S.klapa = d.klapa;
-    if (typeof d.syberka === 'number') S.syberka = d.syberka;
-    if (typeof d.wybor === 'number') S.wybor = d.wybor;
-    if (typeof d.czasOn === 'number') S.czasOn = d.czasOn;
-    if (typeof d.czasOff === 'number') S.czasOff = d.czasOff;
-    if (typeof d.tempOn === 'number') S.tempOn = d.tempOn;
-    if (typeof d.tempOff === 'number') S.tempOff = d.tempOff;
-    if (typeof d.progAlarmTemp === 'number') S.progAlarmTemp = d.progAlarmTemp;
-    if (typeof d.progAlarmDym === 'number') S.progAlarmDym = d.progAlarmDym;
-    if (typeof d.mieszadlo === 'boolean') S.mieszadlo = d.mieszadlo;
-    if (typeof d.mieszadloWlaczony === 'boolean') S.mieszadloWlaczony = d.mieszadloWlaczony;
-    if (typeof d.mieszadloCzasOn === 'number') S.mieszadloCzasOn = d.mieszadloCzasOn;
-    if (typeof d.mieszadloCzasOff === 'number') S.mieszadloCzasOff = d.mieszadloCzasOff;
-    if (typeof d.ip === 'string') S.ip = d.ip;
-    if (typeof d.fw === 'string' && d.fw.trim()) S.firmware = d.fw.trim();
-    if (typeof d.uptime === 'number') S.uptime = d.uptime;
-    // [FIX-OTA-WERSJA-CENTRALI] firmware wysyla "wifi_rssi", nie "rssi".
-    if (typeof d.wifi_rssi === 'number') S.wifi_rssi = d.wifi_rssi;
-    if (typeof d.wifi_ssid === 'string') S.wifi_ssid = d.wifi_ssid;
-    else if (typeof d.rssi === 'number') S.wifi_rssi = d.rssi;
-    S.online = true;
+    if (_isDemoMode || !d || typeof d !== 'object') return;
+    receivedFields.clear();
 
-    Object.assign(real, S);
-    hist.push({ o: val('ogrz', 't_ogrz'), b: val('bojler', 't_bojler'), z: val('zewn', 't_zewn') });
-    if (hist.length > 60) hist.shift();
+    const numericRules = {
+      t_ogrz: [10, 99], t_ogrz_sr: [10, 99], t_bojler: [10, 95], t_zewn: [-25, 45],
+      t_panel: [0, 140], t_pokoj: [8, 45], t_powrot: [10, 95], t_trociny: [0, 90],
+      cisnienie: [900, 1100], wilgotnosc: [10, 100], dym: [0, 4095],
+      tryb_serwa: [1, 3], klapa: [0, 180], syberka: [0, 90], wybor: [1, 3], czasOn: [1, 255], czasOff: [1, 255],
+      tempOn: [0, 100], tempOff: [0, 100], antystopDni: [1, 45], mieszadloCzasOn: [1, 255],
+      mieszadloCzasOff: [1, 180], tempZadServo: [0, 100], histerServo: [0, 50],
+      skokKlapy: [1, 100], skokSyberka: [1, 100], odchylTemp: [1, 50], mnoznik: [1, 10],
+      progAlarmTemp: [0, 100], progAlarmDym: [0, 4095], dymCzasOn: [20, 600],
+      dymCzasOff: [10, 600], dymCzasStabilizacji: [5, 590], dymProgTemp: [0, 200],
+      dymTrybPracy: [0, 1], pompa_override_min: [0, 1440], mieszadlo_override_min: [0, 1440],
+      serwo_override_min: [0, 1440], dzien: [1, 31], miesiac: [1, 12], rok: [2000, 2100],
+      uptime: [0, Number.MAX_SAFE_INTEGER], wifi_rssi: [-127, 0], wifi_quality: [0, 100],
+      ping_ms: [0, 100000]
+    };
+    const integerKeys = new Set([
+      'tryb_serwa', 'trybSerwa', 'klapa', 'syberka', 'wybor', 'czasOn', 'czasOff',
+      'antystopDni', 'mieszadloCzasOn', 'mieszadloCzasOff', 'skokKlapy', 'skokSyberka',
+      'odchylTemp', 'mnoznik', 'progAlarmDym', 'dymCzasOn', 'dymCzasOff',
+      'dymCzasStabilizacji', 'dymTrybPracy', 'pompa_override_min', 'mieszadlo_override_min',
+      'serwo_override_min', 'dzien', 'miesiac', 'rok', 'wifi_quality', 'ping_ms'
+    ]);
+    const sensorPole = Object.fromEntries(Object.entries(SYM_POLA).map(([pole, key]) => [key, pole]));
+    const numericKeys = Object.keys(numericRules);
+
+    numericKeys.forEach(key => {
+      const bounds = numericRules[key];
+      const raw = d[key];
+      const value = typeof raw === 'number' && Number.isFinite(raw) && raw >= bounds[0] && raw <= bounds[1] &&
+        (!integerKeys.has(key) || Number.isInteger(raw)) ? raw : NaN;
+      const pole = sensorPole[key];
+      if (Number.isFinite(value)) {
+        receivedFields.add(key);
+        real[key] = value;
+        if (!pole || !symAktywna(pole)) S[key] = value;
+      } else {
+        real[key] = NaN;
+        if (!pole || !symAktywna(pole)) S[key] = NaN;
+      }
+    });
+
+    // trybSerwa i rssi są historycznymi aliasami pól w firmware.
+    if (!receivedFields.has('tryb_serwa')) {
+      const raw = d.trybSerwa;
+      if (Number.isInteger(raw) && raw >= 1 && raw <= 3) {
+        receivedFields.add('tryb_serwa');
+        S.tryb_serwa = raw; S.trybSerwa = raw; real.tryb_serwa = raw;
+      } else {
+        S.tryb_serwa = 0; S.trybSerwa = 0; real.tryb_serwa = NaN;
+      }
+    } else {
+      S.trybSerwa = S.tryb_serwa;
+    }
+    if (!receivedFields.has('wifi_rssi') && typeof d.rssi === 'number' && Number.isFinite(d.rssi) && d.rssi >= -127 && d.rssi <= 0) {
+      receivedFields.add('wifi_rssi'); S.wifi_rssi = d.rssi; real.wifi_rssi = d.rssi;
+    }
+
+    const flagKeys = [
+      'online', 'night', 'dym_wlaczony', 'dym_swiezy', 'dym_alarm', 'alarm_ogrzewanie',
+      'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie', 'antystopWlaczony',
+      'mieszadloWlaczony', 'rtc_ok'
+    ];
+    flagKeys.forEach(key => {
+      const raw = d[key];
+      const valid = typeof raw === 'boolean' || (typeof raw === 'number' && (raw === 0 || raw === 1));
+      if (valid) {
+        const value = raw === true || raw === 1;
+        receivedFields.add(key);
+        S[key] = value;
+        real[key] = value;
+      } else {
+        S[key] = false;
+        real[key] = undefined;
+      }
+    });
+
+    const textKeys = { ip: 'ip', fw: 'firmware', wifi_ssid: 'wifi_ssid' };
+    Object.entries(textKeys).forEach(([key, target]) => {
+      const value = typeof d[key] === 'string' ? d[key].trim() : '';
+      if (value) {
+        receivedFields.add(key);
+        S[target] = value;
+        real[target] = value;
+      } else {
+        S[target] = '';
+        real[target] = '';
+      }
+    });
+
+    // Brak pola online: wywnioskuj dostępność wyłącznie z poprawnie odebranych pól.
+    S.online = receivedFields.has('online') ? S.online :
+      ['t_ogrz', 't_bojler', 't_zewn', 't_panel', 't_pokoj', 'cisnienie', 'wilgotnosc', 'dym', 'pompa', 'mieszadlo', 'tryb_serwa', 'klapa', 'syberka', 'ip', 'fw', 'wifi_rssi'].some(key => receivedFields.has(key));
+
+    const realMiniReady = ['t_ogrz', 't_bojler', 't_zewn'].every(key => receivedFields.has(key) && Number.isFinite(real[key])) &&
+      !['ogrz', 'bojler', 'zewn'].some(symAktywna);
+    if (S.online && realMiniReady) {
+      hist.push({ o: real.t_ogrz, b: real.t_bojler, z: real.t_zewn });
+      if (hist.length > 60) hist.shift();
+    }
 
     updateConnectionStateUI();
     renderDashboard();
     refreshSheet();
     updateChartsLiveFeed();
-    if (typeof SolarAnalytics !== "undefined") SolarAnalytics.recordSample(S.t_panel, S.t_bojler, S.t_zewn, (typeof weatherData !== "undefined" && weatherData && weatherData.current) ? (weatherData.current.uv * 120) : 0, (typeof weatherData !== "undefined" && weatherData && weatherData.current) ? weatherData.current.uv : 0, (typeof weatherData !== "undefined" && weatherData && weatherData.current) ? weatherData.current.cloud : 30);
+    const weather = typeof weatherData !== 'undefined' && weatherData ? weatherData.current : null;
+    const solarReady = weather && ['t_panel', 't_bojler', 't_zewn'].every(key => receivedFields.has(key) && Number.isFinite(real[key])) &&
+      !['panel', 'bojler', 'zewn'].some(symAktywna);
+    if (solarReady && typeof SolarAnalytics !== 'undefined') {
+      SolarAnalytics.recordSample(real.t_panel, real.t_bojler, real.t_zewn, weather.uv * 120, weather.uv, weather.cloud);
+    }
   }
 
   function updateConnectionStateUI() {
@@ -4811,13 +4937,35 @@ body.mode-phone-frame #phone {
   }
 
   function enableDemoMode() {
+    // Jawne działanie użytkownika: od tego momentu próbki są wyłącznie DEMO.
     _isDemoMode = true;
     _isFirebaseConnected = false;
-    S.online = true;
+    receivedFields.clear();
+    Object.keys(S.sym).forEach(pole => delete S.sym[pole]);
+    Object.assign(S, {
+      online: true, night: false,
+      t_zewn: 11.8, t_ogrz: 58.4, t_ogrz_sr: 57.1, t_bojler: 48.6, t_panel: 36.2, t_pokoj: 21.4,
+      t_powrot: 44.2, t_trociny: 31.0, cisnienie: 1009, wilgotnosc: 54, dym: 412,
+      dym_wlaczony: true, dym_swiezy: true, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
+      pompa: true, mieszadlo: false, rozpalanie: false,
+      tryb_serwa: 1, trybSerwa: 1, klapa: 81, syberka: 27, wybor: 3,
+      pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
+      rtc_ok: true, dzien: new Date().getDate(), miesiac: new Date().getMonth() + 1, rok: new Date().getFullYear(),
+      ip: '', firmware: '', uptime: 0, wifi_rssi: NaN, wifi_quality: NaN, ping_ms: NaN, wifi_ssid: '',
+      czasOn: 10, czasOff: 30, tempOn: 60, tempOff: 50, antystopWlaczony: true, antystopDni: 10,
+      mieszadloWlaczony: true, mieszadloCzasOn: 30, mieszadloCzasOff: 5,
+      tempZadServo: 60, histerServo: 2, skokKlapy: 10, skokSyberka: 10, odchylTemp: 5, mnoznik: 2,
+      progAlarmTemp: 80, progAlarmDym: 1000, dymCzasOn: 30, dymCzasOff: 120,
+      dymCzasStabilizacji: 10, dymProgTemp: 40, dymTrybPracy: 0
+    });
+    Object.assign(real, S);
+    hist.length = 0;
+    drawTrend();
     closeAuthModal();
     updateConnectionStateUI();
-    showToast('SYMULACJA', 'Aktywowano tryb symulacji offline', 'ok');
-    addLog('SYSTEM', 'Uruchomiono lokalny tryb symulacji', 'info');
+    renderDashboard();
+    showToast('SYMULACJA', 'Aktywowano tryb symulacji offline — dane nie są telemetrią', 'warn');
+    addLog('SYSTEM', 'Użytkownik uruchomił lokalny tryb symulacji (bez sterownika)', 'warn');
     if (currentPage === 1) loadTelemetryRange(activeRangeSec);
   }
 
@@ -4874,67 +5022,85 @@ body.mode-phone-frame #phone {
   }
 
   async function sendCommand(cmd) {
+    const commandText = String(cmd || '').trim();
+    const verb = commandText.split(/\s+/, 1)[0].toLowerCase();
+    if (verb === 'symuluj' || verb === 'symuluj_stop') {
+      // Te polecenia są lokalne niezależnie od stanu sesji — nigdy nie trafiają do RTDB/ESP.
+      const localCommand = commandText.replace(/^\S+/, verb);
+      const localResult = applyCommand(localCommand);
+      if (localResult !== true) {
+        showToast('SYMULACJA', String(localResult || 'Nie udało się zastosować'), 'err');
+        return false;
+      }
+      addLog('SIM', verb === 'symuluj' ? 'Operator włączył lokalną symulację czujnika' : 'Operator wyłączył lokalną symulację czujnika', 'warn');
+      showToast('SYMULACJA', verb === 'symuluj' ? 'Wartość lokalna — nie jest telemetrią sterownika' : 'Lokalna symulacja wyłączona', 'warn');
+      return true;
+    }
+
     const t0 = performance.now();
     showToast(cmd, 'Wysyłanie do sterownika…', 'wait');
     addLog('CMD', 'Wysyłanie: ' + cmd, 'cmd');
 
-    // Natychmiast aplikujemy polecenie lokalnie w stanie S i odświeżamy Pulpit
-    const rLocal = applyCommand(cmd);
-    renderDashboard();
-    refreshSheet();
-    updateChartsNowStat();
-
-    if (_isFirebaseConnected) {
+    // W trybie rzeczywistym nie zmieniaj stanu optymistycznie. UI odświeży
+    // dopiero odpowiedź centrali; powodzenie komunikuj wyłącznie po zgodnym ACK.
+    if (_isFirebaseConnected && !_isDemoMode) {
       const cmdId = makeFireCmdId();
       try {
         await fbPatch('/piec/cmd.json', { id: cmdId, cmd: cmd, token: _cmdToken, ts: Date.now() });
-        addLog('CMD', `Wysłano do RTDB (id: ${cmdId})`, 'cmd');
+        addLog('CMD', `Wysłano do RTDB (id: ${cmdId}); oczekiwanie na sterownik`, 'cmd');
 
-        // Poll for ACK
         const ackStart = Date.now();
         while (Date.now() - ackStart < 12000) {
           try {
             const ack = await fbGet('/piec/ack.json');
             if (ack && String(ack.cmdId || '') === String(cmdId)) {
               const latency = Math.round(performance.now() - t0);
-              if (ack.ok) {
-                showToast(cmd, `Potwierdzone z pieca (ACK, ${latency}ms)`, 'ok');
+              if (ack.ok === true) {
+                showToast(cmd, `Potwierdzone przez sterownik (ACK, ${latency}ms)`, 'ok');
                 addLog('ACK', `ACK OK (${latency}ms): ` + cmd, 'ack');
                 if (navigator.vibrate) navigator.vibrate(15);
-              } else {
-                showToast(cmd, 'Odrzucone: ' + (ack.error || 'błąd'), 'err');
-                addLog('NACK', 'Odrzucone (' + ack.error + '): ' + cmd, 'err');
+                await pollFirebase();
+                return true;
               }
-              await pollFirebase();
-              return;
+              if (ack.ok === false) {
+                showToast(cmd, 'Sterownik odrzucił polecenie: ' + (ack.error || 'błąd'), 'err');
+                addLog('NACK', 'Odrzucone (' + (ack.error || 'błąd') + '): ' + cmd, 'err');
+                return false;
+              }
             }
           } catch(e) {}
           await new Promise(r => setTimeout(r, 1000));
         }
 
-        showToast(cmd, 'Wysłano do bazy (oczekiwanie na piec)', 'ok');
-        addLog('ACK_WARN', 'Wysłano do bazy (brak natychmiastowego ACK)', 'warn');
+        showToast(cmd, 'Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie', 'warn');
+        addLog('ACK_WARN', 'Wysłano do RTDB, ale sterownik nie potwierdził polecenia', 'warn');
         setTimeout(pollFirebase, 1500);
-        return;
+        return false;
       } catch (err) {
-        showToast(cmd, 'Błąd: ' + (err.message || err), 'err');
+        showToast(cmd, 'Błąd wysyłki: ' + (err.message || err), 'err');
         addLog('CMD_ERR', 'Błąd wysyłki: ' + (err.message || err), 'err');
-        return;
+        return false;
       }
     }
 
-    // Offline / Demo
-    setTimeout(() => {
-      const latency = Math.round(performance.now() - t0);
+    if (_isDemoMode) {
+      const rLocal = applyCommand(cmd);
+      renderDashboard();
+      refreshSheet();
+      updateChartsNowStat();
       if (rLocal === true) {
-        showToast(cmd, `Lokalnie wykonano (${latency}ms)`, 'ok');
-        addLog('ACK', `Lokalnie (${latency}ms): ` + cmd, 'ack');
-        if (navigator.vibrate) navigator.vibrate(15);
-      } else {
-        showToast(cmd, 'Odrzucone: ' + (rLocal || 'błąd'), 'err');
-        addLog('NACK', 'Odrzucone (' + rLocal + '): ' + cmd, 'err');
+        showToast(cmd, 'Zasymulowano lokalnie — nie wysłano do sterownika', 'warn');
+        addLog('SIM', 'Lokalna symulacja polecenia (bez sterownika): ' + cmd, 'warn');
+        return false;
       }
-    }, 200);
+      showToast(cmd, 'Symulacja odrzucona: ' + (rLocal || 'błąd'), 'err');
+      addLog('SIM', 'Lokalna symulacja odrzucona: ' + (rLocal || 'błąd'), 'err');
+      return false;
+    }
+
+    showToast(cmd, 'Brak sesji Firebase — polecenie nie zostało wysłane', 'err');
+    addLog('CMD_ERR', 'Polecenie nie zostało wysłane: brak sesji Firebase', 'err');
+    return false;
   }
 
   function applyCommand(cmd) {
@@ -4955,27 +5121,26 @@ body.mode-phone-frame #phone {
       case 'symuluj': {
         const pole = p[1];
         if (!SYM_POLA[pole]) return 'nieznane pole ' + pole;
-        const wartosc = +p[2];
-        const minuty = +p[3] || 60;
-        S.sym[pole] = { wartosc: wartosc, min: minuty };
-        const mappedKey = SYM_POLA[pole];
-        if (mappedKey) {
-          S[mappedKey] = wartosc;
-          real[mappedKey] = wartosc;
+        const wartosc = Number(p[2]);
+        const minuty = p[3] === undefined ? 60 : Number(p[3]);
+        const bounds = SYM_BOUNDS[pole];
+        if (!Number.isFinite(wartosc) || !bounds || wartosc < bounds[0] || wartosc > bounds[1]) {
+          return 'wartość poza zakresem czujnika';
         }
-        if (pole === 'dym') S.dym_alarm = wartosc >= S.progAlarmDym;
-        if (pole === 'ogrz') S.alarm_ogrzewanie = wartosc >= S.progAlarmTemp;
-        if (pole === 'panel') S.alarm_panel = wartosc >= S.progAlarmTemp;
+        if (!Number.isInteger(minuty) || minuty < 1 || minuty > 180) {
+          return 'czas symulacji musi wynosić 1–180 min';
+        }
+        S.sym[pole] = { wartosc: wartosc, min: minuty, expiresAt: Date.now() + minuty * 60_000 };
+        S[SYM_POLA[pole]] = wartosc;
         renderDashboard();
         refreshSheet();
         return true;
       }
       case 'symuluj_stop': {
         const pole = p[1];
+        if (!SYM_POLA[pole]) return 'nieznane pole ' + pole;
         delete S.sym[pole];
-        if (pole === 'dym') S.dym_alarm = S.dym >= S.progAlarmDym;
-        if (pole === 'ogrz') S.alarm_ogrzewanie = S.t_ogrz >= S.progAlarmTemp;
-        if (pole === 'panel') S.alarm_panel = S.t_panel >= S.progAlarmTemp;
+        restoreRealSensor(pole);
         renderDashboard();
         refreshSheet();
         return true;
@@ -5004,16 +5169,19 @@ body.mode-phone-frame #phone {
     tick += simSpeed;
     const isFbFresh = _isFirebaseConnected && (Date.now() - _lastFirebaseFetch < 20000);
 
-    // Zmniejszanie liczników symulacji i override'ów w czasie
+    // Symulacje mają niezależny termin końca; ich czas nie zależy od fazy ticka DEMO.
+    const now = Date.now();
     Object.keys(S.sym).forEach(p => {
-      if (tick % 30 === 0) {
-        S.sym[p].min--;
-        if (S.sym[p].min <= 0) {
-          delete S.sym[p];
-          if (p === 'dym') S.dym_alarm = S.dym >= S.progAlarmDym;
-          if (p === 'ogrz') S.alarm_ogrzewanie = S.t_ogrz >= S.progAlarmTemp;
-          if (p === 'panel') S.alarm_panel = S.t_panel >= S.progAlarmTemp;
-        }
+      const entry = S.sym[p];
+      if (!Number.isFinite(entry.expiresAt)) {
+        entry.expiresAt = now + Math.max(1, Number(entry.min) || 1) * 60_000;
+      }
+      const remainingMin = Math.max(0, Math.ceil((entry.expiresAt - now) / 60_000));
+      if (remainingMin <= 0) {
+        delete S.sym[p];
+        restoreRealSensor(p);
+      } else {
+        entry.min = remainingMin;
       }
     });
     ['pompa', 'mieszadlo', 'serwo'].forEach(k => {
@@ -5021,11 +5189,7 @@ body.mode-phone-frame #phone {
       if (S[key] > 0 && tick % 30 === 0) S[key]--;
     });
 
-    if (isFbFresh) {
-      // W trybie Live Firebase: brak losowych szumów
-      hist.push({ o: val('ogrz', 't_ogrz'), b: val('bojler', 't_bojler'), z: val('zewn', 't_zewn') });
-      if (hist.length > 60) hist.shift();
-    } else if (_isDemoMode) {
+    if (_isDemoMode) {
       // W trybie symulacji generujemy animowane wahania dla niesymulowanych czujników
       if (!symAktywna('ogrz')) {
         S.t_ogrz = real.t_ogrz + Math.sin(tick / 9) * 1.5 + (Math.random() - .5) * .2;
@@ -5046,14 +5210,11 @@ body.mode-phone-frame #phone {
       if (S.alarm_panel && !symAktywna('panel')) S.t_panel = S.progAlarmTemp + 5 + Math.random();
       S.dym_wlaczony = S.t_ogrz >= S.dymProgTemp || S.dym_alarm || symAktywna('dym');
 
-      hist.push({ o: val('ogrz', 't_ogrz'), b: val('bojler', 't_bojler'), z: val('zewn', 't_zewn') });
-      if (hist.length > 60) hist.shift();
     }
 
     updateConnectionStateUI();
     renderDashboard();
     updateChartsLiveFeed();
-    if (typeof SolarAnalytics !== "undefined") SolarAnalytics.recordSample(S.t_panel, S.t_bojler, S.t_zewn, (typeof weatherData !== "undefined" && weatherData && weatherData.current) ? (weatherData.current.uv * 120) : 0, (typeof weatherData !== "undefined" && weatherData && weatherData.current) ? weatherData.current.uv : 0, (typeof weatherData !== "undefined" && weatherData && weatherData.current) ? weatherData.current.cloud : 30);
   }
 
   // ───────────────────────── 8. ARKUSZ DOLNY (showSheet) ─────────────────────────
@@ -5086,21 +5247,39 @@ body.mode-phone-frame #phone {
     const s = h('div', 'seg');
     options.forEach(([v, t]) => {
       const b = h('button', v === current ? 'on' : '', t);
-      b.onclick = () => { $$('button', s).forEach(x => x.classList.toggle('on', x === b)); onPick(v); };
+      b.onclick = () => {
+        const result = onPick(v);
+        const select = () => $$('.seg button', s).forEach(x => x.classList.toggle('on', x === b));
+        if (result && typeof result.then === 'function') {
+          $$('.seg button', s).forEach(x => x.disabled = true);
+          result.then(confirmed => {
+            if (confirmed) select();
+          }).finally(() => $$('.seg button', s).forEach(x => x.disabled = false));
+        } else {
+          select();
+        }
+      };
       s.appendChild(b);
     });
     return s;
   }
   function numInput(name, desc, key, min, max, onAfterChange) {
     const r = h('div', 'row', '<div class="l"><b>' + name + '</b>' + (desc ? '<span>' + desc + '</span>' : '') + '</div>');
-    const inp = h('input', 'inp'); inp.type = 'number'; inp.min = min; inp.max = max; inp.value = S[key];
-    live$(inp, el => { if (document.activeElement !== el) el.value = S[key]; });
+    const inp = h('input', 'inp'); inp.type = 'number'; inp.min = min; inp.max = max;
+    inp.placeholder = hasData(key) && Number.isFinite(S[key]) ? '' : '— brak odczytu';
+    const refreshInput = el => {
+      const known = hasData(key) && Number.isFinite(S[key]);
+      el.placeholder = known ? '' : '— brak odczytu';
+      if (document.activeElement !== el) el.value = known ? S[key] : '';
+    };
+    live$(inp, refreshInput);
     const b = h('button', 'ust-btn', 'Ustaw');
     b.onclick = () => {
       const v = parseInt(inp.value, 10);
       if (isNaN(v) || v < min || v > max) { showToast('ustaw ' + key, name + ': zakres ' + min + '–' + max, 'err'); return; }
-      sendCommand('ustaw ' + key + ' ' + v);
-      if (onAfterChange) onAfterChange(v);
+      sendCommand('ustaw ' + key + ' ' + v).then(confirmed => {
+        if ((confirmed || _isDemoMode) && onAfterChange) onAfterChange(v);
+      });
     };
     r.appendChild(inp); r.appendChild(b); return r;
   }
@@ -5111,10 +5290,28 @@ body.mode-phone-frame #phone {
     l.appendChild(c); r.appendChild(l); return r;
   }
   function checkbox(name, key) {
-    const l = h('label', 'chk'); const c = h('input'); c.type = 'checkbox'; c.checked = !!S[key];
-    live$(c, el => el.checked = !!S[key]);
-    c.onchange = () => sendCommand('ustaw ' + key + ' ' + (c.checked ? 1 : 0));
-    l.appendChild(c); l.appendChild(document.createTextNode(name)); return l;
+    const l = h('label', 'chk'); const c = h('input'); c.type = 'checkbox';
+    const labelText = document.createTextNode(name);
+    const stateText = h('span', 'check-state');
+    const update = () => {
+      const known = hasData(key);
+      c.checked = known && !!S[key];
+      c.disabled = !known;
+      stateText.textContent = known ? '' : ' · BRAK DANYCH';
+    };
+    live$(c, update);
+    c.onchange = () => {
+      const requested = c.checked;
+      const previous = hasData(key) && !!S[key];
+      c.disabled = true;
+      sendCommand('ustaw ' + key + ' ' + (requested ? 1 : 0)).then(confirmed => {
+        if (_isDemoMode) c.checked = !!S[key];
+        else c.checked = confirmed && hasData(key) ? !!S[key] : previous;
+        c.disabled = !hasData(key);
+      });
+    };
+    l.appendChild(c); l.appendChild(labelText); l.appendChild(stateText);
+    return l;
   }
   function manualRow(prefix) {
     const r = h('div', 'btnrow');
@@ -5123,12 +5320,23 @@ body.mode-phone-frame #phone {
     });
     return r;
   }
-  function slider(name, min, max, step, value, fmtFn, onChange, onCommit) {
+  function slider(name, min, max, step, value, fmtFn, onChange, onCommit, enabled = true, readActual = null) {
     const w = h('div', 'slider', '<div class="h"><span>' + name + '</span><b></b></div>');
-    const i = h('input'); i.type = 'range'; i.min = min; i.max = max; i.step = step; i.value = value;
+    const i = h('input'); i.type = 'range'; i.min = min; i.max = max; i.step = step;
+    const initial = Number(value);
+    i.value = Number.isFinite(initial) ? Math.max(min, Math.min(max, initial)) : min;
+    i.disabled = !enabled;
     const b = $('b', w);
     const upd = () => { if (b) b.textContent = fmtFn(+i.value); if (onChange) onChange(+i.value); };
-    i.oninput = upd; if (onCommit) i.onchange = () => onCommit(+i.value); upd();
+    i.oninput = upd;
+    if (onCommit) i.onchange = () => {
+      const result = onCommit(+i.value);
+      if (result && typeof result.then === 'function') result.then(() => {
+        const actual = typeof readActual === 'function' ? Number(readActual()) : initial;
+        if (Number.isFinite(actual)) { i.value = Math.max(min, Math.min(max, actual)); upd(); }
+      });
+    };
+    upd();
     w.appendChild(i); w.get = () => +i.value; return w;
   }
 
@@ -5143,7 +5351,8 @@ body.mode-phone-frame #phone {
     const wrap = h('div', 'sym-unit');
 
     const f = v => krok >= 1 ? String(Math.round(v)) : fmt1(v);
-    const initialVal = val(pole, key);
+    const currentVal = val(pole, key);
+    const initialVal = Number.isFinite(currentVal) ? currentVal : (min + max) / 2;
     const initialValFormatted = f(initialVal);
     const initialTime = (S.sym[pole] ? S.sym[pole].min : 60);
 
@@ -5203,15 +5412,23 @@ body.mode-phone-frame #phone {
     btnApply.onclick = () => {
       const v = f(+inpVal.value);
       const m = parseInt(inpTime.value) || 60;
-      sendCommand('symuluj ' + pole + ' ' + v + ' ' + m);
+      const result = applyCommand('symuluj ' + pole + ' ' + v + ' ' + m);
+      if (result !== true) {
+        showToast('SYMULACJA', String(result || 'Nie udało się uruchomić'), 'err');
+        return;
+      }
+      addLog('SIM', `Lokalna symulacja czujnika ${etykieta}: ${v} ${jednostka} przez ${m} min`, 'warn');
+      showToast('SYMULACJA', 'Wartość lokalna — nie jest telemetrią sterownika', 'warn');
       symPokaz(true);
-      info.textContent = 'Aktywna — jeszcze ok. ' + m + ' min';
+      info.textContent = 'Aktywna lokalnie — ' + m + ' min; wyłączona z historii i wykresów';
       renderDashboard();
       refreshSheet();
     };
 
     btnStop.onclick = () => {
-      sendCommand('symuluj_stop ' + pole);
+      const result = applyCommand('symuluj_stop ' + pole);
+      if (result !== true) showToast('SYMULACJA', String(result || 'Nie udało się wyłączyć'), 'err');
+      else addLog('SIM', `Wyłączono lokalną symulację czujnika ${etykieta}`, 'warn');
       symPokaz(false);
       info.textContent = '';
       renderDashboard();
@@ -5241,17 +5458,30 @@ body.mode-phone-frame #phone {
 
   // ───────────────────────── 9. MENU USTAWIEŃ (dpOtworz*()) ─────────────────────────
   const ALL_SENSORS = [
-    { id: 'zewn', name: 'Temperatura zewnętrzna', bus: 'DS18B20 · Magistrala 1-Wire', unit: '°C', min: -30, max: 50, step: 0.5, key: 't_zewn', ico: '🌡️' },
-    { id: 'bojler', name: 'Bojler C.W.U.', bus: 'DS18B20 w gilzie · 1-Wire', unit: '°C', min: 0, max: 160, step: 0.5, key: 't_bojler', ico: '💧' },
-    { id: 'pokoj', name: 'Temperatura pomieszczenia', bus: 'DS18B20 strefy dom · 1-Wire', unit: '°C', min: -50, max: 50, step: 0.5, key: 't_pokoj', ico: '🏠' },
-    { id: 'ogrz', name: 'Piec C.O. (kocioł)', bus: 'DS18B20 płaszcza kotła · 1-Wire', unit: '°C', min: 0, max: 160, step: 0.5, key: 't_ogrz', ico: '🔥' },
-    { id: 'panel', name: 'Panel słoneczny (solary)', bus: 'Kolektor glikolowy · 1-Wire / PT1000', unit: '°C', min: -30, max: 160, step: 0.5, key: 't_panel', ico: '☀️' },
-    { id: 'ogrz_powrot', name: 'Temperatura powrotu kotła', bus: 'Przylgowy powrót C.O. · 1-Wire', unit: '°C', min: 0, max: 120, step: 0.5, key: 't_powrot', ico: '🔄' },
-    { id: 'ogrz_trociny', name: 'Temperatura podajnika / trocin', bus: 'Zasobnik paliwa · 1-Wire', unit: '°C', min: 0, max: 120, step: 0.5, key: 't_trociny', ico: '🪵' },
-    { id: 'cisnienie', name: 'Ciśnienie atmosferyczne', bus: 'Barometr cyfrowy BMP280 · I²C', unit: 'hPa', min: 970, max: 1040, step: 1, key: 'cisnienie', ico: '⏱️' },
-    { id: 'wilgotnosc', name: 'Wilgotność powietrza', bus: 'Higrometr cyfrowy BME280 · I²C', unit: '%', min: 0, max: 100, step: 1, key: 'wilgotnosc', ico: '💦' },
+    { id: 'zewn', name: 'Temperatura zewnętrzna', bus: 'DS18B20 · Magistrala 1-Wire', unit: '°C', min: -25, max: 45, step: 0.5, key: 't_zewn', ico: '🌡️' },
+    { id: 'bojler', name: 'Bojler C.W.U.', bus: 'DS18B20 w gilzie · 1-Wire', unit: '°C', min: 10, max: 95, step: 0.5, key: 't_bojler', ico: '💧' },
+    { id: 'pokoj', name: 'Temperatura pomieszczenia', bus: 'DS18B20 strefy dom · 1-Wire', unit: '°C', min: 8, max: 45, step: 0.5, key: 't_pokoj', ico: '🏠' },
+    { id: 'ogrz', name: 'Piec C.O. (kocioł)', bus: 'DS18B20 płaszcza kotła · 1-Wire', unit: '°C', min: 10, max: 99, step: 0.5, key: 't_ogrz', ico: '🔥' },
+    { id: 'panel', name: 'Panel słoneczny (solary)', bus: 'Kolektor glikolowy · 1-Wire / PT1000', unit: '°C', min: 0, max: 140, step: 0.5, key: 't_panel', ico: '☀️' },
+    { id: 'ogrz_powrot', name: 'Temperatura powrotu kotła', bus: 'Przylgowy powrót C.O. · 1-Wire', unit: '°C', min: 10, max: 95, step: 0.5, key: 't_powrot', ico: '🔄' },
+    { id: 'ogrz_trociny', name: 'Temperatura podajnika / trocin', bus: 'Zasobnik paliwa · 1-Wire', unit: '°C', min: 0, max: 90, step: 0.5, key: 't_trociny', ico: '🪵' },
+    { id: 'cisnienie', name: 'Ciśnienie atmosferyczne', bus: 'Barometr cyfrowy BMP280 · I²C', unit: 'hPa', min: 900, max: 1100, step: 1, key: 'cisnienie', ico: '⏱️' },
+    { id: 'wilgotnosc', name: 'Wilgotność powietrza', bus: 'Higrometr cyfrowy BME280 · I²C', unit: '%', min: 10, max: 100, step: 1, key: 'wilgotnosc', ico: '💦' },
     { id: 'dym', name: 'Czujnik dymu i spalin', bus: 'Przetwornik optyczny MQ-2 · ADC', unit: 'ADC', min: 0, max: 4095, step: 1, key: 'dym', ico: '🛡️' }
   ];
+
+  function sensorReadStatus(sen) {
+    if (symAktywna(sen.id)) return 'SYMULACJA LOKALNA';
+    if (_isDemoMode) return 'SYMULACJA DEMO';
+    const value = val(sen.id, sen.key);
+    if (!receivedFields.has(sen.key) || !Number.isFinite(value)) return 'BRAK DANYCH';
+    if (!_isFirebaseConnected || Date.now() - _lastFirebaseFetch >= 20000) return 'NIEAKTUALNE';
+    return 'ODCZYT ODEBRANY';
+  }
+
+  function sensorReadClass(status) {
+    return status.startsWith('SYMULACJA') ? 'sim' : status === 'ODCZYT ODEBRANY' ? 'ok' : status === 'NIEAKTUALNE' ? 'err' : '';
+  }
 
   function sensorModalContent(sen) {
     const b = h('div');
@@ -5260,8 +5490,8 @@ body.mode-phone-frame #phone {
     // 1. Karta telemetryczna czujnika
     const diagCard = h('div', 'sensor-full-card');
     const initialReading = val(sen.id, sen.key);
-    const formattedVal = sen.step >= 1 ? String(Math.round(initialReading)) : fmt1(initialReading);
-    const isSim = symAktywna(sen.id);
+    const formattedVal = (symAktywna(sen.id) ? '~' : '') + (Number.isFinite(initialReading) ? (sen.step >= 1 ? String(Math.round(initialReading)) : fmt1(initialReading)) : '—');
+    const initialStatus = sensorReadStatus(sen);
 
     diagCard.innerHTML = `
       <div class="sensor-full-header">
@@ -5274,27 +5504,29 @@ body.mode-phone-frame #phone {
         </div>
         <div class="sf-r">
           <div class="sf-val" id="sf-val-${sen.id}">${formattedVal} <small>${sen.unit}</small></div>
-          <div class="status-pill ${isSim ? 'sim' : 'ok'}" id="sf-pill-${sen.id}">${isSim ? 'SYMULACJA' : 'LIVE (q=0)'}</div>
+          <div class="status-pill ${sensorReadClass(initialStatus)}" id="sf-pill-${sen.id}">${initialStatus}</div>
         </div>
       </div>
       <div style="font-size:10px; color:var(--text-dim); display:flex; justify-content:space-between; margin-top:8px; flex-wrap:wrap; gap:6px">
         <span>Zakres roboczy: <b>${sen.min} do ${sen.max} ${sen.unit}</b></span>
         <span>Magistrala: <b>${sen.bus.split('·')[0].trim()}</b></span>
-        <span>Odczyt: <b style="color:var(--live)">Prawidłowy (OK)</b></span>
+        <span>Odczyt: <b id="sf-readstatus-${sen.id}">${initialStatus}</b></span>
       </div>
     `;
 
     live$(diagCard, el => {
       const curV = val(sen.id, sen.key);
-      const fV = sen.step >= 1 ? String(Math.round(curV)) : fmt1(curV);
-      const simOn = symAktywna(sen.id);
+      const fV = (symAktywna(sen.id) ? '~' : '') + (Number.isFinite(curV) ? (sen.step >= 1 ? String(Math.round(curV)) : fmt1(curV)) : '—');
+      const status = sensorReadStatus(sen);
       const valEl = $('#sf-val-' + sen.id, el);
       const pillEl = $('#sf-pill-' + sen.id, el);
+      const readEl = $('#sf-readstatus-' + sen.id, el);
       if (valEl) valEl.innerHTML = fV + ' <small>' + sen.unit + '</small>';
       if (pillEl) {
-        pillEl.className = 'status-pill ' + (simOn ? 'sim' : 'ok');
-        pillEl.textContent = simOn ? 'SYMULACJA' : 'LIVE (q=0)';
+        pillEl.className = 'status-pill ' + sensorReadClass(status);
+        pillEl.textContent = status;
       }
+      if (readEl) readEl.textContent = status;
     });
 
     b.appendChild(diagCard);
@@ -5320,31 +5552,41 @@ body.mode-phone-frame #phone {
         const diagCard = h('div', 'sensor-full-card');
         const initialReading = val('dym', 'dym');
         const isSim = symAktywna('dym');
+        const initialValue = (isSim ? '~' : '') + (Number.isFinite(initialReading) ? String(Math.round(initialReading)) : '—');
+        const smokeAlarmKnown = hasData('dym_alarm');
+        const smokeStatus = isSim ? 'SYMULACJA LOKALNA' : !smokeAlarmKnown ? 'STAN ALARMU — BRAK DANYCH' : S.dym_alarm ? 'ALARM' : 'BRAK ALARMU';
+        const smokeReadStatus = sensorReadStatus(sen);
         diagCard.innerHTML = `
           <div class="sensor-full-header">
             <div class="sf-l">
               <div class="sf-ico">🛡️</div>
               <div class="sf-meta">
                 <b>Czujnik dymu i spalin</b>
-                <span>Przetwornik optyczny MQ-2 · ADC1 GPIO36</span>
+                <span>${sen.bus}</span>
               </div>
             </div>
             <div class="sf-r">
-              <div class="sf-val" id="sf-val-dym">${initialReading} <small>ADC</small></div>
-              <div class="status-pill ${isSim ? 'sim' : S.dym_alarm ? 'err' : 'ok'}" id="sf-pill-dym">${isSim ? 'SYMULACJA' : S.dym_alarm ? 'ALARM' : 'OK (q=0)'}</div>
+              <div class="sf-val" id="sf-val-dym">${initialValue} <small>ADC</small></div>
+              <div class="status-pill ${isSim ? 'sim' : smokeAlarmKnown && S.dym_alarm ? 'err' : ''}" id="sf-pill-dym">${smokeStatus}</div>
             </div>
           </div>
+          <div class="row-desc">Odczyt: <b id="sf-readstatus-dym">${smokeReadStatus}</b></div>
         `;
         live$(diagCard, el => {
           const curV = val('dym', 'dym');
           const simOn = symAktywna('dym');
+          const alarmKnown = hasData('dym_alarm');
+          const status = simOn ? 'SYMULACJA LOKALNA' : !alarmKnown ? 'STAN ALARMU — BRAK DANYCH' : S.dym_alarm ? 'ALARM' : 'BRAK ALARMU';
+          const readStatus = sensorReadStatus(sen);
           const valEl = $('#sf-val-dym', el);
           const pillEl = $('#sf-pill-dym', el);
-          if (valEl) valEl.innerHTML = curV + ' <small>ADC</small>';
+          const readEl = $('#sf-readstatus-dym', el);
+          if (valEl) valEl.innerHTML = (simOn ? '~' : '') + (Number.isFinite(curV) ? String(Math.round(curV)) : '—') + ' <small>ADC</small>';
           if (pillEl) {
-            pillEl.className = 'status-pill ' + (simOn ? 'sim' : S.dym_alarm ? 'err' : 'ok');
-            pillEl.textContent = simOn ? 'SYMULACJA' : S.dym_alarm ? 'ALARM' : 'OK (q=0)';
+            pillEl.className = 'status-pill ' + (simOn ? 'sim' : alarmKnown && S.dym_alarm ? 'err' : '');
+            pillEl.textContent = status;
           }
+          if (readEl) readEl.textContent = readStatus;
         });
         b.appendChild(diagCard);
       }
@@ -5364,12 +5606,14 @@ body.mode-phone-frame #phone {
     czujniki: () => showSheet('Czujniki instalacji (10 czujników)', 'outside', () => {
       const b = h('div');
       
-      // Podsumowanie magistral czujnikowych
+      // Podsumowanie wyłącznie odebranych, poprawnych odczytów.
       const summaryBox = h('div', 'diag-card');
+      const receivedCount = ALL_SENSORS.filter(sen => sensorReadStatus(sen) === 'ODCZYT ODEBRANY').length;
+      const simulatedCount = ALL_SENSORS.filter(sen => symAktywna(sen.id)).length;
       summaryBox.innerHTML = `
-        <div class="lbl">MAGISTRALA CZUJNIKÓW TELEMETRYCZNYCH</div>
-        <div class="val">10 / 10 aktywnych</div>
-        <div class="sub">Magistrale: 1-Wire (7 czujników DS18B20) · I²C (BME280 @ 0x76) · ADC (MQ-2 GPIO36) · Błędy CRC: 0</div>
+        <div class="lbl">STAN ODCZYTÓW CZUJNIKÓW</div>
+        <div class="val">${_isDemoMode ? 'SYMULACJA DEMO' : receivedCount + ' / ' + ALL_SENSORS.length + ' odebranych'}</div>
+        <div class="sub">${_isDemoMode ? 'Dane testowe — nie są telemetrią sterownika.' : simulatedCount ? simulatedCount + ' lokalnych symulacji; wyłączone z historii i wykresów.' : 'Brakujące lub nieprawidłowe pola nie są zastępowane wartościami przykładowymi.'}</div>
       `;
       b.appendChild(summaryBox);
       b.appendChild(note('Wykaz wszystkich czujników pomiarowych instalacji C.O. Kliknij przycisk „Symulacja” przy wybranym czujniku, aby rozwinąć suwaki wymuszenia wartości:'));
@@ -5377,8 +5621,8 @@ body.mode-phone-frame #phone {
       ALL_SENSORS.forEach(sen => {
         const sBox = h('div', 'sensor-full-card');
         const initialReading = val(sen.id, sen.key);
-        const formattedVal = sen.step >= 1 ? String(Math.round(initialReading)) : fmt1(initialReading);
-        const isSim = symAktywna(sen.id);
+        const formattedVal = (symAktywna(sen.id) ? '~' : '') + (Number.isFinite(initialReading) ? (sen.step >= 1 ? String(Math.round(initialReading)) : fmt1(initialReading)) : '—');
+        const initialStatus = sensorReadStatus(sen);
 
         sBox.innerHTML = `
           <div class="sensor-full-header">
@@ -5391,21 +5635,21 @@ body.mode-phone-frame #phone {
             </div>
             <div class="sf-r">
               <div class="sf-val" id="sf-val-list-${sen.id}">${formattedVal} <small>${sen.unit}</small></div>
-              <div class="status-pill ${isSim ? 'sim' : 'ok'}" id="sf-pill-list-${sen.id}">${isSim ? 'SYMULACJA' : 'LIVE'}</div>
+              <div class="status-pill ${sensorReadClass(initialStatus)}" id="sf-pill-list-${sen.id}">${initialStatus}</div>
             </div>
           </div>
         `;
 
         live$(sBox, el => {
           const curV = val(sen.id, sen.key);
-          const fV = sen.step >= 1 ? String(Math.round(curV)) : fmt1(curV);
-          const simOn = symAktywna(sen.id);
+          const fV = (symAktywna(sen.id) ? '~' : '') + (Number.isFinite(curV) ? (sen.step >= 1 ? String(Math.round(curV)) : fmt1(curV)) : '—');
+          const status = sensorReadStatus(sen);
           const valEl = $('#sf-val-list-' + sen.id, el);
           const pillEl = $('#sf-pill-list-' + sen.id, el);
           if (valEl) valEl.innerHTML = fV + ' <small>' + sen.unit + '</small>';
           if (pillEl) {
-            pillEl.className = 'status-pill ' + (simOn ? 'sim' : 'ok');
-            pillEl.textContent = simOn ? 'SYMULACJA' : 'LIVE';
+            pillEl.className = 'status-pill ' + sensorReadClass(status);
+            pillEl.textContent = status;
           }
         });
 
@@ -5435,52 +5679,61 @@ body.mode-phone-frame #phone {
       const tempBox = h('div', 'pump-diagram-box');
 
       function updateDiagrams() {
-        // 1. Diagram Czasowy (Trociniak)
-        const totalMin = (S.czasOn + S.czasOff) || 40;
-        const pctOn = Math.round((S.czasOn / totalMin) * 100);
-        const pctOff = 100 - pctOn;
-        timeBox.innerHTML = `
-          <div class="diag-head">
-            <b>⏱️ TROCINIAK — CYKL CZASOWY POMPY</b>
-            <span>Pełny cykl: ${totalMin} min</span>
-          </div>
-          <div class="time-cycle-bar">
-            <div class="time-cycle-seg-on" style="width:${pctOn}%">PRACA: ${S.czasOn}m (${pctOn}%)</div>
-            <div class="time-cycle-seg-off" style="width:${pctOff}%">POSTÓJ: ${S.czasOff}m (${pctOff}%)</div>
-          </div>
-          <div class="time-cycle-legend">
-            <span>🟢 Załączenie pompy przez ${S.czasOn} min</span>
-            <span>⚪ Przerwa/odpoczynek kotła ${S.czasOff} min</span>
-          </div>
-        `;
+        // Renderowane są tylko wartości odebrane z centrali (lub jawny tryb demo).
+        const cycleKnown = hasData('czasOn') && hasData('czasOff') && Number.isFinite(S.czasOn) && Number.isFinite(S.czasOff) && S.czasOn > 0 && S.czasOff > 0;
+        if (cycleKnown) {
+          const totalMin = S.czasOn + S.czasOff;
+          const pctOn = Math.round((S.czasOn / totalMin) * 100);
+          const pctOff = 100 - pctOn;
+          timeBox.innerHTML = `
+            <div class="diag-head">
+              <b>⏱️ TROCINIAK — CYKL CZASOWY POMPY</b>
+              <span>Pełny cykl: ${totalMin} min</span>
+            </div>
+            <div class="time-cycle-bar">
+              <div class="time-cycle-seg-on" style="width:${pctOn}%">PRACA: ${S.czasOn}m (${pctOn}%)</div>
+              <div class="time-cycle-seg-off" style="width:${pctOff}%">POSTÓJ: ${S.czasOff}m (${pctOff}%)</div>
+            </div>
+            <div class="time-cycle-legend">
+              <span>🟢 Załączenie pompy przez ${S.czasOn} min</span>
+              <span>⚪ Przerwa/odpoczynek kotła ${S.czasOff} min</span>
+            </div>
+          `;
+        } else {
+          timeBox.innerHTML = '<div class="note">Brak prawidłowych danych cyklu pompy.</div>';
+        }
 
-        // 2. Diagram Temperaturowy (Kopciuch)
         const minScale = 20, maxScale = 90;
-        const stopPct = Math.max(0, Math.min(100, ((S.tempOff - minScale) / (maxScale - minScale)) * 100));
-        const startPct = Math.max(0, Math.min(100, ((S.tempOn - minScale) / (maxScale - minScale)) * 100));
-        const curTemp = S.t_ogrz;
-        const curPct = Math.max(0, Math.min(100, ((curTemp - minScale) / (maxScale - minScale)) * 100));
-        const isRunning = curTemp >= S.tempOn || (curTemp > S.tempOff && S.pompa);
+        const thresholdsKnown = hasData('tempOn') && hasData('tempOff') && Number.isFinite(S.tempOn) && Number.isFinite(S.tempOff) && S.tempOn >= 0 && S.tempOn <= 100 && S.tempOff >= 0 && S.tempOff <= 100 && S.tempOn > S.tempOff;
+        const currentKnown = hasData('t_ogrz') && Number.isFinite(S.t_ogrz) && S.t_ogrz >= 0 && S.t_ogrz <= 100;
+        const pumpKnown = hasData('pompa') && typeof S.pompa === 'boolean';
+        if (thresholdsKnown && currentKnown) {
+          const stopPct = Math.max(0, Math.min(100, ((S.tempOff - minScale) / (maxScale - minScale)) * 100));
+          const startPct = Math.max(0, Math.min(100, ((S.tempOn - minScale) / (maxScale - minScale)) * 100));
+          const curPct = Math.max(0, Math.min(100, ((S.t_ogrz - minScale) / (maxScale - minScale)) * 100));
+          tempBox.innerHTML = `
+            <div class="diag-head">
+              <b>🌡️ KOPCIUCH — PROGI TEMPERATURY PIECA</b>
+              <span>Histereza: ${S.tempOn - S.tempOff}°C</span>
+            </div>
+            <div class="temp-threshold-gauge">
+              <div class="temp-stop-marker" style="left:${stopPct}%"><span class="temp-marker-label stop">STOP ${S.tempOff}°C</span></div>
+              <div class="temp-start-marker" style="left:${startPct}%"><span class="temp-marker-label start">START ${S.tempOn}°C</span></div>
+              <div class="temp-live-needle" style="left:${curPct}%"><div class="temp-live-needle-line"></div></div>
+            </div>
+            <div class="temp-gauge-scale">
+              <span>${minScale}°C (zimny)</span>
+              <span style="color:${pumpKnown ? (S.pompa ? 'var(--live)' : 'var(--warn)') : 'var(--text-dim)'}">▲ Piec: ${fmt1(S.t_ogrz)}°C · Pompa: ${pumpKnown ? (S.pompa ? 'PRACUJE' : 'STOI') : 'BRAK DANYCH'}</span>
+              <span>${maxScale}°C (gorący)</span>
+            </div>
+          `;
+        } else {
+          tempBox.innerHTML = '<div class="note">Brak prawidłowej temperatury pieca lub progów START/STOP.</div>';
+        }
 
-        tempBox.innerHTML = `
-          <div class="diag-head">
-            <b>🌡️ KOPCIUCH — PROGI TEMPERATURY PIECA</b>
-            <span>Histereza: ${S.tempOn - S.tempOff}°C</span>
-          </div>
-          <div class="temp-threshold-gauge">
-            <div class="temp-stop-marker" style="left:${stopPct}%"><span class="temp-marker-label stop">STOP ${S.tempOff}°C</span></div>
-            <div class="temp-start-marker" style="left:${startPct}%"><span class="temp-marker-label start">START ${S.tempOn}°C</span></div>
-            <div class="temp-live-needle" style="left:${curPct}%"><div class="temp-live-needle-line"></div></div>
-          </div>
-          <div class="temp-gauge-scale">
-            <span>${minScale}°C (zimny)</span>
-            <span style="color:${isRunning ? 'var(--live)' : 'var(--warn)'}">▲ Aktualnie piec: ${fmt1(curTemp)}°C (${isRunning ? 'POMPA PRACUJE' : 'POMPA STOI'})</span>
-            <span>${maxScale}°C (gorący)</span>
-          </div>
-        `;
-
-        timeBox.style.display = S.wybor === 1 ? 'block' : 'none';
-        tempBox.style.display = S.wybor === 2 ? 'block' : 'none';
+        const modeKnown = hasData('wybor') && Number.isInteger(S.wybor) && S.wybor >= 1 && S.wybor <= 3;
+        timeBox.style.display = modeKnown && S.wybor === 1 ? 'block' : 'none';
+        tempBox.style.display = modeKnown && S.wybor === 2 ? 'block' : 'none';
       }
 
       strats.forEach(st => {
@@ -5490,11 +5743,15 @@ body.mode-phone-frame #phone {
           <span>${st.sub}</span>
         `);
         opt.onclick = () => {
-          $$('.pump-strat-opt', selector).forEach(x => x.classList.toggle('on', x === opt));
-          sendCommand('ustaw wybor ' + st.id);
-          S.wybor = st.id;
-          updateDiagrams();
+          sendCommand('ustaw wybor ' + st.id).then(confirmed => {
+            if (_isDemoMode) S.wybor = st.id;
+            if (confirmed || _isDemoMode) {
+              $$('.pump-strat-opt', selector).forEach(x => x.classList.toggle('on', hasData('wybor') && S.wybor === Number(x.dataset.mode)));
+              updateDiagrams();
+            }
+          });
         };
+        opt.dataset.mode = String(st.id);
         selector.appendChild(opt);
       });
       b.appendChild(selector);
@@ -5524,14 +5781,26 @@ body.mode-phone-frame #phone {
     serwo: () => showSheet('Serwo', 'servo', () => {
       const b = h('div'); b.appendChild(note('Tryb pracy klapy i syberka'));
 
-      const manual = h('div', 'manual' + (S.tryb_serwa === 2 ? ' on' : ''));
-      b.appendChild(seg([[1, 'Auto'], [2, 'Ręczny'], [3, 'Bezpieczna']], S.tryb_serwa, v => {
-        manual.classList.toggle('on', v === 2);
-        sendCommand('ustaw trybSerwa ' + v);
-      }));
+      const servoModeKnown = hasData('tryb_serwa') && Number.isInteger(S.tryb_serwa) && S.tryb_serwa >= 1 && S.tryb_serwa <= 3;
+      const flapPositionKnown = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180;
+      const damperPositionKnown = hasData('syberka') && Number.isInteger(S.syberka) && S.syberka >= 0 && S.syberka <= 90;
+      const manual = h('div', 'manual' + (servoModeKnown && S.tryb_serwa === 2 ? ' on' : ''));
+      b.appendChild(seg([[1, 'Auto'], [2, 'Ręczny'], [3, 'Bezpieczna']], servoModeKnown ? S.tryb_serwa : 0, v =>
+        sendCommand('ustaw trybSerwa ' + v).then(confirmed => {
+          if (_isDemoMode) S.tryb_serwa = v;
+          if (confirmed || _isDemoMode) manual.classList.toggle('on', S.tryb_serwa === 2);
+          return confirmed || _isDemoMode;
+        })
+      ));
       manual.appendChild(h('h4', '', 'Ręczna pozycja'));
-      manual.appendChild(slider('Klapa', 0, 100, 1, Math.round(S.klapa / 1.8), v => v + '%', null, v => sendCommand('klapa ' + v)));
-      manual.appendChild(slider('Syberek', 0, 100, 1, Math.round(S.syberka / .9), v => v + '%', null, v => sendCommand('syberek ' + v)));
+      manual.appendChild(note(!servoModeKnown ? 'Tryb serwa nieznany — odczytaj stan sterownika.' : S.tryb_serwa !== 2 ? 'Ręczna nastawa dostępna po potwierdzeniu trybu Ręczny.' :
+        !flapPositionKnown || !damperPositionKnown ? 'Brak prawidłowego odczytu pozycji serwa.' : 'Suwaki ustawiają wartość do wysłania; pozycja rzeczywista zmienia się dopiero po potwierdzeniu.'));
+      manual.appendChild(slider('Klapa', 0, 100, 1, flapPositionKnown ? Math.round(S.klapa / 1.8) : 0, v => v + '%', null,
+        v => sendCommand('klapa ' + v), servoModeKnown && S.tryb_serwa === 2 && flapPositionKnown,
+        () => flapPositionKnown && hasData('klapa') ? Math.round(S.klapa / 1.8) : NaN));
+      manual.appendChild(slider('Syberek', 0, 100, 1, damperPositionKnown ? Math.round(S.syberka / .9) : 0, v => v + '%', null,
+        v => sendCommand('syberek ' + v), servoModeKnown && S.tryb_serwa === 2 && damperPositionKnown,
+        () => damperPositionKnown && hasData('syberka') ? Math.round(S.syberka / .9) : NaN));
       manual.appendChild(live$(h('div', 'sym-info'), el => el.textContent = S.serwo_override_min > 0 ? 'Ręczna pozycja jeszcze ok. ' + S.serwo_override_min + ' min, potem powrót do Auto' : ''));
       b.appendChild(manual);
       b.appendChild(sectionHeader('Automatyka (tryb Auto)'));
@@ -5563,7 +5832,13 @@ body.mode-phone-frame #phone {
         el.textContent = pad2(n.getDate()) + '.' + pad2(n.getMonth() + 1) + '.' + n.getFullYear() + ' ' + pad2(n.getHours()) + ':' + pad2(n.getMinutes()) + ':' + pad2(n.getSeconds());
       }));
       b.appendChild(sectionHeader('Zegar sterownika (RTC)'));
-      b.appendChild(h('div', 'row', '<div class="l"><b>' + (S.rtc_ok ? 'RTC gotowy' : 'RTC niegotowy') + '</b><span>data w sterowniku: ' + S.dzien + '.' + S.miesiac + '.' + S.rok + '</span></div>'));
+      b.appendChild(live$(h('div', 'row'), el => {
+        const rtcKnown = hasData('rtc_ok') && typeof S.rtc_ok === 'boolean';
+        const rtcDateKnown = ['dzien', 'miesiac', 'rok'].every(key => hasData(key) && Number.isInteger(S[key]) && S[key] > 0);
+        const rtcStateLabel = !rtcKnown ? 'Stan RTC: BRAK DANYCH' : S.rtc_ok ? 'RTC GOTOWY' : 'RTC NIEGOTOWY';
+        const rtcDateLabel = rtcDateKnown ? `${pad2(S.dzien)}.${pad2(S.miesiac)}.${S.rok}` : 'BRAK DANYCH';
+        el.innerHTML = '<div class="l"><b>' + rtcStateLabel + '</b><span>Data w sterowniku: ' + rtcDateLabel + '</span></div>';
+      }));
       const br = h('div', 'btnrow'); const sync = h('button', 'ust-btn', 'Synchronizuj z czasem urządzenia');
       // [FIX-RTC-SYNC + v3.33.0 FB-REMOTE-COMMANDS] Synchronizacja zegara RTC
       // dziala bezposrednio przez Firebase (komenda rtc_sync z czasem telefonu)
@@ -5571,12 +5846,17 @@ body.mode-phone-frame #phone {
       sync.onclick = async () => {
         const t = new Date();
         const yr = t.getFullYear(), mo = t.getMonth() + 1, da = t.getDate(), hr = t.getHours(), mi = t.getMinutes(), se = t.getSeconds();
-        if (_isFirebaseConnected) {
-          sendCommand(`rtc_sync ${yr} ${mo} ${da} ${hr} ${mi} ${se}`);
-          showToast('Czas', 'Wysłano czas telefonu do zegara RTC centrali', 'ok');
-          addLog('RTC', `Zsynchronizowano zegar z czasem urządzenia (${da}.${mo}.${yr} ${hr}:${mi}:${se})`, 'info');
+        if (_isFirebaseConnected && !_isDemoMode) {
+          sync.disabled = true;
+          const confirmed = await sendCommand(`rtc_sync ${yr} ${mo} ${da} ${hr} ${mi} ${se}`);
+          if (confirmed) {
+            addLog('RTC', `Sterownik potwierdził komendę synchronizacji (${da}.${mo}.${yr} ${hr}:${mi}:${se})`, 'ack');
+            showToast('Czas', 'Sterownik potwierdził polecenie synchronizacji RTC', 'ok');
+          }
+          sync.disabled = false;
           return;
         }
+        if (_isDemoMode) { showToast('Czas', 'Tryb symulacji — nie wysłano komendy do sterownika', 'warn'); return; }
         const ip = (S.ip || '').trim();
         if (!ip) { showToast('Czas', 'Brak połączenia z centralą', 'err'); return; }
         const qs = `rok=${yr}&miesiac=${mo}&dzien=${da}&godzina=${hr}&minuta=${mi}&sekunda=${se}`;
@@ -5900,27 +6180,35 @@ body.mode-phone-frame #phone {
   };
 
   function buildTelegramStatusReport() {
-    // [FIX-TELEGRAM-REAL] Podglad pokazuje WYLACZNIE prawdziwe wartosci ze
-    // strumienia /piec/status; brak odczytu = kreska, bez wymyslonych
-    // 58.4°C / -64 dBm / IP 192.168.1.145. Raport WYSYLANY na czat buduje
-    // firmware (buildTelegramStatusReport() w main_centrala.cpp).
-    const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
-    const deg = v => { const x = num(v); return x === null ? '—' : fmt1(x) + '°C'; };
-    const pumpStatus = S.pompa ? '🟢 PRACA' : '⚪ STOP';
-    const pumpDesc = S.wybor === 1
-      ? `Trociniak (${num(S.czasOn) === null ? '—' : S.czasOn}m/${num(S.czasOff) === null ? '—' : S.czasOff}m)`
-      : `Kopciuch (ON: ${deg(S.tempOn)}, OFF: ${deg(S.tempOff)})`;
-    const servoMode = S.tryb_serwa === 1 ? 'AUTO' : S.tryb_serwa === 2 ? 'RĘCZNY' : (num(S.tryb_serwa) === null ? '—' : 'BEZPIECZNA');
-    const flapPct = num(S.klapa) === null ? null : Math.round(S.klapa / 1.8);
-    const damperPct = num(S.syberka) === null ? null : Math.round(S.syberka / 0.9);
-    const alarmState = S.dym_alarm ? '🚨 ALARM DYMU' : S.alarm_ogrzewanie ? '🚨 ALARM PRZEGRZANIA' : 'BRAK (System bezpieczny)';
+    const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+    const deg = (key, v, pole) => {
+      const x = num(v);
+      return x !== null && (hasData(key) || (pole && symAktywna(pole))) ? fmt1(x) + '°C' : '—';
+    };
+    const pumpKnown = hasData('pompa');
+    const pumpModeKnown = hasData('wybor') && Number.isInteger(S.wybor) && S.wybor >= 1 && S.wybor <= 3;
+    const pumpStatus = pumpKnown ? (S.pompa ? '🟢 PRACA' : '⚪ STOP') : '—';
+    const pumpDesc = !pumpModeKnown ? 'tryb nieznany' : S.wybor === 1
+      ? `Trociniak (${hasData('czasOn') ? S.czasOn : '—'}m/${hasData('czasOff') ? S.czasOff : '—'}m)`
+      : S.wybor === 2 ? `Temperaturowy (ON: ${hasData('tempOn') ? deg('tempOn', S.tempOn) : '—'}, OFF: ${hasData('tempOff') ? deg('tempOff', S.tempOff) : '—'})`
+      : `Auto (start: ${hasData('tempOn') ? deg('tempOn', S.tempOn) : '—'})`;
+    const servoModeKnown = hasData('tryb_serwa') && Number.isInteger(S.tryb_serwa) && S.tryb_serwa >= 1 && S.tryb_serwa <= 3;
+    const servoMode = servoModeKnown ? trybNazwa[S.tryb_serwa] : '—';
+    const flapPct = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180 ? Math.round(S.klapa / 1.8) : null;
+    const damperPct = hasData('syberka') && Number.isInteger(S.syberka) && S.syberka >= 0 && S.syberka <= 90 ? Math.round(S.syberka / 0.9) : null;
+    const alarmKnown = hasData('dym_alarm') && hasData('alarm_ogrzewanie') && hasData('alarm_panel');
+    const alarmState = hasData('dym_alarm') && S.dym_alarm ? '🚨 ALARM DYMU' :
+      hasData('alarm_ogrzewanie') && S.alarm_ogrzewanie ? '🚨 ALARM PRZEGRZANIA' :
+      hasData('alarm_panel') && S.alarm_panel ? '🚨 ALARM PANELU' : alarmKnown ? 'BRAK (stan odczytany)' : 'BRAK DANYCH';
+    const sourceLabel = _isDemoMode ? 'SYMULACJA — nie jest telemetrią' : Object.keys(S.sym).length ? 'symulacja lokalna — nie jest telemetrią' : 'stan sterownika';
 
     return `🔥 *Sterownik C.O.* — Raport stanu
-• *Piec:* ${deg(S.t_ogrz)} | *Bojler:* ${deg(S.t_bojler)} | *Panel:* ${deg(S.t_panel)} | *Zewn:* ${deg(S.t_zewn)}
+• *Źródło:* ${sourceLabel}
+• *Piec:* ${deg('t_ogrz', S.t_ogrz, 'ogrz')} | *Bojler:* ${deg('t_bojler', S.t_bojler, 'bojler')} | *Panel:* ${deg('t_panel', S.t_panel, 'panel')} | *Zewn:* ${deg('t_zewn', S.t_zewn, 'zewn')}
 • *Pompa:* ${pumpStatus} — ${pumpDesc}
 • *Serwa:* Klapa ${flapPct === null ? '—' : flapPct + '%'} | Syberek ${damperPct === null ? '—' : damperPct + '%'} (Tryb: ${servoMode})
 • *Alerty:* ${alarmState}
-• *WiFi:* ${num(S.wifi_rssi) === null ? '—' : S.wifi_rssi + ' dBm'} · IP: ${S.ip || '—'}`;
+• *WiFi:* ${hasData('wifi_rssi') && num(S.wifi_rssi) !== null ? S.wifi_rssi + ' dBm' : '—'} · IP: ${hasData('ip') ? S.ip : '—'}`;
   }
 
 
@@ -6021,7 +6309,7 @@ body.mode-phone-frame #phone {
       prevBox.appendChild(bubble);
       b.appendChild(prevBox);
 
-      saveBtn.onclick = () => {
+      saveBtn.onclick = async () => {
         const tok = (tokenInp.value || '').trim();
         const cid = (chatIdInp.value || '').trim();
         if (!tok || !cid) { showToast('Telegram', 'Wypełnij Token i Chat ID', 'warn'); return; }
@@ -6031,9 +6319,15 @@ body.mode-phone-frame #phone {
         safeStorage.set('piec_tg_chat_id', cid);
         // [v3.33.0 FB-REMOTE-COMMANDS] Zdalny zapis konfiguracji przez Firebase
         // lub lokalne API
-        if (_isFirebaseConnected) {
-          sendCommand(`tg_config ${tok} ${cid} ${tgConfig.enabled ? 1 : 0}`);
-          showToast('Telegram', 'Wysłano konfigurację do centrali (Firebase)', 'ok');
+        if (_isFirebaseConnected && !_isDemoMode) {
+          const confirmed = await sendCommand(`tg_config ${tok} ${cid} ${tgConfig.enabled ? 1 : 0}`);
+          if (confirmed) showToast('Telegram', 'Sterownik potwierdził przyjęcie konfiguracji', 'ok');
+          else showToast('Telegram', 'Brak potwierdzenia zapisu w centrali; konfiguracja jest tylko lokalnym szkicem', 'warn');
+          bubble.textContent = buildTelegramStatusReport();
+          return;
+        }
+        if (_isDemoMode) {
+          showToast('Telegram', 'Tryb symulacji — konfiguracji nie wysłano do sterownika', 'warn');
           bubble.textContent = buildTelegramStatusReport();
           return;
         }
@@ -6044,12 +6338,15 @@ body.mode-phone-frame #phone {
       sendTestBtn.onclick = async () => {
         // [v3.33.0 FB-REMOTE-COMMANDS] Gdy panel dziala przez Firebase (na telefonie/LTE),
         // wysylamy komende 'tg_test' bezposrednio do /piec/cmd centrali.
-        if (_isFirebaseConnected) {
-          sendCommand('tg_test');
-          showToast('Telegram', 'Wysłano rozkaz testu Telegram (Firebase)', 'ok');
-          addLog('TELEGRAM', 'Wysłano rozkaz testu Telegram przez Firebase', 'info');
+        if (_isFirebaseConnected && !_isDemoMode) {
+          const confirmed = await sendCommand('tg_test');
+          if (confirmed) {
+            showToast('Telegram', 'Sterownik potwierdził przyjęcie testu; sprawdź wynik w logu centrali', 'ok');
+            addLog('TELEGRAM', 'Sterownik potwierdził przyjęcie polecenia testu Telegram', 'ack');
+          }
           return;
         }
+        if (_isDemoMode) { showToast('Telegram', 'Tryb symulacji — test nie został wysłany', 'warn'); return; }
         const url = tgApiUrl('/api/telegram/send');
         if (!url) { showToast('Telegram', 'Brak połączenia z centralą', 'err'); return; }
         sendTestBtn.disabled = true;
@@ -6104,15 +6401,14 @@ body.mode-phone-frame #phone {
   ];
 
   const _terminalState = {
-    session: '20261005_120000',
-    lastSeq: 0,
+    session: '',
+    lastSeq: -1,
     lines: 0,
     bytes: 0,
     gaps: 0,
     chunks: 0,
     paused: false,
     timer: null,
-    simTimer: null,
     opened: false,
     autoOffAt: 0,
     rendered: [],
@@ -6160,7 +6456,9 @@ body.mode-phone-frame #phone {
     if (!e) return;
     const atBottom = e.scrollTop + e.clientHeight + 30 >= e.scrollHeight;
     _terminalState.rendered = terminalDisplayLines();
-    e.innerHTML = _terminalState.rendered.map(terminalLineHtml).join('\n');
+    e.innerHTML = _terminalState.rendered.length
+      ? _terminalState.rendered.map(terminalLineHtml).join('\n')
+      : '<span class="t-info">Brak odebranych wpisów DLOG z centrali.</span>';
     if (!_terminalState.paused && atBottom) e.scrollTop = e.scrollHeight;
   }
   function terminalAppendChunk(obj) {
@@ -6190,7 +6488,7 @@ body.mode-phone-frame #phone {
     const eBytes = $('#terminalBytesInfo'); if (eBytes) eBytes.textContent = terminalFmtBytes(_terminalState.bytes);
     const eLines = $('#terminalLinesInfo'); if (eLines) eLines.textContent = _terminalState.lines + ' linii';
     const eGap = $('#terminalGapInfo'); if (eGap) eGap.textContent = 'Luki: ' + _terminalState.gaps;
-    const eLive = $('#terminalPollInfo'); if (eLive) eLive.textContent = 'LIVE: ' + (_terminalState.opened ? 'aktywny' : '—');
+    const eLive = $('#terminalPollInfo'); if (eLive) eLive.textContent = 'REMOTE: ' + (_terminalState.opened ? 'potwierdzony' : 'wyłączony');
     const eAuto = $('#terminalAutoOffInfo');
     if (eAuto) {
       if (_terminalState.autoOffAt) {
@@ -6230,70 +6528,40 @@ body.mode-phone-frame #phone {
     if (btnOff) btnOff.disabled = !on;
   }
 
-  function generateSimulatedDLogChunk() {
-    const now = new Date();
-    const ts = pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
-    const sampleCats = [
-      { cat: 'SENSOR', lvl: 'INFO', msg: `t_ogrz=${fmt1(S.t_ogrz)}C t_bojler=${fmt1(S.t_bojler)}C t_panel=${fmt1(S.t_panel)}C t_zewn=${fmt1(S.t_zewn)}C cisnienie=${S.cisnienie}hPa` },
-      { cat: 'POMPA', lvl: 'INFO', msg: `stan=${S.pompa ? 'ON' : 'OFF'} tryb=${S.wybor === 1 ? 'Trociniak' : 'Kopciuch'} cykl=${S.czasOn}m/${S.czasOff}m override=${S.pompa_override_min}m` },
-      { cat: 'SERVO', lvl: 'DEBUG', msg: `klapa=${Math.round(S.klapa / 1.8)}% syberek=${Math.round(S.syberka / 0.9)}% trybSerwa=${S.tryb_serwa} hister=${S.histerServo}C` },
-      { cat: 'FIREBASE', lvl: 'INFO', msg: `telemetry shard v1 commit ACK 32ms rssi=${S.wifi_rssi}dBm queue=0/64` },
-      { cat: 'WIFI', lvl: 'TRACE', msg: `beacon recv bssid=48:E7:29:B1:0A:F0 rssi=${S.wifi_rssi}dBm channel=6 beacon_interval=100ms` },
-      { cat: 'TELEGRAM', lvl: 'DEBUG', msg: `long-poll getUpdates offset=498102 status=200 ok pending=0` },
-      { cat: 'ALARM', lvl: 'INFO', msg: `ogrz=${S.alarm_ogrzewanie ? 'ALARM' : 'OK'} dym=${S.dym_alarm ? 'ALARM' : 'OK'} adc=${S.dym} prog=${S.progAlarmDym}` },
-      { cat: 'WEATHER', lvl: 'INFO', msg: `Open-Meteo sync OK wmo_code=${S.weatherCode || 0} temp=${fmt1(S.t_zewn)}C press=${S.cisnienie}hPa` },
-      { cat: 'MEMORY', lvl: 'TRACE', msg: `heap_free=184320 min_free=168440 psram_free=4194304 tasks=14/24` },
-      { cat: 'WATCHDOG', lvl: 'DEBUG', msg: `task_wdt feed loop=OK tgTask=OK telemetryTask=OK historiaTask=OK` },
-      { cat: 'SCHEDULER', lvl: 'TRACE', msg: `slot=0/16 tick_delta=100ms drift_us=120 load_core0=18% load_core1=34%` }
-    ];
-    const pick = sampleCats[Math.floor(Math.random() * sampleCats.length)];
-    const line = `[${ts}] [${pick.cat}] lvl=${pick.lvl} tag=${pick.cat} msg="${pick.msg}"`;
-    terminalAppendChunk({
-      seq: (_terminalState.lastSeq >= 0 ? _terminalState.lastSeq + 1 : 1),
-      data: line + '\n',
-      bytes: line.length + 1
-    });
-  }
-
   async function terminalRemoteOn() {
-    try {
-      terminalSetStatus('Wysyłanie polecenia diag remote on…', '');
-      sendCommand('diag remote on');
-      _terminalState.autoOffAt = Date.now() + 60 * 60 * 1000;
-      _terminalState.opened = true;
-      terminalSetState(true);
-      terminalSetStatus('Remote ON · LIVE streaming aktywny (Auto-OFF 60 min).', 'ok');
-
-      if (!_terminalState.simTimer) {
-        _terminalState.simTimer = setInterval(() => {
-          if (_terminalState.opened && !_terminalState.paused) {
-            generateSimulatedDLogChunk();
-          }
-        }, 1500);
-      }
-    } catch (e) {
-      terminalSetStatus('Błąd włączenia Remote: ' + (e.message || e), 'err');
+    terminalSetStatus('Wysyłanie polecenia Remote ON; czekam na potwierdzenie sterownika…', 'warn');
+    const confirmed = await sendCommand('diag remote on');
+    if (!confirmed) {
+      terminalSetState(false);
+      terminalSetStatus('Brak potwierdzenia Remote ON. Nie odebrano też wpisów DLOG.', 'warn');
+      return;
     }
+    _terminalState.autoOffAt = Date.now() + 60 * 60 * 1000;
+    _terminalState.opened = true;
+    terminalSetState(true);
+    terminalSetStatus('Remote ON potwierdzony. Oczekiwanie na rzeczywisty strumień DLOG.', 'ok');
   }
 
   async function terminalRemoteOff() {
-    try {
-      sendCommand('diag remote off');
-      _terminalState.autoOffAt = 0;
-      _terminalState.opened = false;
-      if (_terminalState.simTimer) { clearInterval(_terminalState.simTimer); _terminalState.simTimer = null; }
-      terminalSetState(false);
-      terminalSetStatus('Remote OFF · LIVE zatrzymany. Dane w buforze zachowane.', 'ok');
-    } catch (e) {
-      terminalSetStatus('Błąd wyłączenia Remote: ' + (e.message || e), 'err');
+    terminalSetStatus('Wysyłanie polecenia Remote OFF; czekam na potwierdzenie…', 'warn');
+    const confirmed = await sendCommand('diag remote off');
+    if (!confirmed) {
+      terminalSetStatus('Brak potwierdzenia Remote OFF — stan pozostaje nieznany.', 'warn');
+      return;
     }
+    _terminalState.autoOffAt = 0;
+    _terminalState.opened = false;
+    terminalSetState(false);
+    terminalSetStatus('Remote OFF potwierdzony przez sterownik.', 'ok');
   }
 
   function terminalSetLevel(lvl) {
     if (!lvl) return;
-    _terminalState.level = lvl;
-    sendCommand('diag remote level ' + lvl);
-    terminalSetStatus(`Poziom logowania ustawiony na ${lvl} (ACK).`, 'ok');
+    terminalSetStatus('Wysyłanie poziomu DLOG; oczekiwanie na potwierdzenie…', 'warn');
+    sendCommand('diag remote level ' + lvl).then(confirmed => {
+      if (confirmed) _terminalState.level = lvl;
+      terminalSetStatus(confirmed ? `Poziom DLOG ${lvl} potwierdzony przez sterownik.` : 'Nie potwierdzono zmiany poziomu DLOG.', confirmed ? 'ok' : 'warn');
+    });
   }
 
   function terminalSetAllCategories(enabled) {
@@ -6306,10 +6574,12 @@ body.mode-phone-frame #phone {
     });
     terminalRender();
     if (_terminalState.opened) {
-      sendCommand('diag remote cat ALL ' + (enabled ? 'on' : 'off'));
-      terminalSetStatus((enabled ? 'Wszystkie 21 kategorii DLOG WŁĄCZONE' : 'Wszystkie kategorie DLOG WYŁĄCZONE') + ' na urządzeniu.', 'ok');
+      terminalSetStatus('Wysyłanie zmiany filtrów DLOG; oczekiwanie na potwierdzenie…', 'warn');
+      sendCommand('diag remote cat ALL ' + (enabled ? 'on' : 'off')).then(confirmed => {
+        terminalSetStatus(confirmed ? 'Zmiana filtrów DLOG potwierdzona przez sterownik.' : 'Nie potwierdzono zmiany filtrów DLOG.', confirmed ? 'ok' : 'warn');
+      });
     } else {
-      terminalSetStatus((enabled ? 'Filtry 21 kategorii DLOG WŁĄCZONE' : 'Filtry DLOG WYŁĄCZONE') + ' na ekranie.', '');
+      terminalSetStatus((enabled ? 'Filtry DLOG włączone na ekranie' : 'Filtry DLOG wyłączone na ekranie') + ' (zmiana lokalna).', '');
     }
   }
 
@@ -6321,7 +6591,7 @@ body.mode-phone-frame #phone {
       const head = h('div', 'terminal-head', `
         <div>
           <div class="title">💻 Terminal Zdalny ESP32</div>
-          <div class="terminal-sub" id="terminalSessionMeta">sesja ${_terminalState.session} · /piec/telemetry/diagnostics</div>
+          <div class="terminal-sub" id="terminalSessionMeta">${_terminalState.session ? 'sesja ' + _terminalState.session : 'brak odebranej sesji'} · /piec/telemetry/diagnostics</div>
         </div>
         <div class="terminal-state" id="terminalState">
           <span class="terminal-dot ${_terminalState.opened ? 'on' : 'off'}"></span>
@@ -6343,10 +6613,8 @@ body.mode-phone-frame #phone {
       const ctrls = h('div', 'terminal-controls', `
         <label>
           SESJA
-          <select id="terminalSessionSelect">
-            <option value="20261005_120000" selected>20261005_120000 · najnowsza</option>
-            <option value="20261005_100000">20261005_100000 · boot #14</option>
-            <option value="20261004_180000">20261004_180000 · boot #13</option>
+          <select id="terminalSessionSelect" disabled>
+            <option value="" selected>${_terminalState.session || 'Brak odebranej sesji'}</option>
           </select>
         </label>
         <label>
@@ -6386,7 +6654,10 @@ body.mode-phone-frame #phone {
           chip.classList.toggle('active', checked);
           terminalRender();
           if (_terminalState.opened) {
-            sendCommand(`diag remote cat ${cat} ${checked ? 'on' : 'off'}`);
+            terminalSetStatus('Wysyłanie zmiany filtra DLOG; oczekiwanie na potwierdzenie…', 'warn');
+            sendCommand(`diag remote cat ${cat} ${checked ? 'on' : 'off'}`).then(confirmed => {
+              terminalSetStatus(confirmed ? `Filtr ${cat} potwierdzony przez sterownik.` : `Nie potwierdzono zmiany filtra ${cat}.`, confirmed ? 'ok' : 'warn');
+            });
           }
         };
         catGrid.appendChild(chip);
@@ -6400,7 +6671,7 @@ body.mode-phone-frame #phone {
         <span id="terminalBytesInfo">${terminalFmtBytes(_terminalState.bytes)}</span>
         <span id="terminalLinesInfo">${_terminalState.lines} linii</span>
         <span id="terminalGapInfo">Luki: ${_terminalState.gaps}</span>
-        <span id="terminalPollInfo">LIVE: ${_terminalState.opened ? 'aktywny' : '—'}</span>
+        <span id="terminalPollInfo">REMOTE: ${_terminalState.opened ? 'potwierdzony' : 'wyłączony'}</span>
         <span id="terminalAutoOffInfo">Auto-OFF: —</span>
       `);
       b.appendChild(infoGrid);
@@ -6438,31 +6709,18 @@ body.mode-phone-frame #phone {
       b.appendChild(consoleWrap);
 
       // 7. Pasek statusu
-      const foot = h('div', 'terminal-foot', 'Terminal czyta sesję diagnostyczną z pamięci ESP32 i bazy Firebase.');
+      const foot = h('div', 'terminal-foot', 'W tym panelu pojawią się wyłącznie wpisy DLOG odebrane od sterownika.');
       foot.id = 'terminalStatus';
       b.appendChild(foot);
 
       function execTerminalCmd() {
         const cmd = (cmdInp.value || '').trim();
         if (!cmd) return;
-        const now = new Date();
-        const ts = pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
-        const echoLine = `[${ts}] [TERMINAL] lvl=INFO tag=CMD msg="> ${cmd}"`;
-        terminalAppendChunk({
-          seq: _terminalState.lastSeq + 1,
-          data: echoLine + '\n',
-          bytes: echoLine.length + 1
-        });
-        sendCommand(cmd);
         cmdInp.value = '';
-        setTimeout(() => {
-          const ackLine = `[${ts}] [TERMINAL] lvl=DEBUG tag=ACK msg="ACK OK: ${cmd} (rtt=24ms)"`;
-          terminalAppendChunk({
-            seq: _terminalState.lastSeq + 1,
-            data: ackLine + '\n',
-            bytes: ackLine.length + 1
-          });
-        }, 120);
+        terminalSetStatus('Wysyłanie polecenia; oczekiwanie na potwierdzenie sterownika…', 'warn');
+        sendCommand(cmd).then(confirmed => {
+          terminalSetStatus(confirmed ? 'Polecenie potwierdzone przez sterownik.' : 'Brak potwierdzenia. W konsoli nie dodano fikcyjnego ACK.', confirmed ? 'ok' : 'warn');
+        });
       }
 
       setTimeout(() => {
@@ -6480,24 +6738,7 @@ body.mode-phone-frame #phone {
           };
         }
 
-        // Zainicjuj bufor przykładowymi logami startowymi jeśli pusty
-        if (!_terminalState.rawRendered.length) {
-          const initLogs = [
-            `[12:00:00] [BOOT] lvl=INFO tag=BOOT msg="ESP32-S3 Sterownik CO ${fwLabel()} boot=14 rst_reason=POWER_ON"`,
-            `[12:00:01] [SYSTEM] lvl=INFO tag=SYSTEM msg="Inicjalizacja peryferiów, FreeRTOS tasks 14/24 Core 0/1"`,
-            `[12:00:01] [WIFI] lvl=INFO tag=WIFI msg="WiFi connected SSID=${curNet.ssid} IP=${S.ip} rssi=${S.wifi_rssi}dBm"`,
-            `[12:00:02] [FIREBASE] lvl=INFO tag=FIREBASE msg="Firebase UserAuth zalogowany UID=${_fbLocalId || 'admin'} ACK"`,
-            `[12:00:02] [SENSOR] lvl=INFO tag=SENSOR msg="10 czujników gotowych: t_ogrz=${fmt1(S.t_ogrz)}C t_bojler=${fmt1(S.t_bojler)}C"`,
-            `[12:00:03] [TELEGRAM] lvl=INFO tag=TELEGRAM msg="Telegram bot aktywny @SterownikCO_Bot long-poll Core 0"`,
-            `[12:00:03] [POMPA] lvl=INFO tag=POMPA msg="Automatyka pompy: ${S.wybor === 1 ? 'Trociniak czasowy' : 'Kopciuch temp.'} stan=${S.pompa ? 'ON' : 'OFF'}"`,
-            `[12:00:04] [SERVO] lvl=INFO tag=SERVO msg="Klapa=${Math.round(S.klapa / 1.8)}% Syberek=${Math.round(S.syberka / 0.9)}% Tryb=AUTO"`
-          ];
-          initLogs.forEach((l, idx) => {
-            terminalAppendChunk({ seq: idx + 1, data: l + '\n', bytes: l.length + 1 });
-          });
-        } else {
-          terminalRender();
-        }
+        terminalRender();
         terminalSyncInfo();
       }, 50);
 
@@ -6512,7 +6753,12 @@ body.mode-phone-frame #phone {
   function showLogsSheet() {
     showSheet('Logi sterownika', 'logs', () => {
       const b = h('div');
-      b.appendChild(h('div', 'diag-card', '<div class="lbl">DIAGNOSTYKA APLIKACJI</div><div class="val">Połączenie: ' + (S.online ? 'LIVE' : 'OFFLINE') + '</div><div class="sub">IP: ' + S.ip + ' · Bufor telemetrii: ' + chartDataset.length + ' próbek · RSSI: ' + S.wifi_rssi + ' dBm</div>'));
+      const telemetryStatus = _isDemoMode ? 'SYMULACJA' : !_isFirebaseConnected ? 'BRAK SESJI' :
+        !S.online ? (hasData('online') ? 'OFFLINE' : 'OCZEKIWANIE NA TELEMETRIĘ') : 'LIVE';
+      const ipLabel = hasData('ip') && S.ip ? S.ip : '—';
+      const rssiLabel = hasData('wifi_rssi') && Number.isFinite(S.wifi_rssi) ? S.wifi_rssi + ' dBm' : '—';
+      const historyLabel = _isDemoMode ? 'historia symulowana: ' + chartDataset.length : 'historia telemetryczna: ' + chartDataset.length;
+      b.appendChild(h('div', 'diag-card', '<div class="lbl">DIAGNOSTYKA APLIKACJI</div><div class="val">Telemetria: ' + telemetryStatus + '</div><div class="sub">IP: ' + ipLabel + ' · ' + historyLabel + ' próbek · RSSI: ' + rssiLabel + '</div>'));
       const filters = h('div', 'log-filters');
       [['all', 'Wszystkie'], ['system', 'System'], ['cmd', 'Komendy'], ['warn', 'Ostrzeżenia']].forEach(([k, lbl]) => {
         const btn = h('button', 'log-filter' + (logFilter === k ? ' on' : ''), lbl);
@@ -6550,7 +6796,9 @@ body.mode-phone-frame #phone {
       if (logFilter === 'warn') return l.type === 'warn' || l.type === 'err';
       return true;
     });
-    box.innerHTML = filtered.map(l => `<div class="log-entry"><span class="ts">${l.ts}</span><span class="tag ${l.type}">${l.tag}</span><span class="msg">${l.msg}</span></div>`).join('');
+    box.innerHTML = filtered.length
+      ? filtered.map(l => `<div class="log-entry"><span class="ts">${l.ts}</span><span class="tag ${l.type}">${l.tag}</span><span class="msg">${l.msg}</span></div>`).join('')
+      : '<div class="note">Brak zarejestrowanych zdarzeń.</div>';
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -6719,7 +6967,7 @@ body.mode-phone-frame #phone {
       progWrap.style.display = 'none';
       b.appendChild(progWrap);
 
-      function runOtaProcedure(targetName, fileName, cmd) {
+      async function runOtaProcedure(targetName, fileName, cmd) {
         progWrap.style.display = 'flex';
         const lbl = $('#otaProgressLabel');
         const pct = $('#otaProgressPct');
@@ -6736,12 +6984,19 @@ body.mode-phone-frame #phone {
         // Telegrama). Faktyczny download/flash/restart odbywa sie W CENTRALI
         // w tle; postep widac w Telegramie i logach, a nie na tym pasku.
         if (pct) pct.textContent = '…';
-        if (fill) fill.style.width = '40%';
-        if (lbl) lbl.textContent = `Wysyłanie komendy "${cmd}" do centrali (${fileName})…`;
-        sendCommand(cmd);
-        if (fill) fill.style.width = '100%';
-        if (lbl) lbl.textContent = `Komenda "${cmd}" wysłana. OTA ${targetName} wykonuje centrala w tle — postęp w Telegramie i logach; po flashu restart ~10-15 s.`;
-        addLog('OTA', `Kolejkowano ${cmd} (${fileName})`, 'info');
+        if (fill) fill.style.width = '0%';
+        if (lbl) lbl.textContent = `Oczekiwanie na potwierdzenie komendy "${cmd}" (${fileName})…`;
+        const confirmed = await sendCommand(cmd);
+        if (confirmed) {
+          if (pct) pct.textContent = 'ACK';
+          if (fill) fill.style.width = '12%';
+          if (lbl) lbl.textContent = `Sterownik potwierdził przyjęcie "${cmd}". Postęp flashowania ${targetName} nie jest dostępny w panelu; sprawdź logi centrali.`;
+          addLog('OTA', `Sterownik potwierdził przyjęcie ${cmd} (${fileName}); wykonanie OTA niezweryfikowane`, 'ack');
+        } else {
+          if (pct) pct.textContent = '—';
+          if (fill) fill.style.width = '0%';
+          if (lbl) lbl.textContent = `Brak potwierdzenia "${cmd}". Nie można stwierdzić, czy sterownik rozpoczął OTA.`;
+        }
         if (b1) b1.disabled = false;
         if (b2) b2.disabled = false;
       }
@@ -6904,24 +7159,14 @@ body.mode-phone-frame #phone {
   // temperaturowe i serwa na jednym wspolnym wykresie z dwoma osiami Y.
     function isSeriesOrPointSimulated(seriesObj, row) {
     if (_isDemoMode) return true;
-    if (row && (row.is_sim || row.sim || row.simulated)) return true;
     if (!seriesObj) return false;
-    const rawId = seriesObj.id || '';
-    const chId = (seriesObj.ch || '').replace(/^t_/, '');
-    if (typeof symAktywna === 'function') {
-      if (symAktywna(rawId)) return true;
-      if (symAktywna(chId)) return true;
-      if (rawId === 'ogrzsr' && symAktywna('ogrz')) return true;
-      if (rawId === 'powrot' && symAktywna('ogrz_powrot')) return true;
-      if (rawId === 'trociny' && symAktywna('ogrz_trociny')) return true;
-    }
-    if (typeof S !== 'undefined' && S && S.sym) {
-      if (S.sym[rawId] || S.sym[chId]) return true;
-      if (rawId === 'ogrzsr' && S.sym.ogrz) return true;
-      if (rawId === 'powrot' && S.sym.ogrz_powrot) return true;
-      if (rawId === 'trociny' && S.sym.ogrz_trociny) return true;
-    }
-    return false;
+    const rawChannel = seriesObj.ch || '';
+    const channelByKey = { t_zewn: 0, t_bojler: 1, t_ogrz: 2, t_ogrz_sr: 3, t_powrot: 4, t_panel: 5, t_pokoj: 6, t_trociny: 7, wilgotnosc: 8, cisnienie: 9, dym: 10, klapa: 11, syberka: 12 };
+    const channel = Number.isInteger(seriesObj.qCh) && seriesObj.qCh >= 0 ? seriesObj.qCh : channelByKey[rawChannel];
+    const hasSimChannel = point => point && (point.is_sim === true || point.simulated === true ||
+      (Number.isInteger(channel) && channel >= 0 && channel <= 30 && (((Number(point.sim) || 0) & (1 << channel)) !== 0)));
+    if (row) return !!hasSimChannel(row);
+    return Array.isArray(chartDataset) && chartDataset.some(hasSimChannel);
   }
 
   function activeSeriesCatalog() {
@@ -6987,14 +7232,29 @@ body.mode-phone-frame #phone {
 
   function historyParseRecord(id, obj) {
     if (!obj || typeof obj !== 'object') return null;
-    const a = Array.isArray(obj.a) ? obj.a : [];
+    const rawA = Array.isArray(obj.a) ? obj.a : [];
+    const numberOrNaN = value => {
+      if (typeof value !== 'number' && !(typeof value === 'string' && value.trim() !== '')) return NaN;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : NaN;
+    };
     const rid = String(id || '');
     const dash = rid.indexOf('-');
     const session = dash > 0 ? rid.slice(0, dash) : '';
+    const simValue = obj.sim;
+    const hasSimValue = Object.prototype.hasOwnProperty.call(obj, 'sim');
+    const simMaskNumber = typeof simValue === 'number' ? simValue :
+      typeof simValue === 'string' && simValue.trim() !== '' ? Number(simValue) : NaN;
+    const simMaskValid = !hasSimValue || typeof simValue === 'boolean' ||
+      (Number.isSafeInteger(simMaskNumber) && simMaskNumber >= 0);
+    const simFlagsValid = ['is_sim', 'simulated'].every(key =>
+      !Object.prototype.hasOwnProperty.call(obj, key) || typeof obj[key] === 'boolean');
+    const simulated = obj.is_sim === true || obj.simulated === true || simValue === true || !simMaskValid || !simFlagsValid;
+    const simMask = simMaskValid && typeof simValue !== 'boolean' && Number.isSafeInteger(simMaskNumber) && simMaskNumber >= 0 ? simMaskNumber : 0;
     return {
       _id: rid, session: session, seq: Number(obj.seq || 0), ts: Number(obj.ts || 0), mono: Number(obj.mono || 0),
-      a: a.map(v => Number(v)), k: Number(obj.k || 0), s: Number(obj.s || 0),
-      state: Number(obj.state || 0), q: Number(obj.q || 0), sim: Number(obj.sim || 0)
+      a: rawA.map(numberOrNaN), k: numberOrNaN(obj.k), s: numberOrNaN(obj.s),
+      state: Number(obj.state || 0), q: Number(obj.q || 0), sim: simMask, simulated: simulated
     };
   }
 
@@ -7074,7 +7334,7 @@ body.mode-phone-frame #phone {
 
     const parsedRows = sorted.map(r => {
       const getVal = (idx, ch, scale, minBound, maxBound) => {
-        if (!Array.isArray(r.a) || idx >= r.a.length) return null;
+        if (r.simulated || (r.sim & (1 << ch)) !== 0 || !Array.isArray(r.a) || idx >= r.a.length) return null;
         const qVal = (r.q >>> (ch * 2)) & 3;
         const raw = Number(r.a[idx]);
         if (!Number.isFinite(raw) || qVal >= 2) return null;
@@ -7085,10 +7345,11 @@ body.mode-phone-frame #phone {
         return Math.round(val * 10) / 10;
       };
 
-      const getServoVal = (degVal, maxDeg) => {
+      const getServoVal = (degVal, maxDeg, channel) => {
+        if (r.simulated || (r.sim & (1 << channel)) !== 0) return null;
         const v = Number(degVal);
-        if (!Number.isFinite(v) || v < 0) return null;
-        return Math.round(Math.max(0, Math.min(100, (v / maxDeg) * 100)));
+        if (!Number.isFinite(v) || v < 0 || v > maxDeg) return null;
+        return Math.round((v / maxDeg) * 100);
       };
 
       // [FIX-FILTR-ANOMALII v5] Twarde filtry na wejsciu z bazy Firebase:
@@ -7106,30 +7367,33 @@ body.mode-phone-frame #phone {
         t_trociny: getVal(7, 7, 0.1, 5, 90),
         wilgotnosc: getVal(8, 8, 0.1, 10, 100),
         cisnienie: getVal(9, 9, 0.1, 900, 1100),
-        dym: (r.a && Number.isFinite(r.a[10]) && ((r.q >>> 20) & 3) < 2) ? Number(r.a[10]) : null,
-        klapa: getServoVal(r.k, 180),
-        syberka: getServoVal(r.s, 90),
-        pompa: !!(r.state & 1)
+        dym: !r.simulated && (r.sim & (1 << 10)) === 0 && r.a && Number.isFinite(r.a[10]) && r.a[10] >= 0 && r.a[10] <= 4095 && ((r.q >>> 20) & 3) < 2 ? Number(r.a[10]) : null,
+        klapa: getServoVal(r.k, 180, 11),
+        syberka: getServoVal(r.s, 90, 12),
+        pompa: !!(r.state & 1),
+        sim: r.sim,
+        is_sim: r.simulated
       };
     });
 
-    const validOgrz = parsedRows.filter(r => r.t_ogrz !== null && r.t_bojler !== null);
+    const realRows = parsedRows.filter(r => [
+      't_zewn', 't_bojler', 't_ogrz', 't_ogrz_sr', 't_powrot', 't_panel', 't_pokoj', 't_trociny',
+      'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka'
+    ].some(key => typeof r[key] === 'number' && Number.isFinite(r[key])));
+    if (!realRows.length) return null;
+    const validOgrz = realRows.filter(r => r.t_ogrz !== null && r.t_bojler !== null && r.t_zewn !== null);
     if (validOgrz.length >= 10) {
       hist.length = 0;
       const step = Math.max(1, Math.floor(validOgrz.length / 60));
       for (let i = 0; i < validOgrz.length; i += step) {
         const row = validOgrz[i];
-        hist.push({
-          o: row.t_ogrz ?? S.t_ogrz,
-          b: row.t_bojler ?? S.t_bojler,
-          z: row.t_zewn ?? S.t_zewn
-        });
+        hist.push({ o: row.t_ogrz, b: row.t_bojler, z: row.t_zewn });
         if (hist.length >= 60) break;
       }
       drawTrend();
     }
 
-    return parsedRows;
+    return realRows;
   }
 
   function filterSeriesGlitches(rows, channelKey, group) {
@@ -7236,6 +7500,7 @@ body.mode-phone-frame #phone {
   async function loadTelemetryRange(rangeSec) {
     activeRangeSec = rangeSec;
     const rangeName = rangeSec === 6 * 3600 ? '6h' : rangeSec === 24 * 3600 ? '24h' : rangeSec === 7 * 86400 ? '7d' : '30d';
+    let historyFailed = false;
 
     if (_isFirebaseConnected) {
       $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase…`;
@@ -7255,6 +7520,7 @@ body.mode-phone-frame #phone {
           return;
         }
       } catch (err) {
+        historyFailed = true;
         console.warn('Błąd odczytu telemetrii Firebase:', err);
       }
     }
@@ -7267,10 +7533,23 @@ body.mode-phone-frame #phone {
       $('#chartRealityPill').style.color = 'var(--warn)';
     } else {
       chartDataset = [];
-      $('#chartStatusInfo').textContent = 'Wymagane logowanie do Firebase, aby pobrać telemetrię';
-      $('#chartRealityPill').textContent = 'BRAK SESJI';
-      $('#chartRealityPill').style.background = 'rgba(255,77,109,.15)';
-      $('#chartRealityPill').style.color = 'var(--err)';
+      const pill = $('#chartRealityPill');
+      if (!_isFirebaseConnected) {
+        $('#chartStatusInfo').textContent = 'Zaloguj się do Firebase, aby pobrać rzeczywistą historię telemetrii';
+        pill.textContent = 'BRAK SESJI';
+        pill.style.background = 'rgba(255,77,109,.15)';
+        pill.style.color = 'var(--err)';
+      } else if (historyFailed) {
+        $('#chartStatusInfo').textContent = `Nie udało się pobrać rzeczywistej historii (${rangeName}) — spróbuj ponownie`;
+        pill.textContent = 'BŁĄD RTDB';
+        pill.style.background = 'rgba(251,191,36,.15)';
+        pill.style.color = 'var(--warn)';
+      } else {
+        $('#chartStatusInfo').textContent = `Brak rzeczywistych próbek historii (${rangeName}); wartości symulowane są pomijane`;
+        pill.textContent = 'BRAK DANYCH';
+        pill.style.background = 'rgba(148,163,184,.15)';
+        pill.style.color = 'var(--text-dim)';
+      }
     }
 
     $('#chartPointsStat').textContent = String(chartDataset.length);
@@ -7304,14 +7583,22 @@ body.mode-phone-frame #phone {
   }
 
   function updateChartsNowStat() {
-    const curVal = chartFocus === 0 ? S.t_ogrz : S.klapa;
-    const unit = chartFocus === 0 ? '°C' : '%';
-    const lbl = chartFocus === 0 ? 'piec ' : 'klapa ';
-    $('#chartNowStat').textContent = lbl + (chartFocus === 0 ? fmt1(curVal) : fmt0(curVal / 1.8)) + unit;
+    const nowStat = $('#chartNowStat');
+    if (nowStat) {
+      if (chartFocus === 0) {
+        nowStat.textContent = symAktywna('ogrz') ? 'piec SYM — wyłączony z historii' :
+          hasData('t_ogrz') && Number.isFinite(S.t_ogrz) ? 'piec ' + fmt1(S.t_ogrz) + '°C' : 'piec —';
+      } else {
+        nowStat.textContent = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180 ?
+          'klapa ' + Math.round(S.klapa / 1.8) + '%' : 'klapa —';
+      }
+    }
 
     const pill = $('#chartPhasePill');
     if (pill) {
-      if (S.t_ogrz > 65) pill.textContent = `🔥 FAZA GRZANIA: INTENSYWNA (${fmt1(S.t_ogrz)}°C)`;
+      if (symAktywna('ogrz')) pill.textContent = '⚡ LOKALNA SYMULACJA PIECA — POZA WYKRESEM';
+      else if (!hasData('t_ogrz') || !Number.isFinite(S.t_ogrz)) pill.textContent = 'BRAK RZECZYWISTEGO ODCZYTU TEMPERATURY PIECA';
+      else if (S.t_ogrz > 65) pill.textContent = `🔥 FAZA GRZANIA: INTENSYWNA (${fmt1(S.t_ogrz)}°C)`;
       else if (S.t_ogrz > 45) pill.textContent = `🔥 FAZA GRZANIA: STABILNA (${fmt1(S.t_ogrz)}°C)`;
       else pill.textContent = `⏸ FAZA POSTOJU / WYGASZANIE (${fmt1(S.t_ogrz)}°C)`;
     }
@@ -7337,7 +7624,15 @@ body.mode-phone-frame #phone {
     g.scale(dpr, dpr);
     g.clearRect(0, 0, w, h);
 
-    if (!chartDataset || chartDataset.length < 2) return;
+    if (!chartDataset || chartDataset.length < 2) {
+      g.fillStyle = 'rgba(148,163,184,0.95)';
+      g.font = '600 12px Roboto,sans-serif';
+      g.textAlign = 'center';
+      g.fillText(chartDataset && chartDataset.length === 1
+        ? 'Za mało rzeczywistych próbek do narysowania linii'
+        : 'Brak rzeczywistych próbek dla wykresu', w / 2, h / 2);
+      return;
+    }
 
     const cat = activeSeriesCatalog().filter(s => s.on);
     if (!cat.length) return;
@@ -7579,6 +7874,12 @@ body.mode-phone-frame #phone {
       g.fillText(lbl, xPos, h - 8);
     }
 
+    // Smooth Bezier control points can overshoot the mapped data range. Keep
+    // every series path, area fill, and singleton marker inside the plot only.
+    g.save();
+    g.beginPath();
+    g.rect(padLeft, padTop, Math.max(0, plotW), Math.max(0, plotH));
+    g.clip();
     cat.forEach(s => {
       const seriesVals = cleanedValuesMap.get(s.id) || [];
       const segments = [];
@@ -7689,6 +7990,7 @@ body.mode-phone-frame #phone {
         }
       });
     });
+    g.restore();
 
     // Aktualizacja plakietki statusu symulacji na belce wykresu
     {
@@ -7710,6 +8012,10 @@ body.mode-phone-frame #phone {
     }
 
     const tooltip = $('#chartFloatingTooltip');
+    g.save();
+    g.beginPath();
+    g.rect(padLeft, padTop, Math.max(0, plotW), Math.max(0, plotH));
+    g.clip();
     if (chartCrosshairIdx !== null && chartCrosshairIdx >= 0 && chartCrosshairIdx < visibleRows.length) {
       const xCross = padLeft + (chartCrosshairIdx / Math.max(1, visibleRows.length - 1)) * plotW;
       g.setLineDash([3, 3]);

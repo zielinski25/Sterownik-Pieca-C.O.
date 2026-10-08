@@ -227,21 +227,25 @@ fun WifiSheet(m: AppModel) {
     LaunchedEffect(Unit) { m.wifiLoad() }
 
     val cur = m.wifiSaved.firstOrNull { it.active }
-    val curRssi = cur?.rssi?.takeIf { it != 0 } ?: m.S.wifi_rssi
+    val stateSsid = m.S.wifi_ssid.trim()
+    val wifiKnown = (cur?.ssid?.isNotBlank() == true) || (m.S.hasData("wifi_ssid") && stateSsid.isNotEmpty())
+    val curRssi = cur?.rssi?.takeIf { it in -127..-1 }
+        ?: m.S.wifi_rssi.takeIf { m.S.hasData("wifi_rssi") && it in -127..-1 }
     Column(Modifier.fillMaxWidth().background(Pal.Surface2, RoundedCornerShape(12.dp))
         .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(12.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    m.wifiActiveSsid(), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Pal.Text,
+                    m.wifiActiveSsid(), fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                    color = if (wifiKnown) Pal.Text else Pal.TextDim,
                     modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
-                NetBadge("POŁĄCZONO", "on")
+                NetBadge(if (wifiKnown) "POŁĄCZONO" else "STATUS NIEZNANY", if (wifiKnown) "on" else "off")
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("$curRssi dBm", style = Txt.monoSm)
-                WifiSig(curRssi)
+                Text(curRssi?.let { "$it dBm" } ?: "— dBm", style = Txt.monoSm)
+                curRssi?.let { WifiSig(it) }
             }
         }
         FlowRow(
@@ -250,14 +254,14 @@ fun WifiSheet(m: AppModel) {
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
-                "IP: ${if (m.S.ip.isEmpty()) "—" else m.S.ip}", style = Txt.cardDesc, color = Pal.Text,
+                "IP: ${if (m.S.hasData("ip") && m.S.ip.isNotBlank()) m.S.ip else "—"}", style = Txt.cardDesc, color = Pal.Text,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
             Text("Źródło: /api/wifi/list (centrala)", style = Txt.cardDesc,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("Tryb: STA (Klient)", style = Txt.cardDesc.copy(color = Pal.Cyan),
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("MAC: 48:E7:29:B1:0A:F4", style = Txt.monoSm,
+            Text("MAC: — (brak odczytu z centrali)", style = Txt.monoSm,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -357,7 +361,6 @@ fun TelegramSheet(m: AppModel) {
                 val payload = org.json.JSONObject().put("token", token).put("chatId", chatId).put("enabled", m.tgEnabled)
                 if (m.connected) {
                     m.send("tg_config $token $chatId ${if (m.tgEnabled) 1 else 0}")
-                    m.showToast("Telegram", "Wysłano konfigurację do centrali (Firebase)", "ok")
                 } else m.tgSave(payload, "Zapisano konfigurację w NVS centrali")
             }
         })
@@ -458,7 +461,6 @@ private fun Sel(label: String, options: List<Pair<String, String>>, current: Str
 @Composable
 fun TerminalSheet(m: AppModel) {
     var cmd by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { m.terminalSeed() }
     val listState = rememberLazyListState()
     LaunchedEffect(m.terminalDisplay.size, m.termPaused) {
         if (!m.termPaused && m.terminalDisplay.isNotEmpty()) listState.scrollToItem(m.terminalDisplay.size - 1)
@@ -471,7 +473,7 @@ fun TerminalSheet(m: AppModel) {
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("💻 Terminal Zdalny ESP32", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Text)
-                Text("sesja ${m.termSession} · /piec/telemetry/diagnostics", style = Txt.cardDesc, modifier = Modifier.padding(top = 2.dp))
+                Text("Polecenia ESP32 · oczekiwanie na rzeczywiste wpisy DLOG", style = Txt.cardDesc, modifier = Modifier.padding(top = 2.dp))
             }
             Row(Modifier.background(Color(0x40000000), RoundedCornerShape(8.dp))
                 .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
@@ -495,17 +497,10 @@ fun TerminalSheet(m: AppModel) {
                     onClick = { m.terminalTogglePause() })
                 TermBtn("⌫ Wyczyść", modifier = Modifier.weight(1f), onClick = { m.terminalClear() })
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Sel("SESJA", listOf(
-                    "20261005_120000" to "20261005_120000 · najnowsza",
-                    "20261005_100000" to "20261005_100000 · boot #14",
-                    "20261004_180000" to "20261004_180000 · boot #13"
-                ), m.termSession, Modifier.weight(1f)) { m.termSession = it }
-                Sel("POZIOM DLOG", listOf(
-                    "TRACE" to "TRACE (wszystko)", "DEBUG" to "DEBUG", "INFO" to "INFO",
-                    "WARN" to "WARN", "ERR" to "ERR (tylko błędy)"
-                ), m.termLevel, Modifier.weight(1f)) { m.terminalSetLevel(it) }
-            }
+            Sel("POZIOM DLOG", listOf(
+                "TRACE" to "TRACE (wszystko)", "DEBUG" to "DEBUG", "INFO" to "INFO",
+                "WARN" to "WARN", "ERR" to "ERR (tylko błędy)"
+            ), m.termLevel, Modifier.fillMaxWidth()) { m.terminalSetLevel(it) }
         }
 
         // 3. filtr 21 kategorii
@@ -541,7 +536,11 @@ fun TerminalSheet(m: AppModel) {
                 m.terminalFmtBytes(m.termBytes),
                 "${m.termLines} linii",
                 "Luki: ${m.termGaps}",
-                "LIVE: " + (if (m.termOpened) "aktywny" else "—"),
+                "REMOTE: " + when {
+                    !m.termStateKnown -> "—"
+                    m.termOpened -> "ON"
+                    else -> "OFF"
+                },
                 "Auto-OFF: " + if (sec >= 0) String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60) else "—"
             ).forEach {
                 Box(Modifier.background(Color(0x99111F35), RoundedCornerShape(6.dp))
@@ -555,6 +554,12 @@ fun TerminalSheet(m: AppModel) {
         Column(Modifier.fillMaxWidth().background(Color(0xFF040911), RoundedCornerShape(12.dp))
             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(12.dp))) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().height(300.dp).padding(14.dp)) {
+                if (m.terminalDisplay.isEmpty()) {
+                    item {
+                        Text("Brak odebranych wpisów DLOG — niczego nie generujemy lokalnie.",
+                            fontSize = 11.sp, fontFamily = Txt.mono, color = Pal.TextDim)
+                    }
+                }
                 items(m.terminalDisplay.toList()) { line ->
                     val cls = m.terminalLineClass(line)
                     val c = when (cls) {
@@ -614,10 +619,19 @@ fun TerminalSheet(m: AppModel) {
 /** `showLogsSheet()` — diagnostyka + filtr + strumień `systemLogs`. */
 @Composable
 fun LogsSheet(m: AppModel) {
+    val telemetryStatus = when {
+        !m.connected -> "BRAK SESJI FIREBASE"
+        !m.isFbFresh -> "DANE NIEAKTUALNE"
+        !m.S.online && m.S.hasData("online") -> "OFFLINE"
+        !m.S.online -> "OCZEKIWANIE NA TELEMETRIĘ"
+        else -> "LIVE"
+    }
+    val ip = m.S.ip.takeIf { m.S.hasData("ip") && it.isNotBlank() } ?: "—"
+    val rssi = m.S.wifi_rssi.takeIf { m.S.hasData("wifi_rssi") && it in -127..-1 }?.let { "$it dBm" } ?: "—"
     DiagCard(
         lbl = "DIAGNOSTYKA APLIKACJI",
-        value = "Połączenie: " + (if (m.S.online) "LIVE" else "OFFLINE"),
-        sub = "IP: ${m.S.ip} · Bufor telemetrii: ${m.chartPoints} próbek · RSSI: ${m.S.wifi_rssi} dBm"
+        value = "Telemetria: $telemetryStatus",
+        sub = "IP: $ip · Bufor telemetrii: ${m.chartPoints} próbek · RSSI: $rssi"
     )
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("all" to "Wszystkie", "system" to "System", "cmd" to "Komendy", "warn" to "Ostrzeżenia").forEach { (k, lbl) ->
@@ -672,7 +686,7 @@ fun OtaSheet(m: AppModel) {
     LaunchedEffect(Unit) { if (m.ghRelease == null && !m.ghChecking) m.checkGithubRelease() }
     val rel = m.ghRelease
     val curTag = m.fwLabel()
-    val relTag = rel?.optString("tag", "—") ?: (if (m.fwKnown()) curTag else "—")
+    val relTag = rel?.optString("tag", "—") ?: "—"
     val upToDate = m.fwKnown() && rel != null && m.isSameTag(relTag, curTag)
 
     SectionHeader("Zainstalowane oprogramowanie (Bieżący soft)")
@@ -712,16 +726,17 @@ fun OtaSheet(m: AppModel) {
                 }
                 NetBadge(
                     when {
+                        rel == null -> "WYDAŃ GITHUB NIE POBRANO"
                         !m.fwKnown() -> "❔ WERSJA CENTRALI NIEZNANA"
                         upToDate -> "✓ NAJNOWSZA WERSJA"
                         else -> "⚡ DOSTĘPNA AKTUALIZACJA"
                     },
-                    if (upToDate) "on" else "known"
+                    when { rel == null -> "off"; upToDate -> "on"; else -> "known" }
                 )
             }
             Text(
-                if (rel != null) "Tytuł: ${rel.optString("name")} · Data wydania: ${rel.optString("publishedAt")}"
-                else "Sprawdź stan wydań repozytorium GitHub.",
+                if (rel != null) "Tytuł: ${rel.optString("name").ifBlank { "—" }} · Data wydania: ${rel.optString("publishedAt").ifBlank { "—" }}"
+                else "Aktualnych informacji o wydaniu z GitHub nie udało się pobrać.",
                 style = Txt.note.copy(fontSize = 11.sp)
             )
             Text("LISTA ZMIAN / RELEASE NOTES:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.Cyan)
@@ -738,7 +753,9 @@ fun OtaSheet(m: AppModel) {
         }
     }
     UstBtn("🔍 Sprawdź dostępność nowej wersji na GitHub", modifier = Modifier.fillMaxWidth(), onClick = {
-        m.checkGithubRelease { m.showToast("OTA", "Sprawdzono wydania na GitHub Releases", "ok") }
+        m.checkGithubRelease { found ->
+            m.showToast("OTA", if (found) "Pobrano wydanie z GitHub Releases" else "Nie udało się pobrać wydania z GitHub", if (found) "ok" else "err")
+        }
     })
 
     SectionHeader("Wybór komponentu instalacji do aktualizacji")
@@ -772,7 +789,8 @@ fun OtaSheet(m: AppModel) {
             }
             Box(Modifier.fillMaxWidth().height(10.dp).background(Color(0x14FFFFFF), RoundedCornerShape(5.dp))
                 .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(5.dp))) {
-                val frac = m.otaProgressPct.filter { it.isDigit() }.toIntOrNull()?.let { it / 100f } ?: 1f
+                val pct = m.otaProgressPct.removeSuffix("%").toFloatOrNull()
+                val frac = pct?.div(100f)?.coerceIn(0f, 1f) ?: 0f
                 Box(Modifier.fillMaxWidth(frac.coerceIn(0f, 1f)).height(10.dp)
                     .background(Brush.horizontalGradient(listOf(Color(0xFF0070FF), Pal.Cyan)), RoundedCornerShape(5.dp)))
             }
@@ -804,13 +822,15 @@ fun OtaSheet(m: AppModel) {
 /** `showSessionSheet()` — stan Firebase + akcje logowania. */
 @Composable
 fun SessionSheet(m: AppModel) {
+    val ip = m.S.ip.takeIf { m.S.hasData("ip") && it.isNotBlank() } ?: "—"
+    val rssi = m.S.wifi_rssi.takeIf { m.S.hasData("wifi_rssi") && it in -127..-1 }?.let { "$it dBm" } ?: "—"
     DiagCard(
         lbl = "POŁĄCZENIE Z FIREBASE",
         value = when {
             m.connected -> "🟢 Połączono LIVE"
             else -> "🔴 Brak sesji"
         },
-        sub = "Konto: " + (m.prefs.get(Prefs.K_EMAIL) ?: "Brak") + " · IP: ${m.S.ip} · RSSI: ${m.S.wifi_rssi} dBm"
+        sub = "Konto: " + (m.prefs.get(Prefs.K_EMAIL) ?: "Brak") + " · IP: $ip · RSSI: $rssi"
     )
     Note("Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Dane potrzebne do obsługi komend są zarządzane wewnętrznie.")
     UstBtn("🔑 Połącz / Zmień dane Firebase", variant = "primary", modifier = Modifier.fillMaxWidth(), onClick = {

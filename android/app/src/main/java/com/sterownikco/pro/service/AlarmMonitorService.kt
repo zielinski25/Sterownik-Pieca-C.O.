@@ -164,35 +164,47 @@ class AlarmMonitorService : Service() {
     private fun onSnapshot(d: JSONObject) {
         lastSnap = d
         try {
-            val info = AlarmCenter.evaluate(
-                Prefs(applicationContext),
-                jsonBool(d, "dym_alarm"), jsonBool(d, "alarm_ogrzewanie"),
-                d.optDouble("t_ogrz", Double.NaN), d.optDouble("dym", Double.NaN)
-            )
-            if (info != null) AlarmNotify.fire(applicationContext, info)
-            if (info == null && isAllClear(d)) AlarmNotify.cancel(applicationContext)
+            val smoke = alarmFlag(d, "dym_alarm")
+            val overheat = alarmFlag(d, "alarm_ogrzewanie")
+            // Brak, null lub błędny typ nie jest potwierdzeniem stanu "bez alarmu".
+            // Alarm aktywny można obsłużyć od razu; ciszę zatwierdzamy dopiero,
+            // gdy obie flagi są jawnie znane i wyłączone.
+            if (smoke == true || overheat == true || (smoke == false && overheat == false)) {
+                val info = AlarmCenter.evaluate(
+                    Prefs(applicationContext), smoke == true, overheat == true,
+                    number(d, "t_ogrz"), number(d, "dym")
+                )
+                if (info != null) AlarmNotify.fire(applicationContext, info)
+                else if (smoke == false && overheat == false) AlarmNotify.cancel(applicationContext)
+            }
         } catch (e: Exception) { /* alarm nie może wywalić usługi */ }
         try {
             PiecWidget.push(applicationContext, d)
         } catch (e: Exception) { /* widget nie może wywalić usługi */ }
     }
 
-    private fun isAllClear(d: JSONObject): Boolean =
-        !jsonBool(d, "dym_alarm") && !jsonBool(d, "alarm_ogrzewanie")
+    private fun alarmFlag(d: JSONObject, key: String): Boolean? {
+        if (!d.has(key) || d.isNull(key)) return null
+        return when (val raw = d.opt(key)) {
+            is Boolean -> raw
+            is Number -> raw.toDouble().takeIf { it.isFinite() && (it == 0.0 || it == 1.0) }?.let { it == 1.0 }
+            is String -> when (raw.trim().lowercase()) {
+                "1", "true" -> true
+                "0", "false" -> false
+                else -> null
+            }
+            else -> null
+        }
+    }
+
+    private fun number(d: JSONObject, key: String): Double {
+        if (!d.has(key) || d.isNull(key)) return Double.NaN
+        return (d.opt(key) as? Number)?.toDouble()?.takeIf { it.isFinite() } ?: Double.NaN
+    }
 
     companion object {
         const val ACT_STOP = "com.sterownikco.pro.STOP_MONITOR"
         const val STREAM_MAX_MS = 3L * 60_000
-
-        fun jsonBool(d: JSONObject, k: String): Boolean {
-            if (d.isNull(k)) return false
-            return when (val v = d.opt(k)) {
-                is Boolean -> v
-                is Number -> v.toDouble() != 0.0
-                is String -> v == "1" || v.equals("true", true)
-                else -> false
-            }
-        }
 
         fun start(ctx: Context) {
             try {

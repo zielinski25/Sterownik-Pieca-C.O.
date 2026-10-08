@@ -52,7 +52,7 @@ class PiecWidget : AppWidgetProvider() {
         fun push(ctx: Context, d: JSONObject) {
             val app = ctx.applicationContext
             val p = try { Prefs(app) } catch (e: Exception) { return }
-            val sig = listOf("t_ogrz", "t_bojler", "t_panel", "t_zewn", "dym_alarm", "alarm_ogrzewanie")
+            val sig = listOf("t_ogrz", "t_bojler", "t_panel", "t_zewn", "dym_alarm", "alarm_ogrzewanie", "alarm_panel", "online", "sim", "is_sim", "simulated")
                 .joinToString("|") { k -> if (d.isNull(k)) "" else d.opt(k).toString() }
             val now = System.currentTimeMillis()
             val same = sig == (p.get(K_PUSH_SIG) ?: "")
@@ -87,28 +87,106 @@ class PiecWidget : AppWidgetProvider() {
 
         private fun views(ctx: Context, d: JSONObject?): RemoteViews {
             val v = RemoteViews(ctx.packageName, R.layout.widget_piec)
-            fun deg(k: String): String {
-                val x = d?.optDouble(k, Double.NaN) ?: Double.NaN
-                return if (x.isFinite()) String.format(java.util.Locale.US, "%.1f°", x) else "—"
+
+            val simRaw = d?.opt("sim")
+            val simMask = when (simRaw) {
+                is Number -> simRaw.toDouble().takeIf {
+                    it.isFinite() && it >= 0.0 && it % 1.0 == 0.0 && it < Long.MAX_VALUE.toDouble()
+                }?.toLong()
+                is String -> simRaw.trim().toLongOrNull()?.takeIf { it >= 0L }
+                else -> null
             }
-            v.setTextViewText(R.id.w_t_ogrz, deg("t_ogrz"))
-            v.setTextViewText(R.id.w_t_bojler, deg("t_bojler"))
-            v.setTextViewText(R.id.w_t_panel, deg("t_panel"))
-            v.setTextViewText(R.id.w_t_zewn, deg("t_zewn"))
-            val dym = AlarmMonitorService.jsonBool(d ?: JSONObject(), "dym_alarm")
-            val ogrz = AlarmMonitorService.jsonBool(d ?: JSONObject(), "alarm_ogrzewanie")
+            val simFlagInvalid = listOf("is_sim", "simulated").any { key ->
+                d != null && d.has(key) && d.opt(key) !is Boolean
+            }
+            val simMaskInvalid = d?.has("sim") == true &&
+                simRaw !is Boolean && simMask == null
+            val metadataInvalid = simFlagInvalid || simMaskInvalid
+            val explicitSim = d?.optBoolean("is_sim", false) == true ||
+                d?.optBoolean("simulated", false) == true || simRaw == true
+            val simMaskValue = simMask ?: 0L
+            val sim = metadataInvalid || explicitSim || simMaskValue != 0L
+
+            fun simulated(channel: Int): Boolean = metadataInvalid || explicitSim ||
+                (channel in 0..62 && simMaskValue and (1L shl channel) != 0L)
+
+            fun numeric(key: String): Double? {
+                val raw = if (d == null || !d.has(key) || d.isNull(key)) null else d.opt(key)
+                return (raw as? Number)?.toDouble()?.takeIf { it.isFinite() }
+            }
+
+            fun deg(key: String, channel: Int, min: Double, max: Double): String {
+                val x = numeric(key)?.takeIf { it in min..max } ?: return "—"
+                val value = String.format(java.util.Locale.US, "%.1f°", x)
+                return if (simulated(channel)) "~$value" else value
+            }
+
+            val sensors = listOf(
+                Triple("t_ogrz", 2, 10.0..99.0),
+                Triple("t_bojler", 1, 10.0..95.0),
+                Triple("t_panel", 5, 0.0..140.0),
+                Triple("t_zewn", 0, -25.0..45.0)
+            )
+            fun display(sensor: Triple<String, Int, ClosedFloatingPointRange<Double>>) =
+                deg(sensor.first, sensor.second, sensor.third.start, sensor.third.endInclusive)
+
+            v.setTextViewText(R.id.w_t_ogrz, display(sensors[0]))
+            v.setTextViewText(R.id.w_t_bojler, display(sensors[1]))
+            v.setTextViewText(R.id.w_t_panel, display(sensors[2]))
+            v.setTextViewText(R.id.w_t_zewn, display(sensors[3]))
+
+            fun flag(key: String): Boolean? {
+                if (d == null || !d.has(key) || d.isNull(key)) return null
+                return when (val raw = d.opt(key)) {
+                    is Boolean -> raw
+                    is Number -> raw.toDouble().takeIf { it.isFinite() && (it == 0.0 || it == 1.0) }
+                        ?.let { it == 1.0 }
+                    else -> null
+                }
+            }
+
+            // Bool `sim` oznacza cały snapshot symulowany; w takim przypadku
+            // także flagi alarmowe nie są potwierdzeniem stanu sterownika.
+            val alarmTrusted = !metadataInvalid && !explicitSim
+            val dym = if (alarmTrusted) flag("dym_alarm") else null
+            val ogrz = if (alarmTrusted) flag("alarm_ogrzewanie") else null
+            val panel = if (alarmTrusted) flag("alarm_panel") else null
+            val alarmKnown = dym != null && ogrz != null && panel != null
+            val alarmActive = dym == true || ogrz == true || panel == true
+            val hasAnyReading = sensors.any { sensor -> numeric(sensor.first)?.let { value -> value in sensor.third } == true }
+            val hasRealReading = sensors.any { sensor ->
+                numeric(sensor.first)?.let { it in sensor.third } == true && !simulated(sensor.second)
+            }
+            val online = flag("online")
+            val controllerOffline = online == false
+            val lastPush = try { Prefs(ctx.applicationContext).getLong(K_PUSH_TS, 0L) } catch (e: Exception) { 0L }
+            val stale = lastPush <= 0L || System.currentTimeMillis() - lastPush > 5L * 60_000L
+            val alarmLabel = when {
+                dym == true && ogrz == true -> "DYM + PRZEGRZANIE"
+                dym == true -> "ALARM DYMU"
+                ogrz == true -> "PRZEGRZANIE"
+                else -> "ALARM PANELU"
+            }
+            val oldAlarm = controllerOffline || stale
             val (txt, col) = when {
-                d == null -> "○ OCZEKIWANIE NA DANE" to Color.parseColor("#7F93A3")
-                dym && ogrz -> "🚨 DYM + PRZEGRZANIE!" to Color.parseColor("#FF5F78")
-                dym -> "🚨 ALARM DYMU!" to Color.parseColor("#FF5F78")
-                ogrz -> "🚨 PRZEGRZANIE!" to Color.parseColor("#FF5F78")
+                alarmActive && oldAlarm -> "⚠ OSTATNI ODCZYT: $alarmLabel" to Color.parseColor("#FBBF24")
+                alarmActive -> "🚨 $alarmLabel!" to Color.parseColor("#FF5F78")
+                !hasRealReading && hasAnyReading -> "⚠ WYŁĄCZNIE SYMULACJA" to Color.parseColor("#FBBF24")
+                !hasRealReading -> "○ BRAK RZECZYWISTYCH DANYCH" to Color.parseColor("#7F93A3")
+                sim && !alarmKnown -> "⚠ SYMULACJA · STAN ALARMÓW — BRAK DANYCH" to Color.parseColor("#FBBF24")
+                sim -> "⚠ SYMULACJA" to Color.parseColor("#FBBF24")
+                !alarmKnown -> "⚠ STAN ALARMÓW — BRAK DANYCH" to Color.parseColor("#FBBF24")
+                controllerOffline || stale -> "○ OSTATNI ODCZYT — NIEAKTUALNY" to Color.parseColor("#7F93A3")
+                online != true -> "○ STATUS ONLINE — BRAK DANYCH" to Color.parseColor("#7F93A3")
                 else -> "● STEROWNIK CO" to Color.parseColor("#4ADE80")
             }
             v.setTextViewText(R.id.w_status, txt)
             v.setTextColor(R.id.w_status, col)
-            val c = java.util.Calendar.getInstance()
-            v.setTextViewText(R.id.w_time, String.format(java.util.Locale.US, "%02d:%02d",
-                c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE)))
+            val updatedAt = if (lastPush > 0L) java.util.Calendar.getInstance().apply { timeInMillis = lastPush } else null
+            val updatedLabel = updatedAt?.let { "od " + String.format(java.util.Locale.US, "%02d:%02d",
+                it.get(java.util.Calendar.HOUR_OF_DAY), it.get(java.util.Calendar.MINUTE)) } ?: "—"
+            v.setTextViewText(R.id.w_time, updatedLabel)
+
             val open = PendingIntent.getActivity(
                 ctx, 31, Intent(ctx, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -21,10 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -93,101 +89,129 @@ private fun DiagHead(title: String, right: String) {
 @Composable
 fun PompaSheet(m: AppModel) {
     val S = m.S
-    var wybor by remember { mutableIntStateOf(S.wybor) }
+    val modeKnown = S.hasData("wybor") && S.wybor in 1..3
+    val wybor = if (modeKnown) S.wybor else -1
     Note("Wybierz strategię pracy pompy. Trociniak steruje cyklem czasowym, a Kopciuch załącza pompę na podstawie temperatury pieca.")
+    if (!modeKnown) Note("Aktualny tryb: oczekiwanie na odczyt z centrali.")
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        StratOpt("⏱️", "TROCINIAK", "Tryb Czasowy", wybor == 1) {
-            wybor = 1; m.send("ustaw wybor 1"); m.refreshSheet()
+        StratOpt("⏱️", "TROCINIAK", "Tryb Czasowy", modeKnown && wybor == 1) {
+            m.send("ustaw wybor 1")
         }
-        StratOpt("🌡️", "KOPCIUCH", "Temperaturowy", wybor == 2) {
-            wybor = 2; m.send("ustaw wybor 2"); m.refreshSheet()
+        StratOpt("🌡️", "KOPCIUCH", "Temperaturowy", modeKnown && wybor == 2) {
+            m.send("ustaw wybor 2")
         }
-        StratOpt("⚡", "AUTO", "Inteligentny", wybor == 3) {
-            wybor = 3; m.send("ustaw wybor 3"); m.refreshSheet()
+        StratOpt("⚡", "AUTO", "Inteligentny", modeKnown && wybor == 3) {
+            m.send("ustaw wybor 3")
         }
     }
 
     if (wybor == 1) {
-        val totalMin = (S.czasOn + S.czasOff).takeIf { it > 0 } ?: 40
-        val pctOn = Math.round(S.czasOn * 100.0 / totalMin).toInt()
+        val cycleKnown = S.hasAllData("czasOn", "czasOff") && S.czasOn in 1..180 && S.czasOff in 1..180
         DiagramBox {
-            DiagHead("⏱️ TROCINIAK — CYKL CZASOWY POMPY", "Pełny cykl: $totalMin min")
-            Row(Modifier.fillMaxWidth().height(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.weight(pctOn.toFloat().coerceAtLeast(0.01f)).fillMaxHeight()
-                        .background(Brush.horizontalGradient(listOf(Color(0xFF4ADE80), Color(0xFF22C55E))))
-                ) {
-                    Box(Modifier.fillMaxWidth().fillMaxHeight(), contentAlignment = Alignment.Center) {
-                        Text("PRACA: ${S.czasOn}m ($pctOn%)", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF022C10))
+            if (cycleKnown) {
+                val totalMin = S.czasOn + S.czasOff
+                val pctOn = Math.round(S.czasOn * 100.0 / totalMin).toInt()
+                DiagHead("⏱️ TROCINIAK — CYKL CZASOWY POMPY", "Pełny cykl: $totalMin min")
+                Row(Modifier.fillMaxWidth().height(22.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.weight(pctOn.toFloat().coerceAtLeast(0.01f)).fillMaxHeight()
+                            .background(Brush.horizontalGradient(listOf(Color(0xFF4ADE80), Color(0xFF22C55E))))
+                    ) {
+                        Box(Modifier.fillMaxWidth().fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            Text("PRACA: ${S.czasOn}m ($pctOn%)", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF022C10))
+                        }
+                    }
+                    Box(
+                        Modifier.weight((100 - pctOn).toFloat().coerceAtLeast(0.01f)).fillMaxHeight()
+                            .background(Color(0x1AFFFFFF))
+                    ) {
+                        Box(Modifier.fillMaxWidth().fillMaxHeight(), contentAlignment = Alignment.Center) {
+                            Text("POSTÓJ: ${S.czasOff}m (${100 - pctOn}%)", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Pal.TextDim)
+                        }
                     }
                 }
-                Box(
-                    Modifier.weight((100 - pctOn).toFloat().coerceAtLeast(0.01f)).fillMaxHeight()
-                        .background(Color(0x1AFFFFFF))
-                ) {
-                    Box(Modifier.fillMaxWidth().fillMaxHeight(), contentAlignment = Alignment.Center) {
-                        Text("POSTÓJ: ${S.czasOff}m (${100 - pctOn}%)", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Pal.TextDim)
-                    }
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    Text("🟢 Załączenie pompy przez ${S.czasOn} min", fontSize = 7.5.sp, color = Pal.TextDim, modifier = Modifier.weight(1f))
+                    Text("⚪ Przerwa/odpoczynek kotła ${S.czasOff} min", fontSize = 7.5.sp, color = Pal.TextDim)
                 }
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                Text("🟢 Załączenie pompy przez ${S.czasOn} min", fontSize = 7.5.sp, color = Pal.TextDim, modifier = Modifier.weight(1f))
-                Text("⚪ Przerwa/odpoczynek kotła ${S.czasOff} min", fontSize = 7.5.sp, color = Pal.TextDim)
+            } else {
+                DiagHead("⏱️ TROCINIAK — CYKL CZASOWY POMPY", "—")
+                Text("Oczekiwanie na prawidłowe nastawy cyklu z centrali.", fontSize = 8.sp, color = Pal.TextDim)
             }
         }
     }
     if (wybor == 2) {
-        val minScale = 20; val maxScale = 90
-        val stopPct = ((S.tempOff - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
-        val startPct = ((S.tempOn - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
+        val minScale = 20
+        val maxScale = 90
+        val thresholdsKnown = S.hasAllData("tempOff", "tempOn") && S.tempOff in 0..100 && S.tempOn in 0..100
+        val tempKnown = S.hasData("t_ogrz") && S.t_ogrz.isFinite()
+        val pumpKnown = S.hasData("pompa")
         val curTemp = S.t_ogrz
-        val curPct = ((curTemp - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
-        val running = curTemp >= S.tempOn || (curTemp > S.tempOff && S.pompa)
         DiagramBox {
-            DiagHead("🌡️ KOPCIUCH — PROGI TEMPERATURY PIECA", "Histereza: ${S.tempOn - S.tempOff}°C")
-            // Padding must wrap the 14 dp gauge, not consume its height; otherwise
-            // the gradient bar and threshold markers get measured at zero height.
-            BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 12.dp).height(14.dp)) {
-                val w = maxWidth
-                Box(Modifier.fillMaxWidth().height(14.dp)
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Pal.Yellow, Pal.Accent, Pal.Err)), RoundedCornerShape(7.dp)))
-                // .temp-live-needle — biała igła z poświatą
-                Marker(w * (stopPct / 100f), "STOP ${S.tempOff}°C", Color(0xFF38BDF8), Color(0xFF082F49))
-                Marker(w * (startPct / 100f), "START ${S.tempOn}°C", Pal.Accent, Color(0xFF431407))
-                Box(Modifier.offset(x = w * (curPct / 100f) - 1.5.dp, y = (-4).dp).width(3.dp).height(22.dp)
-                    .background(Color.White, RoundedCornerShape(2.dp)))
-            }
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val hysteresis = if (thresholdsKnown) "Histereza: ${S.tempOn - S.tempOff}°C" else "Histereza: —"
+            DiagHead("🌡️ KOPCIUCH — PROGI TEMPERATURY PIECA", hysteresis)
+            if (thresholdsKnown) {
+                val stopPct = ((S.tempOff - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
+                val startPct = ((S.tempOn - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
+                BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 12.dp).height(14.dp)) {
+                    val w = maxWidth
+                    Box(Modifier.fillMaxWidth().height(14.dp)
+                        .background(Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Pal.Yellow, Pal.Accent, Pal.Err)), RoundedCornerShape(7.dp)))
+                    Marker(w * (stopPct / 100f), "STOP ${S.tempOff}°C", Color(0xFF38BDF8), Color(0xFF082F49))
+                    Marker(w * (startPct / 100f), "START ${S.tempOn}°C", Pal.Accent, Color(0xFF431407))
+                    if (tempKnown) {
+                        val curPct = ((curTemp - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
+                        Box(Modifier.offset(x = w * (curPct / 100f) - 1.5.dp, y = (-4).dp).width(3.dp).height(22.dp)
+                            .background(Color.White, RoundedCornerShape(2.dp)))
+                    }
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("$minScale°C (zimny)", fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
                     Text("$maxScale°C (gorący)", fontSize = 7.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
                 }
-                Text(
-                    "▲ Aktualnie piec: ${S.fmt1(curTemp)}°C (${if (running) "POMPA PRACUJE" else "POMPA STOI"})",
-                    fontSize = 8.sp, fontWeight = FontWeight.Bold, color = if (running) Pal.Live else Pal.Warn,
-                    modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
+            } else {
+                Text("Oczekiwanie na rzeczywiste progi temperatury z centrali.", fontSize = 8.sp, color = Pal.TextDim)
             }
+            val tempLabel = if (tempKnown) "${S.fmt1(curTemp)}°C" else "— (brak odczytu)"
+            val pumpLabel = if (pumpKnown) {
+                if (S.pompa) "PRACUJE" else "STOI"
+            } else "— (brak odczytu)"
+            Text(
+                "Piec: $tempLabel · Pompa: $pumpLabel",
+                fontSize = 8.sp, fontWeight = FontWeight.Bold,
+                color = if (pumpKnown && S.pompa) Pal.Live else Pal.TextDim,
+                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
         }
     }
 
     ManualRow("pompa", onSend = { m.send(it) })
-    if (S.pompa_override_min > 0) {
+    if (S.hasData("pompa_override_min") && S.pompa_override_min > 0) {
         Text(
             "Wymuszenie ręczne jeszcze ok. ${S.pompa_override_min} min, potem powrót do automatyki.",
             style = Txt.note.copy(fontSize = 9.5.sp), color = Pal.Warn, modifier = Modifier.padding(top = 6.dp)
         )
     }
     SectionHeader("Parametry trybu Czasowego (Trociniak)")
-    NumRow("Czas ON (Praca)", "Minuty załączenia pompy w cyklu", S.czasOn, 1, 180) { v -> m.commitNum("Czas ON (Praca)", "czasOn", 1, 180, v) }
-    NumRow("Czas OFF (Postój)", "Minuty wyłączenia pompy w cyklu", S.czasOff, 1, 180) { v -> m.commitNum("Czas OFF (Postój)", "czasOff", 1, 180, v) }
+    NumRow("Czas ON (Praca)", "Minuty załączenia pompy w cyklu", S.czasOn, 1, 180, known = S.hasData("czasOn")) { v ->
+        m.commitNum("Czas ON (Praca)", "czasOn", 1, 180, v)
+    }
+    NumRow("Czas OFF (Postój)", "Minuty wyłączenia pompy w cyklu", S.czasOff, 1, 180, known = S.hasData("czasOff")) { v ->
+        m.commitNum("Czas OFF (Postój)", "czasOff", 1, 180, v)
+    }
     SectionHeader("Parametry trybu Temperaturowego (Kopciuch)")
-    NumRow("Temp START (ON)", "°C pieca — uruchomienie pompy", S.tempOn, 0, 100) { v -> m.commitNum("Temp START (ON)", "tempOn", 0, 100, v) }
-    NumRow("Temp STOP (OFF)", "°C pieca — wyłączenie pompy (histereza)", S.tempOff, 0, 100) { v -> m.commitNum("Temp STOP (OFF)", "tempOff", 0, 100, v) }
+    NumRow("Temp START (ON)", "°C pieca — uruchomienie pompy", S.tempOn, 0, 100, known = S.hasData("tempOn")) { v ->
+        m.commitNum("Temp START (ON)", "tempOn", 0, 100, v)
+    }
+    NumRow("Temp STOP (OFF)", "°C pieca — wyłączenie pompy (histereza)", S.tempOff, 0, 100, known = S.hasData("tempOff")) { v ->
+        m.commitNum("Temp STOP (OFF)", "tempOff", 0, 100, v)
+    }
     SectionHeader("Zabezpieczenie Antystop")
-    CheckRow("Włączony antystop", null, S.antystopWlaczony) { v -> m.commitBool("Antystop", "antystopWlaczony", v) }
-    NumRow("Dni bez ruchu", "Wymuszony puls 45s po X dniach bezczynności", S.antystopDni, 1, 45) { v ->
+    CheckRow("Włączony antystop", null, S.antystopWlaczony, known = S.hasData("antystopWlaczony")) { v ->
+        m.commitBool("Antystop", "antystopWlaczony", v)
+    }
+    NumRow("Dni bez ruchu", "Wymuszony puls 45s po X dniach bezczynności", S.antystopDni, 1, 45, known = S.hasData("antystopDni")) { v ->
         m.commitNum("Dni bez ruchu", "antystopDni", 1, 45, v)
     }
 }
@@ -208,26 +232,33 @@ private fun Marker(x: androidx.compose.ui.unit.Dp, label: String, bg: Color, fg:
 @Composable
 fun SerwoSheet(m: AppModel) {
     val S = m.S
+    val modeKnown = S.hasData("tryb_serwa") && S.tryb_serwa in 1..3
     Note("Tryb pracy klapy i syberka")
-    var tryb by remember { mutableIntStateOf(S.tryb_serwa) }
-    Seg(listOf(1 to "Auto", 2 to "Ręczny", 3 to "Bezpieczna"), current = tryb) { v ->
-        tryb = v
+    if (!modeKnown) Note("Aktualny tryb: oczekiwanie na odczyt z centrali.")
+    Seg(listOf(1 to "Auto", 2 to "Ręczny", 3 to "Bezpieczna"), current = if (modeKnown) S.tryb_serwa else -1) { v ->
         m.send("ustaw trybSerwa $v")
-        m.refreshSheet()
     }
-    if (tryb == 2) {
+    if (modeKnown && S.tryb_serwa == 2) {
         Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x14FFFFFF)))
             Text("Ręczna pozycja", style = Txt.rowLabel)
-            SliderRow(
-                name = "Klapa", value = Math.round(S.klapa / 1.8).toFloat(), min = 0f, max = 100f, step = 1f,
-                fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("klapa ${v.toInt()}") }
-            )
-            SliderRow(
-                name = "Syberek", value = Math.round(S.syberka / 0.9).toFloat(), min = 0f, max = 100f, step = 1f,
-                fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("syberek ${v.toInt()}") }
-            )
-            if (S.serwo_override_min > 0) {
+            if (S.hasData("klapa") && S.klapa in 0..180) {
+                SliderRow(
+                    name = "Klapa", value = Math.round(S.klapa / 1.8).toFloat(), min = 0f, max = 100f, step = 1f,
+                    fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("klapa ${v.toInt()}") }, resetOnCommit = true
+                )
+            } else {
+                Note("Pozycja klapy: brak prawidłowego odczytu z centrali.")
+            }
+            if (S.hasData("syberka") && S.syberka in 0..90) {
+                SliderRow(
+                    name = "Syberek", value = Math.round(S.syberka / 0.9).toFloat(), min = 0f, max = 100f, step = 1f,
+                    fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("syberek ${v.toInt()}") }, resetOnCommit = true
+                )
+            } else {
+                Note("Pozycja syberka: brak prawidłowego odczytu z centrali.")
+            }
+            if (S.hasData("serwo_override_min") && S.serwo_override_min > 0) {
                 Text(
                     "Ręczna pozycja jeszcze ok. ${S.serwo_override_min} min, potem powrót do automatyki.",
                     style = Txt.note.copy(fontSize = 9.5.sp), color = Pal.Warn
@@ -236,33 +267,43 @@ fun SerwoSheet(m: AppModel) {
         }
     }
     SectionHeader("Automatyka (tryb Auto)")
-    NumRow("Temperatura zadana", "°C — punkt odniesienia", S.tempZadServo, 0, 100) { v -> m.commitNum("Temperatura zadana", "tempZadServo", 0, 100, v) }
-    NumRow("Histereza", "°C — pasmo bez reakcji", S.histerServo, 0, 50) { v -> m.commitNum("Histereza", "histerServo", 0, 50, v) }
-    NumRow("Skok klapy", "% na jedno wywołanie", S.skokKlapy, 1, 100) { v -> m.commitNum("Skok klapy", "skokKlapy", 1, 100, v) }
-    NumRow("Skok syberka", "% na jedno wywołanie", S.skokSyberka, 1, 100) { v -> m.commitNum("Skok syberka", "skokSyberka", 1, 100, v) }
-    NumRow("Odchylenie przyspieszające", "°C — powyżej: krok × mnożnik", S.odchylTemp, 1, 50) { v ->
+    NumRow("Temperatura zadana", "°C — punkt odniesienia", S.tempZadServo, 0, 100, known = S.hasData("tempZadServo")) { v ->
+        m.commitNum("Temperatura zadana", "tempZadServo", 0, 100, v)
+    }
+    NumRow("Histereza", "°C — pasmo bez reakcji", S.histerServo, 0, 50, known = S.hasData("histerServo")) { v ->
+        m.commitNum("Histereza", "histerServo", 0, 50, v)
+    }
+    NumRow("Skok klapy", "% na jedno wywołanie", S.skokKlapy, 1, 100, known = S.hasData("skokKlapy")) { v ->
+        m.commitNum("Skok klapy", "skokKlapy", 1, 100, v)
+    }
+    NumRow("Skok syberka", "% na jedno wywołanie", S.skokSyberka, 1, 100, known = S.hasData("skokSyberka")) { v ->
+        m.commitNum("Skok syberka", "skokSyberka", 1, 100, v)
+    }
+    NumRow("Odchylenie przyspieszające", "°C — powyżej: krok × mnożnik", S.odchylTemp, 1, 50, known = S.hasData("odchylTemp")) { v ->
         m.commitNum("Odchylenie przyspieszające", "odchylTemp", 1, 50, v)
     }
-    NumRow("Mnożnik korekty", "Mnożnik kroku przy dużym odchyleniu", S.mnoznik, 1, 10) { v -> m.commitNum("Mnożnik korekty", "mnoznik", 1, 10, v) }
+    NumRow("Mnożnik korekty", "Mnożnik kroku przy dużym odchyleniu", S.mnoznik, 1, 10, known = S.hasData("mnoznik")) { v ->
+        m.commitNum("Mnożnik korekty", "mnoznik", 1, 10, v)
+    }
 }
 
 /** `MENUS.mieszadlo` — załączenie, override ręczny, cykl pracy. */
 @Composable
 fun MieszadloSheet(m: AppModel) {
     val S = m.S
-    CheckRow("Włączone", null, S.mieszadloWlaczony) { v -> m.commitBool("Mieszadło", "mieszadloWlaczony", v) }
+    CheckRow("Włączone", null, S.mieszadloWlaczony, known = S.hasData("mieszadloWlaczony")) { v -> m.commitBool("Mieszadło", "mieszadloWlaczony", v) }
     ManualRow("mieszadlo", onSend = { m.send(it) })
-    if (S.mieszadlo_override_min > 0) {
+    if (S.hasData("mieszadlo_override_min") && S.mieszadlo_override_min > 0) {
         Text(
             "Ręczny override jeszcze ok. ${S.mieszadlo_override_min} min, potem powrót do automatyki.",
             style = Txt.note.copy(fontSize = 9.5.sp), color = Pal.Warn, modifier = Modifier.padding(top = 6.dp)
         )
     }
     SectionHeader("Cykl pracy")
-    NumRow("Czas ON", "s — jak długo przekaźnik załączony", S.mieszadloCzasOn, 1, 255) { v ->
+    NumRow("Czas ON", "s — jak długo przekaźnik załączony", S.mieszadloCzasOn, 1, 255, known = S.hasData("mieszadloCzasOn")) { v ->
         m.commitNum("Czas ON", "mieszadloCzasOn", 1, 255, v)
     }
-    NumRow("Czas OFF", "min — przerwa między cyklami", S.mieszadloCzasOff, 1, 180) { v ->
+    NumRow("Czas OFF", "min — przerwa między cyklami", S.mieszadloCzasOff, 1, 180, known = S.hasData("mieszadloCzasOff")) { v ->
         m.commitNum("Czas OFF", "mieszadloCzasOff", 1, 180, v)
     }
 }
@@ -283,8 +324,11 @@ fun CzasSheet(m: AppModel) {
     SectionHeader("Zegar sterownika (RTC)")
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
         Column(Modifier.weight(1f)) {
-            Text(if (S.rtc_ok) "RTC gotowy" else "RTC niegotowy", style = Txt.rowLabel)
-            Text("data w sterowniku: ${S.dzien}.${S.miesiac}.${S.rok}", style = Txt.rowDesc)
+            Text(if (!S.hasData("rtc_ok")) "RTC: oczekiwanie na odczyt" else if (S.rtc_ok) "RTC gotowy" else "RTC niegotowy", style = Txt.rowLabel)
+            val dateKnown = S.hasAllData("dzien", "miesiac", "rok") &&
+                S.dzien in 1..31 && S.miesiac in 1..12 && S.rok in 2000..2100
+            val date = if (dateKnown) "${S.dzien}.${S.miesiac}.${S.rok}" else "—"
+            Text("data w sterowniku: $date", style = Txt.rowDesc)
         }
     }
     com.sterownikco.pro.ui.components.UstBtn(

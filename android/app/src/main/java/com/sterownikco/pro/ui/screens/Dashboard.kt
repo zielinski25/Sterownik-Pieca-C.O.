@@ -48,7 +48,7 @@ import com.sterownikco.pro.ui.components.Tile
 fun Dashboard(m: AppModel) {
     val rev = m.S.rev.intValue // subskrypcja zmian stanu
     val S = m.S
-    val weatherCode = m.weather?.current?.code ?: (if (S.valOf("zewn", "t_zewn") < 0) 71 else 0)
+    val weatherCode = m.weather?.current?.code ?: -1
     val isDay = m.weather?.current?.isDay ?: (!S.night)
     val art = remember(rev, weatherCode, isDay) { S.art(weatherCode, isDay) }
     val tiles = remember(rev, weatherCode, isDay, m.weather, m.weatherBusy) { buildTiles(m, weatherCode, isDay) }
@@ -66,13 +66,13 @@ fun Dashboard(m: AppModel) {
     ) {
         SysStrip(
             sub = m.sysStripSub(),
-            state = if (!S.online) "BRAK ŁĄCZNOŚCI" else if (anyAl) "ALARM" else if (to > 45) "GRZANIE" else "CZUWANIE",
-            stateCls = if (!S.online) "warn" else if (anyAl) "err" else "live",
+            state = if (!m.isFbFresh) "OFFLINE / NIEAKTUALNE" else if (!S.online) "BRAK TELEMETRII" else if (anyAl) "ALARM" else if (S.sym.isNotEmpty()) "SYMULACJA LOKALNA" else if (!to.isFinite()) "OCZEKIWANIE" else if (to > 45) "GRZANIE" else "CZUWANIE",
+            stateCls = if (!m.isFbFresh || !S.online || S.sym.isNotEmpty()) "warn" else if (anyAl) "err" else "live",
             onClick = { m.openSheet("sesja") }
         )
-        if (!m.connected) {
+        if (!m.isFbFresh) {
             Banner(
-                text = "Brak połączenia z bazą Firebase — połącz na żywo",
+                text = if (m.connected) "Odczyt sterownika jest nieaktualny — oczekiwanie na Firebase" else "Brak połączenia z bazą Firebase — połącz na żywo",
                 kind = "warn",
                 action = "🔑 POŁĄCZ",
                 onAction = { m.authOpen = true }
@@ -89,33 +89,58 @@ fun Dashboard(m: AppModel) {
                 onAction = null
             )
         }
-        Hero(m, art, alarm = S.alarm_ogrzewanie, heroSub = "temperatura pieca C.O. · " + (if (to > 70) "grzanie na maks." else "odczyt stabilny"))
+        Hero(m, art, alarm = S.hasData("alarm_ogrzewanie") && S.alarm_ogrzewanie,
+            heroSub = when {
+                S.symAktywna("ogrz") -> "SYMULACJA LOKALNA · nie jest telemetrią sterownika"
+                !S.hasData("t_ogrz") -> "oczekiwanie na rzeczywisty odczyt pieca C.O."
+                !m.isFbFresh -> "ostatni rzeczywisty odczyt pieca C.O. — dane nieaktualne"
+                else -> "temperatura pieca C.O. · " + (if (to > 70) "grzanie na maks." else "odczyt odebrany")
+            })
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val pumpKnown = S.hasData("pompa")
+            val pumpModeKnown = S.hasData("wybor") && S.wybor in 1..3
             QCard(
                 title = "POMPA", icon = "pump",
-                value = if (S.pompa) "WŁĄCZONA" else "WYŁĄCZONA",
-                sub = if (S.wybor == 1) "⏱️ Czasowy" else if (S.wybor == 2) "🌡️ Temp." else "⚡ Auto",
-                state = if (S.pompa) "ok" else "",
+                value = if (!pumpKnown) "—" else if (S.pompa) "WŁĄCZONA" else "WYŁĄCZONA",
+                sub = when {
+                    !pumpKnown -> "oczekiwanie na stan"
+                    !pumpModeKnown -> "tryb pracy: brak odczytu"
+                    S.wybor == 1 -> "⏱️ Czasowy"
+                    S.wybor == 2 -> "🌡️ Temperaturowy"
+                    else -> "⚡ Auto"
+                },
+                state = if (pumpKnown && S.pompa) "ok" else if (!pumpKnown) "warn" else "",
                 onClick = { m.openSheet("pompa") }
             )
+            val servoKnown = S.hasData("tryb_serwa") && S.tryb_serwa in 1..3
+            val flapKnown = S.hasData("klapa") && S.klapa in 0..180
+            val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
             QCard(
                 title = "SERWO", icon = "servo",
-                value = when (S.tryb_serwa) {
-                    1 -> "AUTO (" + Math.round(S.klapa * 100.0 / 180.0) + "%)"
-                    2 -> "RĘCZNY (" + Math.round(S.klapa * 100.0 / 180.0) + "%)"
+                value = if (!servoKnown) "—" else when (S.tryb_serwa) {
+                    1 -> "AUTO ($flapLabel)"
+                    2 -> "RĘCZNY ($flapLabel)"
                     3 -> "BEZPIECZNY"
-                    else -> "AUTO"
+                    else -> "—"
                 },
-                sub = if (S.tryb_serwa == 3) "klapa 0° (stop)" else "klapa ${S.klapa}°",
-                state = when (S.tryb_serwa) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
+                sub = if (flapKnown) "klapa ${S.klapa}°" else "brak prawidłowego odczytu pozycji",
+                state = if (!servoKnown) "warn" else when (S.tryb_serwa) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
                 onClick = { m.openSheet("serwo") }
             )
+            val mixerKnown = S.hasData("mieszadlo")
+            val mixerEnabledKnown = S.hasData("mieszadloWlaczony")
             QCard(
                 title = "MIESZADŁO", icon = "mixer",
-                value = if (S.mieszadlo) "WŁĄCZONE" else "WYŁĄCZONE",
-                sub = if (S.mieszadlo) "praca aktywna" else "ster. ręczne",
-                state = if (S.mieszadlo) "ok" else "",
+                value = if (!mixerKnown) "—" else if (S.mieszadlo) "WŁĄCZONE" else "WYŁĄCZONE",
+                sub = when {
+                    !mixerKnown -> "oczekiwanie na stan"
+                    S.hasData("rozpalanie") && S.rozpalanie -> "override: rozpalanie"
+                    mixerEnabledKnown && !S.mieszadloWlaczony -> "automatyka wyłączona"
+                    mixerEnabledKnown && S.mieszadloWlaczony -> "automatyka aktywna"
+                    else -> "stan pracy odebrany"
+                },
+                state = if (mixerKnown && S.mieszadlo) "ok" else if (!mixerKnown) "warn" else "",
                 onClick = { m.openSheet("mieszadlo") }
             )
         }
@@ -135,12 +160,20 @@ fun Dashboard(m: AppModel) {
             sub = "historia • 6 H / 24 H / 7 DNI / 30 DNI",
             onClick = { m.page = 1 }
         )
+        val rtcStatusKnown = S.hasData("rtc_ok")
+        val rtcDateKnown = S.hasAllData("dzien", "miesiac", "rok") &&
+            S.dzien in 1..31 && S.miesiac in 1..12 && S.rok in 2000..2100
         AnalysisCard(
             accent = Color(0xFFB7C4D4), icon = "clock",
             title = String.format(java.util.Locale.US, "%02d:%02d",
                 java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY),
                 java.util.Calendar.getInstance().get(java.util.Calendar.MINUTE)),
-            sub = if (S.rtc_ok) "${S.dzien}.${S.miesiac}.${S.rok}" else "RTC niegotowy",
+            sub = when {
+                !rtcStatusKnown -> "oczekiwanie na odczyt RTC"
+                !S.rtc_ok -> "RTC niegotowy"
+                rtcDateKnown -> "${S.dzien}.${S.miesiac}.${S.rok}"
+                else -> "RTC gotowy · brak daty"
+            },
             onClick = { m.openSheet("czas") }
         )
 

@@ -100,13 +100,13 @@ fun WeatherPage(m: AppModel) {
             "Opad ${fmt1(selH.precip)} mm (${Math.round(selH.precipProb)}%)"
         heroCode = selH.code; heroIsDay = selH.isDay
     } else {
-        heroTempTxt = (cur?.temp?.let { fmt1(it) } ?: "--.-") + " °C"
+        heroTempTxt = (cur?.temp?.let { fmt1(it) } ?: "—") + " °C"
         heroDescTxt = if (cur == null) (if (m.weatherBusy) "Pobieranie danych…" else "Brak danych — odśwież")
         else Weather.desc(cur.code)
         heroFeelsTxt = if (cur == null) "—"
         else "Odczuwalna ${fmt1(cur.feelsLike)} °C  ·  ${cur.windDir} ${fmt0(cur.wind)} km/h " +
             "(porywy ${fmt0(cur.windGusts)} km/h)"
-        heroCode = cur?.code ?: 0; heroIsDay = cur?.isDay ?: true
+        heroCode = cur?.code ?: -1; heroIsDay = cur?.isDay ?: false
     }
 
     Column(
@@ -181,15 +181,15 @@ fun WeatherPage(m: AppModel) {
         MetricGrid(
             listOf(
                 MCard("💧 WILGOTNOŚĆ", pct(cur?.humidity),
-                    if ((cur?.humidity ?: 0.0) > 70) "podwyższona" else "w normie"),
+                    cur?.humidity?.let { if (it > 70) "podwyższona" else "w normie" } ?: "brak danych"),
                 MCard("💨 WIATR", fmt0or(cur?.wind) + " km/h",
-                    "porywy " + fmt0or(cur?.windGusts) + " km/h · " + (cur?.windDir ?: "—")),
-                MCard("🌡️ CIŚNIENIE", (cur?.pressure?.toString() ?: "--") + " hPa",
-                    if ((cur?.pressure ?: 0) >= 1013) "stabilny wyż" else "niż baryczny"),
-                MCard("☁️ ZACHMURZENIE", pct(cur?.cloud), cloudWord(cur?.cloud ?: 0.0)),
-                MCard("🌧️ OPAD", (cur?.precip?.let { fmt1(it) } ?: "--") + " mm",
-                    if ((cur?.precip ?: 0.0) > 0) "opad aktywny" else "brak opadów"),
-                MCard("☀️ INDEKS UV", cur?.uv?.let { fmt1(it) } ?: "--", uvWord(cur?.uv ?: 0.0))
+                    if (cur == null) "brak danych" else "porywy " + fmt0or(cur.windGusts) + " km/h · " + cur.windDir),
+                MCard("🌡️ CIŚNIENIE", (cur?.pressure?.toString() ?: "—") + " hPa",
+                    cur?.pressure?.let { if (it >= 1013) "stabilny wyż" else "niż baryczny" } ?: "brak danych"),
+                MCard("☁️ ZACHMURZENIE", pct(cur?.cloud), cur?.cloud?.let(::cloudWord) ?: "brak danych"),
+                MCard("🌧️ OPAD", (cur?.precip?.let { fmt1(it) } ?: "—") + " mm",
+                    cur?.precip?.let { if (it > 0) "opad aktywny" else "brak opadów" } ?: "brak danych"),
+                MCard("☀️ INDEKS UV", cur?.uv?.let { fmt1(it) } ?: "—", cur?.uv?.let(::uvWord) ?: "brak danych")
             )
         )
 
@@ -315,7 +315,9 @@ fun WeatherPage(m: AppModel) {
 
             // `.weather-card` — BILANS & ZYSK KOLEKTORA (+eksport CSV, siatka 7 dni)
             val sol = m.solar
-            val dT = m.S.t_panel - m.S.t_zewn
+            val realSolarTemps = m.S.hasAllData("t_panel", "t_zewn") &&
+                !m.S.symAktywna("panel") && !m.S.symAktywna("zewn")
+            val dT = if (realSolarTemps) m.S.t_panel - m.S.t_zewn else Double.NaN
             WCard("☀️ BILANS & ZYSK KOLEKTORA SŁONECZNEGO",
                 "Korelacja nasłonecznienia z odczytami panelu i bojlera",
                 titleColor = SolarY, stackSub = true,
@@ -329,15 +331,15 @@ fun WeatherPage(m: AppModel) {
                 }) {
                 MetricGrid(
                     listOf(
-                        MCard("⚡ ZYSK BRUTTO SŁOŃCA", "+" + fmt1(sol.accumulatedGrossGain) + "°C",
-                            "~" + fmt1(sol.estKwh()) + " kWh energii (dziś)", SolarY),
-                        MCard("🌡️ ΔT PANEL - ZEWN.", (if (dT >= 0) "+" else "") + fmt1(dT) + "°C",
-                            if (m.S.t_panel > m.S.t_zewn + 5) "🔥 aktywne grzanie" else "temperatura wyrównana",
-                            if (dT > 10) SolarY else Pal.Cyan),
-                        MCard("🚰 POBORY WODY CWU", sol.drawCount.toString() + " poborów",
-                            "skompensowano -" + fmt1(sol.accumulatedDrawDrop) + "°C", Pal.Live),
-                        MCard("🔮 PROGNOZA ZYSKU", "+" + fmt1(sol.forecastGain) + "°C",
-                            "prognoza: ~" + fmt1(sol.forecastKwh) + " kWh z meteo", Pal.Violet)
+                        MCard("⚡ ZYSK BRUTTO SŁOŃCA", if (sol.hasSamples) "+" + fmt1(sol.accumulatedGrossGain) + "°C" else "—",
+                            if (sol.hasSamples) "~" + fmt1(sol.estKwh()) + " kWh z rzeczywistych próbek" else "oczekiwanie na odczyty panelu i bojlera", SolarY),
+                        MCard("🌡️ ΔT PANEL - ZEWN.", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
+                            if (!dT.isFinite()) "oczekiwanie na rzeczywiste czujniki" else if (dT > 5) "🔥 panel cieplejszy od zewnątrz" else "temperatura zbliżona",
+                            if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
+                        MCard("🚰 POBORY WODY CWU", if (sol.hasSamples) sol.drawCount.toString() + " poborów" else "—",
+                            if (sol.hasSamples) "skompensowano -" + fmt1(sol.accumulatedDrawDrop) + "°C" else "brak próbek solarnego archiwum", Pal.Live),
+                        MCard("🔮 PROGNOZA ZYSKU", if (sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—",
+                            if (sol.forecastKwh.isFinite()) "prognoza: ~" + fmt1(sol.forecastKwh) + " kWh z Open-Meteo" else "brak danych prognozy", Pal.Violet)
                     )
                 )
                 Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -382,17 +384,17 @@ fun WeatherPage(m: AppModel) {
 
         // `.weather-card` — PODSUMOWANIE METEO (8 pozycji 1:1)
         WCard("PODSUMOWANIE METEO", "stacja pogodowa Open-Meteo") {
-            val tMin = d0?.minT ?: cur?.temp?.minus(4.0)
-            val tMax = d0?.maxT ?: cur?.temp?.plus(4.0)
+            val tMin = d0?.minT
+            val tMax = d0?.maxT
             val items = listOf(
                 "🌡️ Maks. dzisiaj" to ((tMax?.let { fmt1(it) } ?: "—") + " °C"),
                 "🌡️ Min. dzisiaj" to ((tMin?.let { fmt1(it) } ?: "—") + " °C"),
-                "🌧️ Suma opadów" to (fmt1(d0?.rainSum ?: 0.0) + " mm"),
+                "🌧️ Suma opadów" to (d0?.rainSum?.let { fmt1(it) + " mm" } ?: "—"),
                 "💨 Porywy wiatru" to (fmt0or(cur?.windGusts) + " km/h"),
                 "☀️ UV maks." to (cur?.uv?.let { fmt1(it) } ?: "—"),
-                "☀️ Nasłonecznienie" to (m.radEst(cur).toInt().toString() + " W/m²"),
-                "🌅 Wschód słońca" to sunTimeOr(d0?.sunrise, 6, 42),
-                "🌇 Zachód słońca" to sunTimeOr(d0?.sunset, 18, 15)
+                "☀️ Promieniowanie (est.)" to (cur?.let { fmt0(m.radEst(it)) + " W/m²" } ?: "—"),
+                "🌅 Wschód słońca" to sunTimeOr(d0?.sunrise),
+                "🌇 Zachód słońca" to sunTimeOr(d0?.sunset)
             )
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items.chunked(2).forEach { row ->
@@ -535,15 +537,22 @@ private fun SunArcCard(m: AppModel) {
     val c = w?.current
     val d0 = w?.daily?.getOrNull(0)
     val now = System.currentTimeMillis()
-    val sunriseTs = d0?.sunrise?.let { Weather.parseIso(it) }.takeIf { (it ?: 0L) > 0L } ?: todayAt(6, 42)
-    val sunsetTs = d0?.sunset?.let { Weather.parseIso(it) }.takeIf { (it ?: 0L) > 0L } ?: todayAt(18, 15)
+    val sunriseTs = d0?.sunrise?.let { Weather.parseIso(it) }?.takeIf { it > 0L } ?: 0L
+    val sunsetTs = d0?.sunset?.let { Weather.parseIso(it) }?.takeIf { it > 0L } ?: 0L
+    if (sunriseTs <= 0L || sunsetTs <= sunriseTs) {
+        WCard("☀️ ŁUK SŁONECZNY & POTENCJAŁ SOLARNY", "dane czasu słonecznego z Open-Meteo") {
+            Text("Brak danych o wschodzie i zachodzie słońca — wykres pozostaje pusty.",
+                fontSize = 11.sp, color = Pal.TextDim)
+        }
+        return
+    }
     val noonTs = (sunriseTs + sunsetTs) / 2
     val isDayNow = now in sunriseTs..sunsetTs
     val span = maxOf(1L, sunsetTs - sunriseTs)
     val p = ((now - sunriseTs).toFloat() / span.toFloat()).coerceIn(0f, 1f)
-    val rad = m.radEst(c).toInt()
-    val elevTxt = if (isDayNow) "${Math.round(kotlin.math.sin(p * Math.PI) * 48)}° (nad horyzontem)"
-    else "0° (noc / pod horyzontem)"
+    val rad = c?.let { fmt0(m.radEst(it)) + " W/m² (est.)" } ?: "—"
+    val elevTxt = if (isDayNow) "≈${Math.round(kotlin.math.sin(p * Math.PI) * 48)}° (szac.)"
+    else "0° (noc; szac.)"
     val countTxt: String
     val countCol: Color
     val countBd: Color
@@ -616,7 +625,7 @@ private fun SunArcCard(m: AppModel) {
         ) {
             Text(buildAnnotatedString {
                 append("☀️ Promieniowanie: ")
-                withStyle(SpanStyle(color = SolarY, fontWeight = FontWeight.Bold)) { append("$rad W/m²") }
+                withStyle(SpanStyle(color = SolarY, fontWeight = FontWeight.Bold)) { append(rad) }
             }, fontSize = 8.5.sp, color = Pal.TextDim,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Text(buildAnnotatedString {
@@ -751,8 +760,8 @@ private fun wInsp(h: WHour, vbl: String): String {
 
 /* ─────────── pomocnicze formatowanie (port helperow renderWeatherTab) ─────────── */
 
-private fun fmt1(v: Double) = String.format(java.util.Locale.US, "%.1f", v)
-private fun fmt0(v: Double) = String.format(java.util.Locale.US, "%.0f", v)
+private fun fmt1(v: Double) = if (v.isFinite()) String.format(java.util.Locale.US, "%.1f", v) else "—"
+private fun fmt0(v: Double) = if (v.isFinite()) String.format(java.util.Locale.US, "%.0f", v) else "—"
 private fun fmt0or(v: Double?) = v?.let { fmt0(it) } ?: "--"
 private fun pct(v: Double?) = (v?.let { Math.round(it).toString() } ?: "--") + "%"
 private fun pad2(v: Long) = v.toString().padStart(2, '0')
@@ -815,17 +824,8 @@ private fun latLon(m: AppModel): String {
     return f(la) + "° N · " + f(lo) + "° E"
 }
 
-private fun todayAt(h: Int, mi: Int): Long {
-    val c = java.util.Calendar.getInstance()
-    c.set(java.util.Calendar.HOUR_OF_DAY, h)
-    c.set(java.util.Calendar.MINUTE, mi)
-    c.set(java.util.Calendar.SECOND, 0)
-    c.set(java.util.Calendar.MILLISECOND, 0)
-    return c.timeInMillis
-}
-
-/** Wschód/zachód z Open-Meteo (ISO) albo zapas — `HH:MM` jak w podsumowaniu. */
-private fun sunTimeOr(iso: String?, fbH: Int, fbM: Int): String {
+/** Wschód/zachód z Open-Meteo (ISO); brak odpowiedzi pozostaje pusty. */
+private fun sunTimeOr(iso: String?): String {
     val ts = iso?.let { Weather.parseIso(it) } ?: 0L
-    return hhmm(if (ts > 0L) ts else todayAt(fbH, fbM))
+    return if (ts > 0L) hhmm(ts) else "—"
 }

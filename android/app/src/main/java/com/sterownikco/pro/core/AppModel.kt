@@ -25,8 +25,6 @@ import org.json.JSONObject
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
-import kotlin.math.sin
-import kotlin.random.Random
 
 /* ══════════════════════════════════════════════════════════════════════════
    MODEL APLIKACJI — odpowiednik warstwy sterującej Piec.html:
@@ -107,8 +105,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** Szerokość ramki w trybie szerokim (tablet / poziomo). */
     // (Przełącznik telefon/PC usunięty z APK — potrzebny tylko w Piec.html.)
     var frameWidth by mutableIntStateOf(412)
-    var simSpeed = 1
-    var tickCount = 0
 
     val isFbFresh: Boolean get() = connected && (System.currentTimeMillis() - lastFetchTs < 20_000)
 
@@ -123,7 +119,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         ChartSeries.SERVO.forEach { seriesOn[it.id] = it.on }
         loadChartPrefs()
         loadDashboardWidgets()
-        seedLogs()
         refreshWeather(false)
 
         // Przywróć konto po udanym wcześniejszym logowaniu; hasło jest w Android Keystore.
@@ -139,17 +134,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         } else {
             authOpen = true
         }
-    }
-
-    private fun seedLogs() {
-        val now = java.util.Calendar.getInstance()
-        fun t(h: Int, m: Int, s: Int) = String.format(java.util.Locale.US, "%02d:%02d:%02d", h, m, s)
-        logs.add(LogEntry(t(10, 40, 2), "SYSTEM", "Sterownik CO połączony z siecią Wi-Fi (IP: ${S.ip}, RSSI: ${S.wifi_rssi} dBm)", "info"))
-        logs.add(LogEntry(t(10, 40, 5), "RTC", "Zegar RTC zsynchronizowany: " +
-            "${PiecState.pad2(now.get(java.util.Calendar.DAY_OF_MONTH))}.${PiecState.pad2(now.get(java.util.Calendar.MONTH) + 1)}.${now.get(java.util.Calendar.YEAR)}", "info"))
-        logs.add(LogEntry(t(10, 40, 12), "POMPA", "Strategia Auto: start pompy przy ${S.tempOn}°C (histereza 10°C)", "info"))
-        logs.add(LogEntry(t(10, 40, 30), "SERWO", "Pozycja klapy: 45%, syberka: 30% (tryb Auto)", "info"))
-        logs.add(LogEntry(t(10, 41, 0), "TELEMETRIA", "Próbka #184 zapisana w buforze Firebase", "info"))
     }
 
     fun addLog(tag: String, msg: String, type: String = "info") {
@@ -186,18 +170,19 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         jobs = listOf(
             scope.launch { while (true) { delay(4000); poll() } },
             scope.launch { while (true) { delay(15L * 60_000); refreshWeather(true) } },
+            scope.launch { while (true) { delay(2000); if (S.liveTick()) { S.bump(); refreshSheet() } } },
             scope.launch {
                 while (true) {
-                    delay(2000)
-                    S.tick += simSpeed
-                    S.liveTick(isFbFresh)
-                    if (!isFbFresh) S.bump()
-                    tickCount += 1
-                    recordSolar()
-                    if (page == 1) appendLiveFeed()
+                    delay(1000)
+                    if (sheet != null) sheetTick++
+                    if (termOpened && termAutoOffAt > 0L && System.currentTimeMillis() >= termAutoOffAt) {
+                        termAutoOffAt = 0L
+                        termStatus = "Minął lokalny limit czasu — wysyłam Remote OFF i czekam na ACK."
+                        termStatusKind = "warn"
+                        terminalRemoteOff()
+                    }
                 }
-            },
-            scope.launch { while (true) { delay(1000); if (sheet != null) sheetTick++ } }
+            }
         )
     }
 
@@ -209,11 +194,13 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     private fun recordSolar() {
-        val w = weather?.current
-        solar.recordSample(
-            S.valOf("panel", "t_panel"), S.valOf("bojler", "t_bojler"), S.valOf("zewn", "t_zewn"),
-            radEst(w), w?.uv ?: 0.0, w?.cloud ?: 0.0
-        )
+        val w = weather?.current ?: return
+        if (!S.hasAllData("t_panel", "t_bojler", "t_zewn")) return
+        val panel = S.t_panel
+        val boiler = S.t_bojler
+        val outside = S.t_zewn
+        if (!panel.isFinite() || !boiler.isFinite() || !outside.isFinite()) return
+        solar.recordSample(panel, boiler, outside, radEst(w), w.uv, w.cloud)
     }
 
     /** `radEst = isDay ? max(50, (100-cloud*.7) * (uv*18+40)) : 0` — jak w panelu. */
@@ -227,6 +214,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         val d = try { Rtdb.pollStatus() } catch (e: Exception) { null }
         if (d == null) {
             connected = false
+            termStateKnown = false
             S.bump()
             return@launch
         }
@@ -234,16 +222,20 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         lastFetchTs = System.currentTimeMillis()
         S.applyIncomingData(d)
         S.bump()
-        if (page == 1) appendLiveFeed()
-        // Alarmy dymu/przegrzania na pierwszym planie: dźwięk + powiadomienie
-        // (usługa w tle robi to samo — krawędź w prefs chroni przed dublem).
+        if (S.online) {
+            recordSolar()
+            if (page == 1) appendLiveFeed()
+        }
+        // Alarmy oceniaj tylko wtedy, gdy centrala zwróciła rzeczywiste flagi.
         try {
-            val info = AlarmCenter.evaluate(prefs, S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym)
-            if (info != null) {
-                AlarmNotify.fire(ctx, info)
-                alarmPopup = info
-            } else if (!S.dym_alarm && !S.alarm_ogrzewanie) {
-                AlarmNotify.cancel(ctx)
+            if (S.hasAllData("dym_alarm", "alarm_ogrzewanie")) {
+                val info = AlarmCenter.evaluate(prefs, S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym)
+                if (info != null) {
+                    AlarmNotify.fire(ctx, info)
+                    alarmPopup = info
+                } else if (!S.dym_alarm && !S.alarm_ogrzewanie) {
+                    AlarmNotify.cancel(ctx)
+                }
             }
         } catch (e: Exception) { /* alarm nie może wywalić poll() */ }
         // Widget na pulpit (throttling w środku).
@@ -313,52 +305,71 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         try { PiecWidget.clear(ctx) } catch (e: Exception) { /* ignore */ }
         alarmPopup = null
         connected = false
+        termStateKnown = false
         S.bump()
         showToast("SESYJA", "Wylogowano operatora", "ok")
         addLog("SYSTEM", "Zamknięto sesję operatora", "warn")
         authOpen = true
     }
 
-    // ── polecenia ───────────────────────────────────────────────────────────
-    fun send(cmd: String) = scope.launch {
+    // ── polecenia; stan urządzenia zmienia się dopiero po ACK / odczycie ─────
+    fun send(cmd: String) = scope.launch { sendAwait(cmd) }
+
+    /** Wysyła komendę bez lokalnej mutacji stanu i zwraca true wyłącznie po ACK. */
+    private suspend fun sendAwait(cmd: String): Boolean {
+        val command = cmd.trim()
+        if (command.isEmpty()) return false
+        val verb = command.substringBefore(' ').lowercase()
+        val isSimulation = verb == "symuluj" || verb == "symuluj_stop"
+
+        if (isSimulation) {
+            val result = S.applySimulationCommand(command)
+            if (result != true) {
+                showToast(command, result as? String ?: "Nieprawidłowe polecenie symulacji", "err")
+                return false
+            }
+            S.bump(); refreshSheet()
+            addLog("SYM", if (verb == "symuluj") "Operator włączył lokalną symulację czujnika" else "Operator wyłączył lokalną symulację czujnika", "warn")
+            showToast(command, if (verb == "symuluj") "SYM aktywne lokalnie — nie wysłano do sterownika" else "Lokalna symulacja wyłączona", "warn")
+            return true
+        }
+        if (!connected) {
+            showToast(command, "Brak połączenia z Firebase — polecenia nie wysłano", "err")
+            addLog("CMD_ERR", "Nie wysłano polecenia — brak połączenia z Firebase", "warn")
+            return false
+        }
+
         val t0 = System.nanoTime()
-        showToast(cmd, "Wysyłanie do sterownika…", "wait")
-        addLog("CMD", "Wysyłanie: $cmd", "cmd")
-        val rLocal = S.applyCommand(cmd)
-        S.bump(); refreshSheet()
-        if (connected) {
-            val cmdId = Rtdb.makeFireCmdId()
-            try {
-                val ack = Rtdb.sendCommand(cmdId, cmd)
-                val latency = ((System.nanoTime() - t0) / 1_000_000).toInt()
-                if (ack == null) {
-                    showToast(cmd, "Wysłano do bazy (oczekiwanie na piec)", "ok")
-                    addLog("ACK_WARN", "Wysłano do bazy (brak natychmiastowego ACK)", "warn")
-                    delay(1500); poll()
-                } else if (ack.ok) {
-                    showToast(cmd, "Potwierdzone z pieca (ACK, ${latency}ms)", "ok")
-                    addLog("ACK", "ACK OK (${latency}ms): $cmd", "ack")
-                    buzz(); poll()
-                } else {
-                    showToast(cmd, "Odrzucone: ${ack.error}", "err")
-                    addLog("NACK", "Odrzucone (${ack.error}): $cmd", "err")
-                }
-            } catch (e: Exception) {
-                showToast(cmd, "Błąd: " + (e.message ?: "brak"), "err")
-                addLog("CMD_ERR", "Błąd wysyłki: " + (e.message ?: "?"), "err")
-            }
-        } else {
-            delay(200)
+        showToast(command, "Wysyłanie do sterownika…", "wait")
+        addLog("CMD", "Wysyłanie: $command", "cmd")
+        val cmdId = Rtdb.makeFireCmdId()
+        return try {
+            val ack = Rtdb.sendCommand(cmdId, command)
             val latency = ((System.nanoTime() - t0) / 1_000_000).toInt()
-            if (rLocal == true) {
-                showToast(cmd, "Lokalnie wykonano (${latency}ms)", "ok")
-                addLog("ACK", "Lokalnie (${latency}ms): $cmd", "ack")
-                buzz()
-            } else {
-                showToast(cmd, "Odrzucone: " + (rLocal as? String ?: "błąd"), "err")
-                addLog("NACK", "Odrzucone (" + (rLocal as? String ?: "błąd") + "): $cmd", "err")
+            when {
+                ack == null -> {
+                    showToast(command, "Brak potwierdzenia z pieca — wynik nieznany", "warn")
+                    addLog("ACK_WARN", "Brak potwierdzenia sterownika", "warn")
+                    poll()
+                    false
+                }
+                ack.ok -> {
+                    showToast(command, "Potwierdzone przez piec (ACK, ${latency}ms)", "ok")
+                    addLog("ACK", "ACK OK (${latency}ms): $command", "ack")
+                    buzz()
+                    poll()
+                    true
+                }
+                else -> {
+                    showToast(command, "Odrzucone: ${ack.error}", "err")
+                    addLog("NACK", "Odrzucone (${ack.error}): $command", "err")
+                    false
+                }
             }
-            S.bump()
+        } catch (e: Exception) {
+            showToast(command, "Błąd: ${e.message ?: "brak"}", "err")
+            addLog("CMD_ERR", "Błąd wysyłki: " + (e.message ?: "?"), "err")
+            false
         }
     }
 
@@ -392,6 +403,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     /** Eksport archiwum solarnego do CSV (Pobrane) — jak `SolarAnalytics.exportCsv`. */
     fun exportSolarCsv() = scope.launch {
+        if (!solar.hasSamples) {
+            showToast("Solar", "Brak rzeczywistych próbek do eksportu", "warn")
+            return@launch
+        }
         try {
             val csv = solar.csv()
             val name = solar.fileName()
@@ -438,6 +453,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             try {
                 val fb = Rtdb.fetchTelemetry(sec)
                 if (fb != null && fb.isNotEmpty()) {
+                    chartLive = emptyList()
                     telemetry = fb
                     chartPoints = fb.size
                     chartStatus = "Załadowano ${fb.size} próbek z bazy Firebase ($rangeName) · LIVE HISTORIA"
@@ -448,25 +464,34 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         }
         telemetry = emptyList()
         chartPoints = 0
-        chartStatus = "Wymagane logowanie do Firebase, aby pobrać telemetrię"
-        chartReality = "BRAK SESJI"
+        chartStatus = if (connected) "Brak rzeczywistych próbek dla wybranego zakresu" else "Zaloguj się do Firebase, aby pobrać historię telemetrii"
+        chartReality = if (connected) "BRAK DANYCH" else "BRAK SESJI"
         chartLive = emptyList()
     }
 
-    /** `updateChartsLiveFeed()` — doklejenie bieżącego odczytu do wykresu. */
+    /** Dokleja wyłącznie odczyt z właśnie zakończonego, udanego pollingu Firebase. */
     fun appendLiveFeed() {
-        if (page != 1) return
+        if (page != 1 || !isFbFresh || !S.online || lastFetchTs <= 0L) return
+        if (chartLive.lastOrNull()?.ts == lastFetchTs) return
+        fun value(key: String, simKey: String, v: Double) =
+            v.takeIf { S.hasData(key) && !S.symAktywna(simKey) && it.isFinite() }
         val p = TelemPoint(
-            ts = System.currentTimeMillis(), seq = 0,
-            t_zewn = S.valOf("zewn", "t_zewn"), t_bojler = S.valOf("bojler", "t_bojler"),
-            t_ogrz = S.valOf("ogrz", "t_ogrz"), t_ogrz_sr = S.t_ogrz_sr,
-            t_powrot = S.valOf("ogrz_powrot", "t_powrot"), t_panel = S.valOf("panel", "t_panel"),
-            t_pokoj = S.valOf("pokoj", "t_pokoj"), t_trociny = S.valOf("ogrz_trociny", "t_trociny"),
-            wilgotnosc = S.valOf("wilgotnosc", "wilgotnosc"), cisnienie = S.valOf("cisnienie", "cisnienie"),
-            dym = S.valOf("dym", "dym"), klapa = S.klapa * 100.0 / 180.0, syberka = S.syberka * 100.0 / 90.0,
-            pompa = S.pompa, sim = if (S.sym.isNotEmpty()) 1 else 0
+            ts = lastFetchTs, seq = chartLive.size.toLong() + 1,
+            t_zewn = value("t_zewn", "zewn", S.t_zewn),
+            t_bojler = value("t_bojler", "bojler", S.t_bojler),
+            t_ogrz = value("t_ogrz", "ogrz", S.t_ogrz),
+            t_ogrz_sr = value("t_ogrz_sr", "ogrz", S.t_ogrz_sr),
+            t_powrot = value("t_powrot", "ogrz_powrot", S.t_powrot),
+            t_panel = value("t_panel", "panel", S.t_panel),
+            t_pokoj = value("t_pokoj", "pokoj", S.t_pokoj),
+            t_trociny = value("t_trociny", "ogrz_trociny", S.t_trociny),
+            wilgotnosc = value("wilgotnosc", "wilgotnosc", S.wilgotnosc),
+            cisnienie = value("cisnienie", "cisnienie", S.cisnienie),
+            dym = value("dym", "dym", S.dym),
+            klapa = S.klapa.takeIf { S.hasData("klapa") && it in 0..180 }?.let { it * 100.0 / 180.0 },
+            syberka = S.syberka.takeIf { S.hasData("syberka") && it in 0..90 }?.let { it * 100.0 / 90.0 }
         )
-        chartLive = (chartLive + p).takeLast(240)
+        if (p.hasRealValues()) chartLive = (chartLive + p).takeLast(240)
     }
 
     fun rangeLabel(): String = if (rangeSec <= 24 * 3600) "${rangeSec / 3600} h" else "${rangeSec / 86400} dni"
@@ -614,13 +639,20 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun fsSubtitle(): String = if (rangeSec <= 24 * 3600) "Podgląd dobowy telemetryczny" else "Analiza wielodniowa"
 
     /** `updateChartsNowStat()` — plakietka bieżącej wartości + faza grzania. */
-    fun chartNowStat(): String = if (chartFocus == 0) "piec " + fmt1(S.t_ogrz) + "°C"
-    else "klapa " + Math.round(S.klapa / 1.8) + "%"
+    fun chartNowStat(): String = if (chartFocus == 0) {
+        if (S.symAktywna("ogrz")) "SYM wyłączona z wykresów"
+        else if (S.hasData("t_ogrz")) "piec " + fmt1(S.t_ogrz) + "°C" else "piec —"
+    } else {
+        if (S.hasData("klapa")) "klapa " + Math.round(S.klapa / 1.8) + "%" else "klapa —"
+    }
 
-    fun chartPhase(): String = when {
-        S.t_ogrz > 65 -> "🔥 FAZA GRZANIA: INTENSYWNA (" + fmt1(S.t_ogrz) + "°C)"
-        S.t_ogrz > 45 -> "🔥 FAZA GRZANIA: STABILNA (" + fmt1(S.t_ogrz) + "°C)"
-        else -> "⏸ FAZA POSTOJU / WYGASZANIE (" + fmt1(S.t_ogrz) + "°C)"
+    fun chartPhase(): String {
+        if (!S.hasData("t_ogrz")) return "Brak rzeczywistego odczytu temperatury pieca"
+        return when {
+            S.t_ogrz > 65 -> "🔥 FAZA GRZANIA: INTENSYWNA (" + fmt1(S.t_ogrz) + "°C)"
+            S.t_ogrz > 45 -> "🔥 FAZA GRZANIA: STABILNA (" + fmt1(S.t_ogrz) + "°C)"
+            else -> "⏸ FAZA POSTOJU / WYGASZANIE (" + fmt1(S.t_ogrz) + "°C)"
+        }
     }
 
     private fun updateChartHead() { /* tytuł/meta/serie są reaktywne w Compose */ }
@@ -707,24 +739,37 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         tgChatId = prefs.get(Prefs.K_TG_CHAT) ?: ""
     }
 
-    /** `buildTelegramStatusReport()` — tylko prawdziwe wartości ze strumienia. */
+    /** Raport Telegram nie wypełnia brakujących pól wartościami domyślnymi. */
     fun telegramReport(): String {
-        fun deg(v: Double) = if (v.isFinite()) fmt1(v) + "°C" else "—"
-        val pumpDesc = if (S.wybor == 1)
-            "Trociniak (${S.czasOn}m/${S.czasOff}m)" else "Kopciuch (ON: ${deg(S.tempOn.toDouble())}, OFF: ${deg(S.tempOff.toDouble())})"
-        val servoMode = when (S.tryb_serwa) { 1 -> "AUTO"; 2 -> "RĘCZNY"; else -> "BEZPIECZNA" }
-        val alarm = when {
-            S.dym_alarm -> "🚨 ALARM DYMU"; S.alarm_ogrzewanie -> "🚨 ALARM PRZEGRZANIA"; else -> "BRAK (System bezpieczny)"
+        fun deg(key: String, value: Double) = if (S.hasData(key) && value.isFinite()) fmt1(value) + "°C" else "—"
+        val pump = if (S.hasData("pompa")) if (S.pompa) "🟢 PRACA" else "⚪ STOP" else "—"
+        val pumpDesc = when {
+            !S.hasData("wybor") -> "ustawienia niedostępne"
+            S.wybor == 1 && S.hasAllData("czasOn", "czasOff") -> "Trociniak (${S.czasOn}m/${S.czasOff}m)"
+            S.wybor == 2 && S.hasAllData("tempOn", "tempOff") -> "Kopciuch (ON: ${S.tempOn}°C, OFF: ${S.tempOff}°C)"
+            S.wybor == 3 && S.hasData("tempOn") -> "Auto (start: ${S.tempOn}°C)"
+            else -> "ustawienia niedostępne"
         }
+        val servoMode = if (S.hasData("tryb_serwa")) PiecState.TRYB_NAZWA[S.tryb_serwa] ?: "—" else "—"
+        val servo = if (S.hasAllData("tryb_serwa", "klapa", "syberka"))
+            "Klapa ${Math.round(S.klapa / 1.8)}% | Syberek ${Math.round(S.syberka / 0.9)}% (Tryb: $servoMode)" else "—"
+        val alarm = if (!S.hasAllData("dym_alarm", "alarm_ogrzewanie", "alarm_panel")) "BRAK DANYCH"
+        else when {
+            S.dym_alarm -> "🚨 ALARM DYMU"
+            S.alarm_ogrzewanie -> "🚨 ALARM PRZEGRZANIA"
+            S.alarm_panel -> "🚨 ALARM PANELU"
+            else -> "BRAK (stan odczytany)"
+        }
+        val wifi = if (S.hasData("wifi_rssi")) "${S.wifi_rssi} dBm" else "—"
         return "🔥 *Sterownik C.O.* — Raport stanu\n" +
-            "• *Piec:* ${deg(S.t_ogrz)} | *Bojler:* ${deg(S.t_bojler)} | *Panel:* ${deg(S.t_panel)} | *Zewn:* ${deg(S.t_zewn)}\n" +
-            "• *Pompa:* " + (if (S.pompa) "🟢 PRACA" else "⚪ STOP") + " — $pumpDesc\n" +
-            "• *Serwa:* Klapa " + Math.round(S.klapa / 1.8) + "% | Syberek " + Math.round(S.syberka / 0.9) + "% (Tryb: $servoMode)\n" +
+            "• *Piec:* ${deg("t_ogrz", S.t_ogrz)} | *Bojler:* ${deg("t_bojler", S.t_bojler)} | *Panel:* ${deg("t_panel", S.t_panel)} | *Zewn:* ${deg("t_zewn", S.t_zewn)}\n" +
+            "• *Pompa:* $pump — $pumpDesc\n" +
+            "• *Serwa:* $servo\n" +
             "• *Alerty:* $alarm\n" +
-            "• *WiFi:* " + (if (S.wifi_rssi != 0) "${S.wifi_rssi} dBm" else "—") + " · IP: " + (S.ip.ifEmpty { "—" })
+            "• *WiFi:* $wifi · IP: " + (if (S.hasData("ip")) S.ip else "—")
     }
 
-    private fun fmt1(v: Double): String = String.format(java.util.Locale.US, "%.1f", v)
+    private fun fmt1(v: Double): String = if (v.isFinite()) String.format(java.util.Locale.US, "%.1f", v) else "—"
 
     fun tgSave(payload: JSONObject, okMsg: String) = scope.launch {
         val res = withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -750,8 +795,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun tgSendTest() {
         if (connected) {
             send("tg_test")
-            showToast("Telegram", "Wysłano rozkaz testu Telegram (Firebase)", "ok")
-            addLog("TELEGRAM", "Wysłano rozkaz testu Telegram przez Firebase", "info")
             return
         }
         scope.launch {
@@ -874,10 +917,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         val cur = wifiSaved.firstOrNull { it.active }
         val fromState = S.wifi_ssid.trim()
         return when {
-            cur != null -> cur.ssid
-            fromState.isNotEmpty() -> fromState
-            connected -> "Połączono z Wi-Fi"
-            else -> "Centrala nieosiągalna — brak danych"
+            cur != null && cur.ssid.isNotBlank() -> cur.ssid
+            S.hasData("wifi_ssid") && fromState.isNotEmpty() -> fromState
+            else -> "SSID nieodebrane z centrali"
         }
     }
 
@@ -885,20 +927,19 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** `_terminalState` z Piec.html:6060. */
     val terminalRaw = ArrayList<String>()
     val terminalDisplay = mutableStateListOf<String>()
-    var termSession by mutableStateOf("20261005_120000")
-    var termSeq by mutableIntStateOf(0)
+    var termSeq by mutableIntStateOf(-1)
     var termLines by mutableIntStateOf(0)
     var termBytes by mutableLongStateOf(0L)
     var termGaps by mutableIntStateOf(0)
     var termChunks by mutableIntStateOf(0)
     var termPaused by mutableStateOf(false)
     var termOpened by mutableStateOf(false)
+    var termStateKnown by mutableStateOf(false)
     var termAutoOffAt by mutableLongStateOf(0L)
     var termLevel by mutableStateOf("INFO")
-    var termStatus by mutableStateOf("Terminal czyta sesję diagnostyczną z pamięci ESP32 i bazy Firebase.")
+    var termStatus by mutableStateOf("Brak odebranych wpisów DLOG. Oczekiwanie na rzeczywiste dane sterownika.")
     var termStatusKind by mutableStateOf("")
     val termCats = mutableStateMapOf<String, Boolean>()
-    private var termSimJob: Job? = null
 
     init { DLOG_CATEGORIES.forEach { termCats[it] = true } }
 
@@ -950,48 +991,108 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     fun terminalClear() {
-        terminalRaw.clear(); terminalRender()
-        termStatus = "Ekran wyczyszczony — historia w buforze pamięci zresetowana."
-        termStatusKind = "ok"
+        terminalRaw.clear()
+        termSeq = -1; termLines = 0; termBytes = 0L; termGaps = 0; termChunks = 0
+        terminalRender()
+        termStatus = "Wyczyszczono lokalny bufor DLOG."
+        termStatusKind = ""
     }
 
     fun terminalTogglePause() {
         termPaused = !termPaused
-        termStatus = if (termPaused) "Pauza obrazu — odbiór danych w tle aktywny." else "Podgląd na żywo wznowiony."
+        termStatus = if (termPaused) "Wstrzymano wyświetlanie lokalnego bufora." else "Wyświetlanie bufora wznowione."
         termStatusKind = ""
         if (!termPaused) terminalRender()
     }
 
-    fun terminalRemoteOn() {
-        termStatus = "Wysyłanie polecenia diag remote on…"
-        send("diag remote on")
-        termAutoOffAt = System.currentTimeMillis() + 60L * 60_000L
-        termOpened = true
-        termStatus = "Remote ON · LIVE streaming aktywny (Auto-OFF 60 min)."
-        termStatusKind = "ok"
-        if (termSimJob == null) termSimJob = scope.launch {
-            while (true) {
-                delay(1500)
-                if (termOpened && !termPaused) terminalSimChunk()
+    fun terminalRemoteOn() = setTerminalRemote(true)
+
+    fun terminalRemoteOff() = setTerminalRemote(false)
+
+    private fun setTerminalRemote(enabled: Boolean) = scope.launch {
+        if (!connected) {
+            termStateKnown = false
+            termStatus = "Brak połączenia z Firebase — polecenie Remote nie zostało wysłane."
+            termStatusKind = "err"
+            return@launch
+        }
+        val command = if (enabled) "diag remote on" else "diag remote off"
+        if (!enabled) termAutoOffAt = 0L
+        termStatus = "Oczekiwanie na potwierdzenie sterownika…"
+        termStatusKind = ""
+        try {
+            val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
+            when {
+                ack == null -> {
+                    termStateKnown = false
+                    termStatus = "Brak potwierdzenia ESP32; stan Remote jest nieznany."
+                    termStatusKind = "warn"
+                }
+                !ack.ok -> {
+                    termStatus = "ESP32 odrzucił polecenie: ${ack.error}"
+                    termStatusKind = "err"
+                }
+                else -> {
+                    termOpened = enabled
+                    termStateKnown = true
+                    termAutoOffAt = if (enabled) System.currentTimeMillis() + 60L * 60_000L else 0L
+                    termStatus = if (enabled)
+                        "ESP32 potwierdził Remote ON. Wersja Android nie odbiera strumienia DLOG."
+                    else "ESP32 potwierdził Remote OFF."
+                    termStatusKind = "ok"
+                    poll()
+                }
             }
+        } catch (e: Exception) {
+            termStateKnown = false
+            termStatus = "Błąd polecenia Remote: ${e.message ?: "brak odpowiedzi"}"
+            termStatusKind = "err"
         }
     }
 
-    fun terminalRemoteOff() {
-        send("diag remote off")
-        termAutoOffAt = 0L
-        termOpened = false
-        termSimJob?.cancel(); termSimJob = null
-        termStatus = "Remote OFF · LIVE zatrzymany. Dane w buforze zachowane."
-        termStatusKind = "ok"
+    private fun terminalSendWithAck(command: String, success: String, onAck: () -> Unit = {}) = scope.launch {
+        if (!connected) {
+            termStatus = "Brak połączenia Firebase — polecenia DLOG nie wysłano."
+            termStatusKind = "err"
+            return@launch
+        }
+        termStatus = "Oczekiwanie na potwierdzenie sterownika…"
+        termStatusKind = ""
+        try {
+            val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
+            when {
+                ack == null -> {
+                    termStatus = "Brak ACK ESP32; stan tej opcji jest nieznany."
+                    termStatusKind = "warn"
+                }
+                !ack.ok -> {
+                    termStatus = "ESP32 odrzucił polecenie: ${ack.error}"
+                    termStatusKind = "err"
+                }
+                else -> {
+                    onAck()
+                    termStatus = success
+                    termStatusKind = "ok"
+                    poll()
+                }
+            }
+        } catch (e: Exception) {
+            termStatus = "Błąd polecenia DLOG: ${e.message ?: "brak odpowiedzi"}"
+            termStatusKind = "err"
+        }
     }
 
     fun terminalSetLevel(lvl: String) {
         if (lvl.isEmpty()) return
-        termLevel = lvl
-        send("diag remote level $lvl")
-        termStatus = "Poziom logowania ustawiony na $lvl (ACK)."
-        termStatusKind = "ok"
+        if (!termOpened) {
+            termLevel = lvl // lokalny wybór; nie twierdzi, że ESP32 zmieniło poziom
+            termStatus = "Poziom $lvl wybrano lokalnie; nie wysłano go do sterownika."
+            termStatusKind = "warn"
+            return
+        }
+        terminalSendWithAck("diag remote level $lvl", "ESP32 potwierdził poziom DLOG $lvl.") {
+            termLevel = lvl
+        }
     }
 
     fun terminalSetCategory(cat: String, on: Boolean) {
@@ -1004,67 +1105,19 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         DLOG_CATEGORIES.forEach { termCats[it] = on }
         terminalRender()
         if (termOpened) {
-            send("diag remote cat ALL " + if (on) "on" else "off")
-            termStatus = (if (on) "Wszystkie 21 kategorii DLOG WŁĄCZONE" else "Wszystkie kategorie DLOG WYŁĄCZONE") + " na urządzeniu."
-            termStatusKind = "ok"
+            val state = if (on) "on" else "off"
+            terminalSendWithAck("diag remote cat ALL $state", "ESP32 potwierdził filtry kategorii DLOG: $state.")
         } else {
-            termStatus = (if (on) "Filtry 21 kategorii DLOG WŁĄCZONE" else "Filtry DLOG WYŁĄCZONE") + " na ekranie."
+            termStatus = if (on) "Filtry lokalnego bufora włączone." else "Filtry lokalnego bufora wyłączone."
             termStatusKind = ""
         }
     }
 
-    /** `generateSimulatedDLogChunk()` — próbki DLOG z bieżącego stanu. */
-    fun terminalSimChunk() {
-        val c = java.util.Calendar.getInstance()
-        fun t(h: Int) = String.format(java.util.Locale.US, "%02d", h)
-        val ts = t(c.get(java.util.Calendar.HOUR_OF_DAY)) + ":" + t(c.get(java.util.Calendar.MINUTE)) + ":" + t(c.get(java.util.Calendar.SECOND))
-        val samples = listOf(
-            listOf("SENSOR", "INFO", "t_ogrz=" + fmt1(S.t_ogrz) + "C t_bojler=" + fmt1(S.t_bojler) + "C t_panel=" + fmt1(S.t_panel) + "C t_zewn=" + fmt1(S.t_zewn) + "C cisnienie=" + S.cisnienie + "hPa"),
-            listOf("POMPA", "INFO", "stan=" + (if (S.pompa) "ON" else "OFF") + " tryb=" + (if (S.wybor == 1) "Trociniak" else "Kopciuch") + " cykl=" + S.czasOn + "m/" + S.czasOff + "m override=" + S.pompa_override_min + "m"),
-            listOf("SERVO", "DEBUG", "klapa=" + Math.round(S.klapa / 1.8) + "% syberek=" + Math.round(S.syberka / 0.9) + "% trybSerwa=" + S.tryb_serwa + " hister=" + S.histerServo + "C"),
-            listOf("FIREBASE", "INFO", "telemetry shard v1 commit ACK 32ms rssi=" + S.wifi_rssi + "dBm queue=0/64"),
-            listOf("WIFI", "TRACE", "beacon recv bssid=48:E7:29:B1:0A:F0 rssi=" + S.wifi_rssi + "dBm channel=6 beacon_interval=100ms"),
-            listOf("TELEGRAM", "DEBUG", "long-poll getUpdates offset=498102 status=200 ok pending=0"),
-            listOf("ALARM", "INFO", "ogrz=" + (if (S.alarm_ogrzewanie) "ALARM" else "OK") + " dym=" + (if (S.dym_alarm) "ALARM" else "OK") + " adc=" + S.dym + " prog=" + S.progAlarmDym),
-            listOf("WEATHER", "INFO", "Open-Meteo sync OK wmo_code=" + S.weatherCode + " temp=" + fmt1(S.t_zewn) + "C press=" + S.cisnienie + "hPa"),
-            listOf("MEMORY", "TRACE", "heap_free=184320 min_free=168440 psram_free=4194304 tasks=14/24"),
-            listOf("WATCHDOG", "DEBUG", "task_wdt feed loop=OK tgTask=OK telemetryTask=OK historiaTask=OK"),
-            listOf("SCHEDULER", "TRACE", "slot=0/16 tick_delta=100ms drift_us=120 load_core0=18% load_core1=34%")
-        )
-        val pick = samples[Random.nextInt(samples.size)]
-        terminalAppend("[${ts}] [${pick[0]}] lvl=${pick[1]} tag=${pick[0]} msg=\"${pick[2]}\"", seq = termSeq + 1)
-    }
-
-    /** logi startowe (boot) — jak `initLogs` w oryginale. */
-    fun terminalSeed() {
-        if (terminalRaw.isNotEmpty()) return
-        val logs = listOf(
-            "[12:00:00] [BOOT] lvl=INFO tag=BOOT msg=\"ESP32-S3 Sterownik CO ${fwLabel()} boot=14 rst_reason=POWER_ON\"",
-            "[12:00:01] [SYSTEM] lvl=INFO tag=SYSTEM msg=\"Inicjalizacja peryferiów, FreeRTOS tasks 14/24 Core 0/1\"",
-            "[12:00:01] [WIFI] lvl=INFO tag=WIFI msg=\"WiFi connected SSID=${if (S.wifi_ssid.isEmpty()) "Dom_CO" else S.wifi_ssid} IP=${S.ip} rssi=${S.wifi_rssi}dBm\"",
-            "[12:00:02] [FIREBASE] lvl=INFO tag=FIREBASE msg=\"Firebase UserAuth zalogowany UID=${prefs.get(Prefs.K_EMAIL) ?: "admin"} ACK\"",
-            "[12:00:02] [SENSOR] lvl=INFO tag=SENSOR msg=\"10 czujników gotowych: t_ogrz=${fmt1(S.t_ogrz)}C t_bojler=${fmt1(S.t_bojler)}C\"",
-            "[12:00:03] [TELEGRAM] lvl=INFO tag=TELEGRAM msg=\"Telegram bot aktywny @SterownikCO_Bot long-poll Core 0\"",
-            "[12:00:03] [POMPA] lvl=INFO tag=POMPA msg=\"Automatyka pompy: ${if (S.wybor == 1) "Trociniak czasowy" else "Kopciuch temp."} stan=${if (S.pompa) "ON" else "OFF"}\"",
-            "[12:00:04] [SERVO] lvl=INFO tag=SERVO msg=\"Klapa=${Math.round(S.klapa / 1.8)}% Syberek=${Math.round(S.syberka / 0.9)}% Tryb=AUTO\""
-        )
-        logs.forEachIndexed { i, l -> terminalAppend(l, seq = i + 1) }
-    }
-
-    /** `execTerminalCmd()` — echo + `sendCommand` + ACK po 120 ms. */
+    /** Polecenie wysyłane do sterownika; konsola nie dopisuje fikcyjnego ACK. */
     fun terminalExec(cmd: String) {
-        val c = cmd.trim()
-        if (c.isEmpty()) return
-        val now = java.util.Calendar.getInstance()
-        val ts = String.format(java.util.Locale.US, "%02d:%02d:%02d",
-            now.get(java.util.Calendar.HOUR_OF_DAY), now.get(java.util.Calendar.MINUTE), now.get(java.util.Calendar.SECOND))
-        val echo = "[${ts}] [TERMINAL] lvl=INFO tag=CMD msg=\"> $c\""
-        terminalAppend(echo, seq = termSeq + 1)
-        send(c)
-        scope.launch {
-            delay(120)
-            terminalAppend("[${ts}] [TERMINAL] lvl=DEBUG tag=ACK msg=\"ACK OK: $c (rtt=24ms)\"", seq = termSeq + 1)
-        }
+        val command = cmd.trim()
+        if (command.isEmpty()) return
+        send(command)
     }
 
     // ─────────────────────────  OTA / GitHub Releases  ─────────────────────────
@@ -1104,37 +1157,35 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     private fun pad2(v: Int) = if (v < 10) "0$v" else "$v"
 
-    fun checkGithubRelease(onDone: (() -> Unit)? = null) = scope.launch {
+    fun checkGithubRelease(onDone: ((Boolean) -> Unit)? = null) = scope.launch {
         ghChecking = true
         val d = try { Rtdb.latestRelease() } catch (e: Exception) { null }
-        ghRelease = if (d != null) JSONObject()
-            .put("tag", d.optString("tag_name", "v3.31.21"))
-            .put("name", d.optString("name", "Wydanie Stabilne Sterownik C.O."))
-            .put("publishedAt", (d.optString("published_at").split("T").firstOrNull() ?: "2026-10-05"))
+        val tag = d?.optString("tag_name", "")?.trim().orEmpty()
+        ghRelease = if (d != null && tag.isNotEmpty()) JSONObject()
+            .put("tag", tag)
+            .put("name", d.optString("name", ""))
+            .put("publishedAt", d.optString("published_at").split("T").firstOrNull().orEmpty())
             .put("body", d.optString("body", ""))
             .put("assets", d.optJSONArray("assets") ?: JSONArray())
-        else JSONObject()
-            .put("tag", "v3.31.21")
-            .put("name", "Sterownik C.O. PRO — Stabilna Wersja Produkcyjna")
-            .put("publishedAt", "2026-10-05")
-            .put("body", "• Optymalizacja bufora pamięci Flash i telemetryki 1m\n• Wdrożenie 21 kategorii DLOG z selektorem poziomów TRACE-ERR\n• Dwustronna integracja z Telegram Botem i skaner sieci Wi-Fi")
-            .put("assets", JSONArray()
-                .put(JSONObject().put("name", "firmware.bin").put("size", "1.84 MB"))
-                .put(JSONObject().put("name", "firmware_panel.bin").put("size", "1.42 MB")))
+        else null
         ghChecking = false
-        onDone?.invoke()
+        onDone?.invoke(ghRelease != null)
     }
 
-    /** `runOtaProcedure(...)` — zero udawanego postępu; realna komenda do centrali. */
-    fun runOtaProcedure(targetName: String, fileName: String, cmd: String) {
+    /** ACK potwierdza tylko przyjęcie komendy, nie postęp ani wynik flashowania. */
+    fun runOtaProcedure(targetName: String, fileName: String, cmd: String) = scope.launch {
         otaProgressShown = true
         otaProgressPct = "…"
-        otaProgressLabel = "Wysyłanie komendy \"$cmd\" do centrali ($fileName)…"
-        send(cmd)
-        otaProgressPct = "100%"
-        otaProgressLabel = "Komenda \"$cmd\" wysłana. OTA $targetName wykonuje centrala w tle — " +
-            "postęp w Telegramie i logach; po flashu restart ~10-15 s."
-        addLog("OTA", "Kolejkowano $cmd ($fileName)", "info")
+        otaProgressLabel = "Oczekiwanie na potwierdzenie komendy \"$cmd\" ($fileName)…"
+        val confirmed = sendAwait(cmd)
+        if (confirmed) {
+            otaProgressPct = "ACK"
+            otaProgressLabel = "Sterownik potwierdził przyjęcie \"$cmd\". Postęp OTA $targetName nie jest dostępny w panelu — sprawdź logi centrali."
+            addLog("OTA", "Sterownik potwierdził przyjęcie $cmd ($fileName); wynik flashowania niezweryfikowany", "ack")
+        } else {
+            otaProgressPct = "—"
+            otaProgressLabel = "Brak potwierdzenia \"$cmd\". Nie można stwierdzić, czy OTA $targetName zostało rozpoczęte."
+        }
     }
 
     fun rtcSync() {
@@ -1142,8 +1193,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         if (connected) {
             send("rtc_sync ${c.get(java.util.Calendar.YEAR)} ${c.get(java.util.Calendar.MONTH) + 1} ${c.get(java.util.Calendar.DAY_OF_MONTH)} " +
                 "${c.get(java.util.Calendar.HOUR_OF_DAY)} ${c.get(java.util.Calendar.MINUTE)} ${c.get(java.util.Calendar.SECOND)}")
-            showToast("Czas", "Wysłano czas telefonu do zegara RTC centrali", "ok")
-            addLog("RTC", "Zsynchronizowano zegar z czasem urządzenia", "info")
             return
         }
         scope.launch {
@@ -1170,7 +1219,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             send(line)
         } else {
             val j = try { Rtdb.terminalSend(S.ip, line) } catch (e: Exception) { null }
-            terminalLines.add(if (j != null) j.optString("resp", "OK") else "⚠ centrala brak odpowiedzi")
+            val response = j?.optString("resp")?.takeIf { it.isNotBlank() }
+            terminalLines.add(response ?: "⚠ sterownik nie zwrócił odpowiedzi")
         }
     }
 
@@ -1209,9 +1259,14 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     // ─────────────────────────  mapowanie UI (PULPIT → arkusze) ─────────────────────────
     /** `#sysSub` z renderDashboard (Piec.html:4330-4345). */
-    fun sysStripSub(): String = when {
-        connected -> "stan na żywo z ESP32 (${S.ip}) · telemetria Firebase"
-        else -> "oczekiwanie na połączenie z Firebase"
+    fun sysStripSub(): String {
+        val source = when {
+            isFbFresh && S.online -> "telemetria ESP32 · IP: " + (if (S.hasData("ip")) S.ip else "—")
+            connected -> "Firebase połączone · oczekiwanie na rzeczywiste dane centrali"
+            lastFetchTs > 0L -> "Ostatnie dane sterownika są nieaktualne"
+            else -> "oczekiwanie na połączenie z Firebase"
+        }
+        return if (S.sym.isNotEmpty()) "$source · symulacja lokalna" else source
     }
 
     /** kafelki bez pozycji w `MENUS` nie otwierają arkusza (openMenu = () => {}). */
@@ -1230,19 +1285,11 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             showToast("Ustawienia", "$name: zakres $min–$max", "err")
             return
         }
-        S.setNum(key, v.toDouble())
-        S.bump()
-        showToast("Ustawienia", "ustaw $key $v", "ok")
         send("ustaw $key $v")
-        refreshSheet()
     }
 
-    /** `checkbox(...)` → `ustaw <key> 1|0`. */
+    /** `checkbox(...)` → `ustaw <key> 1|0`; widok zmienia się po rzeczywistym odczycie. */
     fun commitBool(name: String, key: String, v: Boolean) {
-        S.setBool(key, v)
-        S.bump()
-        showToast("Ustawienia", "ustaw $key ${if (v) 1 else 0}", "ok")
         send("ustaw $key ${if (v) 1 else 0}")
-        refreshSheet()
     }
 }
