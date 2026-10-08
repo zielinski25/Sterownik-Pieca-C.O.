@@ -426,7 +426,7 @@ fun ChartAxisSheet(m: AppModel) {
     Seg(listOf("SMOOTH" to "Gładkie (Bezier)", "STEPPED" to "Schodkowe"), current = m.chartStyle) { v -> m.setChartStyle(v) }
 }
 
-/** `showChartToolsSheet()` — filtry anomalii, area band, bezier, alarmy, zoom. */
+/** `showChartToolsSheet()` — filtry anomalii, area band, bezier i poziomy odniesienia. */
 @Composable
 fun ChartToolsSheet(m: AppModel) {
     Note("Filtry zmieniają wygląd wykresu; dane w Firebase pozostają bez zmian.")
@@ -434,12 +434,6 @@ fun ChartToolsSheet(m: AppModel) {
     CheckRow("Wypełnienie gradientowe (Area Band)", null, m.chartAreaBand) { v -> m.setChartAreaBand(v) }
     CheckRow("Gładkie linie Bezier (odznacz: schodkowe)", null, m.chartStyle == "SMOOTH") { v -> m.setChartStyle(if (v) "SMOOTH" else "STEPPED") }
     CheckRow("Poziome linie progów temperatury", null, m.chartAlarmLines) { v -> m.setChartAlarmLines(v) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        UstBtn("Zoom −", modifier = Modifier.weight(1f), onClick = { m.zoomChart(1 / 1.3f) })
-        UstBtn("Reset (1×)", modifier = Modifier.weight(1f), onClick = { m.resetChartView() })
-        UstBtn("Zoom +", modifier = Modifier.weight(1f), onClick = { m.zoomChart(1.3f) })
-    }
-    Spacer(Modifier.height(2.dp))
     SectionHeader("Poziomy odniesienia · wykres temperatur")
     Note("Dla wszystkich widocznych serii temperatur na wspólnej osi (°C). Linie odniesienia, nie alarmy sterownika; zapis po puszczeniu suwaka.")
     listOf(

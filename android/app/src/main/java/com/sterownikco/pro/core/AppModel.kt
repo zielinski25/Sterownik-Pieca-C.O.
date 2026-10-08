@@ -652,7 +652,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun setChartAlarmLines(v: Boolean) { chartAlarmLines = v; saveChartPrefs() }
     fun setAlarmLevel(k: String, v: Double) { alarmLevels = alarmLevels + (k to v); saveChartPrefs() }
 
-    /** `chartZoom` 1…16 (zoom +/-1.3× w arkuszu narzędzi). */
+    /** Aktualne powiększenie wykresu (1…16). */
     fun zoomChart(f: Float) { chartZoom = (chartZoom * f).coerceIn(1f, 16f) }
     fun resetChartView() { chartZoom = 1f; chartOffset = 1f }
 
