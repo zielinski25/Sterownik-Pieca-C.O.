@@ -1336,15 +1336,30 @@ body.mode-phone-frame #phone {
 
 .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .sitem {
+  min-width: 0;
   background: var(--surface2);
   border-radius: 8px;
   padding: 6px 8px;
   display: flex;
+  gap: 4px;
   justify-content: space-between;
   align-items: center;
 }
-.sitem .k { font-size: 8px; color: var(--text-dim); }
-.sitem .v { font-size: 9px; font-weight: 800; color: #fff; }
+.sitem .k {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 8px;
+  color: var(--text-dim);
+}
+.sitem .v {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+}
 
 
 /* ───── WIDGET ASTRONOMII & ŁUK SŁONECZNY ───── */
@@ -4770,11 +4785,13 @@ body.mode-phone-frame #phone {
     renderDashboard();
     refreshSheet();
     updateChartsLiveFeed();
-    const weather = typeof weatherData !== 'undefined' && weatherData ? weatherData.current : null;
-    const solarReady = weather && ['t_panel', 't_bojler', 't_zewn'].every(key => receivedFields.has(key) && Number.isFinite(real[key])) &&
+    const weather = weatherDataIsReal && weatherData ? weatherData.current : null;
+    const shortwave = currentHourSolarRadiation(weatherData);
+    const solarReady = weather && Number.isFinite(shortwave) &&
+      ['t_panel', 't_bojler', 't_zewn'].every(key => receivedFields.has(key) && Number.isFinite(real[key])) &&
       !['panel', 'bojler', 'zewn'].some(symAktywna);
     if (solarReady && typeof SolarAnalytics !== 'undefined') {
-      SolarAnalytics.recordSample(real.t_panel, real.t_bojler, real.t_zewn, weather.uv * 120, weather.uv, weather.cloud);
+      SolarAnalytics.recordSample(real.t_panel, real.t_bojler, real.t_zewn, shortwave, weather.uv, weather.cloud);
     }
   }
 
@@ -8688,7 +8705,8 @@ body.mode-phone-frame #phone {
         precip: rain,
         precipProb: Math.round(rain > 0 ? Math.min(95, rain * 40 + 20) : cloud * 0.2),
         code,
-        isDay
+        isDay,
+        shortwaveRadiation: null
       });
     }
 
@@ -8763,7 +8781,7 @@ body.mode-phone-frame #phone {
         latitude: (typeof safeStorage !== 'undefined' && safeStorage.get('piec_weather_lat')) || '51.066389',
         longitude: (typeof safeStorage !== 'undefined' && safeStorage.get('piec_weather_lon')) || '21.509167',
         current: 'temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index',
-        hourly: 'temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,is_day',
+        hourly: 'temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,is_day,shortwave_radiation',
         daily: 'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum',
         timezone: 'auto',
         forecast_days: String(Math.max(1, Math.min(14, days || 7)))
@@ -8785,7 +8803,9 @@ body.mode-phone-frame #phone {
           precip: raw.hourly.precipitation ? raw.hourly.precipitation[i] : 0,
           precipProb: raw.hourly.precipitation_probability ? raw.hourly.precipitation_probability[i] : 0,
           code: raw.hourly.weather_code ? raw.hourly.weather_code[i] : 0,
-          isDay: raw.hourly.is_day ? raw.hourly.is_day[i] === 1 : true
+          isDay: raw.hourly.is_day ? raw.hourly.is_day[i] === 1 : true,
+          shortwaveRadiation: raw.hourly.shortwave_radiation && Number.isFinite(raw.hourly.shortwave_radiation[i])
+            ? raw.hourly.shortwave_radiation[i] : null
         });
       }
 
@@ -8930,11 +8950,9 @@ body.mode-phone-frame #phone {
     const elElevation = $('#sunArcElevationVal');
     const elRad = $('#sunArcRadVal');
 
-    const curUv = (data.current && data.current.uv) || 3.0;
-    const curCloud = (data.current && data.current.cloud) || 20;
     const isDay = nowTs >= sunriseTs && nowTs <= sunsetTs;
-    const radEst = isDay ? Math.round(Math.max(50, (100 - curCloud * 0.7) * (curUv * 18 + 40))) : 0;
-    if (elRad) elRad.textContent = radEst + ' W/m²';
+    const radNow = currentHourSolarRadiation(data);
+    if (elRad) elRad.textContent = radNow === null ? '— W/m²' : Math.round(radNow) + ' W/m²';
 
     if (nowTs >= sunriseTs && nowTs <= sunsetTs) {
       const p = Math.max(0, Math.min(1, (nowTs - sunriseTs) / (sunsetTs - sunriseTs)));
@@ -8973,6 +8991,21 @@ body.mode-phone-frame #phone {
 
     // 2. Wielodniowa Prognoza Solarna (7 Dni)
     renderSolarDayCards($('#solarMultiDayGrid'), data, false);
+  }
+
+  function currentHourSolarRadiation(data = weatherData) {
+    if (!data || !Array.isArray(data.hourly)) return null;
+    const hour = new Date();
+    hour.setMinutes(0, 0, 0);
+    const item = data.hourly.find(hItem => hItem && hItem.time === hour.getTime());
+    const value = item && item.shortwaveRadiation;
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+
+  function sunTimeOr(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? pad2(date.getHours()) + ':' + pad2(date.getMinutes()) : '—';
   }
 
   function weatherHoursFromCurrentHour(hourly, nowMs = Date.now(), limit = 48) {
@@ -9073,15 +9106,16 @@ body.mode-phone-frame #phone {
     // Summary
     const sumBox = $('#weatherSummaryGrid');
     if (sumBox) {
+      const radNow = currentHourSolarRadiation(weatherData);
       sumBox.innerHTML = `
         <div class="sitem"><span class="k">🌡️ Maks. dzisiaj</span><span class="v">${fmt1(today.maxT)} °C</span></div>
         <div class="sitem"><span class="k">🌡️ Min. dzisiaj</span><span class="v">${fmt1(today.minT)} °C</span></div>
         <div class="sitem"><span class="k">🌧️ Suma opadów</span><span class="v">${fmt1(today.rainSum)} mm</span></div>
         <div class="sitem"><span class="k">💨 Porywy wiatru</span><span class="v">${fmt0(cur.windGusts)} km/h</span></div>
         <div class="sitem"><span class="k">☀️ UV maks.</span><span class="v">${fmt1(cur.uv)}</span></div>
-        <div class="sitem"><span class="k">☀️ Nasłonecznienie</span><span class="v">620 W/m²</span></div>
-        <div class="sitem"><span class="k">🌅 Wschód słońca</span><span class="v">06:42</span></div>
-        <div class="sitem"><span class="k">🌇 Zachód słońca</span><span class="v">18:15</span></div>
+        <div class="sitem"><span class="k">☀️ Promieniowanie</span><span class="v">${radNow === null ? '—' : fmt0(radNow) + ' W/m²'}</span></div>
+        <div class="sitem"><span class="k">🌅 Wschód słońca</span><span class="v">${sunTimeOr(today.sunrise)}</span></div>
+        <div class="sitem"><span class="k">🌇 Zachód słońca</span><span class="v">${sunTimeOr(today.sunset)}</span></div>
       `;
     }
   }

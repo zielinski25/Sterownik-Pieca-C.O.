@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -386,7 +387,7 @@ fun WeatherPage(m: AppModel) {
                 "🌧️ Suma opadów" to (d0?.rainSum?.let { fmt1(it) + " mm" } ?: "—"),
                 "💨 Porywy wiatru" to (fmt0or(cur?.windGusts) + " km/h"),
                 "☀️ UV maks." to (cur?.uv?.let { fmt1(it) } ?: "—"),
-                "☀️ Promieniowanie (est.)" to (cur?.let { fmt0(m.radEst(it)) + " W/m²" } ?: "—"),
+                "☀️ Promieniowanie" to (cur?.let { fmt0(m.radEst(it)) + " W/m²" } ?: "—"),
                 "🌅 Wschód słońca" to sunTimeOr(d0?.sunrise),
                 "🌇 Zachód słońca" to sunTimeOr(d0?.sunset)
             )
@@ -397,9 +398,12 @@ fun WeatherPage(m: AppModel) {
                             Row(Modifier.weight(1f).background(Pal.Surface2, RoundedCornerShape(8.dp))
                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(k, fontSize = 8.sp, color = Pal.TextDim)
-                                Text(v, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Pal.White)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(k, fontSize = 8.sp, color = Pal.TextDim, maxLines = 1, softWrap = false,
+                                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Text(v, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Pal.White,
+                                    maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 90.dp))
                             }
                         }
                         if (row.size == 1) Box(Modifier.weight(1f))

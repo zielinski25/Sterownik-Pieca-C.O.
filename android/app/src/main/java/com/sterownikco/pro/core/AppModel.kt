@@ -218,10 +218,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         solar.recordSample(panel, boiler, outside, radEst(w), w.uv, w.cloud)
     }
 
-    /** `radEst = isDay ? max(50, (100-cloud*.7) * (uv*18+40)) : 0` — jak w panelu. */
+    /** Promieniowanie krótkofalowe Open-Meteo z bieżącej godziny; nie estymujemy go z UV. */
     fun radEst(w: WCurrent?): Double {
-        if (w == null || !w.isDay) return 0.0
-        return maxOf(50.0, (100 - w.cloud * .7) * (w.uv * 18 + 40))
+        if (w == null) return Double.NaN
+        val hourStart = Weather.startOfHour()
+        return weather?.hourly?.firstOrNull { it.time == hourStart }?.shortwaveRadiation
+            ?.takeIf { it.isFinite() && it >= 0.0 } ?: Double.NaN
     }
 
     // ── Firebase ────────────────────────────────────────────────────────────

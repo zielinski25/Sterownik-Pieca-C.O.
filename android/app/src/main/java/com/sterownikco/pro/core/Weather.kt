@@ -17,7 +17,8 @@ import kotlin.math.min
 
 data class WHour(
     val time: Long, val temp: Double, val wind: Double, val cloud: Double,
-    val precip: Double, val precipProb: Double, val code: Int, val isDay: Boolean
+    val precip: Double, val precipProb: Double, val code: Int, val isDay: Boolean,
+    val shortwaveRadiation: Double? = null
 )
 
 data class WDay(
@@ -85,7 +86,7 @@ object Weather {
             try {
                 val q = "latitude=" + enc(lat) + "&longitude=" + enc(lon) +
                     "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index" +
-                    "&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,is_day" +
+                    "&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,is_day,shortwave_radiation" +
                     "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum" +
                     "&timezone=auto&forecast_days=" + enc(max(1, min(14, days)).toString())
                 val req = Request.Builder().url("https://api.open-meteo.com/v1/forecast?" + q)
@@ -111,7 +112,8 @@ object Weather {
                     precip = arr(hh, "precipitation", i, 0.0),
                     precipProb = arr(hh, "precipitation_probability", i, 0.0),
                     code = arr(hh, "weather_code", i, 0.0).toInt(),
-                    isDay = if (hh.has("is_day")) arr(hh, "is_day", i, 1.0) == 1.0 else true
+                    isDay = if (hh.has("is_day")) arr(hh, "is_day", i, 1.0) == 1.0 else true,
+                    shortwaveRadiation = arrOrNull(hh, "shortwave_radiation", i)
                 )
             )
         }
@@ -153,6 +155,12 @@ object Weather {
     private fun arr(o: JSONObject, key: String, i: Int, def: Double): Double {
         val a = o.optJSONArray(key) ?: return def
         return if (i < a.length() && !a.isNull(i)) a.optDouble(i, def) else def
+    }
+
+    private fun arrOrNull(o: JSONObject, key: String, i: Int): Double? {
+        val a = o.optJSONArray(key) ?: return null
+        if (i !in 0 until a.length() || a.isNull(i)) return null
+        return a.optDouble(i, Double.NaN).takeIf { it.isFinite() && it >= 0.0 }
     }
 
     private fun str(o: JSONObject, key: String, i: Int): String? {
