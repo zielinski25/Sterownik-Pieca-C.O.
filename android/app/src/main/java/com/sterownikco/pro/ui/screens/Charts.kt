@@ -85,8 +85,8 @@ private fun RowScope.ChartChip(label: String, on: Boolean, modifier: Modifier = 
 
 /** `.series-chip` — kropka w kolorze serii + etykieta. */
 @Composable
-private fun SeriesChip(label: String, rgb: String, on: Boolean, onClick: () -> Unit) {
-    val c = hexColor(rgb)
+private fun SeriesChip(label: String, accentHex: String, on: Boolean, onClick: () -> Unit) {
+    val c = hexColor(accentHex)
     Row(
         Modifier.background(if (on) c.copy(alpha = .12f) else Pal.Surface2, RoundedCornerShape(12.dp))
             .border(BorderStroke(1.dp, if (on) c.copy(alpha = .7f) else Pal.Border), RoundedCornerShape(12.dp))
@@ -176,10 +176,10 @@ fun ChartsPage(m: AppModel) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 m.activeCatalog().forEach { s ->
-                    SeriesChip(label = s.label, rgb = s.rgb, on = m.seriesOn[s.id] ?: s.on,
+                    SeriesChip(label = s.label, accentHex = s.accent, on = m.seriesOn[s.id] ?: s.on,
                         onClick = { m.toggleSeries(s.id) })
                 }
-                SeriesChip(label = "USTAWIENIA", rgb = "0,212,245", on = false,
+                SeriesChip(label = "USTAWIENIA", accentHex = "#00d4f5", on = false,
                     onClick = { m.openSheet("chartSeries") })
             }
 

@@ -456,7 +456,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     chartLive = emptyList()
                     telemetry = fb
                     chartPoints = fb.size
-                    chartStatus = "Załadowano ${fb.size} próbek z bazy Firebase ($rangeName) · LIVE HISTORIA"
+                    chartStatus = "Załadowano ${fb.size} próbek z bazy Firebase ($rangeName) · tylko rzeczywiste wartości"
                     chartReality = "FIREBASE RTDB"
                     return@launch
                 }
