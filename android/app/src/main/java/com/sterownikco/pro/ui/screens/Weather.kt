@@ -28,7 +28,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -79,12 +78,13 @@ fun WeatherPage(m: AppModel) {
     val cur = w?.current
     val days = m.weatherDays
     val hours = w?.hourly ?: emptyList()
+    val currentHourStart = Weather.startOfHour(System.currentTimeMillis())
+    val forecastHours = remember(hours, currentHourStart) { Weather.forecastFromHour(hours, currentHourStart, 48) }
     val dailies = w?.daily ?: emptyList()
     var vbl by remember { mutableStateOf("temp") }
-    var hourSel by remember { mutableIntStateOf(-1) }
+    var hourSel by remember { mutableStateOf<Long?>(null) }
     var wCross by remember { mutableStateOf<Int?>(null) }
-    val hs = hourSel.takeIf { it in hours.indices } ?: -1
-    val selH = if (hs >= 0) hours[hs] else null
+    val selH = hourSel?.let { selectedTs -> forecastHours.firstOrNull { it.time == selectedTs } }
     val d0 = dailies.getOrNull(0)
 
     // Hero: wybrane godziny nadpisuja biezace — jak onclick .hcard w HTML.
@@ -253,13 +253,13 @@ fun WeatherPage(m: AppModel) {
         WCard("PROGNOZA GODZINOWA", "dotknij godziny do podglądu") {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                hours.take(48).forEachIndexed { i, h ->
-                    val on = if (hs < 0) i == 0 else hs == i
+                forecastHours.forEachIndexed { i, h ->
+                    val on = if (selH == null) i == 0 else h.time == hourSel
                     Column(
                         Modifier.width(62.dp).background(
                             if (on) Pal.Surface3 else Pal.Surface2, RoundedCornerShape(12.dp)
                         ).border(BorderStroke(1.dp, if (on) Pal.Cyan else Pal.Border), RoundedCornerShape(12.dp))
-                            .clickable { hourSel = i }.padding(horizontal = 6.dp, vertical = 8.dp),
+                            .clickable { hourSel = h.time }.padding(horizontal = 6.dp, vertical = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -269,7 +269,7 @@ fun WeatherPage(m: AppModel) {
                         Text(if (h.precipProb > 10) "${Math.round(h.precipProb)}%" else "", fontSize = 7.5.sp, color = Pal.Blue)
                     }
                 }
-                if (hours.isEmpty()) Text("Brak prognozy — odśwież dane meteo.", style = Txt.note)
+                if (forecastHours.isEmpty()) Text("Brak prognozy od bieżącej godziny — odśwież dane meteo.", style = Txt.note)
             }
         }
 

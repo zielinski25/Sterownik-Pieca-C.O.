@@ -66,6 +66,19 @@ object Weather {
         else -> "🌤️"
     }
 
+    /** Początek bieżącej godziny w lokalnej strefie urządzenia. */
+    fun startOfHour(nowMillis: Long = System.currentTimeMillis()): Long =
+        Calendar.getInstance().apply {
+            timeInMillis = nowMillis
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+    /** Lista kafelków prognozy zaczyna się od bieżącej godziny, nie od północy. */
+    fun forecastFromHour(hourly: List<WHour>, startMillis: Long, limit: Int = 48): List<WHour> =
+        hourly.filter { it.time >= startMillis }.take(max(0, limit))
+
     /** `fetchRealOpenMeteo(days)` — te same parametry zapytania co w panelu. */
     suspend fun fetch(client: okhttp3.OkHttpClient, lat: String, lon: String, days: Int): WeatherData? =
         withContext(Dispatchers.IO) {

@@ -8900,6 +8900,15 @@ body.mode-phone-frame #phone {
     }
   }
 
+  function weatherHoursFromCurrentHour(hourly, nowMs = Date.now(), limit = 48) {
+    const currentHour = new Date(nowMs);
+    currentHour.setMinutes(0, 0, 0);
+    const startTs = currentHour.getTime();
+    return (Array.isArray(hourly) ? hourly : [])
+      .filter(hItem => hItem && Number.isFinite(hItem.time) && hItem.time >= startTs)
+      .slice(0, limit);
+  }
+
   function renderWeatherTab() {
     if (!weatherData) return;
     const cur = weatherData.current;
@@ -8940,7 +8949,7 @@ body.mode-phone-frame #phone {
     const hourlyBox = $('#weatherHourlyRow');
     if (hourlyBox) {
       hourlyBox.innerHTML = '';
-      const takeH = weatherData.hourly.slice(0, 48);
+      const takeH = weatherHoursFromCurrentHour(weatherData.hourly, Date.now(), 48);
       takeH.forEach((hItem, idx) => {
         const d = new Date(hItem.time);
         const timeStr = pad2(d.getHours()) + ':00';
