@@ -19,7 +19,10 @@ data class AlarmInfo(val kind: String, val title: String, val msg: String, val s
 
 object AlarmCenter {
     const val K_MONITOR = "piec_alarm_monitor"       // "1"/"0", domyślnie "1"
-    const val K_SOUND = "piec_alarm_sound"           // syrena|dzwonek|pikanie|system
+    const val K_SOUND = "piec_alarm_sound"           // legacy shared sound, used as smoke fallback
+    const val K_SOUND_DYM = "piec_alarm_sound_dym"
+    const val K_SOUND_OGRZ = "piec_alarm_sound_ogrz"
+    const val K_SOUND_BOTH = "piec_alarm_sound_both"
     const val K_SNOOZE_UNTIL = "piec_alarm_snooze"   // epoch ms jako String
     const val K_MUTED_SIG = "piec_alarm_muted_sig"   // sygnatura wyciszona "do następnego"
     const val K_LAST_SIG = "piec_alarm_last_sig"     // ostatnia widziana sygnatura
@@ -28,13 +31,45 @@ object AlarmCenter {
     /** Powtórka dzwonka, gdy alarm wisi aktywny i NIC nie jest wyciszone. */
     const val REPEAT_MS = 30L * 60_000
 
+    private val soundIds = setOf(
+        "syrena", "dzwonek", "pikanie", "dwutonowy", "impulsowy", "narastajacy", "niski_puls", "system"
+    )
+
     fun isMonitored(p: Prefs): Boolean = p.get(K_MONITOR) != "0"
     fun setMonitored(p: Prefs, on: Boolean) = p.set(K_MONITOR, if (on) "1" else "0")
 
-    fun sound(p: Prefs): String = (p.get(K_SOUND) ?: "syrena").lowercase().let {
-        if (it in setOf("syrena", "dzwonek", "pikanie", "system")) it else "syrena"
+    /** Osobny wybór dla dymu, przegrzania i alarmu łącznego; K_SOUND zachowuje starszy wybór dymu. */
+    fun sound(p: Prefs, kind: String): String {
+        val key = when (kind) {
+            "ogrz" -> K_SOUND_OGRZ
+            "dym+ogrz", "ogrz+dym" -> K_SOUND_BOTH
+            else -> K_SOUND_DYM
+        }
+        val default = when (kind) {
+            "ogrz" -> "dzwonek"
+            "dym+ogrz", "ogrz+dym" -> "dwutonowy"
+            else -> (p.get(K_SOUND) ?: "syrena").lowercase()
+        }
+        val candidate = (p.get(key) ?: default).lowercase()
+        return candidate.takeIf { it in soundIds } ?: default.takeIf { it in soundIds } ?: "syrena"
     }
-    fun setSound(p: Prefs, s: String) = p.set(K_SOUND, s)
+
+    fun sound(p: Prefs): String = sound(p, "dym")
+
+    fun setSound(p: Prefs, kind: String, sound: String) {
+        if (sound !in soundIds) return
+        val key = when (kind) {
+            "ogrz" -> K_SOUND_OGRZ
+            "dym+ogrz", "ogrz+dym" -> K_SOUND_BOTH
+            else -> K_SOUND_DYM
+        }
+        p.set(key, sound)
+    }
+
+    /** Zapis legacy zachowany dla kompatybilności ze starszymi UI. */
+    fun setSound(p: Prefs, sound: String) {
+        if (sound in soundIds) p.set(K_SOUND, sound)
+    }
 
     /** Drzemka czasowa — liczy od teraz. */
     fun snooze(p: Prefs, minutes: Int) {

@@ -19,7 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,6 +33,7 @@ import com.sterownikco.pro.core.AlarmCenter
 import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.service.AlarmMonitorService
+import com.sterownikco.pro.ui.components.Seg
 import com.sterownikco.pro.ui.theme.Pal
 import com.sterownikco.pro.ui.theme.Txt
 
@@ -45,7 +49,8 @@ fun AlarmSheet(m: AppModel) {
     val ctx = m.ctx
     val p = m.prefs
     val monitored = AlarmCenter.isMonitored(p)
-    val sound = AlarmCenter.sound(p)
+    var soundKind by remember { mutableStateOf("dym") }
+    val sound = AlarmCenter.sound(p, soundKind)
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // 1. Status — brak flag nie jest równoznaczny ze stanem bez alarmu.
@@ -89,22 +94,36 @@ fun AlarmSheet(m: AppModel) {
             }
         }
 
-        // 3. Dźwięk alarmu
+        // 3. Osobny dźwięk dla każdego rodzaju alarmu
         AlarmCard {
-            Text("DŹWIĘK ALARMU", style = Txt.tiny, color = Pal.Cyan)
+            Text("DŹWIĘK WG RODZAJU ALARMU", style = Txt.tiny, color = Pal.Cyan)
+            Seg(
+                listOf("dym" to "Dym", "ogrz" to "Piec", "dym+ogrz" to "Oba"),
+                current = soundKind,
+                onPick = { soundKind = it }
+            )
+            Text(
+                when (soundKind) {
+                    "dym" -> "Alarm czujnika dymu MQ-2"
+                    "ogrz" -> "Alarm przegrzania pieca"
+                    else -> "Jednoczesny alarm dymu i przegrzania"
+                },
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Pal.Text
+            )
             AlarmNotify.SOUNDS.forEach { (id, label) ->
+                val selected = sound == id
                 Row(Modifier.fillMaxWidth().clickable {
-                    AlarmCenter.setSound(p, id)
+                    AlarmCenter.setSound(p, soundKind, id)
                     playTest(ctx, id)
                     m.alarmUiTick++
-                }.padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (sound == id) "◉" else "○", fontSize = 15.sp,
-                        color = if (sound == id) Pal.Cyan else Pal.TextDim)
-                    Text("  $label", fontSize = 13.sp, color = Pal.Text, modifier = Modifier.weight(1f))
-                    if (sound == id) Text("♪ gra", fontSize = 11.sp, color = Pal.Cyan)
+                }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (selected) "◉" else "○", fontSize = 15.sp,
+                        color = if (selected) Pal.Cyan else Pal.TextDim)
+                    Text("  $label", fontSize = 12.5.sp, color = Pal.Text, modifier = Modifier.weight(1f))
+                    if (selected) Text("♪", fontSize = 11.sp, color = Pal.Cyan)
                 }
             }
-            Text("Tapnięcie zapisuje wybór i od razu go odsłuchuje.",
+            Text("Każdy rodzaj alarmu zapamiętuje własny wybór. Dotknij dźwięku, aby go ustawić i odsłuchać.",
                 fontSize = 11.sp, color = Pal.TextDim)
         }
 

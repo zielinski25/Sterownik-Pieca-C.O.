@@ -38,6 +38,10 @@ object AlarmNotify {
         "syrena" to "Syrena",
         "dzwonek" to "Dzwonek",
         "pikanie" to "Pikanie",
+        "dwutonowy" to "Dwutonowy",
+        "impulsowy" to "Krótkie impulsy",
+        "narastajacy" to "Narastający",
+        "niski_puls" to "Niski puls",
         "system" to "Domyślny systemowy"
     )
 
@@ -47,6 +51,10 @@ object AlarmNotify {
         "syrena" -> R.raw.alarm_syrena
         "dzwonek" -> R.raw.alarm_dzwonek
         "pikanie" -> R.raw.alarm_pikanie
+        "dwutonowy" -> R.raw.alarm_dwutonowy
+        "impulsowy" -> R.raw.alarm_impulsowy
+        "narastajacy" -> R.raw.alarm_narastajacy
+        "niski_puls" -> R.raw.alarm_niski_puls
         else -> 0 // "system" — kanał bez setSound = domyślny dźwięk powiadomień
     }
 
@@ -105,7 +113,7 @@ object AlarmNotify {
     /** Odpalenie alarmu: dźwięk + wibracja + okienko (FSI) lub heads-up + akcje drzemki. */
     fun fire(ctx: Context, info: AlarmInfo) {
         ensureChannels(ctx)
-        val sound = AlarmCenter.sound(Prefs(ctx))
+        val sound = AlarmCenter.sound(Prefs(ctx), info.kind)
         val full = PendingIntent.getActivity(
             ctx, 11,
             Intent(ctx, AlarmActivity::class.java)
