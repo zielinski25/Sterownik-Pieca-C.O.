@@ -168,14 +168,6 @@ fun AlarmSheet(m: AppModel) {
             }
         }
 
-        // 6. Widget + autostart
-        AlarmCard {
-            Text("WIDGET I AUTOSTART", style = Txt.tiny, color = Pal.Cyan)
-            Text("• Widget: przytrzymaj pulpit → Widgety → Sterownik CO (4 temperatury + status).\n" +
-                "• Po restarcie telefonu czuwanie wraca samo (gdy jesteś zalogowany).\n" +
-                "• realme: Ustawienia → Aplikacje → Sterownik CO → Autostart + „Zezwól na działanie w tle”.",
-                fontSize = 11.sp, color = Pal.TextDim, lineHeight = 16.sp)
-        }
     }
 }
 
