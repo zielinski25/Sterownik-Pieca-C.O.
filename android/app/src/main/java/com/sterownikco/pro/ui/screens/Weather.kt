@@ -263,10 +263,13 @@ fun WeatherPage(m: AppModel) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(hh00(h.time), fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
-                        Text(Weather.emoji(h.code, h.isDay), fontSize = 15.sp)
-                        Text(fmt0(h.temp) + "°", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Pal.White)
-                        Text(if (h.precipProb > 10) "${Math.round(h.precipProb)}%" else "", fontSize = 7.5.sp, color = Pal.Blue)
+                        Text(hh00(h.time), fontSize = 8.5.sp, lineHeight = 10.sp,
+                            fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                        Text(Weather.emoji(h.code, h.isDay), fontSize = 15.sp, lineHeight = 18.sp)
+                        Text(fmt0(h.temp) + "°", fontSize = 11.sp, lineHeight = 13.sp,
+                            fontWeight = FontWeight.ExtraBold, color = Pal.White)
+                        Text(if (h.precipProb > 10) "${Math.round(h.precipProb)}%" else "",
+                            fontSize = 7.5.sp, lineHeight = 9.sp, color = Pal.Blue)
                     }
                 }
                 if (forecastHours.isEmpty()) Text("Brak prognozy od bieżącej godziny — odśwież dane meteo.", style = Txt.note)
