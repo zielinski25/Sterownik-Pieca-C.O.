@@ -436,6 +436,46 @@ private fun SolarDayCard(m: AppModel, dayLabel: String, dayHours: List<WHour>, t
     }
 }
 
+/** Compact 7-day solar-yield forecast for panel details using the weather page's day-card model. */
+@Composable
+fun SolarMultiDayForecast(m: AppModel) {
+    val weather = m.weather
+    val dailies = weather?.daily?.take(7).orEmpty()
+    val hours = weather?.hourly.orEmpty()
+    Column(
+        Modifier.fillMaxWidth().padding(top = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO · 7 DNI", fontSize = 9.5.sp,
+            fontWeight = FontWeight.ExtraBold, color = SolarY, letterSpacing = 0.4.sp, lineHeight = 12.sp)
+        if (dailies.isEmpty()) {
+            Text(if (m.weatherBusy) "Pobieranie prognozy…" else "Brak prognozy",
+                fontSize = 8.5.sp, color = Pal.TextDim)
+        } else {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val columns = ((maxWidth.value + 6f) / 116f).toInt().coerceAtLeast(1).coerceAtMost(dailies.size)
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    dailies.chunked(columns).forEachIndexed { rowIndex, row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEachIndexed { columnIndex, day ->
+                                val index = rowIndex * columns + columnIndex
+                                SolarDayCard(
+                                    m,
+                                    dayLabelSolar(index, day.date),
+                                    hours.drop(index * 24).take(24),
+                                    index == 0,
+                                    Modifier.weight(1f)
+                                )
+                            }
+                            repeat(columns - row.size) { Box(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 private data class MCard(val lbl: String, val val_: String, val sub: String, val tint: Color = Pal.White)
 
 @Composable

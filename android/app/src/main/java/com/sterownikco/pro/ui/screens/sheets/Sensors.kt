@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.core.SensorDef
+import com.sterownikco.pro.ui.screens.SolarMultiDayForecast
 import com.sterownikco.pro.ui.components.ManualRow
 import com.sterownikco.pro.ui.components.Note
 import com.sterownikco.pro.ui.components.NumRow
@@ -329,6 +330,7 @@ private fun SolarMetricsCard(m: AppModel) {
             if (solar.forecastGain.isFinite() && solar.forecastKwh.isFinite())
                 "+${s.fmt1(solar.forecastGain)}°C · ~${s.fmt1(solar.forecastKwh)} kWh" else "brak prognozy"
         )
+        SolarMultiDayForecast(m)
     }
 }
 

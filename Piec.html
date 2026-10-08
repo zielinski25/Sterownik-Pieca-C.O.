@@ -4142,6 +4142,7 @@ body.mode-phone-frame #phone {
 
   let weatherDays = 7;
   let weatherData = null;
+  let weatherDataIsReal = false;
 
   // ───────────────────────── 2. LOGI I TERMINAL ─────────────────────────
   // Logi są puste na starcie; wpisy pojawiają się wyłącznie po rzeczywistym zdarzeniu.
@@ -5882,7 +5883,7 @@ body.mode-phone-frame #phone {
       const hasSamples = SolarAnalytics.archive.length > 0 || SolarAnalytics.lastSampleTs > 0;
       const gross = hasSamples ? '+' + fmt1(SolarAnalytics.accumulatedGrossGain) + '°C' : 'brak próbek';
       const grossKwh = hasSamples ? '~' + fmt1((SolarAnalytics.accumulatedGrossGain * 200 * 4.186) / 3600) + ' kWh' : '';
-      const forecast = weatherData && weatherData.hourly && weatherData.hourly.length
+      const forecast = weatherDataIsReal && weatherData && weatherData.hourly && weatherData.hourly.length
         ? SolarAnalytics.estimateForecastGain(weatherData.hourly) : null;
       const forecastText = forecast ? '+' + fmt1(forecast.gainC) + '°C · ~' + fmt1(forecast.kwh) + ' kWh' : 'brak prognozy';
       const row = (label, value) => `
@@ -5899,7 +5900,12 @@ body.mode-phone-frame #phone {
         ${row('ΔT panel − zewnątrz', Number.isFinite(deltaT) ? (deltaT >= 0 ? '+' : '') + fmt1(deltaT) + '°C' : 'brak danych')}
         ${row('Pobory wody C.W.U.', SolarAnalytics.waterDrawEvents.length + ' wykrytych · −' + fmt1(SolarAnalytics.accumulatedDrawDrop) + '°C')}
         ${row('Prognoza zysku · model godzinowy', forecastText)}
+        <div style="margin-top:8px">
+          <div style="font-size:9.5px;font-weight:800;color:#ffd32a;letter-spacing:.04em;padding:4px 0">📅 PROGNOZA SOLARNA · 7 DNI</div>
+          <div class="solar-multiday-grid" data-solar-sheet-grid></div>
+        </div>
       `;
+      renderSolarDayCards(el.querySelector('[data-solar-sheet-grid]'), weatherData, true);
     });
   }
 
@@ -8791,6 +8797,7 @@ body.mode-phone-frame #phone {
   async function refreshWeatherTab(force) {
     if (!weatherData || force) {
       weatherData = generateWeatherData(weatherDays);
+      weatherDataIsReal = false;
       renderWeatherTab();
       renderDashboard();
     }
@@ -8798,6 +8805,7 @@ body.mode-phone-frame #phone {
       const realData = await fetchRealOpenMeteo(weatherDays);
       if (realData) {
         weatherData = realData;
+        weatherDataIsReal = true;
         renderWeatherTab();
         renderDashboard();
       }
@@ -8806,6 +8814,44 @@ body.mode-phone-frame #phone {
 
   
   // ─── OBSŁUGA ŁUKU SŁONECZNEGO & WIELODNIOWEJ PROGNOZY SOLARNEJ ───
+  function renderSolarDayCards(multiGrid, data, requireReal = false) {
+    if (!multiGrid) return;
+    multiGrid.innerHTML = '';
+    if (!data || !Array.isArray(data.daily) || !data.daily.length || (requireReal && !weatherDataIsReal)) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'grid-column:1/-1;font-size:8.5px;color:var(--text-dim);padding:4px 0';
+      empty.textContent = requireReal && !weatherDataIsReal ? 'Brak rzeczywistej prognozy' : 'Brak prognozy';
+      multiGrid.appendChild(empty);
+      return;
+    }
+
+    const dayNames = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb'];
+    data.daily.slice(0, 7).forEach((dItem, idx) => {
+      const d = new Date(dItem.date);
+      const dayLabel = idx === 0 ? 'DZIŚ' : (idx === 1 ? 'JUTRO' : `${dayNames[d.getDay()]} ${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`);
+      const dayHours = data.hourly ? data.hourly.slice(idx * 24, (idx + 1) * 24) : [];
+      let avgCloud = 30;
+      if (dayHours.length) {
+        const sumCloud = dayHours.reduce((acc, hItem) => acc + (hItem.cloud || 0), 0);
+        avgCloud = Math.round(sumCloud / dayHours.length);
+      }
+      const estRadPeak = Math.round(Math.max(150, (100 - avgCloud * 0.7) * 8.8));
+      const estTotalKwhM2 = (estRadPeak * 7.5) / 1000;
+      const estGainC = idx === 0 && SolarAnalytics.accumulatedGrossGain > 0
+        ? Math.max(SolarAnalytics.accumulatedGrossGain, Math.round(estTotalKwhM2 * 4.2 * 10) / 10)
+        : Math.round(estTotalKwhM2 * 4.2 * 10) / 10;
+      const estEnergyKwh = Math.round(estTotalKwhM2 * 2.0 * 0.65 * 10) / 10;
+      const sunEmoji = avgCloud < 25 ? '☀️' : (avgCloud < 60 ? '🌤️' : '⛅');
+      const card = h('div', 'solar-day-card' + (idx === 0 ? ' today' : ''), `
+        <div class="head-row"><span>${dayLabel}</span><span>${sunEmoji}</span></div>
+        <div class="gain-row">+${fmt1(estGainC)}°C</div>
+        <div class="energy-row">~${fmt1(estEnergyKwh)} kWh</div>
+        <div class="rad-row">☀️ do ${estRadPeak} W/m²</div>
+      `);
+      multiGrid.appendChild(card);
+    });
+  }
+
   function updateSunArcAndSolarMultiDay(wData) {
     const data = wData || weatherData;
     if (!data) return;
@@ -8888,42 +8934,7 @@ body.mode-phone-frame #phone {
     }
 
     // 2. Wielodniowa Prognoza Solarna (7 Dni)
-    const multiGrid = $('#solarMultiDayGrid');
-    if (multiGrid && data.daily && data.daily.length) {
-      multiGrid.innerHTML = '';
-      const dayNames = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb'];
-      
-      data.daily.slice(0, 7).forEach((dItem, idx) => {
-        const d = new Date(dItem.date);
-        const dayLabel = idx === 0 ? 'DZIŚ' : (idx === 1 ? 'JUTRO' : `${dayNames[d.getDay()]} ${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`);
-        
-        const dayHours = data.hourly ? data.hourly.slice(idx * 24, (idx + 1) * 24) : [];
-        let avgCloud = 30;
-        if (dayHours.length) {
-          const sumCloud = dayHours.reduce((acc, h) => acc + (h.cloud || 0), 0);
-          avgCloud = Math.round(sumCloud / dayHours.length);
-        }
-        
-        const estRadPeak = Math.round(Math.max(150, (100 - avgCloud * 0.7) * 8.8));
-        const estTotalKwhM2 = (estRadPeak * 7.5) / 1000;
-        const estGainC = idx === 0 && SolarAnalytics.accumulatedGrossGain > 0 ?
-          Math.max(SolarAnalytics.accumulatedGrossGain, Math.round(estTotalKwhM2 * 4.2 * 10) / 10) :
-          Math.round(estTotalKwhM2 * 4.2 * 10) / 10;
-        const estEnergyKwh = Math.round(estTotalKwhM2 * 2.0 * 0.65 * 10) / 10;
-        const sunEmoji = avgCloud < 25 ? '☀️' : (avgCloud < 60 ? '🌤️' : '⛅');
-
-        const card = h('div', 'solar-day-card' + (idx === 0 ? ' today' : ''), `
-          <div class="head-row">
-            <span>${dayLabel}</span>
-            <span>${sunEmoji}</span>
-          </div>
-          <div class="gain-row">+${fmt1(estGainC)}°C</div>
-          <div class="energy-row">~${fmt1(estEnergyKwh)} kWh</div>
-          <div class="rad-row">☀️ do ${estRadPeak} W/m²</div>
-        `);
-        multiGrid.appendChild(card);
-      });
-    }
+    renderSolarDayCards($('#solarMultiDayGrid'), data, false);
   }
 
   function weatherHoursFromCurrentHour(hourly, nowMs = Date.now(), limit = 48) {
@@ -9345,6 +9356,7 @@ body.mode-phone-frame #phone {
     dBody.appendChild(h('h5', '', 'Scenariusze pogody'));
     dBody.appendChild(seg([['sun', 'Słońce'], ['rain', 'Deszcz'], ['storm', 'Burza'], ['snow', 'Zima']], 'sun', sc => {
       if (!weatherData) weatherData = generateWeatherData(weatherDays);
+      weatherDataIsReal = false;
       if (sc === 'sun') { weatherData.current.code = 0; weatherData.current.temp = 21.0; S.t_zewn = 21.0; real.t_zewn = 21.0; }
       else if (sc === 'rain') { weatherData.current.code = 61; weatherData.current.precip = 3.5; S.t_zewn = 14.5; real.t_zewn = 14.5; }
       else if (sc === 'storm') { weatherData.current.code = 95; weatherData.current.wind = 45; S.t_zewn = 16.0; real.t_zewn = 16.0; }
