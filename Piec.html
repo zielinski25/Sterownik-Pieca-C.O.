@@ -7155,64 +7155,10 @@ body.mode-phone-frame #phone {
   }
   loadChartPreferences();
 
-  // [FIX-CHART-CORRELATION] Tryb KORELACJA (chartFocus === 2) laczy serie
-  // temperaturowe i serwa na jednym wspolnym wykresie z dwoma osiami Y.
-    function isSeriesOrPointSimulated(seriesObj, row) {
-    if (_isDemoMode) return true;
-    if (!seriesObj) return false;
-    const rawChannel = seriesObj.ch || '';
-    const channelByKey = { t_zewn: 0, t_bojler: 1, t_ogrz: 2, t_ogrz_sr: 3, t_powrot: 4, t_panel: 5, t_pokoj: 6, t_trociny: 7, wilgotnosc: 8, cisnienie: 9, dym: 10, klapa: 11, syberka: 12 };
-    const channel = Number.isInteger(seriesObj.qCh) && seriesObj.qCh >= 0 ? seriesObj.qCh : channelByKey[rawChannel];
-    const hasSimChannel = point => point && (point.is_sim === true || point.simulated === true ||
-      (Number.isInteger(channel) && channel >= 0 && channel <= 30 && (((Number(point.sim) || 0) & (1 << channel)) !== 0)));
-    if (row) return !!hasSimChannel(row);
-    return Array.isArray(chartDataset) && chartDataset.some(hasSimChannel);
-  }
-
   function activeSeriesCatalog() {
     if (chartFocus === 1) return SERVO_SERIES;
     if (chartFocus === 2) return TEMP_SERIES.concat(SERVO_SERIES);
     return TEMP_SERIES;
-  }
-
-  function generateTelemetryHistory(rangeSec) {
-    const pts = rangeSec <= 6 * 3600 ? 72 : rangeSec <= 24 * 3600 ? 288 : rangeSec <= 7 * 86400 ? 504 : 720;
-    const stepSec = rangeSec / pts;
-    const nowTs = Date.now();
-    const rows = [];
-    const baseOgrz = 58, baseBojler = 48, baseZewn = 11.5, basePanel = 35;
-    for (let i = 0; i < pts; i++) {
-      const ts = nowTs - (pts - 1 - i) * stepSec * 1000;
-      const tNorm = i / pts;
-      const cycle = Math.sin(tNorm * Math.PI * 8);
-      const dayCycle = Math.sin(tNorm * Math.PI * 2);
-      const og = baseOgrz + cycle * 12 + Math.sin(tNorm * 40) * 1.5;
-      const bj = baseBojler + Math.sin((tNorm - .05) * Math.PI * 8) * 8;
-      const zw = baseZewn + dayCycle * 7 + Math.sin(tNorm * 30) * .6;
-      const pn = S.night ? 10 : Math.max(12, basePanel + dayCycle * 25 + Math.sin(tNorm * 20) * 3);
-      const kl = Math.max(10, Math.min(100, 50 - cycle * 40));
-      const sy = Math.max(5, Math.min(80, 30 - cycle * 20));
-      rows.push({
-        ts,
-        seq: i + 1,
-        is_sim: true,
-        t_ogrz: Math.round(Math.max(20, og) * 10) / 10,
-        t_ogrz_sr: Math.round(Math.max(20, og - 1.2) * 10) / 10,
-        t_bojler: Math.round(Math.max(15, bj) * 10) / 10,
-        t_zewn: Math.round(zw * 10) / 10,
-        t_powrot: Math.round(Math.max(18, og - 14) * 10) / 10,
-        t_panel: Math.round(pn * 10) / 10,
-        t_pokoj: Math.round((21.4 + Math.sin(tNorm * 10) * .5) * 10) / 10,
-        t_trociny: Math.round((31 + Math.sin(tNorm * 6) * 2) * 10) / 10,
-        wilgotnosc: Math.round(Math.min(95, Math.max(35, 55 - dayCycle * 15)) * 10) / 10,
-        cisnienie: Math.round((1009 + Math.sin(tNorm * 4) * 6) * 10) / 10,
-        dym: Math.round(18 + Math.sin(tNorm * 12) * 8),
-        klapa: Math.round(kl),
-        syberka: Math.round(sy),
-        pompa: og > 50
-      });
-    }
-    return rows;
   }
 
   const HISTORY_PAGE_SIZE = 300;
@@ -7508,12 +7454,13 @@ body.mode-phone-frame #phone {
         const fbData = await fetchTelemetryFromFirebase(rangeSec);
         if (fbData && fbData.length > 0) {
           chartDataset = fbData;
-          $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek z bazy Firebase (${rangeName}) · LIVE HISTORIA`;
+          $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek z bazy Firebase (${rangeName}) · tylko rzeczywiste wartości`;
           $('#chartPointsStat').textContent = String(chartDataset.length);
           $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
           $('#chartRealityPill').textContent = 'FIREBASE RTDB';
           $('#chartRealityPill').style.background = 'rgba(74,222,128,.15)';
           $('#chartRealityPill').style.color = 'var(--ok)';
+          $('#chartRealityPill').style.border = '1px solid rgba(74,222,128,.3)';
           renderSeriesChips();
           updateChartsNowStat();
           updateChartCanvas();
@@ -7525,31 +7472,32 @@ body.mode-phone-frame #phone {
       }
     }
 
+    const pill = $('#chartRealityPill');
+    chartDataset = [];
     if (_isDemoMode) {
-      chartDataset = generateTelemetryHistory(rangeSec);
-      $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek (${rangeName}) · Tryb symulacji`;
-      $('#chartRealityPill').textContent = 'SYMULACJA';
-      $('#chartRealityPill').style.background = 'rgba(251,191,36,.15)';
-      $('#chartRealityPill').style.color = 'var(--warn)';
+      $('#chartStatusInfo').textContent = `Tryb offline — brak rzeczywistej historii (${rangeName}); wykres pozostaje pusty`;
+      pill.textContent = 'DEMO · BRAK HISTORII';
+      pill.style.background = 'rgba(148,163,184,.15)';
+      pill.style.color = 'var(--text-dim)';
+      pill.style.border = '1px solid rgba(148,163,184,.25)';
+    } else if (!_isFirebaseConnected) {
+      $('#chartStatusInfo').textContent = 'Zaloguj się do Firebase, aby pobrać rzeczywistą historię telemetrii';
+      pill.textContent = 'BRAK SESJI';
+      pill.style.background = 'rgba(255,77,109,.15)';
+      pill.style.color = 'var(--err)';
+      pill.style.border = '1px solid rgba(255,77,109,.25)';
+    } else if (historyFailed) {
+      $('#chartStatusInfo').textContent = `Nie udało się pobrać rzeczywistej historii (${rangeName}) — spróbuj ponownie`;
+      pill.textContent = 'BŁĄD RTDB';
+      pill.style.background = 'rgba(251,191,36,.15)';
+      pill.style.color = 'var(--warn)';
+      pill.style.border = '1px solid rgba(251,191,36,.25)';
     } else {
-      chartDataset = [];
-      const pill = $('#chartRealityPill');
-      if (!_isFirebaseConnected) {
-        $('#chartStatusInfo').textContent = 'Zaloguj się do Firebase, aby pobrać rzeczywistą historię telemetrii';
-        pill.textContent = 'BRAK SESJI';
-        pill.style.background = 'rgba(255,77,109,.15)';
-        pill.style.color = 'var(--err)';
-      } else if (historyFailed) {
-        $('#chartStatusInfo').textContent = `Nie udało się pobrać rzeczywistej historii (${rangeName}) — spróbuj ponownie`;
-        pill.textContent = 'BŁĄD RTDB';
-        pill.style.background = 'rgba(251,191,36,.15)';
-        pill.style.color = 'var(--warn)';
-      } else {
-        $('#chartStatusInfo').textContent = `Brak rzeczywistych próbek historii (${rangeName}); wartości symulowane są pomijane`;
-        pill.textContent = 'BRAK DANYCH';
-        pill.style.background = 'rgba(148,163,184,.15)';
-        pill.style.color = 'var(--text-dim)';
-      }
+      $('#chartStatusInfo').textContent = `Brak rzeczywistych próbek historii (${rangeName})`;
+      pill.textContent = 'BRAK DANYCH';
+      pill.style.background = 'rgba(148,163,184,.15)';
+      pill.style.color = 'var(--text-dim)';
+      pill.style.border = '1px solid rgba(148,163,184,.25)';
     }
 
     $('#chartPointsStat').textContent = String(chartDataset.length);
@@ -7564,9 +7512,7 @@ body.mode-phone-frame #phone {
     host.innerHTML = '';
     const cat = activeSeriesCatalog();
     cat.forEach(s => {
-      const isSim = isSeriesOrPointSimulated(s);
-      const simBadge = isSim ? `<span class="sim-badge" style="font-size:8.5px;font-weight:700;color:var(--warn);background:rgba(251,191,36,.2);padding:1px 4px;border-radius:3px;margin-left:4px">⚡SYM</span>` : '';
-      const chip = h('button', 'series-chip' + (s.on ? ' on' : ''), `<span class="dot" style="background:${s.accent}"></span>${s.label}${simBadge}`);
+      const chip = h('button', 'series-chip' + (s.on ? ' on' : ''), `<span class="dot" style="background:${s.accent}"></span>${s.label}`);
       chip.style.setProperty('--sc', s.rgb);
       chip.onclick = () => {
         s.on = !s.on;
@@ -7910,7 +7856,7 @@ body.mode-phone-frame #phone {
             if (curSeg.length) segments.push(curSeg);
             curSeg = [];
           }
-          curSeg.push({ x, y, v, ts: r.ts, idx, isSim: isSeriesOrPointSimulated(s, r) });
+          curSeg.push({ x, y, v, ts: r.ts, idx });
           lastTs = r.ts;
         } else {
           if (curSeg.length) segments.push(curSeg);
@@ -7920,12 +7866,8 @@ body.mode-phone-frame #phone {
       });
       if (curSeg.length) segments.push(curSeg);
 
-      const isSeriesSim = isSeriesOrPointSimulated(s);
-
       segments.forEach(pts => {
         if (!pts.length) return;
-
-        const isSegSim = isSeriesSim || pts.some(p => p.isSim);
 
         if (chartAreaBand && chartMode !== 'NORMALIZED' && pts.length >= 2) {
           g.beginPath();
@@ -7934,23 +7876,14 @@ body.mode-phone-frame #phone {
           g.lineTo(pts[pts.length - 1].x, padTop + plotH);
           g.closePath();
           const grad = g.createLinearGradient(0, padTop, 0, padTop + plotH);
-          if (isSegSim) {
-            grad.addColorStop(0, `rgba(${s.rgb}, 0.10)`);
-            grad.addColorStop(1, `rgba(${s.rgb}, 0.0)`);
-          } else {
-            grad.addColorStop(0, `rgba(${s.rgb}, 0.22)`);
-            grad.addColorStop(1, `rgba(${s.rgb}, 0.0)`);
-          }
+          grad.addColorStop(0, `rgba(${s.rgb}, 0.22)`);
+          grad.addColorStop(1, `rgba(${s.rgb}, 0.0)`);
           g.fillStyle = grad;
           g.fill();
         }
 
         g.beginPath();
-        if (isSegSim) {
-          g.setLineDash([6, 3.5]); // Linia przerywana dla serii lub probek z symulacji
-        } else {
-          g.setLineDash([]);
-        }
+        g.setLineDash([]);
 
         if (chartLineStyle === 'STEPPED' || pts.length < 3) {
           pts.forEach((p, i) => {
@@ -7977,7 +7910,7 @@ body.mode-phone-frame #phone {
           }
         }
         g.strokeStyle = s.accent;
-        g.lineWidth = isSegSim ? 1.8 : 2.0;
+        g.lineWidth = 2.0;
         g.lineJoin = 'round';
         g.stroke();
         g.setLineDash([]); // Reset stylu linii po narysowaniu krzywej
@@ -7991,25 +7924,6 @@ body.mode-phone-frame #phone {
       });
     });
     g.restore();
-
-    // Aktualizacja plakietki statusu symulacji na belce wykresu
-    {
-      const anySim = cat.some(s => isSeriesOrPointSimulated(s)) || _isDemoMode;
-      const pill = $('#chartRealityPill');
-      if (pill) {
-        if (anySim || _isDemoMode) {
-          pill.textContent = '⚡ SYMULACJA';
-          pill.style.background = 'rgba(251,191,36,.18)';
-          pill.style.color = 'var(--warn)';
-          pill.style.border = '1px solid rgba(251,191,36,.4)';
-        } else if (_isFirebaseConnected) {
-          pill.textContent = 'FIREBASE RTDB';
-          pill.style.background = 'rgba(74,222,128,.15)';
-          pill.style.color = 'var(--ok)';
-          pill.style.border = '1px solid rgba(74,222,128,.3)';
-        }
-      }
-    }
 
     const tooltip = $('#chartFloatingTooltip');
     g.save();
@@ -8055,9 +7969,7 @@ body.mode-phone-frame #phone {
       const readout = cat.map(s => {
         const seriesVals = cleanedValuesMap.get(s.id) || [];
         const val = seriesVals[chartCrosshairIdx];
-        const isSim = isSeriesOrPointSimulated(s, hoveredRow);
-        const simBadge = isSim ? ' <span style="font-size:8.5px;font-weight:700;color:var(--warn);background:rgba(251,191,36,.25);padding:1px 3px;border-radius:3px">⚡SYM</span>' : '';
-        const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val)) ? (fmt1(val) + ' ' + s.unit + simBadge) : '<span style="opacity:0.4">—</span>';
+        const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val)) ? (fmt1(val) + ' ' + s.unit) : '<span style="opacity:0.4">—</span>';
         return `<span style="color:${s.accent}">● ${s.label}: <b>${valStr}</b></span>`;
       }).join('  ·  ');
       $('#chartInspectorVal').innerHTML = `<span style="color:var(--cyan);font-weight:700">${timeStr}</span>: ${readout}`;
