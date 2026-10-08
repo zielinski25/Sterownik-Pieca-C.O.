@@ -895,6 +895,14 @@ body.mode-phone-frame #phone {
 .chart-chips { display: flex; gap: 6px; flex: 1; }
 .chart-chip {
   flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: var(--surface2);
   border: 1px solid var(--border);
   color: var(--text-dim);
@@ -1336,6 +1344,7 @@ body.mode-phone-frame #phone {
 
 .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .sitem {
+  height: 36px;
   min-width: 0;
   background: var(--surface2);
   border-radius: 8px;
@@ -3216,7 +3225,7 @@ body.mode-phone-frame #phone {
           <div class="chart-chips">
             <button class="chart-chip on" id="chartFocusTemp">TEMPERATURY</button>
             <button class="chart-chip" id="chartFocusServo">SERWA</button>
-            <button class="chart-chip" id="chartFocusBoth">KORELACJA (Piec + Serwa)</button>
+            <button class="chart-chip" id="chartFocusBoth" title="Korelacja pieca i serw">KORELACJA</button>
           </div>
         </div>
         <div class="chart-row">

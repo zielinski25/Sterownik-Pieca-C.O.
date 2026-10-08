@@ -395,7 +395,7 @@ fun WeatherPage(m: AppModel) {
                 items.chunked(2).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         row.forEach { (k, v) ->
-                            Row(Modifier.weight(1f).background(Pal.Surface2, RoundedCornerShape(8.dp))
+                            Row(Modifier.weight(1f).height(36.dp).background(Pal.Surface2, RoundedCornerShape(8.dp))
                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)) {

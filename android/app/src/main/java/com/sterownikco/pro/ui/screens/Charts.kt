@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +44,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,14 +77,15 @@ import com.sterownikco.pro.ui.theme.Txt
 @Composable
 private fun RowScope.ChartChip(label: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
-        modifier.weight(1f).background(
+        modifier.weight(1f).heightIn(min = 36.dp).background(
             if (on) Pal.rgba(0, 212, 245, .16f) else Pal.Surface2, RoundedCornerShape(8.dp)
         ).border(BorderStroke(1.dp, if (on) Pal.Cyan else Pal.Border), RoundedCornerShape(8.dp))
             .clickable { onClick() }.padding(horizontal = 4.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold,
-            color = if (on) Color.White else Pal.TextDim, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            color = if (on) Color.White else Pal.TextDim, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -145,7 +148,7 @@ fun ChartsPage(m: AppModel) {
             ChartRow("DANE") {
                 ChartChip("TEMPERATURY", m.chartFocus == 0) { m.setChartFocus(0) }
                 ChartChip("SERWA", m.chartFocus == 1) { m.setChartFocus(1) }
-                ChartChip("KORELACJA (Piec + Serwa)", m.chartFocus == 2) { m.setChartFocus(2) }
+                ChartChip("KORELACJA", m.chartFocus == 2) { m.setChartFocus(2) }
             }
             ChartRow("ZAKRES") {
                 ChartChip("6 H", m.rangeSec == 6 * 3600) { m.setRange(6 * 3600) }
