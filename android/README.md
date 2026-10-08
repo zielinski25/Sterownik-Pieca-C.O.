@@ -88,10 +88,17 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
   steruje tylko kafelkami wewnątrz aplikacji; widget ekranu głównego jest
   osobnym elementem Androida.
 * Natywne widżety Androida korzystają z jednej migawki rzeczywistej telemetrii:
-  kompaktowy (bojler + panel), szeroki pasek (cztery temperatury) i pełny
-  panel 2×2. Wszystkie pokazują status/nieaktualne dane uczciwie, otwierają
-  aplikację po dotknięciu i mają osobne podglądy w systemowym wyborze widżetów.
-  Wygląd na launcherze wymaga jeszcze potwierdzenia na telefonie.
+  kompaktowy (do 2 czujników), szeroki pasek (do 4) i pełny panel 2×2 (do 4).
+  Podczas dodawania lub ponownej konfiguracji można wybrać piec C.O., bojler
+  C.W.U., panel słoneczny i/lub temperaturę zewnętrzną; wybór jest zapisany
+  osobno dla każdego widżetu. Temperatury są zaokrąglane do pełnych stopni.
+  `updatePeriodMillis=0`: system/launcher nie wykonuje cyklicznego odpytywania.
+  Widget odświeża się po nadejściu danych z pollingu aplikacji (co 4 s na
+  pierwszym planie) lub usługi SSE; zmieniona sygnatura odświeża go od razu,
+  a identyczna jest renderowana najwyżej raz na 60 s, jeśli kolejne push'e
+  nadal napływają. Bez danych z usługi nie ma gwarantowanego odświeżenia.
+  Wszystkie warianty pokazują status/nieaktualne dane uczciwie i otwierają
+  aplikację po dotknięciu.
 
 ## Świadome uproszczenia (żeby nic nie „udawało”)
 
@@ -125,7 +132,7 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 android/
 ├─ app/build.gradle.kts            # Compose BOM 2024.12.01, okhttp 4.12.0, minSdk 26
 └─ app/src/main/
-   ├─ AndroidManifest.xml          # aktywność + odbiornik widgetu, cleartext HTTP (LAN)
+   ├─ AndroidManifest.xml          # aktywności, konfigurator + odbiorniki widgetów
    ├─ res/                          # ikona, theme, strings, layout i metadane widgetu
    └─ java/com/sterownikco/pro/
       ├─ MainActivity.kt
@@ -140,5 +147,5 @@ android/
       ├─ ui/screens/sheets/         # Sensors, Control, System (Wi‑Fi/TG/terminal/logi/OTA/sesja)
       ├─ core/                      # PiecState, RtdbClient, Telemetry, Weather,
       │                              # SolarAnalytics, AppModel, TileSpecs, Sensors, Prefs
-      └─ widget/PiecWidget.kt       # natywny widget ekranu głównego Androida
+      └─ widget/                    # natywne widgety i ich ekran konfiguracji
 ```

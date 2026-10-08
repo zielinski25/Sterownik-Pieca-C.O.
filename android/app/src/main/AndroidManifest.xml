@@ -68,6 +68,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- Konfigurator wyboru czujników dla każdej instancji widżetu. -->
+        <activity
+            android:name=".widget.PiecWidgetConfigureActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.SterownikCo">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <!-- Trzy warianty widżetu; każdy korzysta z tej samej migawki prawdziwych danych. -->
         <receiver
             android:name=".widget.PiecWidget"

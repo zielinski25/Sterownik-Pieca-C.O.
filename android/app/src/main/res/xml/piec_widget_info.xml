@@ -11,5 +11,6 @@
     android:previewLayout="@layout/widget_piec"
     android:previewImage="@drawable/widget_preview_full"
     android:description="@string/widget_desc_full"
+    android:configure="com.sterownikco.pro.widget.PiecWidgetConfigureActivity"
     android:widgetCategory="home_screen"
     android:widgetFeatures="reconfigurable" />

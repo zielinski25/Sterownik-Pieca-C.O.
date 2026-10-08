@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.view.View
 import android.widget.RemoteViews
 import com.sterownikco.pro.MainActivity
 import com.sterownikco.pro.R
@@ -18,12 +19,12 @@ import org.json.JSONObject
    Widżety pulpitu (APK-only): kompaktowy, szeroki pasek i pełny panel 2×2.
    Wszystkie warianty korzystają z jednego snapshotu rzeczywistych danych.
 
-   • Brak WorkManager/AlarmManager — widżety odświeżają się TYLKO gdy przyjdą
-     świeże dane (usługa SSE w tle lub poll() na pierwszym planie), więc nie
-     budzi telefonu na próżno. Ostatnia migawka siedzi w prefs, więc widget
-     renderuje się poprawnie także po reboocie / ubiciu procesu.
-   • Throttling: binder-update max co 60 s albo natychmiast przy zmianie
-     wartości lub stanu alarmu.
+   • Brak WorkManager/AlarmManager i updatePeriodMillis: launcher nie odpytuje
+     widgetu cyklicznie. Odświeżenie następuje po nadejściu danych z aplikacji
+     na pierwszym planie lub usługi SSE w tle.
+   • Identyczne sygnatury danych są pomijane przez 60 s; zmieniony odczyt lub
+     stan alarmu odświeża widget od razu. Bez napływu danych nie ma pushu.
+   • Wybór czujników jest zapisany niezależnie dla każdego appWidgetId.
    • Tapnięcie widgetu otwiera aplikację.
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -31,6 +32,10 @@ class PiecWidget : AppWidgetProvider() {
 
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
         renderAll(ctx)
+    }
+
+    override fun onDeleted(ctx: Context, appWidgetIds: IntArray) {
+        removeConfigurations(ctx, appWidgetIds)
     }
 
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -48,6 +53,7 @@ class PiecWidget : AppWidgetProvider() {
         const val K_PUSH_TS = "piec_widget_push_ts"
         const val K_PUSH_SIG = "piec_widget_push_sig"
         const val PUSH_MIN_MS = 60_000L
+        private const val K_WIDGET_CONFIG_PREFIX = "piec_widget_sensors_"
 
         /** Wepchnięcie migawki z usługi / aplikacji (z throttlingiem). */
         fun push(ctx: Context, d: JSONObject) {
@@ -72,36 +78,138 @@ class PiecWidget : AppWidgetProvider() {
             renderAll(ctx.applicationContext)
         }
 
+        /** Dane do ekranu konfiguracji właściwego dla istniejącej instancji. */
+        internal fun setupForWidget(ctx: Context, appWidgetId: Int): WidgetSetup? {
+            val spec = specForWidget(ctx, appWidgetId) ?: return null
+            return WidgetSetup(
+                title = spec.title,
+                maxSensors = spec.slots.valueViews.size,
+                sensors = SENSOR_OPTIONS.map { sensor ->
+                    WidgetSensorChoice(sensor.key, sensor.label, sensor.description)
+                }
+            )
+        }
+
+        /** Wczytuje wybór tej instancji albo sensowne ustawienie domyślne wariantu. */
+        fun selectedSensors(ctx: Context, appWidgetId: Int): List<String> {
+            val spec = specForWidget(ctx, appWidgetId) ?: return emptyList()
+            return selectedSensors(ctx.applicationContext, appWidgetId, spec)
+        }
+
+        /** Zapisuje wybór dla tej instancji; pusty wybór jest celowo odrzucany. */
+        fun saveSelectedSensors(ctx: Context, appWidgetId: Int, keys: List<String>) {
+            val spec = specForWidget(ctx, appWidgetId) ?: return
+            val allowed = SENSOR_OPTIONS.map { it.key }.toSet()
+            val normalized = keys.asSequence().filter { it in allowed }.distinct()
+                .take(spec.slots.valueViews.size).toList()
+            if (normalized.isEmpty()) return
+            try {
+                Prefs(ctx.applicationContext).set(configKey(appWidgetId), normalized.joinToString(","))
+            } catch (e: Exception) { /* ignore */ }
+        }
+
+        /** Android nie wysyła APPWIDGET_UPDATE po konfiguracji — zlecamy render tutaj. */
+        fun renderWidget(ctx: Context, appWidgetId: Int) {
+            try {
+                val app = ctx.applicationContext
+                val mgr = AppWidgetManager.getInstance(app)
+                val spec = specForWidget(app, appWidgetId) ?: return
+                val snap = readSnapshot(app)
+                mgr.updateAppWidget(appWidgetId, views(app, snap, spec, appWidgetId))
+            } catch (e: Exception) { /* widget nie może wywalić wołającego */ }
+        }
+
+        fun removeConfigurations(ctx: Context, appWidgetIds: IntArray) {
+            try {
+                val prefs = Prefs(ctx.applicationContext)
+                appWidgetIds.forEach { prefs.remove(configKey(it)) }
+            } catch (e: Exception) { /* ignore */ }
+        }
+
         fun renderAll(ctx: Context) {
             try {
                 val app = ctx.applicationContext
                 val mgr = AppWidgetManager.getInstance(app)
-                val snap = try {
-                    Prefs(app).get(K_SNAP)?.let { JSONObject(it) }
-                } catch (e: Exception) { null }
+                val snap = readSnapshot(app)
                 WIDGETS.forEach { spec ->
                     val ids = mgr.getAppWidgetIds(ComponentName(app, spec.provider))
-                    ids.forEach { id -> mgr.updateAppWidget(id, views(app, snap, spec)) }
+                    ids.forEach { id -> mgr.updateAppWidget(id, views(app, snap, spec, id)) }
                 }
             } catch (e: Exception) { /* widget nie może wywalić wołającego */ }
         }
 
+        private fun readSnapshot(ctx: Context): JSONObject? = try {
+            Prefs(ctx).get(K_SNAP)?.let { JSONObject(it) }
+        } catch (e: Exception) { null }
+
+        private fun configKey(appWidgetId: Int) = "$K_WIDGET_CONFIG_PREFIX$appWidgetId"
+
+        private fun specForWidget(ctx: Context, appWidgetId: Int): WidgetSpec? = try {
+            val providerName = AppWidgetManager.getInstance(ctx.applicationContext)
+                .getAppWidgetInfo(appWidgetId)?.provider?.className
+            WIDGETS.firstOrNull { it.provider.name == providerName }
+        } catch (e: Exception) { null }
+
+        private fun selectedSensors(ctx: Context, appWidgetId: Int, spec: WidgetSpec): List<String> {
+            val valid = SENSOR_OPTIONS.map { it.key }.toSet()
+            val saved = try {
+                Prefs(ctx.applicationContext).get(configKey(appWidgetId))
+                    ?.split(",")?.filter { it in valid }?.distinct()
+                    ?.take(spec.slots.valueViews.size).orEmpty()
+            } catch (e: Exception) { emptyList() }
+            return (saved.ifEmpty { spec.defaultSensorKeys })
+                .filter { it in valid }.distinct().take(spec.slots.valueViews.size)
+                .ifEmpty { spec.defaultSensorKeys.take(spec.slots.valueViews.size) }
+        }
+
+        private val SENSOR_OPTIONS = listOf(
+            WidgetSensor("t_ogrz", "PIEC C.O.", "Temperatura obiegu grzewczego", "PIEC", 2, 10.0, 99.0),
+            WidgetSensor("t_bojler", "BOJLER C.W.U.", "Temperatura zasobnika ciepłej wody", "BOJLER", 1, 10.0, 95.0),
+            WidgetSensor("t_panel", "PANEL SŁONECZNY", "Temperatura kolektora słonecznego", "PANEL", 5, 0.0, 140.0, accent = true),
+            WidgetSensor("t_zewn", "ZEWNĘTRZNA", "Temperatura zewnętrzna", "ZEWN.", 0, -25.0, 45.0)
+        )
+
         private val WIDGETS = listOf(
             WidgetSpec(
-                PiecWidget::class.java, R.layout.widget_piec,
-                WidgetIds(R.id.w_t_ogrz, R.id.w_t_bojler, R.id.w_t_panel, R.id.w_t_zewn, R.id.w_status, R.id.w_time)
+                provider = PiecWidget::class.java,
+                layout = R.layout.widget_piec,
+                slots = WidgetSlotIds(
+                    cellViews = listOf(R.id.w_cell_1, R.id.w_cell_2, R.id.w_cell_3, R.id.w_cell_4),
+                    labelViews = listOf(R.id.w_l_1, R.id.w_l_2, R.id.w_l_3, R.id.w_l_4),
+                    valueViews = listOf(R.id.w_v_1, R.id.w_v_2, R.id.w_v_3, R.id.w_v_4),
+                    rowViews = listOf(R.id.w_row_top, R.id.w_row_bottom)
+                ),
+                defaultSensorKeys = listOf("t_ogrz", "t_bojler", "t_panel", "t_zewn"),
+                useShortLabels = false,
+                title = "Pełny · układ 2 × 2"
             ),
             WidgetSpec(
-                PiecWidgetCompact::class.java, R.layout.widget_piec_compact,
-                WidgetIds(boiler = R.id.w_t_bojler, panel = R.id.w_t_panel, status = R.id.w_status, time = R.id.w_time)
+                provider = PiecWidgetCompact::class.java,
+                layout = R.layout.widget_piec_compact,
+                slots = WidgetSlotIds(
+                    cellViews = listOf(R.id.w_cell_1, R.id.w_cell_2),
+                    labelViews = listOf(R.id.w_l_1, R.id.w_l_2),
+                    valueViews = listOf(R.id.w_v_1, R.id.w_v_2)
+                ),
+                defaultSensorKeys = listOf("t_bojler", "t_panel"),
+                useShortLabels = true,
+                title = "Kompaktowy · do 2 odczytów"
             ),
             WidgetSpec(
-                PiecWidgetStrip::class.java, R.layout.widget_piec_strip,
-                WidgetIds(R.id.w_t_ogrz, R.id.w_t_bojler, R.id.w_t_panel, R.id.w_t_zewn, R.id.w_status, R.id.w_time)
+                provider = PiecWidgetStrip::class.java,
+                layout = R.layout.widget_piec_strip,
+                slots = WidgetSlotIds(
+                    cellViews = listOf(R.id.w_cell_1, R.id.w_cell_2, R.id.w_cell_3, R.id.w_cell_4),
+                    labelViews = listOf(R.id.w_l_1, R.id.w_l_2, R.id.w_l_3, R.id.w_l_4),
+                    valueViews = listOf(R.id.w_v_1, R.id.w_v_2, R.id.w_v_3, R.id.w_v_4)
+                ),
+                defaultSensorKeys = listOf("t_ogrz", "t_bojler", "t_panel", "t_zewn"),
+                useShortLabels = true,
+                title = "Szeroki · do 4 odczytów"
             )
         )
 
-        private fun views(ctx: Context, d: JSONObject?, spec: WidgetSpec): RemoteViews {
+        private fun views(ctx: Context, d: JSONObject?, spec: WidgetSpec, appWidgetId: Int): RemoteViews {
             val v = RemoteViews(ctx.packageName, spec.layout)
 
             val simRaw = d?.opt("sim")
@@ -115,8 +223,7 @@ class PiecWidget : AppWidgetProvider() {
             val simFlagInvalid = listOf("is_sim", "simulated").any { key ->
                 d != null && d.has(key) && d.opt(key) !is Boolean
             }
-            val simMaskInvalid = d?.has("sim") == true &&
-                simRaw !is Boolean && simMask == null
+            val simMaskInvalid = d?.has("sim") == true && simRaw !is Boolean && simMask == null
             val metadataInvalid = simFlagInvalid || simMaskInvalid
             val explicitSim = d?.optBoolean("is_sim", false) == true ||
                 d?.optBoolean("simulated", false) == true || simRaw == true
@@ -131,28 +238,35 @@ class PiecWidget : AppWidgetProvider() {
                 return (raw as? Number)?.toDouble()?.takeIf { it.isFinite() }
             }
 
-            fun deg(key: String, channel: Int, min: Double, max: Double): String {
-                val x = numeric(key)?.takeIf { it in min..max } ?: return "—"
-                val value = String.format(java.util.Locale.US, "%.1f°", x)
-                return if (simulated(channel)) "~$value" else value
+            fun degrees(sensor: WidgetSensor): String {
+                val x = numeric(sensor.key)?.takeIf { it in sensor.min..sensor.max } ?: return "—"
+                val value = "${Math.round(x)}°"
+                return if (simulated(sensor.channel)) "~$value" else value
             }
 
-            val sensors = listOf(
-                Triple("t_ogrz", 2, 10.0..99.0),
-                Triple("t_bojler", 1, 10.0..95.0),
-                Triple("t_panel", 5, 0.0..140.0),
-                Triple("t_zewn", 0, -25.0..45.0)
-            )
-            fun display(sensor: Triple<String, Int, ClosedFloatingPointRange<Double>>) =
-                deg(sensor.first, sensor.second, sensor.third.start, sensor.third.endInclusive)
-
-            fun setText(viewId: Int?, text: String) {
-                if (viewId != null) v.setTextViewText(viewId, text)
+            val selected = selectedSensors(ctx, appWidgetId, spec)
+                .mapNotNull { key -> SENSOR_OPTIONS.firstOrNull { it.key == key } }
+            spec.slots.cellViews.forEachIndexed { index, cellId ->
+                val sensor = selected.getOrNull(index)
+                v.setViewVisibility(cellId, if (sensor == null) View.GONE else View.VISIBLE)
+                if (sensor != null) {
+                    val label = if (spec.useShortLabels) sensor.shortLabel else sensor.label
+                    val labelColor = if (sensor.accent) Color.parseColor("#FFD32A") else Color.parseColor("#8EA6BA")
+                    val valueColor = if (sensor.accent) Color.parseColor("#FFD32A") else Color.WHITE
+                    v.setTextViewText(spec.slots.labelViews[index], label)
+                    v.setTextViewText(spec.slots.valueViews[index], degrees(sensor))
+                    v.setTextColor(spec.slots.labelViews[index], labelColor)
+                    v.setTextColor(spec.slots.valueViews[index], valueColor)
+                }
             }
-            setText(spec.ids.ogrz, display(sensors[0]))
-            setText(spec.ids.boiler, display(sensors[1]))
-            setText(spec.ids.panel, display(sensors[2]))
-            setText(spec.ids.outside, display(sensors[3]))
+            spec.slots.rowViews.forEachIndexed { rowIndex, rowId ->
+                val hasVisibleCell = when (rowIndex) {
+                    0 -> selected.isNotEmpty()
+                    1 -> selected.size > 2
+                    else -> selected.isNotEmpty()
+                }
+                v.setViewVisibility(rowId, if (hasVisibleCell) View.VISIBLE else View.GONE)
+            }
 
             fun flag(key: String): Boolean? {
                 if (d == null || !d.has(key) || d.isNull(key)) return null
@@ -172,9 +286,11 @@ class PiecWidget : AppWidgetProvider() {
             val panel = if (alarmTrusted) flag("alarm_panel") else null
             val alarmKnown = dym != null && ogrz != null && panel != null
             val alarmActive = dym == true || ogrz == true || panel == true
-            val hasAnyReading = sensors.any { sensor -> numeric(sensor.first)?.let { value -> value in sensor.third } == true }
-            val hasRealReading = sensors.any { sensor ->
-                numeric(sensor.first)?.let { it in sensor.third } == true && !simulated(sensor.second)
+            val hasAnyReading = SENSOR_OPTIONS.any { sensor ->
+                numeric(sensor.key)?.let { it in sensor.min..sensor.max } == true
+            }
+            val hasRealReading = SENSOR_OPTIONS.any { sensor ->
+                numeric(sensor.key)?.let { it in sensor.min..sensor.max } == true && !simulated(sensor.channel)
             }
             val online = flag("online")
             val controllerOffline = online == false
@@ -193,12 +309,12 @@ class PiecWidget : AppWidgetProvider() {
                 online != true -> "○ STATUS?" to Color.parseColor("#7F93A3")
                 else -> "● LIVE" to Color.parseColor("#4ADE80")
             }
-            setText(spec.ids.status, statusText)
-            if (spec.ids.status != null) v.setTextColor(spec.ids.status, statusColor)
+            v.setTextViewText(R.id.w_status, statusText)
+            v.setTextColor(R.id.w_status, statusColor)
             val updatedAt = if (lastPush > 0L) java.util.Calendar.getInstance().apply { timeInMillis = lastPush } else null
             val updatedLabel = updatedAt?.let { "od " + String.format(java.util.Locale.US, "%02d:%02d",
                 it.get(java.util.Calendar.HOUR_OF_DAY), it.get(java.util.Calendar.MINUTE)) } ?: "—"
-            setText(spec.ids.time, updatedLabel)
+            v.setTextViewText(R.id.w_time, updatedLabel)
 
             val open = PendingIntent.getActivity(
                 ctx, 31, Intent(ctx, MainActivity::class.java),
@@ -211,31 +327,63 @@ class PiecWidget : AppWidgetProvider() {
     }
 }
 
-/** Compact launcher entry: boiler + solar collector at a glance. */
+/** Compact launcher provider; boiler + solar are the default configurable sensors. */
 class PiecWidgetCompact : AppWidgetProvider() {
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
         PiecWidget.renderAll(ctx)
     }
+
+    override fun onDeleted(ctx: Context, appWidgetIds: IntArray) {
+        PiecWidget.removeConfigurations(ctx, appWidgetIds)
+    }
 }
 
-/** Wide one-row launcher entry: four real temperature readings. */
+/** Wide one-row launcher provider; up to four temperature sensors are configurable. */
 class PiecWidgetStrip : AppWidgetProvider() {
     override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
         PiecWidget.renderAll(ctx)
     }
+
+    override fun onDeleted(ctx: Context, appWidgetIds: IntArray) {
+        PiecWidget.removeConfigurations(ctx, appWidgetIds)
+    }
 }
 
-private data class WidgetIds(
-    val ogrz: Int? = null,
-    val boiler: Int? = null,
-    val panel: Int? = null,
-    val outside: Int? = null,
-    val status: Int? = null,
-    val time: Int? = null
+internal data class WidgetSetup(
+    val title: String,
+    val maxSensors: Int,
+    val sensors: List<WidgetSensorChoice>
+)
+
+internal data class WidgetSensorChoice(
+    val key: String,
+    val label: String,
+    val description: String
+)
+
+private data class WidgetSensor(
+    val key: String,
+    val label: String,
+    val description: String,
+    val shortLabel: String,
+    val channel: Int,
+    val min: Double,
+    val max: Double,
+    val accent: Boolean = false
+)
+
+private data class WidgetSlotIds(
+    val cellViews: List<Int>,
+    val labelViews: List<Int>,
+    val valueViews: List<Int>,
+    val rowViews: List<Int> = emptyList()
 )
 
 private data class WidgetSpec(
     val provider: Class<out AppWidgetProvider>,
     val layout: Int,
-    val ids: WidgetIds
+    val slots: WidgetSlotIds,
+    val defaultSensorKeys: List<String>,
+    val useShortLabels: Boolean,
+    val title: String
 )

@@ -11,4 +11,6 @@
     android:previewLayout="@layout/widget_piec_strip"
     android:previewImage="@drawable/widget_preview_strip"
     android:description="@string/widget_desc_strip"
-    android:widgetCategory="home_screen" />
+    android:configure="com.sterownikco.pro.widget.PiecWidgetConfigureActivity"
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable" />
