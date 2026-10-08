@@ -322,7 +322,7 @@ fun WeatherPage(m: AppModel) {
                 !m.S.symAktywna("panel") && !m.S.symAktywna("zewn")
             val dT = if (realSolarTemps) m.S.t_panel - m.S.t_zewn else Double.NaN
             WCard("☀️ BILANS & ZYSK KOLEKTORA SŁONECZNEGO",
-                "Korelacja nasłonecznienia z odczytami panelu i bojlera",
+                "",
                 titleColor = SolarY, stackSub = true,
                 trailing = {
                     Box(Modifier.background(Color(0x26FFD32A), RoundedCornerShape(8.dp))
@@ -335,14 +335,13 @@ fun WeatherPage(m: AppModel) {
                 MetricGrid(
                     listOf(
                         MCard("⚡ ZYSK BRUTTO SŁOŃCA", if (sol.hasSamples) "+" + fmt1(sol.accumulatedGrossGain) + "°C" else "—",
-                            if (sol.hasSamples) "~" + fmt1(sol.estKwh()) + " kWh z rzeczywistych próbek" else "oczekiwanie na odczyty panelu i bojlera", SolarY),
+                            if (sol.hasSamples) "~" + fmt1(sol.estKwh()) + " kWh" else "", SolarY),
                         MCard("🌡️ ΔT PANEL - ZEWN.", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
-                            if (!dT.isFinite()) "oczekiwanie na rzeczywiste czujniki" else if (dT > 5) "🔥 panel cieplejszy od zewnątrz" else "temperatura zbliżona",
-                            if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
+                            "", if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
                         MCard("🚰 POBORY WODY CWU", if (sol.hasSamples) sol.drawCount.toString() + " poborów" else "—",
-                            if (sol.hasSamples) "skompensowano -" + fmt1(sol.accumulatedDrawDrop) + "°C" else "brak próbek solarnego archiwum", Pal.Live),
+                            if (sol.hasSamples) "−" + fmt1(sol.accumulatedDrawDrop) + "°C" else "", Pal.Live),
                         MCard("🔮 PROGNOZA ZYSKU", if (sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—",
-                            if (sol.forecastKwh.isFinite()) "prognoza: ~" + fmt1(sol.forecastKwh) + " kWh z Open-Meteo" else "brak danych prognozy", Pal.Violet)
+                            if (sol.forecastKwh.isFinite()) "~" + fmt1(sol.forecastKwh) + " kWh" else "", Pal.Violet)
                     )
                 )
                 Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -351,7 +350,6 @@ fun WeatherPage(m: AppModel) {
                         Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI", fontSize = 9.5.sp,
                             fontWeight = FontWeight.ExtraBold, color = SolarY, letterSpacing = 0.4.sp,
                             lineHeight = 12.sp, modifier = Modifier.weight(1f))
-                        Text("model radiacji Open-Meteo", fontSize = 8.sp, color = Pal.TextDim)
                     }
                     BoxWithConstraints(Modifier.fillMaxWidth()) {
                         // CSS repeat(auto-fit, minmax(110px, 1fr)) with 6px gap.
@@ -375,18 +373,11 @@ fun WeatherPage(m: AppModel) {
                         }
                     }
                 }
-                Text(
-                    "💡 Filtr poboru CWU: Algorytm automatycznie wykrywa nagłe schłodzenie bojlera przez napływ " +
-                        "zimnej wody użytkowej i kompensuje ubytek, dzięki czemu bilans zysku słonecznego nie jest zaniżany.",
-                    style = Txt.note.copy(fontSize = 9.5.sp),
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
-                        .background(Color(0x08FFFFFF), RoundedCornerShape(8.dp)).padding(10.dp, 8.dp)
-                )
             }
         }
 
         // `.weather-card` — PODSUMOWANIE METEO (8 pozycji 1:1)
-        WCard("PODSUMOWANIE METEO", "stacja pogodowa Open-Meteo") {
+        WCard("PODSUMOWANIE METEO", "") {
             val tMin = d0?.minT
             val tMax = d0?.maxT
             val items = listOf(
@@ -460,7 +451,8 @@ private fun MetricGrid(items: List<MCard>) {
                     ) {
                         Text(item.lbl, style = Txt.mcardLbl)
                         Text(item.val_, style = Txt.mcardVal.copy(color = item.tint))
-                        Text(item.sub, style = Txt.mcardSub)
+                        if (item.sub.isNotEmpty()) Text(item.sub, style = Txt.mcardSub)
+                        else Box(Modifier.height(10.dp))
                     }
                 }
                 repeat(3 - row.size) { Box(Modifier.weight(1f)) }
@@ -490,14 +482,18 @@ private fun WCard(
                     Text(title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = titleColor,
                         letterSpacing = 0.6.sp, lineHeight = 13.sp,
                         maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
-                    Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp),
-                        maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                    if (sub.isNotEmpty()) {
+                        Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp),
+                            maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                    }
                 }
             } else {
                 Text(title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = titleColor,
                     letterSpacing = 0.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp),
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+                if (sub.isNotEmpty()) {
+                    Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+                }
             }
             if (trailing != null) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), content = trailing)
         }
@@ -543,7 +539,7 @@ private fun SunArcCard(m: AppModel) {
     val sunriseTs = d0?.sunrise?.let { Weather.parseIso(it) }?.takeIf { it > 0L } ?: 0L
     val sunsetTs = d0?.sunset?.let { Weather.parseIso(it) }?.takeIf { it > 0L } ?: 0L
     if (sunriseTs <= 0L || sunsetTs <= sunriseTs) {
-        WCard("☀️ ŁUK SŁONECZNY & POTENCJAŁ SOLARNY", "dane czasu słonecznego z Open-Meteo") {
+        WCard("☀️ ŁUK SŁONECZNY & POTENCJAŁ SOLARNY", "") {
             Text("Brak danych o wschodzie i zachodzie słońca — wykres pozostaje pusty.",
                 fontSize = 11.sp, color = Pal.TextDim)
         }
