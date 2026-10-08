@@ -3,4 +3,10 @@
     <string name="brand">STEROWNIK CO</string>
     <string name="brand_sub">CENTRALA • piec_co</string>
     <string name="widget_desc">Temperatury kotła, bojlera, panelu i zewnętrzna + status alarmu</string>
+    <string name="widget_label_full">Sterownik CO — pełny</string>
+    <string name="widget_label_compact">Sterownik CO — kompaktowy</string>
+    <string name="widget_label_strip">Sterownik CO — temperatury</string>
+    <string name="widget_desc_full">Cztery temperatury, stan sterownika i czas ostatniego odczytu.</string>
+    <string name="widget_desc_compact">Bieżąca temperatura bojlera i panelu słonecznego.</string>
+    <string name="widget_desc_strip">Cztery temperatury w szerokim, niskim widżecie.</string>
 </resources>

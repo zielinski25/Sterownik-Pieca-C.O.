@@ -15,9 +15,10 @@ import com.sterownikco.pro.service.AlarmMonitorService
 import org.json.JSONObject
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Widget na pulpit (APK-only): 4 temperatury + pasek statusu.
+   Widżety pulpitu (APK-only): kompaktowy, szeroki pasek i pełny panel 2×2.
+   Wszystkie warianty korzystają z jednego snapshotu rzeczywistych danych.
 
-   • Brak WorkManager/AlarmManager — widget odświeża się TYLKO gdy przyjdą
+   • Brak WorkManager/AlarmManager — widżety odświeżają się TYLKO gdy przyjdą
      świeże dane (usługa SSE w tle lub poll() na pierwszym planie), więc nie
      budzi telefonu na próżno. Ostatnia migawka siedzi w prefs, więc widget
      renderuje się poprawnie także po reboocie / ubiciu procesu.
@@ -75,18 +76,33 @@ class PiecWidget : AppWidgetProvider() {
             try {
                 val app = ctx.applicationContext
                 val mgr = AppWidgetManager.getInstance(app)
-                val me = ComponentName(app, PiecWidget::class.java)
-                val ids = mgr.getAppWidgetIds(me)
-                if (ids.isEmpty()) return
                 val snap = try {
                     Prefs(app).get(K_SNAP)?.let { JSONObject(it) }
                 } catch (e: Exception) { null }
-                for (id in ids) mgr.updateAppWidget(id, views(app, snap))
+                WIDGETS.forEach { spec ->
+                    val ids = mgr.getAppWidgetIds(ComponentName(app, spec.provider))
+                    ids.forEach { id -> mgr.updateAppWidget(id, views(app, snap, spec)) }
+                }
             } catch (e: Exception) { /* widget nie może wywalić wołającego */ }
         }
 
-        private fun views(ctx: Context, d: JSONObject?): RemoteViews {
-            val v = RemoteViews(ctx.packageName, R.layout.widget_piec)
+        private val WIDGETS = listOf(
+            WidgetSpec(
+                PiecWidget::class.java, R.layout.widget_piec,
+                WidgetIds(R.id.w_t_ogrz, R.id.w_t_bojler, R.id.w_t_panel, R.id.w_t_zewn, R.id.w_status, R.id.w_time)
+            ),
+            WidgetSpec(
+                PiecWidgetCompact::class.java, R.layout.widget_piec_compact,
+                WidgetIds(boiler = R.id.w_t_bojler, panel = R.id.w_t_panel, status = R.id.w_status, time = R.id.w_time)
+            ),
+            WidgetSpec(
+                PiecWidgetStrip::class.java, R.layout.widget_piec_strip,
+                WidgetIds(R.id.w_t_ogrz, R.id.w_t_bojler, R.id.w_t_panel, R.id.w_t_zewn, R.id.w_status, R.id.w_time)
+            )
+        )
+
+        private fun views(ctx: Context, d: JSONObject?, spec: WidgetSpec): RemoteViews {
+            val v = RemoteViews(ctx.packageName, spec.layout)
 
             val simRaw = d?.opt("sim")
             val simMask = when (simRaw) {
@@ -130,10 +146,13 @@ class PiecWidget : AppWidgetProvider() {
             fun display(sensor: Triple<String, Int, ClosedFloatingPointRange<Double>>) =
                 deg(sensor.first, sensor.second, sensor.third.start, sensor.third.endInclusive)
 
-            v.setTextViewText(R.id.w_t_ogrz, display(sensors[0]))
-            v.setTextViewText(R.id.w_t_bojler, display(sensors[1]))
-            v.setTextViewText(R.id.w_t_panel, display(sensors[2]))
-            v.setTextViewText(R.id.w_t_zewn, display(sensors[3]))
+            fun setText(viewId: Int?, text: String) {
+                if (viewId != null) v.setTextViewText(viewId, text)
+            }
+            setText(spec.ids.ogrz, display(sensors[0]))
+            setText(spec.ids.boiler, display(sensors[1]))
+            setText(spec.ids.panel, display(sensors[2]))
+            setText(spec.ids.outside, display(sensors[3]))
 
             fun flag(key: String): Boolean? {
                 if (d == null || !d.has(key) || d.isNull(key)) return null
@@ -161,31 +180,25 @@ class PiecWidget : AppWidgetProvider() {
             val controllerOffline = online == false
             val lastPush = try { Prefs(ctx.applicationContext).getLong(K_PUSH_TS, 0L) } catch (e: Exception) { 0L }
             val stale = lastPush <= 0L || System.currentTimeMillis() - lastPush > 5L * 60_000L
-            val alarmLabel = when {
-                dym == true && ogrz == true -> "DYM + PRZEGRZANIE"
-                dym == true -> "ALARM DYMU"
-                ogrz == true -> "PRZEGRZANIE"
-                else -> "ALARM PANELU"
-            }
             val oldAlarm = controllerOffline || stale
-            val (txt, col) = when {
-                alarmActive && oldAlarm -> "⚠ OSTATNI ODCZYT: $alarmLabel" to Color.parseColor("#FBBF24")
-                alarmActive -> "🚨 $alarmLabel!" to Color.parseColor("#FF5F78")
-                !hasRealReading && hasAnyReading -> "⚠ WYŁĄCZNIE SYMULACJA" to Color.parseColor("#FBBF24")
-                !hasRealReading -> "○ BRAK RZECZYWISTYCH DANYCH" to Color.parseColor("#7F93A3")
-                sim && !alarmKnown -> "⚠ SYMULACJA · STAN ALARMÓW — BRAK DANYCH" to Color.parseColor("#FBBF24")
+            val (statusText, statusColor) = when {
+                alarmActive && oldAlarm -> "⚠ STARY ALARM" to Color.parseColor("#FBBF24")
+                alarmActive -> "🚨 ALARM" to Color.parseColor("#FF5F78")
+                !hasRealReading && hasAnyReading -> "⚠ SYMULACJA" to Color.parseColor("#FBBF24")
+                !hasRealReading -> "○ BRAK DANYCH" to Color.parseColor("#7F93A3")
+                sim && !alarmKnown -> "⚠ SYM · ALARM?" to Color.parseColor("#FBBF24")
                 sim -> "⚠ SYMULACJA" to Color.parseColor("#FBBF24")
-                !alarmKnown -> "⚠ STAN ALARMÓW — BRAK DANYCH" to Color.parseColor("#FBBF24")
-                controllerOffline || stale -> "○ OSTATNI ODCZYT — NIEAKTUALNY" to Color.parseColor("#7F93A3")
-                online != true -> "○ STATUS ONLINE — BRAK DANYCH" to Color.parseColor("#7F93A3")
-                else -> "● STEROWNIK CO" to Color.parseColor("#4ADE80")
+                !alarmKnown -> "⚠ ALARM?" to Color.parseColor("#FBBF24")
+                controllerOffline || stale -> "○ NIEAKTUALNE" to Color.parseColor("#7F93A3")
+                online != true -> "○ STATUS?" to Color.parseColor("#7F93A3")
+                else -> "● LIVE" to Color.parseColor("#4ADE80")
             }
-            v.setTextViewText(R.id.w_status, txt)
-            v.setTextColor(R.id.w_status, col)
+            setText(spec.ids.status, statusText)
+            if (spec.ids.status != null) v.setTextColor(spec.ids.status, statusColor)
             val updatedAt = if (lastPush > 0L) java.util.Calendar.getInstance().apply { timeInMillis = lastPush } else null
             val updatedLabel = updatedAt?.let { "od " + String.format(java.util.Locale.US, "%02d:%02d",
                 it.get(java.util.Calendar.HOUR_OF_DAY), it.get(java.util.Calendar.MINUTE)) } ?: "—"
-            v.setTextViewText(R.id.w_time, updatedLabel)
+            setText(spec.ids.time, updatedLabel)
 
             val open = PendingIntent.getActivity(
                 ctx, 31, Intent(ctx, MainActivity::class.java),
@@ -197,3 +210,32 @@ class PiecWidget : AppWidgetProvider() {
         }
     }
 }
+
+/** Compact launcher entry: boiler + solar collector at a glance. */
+class PiecWidgetCompact : AppWidgetProvider() {
+    override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
+        PiecWidget.renderAll(ctx)
+    }
+}
+
+/** Wide one-row launcher entry: four real temperature readings. */
+class PiecWidgetStrip : AppWidgetProvider() {
+    override fun onUpdate(ctx: Context, mgr: AppWidgetManager, ids: IntArray) {
+        PiecWidget.renderAll(ctx)
+    }
+}
+
+private data class WidgetIds(
+    val ogrz: Int? = null,
+    val boiler: Int? = null,
+    val panel: Int? = null,
+    val outside: Int? = null,
+    val status: Int? = null,
+    val time: Int? = null
+)
+
+private data class WidgetSpec(
+    val provider: Class<out AppWidgetProvider>,
+    val layout: Int,
+    val ids: WidgetIds
+)

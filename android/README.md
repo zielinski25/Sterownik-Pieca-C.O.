@@ -87,10 +87,11 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
   `~`/`SYM` i nie trafiają do historii ani wykresów. Przycisk „Kafelki aplikacji”
   steruje tylko kafelkami wewnątrz aplikacji; widget ekranu głównego jest
   osobnym elementem Androida.
-* Natywny widget Androida (`widget/PiecWidget.kt`) ma układ 4×2 i pokazuje
-  cztery temperatury, stan alarmów oraz czas ostatniej migawki; brak lub
-  nieprawidłowa flaga alarmu pozostaje stanem nieznanym. Widget nie był jeszcze
-  zweryfikowany na launcherze.
+* Natywne widżety Androida korzystają z jednej migawki rzeczywistej telemetrii:
+  kompaktowy (bojler + panel), szeroki pasek (cztery temperatury) i pełny
+  panel 2×2. Wszystkie pokazują status/nieaktualne dane uczciwie, otwierają
+  aplikację po dotknięciu i mają osobne podglądy w systemowym wyborze widżetów.
+  Wygląd na launcherze wymaga jeszcze potwierdzenia na telefonie.
 
 ## Świadome uproszczenia (żeby nic nie „udawało”)
 
