@@ -25,10 +25,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -423,24 +426,45 @@ fun ChartAxisSheet(m: AppModel) {
 /** `showChartToolsSheet()` — filtry anomalii, area band, bezier, alarmy, zoom. */
 @Composable
 fun ChartToolsSheet(m: AppModel) {
-    Note("Ustawienia filtracji anomalii i estetyki wykresu. Dane źródłowe w bazie Firebase pozostają nienaruszone.")
+    Note("Filtry zmieniają wygląd wykresu; dane w Firebase pozostają bez zmian.")
     CheckRow("Filtr anomalii i szpilek (Hampel / Glitch)", null, m.chartGlitch) { v -> m.setChartGlitch(v) }
     CheckRow("Wypełnienie gradientowe (Area Band)", null, m.chartAreaBand) { v -> m.setChartAreaBand(v) }
     CheckRow("Gładkie linie Bezier (odznacz: schodkowe)", null, m.chartStyle == "SMOOTH") { v -> m.setChartStyle(if (v) "SMOOTH" else "STEPPED") }
-    CheckRow("Poziome linie progów alarmowych na wykresie", null, m.chartAlarmLines) { v -> m.setChartAlarmLines(v) }
+    CheckRow("Poziome linie progów temperatury", null, m.chartAlarmLines) { v -> m.setChartAlarmLines(v) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         UstBtn("Zoom −", modifier = Modifier.weight(1f), onClick = { m.zoomChart(1 / 1.3f) })
         UstBtn("Reset (1×)", modifier = Modifier.weight(1f), onClick = { m.resetChartView() })
         UstBtn("Zoom +", modifier = Modifier.weight(1f), onClick = { m.zoomChart(1.3f) })
     }
-    Spacer(Modifier.height(4.dp))
-    SectionHeader("Progi alarmowe (°C)")
-    listOf("lolo" to 25.0, "lo" to 35.0, "hi" to 75.0, "hihi" to 85.0).forEach { (k, def) ->
-        var v by remember(k) { mutableStateOf((m.alarmLevels[k] ?: def).toFloat()) }
-        com.sterownikco.pro.ui.components.SliderRow(
-            name = k.uppercase(), value = v, min = 0f, max = 120f, step = 1f,
-            fmt = { x -> x.toInt().toString() + " °C" }, onValue = { },
-            onCommit = { x -> v = x; m.setAlarmLevel(k, x.toDouble()) }
+    Spacer(Modifier.height(2.dp))
+    SectionHeader("Poziomy odniesienia · wykres temperatur")
+    Note("Dla wszystkich widocznych serii temperatur na wspólnej osi (°C). Linie odniesienia, nie alarmy sterownika; zapis po puszczeniu suwaka.")
+    listOf(
+        Triple("lolo", "LOLO · bardzo niski", 25.0),
+        Triple("lo", "LO · niski", 35.0),
+        Triple("hi", "HI · wysoki", 75.0),
+        Triple("hihi", "HIHI · bardzo wysoki", 85.0)
+    ).forEach { (key, label, default) ->
+        AlarmThresholdRow(m, key, label, default)
+    }
+}
+
+@Composable
+private fun AlarmThresholdRow(m: AppModel, key: String, label: String, default: Double) {
+    var value by remember(key) { mutableFloatStateOf((m.alarmLevels[key] ?: default).toFloat()) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                modifier = Modifier.weight(1f))
+            Text("${value.toInt()} °C", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Pal.White)
+        }
+        Slider(
+            value = value,
+            onValueChange = { value = it },
+            onValueChangeFinished = { m.setAlarmLevel(key, value.toDouble()) },
+            valueRange = 0f..120f,
+            steps = 119,
+            colors = SliderDefaults.colors(thumbColor = Pal.Cyan, activeTrackColor = Pal.Cyan, inactiveTrackColor = Pal.Surface3)
         )
     }
 }
@@ -484,9 +508,9 @@ fun ChartAnalysisSheet(m: AppModel) {
             sub = "Różnica liczona na bieżąco ze strumienia /piec/status"
         )
     }
-    UstBtn("Włącz/Wyłącz linie alarmów", modifier = Modifier.fillMaxWidth(), onClick = {
+    UstBtn("Włącz/Wyłącz linie progów", modifier = Modifier.fillMaxWidth(), onClick = {
         m.setChartAlarmLines(!m.chartAlarmLines)
-        m.showToast("Wykres", (if (m.chartAlarmLines) "Włączono" else "Wyłączono") + " linie alarmowe", "ok")
+        m.showToast("Wykres", (if (m.chartAlarmLines) "Włączono" else "Wyłączono") + " linie progów", "ok")
     })
 }
 

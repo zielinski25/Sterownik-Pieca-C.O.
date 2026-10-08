@@ -7152,6 +7152,7 @@ body.mode-phone-frame #phone {
       const pref = {
         focus: chartFocus,
         range: activeRangeSec,
+        alarmLevels: chartAlarmLevels,
         tempOn: {},
         servoOn: {}
       };
@@ -7168,6 +7169,12 @@ body.mode-phone-frame #phone {
       const p = JSON.parse(raw);
       if (typeof p.focus === 'number' && p.focus >= 0 && p.focus <= 2) chartFocus = p.focus;
       if (typeof p.range === 'number' && p.range > 0) activeRangeSec = p.range;
+      if (p.alarmLevels && typeof p.alarmLevels === 'object') {
+        Object.keys(chartAlarmLevels).forEach(key => {
+          const level = Number(p.alarmLevels[key]);
+          if (Number.isFinite(level)) chartAlarmLevels[key] = Math.max(0, Math.min(120, level));
+        });
+      }
       if (p.tempOn) {
         TEMP_SERIES.forEach(s => { if (typeof p.tempOn[s.id] === 'boolean') s.on = p.tempOn[s.id]; });
       }
@@ -7811,16 +7818,19 @@ body.mode-phone-frame #phone {
 
     if (chartAlarmLines && chartFocus === 0 && chartMode === 'COMMON' && axisUnit === '°C') {
       g.setLineDash([4, 4]);
-      if (chartAlarmLevels.hihi <= maxVal && chartAlarmLevels.hihi >= minVal) {
-        const yH = padTop + plotH * (1 - (chartAlarmLevels.hihi - minVal) / (maxVal - minVal));
-        g.strokeStyle = 'rgba(255,95,120,0.6)';
-        g.beginPath(); g.moveTo(padLeft, yH); g.lineTo(w - padRight, yH); g.stroke();
-      }
-      if (chartAlarmLevels.hi <= maxVal && chartAlarmLevels.hi >= minVal) {
-        const yL = padTop + plotH * (1 - (chartAlarmLevels.hi - minVal) / (maxVal - minVal));
-        g.strokeStyle = 'rgba(255,159,67,0.6)';
-        g.beginPath(); g.moveTo(padLeft, yL); g.lineTo(w - padRight, yL); g.stroke();
-      }
+      const thresholdColors = {
+        lolo: 'rgba(168,85,247,0.65)',
+        lo: 'rgba(0,212,245,0.65)',
+        hi: 'rgba(255,159,67,0.65)',
+        hihi: 'rgba(255,95,120,0.65)'
+      };
+      Object.entries(thresholdColors).forEach(([key, color]) => {
+        const value = Number(chartAlarmLevels[key]);
+        if (!Number.isFinite(value) || value < minVal || value > maxVal) return;
+        const y = padTop + plotH * (1 - (value - minVal) / (maxVal - minVal));
+        g.strokeStyle = color;
+        g.beginPath(); g.moveTo(padLeft, y); g.lineTo(w - padRight, y); g.stroke();
+      });
       g.setLineDash([]);
     }
 
@@ -8383,7 +8393,7 @@ body.mode-phone-frame #phone {
   function showChartToolsSheet() {
     showSheet('Narzędzia i filtry', 'shield', () => {
       const b = h('div');
-      b.appendChild(note('Ustawienia filtracji anomalii i estetyki wykresu. Dane źródłowe w bazie Firebase pozostają nienaruszone.'));
+      b.appendChild(note('Filtry zmieniają wygląd wykresu; dane w Firebase pozostają bez zmian.'));
 
       const r0 = h('label', 'chk'); const c0 = h('input'); c0.type = 'checkbox'; c0.checked = chartGlitchFilter;
       c0.onchange = () => { chartGlitchFilter = c0.checked; updateChartCanvas(); };
@@ -8402,8 +8412,36 @@ body.mode-phone-frame #phone {
 
       const r3 = h('label', 'chk'); const c3 = h('input'); c3.type = 'checkbox'; c3.checked = chartAlarmLines;
       c3.onchange = () => { chartAlarmLines = c3.checked; updateChartCanvas(); };
-      r3.appendChild(c3); r3.appendChild(document.createTextNode('Poziome linie progów alarmowych na wykresie'));
+      r3.appendChild(c3); r3.appendChild(document.createTextNode('Poziome linie progów temperatury'));
       b.appendChild(r3);
+
+      b.appendChild(sectionHeader('Poziomy odniesienia · wykres temperatur'));
+      b.appendChild(note('Dla wszystkich widocznych serii temperatur na wspólnej osi (°C). Linie odniesienia, nie alarmy sterownika; zapis po puszczeniu suwaka.'));
+      [
+        ['lolo', 'LOLO · bardzo niski'],
+        ['lo', 'LO · niski'],
+        ['hi', 'HI · wysoki'],
+        ['hihi', 'HIHI · bardzo wysoki']
+      ].forEach(([key, label]) => {
+        const row = h('div');
+        row.style.cssText = 'padding:2px 0';
+        const head = h('div');
+        head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:700;color:var(--text)';
+        const title = h('span', '', label);
+        const value = h('b', '', Math.round(chartAlarmLevels[key]) + ' °C');
+        head.appendChild(title); head.appendChild(value);
+        const slider = h('input');
+        slider.type = 'range'; slider.min = '0'; slider.max = '120'; slider.step = '1';
+        slider.value = String(chartAlarmLevels[key]);
+        slider.style.cssText = 'width:100%;margin:3px 0 0;accent-color:var(--cyan)';
+        slider.oninput = () => {
+          chartAlarmLevels[key] = Number(slider.value);
+          value.textContent = Math.round(chartAlarmLevels[key]) + ' °C';
+          updateChartCanvas();
+        };
+        slider.onchange = () => saveChartPreferences();
+        row.appendChild(head); row.appendChild(slider); b.appendChild(row);
+      });
 
       const acts = h('div', 'btnrow');
       const zIn = h('button', 'ust-btn', 'Zoom +'); zIn.onclick = () => { chartZoom = Math.min(16, chartZoom * 1.3); updateChartCanvas(); };
@@ -8441,11 +8479,11 @@ body.mode-phone-frame #phone {
       }
 
       const acts = h('div', 'btnrow');
-      const editAlarms = h('button', 'ust-btn', 'Włącz/Wyłącz linie alarmów');
+      const editAlarms = h('button', 'ust-btn', 'Włącz/Wyłącz linie progów');
       editAlarms.onclick = () => {
         chartAlarmLines = !chartAlarmLines;
         updateChartCanvas();
-        showToast('Wykres', chartAlarmLines ? 'Włączono linie alarmowe' : 'Wyłączono linie alarmowe', 'ok');
+        showToast('Wykres', chartAlarmLines ? 'Włączono linie progów' : 'Wyłączono linie progów', 'ok');
         dismissSheet();
       };
       acts.appendChild(editAlarms); b.appendChild(acts);

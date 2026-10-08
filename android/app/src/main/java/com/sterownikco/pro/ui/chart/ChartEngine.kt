@@ -339,9 +339,14 @@ fun ChartCanvas(
                 drawText(tp, topLeft = Offset(w - padRight + 5.dp.toPx(), yPos - tp.size.height / 2f))
             }
         }
-        // linie alarmowe (hi/hihi) — jak w oryginale tylko dla temperatur i osi °C
+        // Wszystkie cztery poziomy odniesienia dla serii temperatur na wspólnej osi °C.
         if (alarmLines && mode == "COMMON" && view.axisUnit == "°C") {
-            listOf("hihi" to Pal.Err, "hi" to Pal.Accent).forEach { (k, c) ->
+            listOf(
+                "lolo" to Pal.Violet,
+                "lo" to Pal.Cyan,
+                "hi" to Pal.Accent,
+                "hihi" to Pal.Err
+            ).forEach { (k, c) ->
                 val v = alarmLevels[k] ?: return@forEach
                 if (v <= view.max && v >= view.min) {
                     val y = padTop + plotH * (1 - ((v - view.min) / (view.max - view.min))).toFloat()
