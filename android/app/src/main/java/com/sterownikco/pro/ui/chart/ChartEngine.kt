@@ -370,7 +370,6 @@ fun ChartCanvas(
         // serie
         view.cat.forEach { s ->
             val vals = view.values[s.id] ?: return@forEach
-            val pts = ArrayList<SegPoint>()
             var lastTs = 0L
             val segs = ArrayList<ArrayList<SegPoint>>()
             var cur = ArrayList<SegPoint>()
@@ -391,7 +390,7 @@ fun ChartCanvas(
                         else -> padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
                     }
                     if (lastTs != 0L && r.ts - lastTs > 360_000L) { if (cur.isNotEmpty()) segs.add(cur); cur = ArrayList() }
-                    cur.add(SegPoint(x, y, v, r.ts, idx))
+                    cur.add(SegPoint(x, y, v, r.ts, idx, r.isSimulated(s.ch)))
                     lastTs = r.ts
                 } else {
                     if (cur.isNotEmpty()) segs.add(cur); cur = ArrayList(); lastTs = 0L
@@ -414,34 +413,70 @@ fun ChartCanvas(
                         ))
                     }
                 }
-                val line = Path()
-                if (lineStyle == "STEPPED" || seg.size < 3) {
-                    seg.forEachIndexed { i, p ->
-                        if (i == 0) line.moveTo(p.x, p.y)
-                        else {
-                            if (lineStyle == "STEPPED") line.lineTo(p.x, seg[i - 1].y)
-                            line.lineTo(p.x, p.y)
+                fun drawStrokeRun(run: List<SegPoint>, isSimulated: Boolean) {
+                    if (run.isEmpty()) return
+                    val line = Path()
+                    if (lineStyle == "STEPPED" || run.size < 3) {
+                        run.forEachIndexed { i, p ->
+                            if (i == 0) line.moveTo(p.x, p.y)
+                            else {
+                                if (lineStyle == "STEPPED") line.lineTo(p.x, run[i - 1].y)
+                                line.lineTo(p.x, p.y)
+                            }
+                        }
+                    } else {
+                        line.moveTo(run[0].x, run[0].y)
+                        for (i in 0 until run.size - 1) {
+                            val p0 = run[if (i == 0) 0 else i - 1]
+                            val p1 = run[i]
+                            val p2 = run[i + 1]
+                            val p3 = run[min(i + 2, run.size - 1)]
+                            line.cubicTo(
+                                p1.x + (p2.x - p0.x) / 6f, p1.y + (p2.y - p0.y) / 6f,
+                                p2.x - (p3.x - p1.x) / 6f, p2.y - (p3.y - p1.y) / 6f,
+                                p2.x, p2.y
+                            )
                         }
                     }
-                } else {
-                    line.moveTo(seg[0].x, seg[0].y)
-                    for (i in 0 until seg.size - 1) {
-                        val p0 = seg[if (i == 0) 0 else i - 1]
-                        val p1 = seg[i]
-                        val p2 = seg[i + 1]
-                        val p3 = seg[min(i + 2, seg.size - 1)]
-                        line.cubicTo(
-                            p1.x + (p2.x - p0.x) / 6f, p1.y + (p2.y - p0.y) / 6f,
-                            p2.x - (p3.x - p1.x) / 6f, p2.y - (p3.y - p1.y) / 6f,
-                            p2.x, p2.y
-                        )
+                    // Only edges touching a simulated sample get the dashed style;
+                    // genuine-to-genuine edges retain the series' ordinary stroke.
+                    val dash = if (isSimulated) PathEffect.dashPathEffect(
+                        floatArrayOf(6.dp.toPx(), 4.dp.toPx())
+                    ) else null
+                    // Catmull–Rom bezier tangents can overshoot the mapped y-range.
+                    clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
+                        drawPath(line, accent, style = Stroke(width = 2.dp.toPx(), pathEffect = dash))
                     }
                 }
-                // Catmull–Rom bezier tangents can overshoot the mapped y-range;
-                // clip paths (and singleton markers) to the plot, never the screen.
-                clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
-                    drawPath(line, accent, style = Stroke(width = 2.dp.toPx()))
-                    if (seg.size == 1) drawCircle(accent, 3.dp.toPx(), center = Offset(seg[0].x, seg[0].y))
+
+                if (seg.size > 1) {
+                    // Group edges (not samples), so the transition edge is dashed
+                    // while adjacent genuine sections stay continuous and solid.
+                    var firstEdge = 0
+                    while (firstEdge < seg.size - 1) {
+                        val isSimulated = seg[firstEdge].simulated || seg[firstEdge + 1].simulated
+                        var lastEdge = firstEdge
+                        while (lastEdge + 1 < seg.size - 1 &&
+                            (seg[lastEdge + 1].simulated || seg[lastEdge + 2].simulated) == isSimulated) {
+                            lastEdge++
+                        }
+                        drawStrokeRun(seg.subList(firstEdge, lastEdge + 2), isSimulated)
+                        firstEdge = lastEdge + 1
+                    }
+                } else {
+                    // Keep an isolated simulated sample visible even without a line.
+                    val point = seg.first()
+                    clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
+                        if (point.simulated) {
+                            drawCircle(Pal.CanvasBg, 3.5.dp.toPx(), center = Offset(point.x, point.y))
+                            drawCircle(accent, 3.dp.toPx(), center = Offset(point.x, point.y),
+                                style = Stroke(width = 1.5.dp.toPx(), pathEffect =
+                                    PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 1.5.dp.toPx())))
+                            )
+                        } else {
+                            drawCircle(accent, 3.dp.toPx(), center = Offset(point.x, point.y))
+                        }
+                    }
                 }
             }
         }
@@ -480,7 +515,7 @@ fun ChartCanvas(
     }
 }
 
-private class SegPoint(val x: Float, val y: Float, val v: Double, val ts: Long, val idx: Int)
+private class SegPoint(val x: Float, val y: Float, val v: Double, val ts: Long, val idx: Int, val simulated: Boolean)
 
 /** `pad2(...) + …` — dobór formatu osi X do szerokości okna. */
 fun fmtXLabel(ts: Long, spanMs: Long): String {

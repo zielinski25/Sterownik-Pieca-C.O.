@@ -51,7 +51,7 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 | Pasek górny, `sysstrip`, banery, hero, quick, sekcje, trend, arkusz, toast | 2960–3175, 4330–4425 | `ui/components/Chrome.kt` |
 | Klasy CSS tile/well/badge/analysis/nav/trend | 1200–2422 | `ui/components/Kit.kt`, `Hmi.kt` |
 | Klient Firebase (`/piec/status`, `/piec/cmd` + ACK) | 4425–5145 | `core/RtdbClient.kt`, `core/AppModel.kt` |
-| Lokalna symulacja czujników / `symuluj …` / `symuluj_stop` | 5100–5240 | `core/PiecState.kt` (`applySimulationCommand`, `sym`) + `ui/screens/sheets/Sensors.kt` |
+| Symulacja czujników na sterowniku / `symuluj …` / `symuluj_stop` + flagi `symulacja_*` z `/piec/status` | 5100–5240 | `core/AppModel.kt` (wysyłka/ACK), `core/PiecState.kt` (stan potwierdzony), `ui/screens/sheets/Sensors.kt` |
 | Arkusze czujników `ALL_SENSORS`, `sensorModalContent`, `symulacjaSekcjaHtml`, `MENUS.dym`, `overheat` | 5104–5345, 5574 | `core/Sensors.kt`, `ui/screens/sheets/Sensors.kt` |
 | `MENUS.pompa / serwo / mieszadlo / czas` (diagramy Trociniak/Kopciuch) | 5386–5562 | `ui/screens/sheets/Control.kt` |
 | Moduł Wi‑Fi (`/api/wifi/list`, `scan/start`, `scan/result`, `add`, `delete`) | 5591–5855 | `ui/screens/sheets/System.kt` (`WifiSheet`) |
@@ -76,19 +76,23 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 
 * `MainActivity` → jedna aktywność, `setContent { SterownikApp(model) }`.
 * `AppModel` (tworzony w `onCreate`) trzyma `PiecState`, timer (`4 s` poll,
-  `2 s` tick symulacji, `15 min` pogoda, `1 s` odświeżanie arkusza), logi,
+  `15 min` pogoda, `1 s` odświeżanie arkusza), logi,
   toasty, telemetrię i preferencje (`SharedPreferences`, klucze jak `safeStorage`
   w panelu: `piec_fb_token`, `piec_tg_token`, `piec_chart_prefs_v2`…).
 * Polecenia urządzeń są wysyłane do `/piec/cmd` i stan jest uznawany za
   potwierdzony dopiero po ACK. Bez sesji Firebase polecenie nie jest wysyłane
   ani stosowane optymistycznie lokalnie.
-* Symulacja czujników (`symuluj …` / `symuluj_stop`) jest osobną, ręczną
-  funkcją lokalną: nie wysyła nic do ESP/Firebase, jej wartości są oznaczone
-  `~`/`SYM` i nie trafiają do historii ani wykresów. Przycisk „Kafelki aplikacji”
-  steruje tylko kafelkami wewnątrz aplikacji; widget ekranu głównego jest
-  osobnym elementem Androida.
-* Natywne widżety Androida korzystają z jednej migawki rzeczywistej telemetrii:
-  kompaktowy (do 2 czujników), szeroki pasek (do 4) i pełny panel 2×2 (do 4).
+* Symulacja czujników (`symuluj …` / `symuluj_stop`) jest wysyłana do
+  `/piec/cmd` i uznawana za potwierdzoną dopiero po ACK sterownika. Aktywny stan
+  pochodzi z flag `symulacja_*` w `/piec/status`; wartości są oznaczane `~`, a w
+  wykresach kreskowany jest tylko symulowany odcinek — próbki rzeczywiste
+  pozostają ciągłe. Test dymu może uruchomić prawdziwy alarm, buzzer oraz ruch
+  aktuatorów. Przycisk „Kafelki aplikacji” steruje tylko kafelkami wewnątrz
+  aplikacji; widget ekranu głównego jest osobnym elementem
+  Androida.
+* Natywne widżety Androida korzystają z jednej migawki statusu sterownika:
+  prawdziwe odczyty oraz aktywne symulacje sterownika oznaczone `~`.
+  Dostępne układy: kompaktowy (do 2 czujników), szeroki pasek (do 4) i pełny panel 2×2 (do 4).
   Podczas dodawania lub ponownej konfiguracji można wybrać piec C.O., bojler
   C.W.U., panel słoneczny i/lub temperaturę zewnętrzną; wybór jest zapisany
   osobno dla każdego widżetu. Temperatury są zaokrąglane do pełnych stopni.

@@ -215,6 +215,10 @@ fun ChartsPage(m: AppModel) {
             }
 
             ChartScrollbar(m)
+            Text(
+                "Linia ciągła — odczyt rzeczywisty · kreskowany jest tylko odcinek kanału symulowanego",
+                style = Txt.tiny.copy(color = Pal.TextDim), modifier = Modifier.fillMaxWidth()
+            )
 
             Box(Modifier.fillMaxWidth().background(Pal.rgba(255, 159, 67, .1f), RoundedCornerShape(8.dp))
                 .border(BorderStroke(1.dp, Pal.rgba(255, 159, 67, .25f)), RoundedCornerShape(8.dp))
@@ -283,6 +287,8 @@ fun ChartsPage(m: AppModel) {
                         }
                     }
                     ChartScrollbar(m)
+                    Text("Linia ciągła — odczyt rzeczywisty · kreskowany — odcinek dotykający próbki symulowanej",
+                        style = Txt.tiny, modifier = Modifier.fillMaxWidth())
                     Text("DOTKNIJ kursor • SZCZYP zoom • PASEK / PRZECIĄGNIJ oś czasu • 2× TAP reset",
                         style = Txt.tiny, modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center)
@@ -541,7 +547,7 @@ private fun ChartHoverTooltip(
         Text(chartTimeLabel(m, row.ts), fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan)
         view.cat.forEach { s ->
             val x = view.values[s.id]?.getOrNull(index)
-            val value = if (x != null && x.isFinite()) fmt1(x) + " " + s.unit else "—"
+            val value = if (x != null && x.isFinite()) (if (row.isSimulated(s.ch)) "~" else "") + fmt1(x) + " " + s.unit else "—"
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("●", fontSize = 7.sp, color = hexColor(s.accent))
                 Text("${s.label}: ", fontSize = 8.sp, color = hexColor(s.accent), fontWeight = FontWeight.SemiBold)
@@ -563,7 +569,7 @@ private fun inspectorText(m: AppModel, view: com.sterownikco.pro.ui.chart.ChartV
     view.cat.forEachIndexed { index, s ->
         if (index > 0) append("  ·  ")
         val x = view.values[s.id]?.getOrNull(cross)
-        val value = if (x != null && x.isFinite()) fmt1(x) + " " + s.unit else "—"
+        val value = if (x != null && x.isFinite()) (if (row.isSimulated(s.ch)) "~" else "") + fmt1(x) + " " + s.unit else "—"
         withStyle(SpanStyle(color = hexColor(s.accent))) {
             append("● ${s.label}: $value")
         }

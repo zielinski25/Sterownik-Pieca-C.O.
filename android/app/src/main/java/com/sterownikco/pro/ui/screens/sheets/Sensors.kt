@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
+import com.sterownikco.pro.core.PiecState
 import com.sterownikco.pro.core.SensorDef
 import com.sterownikco.pro.ui.screens.SolarMultiDayForecast
 import com.sterownikco.pro.ui.components.ManualRow
@@ -80,11 +81,14 @@ fun StatusPill(text: String, cls: String) {
 @Composable
 fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min: Double, max: Double, krok: Double, statusKey: String = pole) {
     val S = m.S
+    val simBounds = PiecState.SYM_BOUNDS[pole]
+    val controlMin = simBounds?.first ?: min
+    val controlMax = simBounds?.second ?: max
     val f: (Double) -> String = { v -> if (krok >= 1.0) Math.round(v).toString() else S.fmt1(v) }
     var open by remember(pole) { mutableStateOf(S.symAktywna(pole)) }
-    val initialValue = S.valOf(pole, statusKey).takeIf { it.isFinite() } ?: (min + max) / 2.0
+    val initialValue = S.valOf(pole, statusKey).takeIf { it.isFinite() } ?: (controlMin + controlMax) / 2.0
     var value by remember(pole) { mutableFloatStateOf(initialValue.toFloat()) }
-    var czas by remember(pole) { mutableIntStateOf(S.sym[pole]?.min ?: 60) }
+    var czas by remember(pole) { mutableIntStateOf((S.sym[pole]?.min ?: 60).coerceIn(5, 180)) }
 
     Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
         SectionHeader("Symulacja — $etykieta")
@@ -97,19 +101,30 @@ fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min:
                     .padding(12.dp, 14.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text("Wyłącznie lokalny test oznaczony SYM — nie trafia do historii ani do sterownika.",
-                    style = Txt.tiny, color = Pal.Warn, modifier = Modifier.padding(bottom = 6.dp))
+                Text(
+                    when {
+                        !m.connected && pole == "dym" ->
+                            "Brak aktywnej sesji Firebase — Zastosuj nie wyśle testu. Po połączeniu test dymu na żywym sterowniku może uruchomić prawdziwy alarm, buzzer i ruch klapy lub syberka."
+                        !m.connected -> "Brak aktywnej sesji Firebase — polecenie nie zostanie wysłane. Połącz z centralą."
+                        pole == "dym" ->
+                            "⚠ TEST NA ŻYWYM STEROWNIKU: przekroczenie progu może uruchomić prawdziwy alarm, buzzer i ruch klapy lub syberka. Używaj tylko po zabezpieczeniu instalacji; po teście sprawdź alarm i aktuatory bezpośrednio."
+                        else ->
+                            "Test wysyłany do sterownika. Wartość trafia do jego normalnej logiki i może wpłynąć na rzeczywiste urządzenia."
+                    },
+                    style = Txt.tiny, color = if (pole == "dym") Pal.Err else Pal.Warn,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Wartość", style = Txt.rowDesc, modifier = Modifier.weight(1f))
                     Text("${f(value.toDouble())} $jednostka", style = Txt.monoVal, color = Pal.White)
                 }
                 Slider(
-                    value = value.coerceIn(min.toFloat(), max.toFloat()),
+                    value = value.coerceIn(controlMin.toFloat(), controlMax.toFloat()),
                     onValueChange = { v ->
                         val step = krok.toFloat().coerceAtLeast(0.1f)
-                        value = min.toFloat() + Math.round((v - min.toFloat()) / step) * step
+                        value = controlMin.toFloat() + Math.round((v - controlMin.toFloat()) / step) * step
                     },
-                    valueRange = min.toFloat()..max.toFloat(),
+                    valueRange = controlMin.toFloat()..controlMax.toFloat(),
                     colors = SliderDefaults.colors(thumbColor = Pal.Cyan, activeTrackColor = Pal.Cyan, inactiveTrackColor = Pal.Surface3)
                 )
                 Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -129,13 +144,18 @@ fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min:
                     })
                     UstBtn("Wyłącz teraz", variant = "danger", modifier = Modifier.weight(1f), onClick = {
                         m.send("symuluj_stop $pole")
-                        open = false
                         m.refreshSheet()
                     })
                 }
             }
         }
-        val info = if (S.symAktywna(pole)) "Aktywna — jeszcze ok. ${S.sym[pole]?.min ?: 0} min" else ""
+        val info = when {
+            S.symAktywna(pole) && m.isFbFresh && S.online ->
+                "Aktywna na sterowniku — jeszcze ok. ${S.sym[pole]?.min ?: 0} min"
+            S.symAktywna(pole) -> "Ostatnio zgłoszona symulacja — status sterownika nieaktualny"
+            open -> "Brak aktywnej symulacji zgłoszonej przez sterownik"
+            else -> ""
+        }
         if (info.isNotEmpty()) {
             Text(info, style = Txt.rowDesc.copy(fontSize = 9.5.sp, fontWeight = FontWeight.Bold, lineHeight = 13.sp),
                 color = Pal.Warn, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).padding(vertical = 4.dp))
@@ -155,7 +175,10 @@ fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeade
     val pill = when {
         sen.id == "dym" && S.hasData("dym_alarm") && S.dym_alarm -> "ALARM" to "err"
         sen.id == "dym" && !S.hasData("dym_alarm") -> "STAN ALARMU — BRAK DANYCH" to "stale"
-        sim -> "SYMULACJA LOKALNA" to "sim"
+        sim -> Pair(
+            if (stale) "SYMULACJA · DANE NIEAKTUALNE" else "SYMULACJA STEROWNIKA",
+            if (stale) "stale" else "sim"
+        )
         sen.id == "dym" && S.hasData("dym_wlaczony") && !S.dym_wlaczony -> "WYŁ." to "stale"
         !available -> "BRAK DANYCH" to "stale"
         stale -> "NIEAKTUALNE" to "stale"
@@ -202,7 +225,7 @@ fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeade
                 Text("Magistrala: ${sen.bus.split("·")[0].trim()}", style = Txt.tiny)
                 Text(
                     when {
-                        sim -> "Odczyt: SYMULACJA — nie jest danymi sterownika"
+                        sim -> "Odczyt: symulacja sterownika — używana przez jego logikę, nie pomiar fizyczny"
                         available -> if (stale) "Odczyt: ostatnia odebrana wartość (nieaktualna)" else "Odczyt: odebrany ze sterownika"
                         else -> "Odczyt: oczekiwanie na dane sterownika"
                     },
@@ -238,7 +261,7 @@ fun SensorListSheet(m: AppModel) {
                 style = Txt.diagSub, modifier = Modifier.padding(top = 4.dp)
             )
         }
-        Note("Każdy odczyt pochodzi z odpowiedzi sterownika. Opcjonalna symulacja jest ręczna, lokalna, oznaczona SYM i nigdy nie trafia do historii.")
+        Note("Symulacje są wysyłane do sterownika i używane przez jego normalną logikę. Na wykresie kreskowany jest tylko symulowany odcinek; odczyty rzeczywiste pozostają ciągłe. Test dymu może uruchomić prawdziwy alarm, buzzer oraz ruch serw.")
         SensorDef.ALL.forEach { sen ->
             Column(Modifier.fillMaxWidth()) {
                 SensorFullCard(m, sen, listStyle = true)

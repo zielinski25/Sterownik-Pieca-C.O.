@@ -3283,7 +3283,7 @@ body.mode-phone-frame #phone {
 
       <div class="chart-hint">
         <span data-ico="info" style="width:14px;height:14px;display:inline-flex"></span>
-        <span>kursor = dymek z odczytem • gest/kółko = zoom • przeciągnij = oś czasu • 2× klik = reset</span>
+        <span>kursor = dymek z odczytem • gest/kółko = zoom • przeciągnij = oś czasu • 2× klik = reset • linia ciągła = odczyt rzeczywisty • kreskowany = odcinek dotykający próbki symulowanej</span>
       </div>
     </section>
 
@@ -4134,7 +4134,7 @@ body.mode-phone-frame #phone {
     tempZadServo: NaN, histerServo: NaN, skokKlapy: NaN, skokSyberka: NaN, odchylTemp: NaN, mnoznik: NaN,
     progAlarmTemp: NaN, progAlarmDym: NaN, dymCzasOn: NaN, dymCzasOff: NaN,
     dymCzasStabilizacji: NaN, dymProgTemp: NaN, dymTrybPracy: NaN,
-    sym: {} // pole -> {wartosc, min, expiresAt}
+    sym: {} // pole -> {wartosc?, min, source: 'controller' | 'demo', expiresAt?}
   };
 
   const SYM_POLA = {
@@ -4149,15 +4149,18 @@ body.mode-phone-frame #phone {
     wilgotnosc: 'wilgotnosc',
     dym: 'dym'
   };
+  // Granice wejściowe kontrolek symulacji po stronie aplikacji.
   const SYM_BOUNDS = {
-    zewn: [-25, 45], ogrz: [10, 99], bojler: [10, 95], panel: [0, 140], pokoj: [8, 45],
-    ogrz_powrot: [10, 95], ogrz_trociny: [0, 90], cisnienie: [900, 1100],
-    wilgotnosc: [10, 100], dym: [0, 4095]
+    zewn: [-30, 50], ogrz: [0, 160], bojler: [0, 160], panel: [-30, 160], pokoj: [-50, 50],
+    ogrz_powrot: [-30, 120], ogrz_trociny: [-30, 120], cisnienie: [970, 1040],
+    wilgotnosc: [0, 100], dym: [0, 4095]
   };
+  const symPanelOpen = new Set();
   const real = Object.assign({}, S);
   const symAktywna = pole => !!S.sym[pole];
   const hasData = key => receivedFields.has(key) || _isDemoMode;
-  const val = (pole, key) => symAktywna(pole) ? S.sym[pole].wartosc : hasData(key) ? S[key] : NaN;
+  const val = (pole, key) => _isDemoMode && symAktywna(pole) && S.sym[pole].source !== 'controller'
+    ? S.sym[pole].wartosc : hasData(key) ? S[key] : NaN;
   function restoreRealSensor(pole) {
     const key = SYM_POLA[pole];
     if (!key) return;
@@ -4418,7 +4421,7 @@ body.mode-phone-frame #phone {
     const anyAlarm = (hasData('dym_alarm') && S.dym_alarm) ||
       (hasData('alarm_ogrzewanie') && S.alarm_ogrzewanie) ||
       (hasData('alarm_panel') && S.alarm_panel);
-    const localSimSuffix = Object.keys(S.sym).length ? ' · SYM LOKALNA' : '';
+    const localSimSuffix = !_isDemoMode && Object.keys(S.sym).length ? ' · SYMULACJA STEROWNIKA' : '';
     const connectionLabel = _isDemoMode ? '🧪 SYMULACJA' : !_isFirebaseConnected ? '○ BRAK SESJI' + localSimSuffix :
       Date.now() - _lastFirebaseFetch >= 20000 ? '○ DANE NIEAKTUALNE' + localSimSuffix :
         !S.online ? (hasData('online') ? '○ OFFLINE' : '○ BRAK TELEMETRII') + localSimSuffix : '● LIVE' + localSimSuffix;
@@ -4453,7 +4456,7 @@ body.mode-phone-frame #phone {
     if (st) {
       st.textContent = !_isFirebaseConnected && !_isDemoMode ? 'BRAK SESJI' : !S.online ?
         (hasData('online') ? 'OFFLINE' : 'OCZEKIWANIE NA TELEMETRIĘ') :
-        anyAlarm ? 'ALARM' : symAktywna('ogrz') ? 'SYMULACJA LOKALNA' : !Number.isFinite(to) ? 'OCZEKIWANIE' : to > 45 ? 'GRZANIE' : 'CZUWANIE';
+        anyAlarm ? 'ALARM' : symAktywna('ogrz') ? (_isDemoMode ? 'SYMULACJA DEMO' : 'SYMULACJA STEROWNIKA') : !Number.isFinite(to) ? 'OCZEKIWANIE' : to > 45 ? 'GRZANIE' : 'CZUWANIE';
       st.className = 'pill ' + (!S.online ? 'warn' : anyAlarm ? 'err' : symAktywna('ogrz') || !Number.isFinite(to) ? 'warn' : 'live');
     }
     const ab = $('#alarmBanner');
@@ -4689,6 +4692,11 @@ body.mode-phone-frame #phone {
   function applyIncomingData(d) {
     if (_isDemoMode || !d || typeof d !== 'object') return;
     receivedFields.clear();
+    // A controller simulation is active only when this snapshot explicitly reports it.
+    // Preserve any non-controller overlay (DEMO returns above and is never parsed here).
+    Object.keys(S.sym).forEach(pole => {
+      if (S.sym[pole]?.source === 'controller') delete S.sym[pole];
+    });
 
     const numericRules = {
       t_ogrz: [10, 99], t_ogrz_sr: [10, 99], t_bojler: [10, 95], t_zewn: [-25, 45],
@@ -4713,21 +4721,43 @@ body.mode-phone-frame #phone {
       'serwo_override_min', 'dzien', 'miesiac', 'rok', 'wifi_quality', 'ping_ms'
     ]);
     const sensorPole = Object.fromEntries(Object.entries(SYM_POLA).map(([pole, key]) => [key, pole]));
+    sensorPole.t_ogrz_sr = 'ogrz';
     const numericKeys = Object.keys(numericRules);
 
+    // Controller flags must be parsed before sensor values so active simulation
+    // readings use the control range, while their validated value remains S[key].
+    Object.keys(SYM_POLA).forEach(pole => {
+      const flagKey = 'symulacja_' + pole;
+      const raw = d[flagKey];
+      const valid = typeof raw === 'boolean' || (typeof raw === 'number' && (raw === 0 || raw === 1));
+      if (!valid) {
+        receivedFields.delete(flagKey);
+        receivedFields.delete(flagKey + '_min');
+        return;
+      }
+      receivedFields.add(flagKey);
+      const active = raw === true || raw === 1;
+      const rawMin = d[flagKey + '_min'];
+      const validMin = typeof rawMin === 'number' && Number.isInteger(rawMin) && rawMin >= 0 && rawMin <= 180;
+      if (validMin) receivedFields.add(flagKey + '_min');
+      else receivedFields.delete(flagKey + '_min');
+      if (active) S.sym[pole] = { wartosc: NaN, min: validMin ? rawMin : 0, source: 'controller' };
+    });
+
     numericKeys.forEach(key => {
-      const bounds = numericRules[key];
+      const pole = sensorPole[key];
+      const bounds = pole && symAktywna(pole) && S.sym[pole].source === 'controller'
+        ? SYM_BOUNDS[pole] : numericRules[key];
       const raw = d[key];
       const value = typeof raw === 'number' && Number.isFinite(raw) && raw >= bounds[0] && raw <= bounds[1] &&
         (!integerKeys.has(key) || Number.isInteger(raw)) ? raw : NaN;
-      const pole = sensorPole[key];
       if (Number.isFinite(value)) {
         receivedFields.add(key);
         real[key] = value;
-        if (!pole || !symAktywna(pole)) S[key] = value;
+        if (!pole || !symAktywna(pole) || S.sym[pole].source === 'controller') S[key] = value;
       } else {
         real[key] = NaN;
-        if (!pole || !symAktywna(pole)) S[key] = NaN;
+        if (!pole || !symAktywna(pole) || S.sym[pole].source === 'controller') S[key] = NaN;
       }
     });
 
@@ -5029,20 +5059,37 @@ body.mode-phone-frame #phone {
     if (cls !== 'wait') toastTimer = setTimeout(() => toast.className = '', cls === 'ok' ? 2500 : 4500);
   }
 
+  function validateSimulationCommand(commandText) {
+    const parts = commandText.trim().split(/\s+/);
+    const verb = (parts[0] || '').toLowerCase();
+    if (verb === 'symuluj') {
+      if (parts.length !== 4) return 'Użycie: symuluj <pole> <wartość> <minuty>';
+      const bounds = SYM_BOUNDS[parts[1]];
+      if (!bounds) return 'Nieznane pole symulacji: ' + parts[1];
+      const value = Number(parts[2]);
+      if (!Number.isFinite(value)) return 'Podaj poprawną wartość';
+      if (value < bounds[0] || value > bounds[1]) return `Wartość poza zakresem ${bounds[0]}–${bounds[1]}`;
+      const minutes = Number(parts[3]);
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 180) return 'Czas symulacji musi wynosić 1–180 min';
+    } else if (verb === 'symuluj_stop') {
+      if (parts.length !== 2) return 'Użycie: symuluj_stop <pole>';
+      if (!SYM_POLA[parts[1]]) return 'Nieznane pole symulacji: ' + parts[1];
+    }
+    return null;
+  }
+
   async function sendCommand(cmd) {
-    const commandText = String(cmd || '').trim();
-    const verb = commandText.split(/\s+/, 1)[0].toLowerCase();
-    if (verb === 'symuluj' || verb === 'symuluj_stop') {
-      // Te polecenia są lokalne niezależnie od stanu sesji — nigdy nie trafiają do RTDB/ESP.
-      const localCommand = commandText.replace(/^\S+/, verb);
-      const localResult = applyCommand(localCommand);
-      if (localResult !== true) {
-        showToast('SYMULACJA', String(localResult || 'Nie udało się zastosować'), 'err');
+    cmd = String(cmd || '').trim();
+    if (!cmd) return false;
+    const verb = cmd.split(/\s+/, 1)[0].toLowerCase();
+    const isSimulation = verb === 'symuluj' || verb === 'symuluj_stop';
+    if (isSimulation) {
+      cmd = cmd.replace(/^\S+/, verb);
+      const validationError = validateSimulationCommand(cmd);
+      if (validationError) {
+        showToast('SYMULACJA', validationError, 'err');
         return false;
       }
-      addLog('SIM', verb === 'symuluj' ? 'Operator włączył lokalną symulację czujnika' : 'Operator wyłączył lokalną symulację czujnika', 'warn');
-      showToast('SYMULACJA', verb === 'symuluj' ? 'Wartość lokalna — nie jest telemetrią sterownika' : 'Lokalna symulacja wyłączona', 'warn');
-      return true;
     }
 
     const t0 = performance.now();
@@ -5068,6 +5115,9 @@ body.mode-phone-frame #phone {
                 addLog('ACK', `ACK OK (${latency}ms): ` + cmd, 'ack');
                 if (navigator.vibrate) navigator.vibrate(15);
                 await pollFirebase();
+                [350, 1000].forEach(ms => setTimeout(() => {
+                  if (!document.hidden && !_isDemoMode) pollFirebase();
+                }, ms));
                 return true;
               }
               if (ack.ok === false) {
@@ -5080,9 +5130,15 @@ body.mode-phone-frame #phone {
           await new Promise(r => setTimeout(r, 1000));
         }
 
-        showToast(cmd, 'Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie', 'warn');
+        showToast(cmd, 'Brak ACK — odczytuję status; nie zastosowano zmiany lokalnej', 'warn');
         addLog('ACK_WARN', 'Wysłano do RTDB, ale sterownik nie potwierdził polecenia', 'warn');
-        setTimeout(pollFirebase, 1500);
+        if (isSimulation) {
+          [350, 1000, 1800].forEach(ms => setTimeout(() => {
+            if (!document.hidden && !_isDemoMode) pollFirebase();
+          }, ms));
+        } else {
+          setTimeout(pollFirebase, 1500);
+        }
         return false;
       } catch (err) {
         showToast(cmd, 'Błąd wysyłki: ' + (err.message || err), 'err');
@@ -5138,7 +5194,7 @@ body.mode-phone-frame #phone {
         if (!Number.isInteger(minuty) || minuty < 1 || minuty > 180) {
           return 'czas symulacji musi wynosić 1–180 min';
         }
-        S.sym[pole] = { wartosc: wartosc, min: minuty, expiresAt: Date.now() + minuty * 60_000 };
+        S.sym[pole] = { wartosc: wartosc, min: minuty, expiresAt: Date.now() + minuty * 60_000, source: 'demo' };
         S[SYM_POLA[pole]] = wartosc;
         renderDashboard();
         refreshSheet();
@@ -5181,6 +5237,7 @@ body.mode-phone-frame #phone {
     const now = Date.now();
     Object.keys(S.sym).forEach(p => {
       const entry = S.sym[p];
+      if (entry.source === 'controller') return;
       if (!Number.isFinite(entry.expiresAt)) {
         entry.expiresAt = now + Math.max(1, Number(entry.min) || 1) * 60_000;
       }
@@ -5359,10 +5416,13 @@ body.mode-phone-frame #phone {
     const wrap = h('div', 'sym-unit');
 
     const f = v => krok >= 1 ? String(Math.round(v)) : fmt1(v);
+    const simBounds = SYM_BOUNDS[pole] || [min, max];
+    const simMin = simBounds[0], simMax = simBounds[1];
     const currentVal = val(pole, key);
-    const initialVal = Number.isFinite(currentVal) ? currentVal : (min + max) / 2;
+    const initialVal = Number.isFinite(currentVal) ? currentVal : (simMin + simMax) / 2;
     const initialValFormatted = f(initialVal);
-    const initialTime = (S.sym[pole] ? S.sym[pole].min : 60);
+    const reportedMinutes = Number(S.sym[pole]?.min);
+    const initialTime = Number.isFinite(reportedMinutes) ? Math.max(5, Math.min(180, reportedMinutes)) : 60;
 
     wrap.innerHTML = `
       <div class="ust-sekcja"><b>Symulacja — ${etykieta}</b><i></i></div>
@@ -5370,11 +5430,12 @@ body.mode-phone-frame #phone {
         <button class="seg-btn" id="sym-${pole}-toggle">Symulacja</button>
       </div>
       <div id="sym-${pole}-panel" class="sym-panel" style="display:none; margin-top:10px">
+        <div class="row-desc sym-warning" style="margin-bottom:8px"></div>
         <div class="row-desc" style="display:flex; justify-content:space-between; margin-bottom:4px">
           <span>Wartość</span>
           <b id="sym-${pole}-wartoscVal" style="color:#fff; font-family:var(--mono);">${initialValFormatted} ${jednostka}</b>
         </div>
-        <input type="range" min="${min}" max="${max}" step="${krok}" value="${initialVal}" id="sym-${pole}-wartosc" style="width:100%; accent-color:var(--cyan); height:22px;">
+        <input type="range" min="${simMin}" max="${simMax}" step="${krok}" value="${initialVal}" id="sym-${pole}-wartosc" style="width:100%; accent-color:var(--cyan); height:22px;">
         
         <div class="row-desc" style="display:flex; justify-content:space-between; margin-top:10px; margin-bottom:4px">
           <span>Czas trwania</span>
@@ -5399,6 +5460,22 @@ body.mode-phone-frame #phone {
     const btnApply = $('#sym-' + pole + '-btn-apply', wrap);
     const btnStop = $('#sym-' + pole + '-btn-stop', wrap);
     const info = $('#sym-' + pole + '-info', wrap);
+    const warning = $('.sym-warning', wrap);
+    live$(warning, el => {
+      if (_isDemoMode) {
+        el.textContent = 'TRYB DEMO — symulacja lokalna tej strony; nie wysyła do sterownika.';
+        el.style.color = 'var(--warn)';
+      } else if (!_isFirebaseConnected) {
+        el.textContent = 'Brak aktywnej sesji Firebase — Zastosuj nie wyśle testu. Połącz z centralą i sprawdź status LIVE.';
+        el.style.color = 'var(--warn)';
+      } else if (pole === 'dym') {
+        el.textContent = '⚠ TEST NA ŻYWYM STEROWNIKU: symulowany dym może uruchomić prawdziwe alarmy lub wyjścia. Zabezpiecz instalację; po teście sprawdź alarmy i aktuatory bezpośrednio.';
+        el.style.color = 'var(--err)';
+      } else {
+        el.textContent = 'Polecenie zostanie wysłane do sterownika. Wpływ zależy od wersji i konfiguracji firmware; symulowane wartości mogą oddziaływać na rzeczywiste wyjścia.';
+        el.style.color = 'var(--warn)';
+      }
+    });
 
     inpVal.oninput = () => {
       txtVal.textContent = f(+inpVal.value) + ' ' + jednostka;
@@ -5410,6 +5487,8 @@ body.mode-phone-frame #phone {
     function symPokaz(wlaczone) {
       panel.style.display = wlaczone ? 'block' : 'none';
       toggle.classList.toggle('on', wlaczone);
+      if (wlaczone) symPanelOpen.add(pole);
+      else symPanelOpen.delete(pole);
     }
 
     toggle.onclick = () => {
@@ -5417,37 +5496,47 @@ body.mode-phone-frame #phone {
       symPokaz(!isCurrentlyOpen);
     };
 
-    btnApply.onclick = () => {
+    btnApply.onclick = async () => {
       const v = f(+inpVal.value);
       const m = parseInt(inpTime.value) || 60;
-      const result = applyCommand('symuluj ' + pole + ' ' + v + ' ' + m);
-      if (result !== true) {
-        showToast('SYMULACJA', String(result || 'Nie udało się uruchomić'), 'err');
-        return;
+      const confirmed = await sendCommand('symuluj ' + pole + ' ' + v + ' ' + m);
+      if (confirmed) {
+        symPokaz(true);
+        info.textContent = symAktywna(pole)
+          ? 'Potwierdzona przez sterownik — jeszcze ok. ' + S.sym[pole].min + ' min'
+          : 'ACK sterownika odebrany; oczekiwanie na status symulacji.';
+      } else if (_isDemoMode && symAktywna(pole)) {
+        symPokaz(true);
+        info.textContent = 'Aktywna wyłącznie w DEMO — ' + S.sym[pole].min + ' min; nie wysłano do sterownika';
       }
-      addLog('SIM', `Lokalna symulacja czujnika ${etykieta}: ${v} ${jednostka} przez ${m} min`, 'warn');
-      showToast('SYMULACJA', 'Wartość lokalna — nie jest telemetrią sterownika', 'warn');
-      symPokaz(true);
-      info.textContent = 'Aktywna lokalnie — ' + m + ' min; wyłączona z historii i wykresów';
       renderDashboard();
       refreshSheet();
     };
 
-    btnStop.onclick = () => {
-      const result = applyCommand('symuluj_stop ' + pole);
-      if (result !== true) showToast('SYMULACJA', String(result || 'Nie udało się wyłączyć'), 'err');
-      else addLog('SIM', `Wyłączono lokalną symulację czujnika ${etykieta}`, 'warn');
-      symPokaz(false);
-      info.textContent = '';
+    btnStop.onclick = async () => {
+      const confirmed = await sendCommand('symuluj_stop ' + pole);
+      if (confirmed) {
+        const stillActive = symAktywna(pole);
+        symPokaz(true);
+        info.textContent = stillActive
+          ? 'Sterownik potwierdził polecenie; oczekiwanie na wyłączenie symulacji.'
+          : 'Brak aktywnej symulacji zgłoszonej przez sterownik';
+      } else if (_isDemoMode && !symAktywna(pole)) {
+        symPokaz(true);
+        info.textContent = 'Brak aktywnej symulacji DEMO';
+      }
       renderDashboard();
       refreshSheet();
     };
 
     // Snapshot stanu symulacji (wzorzec symZaladujStan w ESP)
     const aktywna = symAktywna(pole);
-    symPokaz(aktywna);
+    symPokaz(aktywna || symPanelOpen.has(pole));
     if (aktywna) {
-      info.textContent = 'Aktywna — jeszcze ok. ' + S.sym[pole].min + ' min';
+      info.textContent = _isDemoMode ? 'Aktywna wyłącznie w DEMO — ' + S.sym[pole].min + ' min' :
+        _isFirebaseConnected && S.online && Date.now() - _lastFirebaseFetch < 20000
+          ? 'Aktywna na sterowniku — jeszcze ok. ' + S.sym[pole].min + ' min'
+          : 'Ostatnio zgłoszona symulacja — status sterownika nieaktualny';
     } else {
       info.textContent = '';
     }
@@ -5455,9 +5544,32 @@ body.mode-phone-frame #phone {
     live$(info, el => {
       const isSim = symAktywna(pole);
       if (isSim) {
-        el.textContent = 'Aktywna — jeszcze ok. ' + S.sym[pole].min + ' min';
-      } else if (panel.style.display === 'none') {
-        el.textContent = '';
+        el.textContent = _isDemoMode ? 'Aktywna wyłącznie w DEMO — ' + S.sym[pole].min + ' min' :
+          _isFirebaseConnected && S.online && Date.now() - _lastFirebaseFetch < 20000
+            ? 'Aktywna na sterowniku — jeszcze ok. ' + S.sym[pole].min + ' min'
+            : 'Ostatnio zgłoszona symulacja — status sterownika nieaktualny';
+      } else {
+        const alarmStillActive = pole === 'dym' && hasData('dym_alarm') && S.dym_alarm;
+        el.textContent = panel.style.display === 'none' ? '' :
+          _isDemoMode ? 'Brak aktywnej symulacji DEMO' :
+            alarmStillActive ? 'Symulacja wyłączona; alarm sterownika nadal aktywny — sprawdź kotłownię' :
+              'Brak aktywnej symulacji zgłoszonej przez sterownik';
+      }
+    });
+
+    live$(wrap, () => {
+      // Gdy sterownik (albo jawne DEMO) zgłasza aktywną symulację, pokaż jej
+      // aktualne parametry. Nie nadpisuj wartości, którą operator właśnie edytuje.
+      if (!symAktywna(pole)) return;
+      const current = val(pole, key);
+      if (Number.isFinite(current) && document.activeElement !== inpVal) {
+        inpVal.value = Math.max(simMin, Math.min(simMax, current));
+        txtVal.textContent = f(+inpVal.value) + ' ' + jednostka;
+      }
+      const remaining = Number(S.sym[pole]?.min);
+      if (Number.isFinite(remaining) && document.activeElement !== inpTime) {
+        inpTime.value = Math.max(5, Math.min(180, remaining));
+        txtTime.textContent = inpTime.value + ' min';
       }
     });
 
@@ -5479,8 +5591,9 @@ body.mode-phone-frame #phone {
   ];
 
   function sensorReadStatus(sen) {
-    if (symAktywna(sen.id)) return 'SYMULACJA LOKALNA';
     if (_isDemoMode) return 'SYMULACJA DEMO';
+    if (symAktywna(sen.id)) return _isFirebaseConnected && S.online && Date.now() - _lastFirebaseFetch < 20000
+      ? 'SYMULACJA STEROWNIKA' : 'SYMULACJA — DANE NIEAKTUALNE';
     const value = val(sen.id, sen.key);
     if (!receivedFields.has(sen.key) || !Number.isFinite(value)) return 'BRAK DANYCH';
     if (!_isFirebaseConnected || Date.now() - _lastFirebaseFetch >= 20000) return 'NIEAKTUALNE';
@@ -5562,7 +5675,7 @@ body.mode-phone-frame #phone {
         const isSim = symAktywna('dym');
         const initialValue = (isSim ? '~' : '') + (Number.isFinite(initialReading) ? String(Math.round(initialReading)) : '—');
         const smokeAlarmKnown = hasData('dym_alarm');
-        const smokeStatus = isSim ? 'SYMULACJA LOKALNA' : !smokeAlarmKnown ? 'STAN ALARMU — BRAK DANYCH' : S.dym_alarm ? 'ALARM' : 'BRAK ALARMU';
+        const smokeStatus = smokeAlarmKnown && S.dym_alarm ? (isSim ? 'ALARM · SYMULACJA' : 'ALARM') : isSim ? sensorReadStatus(sen) : !smokeAlarmKnown ? 'STAN ALARMU — BRAK DANYCH' : 'BRAK ALARMU';
         const smokeReadStatus = sensorReadStatus(sen);
         diagCard.innerHTML = `
           <div class="sensor-full-header">
@@ -5575,7 +5688,7 @@ body.mode-phone-frame #phone {
             </div>
             <div class="sf-r">
               <div class="sf-val" id="sf-val-dym">${initialValue} <small>ADC</small></div>
-              <div class="status-pill ${isSim ? 'sim' : smokeAlarmKnown && S.dym_alarm ? 'err' : ''}" id="sf-pill-dym">${smokeStatus}</div>
+              <div class="status-pill ${smokeAlarmKnown && S.dym_alarm ? 'err' : isSim ? 'sim' : ''}" id="sf-pill-dym">${smokeStatus}</div>
             </div>
           </div>
           <div class="row-desc">Odczyt: <b id="sf-readstatus-dym">${smokeReadStatus}</b></div>
@@ -5584,14 +5697,14 @@ body.mode-phone-frame #phone {
           const curV = val('dym', 'dym');
           const simOn = symAktywna('dym');
           const alarmKnown = hasData('dym_alarm');
-          const status = simOn ? 'SYMULACJA LOKALNA' : !alarmKnown ? 'STAN ALARMU — BRAK DANYCH' : S.dym_alarm ? 'ALARM' : 'BRAK ALARMU';
+          const status = alarmKnown && S.dym_alarm ? (simOn ? 'ALARM · SYMULACJA' : 'ALARM') : simOn ? sensorReadStatus(sen) : !alarmKnown ? 'STAN ALARMU — BRAK DANYCH' : 'BRAK ALARMU';
           const readStatus = sensorReadStatus(sen);
           const valEl = $('#sf-val-dym', el);
           const pillEl = $('#sf-pill-dym', el);
           const readEl = $('#sf-readstatus-dym', el);
           if (valEl) valEl.innerHTML = (simOn ? '~' : '') + (Number.isFinite(curV) ? String(Math.round(curV)) : '—') + ' <small>ADC</small>';
           if (pillEl) {
-            pillEl.className = 'status-pill ' + (simOn ? 'sim' : alarmKnown && S.dym_alarm ? 'err' : '');
+            pillEl.className = 'status-pill ' + (alarmKnown && S.dym_alarm ? 'err' : simOn ? 'sim' : '');
             pillEl.textContent = status;
           }
           if (readEl) readEl.textContent = readStatus;
@@ -5621,7 +5734,7 @@ body.mode-phone-frame #phone {
       summaryBox.innerHTML = `
         <div class="lbl">STAN ODCZYTÓW CZUJNIKÓW</div>
         <div class="val">${_isDemoMode ? 'SYMULACJA DEMO' : receivedCount + ' / ' + ALL_SENSORS.length + ' odebranych'}</div>
-        <div class="sub">${_isDemoMode ? 'Dane testowe — nie są telemetrią sterownika.' : simulatedCount ? simulatedCount + ' lokalnych symulacji; wyłączone z historii i wykresów.' : 'Brakujące lub nieprawidłowe pola nie są zastępowane wartościami przykładowymi.'}</div>
+        <div class="sub">${_isDemoMode ? 'Dane testowe — nie są telemetrią sterownika.' : simulatedCount ? simulatedCount + ' symulacji zgłoszonych przez sterownik; oznaczone na wykresie.' : 'Brakujące lub nieprawidłowe pola nie są zastępowane wartościami przykładowymi.'}</div>
       `;
       b.appendChild(summaryBox);
       b.appendChild(note('Wykaz wszystkich czujników pomiarowych instalacji C.O. Kliknij przycisk „Symulacja” przy wybranym czujniku, aby rozwinąć suwaki wymuszenia wartości:'));
@@ -6249,7 +6362,7 @@ body.mode-phone-frame #phone {
     const alarmState = hasData('dym_alarm') && S.dym_alarm ? '🚨 ALARM DYMU' :
       hasData('alarm_ogrzewanie') && S.alarm_ogrzewanie ? '🚨 ALARM PRZEGRZANIA' :
       hasData('alarm_panel') && S.alarm_panel ? '🚨 ALARM PANELU' : alarmKnown ? 'BRAK (stan odczytany)' : 'BRAK DANYCH';
-    const sourceLabel = _isDemoMode ? 'SYMULACJA — nie jest telemetrią' : Object.keys(S.sym).length ? 'symulacja lokalna — nie jest telemetrią' : 'stan sterownika';
+    const sourceLabel = _isDemoMode ? 'SYMULACJA — nie jest telemetrią' : Object.keys(S.sym).length ? 'symulacja sterownika — wartości są używane przez jego logikę' : 'stan sterownika';
 
     return `🔥 *Sterownik C.O.* — Raport stanu
 • *Źródło:* ${sourceLabel}
@@ -7269,6 +7382,22 @@ body.mode-phone-frame #phone {
     });
   }
 
+  const TELEMETRY_SIM_CHANNELS = {
+    t_zewn: 0, t_bojler: 1, t_ogrz: 2, t_ogrz_sr: 3, t_powrot: 4, t_panel: 5,
+    t_pokoj: 6, t_trociny: 7, wilgotnosc: 8, cisnienie: 9, dym: 10, klapa: 11, syberka: 12
+  };
+  // Client-side sanity bounds for values explicitly marked as simulated.
+  const TELEMETRY_SIM_BOUNDS = {
+    t_zewn: [-30, 50], t_bojler: [0, 160], t_ogrz: [0, 160], t_ogrz_sr: [0, 160],
+    t_powrot: [-30, 120], t_panel: [-30, 160], t_pokoj: [-50, 50], t_trociny: [-30, 120],
+    wilgotnosc: [0, 100], cisnienie: [970, 1040], dym: [0, 4095]
+  };
+  function telemetryChannelSimulated(row, key) {
+    const channel = TELEMETRY_SIM_CHANNELS[key];
+    return !!row && (row.is_sim === true || (channel !== undefined &&
+      Number.isSafeInteger(row.sim) && (row.sim & (1 << channel)) !== 0));
+  }
+
   async function historyFetchShard(day, startTs, endTs) {
     const base = historyShardPath(day);
     if (_historyIndexFallback) {
@@ -7335,20 +7464,23 @@ body.mode-phone-frame #phone {
     if (!sorted.length) return null;
 
     const parsedRows = sorted.map(r => {
-      const getVal = (idx, ch, scale, minBound, maxBound) => {
-        if (r.simulated || (r.sim & (1 << ch)) !== 0 || !Array.isArray(r.a) || idx >= r.a.length) return null;
+      const getVal = (idx, ch, scale, minBound, maxBound, key) => {
+        if (r.simulated || !Array.isArray(r.a) || idx >= r.a.length) return null;
         const qVal = (r.q >>> (ch * 2)) & 3;
         const raw = Number(r.a[idx]);
         if (!Number.isFinite(raw) || qVal >= 2) return null;
         if (raw <= -1200 || raw >= 15000) return null; // -1270 is disconnected DS18B20
         const val = raw * scale;
-        if (minBound != null && val < minBound) return null;
-        if (maxBound != null && val > maxBound) return null;
+        const simBounds = telemetryChannelSimulated(r, key) ? TELEMETRY_SIM_BOUNDS[key] : null;
+        const lo = simBounds ? simBounds[0] : minBound;
+        const hi = simBounds ? simBounds[1] : maxBound;
+        if (lo != null && val < lo) return null;
+        if (hi != null && val > hi) return null;
         return Math.round(val * 10) / 10;
       };
 
       const getServoVal = (degVal, maxDeg, channel) => {
-        if (r.simulated || (r.sim & (1 << channel)) !== 0) return null;
+        if (r.simulated) return null;
         const v = Number(degVal);
         if (!Number.isFinite(v) || v < 0 || v > maxDeg) return null;
         return Math.round((v / maxDeg) * 100);
@@ -7359,17 +7491,17 @@ body.mode-phone-frame #phone {
       return {
         ts: r.ts * 1000,
         seq: r.seq,
-        t_zewn: getVal(0, 0, 0.1, -25, 45),
-        t_bojler: getVal(1, 1, 0.1, 10, 95),
-        t_ogrz: getVal(2, 2, 0.1, 10, 100),
-        t_ogrz_sr: getVal(3, 3, 0.1, 10, 100),
-        t_powrot: getVal(4, 4, 0.1, 10, 95),
-        t_panel: getVal(5, 5, 0.1, 5, 140),
-        t_pokoj: getVal(6, 6, 0.1, 8, 45),
-        t_trociny: getVal(7, 7, 0.1, 5, 90),
-        wilgotnosc: getVal(8, 8, 0.1, 10, 100),
-        cisnienie: getVal(9, 9, 0.1, 900, 1100),
-        dym: !r.simulated && (r.sim & (1 << 10)) === 0 && r.a && Number.isFinite(r.a[10]) && r.a[10] >= 0 && r.a[10] <= 4095 && ((r.q >>> 20) & 3) < 2 ? Number(r.a[10]) : null,
+        t_zewn: getVal(0, 0, 0.1, -25, 45, 't_zewn'),
+        t_bojler: getVal(1, 1, 0.1, 10, 95, 't_bojler'),
+        t_ogrz: getVal(2, 2, 0.1, 10, 100, 't_ogrz'),
+        t_ogrz_sr: getVal(3, 3, 0.1, 10, 100, 't_ogrz_sr'),
+        t_powrot: getVal(4, 4, 0.1, 10, 95, 't_powrot'),
+        t_panel: getVal(5, 5, 0.1, 5, 140, 't_panel'),
+        t_pokoj: getVal(6, 6, 0.1, 8, 45, 't_pokoj'),
+        t_trociny: getVal(7, 7, 0.1, 5, 90, 't_trociny'),
+        wilgotnosc: getVal(8, 8, 0.1, 10, 100, 'wilgotnosc'),
+        cisnienie: getVal(9, 9, 0.1, 900, 1100, 'cisnienie'),
+        dym: getVal(10, 10, 1.0, 0, 4095, 'dym'),
         klapa: getServoVal(r.k, 180, 11),
         syberka: getServoVal(r.s, 90, 12),
         pompa: !!(r.state & 1),
@@ -7383,7 +7515,9 @@ body.mode-phone-frame #phone {
       'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka'
     ].some(key => typeof r[key] === 'number' && Number.isFinite(r[key])));
     if (!realRows.length) return null;
-    const validOgrz = realRows.filter(r => r.t_ogrz !== null && r.t_bojler !== null && r.t_zewn !== null);
+    const trendRealMask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+    const validOgrz = realRows.filter(r => r.t_ogrz !== null && r.t_bojler !== null && r.t_zewn !== null &&
+      r.is_sim !== true && (r.sim & trendRealMask) === 0);
     if (validOgrz.length >= 10) {
       hist.length = 0;
       const step = Math.max(1, Math.floor(validOgrz.length / 60));
@@ -7433,15 +7567,19 @@ body.mode-phone-frame #phone {
       klapa: [0, 100], syberka: [0, 100]
     };
     const b = BOUNDS[channelKey] || null;
+    const simBounds = TELEMETRY_SIM_BOUNDS[channelKey] || null;
     const jump = group === 'temp' ? 12 : group === 'rh' ? 20 : group === 'pressure' ? 4 : group === 'position' ? 15 : 400;
     const n = rows.length;
     const raw = rows.map(r => r[channelKey]);
+    const simulated = rows.map(r => telemetryChannelSimulated(r, channelKey));
     const isNum = v => typeof v === 'number' && !isNaN(v) && isFinite(v);
 
-    // Krok 1: Granice fizyczne
-    const cleaned = raw.map(v => {
+    // Physical samples use sensor bounds; marked simulation samples use the
+    // app's simulation bounds and are kept separate from adjacent real samples.
+    const cleaned = raw.map((v, i) => {
       if (!isNum(v)) return null;
-      if (b && (v < b[0] || v > b[1])) return null;
+      const bounds = simulated[i] ? simBounds : b;
+      if (bounds && (v < bounds[0] || v > bounds[1])) return null;
       return v;
     });
 
@@ -7450,10 +7588,12 @@ body.mode-phone-frame #phone {
     for (let i = 0; i < n; i++) {
       const v = cleaned[i];
       if (v === null) continue;
+      if (simulated[i]) { out[i] = v; continue; }
 
       // Poprzednie probki (do 4 punktow wstecz)
       const past = [];
       for (let k = i - 1; k >= 0 && past.length < 4; k--) {
+        if (simulated[k]) break;
         if (cleaned[k] !== null) {
           if (rows[i].ts - rows[k].ts > 3600000) break;
           past.push(cleaned[k]);
@@ -7463,6 +7603,7 @@ body.mode-phone-frame #phone {
       // Nastepne probki (do 4 punktow w przod)
       const future = [];
       for (let k = i + 1; k < n && future.length < 4; k++) {
+        if (simulated[k]) break;
         if (cleaned[k] !== null) {
           if (rows[k].ts - rows[i].ts > 3600000) break;
           future.push(cleaned[k]);
@@ -7505,12 +7646,12 @@ body.mode-phone-frame #phone {
     let historyFailed = false;
 
     if (_isFirebaseConnected) {
-      $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase…`;
+      $('#chartStatusInfo').textContent = `Pobieranie telemetrii (${rangeName}) z Firebase…`;
       try {
         const fbData = await fetchTelemetryFromFirebase(rangeSec);
         if (fbData && fbData.length > 0) {
           chartDataset = fbData;
-          $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek z bazy Firebase (${rangeName}) · tylko rzeczywiste wartości`;
+          $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek RTDB (${rangeName}) · odcinki symulowane są kreskowane`;
           $('#chartPointsStat').textContent = String(chartDataset.length);
           $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
           $('#chartRealityPill').textContent = 'FIREBASE RTDB';
@@ -7543,13 +7684,13 @@ body.mode-phone-frame #phone {
       pill.style.color = 'var(--err)';
       pill.style.border = '1px solid rgba(255,77,109,.25)';
     } else if (historyFailed) {
-      $('#chartStatusInfo').textContent = `Nie udało się pobrać rzeczywistej historii (${rangeName}) — spróbuj ponownie`;
+      $('#chartStatusInfo').textContent = `Nie udało się pobrać historii (${rangeName}) — spróbuj ponownie`;
       pill.textContent = 'BŁĄD RTDB';
       pill.style.background = 'rgba(251,191,36,.15)';
       pill.style.color = 'var(--warn)';
       pill.style.border = '1px solid rgba(251,191,36,.25)';
     } else {
-      $('#chartStatusInfo').textContent = `Brak rzeczywistych próbek historii (${rangeName})`;
+      $('#chartStatusInfo').textContent = `Brak próbek historii (${rangeName})`;
       pill.textContent = 'BRAK DANYCH';
       pill.style.background = 'rgba(148,163,184,.15)';
       pill.style.color = 'var(--text-dim)';
@@ -7588,8 +7729,8 @@ body.mode-phone-frame #phone {
     const nowStat = $('#chartNowStat');
     if (nowStat) {
       if (chartFocus === 0) {
-        nowStat.textContent = symAktywna('ogrz') ? 'piec SYM — wyłączony z historii' :
-          hasData('t_ogrz') && Number.isFinite(S.t_ogrz) ? 'piec ' + fmt1(S.t_ogrz) + '°C' : 'piec —';
+        nowStat.textContent = hasData('t_ogrz') && Number.isFinite(S.t_ogrz)
+          ? 'piec ' + (symAktywna('ogrz') ? '~' : '') + fmt1(S.t_ogrz) + '°C' : 'piec —';
       } else {
         nowStat.textContent = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180 ?
           'klapa ' + Math.round(S.klapa / 1.8) + '%' : 'klapa —';
@@ -7598,8 +7739,8 @@ body.mode-phone-frame #phone {
 
     const pill = $('#chartPhasePill');
     if (pill) {
-      if (symAktywna('ogrz')) pill.textContent = '⚡ LOKALNA SYMULACJA PIECA — POZA WYKRESEM';
-      else if (!hasData('t_ogrz') || !Number.isFinite(S.t_ogrz)) pill.textContent = 'BRAK RZECZYWISTEGO ODCZYTU TEMPERATURY PIECA';
+      if (symAktywna('ogrz')) pill.textContent = 'ODCZYT SYMULOWANY — ODCINEK WYKRESU KRESKOWANY';
+      else if (!hasData('t_ogrz') || !Number.isFinite(S.t_ogrz)) pill.textContent = 'BRAK ODCZYTU TEMPERATURY PIECA';
       else if (S.t_ogrz > 65) pill.textContent = `🔥 FAZA GRZANIA: INTENSYWNA (${fmt1(S.t_ogrz)}°C)`;
       else if (S.t_ogrz > 45) pill.textContent = `🔥 FAZA GRZANIA: STABILNA (${fmt1(S.t_ogrz)}°C)`;
       else pill.textContent = `⏸ FAZA POSTOJU / WYGASZANIE (${fmt1(S.t_ogrz)}°C)`;
@@ -7631,8 +7772,8 @@ body.mode-phone-frame #phone {
       g.font = '600 12px Roboto,sans-serif';
       g.textAlign = 'center';
       g.fillText(chartDataset && chartDataset.length === 1
-        ? 'Za mało rzeczywistych próbek do narysowania linii'
-        : 'Brak rzeczywistych próbek dla wykresu', w / 2, h / 2);
+        ? 'Za mało próbek do narysowania linii'
+        : 'Brak próbek telemetrii dla wykresu', w / 2, h / 2);
       return;
     }
 
@@ -7915,7 +8056,7 @@ body.mode-phone-frame #phone {
             if (curSeg.length) segments.push(curSeg);
             curSeg = [];
           }
-          curSeg.push({ x, y, v, ts: r.ts, idx });
+          curSeg.push({ x, y, v, ts: r.ts, idx, simulated: telemetryChannelSimulated(r, s.ch) });
           lastTs = r.ts;
         } else {
           if (curSeg.length) segments.push(curSeg);
@@ -7941,44 +8082,68 @@ body.mode-phone-frame #phone {
           g.fill();
         }
 
-        g.beginPath();
-        g.setLineDash([]);
-
-        if (chartLineStyle === 'STEPPED' || pts.length < 3) {
-          pts.forEach((p, i) => {
-            if (i === 0) g.moveTo(p.x, p.y);
-            else if (chartLineStyle === 'STEPPED') {
-              g.lineTo(p.x, pts[i - 1].y);
-              g.lineTo(p.x, p.y);
-            } else {
-              g.lineTo(p.x, p.y);
+        const drawStrokeRun = (run, isSimulated) => {
+          if (!run.length) return;
+          g.beginPath();
+          g.setLineDash(isSimulated ? [6, 4] : []);
+          if (chartLineStyle === 'STEPPED' || run.length < 3) {
+            run.forEach((p, i) => {
+              if (i === 0) g.moveTo(p.x, p.y);
+              else if (chartLineStyle === 'STEPPED') {
+                g.lineTo(p.x, run[i - 1].y);
+                g.lineTo(p.x, p.y);
+              } else {
+                g.lineTo(p.x, p.y);
+              }
+            });
+          } else {
+            g.moveTo(run[0].x, run[0].y);
+            for (let i = 0; i < run.length - 1; i++) {
+              const p0 = run[i === 0 ? i : i - 1];
+              const p1 = run[i];
+              const p2 = run[i + 1];
+              const p3 = run[i + 2 < run.length ? i + 2 : i + 1];
+              const cp1x = p1.x + (p2.x - p0.x) / 6;
+              const cp1y = p1.y + (p2.y - p0.y) / 6;
+              const cp2x = p2.x - (p3.x - p1.x) / 6;
+              const cp2y = p2.y - (p3.y - p1.y) / 6;
+              g.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
             }
-          });
-        } else {
-          g.moveTo(pts[0].x, pts[0].y);
-          for (let i = 0; i < pts.length - 1; i++) {
-            const p0 = pts[i === 0 ? i : i - 1];
-            const p1 = pts[i];
-            const p2 = pts[i + 1];
-            const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
-            const cp1x = p1.x + (p2.x - p0.x) / 6;
-            const cp1y = p1.y + (p2.y - p0.y) / 6;
-            const cp2x = p2.x - (p3.x - p1.x) / 6;
-            const cp2y = p2.y - (p3.y - p1.y) / 6;
-            g.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
           }
+          g.strokeStyle = s.accent;
+          g.lineWidth = 2.0;
+          g.lineJoin = 'round';
+          g.stroke();
+          g.setLineDash([]);
+        };
+
+        if (pts.length > 1 && pts.some(p => p.simulated)) {
+          let firstEdge = 0;
+          while (firstEdge < pts.length - 1) {
+            const isSimulated = pts[firstEdge].simulated || pts[firstEdge + 1].simulated;
+            let lastEdge = firstEdge;
+            while (lastEdge + 1 < pts.length - 1 &&
+              (pts[lastEdge + 1].simulated || pts[lastEdge + 2].simulated) === isSimulated) lastEdge++;
+            drawStrokeRun(pts.slice(firstEdge, lastEdge + 2), isSimulated);
+            firstEdge = lastEdge + 1;
+          }
+        } else {
+          drawStrokeRun(pts, false);
         }
-        g.strokeStyle = s.accent;
-        g.lineWidth = 2.0;
-        g.lineJoin = 'round';
-        g.stroke();
-        g.setLineDash([]); // Reset stylu linii po narysowaniu krzywej
 
         if (pts.length === 1) {
           g.beginPath();
           g.arc(pts[0].x, pts[0].y, 3, 0, Math.PI * 2);
-          g.fillStyle = s.accent;
-          g.fill();
+          if (pts[0].simulated) {
+            g.setLineDash([2, 2]);
+            g.strokeStyle = s.accent;
+            g.lineWidth = 1.6;
+            g.stroke();
+            g.setLineDash([]);
+          } else {
+            g.fillStyle = s.accent;
+            g.fill();
+          }
         }
       });
     });
@@ -8020,15 +8185,21 @@ body.mode-phone-frame #phone {
             y = padTop + plotH * (1 - (v - minVal) / (maxVal - minVal));
           }
           g.beginPath(); g.arc(xCross, y, 4, 0, Math.PI * 2);
-          g.fillStyle = s.accent; g.fill();
-          g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke();
+          if (telemetryChannelSimulated(hoveredRow, s.ch)) {
+            g.setLineDash([2, 2]);
+            g.strokeStyle = s.accent; g.lineWidth = 1.6; g.stroke();
+            g.setLineDash([]);
+          } else {
+            g.fillStyle = s.accent; g.fill();
+            g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke();
+          }
         }
       });
 
       const readout = cat.map(s => {
         const seriesVals = cleanedValuesMap.get(s.id) || [];
         const val = seriesVals[chartCrosshairIdx];
-        const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val)) ? (fmt1(val) + ' ' + s.unit) : '<span style="opacity:0.4">—</span>';
+        const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val)) ? ((telemetryChannelSimulated(hoveredRow, s.ch) ? '~' : '') + fmt1(val) + ' ' + s.unit) : '<span style="opacity:0.4">—</span>';
         return `<span style="color:${s.accent}">● ${s.label}: <b>${valStr}</b></span>`;
       }).join('  ·  ');
       $('#chartInspectorVal').innerHTML = `<span style="color:var(--cyan);font-weight:700">${timeStr}</span>: ${readout}`;
@@ -8037,7 +8208,7 @@ body.mode-phone-frame #phone {
         const lines = cat.map(s => {
           const seriesVals = cleanedValuesMap.get(s.id) || [];
           const val = seriesVals[chartCrosshairIdx];
-          const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val)) ? (fmt1(val) + ' ' + s.unit) : '—';
+          const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val)) ? ((telemetryChannelSimulated(hoveredRow, s.ch) ? '~' : '') + fmt1(val) + ' ' + s.unit) : '—';
           return `<span style="color:${s.accent}">●</span> ${s.label}: <b>${valStr}</b>`;
         }).join('<br>');
         tooltip.innerHTML = `<b>${timeStr}</b><br>` + lines;

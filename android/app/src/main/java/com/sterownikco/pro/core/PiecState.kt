@@ -1,6 +1,5 @@
 package com.sterownikco.pro.core
 
-import android.os.SystemClock
 import androidx.compose.runtime.mutableIntStateOf
 import com.sterownikco.pro.BuildConfig
 import org.json.JSONObject
@@ -11,7 +10,7 @@ import kotlin.math.roundToInt
    do chwili odebrania poprawnego pola; nie są zastępowane próbkami przykładowymi.
    ══════════════════════════════════════════════════════════════════════════ */
 
-data class SymEntry(var wartosc: Double, var min: Int, val expiresAtNanos: Long)
+data class SymEntry(val min: Int)
 data class HistPoint(val o: Double, val b: Double, val z: Double)
 
 class PiecState {
@@ -87,10 +86,10 @@ class PiecState {
     var dymProgTemp = 0
     var dymTrybPracy = 0
 
-    /** Symulacje wyłącznie po ręcznym uruchomieniu przez operatora. */
+    /** Aktywne symulacje raportowane przez sterownik Firebase, nigdy lokalne stany optymistyczne. */
     val sym = HashMap<String, SymEntry>()
 
-    /** Pola potwierdzone rzeczywistym, poprawnym odczytem z ostatniej odpowiedzi. */
+    /** Pola obecne i poprawne w ostatniej odpowiedzi `/status` z Firebase. */
     private val receivedFields = mutableSetOf<String>()
     fun hasData(key: String): Boolean = key in receivedFields
     fun hasAllData(vararg keys: String): Boolean = keys.all(::hasData)
@@ -106,7 +105,7 @@ class PiecState {
 
     fun symAktywna(pole: String): Boolean = sym.containsKey(pole)
 
-    fun valOf(pole: String, key: String): Double = sym[pole]?.wartosc ?: if (!hasData(key)) Double.NaN else when (key) {
+    fun valOf(@Suppress("UNUSED_PARAMETER") pole: String, key: String): Double = if (!hasData(key)) Double.NaN else when (key) {
         "t_zewn" -> t_zewn
         "t_ogrz" -> t_ogrz
         "t_ogrz_sr" -> t_ogrz_sr
@@ -159,7 +158,7 @@ class PiecState {
             syberka = if (hasData("syberka") && syberka in 0..90) syberka.toFloat() else Float.NaN,
             mieszadlo = mieszadlo,
             mieszadloKnown = hasData("mieszadlo"),
-            dymKnown = hasData("dym") || symAktywna("dym"),
+            dymKnown = hasData("dym"),
             dymAlarm = dym_alarm,
             klapaAktywne = hasData("tryb_serwa") && tryb_serwa in 1..3 && tryb_serwa == 1,
             cisnienie = artValue(cisnienie),
@@ -172,6 +171,7 @@ class PiecState {
     /** Stosuje wyłącznie pola obecne, poprawne i mieszczące się w zakresach z odpowiedzi Firebase. */
     fun applyIncomingData(d: JSONObject) {
         receivedFields.clear()
+        sym.clear()
 
         // Każdy snapshot jest nowym obrazem statusu. Brak pola ma oznaczać
         // BRAK DANYCH, a nie zachowanie poprzedniego odczytu jako świeżego.
@@ -205,7 +205,10 @@ class PiecState {
         }
 
         fun sensor(key: String, min: Double, max: Double, assign: (Double) -> Unit) {
-            assign(readNumber(key, min, max) ?: Double.NaN)
+            val pole = if (key == "t_ogrz_sr") "ogrz"
+                else SYM_POLA.entries.firstOrNull { it.value == key }?.key
+            val range = if (pole != null && symAktywna(pole)) SYM_BOUNDS[pole] else null
+            assign(readNumber(key, range?.first ?: min, range?.second ?: max) ?: Double.NaN)
         }
 
         fun flag(key: String, assign: (Boolean) -> Unit) {
@@ -227,6 +230,16 @@ class PiecState {
 
         fun intField(key: String, min: Int, max: Int, assign: (Int) -> Unit) {
             assign(readNumber(key, min.toDouble(), max.toDouble(), integer = true)?.toInt() ?: 0)
+        }
+
+        // Flagi odczytujemy przed wartościami czujników, by zastosować
+        // osobne granice walidacji aplikacji dla kanałów oznaczonych jako symulowane.
+        SYM_POLA.keys.forEach { pole ->
+            var active = false
+            val flagKey = "symulacja_$pole"
+            flag(flagKey) { active = it }
+            val remaining = readNumber("${flagKey}_min", 0.0, 180.0, integer = true)?.toInt() ?: 0
+            if (active) sym[pole] = SymEntry(remaining)
         }
 
         sensor("t_ogrz", 10.0, 99.0) { t_ogrz = it }
@@ -330,66 +343,18 @@ class PiecState {
         while (hist.size > 60) hist.removeFirst()
     }
 
-    /** Polecenia symulacji są obsługiwane tylko po jawnej akcji operatora. */
-    fun applySimulationCommand(command: String, nowNanos: Long = SystemClock.elapsedRealtimeNanos()): Any {
-        val parts = command.trim().split(Regex("\\s+"))
-        return when (parts.firstOrNull()?.lowercase()) {
-            "symuluj" -> {
-                val pole = parts.getOrNull(1) ?: return "nie podano pola"
-                if (pole !in SYM_POLA) return "nieznane pole $pole"
-                val value = parts.getOrNull(2)?.toDoubleOrNull()?.takeIf { it.isFinite() }
-                    ?: return "podaj poprawną wartość"
-                val bounds = SYM_BOUNDS.getValue(pole)
-                if (value < bounds.first || value > bounds.second) {
-                    return "wartość poza zakresem ${bounds.first}–${bounds.second}"
-                }
-                val minutes = parts.getOrNull(3)?.toIntOrNull() ?: 60
-                if (minutes !in 1..180) return "czas symulacji musi wynosić 1–180 min"
-                sym[pole] = SymEntry(value, minutes, nowNanos + minutes * NANOS_PER_MINUTE)
-                true
-            }
-            "symuluj_stop" -> {
-                val pole = parts.getOrNull(1) ?: return "nie podano pola"
-                if (pole !in SYM_POLA) return "nieznane pole $pole"
-                sym.remove(pole)
-                true
-            }
-            else -> "nieznane polecenie symulacji"
-        }
-    }
-
-    /** Aktualizuje pozostały czas wyłącznie dla ręcznych symulacji; nie generuje pomiarów. */
-    fun liveTick(nowNanos: Long = SystemClock.elapsedRealtimeNanos()): Boolean {
-        if (sym.isEmpty()) return false
-        val expired = ArrayList<String>()
-        var changed = false
-        for ((pole, entry) in sym) {
-            val remainingNanos = entry.expiresAtNanos - nowNanos
-            val remainingMinutes = if (remainingNanos <= 0L) 0L
-                else (remainingNanos + NANOS_PER_MINUTE - 1L) / NANOS_PER_MINUTE
-            if (remainingMinutes <= 0L) {
-                expired.add(pole)
-            } else if (entry.min != remainingMinutes.toInt()) {
-                entry.min = remainingMinutes.toInt()
-                changed = true
-            }
-        }
-        expired.forEach(sym::remove)
-        return changed || expired.isNotEmpty()
-    }
-
     companion object {
-        private const val NANOS_PER_MINUTE = 60_000_000_000L
         val SYM_POLA = linkedMapOf(
             "zewn" to "t_zewn", "ogrz" to "t_ogrz", "bojler" to "t_bojler", "panel" to "t_panel",
             "pokoj" to "t_pokoj", "ogrz_powrot" to "t_powrot", "ogrz_trociny" to "t_trociny",
             "cisnienie" to "cisnienie", "wilgotnosc" to "wilgotnosc", "dym" to "dym"
         )
+        // Granice wejściowe używane przez kontrolki symulacji w aplikacji.
         val SYM_BOUNDS = mapOf(
-            "zewn" to (-25.0 to 45.0), "ogrz" to (10.0 to 99.0), "bojler" to (10.0 to 95.0),
-            "panel" to (0.0 to 140.0), "pokoj" to (8.0 to 45.0), "ogrz_powrot" to (10.0 to 95.0),
-            "ogrz_trociny" to (0.0 to 90.0), "cisnienie" to (900.0 to 1100.0),
-            "wilgotnosc" to (10.0 to 100.0), "dym" to (0.0 to 4095.0)
+            "zewn" to (-30.0 to 50.0), "ogrz" to (0.0 to 160.0), "bojler" to (0.0 to 160.0),
+            "panel" to (-30.0 to 160.0), "pokoj" to (-50.0 to 50.0), "ogrz_powrot" to (-30.0 to 120.0),
+            "ogrz_trociny" to (-30.0 to 120.0), "cisnienie" to (970.0 to 1040.0),
+            "wilgotnosc" to (0.0 to 100.0), "dym" to (0.0 to 4095.0)
         )
         private val ONLINE_FIELDS = setOf(
             "t_ogrz", "t_bojler", "t_zewn", "t_panel", "t_pokoj", "cisnienie", "wilgotnosc", "dym",

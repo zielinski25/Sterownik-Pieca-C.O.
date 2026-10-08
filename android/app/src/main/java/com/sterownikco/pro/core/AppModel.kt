@@ -24,15 +24,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
-import kotlin.math.roundToInt
 
 /* ══════════════════════════════════════════════════════════════════════════
    MODEL APLIKACJI — odpowiednik warstwy sterującej Piec.html:
-   `pollFirebase` + `sendCommand/ACK` + `liveTick` + `refreshWeatherTab` +
-   `loadTelemetryRange` + logi + toasty + timery (4 s / 45 s / 15 min / 2 s / 1 s).
+   `pollFirebase` + `sendCommand/ACK` + `refreshWeatherTab` +
+   `loadTelemetryRange` + logi + toasty + timery (4 s / 45 s / 15 min / 1 s).
    ══════════════════════════════════════════════════════════════════════════ */
-
-private const val SMOKE_ALARM_HYSTERESIS_ADC = 30
 
 val DLOG_CATEGORIES = listOf(
     "SYSTEM", "BOOT", "SENSOR", "WIFI", "FIREBASE", "TELEMETRY", "HISTORIA",
@@ -60,8 +57,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var authOpen by mutableStateOf(false)
     /** Okienko alarmu w aplikacji (gdy system nie odpali FSI na pierwszym planie). */
     var alarmPopup by mutableStateOf<AlarmInfo?>(null)
-    /** Krawędź lokalnego testu dymu; nie zmienia alarmowych flag sterownika ani prefs AlarmCenter. */
-    private var localSmokeAlarmLatched = false
     /** Jednorazowa prośba o zgodę na powiadomienia po zalogowaniu (Android 13+). */
     var askNotifPerm by mutableStateOf(false)
     /** Licznik odświeżeń arkusza Alarmy (stan uprawnień zmienia się w tle). */
@@ -179,15 +174,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             scope.launch { while (true) { delay(15L * 60_000); refreshWeather(true) } },
             scope.launch {
                 while (true) {
-                    delay(2000)
-                    if (S.liveTick()) {
-                        S.bump(); refreshSheet()
-                        try { syncLocalSmokeAlarmSimulation() } catch (e: Exception) { /* test lokalny nie może wywalić timera */ }
-                    }
-                }
-            },
-            scope.launch {
-                while (true) {
                     delay(1000)
                     if (sheet != null) sheetTick++
                     if (termOpened && termAutoOffAt > 0L && System.currentTimeMillis() >= termAutoOffAt) {
@@ -211,6 +197,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private fun recordSolar() {
         val w = weather?.current ?: return
         if (!S.hasAllData("t_panel", "t_bojler", "t_zewn")) return
+        // Dane symulowane służą logice sterownika, ale nie są próbkami fizycznymi.
+        if (S.symAktywna("panel") || S.symAktywna("bojler") || S.symAktywna("zewn")) return
         val panel = S.t_panel
         val boiler = S.t_bojler
         val outside = S.t_zewn
@@ -255,8 +243,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 }
             }
         } catch (e: Exception) { /* alarm nie może wywalić poll() */ }
-        // Jawna symulacja dymu testuje lokalny tor alarmu, ale nie zmienia flag sterownika.
-        try { syncLocalSmokeAlarmSimulation() } catch (e: Exception) { /* test lokalny nie może wywalić poll() */ }
         // Widget na pulpit (throttling w środku).
         try { PiecWidget.push(ctx, d) } catch (e: Exception) { /* ignore */ }
     }
@@ -322,8 +308,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         Rtdb.idToken = ""; Rtdb.refreshToken = ""
         try { AlarmMonitorService.stop(ctx) } catch (e: Exception) { /* ignore */ }
         try { PiecWidget.clear(ctx) } catch (e: Exception) { /* ignore */ }
-        try { AlarmNotify.cancelSimulation(ctx) } catch (e: Exception) { /* ignore */ }
-        localSmokeAlarmLatched = false
         alarmPopup = null
         connected = false
         termStateKnown = false
@@ -338,28 +322,19 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     /** Wysyła komendę bez lokalnej mutacji stanu i zwraca true wyłącznie po ACK. */
     private suspend fun sendAwait(cmd: String): Boolean {
-        val command = cmd.trim()
-        if (command.isEmpty()) return false
-        val verb = command.substringBefore(' ').lowercase()
+        val rawCommand = cmd.trim()
+        if (rawCommand.isEmpty()) return false
+        val commandParts = rawCommand.split(Regex("\\s+"), limit = 2)
+        val verb = commandParts.first().lowercase()
         val isSimulation = verb == "symuluj" || verb == "symuluj_stop"
-
+        val command = if (isSimulation) listOf(verb, commandParts.getOrNull(1)?.trim().orEmpty())
+            .filter { it.isNotEmpty() }.joinToString(" ") else rawCommand
         if (isSimulation) {
-            val result = S.applySimulationCommand(command)
-            if (result != true) {
-                showToast(command, result as? String ?: "Nieprawidłowe polecenie symulacji", "err")
+            val error = validateSimulationCommand(command)
+            if (error != null) {
+                showToast(command, error, "err")
                 return false
             }
-            S.bump(); refreshSheet()
-            val smokeStatus = try { syncLocalSmokeAlarmSimulation() } catch (e: Exception) { null }
-            addLog("SYM", if (verb == "symuluj") "Operator włączył lokalną symulację czujnika" else "Operator wyłączył lokalną symulację czujnika", "warn")
-            val simField = command.split(Regex("\\s+")).getOrNull(1)
-            val stage = when {
-                verb == "symuluj_stop" -> "Lokalna symulacja wyłączona"
-                verb == "symuluj" && simField == "dym" -> smokeStatus ?: "SYM aktywne lokalnie — nie wysłano do sterownika"
-                else -> "SYM aktywne lokalnie — nie wysłano do sterownika"
-            }
-            showToast(command, stage, "warn")
-            return true
         }
         if (!connected) {
             showToast(command, "Brak połączenia z Firebase — polecenia nie wysłano", "err")
@@ -376,16 +351,16 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             val latency = ((System.nanoTime() - t0) / 1_000_000).toInt()
             when {
                 ack == null -> {
-                    showToast(command, "Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie", "warn")
+                    showToast(command, "Brak ACK — odczytuję status sterownika; stan lokalny nie jest zmieniany", "warn")
                     addLog("ACK_WARN", "Brak potwierdzenia sterownika", "warn")
-                    poll()
+                    refreshStatusAfterCommand(isSimulation, ackTimedOut = true)
                     false
                 }
                 ack.ok -> {
                     showToast(command, "Potwierdzone przez sterownik (ACK, ${latency}ms)", "ok")
                     addLog("ACK", "ACK OK (${latency}ms): $command", "ack")
                     buzz()
-                    poll()
+                    refreshStatusAfterCommand(isSimulation)
                     true
                 }
                 else -> {
@@ -401,69 +376,47 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         }
     }
 
-    /**
-     * Lokalny test alarmu dla ręcznie symulowanego ADC dymu. Nie modyfikuje
-     * S.dym_alarm ani sygnatur AlarmCenter, więc nie udaje ACK/telemetrii ESP.
-     */
-    private fun syncLocalSmokeAlarmSimulation(): String? {
-        val candidate = S.sym["dym"]
-        val simulated = candidate?.takeUnless {
-            it.expiresAtNanos <= android.os.SystemClock.elapsedRealtimeNanos()
+    /** Walidacja składni i wartości wejściowych — nie zmienia stanu, który pochodzi z /status. */
+    private fun validateSimulationCommand(command: String): String? {
+        val parts = command.split(Regex("\\s+"))
+        return when (parts.firstOrNull()?.lowercase()) {
+            "symuluj" -> {
+                if (parts.size != 4) return "Użycie: symuluj <pole> <wartość> <minuty>"
+                val field = parts[1]
+                val bounds = PiecState.SYM_BOUNDS[field]
+                    ?: return "Nieznane pole symulacji: $field"
+                val value = parts[2].toDoubleOrNull()?.takeIf { it.isFinite() }
+                    ?: return "Podaj poprawną wartość"
+                if (value < bounds.first || value > bounds.second)
+                    return "Wartość poza zakresem ${bounds.first}–${bounds.second}"
+                val minutes = parts[3].toIntOrNull()
+                    ?: return "Czas symulacji musi być liczbą całkowitą"
+                if (minutes !in 1..180) return "Czas symulacji musi wynosić 1–180 min"
+                null
+            }
+            "symuluj_stop" -> {
+                if (parts.size != 2) return "Użycie: symuluj_stop <pole>"
+                if (parts[1] !in PiecState.SYM_POLA) "Nieznane pole symulacji: ${parts[1]}" else null
+            }
+            else -> null
         }
-        if (candidate != null && simulated == null) S.sym.remove("dym")
-        if (simulated == null) {
-            clearLocalSmokeAlarmSimulation()
-            return null
-        }
-
-        val threshold = if (S.hasData("progAlarmDym"))
-            S.progAlarmDym.takeIf { it > SMOKE_ALARM_HYSTERESIS_ADC } else null
-        if (threshold == null) {
-            return if (localSmokeAlarmLatched) "Lokalny test alarmu dymu pozostaje aktywny"
-            else "SYM lokalna — próg alarmu dymu nieodebrany lub nieprawidłowy; test pominięty"
-        }
-        // Firmware alarmuje przy ADC > próg i kasuje dopiero poniżej progu minus histereza 30 ADC.
-        val releaseThreshold = (threshold - SMOKE_ALARM_HYSTERESIS_ADC).toDouble()
-        if (localSmokeAlarmLatched && simulated.wartosc < releaseThreshold) {
-            clearLocalSmokeAlarmSimulation()
-            return "SYM lokalna — odczyt spadł poniżej progu zwolnienia alarmu"
-        }
-        val thresholdExceeded = simulated.wartosc > threshold.toDouble()
-        if (!localSmokeAlarmLatched && !thresholdExceeded) {
-            return "SYM lokalna — odczyt nie przekracza progu $threshold ADC"
-        }
-        val realAlarmActive = (S.hasData("dym_alarm") && S.dym_alarm) ||
-            (S.hasData("alarm_ogrzewanie") && S.alarm_ogrzewanie)
-        if (realAlarmActive) {
-            localSmokeAlarmLatched = true
-            if (alarmPopup?.simulated == true) alarmPopup = null
-            try { AlarmNotify.cancelSimulation(ctx) } catch (e: Exception) { /* ignore */ }
-            return "Próg przekroczony — alarm sterownika jest już aktywny"
-        }
-        if (localSmokeAlarmLatched) return "Lokalny test alarmu dymu aktywny"
-        if (!AlarmCenter.isMonitored(prefs)) return "Próg przekroczony — monitoring alarmów jest wyłączony"
-
-        localSmokeAlarmLatched = true
-        val value = simulated.wartosc.roundToInt()
-        val info = AlarmInfo(
-            kind = "dym",
-            title = "TEST ALARMU DYMU · SYMULACJA LOKALNA",
-            msg = "Symulowany odczyt: $value ADC (próg: $threshold ADC). Test lokalny — nie pochodzi ze sterownika.",
-            sig = "SYM-DYM",
-            simulated = true
-        )
-        alarmPopup = info
-        try { AlarmNotify.fire(ctx, info) } catch (e: Exception) { /* popup pozostaje widoczny */ }
-        addLog("ALARM", "Lokalny test alarmu dymu: $value ADC (próg $threshold ADC)", "warn")
-        return "Próg $threshold ADC przekroczony — uruchomiono lokalny test alarmu"
     }
 
-    private fun clearLocalSmokeAlarmSimulation() {
-        if (!localSmokeAlarmLatched) return
-        localSmokeAlarmLatched = false
-        if (alarmPopup?.simulated == true) alarmPopup = null
-        try { AlarmNotify.cancelSimulation(ctx) } catch (e: Exception) { /* ignore */ }
-        addLog("ALARM", "Zakończono lokalny test alarmu dymu", "info")
+    /** Odśwież status po komendzie — także ponownie, bo /status może dostać zmianę po ACK. */
+    private fun refreshStatusAfterCommand(isSimulation: Boolean, ackTimedOut: Boolean = false) {
+        poll()
+        val waits = when {
+            ackTimedOut && isSimulation -> listOf(350L, 1000L, 1800L)
+            ackTimedOut -> listOf(1500L)
+            isSimulation -> listOf(450L, 1200L)
+            else -> listOf(350L, 1000L)
+        }
+        waits.forEach { waitMs ->
+            scope.launch {
+                delay(waitMs)
+                poll()
+            }
+        }
     }
 
     // ── pogoda ──────────────────────────────────────────────────────────────
@@ -549,7 +502,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     chartLive = emptyList()
                     telemetry = fb
                     chartPoints = fb.size
-                    chartStatus = "Załadowano ${fb.size} próbek z bazy Firebase ($rangeName) · tylko rzeczywiste wartości"
+                    chartStatus = "Załadowano ${fb.size} próbek z RTDB · odcinki symulowane są kreskowane"
                     chartReality = "FIREBASE RTDB"
                     return@launch
                 }
@@ -557,34 +510,44 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         }
         telemetry = emptyList()
         chartPoints = 0
-        chartStatus = if (connected) "Brak rzeczywistych próbek dla wybranego zakresu" else "Zaloguj się do Firebase, aby pobrać historię telemetrii"
+        chartStatus = if (connected) "Brak próbek telemetrii dla wybranego zakresu" else "Zaloguj się do Firebase, aby pobrać historię telemetrii"
         chartReality = if (connected) "BRAK DANYCH" else "BRAK SESJI"
         chartLive = emptyList()
     }
 
-    /** Dokleja wyłącznie odczyt z właśnie zakończonego, udanego pollingu Firebase. */
+    /** Dokleja wartości z udanego pollingu; bitmapa oznacza tylko symulowane kanały. */
     fun appendLiveFeed() {
         if (page != 1 || !isFbFresh || !S.online || lastFetchTs <= 0L) return
         if (chartLive.lastOrNull()?.ts == lastFetchTs) return
-        fun value(key: String, simKey: String, v: Double) =
-            v.takeIf { S.hasData(key) && !S.symAktywna(simKey) && it.isFinite() }
-        val p = TelemPoint(
+        var simMask = 0L
+        fun value(key: String, simKey: String, channel: Int, v: Double): Double? {
+            val value = v.takeIf { S.hasData(key) && it.isFinite() } ?: return null
+            if (S.symAktywna(simKey)) simMask = simMask or (1L shl channel)
+            return value
+        }
+        fun servoValue(key: String, simKey: String, channel: Int, degrees: Int, maxDegrees: Int): Double? {
+            if (!S.hasData(key) || degrees !in 0..maxDegrees) return null
+            if (S.symAktywna(simKey)) simMask = simMask or (1L shl channel)
+            return degrees * 100.0 / maxDegrees
+        }
+        val point = TelemPoint(
             ts = lastFetchTs, seq = chartLive.size.toLong() + 1,
-            t_zewn = value("t_zewn", "zewn", S.t_zewn),
-            t_bojler = value("t_bojler", "bojler", S.t_bojler),
-            t_ogrz = value("t_ogrz", "ogrz", S.t_ogrz),
-            t_ogrz_sr = value("t_ogrz_sr", "ogrz", S.t_ogrz_sr),
-            t_powrot = value("t_powrot", "ogrz_powrot", S.t_powrot),
-            t_panel = value("t_panel", "panel", S.t_panel),
-            t_pokoj = value("t_pokoj", "pokoj", S.t_pokoj),
-            t_trociny = value("t_trociny", "ogrz_trociny", S.t_trociny),
-            wilgotnosc = value("wilgotnosc", "wilgotnosc", S.wilgotnosc),
-            cisnienie = value("cisnienie", "cisnienie", S.cisnienie),
-            dym = value("dym", "dym", S.dym),
-            klapa = S.klapa.takeIf { S.hasData("klapa") && it in 0..180 }?.let { it * 100.0 / 180.0 },
-            syberka = S.syberka.takeIf { S.hasData("syberka") && it in 0..90 }?.let { it * 100.0 / 90.0 }
+            t_zewn = value("t_zewn", "zewn", 0, S.t_zewn),
+            t_bojler = value("t_bojler", "bojler", 1, S.t_bojler),
+            t_ogrz = value("t_ogrz", "ogrz", 2, S.t_ogrz),
+            t_ogrz_sr = value("t_ogrz_sr", "ogrz", 3, S.t_ogrz_sr),
+            t_powrot = value("t_powrot", "ogrz_powrot", 4, S.t_powrot),
+            t_panel = value("t_panel", "panel", 5, S.t_panel),
+            t_pokoj = value("t_pokoj", "pokoj", 6, S.t_pokoj),
+            t_trociny = value("t_trociny", "ogrz_trociny", 7, S.t_trociny),
+            wilgotnosc = value("wilgotnosc", "wilgotnosc", 8, S.wilgotnosc),
+            cisnienie = value("cisnienie", "cisnienie", 9, S.cisnienie),
+            dym = value("dym", "dym", 10, S.dym),
+            klapa = servoValue("klapa", "klapa", 11, S.klapa, 180),
+            syberka = servoValue("syberka", "syberka", 12, S.syberka, 90),
+            sim = simMask
         )
-        if (p.hasRealValues()) chartLive = (chartLive + p).takeLast(240)
+        if (point.hasValues()) chartLive = (chartLive + point).takeLast(240)
     }
 
     fun rangeLabel(): String = if (rangeSec <= 24 * 3600) "${rangeSec / 3600} h" else "${rangeSec / 86400} dni"
@@ -733,13 +696,14 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     /** `updateChartsNowStat()` — plakietka bieżącej wartości + faza grzania. */
     fun chartNowStat(): String = if (chartFocus == 0) {
-        if (S.symAktywna("ogrz")) "SYM wyłączona z wykresów"
-        else if (S.hasData("t_ogrz")) "piec " + fmt1(S.t_ogrz) + "°C" else "piec —"
+        if (S.hasData("t_ogrz")) "piec " + (if (S.symAktywna("ogrz")) "~" else "") + fmt1(S.t_ogrz) + "°C"
+        else "piec —"
     } else {
         if (S.hasData("klapa")) "klapa " + Math.round(S.klapa / 1.8) + "%" else "klapa —"
     }
 
     fun chartPhase(): String {
+        if (S.symAktywna("ogrz")) return "Odczyt symulowany — odcinek wykresu jest kreskowany"
         if (!S.hasData("t_ogrz")) return "Brak rzeczywistego odczytu temperatury pieca"
         return when {
             S.t_ogrz > 65 -> "🔥 FAZA GRZANIA: INTENSYWNA (" + fmt1(S.t_ogrz) + "°C)"
@@ -1359,7 +1323,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             lastFetchTs > 0L -> "Ostatnie dane sterownika są nieaktualne"
             else -> "oczekiwanie na połączenie z Firebase"
         }
-        return if (S.sym.isNotEmpty()) "$source · symulacja lokalna" else source
+        return if (S.sym.isNotEmpty()) "$source · symulacja zgłoszona przez sterownik" else source
     }
 
     /** kafelki bez pozycji w `MENUS` nie otwierają arkusza (openMenu = () => {}). */

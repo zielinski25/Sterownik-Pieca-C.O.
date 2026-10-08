@@ -66,7 +66,7 @@ fun Dashboard(m: AppModel) {
     ) {
         SysStrip(
             sub = m.sysStripSub(),
-            state = if (!m.isFbFresh) "OFFLINE / NIEAKTUALNE" else if (!S.online) "BRAK TELEMETRII" else if (anyAl) "ALARM" else if (S.sym.isNotEmpty()) "SYMULACJA LOKALNA" else if (!to.isFinite()) "OCZEKIWANIE" else if (to > 45) "GRZANIE" else "CZUWANIE",
+            state = if (!m.isFbFresh) "OFFLINE / NIEAKTUALNE" else if (!S.online) "BRAK TELEMETRII" else if (anyAl) "ALARM" else if (S.sym.isNotEmpty()) "SYMULACJA STEROWNIKA" else if (!to.isFinite()) "OCZEKIWANIE" else if (to > 45) "GRZANIE" else "CZUWANIE",
             stateCls = if (!m.isFbFresh || !S.online || S.sym.isNotEmpty()) "warn" else if (anyAl) "err" else "live",
             onClick = { m.openSheet("sesja") }
         )
@@ -91,7 +91,11 @@ fun Dashboard(m: AppModel) {
         }
         Hero(m, art, alarm = S.hasData("alarm_ogrzewanie") && S.alarm_ogrzewanie,
             heroSub = when {
-                S.symAktywna("ogrz") -> "SYMULACJA LOKALNA · nie jest telemetrią sterownika"
+                S.symAktywna("ogrz") -> {
+                    if (m.isFbFresh && S.online)
+                        "Symulacja zgłoszona przez sterownik · wartość używana przez jego logikę"
+                    else "Ostatnio zgłoszona symulacja pieca · dane nieaktualne"
+                }
                 !S.hasData("t_ogrz") -> "oczekiwanie na rzeczywisty odczyt pieca C.O."
                 !m.isFbFresh -> "ostatni rzeczywisty odczyt pieca C.O. — dane nieaktualne"
                 else -> "temperatura pieca C.O. · " + (if (to > 70) "grzanie na maks." else "odczyt odebrany")

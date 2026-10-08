@@ -368,7 +368,7 @@ object Rtdb {
         }
         val sorted = uniqueSort(all)
         if (sorted.isEmpty()) return null
-        val realPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasRealValues() }.toList()
-        return realPoints.ifEmpty { null }
+        val chartPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
+        return chartPoints.ifEmpty { null }
     }
 }

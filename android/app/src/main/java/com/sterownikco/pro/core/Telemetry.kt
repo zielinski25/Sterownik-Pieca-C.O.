@@ -18,38 +18,63 @@ data class TelemRow(
     val simulated: Boolean = false
 )
 
-/** Rekord po mapowaniu kanałów. Pola bez rzeczywistych odczytów są null. */
+/** Rekord po mapowaniu kanałów; bitmapa zachowuje odczyty z aktywnych symulacji. */
 data class TelemPoint(
     val ts: Long, val seq: Long,
     val t_zewn: Double?, val t_bojler: Double?, val t_ogrz: Double?, val t_ogrz_sr: Double?,
     val t_powrot: Double?, val t_panel: Double?, val t_pokoj: Double?, val t_trociny: Double?,
     val wilgotnosc: Double?, val cisnienie: Double?, val dym: Double?,
-    val klapa: Double?, val syberka: Double?
+    val klapa: Double?, val syberka: Double?,
+    /** Bit i oznacza, że kanał i tej próbki pochodził z symulacji sterownika. */
+    val sim: Long = 0L,
+    /** Jawny znacznik całego rekordu — takie rekordy demonstracyjne nadal pomijamy. */
+    val simulated: Boolean = false
 ) {
-    fun hasRealValues(): Boolean = listOf(
+    fun hasValues(): Boolean = listOf(
         t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot, t_panel, t_pokoj, t_trociny,
         wilgotnosc, cisnienie, dym, klapa, syberka
     ).any { it != null && it.isFinite() }
+
+    fun isSimulated(key: String): Boolean {
+        if (simulated) return true
+        val channel = SIM_CHANNELS[key] ?: return false
+        return channel in 0..62 && (sim and (1L shl channel)) != 0L
+    }
 }
 
+private val SIM_CHANNELS = mapOf(
+    "t_zewn" to 0, "t_bojler" to 1, "t_ogrz" to 2, "t_ogrz_sr" to 3,
+    "t_powrot" to 4, "t_panel" to 5, "t_pokoj" to 6, "t_trociny" to 7,
+    "wilgotnosc" to 8, "cisnienie" to 9, "dym" to 10, "klapa" to 11, "syberka" to 12
+)
+
+private val SIM_BOUNDS_BY_CHANNEL = mapOf(
+    0 to (-30.0 to 50.0), 1 to (0.0 to 160.0), 2 to (0.0 to 160.0), 3 to (0.0 to 160.0),
+    4 to (-30.0 to 120.0), 5 to (-30.0 to 160.0), 6 to (-50.0 to 50.0), 7 to (-30.0 to 120.0),
+    8 to (0.0 to 100.0), 9 to (970.0 to 1040.0), 10 to (0.0 to 4095.0)
+)
+
 fun TelemRow.toPoint(): TelemPoint {
-    fun isSimulatedChannel(channel: Int): Boolean = simulated ||
-        (channel in 0..62 && (sim and (1L shl channel)) != 0L)
+    fun isSimulatedChannel(channel: Int): Boolean =
+        channel in 0..62 && (sim and (1L shl channel)) != 0L
 
     fun getVal(idx: Int, channel: Int, scale: Double, minB: Double?, maxB: Double?): Double? {
-        if (isSimulatedChannel(channel) || idx !in a.indices) return null
+        if (simulated || idx !in a.indices) return null
         val qVal = ((q shr (channel * 2)) and 3).toInt()
         val raw = a[idx]
         if (!raw.isFinite() || qVal >= 2) return null
         if (raw <= -1200 || raw >= 15000) return null // -1270 = odłączony DS18B20
         val v = raw * scale
-        if (minB != null && v < minB) return null
-        if (maxB != null && v > maxB) return null
+        val simBounds = if (isSimulatedChannel(channel)) SIM_BOUNDS_BY_CHANNEL[channel] else null
+        val lo = simBounds?.first ?: minB
+        val hi = simBounds?.second ?: maxB
+        if (lo != null && v < lo) return null
+        if (hi != null && v > hi) return null
         return (v * 10).roundToInt() / 10.0
     }
 
     fun getServoVal(deg: Long, maxDeg: Double, channel: Int): Double? {
-        if (isSimulatedChannel(channel) || deg < 0L || deg.toDouble() > maxDeg) return null
+        if (simulated || deg < 0L || deg.toDouble() > maxDeg) return null
         return (deg / maxDeg * 100).roundToInt().toDouble()
     }
 
@@ -67,7 +92,8 @@ fun TelemRow.toPoint(): TelemPoint {
         cisnienie = getVal(9, 9, .1, 900.0, 1100.0),
         dym = getVal(10, 10, 1.0, 0.0, 4095.0),
         klapa = getServoVal(k, 180.0, 11),
-        syberka = getServoVal(s, 90.0, 12)
+        syberka = getServoVal(s, 90.0, 12),
+        sim = sim, simulated = simulated
     )
 }
 
@@ -113,6 +139,14 @@ object ChartSeries {
         "klapa" -> p.klapa; "syberka" -> p.syberka; else -> null
     }
 
+    /** Granice walidacji aplikacji dla próbek jawnie oznaczonych jako symulowane. */
+    val SIM_BOUNDS = mapOf(
+        "t_ogrz" to (0.0 to 160.0), "t_ogrz_sr" to (0.0 to 160.0), "t_bojler" to (0.0 to 160.0),
+        "t_powrot" to (-30.0 to 120.0), "t_panel" to (-30.0 to 160.0), "t_trociny" to (-30.0 to 120.0),
+        "t_pokoj" to (-50.0 to 50.0), "t_zewn" to (-30.0 to 50.0), "wilgotnosc" to (0.0 to 100.0),
+        "cisnienie" to (970.0 to 1040.0), "dym" to (0.0 to 4095.0)
+    )
+
     /** `filterSeriesGlitches(rows, key, group)` — granice fizyczne + Hampel. */
     fun filterGlitches(rows: List<TelemPoint>, key: String, group: String, enabled: Boolean = true): List<Double?> {
         val rawAll = rows.map { value(it, key) }
@@ -121,16 +155,23 @@ object ChartSeries {
         val jump = when (group) {
             "temp" -> 12.0; "rh" -> 20.0; "pressure" -> 4.0; "position" -> 15.0; else -> 400.0
         }
-        val cleaned = rawAll.map { v ->
-            if (v == null || !v.isFinite()) null else if (b != null && (v < b.first || v > b.second)) null else v
+        val simulated = rows.map { it.isSimulated(key) }
+        val cleaned = rawAll.mapIndexed { i, v ->
+            if (v == null || !v.isFinite()) null
+            else if (simulated[i]) v.takeIf { SIM_BOUNDS[key]?.let { (lo, hi) -> v >= lo && v <= hi } ?: true }
+            else v.takeIf { b == null || (v >= b.first && v <= b.second) }
         }
         val n = rows.size
         val out = arrayOfNulls<Double>(n)
         for (i in 0 until n) {
             val v = cleaned[i] ?: continue
+            // Zachowaj przebieg symulacji dokładnie; nie filtruj skoku wejścia/wyjścia
+            // Hampel-em i nie porównuj go z sąsiednią serią fizyczną.
+            if (simulated[i]) { out[i] = v; continue }
             val past = ArrayList<Double>(4)
             var k = i - 1
             while (k >= 0 && past.size < 4) {
+                if (simulated[k]) break
                 val c = cleaned[k]
                 if (c != null) {
                     if (rows[i].ts - rows[k].ts > 3_600_000L) break
@@ -141,6 +182,7 @@ object ChartSeries {
             val future = ArrayList<Double>(4)
             k = i + 1
             while (k < n && future.size < 4) {
+                if (simulated[k]) break
                 val c = cleaned[k]
                 if (c != null) {
                     if (rows[k].ts - rows[i].ts > 3_600_000L) break
