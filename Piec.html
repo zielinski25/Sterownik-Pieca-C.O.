@@ -3507,20 +3507,12 @@ body.mode-phone-frame #phone {
       </div>
       <div class="auth-body">
         <div class="auth-field">
-          <label for="authApiKey">Firebase Web API Key</label>
-          <input class="auth-input" id="authApiKey" type="text" value="AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU" placeholder="AIzaSy..." autocomplete="off">
-        </div>
-        <div class="auth-field">
           <label for="authEmail">E-mail operatora</label>
           <input class="auth-input" id="authEmail" type="email" value="piec_co_boot@akwarium.local" placeholder="twoj-email@domena.pl" autocomplete="username">
         </div>
         <div class="auth-field">
           <label for="authPassword">Hasło</label>
           <input class="auth-input" id="authPassword" type="password" value="PcTg8plOcvRrMSojv79X" placeholder="••••••••••••" autocomplete="current-password">
-        </div>
-        <div class="auth-field">
-          <label for="authCmdToken">Token autoryzacji komend (CMD Token)</label>
-          <input class="auth-input" id="authCmdToken" type="password" value="sterownikco-cmd-2026" placeholder="Wpisz token komend /piec/cmd" autocomplete="off">
         </div>
         <div class="auth-check-row">
           <input type="checkbox" id="authRemember" checked>
@@ -4842,14 +4834,10 @@ body.mode-phone-frame #phone {
   }
 
   function openAuthModal() {
-    const k = safeStorage.get('piec_fb_api_key') || DEFAULT_FB_API_KEY;
     const e = safeStorage.get('piec_fb_email') || DEFAULT_FB_EMAIL;
     const p = safeStorage.get('piec_fb_password') || DEFAULT_FB_PASS;
-    const t = safeStorage.get('piec_cmd_token') || DEFAULT_CMD_TOKEN;
-    if ($('#authApiKey')) $('#authApiKey').value = k;
     if ($('#authEmail')) $('#authEmail').value = e;
     if ($('#authPassword')) $('#authPassword').value = p;
-    if ($('#authCmdToken')) $('#authCmdToken').value = t;
     if ($('#authStatus')) {
       if (_isFirebaseConnected) {
         $('#authStatus').className = 'auth-status ok';
@@ -4869,17 +4857,17 @@ body.mode-phone-frame #phone {
   }
 
   async function doFirebaseLogin(apiKeyArg, emailArg, passwordArg, cmdTokenArg) {
-    const apiKey = (apiKeyArg || ($('#authApiKey') ? $('#authApiKey').value : '') || DEFAULT_FB_API_KEY).trim();
+    const apiKey = (apiKeyArg || DEFAULT_FB_API_KEY).trim();
     const email = (emailArg || ($('#authEmail') ? $('#authEmail').value : '') || DEFAULT_FB_EMAIL).trim();
     const password = (passwordArg || ($('#authPassword') ? $('#authPassword').value : '') || DEFAULT_FB_PASS).trim();
-    const cmdToken = (cmdTokenArg || ($('#authCmdToken') ? $('#authCmdToken').value : '') || DEFAULT_CMD_TOKEN).trim();
+    const cmdToken = (cmdTokenArg || safeStorage.get('piec_cmd_token') || DEFAULT_CMD_TOKEN).trim();
     const remember = $('#authRemember') ? $('#authRemember').checked : true;
 
     const statusEl = $('#authStatus');
     const loginBtn = $('#authLoginBtn');
 
     if (!apiKey || apiKey.length < 20) {
-      if (statusEl) { statusEl.className = 'auth-status err'; statusEl.textContent = 'Podaj poprawny Firebase Web API Key.'; }
+      if (statusEl) { statusEl.className = 'auth-status err'; statusEl.textContent = 'Nieprawidłowa konfiguracja połączenia Firebase.'; }
       return;
     }
     if (!email || email.indexOf('@') < 1 || !password || password.length < 6) {
@@ -4990,10 +4978,8 @@ body.mode-phone-frame #phone {
     }
 
     if (k && e && p) {
-      if ($('#authApiKey')) $('#authApiKey').value = k;
       if ($('#authEmail')) $('#authEmail').value = e;
       if ($('#authPassword')) $('#authPassword').value = p;
-      if ($('#authCmdToken')) $('#authCmdToken').value = t || '';
       try {
         await doFirebaseLogin(k, e, p, t);
         return true;
@@ -7045,7 +7031,7 @@ body.mode-phone-frame #phone {
     showSheet('Sesja operatora & Firebase', 'session', () => {
       const b = h('div');
       const authCard = h('div', 'diag-card');
-      authCard.innerHTML = `<div class="lbl">POŁĄCZENIE Z FIREBASE</div><div class="val">${_isFirebaseConnected ? '🟢 Połączono LIVE' : _isDemoMode ? '🟡 Tryb symulacji' : '🔴 Brak sesji'}</div><div class="sub">Konto: ${_fbEmail || 'Brak'} · IP: ${S.ip} · RSSI: ${S.wifi_rssi} dBm · CMD Token: ${_cmdToken ? '✓ Zdefiniowany' : '✗ Brak'}</div>`;
+      authCard.innerHTML = `<div class="lbl">POŁĄCZENIE Z FIREBASE</div><div class="val">${_isFirebaseConnected ? '🟢 Połączono LIVE' : _isDemoMode ? '🟡 Tryb symulacji' : '🔴 Brak sesji'}</div><div class="sub">Konto: ${_fbEmail || 'Brak'} · IP: ${S.ip} · RSSI: ${S.wifi_rssi} dBm</div>`;
       b.appendChild(authCard);
       b.appendChild(note('Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Komendy sterujące /piec/cmd są zabezpieczone osobnym tokenem.'));
 

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -36,7 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -129,9 +133,6 @@ fun ChartsPage(m: AppModel) {
                     .border(BorderStroke(1.dp, Pal.rgba(0, 212, 245, .35f)), RoundedCornerShape(10.dp))
                     .padding(horizontal = 8.dp, vertical = 3.dp))
         }
-        Text("Wykresy korzystają wyłącznie z rzeczywistej telemetrii; lokalna symulacja SYM nie trafia do historii ani wykresu.",
-            style = Txt.tiny, color = Pal.TextDim)
-
         // `.chart-ctrl-card`
         Column(
             Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(Dimens.radiusCard))
@@ -202,6 +203,9 @@ fun ChartsPage(m: AppModel) {
                     onPinch = { f, x -> m.pinchChart(f, x) },
                     onResetView = { m.resetChartView() }
                 )
+                cross?.let { index ->
+                    ChartHoverTooltip(m, view, index, Modifier.align(Alignment.TopStart))
+                }
             }
 
             ChartScrollbar(m)
@@ -268,6 +272,9 @@ fun ChartsPage(m: AppModel) {
                             onPan = { m.panChart(it) }, onPinch = { f, x -> m.pinchChart(f, x) },
                             onResetView = { m.resetChartView() }
                         )
+                        cross?.let { index ->
+                            ChartHoverTooltip(m, view, index, Modifier.align(Alignment.TopStart))
+                        }
                     }
                     ChartScrollbar(m)
                     Text("DOTKNIJ kursor • SZCZYP zoom • PASEK / PRZECIĄGNIJ oś czasu • 2× TAP reset",
@@ -485,18 +492,59 @@ fun ChartAnalysisSheet(m: AppModel) {
 
 private fun fmt1(v: Double): String = if (v.isFinite()) String.format(java.util.Locale.US, "%.1f", v) else "—"
 
-/** `#chartInspectorVal` — dymek z odczytem (czas + wartości aktywnych serii). */
-private fun inspectorText(m: AppModel, view: com.sterownikco.pro.ui.chart.ChartView, cross: Int?): String {
-    if (cross == null) return "Dotknij wykresu / najedź kursorem"
-    val row = view.rows.getOrNull(cross) ?: return "Dotknij wykresu / najedź kursorem"
-    val c = java.util.Calendar.getInstance().apply { timeInMillis = row.ts }
+private fun chartTimeLabel(m: AppModel, ts: Long): String {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = ts }
     fun p(v: Int) = if (v < 10) "0$v" else "$v"
-    val timeStr = p(c.get(java.util.Calendar.HOUR_OF_DAY)) + ":" + p(c.get(java.util.Calendar.MINUTE)) +
+    return p(c.get(java.util.Calendar.HOUR_OF_DAY)) + ":" + p(c.get(java.util.Calendar.MINUTE)) +
         (if (m.rangeSec > 48 * 3600) " (" + p(c.get(java.util.Calendar.DAY_OF_MONTH)) + "." + p(c.get(java.util.Calendar.MONTH) + 1) + ")"
          else ":" + p(c.get(java.util.Calendar.SECOND)))
-    val readout = view.cat.joinToString(" · ") { s ->
-        val x = view.values[s.id]?.getOrNull(cross)
-        s.label + ": " + (if (x != null && x.isFinite()) fmt1(x) + " " + s.unit else "—")
+}
+
+/** Dymek nad wykresem: każda wartość używa koloru swojej serii, jak w Piec.html. */
+@Composable
+private fun ChartHoverTooltip(
+    m: AppModel,
+    view: com.sterownikco.pro.ui.chart.ChartView,
+    index: Int,
+    modifier: Modifier = Modifier
+) {
+    val row = view.rows.getOrNull(index) ?: return
+    Column(
+        modifier.padding(8.dp)
+            .widthIn(max = 220.dp)
+            .background(Pal.rgba(9, 19, 35, .96f), RoundedCornerShape(8.dp))
+            .border(BorderStroke(1.dp, Pal.rgba(0, 212, 245, .75f)), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(chartTimeLabel(m, row.ts), fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan)
+        view.cat.forEach { s ->
+            val x = view.values[s.id]?.getOrNull(index)
+            val value = if (x != null && x.isFinite()) fmt1(x) + " " + s.unit else "—"
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("●", fontSize = 7.sp, color = hexColor(s.accent))
+                Text("${s.label}: ", fontSize = 8.sp, color = hexColor(s.accent), fontWeight = FontWeight.SemiBold)
+                Text(value, fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
     }
-    return "$timeStr: $readout"
+}
+
+/** `#chartInspectorVal` — czas w cyan, wartości w kolorach odpowiadających seriom. */
+private fun inspectorText(m: AppModel, view: com.sterownikco.pro.ui.chart.ChartView, cross: Int?) = buildAnnotatedString {
+    val row = cross?.let { view.rows.getOrNull(it) }
+    if (cross == null || row == null) {
+        withStyle(SpanStyle(color = Pal.TextDim)) { append("Dotknij wykresu / najedź kursorem") }
+        return@buildAnnotatedString
+    }
+    withStyle(SpanStyle(color = Pal.Cyan, fontWeight = FontWeight.Bold)) { append(chartTimeLabel(m, row.ts)) }
+    append(": ")
+    view.cat.forEachIndexed { index, s ->
+        if (index > 0) append("  ·  ")
+        val x = view.values[s.id]?.getOrNull(cross)
+        val value = if (x != null && x.isFinite()) fmt1(x) + " " + s.unit else "—"
+        withStyle(SpanStyle(color = hexColor(s.accent))) {
+            append("● ${s.label}: $value")
+        }
+    }
 }
