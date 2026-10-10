@@ -1,0 +1,6 @@
+diff --git a/android/app/src/debug/res/drawable/ic_launcher_background.xml b/android/app/src/debug/res/drawable/ic_launcher_background.xml
+--- a/android/app/src/debug/res/drawable/ic_launcher_background.xml
++++ b/android/app/src/debug/res/drawable/ic_launcher_background.xml
+@@ -10 +10 @@
+-        <aapt:attr android:name="android:fillColor">
++        <aapt:attr name="android:fillColor">

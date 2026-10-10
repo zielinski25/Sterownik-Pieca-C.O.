@@ -49,11 +49,29 @@ Wariant debug otrzyma nazwę `Sterownik CO (TEST)`, fioletowe tło ikony oraz pr
 
 Patch ma hunki bez kontekstu (`--unidiff-zero` jest wymagane), aby nie kopiować do artefaktu niezmienionych literałów konfiguracyjnych z `Prefs.kt`. Jeśli `--check` zgłosi błąd, zatrzymaj się — nie używaj `--reject` ani nie wymuszaj zastosowania.
 
+## Poprawka dla branding patcha już zastosowanego
+
+Poprzednia wersja zmiany ikony miała błędny atrybut w `<aapt:attr>` i mogła zakończyć `:app:mergeDebugResources` komunikatem `attr tag requires the 'name' attribute`. Jeśli branding patch jest już zastosowany, nie nakładaj go ponownie. Z katalogu głównego repozytorium pobierz aktualizację i zastosuj jednowierszową poprawkę:
+
+```powershell
+git pull --ff-only
+git apply --check --unidiff-zero .\android-sync\Android-DirectBoot-Debug-Branding-Resource-Fix.diff
+git apply --unidiff-zero .\android-sync\Android-DirectBoot-Debug-Branding-Resource-Fix.diff
+```
+
+Poprawka zmienia `android:name` na `name` w `<aapt:attr>`, zgodnie z wymaganiem Android Resource Compiler. Następnie uruchom ponownie:
+
+```powershell
+cd .\android
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug
+```
+
 ## Weryfikacja
 
-Użytkownik potwierdził `BUILD SUCCESSFUL` dla `:app:testDebugUnitTest :app:assembleDebug` oraz że po wylogowaniu debugowa aplikacja pozostała wylogowana po restarcie. Zmiana oznaczeń debug jest nowa i wymaga ponownego builda debug przed instalacją.
+Użytkownik potwierdził `BUILD SUCCESSFUL` dla `:app:testDebugUnitTest :app:assembleDebug` przed zmianami brandingowymi oraz że po wylogowaniu debugowa aplikacja pozostała wylogowana po restarcie. Pierwszy build z brandingiem zatrzymał się na błędnym atrybucie ikony; nowa dystrybucja zawiera poprawioną składnię, która wymaga ponownego builda na Windows.
 
 Weryfikacja na piecu nie wymaga symulacji alarmu ani zmiany wyjść. Nie testuj, gdy występuje aktywny alarm.
 
-SHA-256 pełnego patcha: `902c59fb73f6f81e10b840756b6a8c58e95d085120fa348f8ae4457683e24cbe`
-SHA-256 poprawki debug dla już zmodyfikowanej kopii: `b5ebdafb96c9f89c97e43c46eed6807df826517b82920db6bfce1604b86375c5`
+SHA-256 pełnego patcha: `422cdce7c490b1022fa74e0b0a64a54225355d4b3ef501134eae4a08de5a8a03`
+SHA-256 poprawki debug dla już zmodyfikowanej kopii: `1fbbc363c9649c2a5c6438e7bda9895e8521de878c76f5c7623b57f45e22079e`
+SHA-256 jednowierszowej poprawki zasobu: `86d4d0c9e24c2dcfcab9d06d0871f5f58ea9c367428647d60146c276b81a631b`

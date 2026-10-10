@@ -54,7 +54,7 @@ index 0000000..5c17b3b
 +    android:viewportHeight="108">
 +    <path android:pathData="M0,0h108v108h-108z" android:fillColor="#1E1B4B" />
 +    <path android:pathData="M0,0h108v108h-108z">
-+        <aapt:attr android:name="android:fillColor">
++        <aapt:attr name="android:fillColor">
 +            <gradient
 +                android:startX="0"
 +                android:startY="0"
