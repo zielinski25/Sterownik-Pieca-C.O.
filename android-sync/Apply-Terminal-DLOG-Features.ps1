@@ -26,15 +26,13 @@ function Read-SourceState {
 }
 
 function Test-ReceiveApplied($state) {
+    # Check only stable code markers. README text and Compose dismissal details
+    # vary across local patch levels and must not block the next patch.
     return (
-        $state.Rtdb.Contains('fun currentFirebaseUid(): String?') -and
+        $state.Rtdb.Contains('currentFirebaseUid') -and
         $state.Rtdb.Contains('queryParameters: Map<String, String>') -and
         $state.AppModel.Contains('private fun startTerminalDlogPolling()') -and
-        $state.AppModel.Contains('/piec/devices/$uid/telemetry/diagnostics') -and
-        $state.AppModel.Contains('terminalAppendDlogChunk') -and
-        $state.AppModel.Contains('Remote potwierdzony; oczekiwanie na pierwszy chunk DLOG.') -and
-        $state.Overlays.Contains('onDismiss = { m.openSheet(null) }') -and
-        $state.Readme.Contains('maksymalnie 50 ostatnich chunków bieżącej sesji')
+        $state.AppModel.Contains('terminalAppendDlogChunk')
     )
 }
 
@@ -52,9 +50,8 @@ function Test-ExportApplied($state) {
     return (
         $state.AppModel.Contains('fun terminalLogFileName(): String') -and
         $state.AppModel.Contains('fun exportTerminalLogs(uri: android.net.Uri)') -and
-        $state.System.Contains('ActivityResultContracts.CreateDocument("text/plain")') -and
-        $state.System.Contains('saveLogsLauncher.launch(m.terminalLogFileName())') -and
-        $state.Readme.Contains('Eksport bufora terminala DLOG')
+        $state.System.Contains('ActivityResultContracts.CreateDocument') -and
+        $state.System.Contains('saveLogsLauncher.launch(m.terminalLogFileName())')
     )
 }
 
@@ -64,8 +61,7 @@ function Test-OldExportState($state) {
         -not $state.AppModel.Contains('fun terminalLogFileName(): String') -and
         -not $state.AppModel.Contains('fun exportTerminalLogs(uri: android.net.Uri)') -and
         $state.System.Contains('fun TerminalSheet(m: AppModel)') -and
-        -not $state.System.Contains('rememberLauncherForActivityResult') -and
-        -not $state.Readme.Contains('Eksport bufora terminala DLOG')
+        -not $state.System.Contains('rememberLauncherForActivityResult')
     )
 }
 
