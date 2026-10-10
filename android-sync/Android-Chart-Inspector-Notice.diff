@@ -1,0 +1,65 @@
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
+index 3be2181..52b1c73 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
+@@ -254,7 +254,7 @@ object AlarmNotify {
+         return NotificationCompat.Builder(ctx, CH_SVC)
+             .setSmallIcon(android.R.drawable.stat_notify_sync)
+             .setContentTitle("${ctx.getString(R.string.app_name)} — usługa alarmów")
+-            .setContentText("Sprawdź w aplikacji, czy ostatni odczyt RTDB jest aktualny.")
++            .setContentText("Usługa alarmów działa w tle.")
+             .setPriority(NotificationCompat.PRIORITY_LOW)
+             .setOngoing(true)
+             .setContentIntent(open)
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+index 492f0a1..d82a1c4 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+@@ -44,11 +44,8 @@ import androidx.compose.ui.geometry.Offset
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.PathEffect
+ import androidx.compose.ui.input.pointer.pointerInput
+-import androidx.compose.ui.text.SpanStyle
+-import androidx.compose.ui.text.buildAnnotatedString
+ import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.text.style.TextOverflow
+-import androidx.compose.ui.text.withStyle
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import androidx.compose.ui.window.Dialog
+@@ -226,12 +223,6 @@ fun ChartsPage(m: AppModel) {
+                 Text(m.chartPhase(), fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Accent)
+             }
+ 
+-            Row(Modifier.fillMaxWidth().background(Pal.Surface2, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
+-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                Text("INSPEKTOR", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.5.sp)
+-                Text(inspectorText(m, view, cross), style = Txt.monoSm.copy(fontSize = 8.5.sp, color = Color.White))
+-            }
+-
+             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                 Kpi("ZAKRES", view.span, Pal.Accent)
+                 Kpi("PUNKTY", dataset.size.toString(), Color(0xFF4ADE80))
+@@ -584,22 +575,3 @@ private fun ChartHoverTooltip(
+         }
+     }
+ }
+-
+-/** `#chartInspectorVal` — czas w cyan, wartości w kolorach odpowiadających seriom. */
+-private fun inspectorText(m: AppModel, view: com.sterownikco.pro.ui.chart.ChartView, cross: Int?) = buildAnnotatedString {
+-    val row = cross?.let { view.rows.getOrNull(it) }
+-    if (cross == null || row == null) {
+-        withStyle(SpanStyle(color = Pal.TextDim)) { append("Dotknij wykresu / najedź kursorem") }
+-        return@buildAnnotatedString
+-    }
+-    withStyle(SpanStyle(color = Pal.Cyan, fontWeight = FontWeight.Bold)) { append(chartTimeLabel(m, row.ts)) }
+-    append(": ")
+-    view.cat.forEachIndexed { index, s ->
+-        if (index > 0) append("  ·  ")
+-        val x = view.values[s.id]?.getOrNull(cross)
+-        val value = if (x != null && x.isFinite()) (if (row.isSimulated(s.ch)) "~" else "") + fmt1(x) + " " + s.unit else "—"
+-        withStyle(SpanStyle(color = hexColor(s.accent))) {
+-            append("● ${s.label}: $value")
+-        }
+-    }
+-}
