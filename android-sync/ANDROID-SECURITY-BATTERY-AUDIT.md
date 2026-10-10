@@ -1,8 +1,8 @@
 # Audyt bezpieczeństwa, prywatności, zasobów i baterii — Android
 
-**Data:** 2026-10-10  
-**Wersja źródeł:** Android `v0.31.0`, `minSdk 26`, `targetSdk 35`; projekt w katalogu `android/`.  
-**Zakres:** statyczny przegląd manifestu, reguł kopii zapasowych, preferencji i Keystore, klienta RTDB/HTTP, serwisu alarmowego, powiadomień, cyklu aktywności, pogody i konfiguracji Gradle. Nie audytowano reguł RTDB/Firebase wdrożonych w konsoli ani pełnego firmware ESP32.
+- **Data:** 2026-10-10
+- **Wersja źródeł:** Android `v0.31.0`, `minSdk 26`, `targetSdk 35`; projekt w katalogu `android/`.
+- **Zakres:** statyczny przegląd manifestu, reguł kopii zapasowych, preferencji i Keystore, klienta RTDB/HTTP, serwisu alarmowego, powiadomień, cyklu aktywności, pogody i konfiguracji Gradle. Nie audytowano reguł RTDB/Firebase wdrożonych w konsoli ani pełnego firmware ESP32.
 
 ## Wniosek w skrócie
 
