@@ -25,9 +25,9 @@ function Read-SourceState {
 function Test-ControlsApplied($state) {
     return (
         $state.System.Contains('var servoCommand by remember') -and
-        $state.System.Contains('Ustaw klapę…') -and
-        $state.System.Contains('Ustaw syberek…') -and
-        $state.System.Contains('Wpisz wartość od 0 do 100%.') -and
+        $state.System.Contains('openServoPositionDialog("klapa")') -and
+        $state.System.Contains('openServoPositionDialog("syberek")') -and
+        $state.System.Contains('percent !in 0..100') -and
         $state.Chrome.Contains('fullScreen: Boolean = false') -and
         $state.Overlays.Contains('fullScreen = id == "terminal"')
     )
@@ -75,4 +75,4 @@ $state = Read-SourceState
 if (-not (Test-ControlsApplied $state)) {
     throw 'Post-apply verification failed. Review System.kt, Chrome.kt, and Overlays.kt before building.'
 }
-Write-Host 'Applied: full-screen terminal, grouped Polish controls, and editable 0–100% actuator positions.' -ForegroundColor Green
+Write-Host 'Applied: full-screen terminal, grouped controls, and editable actuator positions from 0 to 100 percent.' -ForegroundColor Green
