@@ -48,7 +48,8 @@
   - `3fe542a` — `fix(tg): log TG-CB pokazuje czas cooldownu (v3.35.2 [2.1])`
   - `83c903c` — `fix(fb): zamknij epizody skip po resecie breakera (v3.35.2 [2.2])`
 - Gałąź pozostała `arena/539ab1b6-sterownik-pieca-c-o`. W tym środowisku gałąź sesji jest stała, więc nie utworzono wskazanej w zadaniu `fix/v3.35.2-fb-tg-throttle-logs`.
-- Niczego nie wypchnięto. Przed użyciem OTA potrzebny jest build oraz osobny, uzgodniony release/tag `v3.35.2` zgodny z wersją w źródle.
+- Po późniejszej prośbie użytkownika wypchnięto commity na `arena/539ab1b6-sterownik-pieca-c-o`; zdalny HEAD: `fee9595`.
+- **Rozbieżność wersji z Releases:** GitHub oznacza `3.36.1` jako Latest (asset `firmware.bin` 2 055 280 B); Release `3.36.0` także istnieje. Oba tagi wskazują ten sam commit `65dc570` na `main`. Archiwum źródłowe `Cenatrala Pieca.zip` w tym commicie nadal deklaruje `FIRMWARE_VERSION = v3.35.1`, a gałąź robocza po poprawkach deklaruje `v3.35.2`. Zadanie wejściowe podało cel `v3.35.2`, ale nie uwzględniało nowszych Releases; **nie flashować ani nie tworzyć tagu na podstawie tej poprawki, dopóki wersja źródła nie zostanie uzgodniona z opublikowanym firmware**.
 
 ## Odpowiedzi i nadal otwarte pytania (§7)
 
