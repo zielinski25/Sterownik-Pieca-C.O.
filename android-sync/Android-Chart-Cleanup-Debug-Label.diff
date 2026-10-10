@@ -1,0 +1,92 @@
+diff --git a/android/app/src/debug/res/values/strings.xml b/android/app/src/debug/res/values/strings.xml
+index 93ddcfd..dbe7ba8 100644
+--- a/android/app/src/debug/res/values/strings.xml
++++ b/android/app/src/debug/res/values/strings.xml
+@@ -1,3 +1,3 @@
+ <resources>
+-    <string name="app_name">Sterownik CO (TEST)</string>
++    <string name="app_name">Sterownik CO (DEBUG)</string>
+ </resources>
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
+index 52b1c73..08165e3 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
+@@ -14,7 +14,6 @@ import android.util.Log
+ import androidx.core.app.ActivityCompat
+ import androidx.core.app.NotificationCompat
+ import com.sterownikco.pro.AlarmActivity
+-import com.sterownikco.pro.BuildConfig
+ import com.sterownikco.pro.MainActivity
+ import com.sterownikco.pro.R
+ import com.sterownikco.pro.receiver.AlarmReceiver
+@@ -192,7 +191,7 @@ object AlarmNotify {
+                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+         )
+-        val visibleTitle = if (BuildConfig.DEBUG) "🚨 TEST — ${info.title}" else "🚨 ${info.title}"
++        val visibleTitle = "🚨 ${info.title}"
+         val b = NotificationCompat.Builder(ctx, channelFor(sound))
+             .setSmallIcon(android.R.drawable.stat_sys_warning)
+             .setContentTitle(visibleTitle)
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+index 4bd436e..e97323a 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -729,16 +729,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+         if (S.hasData("klapa")) "klapa " + Math.round(S.klapa / 1.8) + "%" else "klapa —"
+     }
+ 
+-    fun chartPhase(): String {
+-        if (S.symAktywna("ogrz")) return "Odczyt symulowany — jego odcinek wykresu jest kreskowany"
+-        if (!S.hasData("t_ogrz")) return "Brak rzeczywistego odczytu temperatury pieca"
+-        return when {
+-            S.t_ogrz > 65 -> "🔥 FAZA GRZANIA: INTENSYWNA (" + fmt1(S.t_ogrz) + "°C)"
+-            S.t_ogrz > 45 -> "🔥 FAZA GRZANIA: STABILNA (" + fmt1(S.t_ogrz) + "°C)"
+-            else -> "⏸ FAZA POSTOJU / WYGASZANIE (" + fmt1(S.t_ogrz) + "°C)"
+-        }
+-    }
+-
+     private fun updateChartHead() { /* tytuł/meta/serie są reaktywne w Compose */ }
+ 
+     fun activeCatalog(): List<SeriesDef> = when (chartFocus) {
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+index d82a1c4..554272b 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+@@ -217,12 +217,6 @@ fun ChartsPage(m: AppModel) {
+             ChartScrollbar(m)
+             SimulatedChartLegend()
+ 
+-            Box(Modifier.fillMaxWidth().background(Pal.rgba(255, 159, 67, .1f), RoundedCornerShape(8.dp))
+-                .border(BorderStroke(1.dp, Pal.rgba(255, 159, 67, .25f)), RoundedCornerShape(8.dp))
+-                .padding(horizontal = 10.dp, vertical = 5.dp)) {
+-                Text(m.chartPhase(), fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Accent)
+-            }
+-
+             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                 Kpi("ZAKRES", view.span, Pal.Accent)
+                 Kpi("PUNKTY", dataset.size.toString(), Color(0xFF4ADE80))
+@@ -236,13 +230,6 @@ fun ChartsPage(m: AppModel) {
+                 ActBtn(Pal.Violet, "settings", "ANALIZA", "cykle A−B") { m.openSheet("chartAnalysis") }
+             }
+         }
+-
+-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
+-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+-            AppIcon("info", size = 12.dp, tint = Pal.TextDim2)
+-            Text("dotknij = kursor • szczypnij = zoom • pasek/przeciągnij = oś czasu • 2× tap = reset",
+-                style = Txt.tiny)
+-        }
+     }
+ 
+     if (expand) {
+@@ -279,9 +266,6 @@ fun ChartsPage(m: AppModel) {
+                     }
+                     ChartScrollbar(m)
+                     SimulatedChartLegend()
+-                    Text("DOTKNIJ kursor • SZCZYP zoom • PASEK / PRZECIĄGNIJ oś czasu • 2× TAP reset",
+-                        style = Txt.tiny, modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                 }
+             }
+         }
