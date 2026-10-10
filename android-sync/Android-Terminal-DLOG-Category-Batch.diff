@@ -1,0 +1,263 @@
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+index 54b8f56..50d3446 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -212,7 +212,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+                 while (true) {
+                     delay(1000)
+                     if (sheet != null) sheetTick++
+-                    if (termOpened && termAutoOffAt > 0L && System.currentTimeMillis() >= termAutoOffAt) {
++                    if (!termCategoryBatchBusy && termOpened && termAutoOffAt > 0L && System.currentTimeMillis() >= termAutoOffAt) {
+                         termAutoOffAt = 0L
+                         termStatus = "Minął lokalny limit czasu — wysyłam Remote OFF i czekam na ACK."
+                         termStatusKind = "warn"
+@@ -1044,6 +1044,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     var termPaused by mutableStateOf(false)
+     var termOpened by mutableStateOf(false)
+     var termStateKnown by mutableStateOf(false)
++    var termCategoryBatchBusy by mutableStateOf(false)
+     var termAutoOffAt by mutableLongStateOf(0L)
+     var termLevel by mutableStateOf("INFO")
+     var termStatus by mutableStateOf("Brak odebranych wpisów DLOG. Oczekiwanie na rzeczywiste dane sterownika.")
+@@ -1390,6 +1391,11 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     }
+ 
+     private fun terminalSendWithAck(command: String, success: String, onAck: () -> Unit = {}) = scope.launch {
++        if (termCategoryBatchBusy) {
++            termStatus = "Poczekaj na zakończenie zmiany filtrów DLOG."
++            termStatusKind = "warn"
++            return@launch
++        }
+         if (!connected) {
+             termStatus = "Brak połączenia Firebase — polecenia DLOG nie wysłano."
+             termStatusKind = "err"
+@@ -1422,7 +1428,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     }
+ 
+     fun terminalSetLevel(lvl: String) {
+-        if (lvl.isEmpty()) return
++        if (lvl.isEmpty() || termCategoryBatchBusy) return
+         if (!termOpened) {
+             termLevel = lvl // lokalny wybór; nie twierdzi, że ESP32 zmieniło poziom
+             termStatus = "Poziom $lvl wybrano lokalnie; nie wysłano go do sterownika."
+@@ -1435,20 +1441,65 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     }
+ 
+     fun terminalSetCategory(cat: String, on: Boolean) {
++        if (termCategoryBatchBusy) return
+         termCats[cat] = on
+         terminalRender()
+         if (termOpened) send("diag remote cat $cat " + if (on) "on" else "off")
+     }
+ 
++    /** Firmware accepts one named category per command; send the ALL shortcut serially with ACKs. */
+     fun terminalSetAllCategories(on: Boolean) {
++        if (termCategoryBatchBusy) return
+         DLOG_CATEGORIES.forEach { termCats[it] = on }
+         terminalRender()
+-        if (termOpened) {
+-            val state = if (on) "on" else "off"
+-            terminalSendWithAck("diag remote cat ALL $state", "ESP32 potwierdził filtry kategorii DLOG: $state.")
+-        } else {
++        if (!termOpened) {
+             termStatus = if (on) "Filtry lokalnego bufora włączone." else "Filtry lokalnego bufora wyłączone."
+             termStatusKind = ""
++            return
++        }
++        if (!connected) {
++            termStatus = "Brak połączenia Firebase — filtrów kategorii nie wysłano."
++            termStatusKind = "err"
++            return
++        }
++
++        val state = if (on) "on" else "off"
++        termCategoryBatchBusy = true
++        scope.launch {
++            var completed = 0
++            var currentCategory = ""
++            try {
++                termStatus = "Wysyłanie filtrów DLOG: 0/${DLOG_CATEGORIES.size}."
++                termStatusKind = ""
++                for (cat in DLOG_CATEGORIES) {
++                    currentCategory = cat
++                    val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), "diag remote cat $cat $state")
++                    when {
++                        ack == null -> {
++                            termStatus = "Brak ACK dla kategorii $cat; wykonano $completed/${DLOG_CATEGORIES.size}."
++                            termStatusKind = "warn"
++                            return@launch
++                        }
++                        !ack.ok -> {
++                            termStatus = "ESP32 odrzuciło kategorię $cat: ${ack.error}; wykonano $completed/${DLOG_CATEGORIES.size}."
++                            termStatusKind = "err"
++                            return@launch
++                        }
++                    }
++                    completed++
++                    termStatus = "Ustawianie filtrów DLOG: $completed/${DLOG_CATEGORIES.size}."
++                }
++                termStatus = "ESP32 potwierdziło wszystkie filtry DLOG: ${if (on) "włączone" else "wyłączone"}."
++                termStatusKind = "ok"
++                poll()
++            } catch (e: CancellationException) {
++                throw e
++            } catch (e: Exception) {
++                termStatus = "Błąd przy kategorii $currentCategory po $completed/${DLOG_CATEGORIES.size}: ${e.message ?: "brak odpowiedzi"}."
++                termStatusKind = "err"
++            } finally {
++                termCategoryBatchBusy = false
++            }
+         }
+     }
+ 
+@@ -1456,6 +1507,11 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     fun terminalExec(cmd: String) {
+         val command = cmd.trim()
+         if (command.isEmpty()) return
++        if (termCategoryBatchBusy) {
++            termStatus = "Trwa zmiana filtrów DLOG — polecenie nie zostało wysłane."
++            termStatusKind = "warn"
++            return
++        }
+         send(command)
+     }
+ 
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
+index 4576dd9..bf10ee9 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
+@@ -439,18 +439,18 @@ fun DiagCard(lbl: String, value: String, sub: String) {
+ /** selektor `select` z paska narzędzi terminala. */
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+-private fun Sel(label: String, options: List<Pair<String, String>>, current: String, modifier: Modifier = Modifier, onPick: (String) -> Unit) {
++private fun Sel(label: String, options: List<Pair<String, String>>, current: String, modifier: Modifier = Modifier, enabled: Boolean = true, onPick: (String) -> Unit) {
+     var open by remember { mutableStateOf(false) }
+     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+         Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+         Box(Modifier.fillMaxWidth().background(Color(0xFF091524), RoundedCornerShape(8.dp))
+             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(8.dp))
+-            .clickable { open = true }.padding(horizontal = 10.dp, vertical = 6.dp)) {
++            .clickable(enabled = enabled) { open = true }.padding(horizontal = 10.dp, vertical = 6.dp)) {
+             Text(options.firstOrNull { it.first == current }?.second ?: current, fontSize = 12.sp, color = Pal.Text,
+                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                 options.forEach { (v, lbl) ->
+-                    DropdownMenuItem(text = { Text(lbl, fontSize = 12.sp, color = Pal.Text) }, onClick = {
++                    DropdownMenuItem(text = { Text(lbl, fontSize = 12.sp, color = Pal.Text) }, enabled = enabled, onClick = {
+                         open = false; onPick(v)
+                     })
+                 }
+@@ -525,9 +525,11 @@ fun TerminalSheet(m: AppModel) {
+         // sciskaly przyciski ("Wyczyść" lamal sie na "Wycz/ysc", selektory ucinaly).
+         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+-                TermBtn("▶ Włącz zdalne logi", modifier = Modifier.weight(1f), variant = "primary", enabled = !m.termOpened,
++                TermBtn("▶ Włącz zdalne logi", modifier = Modifier.weight(1f), variant = "primary",
++                    enabled = !m.termOpened && !m.termCategoryBatchBusy,
+                     onClick = { m.terminalRemoteOn() })
+-                TermBtn("■ Wyłącz zdalne logi", modifier = Modifier.weight(1f), variant = "danger", enabled = m.termOpened,
++                TermBtn("■ Wyłącz zdalne logi", modifier = Modifier.weight(1f), variant = "danger",
++                    enabled = m.termOpened && !m.termCategoryBatchBusy,
+                     onClick = { m.terminalRemoteOff() })
+             }
+             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+@@ -540,7 +542,7 @@ fun TerminalSheet(m: AppModel) {
+             Sel("POZIOM DLOG", listOf(
+                 "TRACE" to "TRACE (wszystko)", "DEBUG" to "DEBUG", "INFO" to "INFO",
+                 "WARN" to "WARN", "ERR" to "ERR (tylko błędy)"
+-            ), m.termLevel, Modifier.fillMaxWidth()) { m.terminalSetLevel(it) }
++            ), m.termLevel, Modifier.fillMaxWidth(), enabled = !m.termCategoryBatchBusy) { m.terminalSetLevel(it) }
+         }
+ 
+         // 3. filtr 21 kategorii
+@@ -551,15 +553,17 @@ fun TerminalSheet(m: AppModel) {
+             // i lamala sie na sylaby ("FILTR/21/KATEG/ORII/DLOG/(ESP3/2)").
+             Text("FILTR 21 KATEGORII DLOG (ESP32)", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.5.sp)
+             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-                TermBtn("✓ Wszystkie DLOG", modifier = Modifier.weight(1f), onClick = { m.terminalSetAllCategories(true) })
+-                TermBtn("□ Wyłącz wszystkie", modifier = Modifier.weight(1f), onClick = { m.terminalSetAllCategories(false) })
++                TermBtn("✓ Wszystkie DLOG", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
++                    onClick = { m.terminalSetAllCategories(true) })
++                TermBtn("□ Wyłącz wszystkie", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
++                    onClick = { m.terminalSetAllCategories(false) })
+             }
+             FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                 DLOG_CATEGORIES.forEach { cat ->
+                     val on = m.termCats[cat] != false
+                     Box(Modifier.background(if (on) Pal.rgba(0, 212, 245, .12f) else Color(0xCC111F35), RoundedCornerShape(6.dp))
+                         .border(BorderStroke(1.dp, if (on) Pal.rgba(0, 212, 245, .4f) else Color(0x14FFFFFF)), RoundedCornerShape(6.dp))
+-                        .clickable { m.terminalSetCategory(cat, !on) }
++                        .clickable(enabled = !m.termCategoryBatchBusy) { m.terminalSetCategory(cat, !on) }
+                         .padding(horizontal = 8.dp, vertical = 3.dp)) {
+                         Text((if (on) "☑ " else "☐ ") + cat, fontSize = 10.sp, fontFamily = Txt.mono,
+                             fontWeight = FontWeight.SemiBold, color = if (on) Pal.Cyan else Pal.TextDim)
+@@ -623,7 +627,8 @@ fun TerminalSheet(m: AppModel) {
+                 horizontalArrangement = Arrangement.spacedBy(8.dp)
+             ) {
+                 OutlinedTextField(
+-                    value = cmd, onValueChange = { cmd = it }, modifier = Modifier.weight(1f), singleLine = true,
++                    value = cmd, onValueChange = { cmd = it }, modifier = Modifier.weight(1f),
++                    enabled = !m.termCategoryBatchBusy, singleLine = true,
+                     placeholder = { Text("Wpisz polecenie serwisowe…",
+                         style = Txt.inp.copy(fontSize = 11.sp), color = Pal.TextDim2) },
+                     textStyle = Txt.inp.copy(fontSize = 12.sp),
+@@ -636,7 +641,8 @@ fun TerminalSheet(m: AppModel) {
+                         focusedTextColor = Pal.White, unfocusedTextColor = Pal.White, cursorColor = Pal.Cyan
+                     ),
+                 )
+-                TermBtn("Wyślij komendę", variant = "primary", onClick = { m.terminalExec(cmd); cmd = "" })
++                TermBtn("Wyślij komendę", variant = "primary", enabled = !m.termCategoryBatchBusy,
++                    onClick = { m.terminalExec(cmd); cmd = "" })
+             }
+             Column(
+                 Modifier.fillMaxWidth().background(Color(0xFF0A1728), RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
+@@ -652,26 +658,31 @@ fun TerminalSheet(m: AppModel) {
+                 Text("Zdalny odbiór logów", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                     TermBtn("Włącz zdalne logi", modifier = Modifier.weight(1f), variant = "primary",
++                        enabled = !m.termCategoryBatchBusy,
+                         onClick = { m.terminalExec("diag remote on") })
+                     TermBtn("Wyłącz zdalne logi", modifier = Modifier.weight(1f), variant = "danger",
++                        enabled = !m.termCategoryBatchBusy,
+                         onClick = { m.terminalExec("diag remote off") })
+                 }
+ 
+                 Text("Pompa CO · sterowanie ręczne", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                     TermBtn("Włącz pompę CO", modifier = Modifier.weight(1f), variant = "primary",
++                        enabled = !m.termCategoryBatchBusy,
+                         onClick = { m.terminalExec("pompa_wl") })
+                     TermBtn("Wyłącz pompę CO", modifier = Modifier.weight(1f), variant = "danger",
++                        enabled = !m.termCategoryBatchBusy,
+                         onClick = { m.terminalExec("pompa_wyl") })
+                 }
+                 TermBtn("Przywróć automatykę pompy", modifier = Modifier.fillMaxWidth(),
++                    enabled = !m.termCategoryBatchBusy,
+                     onClick = { m.terminalExec("pompa_auto") })
+ 
+                 Text("Ręczne ustawienie siłowników", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+-                    TermBtn("Ustaw klapę…", modifier = Modifier.weight(1f),
++                    TermBtn("Ustaw klapę…", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
+                         onClick = { openServoPositionDialog("klapa") })
+-                    TermBtn("Ustaw syberek…", modifier = Modifier.weight(1f),
++                    TermBtn("Ustaw syberek…", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
+                         onClick = { openServoPositionDialog("syberek") })
+                 }
+ 
+@@ -679,12 +690,13 @@ fun TerminalSheet(m: AppModel) {
+                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                     TermBtn("Odśwież status", modifier = Modifier.weight(1f),
+                         onClick = { m.poll() })
+-                    TermBtn("Stan zdalnych logów", modifier = Modifier.weight(1f),
++                    TermBtn("Stan zdalnych logów", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
+                         onClick = { m.terminalExec("diag status") })
+                 }
+ 
+                 Text("Aktualizacja panelu pokojowego LCD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                 TermBtn("Uruchom aktualizację OTA panelu LCD", modifier = Modifier.fillMaxWidth(), variant = "danger",
++                    enabled = !m.termCategoryBatchBusy,
+                     onClick = { m.terminalExec("update_panel") })
+             }
+         }
