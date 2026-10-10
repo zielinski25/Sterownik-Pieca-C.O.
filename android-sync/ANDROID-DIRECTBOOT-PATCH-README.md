@@ -66,11 +66,17 @@ cd .\android
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug
 ```
 
-## Weryfikacja
+## Wyniki weryfikacji — 2026-10-10
 
-Użytkownik potwierdził `BUILD SUCCESSFUL` dla `:app:testDebugUnitTest :app:assembleDebug` przed zmianami brandingowymi oraz że po wylogowaniu debugowa aplikacja pozostała wylogowana po restarcie. Pierwszy build z brandingiem zatrzymał się na błędnym atrybucie ikony; nowa dystrybucja zawiera poprawioną składnię, która wymaga ponownego builda na Windows.
+- Użytkownik uruchomił `:app:testDebugUnitTest :app:assembleDebug` po poprawce zasobu ikony; wynik: `BUILD SUCCESSFUL`.
+- Direct Boot po wylogowaniu: użytkownik potwierdził, że debug pozostał wylogowany po restarcie (PASS).
+- Direct Boot po zalogowaniu: użytkownik potwierdził, że powiadomienie `Sterownik CO (TEST) — usługa alarmów` było widoczne na ekranie blokady przed pierwszym odblokowaniem (PASS).
+- Świeżość danych: w debug UI pokazano `Usługa odebrała status z RTDB. Ostatni odczyt RTDB: przed chwilą.`; potwierdza to świeży odczyt w chwili zrzutu, nie gwarantuje przyszłych powiadomień.
+- Test aplikacyjnej ścieżki alarmu: użytkownik zgłosił, że symulowany sygnał dymu wysłany z drugiego telefonu otworzył pełnoekranowy alarm debug i wybudził telefon. To potwierdza reakcję aplikacji na przekazany sygnał; **nie** weryfikuje fizycznego czujnika MQ-2 ani wyjść/firmware pieca. Nie powtarzaj symulacji na działającym piecu — do dalszych prób używaj wyłącznie odizolowanego środowiska testowego.
 
-Weryfikacja na piecu nie wymaga symulacji alarmu ani zmiany wyjść. Nie testuj, gdy występuje aktywny alarm.
+Testy jednostkowe sprawdzają reguły alarmowe na sztucznych danych (parser flag, krawędzie alarmu, duplikaty, wyciszenie/drzemka, snapshoty częściowe i stan usługi). Nie wykonano na piecu testu wyjść ani flashowania firmware.
+
+Weryfikacja Direct Boot nie wymaga symulacji alarmu ani zmiany wyjść. Przed jakimkolwiek przyszłym restartem sprawdź, że nie ma aktywnego alarmu.
 
 SHA-256 pełnego patcha: `422cdce7c490b1022fa74e0b0a64a54225355d4b3ef501134eae4a08de5a8a03`
 SHA-256 poprawki debug dla już zmodyfikowanej kopii: `1fbbc363c9649c2a5c6438e7bda9895e8521de878c76f5c7623b57f45e22079e`
