@@ -1,6 +1,6 @@
 # Terminal Android: odbiór DLOG i zapis do pliku
 
-Arkusz terminala jest dostosowany do ekranu telefonu: zajmuje 75% wysokości, wypełnia szerokość i przewija się pionowo. Lista konsoli ma własne przewijanie. Przycisk **Zapisz logi** znajduje się przy akcjach terminala i pozostaje nieaktywny, dopóki aplikacja nie odbierze prawdziwych wpisów DLOG.
+Terminal otwiera się na pełnym ekranie; jego zawartość przewija się pionowo, a lista konsoli ma własne przewijanie. Dolne skróty są pogrupowane po polsku. Po dotknięciu **Ustaw klapę…** lub **Ustaw syberek…** można wpisać pozycję od 0 do 100% i zatwierdzić ją osobno — nie ma stałej wartości 50%. Przycisk **Zapisz logi** pozostaje nieaktywny, dopóki aplikacja nie odbierze prawdziwych wpisów DLOG.
 
 Odbiornik pobiera z Firebase RTDB ścieżkę bieżącego użytkownika:
 
@@ -15,13 +15,14 @@ Dotknięcie **Zapisz logi** otwiera systemowy selektor pliku Androida. Można wy
 
 ## Zastosowanie na Windows
 
-Po pobraniu zmian uruchom z katalogu głównego repozytorium:
+Po pobraniu zmian, z katalogu głównego repozytorium uruchom:
 
 ```powershell
 .\android-sync\Apply-Terminal-DLOG-Features.ps1
+.\android-sync\Apply-Terminal-Controls.ps1
 ```
 
-Skrypt można uruchomić ponownie: rozpoznaje już zastosowane poprawki. Jeśli odbiornik DLOG był wcześniej zastosowany osobnym skryptem, doda tylko eksport.
+Oba skrypty można uruchamiać ponownie — rozpoznają już zastosowany stan. Drugi skrypt sprawdza bazę i nakłada wyłącznie UI terminala; nie wysyła żadnych poleceń do centrali.
 
 Następnie zbuduj i zainstaluj **Debug APK** (to nie wgrywa firmware):
 
