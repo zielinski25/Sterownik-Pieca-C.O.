@@ -2,44 +2,52 @@
 
 Pakiet zawiera:
 
-- `Android-DirectBoot-78299c9-Audited.diff` — **pełny patch** do czystej bazy Android `78299c9`;
-- `Android-DirectBoot-Security-Battery-Icon.diff` — **nakładkę** dla kopii, w której poprzedni Direct Boot/debug-branding jest już zastosowany;
+- `Android-DirectBoot-78299c9-Audited.diff` — pełny patch do czystej bazy Android `78299c9`;
+- `Android-DirectBoot-Security-Battery-Icon.diff` — nakładkę dla kopii, w której poprzedni Direct Boot/debug-branding jest już zastosowany;
 - `Remove-Obsolete-Android-Default-FB-Password.ps1` — usuwa nieużywaną deklarację po nazwie, bez powielania jej wartości w patchu;
-- `ANDROID-SECURITY-BATTERY-AUDIT.md` — ustalenia, dowody, ryzyko resztkowe i ograniczenia testów.
+- `Android-DirectBoot-Audit-Followups.diff` — follow-up redakcji `tg_config` i anulowania żądań HTTP;
+- `Android-DirectBoot-Debug-Icon-Final.png` — samodzielny PNG końcowej ikony debug, do skopiowania po zastosowaniu patchy.
 
-Pełny patch zawiera bazową debugową grafikę. Aby użyć finalnej wybranej grafiki nr 2 (432×432), po zastosowaniu jednego z wariantów poniżej zastosuj nakładkę opisaną w sekcji „Końcowa grafika debug”. Nie zmienia ona produkcyjnej ikony ani firmware.
+Pełny patch i nakładki zawierają binarny diff PNG. Jeśli Git for Windows zgłosi błąd parsowania przy `GIT binary patch`, **nie wymuszaj patcha**. Zdefiniuj w PowerShell z katalogu głównego repozytorium:
+
+```powershell
+$debugIcon = 'android/app/src/debug/res/drawable-nodpi/ic_launcher_debug_art.png'
+```
+
+Przy kontrolach i zastosowaniu patchy Direct Boot/ikony użyj `--exclude="$debugIcon"`. To pomija wyłącznie binarny obraz, a pozostawia zmiany tekstowe zasobów debug. Końcowy PNG skopiuj poleceniami z sekcji „Końcowa grafika debug”. Nie wykluczaj całego `android/app/src/debug/res` — katalog zawiera też branding debug.
 
 ## Czysta kopia od bazy 78299c9
 
-Z katalogu głównego klona:
+Z katalogu głównego klona pobierz aktualizację. Jeśli `git pull --ff-only` zgłosi konflikt z Twoimi lokalnymi zmianami, zatrzymaj się i nie resetuj ich.
 
 ```powershell
 git pull --ff-only
 git status --porcelain
 
-git apply --check --unidiff-zero .\android-sync\Android-DirectBoot-78299c9-Audited.diff
+$debugIcon = 'android/app/src/debug/res/drawable-nodpi/ic_launcher_debug_art.png'
+git apply --check --unidiff-zero --exclude="$debugIcon" .\android-sync\Android-DirectBoot-78299c9-Audited.diff
 ```
 
 Jeśli kontrola przejdzie:
 
 ```powershell
-git apply --unidiff-zero .\android-sync\Android-DirectBoot-78299c9-Audited.diff
+git apply --unidiff-zero --exclude="$debugIcon" .\android-sync\Android-DirectBoot-78299c9-Audited.diff
 powershell -NoProfile -ExecutionPolicy Bypass -File .\android-sync\Remove-Obsolete-Android-Default-FB-Password.ps1
 ```
 
 ## Kopia testowa z wcześniejszym Direct Boot i brandingiem
 
-Jeśli w `piec-android-test` masz już poprzedni patch Direct Boot, poprawkę pętli alarmu, debug branding oraz poprawkę zasobu Androida, zastosuj **tylko nakładkę**:
+Jeśli w kopii masz już poprzedni patch Direct Boot, poprawkę pętli alarmu, debug branding oraz poprawkę zasobu Androida, zastosuj **tylko nakładkę**:
 
 ```powershell
-git pull --ff-only
-git apply --check --unidiff-zero .\android-sync\Android-DirectBoot-Security-Battery-Icon.diff
+$debugIcon = 'android/app/src/debug/res/drawable-nodpi/ic_launcher_debug_art.png'
+git apply --check --unidiff-zero --exclude="$debugIcon" .\android-sync\Android-DirectBoot-Security-Battery-Icon.diff
 ```
 
 Jeśli kontrola przejdzie:
 
 ```powershell
-git apply --unidiff-zero .\android-sync\Android-DirectBoot-Security-Battery-Icon.diff
+git apply --unidiff-zero --exclude="$debugIcon" .\android-sync\Android-DirectBoot-Security-Battery-Icon.diff
 powershell -NoProfile -ExecutionPolicy Bypass -File .\android-sync\Remove-Obsolete-Android-Default-FB-Password.ps1
 ```
 
@@ -59,15 +67,24 @@ Follow-up maskuje payload `tg_config` w toastach/logu aplikacji, kieruje lokalne
 
 ## Końcowa grafika debug
 
-Po zastosowaniu pełnego patcha albo nakładki Direct Boot oba warianty zawierają `src/debug/res/drawable-nodpi/ic_launcher_debug_art.png`. Aby zastąpić bazową grafikę wybraną opcją nr 2, zastosuj **tylko overlay**:
+Po zastosowaniu pełnego patcha albo nakładki Direct Boot zastosuj tekstowo nakładkę ikony, pomijając binarny PNG:
 
 ```powershell
-git apply --check .\android-sync\Android-DirectBoot-Debug-Icon-Overlay.diff
+$debugIcon = 'android/app/src/debug/res/drawable-nodpi/ic_launcher_debug_art.png'
+git apply --check --exclude="$debugIcon" .\android-sync\Android-DirectBoot-Debug-Icon-Overlay.diff
 if ($LASTEXITCODE -ne 0) { throw "Kontrola nie przeszła — zatrzymaj się." }
-git apply .\android-sync\Android-DirectBoot-Debug-Icon-Overlay.diff
+git apply --exclude="$debugIcon" .\android-sync\Android-DirectBoot-Debug-Icon-Overlay.diff
 ```
 
-Nie nakładaj tu samodzielnego `Android-DirectBoot-Debug-Icon.diff` — pełny patch już zawiera `ic_launcher.xml`. Szczegóły alternatywnych ścieżek opisuje `Android-DirectBoot-Debug-Icon-README.md`.
+Następnie skopiuj finalny plik PNG do zasobów wariantu debug:
+
+```powershell
+$debugIconDir = '.\android\app\src\debug\res\drawable-nodpi'
+New-Item -ItemType Directory -Path $debugIconDir -Force | Out-Null
+Copy-Item -LiteralPath .\android-sync\Android-DirectBoot-Debug-Icon-Final.png -Destination (Join-Path $debugIconDir 'ic_launcher_debug_art.png') -Force
+```
+
+Nie zmieniaj produkcyjnej ikony ani nie nakładaj samodzielnego `Android-DirectBoot-Debug-Icon.diff` — pełny patch/overlay zawiera konfigurację `ic_launcher.xml`.
 
 ## Build lokalny
 
