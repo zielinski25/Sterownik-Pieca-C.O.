@@ -50,8 +50,8 @@
 - Gałąź pozostała `arena/539ab1b6-sterownik-pieca-c-o`. W tym środowisku gałąź sesji jest stała, więc nie utworzono wskazanej w zadaniu `fix/v3.35.2-fb-tg-throttle-logs`.
 - Niczego nie wypchnięto. Przed użyciem OTA potrzebny jest build oraz osobny, uzgodniony release/tag `v3.35.2` zgodny z wersją w źródle.
 
-## Pytania wymagające odpowiedzi człowieka (§7)
+## Odpowiedzi i nadal otwarte pytania (§7)
 
-1. **Stall TG (2026-10-06, ok. 16:45–20:03):** czy zachował się checkpoint `diag` z czasu stallu albo core dump?
-2. **Restarty SW (2026-10-06, ok. 14:49, 14:57 i 15:27):** czy w tym czasie ręcznie wykonywano aktualizację firmware/OTA?
-3. **Pompa OFF we wszystkich próbkach:** czy w analizowanym okresie ogrzewanie miało być włączone? Jeśli tak, wymaga to osobnego zadania — w tej poprawce logiki pompy nie ruszano.
+- **Restarty SW (2026-10-06, ok. 14:49, 14:57 i 15:27):** użytkownik ocenia, że prawdopodobnie wynikały z OTA. To pozostaje hipotezą, nie potwierdzeniem konkretnej operacji; log zawiera `powod=SW`, a boot 8 potwierdza zatwierdzenie partycji OTA.
+- **Pompa OFF we wszystkich próbkach:** użytkownik potwierdził, że w piecu nie palono, więc wyłączona pompa była oczekiwana. Nie otwieramy osobnego problemu pompy.
+- **Stall TG (2026-10-06, ok. 16:45–20:03):** nadal otwarte — czy zachował się checkpoint `diag` z czasu stallu albo core dump?
