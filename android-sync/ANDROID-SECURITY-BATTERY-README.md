@@ -45,6 +45,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\android-sync\Remove-Obsole
 
 Jeżeli `--check` nie przechodzi, zatrzymaj się: nie używaj `--reject` i nie wymuszaj patcha. Nie nakładaj patcha pełnego na już zmodyfikowaną kopię.
 
+## Follow-up audytu (logi poufnych komend i anulowanie HTTP)
+
+Po zastosowaniu właściwego pełnego patcha/nakładki i uruchomieniu skryptu usuwającego nieużywaną deklarację zastosuj dodatkową poprawkę:
+
+```powershell
+git apply --check --unidiff-zero .\android-sync\Android-DirectBoot-Audit-Followups.diff
+if ($LASTEXITCODE -ne 0) { throw "Kontrola nie przeszła — zatrzymaj się." }
+git apply --unidiff-zero .\android-sync\Android-DirectBoot-Audit-Followups.diff
+```
+
+Follow-up maskuje payload `tg_config` w toastach/logu aplikacji, kieruje lokalne żądania Telegrama przez klienta bez proxy/przekierowań i łączy anulowanie coroutine z `Call.cancel()` dla zwykłych żądań oraz pogody. Dodaje też test jednostkowy redaktora. Nie usuwa tokenu z samego polecenia wysyłanego do RTDB i nie dodaje autoryzacji/TLS do firmware. Jeśli `--check` nie przechodzi, nie używaj `--reject`.
+
 ## Końcowa grafika debug
 
 Po zastosowaniu pełnego patcha albo nakładki Direct Boot oba warianty zawierają `src/debug/res/drawable-nodpi/ic_launcher_debug_art.png`. Aby zastąpić bazową grafikę wybraną opcją nr 2, zastosuj **tylko overlay**:

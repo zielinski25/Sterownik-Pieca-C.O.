@@ -18,6 +18,8 @@ Sprawdzono manifest, konfigurację cleartext/backup, źródła uwierzytelniania 
 
 ## 2. Najważniejsze ustalenia bezpieczeństwa
 
+> S1–S5 i początkowe wyliczenia baterii opisują stan źródła przed zastosowaniem poprawek Android-only po audycie. Aktualny status poprawek oraz ryzyka, które pozostały, podano w sekcji 8. Ustalenia o RTDB i firmware pozostają zależne od konfiguracji wdrożonej poza aplikacją.
+
 ### S1 — Wysokie: wspólne poświadczenia są zapisane w kodzie aplikacji i firmware
 
 `Prefs.kt` zawiera stałe związane z domyślnym hasłem konta Firebase i tokenem komend; domyślny token komend jest używany przez klienta RTDB. Analogiczne wartości występują w sprawdzonym źródle firmware. Stała Firebase API key jest identyfikatorem klienta, a nie hasłem — nie należy mylić jej z sekretem. Natomiast wspólne hasło i token komend trzeba traktować jako możliwe do odzyskania ze źródła, a przy obecnym release bez minifikacji także jako możliwe do odnalezienia w APK. Nie wykonywałem ekstrakcji APK, więc nie twierdzę, że zweryfikowałem binarkę.
@@ -67,7 +69,7 @@ Manifest ma `allowBackup="true"`, natomiast oba pliki reguł wskazują `piec_co_
 
 ## 3. Bateria i aktywność sieciowa
 
-**Wniosek statyczny:** obecny projekt stawia niską latencję alarmu i pracę przed odblokowaniem ponad minimalny ruch sieciowy. W trybie całodobowego czuwania nie nazwałbym go „optymalnym bateriowo”. Rzeczywiste zużycie zależy od telefonu, Wi-Fi/LTE, Doze, ROM-u i siły sygnału; nie było pomiaru mAh.
+**Wniosek statyczny:** audytowana baza stawia niską latencję alarmu i pracę przed odblokowaniem ponad minimalny ruch sieciowy. W trybie całodobowego czuwania nie nazwałbym jej „optymalną bateriowo”. Rzeczywiste zużycie zależy od telefonu, Wi-Fi/LTE, Doze, ROM-u i siły sygnału; nie było pomiaru mAh. Liczby pollingu UI poniżej dotyczą stanu bazowego; poprawka lokalnie wydłuża interwał UI z 4 s do 8 s (około 450 żądań/h zamiast 900) i ogranicza odświeżanie historii do widoku wykresu. Fallback usługi pozostaje bez zmian.
 
 ### Ruch w tle
 
@@ -102,7 +104,7 @@ Manifest ma `allowBackup="true"`, natomiast oba pliki reguł wskazują `piec_co_
 | Potencjalnie nieograniczona lista | `terminalLines` jest dopisywane przez `terminalSend()` bez limitu; nie znalazłem obecnie czytnika ani wywołania tej metody w UI. To niskie, latentne ryzyko wzrostu w czasie życia modelu, nie potwierdzony wyciek aplikacji. |
 | Bufor terminala | `terminalRaw` ogranicza liczbę wpisów, ale nie długość bajtową pojedynczej linii; `terminalAppend()` nie ma w tym checkoutcie call-site. Warto dodać limit bajtów, jeśli zostanie podłączony strumień logów. |
 | Historia wykresu | Wyniki dla 30 dni są materializowane w całości i nie są downsamplowane przed przekazaniem do wykresu. To ograniczone czasowo żądanie użytkownika, nie wyciek, ale może zwiększyć peak heap/CPU; dokładny koszt wymaga profilera. |
-| Zwykłe żądania HTTP | Helper `RtdbClient.execute()` i bezpośrednie żądania w `Weather.fetch()`/`AppModel` wykonują synchroniczne `OkHttp.execute()` w `Dispatchers.IO`; w tych miejscach nie widać jawnego hooka `invokeOnCompletion { call.cancel() }`. Nie należy tego mylić z długotrwałym SSE, który ma taki hook opisany wyżej. `callTimeout` wynosi 15 s. Anulowanie coroutine może więc nie przerwać natychmiast synchronicznego I/O; operacja jest jednak ograniczona timeoutem, a `Response.use` zwalnia odpowiedź po zakończeniu. To możliwe opóźnienie sprzątania, nie dowód permanentnego wycieku. |
+| Anulowanie żądań HTTP | Po poprawce RTDB `execute()`, klient lokalny ESP `executeEsp()`, start skanu Wi-Fi i `Weather.fetch()` rejestrują `invokeOnCompletion { call.cancel() }`; odpowiedzi są zamykane przez `use`. Długotrwały SSE ma własny hook. Bezpośrednie lokalne zapisy/testy Telegrama zostały przekierowane przez `postLocalController()` do klienta bez proxy/przekierowań. Zwykły `callTimeout` wynosi 15 s; SSE nie ma limitu czasu, ale jest anulowane razem z coroutine. To poprawia porządek sprzątania statycznie; nie zastępuje profilera heap ani testu runtime. |
 
 **Priorytet pamięci:** ograniczyć `terminalLines` bajtowo/liczbowo, dodać pojedynczy cancellable job dla historii i downsampling wykresu, a potem sprawdzić Android Studio Memory Profiler/heap dump. Nie ma podstaw do obietnicy „brak wycieków” bez takiego testu.
 
@@ -126,4 +128,18 @@ Pakiet przenoszący zawiera dwa alternatywne warianty: `Android-DirectBoot-Debug
 
 - **Bezpieczeństwo:** nie uznałbym obecnego źródła za gotowe do deklaracji „bezpieczne” przed rozwiązaniem współdzielonych poświadczeń, lokalnego API bez widocznej autoryzacji i cleartext z sekretami. Największa niewiadoma to rzeczywiste reguły RTDB oraz firmware działający na urządzeniu.
 - **Pamięć:** brak dowodu na stały wyciek głównych komponentów, ale jest latentna nieograniczona lista i niezmierzony peak pamięci historii. Nie można uczciwie zagwarantować braku wycieków statycznym przeglądem.
-- **Bateria:** projekt jest nastawiony na ciągłe, szybkie czuwanie, nie minimalny pobór. Najbardziej oczywiste zbędne koszty to 4-sekundowy polling na wierzchu, równoległy fallback SSE oraz pobieranie historii przy każdym `onResume`, także poza stroną wykresu. Rzeczywistego drenażu nie zmierzono.
+- **Bateria:** projekt jest nastawiony na ciągłe, szybkie czuwanie, nie minimalny pobór. Najbardziej oczywiste zbędne koszty bazowe to 4-sekundowy polling na wierzchu i równoległy fallback SSE; poprawka podwaja wyłącznie interwał UI i nie usuwa fallbacku alarmowego. Rzeczywistego drenażu nie zmierzono.
+
+## 8. Status po zastosowaniu poprawek Android-only
+
+Po sporządzeniu audytu zastosowałem lokalnie główną poprawkę bezpieczeństwa/baterii, pomijając wyłącznie `src/debug/res`, aby nie nadpisać wybranej ikony debug. Usunąłem także nieużywaną deklarację domyślnego hasła Firebase po nazwie; w bazowym źródle nie znalazłem jej użyć. Dodatkowy follow-up przygotowałem dla żądań i logowania. Te zmiany są **źródłem Androida do lokalnego builda**, nie wynikiem testu APK.
+
+| Obszar | Status po poprawce lokalnej | Co pozostaje |
+|---|---|---|
+| Cel lokalnego HTTP | Tylko literalne RFC1918 IPv4 i bezpieczna ścieżka; klient ESP omija proxy, nie podąża za redirectem i nie ponawia POST. Lokalny zapis/test Telegrama używa tego klienta. | Ruch do ESP nadal jest zwykłym HTTP. Filtr IP nie daje poufności ani autoryzacji w LAN. Firmware wymaga TLS i uwierzytelnienia po stronie serwera. |
+| Sekrety Telegrama/logi | Token i chat ID zapisują się przez istniejący AES-GCM/Keystore z migracją; w follow-upie `tg_config` jest redagowane w toastach i logu. Zwykłe żądania RTDB/ESP, SSE i pogoda wiążą koniec coroutine z `Call.cancel()`. | Sam token wciąż jest przesyłany poleceniem do RTDB, a jego reguły/retencja są nieznane. Wspólny token komend nie został obrócony. |
+| Backup | `allowBackup=false` i wykluczenia CE/DE są jawne. | Zachowanie producentów telefonu wymaga testu backup/transfer; ustawienia mogą nie przejść na nowy telefon. |
+| Polling i historia | UI odpytuje co 8 s; historię ładuje przy widoku wykresu; startowe pobrania pogody są deduplikowane. | Usługa alarmowa nadal ma fallback ok. 120 GET/h i reconnecty SSE; nie mierzyłem wpływu na baterię ani opóźnień. |
+| Pamięć | Standardowe synchroniczne połączenia i pogoda mają jawne anulowanie; odpowiedzi są zamykane przez `use`. | `terminalLines` pozostaje latentnie bez limitu, a maksymalny heap historii nie był profilowany. |
+
+Patchy nie skompilowałem ani nie uruchomiłem; w tym środowisku brak JDK/Android SDK. Pozostawione są istniejące lokalne zmiany w źródłach Androida — nie zostały włączone do commitu z dokumentacją. Żadna zmiana nie dotyka firmware, RTDB ani stanu pieca.

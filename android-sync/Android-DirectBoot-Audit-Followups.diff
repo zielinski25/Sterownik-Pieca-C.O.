@@ -1,0 +1,185 @@
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+index 844b9959d329a9e1b152c27671f2bf582b16bd3e..4bd436eb9871118689be83d8c066336f539cbff2 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -395,0 +396,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        val sensitive = CommandRedactor.isSensitive(command)
++        val commandLabel = CommandRedactor.forDisplay(command)
+@@ -397 +399 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            showToast(command, "Brak połączenia z Firebase — polecenia nie wysłano", "err")
++            showToast(commandLabel, "Brak połączenia z Firebase — polecenia nie wysłano", "err")
+@@ -403,2 +405,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        showToast(command, "Wysyłanie do sterownika…", "wait")
+-        addLog("CMD", "Wysyłanie: $command", "cmd")
++        showToast(commandLabel, "Wysyłanie do sterownika…", "wait")
++        addLog("CMD", "Wysyłanie: $commandLabel", "cmd")
+@@ -411 +413 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                    showToast(command, "Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie", "warn")
++                    showToast(commandLabel, "Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie", "warn")
+@@ -417,2 +419,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                    showToast(command, "Potwierdzone przez sterownik (ACK, ${latency}ms)", "ok")
+-                    addLog("ACK", "ACK OK (${latency}ms): $command", "ack")
++                    showToast(commandLabel, "Potwierdzone przez sterownik (ACK, ${latency}ms)", "ok")
++                    addLog("ACK", "ACK OK (${latency}ms): $commandLabel", "ack")
+@@ -426,2 +428,5 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                    showToast(command, "Sterownik odrzucił polecenie: ${ack.error}", "err")
+-                    addLog("NACK", "Odrzucone (${ack.error}): $command", "err")
++                    val errorText = if (sensitive) "Sterownik odrzucił konfigurację Telegrama."
++                        else "Sterownik odrzucił polecenie: ${ack.error}"
++                    showToast(commandLabel, errorText, "err")
++                    addLog("NACK", if (sensitive) "Odrzucono poufną konfigurację Telegrama"
++                        else "Odrzucone (${ack.error}): $commandLabel", "err")
+@@ -432,2 +437,4 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            showToast(command, "Błąd wysyłki: ${e.message ?: "brak"}", "err")
+-            addLog("CMD_ERR", "Błąd wysyłki: " + (e.message ?: "?"), "err")
++            val errorText = if (sensitive) "Błąd wysyłki poufnego polecenia"
++                else "Błąd wysyłki: ${e.message ?: "brak"}"
++            showToast(commandLabel, errorText, "err")
++            addLog("CMD_ERR", errorText, "err")
+@@ -852,9 +859,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        val res = withContext(kotlinx.coroutines.Dispatchers.IO) {
+-            try {
+-                val url = Rtdb.localControllerUrl(S.ip, "/api/telegram/save")
+-                if (url == null) return@withContext Pair(false, "Adres centrali nie jest prywatnym adresem IPv4 — połączenie zablokowane.")
+-                val r = http.newCall(okhttp3.Request.Builder().url(url).post(payload.toString().toRequestBody(null)).build()).execute()
+-                r.use {
+-                    val j = try { JSONObject(it.body?.string() ?: "") } catch (e: Exception) { JSONObject() }
+-                    if (it.isSuccessful && j.optBoolean("ok")) true to okMsg
+-                    else false to (j.optString("error").ifEmpty { "Błąd zapisu (HTTP ${it.code})" })
++        val res = try {
++            val (code, body) = Rtdb.postLocalController(S.ip, "/api/telegram/save", payload.toString())
++            if (code == -2) false to "Adres centrali nie jest prywatnym adresem IPv4 — połączenie zablokowane."
++            else {
++                val response = try { JSONObject(body) } catch (e: Exception) { JSONObject() }
++                when {
++                    code in 200..299 && response.optBoolean("ok") -> true to okMsg
++                    code < 0 -> false to "Nie udało się połączyć z centralą."
++                    else -> false to "Błąd zapisu konfiguracji Telegrama (HTTP $code)."
+@@ -862,2 +868,0 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            } catch (e: Exception) {
+-                false to "Nie udało się połączyć z centralą (sieć/CORS?)"
+@@ -864,0 +870,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        } catch (e: Exception) {
++            false to "Nie udało się połączyć z centralą."
+@@ -884,8 +891,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            val res = withContext(kotlinx.coroutines.Dispatchers.IO) {
+-                try {
+-                    val url = Rtdb.localControllerUrl(S.ip, "/api/telegram/send")
+-                    if (url == null) return@withContext Pair(false, "Adres centrali nie jest prywatnym adresem IPv4 — połączenie zablokowane.")
+-                    http.newCall(okhttp3.Request.Builder().url(url).post("".toRequestBody(null)).build()).execute().use { r ->
+-                        val j = try { JSONObject(r.body?.string() ?: "") } catch (e: Exception) { JSONObject() }
+-                        if (r.isSuccessful && j.optBoolean("ok")) true to "Raport wysłany — sprawdź czat operatora"
+-                        else false to (j.optString("error").ifEmpty { "Nie wysłano (HTTP ${r.code})" })
++            val res = try {
++                val (code, body) = Rtdb.postLocalController(S.ip, "/api/telegram/send", "")
++                if (code == -2) false to "Adres centrali nie jest prywatnym adresem IPv4 — połączenie zablokowane."
++                else {
++                    val response = try { JSONObject(body) } catch (e: Exception) { JSONObject() }
++                    when {
++                        code in 200..299 && response.optBoolean("ok") -> true to "Raport wysłany — sprawdź czat operatora"
++                        code < 0 -> false to "Nie udało się połączyć z centralą."
++                        else -> false to "Nie wysłano raportu (HTTP $code)."
+@@ -893 +901,3 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                } catch (e: Exception) { false to "Nie udało się połączyć z centralą" }
++                }
++            } catch (e: Exception) {
++                false to "Nie udało się połączyć z centralą."
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/CommandRedactor.kt b/android/app/src/main/java/com/sterownikco/pro/core/CommandRedactor.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..4be51e9f80d30b5539e34d7def310c0c5d1eb3bb
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/CommandRedactor.kt
+@@ -0,0 +1,12 @@
++package com.sterownikco.pro.core
++
++/** Redacts commands that carry credentials before they enter UI toasts or the in-memory log. */
++internal object CommandRedactor {
++    fun isSensitive(command: String): Boolean {
++        val verb = command.trimStart().takeWhile { !it.isWhitespace() }
++        return verb.equals("tg_config", ignoreCase = true)
++    }
++
++    fun forDisplay(command: String): String =
++        if (isSensitive(command)) "tg_config [dane poufne ukryte]" else command
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+index 974f876bcc6d2943f6db974150289ed65db46982..578b16795df9a7887f4fedf540c53ffd0d6e8d9f 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+@@ -102 +102,3 @@ object Rtdb {
+-            http.newCall(req).execute().use { r -> r.code to (r.body?.string() ?: "") }
++            val call = http.newCall(req)
++            coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
++            call.execute().use { r -> r.code to (r.body?.string() ?: "") }
+@@ -110 +112,3 @@ object Rtdb {
+-            espHttp.newCall(req).execute().use { r -> r.code to (r.body?.string() ?: "") }
++            val call = espHttp.newCall(req)
++            coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
++            call.execute().use { r -> r.code to (r.body?.string() ?: "") }
+@@ -278,0 +283,7 @@ object Rtdb {
++    /** Use the no-proxy local client for credential-bearing controller POSTs too. */
++    internal suspend fun postLocalController(ip: String, path: String, body: String): Pair<Int, String> {
++        val url = localControllerUrl(ip, path) ?: return -2 to "invalid local controller address"
++        val request = Request.Builder().url(url).post(body.toRequestBody(null)).build()
++        return executeEsp(request)
++    }
++
+@@ -301 +312 @@ object Rtdb {
+-                    val r = espHttp.newCall(Request.Builder()
++                    val call = espHttp.newCall(Request.Builder()
+@@ -303,2 +314,3 @@ object Rtdb {
+-                        .post("".toRequestBody(null)).build()).execute()
+-                    r.use { it.isSuccessful }
++                        .post("".toRequestBody(null)).build())
++                    coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
++                    call.execute().use { it.isSuccessful }
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/Weather.kt b/android/app/src/main/java/com/sterownikco/pro/core/Weather.kt
+index 7ed104794ecfffb6cbb067a060d1a928d7ba1010..568349550168745580531e8dd5474c6e1bd14382 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/Weather.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/Weather.kt
+@@ -3,0 +4 @@ import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.job
+@@ -94 +95,3 @@ object Weather {
+-                val body = client.newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return@withContext null
++                val call = client.newCall(req)
++                coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
++                val body = call.execute().use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return@withContext null
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/CommandRedactorTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/CommandRedactorTest.kt
+new file mode 100644
+index 0000000000000000000000000000000000000000..36020871d08c85171b9e72e19c4e240968df0af5
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/CommandRedactorTest.kt
+@@ -0,0 +1,33 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class CommandRedactorTest {
++    @Test
++    fun redactsTelegramConfigurationPayloadFromDisplay() {
++        val raw = "tg_config 123456:placeholder-token 987654321 1"
++        val display = CommandRedactor.forDisplay(raw)
++
++        assertTrue(CommandRedactor.isSensitive(raw))
++        assertEquals("tg_config [dane poufne ukryte]", display)
++        assertFalse(display.contains("placeholder-token"))
++        assertFalse(display.contains("987654321"))
++    }
++
++    @Test
++    fun keepsOrdinaryCommandsUnchanged() {
++        val command = "pompa 1"
++
++        assertFalse(CommandRedactor.isSensitive(command))
++        assertEquals(command, CommandRedactor.forDisplay(command))
++    }
++
++    @Test
++    fun matchesTheVerbCaseInsensitivelyAndWithWhitespace() {
++        assertTrue(CommandRedactor.isSensitive("  TG_CONFIG\ttoken chat 1"))
++        assertFalse(CommandRedactor.isSensitive("tg_configure token chat 1"))
++    }
++}

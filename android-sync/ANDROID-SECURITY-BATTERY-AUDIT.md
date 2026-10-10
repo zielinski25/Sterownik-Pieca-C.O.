@@ -32,6 +32,7 @@ Nie znalazłem kodu analityki reklamowej ani jawnego wysyłania tokenów do logg
 - Telegram bot token i chat ID są teraz odczytywane/zapisywane przez istniejący AES-GCM + Android Keystore (`getSecret`/`setSecret`); stare wartości tekstowe są migrowane przy odczycie. Przy błędzie szyfrowania lokalna wartość jest usuwana, a UI informuje o problemie.
 - Zabezpieczyłem lokalne żądania ESP przed hostami publicznymi, niebezpiecznymi ścieżkami, systemowym proxy i przekierowaniami. Pozostaje jawny cleartext na lokalnym Wi-Fi.
 - Usuniłem adres e-mail z bufora kopiowalnych logów logowania.
+- Follow-up `Android-DirectBoot-Audit-Followups.diff` maskuje poufne `tg_config` w toastach/logu, kieruje lokalne zapisy/testy Telegrama przez klienta bez proxy i dopina `Call.cancel()` do anulowania zwykłych żądań RTDB/ESP oraz pogody. Polecenie z tokenem nadal trafia do RTDB; poprawka nie zmienia protokołu firmware.
 - Po wylogowaniu polling UI nie odpytuje RTDB bez refresh tokenu; pogodowe żądania startowe są serializowane; interwał odświeżania UI wynosi 8 s. Ekran może więc odświeżyć temperaturę do 4 s później niż wcześniej.
 - Tekst ustawień baterii informuje, że wyjątek optymalizacji jest opcjonalny i może zwiększyć pobór energii. Aplikacja nie wyłącza tej optymalizacji automatycznie.
 
@@ -43,8 +44,8 @@ W statycznym przeglądzie nie znalazłem oczywistego, nieograniczonego wycieku: 
 
 - XML: **25 plików** zasobów parsują się poprawnie.
 - Ikona: bazowy debug asset w pełnym patchu ma **512×512**; dodatkowa nakładka `Android-DirectBoot-Debug-Icon-Overlay.diff` podmienia go na finalną wybraną grafikę **432×432**. XML produkcyjnej ikony porównałem z bazą — bez zmian.
-- Oba patche przechodzą `git apply --check --unidiff-zero` na odpowiednich stanach bazowych; po zastosowaniu jedyną różnicą do źródła jest usuwana przez skrypt deklaracja `DEFAULT_FB_PASS`.
-- Dodałem testy jednostkowe allowlisty prywatnego IPv4 i bezpiecznych ścieżek, ale **nie uruchomiłem** `:app:testDebugUnitTest` ani `:app:assembleDebug`: w tym środowisku nie ma JDK/`java`. Patch wymaga lokalnego buildu przed instalacją.
+- Główny patch, follow-up i overlay ikony przeszły `git apply --check` na odpowiadających im stanach bazowych. Skrypt usuwa nieużywaną deklarację `DEFAULT_FB_PASS` po nazwie; jej wartość nie jest powielana w patchu.
+- Dodano testy jednostkowe allowlisty IPv4, bezpiecznych ścieżek i redakcji `tg_config`, ale **nie uruchomiłem** `:app:testDebugUnitTest` ani `:app:assembleDebug`: w tym środowisku nie ma JDK/`java`. Patch wymaga lokalnego buildu przed instalacją.
 - Nie wykonano dynamicznego przechwytywania ruchu, testu z APK, audytu reguł Firebase w konsoli ani pomiaru baterii. Nie ma twierdzenia, że aktualne zmiany działają runtime.
 - Nie wykonywałem instalacji, rebootu, symulacji alarmu, poleceń, OTA ani żadnej operacji na żywym piecu; firmware nie był budowany ani flashowany.
 
