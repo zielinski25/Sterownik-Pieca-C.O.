@@ -15,7 +15,7 @@ Dotknięcie **Zapisz logi** otwiera systemowy selektor pliku Androida. Można wy
 
 ## Zbiorcza zmiana kategorii DLOG
 
-Firmware nie obsługuje skrótu `diag remote cat ALL on/off`; przyjmuje jedną z 21 nazw kategorii w każdym poleceniu. Poprawka aplikacji wysyła więc kategorie pojedynczo, czekając na ACK ESP32 po każdej. Pasek statusu pokazuje postęp `n/21`; przy braku lub odrzuceniu ACK zatrzymuje serię i podaje kategorię oraz liczbę wykonanych zmian. W czasie serii kontrolki kategorii i pozostałe polecenia terminala są blokowane, aby nie nadpisać pojedynczej komendy oczekującej w Firebase. Filtry lokalnego bufora nadal zmieniają się natychmiast. Skrypt zastosuje jedynie zmiany źródłowe — sam nie łączy się z Firebase ani piecem.
+Firmware nie obsługuje skrótu `diag remote cat ALL on/off`; przyjmuje jedną z 21 nazw kategorii w każdym poleceniu. Poprawka aplikacji wysyła więc kategorie pojedynczo, czekając na ACK ESP32 po każdej. Pasek statusu pokazuje postęp `n/21`; przy braku lub odrzuceniu ACK zatrzymuje serię i podaje kategorię oraz liczbę wykonanych zmian. Poprawka czeka też na zakończenie wcześniejszego polecenia terminala, a w czasie serii blokuje nowe kontrolki i utrzymuje blokadę kolejki, aby nie nadpisać pojedynczej komendy oczekującej w Firebase. Filtry lokalnego bufora nadal zmieniają się natychmiast. Skrypt zastosuje jedynie zmiany źródłowe — sam nie łączy się z Firebase ani piecem.
 
 ## Zastosowanie na Windows
 
@@ -27,7 +27,7 @@ Po pobraniu zmian, z katalogu głównego repozytorium uruchom:
 .\android-sync\Apply-Terminal-DLOG-Category-Batch.ps1
 ```
 
-Skrypty można uruchamiać ponownie — rozpoznają już zastosowany stan. Skrypt kontrolek sprawdza bazę i nakłada wyłącznie UI terminala; skrypt kategorii nakłada obsługę kolejki ACK. Żaden z nich nie wysyła poleceń do centrali.
+Skrypty można uruchamiać ponownie — rozpoznają już zastosowany stan. Skrypt kontrolek sprawdza bazę i nakłada wyłącznie UI terminala; skrypt kategorii nakłada obsługę kolejki ACK, a także aktualizuje wcześniejszą wersję poprawki kategorii, jeśli była już zastosowana. Żaden z nich nie wysyła poleceń do centrali.
 
 Następnie zbuduj i zainstaluj **Debug APK** (to nie wgrywa firmware):
 

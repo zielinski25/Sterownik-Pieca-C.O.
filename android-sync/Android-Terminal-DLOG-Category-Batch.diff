@@ -1,8 +1,16 @@
 diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
-index 54b8f56..50d3446 100644
+index 54b8f56..0625084 100644
 --- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
 +++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
-@@ -212,7 +212,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+@@ -57,6 +57,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+         .build()
+     private val pollMutex = Mutex()
+     private val weatherMutex = Mutex()
++    private val terminalCommandMutex = Mutex()
+ 
+     // ── stan połączenia ─────────────────────────────────────────────────────
+     var connected by mutableStateOf(false)
+@@ -212,7 +213,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                  while (true) {
                      delay(1000)
                      if (sheet != null) sheetTick++
@@ -11,7 +19,7 @@ index 54b8f56..50d3446 100644
                          termAutoOffAt = 0L
                          termStatus = "Minął lokalny limit czasu — wysyłam Remote OFF i czekam na ACK."
                          termStatusKind = "warn"
-@@ -1044,6 +1044,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+@@ -1044,6 +1045,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
      var termPaused by mutableStateOf(false)
      var termOpened by mutableStateOf(false)
      var termStateKnown by mutableStateOf(false)
@@ -19,19 +27,171 @@ index 54b8f56..50d3446 100644
      var termAutoOffAt by mutableLongStateOf(0L)
      var termLevel by mutableStateOf("INFO")
      var termStatus by mutableStateOf("Brak odebranych wpisów DLOG. Oczekiwanie na rzeczywiste dane sterownika.")
-@@ -1390,6 +1391,11 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
-     }
+@@ -1348,81 +1350,114 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
  
-     private fun terminalSendWithAck(command: String, success: String, onAck: () -> Unit = {}) = scope.launch {
+     fun terminalRemoteOff() = setTerminalRemote(false)
+ 
++    private suspend fun <T> withTerminalCommandLock(action: suspend () -> T): T {
++        terminalCommandMutex.lock()
++        try {
++            return action()
++        } finally {
++            terminalCommandMutex.unlock()
++        }
++    }
++
+     private fun setTerminalRemote(enabled: Boolean) = scope.launch {
+-        if (!connected) {
+-            termStateKnown = false
+-            termStatus = "Brak połączenia z Firebase — polecenie Remote nie zostało wysłane."
+-            termStatusKind = "err"
 +        if (termCategoryBatchBusy) {
 +            termStatus = "Poczekaj na zakończenie zmiany filtrów DLOG."
 +            termStatusKind = "warn"
-+            return@launch
-+        }
-         if (!connected) {
-             termStatus = "Brak połączenia Firebase — polecenia DLOG nie wysłano."
-             termStatusKind = "err"
-@@ -1422,7 +1428,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+             return@launch
+         }
+-        val command = if (enabled) "diag remote on" else "diag remote off"
+-        if (!enabled) termAutoOffAt = 0L
+-        termStatus = "Oczekiwanie na potwierdzenie sterownika…"
+-        termStatusKind = ""
+-        try {
+-            val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
+-            when {
+-                ack == null -> {
+-                    termStateKnown = false
+-                    termStatus = "Brak potwierdzenia ESP32; stan Remote jest nieznany."
+-                    termStatusKind = "warn"
+-                }
+-                !ack.ok -> {
+-                    termStatus = "ESP32 odrzucił polecenie: ${ack.error}"
+-                    termStatusKind = "err"
+-                }
+-                else -> {
+-                    termOpened = enabled
+-                    termStateKnown = true
+-                    termAutoOffAt = if (enabled) System.currentTimeMillis() + 60L * 60_000L else 0L
+-                    termStatus = if (enabled)
+-                        "ESP32 potwierdził Remote ON. Oczekiwanie na rzeczywiste wpisy DLOG."
+-                    else "ESP32 potwierdził Remote OFF."
+-                    termStatusKind = "ok"
+-                    poll()
++        withTerminalCommandLock {
++            if (termCategoryBatchBusy) {
++                termStatus = "Poczekaj na zakończenie zmiany filtrów DLOG."
++                termStatusKind = "warn"
++                return@withTerminalCommandLock
++            }
++            if (!connected) {
++                termStateKnown = false
++                termStatus = "Brak połączenia z Firebase — polecenie Remote nie zostało wysłane."
++                termStatusKind = "err"
++                return@withTerminalCommandLock
++            }
++            val command = if (enabled) "diag remote on" else "diag remote off"
++            if (!enabled) termAutoOffAt = 0L
++            termStatus = "Oczekiwanie na potwierdzenie sterownika…"
++            termStatusKind = ""
++            try {
++                val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
++                when {
++                    ack == null -> {
++                        termStateKnown = false
++                        termStatus = "Brak potwierdzenia ESP32; stan Remote jest nieznany."
++                        termStatusKind = "warn"
++                    }
++                    !ack.ok -> {
++                        termStatus = "ESP32 odrzuciło polecenie: ${ack.error}"
++                        termStatusKind = "err"
++                    }
++                    else -> {
++                        termOpened = enabled
++                        termStateKnown = true
++                        termAutoOffAt = if (enabled) System.currentTimeMillis() + 60L * 60_000L else 0L
++                        termStatus = if (enabled)
++                            "ESP32 potwierdził Remote ON. Oczekiwanie na rzeczywiste wpisy DLOG."
++                        else "ESP32 potwierdził Remote OFF."
++                        termStatusKind = "ok"
++                        poll()
++                    }
+                 }
++            } catch (e: Exception) {
++                termStateKnown = false
++                termStatus = "Błąd polecenia Remote: ${e.message ?: "brak odpowiedzi"}"
++                termStatusKind = "err"
+             }
+-        } catch (e: Exception) {
+-            termStateKnown = false
+-            termStatus = "Błąd polecenia Remote: ${e.message ?: "brak odpowiedzi"}"
+-            termStatusKind = "err"
+         }
+     }
+ 
+     private fun terminalSendWithAck(command: String, success: String, onAck: () -> Unit = {}) = scope.launch {
+-        if (!connected) {
+-            termStatus = "Brak połączenia Firebase — polecenia DLOG nie wysłano."
+-            termStatusKind = "err"
++        if (termCategoryBatchBusy) {
++            termStatus = "Poczekaj na zakończenie zmiany filtrów DLOG."
++            termStatusKind = "warn"
+             return@launch
+         }
+-        termStatus = "Oczekiwanie na potwierdzenie sterownika…"
+-        termStatusKind = ""
+-        try {
+-            val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
+-            when {
+-                ack == null -> {
+-                    termStatus = "Brak ACK ESP32; stan tej opcji jest nieznany."
+-                    termStatusKind = "warn"
+-                }
+-                !ack.ok -> {
+-                    termStatus = "ESP32 odrzucił polecenie: ${ack.error}"
+-                    termStatusKind = "err"
+-                }
+-                else -> {
+-                    onAck()
+-                    termStatus = success
+-                    termStatusKind = "ok"
+-                    poll()
++        withTerminalCommandLock {
++            if (termCategoryBatchBusy) {
++                termStatus = "Poczekaj na zakończenie zmiany filtrów DLOG."
++                termStatusKind = "warn"
++                return@withTerminalCommandLock
++            }
++            if (!connected) {
++                termStatus = "Brak połączenia Firebase — polecenia DLOG nie wysłano."
++                termStatusKind = "err"
++                return@withTerminalCommandLock
++            }
++            termStatus = "Oczekiwanie na potwierdzenie sterownika…"
++            termStatusKind = ""
++            try {
++                val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
++                when {
++                    ack == null -> {
++                        termStatus = "Brak ACK ESP32; stan tej opcji jest nieznany."
++                        termStatusKind = "warn"
++                    }
++                    !ack.ok -> {
++                        termStatus = "ESP32 odrzuciło polecenie: ${ack.error}"
++                        termStatusKind = "err"
++                    }
++                    else -> {
++                        onAck()
++                        termStatus = success
++                        termStatusKind = "ok"
++                        poll()
++                    }
+                 }
++            } catch (e: Exception) {
++                termStatus = "Błąd polecenia DLOG: ${e.message ?: "brak odpowiedzi"}"
++                termStatusKind = "err"
+             }
+-        } catch (e: Exception) {
+-            termStatus = "Błąd polecenia DLOG: ${e.message ?: "brak odpowiedzi"}"
+-            termStatusKind = "err"
+         }
      }
  
      fun terminalSetLevel(lvl: String) {
@@ -40,14 +200,22 @@ index 54b8f56..50d3446 100644
          if (!termOpened) {
              termLevel = lvl // lokalny wybór; nie twierdzi, że ESP32 zmieniło poziom
              termStatus = "Poziom $lvl wybrano lokalnie; nie wysłano go do sterownika."
-@@ -1435,20 +1441,65 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+@@ -1435,20 +1470,76 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
      }
  
      fun terminalSetCategory(cat: String, on: Boolean) {
 +        if (termCategoryBatchBusy) return
          termCats[cat] = on
          terminalRender()
-         if (termOpened) send("diag remote cat $cat " + if (on) "on" else "off")
+-        if (termOpened) send("diag remote cat $cat " + if (on) "on" else "off")
++        if (termOpened) {
++            val state = if (on) "on" else "off"
++            scope.launch {
++                withTerminalCommandLock {
++                    if (!termCategoryBatchBusy) sendAwait("diag remote cat $cat $state")
++                }
++            }
++        }
      }
  
 +    /** Firmware accepts one named category per command; send the ALL shortcut serially with ACKs. */
@@ -76,26 +244,30 @@ index 54b8f56..50d3446 100644
 +            var completed = 0
 +            var currentCategory = ""
 +            try {
-+                termStatus = "Wysyłanie filtrów DLOG: 0/${DLOG_CATEGORIES.size}."
++                termStatus = "Oczekiwanie na poprzednie polecenie terminala…"
 +                termStatusKind = ""
-+                for (cat in DLOG_CATEGORIES) {
-+                    currentCategory = cat
-+                    val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), "diag remote cat $cat $state")
-+                    when {
-+                        ack == null -> {
-+                            termStatus = "Brak ACK dla kategorii $cat; wykonano $completed/${DLOG_CATEGORIES.size}."
-+                            termStatusKind = "warn"
-+                            return@launch
++                withTerminalCommandLock {
++                    termStatus = "Wysyłanie filtrów DLOG: 0/${DLOG_CATEGORIES.size}."
++                    for (cat in DLOG_CATEGORIES) {
++                        currentCategory = cat
++                        val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), "diag remote cat $cat $state")
++                        when {
++                            ack == null -> {
++                                termStatus = "Brak ACK dla kategorii $cat; wykonano $completed/${DLOG_CATEGORIES.size}."
++                                termStatusKind = "warn"
++                                return@withTerminalCommandLock
++                            }
++                            !ack.ok -> {
++                                termStatus = "ESP32 odrzuciło kategorię $cat: ${ack.error}; wykonano $completed/${DLOG_CATEGORIES.size}."
++                                termStatusKind = "err"
++                                return@withTerminalCommandLock
++                            }
 +                        }
-+                        !ack.ok -> {
-+                            termStatus = "ESP32 odrzuciło kategorię $cat: ${ack.error}; wykonano $completed/${DLOG_CATEGORIES.size}."
-+                            termStatusKind = "err"
-+                            return@launch
-+                        }
++                        completed++
++                        termStatus = "Ustawianie filtrów DLOG: $completed/${DLOG_CATEGORIES.size}."
 +                    }
-+                    completed++
-+                    termStatus = "Ustawianie filtrów DLOG: $completed/${DLOG_CATEGORIES.size}."
 +                }
++                if (completed < DLOG_CATEGORIES.size) return@launch
 +                termStatus = "ESP32 potwierdziło wszystkie filtry DLOG: ${if (on) "włączone" else "wyłączone"}."
 +                termStatusKind = "ok"
 +                poll()
@@ -110,18 +282,29 @@ index 54b8f56..50d3446 100644
          }
      }
  
-@@ -1456,6 +1507,11 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+@@ -1456,7 +1547,21 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
      fun terminalExec(cmd: String) {
          val command = cmd.trim()
          if (command.isEmpty()) return
+-        send(command)
 +        if (termCategoryBatchBusy) {
 +            termStatus = "Trwa zmiana filtrów DLOG — polecenie nie zostało wysłane."
 +            termStatusKind = "warn"
 +            return
 +        }
-         send(command)
++        scope.launch {
++            withTerminalCommandLock {
++                if (termCategoryBatchBusy) {
++                    termStatus = "Trwa zmiana filtrów DLOG — polecenie nie zostało wysłane."
++                    termStatusKind = "warn"
++                    return@withTerminalCommandLock
++                }
++                sendAwait(command)
++            }
++        }
      }
  
+     // ─────────────────────────  OTA / GitHub Releases  ─────────────────────────
 diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
 index 4576dd9..bf10ee9 100644
 --- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
