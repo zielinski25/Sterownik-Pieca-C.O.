@@ -42,7 +42,7 @@ W statycznym przeglądzie nie znalazłem oczywistego, nieograniczonego wycieku: 
 ## Wykonane kontrole i granice audytu
 
 - XML: **25 plików** zasobów parsują się poprawnie.
-- Ikona: finalny debug asset ma **512×512**; przygotowałem podgląd kołowej maski. XML produkcyjnej ikony porównałem z bazą — bez zmian.
+- Ikona: bazowy debug asset w pełnym patchu ma **512×512**; dodatkowa nakładka `Android-DirectBoot-Debug-Icon-Overlay.diff` podmienia go na finalną wybraną grafikę **432×432**. XML produkcyjnej ikony porównałem z bazą — bez zmian.
 - Oba patche przechodzą `git apply --check --unidiff-zero` na odpowiednich stanach bazowych; po zastosowaniu jedyną różnicą do źródła jest usuwana przez skrypt deklaracja `DEFAULT_FB_PASS`.
 - Dodałem testy jednostkowe allowlisty prywatnego IPv4 i bezpiecznych ścieżek, ale **nie uruchomiłem** `:app:testDebugUnitTest` ani `:app:assembleDebug`: w tym środowisku nie ma JDK/`java`. Patch wymaga lokalnego buildu przed instalacją.
 - Nie wykonano dynamicznego przechwytywania ruchu, testu z APK, audytu reguł Firebase w konsoli ani pomiaru baterii. Nie ma twierdzenia, że aktualne zmiany działają runtime.

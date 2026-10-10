@@ -7,7 +7,7 @@ Pakiet zawiera:
 - `Remove-Obsolete-Android-Default-FB-Password.ps1` — usuwa nieużywaną deklarację po nazwie, bez powielania jej wartości w patchu;
 - `ANDROID-SECURITY-BATTERY-AUDIT.md` — ustalenia, dowody, ryzyko resztkowe i ograniczenia testów.
 
-Patch zawiera wybrany debugowy artwork nr 2 jako zasób binarny. Nie zmienia produkcyjnej ikony ani firmware.
+Pełny patch zawiera bazową debugową grafikę. Aby użyć finalnej wybranej grafiki nr 2 (432×432), po zastosowaniu jednego z wariantów poniżej zastosuj nakładkę opisaną w sekcji „Końcowa grafika debug”. Nie zmienia ona produkcyjnej ikony ani firmware.
 
 ## Czysta kopia od bazy 78299c9
 
@@ -44,6 +44,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\android-sync\Remove-Obsole
 ```
 
 Jeżeli `--check` nie przechodzi, zatrzymaj się: nie używaj `--reject` i nie wymuszaj patcha. Nie nakładaj patcha pełnego na już zmodyfikowaną kopię.
+
+## Końcowa grafika debug
+
+Po zastosowaniu pełnego patcha albo nakładki Direct Boot oba warianty zawierają `src/debug/res/drawable-nodpi/ic_launcher_debug_art.png`. Aby zastąpić bazową grafikę wybraną opcją nr 2, zastosuj **tylko overlay**:
+
+```powershell
+git apply --check .\android-sync\Android-DirectBoot-Debug-Icon-Overlay.diff
+if ($LASTEXITCODE -ne 0) { throw "Kontrola nie przeszła — zatrzymaj się." }
+git apply .\android-sync\Android-DirectBoot-Debug-Icon-Overlay.diff
+```
+
+Nie nakładaj tu samodzielnego `Android-DirectBoot-Debug-Icon.diff` — pełny patch już zawiera `ic_launcher.xml`. Szczegóły alternatywnych ścieżek opisuje `Android-DirectBoot-Debug-Icon-README.md`.
 
 ## Build lokalny
 
