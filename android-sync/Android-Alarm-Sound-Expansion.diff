@@ -1,0 +1,69 @@
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt
+index 7e70736..766e720 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt
+@@ -36,7 +36,8 @@ object AlarmCenter {
+     const val REPEAT_MS = 30L * 60_000
+ 
+     private val soundIds = setOf(
+-        "syrena", "dzwonek", "pikanie", "dwutonowy", "impulsowy", "narastajacy", "niski_puls", "system"
++        "syrena", "dzwonek", "pikanie", "dwutonowy", "impulsowy", "narastajacy", "niski_puls",
++        "syrena_falujaca", "syrena_ratunkowa", "klakson_pulsacyjny", "gong_ostrzegawczy", "system"
+     )
+ 
+     fun isMonitored(p: AlarmPrefsStore): Boolean = p.get(K_MONITOR) != "0"
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
+index 83987eb..3be2181 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
+@@ -54,6 +54,10 @@ object AlarmNotify {
+         "impulsowy" to "Krótkie impulsy",
+         "narastajacy" to "Narastający",
+         "niski_puls" to "Niski puls",
++        "syrena_falujaca" to "Syrena falująca",
++        "syrena_ratunkowa" to "Syrena ratunkowa",
++        "klakson_pulsacyjny" to "Klakson pulsacyjny",
++        "gong_ostrzegawczy" to "Gong ostrzegawczy",
+         "system" to "Domyślny systemowy"
+     )
+ 
+@@ -68,6 +72,10 @@ object AlarmNotify {
+         "impulsowy" -> R.raw.alarm_impulsowy
+         "narastajacy" -> R.raw.alarm_narastajacy
+         "niski_puls" -> R.raw.alarm_niski_puls
++        "syrena_falujaca" -> R.raw.alarm_syrena_falujaca
++        "syrena_ratunkowa" -> R.raw.alarm_syrena_ratunkowa
++        "klakson_pulsacyjny" -> R.raw.alarm_klakson_pulsacyjny
++        "gong_ostrzegawczy" -> R.raw.alarm_gong_ostrzegawczy
+         else -> 0 // "system" — AlarmMonitorService używa domyślnego dźwięku systemowego
+     }
+ 
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/AlarmCenterTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/AlarmCenterTest.kt
+index 3886e92..2992779 100644
+--- a/android/app/src/test/java/com/sterownikco/pro/core/AlarmCenterTest.kt
++++ b/android/app/src/test/java/com/sterownikco/pro/core/AlarmCenterTest.kt
+@@ -295,6 +295,24 @@ class AlarmCenterTest {
+         assertFalse(AlarmCenter.sound(prefs, "dym").isBlank())
+     }
+ 
++    @Test
++    fun newAlarmSoundChoicesCanBeSavedForEachAlarmType() {
++        val prefs = MemoryAlarmPrefs()
++        val newSounds = listOf(
++            "syrena_falujaca", "syrena_ratunkowa", "klakson_pulsacyjny", "gong_ostrzegawczy"
++        )
++
++        for (sound in newSounds) {
++            AlarmCenter.setSound(prefs, "dym", sound)
++            AlarmCenter.setSound(prefs, "ogrz", sound)
++            AlarmCenter.setSound(prefs, "dym+ogrz", sound)
++
++            assertEquals(sound, AlarmCenter.sound(prefs, "dym"))
++            assertEquals(sound, AlarmCenter.sound(prefs, "ogrz"))
++            assertEquals(sound, AlarmCenter.sound(prefs, "dym+ogrz"))
++        }
++    }
++
+     @Test
+     fun activeUnsilencedAlarmLoopsSoundOnlyWhenMonitoringIsEnabled() {
+         val prefs = MemoryAlarmPrefs()
