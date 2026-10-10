@@ -780,7 +780,7 @@ index 0000000..82e3148
 +        gate.applyPollIfCurrent(startRevision, apply)
 +}
 diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
-index 81e7609..e1a8be7 100644
+index 81e7609..4fd277b 100644
 --- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
 +++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
 @@ -20,0 +21 @@ import kotlinx.coroutines.launch
@@ -901,12 +901,12 @@ index 81e7609..e1a8be7 100644
 +                                if (currentInfo != null) restoreActiveAlarmPopup(currentInfo)
 +                                if (currentInfo != null && !AlarmNotify.postIfMissing(ctx, currentInfo)) {
 +                                    val kind = AlarmCenter.kindFor(S.dym_alarm, S.alarm_ogrzewanie)
-+                                    AlarmNotify.startAlarmLoop(ctx, AlarmCenter.sound(prefs, kind))
++                                    AlarmMonitorService.startAlarmLoop(ctx, AlarmCenter.sound(prefs, kind))
 +                                }
 +                            }
 +                            else -> {
 +                                AlarmNotify.cancelLegacyNotification(ctx)
-+                                AlarmNotify.stopAlarmLoop()
++                                AlarmMonitorService.stopAlarmLoop()
 +                            }
 +                        }
 +                    }
@@ -1593,7 +1593,7 @@ index 6bb7dde..0275600 100644
 +                // Avoid decrypting the Direct Boot session twice on this receiver thread.
 +                if (AlarmCenter.isMonitored(p)) {
 diff --git a/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt b/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
-index ff4f57f..1ba86c3 100644
+index ff4f57f..5759aff 100644
 --- a/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
 +++ b/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
 @@ -6,0 +7,2 @@ import android.content.pm.ServiceInfo
@@ -1929,12 +1929,12 @@ index ff4f57f..1ba86c3 100644
 +                                )
 +                                if (activeInfo != null && !AlarmNotify.postIfMissing(applicationContext, activeInfo)) {
 +                                    val kind = AlarmCenter.kindFor(smokeActive, overheatActive)
-+                                    AlarmNotify.startAlarmLoop(applicationContext, AlarmCenter.sound(prefs, kind))
++                                    AlarmMonitorService.startAlarmLoop(applicationContext, AlarmCenter.sound(prefs, kind))
 +                                }
 +                            }
 +                            else -> {
 +                                AlarmNotify.cancelLegacyNotification(applicationContext)
-+                                AlarmNotify.stopAlarmLoop()
++                                AlarmMonitorService.stopAlarmLoop()
 +                            }
 +                        }
 +                    }
