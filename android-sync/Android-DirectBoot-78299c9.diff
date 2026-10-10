@@ -39,6 +39,43 @@ index ff2a91b..cc413e0 100644
 @@ -73,0 +74,2 @@ dependencies {
 +
 +    testImplementation("junit:junit:4.13.2")
+diff --git a/android/app/src/debug/res/drawable/ic_launcher_background.xml b/android/app/src/debug/res/drawable/ic_launcher_background.xml
+new file mode 100644
+index 0000000..5c17b3b
+--- /dev/null
++++ b/android/app/src/debug/res/drawable/ic_launcher_background.xml
+@@ -0,0 +1,22 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:aapt="http://schemas.android.com/aapt"
++    android:width="108dp"
++    android:height="108dp"
++    android:viewportWidth="108"
++    android:viewportHeight="108">
++    <path android:pathData="M0,0h108v108h-108z" android:fillColor="#1E1B4B" />
++    <path android:pathData="M0,0h108v108h-108z">
++        <aapt:attr android:name="android:fillColor">
++            <gradient
++                android:startX="0"
++                android:startY="0"
++                android:endX="108"
++                android:endY="108"
++                android:type="linear">
++                <item android:color="#7C3AED" android:offset="0" />
++                <item android:color="#1E1B4B" android:offset="1" />
++            </gradient>
++        </aapt:attr>
++    </path>
++</vector>
+diff --git a/android/app/src/debug/res/values/strings.xml b/android/app/src/debug/res/values/strings.xml
+new file mode 100644
+index 0000000..93ddcfd
+--- /dev/null
++++ b/android/app/src/debug/res/values/strings.xml
+@@ -0,0 +1,3 @@
++<resources>
++    <string name="app_name">Sterownik CO (TEST)</string>
++</resources>
 diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
 index 1b44e28..6bf5d84 100644
 --- a/android/app/src/main/AndroidManifest.xml
@@ -499,26 +536,28 @@ index 0000000..277ea9e
 +        monitored && !refreshToken.isNullOrBlank()
 +}
 diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
-index b4f1563..05d7c5e 100644
+index b4f1563..83987eb 100644
 --- a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
 +++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
 @@ -10 +9,0 @@ import android.content.pm.PackageManager
 -import android.media.AudioAttributes
 @@ -13,0 +13 @@ import android.provider.Settings
 +import android.util.Log
-@@ -19,0 +20,2 @@ import com.sterownikco.pro.receiver.AlarmReceiver
+@@ -16,0 +17 @@ import com.sterownikco.pro.AlarmActivity
++import com.sterownikco.pro.BuildConfig
+@@ -19,0 +21,2 @@ import com.sterownikco.pro.receiver.AlarmReceiver
 +import com.sterownikco.pro.service.AlarmMonitorService
 +import java.util.UUID
-@@ -24,2 +26,2 @@ import com.sterownikco.pro.receiver.AlarmReceiver
+@@ -24,2 +27,2 @@ import com.sterownikco.pro.receiver.AlarmReceiver
 -   • Dźwięk kanału jest NIEMUTOWALNY po utworzeniu (reguła Androida 8+) —
 -     dlatego każdy dźwięk do wyboru ma WŁASNY kanał; wybór = zmiana kanału.
 +   • Kanały powiadomień są ciche i wersjonowane; alarmowy dźwięk wybrany w UI
 +     odtwarza w pętli AlarmMonitorService aż do skasowania alarmu / drzemki.
-@@ -31,0 +34 @@ object AlarmNotify {
+@@ -31,0 +35 @@ object AlarmNotify {
 +    private const val TAG = "AlarmNotify"
-@@ -34 +36,0 @@ object AlarmNotify {
+@@ -34 +37,0 @@ object AlarmNotify {
 -    const val SIM_NOTIF_ID = 4203
-@@ -35,0 +38,8 @@ object AlarmNotify {
+@@ -35,0 +39,8 @@ object AlarmNotify {
 +    const val ACTION_ALARM_UPDATED = "com.sterownikco.pro.ALARM_UPDATED"
 +    const val ACTION_ALARM_CLEARED = "com.sterownikco.pro.ALARM_CLEARED"
 +    const val EXTRA_ALARM_TITLE = "alarm_title"
@@ -527,42 +566,42 @@ index b4f1563..05d7c5e 100644
 +    const val EXTRA_ALARM_SIGNATURE = "sig"
 +    const val EXTRA_ALARM_OPEN_NONCE = "alarm_open_nonce"
 +    private const val K_ALARM_OPEN_NONCE = Prefs.K_ALARM_OPEN_NONCE
-@@ -49 +59,2 @@ object AlarmNotify {
+@@ -49 +60,2 @@ object AlarmNotify {
 -    fun channelFor(sound: String): String = "piec_alarm_$sound"
 +    // Nowy, cichy kanał omija jednokrotne odtwarzanie starego kanału; dźwięk zapętla usługa.
 +    fun channelFor(sound: String): String = "piec_alarm_loop_v1_$sound"
-@@ -59 +70 @@ object AlarmNotify {
+@@ -59 +71 @@ object AlarmNotify {
 -        else -> 0 // "system" — kanał bez setSound = domyślny dźwięk powiadomień
 +        else -> 0 // "system" — AlarmMonitorService używa domyślnego dźwięku systemowego
-@@ -69,0 +81,6 @@ object AlarmNotify {
+@@ -69,0 +82,6 @@ object AlarmNotify {
 +    /** App-generated alarm intents are trusted only while their app-private nonce is current. */
 +    fun hasCurrentAlarmNonce(ctx: Context, intent: Intent): Boolean {
 +        val supplied = intent.getStringExtra(EXTRA_ALARM_OPEN_NONCE) ?: return false
 +        return AlarmIntentNonce.matches(supplied, Prefs(ctx).get(K_ALARM_OPEN_NONCE))
 +    }
 +
-@@ -89 +106 @@ object AlarmNotify {
+@@ -89 +107 @@ object AlarmNotify {
 -                description = "Ciche powiadomienie usługi czuwającej nad alarmami dymu i przegrzania."
 +                description = "Ciche powiadomienie usługi alarmowej; nie potwierdza łączności ani aktualności danych RTDB."
-@@ -92,4 +108,0 @@ object AlarmNotify {
+@@ -92,4 +109,0 @@ object AlarmNotify {
 -        val attrs = AudioAttributes.Builder()
 -            .setUsage(AudioAttributes.USAGE_ALARM)
 -            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
 -            .build()
-@@ -98 +111 @@ object AlarmNotify {
+@@ -98 +112 @@ object AlarmNotify {
 -            ch.description = "Dźwięk alarmu dymu / przegrzania: $label."
 +            ch.description = "Alarm dymu / przegrzania: $label, odtwarzany w pętli do skasowania alarmu."
-@@ -103,2 +116,2 @@ object AlarmNotify {
+@@ -103,2 +117,2 @@ object AlarmNotify {
 -            val res = soundRes(id)
 -            if (res != 0) ch.setSound(Uri.parse("android.resource://${ctx.packageName}/$res"), attrs)
 +            // Dźwięk kanału Androida jest jednorazowy; właściwą pętlę odtwarza MediaPlayer usługi.
 +            ch.setSound(null, null)
-@@ -109,0 +123 @@ object AlarmNotify {
+@@ -109,0 +124 @@ object AlarmNotify {
 +        val nonce = Prefs(ctx).get(K_ALARM_OPEN_NONCE).orEmpty()
-@@ -110,0 +125,2 @@ object AlarmNotify {
+@@ -110,0 +126,2 @@ object AlarmNotify {
 +            .setData(Uri.parse("sterownikco://alarm-action/$req/$nonce"))
 +            .putExtra(EXTRA_ALARM_OPEN_NONCE, nonce)
-@@ -114,4 +130,26 @@ object AlarmNotify {
+@@ -114,4 +131,26 @@ object AlarmNotify {
 -    /**
 -     * Rzeczywiste alarmy są trwałe i mają drzemkę/FSI; lokalne testy mają
 -     * osobne, zamykane powiadomienie bez akcji wyciszających prawdziwy alarm.
@@ -593,7 +632,7 @@ index b4f1563..05d7c5e 100644
 +    }
 +
 +    /** Odpalenie alarmu: dźwięk + wibracja + okienko (FSI) lub heads-up + akcje drzemki. */
-@@ -120,2 +158,16 @@ object AlarmNotify {
+@@ -120,2 +159,16 @@ object AlarmNotify {
 -        val simulated = info.simulated
 -        val sound = AlarmCenter.sound(Prefs(ctx), info.kind)
 +        val prefs = Prefs(ctx)
@@ -612,7 +651,7 @@ index b4f1563..05d7c5e 100644
 +                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
 +            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 +        )
-@@ -123,2 +175,9 @@ object AlarmNotify {
+@@ -123,2 +176,9 @@ object AlarmNotify {
 -            ctx, 12,
 -            Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
 +            ctx, 13,
@@ -624,15 +663,17 @@ index b4f1563..05d7c5e 100644
 +                .putExtra(EXTRA_ALARM_OPEN_NONCE, openNonce)
 +                .setData(Uri.parse("sterownikco://alarm-panel/$openNonce"))
 +                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-@@ -129 +188 @@ object AlarmNotify {
+@@ -126,0 +187 @@ object AlarmNotify {
++        val visibleTitle = if (BuildConfig.DEBUG) "🚨 TEST — ${info.title}" else "🚨 ${info.title}"
+@@ -129 +190 @@ object AlarmNotify {
 -            .setContentTitle((if (simulated) "🧪 " else "🚨 ") + info.title)
-+            .setContentTitle("🚨 ${info.title}")
-@@ -135,2 +194,2 @@ object AlarmNotify {
++            .setContentTitle(visibleTitle)
+@@ -135,2 +196,2 @@ object AlarmNotify {
 -            .setAutoCancel(simulated)
 -            .setOngoing(!simulated)
 +            .setAutoCancel(false)
 +            .setOngoing(true)
-@@ -139,15 +198,4 @@ object AlarmNotify {
+@@ -139,15 +200,4 @@ object AlarmNotify {
 -
 -        if (!simulated) {
 -            val full = PendingIntent.getActivity(
@@ -652,19 +693,19 @@ index b4f1563..05d7c5e 100644
 +            .addAction(0, "Drzemka 1 h", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_60, 22))
 +            .addAction(0, "Wycisz do następnego", actionPending(ctx, AlarmReceiver.ACT_MUTE_NEXT, 23))
 +        if (canFullScreen(ctx)) b.setFullScreenIntent(full, true)
-@@ -155 +203 @@ object AlarmNotify {
+@@ -155 +205 @@ object AlarmNotify {
 -            nm(ctx).notify(if (simulated) SIM_NOTIF_ID else NOTIF_ID, b.build())
 +            nm(ctx).notify(NOTIF_ID, b.build())
-@@ -157 +205 @@ object AlarmNotify {
+@@ -157 +207 @@ object AlarmNotify {
 -            // Brak POST_NOTIFICATIONS — aplikacja nadal pokazuje lokalne okienko, jeśli jest na wierzchu.
 +            Log.e(TAG, "Brak uprawnienia POST_NOTIFICATIONS; powiadomienie alarmowe nie zostało opublikowane", e)
-@@ -158,0 +207 @@ object AlarmNotify {
+@@ -158,0 +209 @@ object AlarmNotify {
 +        publishActivityState(ctx, ACTION_ALARM_UPDATED, info, openNonce)
-@@ -162,0 +212,3 @@ object AlarmNotify {
+@@ -162,0 +214,3 @@ object AlarmNotify {
 +        AlarmMonitorService.stopAlarmLoop()
 +        try { Prefs(ctx).remove(K_ALARM_OPEN_NONCE) } catch (e: Exception) { /* ignore */ }
 +        publishActivityState(ctx, ACTION_ALARM_CLEARED)
-@@ -165,2 +217,17 @@ object AlarmNotify {
+@@ -165,2 +219,17 @@ object AlarmNotify {
 -    fun cancelSimulation(ctx: Context) {
 -        try { nm(ctx).cancel(SIM_NOTIF_ID) } catch (e: Exception) { /* ignore */ }
 +    private fun publishActivityState(
@@ -684,10 +725,10 @@ index b4f1563..05d7c5e 100644
 +            openNonce?.let { intent.putExtra(EXTRA_ALARM_OPEN_NONCE, it) }
 +            ctx.sendBroadcast(intent)
 +        } catch (e: Exception) { /* ekran alarmu może nie być uruchomiony */ }
-@@ -179,2 +246,2 @@ object AlarmNotify {
+@@ -179,2 +248,2 @@ object AlarmNotify {
 -            .setContentTitle("Sterownik CO — monitoring alarmów")
 -            .setContentText("Czuwam nad dymem i przegrzaniem kotła")
-+            .setContentTitle("Sterownik CO — usługa alarmów")
++            .setContentTitle("${ctx.getString(R.string.app_name)} — usługa alarmów")
 +            .setContentText("Sprawdź w aplikacji, czy ostatni odczyt RTDB jest aktualny.")
 diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmPopupSession.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmPopupSession.kt
 new file mode 100644
