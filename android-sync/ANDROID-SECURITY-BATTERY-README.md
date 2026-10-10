@@ -2,56 +2,52 @@
 
 Pakiet zawiera:
 
-- `Android-DirectBoot-78299c9-Audited.diff` — pełny patch do czystej bazy Android `78299c9`;
-- `Android-DirectBoot-Security-Battery-Icon.diff` — nakładkę dla kopii, w której poprzedni Direct Boot/debug-branding jest już zastosowany;
+- `Android-DirectBoot-78299c9-Audited.diff` — pełny patch do czystej bazy Android `78299c9` (wariant z binarnym diffem PNG);
+- `Android-DirectBoot-78299c9-Audited-TextOnly.diff` — ten sam patch tekstowy, bez binarnego bloku PNG; zalecany na Windows;
+- `Android-DirectBoot-Security-Battery-Icon.diff` — nakładkę dla kopii z wcześniejszym Direct Boot/debug-brandingiem (wariant z binarnym diffem PNG);
+- `Android-DirectBoot-Security-Battery-Icon-TextOnly.diff` — tekstowa wersja tej nakładki, bez binarnego bloku PNG; zalecana na Windows;
 - `Remove-Obsolete-Android-Default-FB-Password.ps1` — usuwa nieużywaną deklarację po nazwie, bez powielania jej wartości w patchu;
 - `Android-DirectBoot-Audit-Followups.diff` — follow-up redakcji `tg_config` i anulowania żądań HTTP;
 - `Android-DirectBoot-Debug-Icon-Final.png` — samodzielny PNG końcowej ikony debug, do skopiowania po zastosowaniu patchy.
 
-Pełny patch i nakładki zawierają binarny diff PNG. Jeśli Git for Windows zgłosi błąd parsowania przy `GIT binary patch`, **nie wymuszaj patcha**. Zdefiniuj w PowerShell z katalogu głównego repozytorium:
+## Windows / Git for Windows
 
-```powershell
-$debugIcon = 'android/app/src/debug/res/drawable-nodpi/ic_launcher_debug_art.png'
-```
+W pełnych plikach `.diff` znajduje się binarny blok PNG. Na Git for Windows może on powodować błąd `git diff header lacks filename information` przy linii `GIT binary patch`, także z `--exclude`. **Nie stosuj wtedy plików z binarnym blokiem ani nie wymuszaj patcha.** Użyj wariantów `-TextOnly.diff` i skopiuj końcowy PNG poleceniami z sekcji „Końcowa grafika debug”. Warianty tekstowe pomijają tylko plik PNG; zachowują pozostałe hunki debug-brandingu.
 
-Przy kontrolach i zastosowaniu patchy Direct Boot/ikony użyj `--exclude="$debugIcon"`. To pomija wyłącznie binarny obraz, a pozostawia zmiany tekstowe zasobów debug. Końcowy PNG skopiuj poleceniami z sekcji „Końcowa grafika debug”. Nie wykluczaj całego `android/app/src/debug/res` — katalog zawiera też branding debug.
+Wszystkie komendy wykonuj z katalogu głównego repozytorium. Jeśli dowolne `git apply --check` zakończy się błędem, zatrzymaj się i nie uruchamiaj odpowiadającego mu `git apply`.
 
 ## Czysta kopia od bazy 78299c9
-
-Z katalogu głównego klona pobierz aktualizację. Jeśli `git pull --ff-only` zgłosi konflikt z Twoimi lokalnymi zmianami, zatrzymaj się i nie resetuj ich.
 
 ```powershell
 git pull --ff-only
 git status --porcelain
 
-$debugIcon = 'android/app/src/debug/res/drawable-nodpi/ic_launcher_debug_art.png'
-git apply --check --unidiff-zero --exclude="$debugIcon" .\android-sync\Android-DirectBoot-78299c9-Audited.diff
+git apply --check --unidiff-zero .\android-sync\Android-DirectBoot-78299c9-Audited-TextOnly.diff
 ```
 
 Jeśli kontrola przejdzie:
 
 ```powershell
-git apply --unidiff-zero --exclude="$debugIcon" .\android-sync\Android-DirectBoot-78299c9-Audited.diff
+git apply --unidiff-zero .\android-sync\Android-DirectBoot-78299c9-Audited-TextOnly.diff
 powershell -NoProfile -ExecutionPolicy Bypass -File .\android-sync\Remove-Obsolete-Android-Default-FB-Password.ps1
 ```
 
 ## Kopia testowa z wcześniejszym Direct Boot i brandingiem
 
-Jeśli w kopii masz już poprzedni patch Direct Boot, poprawkę pętli alarmu, debug branding oraz poprawkę zasobu Androida, zastosuj **tylko nakładkę**:
+Jeśli w kopii masz już poprzedni patch Direct Boot, poprawkę pętli alarmu, debug branding oraz poprawkę zasobu Androida, zastosuj **tylko tekstową nakładkę**:
 
 ```powershell
-$debugIcon = 'android/app/src/debug/res/drawable-nodpi/ic_launcher_debug_art.png'
-git apply --check --unidiff-zero --exclude="$debugIcon" .\android-sync\Android-DirectBoot-Security-Battery-Icon.diff
+git apply --check --unidiff-zero .\android-sync\Android-DirectBoot-Security-Battery-Icon-TextOnly.diff
 ```
 
 Jeśli kontrola przejdzie:
 
 ```powershell
-git apply --unidiff-zero --exclude="$debugIcon" .\android-sync\Android-DirectBoot-Security-Battery-Icon.diff
+git apply --unidiff-zero .\android-sync\Android-DirectBoot-Security-Battery-Icon-TextOnly.diff
 powershell -NoProfile -ExecutionPolicy Bypass -File .\android-sync\Remove-Obsolete-Android-Default-FB-Password.ps1
 ```
 
-Jeżeli `--check` nie przechodzi, zatrzymaj się: nie używaj `--reject` i nie wymuszaj patcha. Nie nakładaj patcha pełnego na już zmodyfikowaną kopię.
+Jeżeli kontrola nie przechodzi, zatrzymaj się: nie używaj `--reject` i nie wymuszaj patcha. Nie nakładaj pełnego patcha na już zmodyfikowaną kopię.
 
 ## Follow-up audytu (logi poufnych komend i anulowanie HTTP)
 
@@ -63,20 +59,11 @@ if ($LASTEXITCODE -ne 0) { throw "Kontrola nie przeszła — zatrzymaj się." }
 git apply --unidiff-zero .\android-sync\Android-DirectBoot-Audit-Followups.diff
 ```
 
-Follow-up maskuje payload `tg_config` w toastach/logu aplikacji, kieruje lokalne żądania Telegrama przez klienta bez proxy/przekierowań i łączy anulowanie coroutine z `Call.cancel()` dla zwykłych żądań oraz pogody. Dodaje też test jednostkowy redaktora. Nie usuwa tokenu z samego polecenia wysyłanego do RTDB i nie dodaje autoryzacji/TLS do firmware. Jeśli `--check` nie przechodzi, nie używaj `--reject`.
+Follow-up maskuje payload `tg_config` w toastach/logu aplikacji, kieruje lokalne żądania Telegrama przez klienta bez proxy/przekierowań i łączy anulowanie coroutine z `Call.cancel()` dla zwykłych żądań oraz pogody. Dodaje też test jednostkowy redaktora. Nie usuwa tokenu z samego polecenia wysyłanego do RTDB i nie dodaje autoryzacji/TLS do firmware.
 
 ## Końcowa grafika debug
 
-Po zastosowaniu pełnego patcha albo nakładki Direct Boot zastosuj tekstowo nakładkę ikony, pomijając binarny PNG:
-
-```powershell
-$debugIcon = 'android/app/src/debug/res/drawable-nodpi/ic_launcher_debug_art.png'
-git apply --check --exclude="$debugIcon" .\android-sync\Android-DirectBoot-Debug-Icon-Overlay.diff
-if ($LASTEXITCODE -ne 0) { throw "Kontrola nie przeszła — zatrzymaj się." }
-git apply --exclude="$debugIcon" .\android-sync\Android-DirectBoot-Debug-Icon-Overlay.diff
-```
-
-Następnie skopiuj finalny plik PNG do zasobów wariantu debug:
+Po zastosowaniu pełnego patcha albo nakładki skopiuj samodzielny plik PNG do zasobów wariantu debug:
 
 ```powershell
 $debugIconDir = '.\android\app\src\debug\res\drawable-nodpi'
@@ -84,7 +71,7 @@ New-Item -ItemType Directory -Path $debugIconDir -Force | Out-Null
 Copy-Item -LiteralPath .\android-sync\Android-DirectBoot-Debug-Icon-Final.png -Destination (Join-Path $debugIconDir 'ic_launcher_debug_art.png') -Force
 ```
 
-Nie zmieniaj produkcyjnej ikony ani nie nakładaj samodzielnego `Android-DirectBoot-Debug-Icon.diff` — pełny patch/overlay zawiera konfigurację `ic_launcher.xml`.
+Nie zmienia to produkcyjnej ikony. Nie nakładaj na Windows `Android-DirectBoot-Debug-Icon-Overlay.diff` — jego jedyną zmianą jest binarny obraz zastąpiony tutaj przez kopiowanie PNG.
 
 ## Build lokalny
 
