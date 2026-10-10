@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $patchPath = Join-Path $PSScriptRoot 'Android-Alarm-Sound-Expansion.diff'
@@ -16,24 +16,26 @@ $files = @(
 )
 
 if (-not (Test-Path $patchPath) -or -not (Test-Path $rawPath)) {
-    throw 'Nie znaleziono patcha albo katalogu projektu Android. Uruchom skrypt z checkoutu repozytorium.'
+    throw 'Patch or Android source folder not found. Run this script from the repository checkout.'
 }
 foreach ($path in @($notifyPath, $centerPath, $testPath)) {
     if (-not (Test-Path $path)) {
-        throw "Brak oczekiwanego pliku źródłowego: $path. Najpierw zastosuj bazowy patch Androida z selektorem alarmów."
+        throw "Required source file is missing: $path. Apply the base Android alarm-picker patch first."
     }
 }
 
-# Sprawdź wszystkie wejścia i kolizje przed zmianą źródeł; nigdy nie nadpisuj innego WAV-a.
+# Validate inputs and conflicts before changing source; never overwrite a different WAV file.
 foreach ($file in $files) {
     $source = Join-Path $assetsPath $file
     $destination = Join-Path $rawPath $file
-    if (-not (Test-Path $source)) { throw "Brak zasobu źródłowego: $source" }
+    if (-not (Test-Path $source)) {
+        throw "Source asset is missing: $source"
+    }
     if (Test-Path $destination) {
         $sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
         $targetHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash
         if ($sourceHash -ne $targetHash) {
-            throw "Plik już istnieje i ma inną zawartość; nie nadpisuję: $destination"
+            throw "A different file already exists; leaving it untouched: $destination"
         }
     }
 }
@@ -63,22 +65,26 @@ if (-not $alreadyApplied) {
         }
     }
     if ($partial) {
-        throw 'Wykryto częściowo zastosowaną poprawkę. Zatrzymuję się bez nadpisywania źródeł.'
+        throw 'A partial patch was detected. Stopping without changing source files.'
     }
 
     Push-Location $repoRoot
     try {
-        & git apply --check -- $patchPath
-        if ($LASTEXITCODE -ne 0) { throw 'Kontrola git apply --check nie powiodła się; żaden plik nie został zmieniony.' }
-        & git apply -- $patchPath
-        if ($LASTEXITCODE -ne 0) { throw 'Nie udało się zastosować tekstowego patcha.' }
+        & git apply --check $patchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw 'git apply check failed; no source files were changed.'
+        }
+        & git apply $patchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Could not apply the text patch.'
+        }
     }
     finally {
         Pop-Location
     }
 }
 
-# Potwierdź, że lista, zasoby R.raw i allow-list zapisu są zsynchronizowane.
+# Confirm the picker IDs, raw-resource mappings, and persistence allow-list match.
 $notify = Get-Content -Raw -LiteralPath $notifyPath
 $center = Get-Content -Raw -LiteralPath $centerPath
 $tests = Get-Content -Raw -LiteralPath $testPath
@@ -87,11 +93,11 @@ foreach ($id in $ids) {
     if (-not $notify.Contains($quotedId) -or
         -not $center.Contains($quotedId) -or
         -not $notify.Contains(('R.raw.alarm_' + $id))) {
-        throw "Niepełne zastosowanie wyboru dźwięku: $id"
+        throw "The sound patch is incomplete: $id"
     }
 }
 if (-not $tests.Contains('newAlarmSoundChoicesCanBeSavedForEachAlarmType')) {
-    throw 'Nie znaleziono testu zapisu nowych wyborów alarmu.'
+    throw 'The new sound persistence test was not found.'
 }
 
 foreach ($file in $files) {
@@ -102,4 +108,4 @@ foreach ($file in $files) {
     }
 }
 
-Write-Host 'Gotowe: dodano cztery dźwięki alarmowe. Istniejące, różniące się pliki nie były nadpisywane.' -ForegroundColor Green
+Write-Host 'Done: four alarm sounds are ready. Existing different files were not overwritten.' -ForegroundColor Green
