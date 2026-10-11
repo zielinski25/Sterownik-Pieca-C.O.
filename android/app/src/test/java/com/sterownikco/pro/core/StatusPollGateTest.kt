@@ -3,7 +3,6 @@ package com.sterownikco.pro.core
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -55,10 +54,11 @@ class StatusPollGateTest {
     fun cancellationReleasesThePollGate() = runBlocking {
         val gate = StatusPollGate()
         val pollStarted = CompletableDeferred<Unit>()
+        val neverFinish = CompletableDeferred<String>()
         val activePoll = async(start = CoroutineStart.UNDISPATCHED) {
             gate.withPoll(skipIfBusy = false) {
                 pollStarted.complete(Unit)
-                awaitCancellation<String>()
+                neverFinish.await()
             }
         }
         assertTrue(pollStarted.isCompleted)
