@@ -7284,6 +7284,16 @@ body.mode-phone-frame #phone {
   let chartCrosshairIdx = null;
   let chartCrosshairPos = null;
   let chartDataset = [];
+  let lastChartLiveTs = 0;
+
+  function clearChartInspection() {
+    chartCrosshairIdx = null;
+    chartCrosshairPos = null;
+    const inspector = $('#chartInspectorVal');
+    if (inspector) inspector.textContent = 'Dotknij wykresu / najedź kursorem';
+    const tooltip = $('#chartFloatingTooltip');
+    if (tooltip) tooltip.classList.remove('on');
+  }
 
   // [FIX-CHART-PERSIST] Zapamietywanie zaznaczonych serii w localStorage
   function saveChartPreferences() {
@@ -7590,6 +7600,15 @@ body.mode-phone-frame #phone {
       if (v === null) continue;
       if (simulated[i]) { out[i] = v; continue; }
 
+      // Świeży odczyt statusu sterownika jest autorytatywny. Filtr Hampela
+      // nie może ukryć prawdziwej, nagłej zmiany na prawym końcu wykresu;
+      // następne próbki nadal pozwolą odsiać pojedynczą szpilkę.
+      const liveAgeMs = Date.now() - Number(rows[i].ts);
+      if (i === n - 1 && rows[i].is_live === true && liveAgeMs >= 0 && liveAgeMs < 20000) {
+        out[i] = v;
+        continue;
+      }
+
       // Poprzednie probki (do 4 punktow wstecz)
       const past = [];
       for (let k = i - 1; k >= 0 && past.length < 4; k--) {
@@ -7642,6 +7661,7 @@ body.mode-phone-frame #phone {
 
   async function loadTelemetryRange(rangeSec) {
     activeRangeSec = rangeSec;
+    clearChartInspection();
     const rangeName = rangeSec === 6 * 3600 ? '6h' : rangeSec === 24 * 3600 ? '24h' : rangeSec === 7 * 86400 ? '7d' : '30d';
     let historyFailed = false;
 
@@ -7650,7 +7670,12 @@ body.mode-phone-frame #phone {
       try {
         const fbData = await fetchTelemetryFromFirebase(rangeSec);
         if (fbData && fbData.length > 0) {
+          clearChartInspection();
           chartDataset = fbData;
+          // Historia kończy się na ostatnim zapisanym rekordzie; dołącz świeży
+          // snapshot statusu, także gdy polling zakończył się podczas pobierania historii.
+          lastChartLiveTs = 0;
+          appendChartLivePoint(true);
           $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek RTDB (${rangeName}) · odcinki symulowane są kreskowane`;
           $('#chartPointsStat').textContent = String(chartDataset.length);
           $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
@@ -7697,6 +7722,7 @@ body.mode-phone-frame #phone {
       pill.style.border = '1px solid rgba(148,163,184,.25)';
     }
 
+    appendChartLivePoint(true);
     $('#chartPointsStat').textContent = String(chartDataset.length);
     $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
     renderSeriesChips();
@@ -7747,8 +7773,58 @@ body.mode-phone-frame #phone {
     }
   }
 
+  function appendChartLivePoint(force = false) {
+    const ageMs = Date.now() - _lastFirebaseFetch;
+    if (currentPage !== 1 || !_isFirebaseConnected || !S.online || !_lastFirebaseFetch ||
+        ageMs < 0 || ageMs >= 20000 || (!force && _lastFirebaseFetch <= lastChartLiveTs)) return;
+    let sim = 0;
+    const sample = (key, pole, channel) => {
+      const value = S[key];
+      if (!receivedFields.has(key) || !Number.isFinite(value)) return null;
+      if (symAktywna(pole)) sim |= (1 << channel);
+      return value;
+    };
+    const sampleServo = (key, pole, channel, maxDeg) => {
+      const value = S[key];
+      if (!receivedFields.has(key) || !Number.isInteger(value) || value < 0 || value > maxDeg) return null;
+      if (symAktywna(pole)) sim |= (1 << channel);
+      return value * 100 / maxDeg;
+    };
+    const point = {
+      ts: _lastFirebaseFetch, seq: Number.MAX_SAFE_INTEGER, is_live: true,
+      t_zewn: sample('t_zewn', 'zewn', 0),
+      t_bojler: sample('t_bojler', 'bojler', 1),
+      t_ogrz: sample('t_ogrz', 'ogrz', 2),
+      t_ogrz_sr: sample('t_ogrz_sr', 'ogrz', 3),
+      t_powrot: sample('t_powrot', 'ogrz_powrot', 4),
+      t_panel: sample('t_panel', 'panel', 5),
+      t_pokoj: sample('t_pokoj', 'pokoj', 6),
+      t_trociny: sample('t_trociny', 'ogrz_trociny', 7),
+      wilgotnosc: sample('wilgotnosc', 'wilgotnosc', 8),
+      cisnienie: sample('cisnienie', 'cisnienie', 9),
+      dym: sample('dym', 'dym', 10),
+      klapa: sampleServo('klapa', 'klapa', 11, 180),
+      syberka: sampleServo('syberka', 'syberka', 12, 90),
+      sim: sim, is_sim: false
+    };
+    const hasValue = ['t_zewn', 't_bojler', 't_ogrz', 't_ogrz_sr', 't_powrot', 't_panel', 't_pokoj', 't_trociny',
+      'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka'].some(key => typeof point[key] === 'number' && Number.isFinite(point[key]));
+    if (!hasValue) return;
+    lastChartLiveTs = Math.max(lastChartLiveTs, _lastFirebaseFetch);
+    const cutoff = _lastFirebaseFetch - activeRangeSec * 1000;
+    chartDataset = chartDataset.filter(row => row.ts >= cutoff);
+    const duplicate = chartDataset.findIndex(row => row.is_live === true && row.ts === point.ts);
+    if (duplicate >= 0) chartDataset[duplicate] = point;
+    else chartDataset.push(point);
+    chartDataset.sort((a, b) => a.ts - b.ts || a.seq - b.seq);
+    if (chartDataset.length > 50000) chartDataset = chartDataset.slice(-50000);
+    const stat = $('#chartPointsStat');
+    if (stat) stat.textContent = String(chartDataset.length);
+  }
+
   function updateChartsLiveFeed() {
     if (currentPage === 1) {
+      appendChartLivePoint();
       updateChartsNowStat();
       if (chartOffset >= 0.98) updateChartCanvas();
     }
@@ -7768,6 +7844,7 @@ body.mode-phone-frame #phone {
     g.clearRect(0, 0, w, h);
 
     if (!chartDataset || chartDataset.length < 2) {
+      clearChartInspection();
       g.fillStyle = 'rgba(148,163,184,0.95)';
       g.font = '600 12px Roboto,sans-serif';
       g.textAlign = 'center';
@@ -8218,7 +8295,7 @@ body.mode-phone-frame #phone {
         tooltip.style.top = '10px';
       }
     } else {
-      if (tooltip) tooltip.classList.remove('on');
+      clearChartInspection();
     }
     updateChartScrollbars();
   }

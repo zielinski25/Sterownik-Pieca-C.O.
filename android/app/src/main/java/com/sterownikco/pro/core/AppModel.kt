@@ -588,7 +588,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             dym = value("dym", "dym", 10, S.dym),
             klapa = servoValue("klapa", "klapa", 11, S.klapa, 180),
             syberka = servoValue("syberka", "syberka", 12, S.syberka, 90),
-            sim = simMask
+            sim = simMask,
+            isLive = true
         )
         if (p.hasValues()) chartLive = (chartLive + p).takeLast(240)
     }

@@ -28,7 +28,9 @@ data class TelemPoint(
     /** Bit i oznacza, że kanał i tej próbki pochodził z symulacji sterownika. */
     val sim: Long = 0L,
     /** Jawny znacznik całego rekordu — takie rekordy demonstracyjne nadal pomijamy. */
-    val simulated: Boolean = false
+    val simulated: Boolean = false,
+    /** Świeży snapshot statusu sterownika; nie może zostać odrzucony jako anomalia końcowa. */
+    val isLive: Boolean = false
 ) {
     fun hasValues(): Boolean = listOf(
         t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot, t_panel, t_pokoj, t_trociny,
@@ -168,6 +170,9 @@ object ChartSeries {
             // Zachowaj przebieg symulacji dokładnie; nie filtruj skoku wejścia/wyjścia
             // Hampel-em i nie porównuj go z sąsiednią serią fizyczną.
             if (simulated[i]) { out[i] = v; continue }
+            // Ostatnia próbka pochodzi bezpośrednio ze świeżego pollingu RTDB.
+            // Filtr nie może ukryć prawdziwej nagłej zmiany względem historii.
+            if (i == n - 1 && rows[i].isLive) { out[i] = v; continue }
             val past = ArrayList<Double>(4)
             var k = i - 1
             while (k >= 0 && past.size < 4) {
