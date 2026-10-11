@@ -46,4 +46,20 @@ class ModeSelectionUiTest {
         assertEquals(0, state.mode)
         assertTrue(state.awaitingStatus)
     }
+
+    @Test
+    fun mixerModeIsDerivedFromOverrideTimerAndRelayState() {
+        assertEquals(0, presentMixerModeSelection(null, 0, null).mode) // Auto
+        assertEquals(1, presentMixerModeSelection(null, 12, true).mode) // Force ON
+        assertEquals(2, presentMixerModeSelection(null, 12, false).mode) // Force OFF
+        assertNull(presentMixerModeSelection(null, 12, null).mode) // insufficient status
+    }
+
+    @Test
+    fun acknowledgedMixerModeWinsUntilReportedStatusCatchesUp() {
+        val state = presentMixerModeSelection(acknowledgedMode = 1, reportedOverrideMinutes = 10, reportedMixerOn = false)
+
+        assertEquals(1, state.mode)
+        assertTrue(state.awaitingStatus)
+    }
 }

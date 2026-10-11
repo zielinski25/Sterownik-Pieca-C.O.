@@ -59,6 +59,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private enum class StatusPollResult { APPLIED, FAILED, SUPERSEDED }
     private val pumpModeCommandMutex = Mutex()
     private var pumpModeRequestId = 0L
+    private val mixerModeCommandMutex = Mutex()
+    private var mixerModeRequestId = 0L
     private val smokeModeCommandMutex = Mutex()
     private var smokeModeRequestId = 0L
     private val servoModeCommandMutex = Mutex()
@@ -71,6 +73,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var lastFetchTs = 0L
     /** ACK-only presentations until the slower `/piec/status` snapshot catches up. */
     private var pumpModeAckOverride by mutableStateOf<Int?>(null)
+    private var mixerModeAckOverride by mutableStateOf<Int?>(null)
     private var smokeModeAckOverride by mutableStateOf<Int?>(null)
     private var servoModeAckOverride by mutableStateOf<Int?>(null)
     var dashboardWidgets by mutableStateOf(TileDefs.DEFAULT_VISIBLE_IDS)
@@ -449,6 +452,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         allowedModes = 0..1
     )
 
+    internal fun mixerModePresentation(): ModeSelectionPresentation = presentMixerModeSelection(
+        acknowledgedMode = mixerModeAckOverride,
+        reportedOverrideMinutes = S.mieszadlo_override_min.takeIf { S.hasData("mieszadlo_override_min") },
+        reportedMixerOn = S.mieszadlo.takeIf { S.hasData("mieszadlo") }
+    )
+
     private fun updatePumpModeAckOverride(mode: Int?) {
         val valid = mode?.takeIf { it in 1..3 }
         if (pumpModeAckOverride == valid) return
@@ -460,6 +469,13 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         val valid = mode?.takeIf { it in 0..1 }
         if (smokeModeAckOverride == valid) return
         smokeModeAckOverride = valid
+        S.bump()
+    }
+
+    private fun updateMixerModeAckOverride(mode: Int?) {
+        val valid = mode?.takeIf { it in 0..2 }
+        if (mixerModeAckOverride == valid) return
+        mixerModeAckOverride = valid
         S.bump()
     }
 
@@ -533,6 +549,53 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 reportedMode = { S.wybor.takeIf { S.hasData("wybor") } },
                 allowedModes = 1..3,
                 clearOverride = { updatePumpModeAckOverride(null) }
+            )
+        }
+    }
+
+    /**
+     * Tryb mieszadła: 0 = Auto, 1 = wymuś ON, 2 = wymuś OFF. ACK zmienia
+     * tylko chwilową prezentację; stan centrali nadal rozstrzyga status RTDB.
+     */
+    fun setMixerMode(mode: Int) {
+        val command = when (mode) {
+            0 -> "mieszadlo_auto"
+            1 -> "mieszadlo_wl"
+            2 -> "mieszadlo_wyl"
+            else -> return
+        }
+        val requestId = ++mixerModeRequestId
+        updateMixerModeAckOverride(null)
+        scope.launch {
+            val acknowledged = try {
+                mixerModeCommandMutex.lock()
+                try {
+                    if (requestId != mixerModeRequestId) false
+                    else sendAwait(command) {
+                        if (requestId == mixerModeRequestId) updateMixerModeAckOverride(mode)
+                    }
+                } finally {
+                    mixerModeCommandMutex.unlock()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            }
+            if (!acknowledged || requestId != mixerModeRequestId) return@launch
+            awaitModeStatus(
+                label = "MIESZADŁO",
+                mode = mode,
+                requestId = requestId,
+                currentRequestId = { mixerModeRequestId },
+                acknowledgedMode = { mixerModeAckOverride },
+                reportedMode = {
+                    presentMixerModeSelection(
+                        acknowledgedMode = null,
+                        reportedOverrideMinutes = S.mieszadlo_override_min.takeIf { S.hasData("mieszadlo_override_min") },
+                        reportedMixerOn = S.mieszadlo.takeIf { S.hasData("mieszadlo") }
+                    ).mode
+                },
+                allowedModes = 0..2,
+                clearOverride = { updateMixerModeAckOverride(null) }
             )
         }
     }

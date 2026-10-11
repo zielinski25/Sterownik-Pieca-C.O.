@@ -336,8 +336,62 @@ fun SerwoSheet(m: AppModel) {
 @Composable
 fun MieszadloSheet(m: AppModel) {
     val S = m.S
-    CheckRow("Włączone", null, S.mieszadloWlaczony, known = S.hasData("mieszadloWlaczony")) { v -> m.commitBool("Mieszadło", "mieszadloWlaczony", v) }
-    ManualRow("mieszadlo", onSend = { m.send(it) })
+    val modePresentation = m.mixerModePresentation()
+    val selectedCommand = when (modePresentation.mode) {
+        0 -> "mieszadlo_auto"
+        1 -> "mieszadlo_wl"
+        2 -> "mieszadlo_wyl"
+        else -> null
+    }
+    val modeLabel = when (modePresentation.mode) {
+        0 -> "AUTO"
+        1 -> "WYMUSZONE WŁ."
+        2 -> "WYMUSZONE WYŁ."
+        else -> "BRAK ODCZYTU"
+    }
+
+    CheckRow(
+        "Automatyka włączona",
+        "Zezwolenie na cykliczną pracę mieszadła",
+        S.mieszadloWlaczony,
+        known = S.hasData("mieszadloWlaczony")
+    ) { v -> m.commitBool("Mieszadło", "mieszadloWlaczony", v) }
+    Text(
+        "Stan przekaźnika: " + when {
+            !S.hasData("mieszadlo") -> "brak odczytu"
+            S.mieszadlo -> "WŁĄCZONE"
+            else -> "WYŁĄCZONE"
+        },
+        style = Txt.note.copy(fontSize = 10.sp),
+        color = if (S.hasData("mieszadlo") && S.mieszadlo) Pal.Live else Pal.TextDim,
+        modifier = Modifier.padding(top = 3.dp)
+    )
+    Text(
+        "Tryb sterowania: $modeLabel" + if (modePresentation.awaitingStatus) " · oczekuję na status" else "",
+        style = Txt.note.copy(fontSize = 10.sp),
+        color = if (modePresentation.mode != null) Pal.Cyan else Pal.TextDim,
+        modifier = Modifier.padding(top = 2.dp)
+    )
+    SectionHeader("Sterowanie ręczne")
+    ManualRow(
+        "mieszadlo",
+        onSend = { command ->
+            val mode = when (command) {
+                "mieszadlo_auto" -> 0
+                "mieszadlo_wl" -> 1
+                "mieszadlo_wyl" -> 2
+                else -> null
+            }
+            if (mode == null) m.send(command) else m.setMixerMode(mode)
+        },
+        selectedCommand = selectedCommand
+    )
+    if (modePresentation.awaitingStatus) {
+        Text(
+            "Sterownik przyjął wybór; czekam na świeży odczyt.",
+            style = Txt.note.copy(fontSize = 9.5.sp), color = Pal.Warn, modifier = Modifier.padding(top = 6.dp)
+        )
+    }
     if (S.hasData("mieszadlo_override_min") && S.mieszadlo_override_min > 0) {
         Text(
             "Ręczny override jeszcze ok. ${S.mieszadlo_override_min} min, potem powrót do automatyki.",
