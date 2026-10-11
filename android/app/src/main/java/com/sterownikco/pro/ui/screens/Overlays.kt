@@ -72,11 +72,13 @@ fun SheetHost(m: AppModel) {
     val title: String
     val icon: String
     when {
+        // The smoke sensor is also in SensorDef.ALL, but its dashboard/menu
+        // route is the dedicated settings sheet, not the generic sensor modal.
+        id == "dym" -> { title = "Czujnik dymu i spalin"; icon = "shield" }
         sen != null -> { title = sen.sheetTitle; icon = sen.sheetIcon }
         id == "ogrz" -> { title = "Próg przegrzania — Piec C.O."; icon = "thermo" }
         id == "panel" -> { title = "Kolektor słoneczny próżniowy"; icon = "panel" }
         else -> when (id) {
-            "dym" -> { title = "Czujnik dymu i spalin"; icon = "shield" }
             "czujniki" -> { title = "Czujniki instalacji (10 czujników)"; icon = "outside" }
             "pompa" -> { title = "Pompa C.O. — Strategia i sterowanie"; icon = "pump" }
             "serwo" -> { title = "Serwo"; icon = "servo" }
@@ -102,10 +104,12 @@ fun SheetHost(m: AppModel) {
         // w Compose wystarczy lektura licznika `S.rev`.
         m.S.rev.intValue
         when {
+            // Dedicated configuration sheet must win over SensorModal because
+            // SensorDef.byId("dym") also returns a generic sensor definition.
+            id == "dym" -> DymSheet(m)
             sen != null -> SensorModal(m, sen)
             id == "ogrz" -> OverheatSheet(m, panel = false)
             id == "panel" -> OverheatSheet(m, panel = true)
-            id == "dym" -> DymSheet(m)
             id == "czujniki" -> SensorListSheet(m)
             id == "pompa" -> PompaSheet(m)
             id == "serwo" -> SerwoSheet(m)
