@@ -44,6 +44,22 @@ data class TelemPoint(
     }
 }
 
+/**
+ * Chronological merge for the chart's archived telemetry and live status feed.
+ * Keep equal-time archive/live observations (the renderer can show both), but
+ * replace duplicate live polls at the exact same timestamp with the newest one.
+ */
+fun mergeChartPoints(history: List<TelemPoint>, live: List<TelemPoint>): List<TelemPoint> {
+    val latestLiveByTimestamp = LinkedHashMap<Long, TelemPoint>()
+    live.forEach { latestLiveByTimestamp[it.ts] = it }
+
+    return (history + latestLiveByTimestamp.values).sortedWith(
+        compareBy<TelemPoint> { it.ts }
+            .thenBy { if (it.isLive) 1 else 0 }
+            .thenBy { it.seq }
+    )
+}
+
 private val SIM_CHANNELS = mapOf(
     "t_zewn" to 0, "t_bojler" to 1, "t_ogrz" to 2, "t_ogrz_sr" to 3,
     "t_powrot" to 4, "t_panel" to 5, "t_pokoj" to 6, "t_trociny" to 7,

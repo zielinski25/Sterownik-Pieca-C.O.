@@ -937,8 +937,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         .filter { it.on }
 
     // ── UI wykresów: etykiety i sterowanie (port funkcji renderujących) ─────
-    /** `chartDataset` — historia + dopływ próbek na żywo (prawa krawędź). */
-    fun chartDataset(): List<TelemPoint> = if (chartLive.isEmpty()) telemetry else telemetry + chartLive
+    /** Historia + próbki live w kolejności czasu, jak w wykresie WWW. */
+    fun chartDataset(): List<TelemPoint> = mergeChartPoints(telemetry, chartLive)
 
     // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartFocus — stqd "Platform declaration clash".
     @JvmName("hmiSetChartFocus")
