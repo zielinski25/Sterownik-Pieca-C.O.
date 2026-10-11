@@ -264,8 +264,8 @@ class PiecWidget : AppWidgetProvider() {
                 return numeric(sensor.key)?.takeIf { it in range }
             }
 
-            fun degrees(sensor: WidgetSensor): String {
-                val x = value(sensor) ?: return "—"
+            fun degrees(sensor: WidgetSensor, x: Double?): String {
+                if (x == null) return "—"
                 val text = "${Math.round(x)}°"
                 return if (isSimulated(sensor)) "~$text" else text
             }
@@ -278,9 +278,10 @@ class PiecWidget : AppWidgetProvider() {
                 if (sensor != null) {
                     val label = if (spec.useShortLabels) sensor.shortLabel else sensor.label
                     val labelColor = if (sensor.accent) Color.parseColor("#FFD32A") else Color.parseColor("#8EA6BA")
-                    val valueColor = if (sensor.accent) Color.parseColor("#FFD32A") else Color.WHITE
+                    val temperature = value(sensor)
+                    val valueColor = Color.parseColor(WidgetTemperatureColors.colorHex(sensor.key, temperature))
                     v.setTextViewText(spec.slots.labelViews[index], label)
-                    v.setTextViewText(spec.slots.valueViews[index], degrees(sensor))
+                    v.setTextViewText(spec.slots.valueViews[index], degrees(sensor, temperature))
                     v.setTextColor(spec.slots.labelViews[index], labelColor)
                     v.setTextColor(spec.slots.valueViews[index], valueColor)
                 }
@@ -351,6 +352,64 @@ class PiecWidget : AppWidgetProvider() {
             // Cały widget klikalny: tap otwiera aplikację.
             v.setOnClickPendingIntent(R.id.w_root, open)
             return v
+        }
+    }
+}
+
+/** Kolor temperatury jest oceniany według urządzenia, nie wspólnej skali °C. */
+internal object WidgetTemperatureColors {
+    private const val UNKNOWN = "#7F93A3"
+    private const val COLD = "#60A5FA"
+    private const val COOL = "#38BDF8"
+    private const val NORMAL = "#4ADE80"
+    private const val MILD = "#A3E635"
+    private const val WARM = "#FBBF24"
+    private const val HOT = "#FB923C"
+    private const val HIGH = "#FF5F78"
+
+    fun colorHex(sensorKey: String, temperature: Double?): String {
+        val t = temperature?.takeIf { it.isFinite() } ?: return UNKNOWN
+        return when (sensorKey) {
+            // Komfort na zewnątrz: okolice 8–24°C są łagodne; mróz i upał są skrajne.
+            "t_zewn" -> when {
+                t < 0.0 -> COLD
+                t < 8.0 -> COOL
+                t < 16.0 -> NORMAL
+                t < 24.0 -> MILD
+                t < 30.0 -> WARM
+                t < 35.0 -> HOT
+                else -> HIGH
+            }
+            // Obieg C.O.: typowa praca to ok. 55–72°C; wysoka temperatura zaczyna się wyżej.
+            "t_ogrz" -> when {
+                t < 30.0 -> COLD
+                t < 45.0 -> COOL
+                t < 55.0 -> MILD
+                t < 72.0 -> NORMAL
+                t < 82.0 -> WARM
+                t < 90.0 -> HOT
+                else -> HIGH
+            }
+            // C.W.U.: 25°C to jeszcze chłodna woda; zakres 45–55°C jest ciepły.
+            "t_bojler" -> when {
+                t < 25.0 -> COLD
+                t < 35.0 -> COOL
+                t < 45.0 -> NORMAL
+                t < 55.0 -> MILD
+                t < 60.0 -> WARM
+                t < 65.0 -> HOT
+                else -> HIGH
+            }
+            // Kolektor słoneczny zwykle pracuje cieplej niż obieg grzewczy.
+            "t_panel" -> when {
+                t < 15.0 -> COLD
+                t < 35.0 -> COOL
+                t < 60.0 -> NORMAL
+                t < 85.0 -> WARM
+                t < 105.0 -> HOT
+                else -> HIGH
+            }
+            else -> UNKNOWN
         }
     }
 }
