@@ -15,7 +15,9 @@ data class TelemRow(
     /** Bit i oznacza, że kanał i tej próbki pochodził z symulacji. */
     val sim: Long,
     /** Jawny znacznik całego rekordu (`is_sim` / `simulated`). */
-    val simulated: Boolean = false
+    val simulated: Boolean = false,
+    /** Czy pole `state` było obecne i poprawne; starsze rekordy bez stanu pozostają nieznane. */
+    val stateKnown: Boolean = false
 )
 
 /** Rekord po mapowaniu kanałów; bitmapa zachowuje odczyty z aktywnych symulacji. */
@@ -30,9 +32,11 @@ data class TelemPoint(
     /** Jawny znacznik całego rekordu — takie rekordy demonstracyjne nadal pomijamy. */
     val simulated: Boolean = false,
     /** Świeży snapshot statusu sterownika; nie może zostać odrzucony jako anomalia końcowa. */
-    val isLive: Boolean = false
+    val isLive: Boolean = false,
+    /** Stan pompy z bitu 0 `state`; null oznacza brak wiarygodnego pola stanu. */
+    val pumpOn: Boolean? = null
 ) {
-    fun hasValues(): Boolean = listOf(
+    fun hasValues(): Boolean = pumpOn != null || listOf(
         t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot, t_panel, t_pokoj, t_trociny,
         wilgotnosc, cisnienie, dym, klapa, syberka
     ).any { it != null && it.isFinite() }
@@ -111,8 +115,21 @@ fun TelemRow.toPoint(): TelemPoint {
         dym = getVal(10, 10, 1.0, 0.0, 4095.0),
         klapa = getServoVal(k, 180.0, 11),
         syberka = getServoVal(s, 90.0, 12),
-        sim = sim, simulated = simulated
+        sim = sim, simulated = simulated,
+        pumpOn = if (stateKnown) (state and PUMP_ON_STATE_BIT) != 0L else null
     )
+}
+
+/** Bit 0 pola `state` oznacza, że pompa C.O. pracuje. */
+const val PUMP_ON_STATE_BIT = 1L
+
+/** Parsuje liczbowy bitmask `state`; null pozostaje stanem nieznanym, a nie OFF. */
+fun parseTelemetryState(rawState: Any?): Long? {
+    val number = rawState as? Number ?: return null
+    if (number is Long) return number.takeIf { it >= 0L }
+    return number.toDouble().takeIf {
+        it.isFinite() && it >= 0.0 && it < Long.MAX_VALUE.toDouble() && it % 1.0 == 0.0
+    }?.toLong()
 }
 
 /** Opis serii wykresu — pola identyczne jak TEMP_SERIES / SERVO_SERIES. */
@@ -140,21 +157,26 @@ object ChartSeries {
         SeriesDef("servo_flap", "Klapa", "klapa", -1, -1, "%", "position", "#ff6fc7", "255,111,199", true, servo = true),
         SeriesDef("servo_damper", "Syberek", "syberka", -1, -1, "%", "position", "#45d98b", "69,217,139", true, servo = true)
     )
-    val ALL: Map<String, SeriesDef> = (TEMP + SERVO).associateBy { it.ch }
+    val PUMP = listOf(
+        SeriesDef("pompa", "Pompa CO", "pompa", -1, -1, "STAN", "pump", "#4ade80", "74,222,128", true)
+    )
+    val ALL: Map<String, SeriesDef> = (TEMP + SERVO + PUMP).associateBy { it.ch }
 
     val BOUNDS = mapOf(
         "t_ogrz" to (10.0 to 99.0), "t_ogrz_sr" to (10.0 to 99.0), "t_bojler" to (10.0 to 95.0),
         "t_powrot" to (10.0 to 95.0), "t_panel" to (0.0 to 140.0), "t_trociny" to (0.0 to 90.0),
         "t_pokoj" to (8.0 to 45.0), "t_zewn" to (-25.0 to 45.0), "wilgotnosc" to (10.0 to 100.0),
         "cisnienie" to (900.0 to 1100.0), "dym" to (0.0 to 4095.0), "klapa" to (0.0 to 100.0),
-        "syberka" to (0.0 to 100.0)
+        "syberka" to (0.0 to 100.0), "pompa" to (0.0 to 100.0)
     )
 
     fun value(p: TelemPoint, key: String): Double? = when (key) {
         "t_zewn" -> p.t_zewn; "t_bojler" -> p.t_bojler; "t_ogrz" -> p.t_ogrz; "t_ogrz_sr" -> p.t_ogrz_sr
         "t_powrot" -> p.t_powrot; "t_panel" -> p.t_panel; "t_pokoj" -> p.t_pokoj; "t_trociny" -> p.t_trociny
         "wilgotnosc" -> p.wilgotnosc; "cisnienie" -> p.cisnienie; "dym" -> p.dym
-        "klapa" -> p.klapa; "syberka" -> p.syberka; else -> null
+        "klapa" -> p.klapa; "syberka" -> p.syberka
+        "pompa" -> p.pumpOn?.let { if (it) 100.0 else 0.0 }
+        else -> null
     }
 
     /** Zakresy, które firmware dopuszcza tylko dla aktywnych symulacji. */
@@ -168,7 +190,7 @@ object ChartSeries {
     /** `filterSeriesGlitches(rows, key, group)` — granice fizyczne + Hampel. */
     fun filterGlitches(rows: List<TelemPoint>, key: String, group: String, enabled: Boolean = true): List<Double?> {
         val rawAll = rows.map { value(it, key) }
-        if (!enabled || rows.size < 3) return rawAll
+        if (group == "pump" || !enabled || rows.size < 3) return rawAll
         val b = BOUNDS[key]
         val jump = when (group) {
             "temp" -> 12.0; "rh" -> 20.0; "pressure" -> 4.0; "position" -> 15.0; else -> 400.0

@@ -123,7 +123,10 @@ fun buildChartView(
     cat.forEach { s -> values[s.id] = ChartSeries.filterGlitches(rows, s.ch, s.group, glitch) }
 
     var minVal = Double.POSITIVE_INFINITY; var maxVal = Double.NEGATIVE_INFINITY; var axisUnit = "°C"
-    if (focus == 1 || mode == "NORMALIZED") {
+    val pumpOnly = cat.isNotEmpty() && cat.all { it.group == "pump" }
+    if (pumpOnly) {
+        minVal = 0.0; maxVal = 100.0; axisUnit = ""
+    } else if (focus == 1 || mode == "NORMALIZED") {
         minVal = 0.0; maxVal = 100.0; axisUnit = "%"
     } else {
         fun rangeFor(group: String): Pair<Double, Double>? {
@@ -308,6 +311,7 @@ fun ChartCanvas(
         val axis = TextStyle(fontSize = 8.5.sp, color = Pal.AxisText)
         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
+        val pumpOnly = view.cat.isNotEmpty() && view.cat.all { it.group == "pump" }
 
         // FIX-BRAK-DANYCH: uczciwy komunikat jak w HTML (zamiast pustego boxa)
         val hasPts = view.values.values.any { vs -> vs.any { v -> v != null && v.isFinite() } }
@@ -320,15 +324,20 @@ fun ChartCanvas(
             return@Canvas
         }
 
-        // siatka + lewa oś Y
-        val ySteps = 4
+        // siatka + lewa oś Y; pompa jest kategorią binarną, więc ma tylko poziomy PRACA/STOP.
+        val ySteps = if (pumpOnly) 1 else 4
         for (i in 0..ySteps) {
             val yVal = view.min + (view.max - view.min) * (1 - i.toDouble() / ySteps)
             val yPos = padTop + (plotH / ySteps) * i
             drawLine(Pal.rgba(255, 255, 255, .06f), Offset(padLeft, yPos), Offset(w - padRight, yPos), 0.8.dp.toPx())
             val unitLabel = if (view.axisUnit == "°C") "°" else if (view.axisUnit.isNotEmpty()) " " + view.axisUnit else ""
-            val tp = measure(Math.round(yVal).toString() + unitLabel, axis)
-            drawText(tp, topLeft = Offset(padLeft - 6.dp.toPx() - tp.size.width, yPos - tp.size.height / 2f))
+            val axisLabel = if (pumpOnly) {
+                when (i) { 0 -> "PRACA"; ySteps -> "STOP"; else -> "" }
+            } else Math.round(yVal).toString() + unitLabel
+            if (axisLabel.isNotEmpty()) {
+                val tp = measure(axisLabel, axis)
+                drawText(tp, topLeft = Offset(padLeft - 6.dp.toPx() - tp.size.width, yPos - tp.size.height / 2f))
+            }
         }
         // prawa oś Y
         if (view.dual) {
@@ -380,6 +389,7 @@ fun ChartCanvas(
                 if (v != null && v.isFinite()) {
                     val x = padLeft + (idx.toFloat() / max(1f, (view.rows.size - 1).toFloat())) * plotW
                     val y = when {
+                        s.group == "pump" -> padTop + plotH * (1 - (v / 100.0).toFloat())
                         view.dual && s.group == view.secGroup ->
                             padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
                         mode == "NORMALIZED" -> {
@@ -402,7 +412,7 @@ fun ChartCanvas(
             segs.forEach { seg ->
                 if (seg.isEmpty()) return@forEach
                 val accent = hexColor(s.accent)
-                if (areaBand && mode != "NORMALIZED" && seg.size >= 2) {
+                if (areaBand && s.group != "pump" && mode != "NORMALIZED" && seg.size >= 2) {
                     val path = Path()
                     path.moveTo(seg.first().x, padTop + plotH)
                     seg.forEach { path.lineTo(it.x, it.y) }
@@ -418,11 +428,12 @@ fun ChartCanvas(
                 fun drawStrokeRun(run: List<SegPoint>, isSimulated: Boolean) {
                     if (run.isEmpty()) return
                     val line = Path()
-                    if (lineStyle == "STEPPED" || run.size < 3) {
+                    val useSteps = lineStyle == "STEPPED" || s.group == "pump"
+                    if (useSteps || run.size < 3) {
                         run.forEachIndexed { i, p ->
                             if (i == 0) line.moveTo(p.x, p.y)
                             else {
-                                if (lineStyle == "STEPPED") line.lineTo(p.x, run[i - 1].y)
+                                if (useSteps) line.lineTo(p.x, run[i - 1].y)
                                 line.lineTo(p.x, p.y)
                             }
                         }
@@ -496,6 +507,7 @@ fun ChartCanvas(
                         val v = vals.getOrNull(idx)
                         if (v != null && v.isFinite()) {
                             val y = when {
+                                s.group == "pump" -> padTop + plotH * (1 - (v / 100.0).toFloat())
                                 view.dual && s.group == view.secGroup ->
                                     padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
                                 mode == "NORMALIZED" -> {

@@ -151,6 +151,7 @@ fun ChartsPage(m: AppModel) {
             ChartRow("DANE") {
                 ChartChip("TEMPERATURY", m.chartFocus == 0) { m.setChartFocus(0) }
                 ChartChip("SERWA", m.chartFocus == 1) { m.setChartFocus(1) }
+                ChartChip("POMPA", m.chartFocus == 3) { m.setChartFocus(3) }
                 ChartChip("KORELACJA", m.chartFocus == 2) { m.setChartFocus(2) }
             }
             ChartRow("ZAKRES") {
@@ -201,7 +202,7 @@ fun ChartsPage(m: AppModel) {
                 ChartCanvas(
                     view = view,
                     modifier = Modifier.fillMaxWidth().height(Dimens.chartH),
-                    areaBand = m.chartAreaBand,
+                    areaBand = m.chartAreaBand && m.chartFocus != 3,
                     alarmLines = m.chartAlarmLines && m.chartFocus == 0,
                     alarmLevels = m.alarmLevels,
                     mode = m.chartMode,
@@ -266,7 +267,7 @@ fun ChartsPage(m: AppModel) {
                         .border(BorderStroke(1.dp, Color(0x0FFFFFFF)), RoundedCornerShape(12.dp))) {
                         ChartCanvas(
                             view = view, modifier = Modifier.fillMaxSize(),
-                            areaBand = m.chartAreaBand, alarmLines = m.chartAlarmLines && m.chartFocus == 0, alarmLevels = m.alarmLevels,
+                            areaBand = m.chartAreaBand && m.chartFocus != 3, alarmLines = m.chartAlarmLines && m.chartFocus == 0, alarmLevels = m.alarmLevels,
                             mode = m.chartMode, lineStyle = m.chartStyle, crossIdx = cross, onCross = { cross = it },
                             onPan = { m.panChart(it) }, onPinch = { f, x -> m.pinchChart(f, x) },
                             onResetView = { m.resetChartView() }
@@ -384,7 +385,14 @@ fun ChartSeriesSheet(m: AppModel) {
         Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("● " + s.label, style = Txt.rowLabel.copy(color = hexColor(s.accent)))
-                Text(if (s.servo) "Pozycja serwomechanizmu (%)" else "Kanał telemetryczny (${s.unit})", style = Txt.rowDesc)
+                Text(
+                    when {
+                        s.servo -> "Pozycja serwomechanizmu (%)"
+                        s.group == "pump" -> "Stan pompy: PRACA / STOP"
+                        else -> "Kanał telemetryczny (${s.unit})"
+                    },
+                    style = Txt.rowDesc
+                )
             }
             Box(Modifier.size(24.dp).background(if (on) Pal.Cyan else Pal.Surface2, RoundedCornerShape(7.dp))
                 .border(BorderStroke(1.dp, if (on) Pal.Cyan else Pal.BorderStrong), RoundedCornerShape(7.dp))
@@ -420,7 +428,10 @@ fun ChartAxisSheet(m: AppModel) {
 /** `showChartToolsSheet()` — filtry anomalii, area band, styl linii i poziomy odniesienia. */
 @Composable
 fun ChartToolsSheet(m: AppModel) {
-    Note("Filtry zmieniają wygląd wykresu; dane w Firebase pozostają bez zmian.")
+    Note(
+        if (m.chartFocus == 3) "Stan pompy pochodzi z bitu 0 pola state i jest rysowany schodkowo; filtry ani progi temperatur nie zmieniają jego wartości."
+        else "Filtry zmieniają wygląd wykresu; dane w Firebase pozostają bez zmian."
+    )
     CheckRow("Filtr anomalii i szpilek (Hampel / Glitch)", null, m.chartGlitch) { v -> m.setChartGlitch(v) }
     CheckRow("Wypełnienie gradientowe (Area Band)", null, m.chartAreaBand) { v -> m.setChartAreaBand(v) }
     CheckRow("Gładkie linie Bezier (odznacz: schodkowe)", null, m.chartStyle == "SMOOTH") { v -> m.setChartStyle(if (v) "SMOOTH" else "STEPPED") }
@@ -461,30 +472,45 @@ private fun AlarmThresholdRow(m: AppModel, key: String, label: String, default: 
 @Composable
 fun ChartAnalysisSheet(m: AppModel) {
     val dataset = remember { m.chartDataset() }
-    Note("Analiza liczona z pobranych próbek telemetrycznych. Statystyki min/max, średnie, cykle grzania i różnice A−B.")
+    Note(
+        if (m.chartFocus == 3) "Stan pompy z bitu 0 pola telemetrycznego state; brakujące stany są pomijane, a nie liczone jako STOP."
+        else "Analiza liczona z pobranych próbek telemetrycznych. Statystyki min/max, średnie, cykle grzania i różnice A−B."
+    )
     m.catalogOn().forEach { s ->
         val vals = dataset.mapNotNull { com.sterownikco.pro.core.ChartSeries.value(it, s.ch) }.filter { it.isFinite() }
         if (vals.isEmpty()) return@forEach
-        val mn = vals.min(); val mx = vals.max()
-        val avg = vals.sum() / vals.size
-        val delta = vals.last() - vals.first()
+        if (s.group == "pump") {
+            val onSamples = vals.count { it >= 50.0 }
+            val transitions = vals.zipWithNext().count { (a, b) -> (a >= 50.0) != (b >= 50.0) }
+            DiagCard(
+                lbl = "● POMPA C.O.",
+                value = "Ostatni stan: ${if (vals.last() >= 50.0) "PRACUJE" else "STOI"}",
+                sub = "$onSamples próbek PRACA · ${vals.size - onSamples} STOP · $transitions zmian stanu"
+            )
+        } else {
+            val mn = vals.min(); val mx = vals.max()
+            val avg = vals.sum() / vals.size
+            val delta = vals.last() - vals.first()
+            DiagCard(
+                lbl = "● " + s.label.uppercase() + " (" + s.unit + ")",
+                value = "MIN ${fmt1(mn)} ${s.unit}  ·  MAX ${fmt1(mx)} ${s.unit}",
+                sub = "Średnia: ${fmt1(avg)} ${s.unit} · Zmiana okresu: ${(if (delta >= 0) "+" else "") + fmt1(delta)} ${s.unit}"
+            )
+        }
+    }
+    if (m.chartFocus != 3) {
+        SectionHeader("Wykryte cykle pracy kotła")
+        val pumpThresholdsKnown = m.S.hasAllData("tempOn", "tempOff")
         DiagCard(
-            lbl = "● " + s.label.uppercase() + " (" + s.unit + ")",
-            value = "MIN ${fmt1(mn)} ${s.unit}  ·  MAX ${fmt1(mx)} ${s.unit}",
-            sub = "Średnia: ${fmt1(avg)} ${s.unit} · Zmiana okresu: ${(if (delta >= 0) "+" else "") + fmt1(delta)} ${s.unit}"
+            lbl = "ANALIZA CYKLI GRZANIA",
+            value = "Cykliczna praca paleniska w wybranym zakresie",
+            sub = if (pumpThresholdsKnown) {
+                "Próg załączenia pompy: ${m.S.tempOn}°C (histereza ${m.S.tempOn - m.S.tempOff}°C)"
+            } else {
+                "Progi pracy pompy: brak odczytu z centrali"
+            }
         )
     }
-    SectionHeader("Wykryte cykle pracy kotła")
-    val pumpThresholdsKnown = m.S.hasAllData("tempOn", "tempOff")
-    DiagCard(
-        lbl = "ANALIZA CYKLI GRZANIA",
-        value = "Cykliczna praca paleniska w wybranym zakresie",
-        sub = if (pumpThresholdsKnown) {
-            "Próg załączenia pompy: ${m.S.tempOn}°C (histereza ${m.S.tempOn - m.S.tempOff}°C)"
-        } else {
-            "Progi pracy pompy: brak odczytu z centrali"
-        }
-    )
     val cat = m.catalogOn()
     if (cat.size >= 2 && m.chartFocus == 0) {
         val s1 = cat[0]; val s2 = cat[1]
@@ -496,10 +522,12 @@ fun ChartAnalysisSheet(m: AppModel) {
             sub = "Różnica liczona na bieżąco ze strumienia /piec/status"
         )
     }
-    UstBtn("Włącz/Wyłącz linie progów", modifier = Modifier.fillMaxWidth(), onClick = {
-        m.setChartAlarmLines(!m.chartAlarmLines)
-        m.showToast("Wykres", (if (m.chartAlarmLines) "Włączono" else "Wyłączono") + " linie progów", "ok")
-    })
+    if (m.chartFocus == 0) {
+        UstBtn("Włącz/Wyłącz linie progów", modifier = Modifier.fillMaxWidth(), onClick = {
+            m.setChartAlarmLines(!m.chartAlarmLines)
+            m.showToast("Wykres", (if (m.chartAlarmLines) "Włączono" else "Wyłączono") + " linie progów", "ok")
+        })
+    }
 }
 
 private fun fmt1(v: Double): String = if (v.isFinite()) String.format(java.util.Locale.US, "%.1f", v) else "—"
@@ -561,7 +589,12 @@ private fun ChartHoverTooltip(
         Text(chartTimeLabel(m, row.ts), fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan)
         view.cat.forEach { s ->
             val x = view.values[s.id]?.getOrNull(index)
-            val value = if (x != null && x.isFinite()) (if (row.isSimulated(s.ch)) "~" else "") + fmt1(x) + " " + s.unit else "—"
+            val value = when {
+                s.group == "pump" && x != null && x.isFinite() -> if (x >= 50.0) "PRACUJE" else "STOI"
+                s.group == "pump" -> "—"
+                x != null && x.isFinite() -> (if (row.isSimulated(s.ch)) "~" else "") + fmt1(x) + " " + s.unit
+                else -> "—"
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("●", fontSize = 7.sp, color = hexColor(s.accent))
                 Text("${s.label}: ", fontSize = 8.sp, color = hexColor(s.accent), fontWeight = FontWeight.SemiBold)

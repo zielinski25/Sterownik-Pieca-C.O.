@@ -168,6 +168,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         Rtdb.setAuthSession(initialSession.apiKey, initialSession.idToken, initialSession.refreshToken)
         ChartSeries.TEMP.forEach { seriesOn[it.id] = it.on }
         ChartSeries.SERVO.forEach { seriesOn[it.id] = it.on }
+        ChartSeries.PUMP.forEach { seriesOn[it.id] = it.on }
         loadChartPrefs()
         loadDashboardWidgets()
         loadDashboardWidgetOrder()
@@ -902,7 +903,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             klapa = servoValue("klapa", "klapa", 11, S.klapa, 180),
             syberka = servoValue("syberka", "syberka", 12, S.syberka, 90),
             sim = simMask,
-            isLive = true
+            isLive = true,
+            pumpOn = S.pompa.takeIf { S.hasData("pompa") }
         )
         if (p.hasValues()) chartLive = (chartLive + p).takeLast(240)
     }
@@ -1039,24 +1041,33 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     /** `#chartCurrentTitle` / `#chartCurrentMeta`. */
     fun chartTitle(): String = when (chartFocus) {
-        0 -> "TEMPERATURY"; 1 -> "POZYCJE SERW"; else -> "KORELACJA (PIEC + SERWA)"
+        0 -> "TEMPERATURY"
+        1 -> "POZYCJE SERW"
+        2 -> "KORELACJA (PIEC + SERWA)"
+        3 -> "POMPA C.O."
+        else -> "WYKRES"
     }
 
     fun chartMeta(): String = when (chartFocus) {
         0 -> "°C · WSPÓLNA OŚ"
         1 -> "% · KLAPA + SYBEREK"
+        3 -> "STAN · PRACA / STOP"
         else -> "LEWA OŚ: °C · PRAWA OŚ: % (KLAPA/SYBEREK)"
     }
 
-    fun fsTitle(): String = (if (chartFocus == 0) "TEMPERATURY" else "POZYCJE SERW") + " — PEŁNY EKRAN"
+    fun fsTitle(): String = chartTitle() + " — PEŁNY EKRAN"
     fun fsSubtitle(): String = if (rangeSec <= 24 * 3600) "Podgląd dobowy telemetryczny" else "Analiza wielodniowa"
 
     /** `updateChartsNowStat()` — plakietka bieżącej wartości + faza grzania. */
-    fun chartNowStat(): String = if (chartFocus == 0) {
-        if (S.symAktywna("ogrz")) "piec ~${fmt1(S.t_ogrz)}°C · SYM"
-        else if (S.hasData("t_ogrz")) "piec " + fmt1(S.t_ogrz) + "°C" else "piec —"
-    } else {
-        if (S.hasData("klapa")) "klapa " + Math.round(S.klapa / 1.8) + "%" else "klapa —"
+    fun chartNowStat(): String = when (chartFocus) {
+        0 -> if (S.symAktywna("ogrz")) "piec ~${fmt1(S.t_ogrz)}°C · SYM"
+            else if (S.hasData("t_ogrz")) "piec " + fmt1(S.t_ogrz) + "°C" else "piec —"
+        3 -> when {
+            !isFbFresh || !S.hasData("pompa") -> "pompa —"
+            S.pompa -> "POMPA: PRACUJE"
+            else -> "POMPA: STOI"
+        }
+        else -> if (S.hasData("klapa")) "klapa " + Math.round(S.klapa / 1.8) + "%" else "klapa —"
     }
 
     private fun updateChartHead() { /* tytuł/meta/serie są reaktywne w Compose */ }
@@ -1064,6 +1075,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun activeCatalog(): List<SeriesDef> = when (chartFocus) {
         1 -> ChartSeries.SERVO
         2 -> ChartSeries.TEMP + ChartSeries.SERVO
+        3 -> ChartSeries.PUMP
         else -> ChartSeries.TEMP
     }
 
@@ -1073,7 +1085,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             o.put("focus", chartFocus).put("range", rangeSec)
             val t = JSONObject(); ChartSeries.TEMP.forEach { t.put(it.id, seriesOn[it.id] ?: it.on) }
             val s = JSONObject(); ChartSeries.SERVO.forEach { s.put(it.id, seriesOn[it.id] ?: it.on) }
-            o.put("tempOn", t).put("servoOn", s)
+            val p = JSONObject(); ChartSeries.PUMP.forEach { p.put(it.id, seriesOn[it.id] ?: it.on) }
+            o.put("tempOn", t).put("servoOn", s).put("pumpOn", p)
             prefs.set(Prefs.K_CHART_PREFS, o.toString())
         } catch (e: Exception) { /* ignore */ }
     }
@@ -1082,10 +1095,11 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         try {
             val raw = prefs.get(Prefs.K_CHART_PREFS) ?: return
             val p = JSONObject(raw)
-            if (p.has("focus")) { val f = p.getInt("focus"); if (f in 0..2) chartFocus = f }
+            if (p.has("focus")) { val f = p.getInt("focus"); if (f in 0..3) chartFocus = f }
             if (p.has("range")) { val r = p.getInt("range"); if (r > 0) rangeSec = r }
             p.optJSONObject("tempOn")?.let { o -> for (k in o.keys()) seriesOn[k] = o.getBoolean(k) }
             p.optJSONObject("servoOn")?.let { o -> for (k in o.keys()) seriesOn[k] = o.getBoolean(k) }
+            p.optJSONObject("pumpOn")?.let { o -> for (k in o.keys()) seriesOn[k] = o.getBoolean(k) }
         } catch (e: Exception) { /* ignore */ }
     }
 

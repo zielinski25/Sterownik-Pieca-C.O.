@@ -452,10 +452,14 @@ object Rtdb {
         val simMaskValid = !obj.has("sim") || simRaw is Boolean || simMaskValue != null
         val rowSimulated = obj.opt("is_sim") == true || obj.opt("simulated") == true || simRaw == true || !simFlagsValid || !simMaskValid
         val simMask = simMaskValue ?: 0L
+        val parsedState = parseTelemetryState(obj.opt("state"))
+        val stateKnown = parsedState != null
+        val state = parsedState ?: 0L
         return TelemRow(
             id = id, seq = obj.optLong("seq", 0), ts = obj.optLong("ts", 0), mono = obj.optLong("mono", 0),
             a = a, k = obj.optLong("k", -1), s = obj.optLong("s", -1),
-            state = obj.optLong("state", 0), q = obj.optLong("q", 0), sim = simMask, simulated = rowSimulated
+            state = state, q = obj.optLong("q", 0), sim = simMask, simulated = rowSimulated,
+            stateKnown = stateKnown
         )
     }
 
