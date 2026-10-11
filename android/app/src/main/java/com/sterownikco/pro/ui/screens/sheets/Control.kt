@@ -286,7 +286,7 @@ fun SerwoSheet(m: AppModel) {
             if (S.hasData("klapa") && S.klapa in 0..180) {
                 SliderRow(
                     name = "Klapa", value = Math.round(S.klapa / 1.8).toFloat(), min = 0f, max = 100f, step = 1f,
-                    fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("klapa ${v.toInt()}") }, resetOnCommit = true
+                    fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("klapa ${v.toInt()}") }
                 )
             } else {
                 Note("Pozycja klapy: brak prawidłowego odczytu z centrali.")
@@ -294,7 +294,7 @@ fun SerwoSheet(m: AppModel) {
             if (S.hasData("syberka") && S.syberka in 0..90) {
                 SliderRow(
                     name = "Syberek", value = Math.round(S.syberka / 0.9).toFloat(), min = 0f, max = 100f, step = 1f,
-                    fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("syberek ${v.toInt()}") }, resetOnCommit = true
+                    fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("syberek ${v.toInt()}") }
                 )
             } else {
                 Note("Pozycja syberka: brak prawidłowego odczytu z centrali.")

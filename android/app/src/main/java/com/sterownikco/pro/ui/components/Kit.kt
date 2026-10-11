@@ -255,8 +255,7 @@ fun SliderRow(
     step: Float?,
     fmt: (Float) -> String,
     onValue: (Float) -> Unit,
-    onCommit: ((Float) -> Unit)? = null,
-    resetOnCommit: Boolean = false
+    onCommit: ((Float) -> Unit)? = null
 ) {
     var v by remember(value) { mutableFloatStateOf(value) }
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
@@ -273,7 +272,6 @@ fun SliderRow(
         if (onCommit != null) {
             UstBtn("Zastosuj", onClick = {
                 onCommit(v)
-                if (resetOnCommit) v = value
             }, variant = "primary", modifier = Modifier.fillMaxWidth())
         }
     }

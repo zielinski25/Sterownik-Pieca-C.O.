@@ -162,12 +162,6 @@ fun Dashboard(m: AppModel) {
             )
         }
 
-        if (selectedTiles.isNotEmpty()) {
-            Text(
-                "Przytrzymaj uchwyt z kropkami na kafelku i przeciągnij go w inne miejsce tej sekcji.",
-                style = Txt.note
-            )
-        }
         if (measurementTiles.isNotEmpty()) {
             Sect("Pomiary")
             TileGrid(measurementTiles, m, art)
@@ -250,7 +244,7 @@ private fun TileGrid(list: List<com.sterownikco.pro.core.TileSpec>, m: AppModel,
                                     scaleY = if (active) 1.035f else 1f
                                     shadowElevation = if (active) 16.dp.toPx() else 0f
                                 },
-                            dragHandleModifier = Modifier.pointerInput(spec.id, ids, minReorderDistance) {
+                            reorderModifier = Modifier.pointerInput(spec.id, ids, minReorderDistance) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { _ ->
                                         draggingId = spec.id
