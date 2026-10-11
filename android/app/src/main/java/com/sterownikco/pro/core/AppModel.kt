@@ -436,7 +436,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         reportedMode = S.tryb_serwa.takeIf { S.hasData("tryb_serwa") }
     )
 
-    private fun setServoModeAckOverride(mode: Int?) {
+    private fun updateServoModeAckOverride(mode: Int?) {
         val valid = mode?.takeIf { it in 1..3 }
         if (servoModeAckOverride == valid) return
         servoModeAckOverride = valid
@@ -452,7 +452,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun setServoMode(mode: Int) {
         if (mode !in 1..3) return
         val requestId = ++servoModeRequestId
-        setServoModeAckOverride(null)
+        updateServoModeAckOverride(null)
         scope.launch {
             servoModeCommandMutex.lock()
             val acknowledged = try {
@@ -461,7 +461,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     // Apply the UI-only ACK presentation before the post-ACK RTDB refresh,
                     // which can be delayed by a routine poll or the controller's 15 s status cadence.
                     if (requestId == servoModeRequestId) {
-                        setServoModeAckOverride(mode)
+                        updateServoModeAckOverride(mode)
                         if (servoModePresentation().awaitingStatus) {
                             showToast("SERWO", "Sterownik przyjął tryb — oczekuję na świeży odczyt.", "wait")
                         }
@@ -473,7 +473,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             if (!acknowledged || requestId != servoModeRequestId) return@launch
 
             if (!servoModePresentation().awaitingStatus) {
-                setServoModeAckOverride(null)
+                updateServoModeAckOverride(null)
                 return@launch
             }
 
@@ -481,7 +481,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             val deadline = System.currentTimeMillis() + 30_000L
             while (isActive && requestId == servoModeRequestId && System.currentTimeMillis() < deadline) {
                 if (!servoModePresentation().awaitingStatus) {
-                    setServoModeAckOverride(null)
+                    updateServoModeAckOverride(null)
                     showToast("SERWO", "Status centrali potwierdził nowy tryb.", "ok")
                     return@launch
                 }
@@ -491,7 +491,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 delay(500L)
             }
             if (requestId == servoModeRequestId && servoModeAckOverride == mode) {
-                setServoModeAckOverride(null)
+                updateServoModeAckOverride(null)
                 showToast(
                     "SERWO",
                     "ACK odebrany, ale świeży status nie potwierdził trybu po 30 s. Pokazuję ostatni odczyt centrali.",
