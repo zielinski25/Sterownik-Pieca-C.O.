@@ -283,9 +283,13 @@ fun DymSheet(m: AppModel) {
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
         Text("Tryb pracy po aktywacji", style = Txt.rowLabel, modifier = Modifier.weight(1f))
     }
-    Seg(listOf(0 to "Impulsowo", 1 to "Ciągle"), current = if (S.hasData("dymTrybPracy")) S.dymTrybPracy else -1, onPick = { v ->
-        m.send("ustaw dymTrybPracy $v")
+    val smokeModePresentation = m.smokeModePresentation()
+    Seg(listOf(0 to "Impulsowo", 1 to "Ciągle"), current = smokeModePresentation.mode ?: -1, onPick = { v ->
+        m.setSmokeMode(v)
     })
+    if (smokeModePresentation.awaitingStatus) {
+        Note("Sterownik potwierdził zmianę trybu; oczekuję na świeży odczyt centrali.")
+    }
     SectionHeader("Cykl pracy czujnika (tryb Impulsowo)")
     NumRow("Czas WŁ.", "s — rozgrzewanie + pomiar", S.dymCzasOn, 20, 600, known = S.hasData("dymCzasOn")) { v -> m.commitNum("Czas WŁ.", "dymCzasOn", 20, 600, v) }
     NumRow("Czas WYŁ.", "s — między pomiarami", S.dymCzasOff, 10, 600, known = S.hasData("dymCzasOff")) { v -> m.commitNum("Czas WYŁ.", "dymCzasOff", 10, 600, v) }

@@ -116,15 +116,16 @@ fun Dashboard(m: AppModel) {
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val pumpKnown = S.hasData("pompa")
-            val pumpModeKnown = S.hasData("wybor") && S.wybor in 1..3
+            val pumpMode = m.pumpModePresentation().mode
+            val pumpModeKnown = pumpMode != null
             QCard(
                 title = "POMPA", icon = "pump",
                 value = if (!pumpKnown) "—" else if (S.pompa) "WŁĄCZONA" else "WYŁĄCZONA",
                 sub = when {
                     !pumpKnown -> "oczekiwanie na stan"
                     !pumpModeKnown -> "tryb pracy: brak odczytu"
-                    S.wybor == 1 -> "⏱️ Czasowy"
-                    S.wybor == 2 -> "🌡️ Temperaturowy"
+                    pumpMode == 1 -> "⏱️ Czasowy"
+                    pumpMode == 2 -> "🌡️ Temperaturowy"
                     else -> "⚡ Auto"
                 },
                 state = if (pumpKnown && S.pompa) "ok" else if (!pumpKnown) "warn" else "",

@@ -255,21 +255,22 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
 
     // ── pompa ───────────────────────────────────────────────────────────────
     val pumpKnown = S.hasData("pompa")
-    val strategyKnown = S.hasData("wybor") && S.wybor in 1..3
+    val pumpMode = m.pumpModePresentation().mode
+    val strategyKnown = pumpMode != null
     val stratBadge = when {
         !pumpKnown -> "BRAK DANYCH"
         !S.pompa -> "POSTÓJ"
-        strategyKnown && S.wybor == 1 -> "⏱️ CZASOWY"
-        strategyKnown && S.wybor == 2 -> "🌡️ TEMP."
-        strategyKnown && S.wybor == 3 -> "⚡ AUTO"
+        strategyKnown && pumpMode == 1 -> "⏱️ CZASOWY"
+        strategyKnown && pumpMode == 2 -> "🌡️ TEMP."
+        strategyKnown && pumpMode == 3 -> "⚡ AUTO"
         else -> "PRACA"
     }
     val stratDesc = when {
         !pumpKnown -> "oczekiwanie na stan pompy"
         !strategyKnown -> "odebrano stan pompy; tryb pracy nieznany"
-        S.wybor == 1 && S.hasAllData("czasOn", "czasOff") -> "⏱️ Czasowy: ${S.czasOn}m ON / ${S.czasOff}m OFF"
-        S.wybor == 2 && S.hasAllData("tempOn", "tempOff") -> "🌡️ Temp: ON ≥ ${S.tempOn}° / OFF ≤ ${S.tempOff}°"
-        S.wybor == 3 && S.hasData("tempOn") -> "⚡ Automatyczny: start przy ${S.tempOn}°C"
+        pumpMode == 1 && S.hasAllData("czasOn", "czasOff") -> "⏱️ Czasowy: ${S.czasOn}m ON / ${S.czasOff}m OFF"
+        pumpMode == 2 && S.hasAllData("tempOn", "tempOff") -> "🌡️ Temp: ON ≥ ${S.tempOn}° / OFF ≤ ${S.tempOff}°"
+        pumpMode == 3 && S.hasData("tempOn") -> "⚡ Automatyczny: start przy ${S.tempOn}°C"
         else -> "stan odebrany; oczekiwanie na konfigurację"
     }
     out.add(

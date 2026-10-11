@@ -57,6 +57,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         .build()
     private val statusPollGate = StatusPollGate()
     private enum class StatusPollResult { APPLIED, FAILED, SUPERSEDED }
+    private val pumpModeCommandMutex = Mutex()
+    private var pumpModeRequestId = 0L
+    private val smokeModeCommandMutex = Mutex()
+    private var smokeModeRequestId = 0L
     private val servoModeCommandMutex = Mutex()
     private var servoModeRequestId = 0L
     private val weatherMutex = Mutex()
@@ -65,7 +69,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     // ── stan połączenia ─────────────────────────────────────────────────────
     var connected by mutableStateOf(false)
     var lastFetchTs = 0L
-    /** ACK-only presentation until the slower periodic `/piec/status` snapshot catches up. */
+    /** ACK-only presentations until the slower `/piec/status` snapshot catches up. */
+    private var pumpModeAckOverride by mutableStateOf<Int?>(null)
+    private var smokeModeAckOverride by mutableStateOf<Int?>(null)
     private var servoModeAckOverride by mutableStateOf<Int?>(null)
     var dashboardWidgets by mutableStateOf(TileDefs.DEFAULT_VISIBLE_IDS)
     var dashboardWidgetOrder by mutableStateOf(TileDefs.TILES.map { it.id })
@@ -428,6 +434,140 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         showToast("SESYJA", "Wylogowano operatora", "ok")
         addLog("SYSTEM", "Zamknięto sesję operatora", "warn")
         authOpen = true
+    }
+
+    // ── tryby sterownika: szybki widok po ACK + uzgodnienie ze statusem ──
+    internal fun pumpModePresentation(): ModeSelectionPresentation = presentModeSelection(
+        acknowledgedMode = pumpModeAckOverride,
+        reportedMode = S.wybor.takeIf { S.hasData("wybor") },
+        allowedModes = 1..3
+    )
+
+    internal fun smokeModePresentation(): ModeSelectionPresentation = presentModeSelection(
+        acknowledgedMode = smokeModeAckOverride,
+        reportedMode = S.dymTrybPracy.takeIf { S.hasData("dymTrybPracy") },
+        allowedModes = 0..1
+    )
+
+    private fun updatePumpModeAckOverride(mode: Int?) {
+        val valid = mode?.takeIf { it in 1..3 }
+        if (pumpModeAckOverride == valid) return
+        pumpModeAckOverride = valid
+        S.bump()
+    }
+
+    private fun updateSmokeModeAckOverride(mode: Int?) {
+        val valid = mode?.takeIf { it in 0..1 }
+        if (smokeModeAckOverride == valid) return
+        smokeModeAckOverride = valid
+        S.bump()
+    }
+
+    /**
+     * Updates only presentation after ACK; `PiecState` stays authoritative.
+     * Clear the override when a fresh snapshot agrees, or revert to reported data
+     * after 30 seconds rather than presenting an unconfirmed mode indefinitely.
+     */
+    private suspend fun awaitModeStatus(
+        label: String,
+        mode: Int,
+        requestId: Long,
+        currentRequestId: () -> Long,
+        acknowledgedMode: () -> Int?,
+        reportedMode: () -> Int?,
+        allowedModes: IntRange,
+        clearOverride: () -> Unit
+    ) {
+        fun awaitingStatus(): Boolean = presentModeSelection(
+            acknowledgedMode = acknowledgedMode(),
+            reportedMode = reportedMode(),
+            allowedModes = allowedModes
+        ).awaitingStatus
+
+        if (!awaitingStatus()) {
+            clearOverride()
+            return
+        }
+        showToast(label, "Sterownik przyjął tryb — oczekuję na świeży odczyt.", "wait")
+        val deadline = System.currentTimeMillis() + 30_000L
+        while (isActive && requestId == currentRequestId() && System.currentTimeMillis() < deadline) {
+            if (!awaitingStatus()) {
+                clearOverride()
+                showToast(label, "Status centrali potwierdził nowy tryb.", "ok")
+                return
+            }
+            delay(500L)
+        }
+        if (requestId == currentRequestId() && acknowledgedMode() == mode) {
+            clearOverride()
+            showToast(label, "ACK odebrany, ale świeży status nie potwierdził trybu po 30 s. Pokazuję ostatni odczyt centrali.", "warn")
+        }
+    }
+
+    /** Zmiana strategii pompy jest podświetlana po ACK, bez czekania na wolniejszy status RTDB. */
+    fun setPumpMode(mode: Int) {
+        if (mode !in 1..3) return
+        val requestId = ++pumpModeRequestId
+        updatePumpModeAckOverride(null)
+        scope.launch {
+            val acknowledged = try {
+                pumpModeCommandMutex.lock()
+                try {
+                    if (requestId != pumpModeRequestId) false
+                    else sendAwait("ustaw wybor $mode") {
+                        if (requestId == pumpModeRequestId) updatePumpModeAckOverride(mode)
+                    }
+                } finally {
+                    pumpModeCommandMutex.unlock()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            }
+            if (!acknowledged || requestId != pumpModeRequestId) return@launch
+            awaitModeStatus(
+                label = "POMPA",
+                mode = mode,
+                requestId = requestId,
+                currentRequestId = { pumpModeRequestId },
+                acknowledgedMode = { pumpModeAckOverride },
+                reportedMode = { S.wybor.takeIf { S.hasData("wybor") } },
+                allowedModes = 1..3,
+                clearOverride = { updatePumpModeAckOverride(null) }
+            )
+        }
+    }
+
+    /** Analogiczna synchronizacja wyboru trybu pracy czujnika dymu. */
+    fun setSmokeMode(mode: Int) {
+        if (mode !in 0..1) return
+        val requestId = ++smokeModeRequestId
+        updateSmokeModeAckOverride(null)
+        scope.launch {
+            val acknowledged = try {
+                smokeModeCommandMutex.lock()
+                try {
+                    if (requestId != smokeModeRequestId) false
+                    else sendAwait("ustaw dymTrybPracy $mode") {
+                        if (requestId == smokeModeRequestId) updateSmokeModeAckOverride(mode)
+                    }
+                } finally {
+                    smokeModeCommandMutex.unlock()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            }
+            if (!acknowledged || requestId != smokeModeRequestId) return@launch
+            awaitModeStatus(
+                label = "CZUJNIK DYMU",
+                mode = mode,
+                requestId = requestId,
+                currentRequestId = { smokeModeRequestId },
+                acknowledgedMode = { smokeModeAckOverride },
+                reportedMode = { S.dymTrybPracy.takeIf { S.hasData("dymTrybPracy") } },
+                allowedModes = 0..1,
+                clearOverride = { updateSmokeModeAckOverride(null) }
+            )
+        }
     }
 
     // ── tryb serwa: szybki widok po ACK + późniejsze uzgodnienie ze statusem ──

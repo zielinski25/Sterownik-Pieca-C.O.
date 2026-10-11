@@ -89,20 +89,24 @@ private fun DiagHead(title: String, right: String) {
 @Composable
 fun PompaSheet(m: AppModel) {
     val S = m.S
-    val modeKnown = S.hasData("wybor") && S.wybor in 1..3
-    val wybor = if (modeKnown) S.wybor else -1
+    val modePresentation = m.pumpModePresentation()
+    val wybor = modePresentation.mode ?: -1
+    val modeKnown = modePresentation.mode != null
     Note("Wybierz strategię pracy pompy. Trociniak steruje cyklem czasowym, a Kopciuch załącza pompę na podstawie temperatury pieca.")
     if (!modeKnown) Note("Aktualny tryb: oczekiwanie na odczyt z centrali.")
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        StratOpt("⏱️", "TROCINIAK", "Tryb Czasowy", modeKnown && wybor == 1) {
-            m.send("ustaw wybor 1")
+        StratOpt("⏱️", "TROCINIAK", "Tryb Czasowy", wybor == 1) {
+            m.setPumpMode(1)
         }
-        StratOpt("🌡️", "KOPCIUCH", "Temperaturowy", modeKnown && wybor == 2) {
-            m.send("ustaw wybor 2")
+        StratOpt("🌡️", "KOPCIUCH", "Temperaturowy", wybor == 2) {
+            m.setPumpMode(2)
         }
-        StratOpt("⚡", "AUTO", "Inteligentny", modeKnown && wybor == 3) {
-            m.send("ustaw wybor 3")
+        StratOpt("⚡", "AUTO", "Inteligentny", wybor == 3) {
+            m.setPumpMode(3)
         }
+    }
+    if (modePresentation.awaitingStatus) {
+        Note("Sterownik potwierdził zmianę strategii; oczekuję na świeży odczyt centrali.")
     }
 
     if (wybor == 1) {
