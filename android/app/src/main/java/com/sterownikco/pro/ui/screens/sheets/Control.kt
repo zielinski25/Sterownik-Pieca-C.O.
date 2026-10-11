@@ -337,18 +337,16 @@ fun SerwoSheet(m: AppModel) {
 fun MieszadloSheet(m: AppModel) {
     val S = m.S
     val modePresentation = m.mixerModePresentation()
-    val pulseActive = m.mixerPulsePresentationActive()
-    val selectedCommand = when {
-        pulseActive -> "mieszadlo_puls"
-        modePresentation.mode == 0 -> "mieszadlo_auto"
-        modePresentation.mode == 2 -> "mieszadlo_wyl"
+    val selectedCommand = when (modePresentation.mode) {
+        0 -> "mieszadlo_auto"
+        1 -> "mieszadlo_wl"
+        2 -> "mieszadlo_wyl"
         else -> null
     }
-    val modeLabel = when {
-        pulseActive -> "IMPULS W TOKU"
-        modePresentation.mode == 0 -> "AUTO"
-        modePresentation.mode == 1 -> "WYMUSZONE WŁ."
-        modePresentation.mode == 2 -> "WYMUSZONE WYŁ."
+    val modeLabel = when (modePresentation.mode) {
+        0 -> "AUTO"
+        1 -> "WYMUSZONE WŁ."
+        2 -> "WYMUSZONE WYŁ."
         else -> "BRAK ODCZYTU"
     }
 
@@ -378,23 +376,15 @@ fun MieszadloSheet(m: AppModel) {
     ManualRow(
         "mieszadlo",
         onSend = { command ->
-            when (command) {
-                "mieszadlo_puls" -> m.triggerMixerPulse()
-                "mieszadlo_wyl" -> m.setMixerMode(2)
-                "mieszadlo_auto" -> m.setMixerMode(0)
+            val mode = when (command) {
+                "mieszadlo_auto" -> 0
+                "mieszadlo_wl" -> 1
+                "mieszadlo_wyl" -> 2
+                else -> null
             }
+            if (mode == null) m.send(command) else m.setMixerMode(mode)
         },
-        selectedCommand = selectedCommand,
-        actions = listOf(
-            m.mixerPulseButtonLabel() to "mieszadlo_puls",
-            "Wymuś WYŁ." to "mieszadlo_wyl",
-            "Auto" to "mieszadlo_auto"
-        )
-    )
-    Text(
-        if (S.hasData("mieszadloCzasOn")) "Jeden cykl = ${S.mieszadloCzasOn} s (Czas ON)."
-        else "Jeden cykl użyje ustawienia Czas ON z centrali.",
-        style = Txt.note.copy(fontSize = 9.5.sp), color = Pal.TextDim, modifier = Modifier.padding(top = 5.dp)
+        selectedCommand = selectedCommand
     )
     if (modePresentation.awaitingStatus) {
         Text(

@@ -54,7 +54,6 @@ class CommandRedactorTest {
 
     @Test
     fun labelsCommonActionsAndSensorSimulationsInPolish() {
-        assertEquals("Mieszadło: jeden cykl", CommandRedactor.forDisplay("mieszadlo_puls"))
         assertEquals("Pompa CO: ręczne włączenie", CommandRedactor.forDisplay("pompa_wl"))
         assertEquals("Pozycja klapy: 42%", CommandRedactor.forDisplay("klapa 42"))
         assertEquals("Synchronizacja zegara centrali", CommandRedactor.forDisplay("rtc_sync 2026 10 10 12 30 0"))
