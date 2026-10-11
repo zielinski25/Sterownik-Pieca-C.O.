@@ -321,7 +321,8 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
             state = if (dymAlarm) "err" else if (dymDis) "dis" else "",
             frac = if (dymKnown) norm(dymV, 0.0, 4095.0) else 0.0,
             desc = when {
-                dymAlarm -> "ALARM: próg ${if (S.hasData("progAlarmDym")) S.progAlarmDym else "—"} ADC przekroczony"
+                dymAlarm -> if (dymSimulation) "ALARM sterownika · wejście dymu symulowane"
+                    else "ALARM: próg ${if (S.hasData("progAlarmDym")) S.progAlarmDym else "—"} ADC przekroczony"
                 dymSimulation -> "symulacja sterownika (${S.sym["dym"]?.min ?: 0} min)"
                 dymDis -> "czujnik potwierdzony jako wyłączony"
                 !dymKnown -> "oczekiwanie na rzeczywisty odczyt"

@@ -4,7 +4,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import android.util.Base64
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -26,12 +30,26 @@ object Rtdb {
     const val AUTH_REFRESH_URL = "https://securetoken.googleapis.com/v1/token?key="
 
     private val JSON = "application/json; charset=utf-8".toMediaType()
+    private val authRefreshMutex = Mutex()
 
     private val http: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /** Local controller requests can contain credentials: connect directly, never proxy or follow redirects. */
+    private val espHttp: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
+            .proxy(java.net.Proxy.NO_PROXY)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .retryOnConnectionFailure(false)
             .build()
     }
 
@@ -45,9 +63,41 @@ object Rtdb {
             .build()
     }
 
-    @Volatile var idToken: String = ""
-    @Volatile var refreshToken: String = ""
-    @Volatile var apiKey: String = Prefs.DEFAULT_FB_API_KEY
+    private data class AuthState(
+        val apiKey: String = Prefs.DEFAULT_FB_API_KEY,
+        val idToken: String = "",
+        val refreshToken: String = ""
+    )
+    private val authStateLock = Any()
+    @Volatile private var authState = AuthState()
+
+    val idToken: String get() = authState.idToken
+    val refreshToken: String get() = authState.refreshToken
+    val apiKey: String get() = authState.apiKey
+
+    /** Firebase ID token subject is the UID used by the controller's per-user diagnostics branch. */
+    fun currentFirebaseUid(): String? {
+        val payload = idToken.split('.').getOrNull(1) ?: return null
+        return try {
+            val decoded = Base64.decode(payload, Base64.URL_SAFE or Base64.NO_WRAP)
+            val claims = JSONObject(String(decoded, Charsets.UTF_8))
+            val uid = claims.optString("user_id").ifBlank { claims.optString("sub") }
+            uid.takeIf { it.matches(Regex("[A-Za-z0-9_-]{6,128}")) }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun setAuthTokens(idToken: String, refreshToken: String) = synchronized(authStateLock) {
+        authState = authState.copy(idToken = idToken, refreshToken = refreshToken)
+    }
+
+    fun setAuthSession(apiKey: String, idToken: String, refreshToken: String) = synchronized(authStateLock) {
+        authState = AuthState(apiKey, idToken, refreshToken)
+    }
+
+    /** Installed by Android owners so rotated Firebase tokens survive process restart. */
+    @Volatile var onAuthTokensRefreshed: ((String, String) -> Unit)? = null
     @Volatile var cmdToken: String = Prefs.DEFAULT_CMD_TOKEN
     @Volatile var email: String = Prefs.DEFAULT_FB_EMAIL
 
@@ -59,29 +109,57 @@ object Rtdb {
             Integer.toString(cmdSeq, 36) + "-" + rnd
     }
 
-    private fun authQuery(): String = if (idToken.isNotEmpty()) "?auth=" + java.net.URLEncoder.encode(idToken, "UTF-8") else ""
+    private fun authQuery(token: String = idToken): String =
+        if (token.isNotEmpty()) "?auth=" + java.net.URLEncoder.encode(token, "UTF-8") else ""
 
     private suspend fun execute(req: Request): Pair<Int, String> = withContext(Dispatchers.IO) {
         try {
-            http.newCall(req).execute().use { r -> r.code to (r.body?.string() ?: "") }
+            val call = http.newCall(req)
+            coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
+            call.execute().use { r -> r.code to (r.body?.string() ?: "") }
         } catch (e: Exception) {
             -1 to (e.message ?: "błąd sieci")
         }
     }
 
-    /** GET z automatycznym odświeżeniem idToken przy 401/403 (jak fbGet). */
-    suspend fun get(path: String): GetResult {
-        val (code, body) = execute(Request.Builder().url(DB_URL + path + authQuery()).header("Cache-Control", "no-store").build())
+    private suspend fun executeEsp(req: Request): Pair<Int, String> = withContext(Dispatchers.IO) {
+        try {
+            val call = espHttp.newCall(req)
+            coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
+            call.execute().use { r -> r.code to (r.body?.string() ?: "") }
+        } catch (e: Exception) {
+            -1 to (e.message ?: "błąd sieci")
+        }
+    }
+
+    /** GET z automatycznym, serializowanym odświeżeniem idToken przy 401/403. */
+    suspend fun get(path: String): GetResult = get(path, emptyMap())
+
+    /** GET z parametrami RTDB (np. `shallow=true`, `orderBy` i `limitToLast`). */
+    suspend fun get(path: String, queryParameters: Map<String, String>): GetResult {
+        val requestTokens = authState
+        val (code, body) = execute(Request.Builder()
+            .url(rtdbUrl(path, queryParameters, requestTokens.idToken))
+            .header("Cache-Control", "no-store").build())
         if (code == 401 || code == 403) {
-            if (refreshToken.isNotEmpty() && apiKey.isNotEmpty()) {
-                refreshIdToken()
-                val r2 = execute(Request.Builder().url(DB_URL + path + authQuery()).header("Cache-Control", "no-store").build())
+            if (requestTokens.refreshToken.isNotEmpty() && requestTokens.apiKey.isNotEmpty()) {
+                refreshIdToken(requestTokens.idToken, requestTokens.refreshToken)
+                val retryToken = authState.idToken
+                val r2 = execute(Request.Builder().url(rtdbUrl(path, queryParameters, retryToken))
+                    .header("Cache-Control", "no-store").build())
                 return if (r2.first in 200..299) GetResult(true, r2.second, null)
-                else GetResult(false, "", "HTTP " + r2.first)
+                else GetResult(false, r2.second, "HTTP " + r2.first)
             }
             return GetResult(false, "", "Wymagana autoryzacja Firebase")
         }
         return if (code in 200..299) GetResult(true, body, null) else GetResult(false, body, "HTTP " + code)
+    }
+
+    private fun rtdbUrl(path: String, queryParameters: Map<String, String>, token: String): String {
+        val builder = (DB_URL + path).toHttpUrl().newBuilder()
+        queryParameters.forEach { (name, value) -> builder.addQueryParameter(name, value) }
+        if (token.isNotEmpty()) builder.addQueryParameter("auth", token)
+        return builder.build().toString()
     }
 
     data class GetResult(val ok: Boolean, val body: String, val error: String?)
@@ -117,22 +195,38 @@ object Rtdb {
             }
         }
 
-    suspend fun refreshIdToken() {
-        if (apiKey.isEmpty() || refreshToken.isEmpty()) return
-        withContext(Dispatchers.IO) {
-            try {
-                val body = "grant_type=refresh_token&refresh_token=" + java.net.URLEncoder.encode(refreshToken, "UTF-8")
-                val req = Request.Builder().url(AUTH_REFRESH_URL + java.net.URLEncoder.encode(apiKey, "UTF-8"))
-                    .post(body.toRequestBody("application/x-www-form-urlencoded".toMediaType())).build()
-                val (code, text) = execute(req)
-                if (code in 200..299) {
-                    val j = JSONObject(text)
-                    if (j.has("id_token")) {
-                        idToken = j.getString("id_token")
-                        if (j.has("refresh_token")) refreshToken = j.getString("refresh_token")
-                    }
+    suspend fun refreshIdToken(expectedIdToken: String? = null, expectedRefreshToken: String? = null) {
+        authRefreshMutex.withLock {
+            val currentAuth = authState
+            if (currentAuth.apiKey.isEmpty() || currentAuth.refreshToken.isEmpty()) return@withLock
+            if (expectedIdToken != null && currentAuth.idToken != expectedIdToken) return@withLock
+            if (expectedRefreshToken != null && currentAuth.refreshToken != expectedRefreshToken) return@withLock
+
+            val body = "grant_type=refresh_token&refresh_token=" +
+                java.net.URLEncoder.encode(currentAuth.refreshToken, "UTF-8")
+            val req = Request.Builder().url(AUTH_REFRESH_URL + java.net.URLEncoder.encode(currentAuth.apiKey, "UTF-8"))
+                .post(body.toRequestBody("application/x-www-form-urlencoded".toMediaType())).build()
+            val (code, text) = execute(req)
+            if (code !in 200..299) return@withLock
+            val response = try { JSONObject(text) } catch (e: Exception) { return@withLock }
+            val nextIdToken = response.optString("id_token")
+            if (nextIdToken.isBlank()) return@withLock
+            val nextRefreshToken = response.optString("refresh_token")
+                .ifBlank { currentAuth.refreshToken }
+
+            // Commit and persist under the same lock used by login/logout session replacement.
+            val committed = synchronized(authStateLock) {
+                if (authState !== currentAuth) {
+                    false
+                } else {
+                    authState = currentAuth.copy(idToken = nextIdToken, refreshToken = nextRefreshToken)
+                    try {
+                        onAuthTokensRefreshed?.invoke(nextIdToken, nextRefreshToken)
+                    } catch (e: Exception) { /* keep the in-memory session; persistence can be retried later */ }
+                    true
                 }
-            } catch (e: Exception) { /* ciche jak w oryginale */ }
+            }
+            if (!committed) return@withLock
         }
     }
 
@@ -146,10 +240,14 @@ object Rtdb {
      * Strumień SSE (EventSource) z RTDB: `Accept: text/event-stream`.
      * Serwer sam pcha zmiany — zero odpytań = minimum baterii i alarm w ~1 s.
      * Blokuje do anulowania korutyny / błędu sieci / `auth_revoked`.
-     * [onEvent] wołane na wątku IO: (nazwa_zdarzenia, surowy JSON z `data:`).
+     * [onEvent] wołane na wątku IO z eventem, JSON `data:` oraz parą tokenów używaną przez ten strumień.
      */
-    suspend fun streamEvents(path: String, onEvent: (String, String) -> Unit) = withContext(Dispatchers.IO) {
-        val req = Request.Builder().url(DB_URL + path + authQuery())
+    internal suspend fun streamEvents(
+        path: String,
+        onEvent: (event: String, data: String, idToken: String, refreshToken: String) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        val streamTokens = authState
+        val req = Request.Builder().url(DB_URL + path + authQuery(streamTokens.idToken))
             .header("Accept", "text/event-stream")
             .header("Cache-Control", "no-store").build()
         val call = streamHttp.newCall(req)
@@ -169,7 +267,9 @@ object Rtdb {
                     line.startsWith("event:") -> ev = line.substring(6).trim()
                     line.startsWith("data:") -> {
                         val d = line.substring(5).trim()
-                        if (ev.isNotEmpty() && d.isNotEmpty() && d != "null") onEvent(ev, d)
+                        if (ev.isNotEmpty() && d.isNotEmpty() && d != "null") {
+                            onEvent(ev, d, streamTokens.idToken, streamTokens.refreshToken)
+                        }
                         ev = ""
                     }
                     // puste linie = granice ramek SSE, ignorujemy
@@ -202,15 +302,25 @@ object Rtdb {
     data class Ack(val ok: Boolean, val error: String)
 
     // ── lokalne API centrali (ESP32) ─────────────────────────────────────────
-    private fun espUrl(ip: String, path: String): String? = if (ip.isBlank()) null else "http://" + ip.trim() + path
+    internal fun localControllerUrl(ip: String, path: String): String? =
+        LocalControllerAddress.url(ip, path)
+
+    /** Use the no-proxy local client for credential-bearing controller POSTs too. */
+    internal suspend fun postLocalController(ip: String, path: String, body: String): Pair<Int, String> {
+        val url = localControllerUrl(ip, path) ?: return -2 to "invalid local controller address"
+        val request = Request.Builder().url(url).post(body.toRequestBody(null)).build()
+        return executeEsp(request)
+    }
+
+    private fun espUrl(ip: String, path: String): String? = localControllerUrl(ip, path)
 
     private suspend fun espGet(ip: String, path: String): JSONObject? = espUrl(ip, path)?.let { u ->
-        val (code, text) = execute(Request.Builder().url(u).build())
+        val (code, text) = executeEsp(Request.Builder().url(u).build())
         if (code in 200..299) try { JSONObject(text) } catch (e: Exception) { null } else null
     }
 
     private suspend fun espPost(ip: String, path: String, body: JSONObject): JSONObject? = espUrl(ip, path)?.let { u ->
-        val (code, text) = execute(Request.Builder().url(u).post(body.toString().toRequestBody(JSON)).build())
+        val (code, text) = executeEsp(Request.Builder().url(u).post(body.toString().toRequestBody(JSON)).build())
         if (code in 200..299) try { JSONObject(text) } catch (e: Exception) { null } else null
     }
 
@@ -224,10 +334,11 @@ object Rtdb {
         espUrl(ip, "/api/wifi/scan/start") != null &&
             withContext(Dispatchers.IO) {
                 try {
-                    val r = http.newCall(Request.Builder()
+                    val call = espHttp.newCall(Request.Builder()
                         .url(espUrl(ip, "/api/wifi/scan/start")!!)
-                        .post("".toRequestBody(null)).build()).execute()
-                    r.use { it.isSuccessful }
+                        .post("".toRequestBody(null)).build())
+                    coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
+                    call.execute().use { it.isSuccessful }
                 } catch (e: Exception) { false }
             }
 

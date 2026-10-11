@@ -12,7 +12,6 @@ import android.widget.RemoteViews
 import com.sterownikco.pro.MainActivity
 import com.sterownikco.pro.R
 import com.sterownikco.pro.core.Prefs
-import com.sterownikco.pro.service.AlarmMonitorService
 import org.json.JSONObject
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -38,17 +37,7 @@ class PiecWidget : AppWidgetProvider() {
         removeConfigurations(ctx, appWidgetIds)
     }
 
-    override fun onReceive(ctx: Context, intent: Intent) {
-        super.onReceive(ctx, intent)
-        if (intent.action == ACT_REFRESH) {
-            // Tap w odświeżanie: upewniamy się, że usługa żyje + przerys.
-            try { AlarmMonitorService.start(ctx.applicationContext) } catch (e: Exception) { /* ignore */ }
-            renderAll(ctx)
-        }
-    }
-
     companion object {
-        const val ACT_REFRESH = "com.sterownikco.pro.WIDGET_REFRESH"
         const val K_SNAP = "piec_widget_snap"
         const val K_PUSH_TS = "piec_widget_push_ts"
         const val K_PUSH_SIG = "piec_widget_push_sig"
@@ -59,8 +48,16 @@ class PiecWidget : AppWidgetProvider() {
         fun push(ctx: Context, d: JSONObject) {
             val app = ctx.applicationContext
             val p = try { Prefs(app) } catch (e: Exception) { return }
-            val sig = listOf("t_ogrz", "t_bojler", "t_panel", "t_zewn", "dym_alarm", "alarm_ogrzewanie", "alarm_panel", "online", "sim", "is_sim", "simulated")
-                .joinToString("|") { k -> if (d.isNull(k)) "" else d.opt(k).toString() }
+            val simulationFields = listOf(
+                "dym", "ogrz", "bojler", "panel", "pokoj", "zewn", "ogrz_powrot", "ogrz_trociny", "cisnienie", "wilgotnosc"
+            ).flatMap { pole -> listOf("symulacja_$pole", "symulacja_${pole}_min") }
+            val sig = (listOf(
+                "t_ogrz", "t_bojler", "t_panel", "t_zewn", "dym_alarm", "alarm_ogrzewanie", "alarm_panel", "online",
+                "sim", "is_sim", "simulated"
+            ) + simulationFields).joinToString("|") { k ->
+                val value: Any? = d.opt(k)
+                if (value == null || d.isNull(k)) "" else value.toString()
+            }
             val now = System.currentTimeMillis()
             val same = sig == (p.get(K_PUSH_SIG) ?: "")
             if (same && now - p.getLong(K_PUSH_TS, 0L) < PUSH_MIN_MS) return
@@ -233,15 +230,44 @@ class PiecWidget : AppWidgetProvider() {
             fun simulated(channel: Int): Boolean = metadataInvalid || explicitSim ||
                 (channel in 0..62 && simMaskValue and (1L shl channel) != 0L)
 
+            fun controllerSimulation(sensor: WidgetSensor): Boolean {
+                val pole = when (sensor.key) {
+                    "t_ogrz" -> "ogrz"
+                    "t_bojler" -> "bojler"
+                    "t_panel" -> "panel"
+                    "t_zewn" -> "zewn"
+                    else -> return false
+                }
+                val raw = d?.opt("symulacja_$pole")
+                return raw == true || (raw is Number && raw.toDouble() == 1.0)
+            }
+
+            fun isSimulated(sensor: WidgetSensor): Boolean =
+                simulated(sensor.channel) || controllerSimulation(sensor)
+
+            val simulatedBounds = mapOf(
+                "t_ogrz" to (0.0..160.0), "t_bojler" to (0.0..160.0),
+                "t_panel" to (-30.0..160.0), "t_zewn" to (-30.0..50.0)
+            )
+
             fun numeric(key: String): Double? {
                 val raw = if (d == null || !d.has(key) || d.isNull(key)) null else d.opt(key)
                 return (raw as? Number)?.toDouble()?.takeIf { it.isFinite() }
             }
 
+            fun value(sensor: WidgetSensor): Double? {
+                val range = if (controllerSimulation(sensor)) {
+                    simulatedBounds[sensor.key] ?: (sensor.min..sensor.max)
+                } else {
+                    sensor.min..sensor.max
+                }
+                return numeric(sensor.key)?.takeIf { it in range }
+            }
+
             fun degrees(sensor: WidgetSensor): String {
-                val x = numeric(sensor.key)?.takeIf { it in sensor.min..sensor.max } ?: return "—"
-                val value = "${Math.round(x)}°"
-                return if (simulated(sensor.channel)) "~$value" else value
+                val x = value(sensor) ?: return "—"
+                val text = "${Math.round(x)}°"
+                return if (isSimulated(sensor)) "~$text" else text
             }
 
             val selected = selectedSensors(ctx, appWidgetId, spec)
@@ -286,11 +312,13 @@ class PiecWidget : AppWidgetProvider() {
             val panel = if (alarmTrusted) flag("alarm_panel") else null
             val alarmKnown = dym != null && ogrz != null && panel != null
             val alarmActive = dym == true || ogrz == true || panel == true
-            val hasAnyReading = SENSOR_OPTIONS.any { sensor ->
-                numeric(sensor.key)?.let { it in sensor.min..sensor.max } == true
-            }
-            val hasRealReading = SENSOR_OPTIONS.any { sensor ->
-                numeric(sensor.key)?.let { it in sensor.min..sensor.max } == true && !simulated(sensor.channel)
+            val hasAnyReading = SENSOR_OPTIONS.any { sensor -> value(sensor) != null }
+            val hasRealReading = SENSOR_OPTIONS.any { sensor -> value(sensor) != null && !isSimulated(sensor) }
+            val controllerSimulationActive = listOf(
+                "dym", "ogrz", "bojler", "panel", "pokoj", "zewn", "ogrz_powrot", "ogrz_trociny", "cisnienie", "wilgotnosc"
+            ).any { pole ->
+                val raw = d?.opt("symulacja_$pole")
+                raw == true || (raw is Number && raw.toDouble() == 1.0)
             }
             val online = flag("online")
             val controllerOffline = online == false
@@ -302,8 +330,8 @@ class PiecWidget : AppWidgetProvider() {
                 alarmActive -> "🚨 ALARM" to Color.parseColor("#FF5F78")
                 !hasRealReading && hasAnyReading -> "⚠ SYMULACJA" to Color.parseColor("#FBBF24")
                 !hasRealReading -> "○ BRAK DANYCH" to Color.parseColor("#7F93A3")
-                sim && !alarmKnown -> "⚠ SYM · ALARM?" to Color.parseColor("#FBBF24")
-                sim -> "⚠ SYMULACJA" to Color.parseColor("#FBBF24")
+                (sim || controllerSimulationActive) && !alarmKnown -> "⚠ SYM · ALARM?" to Color.parseColor("#FBBF24")
+                sim || controllerSimulationActive -> "⚠ SYMULACJA" to Color.parseColor("#FBBF24")
                 !alarmKnown -> "⚠ ALARM?" to Color.parseColor("#FBBF24")
                 controllerOffline || stale -> "○ NIEAKTUALNE" to Color.parseColor("#7F93A3")
                 online != true -> "○ STATUS?" to Color.parseColor("#7F93A3")

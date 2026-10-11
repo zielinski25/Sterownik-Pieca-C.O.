@@ -1,5 +1,6 @@
 package com.sterownikco.pro.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -337,21 +338,32 @@ fun NavBar(page: Int, onNav: (Int) -> Unit) {
     }
 }
 
-/** `.sheet` — arkusz dolny (75% wys., radius 24, uchwyt 42×5). */
+/** `.sheet` — standardowo arkusz dolny 75%; wybrane okna mogą zajmować cały ekran. */
 @Composable
-fun Sheet(title: String, icon: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+fun Sheet(
+    title: String,
+    icon: String,
+    onDismiss: () -> Unit,
+    fullScreen: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    BackHandler(onBack = onDismiss)
+    val sheetShape = if (fullScreen) RoundedCornerShape(0.dp) else
+        RoundedCornerShape(topStart = Dimens.radiusSheet, topEnd = Dimens.radiusSheet)
     Box(
         modifier = Modifier.fillMaxSize().background(Pal.rgba(3, 8, 15, .62f)).clickable { onDismiss() },
-        contentAlignment = Alignment.BottomCenter
+        contentAlignment = if (fullScreen) Alignment.Center else Alignment.BottomCenter
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(.75f)
-                .background(Pal.Surface, RoundedCornerShape(topStart = Dimens.radiusSheet, topEnd = Dimens.radiusSheet))
-                .border(1.dp, Pal.BorderStrong, RoundedCornerShape(topStart = Dimens.radiusSheet, topEnd = Dimens.radiusSheet))
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(if (fullScreen) 1f else .75f)
+                .background(Pal.Surface, sheetShape)
+                .border(1.dp, Pal.BorderStrong, sheetShape)
                 .clickable(enabled = false) {}
         ) {
-            Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(42.dp).height(5.dp).background(Pal.rgba(120, 150, 175, .35f), RoundedCornerShape(99.dp)))
+            if (!fullScreen) {
+                Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(42.dp).height(5.dp).background(Pal.rgba(120, 150, 175, .35f), RoundedCornerShape(99.dp)))
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 10.dp),
@@ -401,8 +413,8 @@ fun Toast(text: String, stage: String, cls: String) {
             }
         }
         Column(Modifier.weight(1f)) {
-            // `.c` — samo polecenie (mono, tekst-dim), potem `.s` — status
-            Text(text, style = Txt.monoSm, color = Pal.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Nazwa działania jest dla użytkownika; nie pokazujemy tu surowej składni komendy.
+            Text(text, style = Txt.rowDesc.copy(fontSize = 9.sp), color = Pal.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(stage, style = Txt.pill, color = c)
         }
     }

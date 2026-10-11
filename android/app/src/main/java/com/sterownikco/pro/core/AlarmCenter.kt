@@ -9,19 +9,17 @@ package com.sterownikco.pro.core
    Krawędź (edge) wykrywana jest przez sygnaturę zapisaną w prefs, więc
    podwójne odpalenie jest niemożliwe nawet gdy oba źródła pracują naraz.
 
+   Dźwięk aktywnego, nieuciszonego alarmu jest zapętlany przez AlarmMonitorService.
    Tryby ciszy (oba przeżyją restart aplikacji i telefonu):
-   • drzemka czasowa (10 min / 1 h) — po jej końcu AKTYWNY alarm dzwoni znowu,
-   • wyciszenie do następnego alarmu — nowa krawędź (inna sygnatura) dzwoni.
+   • drzemka czasowa (10 min / 1 h) — zatrzymuje pętlę; po jej końcu aktywny alarm wraca,
+   • wyciszenie do następnego alarmu — zatrzymuje pętlę; nowa krawędź (inna sygnatura) dzwoni.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** Opis odpalonego alarmu — `simulated` oznacza lokalny test, nie flagę z centrali. */
-data class AlarmInfo(
-    val kind: String,
-    val title: String,
-    val msg: String,
-    val sig: String,
-    val simulated: Boolean = false
-)
+/** Opis alarmu z flag zwróconych przez sterownik. */
+data class AlarmInfo(val kind: String, val title: String, val msg: String, val sig: String)
+
+/** Stan dwóch flag; `null` pozostaje jawnie nieznanym odczytem. */
+data class AlarmFlags(val dym: Boolean?, val ogrz: Boolean?)
 
 object AlarmCenter {
     const val K_MONITOR = "piec_alarm_monitor"       // "1"/"0", domyślnie "1"
@@ -34,18 +32,39 @@ object AlarmCenter {
     const val K_LAST_SIG = "piec_alarm_last_sig"     // ostatnia widziana sygnatura
     const val K_LAST_FIRE = "piec_alarm_last_fire"   // epoch ms ostatniego dzwonka
 
-    /** Powtórka dzwonka, gdy alarm wisi aktywny i NIC nie jest wyciszone. */
+    /** Ponowne zgłoszenie powiadomienia; właściwy dźwięk alarmu gra w pętli w AlarmMonitorService. */
     const val REPEAT_MS = 30L * 60_000
 
     private val soundIds = setOf(
-        "syrena", "dzwonek", "pikanie", "dwutonowy", "impulsowy", "narastajacy", "niski_puls", "system"
+        "syrena", "dzwonek", "pikanie", "dwutonowy", "impulsowy", "narastajacy", "niski_puls",
+        "syrena_falujaca", "syrena_ratunkowa", "klakson_pulsacyjny", "gong_ostrzegawczy", "system"
     )
 
-    fun isMonitored(p: Prefs): Boolean = p.get(K_MONITOR) != "0"
-    fun setMonitored(p: Prefs, on: Boolean) = p.set(K_MONITOR, if (on) "1" else "0")
+    fun isMonitored(p: AlarmPrefsStore): Boolean = p.get(K_MONITOR) != "0"
+    fun setMonitored(p: AlarmPrefsStore, on: Boolean) = p.set(K_MONITOR, if (on) "1" else "0")
+
+    /**
+     * Resolves an incomplete background snapshot without collapsing unknown to false.
+     * A confirmed active flag is enough to process an alarm; for an unknown flag, retain
+     * a previously active state when available. Otherwise keep that flag as null. A caller
+     * must not clear an alarm from a partial snapshot with no confirmed active flag.
+     */
+    fun activeFlagsForPartialSnapshot(
+        p: AlarmPrefsStore,
+        dym: Boolean?,
+        ogrz: Boolean?
+    ): AlarmFlags? {
+        if (dym != null && ogrz != null) return null
+        if (dym != true && ogrz != true) return null
+
+        val last = (p.get(K_LAST_SIG) ?: "").split('+').toSet()
+        val activeDym = dym ?: if ("D" in last) true else null
+        val activeOgrz = ogrz ?: if ("O" in last) true else null
+        return AlarmFlags(activeDym, activeOgrz)
+    }
 
     /** Osobny wybór dla dymu, przegrzania i alarmu łącznego; K_SOUND zachowuje starszy wybór dymu. */
-    fun sound(p: Prefs, kind: String): String {
+    fun sound(p: AlarmPrefsStore, kind: String): String {
         val key = when (kind) {
             "ogrz" -> K_SOUND_OGRZ
             "dym+ogrz", "ogrz+dym" -> K_SOUND_BOTH
@@ -60,9 +79,9 @@ object AlarmCenter {
         return candidate.takeIf { it in soundIds } ?: default.takeIf { it in soundIds } ?: "syrena"
     }
 
-    fun sound(p: Prefs): String = sound(p, "dym")
+    fun sound(p: AlarmPrefsStore): String = sound(p, "dym")
 
-    fun setSound(p: Prefs, kind: String, sound: String) {
+    fun setSound(p: AlarmPrefsStore, kind: String, sound: String) {
         if (sound !in soundIds) return
         val key = when (kind) {
             "ogrz" -> K_SOUND_OGRZ
@@ -73,42 +92,80 @@ object AlarmCenter {
     }
 
     /** Zapis legacy zachowany dla kompatybilności ze starszymi UI. */
-    fun setSound(p: Prefs, sound: String) {
+    fun setSound(p: AlarmPrefsStore, sound: String) {
         if (sound in soundIds) p.set(K_SOUND, sound)
     }
 
     /** Drzemka czasowa — liczy od teraz. */
-    fun snooze(p: Prefs, minutes: Int) {
-        p.setLong(K_SNOOZE_UNTIL, System.currentTimeMillis() + minutes * 60_000L)
+    fun snooze(p: AlarmPrefsStore, minutes: Int) =
+        snoozeAt(p, minutes, System.currentTimeMillis())
+
+    /** Wariant z jawnym czasem do deterministycznych testów granic timera. */
+    internal fun snoozeAt(p: AlarmPrefsStore, minutes: Int, nowMs: Long) {
+        p.setLong(K_SNOOZE_UNTIL, nowMs + minutes * 60_000L)
     }
 
     /** Całkowite wyciszenie bieżącej krawędzi — zadzwoni dopiero NOWY alarm. */
-    fun muteUntilNext(p: Prefs) {
+    fun muteUntilNext(p: AlarmPrefsStore) {
         val sig = p.get(K_LAST_SIG) ?: ""
         if (sig.isNotEmpty()) p.set(K_MUTED_SIG, sig)
         p.remove(K_SNOOZE_UNTIL)
     }
 
     /** Ręczne zakończenie drzemki / wyciszenia (przycisk w arkuszu). */
-    fun unsilence(p: Prefs) {
+    fun unsilence(p: AlarmPrefsStore) {
         p.remove(K_SNOOZE_UNTIL); p.remove(K_MUTED_SIG)
     }
 
-    fun snoozeLeftMin(p: Prefs): Int {
-        val left = p.getLong(K_SNOOZE_UNTIL, 0L) - System.currentTimeMillis()
+    fun snoozeLeftMin(p: AlarmPrefsStore): Int =
+        snoozeLeftMinAt(p, System.currentTimeMillis())
+
+    /** Jawny zegar pozwala testować zaokrąglenie i dokładną granicę drzemki bez sleep(). */
+    internal fun snoozeLeftMinAt(p: AlarmPrefsStore, nowMs: Long): Int {
+        val left = p.getLong(K_SNOOZE_UNTIL, 0L) - nowMs
         return if (left > 0) ((left + 59_999) / 60_000).toInt() else 0
     }
 
-    fun isMutedNow(p: Prefs): Boolean {
+    fun isMutedNow(p: AlarmPrefsStore): Boolean {
         val last = p.get(K_LAST_SIG) ?: ""
         return last.isNotEmpty() && (p.get(K_MUTED_SIG) ?: "") == last
     }
 
-    fun statusText(p: Prefs): String = when {
-        !isMonitored(p) -> "Monitoring w tle WYŁĄCZONY"
-        snoozeLeftMin(p) > 0 -> "Drzemka — cisza jeszcze ${snoozeLeftMin(p)} min"
-        isMutedNow(p) -> "Wyciszony do następnego alarmu"
-        else -> "Aktywny — zadzwoni przy dymie / przegrzaniu"
+    /** Bieżący rodzaj alarmu do doboru osobnej melodii. */
+    fun kindFor(dym: Boolean, ogrz: Boolean): String = when {
+        dym && ogrz -> "dym+ogrz"
+        dym -> "dym"
+        else -> "ogrz"
+    }
+
+    /** Buduje opis aktywnego alarmu bez zmiany sygnatury, drzemki ani czasu ostatniego dzwonka. */
+    fun describeActiveFlags(dym: Boolean, ogrz: Boolean, tOgrz: Double, dymAdc: Double): AlarmInfo? {
+        val sig = listOfNotNull(if (dym) "D" else null, if (ogrz) "O" else null).joinToString("+")
+        return sig.takeIf { it.isNotEmpty() }?.let { build(it, tOgrz, dymAdc) }
+    }
+
+    /** Ciągły dźwięk jest aktywny tylko przy alarmie nieobjętym drzemką/wyciszeniem. */
+    fun shouldLoopSound(p: AlarmPrefsStore, dym: Boolean, ogrz: Boolean): Boolean =
+        shouldLoopSoundAt(p, dym, ogrz, System.currentTimeMillis())
+
+    internal fun shouldLoopSoundAt(
+        p: AlarmPrefsStore, dym: Boolean, ogrz: Boolean, nowMs: Long
+    ): Boolean {
+        if (!isMonitored(p) || (!dym && !ogrz) || snoozeLeftMinAt(p, nowMs) > 0) return false
+        val sig = listOfNotNull(if (dym) "D" else null, if (ogrz) "O" else null).joinToString("+")
+        return sig.isNotEmpty() && (p.get(K_MUTED_SIG) ?: "") != sig
+    }
+
+    fun statusText(p: AlarmPrefsStore): String = statusTextAt(p, System.currentTimeMillis())
+
+    internal fun statusTextAt(p: AlarmPrefsStore, nowMs: Long): String {
+        val snoozeMinutes = snoozeLeftMinAt(p, nowMs)
+        return when {
+            !isMonitored(p) -> "Monitoring w tle WYŁĄCZONY"
+            snoozeMinutes > 0 -> "Drzemka — cisza jeszcze $snoozeMinutes min"
+            isMutedNow(p) -> "Wyciszony do następnego alarmu"
+            else -> "Monitoring włączony — nie potwierdza łączności w tle"
+        }
     }
 
     /**
@@ -116,9 +173,20 @@ object AlarmCenter {
      * zadzwonić (nowa krawędź, koniec drzemki przy wiszącym alarmie albo
      * 30-minutowa powtórka); w przeciwnym razie null = cisza.
      */
-    fun evaluate(p: Prefs, dym: Boolean, ogrz: Boolean, tOgrz: Double, dymAdc: Double): AlarmInfo? {
+    fun evaluate(p: AlarmPrefsStore, dym: Boolean, ogrz: Boolean, tOgrz: Double, dymAdc: Double): AlarmInfo? =
+        evaluateAt(p, dym, ogrz, tOgrz, dymAdc, System.currentTimeMillis())
+
+    /** Alarm reducer with an explicit timestamp for deterministic unit tests. */
+    internal fun evaluateAt(
+        p: AlarmPrefsStore,
+        dym: Boolean,
+        ogrz: Boolean,
+        tOgrz: Double,
+        dymAdc: Double,
+        nowMs: Long
+    ): AlarmInfo? {
         if (!isMonitored(p)) return null
-        val now = System.currentTimeMillis()
+        val now = nowMs
         val sig = listOfNotNull(if (dym) "D" else null, if (ogrz) "O" else null).joinToString("+")
         if (sig.isEmpty()) {
             // Alarmy zgasły — czyścimy stan krawędzi, żeby powrót zadzwonił od nowa.

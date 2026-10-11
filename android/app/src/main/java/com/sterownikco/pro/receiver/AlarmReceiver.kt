@@ -17,8 +17,12 @@ import com.sterownikco.pro.service.AlarmMonitorService
 class AlarmReceiver : BroadcastReceiver() {
 
     override fun onReceive(ctx: Context, intent: Intent?) {
+        val received = intent ?: return
+        val action = received.action
         val p = try { Prefs(ctx.applicationContext) } catch (e: Exception) { return }
-        when (intent?.action) {
+        val isAlarmAction = action == ACT_SNOOZE_10 || action == ACT_SNOOZE_60 || action == ACT_MUTE_NEXT
+        if (isAlarmAction && !AlarmNotify.hasCurrentAlarmNonce(ctx.applicationContext, received)) return
+        when (action) {
             ACT_SNOOZE_10 -> {
                 AlarmCenter.snooze(p, 10)
                 AlarmNotify.cancel(ctx)
@@ -37,7 +41,9 @@ class AlarmReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_LOCKED_BOOT_COMPLETED -> {
                 // Po reboocie wznawiamy czuwanie tylko gdy użytkownik jest
                 // zalogowany (mamy refresh_token) i monitoringu nie wyłączył.
-                if (AlarmCenter.isMonitored(p) && (p.get(Prefs.K_REF_TOKEN) ?: "").isNotEmpty()) {
+                // AlarmMonitorService.start() performs the authoritative session check.
+                // Avoid decrypting the Direct Boot session twice on this receiver thread.
+                if (AlarmCenter.isMonitored(p)) {
                     AlarmMonitorService.start(ctx.applicationContext)
                 }
             }

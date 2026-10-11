@@ -89,7 +89,7 @@ class PiecState {
     /** Aktywne symulacje raportowane przez sterownik Firebase, nigdy lokalne stany optymistyczne. */
     val sym = HashMap<String, SymEntry>()
 
-    /** Pola obecne i poprawne w ostatniej odpowiedzi `/status` z Firebase. */
+    /** Pola potwierdzone rzeczywistym, poprawnym odczytem z ostatniej odpowiedzi. */
     private val receivedFields = mutableSetOf<String>()
     fun hasData(key: String): Boolean = key in receivedFields
     fun hasAllData(vararg keys: String): Boolean = keys.all(::hasData)
@@ -213,11 +213,7 @@ class PiecState {
 
         fun flag(key: String, assign: (Boolean) -> Unit) {
             if (!d.has(key) || d.isNull(key)) { receivedFields.remove(key); return }
-            val value = when (val raw = d.opt(key)) {
-                is Boolean -> raw
-                is Number -> raw.toDouble().takeIf { it.isFinite() && (it == 0.0 || it == 1.0) }?.let { it == 1.0 }
-                else -> null
-            }
+            val value = parseAlarmFlag(d.opt(key))
             if (value == null) receivedFields.remove(key)
             else { receivedFields.add(key); assign(value) }
         }
@@ -232,8 +228,9 @@ class PiecState {
             assign(readNumber(key, min.toDouble(), max.toDouble(), integer = true)?.toInt() ?: 0)
         }
 
-        // Flagi odczytujemy przed wartościami czujników, by zastosować
-        // osobne granice walidacji aplikacji dla kanałów oznaczonych jako symulowane.
+        // Te flagi pochodzą z /piec/status. Odczytujemy je przed walidacją
+        // temperatur, bo sterownik dopuszcza dla symulacji szerszy zakres niż
+        // dla fizycznych czujników (np. piec 0–160°C).
         SYM_POLA.keys.forEach { pole ->
             var active = false
             val flagKey = "symulacja_$pole"
@@ -349,7 +346,7 @@ class PiecState {
             "pokoj" to "t_pokoj", "ogrz_powrot" to "t_powrot", "ogrz_trociny" to "t_trociny",
             "cisnienie" to "cisnienie", "wilgotnosc" to "wilgotnosc", "dym" to "dym"
         )
-        // Granice wejściowe używane przez kontrolki symulacji w aplikacji.
+        // Zakresy przyjmowane przez parser polecenia symulacji w firmware.
         val SYM_BOUNDS = mapOf(
             "zewn" to (-30.0 to 50.0), "ogrz" to (0.0 to 160.0), "bojler" to (0.0 to 160.0),
             "panel" to (-30.0 to 160.0), "pokoj" to (-50.0 to 50.0), "ogrz_powrot" to (-30.0 to 120.0),

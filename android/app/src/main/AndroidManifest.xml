@@ -10,11 +10,12 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -40,7 +41,8 @@
         <!-- Pełnoekranowe okienko alarmu — także na blokadzie ekranu. -->
         <activity
             android:name=".AlarmActivity"
-            android:exported="true"
+            android:exported="false"
+            android:directBootAware="true"
             android:excludeFromRecents="true"
             android:launchMode="singleTop"
             android:showWhenLocked="true"
@@ -48,20 +50,22 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|density"
             android:theme="@style/Theme.SterownikCo" />
 
-        <!-- Czuwanie nad /piec/status (strumień SSE) — typ specialUse (A14+). -->
+        <!-- Czuwanie nad /piec/status (strumień SSE), także przed pierwszym odblokowaniem. -->
         <service
             android:name=".service.AlarmMonitorService"
             android:exported="false"
+            android:directBootAware="true"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Ciągły monitoring alarmów dymu i przegrzania kotła C.O. ze strumienia Firebase (SSE) — powiadomienie dźwiękowe użytkownika także przy zminimalizowanej aplikacji." />
         </service>
 
-        <!-- Akcje drzemki z powiadomienia + wznowienie monitoringu po reboocie. -->
+        <!-- Akcje alarmu + wznowienie monitoringu przy locked boot i po odblokowaniu. -->
         <receiver
             android:name=".receiver.AlarmReceiver"
-            android:exported="true">
+            android:exported="false"
+            android:directBootAware="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />

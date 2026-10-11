@@ -9,8 +9,13 @@ przyciski, arkusze i diagramy.
 
 ```bash
 cd android
-./gradlew :app:assembleDebug        # Android Studio: Open → folder `android`
+./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest --rerun-tasks
 ```
+
+Windows PowerShell equivalent: `cd android; .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest --rerun-tasks`.
+
+Direct Boot alarm monitoring is supported from Android 9 (API 28) when enabled and logged in. After updating, open the app once while unlocked so it can migrate legacy alarm settings and prepare the encrypted boot-session copy; confirm the green encrypted-session readiness message in the Alarms sheet. This implementation does not add FCM or backend code.
 
 Wymagania: **JDK 17–21** (Studio: `jbr-21`), Android SDK 35 (compile/target),
 minSdk 26, Gradle 8.9 (wrapper w repo — `gradle/wrapper/gradle-wrapper.jar`
@@ -77,18 +82,19 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 * `MainActivity` → jedna aktywność, `setContent { SterownikApp(model) }`.
 * `AppModel` (tworzony w `onCreate`) trzyma `PiecState`, timer (`4 s` poll,
   `15 min` pogoda, `1 s` odświeżanie arkusza), logi,
-  toasty, telemetrię i preferencje (`SharedPreferences`, klucze jak `safeStorage`
-  w panelu: `piec_fb_token`, `piec_tg_token`, `piec_chart_prefs_v2`…).
+  toasty, telemetrię i preferencje: zwykłe dane operatora pozostają w CE,
+  ustawienia alarmowe są w allowliście device-protected, a Firebase refresh
+  session ma dodatkową kopię AES-GCM w DE dla startu przed odblokowaniem.
+  Pozostałe klucze obejmują `piec_tg_token`, `piec_chart_prefs_v2` itd.
 * Polecenia urządzeń są wysyłane do `/piec/cmd` i stan jest uznawany za
   potwierdzony dopiero po ACK. Bez sesji Firebase polecenie nie jest wysyłane
   ani stosowane optymistycznie lokalnie.
 * Symulacja czujników (`symuluj …` / `symuluj_stop`) jest wysyłana do
   `/piec/cmd` i uznawana za potwierdzoną dopiero po ACK sterownika. Aktywny stan
-  pochodzi z flag `symulacja_*` w `/piec/status`; wartości są oznaczane `~`, a w
-  wykresach kreskowany jest tylko symulowany odcinek — próbki rzeczywiste
-  pozostają ciągłe. Test dymu może uruchomić prawdziwy alarm, buzzer oraz ruch
-  aktuatorów. Przycisk „Kafelki aplikacji” steruje tylko kafelkami wewnątrz
-  aplikacji; widget ekranu głównego jest osobnym elementem
+  pochodzi z flag `symulacja_*` w `/piec/status`; wartości są oznaczane `~`/`SYM`
+  i wyłączone z historii/wykresów. Test dymu może uruchomić prawdziwy alarm,
+  buzzer oraz ruch aktuatorów. Przycisk „Kafelki aplikacji” steruje tylko
+  kafelkami wewnątrz aplikacji; widget ekranu głównego jest osobnym elementem
   Androida.
 * Natywne widżety Androida korzystają z jednej migawki statusu sterownika:
   prawdziwe odczyty oraz aktywne symulacje sterownika oznaczone `~`.
@@ -110,10 +116,13 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
    wyłącznie centralę (`/api/wifi/*`, `/api/telegram/*`). Gdy centrala jest
    nieosiągalna, widać uczciwy komunikat (tak jak w oryginale po
    `FIX-WIFI-REAL` / `FIX-TELEGRAM-REAL`), żadnych wymyślonych SSID.
-2. **Terminal 21 DLOG**: brak logów startowych i próbek demo. Widok pozostaje
-   pusty, dopóki aplikacja nie otrzyma rzeczywistych wpisów; bieżący port
-   obsługuje potwierdzane komendy Remote, ale nie subskrybuje jeszcze strumienia
-   `/piec/telemetry/diagnostics`.
+2. **Terminal 21 DLOG**: brak logów startowych i próbek demo. Gdy arkusz terminala
+   jest otwarty, aplikacja odpytuje co 5 s tylko indeks sesji i nowe chunki
+   rzeczywistych wpisów z `/piec/devices/<Firebase UID>/telemetry/diagnostics`
+   (ze zgodnością dla starszej ścieżki `/piec/telemetry/diagnostics`). Startowo
+   pobiera maksymalnie 50 ostatnich chunków bieżącej sesji; nie tworzy logów
+   lokalnie. Sam odczyt jest tylko do odczytu; przyciski Remote wysyłają komendy
+   wyłącznie po świadomym dotknięciu przez operatora.
 3. **Ręczne OTA `.bin`**: w panelu był `<input type=file>`; w aplikacji
    podajesz ścieżkę pliku (brak natywnego pickera w tym porcie). Komenda
    `update` / `update_panel` pokazuje wyłącznie ACK przyjęcia; panel nie
@@ -150,6 +159,10 @@ android/
       ├─ ui/screens/                # Dashboard, Charts, Weather, Lists, Overlays
       ├─ ui/screens/sheets/         # Sensors, Control, System (Wi‑Fi/TG/terminal/logi/OTA/sesja)
       ├─ core/                      # PiecState, RtdbClient, Telemetry, Weather,
-      │                              # SolarAnalytics, AppModel, TileSpecs, Sensors, Prefs
+      │                              # SolarAnalytics, AppModel, TileSpecs, Sensors,
+      │                              # Prefs (CE/DE routing), DeviceBootCredentials
       └─ widget/                    # natywne widgety i ich ekran konfiguracji
 ```
+## Eksport bufora terminala DLOG
+
+Przycisk **Zapisz logi** w terminalu otwiera systemowy selektor zapisu Androida (SAF), z domyślną nazwą `Sterownik-CO-DLOG-<data>.txt`; nie wymaga uprawnień do pamięci. Plik jest tekstem UTF-8: krótki nagłówek opisuje sesję, a dalej znajdują się wyłącznie rzeczywiście odebrane wpisy DLOG. Eksport obejmuje wszystkie kategorie, niezależnie od filtrów widoku, ale tylko wiersze zachowane w bieżącym buforze aplikacji (maksymalnie 3500 najnowszych); nie pobiera dodatkowej historii i nie dopisuje przykładowych logów. Anulowanie selektora nie zapisuje pliku.

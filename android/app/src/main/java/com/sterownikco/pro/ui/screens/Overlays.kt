@@ -97,7 +97,7 @@ fun SheetHost(m: AppModel) {
             else -> { title = id; icon = "settings" }
         }
     }
-    Sheet(title = title, icon = icon, onDismiss = { m.sheet = null }) {
+    Sheet(title = title, icon = icon, onDismiss = { m.openSheet(null) }, fullScreen = id == "terminal") {
         // `#sheetBody` w oryginale jest odświeżany przy każdej zmianie stanu;
         // w Compose wystarczy lektura licznika `S.rev`.
         m.S.rev.intValue

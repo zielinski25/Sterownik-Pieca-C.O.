@@ -1,5 +1,7 @@
 package com.sterownikco.pro.ui.screens.sheets
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.core.WifiNet
 import com.sterownikco.pro.core.DLOG_CATEGORIES
@@ -436,18 +439,18 @@ fun DiagCard(lbl: String, value: String, sub: String) {
 /** selektor `select` z paska narzędzi terminala. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Sel(label: String, options: List<Pair<String, String>>, current: String, modifier: Modifier = Modifier, onPick: (String) -> Unit) {
+private fun Sel(label: String, options: List<Pair<String, String>>, current: String, modifier: Modifier = Modifier, enabled: Boolean = true, onPick: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
         Box(Modifier.fillMaxWidth().background(Color(0xFF091524), RoundedCornerShape(8.dp))
             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(8.dp))
-            .clickable { open = true }.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            .clickable(enabled = enabled) { open = true }.padding(horizontal = 10.dp, vertical = 6.dp)) {
             Text(options.firstOrNull { it.first == current }?.second ?: current, fontSize = 12.sp, color = Pal.Text,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 options.forEach { (v, lbl) ->
-                    DropdownMenuItem(text = { Text(lbl, fontSize = 12.sp, color = Pal.Text) }, onClick = {
+                    DropdownMenuItem(text = { Text(lbl, fontSize = 12.sp, color = Pal.Text) }, enabled = enabled, onClick = {
                         open = false; onPick(v)
                     })
                 }
@@ -461,9 +464,32 @@ private fun Sel(label: String, options: List<Pair<String, String>>, current: Str
 @Composable
 fun TerminalSheet(m: AppModel) {
     var cmd by remember { mutableStateOf("") }
+    var servoCommand by remember { mutableStateOf<String?>(null) }
+    var servoPercent by remember { mutableStateOf("") }
+    var servoInputError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
+    val saveLogsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri -> if (uri != null) m.exportTerminalLogs(uri) }
     LaunchedEffect(m.terminalDisplay.size, m.termPaused) {
         if (!m.termPaused && m.terminalDisplay.isNotEmpty()) listState.scrollToItem(m.terminalDisplay.size - 1)
+    }
+
+    fun openServoPositionDialog(command: String) {
+        servoCommand = command
+        servoPercent = ""
+        servoInputError = null
+    }
+
+    fun submitServoPosition() {
+        val command = servoCommand ?: return
+        val percent = servoPercent.toIntOrNull()
+        if (percent == null || percent !in 0..100) {
+            servoInputError = "Wpisz wartość od 0 do 100%."
+            return
+        }
+        m.terminalExec("$command $percent")
+        servoCommand = null
     }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -472,14 +498,26 @@ fun TerminalSheet(m: AppModel) {
             .border(BorderStroke(width = 1.dp, color = Pal.Border), RoundedCornerShape(bottomStart = 0.dp, bottomEnd = 0.dp)),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("💻 Terminal Zdalny ESP32", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Text)
-                Text("Polecenia ESP32 · oczekiwanie na rzeczywiste wpisy DLOG", style = Txt.cardDesc, modifier = Modifier.padding(top = 2.dp))
+                Text("💻 Terminal diagnostyczny ESP32", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Text)
+                Text("Odbiór rzeczywistych logów DLOG i sterowanie", style = Txt.cardDesc, modifier = Modifier.padding(top = 2.dp))
+            }
+            val remoteStateColor = when {
+                !m.termStateKnown -> Pal.Warn
+                m.termOpened -> Color(0xFF45D98B)
+                else -> Color(0xFF64748B)
             }
             Row(Modifier.background(Color(0x40000000), RoundedCornerShape(8.dp))
                 .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                Box(Modifier.size(9.dp).background(if (m.termOpened) Color(0xFF45D98B) else Color(0xFF64748B), CircleShape))
-                Text(if (m.termOpened) "ON" else "OFF", style = Txt.monoSm.copy(color = Pal.TextDim, fontWeight = FontWeight.ExtraBold))
+                Box(Modifier.size(9.dp).background(remoteStateColor, CircleShape))
+                Text(
+                    when {
+                        !m.termStateKnown -> "STAN NIEZNANY"
+                        m.termOpened -> "AKTYWNE"
+                        else -> "WYŁĄCZONE"
+                    },
+                    style = Txt.monoSm.copy(fontSize = 10.sp, color = remoteStateColor, fontWeight = FontWeight.ExtraBold)
+                )
             }
         }
 
@@ -487,20 +525,24 @@ fun TerminalSheet(m: AppModel) {
         // sciskaly przyciski ("Wyczyść" lamal sie na "Wycz/ysc", selektory ucinaly).
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TermBtn("▶ Włącz Remote", modifier = Modifier.weight(1f), variant = "primary", enabled = !m.termOpened,
+                TermBtn("▶ Włącz zdalne logi", modifier = Modifier.weight(1f), variant = "primary",
+                    enabled = !m.termOpened && !m.termCategoryBatchBusy,
                     onClick = { m.terminalRemoteOn() })
-                TermBtn("■ Wyłącz", modifier = Modifier.weight(1f), variant = "danger", enabled = m.termOpened,
+                TermBtn("■ Wyłącz zdalne logi", modifier = Modifier.weight(1f), variant = "danger",
+                    enabled = m.termOpened && !m.termCategoryBatchBusy,
                     onClick = { m.terminalRemoteOff() })
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TermBtn(if (m.termPaused) "▶ Wznów" else "Ⅱ Pauza", modifier = Modifier.weight(1f),
+                TermBtn(if (m.termPaused) "▶ Wznów widok" else "Ⅱ Pauza widoku", modifier = Modifier.weight(1f),
                     onClick = { m.terminalTogglePause() })
-                TermBtn("⌫ Wyczyść", modifier = Modifier.weight(1f), onClick = { m.terminalClear() })
+                TermBtn("⌫ Wyczyść bufor", modifier = Modifier.weight(1f), onClick = { m.terminalClear() })
+                TermBtn("💾 Zapisz logi", modifier = Modifier.weight(1f), enabled = m.termLines > 0,
+                    onClick = { saveLogsLauncher.launch(m.terminalLogFileName()) })
             }
             Sel("POZIOM DLOG", listOf(
                 "TRACE" to "TRACE (wszystko)", "DEBUG" to "DEBUG", "INFO" to "INFO",
                 "WARN" to "WARN", "ERR" to "ERR (tylko błędy)"
-            ), m.termLevel, Modifier.fillMaxWidth()) { m.terminalSetLevel(it) }
+            ), m.termLevel, Modifier.fillMaxWidth(), enabled = !m.termCategoryBatchBusy) { m.terminalSetLevel(it) }
         }
 
         // 3. filtr 21 kategorii
@@ -511,15 +553,17 @@ fun TerminalSheet(m: AppModel) {
             // i lamala sie na sylaby ("FILTR/21/KATEG/ORII/DLOG/(ESP3/2)").
             Text("FILTR 21 KATEGORII DLOG (ESP32)", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.5.sp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TermBtn("✓ Wszystkie DLOG", modifier = Modifier.weight(1f), onClick = { m.terminalSetAllCategories(true) })
-                TermBtn("□ Wyłącz wszystkie", modifier = Modifier.weight(1f), onClick = { m.terminalSetAllCategories(false) })
+                TermBtn("✓ Wszystkie DLOG", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
+                    onClick = { m.terminalSetAllCategories(true) })
+                TermBtn("□ Wyłącz wszystkie", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
+                    onClick = { m.terminalSetAllCategories(false) })
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 DLOG_CATEGORIES.forEach { cat ->
                     val on = m.termCats[cat] != false
                     Box(Modifier.background(if (on) Pal.rgba(0, 212, 245, .12f) else Color(0xCC111F35), RoundedCornerShape(6.dp))
                         .border(BorderStroke(1.dp, if (on) Pal.rgba(0, 212, 245, .4f) else Color(0x14FFFFFF)), RoundedCornerShape(6.dp))
-                        .clickable { m.terminalSetCategory(cat, !on) }
+                        .clickable(enabled = !m.termCategoryBatchBusy) { m.terminalSetCategory(cat, !on) }
                         .padding(horizontal = 8.dp, vertical = 3.dp)) {
                         Text((if (on) "☑ " else "☐ ") + cat, fontSize = 10.sp, fontFamily = Txt.mono,
                             fontWeight = FontWeight.SemiBold, color = if (on) Pal.Cyan else Pal.TextDim)
@@ -532,16 +576,16 @@ fun TerminalSheet(m: AppModel) {
         val sec = if (m.termAutoOffAt > 0) ((m.termAutoOffAt - System.currentTimeMillis()) / 1000).coerceAtLeast(0) else -1L
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(
-                "SEQ: " + (if (m.termSeq >= 0) m.termSeq.toString() else "—"),
-                m.terminalFmtBytes(m.termBytes),
-                "${m.termLines} linii",
-                "Luki: ${m.termGaps}",
-                "REMOTE: " + when {
-                    !m.termStateKnown -> "—"
-                    m.termOpened -> "ON"
-                    else -> "OFF"
+                "Numer wpisu: " + (if (m.termSeq >= 0) m.termSeq.toString() else "—"),
+                "Odebrane dane: " + m.terminalFmtBytes(m.termBytes),
+                "Odebrane linie: ${m.termLines}",
+                "Brakujące wpisy: ${m.termGaps}",
+                "Logi zdalne: " + when {
+                    !m.termStateKnown -> "stan nieznany"
+                    m.termOpened -> "włączone"
+                    else -> "wyłączone"
                 },
-                "Auto-OFF: " + if (sec >= 0) String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60) else "—"
+                "Auto-wyłączenie za: " + if (sec >= 0) String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60) else "—"
             ).forEach {
                 Box(Modifier.background(Color(0x99111F35), RoundedCornerShape(6.dp))
                     .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -577,14 +621,15 @@ fun TerminalSheet(m: AppModel) {
                 }
             }
             Row(
-                Modifier.fillMaxWidth().background(Color(0xFF0A1728), RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
+                Modifier.fillMaxWidth().background(Color(0xFF0A1728), RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
-                    value = cmd, onValueChange = { cmd = it }, modifier = Modifier.weight(1f), singleLine = true,
-                    placeholder = { Text("Wpisz komendę np. diag remote on, klapa 50, pompa_wl, status, update_panel…",
+                    value = cmd, onValueChange = { cmd = it }, modifier = Modifier.weight(1f),
+                    enabled = !m.termCategoryBatchBusy, singleLine = true,
+                    placeholder = { Text("Wpisz polecenie serwisowe…",
                         style = Txt.inp.copy(fontSize = 11.sp), color = Pal.TextDim2) },
                     textStyle = Txt.inp.copy(fontSize = 12.sp),
                     shape = RoundedCornerShape(8.dp),
@@ -596,23 +641,110 @@ fun TerminalSheet(m: AppModel) {
                         focusedTextColor = Pal.White, unfocusedTextColor = Pal.White, cursorColor = Pal.Cyan
                     ),
                 )
-                TermBtn("Wyślij", variant = "primary", onClick = { m.terminalExec(cmd); cmd = "" })
+                TermBtn("Wyślij komendę", variant = "primary", enabled = !m.termCategoryBatchBusy,
+                    onClick = { m.terminalExec(cmd); cmd = "" })
             }
-            FlowRow(Modifier.fillMaxWidth().background(Color(0xFF0A1728)).padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf("diag remote on", "diag remote off", "pompa_wl", "pompa_wyl", "pompa_auto", "klapa 50", "syberek 50", "status", "diag status", "update_panel")
-                    .forEach { c ->
-                        Box(Modifier.background(Color(0x0DFFFFFF), RoundedCornerShape(5.dp))
-                            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(5.dp))
-                            .clickable { cmd = c; m.terminalExec(c); cmd = "" }
-                            .padding(horizontal = 7.dp, vertical = 2.dp)) {
-                            Text(c, fontSize = 10.sp, fontFamily = Txt.mono, color = Pal.TextDim)
-                        }
-                    }
+            Column(
+                Modifier.fillMaxWidth().background(Color(0xFF0A1728), RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("SZYBKIE DZIAŁANIA", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan)
+                Text(
+                    "Po wysłaniu polecenia pompa i siłowniki zmieniają stan fizycznie; przycisk OTA uruchamia aktualizację panelu LCD.",
+                    style = Txt.note.copy(fontSize = 10.sp), color = Pal.Warn
+                )
+
+                Text("Zdalny odbiór logów", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TermBtn("Włącz zdalne logi", modifier = Modifier.weight(1f), variant = "primary",
+                        enabled = !m.termCategoryBatchBusy,
+                        onClick = { m.terminalExec("diag remote on") })
+                    TermBtn("Wyłącz zdalne logi", modifier = Modifier.weight(1f), variant = "danger",
+                        enabled = !m.termCategoryBatchBusy,
+                        onClick = { m.terminalExec("diag remote off") })
                 }
+
+                Text("Pompa CO · sterowanie ręczne", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TermBtn("Włącz pompę CO", modifier = Modifier.weight(1f), variant = "primary",
+                        enabled = !m.termCategoryBatchBusy,
+                        onClick = { m.terminalExec("pompa_wl") })
+                    TermBtn("Wyłącz pompę CO", modifier = Modifier.weight(1f), variant = "danger",
+                        enabled = !m.termCategoryBatchBusy,
+                        onClick = { m.terminalExec("pompa_wyl") })
+                }
+                TermBtn("Przywróć automatykę pompy", modifier = Modifier.fillMaxWidth(),
+                    enabled = !m.termCategoryBatchBusy,
+                    onClick = { m.terminalExec("pompa_auto") })
+
+                Text("Ręczne ustawienie siłowników", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TermBtn("Ustaw klapę…", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
+                        onClick = { openServoPositionDialog("klapa") })
+                    TermBtn("Ustaw syberek…", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
+                        onClick = { openServoPositionDialog("syberek") })
+                }
+
+                Text("Status sterownika i logów", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TermBtn("Odśwież status", modifier = Modifier.weight(1f),
+                        onClick = { m.poll() })
+                    TermBtn("Stan zdalnych logów", modifier = Modifier.weight(1f), enabled = !m.termCategoryBatchBusy,
+                        onClick = { m.terminalExec("diag status") })
+                }
+
+                Text("Aktualizacja panelu pokojowego LCD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Pal.TextDim)
+                TermBtn("Uruchom aktualizację OTA panelu LCD", modifier = Modifier.fillMaxWidth(), variant = "danger",
+                    enabled = !m.termCategoryBatchBusy,
+                    onClick = { m.terminalExec("update_panel") })
+            }
         }
         Text(m.termStatus, style = Txt.note.copy(fontSize = 11.sp),
             color = when (m.termStatusKind) { "ok" -> Color(0xFF45D98B); "warn" -> Pal.Warn; "err" -> Color(0xFFFF6B81); else -> Pal.TextDim })
+    }
+
+    servoCommand?.let { target ->
+        Dialog(onDismissRequest = { servoCommand = null }) {
+            Column(
+                Modifier.fillMaxWidth().background(Pal.Surface2, RoundedCornerShape(16.dp))
+                    .border(BorderStroke(1.dp, Pal.BorderStrong), RoundedCornerShape(16.dp))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    if (target == "klapa") "Ustaw pozycję klapy" else "Ustaw pozycję syberka",
+                    fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Text
+                )
+                Text(
+                    "Wpisz wartość od 0 do 100%. Po zatwierdzeniu siłownik przejdzie w tryb ręczny.",
+                    style = Txt.note.copy(fontSize = 11.sp), color = Pal.TextDim
+                )
+                OutlinedTextField(
+                    value = servoPercent,
+                    onValueChange = { value ->
+                        servoPercent = value.filter { it.isDigit() }.take(3)
+                        servoInputError = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Pozycja (%)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submitServoPosition() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Pal.Cyan, unfocusedBorderColor = Pal.Border,
+                        unfocusedContainerColor = Color(0xFF040911), focusedContainerColor = Color(0xFF040911),
+                        focusedTextColor = Pal.White, unfocusedTextColor = Pal.White, cursorColor = Pal.Cyan
+                    ),
+                )
+                servoInputError?.let { Text(it, style = Txt.note.copy(fontSize = 11.sp), color = Pal.Err) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    UstBtn("Anuluj", onClick = { servoCommand = null }, modifier = Modifier.weight(1f))
+                    UstBtn("Ustaw pozycję", onClick = { submitServoPosition() },
+                        modifier = Modifier.weight(1.3f), variant = "primary")
+                }
+            }
+        }
     }
 }
 

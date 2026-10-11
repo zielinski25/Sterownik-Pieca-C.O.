@@ -1,13 +1,17 @@
 package com.sterownikco.pro
 
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
+import android.os.UserManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +25,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -37,13 +44,42 @@ import com.sterownikco.pro.ui.theme.SterownikTheme
    Pełnoekranowe OKIENKO ALARMU (dym / przegrzanie) — cel full-screen intent.
    Wyskakuje NAWET na zablokowanym ekranie i przy zminimalizowanej aplikacji:
    `showWhenLocked + turnScreenOn` (manifest + runtime) i prośba o zdjęcie
-   klawiatury blokady. Nie znika samo — tylko świadomy wybór przycisku.
+   klawiatury blokady. Znika po świadomym wyborze albo po potwierdzonym skasowaniu alarmu.
    ══════════════════════════════════════════════════════════════════════════ */
 
 class AlarmActivity : ComponentActivity() {
+    private var alarmTitle by mutableStateOf("ALARM KOTŁA")
+    private var alarmMessage by mutableStateOf("Wykryto zagrożenie — sprawdź kotłownię!")
+    private var alarmKind: String? = null
+    private var alarmSignature: String? = null
+    private var alarmOpenNonce: String? = null
+    private var alarmReceiverRegistered = false
+
+    private val alarmStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent?) {
+            when (intent?.action) {
+                AlarmNotify.ACTION_ALARM_UPDATED -> updateAlarmInfo(intent)
+                AlarmNotify.ACTION_ALARM_CLEARED -> finish()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!AlarmNotify.hasCurrentAlarmNonce(applicationContext, intent)) {
+            finish()
+            return
+        }
+        updateAlarmInfo(intent)
+        val filter = IntentFilter().apply {
+            addAction(AlarmNotify.ACTION_ALARM_UPDATED)
+            addAction(AlarmNotify.ACTION_ALARM_CLEARED)
+        }
+        ContextCompat.registerReceiver(
+            this, alarmStateReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        alarmReceiverRegistered = true
+
         if (Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -60,21 +96,63 @@ class AlarmActivity : ComponentActivity() {
                 ?.requestDismissKeyguard(this, null)
         } catch (e: Exception) { /* część nakładek odmawia — okienko i tak widać */ }
 
-        val title = intent.getStringExtra("title") ?: "ALARM KOTŁA"
-        val msg = intent.getStringExtra("msg") ?: "Wykryto zagrożenie — sprawdź kotłownię!"
         setContent {
             SterownikTheme {
-                AlarmScreen(title = title, msg = msg,
+                AlarmScreen(title = alarmTitle, msg = alarmMessage,
                     onSnooze10 = { act { p -> AlarmCenter.snooze(p, 10) } },
                     onSnooze60 = { act { p -> AlarmCenter.snooze(p, 60) } },
                     onMuteNext = { act { p -> AlarmCenter.muteUntilNext(p) } },
                     onOpen = {
-                        AlarmNotify.cancel(this)
-                        startActivity(Intent(this, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
-                        finish()
+                        val userUnlocked = (getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
+                        if (!userUnlocked) {
+                            alarmMessage = "Odblokuj telefon, aby otworzyć panel sterownika. Alarm pozostaje aktywny."
+                        } else {
+                            // Otwarcie panelu samo w sobie nie kasuje alarmu ani nie zatrzymuje dźwięku.
+                            val panelIntent = Intent(this, MainActivity::class.java)
+                                .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                            alarmKind?.let { panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_KIND, it) }
+                            alarmTitle.takeIf { it.isNotBlank() }?.let {
+                                panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_TITLE, it)
+                            }
+                            alarmMessage.takeIf { it.isNotBlank() }?.let {
+                                panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_MESSAGE, it)
+                            }
+                            alarmSignature?.let { panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_SIGNATURE, it) }
+                            alarmOpenNonce?.let { panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_OPEN_NONCE, it) }
+                            startActivity(panelIntent)
+                            finish()
+                        }
                     })
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (!AlarmNotify.hasCurrentAlarmNonce(applicationContext, intent)) {
+            finish()
+            return
+        }
+        setIntent(intent)
+        updateAlarmInfo(intent)
+    }
+
+    override fun onDestroy() {
+        if (alarmReceiverRegistered) {
+            try { unregisterReceiver(alarmStateReceiver) } catch (e: Exception) { /* ignore */ }
+            alarmReceiverRegistered = false
+        }
+        super.onDestroy()
+    }
+
+    private fun updateAlarmInfo(source: Intent) {
+        alarmKind = source.getStringExtra(AlarmNotify.EXTRA_ALARM_KIND) ?: alarmKind
+        alarmSignature = source.getStringExtra(AlarmNotify.EXTRA_ALARM_SIGNATURE) ?: alarmSignature
+        alarmOpenNonce = source.getStringExtra(AlarmNotify.EXTRA_ALARM_OPEN_NONCE) ?: alarmOpenNonce
+        alarmTitle = source.getStringExtra(AlarmNotify.EXTRA_ALARM_TITLE)
+            ?: source.getStringExtra("title") ?: alarmTitle
+        alarmMessage = source.getStringExtra(AlarmNotify.EXTRA_ALARM_MESSAGE)
+            ?: source.getStringExtra("msg") ?: alarmMessage
     }
 
     private fun act(op: (Prefs) -> Unit) {

@@ -102,15 +102,10 @@ fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min:
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    when {
-                        !m.connected && pole == "dym" ->
-                            "Brak aktywnej sesji Firebase — Zastosuj nie wyśle testu. Po połączeniu test dymu na żywym sterowniku może uruchomić prawdziwy alarm, buzzer i ruch klapy lub syberka."
-                        !m.connected -> "Brak aktywnej sesji Firebase — polecenie nie zostanie wysłane. Połącz z centralą."
-                        pole == "dym" ->
-                            "⚠ TEST NA ŻYWYM STEROWNIKU: przekroczenie progu może uruchomić prawdziwy alarm, buzzer i ruch klapy lub syberka. Używaj tylko po zabezpieczeniu instalacji; po teście sprawdź alarm i aktuatory bezpośrednio."
-                        else ->
-                            "Test wysyłany do sterownika. Wartość trafia do jego normalnej logiki i może wpłynąć na rzeczywiste urządzenia."
-                    },
+                    if (pole == "dym")
+                        "⚠ TEST NA ŻYWYM STEROWNIKU: przekroczenie progu może uruchomić prawdziwy alarm i buzzer oraz poruszyć klapą i syberkiem. Wyłączenie symulacji nie kasuje alarmu natychmiast — decyduje histereza centrali."
+                    else
+                        "Test wysyłany do sterownika. Wartość trafia do jego normalnej logiki i może wpłynąć na rzeczywiste urządzenia.",
                     style = Txt.tiny, color = if (pole == "dym") Pal.Err else Pal.Warn,
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
@@ -122,7 +117,7 @@ fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min:
                     value = value.coerceIn(controlMin.toFloat(), controlMax.toFloat()),
                     onValueChange = { v ->
                         val step = krok.toFloat().coerceAtLeast(0.1f)
-                        value = controlMin.toFloat() + Math.round((v - controlMin.toFloat()) / step) * step
+                        value = min.toFloat() + Math.round((v - min.toFloat()) / step) * step
                     },
                     valueRange = controlMin.toFloat()..controlMax.toFloat(),
                     colors = SliderDefaults.colors(thumbColor = Pal.Cyan, activeTrackColor = Pal.Cyan, inactiveTrackColor = Pal.Surface3)
@@ -261,7 +256,7 @@ fun SensorListSheet(m: AppModel) {
                 style = Txt.diagSub, modifier = Modifier.padding(top = 4.dp)
             )
         }
-        Note("Symulacje są wysyłane do sterownika i używane przez jego normalną logikę. Na wykresie kreskowany jest tylko symulowany odcinek; odczyty rzeczywiste pozostają ciągłe. Test dymu może uruchomić prawdziwy alarm, buzzer oraz ruch serw.")
+        Note("Symulacje są wysyłane do sterownika i używane przez jego normalną logikę; wartości symulowane są oznaczone i pomijane w historii. Test dymu może uruchomić prawdziwy alarm, buzzer oraz ruch serw.")
         SensorDef.ALL.forEach { sen ->
             Column(Modifier.fillMaxWidth()) {
                 SensorFullCard(m, sen, listStyle = true)

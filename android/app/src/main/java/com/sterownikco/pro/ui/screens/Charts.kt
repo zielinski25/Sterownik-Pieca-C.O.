@@ -1,6 +1,7 @@
 package com.sterownikco.pro.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,13 +40,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -215,22 +215,7 @@ fun ChartsPage(m: AppModel) {
             }
 
             ChartScrollbar(m)
-            Text(
-                "Linia ciągła — odczyt rzeczywisty · kreskowany jest tylko odcinek kanału symulowanego",
-                style = Txt.tiny.copy(color = Pal.TextDim), modifier = Modifier.fillMaxWidth()
-            )
-
-            Box(Modifier.fillMaxWidth().background(Pal.rgba(255, 159, 67, .1f), RoundedCornerShape(8.dp))
-                .border(BorderStroke(1.dp, Pal.rgba(255, 159, 67, .25f)), RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 5.dp)) {
-                Text(m.chartPhase(), fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Accent)
-            }
-
-            Row(Modifier.fillMaxWidth().background(Pal.Surface2, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("INSPEKTOR", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan, letterSpacing = 0.5.sp)
-                Text(inspectorText(m, view, cross), style = Txt.monoSm.copy(fontSize = 8.5.sp, color = Color.White))
-            }
+            SimulatedChartLegend()
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Kpi("ZAKRES", view.span, Pal.Accent)
@@ -245,13 +230,6 @@ fun ChartsPage(m: AppModel) {
                 ActBtn(Pal.Violet, "settings", "ANALIZA", "cykle A−B") { m.openSheet("chartAnalysis") }
             }
         }
-
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            AppIcon("info", size = 12.dp, tint = Pal.TextDim2)
-            Text("dotknij = kursor • szczypnij = zoom • pasek/przeciągnij = oś czasu • 2× tap = reset",
-                style = Txt.tiny)
-        }
     }
 
     if (expand) {
@@ -262,21 +240,29 @@ fun ChartsPage(m: AppModel) {
                 contentAlignment = Alignment.Center
             ) {
                 Column(
-                    Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(20.dp))
+                    Modifier.fillMaxSize().background(Pal.Surface, RoundedCornerShape(20.dp))
                         .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(20.dp)).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(m.fsTitle(), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text(
+                                m.fsTitle(),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Text(m.fsSubtitle(), style = Txt.cardDesc)
                         }
                         IconBtn("close", "Zamknij", onClick = { expand = false })
                     }
-                    Box(Modifier.fillMaxWidth().height(320.dp).clip(RoundedCornerShape(12.dp)).background(Pal.CanvasBg, RoundedCornerShape(12.dp))
+                    Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(12.dp)).background(Pal.CanvasBg, RoundedCornerShape(12.dp))
                         .border(BorderStroke(1.dp, Color(0x0FFFFFFF)), RoundedCornerShape(12.dp))) {
                         ChartCanvas(
-                            view = view, modifier = Modifier.fillMaxWidth().height(320.dp),
+                            view = view, modifier = Modifier.fillMaxSize(),
                             areaBand = m.chartAreaBand, alarmLines = m.chartAlarmLines && m.chartFocus == 0, alarmLevels = m.alarmLevels,
                             mode = m.chartMode, lineStyle = m.chartStyle, crossIdx = cross, onCross = { cross = it },
                             onPan = { m.panChart(it) }, onPinch = { f, x -> m.pinchChart(f, x) },
@@ -287,11 +273,7 @@ fun ChartsPage(m: AppModel) {
                         }
                     }
                     ChartScrollbar(m)
-                    Text("Linia ciągła — odczyt rzeczywisty · kreskowany — odcinek dotykający próbki symulowanej",
-                        style = Txt.tiny, modifier = Modifier.fillMaxWidth())
-                    Text("DOTKNIJ kursor • SZCZYP zoom • PASEK / PRZECIĄGNIJ oś czasu • 2× TAP reset",
-                        style = Txt.tiny, modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    SimulatedChartLegend()
                 }
             }
         }
@@ -432,7 +414,7 @@ fun ChartAxisSheet(m: AppModel) {
     Seg(listOf("SMOOTH" to "Gładkie (Bezier)", "STEPPED" to "Schodkowe"), current = m.chartStyle) { v -> m.setChartStyle(v) }
 }
 
-/** `showChartToolsSheet()` — filtry anomalii, area band, bezier i poziomy odniesienia. */
+/** `showChartToolsSheet()` — filtry anomalii, area band, styl linii i poziomy odniesienia. */
 @Composable
 fun ChartToolsSheet(m: AppModel) {
     Note("Filtry zmieniają wygląd wykresu; dane w Firebase pozostają bez zmian.")
@@ -527,6 +509,35 @@ private fun chartTimeLabel(m: AppModel, ts: Long): String {
          else ":" + p(c.get(java.util.Calendar.SECOND)))
 }
 
+/** Oznaczenie stylu odcinków: symulacja zmienia wyłącznie fragmenty dotknięte maską kanału. */
+@Composable
+private fun SimulatedChartLegend() {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        ChartLegendStroke(dashed = false)
+        Text("odcinek rzeczywisty", fontSize = 7.5.sp, color = Pal.TextDim2)
+        Spacer(Modifier.width(9.dp))
+        ChartLegendStroke(dashed = true)
+        Text("odcinek symulowany", fontSize = 7.5.sp, color = Pal.TextDim2)
+    }
+}
+
+@Composable
+private fun ChartLegendStroke(dashed: Boolean) {
+    Canvas(Modifier.width(22.dp).height(8.dp).padding(end = 4.dp)) {
+        drawLine(
+            color = Pal.Cyan,
+            start = Offset(0f, size.height / 2f),
+            end = Offset(size.width, size.height / 2f),
+            strokeWidth = 2.dp.toPx(),
+            pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 2.5.dp.toPx())) else null
+        )
+    }
+}
+
 /** Dymek nad wykresem: każda wartość używa koloru swojej serii, jak w Piec.html. */
 @Composable
 private fun ChartHoverTooltip(
@@ -553,25 +564,6 @@ private fun ChartHoverTooltip(
                 Text("${s.label}: ", fontSize = 8.sp, color = hexColor(s.accent), fontWeight = FontWeight.SemiBold)
                 Text(value, fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold)
             }
-        }
-    }
-}
-
-/** `#chartInspectorVal` — czas w cyan, wartości w kolorach odpowiadających seriom. */
-private fun inspectorText(m: AppModel, view: com.sterownikco.pro.ui.chart.ChartView, cross: Int?) = buildAnnotatedString {
-    val row = cross?.let { view.rows.getOrNull(it) }
-    if (cross == null || row == null) {
-        withStyle(SpanStyle(color = Pal.TextDim)) { append("Dotknij wykresu / najedź kursorem") }
-        return@buildAnnotatedString
-    }
-    withStyle(SpanStyle(color = Pal.Cyan, fontWeight = FontWeight.Bold)) { append(chartTimeLabel(m, row.ts)) }
-    append(": ")
-    view.cat.forEachIndexed { index, s ->
-        if (index > 0) append("  ·  ")
-        val x = view.values[s.id]?.getOrNull(cross)
-        val value = if (x != null && x.isFinite()) (if (row.isSimulated(s.ch)) "~" else "") + fmt1(x) + " " + s.unit else "—"
-        withStyle(SpanStyle(color = hexColor(s.accent))) {
-            append("● ${s.label}: $value")
         }
     }
 }

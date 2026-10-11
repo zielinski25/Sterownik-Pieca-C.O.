@@ -139,7 +139,7 @@ object ChartSeries {
         "klapa" -> p.klapa; "syberka" -> p.syberka; else -> null
     }
 
-    /** Granice walidacji aplikacji dla próbek jawnie oznaczonych jako symulowane. */
+    /** Zakresy, które firmware dopuszcza tylko dla aktywnych symulacji. */
     val SIM_BOUNDS = mapOf(
         "t_ogrz" to (0.0 to 160.0), "t_ogrz_sr" to (0.0 to 160.0), "t_bojler" to (0.0 to 160.0),
         "t_powrot" to (-30.0 to 120.0), "t_panel" to (-30.0 to 160.0), "t_trociny" to (-30.0 to 120.0),

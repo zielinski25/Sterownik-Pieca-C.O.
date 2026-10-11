@@ -1,6 +1,7 @@
 package com.sterownikco.pro.core
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONObject
@@ -91,7 +92,9 @@ object Weather {
                     "&timezone=auto&forecast_days=" + enc(max(1, min(14, days)).toString())
                 val req = Request.Builder().url("https://api.open-meteo.com/v1/forecast?" + q)
                     .header("Cache-Control", "no-store").build()
-                val body = client.newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return@withContext null
+                val call = client.newCall(req)
+                coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
+                val body = call.execute().use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return@withContext null
                 parse(JSONObject(body), days)
             } catch (e: Exception) { null }
         }

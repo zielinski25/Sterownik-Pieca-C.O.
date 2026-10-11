@@ -5,6 +5,7 @@ import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,8 +32,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AlarmCenter
+import com.sterownikco.pro.core.AlarmMonitorHealthText
+import com.sterownikco.pro.core.AlarmMonitorPhase
 import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.AppModel
+import com.sterownikco.pro.core.Prefs
 import com.sterownikco.pro.service.AlarmMonitorService
 import com.sterownikco.pro.ui.components.Seg
 import com.sterownikco.pro.ui.theme.Pal
@@ -46,9 +51,12 @@ import com.sterownikco.pro.ui.theme.Txt
 @Composable
 fun AlarmSheet(m: AppModel) {
     m.alarmUiTick // licznik odświeżeń (uprawnienia zmieniają się poza aplikacją)
+    m.sheetTick // odświeżaj wiek ostatniego odczytu RTDB
     val ctx = m.ctx
     val p = m.prefs
     val monitored = AlarmCenter.isMonitored(p)
+    val monitorHealth by AlarmMonitorService.monitorHealth.collectAsState()
+    val nowElapsedMs = SystemClock.elapsedRealtime()
     var soundKind by remember { mutableStateOf("dym") }
     val sound = AlarmCenter.sound(p, soundKind)
 
@@ -78,11 +86,48 @@ fun AlarmSheet(m: AppModel) {
         // 2. Monitoring w tle
         AlarmCard {
             Text("CZUWANIE W TLE", style = Txt.tiny, color = Pal.Cyan)
-            Text("Usługa czyta strumień Firebase także przy zminimalizowanej aplikacji. Wyłączenie = brak alarmów w tle.",
-                fontSize = 11.sp, color = Pal.TextDim)
+            val hasRefreshToken = !p.get(Prefs.K_REF_TOKEN).isNullOrBlank()
+            val healthAge = monitorHealth.lastStatusElapsedMs?.let {
+                (nowElapsedMs - it).coerceAtLeast(0L)
+            }
+            val monitorHint = AlarmMonitorHealthText.describe(
+                monitored = monitored,
+                hasSession = hasRefreshToken,
+                health = monitorHealth,
+                nowElapsedMs = nowElapsedMs
+            )
+            val healthColor = when {
+                !monitored -> Pal.TextDim
+                !hasRefreshToken -> Pal.Warn
+                monitorHealth.phase == AlarmMonitorPhase.STATUS_OK && healthAge != null && healthAge < 60_000L -> Pal.Live
+                monitorHealth.phase == AlarmMonitorPhase.STARTING || monitorHealth.phase == AlarmMonitorPhase.CONNECTING -> Pal.Warn
+                monitorHealth.phase == AlarmMonitorPhase.RETRYING && healthAge != null && healthAge < 60_000L -> Pal.Warn
+                else -> Pal.Err
+            }
+            Text(monitorHint, fontSize = 11.sp, color = healthColor)
+            val directBootReady = p.directBootReady()
+            val directBootHint = when {
+                !monitored -> "Po restarcie: czuwanie przed odblokowaniem jest wyłączone."
+                !hasRefreshToken -> "Przed odblokowaniem: brak zapisanej sesji Firebase."
+                !p.directBootSupported() -> "Czuwanie przed odblokowaniem wymaga Androida 9 (API 28) lub nowszego."
+                directBootReady -> "Zaszyfrowana sesja umożliwia wznowienie czuwania przed pierwszym odblokowaniem."
+                else -> "Brak dostępnej zaszyfrowanej sesji Direct Boot; sprawdź logowanie i otwórz ponownie ten arkusz."
+            }
+            Text(
+                directBootHint,
+                fontSize = 11.sp,
+                color = when {
+                    !monitored -> Pal.TextDim
+                    directBootReady -> Pal.Live
+                    else -> Pal.Warn
+                }
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AlarmBtn("Włączone", monitored, Modifier.weight(1f)) {
                     AlarmCenter.setMonitored(p, true)
+                    if (!p.get(Prefs.K_REF_TOKEN).isNullOrBlank() && !AlarmNotify.hasPostNotifications(ctx)) {
+                        m.askNotifPerm = true
+                    }
                     try { AlarmMonitorService.start(ctx) } catch (e: Exception) { /* ignore */ }
                     m.alarmUiTick++
                 }
@@ -125,6 +170,8 @@ fun AlarmSheet(m: AppModel) {
             }
             Text("Każdy rodzaj alarmu zapamiętuje własny wybór. Dotknij dźwięku, aby go ustawić i odsłuchać.",
                 fontSize = 11.sp, color = Pal.TextDim)
+            Text("Podczas aktywnego alarmu dźwięk jest zapętlony; zatrzyma go skasowanie alarmu, drzemka lub wyciszenie.",
+                fontSize = 11.sp, color = Pal.TextDim)
         }
 
         // 4. Drzemka / wyciszenie
@@ -152,18 +199,22 @@ fun AlarmSheet(m: AppModel) {
         AlarmCard {
             Text("UPRAWNIENIA SYSTEMOWE", style = Txt.tiny, color = Pal.Cyan)
             val notifOk = AlarmNotify.hasPostNotifications(ctx)
-            PermRow("Powiadomienia", notifOk, "Bez tego alarm nie zadzwoni.",
+            PermRow("Powiadomienia", notifOk,
+                if (notifOk) "Zgoda jest włączona; widoczność nadal zależy od systemu i kanału."
+                else "Powiadomienia alarmowe są zablokowane; dźwięk i działanie usługi też nie są gwarantowane.",
                 btn = "Poproś o zgodę") { m.askNotifPerm = true }
             val fsiOk = AlarmNotify.canFullScreen(ctx)
             PermRow("Okienko na wierzchu", fsiOk,
-                if (fsiOk) "Alarm wyskoczy nawet na blokadzie." else "Bez tego tylko pasek + dźwięk.",
+                if (fsiOk) "Zezwolono na pełny ekran; system nadal może ograniczyć wyświetlenie."
+                else "Bez tej zgody aplikacja nie może żądać alarmowego okna pełnoekranowego.",
                 btn = if (fsiOk) null else "Otwórz ustawienia") {
                 openSafely(ctx, AlarmNotify.fullScreenSettingsIntent(ctx)); m.alarmUiTick++
             }
             val batOk = remember(m.alarmUiTick) { isIgnoringBattery(ctx) }
             PermRow("Praca w tle (bateria)", batOk,
-                if (batOk) "System nie ubije czuwania." else "realme/Oppo lubią ubijać usługi — wyłącz optymalizację.",
-                btn = if (batOk) null else "Wyłącz optymalizację") {
+                if (batOk) "Wyjątek włączony — może zwiększać zużycie baterii; system/OEM nadal może ograniczyć usługę."
+                else "Optymalizacja pozostaje włączona (zalecane dla baterii). Wyjątek jest opcjonalny i może zmniejszyć ryzyko opóźnień na części telefonów.",
+                btn = if (batOk) null else "Ustawienia baterii") {
                 openBatterySettings(ctx); m.alarmUiTick++
             }
         }

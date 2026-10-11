@@ -153,16 +153,41 @@ fun PompaSheet(m: AppModel) {
             if (thresholdsKnown) {
                 val stopPct = ((S.tempOff - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
                 val startPct = ((S.tempOn - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
-                BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 12.dp).height(14.dp)) {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val w = maxWidth
-                    Box(Modifier.fillMaxWidth().height(14.dp)
-                        .background(Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Pal.Yellow, Pal.Accent, Pal.Err)), RoundedCornerShape(7.dp)))
-                    Marker(w * (stopPct / 100f), "STOP ${S.tempOff}°C", Color(0xFF38BDF8), Color(0xFF082F49))
-                    Marker(w * (startPct / 100f), "START ${S.tempOn}°C", Pal.Accent, Color(0xFF431407))
-                    if (tempKnown) {
-                        val curPct = ((curTemp - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
-                        Box(Modifier.offset(x = w * (curPct / 100f) - 1.5.dp, y = (-4).dp).width(3.dp).height(22.dp)
-                            .background(Color.White, RoundedCornerShape(2.dp)))
+                    val stopX = w * (stopPct / 100f)
+                    val startX = w * (startPct / 100f)
+                    val chipWidth = minOf(80.dp, w)
+                    val chipMaxLeft = (w - chipWidth).coerceAtLeast(0.dp)
+                    val stopLeft = (stopX - chipWidth / 2f).coerceIn(0.dp, chipMaxLeft)
+                    val startLeft = (startX - chipWidth / 2f).coerceIn(0.dp, chipMaxLeft)
+                    val labelsOverlap = stopLeft < startLeft + chipWidth && startLeft < stopLeft + chipWidth
+                    val secondLabelY = if (labelsOverlap) 20.dp else 0.dp
+                    val labelLaneHeight = if (labelsOverlap) 38.dp else 18.dp
+
+                    Column(Modifier.fillMaxWidth()) {
+                        Box(Modifier.fillMaxWidth().height(labelLaneHeight)) {
+                            ThresholdChip(
+                                "STOP ${S.tempOff}°C", Color(0xFF38BDF8), Color(0xFF082F49),
+                                modifier = Modifier.offset(x = stopLeft).width(chipWidth).height(18.dp)
+                            )
+                            ThresholdChip(
+                                "START ${S.tempOn}°C", Pal.Accent, Color(0xFF431407),
+                                modifier = Modifier.offset(x = startLeft, y = secondLabelY).width(chipWidth).height(18.dp)
+                            )
+                        }
+                        Box(Modifier.fillMaxWidth().height(4.dp))
+                        Box(Modifier.fillMaxWidth().height(14.dp)) {
+                            Box(Modifier.fillMaxWidth().height(14.dp)
+                                .background(Brush.horizontalGradient(listOf(Color(0xFF38BDF8), Pal.Yellow, Pal.Accent, Pal.Err)), RoundedCornerShape(7.dp)))
+                            Marker(stopX)
+                            Marker(startX)
+                            if (tempKnown) {
+                                val curPct = ((curTemp - minScale) * 100.0 / (maxScale - minScale)).coerceIn(0.0, 100.0).toFloat()
+                                Box(Modifier.offset(x = w * (curPct / 100f) - 1.5.dp, y = (-4).dp).width(3.dp).height(22.dp)
+                                    .background(Color.White, RoundedCornerShape(2.dp)))
+                            }
+                        }
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -216,16 +241,27 @@ fun PompaSheet(m: AppModel) {
     }
 }
 
-/** `.temp-stop-marker` / `.temp-start-marker` + `.temp-marker-label`. */
+/** Etykieta progu pozycjonowana nad znacznikiem skali; jej kontener nie przycina tekstu. */
 @Composable
-private fun Marker(x: androidx.compose.ui.unit.Dp, label: String, bg: Color, fg: Color) {
-    Box(Modifier.offset(x = x - 1.dp, y = (-14).dp).width(2.dp).height(32.dp).background(Color.White))
-    Box(Modifier.offset(x = x - 26.dp, y = (-14).dp)) {
+private fun ThresholdChip(text: String, bg: Color, fg: Color, modifier: Modifier = Modifier) {
+    Box(modifier.background(bg, RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
         Text(
-            label, fontSize = 7.5.sp, fontWeight = FontWeight.ExtraBold, color = fg,
-            modifier = Modifier.background(bg, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 1.dp)
+            text = text,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = fg,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 4.dp)
         )
     }
+}
+
+/** Biały znacznik dokładnego położenia progu na skali temperatury. */
+@Composable
+private fun Marker(x: androidx.compose.ui.unit.Dp) {
+    Box(Modifier.offset(x = x - 1.dp, y = (-4).dp).width(2.dp).height(22.dp).background(Color.White))
 }
 
 /** `MENUS.serwo` — tryb klapy, panel ręczny (`.manual.on`), automatyka. */
