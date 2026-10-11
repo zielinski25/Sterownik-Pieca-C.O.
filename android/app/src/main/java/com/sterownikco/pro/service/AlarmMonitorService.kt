@@ -272,32 +272,43 @@ class AlarmMonitorService : Service() {
             when (ev) {
                 "put", "patch" -> synchronized(snapshotLock) {
                     val j = JSONObject(data)
+                    var alarmFlagsMayHaveChanged = false
                     if (ev == "patch") {
                         val base = j.optString("path", "/").trim('/')
                         val dj = j.optJSONObject("data") ?: return
                         val baseKey = base.substringBefore('/')
                         val touchesAlarm = baseKey in ALARM_STATUS_KEYS ||
                             (base.isEmpty() && ALARM_STATUS_KEYS.any(dj::has))
+                        val previousAlarmFlags = alarmFlagSignature(lastSnap)
                         for (k in dj.keys()) applyKey(if (base.isEmpty()) k else "$base/$k", dj.get(k))
+                        alarmFlagsMayHaveChanged = previousAlarmFlags != alarmFlagSignature(lastSnap)
                         if (touchesAlarm) alarmStreamVersion++
                     } else {
                         val path = j.optString("path", "/")
                         val payload = if (j.isNull("data")) null else j.get("data")
                         if (path == "/") {
                             if (payload is JSONObject) {
+                                alarmFlagsMayHaveChanged = alarmFlagSignature(lastSnap) != alarmFlagSignature(payload)
                                 lastSnap = payload
+                                // Keep the fallback GET's whole-snapshot freshness guard, but do
+                                // not invalidate foreground UI polls when only other fields changed.
                                 alarmStreamVersion++
-                                onSnapshotLocked(payload)
+                                onSnapshotLocked(payload, alarmFlagsMayHaveChanged)
                                 return
                             }
                         } else {
                             // RTDB put-null usuwa klucz; zachowujemy migawkę zgodną ze źródłem.
                             val key = path.trim('/').substringBefore('/')
                             if (key in ALARM_STATUS_KEYS) alarmStreamVersion++
+                            val previousAlarmFlags = alarmFlagSignature(lastSnap)
                             applyKey(path.trim('/'), payload)
+                            alarmFlagsMayHaveChanged = previousAlarmFlags != alarmFlagSignature(lastSnap)
                         }
                     }
-                    onSnapshotLocked(JSONObject(lastSnap.toString()))
+                    onSnapshotLocked(
+                        JSONObject(lastSnap.toString()),
+                        alarmFlagsMayHaveChanged = alarmFlagsMayHaveChanged
+                    )
                 }
                 "auth_revoked" -> {
                     // Token wygasł — odświeżamy i wymuszamy reconnect (wyjątek zrywa strumień).
@@ -336,9 +347,9 @@ class AlarmMonitorService : Service() {
         synchronized(snapshotLock) { onSnapshotLocked(d) }
     }
 
-    private fun onSnapshotLocked(d: JSONObject) {
+    private fun onSnapshotLocked(d: JSONObject, alarmFlagsMayHaveChanged: Boolean = true) {
         lastSnap = d
-        AlarmSnapshotCoordinator.applyServiceSnapshot {
+        AlarmSnapshotCoordinator.applyServiceSnapshot(alarmFlagsMayHaveChanged) {
             try {
                 val smoke = alarmFlag(d, "dym_alarm")
                 val overheat = alarmFlag(d, "alarm_ogrzewanie")
@@ -438,6 +449,9 @@ class AlarmMonitorService : Service() {
         if (!d.has(key) || d.isNull(key)) return null
         return parseAlarmFlag(d.opt(key))
     }
+
+    private fun alarmFlagSignature(d: JSONObject): Pair<Boolean?, Boolean?> =
+        alarmFlag(d, "dym_alarm") to alarmFlag(d, "alarm_ogrzewanie")
 
     private fun number(d: JSONObject, key: String): Double {
         if (!d.has(key) || d.isNull(key)) return Double.NaN

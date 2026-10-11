@@ -31,6 +31,20 @@ class AlarmSnapshotGateTest {
     }
 
     @Test
+    fun unrelatedServiceSnapshotDoesNotInvalidateForegroundStatusPoll() {
+        val gate = AlarmSnapshotGate()
+        val requestRevision = gate.captureRevision()
+        var serviceSnapshotApplied = false
+        gate.applyServiceSnapshot(alarmFlagsMayHaveChanged = false) { serviceSnapshotApplied = true }
+        var pollApplied = false
+        val accepted = gate.applyPollIfCurrent(requestRevision) { pollApplied = true }
+
+        assertTrue(serviceSnapshotApplied)
+        assertTrue(accepted)
+        assertTrue(pollApplied)
+    }
+
+    @Test
     fun firstAcceptedPollInvalidatesOlderOverlappingPoll() {
         val gate = AlarmSnapshotGate()
         val sharedRevision = gate.captureRevision()

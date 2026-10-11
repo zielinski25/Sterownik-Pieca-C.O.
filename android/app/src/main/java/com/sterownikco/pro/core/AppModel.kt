@@ -55,7 +55,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         .callTimeout(15, TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
         .build()
-    private val pollMutex = Mutex()
+    private val statusPollGate = StatusPollGate()
+    private enum class StatusPollResult { APPLIED, FAILED, SUPERSEDED }
     private val weatherMutex = Mutex()
     private val terminalCommandMutex = Mutex()
 
@@ -258,70 +259,96 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     // ── Firebase ────────────────────────────────────────────────────────────
     fun poll() = scope.launch { pollAwait() }
 
-    private suspend fun pollAwait(): Boolean {
+    /**
+     * Routine refreshes are best-effort and coalesce while a poll is active. After an ACK,
+     * the caller must wait for the active poll to finish and then fetch a fresh snapshot;
+     * dropping that request leaves every state-driven sheet stale until the next 8 s tick.
+     */
+    private suspend fun pollAwait(waitForInFlight: Boolean = false): Boolean {
         if (Rtdb.refreshToken.isBlank()) {
             connected = false
             termStateKnown = false
             return false
         }
-        if (!pollMutex.tryLock()) return false
-        try {
-            val startRevision = AlarmSnapshotCoordinator.captureRevision()
-            val d = try { Rtdb.pollStatus() } catch (e: Exception) { null }
-            if (d == null) {
-                AlarmSnapshotCoordinator.applyPollIfCurrent(startRevision) {
-                    connected = false
-                    termStateKnown = false
-                    S.bump()
-                }
-                return false
-            }
+        val result = statusPollGate.withPoll(skipIfBusy = !waitForInFlight) {
+            val first = pollStatusLocked()
+            if (waitForInFlight && first == StatusPollResult.SUPERSEDED) {
+                // A newer alarm-state event can still race this read; fetch once more against
+                // the new revision instead of leaving the post-ACK sheet on its old snapshot.
+                pollStatusLocked()
+            } else first
+        }
+        return result == StatusPollResult.APPLIED
+    }
 
-            return AlarmSnapshotCoordinator.applyPollIfCurrent(startRevision) {
-                connected = true
-                lastFetchTs = System.currentTimeMillis()
-                S.applyIncomingData(d)
+    /** Runs only while [statusPollGate] is held. */
+    private suspend fun pollStatusLocked(): StatusPollResult {
+        if (Rtdb.refreshToken.isBlank()) {
+            connected = false
+            termStateKnown = false
+            return StatusPollResult.FAILED
+        }
+
+        val startRevision = AlarmSnapshotCoordinator.captureRevision()
+        val d = try {
+            Rtdb.pollStatus()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        if (d == null) {
+            val applied = AlarmSnapshotCoordinator.applyPollIfCurrent(startRevision) {
+                connected = false
+                termStateKnown = false
                 S.bump()
-                if (S.online) {
-                    recordSolar()
-                    if (page == 1) appendLiveFeed()
-                }
-                // Alarmy oceniaj wyłącznie na podstawie flag zwróconych przez sterownik.
-                try {
-                    if (S.hasAllData("dym_alarm", "alarm_ogrzewanie")) {
-                        val info = AlarmCenter.evaluate(prefs, S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym)
-                        when {
-                            info != null -> {
-                                AlarmNotify.fire(ctx, info)
-                                showAlarmPopup(info)
-                            }
-                            !S.dym_alarm && !S.alarm_ogrzewanie -> {
-                                AlarmNotify.cancel(ctx)
-                                clearAlarmPopup()
-                            }
-                            AlarmCenter.shouldLoopSound(prefs, S.dym_alarm, S.alarm_ogrzewanie) -> {
-                                val currentInfo = AlarmCenter.describeActiveFlags(
-                                    S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym
-                                )
-                                if (currentInfo != null) restoreActiveAlarmPopup(currentInfo)
-                                if (currentInfo != null && !AlarmNotify.postIfMissing(ctx, currentInfo)) {
-                                    val kind = AlarmCenter.kindFor(S.dym_alarm, S.alarm_ogrzewanie)
-                                    AlarmMonitorService.startAlarmLoop(ctx, AlarmCenter.sound(prefs, kind))
-                                }
-                            }
-                            else -> {
-                                AlarmNotify.cancelLegacyNotification(ctx)
-                                AlarmMonitorService.stopAlarmLoop()
+            }
+            return if (applied) StatusPollResult.FAILED else StatusPollResult.SUPERSEDED
+        }
+
+        val applied = AlarmSnapshotCoordinator.applyPollIfCurrent(startRevision) {
+            connected = true
+            lastFetchTs = System.currentTimeMillis()
+            S.applyIncomingData(d)
+            S.bump()
+            if (S.online) {
+                recordSolar()
+                if (page == 1) appendLiveFeed()
+            }
+            // Alarmy oceniaj wyłącznie na podstawie flag zwróconych przez sterownik.
+            try {
+                if (S.hasAllData("dym_alarm", "alarm_ogrzewanie")) {
+                    val info = AlarmCenter.evaluate(prefs, S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym)
+                    when {
+                        info != null -> {
+                            AlarmNotify.fire(ctx, info)
+                            showAlarmPopup(info)
+                        }
+                        !S.dym_alarm && !S.alarm_ogrzewanie -> {
+                            AlarmNotify.cancel(ctx)
+                            clearAlarmPopup()
+                        }
+                        AlarmCenter.shouldLoopSound(prefs, S.dym_alarm, S.alarm_ogrzewanie) -> {
+                            val currentInfo = AlarmCenter.describeActiveFlags(
+                                S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym
+                            )
+                            if (currentInfo != null) restoreActiveAlarmPopup(currentInfo)
+                            if (currentInfo != null && !AlarmNotify.postIfMissing(ctx, currentInfo)) {
+                                val kind = AlarmCenter.kindFor(S.dym_alarm, S.alarm_ogrzewanie)
+                                AlarmMonitorService.startAlarmLoop(ctx, AlarmCenter.sound(prefs, kind))
                             }
                         }
+                        else -> {
+                            AlarmNotify.cancelLegacyNotification(ctx)
+                            AlarmMonitorService.stopAlarmLoop()
+                        }
                     }
-                } catch (e: Exception) { /* alarm nie może wywalić poll() */ }
-                // Widget na pulpit (throttling w środku).
-                try { PiecWidget.push(ctx, d) } catch (e: Exception) { /* ignore */ }
-            }
-        } finally {
-            pollMutex.unlock()
+                }
+            } catch (e: Exception) { /* alarm nie może wywalić poll() */ }
+            // Widget na pulpit (throttling w środku).
+            try { PiecWidget.push(ctx, d) } catch (e: Exception) { /* ignore */ }
         }
+        return if (applied) StatusPollResult.APPLIED else StatusPollResult.SUPERSEDED
     }
 
     /** Logowanie kontem e-mail + hasło; zapamiętanie hasła jest opcjonalne i szyfrowane. */
@@ -432,9 +459,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     showToast(commandLabel, "Potwierdzone przez sterownik (ACK, ${latency}ms)", "ok")
                     addLog("ACK", "ACK OK (${latency}ms): $commandLabel", "ack")
                     buzz()
-                    // Dociągnij snapshot po ACK, żeby UI pokazał wyłącznie stan
-                    // symulacji raportowany przez centralę (bez lokalnego ACK).
-                    pollAwait()
+                    // Dociągnij świeży snapshot po ACK. Wymuś oczekiwanie na ewentualny
+                    // cykliczny poll, zamiast gubić odświeżenie w jego trakcie.
+                    pollAwait(waitForInFlight = true)
                     true
                 }
                 else -> {
@@ -446,6 +473,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     false
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val errorText = if (sensitive) "Błąd wysyłki poufnego polecenia"
                 else "Błąd wysyłki: ${e.message ?: "brak"}"

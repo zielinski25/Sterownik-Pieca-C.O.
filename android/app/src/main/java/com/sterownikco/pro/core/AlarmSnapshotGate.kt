@@ -2,9 +2,9 @@ package com.sterownikco.pro.core
 
 /**
  * Serializes foreground polling with snapshots accepted by the alarm-monitor service.
- * Capture a revision before network I/O; a poll result is rejected if a newer service snapshot
- * or poll result was applied while that request was in flight. Network calls must stay outside
- * this lock.
+ * Capture a revision before network I/O; a poll result is rejected if alarm flags or a newer
+ * foreground poll changed while that request was in flight. Unrelated SSE fields do not
+ * invalidate a full status poll. Network calls must stay outside this lock.
  */
 internal class AlarmSnapshotGate {
     private var revision = 0L
@@ -13,8 +13,11 @@ internal class AlarmSnapshotGate {
     fun captureRevision(): Long = revision
 
     @Synchronized
-    fun applyServiceSnapshot(apply: () -> Unit) {
-        revision += 1L
+    fun applyServiceSnapshot(alarmFlagsMayHaveChanged: Boolean = true, apply: () -> Unit) {
+        // Foreground status polls also contain unrelated controls and telemetry. An SSE update
+        // to one of those fields must not invalidate the whole poll; only a change to the alarm
+        // flags can make the poll's alarm evaluation stale.
+        if (alarmFlagsMayHaveChanged) revision += 1L
         apply()
     }
 
@@ -33,7 +36,10 @@ internal object AlarmSnapshotCoordinator {
 
     fun captureRevision(): Long = gate.captureRevision()
 
-    fun applyServiceSnapshot(apply: () -> Unit) = gate.applyServiceSnapshot(apply)
+    fun applyServiceSnapshot(
+        alarmFlagsMayHaveChanged: Boolean = true,
+        apply: () -> Unit
+    ) = gate.applyServiceSnapshot(alarmFlagsMayHaveChanged, apply)
 
     fun applyPollIfCurrent(startRevision: Long, apply: () -> Unit): Boolean =
         gate.applyPollIfCurrent(startRevision, apply)
