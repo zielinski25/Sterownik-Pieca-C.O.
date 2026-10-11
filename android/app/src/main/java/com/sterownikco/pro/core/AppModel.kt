@@ -63,6 +63,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var connected by mutableStateOf(false)
     var lastFetchTs = 0L
     var dashboardWidgets by mutableStateOf(TileDefs.DEFAULT_VISIBLE_IDS)
+    var dashboardWidgetOrder by mutableStateOf(TileDefs.TILES.map { it.id })
     var authOpen by mutableStateOf(false)
     /** Okienko alarmu w aplikacji (gdy system nie odpali FSI na pierwszym planie). */
     var alarmPopup by mutableStateOf<AlarmInfo?>(null)
@@ -154,6 +155,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         ChartSeries.SERVO.forEach { seriesOn[it.id] = it.on }
         loadChartPrefs()
         loadDashboardWidgets()
+        loadDashboardWidgetOrder()
         refreshWeather(false)
 
         // Przywróć konto po udanym wcześniejszym logowaniu; hasło jest w Android Keystore.
@@ -792,6 +794,27 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         }
     }
 
+    private fun loadDashboardWidgetOrder() {
+        val canonical = TileDefs.TILES.map { it.id }
+        val raw = prefs.get(Prefs.K_DASH_WIDGET_ORDER)
+        if (raw == null) {
+            dashboardWidgetOrder = canonical
+            return
+        }
+        try {
+            val allowed = canonical.toSet()
+            val stored = JSONArray(raw)
+            val order = linkedSetOf<String>()
+            for (i in 0 until stored.length()) {
+                stored.optString(i).takeIf { it in allowed }?.let(order::add)
+            }
+            canonical.forEach(order::add)
+            dashboardWidgetOrder = order.toList()
+        } catch (e: Exception) {
+            dashboardWidgetOrder = canonical
+        }
+    }
+
     fun setDashboardWidgetEnabled(id: String, enabled: Boolean) {
         if (TileDefs.TILES.none { it.id == id }) return
         val next = dashboardWidgets.toMutableSet()
@@ -800,9 +823,18 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         prefs.set(Prefs.K_DASH_WIDGETS, JSONArray(next.toList()).toString())
     }
 
+    fun moveDashboardWidget(draggedId: String, targetId: String) {
+        val next = reorderTileWithinSection(dashboardWidgetOrder, TileDefs.TILES, draggedId, targetId)
+        if (next == dashboardWidgetOrder) return
+        dashboardWidgetOrder = next
+        prefs.set(Prefs.K_DASH_WIDGET_ORDER, JSONArray(next).toString())
+    }
+
     fun resetDashboardWidgets() {
         dashboardWidgets = TileDefs.DEFAULT_VISIBLE_IDS
+        dashboardWidgetOrder = TileDefs.TILES.map { it.id }
         prefs.set(Prefs.K_DASH_WIDGETS, JSONArray(dashboardWidgets.toList()).toString())
+        prefs.set(Prefs.K_DASH_WIDGET_ORDER, JSONArray(dashboardWidgetOrder).toString())
     }
 
     // (setLayoutMode usunięty z APK — przełącznik telefon/PC tylko w Piec.html.)

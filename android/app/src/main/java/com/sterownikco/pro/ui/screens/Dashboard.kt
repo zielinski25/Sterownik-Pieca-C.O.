@@ -3,6 +3,7 @@ package com.sterownikco.pro.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,11 +19,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.core.buildTiles
@@ -52,7 +64,9 @@ fun Dashboard(m: AppModel) {
     val isDay = m.weather?.current?.isDay ?: (!S.night)
     val art = remember(rev, weatherCode, isDay) { S.art(weatherCode, isDay) }
     val tiles = remember(rev, weatherCode, isDay, m.weather, m.weatherBusy) { buildTiles(m, weatherCode, isDay) }
+    val orderIndex = m.dashboardWidgetOrder.withIndex().associate { it.value to it.index }
     val selectedTiles = tiles.filter { it.id in m.dashboardWidgets }
+        .sortedBy { orderIndex[it.id] ?: Int.MAX_VALUE }
     val measurementTiles = selectedTiles.filter { it.grid == 1 }
     val controlTiles = selectedTiles.filter { it.grid == 2 }
     val to = S.valOf("ogrz", "t_ogrz")
@@ -147,6 +161,12 @@ fun Dashboard(m: AppModel) {
             )
         }
 
+        if (selectedTiles.isNotEmpty()) {
+            Text(
+                "Przytrzymaj uchwyt z kropkami na kafelku i przeciągnij go w inne miejsce tej sekcji.",
+                style = Txt.note
+            )
+        }
         if (measurementTiles.isNotEmpty()) {
             Sect("Pomiary")
             TileGrid(measurementTiles, m, art)
@@ -185,22 +205,107 @@ fun Dashboard(m: AppModel) {
 
 @Composable
 private fun TileGrid(list: List<com.sterownikco.pro.core.TileSpec>, m: AppModel, art: com.sterownikco.pro.ui.art.ArtState) {
+    val positions = remember { mutableStateMapOf<String, Rect>() }
+    val ids = list.map { it.id }
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var dragStartBounds by remember { mutableStateOf<Rect?>(null) }
+    val minReorderDistance = with(LocalDensity.current) { 24.dp.toPx() }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         list.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 row.forEach { spec ->
-                    Box(Modifier.weight(1f)) {
-                        Tile(spec = spec, art = art, onClick = {
-                            val target = m.menuForTile(spec.id)
-                            if (target != null) m.openSheet(target)
-                            else if (spec.id == "weather") { m.page = 2; m.refreshWeatherTab() }
-                        })
+                    Box(Modifier.weight(1f).zIndex(if (draggingId == spec.id) 1f else 0f)) {
+                        Tile(
+                            spec = spec,
+                            art = art,
+                            onClick = {
+                                val target = m.menuForTile(spec.id)
+                                if (target != null) m.openSheet(target)
+                                else if (spec.id == "weather") { m.page = 2; m.refreshWeatherTab() }
+                            },
+                            modifier = Modifier
+                                .onGloballyPositioned { coordinates ->
+                                    if (draggingId != spec.id) {
+                                        val topLeft = coordinates.positionInRoot()
+                                        val bounds = Rect(
+                                            topLeft.x,
+                                            topLeft.y,
+                                            topLeft.x + coordinates.size.width.toFloat(),
+                                            topLeft.y + coordinates.size.height.toFloat()
+                                        )
+                                        if (positions[spec.id] != bounds) positions[spec.id] = bounds
+                                    }
+                                }
+                                .graphicsLayer {
+                                    val active = draggingId == spec.id
+                                    translationX = if (active) dragOffset.x else 0f
+                                    translationY = if (active) dragOffset.y else 0f
+                                    scaleX = if (active) 1.035f else 1f
+                                    scaleY = if (active) 1.035f else 1f
+                                    shadowElevation = if (active) 16.dp.toPx() else 0f
+                                },
+                            dragHandleModifier = Modifier.pointerInput(spec.id, ids, minReorderDistance) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { _ ->
+                                        draggingId = spec.id
+                                        dragOffset = Offset.Zero
+                                        dragStartBounds = positions[spec.id]
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        if (draggingId == spec.id) dragOffset += amount
+                                    },
+                                    onDragEnd = {
+                                        val origin = dragStartBounds
+                                        val offset = dragOffset
+                                        if (origin != null && offset.getDistance() >= minReorderDistance) {
+                                            val dropCenter = origin.center + offset
+                                            val target = ids.asSequence()
+                                                .filter { it != spec.id }
+                                                .mapNotNull { id -> positions[id]?.let { id to it } }
+                                                .minByOrNull { (_, bounds) -> bounds.distanceTo(dropCenter) }
+                                            val maxDropDistance = maxOf(origin.width, origin.height) * .6f
+                                            if (target != null && target.second.distanceTo(dropCenter) <= maxDropDistance) {
+                                                m.moveDashboardWidget(spec.id, target.first)
+                                            }
+                                        }
+                                        draggingId = null
+                                        dragOffset = Offset.Zero
+                                        dragStartBounds = null
+                                    },
+                                    onDragCancel = {
+                                        draggingId = null
+                                        dragOffset = Offset.Zero
+                                        dragStartBounds = null
+                                    }
+                                )
+                            }
+                        )
                     }
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
+}
+
+private fun Rect.distanceTo(point: Offset): Float {
+    val dx = when {
+        point.x < left -> left - point.x
+        point.x > right -> point.x - right
+        else -> 0f
+    }
+    val dy = when {
+        point.y < top -> top - point.y
+        point.y > bottom -> point.y - bottom
+        else -> 0f
+    }
+    return kotlin.math.sqrt(dx * dx + dy * dy)
 }
 
 /** `.acard` — karta analizy (74 px, ikona + tytuł + opis + strzałka). */

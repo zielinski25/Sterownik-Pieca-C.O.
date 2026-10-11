@@ -33,6 +33,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,7 +74,13 @@ private fun badgeColors(cls: String): Pair<Color, Color> = when (cls) {
 }
 
 @Composable
-fun Tile(spec: TileSpec, art: ArtState, onClick: () -> Unit) {
+fun Tile(
+    spec: TileSpec,
+    art: ArtState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    dragHandleModifier: Modifier = Modifier
+) {
     val displayValue = (if (spec.sim) "~" else "") + spec.value
     val accent = tileAccent(spec.cls)
     val alarm = spec.state == "err"
@@ -102,9 +110,10 @@ fun Tile(spec: TileSpec, art: ArtState, onClick: () -> Unit) {
         else -> Pal.TileValue
     }
     Box(
-        modifier = Modifier.fillMaxWidth().height(Dimens.tileH).clip(RoundedCornerShape(Dimens.radiusTile))
-            .background(bgBrush).border(1.dp, borderColor, RoundedCornerShape(Dimens.radiusTile))
+        modifier = modifier.fillMaxWidth().height(Dimens.tileH)
             .clickable { onClick() }
+            .clip(RoundedCornerShape(Dimens.radiusTile))
+            .background(bgBrush).border(1.dp, borderColor, RoundedCornerShape(Dimens.radiusTile))
     ) {
         // poświata akcentu (kopiada .tile::before)
         Box(
@@ -132,14 +141,30 @@ fun Tile(spec: TileSpec, art: ArtState, onClick: () -> Unit) {
         // plakietka
         val (bfg, bbg) = badgeColors(if (spec.sim) "sim" else spec.badgeCls)
         Row(
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 8.dp).height(18.dp)
-                .background(bbg, RoundedCornerShape(9.dp)).border(1.dp, bfg.copy(alpha = .3f), RoundedCornerShape(9.dp))
-                .padding(horizontal = 7.dp),
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Box(Modifier.size(4.dp).background(bfg, RoundedCornerShape(50)))
-            Text(spec.badge, style = Txt.badge, color = bfg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(
+                modifier = Modifier.size(40.dp)
+                    .background(Color(0x1AFFFFFF), RoundedCornerShape(9.dp))
+                    .then(dragHandleModifier)
+                    .semantics { contentDescription = "Uchwyt przesuwania kafelka ${spec.title}" },
+                contentAlignment = Alignment.Center
+            ) {
+                AppIcon("drag", size = 19.dp, tint = Pal.TextDim2)
+            }
+            Row(
+                modifier = Modifier.height(18.dp)
+                    .background(bbg, RoundedCornerShape(9.dp))
+                    .border(1.dp, bfg.copy(alpha = .3f), RoundedCornerShape(9.dp))
+                    .padding(horizontal = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Box(Modifier.size(4.dp).background(bfg, RoundedCornerShape(50)))
+                Text(spec.badge, style = Txt.badge, color = bfg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         // tytuł / wartość / opis
         Text(

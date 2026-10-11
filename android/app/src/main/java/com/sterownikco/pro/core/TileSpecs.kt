@@ -53,6 +53,32 @@ object TileDefs {
     val DEFAULT_VISIBLE_IDS: Set<String> = TILES.filter { it.defaultOn }.map { it.id }.toSet()
 }
 
+/** Move a tile to the target slot while preserving the order of other dashboard sections. */
+internal fun reorderTileWithinSection(
+    order: List<String>,
+    definitions: List<DashboardTileDef>,
+    draggedId: String,
+    targetId: String
+): List<String> {
+    if (draggedId == targetId) return order
+    val byId = definitions.associateBy { it.id }
+    val section = byId[draggedId]?.grid ?: return order
+    if (byId[targetId]?.grid != section) return order
+
+    val sectionOrder = order.filter { byId[it]?.grid == section }.toMutableList()
+    val from = sectionOrder.indexOf(draggedId)
+    val target = sectionOrder.indexOf(targetId)
+    if (from < 0 || target < 0) return order
+
+    sectionOrder.removeAt(from)
+    sectionOrder.add(target.coerceIn(0, sectionOrder.size), draggedId)
+
+    var sectionIndex = 0
+    return order.map { id ->
+        if (byId[id]?.grid == section) sectionOrder[sectionIndex++] else id
+    }
+}
+
 fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
     val S = m.S
     fun fmt1(v: Double) = if (v.isFinite()) String.format(java.util.Locale.US, "%.1f", v) else "—"

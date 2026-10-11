@@ -318,6 +318,7 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         const val K_REMEMBER_CREDS = "piec_fb_remember_credentials"
         const val K_CMD_TOKEN = "piec_cmd_token"
         const val K_DASH_WIDGETS = "piec_dashboard_widgets_v1"
+        const val K_DASH_WIDGET_ORDER = "piec_dashboard_widget_order_v1"
         const val K_ID_TOKEN = "piec_fb_token"
         const val K_REF_TOKEN = "piec_fb_ref_token"
         const val K_TG_TOKEN = "piec_tg_token"
