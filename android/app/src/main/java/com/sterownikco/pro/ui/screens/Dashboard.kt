@@ -148,17 +148,20 @@ fun Dashboard(m: AppModel) {
             )
             val mixerKnown = S.hasData("mieszadlo")
             val mixerEnabledKnown = S.hasData("mieszadloWlaczony")
+            val mixerPulseActive = m.mixerPulsePresentationActive()
+            val mixerPulseDurationLabel = S.mieszadloCzasOn.takeIf { S.hasData("mieszadloCzasOn") }?.let { "$it s" } ?: "Czas ON"
             QCard(
                 title = "MIESZADŁO", icon = "mixer",
-                value = if (!mixerKnown) "—" else if (S.mieszadlo) "WŁĄCZONE" else "WYŁĄCZONE",
+                value = if (mixerPulseActive) "IMPULS" else if (!mixerKnown) "—" else if (S.mieszadlo) "WŁĄCZONE" else "WYŁĄCZONE",
                 sub = when {
+                    mixerPulseActive -> "jeden cykl: $mixerPulseDurationLabel"
                     !mixerKnown -> "oczekiwanie na stan"
                     S.hasData("rozpalanie") && S.rozpalanie -> "override: rozpalanie"
                     mixerEnabledKnown && !S.mieszadloWlaczony -> "automatyka wyłączona"
                     mixerEnabledKnown && S.mieszadloWlaczony -> "automatyka aktywna"
                     else -> "stan pracy odebrany"
                 },
-                state = if (mixerKnown && S.mieszadlo) "ok" else if (!mixerKnown) "warn" else "",
+                state = if (mixerPulseActive || mixerKnown && S.mieszadlo) "ok" else if (!mixerKnown) "warn" else "",
                 onClick = { m.openSheet("mieszadlo") }
             )
         }

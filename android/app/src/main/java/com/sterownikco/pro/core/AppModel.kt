@@ -75,6 +75,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** ACK-only presentations until the slower `/piec/status` snapshot catches up. */
     private var pumpModeAckOverride by mutableStateOf<Int?>(null)
     private var mixerModeAckOverride by mutableStateOf<Int?>(null)
+    private var mixerPulseCommandInFlight by mutableStateOf(false)
+    private var mixerPulseAckUntilMs by mutableLongStateOf(0L)
+    private var mixerPulseUiJob: Job? = null
     private var smokeModeAckOverride by mutableStateOf<Int?>(null)
     private var servoModeAckOverride by mutableStateOf<Int?>(null)
     var dashboardWidgets by mutableStateOf(TileDefs.DEFAULT_VISIBLE_IDS)
@@ -459,6 +462,15 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         reportedMixerOn = S.mieszadlo.takeIf { S.hasData("mieszadlo") }
     )
 
+    internal fun mixerPulsePresentationActive(): Boolean =
+        System.currentTimeMillis() < mixerPulseAckUntilMs
+
+    internal fun mixerPulseButtonLabel(): String = when {
+        mixerPulseCommandInFlight -> "Wysyłanie…"
+        mixerPulsePresentationActive() -> "Impuls trwa"
+        else -> "1 cykl"
+    }
+
     private fun updatePumpModeAckOverride(mode: Int?) {
         val valid = mode?.takeIf { it in 1..3 }
         if (pumpModeAckOverride == valid) return
@@ -556,6 +568,49 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     /**
+     * Uruchamia impuls po stronie centrali. Wyłączenie czasowe nie zależy od
+     * telefonu, więc zadziała także po zamknięciu aplikacji lub utracie sieci.
+     */
+    fun triggerMixerPulse() {
+        if (mixerPulseCommandInFlight || mixerPulsePresentationActive()) {
+            showToast("MIESZADŁO", "Impuls już trwa albo czeka na potwierdzenie.", "wait")
+            return
+        }
+        mixerPulseCommandInFlight = true
+        S.bump()
+        scope.launch {
+            try {
+                val accepted = mixerModeCommandMutex.withLock {
+                    sendAwait("mieszadlo_puls") {
+                        mixerPulseCommandInFlight = false
+                        val durationSeconds = S.mieszadloCzasOn
+                            .takeIf { S.hasData("mieszadloCzasOn") && it in 1..255 } ?: 30
+                        val until = System.currentTimeMillis() + durationSeconds * 1000L + 750L
+                        mixerPulseAckUntilMs = until
+                        S.bump()
+                        mixerPulseUiJob?.cancel()
+                        mixerPulseUiJob = scope.launch {
+                            delay((until - System.currentTimeMillis()).coerceAtLeast(1L))
+                            if (mixerPulseAckUntilMs == until) {
+                                mixerPulseAckUntilMs = 0L
+                                S.bump()
+                            }
+                        }
+                    }
+                }
+                if (!accepted && mixerPulseCommandInFlight) {
+                    mixerPulseCommandInFlight = false
+                    S.bump()
+                }
+            } catch (e: CancellationException) {
+                mixerPulseCommandInFlight = false
+                S.bump()
+                throw e
+            }
+        }
+    }
+
+    /**
      * Tryb mieszadła: 0 = Auto, 1 = wymuś ON, 2 = wymuś OFF. ACK zmienia
      * tylko chwilową prezentację; stan centrali nadal rozstrzyga status RTDB.
      */
@@ -565,6 +620,16 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             1 -> "mieszadlo_wl"
             2 -> "mieszadlo_wyl"
             else -> return
+        }
+        if (mixerPulseCommandInFlight) {
+            showToast("MIESZADŁO", "Impuls jest wysyłany — poczekaj na potwierdzenie.", "wait")
+            return
+        }
+        if (mixerPulsePresentationActive()) {
+            mixerPulseUiJob?.cancel()
+            mixerPulseUiJob = null
+            mixerPulseAckUntilMs = 0L
+            S.bump()
         }
         val requestId = ++mixerModeRequestId
         updateMixerModeAckOverride(null)

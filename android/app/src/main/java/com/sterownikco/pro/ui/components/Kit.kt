@@ -318,19 +318,24 @@ fun ManualRow(
     prefix: String,
     onSend: (String) -> Unit,
     modifier: Modifier = Modifier,
-    selectedCommand: String? = null
+    selectedCommand: String? = null,
+    actions: List<Pair<String, String>>? = null
 ) {
+    val buttons = actions ?: listOf(
+        "Wymuś WŁ." to prefix + "_wl",
+        "Wymuś WYŁ." to prefix + "_wyl",
+        "Auto" to prefix + "_auto"
+    )
     Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Wymuś WŁ." to prefix + "_wl", "Wymuś WYŁ." to prefix + "_wyl", "Auto" to prefix + "_auto")
-            .forEach { (label, cmd) ->
-                Box(Modifier.weight(1f)) {
-                    UstBtn(
-                        label = label,
-                        onClick = { onSend(cmd) },
-                        modifier = Modifier.fillMaxWidth(),
-                        variant = if (cmd == selectedCommand) "primary" else "plain"
-                    )
-                }
+        buttons.forEach { (label, cmd) ->
+            Box(Modifier.weight(1f)) {
+                UstBtn(
+                    label = label,
+                    onClick = { onSend(cmd) },
+                    modifier = Modifier.fillMaxWidth(),
+                    variant = if (cmd == selectedCommand) "primary" else "plain"
+                )
             }
+        }
     }
 }

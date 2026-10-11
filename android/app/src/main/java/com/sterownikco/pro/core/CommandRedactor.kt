@@ -57,6 +57,7 @@ internal object CommandRedactor {
         "pompa_wl" to "Pompa CO: ręczne włączenie",
         "pompa_wyl" to "Pompa CO: ręczne wyłączenie",
         "pompa_auto" to "Pompa CO: powrót do automatyki",
+        "mieszadlo_puls" to "Mieszadło: jeden cykl",
         "mieszadlo_wl" to "Mieszadło: ręczne włączenie",
         "mieszadlo_wyl" to "Mieszadło: ręczne wyłączenie",
         "mieszadlo_auto" to "Mieszadło: powrót do automatyki",

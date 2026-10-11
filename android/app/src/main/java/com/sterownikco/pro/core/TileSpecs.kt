@@ -307,20 +307,23 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
 
     // ── mieszadlo ────────────────────────────────────────────────────────────
     val mixerKnown = S.hasData("mieszadlo")
+    val mixerPulseActive = m.mixerPulsePresentationActive()
+    val mixerPulseDurationLabel = S.mieszadloCzasOn.takeIf { S.hasData("mieszadloCzasOn") }?.let { "$it s" } ?: "Czas ON"
     out.add(
         TileSpec(
             id = "mieszadlo", title = "Mieszadło", grid = 2,
-            value = if (!mixerKnown) "—" else if (S.mieszadlo) "WŁĄCZONE" else "WYŁĄCZONE",
+            value = if (mixerPulseActive) "IMPULS" else if (!mixerKnown) "—" else if (S.mieszadlo) "WŁĄCZONE" else "WYŁĄCZONE",
             cls = if (mixerKnown) "c-ok" else "c-none",
-            state = if (mixerKnown && S.mieszadlo) "ok" else "",
-            frac = if (mixerKnown && S.mieszadlo) 1.0 else 0.0,
+            state = if (mixerPulseActive || mixerKnown && S.mieszadlo) "ok" else "",
+            frac = if (mixerPulseActive || mixerKnown && S.mieszadlo) 1.0 else 0.0,
             desc = when {
+                mixerPulseActive -> "jeden cykl: $mixerPulseDurationLabel"
                 !mixerKnown -> "oczekiwanie na stan mieszadła"
                 S.rozpalanie && S.hasData("rozpalanie") -> "override: rozpalanie"
                 S.mieszadloWlaczony && S.hasData("mieszadloWlaczony") && S.hasAllData("mieszadloCzasOn", "mieszadloCzasOff") -> "cykl ${S.mieszadloCzasOn} s / ${S.mieszadloCzasOff} min"
                 else -> "stan odebrany"
             },
-            badge = if (!mixerKnown) "BRAK DANYCH" else if (S.mieszadlo) "PRACUJE" else "POSTÓJ",
+            badge = if (mixerPulseActive) "1 CYKL" else if (!mixerKnown) "BRAK DANYCH" else if (S.mieszadlo) "PRACUJE" else "POSTÓJ",
             badgeCls = if (mixerKnown && !stale) "live" else "stale",
             stale = stale || !mixerKnown, artKey = "mieszadlo"
         )
