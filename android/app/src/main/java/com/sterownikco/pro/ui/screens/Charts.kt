@@ -108,7 +108,10 @@ private fun SeriesChip(label: String, accentHex: String, on: Boolean, onClick: (
 @Composable
 fun ChartsPage(m: AppModel) {
     val rev = m.sheetTick
-    val dataset = remember(m.telemetry.size, m.chartLive.size, m.chartPoints, rev) { m.chartDataset() }
+    // Używaj samych niezmiennych migawek list, nie tylko ich rozmiarów. chartLive
+    // jest ograniczane do 240 wpisów, więc klucz oparty na size zamrażałby wykres
+    // po dojściu do limitu, mimo że kolejne próbki nadal napływają.
+    val dataset = remember(m.telemetry, m.chartLive, rev) { m.chartDataset() }
     val cat = m.catalogOn()
     val view = remember(dataset, cat, m.chartZoom, m.chartOffset, m.chartFocus, m.chartMode, m.chartGlitch) {
         buildChartView(dataset, cat, m.chartZoom, m.chartOffset, m.chartFocus, m.chartMode, m.chartGlitch)

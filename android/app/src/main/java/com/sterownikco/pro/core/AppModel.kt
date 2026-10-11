@@ -542,6 +542,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     chartPoints = fb.size
                     chartStatus = "Załadowano ${fb.size} próbek z RTDB · odcinki symulowane są kreskowane"
                     chartReality = "FIREBASE RTDB"
+                    // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
+                    // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
+                    appendLiveFeed()
                     return@launch
                 }
             } catch (e: Exception) { /* fallback poniżej, jak w panelu */ }
