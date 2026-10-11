@@ -17,6 +17,7 @@ import com.sterownikco.pro.widget.PiecWidget
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -506,7 +507,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         }
         showToast(label, "Sterownik przyjął tryb — oczekuję na świeży odczyt.", "wait")
         val deadline = System.currentTimeMillis() + 30_000L
-        while (isActive && requestId == currentRequestId() && System.currentTimeMillis() < deadline) {
+        val coroutineContext = currentCoroutineContext()
+        while (coroutineContext.isActive && requestId == currentRequestId() && System.currentTimeMillis() < deadline) {
             if (!awaitingStatus()) {
                 clearOverride()
                 showToast(label, "Status centrali potwierdził nowy tryb.", "ok")
