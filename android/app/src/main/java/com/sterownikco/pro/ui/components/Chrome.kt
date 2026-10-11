@@ -166,6 +166,7 @@ fun Banner(text: String, kind: String, action: String? = null, onAction: (() -> 
 /** `.hero` — temperatura + ilustracja kotła + 3 statystyki. */
 @Composable
 fun Hero(m: AppModel, art: ArtState, alarm: Boolean, heroSub: String) {
+    val servoMode = m.servoModePresentation().mode
     Column(
         modifier = Modifier.fillMaxWidth()
             .background(Brush.linearGradient(listOf(Pal.HeroA, Pal.HeroB)), RoundedCornerShape(20.dp))
@@ -193,7 +194,7 @@ fun Hero(m: AppModel, art: ArtState, alarm: Boolean, heroSub: String) {
         }
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth().background(Pal.rgba(8, 20, 33, .55f), RoundedCornerShape(13.dp)).padding(9.dp, 7.dp)) {
-            HStat("TRYB SERWA", PiecTrybNazwa(m), if (!m.S.hasData("tryb_serwa")) Pal.TextDim else if (m.S.tryb_serwa == 2) Pal.Warn else if (m.S.tryb_serwa == 3) Pal.Err else Pal.White, Modifier.weight(1f))
+            HStat("TRYB SERWA", PiecTrybNazwa(m), if (servoMode == null) Pal.TextDim else if (servoMode == 2) Pal.Warn else if (servoMode == 3) Pal.Err else Pal.White, Modifier.weight(1f))
             HStat("POMPA C.O.", if (m.S.hasData("pompa")) if (m.S.pompa) "ON" else "OFF" else "—", if (!m.S.hasData("pompa")) Pal.TextDim else if (m.S.pompa) Pal.Live else Pal.TextDim, Modifier.weight(1f))
             HStat("BEZPIECZEŃSTWO", alarmSummary(m), if (anyAlarm(m)) Pal.Err else if (m.S.hasAllData("dym_alarm", "alarm_ogrzewanie", "alarm_panel")) Pal.Live else Pal.TextDim, Modifier.weight(1f))
         }
@@ -201,9 +202,7 @@ fun Hero(m: AppModel, art: ArtState, alarm: Boolean, heroSub: String) {
 }
 
 private fun PiecTrybNazwa(m: AppModel): String =
-    if (m.S.hasData("tryb_serwa") && m.S.tryb_serwa in 1..3) {
-        com.sterownikco.pro.core.PiecState.TRYB_NAZWA[m.S.tryb_serwa] ?: "—"
-    } else "—"
+    m.servoModePresentation().mode?.let { com.sterownikco.pro.core.PiecState.TRYB_NAZWA[it] } ?: "—"
 fun anyAlarm(m: AppModel): Boolean =
     (m.S.hasData("dym_alarm") && m.S.dym_alarm) ||
         (m.S.hasData("alarm_ogrzewanie") && m.S.alarm_ogrzewanie) ||

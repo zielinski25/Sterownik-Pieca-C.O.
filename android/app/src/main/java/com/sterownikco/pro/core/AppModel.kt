@@ -57,12 +57,16 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         .build()
     private val statusPollGate = StatusPollGate()
     private enum class StatusPollResult { APPLIED, FAILED, SUPERSEDED }
+    private val servoModeCommandMutex = Mutex()
+    private var servoModeRequestId = 0L
     private val weatherMutex = Mutex()
     private val terminalCommandMutex = Mutex()
 
     // ── stan połączenia ─────────────────────────────────────────────────────
     var connected by mutableStateOf(false)
     var lastFetchTs = 0L
+    /** ACK-only presentation until the slower periodic `/piec/status` snapshot catches up. */
+    private var servoModeAckOverride by mutableStateOf<Int?>(null)
     var dashboardWidgets by mutableStateOf(TileDefs.DEFAULT_VISIBLE_IDS)
     var dashboardWidgetOrder by mutableStateOf(TileDefs.TILES.map { it.id })
     var authOpen by mutableStateOf(false)
@@ -426,11 +430,85 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         authOpen = true
     }
 
+    // ── tryb serwa: szybki widok po ACK + późniejsze uzgodnienie ze statusem ──
+    internal fun servoModePresentation(): ServoModePresentation = presentServoMode(
+        acknowledgedMode = servoModeAckOverride,
+        reportedMode = S.tryb_serwa.takeIf { S.hasData("tryb_serwa") }
+    )
+
+    private fun setServoModeAckOverride(mode: Int?) {
+        val valid = mode?.takeIf { it in 1..3 }
+        if (servoModeAckOverride == valid) return
+        servoModeAckOverride = valid
+        // Dashboard tiles and the open sheet subscribe to this revision as well.
+        S.bump()
+    }
+
+    /**
+     * After a positive ESP32 ACK, show the selected mode and manual controls immediately.
+     * Firebase status is sent on a slower cadence than command ACKs, so keep this
+     * presentation override only until the reported mode catches up (or 30 s elapse).
+     */
+    fun setServoMode(mode: Int) {
+        if (mode !in 1..3) return
+        val requestId = ++servoModeRequestId
+        setServoModeAckOverride(null)
+        scope.launch {
+            servoModeCommandMutex.lock()
+            val acknowledged = try {
+                if (requestId != servoModeRequestId) false
+                else sendAwait("ustaw trybSerwa $mode") {
+                    // Apply the UI-only ACK presentation before the post-ACK RTDB refresh,
+                    // which can be delayed by a routine poll or the controller's 15 s status cadence.
+                    if (requestId == servoModeRequestId) {
+                        setServoModeAckOverride(mode)
+                        if (servoModePresentation().awaitingStatus) {
+                            showToast("SERWO", "Sterownik przyjął tryb — oczekuję na świeży odczyt.", "wait")
+                        }
+                    }
+                }
+            } finally {
+                servoModeCommandMutex.unlock()
+            }
+            if (!acknowledged || requestId != servoModeRequestId) return@launch
+
+            if (!servoModePresentation().awaitingStatus) {
+                setServoModeAckOverride(null)
+                return@launch
+            }
+
+            showToast("SERWO", "Sterownik przyjął tryb — oczekuję na świeży odczyt.", "wait")
+            val deadline = System.currentTimeMillis() + 30_000L
+            while (isActive && requestId == servoModeRequestId && System.currentTimeMillis() < deadline) {
+                if (!servoModePresentation().awaitingStatus) {
+                    setServoModeAckOverride(null)
+                    showToast("SERWO", "Status centrali potwierdził nowy tryb.", "ok")
+                    return@launch
+                }
+                // Routine RTDB polling continues every 8 s; no extra status requests are
+                // generated here. This waiter only reacts as soon as one of those snapshots
+                // reaches the Compose UI.
+                delay(500L)
+            }
+            if (requestId == servoModeRequestId && servoModeAckOverride == mode) {
+                setServoModeAckOverride(null)
+                showToast(
+                    "SERWO",
+                    "ACK odebrany, ale świeży status nie potwierdził trybu po 30 s. Pokazuję ostatni odczyt centrali.",
+                    "warn"
+                )
+            }
+        }
+    }
+
     // ── polecenia; stan urządzenia zmienia się dopiero po ACK / odczycie ─────
     fun send(cmd: String) = scope.launch { sendAwait(cmd) }
 
-    /** Wysyła komendę bez lokalnej mutacji stanu i zwraca true wyłącznie po ACK. */
-    private suspend fun sendAwait(cmd: String): Boolean {
+    /**
+     * Sends a command without mutating reported device state. Optional [onAck] is for a
+     * transient UI acknowledgement only; the fresh RTDB snapshot remains authoritative.
+     */
+    private suspend fun sendAwait(cmd: String, onAck: (() -> Unit)? = null): Boolean {
         val command = cmd.trim()
         if (command.isEmpty()) return false
         val sensitive = CommandRedactor.isSensitive(command)
@@ -459,6 +537,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     showToast(commandLabel, "Potwierdzone przez sterownik (ACK, ${latency}ms)", "ok")
                     addLog("ACK", "ACK OK (${latency}ms): $commandLabel", "ack")
                     buzz()
+                    onAck?.invoke()
                     // Dociągnij świeży snapshot po ACK. Wymuś oczekiwanie na ewentualny
                     // cykliczny poll, zamiast gubić odświeżenie w jego trakcie.
                     pollAwait(waitForInFlight = true)

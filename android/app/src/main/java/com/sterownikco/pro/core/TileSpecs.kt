@@ -284,7 +284,8 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
     )
 
     // ── serwo ───────────────────────────────────────────────────────────────
-    val servoKnown = S.hasData("tryb_serwa") && S.tryb_serwa in 1..3
+    val servoMode = m.servoModePresentation().mode
+    val servoKnown = servoMode != null
     val klapaKnown = S.hasData("klapa") && S.klapa in 0..180
     val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
     val klapaPct = if (klapaKnown) Math.round(S.klapa * 100.0 / 180.0) else null
@@ -292,9 +293,9 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
     out.add(
         TileSpec(
             id = "serwo", title = "Serwo", grid = 2,
-            value = if (servoKnown) PiecState.TRYB_NAZWA[S.tryb_serwa] ?: "—" else "—",
+            value = servoMode?.let { PiecState.TRYB_NAZWA[it] } ?: "—",
             cls = if (servoKnown) "c-flame" else "c-none",
-            state = if (!servoKnown) "" else when (S.tryb_serwa) { 2 -> "warn"; 3 -> "err"; else -> "" },
+            state = when (servoMode) { 2 -> "warn"; 3 -> "err"; else -> "" },
             frac = if (klapaPct != null) klapaPct / 100.0 else 0.0,
             desc = "klapa ${if (klapaKnown) "${S.klapa}°" else "—"} • syberek ${if (syberkaKnown) "${S.syberka}°" else "—"}",
             badge = if (klapaPct != null && sybPct != null) "K$klapaPct% S$sybPct%" else "BRAK DANYCH",

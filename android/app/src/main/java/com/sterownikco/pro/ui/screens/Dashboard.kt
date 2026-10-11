@@ -60,10 +60,11 @@ import com.sterownikco.pro.ui.components.Tile
 fun Dashboard(m: AppModel) {
     val rev = m.S.rev.intValue // subskrypcja zmian stanu
     val S = m.S
+    val servoMode = m.servoModePresentation().mode
     val weatherCode = m.weather?.current?.code ?: -1
     val isDay = m.weather?.current?.isDay ?: (!S.night)
-    val art = remember(rev, weatherCode, isDay) { S.art(weatherCode, isDay) }
-    val tiles = remember(rev, weatherCode, isDay, m.weather, m.weatherBusy) { buildTiles(m, weatherCode, isDay) }
+    val art = remember(rev, servoMode, weatherCode, isDay) { S.art(weatherCode, isDay, servoMode) }
+    val tiles = remember(rev, servoMode, weatherCode, isDay, m.weather, m.weatherBusy) { buildTiles(m, weatherCode, isDay) }
     val orderIndex = m.dashboardWidgetOrder.withIndex().associate { it.value to it.index }
     val selectedTiles = tiles.filter { it.id in m.dashboardWidgets }
         .sortedBy { orderIndex[it.id] ?: Int.MAX_VALUE }
@@ -129,19 +130,19 @@ fun Dashboard(m: AppModel) {
                 state = if (pumpKnown && S.pompa) "ok" else if (!pumpKnown) "warn" else "",
                 onClick = { m.openSheet("pompa") }
             )
-            val servoKnown = S.hasData("tryb_serwa") && S.tryb_serwa in 1..3
+            val servoKnown = servoMode != null
             val flapKnown = S.hasData("klapa") && S.klapa in 0..180
             val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
             QCard(
                 title = "SERWO", icon = "servo",
-                value = if (!servoKnown) "—" else when (S.tryb_serwa) {
+                value = if (!servoKnown) "—" else when (servoMode) {
                     1 -> "AUTO ($flapLabel)"
                     2 -> "RĘCZNY ($flapLabel)"
                     3 -> "BEZPIECZNY"
                     else -> "—"
                 },
                 sub = if (flapKnown) "klapa ${S.klapa}°" else "brak prawidłowego odczytu pozycji",
-                state = if (!servoKnown) "warn" else when (S.tryb_serwa) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
+                state = if (!servoKnown) "warn" else when (servoMode) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
                 onClick = { m.openSheet("serwo") }
             )
             val mixerKnown = S.hasData("mieszadlo")

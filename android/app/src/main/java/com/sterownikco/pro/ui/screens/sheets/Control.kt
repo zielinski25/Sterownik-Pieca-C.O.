@@ -268,13 +268,18 @@ private fun Marker(x: androidx.compose.ui.unit.Dp) {
 @Composable
 fun SerwoSheet(m: AppModel) {
     val S = m.S
-    val modeKnown = S.hasData("tryb_serwa") && S.tryb_serwa in 1..3
+    val modePresentation = m.servoModePresentation()
+    val servoMode = modePresentation.mode
+    val modeKnown = servoMode != null
     Note("Tryb pracy klapy i syberka")
     if (!modeKnown) Note("Aktualny tryb: oczekiwanie na odczyt z centrali.")
-    Seg(listOf(1 to "Auto", 2 to "Ręczny", 3 to "Bezpieczna"), current = if (modeKnown) S.tryb_serwa else -1) { v ->
-        m.send("ustaw trybSerwa $v")
+    Seg(listOf(1 to "Auto", 2 to "Ręczny", 3 to "Bezpieczna"), current = servoMode ?: -1) { v ->
+        m.setServoMode(v)
     }
-    if (modeKnown && S.tryb_serwa == 2) {
+    if (modePresentation.awaitingStatus) {
+        Note("Sterownik potwierdził zmianę trybu; oczekuję na świeży odczyt centrali.")
+    }
+    if (servoMode == 2) {
         Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x14FFFFFF)))
             Text("Ręczna pozycja", style = Txt.rowLabel)

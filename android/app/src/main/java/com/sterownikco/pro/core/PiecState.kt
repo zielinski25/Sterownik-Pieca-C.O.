@@ -138,8 +138,9 @@ class PiecState {
     }
 
     /** Ilustracje otrzymują wartości odczytane; brak pomiaru nie trafia do tekstowych odczytów. */
-    fun art(weatherCode: Int, isDay: Boolean): com.sterownikco.pro.ui.art.ArtState {
+    fun art(weatherCode: Int, isDay: Boolean, servoMode: Int? = null): com.sterownikco.pro.ui.art.ArtState {
         fun artValue(v: Double) = if (v.isFinite()) v.toFloat() else Float.NaN
+        val modeForArt = servoMode ?: tryb_serwa.takeIf { hasData("tryb_serwa") }
         return com.sterownikco.pro.ui.art.ArtState(
             night = night,
             weatherCode = weatherCode,
@@ -160,7 +161,7 @@ class PiecState {
             mieszadloKnown = hasData("mieszadlo"),
             dymKnown = hasData("dym"),
             dymAlarm = dym_alarm,
-            klapaAktywne = hasData("tryb_serwa") && tryb_serwa in 1..3 && tryb_serwa == 1,
+            klapaAktywne = modeForArt == 1,
             cisnienie = artValue(cisnienie),
             wilgotnosc = artValue(wilgotnosc),
             godz = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY),
