@@ -355,16 +355,18 @@ fun ChartCanvas(
                 }
             }
         }
-        // oś X — format zależny od szerokości okna (FIX-OX-OS)
+        // Oś X: godzina zwykle; dzień/miesiąc tylko przy początku lub zmianie daty.
         val xSteps = min(5, view.rows.size)
         val spanMs = if (view.rows.size > 1) view.rows.last().ts - view.rows.first().ts else 0L
+        var previousLabelTs: Long? = null
         for (i in 0 until xSteps) {
             val idx = ((view.rows.size - 1) * (i.toDouble() / max(1, xSteps - 1))).roundToInt()
             val row = view.rows.getOrNull(idx) ?: continue
             val xPos = padLeft + (plotW / max(1f, (view.rows.size - 1).toFloat())) * idx
-            val lbl = fmtXLabel(row.ts, spanMs)
+            val lbl = fmtXLabel(row.ts, spanMs, previousLabelTs)
             val tp = measure(lbl, axis)
             drawText(tp, topLeft = Offset(xPos - tp.size.width / 2f, h - 8.dp.toPx() - tp.size.height / 2f))
+            previousLabelTs = row.ts
         }
 
         // serie
@@ -517,14 +519,34 @@ fun ChartCanvas(
 
 private class SegPoint(val x: Float, val y: Float, val v: Double, val ts: Long, val idx: Int, val simulated: Boolean)
 
-/** `pad2(...) + …` — dobór formatu osi X do szerokości okna. */
-fun fmtXLabel(ts: Long, spanMs: Long): String {
-    val c = java.util.Calendar.getInstance().apply { timeInMillis = ts }
-    fun p(v: Int) = if (v < 10) "0$v" else "$v"
+/**
+ * Labels the date only when it establishes context or crosses a calendar boundary:
+ * full date at the first tick/month change, day number at day changes, time otherwise.
+ */
+fun fmtXLabel(ts: Long, spanMs: Long, previousTs: Long? = null): String {
+    val calendar = java.util.Calendar.getInstance().apply { timeInMillis = ts }
+    val previous = previousTs?.let { java.util.Calendar.getInstance().apply { timeInMillis = it } }
+    fun p(value: Int) = if (value < 10) "0$value" else value.toString()
+
+    val day = p(calendar.get(java.util.Calendar.DAY_OF_MONTH))
+    val month = p(calendar.get(java.util.Calendar.MONTH) + 1)
+    val year = calendar.get(java.util.Calendar.YEAR)
+    val hour = p(calendar.get(java.util.Calendar.HOUR_OF_DAY))
+    val minute = p(calendar.get(java.util.Calendar.MINUTE))
+    val second = p(calendar.get(java.util.Calendar.SECOND))
+
+    val datePrefix = when {
+        previous == null -> "$day.$month"
+        previous != null && year != previous.get(java.util.Calendar.YEAR) -> "$day.$month.$year"
+        previous != null && calendar.get(java.util.Calendar.MONTH) != previous.get(java.util.Calendar.MONTH) -> "$day.$month"
+        previous != null && calendar.get(java.util.Calendar.DAY_OF_MONTH) != previous.get(java.util.Calendar.DAY_OF_MONTH) -> day
+        else -> null
+    }
+
     return when {
-        spanMs < 2 * 3_600_000L -> p(c.get(java.util.Calendar.HOUR_OF_DAY)) + ":" + p(c.get(java.util.Calendar.MINUTE)) + ":" + p(c.get(java.util.Calendar.SECOND))
-        spanMs < 48 * 3_600_000L -> p(c.get(java.util.Calendar.DAY_OF_MONTH)) + "." + p(c.get(java.util.Calendar.MONTH) + 1) +
-            " " + p(c.get(java.util.Calendar.HOUR_OF_DAY)) + ":" + p(c.get(java.util.Calendar.MINUTE))
-        else -> p(c.get(java.util.Calendar.DAY_OF_MONTH)) + "." + p(c.get(java.util.Calendar.MONTH) + 1)
+        spanMs < 2 * 3_600_000L -> listOfNotNull(datePrefix, "$hour:$minute:$second").joinToString(" ")
+        spanMs < 48 * 3_600_000L -> listOfNotNull(datePrefix, "$hour:$minute").joinToString(" ")
+        datePrefix != null -> datePrefix
+        else -> "$hour:$minute"
     }
 }
