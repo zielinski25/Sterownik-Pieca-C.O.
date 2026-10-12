@@ -32,7 +32,7 @@ internal object CommandRedactor {
             "Tryb serwa",
             choices = mapOf("1" to "Automatyczny", "2" to "Ręczny", "3" to "Bezpieczna")
         ),
-        "tempzadservo" to SettingLabel("Temperatura zadana serwa", " °C"),
+        "tempzadservo" to SettingLabel("Temperatura zadana pieca", " °C"),
         "histerservo" to SettingLabel("Histereza serwa", " °C"),
         "skokklapy" to SettingLabel("Skok klapy", "%"),
         "skoksyberka" to SettingLabel("Skok syberka", "%"),

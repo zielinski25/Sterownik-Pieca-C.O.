@@ -29,7 +29,7 @@ class CommandRedactorTest {
             "ustaw antystopWlaczony 0" to "Funkcja Antystop: Wyłączona",
             "ustaw antystopDni 7" to "Czas bezruchu przed uruchomieniem Antystopu: 7 dni",
             "ustaw trybSerwa 3" to "Tryb serwa: Bezpieczna",
-            "ustaw tempZadServo 45" to "Temperatura zadana serwa: 45 °C",
+            "ustaw tempZadServo 45" to "Temperatura zadana pieca: 45 °C",
             "ustaw histerServo 3" to "Histereza serwa: 3 °C",
             "ustaw skokKlapy 10" to "Skok klapy: 10%",
             "ustaw skokSyberka 15" to "Skok syberka: 15%",

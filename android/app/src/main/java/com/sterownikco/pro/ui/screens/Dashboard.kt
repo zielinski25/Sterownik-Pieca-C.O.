@@ -106,13 +106,18 @@ fun Dashboard(m: AppModel) {
                 onAction = null
             )
         }
-        Hero(m, art, alarm = S.hasData("alarm_ogrzewanie") && S.alarm_ogrzewanie,
+        Hero(
+            m,
+            art,
+            alarm = S.hasData("alarm_ogrzewanie") && S.alarm_ogrzewanie,
             heroSub = when {
                 !m.isFbFresh -> "ostatni status sterownika — dane nieaktualne"
                 S.symAktywna("ogrz") -> "WARTOŚĆ SYMULOWANA PRZEZ STEROWNIK · używana przez jego logikę"
                 !S.hasData("t_ogrz") -> "oczekiwanie na rzeczywisty odczyt pieca C.O."
                 else -> "temperatura pieca C.O. · " + (if (to > 70) "grzanie na maks." else "odczyt odebrany")
-            })
+            },
+            onSetpointClick = { m.openSheet("serwo") }
+        )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val pumpKnown = S.hasData("pompa")

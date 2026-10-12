@@ -312,8 +312,8 @@ fun SerwoSheet(m: AppModel) {
         }
     }
     SectionHeader("Automatyka (tryb Auto)")
-    NumRow("Temperatura zadana", "°C — punkt odniesienia", S.tempZadServo, 0, 100, known = S.hasData("tempZadServo")) { v ->
-        m.commitNum("Temperatura zadana", "tempZadServo", 0, 100, v)
+    NumRow("Temperatura zadana pieca", "°C — punkt odniesienia serwa", S.tempZadServo, 0, 100, known = S.hasData("tempZadServo")) { v ->
+        m.commitNum("Temperatura zadana pieca", "tempZadServo", 0, 100, v)
     }
     NumRow("Histereza", "°C — pasmo bez reakcji", S.histerServo, 0, 50, known = S.hasData("histerServo")) { v ->
         m.commitNum("Histereza", "histerServo", 0, 50, v)

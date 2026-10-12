@@ -165,7 +165,13 @@ fun Banner(text: String, kind: String, action: String? = null, onAction: (() -> 
 
 /** `.hero` — temperatura + ilustracja kotła + 3 statystyki. */
 @Composable
-fun Hero(m: AppModel, art: ArtState, alarm: Boolean, heroSub: String) {
+fun Hero(
+    m: AppModel,
+    art: ArtState,
+    alarm: Boolean,
+    heroSub: String,
+    onSetpointClick: () -> Unit
+) {
     val servoMode = m.servoModePresentation().mode
     Column(
         modifier = Modifier.fillMaxWidth()
@@ -184,12 +190,25 @@ fun Hero(m: AppModel, art: ArtState, alarm: Boolean, heroSub: String) {
                 )
                 Text(heroSub, style = Txt.heroD, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Box(Modifier.size(100.dp)) {
+            Box(
+                Modifier.size(100.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable(onClickLabel = "Otwórz ustawienie temperatury zadanej") { onSetpointClick() }
+            ) {
                 SvgView(
                     src = remember(art) { Ilu.heroBoiler(art) },
                     modifier = Modifier.fillMaxSize(),
                     animFor = { t -> Ilu.anim(t, art) }
                 )
+                Box(
+                    Modifier.align(Alignment.BottomEnd)
+                        .size(26.dp)
+                        .background(Pal.Surface2, CircleShape)
+                        .border(1.dp, Pal.Cyan, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AppIcon("thermo", size = 14.dp, tint = Pal.Cyan)
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
