@@ -131,6 +131,7 @@ fun Dashboard(m: AppModel) {
         if (setpointDialogOpen) {
             BoilerSetpointDialog(m, onDismiss = { setpointDialogOpen = false })
         }
+        ServoIgnitionButton(m)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val pumpKnown = S.hasData("pompa")
@@ -214,6 +215,39 @@ fun Dashboard(m: AppModel) {
         )
 
         Trend(S.hist.toList())
+    }
+}
+
+@Composable
+private fun ServoIgnitionButton(m: AppModel) {
+    val s = m.S
+    if (!s.hasData("rozpalanie_serwa_dostepne") || !s.rozpalanie_serwa_dostepne) return
+
+    val alarmsKnown = s.hasAllData("dym_alarm", "alarm_ogrzewanie", "alarm_panel")
+    val safetyAlarm = anyAlarm(m)
+    val enabled = m.isFbFresh && s.online && s.hasData("t_ogrz") && alarmsKnown && !safetyAlarm
+    val active = s.hasData("rozpalanie_serwa_aktywne") && s.rozpalanie_serwa_aktywne
+    val blockedBySmoke = s.hasData("rozpalanie_serwa_blokada_dymu") && s.rozpalanie_serwa_blokada_dymu
+
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        UstBtn(
+            label = if (active) "🔥 Rozpalanie aktywne · +5 min" else "🔥 Rozpalanie",
+            variant = "primary",
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
+            onClick = { m.send("rozpalanie_serwa") }
+        )
+        Text(
+            text = when {
+                !m.isFbFresh || !alarmsKnown -> "Oczekiwanie na świeży status i potwierdzenie braku alarmów bezpieczeństwa."
+                safetyAlarm -> "Rozpalanie zablokowane podczas aktywnego alarmu bezpieczeństwa."
+                blockedBySmoke -> "Po alarmie dymu wymagane jest ponowne kliknięcie; klapa nie otworzy się automatycznie."
+                active -> "Aktywne do przekroczenia 30°C. Kliknięcie odnawia pięciominutowy nadzór dymu."
+                else -> "Serwa są przygotowywane sekwencyjnie: najpierw syberek, potem klapa."
+            },
+            style = Txt.cardDesc,
+            color = if (active) Pal.Cyan else Pal.TextDim
+        )
     }
 }
 
