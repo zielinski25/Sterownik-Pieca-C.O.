@@ -80,7 +80,7 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 ## Jak to działa
 
 * `MainActivity` → jedna aktywność, `setContent { SterownikApp(model) }`.
-* `AppModel` (tworzony w `onCreate`) trzyma `PiecState`, timer (`4 s` poll,
+* `AppModel` (tworzony w `onCreate`) trzyma `PiecState`, timer (`8 s` poll,
   `15 min` pogoda, `1 s` odświeżanie arkusza), logi,
   toasty, telemetrię i preferencje: zwykłe dane operatora pozostają w CE,
   ustawienia alarmowe są w allowliście device-protected, a Firebase refresh
@@ -103,10 +103,11 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
   C.W.U., panel słoneczny i/lub temperaturę zewnętrzną; wybór jest zapisany
   osobno dla każdego widżetu. Temperatury są zaokrąglane do pełnych stopni.
   `updatePeriodMillis=0`: system/launcher nie wykonuje cyklicznego odpytywania.
-  Widget odświeża się po nadejściu danych z pollingu aplikacji (co 4 s na
-  pierwszym planie) lub usługi SSE; zmieniona sygnatura odświeża go od razu,
-  a identyczna jest renderowana najwyżej raz na 60 s, jeśli kolejne push'e
-  nadal napływają. Bez danych z usługi nie ma gwarantowanego odświeżenia.
+  Widget odświeża się po nadejściu danych z pollingu aplikacji (co 8 s na
+  pierwszym planie) lub minutowego pollingu usługi w tle; zmieniona sygnatura
+  odświeża go od razu, a identyczna jest renderowana najwyżej raz na 60 s,
+  jeśli kolejne odczyty nadal napływają. Bez danych z usługi nie ma
+  gwarantowanego odświeżenia.
   Wszystkie warianty pokazują status/nieaktualne dane uczciwie i otwierają
   aplikację po dotknięciu.
 

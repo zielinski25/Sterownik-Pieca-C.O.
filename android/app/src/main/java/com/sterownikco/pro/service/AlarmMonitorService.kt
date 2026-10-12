@@ -33,7 +33,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,7 +42,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -51,11 +49,10 @@ import org.json.JSONObject
 
    • Foreground service typu `specialUse` z widocznym powiadomieniem; Android,
      nakładka producenta lub użytkownik nadal mogą zatrzymać usługę.
-   • Główny odbiór zmian przez SSE z /piec/status.
-   • Odczyt awaryjny GET co 30 s: wykrywa połączenia SSE, które pozostały
-     otwarte, ale przestały dostarczać aktualizacje przy wygaszonym ekranie.
-   • Reconnect z backoffem po zerwaniu + wymuszony restart strumienia co 3 min.
-   • `auth_revoked` / 401 → odświeżenie idToken z refresh_token i dalej.
+   • W tle GET /piec/status co 60 s; nie utrzymuje strumienia SSE.
+   • Pierwszy odczyt wykonuje się od razu po starcie usługi; błędy ponawia
+     zgodnie z minutowym cyklem, bez szybkiej pętli retry.
+   • Odświeżenie Firebase ID token po 401 obsługuje klient RTDB.
    • Każdy snapshot: AlarmCenter.evaluate() + odświeżenie widgetu.
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -64,9 +61,6 @@ class AlarmMonitorService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val alarmMuteCommandMutex = Mutex()
     private val mainHandler = Handler(Looper.getMainLooper())
-    @Volatile private var lastSnap = JSONObject()
-    private val snapshotLock = Any()
-    @Volatile private var alarmStreamVersion = 0L
     private var alarmPlayer: MediaPlayer? = null
     private var alarmSoundId: String? = null
 
@@ -95,9 +89,8 @@ class AlarmMonitorService : Service() {
             return
         }
         loadCredsIntoRtdb()
-        Log.i(TAG, "Usługa monitoringu uruchomiona")
+        Log.i(TAG, "Usługa monitoringu uruchomiona; polling /piec/status co 60 s")
         scope.launch { monitorLoop() }
-        scope.launch { fallbackPollLoop() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -285,139 +278,39 @@ class AlarmMonitorService : Service() {
         if (prefs != null && !AlarmCenter.isMonitored(prefs)) stopSelf()
     }
 
+    /** Background alarm checks use one RTDB read per minute; opening the app has its own faster UI poll. */
     private suspend fun monitorLoop() {
-        var backoffMs = 5_000L
         while (true) {
+            val cycleStartedAt = SystemClock.elapsedRealtime()
             try {
-                val p = Prefs(applicationContext)
-                if (!AlarmCenter.isMonitored(p) || Rtdb.refreshToken.isBlank()) {
-                    // Wylogowany albo monitoring wyłączony — drzemka bez sieci.
-                    delay(60_000); continue
-                }
-                updateMonitorHealth(AlarmMonitorPhase.CONNECTING)
-                // Migawka startowa (przy okazji odświeża idToken po 401) + widget.
-                try {
-                    val initial = Rtdb.pollStatus()
-                    if (initial != null) onSnapshot(initial)
-                    else {
+                val prefs = Prefs(applicationContext)
+                if (AlarmCenter.isMonitored(prefs) && Rtdb.refreshToken.isNotBlank()) {
+                    updateMonitorHealth(AlarmMonitorPhase.CONNECTING)
+                    val status = Rtdb.pollStatus()
+                    if (status == null) {
                         updateMonitorHealth(AlarmMonitorPhase.RETRYING)
-                        Log.w(TAG, "Początkowy odczyt /piec/status nie powiódł się")
-                    }
-                } catch (e: Exception) {
-                    updateMonitorHealth(AlarmMonitorPhase.RETRYING)
-                    Log.w(TAG, "Błąd początkowego odczytu /piec/status", e)
-                }
-                // Strumień SSE z samoleczeniem co 3 min.
-                withTimeout(STREAM_MAX_MS) {
-                    Rtdb.streamEvents("/piec/status.json") { ev, data, idToken, refreshToken ->
-                        onStreamEvent(ev, data, idToken, refreshToken)
+                        Log.w(TAG, "GET /piec/status nie powiódł się; ponowię zgodnie z minutowym cyklem")
+                    } else {
+                        onSnapshot(status)
+                        Log.d(TAG, "GET /piec/status OK; dym_alarm=${alarmFlag(status, "dym_alarm")}, " +
+                            "alarm_ogrzewanie=${alarmFlag(status, "alarm_ogrzewanie")}")
                     }
                 }
-                backoffMs = 5_000L // czyste zerwanie — od razu wznawiamy
-            } catch (e: TimeoutCancellationException) {
-                // Limit 3 min wymusza reconnect; nie wolno zakończyć przez niego pętli usługi.
-                updateMonitorHealth(AlarmMonitorPhase.CONNECTING)
-                backoffMs = 5_000L
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Sieć padła / Doze / serwer zamknął — backoff 5 s → 15 s → 60 s.
                 updateMonitorHealth(AlarmMonitorPhase.RETRYING)
-                Log.w(TAG, "Strumień SSE przerwany; ponowienie za ${backoffMs} ms", e)
-                try { delay(backoffMs) } catch (ce: CancellationException) { throw ce }
-                backoffMs = minOf(backoffMs * 3, 60_000L)
+                Log.w(TAG, "Błąd minutowego GET /piec/status", e)
             }
-        }
-    }
 
-    private fun onStreamEvent(
-        ev: String,
-        data: String,
-        streamIdToken: String,
-        streamRefreshToken: String
-    ) {
-        try {
-            when (ev) {
-                "put", "patch" -> synchronized(snapshotLock) {
-                    val j = JSONObject(data)
-                    var alarmFlagsMayHaveChanged = false
-                    if (ev == "patch") {
-                        val base = j.optString("path", "/").trim('/')
-                        val dj = j.optJSONObject("data") ?: return
-                        val baseKey = base.substringBefore('/')
-                        val touchesAlarm = baseKey in ALARM_STATUS_KEYS ||
-                            (base.isEmpty() && ALARM_STATUS_KEYS.any(dj::has))
-                        val previousAlarmFlags = alarmStateSignature(lastSnap)
-                        for (k in dj.keys()) applyKey(if (base.isEmpty()) k else "$base/$k", dj.get(k))
-                        alarmFlagsMayHaveChanged = previousAlarmFlags != alarmStateSignature(lastSnap)
-                        if (touchesAlarm) alarmStreamVersion++
-                    } else {
-                        val path = j.optString("path", "/")
-                        val payload = if (j.isNull("data")) null else j.get("data")
-                        if (path == "/") {
-                            if (payload is JSONObject) {
-                                alarmFlagsMayHaveChanged = alarmStateSignature(lastSnap) != alarmStateSignature(payload)
-                                lastSnap = payload
-                                // Keep the fallback GET's whole-snapshot freshness guard, but do
-                                // not invalidate foreground UI polls when only other fields changed.
-                                alarmStreamVersion++
-                                onSnapshotLocked(payload, alarmFlagsMayHaveChanged)
-                                return
-                            }
-                        } else {
-                            // RTDB put-null usuwa klucz; zachowujemy migawkę zgodną ze źródłem.
-                            val key = path.trim('/').substringBefore('/')
-                            if (key in ALARM_STATUS_KEYS) alarmStreamVersion++
-                            val previousAlarmFlags = alarmStateSignature(lastSnap)
-                            applyKey(path.trim('/'), payload)
-                            alarmFlagsMayHaveChanged = previousAlarmFlags != alarmStateSignature(lastSnap)
-                        }
-                    }
-                    onSnapshotLocked(
-                        JSONObject(lastSnap.toString()),
-                        alarmFlagsMayHaveChanged = alarmFlagsMayHaveChanged
-                    )
-                }
-                "auth_revoked" -> {
-                    // Token wygasł — odświeżamy i wymuszamy reconnect (wyjątek zrywa strumień).
-                    scope.launch {
-                        try {
-                            Rtdb.refreshIdToken(
-                                expectedIdToken = streamIdToken,
-                                expectedRefreshToken = streamRefreshToken
-                            )
-                        } catch (e: Exception) { /* pętla ponowi */ }
-                    }
-                    throw java.io.IOException("auth_revoked — odświeżam token")
-                }
-                "cancel" -> {
-                    updateMonitorHealth(AlarmMonitorPhase.RETRYING)
-                    throw java.io.IOException("RTDB anulowało strumień; ponawiam połączenie")
-                }
-                // keep-alive potwierdza połączenie, ale nie odświeża migawki /piec/status.
-            }
-        } catch (e: java.io.IOException) {
-            throw e
-        } catch (e: Exception) {
-            // Uszkodzona ramka SSE — ignorujemy, strumień żyje dalej.
+            val elapsedMs = SystemClock.elapsedRealtime() - cycleStartedAt
+            val waitMs = (BACKGROUND_STATUS_POLL_MS - elapsedMs).coerceAtLeast(1_000L)
+            delay(waitMs)
         }
-    }
-
-    /** Wpina wartość ze strumienia w bieżącą migawkę (obsługa kluczy 1. poziomu). */
-    private fun applyKey(slashed: String, v: Any?) {
-        try {
-            val key = slashed.split("/").firstOrNull()?.takeIf { it.isNotEmpty() } ?: return
-            if (v == null || v == JSONObject.NULL) lastSnap.remove(key) else lastSnap.put(key, v)
-        } catch (e: Exception) { /* ignore */ }
     }
 
     private fun onSnapshot(d: JSONObject) {
-        synchronized(snapshotLock) { onSnapshotLocked(d) }
-    }
-
-    private fun onSnapshotLocked(d: JSONObject, alarmFlagsMayHaveChanged: Boolean = true) {
-        lastSnap = d
-        AlarmSnapshotCoordinator.applyServiceSnapshot(alarmFlagsMayHaveChanged) {
+        AlarmSnapshotCoordinator.applyServiceSnapshot {
             try {
                 val smoke = alarmFlag(d, "dym_alarm")
                 val overheat = alarmFlag(d, "alarm_ogrzewanie")
@@ -482,60 +375,10 @@ class AlarmMonitorService : Service() {
         updateMonitorHealth(AlarmMonitorPhase.STATUS_OK, statusReadSucceeded = true)
     }
 
-    /**
-     * Zapasowy, tylko odczytowy GET stanu. Sam proces/usługa może być żywa,
-     * mimo że długa odpowiedź SSE przestała napływać; fallback wykrywa alarm
-     * najpóźniej po jednym interwale. Odrzucamy wynik, jeśli nowsze SSE zdążyło
-     * przyjść w trakcie żądania, aby nie nadpisać świeżego stanu starą migawką.
-     */
-    private suspend fun fallbackPollLoop() {
-        while (true) {
-            delay(FALLBACK_POLL_MS)
-            val prefs = try { Prefs(applicationContext) } catch (e: Exception) { continue }
-            if (!AlarmCenter.isMonitored(prefs)) continue
-            if (Rtdb.refreshToken.isBlank()) {
-                Log.w(TAG, "Pomijam fallback /status: brak zapisanego refresh tokenu")
-                continue
-            }
-            val versionAtStart = synchronized(snapshotLock) { alarmStreamVersion }
-            try {
-                val status = Rtdb.pollStatus()
-                if (status == null) {
-                    updateMonitorHealth(AlarmMonitorPhase.RETRYING)
-                    Log.w(TAG, "Fallback GET /piec/status nie powiódł się")
-                    continue
-                }
-                synchronized(snapshotLock) {
-                    if (alarmStreamVersion != versionAtStart) {
-                        Log.d(TAG, "Odrzucono fallback: nowsze zdarzenie SSE już dotarło")
-                    } else {
-                        onSnapshotLocked(status)
-                        Log.d(TAG, "Fallback GET OK; dym_alarm=${alarmFlag(status, "dym_alarm")}, " +
-                            "alarm_ogrzewanie=${alarmFlag(status, "alarm_ogrzewanie")}")
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                updateMonitorHealth(AlarmMonitorPhase.RETRYING)
-                Log.w(TAG, "Błąd fallback GET /piec/status", e)
-            }
-        }
-    }
-
     private fun alarmFlag(d: JSONObject, key: String): Boolean? {
         if (!d.has(key) || d.isNull(key)) return null
         return parseAlarmFlag(d.opt(key))
     }
-
-    private fun alarmStateSignature(d: JSONObject): List<Any?> = listOf(
-        alarmFlag(d, "dym_alarm"),
-        alarmFlag(d, "alarm_ogrzewanie"),
-        if (d.has("alarm_dym_wyciszony")) parseAlarmFlag(d.opt("alarm_dym_wyciszony")) else null,
-        d.opt("alarm_dym_wyciszenie_ms"),
-        if (d.has("alarm_ogrz_wyciszony")) parseAlarmFlag(d.opt("alarm_ogrz_wyciszony")) else null,
-        d.opt("alarm_ogrz_wyciszenie_ms")
-    )
 
     private fun number(d: JSONObject, key: String): Double {
         if (!d.has(key) || d.isNull(key)) return Double.NaN
@@ -550,15 +393,10 @@ class AlarmMonitorService : Service() {
         const val EXTRA_MUTE_SIGNATURE = "alarm_mute_signature"
         const val EXTRA_MUTE_SECONDS = "alarm_mute_seconds"
         private const val NO_MUTE_SECONDS = Int.MIN_VALUE
-        const val STREAM_MAX_MS = 3L * 60_000
-        const val FALLBACK_POLL_MS = 30_000L
+        const val BACKGROUND_STATUS_POLL_MS = 60_000L
         private const val ALARM_LOOP_RESTART_MS = 250L
         private const val ALARM_LOOP_RETRY_MS = 5_000L
         private const val TAG = "AlarmMonitorService"
-        private val ALARM_STATUS_KEYS = setOf(
-            "dym_alarm", "alarm_ogrzewanie", "alarm_dym_wyciszony",
-            "alarm_dym_wyciszenie_ms", "alarm_ogrz_wyciszony", "alarm_ogrz_wyciszenie_ms"
-        )
         private val _monitorHealth = MutableStateFlow(AlarmMonitorHealth())
         val monitorHealth: StateFlow<AlarmMonitorHealth> = _monitorHealth.asStateFlow()
         @Volatile private var activeInstance: AlarmMonitorService? = null

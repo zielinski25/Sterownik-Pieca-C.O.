@@ -239,8 +239,8 @@ object Rtdb {
     }
 
     /**
-     * Strumień SSE (EventSource) z RTDB: `Accept: text/event-stream`.
-     * Serwer sam pcha zmiany — zero odpytań = minimum baterii i alarm w ~1 s.
+     * Pomocniczy strumień SSE z RTDB. AlarmMonitorService celowo go nie używa:
+     * monitorowanie w tle wykonuje jeden GET na minutę, zgodnie z wymaganą tolerancją opóźnienia.
      * Blokuje do anulowania korutyny / błędu sieci / `auth_revoked`.
      * [onEvent] wołane na wątku IO z eventem, JSON `data:` oraz parą tokenów używaną przez ten strumień.
      */

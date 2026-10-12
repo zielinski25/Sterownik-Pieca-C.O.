@@ -2,8 +2,8 @@ package com.sterownikco.pro.core
 
 /**
  * Serializes foreground polling with snapshots accepted by the alarm-monitor service.
- * Capture a revision before network I/O; a poll result is rejected if alarm flags or a newer
- * foreground poll changed while that request was in flight. Unrelated SSE fields do not
+ * Capture a revision before network I/O; a poll result is rejected if a newer alarm snapshot
+ * or foreground poll changed while that request was in flight. Unrelated status fields do not
  * invalidate a full status poll. Network calls must stay outside this lock.
  */
 internal class AlarmSnapshotGate {
@@ -14,9 +14,8 @@ internal class AlarmSnapshotGate {
 
     @Synchronized
     fun applyServiceSnapshot(alarmFlagsMayHaveChanged: Boolean = true, apply: () -> Unit) {
-        // Foreground status polls also contain unrelated controls and telemetry. An SSE update
-        // to one of those fields must not invalidate the whole poll; only a change to the alarm
-        // flags can make the poll's alarm evaluation stale.
+        // Full status polls also contain unrelated controls and telemetry. A change to one of
+        // those fields must not invalidate the other poll; only a newer alarm snapshot can.
         if (alarmFlagsMayHaveChanged) revision += 1L
         apply()
     }

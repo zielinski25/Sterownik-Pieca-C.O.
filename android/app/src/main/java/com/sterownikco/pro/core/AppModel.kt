@@ -251,8 +251,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun onPause() {
         jobs.forEach { it.cancel() }; jobs = emptyList()
         stopTerminalDlogPolling()
-        // W tle NIE odpytujemy (oszczędność baterii) — czuwanie przejmuje
-        // AlarmMonitorService na strumieniu SSE (natychmiast + bez pollingu).
+        // W tle NIE odpytujemy — oszczędność baterii; alarmy przejmuje
+        // AlarmMonitorService z minutowym pollingiem statusu.
         bgJob?.cancel(); bgJob = null
     }
 

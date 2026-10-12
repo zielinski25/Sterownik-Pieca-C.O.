@@ -5,7 +5,7 @@ package com.sterownikco.pro.core
 
    Działa w DWÓCH miejscach z tą samą logiką:
    • na pierwszym planie — AppModel.poll() po każdym odczycie /piec/status,
-   • w tle — AlarmMonitorService na strumieniu SSE tego samego węzła.
+   • w tle — AlarmMonitorService odpytuje status co 60 s.
    Krawędź (edge) wykrywana jest przez sygnaturę zapisaną w prefs, więc
    podwójne odpalenie jest niemożliwe nawet gdy oba źródła pracują naraz.
 

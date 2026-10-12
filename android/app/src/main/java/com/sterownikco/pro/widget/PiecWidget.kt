@@ -20,7 +20,7 @@ import org.json.JSONObject
 
    • Brak WorkManager/AlarmManager i updatePeriodMillis: launcher nie odpytuje
      widgetu cyklicznie. Odświeżenie następuje po nadejściu danych z aplikacji
-     na pierwszym planie lub usługi SSE w tle.
+     na pierwszym planie lub minutowego monitoringu w tle.
    • Identyczne sygnatury danych są pomijane przez 60 s; zmieniony odczyt lub
      stan alarmu odświeża widget od razu. Bez napływu danych nie ma pushu.
    • Wybór czujników jest zapisany niezależnie dla każdego appWidgetId.
