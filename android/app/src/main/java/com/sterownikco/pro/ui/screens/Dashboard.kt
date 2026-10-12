@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -131,7 +132,11 @@ fun Dashboard(m: AppModel) {
         if (setpointDialogOpen) {
             BoilerSetpointDialog(m, onDismiss = { setpointDialogOpen = false })
         }
-        ServoIgnitionButton(m)
+        // Dashboard observes S.rev, but AppModel itself keeps the same identity. With
+        // Compose strong-skipping, the child could be skipped and retain the initial
+        // hidden state after Firebase changed the availability flag. Re-key it on each
+        // accepted status revision so the visibility gate is evaluated again.
+        key(rev) { ServoIgnitionButton(m) }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val pumpKnown = S.hasData("pompa")
