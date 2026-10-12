@@ -60,12 +60,44 @@ class TelemetryChartTest {
 
         val view = buildChartView(
             dataset = rows, catalog = ChartSeries.PUMP, zoom = 1f, offset = 1f,
-            focus = 3, mode = "COMMON", glitch = true
+            mode = "COMMON", glitch = true
         )
 
         assertEquals(0.0, view.min, 0.001)
         assertEquals(100.0, view.max, 0.001)
         assertEquals("", view.axisUnit)
+    }
+
+    @Test
+    fun pumpCanBeCombinedWithTemperatureAndServoSeries() {
+        val rows = listOf(
+            point(1_000, 20.0).copy(pumpOn = false, klapa = 25.0, syberka = 50.0),
+            point(61_000, 21.0).copy(pumpOn = true, klapa = 50.0, syberka = 75.0)
+        )
+
+        val combined = buildChartView(
+            dataset = rows,
+            catalog = ChartSeries.TEMP.take(1) + ChartSeries.SERVO + ChartSeries.PUMP,
+            zoom = 1f,
+            offset = 1f,
+            mode = "COMMON",
+            glitch = true
+        )
+        val servoAndPump = buildChartView(
+            dataset = rows,
+            catalog = ChartSeries.SERVO + ChartSeries.PUMP,
+            zoom = 1f,
+            offset = 1f,
+            mode = "COMMON",
+            glitch = true
+        )
+
+        assertTrue(combined.dual)
+        assertEquals("position", combined.secGroup)
+        assertEquals("°C", combined.axisUnit)
+        assertEquals("%", servoAndPump.axisUnit)
+        assertEquals(0.0, servoAndPump.min, 0.001)
+        assertEquals(100.0, servoAndPump.max, 0.001)
     }
 
     @Test

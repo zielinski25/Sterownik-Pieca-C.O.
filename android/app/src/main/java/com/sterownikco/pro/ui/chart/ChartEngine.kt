@@ -82,13 +82,11 @@ class ChartView(
  * `updateChartCanvas` — dobór widocznego okna (zoom/offset), serii, skali osi
  * lewej i prawej (podwójna oś dla kombinacji °C/%/hPa/ADC).
  */
-@Suppress("UNUSED_PARAMETER")
 fun buildChartView(
     dataset: List<TelemPoint>,
     catalog: List<SeriesDef>,
     zoom: Float,
     offset: Float,
-    focus: Int,
     mode: String,
     glitch: Boolean
 ): ChartView {
@@ -124,9 +122,10 @@ fun buildChartView(
 
     var minVal = Double.POSITIVE_INFINITY; var maxVal = Double.NEGATIVE_INFINITY; var axisUnit = "°C"
     val pumpOnly = cat.isNotEmpty() && cat.all { it.group == "pump" }
+    val positionOnly = cat.isNotEmpty() && cat.all { it.group == "position" }
     if (pumpOnly) {
         minVal = 0.0; maxVal = 100.0; axisUnit = ""
-    } else if (focus == 1 || mode == "NORMALIZED") {
+    } else if (positionOnly || mode == "NORMALIZED") {
         minVal = 0.0; maxVal = 100.0; axisUnit = "%"
     } else {
         fun rangeFor(group: String): Pair<Double, Double>? {
@@ -158,6 +157,7 @@ fun buildChartView(
                 val spanV = max(50.0, hi - lo)
                 minVal = max(0.0, floor(lo - spanV * 0.08)); maxVal = ceil(hi + spanV * 0.12)
             }
+            primCat.any { it.group == "position" } -> { minVal = 0.0; maxVal = 100.0; axisUnit = "%" }
             else -> { minVal = 0.0; maxVal = 100.0; axisUnit = "" }
         }
     }

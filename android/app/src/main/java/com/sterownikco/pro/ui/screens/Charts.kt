@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.sterownikco.pro.core.AppModel
+import com.sterownikco.pro.core.ChartSeries
 import com.sterownikco.pro.ui.chart.ChartCanvas
 import com.sterownikco.pro.ui.chart.buildChartView
 import com.sterownikco.pro.ui.chart.hexColor
@@ -113,8 +114,9 @@ fun ChartsPage(m: AppModel) {
     // po dojściu do limitu, mimo że kolejne próbki nadal napływają.
     val dataset = remember(m.telemetry, m.chartLive, rev) { m.chartDataset() }
     val cat = m.catalogOn()
-    val view = remember(dataset, cat, m.chartZoom, m.chartOffset, m.chartFocus, m.chartMode, m.chartGlitch) {
-        buildChartView(dataset, cat, m.chartZoom, m.chartOffset, m.chartFocus, m.chartMode, m.chartGlitch)
+    val hasTemperatureSeries = cat.any { it.group == "temp" }
+    val view = remember(dataset, cat, m.chartZoom, m.chartOffset, m.chartGroupMask, m.chartMode, m.chartGlitch) {
+        buildChartView(dataset, cat, m.chartZoom, m.chartOffset, m.chartMode, m.chartGlitch)
     }
     var cross by remember { mutableStateOf<Int?>(null) }
     var expand by remember { mutableStateOf(false) }
@@ -124,7 +126,7 @@ fun ChartsPage(m: AppModel) {
             .padding(start = Dimens.pagePadH, end = Dimens.pagePadH, top = Dimens.pagePad, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(Dimens.gap)
     ) {
-        PageHead("WYKRESY TELEMETRII", "historia pomiarów · analiza cykli · korelacja",
+        PageHead("WYKRESY TELEMETRII", "historia pomiarów · temperatury · serwa · pompa",
             action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec) }) })
 
         // `.chart-status-rail`
@@ -149,11 +151,16 @@ fun ChartsPage(m: AppModel) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             ChartRow("DANE") {
-                ChartChip("TEMPERATURY", m.chartFocus == 0) { m.setChartFocus(0) }
-                ChartChip("SERWA", m.chartFocus == 1) { m.setChartFocus(1) }
-                ChartChip("POMPA", m.chartFocus == 3) { m.setChartFocus(3) }
-                ChartChip("KORELACJA", m.chartFocus == 2) { m.setChartFocus(2) }
+                ChartChip("TEMPERATURY", m.chartGroupSelected("temp")) { m.toggleChartGroup("temp") }
+                ChartChip("SERWA", m.chartGroupSelected("servo")) { m.toggleChartGroup("servo") }
+                ChartChip("POMPA", m.chartGroupSelected("pump")) { m.toggleChartGroup("pump") }
             }
+            Text(
+                "Zaznacz jedną, kilka albo wszystkie grupy.",
+                fontSize = 8.sp,
+                color = Pal.TextDim,
+                modifier = Modifier.fillMaxWidth().padding(start = 58.dp)
+            )
             ChartRow("ZAKRES") {
                 ChartChip("6 H", m.rangeSec == 6 * 3600) { m.setRange(6 * 3600) }
                 ChartChip("24 H", m.rangeSec == 24 * 3600) { m.setRange(24 * 3600) }
@@ -202,8 +209,8 @@ fun ChartsPage(m: AppModel) {
                 ChartCanvas(
                     view = view,
                     modifier = Modifier.fillMaxWidth().height(Dimens.chartH),
-                    areaBand = m.chartAreaBand && m.chartFocus != 3,
-                    alarmLines = m.chartAlarmLines && m.chartFocus == 0,
+                    areaBand = m.chartAreaBand,
+                    alarmLines = m.chartAlarmLines && hasTemperatureSeries,
                     alarmLevels = m.alarmLevels,
                     mode = m.chartMode,
                     lineStyle = m.chartStyle,
@@ -267,7 +274,7 @@ fun ChartsPage(m: AppModel) {
                         .border(BorderStroke(1.dp, Color(0x0FFFFFFF)), RoundedCornerShape(12.dp))) {
                         ChartCanvas(
                             view = view, modifier = Modifier.fillMaxSize(),
-                            areaBand = m.chartAreaBand && m.chartFocus != 3, alarmLines = m.chartAlarmLines && m.chartFocus == 0, alarmLevels = m.alarmLevels,
+                            areaBand = m.chartAreaBand, alarmLines = m.chartAlarmLines && hasTemperatureSeries, alarmLevels = m.alarmLevels,
                             mode = m.chartMode, lineStyle = m.chartStyle, crossIdx = cross, onCross = { cross = it },
                             onPan = { m.panChart(it) }, onPinch = { f, x -> m.pinchChart(f, x) },
                             onResetView = { m.resetChartView() }
@@ -429,7 +436,7 @@ fun ChartAxisSheet(m: AppModel) {
 @Composable
 fun ChartToolsSheet(m: AppModel) {
     Note(
-        if (m.chartFocus == 3) "Stan pompy pochodzi z bitu 0 pola state i jest rysowany schodkowo; filtry ani progi temperatur nie zmieniają jego wartości."
+        if (m.chartGroupSelected("pump")) "Stan pompy pochodzi z bitu 0 pola state i jest rysowany schodkowo; filtry ani progi temperatur nie zmieniają jego wartości."
         else "Filtry zmieniają wygląd wykresu; dane w Firebase pozostają bez zmian."
     )
     CheckRow("Filtr anomalii i szpilek (Hampel / Glitch)", null, m.chartGlitch) { v -> m.setChartGlitch(v) }
@@ -473,7 +480,7 @@ private fun AlarmThresholdRow(m: AppModel, key: String, label: String, default: 
 fun ChartAnalysisSheet(m: AppModel) {
     val dataset = remember { m.chartDataset() }
     Note(
-        if (m.chartFocus == 3) "Stan pompy z bitu 0 pola telemetrycznego state; brakujące stany są pomijane, a nie liczone jako STOP."
+        if (m.chartGroupSelected("pump")) "Stan pompy z bitu 0 pola telemetrycznego state; brakujące stany są pomijane, a nie liczone jako STOP."
         else "Analiza liczona z pobranych próbek telemetrycznych. Statystyki min/max, średnie, cykle grzania i różnice A−B."
     )
     m.catalogOn().forEach { s ->
@@ -498,7 +505,7 @@ fun ChartAnalysisSheet(m: AppModel) {
             )
         }
     }
-    if (m.chartFocus != 3) {
+    if (m.chartGroupSelected("temp")) {
         SectionHeader("Wykryte cykle pracy kotła")
         val pumpThresholdsKnown = m.S.hasAllData("tempOn", "tempOff")
         DiagCard(
@@ -511,9 +518,11 @@ fun ChartAnalysisSheet(m: AppModel) {
             }
         )
     }
-    val cat = m.catalogOn()
-    if (cat.size >= 2 && m.chartFocus == 0) {
-        val s1 = cat[0]; val s2 = cat[1]
+    val temperatureSeries = ChartSeries.TEMP
+        .map { it.copy(on = m.seriesOn[it.id] ?: it.on) }
+        .filter { it.on }
+    if (temperatureSeries.size >= 2 && m.chartGroupSelected("temp")) {
+        val s1 = temperatureSeries[0]; val s2 = temperatureSeries[1]
         val nowDelta = m.S.valOf(s1.id, s1.ch) - m.S.valOf(s2.id, s2.ch)
         SectionHeader("Różnica temperatur A − B")
         DiagCard(
@@ -522,7 +531,7 @@ fun ChartAnalysisSheet(m: AppModel) {
             sub = "Różnica liczona na bieżąco ze strumienia /piec/status"
         )
     }
-    if (m.chartFocus == 0) {
+    if (m.chartGroupSelected("temp")) {
         UstBtn("Włącz/Wyłącz linie progów", modifier = Modifier.fillMaxWidth(), onClick = {
             m.setChartAlarmLines(!m.chartAlarmLines)
             m.showToast("Wykres", (if (m.chartAlarmLines) "Włączono" else "Wyłączono") + " linie progów", "ok")

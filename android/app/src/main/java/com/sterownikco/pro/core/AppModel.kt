@@ -36,6 +36,11 @@ import java.util.concurrent.TimeUnit
    + logi + toasty + timery (8 s / 45 s / 15 min / 1 s).
    ══════════════════════════════════════════════════════════════════════════ */
 
+private const val CHART_GROUP_TEMPERATURE = 1
+private const val CHART_GROUP_SERVO = 2
+private const val CHART_GROUP_PUMP = 4
+private const val CHART_GROUP_ALL = 7
+
 val DLOG_CATEGORIES = listOf(
     "SYSTEM", "BOOT", "SENSOR", "WIFI", "FIREBASE", "TELEMETRY", "HISTORIA",
     "SPOOL", "OTA", "TERMINAL", "ALARM", "SERVO", "WEB", "WEATHER", "SD",
@@ -136,7 +141,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     // ── wykresy ─────────────────────────────────────────────────────────────
     var telemetry by mutableStateOf<List<TelemPoint>>(emptyList())
     var rangeSec by mutableIntStateOf(24 * 3600)
-    var chartFocus by mutableIntStateOf(0)
+    /** Bitmask wyboru grup; temperatura pozostaje domyślnie zaznaczona. */
+    var chartGroupMask by mutableIntStateOf(CHART_GROUP_TEMPERATURE)
     var chartMode by mutableStateOf("COMMON")
     var chartStyle by mutableStateOf("SMOOTH")
     var chartAreaBand by mutableStateOf(true)
@@ -942,13 +948,26 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** Historia + próbki live w kolejności czasu, jak w wykresie WWW. */
     fun chartDataset(): List<TelemPoint> = mergeChartPoints(telemetry, chartLive)
 
-    // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartFocus — stqd "Platform declaration clash".
-    @JvmName("hmiSetChartFocus")
-    fun setChartFocus(i: Int) {
-        if (chartFocus == i) return
-        chartFocus = i
+    private fun chartGroupBit(group: String): Int = when (group) {
+        "temp" -> CHART_GROUP_TEMPERATURE
+        "servo" -> CHART_GROUP_SERVO
+        "pump" -> CHART_GROUP_PUMP
+        else -> 0
+    }
+
+    fun chartGroupSelected(group: String): Boolean {
+        val bit = chartGroupBit(group)
+        return bit != 0 && (chartGroupMask and bit) != 0
+    }
+
+    /** Grupy są niezależnymi filtrami; zostawiamy przynajmniej jedną zaznaczoną. */
+    fun toggleChartGroup(group: String) {
+        val bit = chartGroupBit(group)
+        if (bit == 0) return
+        val next = chartGroupMask xor bit
+        if (next == 0) return
+        chartGroupMask = next
         saveChartPrefs()
-        updateChartHead()
     }
 
     fun setRange(sec: Int) {
@@ -1040,49 +1059,54 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         if (chartZoom <= 1.01f) "1×" else String.format(java.util.Locale.US, "%.1f×", chartZoom)
 
     /** `#chartCurrentTitle` / `#chartCurrentMeta`. */
-    fun chartTitle(): String = when (chartFocus) {
-        0 -> "TEMPERATURY"
-        1 -> "POZYCJE SERW"
-        2 -> "KORELACJA (PIEC + SERWA)"
-        3 -> "POMPA C.O."
-        else -> "WYKRES"
+    fun chartTitle(): String {
+        val groups = mutableListOf<String>()
+        if (chartGroupSelected("temp")) groups += "TEMPERATURY"
+        if (chartGroupSelected("servo")) groups += "SERWA"
+        if (chartGroupSelected("pump")) groups += "POMPA C.O."
+        return groups.joinToString(" + ").ifBlank { "WYKRES" }
     }
 
-    fun chartMeta(): String = when (chartFocus) {
-        0 -> "°C · WSPÓLNA OŚ"
-        1 -> "% · KLAPA + SYBEREK"
-        3 -> "STAN · PRACA / STOP"
-        else -> "LEWA OŚ: °C · PRAWA OŚ: % (KLAPA/SYBEREK)"
+    fun chartMeta(): String {
+        val hasTemp = chartGroupSelected("temp")
+        val hasServo = chartGroupSelected("servo")
+        val hasPump = chartGroupSelected("pump")
+        return when {
+            hasTemp && hasServo && hasPump -> "°C + % · POMPA: PRACA / STOP"
+            hasTemp && hasServo -> "°C + % · KLAPA + SYBEREK"
+            hasTemp && hasPump -> "°C · POMPA: PRACA / STOP"
+            hasServo && hasPump -> "% · POMPA: PRACA / STOP"
+            hasTemp -> "°C · WSPÓLNA OŚ"
+            hasServo -> "% · KLAPA + SYBEREK"
+            else -> "STAN · PRACA / STOP"
+        }
     }
 
     fun fsTitle(): String = chartTitle() + " — PEŁNY EKRAN"
     fun fsSubtitle(): String = if (rangeSec <= 24 * 3600) "Podgląd dobowy telemetryczny" else "Analiza wielodniowa"
 
-    /** `updateChartsNowStat()` — plakietka bieżącej wartości + faza grzania. */
-    fun chartNowStat(): String = when (chartFocus) {
-        0 -> if (S.symAktywna("ogrz")) "piec ~${fmt1(S.t_ogrz)}°C · SYM"
-            else if (S.hasData("t_ogrz")) "piec " + fmt1(S.t_ogrz) + "°C" else "piec —"
-        3 -> when {
+    /** Bieżący odczyt odpowiada grupie pompy, jeśli jest włączona; brak danych to stan nieznany. */
+    fun chartNowStat(): String = when {
+        chartGroupSelected("pump") -> when {
             !isFbFresh || !S.hasData("pompa") -> "pompa —"
             S.pompa -> "POMPA: PRACUJE"
             else -> "POMPA: STOI"
         }
+        chartGroupSelected("temp") -> if (S.symAktywna("ogrz")) "piec ~${fmt1(S.t_ogrz)}°C · SYM"
+            else if (S.hasData("t_ogrz")) "piec " + fmt1(S.t_ogrz) + "°C" else "piec —"
         else -> if (S.hasData("klapa")) "klapa " + Math.round(S.klapa / 1.8) + "%" else "klapa —"
     }
 
-    private fun updateChartHead() { /* tytuł/meta/serie są reaktywne w Compose */ }
-
-    fun activeCatalog(): List<SeriesDef> = when (chartFocus) {
-        1 -> ChartSeries.SERVO
-        2 -> ChartSeries.TEMP + ChartSeries.SERVO
-        3 -> ChartSeries.PUMP
-        else -> ChartSeries.TEMP
+    fun activeCatalog(): List<SeriesDef> = buildList {
+        if (chartGroupSelected("temp")) addAll(ChartSeries.TEMP)
+        if (chartGroupSelected("servo")) addAll(ChartSeries.SERVO)
+        if (chartGroupSelected("pump")) addAll(ChartSeries.PUMP)
     }
 
     fun saveChartPrefs() {
         try {
             val o = JSONObject()
-            o.put("focus", chartFocus).put("range", rangeSec)
+            o.put("groupMask", chartGroupMask).put("range", rangeSec)
             val t = JSONObject(); ChartSeries.TEMP.forEach { t.put(it.id, seriesOn[it.id] ?: it.on) }
             val s = JSONObject(); ChartSeries.SERVO.forEach { s.put(it.id, seriesOn[it.id] ?: it.on) }
             val p = JSONObject(); ChartSeries.PUMP.forEach { p.put(it.id, seriesOn[it.id] ?: it.on) }
@@ -1095,7 +1119,18 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         try {
             val raw = prefs.get(Prefs.K_CHART_PREFS) ?: return
             val p = JSONObject(raw)
-            if (p.has("focus")) { val f = p.getInt("focus"); if (f in 0..3) chartFocus = f }
+            if (p.has("groupMask")) {
+                val savedMask = p.optInt("groupMask", CHART_GROUP_TEMPERATURE) and CHART_GROUP_ALL
+                chartGroupMask = if (savedMask != 0) savedMask else CHART_GROUP_TEMPERATURE
+            } else if (p.has("focus")) {
+                // Migracja starego trybu wyłącznego: indeks 2 był korelacją temperatur i serw.
+                chartGroupMask = when (p.optInt("focus", 0)) {
+                    1 -> CHART_GROUP_SERVO
+                    2 -> CHART_GROUP_TEMPERATURE + CHART_GROUP_SERVO
+                    3 -> CHART_GROUP_PUMP
+                    else -> CHART_GROUP_TEMPERATURE
+                }
+            }
             if (p.has("range")) { val r = p.getInt("range"); if (r > 0) rangeSec = r }
             p.optJSONObject("tempOn")?.let { o -> for (k in o.keys()) seriesOn[k] = o.getBoolean(k) }
             p.optJSONObject("servoOn")?.let { o -> for (k in o.keys()) seriesOn[k] = o.getBoolean(k) }
