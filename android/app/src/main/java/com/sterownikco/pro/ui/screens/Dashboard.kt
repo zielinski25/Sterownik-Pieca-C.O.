@@ -236,7 +236,7 @@ private fun ServoIgnitionButton(m: AppModel) {
 
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         UstBtn(
-            label = if (active) "🔥 Rozpalanie aktywne · +5 min" else "🔥 Rozpalanie",
+            label = if (active) "🔥 Rozpalanie aktywne" else "🔥 Rozpalanie",
             variant = "primary",
             modifier = Modifier.fillMaxWidth(),
             enabled = enabled,
