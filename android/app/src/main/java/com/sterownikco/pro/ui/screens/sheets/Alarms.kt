@@ -32,6 +32,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AlarmCenter
+import com.sterownikco.pro.core.AlarmMuteCommands
+import com.sterownikco.pro.core.AlarmMuteSync
 import com.sterownikco.pro.core.AlarmMonitorHealthText
 import com.sterownikco.pro.core.AlarmMonitorPhase
 import com.sterownikco.pro.core.AlarmNotify
@@ -54,6 +56,15 @@ fun AlarmSheet(m: AppModel) {
     m.sheetTick // odświeżaj wiek ostatniego odczytu RTDB
     val ctx = m.ctx
     val p = m.prefs
+    val alarmSignature = AlarmMuteCommands.signature(
+        m.S.dym_alarm.takeIf { m.S.hasData("dym_alarm") },
+        m.S.alarm_ogrzewanie.takeIf { m.S.hasData("alarm_ogrzewanie") },
+        p.get(AlarmCenter.K_LAST_SIG).orEmpty()
+    )
+    val controllerMutedSignature = listOfNotNull(
+        if (m.S.hasData("alarm_dym_wyciszony") && m.S.alarm_dym_wyciszony) "D" else null,
+        if (m.S.hasData("alarm_ogrz_wyciszony") && m.S.alarm_ogrz_wyciszony) "O" else null
+    ).joinToString("+")
     val monitored = AlarmCenter.isMonitored(p)
     val monitorHealth by AlarmMonitorService.monitorHealth.collectAsState()
     val nowElapsedMs = SystemClock.elapsedRealtime()
@@ -177,20 +188,69 @@ fun AlarmSheet(m: AppModel) {
         // 4. Drzemka / wyciszenie
         AlarmCard {
             Text("WYCISZENIE", style = Txt.tiny, color = Pal.Cyan)
+            val muteStatusKnown = m.S.hasAllData(
+                "alarm_dym_wyciszony", "alarm_dym_wyciszenie_ms",
+                "alarm_ogrz_wyciszony", "alarm_ogrz_wyciszenie_ms"
+            )
+            val mutedClasses = buildList {
+                if (m.S.hasData("alarm_dym_wyciszony") && m.S.alarm_dym_wyciszony) add("dym")
+                if (m.S.hasData("alarm_ogrz_wyciszony") && m.S.alarm_ogrz_wyciszony) add("przegrzanie")
+            }
+            val sharedMuteText = when {
+                !muteStatusKnown -> "Centrala nie raportuje wspólnego wyciszenia. Wymagany firmware z synchronizacją alarmów."
+                mutedClasses.isEmpty() -> "Centrala potwierdza: brak wspólnego wyciszenia."
+                else -> {
+                    fun remainingLabel(ms: Long): String = when {
+                        ms < 0L -> "do ustąpienia alarmu"
+                        ms == 0L -> "wznowienie po upływie timera"
+                        else -> "około ${((ms + 59_999L) / 60_000L).coerceAtLeast(1L)} min"
+                    }
+                    val details = buildList {
+                        if (m.S.alarm_dym_wyciszony) {
+                            add("dym ${remainingLabel(m.S.alarm_dym_wyciszenie_ms)}")
+                        }
+                        if (m.S.alarm_ogrz_wyciszony) {
+                            add("przegrzanie ${remainingLabel(m.S.alarm_ogrz_wyciszenie_ms)}")
+                        }
+                    }
+                    "Centrala i aplikacje wyciszone: ${details.joinToString("; ")}."
+                }
+            }
+            Text(
+                sharedMuteText,
+                fontSize = 11.sp,
+                color = when {
+                    !muteStatusKnown -> Pal.Warn
+                    mutedClasses.isNotEmpty() -> Pal.Cyan
+                    else -> Pal.TextDim
+                }
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AlarmBtn("10 min", false, Modifier.weight(1f)) {
-                    AlarmCenter.snooze(p, 10); AlarmNotify.cancel(ctx); m.alarmUiTick++
+                    AlarmCenter.snooze(p, 10)
+                    AlarmMuteSync.request(ctx, alarmSignature, 10 * 60)
+                    AlarmNotify.cancel(ctx); m.alarmUiTick++
                 }
                 AlarmBtn("1 h", false, Modifier.weight(1f)) {
-                    AlarmCenter.snooze(p, 60); AlarmNotify.cancel(ctx); m.alarmUiTick++
+                    AlarmCenter.snooze(p, 60)
+                    AlarmMuteSync.request(ctx, alarmSignature, 60 * 60)
+                    AlarmNotify.cancel(ctx); m.alarmUiTick++
                 }
             }
             AlarmBtn("🔕 Wycisz do następnego alarmu", false, Modifier.fillMaxWidth()) {
-                AlarmCenter.muteUntilNext(p); AlarmNotify.cancel(ctx); m.alarmUiTick++
+                AlarmCenter.muteUntilNext(p)
+                AlarmMuteSync.request(ctx, alarmSignature, 0)
+                AlarmNotify.cancel(ctx); m.alarmUiTick++
             }
-            if (AlarmCenter.snoozeLeftMin(p) > 0 || AlarmCenter.isMutedNow(p)) {
-                AlarmBtn("🔔 Zakończ wyciszenie", true, Modifier.fillMaxWidth()) {
-                    AlarmCenter.unsilence(p); m.alarmUiTick++
+            if (AlarmCenter.snoozeLeftMin(p) > 0 || AlarmCenter.isMutedNow(p) || controllerMutedSignature.isNotEmpty()) {
+                AlarmBtn("🔔 Zakończ wyciszenie na wszystkich urządzeniach", true, Modifier.fillMaxWidth()) {
+                    AlarmCenter.unsilence(p)
+                    AlarmMuteSync.request(
+                        ctx,
+                        controllerMutedSignature.ifEmpty { alarmSignature },
+                        seconds = null
+                    )
+                    m.alarmUiTick++
                 }
             }
         }

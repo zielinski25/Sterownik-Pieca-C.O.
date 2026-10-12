@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import com.sterownikco.pro.core.AlarmCenter
+import com.sterownikco.pro.core.AlarmMuteSync
 import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.Prefs
 import com.sterownikco.pro.service.AlarmMonitorService
@@ -25,18 +26,25 @@ class AlarmReceiver : BroadcastReceiver() {
         when (action) {
             ACT_SNOOZE_10 -> {
                 AlarmCenter.snooze(p, 10)
+                AlarmMuteSync.request(
+                    ctx, alarmSignature(received, p), seconds = 10 * 60
+                )
                 AlarmNotify.cancel(ctx)
-                toast(ctx, "Alarm wyciszony na 10 minut")
+                toast(ctx, "Alarm wyciszony na 10 minut; synchronizuję z centralą")
             }
             ACT_SNOOZE_60 -> {
                 AlarmCenter.snooze(p, 60)
+                AlarmMuteSync.request(
+                    ctx, alarmSignature(received, p), seconds = 60 * 60
+                )
                 AlarmNotify.cancel(ctx)
-                toast(ctx, "Alarm wyciszony na 1 godzinę")
+                toast(ctx, "Alarm wyciszony na 1 godzinę; synchronizuję z centralą")
             }
             ACT_MUTE_NEXT -> {
                 AlarmCenter.muteUntilNext(p)
+                AlarmMuteSync.request(ctx, alarmSignature(received, p), seconds = 0)
                 AlarmNotify.cancel(ctx)
-                toast(ctx, "Wyciszono do następnego alarmu")
+                toast(ctx, "Wyciszono do następnego alarmu; synchronizuję z centralą")
             }
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_LOCKED_BOOT_COMPLETED -> {
                 // Po reboocie wznawiamy czuwanie tylko gdy użytkownik jest
@@ -49,6 +57,11 @@ class AlarmReceiver : BroadcastReceiver() {
             }
         }
     }
+
+    private fun alarmSignature(intent: Intent, prefs: Prefs): String =
+        intent.getStringExtra(AlarmNotify.EXTRA_ALARM_SIGNATURE)
+            ?.takeIf { it.isNotBlank() }
+            ?: prefs.get(AlarmCenter.K_LAST_SIG).orEmpty()
 
     private fun toast(ctx: Context, msg: String) {
         try { Toast.makeText(ctx.applicationContext, msg, Toast.LENGTH_LONG).show() } catch (e: Exception) { /* ignore */ }

@@ -153,6 +153,162 @@ class AlarmCenterTest {
     }
 
     @Test
+    fun controllerMuteIsSharedAcrossPhonesAndPerAlarmClass() {
+        val now = 4_000_000L
+        val prefs = MemoryAlarmPrefs().apply {
+            set(AlarmCenter.K_LAST_SIG, "D")
+            setLong(AlarmCenter.K_LAST_FIRE, now)
+        }
+        AlarmCenter.applyControllerMuteSnapshot(
+            prefs,
+            ControllerAlarmMuteStatus(
+                smokeMuted = true, smokeRemainingMs = -1L,
+                overheatMuted = false, overheatRemainingMs = 0L
+            ),
+            currentSignature = "D",
+            completeAlarmFlags = true,
+            nowMs = now
+        )
+
+        assertFalse(AlarmCenter.shouldLoopSoundAt(prefs, dym = true, ogrz = false, nowMs = now))
+        assertNull(AlarmCenter.evaluateAt(
+            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0, nowMs = now
+        ))
+        // A newly active, unmuted overheat alarm still rings while smoke stays muted.
+        val escalated = AlarmCenter.evaluateAt(
+            prefs, dym = true, ogrz = true, tOgrz = 95.5, dymAdc = 400.0, nowMs = now + 1L
+        )
+        assertNotNull(escalated)
+        assertEquals("D+O", escalated!!.sig)
+    }
+
+    @Test
+    fun controllerTimedMuteExpiresAndRearmsAnAlarmThatIsStillActive() {
+        val start = 5_000_000L
+        val deadline = start + 60_000L
+        val prefs = MemoryAlarmPrefs().apply {
+            set(AlarmCenter.K_LAST_SIG, "D")
+            setLong(AlarmCenter.K_LAST_FIRE, start)
+        }
+        AlarmCenter.applyControllerMuteSnapshot(
+            prefs,
+            ControllerAlarmMuteStatus(
+                smokeMuted = true, smokeRemainingMs = 60_000L,
+                overheatMuted = false, overheatRemainingMs = 0L
+            ),
+            currentSignature = "D",
+            completeAlarmFlags = true,
+            nowMs = start
+        )
+
+        assertNull(AlarmCenter.evaluateAt(
+            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
+            nowMs = deadline - 1L
+        ))
+        val resumed = AlarmCenter.evaluateAt(
+            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
+            nowMs = deadline
+        )
+        assertNotNull(resumed)
+        assertEquals(deadline, prefs.getLong(AlarmCenter.K_LAST_FIRE, 0L))
+    }
+
+    @Test
+    fun repeatedStaleStatusDoesNotExtendControllerMute() {
+        val start = 7_000_000L
+        val deadline = start + 60_000L
+        val status = ControllerAlarmMuteStatus(true, 60_000L, false, 0L, controllerUpdatedAtMs = 42_000L)
+        val prefs = MemoryAlarmPrefs().apply {
+            set(AlarmCenter.K_LAST_SIG, "D")
+            setLong(AlarmCenter.K_LAST_FIRE, start)
+        }
+        AlarmCenter.applyControllerMuteSnapshot(
+            prefs, status, currentSignature = "D", completeAlarmFlags = true, nowMs = start
+        )
+
+        AlarmCenter.applyControllerMuteSnapshot(
+            prefs, status, currentSignature = "D", completeAlarmFlags = true, nowMs = start + 15_000L
+        )
+        assertEquals(deadline, prefs.getLong(AlarmCenter.K_CONTROLLER_DYM_MUTE_UNTIL, 0L))
+        assertNull(AlarmCenter.evaluateAt(
+            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
+            nowMs = start + 15_000L
+        ))
+
+        AlarmCenter.applyControllerMuteSnapshot(
+            prefs, status, currentSignature = "D", completeAlarmFlags = true, nowMs = deadline + 1L
+        )
+        val resumed = AlarmCenter.evaluateAt(
+            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
+            nowMs = deadline + 2L
+        )
+        assertNotNull(resumed)
+        assertEquals(deadline + 2L, prefs.getLong(AlarmCenter.K_LAST_FIRE, 0L))
+    }
+
+    @Test
+    fun delayedStatusAfterTimerExpiryStillRearmsCurrentAlarm() {
+        val start = 6_500_000L
+        val deadline = start + 60_000L
+        val prefs = MemoryAlarmPrefs().apply {
+            set(AlarmCenter.K_LAST_SIG, "D")
+            setLong(AlarmCenter.K_LAST_FIRE, start)
+        }
+        AlarmCenter.applyControllerMuteSnapshot(
+            prefs,
+            ControllerAlarmMuteStatus(true, 60_000L, false, 0L),
+            currentSignature = "D",
+            completeAlarmFlags = true,
+            nowMs = start
+        )
+        // The status poll can arrive after the controller's timer already expired.
+        AlarmCenter.applyControllerMuteSnapshot(
+            prefs,
+            ControllerAlarmMuteStatus(false, 0L, false, 0L),
+            currentSignature = "D",
+            completeAlarmFlags = true,
+            nowMs = deadline + 5_000L
+        )
+
+        val resumed = AlarmCenter.evaluateAt(
+            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
+            nowMs = deadline + 5_001L
+        )
+        assertNotNull(resumed)
+        assertEquals(deadline + 5_001L, prefs.getLong(AlarmCenter.K_LAST_FIRE, 0L))
+    }
+
+    @Test
+    fun controllerUnmuteTransitionRearmsCurrentAlarmImmediately() {
+        val now = 6_000_000L
+        val prefs = MemoryAlarmPrefs().apply {
+            set(AlarmCenter.K_LAST_SIG, "D")
+            setLong(AlarmCenter.K_LAST_FIRE, now)
+        }
+        AlarmCenter.applyControllerMuteSnapshot(
+            prefs,
+            ControllerAlarmMuteStatus(true, -1L, false, 0L),
+            currentSignature = "D",
+            completeAlarmFlags = true,
+            nowMs = now
+        )
+        AlarmCenter.applyControllerMuteSnapshot(
+            prefs,
+            ControllerAlarmMuteStatus(false, 0L, false, 0L),
+            currentSignature = "D",
+            completeAlarmFlags = true,
+            nowMs = now + 1_000L
+        )
+
+        val resumed = AlarmCenter.evaluateAt(
+            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
+            nowMs = now + 1_001L
+        )
+        assertNotNull(resumed)
+        assertEquals(now + 1_001L, prefs.getLong(AlarmCenter.K_LAST_FIRE, 0L))
+    }
+
+    @Test
     fun snoozeSuppressesCurrentEdgeButNewAlarmEdgeOverridesIt() {
         val prefs = MemoryAlarmPrefs()
         val now = System.currentTimeMillis()

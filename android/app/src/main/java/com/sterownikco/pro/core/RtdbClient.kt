@@ -31,6 +31,8 @@ object Rtdb {
 
     private val JSON = "application/json; charset=utf-8".toMediaType()
     private val authRefreshMutex = Mutex()
+    // /piec/cmd is a single-slot queue with one shared /piec/ack record.
+    private val commandSendMutex = Mutex()
 
     private val http: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -279,7 +281,7 @@ object Rtdb {
     }
 
     /** `POST /piec/cmd.json` + oczekiwanie na `GET /piec/ack.json` (max 12 s). */
-    suspend fun sendCommand(id: String, cmd: String): Ack? {
+    suspend fun sendCommand(id: String, cmd: String): Ack? = commandSendMutex.withLock {
         val body = JSONObject().put("id", id).put("cmd", cmd).put("token", cmdToken).put("ts", System.currentTimeMillis())
         val p = patch("/piec/cmd.json", body)
         if (!p.ok) throw java.io.IOException(p.error ?: "błąd wysyłki")
@@ -290,13 +292,13 @@ object Rtdb {
                 if (a.ok && a.body.isNotBlank()) {
                     val j = JSONObject(a.body)
                     if (j.optString("cmdId") == id && j.opt("ok") is Boolean) {
-                        return Ack(j.getBoolean("ok"), j.optString("error").ifEmpty { "błąd" })
+                        return@withLock Ack(j.getBoolean("ok"), j.optString("error").ifEmpty { "błąd" })
                     }
                 }
             } catch (e: Exception) { /* continue */ }
             delay(1000)
         }
-        return null
+        null
     }
 
     data class Ack(val ok: Boolean, val error: String)

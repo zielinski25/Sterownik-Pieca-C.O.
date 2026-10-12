@@ -127,11 +127,12 @@ object AlarmNotify {
         }
     }
 
-    private fun actionPending(ctx: Context, action: String, req: Int): PendingIntent {
+    private fun actionPending(ctx: Context, action: String, req: Int, signature: String): PendingIntent {
         val nonce = Prefs(ctx).get(K_ALARM_OPEN_NONCE).orEmpty()
         val i = Intent(ctx, AlarmReceiver::class.java).setAction(action)
             .setData(Uri.parse("sterownikco://alarm-action/$req/$nonce"))
             .putExtra(EXTRA_ALARM_OPEN_NONCE, nonce)
+            .putExtra(EXTRA_ALARM_SIGNATURE, signature)
         return PendingIntent.getBroadcast(ctx, req, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
@@ -204,9 +205,9 @@ object AlarmNotify {
             .setOngoing(true)
             .setOnlyAlertOnce(false)
             .setContentIntent(open)
-            .addAction(0, "Drzemka 10 min", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_10, 21))
-            .addAction(0, "Drzemka 1 h", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_60, 22))
-            .addAction(0, "Wycisz do następnego", actionPending(ctx, AlarmReceiver.ACT_MUTE_NEXT, 23))
+            .addAction(0, "Drzemka 10 min", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_10, 21, info.sig))
+            .addAction(0, "Drzemka 1 h", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_60, 22, info.sig))
+            .addAction(0, "Wycisz do następnego", actionPending(ctx, AlarmReceiver.ACT_MUTE_NEXT, 23, info.sig))
         if (canFullScreen(ctx)) b.setFullScreenIntent(full, true)
         try {
             nm(ctx).notify(NOTIF_ID, b.build())

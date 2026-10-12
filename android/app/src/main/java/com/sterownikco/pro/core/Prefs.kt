@@ -303,6 +303,9 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
             AlarmCenter.K_MUTED_SIG,
             AlarmCenter.K_LAST_SIG,
             AlarmCenter.K_LAST_FIRE,
+            AlarmCenter.K_CONTROLLER_DYM_MUTE_UNTIL,
+            AlarmCenter.K_CONTROLLER_OGRZ_MUTE_UNTIL,
+            AlarmCenter.K_CONTROLLER_STATUS_MARKER,
             K_ALARM_OPEN_NONCE
         )
         private val FIREBASE_SESSION_KEYS = setOf(K_API_KEY, K_ID_TOKEN, K_REF_TOKEN)

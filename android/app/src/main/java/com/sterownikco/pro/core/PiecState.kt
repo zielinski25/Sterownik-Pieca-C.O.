@@ -33,6 +33,10 @@ class PiecState {
     var dym_alarm = false
     var alarm_ogrzewanie = false
     var alarm_panel = false
+    var alarm_dym_wyciszony = false
+    var alarm_dym_wyciszenie_ms = 0L
+    var alarm_ogrz_wyciszony = false
+    var alarm_ogrz_wyciszenie_ms = 0L
 
     // ── urządzenia ──────────────────────────────────────────────────────────
     var pompa = false
@@ -181,6 +185,8 @@ class PiecState {
         online = false; night = false
         dym_wlaczony = false; dym_swiezy = false; dym_alarm = false
         alarm_ogrzewanie = false; alarm_panel = false
+        alarm_dym_wyciszony = false; alarm_dym_wyciszenie_ms = 0L
+        alarm_ogrz_wyciszony = false; alarm_ogrz_wyciszenie_ms = 0L
         pompa = false; mieszadlo = false; rozpalanie = false
         antystopWlaczony = false; mieszadloWlaczony = false; rtc_ok = false
         tryb_serwa = 0; trybSerwa = 0; klapa = 0; syberka = 0; wybor = 0
@@ -229,6 +235,10 @@ class PiecState {
             assign(readNumber(key, min.toDouble(), max.toDouble(), integer = true)?.toInt() ?: 0)
         }
 
+        fun longField(key: String, min: Long, max: Long, assign: (Long) -> Unit) {
+            assign(readNumber(key, min.toDouble(), max.toDouble(), integer = true)?.toLong() ?: 0L)
+        }
+
         // Te flagi pochodzą z /piec/status. Odczytujemy je przed walidacją
         // temperatur, bo sterownik dopuszcza dla symulacji szerszy zakres niż
         // dla fizycznych czujników (np. piec 0–160°C).
@@ -259,6 +269,10 @@ class PiecState {
         flag("dym_alarm") { dym_alarm = it }
         flag("alarm_ogrzewanie") { alarm_ogrzewanie = it }
         flag("alarm_panel") { alarm_panel = it }
+        flag("alarm_dym_wyciszony") { alarm_dym_wyciszony = it }
+        flag("alarm_ogrz_wyciszony") { alarm_ogrz_wyciszony = it }
+        longField("alarm_dym_wyciszenie_ms", -1L, 3_600_000L) { alarm_dym_wyciszenie_ms = it }
+        longField("alarm_ogrz_wyciszenie_ms", -1L, 3_600_000L) { alarm_ogrz_wyciszenie_ms = it }
         flag("pompa") { pompa = it }
         flag("mieszadlo") { mieszadlo = it }
         flag("rozpalanie") { rozpalanie = it }

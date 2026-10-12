@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AlarmCenter
+import com.sterownikco.pro.core.AlarmMuteSync
 import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.Prefs
 import com.sterownikco.pro.ui.theme.Pal
@@ -99,9 +100,18 @@ class AlarmActivity : ComponentActivity() {
         setContent {
             SterownikTheme {
                 AlarmScreen(title = alarmTitle, msg = alarmMessage,
-                    onSnooze10 = { act { p -> AlarmCenter.snooze(p, 10) } },
-                    onSnooze60 = { act { p -> AlarmCenter.snooze(p, 60) } },
-                    onMuteNext = { act { p -> AlarmCenter.muteUntilNext(p) } },
+                    onSnooze10 = { act { p ->
+                        AlarmCenter.snooze(p, 10)
+                        AlarmMuteSync.request(this, alarmSignature ?: p.get(AlarmCenter.K_LAST_SIG).orEmpty(), 10 * 60)
+                    } },
+                    onSnooze60 = { act { p ->
+                        AlarmCenter.snooze(p, 60)
+                        AlarmMuteSync.request(this, alarmSignature ?: p.get(AlarmCenter.K_LAST_SIG).orEmpty(), 60 * 60)
+                    } },
+                    onMuteNext = { act { p ->
+                        AlarmCenter.muteUntilNext(p)
+                        AlarmMuteSync.request(this, alarmSignature ?: p.get(AlarmCenter.K_LAST_SIG).orEmpty(), 0)
+                    } },
                     onOpen = {
                         val userUnlocked = (getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
                         if (!userUnlocked) {

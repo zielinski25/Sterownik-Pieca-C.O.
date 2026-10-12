@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AlarmCenter
+import com.sterownikco.pro.core.AlarmMuteSync
 import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.ui.components.NavBar
@@ -141,9 +142,24 @@ private fun AlarmPopup(m: AppModel) {
             Text(info.title, fontSize = 17.sp, fontWeight = FontWeight.Black,
                 color = Pal.Err, textAlign = TextAlign.Center)
             Text(info.msg, fontSize = 13.sp, color = Pal.Text, textAlign = TextAlign.Center)
-            PopupBtn("⏸ Wycisz na 10 minut", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 10) } }
-            PopupBtn("⏸ Wycisz na 1 godzinę", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 60) } }
-            PopupBtn("🔕 Wycisz do następnego alarmu", Pal.Violet) { done { AlarmCenter.muteUntilNext(m.prefs) } }
+            PopupBtn("⏸ Wycisz na 10 minut", Pal.Cyan) {
+                done {
+                    AlarmCenter.snooze(m.prefs, 10)
+                    AlarmMuteSync.request(m.ctx, info.sig, 10 * 60)
+                }
+            }
+            PopupBtn("⏸ Wycisz na 1 godzinę", Pal.Cyan) {
+                done {
+                    AlarmCenter.snooze(m.prefs, 60)
+                    AlarmMuteSync.request(m.ctx, info.sig, 60 * 60)
+                }
+            }
+            PopupBtn("🔕 Wycisz do następnego alarmu", Pal.Violet) {
+                done {
+                    AlarmCenter.muteUntilNext(m.prefs)
+                    AlarmMuteSync.request(m.ctx, info.sig, 0)
+                }
+            }
             PopupBtn("Zamknij podgląd", Pal.TextDim) { m.dismissAlarmPopup() }
         }
     }

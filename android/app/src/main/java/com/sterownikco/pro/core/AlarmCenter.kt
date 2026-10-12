@@ -10,7 +10,9 @@ package com.sterownikco.pro.core
    podwójne odpalenie jest niemożliwe nawet gdy oba źródła pracują naraz.
 
    Dźwięk aktywnego, nieuciszonego alarmu jest zapętlany przez AlarmMonitorService.
-   Tryby ciszy (oba przeżyją restart aplikacji i telefonu):
+   Wyciszenie jest lokalne natychmiast, a aplikacja synchronizuje je z centralą;
+   raport /piec/status jest źródłem wspólnego stanu dla pozostałych telefonów.
+   Tryby ciszy (przetrwają restart aplikacji i telefonu):
    • drzemka czasowa (10 min / 1 h) — zatrzymuje pętlę; po jej końcu aktywny alarm wraca,
    • wyciszenie do następnego alarmu — zatrzymuje pętlę; nowa krawędź (inna sygnatura) dzwoni.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -31,6 +33,9 @@ object AlarmCenter {
     const val K_MUTED_SIG = "piec_alarm_muted_sig"   // sygnatura wyciszona "do następnego"
     const val K_LAST_SIG = "piec_alarm_last_sig"     // ostatnia widziana sygnatura
     const val K_LAST_FIRE = "piec_alarm_last_fire"   // epoch ms ostatniego dzwonka
+    const val K_CONTROLLER_DYM_MUTE_UNTIL = "piec_alarm_controller_dym_until"
+    const val K_CONTROLLER_OGRZ_MUTE_UNTIL = "piec_alarm_controller_ogrz_until"
+    const val K_CONTROLLER_STATUS_MARKER = "piec_alarm_controller_status_marker"
 
     /** Ponowne zgłoszenie powiadomienia; właściwy dźwięk alarmu gra w pętli w AlarmMonitorService. */
     const val REPEAT_MS = 30L * 60_000
@@ -61,6 +66,165 @@ object AlarmCenter {
         val activeDym = dym ?: if ("D" in last) true else null
         val activeOgrz = ogrz ?: if ("O" in last) true else null
         return AlarmFlags(activeDym, activeOgrz)
+    }
+
+    /**
+     * Applies the controller's shared mute report to this phone. Timed values are durations
+     * (not controller millis timestamps); -1 means muted until the alarm clears. A transition
+     * from muted to audible rearms an alarm that is still active on this phone.
+     */
+    fun applyControllerMuteSnapshot(
+        p: AlarmPrefsStore,
+        status: ControllerAlarmMuteStatus,
+        currentSignature: String,
+        completeAlarmFlags: Boolean,
+        nowMs: Long
+    ) {
+        val effectiveStatus = if (status.hasAnyField) {
+            ageRepeatedControllerMuteStatus(p, status, nowMs)
+        } else {
+            status
+        }
+        val wasMuted = storedControllerMuteCoversSignature(p, currentSignature)
+        if (!effectiveStatus.hasAnyField) {
+            // A full status from pre-sync firmware must not leave an old indefinite mute cached.
+            if (completeAlarmFlags) {
+                writeControllerMuteUntil(p, K_CONTROLLER_DYM_MUTE_UNTIL, 0L)
+                writeControllerMuteUntil(p, K_CONTROLLER_OGRZ_MUTE_UNTIL, 0L)
+                if (p.get(K_CONTROLLER_STATUS_MARKER) != null) p.remove(K_CONTROLLER_STATUS_MARKER)
+            }
+        } else {
+            applyControllerMuteType(
+                p, K_CONTROLLER_DYM_MUTE_UNTIL, effectiveStatus.smokeMuted,
+                effectiveStatus.smokeRemainingMs, nowMs
+            )
+            applyControllerMuteType(
+                p, K_CONTROLLER_OGRZ_MUTE_UNTIL, effectiveStatus.overheatMuted,
+                effectiveStatus.overheatRemainingMs, nowMs
+            )
+        }
+        val isMuted = controllerMuteForSignatureAt(p, currentSignature, nowMs, expire = false)
+        if (wasMuted && !isMuted && currentSignature.isNotEmpty() &&
+            p.get(K_LAST_SIG) == currentSignature
+        ) {
+            p.setLong(K_LAST_FIRE, 0L)
+        }
+    }
+
+    private fun ageRepeatedControllerMuteStatus(
+        p: AlarmPrefsStore,
+        status: ControllerAlarmMuteStatus,
+        nowMs: Long
+    ): ControllerAlarmMuteStatus {
+        val sourceTime = status.controllerUpdatedAtMs ?: return status
+        val marker = p.get(K_CONTROLLER_STATUS_MARKER)?.split(':')
+        val previousSourceTime = marker?.getOrNull(0)?.toLongOrNull()
+        val previousReceivedAt = marker?.getOrNull(1)?.toLongOrNull()
+        if (previousSourceTime != sourceTime || previousReceivedAt == null) {
+            p.set(K_CONTROLLER_STATUS_MARKER, "$sourceTime:$nowMs")
+            return status
+        }
+
+        // RTDB can keep returning its last value while the controller is offline. Age a
+        // duplicate report from its first receipt so it cannot extend a mute indefinitely.
+        val ageMs = (nowMs - previousReceivedAt).coerceAtLeast(0L)
+        fun age(remaining: Long?): Long? =
+            if (remaining != null && remaining > 0L) (remaining - ageMs).coerceAtLeast(0L) else remaining
+        return status.copy(
+            smokeRemainingMs = age(status.smokeRemainingMs),
+            overheatRemainingMs = age(status.overheatRemainingMs)
+        )
+    }
+
+    private fun applyControllerMuteType(
+        p: AlarmPrefsStore,
+        key: String,
+        muted: Boolean?,
+        remainingMs: Long?,
+        nowMs: Long
+    ) {
+        if (muted == null) return
+        val until = when {
+            !muted -> 0L
+            remainingMs == null || remainingMs == -1L -> Long.MAX_VALUE
+            remainingMs <= 0L -> 0L
+            else -> nowMs + remainingMs.coerceAtMost(3_600_000L)
+        }
+        writeControllerMuteUntil(p, key, until)
+    }
+
+    private fun writeControllerMuteUntil(p: AlarmPrefsStore, key: String, until: Long) {
+        val previous = p.getLong(key, 0L)
+        val materiallyChanged = when {
+            previous == until -> false
+            previous == 0L || previous == Long.MAX_VALUE || until == 0L || until == Long.MAX_VALUE -> true
+            else -> kotlin.math.abs(until - previous) > 1_000L
+        }
+        if (materiallyChanged) p.setLong(key, until)
+    }
+
+    private fun storedControllerMuteCoversSignature(p: AlarmPrefsStore, signature: String): Boolean {
+        val activeTypes = signature.split('+').mapNotNull {
+            when (it) {
+                "D" -> K_CONTROLLER_DYM_MUTE_UNTIL
+                "O" -> K_CONTROLLER_OGRZ_MUTE_UNTIL
+                else -> null
+            }
+        }
+        return activeTypes.isNotEmpty() && activeTypes.all { p.getLong(it, 0L) > 0L }
+    }
+
+    private fun controllerMuteForSignatureAt(
+        p: AlarmPrefsStore,
+        signature: String,
+        nowMs: Long,
+        expire: Boolean
+    ): Boolean {
+        val activeTypes = signature.split('+').mapNotNull {
+            when (it) {
+                "D" -> K_CONTROLLER_DYM_MUTE_UNTIL
+                "O" -> K_CONTROLLER_OGRZ_MUTE_UNTIL
+                else -> null
+            }
+        }
+        if (activeTypes.isEmpty()) return false
+        var expired = false
+        val allMuted = activeTypes.all { key ->
+            val until = p.getLong(key, 0L)
+            when {
+                until == Long.MAX_VALUE -> true
+                until > nowMs -> true
+                until > 0L -> {
+                    expired = true
+                    if (expire) p.setLong(key, 0L)
+                    false
+                }
+                else -> false
+            }
+        }
+        if (expire && expired && p.get(K_LAST_SIG) == signature) {
+            p.setLong(K_LAST_FIRE, 0L)
+        }
+        return allMuted
+    }
+
+    /** Null means at least one currently active alarm class is not muted. */
+    fun controllerMuteLeftMinAt(p: AlarmPrefsStore, signature: String, nowMs: Long): Int? {
+        val activeTypes = signature.split('+').mapNotNull {
+            when (it) {
+                "D" -> K_CONTROLLER_DYM_MUTE_UNTIL
+                "O" -> K_CONTROLLER_OGRZ_MUTE_UNTIL
+                else -> null
+            }
+        }
+        if (activeTypes.isEmpty()) return null
+        val untils = activeTypes.map { p.getLong(it, 0L) }
+        if (untils.any { it != Long.MAX_VALUE && it <= nowMs }) return null
+        val finite = untils.filter { it != Long.MAX_VALUE }
+        if (finite.isEmpty()) return -1
+        val earliest = finite.minOrNull() ?: return null
+        val left = earliest - nowMs
+        return if (left > 0L) ((left + 59_999L) / 60_000L).toInt() else null
     }
 
     /** Osobny wybór dla dymu, przegrzania i alarmu łącznego; K_SOUND zachowuje starszy wybór dymu. */
@@ -128,7 +292,8 @@ object AlarmCenter {
 
     fun isMutedNow(p: AlarmPrefsStore): Boolean {
         val last = p.get(K_LAST_SIG) ?: ""
-        return last.isNotEmpty() && (p.get(K_MUTED_SIG) ?: "") == last
+        return (last.isNotEmpty() && (p.get(K_MUTED_SIG) ?: "") == last) ||
+            controllerMuteForSignatureAt(p, last, System.currentTimeMillis(), expire = true)
     }
 
     /** Bieżący rodzaj alarmu do doboru osobnej melodii. */
@@ -153,17 +318,23 @@ object AlarmCenter {
     ): Boolean {
         if (!isMonitored(p) || (!dym && !ogrz) || snoozeLeftMinAt(p, nowMs) > 0) return false
         val sig = listOfNotNull(if (dym) "D" else null, if (ogrz) "O" else null).joinToString("+")
-        return sig.isNotEmpty() && (p.get(K_MUTED_SIG) ?: "") != sig
+        if (sig.isEmpty() || (p.get(K_MUTED_SIG) ?: "") == sig) return false
+        return !controllerMuteForSignatureAt(p, sig, nowMs, expire = true)
     }
 
     fun statusText(p: AlarmPrefsStore): String = statusTextAt(p, System.currentTimeMillis())
 
     internal fun statusTextAt(p: AlarmPrefsStore, nowMs: Long): String {
         val snoozeMinutes = snoozeLeftMinAt(p, nowMs)
+        val lastSignature = p.get(K_LAST_SIG) ?: ""
+        val controllerMuteMinutes = controllerMuteLeftMinAt(p, lastSignature, nowMs)
+        val localMuted = lastSignature.isNotEmpty() && (p.get(K_MUTED_SIG) ?: "") == lastSignature
         return when {
             !isMonitored(p) -> "Monitoring w tle WYŁĄCZONY"
             snoozeMinutes > 0 -> "Drzemka — cisza jeszcze $snoozeMinutes min"
-            isMutedNow(p) -> "Wyciszony do następnego alarmu"
+            localMuted -> "Wyciszony do następnego alarmu"
+            controllerMuteMinutes == -1 -> "Centrala i telefony wyciszone do ustąpienia alarmu"
+            controllerMuteMinutes != null -> "Centrala i telefony wyciszone — jeszcze $controllerMuteMinutes min"
             else -> "Monitoring włączony — nie potwierdza łączności w tle"
         }
     }
@@ -211,6 +382,7 @@ object AlarmCenter {
             return build(sig, tOgrz, dymAdc)
         }
         if (!isEdge && (p.get(K_MUTED_SIG) ?: "") == sig) return null // wyciszony do następnego
+        if (controllerMuteForSignatureAt(p, sig, now, expire = true)) return null
         val lastFire = p.getLong(K_LAST_FIRE, 0L)
         if (!isEdge && now - lastFire < REPEAT_MS) return null // ta sama krawędź, za wcześnie na powtórkę
         p.set(K_LAST_SIG, sig); p.setLong(K_LAST_FIRE, now)

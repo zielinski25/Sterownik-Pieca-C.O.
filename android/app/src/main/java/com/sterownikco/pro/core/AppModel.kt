@@ -331,6 +331,17 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             connected = true
             lastFetchTs = System.currentTimeMillis()
             S.applyIncomingData(d)
+            val smokeFlag = S.dym_alarm.takeIf { S.hasData("dym_alarm") }
+            val overheatFlag = S.alarm_ogrzewanie.takeIf { S.hasData("alarm_ogrzewanie") }
+            AlarmCenter.applyControllerMuteSnapshot(
+                prefs = prefs,
+                status = controllerAlarmMuteStatus(d),
+                currentSignature = AlarmMuteCommands.signature(
+                    smokeFlag, overheatFlag, prefs.get(AlarmCenter.K_LAST_SIG).orEmpty()
+                ),
+                completeAlarmFlags = smokeFlag != null && overheatFlag != null,
+                nowMs = System.currentTimeMillis()
+            )
             S.bump()
             if (S.online) {
                 recordSolar()
@@ -360,7 +371,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                             }
                         }
                         else -> {
-                            AlarmNotify.cancelLegacyNotification(ctx)
+                            AlarmNotify.cancel(ctx)
+                            clearAlarmPopup()
                             AlarmMonitorService.stopAlarmLoop()
                         }
                     }

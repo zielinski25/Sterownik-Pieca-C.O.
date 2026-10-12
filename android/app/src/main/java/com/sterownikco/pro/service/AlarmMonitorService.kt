@@ -14,9 +14,11 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.sterownikco.pro.core.AlarmCenter
 import com.sterownikco.pro.core.AlarmFlags
+import com.sterownikco.pro.core.AlarmMuteCommands
 import com.sterownikco.pro.core.AlarmMonitorHealth
 import com.sterownikco.pro.core.AlarmMonitorPhase
 import com.sterownikco.pro.core.AlarmMonitorStartGate
@@ -24,6 +26,7 @@ import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.AlarmSnapshotCoordinator
 import com.sterownikco.pro.core.Prefs
 import com.sterownikco.pro.core.Rtdb
+import com.sterownikco.pro.core.controllerAlarmMuteStatus
 import com.sterownikco.pro.core.parseAlarmFlag
 import com.sterownikco.pro.widget.PiecWidget
 import kotlinx.coroutines.CancellationException
@@ -38,6 +41,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 
@@ -57,6 +62,7 @@ import org.json.JSONObject
 class AlarmMonitorService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val alarmMuteCommandMutex = Mutex()
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var lastSnap = JSONObject()
     private val snapshotLock = Any()
@@ -101,9 +107,17 @@ class AlarmMonitorService : Service() {
             return START_NOT_STICKY
         }
         loadCredsIntoRtdb()
-        if (intent?.action == ACT_PLAY_ALARM_LOOP) {
-            val sound = intent.getStringExtra(EXTRA_ALARM_SOUND) ?: "syrena"
-            if (requestedAlarmSound == sound) startLoopingAlarm(sound)
+        when (intent?.action) {
+            ACT_PLAY_ALARM_LOOP -> {
+                val sound = intent.getStringExtra(EXTRA_ALARM_SOUND) ?: "syrena"
+                if (requestedAlarmSound == sound) startLoopingAlarm(sound)
+            }
+            ACT_SYNC_ALARM_MUTE -> {
+                val signature = intent.getStringExtra(EXTRA_MUTE_SIGNATURE).orEmpty()
+                val secondsExtra = intent.getIntExtra(EXTRA_MUTE_SECONDS, NO_MUTE_SECONDS)
+                val seconds = secondsExtra.takeUnless { it == NO_MUTE_SECONDS }
+                scope.launch { syncControllerMute(signature, seconds) }
+            }
         }
         return START_STICKY
     }
@@ -210,11 +224,65 @@ class AlarmMonitorService : Service() {
             }
             val session = p.firebaseSession()
             Rtdb.setAuthSession(session.apiKey, session.idToken, session.refreshToken)
-            // Commands are never sent by this service; keep the command credential in CE storage only.
             Rtdb.cmdToken = if (android.os.Build.VERSION.SDK_INT >= 24 &&
                 (applicationContext.getSystemService(Context.USER_SERVICE) as android.os.UserManager).isUserUnlocked
             ) p.get(Prefs.K_CMD_TOKEN) ?: Prefs.DEFAULT_CMD_TOKEN else Prefs.DEFAULT_CMD_TOKEN
         } catch (e: Exception) { /* prefs niedostępne — pętla i tak poczeka */ }
+    }
+
+    private suspend fun syncControllerMute(signature: String, seconds: Int?) {
+        alarmMuteCommandMutex.withLock {
+            val commands = AlarmMuteCommands.forMute(signature, seconds)
+            if (commands.isEmpty()) {
+                reportMuteSync("Brak aktywnego alarmu do synchronizacji wyciszenia.", error = true)
+                return@withLock
+            }
+            if (Rtdb.refreshToken.isBlank()) {
+                reportMuteSync("Brak sesji Firebase — wyciszenie działa tylko na tym telefonie.", error = true)
+                stopIfOnlyStartedForMute()
+                return@withLock
+            }
+            for ((index, command) in commands.withIndex()) {
+                val ack = try {
+                    Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
+                } catch (e: Exception) {
+                    null
+                }
+                when {
+                    ack == null -> {
+                        reportMuteSync(
+                            "Brak potwierdzenia centrali (${index + 1}/${commands.size}). Wyciszenie globalne nie jest potwierdzone.",
+                            error = true
+                        )
+                        stopIfOnlyStartedForMute()
+                        return@withLock
+                    }
+                    !ack.ok -> {
+                        reportMuteSync(
+                            "Centrala odrzuciła wyciszenie: ${ack.error}. Wymagany zgodny firmware.",
+                            error = true
+                        )
+                        stopIfOnlyStartedForMute()
+                        return@withLock
+                    }
+                }
+            }
+            reportMuteSync("Centrala przyjęła wyciszenie; czekam na potwierdzenie stanu wspólnego.")
+            stopIfOnlyStartedForMute()
+        }
+    }
+
+    private fun reportMuteSync(message: String, error: Boolean = false) {
+        if (error) Log.w(TAG, message) else Log.i(TAG, message)
+        mainHandler.post {
+            try { Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show() }
+            catch (e: Exception) { /* ekran powiadomień może nie być dostępny */ }
+        }
+    }
+
+    private fun stopIfOnlyStartedForMute() {
+        val prefs = try { Prefs(applicationContext) } catch (e: Exception) { null }
+        if (prefs != null && !AlarmCenter.isMonitored(prefs)) stopSelf()
     }
 
     private suspend fun monitorLoop() {
@@ -279,16 +347,16 @@ class AlarmMonitorService : Service() {
                         val baseKey = base.substringBefore('/')
                         val touchesAlarm = baseKey in ALARM_STATUS_KEYS ||
                             (base.isEmpty() && ALARM_STATUS_KEYS.any(dj::has))
-                        val previousAlarmFlags = alarmFlagSignature(lastSnap)
+                        val previousAlarmFlags = alarmStateSignature(lastSnap)
                         for (k in dj.keys()) applyKey(if (base.isEmpty()) k else "$base/$k", dj.get(k))
-                        alarmFlagsMayHaveChanged = previousAlarmFlags != alarmFlagSignature(lastSnap)
+                        alarmFlagsMayHaveChanged = previousAlarmFlags != alarmStateSignature(lastSnap)
                         if (touchesAlarm) alarmStreamVersion++
                     } else {
                         val path = j.optString("path", "/")
                         val payload = if (j.isNull("data")) null else j.get("data")
                         if (path == "/") {
                             if (payload is JSONObject) {
-                                alarmFlagsMayHaveChanged = alarmFlagSignature(lastSnap) != alarmFlagSignature(payload)
+                                alarmFlagsMayHaveChanged = alarmStateSignature(lastSnap) != alarmStateSignature(payload)
                                 lastSnap = payload
                                 // Keep the fallback GET's whole-snapshot freshness guard, but do
                                 // not invalidate foreground UI polls when only other fields changed.
@@ -300,9 +368,9 @@ class AlarmMonitorService : Service() {
                             // RTDB put-null usuwa klucz; zachowujemy migawkę zgodną ze źródłem.
                             val key = path.trim('/').substringBefore('/')
                             if (key in ALARM_STATUS_KEYS) alarmStreamVersion++
-                            val previousAlarmFlags = alarmFlagSignature(lastSnap)
+                            val previousAlarmFlags = alarmStateSignature(lastSnap)
                             applyKey(path.trim('/'), payload)
-                            alarmFlagsMayHaveChanged = previousAlarmFlags != alarmFlagSignature(lastSnap)
+                            alarmFlagsMayHaveChanged = previousAlarmFlags != alarmStateSignature(lastSnap)
                         }
                     }
                     onSnapshotLocked(
@@ -354,11 +422,21 @@ class AlarmMonitorService : Service() {
                 val smoke = alarmFlag(d, "dym_alarm")
                 val overheat = alarmFlag(d, "alarm_ogrzewanie")
                 val complete = smoke != null && overheat != null
+                val prefs = Prefs(applicationContext)
+                val activeSignature = AlarmMuteCommands.signature(
+                    smoke, overheat, prefs.get(AlarmCenter.K_LAST_SIG).orEmpty()
+                )
+                AlarmCenter.applyControllerMuteSnapshot(
+                    prefs = prefs,
+                    status = controllerAlarmMuteStatus(d),
+                    currentSignature = activeSignature,
+                    completeAlarmFlags = complete,
+                    nowMs = System.currentTimeMillis()
+                )
 
                 // Niepełna migawka nie może potwierdzić ciszy. Jeśli zawiera aktywną
                 // flagę, zachowujemy poprzedni aktywny stan drugiej flagi (jeśli był znany).
                 if (smoke == true || overheat == true || complete) {
-                    val prefs = Prefs(applicationContext)
                     val flags = if (complete) {
                         AlarmFlags(dym = smoke == true, ogrz = overheat == true)
                     } else {
@@ -390,7 +468,7 @@ class AlarmMonitorService : Service() {
                                 }
                             }
                             else -> {
-                                AlarmNotify.cancelLegacyNotification(applicationContext)
+                                AlarmNotify.cancel(applicationContext)
                                 AlarmMonitorService.stopAlarmLoop()
                             }
                         }
@@ -450,8 +528,14 @@ class AlarmMonitorService : Service() {
         return parseAlarmFlag(d.opt(key))
     }
 
-    private fun alarmFlagSignature(d: JSONObject): Pair<Boolean?, Boolean?> =
-        alarmFlag(d, "dym_alarm") to alarmFlag(d, "alarm_ogrzewanie")
+    private fun alarmStateSignature(d: JSONObject): List<Any?> = listOf(
+        alarmFlag(d, "dym_alarm"),
+        alarmFlag(d, "alarm_ogrzewanie"),
+        if (d.has("alarm_dym_wyciszony")) parseAlarmFlag(d.opt("alarm_dym_wyciszony")) else null,
+        d.opt("alarm_dym_wyciszenie_ms"),
+        if (d.has("alarm_ogrz_wyciszony")) parseAlarmFlag(d.opt("alarm_ogrz_wyciszony")) else null,
+        d.opt("alarm_ogrz_wyciszenie_ms")
+    )
 
     private fun number(d: JSONObject, key: String): Double {
         if (!d.has(key) || d.isNull(key)) return Double.NaN
@@ -461,13 +545,20 @@ class AlarmMonitorService : Service() {
     companion object {
         const val ACT_STOP = "com.sterownikco.pro.STOP_MONITOR"
         const val ACT_PLAY_ALARM_LOOP = "com.sterownikco.pro.PLAY_ALARM_LOOP"
+        const val ACT_SYNC_ALARM_MUTE = "com.sterownikco.pro.SYNC_ALARM_MUTE"
         const val EXTRA_ALARM_SOUND = "alarm_sound"
+        const val EXTRA_MUTE_SIGNATURE = "alarm_mute_signature"
+        const val EXTRA_MUTE_SECONDS = "alarm_mute_seconds"
+        private const val NO_MUTE_SECONDS = Int.MIN_VALUE
         const val STREAM_MAX_MS = 3L * 60_000
         const val FALLBACK_POLL_MS = 30_000L
         private const val ALARM_LOOP_RESTART_MS = 250L
         private const val ALARM_LOOP_RETRY_MS = 5_000L
         private const val TAG = "AlarmMonitorService"
-        private val ALARM_STATUS_KEYS = setOf("dym_alarm", "alarm_ogrzewanie")
+        private val ALARM_STATUS_KEYS = setOf(
+            "dym_alarm", "alarm_ogrzewanie", "alarm_dym_wyciszony",
+            "alarm_dym_wyciszenie_ms", "alarm_ogrz_wyciszony", "alarm_ogrz_wyciszenie_ms"
+        )
         private val _monitorHealth = MutableStateFlow(AlarmMonitorHealth())
         val monitorHealth: StateFlow<AlarmMonitorHealth> = _monitorHealth.asStateFlow()
         @Volatile private var activeInstance: AlarmMonitorService? = null
@@ -539,6 +630,50 @@ class AlarmMonitorService : Service() {
             requestedAlarmSound = null
             val service = activeInstance ?: return
             service.mainHandler.post { if (activeInstance === service) service.stopLoopingAlarm() }
+        }
+
+        /** Requests a controller-side mute; no furnace or actuator command is sent. */
+        fun requestControllerMute(ctx: Context, signature: String, seconds: Int?) {
+            val appContext = ctx.applicationContext
+            val service = activeInstance
+            if (service != null) {
+                service.scope.launch {
+                    service.loadCredsIntoRtdb()
+                    service.syncControllerMute(signature, seconds)
+                }
+                return
+            }
+            val session = try { Prefs(appContext).firebaseSession() } catch (e: Exception) { null }
+            if (session?.refreshToken.isNullOrBlank()) {
+                Handler(Looper.getMainLooper()).post {
+                    try {
+                        Toast.makeText(
+                            appContext,
+                            "Brak sesji Firebase — wyciszenie działa tylko na tym telefonie.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } catch (ignored: Exception) { /* ignore */ }
+                }
+                return
+            }
+            try {
+                val intent = Intent(appContext, AlarmMonitorService::class.java)
+                    .setAction(ACT_SYNC_ALARM_MUTE)
+                    .putExtra(EXTRA_MUTE_SIGNATURE, signature)
+                    .putExtra(EXTRA_MUTE_SECONDS, seconds ?: NO_MUTE_SECONDS)
+                ContextCompat.startForegroundService(appContext, intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Nie udało się uruchomić usługi do synchronizacji wyciszenia", e)
+                Handler(Looper.getMainLooper()).post {
+                    try {
+                        Toast.makeText(
+                            appContext,
+                            "Nie udało się wysłać wyciszenia do centrali.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } catch (ignored: Exception) { /* ignore */ }
+                }
+            }
         }
 
         fun stop(ctx: Context) {
