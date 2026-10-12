@@ -73,7 +73,7 @@ object AlarmCenter {
      * (not controller millis timestamps); -1 means muted until the alarm clears. A transition
      * from muted to audible rearms an alarm that is still active on this phone.
      */
-    fun applyControllerMuteSnapshot(
+    internal fun applyControllerMuteSnapshot(
         p: AlarmPrefsStore,
         status: ControllerAlarmMuteStatus,
         currentSignature: String,

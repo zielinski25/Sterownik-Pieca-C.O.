@@ -334,7 +334,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             val smokeFlag = S.dym_alarm.takeIf { S.hasData("dym_alarm") }
             val overheatFlag = S.alarm_ogrzewanie.takeIf { S.hasData("alarm_ogrzewanie") }
             AlarmCenter.applyControllerMuteSnapshot(
-                prefs = prefs,
+                p = prefs,
                 status = controllerAlarmMuteStatus(d),
                 currentSignature = AlarmMuteCommands.signature(
                     smokeFlag, overheatFlag, prefs.get(AlarmCenter.K_LAST_SIG).orEmpty()

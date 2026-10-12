@@ -320,7 +320,7 @@ class AlarmMonitorService : Service() {
                     smoke, overheat, prefs.get(AlarmCenter.K_LAST_SIG).orEmpty()
                 )
                 AlarmCenter.applyControllerMuteSnapshot(
-                    prefs = prefs,
+                    p = prefs,
                     status = controllerAlarmMuteStatus(d),
                     currentSignature = activeSignature,
                     completeAlarmFlags = complete,
