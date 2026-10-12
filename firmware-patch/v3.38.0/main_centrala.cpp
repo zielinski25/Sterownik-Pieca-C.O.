@@ -1,9 +1,9 @@
-// [v3.37.0 ROZPALANIE-SERW + WSPOLNE-WYCISZANIE] — 2026-10-12
+// [v3.38.0 ROZPALANIE-SERW + WSPOLNE-WYCISZANIE] — 2026-10-12
 // Co: Automatyczne przygotowanie serw do rozpalenia, wymuszenie sekwencyjne
 //     do 30C, blokada po alarmie dymu oraz nadzor czujnika po ruchu serw.
 //     Dodano wspolny, czasowy kontrakt alarm_mute z raportem statusu RTDB,
 //     dzieki czemu brzeczyk centrali i telefony korzystaja z tego samego stanu.
-// FIRMWARE_VERSION v3.36.1 -> v3.37.0 (MINOR: nowe sterowanie i API alarmow).
+// FIRMWARE_VERSION v3.37.0 -> v3.38.0 (MINOR: nowe sterowanie i API alarmow).
 //
 // [v3.36.1 TELEGRAM-LOGS-MENU] — 2026-10-11
 // Co: Glowny przycisk "Logi i dane" otwiera podmenu operacji na logach.
@@ -4976,7 +4976,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.37.0";
+static const char* FIRMWARE_VERSION = "v3.38.0";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze

@@ -1,8 +1,8 @@
-# Firmware v3.37.0 — patch źródłowy
+# Firmware v3.38.0 — patch źródłowy
 
 Pakiet zawiera:
 
-- `main_centrala.cpp` — pełne źródło centrali przygotowane dla v3.37.0;
+- `main_centrala.cpp` — pełne źródło centrali przygotowane dla v3.38.0;
 - `main_centrala.cpp.patch` — różnicę względem `src/main_centrala.cpp` z pliku `Cenatrala Pieca.zip`;
 - ten README z zakresem zmian i statusem weryfikacji.
 
