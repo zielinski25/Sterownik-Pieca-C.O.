@@ -15,7 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,9 +37,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.core.buildTiles
 import com.sterownikco.pro.ui.components.Banner
@@ -44,6 +52,7 @@ import com.sterownikco.pro.ui.components.QCard
 import com.sterownikco.pro.ui.components.Sect
 import com.sterownikco.pro.ui.components.SysStrip
 import com.sterownikco.pro.ui.components.Trend
+import com.sterownikco.pro.ui.components.UstBtn
 import com.sterownikco.pro.ui.components.anyAlarm
 import com.sterownikco.pro.ui.icons.AppIcon
 import com.sterownikco.pro.ui.theme.Dimens
@@ -73,6 +82,7 @@ fun Dashboard(m: AppModel) {
     val to = S.valOf("ogrz", "t_ogrz")
     val tb = S.valOf("bojler", "t_bojler")
     val anyAl = anyAlarm(m)
+    var setpointDialogOpen by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
@@ -116,8 +126,11 @@ fun Dashboard(m: AppModel) {
                 !S.hasData("t_ogrz") -> "oczekiwanie na rzeczywisty odczyt pieca C.O."
                 else -> "temperatura pieca C.O. · " + (if (to > 70) "grzanie na maks." else "odczyt odebrany")
             },
-            onSetpointClick = { m.openSheet("serwo") }
+            onSetpointClick = { setpointDialogOpen = true }
         )
+        if (setpointDialogOpen) {
+            BoilerSetpointDialog(m, onDismiss = { setpointDialogOpen = false })
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val pumpKnown = S.hasData("pompa")
@@ -201,6 +214,62 @@ fun Dashboard(m: AppModel) {
         )
 
         Trend(S.hist.toList())
+    }
+}
+
+@Composable
+private fun BoilerSetpointDialog(m: AppModel, onDismiss: () -> Unit) {
+    var value by remember {
+        mutableStateOf(if (m.S.hasData("tempZadServo")) m.S.tempZadServo.toString() else "")
+    }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun submit() {
+        val degrees = value.toIntOrNull()
+        if (degrees == null || degrees !in 0..100) {
+            error = "Wpisz temperaturę od 0 do 100 °C."
+            return
+        }
+        m.commitNum("Temperatura zadana pieca", "tempZadServo", 0, 100, degrees)
+        onDismiss()
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth()
+                .background(Pal.Surface2, RoundedCornerShape(16.dp))
+                .border(1.dp, Pal.BorderStrong, RoundedCornerShape(16.dp))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Temperatura pieca", style = Txt.sheetTitle)
+            OutlinedTextField(
+                value = value,
+                onValueChange = { input ->
+                    value = input.filter { it.isDigit() }.take(3)
+                    error = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Temperatura zadana (°C)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Pal.Cyan,
+                    unfocusedBorderColor = Pal.Border,
+                    focusedContainerColor = Color(0xFF040911),
+                    unfocusedContainerColor = Color(0xFF040911),
+                    focusedTextColor = Pal.White,
+                    unfocusedTextColor = Pal.White,
+                    cursorColor = Pal.Cyan
+                )
+            )
+            error?.let { Text(it, style = Txt.note.copy(fontSize = 11.sp), color = Pal.Err) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                UstBtn("Anuluj", onClick = onDismiss, modifier = Modifier.weight(1f))
+                UstBtn("Ustaw", onClick = { submit() }, modifier = Modifier.weight(1f), variant = "primary")
+            }
+        }
     }
 }
 

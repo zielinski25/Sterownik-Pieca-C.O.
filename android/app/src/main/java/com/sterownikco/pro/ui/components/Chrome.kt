@@ -193,22 +193,13 @@ fun Hero(
             Box(
                 Modifier.size(100.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .clickable(onClickLabel = "Otwórz ustawienie temperatury zadanej") { onSetpointClick() }
+                    .clickable(onClickLabel = "Ustaw temperaturę pieca") { onSetpointClick() }
             ) {
                 SvgView(
                     src = remember(art) { Ilu.heroBoiler(art) },
                     modifier = Modifier.fillMaxSize(),
                     animFor = { t -> Ilu.anim(t, art) }
                 )
-                Box(
-                    Modifier.align(Alignment.BottomEnd)
-                        .size(26.dp)
-                        .background(Pal.Surface2, CircleShape)
-                        .border(1.dp, Pal.Cyan, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    AppIcon("thermo", size = 14.dp, tint = Pal.Cyan)
-                }
             }
         }
         Spacer(Modifier.height(8.dp))
