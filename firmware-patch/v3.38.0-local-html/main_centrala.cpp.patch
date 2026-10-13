@@ -1,7 +1,18 @@
 --- a/src/main_centrala.cpp
 +++ b/src/main_centrala.cpp
-@@ -0,0 +1,30 @@
-+// [v3.42.0 WYKRESY-UI-ANDROID] — 2026-10-13
+@@ -0,0 +1,41 @@
++// [v3.43.0 WYKRESY-MULTI-GROUP-ANDROID] — 2026-10-13
++// Co: Wybor danych wykresu odpowiada Androidowi: niezalezne grupy
++//     TEMPERATURY, SERWA i POMPA, mozna laczyc dowolne grupy.
++// Problem: W v3.42.0 przyciski DANE dzialaly jak radio; naraz mozna bylo
++//     wybrac tylko jedna kategorie, w przeciwienstwie do Androida.
++// Przyczyna: Uzyto starego chartFocus i sztucznego trybu KORELACJA zamiast
++//     wielokrotnego wyboru bitmaski grup Androida.
++// Naprawa: Wprowadzono chartGroupMask z blokada odznaczenia ostatniej grupy,
++//     zachowano niezalezne zaznaczanie serii i dodano serie pompy z bitu 0
++//     pola state (PRACA/STOP, wykres schodkowy; brak stanu pozostaje brakiem danych).
++// FIRMWARE_VERSION v3.42.0 -> v3.43.0 (MINOR: poprawka i rozszerzenie wykresow).
++//
 +// Co: Przywrocono wybor TEMPERATURY / SERWA / KORELACJA jak w aplikacji Android.
 +// Problem: Globalny przycisk "WSZYSTKIE SERIE" od razu wlaczal 13 przebiegow,
 +//     zasmiecal wykres i nie odpowiadal ukladowi Androida.
@@ -31,10 +42,10 @@
 +//     beginResponse_P(). Zachowano API centrali; algorytm serw i dymu bez zmian.
 +// FIRMWARE_VERSION v3.39.0 -> v3.40.0 (MINOR wg semver: pelny lokalny interfejs).
 +//
-@@ -4979 +5009 @@
+@@ -4979 +5020 @@
 -static const char* FIRMWARE_VERSION = "v3.38.0";
-+static const char* FIRMWARE_VERSION = "v3.42.0";
-@@ -5795,4 +5825,10047 @@
++static const char* FIRMWARE_VERSION = "v3.43.0";
+@@ -5795,4 +5836,10136 @@
 -// Wspolny styl strony — ten sam wyglad niezaleznie od trybu polaczenia.
 -// Motyw wzorowany na panelu Ryby LED (ciemne tlo, karty, poswiata), ale
 -// z akcentem pomaranczowo-czerwonym ("ogien/piec") zamiast cyan/aqua
@@ -972,6 +983,12 @@
 +  color: #fff;
 +  border-color: var(--cyan);
 +  box-shadow: 0 0 8px var(--cyan-glow);
++}
++.chart-group-note {
++  margin: -3px 0 0 58px;
++  color: var(--text-dim);
++  font-size: 8px;
++  line-height: 1.35;
 +}
 +
 +.chart-workspace {
@@ -3303,7 +3320,7 @@
 +    <!-- ═══════════ 2. WYKRESY (buildCharts) ═══════════ -->
 +    <section class="page" id="pg-wykresy">
 +      <div class="page-head">
-+        <div class="titles"><h2>WYKRESY TELEMETRII</h2><div class="lead">historia pomiarów · analiza cykli · korelacja</div></div>
++        <div class="titles"><h2>WYKRESY TELEMETRII</h2><div class="lead">historia pomiarów · temperatury · serwa · pompa</div></div>
 +        <button class="iconbtn" id="chartBtnRefresh" title="Odśwież historię" data-ico="refresh"></button>
 +      </div>
 +
@@ -3317,11 +3334,12 @@
 +        <div class="chart-row">
 +          <div class="lbl">DANE</div>
 +          <div class="chart-chips">
-+            <button class="chart-chip on" id="chartFocusTemp">TEMPERATURY</button>
-+            <button class="chart-chip" id="chartFocusServo">SERWA</button>
-+            <button class="chart-chip" id="chartFocusBoth" title="Wybierz, aby łączyć dowolne serie temperatur, bojlera i serw">KORELACJA</button>
++            <button class="chart-chip on" id="chartGroupTemp">TEMPERATURY</button>
++            <button class="chart-chip" id="chartGroupServo">SERWA</button>
++            <button class="chart-chip" id="chartGroupPump">POMPA</button>
 +          </div>
 +        </div>
++        <div class="chart-group-note">Zaznacz jedną, kilka albo wszystkie grupy.</div>
 +        <div class="chart-row">
 +          <div class="lbl">ZAKRES</div>
 +          <div class="chart-chips">
@@ -7454,8 +7472,15 @@
 +    { id: 'servo_flap', label: 'Klapa', ch: 'klapa', unit: '%', group: 'position', accent: '#ff6fc7', rgb: '255,111,199', on: true, servo: true },
 +    { id: 'servo_damper', label: 'Syberek', ch: 'syberka', unit: '%', group: 'position', accent: '#45d98b', rgb: '69,217,139', on: true, servo: true }
 +  ];
++  const PUMP_SERIES = [
++    { id: 'pompa', label: 'Pompa CO', ch: 'pompa', unit: 'STAN', group: 'pump', accent: '#4ade80', rgb: '74,222,128', on: true }
++  ];
 +
-+  let chartFocus = 0;
++  const CHART_GROUP_TEMPERATURE = 1;
++  const CHART_GROUP_SERVO = 2;
++  const CHART_GROUP_PUMP = 4;
++  const CHART_GROUP_ALL = 7;
++  let chartGroupMask = CHART_GROUP_TEMPERATURE;
 +  let activeRangeSec = 24 * 3600;
 +  let chartMode = 'COMMON';
 +  let chartLineStyle = 'SMOOTH';
@@ -7475,14 +7500,16 @@
 +  function saveChartPreferences() {
 +    try {
 +      const pref = {
-+        focus: chartFocus,
++        groupMask: chartGroupMask,
 +        range: activeRangeSec,
 +        alarmLevels: chartAlarmLevels,
 +        tempOn: {},
-+        servoOn: {}
++        servoOn: {},
++        pumpOn: {}
 +      };
 +      TEMP_SERIES.forEach(s => { pref.tempOn[s.id] = !!s.on; });
 +      SERVO_SERIES.forEach(s => { pref.servoOn[s.id] = !!s.on; });
++      PUMP_SERIES.forEach(s => { pref.pumpOn[s.id] = !!s.on; });
 +      safeStorage.set('piec_chart_prefs_v2', JSON.stringify(pref));
 +    } catch (e) {}
 +  }
@@ -7492,7 +7519,15 @@
 +      const raw = safeStorage.get('piec_chart_prefs_v2');
 +      if (!raw) return;
 +      const p = JSON.parse(raw);
-+      if (typeof p.focus === 'number' && p.focus >= 0 && p.focus <= 2) chartFocus = p.focus;
++      if (Number.isInteger(p.groupMask)) {
++        const savedMask = p.groupMask & CHART_GROUP_ALL;
++        chartGroupMask = savedMask || CHART_GROUP_TEMPERATURE;
++      } else if (typeof p.focus === 'number') {
++        // Migrate the previous exclusive modes: correlation meant temperatures + servos.
++        chartGroupMask = p.focus === 1 ? CHART_GROUP_SERVO :
++          p.focus === 2 ? (CHART_GROUP_TEMPERATURE | CHART_GROUP_SERVO) :
++          p.focus === 3 ? CHART_GROUP_PUMP : CHART_GROUP_TEMPERATURE;
++      }
 +      if (typeof p.range === 'number' && p.range > 0) activeRangeSec = p.range;
 +      if (p.alarmLevels && typeof p.alarmLevels === 'object') {
 +        Object.keys(chartAlarmLevels).forEach(key => {
@@ -7506,14 +7541,57 @@
 +      if (p.servoOn) {
 +        SERVO_SERIES.forEach(s => { if (typeof p.servoOn[s.id] === 'boolean') s.on = p.servoOn[s.id]; });
 +      }
++      if (p.pumpOn) {
++        PUMP_SERIES.forEach(s => { if (typeof p.pumpOn[s.id] === 'boolean') s.on = p.pumpOn[s.id]; });
++      }
 +    } catch (e) {}
 +  }
 +  loadChartPreferences();
 +
++  function chartGroupSelected(group) {
++    const bit = group === 'temp' ? CHART_GROUP_TEMPERATURE :
++      group === 'servo' ? CHART_GROUP_SERVO : group === 'pump' ? CHART_GROUP_PUMP : 0;
++    return bit !== 0 && (chartGroupMask & bit) !== 0;
++  }
++
++  function toggleChartGroup(group) {
++    const bit = group === 'temp' ? CHART_GROUP_TEMPERATURE :
++      group === 'servo' ? CHART_GROUP_SERVO : group === 'pump' ? CHART_GROUP_PUMP : 0;
++    if (!bit) return false;
++    const next = chartGroupMask ^ bit;
++    if (next === 0) return false;
++    chartGroupMask = next;
++    saveChartPreferences();
++    return true;
++  }
++
++  function chartTitle() {
++    const groups = [];
++    if (chartGroupSelected('temp')) groups.push('TEMPERATURY');
++    if (chartGroupSelected('servo')) groups.push('SERWA');
++    if (chartGroupSelected('pump')) groups.push('POMPA C.O.');
++    return groups.join(' + ') || 'WYKRES';
++  }
++
++  function chartMeta() {
++    const hasTemp = chartGroupSelected('temp');
++    const hasServo = chartGroupSelected('servo');
++    const hasPump = chartGroupSelected('pump');
++    if (hasTemp && hasServo && hasPump) return '°C + % · POMPA: PRACA / STOP';
++    if (hasTemp && hasServo) return '°C + % · KLAPA + SYBEREK';
++    if (hasTemp && hasPump) return '°C · POMPA: PRACA / STOP';
++    if (hasServo && hasPump) return '% · POMPA: PRACA / STOP';
++    if (hasTemp) return '°C · WSPÓLNA OŚ';
++    if (hasServo) return '% · KLAPA + SYBEREK';
++    return 'STAN · PRACA / STOP';
++  }
++
 +  function activeSeriesCatalog() {
-+    if (chartFocus === 1) return SERVO_SERIES;
-+    if (chartFocus === 2) return TEMP_SERIES.concat(SERVO_SERIES);
-+    return TEMP_SERIES;
++    return [
++      ...(chartGroupSelected('temp') ? TEMP_SERIES : []),
++      ...(chartGroupSelected('servo') ? SERVO_SERIES : []),
++      ...(chartGroupSelected('pump') ? PUMP_SERIES : [])
++    ];
 +  }
 +
 +  const HISTORY_PAGE_SIZE = 300;
@@ -7552,10 +7630,12 @@
 +      !Object.prototype.hasOwnProperty.call(obj, key) || typeof obj[key] === 'boolean');
 +    const simulated = obj.is_sim === true || obj.simulated === true || simValue === true || !simMaskValid || !simFlagsValid;
 +    const simMask = simMaskValid && typeof simValue !== 'boolean' && Number.isSafeInteger(simMaskNumber) && simMaskNumber >= 0 ? simMaskNumber : 0;
++    const stateNumber = typeof obj.state === 'number' ? obj.state : NaN;
++    const stateKnown = Number.isSafeInteger(stateNumber) && stateNumber >= 0;
 +    return {
 +      _id: rid, session: session, seq: Number(obj.seq || 0), ts: Number(obj.ts || 0), mono: Number(obj.mono || 0),
 +      a: rawA.map(numberOrNaN), k: numberOrNaN(obj.k), s: numberOrNaN(obj.s),
-+      state: Number(obj.state || 0), q: Number(obj.q || 0), sim: simMask, simulated: simulated
++      state: stateKnown ? stateNumber : 0, stateKnown: stateKnown, q: Number(obj.q || 0), sim: simMask, simulated: simulated
 +    };
 +  }
 +
@@ -7689,7 +7769,7 @@
 +        dym: getVal(10, 10, 1.0, 0, 4095, 'dym'),
 +        klapa: getServoVal(r.k, 180, 11),
 +        syberka: getServoVal(r.s, 90, 12),
-+        pompa: !!(r.state & 1),
++        pompa: r.stateKnown ? ((r.state & 1) ? 100 : 0) : null,
 +        sim: r.sim,
 +        is_sim: r.simulated
 +      };
@@ -7697,7 +7777,7 @@
 +
 +    const realRows = parsedRows.filter(r => [
 +      't_zewn', 't_bojler', 't_ogrz', 't_ogrz_sr', 't_powrot', 't_panel', 't_pokoj', 't_trociny',
-+      'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka'
++      'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka', 'pompa'
 +    ].some(key => typeof r[key] === 'number' && Number.isFinite(r[key])));
 +    if (!realRows.length) return null;
 +    const trendRealMask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
@@ -7718,6 +7798,7 @@
 +  }
 +
 +  function filterSeriesGlitches(rows, channelKey, group) {
++    if (group === 'pump') return rows.map(r => Number.isFinite(r[channelKey]) ? r[channelKey] : null);
 +    // [FIX-FILTR-ANOMALII v2, ta sesja] Poprzedni filtr lapal WYLACZNIE
 +    // pojedyncze szpilki (prev/next blisko siebie). Serie 2-3 probek z
 +    // blednym odczytem (DS18B20 "-1/-2°C", power-on-reset "85°C")
@@ -7912,7 +7993,10 @@
 +  function updateChartsNowStat() {
 +    const nowStat = $('#chartNowStat');
 +    if (nowStat) {
-+      if (chartFocus === 0) {
++      if (chartGroupSelected('pump')) {
++        nowStat.textContent = !hasData('pompa') || typeof S.pompa !== 'boolean' ? 'pompa —' :
++          S.pompa ? 'POMPA: PRACUJE' : 'POMPA: STOI';
++      } else if (chartGroupSelected('temp')) {
 +        nowStat.textContent = symAktywna('ogrz') ? 'piec ~' + fmt1(S.t_ogrz) + '°C · SYM' :
 +          hasData('t_ogrz') && Number.isFinite(S.t_ogrz) ? 'piec ' + fmt1(S.t_ogrz) + '°C' : 'piec —';
 +      } else {
@@ -7921,8 +8005,10 @@
 +      }
 +    }
 +
++    const phaseBar = $('#chartPhaseBar');
++    if (phaseBar) phaseBar.style.display = chartGroupSelected('temp') ? '' : 'none';
 +    const pill = $('#chartPhasePill');
-+    if (pill) {
++    if (pill && chartGroupSelected('temp')) {
 +      if (symAktywna('ogrz')) pill.textContent = 'ODCZYT SYMULOWANY — FRAGMENT LINII PRZERYWANY';
 +      else if (!hasData('t_ogrz') || !Number.isFinite(S.t_ogrz)) pill.textContent = 'BRAK RZECZYWISTEGO ODCZYTU TEMPERATURY PIECA';
 +      else if (S.t_ogrz > 65) pill.textContent = `🔥 FAZA GRZANIA: INTENSYWNA (${fmt1(S.t_ogrz)}°C)`;
@@ -7946,6 +8032,7 @@
 +      if (symAktywna(pole)) sim |= (1 << channel);
 +      return value * 100 / maxDeg;
 +    };
++    const pumpValue = receivedFields.has('pompa') && typeof S.pompa === 'boolean' ? (S.pompa ? 100 : 0) : null;
 +    const point = {
 +      ts: _lastFirebaseFetch, seq: 0,
 +      t_zewn: sample('t_zewn', 'zewn', 0),
@@ -7961,10 +8048,11 @@
 +      dym: sample('dym', 'dym', 10),
 +      klapa: sampleServo('klapa', 'klapa', 11, 180),
 +      syberka: sampleServo('syberka', 'syberka', 12, 90),
++      pompa: pumpValue,
 +      sim: sim, is_sim: false
 +    };
 +    const hasValue = ['t_zewn', 't_bojler', 't_ogrz', 't_ogrz_sr', 't_powrot', 't_panel', 't_pokoj', 't_trociny',
-+      'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka'].some(key => typeof point[key] === 'number' && Number.isFinite(point[key]));
++      'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka', 'pompa'].some(key => typeof point[key] === 'number' && Number.isFinite(point[key]));
 +    lastChartLiveTs = _lastFirebaseFetch;
 +    if (!hasValue) return;
 +    const cutoff = _lastFirebaseFetch - activeRangeSec * 1000;
@@ -8085,7 +8173,12 @@
 +    let minVal = Infinity, maxVal = -Infinity;
 +    let axisUnit = '°C';
 +
-+    if (chartFocus === 1 || chartMode === 'NORMALIZED') {
++    const pumpOnly = cat.length > 0 && cat.every(s => s.group === 'pump');
++    const positionOnly = cat.length > 0 && cat.every(s => s.group === 'position');
++    if (pumpOnly) {
++      minVal = 0; maxVal = 100;
++      axisUnit = '';
++    } else if (positionOnly || chartMode === 'NORMALIZED') {
 +      minVal = 0; maxVal = 100;
 +      axisUnit = '%';
 +    } else {
@@ -8187,7 +8280,7 @@
 +    g.font = '600 8.5px Roboto,sans-serif';
 +    g.textAlign = 'right';
 +
-+    const ySteps = 4;
++    const ySteps = pumpOnly ? 1 : 4;
 +    for (let i = 0; i <= ySteps; i++) {
 +      const yVal = minVal + (maxVal - minVal) * (1 - i / ySteps);
 +      const yPos = padTop + (plotH / ySteps) * i;
@@ -8196,7 +8289,8 @@
 +      g.lineTo(w - padRight, yPos);
 +      g.stroke();
 +      const unitLabel = axisUnit === '°C' ? '°' : axisUnit ? ' ' + axisUnit : '';
-+      g.fillText(Math.round(yVal) + unitLabel, padLeft - 6, yPos + 3);
++      const axisLabel = pumpOnly ? (i === 0 ? 'PRACA' : 'STOP') : Math.round(yVal) + unitLabel;
++      g.fillText(axisLabel, padLeft - 6, yPos + 3);
 +    }
 +
 +    // [FIX-CHART-CORRELATION + DUAL-AXIS-MULTIUNIT] Prawa os Y z dynamiczna jednostka (% lub hPa lub ADC)
@@ -8213,7 +8307,7 @@
 +      g.fillStyle = '#6E8B9F';
 +    }
 +
-+    if (chartAlarmLines && chartFocus === 0 && chartMode === 'COMMON' && axisUnit === '°C') {
++    if (chartAlarmLines && chartGroupSelected('temp') && chartMode === 'COMMON' && axisUnit === '°C') {
 +      g.setLineDash([4, 4]);
 +      const thresholdColors = {
 +        lolo: 'rgba(168,85,247,0.65)',
@@ -8268,7 +8362,9 @@
 +          const x = padLeft + (idx / Math.max(1, visibleRows.length - 1)) * plotW;
 +          let y;
 +
-+          if (isDualAxis && s.group === secGroup) {
++          if (s.group === 'pump') {
++            y = padTop + plotH * (1 - v / 100);
++          } else if (isDualAxis && s.group === secGroup) {
 +            // Seria boczna (np. Serwo, Wilgotnosc, Cisnienie) skalowana do prawej osi Y
 +            const sSpan = Math.max(1, secMax - secMin);
 +            y = padTop + plotH * (1 - (v - secMin) / sSpan);
@@ -8299,7 +8395,7 @@
 +      segments.forEach(pts => {
 +        if (!pts.length) return;
 +
-+        if (chartAreaBand && chartMode !== 'NORMALIZED' && pts.length >= 2) {
++        if (chartAreaBand && s.group !== 'pump' && chartMode !== 'NORMALIZED' && pts.length >= 2) {
 +          g.beginPath();
 +          g.moveTo(pts[0].x, padTop + plotH);
 +          pts.forEach(p => g.lineTo(p.x, p.y));
@@ -8316,7 +8412,7 @@
 +          if (!run.length) return;
 +          g.beginPath();
 +          g.setLineDash(isSimulated ? [6, 4] : []);
-+          if (chartLineStyle === 'STEPPED' || run.length < 3) {
++          if (chartLineStyle === 'STEPPED' || s.group === 'pump' || run.length < 3) {
 +            run.forEach((p, i) => {
 +              if (i === 0) g.moveTo(p.x, p.y);
 +              else if (chartLineStyle === 'STEPPED') {
@@ -8401,7 +8497,9 @@
 +        const v = seriesVals[chartCrosshairIdx];
 +        if (typeof v === 'number' && !isNaN(v) && isFinite(v)) {
 +          let y;
-+          if (isDualAxis && s.group === secGroup) {
++          if (s.group === 'pump') {
++            y = padTop + plotH * (1 - v / 100);
++          } else if (isDualAxis && s.group === secGroup) {
 +            // Seria boczna (np. Serwo, Wilgotnosc, Cisnienie) skalowana do prawej osi Y
 +            const sSpan = Math.max(1, secMax - secMin);
 +            y = padTop + plotH * (1 - (v - secMin) / sSpan);
@@ -8423,7 +8521,9 @@
 +      const readout = cat.map(s => {
 +        const seriesVals = cleanedValuesMap.get(s.id) || [];
 +        const val = seriesVals[chartCrosshairIdx];
-+        const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val)) ? ((telemetryChannelSimulated(hoveredRow, s.ch) ? '~' : '') + fmt1(val) + ' ' + s.unit) : '<span style="opacity:0.4">—</span>';
++        const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val))
++          ? (s.group === 'pump' ? (val >= 50 ? 'PRACA' : 'STOP') : ((telemetryChannelSimulated(hoveredRow, s.ch) ? '~' : '') + fmt1(val) + ' ' + s.unit))
++          : '<span style="opacity:0.4">—</span>';
 +        return `<span style="color:${s.accent}">● ${s.label}: <b>${valStr}</b></span>`;
 +      }).join('  ·  ');
 +      $('#chartInspectorVal').innerHTML = `<span style="color:var(--cyan);font-weight:700">${timeStr}</span>: ${readout}`;
@@ -8432,7 +8532,9 @@
 +        const lines = cat.map(s => {
 +          const seriesVals = cleanedValuesMap.get(s.id) || [];
 +          const val = seriesVals[chartCrosshairIdx];
-+          const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val)) ? ((telemetryChannelSimulated(hoveredRow, s.ch) ? '~' : '') + fmt1(val) + ' ' + s.unit) : '—';
++          const valStr = (typeof val === 'number' && !isNaN(val) && isFinite(val))
++            ? (s.group === 'pump' ? (val >= 50 ? 'PRACA' : 'STOP') : ((telemetryChannelSimulated(hoveredRow, s.ch) ? '~' : '') + fmt1(val) + ' ' + s.unit))
++            : '—';
 +          return `<span style="color:${s.accent}">●</span> ${s.label}: <b>${valStr}</b>`;
 +        }).join('<br>');
 +        tooltip.innerHTML = `<b>${timeStr}</b><br>` + lines;
@@ -8705,42 +8807,27 @@
 +  }
 +
 +  function initChartControls() {
-+    const cfTemp = $('#chartFocusTemp'), cfServo = $('#chartFocusServo'), cfBoth = $('#chartFocusBoth');
-+    const updateFocusBtns = () => {
-+      if (cfTemp) cfTemp.classList.toggle('on', chartFocus === 0);
-+      if (cfServo) cfServo.classList.toggle('on', chartFocus === 1);
-+      if (cfBoth) cfBoth.classList.toggle('on', chartFocus === 2);
-+      const ct = $('#chartCurrentTitle'), cm = $('#chartCurrentMeta');
-+      if (chartFocus === 0) {
-+        if (ct) ct.textContent = 'TEMPERATURY';
-+        if (cm) cm.textContent = '°C · WSPÓLNA OŚ';
-+      } else if (chartFocus === 1) {
-+        if (ct) ct.textContent = 'POZYCJE SERW';
-+        if (cm) cm.textContent = '% · KLAPA + SYBEREK';
-+      } else {
-+        if (ct) ct.textContent = 'KORELACJA (PIEC + SERWA)';
-+        if (cm) cm.textContent = 'LEWA OŚ: °C · PRAWA OŚ: % (KLAPA/SYBEREK)';
-+      }
++    const groupButtons = [
++      ['temp', $('#chartGroupTemp')],
++      ['servo', $('#chartGroupServo')],
++      ['pump', $('#chartGroupPump')]
++    ];
++    const updateGroupButtons = () => {
++      groupButtons.forEach(([group, button]) => {
++        if (button) button.classList.toggle('on', chartGroupSelected(group));
++      });
++      const title = $('#chartCurrentTitle'), meta = $('#chartCurrentMeta');
++      if (title) title.textContent = chartTitle();
++      if (meta) meta.textContent = chartMeta();
 +    };
-+    if (cfTemp) {
-+      cfTemp.onclick = () => {
-+        chartFocus = 0; saveChartPreferences(); updateFocusBtns();
++    groupButtons.forEach(([group, button]) => {
++      if (button) button.onclick = () => {
++        toggleChartGroup(group);
++        updateGroupButtons();
 +        renderSeriesChips(); updateChartsNowStat(); updateChartCanvas();
 +      };
-+    }
-+    if (cfServo) {
-+      cfServo.onclick = () => {
-+        chartFocus = 1; saveChartPreferences(); updateFocusBtns();
-+        renderSeriesChips(); updateChartsNowStat(); updateChartCanvas();
-+      };
-+    }
-+    if (cfBoth) {
-+      cfBoth.onclick = () => {
-+        chartFocus = 2; saveChartPreferences(); updateFocusBtns();
-+        renderSeriesChips(); updateChartsNowStat(); updateChartCanvas();
-+      };
-+    }
-+    updateFocusBtns();
++    });
++    updateGroupButtons();
 +
 +    const RANGES = [
 +      ['#chartRange6', 6 * 3600],
@@ -8773,7 +8860,7 @@
 +    if (btnExp) {
 +      btnExp.onclick = () => {
 +        const ft = $('#fsModalTitle'), fs = $('#fsModalSubtitle');
-+        if (ft) ft.textContent = chartFocus === 0 ? 'TEMPERATURY — PEŁNY EKRAN' : 'POZYCJE SERW — PEŁNY EKRAN';
++        if (ft) ft.textContent = chartTitle() + ' — PEŁNY EKRAN';
 +        if (fs) fs.textContent = activeRangeSec <= 24 * 3600 ? 'Podgląd dobowy telemetryczny' : 'Analiza wielodniowa';
 +        const modal = $('#chartFsModal');
 +        if (modal) {
@@ -8797,7 +8884,9 @@
 +      b.appendChild(note('Wybierz widoczne przebiegi na wykresie. Przynajmniej jedna seria musi pozostać aktywna.'));
 +      const cat = activeSeriesCatalog();
 +      cat.forEach(s => {
-+        const row = h('div', 'row', `<div class="l"><b style="color:${s.accent}">● ${s.label}</b><span>${s.servo ? 'Pozycja serwomechanizmu (%)' : 'Kanał telemetryczny (' + s.unit + ')'}</span></div>`);
++        const description = s.servo ? 'Pozycja serwomechanizmu (%)' :
++          s.group === 'pump' ? 'Stan pompy: PRACA / STOP' : 'Kanał telemetryczny (' + s.unit + ')';
++        const row = h('div', 'row', `<div class="l"><b style="color:${s.accent}">● ${s.label}</b><span>${description}</span></div>`);
 +        const chk = h('input'); chk.type = 'checkbox'; chk.checked = s.on;
 +        chk.onchange = () => {
 +          s.on = chk.checked;
@@ -8837,7 +8926,7 @@
 +        const card = h('div', 'setcard', `<div class="ic" data-ico="chart" style="color:var(--cyan)"></div><div class="t"><b>${t}</b><span>${d}</span></div><span class="nx">${chartMode === m ? '✓' : ''}</span>`);
 +        card.onclick = () => {
 +          chartMode = m;
-+          $('#chartCurrentMeta').textContent = m === 'COMMON' ? '°C · WSPÓLNA OŚ' : '0–100% · NORMALIZACJA';
++          $('#chartCurrentMeta').textContent = chartMeta();
 +          updateChartCanvas();
 +          dismissSheet();
 +        };
@@ -8907,12 +8996,21 @@
 +  function showChartAnalysisSheet() {
 +    showSheet('Analiza PRO & Diagnostyka', 'settings', () => {
 +      const b = h('div');
-+      b.appendChild(note('Analiza liczona z pobranych próbek telemetrycznych. Statystyki min/max, średnie, cykle grzania i różnice A−B.'));
++      b.appendChild(note(chartGroupSelected('pump')
++        ? 'Stan pompy pochodzi z bitu 0 pola state i jest rysowany schodkowo; brak danych pozostaje stanem nieznanym.'
++        : 'Analiza liczona z pobranych próbek telemetrycznych. Statystyki min/max, średnie, cykle grzania i różnice A−B.'));
 +
 +      const cat = activeSeriesCatalog().filter(x => x.on);
 +      cat.forEach(s => {
 +        const vals = chartDataset.map(r => r[s.ch]).filter(v => typeof v === 'number' && !isNaN(v) && isFinite(v));
 +        if (!vals.length) return;
++        if (s.group === 'pump') {
++          const onSamples = vals.filter(v => v >= 50).length;
++          const transitions = vals.slice(1).filter((v, i) => (v >= 50) !== (vals[i] >= 50)).length;
++          const card = h('div', 'diag-card', `<div class="lbl" style="color:${s.accent}">● ${s.label.toUpperCase()}</div><div class="val">Ostatni stan: ${vals[vals.length - 1] >= 50 ? 'PRACUJE' : 'STOI'}</div><div class="sub">${onSamples} próbek PRACA · ${vals.length - onSamples} STOP · ${transitions} zmian stanu</div>`);
++          b.appendChild(card);
++          return;
++        }
 +        const mn = Math.min(...vals), mx = Math.max(...vals);
 +        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
 +        const delta = vals[vals.length - 1] - vals[0];
@@ -8920,14 +9018,16 @@
 +        b.appendChild(card);
 +      });
 +
-+      b.appendChild(sectionHeader('Wykryte cykle pracy kotła'));
-+      b.appendChild(h('div', 'diag-card', '<div class="lbl">ANALIZA CYKLI GRZANIA</div><div class="val">Cykliczna praca paleniska w wybranym zakresie</div><div class="sub">Próg załączenia pompy: 60°C (histereza 10°C)</div>'));
-+
-+      if (cat.length >= 2 && chartFocus === 0) {
-+        const s1 = cat[0], s2 = cat[1];
-+        const nowDelta = (S[s1.ch] || 0) - (S[s2.ch] || 0);
-+        b.appendChild(sectionHeader('Różnica temperatur A − B'));
-+        b.appendChild(h('div', 'diag-card', `<div class="lbl">${s1.label} − ${s2.label}</div><div class="val">Aktualna różnica: ${fmt1(nowDelta)} °C</div><div class="sub">Różnica przepływu instalacji i odbioru ciepła</div>`));
++      if (chartGroupSelected('temp')) {
++        b.appendChild(sectionHeader('Wykryte cykle pracy kotła'));
++        b.appendChild(h('div', 'diag-card', '<div class="lbl">ANALIZA CYKLI GRZANIA</div><div class="val">Cykliczna praca paleniska w wybranym zakresie</div><div class="sub">Próg załączenia pompy: 60°C (histereza 10°C)</div>'));
++        const tempCat = TEMP_SERIES.filter(s => s.on);
++        if (tempCat.length >= 2) {
++          const s1 = tempCat[0], s2 = tempCat[1];
++          const nowDelta = (S[s1.ch] || 0) - (S[s2.ch] || 0);
++          b.appendChild(sectionHeader('Różnica temperatur A − B'));
++          b.appendChild(h('div', 'diag-card', `<div class="lbl">${s1.label} − ${s2.label}</div><div class="val">Aktualna różnica: ${fmt1(nowDelta)} °C</div><div class="sub">Różnica przepływu instalacji i odbioru ciepła</div>`));
++        }
 +      }
 +
 +      const acts = h('div', 'btnrow');
@@ -8938,7 +9038,7 @@
 +        showToast('Wykres', chartAlarmLines ? 'Włączono linie progów' : 'Wyłączono linie progów', 'ok');
 +        dismissSheet();
 +      };
-+      acts.appendChild(editAlarms); b.appendChild(acts);
++      if (chartGroupSelected('temp')) { acts.appendChild(editAlarms); b.appendChild(acts); }
 +      return b;
 +    });
 +  }
@@ -10086,7 +10186,7 @@
 +</html>
 +)PIECHTML";
 +
-@@ -6948 +17021,13 @@
+@@ -6948 +17121,13 @@
 -    "<div class='row-desc' style='margin-bottom:8px'>Tryb pracy klapy i syberka</div>"
 +    "<div style='margin-bottom:12px;padding:10px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.035)'>"
 +      + "<div class='row-label'>Bieżące pozycje serw</div>"
@@ -10101,11 +10201,11 @@
 +      + "<div class='row-desc' id='dp-rozpalanieSerwaInfo' style='margin-top:6px'>Oczekiwanie na świeży status centrali.</div>"
 +    + "</div>"
 +    + "<div class='row-desc' style='margin-bottom:8px'>Tryb pracy klapy i syberka</div>"
-@@ -6998 +17083,2 @@
+@@ -6998 +17183,2 @@
 -  fetch('/api/status').then(function(r){ return r.json(); }).then(function(d){
 +  fetch('/api/status', {cache:'no-store'}).then(function(r){ return r.json(); }).then(function(d){
 +    espStatusZapamietaj(d);
-@@ -7258,0 +17345,81 @@
+@@ -7258,0 +17445,81 @@
 +var _espStatusSnapshot = null;
 +var _espStatusSnapshotAt = 0;
 +var _rozpalanieSerwaRequest = false;
@@ -10187,13 +10287,13 @@
 +  });
 +}
 +
-@@ -7260 +17427,2 @@
+@@ -7260 +17527,2 @@
 -  fetch('/api/status').then(function(r){return r.json();}).then(function(d){
 +  fetch('/api/status', {cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
 +    espStatusZapamietaj(d);
-@@ -7337,0 +17506 @@
+@@ -7337,0 +17606 @@
 +    espStatusUtracony();
-@@ -7560,0 +17730,251 @@
+@@ -7560,0 +17830,251 @@
 +var _espChartSeriesNames = {
 +  'chart-piec':['Ogrzewanie','Średnia','Powrót'],
 +  'chart-inne':['Zewnętrzna','Bojler','Panel','Pokój'],
@@ -10445,7 +10545,7 @@
 +    lokalnyWykresZoomDo(st, st.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), f, ix);
 +  }, {passive:false});
 +}
-@@ -7563,0 +17984,17 @@
+@@ -7563,0 +18084,17 @@
 +  var st = el.__localChartState;
 +  if (!st){
 +    st = {id:id, zoom:1, offset:1, crosshairIndex:null, crosshairPinned:false};
@@ -10463,20 +10563,20 @@
 +function lokalnyWykresRysuj(st){
 +  var el = document.getElementById(st.id);
 +  if (!el) return;
-@@ -7564,0 +18002 @@
+@@ -7564,0 +18102 @@
 +  var H = st.height || 150;
-@@ -7566,0 +18005 @@
+@@ -7566,0 +18105 @@
 +  el.style.touchAction = 'pan-y';
-@@ -7570,2 +18009,2 @@
+@@ -7570,2 +18109,2 @@
 -  var n = labels.length;
 -  if (n < 1){
 +  var total = st.labels.length;
 +  if (!total){
-@@ -7572,0 +18012,3 @@
+@@ -7572,0 +18112,3 @@
 +    st.startIndex = 0; st.endIndex = 0; st.width = W; st.plotLeft = PAD.l; st.plotRight = W - PAD.r;
 +    st.renderXs = []; st.renderIndices = []; st.renderYs = [];
 +    lokalnyWykresOdswiezInspector(st);
-@@ -7574,0 +18017,9 @@
+@@ -7574,0 +18117,9 @@
 +  var visible = lokalnyWykresWidoczne(st);
 +  var start = lokalnyWykresStart(st);
 +  var end = Math.min(total, start + visible);
@@ -10486,13 +10586,13 @@
 +  var renderIndices = [];
 +  for (var ri = start; ri < end; ri++) renderIndices.push(ri);
 +  var n = labels.length;
-@@ -7577,2 +18028,3 @@
+@@ -7577,2 +18128,3 @@
 -    times  = (times || []).concat(times || []);
 -    series = series.map(function(s){ return {data: s.data.concat(s.data), color: s.color}; });
 +    times = (times || []).concat(times || []);
 +    series = series.map(function(a){ return {data:a.data.concat(a.data), color:a.color}; });
 +    renderIndices.push(renderIndices[0]);
-@@ -7582 +18034,10 @@
+@@ -7582 +18134,10 @@
 -  series.forEach(function(s){ allVals = allVals.concat(s.data); });
 +  series.forEach(function(a){
 +    a.data.forEach(function(v){ var num = Number(v); if (isFinite(num)) allVals.push(num); });
@@ -10504,17 +10604,17 @@
 +    lokalnyWykresOdswiezInspector(st);
 +    return;
 +  }
-@@ -7585,6 +18045,0 @@
+@@ -7585,6 +18145,0 @@
 -
 -  // Pozycja X: z realnego czasu probki, gdy mamy komplet wiarygodnych
 -  // znacznikow (times tej samej dlugosci co labels) i realny rozstep miedzy
 -  // najstarsza a najnowsza probka (tMax>tMin) - w przeciwnym razie (stare
 -  // dane bez czas_unix, albo wszystkie probki maja czas==0) wracamy do
 -  // starego, indeksowego rozstawu, zeby wykres nigdy nie zniknal.
-@@ -7592 +18047 @@
+@@ -7592 +18147 @@
 -  var czasyWazne = maTimes ? times.filter(function(t){ return t > 0; }) : [];
 +  var czasyWazne = maTimes ? times.map(Number).filter(function(t){ return t > 0; }) : [];
-@@ -7595,9 +18050 @@
+@@ -7595,9 +18150 @@
 -  var xCzasOk = maTimes && (tMax > tMin);
 -  // [FIX-WYKRES-CZAS-ZERO, v3.10.5] czas_unix==0 to probka zapisana BEZ
 -  // wiarygodnego czasu (historiaZapiszProbke(): brak RTC i brak NTP -
@@ -10525,7 +10625,7 @@
 -  // polyline uciekal poza plotno i wykres byl nieczytelny. Teraz taka probka
 -  // nie ma pozycji (null): jest pomijana jako punkt i traktowana jak przerwa.
 +  var xCzasOk = maTimes && tMax > tMin;
-@@ -7605,4 +18052,4 @@
+@@ -7605,4 +18152,4 @@
 -    if (!xCzasOk) return PAD.l + (i/(n-1))*cW;
 -    var t = times[i];
 -    if (!(t > 0)) return null;   // czas nieznany - brak pozycji na osi
@@ -10534,18 +10634,18 @@
 +    var t = Number(times[i]);
 +    if (!(t > 0)) return null;
 +    return PAD.l + ((t - tMin) / (tMax - tMin)) * cW;
-@@ -7610 +18057,2 @@
+@@ -7610 +18157,2 @@
 -
 +  function yPos(value){ return PAD.t + cH - ((value - mn) / (mx - mn)) * cH; }
 +  function escSvg(value){ return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-@@ -7612,3 +18060,3 @@
+@@ -7612,3 +18160,3 @@
 -  for (var g=0; g<=4; g++){
 -    var gy = PAD.t + cH - (g/4)*cH;
 -    var gv = mn + (g/4)*(mx-mn);
 +  for (var g = 0; g <= 4; g++){
 +    var gy = PAD.t + cH - (g / 4) * cH;
 +    var gv = mn + (g / 4) * (mx - mn);
-@@ -7618,5 +18066,2 @@
+@@ -7618,5 +18166,2 @@
 -  var step = Math.max(1, Math.floor(n/6));
 -  for (var i=0; i<n; i+=step){
 -    // [FIX-WYKRES-CZAS-ZERO, v3.10.5] Probka bez czasu nie ma pozycji na osi -
@@ -10553,10 +10653,10 @@
 -    // poza plotnem, a przy okazji psula odstepy pozostalych etykiet).
 +  var step = Math.max(1, Math.floor(n / 6));
 +  for (var i = 0; i < n; i += step){
-@@ -7625 +18070 @@
+@@ -7625 +18170 @@
 -    svg += '<text x="'+xe+'" y="'+(H-6)+'" text-anchor="middle" fill="#445" font-size="9">'+labels[i]+'</text>';
 +    svg += '<text x="'+xe+'" y="'+(H-6)+'" text-anchor="middle" fill="#445" font-size="9">'+escSvg(labels[i])+'</text>';
-@@ -7627,13 +18072,11 @@
+@@ -7627,13 +18172,11 @@
 -
 -  // Prog przerwy w sekundach ("Infinity" gdy nie podano -> nigdy nie
 -  // przerywaj, czyli dawne zachowanie sprzed tej zmiany).
@@ -10581,7 +10681,7 @@
 +      var val = Number(series[si].data[pi]);
 +      if (x === null || !isFinite(val)){
 +        if (seg.length){ segs.push(seg); seg = []; }
-@@ -7642,10 +18085,10 @@
+@@ -7642,10 +18185,10 @@
 -      var dziura = xCzasOk && i>0 && times[i]>0 && times[i-1]>0 && (times[i]-times[i-1] > prog);
 -      if (dziura && segment.length){ segmenty.push(segment); segment = []; }
 -      segment.push({x: x, y: PAD.t + cH - ((s.data[i]-mn)/(mx-mn))*cH});
@@ -10602,12 +10702,12 @@
 +    segs.forEach(function(part){
 +      if (part.length === 1){
 +        svg += '<circle cx="'+part[0].x.toFixed(1)+'" cy="'+part[0].y.toFixed(1)+'" r="2" fill="'+series[si].color+'"/>';
-@@ -7653,2 +18096,2 @@
+@@ -7653,2 +18196,2 @@
 -        var pts = seg.map(function(p){ return p.x.toFixed(1)+','+p.y.toFixed(1); }).join(' ');
 -        svg += '<polyline points="'+pts+'" fill="none" stroke="'+s.color+'" stroke-width="1.5" stroke-linejoin="round"/>';
 +        var pts = part.map(function(p){ return p.x.toFixed(1)+','+p.y.toFixed(1); }).join(' ');
 +        svg += '<polyline points="'+pts+'" fill="none" stroke="'+series[si].color+'" stroke-width="1.5" stroke-linejoin="round"/>';
-@@ -7657 +18100,11 @@
+@@ -7657 +18200,11 @@
 -  });
 +  }
 +  var selectedLocal = st.crosshairIndex == null ? -1 : st.crosshairIndex - start;
@@ -10620,12 +10720,12 @@
 +      if (cy != null && isFinite(cy)) svg += '<circle cx="'+cx.toFixed(1)+'" cy="'+cy.toFixed(1)+'" r="3.2" fill="'+series[mi].color+'" stroke="#fff" stroke-width="1" pointer-events="none"/>';
 +    }
 +  }
-@@ -7658,0 +18112,4 @@
+@@ -7658,0 +18212,4 @@
 +  st.startIndex = start; st.endIndex = end; st.width = W;
 +  st.plotLeft = PAD.l; st.plotRight = W - PAD.r;
 +  st.renderXs = renderXs; st.renderIndices = renderIndices; st.renderYs = renderYs;
 +  lokalnyWykresOdswiezInspector(st);
-@@ -13607,0 +24065,17 @@
+@@ -13607,0 +24165,17 @@
 +// Token CSRF dla jedynego nowego lokalnego endpointu mutujacego stan serw.
 +// Powstaje raz przed wystawieniem tras, trafia tylko do HTML z ESP i jest
 +// wymagany przez POST; obce strony nie moga go odczytac przez same-origin policy.
@@ -10643,17 +10743,17 @@
 +  g_wifiLocalActionToken = tokenHex;
 +}
 +
-@@ -13611,0 +24086 @@
+@@ -13611,0 +24186 @@
 +  wifiLocalActionTokenEnsure();
-@@ -13702,0 +24178 @@
+@@ -13702,0 +24278 @@
 +    "<div class='row-desc' style='margin-top:4px'>Dotknij lub najedź: odczyt • przeciągnij poziomo: oś czasu • szczyp/kółko: zoom • 2× dotknij: reset widoku</div>"
-@@ -14280,0 +24757,5 @@
+@@ -14280,0 +24857,5 @@
 +  // Token istnieje tylko w aktualnie serwowanym HTML; endpoint akcji odrzuca
 +  // brak lub niezgodnosc, aby obca strona nie mogla wyslac formularza CSRF.
 +  html += F("<script>window.espLocalActionToken='");
 +  html += g_wifiLocalActionToken;
 +  html += F("';</script>");
-@@ -14284,0 +24766,7 @@
+@@ -14284,0 +24866,7 @@
 +// [ESP-LOCAL-HTML-PARITY] Te same backendowe warunki bezpieczenstwa co
 +// komenda Firebase Rozpalanie; lokalny panel wystawia je tylko do odczytu,
 +// a POST ponownie sprawdza warunki przed zmiana stanu.
@@ -10661,14 +10761,14 @@
 +static bool temperaturaPiecZnanaDlaRozpalania();
 +static bool uruchomRozpalanieSerwa(String& blad);
 +
-@@ -14376,0 +24865,4 @@
+@@ -14376,0 +24965,4 @@
 +  // [ESP-LOCAL-HTML-PARITY] UI nie uznaje samej liczby temperatury za dowod
 +  // swiezego pomiaru i nie zgaduje stanu alarmu bezpieczenstwa.
 +  j += F("\"rozpalanie_serwa_temp_ok\":"); j += (temperaturaPiecZnanaDlaRozpalania() ? "true" : "false"); j += F(",");
 +  j += F("\"rozpalanie_serwa_alarm_bezpieczenstwa\":"); j += (alarmBezpieczenstwaSerwaAktywny() ? "true" : "false"); j += F(",");
-@@ -14457,0 +24950 @@
+@@ -14457,0 +25050 @@
 +  wifiLocalActionTokenEnsure();
-@@ -14460 +24953,6 @@
+@@ -14460 +25053,6 @@
 -    request->send(200, "text/html", wifiZbudujStrone());
 +    AsyncWebServerResponse *response = request->beginResponse_P(
 +      200, "text/html; charset=utf-8",
@@ -10676,12 +10776,12 @@
 +      sizeof(WIFI_LOCAL_PANEL_HTML) - 1);
 +    response->addHeader("Cache-Control", "no-store, max-age=0");
 +    request->send(response);
-@@ -14527 +25025,3 @@
+@@ -14527 +25125,3 @@
 -    request->send(200, "application/json", wifiZbudujJsonStatus());
 +    AsyncWebServerResponse *statusResponse = request->beginResponse(200, "application/json", wifiZbudujJsonStatus());
 +    statusResponse->addHeader("Cache-Control", "no-store, max-age=0");
 +    request->send(statusResponse);
-@@ -15454,0 +25955,21 @@
+@@ -15454,0 +26055,21 @@
 +  });
 +
 +  // [ESP-LOCAL-HTML-PARITY] Lokalny przycisk korzysta z tego samego helpera
