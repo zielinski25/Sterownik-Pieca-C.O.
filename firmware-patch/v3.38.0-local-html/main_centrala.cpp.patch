@@ -1,7 +1,7 @@
 --- a/src/main_centrala.cpp
 +++ b/src/main_centrala.cpp
 @@ -0,0 +1,11 @@
-+// [v3.39.0 ESP-HTML-1TO1] — 2026-10-13
++// [v3.40.0 ESP-HTML-1TO1] — 2026-10-13
 +// Co: Strona glowna ESP serwuje ten sam pelny interfejs co biezacy Piec.html.
 +// Problem: ESP pokazywal osobny, uproszczony panel, rozniacy sie ukladem,
 +//     zakladkami, kartami, wykresami i dialogami od panelu Piec.html.
@@ -10,11 +10,11 @@
 +// Naprawa: Biezacy Piec.html osadzono bajt-w-bajt jako PROGMEM
 +//     WIFI_LOCAL_PANEL_HTML, a GET / serwuje go bez kopiowania do RAM przez
 +//     beginResponse_P(). Zachowano API centrali; algorytm serw i dymu bez zmian.
-+// FIRMWARE_VERSION v3.38.0 -> v3.39.0 (MINOR wg semver: pelny lokalny interfejs).
++// FIRMWARE_VERSION v3.39.0 -> v3.40.0 (MINOR wg semver: pelny lokalny interfejs).
 +//
 @@ -4979 +4990 @@
 -static const char* FIRMWARE_VERSION = "v3.38.0";
-+static const char* FIRMWARE_VERSION = "v3.39.0";
++static const char* FIRMWARE_VERSION = "v3.40.0";
 @@ -5795,4 +5806,10044 @@
 -// Wspolny styl strony — ten sam wyglad niezaleznie od trybu polaczenia.
 -// Motyw wzorowany na panelu Ryby LED (ciemne tlo, karty, poswiata), ale

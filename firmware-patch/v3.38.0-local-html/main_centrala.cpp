@@ -1,4 +1,4 @@
-// [v3.39.0 ESP-HTML-1TO1] — 2026-10-13
+// [v3.40.0 ESP-HTML-1TO1] — 2026-10-13
 // Co: Strona glowna ESP serwuje ten sam pelny interfejs co biezacy Piec.html.
 // Problem: ESP pokazywal osobny, uproszczony panel, rozniacy sie ukladem,
 //     zakladkami, kartami, wykresami i dialogami od panelu Piec.html.
@@ -7,7 +7,7 @@
 // Naprawa: Biezacy Piec.html osadzono bajt-w-bajt jako PROGMEM
 //     WIFI_LOCAL_PANEL_HTML, a GET / serwuje go bez kopiowania do RAM przez
 //     beginResponse_P(). Zachowano API centrali; algorytm serw i dymu bez zmian.
-// FIRMWARE_VERSION v3.38.0 -> v3.39.0 (MINOR wg semver: pelny lokalny interfejs).
+// FIRMWARE_VERSION v3.39.0 -> v3.40.0 (MINOR wg semver: pelny lokalny interfejs).
 //
 // [v3.38.0 ROZPALANIE-SERW + WSPOLNE-WYCISZANIE] — 2026-10-12
 // Co: Automatyczne przygotowanie serw do rozpalenia, wymuszenie sekwencyjne
@@ -4987,7 +4987,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.39.0";
+static const char* FIRMWARE_VERSION = "v3.40.0";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
