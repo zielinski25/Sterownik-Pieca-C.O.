@@ -268,6 +268,104 @@ private fun Marker(x: androidx.compose.ui.unit.Dp) {
     Box(Modifier.offset(x = x - 1.dp, y = (-4).dp).width(2.dp).height(22.dp).background(Color.White))
 }
 
+@Composable
+private fun RowScope.ServoPositionMetric(
+    name: String,
+    angleDegrees: Int?,
+    percent: Int?,
+    live: Boolean,
+    accent: Color
+) {
+    val hasValue = angleDegrees != null && percent != null
+    val valueColor = when {
+        !hasValue -> Pal.TextDim
+        live -> accent
+        else -> Pal.Warn
+    }
+    Column(
+        Modifier.weight(1f)
+            .background(Pal.Surface2, RoundedCornerShape(11.dp))
+            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(11.dp))
+            .padding(horizontal = 9.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(name, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Pal.TextDim)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                angleDegrees?.let { "$it°" } ?: "—",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = valueColor,
+                maxLines = 1
+            )
+            Text(
+                percent?.let { "$it%" } ?: "brak odczytu",
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (hasValue) valueColor else Pal.TextDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(bottom = 2.dp)
+            )
+        }
+        Box(
+            Modifier.fillMaxWidth().height(4.dp)
+                .background(Pal.rgba(255, 255, 255, .08f), RoundedCornerShape(4.dp))
+        ) {
+            if (percent != null) {
+                Box(
+                    Modifier.fillMaxWidth(percent.coerceIn(0, 100) / 100f).fillMaxHeight()
+                        .background(valueColor, RoundedCornerShape(4.dp))
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServoPositionSummary(m: AppModel) {
+    val s = m.S
+    val flapAngle = s.klapa.takeIf { s.hasData("klapa") && it in 0..180 }
+    val damperAngle = s.syberka.takeIf { s.hasData("syberka") && it in 0..90 }
+    val flapPercent = flapAngle?.let { Math.round(it * 100.0 / 180.0).toInt() }
+    val damperPercent = damperAngle?.let { Math.round(it * 100.0 / 90.0).toInt() }
+    val hasPosition = flapAngle != null || damperAngle != null
+    val live = m.isFbFresh && s.online
+    val stateColor = when {
+        !hasPosition -> Pal.TextDim
+        live -> Pal.Live
+        else -> Pal.Warn
+    }
+    val stateLabel = when {
+        !hasPosition -> "BRAK ODCZYTU"
+        live -> "NA ŻYWO"
+        else -> "OSTATNI ODCZYT"
+    }
+
+    Column(
+        Modifier.fillMaxWidth().padding(top = 8.dp)
+            .background(Pal.rgba(8, 20, 33, .55f), RoundedCornerShape(14.dp))
+            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(14.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("BIEŻĄCA POZYCJA", style = Txt.sect, modifier = Modifier.weight(1f))
+            Box(
+                Modifier.background(stateColor.copy(alpha = .12f), RoundedCornerShape(999.dp))
+                    .border(BorderStroke(1.dp, stateColor.copy(alpha = .38f)), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(stateLabel, style = Txt.pill, color = stateColor, maxLines = 1)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ServoPositionMetric("KLAPA", flapAngle, flapPercent, live, Pal.Cyan)
+            ServoPositionMetric("SYBEREK", damperAngle, damperPercent, live, Pal.Live)
+        }
+    }
+}
+
 /** `MENUS.serwo` — tryb klapy, panel ręczny (`.manual.on`), automatyka. */
 @Composable
 fun SerwoSheet(m: AppModel) {
@@ -276,6 +374,7 @@ fun SerwoSheet(m: AppModel) {
     val servoMode = modePresentation.mode
     val modeKnown = servoMode != null
     Note("Tryb pracy klapy i syberka")
+    ServoPositionSummary(m)
     if (!modeKnown) Note("Aktualny tryb: oczekiwanie na odczyt z centrali.")
     Seg(listOf(1 to "Auto", 2 to "Ręczny", 3 to "Bezpieczna"), current = servoMode ?: -1) { v ->
         m.setServoMode(v)
