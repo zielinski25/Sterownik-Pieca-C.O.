@@ -184,15 +184,15 @@ fun buildChartView(
 
 /**
  * Jeden detektor gestow wykresu: tap = kursor, 2× tap = reset widoku,
- * poziomy drag = pan osi czasu, szczypniecie = zoom z kotwica w srodku palcow.
- * Pionowych przeciagniec NIE konsumujemy, zeby strona dalej sie przewijala.
+ * poziomy drag z otwartym inspektorem = przesuwanie próbki, bez inspektora = pan,
+ * szczypniecie = zoom z kotwica w srodku palcow. Pionowych dragów nie konsumujemy.
  */
 private suspend fun PointerInputScope.chartGestures(
     padL: Float,
     plotW: Float,
     onTap: (Offset, Float, Float) -> Unit,
     onDoubleTap: () -> Unit,
-    onPan: (Float) -> Unit,
+    onHorizontalDrag: (Float, Float) -> Unit,
     onPinch: (Float, Float) -> Unit
 ) {
     val slop = viewConfiguration.touchSlop
@@ -201,7 +201,7 @@ private suspend fun PointerInputScope.chartGestures(
     var lastUpX = 0f
     awaitEachGesture {
         awaitFirstDown(requireUnconsumed = false)
-        var mode = 0 // 0=tap? 1=pan 2=pinch 3=obcy (pion/scroll)
+        var mode = 0 // 0=tap? 1=horizontal drag 2=pinch 3=obcy (pion/scroll)
         var downX = 0f
         var downY = 0f
         var lastX = 0f
@@ -254,7 +254,7 @@ private suspend fun PointerInputScope.chartGestures(
                 if (mode == 1) {
                     val dx = p.position.x - lastX
                     lastX = p.position.x
-                    if (plotW > 0f && dx != 0f) onPan(dx / plotW)
+                    if (plotW > 0f && dx != 0f) onHorizontalDrag(p.position.x, dx)
                     p.consume()
                 }
                 // mode 3 (pion): nie konsumujemy — verticalScroll strony przejmuje
@@ -284,6 +284,11 @@ fun ChartCanvas(
     // Gesty czytaja SWIEZY view bez restartu detektora: kluczem sa tylko pady
     // (zoom/offset przebudowuja view co klatke — pointerInput(view) rwalo by gest).
     val viewState = rememberUpdatedState(view)
+    val inspectorActiveState = rememberUpdatedState(crossIdx != null)
+    val onCrossState = rememberUpdatedState(onCross)
+    val onPanState = rememberUpdatedState(onPan)
+    val onPinchState = rememberUpdatedState(onPinch)
+    val onResetViewState = rememberUpdatedState(onResetView)
     val padLKey = view.padLeft
     val padRKey = view.padRight
     Canvas(
@@ -294,12 +299,18 @@ fun ChartCanvas(
                 padL = padL,
                 plotW = plotW,
                 onTap = { pos, pl, pw ->
-                    val n = viewState.value.rows.size
-                    if (n > 1) onCross((((pos.x - pl) / max(1f, pw)) * (n - 1)).roundToInt().coerceIn(0, n - 1))
+                    chartSampleIndexAtX(pos.x, pl, pw, viewState.value.rows.size)?.let { onCrossState.value(it) }
                 },
-                onDoubleTap = { onCross(null); onResetView() },
-                onPan = onPan,
-                onPinch = onPinch
+                onDoubleTap = { onCrossState.value(null); onResetViewState.value() },
+                onHorizontalDrag = { x, dx ->
+                    if (inspectorActiveState.value) {
+                        // Gdy inspektor jest otwarty, przesuwamy próbkę pod palcem zamiast panoramować wykres.
+                        chartSampleIndexAtX(x, padL, plotW, viewState.value.rows.size)?.let { onCrossState.value(it) }
+                    } else if (plotW > 0f && dx != 0f) {
+                        onPanState.value(dx / plotW)
+                    }
+                },
+                onPinch = { factor, anchor -> onPinchState.value(factor, anchor) }
             )
         }
     ) {
@@ -527,6 +538,12 @@ fun ChartCanvas(
             }
         }
     }
+}
+
+internal fun chartSampleIndexAtX(x: Float, padLeft: Float, plotWidth: Float, sampleCount: Int): Int? {
+    if (sampleCount < 2 || !plotWidth.isFinite() || plotWidth <= 0f) return null
+    val fraction = ((x - padLeft) / plotWidth).coerceIn(0f, 1f)
+    return (fraction * (sampleCount - 1)).roundToInt()
 }
 
 private class SegPoint(val x: Float, val y: Float, val v: Double, val ts: Long, val idx: Int, val simulated: Boolean)
