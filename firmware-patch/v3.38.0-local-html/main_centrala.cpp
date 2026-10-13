@@ -1,4 +1,14 @@
-// [v3.40.0 ESP-HTML-1TO1] — 2026-10-13
+// [v3.41.0 WYKRESY-MULTI-SERIE] — 2026-10-13
+// Co: Wykres pozwala laczyc dowolnie wybrane serie temperatur, bojlera i serw.
+// Problem: Widok danych byl wybierany jednym trybem TEMPERATURY/SERWA/KORELACJA,
+//     przez co wybor mieszanych przebiegow nie byl bezposredni i czytelny.
+// Przyczyna: chartFocus ograniczal activeSeriesCatalog() do jednej kategorii;
+//     renderSeriesChips() i showSeriesSheet() wymuszaly tez pozostawienie serii.
+// Naprawa: Usunieto wybor radiowy; pelny katalog serii jest zawsze dostepny,
+//     a kazda seria ma niezalezny stan on. Dodano zaznaczanie wszystkich,
+//     mozliwosc wylaczenia dowolnych serii, zapis preferencji i auto-osie °C/%.
+// FIRMWARE_VERSION v3.40.0 -> v3.41.0 (MINOR wg semver: nowa analiza wykresow).
+//
 // Co: Strona glowna ESP serwuje ten sam pelny interfejs co biezacy Piec.html.
 // Problem: ESP pokazywal osobny, uproszczony panel, rozniacy sie ukladem,
 //     zakladkami, kartami, wykresami i dialogami od panelu Piec.html.
@@ -4987,7 +4997,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.40.0";
+static const char* FIRMWARE_VERSION = "v3.41.0";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -9081,9 +9091,8 @@ body.mode-phone-frame #phone {
         <div class="chart-row">
           <div class="lbl">DANE</div>
           <div class="chart-chips">
-            <button class="chart-chip on" id="chartFocusTemp">TEMPERATURY</button>
-            <button class="chart-chip" id="chartFocusServo">SERWA</button>
-            <button class="chart-chip" id="chartFocusBoth" title="Korelacja pieca i serw">KORELACJA</button>
+            <button class="chart-chip" id="chartSelectAll" title="Zaznacz wszystkie przebiegi">WSZYSTKIE SERIE</button>
+            <span style="font-size:9px;color:var(--text-dim);align-self:center">Zaznacz dowolny zestaw — temperatury i serwa mogą być razem</span>
           </div>
         </div>
         <div class="chart-row">
@@ -9100,8 +9109,8 @@ body.mode-phone-frame #phone {
       <div class="chart-workspace">
         <div class="chart-workhead">
           <div class="title-box">
-            <h3 id="chartCurrentTitle">TEMPERATURY</h3>
-            <div class="meta" id="chartCurrentMeta">°C · WSPÓLNA OŚ</div>
+            <h3 id="chartCurrentTitle">WYBRANE SERIE</h3>
+            <div class="meta" id="chartCurrentMeta">Możesz łączyć temperatury i serwa</div>
           </div>
           <span class="chart-stat-pill" id="chartNowStat">—</span>
           <button class="chart-icon-btn" id="chartBtnReset" title="Resetuj widok (1×)" data-ico="reset"></button>
@@ -13219,7 +13228,6 @@ body.mode-phone-frame #phone {
     { id: 'servo_damper', label: 'Syberek', ch: 'syberka', unit: '%', group: 'position', accent: '#45d98b', rgb: '69,217,139', on: true, servo: true }
   ];
 
-  let chartFocus = 0;
   let activeRangeSec = 24 * 3600;
   let chartMode = 'COMMON';
   let chartLineStyle = 'SMOOTH';
@@ -13239,7 +13247,6 @@ body.mode-phone-frame #phone {
   function saveChartPreferences() {
     try {
       const pref = {
-        focus: chartFocus,
         range: activeRangeSec,
         alarmLevels: chartAlarmLevels,
         tempOn: {},
@@ -13256,7 +13263,6 @@ body.mode-phone-frame #phone {
       const raw = safeStorage.get('piec_chart_prefs_v2');
       if (!raw) return;
       const p = JSON.parse(raw);
-      if (typeof p.focus === 'number' && p.focus >= 0 && p.focus <= 2) chartFocus = p.focus;
       if (typeof p.range === 'number' && p.range > 0) activeRangeSec = p.range;
       if (p.alarmLevels && typeof p.alarmLevels === 'object') {
         Object.keys(chartAlarmLevels).forEach(key => {
@@ -13275,9 +13281,51 @@ body.mode-phone-frame #phone {
   loadChartPreferences();
 
   function activeSeriesCatalog() {
-    if (chartFocus === 1) return SERVO_SERIES;
-    if (chartFocus === 2) return TEMP_SERIES.concat(SERVO_SERIES);
-    return TEMP_SERIES;
+    // Katalog jest zawsze pelny; wybor aktywnych przebiegow odbywa sie
+    // niezaleznie dla kazdej serii, takze w mieszanych zestawach temp + serwa.
+    return TEMP_SERIES.concat(SERVO_SERIES);
+  }
+
+  function selectedChartSeries() {
+    return activeSeriesCatalog().filter(s => s.on);
+  }
+
+  function chartSelectionTitle() {
+    const selected = selectedChartSeries();
+    if (!selected.length) return 'WYBIERZ SERIE';
+    const hasTemp = selected.some(s => s.group === 'temp');
+    const hasServo = selected.some(s => s.servo);
+    const hasOther = selected.some(s => !s.servo && s.group !== 'temp');
+    if (hasTemp && hasServo) return 'TEMPERATURY + SERWA';
+    if (hasServo) return 'POZYCJE SERW';
+    if (hasTemp && !hasOther) return 'TEMPERATURY';
+    return 'WYBRANE POMIARY';
+  }
+
+  function updateChartSelectionHeader() {
+    const selected = selectedChartSeries();
+    const title = $('#chartCurrentTitle');
+    const meta = $('#chartCurrentMeta');
+    const selectAll = $('#chartSelectAll');
+    if (title) title.textContent = chartSelectionTitle();
+    if (selectAll) selectAll.classList.toggle('on', selected.length === activeSeriesCatalog().length);
+    if (!meta) return;
+    if (!selected.length) {
+      meta.textContent = 'Zaznacz dowolne serie poniżej';
+      return;
+    }
+    if (chartMode === 'NORMALIZED') {
+      meta.textContent = '0–100% · NORMALIZACJA · ' + selected.length + ' SERII';
+      return;
+    }
+    const hasTemp = selected.some(s => s.group === 'temp');
+    const hasServo = selected.some(s => s.servo);
+    if (hasTemp && hasServo) meta.textContent = 'OSIE AUTOMATYCZNE · °C + % · ' + selected.length + ' SERII';
+    else if (hasServo) meta.textContent = '% · POZYCJE SERW · ' + selected.length + ' SERII';
+    else {
+      const units = [...new Set(selected.map(s => s.unit).filter(Boolean))];
+      meta.textContent = (units.length ? units.join(' + ') : 'SKALA AUTO') + ' · ' + selected.length + ' SERII';
+    }
   }
 
   const HISTORY_PAGE_SIZE = 300;
@@ -13661,9 +13709,9 @@ body.mode-phone-frame #phone {
       chip.style.setProperty('--sc', s.rgb);
       chip.onclick = () => {
         s.on = !s.on;
-        if (!cat.some(x => x.on)) s.on = true;
         saveChartPreferences();
         renderSeriesChips();
+        updateChartsNowStat();
         updateChartCanvas();
       };
       host.appendChild(chip);
@@ -13671,19 +13719,28 @@ body.mode-phone-frame #phone {
     const moreBtn = h('button', 'series-chip', '<span data-ico="settings" style="width:14px;height:14px"></span>USTAWIENIA');
     moreBtn.onclick = () => showSeriesSheet();
     host.appendChild(moreBtn);
+    updateChartSelectionHeader();
   }
 
   function updateChartsNowStat() {
     const nowStat = $('#chartNowStat');
     if (nowStat) {
-      if (chartFocus === 0) {
-        nowStat.textContent = symAktywna('ogrz') ? 'piec ~' + fmt1(S.t_ogrz) + '°C · SYM' :
-          hasData('t_ogrz') && Number.isFinite(S.t_ogrz) ? 'piec ' + fmt1(S.t_ogrz) + '°C' : 'piec —';
-      } else {
-        nowStat.textContent = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180 ?
-          'klapa ' + Math.round(S.klapa / 1.8) + '%' : 'klapa —';
-      }
+      const selected = selectedChartSeries();
+      const sensor = selected.find(s => s.id === 'ogrz') || selected.find(s => !s.servo);
+      const servo = selected.find(s => s.id === 'servo_flap') || selected.find(s => s.servo);
+      const currentText = s => {
+        if (!s || !hasData(s.ch) || !Number.isFinite(Number(S[s.ch]))) return s.label + ' —';
+        const raw = Number(S[s.ch]);
+        const value = s.servo ? (s.id === 'servo_flap' ? raw * 100 / 180 : raw) : raw;
+        const shown = s.servo ? String(Math.round(value)) : fmt1(value);
+        return s.label + ' ' + shown + (s.unit || '');
+      };
+      if (sensor && servo) nowStat.textContent = currentText(sensor) + ' · ' + currentText(servo);
+      else if (sensor) nowStat.textContent = currentText(sensor);
+      else if (servo) nowStat.textContent = currentText(servo);
+      else nowStat.textContent = selected.length ? currentText(selected[0]) : 'brak aktywnych serii';
     }
+    updateChartSelectionHeader();
 
     const pill = $('#chartPhasePill');
     if (pill) {
@@ -13771,8 +13828,14 @@ body.mode-phone-frame #phone {
       return;
     }
 
-    const cat = activeSeriesCatalog().filter(s => s.on);
-    if (!cat.length) return;
+    const cat = selectedChartSeries();
+    if (!cat.length) {
+      g.fillStyle = 'rgba(148,163,184,0.95)';
+      g.font = '600 12px Roboto,sans-serif';
+      g.textAlign = 'center';
+      g.fillText('Zaznacz dowolne serie nad wykresem', w / 2, h / 2);
+      return;
+    }
 
     const totalPts = chartDataset.length;
     const visibleCount = Math.max(4, Math.round(totalPts / chartZoom));
@@ -13849,7 +13912,7 @@ body.mode-phone-frame #phone {
     let minVal = Infinity, maxVal = -Infinity;
     let axisUnit = '°C';
 
-    if (chartFocus === 1 || chartMode === 'NORMALIZED') {
+    if (chartMode === 'NORMALIZED') {
       minVal = 0; maxVal = 100;
       axisUnit = '%';
     } else {
@@ -13904,6 +13967,9 @@ body.mode-phone-frame #phone {
         const span = Math.max(50, maxVal - minVal);
         minVal = Math.max(0, Math.floor(minVal - span * 0.08));
         maxVal = Math.ceil(maxVal + span * 0.12);
+      } else if (primCat.some(s => s.group === 'position')) {
+        minVal = 0; maxVal = 100;
+        axisUnit = '%';
       } else {
         minVal = 0; maxVal = 100;
         axisUnit = '';
@@ -13977,7 +14043,7 @@ body.mode-phone-frame #phone {
       g.fillStyle = '#6E8B9F';
     }
 
-    if (chartAlarmLines && chartFocus === 0 && chartMode === 'COMMON' && axisUnit === '°C') {
+    if (chartAlarmLines && primCat.some(s => s.id === 'ogrz') && chartMode === 'COMMON' && axisUnit === '°C') {
       g.setLineDash([4, 4]);
       const thresholdColors = {
         lolo: 'rgba(168,85,247,0.65)',
@@ -14469,42 +14535,17 @@ body.mode-phone-frame #phone {
   }
 
   function initChartControls() {
-    const cfTemp = $('#chartFocusTemp'), cfServo = $('#chartFocusServo'), cfBoth = $('#chartFocusBoth');
-    const updateFocusBtns = () => {
-      if (cfTemp) cfTemp.classList.toggle('on', chartFocus === 0);
-      if (cfServo) cfServo.classList.toggle('on', chartFocus === 1);
-      if (cfBoth) cfBoth.classList.toggle('on', chartFocus === 2);
-      const ct = $('#chartCurrentTitle'), cm = $('#chartCurrentMeta');
-      if (chartFocus === 0) {
-        if (ct) ct.textContent = 'TEMPERATURY';
-        if (cm) cm.textContent = '°C · WSPÓLNA OŚ';
-      } else if (chartFocus === 1) {
-        if (ct) ct.textContent = 'POZYCJE SERW';
-        if (cm) cm.textContent = '% · KLAPA + SYBEREK';
-      } else {
-        if (ct) ct.textContent = 'KORELACJA (PIEC + SERWA)';
-        if (cm) cm.textContent = 'LEWA OŚ: °C · PRAWA OŚ: % (KLAPA/SYBEREK)';
-      }
-    };
-    if (cfTemp) {
-      cfTemp.onclick = () => {
-        chartFocus = 0; saveChartPreferences(); updateFocusBtns();
-        renderSeriesChips(); updateChartsNowStat(); updateChartCanvas();
+    const selectAll = $('#chartSelectAll');
+    if (selectAll) {
+      selectAll.onclick = () => {
+        activeSeriesCatalog().forEach(series => { series.on = true; });
+        saveChartPreferences();
+        renderSeriesChips();
+        updateChartsNowStat();
+        updateChartCanvas();
       };
     }
-    if (cfServo) {
-      cfServo.onclick = () => {
-        chartFocus = 1; saveChartPreferences(); updateFocusBtns();
-        renderSeriesChips(); updateChartsNowStat(); updateChartCanvas();
-      };
-    }
-    if (cfBoth) {
-      cfBoth.onclick = () => {
-        chartFocus = 2; saveChartPreferences(); updateFocusBtns();
-        renderSeriesChips(); updateChartsNowStat(); updateChartCanvas();
-      };
-    }
-    updateFocusBtns();
+    updateChartSelectionHeader();
 
     const RANGES = [
       ['#chartRange6', 6 * 3600],
@@ -14537,7 +14578,7 @@ body.mode-phone-frame #phone {
     if (btnExp) {
       btnExp.onclick = () => {
         const ft = $('#fsModalTitle'), fs = $('#fsModalSubtitle');
-        if (ft) ft.textContent = chartFocus === 0 ? 'TEMPERATURY — PEŁNY EKRAN' : 'POZYCJE SERW — PEŁNY EKRAN';
+        if (ft) ft.textContent = chartSelectionTitle() + ' — PEŁNY EKRAN';
         if (fs) fs.textContent = activeRangeSec <= 24 * 3600 ? 'Podgląd dobowy telemetryczny' : 'Analiza wielodniowa';
         const modal = $('#chartFsModal');
         if (modal) {
@@ -14558,15 +14599,17 @@ body.mode-phone-frame #phone {
   function showSeriesSheet() {
     showSheet('Wybór serii wykresu', 'chart', () => {
       const b = h('div');
-      b.appendChild(note('Wybierz widoczne przebiegi na wykresie. Przynajmniej jedna seria musi pozostać aktywna.'));
+      b.appendChild(note('Zaznacz dowolny zestaw przebiegów. Możesz łączyć temperatury, bojler i pozycje serw.'));
       const cat = activeSeriesCatalog();
       cat.forEach(s => {
         const row = h('div', 'row', `<div class="l"><b style="color:${s.accent}">● ${s.label}</b><span>${s.servo ? 'Pozycja serwomechanizmu (%)' : 'Kanał telemetryczny (' + s.unit + ')'}</span></div>`);
         const chk = h('input'); chk.type = 'checkbox'; chk.checked = s.on;
         chk.onchange = () => {
           s.on = chk.checked;
-          if (!cat.some(x => x.on)) { s.on = true; chk.checked = true; }
-          renderSeriesChips(); updateChartCanvas();
+          saveChartPreferences();
+          renderSeriesChips();
+          updateChartsNowStat();
+          updateChartCanvas();
         };
         row.appendChild(chk); b.appendChild(row);
       });
@@ -14574,12 +14617,14 @@ body.mode-phone-frame #phone {
       const minBtn = h('button', 'ust-btn', 'Tylko główna');
       minBtn.onclick = () => {
         cat.forEach((x, i) => x.on = (i === 0));
-        renderSeriesChips(); updateChartCanvas(); dismissSheet();
+        saveChartPreferences();
+        renderSeriesChips(); updateChartsNowStat(); updateChartCanvas(); dismissSheet();
       };
       const allBtn = h('button', 'ust-btn', 'Wszystkie');
       allBtn.onclick = () => {
         cat.forEach(x => x.on = true);
-        renderSeriesChips(); updateChartCanvas(); dismissSheet();
+        saveChartPreferences();
+        renderSeriesChips(); updateChartsNowStat(); updateChartCanvas(); dismissSheet();
       };
       acts.appendChild(minBtn); acts.appendChild(allBtn); b.appendChild(acts);
       return b;
@@ -14598,7 +14643,7 @@ body.mode-phone-frame #phone {
         const card = h('div', 'setcard', `<div class="ic" data-ico="chart" style="color:var(--cyan)"></div><div class="t"><b>${t}</b><span>${d}</span></div><span class="nx">${chartMode === m ? '✓' : ''}</span>`);
         card.onclick = () => {
           chartMode = m;
-          $('#chartCurrentMeta').textContent = m === 'COMMON' ? '°C · WSPÓLNA OŚ' : '0–100% · NORMALIZACJA';
+          updateChartSelectionHeader();
           updateChartCanvas();
           dismissSheet();
         };
@@ -14684,8 +14729,9 @@ body.mode-phone-frame #phone {
       b.appendChild(sectionHeader('Wykryte cykle pracy kotła'));
       b.appendChild(h('div', 'diag-card', '<div class="lbl">ANALIZA CYKLI GRZANIA</div><div class="val">Cykliczna praca paleniska w wybranym zakresie</div><div class="sub">Próg załączenia pompy: 60°C (histereza 10°C)</div>'));
 
-      if (cat.length >= 2 && chartFocus === 0) {
-        const s1 = cat[0], s2 = cat[1];
+      const tempCat = cat.filter(s => s.group === 'temp');
+      if (tempCat.length >= 2) {
+        const s1 = tempCat[0], s2 = tempCat[1];
         const nowDelta = (S[s1.ch] || 0) - (S[s2.ch] || 0);
         b.appendChild(sectionHeader('Różnica temperatur A − B'));
         b.appendChild(h('div', 'diag-card', `<div class="lbl">${s1.label} − ${s2.label}</div><div class="val">Aktualna różnica: ${fmt1(nowDelta)} °C</div><div class="sub">Różnica przepływu instalacji i odbioru ciepła</div>`));
