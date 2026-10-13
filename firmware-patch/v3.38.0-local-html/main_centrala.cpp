@@ -1,3 +1,13 @@
+// [v3.44.0 WYKRESY-ESP-LOKALNE] — 2026-10-13
+// Co: Zakladka Wykresy ESP pobiera zakresy 6h/24h z /api/history, a 7/30 dni
+//     z lokalnego /api/history/long (uzupelnionego o ostatnie 24h z bufora minutowego).
+// Problem: Osadzona strona nadal pobierala historie wykresu z Firebase RTDB,
+//     mimo ze centrala ma trwale lokalne archiwum LittleFS/PSRAM.
+// Naprawa: Dodano lokalny parser CSV po stronie strony, lokalne odswiezanie i
+//     bezpieczny brak fallbacku do Firebase. Do dlugiego CSV dopisano stan pompy;
+//     czytnik nadal akceptuje starsze 35-kolumnowe pliki (pompa = brak danych).
+// FIRMWARE_VERSION v3.43.0 -> v3.44.0 (MINOR: wykresy ESP lokalnie).
+//
 // [v3.43.0 WYKRESY-MULTI-GROUP-ANDROID] — 2026-10-13
 // Co: Wybor danych wykresu odpowiada Androidowi: niezalezne grupy
 //     TEMPERATURY, SERWA i POMPA, mozna laczyc dowolne grupy.
@@ -5017,7 +5027,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.43.0";
+static const char* FIRMWARE_VERSION = "v3.44.0";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -10618,6 +10628,9 @@ body.mode-phone-frame #phone {
 
   async function pollFirebase() {
     if (_isDemoMode) return;
+    // Na lokalnym ESP zakladka Wykresy korzysta wyłącznie z /api/history*.
+    // Nie odpytuj Firebase, gdy ekran wykresów jest aktywny.
+    if (currentPage === 1 && await isEspLocalChartPage()) return;
     try {
       const data = await fbGet('/piec/status.json');
       if (data && typeof data === 'object') {
@@ -13379,6 +13392,180 @@ body.mode-phone-frame #phone {
 
   const HISTORY_PAGE_SIZE = 300;
   let _historyIndexFallback = false;
+  let _espLocalChartMode = null;
+  let _espLocalChartProbe = null;
+  let _chartLoadGeneration = 0;
+
+  function espHostLooksLocal(hostname) {
+    const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+    if (host === 'localhost' || host === '::1' || host.endsWith('.local') || host.endsWith('.lan')) return true;
+    const match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!match) return false;
+    const octets = match.slice(1).map(Number);
+    if (octets.some(value => value < 0 || value > 255)) return false;
+    return octets[0] === 10 || octets[0] === 127 ||
+      (octets[0] === 192 && octets[1] === 168) ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 169 && octets[1] === 254);
+  }
+
+  function isEspLocalChartPage() {
+    if (_espLocalChartMode !== null) return Promise.resolve(_espLocalChartMode);
+    if (espHostLooksLocal(window.location.hostname)) {
+      _espLocalChartMode = true;
+      return Promise.resolve(true);
+    }
+    if (!_espLocalChartProbe) {
+      _espLocalChartProbe = (async () => {
+        try {
+          // ESP odróżniamy po istniejącym lokalnym API, nie po stanie Firebase.
+          const response = await fetch('/api/status', { cache: 'no-store' });
+          if (!response.ok) return false;
+          const status = await response.json();
+          return !!status && (status.wifi_mode === 'AP' || status.wifi_mode === 'STA') &&
+            typeof status.ip === 'string';
+        } catch (e) {
+          return false;
+        }
+      })().then(isEsp => {
+        _espLocalChartMode = !!isEsp;
+        return _espLocalChartMode;
+      });
+    }
+    return _espLocalChartProbe;
+  }
+
+  function localCsvNumber(columns, index) {
+    if (index < 0 || index >= columns.length) return null;
+    const raw = String(columns[index] == null ? '' : columns[index]).trim();
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function localServoPercent(degrees, maxDegrees) {
+    return Number.isFinite(degrees) && degrees >= 0 && degrees <= maxDegrees
+      ? degrees * 100 / maxDegrees : null;
+  }
+
+  function localPumpPercent(value) {
+    return value === 0 ? 0 : value === 1 ? 100 : null;
+  }
+
+  // /api/history: 14 kolumn, probka lokalna co 60 s, bufor 24 h.
+  function parseEspShortHistory(csv) {
+    const result = [];
+    String(csv || '').split(/\r?\n/).forEach((line, seq) => {
+      if (!line.trim()) return;
+      const c = line.split(',');
+      if (c.length < 14) return;
+      const seconds = localCsvNumber(c, 13);
+      if (!Number.isFinite(seconds) || seconds <= 0) return;
+      result.push({
+        ts: seconds * 1000, seq,
+        t_zewn: localCsvNumber(c, 1), t_bojler: localCsvNumber(c, 2),
+        t_ogrz: localCsvNumber(c, 3), t_ogrz_sr: localCsvNumber(c, 4),
+        t_powrot: localCsvNumber(c, 5), t_panel: localCsvNumber(c, 6),
+        t_pokoj: localCsvNumber(c, 7),
+        t_trociny: null, dym: null,
+        pompa: localPumpPercent(localCsvNumber(c, 8)),
+        cisnienie: localCsvNumber(c, 9), wilgotnosc: localCsvNumber(c, 10),
+        klapa: localServoPercent(localCsvNumber(c, 11), 180),
+        syberka: localServoPercent(localCsvNumber(c, 12), 90),
+        sim: 0, is_sim: false
+      });
+    });
+    return result;
+  }
+
+  // /api/history/long: 35 kolumn historycznych + opcjonalna 36. kolumna
+  // pompa (v3.44.0+). Starszy zapis pozostaje czytelny, stan pompy brakujący.
+  function parseEspLongHistory(csv) {
+    const result = [];
+    String(csv || '').split(/\r?\n/).forEach((line, seq) => {
+      if (!line.trim()) return;
+      const c = line.split(',');
+      if (c.length < 35) return;
+      const seconds = localCsvNumber(c, 34);
+      if (!Number.isFinite(seconds) || seconds <= 0) return;
+      result.push({
+        ts: seconds * 1000, seq,
+        t_zewn: localCsvNumber(c, 1), t_bojler: localCsvNumber(c, 4),
+        t_ogrz: localCsvNumber(c, 7), t_ogrz_sr: localCsvNumber(c, 10),
+        t_powrot: localCsvNumber(c, 13), t_panel: localCsvNumber(c, 16),
+        t_pokoj: localCsvNumber(c, 19),
+        t_trociny: null, dym: null,
+        cisnienie: localCsvNumber(c, 22), wilgotnosc: localCsvNumber(c, 25),
+        klapa: localServoPercent(localCsvNumber(c, 28), 180),
+        syberka: localServoPercent(localCsvNumber(c, 31), 90),
+        pompa: localPumpPercent(localCsvNumber(c, 35)),
+        sim: 0, is_sim: false
+      });
+    });
+    return result;
+  }
+
+  async function fetchEspHistoryCsv(path) {
+    const response = await fetch(path, { cache: 'no-store', headers: { 'Accept': 'text/plain' } });
+    if (!response.ok) throw new Error('HTTP ' + response.status + ' dla ' + path);
+    return response.text();
+  }
+
+  function setEspLocalChartBadge() {
+    const pill = $('#chartRealityPill');
+    if (!pill) return;
+    pill.textContent = 'ESP · LOKALNIE';
+    pill.style.background = 'rgba(0,212,245,.15)';
+    pill.style.color = 'var(--cyan)';
+    pill.style.border = '1px solid rgba(0,212,245,.3)';
+  }
+
+  async function loadEspLocalTelemetryRange(rangeSec, rangeName, generation) {
+    const info = $('#chartStatusInfo');
+    const isLongRange = rangeSec > 24 * 3600;
+    if (info) info.textContent = `Pobieranie lokalnej historii ESP (${rangeName})…`;
+    setEspLocalChartBadge();
+
+    try {
+      let rows;
+      if (isLongRange) {
+        // Bufor dlugi zapewnia archiwum wielodniowe; ostatnie 24 h bierzemy
+        // z bufora minutowego, zeby wykres i stan pompy pozostawaly aktualne.
+        const [longCsv, shortCsv] = await Promise.all([
+          fetchEspHistoryCsv('/api/history/long'), fetchEspHistoryCsv('/api/history')
+        ]);
+        const now = Date.now();
+        const cutoff = now - rangeSec * 1000;
+        const recentCutoff = now - 24 * 3600 * 1000;
+        rows = parseEspLongHistory(longCsv).filter(row => row.ts >= cutoff && row.ts < recentCutoff)
+          .concat(parseEspShortHistory(shortCsv).filter(row => row.ts >= Math.max(cutoff, recentCutoff)));
+      } else {
+        const shortCsv = await fetchEspHistoryCsv('/api/history');
+        const cutoff = Date.now() - rangeSec * 1000;
+        rows = parseEspShortHistory(shortCsv).filter(row => row.ts >= cutoff);
+      }
+      if (generation !== _chartLoadGeneration) return;
+      chartDataset = rows.sort((a, b) => a.ts - b.ts || a.seq - b.seq);
+      if (info) {
+        info.textContent = chartDataset.length
+          ? `ESP lokalnie · ${chartDataset.length} próbek · archiwum centrali · bez Firebase`
+          : `Brak lokalnych próbek ESP dla zakresu ${rangeName}`;
+      }
+    } catch (err) {
+      if (generation !== _chartLoadGeneration) return;
+      chartDataset = [];
+      console.warn('Błąd odczytu lokalnej historii ESP:', err);
+      if (info) info.textContent = `Nie udało się pobrać lokalnej historii ESP (${rangeName}); Firebase nie jest używany`;
+    }
+
+    if (generation !== _chartLoadGeneration) return;
+    setEspLocalChartBadge();
+    $('#chartPointsStat').textContent = String(chartDataset.length);
+    $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
+    renderSeriesChips();
+    updateChartsNowStat();
+    updateChartCanvas();
+  }
 
   function historyDayRange(startTs, endTs) {
     const out = [];
@@ -13689,14 +13876,23 @@ body.mode-phone-frame #phone {
   }
 
   async function loadTelemetryRange(rangeSec) {
+    const generation = ++_chartLoadGeneration;
     activeRangeSec = rangeSec;
     const rangeName = rangeSec === 6 * 3600 ? '6h' : rangeSec === 24 * 3600 ? '24h' : rangeSec === 7 * 86400 ? '7d' : '30d';
-    let historyFailed = false;
 
+    if (await isEspLocalChartPage()) {
+      if (generation !== _chartLoadGeneration) return;
+      await loadEspLocalTelemetryRange(rangeSec, rangeName, generation);
+      return;
+    }
+    if (generation !== _chartLoadGeneration) return;
+
+    let historyFailed = false;
     if (_isFirebaseConnected) {
       $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase…`;
       try {
         const fbData = await fetchTelemetryFromFirebase(rangeSec);
+        if (generation !== _chartLoadGeneration) return;
         if (fbData && fbData.length > 0) {
           chartDataset = fbData;
           $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek RTDB (${rangeName}) · symulowane odcinki są kreskowane`;
@@ -13712,11 +13908,13 @@ body.mode-phone-frame #phone {
           return;
         }
       } catch (err) {
+        if (generation !== _chartLoadGeneration) return;
         historyFailed = true;
         console.warn('Błąd odczytu telemetrii Firebase:', err);
       }
     }
 
+    if (generation !== _chartLoadGeneration) return;
     const pill = $('#chartRealityPill');
     chartDataset = [];
     if (_isDemoMode) {
@@ -13774,9 +13972,24 @@ body.mode-phone-frame #phone {
   }
 
   function updateChartsNowStat() {
+    const localMode = _espLocalChartMode;
+    const localRow = localMode === true && chartDataset.length ? chartDataset[chartDataset.length - 1] : null;
     const nowStat = $('#chartNowStat');
     if (nowStat) {
-      if (chartGroupSelected('pump')) {
+      if (localMode === true) {
+        if (chartGroupSelected('pump')) {
+          nowStat.textContent = localRow && Number.isFinite(localRow.pompa)
+            ? (localRow.pompa >= 50 ? 'POMPA: PRACUJE' : 'POMPA: STOI') : 'pompa —';
+        } else if (chartGroupSelected('temp')) {
+          nowStat.textContent = localRow && Number.isFinite(localRow.t_ogrz)
+            ? 'piec ' + fmt1(localRow.t_ogrz) + '°C · lokalnie' : 'piec —';
+        } else {
+          nowStat.textContent = localRow && Number.isFinite(localRow.klapa)
+            ? 'klapa ' + Math.round(localRow.klapa) + '% · lokalnie' : 'klapa —';
+        }
+      } else if (localMode === null) {
+        nowStat.textContent = 'stan lokalny —';
+      } else if (chartGroupSelected('pump')) {
         nowStat.textContent = !hasData('pompa') || typeof S.pompa !== 'boolean' ? 'pompa —' :
           S.pompa ? 'POMPA: PRACUJE' : 'POMPA: STOI';
       } else if (chartGroupSelected('temp')) {
@@ -13792,7 +14005,15 @@ body.mode-phone-frame #phone {
     if (phaseBar) phaseBar.style.display = chartGroupSelected('temp') ? '' : 'none';
     const pill = $('#chartPhasePill');
     if (pill && chartGroupSelected('temp')) {
-      if (symAktywna('ogrz')) pill.textContent = 'ODCZYT SYMULOWANY — FRAGMENT LINII PRZERYWANY';
+      const localTemp = localRow && Number.isFinite(localRow.t_ogrz) ? localRow.t_ogrz : null;
+      if (localMode === true) {
+        if (localTemp === null) pill.textContent = 'BRAK LOKALNEGO ODCZYTU TEMPERATURY PIECA';
+        else if (localTemp > 65) pill.textContent = `🔥 FAZA GRZANIA: INTENSYWNA (${fmt1(localTemp)}°C) · ESP`;
+        else if (localTemp > 45) pill.textContent = `🔥 FAZA GRZANIA: STABILNA (${fmt1(localTemp)}°C) · ESP`;
+        else pill.textContent = `⏸ FAZA POSTOJU / WYGASZANIE (${fmt1(localTemp)}°C) · ESP`;
+      } else if (localMode === null) {
+        pill.textContent = 'ŁADOWANIE LOKALNEJ HISTORII ESP…';
+      } else if (symAktywna('ogrz')) pill.textContent = 'ODCZYT SYMULOWANY — FRAGMENT LINII PRZERYWANY';
       else if (!hasData('t_ogrz') || !Number.isFinite(S.t_ogrz)) pill.textContent = 'BRAK RZECZYWISTEGO ODCZYTU TEMPERATURY PIECA';
       else if (S.t_ogrz > 65) pill.textContent = `🔥 FAZA GRZANIA: INTENSYWNA (${fmt1(S.t_ogrz)}°C)`;
       else if (S.t_ogrz > 45) pill.textContent = `🔥 FAZA GRZANIA: STABILNA (${fmt1(S.t_ogrz)}°C)`;
@@ -13801,7 +14022,8 @@ body.mode-phone-frame #phone {
   }
 
   function appendChartLivePoint() {
-    if (currentPage !== 1 || !_isFirebaseConnected || !S.online || !_lastFirebaseFetch || _lastFirebaseFetch <= lastChartLiveTs) return;
+    // Na stronie ESP telemetria wykresu pochodzi z /api/history*, nigdy z S/Firebase.
+    if (currentPage !== 1 || _espLocalChartMode !== false || !_isFirebaseConnected || !S.online || !_lastFirebaseFetch || _lastFirebaseFetch <= lastChartLiveTs) return;
     let sim = 0;
     const sample = (key, pole, channel) => {
       const value = S[key];
@@ -15892,6 +16114,7 @@ body.mode-phone-frame #phone {
       let weatherIntervalId = null;
       let liveIntervalId = null;
       let fastUiIntervalId = null;
+      let chartHistoryIntervalId = null;
 
       function startForegroundTimers() {
         stopAllTimers();
@@ -15899,6 +16122,13 @@ body.mode-phone-frame #phone {
         fbIntervalId = setInterval(() => {
           if (!document.hidden) pollFirebase();
         }, 4000);
+
+        // Archiwum ESP zapisuje próbki co minutę; odświeżaj wykres lokalnie
+        // tylko wtedy, gdy użytkownik ma otwartą zakładkę Wykresy.
+        chartHistoryIntervalId = setInterval(async () => {
+          if (document.hidden || currentPage !== 1) return;
+          if (await isEspLocalChartPage()) loadTelemetryRange(activeRangeSec);
+        }, 60 * 1000);
 
         // Pogoda co 15 minut
         weatherIntervalId = setInterval(() => {
@@ -15924,6 +16154,7 @@ body.mode-phone-frame #phone {
         if (weatherIntervalId) clearInterval(weatherIntervalId);
         if (liveIntervalId) clearInterval(liveIntervalId);
         if (fastUiIntervalId) clearInterval(fastUiIntervalId);
+        if (chartHistoryIntervalId) clearInterval(chartHistoryIntervalId);
       }
 
       document.addEventListener('visibilitychange', () => {
@@ -15935,6 +16166,7 @@ body.mode-phone-frame #phone {
         } else {
           // Powrót do aplikacji: natychmiastowe jednorazowe odświeżenie i start szybkich timerów
           pollFirebase();
+          if (currentPage === 1) loadTelemetryRange(activeRangeSec);
           liveTick();
           if (ck && ILU && ILU.czas) ILU.czas.update(ck);
           if (sheetBuilder && $('#sheet') && $('#sheet').classList.contains('on')) refreshSheet();
@@ -21420,6 +21652,8 @@ struct HistoriaProbkaDluga {
   // warunek na poczatku historiaDlugaAkumulujProbke()). Analogia do pola
   // czas_unix w HistoriaProbka wyzej, ten sam cel (dziury na wykresie).
   uint32_t czas_unix;
+  // Ostatnia kolumna /api/history/long: 0/1, -1 dla wierszy sprzed v3.44.0.
+  int8_t pompa;
 };
 
 HistoriaProbkaDluga* historiaDlugaBufor = nullptr;
@@ -21472,17 +21706,18 @@ void historiaDlugaFlushDoFS(const HistoriaProbkaDluga &nowa);
 // Zapisuje POJEDYNCZA probke chwilowa do historiaDlugaBufor - sr=min=max=
 // biezaca wartosc kazdego pola, bo przy zapisie zdarzeniowym nie ma juz
 // okna czasowego do usredniania (kazdy zapis to jeden punkt w czasie, nie
-// agregat). Ten sam uklad pol/CSV co dawniej (35 kolumn: etykieta +
-// sr/min/max dla kazdej z 11 metryk + czas_unix) CELOWO bez zmian - dzieki
-// temu panel LVGL (dashboard_lvgl_poc.cpp, osobny projekt) i JS panelu WWW
-// (wykrParsujCsvDlugie()) czytaja ten plik bez zadnej modyfikacji, patrz
+// agregat). Pierwsze 35 kolumn CSV pozostaja bez zmian (etykieta + sr/min/max
+// dla 11 metryk + czas_unix); kolumna 36 dopisuje stan pompy, ktorego brakowalo
+// w archiwum wielodniowym. Starsze pliki bez tej kolumny nadal sa akceptowane.
+// Panel LVGL i historyczny parser WWW ignoruja dodatkowa koncowa kolumne.
 // PLAN_HISTORIA_JEDNOPLIKOWA.md Czesc 3.3. Wolane WYLACZNIE z
 // historiaDlugaAkumulujProbke() po decyzji, ze warto zapisac (przekroczony
 // prog / zmiana pompy / heartbeat) - nigdy bezposrednio z zewnatrz.
 static void historiaDlugaZapiszProbke(const DateTime &now, float t_zewn, float t_bojler,
                                        float t_ogrz, float t_ogrz_sr, float t_powrot,
                                        float t_panel, float t_pokoj, float cisnienie,
-                                       float wilgotnosc, int klapa_proc, int syberko_proc) {
+                                       float wilgotnosc, int klapa_proc, int syberko_proc,
+                                       bool pompaOn) {
   if (!historiaDlugaBufor) return;
 
   HistoriaProbkaDluga nowa;
@@ -21493,6 +21728,7 @@ static void historiaDlugaZapiszProbke(const DateTime &now, float t_zewn, float t
   snprintf(nowa.etykieta, sizeof(nowa.etykieta), "%02d.%02d %02d:%02d",
            now.day(), now.month(), now.hour(), now.minute());
   nowa.czas_unix = now.unixtime();
+  nowa.pompa = pompaOn ? 1 : 0;
 
   // sr=min=max=wartosc chwilowa - patrz komentarz nad funkcja.
   #define ZDARZ_PRZEPISZ(pole, wartosc) \
@@ -21536,7 +21772,7 @@ static void historiaDlugaZapiszProbke(const DateTime &now, float t_zewn, float t
   historiaDlugaOstatnia.wilgotnosc   = wilgotnosc;
   historiaDlugaOstatnia.klapa_proc   = klapa_proc;
   historiaDlugaOstatnia.syberko_proc = syberko_proc;
-  historiaDlugaOstatnia.pompa        = pompaJestWlaczona();
+  historiaDlugaOstatnia.pompa        = pompaOn;
 
   DLOGF(DC_HISTORIA, DL_DEBUG, "HISTORIA_DLUGA zdarzenie=zapis etykieta=\"%s\"", nowa.etykieta);
 
@@ -21582,6 +21818,7 @@ void historiaDlugaAkumulujProbke(const DateTime &now, float t_zewn, float t_bojl
   if (!g_rtcGotowy && !g_rtcNtpZsynchronizowany) return;
 
   uint32_t teraz = millis();
+  const bool pompaNow = pompaJestWlaczona();
 
   // (1) Limit przeciw-zalewowy - PRZED jakimkolwiek innym sprawdzeniem.
   if (historiaDlugaOstatnia.mamy &&
@@ -21595,7 +21832,7 @@ void historiaDlugaAkumulujProbke(const DateTime &now, float t_zewn, float t_bojl
     zapisz = true;  // (2) pierwsza probka od startu urzadzenia
   } else if ((teraz - historiaDlugaOstatnia.czasMs) >= HIST_DLUGA_HEARTBEAT_MS) {
     zapisz = true;  // (3) heartbeat
-  } else if (pompaJestWlaczona() != historiaDlugaOstatnia.pompa) {
+  } else if (pompaNow != historiaDlugaOstatnia.pompa) {
     zapisz = true;  // (4) zmiana stanu pompy
   } else {
     // (5) progi per-metryka - wystarczy pierwszy przekroczony.
@@ -21617,7 +21854,8 @@ void historiaDlugaAkumulujProbke(const DateTime &now, float t_zewn, float t_bojl
   if (!zapisz) return;
 
   historiaDlugaZapiszProbke(now, t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot,
-                             t_panel, t_pokoj, cisnienie, wilgotnosc, klapa_proc, syberko_proc);
+                             t_panel, t_pokoj, cisnienie, wilgotnosc, klapa_proc, syberko_proc,
+                             pompaNow);
 }
 
 // [HISTORIA-DLUGA, Partia 3 - Krok 1] CSV z bufora dlugiego dla endpointu
@@ -21625,9 +21863,9 @@ void historiaDlugaAkumulujProbke(const DateTime &now, float t_zewn, float t_bojl
 // licznikow pod spinlockiem, potem petla bez lockowania, bo historiaDlugaBufor
 // nie jest realokowany w locie). Kolejnosc kolumn: etykieta, potem
 // sr,min,max dla kazdego pola po kolei (w tej samej kolejnosci pol co w
-// strukturze HistoriaProbkaDluga wyzej).
+// strukturze HistoriaProbkaDluga wyzej), dalej czas_unix i koncowy stan pompy.
 // Analogia historiaLiniaCsv() dla bufora dlugiego - jedna linia CSV
-// (z koncowym \n) dla jednej domknietej probki godzinowej.
+// (z koncowym \n) dla jednej probki zdarzeniowej.
 void historiaDlugaLiniaCsv(const HistoriaProbkaDluga &p, String &csv) {
   csv += p.etykieta; csv += ',';
   csv += String(p.t_zewn_sr, 1);      csv += ','; csv += String(p.t_zewn_min, 1);      csv += ','; csv += String(p.t_zewn_max, 1);      csv += ',';
@@ -21641,7 +21879,8 @@ void historiaDlugaLiniaCsv(const HistoriaProbkaDluga &p, String &csv) {
   csv += String(p.wilgotnosc_sr, 0);  csv += ','; csv += String(p.wilgotnosc_min, 0);  csv += ','; csv += String(p.wilgotnosc_max, 0);  csv += ',';
   csv += String(p.klapa_proc_sr);     csv += ','; csv += String(p.klapa_proc_min);     csv += ','; csv += String(p.klapa_proc_max);     csv += ',';
   csv += String(p.syberko_proc_sr);   csv += ','; csv += String(p.syberko_proc_min);   csv += ','; csv += String(p.syberko_proc_max);     csv += ',';
-  csv += String(p.czas_unix); // [DZIURY-CZAS, v3.0.0.2] 35. kolumna
+  csv += String(p.czas_unix); csv += ','; // [DZIURY-CZAS, v3.0.0.2] 35. kolumna
+  csv += String((int)p.pompa);          // 36. kolumna: 0/1, -1 = brak danych w starszym pliku
   csv += '\n';
 }
 
@@ -21656,10 +21895,9 @@ String historiaDlugaZbudujCsv() {
 
   if (liczbaProbekSnap == 0) return "";
   String csv;
-  // 12 pol x (sr,min,max) = 36 liczb + etykieta -> szacunek z zapasem,
-  // zeby String nie realokowal sie w trakcie petli przy pelnym buforze
-  // (168 probek).
-  csv.reserve(liczbaProbekSnap * 220);
+  // 11 metryk x (sr,min,max) = 33 wartosci + etykieta, czas i stan pompy.
+  // Rezerwa z zapasem ogranicza realokacje Stringa dla max 8000 zdarzen.
+  csv.reserve(liczbaProbekSnap * 230);
   for (int i = 0; i < liczbaProbekSnap; i++) {
     int idx = (startSnap + i) % HISTORIA_DLUGA_MAX_PROBEK;
     historiaDlugaLiniaCsv(historiaDlugaBufor[idx], csv);
@@ -25251,9 +25489,10 @@ void wifiZarejestrujTrasy() {
     historiaWyczysc();
     request->send(200, "application/json", "{\"ok\":true}");
   });
-  // [HISTORIA-DLUGA, Partia 3 - Krok 2] CSV z bufora dlugiego (7 dni,
-  // probka co ~1h, kolumny sr/min/max) dla filtra Dzien/Tydzien w JS —
-  // patrz historiaDlugaZbudujCsv() wyzej. Ten sam wzorzec co /api/history,
+  // [WYKRESY-ESP-LOKALNE] CSV z lokalnego bufora dlugiego (do 8000 zdarzen,
+  // kolumny sr/min/max oraz koncowy stan pompy) dla zakresow 7/30 dni.
+  // Strona ESP laczy je z ostatnimi 24 h z /api/history; starsze wiersze
+  // bez kolumny pompa sa zwracane ze stanem -1 (brak danych).
   // celowo osobny endpoint zamiast parametru ?zakres=, zeby nie mieszac
   // dwoch calkiem roznych formatow CSV (bufor krotki: 1 wartosc/pole,
   // bufor dlugi: 3 wartosci/pole) pod jednym adresem.
@@ -41498,9 +41737,8 @@ void historiaWczytajZFS() {
   DLOGF(DC_HISTORIA, DL_INFO, "HISTORIA-FS zdarzenie=wczytano_z_dysku probek=%d", wczytane);
 }
 
-// Analogicznie dla bufora dlugiego - 35 kolumn (etykieta + 11 pol x
-// sr/min/max + czas_unix [DZIURY-CZAS, v3.0.0.2]), makro WCZYTAJ_FLOAT
-// wzorem AKUM_DOMKNIJ_FLOAT wyzej w pliku.
+// Analogicznie dla bufora dlugiego - starsze pliki maja 35 kolumn, nowe
+// 36 (koncowa kolumna pompa); makro WCZYTAJ_FLOAT wzorem AKUM_DOMKNIJ_FLOAT.
 void historiaDlugaWczytajZFS() {
   if (!historiaDlugaBufor) return;
   if (!littlefsReady) return;
@@ -41525,18 +41763,19 @@ void historiaDlugaWczytajZFS() {
     if (numerLinii <= pominac) continue;
     if ((numerLinii % 50) == 0) serwisujTWDTJesliZarejestrowany();
 
-    String kol[35];
+    String kol[36];
     int pole = 0, pStart = 0;
-    for (unsigned int j = 0; j <= linia.length() && pole < 35; j++) {
+    for (unsigned int j = 0; j <= linia.length() && pole < 36; j++) {
       if (j == linia.length() || linia[j] == ',') {
         kol[pole] = linia.substring(pStart, j);
         pole++;
         pStart = j + 1;
       }
     }
-    if (pole != 35) continue;   // linia uszkodzona/niekompletna - pomijamy
+    if (pole != 35 && pole != 36) continue;   // stary/nowy format; reszte uszkodzonych wierszy pomijamy
 
     HistoriaProbkaDluga p;
+    p.pompa = -1; // stare pliki nie zapisywaly stanu pompy
     strncpy(p.etykieta, kol[0].c_str(), sizeof(p.etykieta)-1); p.etykieta[sizeof(p.etykieta)-1]=0;
     int k = 1;
     #define WCZYTAJ_FLOAT(pole_) \
@@ -41560,6 +41799,10 @@ void historiaDlugaWczytajZFS() {
     p.syberko_proc_min = kol[k++].toInt();
     p.syberko_proc_max = kol[k++].toInt();
     p.czas_unix        = (uint32_t) kol[k++].toInt(); // [DZIURY-CZAS, v3.0.0.2]
+    if (pole == 36) {
+      const String &pumpValue = kol[k];
+      p.pompa = pumpValue == "0" ? 0 : (pumpValue == "1" ? 1 : -1);
+    }
 
     if (wczytane < HISTORIA_DLUGA_MAX_PROBEK) {
       historiaDlugaBufor[wczytane] = p;

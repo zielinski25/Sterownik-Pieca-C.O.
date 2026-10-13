@@ -1,32 +1,31 @@
-# ESP-local panel: Android multi-select chart groups — base v3.38.0, output v3.43.0
+# ESP-local charts — base v3.38.0, output v3.44.0
 
-This source patch updates the HTML served by the ESP and keeps the main-checkout `Cenatrala Pieca.zip` untouched.
+This patch makes the ESP **Wykresy** tab read its history from the controller's own PSRAM/LittleFS archive. The page remains shared with `Piec.html`; the main-checkout `Cenatrala Pieca.zip` is not modified.
 
-## Result
+## Local chart behavior
 
-- `GET /` serves the current `Piec.html` byte-for-byte from `WIFI_LOCAL_PANEL_HTML` in `PROGMEM`; ESP and browser therefore use the same page, styles, and JavaScript.
-- The **DANE** row now matches Android: **TEMPERATURY**, **SERWA**, and **POMPA** are independent multi-select groups. You can enable any combination; the last enabled group cannot be turned off.
-- Series remain independently selectable within enabled groups, including mixed temperature, servo, and pump plots. Series settings retain the **Tylko główna** and **Wszystkie** actions, require at least one active series, and persist group and series choices. Existing v3.42 exclusive-focus preferences migrate to the closest matching group selection.
-- Pump history reads bit 0 of telemetry `state`: `100` means PRACA and `0` means STOP; missing/invalid state stays missing rather than being shown as STOP. Pump traces are drawn as step lines, with PRACA/STOP labels in pump-only view.
-- `/` sends the page directly from flash with `beginResponse_P()` and marks it `Cache-Control: no-store`, rather than copying the 458 KB page into a temporary `String` in heap RAM.
-- Existing firmware APIs and the servo/smoke algorithm are unchanged. The source-reported version is **v3.43.0**, advanced from v3.42.0.
+- **6 h / 24 h:** fetch `GET /api/history` (the controller's 60-second ring, persisted in `/hist_short.csv`).
+- **7 days / 30 days:** fetch `GET /api/history/long` plus the latest 24 hours from `/api/history`; merge and filter both by the selected time window. The long history is the controller's local event archive (up to 8,000 entries), not a Firebase shard.
+- On an ESP-served page, the available historical series, pump indicator, refresh button, and periodic refresh use these local CSV endpoints. Firebase chart-history requests and Firebase live-point appends are bypassed while Wykresy is open. A local API error is shown as an error; the chart does **not** fall back to Firebase.
+- Existing local CSV data includes temperatures, servo positions, pressure, humidity, and the short-range pump state. The existing archive does not record `t_trociny` or `dym`, so those optional series have no local historical points; they are not substituted with cloud values.
+- The long CSV keeps its original first 35 columns and appends a 36th pump-state column (`0`/`1`). The firmware reader remains compatible with old 35-column files; historic rows without a pump value stay unknown (`-1`), never falsely STOP.
+
+The source-reported firmware version advances from **v3.43.0** to **v3.44.0**. No heater-control, smoke-alarm, servo, or pump-control algorithm was changed. No firmware build or flash was performed.
 
 ## Apply
 
-The patch expects the **v3.38.0 base** `main_centrala.cpp` at `src/main_centrala.cpp`. Applying it produces source reporting **v3.43.0**. Confirm the base source matches v3.38.0 before applying:
+The patch is against the v3.38.0 source at `src/main_centrala.cpp`. In a separate copy of that source tree, verify and apply:
 
 ```sh
 patch --dry-run -p1 < /path/to/v3.38.0-local-html/main_centrala.cpp.patch
 patch -p1 < /path/to/v3.38.0-local-html/main_centrala.cpp.patch
 ```
 
-Do not apply it directly to `Cenatrala Pieca.zip`; that archive is not the matching v3.38.0 source base and remains unchanged. Building/flashing firmware and publishing a matching OTA release are separate steps. This preparation did **not** build or flash firmware, upload firmware, or send commands to the heater.
+Do not apply the patch to the modified `Cenatrala Pieca.zip` in the main checkout. Firmware build, flashing, and any OTA release are separate operations.
 
 ## Verification
 
-- Embedded `WIFI_LOCAL_PANEL_HTML` compared byte-for-byte with the current `Piec.html`.
-- Inline page JavaScript passed `node --check`.
-- Group-selection smoke test checked the default temperature group, every multi-group combination, the last-group guard, and independent per-series toggles.
-- Pump-state handling preserves unknown states and maps the `state` bit to PRACA/STOP values.
-- Patch dry-run and apply against the exact v3.38.0 base passed; applying it reproduced the prepared C++ source byte-for-byte (`cmp`).
-- Firmware build and live-device testing were not performed.
+- The `WIFI_LOCAL_PANEL_HTML` raw string was refreshed from the current `Piec.html` and byte-compared.
+- Inline JavaScript syntax and local short/long CSV parsing were checked with Node.js, including backward-compatible 35-column history and the new optional pump column.
+- The cumulative patch was dry-run/applied against the v3.38.0 source and reproduced the prepared v3.44.0 source byte-for-byte.
+- No firmware build, upload, flash, or heater command was run.
