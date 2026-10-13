@@ -1,6 +1,8 @@
-# ESP-local panel HTML parity patch — v3.38.0
+# ESP-local panel HTML parity patch — base v3.38.0, output v3.39.0
 
 This is a **separate source patch** for the HTML embedded in the ESP firmware. It does not edit or replace `Cenatrala Pieca.zip`.
+
+Applying the patch updates the source-reported firmware version from **v3.38.0** to **v3.39.0** (MINOR: new local UI/API functionality). A matching v3.39.0 firmware build and GitHub Release are separate steps; neither is created or flashed here.
 
 ## Changes
 
@@ -11,7 +13,7 @@ This is a **separate source patch** for the HTML embedded in the ESP firmware. I
 
 ## Apply
 
-The patch expects the **v3.38.0** `main_centrala.cpp` source at `src/main_centrala.cpp`. Apply it in the firmware source directory only after the source matches v3.38.0:
+The patch expects the **v3.38.0 base** `main_centrala.cpp` source at `src/main_centrala.cpp`; applying it produces source reporting **v3.39.0**. Apply only after confirming the base source matches v3.38.0:
 
 ```sh
 patch --dry-run -p1 < /path/to/v3.38.0-local-html/main_centrala.cpp.patch

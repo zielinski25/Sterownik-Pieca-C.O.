@@ -1,3 +1,18 @@
+// [v3.39.0 LOCAL-HTML-SERWA-WYKRESY] — 2026-10-13
+// Co: Rozszerzono lokalny HTML centrali o pozycje serw, bezpieczne
+//     "Rozpalanie serw" oraz inspektor wykresow.
+// Problem: Lokalny panel nie pokazywal pozycji klap z wiarygodnym statusem,
+//     nie udostepnial bezpiecznej akcji rozpalania serw z UI, a wykresom
+//     brakowalo odczytu probek i nawigacji dotykiem/myszka.
+// Przyczyna: Osadzona strona HTML nie byla zsynchronizowana z istniejacymi
+//     funkcjami serw i potrzebami interaktywnego podgladu wykresow.
+// Naprawa: Pozycje sa odswiezane z /api/status; dodano POST
+//     /api/rozpalanie-serwa z tokenem CSRF na biezacy boot i ponowna kontrola
+//     bezpieczenstwa przez uruchomRozpalanieSerwa(). Dodano inspektor wykresow
+//     (odczyt/crosshair, pan, zoom kolkiem/szczypaniem i reset dwuklikiem)
+//     oraz Cache-Control no-store. Algorytm serw i dymu pozostaje bez zmian.
+// FIRMWARE_VERSION v3.38.0 -> v3.39.0 (MINOR wg semver: nowa funkcjonalnosc UI/API).
+//
 // [v3.38.0 ROZPALANIE-SERW + WSPOLNE-WYCISZANIE] — 2026-10-12
 // Co: Automatyczne przygotowanie serw do rozpalenia, wymuszenie sekwencyjne
 //     do 30C, blokada po alarmie dymu oraz nadzor czujnika po ruchu serw.
@@ -4976,7 +4991,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.38.0";
+static const char* FIRMWARE_VERSION = "v3.39.0";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
