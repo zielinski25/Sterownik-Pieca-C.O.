@@ -1084,6 +1084,18 @@ body.mode-phone-frame #phone {
   color: var(--text-dim2);
 }
 .chart-hint svg { width: 12px; height: 12px; color: var(--text-dim2); flex-shrink: 0; }
+.chart-sim-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 5px 7px;
+  padding: 4px 6px;
+  color: var(--text-dim2);
+  font-size: 8px;
+}
+.chart-sim-legend .line-swatch { width: 22px; height: 0; border-top: 2px solid var(--cyan); flex: 0 0 auto; }
+.chart-sim-legend .line-swatch.dashed { border-top-style: dashed; }
 
 /* ═══════════ 3. POGODA & METEO STUDIO ═══════════ */
 .weather-topbar {
@@ -3294,6 +3306,10 @@ body.mode-phone-frame #phone {
           <div id="chartFloatingTooltip"></div>
         </div>
         <div class="chscroll" id="chartScrollbar"><div class="chscroll-track"></div><div class="chscroll-thumb" id="chartScrollbarThumb"></div></div>
+        <div class="chart-sim-legend" aria-label="Oznaczenie próbek symulowanych">
+          <span class="line-swatch"></span><span>odczyt rzeczywisty</span>
+          <span class="line-swatch dashed"></span><span>odczyt symulowany — tylko ten odcinek jest kreskowany</span>
+        </div>
 
         <div class="chart-phase-bar" id="chartPhaseBar">
           <span class="phase-pill" id="chartPhasePill">🔥 FAZA GRZANIA: STABILNA (58.4°C)</span>
@@ -3320,7 +3336,7 @@ body.mode-phone-frame #phone {
 
       <div class="chart-hint">
         <span data-ico="info" style="width:14px;height:14px;display:inline-flex"></span>
-        <span>najedź/dotknij = odczyt • przeciągnij poziomo = oś czasu • szczypnięcie/kółko = zoom • 2× klik/dotknij = reset • linia ciągła = odczyt rzeczywisty • kreskowana = próbka symulowana</span>
+        <span>najedź/dotknij = odczyt • przeciągnij poziomo = oś czasu • szczypnięcie/kółko = zoom • 2× klik/dotknij = reset</span>
       </div>
     </section>
 
@@ -3546,7 +3562,11 @@ body.mode-phone-frame #phone {
         <canvas id="chartFsCanvas"></canvas>
       </div>
       <div class="chscroll" id="chartFsScrollbar"><div class="chscroll-track"></div><div class="chscroll-thumb" id="chartFsScrollbarThumb"></div></div>
-      <div style="font-size:8px;color:var(--text-dim2);text-align:center;padding-top:4px">DOTKNIJ odczyt • PRZECIĄGNIJ poziomo oś czasu • SZCZYP / KÓŁKO zoom • PASEK oś czasu • 2× KLIK/DOTKNIJ reset</div>
+      <div class="chart-sim-legend" aria-label="Oznaczenie próbek symulowanych">
+        <span class="line-swatch"></span><span>odczyt rzeczywisty</span>
+        <span class="line-swatch dashed"></span><span>odczyt symulowany — tylko ten odcinek jest kreskowany</span>
+      </div>
+      <div style="font-size:8px;color:var(--text-dim2);text-align:center;padding-top:4px">DOTKNIJ odczyt • PRZECIĄGNIJ poziomo oś czasu • SZCZYP / KÓŁKO zoom • PASEK oś czasu • 2× KLIK reset</div>
     </div>
   </div>
 
@@ -3801,20 +3821,22 @@ body.mode-phone-frame #phone {
   ILU.serwo = {
     svg: s => {
       const deg = (s && typeof s.klapa === 'number') ? s.klapa : 90;
+      const mode = s && Number.isInteger(s.tryb_serwa) ? s.tryb_serwa : 0;
+      const accent = mode === 1 ? '#00d4f5' : mode === 2 ? '#fbbf24' : mode === 3 ? '#ff5f78' : '#94a3b8';
       const rot = (deg - 90).toFixed(1);
       return '<svg viewBox="0 0 24 24" fill="none" xmlns="' + NS + '">'
         + '<path d="M3 6.5h18v11H3z" fill="#081423" stroke="#475569" stroke-width="1.2" rx="2"/>'
-        + '<g class="serwo-przeplyw" style="opacity:' + Math.max(.2, deg / 180).toFixed(2) + '"><path d="M4 9.5h16M4 12h16M4 14.5h16" stroke="#38bdf8" stroke-width=".9" stroke-linecap="round" stroke-dasharray="2 3"/></g>'
+        + '<g class="serwo-przeplyw" style="opacity:' + Math.max(.2, deg / 180).toFixed(2) + '"><path d="M4 9.5h16M4 12h16M4 14.5h16" stroke="' + accent + '" stroke-width=".9" stroke-linecap="round" stroke-dasharray="2 3"/></g>'
         + '<circle cx="12" cy="12" r="8.2" stroke="#64748b" stroke-width="1.4" fill="none"/>'
         + '<g class="klapa-wobble" style="transform-origin:12px 12px"><g class="klapa-kat" style="transform-origin:12px 12px;transform:rotate(' + rot + 'deg)">'
-        + '<line x1="12" y1="4.2" x2="12" y2="19.8" stroke="#00d4f5" stroke-width="2.2" stroke-linecap="round"/>'
-        + '<ellipse cx="12" cy="12" rx="5.4" ry="1.6" fill="#00d4f5" opacity=".7"/>'
+        + '<line x1="12" y1="4.2" x2="12" y2="19.8" stroke="' + accent + '" stroke-width="2.2" stroke-linecap="round"/>'
+        + '<ellipse cx="12" cy="12" rx="5.4" ry="1.6" fill="' + accent + '" opacity=".7"/>'
         + '</g></g>'
         + '<circle cx="12" cy="12" r="2.2" fill="#e2e8f0" stroke="#081423" stroke-width=".8"/>'
         + '<path d="M12 2v2.2M12 19.8V22" stroke="#64748b" stroke-width="1.4" stroke-linecap="round"/>'
         + '</svg>';
     },
-    key: s => 'srv_' + (s && s.klapa)
+    key: s => 'srv_' + (s && Number.isInteger(s.tryb_serwa) ? s.tryb_serwa : 0) + '_' + (s && s.klapa)
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -4172,7 +4194,7 @@ body.mode-phone-frame #phone {
     tempZadServo: NaN, histerServo: NaN, skokKlapy: NaN, skokSyberka: NaN, odchylTemp: NaN, mnoznik: NaN,
     progAlarmTemp: NaN, progAlarmDym: NaN, dymCzasOn: NaN, dymCzasOff: NaN,
     dymCzasStabilizacji: NaN, dymProgTemp: NaN, dymTrybPracy: NaN,
-    sym: {} // pole -> {wartosc?, min, source: 'controller' | 'demo', expiresAt?}
+    sym: {} // aktywne symulacje z /piec/status; demo oznaczone source: demo
   };
 
   const SYM_POLA = {
@@ -4187,18 +4209,16 @@ body.mode-phone-frame #phone {
     wilgotnosc: 'wilgotnosc',
     dym: 'dym'
   };
-  // Granice wejściowe kontrolek symulacji po stronie aplikacji.
+  // Zakresy zgodne z parserem komendy symulacji w firmware.
   const SYM_BOUNDS = {
     zewn: [-30, 50], ogrz: [0, 160], bojler: [0, 160], panel: [-30, 160], pokoj: [-50, 50],
     ogrz_powrot: [-30, 120], ogrz_trociny: [-30, 120], cisnienie: [970, 1040],
     wilgotnosc: [0, 100], dym: [0, 4095]
   };
-  const symPanelOpen = new Set();
   const real = Object.assign({}, S);
   const symAktywna = pole => !!S.sym[pole];
   const hasData = key => receivedFields.has(key) || _isDemoMode;
-  const val = (pole, key) => _isDemoMode && symAktywna(pole) && S.sym[pole].source !== 'controller'
-    ? S.sym[pole].wartosc : hasData(key) ? S[key] : NaN;
+  const val = (pole, key) => _isDemoMode && symAktywna(pole) ? S.sym[pole].wartosc : hasData(key) ? S[key] : NaN;
   function restoreRealSensor(pole) {
     const key = SYM_POLA[pole];
     if (!key) return;
@@ -4297,6 +4317,8 @@ body.mode-phone-frame #phone {
     // Plakietka symulacji dopasowana szerokością do zaokrąglenia kafelka
     const symBadge = pole => {
       if (!symAktywna(pole)) return null;
+      const alarmFlag = { ogrz: 'alarm_ogrzewanie', panel: 'alarm_panel', dym: 'dym_alarm' }[pole];
+      if (alarmFlag && hasData(alarmFlag) && S[alarmFlag]) return null;
       return {
         badge: 'SYMULACJA ' + S.sym[pole].min + 'M',
         badgeCls: 'sim',
@@ -4448,7 +4470,7 @@ body.mode-phone-frame #phone {
       cls: 'c-none',
       state: dymDis ? 'dis' : smokeAlarmKnown && S.dym_alarm ? 'err' : '',
       frac: dymDis || !dymDataKnown ? 0 : dymV / 4095,
-      desc: symAktywna('dym') ? 'symulacja (' + S.sym.dym.min + ' min)' : dymDis ? 'czujnik wyłączony (odczyt odebrany)' : !dymDataKnown ? 'oczekiwanie na odczyt' : smokeAlarmKnown && S.dym_alarm ? 'próg alarmu przekroczony' : !smokeAlarmKnown ? 'stan alarmu — brak danych' : hasData('dym_swiezy') && S.dym_swiezy && hasData('progAlarmDym') ? 'próg alarmu ' + S.progAlarmDym : 'odczyt odebrany',
+      desc: smokeAlarmKnown && S.dym_alarm ? (symAktywna('dym') ? 'ALARM sterownika — wejście dymu symulowane' : 'próg alarmu przekroczony') : symAktywna('dym') ? 'symulacja (' + S.sym.dym.min + ' min)' : dymDis ? 'czujnik wyłączony (odczyt odebrany)' : !dymDataKnown ? 'oczekiwanie na odczyt' : !smokeAlarmKnown ? 'stan alarmu — brak danych' : hasData('dym_swiezy') && S.dym_swiezy && hasData('progAlarmDym') ? 'próg alarmu ' + S.progAlarmDym : 'odczyt odebrany',
       badge: dymDis ? 'WYŁ.' : smokeAlarmKnown ? (S.dym_alarm ? 'ALARM' : 'BRAK ALARMU') : dymDataKnown ? 'ALARM? BRAK DANYCH' : 'BRAK DANYCH',
       badgeCls: dymDis ? 'stale' : smokeAlarmKnown && S.dym_alarm ? 'alarm' : smokeAlarmKnown ? 'live' : 'stale',
       ill: { dym_alarm: smokeAlarmKnown ? S.dym_alarm : null, off: dymDis, dym: dymDataKnown ? dymV : NaN }
@@ -4495,10 +4517,10 @@ body.mode-phone-frame #phone {
       }
     }
 
-    const localSimSuffix = !_isDemoMode && Object.keys(S.sym).length ? ' · SYMULACJA STEROWNIKA' : '';
-    const connectionLabel = _isDemoMode ? '🧪 SYMULACJA' : !_isFirebaseConnected ? '○ BRAK SESJI' + localSimSuffix :
-      Date.now() - _lastFirebaseFetch >= 20000 ? '○ DANE NIEAKTUALNE' + localSimSuffix :
-        !S.online ? (hasData('online') ? '○ OFFLINE' : '○ BRAK TELEMETRII') + localSimSuffix : '● LIVE' + localSimSuffix;
+    const simSuffix = Object.keys(S.sym).length ? ' · SYMULACJA STEROWNIKA' : '';
+    const connectionLabel = _isDemoMode ? '🧪 SYMULACJA' : !_isFirebaseConnected ? '○ BRAK SESJI' + simSuffix :
+      Date.now() - _lastFirebaseFetch >= 20000 ? '○ DANE NIEAKTUALNE' + simSuffix :
+        !S.online ? (hasData('online') ? '○ OFFLINE' : '○ BRAK TELEMETRII') + simSuffix : '● LIVE' + simSuffix;
     const ht = $('#heroTemp');
     if (ht) {
       ht.textContent = (symAktywna('ogrz') ? '~' : '') + fmt1(to) + ' °C';
@@ -4530,13 +4552,13 @@ body.mode-phone-frame #phone {
     if (st) {
       st.textContent = !_isFirebaseConnected && !_isDemoMode ? 'BRAK SESJI' : !S.online ?
         (hasData('online') ? 'OFFLINE' : 'OCZEKIWANIE NA TELEMETRIĘ') :
-        anyAlarm ? 'ALARM' : symAktywna('ogrz') ? (_isDemoMode ? 'SYMULACJA DEMO' : 'SYMULACJA STEROWNIKA') : !Number.isFinite(to) ? 'OCZEKIWANIE' : to > 45 ? 'GRZANIE' : 'CZUWANIE';
-      st.className = 'pill ' + (!S.online ? 'warn' : anyAlarm ? 'err' : symAktywna('ogrz') || !Number.isFinite(to) ? 'warn' : 'live');
+        anyAlarm ? 'ALARM' : Object.keys(S.sym).length ? 'SYMULACJA STEROWNIKA' : !Number.isFinite(to) ? 'OCZEKIWANIE' : to > 45 ? 'GRZANIE' : 'CZUWANIE';
+      st.className = 'pill ' + (!S.online ? 'warn' : anyAlarm ? 'err' : Object.keys(S.sym).length > 0 || !Number.isFinite(to) ? 'warn' : 'live');
     }
     const ab = $('#alarmBanner');
     if (ab) ab.classList.toggle('on', anyAlarm);
     const at = $('#alarmText');
-    if (at) at.textContent = hasData('dym_alarm') && S.dym_alarm ? 'ALARM DYMU — sprawdź kotłownię' :
+    if (at) at.textContent = hasData('dym_alarm') && S.dym_alarm ? (symAktywna('dym') ? 'ALARM DYMU — wejście symulowane, alarm sterownika aktywny; sprawdź kotłownię' : 'ALARM DYMU — sprawdź kotłownię') :
       hasData('alarm_ogrzewanie') && S.alarm_ogrzewanie ? 'PRZEGRZANIE PIECA — ' + fmt1(to) + ' °C' :
       'PRZEGRZANIE PANELU — ' + fmt1(tp) + ' °C';
 
@@ -4766,11 +4788,9 @@ body.mode-phone-frame #phone {
   function applyIncomingData(d) {
     if (_isDemoMode || !d || typeof d !== 'object') return;
     receivedFields.clear();
-    // A controller simulation is active only when this snapshot explicitly reports it.
-    // Preserve any non-controller overlay (DEMO returns above and is never parsed here).
-    Object.keys(S.sym).forEach(pole => {
-      if (S.sym[pole]?.source === 'controller') delete S.sym[pole];
-    });
+    // Nie zachowuj optymistycznego/starego stanu: symulacja jest aktywna
+    // wyłącznie wtedy, gdy flaga z bieżącego snapshotu centrali to potwierdza.
+    Object.keys(S.sym).forEach(pole => delete S.sym[pole]);
 
     const numericRules = {
       t_ogrz: [10, 99], t_ogrz_sr: [10, 99], t_bojler: [10, 95], t_zewn: [-25, 45],
@@ -4798,30 +4818,29 @@ body.mode-phone-frame #phone {
     sensorPole.t_ogrz_sr = 'ogrz';
     const numericKeys = Object.keys(numericRules);
 
-    // Controller flags must be parsed before sensor values so active simulation
-    // readings use the control range, while their validated value remains S[key].
+    // Odbierz flagi symulacji PRZED walidacją odczytów: wartości wymuszone
+    // przez centralę mogą wykraczać poza fizyczny zakres czujnika.
     Object.keys(SYM_POLA).forEach(pole => {
-      const flagKey = 'symulacja_' + pole;
-      const raw = d[flagKey];
+      const key = 'symulacja_' + pole;
+      const raw = d[key];
       const valid = typeof raw === 'boolean' || (typeof raw === 'number' && (raw === 0 || raw === 1));
       if (!valid) {
-        receivedFields.delete(flagKey);
-        receivedFields.delete(flagKey + '_min');
+        receivedFields.delete(key);
+        receivedFields.delete(key + '_min');
         return;
       }
-      receivedFields.add(flagKey);
+      receivedFields.add(key);
       const active = raw === true || raw === 1;
-      const rawMin = d[flagKey + '_min'];
+      const rawMin = d[key + '_min'];
       const validMin = typeof rawMin === 'number' && Number.isInteger(rawMin) && rawMin >= 0 && rawMin <= 180;
-      if (validMin) receivedFields.add(flagKey + '_min');
-      else receivedFields.delete(flagKey + '_min');
+      if (validMin) receivedFields.add(key + '_min');
+      else receivedFields.delete(key + '_min');
       if (active) S.sym[pole] = { wartosc: NaN, min: validMin ? rawMin : 0, source: 'controller' };
     });
 
     numericKeys.forEach(key => {
       const pole = sensorPole[key];
-      const bounds = pole && symAktywna(pole) && S.sym[pole].source === 'controller'
-        ? SYM_BOUNDS[pole] : numericRules[key];
+      const bounds = pole && symAktywna(pole) ? SYM_BOUNDS[pole] : numericRules[key];
       const raw = d[key];
       const value = typeof raw === 'number' && Number.isFinite(raw) && raw >= bounds[0] && raw <= bounds[1] &&
         (!integerKeys.has(key) || Number.isInteger(raw)) ? raw : NaN;
@@ -5135,39 +5154,9 @@ body.mode-phone-frame #phone {
     if (cls !== 'wait') toastTimer = setTimeout(() => toast.className = '', cls === 'ok' ? 2500 : 4500);
   }
 
-  function validateSimulationCommand(commandText) {
-    const parts = commandText.trim().split(/\s+/);
-    const verb = (parts[0] || '').toLowerCase();
-    if (verb === 'symuluj') {
-      if (parts.length !== 4) return 'Użycie: symuluj <pole> <wartość> <minuty>';
-      const bounds = SYM_BOUNDS[parts[1]];
-      if (!bounds) return 'Nieznane pole symulacji: ' + parts[1];
-      const value = Number(parts[2]);
-      if (!Number.isFinite(value)) return 'Podaj poprawną wartość';
-      if (value < bounds[0] || value > bounds[1]) return `Wartość poza zakresem ${bounds[0]}–${bounds[1]}`;
-      const minutes = Number(parts[3]);
-      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 180) return 'Czas symulacji musi wynosić 1–180 min';
-    } else if (verb === 'symuluj_stop') {
-      if (parts.length !== 2) return 'Użycie: symuluj_stop <pole>';
-      if (!SYM_POLA[parts[1]]) return 'Nieznane pole symulacji: ' + parts[1];
-    }
-    return null;
-  }
-
   async function sendCommand(cmd) {
     cmd = String(cmd || '').trim();
     if (!cmd) return false;
-    const verb = cmd.split(/\s+/, 1)[0].toLowerCase();
-    const isSimulation = verb === 'symuluj' || verb === 'symuluj_stop';
-    if (isSimulation) {
-      cmd = cmd.replace(/^\S+/, verb);
-      const validationError = validateSimulationCommand(cmd);
-      if (validationError) {
-        showToast('SYMULACJA', validationError, 'err');
-        return false;
-      }
-    }
-
     const t0 = performance.now();
     showToast(cmd, 'Wysyłanie do sterownika…', 'wait');
     addLog('CMD', 'Wysyłanie: ' + cmd, 'cmd');
@@ -5191,6 +5180,8 @@ body.mode-phone-frame #phone {
                 addLog('ACK', `ACK OK (${latency}ms): ` + cmd, 'ack');
                 if (navigator.vibrate) navigator.vibrate(15);
                 await pollFirebase();
+                // ACK może wyprzedzić zapis nowego snapshotu /piec/status. Dociągnij
+                // stan jeszcze raz, aby kafelki i otwarte kontrolki nie czekały na reload.
                 [350, 1000].forEach(ms => setTimeout(() => {
                   if (!document.hidden && !_isDemoMode) pollFirebase();
                 }, ms));
@@ -5206,15 +5197,9 @@ body.mode-phone-frame #phone {
           await new Promise(r => setTimeout(r, 1000));
         }
 
-        showToast(cmd, 'Brak ACK — odczytuję status; nie zastosowano zmiany lokalnej', 'warn');
+        showToast(cmd, 'Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie', 'warn');
         addLog('ACK_WARN', 'Wysłano do RTDB, ale sterownik nie potwierdził polecenia', 'warn');
-        if (isSimulation) {
-          [350, 1000, 1800].forEach(ms => setTimeout(() => {
-            if (!document.hidden && !_isDemoMode) pollFirebase();
-          }, ms));
-        } else {
-          setTimeout(pollFirebase, 1500);
-        }
+        setTimeout(pollFirebase, 1500);
         return false;
       } catch (err) {
         showToast(cmd, 'Błąd wysyłki: ' + (err.message || err), 'err');
@@ -5364,7 +5349,10 @@ body.mode-phone-frame #phone {
     sheetBuilder = builder;
     $('#sheet h3').textContent = title;
     $('#sheet .hd .ic').innerHTML = ILU.nav[icon] || ILU.nav.settings;
-    const body = $('#sheet .body'); body.innerHTML = ''; body.appendChild(builder());
+    const body = $('#sheet .body');
+    $$('[data-live]', body).forEach(el => { delete liveFns[el.dataset.live]; });
+    body.innerHTML = '';
+    body.appendChild(builder());
     $$('[data-ico]', body).forEach(el => {
       const icoKey = el && el.dataset ? el.dataset.ico : el.getAttribute('data-ico');
       if (icoKey && ILU && ILU.nav) el.innerHTML = ILU.nav[icoKey] || '';
@@ -5378,7 +5366,13 @@ body.mode-phone-frame #phone {
   const liveFns = {};
   let liveId = 0;
   const live$ = (el, fn) => { const id = 'l' + (++liveId); el.dataset.live = id; liveFns[id] = fn; fn(el); return el; };
-  function dismissSheet() { $('#scrim').classList.remove('on'); $('#sheet').classList.remove('on'); sheetBuilder = null; }
+  function dismissSheet() {
+    const body = $('#sheet .body');
+    if (body) $$('[data-live]', body).forEach(el => { delete liveFns[el.dataset.live]; });
+    $('#scrim').classList.remove('on');
+    $('#sheet').classList.remove('on');
+    sheetBuilder = null;
+  }
   // Sheet listeners attached safely in initHandlers
 
   const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
@@ -5386,15 +5380,20 @@ body.mode-phone-frame #phone {
   const sectionHeader = t => h('div', 'ust-sekcja', '<b>' + t + '</b><i></i>');
   function seg(options, current, onPick) {
     const s = h('div', 'seg');
+    const getCurrent = typeof current === 'function' ? current : null;
+    const syncSelection = (el = s) => {
+      const selected = getCurrent ? getCurrent() : current;
+      $$('.seg button', el).forEach((button, index) => button.classList.toggle('on', options[index][0] === selected));
+    };
     options.forEach(([v, t]) => {
-      const b = h('button', v === current ? 'on' : '', t);
+      const b = h('button', v === (getCurrent ? getCurrent() : current) ? 'on' : '', t);
       b.onclick = () => {
         const result = onPick(v);
         const select = () => $$('.seg button', s).forEach(x => x.classList.toggle('on', x === b));
         if (result && typeof result.then === 'function') {
           $$('.seg button', s).forEach(x => x.disabled = true);
           result.then(confirmed => {
-            if (confirmed) select();
+            if (confirmed) getCurrent ? syncSelection() : select();
           }).finally(() => $$('.seg button', s).forEach(x => x.disabled = false));
         } else {
           select();
@@ -5402,6 +5401,7 @@ body.mode-phone-frame #phone {
       };
       s.appendChild(b);
     });
+    if (getCurrent) live$(s, syncSelection);
     return s;
   }
   function numInput(name, desc, key, min, max, onAfterChange) {
@@ -5466,19 +5466,30 @@ body.mode-phone-frame #phone {
     const i = h('input'); i.type = 'range'; i.min = min; i.max = max; i.step = step;
     const initial = Number(value);
     i.value = Number.isFinite(initial) ? Math.max(min, Math.min(max, initial)) : min;
-    i.disabled = !enabled;
     const b = $('b', w);
+    const isEnabled = () => typeof enabled === 'function' ? !!enabled() : !!enabled;
     const upd = () => { if (b) b.textContent = fmtFn(+i.value); if (onChange) onChange(+i.value); };
+    const syncFromStatus = () => {
+      i.disabled = !isEnabled();
+      if (typeof readActual === 'function' && document.activeElement !== i) {
+        const actual = Number(readActual());
+        if (Number.isFinite(actual)) {
+          i.value = Math.max(min, Math.min(max, actual));
+          upd();
+        }
+      }
+    };
+    i.disabled = !isEnabled();
     i.oninput = upd;
     if (onCommit) i.onchange = () => {
       const result = onCommit(+i.value);
-      if (result && typeof result.then === 'function') result.then(() => {
-        const actual = typeof readActual === 'function' ? Number(readActual()) : initial;
-        if (Number.isFinite(actual)) { i.value = Math.max(min, Math.min(max, actual)); upd(); }
-      });
+      if (result && typeof result.then === 'function') result.then(() => syncFromStatus());
     };
     upd();
-    w.appendChild(i); w.get = () => +i.value; return w;
+    w.appendChild(i);
+    if (typeof enabled === 'function' || typeof readActual === 'function') live$(w, syncFromStatus);
+    w.get = () => +i.value;
+    return w;
   }
 
   const SYM_POLE_STATUS_KLUCZ = {
@@ -5545,10 +5556,10 @@ body.mode-phone-frame #phone {
         el.textContent = 'Brak aktywnej sesji Firebase — Zastosuj nie wyśle testu. Połącz z centralą i sprawdź status LIVE.';
         el.style.color = 'var(--warn)';
       } else if (pole === 'dym') {
-        el.textContent = '⚠ TEST NA ŻYWYM STEROWNIKU: symulowany dym może uruchomić prawdziwe alarmy lub wyjścia. Zabezpiecz instalację; po teście sprawdź alarmy i aktuatory bezpośrednio.';
+        el.textContent = '⚠ TEST NA ŻYWYM STEROWNIKU: przekroczenie progu może uruchomić prawdziwy alarm, buzzer oraz ruch klapy i syberka. Wyłączenie symulacji nie kasuje alarmu natychmiast — decyduje histereza centrali.';
         el.style.color = 'var(--err)';
       } else {
-        el.textContent = 'Polecenie zostanie wysłane do sterownika. Wpływ zależy od wersji i konfiguracji firmware; symulowane wartości mogą oddziaływać na rzeczywiste wyjścia.';
+        el.textContent = 'Test trafia do sterownika i jest używany przez jego normalną logikę; może wpłynąć na rzeczywiste urządzenia.';
         el.style.color = 'var(--warn)';
       }
     });
@@ -5563,8 +5574,6 @@ body.mode-phone-frame #phone {
     function symPokaz(wlaczone) {
       panel.style.display = wlaczone ? 'block' : 'none';
       toggle.classList.toggle('on', wlaczone);
-      if (wlaczone) symPanelOpen.add(pole);
-      else symPanelOpen.delete(pole);
     }
 
     toggle.onclick = () => {
@@ -5607,7 +5616,7 @@ body.mode-phone-frame #phone {
 
     // Snapshot stanu symulacji (wzorzec symZaladujStan w ESP)
     const aktywna = symAktywna(pole);
-    symPokaz(aktywna || symPanelOpen.has(pole));
+    symPokaz(aktywna);
     if (aktywna) {
       info.textContent = _isDemoMode ? 'Aktywna wyłącznie w DEMO — ' + S.sym[pole].min + ' min' :
         _isFirebaseConnected && S.online && Date.now() - _lastFirebaseFetch < 20000
@@ -5751,7 +5760,7 @@ body.mode-phone-frame #phone {
         const isSim = symAktywna('dym');
         const initialValue = (isSim ? '~' : '') + (Number.isFinite(initialReading) ? String(Math.round(initialReading)) : '—');
         const smokeAlarmKnown = hasData('dym_alarm');
-        const smokeStatus = smokeAlarmKnown && S.dym_alarm ? (isSim ? 'ALARM · SYMULACJA' : 'ALARM') : isSim ? sensorReadStatus(sen) : !smokeAlarmKnown ? 'STAN ALARMU — BRAK DANYCH' : 'BRAK ALARMU';
+        const smokeStatus = smokeAlarmKnown && S.dym_alarm ? 'ALARM' : isSim ? 'SYMULACJA STEROWNIKA' : !smokeAlarmKnown ? 'STAN ALARMU — BRAK DANYCH' : 'BRAK ALARMU';
         const smokeReadStatus = sensorReadStatus(sen);
         diagCard.innerHTML = `
           <div class="sensor-full-header">
@@ -5773,7 +5782,7 @@ body.mode-phone-frame #phone {
           const curV = val('dym', 'dym');
           const simOn = symAktywna('dym');
           const alarmKnown = hasData('dym_alarm');
-          const status = alarmKnown && S.dym_alarm ? (simOn ? 'ALARM · SYMULACJA' : 'ALARM') : simOn ? sensorReadStatus(sen) : !alarmKnown ? 'STAN ALARMU — BRAK DANYCH' : 'BRAK ALARMU';
+          const status = alarmKnown && S.dym_alarm ? 'ALARM' : simOn ? 'SYMULACJA STEROWNIKA' : !alarmKnown ? 'STAN ALARMU — BRAK DANYCH' : 'BRAK ALARMU';
           const readStatus = sensorReadStatus(sen);
           const valEl = $('#sf-val-dym', el);
           const pillEl = $('#sf-pill-dym', el);
@@ -5792,7 +5801,9 @@ body.mode-phone-frame #phone {
       b.appendChild(sectionHeader('Aktywacja od temperatury pieca'));
       b.appendChild(numInput('Próg temperatury', '°C — poniżej tej temp. pieca czujnik jest wyłączony (histereza 3°C)', 'dymProgTemp', 0, 200));
       b.appendChild(h('div', 'row', '<div class="l"><b>Tryb pracy po aktywacji</b></div>'));
-      b.appendChild(seg([[0, 'Impulsowo'], [1, 'Ciągle']], S.dymTrybPracy, v => sendCommand('ustaw dymTrybPracy ' + v)));
+      b.appendChild(seg([[0, 'Impulsowo'], [1, 'Ciągle']],
+        () => hasData('dymTrybPracy') && Number.isInteger(S.dymTrybPracy) ? S.dymTrybPracy : null,
+        v => sendCommand('ustaw dymTrybPracy ' + v)));
       b.appendChild(sectionHeader('Cykl pracy czujnika (tryb Impulsowo)'));
       b.appendChild(numInput('Czas WŁ.', 's — rozgrzewanie + pomiar', 'dymCzasOn', 20, 600));
       b.appendChild(numInput('Czas WYŁ.', 's — między pomiarami', 'dymCzasOff', 10, 600));
@@ -5810,10 +5821,10 @@ body.mode-phone-frame #phone {
       summaryBox.innerHTML = `
         <div class="lbl">STAN ODCZYTÓW CZUJNIKÓW</div>
         <div class="val">${_isDemoMode ? 'SYMULACJA DEMO' : receivedCount + ' / ' + ALL_SENSORS.length + ' odebranych'}</div>
-        <div class="sub">${_isDemoMode ? 'Dane testowe — nie są telemetrią sterownika.' : simulatedCount ? simulatedCount + ' symulacji zgłoszonych przez sterownik; oznaczone na wykresie.' : 'Brakujące lub nieprawidłowe pola nie są zastępowane wartościami przykładowymi.'}</div>
+        <div class="sub">${_isDemoMode ? 'Dane testowe — nie są telemetrią sterownika.' : simulatedCount ? simulatedCount + ' aktywnych symulacji sterownika; ich odcinki na wykresie są kreskowane.' : 'Brakujące lub nieprawidłowe pola nie są zastępowane wartościami przykładowymi.'}</div>
       `;
       b.appendChild(summaryBox);
-      b.appendChild(note('Wykaz wszystkich czujników pomiarowych instalacji C.O. Kliknij przycisk „Symulacja” przy wybranym czujniku, aby rozwinąć suwaki wymuszenia wartości:'));
+      b.appendChild(note('Symulacje są wysyłane do sterownika i używane przez jego normalną logikę; na wykresie tylko wymuszony odcinek jest kreskowany. Test dymu może uruchomić prawdziwy alarm, buzzer oraz ruch klapy i syberka.'));
 
       ALL_SENSORS.forEach(sen => {
         const sBox = h('div', 'sensor-full-card');
@@ -5866,6 +5877,10 @@ body.mode-phone-frame #phone {
 
       // Karty wyboru strategii z bogatą grafiką
       const selector = h('div', 'pump-strat-selector');
+      const syncStrategyOptions = el => {
+        const modeKnown = hasData('wybor') && Number.isInteger(S.wybor) && S.wybor >= 1 && S.wybor <= 3;
+        $$('.pump-strat-opt', el || selector).forEach(x => x.classList.toggle('on', modeKnown && S.wybor === Number(x.dataset.mode)));
+      };
       const strats = [
         { id: 1, title: 'TROCINIAK', sub: 'Tryb Czasowy', ico: '⏱️' },
         { id: 2, title: 'KOPCIUCH', sub: 'Temperaturowy', ico: '🌡️' },
@@ -5943,7 +5958,7 @@ body.mode-phone-frame #phone {
           sendCommand('ustaw wybor ' + st.id).then(confirmed => {
             if (_isDemoMode) S.wybor = st.id;
             if (confirmed || _isDemoMode) {
-              $$('.pump-strat-opt', selector).forEach(x => x.classList.toggle('on', hasData('wybor') && S.wybor === Number(x.dataset.mode)));
+              syncStrategyOptions(selector);
               updateDiagrams();
             }
           });
@@ -5951,12 +5966,11 @@ body.mode-phone-frame #phone {
         opt.dataset.mode = String(st.id);
         selector.appendChild(opt);
       });
-      b.appendChild(selector);
+      b.appendChild(live$(selector, syncStrategyOptions));
 
-      // Dodanie interaktywnych diagramów
-      b.appendChild(timeBox);
+      // Diagramy i wybór strategii odświeżają się po każdym świeżym statusie z centrali.
+      b.appendChild(live$(timeBox, updateDiagrams));
       b.appendChild(tempBox);
-      updateDiagrams();
 
       b.appendChild(manualRow('pompa'));
       b.appendChild(live$(h('div', 'sym-info'), el => el.textContent = S.pompa_override_min > 0 ? 'Wymuszenie ręczne jeszcze ok. ' + S.pompa_override_min + ' min, potem powrót do wybranej strategii' : ''));
@@ -6026,24 +6040,30 @@ body.mode-phone-frame #phone {
       const flapPositionKnown = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180;
       const damperPositionKnown = hasData('syberka') && Number.isInteger(S.syberka) && S.syberka >= 0 && S.syberka <= 90;
       const manual = h('div', 'manual' + (servoModeKnown && S.tryb_serwa === 2 ? ' on' : ''));
-      b.appendChild(seg([[1, 'Auto'], [2, 'Ręczny'], [3, 'Bezpieczna']], servoModeKnown ? S.tryb_serwa : 0, v =>
-        sendCommand('ustaw trybSerwa ' + v).then(confirmed => {
+      b.appendChild(seg([[1, 'Auto'], [2, 'Ręczny'], [3, 'Bezpieczna']],
+        () => hasData('tryb_serwa') && Number.isInteger(S.tryb_serwa) && S.tryb_serwa >= 1 && S.tryb_serwa <= 3 ? S.tryb_serwa : 0,
+        v => sendCommand('ustaw trybSerwa ' + v).then(confirmed => {
           if (_isDemoMode) S.tryb_serwa = v;
-          if (confirmed || _isDemoMode) manual.classList.toggle('on', S.tryb_serwa === 2);
           return confirmed || _isDemoMode;
         })
       ));
       manual.appendChild(h('h4', '', 'Ręczna pozycja'));
-      manual.appendChild(note(!servoModeKnown ? 'Tryb serwa nieznany — odczytaj stan sterownika.' : S.tryb_serwa !== 2 ? 'Ręczna nastawa dostępna po potwierdzeniu trybu Ręczny.' :
-        !flapPositionKnown || !damperPositionKnown ? 'Brak prawidłowego odczytu pozycji serwa.' : 'Suwaki ustawiają wartość do wysłania; pozycja rzeczywista zmienia się dopiero po potwierdzeniu.'));
+      manual.appendChild(live$(h('div', 'note'), el => {
+        const modeKnown = hasData('tryb_serwa') && Number.isInteger(S.tryb_serwa) && S.tryb_serwa >= 1 && S.tryb_serwa <= 3;
+        const flapKnown = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180;
+        const damperKnown = hasData('syberka') && Number.isInteger(S.syberka) && S.syberka >= 0 && S.syberka <= 90;
+        el.textContent = !modeKnown ? 'Tryb serwa nieznany — odczytaj stan sterownika.' : S.tryb_serwa !== 2 ? 'Ręczna nastawa dostępna po potwierdzeniu trybu Ręczny.' :
+          !flapKnown || !damperKnown ? 'Brak prawidłowego odczytu pozycji serwa.' : 'Suwaki ustawiają wartość do wysłania; pozycja rzeczywista zmienia się dopiero po potwierdzeniu.';
+      }));
+      const readFlapPercent = () => hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180 ? Math.round(S.klapa / 1.8) : NaN;
+      const readDamperPercent = () => hasData('syberka') && Number.isInteger(S.syberka) && S.syberka >= 0 && S.syberka <= 90 ? Math.round(S.syberka / .9) : NaN;
+      const canMoveServos = readActual => hasData('tryb_serwa') && S.tryb_serwa === 2 && Number.isFinite(readActual());
       manual.appendChild(slider('Klapa', 0, 100, 1, flapPositionKnown ? Math.round(S.klapa / 1.8) : 0, v => v + '%', null,
-        v => sendCommand('klapa ' + v), servoModeKnown && S.tryb_serwa === 2 && flapPositionKnown,
-        () => flapPositionKnown && hasData('klapa') ? Math.round(S.klapa / 1.8) : NaN));
+        v => sendCommand('klapa ' + v), () => canMoveServos(readFlapPercent), readFlapPercent));
       manual.appendChild(slider('Syberek', 0, 100, 1, damperPositionKnown ? Math.round(S.syberka / .9) : 0, v => v + '%', null,
-        v => sendCommand('syberek ' + v), servoModeKnown && S.tryb_serwa === 2 && damperPositionKnown,
-        () => damperPositionKnown && hasData('syberka') ? Math.round(S.syberka / .9) : NaN));
+        v => sendCommand('syberek ' + v), () => canMoveServos(readDamperPercent), readDamperPercent));
       manual.appendChild(live$(h('div', 'sym-info'), el => el.textContent = S.serwo_override_min > 0 ? 'Ręczna pozycja jeszcze ok. ' + S.serwo_override_min + ' min, potem powrót do Auto' : ''));
-      b.appendChild(manual);
+      b.appendChild(live$(manual, el => el.classList.toggle('on', hasData('tryb_serwa') && S.tryb_serwa === 2)));
       b.appendChild(sectionHeader('Automatyka (tryb Auto)'));
       b.appendChild(numInput('Temperatura zadana', '°C — punkt odniesienia', 'tempZadServo', 0, 100));
       b.appendChild(numInput('Histereza', '°C — pasmo bez reakcji', 'histerServo', 0, 50));
@@ -7406,15 +7426,6 @@ body.mode-phone-frame #phone {
   let chartDataset = [];
   let lastChartLiveTs = 0;
 
-  function clearChartInspection() {
-    chartCrosshairIdx = null;
-    chartCrosshairPos = null;
-    const inspector = $('#chartInspectorVal');
-    if (inspector) inspector.textContent = 'Dotknij wykresu / najedź kursorem';
-    const tooltip = $('#chartFloatingTooltip');
-    if (tooltip) tooltip.classList.remove('on');
-  }
-
   // [FIX-CHART-PERSIST] Zapamietywanie zaznaczonych serii w localStorage
   function saveChartPreferences() {
     try {
@@ -7516,7 +7527,6 @@ body.mode-phone-frame #phone {
     t_zewn: 0, t_bojler: 1, t_ogrz: 2, t_ogrz_sr: 3, t_powrot: 4, t_panel: 5,
     t_pokoj: 6, t_trociny: 7, wilgotnosc: 8, cisnienie: 9, dym: 10, klapa: 11, syberka: 12
   };
-  // Client-side sanity bounds for values explicitly marked as simulated.
   const TELEMETRY_SIM_BOUNDS = {
     t_zewn: [-30, 50], t_bojler: [0, 160], t_ogrz: [0, 160], t_ogrz_sr: [0, 160],
     t_powrot: [-30, 120], t_panel: [-30, 160], t_pokoj: [-50, 50], t_trociny: [-30, 120],
@@ -7704,8 +7714,7 @@ body.mode-phone-frame #phone {
     const simulated = rows.map(r => telemetryChannelSimulated(r, channelKey));
     const isNum = v => typeof v === 'number' && !isNaN(v) && isFinite(v);
 
-    // Physical samples use sensor bounds; marked simulation samples use the
-    // app's simulation bounds and are kept separate from adjacent real samples.
+    // Fizyczne próbki mają granice czujnika; kanał symulowany — zakres firmware.
     const cleaned = raw.map((v, i) => {
       if (!isNum(v)) return null;
       const bounds = simulated[i] ? simBounds : b;
@@ -7718,16 +7727,7 @@ body.mode-phone-frame #phone {
     for (let i = 0; i < n; i++) {
       const v = cleaned[i];
       if (v === null) continue;
-      if (simulated[i]) { out[i] = v; continue; }
-
-      // Świeży odczyt statusu sterownika jest autorytatywny. Filtr Hampela
-      // nie może ukryć prawdziwej, nagłej zmiany na prawym końcu wykresu;
-      // następne próbki nadal pozwolą odsiać pojedynczą szpilkę.
-      const liveAgeMs = Date.now() - Number(rows[i].ts);
-      if (i === n - 1 && rows[i].is_live === true && liveAgeMs >= 0 && liveAgeMs < 20000) {
-        out[i] = v;
-        continue;
-      }
+      if (simulated[i]) { out[i] = v; continue; } // Zachowaj cały odcinek wymuszenia.
 
       // Poprzednie probki (do 4 punktow wstecz)
       const past = [];
@@ -7781,22 +7781,16 @@ body.mode-phone-frame #phone {
 
   async function loadTelemetryRange(rangeSec) {
     activeRangeSec = rangeSec;
-    clearChartInspection();
     const rangeName = rangeSec === 6 * 3600 ? '6h' : rangeSec === 24 * 3600 ? '24h' : rangeSec === 7 * 86400 ? '7d' : '30d';
     let historyFailed = false;
 
     if (_isFirebaseConnected) {
-      $('#chartStatusInfo').textContent = `Pobieranie telemetrii (${rangeName}) z Firebase…`;
+      $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase…`;
       try {
         const fbData = await fetchTelemetryFromFirebase(rangeSec);
         if (fbData && fbData.length > 0) {
-          clearChartInspection();
           chartDataset = fbData;
-          // Historia kończy się na ostatnim zapisanym rekordzie; dołącz świeży
-          // snapshot statusu, także gdy polling zakończył się podczas pobierania historii.
-          lastChartLiveTs = 0;
-          appendChartLivePoint(true);
-          $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek RTDB (${rangeName}) · odcinki symulowane są kreskowane`;
+          $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek RTDB (${rangeName}) · symulowane odcinki są kreskowane`;
           $('#chartPointsStat').textContent = String(chartDataset.length);
           $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
           $('#chartRealityPill').textContent = 'FIREBASE RTDB';
@@ -7817,19 +7811,19 @@ body.mode-phone-frame #phone {
     const pill = $('#chartRealityPill');
     chartDataset = [];
     if (_isDemoMode) {
-      $('#chartStatusInfo').textContent = `Tryb offline — brak rzeczywistej historii (${rangeName}); wykres pozostaje pusty`;
+      $('#chartStatusInfo').textContent = `Tryb offline — brak historii telemetrii (${rangeName}); wykres pozostaje pusty`;
       pill.textContent = 'DEMO · BRAK HISTORII';
       pill.style.background = 'rgba(148,163,184,.15)';
       pill.style.color = 'var(--text-dim)';
       pill.style.border = '1px solid rgba(148,163,184,.25)';
     } else if (!_isFirebaseConnected) {
-      $('#chartStatusInfo').textContent = 'Zaloguj się do Firebase, aby pobrać rzeczywistą historię telemetrii';
+      $('#chartStatusInfo').textContent = 'Zaloguj się do Firebase, aby pobrać historię telemetrii';
       pill.textContent = 'BRAK SESJI';
       pill.style.background = 'rgba(255,77,109,.15)';
       pill.style.color = 'var(--err)';
       pill.style.border = '1px solid rgba(255,77,109,.25)';
     } else if (historyFailed) {
-      $('#chartStatusInfo').textContent = `Nie udało się pobrać historii (${rangeName}) — spróbuj ponownie`;
+      $('#chartStatusInfo').textContent = `Nie udało się pobrać historii telemetrii (${rangeName}) — spróbuj ponownie`;
       pill.textContent = 'BŁĄD RTDB';
       pill.style.background = 'rgba(251,191,36,.15)';
       pill.style.color = 'var(--warn)';
@@ -7842,7 +7836,6 @@ body.mode-phone-frame #phone {
       pill.style.border = '1px solid rgba(148,163,184,.25)';
     }
 
-    appendChartLivePoint(true);
     $('#chartPointsStat').textContent = String(chartDataset.length);
     $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
     renderSeriesChips();
@@ -7875,8 +7868,8 @@ body.mode-phone-frame #phone {
     const nowStat = $('#chartNowStat');
     if (nowStat) {
       if (chartFocus === 0) {
-        nowStat.textContent = hasData('t_ogrz') && Number.isFinite(S.t_ogrz)
-          ? 'piec ' + (symAktywna('ogrz') ? '~' : '') + fmt1(S.t_ogrz) + '°C' : 'piec —';
+        nowStat.textContent = symAktywna('ogrz') ? 'piec ~' + fmt1(S.t_ogrz) + '°C · SYM' :
+          hasData('t_ogrz') && Number.isFinite(S.t_ogrz) ? 'piec ' + fmt1(S.t_ogrz) + '°C' : 'piec —';
       } else {
         nowStat.textContent = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180 ?
           'klapa ' + Math.round(S.klapa / 1.8) + '%' : 'klapa —';
@@ -7885,18 +7878,16 @@ body.mode-phone-frame #phone {
 
     const pill = $('#chartPhasePill');
     if (pill) {
-      if (symAktywna('ogrz')) pill.textContent = 'ODCZYT SYMULOWANY — ODCINEK WYKRESU KRESKOWANY';
-      else if (!hasData('t_ogrz') || !Number.isFinite(S.t_ogrz)) pill.textContent = 'BRAK ODCZYTU TEMPERATURY PIECA';
+      if (symAktywna('ogrz')) pill.textContent = 'ODCZYT SYMULOWANY — FRAGMENT LINII PRZERYWANY';
+      else if (!hasData('t_ogrz') || !Number.isFinite(S.t_ogrz)) pill.textContent = 'BRAK RZECZYWISTEGO ODCZYTU TEMPERATURY PIECA';
       else if (S.t_ogrz > 65) pill.textContent = `🔥 FAZA GRZANIA: INTENSYWNA (${fmt1(S.t_ogrz)}°C)`;
       else if (S.t_ogrz > 45) pill.textContent = `🔥 FAZA GRZANIA: STABILNA (${fmt1(S.t_ogrz)}°C)`;
       else pill.textContent = `⏸ FAZA POSTOJU / WYGASZANIE (${fmt1(S.t_ogrz)}°C)`;
     }
   }
 
-  function appendChartLivePoint(force = false) {
-    const ageMs = Date.now() - _lastFirebaseFetch;
-    if (currentPage !== 1 || !_isFirebaseConnected || !S.online || !_lastFirebaseFetch ||
-        ageMs < 0 || ageMs >= 20000 || (!force && _lastFirebaseFetch <= lastChartLiveTs)) return;
+  function appendChartLivePoint() {
+    if (currentPage !== 1 || !_isFirebaseConnected || !S.online || !_lastFirebaseFetch || _lastFirebaseFetch <= lastChartLiveTs) return;
     let sim = 0;
     const sample = (key, pole, channel) => {
       const value = S[key];
@@ -7911,7 +7902,7 @@ body.mode-phone-frame #phone {
       return value * 100 / maxDeg;
     };
     const point = {
-      ts: _lastFirebaseFetch, seq: Number.MAX_SAFE_INTEGER, is_live: true,
+      ts: _lastFirebaseFetch, seq: 0,
       t_zewn: sample('t_zewn', 'zewn', 0),
       t_bojler: sample('t_bojler', 'bojler', 1),
       t_ogrz: sample('t_ogrz', 'ogrz', 2),
@@ -7929,13 +7920,11 @@ body.mode-phone-frame #phone {
     };
     const hasValue = ['t_zewn', 't_bojler', 't_ogrz', 't_ogrz_sr', 't_powrot', 't_panel', 't_pokoj', 't_trociny',
       'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka'].some(key => typeof point[key] === 'number' && Number.isFinite(point[key]));
+    lastChartLiveTs = _lastFirebaseFetch;
     if (!hasValue) return;
-    lastChartLiveTs = Math.max(lastChartLiveTs, _lastFirebaseFetch);
     const cutoff = _lastFirebaseFetch - activeRangeSec * 1000;
     chartDataset = chartDataset.filter(row => row.ts >= cutoff);
-    const duplicate = chartDataset.findIndex(row => row.is_live === true && row.ts === point.ts);
-    if (duplicate >= 0) chartDataset[duplicate] = point;
-    else chartDataset.push(point);
+    chartDataset.push(point);
     chartDataset.sort((a, b) => a.ts - b.ts || a.seq - b.seq);
     if (chartDataset.length > 50000) chartDataset = chartDataset.slice(-50000);
     const stat = $('#chartPointsStat');
@@ -7964,13 +7953,12 @@ body.mode-phone-frame #phone {
     g.clearRect(0, 0, w, h);
 
     if (!chartDataset || chartDataset.length < 2) {
-      clearChartInspection();
       g.fillStyle = 'rgba(148,163,184,0.95)';
       g.font = '600 12px Roboto,sans-serif';
       g.textAlign = 'center';
       g.fillText(chartDataset && chartDataset.length === 1
         ? 'Za mało próbek do narysowania linii'
-        : 'Brak próbek telemetrii dla wykresu', w / 2, h / 2);
+        : 'Brak próbek dla wykresu', w / 2, h / 2);
       return;
     }
 
@@ -8382,14 +8370,8 @@ body.mode-phone-frame #phone {
             y = padTop + plotH * (1 - (v - minVal) / (maxVal - minVal));
           }
           g.beginPath(); g.arc(xCross, y, 4, 0, Math.PI * 2);
-          if (telemetryChannelSimulated(hoveredRow, s.ch)) {
-            g.setLineDash([2, 2]);
-            g.strokeStyle = s.accent; g.lineWidth = 1.6; g.stroke();
-            g.setLineDash([]);
-          } else {
-            g.fillStyle = s.accent; g.fill();
-            g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke();
-          }
+          g.fillStyle = s.accent; g.fill();
+          g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke();
         }
       });
 
@@ -8414,7 +8396,7 @@ body.mode-phone-frame #phone {
         tooltip.style.top = '8px';
       }
     } else {
-      clearChartInspection();
+      if (tooltip) tooltip.classList.remove('on');
     }
     updateChartScrollbars();
   }
@@ -8870,11 +8852,6 @@ body.mode-phone-frame #phone {
         row.appendChild(head); row.appendChild(slider); b.appendChild(row);
       });
 
-      const acts = h('div', 'btnrow');
-      const zIn = h('button', 'ust-btn', 'Zoom +'); zIn.onclick = () => { chartZoom = Math.min(16, chartZoom * 1.3); updateChartCanvas(); };
-      const zOut = h('button', 'ust-btn', 'Zoom −'); zOut.onclick = () => { chartZoom = Math.max(1, chartZoom / 1.3); updateChartCanvas(); };
-      const rst = h('button', 'ust-btn', 'Reset (1×)'); rst.onclick = () => { chartZoom = 1; chartOffset = 1; updateChartCanvas(); };
-      acts.appendChild(zOut); acts.appendChild(rst); acts.appendChild(zIn); b.appendChild(acts);
       return b;
     });
   }

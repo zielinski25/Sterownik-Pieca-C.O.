@@ -1,30 +1,30 @@
-# ESP-local panel HTML parity patch — base v3.38.0, output v3.39.0
+# ESP-local panel: 1:1 `Piec.html` parity — base v3.38.0, output v3.39.0
 
-This is a **separate source patch** for the HTML embedded in the ESP firmware. It does not edit or replace `Cenatrala Pieca.zip`.
+This is a separate source patch for the HTML served by the ESP. It does not edit or replace `Cenatrala Pieca.zip`.
 
-Applying the patch updates the source-reported firmware version from **v3.38.0** to **v3.39.0** (MINOR: new local UI/API functionality). A matching v3.39.0 firmware build and GitHub Release are separate steps; neither is created or flashed here.
+## Result
 
-## Changes
+- `GET /` serves the current `Piec.html` snapshot byte-for-byte from `WIFI_LOCAL_PANEL_HTML` in `PROGMEM`. The HTML structure, CSS, and JavaScript are the same as the source page at patch preparation time.
+- The ESP sends the page directly from flash with `beginResponse_P()` and marks it `Cache-Control: no-store`; it does not copy the 453 KB page into a temporary `String` in heap RAM.
+- Existing firmware APIs and control logic are retained. The page uses the same Firebase and local-API flows as `Piec.html`; this change does not alter the servo/smoke algorithm.
+- The source-reported firmware version is bumped from **v3.38.0** to **v3.39.0** (MINOR: full local-panel UI parity).
 
-- The local Servo dialog always shows the current flap and damper positions, refreshed from `/api/status`; values are hidden when the status is stale.
-- Adds a local **Rozpalanie serw** action. The button fails closed unless it has a fresh status, a fresh/reliable boiler temperature, a complete alarm status, an available cold-start window, and no active safety alarm or ignition sequence. The new POST endpoint rechecks safety by calling the existing `uruchomRozpalanieSerwa()` helper; it does not change the servo/smoke algorithm. The endpoint requires a per-boot CSRF token, and duplicate active requests are rejected.
-- Adds a chart inspector to the local SVG charts: hover/tap sample readout and crosshair, horizontal drag to pan without dragging the crosshair, pinch/wheel zoom, and double-tap/double-click reset. Vertical page scrolling remains available.
-- Marks the local page and live status as non-cacheable so stale status or an expired per-boot token cannot enable a control.
+The legacy `wifiZbudujStrone()` builder remains in the source, but the `/` route no longer serves its older UI. If `Piec.html` changes later, regenerate the embedded snapshot and patch to keep the two pages identical.
 
 ## Apply
 
-The patch expects the **v3.38.0 base** `main_centrala.cpp` source at `src/main_centrala.cpp`; applying it produces source reporting **v3.39.0**. Apply only after confirming the base source matches v3.38.0:
+The patch expects the **v3.38.0 base** `main_centrala.cpp` at `src/main_centrala.cpp`. Applying it produces source reporting **v3.39.0**. Confirm the base source matches v3.38.0 before applying:
 
 ```sh
 patch --dry-run -p1 < /path/to/v3.38.0-local-html/main_centrala.cpp.patch
 patch -p1 < /path/to/v3.38.0-local-html/main_centrala.cpp.patch
 ```
 
-Do not apply it directly to `Cenatrala Pieca.zip` in the main checkout; that archive's source does not match this v3.38.0 patch base. Keep the archive unchanged. Building/flashing firmware is a separate step; this patch preparation did **not** flash the ESP, upload firmware, or send commands to the heater.
+Do not apply it directly to `Cenatrala Pieca.zip`; that archive is not the matching v3.38.0 source base and remains unchanged. A v3.39.0 build and matching OTA release are separate steps. This preparation did **not** build or flash firmware, upload firmware, or send commands to the heater.
 
-## Verification performed
+## Verification
 
-- Extracted embedded page JavaScript: `node --check` passed.
-- Synthetic-DOM smoke test: chart sample inspection, wheel/pinch zoom, horizontal pan, and double-tap reset passed; the active crosshair stayed on its sample during drag.
-- Patch dry-run against the exact v3.38.0 source passed; applying the patch reproduced the prepared source byte-for-byte (`cmp`).
+- Extracted `WIFI_LOCAL_PANEL_HTML` compared byte-for-byte with the current working-tree `Piec.html`.
+- The inline JavaScript from `Piec.html` passed `node --check`.
+- Patch dry-run and apply against the exact v3.38.0 base passed; applying the patch reproduced the prepared C++ source byte-for-byte (`cmp`).
 - Firmware build and live-device testing were not performed.
