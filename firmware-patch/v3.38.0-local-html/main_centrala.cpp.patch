@@ -1,6 +1,15 @@
 --- a/src/main_centrala.cpp
 +++ b/src/main_centrala.cpp
-@@ -1,3 +1,54 @@
+@@ -1,3 +1,63 @@
++// [v3.45.0 WYKRESY-FIREBASE-ARCHIVE-AXIS] — 2026-10-13
++// Co: Prawy wykres Firebase używa wyłącznie zapisanej historii RTDB, jej ts
++//     i przyrostowego odświeżania; porównanie ma jawny, wspólny zakres czasu.
++// Problem: Poll statusu co 4 s dopisywał pseudo-próbki, a X rozmieszczał dane
++//     po indeksie, więc zagęszczenie odświeżeń mogło zmieniać kształt przebiegu.
++// Naprawa: Usunięto punkty z odczytu statusu; próbki archiwalne są deduplikowane
++//     po ID i rysowane według timestampu. Lokalna ścieżka /api/history* bez zmian.
++// FIRMWARE_VERSION v3.44.0 -> v3.45.0 (MINOR: zgodność wykresu Firebase z lokalnym).
++//
 +// [v3.44.0 WYKRESY-ESP-LOKALNE] — 2026-10-13
 +// Co: Zakladka Wykresy ESP pobiera zakresy 6h/24h z /api/history, a 7/30 dni
 +//     z lokalnego /api/history/long (uzupelnionego o ostatnie 24h z bufora minutowego).
@@ -55,16 +64,16 @@
  // [v3.38.0 ROZPALANIE-SERW + WSPOLNE-WYCISZANIE] — 2026-10-12
  // Co: Automatyczne przygotowanie serw do rozpalenia, wymuszenie sekwencyjne
  //     do 30C, blokada po alarmie dymu oraz nadzor czujnika po ruchu serw.
-@@ -4976,7 +5027,7 @@
+@@ -4976,7 +5036,7 @@
  // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
  // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
  // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
 -static const char* FIRMWARE_VERSION = "v3.38.0";
-+static const char* FIRMWARE_VERSION = "v3.44.0";
++static const char* FIRMWARE_VERSION = "v3.45.0";
  
  // ════════════════════════════════════════════════════════
  // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
-@@ -5792,10 +5843,10364 @@
+@@ -5792,10 +5852,10455 @@
  WifiZapisanaSiec wifiSieci[WIFI_MAX_SIECI];
  int wifiLiczbaSieci = 0;
  
@@ -7519,7 +7528,11 @@
 +  let chartCrosshairIdx = null;
 +  let chartCrosshairPos = null;
 +  let chartDataset = [];
-+  let lastChartLiveTs = 0;
++  let chartRangeStartMs = 0;
++  let chartRangeEndMs = 0;
++  let chartUsesEpochX = false;
++  let lastChartArchiveSampleTs = 0;
++  let firebaseChartTailRefreshBusy = false;
 +
 +  // [FIX-CHART-PERSIST] Zapamietywanie zaznaczonych serii w localStorage
 +  function saveChartPreferences() {
@@ -7750,6 +7763,7 @@
 +  }
 +
 +  async function loadEspLocalTelemetryRange(rangeSec, rangeName, generation) {
++    chartUsesEpochX = false;
 +    const info = $('#chartStatusInfo');
 +    const isLongRange = rangeSec > 24 * 3600;
 +    if (info) info.textContent = `Pobieranie lokalnej historii ESP (${rangeName})…`;
@@ -7763,22 +7777,23 @@
 +        const [longCsv, shortCsv] = await Promise.all([
 +          fetchEspHistoryCsv('/api/history/long'), fetchEspHistoryCsv('/api/history')
 +        ]);
-+        const now = Date.now();
-+        const cutoff = now - rangeSec * 1000;
-+        const recentCutoff = now - 24 * 3600 * 1000;
++        const rangeEndMs = chartRangeEndMs || Date.now();
++        const cutoff = chartRangeStartMs || rangeEndMs - rangeSec * 1000;
++        const recentCutoff = rangeEndMs - 24 * 3600 * 1000;
 +        rows = parseEspLongHistory(longCsv).filter(row => row.ts >= cutoff && row.ts < recentCutoff)
-+          .concat(parseEspShortHistory(shortCsv).filter(row => row.ts >= Math.max(cutoff, recentCutoff)));
++          .concat(parseEspShortHistory(shortCsv).filter(row => row.ts >= Math.max(cutoff, recentCutoff) && row.ts <= rangeEndMs));
 +      } else {
 +        const shortCsv = await fetchEspHistoryCsv('/api/history');
-+        const cutoff = Date.now() - rangeSec * 1000;
-+        rows = parseEspShortHistory(shortCsv).filter(row => row.ts >= cutoff);
++        const cutoff = chartRangeStartMs || (chartRangeEndMs || Date.now()) - rangeSec * 1000;
++        const rangeEndMs = chartRangeEndMs || Date.now();
++        rows = parseEspShortHistory(shortCsv).filter(row => row.ts >= cutoff && row.ts <= rangeEndMs);
 +      }
 +      if (generation !== _chartLoadGeneration) return;
 +      chartDataset = rows.sort((a, b) => a.ts - b.ts || a.seq - b.seq);
 +      if (info) {
 +        info.textContent = chartDataset.length
-+          ? `ESP lokalnie · ${chartDataset.length} próbek · archiwum centrali · bez Firebase`
-+          : `Brak lokalnych próbek ESP dla zakresu ${rangeName}`;
++          ? `ESP lokalnie · ${chartDataset.length} próbek · bez Firebase · ${chartWindowLabel()}`
++          : `Brak lokalnych próbek ESP dla zakresu ${rangeName} · ${chartWindowLabel()}`;
 +      }
 +    } catch (err) {
 +      if (generation !== _chartLoadGeneration) return;
@@ -7911,9 +7926,9 @@
 +    return historyUniqueSort(rows);
 +  }
 +
-+  async function fetchTelemetryFromFirebase(rangeSec) {
++  async function fetchTelemetryFromFirebase(rangeSec, endSec, updateTrend = true) {
 +    if (!_isFirebaseConnected && !_fbIdToken) return null;
-+    const end = Math.floor(Date.now() / 1000);
++    const end = Number.isFinite(endSec) ? Math.floor(endSec) : Math.floor(Date.now() / 1000);
 +    const start = end - rangeSec;
 +    const days = historyDayRange(start, end);
 +    const all = [];
@@ -7947,12 +7962,15 @@
 +        if (r.simulated) return null;
 +        const v = Number(degVal);
 +        if (!Number.isFinite(v) || v < 0 || v > maxDeg) return null;
-+        return Math.round((v / maxDeg) * 100);
++        // Match the ESP CSV parser: preserve fractional percentages instead of
++        // rounding every servo position to an integer before plotting.
++        return (v / maxDeg) * 100;
 +      };
 +
 +      // [FIX-FILTR-ANOMALII v5] Twarde filtry na wejsciu z bazy Firebase:
 +      // odrzucaja ujemne kody bledow z historii (np. t_panel -6°C, t_trociny -2°C)
 +      return {
++        _id: r._id,
 +        ts: r.ts * 1000,
 +        seq: r.seq,
 +        t_zewn: getVal(0, 0, 0.1, -25, 45, 't_zewn'),
@@ -7960,9 +7978,9 @@
 +        t_ogrz: getVal(2, 2, 0.1, 10, 100, 't_ogrz'),
 +        t_ogrz_sr: getVal(3, 3, 0.1, 10, 100, 't_ogrz_sr'),
 +        t_powrot: getVal(4, 4, 0.1, 10, 95, 't_powrot'),
-+        t_panel: getVal(5, 5, 0.1, 5, 140, 't_panel'),
++        t_panel: getVal(5, 5, 0.1, 0, 140, 't_panel'),
 +        t_pokoj: getVal(6, 6, 0.1, 8, 45, 't_pokoj'),
-+        t_trociny: getVal(7, 7, 0.1, 5, 90, 't_trociny'),
++        t_trociny: getVal(7, 7, 0.1, 0, 90, 't_trociny'),
 +        wilgotnosc: getVal(8, 8, 0.1, 10, 100, 'wilgotnosc'),
 +        cisnienie: getVal(9, 9, 0.1, 900, 1100, 'cisnienie'),
 +        dym: getVal(10, 10, 1.0, 0, 4095, 'dym'),
@@ -7982,7 +8000,7 @@
 +    const trendRealMask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
 +    const validOgrz = realRows.filter(r => r.t_ogrz !== null && r.t_bojler !== null && r.t_zewn !== null &&
 +      r.is_sim !== true && (r.sim & trendRealMask) === 0);
-+    if (validOgrz.length >= 10) {
++    if (updateTrend && validOgrz.length >= 10) {
 +      hist.length = 0;
 +      const step = Math.max(1, Math.floor(validOgrz.length / 60));
 +      for (let i = 0; i < validOgrz.length; i += step) {
@@ -7994,6 +8012,61 @@
 +    }
 +
 +    return realRows;
++  }
++
++  function mergeTelemetryChartRows(existing, incoming, startMs, endMs) {
++    const byId = new Map();
++    [...(existing || []), ...(incoming || [])].forEach(row => {
++      if (!row || !Number.isFinite(row.ts) || row.ts < startMs || row.ts > endMs) return;
++      const key = row._id || `${row.ts}:${row.seq || 0}`;
++      byId.set(key, row);
++    });
++    return Array.from(byId.values()).sort((a, b) => a.ts - b.ts || a.seq - b.seq);
++  }
++
++  function chartWindowLabel() {
++    if (!chartRangeStartMs || !chartRangeEndMs) return '';
++    const format = ms => {
++      const d = new Date(ms);
++      const p = n => String(n).padStart(2, '0');
++      return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
++    };
++    return `${format(chartRangeStartMs)}–${format(chartRangeEndMs)}`;
++  }
++
++  async function refreshFirebaseChartTail() {
++    if (firebaseChartTailRefreshBusy || currentPage !== 1 || _espLocalChartMode !== false ||
++        (!_isFirebaseConnected && !_fbIdToken)) return;
++    firebaseChartTailRefreshBusy = true;
++    const generation = _chartLoadGeneration;
++    try {
++      const endSec = Math.floor(Date.now() / 60000) * 60;
++      const endMs = endSec * 1000;
++      const startMs = endMs - activeRangeSec * 1000;
++      const lastTsSec = lastChartArchiveSampleTs > 0 ? Math.floor(lastChartArchiveSampleTs / 1000) : 0;
++      const startSec = Math.max(Math.floor(startMs / 1000), lastTsSec > 0 ? lastTsSec - 120 : endSec - 180);
++      const rows = await fetchTelemetryFromFirebase(Math.max(1, endSec - startSec), endSec, false);
++      if (generation !== _chartLoadGeneration || currentPage !== 1 || _espLocalChartMode !== false) return;
++
++      chartRangeStartMs = startMs;
++      chartRangeEndMs = endMs;
++      if (rows && rows.length) {
++        chartDataset = mergeTelemetryChartRows(chartDataset, rows, startMs, endMs);
++        lastChartArchiveSampleTs = chartDataset.reduce((latest, row) => Math.max(latest, row.ts), 0);
++      } else {
++        chartDataset = chartDataset.filter(row => row.ts >= startMs && row.ts <= endMs);
++      }
++      const info = $('#chartStatusInfo');
++      if (info && chartDataset.length) {
++        info.textContent = `Firebase RTDB · ${chartDataset.length} próbek · archiwum 1-min · ${chartWindowLabel()}`;
++      }
++      $('#chartPointsStat').textContent = String(chartDataset.length);
++      updateChartCanvas();
++    } catch (err) {
++      console.warn('Błąd odświeżania końca historii Firebase:', err);
++    } finally {
++      firebaseChartTailRefreshBusy = false;
++    }
 +  }
 +
 +  function filterSeriesGlitches(rows, channelKey, group) {
@@ -8108,6 +8181,10 @@
 +    const generation = ++_chartLoadGeneration;
 +    activeRangeSec = rangeSec;
 +    const rangeName = rangeSec === 6 * 3600 ? '6h' : rangeSec === 24 * 3600 ? '24h' : rangeSec === 7 * 86400 ? '7d' : '30d';
++    const rangeEndSec = Math.floor(Date.now() / 60000) * 60;
++    chartRangeEndMs = rangeEndSec * 1000;
++    chartRangeStartMs = chartRangeEndMs - rangeSec * 1000;
++    lastChartArchiveSampleTs = 0;
 +
 +    if (await isEspLocalChartPage()) {
 +      if (generation !== _chartLoadGeneration) return;
@@ -8115,16 +8192,18 @@
 +      return;
 +    }
 +    if (generation !== _chartLoadGeneration) return;
++    chartUsesEpochX = true;
 +
 +    let historyFailed = false;
 +    if (_isFirebaseConnected) {
 +      $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase…`;
 +      try {
-+        const fbData = await fetchTelemetryFromFirebase(rangeSec);
++        const fbData = await fetchTelemetryFromFirebase(rangeSec, rangeEndSec);
 +        if (generation !== _chartLoadGeneration) return;
 +        if (fbData && fbData.length > 0) {
-+          chartDataset = fbData;
-+          $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek RTDB (${rangeName}) · symulowane odcinki są kreskowane`;
++          chartDataset = mergeTelemetryChartRows([], fbData, chartRangeStartMs, chartRangeEndMs);
++          lastChartArchiveSampleTs = chartDataset.reduce((latest, row) => Math.max(latest, row.ts), 0);
++          $('#chartStatusInfo').textContent = `Firebase RTDB · ${chartDataset.length} próbek archiwalnych (${rangeName}) · ${chartWindowLabel()}`;
 +          $('#chartPointsStat').textContent = String(chartDataset.length);
 +          $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
 +          $('#chartRealityPill').textContent = 'FIREBASE RTDB';
@@ -8250,60 +8329,10 @@
 +    }
 +  }
 +
-+  function appendChartLivePoint() {
-+    // Na stronie ESP telemetria wykresu pochodzi z /api/history*, nigdy z S/Firebase.
-+    if (currentPage !== 1 || _espLocalChartMode !== false || !_isFirebaseConnected || !S.online || !_lastFirebaseFetch || _lastFirebaseFetch <= lastChartLiveTs) return;
-+    let sim = 0;
-+    const sample = (key, pole, channel) => {
-+      const value = S[key];
-+      if (!receivedFields.has(key) || !Number.isFinite(value)) return null;
-+      if (symAktywna(pole)) sim |= (1 << channel);
-+      return value;
-+    };
-+    const sampleServo = (key, pole, channel, maxDeg) => {
-+      const value = S[key];
-+      if (!receivedFields.has(key) || !Number.isInteger(value) || value < 0 || value > maxDeg) return null;
-+      if (symAktywna(pole)) sim |= (1 << channel);
-+      return value * 100 / maxDeg;
-+    };
-+    const pumpValue = receivedFields.has('pompa') && typeof S.pompa === 'boolean' ? (S.pompa ? 100 : 0) : null;
-+    const point = {
-+      ts: _lastFirebaseFetch, seq: 0,
-+      t_zewn: sample('t_zewn', 'zewn', 0),
-+      t_bojler: sample('t_bojler', 'bojler', 1),
-+      t_ogrz: sample('t_ogrz', 'ogrz', 2),
-+      t_ogrz_sr: sample('t_ogrz_sr', 'ogrz', 3),
-+      t_powrot: sample('t_powrot', 'ogrz_powrot', 4),
-+      t_panel: sample('t_panel', 'panel', 5),
-+      t_pokoj: sample('t_pokoj', 'pokoj', 6),
-+      t_trociny: sample('t_trociny', 'ogrz_trociny', 7),
-+      wilgotnosc: sample('wilgotnosc', 'wilgotnosc', 8),
-+      cisnienie: sample('cisnienie', 'cisnienie', 9),
-+      dym: sample('dym', 'dym', 10),
-+      klapa: sampleServo('klapa', 'klapa', 11, 180),
-+      syberka: sampleServo('syberka', 'syberka', 12, 90),
-+      pompa: pumpValue,
-+      sim: sim, is_sim: false
-+    };
-+    const hasValue = ['t_zewn', 't_bojler', 't_ogrz', 't_ogrz_sr', 't_powrot', 't_panel', 't_pokoj', 't_trociny',
-+      'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka', 'pompa'].some(key => typeof point[key] === 'number' && Number.isFinite(point[key]));
-+    lastChartLiveTs = _lastFirebaseFetch;
-+    if (!hasValue) return;
-+    const cutoff = _lastFirebaseFetch - activeRangeSec * 1000;
-+    chartDataset = chartDataset.filter(row => row.ts >= cutoff);
-+    chartDataset.push(point);
-+    chartDataset.sort((a, b) => a.ts - b.ts || a.seq - b.seq);
-+    if (chartDataset.length > 50000) chartDataset = chartDataset.slice(-50000);
-+    const stat = $('#chartPointsStat');
-+    if (stat) stat.textContent = String(chartDataset.length);
-+  }
-+
 +  function updateChartsLiveFeed() {
-+    if (currentPage === 1) {
-+      appendChartLivePoint();
-+      updateChartsNowStat();
-+      if (chartOffset >= 0.98) updateChartCanvas();
-+    }
++    // Status polling is not an archive write. Only timestamped RTDB history
++    // records may add points to the Firebase chart (tail refresh runs separately).
++    if (currentPage === 1) updateChartsNowStat();
 +  }
 +
 +  // ───────────────────────── 13. SILNIK RYSOWANIA WYKRESU (CANVAS PRO) ─────────────────────────
@@ -8332,12 +8361,15 @@
 +    const cat = activeSeriesCatalog().filter(s => s.on);
 +    if (!cat.length) return;
 +
-+    const totalPts = chartDataset.length;
-+    const visibleCount = Math.max(4, Math.round(totalPts / chartZoom));
-+    const maxStart = totalPts - visibleCount;
-+    const startIdx = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
-+    const endIdx = Math.min(totalPts, startIdx + visibleCount);
-+    const visibleRows = chartDataset.slice(startIdx, endIdx);
++    const windowGeom = chartWindowGeom();
++    const visibleRows = windowGeom.rows;
++    if (visibleRows.length < 2) {
++      g.fillStyle = 'rgba(148,163,184,0.95)';
++      g.font = '600 12px Roboto,sans-serif';
++      g.textAlign = 'center';
++      g.fillText(visibleRows.length === 1 ? 'Za mało próbek w widocznym oknie' : 'Brak próbek w widocznym oknie', w / 2, h / 2);
++      return;
++    }
 +
 +    // [FIX-CHART-CORRELATION + DUAL-AXIS-MULTIUNIT] Automatyczna podwojna os Y
 +    // dla dowolnej kombinacji jednostek:
@@ -8378,6 +8410,9 @@
 +    const padRight = isDualAxis ? (secHasLongUnit ? 56 : 38) : 14;
 +    const padTop = 16, padBottom = 24;
 +    const plotW = w - padLeft - padRight, plotH = h - padTop - padBottom;
++    const xForRow = (row, idx) => windowGeom.timeBased
++      ? padLeft + ((row.ts - windowGeom.viewStartMs) / windowGeom.visibleSpanMs) * plotW
++      : padLeft + (idx / Math.max(1, visibleRows.length - 1)) * plotW;
 +
 +    // Filter glitches and collect cleaned values for active series
 +    const cleanedValuesMap = new Map();
@@ -8560,16 +8595,19 @@
 +    }
 +
 +    g.textAlign = 'center';
-+    const xSteps = Math.min(5, visibleRows.length);
++    const spanMs = windowGeom.timeBased
++      ? windowGeom.visibleSpanMs
++      : visibleRows[visibleRows.length - 1].ts - visibleRows[0].ts;
++    const xSteps = windowGeom.timeBased ? 5 : Math.min(5, visibleRows.length);
 +    for (let i = 0; i < xSteps; i++) {
-+      const idx = Math.round((visibleRows.length - 1) * (i / (xSteps - 1)));
-+      const xPos = padLeft + (plotW / Math.max(1, visibleRows.length - 1)) * idx;
-+      const d = new Date(visibleRows[idx].ts);
-+      // [FIX-OX-OS] W zakresie 7d/30d przy mocnym przyblizeniu wszystkie 5
-+      // etykiet byly IDENTYCZNE (piec razy '26.09' — zrzut 2026-10-05).
-+      // Format dobieramy do FAKTYCZNEJ rozpietosci widocznego okna:
-+      // <2 h -> HH:MM:SS, <48 h -> DD.MM HH:MM, wiecej -> DD.MM.
-+      const spanMs = visibleRows.length > 1 ? (visibleRows[visibleRows.length - 1].ts - visibleRows[0].ts) : 0;
++      const fraction = i / (xSteps - 1);
++      const idx = Math.round((visibleRows.length - 1) * fraction);
++      const xPos = padLeft + plotW * fraction;
++      const d = new Date(windowGeom.timeBased
++        ? windowGeom.viewStartMs + fraction * windowGeom.visibleSpanMs
++        : visibleRows[idx].ts);
++      // Firebase: stałe ticki czasu rzeczywistego; ESP lokalny zachowuje
++      // dotychczasową siatkę indeksową, będącą wzorcem po lewej stronie.
 +      const lbl = spanMs < 2 * 3600000
 +        ? pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds())
 +        : spanMs < 48 * 3600000
@@ -8593,7 +8631,7 @@
 +      visibleRows.forEach((r, idx) => {
 +        let v = seriesVals[idx];
 +        if (typeof v === 'number' && !isNaN(v) && isFinite(v)) {
-+          const x = padLeft + (idx / Math.max(1, visibleRows.length - 1)) * plotW;
++          const x = xForRow(r, idx);
 +          let y;
 +
 +          if (s.group === 'pump') {
@@ -8715,7 +8753,7 @@
 +    g.rect(padLeft, padTop, Math.max(0, plotW), Math.max(0, plotH));
 +    g.clip();
 +    if (chartCrosshairIdx !== null && chartCrosshairIdx >= 0 && chartCrosshairIdx < visibleRows.length) {
-+      const xCross = padLeft + (chartCrosshairIdx / Math.max(1, visibleRows.length - 1)) * plotW;
++      const xCross = xForRow(visibleRows[chartCrosshairIdx], chartCrosshairIdx);
 +      g.setLineDash([3, 3]);
 +      g.strokeStyle = 'rgba(0,212,245,0.7)';
 +      g.lineWidth = 1.2;
@@ -8786,32 +8824,73 @@
 +  // Kotwica w focusFrac (0..1 plotu); okno 1:1 z updateChartCanvas:
 +  // startIdx = maxStart * (1 - chartOffset).
 +  function pinchZoomChartBy(factor, focusFrac) {
-+    const total = chartDataset.length;
-+    if (total < 5 || !isFinite(factor) || factor <= 0) return;
++    if (!isFinite(factor) || factor <= 0) return;
 +    const f = Math.max(0, Math.min(1, focusFrac));
-+    const vis = Math.max(4, Math.round(total / Math.max(chartZoom, 0.01)));
-+    const maxStart = Math.max(0, total - vis);
-+    const start = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
-+    const anchor = start + f * Math.max(1, vis - 1);
 +    const z2 = Math.max(1.0, Math.min(16.0, chartZoom * factor));
-+    const vis2 = Math.max(4, Math.round(total / Math.max(z2, 0.01)));
-+    const maxStart2 = Math.max(0, total - vis2);
-+    const start2 = Math.max(0, Math.min(maxStart2, Math.round(anchor - f * Math.max(1, vis2 - 1))));
-+    chartZoom = z2;
-+    chartOffset = maxStart2 > 0 ? 1 - start2 / maxStart2 : 1;
++    const g = chartWindowGeom();
++    if (g.timeBased) {
++      const anchorMs = g.viewStartMs + f * g.visibleSpanMs;
++      const span2 = g.domainSpanMs / z2;
++      const maxStart2 = Math.max(0, g.domainSpanMs - span2);
++      const start2 = Math.max(g.domainStartMs, Math.min(g.domainEndMs - span2, anchorMs - f * span2));
++      chartZoom = z2;
++      chartOffset = maxStart2 > 0 ? 1 - (start2 - g.domainStartMs) / maxStart2 : 1;
++    } else {
++      const total = chartDataset.length;
++      if (total < 5) return;
++      const vis = Math.max(4, Math.round(total / Math.max(chartZoom, 0.01)));
++      const maxStart = Math.max(0, total - vis);
++      const start = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
++      const anchor = start + f * Math.max(1, vis - 1);
++      const vis2 = Math.max(4, Math.round(total / Math.max(z2, 0.01)));
++      const maxStart2 = Math.max(0, total - vis2);
++      const start2 = Math.max(0, Math.min(maxStart2, Math.round(anchor - f * Math.max(1, vis2 - 1))));
++      chartZoom = z2;
++      chartOffset = maxStart2 > 0 ? 1 - start2 / maxStart2 : 1;
++    }
 +    const zs = $('#chartZoomStat'); if (zs) zs.textContent = chartZoom.toFixed(1) + '×';
 +  }
 +
 +  function chartWindowGeom() {
 +    const total = chartDataset.length;
++    if (chartUsesEpochX) {
++      let domainStartMs = chartRangeStartMs;
++      let domainEndMs = chartRangeEndMs;
++      if ((!domainStartMs || !domainEndMs) && total) {
++        domainStartMs = chartDataset[0].ts;
++        domainEndMs = chartDataset[total - 1].ts;
++      }
++      if (!Number.isFinite(domainStartMs)) domainStartMs = 0;
++      if (!Number.isFinite(domainEndMs) || domainEndMs <= domainStartMs) domainEndMs = domainStartMs + 1;
++      const domainSpanMs = Math.max(1, domainEndMs - domainStartMs);
++      const zoom = Math.max(1, Math.min(16, chartZoom));
++      const visibleSpanMs = domainSpanMs / zoom;
++      const maxStartMs = Math.max(0, domainSpanMs - visibleSpanMs);
++      const positionFraction = Math.max(0, Math.min(1, 1 - chartOffset));
++      const viewStartMs = domainStartMs + maxStartMs * positionFraction;
++      const viewEndMs = viewStartMs + visibleSpanMs;
++      const rows = chartDataset.filter(row => row.ts >= viewStartMs && row.ts <= viewEndMs);
++      return {
++        timeBased: true, rows, domainStartMs, domainEndMs, domainSpanMs,
++        visibleSpanMs, maxStartMs, viewStartMs, viewEndMs,
++        startFraction: (viewStartMs - domainStartMs) / domainSpanMs,
++        visibleFraction: visibleSpanMs / domainSpanMs
++      };
++    }
++
 +    const vis = Math.max(4, Math.round(total / Math.max(chartZoom, 0.01)));
 +    const maxStart = Math.max(0, total - vis);
 +    const start = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
-+    return { start, end: Math.min(total, start + vis), total, maxStart, vis };
++    const end = Math.min(total, start + vis);
++    return { timeBased: false, rows: chartDataset.slice(start, end), start, end, total, maxStart, vis };
 +  }
 +
 +  function seekChartStartTo(startF) {
 +    const g = chartWindowGeom();
++    if (g.timeBased) {
++      chartOffset = 1 - Math.max(0, Math.min(1, startF));
++      return;
++    }
 +    if (g.total < 5 || g.maxStart <= 0) return;
 +    chartOffset = 1 - Math.max(0, Math.min(g.maxStart, startF)) / g.maxStart;
 +  }
@@ -8822,10 +8901,12 @@
 +      const thumb = $(th), track = $(tr);
 +      if (!thumb || !track) return;
 +      const W = track.clientWidth - 12;
-+      if (W <= 0 || g.total < 2) { thumb.style.display = 'none'; return; }
++      if (W <= 0 || (!g.timeBased && g.total < 2)) { thumb.style.display = 'none'; return; }
 +      thumb.style.display = '';
-+      const w = Math.max(22, W * (g.end - g.start) / g.total);
-+      const x = 6 + Math.min(W - w, Math.max(0, W * g.start / g.total));
++      const visibleFraction = g.timeBased ? g.visibleFraction : (g.end - g.start) / g.total;
++      const startFraction = g.timeBased ? g.startFraction : g.start / g.total;
++      const w = Math.max(22, W * visibleFraction);
++      const x = 6 + Math.min(W - w, Math.max(0, W * startFraction));
 +      thumb.style.width = w + 'px';
 +      thumb.style.left = x + 'px';
 +    });
@@ -8842,7 +8923,8 @@
 +    };
 +    const jump = e => {
 +      const g = chartWindowGeom();
-+      seekChartStartTo(fracAt(e) * g.total - g.vis / 2);
++      if (g.timeBased) seekChartStartTo(fracAt(e) - g.visibleFraction / 2);
++      else seekChartStartTo(fracAt(e) * g.total - g.vis / 2);
 +      updateChartCanvas();
 +    };
 +    track.addEventListener('pointerdown', e => {
@@ -8998,8 +9080,25 @@
 +      const plotW = rect.width - padLeft - padRight;
 +      const xInPlot = e.clientX - rect.left - padLeft;
 +      const ratio = Math.max(0, Math.min(1, xInPlot / plotW));
-+      const visibleCount = Math.max(4, Math.round(chartDataset.length / chartZoom));
-+      chartCrosshairIdx = Math.round(ratio * (visibleCount - 1));
++      const geom = chartWindowGeom();
++      if (geom.timeBased) {
++        const targetTs = geom.viewStartMs + ratio * geom.visibleSpanMs;
++        const rows = geom.rows;
++        if (!rows.length) chartCrosshairIdx = null;
++        else {
++          let lo = 0, hi = rows.length - 1;
++          while (lo < hi) {
++            const mid = (lo + hi) >> 1;
++            if (rows[mid].ts < targetTs) lo = mid + 1;
++            else hi = mid;
++          }
++          if (lo > 0 && Math.abs(rows[lo - 1].ts - targetTs) <= Math.abs(rows[lo].ts - targetTs)) lo--;
++          chartCrosshairIdx = lo;
++        }
++      } else {
++        const visibleCount = Math.max(4, Math.round(chartDataset.length / chartZoom));
++        chartCrosshairIdx = Math.round(ratio * (visibleCount - 1));
++      }
 +      chartCrosshairPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 +    }
 +  }
@@ -10352,11 +10451,12 @@
 +          if (!document.hidden) pollFirebase();
 +        }, 4000);
 +
-+        // Archiwum ESP zapisuje próbki co minutę; odświeżaj wykres lokalnie
-+        // tylko wtedy, gdy użytkownik ma otwartą zakładkę Wykresy.
++        // Archiwum zapisuje próbki co minutę. ESP odświeżamy z lokalnego API;
++        // Firebase doczytuje wyłącznie nowy koniec archiwum, nigdy status live.
 +        chartHistoryIntervalId = setInterval(async () => {
 +          if (document.hidden || currentPage !== 1) return;
 +          if (await isEspLocalChartPage()) loadTelemetryRange(activeRangeSec);
++          else refreshFirebaseChartTail();
 +        }, 60 * 1000);
 +
 +        // Pogoda co 15 minut
@@ -10433,7 +10533,7 @@
  const char WIFI_STRONA_HTML_HEADER[] PROGMEM = R"HTML(<!DOCTYPE html><html><head><meta charset="utf-8">
  <meta name="viewport" content="width=device-width,initial-scale=1">
  <title>Sterownik CO</title>
-@@ -6945,7 +17350,19 @@
+@@ -6945,7 +17450,19 @@
  
  function dpOtworzSerwo(){
    dpOtworz(
@@ -10454,7 +10554,7 @@
      + "<div class='seg' id='dp-seg-trybserwa'>"
        + "<button class='seg-btn' data-v='1' onclick='dpSegTrybSerwa(1,this)'>Auto</button>"
        + "<button class='seg-btn' data-v='2' onclick='dpSegTrybSerwa(2,this)'>Ręczny</button>"
-@@ -6995,7 +17412,8 @@
+@@ -6995,7 +17512,8 @@
    // [SYMULACJA-PER-CZUJNIK, PLAN_SYMULACJA_CZUJNIKOW.md 7.3] Licznik
    // auto-wygasniecia trybu Recznego, z /api/status (dotad TrybSerwa==2 nie
    // wygasal wcale, wiec taki licznik nie mial racji bytu).
@@ -10464,7 +10564,7 @@
      var info = document.getElementById('dp-serwoOverrideInfo');
      if (info) info.textContent = (d.serwo_override_min > 0)
        ? ('Ręczna pozycja jeszcze ok. ' + d.serwo_override_min + ' min, potem powrót do Auto')
-@@ -7256,8 +17674,90 @@
+@@ -7256,8 +17774,90 @@
    symZaladujStan('wilgotnosc');
  }
  
@@ -10556,7 +10656,7 @@
      // [CZ.4/SYS-HDR] podpiete pod istniejacy 2s-owy cykl odswiezDashboard()
      // (centrala nie ma WebSocket jak Ryby -- to REST polling, wiec zamiast
      // ws.onopen z Ryb aktualizacja idzie tu, razem z reszta danych z tego
-@@ -7335,6 +17835,7 @@
+@@ -7335,6 +17935,7 @@
        tekst.textContent = 'Połączono: ' + (d.ip||'') + ' (' + fmt(d.rssi,0) + ' dBm)';
      }
    }).catch(function(){
@@ -10564,7 +10664,7 @@
      // [DASHBOARD-WWW-BANER, dokonczenie sekcji 4.4/5 planu] Realny brak z
      // Fazy 1 -- ten catch byl pusty, wiec przy zerwaniu polaczenia strona
      // po cichu zostawiala coraz starsze liczby na ekranie, bez zadnego
-@@ -7558,104 +18059,392 @@
+@@ -7558,104 +18159,392 @@
  // nie z samego indeksu w tablicy - a odcinki oddalone od siebie o wiecej niz
  // "progDziuryS" sekund rysowane sa jako OSOBNE polyline (przerwa w linii)
  // zamiast byc laczone tak, jakby powstaly tuz po sobie.
@@ -10847,16 +10947,14 @@
    var PAD = {t:10,r:8,b:28,l:38};
    var cW = W - PAD.l - PAD.r;
    var cH = H - PAD.t - PAD.b;
--  var n = labels.length;
--  if (n < 1){
 +  var total = st.labels.length;
 +  if (!total){
-     el.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#556" font-size="13">Brak danych</text>';
++    el.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#556" font-size="13">Brak danych</text>';
 +    st.startIndex = 0; st.endIndex = 0; st.width = W; st.plotLeft = PAD.l; st.plotRight = W - PAD.r;
 +    st.renderXs = []; st.renderIndices = []; st.renderYs = [];
 +    lokalnyWykresOdswiezInspector(st);
-     return;
-   }
++    return;
++  }
 +  var visible = lokalnyWykresWidoczne(st);
 +  var start = lokalnyWykresStart(st);
 +  var end = Math.min(total, start + visible);
@@ -10865,7 +10963,11 @@
 +  var series = st.series.map(function(a){ return {data:a.data.slice(start, end), color:a.color}; });
 +  var renderIndices = [];
 +  for (var ri = start; ri < end; ri++) renderIndices.push(ri);
-+  var n = labels.length;
+   var n = labels.length;
+-  if (n < 1){
+-    el.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#556" font-size="13">Brak danych</text>';
+-    return;
+-  }
    if (n === 1){
      labels = labels.concat(labels);
 -    times  = (times || []).concat(times || []);
@@ -10915,12 +11017,13 @@
 -    var t = times[i];
 -    if (!(t > 0)) return null;   // czas nieznany - brak pozycji na osi
 -    return PAD.l + ((t-tMin)/(tMax-tMin))*cW;
+-  }
+-
 +    if (!xCzasOk) return PAD.l + (i / (n - 1)) * cW;
 +    var t = Number(times[i]);
 +    if (!(t > 0)) return null;
 +    return PAD.l + ((t - tMin) / (tMax - tMin)) * cW;
-   }
--
++  }
 +  function yPos(value){ return PAD.t + cH - ((value - mn) / (mx - mn)) * cH; }
 +  function escSvg(value){ return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
    var svg = '';
@@ -10943,8 +11046,7 @@
      var xe = xPos(i);
      if (xe === null) continue;
 -    svg += '<text x="'+xe+'" y="'+(H-6)+'" text-anchor="middle" fill="#445" font-size="9">'+labels[i]+'</text>';
-+    svg += '<text x="'+xe+'" y="'+(H-6)+'" text-anchor="middle" fill="#445" font-size="9">'+escSvg(labels[i])+'</text>';
-   }
+-  }
 -
 -  // Prog przerwy w sekundach ("Infinity" gdy nie podano -> nigdy nie
 -  // przerywaj, czyli dawne zachowanie sprzed tej zmiany).
@@ -10958,6 +11060,8 @@
 -      // rysowana (zamiast byc doklejana do linii na absurdalnej wspolrzednej).
 -      if (x === null){
 -        if (segment.length){ segmenty.push(segment); segment = []; }
++    svg += '<text x="'+xe+'" y="'+(H-6)+'" text-anchor="middle" fill="#445" font-size="9">'+escSvg(labels[i])+'</text>';
++  }
 +  var prog = (typeof st.progDziuryS === 'number') ? st.progDziuryS : Infinity;
 +  var renderXs = [], renderYs = [];
 +  for (var xi = 0; xi < n; xi++) renderXs[xi] = xPos(xi);
@@ -11018,7 +11122,7 @@
  }
  
  // [PROGNOZA-ETAP3, PLAN_PROGNOZA.md] Reuzywa DOKLADNIE ten sam drawChart()
-@@ -10863,6 +21652,8 @@
+@@ -10863,6 +21752,8 @@
    // warunek na poczatku historiaDlugaAkumulujProbke()). Analogia do pola
    // czas_unix w HistoriaProbka wyzej, ten sam cel (dziury na wykresie).
    uint32_t czas_unix;
@@ -11027,7 +11131,7 @@
  };
  
  HistoriaProbkaDluga* historiaDlugaBufor = nullptr;
-@@ -10915,17 +21706,18 @@
+@@ -10915,17 +21806,18 @@
  // Zapisuje POJEDYNCZA probke chwilowa do historiaDlugaBufor - sr=min=max=
  // biezaca wartosc kazdego pola, bo przy zapisie zdarzeniowym nie ma juz
  // okna czasowego do usredniania (kazdy zapis to jeden punkt w czasie, nie
@@ -11051,7 +11155,7 @@
    if (!historiaDlugaBufor) return;
  
    HistoriaProbkaDluga nowa;
-@@ -10936,6 +21728,7 @@
+@@ -10936,6 +21828,7 @@
    snprintf(nowa.etykieta, sizeof(nowa.etykieta), "%02d.%02d %02d:%02d",
             now.day(), now.month(), now.hour(), now.minute());
    nowa.czas_unix = now.unixtime();
@@ -11059,7 +11163,7 @@
  
    // sr=min=max=wartosc chwilowa - patrz komentarz nad funkcja.
    #define ZDARZ_PRZEPISZ(pole, wartosc) \
-@@ -10979,7 +21772,7 @@
+@@ -10979,7 +21872,7 @@
    historiaDlugaOstatnia.wilgotnosc   = wilgotnosc;
    historiaDlugaOstatnia.klapa_proc   = klapa_proc;
    historiaDlugaOstatnia.syberko_proc = syberko_proc;
@@ -11068,7 +11172,7 @@
  
    DLOGF(DC_HISTORIA, DL_DEBUG, "HISTORIA_DLUGA zdarzenie=zapis etykieta=\"%s\"", nowa.etykieta);
  
-@@ -11025,6 +21818,7 @@
+@@ -11025,6 +21918,7 @@
    if (!g_rtcGotowy && !g_rtcNtpZsynchronizowany) return;
  
    uint32_t teraz = millis();
@@ -11076,7 +11180,7 @@
  
    // (1) Limit przeciw-zalewowy - PRZED jakimkolwiek innym sprawdzeniem.
    if (historiaDlugaOstatnia.mamy &&
-@@ -11038,7 +21832,7 @@
+@@ -11038,7 +21932,7 @@
      zapisz = true;  // (2) pierwsza probka od startu urzadzenia
    } else if ((teraz - historiaDlugaOstatnia.czasMs) >= HIST_DLUGA_HEARTBEAT_MS) {
      zapisz = true;  // (3) heartbeat
@@ -11085,7 +11189,7 @@
      zapisz = true;  // (4) zmiana stanu pompy
    } else {
      // (5) progi per-metryka - wystarczy pierwszy przekroczony.
-@@ -11060,7 +21854,8 @@
+@@ -11060,7 +21954,8 @@
    if (!zapisz) return;
  
    historiaDlugaZapiszProbke(now, t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot,
@@ -11095,7 +11199,7 @@
  }
  
  // [HISTORIA-DLUGA, Partia 3 - Krok 1] CSV z bufora dlugiego dla endpointu
-@@ -11068,9 +21863,9 @@
+@@ -11068,9 +21963,9 @@
  // licznikow pod spinlockiem, potem petla bez lockowania, bo historiaDlugaBufor
  // nie jest realokowany w locie). Kolejnosc kolumn: etykieta, potem
  // sr,min,max dla kazdego pola po kolei (w tej samej kolejnosci pol co w
@@ -11107,7 +11211,7 @@
  void historiaDlugaLiniaCsv(const HistoriaProbkaDluga &p, String &csv) {
    csv += p.etykieta; csv += ',';
    csv += String(p.t_zewn_sr, 1);      csv += ','; csv += String(p.t_zewn_min, 1);      csv += ','; csv += String(p.t_zewn_max, 1);      csv += ',';
-@@ -11084,7 +21879,8 @@
+@@ -11084,7 +21979,8 @@
    csv += String(p.wilgotnosc_sr, 0);  csv += ','; csv += String(p.wilgotnosc_min, 0);  csv += ','; csv += String(p.wilgotnosc_max, 0);  csv += ',';
    csv += String(p.klapa_proc_sr);     csv += ','; csv += String(p.klapa_proc_min);     csv += ','; csv += String(p.klapa_proc_max);     csv += ',';
    csv += String(p.syberko_proc_sr);   csv += ','; csv += String(p.syberko_proc_min);   csv += ','; csv += String(p.syberko_proc_max);     csv += ',';
@@ -11117,7 +11221,7 @@
    csv += '\n';
  }
  
-@@ -11099,10 +21895,9 @@
+@@ -11099,10 +21995,9 @@
  
    if (liczbaProbekSnap == 0) return "";
    String csv;
@@ -11131,7 +11235,7 @@
    for (int i = 0; i < liczbaProbekSnap; i++) {
      int idx = (startSnap + i) % HISTORIA_DLUGA_MAX_PROBEK;
      historiaDlugaLiniaCsv(historiaDlugaBufor[idx], csv);
-@@ -13605,10 +24400,28 @@
+@@ -13605,10 +24500,28 @@
    return pelny.substring(start, koniec);
  }
  
@@ -11160,7 +11264,7 @@
    String html;
    html.reserve(4096);
    html += FPSTR(WIFI_STRONA_HTML_HEADER);
-@@ -13700,6 +24513,7 @@
+@@ -13700,6 +24613,7 @@
        "</div>"
      "</div>"
      "<p id='wykrInfo' style='margin-top:8px'><small></small></p>"
@@ -11168,7 +11272,7 @@
      "</div>"
  
      "<div class='karta'><h2>Piec &#8211; ogrzewanie</h2>"
-@@ -14278,10 +25092,22 @@
+@@ -14278,9 +25192,21 @@
      "</div>"
    "</div></div>"); // koniec #tab-term
  
@@ -11180,18 +11284,17 @@
    html += FPSTR(WIFI_STRONA_HTML_FOOTER);
    return html;
  }
- 
++
 +// [ESP-LOCAL-HTML-PARITY] Te same backendowe warunki bezpieczenstwa co
 +// komenda Firebase Rozpalanie; lokalny panel wystawia je tylko do odczytu,
 +// a POST ponownie sprawdza warunki przed zmiana stanu.
 +static bool alarmBezpieczenstwaSerwaAktywny();
 +static bool temperaturaPiecZnanaDlaRozpalania();
 +static bool uruchomRozpalanieSerwa(String& blad);
-+
+ 
  // Buduje JSON ze stanem sterownika dla zakladki Dashboard (odpytywane co
  // 2s przez JS z /api/status). Reczne skladanie String zamiast ArduinoJson
- // — jedna, plaska struktura, nie warto dodawac kolejnej zaleznosci.
-@@ -14374,6 +25200,10 @@
+@@ -14374,6 +25300,10 @@
    j += F("\"rozpalanie_serwa_dostepne\":"); j += (rozpalanieSerwaDostepne ? "true" : "false"); j += F(",");
    j += F("\"rozpalanie_serwa_aktywne\":"); j += (rozpalanieSerwaAktywne ? "true" : "false"); j += F(",");
    j += F("\"rozpalanie_serwa_blokada_dymu\":"); j += (rozpalanieSerwaBlokadaDymu ? "true" : "false"); j += F(",");
@@ -11202,7 +11305,7 @@
    // [LCD-SEZON, plan PIEC_ESPNOW_PLAN.md] Miesiac z RTC centrali (0 gdy RTC
    // niegotowy — patrz g_rtcGotowy/FIX 12/FIX 13 wyzej) — wyswietlacz uzywa
    // tego do automatycznego przelaczania widoku Lato/Zima (chowanie kafelkow
-@@ -14455,9 +25285,15 @@
+@@ -14455,9 +25385,15 @@
  // — to jest ten sam serwer, ta sama strona w obu trybach.
  void wifiZarejestrujTrasy() {
    if (wifiWebServerUruchomiony) return;
@@ -11219,7 +11322,7 @@
    });
  
    // [TERMINAL] WS dla zakladki "Terminal" — dopiety do TEGO SAMEGO
-@@ -14524,7 +25360,9 @@
+@@ -14524,7 +25460,9 @@
          g_panelOstatniPowodRestartu = powod;
        }
      }
@@ -11230,7 +11333,7 @@
    });
  
    // [PROGNOZA-ETAP1, PLAN_PROGNOZA.md] Serwuje ostatni zbudowany cache
-@@ -14651,9 +25489,10 @@
+@@ -14651,9 +25589,10 @@
      historiaWyczysc();
      request->send(200, "application/json", "{\"ok\":true}");
    });
@@ -11244,10 +11347,12 @@
    // celowo osobny endpoint zamiast parametru ?zakres=, zeby nie mieszac
    // dwoch calkiem roznych formatow CSV (bufor krotki: 1 wartosc/pole,
    // bufor dlugi: 3 wartosci/pole) pod jednym adresem.
-@@ -15454,6 +26293,27 @@
-     request->send(200, "application/json", "{\"ok\":true,\"os\":\"" + os + "\",\"procent\":" + String(procent) + "}");
-   });
+@@ -15452,6 +26391,27 @@
  
+     zapiszLog(String(F("tag=SERVO_MANUAL zdarzenie=zlecono_z_panelu os=")) + os + " procent=" + String(procent));
+     request->send(200, "application/json", "{\"ok\":true,\"os\":\"" + os + "\",\"procent\":" + String(procent) + "}");
++  });
++
 +  // [ESP-LOCAL-HTML-PARITY] Lokalny przycisk korzysta z tego samego helpera
 +  // co Firebase. Helper ponownie weryfikuje alarmy i swiezosc temperatury;
 +  // powtorne POST podczas aktywnej sekwencji sa odrzucane.
@@ -11267,12 +11372,10 @@
 +      return;
 +    }
 +    request->send(200, "application/json", "{\"ok\":true}");
-+  });
-+
+   });
+ 
    // [LCD-POMPA-OVERRIDE] Lokalny odpowiednik komend Telegram/Firebase
-   // pompa_wl/pompa_wyl, dla panelu dotykowego LCD w tej samej sieci LAN —
-   // bez rundy przez Firebase (nizsze opoznienie, dziala tez gdy internet
-@@ -30877,9 +41737,8 @@
+@@ -30877,9 +41837,8 @@
    DLOGF(DC_HISTORIA, DL_INFO, "HISTORIA-FS zdarzenie=wczytano_z_dysku probek=%d", wczytane);
  }
  
@@ -11284,7 +11387,7 @@
  void historiaDlugaWczytajZFS() {
    if (!historiaDlugaBufor) return;
    if (!littlefsReady) return;
-@@ -30904,18 +41763,19 @@
+@@ -30904,18 +41863,19 @@
      if (numerLinii <= pominac) continue;
      if ((numerLinii % 50) == 0) serwisujTWDTJesliZarejestrowany();
  
@@ -11307,7 +11410,7 @@
      strncpy(p.etykieta, kol[0].c_str(), sizeof(p.etykieta)-1); p.etykieta[sizeof(p.etykieta)-1]=0;
      int k = 1;
      #define WCZYTAJ_FLOAT(pole_) \
-@@ -30939,6 +41799,10 @@
+@@ -30939,6 +41899,10 @@
      p.syberko_proc_min = kol[k++].toInt();
      p.syberko_proc_max = kol[k++].toInt();
      p.czas_unix        = (uint32_t) kol[k++].toInt(); // [DZIURY-CZAS, v3.0.0.2]

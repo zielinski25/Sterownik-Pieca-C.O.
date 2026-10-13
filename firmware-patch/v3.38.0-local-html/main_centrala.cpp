@@ -1,3 +1,12 @@
+// [v3.45.0 WYKRESY-FIREBASE-ARCHIVE-AXIS] — 2026-10-13
+// Co: Prawy wykres Firebase używa wyłącznie zapisanej historii RTDB, jej ts
+//     i przyrostowego odświeżania; porównanie ma jawny, wspólny zakres czasu.
+// Problem: Poll statusu co 4 s dopisywał pseudo-próbki, a X rozmieszczał dane
+//     po indeksie, więc zagęszczenie odświeżeń mogło zmieniać kształt przebiegu.
+// Naprawa: Usunięto punkty z odczytu statusu; próbki archiwalne są deduplikowane
+//     po ID i rysowane według timestampu. Lokalna ścieżka /api/history* bez zmian.
+// FIRMWARE_VERSION v3.44.0 -> v3.45.0 (MINOR: zgodność wykresu Firebase z lokalnym).
+//
 // [v3.44.0 WYKRESY-ESP-LOKALNE] — 2026-10-13
 // Co: Zakladka Wykresy ESP pobiera zakresy 6h/24h z /api/history, a 7/30 dni
 //     z lokalnego /api/history/long (uzupelnionego o ostatnie 24h z bufora minutowego).
@@ -5027,7 +5036,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.44.0";
+static const char* FIRMWARE_VERSION = "v3.45.0";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -13290,7 +13299,11 @@ body.mode-phone-frame #phone {
   let chartCrosshairIdx = null;
   let chartCrosshairPos = null;
   let chartDataset = [];
-  let lastChartLiveTs = 0;
+  let chartRangeStartMs = 0;
+  let chartRangeEndMs = 0;
+  let chartUsesEpochX = false;
+  let lastChartArchiveSampleTs = 0;
+  let firebaseChartTailRefreshBusy = false;
 
   // [FIX-CHART-PERSIST] Zapamietywanie zaznaczonych serii w localStorage
   function saveChartPreferences() {
@@ -13521,6 +13534,7 @@ body.mode-phone-frame #phone {
   }
 
   async function loadEspLocalTelemetryRange(rangeSec, rangeName, generation) {
+    chartUsesEpochX = false;
     const info = $('#chartStatusInfo');
     const isLongRange = rangeSec > 24 * 3600;
     if (info) info.textContent = `Pobieranie lokalnej historii ESP (${rangeName})…`;
@@ -13534,22 +13548,23 @@ body.mode-phone-frame #phone {
         const [longCsv, shortCsv] = await Promise.all([
           fetchEspHistoryCsv('/api/history/long'), fetchEspHistoryCsv('/api/history')
         ]);
-        const now = Date.now();
-        const cutoff = now - rangeSec * 1000;
-        const recentCutoff = now - 24 * 3600 * 1000;
+        const rangeEndMs = chartRangeEndMs || Date.now();
+        const cutoff = chartRangeStartMs || rangeEndMs - rangeSec * 1000;
+        const recentCutoff = rangeEndMs - 24 * 3600 * 1000;
         rows = parseEspLongHistory(longCsv).filter(row => row.ts >= cutoff && row.ts < recentCutoff)
-          .concat(parseEspShortHistory(shortCsv).filter(row => row.ts >= Math.max(cutoff, recentCutoff)));
+          .concat(parseEspShortHistory(shortCsv).filter(row => row.ts >= Math.max(cutoff, recentCutoff) && row.ts <= rangeEndMs));
       } else {
         const shortCsv = await fetchEspHistoryCsv('/api/history');
-        const cutoff = Date.now() - rangeSec * 1000;
-        rows = parseEspShortHistory(shortCsv).filter(row => row.ts >= cutoff);
+        const cutoff = chartRangeStartMs || (chartRangeEndMs || Date.now()) - rangeSec * 1000;
+        const rangeEndMs = chartRangeEndMs || Date.now();
+        rows = parseEspShortHistory(shortCsv).filter(row => row.ts >= cutoff && row.ts <= rangeEndMs);
       }
       if (generation !== _chartLoadGeneration) return;
       chartDataset = rows.sort((a, b) => a.ts - b.ts || a.seq - b.seq);
       if (info) {
         info.textContent = chartDataset.length
-          ? `ESP lokalnie · ${chartDataset.length} próbek · archiwum centrali · bez Firebase`
-          : `Brak lokalnych próbek ESP dla zakresu ${rangeName}`;
+          ? `ESP lokalnie · ${chartDataset.length} próbek · bez Firebase · ${chartWindowLabel()}`
+          : `Brak lokalnych próbek ESP dla zakresu ${rangeName} · ${chartWindowLabel()}`;
       }
     } catch (err) {
       if (generation !== _chartLoadGeneration) return;
@@ -13682,9 +13697,9 @@ body.mode-phone-frame #phone {
     return historyUniqueSort(rows);
   }
 
-  async function fetchTelemetryFromFirebase(rangeSec) {
+  async function fetchTelemetryFromFirebase(rangeSec, endSec, updateTrend = true) {
     if (!_isFirebaseConnected && !_fbIdToken) return null;
-    const end = Math.floor(Date.now() / 1000);
+    const end = Number.isFinite(endSec) ? Math.floor(endSec) : Math.floor(Date.now() / 1000);
     const start = end - rangeSec;
     const days = historyDayRange(start, end);
     const all = [];
@@ -13718,12 +13733,15 @@ body.mode-phone-frame #phone {
         if (r.simulated) return null;
         const v = Number(degVal);
         if (!Number.isFinite(v) || v < 0 || v > maxDeg) return null;
-        return Math.round((v / maxDeg) * 100);
+        // Match the ESP CSV parser: preserve fractional percentages instead of
+        // rounding every servo position to an integer before plotting.
+        return (v / maxDeg) * 100;
       };
 
       // [FIX-FILTR-ANOMALII v5] Twarde filtry na wejsciu z bazy Firebase:
       // odrzucaja ujemne kody bledow z historii (np. t_panel -6°C, t_trociny -2°C)
       return {
+        _id: r._id,
         ts: r.ts * 1000,
         seq: r.seq,
         t_zewn: getVal(0, 0, 0.1, -25, 45, 't_zewn'),
@@ -13731,9 +13749,9 @@ body.mode-phone-frame #phone {
         t_ogrz: getVal(2, 2, 0.1, 10, 100, 't_ogrz'),
         t_ogrz_sr: getVal(3, 3, 0.1, 10, 100, 't_ogrz_sr'),
         t_powrot: getVal(4, 4, 0.1, 10, 95, 't_powrot'),
-        t_panel: getVal(5, 5, 0.1, 5, 140, 't_panel'),
+        t_panel: getVal(5, 5, 0.1, 0, 140, 't_panel'),
         t_pokoj: getVal(6, 6, 0.1, 8, 45, 't_pokoj'),
-        t_trociny: getVal(7, 7, 0.1, 5, 90, 't_trociny'),
+        t_trociny: getVal(7, 7, 0.1, 0, 90, 't_trociny'),
         wilgotnosc: getVal(8, 8, 0.1, 10, 100, 'wilgotnosc'),
         cisnienie: getVal(9, 9, 0.1, 900, 1100, 'cisnienie'),
         dym: getVal(10, 10, 1.0, 0, 4095, 'dym'),
@@ -13753,7 +13771,7 @@ body.mode-phone-frame #phone {
     const trendRealMask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
     const validOgrz = realRows.filter(r => r.t_ogrz !== null && r.t_bojler !== null && r.t_zewn !== null &&
       r.is_sim !== true && (r.sim & trendRealMask) === 0);
-    if (validOgrz.length >= 10) {
+    if (updateTrend && validOgrz.length >= 10) {
       hist.length = 0;
       const step = Math.max(1, Math.floor(validOgrz.length / 60));
       for (let i = 0; i < validOgrz.length; i += step) {
@@ -13765,6 +13783,61 @@ body.mode-phone-frame #phone {
     }
 
     return realRows;
+  }
+
+  function mergeTelemetryChartRows(existing, incoming, startMs, endMs) {
+    const byId = new Map();
+    [...(existing || []), ...(incoming || [])].forEach(row => {
+      if (!row || !Number.isFinite(row.ts) || row.ts < startMs || row.ts > endMs) return;
+      const key = row._id || `${row.ts}:${row.seq || 0}`;
+      byId.set(key, row);
+    });
+    return Array.from(byId.values()).sort((a, b) => a.ts - b.ts || a.seq - b.seq);
+  }
+
+  function chartWindowLabel() {
+    if (!chartRangeStartMs || !chartRangeEndMs) return '';
+    const format = ms => {
+      const d = new Date(ms);
+      const p = n => String(n).padStart(2, '0');
+      return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    return `${format(chartRangeStartMs)}–${format(chartRangeEndMs)}`;
+  }
+
+  async function refreshFirebaseChartTail() {
+    if (firebaseChartTailRefreshBusy || currentPage !== 1 || _espLocalChartMode !== false ||
+        (!_isFirebaseConnected && !_fbIdToken)) return;
+    firebaseChartTailRefreshBusy = true;
+    const generation = _chartLoadGeneration;
+    try {
+      const endSec = Math.floor(Date.now() / 60000) * 60;
+      const endMs = endSec * 1000;
+      const startMs = endMs - activeRangeSec * 1000;
+      const lastTsSec = lastChartArchiveSampleTs > 0 ? Math.floor(lastChartArchiveSampleTs / 1000) : 0;
+      const startSec = Math.max(Math.floor(startMs / 1000), lastTsSec > 0 ? lastTsSec - 120 : endSec - 180);
+      const rows = await fetchTelemetryFromFirebase(Math.max(1, endSec - startSec), endSec, false);
+      if (generation !== _chartLoadGeneration || currentPage !== 1 || _espLocalChartMode !== false) return;
+
+      chartRangeStartMs = startMs;
+      chartRangeEndMs = endMs;
+      if (rows && rows.length) {
+        chartDataset = mergeTelemetryChartRows(chartDataset, rows, startMs, endMs);
+        lastChartArchiveSampleTs = chartDataset.reduce((latest, row) => Math.max(latest, row.ts), 0);
+      } else {
+        chartDataset = chartDataset.filter(row => row.ts >= startMs && row.ts <= endMs);
+      }
+      const info = $('#chartStatusInfo');
+      if (info && chartDataset.length) {
+        info.textContent = `Firebase RTDB · ${chartDataset.length} próbek · archiwum 1-min · ${chartWindowLabel()}`;
+      }
+      $('#chartPointsStat').textContent = String(chartDataset.length);
+      updateChartCanvas();
+    } catch (err) {
+      console.warn('Błąd odświeżania końca historii Firebase:', err);
+    } finally {
+      firebaseChartTailRefreshBusy = false;
+    }
   }
 
   function filterSeriesGlitches(rows, channelKey, group) {
@@ -13879,6 +13952,10 @@ body.mode-phone-frame #phone {
     const generation = ++_chartLoadGeneration;
     activeRangeSec = rangeSec;
     const rangeName = rangeSec === 6 * 3600 ? '6h' : rangeSec === 24 * 3600 ? '24h' : rangeSec === 7 * 86400 ? '7d' : '30d';
+    const rangeEndSec = Math.floor(Date.now() / 60000) * 60;
+    chartRangeEndMs = rangeEndSec * 1000;
+    chartRangeStartMs = chartRangeEndMs - rangeSec * 1000;
+    lastChartArchiveSampleTs = 0;
 
     if (await isEspLocalChartPage()) {
       if (generation !== _chartLoadGeneration) return;
@@ -13886,16 +13963,18 @@ body.mode-phone-frame #phone {
       return;
     }
     if (generation !== _chartLoadGeneration) return;
+    chartUsesEpochX = true;
 
     let historyFailed = false;
     if (_isFirebaseConnected) {
       $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase…`;
       try {
-        const fbData = await fetchTelemetryFromFirebase(rangeSec);
+        const fbData = await fetchTelemetryFromFirebase(rangeSec, rangeEndSec);
         if (generation !== _chartLoadGeneration) return;
         if (fbData && fbData.length > 0) {
-          chartDataset = fbData;
-          $('#chartStatusInfo').textContent = `Załadowano ${chartDataset.length} próbek RTDB (${rangeName}) · symulowane odcinki są kreskowane`;
+          chartDataset = mergeTelemetryChartRows([], fbData, chartRangeStartMs, chartRangeEndMs);
+          lastChartArchiveSampleTs = chartDataset.reduce((latest, row) => Math.max(latest, row.ts), 0);
+          $('#chartStatusInfo').textContent = `Firebase RTDB · ${chartDataset.length} próbek archiwalnych (${rangeName}) · ${chartWindowLabel()}`;
           $('#chartPointsStat').textContent = String(chartDataset.length);
           $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
           $('#chartRealityPill').textContent = 'FIREBASE RTDB';
@@ -14021,60 +14100,10 @@ body.mode-phone-frame #phone {
     }
   }
 
-  function appendChartLivePoint() {
-    // Na stronie ESP telemetria wykresu pochodzi z /api/history*, nigdy z S/Firebase.
-    if (currentPage !== 1 || _espLocalChartMode !== false || !_isFirebaseConnected || !S.online || !_lastFirebaseFetch || _lastFirebaseFetch <= lastChartLiveTs) return;
-    let sim = 0;
-    const sample = (key, pole, channel) => {
-      const value = S[key];
-      if (!receivedFields.has(key) || !Number.isFinite(value)) return null;
-      if (symAktywna(pole)) sim |= (1 << channel);
-      return value;
-    };
-    const sampleServo = (key, pole, channel, maxDeg) => {
-      const value = S[key];
-      if (!receivedFields.has(key) || !Number.isInteger(value) || value < 0 || value > maxDeg) return null;
-      if (symAktywna(pole)) sim |= (1 << channel);
-      return value * 100 / maxDeg;
-    };
-    const pumpValue = receivedFields.has('pompa') && typeof S.pompa === 'boolean' ? (S.pompa ? 100 : 0) : null;
-    const point = {
-      ts: _lastFirebaseFetch, seq: 0,
-      t_zewn: sample('t_zewn', 'zewn', 0),
-      t_bojler: sample('t_bojler', 'bojler', 1),
-      t_ogrz: sample('t_ogrz', 'ogrz', 2),
-      t_ogrz_sr: sample('t_ogrz_sr', 'ogrz', 3),
-      t_powrot: sample('t_powrot', 'ogrz_powrot', 4),
-      t_panel: sample('t_panel', 'panel', 5),
-      t_pokoj: sample('t_pokoj', 'pokoj', 6),
-      t_trociny: sample('t_trociny', 'ogrz_trociny', 7),
-      wilgotnosc: sample('wilgotnosc', 'wilgotnosc', 8),
-      cisnienie: sample('cisnienie', 'cisnienie', 9),
-      dym: sample('dym', 'dym', 10),
-      klapa: sampleServo('klapa', 'klapa', 11, 180),
-      syberka: sampleServo('syberka', 'syberka', 12, 90),
-      pompa: pumpValue,
-      sim: sim, is_sim: false
-    };
-    const hasValue = ['t_zewn', 't_bojler', 't_ogrz', 't_ogrz_sr', 't_powrot', 't_panel', 't_pokoj', 't_trociny',
-      'wilgotnosc', 'cisnienie', 'dym', 'klapa', 'syberka', 'pompa'].some(key => typeof point[key] === 'number' && Number.isFinite(point[key]));
-    lastChartLiveTs = _lastFirebaseFetch;
-    if (!hasValue) return;
-    const cutoff = _lastFirebaseFetch - activeRangeSec * 1000;
-    chartDataset = chartDataset.filter(row => row.ts >= cutoff);
-    chartDataset.push(point);
-    chartDataset.sort((a, b) => a.ts - b.ts || a.seq - b.seq);
-    if (chartDataset.length > 50000) chartDataset = chartDataset.slice(-50000);
-    const stat = $('#chartPointsStat');
-    if (stat) stat.textContent = String(chartDataset.length);
-  }
-
   function updateChartsLiveFeed() {
-    if (currentPage === 1) {
-      appendChartLivePoint();
-      updateChartsNowStat();
-      if (chartOffset >= 0.98) updateChartCanvas();
-    }
+    // Status polling is not an archive write. Only timestamped RTDB history
+    // records may add points to the Firebase chart (tail refresh runs separately).
+    if (currentPage === 1) updateChartsNowStat();
   }
 
   // ───────────────────────── 13. SILNIK RYSOWANIA WYKRESU (CANVAS PRO) ─────────────────────────
@@ -14103,12 +14132,15 @@ body.mode-phone-frame #phone {
     const cat = activeSeriesCatalog().filter(s => s.on);
     if (!cat.length) return;
 
-    const totalPts = chartDataset.length;
-    const visibleCount = Math.max(4, Math.round(totalPts / chartZoom));
-    const maxStart = totalPts - visibleCount;
-    const startIdx = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
-    const endIdx = Math.min(totalPts, startIdx + visibleCount);
-    const visibleRows = chartDataset.slice(startIdx, endIdx);
+    const windowGeom = chartWindowGeom();
+    const visibleRows = windowGeom.rows;
+    if (visibleRows.length < 2) {
+      g.fillStyle = 'rgba(148,163,184,0.95)';
+      g.font = '600 12px Roboto,sans-serif';
+      g.textAlign = 'center';
+      g.fillText(visibleRows.length === 1 ? 'Za mało próbek w widocznym oknie' : 'Brak próbek w widocznym oknie', w / 2, h / 2);
+      return;
+    }
 
     // [FIX-CHART-CORRELATION + DUAL-AXIS-MULTIUNIT] Automatyczna podwojna os Y
     // dla dowolnej kombinacji jednostek:
@@ -14149,6 +14181,9 @@ body.mode-phone-frame #phone {
     const padRight = isDualAxis ? (secHasLongUnit ? 56 : 38) : 14;
     const padTop = 16, padBottom = 24;
     const plotW = w - padLeft - padRight, plotH = h - padTop - padBottom;
+    const xForRow = (row, idx) => windowGeom.timeBased
+      ? padLeft + ((row.ts - windowGeom.viewStartMs) / windowGeom.visibleSpanMs) * plotW
+      : padLeft + (idx / Math.max(1, visibleRows.length - 1)) * plotW;
 
     // Filter glitches and collect cleaned values for active series
     const cleanedValuesMap = new Map();
@@ -14331,16 +14366,19 @@ body.mode-phone-frame #phone {
     }
 
     g.textAlign = 'center';
-    const xSteps = Math.min(5, visibleRows.length);
+    const spanMs = windowGeom.timeBased
+      ? windowGeom.visibleSpanMs
+      : visibleRows[visibleRows.length - 1].ts - visibleRows[0].ts;
+    const xSteps = windowGeom.timeBased ? 5 : Math.min(5, visibleRows.length);
     for (let i = 0; i < xSteps; i++) {
-      const idx = Math.round((visibleRows.length - 1) * (i / (xSteps - 1)));
-      const xPos = padLeft + (plotW / Math.max(1, visibleRows.length - 1)) * idx;
-      const d = new Date(visibleRows[idx].ts);
-      // [FIX-OX-OS] W zakresie 7d/30d przy mocnym przyblizeniu wszystkie 5
-      // etykiet byly IDENTYCZNE (piec razy '26.09' — zrzut 2026-10-05).
-      // Format dobieramy do FAKTYCZNEJ rozpietosci widocznego okna:
-      // <2 h -> HH:MM:SS, <48 h -> DD.MM HH:MM, wiecej -> DD.MM.
-      const spanMs = visibleRows.length > 1 ? (visibleRows[visibleRows.length - 1].ts - visibleRows[0].ts) : 0;
+      const fraction = i / (xSteps - 1);
+      const idx = Math.round((visibleRows.length - 1) * fraction);
+      const xPos = padLeft + plotW * fraction;
+      const d = new Date(windowGeom.timeBased
+        ? windowGeom.viewStartMs + fraction * windowGeom.visibleSpanMs
+        : visibleRows[idx].ts);
+      // Firebase: stałe ticki czasu rzeczywistego; ESP lokalny zachowuje
+      // dotychczasową siatkę indeksową, będącą wzorcem po lewej stronie.
       const lbl = spanMs < 2 * 3600000
         ? pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds())
         : spanMs < 48 * 3600000
@@ -14364,7 +14402,7 @@ body.mode-phone-frame #phone {
       visibleRows.forEach((r, idx) => {
         let v = seriesVals[idx];
         if (typeof v === 'number' && !isNaN(v) && isFinite(v)) {
-          const x = padLeft + (idx / Math.max(1, visibleRows.length - 1)) * plotW;
+          const x = xForRow(r, idx);
           let y;
 
           if (s.group === 'pump') {
@@ -14486,7 +14524,7 @@ body.mode-phone-frame #phone {
     g.rect(padLeft, padTop, Math.max(0, plotW), Math.max(0, plotH));
     g.clip();
     if (chartCrosshairIdx !== null && chartCrosshairIdx >= 0 && chartCrosshairIdx < visibleRows.length) {
-      const xCross = padLeft + (chartCrosshairIdx / Math.max(1, visibleRows.length - 1)) * plotW;
+      const xCross = xForRow(visibleRows[chartCrosshairIdx], chartCrosshairIdx);
       g.setLineDash([3, 3]);
       g.strokeStyle = 'rgba(0,212,245,0.7)';
       g.lineWidth = 1.2;
@@ -14557,32 +14595,73 @@ body.mode-phone-frame #phone {
   // Kotwica w focusFrac (0..1 plotu); okno 1:1 z updateChartCanvas:
   // startIdx = maxStart * (1 - chartOffset).
   function pinchZoomChartBy(factor, focusFrac) {
-    const total = chartDataset.length;
-    if (total < 5 || !isFinite(factor) || factor <= 0) return;
+    if (!isFinite(factor) || factor <= 0) return;
     const f = Math.max(0, Math.min(1, focusFrac));
-    const vis = Math.max(4, Math.round(total / Math.max(chartZoom, 0.01)));
-    const maxStart = Math.max(0, total - vis);
-    const start = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
-    const anchor = start + f * Math.max(1, vis - 1);
     const z2 = Math.max(1.0, Math.min(16.0, chartZoom * factor));
-    const vis2 = Math.max(4, Math.round(total / Math.max(z2, 0.01)));
-    const maxStart2 = Math.max(0, total - vis2);
-    const start2 = Math.max(0, Math.min(maxStart2, Math.round(anchor - f * Math.max(1, vis2 - 1))));
-    chartZoom = z2;
-    chartOffset = maxStart2 > 0 ? 1 - start2 / maxStart2 : 1;
+    const g = chartWindowGeom();
+    if (g.timeBased) {
+      const anchorMs = g.viewStartMs + f * g.visibleSpanMs;
+      const span2 = g.domainSpanMs / z2;
+      const maxStart2 = Math.max(0, g.domainSpanMs - span2);
+      const start2 = Math.max(g.domainStartMs, Math.min(g.domainEndMs - span2, anchorMs - f * span2));
+      chartZoom = z2;
+      chartOffset = maxStart2 > 0 ? 1 - (start2 - g.domainStartMs) / maxStart2 : 1;
+    } else {
+      const total = chartDataset.length;
+      if (total < 5) return;
+      const vis = Math.max(4, Math.round(total / Math.max(chartZoom, 0.01)));
+      const maxStart = Math.max(0, total - vis);
+      const start = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
+      const anchor = start + f * Math.max(1, vis - 1);
+      const vis2 = Math.max(4, Math.round(total / Math.max(z2, 0.01)));
+      const maxStart2 = Math.max(0, total - vis2);
+      const start2 = Math.max(0, Math.min(maxStart2, Math.round(anchor - f * Math.max(1, vis2 - 1))));
+      chartZoom = z2;
+      chartOffset = maxStart2 > 0 ? 1 - start2 / maxStart2 : 1;
+    }
     const zs = $('#chartZoomStat'); if (zs) zs.textContent = chartZoom.toFixed(1) + '×';
   }
 
   function chartWindowGeom() {
     const total = chartDataset.length;
+    if (chartUsesEpochX) {
+      let domainStartMs = chartRangeStartMs;
+      let domainEndMs = chartRangeEndMs;
+      if ((!domainStartMs || !domainEndMs) && total) {
+        domainStartMs = chartDataset[0].ts;
+        domainEndMs = chartDataset[total - 1].ts;
+      }
+      if (!Number.isFinite(domainStartMs)) domainStartMs = 0;
+      if (!Number.isFinite(domainEndMs) || domainEndMs <= domainStartMs) domainEndMs = domainStartMs + 1;
+      const domainSpanMs = Math.max(1, domainEndMs - domainStartMs);
+      const zoom = Math.max(1, Math.min(16, chartZoom));
+      const visibleSpanMs = domainSpanMs / zoom;
+      const maxStartMs = Math.max(0, domainSpanMs - visibleSpanMs);
+      const positionFraction = Math.max(0, Math.min(1, 1 - chartOffset));
+      const viewStartMs = domainStartMs + maxStartMs * positionFraction;
+      const viewEndMs = viewStartMs + visibleSpanMs;
+      const rows = chartDataset.filter(row => row.ts >= viewStartMs && row.ts <= viewEndMs);
+      return {
+        timeBased: true, rows, domainStartMs, domainEndMs, domainSpanMs,
+        visibleSpanMs, maxStartMs, viewStartMs, viewEndMs,
+        startFraction: (viewStartMs - domainStartMs) / domainSpanMs,
+        visibleFraction: visibleSpanMs / domainSpanMs
+      };
+    }
+
     const vis = Math.max(4, Math.round(total / Math.max(chartZoom, 0.01)));
     const maxStart = Math.max(0, total - vis);
     const start = Math.max(0, Math.min(maxStart, Math.round(maxStart * (1 - chartOffset))));
-    return { start, end: Math.min(total, start + vis), total, maxStart, vis };
+    const end = Math.min(total, start + vis);
+    return { timeBased: false, rows: chartDataset.slice(start, end), start, end, total, maxStart, vis };
   }
 
   function seekChartStartTo(startF) {
     const g = chartWindowGeom();
+    if (g.timeBased) {
+      chartOffset = 1 - Math.max(0, Math.min(1, startF));
+      return;
+    }
     if (g.total < 5 || g.maxStart <= 0) return;
     chartOffset = 1 - Math.max(0, Math.min(g.maxStart, startF)) / g.maxStart;
   }
@@ -14593,10 +14672,12 @@ body.mode-phone-frame #phone {
       const thumb = $(th), track = $(tr);
       if (!thumb || !track) return;
       const W = track.clientWidth - 12;
-      if (W <= 0 || g.total < 2) { thumb.style.display = 'none'; return; }
+      if (W <= 0 || (!g.timeBased && g.total < 2)) { thumb.style.display = 'none'; return; }
       thumb.style.display = '';
-      const w = Math.max(22, W * (g.end - g.start) / g.total);
-      const x = 6 + Math.min(W - w, Math.max(0, W * g.start / g.total));
+      const visibleFraction = g.timeBased ? g.visibleFraction : (g.end - g.start) / g.total;
+      const startFraction = g.timeBased ? g.startFraction : g.start / g.total;
+      const w = Math.max(22, W * visibleFraction);
+      const x = 6 + Math.min(W - w, Math.max(0, W * startFraction));
       thumb.style.width = w + 'px';
       thumb.style.left = x + 'px';
     });
@@ -14613,7 +14694,8 @@ body.mode-phone-frame #phone {
     };
     const jump = e => {
       const g = chartWindowGeom();
-      seekChartStartTo(fracAt(e) * g.total - g.vis / 2);
+      if (g.timeBased) seekChartStartTo(fracAt(e) - g.visibleFraction / 2);
+      else seekChartStartTo(fracAt(e) * g.total - g.vis / 2);
       updateChartCanvas();
     };
     track.addEventListener('pointerdown', e => {
@@ -14769,8 +14851,25 @@ body.mode-phone-frame #phone {
       const plotW = rect.width - padLeft - padRight;
       const xInPlot = e.clientX - rect.left - padLeft;
       const ratio = Math.max(0, Math.min(1, xInPlot / plotW));
-      const visibleCount = Math.max(4, Math.round(chartDataset.length / chartZoom));
-      chartCrosshairIdx = Math.round(ratio * (visibleCount - 1));
+      const geom = chartWindowGeom();
+      if (geom.timeBased) {
+        const targetTs = geom.viewStartMs + ratio * geom.visibleSpanMs;
+        const rows = geom.rows;
+        if (!rows.length) chartCrosshairIdx = null;
+        else {
+          let lo = 0, hi = rows.length - 1;
+          while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (rows[mid].ts < targetTs) lo = mid + 1;
+            else hi = mid;
+          }
+          if (lo > 0 && Math.abs(rows[lo - 1].ts - targetTs) <= Math.abs(rows[lo].ts - targetTs)) lo--;
+          chartCrosshairIdx = lo;
+        }
+      } else {
+        const visibleCount = Math.max(4, Math.round(chartDataset.length / chartZoom));
+        chartCrosshairIdx = Math.round(ratio * (visibleCount - 1));
+      }
       chartCrosshairPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     }
   }
@@ -16123,11 +16222,12 @@ body.mode-phone-frame #phone {
           if (!document.hidden) pollFirebase();
         }, 4000);
 
-        // Archiwum ESP zapisuje próbki co minutę; odświeżaj wykres lokalnie
-        // tylko wtedy, gdy użytkownik ma otwartą zakładkę Wykresy.
+        // Archiwum zapisuje próbki co minutę. ESP odświeżamy z lokalnego API;
+        // Firebase doczytuje wyłącznie nowy koniec archiwum, nigdy status live.
         chartHistoryIntervalId = setInterval(async () => {
           if (document.hidden || currentPage !== 1) return;
           if (await isEspLocalChartPage()) loadTelemetryRange(activeRangeSec);
+          else refreshFirebaseChartTail();
         }, 60 * 1000);
 
         // Pogoda co 15 minut

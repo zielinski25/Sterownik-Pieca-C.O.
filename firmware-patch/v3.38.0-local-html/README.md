@@ -1,31 +1,44 @@
-# ESP-local charts — base v3.38.0, output v3.44.0
+# Wykresy lokalne i Firebase — baza v3.38.0, źródło v3.45.0
 
-This patch makes the ESP **Wykresy** tab read its history from the controller's own PSRAM/LittleFS archive. The page remains shared with `Piec.html`; the main-checkout `Cenatrala Pieca.zip` is not modified.
+Ta łatka zachowuje wykres ESP korzystający wyłącznie z lokalnego archiwum centrali i naprawia osobną ścieżkę wykresu Firebase. `Piec.html` jest osadzony w przygotowanym CPP. Głównego `Cenatrala Pieca.zip` w katalogu repozytorium nie zmieniamy.
 
-## Local chart behavior
+## Zachowanie wykresu ESP (bez zmiany źródła lokalnego)
 
-- **6 h / 24 h:** fetch `GET /api/history` (the controller's 60-second ring, persisted in `/hist_short.csv`).
-- **7 days / 30 days:** fetch `GET /api/history/long` plus the latest 24 hours from `/api/history`; merge and filter both by the selected time window. The long history is the controller's local event archive (up to 8,000 entries), not a Firebase shard.
-- On an ESP-served page, the available historical series, pump indicator, refresh button, and periodic refresh use these local CSV endpoints. Firebase chart-history requests and Firebase live-point appends are bypassed while Wykresy is open. A local API error is shown as an error; the chart does **not** fall back to Firebase.
-- Existing local CSV data includes temperatures, servo positions, pressure, humidity, and the short-range pump state. The existing archive does not record `t_trociny` or `dym`, so those optional series have no local historical points; they are not substituted with cloud values.
-- The long CSV keeps its original first 35 columns and appends a 36th pump-state column (`0`/`1`). The firmware reader remains compatible with old 35-column files; historic rows without a pump value stay unknown (`-1`), never falsely STOP.
+- **6 h / 24 h:** pobieranie `GET /api/history` (lokalny bufor minutowy zapisany w `/hist_short.csv`).
+- **7 dni / 30 dni:** pobieranie `GET /api/history/long` oraz łączenie z ostatnimi 24 h z `/api/history`.
+- Na stronie serwowanej przez ESP wykres, jego próbki, pompa i odświeżanie nadal pochodzą wyłącznie z lokalnych endpointów. Błąd lokalnego API nie uruchamia fallbacku Firebase.
+- Istniejące lokalne archiwum nie zapisuje `t_trociny` ani `dym`; te opcjonalne serie pozostają bez lokalnej historii.
+- Lokalna ścieżka i jej rozmieszczanie próbek pozostają wzorcem i nie korzystają z danych statusowych Firebase.
 
-The source-reported firmware version advances from **v3.43.0** to **v3.44.0**. No heater-control, smoke-alarm, servo, or pump-control algorithm was changed. No firmware build or flash was performed.
+## Naprawiona ścieżka wykresu Firebase
 
-## Apply
+- Wykres dodaje wyłącznie rekordy zapisane w archiwum RTDB, używając ich `ts`. Odpytanie `/piec/status` co 4 s aktualizuje bieżący panel, ale nie tworzy historycznego punktu wykresu.
+- Oś X, ticki, powiększanie, przewijanie i crosshair po stronie Firebase odnoszą się do czasu próbek, a nie do ich indeksu w tablicy.
+- Zakres `od–do` jest ustawiany na granicach minutowych. Wyświetlany opis pokazuje granice aktywnego okna.
+- Co minutę strona doczytuje tylko końcówkę archiwum z krótkim nakładaniem, a rekordy łączy i deduplikuje po ID (z fallbackiem `ts + seq`). Nie pobiera ponownie całego zakresu 7/30 dni.
+- Konwersja serw do procentów zachowuje wartości ułamkowe jak parser lokalnego CSV, a dolne granice `t_panel` i `t_trociny` odpowiadają zakresom wspólnego filtra wykresu.
 
-The patch is against the v3.38.0 source at `src/main_centrala.cpp`. In a separate copy of that source tree, verify and apply:
+Dla porównania 6 h / 24 h wybierz te same serie i ustaw ten sam zakres. Lokalne i Firebase-owe archiwa minutowe mogą różnić się dostępnością pojedynczych zapisów. Dla 7/30 dni dokładna zgodność rozdzielczości nie jest gwarantowana: lokalne długie archiwum jest zdarzeniowe, a RTDB zapisuje próbki minutowe. Porównanie wymaga też takich samych filtrów i ustawień osi.
+
+## Wersja i bezpieczeństwo zmian
+
+Źródłowe `FIRMWARE_VERSION` przechodzi z **v3.44.0** na **v3.45.0**. Nie zmieniano algorytmu sterowania piecem, serw, dymu ani pompy. Nie wykonano kompilacji firmware, flashowania ani poleceń do urządzenia. Główny ZIP firmware w checkoutcie nie jest częścią tej łatki.
+
+## Zastosowanie
+
+Łatka skumulowana jest względem bazowego `src/main_centrala.cpp` v3.38.0. W osobnej kopii tej bazy sprawdź i zastosuj:
 
 ```sh
 patch --dry-run -p1 < /path/to/v3.38.0-local-html/main_centrala.cpp.patch
 patch -p1 < /path/to/v3.38.0-local-html/main_centrala.cpp.patch
 ```
 
-Do not apply the patch to the modified `Cenatrala Pieca.zip` in the main checkout. Firmware build, flashing, and any OTA release are separate operations.
+Nie stosuj jej do zmodyfikowanego `Cenatrala Pieca.zip` w głównym checkoutcie. Budowanie, instalacja i ewentualne OTA są osobnymi działaniami.
 
-## Verification
+## Weryfikacja
 
-- The `WIFI_LOCAL_PANEL_HTML` raw string was refreshed from the current `Piec.html` and byte-compared.
-- Inline JavaScript syntax and local short/long CSV parsing were checked with Node.js, including backward-compatible 35-column history and the new optional pump column.
-- The cumulative patch was dry-run/applied against the v3.38.0 source and reproduced the prepared v3.44.0 source byte-for-byte.
-- No firmware build, upload, flash, or heater command was run.
+- JavaScript strony sprawdzony parserem Node.js.
+- Testy regresyjne sprawdzają: brak tworzenia punktów z pollingu statusu, deduplikację archiwum, przyrostowe doczytywanie, pozycję X opartą o `ts` oraz niezależną ścieżkę lokalną.
+- `WIFI_LOCAL_PANEL_HTML` jest porównywany bajt w bajt z aktualnym `Piec.html`.
+- Skumulowaną łatkę sprawdzono przez dry-run i zastosowanie do śledzonej bazy v3.38.0; wynik odtwarza przygotowany CPP.
+- Nie wykonano `pio run`, uploadu, flashowania ani komend sterujących piecem.
