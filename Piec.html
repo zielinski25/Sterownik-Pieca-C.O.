@@ -501,6 +501,13 @@ body.mode-phone-frame #phone {
 .h-stat .val.warn { color: var(--warn); }
 .h-stat .val.err { color: var(--err); }
 
+.servo-ignition-panel { display: none; flex-direction: column; gap: 5px; margin-top: 8px; }
+.servo-ignition-panel.on { display: flex; }
+.servo-ignition-panel .ust-btn { width: 100%; }
+.servo-ignition-panel .ust-btn:disabled { opacity: .48; cursor: not-allowed; }
+.servo-ignition-note { padding: 0 4px; font-size: 8.5px; line-height: 1.4; text-align: center; color: var(--text-dim); }
+.servo-ignition-note.active { color: var(--cyan); }
+
 /* ───── SZYBKIE KARTY (QUICK) — CZYTELNY UKŁAD PIONOWY ───── */
 .quick {
   display: grid;
@@ -1760,6 +1767,31 @@ body.mode-phone-frame #phone {
 .manual { display: none; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); margin-top: 4px; }
 .manual.on { display: block; }
 .manual h4 { font-size: 11.5px; font-weight: 700; padding: 10px 0 6px; }
+.servo-position-card {
+  margin: 8px 0 10px;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(8, 20, 33, .55);
+  border: 1px solid var(--border);
+}
+.servo-position-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.servo-position-head b { min-width: 0; font-size: 9px; font-weight: 800; color: var(--text-dim); letter-spacing: .07em; }
+.servo-position-state { flex: 0 0 auto; padding: 3px 7px; border-radius: 999px; font-size: 7px; font-weight: 800; letter-spacing: .04em; }
+.servo-position-state.live { color: var(--live); background: rgba(74, 222, 128, .1); border: 1px solid rgba(74, 222, 128, .35); }
+.servo-position-state.stale { color: var(--warn); background: rgba(251, 191, 36, .1); border: 1px solid rgba(251, 191, 36, .35); }
+.servo-position-state.unknown { color: var(--text-dim); background: rgba(255, 255, 255, .04); border: 1px solid var(--border); }
+.servo-position-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.servo-position-item { min-width: 0; padding: 8px; border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); }
+.servo-position-item .name { display: block; font-size: 8px; font-weight: 800; color: var(--text-dim); }
+.servo-position-item .values { display: flex; align-items: baseline; gap: 7px; min-width: 0; margin-top: 3px; }
+.servo-position-item .angle { font-size: 16px; line-height: 1.1; font-weight: 800; color: var(--cyan); font-variant-numeric: tabular-nums; }
+.servo-position-item .percent { font-size: 8.5px; font-weight: 700; color: var(--live); font-variant-numeric: tabular-nums; }
+.servo-position-item.stale .angle, .servo-position-item.stale .percent { color: var(--warn); }
+.servo-position-item.unknown .angle, .servo-position-item.unknown .percent { color: var(--text-dim); }
+.servo-position-track { height: 4px; margin-top: 6px; overflow: hidden; border-radius: 4px; background: rgba(255, 255, 255, .08); }
+.servo-position-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--cyan); transition: width .25s ease; }
+.servo-position-item[data-position="syberka"] .servo-position-track i { background: var(--live); }
+.servo-position-item.stale .servo-position-track i { opacity: .65; }
 .bigtime { font-size: 20px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
 
 /* ───── PANELE STRATEGII POMPY (TROCINIAK / KOPCIUCH) ───── */
@@ -3170,6 +3202,11 @@ body.mode-phone-frame #phone {
         </div>
       </div>
 
+      <div class="servo-ignition-panel" id="servoIgnitionPanel" aria-live="polite">
+        <button type="button" class="ust-btn primary" id="servoIgnitionButton" disabled>🔥 Rozpalanie</button>
+        <div class="servo-ignition-note" id="servoIgnitionNote"></div>
+      </div>
+
       <div class="quick">
         <div class="qcard" id="qPompa">
           <div class="qcard-top"><span class="title">POMPA</span><div class="ic" style="color:var(--cyan)" data-ico="pump"></div></div>
@@ -3264,7 +3301,7 @@ body.mode-phone-frame #phone {
 
         <div class="chart-inspector">
           <span class="tag">INSPEKTOR</span>
-          <span class="val" id="chartInspectorVal">Dotknij wykresu / najedź kursorem</span>
+          <span class="val" id="chartInspectorVal">Najedź, kliknij lub dotknij wykresu, aby odczytać próbkę</span>
         </div>
 
         <div class="chart-kpi-rail">
@@ -3283,7 +3320,7 @@ body.mode-phone-frame #phone {
 
       <div class="chart-hint">
         <span data-ico="info" style="width:14px;height:14px;display:inline-flex"></span>
-        <span>kursor = dymek z odczytem • gest/kółko = zoom • przeciągnij = oś czasu • 2× klik = reset • linia ciągła = odczyt rzeczywisty • kreskowany = odcinek dotykający próbki symulowanej</span>
+        <span>najedź/dotknij = odczyt • przeciągnij poziomo = oś czasu • szczypnięcie/kółko = zoom • 2× klik/dotknij = reset • linia ciągła = odczyt rzeczywisty • kreskowana = próbka symulowana</span>
       </div>
     </section>
 
@@ -3509,7 +3546,7 @@ body.mode-phone-frame #phone {
         <canvas id="chartFsCanvas"></canvas>
       </div>
       <div class="chscroll" id="chartFsScrollbar"><div class="chscroll-track"></div><div class="chscroll-thumb" id="chartFsScrollbarThumb"></div></div>
-      <div style="font-size:8px;color:var(--text-dim2);text-align:center;padding-top:4px">DOTKNIJ kursor • SZCZYP / KÓŁKO zoom • PASEK / PRZECIĄGNIJ oś czasu • 2× KLIK reset</div>
+      <div style="font-size:8px;color:var(--text-dim2);text-align:center;padding-top:4px">DOTKNIJ odczyt • PRZECIĄGNIJ poziomo oś czasu • SZCZYP / KÓŁKO zoom • PASEK oś czasu • 2× KLIK/DOTKNIJ reset</div>
     </div>
   </div>
 
@@ -4124,6 +4161,7 @@ body.mode-phone-frame #phone {
     cisnienie: NaN, wilgotnosc: NaN, dym: NaN,
     dym_wlaczony: false, dym_swiezy: false, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
     pompa: false, mieszadlo: false, rozpalanie: false,
+    rozpalanie_serwa_aktywne: false, rozpalanie_serwa_dostepne: false, rozpalanie_serwa_blokada_dymu: false,
     tryb_serwa: 0, trybSerwa: 0, klapa: NaN, syberka: NaN,
     wybor: 0, pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
     rtc_ok: false, dzien: 0, miesiac: 0, rok: 0,
@@ -4421,6 +4459,42 @@ body.mode-phone-frame #phone {
     const anyAlarm = (hasData('dym_alarm') && S.dym_alarm) ||
       (hasData('alarm_ogrzewanie') && S.alarm_ogrzewanie) ||
       (hasData('alarm_panel') && S.alarm_panel);
+
+    const ignitionPanel = $('#servoIgnitionPanel');
+    if (ignitionPanel) {
+      const ignitionAvailable = hasData('rozpalanie_serwa_dostepne') && S.rozpalanie_serwa_dostepne;
+      const ignitionActive = hasData('rozpalanie_serwa_aktywne') && S.rozpalanie_serwa_aktywne;
+      const smokeBlocked = hasData('rozpalanie_serwa_blokada_dymu') && S.rozpalanie_serwa_blokada_dymu;
+      const freshStatus = !_isDemoMode && _isFirebaseConnected && Date.now() - _lastFirebaseFetch < 20000;
+      const tempKnown = hasData('t_ogrz') && Number.isFinite(to);
+      const controlsReady = freshStatus && S.online && tempKnown && alarmKnown;
+      const canIgnite = ignitionAvailable && controlsReady && !anyAlarm;
+      ignitionPanel.classList.toggle('on', ignitionAvailable);
+      const button = $('#servoIgnitionButton');
+      if (button) {
+        button.disabled = !canIgnite;
+        button.textContent = ignitionActive ? '🔥 Rozpalanie aktywne' : '🔥 Rozpalanie';
+        button.setAttribute('aria-pressed', String(ignitionActive));
+      }
+      const ignitionNote = $('#servoIgnitionNote');
+      if (ignitionNote) {
+        ignitionNote.className = 'servo-ignition-note' + (ignitionActive ? ' active' : '');
+        ignitionNote.textContent = !freshStatus || !alarmKnown
+          ? 'Oczekiwanie na świeży status i potwierdzenie braku alarmów bezpieczeństwa.'
+          : !S.online
+            ? 'Centrala jest offline — polecenie rozpalania jest zablokowane.'
+            : !tempKnown
+              ? 'Brak prawidłowego odczytu temperatury pieca — rozpalanie jest zablokowane.'
+              : anyAlarm
+                ? 'Rozpalanie zablokowane podczas aktywnego alarmu bezpieczeństwa.'
+                : smokeBlocked
+                  ? 'Po alarmie dymu wymagane jest ponowne kliknięcie; klapa nie otworzy się automatycznie.'
+                  : ignitionActive
+                    ? 'Aktywne do przekroczenia 30°C. Kliknięcie odnawia pięciominutowy nadzór dymu.'
+                    : 'Serwa są przygotowywane sekwencyjnie: najpierw syberek, potem klapa.';
+      }
+    }
+
     const localSimSuffix = !_isDemoMode && Object.keys(S.sym).length ? ' · SYMULACJA STEROWNIKA' : '';
     const connectionLabel = _isDemoMode ? '🧪 SYMULACJA' : !_isFirebaseConnected ? '○ BRAK SESJI' + localSimSuffix :
       Date.now() - _lastFirebaseFetch >= 20000 ? '○ DANE NIEAKTUALNE' + localSimSuffix :
@@ -4779,8 +4853,9 @@ body.mode-phone-frame #phone {
 
     const flagKeys = [
       'online', 'night', 'dym_wlaczony', 'dym_swiezy', 'dym_alarm', 'alarm_ogrzewanie',
-      'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie', 'antystopWlaczony',
-      'mieszadloWlaczony', 'rtc_ok'
+      'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie',
+      'rozpalanie_serwa_aktywne', 'rozpalanie_serwa_dostepne', 'rozpalanie_serwa_blokada_dymu',
+      'antystopWlaczony', 'mieszadloWlaczony', 'rtc_ok'
     ];
     flagKeys.forEach(key => {
       const raw = d[key];
@@ -4811,7 +4886,7 @@ body.mode-phone-frame #phone {
 
     // Brak pola online: wywnioskuj dostępność wyłącznie z poprawnie odebranych pól.
     S.online = receivedFields.has('online') ? S.online :
-      ['t_ogrz', 't_bojler', 't_zewn', 't_panel', 't_pokoj', 'cisnienie', 'wilgotnosc', 'dym', 'pompa', 'mieszadlo', 'tryb_serwa', 'klapa', 'syberka', 'ip', 'fw', 'wifi_rssi'].some(key => receivedFields.has(key));
+      ['t_ogrz', 't_bojler', 't_zewn', 't_panel', 't_pokoj', 'cisnienie', 'wilgotnosc', 'dym', 'pompa', 'mieszadlo', 'rozpalanie_serwa_dostepne', 'tryb_serwa', 'klapa', 'syberka', 'ip', 'fw', 'wifi_rssi'].some(key => receivedFields.has(key));
 
     const realMiniReady = ['t_ogrz', 't_bojler', 't_zewn'].every(key => receivedFields.has(key) && Number.isFinite(real[key])) &&
       !['ogrz', 'bojler', 'zewn'].some(symAktywna);
@@ -4988,6 +5063,7 @@ body.mode-phone-frame #phone {
       t_powrot: 44.2, t_trociny: 31.0, cisnienie: 1009, wilgotnosc: 54, dym: 412,
       dym_wlaczony: true, dym_swiezy: true, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
       pompa: true, mieszadlo: false, rozpalanie: false,
+      rozpalanie_serwa_aktywne: false, rozpalanie_serwa_dostepne: false, rozpalanie_serwa_blokada_dymu: false,
       tryb_serwa: 1, trybSerwa: 1, klapa: 81, syberka: 27, wybor: 3,
       pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
       rtc_ok: true, dzien: new Date().getDate(), miesiac: new Date().getMonth() + 1, rok: new Date().getFullYear(),
@@ -5900,7 +5976,51 @@ body.mode-phone-frame #phone {
     }),
 
     serwo: () => showSheet('Serwo', 'servo', () => {
-      const b = h('div'); b.appendChild(note('Tryb pracy klapy i syberka'));
+      const b = h('div');
+      const positionCard = h('div', 'servo-position-card', `
+        <div class="servo-position-head">
+          <b>BIEŻĄCA POZYCJA SERW</b>
+          <span class="servo-position-state unknown" data-position-state>BRAK ODCZYTU</span>
+        </div>
+        <div class="servo-position-grid">
+          <div class="servo-position-item unknown" data-position="klapa">
+            <span class="name">KLAPA</span>
+            <div class="values"><b class="angle" data-angle>—</b><span class="percent" data-percent>brak odczytu</span></div>
+            <div class="servo-position-track"><i data-progress></i></div>
+          </div>
+          <div class="servo-position-item unknown" data-position="syberka">
+            <span class="name">SYBEREK</span>
+            <div class="values"><b class="angle" data-angle>—</b><span class="percent" data-percent>brak odczytu</span></div>
+            <div class="servo-position-track"><i data-progress></i></div>
+          </div>
+        </div>`);
+      b.appendChild(live$(positionCard, el => {
+        const flapKnown = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180;
+        const damperKnown = hasData('syberka') && Number.isInteger(S.syberka) && S.syberka >= 0 && S.syberka <= 90;
+        const anyPosition = flapKnown || damperKnown;
+        const freshPosition = !_isDemoMode && _isFirebaseConnected && S.online && _lastFirebaseFetch > 0 && Date.now() - _lastFirebaseFetch < 20000;
+        const state = $('[data-position-state]', el);
+        if (state) {
+          state.textContent = !anyPosition ? 'BRAK ODCZYTU' : _isDemoMode ? 'SYMULACJA' : freshPosition ? 'NA ŻYWO' : 'NIEAKTUALNE';
+          state.className = 'servo-position-state ' + (!anyPosition ? 'unknown' : freshPosition && !_isDemoMode ? 'live' : 'stale');
+        }
+        const updatePosition = (key, known, angle, maximum) => {
+          const item = $('.servo-position-item[data-position="' + key + '"]', el);
+          if (!item) return;
+          const percent = known ? Math.round(angle * 100 / maximum) : null;
+          item.classList.toggle('unknown', !known);
+          item.classList.toggle('stale', known && !_isDemoMode && !freshPosition);
+          const angleEl = $('.angle', item);
+          const percentEl = $('.percent', item);
+          const progressEl = $('[data-progress]', item);
+          if (angleEl) angleEl.textContent = known ? angle + '°' : '—';
+          if (percentEl) percentEl.textContent = known ? percent + '%' : 'brak odczytu';
+          if (progressEl) progressEl.style.width = known ? percent + '%' : '0%';
+        };
+        updatePosition('klapa', flapKnown, S.klapa, 180);
+        updatePosition('syberka', damperKnown, S.syberka, 90);
+      }));
+      b.appendChild(note('Tryb pracy klapy i syberka'));
 
       const servoModeKnown = hasData('tryb_serwa') && Number.isInteger(S.tryb_serwa) && S.tryb_serwa >= 1 && S.tryb_serwa <= 3;
       const flapPositionKnown = hasData('klapa') && Number.isInteger(S.klapa) && S.klapa >= 0 && S.klapa <= 180;
@@ -8290,9 +8410,8 @@ body.mode-phone-frame #phone {
         }).join('<br>');
         tooltip.innerHTML = `<b>${timeStr}</b><br>` + lines;
         tooltip.classList.add('on');
-        const posX = Math.min(w - 120, Math.max(10, xCross - 40));
-        tooltip.style.left = posX + 'px';
-        tooltip.style.top = '10px';
+        tooltip.style.left = '8px';
+        tooltip.style.top = '8px';
       }
     } else {
       clearChartInspection();
@@ -8377,7 +8496,9 @@ body.mode-phone-frame #phone {
   function initChartInteractivity() {
     function bindWrap(wrap, targetCanvas) {
       if (!wrap) return;
-      let isDown = false, startX = 0, initialOffset = 1.0;
+      let isDown = false, startX = 0, startY = 0, initialOffset = 1.0;
+      let gestureMode = 'none', activePointerType = 'mouse';
+      let lastTapTs = 0, lastTapX = 0, lastTapY = 0;
       let rafChartPending = false;
       const pointers = new Map();
       let pinchD0 = 0;
@@ -8394,25 +8515,34 @@ body.mode-phone-frame #phone {
         if (p.length < 2) return 0;
         return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
       }
+      function resetChartGestureView() {
+        chartZoom = 1.0; chartOffset = 1.0; chartCrosshairIdx = null; chartCrosshairPos = null;
+        const zs = $('#chartZoomStat'); if (zs) zs.textContent = '1×';
+        scheduleChartRedraw();
+      }
 
       wrap.addEventListener('pointerdown', e => {
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size >= 2) {
-          // drugi palec: koniec pana, poczatek szczypania
+          // Drugi palec przełącza gest w pinch; zachowaj wybrany inspektor.
           isDown = false;
+          gestureMode = 'pinch';
           pinchD0 = pinchDist();
-          chartCrosshairIdx = null; chartCrosshairPos = null;
         } else {
-          isDown = true; startX = e.clientX; initialOffset = chartOffset;
+          isDown = true;
+          gestureMode = 'pending';
+          activePointerType = e.pointerType || 'mouse';
+          startX = e.clientX; startY = e.clientY; initialOffset = chartOffset;
           try { wrap.setPointerCapture(e.pointerId); } catch (ex) {}
-          handlePointerCrosshair(e, targetCanvas, wrap);
         }
       });
       wrap.addEventListener('pointermove', e => {
         if (!pointers.has(e.pointerId)) {
-          // hover bez dotyku (mysz): sam crosshair, jak dawniej
-          handlePointerCrosshair(e, targetCanvas, wrap);
-          scheduleChartRedraw();
+          // Myszka aktualizuje inspektor po najechaniu; dotyk wybiera próbkę tapnięciem.
+          if (e.pointerType === 'mouse') {
+            handlePointerCrosshair(e, targetCanvas, wrap);
+            scheduleChartRedraw();
+          }
           return;
         }
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -8428,24 +8558,47 @@ body.mode-phone-frame #phone {
           scheduleChartRedraw();
           return;
         }
-        if (isDown) {
-          const dx = e.clientX - startX;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        const slop = activePointerType === 'mouse' ? 4 : 9;
+        if (gestureMode === 'pending' && (Math.abs(dx) > slop || Math.abs(dy) > slop)) {
+          gestureMode = Math.abs(dx) > Math.abs(dy) ? 'pan' : 'scroll';
+        }
+        if (gestureMode === 'pan' && isDown) {
           const sensitivity = 0.003 / chartZoom;
           chartOffset = Math.max(0, Math.min(1.0, initialOffset + dx * sensitivity));
-          const zs = $('#chartZoomStat'); if (zs) zs.textContent = chartZoom.toFixed(1) + '×';
         }
-        handlePointerCrosshair(e, targetCanvas, wrap);
+        // Po przekroczeniu touch-slop drag jest wyłącznie panem/scrollowaniem,
+        // tak jak w Androidzie; aktywny celownik nie podąża za palcem.
         scheduleChartRedraw();
       });
       const endPointer = e => {
+        const primary = pointers.size === 1 && pointers.has(e.pointerId);
+        if (e.type === 'pointerup' && primary && gestureMode === 'pending') {
+          const now = Date.now();
+          const slop = activePointerType === 'mouse' ? 4 : 9;
+          const isDoubleTap = lastTapTs && now - lastTapTs <= 300 &&
+            Math.abs(e.clientX - lastTapX) < slop * 2 && Math.abs(e.clientY - lastTapY) < slop * 2;
+          if (isDoubleTap) {
+            lastTapTs = 0;
+            resetChartGestureView();
+          } else {
+            handlePointerCrosshair(e, targetCanvas, wrap);
+            lastTapTs = now; lastTapX = e.clientX; lastTapY = e.clientY;
+            scheduleChartRedraw();
+          }
+        } else if (primary || e.type === 'pointercancel') {
+          // Android clears the double-tap candidate after a drag/scroll/pinch.
+          lastTapTs = 0;
+        }
         pointers.delete(e.pointerId);
         if (pointers.size < 2) pinchD0 = 0;
-        if (pointers.size === 0) isDown = false;
+        if (pointers.size === 0) { isDown = false; gestureMode = 'none'; }
       };
       wrap.addEventListener('pointerup', endPointer);
       wrap.addEventListener('pointercancel', endPointer);
-      wrap.addEventListener('pointerleave', () => {
-        if (pointers.size > 0) return;
+      wrap.addEventListener('pointerleave', e => {
+        if (e.pointerType === 'touch' || pointers.size > 0) return;
         if (!isDown) {
           chartCrosshairIdx = null; chartCrosshairPos = null;
           const tooltip = $('#chartFloatingTooltip');
@@ -9787,6 +9940,10 @@ body.mode-phone-frame #phone {
       refreshWeatherTab();
 
       if ($('#connBannerBtn')) $('#connBannerBtn').onclick = () => openAuthModal();
+      const servoIgnitionButton = $('#servoIgnitionButton');
+      if (servoIgnitionButton) servoIgnitionButton.onclick = () => {
+        if (!servoIgnitionButton.disabled) sendCommand('rozpalanie_serwa');
+      };
       if ($('#authModalClose')) $('#authModalClose').onclick = () => closeAuthModal();
       if ($('#authLoginBtn')) $('#authLoginBtn').onclick = () => doFirebaseLogin();
       if ($('#authDemoBtn')) $('#authDemoBtn').onclick = () => enableDemoMode();
