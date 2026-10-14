@@ -177,7 +177,7 @@ fun Dashboard(m: AppModel) {
                 value = if (!mixerKnown) "—" else if (S.mieszadlo) "WŁĄCZONE" else "WYŁĄCZONE",
                 sub = when {
                     !mixerKnown -> "oczekiwanie na stan"
-                    S.hasData("rozpalanie") && S.rozpalanie -> "override: rozpalanie"
+                    S.hasAllData("rozpalanie", "rozpalanie_potwierdzone", "rozpalanie_pozostalo_s") && S.rozpalanie -> "wspólny tryb rozpalania"
                     mixerEnabledKnown && !S.mieszadloWlaczony -> "automatyka wyłączona"
                     mixerEnabledKnown && S.mieszadloWlaczony -> "automatyka aktywna"
                     else -> "stan pracy odebrany"
@@ -226,29 +226,44 @@ fun Dashboard(m: AppModel) {
 @Composable
 private fun ServoIgnitionButton(m: AppModel) {
     val s = m.S
-    if (!s.hasData("rozpalanie_serwa_dostepne") || !s.rozpalanie_serwa_dostepne) return
+    val supported = s.hasAllData("rozpalanie", "rozpalanie_potwierdzone", "rozpalanie_pozostalo_s")
+    val legacyServoStatusKnown = s.hasData("rozpalanie_serwa_dostepne") || s.hasData("rozpalanie_serwa_aktywne")
+    val active = supported && s.rozpalanie
+    val available = s.hasData("rozpalanie_serwa_dostepne") && s.rozpalanie_serwa_dostepne
+    if (!supported && !legacyServoStatusKnown) return
+    if (supported && !available && !active) return
 
     val alarmsKnown = s.hasAllData("dym_alarm", "alarm_ogrzewanie", "alarm_panel")
     val safetyAlarm = anyAlarm(m)
-    val enabled = m.isFbFresh && s.online && s.hasData("t_ogrz") && alarmsKnown && !safetyAlarm
-    val active = s.hasData("rozpalanie_serwa_aktywne") && s.rozpalanie_serwa_aktywne
+    val temperatureKnown = s.hasData("t_ogrz") && s.t_ogrz.isFinite()
     val blockedBySmoke = s.hasData("rozpalanie_serwa_blokada_dymu") && s.rozpalanie_serwa_blokada_dymu
+    val canStart = supported && !active && available && m.isFbFresh && s.online && temperatureKnown &&
+        s.t_ogrz <= 30.0 && alarmsKnown && !safetyAlarm
+    val canStop = active && m.isFbFresh && s.online
+    val secondsLeft = if (s.hasData("rozpalanie_pozostalo_s")) s.rozpalanie_pozostalo_s.coerceIn(0, 3600) else 0
+    val countdown = "${secondsLeft / 60}:${(secondsLeft % 60).toString().padStart(2, '0')}"
 
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         UstBtn(
-            label = if (active) "🔥 Rozpalanie aktywne" else "🔥 Rozpalanie",
+            label = if (active) "⏹ Zakończ rozpalanie" else "🔥 Rozpalanie",
             variant = "primary",
             modifier = Modifier.fillMaxWidth(),
-            enabled = enabled,
-            onClick = { m.send("rozpalanie_serwa") }
+            enabled = canStart || canStop,
+            onClick = { m.send(if (active) "rozpalanie_stop" else "rozpalanie_serwa") }
         )
         Text(
             text = when {
                 !m.isFbFresh || !alarmsKnown -> "Oczekiwanie na świeży status i potwierdzenie braku alarmów bezpieczeństwa."
+                !supported -> "Firmware centrali nie raportuje wspólnego trybu rozpalania — sterowanie jest zablokowane."
                 safetyAlarm -> "Rozpalanie zablokowane podczas aktywnego alarmu bezpieczeństwa."
-                blockedBySmoke -> "Po alarmie dymu wymagane jest ponowne kliknięcie; klapa nie otworzy się automatycznie."
-                active -> "Aktywne do przekroczenia 30°C. Kliknięcie odnawia pięciominutowy nadzór dymu."
-                else -> "Serwa są przygotowywane sekwencyjnie: najpierw syberek, potem klapa."
+                active && s.rozpalanie_potwierdzone -> "Rozpalenie potwierdzone; pozostały limit trybu: $countdown (maksymalnie 60 min)."
+                active -> "Serwa i mieszadło działają razem. Bez potwierdzenia tryb wyłączy się po 30 min; limit maksymalny 60 min. Pozostało: $countdown."
+                !s.online -> "Centrala jest offline — polecenie rozpalania jest zablokowane."
+                !temperatureKnown -> "Brak prawidłowego odczytu temperatury pieca — rozpalanie jest zablokowane."
+                s.t_ogrz > 30.0 -> "Temperatura pieca przekracza 30°C — rozpoczęcie trybu jest zablokowane."
+                blockedBySmoke -> "Po alarmie dymu wymagane jest ponowne ręczne uruchomienie."
+                !available -> "Przycisk rozpalania będzie dostępny po otwarciu zimnego okna (<25°C)."
+                else -> "Jeden start uruchamia sekwencję serw i czasowy override mieszadła."
             },
             style = Txt.cardDesc,
             color = if (active) Pal.Cyan else Pal.TextDim

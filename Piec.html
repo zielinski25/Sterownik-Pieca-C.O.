@@ -4190,6 +4190,7 @@ body.mode-phone-frame #phone {
     cisnienie: NaN, wilgotnosc: NaN, dym: NaN,
     dym_wlaczony: false, dym_swiezy: false, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
     pompa: false, mieszadlo: false, rozpalanie: false,
+    rozpalanie_potwierdzone: false, rozpalanie_pozostalo_s: 0,
     rozpalanie_serwa_aktywne: false, rozpalanie_serwa_dostepne: false, rozpalanie_serwa_blokada_dymu: false,
     tryb_serwa: 0, trybSerwa: 0, klapa: NaN, syberka: NaN,
     wybor: 0, pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
@@ -4461,7 +4462,7 @@ body.mode-phone-frame #phone {
       cls: mixerKnown ? 'c-ok' : 'c-none',
       state: mixerKnown && S.mieszadlo ? 'ok' : '',
       frac: mixerKnown && S.mieszadlo ? 1 : 0,
-      desc: !mixerKnown ? 'oczekiwanie na stan mieszadła' : hasData('rozpalanie') && S.rozpalanie ? 'override: rozpalanie' : mixerEnabledKnown && S.mieszadloWlaczony ? 'automatyka aktywna' : mixerEnabledKnown ? 'automatyka wyłączona' : 'tryb automatyki nieznany',
+      desc: !mixerKnown ? 'oczekiwanie na stan mieszadła' : hasData('rozpalanie_potwierdzone') && hasData('rozpalanie_pozostalo_s') && hasData('rozpalanie') && S.rozpalanie ? 'wspólny tryb rozpalania' : mixerEnabledKnown && S.mieszadloWlaczony ? 'automatyka aktywna' : mixerEnabledKnown ? 'automatyka wyłączona' : 'tryb automatyki nieznany',
       badge: !mixerKnown ? 'BRAK DANYCH' : S.mieszadlo ? 'PRACUJE' : 'POSTÓJ',
       badgeCls: mixerKnown ? 'live' : 'stale',
       ill: { mieszadlo: mixerKnown ? S.mieszadlo : null }
@@ -4491,36 +4492,47 @@ body.mode-phone-frame #phone {
 
     const ignitionPanel = $('#servoIgnitionPanel');
     if (ignitionPanel) {
+      const ignitionSupported = hasData('rozpalanie_potwierdzone') && hasData('rozpalanie_pozostalo_s');
       const ignitionAvailable = hasData('rozpalanie_serwa_dostepne') && S.rozpalanie_serwa_dostepne;
-      const ignitionActive = hasData('rozpalanie_serwa_aktywne') && S.rozpalanie_serwa_aktywne;
+      const ignitionActive = ignitionSupported && hasData('rozpalanie') && S.rozpalanie;
+      const confirmed = ignitionSupported && hasData('rozpalanie_potwierdzone') && S.rozpalanie_potwierdzone;
+      const secondsLeft = hasData('rozpalanie_pozostalo_s') ? Math.max(0, Math.min(3600, S.rozpalanie_pozostalo_s)) : 0;
+      const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`;
       const smokeBlocked = hasData('rozpalanie_serwa_blokada_dymu') && S.rozpalanie_serwa_blokada_dymu;
       const freshStatus = !_isDemoMode && _isFirebaseConnected && Date.now() - _lastFirebaseFetch < 20000;
       const tempKnown = hasData('t_ogrz') && Number.isFinite(to);
       const controlsReady = freshStatus && S.online && tempKnown && alarmKnown;
-      const canIgnite = ignitionAvailable && controlsReady && !anyAlarm;
-      ignitionPanel.classList.toggle('on', ignitionAvailable);
+      const canStart = ignitionSupported && ignitionAvailable && controlsReady && to <= 30 && !anyAlarm;
+      const canStop = ignitionSupported && ignitionActive && freshStatus && S.online;
+      ignitionPanel.classList.toggle('on', ignitionAvailable || ignitionActive);
       const button = $('#servoIgnitionButton');
       if (button) {
-        button.disabled = !canIgnite;
-        button.textContent = ignitionActive ? '🔥 Rozpalanie aktywne' : '🔥 Rozpalanie';
+        button.disabled = !(canStart || canStop);
+        button.textContent = ignitionActive ? '⏹ Zakończ rozpalanie' : '🔥 Rozpalanie';
         button.setAttribute('aria-pressed', String(ignitionActive));
       }
       const ignitionNote = $('#servoIgnitionNote');
       if (ignitionNote) {
         ignitionNote.className = 'servo-ignition-note' + (ignitionActive ? ' active' : '');
         ignitionNote.textContent = !freshStatus || !alarmKnown
-          ? 'Oczekiwanie na świeży status i potwierdzenie braku alarmów bezpieczeństwa.'
-          : !S.online
-            ? 'Centrala jest offline — polecenie rozpalania jest zablokowane.'
-            : !tempKnown
-              ? 'Brak prawidłowego odczytu temperatury pieca — rozpalanie jest zablokowane.'
-              : anyAlarm
-                ? 'Rozpalanie zablokowane podczas aktywnego alarmu bezpieczeństwa.'
-                : smokeBlocked
-                  ? 'Po alarmie dymu wymagane jest ponowne kliknięcie; klapa nie otworzy się automatycznie.'
-                  : ignitionActive
-                    ? 'Aktywne do przekroczenia 30°C. Kliknięcie odnawia pięciominutowy nadzór dymu.'
-                    : 'Serwa są przygotowywane sekwencyjnie: najpierw syberek, potem klapa.';
+          ? 'Oczekiwanie na świeży status centrali.'
+          : !ignitionSupported
+            ? 'Firmware centrali nie raportuje wspólnego trybu rozpalania — sterowanie jest zablokowane.'
+            : anyAlarm
+              ? 'Rozpalanie zablokowane podczas aktywnego alarmu bezpieczeństwa.'
+              : ignitionActive && confirmed
+                ? `Rozpalenie potwierdzone; pozostały limit trybu: ${countdown} (maksymalnie 60 min).`
+                : ignitionActive
+                  ? `Serwa i mieszadło działają w jednym trybie. Bez potwierdzenia wyłączy się po 30 min; limit maksymalny: 60 min. Pozostało: ${countdown}.`
+                : !S.online
+                  ? 'Centrala jest offline — polecenie rozpalania jest zablokowane.'
+                  : !tempKnown
+                    ? 'Brak prawidłowego odczytu temperatury pieca — rozpalanie jest zablokowane.'
+                    : to > 30
+                      ? 'Temperatura pieca przekracza 30°C — rozpoczęcie trybu jest zablokowane.'
+                      : smokeBlocked
+                      ? 'Po alarmie dymu wymagane jest ponowne ręczne uruchomienie.'
+                      : 'Jeden start uruchamia sekwencję serw i czasowy override mieszadła.';
       }
     }
 
@@ -4599,7 +4611,7 @@ body.mode-phone-frame #phone {
     setQuick('qSerwo', serwoStatus, serwoCls, serwoSub);
     setQuick('qMiesz', mixerKnown ? (S.mieszadlo ? 'WŁĄCZONE' : 'WYŁĄCZONE') : '—',
       mixerKnown && S.mieszadlo ? 'ok' : '',
-      !mixerKnown ? 'oczekiwanie na stan' : hasData('rozpalanie') && S.rozpalanie ? 'override: rozpalanie' :
+      !mixerKnown ? 'oczekiwanie na stan' : hasData('rozpalanie_potwierdzone') && hasData('rozpalanie_pozostalo_s') && hasData('rozpalanie') && S.rozpalanie ? 'wspólny tryb rozpalania' :
         mixerEnabledKnown ? S.mieszadloWlaczony ? 'automatyka aktywna' : 'automatyka wyłączona' : 'tryb automatyki nieznany');
 
     const cv = $('#clockVal'); if (cv) cv.textContent = pad2(new Date().getHours()) + ':' + pad2(new Date().getMinutes());
@@ -4815,14 +4827,14 @@ body.mode-phone-frame #phone {
       dymTrybPracy: [0, 1], pompa_override_min: [0, 1440], mieszadlo_override_min: [0, 1440],
       serwo_override_min: [0, 1440], dzien: [1, 31], miesiac: [1, 12], rok: [2000, 2100],
       uptime: [0, Number.MAX_SAFE_INTEGER], wifi_rssi: [-127, 0], wifi_quality: [0, 100],
-      ping_ms: [0, 100000]
+      ping_ms: [0, 100000], rozpalanie_pozostalo_s: [0, 3600]
     };
     const integerKeys = new Set([
       'tryb_serwa', 'trybSerwa', 'klapa', 'syberka', 'wybor', 'czasOn', 'czasOff',
       'antystopDni', 'mieszadloCzasOn', 'mieszadloCzasOff', 'skokKlapy', 'skokSyberka',
       'odchylTemp', 'mnoznik', 'progAlarmDym', 'dymCzasOn', 'dymCzasOff',
       'dymCzasStabilizacji', 'dymTrybPracy', 'pompa_override_min', 'mieszadlo_override_min',
-      'serwo_override_min', 'dzien', 'miesiac', 'rok', 'wifi_quality', 'ping_ms'
+      'serwo_override_min', 'dzien', 'miesiac', 'rok', 'wifi_quality', 'ping_ms', 'rozpalanie_pozostalo_s'
     ]);
     const sensorPole = Object.fromEntries(Object.entries(SYM_POLA).map(([pole, key]) => [key, pole]));
     sensorPole.t_ogrz_sr = 'ogrz';
@@ -4882,7 +4894,7 @@ body.mode-phone-frame #phone {
 
     const flagKeys = [
       'online', 'night', 'dym_wlaczony', 'dym_swiezy', 'dym_alarm', 'alarm_ogrzewanie',
-      'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie',
+      'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie', 'rozpalanie_potwierdzone',
       'rozpalanie_serwa_aktywne', 'rozpalanie_serwa_dostepne', 'rozpalanie_serwa_blokada_dymu',
       'antystopWlaczony', 'mieszadloWlaczony', 'rtc_ok'
     ];
@@ -5092,6 +5104,7 @@ body.mode-phone-frame #phone {
       t_powrot: 44.2, t_trociny: 31.0, cisnienie: 1009, wilgotnosc: 54, dym: 412,
       dym_wlaczony: true, dym_swiezy: true, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
       pompa: true, mieszadlo: false, rozpalanie: false,
+      rozpalanie_potwierdzone: false, rozpalanie_pozostalo_s: 0,
       rozpalanie_serwa_aktywne: false, rozpalanie_serwa_dostepne: false, rozpalanie_serwa_blokada_dymu: false,
       tryb_serwa: 1, trybSerwa: 1, klapa: 81, syberka: 27, wybor: 3,
       pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
@@ -10173,7 +10186,7 @@ body.mode-phone-frame #phone {
     dBody.appendChild(h('h5', '', 'Urządzenia i Siłowniki'));
     dBody.appendChild(chk('Pompa pracuje', () => S.pompa, v => S.pompa = v));
     dBody.appendChild(chk('Mieszadło pracuje', () => S.mieszadlo, v => S.mieszadlo = v));
-    dBody.appendChild(chk('Rozpalanie (override)', () => S.rozpalanie, v => S.rozpalanie = v));
+    dBody.appendChild(chk('Rozpalanie (serwa + mieszadło)', () => S.rozpalanie, v => { S.rozpalanie = v; S.rozpalanie_serwa_aktywne = v; S.rozpalanie_serwa_dostepne = v; }));
     dBody.appendChild(h('p', '', 'Tryb serwa:'));
     dBody.appendChild(seg([[1, 'Auto'], [2, 'Ręczny'], [3, 'Bezp.']], S.tryb_serwa, v => {
       S.tryb_serwa = v; S.trybSerwa = v; renderDashboard();
@@ -10313,7 +10326,9 @@ body.mode-phone-frame #phone {
       if ($('#connBannerBtn')) $('#connBannerBtn').onclick = () => openAuthModal();
       const servoIgnitionButton = $('#servoIgnitionButton');
       if (servoIgnitionButton) servoIgnitionButton.onclick = () => {
-        if (!servoIgnitionButton.disabled) sendCommand('rozpalanie_serwa');
+        if (!servoIgnitionButton.disabled) {
+          sendCommand(S.rozpalanie ? 'rozpalanie_stop' : 'rozpalanie_serwa');
+        }
       };
       if ($('#authModalClose')) $('#authModalClose').onclick = () => closeAuthModal();
       if ($('#authLoginBtn')) $('#authLoginBtn').onclick = () => doFirebaseLogin();

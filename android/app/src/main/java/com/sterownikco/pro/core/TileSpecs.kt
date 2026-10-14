@@ -316,7 +316,7 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
             frac = if (mixerKnown && S.mieszadlo) 1.0 else 0.0,
             desc = when {
                 !mixerKnown -> "oczekiwanie na stan mieszadła"
-                S.rozpalanie && S.hasData("rozpalanie") -> "override: rozpalanie"
+                S.hasAllData("rozpalanie", "rozpalanie_potwierdzone", "rozpalanie_pozostalo_s") && S.rozpalanie -> "wspólny tryb rozpalania"
                 S.mieszadloWlaczony && S.hasData("mieszadloWlaczony") && S.hasAllData("mieszadloCzasOn", "mieszadloCzasOff") -> "cykl ${S.mieszadloCzasOn} s / ${S.mieszadloCzasOff} min"
                 else -> "stan odebrany"
             },

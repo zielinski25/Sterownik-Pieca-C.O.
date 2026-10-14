@@ -1,6 +1,15 @@
-# Wykresy lokalne i Firebase — baza v3.38.0, źródło v3.45.0
+# Wspólne rozpalanie, wykresy lokalne i Firebase — baza v3.38.0, źródło v3.46.0
 
-Ta łatka zachowuje wykres ESP korzystający wyłącznie z lokalnego archiwum centrali i naprawia osobną ścieżkę wykresu Firebase. `Piec.html` jest osadzony w przygotowanym CPP. Głównego `Cenatrala Pieca.zip` w katalogu repozytorium nie zmieniamy.
+Ta skumulowana łatka zachowuje lokalne archiwum wykresu ESP, używa timestampów RTDB dla wykresu Firebase i dodaje jedno wspólne sterowanie rozpalaniem serw oraz mieszadła. `Piec.html` jest osadzony w przygotowanym CPP. Głównego `Cenatrala Pieca.zip` w katalogu repozytorium nie zmieniamy.
+
+## Jedno wspólne sterowanie „Rozpalaniem”
+
+- `rozpalanie_serwa` uruchamia jednocześnie sekwencję serw i czasowy override mieszadła; `rozpalanie_stop` wyłącza cały tryb. `ustaw rozpalanie 1/0` pozostaje aliasem start/stop.
+- Start jest odrzucany przy nieświeżej/niewiarygodnej temperaturze, aktywnym alarmie bezpieczeństwa albo temperaturze pieca powyżej 30°C. Zimne okno `<25°C` udostępnia przycisk, ale samo nie uruchamia wymuszeń.
+- Rozpalenie jest potwierdzone, gdy temperatura pieca przekroczy 30°C **lub** wzrośnie o co najmniej 5°C względem odczytu zapisanego przy starcie.
+- Bez potwierdzenia tryb kończy się po 30 min; po potwierdzeniu nadal obowiązuje bezwzględny limit 60 min od startu. Tryb nie jest odtwarzany po restarcie.
+- Alarmy bezpieczeństwa i dymu nadal zatrzymują wymuszenia. Po normalnym zakończeniu sterowanie wraca do zwykłej automatyki serw i mieszadła.
+- Status publikuje `rozpalanie`, `rozpalanie_potwierdzone` i `rozpalanie_pozostalo_s`; interfejsy blokują start na starszym firmware bez pól potwierdzających obsługę wspólnego trybu.
 
 ## Zachowanie wykresu ESP (bez zmiany źródła lokalnego)
 
@@ -22,7 +31,7 @@ Dla porównania 6 h / 24 h wybierz te same serie i ustaw ten sam zakres. Lokalne
 
 ## Wersja i bezpieczeństwo zmian
 
-Źródłowe `FIRMWARE_VERSION` przechodzi z **v3.44.0** na **v3.45.0**. Nie zmieniano algorytmu sterowania piecem, serw, dymu ani pompy. Nie wykonano kompilacji firmware, flashowania ani poleceń do urządzenia. Główny ZIP firmware w checkoutcie nie jest częścią tej łatki.
+Źródłowe `FIRMWARE_VERSION` przechodzi z **v3.45.0** na **v3.46.0**. Zmieniono wyłącznie wspólną logikę rozpalania oraz jej lokalne/Firebase API i opisy; zabezpieczenia alarmowe pozostają aktywne. Nie zmieniano głównego `Cenatrala Pieca.zip`. Nie wykonano kompilacji firmware, flashowania ani poleceń do urządzenia.
 
 ## Zastosowanie
 

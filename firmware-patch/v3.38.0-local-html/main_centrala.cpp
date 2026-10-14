@@ -1,3 +1,11 @@
+// [v3.46.0 WSPOLNE-ROZPALANIE] — 2026-10-14
+// Co: Jeden jawny tryb uruchamia sekwencje serw i czasowy override mieszadla.
+// Naprawa: bez potwierdzenia (>30°C lub wzrostu >=5°C od startu) tryb konczy
+//     sie po 30 min; po potwierdzeniu obowiazuje bezwzgledny limit 60 min.
+//     Alarmy bezpieczenstwa nadal zatrzymuja wymuszenia; po zakonczeniu wraca
+//     normalna automatyka. Stan nie jest odtwarzany po restarcie.
+// FIRMWARE_VERSION v3.45.0 -> v3.46.0 (MINOR: wspolne sterowanie rozpalaniem).
+//
 // [v3.45.0 WYKRESY-FIREBASE-ARCHIVE-AXIS] — 2026-10-13
 // Co: Prawy wykres Firebase używa wyłącznie zapisanej historii RTDB, jej ts
 //     i przyrostowego odświeżania; porównanie ma jawny, wspólny zakres czasu.
@@ -4801,6 +4809,9 @@ int32_t alarmMuteRemainingMs(AlarmMuteTimer& mute, bool alarmActive);
 bool dymNadzorAktywny();
 void odnowDymNadzorPoRuchu();
 void obslugaRozpalaniaSerwa();
+static bool uruchomRozpalanieSerwa(String& blad);
+static void zakonczTrybRozpalania(const char* powod, bool blokadaDymu = false);
+static unsigned long rozpalaniePozostaloSekundy();
 void aktywujAlarmCO();
 void dezaktywujAlarmCO();
 void aktywujAlarmPanelu();
@@ -5036,7 +5047,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.45.0";
+static const char* FIRMWARE_VERSION = "v3.46.0";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -10048,6 +10059,7 @@ body.mode-phone-frame #phone {
     cisnienie: NaN, wilgotnosc: NaN, dym: NaN,
     dym_wlaczony: false, dym_swiezy: false, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
     pompa: false, mieszadlo: false, rozpalanie: false,
+    rozpalanie_potwierdzone: false, rozpalanie_pozostalo_s: 0,
     rozpalanie_serwa_aktywne: false, rozpalanie_serwa_dostepne: false, rozpalanie_serwa_blokada_dymu: false,
     tryb_serwa: 0, trybSerwa: 0, klapa: NaN, syberka: NaN,
     wybor: 0, pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
@@ -10319,7 +10331,7 @@ body.mode-phone-frame #phone {
       cls: mixerKnown ? 'c-ok' : 'c-none',
       state: mixerKnown && S.mieszadlo ? 'ok' : '',
       frac: mixerKnown && S.mieszadlo ? 1 : 0,
-      desc: !mixerKnown ? 'oczekiwanie na stan mieszadła' : hasData('rozpalanie') && S.rozpalanie ? 'override: rozpalanie' : mixerEnabledKnown && S.mieszadloWlaczony ? 'automatyka aktywna' : mixerEnabledKnown ? 'automatyka wyłączona' : 'tryb automatyki nieznany',
+      desc: !mixerKnown ? 'oczekiwanie na stan mieszadła' : hasData('rozpalanie_potwierdzone') && hasData('rozpalanie_pozostalo_s') && hasData('rozpalanie') && S.rozpalanie ? 'wspólny tryb rozpalania' : mixerEnabledKnown && S.mieszadloWlaczony ? 'automatyka aktywna' : mixerEnabledKnown ? 'automatyka wyłączona' : 'tryb automatyki nieznany',
       badge: !mixerKnown ? 'BRAK DANYCH' : S.mieszadlo ? 'PRACUJE' : 'POSTÓJ',
       badgeCls: mixerKnown ? 'live' : 'stale',
       ill: { mieszadlo: mixerKnown ? S.mieszadlo : null }
@@ -10349,36 +10361,47 @@ body.mode-phone-frame #phone {
 
     const ignitionPanel = $('#servoIgnitionPanel');
     if (ignitionPanel) {
+      const ignitionSupported = hasData('rozpalanie_potwierdzone') && hasData('rozpalanie_pozostalo_s');
       const ignitionAvailable = hasData('rozpalanie_serwa_dostepne') && S.rozpalanie_serwa_dostepne;
-      const ignitionActive = hasData('rozpalanie_serwa_aktywne') && S.rozpalanie_serwa_aktywne;
+      const ignitionActive = ignitionSupported && hasData('rozpalanie') && S.rozpalanie;
+      const confirmed = ignitionSupported && hasData('rozpalanie_potwierdzone') && S.rozpalanie_potwierdzone;
+      const secondsLeft = hasData('rozpalanie_pozostalo_s') ? Math.max(0, Math.min(3600, S.rozpalanie_pozostalo_s)) : 0;
+      const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`;
       const smokeBlocked = hasData('rozpalanie_serwa_blokada_dymu') && S.rozpalanie_serwa_blokada_dymu;
       const freshStatus = !_isDemoMode && _isFirebaseConnected && Date.now() - _lastFirebaseFetch < 20000;
       const tempKnown = hasData('t_ogrz') && Number.isFinite(to);
       const controlsReady = freshStatus && S.online && tempKnown && alarmKnown;
-      const canIgnite = ignitionAvailable && controlsReady && !anyAlarm;
-      ignitionPanel.classList.toggle('on', ignitionAvailable);
+      const canStart = ignitionSupported && ignitionAvailable && controlsReady && to <= 30 && !anyAlarm;
+      const canStop = ignitionSupported && ignitionActive && freshStatus && S.online;
+      ignitionPanel.classList.toggle('on', ignitionAvailable || ignitionActive);
       const button = $('#servoIgnitionButton');
       if (button) {
-        button.disabled = !canIgnite;
-        button.textContent = ignitionActive ? '🔥 Rozpalanie aktywne' : '🔥 Rozpalanie';
+        button.disabled = !(canStart || canStop);
+        button.textContent = ignitionActive ? '⏹ Zakończ rozpalanie' : '🔥 Rozpalanie';
         button.setAttribute('aria-pressed', String(ignitionActive));
       }
       const ignitionNote = $('#servoIgnitionNote');
       if (ignitionNote) {
         ignitionNote.className = 'servo-ignition-note' + (ignitionActive ? ' active' : '');
         ignitionNote.textContent = !freshStatus || !alarmKnown
-          ? 'Oczekiwanie na świeży status i potwierdzenie braku alarmów bezpieczeństwa.'
-          : !S.online
-            ? 'Centrala jest offline — polecenie rozpalania jest zablokowane.'
-            : !tempKnown
-              ? 'Brak prawidłowego odczytu temperatury pieca — rozpalanie jest zablokowane.'
-              : anyAlarm
-                ? 'Rozpalanie zablokowane podczas aktywnego alarmu bezpieczeństwa.'
-                : smokeBlocked
-                  ? 'Po alarmie dymu wymagane jest ponowne kliknięcie; klapa nie otworzy się automatycznie.'
-                  : ignitionActive
-                    ? 'Aktywne do przekroczenia 30°C. Kliknięcie odnawia pięciominutowy nadzór dymu.'
-                    : 'Serwa są przygotowywane sekwencyjnie: najpierw syberek, potem klapa.';
+          ? 'Oczekiwanie na świeży status centrali.'
+          : !ignitionSupported
+            ? 'Firmware centrali nie raportuje wspólnego trybu rozpalania — sterowanie jest zablokowane.'
+            : anyAlarm
+              ? 'Rozpalanie zablokowane podczas aktywnego alarmu bezpieczeństwa.'
+              : ignitionActive && confirmed
+                ? `Rozpalenie potwierdzone; pozostały limit trybu: ${countdown} (maksymalnie 60 min).`
+                : ignitionActive
+                  ? `Serwa i mieszadło działają w jednym trybie. Bez potwierdzenia wyłączy się po 30 min; limit maksymalny: 60 min. Pozostało: ${countdown}.`
+                : !S.online
+                  ? 'Centrala jest offline — polecenie rozpalania jest zablokowane.'
+                  : !tempKnown
+                    ? 'Brak prawidłowego odczytu temperatury pieca — rozpalanie jest zablokowane.'
+                    : to > 30
+                      ? 'Temperatura pieca przekracza 30°C — rozpoczęcie trybu jest zablokowane.'
+                      : smokeBlocked
+                      ? 'Po alarmie dymu wymagane jest ponowne ręczne uruchomienie.'
+                      : 'Jeden start uruchamia sekwencję serw i czasowy override mieszadła.';
       }
     }
 
@@ -10457,7 +10480,7 @@ body.mode-phone-frame #phone {
     setQuick('qSerwo', serwoStatus, serwoCls, serwoSub);
     setQuick('qMiesz', mixerKnown ? (S.mieszadlo ? 'WŁĄCZONE' : 'WYŁĄCZONE') : '—',
       mixerKnown && S.mieszadlo ? 'ok' : '',
-      !mixerKnown ? 'oczekiwanie na stan' : hasData('rozpalanie') && S.rozpalanie ? 'override: rozpalanie' :
+      !mixerKnown ? 'oczekiwanie na stan' : hasData('rozpalanie_potwierdzone') && hasData('rozpalanie_pozostalo_s') && hasData('rozpalanie') && S.rozpalanie ? 'wspólny tryb rozpalania' :
         mixerEnabledKnown ? S.mieszadloWlaczony ? 'automatyka aktywna' : 'automatyka wyłączona' : 'tryb automatyki nieznany');
 
     const cv = $('#clockVal'); if (cv) cv.textContent = pad2(new Date().getHours()) + ':' + pad2(new Date().getMinutes());
@@ -10673,14 +10696,14 @@ body.mode-phone-frame #phone {
       dymTrybPracy: [0, 1], pompa_override_min: [0, 1440], mieszadlo_override_min: [0, 1440],
       serwo_override_min: [0, 1440], dzien: [1, 31], miesiac: [1, 12], rok: [2000, 2100],
       uptime: [0, Number.MAX_SAFE_INTEGER], wifi_rssi: [-127, 0], wifi_quality: [0, 100],
-      ping_ms: [0, 100000]
+      ping_ms: [0, 100000], rozpalanie_pozostalo_s: [0, 3600]
     };
     const integerKeys = new Set([
       'tryb_serwa', 'trybSerwa', 'klapa', 'syberka', 'wybor', 'czasOn', 'czasOff',
       'antystopDni', 'mieszadloCzasOn', 'mieszadloCzasOff', 'skokKlapy', 'skokSyberka',
       'odchylTemp', 'mnoznik', 'progAlarmDym', 'dymCzasOn', 'dymCzasOff',
       'dymCzasStabilizacji', 'dymTrybPracy', 'pompa_override_min', 'mieszadlo_override_min',
-      'serwo_override_min', 'dzien', 'miesiac', 'rok', 'wifi_quality', 'ping_ms'
+      'serwo_override_min', 'dzien', 'miesiac', 'rok', 'wifi_quality', 'ping_ms', 'rozpalanie_pozostalo_s'
     ]);
     const sensorPole = Object.fromEntries(Object.entries(SYM_POLA).map(([pole, key]) => [key, pole]));
     sensorPole.t_ogrz_sr = 'ogrz';
@@ -10740,7 +10763,7 @@ body.mode-phone-frame #phone {
 
     const flagKeys = [
       'online', 'night', 'dym_wlaczony', 'dym_swiezy', 'dym_alarm', 'alarm_ogrzewanie',
-      'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie',
+      'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie', 'rozpalanie_potwierdzone',
       'rozpalanie_serwa_aktywne', 'rozpalanie_serwa_dostepne', 'rozpalanie_serwa_blokada_dymu',
       'antystopWlaczony', 'mieszadloWlaczony', 'rtc_ok'
     ];
@@ -10950,6 +10973,7 @@ body.mode-phone-frame #phone {
       t_powrot: 44.2, t_trociny: 31.0, cisnienie: 1009, wilgotnosc: 54, dym: 412,
       dym_wlaczony: true, dym_swiezy: true, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
       pompa: true, mieszadlo: false, rozpalanie: false,
+      rozpalanie_potwierdzone: false, rozpalanie_pozostalo_s: 0,
       rozpalanie_serwa_aktywne: false, rozpalanie_serwa_dostepne: false, rozpalanie_serwa_blokada_dymu: false,
       tryb_serwa: 1, trybSerwa: 1, klapa: 81, syberka: 27, wybor: 3,
       pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
@@ -16031,7 +16055,7 @@ body.mode-phone-frame #phone {
     dBody.appendChild(h('h5', '', 'Urządzenia i Siłowniki'));
     dBody.appendChild(chk('Pompa pracuje', () => S.pompa, v => S.pompa = v));
     dBody.appendChild(chk('Mieszadło pracuje', () => S.mieszadlo, v => S.mieszadlo = v));
-    dBody.appendChild(chk('Rozpalanie (override)', () => S.rozpalanie, v => S.rozpalanie = v));
+    dBody.appendChild(chk('Rozpalanie (serwa + mieszadło)', () => S.rozpalanie, v => { S.rozpalanie = v; S.rozpalanie_serwa_aktywne = v; S.rozpalanie_serwa_dostepne = v; }));
     dBody.appendChild(h('p', '', 'Tryb serwa:'));
     dBody.appendChild(seg([[1, 'Auto'], [2, 'Ręczny'], [3, 'Bezp.']], S.tryb_serwa, v => {
       S.tryb_serwa = v; S.trybSerwa = v; renderDashboard();
@@ -16171,7 +16195,9 @@ body.mode-phone-frame #phone {
       if ($('#connBannerBtn')) $('#connBannerBtn').onclick = () => openAuthModal();
       const servoIgnitionButton = $('#servoIgnitionButton');
       if (servoIgnitionButton) servoIgnitionButton.onclick = () => {
-        if (!servoIgnitionButton.disabled) sendCommand('rozpalanie_serwa');
+        if (!servoIgnitionButton.disabled) {
+          sendCommand(S.rozpalanie ? 'rozpalanie_stop' : 'rozpalanie_serwa');
+        }
       };
       if ($('#authModalClose')) $('#authModalClose').onclick = () => closeAuthModal();
       if ($('#authLoginBtn')) $('#authLoginBtn').onclick = () => doFirebaseLogin();
@@ -17293,7 +17319,7 @@ function odswiezKafelki(d){
       // mieszadlu pracowac ponizej normalnego progu temperatury -- warto
       // widziec na kafelku CZY jest aktywny, bo to tlumaczy, dlaczego
       // mieszadlo dziala mimo zimnego jeszcze pieca.
-      if (dd) dd.textContent = d.rozpalanie ? 'override: rozpalanie' : '';
+      if (dd) dd.textContent = d.rozpalanie ? 'wspólny tryb rozpalania' : '';
     } else if (k.typ === 'zegar') {
       w.innerHTML = d.rtc_ok ? ((d.godzina < 10 ? '0' : '') + d.godzina + ':' + (d.minuta < 10 ? '0' : '') + d.minuta) : '--:--';
       stan = d.rtc_ok ? '' : 'warn';
@@ -17459,7 +17485,7 @@ function dpOtworzSerwo(){
       + "<div class='row-desc' id='dp-serwoPosInfo' style='margin-top:6px'>Oczekiwanie na świeży status…</div>"
     + "</div>"
     + "<div style='margin-bottom:12px'>"
-      + "<button type='button' class='ust-btn' id='dp-rozpalanieSerwaBtn' style='width:100%;margin:0' onclick='rozpalanieSerwaWyslij()' disabled>Rozpalanie serw</button>"
+      + "<button type='button' class='ust-btn' id='dp-rozpalanieSerwaBtn' style='width:100%;margin:0' onclick='rozpalanieSerwaWyslij()' disabled>🔥 Rozpalanie</button>"
       + "<div class='row-desc' id='dp-rozpalanieSerwaInfo' style='margin-top:6px'>Oczekiwanie na świeży status centrali.</div>"
     + "</div>"
     + "<div class='row-desc' style='margin-bottom:8px'>Tryb pracy klapy i syberka</div>"
@@ -17808,44 +17834,58 @@ function dpSerwoDialogOdswiez(){
   var tempKnown = fresh && d.rozpalanie_serwa_temp_ok === true && isFinite(Number(d.t_ogrz));
   var anyAlarm = !!d && (d.rozpalanie_serwa_alarm_bezpieczenstwa === true || d.dym_alarm === true ||
     d.alarm_ogrzewanie === true || d.alarm_panel === true);
+  var sharedModeSupported = !!d && typeof d.rozpalanie_potwierdzone === 'boolean' &&
+    typeof d.rozpalanie_pozostalo_s === 'number';
   var available = !!d && d.rozpalanie_serwa_dostepne === true;
-  var active = !!d && d.rozpalanie_serwa_aktywne === true;
+  var active = sharedModeSupported && d.rozpalanie === true;
+  var confirmed = sharedModeSupported && d.rozpalanie_potwierdzone === true;
+  var remaining = d && isFinite(Number(d.rozpalanie_pozostalo_s))
+    ? Math.max(0, Math.min(3600, Number(d.rozpalanie_pozostalo_s))) : 0;
+  var countdown = Math.floor(remaining / 60) + ':' + String(Math.floor(remaining % 60)).padStart(2, '0');
   var smokeBlocked = !!d && d.rozpalanie_serwa_blokada_dymu === true;
-  var canStart = fresh && alarmsKnown && tempKnown && !anyAlarm && available && !active && !_rozpalanieSerwaRequest;
+  var canStart = sharedModeSupported && fresh && alarmsKnown && tempKnown && Number(d.t_ogrz) <= 30 && !anyAlarm && available && !active && !_rozpalanieSerwaRequest;
+  var canStop = sharedModeSupported && fresh && active && !_rozpalanieSerwaRequest;
   if (btn){
-    btn.disabled = !canStart;
-    btn.textContent = active ? 'Rozpalanie serw: aktywne' : 'Rozpalanie serw';
+    btn.disabled = !(canStart || canStop);
+    btn.textContent = active ? '⏹ Zakończ rozpalanie' : '🔥 Rozpalanie';
   }
   if (note){
     note.textContent = _rozpalanieSerwaRequest ? 'Wysyłanie polecenia…' :
       !fresh ? 'Oczekiwanie na świeży status centrali — sterowanie zablokowane.' :
       !alarmsKnown ? 'Brak pełnego statusu alarmów — sterowanie zablokowane.' :
-      !tempKnown ? 'Brak świeżej, wiarygodnej temperatury pieca — sterowanie zablokowane.' :
+      !sharedModeSupported ? 'Firmware centrali nie raportuje wspólnego trybu rozpalania — sterowanie zablokowane.' :
       anyAlarm ? 'Rozpalanie zablokowane podczas aktywnego alarmu bezpieczeństwa.' :
-      active ? 'Sekwencja rozpalania serw jest już aktywna.' :
-      !available ? 'Rozpalanie niedostępne — wymagane jest dostępne zimne okno.' :
-      smokeBlocked ? 'Po alarmie dymu wymagane jest ponowne, ręczne kliknięcie.' :
-      'Warunki spełnione. Centrala ponownie sprawdzi je po kliknięciu.';
+      active && confirmed ? 'Rozpalenie potwierdzone; pozostały limit trybu: ' + countdown + ' (maks. 60 min).' :
+      active ? 'Serwa i mieszadło działają razem. Bez potwierdzenia wyłączy się po 30 min; limit maksymalny 60 min. Pozostało: ' + countdown + '.' :
+      !tempKnown ? 'Brak świeżej, wiarygodnej temperatury pieca — sterowanie zablokowane.' :
+      Number(d.t_ogrz) > 30 ? 'Temperatura pieca przekracza 30°C — rozpoczęcie trybu jest zablokowane.' :
+      smokeBlocked ? 'Po alarmie dymu wymagane jest ponowne, ręczne uruchomienie.' :
+      !available ? 'Rozpalanie dostępne po otwarciu zimnego okna (<25°C).' :
+      'Jeden start uruchamia sekwencję serw oraz czasowy override mieszadła.';
   }
 }
 function rozpalanieSerwaWyslij(){
   dpSerwoDialogOdswiez();
   var btn = document.getElementById('dp-rozpalanieSerwaBtn');
   if (!btn || btn.disabled || _rozpalanieSerwaRequest) return;
-  if (!window.confirm('Uruchomić przygotowanie serw do rozpalania? Centrala ponownie sprawdzi świeżą temperaturę i alarmy.')) return;
+  var active = !!_espStatusSnapshot && _espStatusSnapshot.rozpalanie === true;
+  var prompt = active
+    ? 'Zakończyć wspólny tryb rozpalania serw i mieszadła?'
+    : 'Uruchomić wspólny tryb rozpalania serw i mieszadła? Centrala sprawdzi świeżą temperaturę oraz alarmy.';
+  if (!window.confirm(prompt)) return;
   _rozpalanieSerwaRequest = true;
   dpSerwoDialogOdswiez();
   fetch('/api/rozpalanie-serwa', {
     method: 'POST',
     headers: {'Content-Type':'application/x-www-form-urlencoded'},
-    body: 'token=' + encodeURIComponent(window.espLocalActionToken || '')
+    body: 'token=' + encodeURIComponent(window.espLocalActionToken || '') + '&akcja=' + (active ? 'stop' : 'start')
   }).then(function(r){
     return r.json().then(function(d){
       if (!r.ok || !d.ok) throw new Error(d.error || 'odrzucono_przez_centrale');
       return d;
     });
   }).then(function(){
-    toast('Polecenie rozpalania serw przyjęte', 'ok');
+    toast(active ? 'Tryb rozpalania zakończony' : 'Wspólny tryb rozpalania przyjęty', 'ok');
     odswiezDashboard();
   }).catch(function(e){
     toast('Rozpalanie odrzucone: ' + (e && e.message ? e.message : 'brak połączenia'), 'err');
@@ -18864,15 +18904,13 @@ function ustLoad(){
       var el = document.getElementById('u-' + k);
       if (el && d.hasOwnProperty(k)) el.value = d[k];
     });
-    // antystopWlaczony/mieszadloWlaczony/rozpalanie: checkboxy, ustawiane
-    // przez .checked a nie .value — dlatego osobno, poza petla numerycznych
-    // pol wyzej.
+    // antystopWlaczony/mieszadloWlaczony: checkboxy, ustawiane przez
+    // .checked, poza petla numerycznych pol. Rozpalanie ma jeden przycisk na
+    // pulpicie; dawny niezalezny checkbox mieszadla zostal usuniety.
     var elAntystop = document.getElementById('u-antystopWlaczony');
     if (elAntystop && d.hasOwnProperty('antystopWlaczony')) elAntystop.checked = d.antystopWlaczony;
     var elMieszWl = document.getElementById('u-mieszadloWlaczony');
     if (elMieszWl && d.hasOwnProperty('mieszadloWlaczony')) elMieszWl.checked = d.mieszadloWlaczony;
-    var elRozpalanie = document.getElementById('u-rozpalanie');
-    if (elRozpalanie && d.hasOwnProperty('rozpalanie')) elRozpalanie.checked = d.rozpalanie;
     ustSegAktywny('seg-wybor', d.wybor);
     ustSegAktywny('seg-trybserwa', d.trybSerwa);
     ustSegAktywny('seg-dymtryb', d.dymTrybPracy); // [DYM-OD-TEMPERATURY]
@@ -20288,7 +20326,7 @@ AlarmMuteTimer alarmMuteDym;
 AlarmMuteTimer alarmMuteOgrz;
 static portMUX_TYPE alarmMuteMux = portMUX_INITIALIZER_UNLOCKED;
 
-// Osobny stan serw „Rozpalanie” — nie uzywac rozpalanieAktywne od mieszadla.
+// Podfaza serw w ramach wspolnego trybu operatora; nie jest drugim sterowaniem.
 volatile bool rozpalanieSerwaAktywne = false;
 volatile bool rozpalanieSerwaDostepne = false;
 volatile bool rozpalanieSerwaBlokadaDymu = false;
@@ -20469,16 +20507,17 @@ byte mieszadloCzasOff = 10;                 // minuty, jak dlugo przekaznik jest
 bool mieszadloAktywnyStan = false;          // czy przekaznik jest AKTUALNIE zalaczony (faza ON, w odroznieniu od fazy OFF)
 unsigned long mieszadloCzasZmianyFazyMs = 0; // millis() ostatniej zmiany fazy ON<->OFF
 
-// [MIESZADLO-ROZPALANIE] Reczny, przejsciowy override — pozwala mieszadlu
-// pracowac ponizej progu TEMP_MIN_POMPY (piec jeszcze zimny) podczas
-// rozpalania. Celowo BEZ zapisu do NVS/Preferences: to stan przejsciowy
-// zwiazany z biezacym rozpalaniem, nie trwale ustawienie — po restarcie
-// urzadzenia (albo po ROZPALANIE_MAX_CZAS_MS/przekroczeniu progu) ma
-// wracac do normalnego gatingu TEMP_MIN_POMPY (55°C od v1.8.0), a nie
-// zostac "zapomniane wlaczone".
-bool rozpalanieAktywne = false;
-unsigned long rozpalanieStartMs = 0;
-const unsigned long ROZPALANIE_MAX_CZAS_MS = 3600000UL; // 1h — automatyczne wylaczenie, zabezpieczenie na wypadek zapomnienia
+// [ROZPALANIE-WSPOLNE] Jeden tryb operatora steruje jednoczesnie sekwencja
+// serw i tymczasowym override'em mieszadla. Czas jest tylko w RAM — po restarcie
+// sterownik wraca do zwyklej automatyki, zamiast zerowac licznik i trzymac
+// wymuszenie bezterminowo.
+volatile bool rozpalanieTrybAktywny = false;
+volatile bool rozpalaniePotwierdzone = false;
+volatile bool rozpalanieAktywne = false; // podfaza override'u mieszadla w ramach wspolnego trybu
+volatile unsigned long rozpalanieStartMs = 0;
+volatile float rozpalanieTempStartu = 0.0f;
+const unsigned long ROZPALANIE_BRAK_POTWIERDZENIA_MS = 30UL * 60UL * 1000UL;
+const unsigned long ROZPALANIE_MAX_CZAS_MS = 60UL * 60UL * 1000UL; // bezwzgledny limit 1h
 
 unsigned long ostatniPomiar = 0;
 float ostatniaTempPowrotu = 0;
@@ -20786,11 +20825,14 @@ bool ustawParametrPieca(const String& pole, long w, String& err) {
     if (w < 1 || w > 180) { err = "mieszadloCzasOff poza zakresem 1-180"; return false; }
     mieszadloCzasOff = w; config.putUChar("mieszCzasOff", mieszadloCzasOff);  // [FIX NVS-15] klucz byl 16 znakow, ciche niepowodzenie zapisu (pierwotnie zdiagnozowany przypadek)
   } else if (pole == "rozpalanie") {
-    // [MIESZADLO-ROZPALANIE] Celowo BEZ config.put*() — stan przejsciowy,
-    // nie zapisujemy do NVS (patrz komentarz przy deklaracji zmiennej).
+    // Wsteczna zgodnosc: stary parametr startuje/zatrzymuje ten sam tryb
+    // wspolny dla serw i mieszadla — nie istnieje osobny override mieszadla.
     if (w != 0 && w != 1) { err = "rozpalanie musi byc 0 lub 1"; return false; }
-    rozpalanieAktywne = (w != 0);
-    if (rozpalanieAktywne) rozpalanieStartMs = millis();
+    if (w == 0) {
+      zakonczTrybRozpalania("operator", false);
+    } else if (!rozpalanieTrybAktywny && !uruchomRozpalanieSerwa(err)) {
+      return false;
+    }
   } else if (pole == "tempZadServo") {
     if (w < 0 || w > 100) { err = "tempZadServo poza zakresem 0-100"; return false; }
     temperatura_zadana_serwo = w; config.putUChar("tempZadServo", temperatura_zadana_serwo);
@@ -24934,10 +24976,7 @@ String wifiZbudujStrone() {
     "<div class='row'><div><div class='row-label'>Czas OFF</div><div class='row-desc'>Minuty przekaznik WYLACZONY miedzy cyklami (1-180)</div></div>"
       "<div style='display:flex;gap:8px'><input class='ust-inp' type='number' min='1' max='180' id='u-mieszadloCzasOff'>"
       "<button class='ust-btn' onclick=\"ustSet('mieszadloCzasOff','u-mieszadloCzasOff')\">Ustaw</button></div></div>"
-    "<label style='display:flex;align-items:center;gap:8px;margin:10px 0 2px'>"
-      "<input type='checkbox' id='u-rozpalanie' style='width:auto;margin:0' onchange=\"ustToggle('rozpalanie',this)\"> Rozpalam piec"
-    "</label>"
-    "<div class='row-desc' style='margin:0 0 4px'>Pozwala mieszadlu pracowac ponizej 40&deg;C podczas rozpalania (wylacza sie samo po osiagnieciu temperatury albo po 1h)</div>"
+    "<div class='row-desc' style='margin:10px 0 4px'>Rozpalanie serw i mieszadla uruchamia sie jednym przyciskiem na pulpicie. Bez potwierdzenia w 30 min tryb sie wylaczy; maksymalny czas to 60 min.</div>"
     "</div></div>"
 
     // ── KARTA 3: Serwo (klapa/syberek) — tryb automatyczny ──
@@ -25287,14 +25326,15 @@ String wifiZbudujJsonStatus() {
   // wzorzec jak TrybSerwa kilka linii wyzej.
   j += F("\"wybor\":"); j += String(Wybor); j += F(",");
   // [DASHBOARD-WWW-KAFELKI, Faza 4 (bonus) wg PLAN_DASHBOARD_WWW_CENTRALI.md,
-  // sekcja 9] Analogiczna luka jak "wybor" powyzej -- zywy stan mieszadla
-  // (mieszadloAktywnyStan) i override rozpalania (rozpalanieAktywne) dotad
-  // nie byly nigdzie w /api/status, tylko mieszadloWlaczony (USTAWIENIE
-  // "czy funkcja wlaczona", nie "czy przekaznik akurat zalaczony") w
-  // /api/ustawienia-get. Bez tego nowy kafelek MIESZADLO nie mialby zadnego
-  // zywego stanu do pokazania -- tylko ustawienie, jak w Ustawieniach.
+  // sekcja 9] Zywy stan przekaznika mieszadla oraz wspolny tryb rozpalania sa
+  // raportowane nizej; mieszadloWlaczony pozostaje osobnym ustawieniem
+  // automatyki, a nie odczytem stanu wyjscia.
   j += F("\"mieszadlo\":"); j += (mieszadloAktywnyStan ? "true" : "false"); j += F(",");
-  j += F("\"rozpalanie\":"); j += (rozpalanieAktywne ? "true" : "false"); j += F(",");
+  // `rozpalanie` to teraz jeden wspolny tryb serwa + mieszadlo; statusy
+  // podfaz i timer sa rozdzielone tylko diagnostycznie.
+  j += F("\"rozpalanie\":"); j += (rozpalanieTrybAktywny ? "true" : "false"); j += F(",");
+  j += F("\"rozpalanie_potwierdzone\":"); j += (rozpalaniePotwierdzone ? "true" : "false"); j += F(",");
+  j += F("\"rozpalanie_pozostalo_s\":"); j += String(rozpalaniePozostaloSekundy()); j += F(",");
   j += F("\"alarm_ogrzewanie\":"); j += (alarmOgrzewanieWlaczone ? "true" : "false"); j += F(",");
   j += F("\"alarm_panel\":"); j += (alarmPanelWlaczone ? "true" : "false"); j += F(",");
   j += F("\"rozpalanie_serwa_dostepne\":"); j += (rozpalanieSerwaDostepne ? "true" : "false"); j += F(",");
@@ -26293,7 +26333,9 @@ void wifiZarejestrujTrasy() {
     json += ",\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false");
     json += ",\"mieszadloCzasOn\":" + String(mieszadloCzasOn);
     json += ",\"mieszadloCzasOff\":" + String(mieszadloCzasOff);
-    json += ",\"rozpalanie\":" + String(rozpalanieAktywne ? "true" : "false");
+    json += ",\"rozpalanie\":" + String(rozpalanieTrybAktywne ? "true" : "false");
+    json += ",\"rozpalanie_potwierdzone\":" + String(rozpalaniePotwierdzone ? "true" : "false");
+    json += ",\"rozpalanie_pozostalo_s\":" + String(rozpalaniePozostaloSekundy());
     json += ",\"tempZadServo\":" + String(temperatura_zadana_serwo);
     json += ",\"histerServo\":" + String(Histereza_Serwo);
     json += ",\"skokKlapy\":" + String(Skok_Klapy);
@@ -26393,17 +26435,24 @@ void wifiZarejestrujTrasy() {
     request->send(200, "application/json", "{\"ok\":true,\"os\":\"" + os + "\",\"procent\":" + String(procent) + "}");
   });
 
-  // [ESP-LOCAL-HTML-PARITY] Lokalny przycisk korzysta z tego samego helpera
-  // co Firebase. Helper ponownie weryfikuje alarmy i swiezosc temperatury;
-  // powtorne POST podczas aktywnej sekwencji sa odrzucane.
+  // [ROZPALANIE-WSPOLNE] Jeden lokalny przycisk moze uruchomic lub jawnie
+  // zatrzymac wspolny tryb serw + mieszadla. Start ponownie waliduje alarmy
+  // i swiezosc temperatury po stronie centrali.
   wifiWebServer.on(AsyncURIMatcher::exact("/api/rozpalanie-serwa"), HTTP_POST, [](AsyncWebServerRequest *request) {
     if (!request->hasParam("token", true) ||
         request->getParam("token", true)->value() != g_wifiLocalActionToken) {
       request->send(403, "application/json", "{\"ok\":false,\"error\":\"nieprawidlowy_token\"}");
       return;
     }
-    if (rozpalanieSerwaAktywne) {
-      request->send(409, "application/json", "{\"ok\":false,\"error\":\"rozpalanie_juz_aktywne\"}");
+    const String akcja = request->hasParam("akcja", true)
+        ? request->getParam("akcja", true)->value() : String("start");
+    if (akcja == "stop") {
+      zakonczTrybRozpalania("operator", false);
+      request->send(200, "application/json", "{\"ok\":true,\"active\":false}");
+      return;
+    }
+    if (akcja != "start") {
+      request->send(400, "application/json", "{\"ok\":false,\"error\":\"nieprawidlowa_akcja\"}");
       return;
     }
     String blad;
@@ -26411,7 +26460,7 @@ void wifiZarejestrujTrasy() {
       request->send(409, "application/json", String("{\"ok\":false,\"error\":\"") + blad + "\"}");
       return;
     }
-    request->send(200, "application/json", "{\"ok\":true}");
+    request->send(200, "application/json", "{\"ok\":true,\"active\":true}");
   });
 
   // [LCD-POMPA-OVERRIDE] Lokalny odpowiednik komend Telegram/Firebase
@@ -26455,8 +26504,8 @@ void wifiZarejestrujTrasy() {
 
   // [SYMULACJA-MIESZADLO, PLAN_SYMULACJA_CZUJNIKOW.md 3.2/6.5] Nowy endpoint,
   // wzorowany 1:1 na /api/pompa-manual powyzej. Mieszadlo mialo dotad tylko
-  // wlasny, wezszy override na potrzeby rozpalania (rozpalanieAktywne), bez
-  // ogolnego "wymus WL/WYL na X minut", jakie ma pompa. W przeciwienstwie do
+  // wspolny, wezszy override na potrzeby trybu rozpalania (rozpalanieAktywne),
+  // bez ogolnego "wymus WL/WYL na X minut", jakie ma pompa. W przeciwienstwie do
   // pompy nie ma dedykowanej funkcji xUstaw() — mieszadlo() steruje
   // przekaznikiem wprost, wiec robimy to samo tutaj (digitalWrite +
   // mieszadloAktywnyStan), a guard na gorze mieszadlo() (patrz ta funkcja)
@@ -27731,7 +27780,7 @@ void mieszadlo() {
   }
 
   bool pracaDozwolona = mieszadloWlaczony &&
-      (rozpalanieAktywne || temperaturaOgrzewania >= TEMP_MIN_POMPY);
+      ((rozpalanieTrybAktywny && rozpalanieAktywne) || temperaturaOgrzewania >= TEMP_MIN_POMPY);
 
   if (!pracaDozwolona) {
     if (mieszadloAktywnyStan) {
@@ -27740,16 +27789,6 @@ void mieszadlo() {
     }
     mieszadloCzasZmianyFazyMs = millis(); // faza OFF zaczyna sie na nowo, gdy warunek znow bedzie spelniony
     return;
-  }
-
-  // [MIESZADLO-ROZPALANIE] Autowylaczenie override po 1h albo po
-  // osiagnieciu progu — zabezpieczenie przed "zapomnianym wlaczonym"
-  // rozpalaniem; kolejny tick z tym samym pracaDozwolona==false wyzej
-  // (jesli piec jednak jeszcze zimny) po prostu wstrzyma mieszadlo.
-  if (rozpalanieAktywne &&
-      (temperaturaOgrzewania >= TEMP_MIN_POMPY ||
-       millis() - rozpalanieStartMs >= ROZPALANIE_MAX_CZAS_MS)) {
-    rozpalanieAktywne = false;
   }
 
   unsigned long teraz = millis();
@@ -27834,7 +27873,9 @@ static bool temperaturaPiecZnanaDlaRozpalania() {
 }
 
 static bool rozpalanieSerwaWymuszenieAktywne() {
-  return rozpalanieSerwaDostepne && !rozpalanieSerwaBlokadaDymu;
+  // Samo zimne okno tylko udostepnia przycisk. Wymuszenie serw jest
+  // aktywne wylacznie w ramach jednego, jawnie uruchomionego trybu.
+  return rozpalanieTrybAktywny && rozpalanieSerwaDostepne && !rozpalanieSerwaBlokadaDymu;
 }
 
 static void zapiszStanRozpalaniaSerwa() {
@@ -27957,7 +27998,44 @@ void serwoTick() {
   }
 }
 
+static unsigned long rozpalaniePozostaloSekundy() {
+  if (!rozpalanieTrybAktywny) return 0;
+  const unsigned long limitMs = rozpalaniePotwierdzone
+      ? ROZPALANIE_MAX_CZAS_MS
+      : ROZPALANIE_BRAK_POTWIERDZENIA_MS;
+  const unsigned long elapsedMs = millis() - rozpalanieStartMs;
+  if (elapsedMs >= limitMs) return 0;
+  return (limitMs - elapsedMs + 999UL) / 1000UL;
+}
+
+static void zakonczTrybRozpalania(const char* powod, bool blokadaDymu) {
+  const bool byloAktywne = rozpalanieTrybAktywne || rozpalanieAktywne || rozpalanieSerwaAktywne;
+  rozpalanieTrybAktywne = false;
+  rozpalaniePotwierdzone = false;
+  rozpalanieAktywne = false;
+  rozpalanieStartMs = 0;
+  rozpalanieTempStartu = 0.0f;
+  rozpalanieSerwaAktywne = false;
+  rozpalanieSerwaMonitorPoStarcie = false;
+  dymNadzorKlikniecieOczekuje = false;
+  if (blokadaDymu) {
+    rozpalanieSerwaBlokadaDymu = true;
+  } else if (!alarmBezpieczenstwaSerwaAktywny()) {
+    rozpalanieSerwaBlokadaDymu = false;
+  }
+  zatrzymajRuchSerwa(ruchSyberka);
+  zatrzymajRuchSerwa(ruchKlapy);
+  zapiszStanRozpalaniaSerwa();
+  if (byloAktywne) {
+    zapiszLog(String(F("tag=SERVO lvl=INFO akcja=rozpalanie stan=zakonczone powod=")) +
+              String(powod ? powod : "nieznany"));
+  }
+}
+
 static bool uruchomRozpalanieSerwa(String& blad) {
+  // Ta komenda rozpoczyna wspolny tryb; ponowiony pakiet Firebase jest
+  // idempotentny i nie zeruje licznika. Zatrzymanie ma osobna komende.
+  if (rozpalanieTrybAktywne) { blad = ""; return true; }
   if (alarmBezpieczenstwaSerwaAktywny()) { blad = "aktywny_alarm_bezpieczenstwa"; return false; }
   if (!temperaturaPiecZnanaDlaRozpalania()) { blad = "brak_swiezej_temperatury_pieca"; return false; }
   if (temperaturaOgrzewania > 30.0f) { blad = "temperatura_powyzej_30C"; return false; }
@@ -27966,12 +28044,17 @@ static bool uruchomRozpalanieSerwa(String& blad) {
     return false;
   }
 
+  rozpalanieStartMs = millis();
+  rozpalanieTempStartu = temperaturaOgrzewania;
+  rozpalaniePotwierdzone = false;
+  rozpalanieAktywne = true; // jeden start uruchamia tez override mieszadla
   rozpalanieSerwaDostepne = true;
   rozpalanieSerwaBlokadaDymu = false;
   rozpalanieSerwaAktywne = true;
-  zapiszStanRozpalaniaSerwa();
   dymNadzorKlikniecieOczekuje = true; // obsluga GPIO/czujnika pozostaje na Core 1
-  zapiszLog(F("tag=SERVO akcja=rozpalanie stan=aktywne nadzor_dym_min=5"));
+  rozpalanieTrybAktywny = true; // flaga wspolna publikuje kompletnie przygotowany stan
+  zapiszStanRozpalaniaSerwa();
+  zapiszLog(F("tag=SERVO akcja=rozpalanie stan=wspolny_start serwa_mieszadlo limit_brak_30min limit_max_60min"));
   blad = "";
   return true;
 }
@@ -27990,27 +28073,74 @@ void obslugaRozpalaniaSerwa() {
     zapiszStanRozpalaniaSerwa();
   }
 
-  bool temperaturaZnana = temperaturaPiecZnanaDlaRozpalania();
-  if (temperaturaZnana) {
-    if (temperaturaOgrzewania < 25.0f && !rozpalanieSerwaDostepne) {
-      rozpalanieSerwaDostepne = true;
-      zapiszStanRozpalaniaSerwa();
-      zapiszLog(F("tag=SERVO akcja=rozpalanie okno=otwarte temp_ponizej=25C"));
+  const bool temperaturaZnana = temperaturaPiecZnanaDlaRozpalania();
+  if (!rozpalanieTrybAktywny && temperaturaZnana && temperaturaOgrzewania < 25.0f && !rozpalanieSerwaDostepne) {
+    // Zimne okno udostepnia jeden wspolny przycisk; samo w sobie nie uruchamia
+    // wymuszenia serw ani override'u mieszadla.
+    rozpalanieSerwaDostepne = true;
+    zapiszStanRozpalaniaSerwa();
+    zapiszLog(F("tag=SERVO akcja=rozpalanie okno=otwarte temp_ponizej=25C"));
+  }
+
+  if (rozpalanieTrybAktywny && alarmBezpieczenstwaSerwaAktywny()) {
+    const bool alarmDymu = (czyAlarmAktywny == 1);
+    zakonczTrybRozpalania(alarmDymu ? "alarm_dymu" : "alarm_bezpieczenstwa", alarmDymu);
+    return;
+  }
+
+  unsigned long rozpalanieElapsedMs = 0;
+  if (rozpalanieTrybAktywny) {
+    rozpalanieElapsedMs = millis() - rozpalanieStartMs;
+    const unsigned long elapsedMs = rozpalanieElapsedMs;
+    if (elapsedMs >= ROZPALANIE_MAX_CZAS_MS) {
+      zakonczTrybRozpalania("limit_bezwzgledny_60min", false);
+      return;
     }
-    if (temperaturaOgrzewania > 30.0f &&
-        (rozpalanieSerwaDostepne || rozpalanieSerwaAktywne || rozpalanieSerwaBlokadaDymu)) {
-      bool byloAktywne = rozpalanieSerwaAktywne;
-      rozpalanieSerwaDostepne = false;
-      rozpalanieSerwaAktywne = false;
-      if (!alarmBezpieczenstwaSerwaAktywny()) {
-        zatrzymajRuchSerwa(ruchSyberka);
-        zatrzymajRuchSerwa(ruchKlapy);
-        rozpalanieSerwaBlokadaDymu = false;
-      }
-      zapiszStanRozpalaniaSerwa();
-      zapiszLog(byloAktywne ? F("tag=SERVO akcja=rozpalanie stan=zakonczone temp_powyzej=30C")
-                            : F("tag=SERVO akcja=rozpalanie okno=zamkniete temp_powyzej=30C"));
+    // Po przekroczeniu 30 min nie przyjmujemy juz spoznionego odczytu jako
+    // potwierdzenia. Na samej granicy (elapsed == 30 min) odczyt moze jeszcze
+    // potwierdzic zaplon; jesli go brak, tryb zostaje wylaczony w tym ticku.
+    if (!rozpalaniePotwierdzone && elapsedMs > ROZPALANIE_BRAK_POTWIERDZENIA_MS) {
+      zakonczTrybRozpalania("brak_potwierdzenia_30min", false);
+      return;
     }
+  }
+
+  if (rozpalanieTrybAktywny && temperaturaZnana && !rozpalaniePotwierdzone &&
+      (temperaturaOgrzewania > 30.0f || temperaturaOgrzewania - rozpalanieTempStartu >= 5.0f)) {
+    rozpalaniePotwierdzone = true;
+    zapiszLog(F("tag=SERVO akcja=rozpalanie stan=potwierdzone temp_prog_30C_lub_wzrost_5C"));
+  }
+
+  if (rozpalanieTrybAktywny && !rozpalaniePotwierdzone &&
+      rozpalanieElapsedMs >= ROZPALANIE_BRAK_POTWIERDZENIA_MS) {
+    zakonczTrybRozpalania("brak_potwierdzenia_30min", false);
+    return;
+  }
+
+  if (temperaturaZnana && rozpalanieAktywne && temperaturaOgrzewania >= TEMP_MIN_POMPY) {
+    // Po rozgrzaniu mieszadlo wraca do normalnego sterowania progowego.
+    rozpalanieAktywne = false;
+    zapiszLog(F("tag=SERVO akcja=rozpalanie podfaza=mieszadlo_zakonczona temp_prog=55C"));
+  }
+
+  if (temperaturaZnana && temperaturaOgrzewania > 30.0f &&
+      (rozpalanieSerwaDostepne || rozpalanieSerwaAktywne || rozpalanieSerwaBlokadaDymu)) {
+    const bool byloAktywne = rozpalanieSerwaAktywne;
+    rozpalanieSerwaDostepne = false;
+    rozpalanieSerwaAktywne = false;
+    if (!alarmBezpieczenstwaSerwaAktywny()) {
+      zatrzymajRuchSerwa(ruchSyberka);
+      zatrzymajRuchSerwa(ruchKlapy);
+      rozpalanieSerwaBlokadaDymu = false;
+    }
+    zapiszStanRozpalaniaSerwa();
+    zapiszLog(byloAktywne ? F("tag=SERVO akcja=rozpalanie podfaza=serwa_zakonczona temp_powyzej=30C")
+                          : F("tag=SERVO akcja=rozpalanie okno=zamkniete temp_powyzej=30C"));
+  }
+
+  if (rozpalanieTrybAktywny && !rozpalanieSerwaAktywne && !rozpalanieAktywne) {
+    zakonczTrybRozpalania("temperatura_robocza_55C", false);
+    return;
   }
 
   if (!temperaturaZnana || !rozpalanieSerwaWymuszenieAktywne() ||
@@ -28625,16 +28755,14 @@ void pozar() {
     czasNastepnejAkcjiDymu = millis() + 10000UL;
 
     if (czyAlarmAktywny == 0) {
-      bool rozpalanieByloAktywne = rozpalanieSerwaAktywne;
+      bool rozpalanieByloAktywne = rozpalanieTrybAktywne || rozpalanieSerwaAktywne;
       bool wymuszenieByloAktywne = rozpalanieSerwaWymuszenieAktywne();
       bool syberekJuzSieOtwiera = ruchSyberka.aktywny && ruchSyberka.docelowa > pozycjaSyberek;
       int bazaSyberka = syberekJuzSieOtwiera ? ruchSyberka.docelowa : pozycjaSyberek;
       if (wymuszenieByloAktywne || rozpalanieByloAktywne) {
-        // Alarm przerywa wymuszenie; blokada trwa do recznego ponownego kliku
-        // albo zamkniecia zimnego okna po przekroczeniu 30C.
-        rozpalanieSerwaAktywne = false;
-        rozpalanieSerwaBlokadaDymu = true;
-        zapiszStanRozpalaniaSerwa();
+        // Alarm dymu przerywa CALY wspolny tryb i blokuje automatyczne
+        // ponowne wymuszenie do recznego klikniecia po skasowaniu alarmu.
+        zakonczTrybRozpalania("alarm_dymu", true);
       }
 
       zapiszLogKrytyczny(F("tag=ALARM lvl=CRIT zdarzenie=aktywacja typ=POZAR"));
@@ -38722,7 +38850,9 @@ void sendStatusToFirebase() {
   ja("\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false") + ",");
   ja("\"mieszadloCzasOn\":" + String(mieszadloCzasOn) + ",");
   ja("\"mieszadloCzasOff\":" + String(mieszadloCzasOff) + ",");
-  ja("\"rozpalanie\":" + String(rozpalanieAktywne ? "true" : "false") + ",");
+  ja("\"rozpalanie\":" + String(rozpalanieTrybAktywne ? "true" : "false") + ",");
+  ja("\"rozpalanie_potwierdzone\":" + String(rozpalaniePotwierdzone ? "true" : "false") + ",");
+  ja("\"rozpalanie_pozostalo_s\":" + String(rozpalaniePozostaloSekundy()) + ",");
   ja("\"tempZadServo\":" + String(temperatura_zadana_serwo) + ",");
   ja("\"histerServo\":" + String(Histereza_Serwo) + ",");
   ja("\"skokKlapy\":" + String(Skok_Klapy) + ",");
@@ -39309,6 +39439,11 @@ void checkFirebaseCommands() {
       lastFirebaseCmdError = bladRozpalania;
       zapiszLog(String(F("tag=SERVO lvl=WARN akcja=rozpalanie_odrzucone powod=")) + bladRozpalania);
     }
+  }
+  else if (cmd == "rozpalanie_stop") {
+    zakonczTrybRozpalania("operator", false);
+    lastFirebaseCmdOk = true;
+    lastFirebaseCmdError = "";
   }
   else if (cmd == "wycisz") {
     // [FIX-DYM-RESET-NIEPELNY] Celowo OSOBNA komenda od reset_alarmow —
@@ -42178,15 +42313,23 @@ void setup() {
   Skok_Syberka             = config.getUChar("skokSyberka", 5);
   pozycjaKlapa             = config.getUChar("pozKlapa", 0);
   pozycjaSyberek           = config.getUChar("pozSyberek", 0);
-  // Stan nowego Rozpalania-serw jest odrebny od rozpalanieAktywne mieszadla.
-  rozpalanieSerwaAktywne = config.getBool("rSerwoAct", false);
+  // Wspolne Rozpalanie jest ograniczone czasowo tylko w RAM. Po restarcie
+  // nie odtwarzamy wymuszenia, bo licznik millis() zaczyna sie od nowa.
+  const bool rozpalaniePrzerwaneRestartem = config.getBool("rSerwoAct", false);
+  rozpalanieTrybAktywny = false;
+  rozpalaniePotwierdzone = false;
+  rozpalanieAktywne = false;
+  rozpalanieStartMs = 0;
+  rozpalanieTempStartu = 0.0f;
+  rozpalanieSerwaAktywne = false;
   rozpalanieSerwaDostepne = config.getBool("rSerwoWin", false);
   rozpalanieSerwaBlokadaDymu = config.getBool("rSerwoBlk", false);
-  if (rozpalanieSerwaBlokadaDymu) rozpalanieSerwaAktywne = false;
-  if (rozpalanieSerwaAktywne) rozpalanieSerwaDostepne = true;
-  rozpalanieSerwaMonitorPoStarcie = rozpalanieSerwaAktywne;
-  if (rozpalanieSerwaAktywne || rozpalanieSerwaBlokadaDymu || rozpalanieSerwaDostepne) {
+  rozpalanieSerwaMonitorPoStarcie = false;
+  if (rozpalaniePrzerwaneRestartem || rozpalanieSerwaBlokadaDymu || rozpalanieSerwaDostepne) {
     zapiszStanRozpalaniaSerwa();
+  }
+  if (rozpalaniePrzerwaneRestartem) {
+    zapiszLog(F("tag=SERVO lvl=WARN akcja=rozpalanie stan=przerwane_restartem wymuszenia_wylaczone"));
   }
   // [MIESZADLO-CYKL] Stary klucz "mieszadloTemp" (martwa flaga Mieszadlo_TEMP)
   // celowo NIE jest juz odczytywany — osierocony w NVS, nieszkodliwy.

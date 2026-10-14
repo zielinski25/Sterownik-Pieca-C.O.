@@ -41,7 +41,9 @@ class PiecState {
     // ── urządzenia ──────────────────────────────────────────────────────────
     var pompa = false
     var mieszadlo = false
-    var rozpalanie = false // istniejący override mieszadła
+    var rozpalanie = false // wspólny tryb serw i mieszadła
+    var rozpalanie_potwierdzone = false
+    var rozpalanie_pozostalo_s = 0
     var rozpalanie_serwa_aktywne = false
     var rozpalanie_serwa_dostepne = false
     var rozpalanie_serwa_blokada_dymu = false
@@ -191,6 +193,7 @@ class PiecState {
         alarm_dym_wyciszony = false; alarm_dym_wyciszenie_ms = 0L
         alarm_ogrz_wyciszony = false; alarm_ogrz_wyciszenie_ms = 0L
         pompa = false; mieszadlo = false; rozpalanie = false
+        rozpalanie_potwierdzone = false; rozpalanie_pozostalo_s = 0
         rozpalanie_serwa_aktywne = false; rozpalanie_serwa_dostepne = false
         rozpalanie_serwa_blokada_dymu = false
         antystopWlaczony = false; mieszadloWlaczony = false; rtc_ok = false
@@ -281,6 +284,8 @@ class PiecState {
         flag("pompa") { pompa = it }
         flag("mieszadlo") { mieszadlo = it }
         flag("rozpalanie") { rozpalanie = it }
+        flag("rozpalanie_potwierdzone") { rozpalanie_potwierdzone = it }
+        intField("rozpalanie_pozostalo_s", 0, 3600) { rozpalanie_pozostalo_s = it }
         flag("rozpalanie_serwa_aktywne") { rozpalanie_serwa_aktywne = it }
         flag("rozpalanie_serwa_dostepne") { rozpalanie_serwa_dostepne = it }
         flag("rozpalanie_serwa_blokada_dymu") { rozpalanie_serwa_blokada_dymu = it }

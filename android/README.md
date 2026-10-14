@@ -15,6 +15,10 @@ cd android
 
 Windows PowerShell equivalent: `cd android; .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest --rerun-tasks`.
 
+### Wspólny tryb rozpalania
+
+Jeden przycisk uruchamia sekwencję serw oraz czasowy override mieszadła. Start wymaga świeżego statusu, temperatury pieca do 30°C i braku alarmu; rozpalenie potwierdza temperatura powyżej 30°C lub wzrost o co najmniej 5°C od startu. Bez potwierdzenia tryb wyłącza się po 30 minutach, a bezwzględny limit wynosi 60 minut. Zatrzymanie wysyła `rozpalanie_stop`; sterowanie pozostaje zablokowane, gdy status nie zawiera pól `rozpalanie_potwierdzone` i `rozpalanie_pozostalo_s`.
+
 Direct Boot alarm monitoring is supported from Android 9 (API 28) when enabled and logged in. After updating, open the app once while unlocked so it can migrate legacy alarm settings and prepare the encrypted boot-session copy; confirm the green encrypted-session readiness message in the Alarms sheet. This implementation does not add FCM or backend code.
 
 Wymagania: **JDK 17–21** (Studio: `jbr-21`), Android SDK 35 (compile/target),
