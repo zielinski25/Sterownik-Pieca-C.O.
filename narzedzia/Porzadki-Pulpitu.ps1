@@ -26,6 +26,10 @@
     Archiwizuje tez dodatkowe APK, paczki chart-fix, kopie panelu .bak oraz
     nazwane kopie projektow sterownika. Nie wybiera z nich aktualnej wersji.
 
+.PARAMETER ResztaPulpitu
+    Grupuje pozostale rozpoznane elementy w Projekty, Druk3D, Dokumenty
+    i Do-przejrzenia. Nie przenosi skrotow ani nieznanych folderow.
+
 .PARAMETER Pulpit
     Inny folder do uporzadkowania (domyslnie pulpit biezacego uzytkownika).
 
@@ -39,6 +43,7 @@
 param(
     [switch]$Wykonaj,
     [switch]$DodatkoweKopie,
+    [switch]$ResztaPulpitu,
     [string]$Pulpit
 )
 
@@ -202,6 +207,37 @@ if ($DodatkoweKopie) {
     }
 }
 
+# Ostatni etap: tylko nazwy i typy potwierdzone przez uzytkownika.
+# Nie nazywamy projektow starymi ani nie archiwizujemy ich: moga byc uzywane.
+if ($ResztaPulpitu) {
+    $alreadyPlanned = @{}
+    foreach ($group in @($toArchive, $toTarget)) {
+        foreach ($p in $group) { $alreadyPlanned[$p.Source.ToLowerInvariant()] = $true }
+    }
+    $folderGroups = @{
+        'app' = 'Projekty'; 'piec' = 'Projekty'
+        'files' = 'Druk3D'; 'Marlin_Ender3V2S1_drukarka3D' = 'Druk3D'
+        'OFERTA' = 'Dokumenty'; 'Nowy folder' = 'Do-przejrzenia'
+    }
+    $documentNames = @('TR.docx', 'Produkty promowane.txt', 'Nowy Dokument tekstowy.txt')
+    foreach ($item in @(Get-ChildItem -LiteralPath $desk -ErrorAction Stop)) {
+        if ($alreadyPlanned.ContainsKey($item.FullName.ToLowerInvariant())) { continue }
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        $category = ''
+        if ($item.PSIsContainer) {
+            if ($folderGroups.ContainsKey($item.Name)) { $category = $folderGroups[$item.Name] }
+        } elseif ($item.Name -like 'obj_*.stl') {
+            $category = 'Druk3D'
+        } elseif ($documentNames -contains $item.Name) {
+            $category = 'Dokumenty'
+        }
+        if ($category) {
+            $destDir = Join-Path $desk $category
+            $toTarget.Add((New-PlanItem $item.FullName $destDir ('grupowanie: ' + $category) ([bool]$item.PSIsContainer)))
+        }
+    }
+}
+
 # --- podglad ---------------------------------------------------------------
 # Listy przechodzone petla w petli: w Windows PowerShell 5.1 "@(lista) + @(lista)"
 # dla List[object] konczy sie bledem "Argument types do not match".
@@ -222,8 +258,7 @@ if (($toArchive.Count + $toTarget.Count) -eq 0) {
         foreach ($p in $group) {
             $leaf = Split-Path -Leaf $p.Source
             if ($p.IsDir) { $leaf = $leaf + '\' }
-            $where = $FolderName + '\'
-            if ($p.DestDir -eq $archive) { $where = $FolderName + '\' + $ArchiveName + '\' }
+            $where = $p.DestDir.Substring($desk.Length + 1) + '\'
             $from = ''
             if ((Split-Path -Parent $p.Source).TrimEnd('\') -ieq $target) { $from = $FolderName + '\' }
             Write-Info ('{0,-22} <- {1}{2}  ({3})' -f $where, $from, $leaf, $p.Why)
@@ -236,10 +271,13 @@ $moved = 0
 $failed = 0
 if ($Wykonaj -and ($toArchive.Count + $toTarget.Count) -gt 0) {
     try {
-        New-Item -ItemType Directory -Force -Path $target -ErrorAction Stop | Out-Null
-        if ($toArchive.Count -gt 0) { New-Item -ItemType Directory -Force -Path $archive -ErrorAction Stop | Out-Null }
+        foreach ($group in @($toArchive, $toTarget)) {
+            foreach ($p in $group) {
+                New-Item -ItemType Directory -Force -Path $p.DestDir -ErrorAction Stop | Out-Null
+            }
+        }
     } catch {
-        Exit-WithError ("Nie udalo sie utworzyc folderu {0}: {1}" -f $target, $_.Exception.Message)
+        Exit-WithError ("Nie udalo sie utworzyc folderu docelowego (pulpit {0}): {1}" -f $desk, $_.Exception.Message)
     }
     # Najpierw archiwum - zwalnia nazwy w SterownikCO dla najnowszych plikow.
     foreach ($group in @($toArchive, $toTarget)) {
@@ -299,4 +337,8 @@ if ($failed -gt 0) {
     Write-Host ("Gotowe z bledami: {0} element(y) nie przeniesione (np. otwarte w innym programie)." -f $failed) -ForegroundColor Yellow
     exit 1
 }
-Write-Host ('Gotowe. Pliki sterownika sa w {0}' -f $target) -ForegroundColor Green
+if ($ResztaPulpitu) {
+    Write-Host 'Gotowe. Przeniesione elementy sa w folderach wskazanych w planie.' -ForegroundColor Green
+} else {
+    Write-Host ('Gotowe. Pliki sterownika sa w {0}' -f $target) -ForegroundColor Green
+}

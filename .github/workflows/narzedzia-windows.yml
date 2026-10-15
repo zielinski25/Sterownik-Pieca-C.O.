@@ -236,3 +236,68 @@ jobs:
               if (-not (Select-String -LiteralPath "$env:RUNNER_TEMP\kopie.log" -SimpleMatch 'Nic do przeniesienia' -Quiet)) { throw 'Oczekiwano: Nic do przeniesienia' }
           }
           Send-Notice 'Dodatkowe kopie - wynik' @('Opt-in, podglad, wykonanie PS 5.1, zachowanie tresci (w tym .git), kolizja nazw i powtorzenie PS 5.1/7: OK')
+
+      - name: Reszta pulpitu - projekty, modele i dokumenty
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $d = 'C:\pulpit-reszta'
+          $move = [ordered]@{
+              'app\app\build.gradle.kts' = 'Projekty\app\app\build.gradle.kts'
+              'app\.idea\workspace.xml' = 'Projekty\app\.idea\workspace.xml'
+              'piec\.git\HEAD' = 'Projekty\piec (2)\.git\HEAD'
+              'piec\Piec.html' = 'Projekty\piec (2)\Piec.html'
+              'files\TOP_mst.stl' = 'Druk3D\files\TOP_mst.stl'
+              'Marlin_Ender3V2S1_drukarka3D\platformio.ini' = 'Druk3D\Marlin_Ender3V2S1_drukarka3D\platformio.ini'
+              ('obj_1_' + [char]0x5b9e + [char]0x4f53 + '1.stl') = ('Druk3D\obj_1_' + [char]0x5b9e + [char]0x4f53 + '1.stl')
+              'OFERTA\oferta.txt' = 'Dokumenty\OFERTA\oferta.txt'
+              'TR.docx' = 'Dokumenty\TR.docx'
+              'Produkty promowane.txt' = 'Dokumenty\Produkty promowane.txt'
+              'Nowy Dokument tekstowy.txt' = 'Dokumenty\Nowy Dokument tekstowy.txt'
+              'Nowy folder\bootmgr' = 'Do-przejrzenia\Nowy folder\bootmgr'
+          }
+          $stay = @('Projekty\piec\README.txt', 'natan\dane.txt', 'Telegram.lnk',
+                    'Inny folder\dane.txt', 'SterownikCO\SterownikCO-debug.apk')
+          foreach ($rel in (@($move.Keys) + $stay)) {
+              $p = Join-Path $d $rel
+              New-Item -ItemType Directory -Force -Path (Split-Path -Parent $p) | Out-Null
+              [IO.File]::WriteAllText($p, $rel)
+          }
+          function Get-Snapshot {
+              @(Get-ChildItem -LiteralPath $d -Recurse -Force -File | ForEach-Object {
+                  $_.FullName.Substring($d.Length + 1) + ':' + [IO.File]::ReadAllText($_.FullName)
+              } | Sort-Object)
+          }
+          function Invoke-Cleanup([string]$Exe, [string[]]$Extra) {
+              $log = "$env:RUNNER_TEMP\reszta.log"
+              & $Exe -NoProfile -ExecutionPolicy Bypass -File narzedzia\Porzadki-Pulpitu.ps1 -Pulpit $d @Extra *> $log
+              $code = $LASTEXITCODE
+              Send-Notice ("Reszta {0} {1} (kod {2})" -f $Exe, ($Extra -join ' '), $code) (Get-Content -LiteralPath $log)
+              if ($code -ne 0) { throw "Skrypt zakonczyl sie kodem $code" }
+          }
+          $before = Get-Snapshot
+          Invoke-Cleanup 'powershell' @('-Wykonaj')
+          if (Compare-Object $before (Get-Snapshot)) { throw 'Bez opt-in cos przeniesiono' }
+          Invoke-Cleanup 'powershell' @('-ResztaPulpitu')
+          if (Compare-Object $before (Get-Snapshot)) { throw 'Podglad cos zmienil' }
+          $txt = Get-Content -LiteralPath "$env:RUNNER_TEMP\reszta.log" -Raw
+          foreach ($category in @('Projekty', 'Druk3D', 'Dokumenty', 'Do-przejrzenia')) {
+              if (-not $txt.Contains($category + '\')) { throw "Brak kategorii: $category" }
+          }
+          Invoke-Cleanup 'powershell' @('-ResztaPulpitu', '-Wykonaj')
+          foreach ($rel in $move.Keys) {
+              $p = Join-Path $d $move[$rel]
+              if ([IO.File]::ReadAllText($p) -ne $rel) { throw "Zla tresc: $p" }
+              if (Test-Path -LiteralPath (Join-Path $d $rel)) { throw "Pozostal: $rel" }
+          }
+          foreach ($rel in $stay) {
+              if ([IO.File]::ReadAllText((Join-Path $d $rel)) -ne $rel) { throw "Zmieniono: $rel" }
+          }
+          $after = Get-Snapshot
+          if ($before.Count -ne $after.Count) { throw 'Zmienila sie liczba plikow' }
+          foreach ($exe in @('powershell', 'pwsh')) {
+              Invoke-Cleanup $exe @('-ResztaPulpitu', '-Wykonaj')
+              if (Compare-Object $after (Get-Snapshot)) { throw "Powtorzenie $exe zmienilo pliki" }
+          }
+          Send-Notice 'Reszta pulpitu - wynik' @('Opt-in, podglad, wykonanie PS 5.1, tresci i ukryte .git/.idea, kolizja folderu piec, powtorzenie PS 5.1/7: OK')

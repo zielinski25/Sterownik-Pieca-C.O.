@@ -70,3 +70,29 @@ są przepisywane). Dodatkowe reguły pomijają junctiony i dowiązania symbolicz
 Foldery o niejasnych nazwach (`app`, `files`, `piec`, `Nowy folder`, `natan`) oraz
 prywatne dokumenty, modele STL i skróty pozostają na miejscu, o ile nie pasują
 do wcześniej opisanej reguły projektu PlatformIO centrali.
+
+### Ostatni etap: pozostałe rozpoznane elementy
+
+Opcja `-ResztaPulpitu` grupuje elementy potwierdzone podczas przeglądu pulpitu.
+Nie usuwa niczego i nie traktuje projektów jako nieaktualnych:
+
+| Element | Folder na pulpicie |
+|---|---|
+| foldery `app`, `piec` | `Projekty` |
+| foldery `files`, `Marlin_Ender3V2S1_drukarka3D`, pliki `obj_*.stl` | `Druk3D` |
+| folder `OFERTA`, pliki `TR.docx`, `Produkty promowane.txt`, `Nowy Dokument tekstowy.txt` | `Dokumenty` |
+| folder `Nowy folder` (mieszane pliki) | `Do-przejrzenia` |
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File $porzadki -ResztaPulpitu
+# Sprawdź plan i zamknij projekty oraz terminale korzystające z tych folderów:
+powershell -NoProfile -ExecutionPolicy Bypass -File $porzadki -ResztaPulpitu -Wykonaj
+```
+
+Projekty są przenoszone **w całości**, w tym ukryte `.git` i pliki IDE. Nie są
+zmieniane ich pliki konfiguracyjne ani absolutne ścieżki. Po przeniesieniu otwórz
+projekt z nowej lokalizacji; GitHub Desktop może wymagać wskazania nowej ścieżki
+repozytorium. Jeśli chcesz zachować ścieżkę któregoś projektu, nie wykonuj planu.
+Skróty, folder `natan` oraz inne nierozpoznane elementy pozostają na miejscu.
+Wyniki kolejnych kompilacji nadal trafiają do `SterownikCO`. Dotychczasowych
+folderów docelowych nie przenosimy; przy kolizji nazwy używamy dopisku ` (2)`.
