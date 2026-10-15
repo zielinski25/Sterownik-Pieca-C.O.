@@ -189,14 +189,23 @@ function Repair-PioarduinoCore([string]$PioExe) {
     # instalowany, gdy pio nie dziala. $true = cos zainstalowano (warto sprobowac ponownie).
     $scripts = Split-Path -Parent $PioExe
     $py = Join-Path $scripts 'python.exe'
-    if (-not (Test-Path -LiteralPath $py -PathType Leaf)) { return $false }
+    if (-not (Test-Path -LiteralPath $py -PathType Leaf)) {
+        Write-Info "PlatformIO spoza penv ($py nie istnieje) - bez naprawy rdzenia."
+        return $false
+    }
     $pin = Get-PioarduinoCorePin
-    if (-not $pin) { return $false }
+    if (-not $pin) {
+        Write-Info 'Nie znalazlem przypietej wersji rdzenia pioarduino (penv_setup.py) - bez naprawy.'
+        return $false
+    }
     $verText = (& $PioExe --version 2>$null) -join ' '
     $have = ''
     $m = [regex]::Match([string]$verText, 'version\s+([0-9][0-9.]*)')
     if ($m.Success) { $have = $m.Groups[1].Value }
-    if ($have -eq $pin.Version) { return $false }
+    if ($have -eq $pin.Version) {
+        Write-Info ('PlatformIO Core {0} zgodny z platforma - przyczyna bledu jest inna.' -f $have)
+        return $false
+    }
     $haveLabel = $have
     if (-not $haveLabel) { $haveLabel = 'brak' }
     Write-Info ('PlatformIO Core {0} -> {1} (wersja wymagana przez platforme pioarduino), instaluje...' -f $haveLabel, $pin.Version)

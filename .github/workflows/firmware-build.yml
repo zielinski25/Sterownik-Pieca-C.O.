@@ -161,6 +161,32 @@ jobs:
           Send-LogNotices "Wgraj-Firmware PS 5.1 (kod $code)" $log
           exit $code
 
+      - name: Diagnostyka PlatformIO (po bledzie)
+        if: failure()
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $penv = Join-Path $env:USERPROFILE '.platformio\penv'
+          $py = Join-Path $penv 'Scripts\python.exe'
+          $uv = Join-Path $penv 'Scripts\uv.exe'
+          $rows = @()
+          $rows += ('python.exe: {0}  uv.exe: {1}' -f (Test-Path $py), (Test-Path $uv))
+          $rows += ('pio --version: ' + ((& (Join-Path $penv 'Scripts\pio.exe') --version 2>&1) -join ' '))
+          $files = @(Get-ChildItem -LiteralPath (Join-Path $env:USERPROFILE '.platformio\platforms') -Filter 'penv_setup.py' -File -Recurse -Depth 4 -ErrorAction SilentlyContinue)
+          foreach ($f in $files) {
+              $rows += ('penv_setup.py: ' + $f.FullName)
+              $rows += @(Select-String -LiteralPath $f.FullName -Pattern '"platformio"\s*:' | ForEach-Object { '  ' + $_.Line.Trim() })
+          }
+          $rows += @(& $py -m pip list 2>&1 | Select-String -Pattern '^(platformio|uv|pyyaml|PyYAML|certifi|rich|click|cryptography) ' | ForEach-Object { 'pip: ' + $_.Line })
+          Send-Notice 'Diagnostyka penv' $rows
+          $rows | ForEach-Object { Write-Host $_ }
+          if (Test-Path $uv) {
+              $out = @(& $uv pip install ('--python=' + $py) --upgrade 'https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip' 'littlefs-python>=0.16.0' 'fatfs-ng>=0.1.14' 'pyyaml>=6.0.2' 'rich-click>=1.8.6' 'zopfli>=0.2.2' 'intelhex>=2.3.0' 'rich>=14.0.0' 'cryptography>=45.0.3' 'certifi>=2025.8.3' 'ecdsa>=0.19.1' 'bitstring>=4.3.1' 'reedsolo>=1.5.3,<1.8' 'esp-idf-size>=2.0.0' 'esp-coredump>=1.14.0' 'pyelftools>=0.32' 2>&1 | ForEach-Object { [string]$_ })
+              Send-Notice ('uv pip install poza pio (kod {0})' -f $LASTEXITCODE) ($out | Select-Object -Last 30)
+              $out | Select-Object -Last 30 | ForEach-Object { Write-Host $_ }
+          }
+
       - name: Wynik w projekcie i na pulpicie
         shell: pwsh
         working-directory: C:\src
