@@ -91,6 +91,8 @@ private data class ChipStyle(val text: String, val fg: Color, val bg: Color, val
 @Composable
 fun Chip(m: AppModel) {
     val st = when {
+        // [LAN] Status prosto z centrali w tej samej sieci — działa także bez internetu.
+        m.onLan -> ChipStyle("● LAN", Pal.Cyan, Pal.rgba(0, 212, 245, .13f), Pal.rgba(0, 212, 245, .38f))
         m.connected -> ChipStyle("● LIVE", Pal.Live, Pal.rgba(74, 222, 128, .13f), Pal.rgba(74, 222, 128, .35f))
         else -> ChipStyle("○ BRAK SESJI", Pal.TextDim, Pal.rgba(127, 147, 163, .12f), Pal.rgba(127, 147, 163, .3f))
     }

@@ -1,6 +1,9 @@
 package com.sterownikco.pro.core
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
@@ -8,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import android.util.Base64
+import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -188,6 +192,9 @@ object Rtdb {
                 val req = Request.Builder().url(AUTH_SIGNIN_URL + java.net.URLEncoder.encode(apiKey, "UTF-8"))
                     .post(body.toString().toRequestBody(JSON)).build()
                 val (code, text) = execute(req)
+                // Brak połączenia (np. brak internetu): IOException, żeby logowanie automatyczne
+                // nie zasłaniało działającego trybu LAN oknem logowania.
+                if (code < 0) return@withContext Result.failure(java.io.IOException(text))
                 val j = JSONObject(text)
                 if (code in 200..299 && j.has("idToken")) Result.success(j)
                 else Result.failure(Exception(j.optJSONObject("error")?.optString("message") ?: "Błąd autoryzacji Firebase"))
@@ -300,7 +307,142 @@ object Rtdb {
         null
     }
 
-    data class Ack(val ok: Boolean, val error: String)
+    /** [via] = droga potwierdzenia: [VIA_FIREBASE] (/piec/ack) albo [VIA_LAN] (/api/lan/ack). */
+    data class Ack(val ok: Boolean, val error: String, val via: String = VIA_FIREBASE)
+
+    const val VIA_FIREBASE = "FIREBASE"
+    const val VIA_LAN = "LAN"
+
+    // ── [LAN] centrala w tej samej sieci — działa także bez internetu ────────
+    /** Sondowanie LAN: krótkie limity — telefon poza siecią centrali nie czeka 15 s. */
+    private val lanHttp: OkHttpClient by lazy {
+        espHttp.newBuilder()
+            .connectTimeout(1500, TimeUnit.MILLISECONDS)
+            .readTimeout(4, TimeUnit.SECONDS)
+            .callTimeout(6, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private suspend fun executeWith(client: OkHttpClient, req: Request): Pair<Int, String> = withContext(Dispatchers.IO) {
+        try {
+            val call = client.newCall(req)
+            coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
+            call.execute().use { r -> r.code to (r.body?.string() ?: "") }
+        } catch (e: Exception) {
+            -1 to (e.message ?: "błąd sieci")
+        }
+    }
+
+    private suspend fun lanGet(ip: String, path: String, client: OkHttpClient = lanHttp): Pair<Int, String> {
+        val url = LocalControllerAddress.url(ip, path) ?: return -2 to ""
+        return executeWith(client, Request.Builder().url(url).header("Cache-Control", "no-store").build())
+    }
+
+    private fun jsonOrNull(text: String): JSONObject? =
+        try { if (text.isBlank()) null else JSONObject(text) } catch (e: Exception) { null }
+
+    data class LanStatus(val ip: String, val json: JSONObject, val fullApi: Boolean)
+
+    /**
+     * Status centrali pod [ip]: `GET /api/lan/status` (firmware v3.47.0+, ten sam JSON co
+     * /piec/status); starszy firmware — `/api/status` (bez ustawień, tylko odczyt).
+     * Starszy firmware odpowiada na nieznane trasy 404 albo przekierowaniem na „/”
+     * (captive portal) — oba oznaczają brak /api/lan/… — null = pod adresem nie ma centrali.
+     */
+    suspend fun lanStatus(ip: String): LanStatus? {
+        val (code, text) = lanGet(ip, "/api/lan/status")
+        val fullApi: Boolean
+        val json: JSONObject? = when {
+            code in 200..299 -> { fullApi = true; jsonOrNull(text) }
+            code == 404 || code in 300..399 -> {
+                fullApi = false
+                val (legacyCode, legacyText) = lanGet(ip, "/api/status")
+                if (legacyCode in 200..299) jsonOrNull(legacyText) else null
+            }
+            else -> { fullApi = false; null }
+        }
+        if (json == null) return null
+        val controllerFields = json.has("t_ogrz") || json.has("dym_alarm") || json.has("tryb_serwa")
+        if (!LanCandidates.looksLikeController(json.optString("wifi_mode"), controllerFields)) return null
+        return LanStatus(ip, json, fullApi)
+    }
+
+    /** Pierwszy osiągalny adres z [candidates] (kolejność = pierwszeństwo; sprawdzane równolegle). */
+    suspend fun lanFind(candidates: List<String>): LanStatus? = coroutineScope {
+        val probes = candidates.map { ip ->
+            async {
+                try { lanStatus(ip) } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+            }
+        }
+        probes.map { it.await() }.firstOrNull { it != null }
+    }
+
+    /** Polecenie na pewno NIE dotarło do centrali w LAN — wolno spróbować przez Firebase. */
+    class LanNotDelivered(message: String) : java.io.IOException(message)
+
+    /**
+     * `POST /api/lan/cmd` (token w nagłówku X-Piec-Token) + oczekiwanie na `GET /api/lan/ack`
+     * (max 12 s) — odpowiednik [sendCommand] w sieci lokalnej: ten sam wykonawca w centrali
+     * i ten sam token. null = brak potwierdzenia; [LanNotDelivered] = polecenie nie dotarło.
+     */
+    suspend fun lanSendCommand(ip: String, id: String, cmd: String): Ack? {
+        val url = LocalControllerAddress.url(ip, "/api/lan/cmd") ?: throw LanNotDelivered("nieprawidłowy adres centrali")
+        val ackPath = "/api/lan/ack?id=$id"
+        val form = FormBody.Builder().add("id", id).add("cmd", cmd).build()
+        val (code, text) = executeWith(lanHttp, Request.Builder().url(url)
+            .header("X-Piec-Token", cmdToken).header("Cache-Control", "no-store").post(form).build())
+        val reply = jsonOrNull(text)
+        when (code) {
+            200, 202 -> Unit
+            400 -> return Ack(false, reply?.optString("error")?.ifEmpty { null } ?: "nieprawidłowe polecenie", VIA_LAN)
+            403 -> return Ack(false, "nieprawidłowy token poleceń", VIA_LAN)
+            409 -> return Ack(false, "centrala wykonuje poprzednie polecenie — spróbuj za chwilę", VIA_LAN)
+            in 300..399, 404 -> throw LanNotDelivered("firmware centrali bez /api/lan/cmd")
+            else -> {
+                // Zerwane połączenie: centrala mogła jednak przyjąć ten cmdId — sprawdź, zanim użyjemy Firebase.
+                val (probeCode, _) = lanGet(ip, ackPath)
+                if (probeCode != 200) throw LanNotDelivered(if (code < 0) "brak połączenia z centralą" else "HTTP $code")
+            }
+        }
+        if (reply?.optBoolean("done") == true) return lanAck(reply)
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < 12_000) {
+            delay(300)
+            val (ackCode, ackText) = lanGet(ip, ackPath)
+            if (ackCode == 404 || ackCode in 300..399) return null
+            val ack = jsonOrNull(ackText) ?: continue
+            if (ack.optBoolean("done")) return lanAck(ack)
+        }
+        return null
+    }
+
+    private fun lanAck(j: JSONObject): Ack = Ack(j.optBoolean("ok"), j.optString("error").ifEmpty { "błąd" }, VIA_LAN)
+
+    /** `GET /api/history` (bufor minutowy ~24 h) albo `/api/history/long` (wiele dni) — CSV centrali. */
+    suspend fun lanHistoryCsv(ip: String, long: Boolean): String? {
+        val (code, text) = lanGet(ip, if (long) "/api/history/long" else "/api/history", client = espHttp)
+        return if (code in 200..299) text else null
+    }
+
+    /**
+     * Polecenie do centrali: w sieci lokalnej (świeże łącze [LanLink] z pełnym API), inaczej
+     * przez Firebase. Gdy LAN zawiedzie, zanim polecenie dotrze do centrali — Firebase.
+     */
+    suspend fun sendCommandAuto(id: String, cmd: String): Ack? {
+        val lan = LanLink.fresh(System.currentTimeMillis())
+        if (lan != null && lan.fullApi) {
+            try {
+                return lanSendCommand(lan.ip, id, cmd)
+            } catch (e: LanNotDelivered) {
+                LanLink.markLost(lan.ip)
+                if (refreshToken.isBlank()) throw java.io.IOException("Brak połączenia z centralą w sieci lokalnej (${e.message})")
+            }
+        } else if (lan != null && refreshToken.isBlank()) {
+            throw java.io.IOException("Starszy firmware centrali — sterowanie w sieci lokalnej wymaga v3.47.0")
+        }
+        if (refreshToken.isBlank()) throw java.io.IOException("Brak połączenia ze sterownikiem — ani sieci lokalnej, ani sesji Firebase")
+        return sendCommand(id, cmd)
+    }
 
     // ── lokalne API centrali (ESP32) ─────────────────────────────────────────
     internal fun localControllerUrl(ip: String, path: String): String? =

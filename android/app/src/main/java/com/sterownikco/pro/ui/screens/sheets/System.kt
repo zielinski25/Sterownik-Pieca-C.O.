@@ -59,6 +59,7 @@ import com.sterownikco.pro.core.WifiNet
 import com.sterownikco.pro.core.DLOG_CATEGORIES
 import com.sterownikco.pro.core.Prefs
 import com.sterownikco.pro.ui.icons.AppIcon
+import com.sterownikco.pro.ui.components.CheckRow
 import com.sterownikco.pro.ui.components.Note
 import com.sterownikco.pro.ui.components.SectionHeader
 import com.sterownikco.pro.ui.components.UstBtn
@@ -752,7 +753,7 @@ fun TerminalSheet(m: AppModel) {
 @Composable
 fun LogsSheet(m: AppModel) {
     val telemetryStatus = when {
-        !m.connected -> "BRAK SESJI FIREBASE"
+        !m.connected -> "BRAK POŁĄCZENIA"
         !m.isFbFresh -> "DANE NIEAKTUALNE"
         !m.S.online && m.S.hasData("online") -> "OFFLINE"
         !m.S.online -> "OCZEKIWANIE NA TELEMETRIĘ"
@@ -981,4 +982,40 @@ fun SessionSheet(m: AppModel) {
             m.openSheet(null)
         })
     }
+    LanSection(m)
+}
+
+/** [LAN] Centrala w tej samej sieci: status i polecenia bez internetu (firmware v3.47.0+). */
+@Composable
+private fun LanSection(m: AppModel) {
+    val ip = m.lanIp
+    DiagCard(
+        lbl = "SIEĆ LOKALNA (LAN)",
+        value = when {
+            !m.lanEnabled -> "⚪ Połączenie lokalne wyłączone"
+            ip != null && m.lanFullApi -> "🟢 Centrala w tej sieci: $ip"
+            ip != null -> "🟡 Centrala w tej sieci: $ip — tylko odczyt"
+            else -> "⚪ Centrali nie ma w tej sieci"
+        },
+        sub = m.lanInfo
+    )
+    CheckRow(
+        name = "Połączenie lokalne",
+        desc = "W sieci centrali status i polecenia idą prosto do niej — także bez internetu",
+        checked = m.lanEnabled,
+        onChange = { m.updateLanEnabled(it) }
+    )
+    var manualIp by remember(m.lanManualIp) { mutableStateOf(m.lanManualIp) }
+    SheetField("ADRES CENTRALI W SIECI (OPCJONALNIE)", manualIp, { manualIp = it }, "np. 192.168.1.50 — puste = wykrywanie")
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        UstBtn("Zapisz adres", modifier = Modifier.weight(1f), onClick = {
+            if (m.updateLanManualIp(manualIp)) {
+                m.showToast("LAN", if (manualIp.isBlank()) "Wykrywanie automatyczne" else "Zapisano adres centrali", "ok")
+            } else {
+                m.showToast("LAN", "Podaj prywatny adres IPv4, np. 192.168.1.50", "err")
+            }
+        })
+        UstBtn("Sprawdź teraz", modifier = Modifier.weight(1f), onClick = { m.lanCheckNow() })
+    }
+    Note("Aplikacja sama wykrywa centralę w sieci: adres z ostatniego połączenia przez Firebase albo hotspot centrali (192.168.4.1). Sterowanie lokalne wymaga firmware v3.47.0 lub nowszego; polecenia chroni ten sam token co w Firebase.")
 }

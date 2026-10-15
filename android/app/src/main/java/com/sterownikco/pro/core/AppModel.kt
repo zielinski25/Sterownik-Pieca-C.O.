@@ -75,8 +75,26 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private val terminalCommandMutex = Mutex()
 
     // ── stan połączenia ─────────────────────────────────────────────────────
+    /** Świeży status centrali z dowolnej drogi: sieć lokalna (LAN) albo Firebase — źródło w [linkSource]. */
     var connected by mutableStateOf(false)
     var lastFetchTs = 0L
+
+    // ── [LAN] centrala w tej samej sieci — status i polecenia także bez internetu ──
+    /** Źródło ostatniego statusu: [Rtdb.VIA_LAN], [Rtdb.VIA_FIREBASE] albo "" (brak). */
+    var linkSource by mutableStateOf("")
+    /** Bieżący status pochodzi z centrali w sieci lokalnej (bez Firebase). */
+    val onLan: Boolean get() = connected && linkSource == Rtdb.VIA_LAN
+    /** Adres centrali osiągalnej w sieci lokalnej (null = nie znaleziono). */
+    var lanIp by mutableStateOf<String?>(null)
+    /** Firmware z pełnym API LAN (/api/lan/…, v3.47.0+) — sterowanie bez internetu; inaczej tylko odczyt. */
+    var lanFullApi by mutableStateOf(false)
+    var lanEnabled by mutableStateOf(prefs.getBool(Prefs.K_LAN_ENABLED, true))
+    var lanManualIp by mutableStateOf(prefs.get(Prefs.K_LAN_MANUAL_IP) ?: "")
+    var lanInfo by mutableStateOf("Sprawdzanie, czy centrala jest w tej sieci…")
+    private val lanProbe = LanProbeSchedule()
+    private var lanMonitorStarted = false
+    /** >0: automatyczne logowanie odłożone z braku internetu — ponowienie najwcześniej o tej porze. */
+    private var autoLoginRetryAtMs = 0L
     /** ACK-only presentations until the slower `/piec/status` snapshot catches up. */
     private var pumpModeAckOverride by mutableStateOf<Int?>(null)
     private var mixerModeAckOverride by mutableStateOf<Int?>(null)
@@ -298,8 +316,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
      * dropping that request leaves every state-driven sheet stale until the next 8 s tick.
      */
     private suspend fun pollAwait(waitForInFlight: Boolean = false): Boolean {
-        if (Rtdb.refreshToken.isBlank()) {
+        if (Rtdb.refreshToken.isBlank() && !lanEnabled) {
             connected = false
+            linkSource = ""
             termStateKnown = false
             return false
         }
@@ -316,23 +335,13 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     /** Runs only while [statusPollGate] is held. */
     private suspend fun pollStatusLocked(): StatusPollResult {
-        if (Rtdb.refreshToken.isBlank()) {
-            connected = false
-            termStateKnown = false
-            return StatusPollResult.FAILED
-        }
-
         val startRevision = AlarmSnapshotCoordinator.captureRevision()
-        val d = try {
-            Rtdb.pollStatus()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
-        }
+        val (d, source) = pickStatus(if (lanEnabled) pollLan() else null)
         if (d == null) {
+            retryDeferredLogin(System.currentTimeMillis())
             val applied = AlarmSnapshotCoordinator.applyPollIfCurrent(startRevision) {
                 connected = false
+                linkSource = ""
                 termStateKnown = false
                 S.bump()
             }
@@ -341,8 +350,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
         val applied = AlarmSnapshotCoordinator.applyPollIfCurrent(startRevision) {
             connected = true
+            linkSource = source
             lastFetchTs = System.currentTimeMillis()
             S.applyIncomingData(d)
+            if (source == Rtdb.VIA_FIREBASE) rememberLanAddress(d)
             val smokeFlag = S.dym_alarm.takeIf { S.hasData("dym_alarm") }
             val overheatFlag = S.alarm_ogrzewanie.takeIf { S.hasData("alarm_ogrzewanie") }
             AlarmCenter.applyControllerMuteSnapshot(
@@ -396,6 +407,142 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         return if (applied) StatusPollResult.APPLIED else StatusPollResult.SUPERSEDED
     }
 
+    // ── [LAN] wykrywanie centrali w sieci lokalnej ─────────────────────────
+    /**
+     * Źródło statusu: pełne API LAN (v3.47.0+) ma pierwszeństwo — szybciej, bez internetu
+     * i bez ruchu do Firebase. Starszy firmware (status bez ustawień) — tylko gdy Firebase
+     * jest niedostępny.
+     */
+    private suspend fun pickStatus(lan: Rtdb.LanStatus?): Pair<JSONObject?, String> {
+        if (lan != null && lan.fullApi) return lan.json to Rtdb.VIA_LAN
+        if (Rtdb.refreshToken.isNotBlank()) {
+            val firebase = try {
+                Rtdb.pollStatus()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            if (firebase != null) return firebase to Rtdb.VIA_FIREBASE
+        }
+        return if (lan != null) lan.json to Rtdb.VIA_LAN else null to Rtdb.VIA_FIREBASE
+    }
+
+    /**
+     * Status z centrali w sieci lokalnej; null, gdy jej tu nie ma. Znany adres sprawdzamy
+     * przy każdym odczycie, pozostałe — najwyżej co 30 s (poza domem nie tracimy czasu).
+     */
+    private suspend fun pollLan(force: Boolean = false): Rtdb.LanStatus? {
+        val known = lanIp
+        if (known != null) {
+            val st = try { Rtdb.lanStatus(known) } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+            if (st != null) {
+                onLanFound(st)
+                return st
+            }
+        }
+        // Utracony znany adres sprawdzamy od razu jeszcze raz (razem z pozostałymi) — pojedynczy
+        // timeout nie zrywa trybu LAN; nowe adresy — według harmonogramu.
+        if (known == null && !lanProbe.shouldProbe(System.currentTimeMillis(), force)) return null
+        val candidates = LanCandidates.build(lanManualIp.ifBlank { null }, prefs.get(Prefs.K_LAN_LAST_IP))
+        val found = if (candidates.isEmpty()) null else try {
+            Rtdb.lanFind(candidates)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        if (found != null) {
+            onLanFound(found)
+            return found
+        }
+        if (known != null) onLanLost(known)
+        lanProbe.onMissing(System.currentTimeMillis())
+        lanInfo = if (candidates.isEmpty()) "Brak adresu centrali — wpisz IP albo połącz się raz przez Firebase"
+            else "Centrali nie ma w tej sieci (sprawdzono: ${candidates.joinToString()})"
+        return null
+    }
+
+    private fun onLanFound(st: Rtdb.LanStatus) {
+        val previous = lanIp
+        lanIp = st.ip
+        lanFullApi = st.fullApi
+        LanLink.markOk(st.ip, st.fullApi, System.currentTimeMillis())
+        lanProbe.onFound()
+        lanInfo = if (st.fullApi) "Centrala w tej sieci: ${st.ip} — status i sterowanie bez internetu"
+            else "Centrala w tej sieci: ${st.ip} — tylko odczyt (firmware < v3.47.0; polecenia przez Firebase)"
+        if (previous == st.ip) return
+        addLog("LAN", "Połączono lokalnie z centralą ${st.ip}" + (if (st.fullApi) "" else " (starszy firmware — tylko odczyt)"), "info")
+        if (prefs.get(Prefs.K_LAN_LAST_IP) != st.ip) prefs.set(Prefs.K_LAN_LAST_IP, st.ip)
+        // Czuwanie alarmów w tle działa także bez internetu, gdy centrala jest w sieci lokalnej.
+        if (!lanMonitorStarted && AlarmCenter.isMonitored(prefs)) {
+            lanMonitorStarted = true
+            try { AlarmMonitorService.start(ctx) } catch (e: Exception) { /* ignore */ }
+        }
+    }
+
+    private fun onLanLost(ip: String) {
+        lanIp = null
+        lanFullApi = false
+        LanLink.markLost(ip)
+        lanInfo = "Utracono połączenie lokalne z centralą $ip"
+        addLog("LAN", "Utracono połączenie lokalne z centralą $ip", "warn")
+    }
+
+    /** Adres centrali w sieci domowej z /piec/status — do pracy lokalnej, gdy zabraknie internetu. */
+    private fun rememberLanAddress(d: JSONObject) {
+        if (d.optString("wifi_mode") != "STA") return
+        val ip = LocalControllerAddress.canonicalPrivateIpv4(d.optString("ip")) ?: return
+        if (prefs.get(Prefs.K_LAN_LAST_IP) != ip) {
+            prefs.set(Prefs.K_LAN_LAST_IP, ip)
+            lanProbe.probeSoon()
+        }
+    }
+
+    /** Ustawienia → Połączenie lokalne: włącz/wyłącz pracę bez Firebase w sieci centrali. */
+    fun updateLanEnabled(enabled: Boolean) {
+        lanEnabled = enabled
+        prefs.setBool(Prefs.K_LAN_ENABLED, enabled)
+        if (enabled) {
+            lanProbe.probeSoon()
+            lanInfo = "Sprawdzanie, czy centrala jest w tej sieci…"
+        } else {
+            lanIp?.let { LanLink.markLost(it) }
+            lanIp = null
+            lanFullApi = false
+            lanInfo = "Połączenie lokalne wyłączone — status i polecenia tylko przez Firebase"
+        }
+        poll()
+    }
+
+    /** Ręczny adres centrali (prywatny IPv4) albo pusty = wykrywanie automatyczne. false = zły adres. */
+    fun updateLanManualIp(raw: String): Boolean {
+        val trimmed = raw.trim()
+        val ip = if (trimmed.isEmpty()) "" else LocalControllerAddress.canonicalPrivateIpv4(trimmed) ?: return false
+        lanManualIp = ip
+        if (ip.isEmpty()) prefs.remove(Prefs.K_LAN_MANUAL_IP) else prefs.set(Prefs.K_LAN_MANUAL_IP, ip)
+        lanCheckNow()
+        return true
+    }
+
+    fun lanCheckNow() {
+        lanProbe.probeSoon()
+        lanInfo = "Sprawdzanie sieci lokalnej…"
+        poll()
+    }
+
+    /** Ponawia logowanie automatyczne odłożone z braku internetu (najwyżej co 2 min). */
+    private fun retryDeferredLogin(nowMs: Long) {
+        if (autoLoginRetryAtMs == 0L || nowMs < autoLoginRetryAtMs || authBusy) return
+        val savedPassword = prefs.getSecret(Prefs.K_PASS)
+        if (savedPassword.isNullOrBlank() || Rtdb.email.isBlank()) {
+            autoLoginRetryAtMs = 0L
+            return
+        }
+        autoLoginRetryAtMs = nowMs + 120_000L
+        login(Rtdb.email, savedPassword, remember = true, automatic = true)
+    }
+
     /** Logowanie kontem e-mail + hasło; zapamiętanie hasła jest opcjonalne i szyfrowane. */
     fun login(emailIn: String, password: String, remember: Boolean, automatic: Boolean = false) = scope.launch {
         authBusy = true; authStatusKind = "warn"
@@ -431,6 +578,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             if (!passwordSaved) showToast("SESJA", "Zalogowano, ale nie udało się bezpiecznie zapisać hasła.", "err")
             else if (!automatic) showToast("FIREBASE", "Logowanie zakończone — pobieram /piec/status", "ok")
             addLog("SYSTEM", "Zalogowano operatora", "info")
+            autoLoginRetryAtMs = 0L
             authOpen = false
             authBusy = false
             authStatusKind = if (passwordSaved) "ok" else "warn"
@@ -445,9 +593,17 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             if (sheet == "terminal") startTerminalDlogPolling()
             if (page == 1) loadRange(rangeSec)
         }.onFailure { e ->
-            authBusy = false; authStatusKind = "err"; authStatus = e.message ?: "Logowanie nieudane"
-            if (automatic) authOpen = true
-            else showToast("BŁĄD", e.message ?: "Logowanie nieudane", "err")
+            // Brak internetu: nie zasłaniaj działającego trybu LAN oknem logowania; ponowimy później.
+            val offline = e is java.io.IOException
+            authBusy = false
+            authStatusKind = if (offline) "warn" else "err"
+            authStatus = if (offline) "Brak internetu — logowanie do Firebase ponowię później. W sieci centrali sterowanie działa bez logowania."
+                else e.message ?: "Logowanie nieudane"
+            if (automatic) {
+                if (offline) autoLoginRetryAtMs = System.currentTimeMillis() + 120_000L else authOpen = true
+            } else {
+                showToast("BŁĄD", if (offline) "Brak internetu — nie można zalogować się do Firebase" else e.message ?: "Logowanie nieudane", "err")
+            }
         }
     }
 
@@ -457,6 +613,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         stopTerminalDlogPolling()
         // Replace the in-memory session before deleting persisted credentials so a racing refresh cannot restore them.
         Rtdb.setAuthTokens("", "")
+        autoLoginRetryAtMs = 0L   // jawne wylogowanie: bez odłożonego logowania automatycznego
         // Wykresy: przerwij ładowanie i usuń lokalną kopię dób z telefonu (Firebase bez zmian).
         historyJob?.cancel(); historyJob = null; historyGeneration++
         telemetry = emptyList(); chartLive = emptyList(); chartPoints = 0
@@ -758,8 +915,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         val sensitive = CommandRedactor.isSensitive(command)
         val commandLabel = CommandRedactor.forDisplay(command)
         if (!connected) {
-            showToast(commandLabel, "Brak połączenia z Firebase — polecenia nie wysłano", "err")
-            addLog("CMD_ERR", "Nie wysłano polecenia — brak połączenia z Firebase", "warn")
+            showToast(commandLabel, "Brak połączenia ze sterownikiem — polecenia nie wysłano", "err")
+            addLog("CMD_ERR", "Nie wysłano polecenia — brak połączenia ze sterownikiem (sieć lokalna / Firebase)", "warn")
             return false
         }
 
@@ -768,7 +925,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         addLog("CMD", "Wysyłanie: $commandLabel", "cmd")
         val cmdId = Rtdb.makeFireCmdId()
         return try {
-            val ack = Rtdb.sendCommand(cmdId, command)
+            // [LAN] W sieci centrali polecenie idzie prosto do niej, inaczej przez Firebase.
+            val ack = Rtdb.sendCommandAuto(cmdId, command)
             val latency = ((System.nanoTime() - t0) / 1_000_000).toInt()
             when {
                 ack == null -> {
@@ -778,8 +936,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     false
                 }
                 ack.ok -> {
-                    showToast(commandLabel, "Potwierdzone przez sterownik (ACK, ${latency}ms)", "ok")
-                    addLog("ACK", "ACK OK (${latency}ms): $commandLabel", "ack")
+                    val route = if (ack.via == Rtdb.VIA_LAN) "LAN" else "ACK"
+                    showToast(commandLabel, "Potwierdzone przez sterownik ($route, ${latency}ms)", "ok")
+                    addLog("ACK", "ACK OK (${if (ack.via == Rtdb.VIA_LAN) "LAN, " else ""}${latency}ms): $commandLabel", "ack")
                     buzz()
                     onAck?.invoke()
                     // Dociągnij świeży snapshot po ACK. Wymuś oczekiwanie na ewentualny
@@ -910,6 +1069,27 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 null
             }
             if (generation != historyGeneration) return@launch
+            // [LAN] Firebase niedostępny (brak internetu/sesji): kopia dób z telefonu + archiwum centrali.
+            val lanNow = LanLink.fresh(System.currentTimeMillis())
+            if (lanNow != null && (load == null || load.failedDays > 0)) {
+                val lanChart = try {
+                    loadLanChart(lanNow.ip, sec, load)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+                if (generation != historyGeneration) return@launch
+                if (lanChart != null && lanChart.points.isNotEmpty()) {
+                    chartLive = emptyList()
+                    telemetry = lanChart.points
+                    chartPoints = lanChart.points.size
+                    chartStatus = lanChart.status
+                    chartReality = "LAN · CENTRALA"
+                    appendLiveFeed()
+                    return@launch
+                }
+            }
             if (load != null && load.points.isNotEmpty()) {
                 chartLive = emptyList()
                 telemetry = load.points
@@ -939,6 +1119,35 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         }
         historyJob = job
         return job
+    }
+
+    private class LanChart(val points: List<TelemPoint>, val status: String)
+
+    /**
+     * Wykres bez Firebase: kopia dób z telefonu, a czas po ostatniej próbce z kopii —
+     * z lokalnego archiwum centrali (/api/history, dla 7/30 dni także /api/history/long).
+     */
+    private suspend fun loadLanChart(ip: String, sec: Int, firebaseLoad: TelemRangeResult?): LanChart? {
+        val cached = firebaseLoad ?: run {
+            val end = System.currentTimeMillis() / 1000
+            historyStore.load(end - sec, end) { _, _ -> throw java.io.IOException("Firebase niedostępny") }
+        }
+        val shortCsv = Rtdb.lanHistoryCsv(ip, long = false) ?: return null
+        val longCsv = if (sec > 24 * 3600) Rtdb.lanHistoryCsv(ip, long = true) else null
+        val endMs = System.currentTimeMillis()
+        val startMs = endMs - sec * 1000L
+        val local = withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val shortPoints = EspLocalHistory.parseShort(shortCsv)
+            if (sec <= 24 * 3600) shortPoints.filter { it.ts in startMs..endMs }
+            else EspLocalHistory.combine(shortPoints, longCsv?.let { EspLocalHistory.parseLong(it) } ?: emptyList(), startMs, endMs)
+        }
+        val merged = EspLocalHistory.appendAfter(cached.points, local)
+        val parts = ArrayList<String>()
+        parts.add("Załadowano ${merged.size} próbek")
+        if (cached.points.isNotEmpty()) parts.add("z pamięci telefonu: ${cached.points.size}")
+        parts.add("z centrali w sieci lokalnej: ${merged.size - cached.points.size}")
+        parts.add("Firebase niedostępny")
+        return LanChart(merged, parts.joinToString(" · "))
     }
 
     private fun historyStatusText(load: TelemRangeResult): String {
@@ -1868,7 +2077,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             termStatus = "Oczekiwanie na potwierdzenie sterownika…"
             termStatusKind = ""
             try {
-                val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
+                val ack = Rtdb.sendCommandAuto(Rtdb.makeFireCmdId(), command)
                 when {
                     ack == null -> {
                         termStateKnown = false
@@ -1918,7 +2127,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             termStatus = "Oczekiwanie na potwierdzenie sterownika…"
             termStatusKind = ""
             try {
-                val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
+                val ack = Rtdb.sendCommandAuto(Rtdb.makeFireCmdId(), command)
                 when {
                     ack == null -> {
                         termStatus = "Brak ACK ESP32; stan tej opcji jest nieznany."
@@ -1996,7 +2205,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 withTerminalCommandLock {
                     termStatus = "Ustawianie filtrów logów: 0/${DLOG_CATEGORIES.size}."
                     for (cat in DLOG_CATEGORIES) {
-                        val ack = Rtdb.sendCommand(Rtdb.makeFireCmdId(), "diag remote cat $cat $state")
+                        val ack = Rtdb.sendCommandAuto(Rtdb.makeFireCmdId(), "diag remote cat $cat $state")
                         when {
                             ack == null -> {
                                 termStatus = "Brak potwierdzenia zmiany kategorii logów; wykonano $completed/${DLOG_CATEGORIES.size}."
@@ -2191,9 +2400,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** `#sysSub` z renderDashboard (Piec.html:4330-4345). */
     fun sysStripSub(): String {
         val source = when {
-            isFbFresh && S.online -> "telemetria ESP32 · IP: " + (if (S.hasData("ip")) S.ip else "—")
-            connected -> "Firebase połączone · oczekiwanie na rzeczywiste dane centrali"
+            isFbFresh && S.online -> "telemetria ESP32 · " + (if (linkSource == Rtdb.VIA_LAN) "sieć lokalna, bez Firebase · " else "") +
+                "IP: " + (if (S.hasData("ip")) S.ip else "—")
+            connected -> (if (linkSource == Rtdb.VIA_LAN) "Sieć lokalna połączona" else "Firebase połączone") +
+                " · oczekiwanie na rzeczywiste dane centrali"
             lastFetchTs > 0L -> "Ostatnie dane sterownika są nieaktualne"
+            lanEnabled -> "oczekiwanie na połączenie ze sterownikiem (sieć lokalna / Firebase)"
             else -> "oczekiwanie na połączenie z Firebase"
         }
         return if (S.sym.isNotEmpty()) "$source · symulacja zgłoszona przez sterownik" else source

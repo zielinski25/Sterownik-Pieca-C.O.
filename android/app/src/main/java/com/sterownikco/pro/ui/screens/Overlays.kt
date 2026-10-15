@@ -177,6 +177,15 @@ fun AuthModal(m: AppModel) {
             }
 
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                if (m.onLan) {
+                    // [LAN] W sieci centrali logowanie nie jest potrzebne do sterowania.
+                    Text(
+                        "Centrala jest w tej sieci — sterowanie działa lokalnie, także bez internetu. " +
+                            "Logowanie do Firebase jest potrzebne tylko do pracy zdalnej.",
+                        fontSize = 11.sp, lineHeight = 15.sp, color = Pal.Cyan,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                }
                 com.sterownikco.pro.ui.screens.sheets.SheetField("E-mail operatora", email, { email = it }, "twoj-email@domena.pl")
                 Box(Modifier.height(12.dp))
                 com.sterownikco.pro.ui.screens.sheets.SheetField("Hasło", pass, { pass = it }, "••••••••••••", password = true)

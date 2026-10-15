@@ -1,6 +1,31 @@
-# Wspólne rozpalanie, wykresy lokalne i Firebase — baza v3.38.0, źródło v3.46.0
+# Sieć lokalna bez internetu, wspólne rozpalanie, wykresy lokalne i Firebase — baza v3.38.0, źródło v3.47.0
 
 Ta skumulowana łatka zachowuje lokalne archiwum wykresu ESP, używa timestampów RTDB dla wykresu Firebase i dodaje jedno wspólne sterowanie rozpalaniem serw oraz mieszadła. `Piec.html` jest osadzony w przygotowanym CPP. Głównego `Cenatrala Pieca.zip` w katalogu repozytorium nie zmieniamy.
+
+## v3.47.0 — praca w sieci lokalnej, także bez internetu (LAN API)
+
+Telefon w tej samej sieci co centrala (sieć wewnętrzna budynku albo hotspot `PiecCO_AP`) steruje piecem bezpośrednio. Firebase nie jest do tego potrzebny, więc wszystko działa także wtedy, gdy padnie internet.
+
+| Trasa | Odpowiednik w Firebase | Opis |
+|---|---|---|
+| `GET /api/lan/status` | `/piec/status` | Ten sam JSON co status w Firebase (wspólny builder `zbudujJsonStatusPelny()`), plus pola `lan`, `lan_api` i `internet`. Ma nagłówki CORS tylko do odczytu, żeby panel otwarty spoza centrali mógł ją wykryć. |
+| `POST /api/lan/cmd` | `/piec/cmd` | Pola formularza `id` i `cmd`. Token jest w nagłówku `X-Piec-Token` (ten sam `CMD_TOKEN` co w Firebase). |
+| `GET /api/lan/ack?id=…` | `/piec/ack` | Wynik polecenia: `done`, `ok`, `error`. |
+
+- **Ten sam wykonawca poleceń:** wykonawca wydzielono 1:1 z `checkFirebaseCommands()` do `wykonajKomendePanelu()`. Zmieniły się wyłącznie nazwy zmiennych wyniku.
+- **To samo zadanie:** polecenia z LAN wykonuje to samo zadanie `tgTaskFn` co polecenia z Firebase, więc obie drogi nigdy nie działają równolegle.
+  - Handler HTTP tylko kopiuje polecenie do jednego slotu chronionego spinlockiem, bez alokacji pod blokadą.
+  - Slot jest odbierany co 100 ms, także w przerwie pętli. Polecenie nie czeka na Firebase.
+- **Powtórzony `cmdId`** nie wykonuje polecenia drugi raz, tylko zwraca jego wynik.
+- **Zajęty slot:** inne polecenie w kolejce dostaje odpowiedź 409.
+- **Ochrona przed obcymi stronami:** `/api/lan/cmd` celowo nie ma CORS. Własny nagłówek wymusza w przeglądarce preflight, więc obca strona nie wyśle polecenia (ochrona CSRF).
+- **Log:** wartość `tg_config` jest w logu ukryta (`tg_config <ukryte>`).
+- **Bufor PSRAM statusu Firebase:** 2048 → 3072 B. JSON ma ok. 1,9 KB; to zapas na nowe pola.
+- **Starszy firmware:** na nieznane trasy odpowiada przekierowaniem na „/”. Aplikacja i panel traktują to jak brak `/api/lan/*`: odczyt z `/api/status`, polecenia tylko przez Firebase.
+- **Panel z ESP (`Piec.html`):**
+  - czyta status i wysyła polecenia przez `/api/lan/*`, bez logowania do Firebase;
+  - pokazuje znacznik **● LAN · IP**.
+- **Panel otwarty spoza centrali (plik lub http):** gdy wykryje centralę w tej samej sieci, pokazuje baner z linkiem do panelu lokalnego.
 
 ## Jedno wspólne sterowanie „Rozpalaniem”
 
@@ -31,7 +56,12 @@ Dla porównania 6 h / 24 h wybierz te same serie i ustaw ten sam zakres. Lokalne
 
 ## Wersja i bezpieczeństwo zmian
 
-Źródłowe `FIRMWARE_VERSION` przechodzi z **v3.45.0** na **v3.46.0**. Zmieniono wyłącznie wspólną logikę rozpalania oraz jej lokalne/Firebase API i opisy; zabezpieczenia alarmowe pozostają aktywne. Nie zmieniano głównego `Cenatrala Pieca.zip`. Nie wykonano kompilacji firmware, flashowania ani poleceń do urządzenia.
+**v3.47.0:** `FIRMWARE_VERSION` przechodzi z **v3.46.0** na **v3.47.0**.
+- Doszły trasy `/api/lan/*`, wspólny builder statusu i wspólny wykonawca poleceń.
+- Logika poleceń, Firebase, telemetria, LCD i dotychczasowe trasy są bez zmian.
+- Kontrola odwrotna potwierdza, że poza tymi wydzieleniami i dodatkami plik jest bajt w bajt taki sam jak v3.46.0.
+
+Wcześniej: źródłowe `FIRMWARE_VERSION` przeszło z **v3.45.0** na **v3.46.0**. Zmieniono wyłącznie wspólną logikę rozpalania oraz jej lokalne/Firebase API i opisy; zabezpieczenia alarmowe pozostają aktywne. Nie zmieniano głównego `Cenatrala Pieca.zip`. Nie wykonano kompilacji firmware, flashowania ani poleceń do urządzenia.
 
 ## Zastosowanie
 
@@ -45,6 +75,26 @@ patch -p1 < /path/to/v3.38.0-local-html/main_centrala.cpp.patch
 Nie stosuj jej do zmodyfikowanego `Cenatrala Pieca.zip` w głównym checkoutcie. Budowanie, instalacja i ewentualne OTA są osobnymi działaniami.
 
 ## Weryfikacja
+
+v3.47.0:
+
+- **Kontrola odwrotna:** odwrócenie wydzieleń, zmiany nazw i dodatków (z oryginalnym `Piec.html`) daje plik bajt w bajt identyczny z v3.46.0.
+- **Kompilacja:** nowy kod LAN skompilowano `g++ -std=gnu++17 -Wall -Wextra -Wshadow` na atrapach API zgodnych z ESPAsyncWebServer 3.11.2. Wynik: bez ostrzeżeń.
+- **Test funkcjonalny slotu poleceń** sprawdza:
+  - przyjęcie i ponowienie;
+  - zajętość (409);
+  - wykonanie;
+  - brak podwójnego wykonania;
+  - ucieczkę znaków w JSON;
+  - ukrycie tokenu w logu.
+- **Testy strony w Node/jsdom:**
+  - strona z ESP startuje w trybie LAN bez internetu i bez logowania;
+  - polecenie z UI idzie przez `/api/lan/cmd` z tokenem i potwierdzeniem;
+  - zachowanie ze starszym firmware;
+  - baner wykrycia centrali.
+- **Bez kompilacji całego firmware:** brak platformy PlatformIO w środowisku. Przed wgraniem uruchom `pio run`.
+
+Wcześniej (v3.46.0):
 
 - JavaScript strony sprawdzony parserem Node.js.
 - Testy regresyjne sprawdzają: brak tworzenia punktów z pollingu statusu, deduplikację archiwum, przyrostowe doczytywanie, pozycję X opartą o `ts` oraz niezależną ścieżkę lokalną.
