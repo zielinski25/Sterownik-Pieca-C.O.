@@ -31,6 +31,18 @@ Co robi skrypt:
 
 Pozostałe opcje: `-Projekt <katalog>`, `-Port COM5`, `-AdresOta 192.168.x.x`, `-BezPulpitu`.
 
+Platforma pioarduino 55.03.38-1 wymaga pakietu `platformio` w wersji 6.1.19. Gdy w `penv` jest inna wersja (np. 6.2.0 po aktualizacji PlatformIO IDE), przy każdym `pio run` platforma próbuje przeinstalować rdzeń. Na Windowsie to się nie udaje, bo działający `pio.exe` blokuje swoje pliki, a w logu pojawia się `Failed to install Python dependencies into penv`. Skrypt wtedy instaluje `platformio==6.1.19`, gdy `pio` nie działa, i kompiluje jeszcze raz.
+
+**Test skryptu (2026-10-15, GitHub Actions `windows-latest`):** środowisko jak u użytkownika, czyli projekt z `Cenatrala Pieca.zip` w `Dokumenty\PlatformIO\Projects\Cenatrala Pieca` (bez `lib\dhtESP32-rmt`) i świeże PlatformIO 6.2.0 z oficjalnego instalatora, poza PATH. W Windows PowerShell 5.1 skrypt:
+
+- znalazł projekt i `pio.exe`;
+- pobrał bibliotekę DHT;
+- zrobił kopię `main_centrala_v3.36.2_….cpp`;
+- naprawił wersję rdzenia (6.2.0 → 6.1.19);
+- skompilował v3.47.1 (**SUCCESS**, `firmware.bin` 2 365 440 B) i położył `firmware_v3.47.1.bin` na pulpicie.
+
+Drugie uruchomienie w PowerShell 7 rozpoznało podmieniony plik. Wgrywania (`-Wgraj`) nie testowano, bo w CI nie ma urządzenia.
+
 **Kompilacja (2026-10-15):** workflow `.github/workflows/firmware-build.yml` (GitHub Actions) uruchamia `pio run -e esp32-s3-n16r8`. Środowisko: platforma pioarduino 55.03.38-1, `platformio.ini` z `Cenatrala Pieca.zip`, `lib/dhtESP32-rmt` 2.0.2. Wynik: **SUCCESS**. RAM 23,3% (76 328 B), Flash 75,2% (2 364 678 B z 3 145 728 B). Nie wgrywano firmware na urządzenie.
 
 ## v3.47.0 — praca w sieci lokalnej, także bez internetu (LAN API)
