@@ -765,6 +765,12 @@ fun LogsSheet(m: AppModel) {
         value = "Telemetria: $telemetryStatus",
         sub = "IP: $ip · Bufor telemetrii: ${m.chartPoints} próbek · RSSI: $rssi"
     )
+    // Telefon pamięta pobrane doby wykresów; tu awaryjnie kasujemy tylko tę lokalną kopię.
+    UstBtn(
+        "Wykresy: pobierz historię od nowa",
+        modifier = Modifier.fillMaxWidth(),
+        onClick = { m.redownloadChartHistory() }
+    )
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf("all" to "Wszystkie", "system" to "System", "cmd" to "Komendy", "warn" to "Ostrzeżenia").forEach { (k, lbl) ->
             val on = m.logFilter == k

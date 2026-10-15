@@ -16,7 +16,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
-import kotlin.math.max
 
 /* ══════════════════════════════════════════════════════════════════════════
    Klient Firebase RTDB (REST) + lokalnego API ESP32 — odpowiednik
@@ -362,78 +361,58 @@ object Rtdb {
         } catch (e: Exception) { null }
     }
 
-    // ── telemetria historyczna (szardy dzienne + paginacja po `ts`) ──────────
-    private const val HISTORY_PAGE_SIZE = 300
-    private var historyIndexFallback = false
+    // ── telemetria historyczna (szardy dzienne UTC + lokalna pamięć dób) ─────
+    /** Strona zapytania `orderBy="ts"`; pełna doba to ~1440 rekordów = 2 strony. */
+    private const val HISTORY_PAGE_SIZE = 1000
+    @Volatile private var historyIndexFallback = false
 
-    private fun shardPath(y: Int, m: Int, d: Int) =
-        "/piec/telemetry/1m/v1/$y/" + PiecState.pad2(m) + "/" + PiecState.pad2(d)
+    /** Reguły bez `".indexOn": ["ts"]` — RTDB odrzuca zapytanie po `ts` (HTTP 400). */
+    private class HistoryIndexMissing : Exception()
 
-    private fun dayRange(startTs: Long, endTs: Long): List<LongArray> {
-        val out = ArrayList<LongArray>()
-        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        cal.timeInMillis = startTs * 1000
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
-        cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
-        val lastCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        lastCal.timeInMillis = endTs * 1000
-        lastCal.set(java.util.Calendar.HOUR_OF_DAY, 0); lastCal.set(java.util.Calendar.MINUTE, 0)
-        lastCal.set(java.util.Calendar.SECOND, 0); lastCal.set(java.util.Calendar.MILLISECOND, 0)
-        var cur = cal.timeInMillis
-        while (cur <= lastCal.timeInMillis) {
-            val c = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-            c.timeInMillis = cur
-            out.add(longArrayOf(cur, c.get(java.util.Calendar.YEAR).toLong(), (c.get(java.util.Calendar.MONTH) + 1).toLong(), c.get(java.util.Calendar.DAY_OF_MONTH).toLong()))
-            cur += 86_400_000L
+    private suspend fun fetchShardPage(day: TelemDay, cursor: Long): TelemShardPage {
+        val res = get(day.shardPath + ".json", mapOf(
+            "orderBy" to "\"ts\"",
+            "startAt" to cursor.toString(),
+            "endAt" to day.endTs.toString(),
+            "limitToFirst" to HISTORY_PAGE_SIZE.toString()
+        ))
+        if (!res.ok) {
+            val msg = res.error ?: ""
+            if (msg.contains("400") || res.body.contains("Index not defined", true) || res.body.contains("indexOn", true)) {
+                throw HistoryIndexMissing()
+            }
+            throw java.io.IOException("Historia " + day.date + ": " + msg)
         }
-        return out
+        return parseShardBody(res.body, day)
     }
 
-    private suspend fun fetchShard(path: String, startTs: Long, endTs: Long): List<TelemRow> {
-        if (historyIndexFallback) return fetchShardFull(path, startTs, endTs)
-        val rows = ArrayList<TelemRow>()
-        var cursor = startTs
-        for (guard in 0 until 100) {
-            val q = path + ".json?orderBy=" + java.net.URLEncoder.encode("\"ts\"", "UTF-8") +
-                "&startAt=" + cursor + "&endAt=" + endTs + "&limitToFirst=" + HISTORY_PAGE_SIZE
-            val res = get(q)
-            if (!res.ok) {
-                val msg = res.error ?: ""
-                if (msg.contains("Index not defined", true) || msg.contains("indexOn", true) || msg.contains("400")) {
-                    historyIndexFallback = true
-                    return fetchShardFull(path, startTs, endTs)
-                }
-                throw java.io.IOException(msg)
-            }
-            val page = ArrayList<TelemRow>()
-            if (res.body.isNotBlank()) {
-                val data = JSONObject(res.body)
-                for (id in data.keys()) {
-                    val r = parseRecord(id, data.optJSONObject(id))
-                    if (r != null && r.ts in startTs..endTs) page.add(r)
-                }
-            }
-            if (page.isEmpty()) break
-            rows.addAll(page)
-            if (page.size < HISTORY_PAGE_SIZE) break
-            val maxTs = page.maxOf { it.ts }
-            if (maxTs < cursor) break
-            cursor = maxTs + 1
+    /** `null` / `{}` = doba bez rekordów (poprawny, pusty wynik); zepsuty JSON = błąd doby. */
+    private fun parseShardBody(body: String, day: TelemDay): TelemShardPage {
+        if (isEmptyRtdbBody(body)) return TelemShardPage(emptyList(), 0)
+        val data = JSONObject(body)
+        val rows = ArrayList<TelemRow>(data.length())
+        for (id in data.keys()) {
+            val r = parseRecord(id, data.optJSONObject(id))
+            if (r != null && r.ts in day.startTs..day.endTs) rows.add(r)
         }
-        return uniqueSort(rows)
+        return TelemShardPage(rows, data.length())
     }
 
-    private suspend fun fetchShardFull(path: String, startTs: Long, endTs: Long): List<TelemRow> {
-        val res = get(path + ".json")
-        val rows = ArrayList<TelemRow>()
-        if (res.ok && res.body.isNotBlank()) {
-            val data = JSONObject(res.body)
-            for (id in data.keys()) {
-                val r = parseRecord(id, data.optJSONObject(id))
-                if (r != null && r.ts in startTs..endTs) rows.add(r)
+    /**
+     * Rekordy doby z `ts >= fromTs` (rzuca przy błędzie sieci/HTTP — doba nie zostanie
+     * wtedy uznana za kompletną). Bez indeksu `ts` w regułach: cały shard doby.
+     */
+    private suspend fun fetchShardRows(day: TelemDay, fromTs: Long): List<TelemRow> {
+        if (!historyIndexFallback) {
+            try {
+                return fetchDayPaged(day, fromTs, HISTORY_PAGE_SIZE) { cursor -> fetchShardPage(day, cursor) }
+            } catch (e: HistoryIndexMissing) {
+                historyIndexFallback = true
             }
         }
-        return uniqueSort(rows)
+        val res = get(day.shardPath + ".json")
+        if (!res.ok) throw java.io.IOException("Historia " + day.date + ": " + (res.error ?: ""))
+        return uniqueSortedRows(parseShardBody(res.body, day).rows)
     }
 
     private fun parseRecord(id: String, obj: JSONObject?): TelemRow? {
@@ -465,27 +444,19 @@ object Rtdb {
         )
     }
 
-    private fun uniqueSort(rows: List<TelemRow>): List<TelemRow> {
-        val map = LinkedHashMap<String, TelemRow>()
-        rows.forEach { r -> map[r.id] = r }
-        return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
-    }
-
-    /** `fetchTelemetryFromFirebase(rangeSec)` — zwraca gotowe serie lub null. */
-    suspend fun fetchTelemetry(rangeSec: Int): List<TelemPoint>? {
+    /**
+     * `fetchTelemetryFromFirebase(rangeSec)` z lokalną pamięcią dób ([store]): doby
+     * kompletne idą z telefonu, z Firebase dociągane są tylko nowe rekordy (zwykle
+     * dzisiejsze). Zwraca null bez sesji Firebase. Niczego w bazie nie usuwa ani nie zmienia.
+     */
+    internal suspend fun fetchTelemetry(
+        rangeSec: Int,
+        store: TelemetryDayStore,
+        onProgress: ((done: Int, total: Int) -> Unit)? = null
+    ): TelemRangeResult? {
         if (idToken.isEmpty()) return null
         val end = System.currentTimeMillis() / 1000
         val start = end - rangeSec
-        val all = ArrayList<TelemRow>()
-        for (day in dayRange(start, end)) {
-            val dayStart = max(start, day[0] / 1000)
-            val dayEnd = minOf(end, day[0] / 1000 + 86_400 - 1)
-            val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
-            try { all.addAll(fetchShard(path, dayStart, dayEnd)) } catch (e: Exception) { /* pusty dzień */ }
-        }
-        val sorted = uniqueSort(all)
-        if (sorted.isEmpty()) return null
-        val chartPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
-        return chartPoints.ifEmpty { null }
+        return store.load(start, end, onProgress) { day, fromTs -> fetchShardRows(day, fromTs) }
     }
 }

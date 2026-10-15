@@ -157,6 +157,15 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     val seriesOn = mutableStateMapOf<String, Boolean>()
     var alarmLevels by mutableStateOf(mapOf("lolo" to 25.0, "lo" to 35.0, "hi" to 75.0, "hihi" to 85.0))
 
+    /**
+     * Lokalna pamięć pobranych dób telemetrii (pliki w cacheDir, bez backupu): wykres
+     * dociąga z Firebase tylko nowe rekordy zamiast całego zakresu (30 dni ≈ 9 MB).
+     * To wyłącznie kopia w telefonie — historia w Firebase nie jest usuwana ani zmieniana.
+     */
+    private val historyStore = TelemetryDayStore(TelemetryDayStore.directoryFor(ctx.cacheDir, Rtdb.DB_URL))
+    private var historyJob: Job? = null
+    private var historyGeneration = 0
+
     /** Szerokość ramki w trybie szerokim (tablet / poziomo). */
     // (Przełącznik telefon/PC usunięty z APK — potrzebny tylko w Piec.html.)
     var frameWidth by mutableIntStateOf(412)
@@ -228,7 +237,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     fun onResume() {
         bgJob?.cancel(); bgJob = null
-        poll(); refreshWeather(false); loadRange(rangeSec)
+        poll(); refreshWeather(false)
+        // Historię odświeżamy tylko na widocznym ekranie wykresów; wejście na zakładkę
+        // (navigate(1)) i tak ją ładuje. Dzięki lokalnej pamięci dób to zwykle jedno małe zapytanie.
+        if (page == 1) loadRange(rangeSec)
         if (sheet == "terminal") startTerminalDlogPolling()
         jobs = listOf(
             scope.launch { while (true) { delay(8000); poll() } },
@@ -445,6 +457,14 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         stopTerminalDlogPolling()
         // Replace the in-memory session before deleting persisted credentials so a racing refresh cannot restore them.
         Rtdb.setAuthTokens("", "")
+        // Wykresy: przerwij ładowanie i usuń lokalną kopię dób z telefonu (Firebase bez zmian).
+        historyJob?.cancel(); historyJob = null; historyGeneration++
+        telemetry = emptyList(); chartLive = emptyList(); chartPoints = 0
+        chartStatus = "Zaloguj się do Firebase, aby pobrać historię telemetrii"
+        chartReality = "BRAK SESJI"
+        scope.launch {
+            try { historyStore.clear() } catch (e: CancellationException) { throw e } catch (e: Exception) { /* tylko cache */ }
+        }
         // Persist the DE logout tombstone before touching any other credential storage.
         prefs.clearFirebaseTokens()
         prefs.clearRememberedCredentials()
@@ -861,33 +881,89 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     // ── historia telemetrii ─────────────────────────────────────────────────
-    fun loadRange(sec: Int) = scope.launch {
-        rangeSec = sec
-        val rangeName = when (sec) {
-            6 * 3600 -> "6h"; 24 * 3600 -> "24h"; 7 * 86400 -> "7d"; else -> "30d"
-        }
-        chartStatus = "Pobieranie historii ($rangeName) z bazy Firebase…"
-        if (connected) {
-            try {
-                val fb = Rtdb.fetchTelemetry(sec)
-                if (fb != null && fb.isNotEmpty()) {
-                    chartLive = emptyList()
-                    telemetry = fb
-                    chartPoints = fb.size
-                    chartStatus = "Załadowano ${fb.size} próbek z RTDB · odcinki symulowane są kreskowane"
-                    chartReality = "FIREBASE RTDB"
-                    // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
-                    // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
-                    appendLiveFeed()
-                    return@launch
+    /**
+     * Ładuje zakres wykresu. Doby kompletne idą z pamięci telefonu ([historyStore]),
+     * z Firebase dociągane są tylko nowe rekordy. Nowe wywołanie anuluje poprzednie,
+     * więc wynik starego zakresu nie nadpisze nowo wybranego.
+     */
+    fun loadRange(sec: Int): Job {
+        historyJob?.cancel()
+        val generation = ++historyGeneration
+        val job = scope.launch {
+            rangeSec = sec
+            val rangeName = when (sec) {
+                6 * 3600 -> "6h"; 24 * 3600 -> "24h"; 7 * 86400 -> "7d"; else -> "30d"
+            }
+            chartStatus = "Pobieranie historii ($rangeName) z bazy Firebase…"
+            var failed = false
+            val load = try {
+                Rtdb.fetchTelemetry(sec, historyStore) { done, total ->
+                    // Postęp ma sens przy pierwszym pobraniu wielu dób; zwykle odpytywana jest tylko dzisiejsza.
+                    if (total >= 3 && generation == historyGeneration) {
+                        chartStatus = "Pobieranie historii ($rangeName) z bazy Firebase… doba $done/$total"
+                    }
                 }
-            } catch (e: Exception) { /* fallback poniżej, jak w panelu */ }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failed = true
+                null
+            }
+            if (generation != historyGeneration) return@launch
+            if (load != null && load.points.isNotEmpty()) {
+                chartLive = emptyList()
+                telemetry = load.points
+                chartPoints = load.points.size
+                chartStatus = historyStatusText(load)
+                chartReality = if (load.refreshedDays == 0 && load.failedDays > 0) "PAMIĘĆ TELEFONU" else "FIREBASE RTDB"
+                // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
+                // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
+                appendLiveFeed()
+                return@launch
+            }
+            val noSession = !failed && load == null
+            val loadError = failed || (load != null && load.failedDays > 0)
+            telemetry = emptyList()
+            chartPoints = 0
+            chartStatus = when {
+                noSession -> "Zaloguj się do Firebase, aby pobrać historię telemetrii"
+                loadError -> "Nie udało się pobrać historii z Firebase — sprawdź połączenie i odśwież"
+                else -> "Brak próbek telemetrii dla wybranego zakresu"
+            }
+            chartReality = when {
+                noSession -> "BRAK SESJI"
+                loadError -> "BŁĄD POBRANIA"
+                else -> "BRAK DANYCH"
+            }
+            chartLive = emptyList()
         }
-        telemetry = emptyList()
-        chartPoints = 0
-        chartStatus = if (connected) "Brak próbek telemetrii dla wybranego zakresu" else "Zaloguj się do Firebase, aby pobrać historię telemetrii"
-        chartReality = if (connected) "BRAK DANYCH" else "BRAK SESJI"
-        chartLive = emptyList()
+        historyJob = job
+        return job
+    }
+
+    private fun historyStatusText(load: TelemRangeResult): String {
+        fun days(n: Int) = if (n == 1) "1 dzień" else "$n dni"
+        val parts = ArrayList<String>()
+        parts.add("Załadowano ${load.points.size} próbek")
+        if (load.cachedDays > 0) parts.add("z pamięci telefonu: ${days(load.cachedDays)}")
+        if (load.refreshedDays > 0) parts.add("nowe z RTDB: ${load.newRows}")
+        if (load.failedDays > 0) parts.add("nie odświeżono: ${days(load.failedDays)} (brak połączenia?)")
+        parts.add("odcinki symulowane są kreskowane")
+        return parts.joinToString(" · ")
+    }
+
+    /**
+     * Usuwa WYŁĄCZNIE lokalną kopię dób wykresów w telefonie i pobiera bieżący zakres
+     * od nowa. Historia w Firebase zostaje nietknięta.
+     */
+    fun redownloadChartHistory() {
+        historyJob?.cancel(); historyJob = null; historyGeneration++
+        scope.launch {
+            try { historyStore.clear() } catch (e: CancellationException) { throw e } catch (e: Exception) { /* tylko cache */ }
+            addLog("WYKRESY", "Wyczyszczono lokalną pamięć wykresów w telefonie (Firebase bez zmian)", "info")
+            showToast("WYKRESY", "Pamięć wykresów w telefonie wyczyszczona — historia zostanie pobrana od nowa", "ok")
+            if (page == 1) loadRange(rangeSec)
+        }
     }
 
     /** Dokleja wyłącznie odczyt z właśnie zakończonego, udanego pollingu Firebase. */
