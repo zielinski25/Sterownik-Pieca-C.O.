@@ -79,9 +79,13 @@ uruchamiają się na JDK 17/21. Jeżeli koniecznie chcesz budować na JDK 25, tr
 podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 `gradle-wrapper.properties` wymaga zmiany `distributionUrl`.
 
-> Bieżący Linux sandbox nie ma JDK ani Android SDK, więc nie można tu powtórzyć
-> `./gradlew :app:assembleDebug`. Poprzedni build Windows został zgłoszony jako
-> udany na JDK 21.0.12.1; instalacja APK na urządzeniu nie została potwierdzona.
+> Weryfikacja (2026-10-15, GitHub Actions `windows-latest`): na Javie 25
+> `gradlew.bat` kończy się komunikatem `What went wrong: 25.0.4.1`.
+> `Zbuduj-APK.ps1` w Windows PowerShell 5.1 pobiera Temurin 17.0.20.1, buduje
+> APK v0.31.11-debug (12,3 MB) i kopiuje go na pulpit. W PowerShell 7 skrypt
+> wykrywa zainstalowane JDK 17 i przechodzi `:app:testDebugUnitTest`.
+> Wcześniejszy build Windows został zgłoszony jako udany na JDK 21.0.12.1.
+> Instalacja APK na urządzeniu nie została tu potwierdzona.
 
 ## Ekran ↔ źródło w `Piec.html`
 

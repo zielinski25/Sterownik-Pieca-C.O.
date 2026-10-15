@@ -18,6 +18,7 @@ on:
   push:
     paths:
       - "android/**"
+      - "!android/**/*.md"
       - ".github/workflows/android-apk-windows.yml"
   workflow_dispatch:
 
