@@ -1,0 +1,95 @@
+# Sprawdza na prawdziwym Windows, ze aplikacje Android da sie zbudowac skryptem
+# android/Zbuduj-APK.ps1 w warunkach jak u uzytkownika: JAVA_HOME oraz JBR z Android
+# Studio 2026.x wskazuja Jave 25, na ktorej Gradle 8.9 nie startuje
+# ("What went wrong: 25.0.x").
+#
+# APK z artefaktu jest podpisany losowym kluczem debug runnera - nie zainstaluje sie
+# jako aktualizacja APK zbudowanego lokalnie (trzeba by najpierw odinstalowac aplikacje).
+name: Android APK (Windows)
+
+on:
+  push:
+    paths:
+      - "android/**"
+      - ".github/workflows/android-apk-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Zbuduj-APK.ps1 (Windows, domyslnie Java 25)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Java 25 jako domyslna (jak JBR w Android Studio 2026.x)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Atrapa Android Studio z wbudowana Java 25 + folder pulpitu
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path 'C:\Program Files\Android\Android Studio' | Out-Null
+          cmd /c mklink /J "C:\Program Files\Android\Android Studio\jbr" "$env:JAVA_HOME"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Select-String -Path 'C:\Program Files\Android\Android Studio\jbr\release' -Pattern 'JAVA_VERSION'
+          [Environment]::GetFolderPath('Desktop', [Environment+SpecialFolderOption]::Create)
+
+      - name: Reprodukcja bledu - gradlew.bat na Javie 25
+        shell: pwsh
+        working-directory: android
+        run: |
+          $out = cmd /c "gradlew.bat --no-daemon help 2>&1"
+          $code = $LASTEXITCODE
+          $out | Select-Object -Last 12
+          if ($code -eq 0) { Write-Host 'Oczekiwano bledu Gradle 8.9 na Javie 25'; exit 1 }
+          if (-not ($out | Select-String -SimpleMatch 'What went wrong')) { Write-Host 'Inny blad niz oczekiwany'; exit 1 }
+          Write-Host "OK: blad z Java 25 odtworzony (kod $code)"
+          exit 0
+
+      - name: Zbuduj-APK.ps1 w Windows PowerShell 5.1 (pobiera Temurin JDK 17)
+        shell: powershell
+        run: |
+          'PowerShell ' + $PSVersionTable.PSVersion.ToString()
+          & .\android\Zbuduj-APK.ps1 -PobierzJdk
+          exit $LASTEXITCODE
+
+      - name: Pliki na pulpicie
+        shell: pwsh
+        run: |
+          $desktop = [Environment]::GetFolderPath('Desktop')
+          Get-Item -LiteralPath (Join-Path $desktop 'SterownikCO-debug.apk'), (Join-Path $desktop 'Piec.html') |
+            Format-Table Name, Length, LastWriteTime -AutoSize
+
+      - name: Zbuduj-APK.ps1 w PowerShell 7 (wykrywa JDK) + testy jednostkowe
+        shell: pwsh
+        run: |
+          & .\android\Zbuduj-APK.ps1 -Testy -BezPulpitu
+          exit $LASTEXITCODE
+
+      - name: APK jako artefakt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: SterownikCO-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Raport testow
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: raport-testow
+          path: android/app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14

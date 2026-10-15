@@ -13,7 +13,31 @@ cd android
 ./gradlew :app:testDebugUnitTest --rerun-tasks
 ```
 
-Windows PowerShell equivalent: `cd android; .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest --rerun-tasks`.
+Windows PowerShell equivalent: `cd android; .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest --rerun-tasks`
+(wymaga `JAVA_HOME` wskazującego JDK 17–22 — patrz niżej).
+
+### Windows: jedno polecenie (`Zbuduj-APK.ps1`)
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\android\Zbuduj-APK.ps1
+```
+
+Skrypt sam dobiera Javę dla Gradle 8.9: szuka JDK 17–22 (`JAVA_HOME`, `PATH`,
+`%USERPROFILE%\.jdks`, Program Files, rejestr), a gdy go nie ma, pobiera
+przenośne Eclipse Temurin JDK 17 (ZIP z api.adoptium.net, z kontrolą SHA-256)
+do `%LOCALAPPDATA%\SterownikCO\jdk`. Następnie znajduje Android SDK, buduje
+`:app:assembleDebug` i kopiuje `SterownikCO-debug.apk` oraz `Piec.html` na
+pulpit. `JAVA_HOME`/`ANDROID_HOME` ustawia tylko dla własnego procesu — system
+i Android Studio zostają bez zmian. Opcje: `-Testy` (dodatkowo
+`:app:testDebugUnitTest`), `-JavaHome <katalog JDK>`, `-PobierzJdk`,
+`-BezPulpitu`. Plik jest czystym ASCII, więc działa także w Windows PowerShell
+5.1 bez BOM.
+
+Workflow `.github/workflows/android-apk-windows.yml` uruchamia ten skrypt na
+Windows (Windows PowerShell 5.1 i PowerShell 7) przy każdej zmianie w `android/`.
+Odtwarza przy tym błąd z Javą 25 i publikuje APK jako artefakt. Uwaga: ten APK
+jest podpisany kluczem debug runnera, więc nie zainstaluje się jako
+aktualizacja APK zbudowanego lokalnie.
 
 ### Wspólny tryb rozpalania
 
@@ -21,27 +45,37 @@ Jeden przycisk uruchamia sekwencję serw oraz czasowy override mieszadła. Start
 
 Direct Boot alarm monitoring is supported from Android 9 (API 28) when enabled and logged in. After updating, open the app once while unlocked so it can migrate legacy alarm settings and prepare the encrypted boot-session copy; confirm the green encrypted-session readiness message in the Alarms sheet. This implementation does not add FCM or backend code.
 
-Wymagania: **JDK 17–21** (Studio: `jbr-21`), Android SDK 35 (compile/target),
+Wymagania: **JDK 17–22** (zalecane 17 lub 21; **nie 25**), Android SDK 35 (compile/target),
 minSdk 26, Gradle 8.9 (wrapper w repo — `gradle/wrapper/gradle-wrapper.jar`
 jest commitowany, więc lokalny `gradle` nie jest potrzebny). Zestawienie
 narzędzi: AGP 8.7.3 · Kotlin 2.0.21 · Compose BOM 2024.12.01.
 
-### „Incompatible Gradle JVM version" przy syncu
+### Java 25: „Incompatible Gradle JVM version" / „What went wrong: 25.0.3"
 
-Gradle 8.9 nie uruchamia się na JDK 25 (i nowszych) — komunikat
-`The project's Gradle version 8.9 is incompatible with the Gradle JVM version 25.x`.
-Rozwiązanie (jedno kliknięcie): w panelu błędu wybrać
-**„Apply compatible Gradle JDK configuration and sync"**. Ręcznie:
+Gradle 8.9 nie uruchamia się na JDK 25 (i nowszych). Aktualne Android Studio
+(2026.x) ma **wbudowaną Javę 25** (JBR 25.0.x), więc katalog
+`C:\Program Files\Android\Android Studio\jbr` nie nadaje się już do
+budowania tego projektu. Objawy:
+
+* w Studio: `The project's Gradle version 8.9 is incompatible with the Gradle JVM version 25.x`;
+* w terminalu (`gradlew.bat`): `What went wrong:` i sam numer wersji, np. `25.0.3`.
+  To wbudowany kompilator Kotlina w Gradle 8.x, który nie umie odczytać numeru
+  wersji Javy 25 (KT-83610).
+
+Terminal: użyj `Zbuduj-APK.ps1` (wyżej) albo ustaw `JAVA_HOME` na JDK 17/21.
+W Android Studio w panelu błędu wybierz
+**„Apply compatible Gradle JDK configuration and sync"** albo ustaw ręcznie:
 
 ```
 Settings → Build, Execution, Deployment → Build Tools → Gradle
-  → Gradle JDK: jbr-21 (JetBrains Runtime bundled z Studio)
+  → Gradle JDK: Download JDK… → wersja 17 (np. Eclipse Temurin)
+    albo Add JDK from disk… → %LOCALAPPDATA%\SterownikCO\jdk\jdk-17…  (pobrane przez skrypt)
   → Apply → Sync Project with Gradle Files
 ```
 
 Zostawienie `sourceCompatibility/targetCompatibility = 17` i `jvmTarget = "17"`
 jest celowe — kod ma działać na urządzeniach z bootimage JDK 17, a Gradle/Kotlin
-uruchamiają się na JDK 21. Jeżeli koniecznie chcesz budować na JDK 25, trzeba
+uruchamiają się na JDK 17/21. Jeżeli koniecznie chcesz budować na JDK 25, trzeba
 podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
 `gradle-wrapper.properties` wymaga zmiany `distributionUrl`.
 
