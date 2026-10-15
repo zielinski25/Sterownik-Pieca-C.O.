@@ -11,6 +11,26 @@ Ta skumulowana łatka zachowuje lokalne archiwum wykresu ESP, używa timestampó
 
 Budowanie: w projekcie PlatformIO z `Cenatrala Pieca.zip` podmień `src/main_centrala.cpp` na plik z tego katalogu i uruchom `pio run -e esp32-s3-n16r8`. Projekt potrzebuje też lokalnej biblioteki DHT22 w podfolderze `lib/dhtESP32-rmt/` (github.com/junkfix/dhtESP32-rmt). Nie ma jej w ZIP-ie projektu.
 
+### Windows: `Wgraj-Firmware.ps1`
+
+```powershell
+$fw = "$env:USERPROFILE\SterownikCO\firmware-patch\v3.38.0-local-html\Wgraj-Firmware.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File $fw              # tylko kompilacja
+powershell -NoProfile -ExecutionPolicy Bypass -File $fw -Wgraj OTA   # wgranie przez sieć lokalną
+powershell -NoProfile -ExecutionPolicy Bypass -File $fw -Wgraj USB   # wgranie kablem
+```
+
+Co robi skrypt:
+
+1. Sam znajduje projekt PlatformIO centrali, czyli `platformio.ini` z `[env:esp32-s3-n16r8]`. Szuka w Dokumentach, na pulpicie, w Pobranych, w OneDrive i w folderze użytkownika.
+2. Znajduje `pio.exe`, także w `%USERPROFILE%\.platformio\penv` instalowanym przez VS Code.
+3. Gdy brakuje `lib\dhtESP32-rmt`, pobiera tę bibliotekę.
+4. Robi kopię dotychczasowego `src\main_centrala.cpp` w `kopie-firmware\`, wstawia plik z tego katalogu i kompiluje. Gdy kompilacja się nie uda, przywraca poprzedni plik.
+5. Kopiuje `firmware.bin` na pulpit jako `firmware_<wersja>.bin`, na przykład do GitHub Release i `/update`.
+6. Wgrywa firmware na centralę tylko z `-Wgraj USB` albo `-Wgraj OTA`.
+
+Pozostałe opcje: `-Projekt <katalog>`, `-Port COM5`, `-AdresOta 192.168.x.x`, `-BezPulpitu`.
+
 **Kompilacja (2026-10-15):** workflow `.github/workflows/firmware-build.yml` (GitHub Actions) uruchamia `pio run -e esp32-s3-n16r8`. Środowisko: platforma pioarduino 55.03.38-1, `platformio.ini` z `Cenatrala Pieca.zip`, `lib/dhtESP32-rmt` 2.0.2. Wynik: **SUCCESS**. RAM 23,3% (76 328 B), Flash 75,2% (2 364 678 B z 3 145 728 B). Nie wgrywano firmware na urządzenie.
 
 ## v3.47.0 — praca w sieci lokalnej, także bez internetu (LAN API)

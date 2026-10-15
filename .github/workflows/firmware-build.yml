@@ -88,3 +88,102 @@ jobs:
           notice('Firmware - podsumowanie', usage[-20:])
           notice('Firmware - koniec logu', lines[-30:])
           EOF
+
+  # Ten sam firmware, ale przez skrypt Wgraj-Firmware.ps1 na prawdziwym Windows, w ukladzie
+  # jak u uzytkownika: projekt w Dokumenty\PlatformIO\Projects (bez lib\dhtESP32-rmt - skrypt
+  # ma ja pobrac), PlatformIO w %USERPROFILE%\.platformio\penv poza PATH (jak z VS Code).
+  # Kod pobierany recznie do C:\src: nazwa repozytorium konczy sie kropka, a Windows ucina
+  # koncowe kropki w sciezce GITHUB_WORKSPACE.
+  windows-skrypt:
+    name: Wgraj-Firmware.ps1 (Windows, bez wgrywania)
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Pobranie kodu do C:\src
+        shell: pwsh
+        working-directory: C:\
+        run: |
+          git config --global core.autocrlf true
+          git init -q C:\src
+          git -C C:\src fetch -q --depth 1 "https://github.com/${{ github.repository }}.git" "${{ github.sha }}"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git -C C:\src checkout -q FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          @'
+          function Send-Notice([string]$Title, [string[]]$Lines) {
+              $msg = (@($Lines) -join "`n")
+              if ($msg.Length -gt 6000) { $msg = '...' + $msg.Substring($msg.Length - 6000) }
+              if (-not $msg) { $msg = '(brak)' }
+              $msg = $msg.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+              $t = $Title.Replace('%', '%25').Replace(':', '%3A').Replace(',', '%2C')
+              Write-Host ('::notice title={0}::{1}' -f $t, $msg)
+          }
+          function Send-LogNotices([string]$Name, [string]$LogFile) {
+              $all = @(Get-Content -LiteralPath $LogFile -ErrorAction SilentlyContinue)
+              Send-Notice "$Name - komunikaty skryptu" ($all | Where-Object { $_ -match '^(==>|    \S|BLAD|Gotowe|Sterownik Pieca|Wgrano)' })
+              $err = @($all | Where-Object { $_ -match 'error:|FAILED|Error [0-9]' } | Select-Object -First 40)
+              if ($err.Count) { Send-Notice "$Name - bledy" $err }
+              Send-Notice "$Name - koniec logu" ($all | Select-Object -Last 25)
+          }
+          '@ | Set-Content -LiteralPath "$env:RUNNER_TEMP\notice.ps1" -Encoding utf8
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: PlatformIO jak z VS Code (poza PATH) + projekt w Dokumentach
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          python -m venv "$env:USERPROFILE\.platformio\penv"
+          & "$env:USERPROFILE\.platformio\penv\Scripts\python.exe" -m pip install -q -U platformio
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $docs = [Environment]::GetFolderPath('MyDocuments', 'Create')
+          $proj = Join-Path $docs 'PlatformIO\Projects\Cenatrala Pieca'
+          New-Item -ItemType Directory -Force -Path $proj | Out-Null
+          Expand-Archive -LiteralPath 'Cenatrala Pieca.zip' -DestinationPath $proj
+          [Environment]::GetFolderPath('Desktop', 'Create')
+          if (Get-Command pio -ErrorAction SilentlyContinue) { Write-Host 'Uwaga: pio jest w PATH' }
+          Get-ChildItem -LiteralPath $proj | Format-Table 'Name', 'Length' -AutoSize
+
+      - name: Wgraj-Firmware.ps1 w Windows PowerShell 5.1 (domyslnie - bez wgrywania)
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $log = "$env:RUNNER_TEMP\wgraj-ps51.log"
+          cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File firmware-patch\v3.38.0-local-html\Wgraj-Firmware.ps1 > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $log
+          Send-LogNotices "Wgraj-Firmware PS 5.1 (kod $code)" $log
+          exit $code
+
+      - name: Wynik w projekcie i na pulpicie
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $proj = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PlatformIO\Projects\Cenatrala Pieca'
+          $desk = [Environment]::GetFolderPath('Desktop')
+          $rows = @()
+          $rows += @(Get-ChildItem -LiteralPath $desk -Filter 'firmware_v*.bin' -File | ForEach-Object { 'pulpit: {0} ({1:N0} B)' -f $_.Name, $_.Length })
+          $rows += @(Get-ChildItem -LiteralPath (Join-Path $proj 'kopie-firmware') -File -ErrorAction SilentlyContinue | ForEach-Object { 'kopia: ' + $_.Name })
+          $rows += @(Get-ChildItem -LiteralPath (Join-Path $proj 'lib\dhtESP32-rmt') -File -ErrorAction SilentlyContinue | ForEach-Object { 'lib: ' + $_.Name })
+          $ver = Select-String -LiteralPath (Join-Path $proj 'src\main_centrala.cpp') -Pattern 'static const char\* FIRMWARE_VERSION = "([^"]+)"' -List
+          if ($ver) { $rows += ('src: ' + $ver.Matches[0].Groups[1].Value) }
+          $rows | ForEach-Object { Write-Host $_ }
+          Send-Notice 'Wynik' $rows
+          if (-not ($rows -match '^pulpit:') -or -not ($rows -match '^kopia:') -or -not ($rows -match 'dhtESP32-rmt\.h')) { exit 1 }
+
+      - name: Drugie uruchomienie w PowerShell 7 (plik juz podmieniony)
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $log = "$env:RUNNER_TEMP\wgraj-ps7.log"
+          cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File firmware-patch\v3.38.0-local-html\Wgraj-Firmware.ps1 -BezPulpitu > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $log
+          Send-LogNotices "Wgraj-Firmware PS 7 (kod $code)" $log
+          if ($code -ne 0) { exit $code }
+          if (-not (Select-String -LiteralPath $log -SimpleMatch 'Projekt ma juz ten plik' -Quiet)) { Write-Host 'Oczekiwano komunikatu: Projekt ma juz ten plik'; exit 1 }
