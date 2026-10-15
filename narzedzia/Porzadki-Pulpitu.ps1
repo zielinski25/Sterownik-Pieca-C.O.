@@ -22,6 +22,10 @@
 .PARAMETER Wykonaj
     Naprawde przenosi (bez tego tylko podglad).
 
+.PARAMETER DodatkoweKopie
+    Archiwizuje tez dodatkowe APK, paczki chart-fix, kopie panelu .bak oraz
+    nazwane kopie projektow sterownika. Nie wybiera z nich aktualnej wersji.
+
 .PARAMETER Pulpit
     Inny folder do uporzadkowania (domyslnie pulpit biezacego uzytkownika).
 
@@ -34,6 +38,7 @@
 [CmdletBinding()]
 param(
     [switch]$Wykonaj,
+    [switch]$DodatkoweKopie,
     [string]$Pulpit
 )
 
@@ -168,6 +173,35 @@ foreach ($d in @(Get-ChildItem -LiteralPath $desk -Directory -ErrorAction Silent
     $toArchive.Add((New-PlanItem $d.FullName $archive $why $true))
 }
 
+# Dodatkowy etap jest opt-in: nazwy z kolejnych paczek nie dowodza, ktora wersja
+# jest aktualna. Wszystkie ida do archiwum, bez zmiany APK juz w SterownikCO.
+if ($DodatkoweKopie) {
+    $alreadyPlanned = @{}
+    foreach ($group in @($toArchive, $toTarget)) {
+        foreach ($p in $group) { $alreadyPlanned[$p.Source.ToLowerInvariant()] = $true }
+    }
+    foreach ($item in @(Get-ChildItem -LiteralPath $desk -ErrorAction Stop)) {
+        if ($alreadyPlanned.ContainsKey($item.FullName.ToLowerInvariant())) { continue }
+        # Nie archiwizuj junctionow/symlinkow do projektow w innych miejscach.
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        $why = ''
+        if ($item.PSIsContainer) {
+            if ($item.Name -match '^(piec-android-chartfix-.+|piec-android-test|piec-co-final|piec-fw-v[0-9].*|sterownik-co-android_v[0-9].*|Sterownik-Pieca-C\.O\.-fresh-.+)$') {
+                $why = 'dodatkowa kopia projektu (sprawdz przed przeniesieniem)'
+            }
+        } else {
+            if ($item.Name -like 'Sterownik-*.apk' -or $item.Name -like 'SterownikPieca*.apk') {
+                $why = 'dodatkowy APK (wersja niezweryfikowana)'
+            } elseif ($item.Name -like 'Android-Chart-Fix-*.zip') {
+                $why = 'paczka poprawek Android'
+            } elseif ($item.Name -like 'Piec.html.*.bak') {
+                $why = 'kopia panelu HTML'
+            }
+        }
+        if ($why) { $toArchive.Add((New-PlanItem $item.FullName $archive $why ([bool]$item.PSIsContainer))) }
+    }
+}
+
 # --- podglad ---------------------------------------------------------------
 # Listy przechodzone petla w petli: w Windows PowerShell 5.1 "@(lista) + @(lista)"
 # dla List[object] konczy sie bledem "Argument types do not match".
@@ -241,7 +275,7 @@ $rest = @(Get-ChildItem -LiteralPath $desk -ErrorAction SilentlyContinue | Where
     if (-not $Wykonaj -and $planned.ContainsKey($_.FullName.ToLowerInvariant())) { return $false }
     return $true
 })
-Write-Step ('Zostaje na pulpicie (nie dotyczy sterownika): {0}' -f $rest.Count)
+Write-Step ('Zostaje na pulpicie (poza planem; nierozpoznane lub inne pliki): {0}' -f $rest.Count)
 $shown = 0
 foreach ($r in ($rest | Sort-Object -Property @{ Expression = { -not $_.PSIsContainer } }, 'Name')) {
     if ($shown -ge 80) {
