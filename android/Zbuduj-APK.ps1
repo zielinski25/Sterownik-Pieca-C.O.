@@ -184,6 +184,23 @@ function Find-CompatibleJdk {
     return $null
 }
 
+function Get-Sha256Hex([string]$File) {
+    # Czyste .NET zamiast Get-FileHash: Windows PowerShell 5.1 uruchomiony z PowerShell 7
+    # dziedziczy PSModulePath i nie znajduje funkcji z modulu Microsoft.PowerShell.Utility.
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::OpenRead($File)
+        $bytes = $sha.ComputeHash($stream)
+        return ([BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant())
+    } catch {
+        return ''
+    } finally {
+        if ($stream) { $stream.Dispose() }
+        $sha.Dispose()
+    }
+}
+
 function Install-TemurinJdk([int]$Feature) {
     # Przenosne Eclipse Temurin JDK (ZIP) do $JdkCacheDir; zwraca katalog JDK.
     $procArch = $env:PROCESSOR_ARCHITEW6432
@@ -244,9 +261,7 @@ function Install-TemurinJdk([int]$Feature) {
 
     $expected = ([string]$pkg.checksum).Trim().ToLowerInvariant()
     if ($expected) {
-        $actual = ''
-        $hash = Get-FileHash -LiteralPath $part -Algorithm SHA256 -ErrorAction SilentlyContinue
-        if ($hash) { $actual = $hash.Hash.ToLowerInvariant() }
+        $actual = Get-Sha256Hex $part
         if ($actual -ne $expected) {
             Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
             Exit-WithError "Suma SHA-256 pobranego pliku sie nie zgadza (oczekiwana $expected, jest '$actual'). Uruchom skrypt ponownie."
@@ -265,8 +280,12 @@ function Install-TemurinJdk([int]$Feature) {
         $unpacked = ($LASTEXITCODE -eq 0)
     }
     if (-not $unpacked) {
+        # zapasowo .NET (Expand-Archive pochodzi z modulu, ktory potrafi sie nie zaladowac)
+        Remove-Item -LiteralPath $unpackDir -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path $unpackDir -ErrorAction Stop | Out-Null
         try {
-            Expand-Archive -LiteralPath $zip -DestinationPath $unpackDir -Force -ErrorAction Stop
+            Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $unpackDir)
         } catch {
             Exit-WithError ("Nie udalo sie rozpakowac {0}: {1}" -f $zip, $_.Exception.Message)
         }
