@@ -182,11 +182,29 @@ function Get-PioarduinoCorePin {
     return $null
 }
 
+function Get-PenvPackageVersion([string]$Scripts, [string]$Name) {
+    # Wersja dystrybucji w penv (uv pip list / pip list w formacie JSON); '' gdy brak.
+    $py = Join-Path $Scripts 'python.exe'
+    $uv = Join-Path $Scripts 'uv.exe'
+    if (Test-Path -LiteralPath $uv -PathType Leaf) {
+        $json = (& $uv 'pip' 'list' ('--python=' + $py) '--format=json' 2>$null) -join ''
+    } else {
+        $json = (& $py '-m' 'pip' 'list' '--format=json' '--disable-pip-version-check' 2>$null) -join ''
+    }
+    if (-not $json) { return '' }
+    try { $list = $json | ConvertFrom-Json } catch { return '' }
+    foreach ($pkg in @($list)) {
+        if ([string]$pkg.name -ieq $Name) { return [string]$pkg.version }
+    }
+    return ''
+}
+
 function Repair-PioarduinoCore([string]$PioExe) {
-    # Platforma pioarduino w trakcie 'pio run' przeinstalowuje w penv swoj rdzen platformio,
-    # gdy zainstalowana wersja jest inna. Na Windows to sie nie udaje, bo uruchomiony pio.exe
-    # blokuje wlasne pliki ("Failed to install Python dependencies into penv"). Tu rdzen jest
-    # instalowany, gdy pio nie dziala. $true = cos zainstalowano (warto sprobowac ponownie).
+    # Platforma pioarduino porownuje wersje pakietu "platformio" w penv z przypieta (np. 6.1.19).
+    # Gdy sie rozni (np. PlatformIO IDE zainstalowalo 6.2.0), przy kazdym 'pio run' probuje
+    # przeinstalowac rdzen. Na Windows to sie nie udaje, bo uruchomiony pio.exe blokuje wlasne
+    # pliki ("Failed to install Python dependencies into penv"). Tu wymagana wersja jest
+    # instalowana, gdy pio nie dziala. $true = cos zainstalowano (warto sprobowac ponownie).
     $scripts = Split-Path -Parent $PioExe
     $py = Join-Path $scripts 'python.exe'
     if (-not (Test-Path -LiteralPath $py -PathType Leaf)) {
@@ -198,22 +216,20 @@ function Repair-PioarduinoCore([string]$PioExe) {
         Write-Info 'Nie znalazlem przypietej wersji rdzenia pioarduino (penv_setup.py) - bez naprawy.'
         return $false
     }
-    $verText = (& $PioExe --version 2>$null) -join ' '
-    $have = ''
-    $m = [regex]::Match([string]$verText, 'version\s+([0-9][0-9.]*)')
-    if ($m.Success) { $have = $m.Groups[1].Value }
+    $have = Get-PenvPackageVersion $scripts 'platformio'
     if ($have -eq $pin.Version) {
-        Write-Info ('PlatformIO Core {0} zgodny z platforma - przyczyna bledu jest inna.' -f $have)
+        Write-Info ('Pakiet platformio {0} zgodny z platforma - przyczyna bledu jest inna.' -f $have)
         return $false
     }
     $haveLabel = $have
     if (-not $haveLabel) { $haveLabel = 'brak' }
-    Write-Info ('PlatformIO Core {0} -> {1} (wersja wymagana przez platforme pioarduino), instaluje...' -f $haveLabel, $pin.Version)
+    Write-Info ('Pakiet platformio w penv: {0}, platforma pioarduino wymaga {1} - instaluje platformio=={1}...' -f $haveLabel, $pin.Version)
+    $spec = 'platformio==' + $pin.Version
     $uv = Join-Path $scripts 'uv.exe'
     if (Test-Path -LiteralPath $uv -PathType Leaf) {
-        & $uv pip install --quiet ('--python=' + $py) $pin.Url | Out-Host
+        & $uv 'pip' 'install' '--quiet' ('--python=' + $py) $spec | Out-Host
     } else {
-        & $py -m pip install --quiet --disable-pip-version-check $pin.Url | Out-Host
+        & $py '-m' 'pip' 'install' '--quiet' '--disable-pip-version-check' $spec | Out-Host
     }
     return ($LASTEXITCODE -eq 0)
 }
