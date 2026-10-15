@@ -13195,11 +13195,93 @@ body.mode-phone-frame #phone {
         if (b2) b2.disabled = false;
       }
 
+      function uploadLocalFirmware(file, password) {
+        const ip = String(S.ip || '').trim();
+        const host = window.location.hostname;
+        const expectedHost = ip.replace(/^\[|\]$/g, '');
+        const servedByController = window.location.protocol === 'http:' &&
+          (!ip || host === expectedHost || host === 'sterownikco.local' || host === 'sterownikco');
+        if (!servedByController) {
+          const hint = ip
+            ? `Wgraj plik z panelu centrali: http://${ip}/`
+            : 'Otwórz panel bezpośrednio z centrali przez HTTP, aby wgrać plik.';
+          showToast('OTA', hint, 'warn');
+          return;
+        }
+        if (!file || !file.name.toLowerCase().endsWith('.bin') || !file.size) {
+          showToast('OTA', 'Wybierz prawidłowy plik .bin', 'warn');
+          return;
+        }
+        if (!window.confirm(`Wgrać ${file.name} (${Math.ceil(file.size / 1024)} KiB) do pamięci Flash ESP32? Centrala uruchomi się ponownie.`)) return;
+
+        progWrap.style.display = 'flex';
+        const lbl = $('#otaProgressLabel');
+        const pct = $('#otaProgressPct');
+        const fill = $('#otaProgressBarFill');
+        const b1 = $('#btnOtaCentrala');
+        const b2 = $('#btnOtaPanel');
+        const bUpload = $('#btnOtaLocalUpload');
+        if (b1) b1.disabled = true;
+        if (b2) b2.disabled = true;
+        if (bUpload) bUpload.disabled = true;
+        if (pct) pct.textContent = '0%';
+        if (fill) fill.style.width = '0%';
+        if (lbl) lbl.textContent = `Wysyłanie ${file.name} do centrali…`;
+
+        const form = new FormData();
+        // Kolejność ma znaczenie: firmware sprawdza hasło przed pierwszym bajtem pliku.
+        form.append('haslo', password);
+        form.append('firmware', file, file.name);
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/ota-upload', true);
+        xhr.timeout = 180000;
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const progress = Math.round(event.loaded * 100 / event.total);
+          if (pct) pct.textContent = `${progress}%`;
+          if (fill) fill.style.width = `${progress}%`;
+        };
+        const restoreButtons = () => {
+          if (b1) b1.disabled = false;
+          if (b2) b2.disabled = false;
+          if (bUpload) bUpload.disabled = false;
+        };
+        xhr.onload = () => {
+          const response = String(xhr.responseText || '').trim();
+          if (xhr.status === 200) {
+            if (pct) pct.textContent = 'OK';
+            if (fill) fill.style.width = '100%';
+            if (lbl) lbl.textContent = `Centrala przyjęła plik. Restart za chwilę. ${response}`;
+            addLog('OTA', `Centrala przyjęła lokalny plik ${file.name}; oczekiwany restart`, 'ack');
+            showToast('OTA', 'Plik przyjęty; centrala uruchamia się ponownie.', 'ok');
+          } else {
+            if (pct) pct.textContent = 'BŁĄD';
+            if (lbl) lbl.textContent = `Błąd HTTP ${xhr.status}: ${response || 'brak szczegółów'}`;
+            addLog('OTA', `Lokalny upload odrzucony HTTP ${xhr.status}: ${response}`, 'err');
+            showToast('OTA', response || `Upload odrzucony (HTTP ${xhr.status})`, 'err');
+            restoreButtons();
+          }
+        };
+        xhr.onerror = () => {
+          if (pct) pct.textContent = 'BŁĄD';
+          if (lbl) lbl.textContent = 'Brak odpowiedzi HTTP. Sprawdź stan centrali przed ponowieniem uploadu.';
+          showToast('OTA', 'Brak odpowiedzi centrali; nie ponawiaj bez sprawdzenia jej stanu.', 'err');
+          restoreButtons();
+        };
+        xhr.ontimeout = () => {
+          if (pct) pct.textContent = 'TIMEOUT';
+          if (lbl) lbl.textContent = 'Przekroczono limit czasu. Sprawdź stan centrali przed ponowieniem uploadu.';
+          showToast('OTA', 'Przekroczono limit czasu; sprawdź stan centrali.', 'err');
+          restoreButtons();
+        };
+        xhr.send(form);
+      }
+
       // 4. Ręczne wgranie pliku binarnego z dysku
       b.appendChild(sectionHeader('Ręczne wgranie pliku binarnego (.bin z dysku)'));
       const uploadCard = h('div', 'wifi-status-card', `
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">
-          Bezpośrednie wgranie skompilowanego pliku <code>firmware.bin</code> do pamięci Flash sterownika przez interfejs HTTP:
+          Bezpośrednie wgranie skompilowanego pliku <code>firmware.bin</code> do pamięci Flash sterownika przez interfejs HTTP. Wymaga otwarcia panelu bezpośrednio z adresu ESP32 (nie z lokalnego pliku HTML):
         </div>
         <div style="display:flex;flex-direction:column;gap:8px">
           <input type="file" id="otaLocalFile" accept=".bin" style="font-size:11px;color:var(--text);padding:6px;background:rgba(0,0,0,0.3);border-radius:6px;border:1px solid var(--border)">
@@ -13221,7 +13303,7 @@ body.mode-phone-frame #phone {
             const pass = $('#otaPassword')?.value;
             if (!file) { showToast('OTA', 'Wybierz plik .bin z dysku', 'warn'); return; }
             if (!pass) { showToast('OTA', 'Podaj hasło zabezpieczenia OTA', 'warn'); return; }
-            runOtaProcedure(`Plik lokalny (${file.name})`, file.name, 'ota_upload');
+            uploadLocalFirmware(file, pass);
           };
         }
       }, 50);

@@ -29,9 +29,13 @@ Ta skumulowana łatka zachowuje lokalne archiwum wykresu ESP, używa timestampó
 
 Dla porównania 6 h / 24 h wybierz te same serie i ustaw ten sam zakres. Lokalne i Firebase-owe archiwa minutowe mogą różnić się dostępnością pojedynczych zapisów. Dla 7/30 dni dokładna zgodność rozdzielczości nie jest gwarantowana: lokalne długie archiwum jest zdarzeniowe, a RTDB zapisuje próbki minutowe. Porównanie wymaga też takich samych filtrów i ustawień osi.
 
+## Lokalne wgrywanie pliku `.bin`
+
+Przycisk lokalnego uploadu wysyła hasło oraz plik jako `multipart/form-data` bezpośrednio do HTTP endpointu `/ota-upload`; `ota_upload` nie jest komendą Firebase i nie przenosi pliku. Upload działa wyłącznie na stronie serwowanej bezpośrednio przez ESP32 (ten sam origin HTTP), nie z lokalnego pliku HTML ani strony Firebase.
+
 ## Wersja i bezpieczeństwo zmian
 
-Źródłowe `FIRMWARE_VERSION` przechodzi z **v3.45.0** na **v3.46.0**. Zmieniono wyłącznie wspólną logikę rozpalania oraz jej lokalne/Firebase API i opisy; zabezpieczenia alarmowe pozostają aktywne. Nie zmieniano głównego `Cenatrala Pieca.zip`. Nie wykonano kompilacji firmware, flashowania ani poleceń do urządzenia.
+Źródłowe `FIRMWARE_VERSION` przechodzi z **v3.45.0** na **v3.46.0**. Zmieniono wspólną logikę rozpalania oraz jej lokalne/Firebase API, a także poprawiono obsługę lokalnego uploadu `.bin`; zabezpieczenia alarmowe pozostają aktywne. Nie zmieniano głównego `Cenatrala Pieca.zip`. W tej sesji nie wykonano kompilacji firmware, flashowania ani poleceń do urządzenia.
 
 ## Zastosowanie
 

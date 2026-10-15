@@ -91,7 +91,7 @@
  
  // ════════════════════════════════════════════════════════
  // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
-@@ -5792,10 +5863,10470 @@
+@@ -5792,10 +5863,10552 @@
  WifiZapisanaSiec wifiSieci[WIFI_MAX_SIECI];
  int wifiLiczbaSieci = 0;
  
@@ -7431,11 +7431,93 @@
 +        if (b2) b2.disabled = false;
 +      }
 +
++      function uploadLocalFirmware(file, password) {
++        const ip = String(S.ip || '').trim();
++        const host = window.location.hostname;
++        const expectedHost = ip.replace(/^\[|\]$/g, '');
++        const servedByController = window.location.protocol === 'http:' &&
++          (!ip || host === expectedHost || host === 'sterownikco.local' || host === 'sterownikco');
++        if (!servedByController) {
++          const hint = ip
++            ? `Wgraj plik z panelu centrali: http://${ip}/`
++            : 'Otwórz panel bezpośrednio z centrali przez HTTP, aby wgrać plik.';
++          showToast('OTA', hint, 'warn');
++          return;
++        }
++        if (!file || !file.name.toLowerCase().endsWith('.bin') || !file.size) {
++          showToast('OTA', 'Wybierz prawidłowy plik .bin', 'warn');
++          return;
++        }
++        if (!window.confirm(`Wgrać ${file.name} (${Math.ceil(file.size / 1024)} KiB) do pamięci Flash ESP32? Centrala uruchomi się ponownie.`)) return;
++
++        progWrap.style.display = 'flex';
++        const lbl = $('#otaProgressLabel');
++        const pct = $('#otaProgressPct');
++        const fill = $('#otaProgressBarFill');
++        const b1 = $('#btnOtaCentrala');
++        const b2 = $('#btnOtaPanel');
++        const bUpload = $('#btnOtaLocalUpload');
++        if (b1) b1.disabled = true;
++        if (b2) b2.disabled = true;
++        if (bUpload) bUpload.disabled = true;
++        if (pct) pct.textContent = '0%';
++        if (fill) fill.style.width = '0%';
++        if (lbl) lbl.textContent = `Wysyłanie ${file.name} do centrali…`;
++
++        const form = new FormData();
++        // Kolejność ma znaczenie: firmware sprawdza hasło przed pierwszym bajtem pliku.
++        form.append('haslo', password);
++        form.append('firmware', file, file.name);
++        const xhr = new XMLHttpRequest();
++        xhr.open('POST', '/ota-upload', true);
++        xhr.timeout = 180000;
++        xhr.upload.onprogress = (event) => {
++          if (!event.lengthComputable) return;
++          const progress = Math.round(event.loaded * 100 / event.total);
++          if (pct) pct.textContent = `${progress}%`;
++          if (fill) fill.style.width = `${progress}%`;
++        };
++        const restoreButtons = () => {
++          if (b1) b1.disabled = false;
++          if (b2) b2.disabled = false;
++          if (bUpload) bUpload.disabled = false;
++        };
++        xhr.onload = () => {
++          const response = String(xhr.responseText || '').trim();
++          if (xhr.status === 200) {
++            if (pct) pct.textContent = 'OK';
++            if (fill) fill.style.width = '100%';
++            if (lbl) lbl.textContent = `Centrala przyjęła plik. Restart za chwilę. ${response}`;
++            addLog('OTA', `Centrala przyjęła lokalny plik ${file.name}; oczekiwany restart`, 'ack');
++            showToast('OTA', 'Plik przyjęty; centrala uruchamia się ponownie.', 'ok');
++          } else {
++            if (pct) pct.textContent = 'BŁĄD';
++            if (lbl) lbl.textContent = `Błąd HTTP ${xhr.status}: ${response || 'brak szczegółów'}`;
++            addLog('OTA', `Lokalny upload odrzucony HTTP ${xhr.status}: ${response}`, 'err');
++            showToast('OTA', response || `Upload odrzucony (HTTP ${xhr.status})`, 'err');
++            restoreButtons();
++          }
++        };
++        xhr.onerror = () => {
++          if (pct) pct.textContent = 'BŁĄD';
++          if (lbl) lbl.textContent = 'Brak odpowiedzi HTTP. Sprawdź stan centrali przed ponowieniem uploadu.';
++          showToast('OTA', 'Brak odpowiedzi centrali; nie ponawiaj bez sprawdzenia jej stanu.', 'err');
++          restoreButtons();
++        };
++        xhr.ontimeout = () => {
++          if (pct) pct.textContent = 'TIMEOUT';
++          if (lbl) lbl.textContent = 'Przekroczono limit czasu. Sprawdź stan centrali przed ponowieniem uploadu.';
++          showToast('OTA', 'Przekroczono limit czasu; sprawdź stan centrali.', 'err');
++          restoreButtons();
++        };
++        xhr.send(form);
++      }
++
 +      // 4. Ręczne wgranie pliku binarnego z dysku
 +      b.appendChild(sectionHeader('Ręczne wgranie pliku binarnego (.bin z dysku)'));
 +      const uploadCard = h('div', 'wifi-status-card', `
 +        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">
-+          Bezpośrednie wgranie skompilowanego pliku <code>firmware.bin</code> do pamięci Flash sterownika przez interfejs HTTP:
++          Bezpośrednie wgranie skompilowanego pliku <code>firmware.bin</code> do pamięci Flash sterownika przez interfejs HTTP. Wymaga otwarcia panelu bezpośrednio z adresu ESP32 (nie z lokalnego pliku HTML):
 +        </div>
 +        <div style="display:flex;flex-direction:column;gap:8px">
 +          <input type="file" id="otaLocalFile" accept=".bin" style="font-size:11px;color:var(--text);padding:6px;background:rgba(0,0,0,0.3);border-radius:6px;border:1px solid var(--border)">
@@ -7457,7 +7539,7 @@
 +            const pass = $('#otaPassword')?.value;
 +            if (!file) { showToast('OTA', 'Wybierz plik .bin z dysku', 'warn'); return; }
 +            if (!pass) { showToast('OTA', 'Podaj hasło zabezpieczenia OTA', 'warn'); return; }
-+            runOtaProcedure(`Plik lokalny (${file.name})`, file.name, 'ota_upload');
++            uploadLocalFirmware(file, pass);
 +          };
 +        }
 +      }, 50);
@@ -10566,7 +10648,7 @@
  const char WIFI_STRONA_HTML_HEADER[] PROGMEM = R"HTML(<!DOCTYPE html><html><head><meta charset="utf-8">
  <meta name="viewport" content="width=device-width,initial-scale=1">
  <title>Sterownik CO</title>
-@@ -6788,7 +17319,7 @@
+@@ -6788,7 +17401,7 @@
        // mieszadlu pracowac ponizej normalnego progu temperatury -- warto
        // widziec na kafelku CZY jest aktywny, bo to tlumaczy, dlaczego
        // mieszadlo dziala mimo zimnego jeszcze pieca.
@@ -10575,7 +10657,7 @@
      } else if (k.typ === 'zegar') {
        w.innerHTML = d.rtc_ok ? ((d.godzina < 10 ? '0' : '') + d.godzina + ':' + (d.minuta < 10 ? '0' : '') + d.minuta) : '--:--';
        stan = d.rtc_ok ? '' : 'warn';
-@@ -6945,7 +17476,19 @@
+@@ -6945,7 +17558,19 @@
  
  function dpOtworzSerwo(){
    dpOtworz(
@@ -10596,7 +10678,7 @@
      + "<div class='seg' id='dp-seg-trybserwa'>"
        + "<button class='seg-btn' data-v='1' onclick='dpSegTrybSerwa(1,this)'>Auto</button>"
        + "<button class='seg-btn' data-v='2' onclick='dpSegTrybSerwa(2,this)'>Ręczny</button>"
-@@ -6995,7 +17538,8 @@
+@@ -6995,7 +17620,8 @@
    // [SYMULACJA-PER-CZUJNIK, PLAN_SYMULACJA_CZUJNIKOW.md 7.3] Licznik
    // auto-wygasniecia trybu Recznego, z /api/status (dotad TrybSerwa==2 nie
    // wygasal wcale, wiec taki licznik nie mial racji bytu).
@@ -10606,7 +10688,7 @@
      var info = document.getElementById('dp-serwoOverrideInfo');
      if (info) info.textContent = (d.serwo_override_min > 0)
        ? ('Ręczna pozycja jeszcze ok. ' + d.serwo_override_min + ' min, potem powrót do Auto')
-@@ -7256,8 +17800,104 @@
+@@ -7256,8 +17882,104 @@
    symZaladujStan('wilgotnosc');
  }
  
@@ -10712,7 +10794,7 @@
      // [CZ.4/SYS-HDR] podpiete pod istniejacy 2s-owy cykl odswiezDashboard()
      // (centrala nie ma WebSocket jak Ryby -- to REST polling, wiec zamiast
      // ws.onopen z Ryb aktualizacja idzie tu, razem z reszta danych z tego
-@@ -7335,6 +17975,7 @@
+@@ -7335,6 +18057,7 @@
        tekst.textContent = 'Połączono: ' + (d.ip||'') + ' (' + fmt(d.rssi,0) + ' dBm)';
      }
    }).catch(function(){
@@ -10720,7 +10802,7 @@
      // [DASHBOARD-WWW-BANER, dokonczenie sekcji 4.4/5 planu] Realny brak z
      // Fazy 1 -- ten catch byl pusty, wiec przy zerwaniu polaczenia strona
      // po cichu zostawiala coraz starsze liczby na ekranie, bez zadnego
-@@ -7558,104 +18199,392 @@
+@@ -7558,104 +18281,392 @@
  // nie z samego indeksu w tablicy - a odcinki oddalone od siebie o wiecej niz
  // "progDziuryS" sekund rysowane sa jako OSOBNE polyline (przerwa w linii)
  // zamiast byc laczone tak, jakby powstaly tuz po sobie.
@@ -11174,7 +11256,7 @@
  }
  
  // [PROGNOZA-ETAP3, PLAN_PROGNOZA.md] Reuzywa DOKLADNIE ten sam drawChart()
-@@ -7975,15 +18904,13 @@
+@@ -7975,15 +18986,13 @@
        var el = document.getElementById('u-' + k);
        if (el && d.hasOwnProperty(k)) el.value = d[k];
      });
@@ -11193,7 +11275,7 @@
      ustSegAktywny('seg-wybor', d.wybor);
      ustSegAktywny('seg-trybserwa', d.trybSerwa);
      ustSegAktywny('seg-dymtryb', d.dymTrybPracy); // [DYM-OD-TEMPERATURY]
-@@ -9399,7 +20326,7 @@
+@@ -9399,7 +20408,7 @@
  AlarmMuteTimer alarmMuteOgrz;
  static portMUX_TYPE alarmMuteMux = portMUX_INITIALIZER_UNLOCKED;
  
@@ -11202,7 +11284,7 @@
  volatile bool rozpalanieSerwaAktywne = false;
  volatile bool rozpalanieSerwaDostepne = false;
  volatile bool rozpalanieSerwaBlokadaDymu = false;
-@@ -9580,16 +20507,17 @@
+@@ -9580,16 +20589,17 @@
  bool mieszadloAktywnyStan = false;          // czy przekaznik jest AKTUALNIE zalaczony (faza ON, w odroznieniu od fazy OFF)
  unsigned long mieszadloCzasZmianyFazyMs = 0; // millis() ostatniej zmiany fazy ON<->OFF
  
@@ -11230,7 +11312,7 @@
  
  unsigned long ostatniPomiar = 0;
  float ostatniaTempPowrotu = 0;
-@@ -9897,11 +20825,14 @@
+@@ -9897,11 +20907,14 @@
      if (w < 1 || w > 180) { err = "mieszadloCzasOff poza zakresem 1-180"; return false; }
      mieszadloCzasOff = w; config.putUChar("mieszCzasOff", mieszadloCzasOff);  // [FIX NVS-15] klucz byl 16 znakow, ciche niepowodzenie zapisu (pierwotnie zdiagnozowany przypadek)
    } else if (pole == "rozpalanie") {
@@ -11249,7 +11331,7 @@
    } else if (pole == "tempZadServo") {
      if (w < 0 || w > 100) { err = "tempZadServo poza zakresem 0-100"; return false; }
      temperatura_zadana_serwo = w; config.putUChar("tempZadServo", temperatura_zadana_serwo);
-@@ -10863,6 +21794,8 @@
+@@ -10863,6 +21876,8 @@
    // warunek na poczatku historiaDlugaAkumulujProbke()). Analogia do pola
    // czas_unix w HistoriaProbka wyzej, ten sam cel (dziury na wykresie).
    uint32_t czas_unix;
@@ -11258,7 +11340,7 @@
  };
  
  HistoriaProbkaDluga* historiaDlugaBufor = nullptr;
-@@ -10915,17 +21848,18 @@
+@@ -10915,17 +21930,18 @@
  // Zapisuje POJEDYNCZA probke chwilowa do historiaDlugaBufor - sr=min=max=
  // biezaca wartosc kazdego pola, bo przy zapisie zdarzeniowym nie ma juz
  // okna czasowego do usredniania (kazdy zapis to jeden punkt w czasie, nie
@@ -11282,7 +11364,7 @@
    if (!historiaDlugaBufor) return;
  
    HistoriaProbkaDluga nowa;
-@@ -10936,6 +21870,7 @@
+@@ -10936,6 +21952,7 @@
    snprintf(nowa.etykieta, sizeof(nowa.etykieta), "%02d.%02d %02d:%02d",
             now.day(), now.month(), now.hour(), now.minute());
    nowa.czas_unix = now.unixtime();
@@ -11290,7 +11372,7 @@
  
    // sr=min=max=wartosc chwilowa - patrz komentarz nad funkcja.
    #define ZDARZ_PRZEPISZ(pole, wartosc) \
-@@ -10979,7 +21914,7 @@
+@@ -10979,7 +21996,7 @@
    historiaDlugaOstatnia.wilgotnosc   = wilgotnosc;
    historiaDlugaOstatnia.klapa_proc   = klapa_proc;
    historiaDlugaOstatnia.syberko_proc = syberko_proc;
@@ -11299,7 +11381,7 @@
  
    DLOGF(DC_HISTORIA, DL_DEBUG, "HISTORIA_DLUGA zdarzenie=zapis etykieta=\"%s\"", nowa.etykieta);
  
-@@ -11025,6 +21960,7 @@
+@@ -11025,6 +22042,7 @@
    if (!g_rtcGotowy && !g_rtcNtpZsynchronizowany) return;
  
    uint32_t teraz = millis();
@@ -11307,7 +11389,7 @@
  
    // (1) Limit przeciw-zalewowy - PRZED jakimkolwiek innym sprawdzeniem.
    if (historiaDlugaOstatnia.mamy &&
-@@ -11038,7 +21974,7 @@
+@@ -11038,7 +22056,7 @@
      zapisz = true;  // (2) pierwsza probka od startu urzadzenia
    } else if ((teraz - historiaDlugaOstatnia.czasMs) >= HIST_DLUGA_HEARTBEAT_MS) {
      zapisz = true;  // (3) heartbeat
@@ -11316,7 +11398,7 @@
      zapisz = true;  // (4) zmiana stanu pompy
    } else {
      // (5) progi per-metryka - wystarczy pierwszy przekroczony.
-@@ -11060,7 +21996,8 @@
+@@ -11060,7 +22078,8 @@
    if (!zapisz) return;
  
    historiaDlugaZapiszProbke(now, t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot,
@@ -11326,7 +11408,7 @@
  }
  
  // [HISTORIA-DLUGA, Partia 3 - Krok 1] CSV z bufora dlugiego dla endpointu
-@@ -11068,9 +22005,9 @@
+@@ -11068,9 +22087,9 @@
  // licznikow pod spinlockiem, potem petla bez lockowania, bo historiaDlugaBufor
  // nie jest realokowany w locie). Kolejnosc kolumn: etykieta, potem
  // sr,min,max dla kazdego pola po kolei (w tej samej kolejnosci pol co w
@@ -11338,7 +11420,7 @@
  void historiaDlugaLiniaCsv(const HistoriaProbkaDluga &p, String &csv) {
    csv += p.etykieta; csv += ',';
    csv += String(p.t_zewn_sr, 1);      csv += ','; csv += String(p.t_zewn_min, 1);      csv += ','; csv += String(p.t_zewn_max, 1);      csv += ',';
-@@ -11084,7 +22021,8 @@
+@@ -11084,7 +22103,8 @@
    csv += String(p.wilgotnosc_sr, 0);  csv += ','; csv += String(p.wilgotnosc_min, 0);  csv += ','; csv += String(p.wilgotnosc_max, 0);  csv += ',';
    csv += String(p.klapa_proc_sr);     csv += ','; csv += String(p.klapa_proc_min);     csv += ','; csv += String(p.klapa_proc_max);     csv += ',';
    csv += String(p.syberko_proc_sr);   csv += ','; csv += String(p.syberko_proc_min);   csv += ','; csv += String(p.syberko_proc_max);     csv += ',';
@@ -11348,7 +11430,7 @@
    csv += '\n';
  }
  
-@@ -11099,10 +22037,9 @@
+@@ -11099,10 +22119,9 @@
  
    if (liczbaProbekSnap == 0) return "";
    String csv;
@@ -11362,7 +11444,7 @@
    for (int i = 0; i < liczbaProbekSnap; i++) {
      int idx = (startSnap + i) % HISTORIA_DLUGA_MAX_PROBEK;
      historiaDlugaLiniaCsv(historiaDlugaBufor[idx], csv);
-@@ -13605,10 +24542,28 @@
+@@ -13605,10 +24624,28 @@
    return pelny.substring(start, koniec);
  }
  
@@ -11391,7 +11473,7 @@
    String html;
    html.reserve(4096);
    html += FPSTR(WIFI_STRONA_HTML_HEADER);
-@@ -13700,6 +24655,7 @@
+@@ -13700,6 +24737,7 @@
        "</div>"
      "</div>"
      "<p id='wykrInfo' style='margin-top:8px'><small></small></p>"
@@ -11399,7 +11481,7 @@
      "</div>"
  
      "<div class='karta'><h2>Piec &#8211; ogrzewanie</h2>"
-@@ -14020,10 +24976,7 @@
+@@ -14020,10 +25058,7 @@
      "<div class='row'><div><div class='row-label'>Czas OFF</div><div class='row-desc'>Minuty przekaznik WYLACZONY miedzy cyklami (1-180)</div></div>"
        "<div style='display:flex;gap:8px'><input class='ust-inp' type='number' min='1' max='180' id='u-mieszadloCzasOff'>"
        "<button class='ust-btn' onclick=\"ustSet('mieszadloCzasOff','u-mieszadloCzasOff')\">Ustaw</button></div></div>"
@@ -11411,7 +11493,7 @@
      "</div></div>"
  
      // ── KARTA 3: Serwo (klapa/syberek) — tryb automatyczny ──
-@@ -14278,10 +25231,22 @@
+@@ -14278,10 +25313,22 @@
      "</div>"
    "</div></div>"); // koniec #tab-term
  
@@ -11434,7 +11516,7 @@
  // Buduje JSON ze stanem sterownika dla zakladki Dashboard (odpytywane co
  // 2s przez JS z /api/status). Reczne skladanie String zamiast ArduinoJson
  // — jedna, plaska struktura, nie warto dodawac kolejnej zaleznosci.
-@@ -14361,19 +25326,24 @@
+@@ -14361,19 +25408,24 @@
    // wzorzec jak TrybSerwa kilka linii wyzej.
    j += F("\"wybor\":"); j += String(Wybor); j += F(",");
    // [DASHBOARD-WWW-KAFELKI, Faza 4 (bonus) wg PLAN_DASHBOARD_WWW_CENTRALI.md,
@@ -11466,7 +11548,7 @@
    // [LCD-SEZON, plan PIEC_ESPNOW_PLAN.md] Miesiac z RTC centrali (0 gdy RTC
    // niegotowy — patrz g_rtcGotowy/FIX 12/FIX 13 wyzej) — wyswietlacz uzywa
    // tego do automatycznego przelaczania widoku Lato/Zima (chowanie kafelkow
-@@ -14455,9 +25425,15 @@
+@@ -14455,9 +25507,15 @@
  // — to jest ten sam serwer, ta sama strona w obu trybach.
  void wifiZarejestrujTrasy() {
    if (wifiWebServerUruchomiony) return;
@@ -11483,7 +11565,7 @@
    });
  
    // [TERMINAL] WS dla zakladki "Terminal" — dopiety do TEGO SAMEGO
-@@ -14524,7 +25500,9 @@
+@@ -14524,7 +25582,9 @@
          g_panelOstatniPowodRestartu = powod;
        }
      }
@@ -11494,7 +11576,7 @@
    });
  
    // [PROGNOZA-ETAP1, PLAN_PROGNOZA.md] Serwuje ostatni zbudowany cache
-@@ -14651,9 +25629,10 @@
+@@ -14651,9 +25711,10 @@
      historiaWyczysc();
      request->send(200, "application/json", "{\"ok\":true}");
    });
@@ -11508,7 +11590,7 @@
    // celowo osobny endpoint zamiast parametru ?zakres=, zeby nie mieszac
    // dwoch calkiem roznych formatow CSV (bufor krotki: 1 wartosc/pole,
    // bufor dlugi: 3 wartosci/pole) pod jednym adresem.
-@@ -15354,7 +26333,9 @@
+@@ -15354,7 +26415,9 @@
      json += ",\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false");
      json += ",\"mieszadloCzasOn\":" + String(mieszadloCzasOn);
      json += ",\"mieszadloCzasOff\":" + String(mieszadloCzasOff);
@@ -11519,7 +11601,7 @@
      json += ",\"tempZadServo\":" + String(temperatura_zadana_serwo);
      json += ",\"histerServo\":" + String(Histereza_Serwo);
      json += ",\"skokKlapy\":" + String(Skok_Klapy);
-@@ -15454,6 +26435,34 @@
+@@ -15454,6 +26517,34 @@
      request->send(200, "application/json", "{\"ok\":true,\"os\":\"" + os + "\",\"procent\":" + String(procent) + "}");
    });
  
@@ -11554,7 +11636,7 @@
    // [LCD-POMPA-OVERRIDE] Lokalny odpowiednik komend Telegram/Firebase
    // pompa_wl/pompa_wyl, dla panelu dotykowego LCD w tej samej sieci LAN —
    // bez rundy przez Firebase (nizsze opoznienie, dziala tez gdy internet
-@@ -15495,8 +26504,8 @@
+@@ -15495,8 +26586,8 @@
  
    // [SYMULACJA-MIESZADLO, PLAN_SYMULACJA_CZUJNIKOW.md 3.2/6.5] Nowy endpoint,
    // wzorowany 1:1 na /api/pompa-manual powyzej. Mieszadlo mialo dotad tylko
@@ -11565,7 +11647,7 @@
    // pompy nie ma dedykowanej funkcji xUstaw() — mieszadlo() steruje
    // przekaznikiem wprost, wiec robimy to samo tutaj (digitalWrite +
    // mieszadloAktywnyStan), a guard na gorze mieszadlo() (patrz ta funkcja)
-@@ -16771,7 +27780,7 @@
+@@ -16771,7 +27862,7 @@
    }
  
    bool pracaDozwolona = mieszadloWlaczony &&
@@ -11574,7 +11656,7 @@
  
    if (!pracaDozwolona) {
      if (mieszadloAktywnyStan) {
-@@ -16782,16 +27791,6 @@
+@@ -16782,16 +27873,6 @@
      return;
    }
  
@@ -11591,7 +11673,7 @@
    unsigned long teraz = millis();
    if (mieszadloAktywnyStan) {
      // faza ON — po uplywie mieszadloCzasOn (sekundy) przelacz na OFF
-@@ -16874,7 +27873,9 @@
+@@ -16874,7 +27955,9 @@
  }
  
  static bool rozpalanieSerwaWymuszenieAktywne() {
@@ -11602,7 +11684,7 @@
  }
  
  static void zapiszStanRozpalaniaSerwa() {
-@@ -16997,7 +27998,44 @@
+@@ -16997,7 +28080,44 @@
    }
  }
  
@@ -11647,7 +11729,7 @@
    if (alarmBezpieczenstwaSerwaAktywny()) { blad = "aktywny_alarm_bezpieczenstwa"; return false; }
    if (!temperaturaPiecZnanaDlaRozpalania()) { blad = "brak_swiezej_temperatury_pieca"; return false; }
    if (temperaturaOgrzewania > 30.0f) { blad = "temperatura_powyzej_30C"; return false; }
-@@ -17006,12 +28044,17 @@
+@@ -17006,12 +28126,17 @@
      return false;
    }
  
@@ -11667,7 +11749,7 @@
    blad = "";
    return true;
  }
-@@ -17030,29 +28073,76 @@
+@@ -17030,29 +28155,76 @@
      zapiszStanRozpalaniaSerwa();
    }
  
@@ -11764,7 +11846,7 @@
    if (!temperaturaZnana || !rozpalanieSerwaWymuszenieAktywne() ||
        alarmBezpieczenstwaSerwaAktywny()) return;
  
-@@ -17665,16 +28755,14 @@
+@@ -17665,16 +28837,14 @@
      czasNastepnejAkcjiDymu = millis() + 10000UL;
  
      if (czyAlarmAktywny == 0) {
@@ -11785,7 +11867,7 @@
        }
  
        zapiszLogKrytyczny(F("tag=ALARM lvl=CRIT zdarzenie=aktywacja typ=POZAR"));
-@@ -27762,7 +38850,9 @@
+@@ -27762,7 +38932,9 @@
    ja("\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false") + ",");
    ja("\"mieszadloCzasOn\":" + String(mieszadloCzasOn) + ",");
    ja("\"mieszadloCzasOff\":" + String(mieszadloCzasOff) + ",");
@@ -11796,7 +11878,7 @@
    ja("\"tempZadServo\":" + String(temperatura_zadana_serwo) + ",");
    ja("\"histerServo\":" + String(Histereza_Serwo) + ",");
    ja("\"skokKlapy\":" + String(Skok_Klapy) + ",");
-@@ -28350,6 +39440,11 @@
+@@ -28350,6 +39522,11 @@
        zapiszLog(String(F("tag=SERVO lvl=WARN akcja=rozpalanie_odrzucone powod=")) + bladRozpalania);
      }
    }
@@ -11808,7 +11890,7 @@
    else if (cmd == "wycisz") {
      // [FIX-DYM-RESET-NIEPELNY] Celowo OSOBNA komenda od reset_alarmow —
      // dotyczy wylacznie buzzera alarmu dymu, nie rusza serw/pompy/flag.
-@@ -30877,9 +41972,8 @@
+@@ -30877,9 +42054,8 @@
    DLOGF(DC_HISTORIA, DL_INFO, "HISTORIA-FS zdarzenie=wczytano_z_dysku probek=%d", wczytane);
  }
  
@@ -11820,7 +11902,7 @@
  void historiaDlugaWczytajZFS() {
    if (!historiaDlugaBufor) return;
    if (!littlefsReady) return;
-@@ -30904,18 +41998,19 @@
+@@ -30904,18 +42080,19 @@
      if (numerLinii <= pominac) continue;
      if ((numerLinii % 50) == 0) serwisujTWDTJesliZarejestrowany();
  
@@ -11843,7 +11925,7 @@
      strncpy(p.etykieta, kol[0].c_str(), sizeof(p.etykieta)-1); p.etykieta[sizeof(p.etykieta)-1]=0;
      int k = 1;
      #define WCZYTAJ_FLOAT(pole_) \
-@@ -30939,6 +42034,10 @@
+@@ -30939,6 +42116,10 @@
      p.syberko_proc_min = kol[k++].toInt();
      p.syberko_proc_max = kol[k++].toInt();
      p.czas_unix        = (uint32_t) kol[k++].toInt(); // [DZIURY-CZAS, v3.0.0.2]
@@ -11854,7 +11936,7 @@
  
      if (wczytane < HISTORIA_DLUGA_MAX_PROBEK) {
        historiaDlugaBufor[wczytane] = p;
-@@ -31214,16 +42313,24 @@
+@@ -31214,16 +42395,24 @@
    Skok_Syberka             = config.getUChar("skokSyberka", 5);
    pozycjaKlapa             = config.getUChar("pozKlapa", 0);
    pozycjaSyberek           = config.getUChar("pozSyberek", 0);
