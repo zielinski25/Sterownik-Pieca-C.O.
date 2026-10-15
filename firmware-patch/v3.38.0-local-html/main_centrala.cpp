@@ -26333,7 +26333,7 @@ void wifiZarejestrujTrasy() {
     json += ",\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false");
     json += ",\"mieszadloCzasOn\":" + String(mieszadloCzasOn);
     json += ",\"mieszadloCzasOff\":" + String(mieszadloCzasOff);
-    json += ",\"rozpalanie\":" + String(rozpalanieTrybAktywne ? "true" : "false");
+    json += ",\"rozpalanie\":" + String(rozpalanieTrybAktywny ? "true" : "false");
     json += ",\"rozpalanie_potwierdzone\":" + String(rozpalaniePotwierdzone ? "true" : "false");
     json += ",\"rozpalanie_pozostalo_s\":" + String(rozpalaniePozostaloSekundy());
     json += ",\"tempZadServo\":" + String(temperatura_zadana_serwo);
@@ -28009,8 +28009,8 @@ static unsigned long rozpalaniePozostaloSekundy() {
 }
 
 static void zakonczTrybRozpalania(const char* powod, bool blokadaDymu) {
-  const bool byloAktywne = rozpalanieTrybAktywne || rozpalanieAktywne || rozpalanieSerwaAktywne;
-  rozpalanieTrybAktywne = false;
+  const bool byloAktywne = rozpalanieTrybAktywny || rozpalanieAktywne || rozpalanieSerwaAktywne;
+  rozpalanieTrybAktywny = false;
   rozpalaniePotwierdzone = false;
   rozpalanieAktywne = false;
   rozpalanieStartMs = 0;
@@ -28035,7 +28035,7 @@ static void zakonczTrybRozpalania(const char* powod, bool blokadaDymu) {
 static bool uruchomRozpalanieSerwa(String& blad) {
   // Ta komenda rozpoczyna wspolny tryb; ponowiony pakiet Firebase jest
   // idempotentny i nie zeruje licznika. Zatrzymanie ma osobna komende.
-  if (rozpalanieTrybAktywne) { blad = ""; return true; }
+  if (rozpalanieTrybAktywny) { blad = ""; return true; }
   if (alarmBezpieczenstwaSerwaAktywny()) { blad = "aktywny_alarm_bezpieczenstwa"; return false; }
   if (!temperaturaPiecZnanaDlaRozpalania()) { blad = "brak_swiezej_temperatury_pieca"; return false; }
   if (temperaturaOgrzewania > 30.0f) { blad = "temperatura_powyzej_30C"; return false; }
@@ -28755,7 +28755,7 @@ void pozar() {
     czasNastepnejAkcjiDymu = millis() + 10000UL;
 
     if (czyAlarmAktywny == 0) {
-      bool rozpalanieByloAktywne = rozpalanieTrybAktywne || rozpalanieSerwaAktywne;
+      bool rozpalanieByloAktywne = rozpalanieTrybAktywny || rozpalanieSerwaAktywne;
       bool wymuszenieByloAktywne = rozpalanieSerwaWymuszenieAktywne();
       bool syberekJuzSieOtwiera = ruchSyberka.aktywny && ruchSyberka.docelowa > pozycjaSyberek;
       int bazaSyberka = syberekJuzSieOtwiera ? ruchSyberka.docelowa : pozycjaSyberek;
@@ -38850,7 +38850,7 @@ void sendStatusToFirebase() {
   ja("\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false") + ",");
   ja("\"mieszadloCzasOn\":" + String(mieszadloCzasOn) + ",");
   ja("\"mieszadloCzasOff\":" + String(mieszadloCzasOff) + ",");
-  ja("\"rozpalanie\":" + String(rozpalanieTrybAktywne ? "true" : "false") + ",");
+  ja("\"rozpalanie\":" + String(rozpalanieTrybAktywny ? "true" : "false") + ",");
   ja("\"rozpalanie_potwierdzone\":" + String(rozpalaniePotwierdzone ? "true" : "false") + ",");
   ja("\"rozpalanie_pozostalo_s\":" + String(rozpalaniePozostaloSekundy()) + ",");
   ja("\"tempZadServo\":" + String(temperatura_zadana_serwo) + ",");
