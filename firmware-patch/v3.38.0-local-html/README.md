@@ -29,13 +29,15 @@ Ta skumulowana łatka zachowuje lokalne archiwum wykresu ESP, używa timestampó
 
 Dla porównania 6 h / 24 h wybierz te same serie i ustaw ten sam zakres. Lokalne i Firebase-owe archiwa minutowe mogą różnić się dostępnością pojedynczych zapisów. Dla 7/30 dni dokładna zgodność rozdzielczości nie jest gwarantowana: lokalne długie archiwum jest zdarzeniowe, a RTDB zapisuje próbki minutowe. Porównanie wymaga też takich samych filtrów i ustawień osi.
 
-## Lokalne wgrywanie pliku `.bin`
+## Lokalne wgrywanie OTA przez PlatformIO
 
-Przycisk lokalnego uploadu wysyła hasło oraz plik jako `multipart/form-data` bezpośrednio do HTTP endpointu `/ota-upload`; `ota_upload` nie jest komendą Firebase i nie przenosi pliku. Upload działa wyłącznie na stronie serwowanej bezpośrednio przez ESP32 (ten sam origin HTTP), nie z lokalnego pliku HTML ani strony Firebase.
+- Panel wyświetla przycisk kopiowania komendy `pio run -e esp32-s3-ota -t upload --upload-port <IP-centrali>`. Adres IP pobierany jest z bieżącego statusu centrali.
+- Kliknięcie tylko kopiuje tekst do schowka — nie wybiera ani nie przesyła pliku i nie uruchamia uploadu. Użytkownik wkleja komendę i uruchamia ją samodzielnie w terminalu, w katalogu projektu PlatformIO.
+- Środowisko `esp32-s3-ota` dostarcza konfigurację poświadczeń OTA; hasło nie jest wpisywane do skopiowanej komendy.
 
 ## Wersja i bezpieczeństwo zmian
 
-Źródłowe `FIRMWARE_VERSION` przechodzi z **v3.45.0** na **v3.46.0**. Zmieniono wspólną logikę rozpalania oraz jej lokalne/Firebase API, a także poprawiono obsługę lokalnego uploadu `.bin`; zabezpieczenia alarmowe pozostają aktywne. Nie zmieniano głównego `Cenatrala Pieca.zip`. W tej sesji nie wykonano kompilacji firmware, flashowania ani poleceń do urządzenia.
+Źródłowe `FIRMWARE_VERSION` przechodzi z **v3.45.0** na **v3.46.0**. Zmieniono wspólną logikę rozpalania oraz jej lokalne/Firebase API, a panel przywraca lokalny przepływ OTA przez przycisk kopiujący komendę PlatformIO; zabezpieczenia alarmowe pozostają aktywne. Nie zmieniano głównego `Cenatrala Pieca.zip`. W tej sesji nie wykonano kompilacji firmware, uploadu, flashowania ani poleceń do urządzenia.
 
 ## Zastosowanie
 

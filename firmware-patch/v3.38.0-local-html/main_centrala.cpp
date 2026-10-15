@@ -13195,117 +13195,70 @@ body.mode-phone-frame #phone {
         if (b2) b2.disabled = false;
       }
 
-      function uploadLocalFirmware(file, password) {
+      // 4. Lokalne wgrywanie przez PlatformIO — kopiuj komendę, wklej ją w terminalu.
+      b.appendChild(sectionHeader('Lokalna aktualizacja przez PlatformIO'));
+      const pioCmdCard = h('div', 'wifi-status-card', `
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">
+          Skopiuj polecenie do terminala otwartego w katalogu projektu PlatformIO. Wykona ono kompilację i wysyłkę OTA do centrali po jej IP. Środowisko <code>esp32-s3-ota</code> korzysta z konfiguracji hasła OTA.
+        </div>
+        <code id="otaPioCommandText" style="display:block;overflow-wrap:anywhere;padding:9px;background:rgba(0,0,0,.28);border-radius:7px;color:var(--cyan);font-size:11px">pio run -e esp32-s3-ota -t upload --upload-port —</code>
+        <button type="button" id="btnOtaPioCopy" class="ust-btn primary" style="margin-top:8px">📋 Kopiuj komendę do terminala</button>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:6px">Samo kliknięcie tylko kopiuje tekst. Wgranie rozpocznie się dopiero po wklejeniu i uruchomieniu polecenia w terminalu.</div>
+      `);
+      b.appendChild(pioCmdCard);
+
+      function buildPioOtaCommand() {
         const ip = String(S.ip || '').trim();
-        const host = window.location.hostname;
-        const expectedHost = ip.replace(/^\[|\]$/g, '');
-        const servedByController = window.location.protocol === 'http:' &&
-          (!ip || host === expectedHost || host === 'sterownikco.local' || host === 'sterownikco');
-        if (!servedByController) {
-          const hint = ip
-            ? `Wgraj plik z panelu centrali: http://${ip}/`
-            : 'Otwórz panel bezpośrednio z centrali przez HTTP, aby wgrać plik.';
-          showToast('OTA', hint, 'warn');
-          return;
-        }
-        if (!file || !file.name.toLowerCase().endsWith('.bin') || !file.size) {
-          showToast('OTA', 'Wybierz prawidłowy plik .bin', 'warn');
-          return;
-        }
-        if (!window.confirm(`Wgrać ${file.name} (${Math.ceil(file.size / 1024)} KiB) do pamięci Flash ESP32? Centrala uruchomi się ponownie.`)) return;
-
-        progWrap.style.display = 'flex';
-        const lbl = $('#otaProgressLabel');
-        const pct = $('#otaProgressPct');
-        const fill = $('#otaProgressBarFill');
-        const b1 = $('#btnOtaCentrala');
-        const b2 = $('#btnOtaPanel');
-        const bUpload = $('#btnOtaLocalUpload');
-        if (b1) b1.disabled = true;
-        if (b2) b2.disabled = true;
-        if (bUpload) bUpload.disabled = true;
-        if (pct) pct.textContent = '0%';
-        if (fill) fill.style.width = '0%';
-        if (lbl) lbl.textContent = `Wysyłanie ${file.name} do centrali…`;
-
-        const form = new FormData();
-        // Kolejność ma znaczenie: firmware sprawdza hasło przed pierwszym bajtem pliku.
-        form.append('haslo', password);
-        form.append('firmware', file, file.name);
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/ota-upload', true);
-        xhr.timeout = 180000;
-        xhr.upload.onprogress = (event) => {
-          if (!event.lengthComputable) return;
-          const progress = Math.round(event.loaded * 100 / event.total);
-          if (pct) pct.textContent = `${progress}%`;
-          if (fill) fill.style.width = `${progress}%`;
-        };
-        const restoreButtons = () => {
-          if (b1) b1.disabled = false;
-          if (b2) b2.disabled = false;
-          if (bUpload) bUpload.disabled = false;
-        };
-        xhr.onload = () => {
-          const response = String(xhr.responseText || '').trim();
-          if (xhr.status === 200) {
-            if (pct) pct.textContent = 'OK';
-            if (fill) fill.style.width = '100%';
-            if (lbl) lbl.textContent = `Centrala przyjęła plik. Restart za chwilę. ${response}`;
-            addLog('OTA', `Centrala przyjęła lokalny plik ${file.name}; oczekiwany restart`, 'ack');
-            showToast('OTA', 'Plik przyjęty; centrala uruchamia się ponownie.', 'ok');
-          } else {
-            if (pct) pct.textContent = 'BŁĄD';
-            if (lbl) lbl.textContent = `Błąd HTTP ${xhr.status}: ${response || 'brak szczegółów'}`;
-            addLog('OTA', `Lokalny upload odrzucony HTTP ${xhr.status}: ${response}`, 'err');
-            showToast('OTA', response || `Upload odrzucony (HTTP ${xhr.status})`, 'err');
-            restoreButtons();
-          }
-        };
-        xhr.onerror = () => {
-          if (pct) pct.textContent = 'BŁĄD';
-          if (lbl) lbl.textContent = 'Brak odpowiedzi HTTP. Sprawdź stan centrali przed ponowieniem uploadu.';
-          showToast('OTA', 'Brak odpowiedzi centrali; nie ponawiaj bez sprawdzenia jej stanu.', 'err');
-          restoreButtons();
-        };
-        xhr.ontimeout = () => {
-          if (pct) pct.textContent = 'TIMEOUT';
-          if (lbl) lbl.textContent = 'Przekroczono limit czasu. Sprawdź stan centrali przed ponowieniem uploadu.';
-          showToast('OTA', 'Przekroczono limit czasu; sprawdź stan centrali.', 'err');
-          restoreButtons();
-        };
-        xhr.send(form);
+        const octets = ip.split('.');
+        if (octets.length !== 4 || octets.some(part => !/^\d{1,3}$/.test(part) || Number(part) > 255) || ip === '0.0.0.0') return null;
+        return `pio run -e esp32-s3-ota -t upload --upload-port ${ip}`;
       }
 
-      // 4. Ręczne wgranie pliku binarnego z dysku
-      b.appendChild(sectionHeader('Ręczne wgranie pliku binarnego (.bin z dysku)'));
-      const uploadCard = h('div', 'wifi-status-card', `
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">
-          Bezpośrednie wgranie skompilowanego pliku <code>firmware.bin</code> do pamięci Flash sterownika przez interfejs HTTP. Wymaga otwarcia panelu bezpośrednio z adresu ESP32 (nie z lokalnego pliku HTML):
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <input type="file" id="otaLocalFile" accept=".bin" style="font-size:11px;color:var(--text);padding:6px;background:rgba(0,0,0,0.3);border-radius:6px;border:1px solid var(--border)">
-          <input type="password" id="otaPassword" class="auth-input" placeholder="Wpisz hasło autoryzacji OTA" autocomplete="current-password">
-          <button id="btnOtaLocalUpload" class="ust-btn primary">Wgraj wybrany plik (.bin) do ESP32</button>
-        </div>
-      `);
-      b.appendChild(uploadCard);
+      async function copyPioOtaCommand() {
+        const command = buildPioOtaCommand();
+        const commandEl = $('#otaPioCommandText');
+        if (!command) {
+          showToast('OTA', 'Brak prawidłowego IP centrali w bieżącym statusie.', 'warn');
+          return;
+        }
+        if (commandEl) commandEl.textContent = command;
+        try {
+          let copied = false;
+          if (navigator.clipboard && window.isSecureContext) {
+            try {
+              await navigator.clipboard.writeText(command);
+              copied = true;
+            } catch (_) {}
+          }
+          if (!copied) {
+            const area = document.createElement('textarea');
+            area.value = command;
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.left = '-9999px';
+            document.body.appendChild(area);
+            area.select();
+            copied = document.execCommand('copy');
+            area.remove();
+          }
+          if (!copied) throw new Error('clipboard unavailable');
+          showToast('OTA', 'Skopiowano. Wklej polecenie w terminalu projektu PlatformIO.', 'ok');
+          addLog('OTA', `Skopiowano polecenie PlatformIO dla ${S.ip}`, 'ack');
+        } catch (_) {
+          showToast('OTA', 'Nie udało się skopiować — zaznacz widoczne polecenie i skopiuj je ręcznie.', 'err');
+        }
+      }
 
       setTimeout(() => {
         const b1 = $('#btnOtaCentrala');
         if (b1) b1.onclick = () => runOtaProcedure('Centrala ESP32', 'firmware.bin', 'update');
         const b2 = $('#btnOtaPanel');
         if (b2) b2.onclick = () => runOtaProcedure('Panel Sterownika', 'firmware_panel.bin', 'update_panel');
-        const bUpload = $('#btnOtaLocalUpload');
-        if (bUpload) {
-          bUpload.onclick = () => {
-            const file = $('#otaLocalFile')?.files?.[0];
-            const pass = $('#otaPassword')?.value;
-            if (!file) { showToast('OTA', 'Wybierz plik .bin z dysku', 'warn'); return; }
-            if (!pass) { showToast('OTA', 'Podaj hasło zabezpieczenia OTA', 'warn'); return; }
-            uploadLocalFirmware(file, pass);
-          };
-        }
+        const commandEl = $('#otaPioCommandText');
+        const command = buildPioOtaCommand();
+        if (commandEl && command) commandEl.textContent = command;
+        const copyButton = $('#btnOtaPioCopy');
+        if (copyButton) copyButton.onclick = () => { void copyPioOtaCommand(); };
       }, 50);
 
       // Wywołaj sprawdzenie wydań jeśli nie było robione
