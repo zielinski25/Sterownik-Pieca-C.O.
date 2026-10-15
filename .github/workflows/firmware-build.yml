@@ -35,7 +35,12 @@ jobs:
           mkdir -p "$RUNNER_TEMP/fw"
           unzip -q "Cenatrala Pieca.zip" -d "$RUNNER_TEMP/fw"
           cp firmware-patch/v3.38.0-local-html/main_centrala.cpp "$RUNNER_TEMP/fw/src/main_centrala.cpp"
-          ls -l "$RUNNER_TEMP/fw" "$RUNNER_TEMP/fw/src"
+          # Biblioteka DHT22 lezy u uzytkownika lokalnie w lib/dhtESP32-rmt/ (patrz komentarz
+          # przy #include "dhtESP32-rmt.h" w main_centrala.cpp); ZIP projektu jej nie zawiera.
+          git clone -q --depth 1 --branch 2.0.2 https://github.com/junkfix/dhtESP32-rmt.git "$RUNNER_TEMP/dht"
+          mkdir -p "$RUNNER_TEMP/fw/lib/dhtESP32-rmt"
+          cp "$RUNNER_TEMP/dht/dhtESP32-rmt.h" "$RUNNER_TEMP/dht/dhtESP32-rmt.cpp" "$RUNNER_TEMP/dht/LICENSE" "$RUNNER_TEMP/fw/lib/dhtESP32-rmt/"
+          ls -l "$RUNNER_TEMP/fw" "$RUNNER_TEMP/fw/src" "$RUNNER_TEMP/fw/lib/dhtESP32-rmt"
           grep -m1 -o 'FIRMWARE_VERSION = "[^"]*"' "$RUNNER_TEMP/fw/src/main_centrala.cpp"
 
       - uses: actions/setup-python@v7
