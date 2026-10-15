@@ -135,9 +135,12 @@ jobs:
         shell: pwsh
         working-directory: C:\src
         run: |
-          python -m venv "$env:USERPROFILE\.platformio\penv"
-          & "$env:USERPROFILE\.platformio\penv\Scripts\python.exe" -m pip install -q -U platformio
+          # Oficjalny instalator PlatformIO (ten sam, ktorego uzywa VS Code) zaklada
+          # %USERPROFILE%\.platformio\penv i nie dopisuje pio do PATH.
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py' -OutFile "$env:RUNNER_TEMP\get-platformio.py" -UseBasicParsing
+          python "$env:RUNNER_TEMP\get-platformio.py"
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Test-Path "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe")) { Write-Host 'Brak penv\Scripts\pio.exe'; exit 1 }
           $docs = [Environment]::GetFolderPath('MyDocuments', 'Create')
           $proj = Join-Path $docs 'PlatformIO\Projects\Cenatrala Pieca'
           New-Item -ItemType Directory -Force -Path $proj | Out-Null

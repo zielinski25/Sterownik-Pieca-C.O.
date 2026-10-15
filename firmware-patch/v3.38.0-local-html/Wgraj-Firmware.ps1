@@ -329,7 +329,7 @@ $code = $LASTEXITCODE
 if ($code -ne 0) {
     if ($backup) {
         Copy-Item -LiteralPath $backup -Destination $targetCpp -Force -ErrorAction SilentlyContinue
-        Write-Info "Przywrocono poprzedni plik ($oldLabel) - projekt jest w stanie sprzed uruchomienia."
+        Write-Info "Przywrocono poprzedni src\main_centrala.cpp ($oldLabel)."
     }
     Exit-WithError "Kompilacja nie powiodla sie (kod $code). Skopiuj komunikaty z linii zawierajacych 'error:'."
 }
