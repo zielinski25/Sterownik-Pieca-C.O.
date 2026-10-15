@@ -34,3 +34,12 @@ Workflow `.github/workflows/narzedzia-windows.yml` testuje skrypt na Windows
 (Windows PowerShell 5.1 i PowerShell 7) na sztucznym pulpicie. Pulpit ma
 starsze i nowsze wersje plików, kolizję nazw w archiwum, nawiasy `[]` w nazwie
 pliku i prywatny folder z projektem w podfolderze, który musi zostać na miejscu.
+
+**Wynik testu (2026-10-15, GitHub Actions `windows-latest`):** podgląd w Windows
+PowerShell 5.1 niczego nie zmienił. `-Wykonaj` przeniósł 12 elementów, w tym dwa
+foldery projektu (v3.36.1 i v3.11.4). Przy kolizji nazwy w archiwum plik dostał
+nazwę `Piec (1) (2).html`, a pięć elementów niezwiązanych ze sterownikiem zostało
+na miejscu. Drugie uruchomienie w PowerShell 7 wypisało `Nic do przeniesienia`.
+W tym samym przebiegu CI `Zbuduj-APK.ps1` zapisał APK i `Piec.html` do
+`Pulpit\SterownikCO`, a `Wgraj-Firmware.ps1` zapisał tam `firmware_v3.47.1.bin`,
+przenosząc starszy `firmware_v3.45.1.bin` do `archiwum`.
