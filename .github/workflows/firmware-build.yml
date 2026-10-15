@@ -145,7 +145,10 @@ jobs:
           $proj = Join-Path $docs 'PlatformIO\Projects\Cenatrala Pieca'
           New-Item -ItemType Directory -Force -Path $proj | Out-Null
           Expand-Archive -LiteralPath 'Cenatrala Pieca.zip' -DestinationPath $proj
-          [Environment]::GetFolderPath('Desktop', 'Create')
+          $desk = [Environment]::GetFolderPath('Desktop', 'Create')
+          # starszy plik w Pulpit\SterownikCO - skrypt ma go odlozyc do archiwum
+          New-Item -ItemType Directory -Force -Path (Join-Path $desk 'SterownikCO') | Out-Null
+          Set-Content -LiteralPath (Join-Path $desk 'SterownikCO\firmware_v3.45.1.bin') -Value 'stary' -Encoding ascii
           if (Get-Command pio -ErrorAction SilentlyContinue) { Write-Host 'Uwaga: pio jest w PATH' }
           Get-ChildItem -LiteralPath $proj | Format-Table 'Name', 'Length' -AutoSize
 
@@ -193,16 +196,25 @@ jobs:
         run: |
           . "$env:RUNNER_TEMP\notice.ps1"
           $proj = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PlatformIO\Projects\Cenatrala Pieca'
-          $desk = [Environment]::GetFolderPath('Desktop')
+          $outDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SterownikCO'
           $rows = @()
-          $rows += @(Get-ChildItem -LiteralPath $desk -Filter 'firmware_v*.bin' -File | ForEach-Object { 'pulpit: {0} ({1:N0} B)' -f $_.Name, $_.Length })
+          $rows += @(Get-ChildItem -LiteralPath $outDir -Filter 'firmware_v*.bin' -File | ForEach-Object { 'pulpit: {0} ({1:N0} B)' -f $_.Name, $_.Length })
+          $rows += @(Get-ChildItem -LiteralPath (Join-Path $outDir 'archiwum') -Filter 'firmware_v*.bin' -File -ErrorAction SilentlyContinue | ForEach-Object { 'archiwum: ' + $_.Name })
           $rows += @(Get-ChildItem -LiteralPath (Join-Path $proj 'kopie-firmware') -File -ErrorAction SilentlyContinue | ForEach-Object { 'kopia: ' + $_.Name })
           $rows += @(Get-ChildItem -LiteralPath (Join-Path $proj 'lib\dhtESP32-rmt') -File -ErrorAction SilentlyContinue | ForEach-Object { 'lib: ' + $_.Name })
           $ver = Select-String -LiteralPath (Join-Path $proj 'src\main_centrala.cpp') -Pattern 'static const char\* FIRMWARE_VERSION = "([^"]+)"' -List
           if ($ver) { $rows += ('src: ' + $ver.Matches[0].Groups[1].Value) }
           $rows | ForEach-Object { Write-Host $_ }
           Send-Notice 'Wynik' $rows
-          if (-not ($rows -match '^pulpit:') -or -not ($rows -match '^kopia:') -or -not ($rows -match 'dhtESP32-rmt\.h')) { exit 1 }
+          $expected = 'pulpit: firmware_{0}.bin' -f $ver.Matches[0].Groups[1].Value
+          $checks = [ordered]@{
+              'nowy firmware w SterownikCO'      = [bool]($rows | Where-Object { $_.StartsWith($expected) })
+              'stary bin tylko w archiwum'       = (-not ($rows -match '^pulpit: firmware_v3\.45\.1')) -and [bool]($rows -match '^archiwum: firmware_v3\.45\.1\.bin')
+              'kopia poprzedniego pliku'         = [bool]($rows -match '^kopia:')
+              'biblioteka dhtESP32-rmt'          = [bool]($rows -match 'dhtESP32-rmt\.h')
+          }
+          $bad = @($checks.Keys | Where-Object { -not $checks[$_] })
+          if ($bad.Count) { Write-Host ('Niespelnione: ' + ($bad -join ', ')); exit 1 }
 
       - name: Drugie uruchomienie w PowerShell 7 (plik juz podmieniony)
         shell: pwsh

@@ -1,0 +1,166 @@
+# Test narzedzia\Porzadki-Pulpitu.ps1 na prawdziwym Windows: sztuczny pulpit z plikami
+# sterownika (nowsze i starsze wersje, kolizja nazw w archiwum, nawiasy [] w nazwie),
+# starymi kopiami projektu i plikami prywatnymi, ktore musza zostac nietkniete.
+# Kod pobierany recznie do C:\src: nazwa repozytorium konczy sie kropka, a Windows ucina
+# koncowe kropki w sciezce GITHUB_WORKSPACE.
+name: Narzedzia (Windows)
+
+on:
+  push:
+    paths:
+      - "narzedzia/**"
+      - "!narzedzia/**/*.md"
+      - ".github/workflows/narzedzia-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  porzadki:
+    name: Porzadki-Pulpitu.ps1 (PowerShell 5.1 i 7)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Pobranie kodu do C:\src
+        shell: pwsh
+        working-directory: C:\
+        run: |
+          git config --global core.autocrlf true
+          git init -q C:\src
+          git -C C:\src fetch -q --depth 1 "https://github.com/${{ github.repository }}.git" "${{ github.sha }}"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git -C C:\src checkout -q FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          @'
+          function Send-Notice([string]$Title, [string[]]$Lines) {
+              $msg = (@($Lines) -join "`n")
+              if ($msg.Length -gt 6000) { $msg = '...' + $msg.Substring($msg.Length - 6000) }
+              if (-not $msg) { $msg = '(brak)' }
+              $msg = $msg.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+              $t = $Title.Replace('%', '%25').Replace(':', '%3A').Replace(',', '%2C')
+              Write-Host ('::notice title={0}::{1}' -f $t, $msg)
+          }
+          function Get-TreeList([string]$Root) {
+              @(Get-ChildItem -LiteralPath $Root -Recurse -File | ForEach-Object { $_.FullName.Substring($Root.Length + 1) } | Sort-Object)
+          }
+          '@ | Set-Content -LiteralPath "$env:RUNNER_TEMP\notice.ps1" -Encoding utf8
+
+      - name: Sztuczny pulpit C:\pulpit-test
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $d = 'C:\pulpit-test'
+          function Add-TestFile([string]$Rel, [string]$Content, [double]$HoursAgo) {
+              $path = Join-Path $d $Rel
+              New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+              [IO.File]::WriteAllText($path, $Content)
+              (Get-Item -LiteralPath $path).LastWriteTime = (Get-Date).AddHours(-$HoursAgo)
+          }
+          Add-TestFile 'Piec.html' 'nowy' 1
+          Add-TestFile 'Piec (1).html' 'piec1' 120
+          Add-TestFile 'main_centrala_v3.47.1.cpp' 'cpp-nowy' 2
+          Add-TestFile 'main_centrala_v3.45.1.cpp' 'cpp-stary' 24
+          Add-TestFile 'firmware_v3.47.1.bin' 'bin-nowy' 0.5
+          Add-TestFile 'firmware.bin' 'bin-stary' 24
+          Add-TestFile 'SterownikCO-debug.apk' 'apk' 3
+          Add-TestFile 'Cenatrala Pieca.zip' 'zip' 96
+          Add-TestFile 'SterownikCO-HTML-CPP-v3.47.1.zip' 'zip2' 3
+          Add-TestFile 'Cenatrala-Pieca-v3.36.1\platformio.ini' "[env:esp32-s3-n16r8]`nboard = esp32-s3-n16r8" 200
+          Add-TestFile 'Cenatrala-Pieca-v3.36.1\src\main_centrala.cpp' 'static const char* FIRMWARE_VERSION = "v3.36.1";' 200
+          Add-TestFile 'Nowy folder (2)\platformio.ini' '[env:esp32-s3-n16r8]' 500
+          Add-TestFile 'Nowy folder (2)\src\main_centrala.cpp' 'static const char* FIRMWARE_VERSION = "v3.11.4";' 500
+          Add-TestFile 'Elektronika\inny-projekt\platformio.ini' '[env:esp32-s3-n16r8]' 10
+          Add-TestFile 'Elektronika\schemat.txt' 'schemat' 10
+          Add-TestFile 'Zdjecia\wakacje.jpg' 'jpg' 10
+          Add-TestFile 'Notatki.txt' 'notatki' 10
+          Add-TestFile 'Zdjecie [1].jpg' 'zdjecie' 10
+          Add-TestFile 'skrot.lnk' 'lnk' 10
+          Add-TestFile 'SterownikCO\Piec.html' 'stary-cel' 48
+          Add-TestFile 'SterownikCO\archiwum\Piec (1).html' 'archiwum-wczesniej' 300
+          Get-TreeList $d | Set-Content -LiteralPath "$env:RUNNER_TEMP\przed.txt"
+          Get-Content -LiteralPath "$env:RUNNER_TEMP\przed.txt"
+
+      - name: Podglad w Windows PowerShell 5.1 (nic nie przenosi)
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $d = 'C:\pulpit-test'
+          $log = "$env:RUNNER_TEMP\podglad.log"
+          cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File narzedzia\Porzadki-Pulpitu.ps1 -Pulpit C:\pulpit-test > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $log
+          Send-Notice "Podglad PS 5.1 (kod $code)" (Get-Content -LiteralPath $log)
+          if ($code -ne 0) { exit $code }
+          if (Compare-Object (Get-Content -LiteralPath "$env:RUNNER_TEMP\przed.txt") (Get-TreeList $d)) { Write-Host 'Podglad cos zmienil!'; exit 1 }
+          $txt = Get-Content -LiteralPath $log -Raw
+          foreach ($must in @('<- Nowy folder (2)\', '<- Cenatrala-Pieca-v3.36.1\', 'v3.36.1', '<- SterownikCO\Piec.html', 'Elektronika\', 'Zdjecie [1].jpg', '-Wykonaj')) {
+              if (-not $txt.Contains($must)) { Write-Host "Brak w podgladzie: $must"; exit 1 }
+          }
+          if ($txt.Contains('<- Elektronika')) { Write-Host 'Folder Elektronika nie moze byc w planie'; exit 1 }
+
+      - name: Wykonanie w Windows PowerShell 5.1
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $d = 'C:\pulpit-test'
+          $log = "$env:RUNNER_TEMP\wykonanie.log"
+          cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File narzedzia\Porzadki-Pulpitu.ps1 -Pulpit C:\pulpit-test -Wykonaj > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $log
+          Send-Notice "Wykonanie PS 5.1 (kod $code)" (Get-Content -LiteralPath $log)
+          if ($code -ne 0) { exit $code }
+          $expect = [ordered]@{
+              'SterownikCO\Piec.html'                               = 'nowy'
+              'SterownikCO\main_centrala_v3.47.1.cpp'               = 'cpp-nowy'
+              'SterownikCO\firmware_v3.47.1.bin'                    = 'bin-nowy'
+              'SterownikCO\SterownikCO-debug.apk'                   = 'apk'
+              'SterownikCO\archiwum\Piec.html'                      = 'stary-cel'
+              'SterownikCO\archiwum\Piec (1).html'                  = 'archiwum-wczesniej'
+              'SterownikCO\archiwum\Piec (1) (2).html'              = 'piec1'
+              'SterownikCO\archiwum\main_centrala_v3.45.1.cpp'      = 'cpp-stary'
+              'SterownikCO\archiwum\firmware.bin'                   = 'bin-stary'
+              'SterownikCO\archiwum\Cenatrala Pieca.zip'            = 'zip'
+              'SterownikCO\archiwum\SterownikCO-HTML-CPP-v3.47.1.zip' = 'zip2'
+              'SterownikCO\archiwum\Cenatrala-Pieca-v3.36.1\src\main_centrala.cpp' = 'static const char* FIRMWARE_VERSION = "v3.36.1";'
+              'SterownikCO\archiwum\Nowy folder (2)\platformio.ini' = '[env:esp32-s3-n16r8]'
+              'Elektronika\inny-projekt\platformio.ini'             = '[env:esp32-s3-n16r8]'
+              'Elektronika\schemat.txt'                             = 'schemat'
+              'Zdjecia\wakacje.jpg'                                 = 'jpg'
+              'Notatki.txt'                                         = 'notatki'
+              'Zdjecie [1].jpg'                                     = 'zdjecie'
+              'skrot.lnk'                                           = 'lnk'
+          }
+          $bad = @()
+          foreach ($k in $expect.Keys) {
+              $p = Join-Path $d $k
+              if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { $bad += "brak: $k"; continue }
+              if ([IO.File]::ReadAllText($p) -ne $expect[$k]) { $bad += "zla tresc: $k" }
+          }
+          $top = @(Get-ChildItem -LiteralPath $d | ForEach-Object { $_.Name } | Sort-Object)
+          $wantTop = @('Elektronika', 'Notatki.txt', 'SterownikCO', 'skrot.lnk', 'Zdjecia', 'Zdjecie [1].jpg')
+          if (Compare-Object $top $wantTop) { $bad += ('na pulpicie: ' + ($top -join ', ')) }
+          $before = @(Get-Content -LiteralPath "$env:RUNNER_TEMP\przed.txt").Count
+          $after = @(Get-TreeList $d).Count
+          if ($before -ne $after) { $bad += ('liczba plikow {0} -> {1}' -f $before, $after) }
+          Send-Notice 'Wynik' (@('na pulpicie: ' + ($top -join ', ')) + @(Get-TreeList $d) + $bad)
+          if ($bad.Count) { $bad | ForEach-Object { Write-Host $_ }; exit 1 }
+
+      - name: Drugie wykonanie w PowerShell 7 (nic do zrobienia)
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $d = 'C:\pulpit-test'
+          $listBefore = Get-TreeList $d
+          $log = "$env:RUNNER_TEMP\drugie.log"
+          cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File narzedzia\Porzadki-Pulpitu.ps1 -Pulpit C:\pulpit-test -Wykonaj > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $log
+          Send-Notice "Drugie wykonanie PS 7 (kod $code)" (Get-Content -LiteralPath $log)
+          if ($code -ne 0) { exit $code }
+          if (-not (Select-String -LiteralPath $log -SimpleMatch 'Nic do przeniesienia' -Quiet)) { Write-Host 'Oczekiwano: Nic do przeniesienia'; exit 1 }
+          if (Compare-Object $listBefore (Get-TreeList $d)) { Write-Host 'Drugie wykonanie cos zmienilo!'; exit 1 }

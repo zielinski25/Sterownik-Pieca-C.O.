@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Buduje aplikacje Android "Sterownik Pieca C.O." (APK debug) na Windows
-    i kopiuje na pulpit SterownikCO-debug.apk oraz Piec.html.
+    i kopiuje SterownikCO-debug.apk oraz Piec.html do folderu SterownikCO na pulpicie.
 
 .DESCRIPTION
     Projekt uzywa Gradle 8.9 (wrapper w repozytorium), ktory uruchamia sie
@@ -23,7 +23,7 @@
       4. uruchamia gradlew.bat :app:assembleDebug z JAVA_HOME ustawionym
          tylko dla tego procesu - systemowa Java, zmienne srodowiskowe
          i Android Studio zostaja bez zmian;
-      5. kopiuje APK i Piec.html na pulpit.
+      5. kopiuje APK i Piec.html do folderu Pulpit\SterownikCO (tworzy go, gdy go brak).
 
 .PARAMETER JavaHome
     Katalog JDK 17-22 wskazany recznie (pomija wyszukiwanie).
@@ -36,7 +36,7 @@
     Po skopiowaniu APK uruchamia tez testy jednostkowe (:app:testDebugUnitTest).
 
 .PARAMETER BezPulpitu
-    Nie kopiuje plikow na pulpit.
+    Nie kopiuje plikow do Pulpit\SterownikCO.
 
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\SterownikCO\android\Zbuduj-APK.ps1"
@@ -450,16 +450,23 @@ Write-Info ('APK: {0} ({1:N1} MB), wersja {2}-debug' -f $apk, $apkMb, $versionNa
 
 # 4. Pulpit ---------------------------------------------------------------------------
 if ($BezPulpitu) {
-    Write-Info 'Pominieto kopiowanie na pulpit (-BezPulpitu).'
+    Write-Info 'Pominieto kopiowanie do Pulpit\SterownikCO (-BezPulpitu).'
 } else {
-    Write-Step 'Kopiowanie na pulpit'
+    Write-Step 'Kopiowanie do folderu SterownikCO na pulpicie'
     $desktop = [Environment]::GetFolderPath('Desktop')
     if (-not $desktop -or -not (Test-Path -LiteralPath $desktop -PathType Container)) {
         Write-Info 'Nie znaleziono folderu pulpitu - pliki zostaja w repozytorium.'
     } else {
+        # Jeden folder zamiast plikow luzem na pulpicie (porzadki: narzedzia\Porzadki-Pulpitu.ps1).
+        $outDir = Join-Path $desktop 'SterownikCO'
+        try {
+            New-Item -ItemType Directory -Force -Path $outDir -ErrorAction Stop | Out-Null
+        } catch {
+            Exit-WithError ("Nie udalo sie utworzyc folderu {0}: {1}" -f $outDir, $_.Exception.Message)
+        }
         $copies = @(
-            @{ From = $apk; To = (Join-Path $desktop 'SterownikCO-debug.apk') },
-            @{ From = (Join-Path $RepoDir 'Piec.html'); To = (Join-Path $desktop 'Piec.html') }
+            @{ From = $apk; To = (Join-Path $outDir 'SterownikCO-debug.apk') },
+            @{ From = (Join-Path $RepoDir 'Piec.html'); To = (Join-Path $outDir 'Piec.html') }
         )
         foreach ($copy in $copies) {
             if (-not (Test-Path -LiteralPath $copy.From -PathType Leaf)) {

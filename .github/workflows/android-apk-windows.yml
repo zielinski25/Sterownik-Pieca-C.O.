@@ -106,14 +106,14 @@ jobs:
           Send-LogNotices "PS 5.1 (kod $code)" $log
           exit $code
 
-      - name: Pliki na pulpicie
+      - name: Pliki w Pulpit\SterownikCO
         shell: pwsh
         working-directory: C:\src
         run: |
           . "$env:RUNNER_TEMP\notice.ps1"
-          $desktop = [Environment]::GetFolderPath('Desktop')
-          $files = @(Get-Item -LiteralPath (Join-Path $desktop 'SterownikCO-debug.apk'), (Join-Path $desktop 'Piec.html') -ErrorAction Stop)
-          Send-Notice 'Pulpit' ($files | ForEach-Object { '{0}  {1:N0} B' -f $_.FullName, $_.Length })
+          $outDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SterownikCO'
+          $files = @(Get-Item -LiteralPath (Join-Path $outDir 'SterownikCO-debug.apk'), (Join-Path $outDir 'Piec.html') -ErrorAction Stop)
+          Send-Notice 'Pulpit\SterownikCO' ($files | ForEach-Object { '{0}  {1:N0} B' -f $_.FullName, $_.Length })
 
       - name: Zbuduj-APK.ps1 w PowerShell 7 (wykrywa JDK) + testy jednostkowe
         shell: pwsh

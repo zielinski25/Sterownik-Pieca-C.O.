@@ -22,11 +22,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $fw -Wgraj USB   # wgranie k
 
 Co robi skrypt:
 
-1. Sam znajduje projekt PlatformIO centrali, czyli `platformio.ini` z `[env:esp32-s3-n16r8]`. Szuka w Dokumentach, na pulpicie, w Pobranych, w OneDrive i w folderze użytkownika.
+1. Sam znajduje projekt PlatformIO centrali, czyli `platformio.ini` z `[env:esp32-s3-n16r8]`. Szuka w Dokumentach, na pulpicie, w Pobranych, w OneDrive i w folderze użytkownika. Pomija stare kopie w `Pulpit\SterownikCO\archiwum`.
 2. Znajduje `pio.exe`, także w `%USERPROFILE%\.platformio\penv` instalowanym przez VS Code.
 3. Gdy brakuje `lib\dhtESP32-rmt`, pobiera tę bibliotekę.
 4. Robi kopię dotychczasowego `src\main_centrala.cpp` w `kopie-firmware\`, wstawia plik z tego katalogu i kompiluje. Gdy kompilacja się nie uda, przywraca poprzedni plik.
-5. Kopiuje `firmware.bin` na pulpit jako `firmware_<wersja>.bin`, na przykład do GitHub Release i `/update`.
+5. Kopiuje `firmware.bin` do folderu `Pulpit\SterownikCO` jako `firmware_<wersja>.bin`, na przykład do GitHub Release i `/update`. Starsze `firmware*.bin` z tego folderu przenosi do `Pulpit\SterownikCO\archiwum`.
 6. Wgrywa firmware na centralę tylko z `-Wgraj USB` albo `-Wgraj OTA`.
 
 Pozostałe opcje: `-Projekt <katalog>`, `-Port COM5`, `-AdresOta 192.168.x.x`, `-BezPulpitu`.

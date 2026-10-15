@@ -26,8 +26,9 @@ Skrypt sam dobiera Javę dla Gradle 8.9: szuka JDK 17–22 (`JAVA_HOME`, `PATH`,
 `%USERPROFILE%\.jdks`, Program Files, rejestr), a gdy go nie ma, pobiera
 przenośne Eclipse Temurin JDK 17 (ZIP z api.adoptium.net, z kontrolą SHA-256)
 do `%LOCALAPPDATA%\SterownikCO\jdk`. Następnie znajduje Android SDK, buduje
-`:app:assembleDebug` i kopiuje `SterownikCO-debug.apk` oraz `Piec.html` na
-pulpit. `JAVA_HOME`/`ANDROID_HOME` ustawia tylko dla własnego procesu — system
+`:app:assembleDebug` i kopiuje `SterownikCO-debug.apk` oraz `Piec.html` do
+folderu `Pulpit\SterownikCO` (tworzy go, gdy go nie ma; luzem na pulpicie nic
+nie zostawia). `JAVA_HOME`/`ANDROID_HOME` ustawia tylko dla własnego procesu — system
 i Android Studio zostają bez zmian. Opcje: `-Testy` (dodatkowo
 `:app:testDebugUnitTest`), `-JavaHome <katalog JDK>`, `-PobierzJdk`,
 `-BezPulpitu`. Plik jest czystym ASCII, więc działa także w Windows PowerShell

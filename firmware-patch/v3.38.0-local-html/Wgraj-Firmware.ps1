@@ -15,7 +15,8 @@
       4. kompiluje (pio run). Gdy platforma pioarduino nie moze podmienic swojego rdzenia
          PlatformIO w dzialajacym penv (Windows), doinstalowuje go i probuje drugi raz.
          Gdy kompilacja sie nie uda, przywraca poprzedni plik;
-      5. kopiuje firmware.bin na pulpit jako firmware_<wersja>.bin;
+      5. kopiuje firmware.bin do folderu Pulpit\SterownikCO jako firmware_<wersja>.bin
+         (starsze firmware_v*.bin z tego folderu przenosi do SterownikCO\archiwum);
       6. tylko z -Wgraj USB albo -Wgraj OTA wgrywa firmware na centrale.
 
     Kompilacja odbywa sie w Twoim projekcie, wiec uzywa tych samych wersji bibliotek
@@ -36,7 +37,7 @@
     Adres IP centrali dla -Wgraj OTA. Bez tego - upload_port z platformio.ini.
 
 .PARAMETER BezPulpitu
-    Nie kopiuje firmware.bin na pulpit.
+    Nie kopiuje firmware.bin do Pulpit\SterownikCO.
 
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\SterownikCO\firmware-patch\v3.38.0-local-html\Wgraj-Firmware.ps1"
@@ -136,6 +137,8 @@ function Find-CentralaProjects {
         $inis = @(Get-ChildItem -LiteralPath $root -Filter 'platformio.ini' -File -Recurse -Depth $depth -ErrorAction SilentlyContinue)
         foreach ($ini in $inis) {
             $dir = $ini.DirectoryName
+            # stare kopie projektu odlozone przez narzedzia\Porzadki-Pulpitu.ps1
+            if ($dir -like '*\SterownikCO\archiwum*') { continue }
             $key = $dir.ToLowerInvariant()
             if ($found.ContainsKey($key)) { continue }
             if (Test-IniHasEnv $dir $EnvUsb) { $found[$key] = $dir }
@@ -232,6 +235,30 @@ function Repair-PioarduinoCore([string]$PioExe) {
         & $py '-m' 'pip' 'install' '--quiet' '--disable-pip-version-check' $spec | Out-Host
     }
     return ($LASTEXITCODE -eq 0)
+}
+
+function Move-OlderFirmwareBins([string]$OutDir, [string]$KeepName) {
+    # Starsze firmware_v*.bin z folderu SterownikCO trafiaja do SterownikCO\archiwum.
+    # Nic nie jest nadpisywane - zajeta nazwa dostaje dopisek " (2)", " (3)"...
+    $older = @(Get-ChildItem -LiteralPath $OutDir -Filter 'firmware_v*.bin' -File -ErrorAction SilentlyContinue |
+        Where-Object { ($_.Name -like 'firmware_v*.bin') -and ($_.Name -ne $KeepName) })
+    if ($older.Count -eq 0) { return }
+    $archive = Join-Path $OutDir 'archiwum'
+    New-Item -ItemType Directory -Force -Path $archive -ErrorAction SilentlyContinue | Out-Null
+    foreach ($f in $older) {
+        $dest = Join-Path $archive $f.Name
+        $i = 2
+        while ((Test-Path -LiteralPath $dest) -and ($i -lt 1000)) {
+            $dest = Join-Path $archive ('{0} ({1}){2}' -f $f.BaseName, $i, $f.Extension)
+            $i++
+        }
+        try {
+            [IO.File]::Move($f.FullName, $dest)
+            Write-Info ('Starszy plik do archiwum: {0}' -f $f.Name)
+        } catch {
+            Write-Info ('Nie przeniesiono {0}: {1}' -f $f.Name, $_.Exception.Message)
+        }
+    }
 }
 
 function Install-DhtLibrary([string]$LibDir) {
@@ -417,9 +444,14 @@ if (Test-Path -LiteralPath $bin -PathType Leaf) {
     if (-not $BezPulpitu) {
         $desktop = [Environment]::GetFolderPath('Desktop')
         if ($desktop -and (Test-Path -LiteralPath $desktop -PathType Container)) {
-            $destBin = Join-Path $desktop ('firmware_{0}.bin' -f $newVer)
+            # Jeden folder zamiast plikow luzem na pulpicie.
+            $outDir = Join-Path $desktop 'SterownikCO'
+            New-Item -ItemType Directory -Force -Path $outDir -ErrorAction SilentlyContinue | Out-Null
+            $binName = 'firmware_{0}.bin' -f $newVer
+            Move-OlderFirmwareBins $outDir $binName
+            $destBin = Join-Path $outDir $binName
             Copy-Item -LiteralPath $bin -Destination $destBin -Force -ErrorAction SilentlyContinue
-            if (Test-Path -LiteralPath $destBin -PathType Leaf) { Write-Info "Na pulpicie: $destBin" }
+            if (Test-Path -LiteralPath $destBin -PathType Leaf) { Write-Info "Kopia do wgrania: $destBin" }
         }
     }
 } else {
