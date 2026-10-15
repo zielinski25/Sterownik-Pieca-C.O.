@@ -1,6 +1,26 @@
 --- a/src/main_centrala.cpp
 +++ b/src/main_centrala.cpp
-@@ -1,3 +1,87 @@
+@@ -1,3 +1,107 @@
++// [v3.47.1 BUILD-FIX + HEALTH-CO-5-MIN] — 2026-10-15
++// [1] Naprawa kompilacji (blad z v3.46.0).
++// Co: Szesc miejsc uzywalo niezadeklarowanej nazwy rozpalanieTrybAktywne zamiast
++//     zmiennej rozpalanieTrybAktywny (status lokalny i Firebase, start i koniec
++//     wspolnego trybu rozpalania, pozar()).
++// Problem: PlatformIO przerywal kompilacje: "'rozpalanieTrybAktywne' was not
++//     declared in this scope".
++// Naprawa: Wszystkie uzycia wskazuja zadeklarowana zmienna (ta sama poprawka co
++//     commit ce3e4c6). Logika bez zmian.
++// [2] Zmiana z v3.45.1 HEALTH-CO-5-MIN, ktora powstala obok linii v3.46.0/v3.47.0
++//     i nie byla w niej obecna.
++// Co: Heartbeat (tag=HEALTH) i snapshot pamieci (tag=HEALTH-A) zapisywane co
++//     5 minut zamiast co 30 sekund. Checkpoint diagnostyczny pozostaje co 30 s.
++// Problem: Co 30 s powstawaly dwa rekordy HEALTH, ktore zajmowaly ok. 91%
++//     objetosci logu (ok. 1,2 MB w 19 h), czyli glowna czesc zapisow na flash.
++// Naprawa: Osobny znacznik lastHealthLog z interwalem HEALTH_LOG_INTERVAL_MS
++//     = 300000 ms. Zawartosc rekordow bez zmian. Pierwszy rekord po starcie
++//     pojawia sie po 5 min.
++// FIRMWARE_VERSION v3.47.0 -> v3.47.1 (PATCH: naprawa kompilacji i czestotliwosci logowania).
++//
 +// [v3.47.0 LAN-API-APLIKACJA-PANEL] — 2026-10-15
 +// Co: Aplikacja Android i panel WWW dzialaja w sieci lokalnej centrali takze
 +//     bez internetu: GET /api/lan/status (ten sam JSON co /piec/status),
@@ -88,7 +108,7 @@
  // [v3.38.0 ROZPALANIE-SERW + WSPOLNE-WYCISZANIE] — 2026-10-12
  // Co: Automatyczne przygotowanie serw do rozpalenia, wymuszenie sekwencyjne
  //     do 30C, blokada po alarmie dymu oraz nadzor czujnika po ruchu serw.
-@@ -4657,6 +4741,7 @@
+@@ -4657,6 +4761,7 @@
  #include <WiFi.h>
  #include <DNSServer.h>
  #include <ESPAsyncWebServer.h>
@@ -96,7 +116,7 @@
  #include <ArduinoOTA.h>   // [PUNKT 3 — OTA] OTA lokalne z VSCode/PlatformIO (pio run -t upload --upload-port <IP>)
  #include <Update.h>       // [PUNKT 3 — OTA] Upload pliku .bin przez przegladarke (endpoint /ota-upload)
  #include <HTTPClient.h>   // [PUNKT 7 — OTA GitHub] zapytanie do api.github.com (sprawdzenie tagu najnowszego Release)
-@@ -4741,6 +4826,9 @@
+@@ -4741,6 +4846,9 @@
  bool dymNadzorAktywny();
  void odnowDymNadzorPoRuchu();
  void obslugaRozpalaniaSerwa();
@@ -106,16 +126,16 @@
  void aktywujAlarmCO();
  void dezaktywujAlarmCO();
  void aktywujAlarmPanelu();
-@@ -4976,7 +5064,7 @@
+@@ -4976,7 +5084,7 @@
  // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
  // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
  // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
 -static const char* FIRMWARE_VERSION = "v3.38.0";
-+static const char* FIRMWARE_VERSION = "v3.47.0";
++static const char* FIRMWARE_VERSION = "v3.47.1";
  
  // ════════════════════════════════════════════════════════
  // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
-@@ -5792,10 +5880,10863 @@
+@@ -5792,10 +5900,10863 @@
  WifiZapisanaSiec wifiSieci[WIFI_MAX_SIECI];
  int wifiLiczbaSieci = 0;
  
@@ -10983,7 +11003,7 @@
  const char WIFI_STRONA_HTML_HEADER[] PROGMEM = R"HTML(<!DOCTYPE html><html><head><meta charset="utf-8">
  <meta name="viewport" content="width=device-width,initial-scale=1">
  <title>Sterownik CO</title>
-@@ -6788,7 +17729,7 @@
+@@ -6788,7 +17749,7 @@
        // mieszadlu pracowac ponizej normalnego progu temperatury -- warto
        // widziec na kafelku CZY jest aktywny, bo to tlumaczy, dlaczego
        // mieszadlo dziala mimo zimnego jeszcze pieca.
@@ -10992,7 +11012,7 @@
      } else if (k.typ === 'zegar') {
        w.innerHTML = d.rtc_ok ? ((d.godzina < 10 ? '0' : '') + d.godzina + ':' + (d.minuta < 10 ? '0' : '') + d.minuta) : '--:--';
        stan = d.rtc_ok ? '' : 'warn';
-@@ -6945,7 +17886,19 @@
+@@ -6945,7 +17906,19 @@
  
  function dpOtworzSerwo(){
    dpOtworz(
@@ -11013,7 +11033,7 @@
      + "<div class='seg' id='dp-seg-trybserwa'>"
        + "<button class='seg-btn' data-v='1' onclick='dpSegTrybSerwa(1,this)'>Auto</button>"
        + "<button class='seg-btn' data-v='2' onclick='dpSegTrybSerwa(2,this)'>Ręczny</button>"
-@@ -6995,7 +17948,8 @@
+@@ -6995,7 +17968,8 @@
    // [SYMULACJA-PER-CZUJNIK, PLAN_SYMULACJA_CZUJNIKOW.md 7.3] Licznik
    // auto-wygasniecia trybu Recznego, z /api/status (dotad TrybSerwa==2 nie
    // wygasal wcale, wiec taki licznik nie mial racji bytu).
@@ -11023,7 +11043,7 @@
      var info = document.getElementById('dp-serwoOverrideInfo');
      if (info) info.textContent = (d.serwo_override_min > 0)
        ? ('Ręczna pozycja jeszcze ok. ' + d.serwo_override_min + ' min, potem powrót do Auto')
-@@ -7256,8 +18210,104 @@
+@@ -7256,8 +18230,104 @@
    symZaladujStan('wilgotnosc');
  }
  
@@ -11129,7 +11149,7 @@
      // [CZ.4/SYS-HDR] podpiete pod istniejacy 2s-owy cykl odswiezDashboard()
      // (centrala nie ma WebSocket jak Ryby -- to REST polling, wiec zamiast
      // ws.onopen z Ryb aktualizacja idzie tu, razem z reszta danych z tego
-@@ -7335,6 +18385,7 @@
+@@ -7335,6 +18405,7 @@
        tekst.textContent = 'Połączono: ' + (d.ip||'') + ' (' + fmt(d.rssi,0) + ' dBm)';
      }
    }).catch(function(){
@@ -11137,7 +11157,7 @@
      // [DASHBOARD-WWW-BANER, dokonczenie sekcji 4.4/5 planu] Realny brak z
      // Fazy 1 -- ten catch byl pusty, wiec przy zerwaniu polaczenia strona
      // po cichu zostawiala coraz starsze liczby na ekranie, bez zadnego
-@@ -7558,104 +18609,392 @@
+@@ -7558,104 +18629,392 @@
  // nie z samego indeksu w tablicy - a odcinki oddalone od siebie o wiecej niz
  // "progDziuryS" sekund rysowane sa jako OSOBNE polyline (przerwa w linii)
  // zamiast byc laczone tak, jakby powstaly tuz po sobie.
@@ -11591,7 +11611,7 @@
  }
  
  // [PROGNOZA-ETAP3, PLAN_PROGNOZA.md] Reuzywa DOKLADNIE ten sam drawChart()
-@@ -7975,15 +19314,13 @@
+@@ -7975,15 +19334,13 @@
        var el = document.getElementById('u-' + k);
        if (el && d.hasOwnProperty(k)) el.value = d[k];
      });
@@ -11610,7 +11630,7 @@
      ustSegAktywny('seg-wybor', d.wybor);
      ustSegAktywny('seg-trybserwa', d.trybSerwa);
      ustSegAktywny('seg-dymtryb', d.dymTrybPracy); // [DYM-OD-TEMPERATURY]
-@@ -9399,7 +20736,7 @@
+@@ -9399,7 +20756,7 @@
  AlarmMuteTimer alarmMuteOgrz;
  static portMUX_TYPE alarmMuteMux = portMUX_INITIALIZER_UNLOCKED;
  
@@ -11619,7 +11639,7 @@
  volatile bool rozpalanieSerwaAktywne = false;
  volatile bool rozpalanieSerwaDostepne = false;
  volatile bool rozpalanieSerwaBlokadaDymu = false;
-@@ -9580,16 +20917,17 @@
+@@ -9580,16 +20937,17 @@
  bool mieszadloAktywnyStan = false;          // czy przekaznik jest AKTUALNIE zalaczony (faza ON, w odroznieniu od fazy OFF)
  unsigned long mieszadloCzasZmianyFazyMs = 0; // millis() ostatniej zmiany fazy ON<->OFF
  
@@ -11647,7 +11667,7 @@
  
  unsigned long ostatniPomiar = 0;
  float ostatniaTempPowrotu = 0;
-@@ -9897,11 +21235,14 @@
+@@ -9897,11 +21255,14 @@
      if (w < 1 || w > 180) { err = "mieszadloCzasOff poza zakresem 1-180"; return false; }
      mieszadloCzasOff = w; config.putUChar("mieszCzasOff", mieszadloCzasOff);  // [FIX NVS-15] klucz byl 16 znakow, ciche niepowodzenie zapisu (pierwotnie zdiagnozowany przypadek)
    } else if (pole == "rozpalanie") {
@@ -11666,7 +11686,7 @@
    } else if (pole == "tempZadServo") {
      if (w < 0 || w > 100) { err = "tempZadServo poza zakresem 0-100"; return false; }
      temperatura_zadana_serwo = w; config.putUChar("tempZadServo", temperatura_zadana_serwo);
-@@ -10863,6 +22204,8 @@
+@@ -10863,6 +22224,8 @@
    // warunek na poczatku historiaDlugaAkumulujProbke()). Analogia do pola
    // czas_unix w HistoriaProbka wyzej, ten sam cel (dziury na wykresie).
    uint32_t czas_unix;
@@ -11675,7 +11695,7 @@
  };
  
  HistoriaProbkaDluga* historiaDlugaBufor = nullptr;
-@@ -10915,17 +22258,18 @@
+@@ -10915,17 +22278,18 @@
  // Zapisuje POJEDYNCZA probke chwilowa do historiaDlugaBufor - sr=min=max=
  // biezaca wartosc kazdego pola, bo przy zapisie zdarzeniowym nie ma juz
  // okna czasowego do usredniania (kazdy zapis to jeden punkt w czasie, nie
@@ -11699,7 +11719,7 @@
    if (!historiaDlugaBufor) return;
  
    HistoriaProbkaDluga nowa;
-@@ -10936,6 +22280,7 @@
+@@ -10936,6 +22300,7 @@
    snprintf(nowa.etykieta, sizeof(nowa.etykieta), "%02d.%02d %02d:%02d",
             now.day(), now.month(), now.hour(), now.minute());
    nowa.czas_unix = now.unixtime();
@@ -11707,7 +11727,7 @@
  
    // sr=min=max=wartosc chwilowa - patrz komentarz nad funkcja.
    #define ZDARZ_PRZEPISZ(pole, wartosc) \
-@@ -10979,7 +22324,7 @@
+@@ -10979,7 +22344,7 @@
    historiaDlugaOstatnia.wilgotnosc   = wilgotnosc;
    historiaDlugaOstatnia.klapa_proc   = klapa_proc;
    historiaDlugaOstatnia.syberko_proc = syberko_proc;
@@ -11716,7 +11736,7 @@
  
    DLOGF(DC_HISTORIA, DL_DEBUG, "HISTORIA_DLUGA zdarzenie=zapis etykieta=\"%s\"", nowa.etykieta);
  
-@@ -11025,6 +22370,7 @@
+@@ -11025,6 +22390,7 @@
    if (!g_rtcGotowy && !g_rtcNtpZsynchronizowany) return;
  
    uint32_t teraz = millis();
@@ -11724,7 +11744,7 @@
  
    // (1) Limit przeciw-zalewowy - PRZED jakimkolwiek innym sprawdzeniem.
    if (historiaDlugaOstatnia.mamy &&
-@@ -11038,7 +22384,7 @@
+@@ -11038,7 +22404,7 @@
      zapisz = true;  // (2) pierwsza probka od startu urzadzenia
    } else if ((teraz - historiaDlugaOstatnia.czasMs) >= HIST_DLUGA_HEARTBEAT_MS) {
      zapisz = true;  // (3) heartbeat
@@ -11733,7 +11753,7 @@
      zapisz = true;  // (4) zmiana stanu pompy
    } else {
      // (5) progi per-metryka - wystarczy pierwszy przekroczony.
-@@ -11060,7 +22406,8 @@
+@@ -11060,7 +22426,8 @@
    if (!zapisz) return;
  
    historiaDlugaZapiszProbke(now, t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot,
@@ -11743,7 +11763,7 @@
  }
  
  // [HISTORIA-DLUGA, Partia 3 - Krok 1] CSV z bufora dlugiego dla endpointu
-@@ -11068,9 +22415,9 @@
+@@ -11068,9 +22435,9 @@
  // licznikow pod spinlockiem, potem petla bez lockowania, bo historiaDlugaBufor
  // nie jest realokowany w locie). Kolejnosc kolumn: etykieta, potem
  // sr,min,max dla kazdego pola po kolei (w tej samej kolejnosci pol co w
@@ -11755,7 +11775,7 @@
  void historiaDlugaLiniaCsv(const HistoriaProbkaDluga &p, String &csv) {
    csv += p.etykieta; csv += ',';
    csv += String(p.t_zewn_sr, 1);      csv += ','; csv += String(p.t_zewn_min, 1);      csv += ','; csv += String(p.t_zewn_max, 1);      csv += ',';
-@@ -11084,7 +22431,8 @@
+@@ -11084,7 +22451,8 @@
    csv += String(p.wilgotnosc_sr, 0);  csv += ','; csv += String(p.wilgotnosc_min, 0);  csv += ','; csv += String(p.wilgotnosc_max, 0);  csv += ',';
    csv += String(p.klapa_proc_sr);     csv += ','; csv += String(p.klapa_proc_min);     csv += ','; csv += String(p.klapa_proc_max);     csv += ',';
    csv += String(p.syberko_proc_sr);   csv += ','; csv += String(p.syberko_proc_min);   csv += ','; csv += String(p.syberko_proc_max);     csv += ',';
@@ -11765,7 +11785,7 @@
    csv += '\n';
  }
  
-@@ -11099,10 +22447,9 @@
+@@ -11099,10 +22467,9 @@
  
    if (liczbaProbekSnap == 0) return "";
    String csv;
@@ -11779,7 +11799,7 @@
    for (int i = 0; i < liczbaProbekSnap; i++) {
      int idx = (startSnap + i) % HISTORIA_DLUGA_MAX_PROBEK;
      historiaDlugaLiniaCsv(historiaDlugaBufor[idx], csv);
-@@ -13605,10 +24952,28 @@
+@@ -13605,10 +24972,28 @@
    return pelny.substring(start, koniec);
  }
  
@@ -11808,7 +11828,7 @@
    String html;
    html.reserve(4096);
    html += FPSTR(WIFI_STRONA_HTML_HEADER);
-@@ -13700,6 +25065,7 @@
+@@ -13700,6 +25085,7 @@
        "</div>"
      "</div>"
      "<p id='wykrInfo' style='margin-top:8px'><small></small></p>"
@@ -11816,7 +11836,7 @@
      "</div>"
  
      "<div class='karta'><h2>Piec &#8211; ogrzewanie</h2>"
-@@ -14020,10 +25386,7 @@
+@@ -14020,10 +25406,7 @@
      "<div class='row'><div><div class='row-label'>Czas OFF</div><div class='row-desc'>Minuty przekaznik WYLACZONY miedzy cyklami (1-180)</div></div>"
        "<div style='display:flex;gap:8px'><input class='ust-inp' type='number' min='1' max='180' id='u-mieszadloCzasOff'>"
        "<button class='ust-btn' onclick=\"ustSet('mieszadloCzasOff','u-mieszadloCzasOff')\">Ustaw</button></div></div>"
@@ -11828,7 +11848,7 @@
      "</div></div>"
  
      // ── KARTA 3: Serwo (klapa/syberek) — tryb automatyczny ──
-@@ -14278,10 +25641,22 @@
+@@ -14278,10 +25661,22 @@
      "</div>"
    "</div></div>"); // koniec #tab-term
  
@@ -11851,7 +11871,7 @@
  // Buduje JSON ze stanem sterownika dla zakladki Dashboard (odpytywane co
  // 2s przez JS z /api/status). Reczne skladanie String zamiast ArduinoJson
  // — jedna, plaska struktura, nie warto dodawac kolejnej zaleznosci.
-@@ -14361,19 +25736,24 @@
+@@ -14361,19 +25756,24 @@
    // wzorzec jak TrybSerwa kilka linii wyzej.
    j += F("\"wybor\":"); j += String(Wybor); j += F(",");
    // [DASHBOARD-WWW-KAFELKI, Faza 4 (bonus) wg PLAN_DASHBOARD_WWW_CENTRALI.md,
@@ -11883,7 +11903,7 @@
    // [LCD-SEZON, plan PIEC_ESPNOW_PLAN.md] Miesiac z RTC centrali (0 gdy RTC
    // niegotowy — patrz g_rtcGotowy/FIX 12/FIX 13 wyzej) — wyswietlacz uzywa
    // tego do automatycznego przelaczania widoku Lato/Zima (chowanie kafelkow
-@@ -14451,13 +25831,169 @@
+@@ -14451,13 +25851,169 @@
    return j;
  }
  
@@ -12054,7 +12074,7 @@
    });
  
    // [TERMINAL] WS dla zakladki "Terminal" — dopiety do TEGO SAMEGO
-@@ -14524,7 +26060,76 @@
+@@ -14524,7 +26080,76 @@
          g_panelOstatniPowodRestartu = powod;
        }
      }
@@ -12132,7 +12152,7 @@
    });
  
    // [PROGNOZA-ETAP1, PLAN_PROGNOZA.md] Serwuje ostatni zbudowany cache
-@@ -14651,9 +26256,10 @@
+@@ -14651,9 +26276,10 @@
      historiaWyczysc();
      request->send(200, "application/json", "{\"ok\":true}");
    });
@@ -12146,18 +12166,18 @@
    // celowo osobny endpoint zamiast parametru ?zakres=, zeby nie mieszac
    // dwoch calkiem roznych formatow CSV (bufor krotki: 1 wartosc/pole,
    // bufor dlugi: 3 wartosci/pole) pod jednym adresem.
-@@ -15354,7 +26960,9 @@
+@@ -15354,7 +26980,9 @@
      json += ",\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false");
      json += ",\"mieszadloCzasOn\":" + String(mieszadloCzasOn);
      json += ",\"mieszadloCzasOff\":" + String(mieszadloCzasOff);
 -    json += ",\"rozpalanie\":" + String(rozpalanieAktywne ? "true" : "false");
-+    json += ",\"rozpalanie\":" + String(rozpalanieTrybAktywne ? "true" : "false");
++    json += ",\"rozpalanie\":" + String(rozpalanieTrybAktywny ? "true" : "false");
 +    json += ",\"rozpalanie_potwierdzone\":" + String(rozpalaniePotwierdzone ? "true" : "false");
 +    json += ",\"rozpalanie_pozostalo_s\":" + String(rozpalaniePozostaloSekundy());
      json += ",\"tempZadServo\":" + String(temperatura_zadana_serwo);
      json += ",\"histerServo\":" + String(Histereza_Serwo);
      json += ",\"skokKlapy\":" + String(Skok_Klapy);
-@@ -15454,6 +27062,34 @@
+@@ -15454,6 +27082,34 @@
      request->send(200, "application/json", "{\"ok\":true,\"os\":\"" + os + "\",\"procent\":" + String(procent) + "}");
    });
  
@@ -12192,7 +12212,7 @@
    // [LCD-POMPA-OVERRIDE] Lokalny odpowiednik komend Telegram/Firebase
    // pompa_wl/pompa_wyl, dla panelu dotykowego LCD w tej samej sieci LAN —
    // bez rundy przez Firebase (nizsze opoznienie, dziala tez gdy internet
-@@ -15495,8 +27131,8 @@
+@@ -15495,8 +27151,8 @@
  
    // [SYMULACJA-MIESZADLO, PLAN_SYMULACJA_CZUJNIKOW.md 3.2/6.5] Nowy endpoint,
    // wzorowany 1:1 na /api/pompa-manual powyzej. Mieszadlo mialo dotad tylko
@@ -12203,7 +12223,7 @@
    // pompy nie ma dedykowanej funkcji xUstaw() — mieszadlo() steruje
    // przekaznikiem wprost, wiec robimy to samo tutaj (digitalWrite +
    // mieszadloAktywnyStan), a guard na gorze mieszadlo() (patrz ta funkcja)
-@@ -16771,7 +28407,7 @@
+@@ -16771,7 +28427,7 @@
    }
  
    bool pracaDozwolona = mieszadloWlaczony &&
@@ -12212,7 +12232,7 @@
  
    if (!pracaDozwolona) {
      if (mieszadloAktywnyStan) {
-@@ -16782,16 +28418,6 @@
+@@ -16782,16 +28438,6 @@
      return;
    }
  
@@ -12229,7 +12249,7 @@
    unsigned long teraz = millis();
    if (mieszadloAktywnyStan) {
      // faza ON — po uplywie mieszadloCzasOn (sekundy) przelacz na OFF
-@@ -16874,7 +28500,9 @@
+@@ -16874,7 +28520,9 @@
  }
  
  static bool rozpalanieSerwaWymuszenieAktywne() {
@@ -12240,7 +12260,7 @@
  }
  
  static void zapiszStanRozpalaniaSerwa() {
-@@ -16997,7 +28625,44 @@
+@@ -16997,7 +28645,44 @@
    }
  }
  
@@ -12255,8 +12275,8 @@
 +}
 +
 +static void zakonczTrybRozpalania(const char* powod, bool blokadaDymu) {
-+  const bool byloAktywne = rozpalanieTrybAktywne || rozpalanieAktywne || rozpalanieSerwaAktywne;
-+  rozpalanieTrybAktywne = false;
++  const bool byloAktywne = rozpalanieTrybAktywny || rozpalanieAktywne || rozpalanieSerwaAktywne;
++  rozpalanieTrybAktywny = false;
 +  rozpalaniePotwierdzone = false;
 +  rozpalanieAktywne = false;
 +  rozpalanieStartMs = 0;
@@ -12281,11 +12301,11 @@
  static bool uruchomRozpalanieSerwa(String& blad) {
 +  // Ta komenda rozpoczyna wspolny tryb; ponowiony pakiet Firebase jest
 +  // idempotentny i nie zeruje licznika. Zatrzymanie ma osobna komende.
-+  if (rozpalanieTrybAktywne) { blad = ""; return true; }
++  if (rozpalanieTrybAktywny) { blad = ""; return true; }
    if (alarmBezpieczenstwaSerwaAktywny()) { blad = "aktywny_alarm_bezpieczenstwa"; return false; }
    if (!temperaturaPiecZnanaDlaRozpalania()) { blad = "brak_swiezej_temperatury_pieca"; return false; }
    if (temperaturaOgrzewania > 30.0f) { blad = "temperatura_powyzej_30C"; return false; }
-@@ -17006,12 +28671,17 @@
+@@ -17006,12 +28691,17 @@
      return false;
    }
  
@@ -12305,7 +12325,7 @@
    blad = "";
    return true;
  }
-@@ -17030,27 +28700,74 @@
+@@ -17030,27 +28720,74 @@
      zapiszStanRozpalaniaSerwa();
    }
  
@@ -12400,12 +12420,12 @@
    }
  
    if (!temperaturaZnana || !rozpalanieSerwaWymuszenieAktywne() ||
-@@ -17665,16 +29382,14 @@
+@@ -17665,16 +29402,14 @@
      czasNastepnejAkcjiDymu = millis() + 10000UL;
  
      if (czyAlarmAktywny == 0) {
 -      bool rozpalanieByloAktywne = rozpalanieSerwaAktywne;
-+      bool rozpalanieByloAktywne = rozpalanieTrybAktywne || rozpalanieSerwaAktywne;
++      bool rozpalanieByloAktywne = rozpalanieTrybAktywny || rozpalanieSerwaAktywne;
        bool wymuszenieByloAktywne = rozpalanieSerwaWymuszenieAktywne();
        bool syberekJuzSieOtwiera = ruchSyberka.aktywny && ruchSyberka.docelowa > pozycjaSyberek;
        int bazaSyberka = syberekJuzSieOtwiera ? ruchSyberka.docelowa : pozycjaSyberek;
@@ -12421,7 +12441,7 @@
        }
  
        zapiszLogKrytyczny(F("tag=ALARM lvl=CRIT zdarzenie=aktywacja typ=POZAR"));
-@@ -27600,96 +39315,11 @@
+@@ -27600,96 +39335,11 @@
    return true;
  }
  
@@ -12523,18 +12543,18 @@
    ja("{");
    ja("\"wifi_mode\":\""); ja(wifiStan == WIFI_STAN_PORTAL_AP ? "AP" : "STA"); ja("\",");
    ja("\"ip\":\""); ja(wifiStan == WIFI_STAN_PORTAL_AP ? WiFi.softAPIP().toString() : WiFi.localIP().toString()); ja("\",");
-@@ -27762,7 +39392,9 @@
+@@ -27762,7 +39412,9 @@
    ja("\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false") + ",");
    ja("\"mieszadloCzasOn\":" + String(mieszadloCzasOn) + ",");
    ja("\"mieszadloCzasOff\":" + String(mieszadloCzasOff) + ",");
 -  ja("\"rozpalanie\":" + String(rozpalanieAktywne ? "true" : "false") + ",");
-+  ja("\"rozpalanie\":" + String(rozpalanieTrybAktywne ? "true" : "false") + ",");
++  ja("\"rozpalanie\":" + String(rozpalanieTrybAktywny ? "true" : "false") + ",");
 +  ja("\"rozpalanie_potwierdzone\":" + String(rozpalaniePotwierdzone ? "true" : "false") + ",");
 +  ja("\"rozpalanie_pozostalo_s\":" + String(rozpalaniePozostaloSekundy()) + ",");
    ja("\"tempZadServo\":" + String(temperatura_zadana_serwo) + ",");
    ja("\"histerServo\":" + String(Histereza_Serwo) + ",");
    ja("\"skokKlapy\":" + String(Skok_Klapy) + ",");
-@@ -27817,6 +39449,100 @@
+@@ -27817,6 +39469,100 @@
    ja("\"fw\":\""); ja(FIRMWARE_VERSION); ja("\",");
    ja("\"uptime\":" + String(millis() / 1000) + ",");
    ja("\"updatedAt\":" + String(millis()) + "}");
@@ -12635,7 +12655,7 @@
  
    const char* jsonPtr = jPsram ? jb : jsonFb.c_str();
  
-@@ -28059,174 +39785,13 @@
+@@ -28059,174 +39805,13 @@
    logThrottleWyczysc(g_fbSkipCmdLogStan, "FB-CB", "skip_cmd");
  }
  
@@ -12817,7 +12837,7 @@
    if (cmd == "pompa_wl") {
      // [FIX-POMPA cz.1] Bylo odwrotnie (HIGH=ON) — cala reszta kodu i
      // sprzet maja LOW=ON. Patrz PLAN_NAPRAWY_POMPY_CO.md, Czesc 1.
-@@ -28274,11 +39839,11 @@
+@@ -28274,11 +39859,11 @@
      String diagResponse;
      if (diagApplyCommand(cmd, diagResponse)) {
        zapiszLog(String(F("tag=DIAG lvl=INFO zdarzenie=cmd_ok cmd=")) + cmd);
@@ -12833,7 +12853,7 @@
        zapiszLog(String(F("tag=DIAG lvl=WARN zdarzenie=cmd_rejected cmd=")) + cmd);
      }
    }
-@@ -28287,8 +39852,8 @@
+@@ -28287,8 +39872,8 @@
      // Core 0 tylko zapisuje zadanie — fizyczny ruch (i zapis do
      // pozycjaKlapa) wykonuje wylacznie Core 1 w servo_manual().
      if (rozpalanieSerwaWymuszenieAktywne()) {
@@ -12844,7 +12864,7 @@
      } else {
        int procent = constrain(cmd.substring(6).toInt(), 0, 100);
        docelowaKlapaProcent = procent;
-@@ -28298,8 +39863,8 @@
+@@ -28298,8 +39883,8 @@
    }
    else if (cmd.startsWith("syberek ")) {
      if (rozpalanieSerwaWymuszenieAktywne()) {
@@ -12855,7 +12875,7 @@
      } else {
        int procent = constrain(cmd.substring(8).toInt(), 0, 100);
        docelowaSyberekProcent = procent;
-@@ -28331,25 +39896,30 @@
+@@ -28331,25 +39916,30 @@
    else if (cmd.startsWith("alarm_mute ")) {
      String bladMute;
      if (obsluzKomendeAlarmMute(cmd, bladMute)) {
@@ -12894,7 +12914,7 @@
    else if (cmd == "wycisz") {
      // [FIX-DYM-RESET-NIEPELNY] Celowo OSOBNA komenda od reset_alarmow —
      // dotyczy wylacznie buzzera alarmu dymu, nie rusza serw/pompy/flag.
-@@ -28387,8 +39957,8 @@
+@@ -28387,8 +39977,8 @@
      String reszta = cmd.substring(6);
      int spacja = reszta.indexOf(' ');
      if (spacja < 0) {
@@ -12905,7 +12925,7 @@
        zapiszLog(String(F("tag=FB lvl=WARN akcja=ustaw msg=\"brak wartosci w komendzie\" cmd=")) + cmd);
      } else {
        String poleUst = reszta.substring(0, spacja);
-@@ -28397,8 +39967,8 @@
+@@ -28397,8 +39987,8 @@
        if (ustawParametrPieca(poleUst, wUst, errUst)) {
          zapiszLog(String(F("tag=FB lvl=INFO akcja=ustaw pole=")) + poleUst + " wartosc=" + String(wUst));
        } else {
@@ -12916,7 +12936,7 @@
          zapiszLog(String(F("tag=FB lvl=WARN akcja=ustaw zdarzenie=odrzucone pole=")) + poleUst + " powod=" + errUst);
        }
      }
-@@ -28442,8 +40012,8 @@
+@@ -28442,8 +40032,8 @@
      }
  
      if (!poleSymStopZnalezione) {
@@ -12927,7 +12947,7 @@
        zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj_stop zdarzenie=odrzucono pole=")) + poleSymStop + " powod=nieznane_pole");
      } else {
        if (poleSymStopToDym) {
-@@ -28469,8 +40039,8 @@
+@@ -28469,8 +40059,8 @@
      int spSym2 = (spSym1 >= 0) ? resztaSym.indexOf(' ', spSym1 + 1) : -1;
  
      if (spSym1 < 0 || spSym2 < 0) {
@@ -12938,7 +12958,7 @@
        zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj msg=\"brak wartosci/czasu w komendzie\" cmd=")) + cmd);
      } else {
        String poleSym = resztaSym.substring(0, spSym1);
-@@ -28517,12 +40087,12 @@
+@@ -28517,12 +40107,12 @@
        }
  
        if (!poleSymZnalezione) {
@@ -12955,7 +12975,7 @@
          zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj zdarzenie=odrzucono pole=")) + poleSym + " powod=wartosc_poza_zakresem wartosc=" + String(wartoscSym, 2));
        } else {
          if (czasMinSym < SYMULACJA_CZAS_MIN_MINUT || czasMinSym > SYMULACJA_CZAS_MAX_MINUT) {
-@@ -28563,13 +40133,13 @@
+@@ -28563,13 +40153,13 @@
    // przez Firebase /piec/cmd (dla aplikacji mobilnej i panelu WWW poza LAN).
    else if (cmd == "tg_test") {
      if (!tgEnabled || tgBotToken.length() < 10 || tgChatId.length() < 3) {
@@ -12973,7 +12993,7 @@
        zapiszLog(String(F("tag=FB-TG lvl=INFO zdarzenie=wyslano_raport_testowy ok=")) + String(ok ? "1" : "0"));
      }
    }
-@@ -28579,8 +40149,8 @@
+@@ -28579,8 +40169,8 @@
      int s1 = reszta.indexOf(' ');
      int s2 = (s1 >= 0) ? reszta.indexOf(' ', s1 + 1) : -1;
      if (s1 < 0 || s2 < 0) {
@@ -12984,7 +13004,7 @@
      } else {
        String newToken = reszta.substring(0, s1);
        String newChatId = reszta.substring(s1 + 1, s2);
-@@ -28604,16 +40174,16 @@
+@@ -28604,16 +40194,16 @@
        }
      }
      if (pIdx < 6) {
@@ -13005,7 +13025,7 @@
        } else {
          Zegar.adjust(DateTime(rok, miesiac, dzien, godzina, minuta, sekunda));
          DLOGF(DC_SYSTEM, DL_INFO, "RTC zdarzenie=sync zrodlo=firebase czas=\"%04d-%02d-%02d %02d:%02d:%02d\"",
-@@ -28623,10 +40193,189 @@
+@@ -28623,10 +40213,189 @@
      }
    }
    else {
@@ -13197,7 +13217,7 @@
  
      // ACK dopiero po wykonaniu/zwalidowaniu komendy.
      if (!fbSendCommandAck(lastFirebaseCmdId, lastFirebaseCmdText, lastFirebaseCmdOk, lastFirebaseCmdError)) return;
-@@ -29208,6 +40957,49 @@
+@@ -29208,6 +40977,49 @@
  bool poprzedniAlarmPanelTg = false;
  byte poprzedniAlarmDymTg   = 0;
  
@@ -13247,7 +13267,7 @@
  void tgTaskFn(void* /*pvParams*/) {
    // [v3.18.0] Brak esp_task_wdt_add(): ten worker wykonuje blokujace TCP/TLS/HTTP,
    // ktorych czas powrotu nie jest twardo ograniczony przez warstwe wyzej.
-@@ -29972,6 +41764,7 @@
+@@ -29972,6 +41784,7 @@
        vTaskDelay(pdMS_TO_TICKS(100));
        continue;
      }
@@ -13255,7 +13275,7 @@
  
      // [FIX-ALARM-BRAK-PUSH] Powiadomienia o zmianie stanu alarmow — patrz
      // uzasadnienie architektury przy deklaracji poprzedniAlarm*Tg wyzej.
-@@ -30029,6 +41822,7 @@
+@@ -30029,6 +41842,7 @@
      // [TELEMETRY-C] Jeden batch telemetryczny na interwal. Wykonywany po
      // zamknieciu poprzedniego requestu, przed statusem; aktywny worker blokuje
      // wszystkie pozostale sciezki Firebase przez istniejacy globalny guard.
@@ -13263,7 +13283,7 @@
      telemetryTrySendOneBatch(tgIterStartMs);
  
      // [FB-ETAP2A] Wysylka statusu co ~15s (albo ~1s w oknie turbo — patrz
-@@ -30192,6 +41986,7 @@
+@@ -30192,6 +42006,7 @@
        int fbPetlaKrokow = (int)(fbPetlaOdstepMs / 100UL);
        for (int i = 0; i < fbPetlaKrokow; i++) {
          vTaskDelay(pdMS_TO_TICKS(100));
@@ -13271,7 +13291,7 @@
        }
      }
      tgTaskBeat(0);
-@@ -30877,9 +42672,8 @@
+@@ -30877,9 +42692,8 @@
    DLOGF(DC_HISTORIA, DL_INFO, "HISTORIA-FS zdarzenie=wczytano_z_dysku probek=%d", wczytane);
  }
  
@@ -13283,7 +13303,7 @@
  void historiaDlugaWczytajZFS() {
    if (!historiaDlugaBufor) return;
    if (!littlefsReady) return;
-@@ -30904,18 +42698,19 @@
+@@ -30904,18 +42718,19 @@
      if (numerLinii <= pominac) continue;
      if ((numerLinii % 50) == 0) serwisujTWDTJesliZarejestrowany();
  
@@ -13306,7 +13326,7 @@
      strncpy(p.etykieta, kol[0].c_str(), sizeof(p.etykieta)-1); p.etykieta[sizeof(p.etykieta)-1]=0;
      int k = 1;
      #define WCZYTAJ_FLOAT(pole_) \
-@@ -30939,6 +42734,10 @@
+@@ -30939,6 +42754,10 @@
      p.syberko_proc_min = kol[k++].toInt();
      p.syberko_proc_max = kol[k++].toInt();
      p.czas_unix        = (uint32_t) kol[k++].toInt(); // [DZIURY-CZAS, v3.0.0.2]
@@ -13317,7 +13337,7 @@
  
      if (wczytane < HISTORIA_DLUGA_MAX_PROBEK) {
        historiaDlugaBufor[wczytane] = p;
-@@ -31214,16 +43013,24 @@
+@@ -31214,16 +43033,24 @@
    Skok_Syberka             = config.getUChar("skokSyberka", 5);
    pozycjaKlapa             = config.getUChar("pozKlapa", 0);
    pozycjaSyberek           = config.getUChar("pozSyberek", 0);
@@ -13348,3 +13368,30 @@
    // [MIESZADLO-CYKL] Stary klucz "mieszadloTemp" (martwa flaga Mieszadlo_TEMP)
    // celowo NIE jest juz odczytywany — osierocony w NVS, nieszkodliwy.
    mieszadloWlaczony        = config.getBool("mieszWlaczony", true);  // [FIX NVS-15] patrz PLAN_NAPRAWY_NVS_KLUCZE_15_ZNAKOW.md
+@@ -31669,10 +43496,14 @@
+ // ════════════════════════════════════════════════════════
+ // LOOP
+ // ════════════════════════════════════════════════════════
++// [v3.47.1] Interwal zapisu rekordow HEALTH i HEALTH-A do logu (zmiana z v3.45.1).
++static const unsigned long HEALTH_LOG_INTERVAL_MS = 300000UL;
++
+ void loop() {
+   serwisujTWDTJesliZarejestrowany();
+   static unsigned long lastPing = 0;
+   static unsigned long lastDiag = 0;
++  static unsigned long lastHealthLog = 0;
+   if (millis() - lastPing > 300000UL) {
+     lastPing = millis();
+     debugPrint(F("tag=PING zdarzenie=alive msg=\"petla loop zyje\""));
+@@ -31680,6 +43511,11 @@
+   if (millis() - lastDiag >= 30000UL) {
+     lastDiag = millis();
+     diagCheckpoint(DIAG_TASK_LOOP, DIAG_OP_SETUP, DIAG_STAGE_IDLE);
++  }
++  // [v3.47.1] Heartbeat i snapshot pamieci co 5 min (wczesniej co 30 s razem
++  // z checkpointem). Pierwszy rekord po starcie pojawia sie po 5 min.
++  if (millis() - lastHealthLog >= HEALTH_LOG_INTERVAL_MS) {
++    lastHealthLog = millis();
+     const unsigned long freeHeap = ESP.getFreeHeap();
+     const unsigned long largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+     zapiszLog(String(F("tag=HEALTH lvl=INFO zdarzenie=heartbeat heap=")) + String(freeHeap) +

@@ -1,6 +1,15 @@
-# Sieć lokalna bez internetu, wspólne rozpalanie, wykresy lokalne i Firebase — baza v3.38.0, źródło v3.47.0
+# Sieć lokalna bez internetu, wspólne rozpalanie, wykresy lokalne i Firebase — baza v3.38.0, źródło v3.47.1
 
 Ta skumulowana łatka zachowuje lokalne archiwum wykresu ESP, używa timestampów RTDB dla wykresu Firebase i dodaje jedno wspólne sterowanie rozpalaniem serw oraz mieszadła. `Piec.html` jest osadzony w przygotowanym CPP. Głównego `Cenatrala Pieca.zip` w katalogu repozytorium nie zmieniamy.
+
+## v3.47.1 — naprawa kompilacji i zapis HEALTH co 5 min
+
+**v3.47.1:** `FIRMWARE_VERSION` przechodzi z **v3.47.0** na **v3.47.1** (PATCH).
+
+1. **Naprawa kompilacji (błąd z v3.46.0).** Sześć miejsc używało niezadeklarowanej nazwy `rozpalanieTrybAktywne` zamiast zmiennej `rozpalanieTrybAktywny`. PlatformIO przerywał kompilację błędem `'rozpalanieTrybAktywne' was not declared in this scope`. To ta sama poprawka co commit `ce3e4c6` w gałęzi `arena/539ab1b6-sterownik-pieca-c-o`. Logika bez zmian.
+2. **Zmiana z v3.45.1 (HEALTH co 5 min).** Wersja v3.45.1 powstała obok linii v3.46.0/v3.47.0, więc jej zmiany tu nie było. Heartbeat (`tag=HEALTH`) i snapshot pamięci (`tag=HEALTH-A`) zapisują się co 5 minut zamiast co 30 sekund (`HEALTH_LOG_INTERVAL_MS = 300000`, osobny znacznik `lastHealthLog`). Wcześniej te rekordy zajmowały ok. 91% logu na flashu. Checkpoint diagnostyczny pozostaje co 30 s, treść rekordów jest bez zmian, a pierwszy rekord po starcie pojawia się po 5 min. Zmianę odtworzono według opisu w nagłówku pliku v3.45.1, bo jego źródła nie ma w repozytorium.
+
+Budowanie: w projekcie PlatformIO z `Cenatrala Pieca.zip` podmień `src/main_centrala.cpp` na plik z tego katalogu i uruchom `pio run -e esp32-s3-n16r8`. Workflow `.github/workflows/firmware-build.yml` robi to samo w GitHub Actions przy każdej zmianie w `firmware-patch/`.
 
 ## v3.47.0 — praca w sieci lokalnej, także bez internetu (LAN API)
 

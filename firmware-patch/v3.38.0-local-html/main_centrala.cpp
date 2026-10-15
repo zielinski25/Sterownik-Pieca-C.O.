@@ -1,3 +1,23 @@
+// [v3.47.1 BUILD-FIX + HEALTH-CO-5-MIN] — 2026-10-15
+// [1] Naprawa kompilacji (blad z v3.46.0).
+// Co: Szesc miejsc uzywalo niezadeklarowanej nazwy rozpalanieTrybAktywne zamiast
+//     zmiennej rozpalanieTrybAktywny (status lokalny i Firebase, start i koniec
+//     wspolnego trybu rozpalania, pozar()).
+// Problem: PlatformIO przerywal kompilacje: "'rozpalanieTrybAktywne' was not
+//     declared in this scope".
+// Naprawa: Wszystkie uzycia wskazuja zadeklarowana zmienna (ta sama poprawka co
+//     commit ce3e4c6). Logika bez zmian.
+// [2] Zmiana z v3.45.1 HEALTH-CO-5-MIN, ktora powstala obok linii v3.46.0/v3.47.0
+//     i nie byla w niej obecna.
+// Co: Heartbeat (tag=HEALTH) i snapshot pamieci (tag=HEALTH-A) zapisywane co
+//     5 minut zamiast co 30 sekund. Checkpoint diagnostyczny pozostaje co 30 s.
+// Problem: Co 30 s powstawaly dwa rekordy HEALTH, ktore zajmowaly ok. 91%
+//     objetosci logu (ok. 1,2 MB w 19 h), czyli glowna czesc zapisow na flash.
+// Naprawa: Osobny znacznik lastHealthLog z interwalem HEALTH_LOG_INTERVAL_MS
+//     = 300000 ms. Zawartosc rekordow bez zmian. Pierwszy rekord po starcie
+//     pojawia sie po 5 min.
+// FIRMWARE_VERSION v3.47.0 -> v3.47.1 (PATCH: naprawa kompilacji i czestotliwosci logowania).
+//
 // [v3.47.0 LAN-API-APLIKACJA-PANEL] — 2026-10-15
 // Co: Aplikacja Android i panel WWW dzialaja w sieci lokalnej centrali takze
 //     bez internetu: GET /api/lan/status (ten sam JSON co /piec/status),
@@ -5064,7 +5084,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.47.0";
+static const char* FIRMWARE_VERSION = "v3.47.1";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -26960,7 +26980,7 @@ void wifiZarejestrujTrasy() {
     json += ",\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false");
     json += ",\"mieszadloCzasOn\":" + String(mieszadloCzasOn);
     json += ",\"mieszadloCzasOff\":" + String(mieszadloCzasOff);
-    json += ",\"rozpalanie\":" + String(rozpalanieTrybAktywne ? "true" : "false");
+    json += ",\"rozpalanie\":" + String(rozpalanieTrybAktywny ? "true" : "false");
     json += ",\"rozpalanie_potwierdzone\":" + String(rozpalaniePotwierdzone ? "true" : "false");
     json += ",\"rozpalanie_pozostalo_s\":" + String(rozpalaniePozostaloSekundy());
     json += ",\"tempZadServo\":" + String(temperatura_zadana_serwo);
@@ -28636,8 +28656,8 @@ static unsigned long rozpalaniePozostaloSekundy() {
 }
 
 static void zakonczTrybRozpalania(const char* powod, bool blokadaDymu) {
-  const bool byloAktywne = rozpalanieTrybAktywne || rozpalanieAktywne || rozpalanieSerwaAktywne;
-  rozpalanieTrybAktywne = false;
+  const bool byloAktywne = rozpalanieTrybAktywny || rozpalanieAktywne || rozpalanieSerwaAktywne;
+  rozpalanieTrybAktywny = false;
   rozpalaniePotwierdzone = false;
   rozpalanieAktywne = false;
   rozpalanieStartMs = 0;
@@ -28662,7 +28682,7 @@ static void zakonczTrybRozpalania(const char* powod, bool blokadaDymu) {
 static bool uruchomRozpalanieSerwa(String& blad) {
   // Ta komenda rozpoczyna wspolny tryb; ponowiony pakiet Firebase jest
   // idempotentny i nie zeruje licznika. Zatrzymanie ma osobna komende.
-  if (rozpalanieTrybAktywne) { blad = ""; return true; }
+  if (rozpalanieTrybAktywny) { blad = ""; return true; }
   if (alarmBezpieczenstwaSerwaAktywny()) { blad = "aktywny_alarm_bezpieczenstwa"; return false; }
   if (!temperaturaPiecZnanaDlaRozpalania()) { blad = "brak_swiezej_temperatury_pieca"; return false; }
   if (temperaturaOgrzewania > 30.0f) { blad = "temperatura_powyzej_30C"; return false; }
@@ -29382,7 +29402,7 @@ void pozar() {
     czasNastepnejAkcjiDymu = millis() + 10000UL;
 
     if (czyAlarmAktywny == 0) {
-      bool rozpalanieByloAktywne = rozpalanieTrybAktywne || rozpalanieSerwaAktywne;
+      bool rozpalanieByloAktywne = rozpalanieTrybAktywny || rozpalanieSerwaAktywne;
       bool wymuszenieByloAktywne = rozpalanieSerwaWymuszenieAktywne();
       bool syberekJuzSieOtwiera = ruchSyberka.aktywny && ruchSyberka.docelowa > pozycjaSyberek;
       int bazaSyberka = syberekJuzSieOtwiera ? ruchSyberka.docelowa : pozycjaSyberek;
@@ -39392,7 +39412,7 @@ static void zbudujJsonStatusPelny(const std::function<void(const String&)>& ja) 
   ja("\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false") + ",");
   ja("\"mieszadloCzasOn\":" + String(mieszadloCzasOn) + ",");
   ja("\"mieszadloCzasOff\":" + String(mieszadloCzasOff) + ",");
-  ja("\"rozpalanie\":" + String(rozpalanieTrybAktywne ? "true" : "false") + ",");
+  ja("\"rozpalanie\":" + String(rozpalanieTrybAktywny ? "true" : "false") + ",");
   ja("\"rozpalanie_potwierdzone\":" + String(rozpalaniePotwierdzone ? "true" : "false") + ",");
   ja("\"rozpalanie_pozostalo_s\":" + String(rozpalaniePozostaloSekundy()) + ",");
   ja("\"tempZadServo\":" + String(temperatura_zadana_serwo) + ",");
@@ -43476,10 +43496,14 @@ void setup() {
 // ════════════════════════════════════════════════════════
 // LOOP
 // ════════════════════════════════════════════════════════
+// [v3.47.1] Interwal zapisu rekordow HEALTH i HEALTH-A do logu (zmiana z v3.45.1).
+static const unsigned long HEALTH_LOG_INTERVAL_MS = 300000UL;
+
 void loop() {
   serwisujTWDTJesliZarejestrowany();
   static unsigned long lastPing = 0;
   static unsigned long lastDiag = 0;
+  static unsigned long lastHealthLog = 0;
   if (millis() - lastPing > 300000UL) {
     lastPing = millis();
     debugPrint(F("tag=PING zdarzenie=alive msg=\"petla loop zyje\""));
@@ -43487,6 +43511,11 @@ void loop() {
   if (millis() - lastDiag >= 30000UL) {
     lastDiag = millis();
     diagCheckpoint(DIAG_TASK_LOOP, DIAG_OP_SETUP, DIAG_STAGE_IDLE);
+  }
+  // [v3.47.1] Heartbeat i snapshot pamieci co 5 min (wczesniej co 30 s razem
+  // z checkpointem). Pierwszy rekord po starcie pojawia sie po 5 min.
+  if (millis() - lastHealthLog >= HEALTH_LOG_INTERVAL_MS) {
+    lastHealthLog = millis();
     const unsigned long freeHeap = ESP.getFreeHeap();
     const unsigned long largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     zapiszLog(String(F("tag=HEALTH lvl=INFO zdarzenie=heartbeat heap=")) + String(freeHeap) +
