@@ -39,6 +39,14 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
+# Kazdy nieprzewidziany blad przerywa skrypt (kod 1) zamiast przenosic dalej z niepelnym planem.
+trap {
+    Write-Host ''
+    Write-Host ('BLAD: {0}' -f $_.Exception.Message) -ForegroundColor Red
+    if ($_.InvocationInfo) { Write-Host ('  linia {0}: {1}' -f $_.InvocationInfo.ScriptLineNumber, ([string]$_.InvocationInfo.Line).Trim()) }
+    exit 1
+}
+
 $FolderName  = 'SterownikCO'
 $ArchiveName = 'archiwum'
 $EnvMarker   = 'esp32-s3-n16r8'
@@ -161,8 +169,12 @@ foreach ($d in @(Get-ChildItem -LiteralPath $desk -Directory -ErrorAction Silent
 }
 
 # --- podglad ---------------------------------------------------------------
+# Listy przechodzone petla w petli: w Windows PowerShell 5.1 "@(lista) + @(lista)"
+# dla List[object] konczy sie bledem "Argument types do not match".
 $planned = @{}
-foreach ($p in @($toArchive) + @($toTarget)) { $planned[$p.Source.ToLowerInvariant()] = $true }
+foreach ($group in @($toArchive, $toTarget)) {
+    foreach ($p in $group) { $planned[$p.Source.ToLowerInvariant()] = $true }
+}
 
 if ($Wykonaj) {
     Write-Step 'Przenoszenie'
@@ -172,14 +184,16 @@ if ($Wykonaj) {
 if (($toArchive.Count + $toTarget.Count) -eq 0) {
     Write-Info 'Nic do przeniesienia - pliki sterownika sa juz uporzadkowane.'
 } else {
-    foreach ($p in @($toTarget) + @($toArchive)) {
-        $leaf = Split-Path -Leaf $p.Source
-        if ($p.IsDir) { $leaf = $leaf + '\' }
-        $where = $FolderName + '\'
-        if ($p.DestDir -eq $archive) { $where = $FolderName + '\' + $ArchiveName + '\' }
-        $from = ''
-        if ((Split-Path -Parent $p.Source).TrimEnd('\') -ieq $target) { $from = $FolderName + '\' }
-        Write-Info ('{0,-22} <- {1}{2}  ({3})' -f $where, $from, $leaf, $p.Why)
+    foreach ($group in @($toTarget, $toArchive)) {
+        foreach ($p in $group) {
+            $leaf = Split-Path -Leaf $p.Source
+            if ($p.IsDir) { $leaf = $leaf + '\' }
+            $where = $FolderName + '\'
+            if ($p.DestDir -eq $archive) { $where = $FolderName + '\' + $ArchiveName + '\' }
+            $from = ''
+            if ((Split-Path -Parent $p.Source).TrimEnd('\') -ieq $target) { $from = $FolderName + '\' }
+            Write-Info ('{0,-22} <- {1}{2}  ({3})' -f $where, $from, $leaf, $p.Why)
+        }
     }
 }
 
@@ -194,25 +208,27 @@ if ($Wykonaj -and ($toArchive.Count + $toTarget.Count) -gt 0) {
         Exit-WithError ("Nie udalo sie utworzyc folderu {0}: {1}" -f $target, $_.Exception.Message)
     }
     # Najpierw archiwum - zwalnia nazwy w SterownikCO dla najnowszych plikow.
-    foreach ($p in @($toArchive) + @($toTarget)) {
-        $leaf = Split-Path -Leaf $p.Source
-        $dest = Get-FreePath $p.DestDir $leaf $p.IsDir
-        if (-not $dest) {
-            $failed++
-            Write-Info "NIE PRZENIESIONO $leaf - brak wolnej nazwy w $($p.DestDir)"
-            continue
-        }
-        try {
-            if ($p.IsDir) {
-                [IO.Directory]::Move($p.Source, $dest)
-            } else {
-                [IO.File]::Move($p.Source, $dest)
+    foreach ($group in @($toArchive, $toTarget)) {
+        foreach ($p in $group) {
+            $leaf = Split-Path -Leaf $p.Source
+            $dest = Get-FreePath $p.DestDir $leaf $p.IsDir
+            if (-not $dest) {
+                $failed++
+                Write-Info "NIE PRZENIESIONO $leaf - brak wolnej nazwy w $($p.DestDir)"
+                continue
             }
-            $moved++
-            if ((Split-Path -Leaf $dest) -ne $leaf) { Write-Info ("{0} -> {1} (nazwa zajeta)" -f $leaf, (Split-Path -Leaf $dest)) }
-        } catch {
-            $failed++
-            Write-Info ("NIE PRZENIESIONO {0}: {1}" -f $leaf, $_.Exception.Message)
+            try {
+                if ($p.IsDir) {
+                    [IO.Directory]::Move($p.Source, $dest)
+                } else {
+                    [IO.File]::Move($p.Source, $dest)
+                }
+                $moved++
+                if ((Split-Path -Leaf $dest) -ne $leaf) { Write-Info ("{0} -> {1} (nazwa zajeta)" -f $leaf, (Split-Path -Leaf $dest)) }
+            } catch {
+                $failed++
+                Write-Info ("NIE PRZENIESIONO {0}: {1}" -f $leaf, $_.Exception.Message)
+            }
         }
     }
     Write-Info ("Przeniesiono: {0}, nieudane: {1}." -f $moved, $failed)
