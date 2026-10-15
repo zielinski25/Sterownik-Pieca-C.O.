@@ -12,7 +12,9 @@
          wersje 2.0.2 z github.com/junkfix/dhtESP32-rmt);
       3. kopiuje obecny src\main_centrala.cpp do folderu kopie-firmware w projekcie
          i wstawia plik z tego katalogu;
-      4. kompiluje (pio run) - gdy kompilacja sie nie uda, przywraca poprzedni plik;
+      4. kompiluje (pio run). Gdy platforma pioarduino nie moze podmienic swojego rdzenia
+         PlatformIO w dzialajacym penv (Windows), doinstalowuje go i probuje drugi raz.
+         Gdy kompilacja sie nie uda, przywraca poprzedni plik;
       5. kopiuje firmware.bin na pulpit jako firmware_<wersja>.bin;
       6. tylko z -Wgraj USB albo -Wgraj OTA wgrywa firmware na centrale.
 
@@ -161,6 +163,50 @@ function Find-Pio {
         if ($c -and (Test-Path -LiteralPath $c -PathType Leaf)) { return $c }
     }
     return $null
+}
+
+function Get-PioarduinoCorePin {
+    # Rdzen platformio przypiety przez zainstalowana platforme pioarduino (python_deps
+    # w builder\penv_setup.py), np. ...pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+    $coreDir = $env:PLATFORMIO_CORE_DIR
+    if (-not $coreDir) { $coreDir = Join-Path $env:USERPROFILE '.platformio' }
+    $platforms = Join-Path $coreDir 'platforms'
+    if (-not (Test-Path -LiteralPath $platforms -PathType Container)) { return $null }
+    $files = @(Get-ChildItem -LiteralPath $platforms -Filter 'penv_setup.py' -File -Recurse -Depth 3 -ErrorAction SilentlyContinue)
+    foreach ($f in $files) {
+        $hit = Select-String -LiteralPath $f.FullName -Pattern '"platformio"\s*:\s*"(https://github\.com/pioarduino/platformio-core/archive/refs/tags/v([0-9][0-9.]*)\.zip)"' -List
+        if ($hit) {
+            return [pscustomobject]@{ Url = $hit.Matches[0].Groups[1].Value; Version = $hit.Matches[0].Groups[2].Value }
+        }
+    }
+    return $null
+}
+
+function Repair-PioarduinoCore([string]$PioExe) {
+    # Platforma pioarduino w trakcie 'pio run' przeinstalowuje w penv swoj rdzen platformio,
+    # gdy zainstalowana wersja jest inna. Na Windows to sie nie udaje, bo uruchomiony pio.exe
+    # blokuje wlasne pliki ("Failed to install Python dependencies into penv"). Tu rdzen jest
+    # instalowany, gdy pio nie dziala. $true = cos zainstalowano (warto sprobowac ponownie).
+    $scripts = Split-Path -Parent $PioExe
+    $py = Join-Path $scripts 'python.exe'
+    if (-not (Test-Path -LiteralPath $py -PathType Leaf)) { return $false }
+    $pin = Get-PioarduinoCorePin
+    if (-not $pin) { return $false }
+    $verText = (& $PioExe --version 2>$null) -join ' '
+    $have = ''
+    $m = [regex]::Match([string]$verText, 'version\s+([0-9][0-9.]*)')
+    if ($m.Success) { $have = $m.Groups[1].Value }
+    if ($have -eq $pin.Version) { return $false }
+    $haveLabel = $have
+    if (-not $haveLabel) { $haveLabel = 'brak' }
+    Write-Info ('PlatformIO Core {0} -> {1} (wersja wymagana przez platforme pioarduino), instaluje...' -f $haveLabel, $pin.Version)
+    $uv = Join-Path $scripts 'uv.exe'
+    if (Test-Path -LiteralPath $uv -PathType Leaf) {
+        & $uv pip install --quiet ('--python=' + $py) $pin.Url | Out-Host
+    } else {
+        & $py -m pip install --quiet --disable-pip-version-check $pin.Url | Out-Host
+    }
+    return ($LASTEXITCODE -eq 0)
 }
 
 function Install-DhtLibrary([string]$LibDir) {
@@ -326,6 +372,11 @@ if ((Test-Path -LiteralPath $targetCpp -PathType Leaf) -and ((Get-Sha256Hex $tar
 Write-Step "Kompilacja: pio run -e $envName (pierwsza moze potrwac kilka minut)"
 & $pio run -d $projDir -e $envName
 $code = $LASTEXITCODE
+if ($code -ne 0 -and (Repair-PioarduinoCore $pio)) {
+    Write-Step "Kompilacja - druga proba po doinstalowaniu PlatformIO Core"
+    & $pio run -d $projDir -e $envName
+    $code = $LASTEXITCODE
+}
 if ($code -ne 0) {
     if ($backup) {
         Copy-Item -LiteralPath $backup -Destination $targetCpp -Force -ErrorAction SilentlyContinue
