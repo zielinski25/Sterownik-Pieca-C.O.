@@ -1,0 +1,3395 @@
+diff --git a/android/README.md b/android/README.md
+index b38c3d4..3ad7118 100644
+--- a/android/README.md
++++ b/android/README.md
+@@ -12 +12,2 @@ cd android
+-./gradlew :app:assembleDebug        # Android Studio: Open → folder `android`
++./gradlew :app:assembleDebug
++./gradlew :app:testDebugUnitTest --rerun-tasks
+@@ -14,0 +16,4 @@ cd android
++Windows PowerShell equivalent: `cd android; .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest --rerun-tasks`.
++
++Direct Boot alarm monitoring is supported from Android 9 (API 28) when enabled and logged in. After updating, open the app once while unlocked so it can migrate legacy alarm settings and prepare the encrypted boot-session copy; confirm the green encrypted-session readiness message in the Alarms sheet. This implementation does not add FCM or backend code.
++
+@@ -80,2 +85,4 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
+-  toasty, telemetrię i preferencje (`SharedPreferences`, klucze jak `safeStorage`
+-  w panelu: `piec_fb_token`, `piec_tg_token`, `piec_chart_prefs_v2`…).
++  toasty, telemetrię i preferencje: zwykłe dane operatora pozostają w CE,
++  ustawienia alarmowe są w allowliście device-protected, a Firebase refresh
++  session ma dodatkową kopię AES-GCM w DE dla startu przed odblokowaniem.
++  Pozostałe klucze obejmują `piec_tg_token`, `piec_chart_prefs_v2` itd.
+@@ -87,5 +94,4 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
+-  pochodzi z flag `symulacja_*` w `/piec/status`; wartości są oznaczane `~`, a w
+-  wykresach kreskowany jest tylko symulowany odcinek — próbki rzeczywiste
+-  pozostają ciągłe. Test dymu może uruchomić prawdziwy alarm, buzzer oraz ruch
+-  aktuatorów. Przycisk „Kafelki aplikacji” steruje tylko kafelkami wewnątrz
+-  aplikacji; widget ekranu głównego jest osobnym elementem
++  pochodzi z flag `symulacja_*` w `/piec/status`; wartości są oznaczane `~`/`SYM`
++  i wyłączone z historii/wykresów. Test dymu może uruchomić prawdziwy alarm,
++  buzzer oraz ruch aktuatorów. Przycisk „Kafelki aplikacji” steruje tylko
++  kafelkami wewnątrz aplikacji; widget ekranu głównego jest osobnym elementem
+@@ -153 +159,2 @@ android/
+-      │                              # SolarAnalytics, AppModel, TileSpecs, Sensors, Prefs
++      │                              # SolarAnalytics, AppModel, TileSpecs, Sensors,
++      │                              # Prefs (CE/DE routing), DeviceBootCredentials
+diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
+index ff2a91b..cc413e0 100644
+--- a/android/app/build.gradle.kts
++++ b/android/app/build.gradle.kts
+@@ -73,0 +74,2 @@ dependencies {
++
++    testImplementation("junit:junit:4.13.2")
+diff --git a/android/app/src/debug/res/drawable/ic_launcher_background.xml b/android/app/src/debug/res/drawable/ic_launcher_background.xml
+new file mode 100644
+index 0000000..9fe51a6
+--- /dev/null
++++ b/android/app/src/debug/res/drawable/ic_launcher_background.xml
+@@ -0,0 +1,4 @@
++<?xml version="1.0" encoding="utf-8"?>
++<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
++    android:src="@drawable/ic_launcher_debug_art"
++    android:gravity="fill" />
+diff --git a/android/app/src/debug/res/drawable/ic_launcher_debug_empty.xml b/android/app/src/debug/res/drawable/ic_launcher_debug_empty.xml
+new file mode 100644
+index 0000000..b4e951d
+--- /dev/null
++++ b/android/app/src/debug/res/drawable/ic_launcher_debug_empty.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="108dp"
++    android:height="108dp"
++    android:viewportWidth="108"
++    android:viewportHeight="108">
++    <path android:pathData="M0,0h108v108h-108z" android:fillColor="#00000000" />
++</vector>
+diff --git a/android/app/src/debug/res/drawable/ic_launcher_debug_monochrome.xml b/android/app/src/debug/res/drawable/ic_launcher_debug_monochrome.xml
+new file mode 100644
+index 0000000..a902d4d
+--- /dev/null
++++ b/android/app/src/debug/res/drawable/ic_launcher_debug_monochrome.xml
+@@ -0,0 +1,34 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="108dp"
++    android:height="108dp"
++    android:viewportWidth="108"
++    android:viewportHeight="108">
++    <!-- Distinct TEST mark: boiler frame plus flame and Wi-Fi signal. -->
++    <path
++        android:fillColor="#00000000"
++        android:pathData="M34,29h40a9,9 0 0 1 9,9v39a9,9 0 0 1 -9,9h-40a9,9 0 0 1 -9,-9v-39a9,9 0 0 1 9,-9z"
++        android:strokeColor="#FFFFFFFF"
++        android:strokeWidth="4" />
++    <path
++        android:fillColor="#00000000"
++        android:pathData="M45,29v-5a5,5 0 0 1 5,-5h8a5,5 0 0 1 5,5v5"
++        android:strokeColor="#FFFFFFFF"
++        android:strokeWidth="4"
++        android:strokeLineCap="round" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M51,75c-6,0 -10,-4 -10,-10 0,-5 4,-9 5,-15 3,4 4,5 4,5 -1,-6 2,-11 7,-14 -1,7 1,10 5,14 3,3 4,6 4,10 0,6 -5,10 -11,10z" />
++    <path
++        android:fillColor="#00000000"
++        android:pathData="M68,39c7,0 12,5 12,12M70,47c3,0 5,2 5,5"
++        android:strokeColor="#FFFFFFFF"
++        android:strokeWidth="4"
++        android:strokeLineCap="round" />
++    <path
++        android:fillColor="#00000000"
++        android:pathData="M45,80h18"
++        android:strokeColor="#FFFFFFFF"
++        android:strokeWidth="4"
++        android:strokeLineCap="round" />
++</vector>
+diff --git a/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher.xml b/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher.xml
+new file mode 100644
+index 0000000..0785346
+--- /dev/null
++++ b/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
++    <background android:drawable="@drawable/ic_launcher_background" />
++    <foreground android:drawable="@drawable/ic_launcher_debug_empty" />
++    <monochrome android:drawable="@drawable/ic_launcher_debug_monochrome" />
++</adaptive-icon>
+diff --git a/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher_round.xml b/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher_round.xml
+new file mode 100644
+index 0000000..0785346
+--- /dev/null
++++ b/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher_round.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
++    <background android:drawable="@drawable/ic_launcher_background" />
++    <foreground android:drawable="@drawable/ic_launcher_debug_empty" />
++    <monochrome android:drawable="@drawable/ic_launcher_debug_monochrome" />
++</adaptive-icon>
+diff --git a/android/app/src/debug/res/values/strings.xml b/android/app/src/debug/res/values/strings.xml
+new file mode 100644
+index 0000000..93ddcfd
+--- /dev/null
++++ b/android/app/src/debug/res/values/strings.xml
+@@ -0,0 +1,3 @@
++<resources>
++    <string name="app_name">Sterownik CO (TEST)</string>
++</resources>
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 1b44e28..ca6f88f 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -12,0 +13 @@
++    <uses-permission android:name="android.permission.WAKE_LOCK" />
+@@ -17 +18 @@
+-        android:allowBackup="true"
++        android:allowBackup="false"
+@@ -43 +44,2 @@
+-            android:exported="true"
++            android:exported="false"
++            android:directBootAware="true"
+@@ -51 +53 @@
+-        <!-- Czuwanie nad /piec/status (strumień SSE) — typ specialUse (A14+). -->
++        <!-- Czuwanie nad /piec/status (strumień SSE), także przed pierwszym odblokowaniem. -->
+@@ -54,0 +57 @@
++            android:directBootAware="true"
+@@ -61 +64 @@
+-        <!-- Akcje drzemki z powiadomienia + wznowienie monitoringu po reboocie. -->
++        <!-- Akcje alarmu + wznowienie monitoringu przy locked boot i po odblokowaniu. -->
+@@ -64 +67,2 @@
+-            android:exported="true">
++            android:exported="false"
++            android:directBootAware="true">
+diff --git a/android/app/src/main/java/com/sterownikco/pro/AlarmActivity.kt b/android/app/src/main/java/com/sterownikco/pro/AlarmActivity.kt
+index c3b0668..cb4876e 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/AlarmActivity.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/AlarmActivity.kt
+@@ -3,0 +4 @@ import android.app.KeyguardManager
++import android.content.BroadcastReceiver
+@@ -5,0 +7 @@ import android.content.Intent
++import android.content.IntentFilter
+@@ -7,0 +10 @@ import android.os.Bundle
++import android.os.UserManager
+@@ -10,0 +14 @@ import androidx.activity.compose.setContent
++import androidx.core.content.ContextCompat
+@@ -23,0 +28,3 @@ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.setValue
+@@ -40 +47 @@ import com.sterownikco.pro.ui.theme.SterownikTheme
+-   klawiatury blokady. Nie znika samo — tylko świadomy wybór przycisku.
++   klawiatury blokady. Znika po świadomym wyborze albo po potwierdzonym skasowaniu alarmu.
+@@ -43,0 +51,15 @@ class AlarmActivity : ComponentActivity() {
++    private var alarmTitle by mutableStateOf("ALARM KOTŁA")
++    private var alarmMessage by mutableStateOf("Wykryto zagrożenie — sprawdź kotłownię!")
++    private var alarmKind: String? = null
++    private var alarmSignature: String? = null
++    private var alarmOpenNonce: String? = null
++    private var alarmReceiverRegistered = false
++
++    private val alarmStateReceiver = object : BroadcastReceiver() {
++        override fun onReceive(context: Context, intent: Intent?) {
++            when (intent?.action) {
++                AlarmNotify.ACTION_ALARM_UPDATED -> updateAlarmInfo(intent)
++                AlarmNotify.ACTION_ALARM_CLEARED -> finish()
++            }
++        }
++    }
+@@ -46,0 +69,14 @@ class AlarmActivity : ComponentActivity() {
++        if (!AlarmNotify.hasCurrentAlarmNonce(applicationContext, intent)) {
++            finish()
++            return
++        }
++        updateAlarmInfo(intent)
++        val filter = IntentFilter().apply {
++            addAction(AlarmNotify.ACTION_ALARM_UPDATED)
++            addAction(AlarmNotify.ACTION_ALARM_CLEARED)
++        }
++        ContextCompat.registerReceiver(
++            this, alarmStateReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
++        )
++        alarmReceiverRegistered = true
++
+@@ -63,2 +98,0 @@ class AlarmActivity : ComponentActivity() {
+-        val title = intent.getStringExtra("title") ?: "ALARM KOTŁA"
+-        val msg = intent.getStringExtra("msg") ?: "Wykryto zagrożenie — sprawdź kotłownię!"
+@@ -67 +101 @@ class AlarmActivity : ComponentActivity() {
+-                AlarmScreen(title = title, msg = msg,
++                AlarmScreen(title = alarmTitle, msg = alarmMessage,
+@@ -72,3 +106,19 @@ class AlarmActivity : ComponentActivity() {
+-                        AlarmNotify.cancel(this)
+-                        startActivity(Intent(this, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+-                        finish()
++                        val userUnlocked = (getSystemService(Context.USER_SERVICE) as UserManager).isUserUnlocked
++                        if (!userUnlocked) {
++                            alarmMessage = "Odblokuj telefon, aby otworzyć panel sterownika. Alarm pozostaje aktywny."
++                        } else {
++                            // Otwarcie panelu samo w sobie nie kasuje alarmu ani nie zatrzymuje dźwięku.
++                            val panelIntent = Intent(this, MainActivity::class.java)
++                                .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
++                            alarmKind?.let { panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_KIND, it) }
++                            alarmTitle.takeIf { it.isNotBlank() }?.let {
++                                panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_TITLE, it)
++                            }
++                            alarmMessage.takeIf { it.isNotBlank() }?.let {
++                                panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_MESSAGE, it)
++                            }
++                            alarmSignature?.let { panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_SIGNATURE, it) }
++                            alarmOpenNonce?.let { panelIntent.putExtra(AlarmNotify.EXTRA_ALARM_OPEN_NONCE, it) }
++                            startActivity(panelIntent)
++                            finish()
++                        }
+@@ -79,0 +130,28 @@ class AlarmActivity : ComponentActivity() {
++    override fun onNewIntent(intent: Intent) {
++        super.onNewIntent(intent)
++        if (!AlarmNotify.hasCurrentAlarmNonce(applicationContext, intent)) {
++            finish()
++            return
++        }
++        setIntent(intent)
++        updateAlarmInfo(intent)
++    }
++
++    override fun onDestroy() {
++        if (alarmReceiverRegistered) {
++            try { unregisterReceiver(alarmStateReceiver) } catch (e: Exception) { /* ignore */ }
++            alarmReceiverRegistered = false
++        }
++        super.onDestroy()
++    }
++
++    private fun updateAlarmInfo(source: Intent) {
++        alarmKind = source.getStringExtra(AlarmNotify.EXTRA_ALARM_KIND) ?: alarmKind
++        alarmSignature = source.getStringExtra(AlarmNotify.EXTRA_ALARM_SIGNATURE) ?: alarmSignature
++        alarmOpenNonce = source.getStringExtra(AlarmNotify.EXTRA_ALARM_OPEN_NONCE) ?: alarmOpenNonce
++        alarmTitle = source.getStringExtra(AlarmNotify.EXTRA_ALARM_TITLE)
++            ?: source.getStringExtra("title") ?: alarmTitle
++        alarmMessage = source.getStringExtra(AlarmNotify.EXTRA_ALARM_MESSAGE)
++            ?: source.getStringExtra("msg") ?: alarmMessage
++    }
++
+diff --git a/android/app/src/main/java/com/sterownikco/pro/MainActivity.kt b/android/app/src/main/java/com/sterownikco/pro/MainActivity.kt
+index e423e5b..899d3cc 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/MainActivity.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/MainActivity.kt
+@@ -2,0 +3,4 @@ package com.sterownikco.pro
++import android.content.BroadcastReceiver
++import android.content.Context
++import android.content.Intent
++import android.content.IntentFilter
+@@ -5,0 +10 @@ import androidx.activity.compose.setContent
++import androidx.core.content.ContextCompat
+@@ -6,0 +12,2 @@ import androidx.lifecycle.lifecycleScope
++import com.sterownikco.pro.core.AlarmInfo
++import com.sterownikco.pro.core.AlarmNotify
+@@ -13 +20 @@ import com.sterownikco.pro.ui.SterownikApp
+- * 4 s odpytywanie statusu / 2 s tick zegara / 15 min pogoda / 1 s arkusz.
++ * 8 s odpytywanie statusu / 2 s tick zegara / 15 min pogoda / 1 s arkusz.
+@@ -17,0 +25,22 @@ class MainActivity : ComponentActivity() {
++    private var alarmReceiverRegistered = false
++    private val alarmStateReceiver = object : BroadcastReceiver() {
++        override fun onReceive(context: Context, intent: Intent?) {
++            if (!::model.isInitialized) return
++            val received = intent ?: return
++            when (received.action) {
++                AlarmNotify.ACTION_ALARM_UPDATED -> {
++                    val info = alarmInfoFrom(received) ?: return
++                    model.showAlarmPopup(info)
++                }
++                AlarmNotify.ACTION_ALARM_CLEARED -> model.clearAlarmPopup()
++            }
++        }
++    }
++
++    private fun alarmInfoFrom(intent: Intent): AlarmInfo? {
++        val kind = intent.getStringExtra(AlarmNotify.EXTRA_ALARM_KIND) ?: return null
++        val title = intent.getStringExtra(AlarmNotify.EXTRA_ALARM_TITLE) ?: return null
++        val message = intent.getStringExtra(AlarmNotify.EXTRA_ALARM_MESSAGE) ?: return null
++        val signature = intent.getStringExtra(AlarmNotify.EXTRA_ALARM_SIGNATURE) ?: return null
++        return AlarmInfo(kind, title, message, signature)
++    }
+@@ -21,0 +51 @@ class MainActivity : ComponentActivity() {
++        applyAlarmIntent(intent)
+@@ -25,0 +56,30 @@ class MainActivity : ComponentActivity() {
++    override fun onNewIntent(intent: Intent) {
++        super.onNewIntent(intent)
++        setIntent(intent)
++        applyAlarmIntent(intent)
++    }
++
++    private fun applyAlarmIntent(intent: Intent) {
++        if (!AlarmNotify.hasCurrentAlarmNonce(applicationContext, intent)) return
++        val info = alarmInfoFrom(intent) ?: return
++        model.showAlarmPopup(info)
++    }
++
++    override fun onStart() {
++        super.onStart()
++        val filter = IntentFilter().apply {
++            addAction(AlarmNotify.ACTION_ALARM_UPDATED)
++            addAction(AlarmNotify.ACTION_ALARM_CLEARED)
++        }
++        ContextCompat.registerReceiver(this, alarmStateReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
++        alarmReceiverRegistered = true
++    }
++
++    override fun onStop() {
++        if (alarmReceiverRegistered) {
++            try { unregisterReceiver(alarmStateReceiver) } catch (e: Exception) { /* ignore */ }
++            alarmReceiverRegistered = false
++        }
++        super.onStop()
++    }
++
+@@ -28 +88,4 @@ class MainActivity : ComponentActivity() {
+-        if (::model.isInitialized) model.onResume()
++        if (::model.isInitialized) {
++            model.onResume()
++            model.alarmUiTick++ // odczytaj ponownie uprawnienia i wyjątki OEM po powrocie do aplikacji
++        }
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt
+index bd10648..7e70736 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt
+@@ -11,0 +12 @@ package com.sterownikco.pro.core
++   Dźwięk aktywnego, nieuciszonego alarmu jest zapętlany przez AlarmMonitorService.
+@@ -13,2 +14,2 @@ package com.sterownikco.pro.core
+-   • drzemka czasowa (10 min / 1 h) — po jej końcu AKTYWNY alarm dzwoni znowu,
+-   • wyciszenie do następnego alarmu — nowa krawędź (inna sygnatura) dzwoni.
++   • drzemka czasowa (10 min / 1 h) — zatrzymuje pętlę; po jej końcu aktywny alarm wraca,
++   • wyciszenie do następnego alarmu — zatrzymuje pętlę; nowa krawędź (inna sygnatura) dzwoni.
+@@ -17,8 +18,5 @@ package com.sterownikco.pro.core
+-/** Opis odpalonego alarmu — `simulated` oznacza lokalny test, nie flagę z centrali. */
+-data class AlarmInfo(
+-    val kind: String,
+-    val title: String,
+-    val msg: String,
+-    val sig: String,
+-    val simulated: Boolean = false
+-)
++/** Opis alarmu z flag zwróconych przez sterownik. */
++data class AlarmInfo(val kind: String, val title: String, val msg: String, val sig: String)
++
++/** Stan dwóch flag; `null` pozostaje jawnie nieznanym odczytem. */
++data class AlarmFlags(val dym: Boolean?, val ogrz: Boolean?)
+@@ -37 +35 @@ object AlarmCenter {
+-    /** Powtórka dzwonka, gdy alarm wisi aktywny i NIC nie jest wyciszone. */
++    /** Ponowne zgłoszenie powiadomienia; właściwy dźwięk alarmu gra w pętli w AlarmMonitorService. */
+@@ -44,2 +42,22 @@ object AlarmCenter {
+-    fun isMonitored(p: Prefs): Boolean = p.get(K_MONITOR) != "0"
+-    fun setMonitored(p: Prefs, on: Boolean) = p.set(K_MONITOR, if (on) "1" else "0")
++    fun isMonitored(p: AlarmPrefsStore): Boolean = p.get(K_MONITOR) != "0"
++    fun setMonitored(p: AlarmPrefsStore, on: Boolean) = p.set(K_MONITOR, if (on) "1" else "0")
++
++    /**
++     * Resolves an incomplete background snapshot without collapsing unknown to false.
++     * A confirmed active flag is enough to process an alarm; for an unknown flag, retain
++     * a previously active state when available. Otherwise keep that flag as null. A caller
++     * must not clear an alarm from a partial snapshot with no confirmed active flag.
++     */
++    fun activeFlagsForPartialSnapshot(
++        p: AlarmPrefsStore,
++        dym: Boolean?,
++        ogrz: Boolean?
++    ): AlarmFlags? {
++        if (dym != null && ogrz != null) return null
++        if (dym != true && ogrz != true) return null
++
++        val last = (p.get(K_LAST_SIG) ?: "").split('+').toSet()
++        val activeDym = dym ?: if ("D" in last) true else null
++        val activeOgrz = ogrz ?: if ("O" in last) true else null
++        return AlarmFlags(activeDym, activeOgrz)
++    }
+@@ -48 +66 @@ object AlarmCenter {
+-    fun sound(p: Prefs, kind: String): String {
++    fun sound(p: AlarmPrefsStore, kind: String): String {
+@@ -63 +81 @@ object AlarmCenter {
+-    fun sound(p: Prefs): String = sound(p, "dym")
++    fun sound(p: AlarmPrefsStore): String = sound(p, "dym")
+@@ -65 +83 @@ object AlarmCenter {
+-    fun setSound(p: Prefs, kind: String, sound: String) {
++    fun setSound(p: AlarmPrefsStore, kind: String, sound: String) {
+@@ -76 +94 @@ object AlarmCenter {
+-    fun setSound(p: Prefs, sound: String) {
++    fun setSound(p: AlarmPrefsStore, sound: String) {
+@@ -81,2 +99,6 @@ object AlarmCenter {
+-    fun snooze(p: Prefs, minutes: Int) {
+-        p.setLong(K_SNOOZE_UNTIL, System.currentTimeMillis() + minutes * 60_000L)
++    fun snooze(p: AlarmPrefsStore, minutes: Int) =
++        snoozeAt(p, minutes, System.currentTimeMillis())
++
++    /** Wariant z jawnym czasem do deterministycznych testów granic timera. */
++    internal fun snoozeAt(p: AlarmPrefsStore, minutes: Int, nowMs: Long) {
++        p.setLong(K_SNOOZE_UNTIL, nowMs + minutes * 60_000L)
+@@ -86 +108 @@ object AlarmCenter {
+-    fun muteUntilNext(p: Prefs) {
++    fun muteUntilNext(p: AlarmPrefsStore) {
+@@ -93 +115 @@ object AlarmCenter {
+-    fun unsilence(p: Prefs) {
++    fun unsilence(p: AlarmPrefsStore) {
+@@ -97,2 +119,6 @@ object AlarmCenter {
+-    fun snoozeLeftMin(p: Prefs): Int {
+-        val left = p.getLong(K_SNOOZE_UNTIL, 0L) - System.currentTimeMillis()
++    fun snoozeLeftMin(p: AlarmPrefsStore): Int =
++        snoozeLeftMinAt(p, System.currentTimeMillis())
++
++    /** Jawny zegar pozwala testować zaokrąglenie i dokładną granicę drzemki bez sleep(). */
++    internal fun snoozeLeftMinAt(p: AlarmPrefsStore, nowMs: Long): Int {
++        val left = p.getLong(K_SNOOZE_UNTIL, 0L) - nowMs
+@@ -102 +128 @@ object AlarmCenter {
+-    fun isMutedNow(p: Prefs): Boolean {
++    fun isMutedNow(p: AlarmPrefsStore): Boolean {
+@@ -107,5 +133,35 @@ object AlarmCenter {
+-    fun statusText(p: Prefs): String = when {
+-        !isMonitored(p) -> "Monitoring w tle WYŁĄCZONY"
+-        snoozeLeftMin(p) > 0 -> "Drzemka — cisza jeszcze ${snoozeLeftMin(p)} min"
+-        isMutedNow(p) -> "Wyciszony do następnego alarmu"
+-        else -> "Aktywny — zadzwoni przy dymie / przegrzaniu"
++    /** Bieżący rodzaj alarmu do doboru osobnej melodii. */
++    fun kindFor(dym: Boolean, ogrz: Boolean): String = when {
++        dym && ogrz -> "dym+ogrz"
++        dym -> "dym"
++        else -> "ogrz"
++    }
++
++    /** Buduje opis aktywnego alarmu bez zmiany sygnatury, drzemki ani czasu ostatniego dzwonka. */
++    fun describeActiveFlags(dym: Boolean, ogrz: Boolean, tOgrz: Double, dymAdc: Double): AlarmInfo? {
++        val sig = listOfNotNull(if (dym) "D" else null, if (ogrz) "O" else null).joinToString("+")
++        return sig.takeIf { it.isNotEmpty() }?.let { build(it, tOgrz, dymAdc) }
++    }
++
++    /** Ciągły dźwięk jest aktywny tylko przy alarmie nieobjętym drzemką/wyciszeniem. */
++    fun shouldLoopSound(p: AlarmPrefsStore, dym: Boolean, ogrz: Boolean): Boolean =
++        shouldLoopSoundAt(p, dym, ogrz, System.currentTimeMillis())
++
++    internal fun shouldLoopSoundAt(
++        p: AlarmPrefsStore, dym: Boolean, ogrz: Boolean, nowMs: Long
++    ): Boolean {
++        if (!isMonitored(p) || (!dym && !ogrz) || snoozeLeftMinAt(p, nowMs) > 0) return false
++        val sig = listOfNotNull(if (dym) "D" else null, if (ogrz) "O" else null).joinToString("+")
++        return sig.isNotEmpty() && (p.get(K_MUTED_SIG) ?: "") != sig
++    }
++
++    fun statusText(p: AlarmPrefsStore): String = statusTextAt(p, System.currentTimeMillis())
++
++    internal fun statusTextAt(p: AlarmPrefsStore, nowMs: Long): String {
++        val snoozeMinutes = snoozeLeftMinAt(p, nowMs)
++        return when {
++            !isMonitored(p) -> "Monitoring w tle WYŁĄCZONY"
++            snoozeMinutes > 0 -> "Drzemka — cisza jeszcze $snoozeMinutes min"
++            isMutedNow(p) -> "Wyciszony do następnego alarmu"
++            else -> "Monitoring włączony — nie potwierdza łączności w tle"
++        }
+@@ -119 +175,12 @@ object AlarmCenter {
+-    fun evaluate(p: Prefs, dym: Boolean, ogrz: Boolean, tOgrz: Double, dymAdc: Double): AlarmInfo? {
++    fun evaluate(p: AlarmPrefsStore, dym: Boolean, ogrz: Boolean, tOgrz: Double, dymAdc: Double): AlarmInfo? =
++        evaluateAt(p, dym, ogrz, tOgrz, dymAdc, System.currentTimeMillis())
++
++    /** Alarm reducer with an explicit timestamp for deterministic unit tests. */
++    internal fun evaluateAt(
++        p: AlarmPrefsStore,
++        dym: Boolean,
++        ogrz: Boolean,
++        tOgrz: Double,
++        dymAdc: Double,
++        nowMs: Long
++    ): AlarmInfo? {
+@@ -121 +188 @@ object AlarmCenter {
+-        val now = System.currentTimeMillis()
++        val now = nowMs
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmFlagParser.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmFlagParser.kt
+new file mode 100644
+index 0000000..1707c9c
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmFlagParser.kt
+@@ -0,0 +1,17 @@
++package com.sterownikco.pro.core
++
++/**
++ * Parses a wire-format alarm flag without collapsing malformed or missing input to false.
++ * Callers must keep `null` as an unknown state and only clear an active alarm when the
++ * relevant flags are explicitly known to be false.
++ */
++internal fun parseAlarmFlag(raw: Any?): Boolean? = when (raw) {
++    is Boolean -> raw
++    is Number -> raw.toDouble().takeIf { it.isFinite() && (it == 0.0 || it == 1.0) }?.let { it == 1.0 }
++    is String -> when (raw.trim().lowercase()) {
++        "1", "true" -> true
++        "0", "false" -> false
++        else -> null
++    }
++    else -> null
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmIntentNonce.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmIntentNonce.kt
+new file mode 100644
+index 0000000..35077e1
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmIntentNonce.kt
+@@ -0,0 +1,7 @@
++package com.sterownikco.pro.core
++
++/** Rejects forged or stale alarm-open intents without trusting exported-activity extras. */
++internal object AlarmIntentNonce {
++    fun matches(supplied: String?, expected: String?): Boolean =
++        !supplied.isNullOrBlank() && supplied == expected
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmMonitorHealth.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmMonitorHealth.kt
+new file mode 100644
+index 0000000..dee5bd0
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmMonitorHealth.kt
+@@ -0,0 +1,48 @@
++package com.sterownikco.pro.core
++
++enum class AlarmMonitorPhase {
++    STOPPED,
++    STARTING,
++    CONNECTING,
++    STATUS_OK,
++    RETRYING,
++    START_FAILED
++}
++
++data class AlarmMonitorHealth(
++    val phase: AlarmMonitorPhase = AlarmMonitorPhase.STOPPED,
++    /** Monotonic timestamp; meaningful only during the current device boot. */
++    val lastStatusElapsedMs: Long? = null
++)
++
++/** Cautious UI copy: a recent read is evidence of reachability, not a delivery guarantee. */
++internal object AlarmMonitorHealthText {
++    fun describe(
++        monitored: Boolean,
++        hasSession: Boolean,
++        health: AlarmMonitorHealth,
++        nowElapsedMs: Long
++    ): String {
++        if (!monitored) return "Monitoring alarmów jest wyłączony."
++        if (!hasSession) return "Brak zapisanej sesji Firebase — monitoring w tle nie wystartuje."
++
++        val lastRead = health.lastStatusElapsedMs?.let { timestamp ->
++            val ageMs = (nowElapsedMs - timestamp).coerceAtLeast(0L)
++            when {
++                ageMs < 20_000L -> "Ostatni odczyt RTDB: przed chwilą."
++                ageMs < 60_000L -> "Ostatni odczyt RTDB: ${ageMs / 1_000L} s temu."
++                else -> "Ostatni odczyt RTDB: ${ageMs / 60_000L} min temu; dane mogą być nieaktualne."
++            }
++        } ?: "Brak potwierdzonego odczytu RTDB."
++
++        val phaseText = when (health.phase) {
++            AlarmMonitorPhase.STOPPED -> "Usługa monitorowania nie jest potwierdzona jako uruchomiona."
++            AlarmMonitorPhase.STARTING -> "Wysłano żądanie uruchomienia usługi; oczekiwanie na start."
++            AlarmMonitorPhase.CONNECTING -> "Usługa łączy się z RTDB."
++            AlarmMonitorPhase.STATUS_OK -> "Usługa odebrała status z RTDB."
++            AlarmMonitorPhase.RETRYING -> "Ostatnia próba połączenia lub odczytu nie powiodła się; usługa ponawia próbę."
++            AlarmMonitorPhase.START_FAILED -> "Nie udało się zlecić uruchomienia usługi."
++        }
++        return "$phaseText $lastRead Sam status nie gwarantuje przyszłego alarmu."
++    }
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmMonitorStartGate.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmMonitorStartGate.kt
+new file mode 100644
+index 0000000..277ea9e
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmMonitorStartGate.kt
+@@ -0,0 +1,7 @@
++package com.sterownikco.pro.core
++
++/** Pure startup policy for the background alarm monitor. */
++internal object AlarmMonitorStartGate {
++    fun canStart(monitored: Boolean, refreshToken: String?): Boolean =
++        monitored && !refreshToken.isNullOrBlank()
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
+index b4f1563..83987eb 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmNotify.kt
+@@ -10 +9,0 @@ import android.content.pm.PackageManager
+-import android.media.AudioAttributes
+@@ -13,0 +13 @@ import android.provider.Settings
++import android.util.Log
+@@ -16,0 +17 @@ import com.sterownikco.pro.AlarmActivity
++import com.sterownikco.pro.BuildConfig
+@@ -19,0 +21,2 @@ import com.sterownikco.pro.receiver.AlarmReceiver
++import com.sterownikco.pro.service.AlarmMonitorService
++import java.util.UUID
+@@ -24,2 +27,2 @@ import com.sterownikco.pro.receiver.AlarmReceiver
+-   • Dźwięk kanału jest NIEMUTOWALNY po utworzeniu (reguła Androida 8+) —
+-     dlatego każdy dźwięk do wyboru ma WŁASNY kanał; wybór = zmiana kanału.
++   • Kanały powiadomień są ciche i wersjonowane; alarmowy dźwięk wybrany w UI
++     odtwarza w pętli AlarmMonitorService aż do skasowania alarmu / drzemki.
+@@ -31,0 +35 @@ object AlarmNotify {
++    private const val TAG = "AlarmNotify"
+@@ -34 +37,0 @@ object AlarmNotify {
+-    const val SIM_NOTIF_ID = 4203
+@@ -35,0 +39,8 @@ object AlarmNotify {
++    const val ACTION_ALARM_UPDATED = "com.sterownikco.pro.ALARM_UPDATED"
++    const val ACTION_ALARM_CLEARED = "com.sterownikco.pro.ALARM_CLEARED"
++    const val EXTRA_ALARM_TITLE = "alarm_title"
++    const val EXTRA_ALARM_MESSAGE = "alarm_message"
++    const val EXTRA_ALARM_KIND = "kind"
++    const val EXTRA_ALARM_SIGNATURE = "sig"
++    const val EXTRA_ALARM_OPEN_NONCE = "alarm_open_nonce"
++    private const val K_ALARM_OPEN_NONCE = Prefs.K_ALARM_OPEN_NONCE
+@@ -49 +60,2 @@ object AlarmNotify {
+-    fun channelFor(sound: String): String = "piec_alarm_$sound"
++    // Nowy, cichy kanał omija jednokrotne odtwarzanie starego kanału; dźwięk zapętla usługa.
++    fun channelFor(sound: String): String = "piec_alarm_loop_v1_$sound"
+@@ -59 +71 @@ object AlarmNotify {
+-        else -> 0 // "system" — kanał bez setSound = domyślny dźwięk powiadomień
++        else -> 0 // "system" — AlarmMonitorService używa domyślnego dźwięku systemowego
+@@ -69,0 +82,6 @@ object AlarmNotify {
++    /** App-generated alarm intents are trusted only while their app-private nonce is current. */
++    fun hasCurrentAlarmNonce(ctx: Context, intent: Intent): Boolean {
++        val supplied = intent.getStringExtra(EXTRA_ALARM_OPEN_NONCE) ?: return false
++        return AlarmIntentNonce.matches(supplied, Prefs(ctx).get(K_ALARM_OPEN_NONCE))
++    }
++
+@@ -89 +107 @@ object AlarmNotify {
+-                description = "Ciche powiadomienie usługi czuwającej nad alarmami dymu i przegrzania."
++                description = "Ciche powiadomienie usługi alarmowej; nie potwierdza łączności ani aktualności danych RTDB."
+@@ -92,4 +109,0 @@ object AlarmNotify {
+-        val attrs = AudioAttributes.Builder()
+-            .setUsage(AudioAttributes.USAGE_ALARM)
+-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+-            .build()
+@@ -98 +112 @@ object AlarmNotify {
+-            ch.description = "Dźwięk alarmu dymu / przegrzania: $label."
++            ch.description = "Alarm dymu / przegrzania: $label, odtwarzany w pętli do skasowania alarmu."
+@@ -103,2 +117,2 @@ object AlarmNotify {
+-            val res = soundRes(id)
+-            if (res != 0) ch.setSound(Uri.parse("android.resource://${ctx.packageName}/$res"), attrs)
++            // Dźwięk kanału Androida jest jednorazowy; właściwą pętlę odtwarza MediaPlayer usługi.
++            ch.setSound(null, null)
+@@ -109,0 +124 @@ object AlarmNotify {
++        val nonce = Prefs(ctx).get(K_ALARM_OPEN_NONCE).orEmpty()
+@@ -110,0 +126,2 @@ object AlarmNotify {
++            .setData(Uri.parse("sterownikco://alarm-action/$req/$nonce"))
++            .putExtra(EXTRA_ALARM_OPEN_NONCE, nonce)
+@@ -114,4 +131,26 @@ object AlarmNotify {
+-    /**
+-     * Rzeczywiste alarmy są trwałe i mają drzemkę/FSI; lokalne testy mają
+-     * osobne, zamykane powiadomienie bez akcji wyciszających prawdziwy alarm.
+-     */
++    private val missingNotificationLock = Any()
++
++    private fun hasActiveAlarmNotification(ctx: Context): Boolean = try {
++        nm(ctx).activeNotifications.any { it.id == NOTIF_ID }
++    } catch (e: Exception) {
++        false
++    }
++
++    /** Cancels a pre-nonce notification whose old action PendingIntents must not be trusted. */
++    fun cancelLegacyNotification(ctx: Context) = synchronized(missingNotificationLock) {
++        if (!Prefs(ctx).get(K_ALARM_OPEN_NONCE).isNullOrBlank()) return@synchronized
++        if (hasActiveAlarmNotification(ctx)) cancel(ctx)
++    }
++
++    /** Restores a missing notification, or replaces a legacy copy without a current action nonce. */
++    fun postIfMissing(ctx: Context, info: AlarmInfo): Boolean = synchronized(missingNotificationLock) {
++        val hasCurrentNonce = !Prefs(ctx).get(K_ALARM_OPEN_NONCE).isNullOrBlank()
++        val isActive = hasActiveAlarmNotification(ctx)
++        if (isActive && hasCurrentNonce) return@synchronized false
++        if (isActive) cancel(ctx)
++        if (!hasPostNotifications(ctx)) return@synchronized false
++        fire(ctx, info)
++        true
++    }
++
++    /** Odpalenie alarmu: dźwięk + wibracja + okienko (FSI) lub heads-up + akcje drzemki. */
+@@ -120,2 +159,16 @@ object AlarmNotify {
+-        val simulated = info.simulated
+-        val sound = AlarmCenter.sound(Prefs(ctx), info.kind)
++        val prefs = Prefs(ctx)
++        val sound = AlarmCenter.sound(prefs, info.kind)
++        val openNonce = UUID.randomUUID().toString()
++        prefs.set(K_ALARM_OPEN_NONCE, openNonce)
++        // Kanał jest cichy; usługa utrzymuje wybraną melodię w pętli, dopóki alarm trwa.
++        AlarmMonitorService.startAlarmLoop(ctx, sound)
++        val full = PendingIntent.getActivity(
++            ctx, 11,
++            Intent(ctx, AlarmActivity::class.java)
++                .putExtra(EXTRA_ALARM_KIND, info.kind).putExtra(EXTRA_ALARM_TITLE, info.title)
++                .putExtra(EXTRA_ALARM_MESSAGE, info.msg).putExtra(EXTRA_ALARM_SIGNATURE, info.sig)
++                .putExtra(EXTRA_ALARM_OPEN_NONCE, openNonce)
++                .setData(Uri.parse("sterownikco://alarm-fullscreen/$openNonce"))
++                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
++            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
++        )
+@@ -123,2 +176,9 @@ object AlarmNotify {
+-            ctx, 12,
+-            Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
++            ctx, 13,
++            Intent(ctx, MainActivity::class.java)
++                .putExtra(EXTRA_ALARM_KIND, info.kind)
++                .putExtra(EXTRA_ALARM_TITLE, info.title)
++                .putExtra(EXTRA_ALARM_MESSAGE, info.msg)
++                .putExtra(EXTRA_ALARM_SIGNATURE, info.sig)
++                .putExtra(EXTRA_ALARM_OPEN_NONCE, openNonce)
++                .setData(Uri.parse("sterownikco://alarm-panel/$openNonce"))
++                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+@@ -126,0 +187 @@ object AlarmNotify {
++        val visibleTitle = if (BuildConfig.DEBUG) "🚨 TEST — ${info.title}" else "🚨 ${info.title}"
+@@ -129 +190 @@ object AlarmNotify {
+-            .setContentTitle((if (simulated) "🧪 " else "🚨 ") + info.title)
++            .setContentTitle(visibleTitle)
+@@ -135,2 +196,2 @@ object AlarmNotify {
+-            .setAutoCancel(simulated)
+-            .setOngoing(!simulated)
++            .setAutoCancel(false)
++            .setOngoing(true)
+@@ -139,15 +200,4 @@ object AlarmNotify {
+-
+-        if (!simulated) {
+-            val full = PendingIntent.getActivity(
+-                ctx, 11,
+-                Intent(ctx, AlarmActivity::class.java)
+-                    .putExtra("kind", info.kind).putExtra("title", info.title)
+-                    .putExtra("msg", info.msg).putExtra("sig", info.sig)
+-                    .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+-            )
+-            b.addAction(0, "Drzemka 10 min", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_10, 21))
+-                .addAction(0, "Drzemka 1 h", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_60, 22))
+-                .addAction(0, "Wycisz do następnego", actionPending(ctx, AlarmReceiver.ACT_MUTE_NEXT, 23))
+-            if (canFullScreen(ctx)) b.setFullScreenIntent(full, true)
+-        }
++            .addAction(0, "Drzemka 10 min", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_10, 21))
++            .addAction(0, "Drzemka 1 h", actionPending(ctx, AlarmReceiver.ACT_SNOOZE_60, 22))
++            .addAction(0, "Wycisz do następnego", actionPending(ctx, AlarmReceiver.ACT_MUTE_NEXT, 23))
++        if (canFullScreen(ctx)) b.setFullScreenIntent(full, true)
+@@ -155 +205 @@ object AlarmNotify {
+-            nm(ctx).notify(if (simulated) SIM_NOTIF_ID else NOTIF_ID, b.build())
++            nm(ctx).notify(NOTIF_ID, b.build())
+@@ -157 +207 @@ object AlarmNotify {
+-            // Brak POST_NOTIFICATIONS — aplikacja nadal pokazuje lokalne okienko, jeśli jest na wierzchu.
++            Log.e(TAG, "Brak uprawnienia POST_NOTIFICATIONS; powiadomienie alarmowe nie zostało opublikowane", e)
+@@ -158,0 +209 @@ object AlarmNotify {
++        publishActivityState(ctx, ACTION_ALARM_UPDATED, info, openNonce)
+@@ -162,0 +214,3 @@ object AlarmNotify {
++        AlarmMonitorService.stopAlarmLoop()
++        try { Prefs(ctx).remove(K_ALARM_OPEN_NONCE) } catch (e: Exception) { /* ignore */ }
++        publishActivityState(ctx, ACTION_ALARM_CLEARED)
+@@ -165,2 +219,17 @@ object AlarmNotify {
+-    fun cancelSimulation(ctx: Context) {
+-        try { nm(ctx).cancel(SIM_NOTIF_ID) } catch (e: Exception) { /* ignore */ }
++    private fun publishActivityState(
++        ctx: Context,
++        action: String,
++        info: AlarmInfo? = null,
++        openNonce: String? = null
++    ) {
++        try {
++            val intent = Intent(action).setPackage(ctx.packageName)
++            if (info != null) {
++                intent.putExtra(EXTRA_ALARM_KIND, info.kind)
++                intent.putExtra(EXTRA_ALARM_TITLE, info.title)
++                intent.putExtra(EXTRA_ALARM_MESSAGE, info.msg)
++                intent.putExtra(EXTRA_ALARM_SIGNATURE, info.sig)
++            }
++            openNonce?.let { intent.putExtra(EXTRA_ALARM_OPEN_NONCE, it) }
++            ctx.sendBroadcast(intent)
++        } catch (e: Exception) { /* ekran alarmu może nie być uruchomiony */ }
+@@ -179,2 +248,2 @@ object AlarmNotify {
+-            .setContentTitle("Sterownik CO — monitoring alarmów")
+-            .setContentText("Czuwam nad dymem i przegrzaniem kotła")
++            .setContentTitle("${ctx.getString(R.string.app_name)} — usługa alarmów")
++            .setContentText("Sprawdź w aplikacji, czy ostatni odczyt RTDB jest aktualny.")
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmPopupSession.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmPopupSession.kt
+new file mode 100644
+index 0000000..394916d
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmPopupSession.kt
+@@ -0,0 +1,22 @@
++package com.sterownikco.pro.core
++
++/** In-memory dismissal policy for the in-app preview of a still-active alarm. */
++internal class AlarmPopupSession {
++    private var dismissedSignature: String? = null
++
++    /** A new alarm notification/repeat or explicit open should be allowed to show again. */
++    fun onAlarmEvent() {
++        dismissedSignature = null
++    }
++
++    fun dismiss(signature: String?) {
++        dismissedSignature = signature?.takeIf { it.isNotBlank() }
++    }
++
++    fun clear() {
++        dismissedSignature = null
++    }
++
++    fun shouldRestore(signature: String): Boolean =
++        signature.isNotBlank() && signature != dismissedSignature
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmPrefsStore.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmPrefsStore.kt
+new file mode 100644
+index 0000000..772a4b5
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmPrefsStore.kt
+@@ -0,0 +1,10 @@
++package com.sterownikco.pro.core
++
++/** Minimal key-value surface used by AlarmCenter; keeps its state logic testable without Android APIs. */
++interface AlarmPrefsStore {
++    fun get(key: String): String?
++    fun set(key: String, value: String)
++    fun remove(key: String)
++    fun getLong(key: String, def: Long): Long
++    fun setLong(key: String, v: Long)
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmSnapshotGate.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmSnapshotGate.kt
+new file mode 100644
+index 0000000..82e3148
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmSnapshotGate.kt
+@@ -0,0 +1,40 @@
++package com.sterownikco.pro.core
++
++/**
++ * Serializes foreground polling with snapshots accepted by the alarm-monitor service.
++ * Capture a revision before network I/O; a poll result is rejected if a newer service snapshot
++ * or poll result was applied while that request was in flight. Network calls must stay outside
++ * this lock.
++ */
++internal class AlarmSnapshotGate {
++    private var revision = 0L
++
++    @Synchronized
++    fun captureRevision(): Long = revision
++
++    @Synchronized
++    fun applyServiceSnapshot(apply: () -> Unit) {
++        revision += 1L
++        apply()
++    }
++
++    @Synchronized
++    fun applyPollIfCurrent(startRevision: Long, apply: () -> Unit): Boolean {
++        if (revision != startRevision) return false
++        revision += 1L
++        apply()
++        return true
++    }
++}
++
++/** One process-wide gate shared by the foreground model and background service. */
++internal object AlarmSnapshotCoordinator {
++    private val gate = AlarmSnapshotGate()
++
++    fun captureRevision(): Long = gate.captureRevision()
++
++    fun applyServiceSnapshot(apply: () -> Unit) = gate.applyServiceSnapshot(apply)
++
++    fun applyPollIfCurrent(startRevision: Long, apply: () -> Unit): Boolean =
++        gate.applyPollIfCurrent(startRevision, apply)
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+index 81e7609..844b995 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -20,0 +21,2 @@ import kotlinx.coroutines.launch
++import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.sync.withLock
+@@ -30,2 +32,2 @@ import java.util.concurrent.TimeUnit
+-   `pollFirebase` + `sendCommand/ACK` + `refreshWeatherTab` +
+-   `loadTelemetryRange` + logi + toasty + timery (4 s / 45 s / 15 min / 1 s).
++   `pollFirebase` + `sendCommand/ACK` + `refreshWeatherTab` + `loadTelemetryRange`
++   + logi + toasty + timery (8 s / 45 s / 15 min / 1 s).
+@@ -51 +53,5 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        .callTimeout(15, TimeUnit.SECONDS).build()
++        .callTimeout(15, TimeUnit.SECONDS)
++        .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
++        .build()
++    private val pollMutex = Mutex()
++    private val weatherMutex = Mutex()
+@@ -59,0 +66,21 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++    private val alarmPopupSession = AlarmPopupSession()
++
++    fun showAlarmPopup(info: AlarmInfo) {
++        alarmPopupSession.onAlarmEvent()
++        alarmPopup = info
++    }
++
++    fun restoreActiveAlarmPopup(info: AlarmInfo) {
++        if (alarmPopup == null && alarmPopupSession.shouldRestore(info.sig)) alarmPopup = info
++    }
++
++    fun dismissAlarmPopup() {
++        alarmPopupSession.dismiss(alarmPopup?.sig)
++        alarmPopup = null
++    }
++
++    fun clearAlarmPopup() {
++        alarmPopupSession.clear()
++        alarmPopup = null
++    }
++
+@@ -112 +138,0 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        Rtdb.apiKey = prefs.get(Prefs.K_API_KEY) ?: Prefs.DEFAULT_FB_API_KEY
+@@ -115,2 +141,5 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        Rtdb.idToken = prefs.get(Prefs.K_ID_TOKEN) ?: ""
+-        Rtdb.refreshToken = prefs.get(Prefs.K_REF_TOKEN) ?: ""
++        Rtdb.onAuthTokensRefreshed = { idToken, refreshToken ->
++            prefs.saveRefreshedTokens(Rtdb.apiKey, idToken, refreshToken)
++        }
++        val initialSession = prefs.firebaseSession()
++        Rtdb.setAuthSession(initialSession.apiKey, initialSession.idToken, initialSession.refreshToken)
+@@ -173 +202 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            scope.launch { while (true) { delay(4000); poll() } },
++            scope.launch { while (true) { delay(8000); poll() } },
+@@ -200 +229,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        // Dane symulowane służą logice sterownika, ale nie są próbkami fizycznymi.
++        // Symulowane wartości z centrali są prawdziwie używane przez jej logikę,
++        // ale nie trafiają do analityki jako próbki fizyczne.
+@@ -218,3 +248,4 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-    fun poll() = scope.launch {
+-        val d = try { Rtdb.pollStatus() } catch (e: Exception) { null }
+-        if (d == null) {
++    fun poll() = scope.launch { pollAwait() }
++
++    private suspend fun pollAwait(): Boolean {
++        if (Rtdb.refreshToken.isBlank()) {
+@@ -223,10 +254 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            S.bump()
+-            return@launch
+-        }
+-        connected = true
+-        lastFetchTs = System.currentTimeMillis()
+-        S.applyIncomingData(d)
+-        S.bump()
+-        if (S.online) {
+-            recordSolar()
+-            if (page == 1) appendLiveFeed()
++            return false
+@@ -234 +256 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        // Alarmy oceniaj tylko wtedy, gdy centrala zwróciła rzeczywiste flagi.
++        if (!pollMutex.tryLock()) return false
+@@ -236,7 +258,19 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            if (S.hasAllData("dym_alarm", "alarm_ogrzewanie")) {
+-                val info = AlarmCenter.evaluate(prefs, S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym)
+-                if (info != null) {
+-                    AlarmNotify.fire(ctx, info)
+-                    alarmPopup = info
+-                } else if (!S.dym_alarm && !S.alarm_ogrzewanie) {
+-                    AlarmNotify.cancel(ctx)
++            val startRevision = AlarmSnapshotCoordinator.captureRevision()
++            val d = try { Rtdb.pollStatus() } catch (e: Exception) { null }
++            if (d == null) {
++                AlarmSnapshotCoordinator.applyPollIfCurrent(startRevision) {
++                    connected = false
++                    termStateKnown = false
++                    S.bump()
++                }
++                return false
++            }
++
++            return AlarmSnapshotCoordinator.applyPollIfCurrent(startRevision) {
++                connected = true
++                lastFetchTs = System.currentTimeMillis()
++                S.applyIncomingData(d)
++                S.bump()
++                if (S.online) {
++                    recordSolar()
++                    if (page == 1) appendLiveFeed()
+@@ -243,0 +278,32 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++                // Alarmy oceniaj wyłącznie na podstawie flag zwróconych przez sterownik.
++                try {
++                    if (S.hasAllData("dym_alarm", "alarm_ogrzewanie")) {
++                        val info = AlarmCenter.evaluate(prefs, S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym)
++                        when {
++                            info != null -> {
++                                AlarmNotify.fire(ctx, info)
++                                showAlarmPopup(info)
++                            }
++                            !S.dym_alarm && !S.alarm_ogrzewanie -> {
++                                AlarmNotify.cancel(ctx)
++                                clearAlarmPopup()
++                            }
++                            AlarmCenter.shouldLoopSound(prefs, S.dym_alarm, S.alarm_ogrzewanie) -> {
++                                val currentInfo = AlarmCenter.describeActiveFlags(
++                                    S.dym_alarm, S.alarm_ogrzewanie, S.t_ogrz, S.dym
++                                )
++                                if (currentInfo != null) restoreActiveAlarmPopup(currentInfo)
++                                if (currentInfo != null && !AlarmNotify.postIfMissing(ctx, currentInfo)) {
++                                    val kind = AlarmCenter.kindFor(S.dym_alarm, S.alarm_ogrzewanie)
++                                    AlarmMonitorService.startAlarmLoop(ctx, AlarmCenter.sound(prefs, kind))
++                                }
++                            }
++                            else -> {
++                                AlarmNotify.cancelLegacyNotification(ctx)
++                                AlarmMonitorService.stopAlarmLoop()
++                            }
++                        }
++                    }
++                } catch (e: Exception) { /* alarm nie może wywalić poll() */ }
++                // Widget na pulpit (throttling w środku).
++                try { PiecWidget.push(ctx, d) } catch (e: Exception) { /* ignore */ }
+@@ -245,3 +311,3 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        } catch (e: Exception) { /* alarm nie może wywalić poll() */ }
+-        // Widget na pulpit (throttling w środku).
+-        try { PiecWidget.push(ctx, d) } catch (e: Exception) { /* ignore */ }
++        } finally {
++            pollMutex.unlock()
++        }
+@@ -270,3 +336,4 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            Rtdb.apiKey = apiKey
+-            Rtdb.idToken = j.getString("idToken")
+-            Rtdb.refreshToken = j.optString("refreshToken")
++            val idToken = j.getString("idToken")
++            val refreshToken = j.optString("refreshToken")
++            Rtdb.setAuthSession(apiKey, idToken, refreshToken)
++            prefs.saveFirebaseSession(apiKey, idToken, refreshToken)
+@@ -275 +341,0 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            prefs.set(Prefs.K_API_KEY, apiKey)
+@@ -278,2 +343,0 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            prefs.set(Prefs.K_ID_TOKEN, Rtdb.idToken)
+-            prefs.set(Prefs.K_REF_TOKEN, Rtdb.refreshToken)
+@@ -286 +350 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            addLog("SYSTEM", "Zalogowano operatora: $emailIn", "info")
++            addLog("SYSTEM", "Zalogowano operatora", "info")
+@@ -292,3 +356,5 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            // Start czuwania w tle + prośba o zgodę na powiadomienia (Android 13+).
+-            try { AlarmMonitorService.start(ctx) } catch (e: Exception) { /* ignore */ }
+-            if (!AlarmNotify.hasPostNotifications(ctx)) askNotifPerm = true
++            // Uruchom czuwanie i poproś o zgodę powiadomień tylko przy włączonym monitoringu.
++            if (AlarmCenter.isMonitored(prefs)) {
++                try { AlarmMonitorService.start(ctx) } catch (e: Exception) { /* ignore */ }
++                if (!AlarmNotify.hasPostNotifications(ctx)) askNotifPerm = true
++            }
+@@ -307,2 +373,5 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        prefs.remove(Prefs.K_PASS); prefs.remove(Prefs.K_ID_TOKEN); prefs.remove(Prefs.K_REF_TOKEN)
+-        Rtdb.idToken = ""; Rtdb.refreshToken = ""
++        // Replace the in-memory session before deleting persisted credentials so a racing refresh cannot restore them.
++        Rtdb.setAuthTokens("", "")
++        // Persist the DE logout tombstone before touching any other credential storage.
++        prefs.clearFirebaseTokens()
++        prefs.clearRememberedCredentials()
+@@ -311 +380 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        alarmPopup = null
++        clearAlarmPopup()
+@@ -325,14 +394,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        val rawCommand = cmd.trim()
+-        if (rawCommand.isEmpty()) return false
+-        val commandParts = rawCommand.split(Regex("\\s+"), limit = 2)
+-        val verb = commandParts.first().lowercase()
+-        val isSimulation = verb == "symuluj" || verb == "symuluj_stop"
+-        val command = if (isSimulation) listOf(verb, commandParts.getOrNull(1)?.trim().orEmpty())
+-            .filter { it.isNotEmpty() }.joinToString(" ") else rawCommand
+-        if (isSimulation) {
+-            val error = validateSimulationCommand(command)
+-            if (error != null) {
+-                showToast(command, error, "err")
+-                return false
+-            }
+-        }
++        val command = cmd.trim()
++        if (command.isEmpty()) return false
+@@ -354 +411 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                    showToast(command, "Brak ACK — odczytuję status sterownika; stan lokalny nie jest zmieniany", "warn")
++                    showToast(command, "Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie", "warn")
+@@ -356 +413 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                    refreshStatusAfterCommand(isSimulation, ackTimedOut = true)
++                    poll()
+@@ -363 +420,3 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                    refreshStatusAfterCommand(isSimulation)
++                    // Dociągnij snapshot po ACK, żeby UI pokazał wyłącznie stan
++                    // symulacji raportowany przez centralę (bez lokalnego ACK).
++                    pollAwait()
+@@ -379,43 +437,0 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-    /** Walidacja składni i wartości wejściowych — nie zmienia stanu, który pochodzi z /status. */
+-    private fun validateSimulationCommand(command: String): String? {
+-        val parts = command.split(Regex("\\s+"))
+-        return when (parts.firstOrNull()?.lowercase()) {
+-            "symuluj" -> {
+-                if (parts.size != 4) return "Użycie: symuluj <pole> <wartość> <minuty>"
+-                val field = parts[1]
+-                val bounds = PiecState.SYM_BOUNDS[field]
+-                    ?: return "Nieznane pole symulacji: $field"
+-                val value = parts[2].toDoubleOrNull()?.takeIf { it.isFinite() }
+-                    ?: return "Podaj poprawną wartość"
+-                if (value < bounds.first || value > bounds.second)
+-                    return "Wartość poza zakresem ${bounds.first}–${bounds.second}"
+-                val minutes = parts[3].toIntOrNull()
+-                    ?: return "Czas symulacji musi być liczbą całkowitą"
+-                if (minutes !in 1..180) return "Czas symulacji musi wynosić 1–180 min"
+-                null
+-            }
+-            "symuluj_stop" -> {
+-                if (parts.size != 2) return "Użycie: symuluj_stop <pole>"
+-                if (parts[1] !in PiecState.SYM_POLA) "Nieznane pole symulacji: ${parts[1]}" else null
+-            }
+-            else -> null
+-        }
+-    }
+-
+-    /** Odśwież status po komendzie — także ponownie, bo /status może dostać zmianę po ACK. */
+-    private fun refreshStatusAfterCommand(isSimulation: Boolean, ackTimedOut: Boolean = false) {
+-        poll()
+-        val waits = when {
+-            ackTimedOut && isSimulation -> listOf(350L, 1000L, 1800L)
+-            ackTimedOut -> listOf(1500L)
+-            isSimulation -> listOf(450L, 1200L)
+-            else -> listOf(350L, 1000L)
+-        }
+-        waits.forEach { waitMs ->
+-            scope.launch {
+-                delay(waitMs)
+-                poll()
+-            }
+-        }
+-    }
+-
+@@ -425,15 +441,19 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        if (weather == null || force) weatherBusy = true
+-        val lat = prefs.get(Prefs.K_LAT) ?: "51.066389"
+-        val lon = prefs.get(Prefs.K_LON) ?: "21.509167"
+-        val real = Weather.fetch(http, lat, lon, weatherDays)
+-        if (real != null) {
+-            weather = real; S.bump()
+-            if (announce) showToast("Pogoda", "Dane pogodowe zaktualizowane", "ok")
+-        } else if (weather == null) {
+-            // Pierwsze pobranie padlo: uczciwy brak danych, zadnych wymyslonych.
+-            if (announce) showToast("Pogoda", "Brak połączenia z Open-Meteo", "err")
+-        } else if (announce) {
+-            showToast("Pogoda", "Brak połączenia — pokazuję ostatnie dane", "err")
+-        }
+-        weatherBusy = false
+-        solar.estimateForecastGain(weather?.hourly ?: emptyList())
++        weatherMutex.withLock {
++            // Init + onResume can request the initial forecast back-to-back; coalesce the duplicate.
++            if (!force && weather != null) return@withLock
++            if (weather == null || force) weatherBusy = true
++            val lat = prefs.get(Prefs.K_LAT) ?: "51.066389"
++            val lon = prefs.get(Prefs.K_LON) ?: "21.509167"
++            val real = Weather.fetch(http, lat, lon, weatherDays)
++            if (real != null) {
++                weather = real; S.bump()
++                if (announce) showToast("Pogoda", "Dane pogodowe zaktualizowane", "ok")
++            } else if (weather == null) {
++                // Pierwsze pobranie padlo: uczciwy brak danych, zadnych wymyslonych.
++                if (announce) showToast("Pogoda", "Brak połączenia z Open-Meteo", "err")
++            } else if (announce) {
++                showToast("Pogoda", "Brak połączenia — pokazuję ostatnie dane", "err")
++            }
++            weatherBusy = false
++            solar.estimateForecastGain(weather?.hourly ?: emptyList())
++        }
+@@ -518 +538 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-    /** Dokleja wartości z udanego pollingu; bitmapa oznacza tylko symulowane kanały. */
++    /** Dokleja wyłącznie odczyt z właśnie zakończonego, udanego pollingu Firebase. */
+@@ -533 +553 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        val point = TelemPoint(
++        val p = TelemPoint(
+@@ -550 +570 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        if (point.hasValues()) chartLive = (chartLive + point).takeLast(240)
++        if (p.hasValues()) chartLive = (chartLive + p).takeLast(240)
+@@ -618 +638 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-    /** Aktualne powiększenie wykresu (1…16). */
++    /** `chartZoom` 1…16 (zoom +/-1.3× w arkuszu narzędzi). */
+@@ -699,2 +719,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        if (S.hasData("t_ogrz")) "piec " + (if (S.symAktywna("ogrz")) "~" else "") + fmt1(S.t_ogrz) + "°C"
+-        else "piec —"
++        if (S.symAktywna("ogrz")) "piec ~${fmt1(S.t_ogrz)}°C · SYM"
++        else if (S.hasData("t_ogrz")) "piec " + fmt1(S.t_ogrz) + "°C" else "piec —"
+@@ -706 +726 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        if (S.symAktywna("ogrz")) return "Odczyt symulowany — odcinek wykresu jest kreskowany"
++        if (S.symAktywna("ogrz")) return "Odczyt symulowany — jego odcinek wykresu jest kreskowany"
+@@ -795,2 +815,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        tgToken = prefs.get(Prefs.K_TG_TOKEN) ?: ""
+-        tgChatId = prefs.get(Prefs.K_TG_CHAT) ?: ""
++        tgToken = prefs.getSecret(Prefs.K_TG_TOKEN) ?: ""
++        tgChatId = prefs.getSecret(Prefs.K_TG_CHAT) ?: ""
+@@ -834 +854,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                val url = "http://" + S.ip.trim() + "/api/telegram/save"
++                val url = Rtdb.localControllerUrl(S.ip, "/api/telegram/save")
++                if (url == null) return@withContext Pair(false, "Adres centrali nie jest prywatnym adresem IPv4 — połączenie zablokowane.")
+@@ -847,2 +868,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            prefs.set(Prefs.K_TG_TOKEN, payload.optString("token", tgToken))
+-            prefs.set(Prefs.K_TG_CHAT, payload.optString("chatId", tgChatId))
++            val tokenSaved = prefs.setSecret(Prefs.K_TG_TOKEN, payload.optString("token", tgToken))
++            val chatSaved = prefs.setSecret(Prefs.K_TG_CHAT, payload.optString("chatId", tgChatId))
++            if (!tokenSaved) prefs.remove(Prefs.K_TG_TOKEN)
++            if (!chatSaved) prefs.remove(Prefs.K_TG_CHAT)
++            if (!tokenSaved || !chatSaved) showToast(
++                "Telegram", "Ustawienia zapisano w centrali, ale nie udało się zaszyfrować kopii lokalnej.", "err"
++            )
+@@ -860 +886,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                    val url = "http://" + S.ip.trim() + "/api/telegram/send"
++                    val url = Rtdb.localControllerUrl(S.ip, "/api/telegram/send")
++                    if (url == null) return@withContext Pair(false, "Adres centrali nie jest prywatnym adresem IPv4 — połączenie zablokowane.")
+@@ -877,0 +905 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        val localUrlValid = Rtdb.localControllerUrl(ip, "/api/wifi/list") != null
+@@ -879 +907 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            val arr = try { if (ip.isEmpty()) null else Rtdb.wifiList(ip) } catch (e: Exception) { null }
++            val arr = try { if (!localUrlValid) null else Rtdb.wifiList(ip) } catch (e: Exception) { null }
+@@ -881,0 +910 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++                !localUrlValid -> "Nieprawidłowy adres centrali. Dozwolone jest tylko prywatne IPv4 (10/8, 172.16/12, 192.168/16)."
+@@ -904,0 +934,5 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        if (Rtdb.localControllerUrl(ip, "/api/wifi/scan/start") == null) {
++            wifiBusy = false; wifiScanStatus = "Błędny adres centrali"
++            wifiScanNote = "Żądanie zablokowano: centrala musi mieć prywatny adres IPv4 (10/8, 172.16/12, 192.168/16)."
++            return@launch
++        }
+@@ -944,0 +979,4 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        if (Rtdb.localControllerUrl(ipA, "/api/wifi/add") == null) {
++            showToast("WiFi", "Nieprawidłowy adres centrali — sieć NIE została wysłana", "err")
++            return@launch
++        }
+@@ -959,0 +998,4 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        if (Rtdb.localControllerUrl(ipD, "/api/wifi/delete") == null) {
++            showToast("WiFi", "Nieprawidłowy adres centrali — operacja zablokowana", "err")
++            return@launch
++        }
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/DeviceBootCredentials.kt b/android/app/src/main/java/com/sterownikco/pro/core/DeviceBootCredentials.kt
+new file mode 100644
+index 0000000..b955096
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/DeviceBootCredentials.kt
+@@ -0,0 +1,113 @@
++package com.sterownikco.pro.core
++
++import android.content.Context
++import android.os.Build
++import android.security.keystore.KeyGenParameterSpec
++import android.security.keystore.KeyProperties
++import android.util.Base64
++import org.json.JSONObject
++import java.security.KeyStore
++import javax.crypto.Cipher
++import javax.crypto.KeyGenerator
++import javax.crypto.SecretKey
++import javax.crypto.spec.GCMParameterSpec
++
++/**
++ * Encrypted, device-protected copy of the Firebase session needed only for
++ * alarm monitoring before the first unlock after boot. Never store raw tokens
++ * in device-protected preferences.
++ *
++ * Android 9+ is required for a Keystore key explicitly usable while locked.
++ * Older supported Android versions can still start monitoring after first unlock.
++ */
++internal object DeviceBootCredentials {
++    private const val PREFS_NAME = "piec_alarm_boot_session"
++    private const val PREF_CIPHERTEXT = "session_v1"
++    private const val KEY_ALIAS = "sterownikco.directboot.session.aes.v1"
++    private const val IV_BYTES = 12
++    private const val TAG_BITS = 128
++
++    data class Session(val apiKey: String, val idToken: String, val refreshToken: String)
++
++    fun supportsLockedBoot(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
++
++    fun read(context: Context): Session? = synchronized(this) {
++        if (!supportsLockedBoot()) return@synchronized null
++        val encoded = prefs(context).getString(PREF_CIPHERTEXT, null) ?: return@synchronized null
++        try {
++            val sealed = Base64.decode(encoded, Base64.NO_WRAP)
++            if (sealed.size <= IV_BYTES) return@synchronized null
++            val iv = sealed.copyOfRange(0, IV_BYTES)
++            val ciphertext = sealed.copyOfRange(IV_BYTES, sealed.size)
++            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
++            cipher.init(Cipher.DECRYPT_MODE, keyStoreKey(), GCMParameterSpec(TAG_BITS, iv))
++            cipher.updateAAD(context.applicationContext.packageName.toByteArray(Charsets.UTF_8))
++            val json = JSONObject(String(cipher.doFinal(ciphertext), Charsets.UTF_8))
++            val refreshToken = json.optString("refreshToken")
++            if (refreshToken.isBlank()) return@synchronized null
++            Session(
++                apiKey = json.optString("apiKey").ifBlank { Prefs.DEFAULT_FB_API_KEY },
++                idToken = json.optString("idToken"),
++                refreshToken = refreshToken
++            )
++        } catch (e: Exception) {
++            // Keep the ciphertext for post-unlock recovery; never log its contents.
++            null
++        }
++    }
++
++    fun write(context: Context, apiKey: String, idToken: String, refreshToken: String): Boolean = synchronized(this) {
++        if (!supportsLockedBoot() || refreshToken.isBlank()) return@synchronized false
++        try {
++            val json = JSONObject()
++                .put("apiKey", apiKey)
++                .put("idToken", idToken)
++                .put("refreshToken", refreshToken)
++            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
++            cipher.init(Cipher.ENCRYPT_MODE, keyStoreKey())
++            cipher.updateAAD(context.applicationContext.packageName.toByteArray(Charsets.UTF_8))
++            val sealed = cipher.iv + cipher.doFinal(json.toString().toByteArray(Charsets.UTF_8))
++            // commit() makes a successful login/token rotation durable before the app can be rebooted.
++            prefs(context).edit()
++                .putString(PREF_CIPHERTEXT, Base64.encodeToString(sealed, Base64.NO_WRAP))
++                .commit()
++        } catch (e: Exception) {
++            false
++        }
++    }
++
++    fun clear(context: Context, invalidateKey: Boolean = false) {
++        synchronized(this) {
++            val removed = try { prefs(context).edit().remove(PREF_CIPHERTEXT).commit() } catch (e: Exception) { false }
++            if (invalidateKey || !removed) {
++                // If storage removal fails, delete the wrapping key so stale ciphertext is unusable.
++                try {
++                    KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(KEY_ALIAS)
++                } catch (e: Exception) { /* ignore */ }
++            }
++        }
++    }
++
++    private fun prefs(context: Context) = context.applicationContext
++        .createDeviceProtectedStorageContext()
++        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
++
++    private fun keyStoreKey(): SecretKey {
++        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
++        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
++
++        val builder = KeyGenParameterSpec.Builder(
++            KEY_ALIAS,
++            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
++        ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
++            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
++            .setRandomizedEncryptionRequired(true)
++            .setKeySize(256)
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
++            builder.setUnlockedDeviceRequired(false)
++        }
++        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
++            .apply { init(builder.build()) }
++            .generateKey()
++    }
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/LocalControllerAddress.kt b/android/app/src/main/java/com/sterownikco/pro/core/LocalControllerAddress.kt
+new file mode 100644
+index 0000000..512a996
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/LocalControllerAddress.kt
+@@ -0,0 +1,44 @@
++package com.sterownikco.pro.core
++
++/**
++ * URL policy for the ESP32's plain-HTTP API. Status comes from RTDB, so its
++ * `ip` field is untrusted input: accept only literal RFC1918 IPv4 hosts and
++ * simple API paths. This prevents a bad/stale status value from turning a
++ * local credential-bearing request into an arbitrary Internet request.
++ */
++internal object LocalControllerAddress {
++    fun canonicalPrivateIpv4(raw: String): String? {
++        val host = raw.trim()
++        if (host.isEmpty() || host.length > 15) return null
++        val fields = host.split('.')
++        if (fields.size != 4) return null
++
++        val octets = IntArray(4)
++        for (i in fields.indices) {
++            val field = fields[i]
++            if (field.isEmpty() || (field.length > 1 && field[0] == '0') ||
++                field.any { it !in '0'..'9' }
++            ) return null
++            octets[i] = field.toIntOrNull()?.takeIf { it in 0..255 } ?: return null
++        }
++
++        val privateAddress = octets[0] == 10 ||
++            (octets[0] == 172 && octets[1] in 16..31) ||
++            (octets[0] == 192 && octets[1] == 168)
++        return if (privateAddress) octets.joinToString(".") else null
++    }
++
++    fun url(ip: String, path: String): String? {
++        val host = canonicalPrivateIpv4(ip) ?: return null
++        if (path.isEmpty() || path[0] != '/' || path.startsWith("//")) return null
++        if (path.count { it == '?' } > 1) return null
++        if (path.any { ch ->
++                ch !in 'a'..'z' && ch !in 'A'..'Z' && ch !in '0'..'9' &&
++                    ch !in "/._?=&+-"
++            }
++        ) return null
++        val route = path.substringBefore('?').removePrefix("/")
++        if (route.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
++        return "http://$host$path"
++    }
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/PiecState.kt b/android/app/src/main/java/com/sterownikco/pro/core/PiecState.kt
+index 0db9fc3..afe9447 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/PiecState.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/PiecState.kt
+@@ -92 +92 @@ class PiecState {
+-    /** Pola obecne i poprawne w ostatniej odpowiedzi `/status` z Firebase. */
++    /** Pola potwierdzone rzeczywistym, poprawnym odczytem z ostatniej odpowiedzi. */
+@@ -216,5 +216 @@ class PiecState {
+-            val value = when (val raw = d.opt(key)) {
+-                is Boolean -> raw
+-                is Number -> raw.toDouble().takeIf { it.isFinite() && (it == 0.0 || it == 1.0) }?.let { it == 1.0 }
+-                else -> null
+-            }
++            val value = parseAlarmFlag(d.opt(key))
+@@ -235,2 +231,3 @@ class PiecState {
+-        // Flagi odczytujemy przed wartościami czujników, by zastosować
+-        // osobne granice walidacji aplikacji dla kanałów oznaczonych jako symulowane.
++        // Te flagi pochodzą z /piec/status. Odczytujemy je przed walidacją
++        // temperatur, bo sterownik dopuszcza dla symulacji szerszy zakres niż
++        // dla fizycznych czujników (np. piec 0–160°C).
+@@ -352 +349 @@ class PiecState {
+-        // Granice wejściowe używane przez kontrolki symulacji w aplikacji.
++        // Zakresy przyjmowane przez parser polecenia symulacji w firmware.
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/Prefs.kt b/android/app/src/main/java/com/sterownikco/pro/core/Prefs.kt
+index e246dc2..3c3ee4e 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/Prefs.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/Prefs.kt
+@@ -4,0 +5 @@ import android.content.SharedPreferences
++import android.os.UserManager
+@@ -15,2 +16,3 @@ import javax.crypto.spec.GCMParameterSpec
+-   Odpowiednik `safeStorage` z Piec.html (localStorage + sessionStorage).
+-   Na Androidzie: jedna SharedPreferences; klucze bez zmian (piec_*).
++   Credential-encrypted preferences hold normal UI data. Alarm decisions use
++   a small device-protected allowlist so the boot monitor can run before unlock.
++   Firebase session copies in device-protected storage are encrypted separately.
+@@ -18,2 +20,51 @@ import javax.crypto.spec.GCMParameterSpec
+-class Prefs(ctx: Context) {
+-    private val sp: SharedPreferences = ctx.getSharedPreferences("piec_hmi", Context.MODE_PRIVATE)
++class Prefs(ctx: Context) : AlarmPrefsStore {
++    private val appContext = ctx.applicationContext
++    private val deviceContext = appContext.createDeviceProtectedStorageContext()
++    private val devicePrefs: SharedPreferences =
++        deviceContext.getSharedPreferences(DEVICE_PREFS_NAME, Context.MODE_PRIVATE)
++    private val userManager = appContext.getSystemService(Context.USER_SERVICE) as UserManager
++    private val credentialPrefs: SharedPreferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
++        appContext.getSharedPreferences(CREDENTIAL_PREFS_NAME, Context.MODE_PRIVATE)
++    }
++
++    init {
++        migrateAlarmPreferencesIfUnlocked()
++    }
++
++    private fun isUserUnlocked(): Boolean = userManager.isUserUnlocked
++
++    private fun firebaseSessionLoggedOut(): Boolean =
++        devicePrefs.getBoolean(FIREBASE_SESSION_LOGGED_OUT, false)
++
++    private fun migrateAlarmPreferencesIfUnlocked() {
++        if (!isUserUnlocked()) return
++        synchronized(BOOT_PREFS_MIGRATION_LOCK) {
++            if (devicePrefs.getBoolean(BOOT_PREFS_MIGRATED, false)) return
++            val oldValues = credentialPrefs.all
++            val editor = devicePrefs.edit()
++            for (key in DEVICE_PROTECTED_KEYS) {
++                if (!devicePrefs.contains(key)) {
++                    (oldValues[key] as? String)?.let { editor.putString(key, it) }
++                }
++            }
++            editor.putBoolean(BOOT_PREFS_MIGRATED, true).commit()
++        }
++    }
++
++    override fun get(key: String): String? {
++        if (key in FIREBASE_SESSION_KEYS) {
++            val session = firebaseSession()
++            val value = when (key) {
++                K_API_KEY -> session.apiKey
++                K_ID_TOKEN -> session.idToken
++                else -> session.refreshToken
++            }
++            return value.ifEmpty { null }
++        }
++        val store = when {
++            key in DEVICE_PROTECTED_KEYS -> devicePrefs
++            isUserUnlocked() -> credentialPrefs
++            else -> return null
++        }
++        return store.getString(key, null)?.ifEmpty { null }
++    }
+@@ -21,3 +72,145 @@ class Prefs(ctx: Context) {
+-    fun get(key: String): String? = sp.getString(key, null)?.ifEmpty { null }
+-    fun set(key: String, value: String) = sp.edit().putString(key, value).apply()
+-    fun remove(key: String) = sp.edit().remove(key).apply()
++    override fun set(key: String, value: String) {
++        when {
++            key in DEVICE_PROTECTED_KEYS -> synchronized(BOOT_PREFS_MIGRATION_LOCK) {
++                // Serialize first-unlock migration against alarm writes; DE state must survive reboot.
++                devicePrefs.edit().putString(key, value).commit()
++                if (key == AlarmCenter.K_MONITOR) {
++                    if (value == "0") DeviceBootCredentials.clear(appContext)
++                    else if (isUserUnlocked()) firebaseSession()
++                }
++            }
++            key in FIREBASE_SESSION_KEYS -> synchronized(BOOT_PREFS_MIGRATION_LOCK) {
++                if (firebaseSessionLoggedOut()) return@synchronized
++                val current = firebaseSession()
++                val updated = when (key) {
++                    K_API_KEY -> current.copy(apiKey = value)
++                    K_ID_TOKEN -> current.copy(idToken = value)
++                    else -> current.copy(refreshToken = value)
++                }
++                saveFirebaseSession(updated.apiKey, updated.idToken, updated.refreshToken)
++            }
++            isUserUnlocked() -> credentialPrefs.edit().putString(key, value).apply()
++        }
++    }
++
++    override fun remove(key: String) {
++        when {
++            key in DEVICE_PROTECTED_KEYS -> synchronized(BOOT_PREFS_MIGRATION_LOCK) {
++                devicePrefs.edit().remove(key).commit()
++            }
++            key in FIREBASE_SESSION_KEYS -> clearFirebaseTokens()
++            isUserUnlocked() -> {
++                val editor = credentialPrefs.edit().remove(key)
++                if (key == K_PASS) {
++                    editor.commit()
++                } else {
++                    editor.apply()
++                }
++            }
++        }
++    }
++
++    /** Current Firebase session, preferring the encrypted boot copy when monitoring is enabled. */
++    internal fun firebaseSession(): DeviceBootCredentials.Session {
++        // A DE tombstone is written first on logout, so a crash cannot restore
++        // stale tokens from either storage domain on the next boot/unlock.
++        if (firebaseSessionLoggedOut()) {
++            return DeviceBootCredentials.Session(Prefs.DEFAULT_FB_API_KEY, "", "")
++        }
++        val monitoring = AlarmCenter.isMonitored(this)
++        if (monitoring) {
++            val bootSession = DeviceBootCredentials.read(appContext)
++            if (bootSession != null) {
++                if (isUserUnlocked()) writeCredentialSession(bootSession)
++                return bootSession
++            }
++        } else {
++            DeviceBootCredentials.clear(appContext)
++        }
++
++        if (!isUserUnlocked()) {
++            return DeviceBootCredentials.Session(Prefs.DEFAULT_FB_API_KEY, "", "")
++        }
++        val session = DeviceBootCredentials.Session(
++            apiKey = credentialPrefs.getString(K_API_KEY, null) ?: Prefs.DEFAULT_FB_API_KEY,
++            idToken = credentialPrefs.getString(K_ID_TOKEN, null).orEmpty(),
++            refreshToken = credentialPrefs.getString(K_REF_TOKEN, null).orEmpty()
++        )
++        if (monitoring && session.refreshToken.isNotBlank()) {
++            if (!DeviceBootCredentials.write(appContext, session.apiKey, session.idToken, session.refreshToken)) {
++                DeviceBootCredentials.clear(appContext, invalidateKey = true)
++            }
++        }
++        return session
++    }
++
++    /** True only when an encrypted session exists in storage available during Direct Boot. */
++    internal fun directBootSupported(): Boolean = DeviceBootCredentials.supportsLockedBoot()
++
++    internal fun directBootReady(): Boolean =
++        !firebaseSessionLoggedOut() && AlarmCenter.isMonitored(this) && DeviceBootCredentials.read(appContext) != null
++
++    /** Persist a successful login, then release a previous logout tombstone. */
++    internal fun saveFirebaseSession(apiKey: String, idToken: String, refreshToken: String) {
++        synchronized(BOOT_PREFS_MIGRATION_LOCK) {
++            val normalizedApiKey = apiKey.ifBlank { Prefs.DEFAULT_FB_API_KEY }
++            val credentialSaved = if (isUserUnlocked()) {
++                credentialPrefs.edit()
++                    .putString(K_API_KEY, normalizedApiKey)
++                    .putString(K_ID_TOKEN, idToken)
++                    .putString(K_REF_TOKEN, refreshToken)
++                    .commit()
++            } else false
++
++            val monitoring = AlarmCenter.isMonitored(this)
++            val bootSaved = if (monitoring && refreshToken.isNotBlank()) {
++                DeviceBootCredentials.write(appContext, normalizedApiKey, idToken, refreshToken).also { saved ->
++                    if (!saved) DeviceBootCredentials.clear(appContext, invalidateKey = true)
++                }
++            } else {
++                DeviceBootCredentials.clear(appContext)
++                false
++            }
++
++            // Do not expose any CE/DE copy again until at least one complete new session is durable.
++            if (refreshToken.isNotBlank() && (credentialSaved || bootSaved)) {
++                devicePrefs.edit().remove(FIREBASE_SESSION_LOGGED_OUT).commit()
++            }
++        }
++    }
++
++    /** Persist a rotated pair only for a live session; a late refresh must not undo logout. */
++    internal fun saveRefreshedTokens(apiKey: String, idToken: String, refreshToken: String) {
++        synchronized(BOOT_PREFS_MIGRATION_LOCK) {
++            if (firebaseSessionLoggedOut()) return
++            saveFirebaseSession(apiKey, idToken, refreshToken)
++        }
++    }
++
++    /** Logout tombstone suppresses both session copies before their storage is cleared. */
++    fun clearFirebaseTokens() {
++        synchronized(BOOT_PREFS_MIGRATION_LOCK) {
++            devicePrefs.edit().putBoolean(FIREBASE_SESSION_LOGGED_OUT, true).commit()
++            if (isUserUnlocked()) {
++                credentialPrefs.edit().remove(K_ID_TOKEN).remove(K_REF_TOKEN).commit()
++            }
++            DeviceBootCredentials.clear(appContext, invalidateKey = true)
++        }
++    }
++
++    /** Forget the saved password and the auto-login preference as one durable CE update. */
++    internal fun clearRememberedCredentials() {
++        if (!isUserUnlocked()) return
++        credentialPrefs.edit()
++            .remove(K_PASS)
++            .putString(K_REMEMBER_CREDS, false.toString())
++            .commit()
++    }
++
++    private fun writeCredentialSession(session: DeviceBootCredentials.Session) {
++        credentialPrefs.edit()
++            .putString(K_API_KEY, session.apiKey)
++            .putString(K_ID_TOKEN, session.idToken)
++            .putString(K_REF_TOKEN, session.refreshToken)
++            .apply()
++    }
+@@ -40,0 +234,2 @@ class Prefs(ctx: Context) {
++        // If logout's secure delete could not complete, never let a stored password auto-login.
++        if (key == K_PASS && firebaseSessionLoggedOut()) return null
+@@ -80,2 +275,2 @@ class Prefs(ctx: Context) {
+-    fun getInt(key: String, def: Int): Int = try { sp.getString(key, null)?.toIntOrNull() ?: def } catch (e: Exception) { def }
+-    fun setInt(key: String, v: Int) = sp.edit().putString(key, v.toString()).apply()
++    fun getInt(key: String, def: Int): Int = try { get(key)?.toIntOrNull() ?: def } catch (e: Exception) { def }
++    fun setInt(key: String, v: Int) = set(key, v.toString())
+@@ -83,2 +278,2 @@ class Prefs(ctx: Context) {
+-    fun getLong(key: String, def: Long): Long = try { sp.getString(key, null)?.toLongOrNull() ?: def } catch (e: Exception) { def }
+-    fun setLong(key: String, v: Long) = sp.edit().putString(key, v.toString()).apply()
++    override fun getLong(key: String, def: Long): Long = try { get(key)?.toLongOrNull() ?: def } catch (e: Exception) { def }
++    override fun setLong(key: String, v: Long) = set(key, v.toString())
+@@ -86,2 +281,2 @@ class Prefs(ctx: Context) {
+-    fun getBool(key: String, def: Boolean): Boolean = try { sp.getString(key, null)?.toBooleanStrictOrNull() ?: def } catch (e: Exception) { def }
+-    fun setBool(key: String, v: Boolean) = sp.edit().putString(key, v.toString()).apply()
++    fun getBool(key: String, def: Boolean): Boolean = try { get(key)?.toBooleanStrictOrNull() ?: def } catch (e: Exception) { def }
++    fun setBool(key: String, v: Boolean) = set(key, v.toString())
+@@ -93,0 +289,20 @@ class Prefs(ctx: Context) {
++        private const val CREDENTIAL_PREFS_NAME = "piec_hmi"
++        private const val DEVICE_PREFS_NAME = "piec_hmi_direct_boot"
++        private const val BOOT_PREFS_MIGRATED = "direct_boot_alarm_prefs_migrated_v1"
++        private const val FIREBASE_SESSION_LOGGED_OUT = "direct_boot_firebase_session_logged_out_v1"
++        private val BOOT_PREFS_MIGRATION_LOCK = Any()
++
++        const val K_ALARM_OPEN_NONCE = "piec_alarm_open_nonce"
++        private val DEVICE_PROTECTED_KEYS = setOf(
++            AlarmCenter.K_MONITOR,
++            AlarmCenter.K_SOUND,
++            AlarmCenter.K_SOUND_DYM,
++            AlarmCenter.K_SOUND_OGRZ,
++            AlarmCenter.K_SOUND_BOTH,
++            AlarmCenter.K_SNOOZE_UNTIL,
++            AlarmCenter.K_MUTED_SIG,
++            AlarmCenter.K_LAST_SIG,
++            AlarmCenter.K_LAST_FIRE,
++            K_ALARM_OPEN_NONCE
++        )
++        private val FIREBASE_SESSION_KEYS = setOf(K_API_KEY, K_ID_TOKEN, K_REF_TOKEN)
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+index 9e37466..974f876 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+@@ -6,0 +7,2 @@ import kotlinx.coroutines.job
++import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.sync.withLock
+@@ -28,0 +31 @@ object Rtdb {
++    private val authRefreshMutex = Mutex()
+@@ -37,0 +41,13 @@ object Rtdb {
++    /** Local controller requests can contain credentials: connect directly, never proxy or follow redirects. */
++    private val espHttp: OkHttpClient by lazy {
++        OkHttpClient.Builder()
++            .connectTimeout(8, TimeUnit.SECONDS)
++            .readTimeout(10, TimeUnit.SECONDS)
++            .callTimeout(15, TimeUnit.SECONDS)
++            .proxy(java.net.Proxy.NO_PROXY)
++            .followRedirects(false)
++            .followSslRedirects(false)
++            .retryOnConnectionFailure(false)
++            .build()
++    }
++
+@@ -48,3 +64,22 @@ object Rtdb {
+-    @Volatile var idToken: String = ""
+-    @Volatile var refreshToken: String = ""
+-    @Volatile var apiKey: String = Prefs.DEFAULT_FB_API_KEY
++    private data class AuthState(
++        val apiKey: String = Prefs.DEFAULT_FB_API_KEY,
++        val idToken: String = "",
++        val refreshToken: String = ""
++    )
++    private val authStateLock = Any()
++    @Volatile private var authState = AuthState()
++
++    val idToken: String get() = authState.idToken
++    val refreshToken: String get() = authState.refreshToken
++    val apiKey: String get() = authState.apiKey
++
++    fun setAuthTokens(idToken: String, refreshToken: String) = synchronized(authStateLock) {
++        authState = authState.copy(idToken = idToken, refreshToken = refreshToken)
++    }
++
++    fun setAuthSession(apiKey: String, idToken: String, refreshToken: String) = synchronized(authStateLock) {
++        authState = AuthState(apiKey, idToken, refreshToken)
++    }
++
++    /** Installed by Android owners so rotated Firebase tokens survive process restart. */
++    @Volatile var onAuthTokensRefreshed: ((String, String) -> Unit)? = null
+@@ -62 +97,2 @@ object Rtdb {
+-    private fun authQuery(): String = if (idToken.isNotEmpty()) "?auth=" + java.net.URLEncoder.encode(idToken, "UTF-8") else ""
++    private fun authQuery(token: String = idToken): String =
++        if (token.isNotEmpty()) "?auth=" + java.net.URLEncoder.encode(token, "UTF-8") else ""
+@@ -72 +108,9 @@ object Rtdb {
+-    /** GET z automatycznym odświeżeniem idToken przy 401/403 (jak fbGet). */
++    private suspend fun executeEsp(req: Request): Pair<Int, String> = withContext(Dispatchers.IO) {
++        try {
++            espHttp.newCall(req).execute().use { r -> r.code to (r.body?.string() ?: "") }
++        } catch (e: Exception) {
++            -1 to (e.message ?: "błąd sieci")
++        }
++    }
++
++    /** GET z automatycznym, serializowanym odświeżeniem idToken przy 401/403. */
+@@ -74 +118,4 @@ object Rtdb {
+-        val (code, body) = execute(Request.Builder().url(DB_URL + path + authQuery()).header("Cache-Control", "no-store").build())
++        val requestTokens = authState
++        val (code, body) = execute(Request.Builder()
++            .url(DB_URL + path + authQuery(requestTokens.idToken))
++            .header("Cache-Control", "no-store").build())
+@@ -76,3 +123,5 @@ object Rtdb {
+-            if (refreshToken.isNotEmpty() && apiKey.isNotEmpty()) {
+-                refreshIdToken()
+-                val r2 = execute(Request.Builder().url(DB_URL + path + authQuery()).header("Cache-Control", "no-store").build())
++            if (requestTokens.refreshToken.isNotEmpty() && requestTokens.apiKey.isNotEmpty()) {
++                refreshIdToken(requestTokens.idToken, requestTokens.refreshToken)
++                val retryToken = authState.idToken
++                val r2 = execute(Request.Builder().url(DB_URL + path + authQuery(retryToken))
++                    .header("Cache-Control", "no-store").build())
+@@ -120,14 +169,29 @@ object Rtdb {
+-    suspend fun refreshIdToken() {
+-        if (apiKey.isEmpty() || refreshToken.isEmpty()) return
+-        withContext(Dispatchers.IO) {
+-            try {
+-                val body = "grant_type=refresh_token&refresh_token=" + java.net.URLEncoder.encode(refreshToken, "UTF-8")
+-                val req = Request.Builder().url(AUTH_REFRESH_URL + java.net.URLEncoder.encode(apiKey, "UTF-8"))
+-                    .post(body.toRequestBody("application/x-www-form-urlencoded".toMediaType())).build()
+-                val (code, text) = execute(req)
+-                if (code in 200..299) {
+-                    val j = JSONObject(text)
+-                    if (j.has("id_token")) {
+-                        idToken = j.getString("id_token")
+-                        if (j.has("refresh_token")) refreshToken = j.getString("refresh_token")
+-                    }
++    suspend fun refreshIdToken(expectedIdToken: String? = null, expectedRefreshToken: String? = null) {
++        authRefreshMutex.withLock {
++            val currentAuth = authState
++            if (currentAuth.apiKey.isEmpty() || currentAuth.refreshToken.isEmpty()) return@withLock
++            if (expectedIdToken != null && currentAuth.idToken != expectedIdToken) return@withLock
++            if (expectedRefreshToken != null && currentAuth.refreshToken != expectedRefreshToken) return@withLock
++
++            val body = "grant_type=refresh_token&refresh_token=" +
++                java.net.URLEncoder.encode(currentAuth.refreshToken, "UTF-8")
++            val req = Request.Builder().url(AUTH_REFRESH_URL + java.net.URLEncoder.encode(currentAuth.apiKey, "UTF-8"))
++                .post(body.toRequestBody("application/x-www-form-urlencoded".toMediaType())).build()
++            val (code, text) = execute(req)
++            if (code !in 200..299) return@withLock
++            val response = try { JSONObject(text) } catch (e: Exception) { return@withLock }
++            val nextIdToken = response.optString("id_token")
++            if (nextIdToken.isBlank()) return@withLock
++            val nextRefreshToken = response.optString("refresh_token")
++                .ifBlank { currentAuth.refreshToken }
++
++            // Commit and persist under the same lock used by login/logout session replacement.
++            val committed = synchronized(authStateLock) {
++                if (authState !== currentAuth) {
++                    false
++                } else {
++                    authState = currentAuth.copy(idToken = nextIdToken, refreshToken = nextRefreshToken)
++                    try {
++                        onAuthTokensRefreshed?.invoke(nextIdToken, nextRefreshToken)
++                    } catch (e: Exception) { /* keep the in-memory session; persistence can be retried later */ }
++                    true
+@@ -135 +199,2 @@ object Rtdb {
+-            } catch (e: Exception) { /* ciche jak w oryginale */ }
++            }
++            if (!committed) return@withLock
+@@ -149 +214 @@ object Rtdb {
+-     * [onEvent] wołane na wątku IO: (nazwa_zdarzenia, surowy JSON z `data:`).
++     * [onEvent] wołane na wątku IO z eventem, JSON `data:` oraz parą tokenów używaną przez ten strumień.
+@@ -151,2 +216,6 @@ object Rtdb {
+-    suspend fun streamEvents(path: String, onEvent: (String, String) -> Unit) = withContext(Dispatchers.IO) {
+-        val req = Request.Builder().url(DB_URL + path + authQuery())
++    internal suspend fun streamEvents(
++        path: String,
++        onEvent: (event: String, data: String, idToken: String, refreshToken: String) -> Unit
++    ) = withContext(Dispatchers.IO) {
++        val streamTokens = authState
++        val req = Request.Builder().url(DB_URL + path + authQuery(streamTokens.idToken))
+@@ -172 +241,3 @@ object Rtdb {
+-                        if (ev.isNotEmpty() && d.isNotEmpty() && d != "null") onEvent(ev, d)
++                        if (ev.isNotEmpty() && d.isNotEmpty() && d != "null") {
++                            onEvent(ev, d, streamTokens.idToken, streamTokens.refreshToken)
++                        }
+@@ -205 +276,4 @@ object Rtdb {
+-    private fun espUrl(ip: String, path: String): String? = if (ip.isBlank()) null else "http://" + ip.trim() + path
++    internal fun localControllerUrl(ip: String, path: String): String? =
++        LocalControllerAddress.url(ip, path)
++
++    private fun espUrl(ip: String, path: String): String? = localControllerUrl(ip, path)
+@@ -208 +282 @@ object Rtdb {
+-        val (code, text) = execute(Request.Builder().url(u).build())
++        val (code, text) = executeEsp(Request.Builder().url(u).build())
+@@ -213 +287 @@ object Rtdb {
+-        val (code, text) = execute(Request.Builder().url(u).post(body.toString().toRequestBody(JSON)).build())
++        val (code, text) = executeEsp(Request.Builder().url(u).post(body.toString().toRequestBody(JSON)).build())
+@@ -227 +301 @@ object Rtdb {
+-                    val r = http.newCall(Request.Builder()
++                    val r = espHttp.newCall(Request.Builder()
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt b/android/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt
+index f2a7c9d..d8b2178 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt
+@@ -142 +142 @@ object ChartSeries {
+-    /** Granice walidacji aplikacji dla próbek jawnie oznaczonych jako symulowane. */
++    /** Zakresy, które firmware dopuszcza tylko dla aktywnych symulacji. */
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/TileSpecs.kt b/android/app/src/main/java/com/sterownikco/pro/core/TileSpecs.kt
+index f947ed5..77c03c3 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/TileSpecs.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/TileSpecs.kt
+@@ -324 +324,2 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
+-                dymAlarm -> "ALARM: próg ${if (S.hasData("progAlarmDym")) S.progAlarmDym else "—"} ADC przekroczony"
++                dymAlarm -> if (dymSimulation) "ALARM sterownika · wejście dymu symulowane"
++                    else "ALARM: próg ${if (S.hasData("progAlarmDym")) S.progAlarmDym else "—"} ADC przekroczony"
+diff --git a/android/app/src/main/java/com/sterownikco/pro/receiver/AlarmReceiver.kt b/android/app/src/main/java/com/sterownikco/pro/receiver/AlarmReceiver.kt
+index 6bb7dde..0275600 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/receiver/AlarmReceiver.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/receiver/AlarmReceiver.kt
+@@ -19,0 +20,2 @@ class AlarmReceiver : BroadcastReceiver() {
++        val received = intent ?: return
++        val action = received.action
+@@ -21 +23,3 @@ class AlarmReceiver : BroadcastReceiver() {
+-        when (intent?.action) {
++        val isAlarmAction = action == ACT_SNOOZE_10 || action == ACT_SNOOZE_60 || action == ACT_MUTE_NEXT
++        if (isAlarmAction && !AlarmNotify.hasCurrentAlarmNonce(ctx.applicationContext, received)) return
++        when (action) {
+@@ -40 +44,3 @@ class AlarmReceiver : BroadcastReceiver() {
+-                if (AlarmCenter.isMonitored(p) && (p.get(Prefs.K_REF_TOKEN) ?: "").isNotEmpty()) {
++                // AlarmMonitorService.start() performs the authoritative session check.
++                // Avoid decrypting the Direct Boot session twice on this receiver thread.
++                if (AlarmCenter.isMonitored(p)) {
+diff --git a/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt b/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
+index ff4f57f..5759aff 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
+@@ -6,0 +7,2 @@ import android.content.pm.ServiceInfo
++import android.media.AudioAttributes
++import android.media.MediaPlayer
+@@ -7,0 +10 @@ import android.os.Build
++import android.os.Handler
+@@ -8,0 +12,5 @@ import android.os.IBinder
++import android.os.Looper
++import android.os.PowerManager
++import android.os.SystemClock
++import android.provider.Settings
++import android.util.Log
+@@ -10,0 +19,4 @@ import com.sterownikco.pro.core.AlarmCenter
++import com.sterownikco.pro.core.AlarmFlags
++import com.sterownikco.pro.core.AlarmMonitorHealth
++import com.sterownikco.pro.core.AlarmMonitorPhase
++import com.sterownikco.pro.core.AlarmMonitorStartGate
+@@ -11,0 +24 @@ import com.sterownikco.pro.core.AlarmNotify
++import com.sterownikco.pro.core.AlarmSnapshotCoordinator
+@@ -13,0 +27 @@ import com.sterownikco.pro.core.Rtdb
++import com.sterownikco.pro.core.parseAlarmFlag
+@@ -18,0 +33 @@ import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.TimeoutCancellationException
+@@ -20,0 +36,4 @@ import kotlinx.coroutines.delay
++import kotlinx.coroutines.flow.MutableStateFlow
++import kotlinx.coroutines.flow.StateFlow
++import kotlinx.coroutines.flow.asStateFlow
++import kotlinx.coroutines.flow.update
+@@ -28,6 +47,6 @@ import org.json.JSONObject
+-   • Foreground service typu `specialUse` — system go nie ubija po cichu,
+-     a użytkownik widzi stałą ikonkę „Monitoring alarmów".
+-   • JEDEN strumień SSE z /piec/status zamiast odpytań — Firebase sam pcha
+-     zmiany (keep-alive ~30 s), więc radio śpi, a alarm wpada w ~1 s.
+-   • Reconnect z backoffem po każdym zerwaniu + wymuszony restart strumienia
+-     co 3 min (samoleczenie „na wpół otwartych" połączeń po Doze/tunelach).
++   • Foreground service typu `specialUse` z widocznym powiadomieniem; Android,
++     nakładka producenta lub użytkownik nadal mogą zatrzymać usługę.
++   • Główny odbiór zmian przez SSE z /piec/status.
++   • Odczyt awaryjny GET co 30 s: wykrywa połączenia SSE, które pozostały
++     otwarte, ale przestały dostarczać aktualizacje przy wygaszonym ekranie.
++   • Reconnect z backoffem po zerwaniu + wymuszony restart strumienia co 3 min.
+@@ -40,0 +60 @@ class AlarmMonitorService : Service() {
++    private val mainHandler = Handler(Looper.getMainLooper())
+@@ -41,0 +62,4 @@ class AlarmMonitorService : Service() {
++    private val snapshotLock = Any()
++    @Volatile private var alarmStreamVersion = 0L
++    private var alarmPlayer: MediaPlayer? = null
++    private var alarmSoundId: String? = null
+@@ -45,7 +69,21 @@ class AlarmMonitorService : Service() {
+-        loadCredsIntoRtdb()
+-        val notif = AlarmNotify.serviceNotification(this)
+-        if (Build.VERSION.SDK_INT >= 29) {
+-            startForeground(AlarmNotify.SVC_NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+-        } else {
+-            @Suppress("DEPRECATION")
+-            startForeground(AlarmNotify.SVC_NOTIF_ID, notif)
++        activeInstance = this
++        updateMonitorHealth(AlarmMonitorPhase.CONNECTING)
++        // Promote before SharedPreferences/Keystore reads so Direct Boot startup
++        // cannot consume the foreground-service start deadline on credential I/O.
++        try {
++            val notif = AlarmNotify.serviceNotification(this)
++            if (Build.VERSION.SDK_INT >= 29) {
++                startForeground(AlarmNotify.SVC_NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
++            } else {
++                @Suppress("DEPRECATION")
++                startForeground(AlarmNotify.SVC_NOTIF_ID, notif)
++            }
++        } catch (e: Exception) {
++            updateMonitorHealth(AlarmMonitorPhase.START_FAILED)
++            if (activeInstance === this) {
++                activeInstance = null
++                requestedAlarmSound = null
++            }
++            Log.e(TAG, "Nie udało się przejść do foreground service monitoringu alarmów", e)
++            stopSelf()
++            return
+@@ -52,0 +91,2 @@ class AlarmMonitorService : Service() {
++        loadCredsIntoRtdb()
++        Log.i(TAG, "Usługa monitoringu uruchomiona")
+@@ -53,0 +94 @@ class AlarmMonitorService : Service() {
++        scope.launch { fallbackPollLoop() }
+@@ -57,0 +99 @@ class AlarmMonitorService : Service() {
++            stopLoopingAlarm()
+@@ -61,0 +104,4 @@ class AlarmMonitorService : Service() {
++        if (intent?.action == ACT_PLAY_ALARM_LOOP) {
++            val sound = intent.getStringExtra(EXTRA_ALARM_SOUND) ?: "syrena"
++            if (requestedAlarmSound == sound) startLoopingAlarm(sound)
++        }
+@@ -67,0 +114,8 @@ class AlarmMonitorService : Service() {
++        stopLoopingAlarm()
++        if (activeInstance === this) {
++            activeInstance = null
++            requestedAlarmSound = null
++        }
++        if (monitorHealth.value.phase != AlarmMonitorPhase.START_FAILED) {
++            updateMonitorHealth(AlarmMonitorPhase.STOPPED)
++        }
+@@ -71,0 +126,78 @@ class AlarmMonitorService : Service() {
++    /** Utrzymuj jeden dźwięk alarmowy w pętli; te metody działają na wątku głównym usługi. */
++    private fun startLoopingAlarm(sound: String) {
++        if (alarmSoundId == sound) {
++            try { if (alarmPlayer?.isPlaying == true) return } catch (e: Exception) { /* odtwórz ponownie */ }
++        }
++        stopLoopingAlarm()
++        val res = AlarmNotify.soundRes(sound)
++        val attrs = AudioAttributes.Builder()
++            .setUsage(AudioAttributes.USAGE_ALARM)
++            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
++            .build()
++        val player = try {
++            if (res != 0) MediaPlayer.create(applicationContext, res, attrs, 0)
++            else MediaPlayer.create(applicationContext, Settings.System.DEFAULT_NOTIFICATION_URI, null, attrs, 0)
++        } catch (e: Exception) { null } ?: run {
++            Log.e(TAG, "Nie udało się utworzyć MediaPlayer alarmu: $sound")
++            scheduleAlarmLoopRestart(sound, ALARM_LOOP_RETRY_MS)
++            return
++        }
++        try {
++            player.setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
++            player.isLooping = true
++            alarmPlayer = player
++            alarmSoundId = sound
++            player.setOnCompletionListener { finished ->
++                Log.w(TAG, "MediaPlayer alarmu zakończył dźwięk mimo pętli: $sound")
++                if (alarmPlayer === finished) {
++                    alarmPlayer = null
++                    alarmSoundId = null
++                    try { finished.release() } catch (e: Exception) { /* ignore */ }
++                }
++                scheduleAlarmLoopRestart(sound, ALARM_LOOP_RESTART_MS)
++            }
++            player.setOnErrorListener { failed, what, extra ->
++                Log.e(TAG, "Błąd MediaPlayer alarmu: what=$what extra=$extra")
++                if (alarmPlayer === failed) {
++                    alarmPlayer = null
++                    alarmSoundId = null
++                }
++                try { failed.release() } catch (e: Exception) { /* ignore */ }
++                scheduleAlarmLoopRestart(sound, ALARM_LOOP_RETRY_MS)
++                true
++            }
++            player.start()
++            Log.i(TAG, "Uruchomiono pętlę dźwięku alarmu: $sound")
++        } catch (e: Exception) {
++            Log.e(TAG, "Nie udało się uruchomić pętli dźwięku alarmu: $sound", e)
++            if (alarmPlayer === player) {
++                alarmPlayer = null
++                alarmSoundId = null
++            }
++            try { player.release() } catch (ignored: Exception) { /* ignore */ }
++            scheduleAlarmLoopRestart(sound, ALARM_LOOP_RETRY_MS)
++        }
++    }
++
++    /** MediaPlayer powinien zapętlać sam, ale pilnujemy wznowienia, jeśli ROM go zatrzyma. */
++    private fun scheduleAlarmLoopRestart(sound: String, delayMs: Long) {
++        mainHandler.postDelayed({
++            if (activeInstance === this && requestedAlarmSound == sound &&
++                (alarmPlayer == null || alarmSoundId != sound)
++            ) {
++                startLoopingAlarm(sound)
++            }
++        }, delayMs)
++    }
++
++    private fun stopLoopingAlarm() {
++        val player = alarmPlayer
++        alarmPlayer = null
++        alarmSoundId = null
++        if (player != null) {
++            Log.i(TAG, "Zatrzymano pętlę dźwięku alarmu")
++            try { if (player.isPlaying) player.stop() } catch (e: Exception) { /* ignore */ }
++            try { player.release() } catch (e: Exception) { /* ignore */ }
++        }
++    }
++
+@@ -76,2 +208,2 @@ class AlarmMonitorService : Service() {
+-            (p.get(Prefs.K_API_KEY) ?: Prefs.DEFAULT_FB_API_KEY).let {
+-                if (it.isNotEmpty()) Rtdb.apiKey = it
++            Rtdb.onAuthTokensRefreshed = { idToken, refreshToken ->
++                p.saveRefreshedTokens(Rtdb.apiKey, idToken, refreshToken)
+@@ -79,3 +211,6 @@ class AlarmMonitorService : Service() {
+-            Rtdb.idToken = p.get(Prefs.K_ID_TOKEN) ?: ""
+-            Rtdb.refreshToken = p.get(Prefs.K_REF_TOKEN) ?: ""
+-            Rtdb.cmdToken = p.get(Prefs.K_CMD_TOKEN) ?: Prefs.DEFAULT_CMD_TOKEN
++            val session = p.firebaseSession()
++            Rtdb.setAuthSession(session.apiKey, session.idToken, session.refreshToken)
++            // Commands are never sent by this service; keep the command credential in CE storage only.
++            Rtdb.cmdToken = if (android.os.Build.VERSION.SDK_INT >= 24 &&
++                (applicationContext.getSystemService(Context.USER_SERVICE) as android.os.UserManager).isUserUnlocked
++            ) p.get(Prefs.K_CMD_TOKEN) ?: Prefs.DEFAULT_CMD_TOKEN else Prefs.DEFAULT_CMD_TOKEN
+@@ -90 +225 @@ class AlarmMonitorService : Service() {
+-                if (!AlarmCenter.isMonitored(p) || (p.get(Prefs.K_REF_TOKEN) ?: "").isEmpty()) {
++                if (!AlarmCenter.isMonitored(p) || Rtdb.refreshToken.isBlank()) {
+@@ -93,0 +229 @@ class AlarmMonitorService : Service() {
++                updateMonitorHealth(AlarmMonitorPhase.CONNECTING)
+@@ -96,2 +232,10 @@ class AlarmMonitorService : Service() {
+-                    Rtdb.pollStatus()?.let { onSnapshot(it) }
+-                } catch (e: Exception) { /* strumień i tak spróbuje */ }
++                    val initial = Rtdb.pollStatus()
++                    if (initial != null) onSnapshot(initial)
++                    else {
++                        updateMonitorHealth(AlarmMonitorPhase.RETRYING)
++                        Log.w(TAG, "Początkowy odczyt /piec/status nie powiódł się")
++                    }
++                } catch (e: Exception) {
++                    updateMonitorHealth(AlarmMonitorPhase.RETRYING)
++                    Log.w(TAG, "Błąd początkowego odczytu /piec/status", e)
++                }
+@@ -100 +244,3 @@ class AlarmMonitorService : Service() {
+-                    Rtdb.streamEvents("/piec/status.json") { ev, data -> onStreamEvent(ev, data) }
++                    Rtdb.streamEvents("/piec/status.json") { ev, data, idToken, refreshToken ->
++                        onStreamEvent(ev, data, idToken, refreshToken)
++                    }
+@@ -102 +248,5 @@ class AlarmMonitorService : Service() {
+-                backoffMs = 5_000L // czyste zerwanie po timeout — od razu wznawiamy
++                backoffMs = 5_000L // czyste zerwanie — od razu wznawiamy
++            } catch (e: TimeoutCancellationException) {
++                // Limit 3 min wymusza reconnect; nie wolno zakończyć przez niego pętli usługi.
++                updateMonitorHealth(AlarmMonitorPhase.CONNECTING)
++                backoffMs = 5_000L
+@@ -106,0 +257,2 @@ class AlarmMonitorService : Service() {
++                updateMonitorHealth(AlarmMonitorPhase.RETRYING)
++                Log.w(TAG, "Strumień SSE przerwany; ponowienie za ${backoffMs} ms", e)
+@@ -113 +265,6 @@ class AlarmMonitorService : Service() {
+-    private fun onStreamEvent(ev: String, data: String) {
++    private fun onStreamEvent(
++        ev: String,
++        data: String,
++        streamIdToken: String,
++        streamRefreshToken: String
++    ) {
+@@ -116 +273 @@ class AlarmMonitorService : Service() {
+-                "put", "patch" -> {
++                "put", "patch" -> synchronized(snapshotLock) {
+@@ -120,0 +278,3 @@ class AlarmMonitorService : Service() {
++                        val baseKey = base.substringBefore('/')
++                        val touchesAlarm = baseKey in ALARM_STATUS_KEYS ||
++                            (base.isEmpty() && ALARM_STATUS_KEYS.any(dj::has))
+@@ -121,0 +282 @@ class AlarmMonitorService : Service() {
++                        if (touchesAlarm) alarmStreamVersion++
+@@ -126,2 +287,10 @@ class AlarmMonitorService : Service() {
+-                            if (payload is JSONObject) { lastSnap = payload; onSnapshot(payload); return }
+-                        } else if (payload != null) {
++                            if (payload is JSONObject) {
++                                lastSnap = payload
++                                alarmStreamVersion++
++                                onSnapshotLocked(payload)
++                                return
++                            }
++                        } else {
++                            // RTDB put-null usuwa klucz; zachowujemy migawkę zgodną ze źródłem.
++                            val key = path.trim('/').substringBefore('/')
++                            if (key in ALARM_STATUS_KEYS) alarmStreamVersion++
+@@ -131 +300 @@ class AlarmMonitorService : Service() {
+-                    onSnapshot(JSONObject(lastSnap.toString()))
++                    onSnapshotLocked(JSONObject(lastSnap.toString()))
+@@ -137,6 +306,4 @@ class AlarmMonitorService : Service() {
+-                            Rtdb.refreshIdToken()
+-                            val p = Prefs(applicationContext)
+-                            if (Rtdb.idToken.isNotEmpty()) {
+-                                p.set(Prefs.K_ID_TOKEN, Rtdb.idToken)
+-                                p.set(Prefs.K_REF_TOKEN, Rtdb.refreshToken)
+-                            }
++                            Rtdb.refreshIdToken(
++                                expectedIdToken = streamIdToken,
++                                expectedRefreshToken = streamRefreshToken
++                            )
+@@ -147 +314,5 @@ class AlarmMonitorService : Service() {
+-                // keep-alive / cancel: ignorujemy (cancel = reguły; reconnect i tak nastąpi)
++                "cancel" -> {
++                    updateMonitorHealth(AlarmMonitorPhase.RETRYING)
++                    throw java.io.IOException("RTDB anulowało strumień; ponawiam połączenie")
++                }
++                // keep-alive potwierdza połączenie, ale nie odświeża migawki /piec/status.
+@@ -164,0 +336,4 @@ class AlarmMonitorService : Service() {
++        synchronized(snapshotLock) { onSnapshotLocked(d) }
++    }
++
++    private fun onSnapshotLocked(d: JSONObject) {
+@@ -166,15 +341,49 @@ class AlarmMonitorService : Service() {
+-        try {
+-            val smoke = alarmFlag(d, "dym_alarm")
+-            val overheat = alarmFlag(d, "alarm_ogrzewanie")
+-            // Brak, null lub błędny typ nie jest potwierdzeniem stanu "bez alarmu".
+-            // Alarm aktywny można obsłużyć od razu; ciszę zatwierdzamy dopiero,
+-            // gdy obie flagi są jawnie znane i wyłączone.
+-            if (smoke == true || overheat == true || (smoke == false && overheat == false)) {
+-                val info = AlarmCenter.evaluate(
+-                    Prefs(applicationContext), smoke == true, overheat == true,
+-                    number(d, "t_ogrz"), number(d, "dym")
+-                )
+-                if (info != null) AlarmNotify.fire(applicationContext, info)
+-                else if (smoke == false && overheat == false) AlarmNotify.cancel(applicationContext)
+-            }
+-        } catch (e: Exception) { /* alarm nie może wywalić usługi */ }
++        AlarmSnapshotCoordinator.applyServiceSnapshot {
++            try {
++                val smoke = alarmFlag(d, "dym_alarm")
++                val overheat = alarmFlag(d, "alarm_ogrzewanie")
++                val complete = smoke != null && overheat != null
++
++                // Niepełna migawka nie może potwierdzić ciszy. Jeśli zawiera aktywną
++                // flagę, zachowujemy poprzedni aktywny stan drugiej flagi (jeśli był znany).
++                if (smoke == true || overheat == true || complete) {
++                    val prefs = Prefs(applicationContext)
++                    val flags = if (complete) {
++                        AlarmFlags(dym = smoke == true, ogrz = overheat == true)
++                    } else {
++                        AlarmCenter.activeFlagsForPartialSnapshot(prefs, smoke, overheat)
++                    }
++                    val hasActiveFlag = flags?.dym == true || flags?.ogrz == true
++
++                    if (flags != null && (complete || hasActiveFlag)) {
++                        // `false` below is only the projection of a partial active-set signature;
++                        // an incomplete snapshot never reaches the all-clear/cancel branch.
++                        val smokeActive = flags.dym == true
++                        val overheatActive = flags.ogrz == true
++                        val info = AlarmCenter.evaluate(
++                            prefs, smokeActive, overheatActive,
++                            number(d, "t_ogrz"), number(d, "dym")
++                        )
++                        when {
++                            info != null -> AlarmNotify.fire(applicationContext, info)
++                            complete && smoke == false && overheat == false ->
++                                AlarmNotify.cancel(applicationContext)
++                            AlarmCenter.shouldLoopSound(prefs, smokeActive, overheatActive) -> {
++                                val activeInfo = AlarmCenter.describeActiveFlags(
++                                    smokeActive, overheatActive,
++                                    number(d, "t_ogrz"), number(d, "dym")
++                                )
++                                if (activeInfo != null && !AlarmNotify.postIfMissing(applicationContext, activeInfo)) {
++                                    val kind = AlarmCenter.kindFor(smokeActive, overheatActive)
++                                    AlarmMonitorService.startAlarmLoop(applicationContext, AlarmCenter.sound(prefs, kind))
++                                }
++                            }
++                            else -> {
++                                AlarmNotify.cancelLegacyNotification(applicationContext)
++                                AlarmMonitorService.stopAlarmLoop()
++                            }
++                        }
++                    }
++                }
++            } catch (e: Exception) { /* alarm nie może wywalić usługi */ }
++        }
+@@ -183,0 +393 @@ class AlarmMonitorService : Service() {
++        updateMonitorHealth(AlarmMonitorPhase.STATUS_OK, statusReadSucceeded = true)
+@@ -186,9 +396,37 @@ class AlarmMonitorService : Service() {
+-    private fun alarmFlag(d: JSONObject, key: String): Boolean? {
+-        if (!d.has(key) || d.isNull(key)) return null
+-        return when (val raw = d.opt(key)) {
+-            is Boolean -> raw
+-            is Number -> raw.toDouble().takeIf { it.isFinite() && (it == 0.0 || it == 1.0) }?.let { it == 1.0 }
+-            is String -> when (raw.trim().lowercase()) {
+-                "1", "true" -> true
+-                "0", "false" -> false
+-                else -> null
++    /**
++     * Zapasowy, tylko odczytowy GET stanu. Sam proces/usługa może być żywa,
++     * mimo że długa odpowiedź SSE przestała napływać; fallback wykrywa alarm
++     * najpóźniej po jednym interwale. Odrzucamy wynik, jeśli nowsze SSE zdążyło
++     * przyjść w trakcie żądania, aby nie nadpisać świeżego stanu starą migawką.
++     */
++    private suspend fun fallbackPollLoop() {
++        while (true) {
++            delay(FALLBACK_POLL_MS)
++            val prefs = try { Prefs(applicationContext) } catch (e: Exception) { continue }
++            if (!AlarmCenter.isMonitored(prefs)) continue
++            if (Rtdb.refreshToken.isBlank()) {
++                Log.w(TAG, "Pomijam fallback /status: brak zapisanego refresh tokenu")
++                continue
++            }
++            val versionAtStart = synchronized(snapshotLock) { alarmStreamVersion }
++            try {
++                val status = Rtdb.pollStatus()
++                if (status == null) {
++                    updateMonitorHealth(AlarmMonitorPhase.RETRYING)
++                    Log.w(TAG, "Fallback GET /piec/status nie powiódł się")
++                    continue
++                }
++                synchronized(snapshotLock) {
++                    if (alarmStreamVersion != versionAtStart) {
++                        Log.d(TAG, "Odrzucono fallback: nowsze zdarzenie SSE już dotarło")
++                    } else {
++                        onSnapshotLocked(status)
++                        Log.d(TAG, "Fallback GET OK; dym_alarm=${alarmFlag(status, "dym_alarm")}, " +
++                            "alarm_ogrzewanie=${alarmFlag(status, "alarm_ogrzewanie")}")
++                    }
++                }
++            } catch (e: CancellationException) {
++                throw e
++            } catch (e: Exception) {
++                updateMonitorHealth(AlarmMonitorPhase.RETRYING)
++                Log.w(TAG, "Błąd fallback GET /piec/status", e)
+@@ -196 +433,0 @@ class AlarmMonitorService : Service() {
+-            else -> null
+@@ -199,0 +437,5 @@ class AlarmMonitorService : Service() {
++    private fun alarmFlag(d: JSONObject, key: String): Boolean? {
++        if (!d.has(key) || d.isNull(key)) return null
++        return parseAlarmFlag(d.opt(key))
++    }
++
+@@ -206,0 +449,2 @@ class AlarmMonitorService : Service() {
++        const val ACT_PLAY_ALARM_LOOP = "com.sterownikco.pro.PLAY_ALARM_LOOP"
++        const val EXTRA_ALARM_SOUND = "alarm_sound"
+@@ -207,0 +452,25 @@ class AlarmMonitorService : Service() {
++        const val FALLBACK_POLL_MS = 30_000L
++        private const val ALARM_LOOP_RESTART_MS = 250L
++        private const val ALARM_LOOP_RETRY_MS = 5_000L
++        private const val TAG = "AlarmMonitorService"
++        private val ALARM_STATUS_KEYS = setOf("dym_alarm", "alarm_ogrzewanie")
++        private val _monitorHealth = MutableStateFlow(AlarmMonitorHealth())
++        val monitorHealth: StateFlow<AlarmMonitorHealth> = _monitorHealth.asStateFlow()
++        @Volatile private var activeInstance: AlarmMonitorService? = null
++
++        private fun updateMonitorHealth(
++            phase: AlarmMonitorPhase,
++            statusReadSucceeded: Boolean = false
++        ) {
++            _monitorHealth.update { current ->
++                current.copy(
++                    phase = phase,
++                    lastStatusElapsedMs = if (statusReadSucceeded) {
++                        SystemClock.elapsedRealtime()
++                    } else {
++                        current.lastStatusElapsedMs
++                    }
++                )
++            }
++        }
++        @Volatile private var requestedAlarmSound: String? = null
+@@ -209,0 +479,15 @@ class AlarmMonitorService : Service() {
++            val appContext = ctx.applicationContext
++            val prefs = try { Prefs(appContext) } catch (e: Exception) {
++                updateMonitorHealth(AlarmMonitorPhase.START_FAILED)
++                Log.e(TAG, "Nie można odczytać ustawień monitoringu alarmów", e)
++                return
++            }
++            val session = prefs.firebaseSession()
++            if (!AlarmMonitorStartGate.canStart(
++                    AlarmCenter.isMonitored(prefs), session.refreshToken
++                )
++            ) {
++                Log.i(TAG, "Pominięto start monitoringu alarmów: monitoring wyłączony lub brak sesji Firebase")
++                return
++            }
++            if (activeInstance == null) updateMonitorHealth(AlarmMonitorPhase.STARTING)
+@@ -211,2 +495,33 @@ class AlarmMonitorService : Service() {
+-                ContextCompat.startForegroundService(ctx, Intent(ctx, AlarmMonitorService::class.java))
+-            } catch (e: Exception) { /* np. start z tła na Androidzie 12+ */ }
++                ContextCompat.startForegroundService(appContext, Intent(appContext, AlarmMonitorService::class.java))
++            } catch (e: Exception) {
++                if (activeInstance == null) updateMonitorHealth(AlarmMonitorPhase.START_FAILED)
++                Log.e(TAG, "Nie udało się uruchomić foreground service monitoringu alarmów", e)
++            }
++        }
++
++        /** Wywołuje istniejącą usługę monitorującą; jeśli jej brak, uruchamia ją jako foreground. */
++        fun startAlarmLoop(ctx: Context, sound: String) {
++            requestedAlarmSound = sound
++            val service = activeInstance
++            if (service != null) {
++                service.mainHandler.post {
++                    if (activeInstance === service && requestedAlarmSound == sound) service.startLoopingAlarm(sound)
++                }
++                return
++            }
++            if (activeInstance == null) updateMonitorHealth(AlarmMonitorPhase.STARTING)
++            try {
++                val intent = Intent(ctx, AlarmMonitorService::class.java)
++                    .setAction(ACT_PLAY_ALARM_LOOP)
++                    .putExtra(EXTRA_ALARM_SOUND, sound)
++                ContextCompat.startForegroundService(ctx, intent)
++            } catch (e: Exception) {
++                if (activeInstance == null) updateMonitorHealth(AlarmMonitorPhase.START_FAILED)
++                Log.e(TAG, "Nie udało się uruchomić usługi do pętli alarmowej", e)
++            }
++        }
++
++        fun stopAlarmLoop() {
++            requestedAlarmSound = null
++            val service = activeInstance ?: return
++            service.mainHandler.post { if (activeInstance === service) service.stopLoopingAlarm() }
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt b/android/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+index ed55ec3..71d6c97 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+@@ -124,2 +124,2 @@ private fun AlarmPopup(m: AppModel) {
+-        if (info.simulated) AlarmNotify.cancelSimulation(m.ctx) else AlarmNotify.cancel(m.ctx)
+-        m.alarmPopup = null
++        AlarmNotify.cancel(m.ctx)
++        m.clearAlarmPopup()
+@@ -127 +126,0 @@ private fun AlarmPopup(m: AppModel) {
+-    val alarmTint = if (info.simulated) Pal.Warn else Pal.Err
+@@ -136 +135 @@ private fun AlarmPopup(m: AppModel) {
+-                .border(2.dp, alarmTint, RoundedCornerShape(18.dp))
++                .border(2.dp, Pal.Err, RoundedCornerShape(18.dp))
+@@ -141 +140 @@ private fun AlarmPopup(m: AppModel) {
+-            Text(if (info.simulated) "🧪" else "🚨", fontSize = 40.sp)
++            Text("🚨", fontSize = 40.sp)
+@@ -143 +142 @@ private fun AlarmPopup(m: AppModel) {
+-                color = alarmTint, textAlign = TextAlign.Center)
++                color = Pal.Err, textAlign = TextAlign.Center)
+@@ -145,8 +144,4 @@ private fun AlarmPopup(m: AppModel) {
+-            if (info.simulated) {
+-                PopupBtn("Zamknij test lokalny", Pal.TextDim) { done {} }
+-            } else {
+-                PopupBtn("⏸ Wycisz na 10 minut", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 10) } }
+-                PopupBtn("⏸ Wycisz na 1 godzinę", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 60) } }
+-                PopupBtn("🔕 Wycisz do następnego alarmu", Pal.Violet) { done { AlarmCenter.muteUntilNext(m.prefs) } }
+-                PopupBtn("Zamknij podgląd", Pal.TextDim) { m.alarmPopup = null }
+-            }
++            PopupBtn("⏸ Wycisz na 10 minut", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 10) } }
++            PopupBtn("⏸ Wycisz na 1 godzinę", Pal.Cyan) { done { AlarmCenter.snooze(m.prefs, 60) } }
++            PopupBtn("🔕 Wycisz do następnego alarmu", Pal.Violet) { done { AlarmCenter.muteUntilNext(m.prefs) } }
++            PopupBtn("Zamknij podgląd", Pal.TextDim) { m.dismissAlarmPopup() }
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+index c88cf46..492f0a1 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+@@ -3,0 +4 @@ import androidx.compose.foundation.BorderStroke
++import androidx.compose.foundation.Canvas
+@@ -41,0 +43 @@ import androidx.compose.ui.draw.clip
++import androidx.compose.ui.geometry.Offset
+@@ -42,0 +45 @@ import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.graphics.PathEffect
+@@ -218,4 +221 @@ fun ChartsPage(m: AppModel) {
+-            Text(
+-                "Linia ciągła — odczyt rzeczywisty · kreskowany jest tylko odcinek kanału symulowanego",
+-                style = Txt.tiny.copy(color = Pal.TextDim), modifier = Modifier.fillMaxWidth()
+-            )
++            SimulatedChartLegend()
+@@ -290,2 +290 @@ fun ChartsPage(m: AppModel) {
+-                    Text("Linia ciągła — odczyt rzeczywisty · kreskowany — odcinek dotykający próbki symulowanej",
+-                        style = Txt.tiny, modifier = Modifier.fillMaxWidth())
++                    SimulatedChartLegend()
+@@ -435 +434 @@ fun ChartAxisSheet(m: AppModel) {
+-/** `showChartToolsSheet()` — filtry anomalii, area band, bezier i poziomy odniesienia. */
++/** `showChartToolsSheet()` — filtry anomalii, area band, styl linii i poziomy odniesienia. */
+@@ -529,0 +529,29 @@ private fun chartTimeLabel(m: AppModel, ts: Long): String {
++/** Oznaczenie stylu odcinków: symulacja zmienia wyłącznie fragmenty dotknięte maską kanału. */
++@Composable
++private fun SimulatedChartLegend() {
++    Row(
++        Modifier.fillMaxWidth().padding(vertical = 2.dp),
++        verticalAlignment = Alignment.CenterVertically,
++        horizontalArrangement = Arrangement.Center
++    ) {
++        ChartLegendStroke(dashed = false)
++        Text("odcinek rzeczywisty", fontSize = 7.5.sp, color = Pal.TextDim2)
++        Spacer(Modifier.width(9.dp))
++        ChartLegendStroke(dashed = true)
++        Text("odcinek symulowany", fontSize = 7.5.sp, color = Pal.TextDim2)
++    }
++}
++
++@Composable
++private fun ChartLegendStroke(dashed: Boolean) {
++    Canvas(Modifier.width(22.dp).height(8.dp).padding(end = 4.dp)) {
++        drawLine(
++            color = Pal.Cyan,
++            start = Offset(0f, size.height / 2f),
++            end = Offset(size.width, size.height / 2f),
++            strokeWidth = 2.dp.toPx(),
++            pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 2.5.dp.toPx())) else null
++        )
++    }
++}
++
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+index ce4cedd..870ee6b 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+@@ -70 +70 @@ fun Dashboard(m: AppModel) {
+-            stateCls = if (!m.isFbFresh || !S.online || S.sym.isNotEmpty()) "warn" else if (anyAl) "err" else "live",
++            stateCls = if (!m.isFbFresh || !S.online) "warn" else if (anyAl) "err" else if (S.sym.isNotEmpty()) "warn" else "live",
+@@ -84 +84,3 @@ fun Dashboard(m: AppModel) {
+-                    S.dym_alarm -> "ALARM DYMU — sprawdź kotłownię"
++                    S.dym_alarm -> if (S.symAktywna("dym"))
++                        "ALARM DYMU — wejście symulowane, alarm sterownika aktywny; sprawdź kotłownię"
++                    else "ALARM DYMU — sprawdź kotłownię"
+@@ -94,5 +96,2 @@ fun Dashboard(m: AppModel) {
+-                S.symAktywna("ogrz") -> {
+-                    if (m.isFbFresh && S.online)
+-                        "Symulacja zgłoszona przez sterownik · wartość używana przez jego logikę"
+-                    else "Ostatnio zgłoszona symulacja pieca · dane nieaktualne"
+-                }
++                !m.isFbFresh -> "ostatni status sterownika — dane nieaktualne"
++                S.symAktywna("ogrz") -> "WARTOŚĆ SYMULOWANA PRZEZ STEROWNIK · używana przez jego logikę"
+@@ -100 +98,0 @@ fun Dashboard(m: AppModel) {
+-                !m.isFbFresh -> "ostatni rzeczywisty odczyt pieca C.O. — dane nieaktualne"
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt
+index b7b64e0..17f7e9a 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt
+@@ -7,0 +8 @@ import android.os.PowerManager
++import android.os.SystemClock
+@@ -21,0 +23 @@ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.collectAsState
+@@ -32,0 +35,2 @@ import com.sterownikco.pro.core.AlarmCenter
++import com.sterownikco.pro.core.AlarmMonitorHealthText
++import com.sterownikco.pro.core.AlarmMonitorPhase
+@@ -34,0 +39 @@ import com.sterownikco.pro.core.AppModel
++import com.sterownikco.pro.core.Prefs
+@@ -48,0 +54 @@ fun AlarmSheet(m: AppModel) {
++    m.sheetTick // odświeżaj wiek ostatniego odczytu RTDB
+@@ -51,0 +58,2 @@ fun AlarmSheet(m: AppModel) {
++    val monitorHealth by AlarmMonitorService.monitorHealth.collectAsState()
++    val nowElapsedMs = SystemClock.elapsedRealtime()
+@@ -81,2 +89,36 @@ fun AlarmSheet(m: AppModel) {
+-            Text("Usługa czyta strumień Firebase także przy zminimalizowanej aplikacji. Wyłączenie = brak alarmów w tle.",
+-                fontSize = 11.sp, color = Pal.TextDim)
++            val hasRefreshToken = !p.get(Prefs.K_REF_TOKEN).isNullOrBlank()
++            val healthAge = monitorHealth.lastStatusElapsedMs?.let {
++                (nowElapsedMs - it).coerceAtLeast(0L)
++            }
++            val monitorHint = AlarmMonitorHealthText.describe(
++                monitored = monitored,
++                hasSession = hasRefreshToken,
++                health = monitorHealth,
++                nowElapsedMs = nowElapsedMs
++            )
++            val healthColor = when {
++                !monitored -> Pal.TextDim
++                !hasRefreshToken -> Pal.Warn
++                monitorHealth.phase == AlarmMonitorPhase.STATUS_OK && healthAge != null && healthAge < 60_000L -> Pal.Live
++                monitorHealth.phase == AlarmMonitorPhase.STARTING || monitorHealth.phase == AlarmMonitorPhase.CONNECTING -> Pal.Warn
++                monitorHealth.phase == AlarmMonitorPhase.RETRYING && healthAge != null && healthAge < 60_000L -> Pal.Warn
++                else -> Pal.Err
++            }
++            Text(monitorHint, fontSize = 11.sp, color = healthColor)
++            val directBootReady = p.directBootReady()
++            val directBootHint = when {
++                !monitored -> "Po restarcie: czuwanie przed odblokowaniem jest wyłączone."
++                !hasRefreshToken -> "Przed odblokowaniem: brak zapisanej sesji Firebase."
++                !p.directBootSupported() -> "Czuwanie przed odblokowaniem wymaga Androida 9 (API 28) lub nowszego."
++                directBootReady -> "Zaszyfrowana sesja umożliwia wznowienie czuwania przed pierwszym odblokowaniem."
++                else -> "Brak dostępnej zaszyfrowanej sesji Direct Boot; sprawdź logowanie i otwórz ponownie ten arkusz."
++            }
++            Text(
++                directBootHint,
++                fontSize = 11.sp,
++                color = when {
++                    !monitored -> Pal.TextDim
++                    directBootReady -> Pal.Live
++                    else -> Pal.Warn
++                }
++            )
+@@ -85,0 +128,3 @@ fun AlarmSheet(m: AppModel) {
++                    if (!p.get(Prefs.K_REF_TOKEN).isNullOrBlank() && !AlarmNotify.hasPostNotifications(ctx)) {
++                        m.askNotifPerm = true
++                    }
+@@ -127,0 +173,2 @@ fun AlarmSheet(m: AppModel) {
++            Text("Podczas aktywnego alarmu dźwięk jest zapętlony; zatrzyma go skasowanie alarmu, drzemka lub wyciszenie.",
++                fontSize = 11.sp, color = Pal.TextDim)
+@@ -155 +202,3 @@ fun AlarmSheet(m: AppModel) {
+-            PermRow("Powiadomienia", notifOk, "Bez tego alarm nie zadzwoni.",
++            PermRow("Powiadomienia", notifOk,
++                if (notifOk) "Zgoda jest włączona; widoczność nadal zależy od systemu i kanału."
++                else "Powiadomienia alarmowe są zablokowane; dźwięk i działanie usługi też nie są gwarantowane.",
+@@ -159 +208,2 @@ fun AlarmSheet(m: AppModel) {
+-                if (fsiOk) "Alarm wyskoczy nawet na blokadzie." else "Bez tego tylko pasek + dźwięk.",
++                if (fsiOk) "Zezwolono na pełny ekran; system nadal może ograniczyć wyświetlenie."
++                else "Bez tej zgody aplikacja nie może żądać alarmowego okna pełnoekranowego.",
+@@ -165,2 +215,3 @@ fun AlarmSheet(m: AppModel) {
+-                if (batOk) "System nie ubije czuwania." else "realme/Oppo lubią ubijać usługi — wyłącz optymalizację.",
+-                btn = if (batOk) null else "Wyłącz optymalizację") {
++                if (batOk) "Wyjątek włączony — może zwiększać zużycie baterii; system/OEM nadal może ograniczyć usługę."
++                else "Optymalizacja pozostaje włączona (zalecane dla baterii). Wyjątek jest opcjonalny i może zmniejszyć ryzyko opóźnień na części telefonów.",
++                btn = if (batOk) null else "Ustawienia baterii") {
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
+index 4a17341..f6644a4 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
+@@ -105,9 +105,4 @@ fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min:
+-                    when {
+-                        !m.connected && pole == "dym" ->
+-                            "Brak aktywnej sesji Firebase — Zastosuj nie wyśle testu. Po połączeniu test dymu na żywym sterowniku może uruchomić prawdziwy alarm, buzzer i ruch klapy lub syberka."
+-                        !m.connected -> "Brak aktywnej sesji Firebase — polecenie nie zostanie wysłane. Połącz z centralą."
+-                        pole == "dym" ->
+-                            "⚠ TEST NA ŻYWYM STEROWNIKU: przekroczenie progu może uruchomić prawdziwy alarm, buzzer i ruch klapy lub syberka. Używaj tylko po zabezpieczeniu instalacji; po teście sprawdź alarm i aktuatory bezpośrednio."
+-                        else ->
+-                            "Test wysyłany do sterownika. Wartość trafia do jego normalnej logiki i może wpłynąć na rzeczywiste urządzenia."
+-                    },
++                    if (pole == "dym")
++                        "⚠ TEST NA ŻYWYM STEROWNIKU: przekroczenie progu może uruchomić prawdziwy alarm i buzzer oraz poruszyć klapą i syberkiem. Wyłączenie symulacji nie kasuje alarmu natychmiast — decyduje histereza centrali."
++                    else
++                        "Test wysyłany do sterownika. Wartość trafia do jego normalnej logiki i może wpłynąć na rzeczywiste urządzenia.",
+@@ -125 +120 @@ fun SymUnit(m: AppModel, pole: String, etykieta: String, jednostka: String, min:
+-                        value = controlMin.toFloat() + Math.round((v - controlMin.toFloat()) / step) * step
++                        value = min.toFloat() + Math.round((v - min.toFloat()) / step) * step
+@@ -264 +259 @@ fun SensorListSheet(m: AppModel) {
+-        Note("Symulacje są wysyłane do sterownika i używane przez jego normalną logikę. Na wykresie kreskowany jest tylko symulowany odcinek; odczyty rzeczywiste pozostają ciągłe. Test dymu może uruchomić prawdziwy alarm, buzzer oraz ruch serw.")
++        Note("Symulacje są wysyłane do sterownika i używane przez jego normalną logikę; wartości symulowane są oznaczone i pomijane w historii. Test dymu może uruchomić prawdziwy alarm, buzzer oraz ruch serw.")
+diff --git a/android/app/src/main/java/com/sterownikco/pro/widget/PiecWidget.kt b/android/app/src/main/java/com/sterownikco/pro/widget/PiecWidget.kt
+index 8886c3d..8e7964c 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/widget/PiecWidget.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/widget/PiecWidget.kt
+@@ -15 +14,0 @@ import com.sterownikco.pro.core.Prefs
+-import com.sterownikco.pro.service.AlarmMonitorService
+@@ -41,9 +39,0 @@ class PiecWidget : AppWidgetProvider() {
+-    override fun onReceive(ctx: Context, intent: Intent) {
+-        super.onReceive(ctx, intent)
+-        if (intent.action == ACT_REFRESH) {
+-            // Tap w odświeżanie: upewniamy się, że usługa żyje + przerys.
+-            try { AlarmMonitorService.start(ctx.applicationContext) } catch (e: Exception) { /* ignore */ }
+-            renderAll(ctx)
+-        }
+-    }
+-
+@@ -51 +40,0 @@ class PiecWidget : AppWidgetProvider() {
+-        const val ACT_REFRESH = "com.sterownikco.pro.WIDGET_REFRESH"
+@@ -62,2 +51,10 @@ class PiecWidget : AppWidgetProvider() {
+-            val sig = listOf("t_ogrz", "t_bojler", "t_panel", "t_zewn", "dym_alarm", "alarm_ogrzewanie", "alarm_panel", "online", "sim", "is_sim", "simulated")
+-                .joinToString("|") { k -> if (d.isNull(k)) "" else d.opt(k).toString() }
++            val simulationFields = listOf(
++                "dym", "ogrz", "bojler", "panel", "pokoj", "zewn", "ogrz_powrot", "ogrz_trociny", "cisnienie", "wilgotnosc"
++            ).flatMap { pole -> listOf("symulacja_$pole", "symulacja_${pole}_min") }
++            val sig = (listOf(
++                "t_ogrz", "t_bojler", "t_panel", "t_zewn", "dym_alarm", "alarm_ogrzewanie", "alarm_panel", "online",
++                "sim", "is_sim", "simulated"
++            ) + simulationFields).joinToString("|") { k ->
++                val value: Any? = d.opt(k)
++                if (value == null || d.isNull(k)) "" else value.toString()
++            }
+@@ -235,0 +233,20 @@ class PiecWidget : AppWidgetProvider() {
++            fun controllerSimulation(sensor: WidgetSensor): Boolean {
++                val pole = when (sensor.key) {
++                    "t_ogrz" -> "ogrz"
++                    "t_bojler" -> "bojler"
++                    "t_panel" -> "panel"
++                    "t_zewn" -> "zewn"
++                    else -> return false
++                }
++                val raw = d?.opt("symulacja_$pole")
++                return raw == true || (raw is Number && raw.toDouble() == 1.0)
++            }
++
++            fun isSimulated(sensor: WidgetSensor): Boolean =
++                simulated(sensor.channel) || controllerSimulation(sensor)
++
++            val simulatedBounds = mapOf(
++                "t_ogrz" to (0.0..160.0), "t_bojler" to (0.0..160.0),
++                "t_panel" to (-30.0..160.0), "t_zewn" to (-30.0..50.0)
++            )
++
+@@ -240,0 +258,9 @@ class PiecWidget : AppWidgetProvider() {
++            fun value(sensor: WidgetSensor): Double? {
++                val range = if (controllerSimulation(sensor)) {
++                    simulatedBounds[sensor.key] ?: (sensor.min..sensor.max)
++                } else {
++                    sensor.min..sensor.max
++                }
++                return numeric(sensor.key)?.takeIf { it in range }
++            }
++
+@@ -242,3 +268,3 @@ class PiecWidget : AppWidgetProvider() {
+-                val x = numeric(sensor.key)?.takeIf { it in sensor.min..sensor.max } ?: return "—"
+-                val value = "${Math.round(x)}°"
+-                return if (simulated(sensor.channel)) "~$value" else value
++                val x = value(sensor) ?: return "—"
++                val text = "${Math.round(x)}°"
++                return if (isSimulated(sensor)) "~$text" else text
+@@ -289,5 +315,7 @@ class PiecWidget : AppWidgetProvider() {
+-            val hasAnyReading = SENSOR_OPTIONS.any { sensor ->
+-                numeric(sensor.key)?.let { it in sensor.min..sensor.max } == true
+-            }
+-            val hasRealReading = SENSOR_OPTIONS.any { sensor ->
+-                numeric(sensor.key)?.let { it in sensor.min..sensor.max } == true && !simulated(sensor.channel)
++            val hasAnyReading = SENSOR_OPTIONS.any { sensor -> value(sensor) != null }
++            val hasRealReading = SENSOR_OPTIONS.any { sensor -> value(sensor) != null && !isSimulated(sensor) }
++            val controllerSimulationActive = listOf(
++                "dym", "ogrz", "bojler", "panel", "pokoj", "zewn", "ogrz_powrot", "ogrz_trociny", "cisnienie", "wilgotnosc"
++            ).any { pole ->
++                val raw = d?.opt("symulacja_$pole")
++                raw == true || (raw is Number && raw.toDouble() == 1.0)
+@@ -305,2 +333,2 @@ class PiecWidget : AppWidgetProvider() {
+-                sim && !alarmKnown -> "⚠ SYM · ALARM?" to Color.parseColor("#FBBF24")
+-                sim -> "⚠ SYMULACJA" to Color.parseColor("#FBBF24")
++                (sim || controllerSimulationActive) && !alarmKnown -> "⚠ SYM · ALARM?" to Color.parseColor("#FBBF24")
++                sim || controllerSimulationActive -> "⚠ SYMULACJA" to Color.parseColor("#FBBF24")
+diff --git a/android/app/src/main/res/xml/backup_rules.xml b/android/app/src/main/res/xml/backup_rules.xml
+index 3d1f75a..468efaf 100644
+--- a/android/app/src/main/res/xml/backup_rules.xml
++++ b/android/app/src/main/res/xml/backup_rules.xml
+@@ -3 +3,10 @@
+-    <include domain="sharedpref" path="piec_co_prefs.xml" />
++    <!-- Defense in depth for Android versions/OEMs that honor legacy backup rules. -->
++    <exclude domain="root" path="." />
++    <exclude domain="file" path="." />
++    <exclude domain="database" path="." />
++    <exclude domain="sharedpref" path="." />
++    <exclude domain="external" path="." />
++    <exclude domain="device_root" path="." />
++    <exclude domain="device_file" path="." />
++    <exclude domain="device_database" path="." />
++    <exclude domain="device_sharedpref" path="." />
+diff --git a/android/app/src/main/res/xml/data_extraction_rules.xml b/android/app/src/main/res/xml/data_extraction_rules.xml
+index 77165f4..b853a8d 100644
+--- a/android/app/src/main/res/xml/data_extraction_rules.xml
++++ b/android/app/src/main/res/xml/data_extraction_rules.xml
+@@ -4 +4,9 @@
+-        <include domain="sharedpref" path="piec_co_prefs.xml" />
++        <exclude domain="root" path="." />
++        <exclude domain="file" path="." />
++        <exclude domain="database" path="." />
++        <exclude domain="sharedpref" path="." />
++        <exclude domain="external" path="." />
++        <exclude domain="device_root" path="." />
++        <exclude domain="device_file" path="." />
++        <exclude domain="device_database" path="." />
++        <exclude domain="device_sharedpref" path="." />
+@@ -7 +15,9 @@
+-        <include domain="sharedpref" path="piec_co_prefs.xml" />
++        <exclude domain="root" path="." />
++        <exclude domain="file" path="." />
++        <exclude domain="database" path="." />
++        <exclude domain="sharedpref" path="." />
++        <exclude domain="external" path="." />
++        <exclude domain="device_root" path="." />
++        <exclude domain="device_file" path="." />
++        <exclude domain="device_database" path="." />
++        <exclude domain="device_sharedpref" path="." />
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/AlarmCenterTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/AlarmCenterTest.kt
+new file mode 100644
+index 0000000..3886e92
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/AlarmCenterTest.kt
+@@ -0,0 +1,306 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class AlarmCenterTest {
++    private class MemoryAlarmPrefs : AlarmPrefsStore {
++        private val values = mutableMapOf<String, String>()
++
++        override fun get(key: String): String? = values[key]
++
++        override fun set(key: String, value: String) {
++            values[key] = value
++        }
++
++        override fun remove(key: String) {
++            values.remove(key)
++        }
++
++        override fun getLong(key: String, def: Long): Long = values[key]?.toLongOrNull() ?: def
++
++        override fun setLong(key: String, v: Long) {
++            values[key] = v.toString()
++        }
++    }
++
++    @Test
++    fun monitoringDisabledDoesNotRaiseOrMutateAlarm() {
++        val prefs = MemoryAlarmPrefs().apply {
++            set(AlarmCenter.K_MONITOR, "0")
++            set(AlarmCenter.K_LAST_SIG, "D")
++        }
++
++        assertNull(AlarmCenter.evaluate(prefs, dym = true, ogrz = false, tOgrz = 80.0, dymAdc = 700.0))
++        assertEquals("D", prefs.get(AlarmCenter.K_LAST_SIG))
++    }
++
++    @Test
++    fun firstSmokeEdgeFiresAndDuplicateIsSuppressed() {
++        val prefs = MemoryAlarmPrefs()
++
++        val first = AlarmCenter.evaluate(prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0)
++        assertNotNull(first)
++        assertEquals("dym", first!!.kind)
++        assertEquals("D", first.sig)
++
++        assertNull(AlarmCenter.evaluate(prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0))
++    }
++
++    @Test
++    fun clearingAlarmAllowsSameAlarmToFireAgain() {
++        val prefs = MemoryAlarmPrefs()
++
++        assertNotNull(AlarmCenter.evaluate(prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0))
++        assertNull(AlarmCenter.evaluate(prefs, dym = false, ogrz = false, tOgrz = 70.0, dymAdc = 0.0))
++        assertEquals("", prefs.get(AlarmCenter.K_LAST_SIG))
++
++        assertNotNull(AlarmCenter.evaluate(prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0))
++    }
++
++    @Test
++    fun combinedAlarmUsesCombinedClassification() {
++        val alarm = AlarmCenter.evaluate(
++            MemoryAlarmPrefs(),
++            dym = true,
++            ogrz = true,
++            tOgrz = 95.5,
++            dymAdc = 812.0
++        )
++
++        assertNotNull(alarm)
++        assertEquals("dym+ogrz", alarm!!.kind)
++        assertEquals("D+O", alarm.sig)
++        assertEquals("ALARM DYMU I PRZEGRZANIA", alarm.title)
++    }
++
++    @Test
++    fun describeActiveFlagsReturnsCombinedAlarmInfo() {
++        assertNull(AlarmCenter.describeActiveFlags(dym = false, ogrz = false, tOgrz = 70.0, dymAdc = 400.0))
++        val info = AlarmCenter.describeActiveFlags(dym = true, ogrz = true, tOgrz = 95.5, dymAdc = 812.0)
++
++        val alarm = requireNotNull(info)
++        assertEquals("dym+ogrz", alarm.kind)
++        assertEquals("D+O", alarm.sig)
++    }
++
++    @Test
++    fun partialSnapshotPreservesUnknownFlagAlongsideConfirmedActiveFlag() {
++        val prefs = MemoryAlarmPrefs()
++
++        val flags = AlarmCenter.activeFlagsForPartialSnapshot(prefs, dym = true, ogrz = null)
++
++        assertEquals(AlarmFlags(dym = true, ogrz = null), flags)
++    }
++
++    @Test
++    fun partialSnapshotPreservesPreviouslyActiveUnknownFlag() {
++        val prefs = MemoryAlarmPrefs().apply { set(AlarmCenter.K_LAST_SIG, "D+O") }
++
++        val flags = AlarmCenter.activeFlagsForPartialSnapshot(prefs, dym = true, ogrz = null)
++
++        assertEquals(AlarmFlags(dym = true, ogrz = true), flags)
++    }
++
++    @Test
++    fun partialSnapshotPreservesOtherPreviouslyActiveFlag() {
++        val prefs = MemoryAlarmPrefs().apply { set(AlarmCenter.K_LAST_SIG, "D") }
++
++        val flags = AlarmCenter.activeFlagsForPartialSnapshot(prefs, dym = null, ogrz = true)
++
++        assertEquals(AlarmFlags(dym = true, ogrz = true), flags)
++    }
++
++    @Test
++    fun partialSnapshotWithoutConfirmedActiveFlagCannotClearAlarm() {
++        val prefs = MemoryAlarmPrefs().apply { set(AlarmCenter.K_LAST_SIG, "D") }
++
++        val flags = AlarmCenter.activeFlagsForPartialSnapshot(prefs, dym = false, ogrz = null)
++
++        assertNull(flags)
++        assertEquals("D", prefs.get(AlarmCenter.K_LAST_SIG))
++    }
++
++    @Test
++    fun completeSnapshotIsLeftForRegularAlarmEvaluation() {
++        val flags = AlarmCenter.activeFlagsForPartialSnapshot(
++            MemoryAlarmPrefs(), dym = false, ogrz = false
++        )
++
++        assertNull(flags)
++    }
++
++    @Test
++    fun partialAlarmCanFireAndLaterUnknownSnapshotCannotClearIt() {
++        val prefs = MemoryAlarmPrefs()
++        val active = requireNotNull(
++            AlarmCenter.activeFlagsForPartialSnapshot(prefs, dym = true, ogrz = null)
++        )
++
++        val info = AlarmCenter.evaluate(
++            prefs, active.dym == true, active.ogrz == true, tOgrz = 70.0, dymAdc = 400.0
++        )
++        assertNotNull(info)
++        assertEquals("D", prefs.get(AlarmCenter.K_LAST_SIG))
++
++        val incompleteClear = AlarmCenter.activeFlagsForPartialSnapshot(prefs, dym = false, ogrz = null)
++        assertNull(incompleteClear)
++        assertEquals("D", prefs.get(AlarmCenter.K_LAST_SIG))
++    }
++
++    @Test
++    fun snoozeSuppressesCurrentEdgeButNewAlarmEdgeOverridesIt() {
++        val prefs = MemoryAlarmPrefs()
++        val now = System.currentTimeMillis()
++        prefs.set(AlarmCenter.K_LAST_SIG, "D")
++        prefs.setLong(AlarmCenter.K_LAST_FIRE, now)
++        prefs.setLong(AlarmCenter.K_SNOOZE_UNTIL, now + 10 * 60_000L)
++
++        assertNull(AlarmCenter.evaluate(prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0))
++
++        val escalated = AlarmCenter.evaluate(prefs, dym = true, ogrz = true, tOgrz = 95.5, dymAdc = 812.0)
++        assertNotNull(escalated)
++        assertEquals("D+O", escalated!!.sig)
++        assertEquals(0L, prefs.getLong(AlarmCenter.K_SNOOZE_UNTIL, 0L))
++    }
++
++    @Test
++    fun expiredSnoozeRingsAgainWhileAlarmRemainsActive() {
++        val prefs = MemoryAlarmPrefs()
++        val now = System.currentTimeMillis()
++        prefs.set(AlarmCenter.K_LAST_SIG, "D")
++        prefs.setLong(AlarmCenter.K_LAST_FIRE, now - 20 * 60_000L)
++        prefs.setLong(AlarmCenter.K_SNOOZE_UNTIL, now - 1L)
++
++        val repeated = AlarmCenter.evaluate(prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0)
++
++        assertNotNull(repeated)
++        assertEquals("D", repeated!!.sig)
++        assertEquals(0L, prefs.getLong(AlarmCenter.K_SNOOZE_UNTIL, 0L))
++    }
++
++    @Test
++    fun repeatThresholdSuppressesJustBeforeAndFiresAtExactBoundary() {
++        val start = 1_000_000L
++        val prefs = MemoryAlarmPrefs().apply {
++            set(AlarmCenter.K_LAST_SIG, "D")
++            setLong(AlarmCenter.K_LAST_FIRE, start)
++        }
++
++        assertNull(AlarmCenter.evaluateAt(
++            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
++            nowMs = start + AlarmCenter.REPEAT_MS - 1L
++        ))
++        val repeated = AlarmCenter.evaluateAt(
++            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
++            nowMs = start + AlarmCenter.REPEAT_MS
++        )
++
++        assertNotNull(repeated)
++        assertEquals(start + AlarmCenter.REPEAT_MS, prefs.getLong(AlarmCenter.K_LAST_FIRE, 0L))
++    }
++
++    @Test
++    fun snoozeSuppressesUntilExactDeadlineThenRings() {
++        val start = 2_000_000L
++        val deadline = start + 60_000L
++        val prefs = MemoryAlarmPrefs().apply {
++            set(AlarmCenter.K_LAST_SIG, "D")
++            setLong(AlarmCenter.K_LAST_FIRE, start)
++            setLong(AlarmCenter.K_SNOOZE_UNTIL, deadline)
++        }
++
++        assertNull(AlarmCenter.evaluateAt(
++            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
++            nowMs = deadline - 1L
++        ))
++        val resumed = AlarmCenter.evaluateAt(
++            prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0,
++            nowMs = deadline
++        )
++
++        assertNotNull(resumed)
++        assertEquals(deadline, prefs.getLong(AlarmCenter.K_LAST_FIRE, 0L))
++        assertEquals(0L, prefs.getLong(AlarmCenter.K_SNOOZE_UNTIL, 0L))
++    }
++
++    @Test
++    fun snoozeCountdownAndLoopPolicyUseExactInjectedTime() {
++        val start = 3_000_000L
++        val prefs = MemoryAlarmPrefs().apply { set(AlarmCenter.K_LAST_SIG, "D") }
++        AlarmCenter.snoozeAt(prefs, 10, start)
++        val deadline = start + 10 * 60_000L
++
++        assertEquals(10, AlarmCenter.snoozeLeftMinAt(prefs, start))
++        assertEquals(1, AlarmCenter.snoozeLeftMinAt(prefs, deadline - 1L))
++        assertEquals(0, AlarmCenter.snoozeLeftMinAt(prefs, deadline))
++        assertFalse(AlarmCenter.shouldLoopSoundAt(prefs, dym = true, ogrz = false, nowMs = deadline - 1L))
++        assertTrue(AlarmCenter.shouldLoopSoundAt(prefs, dym = true, ogrz = false, nowMs = deadline))
++    }
++
++    @Test
++    fun muteAppliesToCurrentSignatureUntilANewEdge() {
++        val prefs = MemoryAlarmPrefs()
++        prefs.set(AlarmCenter.K_LAST_SIG, "D")
++        AlarmCenter.muteUntilNext(prefs)
++
++        assertNull(AlarmCenter.evaluate(prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0))
++
++        val next = AlarmCenter.evaluate(prefs, dym = false, ogrz = true, tOgrz = 95.5, dymAdc = 0.0)
++        assertNotNull(next)
++        assertEquals("O", next!!.sig)
++    }
++
++    @Test
++    fun clearingAlarmClearsMuteAndSnooze() {
++        val prefs = MemoryAlarmPrefs()
++        val now = System.currentTimeMillis()
++        prefs.set(AlarmCenter.K_LAST_SIG, "D")
++        prefs.set(AlarmCenter.K_MUTED_SIG, "D")
++        prefs.setLong(AlarmCenter.K_SNOOZE_UNTIL, now + 60_000L)
++
++        assertNull(AlarmCenter.evaluate(prefs, dym = false, ogrz = false, tOgrz = 70.0, dymAdc = 0.0))
++
++        assertEquals("", prefs.get(AlarmCenter.K_LAST_SIG))
++        assertNull(prefs.get(AlarmCenter.K_MUTED_SIG))
++        assertEquals(0L, prefs.getLong(AlarmCenter.K_SNOOZE_UNTIL, 0L))
++    }
++
++    @Test
++    fun oldAlarmMayRepeatAfterRepeatInterval() {
++        val prefs = MemoryAlarmPrefs()
++        val now = System.currentTimeMillis()
++        prefs.set(AlarmCenter.K_LAST_SIG, "D")
++        prefs.setLong(AlarmCenter.K_LAST_FIRE, now - AlarmCenter.REPEAT_MS - 1L)
++
++        val repeated = AlarmCenter.evaluate(prefs, dym = true, ogrz = false, tOgrz = 70.0, dymAdc = 400.0)
++
++        assertNotNull(repeated)
++        assertEquals("D", repeated!!.sig)
++    }
++
++    @Test
++    fun invalidSoundPreferenceFallsBackSafely() {
++        val prefs = MemoryAlarmPrefs().apply {
++            set(AlarmCenter.K_SOUND_DYM, "unknown-tone")
++            set(AlarmCenter.K_SOUND_OGRZ, "unknown-tone")
++        }
++
++        assertEquals("syrena", AlarmCenter.sound(prefs, "dym"))
++        assertEquals("dzwonek", AlarmCenter.sound(prefs, "ogrz"))
++        assertFalse(AlarmCenter.sound(prefs, "dym").isBlank())
++    }
++
++    @Test
++    fun activeUnsilencedAlarmLoopsSoundOnlyWhenMonitoringIsEnabled() {
++        val prefs = MemoryAlarmPrefs()
++        assertTrue(AlarmCenter.shouldLoopSound(prefs, dym = true, ogrz = false))
++
++        AlarmCenter.setMonitored(prefs, false)
++        assertFalse(AlarmCenter.shouldLoopSound(prefs, dym = true, ogrz = false))
++    }
++}
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/AlarmFlagParserTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/AlarmFlagParserTest.kt
+new file mode 100644
+index 0000000..5b475d2
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/AlarmFlagParserTest.kt
+@@ -0,0 +1,42 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNull
++import org.junit.Test
++
++class AlarmFlagParserTest {
++    @Test
++    fun acceptsBooleanAndZeroOrOneNumbers() {
++        assertEquals(true, parseAlarmFlag(true))
++        assertEquals(false, parseAlarmFlag(false))
++        assertEquals(true, parseAlarmFlag(1))
++        assertEquals(false, parseAlarmFlag(0L))
++        assertEquals(true, parseAlarmFlag(1.0))
++        assertEquals(false, parseAlarmFlag(0.0f))
++    }
++
++    @Test
++    fun acceptsTrimmedCaseInsensitiveStringFlags() {
++        assertEquals(true, parseAlarmFlag(" TRUE "))
++        assertEquals(false, parseAlarmFlag("False"))
++        assertEquals(true, parseAlarmFlag(" 1 "))
++        assertEquals(false, parseAlarmFlag("0"))
++    }
++
++    @Test
++    fun rejectsNumbersOutsideBooleanDomain() {
++        assertNull(parseAlarmFlag(2))
++        assertNull(parseAlarmFlag(-1))
++        assertNull(parseAlarmFlag(0.5))
++        assertNull(parseAlarmFlag(Double.NaN))
++        assertNull(parseAlarmFlag(Double.POSITIVE_INFINITY))
++    }
++
++    @Test
++    fun preservesUnknownForMissingOrMalformedValues() {
++        assertNull(parseAlarmFlag(null))
++        assertNull(parseAlarmFlag("yes"))
++        assertNull(parseAlarmFlag(""))
++        assertNull(parseAlarmFlag(Any()))
++    }
++}
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/AlarmIntentNonceTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/AlarmIntentNonceTest.kt
+new file mode 100644
+index 0000000..723bd8f
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/AlarmIntentNonceTest.kt
+@@ -0,0 +1,27 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class AlarmIntentNonceTest {
++    @Test
++    fun missingNonceIsRejected() {
++        assertFalse(AlarmIntentNonce.matches(null, "current"))
++    }
++
++    @Test
++    fun blankNonceIsRejected() {
++        assertFalse(AlarmIntentNonce.matches("  ", "  "))
++    }
++
++    @Test
++    fun currentNonceIsAccepted() {
++        assertTrue(AlarmIntentNonce.matches("current", "current"))
++    }
++
++    @Test
++    fun staleNonceIsRejected() {
++        assertFalse(AlarmIntentNonce.matches("previous", "current"))
++    }
++}
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/AlarmMonitorHealthTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/AlarmMonitorHealthTest.kt
+new file mode 100644
+index 0000000..4a0913a
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/AlarmMonitorHealthTest.kt
+@@ -0,0 +1,96 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class AlarmMonitorHealthTest {
++    @Test
++    fun disabledMonitoringOverridesServiceSnapshot() {
++        val text = AlarmMonitorHealthText.describe(
++            monitored = false,
++            hasSession = true,
++            health = AlarmMonitorHealth(AlarmMonitorPhase.STATUS_OK, 90_000L),
++            nowElapsedMs = 100_000L
++        )
++
++        assertEquals("Monitoring alarmów jest wyłączony.", text)
++    }
++
++    @Test
++    fun missingSessionDoesNotClaimServiceIsRunning() {
++        val text = AlarmMonitorHealthText.describe(
++            monitored = true,
++            hasSession = false,
++            health = AlarmMonitorHealth(AlarmMonitorPhase.STATUS_OK, 90_000L),
++            nowElapsedMs = 100_000L
++        )
++
++        assertEquals("Brak zapisanej sesji Firebase — monitoring w tle nie wystartuje.", text)
++    }
++
++    @Test
++    fun freshSuccessfulReadIsDescribedWithoutDeliveryGuarantee() {
++        val text = AlarmMonitorHealthText.describe(
++            monitored = true,
++            hasSession = true,
++            health = AlarmMonitorHealth(AlarmMonitorPhase.STATUS_OK, 82_000L),
++            nowElapsedMs = 100_000L
++        )
++
++        assertTrue(text.contains("Usługa odebrała status z RTDB."))
++        assertTrue(text.contains("Ostatni odczyt RTDB: przed chwilą."))
++        assertTrue(text.contains("nie gwarantuje przyszłego alarmu"))
++    }
++
++    @Test
++    fun staleStatusIsExplicitlyMarkedAsPossiblyOutdated() {
++        val text = AlarmMonitorHealthText.describe(
++            monitored = true,
++            hasSession = true,
++            health = AlarmMonitorHealth(AlarmMonitorPhase.RETRYING, 1_000L),
++            nowElapsedMs = 131_000L
++        )
++
++        assertTrue(text.contains("usługa ponawia próbę"))
++        assertTrue(text.contains("Ostatni odczyt RTDB: 2 min temu; dane mogą być nieaktualne."))
++    }
++
++    @Test
++    fun connectingWithoutAnyReadDoesNotImplyRtdbIsReachable() {
++        val text = AlarmMonitorHealthText.describe(
++            monitored = true,
++            hasSession = true,
++            health = AlarmMonitorHealth(AlarmMonitorPhase.CONNECTING),
++            nowElapsedMs = 100_000L
++        )
++
++        assertTrue(text.contains("Usługa łączy się z RTDB."))
++        assertTrue(text.contains("Brak potwierdzonego odczytu RTDB."))
++    }
++
++    @Test
++    fun stoppedServiceIsNotPresentedAsReady() {
++        val text = AlarmMonitorHealthText.describe(
++            monitored = true,
++            hasSession = true,
++            health = AlarmMonitorHealth(),
++            nowElapsedMs = 100_000L
++        )
++
++        assertTrue(text.contains("nie jest potwierdzona jako uruchomiona"))
++        assertTrue(text.contains("Brak potwierdzonego odczytu RTDB."))
++    }
++
++    @Test
++    fun failedForegroundStartIsShownAsFailure() {
++        val text = AlarmMonitorHealthText.describe(
++            monitored = true,
++            hasSession = true,
++            health = AlarmMonitorHealth(AlarmMonitorPhase.START_FAILED),
++            nowElapsedMs = 100_000L
++        )
++
++        assertTrue(text.contains("Nie udało się zlecić uruchomienia usługi."))
++    }
++}
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/AlarmMonitorStartGateTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/AlarmMonitorStartGateTest.kt
+new file mode 100644
+index 0000000..44ab248
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/AlarmMonitorStartGateTest.kt
+@@ -0,0 +1,24 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class AlarmMonitorStartGateTest {
++    @Test
++    fun disabledPreferencePreventsMonitorStartEvenWithSession() {
++        assertFalse(AlarmMonitorStartGate.canStart(monitored = false, refreshToken = "refresh-token"))
++    }
++
++    @Test
++    fun missingOrBlankSessionPreventsMonitorStart() {
++        assertFalse(AlarmMonitorStartGate.canStart(monitored = true, refreshToken = null))
++        assertFalse(AlarmMonitorStartGate.canStart(monitored = true, refreshToken = ""))
++        assertFalse(AlarmMonitorStartGate.canStart(monitored = true, refreshToken = "  "))
++    }
++
++    @Test
++    fun enabledMonitorWithSessionCanStart() {
++        assertTrue(AlarmMonitorStartGate.canStart(monitored = true, refreshToken = "refresh-token"))
++    }
++}
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/AlarmPopupSessionTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/AlarmPopupSessionTest.kt
+new file mode 100644
+index 0000000..eee1b8d
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/AlarmPopupSessionTest.kt
+@@ -0,0 +1,46 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class AlarmPopupSessionTest {
++    @Test
++    fun activeAlarmCanRestoreWhenPreviewHasNotBeenDismissed() {
++        assertTrue(AlarmPopupSession().shouldRestore("D"))
++    }
++
++    @Test
++    fun dismissedPreviewDoesNotReopenOnEveryPoll() {
++        val session = AlarmPopupSession()
++        session.dismiss("D")
++
++        assertFalse(session.shouldRestore("D"))
++    }
++
++    @Test
++    fun newAlarmEventCanShowSameSignatureAgain() {
++        val session = AlarmPopupSession()
++        session.dismiss("D")
++        session.onAlarmEvent()
++
++        assertTrue(session.shouldRestore("D"))
++    }
++
++    @Test
++    fun differentAlarmSignatureCanOpenAfterDismissal() {
++        val session = AlarmPopupSession()
++        session.dismiss("D")
++
++        assertTrue(session.shouldRestore("D+O"))
++    }
++
++    @Test
++    fun clearingAlarmAllowsSameSignatureToShowAgainLater() {
++        val session = AlarmPopupSession()
++        session.dismiss("D")
++        session.clear()
++
++        assertTrue(session.shouldRestore("D"))
++    }
++}
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/AlarmSnapshotGateTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/AlarmSnapshotGateTest.kt
+new file mode 100644
+index 0000000..ae04741
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/AlarmSnapshotGateTest.kt
+@@ -0,0 +1,45 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class AlarmSnapshotGateTest {
++    @Test
++    fun rejectsPollResultWhenServiceSnapshotArrivesDuringRequest() {
++        val gate = AlarmSnapshotGate()
++        val requestRevision = gate.captureRevision()
++        var pollApplied = false
++
++        gate.applyServiceSnapshot { }
++        val accepted = gate.applyPollIfCurrent(requestRevision) { pollApplied = true }
++
++        assertFalse(accepted)
++        assertFalse(pollApplied)
++    }
++
++    @Test
++    fun acceptsPollResultWhenNoNewerServiceSnapshotExists() {
++        val gate = AlarmSnapshotGate()
++        val requestRevision = gate.captureRevision()
++        var pollApplied = false
++
++        val accepted = gate.applyPollIfCurrent(requestRevision) { pollApplied = true }
++
++        assertTrue(accepted)
++        assertTrue(pollApplied)
++    }
++
++    @Test
++    fun firstAcceptedPollInvalidatesOlderOverlappingPoll() {
++        val gate = AlarmSnapshotGate()
++        val sharedRevision = gate.captureRevision()
++        var olderPollApplied = false
++
++        assertTrue(gate.applyPollIfCurrent(sharedRevision) { })
++        val staleAccepted = gate.applyPollIfCurrent(sharedRevision) { olderPollApplied = true }
++
++        assertFalse(staleAccepted)
++        assertFalse(olderPollApplied)
++    }
++}
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/LocalControllerAddressTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/LocalControllerAddressTest.kt
+new file mode 100644
+index 0000000..808452e
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/LocalControllerAddressTest.kt
+@@ -0,0 +1,52 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNull
++import org.junit.Test
++
++class LocalControllerAddressTest {
++    @Test
++    fun acceptsRfc1918ControllerAddresses() {
++        assertEquals("10.0.0.12", LocalControllerAddress.canonicalPrivateIpv4("10.0.0.12"))
++        assertEquals("172.16.1.2", LocalControllerAddress.canonicalPrivateIpv4("172.16.1.2"))
++        assertEquals("172.31.255.254", LocalControllerAddress.canonicalPrivateIpv4("172.31.255.254"))
++        assertEquals("192.168.10.42", LocalControllerAddress.canonicalPrivateIpv4(" 192.168.10.42 "))
++    }
++
++    @Test
++    fun rejectsPublicLoopbackLinkLocalAndMalformedAddresses() {
++        listOf(
++            "8.8.8.8",
++            "172.15.0.1",
++            "172.32.0.1",
++            "192.167.1.1",
++            "127.0.0.1",
++            "169.254.1.2",
++            "0.0.0.0",
++            "192.168.1",
++            "192.168.1.256",
++            "192.168.01.1",
++            "controller.local",
++            "192.168.1.1:8080",
++            "192.168.1.1/attacker.example"
++        ).forEach { assertNull("must reject $it", LocalControllerAddress.canonicalPrivateIpv4(it)) }
++    }
++
++    @Test
++    fun buildsOnlySimpleLocalApiUrls() {
++        assertEquals(
++            "http://192.168.10.42/api/wifi/list",
++            LocalControllerAddress.url("192.168.10.42", "/api/wifi/list")
++        )
++        assertEquals(
++            "http://192.168.10.42/api/rtc-sync?rok=2026&miesiac=10",
++            LocalControllerAddress.url("192.168.10.42", "/api/rtc-sync?rok=2026&miesiac=10")
++        )
++        assertNull(LocalControllerAddress.url("192.168.10.42", "//attacker.example/path"))
++        assertNull(LocalControllerAddress.url("192.168.10.42", "/api/wifi/list#fragment"))
++        assertNull(LocalControllerAddress.url("192.168.10.42", "/api/%2e%2e/cmd"))
++        assertNull(LocalControllerAddress.url("192.168.10.42", "/api/../cmd"))
++        assertNull(LocalControllerAddress.url("192.168.10.42", "/api//wifi/list"))
++        assertNull(LocalControllerAddress.url("8.8.8.8", "/api/wifi/add"))
++    }
++}

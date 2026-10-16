@@ -1,0 +1,81 @@
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -1121,2 +1121,48 @@
+-
++
++    fun terminalLogFileName(): String {
++        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
++            .format(java.util.Date())
++        return "Sterownik-CO-DLOG-$stamp.txt"
++    }
++
++    /** Zapisuje odebrane, rzeczywiste wiersze z bufora przez systemowy selektor pliku Androida. */
++    fun exportTerminalLogs(uri: android.net.Uri) = scope.launch {
++        val lines = terminalRaw.toList()
++        if (lines.isEmpty()) {
++            termStatus = "Brak odebranych wpisów DLOG do zapisania."
++            termStatusKind = "warn"
++            return@launch
++        }
++        val savedAt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
++            .format(java.util.Date())
++        val text = buildString {
++            append("# Sterownik CO — odebrane wpisy DLOG\n")
++            append("# Zapisano: ").append(savedAt).append('\n')
++            if (terminalDlogSession.isNotBlank()) append("# Sesja: ").append(terminalDlogSession).append('\n')
++            append("# Linie w zapisanym buforze: ").append(lines.size)
++                .append("; odebrane chunki: ").append(termChunks)
++                .append("; bajty sesji: ").append(termBytes)
++                .append("; luki sekwencji: ").append(termGaps).append('\n')
++            append("# Eksport zawiera wszystkie odebrane kategorie, także ukryte filtrami widoku.\n")
++            append(lines.joinToString("\n"))
++            append('\n')
++        }
++        try {
++            withContext(kotlinx.coroutines.Dispatchers.IO) {
++                val output = ctx.contentResolver.openOutputStream(uri)
++                    ?: throw java.io.IOException("Android nie otworzył pliku do zapisu")
++                output.use { it.write(text.toByteArray(Charsets.UTF_8)) }
++            }
++            termStatus = "Zapisano ${lines.size} odebranych wierszy DLOG do pliku."
++            termStatusKind = "ok"
++            showToast("DLOG", "Zapisano ${lines.size} wierszy", "ok")
++        } catch (e: CancellationException) {
++            throw e
++        } catch (e: Exception) {
++            termStatus = "Nie udało się zapisać DLOG: ${e.message ?: "błąd pliku"}"
++            termStatusKind = "err"
++            showToast("DLOG", "Zapis pliku nie powiódł się", "err")
++        }
++    }
++
+     /** Odczyt prawdziwych chunków DLOG tylko wtedy, gdy arkusz terminala jest otwarty. */
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
+@@ -2,2 +2,4 @@
+-
++
++import androidx.activity.compose.rememberLauncherForActivityResult
++import androidx.activity.result.contract.ActivityResultContracts
+ import androidx.compose.foundation.BorderStroke
+@@ -464,2 +466,5 @@
+     val listState = rememberLazyListState()
++    val saveLogsLauncher = rememberLauncherForActivityResult(
++        ActivityResultContracts.CreateDocument("text/plain")
++    ) { uri -> if (uri != null) m.exportTerminalLogs(uri) }
+     LaunchedEffect(m.terminalDisplay.size, m.termPaused) {
+@@ -498,2 +503,4 @@
+                 TermBtn("⌫ Wyczyść", modifier = Modifier.weight(1f), onClick = { m.terminalClear() })
++                TermBtn("💾 Zapisz logi", modifier = Modifier.weight(1f), enabled = m.termLines > 0,
++                    onClick = { saveLogsLauncher.launch(m.terminalLogFileName()) })
+             }
+diff --git a/android/README.md b/android/README.md
+--- a/android/README.md
++++ b/android/README.md
+@@ -165 +165,4 @@
+ ```
++## Eksport bufora terminala DLOG
++
++Przycisk **Zapisz logi** w terminalu otwiera systemowy selektor zapisu Androida (SAF), z domyślną nazwą `Sterownik-CO-DLOG-<data>.txt`; nie wymaga uprawnień do pamięci. Plik jest tekstem UTF-8: krótki nagłówek opisuje sesję, a dalej znajdują się wyłącznie rzeczywiście odebrane wpisy DLOG. Eksport obejmuje wszystkie kategorie, niezależnie od filtrów widoku, ale tylko wiersze zachowane w bieżącym buforze aplikacji (maksymalnie 3500 najnowszych); nie pobiera dodatkowej historii i nie dopisuje przykładowych logów. Anulowanie selektora nie zapisuje pliku.

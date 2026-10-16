@@ -1,0 +1,9 @@
+diff --git a/android/app/src/debug/res/values/strings.xml b/android/app/src/debug/res/values/strings.xml
+index dbe7ba8..eaca453 100644
+--- a/android/app/src/debug/res/values/strings.xml
++++ b/android/app/src/debug/res/values/strings.xml
+@@ -1,3 +1,3 @@
+ <resources>
+-    <string name="app_name">Sterownik CO (DEBUG)</string>
++    <string name="app_name">Sterownik CO</string>
+ </resources>

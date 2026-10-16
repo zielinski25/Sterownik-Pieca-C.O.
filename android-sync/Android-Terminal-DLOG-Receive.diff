@@ -1,0 +1,376 @@
+diff --git a/android/README.md b/android/README.md
+index 3ad7118..d1286e0 100644
+--- a/android/README.md
++++ b/android/README.md
+@@ -116,10 +116,13 @@ podbic Gradle do 9.x (i AGP do gałęzi dopasowanej do 9.x) — wtedy ten plik
+    wyłącznie centralę (`/api/wifi/*`, `/api/telegram/*`). Gdy centrala jest
+    nieosiągalna, widać uczciwy komunikat (tak jak w oryginale po
+    `FIX-WIFI-REAL` / `FIX-TELEGRAM-REAL`), żadnych wymyślonych SSID.
+-2. **Terminal 21 DLOG**: brak logów startowych i próbek demo. Widok pozostaje
+-   pusty, dopóki aplikacja nie otrzyma rzeczywistych wpisów; bieżący port
+-   obsługuje potwierdzane komendy Remote, ale nie subskrybuje jeszcze strumienia
+-   `/piec/telemetry/diagnostics`.
++2. **Terminal 21 DLOG**: brak logów startowych i próbek demo. Gdy arkusz terminala
++   jest otwarty, aplikacja odpytuje co 5 s tylko indeks sesji i nowe chunki
++   rzeczywistych wpisów z `/piec/devices/<Firebase UID>/telemetry/diagnostics`
++   (ze zgodnością dla starszej ścieżki `/piec/telemetry/diagnostics`). Startowo
++   pobiera maksymalnie 50 ostatnich chunków bieżącej sesji; nie tworzy logów
++   lokalnie. Sam odczyt jest tylko do odczytu; przyciski Remote wysyłają komendy
++   wyłącznie po świadomym dotknięciu przez operatora.
+ 3. **Ręczne OTA `.bin`**: w panelu był `<input type=file>`; w aplikacji
+    podajesz ścieżkę pliku (brak natywnego pickera w tym porcie). Komenda
+    `update` / `update_panel` pokazuje wyłącznie ACK przyjęcia; panel nie
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+index e97323a..7031617 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -14,9 +14,11 @@ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.setValue
+ import com.sterownikco.pro.service.AlarmMonitorService
+ import com.sterownikco.pro.widget.PiecWidget
++import kotlinx.coroutines.CancellationException
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.delay
++import kotlinx.coroutines.isActive
+ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.sync.Mutex
+ import kotlinx.coroutines.sync.withLock
+@@ -99,7 +101,11 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     var sheetTick by mutableIntStateOf(0)
+     var sensorSheetId by mutableStateOf<String?>(null)
+     fun refreshSheet() { sheetTick = sheetTick + 1 }
+-    fun openSheet(id: String?) { sheet = id; refreshSheet() }
++    fun openSheet(id: String?) {
++        sheet = id
++        refreshSheet()
++        if (id == "terminal") startTerminalDlogPolling() else stopTerminalDlogPolling()
++    }
+ 
+     // ── toasty i logi ───────────────────────────────────────────────────────
+     var toast by mutableStateOf<ToastMsg?>(null)
+@@ -198,6 +204,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     fun onResume() {
+         bgJob?.cancel(); bgJob = null
+         poll(); refreshWeather(false); loadRange(rangeSec)
++        if (sheet == "terminal") startTerminalDlogPolling()
+         jobs = listOf(
+             scope.launch { while (true) { delay(8000); poll() } },
+             scope.launch { while (true) { delay(15L * 60_000); refreshWeather(true) } },
+@@ -218,6 +225,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+ 
+     fun onPause() {
+         jobs.forEach { it.cancel() }; jobs = emptyList()
++        stopTerminalDlogPolling()
+         // W tle NIE odpytujemy (oszczędność baterii) — czuwanie przejmuje
+         // AlarmMonitorService na strumieniu SSE (natychmiast + bez pollingu).
+         bgJob?.cancel(); bgJob = null
+@@ -359,6 +367,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+                 if (!AlarmNotify.hasPostNotifications(ctx)) askNotifPerm = true
+             }
+             poll()
++            if (sheet == "terminal") startTerminalDlogPolling()
+             if (page == 1) loadRange(rangeSec)
+         }.onFailure { e ->
+             authBusy = false; authStatusKind = "err"; authStatus = e.message ?: "Logowanie nieudane"
+@@ -370,6 +379,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     // (Tryb symulacji/DEMO usuniety z APK — tylko w Piec.html.)
+ 
+     fun logout() {
++        stopTerminalDlogPolling()
+         // Replace the in-memory session before deleting persisted credentials so a racing refresh cannot restore them.
+         Rtdb.setAuthTokens("", "")
+         // Persist the DE logout tombstone before touching any other credential storage.
+@@ -1039,6 +1049,11 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     var termStatus by mutableStateOf("Brak odebranych wpisów DLOG. Oczekiwanie na rzeczywiste dane sterownika.")
+     var termStatusKind by mutableStateOf("")
+     val termCats = mutableStateMapOf<String, Boolean>()
++    private var terminalDlogJob: Job? = null
++    private var terminalDlogUid = ""
++    private var terminalDlogRoot = ""
++    private var terminalDlogSession = ""
++    private var terminalDlogCursor = -1
+ 
+     init { DLOG_CATEGORIES.forEach { termCats[it] = true } }
+ 
+@@ -1104,6 +1119,185 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+         if (!termPaused) terminalRender()
+     }
+ 
++    /** Odczyt prawdziwych chunków DLOG tylko wtedy, gdy arkusz terminala jest otwarty. */
++    private fun startTerminalDlogPolling() {
++        if (terminalDlogJob?.isActive == true) return
++        terminalDlogJob = scope.launch {
++            termStatus = "Łączenie z rzeczywistymi wpisami DLOG z Firebase…"
++            termStatusKind = ""
++            while (isActive && sheet == "terminal") {
++                try {
++                    terminalPollDlogOnce()
++                } catch (e: CancellationException) {
++                    throw e
++                } catch (e: Exception) {
++                    termStatus = "Błąd odbioru DLOG: ${e.message ?: "błąd odczytu"}"
++                    termStatusKind = "warn"
++                }
++                delay(5_000)
++            }
++        }
++    }
++
++    private fun stopTerminalDlogPolling() {
++        terminalDlogJob?.cancel()
++        terminalDlogJob = null
++    }
++
++    private suspend fun terminalPollDlogOnce() {
++        val uid = Rtdb.currentFirebaseUid()
++        if (uid == null) {
++            termStatus = "Zaloguj się do Firebase, aby odbierać DLOG."
++            termStatusKind = "warn"
++            return
++        }
++        if (uid != terminalDlogUid) {
++            terminalDlogUid = uid
++            terminalDlogRoot = ""
++            terminalDlogSession = ""
++            terminalDlogCursor = -1
++            terminalResetDlogBuffer()
++        }
++
++        // Aktualny firmware zapisuje do prywatnej gałęzi urządzenia; drugi wpis
++        // zachowuje zgodność ze starszymi centralami zapisującymi pod /piec/telemetry.
++        val candidateRoots = listOf(
++            "/piec/devices/$uid/telemetry/diagnostics",
++            "/piec/telemetry/diagnostics"
++        )
++        var selectedRoot = ""
++        var session = ""
++        var lastReadError: String? = null
++        for (root in candidateRoots) {
++            val result = Rtdb.get("$root.json", mapOf("shallow" to "true"))
++            if (!result.ok) {
++                lastReadError = result.error ?: "HTTP error"
++                continue
++            }
++            val sessions = try { JSONObject(result.body) } catch (_: Exception) { null } ?: continue
++            val newest = terminalNewestSession(sessions) ?: continue
++            selectedRoot = root
++            session = newest
++            break
++        }
++
++        if (selectedRoot.isEmpty()) {
++            if (lastReadError != null) {
++                termStatus = "Nie udało się odczytać DLOG z Firebase ($lastReadError)."
++                termStatusKind = "warn"
++            } else {
++                termStatus = if (termOpened)
++                    "Remote włączony, ale centrala nie wysłała jeszcze wpisów DLOG."
++                else "Brak wpisów DLOG. Remote może być wyłączony albo nie ma nowych zdarzeń."
++                termStatusKind = "warn"
++            }
++            return
++        }
++
++        if (selectedRoot != terminalDlogRoot) {
++            terminalDlogRoot = selectedRoot
++            terminalDlogSession = ""
++        }
++        if (session != terminalDlogSession) terminalSelectDlogSession(session)
++
++        if (terminalDlogCursor < 0) {
++            // Przy pierwszym otwarciu pokazujemy tylko najnowsze 50 chunków sesji.
++            val result = Rtdb.get(
++                "$selectedRoot/$session/chunks.json",
++                mapOf("orderBy" to "\"\$key\"", "limitToLast" to "50")
++            )
++            if (!result.ok) {
++                termStatus = "Nie udało się pobrać DLOG (${result.error ?: "HTTP error"})."
++                termStatusKind = "warn"
++                return
++            }
++            val chunks = try { JSONObject(result.body) } catch (_: Exception) { null }
++            if (chunks != null) terminalAppendDlogChunks(chunks)
++            if (terminalDlogCursor < 0) {
++                termStatus = if (termOpened)
++                    "Remote potwierdzony; oczekiwanie na pierwszy chunk DLOG."
++                else "Brak chunków DLOG w tej sesji."
++                termStatusKind = "warn"
++            } else {
++                termStatus = "Wyświetlam ostatnie rzeczywiste wpisy DLOG z sesji $session."
++                termStatusKind = "ok"
++            }
++            return
++        }
++
++        // Pojedynczy GET po oczekiwanym numerze ogranicza transfer; pobieramy
++        // ograniczoną partię, jeśli aplikacja była chwilowo uśpiona.
++        var received = 0
++        while (received < 50) {
++            val nextSeq = terminalDlogCursor + 1
++            val result = Rtdb.get("$selectedRoot/$session/chunks/$nextSeq.json")
++            if (!result.ok) {
++                termStatus = "Nie udało się pobrać DLOG (${result.error ?: "HTTP error"})."
++                termStatusKind = "warn"
++                return
++            }
++            val chunk = try { JSONObject(result.body) } catch (_: Exception) { null } ?: break
++            val previous = terminalDlogCursor
++            terminalAppendDlogChunk(nextSeq.toString(), chunk)
++            if (terminalDlogCursor == previous) break
++            received++
++        }
++        if (received > 0) {
++            termStatus = "Odebrano rzeczywiste wpisy DLOG z sesji $session."
++            termStatusKind = "ok"
++        }
++    }
++
++    private fun terminalNewestSession(sessions: JSONObject): String? {
++        val keys = mutableListOf<String>()
++        val iterator = sessions.keys()
++        while (iterator.hasNext()) {
++            val key = iterator.next()
++            if (key.matches(Regex("[A-Za-z0-9_-]{1,64}"))) keys.add(key)
++        }
++        return keys.maxWithOrNull(compareBy<String> { it.toLongOrNull() ?: Long.MIN_VALUE }.thenBy { it })
++    }
++
++    private fun terminalSelectDlogSession(session: String) {
++        terminalDlogSession = session
++        terminalDlogCursor = -1
++        terminalResetDlogBuffer()
++        termStatus = "Odczytuję wpisy DLOG z sesji $session…"
++        termStatusKind = ""
++    }
++
++    private fun terminalResetDlogBuffer() {
++        terminalRaw.clear()
++        terminalDisplay.clear()
++        termSeq = -1
++        termLines = 0
++        termBytes = 0L
++        termGaps = 0
++        termChunks = 0
++    }
++
++    private fun terminalAppendDlogChunks(chunks: JSONObject) {
++        val entries = mutableListOf<Pair<String, JSONObject>>()
++        val iterator = chunks.keys()
++        while (iterator.hasNext()) {
++            val key = iterator.next()
++            val chunk = chunks.optJSONObject(key) ?: continue
++            entries.add(key to chunk)
++        }
++        entries.sortedBy { (key, chunk) -> chunk.optInt("seq", key.toIntOrNull() ?: Int.MAX_VALUE) }
++            .forEach { (key, chunk) -> terminalAppendDlogChunk(key, chunk) }
++    }
++
++    private fun terminalAppendDlogChunk(key: String, chunk: JSONObject) {
++        val seq = chunk.optInt("seq", key.toIntOrNull() ?: -1)
++        if (seq < 0 || seq <= terminalDlogCursor) return
++        val data = chunk.optString("data", "")
++        val bytes = chunk.optLong("bytes", data.toByteArray(Charsets.UTF_8).size.toLong())
++            .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
++        if (data.isNotEmpty()) terminalAppend(data, bytes, seq)
++        terminalDlogCursor = seq
++    }
++
+     fun terminalRemoteOn() = setTerminalRemote(true)
+ 
+     fun terminalRemoteOff() = setTerminalRemote(false)
+@@ -1136,7 +1330,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+                     termStateKnown = true
+                     termAutoOffAt = if (enabled) System.currentTimeMillis() + 60L * 60_000L else 0L
+                     termStatus = if (enabled)
+-                        "ESP32 potwierdził Remote ON. Wersja Android nie odbiera strumienia DLOG."
++                        "ESP32 potwierdził Remote ON. Oczekiwanie na rzeczywiste wpisy DLOG."
+                     else "ESP32 potwierdził Remote OFF."
+                     termStatusKind = "ok"
+                     poll()
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+index 578b167..7ce75a6 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+@@ -7,6 +7,8 @@ import kotlinx.coroutines.job
+ import kotlinx.coroutines.sync.Mutex
+ import kotlinx.coroutines.sync.withLock
+ import kotlinx.coroutines.withContext
++import android.util.Base64
++import okhttp3.HttpUrl.Companion.toHttpUrl
+ import okhttp3.MediaType.Companion.toMediaType
+ import okhttp3.OkHttpClient
+ import okhttp3.Request
+@@ -73,6 +75,19 @@ object Rtdb {
+     val refreshToken: String get() = authState.refreshToken
+     val apiKey: String get() = authState.apiKey
+ 
++    /** Firebase ID token subject is the UID used by the controller's per-user diagnostics branch. */
++    fun currentFirebaseUid(): String? {
++        val payload = idToken.split('.').getOrNull(1) ?: return null
++        return try {
++            val decoded = Base64.decode(payload, Base64.URL_SAFE or Base64.NO_WRAP)
++            val claims = JSONObject(String(decoded, Charsets.UTF_8))
++            val uid = claims.optString("user_id").ifBlank { claims.optString("sub") }
++            uid.takeIf { it.matches(Regex("[A-Za-z0-9_-]{6,128}")) }
++        } catch (_: Exception) {
++            null
++        }
++    }
++
+     fun setAuthTokens(idToken: String, refreshToken: String) = synchronized(authStateLock) {
+         authState = authState.copy(idToken = idToken, refreshToken = refreshToken)
+     }
+@@ -118,25 +133,35 @@ object Rtdb {
+     }
+ 
+     /** GET z automatycznym, serializowanym odświeżeniem idToken przy 401/403. */
+-    suspend fun get(path: String): GetResult {
++    suspend fun get(path: String): GetResult = get(path, emptyMap())
++
++    /** GET z parametrami RTDB (np. `shallow=true`, `orderBy` i `limitToLast`). */
++    suspend fun get(path: String, queryParameters: Map<String, String>): GetResult {
+         val requestTokens = authState
+         val (code, body) = execute(Request.Builder()
+-            .url(DB_URL + path + authQuery(requestTokens.idToken))
++            .url(rtdbUrl(path, queryParameters, requestTokens.idToken))
+             .header("Cache-Control", "no-store").build())
+         if (code == 401 || code == 403) {
+             if (requestTokens.refreshToken.isNotEmpty() && requestTokens.apiKey.isNotEmpty()) {
+                 refreshIdToken(requestTokens.idToken, requestTokens.refreshToken)
+                 val retryToken = authState.idToken
+-                val r2 = execute(Request.Builder().url(DB_URL + path + authQuery(retryToken))
++                val r2 = execute(Request.Builder().url(rtdbUrl(path, queryParameters, retryToken))
+                     .header("Cache-Control", "no-store").build())
+                 return if (r2.first in 200..299) GetResult(true, r2.second, null)
+-                else GetResult(false, "", "HTTP " + r2.first)
++                else GetResult(false, r2.second, "HTTP " + r2.first)
+             }
+             return GetResult(false, "", "Wymagana autoryzacja Firebase")
+         }
+         return if (code in 200..299) GetResult(true, body, null) else GetResult(false, body, "HTTP " + code)
+     }
+ 
++    private fun rtdbUrl(path: String, queryParameters: Map<String, String>, token: String): String {
++        val builder = (DB_URL + path).toHttpUrl().newBuilder()
++        queryParameters.forEach { (name, value) -> builder.addQueryParameter(name, value) }
++        if (token.isNotEmpty()) builder.addQueryParameter("auth", token)
++        return builder.build().toString()
++    }
++
+     data class GetResult(val ok: Boolean, val body: String, val error: String?)
+ 
+     suspend fun patch(path: String, body: JSONObject): GetResult {
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Overlays.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Overlays.kt
+index 6ec8769..38a4b46 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Overlays.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Overlays.kt
+@@ -97,7 +97,7 @@ fun SheetHost(m: AppModel) {
+             else -> { title = id; icon = "settings" }
+         }
+     }
+-    Sheet(title = title, icon = icon, onDismiss = { m.sheet = null }) {
++    Sheet(title = title, icon = icon, onDismiss = { m.openSheet(null) }) {
+         // `#sheetBody` w oryginale jest odświeżany przy każdej zmianie stanu;
+         // w Compose wystarczy lektura licznika `S.rev`.
+         m.S.rev.intValue

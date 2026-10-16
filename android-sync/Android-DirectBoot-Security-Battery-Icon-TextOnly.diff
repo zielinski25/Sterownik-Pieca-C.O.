@@ -1,0 +1,433 @@
+diff --git a/android/app/src/debug/res/drawable/ic_launcher_background.xml b/android/app/src/debug/res/drawable/ic_launcher_background.xml
+index 8c52a78..9fe51a6 100644
+--- a/android/app/src/debug/res/drawable/ic_launcher_background.xml
++++ b/android/app/src/debug/res/drawable/ic_launcher_background.xml
+@@ -2,21 +2,3 @@
+-<vector xmlns:android="http://schemas.android.com/apk/res/android"
+-    xmlns:aapt="http://schemas.android.com/aapt"
+-    android:width="108dp"
+-    android:height="108dp"
+-    android:viewportWidth="108"
+-    android:viewportHeight="108">
+-    <path android:pathData="M0,0h108v108h-108z" android:fillColor="#1E1B4B" />
+-    <path android:pathData="M0,0h108v108h-108z">
+-        <aapt:attr name="android:fillColor">
+-            <gradient
+-                android:startX="0"
+-                android:startY="0"
+-                android:endX="108"
+-                android:endY="108"
+-                android:type="linear">
+-                <item android:color="#7C3AED" android:offset="0" />
+-                <item android:color="#1E1B4B" android:offset="1" />
+-            </gradient>
+-        </aapt:attr>
+-    </path>
+-</vector>
++<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
++    android:src="@drawable/ic_launcher_debug_art"
++    android:gravity="fill" />
+diff --git a/android/app/src/debug/res/drawable/ic_launcher_debug_empty.xml b/android/app/src/debug/res/drawable/ic_launcher_debug_empty.xml
+new file mode 100644
+index 0000000..b4e951d
+--- /dev/null
++++ b/android/app/src/debug/res/drawable/ic_launcher_debug_empty.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="108dp"
++    android:height="108dp"
++    android:viewportWidth="108"
++    android:viewportHeight="108">
++    <path android:pathData="M0,0h108v108h-108z" android:fillColor="#00000000" />
++</vector>
+diff --git a/android/app/src/debug/res/drawable/ic_launcher_debug_monochrome.xml b/android/app/src/debug/res/drawable/ic_launcher_debug_monochrome.xml
+new file mode 100644
+index 0000000..a902d4d
+--- /dev/null
++++ b/android/app/src/debug/res/drawable/ic_launcher_debug_monochrome.xml
+@@ -0,0 +1,34 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="108dp"
++    android:height="108dp"
++    android:viewportWidth="108"
++    android:viewportHeight="108">
++    <!-- Distinct TEST mark: boiler frame plus flame and Wi-Fi signal. -->
++    <path
++        android:fillColor="#00000000"
++        android:pathData="M34,29h40a9,9 0 0 1 9,9v39a9,9 0 0 1 -9,9h-40a9,9 0 0 1 -9,-9v-39a9,9 0 0 1 9,-9z"
++        android:strokeColor="#FFFFFFFF"
++        android:strokeWidth="4" />
++    <path
++        android:fillColor="#00000000"
++        android:pathData="M45,29v-5a5,5 0 0 1 5,-5h8a5,5 0 0 1 5,5v5"
++        android:strokeColor="#FFFFFFFF"
++        android:strokeWidth="4"
++        android:strokeLineCap="round" />
++    <path
++        android:fillColor="#FFFFFFFF"
++        android:pathData="M51,75c-6,0 -10,-4 -10,-10 0,-5 4,-9 5,-15 3,4 4,5 4,5 -1,-6 2,-11 7,-14 -1,7 1,10 5,14 3,3 4,6 4,10 0,6 -5,10 -11,10z" />
++    <path
++        android:fillColor="#00000000"
++        android:pathData="M68,39c7,0 12,5 12,12M70,47c3,0 5,2 5,5"
++        android:strokeColor="#FFFFFFFF"
++        android:strokeWidth="4"
++        android:strokeLineCap="round" />
++    <path
++        android:fillColor="#00000000"
++        android:pathData="M45,80h18"
++        android:strokeColor="#FFFFFFFF"
++        android:strokeWidth="4"
++        android:strokeLineCap="round" />
++</vector>
+diff --git a/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher.xml b/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher.xml
+new file mode 100644
+index 0000000..0785346
+--- /dev/null
++++ b/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
++    <background android:drawable="@drawable/ic_launcher_background" />
++    <foreground android:drawable="@drawable/ic_launcher_debug_empty" />
++    <monochrome android:drawable="@drawable/ic_launcher_debug_monochrome" />
++</adaptive-icon>
+diff --git a/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher_round.xml b/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher_round.xml
+new file mode 100644
+index 0000000..0785346
+--- /dev/null
++++ b/android/app/src/debug/res/mipmap-anydpi-v26/ic_launcher_round.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
++    <background android:drawable="@drawable/ic_launcher_background" />
++    <foreground android:drawable="@drawable/ic_launcher_debug_empty" />
++    <monochrome android:drawable="@drawable/ic_launcher_debug_monochrome" />
++</adaptive-icon>
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 6bf5d84..ca6f88f 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -18 +18 @@
+-        android:allowBackup="true"
++        android:allowBackup="false"
+diff --git a/android/app/src/main/java/com/sterownikco/pro/MainActivity.kt b/android/app/src/main/java/com/sterownikco/pro/MainActivity.kt
+index 110ab7b..899d3cc 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/MainActivity.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/MainActivity.kt
+@@ -20 +20 @@ import com.sterownikco.pro.ui.SterownikApp
+- * 4 s odpytywanie statusu / 2 s tick zegara / 15 min pogoda / 1 s arkusz.
++ * 8 s odpytywanie statusu / 2 s tick zegara / 15 min pogoda / 1 s arkusz.
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+index 4fd277b..844b995 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -21,0 +22 @@ import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.sync.withLock
+@@ -32 +33 @@ import java.util.concurrent.TimeUnit
+-   + logi + toasty + timery (4 s / 45 s / 15 min / 1 s).
++   + logi + toasty + timery (8 s / 45 s / 15 min / 1 s).
+@@ -52 +53,3 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        .callTimeout(15, TimeUnit.SECONDS).build()
++        .callTimeout(15, TimeUnit.SECONDS)
++        .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
++        .build()
+@@ -53,0 +57 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++    private val weatherMutex = Mutex()
+@@ -198 +202 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            scope.launch { while (true) { delay(4000); poll() } },
++            scope.launch { while (true) { delay(8000); poll() } },
+@@ -246,0 +251,5 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        if (Rtdb.refreshToken.isBlank()) {
++            connected = false
++            termStateKnown = false
++            return false
++        }
+@@ -341 +350 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            addLog("SYSTEM", "Zalogowano operatora: $emailIn", "info")
++            addLog("SYSTEM", "Zalogowano operatora", "info")
+@@ -432,15 +441,19 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        if (weather == null || force) weatherBusy = true
+-        val lat = prefs.get(Prefs.K_LAT) ?: "51.066389"
+-        val lon = prefs.get(Prefs.K_LON) ?: "21.509167"
+-        val real = Weather.fetch(http, lat, lon, weatherDays)
+-        if (real != null) {
+-            weather = real; S.bump()
+-            if (announce) showToast("Pogoda", "Dane pogodowe zaktualizowane", "ok")
+-        } else if (weather == null) {
+-            // Pierwsze pobranie padlo: uczciwy brak danych, zadnych wymyslonych.
+-            if (announce) showToast("Pogoda", "Brak połączenia z Open-Meteo", "err")
+-        } else if (announce) {
+-            showToast("Pogoda", "Brak połączenia — pokazuję ostatnie dane", "err")
+-        }
+-        weatherBusy = false
+-        solar.estimateForecastGain(weather?.hourly ?: emptyList())
++        weatherMutex.withLock {
++            // Init + onResume can request the initial forecast back-to-back; coalesce the duplicate.
++            if (!force && weather != null) return@withLock
++            if (weather == null || force) weatherBusy = true
++            val lat = prefs.get(Prefs.K_LAT) ?: "51.066389"
++            val lon = prefs.get(Prefs.K_LON) ?: "21.509167"
++            val real = Weather.fetch(http, lat, lon, weatherDays)
++            if (real != null) {
++                weather = real; S.bump()
++                if (announce) showToast("Pogoda", "Dane pogodowe zaktualizowane", "ok")
++            } else if (weather == null) {
++                // Pierwsze pobranie padlo: uczciwy brak danych, zadnych wymyslonych.
++                if (announce) showToast("Pogoda", "Brak połączenia z Open-Meteo", "err")
++            } else if (announce) {
++                showToast("Pogoda", "Brak połączenia — pokazuję ostatnie dane", "err")
++            }
++            weatherBusy = false
++            solar.estimateForecastGain(weather?.hourly ?: emptyList())
++        }
+@@ -802,2 +815,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-        tgToken = prefs.get(Prefs.K_TG_TOKEN) ?: ""
+-        tgChatId = prefs.get(Prefs.K_TG_CHAT) ?: ""
++        tgToken = prefs.getSecret(Prefs.K_TG_TOKEN) ?: ""
++        tgChatId = prefs.getSecret(Prefs.K_TG_CHAT) ?: ""
+@@ -841 +854,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                val url = "http://" + S.ip.trim() + "/api/telegram/save"
++                val url = Rtdb.localControllerUrl(S.ip, "/api/telegram/save")
++                if (url == null) return@withContext Pair(false, "Adres centrali nie jest prywatnym adresem IPv4 — połączenie zablokowane.")
+@@ -854,2 +868,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            prefs.set(Prefs.K_TG_TOKEN, payload.optString("token", tgToken))
+-            prefs.set(Prefs.K_TG_CHAT, payload.optString("chatId", tgChatId))
++            val tokenSaved = prefs.setSecret(Prefs.K_TG_TOKEN, payload.optString("token", tgToken))
++            val chatSaved = prefs.setSecret(Prefs.K_TG_CHAT, payload.optString("chatId", tgChatId))
++            if (!tokenSaved) prefs.remove(Prefs.K_TG_TOKEN)
++            if (!chatSaved) prefs.remove(Prefs.K_TG_CHAT)
++            if (!tokenSaved || !chatSaved) showToast(
++                "Telegram", "Ustawienia zapisano w centrali, ale nie udało się zaszyfrować kopii lokalnej.", "err"
++            )
+@@ -867 +886,2 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-                    val url = "http://" + S.ip.trim() + "/api/telegram/send"
++                    val url = Rtdb.localControllerUrl(S.ip, "/api/telegram/send")
++                    if (url == null) return@withContext Pair(false, "Adres centrali nie jest prywatnym adresem IPv4 — połączenie zablokowane.")
+@@ -884,0 +905 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        val localUrlValid = Rtdb.localControllerUrl(ip, "/api/wifi/list") != null
+@@ -886 +907 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+-            val arr = try { if (ip.isEmpty()) null else Rtdb.wifiList(ip) } catch (e: Exception) { null }
++            val arr = try { if (!localUrlValid) null else Rtdb.wifiList(ip) } catch (e: Exception) { null }
+@@ -888,0 +910 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++                !localUrlValid -> "Nieprawidłowy adres centrali. Dozwolone jest tylko prywatne IPv4 (10/8, 172.16/12, 192.168/16)."
+@@ -911,0 +934,5 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        if (Rtdb.localControllerUrl(ip, "/api/wifi/scan/start") == null) {
++            wifiBusy = false; wifiScanStatus = "Błędny adres centrali"
++            wifiScanNote = "Żądanie zablokowano: centrala musi mieć prywatny adres IPv4 (10/8, 172.16/12, 192.168/16)."
++            return@launch
++        }
+@@ -951,0 +979,4 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        if (Rtdb.localControllerUrl(ipA, "/api/wifi/add") == null) {
++            showToast("WiFi", "Nieprawidłowy adres centrali — sieć NIE została wysłana", "err")
++            return@launch
++        }
+@@ -966,0 +998,4 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
++        if (Rtdb.localControllerUrl(ipD, "/api/wifi/delete") == null) {
++            showToast("WiFi", "Nieprawidłowy adres centrali — operacja zablokowana", "err")
++            return@launch
++        }
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/LocalControllerAddress.kt b/android/app/src/main/java/com/sterownikco/pro/core/LocalControllerAddress.kt
+new file mode 100644
+index 0000000..512a996
+--- /dev/null
++++ b/android/app/src/main/java/com/sterownikco/pro/core/LocalControllerAddress.kt
+@@ -0,0 +1,44 @@
++package com.sterownikco.pro.core
++
++/**
++ * URL policy for the ESP32's plain-HTTP API. Status comes from RTDB, so its
++ * `ip` field is untrusted input: accept only literal RFC1918 IPv4 hosts and
++ * simple API paths. This prevents a bad/stale status value from turning a
++ * local credential-bearing request into an arbitrary Internet request.
++ */
++internal object LocalControllerAddress {
++    fun canonicalPrivateIpv4(raw: String): String? {
++        val host = raw.trim()
++        if (host.isEmpty() || host.length > 15) return null
++        val fields = host.split('.')
++        if (fields.size != 4) return null
++
++        val octets = IntArray(4)
++        for (i in fields.indices) {
++            val field = fields[i]
++            if (field.isEmpty() || (field.length > 1 && field[0] == '0') ||
++                field.any { it !in '0'..'9' }
++            ) return null
++            octets[i] = field.toIntOrNull()?.takeIf { it in 0..255 } ?: return null
++        }
++
++        val privateAddress = octets[0] == 10 ||
++            (octets[0] == 172 && octets[1] in 16..31) ||
++            (octets[0] == 192 && octets[1] == 168)
++        return if (privateAddress) octets.joinToString(".") else null
++    }
++
++    fun url(ip: String, path: String): String? {
++        val host = canonicalPrivateIpv4(ip) ?: return null
++        if (path.isEmpty() || path[0] != '/' || path.startsWith("//")) return null
++        if (path.count { it == '?' } > 1) return null
++        if (path.any { ch ->
++                ch !in 'a'..'z' && ch !in 'A'..'Z' && ch !in '0'..'9' &&
++                    ch !in "/._?=&+-"
++            }
++        ) return null
++        val route = path.substringBefore('?').removePrefix("/")
++        if (route.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
++        return "http://$host$path"
++    }
++}
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+index 5cdf5b0..974f876 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+@@ -40,0 +41,13 @@ object Rtdb {
++    /** Local controller requests can contain credentials: connect directly, never proxy or follow redirects. */
++    private val espHttp: OkHttpClient by lazy {
++        OkHttpClient.Builder()
++            .connectTimeout(8, TimeUnit.SECONDS)
++            .readTimeout(10, TimeUnit.SECONDS)
++            .callTimeout(15, TimeUnit.SECONDS)
++            .proxy(java.net.Proxy.NO_PROXY)
++            .followRedirects(false)
++            .followSslRedirects(false)
++            .retryOnConnectionFailure(false)
++            .build()
++    }
++
+@@ -94,0 +108,8 @@ object Rtdb {
++    private suspend fun executeEsp(req: Request): Pair<Int, String> = withContext(Dispatchers.IO) {
++        try {
++            espHttp.newCall(req).execute().use { r -> r.code to (r.body?.string() ?: "") }
++        } catch (e: Exception) {
++            -1 to (e.message ?: "błąd sieci")
++        }
++    }
++
+@@ -255 +276,4 @@ object Rtdb {
+-    private fun espUrl(ip: String, path: String): String? = if (ip.isBlank()) null else "http://" + ip.trim() + path
++    internal fun localControllerUrl(ip: String, path: String): String? =
++        LocalControllerAddress.url(ip, path)
++
++    private fun espUrl(ip: String, path: String): String? = localControllerUrl(ip, path)
+@@ -258 +282 @@ object Rtdb {
+-        val (code, text) = execute(Request.Builder().url(u).build())
++        val (code, text) = executeEsp(Request.Builder().url(u).build())
+@@ -263 +287 @@ object Rtdb {
+-        val (code, text) = execute(Request.Builder().url(u).post(body.toString().toRequestBody(JSON)).build())
++        val (code, text) = executeEsp(Request.Builder().url(u).post(body.toString().toRequestBody(JSON)).build())
+@@ -277 +301 @@ object Rtdb {
+-                    val r = http.newCall(Request.Builder()
++                    val r = espHttp.newCall(Request.Builder()
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt
+index 0177113..17f7e9a 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt
+@@ -215,3 +215,3 @@ fun AlarmSheet(m: AppModel) {
+-                if (batOk) "Optymalizacja wyłączona; system/OEM nadal może ograniczyć pracę w tle."
+-                else "Wyłącz optymalizację, by zmniejszyć ryzyko ograniczeń pracy w tle.",
+-                btn = if (batOk) null else "Wyłącz optymalizację") {
++                if (batOk) "Wyjątek włączony — może zwiększać zużycie baterii; system/OEM nadal może ograniczyć usługę."
++                else "Optymalizacja pozostaje włączona (zalecane dla baterii). Wyjątek jest opcjonalny i może zmniejszyć ryzyko opóźnień na części telefonów.",
++                btn = if (batOk) null else "Ustawienia baterii") {
+diff --git a/android/app/src/main/res/xml/backup_rules.xml b/android/app/src/main/res/xml/backup_rules.xml
+index 3d1f75a..468efaf 100644
+--- a/android/app/src/main/res/xml/backup_rules.xml
++++ b/android/app/src/main/res/xml/backup_rules.xml
+@@ -3 +3,10 @@
+-    <include domain="sharedpref" path="piec_co_prefs.xml" />
++    <!-- Defense in depth for Android versions/OEMs that honor legacy backup rules. -->
++    <exclude domain="root" path="." />
++    <exclude domain="file" path="." />
++    <exclude domain="database" path="." />
++    <exclude domain="sharedpref" path="." />
++    <exclude domain="external" path="." />
++    <exclude domain="device_root" path="." />
++    <exclude domain="device_file" path="." />
++    <exclude domain="device_database" path="." />
++    <exclude domain="device_sharedpref" path="." />
+diff --git a/android/app/src/main/res/xml/data_extraction_rules.xml b/android/app/src/main/res/xml/data_extraction_rules.xml
+index 77165f4..b853a8d 100644
+--- a/android/app/src/main/res/xml/data_extraction_rules.xml
++++ b/android/app/src/main/res/xml/data_extraction_rules.xml
+@@ -4 +4,9 @@
+-        <include domain="sharedpref" path="piec_co_prefs.xml" />
++        <exclude domain="root" path="." />
++        <exclude domain="file" path="." />
++        <exclude domain="database" path="." />
++        <exclude domain="sharedpref" path="." />
++        <exclude domain="external" path="." />
++        <exclude domain="device_root" path="." />
++        <exclude domain="device_file" path="." />
++        <exclude domain="device_database" path="." />
++        <exclude domain="device_sharedpref" path="." />
+@@ -7 +15,9 @@
+-        <include domain="sharedpref" path="piec_co_prefs.xml" />
++        <exclude domain="root" path="." />
++        <exclude domain="file" path="." />
++        <exclude domain="database" path="." />
++        <exclude domain="sharedpref" path="." />
++        <exclude domain="external" path="." />
++        <exclude domain="device_root" path="." />
++        <exclude domain="device_file" path="." />
++        <exclude domain="device_database" path="." />
++        <exclude domain="device_sharedpref" path="." />
+diff --git a/android/app/src/test/java/com/sterownikco/pro/core/LocalControllerAddressTest.kt b/android/app/src/test/java/com/sterownikco/pro/core/LocalControllerAddressTest.kt
+new file mode 100644
+index 0000000..808452e
+--- /dev/null
++++ b/android/app/src/test/java/com/sterownikco/pro/core/LocalControllerAddressTest.kt
+@@ -0,0 +1,52 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNull
++import org.junit.Test
++
++class LocalControllerAddressTest {
++    @Test
++    fun acceptsRfc1918ControllerAddresses() {
++        assertEquals("10.0.0.12", LocalControllerAddress.canonicalPrivateIpv4("10.0.0.12"))
++        assertEquals("172.16.1.2", LocalControllerAddress.canonicalPrivateIpv4("172.16.1.2"))
++        assertEquals("172.31.255.254", LocalControllerAddress.canonicalPrivateIpv4("172.31.255.254"))
++        assertEquals("192.168.10.42", LocalControllerAddress.canonicalPrivateIpv4(" 192.168.10.42 "))
++    }
++
++    @Test
++    fun rejectsPublicLoopbackLinkLocalAndMalformedAddresses() {
++        listOf(
++            "8.8.8.8",
++            "172.15.0.1",
++            "172.32.0.1",
++            "192.167.1.1",
++            "127.0.0.1",
++            "169.254.1.2",
++            "0.0.0.0",
++            "192.168.1",
++            "192.168.1.256",
++            "192.168.01.1",
++            "controller.local",
++            "192.168.1.1:8080",
++            "192.168.1.1/attacker.example"
++        ).forEach { assertNull("must reject $it", LocalControllerAddress.canonicalPrivateIpv4(it)) }
++    }
++
++    @Test
++    fun buildsOnlySimpleLocalApiUrls() {
++        assertEquals(
++            "http://192.168.10.42/api/wifi/list",
++            LocalControllerAddress.url("192.168.10.42", "/api/wifi/list")
++        )
++        assertEquals(
++            "http://192.168.10.42/api/rtc-sync?rok=2026&miesiac=10",
++            LocalControllerAddress.url("192.168.10.42", "/api/rtc-sync?rok=2026&miesiac=10")
++        )
++        assertNull(LocalControllerAddress.url("192.168.10.42", "//attacker.example/path"))
++        assertNull(LocalControllerAddress.url("192.168.10.42", "/api/wifi/list#fragment"))
++        assertNull(LocalControllerAddress.url("192.168.10.42", "/api/%2e%2e/cmd"))
++        assertNull(LocalControllerAddress.url("192.168.10.42", "/api/../cmd"))
++        assertNull(LocalControllerAddress.url("192.168.10.42", "/api//wifi/list"))
++        assertNull(LocalControllerAddress.url("8.8.8.8", "/api/wifi/add"))
++    }
++}

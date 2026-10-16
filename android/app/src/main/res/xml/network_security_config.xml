@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Centrala ESP32 jest odpytywana po HTTP w sieci lokalnej (jak w Piec.html),
+     Firebase / GitHub / Open-Meteo idą po HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

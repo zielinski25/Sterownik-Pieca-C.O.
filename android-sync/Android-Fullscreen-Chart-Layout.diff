@@ -1,0 +1,38 @@
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+index 554272b..a4a056c 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+@@ -240,21 +240,29 @@ fun ChartsPage(m: AppModel) {
+                 contentAlignment = Alignment.Center
+             ) {
+                 Column(
+-                    Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(20.dp))
++                    Modifier.fillMaxSize().background(Pal.Surface, RoundedCornerShape(20.dp))
+                         .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(20.dp)).padding(14.dp),
+                     verticalArrangement = Arrangement.spacedBy(10.dp)
+                 ) {
+                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                         Column(Modifier.weight(1f)) {
+-                            Text(m.fsTitle(), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
++                            Text(
++                                m.fsTitle(),
++                                fontSize = 16.sp,
++                                fontWeight = FontWeight.Bold,
++                                color = Color.White,
++                                maxLines = 1,
++                                softWrap = false,
++                                overflow = TextOverflow.Ellipsis
++                            )
+                             Text(m.fsSubtitle(), style = Txt.cardDesc)
+                         }
+                         IconBtn("close", "Zamknij", onClick = { expand = false })
+                     }
+-                    Box(Modifier.fillMaxWidth().height(320.dp).clip(RoundedCornerShape(12.dp)).background(Pal.CanvasBg, RoundedCornerShape(12.dp))
++                    Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(12.dp)).background(Pal.CanvasBg, RoundedCornerShape(12.dp))
+                         .border(BorderStroke(1.dp, Color(0x0FFFFFFF)), RoundedCornerShape(12.dp))) {
+                         ChartCanvas(
+-                            view = view, modifier = Modifier.fillMaxWidth().height(320.dp),
++                            view = view, modifier = Modifier.fillMaxSize(),
+                             areaBand = m.chartAreaBand, alarmLines = m.chartAlarmLines && m.chartFocus == 0, alarmLevels = m.alarmLevels,
+                             mode = m.chartMode, lineStyle = m.chartStyle, crossIdx = cross, onCross = { cross = it },
+                             onPan = { m.panChart(it) }, onPinch = { f, x -> m.pinchChart(f, x) },

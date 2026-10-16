@@ -1,0 +1,776 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,10 @@
++// [v3.38.0 ROZPALANIE-SERW + WSPOLNE-WYCISZANIE] — 2026-10-12
++// Co: Automatyczne przygotowanie serw do rozpalenia, wymuszenie sekwencyjne
++//     do 30C, blokada po alarmie dymu oraz nadzor czujnika po ruchu serw.
++//     Dodano wspolny, czasowy kontrakt alarm_mute z raportem statusu RTDB,
++//     dzieki czemu brzeczyk centrali i telefony korzystaja z tego samego stanu.
++// FIRMWARE_VERSION v3.37.0 -> v3.38.0 (MINOR: nowe sterowanie i API alarmow).
++//
+ // [v3.36.1 TELEGRAM-LOGS-MENU] — 2026-10-11
+ // Co: Glowny przycisk "Logi i dane" otwiera podmenu operacji na logach.
+ // Problem: przycisk glowny wysylal od razu plik /logi; podmenu z opcja
+@@ -4729,11 +4736,18 @@
+ // — patrz sekcja "SCHEDULER" niżej. To realizacja punktu 3.1 planu.
+ 
+ // ── Deklaracje "do przodu" ───────────────────────────────────────────────
++struct AlarmMuteTimer;
++int32_t alarmMuteRemainingMs(AlarmMuteTimer& mute, bool alarmActive);
++bool dymNadzorAktywny();
++void odnowDymNadzorPoRuchu();
++void obslugaRozpalaniaSerwa();
+ void aktywujAlarmCO();
+ void dezaktywujAlarmCO();
+ void aktywujAlarmPanelu();
+ void dezaktywujAlarmPanelu();
+ void wyciszAlarmDzwiekowy();
++void wyciszAlarmDzwiekowyOgrzewania();
++void wyciszAktywneAlarmyDoKasowania();
+ void zadanieObslugaPompy();
+ void servo();
+ void logZapisz(const String &tresc); // [LOGI] bufor PSRAM — definicja dalej w pliku, wolana juz z debugPrint()
+@@ -4962,7 +4976,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.36.1";
++static const char* FIRMWARE_VERSION = "v3.38.0";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -9371,7 +9385,25 @@
+ // FLAGI I POMIARY
+ //=========================
+ byte czyAlarmAktywny = 0;
+-bool czyDzwiekAlarmuWyciszony = false;
++
++// Wspolne, czasowe wyciszenie raportowane do Androida i stosowane rowniez
++// przez centralny buzzer. Timery sa monotoniczne (millis), a komenda 0
++// oznacza wyciszenie do ustapienia biezacego alarmu.
++struct AlarmMuteTimer {
++  bool active = false;
++  bool untilClear = false;
++  uint32_t startedAtMs = 0;
++  uint32_t durationMs = 0;
++};
++AlarmMuteTimer alarmMuteDym;
++AlarmMuteTimer alarmMuteOgrz;
++static portMUX_TYPE alarmMuteMux = portMUX_INITIALIZER_UNLOCKED;
++
++// Osobny stan serw „Rozpalanie” — nie uzywac rozpalanieAktywne od mieszadla.
++volatile bool rozpalanieSerwaAktywne = false;
++volatile bool rozpalanieSerwaDostepne = false;
++volatile bool rozpalanieSerwaBlokadaDymu = false;
++volatile bool rozpalanieSerwaMonitorPoStarcie = false;
+ 
+ float temperaturaNaZewnatrz = 0.0;
+ float temperaturaBojlera = 0.0;
+@@ -9411,6 +9443,20 @@
+ unsigned long czasNastepnejAkcjiDymu = 0;
+ bool czyCzujnikDymuAktywny = false;
+ unsigned long czasStartuAktywacjiDymu = 0;
++
++// Nadzor czujnika po ruchach serw: 5 min od ostatniego ruchu oraz 3 min po
++// skasowaniu alarmu dymu; alarm sam w sobie przedluza nadzor bezterminowo.
++const uint32_t DYM_NADZOR_PO_RUCHU_MS = 5UL * 60UL * 1000UL;
++const uint32_t DYM_NADZOR_PO_ALARMIE_MS = 3UL * 60UL * 1000UL;
++const uint32_t DYM_KROK_SYBERKA_MS = 3UL * 60UL * 1000UL;
++uint32_t dymOstatniRuchSerwaMs = 0;
++bool dymBylRuchSerwa = false;
++volatile bool dymNadzorKlikniecieOczekuje = false;
++uint32_t dymSkasowanieAlarmuMs = 0;
++bool dymNadzorPoSkasowaniuAktywny = false;
++bool dymNadzorWymuszaCiagly = false;
++uint32_t dymOstatniKrokSyberkaMs = 0;
++bool dymKrokSyberkaUstawiony = false;
+ // [FIX-DYM-WYSWIETLANIE-ZERO] true = czujnikDymuOdczyt pochodzi ze SWIEZEGO
+ // odczytu ADC z biezacego cyklu; false = wartosc jest TRZYMANA z ostatniego
+ // udanego pomiaru, bo czujnik jest akurat wylaczony/rozgrzewa sie (patrz
+@@ -9485,15 +9531,13 @@
+ byte fazaAlarmuDzwiekowego = 0;
+ unsigned long czasFazyAlarmuDzwiekowego = 0;
+ 
+-// [NOWE] Dzwiek alarmu OGRZEWANIE/PANEL - ten sam nieblokujacy wzorzec co
+-// dym powyzej, ALE osobne zmienne stanu i osobna flaga wyciszenia (patrz
+-// WDROZENIE_DZWIEKOW_ALARMOWYCH_CENTRALA.md, sekcja 2, co do tego dlaczego
+-// NIE wolno tu uzyc czyDzwiekAlarmuWyciszony). faza: 0=cisza(nieaktywny),
++// Dzwiek alarmu OGRZEWANIE/PANEL - ten sam nieblokujacy wzorzec co dym,
++// z osobna faza i osobnym licznikiem alarmMuteOgrz (status synchronizowany
++// z alarmMuteDym przez wspolny kontrakt RTDB). Faza: 0=cisza(nieaktywny),
+ // 1=ton niski (1200Hz), 2=ton wysoki (1600Hz) - w odroznieniu od dymu BEZ
+ // przerwy miedzy tonami (dwuton "hi-lo", ciagly).
+ byte fazaAlarmuOgrzewania = 0;
+ unsigned long czasFazyAlarmuOgrzewania = 0;
+-bool czyDzwiekAlarmuOgrzewaniaWyciszony = false;
+ 
+ unsigned long czasStartuPompyTimerMode = 0;
+ bool pompaCykluStartal = false;
+@@ -14268,6 +14312,14 @@
+   // fizycznie wylaczony -- dashboard pokazuje ikonke OFF zamiast wartosci.
+   j += F("\"dym_wlaczony\":"); j += (czujnikDymuWlaczonyTemperaturowo ? "true" : "false"); j += F(",");
+   j += F("\"dym_alarm\":"); j += (czyAlarmAktywny ? "true" : "false"); j += F(",");
++  {
++    int32_t dymMuteMs = alarmMuteRemainingMs(alarmMuteDym, czyAlarmAktywny == 1);
++    int32_t ogrzMuteMs = alarmMuteRemainingMs(alarmMuteOgrz, alarmOgrzewanieWlaczone || alarmPanelWlaczone);
++    j += F("\"alarm_dym_wyciszony\":"); j += (dymMuteMs != 0 ? "true" : "false"); j += F(",");
++    j += F("\"alarm_dym_wyciszenie_ms\":"); j += String(dymMuteMs); j += F(",");
++    j += F("\"alarm_ogrz_wyciszony\":"); j += (ogrzMuteMs != 0 ? "true" : "false"); j += F(",");
++    j += F("\"alarm_ogrz_wyciszenie_ms\":"); j += String(ogrzMuteMs); j += F(",");
++  }
+   j += F("\"klapa\":"); j += String(pozycjaKlapa); j += F(",");
+   j += F("\"syberka\":"); j += String(pozycjaSyberek); j += F(",");
+   // [CZ.4/SYS-HDR] TrybSerwa wystawiony tu po raz pierwszy dla /api/status
+@@ -14319,6 +14371,9 @@
+   j += F("\"rozpalanie\":"); j += (rozpalanieAktywne ? "true" : "false"); j += F(",");
+   j += F("\"alarm_ogrzewanie\":"); j += (alarmOgrzewanieWlaczone ? "true" : "false"); j += F(",");
+   j += F("\"alarm_panel\":"); j += (alarmPanelWlaczone ? "true" : "false"); j += F(",");
++  j += F("\"rozpalanie_serwa_dostepne\":"); j += (rozpalanieSerwaDostepne ? "true" : "false"); j += F(",");
++  j += F("\"rozpalanie_serwa_aktywne\":"); j += (rozpalanieSerwaAktywne ? "true" : "false"); j += F(",");
++  j += F("\"rozpalanie_serwa_blokada_dymu\":"); j += (rozpalanieSerwaBlokadaDymu ? "true" : "false"); j += F(",");
+   // [LCD-SEZON, plan PIEC_ESPNOW_PLAN.md] Miesiac z RTC centrali (0 gdy RTC
+   // niegotowy — patrz g_rtcGotowy/FIX 12/FIX 13 wyzej) — wyswietlacz uzywa
+   // tego do automatycznego przelaczania widoku Lato/Zima (chowanie kafelkow
+@@ -16809,6 +16864,67 @@
+ };
+ SerwoRuch ruchKlapy, ruchSyberka;
+ 
++static bool alarmBezpieczenstwaSerwaAktywny() {
++  return czyTemperaturaAlarmowa || alarmOgrzewanieWlaczone || alarmPanelWlaczone || czyAlarmAktywny == 1;
++}
++
++static bool temperaturaPiecZnanaDlaRozpalania() {
++  const TelemetrySourceMeta &src = g_telemetrySourceMeta[TELEMETRY_CH_OGZ];
++  return src.hasGoodValue && telemetryQuality(TELEMETRY_CH_OGZ, telemetryMonotonicMs()) == 0;
++}
++
++static bool rozpalanieSerwaWymuszenieAktywne() {
++  return rozpalanieSerwaDostepne && !rozpalanieSerwaBlokadaDymu;
++}
++
++static void zapiszStanRozpalaniaSerwa() {
++  config.putBool("rSerwoAct", rozpalanieSerwaAktywne);
++  config.putBool("rSerwoWin", rozpalanieSerwaDostepne);
++  config.putBool("rSerwoBlk", rozpalanieSerwaBlokadaDymu);
++}
++
++static void zatrzymajRuchSerwa(SerwoRuch &r) {
++  if (!r.aktywny || r.wskPozycja == nullptr) return;
++  if (r.kluczNVS != nullptr && config.getUChar(r.kluczNVS, 255) != *r.wskPozycja) {
++    config.putUChar(r.kluczNVS, (uint8_t)*r.wskPozycja);
++  }
++  r.aktywny = false;
++}
++
++bool dymNadzorAktywny() {
++  uint32_t teraz = millis();
++  bool ruchWOkresie = dymBylRuchSerwa &&
++      (uint32_t)(teraz - dymOstatniRuchSerwaMs) < DYM_NADZOR_PO_RUCHU_MS;
++  bool poAlarmieWOkresie = dymNadzorPoSkasowaniuAktywny &&
++      (uint32_t)(teraz - dymSkasowanieAlarmuMs) < DYM_NADZOR_PO_ALARMIE_MS;
++  if (dymBylRuchSerwa && !ruchWOkresie) dymBylRuchSerwa = false;
++  if (dymNadzorPoSkasowaniuAktywny && !poAlarmieWOkresie) dymNadzorPoSkasowaniuAktywny = false;
++  bool aktywny = (czyAlarmAktywny == 1) || ruchWOkresie || poAlarmieWOkresie;
++  if (!aktywny) dymNadzorWymuszaCiagly = false;
++  return aktywny;
++}
++
++void odnowDymNadzorPoRuchu() {
++  uint32_t teraz = millis();
++  dymOstatniRuchSerwaMs = teraz;
++  dymBylRuchSerwa = true;
++  if (!czujnikDymuWlaczonyTemperaturowo) {
++    // Czujnik wylaczony bramka temperatury: ciagly zasilany nadzor,
++    // a jego rozgrzewanie wlicza sie do tego samego pieciominutowego okna.
++    dymNadzorWymuszaCiagly = true;
++  }
++  if (dymNadzorWymuszaCiagly) {
++    czujnikDymuWlaczonyTemperaturowo = true;
++    if (!czyCzujnikDymuAktywny) {
++      digitalWrite(zasilanieCzujnikaDymu, HIGH);
++      czyCzujnikDymuAktywny = true;
++      czasStartuAktywacjiDymu = teraz;
++    } else if (czasStartuAktywacjiDymu == 0) {
++      czasStartuAktywacjiDymu = teraz;
++    }
++  }
++}
++
+ // Zleca nieblokujacy ruch — odpowiednik startu dzisiejszego moveServo(),
+ // ale wraca natychmiast; fizyczny ruch wykonuje sie w kolejnych tikach
+ // serwoTick(). Uzywane przez servo_manual() od etapu 21.3.
+@@ -16822,6 +16938,7 @@
+     debugPrint(buf);
+     return;
+   }
++  odnowDymNadzorPoRuchu();
+   snprintf(buf, sizeof(buf), "zlecServoRuch START: %d -> %d (%s)", pozycja, docelowa, kluczNVS);
+   debugPrint(buf);
+   r.wskServo    = &servo;
+@@ -16880,6 +16997,77 @@
+   }
+ }
+ 
++static bool uruchomRozpalanieSerwa(String& blad) {
++  if (alarmBezpieczenstwaSerwaAktywny()) { blad = "aktywny_alarm_bezpieczenstwa"; return false; }
++  if (!temperaturaPiecZnanaDlaRozpalania()) { blad = "brak_swiezej_temperatury_pieca"; return false; }
++  if (temperaturaOgrzewania > 30.0f) { blad = "temperatura_powyzej_30C"; return false; }
++  if (!rozpalanieSerwaDostepne && temperaturaOgrzewania >= 25.0f) {
++    blad = "rozpalanie_dostepne_ponizej_25C";
++    return false;
++  }
++
++  rozpalanieSerwaDostepne = true;
++  rozpalanieSerwaBlokadaDymu = false;
++  rozpalanieSerwaAktywne = true;
++  zapiszStanRozpalaniaSerwa();
++  dymNadzorKlikniecieOczekuje = true; // obsluga GPIO/czujnika pozostaje na Core 1
++  zapiszLog(F("tag=SERVO akcja=rozpalanie stan=aktywne nadzor_dym_min=5"));
++  blad = "";
++  return true;
++}
++
++void obslugaRozpalaniaSerwa() {
++  if (dymNadzorKlikniecieOczekuje) {
++    dymNadzorKlikniecieOczekuje = false;
++    odnowDymNadzorPoRuchu();
++  }
++  if (rozpalanieSerwaMonitorPoStarcie && rozpalanieSerwaAktywne) {
++    rozpalanieSerwaMonitorPoStarcie = false;
++    odnowDymNadzorPoRuchu();
++  }
++  if (rozpalanieSerwaAktywne && !rozpalanieSerwaDostepne) {
++    rozpalanieSerwaDostepne = true;
++    zapiszStanRozpalaniaSerwa();
++  }
++
++  bool temperaturaZnana = temperaturaPiecZnanaDlaRozpalania();
++  if (temperaturaZnana) {
++    if (temperaturaOgrzewania < 25.0f && !rozpalanieSerwaDostepne) {
++      rozpalanieSerwaDostepne = true;
++      zapiszStanRozpalaniaSerwa();
++      zapiszLog(F("tag=SERVO akcja=rozpalanie okno=otwarte temp_ponizej=25C"));
++    }
++    if (temperaturaOgrzewania > 30.0f &&
++        (rozpalanieSerwaDostepne || rozpalanieSerwaAktywne || rozpalanieSerwaBlokadaDymu)) {
++      bool byloAktywne = rozpalanieSerwaAktywne;
++      rozpalanieSerwaDostepne = false;
++      rozpalanieSerwaAktywne = false;
++      if (!alarmBezpieczenstwaSerwaAktywny()) {
++        zatrzymajRuchSerwa(ruchSyberka);
++        zatrzymajRuchSerwa(ruchKlapy);
++        rozpalanieSerwaBlokadaDymu = false;
++      }
++      zapiszStanRozpalaniaSerwa();
++      zapiszLog(byloAktywne ? F("tag=SERVO akcja=rozpalanie stan=zakonczone temp_powyzej=30C")
++                            : F("tag=SERVO akcja=rozpalanie okno=zamkniete temp_powyzej=30C"));
++    }
++  }
++
++  if (!temperaturaZnana || !rozpalanieSerwaWymuszenieAktywne() ||
++      alarmBezpieczenstwaSerwaAktywny()) return;
++
++  // Sekwencja z interlockiem: najpierw syberek do pelnego otwarcia, potem
++  // klapa. Nie ruszamy drugiego serwa, dopoki trwa jakikolwiek poprzedni ruch.
++  if (ruchSyberka.aktywny || ruchKlapy.aktywny) return;
++  if (pozycjaSyberek < 90) {
++    zlecServoRuch(ruchSyberka, serwoSyberek, pozycjaSyberek, 90, 0, 90, "pozSyberek");
++    return;
++  }
++  if (pozycjaKlapa < 180) {
++    zlecServoRuch(ruchKlapy, serwoKlapa, pozycjaKlapa, 180, 0, 180, "pozKlapa");
++  }
++}
++
+ // [ETAP 21.3 — zmigrowane na nieblokujaca sciezke] Zasilanie pinu servo
+ // NIE jest juz ustawiane tutaj — patrz serwoTick(), ktory teraz sam
+ // decyduje HIGH/LOW na podstawie ruchKlapy.aktywny/ruchSyberka.aktywny
+@@ -16899,7 +17087,17 @@
+   // rowniez przez zlecServoRuch(), patrz aktywujAlarmCO()/pozar() nizej),
+   // wiec podczas ich trwania ta funkcja nie powinna nic zlecac — inaczej
+   // moglaby nadpisac docelowa pozycje ustawiona wlasnie przez alarm.
+-  if (czyTemperaturaAlarmowa || alarmPanelWlaczone || czyAlarmAktywny) return;
++  if (czyTemperaturaAlarmowa || alarmPanelWlaczone || czyAlarmAktywny) {
++    docelowaKlapaProcent = -1;
++    docelowaSyberekProcent = -1;
++    return;
++  }
++  if (rozpalanieSerwaWymuszenieAktywne()) {
++    // Nie odtwarzaj po koncu Rozpalania starego recznego celu z kolejki.
++    docelowaKlapaProcent = -1;
++    docelowaSyberekProcent = -1;
++    return;
++  }
+ 
+   if (TrybSerwa == 2) {
+     // [FIX-WYSCIG, Czesc 2 planu wspolbieznosci] Zadanie z Firebase/www
+@@ -16963,6 +17161,9 @@
+ // LUB syberka), nigdy oba naraz — patrz uzasadnienie w komentarzu nizej,
+ // przy drugim warunku ("else if").
+ void servo() {
++  // Alarmy bezpieczenstwa i wymuszenie Rozpalania maja pierwszenstwo nad AUTO.
++  if (alarmBezpieczenstwaSerwaAktywny()) return;
++  if (rozpalanieSerwaWymuszenieAktywne()) return;
+   if (TrybSerwa != 1) return;  // AUTO dziala tylko gdy TrybSerwa==1; nie
+                                 // wolno nadpisywac RECZNY(2)/BEZPIECZNA(3)
+ 
+@@ -16971,6 +17172,9 @@
+ 
+   bool czyZamykac = (temperaturaOgrzewaniaSrednia > progGorny);
+   bool czyOtwierac = (temperaturaOgrzewaniaSrednia < progDolny);
++  // Po alarmie dymu w Rozpalaniu nie pozwol AUTO ponownie otworzyc klapy
++  // do pelna; wymaga to kolejnego, jawnego klikniecia. Zamykanie dozwolone.
++  if (rozpalanieSerwaBlokadaDymu && rozpalanieSerwaDostepne && czyOtwierac) return;
+   if (!czyZamykac && !czyOtwierac) return;
+ 
+   // [ETAP 21.4] Zasilanie pinu (pinZasilanieSerwo) JUZ NIE jest ustawiane
+@@ -17103,10 +17307,10 @@
+   // (pinZasilanieSerwo) obsluguje juz wylacznie serwoTick() (ten sam
+   // mechanizm co servo_manual()/servo() od 21.3/21.4) — nie ustawiamy go
+   // tutaj recznie.
+-  if (pozycjaSyberek > 0) {
++  if (pozycjaSyberek > 0 || (ruchSyberka.aktywny && ruchSyberka.docelowa != 0)) {
+     zlecServoRuch(ruchSyberka, serwoSyberek, pozycjaSyberek, 0, 0, 90, "pozSyberek");
+   }
+-  if (pozycjaKlapa > 0) {
++  if (pozycjaKlapa > 0 || (ruchKlapy.aktywny && ruchKlapy.docelowa != 0)) {
+     zlecServoRuch(ruchKlapy, serwoKlapa, pozycjaKlapa, 0, 0, 180, "pozKlapa");
+   }
+ }
+@@ -17125,6 +17329,11 @@
+ void aktywujAlarmPanelu() {
+   zapiszLogKrytyczny(F("tag=ALARM lvl=CRIT zdarzenie=aktywacja typ=PANEL"));
+   czyTemperaturaAlarmowa = true;
++  // Panel nie zmienia docelowych pozycji serw, ale aktywny alarm nie moze
++  // zostac nadpisany ruchem ani z AUTO, ani z Rozpalania. Zatrzymaj biezace
++  // kroki na aktualnych pozycjach; po skasowaniu TrybSerwa przejmie sterowanie.
++  zatrzymajRuchSerwa(ruchSyberka);
++  zatrzymajRuchSerwa(ruchKlapy);
+   // [FIX-ALARM-PANEL-POMPA, v3.1.0] Usuniete: wstrzymajZadanie(zadanieObslugaPompy)
+   // + pompaUstaw(true, true). Uzasadnienie: PLAN_ALARM_PANEL_POMPA.md /
+   // CHANGELOG [3.1.0.1]. W skrocie: panel zasila wylacznie CWU, a
+@@ -17144,18 +17353,127 @@
+   // tez wyscig opisany w PLAN_ALARM_PANEL_POMPA.md / CHANGELOG [3.1.0.2].
+ }
+ 
+-// [FIX-DYM-RESET-NIEPELNY] Wyciszenie buzzera alarmu dymu, bez ruszania
+-// serw/pompy — bezpieczna pozycja zostaje, dopoki dym fizycznie nie opadnie
+-// ponizej progu. Wywolywane z komendy Firebase "wycisz" i Telegram /cisza.
+-// Nie robi nic, jesli alarm akurat nie trwa (nie ma czego wyciszac).
+-void wyciszAlarmDzwiekowy() {
+-  if (czyAlarmAktywny == 1) {
+-    czyDzwiekAlarmuWyciszony = true;
++// Wspolny timer wyciszenia: sekundy >0 oznaczaja drzemke, 0 — do
++// skasowania biezacego alarmu. Termin liczony monotonicznie, wrap millis()
++// obslugiwany przez odejmowanie unsigned.
++int32_t alarmMuteRemainingMs(AlarmMuteTimer& mute, bool alarmActive) {
++  int32_t remaining = 0;
++  portENTER_CRITICAL(&alarmMuteMux);
++  if (mute.active) {
++    if (mute.untilClear) {
++      if (alarmActive) {
++        remaining = -1;
++      } else {
++        mute.active = false;
++        mute.untilClear = false;
++        mute.startedAtMs = 0;
++        mute.durationMs = 0;
++      }
++    } else {
++      uint32_t elapsed = (uint32_t)(millis() - mute.startedAtMs);
++      if (elapsed >= mute.durationMs) {
++        mute.active = false;
++        mute.startedAtMs = 0;
++        mute.durationMs = 0;
++      } else {
++        remaining = (int32_t)(mute.durationMs - elapsed);
++      }
++    }
++  }
++  portEXIT_CRITICAL(&alarmMuteMux);
++  return remaining;
++}
++
++static void alarmMuteSet(AlarmMuteTimer& mute, int seconds) {
++  portENTER_CRITICAL(&alarmMuteMux);
++  mute.active = true;
++  mute.untilClear = (seconds == 0);
++  mute.startedAtMs = millis();
++  mute.durationMs = seconds > 0 ? (uint32_t)seconds * 1000UL : 0UL;
++  portEXIT_CRITICAL(&alarmMuteMux);
++}
++
++static void alarmMuteClear(AlarmMuteTimer& mute) {
++  portENTER_CRITICAL(&alarmMuteMux);
++  mute.active = false;
++  mute.untilClear = false;
++  mute.startedAtMs = 0;
++  mute.durationMs = 0;
++  portEXIT_CRITICAL(&alarmMuteMux);
++}
++
++static void alarmMuteStopSoundIfOwned(bool dymTarget, bool ogrzTarget) {
++  if ((dymTarget && czyAlarmAktywny == 1) ||
++      (ogrzTarget && czyAlarmAktywny != 1 && (alarmOgrzewanieWlaczone || alarmPanelWlaczone))) {
+     noTone(pinBuzer);
+     digitalWrite(pinZasilanieBuzera, LOW);
+-    fazaAlarmuDzwiekowego = 0; // buzzerAlarmuDymu() zlapaloby to i tak w <=50ms, ale jawnie czytelniej
+-    zapiszLog(F("tag=ALARM akcja=wyciszenie zrodlo=recznie msg=\"alarm dzwiekowy dymu, serwa/pompa bez zmian\""));
++    if (dymTarget) fazaAlarmuDzwiekowego = 0;
++    if (ogrzTarget) fazaAlarmuOgrzewania = 0;
++  }
++}
++
++// Wyciszenie starego przycisku/komendy do konca biezacego alarmu.
++void wyciszAlarmDzwiekowy() {
++  if (czyAlarmAktywny == 1) {
++    alarmMuteSet(alarmMuteDym, 0);
++    alarmMuteStopSoundIfOwned(true, false);
++    zapiszLog(F("tag=ALARM akcja=wyciszenie zrodlo=reczne typ=dym czas=do_skasowania"));
++  }
++}
++
++void wyciszAktywneAlarmyDoKasowania() {
++  bool dymAktywny = (czyAlarmAktywny == 1);
++  bool ogrzAktywny = alarmOgrzewanieWlaczone || alarmPanelWlaczone;
++  if (dymAktywny) wyciszAlarmDzwiekowy();
++  if (ogrzAktywny) wyciszAlarmDzwiekowyOgrzewania();
++}
++
++static bool obsluzKomendeAlarmMute(const String& cmd, String& blad) {
++  if (!cmd.startsWith("alarm_mute ")) { blad = "nieznana_komenda"; return false; }
++  String args = cmd.substring(11);
++  args.trim();
++  int separator = args.indexOf(' ');
++  if (separator < 0) { blad = "format: alarm_mute <dym|ogrz|oba> <sekundy|off>"; return false; }
++  String target = args.substring(0, separator);
++  String action = args.substring(separator + 1);
++  action.trim();
++  if (action.length() == 0 || action.indexOf(' ') >= 0) {
++    blad = "format: alarm_mute <dym|ogrz|oba> <sekundy|off>";
++    return false;
++  }
++  bool dymTarget = (target == "dym" || target == "oba");
++  bool ogrzTarget = (target == "ogrz" || target == "oba");
++  if (!dymTarget && !ogrzTarget) { blad = "cel musi byc dym, ogrz albo oba"; return false; }
++
++  if (action == "off") {
++    if (dymTarget) alarmMuteClear(alarmMuteDym);
++    if (ogrzTarget) alarmMuteClear(alarmMuteOgrz);
++    if (dymTarget && czyAlarmAktywny == 1) {
++      fazaAlarmuDzwiekowego = 0;
++      czasNastepnegoAlarmuDzwiekowego = millis();
++    }
++    zapiszLog(String(F("tag=ALARM akcja=wyciszenie_zmieniono cel=")) + target + " tryb=off");
++    return true;
++  }
++
++  for (unsigned int i = 0; i < action.length(); ++i) {
++    if (action[i] < '0' || action[i] > '9') { blad = "czas musi byc liczba sekund albo off"; return false; }
+   }
++  long seconds = action.toInt();
++  if (seconds < 0 || seconds > 3600) { blad = "czas wyciszenia poza zakresem 0-3600 s"; return false; }
++  bool aktywnyCel = (dymTarget && czyAlarmAktywny == 1) ||
++                    (ogrzTarget && (alarmOgrzewanieWlaczone || alarmPanelWlaczone));
++  if (seconds == 0 && !aktywnyCel) { blad = "brak aktywnego alarmu do wyciszenia do skasowania"; return false; }
++
++  if (dymTarget) alarmMuteSet(alarmMuteDym, (int)seconds);
++  if (ogrzTarget) alarmMuteSet(alarmMuteOgrz, (int)seconds);
++  alarmMuteStopSoundIfOwned(dymTarget, ogrzTarget);
++  if (seconds == 0) {
++    zapiszLog(String(F("tag=ALARM akcja=wyciszenie_zmieniono cel=")) + target + " tryb=do_skasowania");
++  } else {
++    zapiszLog(String(F("tag=ALARM akcja=wyciszenie_zmieniono cel=")) + target + " sekundy=" + String(seconds));
++  }
++  return true;
+ }
+ 
+ void pozar() {
+@@ -17166,6 +17484,7 @@
+   // przekroczeniu czasu), wiec wolane dokladnie raz na tick, nie osobno w
+   // kazdym miejscu, gdzie wynik jest potrzebny.
+   bool symDymTeraz = symulacjaTrwa(symulacjaDymAktywna, symulacjaDymDo, "dym");
++  bool nadzorPoRuchuSerwa = dymNadzorAktywny();
+ 
+   // [DYM-OD-TEMPERATURY] Bramka temperaturowa -- czujnik w ogole nie jest
+   // zasilany, dopoki piec nie jest wystarczajaco goracy. Histereza
+@@ -17189,7 +17508,7 @@
+   // lawce testowej (czujnik traktowany jak stale zasilony, niezaleznie od
+   // temperatury). Na prawdziwym sprzecie trybSymulacji zawsze false — zero
+   // zmiany zachowania tam.
+-  if (!symDymTeraz && !czyAlarmAktywny) {
++  if (!symDymTeraz && !czyAlarmAktywny && !nadzorPoRuchuSerwa) {
+     if (czujnikDymuWlaczonyTemperaturowo) {
+       if (temperaturaOgrzewania < dymProgTemperatury - DYM_HISTEREZA_TEMPERATURY) {
+         czujnikDymuWlaczonyTemperaturowo = false;
+@@ -17237,7 +17556,7 @@
+     czujnikDymuOdczyt = symulowanyCzujnikDymu;
+     czujnikDymuSwiezyOdczyt = true;
+     telemetryMarkAccepted(TELEMETRY_CH_DYM, telemetryMonotonicMs(), true);
+-  } else if (dymTrybPracy == 1) {
++  } else if (dymTrybPracy == 1 || dymNadzorWymuszaCiagly) {
+     // TRYB CIAGLY -- zasilanie wlaczone non-stop, dopoki bramka
+     // temperaturowa wyzej pozostaje spelniona. Brak przelaczania on/off
+     // -- to jest cala roznica wzgledem trybu impulsowego. Zgodne z
+@@ -17337,41 +17656,80 @@
+     }
+   }
+ 
+-  int krokSyberka = procentNaKat(Skok_Syberka, 0, 90);
+-  byte maksymalnaPozycjaSyberek = min(pozycjaSyberek + krokSyberka, 90);
++  int krokSyberka = max(1, procentNaKat(Skok_Syberka, 0, 90));
+ 
+-  if (czujnikDymuOdczyt > progAlarmowyDymu) {
++  // Alarm wlaczamy/kasujemy wylacznie na swiezym odczycie. Przy wymuszonym
++  // nadzorze czujnik moze sie dopiero rozgrzewac; poprzednia wartosc nie jest
++  // dowodem, ze dym opadl ponizej progu kasowania.
++  if (czujnikDymuSwiezyOdczyt && czujnikDymuOdczyt > progAlarmowyDymu) {
+     czasNastepnejAkcjiDymu = millis() + 10000UL;
+ 
+     if (czyAlarmAktywny == 0) {
++      bool rozpalanieByloAktywne = rozpalanieSerwaAktywne;
++      bool wymuszenieByloAktywne = rozpalanieSerwaWymuszenieAktywne();
++      bool syberekJuzSieOtwiera = ruchSyberka.aktywny && ruchSyberka.docelowa > pozycjaSyberek;
++      int bazaSyberka = syberekJuzSieOtwiera ? ruchSyberka.docelowa : pozycjaSyberek;
++      if (wymuszenieByloAktywne || rozpalanieByloAktywne) {
++        // Alarm przerywa wymuszenie; blokada trwa do recznego ponownego kliku
++        // albo zamkniecia zimnego okna po przekroczeniu 30C.
++        rozpalanieSerwaAktywne = false;
++        rozpalanieSerwaBlokadaDymu = true;
++        zapiszStanRozpalaniaSerwa();
++      }
++
+       zapiszLogKrytyczny(F("tag=ALARM lvl=CRIT zdarzenie=aktywacja typ=POZAR"));
+-      // [ETAP 21.5] Zmigrowane na zlecServoRuch() — jak w aktywujAlarmCO()
+-      // wyzej, oba serwa CELOWO naraz (bez sekwencjonowania/interlocka):
+-      // przy pozarze/dymie liczy sie jak najszybsze domkniecie klapy i
+-      // otwarcie syberka, nie unikanie posredniego przeplywu spalin.
+-      // Zasilanie pinu obsluguje serwoTick().
++      // Zatrzymaj poprzednie cele, zapisz rzeczywiste pozycje i wydaj od razu
++      // pozycje bezpieczenstwa. W Rozpalaniu: klapa 0, syberek pelne 100%;
++      // w zwyklej pracy: klapa 0 i pierwszy skonfigurowany krok syberka.
++      zatrzymajRuchSerwa(ruchKlapy);
++      zatrzymajRuchSerwa(ruchSyberka);
++      int celSyberka = rozpalanieByloAktywne
++          ? 90
++          : syberekJuzSieOtwiera ? min(bazaSyberka, 90)
++                                : min(bazaSyberka + krokSyberka, 90);
+       if (pozycjaKlapa > 0) {
+         zlecServoRuch(ruchKlapy, serwoKlapa, pozycjaKlapa, 0, 0, 180, "pozKlapa");
+       }
+-      zlecServoRuch(ruchSyberka, serwoSyberek, pozycjaSyberek, maksymalnaPozycjaSyberek, 0, 90, "pozSyberek");
+-
++      if (pozycjaSyberek != celSyberka) {
++        zlecServoRuch(ruchSyberka, serwoSyberek, pozycjaSyberek, celSyberka, 0, 90, "pozSyberek");
++      }
++      dymOstatniKrokSyberkaMs = millis();
++      dymKrokSyberkaUstawiony = true;
+       czyAlarmAktywny = 1;
+     }
+-  } else if (czujnikDymuOdczyt < progAlarmowyDymu - HISTEREZA_DYMU) {
++  } else if (czujnikDymuSwiezyOdczyt &&
++             czujnikDymuOdczyt < progAlarmowyDymu - HISTEREZA_DYMU) {
+     if (czyAlarmAktywny == 1) {
+       zapiszLogKrytyczny(F("tag=ALARM lvl=INFO zdarzenie=dezaktywacja typ=POZAR"));
+       czyAlarmAktywny = 0;
+-      czyDzwiekAlarmuWyciszony = false;
++      dymSkasowanieAlarmuMs = millis();
++      dymNadzorPoSkasowaniuAktywny = true;
++      dymKrokSyberkaUstawiony = false;
++      alarmMuteRemainingMs(alarmMuteDym, false); // kasuje tylko mute "do skasowania"
+       noTone(pinBuzer);
+       digitalWrite(pinZasilanieBuzera, LOW);
+       fazaAlarmuDzwiekowego = 0;
+     }
+   }
+ 
++  // W zwyklej pracy syberek otwiera sie na poczatku alarmu i o kolejny
++  // skonfigurowany Skok_Syberka co 3 minuty, az do pelnego otwarcia.
++  if (czyAlarmAktywny == 1 && dymKrokSyberkaUstawiony &&
++      (uint32_t)(millis() - dymOstatniKrokSyberkaMs) >= DYM_KROK_SYBERKA_MS) {
++    if (!ruchSyberka.aktywny && pozycjaSyberek < 90) {
++      int nowaPozycja = min(pozycjaSyberek + krokSyberka, 90);
++      if (nowaPozycja > pozycjaSyberek) {
++        zlecServoRuch(ruchSyberka, serwoSyberek, pozycjaSyberek, nowaPozycja, 0, 90, "pozSyberek");
++        zapiszLog(String(F("tag=ALARM lvl=WARN akcja=dym_syberek_krok pozycja=")) + String(nowaPozycja));
++      }
++    }
++    dymOstatniKrokSyberkaMs = millis();
++  }
++
+   // Dzwiek alarmu (dwutonowy sygnal 400/800Hz) jest krokowany nieblokujaco
+   // w buzzerAlarmuDymu() — osobne zadanie schedulera, patrz definicja i
+   // komentarz [FIX-DYM-BUZZER-BLOKUJE] przy niej. Reczne wyciszenie
+-  // (czyDzwiekAlarmuWyciszony, komenda Firebase "wycisz" / Telegram /cisza)
++  // (alarmMuteDym, komendy Firebase/Telegram/aplikacja)
+   // i dezaktywacja alarmu (wyzej w tej funkcji) obie juz wprost gasza
+   // buzzer — buzzerAlarmuDymu() dogania stan przy najblizszym swoim ticku.
+ }
+@@ -17384,7 +17742,7 @@
+ // dzwieku brzmi identycznie jak stara wersja z delay() — zmienia sie tylko
+ // to, ze Core 1 (pompa/serwa/reszta zadan) juz nigdy nie czeka na buzzer.
+ void buzzerAlarmuDymu() {
+-  if (czyAlarmAktywny != 1 || czyDzwiekAlarmuWyciszony) {
++  if (czyAlarmAktywny != 1 || alarmMuteRemainingMs(alarmMuteDym, czyAlarmAktywny == 1) != 0) {
+     if (fazaAlarmuDzwiekowego != 0) {
+       noTone(pinBuzer);
+       digitalWrite(pinZasilanieBuzera, LOW);
+@@ -17431,7 +17789,7 @@
+   if (czyAlarmAktywny == 1) return;
+ 
+   bool powinienGrac = (alarmOgrzewanieWlaczone || alarmPanelWlaczone) &&
+-                       !czyDzwiekAlarmuOgrzewaniaWyciszony;
++                       alarmMuteRemainingMs(alarmMuteOgrz, alarmOgrzewanieWlaczone || alarmPanelWlaczone) == 0;
+   unsigned long teraz = millis();
+ 
+   if (!powinienGrac) {
+@@ -17440,11 +17798,10 @@
+       digitalWrite(pinZasilanieBuzera, LOW);
+       fazaAlarmuOgrzewania = 0;
+     }
+-    // Odblokuj wyciszenie na kolejny, PRZYSZLY epizod - dopiero gdy OBA
+-    // zrodla sa czyste (ten sam "reset po realnym ustapieniu" wzorzec co
+-    // czyDzwiekAlarmuWyciszony=false w pozar() dla dymu).
++    // Wyciszenie "do skasowania" wygasa dopiero gdy oba zrodla sa czyste;
++    // drzemka czasowa zachowuje pozostaly czas.
+     if (!alarmOgrzewanieWlaczone && !alarmPanelWlaczone) {
+-      czyDzwiekAlarmuOgrzewaniaWyciszony = false;
++      alarmMuteRemainingMs(alarmMuteOgrz, false);
+     }
+     return;
+   }
+@@ -17457,14 +17814,12 @@
+   }
+ }
+ 
+-// [NOWE] Wyciszenie WYLACZNIE dzwieku alarmu ogrzewania/panelu - lustrzane
+-// wyciszAlarmDzwiekowy() (dym), ale CELOWO osobna funkcja/flaga (patrz
+-// sekcja 2 w WDROZENIU). Narazie nie podpieta pod zadna komende - patrz
+-// sekcja 7 (opcjonalne) co do podpiecia pod Telegram/Firebase.
++// Wyciszenie starej komendy CO/panel do ustapienia biezacego alarmu.
+ void wyciszAlarmDzwiekowyOgrzewania() {
+   if (alarmOgrzewanieWlaczone || alarmPanelWlaczone) {
+-    czyDzwiekAlarmuOgrzewaniaWyciszony = true;
+-    zapiszLog(F("tag=ALARM akcja=wyciszenie zrodlo=recznie msg=\"alarm dzwiekowy ogrzewania/panelu, reszta bez zmian\""));
++    alarmMuteSet(alarmMuteOgrz, 0);
++    alarmMuteStopSoundIfOwned(false, true);
++    zapiszLog(F("tag=ALARM akcja=wyciszenie zrodlo=reczne typ=ogrz czas=do_skasowania"));
+   }
+ }
+ 
+@@ -27358,11 +27713,22 @@
+   // budowniczym JSON (WS/HTTP) -- trzymane zsynchronizowane.
+   ja("\"dym_wlaczony\":" + String(czujnikDymuWlaczonyTemperaturowo ? "true" : "false") + ",");
+   ja("\"dym_alarm\":" + String(czyAlarmAktywny ? "true" : "false") + ",");
++  {
++    int32_t dymMuteMs = alarmMuteRemainingMs(alarmMuteDym, czyAlarmAktywny == 1);
++    int32_t ogrzMuteMs = alarmMuteRemainingMs(alarmMuteOgrz, alarmOgrzewanieWlaczone || alarmPanelWlaczone);
++    ja("\"alarm_dym_wyciszony\":" + String(dymMuteMs != 0 ? "true" : "false") + ",");
++    ja("\"alarm_dym_wyciszenie_ms\":" + String(dymMuteMs) + ",");
++    ja("\"alarm_ogrz_wyciszony\":" + String(ogrzMuteMs != 0 ? "true" : "false") + ",");
++    ja("\"alarm_ogrz_wyciszenie_ms\":" + String(ogrzMuteMs) + ",");
++  }
+   ja("\"klapa\":" + String(pozycjaKlapa) + ",");
+   ja("\"syberka\":" + String(pozycjaSyberek) + ",");
+   ja("\"pompa\":" + String(pompaJestWlaczona() ? "true" : "false") + ",");
+   ja("\"alarm_ogrzewanie\":" + String(alarmOgrzewanieWlaczone ? "true" : "false") + ",");
+   ja("\"alarm_panel\":" + String(alarmPanelWlaczone ? "true" : "false") + ",");
++  ja("\"rozpalanie_serwa_dostepne\":" + String(rozpalanieSerwaDostepne ? "true" : "false") + ",");
++  ja("\"rozpalanie_serwa_aktywne\":" + String(rozpalanieSerwaAktywne ? "true" : "false") + ",");
++  ja("\"rozpalanie_serwa_blokada_dymu\":" + String(rozpalanieSerwaBlokadaDymu ? "true" : "false") + ",");
+   // [FB-GAP-FIX] tryb_serwa — brakujace pole, luka opisana w
+   // PLAN_FIREBASE_STEROWNIK_CO.md/sekcja 6 i CONTYNUACJA (przelacznik
+   // AUTO/RECZNY w panelu pokazywal tylko lokalny stan przegladarki).
+@@ -27920,16 +28286,26 @@
+     // [FIX-WYSCIG] Panel/Firebase podaje PROCENT (0-100%), nie stopnie.
+     // Core 0 tylko zapisuje zadanie — fizyczny ruch (i zapis do
+     // pozycjaKlapa) wykonuje wylacznie Core 1 w servo_manual().
+-    int procent = constrain(cmd.substring(6).toInt(), 0, 100);
+-    docelowaKlapaProcent = procent;
+-    TrybSerwa = 2;   // reczna pozycja — servo_manual() ma trzymac ten kat
+-    zapiszLog(String(F("tag=FB lvl=INFO akcja=klapa zadanie_procent=")) + procent);
++    if (rozpalanieSerwaWymuszenieAktywne()) {
++      lastFirebaseCmdOk = false;
++      lastFirebaseCmdError = "rozpalanie_serwa_wymusza_pozycje_otwarta";
++    } else {
++      int procent = constrain(cmd.substring(6).toInt(), 0, 100);
++      docelowaKlapaProcent = procent;
++      TrybSerwa = 2;   // reczna pozycja — servo_manual() ma trzymac ten kat
++      zapiszLog(String(F("tag=FB lvl=INFO akcja=klapa zadanie_procent=")) + procent);
++    }
+   }
+   else if (cmd.startsWith("syberek ")) {
+-    int procent = constrain(cmd.substring(8).toInt(), 0, 100);
+-    docelowaSyberekProcent = procent;
+-    TrybSerwa = 2;
+-    zapiszLog(String(F("tag=FB lvl=INFO akcja=syberek zadanie_procent=")) + procent);
++    if (rozpalanieSerwaWymuszenieAktywne()) {
++      lastFirebaseCmdOk = false;
++      lastFirebaseCmdError = "rozpalanie_serwa_wymusza_pozycje_otwarta";
++    } else {
++      int procent = constrain(cmd.substring(8).toInt(), 0, 100);
++      docelowaSyberekProcent = procent;
++      TrybSerwa = 2;
++      zapiszLog(String(F("tag=FB lvl=INFO akcja=syberek zadanie_procent=")) + procent);
++    }
+   }
+   else if (cmd == "reset_alarmow") {
+     // [FB-ETAP3] NIE ustawiac samych flag na false — aktywujAlarmCO() robi
+@@ -27952,6 +28328,28 @@
+     if (alarmPanelWlaczone)      { dezaktywujAlarmPanelu(); alarmPanelWlaczone = false; }
+     zapiszLog(F("tag=FB lvl=INFO akcja=reset_alarmow msg=\"alarmy skasowane recznie\""));
+   }
++  else if (cmd.startsWith("alarm_mute ")) {
++    String bladMute;
++    if (obsluzKomendeAlarmMute(cmd, bladMute)) {
++      lastFirebaseCmdOk = true;
++      lastFirebaseCmdError = "";
++    } else {
++      lastFirebaseCmdOk = false;
++      lastFirebaseCmdError = bladMute;
++      zapiszLog(String(F("tag=ALARM lvl=WARN akcja=wyciszenie_odrzucone powod=")) + bladMute);
++    }
++  }
++  else if (cmd == "rozpalanie_serwa") {
++    String bladRozpalania;
++    if (uruchomRozpalanieSerwa(bladRozpalania)) {
++      lastFirebaseCmdOk = true;
++      lastFirebaseCmdError = "";
++    } else {
++      lastFirebaseCmdOk = false;
++      lastFirebaseCmdError = bladRozpalania;
++      zapiszLog(String(F("tag=SERVO lvl=WARN akcja=rozpalanie_odrzucone powod=")) + bladRozpalania);
++    }
++  }
+   else if (cmd == "wycisz") {
+     // [FIX-DYM-RESET-NIEPELNY] Celowo OSOBNA komenda od reset_alarmow —
+     // dotyczy wylacznie buzzera alarmu dymu, nie rusza serw/pompy/flag.
+@@ -30816,6 +31214,16 @@
+   Skok_Syberka             = config.getUChar("skokSyberka", 5);
+   pozycjaKlapa             = config.getUChar("pozKlapa", 0);
+   pozycjaSyberek           = config.getUChar("pozSyberek", 0);
++  // Stan nowego Rozpalania-serw jest odrebny od rozpalanieAktywne mieszadla.
++  rozpalanieSerwaAktywne = config.getBool("rSerwoAct", false);
++  rozpalanieSerwaDostepne = config.getBool("rSerwoWin", false);
++  rozpalanieSerwaBlokadaDymu = config.getBool("rSerwoBlk", false);
++  if (rozpalanieSerwaBlokadaDymu) rozpalanieSerwaAktywne = false;
++  if (rozpalanieSerwaAktywne) rozpalanieSerwaDostepne = true;
++  rozpalanieSerwaMonitorPoStarcie = rozpalanieSerwaAktywne;
++  if (rozpalanieSerwaAktywne || rozpalanieSerwaBlokadaDymu || rozpalanieSerwaDostepne) {
++    zapiszStanRozpalaniaSerwa();
++  }
+   // [MIESZADLO-CYKL] Stary klucz "mieszadloTemp" (martwa flaga Mieszadlo_TEMP)
+   // celowo NIE jest juz odczytywany — osierocony w NVS, nieszkodliwy.
+   mieszadloWlaczony        = config.getBool("mieszWlaczony", true);  // [FIX NVS-15] patrz PLAN_NAPRAWY_NVS_KLUCZE_15_ZNAKOW.md
+@@ -31072,8 +31480,9 @@
+ 
+   DLOG(DC_SCHEDULER, DL_INFO, F("konfiguracja"));
+   dodajZadanie(zadanieObslugaPompy,    112);
+-  dodajZadanie(servo_manual,           500);   // RECZNY(2)/BEZPIECZNA(3) - patrz gating w servo()
+-  dodajZadanie(serwoTick,              20);    // [WIP — AUDYT 21.2] szkielet nieblokujacy, na razie nieuzywany (nikt nie woła zlecServoRuch()) — patrz komentarz nad serwoTick()
++  dodajZadanie(servo_manual,           500);   // RECZNY(2)/BEZPIECZNA(3), z alarmem i Rozpalaniem jako wyzszym priorytetem
++  dodajZadanie(obslugaRozpalaniaSerwa, 500);   // przygotowanie <25C, aktywacja z Firebase, koniec >30C
++  dodajZadanie(serwoTick,              20);    // nieblokujace kroki ruchow zadanych przez automat i alarmy
+   dodajZadanie(Czujnik_DS,             2816);
+   dodajZadanie(dsObslugaPowerCycle,    200);   // [FIX v1.11.0 — AUDYT 14.4] state machine power-cycle magistrali OneWire
+   dodajZadanie(pozar,                  4992);

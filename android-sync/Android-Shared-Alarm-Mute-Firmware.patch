@@ -1,0 +1,232 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -9372,6 +9372,7 @@
+ //=========================
+ byte czyAlarmAktywny = 0;
+ bool czyDzwiekAlarmuWyciszony = false;
++uint32_t czyDzwiekAlarmuWyciszonyDoMs = 0; // 0 = do ustapienia alarmu
+ 
+ float temperaturaNaZewnatrz = 0.0;
+ float temperaturaBojlera = 0.0;
+@@ -9494,6 +9495,16 @@
+ byte fazaAlarmuOgrzewania = 0;
+ unsigned long czasFazyAlarmuOgrzewania = 0;
+ bool czyDzwiekAlarmuOgrzewaniaWyciszony = false;
++uint32_t czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs = 0; // 0 = do ustapienia alarmu
++
++// Pozostaly czas jako duration, niezalezny od zegara RTC telefonu. -1 oznacza
++// wyciszenie bez timera; 0 oznacza brak wyciszenia lub uplyniecie timera.
++long alarmWyciszeniePozostaloMs(bool wyciszony, uint32_t doMs) {
++  if (!wyciszony) return 0L;
++  if (doMs == 0) return -1L;
++  const int32_t left = static_cast<int32_t>(doMs - static_cast<uint32_t>(millis()));
++  return left > 0 ? static_cast<long>(left) : 0L;
++}
+ 
+ unsigned long czasStartuPompyTimerMode = 0;
+ bool pompaCykluStartal = false;
+@@ -14318,6 +14329,10 @@
+   j += F("\"mieszadlo\":"); j += (mieszadloAktywnyStan ? "true" : "false"); j += F(",");
+   j += F("\"rozpalanie\":"); j += (rozpalanieAktywne ? "true" : "false"); j += F(",");
+   j += F("\"alarm_ogrzewanie\":"); j += (alarmOgrzewanieWlaczone ? "true" : "false"); j += F(",");
++  j += F("\"alarm_dym_wyciszony\":"); j += (czyDzwiekAlarmuWyciszony ? "true" : "false"); j += F(",");
++  j += F("\"alarm_dym_wyciszenie_ms\":"); j += String(alarmWyciszeniePozostaloMs(czyDzwiekAlarmuWyciszony, czyDzwiekAlarmuWyciszonyDoMs)); j += F(",");
++  j += F("\"alarm_ogrz_wyciszony\":"); j += (czyDzwiekAlarmuOgrzewaniaWyciszony ? "true" : "false"); j += F(",");
++  j += F("\"alarm_ogrz_wyciszenie_ms\":"); j += String(alarmWyciszeniePozostaloMs(czyDzwiekAlarmuOgrzewaniaWyciszony, czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs)); j += F(",");
+   j += F("\"alarm_panel\":"); j += (alarmPanelWlaczone ? "true" : "false"); j += F(",");
+   // [LCD-SEZON, plan PIEC_ESPNOW_PLAN.md] Miesiac z RTC centrali (0 gdy RTC
+   // niegotowy — patrz g_rtcGotowy/FIX 12/FIX 13 wyzej) — wyswietlacz uzywa
+@@ -17151,6 +17166,7 @@
+ void wyciszAlarmDzwiekowy() {
+   if (czyAlarmAktywny == 1) {
+     czyDzwiekAlarmuWyciszony = true;
++    czyDzwiekAlarmuWyciszonyDoMs = 0; // starsza komenda = do ustapienia alarmu
+     noTone(pinBuzer);
+     digitalWrite(pinZasilanieBuzera, LOW);
+     fazaAlarmuDzwiekowego = 0; // buzzerAlarmuDymu() zlapaloby to i tak w <=50ms, ale jawnie czytelniej
+@@ -17158,6 +17174,83 @@
+   }
+ }
+ 
++// Wspolna komenda z Androida: seconds=0 oznacza wyciszenie do ustapienia
++// biezacego alarmu, 1..3600 to timer, a "off" jawnie przywraca dzwiek.
++bool ustawWyciszenieAlarmu(const String& rodzaj, const String& akcja, String& blad) {
++  const bool wybierzDym = rodzaj == "dym" || rodzaj == "oba";
++  const bool wybierzOgrz = rodzaj == "ogrz" || rodzaj == "oba";
++  if (!wybierzDym && !wybierzOgrz) {
++    blad = "unknown_alarm_type";
++    return false;
++  }
++  const bool dymAktywny = czyAlarmAktywny == 1;
++  const bool ogrzAktywny = alarmOgrzewanieWlaczone || alarmPanelWlaczone;
++
++  if (akcja == "off") {
++    if (wybierzDym) {
++      czyDzwiekAlarmuWyciszony = false;
++      czyDzwiekAlarmuWyciszonyDoMs = 0;
++      fazaAlarmuDzwiekowego = 0;
++      if (dymAktywny) czasNastepnegoAlarmuDzwiekowego = millis();
++    }
++    if (wybierzOgrz) {
++      czyDzwiekAlarmuOgrzewaniaWyciszony = false;
++      czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs = 0;
++      fazaAlarmuOgrzewania = 0;
++    }
++    zapiszLog(String(F("tag=ALARM akcja=koniec_wyciszenia rodzaj=")) + rodzaj);
++    return true;
++  }
++
++  if (akcja.isEmpty()) {
++    blad = "missing_duration";
++    return false;
++  }
++  for (size_t i = 0; i < akcja.length(); ++i) {
++    if (akcja[i] < '0' || akcja[i] > '9') {
++      blad = "invalid_duration";
++      return false;
++    }
++  }
++  const long seconds = akcja.toInt();
++  if (seconds < 0 || seconds > 3600) {
++    blad = "duration_out_of_range";
++    return false;
++  }
++
++  // "oba" jest atomowe: jesli jeden alarm zdazyl ustapic miedzy tapnieciem
++  // w telefonie a odbiorem komendy, wyciszamy tylko ten, ktory nadal trwa.
++  const bool wyciszDym = wybierzDym && dymAktywny;
++  const bool wyciszOgrz = wybierzOgrz && ogrzAktywny;
++  if (!wyciszDym && !wyciszOgrz) {
++    blad = "alarm_not_active";
++    return false;
++  }
++
++  const uint32_t doMs = seconds == 0 ? 0U
++      : static_cast<uint32_t>(millis()) + static_cast<uint32_t>(seconds) * 1000UL;
++  if (wyciszDym) {
++    czyDzwiekAlarmuWyciszony = true;
++    czyDzwiekAlarmuWyciszonyDoMs = doMs;
++    noTone(pinBuzer);
++    digitalWrite(pinZasilanieBuzera, LOW);
++    fazaAlarmuDzwiekowego = 0;
++  }
++  if (wyciszOgrz) {
++    czyDzwiekAlarmuOgrzewaniaWyciszony = true;
++    czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs = doMs;
++    // Dym ma pierwszenstwo nad fizycznym buzzerem; nie przerywamy jego tonu.
++    if (czyAlarmAktywny != 1) {
++      noTone(pinBuzer);
++      digitalWrite(pinZasilanieBuzera, LOW);
++      fazaAlarmuOgrzewania = 0;
++    }
++  }
++  zapiszLog(String(F("tag=ALARM akcja=wyciszenie rodzaj=")) + rodzaj +
++      " czas_s=" + String(seconds));
++  return true;
++}
++
+ void pozar() {
+   // [SYMULACJA-PER-CZUJNIK, PLAN_SYMULACJA_CZUJNIKOW.md 6.3] Sprawdzone raz
+   // na poczatku calego wywolania - wynik uzywany zarowno przy bramce
+@@ -17362,6 +17455,7 @@
+       zapiszLogKrytyczny(F("tag=ALARM lvl=INFO zdarzenie=dezaktywacja typ=POZAR"));
+       czyAlarmAktywny = 0;
+       czyDzwiekAlarmuWyciszony = false;
++      czyDzwiekAlarmuWyciszonyDoMs = 0;
+       noTone(pinBuzer);
+       digitalWrite(pinZasilanieBuzera, LOW);
+       fazaAlarmuDzwiekowego = 0;
+@@ -17384,6 +17478,16 @@
+ // dzwieku brzmi identycznie jak stara wersja z delay() — zmienia sie tylko
+ // to, ze Core 1 (pompa/serwa/reszta zadan) juz nigdy nie czeka na buzzer.
+ void buzzerAlarmuDymu() {
++  const uint32_t teraz32 = static_cast<uint32_t>(millis());
++  if (czyAlarmAktywny == 1 && czyDzwiekAlarmuWyciszony &&
++      czyDzwiekAlarmuWyciszonyDoMs != 0 &&
++      static_cast<int32_t>(teraz32 - czyDzwiekAlarmuWyciszonyDoMs) >= 0) {
++    czyDzwiekAlarmuWyciszony = false;
++    czyDzwiekAlarmuWyciszonyDoMs = 0;
++    fazaAlarmuDzwiekowego = 0;
++    czasNastepnegoAlarmuDzwiekowego = millis();
++    zapiszLog(F("tag=ALARM akcja=koniec_wyciszenia rodzaj=dym przyczyna=timer"));
++  }
+   if (czyAlarmAktywny != 1 || czyDzwiekAlarmuWyciszony) {
+     if (fazaAlarmuDzwiekowego != 0) {
+       noTone(pinBuzer);
+@@ -17425,6 +17529,16 @@
+ // OGRZEWANIA/PANELU - patrz WDROZENIE_DZWIEKOW_ALARMOWYCH_CENTRALA.md.
+ // Rejestracja w setup(): dodajZadanie(buzzerAlarmuOgrzewania, 50).
+ void buzzerAlarmuOgrzewania() {
++  const uint32_t teraz32 = static_cast<uint32_t>(millis());
++  const bool alarmOgrzAktywny = alarmOgrzewanieWlaczone || alarmPanelWlaczone;
++  if (alarmOgrzAktywny && czyDzwiekAlarmuOgrzewaniaWyciszony &&
++      czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs != 0 &&
++      static_cast<int32_t>(teraz32 - czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs) >= 0) {
++    czyDzwiekAlarmuOgrzewaniaWyciszony = false;
++    czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs = 0;
++    fazaAlarmuOgrzewania = 0;
++    zapiszLog(F("tag=ALARM akcja=koniec_wyciszenia rodzaj=ogrz przyczyna=timer"));
++  }
+   // Dym ZAWSZE ma pierwszenstwo do jedynego fizycznego buzzera - jesli
+   // aktywny, ta funkcja nic nie robi i NIE RUSZA pinow (buzzerAlarmuDymu()
+   // ma wtedy pelna, wylaczna kontrole nad pinBuzer/pinZasilanieBuzera).
+@@ -17445,6 +17559,7 @@
+     // czyDzwiekAlarmuWyciszony=false w pozar() dla dymu).
+     if (!alarmOgrzewanieWlaczone && !alarmPanelWlaczone) {
+       czyDzwiekAlarmuOgrzewaniaWyciszony = false;
++      czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs = 0;
+     }
+     return;
+   }
+@@ -17464,6 +17579,7 @@
+ void wyciszAlarmDzwiekowyOgrzewania() {
+   if (alarmOgrzewanieWlaczone || alarmPanelWlaczone) {
+     czyDzwiekAlarmuOgrzewaniaWyciszony = true;
++    czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs = 0; // starsza komenda = do ustapienia alarmu
+     zapiszLog(F("tag=ALARM akcja=wyciszenie zrodlo=recznie msg=\"alarm dzwiekowy ogrzewania/panelu, reszta bez zmian\""));
+   }
+ }
+@@ -27362,6 +27478,10 @@
+   ja("\"syberka\":" + String(pozycjaSyberek) + ",");
+   ja("\"pompa\":" + String(pompaJestWlaczona() ? "true" : "false") + ",");
+   ja("\"alarm_ogrzewanie\":" + String(alarmOgrzewanieWlaczone ? "true" : "false") + ",");
++  ja("\"alarm_dym_wyciszony\":" + String(czyDzwiekAlarmuWyciszony ? "true" : "false") + ",");
++  ja("\"alarm_dym_wyciszenie_ms\":" + String(alarmWyciszeniePozostaloMs(czyDzwiekAlarmuWyciszony, czyDzwiekAlarmuWyciszonyDoMs)) + ",");
++  ja("\"alarm_ogrz_wyciszony\":" + String(czyDzwiekAlarmuOgrzewaniaWyciszony ? "true" : "false") + ",");
++  ja("\"alarm_ogrz_wyciszenie_ms\":" + String(alarmWyciszeniePozostaloMs(czyDzwiekAlarmuOgrzewaniaWyciszony, czyDzwiekAlarmuOgrzewaniaWyciszonyDoMs)) + ",");
+   ja("\"alarm_panel\":" + String(alarmPanelWlaczone ? "true" : "false") + ",");
+   // [FB-GAP-FIX] tryb_serwa — brakujace pole, luka opisana w
+   // PLAN_FIREBASE_STEROWNIK_CO.md/sekcja 6 i CONTYNUACJA (przelacznik
+@@ -27952,6 +28072,32 @@
+     if (alarmPanelWlaczone)      { dezaktywujAlarmPanelu(); alarmPanelWlaczone = false; }
+     zapiszLog(F("tag=FB lvl=INFO akcja=reset_alarmow msg=\"alarmy skasowane recznie\""));
+   }
++  else if (cmd.startsWith("alarm_mute ")) {
++    // Synchronizowane wyciszenie dla Androida: alarm_mute <dym|ogrz|oba> <sekundy|off>.
++    // 0 = do ustapienia aktywnego alarmu, 1..3600 = timer, off = natychmiastowe wznowienie.
++    String args = cmd.substring(11);
++    args.trim();
++    const int separator = args.indexOf(' ');
++    if (separator <= 0) {
++      lastFirebaseCmdOk = false;
++      lastFirebaseCmdError = "format: alarm_mute <dym|ogrz|oba> <sekundy|off>";
++      zapiszLog(F("tag=ALARM lvl=WARN zdarzenie=wyciszenie_odrzucone powod=bad_format"));
++    } else {
++      String rodzaj = args.substring(0, separator);
++      String akcja = args.substring(separator + 1);
++      rodzaj.trim();
++      akcja.trim();
++      String bladWyciszenia;
++      if (!ustawWyciszenieAlarmu(rodzaj, akcja, bladWyciszenia)) {
++        lastFirebaseCmdOk = false;
++        lastFirebaseCmdError = bladWyciszenia;
++        zapiszLog(String(F("tag=ALARM lvl=WARN zdarzenie=wyciszenie_odrzucone rodzaj=")) + rodzaj + " powod=" + bladWyciszenia);
++      } else {
++        lastFirebaseCmdOk = true;
++        lastFirebaseCmdError = "";
++      }
++    }
++  }
+   else if (cmd == "wycisz") {
+     // [FIX-DYM-RESET-NIEPELNY] Celowo OSOBNA komenda od reset_alarmow —
+     // dotyczy wylacznie buzzera alarmu dymu, nie rusza serw/pompy/flag.

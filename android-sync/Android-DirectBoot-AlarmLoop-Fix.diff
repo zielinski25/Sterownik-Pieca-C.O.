@@ -1,0 +1,18 @@
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -289 +289 @@
+-                                    AlarmNotify.startAlarmLoop(ctx, AlarmCenter.sound(prefs, kind))
++                                    AlarmMonitorService.startAlarmLoop(ctx, AlarmCenter.sound(prefs, kind))
+@@ -294 +294 @@
+-                                AlarmNotify.stopAlarmLoop()
++                                AlarmMonitorService.stopAlarmLoop()
+diff --git a/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt b/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
+--- a/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
+@@ -378 +378 @@
+-                                    AlarmNotify.startAlarmLoop(applicationContext, AlarmCenter.sound(prefs, kind))
++                                    AlarmMonitorService.startAlarmLoop(applicationContext, AlarmCenter.sound(prefs, kind))
+@@ -383 +383 @@
+-                                AlarmNotify.stopAlarmLoop()
++                                AlarmMonitorService.stopAlarmLoop()
