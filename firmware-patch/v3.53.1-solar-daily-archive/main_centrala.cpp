@@ -1,3 +1,19 @@
+// [v3.53.1 SOLAR-SPLIT-PROOF] — 2026-10-21
+// Co: /archiwum_test — raport z 30 WYMYSLONYCH dni, wyslany ta sama droga co
+//     prawdziwy; plus odpowiedz na nieznana komende.
+// Problem: podzial wiadomosci (v3.53.0) dziala dopiero od ~25 zapisanych dni.
+//     Archiwum mialo 2 dni, wiec po wgraniu v3.53.0 nie bylo jak sprawdzic na
+//     urzadzeniu, czy drugi kawalek raportu dojdzie. Bledu dowiedzielibysmy sie
+//     po miesiacu — i to nie jako blad, tylko jako CICHE zatrzymanie raportu.
+//     Drugi problem z tego samego wieczoru: /archiwum30 (bez spacji) nie
+//     dostawalo ZADNEJ odpowiedzi — wygladalo jak zawieszony bot.
+// Naprawa: (1) buildSelfTestDays() w naglowku buduje 30 dni w RAM (bez
+//     LittleFS), firmware wysyla je przez tgWyslijRaportTekst() — ten sam kod
+//     porcjowania co raport prawdziwy, wiec dowod jest prawdziwy;
+//     (2) na nieznana komende (zaczynajaca sie od "/") bot odpowiada lista
+//     najblizszych mozliwosci zamiast milczec.
+// FIRMWARE_VERSION v3.53.0 -> v3.53.1 (PATCH, tylko diagnostyka Telegrama).
+//
 // [v3.53.0 SOLAR-REPORT-TESTABLE] — 2026-10-21
 // Co: skladanie raportu archiwum przeniesione do SolarDailyArchive.h, gdzie
 //     da sie je uruchomic na komputerze PRZED wgraniem firmware'u.
@@ -4996,9 +5012,10 @@
 
 // [v3.52.4] Twarda bramka zgodnosci naglowka. Bez tego mozna bylo zbudowac
 // firmware meldujacy nowy numer wersji, ale liczacy URL po staremu.
-// [v3.53.0] Prog 20261101 — naglowek musi znac buildReport() i splitForTelegram().
-#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261101
-#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja nie ma buildReport() ani podzialu wiadomosci."
+// [v3.53.1] Prog 20261102 — naglowek musi znac buildSelfTestDays().
+// [v3.53.0] 20261101 — buildReport() i podzial wiadomosci.
+#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261102
+#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja nie ma buildSelfTestDays() (v3.53.1)."
 #endif
 #include <time.h>
 #include <stdlib.h>
@@ -5395,7 +5412,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.53.0";
+static const char* FIRMWARE_VERSION = "v3.53.1";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -5590,6 +5607,7 @@ enum TgDeferCmd : uint8_t {
   TG_COREDUMP_LIST,         // [COREDUMP, v3.11.0] wyswietl liste zrzutow z /coredumps/
   TG_HIST,                 // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md] wyslij hist_short.csv+hist_long.csv+log_ustawien.txt
   TG_SOLAR_ARCHIVE,        // [v3.51.0] raport archiwum solarnego czytany z /solar_daily
+  TG_SOLAR_ARCHIVE_TEST,   // [v3.53.1] /archiwum_test — 30 dni wymyslonych, test podzialu
   TG_SOLAR_PURGE_LEGACY,   // [v3.52.0] usun rekordy sprzed poprawki kanalu (bojler CO)
   TG_SOLAR_DELETE_DAY,     // [v3.52.1] usun wskazany dzien (data w g_solarDeleteDate)
   TG_POMPA_WL,
@@ -23851,8 +23869,9 @@ static void tgRaportPorcjaSink(void *ctx, const char *prefix, size_t prefixLen,
   g_tgRaportPorcji++;
 }
 
-static void tgWyslijRaportSolarny(uint8_t days) {
-  const String raport = buildSolarArchiveTelegramReport(days);
+// [v3.53.1] Wspolna wysylka GOTOWEGO tekstu — korzysta z niej raport
+// prawdziwy i /archiwum_test, wiec test sprawdza dokladnie te sama droge.
+static void tgWyslijRaportTekst(const String &raport) {
   if (raport.length() == 0) return;
 
   g_tgRaportPorcji = 0;
@@ -23879,6 +23898,41 @@ static void tgWyslijRaportSolarny(uint8_t days) {
     if (i + 1 < g_tgRaportPorcji) delay(300);   // nie zalewamy API Telegrama
   }
   g_tgRaportPorcji = 0;
+}
+
+static void tgWyslijRaportSolarny(uint8_t days) {
+  tgWyslijRaportTekst(buildSolarArchiveTelegramReport(days));
+}
+
+// [v3.53.1] /archiwum_test — 30 dni WYMYSLONYCH, zeby sprawdzic podzial
+// wiadomosci, zanim archiwum naprawde uzbiera 30 dni. Nie czyta i nie zmienia
+// zadnego pliku; raport jest oznaczony w pierwszej linii jako TEST.
+static void tgWyslijRaportTestowy() {
+  static solar_daily::DayReport demo[kSolarReportMaxDays];
+  memset(demo, 0, sizeof(demo));
+
+  solar_daily::LocalFields teraz;
+  char dzis[11] = "2027-01-30";   // awaryjna data, gdy brak zegara
+  int nowMinutes = 720;
+  if (solarArchiveLocalNow(teraz)) {
+    solar_daily::formatDateKey(teraz.year, teraz.month, teraz.day, dzis);
+    nowMinutes = teraz.hour * 60 + teraz.minute;
+  }
+  const uint16_t ile = solar_daily::buildSelfTestDays(demo, kSolarReportMaxDays, dzis);
+  if (ile == 0) {
+    sendTelegramMessage(F("Test podzialu: nie udalo sie zbudowac dni."));
+    return;
+  }
+
+  solar_daily::ReportOptions opt;
+  memcpy(opt.today, dzis, sizeof(opt.today));
+  opt.nowMinutes = nowMinutes;
+
+  String out;
+  out.reserve(5200);
+  out += solar_daily::kSelfTestBanner;
+  solar_daily::buildReport(demo, ile, opt, tgRaportSink, &out);
+  tgWyslijRaportTekst(out);
 }
 
 // Wpiete do schedulera (dodajZadanie), co HISTORIA_PROBKA_MS.
@@ -39055,12 +39109,22 @@ void pollTelegramCommands() {
             if (v >= 1 && v <= (long)kSolarReportMaxDays) dni = (uint32_t)v;
           }
           tgKolejkujAlboOdpowiedzBledem(TG_SOLAR_ARCHIVE, dni);
+        } else if (cmd == "/archiwum_test") {
+          // [v3.53.1] Dowod podzialu wiadomosci bez czekania miesiaca na 30 dni.
+          tgKolejkujAlboOdpowiedzBledem(TG_SOLAR_ARCHIVE_TEST);
         } else if (cmd == "/reset_alarmy") {
           tgKolejkujAlboOdpowiedzBledem(TG_RESET_ALARMY);
         } else if (cmd == "/update") {
           tgKolejkujAlboOdpowiedzBledem(TG_UPDATE);
         } else if (cmd == "/update_panel") {
           tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL);
+        } else if (cmd.startsWith("/")) {
+          // [v3.53.1] Do tej wersji literowka konczyla sie CISZA i wygladala
+          // jak zawieszony bot (/archiwum30 zamiast /archiwum 30 — 2026-10-21).
+          String odp = F("Nie znam komendy: ");
+          odp += cmd.substring(0, 64);
+          odp += F("\nWpisz /help — pokaze menu.");
+          sendTelegramMessage(odp);
         }
       }
     }
@@ -43737,6 +43801,10 @@ void tgTaskFn(void* /*pvParams*/) {
 
           case TG_SOLAR_ARCHIVE:
             tgWyslijRaportSolarny((uint8_t)(tgQueued.arg & 0xFF));
+            break;
+
+          case TG_SOLAR_ARCHIVE_TEST:
+            tgWyslijRaportTestowy();
             break;
 
           case TG_SOLAR_DELETE_DAY: {

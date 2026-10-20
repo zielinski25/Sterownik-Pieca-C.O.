@@ -668,6 +668,49 @@ int main(int argc, char **argv) {
     std::printf("%d wariantow OK\n", ok);
   }
 
+  // ── S24: raport /archiwum_test (30 dni WYMYSLONYCH) ────────────────────
+  // Dokladnie to, co robi firmware: banner + buildSelfTestDays() + buildReport().
+  // Ten scenariusz jest dowodem, ze podzial zadziala na urzadzeniu TERAZ,
+  // a nie dopiero gdy archiwum uzbiera 30 prawdziwych dni.
+  {
+    static DayReport demo[30];
+    int ok = 0;
+    for (int wariant = 0; wariant < 4; wariant++) {
+      const char *dzis = (wariant == 0) ? "2026-10-21"
+                       : (wariant == 1) ? "2026-10-25"   // doba 25 h
+                       : (wariant == 2) ? "2027-03-29"   // doba 23 h
+                                        : "2027-01-30";
+      std::memset(demo, 0, sizeof(demo));
+      const uint16_t ile = buildSelfTestDays(demo, 30, dzis);
+      check(ile == 30, "S24 buildSelfTestDays wypelnia 30 dni", std::string());
+
+      std::string rep = kSelfTestBanner;
+      buildReport(demo, ile, opts(dzis, 600), sinkString, &rep);
+
+      check(rep.find("TEST podzialu") == 0, "S24 banner jest pierwsza linia", rep);
+      check(rep.find("(30 dni, z centrali)") != std::string::npos,
+            "S24 naglowek mowi 30 dni", rep);
+      checkCommon(rep, "S24 archiwum_test");
+      checkSplit(rep, "S24 archiwum_test", gVerbose);
+      if (wariant == 1)
+        check(rep.find("/1500 prob.") != std::string::npos,
+              "S24 doba 25 h ma 1500 probek", rep);
+      if (wariant == 2)
+        check(rep.find("/1380 prob.") != std::string::npos,
+              "S24 doba 23 h ma 1380 probek", rep);
+
+      // Dowod, ze to naprawde potrzebuje dwoch wiadomosci — inaczej test
+      // nie sprawdzalby podzialu, tylko jego brak.
+      std::vector<Wiadomosc> wiad;
+      splitForTelegramParts(rep.c_str(), kTelegramSplitLen, partSink, &wiad);
+      check(wiad.size() == 2, "S24 raport testowy to dokladnie 2 wiadomosci", rep);
+      check(wiad.size() > 1 && wiad[1].prefiks,
+            "S24 druga wiadomosc ma prefiks kontynuacji", rep);
+      ok++;
+    }
+    std::printf("  %-46s %d warianty OK\n", "S24 /archiwum_test (30 dni wymyslonych)", ok);
+  }
+
   std::printf("\n%s: %d sprawdzen, %d bledow\n",
               gFail == 0 ? "WYNIK OK" : "WYNIK BLAD", gChecks, gFail);
   return gFail == 0 ? 0 : 1;

@@ -1,7 +1,33 @@
-# v3.53.0 — autonomiczne dzienne archiwum solarne w centrali
+# v3.53.1 — autonomiczne dzienne archiwum solarne w centrali
 
 Paczka robocza oparta na źródłach v3.50.0. Katalogi wcześniejszych wersji pozostają bez zmian.
 **Nie zmieniano Androida, reguł Firebase ani plików historii. Firmware nie był kompilowany w tym środowisku.**
+
+## Co wnosi v3.53.1 — dowód podziału wiadomości na urządzeniu
+
+v3.53.0 podzieliła raport na porcje, ale **nie dało się tego sprawdzić**, bo podział
+włącza się dopiero od ~25 zapisanych dni, a archiwum miało ich **2**. Błąd wyszedłby
+po miesiącu — i to nie jako błąd, tylko jako **ciche zatrzymanie raportu**.
+
+| problem | rozwiązanie |
+|---|---|
+| nie ma czym zapełnić 30 dni, żeby zobaczyć podział | `/archiwum_test` — 30 dni **wymyślonych**, zbudowanych w RAM, bez czytania i ruszania LittleFS; idą **tą samą drogą** co raport prawdziwy (`tgWyslijRaportTekst`) |
+| `/archiwum30` (bez spacji) nie dawało **żadnej** odpowiedzi | nieznana komenda kończy się teraz `Nie znam komendy: … /help` |
+| raport testowy mógłby wyglądać jak prawdziwy | pierwsza linia: `TEST podzialu — liczby wymyslone, archiwum nietkniete` |
+
+Użycie:
+
+```
+/archiwum_test      # dwie wiadomosci, druga z (ciag dalszy)
+```
+
+Dane w teście są celowo zróżnicowane: co szósty dzień ma większą dziurę (wypada `TECH`),
+część prognoz jest niepełna, a doby 23 h i 25 h (zmiana czasu) mają własną liczbę próbek
+(1380 / 1500), nie 1440.
+
+**Po co na urządzeniu, skoro symulator przechodzi?** Bo symulator sprawdza *decyzję*
+o podziale, a `/archiwum_test` sprawdza *całą drogę*: budowę `String`, kolejkę Telegrama,
+`sendTelegramMessage()` i limity API. To jedyne miejsce, którego nie da się sprawdzić na komputerze.
 
 ## Co wnosi v3.53.0 — raport testowany PRZED wgraniem
 
@@ -47,7 +73,7 @@ stopka bez mylącego mianownika, pokrycie czasu tylko przy spójnych danych,
 jawne zerowanie terminatorów, zabezpieczenie przed ucięciem raportu
 (ostatnia porcja mówi `(raport uciety — za duzo dni naraz)`).
 
-### Zakres symulacji — 3559 sprawdzeń
+### Zakres symulacji — 3665 sprawdzeń
 
 | grupa | scenariusze |
 |---|---|
@@ -58,6 +84,7 @@ jawne zerowanie terminatorów, zabezpieczenie przed ucięciem raportu
 | skrajne | doba 25 h, doba 23 h, 30 dni, 1 dzień, pusty katalog, awaria GHI |
 | **przemiatanie** | **co 10 minut przez całą dobę (145 wariantów)** |
 | **przemiatanie** | **każda liczba dni 1–30** |
+| **test na urządzeniu** | **S24: `/archiwum_test` w 4 wariantach dat (zwykły, 25 h, 23 h, awaryjny)** |
 
 Każdy wyrenderowany raport jest sprawdzany automatycznie na: długość linii,
 brak `nan`/`inf`/`0/0`, potrójne spacje, zbalansowane `<b>…</b>`, zakończenie

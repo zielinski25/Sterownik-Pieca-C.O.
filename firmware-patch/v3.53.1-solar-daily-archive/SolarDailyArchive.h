@@ -16,6 +16,10 @@
 #ifndef SOLAR_DAILY_ARCHIVE_H
 #define SOLAR_DAILY_ARCHIVE_H
 
+// [v3.53.1] API 20261102: buildSelfTestDays() + kSelfTestBanner — raport
+// z 30 WYMYSLONYCH dni, zeby dalo sie sprawdzic podzial wiadomosci NA
+// URZADZENIU, zanim archiwum naprawde uzbiera 30 dni (patrz /archiwum_test).
+//
 // [v3.53.0] API 20261101: buildReport() sklada CALA wiadomosc Telegrama
 // (naglowek, linie dni, stopka) w tym pliku, wiec test hostowy sprawdza
 // dokladnie to, co wychodzi z urzadzenia — a nie tylko pojedyncza linie.
@@ -40,7 +44,7 @@
 // main_centrala.cpp wymaga dokladnie tej wersji i NIE SKOMPILUJE SIE ze starym
 // plikiem — dzieki temu nie da sie wgrac firmware'u, ktory podaje nowy numer
 // wersji, ale liczy URL po staremu (kontrola "Z" w start_hour/end_hour).
-#define SOLAR_DAILY_ARCHIVE_API 20261101
+#define SOLAR_DAILY_ARCHIVE_API 20261102
 
 #include <stdint.h>
 #include <stddef.h>
@@ -946,6 +950,59 @@ inline uint16_t buildReport(const DayReport *days, uint16_t count,
                   (unsigned)opt.legacyCount);
   }
   return count;
+}
+
+// ── raport testowy (wymyslone dni) ─────────────────────────────────────────
+// [v3.53.1] Po co: podzial wiadomosci dziala dopiero od ~25 zapisanych dni.
+// Archiwum mialo ich 2, wiec na urzadzeniu nie dalo sie sprawdzic, czy drugi
+// kawalek raportu w ogole dojdzie — a dowiedzielibysmy sie o bledzie po
+// miesiacu, gdy raport po cichu przestanie przychodzic. /archiwum_test
+// buduje 30 dni w RAM (bez dotykania LittleFS) i wysyla je TA SAMA droga.
+static const char kSelfTestBanner[] =
+    "TEST podzialu \u2014 liczby wymyslone, archiwum nietkniete\n";
+
+// Wypelnia `count` rekordow, konczac na todayKey (najnowszy = todayKey).
+// Zwraca liczbe rekordow, ktore udalo sie wypelnic (0 = bledna data).
+inline uint16_t buildSelfTestDays(DayReport *out, uint16_t count,
+                                  const char *todayKey) {
+  if (!out || count == 0 || !todayKey) return 0;
+  uint16_t filled = 0;
+  for (uint16_t i = 0; i < count; ++i) {
+    char key[11];
+    if (!addDays(todayKey, (int)i - (int)count + 1, key)) break;
+    DayReport &d = out[filled];
+    d = DayReport();
+    memcpy(d.date, key, sizeof(d.date));
+    d.hasForecast = true;
+    d.forecastComplete = (i % 7) != 3;
+    d.ghiKwhM2 = 0.80f + 0.07f * (float)i;
+    d.hasActual = true;
+    d.finalized = true;
+    d.minC = 16.0f + 0.1f * (float)i;
+    d.maxC = d.minC + 8.5f + 0.05f * (float)i;
+    d.deltaC = 3.0f + 0.1f * (float)i;
+    // Doba 23/25 h (zmiana czasu) musi miec wlasna liczbe probek, inaczej
+    // wiersz TEST pokazywalby 1440 probek w dobie 25-godzinnej.
+    uint16_t expected = 1440;
+    int32_t startUtc = 0, endUtc = 0;
+    uint16_t hours = 0;
+    if (warsawDayBounds(key, startUtc, endUtc, hours)) {
+      if (hours > 0) expected = (uint16_t)(hours * 60);
+      d.firstUtc = startUtc;
+      d.lastUtc = endUtc - 600;
+      d.minUtc = startUtc + 5 * 3600 + 1800;   // 05:30 czasu lokalnego
+      d.maxUtc = startUtc + 12 * 3600 + 600;   // 12:10
+    }
+    // Co szosty dzien ma wieksza dziure — wtedy wypada TECH, wiec raport
+    // testowy pokazuje oba warianty wiersza, a nie 30 identycznych.
+    const uint16_t braki = (uint16_t)(60 + (((i % 6) == 0) ? 120 : 0));
+    d.expectedSamples = expected;
+    d.validSamples = (uint16_t)(expected - braki + (i % 20));
+    d.coverageRatio = (float)d.validSamples / (float)expected;
+    d.technicalCandidate = d.coverageRatio >= 0.95f;
+    filled++;
+  }
+  return filled;
 }
 
 // [v3.53.0] Limity Telegrama i podzialu w jednym miejscu — firmware i symulator

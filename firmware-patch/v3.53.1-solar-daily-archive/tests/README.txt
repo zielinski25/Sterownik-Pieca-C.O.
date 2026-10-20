@@ -15,7 +15,7 @@ Testy logiki archiwum (bez Arduino):
 
 SYMULATOR RAPORTU (v3.53.0) -- uruchom PRZED kazda prosba o wgranie firmware:
   g++ -std=c++11 -Wall -Wextra -Werror -I.. ReportSimulation.cpp -o /tmp/reportsim
-  /tmp/reportsim              -> WYNIK OK: 3559 sprawdzen, 0 bledow
+  /tmp/reportsim              -> WYNIK OK: 3665 sprawdzen, 0 bledow
   /tmp/reportsim --verbose    -> pelna tresc kazdej wiadomosci
 
   Sklada CALE wiadomosci Telegrama tym samym kodem, ktory jest w firmware
@@ -27,6 +27,8 @@ SYMULATOR RAPORTU (v3.53.0) -- uruchom PRZED kazda prosba o wgranie firmware:
   awaria GHI, brak zegara, pusty katalog -- plus przemiatanie calej doby co
   10 minut (145 wariantow) i kazdej liczby dni 1..30 (30 wariantow), oba
   z pelnym sprawdzeniem podzialu. Drukuje granice wiadomosci i ich rozmiary.
+  S24 odtwarza raport /archiwum_test (30 dni wymyslonych) w 4 wariantach dat,
+  w tym doby 23 h i 25 h -- to dowod, ze podzial zadziala na urzadzeniu.
 
   Dlaczego to istnieje: wersje v3.52.7-v3.52.11 naprawialy rzeczy widoczne
   dopiero w gotowej wiadomosci, bo testy sprawdzaly tylko pojedyncza linie.

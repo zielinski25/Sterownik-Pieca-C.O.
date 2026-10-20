@@ -2,7 +2,7 @@
 
 Dokument odtworzony 2026-10-20 po resecie środowiska (poprzednia kopia nie była w repozytorium).
 Ma być **żywy**: każda zmiana zachowania archiwum dopisuje sekcję „Historia wersji”, a ustalenia
-sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.53.0**.
+sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.53.1**.
 
 ---
 
@@ -170,7 +170,8 @@ starcie.
 | v3.52.9 | godzina minimum i maksimum (`@ HH:MM`) — amplituda przestaje być zagadką |
 | v3.52.10 | „prognoza na jutro” zamiast mylącego „brak odczytów”; `TECH` tylko dla doby zamkniętej |
 | v3.52.11 | początek doby nie udaje pomiaru: `(za malo probek)`, pokrycie czasu dopiero po godzinie |
-| **v3.53.0** | całe składanie raportu w `SolarDailyArchive.h` + symulator 3559 sprawdzeń; podział wiadomości (limit Telegrama) |
+| v3.53.0 | całe składanie raportu w `SolarDailyArchive.h` + symulator; podział wiadomości (limit Telegrama) |
+| **v3.53.1** | `/archiwum_test` — dowód podziału na urządzeniu, zanim archiwum uzbiera 30 dni; odpowiedź na nieznaną komendę |
 
 ## 11a. Jak sprawdzić raport BEZ wgrywania firmware
 
@@ -181,7 +182,7 @@ pliki i wypełnia tablicę rekordów.
 ```sh
 cd firmware-patch/v3.53.0-solar-daily-archive/tests
 g++ -std=c++11 -Wall -Wextra -Werror -I.. ReportSimulation.cpp -o /tmp/reportsim
-/tmp/reportsim              # 3559 sprawdzeń, 0 błędów
+/tmp/reportsim              # 3665 sprawdzeń, 0 błędów
 /tmp/reportsim --verbose    # pełna treść każdej wiadomości
 ```
 
@@ -190,25 +191,39 @@ nie przejdzie. `--verbose` pokazuje też granice wiadomości i ich rozmiar w baj
 raport 30-dniowy to 4585 B, czyli **dwie wiadomości** (3777 B i 822 B), nie jedna. Wersje v3.52.7–v3.52.11 łamały tę zasadę i kosztowały pięć
 aktualizacji OTA — każda naprawiała coś, co widać było tylko w gotowym tekście.
 
-## 11b. Paczka v3.53.0
+## 11b. Paczka v3.53.1
 
 | | |
 |---|---|
-| plik | `v3.53.0-solar-daily-archive.zip` |
-| rozmiar | 850 017 B |
-| sha256 | `f34336ee54273736b182946acbdaaabe2cda57e357f928fb6c1595a8ee294979` |
-| Google Drive | `1bIsQrduMa-ZMZpncFyA0zrvRSgcolbA9` |
-| katalog w repo | `firmware-patch/v3.53.0-solar-daily-archive/` |
+| plik | `v3.53.1-solar-daily-archive.zip` |
+| rozmiar | 853 182 B |
+| sha256 | `07a01257a509e29e70a7e1ffee1e5abff816e50531fb4a8c973f27904bb8389b` |
+| Google Drive | `1X9wYcTUtuyh9pm4Qrrr_s8aU3O0W0zs5` |
+| katalog w repo | `firmware-patch/v3.53.1-solar-daily-archive/` |
 
 Paczka jest **jedna** i zastępuje v3.52.7–v3.52.11 (każda z nich była osobnym,
 niepełnym krokiem). Zawiera `Piec.html` bez zmian oraz dwa patche v3.49.x.
 
+### Dowód podziału wiadomości bez czekania miesiąc
+
+Podział na porcje włącza się dopiero przy ~25 zapisanych dniach. Archiwum miało **2**,
+więc po wgraniu v3.53.0 nie było jak sprawdzić, czy druga wiadomość w ogóle dojdzie —
+a błąd ujawniłby się po miesiącu jako **ciche zatrzymanie raportu**.
+
+```
+/archiwum_test
+```
+
+Buduje 30 dni **wymyślonych** w RAM (`buildSelfTestDays()`), bez czytania i zmieniania
+LittleFS, i wysyła je **drogą prawdziwego raportu** (`tgWyslijRaportTekst`). Pierwsza
+linia zawsze mówi `TEST podzialu — liczby wymyslone, archiwum nietkniete`. Oczekiwany
+wynik: **dwie wiadomości**, druga zaczyna się od `(ciag dalszy)`.
+
 ## 12. Co dalej (plan etapowy)
 
-1. **Po wgraniu v3.53.0 (jedno wgranie)** — wysłać `/archiwum` i sprawdzić:
-   linia dnia ma `@ HH:MM` przy min/max, dzień w toku nie udaje pomiaru
-   (`za malo probek` zamiast `dT +0.0°C`), a 30 dni przychodzi w dwóch wiadomościach
-   (`(ciag dalszy)`), nie jako błąd Telegrama.
+1. **Po wgraniu v3.53.1** — `/archiwum_test`: mają przyjść **dwie** wiadomości,
+   druga z `(ciag dalszy)` i z danymi oznaczonymi `TEST`. To jedyny sposób, żeby
+   zobaczyć podział na porcje teraz, a nie po miesiącu zbierania dni.
 2. **Przed zimą** — wpisać `/solar_tryb spuszczona` **w dniu spuszczania wody**, nie później;
    inaczej rekordy z pustego zbiornika wejdą do statystyk jako „pochmurne dni”.
 3. **Wiosną** — `/solar_tryb sezon`; prognoza GHI wróci przy najbliższym oknie.
@@ -222,21 +237,27 @@ Zapis rzeczywistych raportów, żeby dało się porównać dni i wychwycić anom
 ### 2026-10-21 po północy — wgrana v3.53.0 (pierwsze wgranie po testach)
 
 Użytkownik zgłosił instalację **v3.53.0**. To pierwsza paczka od v3.52.7, której treść
-raportu została sprawdzona **przed** wgraniem (339 PASS + 3559 sprawdzeń symulatora).
+raportu została sprawdzona **przed** wgraniem (339 PASS + 3665 sprawdzeń symulatora
+w wersji v3.53.1; w chwili wgrywania było 3559).
 
-Do potwierdzenia na urządzeniu (wynik wpisać poniżej, nie zmyślać):
+Wynik na urządzeniu (zrzut Telegrama, 00:24–00:33):
 
 | sprawdzenie | oczekiwane | wynik |
 |---|---|---|
-| `/version` | `v3.53.0` (nie `v3.52.11` — to znaczyłoby rollback OTA) | — |
-| `/archiwum` | jedna wiadomość; linia dnia z `@ HH:MM` przy min i max | — |
-| `/archiwum 30` | **dwie** wiadomości; druga zaczyna się od `(ciag dalszy)` | — |
-| po ~10 min od OTA | brak komunikatu o rollbacku (potwierdzenie chodzi w `loop()`) | — |
+| `/update` | pobranie z GitHuba i restart | `Nowa wersja: 3.53.0 (obecna: v3.52.10) … Aktualizacja pobrana OK` — **na urządzeniu była v3.52.10**, czyli v3.52.11 nigdy nie weszła |
+| `/archiwum` po restarcie (00:26) | licznik próbek wraca z pliku, bez utraty doby | `20/1440 prob. 00:00-00:19` — dokładnie ten sam stan, co przed restartem |
+| `/archiwum` o 00:32 | licznik rośnie dalej | `25/1440 prob. 00:00-00:30` (restart zjadł ~6 minut: 00:20–00:25) |
+| `/archiwum 30` | **dwie** wiadomości | **nie udało się sprawdzić** — archiwum ma tylko **2 dni**, więc nie ma czego dzielić |
+| `/archiwum30` (bez spacji) | — | **cisza**; do v3.53.1 nieznana komenda nie dostawała żadnej odpowiedzi |
+| rollback OTA | brak komunikatu | brak — aktualizacja się potwierdziła |
 
-Jeżeli `/archiwum 30` przyjdzie jako jedna wiadomość albo nie przyjdzie wcale —
-podział na porcje nie działa i trzeba patrzeć na `/logi`. Jeżeli przyjdzie druga
-wiadomość **sama z nagłówkiem** — to znaczy, że wrócił błąd z v3.53.0 (prefiks
-wysyłany osobno), ale ten kod jest już pokryty testem (`checkSplit`, punkt 3).
+**Wniosek:** podziału wiadomości nie da się sprawdzić na prawdziwych danych przez
+najbliższy miesiąc (~25 dni potrzebnych linii). Stąd v3.53.1 z `/archiwum_test`.
+
+Sprawdzenie podziału przenosi się na `/archiwum_test` (v3.53.1). Jeżeli przyjdzie
+jedna wiadomość albo żadna — podział nie działa, patrzeć na `/logi`. Jeżeli druga
+wiadomość przyjdzie **sama z nagłówkiem** — wrócił błąd z v3.53.0 (prefiks wysyłany
+osobno), ale ten kod jest pokryty testem (`checkSplit`, punkt 3).
 
 ### 2026-10-21, raport o ~00:05, wersja v3.52.10
 
