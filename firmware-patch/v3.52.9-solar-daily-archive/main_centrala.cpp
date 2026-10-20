@@ -1,3 +1,18 @@
+// [v3.52.9 SOLAR-REPORT-MINMAX-TIME] — 2026-10-20
+// Co: raport pokazuje GODZINE minimum i maksimum temperatury.
+// Problem: v3.52.7 dodalo amplitude (max-min), zeby dT nie klamalo, ale
+//     amplituda nadal nie mowi, SKAD sie wziela. Doba 20.10: 25.0 -> 21.8
+//     (noc) -> 25.0 (dzien) -> 23.5 (wieczor) dala "amplituda 3.2°C" —
+//     tyle samo, ile daloby samo wychlodzenie nocne bez slonca.
+// Naprawa: agregat pamieta znaczniki czasu min/max (minUtc, maxUtc), rekord
+//     zapisuje je w actual.minUtc/maxUtc, a linia raportu dopisuje godzine
+//     lokalna: "(min 21.8 @ 05:40 / max 25.0 @ 14:20)". Minimum przed
+//     wschodem slonca + maksimum po poludniu = grzanie sloncem. Odwrotnie =
+//     dobowa hustawka, nie uzysk.
+// Zgodnosc: rekord sprzed tej wersji nie ma tych pol — raport pokaze same
+//     temperatury bez "@", zamiast zmyslac godzine.
+// FIRMWARE_VERSION v3.52.8 -> v3.52.9 (PATCH, tylko raport archiwum).
+//
 // [v3.52.8 SOLAR-REPORT-CELSIUS] — 2026-10-20
 // Co: jednostka w raporcie archiwum to °C, nie K.
 // Powod: "amplituda 2.5K" było technicznie poprawne (roznicę temperatur
@@ -4934,9 +4949,9 @@
 
 // [v3.52.4] Twarda bramka zgodnosci naglowka. Bez tego mozna bylo zbudowac
 // firmware meldujacy nowy numer wersji, ale liczacy URL po staremu.
-// [v3.52.7] Prog 20261027 — naglowek musi znac pola offSeason/inProgress.
-#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261027
-#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja nie zna trybu 'spuszczona' ani pokrycia od uplynietego czasu."
+// [v3.52.9] Prog 20261029 — naglowek musi znac pola minUtc/maxUtc.
+#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261029
+#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja nie zna godzin minimum i maksimum (minUtc/maxUtc)."
 #endif
 #include <time.h>
 #include <stdlib.h>
@@ -5333,7 +5348,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.52.8";
+static const char* FIRMWARE_VERSION = "v3.52.9";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -22905,6 +22920,10 @@ static bool solarArchiveWriteRecord(const char *dateKey,
     actual["deltaC"] = agg->deltaC();
     actual["firstUtc"] = agg->firstUtc;
     actual["lastUtc"] = agg->lastUtc;
+    // [v3.52.9] KIEDY padlo minimum i maksimum. Bez tego amplituda mowi
+    // "3.2 stopnia", ale nie mowi, czy to nocne wychlodzenie, czy grzanie.
+    actual["minUtc"] = agg->minUtc;
+    actual["maxUtc"] = agg->maxUtc;
     actual["coverageHours"] = agg->coverageHours();
     actual["coverageRatio"] = agg->sampleCoverageRatio();
     // [v3.51.1] Maska minut przezywa restart/OTA (pokrycie bez zanizenia).
@@ -23032,7 +23051,11 @@ static void solarArchiveRestoreFor(const char *dateKey) {
                                actual["minC"] | 0.0f,
                                actual["maxC"] | 0.0f,
                                actual["firstUtc"] | 0,
-                               actual["lastUtc"] | 0);
+                               actual["lastUtc"] | 0,
+                               // [v3.52.9] 0 = rekord sprzed tej wersji;
+                               // raport nie zmysli wtedy godziny.
+                               actual["minUtc"] | 0,
+                               actual["maxUtc"] | 0);
     const char *maskHex = actual["minuteMaskHex"] | "";
     if (maskHex[0]) {
       g_solarAgg.restoreMask(maskHex);
@@ -23706,6 +23729,9 @@ static String buildSolarArchiveTelegramReport(uint8_t days) {
     row.deltaC = doc["actual"]["deltaC"] | 0.0f;
     row.minC = doc["actual"]["minC"] | 0.0f;
     row.maxC = doc["actual"]["maxC"] | 0.0f;
+    // [v3.52.9] Godziny min/max — 0, gdy rekord jest starszy.
+    row.minUtc = doc["actual"]["minUtc"] | 0;
+    row.maxUtc = doc["actual"]["maxUtc"] | 0;
     row.firstUtc = doc["actual"]["firstUtc"] | 0;
     row.lastUtc = doc["actual"]["lastUtc"] | 0;
     row.coverageRatio = doc["actual"]["coverageRatio"] | 0.0f;

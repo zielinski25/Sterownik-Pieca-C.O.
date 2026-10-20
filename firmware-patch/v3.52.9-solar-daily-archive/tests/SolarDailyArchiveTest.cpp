@@ -220,6 +220,60 @@ static void testAggregateRestore() {
   CHECK_NEAR(restored.deltaC(), original.deltaC(), 0.001);
 }
 
+// [v3.52.9] Agregat musi pamietac, KIEDY padlo minimum i maksimum.
+// Bez tego amplituda mowi "3.2 stopnia", ale nie mowi, czy to nocne
+// wychlodzenie, czy grzanie sloncem.
+static void testAggregateMinMaxTimes() {
+  int32_t start = 0, end = 0;
+  uint16_t hours = 0;
+  CHECK(warsawDayBounds("2026-10-20", start, end, hours));
+
+  Aggregate agg;
+  CHECK(agg.begin("2026-10-20"));
+
+  // 00:00-05:40 stygniecie 25.0 -> 21.8, potem grzanie do 25.4 o 14:20,
+  // potem wieczorne stygniecie do 23.5. Szczyt MUSI byc wyraznie wyzszy od
+  // wartosci startowej — przy rownych 25.0 zaokraglenie float trzymaloby
+  // maksimum na pierwszej probce doby.
+  for (int32_t m = 0; m <= 340; m++) {
+    agg.addSample(start + m * 60, 25.0f - 3.2f * (float)m / 340.0f, 0, false);
+  }
+  for (int32_t m = 341; m <= 860; m++) {
+    agg.addSample(start + m * 60, 21.8f + 3.6f * (float)(m - 340) / 520.0f, 0, false);
+  }
+  for (int32_t m = 861; m < 1380; m++) {
+    agg.addSample(start + m * 60, 25.4f - 1.9f * (float)(m - 860) / 520.0f, 0, false);
+  }
+
+  CHECK_EQ_INT(agg.minUtc, start + 340 * 60);   // 05:40
+  CHECK_EQ_INT(agg.maxUtc, start + 860 * 60);   // 14:20
+  CHECK_NEAR(agg.minC, 21.8, 0.01);
+  CHECK_NEAR(agg.maxC, 25.4, 0.01);
+
+  // Odtworzenie po restarcie musi zachowac oba znaczniki.
+  Aggregate restored;
+  CHECK(restored.restore("2026-10-20", agg.validSamples, agg.simulatedSamples,
+                         agg.invalidSamples, agg.firstC, agg.lastC, agg.minC, agg.maxC,
+                         agg.firstUtc, agg.lastUtc, agg.minUtc, agg.maxUtc));
+  CHECK_EQ_INT(restored.minUtc, agg.minUtc);
+  CHECK_EQ_INT(restored.maxUtc, agg.maxUtc);
+
+  // Stary rekord (sprzed v3.52.9) nie ma tych pol — zero, nie zmyslona godzina.
+  Aggregate old;
+  CHECK(old.restore("2026-10-20", agg.validSamples, agg.simulatedSamples,
+                    agg.invalidSamples, agg.firstC, agg.lastC, agg.minC, agg.maxC,
+                    agg.firstUtc, agg.lastUtc));
+  CHECK_EQ_INT(old.minUtc, 0);
+  CHECK_EQ_INT(old.maxUtc, 0);
+
+  // Nowa probka ponizej minimum przesuwa znacznik czasu.
+  const int32_t laterMin = start + 1000 * 60;
+  agg.addSample(laterMin, 20.0f, 0, false);
+  CHECK_EQ_INT(agg.minUtc, laterMin);
+  CHECK_NEAR(agg.minC, 20.0, 0.001);
+  CHECK_EQ_INT(agg.maxUtc, start + 860 * 60);   // maksimum sie nie ruszylo
+}
+
 static void testGhiSnapshot() {
   Aggregate unused;
   (void)unused;
@@ -377,6 +431,19 @@ static void testDayReportFormat() {
   CHECK(std::strstr(line, "TECH") == nullptr);
   CHECK(std::strstr(line, "(min 38.4 / max 55.9)") != nullptr);
   CHECK(std::strstr(line, "00:00-10:00") != nullptr);
+  // [v3.52.9] Bez znacznikow czasu nie ma "@" — nie zmyślamy godziny.
+  CHECK(std::strstr(line, "@") == nullptr);
+
+  // [v3.52.9] Z czasem min/max linia pokazuje godzine lokalna.
+  // 19.10.2026 to jeszcze CEST (UTC+2), a utcFromFields() buduje pola UTC —
+  // 05:40 lokalnie = 03:40 UTC, 14:20 lokalnie = 12:20 UTC.
+  row.minUtc = utcFromFields(2026, 10, 19, 3, 40, 0);
+  row.maxUtc = utcFromFields(2026, 10, 19, 12, 20, 0);
+  CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
+  CHECK(std::strstr(line, "min 38.4 @ 05:40") != nullptr);
+  CHECK(std::strstr(line, "max 55.9 @ 14:20") != nullptr);
+  row.minUtc = 0;
+  row.maxUtc = 0;
 
   // Dzien w trakcie, z symulacjami i bez kompletu godzin prognozy.
   row.finalized = false;
@@ -556,6 +623,7 @@ int main() {
   testAggregateExclusions();
   testAggregateGapAndDraw();
   testAggregateRestore();
+  testAggregateMinMaxTimes();
   testGhiSnapshot();
   testGhiHourWindow();
   testGhiUrl();

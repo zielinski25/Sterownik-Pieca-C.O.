@@ -1,7 +1,38 @@
-# v3.52.8 — autonomiczne dzienne archiwum solarne w centrali
+# v3.52.9 — autonomiczne dzienne archiwum solarne w centrali
 
 Paczka robocza oparta na źródłach v3.50.0. Katalogi wcześniejszych wersji pozostają bez zmian.
 **Nie zmieniano Androida, reguł Firebase ani plików historii. Firmware nie był kompilowany w tym środowisku.**
+
+## Co wnosi v3.52.9 — godzina minimum i maksimum
+
+Amplituda z v3.52.7 mówi **ile** stopni zbiornik się zmienił, ale nie mówi **skąd**.
+Doba 20.10 wyglądała tak:
+
+| godzina | temp. | co się działo |
+|---|---|---|
+| 00:00 | 25,0 °C | woda ciepła po słonecznym 19.10 |
+| ~05:40 | 21,8 °C | wychładzanie nocne |
+| popołudnie | 25,0 °C | grzanie słońcem |
+| 22:58 | 23,5 °C | wieczorne stygnięcie |
+
+`amplituda 3.2°C` jest poprawna, ale **dokładnie tę samą liczbę dałoby samo wychłodzenie
+nocne bez ani minuty słońca**. Teraz linia pokazuje, kiedy padły oba ekstrema:
+
+```
+2026-10-20  GHI 0.55 kWh/m2  dT -1.5°C  amplituda 3.2°C
+            (min 21.8 @ 05:40 / max 25.0 @ 14:20)
+            pokrycie 94.6% (98.6% czasu)  1362/1440 prob. 00:00-22:58 (w toku)
+```
+
+Jak to czytać:
+
+- **minimum przed wschodem słońca + maksimum po południu** → amplituda to grzanie słońcem,
+- **maksimum wieczorem, minimum rano** → to samo (grzanie w ciągu dnia),
+- **minimum wieczorem** → tego dnia nic nie grzało, amplituda to sama dobowa huśtawka,
+- **`@` w ogóle nie ma** → rekord zapisany przed v3.52.9; nie zmyślamy godziny.
+
+Zmiana dotyczy tylko raportu i zapisu rekordu (`actual.minUtc` / `actual.maxUtc`).
+Próbki, progi i sposób liczenia pokrycia — bez zmian.
 
 ## Co wnosi v3.52.8 — stopnie Celsjusza zamiast kelwinów
 
@@ -378,9 +409,10 @@ g++ -std=c++11 -Wall -Wextra -Werror SolarDailyArchiveTest.cpp -o /tmp/solar-dai
 /tmp/solar-daily-test
 ```
 
-Wynik w tej sesji: `SolarDailyArchiveTest: PASS (294 sprawdzenia)` — 19 nowych asercji:
-format linii z amplitudą, pokrycie od upływu czasu, znacznik `(poza sezonem)`
-oraz okno godzinowe GHI `(start, end]` dla doby 24- i 25-godzinnej.
+Wynik w tej sesji: `SolarDailyArchiveTest: PASS (313 sprawdzeń)` — asercje na format linii
+(amplituda, pokrycie od upływu czasu, godziny min/max), znacznik `(poza sezonem)`,
+okno godzinowe GHI `(start, end]` oraz na to, że agregat i odtworzenie po restarcie
+zachowują `minUtc`/`maxUtc`, a stary rekord bez tych pól nie zmyśla godziny.
 
 Testy panelu (z katalogu głównego repozytorium):
 

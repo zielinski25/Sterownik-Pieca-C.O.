@@ -16,6 +16,10 @@
 #ifndef SOLAR_DAILY_ARCHIVE_H
 #define SOLAR_DAILY_ARCHIVE_H
 
+// [v3.52.9] API 20261029: DayReport ma pola minUtc / maxUtc (godzina
+// wystapienia minimum i maksimum), a formatDayReportLine() dopisuje je
+// przy temperaturach. Stara wersja naglowka nie ma tych pol.
+//
 // [v3.52.7] API 20261027: DayReport ma pola offSeason / inProgress /
 // elapsedCoverageRatio, a formatDayReportLine() pisze amplitude i pokrycie
 // z jednym miejscem po przecinku. Stara wersja naglowka nie skompiluje sie
@@ -25,7 +29,7 @@
 // main_centrala.cpp wymaga dokladnie tej wersji i NIE SKOMPILUJE SIE ze starym
 // plikiem — dzieki temu nie da sie wgrac firmware'u, ktory podaje nowy numer
 // wersji, ale liczy URL po staremu (kontrola "Z" w start_hour/end_hour).
-#define SOLAR_DAILY_ARCHIVE_API 20261027
+#define SOLAR_DAILY_ARCHIVE_API 20261029
 
 #include <stdint.h>
 #include <stddef.h>
@@ -293,6 +297,11 @@ struct Aggregate {
   float maxC;
   int32_t firstUtc;
   int32_t lastUtc;
+  // [v3.52.9] KIEDY padlo minimum i maksimum. Bez tego amplituda mowi
+  // "3.2 stopnia", ale nie mowi, czy to nocne wychlodzenie, czy grzanie
+  // sloncem. Z godzinami widac to od razu.
+  int32_t minUtc;
+  int32_t maxUtc;
 
   int32_t prevUtc;
   float prevC;
@@ -322,6 +331,8 @@ struct Aggregate {
     maxC = 0.0f;
     firstUtc = 0;
     lastUtc = 0;
+    minUtc = 0;
+    maxUtc = 0;
     prevUtc = 0;
     prevC = 0.0f;
     maxGapMinutes = 0;
@@ -354,9 +365,12 @@ struct Aggregate {
   }
 
   // Same liczniki, bez liczenia granic — dozwolone pod blokada.
+  // [v3.52.9] minAt/maxAt sa opcjonalne: rekord zapisany przed ta wersja
+  // ich nie ma (0 = nieznana godzina), a stare wywolania dalej sie kompiluja.
   void restoreCounters(uint32_t valid, uint32_t simulated, uint32_t invalid,
                        float firstVal, float lastVal, float minVal, float maxVal,
-                       int32_t firstAt, int32_t lastAt) {
+                       int32_t firstAt, int32_t lastAt,
+                       int32_t minAt = 0, int32_t maxAt = 0) {
     validSamples = valid;
     simulatedSamples = simulated;
     invalidSamples = invalid;
@@ -364,6 +378,10 @@ struct Aggregate {
       firstC = firstVal; lastC = lastVal;
       minC = minVal; maxC = maxVal;
       firstUtc = firstAt; lastUtc = lastAt;
+      // Znaczniki czasu tylko gdy sa sensowne — inaczej zostaja zerami
+      // i raport nie wypisze godziny, ktorej nie zna.
+      minUtc = (minAt > 0) ? minAt : 0;
+      maxUtc = (maxAt > 0) ? maxAt : 0;
       prevUtc = lastAt; prevC = lastVal;
     }
   }
@@ -371,10 +389,11 @@ struct Aggregate {
   // Odtworzenie stanu po restarcie (te same granice, zachowane liczniki).
   bool restore(const char *key, uint32_t valid, uint32_t simulated, uint32_t invalid,
                float firstVal, float lastVal, float minVal, float maxVal,
-               int32_t firstAt, int32_t lastAt) {
+               int32_t firstAt, int32_t lastAt,
+               int32_t minAt = 0, int32_t maxAt = 0) {
     if (!begin(key)) return false;
     restoreCounters(valid, simulated, invalid, firstVal, lastVal, minVal, maxVal,
-                    firstAt, lastAt);
+                    firstAt, lastAt, minAt, maxAt);
     return true;
   }
 
@@ -407,9 +426,10 @@ struct Aggregate {
     if (validSamples == 0) {
       firstC = tempC; firstUtc = utc;
       minC = tempC; maxC = tempC;
+      minUtc = utc; maxUtc = utc;
     } else {
-      if (tempC < minC) minC = tempC;
-      if (tempC > maxC) maxC = tempC;
+      if (tempC < minC) { minC = tempC; minUtc = utc; }
+      if (tempC > maxC) { maxC = tempC; maxUtc = utc; }
       const int32_t gapSec = utc - prevUtc;
       if (gapSec > 0) {
         const uint16_t gapMin = (uint16_t)(gapSec / 60);
@@ -575,6 +595,9 @@ struct DayReport {
   float deltaC;
   float minC;
   float maxC;
+  // [v3.52.9] Kiedy padlo minimum i maksimum (0 = nieznane, np. stary rekord).
+  int32_t minUtc;
+  int32_t maxUtc;
   int32_t firstUtc;            // do oceny, czy znaczniki czasu nie stoja
   int32_t lastUtc;
   uint16_t validSamples;
@@ -593,8 +616,14 @@ struct DayReport {
 };
 
 // Jedna linia raportu, np.:
-//   2026-10-18  GHI 2.84 kWh/m2  dT +3.1°C  amplituda 17.5°C  (min 38.4 / max 55.9)
+//   2026-10-18  GHI 2.84 kWh/m2  dT +3.1°C  amplituda 17.5°C
+//               (min 38.4 @ 05:40 / max 55.9 @ 14:20)
 //               pokrycie 97.0%  1378/1440 prob. 00:00-23:59
+// [v3.52.9] Godzina przy min/max. Sama amplituda mowi "3.2 stopnia", ale nie
+// mowi, czy to nocne wychlodzenie, czy grzanie sloncem. Gdy minimum wypada
+// przed wschodem slonca, a maksimum po poludniu — to grzanie. Gdy odwrotnie,
+// amplituda jest tylko dobowa hustawka. Stary rekord bez godzin pokaze
+// same temperatury, bez "@".
 // W dobie, ktora sie jeszcze liczy, pokrycie dostaje drugi wskaznik:
 //   pokrycie 74.0% (98.6% czasu)  — bo mianownikiem jest czas, ktory uplynal.
 // [v3.52.7] Amplituda (max-min) jest wazniejsza od dT: dT porownuje polnoc
@@ -619,28 +648,43 @@ inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize)
 
   // [v3.52.7] Jedno miejsce po przecinku — przy 5 probkach "0%" wygladalo
   // jak brak danych, a bylo 0.4%.
-  char act[224];
+  char act[256];
   if (d.hasActual) {
     float pctF = d.coverageRatio * 100.0f;
     if (pctF > 100.0f) pctF = 100.0f;
     if (pctF < 0.0f) pctF = 0.0f;
     float amplF = d.maxC - d.minC;
     if (amplF < 0.0f) amplF = 0.0f;
+    // [v3.52.9] Temperatury z godzina, gdy rekord ja zna. Godzina lokalna
+    // jest tym, co czlowiek porownuje z pogoda za oknem.
+    char minTxt[32];
+    char maxTxt[32];
+    LocalFields fm, fx;
+    if (d.minUtc > 0 && localFieldsFromUtc(d.minUtc, fm)) {
+      snprintf(minTxt, sizeof(minTxt), "%.1f @ %02d:%02d", d.minC, fm.hour, fm.minute);
+    } else {
+      snprintf(minTxt, sizeof(minTxt), "%.1f", d.minC);
+    }
+    if (d.maxUtc > 0 && localFieldsFromUtc(d.maxUtc, fx)) {
+      snprintf(maxTxt, sizeof(maxTxt), "%.1f @ %02d:%02d", d.maxC, fx.hour, fx.minute);
+    } else {
+      snprintf(maxTxt, sizeof(maxTxt), "%.1f", d.maxC);
+    }
     int n;
     if (d.inProgress) {
       float ePctF = d.elapsedCoverageRatio * 100.0f;
       if (ePctF > 100.0f) ePctF = 100.0f;
       if (ePctF < 0.0f) ePctF = 0.0f;
       n = snprintf(act, sizeof(act),
-                   "dT %+.1f°C  amplituda %.1f°C  (min %.1f / max %.1f)  "
+                   "dT %+.1f°C  amplituda %.1f°C  (min %s / max %s)  "
                    "pokrycie %.1f%% (%.1f%% czasu)  %u/%u prob.",
-                   d.deltaC, amplF, d.minC, d.maxC, pctF, ePctF,
+                   d.deltaC, amplF, minTxt, maxTxt, pctF, ePctF,
                    (unsigned)d.validSamples, (unsigned)d.expectedSamples);
     } else {
       n = snprintf(act, sizeof(act),
-                   "dT %+.1f°C  amplituda %.1f°C  (min %.1f / max %.1f)  "
+                   "dT %+.1f°C  amplituda %.1f°C  (min %s / max %s)  "
                    "pokrycie %.1f%%  %u/%u prob.",
-                   d.deltaC, amplF, d.minC, d.maxC, pctF,
+                   d.deltaC, amplF, minTxt, maxTxt, pctF,
                    (unsigned)d.validSamples, (unsigned)d.expectedSamples);
     }
     size_t used = (n > 0 && (size_t)n < sizeof(act)) ? (size_t)n : 0;
@@ -678,7 +722,8 @@ inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize)
   }
 
   // [v3.52.7] Linia urosla (amplituda + pokrycie od uplynietego czasu),
-  // wiec wolajacy powinni dawac >= 256 B. Przy za malym buforze nadal
+  // wiec wolajacy powinni dawac >= 256 B. [v3.52.9] Doszly godziny min/max
+  // — nadal miesci sie w 256 B, ale zapas jest maly. Przy za malym buforze nadal
   // zwracamy 0 — lepiej "nieczytelny rekord" niz ucieta liczbe.
   const int n = snprintf(out, outSize, "%s  %s  %s", d.date, ghi, act);
   if (n < 0 || (size_t)n >= outSize) {
