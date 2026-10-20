@@ -593,13 +593,16 @@ struct DayReport {
 };
 
 // Jedna linia raportu, np.:
-//   2026-10-18  GHI 2.84 kWh/m2  dT +3.1C  amplituda 17.5K  (min 38.4 / max 55.9)
+//   2026-10-18  GHI 2.84 kWh/m2  dT +3.1°C  amplituda 17.5°C  (min 38.4 / max 55.9)
 //               pokrycie 97.0%  1378/1440 prob. 00:00-23:59
 // W dobie, ktora sie jeszcze liczy, pokrycie dostaje drugi wskaznik:
 //   pokrycie 74.0% (98.6% czasu)  — bo mianownikiem jest czas, ktory uplynal.
 // [v3.52.7] Amplituda (max-min) jest wazniejsza od dT: dT porownuje polnoc
 // z wieczorem i przy dobowym cyklu grzania/stygniecia potrafi wyjsc ~0.0,
-// mimo ze zbiornik realnie zmienil temperature o kilka kelwinow.
+// mimo ze zbiornik realnie zmienil temperature o kilka stopni.
+// [v3.52.8] Jednostka w raporcie to °C, nie K. Roznica 2,5 K i 2,5 °C to
+// ta sama wartosc, ale w Polsce nikt nie czyta temperatury w kelwinach —
+// "amplituda 2.5K" wygladalo jak literowka.
 // Zwraca dlugosc zapisu albo 0, gdy argumenty sa niepoprawne / bufor za maly.
 inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize) {
   if (!out || outSize == 0 || !isValidDateKey(d.date)) return 0;
@@ -629,13 +632,13 @@ inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize)
       if (ePctF > 100.0f) ePctF = 100.0f;
       if (ePctF < 0.0f) ePctF = 0.0f;
       n = snprintf(act, sizeof(act),
-                   "dT %+.1fC  amplituda %.1fK  (min %.1f / max %.1f)  "
+                   "dT %+.1f°C  amplituda %.1f°C  (min %.1f / max %.1f)  "
                    "pokrycie %.1f%% (%.1f%% czasu)  %u/%u prob.",
                    d.deltaC, amplF, d.minC, d.maxC, pctF, ePctF,
                    (unsigned)d.validSamples, (unsigned)d.expectedSamples);
     } else {
       n = snprintf(act, sizeof(act),
-                   "dT %+.1fC  amplituda %.1fK  (min %.1f / max %.1f)  "
+                   "dT %+.1f°C  amplituda %.1f°C  (min %.1f / max %.1f)  "
                    "pokrycie %.1f%%  %u/%u prob.",
                    d.deltaC, amplF, d.minC, d.maxC, pctF,
                    (unsigned)d.validSamples, (unsigned)d.expectedSamples);

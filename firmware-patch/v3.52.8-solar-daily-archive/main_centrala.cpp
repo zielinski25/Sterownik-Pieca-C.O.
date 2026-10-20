@@ -1,3 +1,13 @@
+// [v3.52.8 SOLAR-REPORT-CELSIUS] — 2026-10-20
+// Co: jednostka w raporcie archiwum to °C, nie K.
+// Powod: "amplituda 2.5K" było technicznie poprawne (roznicę temperatur
+//     podaje sie w kelwinach), ale w Polsce nikt tak nie czyta temperatury —
+//     wygladalo jak literowka albo jakas nowa jednostka. Ta sama wartosc,
+//     czytelniejszy zapis: "amplituda 2.5°C". Dotyczy tez "dT +0.2°C".
+// Zmiana wylacznie kosmetyczna: liczby, progi i zapis rekordu bez zmian.
+//     Stary rekord bez roznicy — jednostka jest tylko w naglowku raportu.
+// FIRMWARE_VERSION v3.52.7 -> v3.52.8 (PATCH, tekst raportu).
+//
 // [v3.52.7 SOLAR-REPORT-MODE] — 2026-10-20
 // Co: szesc poprawek czytelnosci raportu archiwum + znacznik trybu instalacji.
 // 1. Amplituda (max-min) obok dT. dT porownuje polnoc z wieczorem, wiec przy
@@ -5323,7 +5333,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.52.7";
+static const char* FIRMWARE_VERSION = "v3.52.8";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze

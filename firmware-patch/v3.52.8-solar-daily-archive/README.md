@@ -1,7 +1,20 @@
-# v3.52.7 — autonomiczne dzienne archiwum solarne w centrali
+# v3.52.8 — autonomiczne dzienne archiwum solarne w centrali
 
 Paczka robocza oparta na źródłach v3.50.0. Katalogi wcześniejszych wersji pozostają bez zmian.
 **Nie zmieniano Androida, reguł Firebase ani plików historii. Firmware nie był kompilowany w tym środowisku.**
+
+## Co wnosi v3.52.8 — stopnie Celsjusza zamiast kelwinów
+
+Raport pokazywał `amplituda 2.5K`. To było poprawne fizycznie (różnicę temperatur
+podaje się w kelwinach), ale w Polsce nikt tak nie czyta temperatury — wyglądało jak
+literówka. Ta sama wartość, zapis po ludzku:
+
+```
+2026-10-20  GHI 0.55 kWh/m2  dT +0.2°C  amplituda 2.5°C  (min 22.5 / max 25.0) ...
+```
+
+Zmiana **wyłącznie kosmetyczna**: liczby, progi, zapis rekordu i znaczniki bez zmian.
+Stare rekordy nie wymagają niczego — jednostka jest tylko w nagłówku raportu.
 
 ## Co wnosi v3.52.7 — raport, który mówi prawdę, i tryb „spuszczona”
 
@@ -11,11 +24,11 @@ sposobu liczenia próbek ani zapisu rekordu „od środka” — poprawiają to,
 ### 1. Amplituda obok `dT`
 
 `dT` porównuje **pierwszą próbkę doby z ostatnią**. Przy dobowym cyklu grzania i stygnięcia
-wychodziło `dT +0.2C`, mimo że zbiornik realnie zmienił temperaturę o **2,5 K**. Obok `dT` jest
+wychodziło `dT +0.2°C`, mimo że zbiornik realnie zmienił temperaturę o **2,5 K**. Obok `dT` jest
 teraz `amplituda = max − min`, która tej pomyłki nie popełnia:
 
 ```
-2026-10-20  GHI 0.55 kWh/m2  dT +0.2C  amplituda 2.5K  (min 22.5 / max 25.0) ...
+2026-10-20  GHI 0.55 kWh/m2  dT +0.2°C  amplituda 2.5°C  (min 22.5 / max 25.0) ...
 ```
 
 ### 2. Pokrycie względem czasu, który upłynął

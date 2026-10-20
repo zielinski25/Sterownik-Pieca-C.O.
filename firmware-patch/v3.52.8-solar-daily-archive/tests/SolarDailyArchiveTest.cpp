@@ -368,10 +368,10 @@ static void testDayReportFormat() {
   CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
   CHECK(std::strstr(line, "2026-10-18") != nullptr);
   CHECK(std::strstr(line, "GHI 2.84 kWh/m2") != nullptr);
-  CHECK(std::strstr(line, "dT +3.1C") != nullptr);
+  CHECK(std::strstr(line, "dT +3.1°C") != nullptr);
   CHECK(std::strstr(line, "pokrycie 97.0%") != nullptr);
   // [v3.52.7] amplituda = max - min (55.9 - 38.4), niezalezna od dT
-  CHECK(std::strstr(line, "amplituda 17.5K") != nullptr);
+  CHECK(std::strstr(line, "amplituda 17.5°C") != nullptr);
   CHECK(std::strstr(line, "1378/1440 prob.") != nullptr);
   CHECK(std::strstr(line, "w toku") == nullptr);
   CHECK(std::strstr(line, "TECH") == nullptr);

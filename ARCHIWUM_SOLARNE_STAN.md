@@ -2,7 +2,7 @@
 
 Dokument odtworzony 2026-10-20 po resecie środowiska (poprzednia kopia nie była w repozytorium).
 Ma być **żywy**: każda zmiana zachowania archiwum dopisuje sekcję „Historia wersji”, a ustalenia
-sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.52.7**.
+sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.52.8**.
 
 ---
 
@@ -94,12 +94,14 @@ prognoza GHI **nie jest pobierana**, rekord ma `offSeason = true`, a w raporcie 
 ## 8. Jak czytać raport
 
 ```
-2026-10-20  GHI 0.55 kWh/m2  dT +0.2C  amplituda 2.5K  (min 22.5 / max 25.0)  pokrycie 74.0% (98.6% czasu)  1065/1440 prob. 05:20-23:30 (w toku)
+2026-10-20  GHI 0.55 kWh/m2  dT +0.2°C  amplituda 2.5°C  (min 22.5 / max 25.0)  pokrycie 74.0% (98.6% czasu)  1065/1440 prob. 05:20-23:30 (w toku)
 ```
 
 - **GHI** — suma nasłonecznienia z prognozy, kWh/m². `(niepelna)` = brakuje godzin.
 - **dT** — pierwsza próbka doby → ostatnia. **Słaby wskaźnik**: porównuje północ z wieczorem.
-- **amplituda** — `max − min` w ciągu doby. To ona pokazuje, ile zbiornik realnie się zmienił.
+- **amplituda** — `max − min` w ciągu doby, w °C. To ona pokazuje, ile zbiornik realnie się zmienił.
+  (W fizyce różnicę temperatur podaje się w kelwinach — 2,5 K to dokładnie 2,5 °C. W raporcie
+  jest °C, bo tak się u nas czyta temperaturę.)
 - **pokrycie** — udział minut doby, w których jest próbka. W dobie w toku drugi nawias to pokrycie
   **czasu, który już upłynął** (mianownik = minuty od północy).
 - `(w toku)`, ` sym`, `TECH`, `[dane CO]`, `(poza sezonem)` — znaczniki stanu rekordu.
@@ -143,7 +145,8 @@ starcie.
 | v3.52.4 | twarda bramka `SOLAR_DAILY_ARCHIVE_API` — nie da się zbudować mieszanej paczki |
 | v3.52.5 | odpowiedź GHI czytana w całości (`getString`) przed `deserializeJson` |
 | v3.52.6 | potwierdzenie OTA w `loop()` (10 min / 60 min) + wykrywanie cichego rollbacku |
-| **v3.52.7** | amplituda, pokrycie od upływu czasu, `/solar_tryb`, tablica GHI bez przesunięcia |
+| v3.52.7 | amplituda, pokrycie od upływu czasu, `/solar_tryb`, tablica GHI bez przesunięcia |
+| **v3.52.8** | jednostka w raporcie: °C zamiast K (zmiana kosmetyczna) |
 
 ## 12. Co dalej (plan etapowy)
 
