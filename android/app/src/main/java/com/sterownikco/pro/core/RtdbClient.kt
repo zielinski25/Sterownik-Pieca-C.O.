@@ -1,6 +1,9 @@
 package com.sterownikco.pro.core
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
@@ -8,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import android.util.Base64
+import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -16,7 +20,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
-import kotlin.math.max
 
 /* ══════════════════════════════════════════════════════════════════════════
    Klient Firebase RTDB (REST) + lokalnego API ESP32 — odpowiednik
@@ -189,6 +192,9 @@ object Rtdb {
                 val req = Request.Builder().url(AUTH_SIGNIN_URL + java.net.URLEncoder.encode(apiKey, "UTF-8"))
                     .post(body.toString().toRequestBody(JSON)).build()
                 val (code, text) = execute(req)
+                // Brak połączenia (np. brak internetu): IOException, żeby logowanie automatyczne
+                // nie zasłaniało działającego trybu LAN oknem logowania.
+                if (code < 0) return@withContext Result.failure(java.io.IOException(text))
                 val j = JSONObject(text)
                 if (code in 200..299 && j.has("idToken")) Result.success(j)
                 else Result.failure(Exception(j.optJSONObject("error")?.optString("message") ?: "Błąd autoryzacji Firebase"))
@@ -301,7 +307,142 @@ object Rtdb {
         null
     }
 
-    data class Ack(val ok: Boolean, val error: String)
+    /** [via] = droga potwierdzenia: [VIA_FIREBASE] (/piec/ack) albo [VIA_LAN] (/api/lan/ack). */
+    data class Ack(val ok: Boolean, val error: String, val via: String = VIA_FIREBASE)
+
+    const val VIA_FIREBASE = "FIREBASE"
+    const val VIA_LAN = "LAN"
+
+    // ── [LAN] centrala w tej samej sieci — działa także bez internetu ────────
+    /** Sondowanie LAN: krótkie limity — telefon poza siecią centrali nie czeka 15 s. */
+    private val lanHttp: OkHttpClient by lazy {
+        espHttp.newBuilder()
+            .connectTimeout(1500, TimeUnit.MILLISECONDS)
+            .readTimeout(4, TimeUnit.SECONDS)
+            .callTimeout(6, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private suspend fun executeWith(client: OkHttpClient, req: Request): Pair<Int, String> = withContext(Dispatchers.IO) {
+        try {
+            val call = client.newCall(req)
+            coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
+            call.execute().use { r -> r.code to (r.body?.string() ?: "") }
+        } catch (e: Exception) {
+            -1 to (e.message ?: "błąd sieci")
+        }
+    }
+
+    private suspend fun lanGet(ip: String, path: String, client: OkHttpClient = lanHttp): Pair<Int, String> {
+        val url = LocalControllerAddress.url(ip, path) ?: return -2 to ""
+        return executeWith(client, Request.Builder().url(url).header("Cache-Control", "no-store").build())
+    }
+
+    private fun jsonOrNull(text: String): JSONObject? =
+        try { if (text.isBlank()) null else JSONObject(text) } catch (e: Exception) { null }
+
+    data class LanStatus(val ip: String, val json: JSONObject, val fullApi: Boolean)
+
+    /**
+     * Status centrali pod [ip]: `GET /api/lan/status` (firmware v3.47.0+, ten sam JSON co
+     * /piec/status); starszy firmware — `/api/status` (bez ustawień, tylko odczyt).
+     * Starszy firmware odpowiada na nieznane trasy 404 albo przekierowaniem na „/”
+     * (captive portal) — oba oznaczają brak /api/lan/… — null = pod adresem nie ma centrali.
+     */
+    suspend fun lanStatus(ip: String): LanStatus? {
+        val (code, text) = lanGet(ip, "/api/lan/status")
+        val fullApi: Boolean
+        val json: JSONObject? = when {
+            code in 200..299 -> { fullApi = true; jsonOrNull(text) }
+            code == 404 || code in 300..399 -> {
+                fullApi = false
+                val (legacyCode, legacyText) = lanGet(ip, "/api/status")
+                if (legacyCode in 200..299) jsonOrNull(legacyText) else null
+            }
+            else -> { fullApi = false; null }
+        }
+        if (json == null) return null
+        val controllerFields = json.has("t_ogrz") || json.has("dym_alarm") || json.has("tryb_serwa")
+        if (!LanCandidates.looksLikeController(json.optString("wifi_mode"), controllerFields)) return null
+        return LanStatus(ip, json, fullApi)
+    }
+
+    /** Pierwszy osiągalny adres z [candidates] (kolejność = pierwszeństwo; sprawdzane równolegle). */
+    suspend fun lanFind(candidates: List<String>): LanStatus? = coroutineScope {
+        val probes = candidates.map { ip ->
+            async {
+                try { lanStatus(ip) } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+            }
+        }
+        probes.map { it.await() }.firstOrNull { it != null }
+    }
+
+    /** Polecenie na pewno NIE dotarło do centrali w LAN — wolno spróbować przez Firebase. */
+    class LanNotDelivered(message: String) : java.io.IOException(message)
+
+    /**
+     * `POST /api/lan/cmd` (token w nagłówku X-Piec-Token) + oczekiwanie na `GET /api/lan/ack`
+     * (max 12 s) — odpowiednik [sendCommand] w sieci lokalnej: ten sam wykonawca w centrali
+     * i ten sam token. null = brak potwierdzenia; [LanNotDelivered] = polecenie nie dotarło.
+     */
+    suspend fun lanSendCommand(ip: String, id: String, cmd: String): Ack? {
+        val url = LocalControllerAddress.url(ip, "/api/lan/cmd") ?: throw LanNotDelivered("nieprawidłowy adres centrali")
+        val ackPath = "/api/lan/ack?id=$id"
+        val form = FormBody.Builder().add("id", id).add("cmd", cmd).build()
+        val (code, text) = executeWith(lanHttp, Request.Builder().url(url)
+            .header("X-Piec-Token", cmdToken).header("Cache-Control", "no-store").post(form).build())
+        val reply = jsonOrNull(text)
+        when (code) {
+            200, 202 -> Unit
+            400 -> return Ack(false, reply?.optString("error")?.ifEmpty { null } ?: "nieprawidłowe polecenie", VIA_LAN)
+            403 -> return Ack(false, "nieprawidłowy token poleceń", VIA_LAN)
+            409 -> return Ack(false, "centrala wykonuje poprzednie polecenie — spróbuj za chwilę", VIA_LAN)
+            in 300..399, 404 -> throw LanNotDelivered("firmware centrali bez /api/lan/cmd")
+            else -> {
+                // Zerwane połączenie: centrala mogła jednak przyjąć ten cmdId — sprawdź, zanim użyjemy Firebase.
+                val (probeCode, _) = lanGet(ip, ackPath)
+                if (probeCode != 200) throw LanNotDelivered(if (code < 0) "brak połączenia z centralą" else "HTTP $code")
+            }
+        }
+        if (reply?.optBoolean("done") == true) return lanAck(reply)
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < 12_000) {
+            delay(300)
+            val (ackCode, ackText) = lanGet(ip, ackPath)
+            if (ackCode == 404 || ackCode in 300..399) return null
+            val ack = jsonOrNull(ackText) ?: continue
+            if (ack.optBoolean("done")) return lanAck(ack)
+        }
+        return null
+    }
+
+    private fun lanAck(j: JSONObject): Ack = Ack(j.optBoolean("ok"), j.optString("error").ifEmpty { "błąd" }, VIA_LAN)
+
+    /** `GET /api/history` (bufor minutowy ~24 h) albo `/api/history/long` (wiele dni) — CSV centrali. */
+    suspend fun lanHistoryCsv(ip: String, long: Boolean): String? {
+        val (code, text) = lanGet(ip, if (long) "/api/history/long" else "/api/history", client = espHttp)
+        return if (code in 200..299) text else null
+    }
+
+    /**
+     * Polecenie do centrali: w sieci lokalnej (świeże łącze [LanLink] z pełnym API), inaczej
+     * przez Firebase. Gdy LAN zawiedzie, zanim polecenie dotrze do centrali — Firebase.
+     */
+    suspend fun sendCommandAuto(id: String, cmd: String): Ack? {
+        val lan = LanLink.fresh(System.currentTimeMillis())
+        if (lan != null && lan.fullApi) {
+            try {
+                return lanSendCommand(lan.ip, id, cmd)
+            } catch (e: LanNotDelivered) {
+                LanLink.markLost(lan.ip)
+                if (refreshToken.isBlank()) throw java.io.IOException("Brak połączenia z centralą w sieci lokalnej (${e.message})")
+            }
+        } else if (lan != null && refreshToken.isBlank()) {
+            throw java.io.IOException("Starszy firmware centrali — sterowanie w sieci lokalnej wymaga v3.47.0")
+        }
+        if (refreshToken.isBlank()) throw java.io.IOException("Brak połączenia ze sterownikiem — ani sieci lokalnej, ani sesji Firebase")
+        return sendCommand(id, cmd)
+    }
 
     // ── lokalne API centrali (ESP32) ─────────────────────────────────────────
     internal fun localControllerUrl(ip: String, path: String): String? =
@@ -362,78 +503,58 @@ object Rtdb {
         } catch (e: Exception) { null }
     }
 
-    // ── telemetria historyczna (szardy dzienne + paginacja po `ts`) ──────────
-    private const val HISTORY_PAGE_SIZE = 300
-    private var historyIndexFallback = false
+    // ── telemetria historyczna (szardy dzienne UTC + lokalna pamięć dób) ─────
+    /** Strona zapytania `orderBy="ts"`; pełna doba to ~1440 rekordów = 2 strony. */
+    private const val HISTORY_PAGE_SIZE = 1000
+    @Volatile private var historyIndexFallback = false
 
-    private fun shardPath(y: Int, m: Int, d: Int) =
-        "/piec/telemetry/1m/v1/$y/" + PiecState.pad2(m) + "/" + PiecState.pad2(d)
+    /** Reguły bez `".indexOn": ["ts"]` — RTDB odrzuca zapytanie po `ts` (HTTP 400). */
+    private class HistoryIndexMissing : Exception()
 
-    private fun dayRange(startTs: Long, endTs: Long): List<LongArray> {
-        val out = ArrayList<LongArray>()
-        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        cal.timeInMillis = startTs * 1000
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
-        cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
-        val lastCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        lastCal.timeInMillis = endTs * 1000
-        lastCal.set(java.util.Calendar.HOUR_OF_DAY, 0); lastCal.set(java.util.Calendar.MINUTE, 0)
-        lastCal.set(java.util.Calendar.SECOND, 0); lastCal.set(java.util.Calendar.MILLISECOND, 0)
-        var cur = cal.timeInMillis
-        while (cur <= lastCal.timeInMillis) {
-            val c = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-            c.timeInMillis = cur
-            out.add(longArrayOf(cur, c.get(java.util.Calendar.YEAR).toLong(), (c.get(java.util.Calendar.MONTH) + 1).toLong(), c.get(java.util.Calendar.DAY_OF_MONTH).toLong()))
-            cur += 86_400_000L
+    private suspend fun fetchShardPage(day: TelemDay, cursor: Long): TelemShardPage {
+        val res = get(day.shardPath + ".json", mapOf(
+            "orderBy" to "\"ts\"",
+            "startAt" to cursor.toString(),
+            "endAt" to day.endTs.toString(),
+            "limitToFirst" to HISTORY_PAGE_SIZE.toString()
+        ))
+        if (!res.ok) {
+            val msg = res.error ?: ""
+            if (msg.contains("400") || res.body.contains("Index not defined", true) || res.body.contains("indexOn", true)) {
+                throw HistoryIndexMissing()
+            }
+            throw java.io.IOException("Historia " + day.date + ": " + msg)
         }
-        return out
+        return parseShardBody(res.body, day)
     }
 
-    private suspend fun fetchShard(path: String, startTs: Long, endTs: Long): List<TelemRow> {
-        if (historyIndexFallback) return fetchShardFull(path, startTs, endTs)
-        val rows = ArrayList<TelemRow>()
-        var cursor = startTs
-        for (guard in 0 until 100) {
-            val q = path + ".json?orderBy=" + java.net.URLEncoder.encode("\"ts\"", "UTF-8") +
-                "&startAt=" + cursor + "&endAt=" + endTs + "&limitToFirst=" + HISTORY_PAGE_SIZE
-            val res = get(q)
-            if (!res.ok) {
-                val msg = res.error ?: ""
-                if (msg.contains("Index not defined", true) || msg.contains("indexOn", true) || msg.contains("400")) {
-                    historyIndexFallback = true
-                    return fetchShardFull(path, startTs, endTs)
-                }
-                throw java.io.IOException(msg)
-            }
-            val page = ArrayList<TelemRow>()
-            if (res.body.isNotBlank()) {
-                val data = JSONObject(res.body)
-                for (id in data.keys()) {
-                    val r = parseRecord(id, data.optJSONObject(id))
-                    if (r != null && r.ts in startTs..endTs) page.add(r)
-                }
-            }
-            if (page.isEmpty()) break
-            rows.addAll(page)
-            if (page.size < HISTORY_PAGE_SIZE) break
-            val maxTs = page.maxOf { it.ts }
-            if (maxTs < cursor) break
-            cursor = maxTs + 1
+    /** `null` / `{}` = doba bez rekordów (poprawny, pusty wynik); zepsuty JSON = błąd doby. */
+    private fun parseShardBody(body: String, day: TelemDay): TelemShardPage {
+        if (isEmptyRtdbBody(body)) return TelemShardPage(emptyList(), 0)
+        val data = JSONObject(body)
+        val rows = ArrayList<TelemRow>(data.length())
+        for (id in data.keys()) {
+            val r = parseRecord(id, data.optJSONObject(id))
+            if (r != null && r.ts in day.startTs..day.endTs) rows.add(r)
         }
-        return uniqueSort(rows)
+        return TelemShardPage(rows, data.length())
     }
 
-    private suspend fun fetchShardFull(path: String, startTs: Long, endTs: Long): List<TelemRow> {
-        val res = get(path + ".json")
-        val rows = ArrayList<TelemRow>()
-        if (res.ok && res.body.isNotBlank()) {
-            val data = JSONObject(res.body)
-            for (id in data.keys()) {
-                val r = parseRecord(id, data.optJSONObject(id))
-                if (r != null && r.ts in startTs..endTs) rows.add(r)
+    /**
+     * Rekordy doby z `ts >= fromTs` (rzuca przy błędzie sieci/HTTP — doba nie zostanie
+     * wtedy uznana za kompletną). Bez indeksu `ts` w regułach: cały shard doby.
+     */
+    private suspend fun fetchShardRows(day: TelemDay, fromTs: Long): List<TelemRow> {
+        if (!historyIndexFallback) {
+            try {
+                return fetchDayPaged(day, fromTs, HISTORY_PAGE_SIZE) { cursor -> fetchShardPage(day, cursor) }
+            } catch (e: HistoryIndexMissing) {
+                historyIndexFallback = true
             }
         }
-        return uniqueSort(rows)
+        val res = get(day.shardPath + ".json")
+        if (!res.ok) throw java.io.IOException("Historia " + day.date + ": " + (res.error ?: ""))
+        return uniqueSortedRows(parseShardBody(res.body, day).rows)
     }
 
     private fun parseRecord(id: String, obj: JSONObject?): TelemRow? {
@@ -465,27 +586,19 @@ object Rtdb {
         )
     }
 
-    private fun uniqueSort(rows: List<TelemRow>): List<TelemRow> {
-        val map = LinkedHashMap<String, TelemRow>()
-        rows.forEach { r -> map[r.id] = r }
-        return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
-    }
-
-    /** `fetchTelemetryFromFirebase(rangeSec)` — zwraca gotowe serie lub null. */
-    suspend fun fetchTelemetry(rangeSec: Int): List<TelemPoint>? {
+    /**
+     * `fetchTelemetryFromFirebase(rangeSec)` z lokalną pamięcią dób ([store]): doby
+     * kompletne idą z telefonu, z Firebase dociągane są tylko nowe rekordy (zwykle
+     * dzisiejsze). Zwraca null bez sesji Firebase. Niczego w bazie nie usuwa ani nie zmienia.
+     */
+    internal suspend fun fetchTelemetry(
+        rangeSec: Int,
+        store: TelemetryDayStore,
+        onProgress: ((done: Int, total: Int) -> Unit)? = null
+    ): TelemRangeResult? {
         if (idToken.isEmpty()) return null
         val end = System.currentTimeMillis() / 1000
         val start = end - rangeSec
-        val all = ArrayList<TelemRow>()
-        for (day in dayRange(start, end)) {
-            val dayStart = max(start, day[0] / 1000)
-            val dayEnd = minOf(end, day[0] / 1000 + 86_400 - 1)
-            val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
-            try { all.addAll(fetchShard(path, dayStart, dayEnd)) } catch (e: Exception) { /* pusty dzień */ }
-        }
-        val sorted = uniqueSort(all)
-        if (sorted.isEmpty()) return null
-        val chartPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
-        return chartPoints.ifEmpty { null }
+        return store.load(start, end, onProgress) { day, fromTs -> fetchShardRows(day, fromTs) }
     }
 }

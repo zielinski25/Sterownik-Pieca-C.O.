@@ -1,0 +1,163 @@
+# Sprawdza na prawdziwym Windows, ze aplikacje Android da sie zbudowac skryptem
+# android/Zbuduj-APK.ps1 w warunkach jak u uzytkownika: JAVA_HOME oraz JBR z Android
+# Studio 2026.x wskazuja Jave 25, na ktorej Gradle 8.9 nie startuje
+# ("What went wrong: 25.0.x").
+#
+# Nazwa repozytorium konczy sie kropka ("Sterownik-Pieca-C.O."), a Windows ucina koncowe
+# kropki w sciezkach - katalog roboczy GITHUB_WORKSPACE jest przez to niedostepny dla
+# actions/checkout. Dlatego kod jest pobierany recznie do C:\src.
+#
+# Najwazniejsze fragmenty logow trafiaja tez do adnotacji (::notice), widocznych
+# w podsumowaniu przebiegu.
+#
+# APK z artefaktu jest podpisany losowym kluczem debug runnera - nie zainstaluje sie
+# jako aktualizacja APK zbudowanego lokalnie (trzeba by najpierw odinstalowac aplikacje).
+name: Android APK (Windows)
+
+on:
+  push:
+    paths:
+      - "android/**"
+      - "!android/**/*.md"
+      - ".github/workflows/android-apk-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Zbuduj-APK.ps1 (Windows, domyslnie Java 25)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Pobranie kodu do C:\src
+        shell: pwsh
+        working-directory: C:\
+        run: |
+          git config --global core.autocrlf true
+          git init -q C:\src
+          git -C C:\src fetch -q --depth 1 "https://github.com/${{ github.repository }}.git" "${{ github.sha }}"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git -C C:\src checkout -q FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git -C C:\src log --oneline -1
+          # pomocnik: adnotacja ::notice z wieloma liniami (ostatnie znaki, jesli za dlugo)
+          @'
+          function Send-Notice([string]$Title, [string[]]$Lines) {
+              $msg = (@($Lines) -join "`n")
+              if ($msg.Length -gt 6000) { $msg = '...' + $msg.Substring($msg.Length - 6000) }
+              if (-not $msg) { $msg = '(brak)' }
+              $msg = $msg.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+              $t = $Title.Replace('%', '%25').Replace(':', '%3A').Replace(',', '%2C')
+              Write-Host ('::notice title={0}::{1}' -f $t, $msg)
+          }
+          function Send-LogNotices([string]$Name, [string]$LogFile) {
+              $all = @(Get-Content -LiteralPath $LogFile -ErrorAction SilentlyContinue)
+              Send-Notice "$Name - komunikaty skryptu" ($all | Where-Object { $_ -match '^(==>|    \S|BLAD|Gotowe|Sterownik Pieca)' })
+              $err = @($all | Where-Object { $_ -match '^(e: |FAILURE|\* What went wrong)|tests completed|FAILED' } | Select-Object -First 40)
+              if ($err.Count) { Send-Notice "$Name - bledy" $err }
+              Send-Notice "$Name - koniec logu" ($all | Select-Object -Last 30)
+          }
+          '@ | Set-Content -LiteralPath "$env:RUNNER_TEMP\notice.ps1" -Encoding utf8
+
+      - name: Java 25 jako domyslna (jak JBR w Android Studio 2026.x)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Atrapa Android Studio z wbudowana Java 25 + folder pulpitu
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          New-Item -ItemType Directory -Force -Path 'C:\Program Files\Android\Android Studio' | Out-Null
+          cmd /c mklink /J "C:\Program Files\Android\Android Studio\jbr" "$env:JAVA_HOME"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Select-String -Path 'C:\Program Files\Android\Android Studio\jbr\release' -Pattern 'JAVA_VERSION'
+          [Environment]::GetFolderPath('Desktop', 'Create')
+
+      - name: Reprodukcja bledu - gradlew.bat na Javie 25
+        shell: pwsh
+        working-directory: C:\src\android
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $out = @(cmd /c "gradlew.bat --no-daemon help 2>&1")
+          $code = $LASTEXITCODE
+          $out | Select-Object -Last 15
+          Send-Notice "Java 25 - gradlew.bat (kod $code)" ($out | Select-Object -Last 15)
+          if ($code -eq 0) { Write-Host 'Oczekiwano bledu Gradle 8.9 na Javie 25'; exit 1 }
+          if (-not ($out | Select-String -SimpleMatch 'What went wrong')) { Write-Host 'Inny blad niz oczekiwany'; exit 1 }
+          exit 0
+
+      - name: Zbuduj-APK.ps1 w Windows PowerShell 5.1 (pobiera Temurin JDK 17)
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $log = "$env:RUNNER_TEMP\ps51.log"
+          cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File android\Zbuduj-APK.ps1 -PobierzJdk > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $log
+          Send-LogNotices "PS 5.1 (kod $code)" $log
+          exit $code
+
+      - name: Pliki w Pulpit\SterownikCO
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $outDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SterownikCO'
+          $files = @(Get-Item -LiteralPath (Join-Path $outDir 'SterownikCO-debug.apk'), (Join-Path $outDir 'Piec.html') -ErrorAction Stop)
+          Send-Notice 'Pulpit\SterownikCO' ($files | ForEach-Object { '{0}  {1:N0} B' -f $_.FullName, $_.Length })
+
+      - name: Zbuduj-APK.ps1 w PowerShell 7 (wykrywa JDK) + testy jednostkowe
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $log = "$env:RUNNER_TEMP\ps7.log"
+          cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File android\Zbuduj-APK.ps1 -Testy -BezPulpitu > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $log
+          Send-LogNotices "PS 7 (kod $code)" $log
+          exit $code
+
+      - name: Nieudane testy (szczegoly)
+        if: failure()
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $lines = @()
+          foreach ($f in Get-ChildItem 'android\app\build\test-results\testDebugUnitTest\*.xml' -ErrorAction SilentlyContinue) {
+              [xml]$x = Get-Content -LiteralPath $f.FullName -Raw
+              foreach ($tc in $x.testsuite.testcase) {
+                  foreach ($fl in @($tc.failure) + @($tc.error)) {
+                      if ($fl) { $lines += ('{0}.{1}: {2}' -f $tc.classname, $tc.name, ([string]$fl.message).Split("`n")[0]) }
+                  }
+              }
+          }
+          if ($lines.Count) { Send-Notice 'Nieudane testy' ($lines | Select-Object -First 40) }
+
+      - name: APK jako artefakt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: SterownikCO-debug-apk
+          path: C:\src\android\app\build\outputs\apk\debug\app-debug.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Raport testow
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: raport-testow
+          path: C:\src\android\app\build\reports\tests\
+          if-no-files-found: ignore
+          retention-days: 14

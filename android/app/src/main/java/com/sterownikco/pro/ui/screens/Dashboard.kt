@@ -98,7 +98,11 @@ fun Dashboard(m: AppModel) {
         )
         if (!m.isFbFresh) {
             Banner(
-                text = if (m.connected) "Odczyt sterownika jest nieaktualny — oczekiwanie na Firebase" else "Brak połączenia z bazą Firebase — połącz na żywo",
+                text = when {
+                    m.connected -> "Odczyt sterownika jest nieaktualny — oczekiwanie na kolejny odczyt"
+                    m.lanEnabled -> "Brak połączenia ze sterownikiem — ani w sieci lokalnej, ani przez Firebase"
+                    else -> "Brak połączenia z bazą Firebase — połącz na żywo"
+                },
                 kind = "warn",
                 action = "🔑 POŁĄCZ",
                 onAction = { m.authOpen = true }

@@ -1,3 +1,39 @@
+// [v3.47.1 BUILD-FIX + HEALTH-CO-5-MIN] — 2026-10-15
+// [1] Naprawa kompilacji (blad z v3.46.0).
+// Co: Szesc miejsc uzywalo niezadeklarowanej nazwy rozpalanieTrybAktywne zamiast
+//     zmiennej rozpalanieTrybAktywny (status lokalny i Firebase, start i koniec
+//     wspolnego trybu rozpalania, pozar()).
+// Problem: PlatformIO przerywal kompilacje: "'rozpalanieTrybAktywne' was not
+//     declared in this scope".
+// Naprawa: Wszystkie uzycia wskazuja zadeklarowana zmienna (ta sama poprawka co
+//     commit ce3e4c6). Logika bez zmian.
+// [2] Zmiana z v3.45.1 HEALTH-CO-5-MIN, ktora powstala obok linii v3.46.0/v3.47.0
+//     i nie byla w niej obecna.
+// Co: Heartbeat (tag=HEALTH) i snapshot pamieci (tag=HEALTH-A) zapisywane co
+//     5 minut zamiast co 30 sekund. Checkpoint diagnostyczny pozostaje co 30 s.
+// Problem: Co 30 s powstawaly dwa rekordy HEALTH, ktore zajmowaly ok. 91%
+//     objetosci logu (ok. 1,2 MB w 19 h), czyli glowna czesc zapisow na flash.
+// Naprawa: Osobny znacznik lastHealthLog z interwalem HEALTH_LOG_INTERVAL_MS
+//     = 300000 ms. Zawartosc rekordow bez zmian. Pierwszy rekord po starcie
+//     pojawia sie po 5 min.
+// FIRMWARE_VERSION v3.47.0 -> v3.47.1 (PATCH: naprawa kompilacji i czestotliwosci logowania).
+//
+// [v3.47.0 LAN-API-APLIKACJA-PANEL] — 2026-10-15
+// Co: Aplikacja Android i panel WWW dzialaja w sieci lokalnej centrali takze
+//     bez internetu: GET /api/lan/status (ten sam JSON co /piec/status),
+//     POST /api/lan/cmd (te same komendy co /piec/cmd, token w naglowku
+//     X-Piec-Token) i GET /api/lan/ack?id=... (odpowiednik /piec/ack).
+// Problem: Bez internetu telefon w tej samej sieci co centrala nie mogl
+//     sterowac piecem: status i komendy szly wylacznie przez Firebase, a
+//     lokalne /api/status nie zawiera ustawien (czasy, progi, serwa, dym).
+// Naprawa: Wspolny builder JSON statusu (Firebase i LAN) oraz wspolny
+//     wykonawca komend wydzielony 1:1 z checkFirebaseCommands(). Komendy LAN
+//     wykonuje to samo zadanie tgTaskFn (jeden slot, idempotentny cmdId,
+//     lokalny ACK, odbior co 100 ms takze w przerwie petli). Bufor PSRAM
+//     statusu Firebase 2048 -> 3072 B (zapas na nowe pola). Firebase,
+//     telemetria, LCD i dotychczasowe endpointy bez zmian.
+// FIRMWARE_VERSION v3.46.0 -> v3.47.0 (MINOR: nowe lokalne API).
+//
 // [v3.46.0 WSPOLNE-ROZPALANIE] — 2026-10-14
 // Co: Jeden jawny tryb uruchamia sekwencje serw i czasowy override mieszadla.
 // Naprawa: bez potwierdzenia (>30°C lub wzrostu >=5°C od startu) tryb konczy
@@ -4725,6 +4761,7 @@
 #include <WiFi.h>
 #include <DNSServer.h>
 #include <ESPAsyncWebServer.h>
+#include <functional>     // [v3.47.0 LAN-API] std::function dla wspolnego buildera statusu
 #include <ArduinoOTA.h>   // [PUNKT 3 — OTA] OTA lokalne z VSCode/PlatformIO (pio run -t upload --upload-port <IP>)
 #include <Update.h>       // [PUNKT 3 — OTA] Upload pliku .bin przez przegladarke (endpoint /ota-upload)
 #include <HTTPClient.h>   // [PUNKT 7 — OTA GitHub] zapytanie do api.github.com (sprawdzenie tagu najnowszego Release)
@@ -5047,7 +5084,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.46.0";
+static const char* FIRMWARE_VERSION = "v3.47.1";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -6139,6 +6176,7 @@ body.mode-phone-frame #phone {
 .chip.stale { background: rgba(127, 147, 163, .12); color: #8EA6BA; border-color: rgba(127, 147, 163, .3); box-shadow: none; }
 .chip.err { background: rgba(255, 95, 120, .14); color: var(--err); border-color: rgba(255, 95, 120, .4); box-shadow: 0 0 10px var(--err-glow); }
 .chip.sim { background: rgba(0, 212, 245, .15); color: var(--cyan); border-color: rgba(0, 212, 245, .4); box-shadow: 0 0 10px var(--cyan-glow); }
+.chip.lan { background: rgba(0, 212, 245, .15); color: var(--cyan); border-color: rgba(0, 212, 245, .45); box-shadow: 0 0 10px var(--cyan-glow); }
 
 .iconbtn {
   width: 36px;
@@ -8395,6 +8433,16 @@ body.mode-phone-frame #phone {
   cursor: pointer;
   white-space: nowrap;
 }
+/* [LAN] Centrala wykryta w tej samej sieci — link do panelu lokalnego */
+.conn-banner.lan {
+  background: rgba(0, 212, 245, 0.08);
+  border-color: rgba(0, 212, 245, 0.3);
+  color: var(--cyan);
+}
+.conn-banner.lan .conn-banner-btn {
+  background: var(--cyan);
+  text-decoration: none;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MODUŁY: WI-FI, TELEGRAM & TERMINAL DIAGNOSTYCZNY (21 DLOG)
@@ -9053,6 +9101,14 @@ body.mode-phone-frame #phone {
           <span id="connBannerText">Brak połączenia z bazą Firebase — połącz na żywo</span>
         </div>
         <button class="conn-banner-btn" id="connBannerBtn">🔑 POŁĄCZ</button>
+      </div>
+
+      <div class="conn-banner lan hidden" id="lanBanner">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span data-ico="shield" style="width:16px;height:16px;display:inline-flex"></span>
+          <span id="lanBannerText">Sterownik jest w tej samej sieci — panel lokalny działa także bez internetu</span>
+        </div>
+        <a class="conn-banner-btn" id="lanBannerLink" href="#" rel="noopener">OTWÓRZ PANEL LOKALNY</a>
       </div>
 
       <div class="alarmbanner" id="alarmBanner">
@@ -10408,7 +10464,8 @@ body.mode-phone-frame #phone {
     const simSuffix = Object.keys(S.sym).length ? ' · SYMULACJA STEROWNIKA' : '';
     const connectionLabel = _isDemoMode ? '🧪 SYMULACJA' : !_isFirebaseConnected ? '○ BRAK SESJI' + simSuffix :
       Date.now() - _lastFirebaseFetch >= 20000 ? '○ DANE NIEAKTUALNE' + simSuffix :
-        !S.online ? (hasData('online') ? '○ OFFLINE' : '○ BRAK TELEMETRII') + simSuffix : '● LIVE' + simSuffix;
+        !S.online ? (hasData('online') ? '○ OFFLINE' : '○ BRAK TELEMETRII') + simSuffix :
+          (_linkSource === 'lan' ? '● LAN' + (S.ip ? ' · ' + S.ip : '') : '● LIVE') + simSuffix;
     const ht = $('#heroTemp');
     if (ht) {
       ht.textContent = (symAktywna('ogrz') ? '~' : '') + fmt1(to) + ' °C';
@@ -10453,7 +10510,7 @@ body.mode-phone-frame #phone {
     const chip = $('#chip');
     if (chip) {
       chip.textContent = connectionLabel;
-      chip.className = 'chip' + (_isDemoMode ? ' demo' : S.online ? '' : ' stale');
+      chip.className = 'chip' + (_isDemoMode ? ' demo' : !S.online ? ' stale' : _linkSource === 'lan' ? ' lan' : '');
     }
     const pg = $('#pg-pulpit');
     if (pg) pg.classList.toggle('offline', !S.online);
@@ -10610,13 +10667,21 @@ body.mode-phone-frame #phone {
     return fetch(url, options).finally(() => clearTimeout(timer));
   }
 
+  // Zapytania historii mają już własny query string (?orderBy=…): token musi
+  // dojść jako &auth=. Wcześniej doklejany drugi „?” psuł limitToFirst i gubił
+  // autoryzację, więc zapytanie po indeksie `ts` nigdy się nie udawało.
+  function fbAuthQuery(path, token) {
+    if (!token) return '';
+    return (String(path).indexOf('?') >= 0 ? '&' : '?') + 'auth=' + encodeURIComponent(token);
+  }
+
   async function fbGet(path) {
-    const authQuery = _fbIdToken ? `?auth=${encodeURIComponent(_fbIdToken)}` : '';
+    const authQuery = fbAuthQuery(path, _fbIdToken);
     const res = await fetchWithTimeout(DB_URL + path + authQuery, { cache: 'no-store' }, 8000);
     if (res.status === 401 || res.status === 403) {
       if (_fbRefreshToken && _fbApiKey) {
         await fbRefreshIdToken();
-        const retryAuth = `?auth=${encodeURIComponent(_fbIdToken)}`;
+        const retryAuth = fbAuthQuery(path, _fbIdToken);
         const r2 = await fetchWithTimeout(DB_URL + path + retryAuth, { cache: 'no-store' }, 8000);
         if (!r2.ok) throw new Error('HTTP ' + r2.status);
         return await r2.json();
@@ -10628,7 +10693,7 @@ body.mode-phone-frame #phone {
   }
 
   async function fbPatch(path, bodyObj) {
-    const authQuery = _fbIdToken ? `?auth=${encodeURIComponent(_fbIdToken)}` : '';
+    const authQuery = fbAuthQuery(path, _fbIdToken);
     const res = await fetchWithTimeout(DB_URL + path + authQuery, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -10658,22 +10723,177 @@ body.mode-phone-frame #phone {
     }
   }
 
+  // ─── [LAN] PRACA W SIECI LOKALNEJ CENTRALI (TAKŻE BEZ INTERNETU) ───
+  // Strona serwowana przez ESP (http://<IP centrali>/) czyta status z
+  // GET /api/lan/status (ten sam JSON co /piec/status) i wysyła komendy przez
+  // POST /api/lan/cmd + GET /api/lan/ack (firmware v3.47.0+) — Firebase nie jest
+  // wtedy potrzebny, więc panel działa także, gdy padnie internet. Starszy
+  // firmware: odczyt z /api/status (bez ustawień), komendy tylko przez Firebase.
+  // _isFirebaseConnected/_lastFirebaseFetch znaczą odtąd „świeże łącze statusu”
+  // (Firebase albo LAN); źródło trzyma _linkSource.
+  let _linkSource = '';            // 'lan' | 'firebase' | ''
+  let _lanApiFull = false;         // centrala obsługuje /api/lan/* (status + komendy)
+  const LAN_IP_KEY = 'piec_lan_ip';
+
+  // Adres centrali w sieci lokalnej (z /piec/status) — do wykrywania jej
+  // z panelu otwartego spoza ESP, także gdy internet przestanie działać.
+  function lanRememberControllerIp() {
+    const ip = String(S.ip || '').trim();
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) && espHostLooksLocal(ip) && !/^127\./.test(ip)) {
+      safeStorage.set(LAN_IP_KEY, ip, true);
+    }
+  }
+
+  async function pollLanStatus() {
+    try {
+      let full = true;
+      let res = await fetchWithTimeout('/api/lan/status', { cache: 'no-store' }, 4000);
+      // Starszy firmware nie zna /api/lan/*: odpowiada 404 albo przekierowaniem na „/” (captive portal).
+      if (res.status === 404 || res.redirected) {
+        full = false;
+        res = await fetchWithTimeout('/api/status', { cache: 'no-store' }, 4000);
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (!data || typeof data !== 'object' || (data.wifi_mode !== 'AP' && data.wifi_mode !== 'STA')) {
+        throw new Error('odpowiedź nie pochodzi z centrali');
+      }
+      if (_linkSource !== 'lan' || _lanApiFull !== full) {
+        addLog('SYSTEM', full
+          ? 'Połączono lokalnie z centralą (LAN) — status i polecenia bez Firebase'
+          : 'Połączono lokalnie z centralą (LAN) — starszy firmware: tylko odczyt', 'info');
+      }
+      _lanApiFull = full;
+      _linkSource = 'lan';
+      _isFirebaseConnected = true;
+      _lastFirebaseFetch = Date.now();
+      applyIncomingData(data);
+      return true;
+    } catch (e) {
+      if (_linkSource === 'lan') {
+        _linkSource = '';
+        _isFirebaseConnected = false;
+        updateConnectionStateUI();
+      }
+      return false;
+    }
+  }
+
+  // Odpowiednik ścieżki /piec/cmd + /piec/ack: ten sam wykonawca w centrali,
+  // token w nagłówku X-Piec-Token (obca strona nie wyśle go bez preflightu).
+  async function sendLanCommand(cmd, t0) {
+    const cmdId = makeFireCmdId();
+    try {
+      const body = new URLSearchParams();
+      body.set('id', cmdId);
+      body.set('cmd', cmd);
+      const res = await fetchWithTimeout('/api/lan/cmd', {
+        method: 'POST', cache: 'no-store', headers: { 'X-Piec-Token': _cmdToken }, body: body
+      }, 5000);
+      if (res.redirected || res.status === 404) throw new Error('firmware centrali bez /api/lan/cmd');
+      let j = null;
+      try { j = await res.json(); } catch (e) {}
+      if (res.status === 403) throw new Error('nieprawidłowy token poleceń');
+      if (res.status === 409) throw new Error('centrala wykonuje poprzednie polecenie — spróbuj za chwilę');
+      if (res.status !== 200 && res.status !== 202) throw new Error((j && j.error) || ('HTTP ' + res.status));
+      addLog('CMD', `Wysłano przez sieć lokalną (id: ${cmdId}); oczekiwanie na sterownik`, 'cmd');
+
+      let ack = j && j.done === true ? j : null;
+      const ackStart = Date.now();
+      while (!ack && Date.now() - ackStart < 12000) {
+        await new Promise(r => setTimeout(r, 300));
+        try {
+          const ra = await fetchWithTimeout('/api/lan/ack?id=' + encodeURIComponent(cmdId), { cache: 'no-store' }, 3000);
+          if (ra.status === 404) break;
+          const ja = await ra.json();
+          if (ja && ja.done === true) ack = ja;
+        } catch (e) {}
+      }
+      const latency = Math.round(performance.now() - t0);
+      if (ack && ack.ok === true) {
+        showToast(cmd, `Potwierdzone przez sterownik (LAN, ${latency}ms)`, 'ok');
+        addLog('ACK', `ACK OK przez LAN (${latency}ms): ` + cmd, 'ack');
+        if (navigator.vibrate) navigator.vibrate(15);
+        await pollFirebase();
+        [350, 1000].forEach(ms => setTimeout(() => {
+          if (!document.hidden && !_isDemoMode) pollFirebase();
+        }, ms));
+        return true;
+      }
+      if (ack && ack.ok === false) {
+        showToast(cmd, 'Sterownik odrzucił polecenie: ' + (ack.error || 'błąd'), 'err');
+        addLog('NACK', 'Odrzucone (' + (ack.error || 'błąd') + '): ' + cmd, 'err');
+        return false;
+      }
+      showToast(cmd, 'Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie', 'warn');
+      addLog('ACK_WARN', 'Wysłano przez sieć lokalną, ale sterownik nie potwierdził polecenia', 'warn');
+      setTimeout(pollFirebase, 1500);
+      return false;
+    } catch (err) {
+      showToast(cmd, 'Błąd wysyłki (LAN): ' + (err.message || err), 'err');
+      addLog('CMD_ERR', 'Błąd wysyłki przez sieć lokalną: ' + (err.message || err), 'err');
+      return false;
+    }
+  }
+
+  // Panel otwarty spoza centrali (plik / http): sprawdź zapamiętany adres
+  // centrali i zaproponuj panel lokalny. Na https przeglądarka blokuje
+  // zapytania http do sieci lokalnej — wtedy nic nie robimy.
+  let _lanProbeBusy = false;
+  let _lanProbeAt = 0;
+  async function lanDiscoveryProbe(force) {
+    if (_lanProbeBusy || location.protocol === 'https:') return;
+    const now = Date.now();
+    if (!force && now - _lanProbeAt < 60000) return;
+    _lanProbeAt = now;
+    if (await isEspLocalChartPage()) return;   // strona z ESP: tryb LAN obsługuje pollFirebase()
+    const ip = String(safeStorage.get(LAN_IP_KEY) || '').trim();
+    const banner = $('#lanBanner');
+    if (!ip || !banner || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) || !espHostLooksLocal(ip)) return;
+    _lanProbeBusy = true;
+    try {
+      const res = await fetchWithTimeout('http://' + ip + '/api/lan/status', { cache: 'no-store' }, 2500);
+      const data = res.ok ? await res.json() : null;
+      const found = !!data && (data.wifi_mode === 'AP' || data.wifi_mode === 'STA');
+      banner.classList.toggle('hidden', !found);
+      if (found) {
+        const link = $('#lanBannerLink');
+        if (link) link.href = 'http://' + ip + '/';
+        const txt = $('#lanBannerText');
+        if (txt) txt.textContent = `Sterownik jest w tej samej sieci (${ip}) — panel lokalny działa także bez internetu`;
+      }
+    } catch (e) {
+      banner.classList.add('hidden');
+    } finally {
+      _lanProbeBusy = false;
+    }
+  }
+
   async function pollFirebase() {
     if (_isDemoMode) return;
-    // Na lokalnym ESP zakladka Wykresy korzysta wyłącznie z /api/history*.
-    // Nie odpytuj Firebase, gdy ekran wykresów jest aktywny.
-    if (currentPage === 1 && await isEspLocalChartPage()) return;
+    if (await isEspLocalChartPage()) {
+      // [LAN] Strona z ESP: status z sieci lokalnej — działa bez internetu.
+      // Status nie dopisuje punktów do wykresu, więc działa też na zakładce Wykresy.
+      if (await pollLanStatus()) return;
+      // Na lokalnym ESP zakladka Wykresy korzysta wyłącznie z /api/history*.
+      // Nie odpytuj Firebase, gdy ekran wykresów jest aktywny.
+      if (currentPage === 1) return;
+    }
     try {
       const data = await fbGet('/piec/status.json');
       if (data && typeof data === 'object') {
+        _linkSource = 'firebase';
         _isFirebaseConnected = true;
         _lastFirebaseFetch = Date.now();
         applyIncomingData(data);
+        lanRememberControllerIp();
       }
     } catch (e) {
       _isFirebaseConnected = false;
+      if (_linkSource === 'firebase') _linkSource = '';
       updateConnectionStateUI();
     }
+    lanDiscoveryProbe(false);
   }
 
   function applyIncomingData(d) {
@@ -10831,7 +11051,21 @@ body.mode-phone-frame #phone {
 
     if (demoBtn) demoBtn.style.display = _isDemoMode ? 'block' : 'none';
 
-    if (_isFirebaseConnected) {
+    if (_isFirebaseConnected && _linkSource === 'lan') {
+      if (chip) {
+        chip.className = 'chip lan';
+        chip.textContent = `● LAN · ${S.ip || 'ESP32'}`;
+      }
+      if (banner) banner.classList.add('hidden');
+      if (sysstripSub) sysstripSub.textContent = `stan na żywo z ESP32 (${S.ip || 'sieć lokalna'}) · sieć lokalna — bez Firebase`;
+      if (ustStatus) {
+        ustStatus.textContent = _lanApiFull ? '🟢 Połączono lokalnie (LAN) — sterowanie bez internetu'
+          : '🟡 Sieć lokalna — tylko odczyt (firmware centrali < v3.47.0)';
+        ustStatus.style.color = _lanApiFull ? 'var(--ok)' : 'var(--warn)';
+      }
+      if (ustEmail) ustEmail.textContent = _fbEmail ? _fbEmail + ' (w sieci lokalnej niewymagane)' : 'niewymagane w sieci lokalnej';
+      if (ustMode) ustMode.textContent = _lanApiFull ? 'LAN · STEROWANIE LOKALNE' : 'LAN · TYLKO ODCZYT';
+    } else if (_isFirebaseConnected) {
       if (chip) {
         chip.className = 'chip live';
         chip.textContent = `● LIVE · ${S.ip || 'ESP32'}`;
@@ -10997,6 +11231,12 @@ body.mode-phone-frame #phone {
   }
 
   async function tryAutoLogin() {
+    // [LAN] Strona z ESP z działającym API lokalnym nie potrzebuje Firebase —
+    // bez internetu automatyczne logowanie zgłaszałoby tylko błędy połączenia.
+    if (await isEspLocalChartPage() && await pollLanStatus()) {
+      updateConnectionStateUI();
+      return true;
+    }
     const k = safeStorage.get('piec_fb_api_key') || DEFAULT_FB_API_KEY;
     const e = safeStorage.get('piec_fb_email') || DEFAULT_FB_EMAIL;
     const p = safeStorage.get('piec_fb_password') || DEFAULT_FB_PASS;
@@ -11056,6 +11296,13 @@ body.mode-phone-frame #phone {
     // W trybie rzeczywistym nie zmieniaj stanu optymistycznie. UI odświeży
     // dopiero odpowiedź centrali; powodzenie komunikuj wyłącznie po zgodnym ACK.
     if (_isFirebaseConnected && !_isDemoMode) {
+      // [LAN] Strona z ESP (firmware v3.47.0+): polecenie prosto do centrali.
+      if (_linkSource === 'lan' && _lanApiFull) return sendLanCommand(cmd, t0);
+      if (_linkSource === 'lan' && !_fbIdToken && !_fbRefreshToken) {
+        showToast(cmd, 'Starszy firmware centrali — sterowanie w sieci lokalnej wymaga v3.47.0', 'err');
+        addLog('CMD_ERR', 'Polecenie nie zostało wysłane: firmware bez /api/lan/cmd i brak sesji Firebase', 'err');
+        return false;
+      }
       const cmdId = makeFireCmdId();
       try {
         await fbPatch('/piec/cmd.json', { id: cmdId, cmd: cmd, token: _cmdToken, ts: Date.now() });
@@ -13274,7 +13521,11 @@ body.mode-phone-frame #phone {
     showSheet('Sesja operatora & Firebase', 'session', () => {
       const b = h('div');
       const authCard = h('div', 'diag-card');
-      authCard.innerHTML = `<div class="lbl">POŁĄCZENIE Z FIREBASE</div><div class="val">${_isFirebaseConnected ? '🟢 Połączono LIVE' : _isDemoMode ? '🟡 Tryb symulacji' : '🔴 Brak sesji'}</div><div class="sub">Konto: ${_fbEmail || 'Brak'} · IP: ${S.ip} · RSSI: ${S.wifi_rssi} dBm</div>`;
+      const lanLive = _isFirebaseConnected && _linkSource === 'lan';
+      const linkLbl = lanLive ? 'POŁĄCZENIE LOKALNE (LAN)' : 'POŁĄCZENIE Z FIREBASE';
+      const linkVal = lanLive ? (_lanApiFull ? '🟢 Sieć lokalna — sterowanie bez internetu' : '🟡 Sieć lokalna — tylko odczyt (firmware < v3.47.0)')
+        : _isFirebaseConnected ? '🟢 Połączono LIVE' : _isDemoMode ? '🟡 Tryb symulacji' : '🔴 Brak sesji';
+      authCard.innerHTML = `<div class="lbl">${linkLbl}</div><div class="val">${linkVal}</div><div class="sub">Konto: ${_fbEmail || 'Brak'} · IP: ${S.ip} · RSSI: ${S.wifi_rssi} dBm</div>`;
       b.appendChild(authCard);
       b.appendChild(note('Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Komendy sterujące /piec/cmd są zabezpieczone osobnym tokenem.'));
 
@@ -13286,6 +13537,16 @@ body.mode-phone-frame #phone {
       };
       acts.appendChild(authBtn);
 
+      // Awaryjnie: usuwa WYŁĄCZNIE kopię dób wykresów w tej przeglądarce.
+      const histBtn = h('button', 'ust-btn', 'Wykresy: pobierz historię od nowa');
+      histBtn.onclick = async () => {
+        await teldayClear();
+        showToast('WYKRESY', 'Pamięć wykresów w przeglądarce wyczyszczona — historia z Firebase bez zmian', 'ok');
+        addLog('WYKRESY', 'Wyczyszczono lokalną pamięć dób wykresów (Firebase bez zmian)', 'info');
+        if (currentPage === 1) loadTelemetryRange(activeRangeSec);
+      };
+      acts.appendChild(histBtn);
+
       if (_isFirebaseConnected) {
         const logoutBtn = h('button', 'ust-btn danger', 'Rozłącz i wyloguj');
         logoutBtn.onclick = () => {
@@ -13293,6 +13554,7 @@ body.mode-phone-frame #phone {
           safeStorage.remove('piec_fb_token');
           safeStorage.remove('piec_fb_ref_token');
           safeStorage.remove('piec_fb_password');
+          teldayClear();   // kopia dób wykresu tylko w tej przeglądarce; Firebase bez zmian
           updateConnectionStateUI();
           showToast('sesja', 'Wylogowano operatora', 'ok');
           dismissSheet();
@@ -13462,7 +13724,7 @@ body.mode-phone-frame #phone {
     ];
   }
 
-  const HISTORY_PAGE_SIZE = 300;
+  const HISTORY_PAGE_SIZE = 1000; // pełna doba = ~1440 rekordów = 2 strony
   let _historyIndexFallback = false;
   let _espLocalChartMode = null;
   let _espLocalChartProbe = null;
@@ -13707,70 +13969,231 @@ body.mode-phone-frame #phone {
       Number.isSafeInteger(row.sim) && (row.sim & (1 << channel)) !== 0));
   }
 
-  async function historyFetchShard(day, startTs, endTs) {
-    const base = historyShardPath(day);
-    if (_historyIndexFallback) {
-      return historyFetchShardFallback(base, startTs, endTs);
-    }
-    const rows = [];
-    let cursor = startTs;
-    try {
-      for (let guard = 0; guard < 100; guard++) {
-        const q = base + '.json?orderBy=' + encodeURIComponent('"ts"') + '&startAt=' + encodeURIComponent(String(cursor)) + '&endAt=' + encodeURIComponent(String(endTs)) + '&limitToFirst=' + HISTORY_PAGE_SIZE;
-        const data = await fbGet(q);
-        const page = [];
-        if (data && typeof data === 'object') {
-          Object.keys(data).forEach(id => {
-            const r = historyParseRecord(id, data[id]);
-            if (r && r.ts >= startTs && r.ts <= endTs) page.push(r);
-          });
-        }
-        if (!page.length) break;
-        rows.push(...page);
-        if (page.length < HISTORY_PAGE_SIZE) break;
-        const maxTs = Math.max(...page.map(r => r.ts));
-        if (maxTs < cursor) break;
-        cursor = maxTs + 1;
-      }
-      return historyUniqueSort(rows);
-    } catch (e) {
-      const msg = String(e && e.message || e);
-      if (/Index not defined/i.test(msg) || /indexOn/i.test(msg) || /400/i.test(msg)) {
-        _historyIndexFallback = true;
-        return historyFetchShardFallback(base, startTs, endTs);
-      }
-      throw e;
-    }
-  }
-
-  async function historyFetchShardFallback(base, startTs, endTs) {
-    const q = base + '.json';
-    const data = await fbGet(q);
-    const rows = [];
-    if (data && typeof data === 'object') {
-      Object.keys(data).forEach(id => {
+  // Rekordy doby z `ts >= fromTs`: zapytanie po indeksie `ts` stronami po
+  // HISTORY_PAGE_SIZE z kursorem WŁĄCZNYM (rekordy z tym samym ts na granicy
+  // strony nie giną; duplikat usuwa deduplikacja po id). Bez indeksu w regułach
+  // (HTTP 400) — cały shard doby. Rzuca przy błędzie sieci/HTTP.
+  async function historyFetchDayRows(dayStart, fromTs) {
+    const dayEnd = dayStart + 86399;
+    const base = historyShardPath(new Date(dayStart * 1000));
+    const parsePage = data => {
+      const rows = [];
+      const keys = data && typeof data === 'object' ? Object.keys(data) : [];
+      keys.forEach(id => {
         const r = historyParseRecord(id, data[id]);
-        if (r && r.ts >= startTs && r.ts <= endTs) rows.push(r);
+        if (r && r.ts >= dayStart && r.ts <= dayEnd) rows.push(r);
       });
+      return { rows, count: keys.length };
+    };
+    if (!_historyIndexFallback) {
+      try {
+        const rows = [];
+        let cursor = Math.max(fromTs, dayStart);
+        for (let pageNo = 0; pageNo < 64; pageNo++) {
+          const q = base + '.json?orderBy=' + encodeURIComponent('"ts"') + '&startAt=' + cursor +
+            '&endAt=' + dayEnd + '&limitToFirst=' + HISTORY_PAGE_SIZE;
+          const page = parsePage(await fbGet(q));
+          rows.push(...page.rows);
+          if (page.count < HISTORY_PAGE_SIZE) return historyUniqueSort(rows);
+          if (!page.rows.length) throw new Error('Nieczytelna strona telemetrii');
+          const maxTs = page.rows.reduce((m, r) => Math.max(m, r.ts), cursor);
+          cursor = maxTs > cursor ? maxTs : cursor + 1;
+          if (cursor > dayEnd) return historyUniqueSort(rows);
+        }
+        throw new Error('Zbyt wiele stron telemetrii');
+      } catch (e) {
+        const msg = String(e && e.message || e);
+        if (!(/Index not defined/i.test(msg) || /indexOn/i.test(msg) || /HTTP 400/.test(msg))) throw e;
+        _historyIndexFallback = true;
+      }
     }
-    return historyUniqueSort(rows);
+    return historyUniqueSort(parsePage(await fbGet(base + '.json')).rows);
   }
 
-  async function fetchTelemetryFromFirebase(rangeSec, endSec, updateTrend = true) {
-    if (!_isFirebaseConnected && !_fbIdToken) return null;
+  // ─── [PAMIĘĆ DÓB] Lokalna kopia pobranych dób telemetrii (IndexedDB) ───
+  // Doby kompletne nie są ponownie pobierane z Firebase; o dobę otwartą
+  // (zwykle dzisiejszą) pytamy tylko od ostatniego znanego ts (włącznie).
+  // Doba jest kompletna, gdy przed zapytaniem widzieliśmy w bazie rekord
+  // nowszy niż jej koniec (ESP wysyła telemetrię po kolei, od najstarszej),
+  // dlatego doby odpytujemy od najnowszej. Kopia jest wyłącznie w tej
+  // przeglądarce — historia w Firebase nie jest usuwana ani zmieniana.
+  const TELDAY_DB_NAME = 'piec-telemetry-1m-v1';
+  const TELDAY_STORE = 'days';
+  const TELDAY_KEEP_DAYS = 35;
+  const _teldayOpenDays = new Map();   // RAM: tylko doby otwarte z bieżącego zakresu
+  let _teldayDbPromise = null;
+  let _teldayPruned = false;
+  let _historyLastLoad = null;
+
+  function teldayDb() {
+    if (_teldayDbPromise) return _teldayDbPromise;
+    _teldayDbPromise = new Promise(resolve => {
+      try {
+        if (typeof indexedDB === 'undefined' || !indexedDB) { resolve(null); return; }
+        const req = indexedDB.open(TELDAY_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(TELDAY_STORE)) db.createObjectStore(TELDAY_STORE, { keyPath: 'key' });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+        req.onblocked = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+    return _teldayDbPromise;
+  }
+
+  // Jedna transakcja; wynik żądania albo null (pamięć jest tylko pomocnicza).
+  function teldayRequest(db, mode, fn) {
+    return new Promise(resolve => {
+      try {
+        const tx = db.transaction(TELDAY_STORE, mode);
+        const req = fn(tx.objectStore(TELDAY_STORE));
+        let result = null;
+        if (req) req.onsuccess = () => { result = req.result; };
+        tx.oncomplete = () => resolve(result === undefined ? null : result);
+        tx.onerror = () => resolve(null);
+        tx.onabort = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  function teldayKey(dayStart) { return new Date(dayStart * 1000).toISOString().slice(0, 10); }
+  function teldayPack(r) {
+    return [r._id, r.seq, r.ts, r.mono, r.a, r.k, r.s, r.state, r.stateKnown ? 1 : 0, r.q, r.sim, r.simulated ? 1 : 0];
+  }
+  function teldayUnpack(p) {
+    const id = String(p[0] || '');
+    const dash = id.indexOf('-');
+    return {
+      _id: id, session: dash > 0 ? id.slice(0, dash) : '', seq: p[1], ts: p[2], mono: p[3],
+      a: Array.isArray(p[4]) ? p[4] : [], k: p[5], s: p[6], state: p[7], stateKnown: p[8] === 1,
+      q: p[9], sim: p[10], simulated: p[11] === 1
+    };
+  }
+
+  async function teldayRead(db, dayStart) {
+    const rec = await teldayRequest(db, 'readonly', store => store.get(teldayKey(dayStart)));
+    if (!rec || rec.db !== DB_URL || rec.dayStart !== dayStart || !Array.isArray(rec.rows) ||
+        !(rec.completeBefore >= dayStart && rec.completeBefore <= dayStart + 86400)) return null;
+    try {
+      const rows = rec.rows.map(teldayUnpack).filter(r => r._id && r.ts >= dayStart && r.ts <= dayStart + 86399);
+      return { dayStart: dayStart, completeBefore: rec.completeBefore, rows: historyUniqueSort(rows) };
+    } catch (e) { return null; }
+  }
+
+  function teldayWrite(db, entry) {
+    return teldayRequest(db, 'readwrite', store => store.put({
+      key: teldayKey(entry.dayStart), db: DB_URL, dayStart: entry.dayStart,
+      completeBefore: entry.completeBefore, rows: entry.rows.map(teldayPack)
+    }));
+  }
+
+  async function teldayPrune(db, todayStart) {
+    if (_teldayPruned) return;
+    _teldayPruned = true;
+    const keys = await teldayRequest(db, 'readonly', store => store.getAllKeys());
+    if (!Array.isArray(keys)) return;
+    const keepFrom = teldayKey(todayStart - TELDAY_KEEP_DAYS * 86400);
+    const old = keys.filter(k => typeof k !== 'string' || k < keepFrom);
+    if (old.length) await teldayRequest(db, 'readwrite', store => { old.forEach(k => store.delete(k)); return null; });
+  }
+
+  // Usuwa WYŁĄCZNIE kopię w przeglądarce (wylogowanie / „pobierz od nowa”).
+  async function teldayClear() {
+    _teldayOpenDays.clear();
+    const db = await teldayDb();
+    if (db) await teldayRequest(db, 'readwrite', store => store.clear());
+  }
+
+  function teldayMerge(dayStart, prev, fetched, latestKnownBefore) {
+    const dayEnd = dayStart + 86399;
+    const inDay = fetched.filter(r => r && r.ts >= dayStart && r.ts <= dayEnd);
+    const rows = historyUniqueSort((prev ? prev.rows : []).concat(inDay));
+    let bound = latestKnownBefore === null ? -Infinity : latestKnownBefore;
+    inDay.forEach(r => { if (r.ts > bound) bound = r.ts; });
+    const prevComplete = prev ? prev.completeBefore : dayStart;
+    return { dayStart: dayStart, completeBefore: Math.max(prevComplete, Math.min(bound, dayEnd + 1)), rows: rows };
+  }
+
+  async function historyLoadRowsCached(start, end, canFetch, onProgress) {
+    const days = [];
+    for (let d = Math.floor(start / 86400) * 86400; d <= end; d += 86400) days.push(d);
+    const db = await teldayDb();
+    if (db) await teldayPrune(db, Math.floor(end / 86400) * 86400);
+    const entries = new Map();
+    for (const d of days) {
+      let e = _teldayOpenDays.get(d) || null;
+      if (!e && db) e = await teldayRead(db, d);
+      if (e) entries.set(d, e);
+    }
+    Array.from(_teldayOpenDays.keys()).forEach(d => { if (!entries.has(d)) _teldayOpenDays.delete(d); });
+    let latestKnown = null;
+    entries.forEach(e => {
+      const n = e.rows.length;
+      if (n && (latestKnown === null || e.rows[n - 1].ts > latestKnown)) latestKnown = e.rows[n - 1].ts;
+    });
+    // Od najnowszej doby: jej rekordy domykają starsze doby w tym samym odświeżeniu.
+    const pending = days.slice().reverse().filter(d => {
+      const e = entries.get(d);
+      return !(e && e.completeBefore > d + 86399);
+    });
+    const info = { days: days.length, cached: days.length - pending.length, refreshed: 0, failed: 0, newRows: 0, rows: [] };
+    let aborted = !canFetch;
+    for (let i = 0; i < pending.length; i++) {
+      const d = pending[i];
+      if (aborted) { info.failed++; continue; }
+      const prev = entries.get(d) || null;
+      try {
+        const fetched = await historyFetchDayRows(d, prev ? Math.max(d, prev.completeBefore) : d);
+        const merged = teldayMerge(d, prev, fetched, latestKnown);
+        const added = merged.rows.length - (prev ? prev.rows.length : 0);
+        const changed = prev ? (added !== 0 || merged.completeBefore !== prev.completeBefore)
+          : (merged.rows.length > 0 || merged.completeBefore !== d);
+        if (changed && db) await teldayWrite(db, merged);
+        entries.set(d, merged);
+        if (merged.completeBefore > d + 86399) _teldayOpenDays.delete(d); else _teldayOpenDays.set(d, merged);
+        info.refreshed++;
+        info.newRows += Math.max(0, added);
+        const n = merged.rows.length;
+        if (n && (latestKnown === null || merged.rows[n - 1].ts > latestKnown)) latestKnown = merged.rows[n - 1].ts;
+      } catch (e) {
+        // Brak sieci: doba nie zostaje uznana za kompletną, kolejnych nie odpytujemy.
+        console.warn('Historia: nie udało się pobrać doby ' + teldayKey(d), e);
+        aborted = true;
+        info.failed++;
+      }
+      if (onProgress) onProgress(i + 1, pending.length);
+    }
+    days.forEach(d => {
+      const e = entries.get(d);
+      if (e) e.rows.forEach(r => { if (r.ts >= start && r.ts <= end) info.rows.push(r); });
+    });
+    return info;
+  }
+
+  function historyCacheSummary(info) {
+    if (!info) return '';
+    const dni = n => n === 1 ? '1 dzień' : n + ' dni';
+    const parts = [];
+    if (info.cached > 0) parts.push('z pamięci przeglądarki: ' + dni(info.cached));
+    if (info.refreshed > 0) parts.push('nowe z RTDB: ' + info.newRows);
+    if (info.failed > 0) parts.push('nie odświeżono: ' + dni(info.failed));
+    return parts.length ? ' · ' + parts.join(' · ') : '';
+  }
+
+  async function fetchTelemetryFromFirebase(rangeSec, endSec, updateTrend = true, onProgress = null) {
     const end = Number.isFinite(endSec) ? Math.floor(endSec) : Math.floor(Date.now() / 1000);
     const start = end - rangeSec;
-    const days = historyDayRange(start, end);
-    const all = [];
-    for (let i = 0; i < days.length; i++) {
-      const dayStart = Math.max(start, Math.floor(days[i].getTime() / 1000));
-      const nextDay = Math.floor(days[i].getTime() / 1000) + 86400;
-      const dayEnd = Math.min(end, nextDay - 1);
-      const part = await historyFetchShard(days[i], dayStart, dayEnd);
-      all.push(...part);
+    // Doby kompletne idą z pamięci przeglądarki; bez sesji — wyłącznie z niej.
+    const canFetch = !!(_fbIdToken || _fbRefreshToken);
+    const loaded = await historyLoadRowsCached(start, end, canFetch, onProgress);
+    _historyLastLoad = loaded;
+    const sorted = loaded.rows;
+    if (!sorted.length) {
+      if (canFetch && loaded.failed > 0) throw new Error('Nie udało się pobrać historii z Firebase');
+      return null;
     }
-    const sorted = historyUniqueSort(all);
-    if (!sorted.length) return null;
 
     const parsedRows = sorted.map(r => {
       const getVal = (idx, ch, scale, minBound, maxBound, key) => {
@@ -14025,31 +14448,38 @@ body.mode-phone-frame #phone {
     chartUsesEpochX = true;
 
     let historyFailed = false;
-    if (_isFirebaseConnected) {
-      $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase…`;
-      try {
-        const fbData = await fetchTelemetryFromFirebase(rangeSec, rangeEndSec);
-        if (generation !== _chartLoadGeneration) return;
-        if (fbData && fbData.length > 0) {
-          chartDataset = mergeTelemetryChartRows([], fbData, chartRangeStartMs, chartRangeEndMs);
-          lastChartArchiveSampleTs = chartDataset.reduce((latest, row) => Math.max(latest, row.ts), 0);
-          $('#chartStatusInfo').textContent = `Firebase RTDB · ${chartDataset.length} próbek archiwalnych (${rangeName}) · ${chartWindowLabel()}`;
-          $('#chartPointsStat').textContent = String(chartDataset.length);
-          $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
-          $('#chartRealityPill').textContent = 'FIREBASE RTDB';
-          $('#chartRealityPill').style.background = 'rgba(74,222,128,.15)';
-          $('#chartRealityPill').style.color = 'var(--ok)';
-          $('#chartRealityPill').style.border = '1px solid rgba(74,222,128,.3)';
-          renderSeriesChips();
-          updateChartsNowStat();
-          updateChartCanvas();
-          return;
+    const historyCanFetch = !!(_fbIdToken || _fbRefreshToken);
+    $('#chartStatusInfo').textContent = historyCanFetch ? `Pobieranie historii (${rangeName}) z bazy Firebase…`
+      : `Wczytywanie historii (${rangeName}) z pamięci przeglądarki…`;
+    try {
+      const fbData = await fetchTelemetryFromFirebase(rangeSec, rangeEndSec, true, (done, total) => {
+        // Postęp ma sens przy pierwszym pobraniu wielu dób; zwykle odpytywana jest tylko dzisiejsza.
+        if (total >= 3 && generation === _chartLoadGeneration) {
+          $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase… doba ${done}/${total}`;
         }
-      } catch (err) {
-        if (generation !== _chartLoadGeneration) return;
-        historyFailed = true;
-        console.warn('Błąd odczytu telemetrii Firebase:', err);
+      });
+      if (generation !== _chartLoadGeneration) return;
+      if (fbData && fbData.length > 0) {
+        const load = _historyLastLoad;
+        const onlyCache = !!load && load.refreshed === 0 && load.failed > 0;
+        chartDataset = mergeTelemetryChartRows([], fbData, chartRangeStartMs, chartRangeEndMs);
+        lastChartArchiveSampleTs = chartDataset.reduce((latest, row) => Math.max(latest, row.ts), 0);
+        $('#chartStatusInfo').textContent = `Firebase RTDB · ${chartDataset.length} próbek archiwalnych (${rangeName})${historyCacheSummary(load)} · ${chartWindowLabel()}`;
+        $('#chartPointsStat').textContent = String(chartDataset.length);
+        $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
+        $('#chartRealityPill').textContent = onlyCache ? 'PAMIĘĆ PRZEGLĄDARKI' : 'FIREBASE RTDB';
+        $('#chartRealityPill').style.background = onlyCache ? 'rgba(251,191,36,.15)' : 'rgba(74,222,128,.15)';
+        $('#chartRealityPill').style.color = onlyCache ? 'var(--warn)' : 'var(--ok)';
+        $('#chartRealityPill').style.border = onlyCache ? '1px solid rgba(251,191,36,.3)' : '1px solid rgba(74,222,128,.3)';
+        renderSeriesChips();
+        updateChartsNowStat();
+        updateChartCanvas();
+        return;
       }
+    } catch (err) {
+      if (generation !== _chartLoadGeneration) return;
+      historyFailed = true;
+      console.warn('Błąd odczytu telemetrii Firebase:', err);
     }
 
     if (generation !== _chartLoadGeneration) return;
@@ -25456,6 +25886,156 @@ String wifiZbudujJsonStatus() {
   return j;
 }
 
+// ════════════════════════════════════════════════════════
+// [v3.47.0 LAN-API] Aplikacja i panel w tej samej sieci co centrala — bez internetu
+// ════════════════════════════════════════════════════════
+// Odpowiednik /piec/status, /piec/cmd i /piec/ack dla sieci lokalnej:
+//   GET  /api/lan/status      — TEN SAM JSON co /piec/status (wspolny builder
+//                               zbudujJsonStatusPelny()) + pola lan/internet;
+//   POST /api/lan/cmd         — pola formularza id + cmd, token w naglowku
+//                               X-Piec-Token (ten sam CMD_TOKEN co w /piec/cmd).
+//                               Wlasny naglowek wymusza w przegladarce preflight
+//                               CORS, ktorego ta trasa celowo nie obsluguje, wiec
+//                               obca strona nie wysle komendy (ochrona CSRF);
+//   GET  /api/lan/ack?id=...  — wynik komendy (odpowiednik /piec/ack).
+// Handler HTTP (zadanie async_tcp) tylko kopiuje komende do jednego slotu.
+// Wykonuje ja tgTaskFn — TO SAMO zadanie i TEN SAM wykonawca
+// (wykonajKomendePanelu()) co komendy z Firebase, wiec obie drogi nigdy nie
+// dzialaja rownolegle. Pod spinlockiem wylacznie strcmp/strncpy/memcpy (zero
+// alokacji). Powtorzony cmdId nie wykonuje komendy drugi raz — zwraca wynik.
+static void zbudujJsonStatusPelny(const std::function<void(const String&)>& ja); // definicja przy sendStatusToFirebase()
+
+static const size_t LAN_CMD_ID_MAX  = 48;
+static const size_t LAN_CMD_TXT_MAX = 192;
+static const size_t LAN_CMD_ERR_MAX = 128;
+
+struct LanKomendaStan {
+  bool oczekuje;                  // komenda czeka na wykonanie w tgTaskFn
+  char id[LAN_CMD_ID_MAX];
+  char cmd[LAN_CMD_TXT_MAX];
+  bool ackGotowy;                 // wynik ostatniej wykonanej komendy jest dostepny
+  bool ackOk;
+  char ackId[LAN_CMD_ID_MAX];
+  char ackBlad[LAN_CMD_ERR_MAX];
+};
+static LanKomendaStan g_lanKomenda = {};
+static portMUX_TYPE g_lanKomendaMux = portMUX_INITIALIZER_UNLOCKED;
+
+static bool lanIdPoprawny(const String& id) {
+  if (id.length() == 0 || id.length() >= LAN_CMD_ID_MAX) return false;
+  for (unsigned int i = 0; i < id.length(); i++) {
+    const char c = id.charAt(i);
+    const bool dozwolony = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                           (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.';
+    if (!dozwolony) return false;
+  }
+  return true;
+}
+
+// Jak w /piec/cmd: bez cudzyslowow, backslasha i znakow sterujacych.
+static bool lanKomendaTekstPoprawny(const String& cmd) {
+  if (cmd.length() == 0 || cmd.length() >= LAN_CMD_TXT_MAX) return false;
+  for (unsigned int i = 0; i < cmd.length(); i++) {
+    const unsigned char c = (unsigned char)cmd.charAt(i);
+    if (c < 0x20 || c == 0x7F || c == '"' || c == '\\') return false;
+  }
+  return true;
+}
+
+static String lanJsonTekst(const char* s) {
+  String out;
+  out.reserve(strlen(s) + 8);
+  for (const char* p = s; *p; p++) {
+    const unsigned char c = (unsigned char)*p;
+    if (c == '"' || c == '\\') { out += '\\'; out += (char)c; }
+    else if (c < 0x20) out += ' ';
+    else out += (char)c;
+  }
+  return out;
+}
+
+static void lanWyslijJson(AsyncWebServerRequest *request, int kod, const String& json) {
+  AsyncWebServerResponse *resp = request->beginResponse(kod, "application/json", json);
+  resp->addHeader("Cache-Control", "no-store, max-age=0");
+  request->send(resp);
+}
+
+// Status mozna odczytac takze ze strony otwartej z pliku/innej domeny (np. by
+// wykryc, ze telefon jest w tej samej sieci co centrala). Tylko GET/OPTIONS —
+// trasy zmieniajace stan celowo NIE maja naglowkow CORS.
+static void lanDodajCorsOdczytu(AsyncWebServerResponse *resp) {
+  resp->addHeader("Access-Control-Allow-Origin", "*");
+  resp->addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  resp->addHeader("Access-Control-Allow-Headers", "Content-Type");
+  resp->addHeader("Access-Control-Allow-Private-Network", "true");
+  resp->addHeader("Vary", "Origin");
+}
+
+// POST /api/lan/cmd — przyjecie komendy do slotu. Zwraca kod HTTP i JSON.
+static int lanKomendaPrzyjmij(const String& id, const String& cmd, String& odpowiedz) {
+  bool gotowyWynik = false, zajete = false, ackOk = false;
+  char ackBlad[LAN_CMD_ERR_MAX];
+  ackBlad[0] = '\0';
+  portENTER_CRITICAL(&g_lanKomendaMux);
+  if (g_lanKomenda.ackGotowy && strcmp(g_lanKomenda.ackId, id.c_str()) == 0) {
+    gotowyWynik = true;
+    ackOk = g_lanKomenda.ackOk;
+    memcpy(ackBlad, g_lanKomenda.ackBlad, sizeof(ackBlad));
+  } else if (g_lanKomenda.oczekuje) {
+    // Ten sam cmdId w kolejce = retry transportowy (202); inny = centrala zajeta.
+    if (strcmp(g_lanKomenda.id, id.c_str()) != 0) zajete = true;
+  } else {
+    strncpy(g_lanKomenda.id, id.c_str(), LAN_CMD_ID_MAX - 1);
+    g_lanKomenda.id[LAN_CMD_ID_MAX - 1] = '\0';
+    strncpy(g_lanKomenda.cmd, cmd.c_str(), LAN_CMD_TXT_MAX - 1);
+    g_lanKomenda.cmd[LAN_CMD_TXT_MAX - 1] = '\0';
+    g_lanKomenda.oczekuje = true;
+  }
+  portEXIT_CRITICAL(&g_lanKomendaMux);
+
+  const String idJson = lanJsonTekst(id.c_str());
+  if (gotowyWynik) {
+    odpowiedz = String("{\"accepted\":true,\"cmdId\":\"") + idJson + "\",\"done\":true,\"ok\":" +
+                (ackOk ? "true" : "false") + ",\"error\":\"" + lanJsonTekst(ackBlad) + "\"}";
+    return 200;
+  }
+  if (zajete) {
+    odpowiedz = F("{\"accepted\":false,\"error\":\"centrala_wykonuje_poprzednia_komende\"}");
+    return 409;
+  }
+  odpowiedz = String("{\"accepted\":true,\"cmdId\":\"") + idJson + "\",\"done\":false}";
+  return 202;
+}
+
+// GET /api/lan/ack?id=... — wynik komendy (done=false, gdy jeszcze czeka).
+static int lanAckOdpowiedz(const String& id, String& odpowiedz) {
+  bool gotowy = false, wToku = false, ok = false;
+  char blad[LAN_CMD_ERR_MAX];
+  blad[0] = '\0';
+  portENTER_CRITICAL(&g_lanKomendaMux);
+  if (g_lanKomenda.ackGotowy && strcmp(g_lanKomenda.ackId, id.c_str()) == 0) {
+    gotowy = true;
+    ok = g_lanKomenda.ackOk;
+    memcpy(blad, g_lanKomenda.ackBlad, sizeof(blad));
+  } else if (g_lanKomenda.oczekuje && strcmp(g_lanKomenda.id, id.c_str()) == 0) {
+    wToku = true;
+  }
+  portEXIT_CRITICAL(&g_lanKomendaMux);
+
+  const String idJson = lanJsonTekst(id.c_str());
+  if (gotowy) {
+    odpowiedz = String("{\"cmdId\":\"") + idJson + "\",\"done\":true,\"ok\":" + (ok ? "true" : "false") +
+                ",\"error\":\"" + lanJsonTekst(blad) + "\"}";
+    return 200;
+  }
+  if (wToku) {
+    odpowiedz = String("{\"cmdId\":\"") + idJson + "\",\"done\":false}";
+    return 200;
+  }
+  odpowiedz = String("{\"cmdId\":\"") + idJson + "\",\"done\":false,\"error\":\"nieznany_cmdId\"}";
+  return 404;
+}
+
 // Rejestruje trasy webserwera. Wywolywane RAZ (niezaleznie od trybu AP/STA)
 // — to jest ten sam serwer, ta sama strona w obu trybach.
 void wifiZarejestrujTrasy() {
@@ -25538,6 +26118,73 @@ void wifiZarejestrujTrasy() {
     AsyncWebServerResponse *statusResponse = request->beginResponse(200, "application/json", wifiZbudujJsonStatus());
     statusResponse->addHeader("Cache-Control", "no-store, max-age=0");
     request->send(statusResponse);
+  });
+
+  // [v3.47.0 LAN-API] Pelny status, komendy i ACK dla aplikacji/panelu w sieci
+  // lokalnej (opis przy definicji g_lanKomenda wyzej). AsyncURIMatcher::exact
+  // jak przy /api/prognoza — goly string dopasowalby tez pod-URL-e.
+  wifiWebServer.on(AsyncURIMatcher::exact("/api/lan/status"), HTTP_OPTIONS, [](AsyncWebServerRequest *request) {
+    AsyncWebServerResponse *resp = request->beginResponse(204);
+    lanDodajCorsOdczytu(resp);
+    resp->addHeader("Cache-Control", "no-store");
+    request->send(resp);
+  });
+  wifiWebServer.on(AsyncURIMatcher::exact("/api/lan/status"), HTTP_GET, [](AsyncWebServerRequest *request) {
+    String j;
+    j.reserve(2304);
+    zbudujJsonStatusPelny([&j](const String& s) { j += s; });
+    // Pola wylacznie lokalne: znacznik LAN i czy centrala ma teraz internet.
+    if (j.endsWith("}")) {
+      j.remove(j.length() - 1);
+      j += F(",\"lan\":true,\"lan_api\":1,\"internet\":");
+      j += (fbAppReady ? "true" : "false");
+      j += F("}");
+    }
+    AsyncWebServerResponse *resp = request->beginResponse(200, "application/json", j);
+    resp->addHeader("Cache-Control", "no-store, max-age=0");
+    lanDodajCorsOdczytu(resp);
+    request->send(resp);
+  });
+  wifiWebServer.on(AsyncURIMatcher::exact("/api/lan/cmd"), HTTP_POST, [](AsyncWebServerRequest *request) {
+    const AsyncWebHeader *tokenNaglowek = request->getHeader("X-Piec-Token");
+    if (tokenNaglowek == nullptr || tokenNaglowek->value() != CMD_TOKEN) {
+      lanWyslijJson(request, 403, F("{\"accepted\":false,\"error\":\"nieprawidlowy_token\"}"));
+      return;
+    }
+    if (!request->hasParam("id", true) || !request->hasParam("cmd", true)) {
+      lanWyslijJson(request, 400, F("{\"accepted\":false,\"error\":\"brak_id_lub_cmd\"}"));
+      return;
+    }
+    String id = request->getParam("id", true)->value();
+    String cmd = request->getParam("cmd", true)->value();
+    id.trim();
+    cmd.trim();
+    if (!lanIdPoprawny(id)) {
+      lanWyslijJson(request, 400, F("{\"accepted\":false,\"error\":\"nieprawidlowy_cmdId\"}"));
+      return;
+    }
+    if (!lanKomendaTekstPoprawny(cmd)) {
+      lanWyslijJson(request, 400, F("{\"accepted\":false,\"error\":\"nieprawidlowa_komenda\"}"));
+      return;
+    }
+    String odpowiedz;
+    const int kod = lanKomendaPrzyjmij(id, cmd, odpowiedz);
+    lanWyslijJson(request, kod, odpowiedz);
+  });
+  wifiWebServer.on(AsyncURIMatcher::exact("/api/lan/ack"), HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!request->hasParam("id")) {
+      lanWyslijJson(request, 400, F("{\"done\":false,\"error\":\"brak_id\"}"));
+      return;
+    }
+    String id = request->getParam("id")->value();
+    id.trim();
+    if (!lanIdPoprawny(id)) {
+      lanWyslijJson(request, 400, F("{\"done\":false,\"error\":\"nieprawidlowy_cmdId\"}"));
+      return;
+    }
+    String odpowiedz;
+    const int kod = lanAckOdpowiedz(id, odpowiedz);
+    lanWyslijJson(request, kod, odpowiedz);
   });
 
   // [PROGNOZA-ETAP1, PLAN_PROGNOZA.md] Serwuje ostatni zbudowany cache
@@ -38723,96 +39370,11 @@ static bool applyFbSockTimeouts(WiFiClientSecure &client, int timeout_sec) {
   return true;
 }
 
-// ════════════════════════════════════════════════════════
-// [FB-ETAP2A/2B] Wysylka statusu sterownika -> Firebase RTDB, /piec/status.
-// Wzorzec 1:1 Ryby sendStatusToFirebase() (~linia 13364).
-// ETAP 2A dal: dzialajacy, testowalny zapis co ~15s (POTWIERDZONE logiem
-// [FB-SEND] OK na sprzecie — patrz CONTYNUACJA_STEROWNIK_CO.md).
-// ETAP 2B dokłada:
-//   - circuit breaker (FB_NET_FAIL()/FB_NET_SUCCESS(), CLOSED/OPEN/HALF_OPEN)
-//     — gate na wejsciu funkcji, patrz blok nizej;
-//   - applyTcpKeepalive(fbSSLClient,3,2,3) w kazdej iteracji petli pollingu;
-//   - jawne fbSSLClient.stop() we WSZYSTKICH sciezkach bledu (nie tylko
-//     timeout jak w 2A) — pelny wzorzec z planu sekcja 3.3.
-// ════════════════════════════════════════════════════════
-// [PLAN_LOGOWANIE_ANTYSPAM.md, higiena po TG-CB v2.10.0] LogThrottleStan dla
-// "tag=FB-CB zdarzenie=skip" (obie sciezki, status+cmd, nizej) — dzis
-// nieszkodliwe (max ~1x/FB_SEND_INTERVAL_MS albo ~1x/FB_CMD_INTERVAL_MS),
-// ale to bylo bezpieczne "przez przypadek architektury" (dlugosc tych
-// interwalow), nie "z definicji" — dokladnie taki cichy dryf (krotszy
-// interwal albo nowe, czestsze wywolanie tej samej bramki fbNetCircuitOpen)
-// odtworzylby problem, ktory mial TG-CB. Wspolny interwal przypomnienia z
-// TG-CB, bo fbNetBackoffMs ma ten sam zakres 30s->60s->120s.
-static const uint32_t FB_SKIP_LOG_PRZYPOMNIENIE_MS = 10000UL;
-static LogThrottleStan g_fbSkipStatusLogStan;
-
-void sendStatusToFirebase() {
-  serwisujTWDTJesliZarejestrowany();
-  if (WiFi.status() != WL_CONNECTED) return;
-
-  // [FIX-FB-LOOP-BEZ-LIMITU / STRAZNIK ROWNOLEGLOSCI, v3.10.3] Musi byc
-  // PRZED fbDatabase.set() ponizej, nie tylko przed czekaniem na wynik:
-  // porzucony worker z poprzedniego cyklu wciaz moze siedziec w
-  // fbApp.loop(), a fbDatabase.set() dotyka tych samych obiektow
-  // biblioteki. Pelne uzasadnienie przy definicji fbLoopWorkerZajety().
-  if (fbLoopWorkerZajety()) {
-    zapiszLog(F("tag=FB lvl=WARN zdarzenie=skip_worker_zajety sciezka=status msg=\"poprzedni fbApp.loop() wciaz wisi - pomijam cykl\""));
-    return;
-  }
-
-  // [FB-ETAP2B] Circuit breaker gate. Gdy otwarty: sprawdz czy cooldown
-  // minal — jesli tak, wejdz w HALF_OPEN (pojedyncza proba; NIE zerujemy
-  // streaka tutaj, zrobi to dopiero FB_NET_SUCCESS()/FB_NET_FAIL() ponizej,
-  // wzorem Ryby ~linia 10012-10022). Jesli cooldown jeszcze trwa — pomin
-  // cala probe, zero ruchu sieciowego, zaden reconnect.
-  if (fbNetCircuitOpen) {
-    if (millis() >= fbNetCooldownUntilMs) {
-      logThrottleWyczysc(g_fbSkipStatusLogStan, "FB-CB", "skip_status");
-      zapiszLog(String(F("tag=FB-CB lvl=INFO zdarzenie=half_open sciezka=status streak_byl=")) + String((int)fbNetFailStreak));
-      fbNetCircuitOpen = false; // tymczasowo zamkniete — ponizsza proba zdecyduje FB_NET_SUCCESS()/FB_NET_FAIL()
-    } else {
-      // zdarzenie="skip_status" (nie samo "skip") — logThrottleZglos/Wyczysc
-      // nie maja osobnego pola "sciezka=", wiec identyfikacja epizodu (status
-      // vs cmd, patrz g_fbSkipCmdLogStan przy checkFirebaseCommands()) siedzi
-      // w nazwie zdarzenia; pole "sciezka=" w linii half_open powyzej zostaje
-      // bez zmian.
-      logThrottleZglos(g_fbSkipStatusLogStan, "FB-CB", "skip_status", FB_SKIP_LOG_PRZYPOMNIENIE_MS);
-      return;
-    }
-  }
-
-  // [FB-ETAP2A] JSON w PSRAM — analogicznie do Ryby (unika reserve() z DRAM
-  // co 15s). Lambda ja() appenduje do jb (PSRAM) lub jsonFb (String fallback
-  // DRAM, gdyby psramAllocSafe() zwrocilo nullptr).
-  // [FB-USTAWIENIA] Podniesione z 1024 -> 1536 po dolozeniu 14 pol
-  // ustawien do payloadu (patrz nizej) — worst-case dlugosc calego JSON-a
-  // to ok. 650B, wiec 1536 zostawia spory zapas na przyszle pola bez
-  // ryzyka cichego obciecia (jLen + sl < FB_JSON_CAP-1 w ja() ponizej
-  // po prostu przestaje dopisywac po przekroczeniu, co zepsuloby JSON).
-  // [v3.31.26 FB-SYMULACJA] 1536 -> 2048: dolozone 25 pol (symulacja_*/_min
-  // x10 czujnikow + 3x *_override_min + mieszadlo + dym_... juz byly) to
-  // ~+600B w najgorszym razie; 2048 zostawia ten sam zapas co dotad.
-  const size_t FB_JSON_CAP = 2048;
-  char* jb = (char*)psramAllocSafe(FB_JSON_CAP);
-  size_t jLen = 0;
-  bool jPsram = (jb != nullptr);
-  String jsonFb;
-  if (jPsram) { jb[0] = '\0'; }
-  else        { jsonFb.reserve(1280); }
-
-  auto ja = [&](const String& s) {
-    if (jPsram) {
-      size_t sl = s.length();
-      if (jLen + sl < FB_JSON_CAP - 1) {
-        memcpy(jb + jLen, s.c_str(), sl);
-        jLen += sl;
-        jb[jLen] = '\0';
-      }
-    } else {
-      jsonFb += s;
-    }
-  };
-
+// [v3.47.0 LAN-API] Wspolny JSON statusu: /piec/status (Firebase, bufor PSRAM
+// w sendStatusToFirebase()) i GET /api/lan/status (siec lokalna). Wydzielony
+// 1:1 z sendStatusToFirebase() — jedno zrodlo pol, zeby aplikacja i panel
+// widzialy w LAN dokladnie ten sam status co z Firebase.
+static void zbudujJsonStatusPelny(const std::function<void(const String&)>& ja) {
   ja("{");
   ja("\"wifi_mode\":\""); ja(wifiStan == WIFI_STAN_PORTAL_AP ? "AP" : "STA"); ja("\",");
   ja("\"ip\":\""); ja(wifiStan == WIFI_STAN_PORTAL_AP ? WiFi.softAPIP().toString() : WiFi.localIP().toString()); ja("\",");
@@ -38942,6 +39504,100 @@ void sendStatusToFirebase() {
   ja("\"fw\":\""); ja(FIRMWARE_VERSION); ja("\",");
   ja("\"uptime\":" + String(millis() / 1000) + ",");
   ja("\"updatedAt\":" + String(millis()) + "}");
+}
+
+// ════════════════════════════════════════════════════════
+// [FB-ETAP2A/2B] Wysylka statusu sterownika -> Firebase RTDB, /piec/status.
+// Wzorzec 1:1 Ryby sendStatusToFirebase() (~linia 13364).
+// ETAP 2A dal: dzialajacy, testowalny zapis co ~15s (POTWIERDZONE logiem
+// [FB-SEND] OK na sprzecie — patrz CONTYNUACJA_STEROWNIK_CO.md).
+// ETAP 2B dokłada:
+//   - circuit breaker (FB_NET_FAIL()/FB_NET_SUCCESS(), CLOSED/OPEN/HALF_OPEN)
+//     — gate na wejsciu funkcji, patrz blok nizej;
+//   - applyTcpKeepalive(fbSSLClient,3,2,3) w kazdej iteracji petli pollingu;
+//   - jawne fbSSLClient.stop() we WSZYSTKICH sciezkach bledu (nie tylko
+//     timeout jak w 2A) — pelny wzorzec z planu sekcja 3.3.
+// ════════════════════════════════════════════════════════
+// [PLAN_LOGOWANIE_ANTYSPAM.md, higiena po TG-CB v2.10.0] LogThrottleStan dla
+// "tag=FB-CB zdarzenie=skip" (obie sciezki, status+cmd, nizej) — dzis
+// nieszkodliwe (max ~1x/FB_SEND_INTERVAL_MS albo ~1x/FB_CMD_INTERVAL_MS),
+// ale to bylo bezpieczne "przez przypadek architektury" (dlugosc tych
+// interwalow), nie "z definicji" — dokladnie taki cichy dryf (krotszy
+// interwal albo nowe, czestsze wywolanie tej samej bramki fbNetCircuitOpen)
+// odtworzylby problem, ktory mial TG-CB. Wspolny interwal przypomnienia z
+// TG-CB, bo fbNetBackoffMs ma ten sam zakres 30s->60s->120s.
+static const uint32_t FB_SKIP_LOG_PRZYPOMNIENIE_MS = 10000UL;
+static LogThrottleStan g_fbSkipStatusLogStan;
+
+void sendStatusToFirebase() {
+  serwisujTWDTJesliZarejestrowany();
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  // [FIX-FB-LOOP-BEZ-LIMITU / STRAZNIK ROWNOLEGLOSCI, v3.10.3] Musi byc
+  // PRZED fbDatabase.set() ponizej, nie tylko przed czekaniem na wynik:
+  // porzucony worker z poprzedniego cyklu wciaz moze siedziec w
+  // fbApp.loop(), a fbDatabase.set() dotyka tych samych obiektow
+  // biblioteki. Pelne uzasadnienie przy definicji fbLoopWorkerZajety().
+  if (fbLoopWorkerZajety()) {
+    zapiszLog(F("tag=FB lvl=WARN zdarzenie=skip_worker_zajety sciezka=status msg=\"poprzedni fbApp.loop() wciaz wisi - pomijam cykl\""));
+    return;
+  }
+
+  // [FB-ETAP2B] Circuit breaker gate. Gdy otwarty: sprawdz czy cooldown
+  // minal — jesli tak, wejdz w HALF_OPEN (pojedyncza proba; NIE zerujemy
+  // streaka tutaj, zrobi to dopiero FB_NET_SUCCESS()/FB_NET_FAIL() ponizej,
+  // wzorem Ryby ~linia 10012-10022). Jesli cooldown jeszcze trwa — pomin
+  // cala probe, zero ruchu sieciowego, zaden reconnect.
+  if (fbNetCircuitOpen) {
+    if (millis() >= fbNetCooldownUntilMs) {
+      logThrottleWyczysc(g_fbSkipStatusLogStan, "FB-CB", "skip_status");
+      zapiszLog(String(F("tag=FB-CB lvl=INFO zdarzenie=half_open sciezka=status streak_byl=")) + String((int)fbNetFailStreak));
+      fbNetCircuitOpen = false; // tymczasowo zamkniete — ponizsza proba zdecyduje FB_NET_SUCCESS()/FB_NET_FAIL()
+    } else {
+      // zdarzenie="skip_status" (nie samo "skip") — logThrottleZglos/Wyczysc
+      // nie maja osobnego pola "sciezka=", wiec identyfikacja epizodu (status
+      // vs cmd, patrz g_fbSkipCmdLogStan przy checkFirebaseCommands()) siedzi
+      // w nazwie zdarzenia; pole "sciezka=" w linii half_open powyzej zostaje
+      // bez zmian.
+      logThrottleZglos(g_fbSkipStatusLogStan, "FB-CB", "skip_status", FB_SKIP_LOG_PRZYPOMNIENIE_MS);
+      return;
+    }
+  }
+
+  // [FB-ETAP2A] JSON w PSRAM — analogicznie do Ryby (unika reserve() z DRAM
+  // co 15s). Lambda ja() appenduje do jb (PSRAM) lub jsonFb (String fallback
+  // DRAM, gdyby psramAllocSafe() zwrocilo nullptr).
+  // [FB-USTAWIENIA] Podniesione z 1024 -> 1536 po dolozeniu 14 pol
+  // ustawien do payloadu (patrz nizej) — worst-case dlugosc calego JSON-a
+  // to ok. 650B, wiec 1536 zostawia spory zapas na przyszle pola bez
+  // ryzyka cichego obciecia (jLen + sl < FB_JSON_CAP-1 w ja() ponizej
+  // po prostu przestaje dopisywac po przekroczeniu, co zepsuloby JSON).
+  // [v3.31.26 FB-SYMULACJA] 1536 -> 2048: dolozone 25 pol (symulacja_*/_min
+  // x10 czujnikow + 3x *_override_min + mieszadlo + dym_... juz byly) to
+  // ~+600B w najgorszym razie; 2048 zostawia ten sam zapas co dotad.
+  const size_t FB_JSON_CAP = 3072;   // [v3.47.0 LAN-API] bylo 2048 przy JSON ~1.9 KB — zapas na nowe pola
+  char* jb = (char*)psramAllocSafe(FB_JSON_CAP);
+  size_t jLen = 0;
+  bool jPsram = (jb != nullptr);
+  String jsonFb;
+  if (jPsram) { jb[0] = '\0'; }
+  else        { jsonFb.reserve(1280); }
+
+  auto ja = [&](const String& s) {
+    if (jPsram) {
+      size_t sl = s.length();
+      if (jLen + sl < FB_JSON_CAP - 1) {
+        memcpy(jb + jLen, s.c_str(), sl);
+        jLen += sl;
+        jb[jLen] = '\0';
+      }
+    } else {
+      jsonFb += s;
+    }
+  };
+
+  // [v3.47.0 LAN-API] Ten sam JSON buduje GET /api/lan/status (wspolny builder).
+  zbudujJsonStatusPelny(ja);
 
   const char* jsonPtr = jPsram ? jb : jsonFb.c_str();
 
@@ -39184,6 +39840,420 @@ void fbCbSkipEpisodesReset() {
   logThrottleWyczysc(g_fbSkipCmdLogStan, "FB-CB", "skip_cmd");
 }
 
+// [v3.47.0 LAN-API] Wspolny wykonawca komend panelu/aplikacji. Wydzielony 1:1
+// z checkFirebaseCommands() (zmienione wylacznie nazwy lastFirebaseCmdOk/Error
+// -> wynikOk/wynikBlad). Wolany z dwoch miejsc w tym samym zadaniu tgTaskFn:
+// /piec/cmd (Firebase) i /api/lan/cmd (siec lokalna, lanObsluzOczekujacaKomende()).
+static void wykonajKomendePanelu(const String& cmd, bool& wynikOk, String& wynikBlad) {
+  wynikOk = true;
+  wynikBlad = "";
+  if (cmd == "pompa_wl") {
+    // [FIX-POMPA cz.1] Bylo odwrotnie (HIGH=ON) — cala reszta kodu i
+    // sprzet maja LOW=ON. Patrz PLAN_NAPRAWY_POMPY_CO.md, Czesc 1.
+    pompaUstaw(true, true); // wymus=true: reczny rozkaz uzytkownika nie moze zostac cicho zignorowany
+    pompaManualOverrideUntil = millis() + POMPA_OVERRIDE_MS;
+    zapiszLog(F("tag=FB lvl=INFO akcja=pompa stan=ON tryb=reczny override_min=60"));
+  }
+  else if (cmd == "pompa_wyl") {
+    pompaUstaw(false, true); // wymus=true: jak wyzej
+    pompaManualOverrideUntil = millis() + POMPA_OVERRIDE_MS;
+    zapiszLog(F("tag=FB lvl=INFO akcja=pompa stan=OFF tryb=reczny override_min=60"));
+  }
+  else if (cmd == "pompa_auto") {
+    // [FB-BRAKUJACE-KOMENDY, AUDYT_komend_panel_vs_firmware.md, 2026-09-25]
+    // Firebase odpowiednik stan=auto z /api/pompa-manual (patrz ta funkcja
+    // wyzej) — natychmiastowy powrot do automatyki, bez czekania na
+    // wygasniecie override'u (jak "Cancel Hold" na termostatach). Segment
+    // "Auto" w sekcji Pompa panelu dotad wysylal te komende w prozne.
+    pompaManualOverrideUntil = 0;
+    zapiszLog(F("tag=FB lvl=INFO akcja=pompa zdarzenie=powrot_do_auto"));
+  }
+  else if (cmd == "mieszadlo_wl") {
+    // [FB-BRAKUJACE-KOMENDY, 2026-09-25] Firebase odpowiednik stan=wl z
+    // /api/mieszadlo-manual (patrz ta funkcja wyzej) — mieszadlo nie ma
+    // wlasnej funkcji xUstaw(), wiec sterujemy przekaznikiem bezposrednio,
+    // identycznie jak ten endpoint WWW.
+    digitalWrite(mieszadlo_przekaznik, HIGH);
+    mieszadloAktywnyStan = true;
+    mieszadloCzasZmianyFazyMs = millis(); // faza w automatyce liczy sie od nowa po powrocie z override'u
+    mieszadloManualOverrideUntil = millis() + SYMULACJA_DOMYSLNY_CZAS_MS;
+    zapiszLog(F("tag=FB lvl=INFO akcja=mieszadlo stan=ON tryb=reczny override_min=60"));
+  }
+  else if (cmd == "mieszadlo_wyl") {
+    digitalWrite(mieszadlo_przekaznik, LOW);
+    mieszadloAktywnyStan = false;
+    mieszadloCzasZmianyFazyMs = millis();
+    mieszadloManualOverrideUntil = millis() + SYMULACJA_DOMYSLNY_CZAS_MS;
+    zapiszLog(F("tag=FB lvl=INFO akcja=mieszadlo stan=OFF tryb=reczny override_min=60"));
+  }
+  else if (cmd == "mieszadlo_auto") {
+    mieszadloManualOverrideUntil = 0;
+    zapiszLog(F("tag=FB lvl=INFO akcja=mieszadlo zdarzenie=powrot_do_auto"));
+  }
+  else if (cmd.startsWith("diag")) {
+    String diagResponse;
+    if (diagApplyCommand(cmd, diagResponse)) {
+      zapiszLog(String(F("tag=DIAG lvl=INFO zdarzenie=cmd_ok cmd=")) + cmd);
+      wynikOk = true;
+      wynikBlad = "";
+    } else {
+      wynikOk = false;
+      wynikBlad = diagResponse.length() ? diagResponse : "invalid_diag_command";
+      zapiszLog(String(F("tag=DIAG lvl=WARN zdarzenie=cmd_rejected cmd=")) + cmd);
+    }
+  }
+  else if (cmd.startsWith("klapa ")) {
+    // [FIX-WYSCIG] Panel/Firebase podaje PROCENT (0-100%), nie stopnie.
+    // Core 0 tylko zapisuje zadanie — fizyczny ruch (i zapis do
+    // pozycjaKlapa) wykonuje wylacznie Core 1 w servo_manual().
+    if (rozpalanieSerwaWymuszenieAktywne()) {
+      wynikOk = false;
+      wynikBlad = "rozpalanie_serwa_wymusza_pozycje_otwarta";
+    } else {
+      int procent = constrain(cmd.substring(6).toInt(), 0, 100);
+      docelowaKlapaProcent = procent;
+      TrybSerwa = 2;   // reczna pozycja — servo_manual() ma trzymac ten kat
+      zapiszLog(String(F("tag=FB lvl=INFO akcja=klapa zadanie_procent=")) + procent);
+    }
+  }
+  else if (cmd.startsWith("syberek ")) {
+    if (rozpalanieSerwaWymuszenieAktywne()) {
+      wynikOk = false;
+      wynikBlad = "rozpalanie_serwa_wymusza_pozycje_otwarta";
+    } else {
+      int procent = constrain(cmd.substring(8).toInt(), 0, 100);
+      docelowaSyberekProcent = procent;
+      TrybSerwa = 2;
+      zapiszLog(String(F("tag=FB lvl=INFO akcja=syberek zadanie_procent=")) + procent);
+    }
+  }
+  else if (cmd == "reset_alarmow") {
+    // [FB-ETAP3] NIE ustawiac samych flag na false — aktywujAlarmCO() robi
+    // wstrzymajZadanie(zadanieObslugaPompy) przy wejsciu w alarm; jesli
+    // zresetujemy tu tylko flage alarmOgrzewanieWlaczone, pompa zostanie
+    // trwale wstrzymana (wznowZadanie() nigdy by sie nie wykonalo).
+    // [FIX-ALARM-PANEL-POMPA, v3.1.0] Od tej wersji aktywujAlarmPanelu() juz
+    // NIE rusza pompy — ale dezaktywujAlarmPanelu() nadal trzeba wywolac,
+    // bo to ona resetuje czyTemperaturaAlarmowa na stan drugiego alarmu
+    // (patrz [FIX-ALARM-WSPOLNA-FLAGA, 2.12.2.1]); samo wyzerowanie
+    // alarmPanelWlaczone by tego nie zrobilo. Dlatego w obu przypadkach
+    // wolamy te same funkcje dezaktywujace co normalny automat alarmowy
+    // (temperatura_alarmowa()), tylko wymuszone recznie z Firebase.
+    // [FIX-ALARM-WSPOLNA-FLAGA, 2.12.2.2] Bylo: wolano tylko funkcje
+    // dezaktywujace, bez zerowania samych flag alarmOgrzewanieWlaczone/
+    // alarmPanelWlaczone — system po recznym resecie nadal raportowal
+    // alarm jako AKTYWNY, a automat w temperatura_alarmowa() nigdy wiecej
+    // nie mial okazji ponownie zadzialac przy tym samym przegrzaniu.
+    if (alarmOgrzewanieWlaczone) { dezaktywujAlarmCO();    alarmOgrzewanieWlaczone = false; }
+    if (alarmPanelWlaczone)      { dezaktywujAlarmPanelu(); alarmPanelWlaczone = false; }
+    zapiszLog(F("tag=FB lvl=INFO akcja=reset_alarmow msg=\"alarmy skasowane recznie\""));
+  }
+  else if (cmd.startsWith("alarm_mute ")) {
+    String bladMute;
+    if (obsluzKomendeAlarmMute(cmd, bladMute)) {
+      wynikOk = true;
+      wynikBlad = "";
+    } else {
+      wynikOk = false;
+      wynikBlad = bladMute;
+      zapiszLog(String(F("tag=ALARM lvl=WARN akcja=wyciszenie_odrzucone powod=")) + bladMute);
+    }
+  }
+  else if (cmd == "rozpalanie_serwa") {
+    String bladRozpalania;
+    if (uruchomRozpalanieSerwa(bladRozpalania)) {
+      wynikOk = true;
+      wynikBlad = "";
+    } else {
+      wynikOk = false;
+      wynikBlad = bladRozpalania;
+      zapiszLog(String(F("tag=SERVO lvl=WARN akcja=rozpalanie_odrzucone powod=")) + bladRozpalania);
+    }
+  }
+  else if (cmd == "rozpalanie_stop") {
+    zakonczTrybRozpalania("operator", false);
+    wynikOk = true;
+    wynikBlad = "";
+  }
+  else if (cmd == "wycisz") {
+    // [FIX-DYM-RESET-NIEPELNY] Celowo OSOBNA komenda od reset_alarmow —
+    // dotyczy wylacznie buzzera alarmu dymu, nie rusza serw/pompy/flag.
+    // Patrz wyciszAlarmDzwiekowy() i uzasadnienie w PLAN_ALARMY_I_POWIADOMIENIA.md.
+    wyciszAlarmDzwiekowy();
+  }
+  else if (cmd == "wycisz_ogrz") {
+    // [FB-BRAKUJACE-KOMENDY, 2026-09-25] Firebase odpowiednik przycisku
+    // "Wycisz brzeczyk" / "Wycisz przegrzanie" w panelu — lustrzane do
+    // "wycisz" (dym) wyzej, ale dotyczy WYLACZNIE dzwieku alarmu
+    // ogrzewania/panelu. Funkcja juz istniala (patrz komentarz "[NOWE]"
+    // przy jej definicji wyzej w pliku), tylko nie byla dotad podpieta
+    // pod zadna komende.
+    wyciszAlarmDzwiekowyOgrzewania();
+  }
+  else if (cmd == "tryb_reczny") {
+    TrybSerwa = 2;
+    zapiszLog(F("tag=FB lvl=INFO akcja=tryb_serwa TrybSerwa=2 wartosc=reczny"));
+  }
+  else if (cmd == "tryb_auto") {
+    TrybSerwa = 1;
+    zapiszLog(F("tag=FB lvl=INFO akcja=tryb_serwa TrybSerwa=1 wartosc=automatyczny"));
+  }
+  else if (cmd == "tryb_bezpieczny") {
+    TrybSerwa = 3;
+    zapiszLog(F("tag=FB lvl=INFO akcja=tryb_serwa TrybSerwa=3 wartosc=bezpieczna_pozycja syberek=90 klapa=0"));
+  }
+  else if (cmd.startsWith("ustaw ")) {
+    // [FB-USTAWIENIA] Generyczna komenda dla wszystkich 20 pol zakladki
+    // Ustawienia panelu Firebase — format "ustaw <pole> <wartosc>", np.
+    // "ustaw tempOn 65". Ta sama walidacja/zapis co lokalny
+    // /api/ustawienia-set, przez wspolna ustawParametrPieca() (patrz
+    // definicja funkcji wyzej w pliku) — zeby te dwie sciezki nigdy nie
+    // rozjechaly sie w zakresach/regulach.
+    String reszta = cmd.substring(6);
+    int spacja = reszta.indexOf(' ');
+    if (spacja < 0) {
+      wynikOk = false;
+      wynikBlad = "brak wartosci w komendzie";
+      zapiszLog(String(F("tag=FB lvl=WARN akcja=ustaw msg=\"brak wartosci w komendzie\" cmd=")) + cmd);
+    } else {
+      String poleUst = reszta.substring(0, spacja);
+      long wUst = reszta.substring(spacja + 1).toInt();
+      String errUst;
+      if (ustawParametrPieca(poleUst, wUst, errUst)) {
+        zapiszLog(String(F("tag=FB lvl=INFO akcja=ustaw pole=")) + poleUst + " wartosc=" + String(wUst));
+      } else {
+        wynikOk = false;
+        wynikBlad = errUst;
+        zapiszLog(String(F("tag=FB lvl=WARN akcja=ustaw zdarzenie=odrzucone pole=")) + poleUst + " powod=" + errUst);
+      }
+    }
+  }
+  else if (cmd.startsWith("symuluj_stop ")) {
+    // [FB-BRAKUJACE-KOMENDY, AUDYT_komend_panel_vs_firmware.md, 2026-09-25]
+    // Firebase odpowiednik akcja=stop z /api/symulacja-czujnik (patrz ta
+    // funkcja wyzej) — format "symuluj_stop <pole>". Ta sama lista 10 pol
+    // co ten endpoint WWW — CELOWO zduplikowana (nie wspoldzielona funkcja)
+    // zeby nie ruszac juz dzialajacego endpointu WWW przy tej naprawie;
+    // jesli kiedys dolozysz/zmienisz pole tam, zrob to samo tutaj.
+    String poleSymStop = cmd.substring(13);
+    poleSymStop.trim();
+    bool *aktywnaSymStop = nullptr;
+    unsigned long *doCzasuSymStop = nullptr;
+    bool poleSymStopZnalezione = true;
+    bool poleSymStopToDym = (poleSymStop == "dym");
+
+    if (poleSymStopToDym) {
+      // dym ma storage int (symulowanyCzujnikDymu), obslugiwany nizej osobno.
+    } else if (poleSymStop == "ogrz") {
+      aktywnaSymStop = &symulacjaOgrzAktywna; doCzasuSymStop = &symulacjaOgrzDo;
+    } else if (poleSymStop == "panel") {
+      aktywnaSymStop = &symulacjaPaneluAktywna; doCzasuSymStop = &symulacjaPaneluDo;
+    } else if (poleSymStop == "bojler") {
+      aktywnaSymStop = &symulacjaBojleraAktywna; doCzasuSymStop = &symulacjaBojleraDo;
+    } else if (poleSymStop == "pokoj") {
+      aktywnaSymStop = &symulacjaPokojuAktywna; doCzasuSymStop = &symulacjaPokojuDo;
+    } else if (poleSymStop == "zewn") {
+      aktywnaSymStop = &symulacjaZewnAktywna; doCzasuSymStop = &symulacjaZewnDo;
+    } else if (poleSymStop == "ogrz_powrot") {
+      aktywnaSymStop = &symulacjaPowrotuAktywna; doCzasuSymStop = &symulacjaPowrotuDo;
+    } else if (poleSymStop == "ogrz_trociny") {
+      aktywnaSymStop = &symulacjaTrocinAktywna; doCzasuSymStop = &symulacjaTrocinDo;
+    } else if (poleSymStop == "cisnienie") {
+      aktywnaSymStop = &symulacjaCisnieniaAktywna; doCzasuSymStop = &symulacjaCisnieniaDo;
+    } else if (poleSymStop == "wilgotnosc") {
+      aktywnaSymStop = &symulacjaWilgotnosciAktywna; doCzasuSymStop = &symulacjaWilgotnosciDo;
+    } else {
+      poleSymStopZnalezione = false;
+    }
+
+    if (!poleSymStopZnalezione) {
+      wynikOk = false;
+      wynikBlad = "nieznane pole: " + poleSymStop;
+      zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj_stop zdarzenie=odrzucono pole=")) + poleSymStop + " powod=nieznane_pole");
+    } else {
+      if (poleSymStopToDym) {
+        symulacjaDymAktywna = false;
+        symulacjaDymDo = 0;
+      } else {
+        *aktywnaSymStop = false;
+        *doCzasuSymStop = 0;
+      }
+      zapiszLog(String(F("tag=FB lvl=INFO akcja=symuluj_stop czujnik=")) + poleSymStop);
+    }
+  }
+  else if (cmd.startsWith("symuluj ")) {
+    // [FB-BRAKUJACE-KOMENDY, 2026-09-25] Firebase odpowiednik akcja=start z
+    // /api/symulacja-czujnik (patrz ta funkcja wyzej) — format "symuluj
+    // <pole> <wartosc> <czas_min>", np. "symuluj ogrz 0 60" (dokladnie
+    // komenda ze zgloszonego bledu). Ta sama tablica pole->wskazniki i
+    // zakresow co ten endpoint WWW — jak w symuluj_stop wyzej, celowo
+    // zduplikowana zamiast wspoldzielonej, zeby nie ruszac juz dzialajacego
+    // /api/symulacja-czujnik; obie kopie trzeba aktualizowac razem.
+    String resztaSym = cmd.substring(8);
+    int spSym1 = resztaSym.indexOf(' ');
+    int spSym2 = (spSym1 >= 0) ? resztaSym.indexOf(' ', spSym1 + 1) : -1;
+
+    if (spSym1 < 0 || spSym2 < 0) {
+      wynikOk = false;
+      wynikBlad = "brak wartosci/czasu w komendzie";
+      zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj msg=\"brak wartosci/czasu w komendzie\" cmd=")) + cmd);
+    } else {
+      String poleSym = resztaSym.substring(0, spSym1);
+      float wartoscSym = resztaSym.substring(spSym1 + 1, spSym2).toFloat();
+      int czasMinSym = resztaSym.substring(spSym2 + 1).toInt();
+
+      bool *aktywnaSym = nullptr;
+      unsigned long *doCzasuSym = nullptr;
+      float *wartoscWskSym = nullptr;
+      float zakresMinSym = 0, zakresMaxSym = 0;
+      bool poleSymZnalezione = true;
+
+      if (poleSym == "dym") {
+        zakresMinSym = 0; zakresMaxSym = 4095;
+      } else if (poleSym == "ogrz") {
+        aktywnaSym = &symulacjaOgrzAktywna; doCzasuSym = &symulacjaOgrzDo;
+        wartoscWskSym = &symulowanaTemperaturaOgrzewania; zakresMinSym = 0; zakresMaxSym = 160;
+      } else if (poleSym == "panel") {
+        aktywnaSym = &symulacjaPaneluAktywna; doCzasuSym = &symulacjaPaneluDo;
+        wartoscWskSym = &symulowanaTemperaturaPanelu; zakresMinSym = -30; zakresMaxSym = 160;
+      } else if (poleSym == "bojler") {
+        aktywnaSym = &symulacjaBojleraAktywna; doCzasuSym = &symulacjaBojleraDo;
+        wartoscWskSym = &symulowanaTemperaturaBojlera; zakresMinSym = 0; zakresMaxSym = 160;
+      } else if (poleSym == "pokoj") {
+        aktywnaSym = &symulacjaPokojuAktywna; doCzasuSym = &symulacjaPokojuDo;
+        wartoscWskSym = &symulowanaTemperaturaPomieszczenia; zakresMinSym = -50; zakresMaxSym = 50;
+      } else if (poleSym == "zewn") {
+        aktywnaSym = &symulacjaZewnAktywna; doCzasuSym = &symulacjaZewnDo;
+        wartoscWskSym = &symulowanaTemperaturaNaZewnatrz; zakresMinSym = -30; zakresMaxSym = 50;
+      } else if (poleSym == "ogrz_powrot") {
+        aktywnaSym = &symulacjaPowrotuAktywna; doCzasuSym = &symulacjaPowrotuDo;
+        wartoscWskSym = &symulowanaTemperaturaPowrot; zakresMinSym = -30; zakresMaxSym = 120;
+      } else if (poleSym == "ogrz_trociny") {
+        aktywnaSym = &symulacjaTrocinAktywna; doCzasuSym = &symulacjaTrocinDo;
+        wartoscWskSym = &symulowanaTemperaturaTrociny; zakresMinSym = -30; zakresMaxSym = 120;
+      } else if (poleSym == "cisnienie") {
+        aktywnaSym = &symulacjaCisnieniaAktywna; doCzasuSym = &symulacjaCisnieniaDo;
+        wartoscWskSym = &symulowaneCisnienie; zakresMinSym = 970; zakresMaxSym = 1040;
+      } else if (poleSym == "wilgotnosc") {
+        aktywnaSym = &symulacjaWilgotnosciAktywna; doCzasuSym = &symulacjaWilgotnosciDo;
+        wartoscWskSym = &symulowanaWilgotnosc; zakresMinSym = 0; zakresMaxSym = 100;
+      } else {
+        poleSymZnalezione = false;
+      }
+
+      if (!poleSymZnalezione) {
+        wynikOk = false;
+        wynikBlad = "nieznane pole: " + poleSym;
+        zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj zdarzenie=odrzucono pole=")) + poleSym + " powod=nieznane_pole");
+      } else if (wartoscSym < zakresMinSym || wartoscSym > zakresMaxSym) {
+        wynikOk = false;
+        wynikBlad = "wartosc poza zakresem " + String(zakresMinSym, 0) + "-" + String(zakresMaxSym, 0);
+        zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj zdarzenie=odrzucono pole=")) + poleSym + " powod=wartosc_poza_zakresem wartosc=" + String(wartoscSym, 2));
+      } else {
+        if (czasMinSym < SYMULACJA_CZAS_MIN_MINUT || czasMinSym > SYMULACJA_CZAS_MAX_MINUT) {
+          czasMinSym = SYMULACJA_DOMYSLNY_CZAS_MS / 60000UL;
+        }
+        unsigned long doCzasuNowySym = millis() + (unsigned long)czasMinSym * 60000UL;
+
+        if (poleSym == "dym") {
+          symulowanyCzujnikDymu = (int)wartoscSym;
+          symulacjaDymAktywna = true;
+          symulacjaDymDo = doCzasuNowySym;
+        } else {
+          *wartoscWskSym = wartoscSym;
+          *aktywnaSym = true;
+          *doCzasuSym = doCzasuNowySym;
+        }
+        zapiszLog(String(F("tag=FB lvl=INFO akcja=symuluj czujnik=")) + poleSym + " wartosc=" + String(wartoscSym, 2) + " czas_min=" + String(czasMinSym));
+      }
+    }
+  }
+  // [FB-OTA, ta sesja] Odpowiednik przyciskow Telegrama "Sprawdz / aktualizuj
+  // centrale" i "Aktualizuj panel" (callback_data "update" / "update_panel",
+  // linie ~24093-24094) oraz komend "/update" / "/update_panel" (~24310).
+  // Bez tej galezi panel WWW wysylajacy "update" dostawal z powrotem ACK
+  // "nieznana komenda: update" (zrzut ekranu 2026-10-05). Kolejkuje DOKLADNIE
+  // ten sam TG_UPDATE / TG_UPDATE_PANEL, wiec cala istniejaca maszyna OTA
+  // (GitHub Releases -> weryfikacja -> flash -> potwierdzenie partycji ->
+  // restart) jest wykorzystana 1:1; zero nowej logiki flashowania.
+  else if (cmd == "update" || cmd == "update_centrala") {
+    tgKolejkujAlboOdpowiedzBledem(TG_UPDATE);
+    zapiszLog(F("tag=FB-OTA lvl=INFO zdarzenie=kolejkuje_ota_centrala"));
+  }
+  else if (cmd == "update_panel") {
+    tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL);
+    zapiszLog(F("tag=FB-OTA lvl=INFO zdarzenie=kolejkuje_ota_panel"));
+  }
+  // [v3.33.0 FB-REMOTE-COMMANDS] Zdalna obsluga Telegramu i synchronizacji RTC
+  // przez Firebase /piec/cmd (dla aplikacji mobilnej i panelu WWW poza LAN).
+  else if (cmd == "tg_test") {
+    if (!tgEnabled || tgBotToken.length() < 10 || tgChatId.length() < 3) {
+      wynikOk = false;
+      wynikBlad = "Telegram nie skonfigurowany lub wylaczony";
+      zapiszLog(F("tag=FB-TG lvl=WARN msg=\"Telegram nie skonfigurowany lub wylaczony\""));
+    } else {
+      bool ok = sendTelegramMessage(buildTelegramStatusReport());
+      wynikOk = ok;
+      if (!ok) wynikBlad = "Blad wysylki Telegram (sprawdz token i chatId)";
+      zapiszLog(String(F("tag=FB-TG lvl=INFO zdarzenie=wyslano_raport_testowy ok=")) + String(ok ? "1" : "0"));
+    }
+  }
+  else if (cmd.startsWith("tg_config ")) {
+    String reszta = cmd.substring(10);
+    reszta.trim();
+    int s1 = reszta.indexOf(' ');
+    int s2 = (s1 >= 0) ? reszta.indexOf(' ', s1 + 1) : -1;
+    if (s1 < 0 || s2 < 0) {
+      wynikOk = false;
+      wynikBlad = "niepoprawny format: tg_config <token> <chatId> <enabled 0/1>";
+    } else {
+      String newToken = reszta.substring(0, s1);
+      String newChatId = reszta.substring(s1 + 1, s2);
+      int newEn = reszta.substring(s2 + 1).toInt();
+      if (newToken.length() > 0) tgBotToken = newToken;
+      if (newChatId.length() > 0) tgChatId = newChatId;
+      tgEnabled = (newEn == 1);
+      saveTelegramConfig();
+      zapiszLog(String(F("tag=FB-TG lvl=INFO zdarzenie=zapisano_konfiguracje enabled=")) + String(tgEnabled ? "1" : "0"));
+    }
+  }
+  else if (cmd.startsWith("rtc_sync ")) {
+    String reszta = cmd.substring(9);
+    reszta.trim();
+    int parts[6];
+    int pIdx = 0, lastSpace = 0;
+    for (int i = 0; i <= (int)reszta.length() && pIdx < 6; i++) {
+      if (i == (int)reszta.length() || reszta.charAt(i) == ' ') {
+        parts[pIdx++] = reszta.substring(lastSpace, i).toInt();
+        lastSpace = i + 1;
+      }
+    }
+    if (pIdx < 6) {
+      wynikOk = false;
+      wynikBlad = "wymagane 6 parametrow czasu (rok miesiac dzien godzina minuta sekunda)";
+    } else {
+      int rok = parts[0], miesiac = parts[1], dzien = parts[2], godzina = parts[3], minuta = parts[4], sekunda = parts[5];
+      bool ok = (rok >= 2024 && rok <= 2099) && (miesiac >= 1 && miesiac <= 12) &&
+                (dzien >= 1 && dzien <= 31) && (godzina >= 0 && godzina <= 23) &&
+                (minuta >= 0 && minuta <= 59) && (sekunda >= 0 && sekunda <= 59);
+      if (!ok) {
+        wynikOk = false;
+        wynikBlad = "zakres czasu poza granicami";
+      } else {
+        Zegar.adjust(DateTime(rok, miesiac, dzien, godzina, minuta, sekunda));
+        DLOGF(DC_SYSTEM, DL_INFO, "RTC zdarzenie=sync zrodlo=firebase czas=\"%04d-%02d-%02d %02d:%02d:%02d\"",
+                      rok, miesiac, dzien, godzina, minuta, sekunda);
+        zapiszLog(String(F("tag=FB-RTC lvl=INFO zdarzenie=sync rok=")) + String(rok));
+      }
+    }
+  }
+  else {
+    wynikOk = false;
+    wynikBlad = String("nieznana komenda: ") + cmd;
+    zapiszLog(String(F("tag=FB-CMD lvl=WARN zdarzenie=nieznana_komenda cmd=")) + cmd);
+  }
+}
+
 void checkFirebaseCommands() {
   serwisujTWDTJesliZarejestrowany();
   if (WiFi.status() != WL_CONNECTED) return;
@@ -39352,410 +40422,14 @@ void checkFirebaseCommands() {
     lastFirebaseCmdError = "";
     zapiszLog(String(F("tag=FB-CMD lvl=INFO zdarzenie=komenda cmdId=")) + cmdId + " cmd=" + cmd); // [LOGI]
 
-  if (cmd == "pompa_wl") {
-    // [FIX-POMPA cz.1] Bylo odwrotnie (HIGH=ON) — cala reszta kodu i
-    // sprzet maja LOW=ON. Patrz PLAN_NAPRAWY_POMPY_CO.md, Czesc 1.
-    pompaUstaw(true, true); // wymus=true: reczny rozkaz uzytkownika nie moze zostac cicho zignorowany
-    pompaManualOverrideUntil = millis() + POMPA_OVERRIDE_MS;
-    zapiszLog(F("tag=FB lvl=INFO akcja=pompa stan=ON tryb=reczny override_min=60"));
-  }
-  else if (cmd == "pompa_wyl") {
-    pompaUstaw(false, true); // wymus=true: jak wyzej
-    pompaManualOverrideUntil = millis() + POMPA_OVERRIDE_MS;
-    zapiszLog(F("tag=FB lvl=INFO akcja=pompa stan=OFF tryb=reczny override_min=60"));
-  }
-  else if (cmd == "pompa_auto") {
-    // [FB-BRAKUJACE-KOMENDY, AUDYT_komend_panel_vs_firmware.md, 2026-09-25]
-    // Firebase odpowiednik stan=auto z /api/pompa-manual (patrz ta funkcja
-    // wyzej) — natychmiastowy powrot do automatyki, bez czekania na
-    // wygasniecie override'u (jak "Cancel Hold" na termostatach). Segment
-    // "Auto" w sekcji Pompa panelu dotad wysylal te komende w prozne.
-    pompaManualOverrideUntil = 0;
-    zapiszLog(F("tag=FB lvl=INFO akcja=pompa zdarzenie=powrot_do_auto"));
-  }
-  else if (cmd == "mieszadlo_wl") {
-    // [FB-BRAKUJACE-KOMENDY, 2026-09-25] Firebase odpowiednik stan=wl z
-    // /api/mieszadlo-manual (patrz ta funkcja wyzej) — mieszadlo nie ma
-    // wlasnej funkcji xUstaw(), wiec sterujemy przekaznikiem bezposrednio,
-    // identycznie jak ten endpoint WWW.
-    digitalWrite(mieszadlo_przekaznik, HIGH);
-    mieszadloAktywnyStan = true;
-    mieszadloCzasZmianyFazyMs = millis(); // faza w automatyce liczy sie od nowa po powrocie z override'u
-    mieszadloManualOverrideUntil = millis() + SYMULACJA_DOMYSLNY_CZAS_MS;
-    zapiszLog(F("tag=FB lvl=INFO akcja=mieszadlo stan=ON tryb=reczny override_min=60"));
-  }
-  else if (cmd == "mieszadlo_wyl") {
-    digitalWrite(mieszadlo_przekaznik, LOW);
-    mieszadloAktywnyStan = false;
-    mieszadloCzasZmianyFazyMs = millis();
-    mieszadloManualOverrideUntil = millis() + SYMULACJA_DOMYSLNY_CZAS_MS;
-    zapiszLog(F("tag=FB lvl=INFO akcja=mieszadlo stan=OFF tryb=reczny override_min=60"));
-  }
-  else if (cmd == "mieszadlo_auto") {
-    mieszadloManualOverrideUntil = 0;
-    zapiszLog(F("tag=FB lvl=INFO akcja=mieszadlo zdarzenie=powrot_do_auto"));
-  }
-  else if (cmd.startsWith("diag")) {
-    String diagResponse;
-    if (diagApplyCommand(cmd, diagResponse)) {
-      zapiszLog(String(F("tag=DIAG lvl=INFO zdarzenie=cmd_ok cmd=")) + cmd);
-      lastFirebaseCmdOk = true;
-      lastFirebaseCmdError = "";
-    } else {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = diagResponse.length() ? diagResponse : "invalid_diag_command";
-      zapiszLog(String(F("tag=DIAG lvl=WARN zdarzenie=cmd_rejected cmd=")) + cmd);
-    }
-  }
-  else if (cmd.startsWith("klapa ")) {
-    // [FIX-WYSCIG] Panel/Firebase podaje PROCENT (0-100%), nie stopnie.
-    // Core 0 tylko zapisuje zadanie — fizyczny ruch (i zapis do
-    // pozycjaKlapa) wykonuje wylacznie Core 1 w servo_manual().
-    if (rozpalanieSerwaWymuszenieAktywne()) {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = "rozpalanie_serwa_wymusza_pozycje_otwarta";
-    } else {
-      int procent = constrain(cmd.substring(6).toInt(), 0, 100);
-      docelowaKlapaProcent = procent;
-      TrybSerwa = 2;   // reczna pozycja — servo_manual() ma trzymac ten kat
-      zapiszLog(String(F("tag=FB lvl=INFO akcja=klapa zadanie_procent=")) + procent);
-    }
-  }
-  else if (cmd.startsWith("syberek ")) {
-    if (rozpalanieSerwaWymuszenieAktywne()) {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = "rozpalanie_serwa_wymusza_pozycje_otwarta";
-    } else {
-      int procent = constrain(cmd.substring(8).toInt(), 0, 100);
-      docelowaSyberekProcent = procent;
-      TrybSerwa = 2;
-      zapiszLog(String(F("tag=FB lvl=INFO akcja=syberek zadanie_procent=")) + procent);
-    }
-  }
-  else if (cmd == "reset_alarmow") {
-    // [FB-ETAP3] NIE ustawiac samych flag na false — aktywujAlarmCO() robi
-    // wstrzymajZadanie(zadanieObslugaPompy) przy wejsciu w alarm; jesli
-    // zresetujemy tu tylko flage alarmOgrzewanieWlaczone, pompa zostanie
-    // trwale wstrzymana (wznowZadanie() nigdy by sie nie wykonalo).
-    // [FIX-ALARM-PANEL-POMPA, v3.1.0] Od tej wersji aktywujAlarmPanelu() juz
-    // NIE rusza pompy — ale dezaktywujAlarmPanelu() nadal trzeba wywolac,
-    // bo to ona resetuje czyTemperaturaAlarmowa na stan drugiego alarmu
-    // (patrz [FIX-ALARM-WSPOLNA-FLAGA, 2.12.2.1]); samo wyzerowanie
-    // alarmPanelWlaczone by tego nie zrobilo. Dlatego w obu przypadkach
-    // wolamy te same funkcje dezaktywujace co normalny automat alarmowy
-    // (temperatura_alarmowa()), tylko wymuszone recznie z Firebase.
-    // [FIX-ALARM-WSPOLNA-FLAGA, 2.12.2.2] Bylo: wolano tylko funkcje
-    // dezaktywujace, bez zerowania samych flag alarmOgrzewanieWlaczone/
-    // alarmPanelWlaczone — system po recznym resecie nadal raportowal
-    // alarm jako AKTYWNY, a automat w temperatura_alarmowa() nigdy wiecej
-    // nie mial okazji ponownie zadzialac przy tym samym przegrzaniu.
-    if (alarmOgrzewanieWlaczone) { dezaktywujAlarmCO();    alarmOgrzewanieWlaczone = false; }
-    if (alarmPanelWlaczone)      { dezaktywujAlarmPanelu(); alarmPanelWlaczone = false; }
-    zapiszLog(F("tag=FB lvl=INFO akcja=reset_alarmow msg=\"alarmy skasowane recznie\""));
-  }
-  else if (cmd.startsWith("alarm_mute ")) {
-    String bladMute;
-    if (obsluzKomendeAlarmMute(cmd, bladMute)) {
-      lastFirebaseCmdOk = true;
-      lastFirebaseCmdError = "";
-    } else {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = bladMute;
-      zapiszLog(String(F("tag=ALARM lvl=WARN akcja=wyciszenie_odrzucone powod=")) + bladMute);
-    }
-  }
-  else if (cmd == "rozpalanie_serwa") {
-    String bladRozpalania;
-    if (uruchomRozpalanieSerwa(bladRozpalania)) {
-      lastFirebaseCmdOk = true;
-      lastFirebaseCmdError = "";
-    } else {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = bladRozpalania;
-      zapiszLog(String(F("tag=SERVO lvl=WARN akcja=rozpalanie_odrzucone powod=")) + bladRozpalania);
-    }
-  }
-  else if (cmd == "rozpalanie_stop") {
-    zakonczTrybRozpalania("operator", false);
-    lastFirebaseCmdOk = true;
-    lastFirebaseCmdError = "";
-  }
-  else if (cmd == "wycisz") {
-    // [FIX-DYM-RESET-NIEPELNY] Celowo OSOBNA komenda od reset_alarmow —
-    // dotyczy wylacznie buzzera alarmu dymu, nie rusza serw/pompy/flag.
-    // Patrz wyciszAlarmDzwiekowy() i uzasadnienie w PLAN_ALARMY_I_POWIADOMIENIA.md.
-    wyciszAlarmDzwiekowy();
-  }
-  else if (cmd == "wycisz_ogrz") {
-    // [FB-BRAKUJACE-KOMENDY, 2026-09-25] Firebase odpowiednik przycisku
-    // "Wycisz brzeczyk" / "Wycisz przegrzanie" w panelu — lustrzane do
-    // "wycisz" (dym) wyzej, ale dotyczy WYLACZNIE dzwieku alarmu
-    // ogrzewania/panelu. Funkcja juz istniala (patrz komentarz "[NOWE]"
-    // przy jej definicji wyzej w pliku), tylko nie byla dotad podpieta
-    // pod zadna komende.
-    wyciszAlarmDzwiekowyOgrzewania();
-  }
-  else if (cmd == "tryb_reczny") {
-    TrybSerwa = 2;
-    zapiszLog(F("tag=FB lvl=INFO akcja=tryb_serwa TrybSerwa=2 wartosc=reczny"));
-  }
-  else if (cmd == "tryb_auto") {
-    TrybSerwa = 1;
-    zapiszLog(F("tag=FB lvl=INFO akcja=tryb_serwa TrybSerwa=1 wartosc=automatyczny"));
-  }
-  else if (cmd == "tryb_bezpieczny") {
-    TrybSerwa = 3;
-    zapiszLog(F("tag=FB lvl=INFO akcja=tryb_serwa TrybSerwa=3 wartosc=bezpieczna_pozycja syberek=90 klapa=0"));
-  }
-  else if (cmd.startsWith("ustaw ")) {
-    // [FB-USTAWIENIA] Generyczna komenda dla wszystkich 20 pol zakladki
-    // Ustawienia panelu Firebase — format "ustaw <pole> <wartosc>", np.
-    // "ustaw tempOn 65". Ta sama walidacja/zapis co lokalny
-    // /api/ustawienia-set, przez wspolna ustawParametrPieca() (patrz
-    // definicja funkcji wyzej w pliku) — zeby te dwie sciezki nigdy nie
-    // rozjechaly sie w zakresach/regulach.
-    String reszta = cmd.substring(6);
-    int spacja = reszta.indexOf(' ');
-    if (spacja < 0) {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = "brak wartosci w komendzie";
-      zapiszLog(String(F("tag=FB lvl=WARN akcja=ustaw msg=\"brak wartosci w komendzie\" cmd=")) + cmd);
-    } else {
-      String poleUst = reszta.substring(0, spacja);
-      long wUst = reszta.substring(spacja + 1).toInt();
-      String errUst;
-      if (ustawParametrPieca(poleUst, wUst, errUst)) {
-        zapiszLog(String(F("tag=FB lvl=INFO akcja=ustaw pole=")) + poleUst + " wartosc=" + String(wUst));
-      } else {
-        lastFirebaseCmdOk = false;
-        lastFirebaseCmdError = errUst;
-        zapiszLog(String(F("tag=FB lvl=WARN akcja=ustaw zdarzenie=odrzucone pole=")) + poleUst + " powod=" + errUst);
-      }
-    }
-  }
-  else if (cmd.startsWith("symuluj_stop ")) {
-    // [FB-BRAKUJACE-KOMENDY, AUDYT_komend_panel_vs_firmware.md, 2026-09-25]
-    // Firebase odpowiednik akcja=stop z /api/symulacja-czujnik (patrz ta
-    // funkcja wyzej) — format "symuluj_stop <pole>". Ta sama lista 10 pol
-    // co ten endpoint WWW — CELOWO zduplikowana (nie wspoldzielona funkcja)
-    // zeby nie ruszac juz dzialajacego endpointu WWW przy tej naprawie;
-    // jesli kiedys dolozysz/zmienisz pole tam, zrob to samo tutaj.
-    String poleSymStop = cmd.substring(13);
-    poleSymStop.trim();
-    bool *aktywnaSymStop = nullptr;
-    unsigned long *doCzasuSymStop = nullptr;
-    bool poleSymStopZnalezione = true;
-    bool poleSymStopToDym = (poleSymStop == "dym");
-
-    if (poleSymStopToDym) {
-      // dym ma storage int (symulowanyCzujnikDymu), obslugiwany nizej osobno.
-    } else if (poleSymStop == "ogrz") {
-      aktywnaSymStop = &symulacjaOgrzAktywna; doCzasuSymStop = &symulacjaOgrzDo;
-    } else if (poleSymStop == "panel") {
-      aktywnaSymStop = &symulacjaPaneluAktywna; doCzasuSymStop = &symulacjaPaneluDo;
-    } else if (poleSymStop == "bojler") {
-      aktywnaSymStop = &symulacjaBojleraAktywna; doCzasuSymStop = &symulacjaBojleraDo;
-    } else if (poleSymStop == "pokoj") {
-      aktywnaSymStop = &symulacjaPokojuAktywna; doCzasuSymStop = &symulacjaPokojuDo;
-    } else if (poleSymStop == "zewn") {
-      aktywnaSymStop = &symulacjaZewnAktywna; doCzasuSymStop = &symulacjaZewnDo;
-    } else if (poleSymStop == "ogrz_powrot") {
-      aktywnaSymStop = &symulacjaPowrotuAktywna; doCzasuSymStop = &symulacjaPowrotuDo;
-    } else if (poleSymStop == "ogrz_trociny") {
-      aktywnaSymStop = &symulacjaTrocinAktywna; doCzasuSymStop = &symulacjaTrocinDo;
-    } else if (poleSymStop == "cisnienie") {
-      aktywnaSymStop = &symulacjaCisnieniaAktywna; doCzasuSymStop = &symulacjaCisnieniaDo;
-    } else if (poleSymStop == "wilgotnosc") {
-      aktywnaSymStop = &symulacjaWilgotnosciAktywna; doCzasuSymStop = &symulacjaWilgotnosciDo;
-    } else {
-      poleSymStopZnalezione = false;
-    }
-
-    if (!poleSymStopZnalezione) {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = "nieznane pole: " + poleSymStop;
-      zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj_stop zdarzenie=odrzucono pole=")) + poleSymStop + " powod=nieznane_pole");
-    } else {
-      if (poleSymStopToDym) {
-        symulacjaDymAktywna = false;
-        symulacjaDymDo = 0;
-      } else {
-        *aktywnaSymStop = false;
-        *doCzasuSymStop = 0;
-      }
-      zapiszLog(String(F("tag=FB lvl=INFO akcja=symuluj_stop czujnik=")) + poleSymStop);
-    }
-  }
-  else if (cmd.startsWith("symuluj ")) {
-    // [FB-BRAKUJACE-KOMENDY, 2026-09-25] Firebase odpowiednik akcja=start z
-    // /api/symulacja-czujnik (patrz ta funkcja wyzej) — format "symuluj
-    // <pole> <wartosc> <czas_min>", np. "symuluj ogrz 0 60" (dokladnie
-    // komenda ze zgloszonego bledu). Ta sama tablica pole->wskazniki i
-    // zakresow co ten endpoint WWW — jak w symuluj_stop wyzej, celowo
-    // zduplikowana zamiast wspoldzielonej, zeby nie ruszac juz dzialajacego
-    // /api/symulacja-czujnik; obie kopie trzeba aktualizowac razem.
-    String resztaSym = cmd.substring(8);
-    int spSym1 = resztaSym.indexOf(' ');
-    int spSym2 = (spSym1 >= 0) ? resztaSym.indexOf(' ', spSym1 + 1) : -1;
-
-    if (spSym1 < 0 || spSym2 < 0) {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = "brak wartosci/czasu w komendzie";
-      zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj msg=\"brak wartosci/czasu w komendzie\" cmd=")) + cmd);
-    } else {
-      String poleSym = resztaSym.substring(0, spSym1);
-      float wartoscSym = resztaSym.substring(spSym1 + 1, spSym2).toFloat();
-      int czasMinSym = resztaSym.substring(spSym2 + 1).toInt();
-
-      bool *aktywnaSym = nullptr;
-      unsigned long *doCzasuSym = nullptr;
-      float *wartoscWskSym = nullptr;
-      float zakresMinSym = 0, zakresMaxSym = 0;
-      bool poleSymZnalezione = true;
-
-      if (poleSym == "dym") {
-        zakresMinSym = 0; zakresMaxSym = 4095;
-      } else if (poleSym == "ogrz") {
-        aktywnaSym = &symulacjaOgrzAktywna; doCzasuSym = &symulacjaOgrzDo;
-        wartoscWskSym = &symulowanaTemperaturaOgrzewania; zakresMinSym = 0; zakresMaxSym = 160;
-      } else if (poleSym == "panel") {
-        aktywnaSym = &symulacjaPaneluAktywna; doCzasuSym = &symulacjaPaneluDo;
-        wartoscWskSym = &symulowanaTemperaturaPanelu; zakresMinSym = -30; zakresMaxSym = 160;
-      } else if (poleSym == "bojler") {
-        aktywnaSym = &symulacjaBojleraAktywna; doCzasuSym = &symulacjaBojleraDo;
-        wartoscWskSym = &symulowanaTemperaturaBojlera; zakresMinSym = 0; zakresMaxSym = 160;
-      } else if (poleSym == "pokoj") {
-        aktywnaSym = &symulacjaPokojuAktywna; doCzasuSym = &symulacjaPokojuDo;
-        wartoscWskSym = &symulowanaTemperaturaPomieszczenia; zakresMinSym = -50; zakresMaxSym = 50;
-      } else if (poleSym == "zewn") {
-        aktywnaSym = &symulacjaZewnAktywna; doCzasuSym = &symulacjaZewnDo;
-        wartoscWskSym = &symulowanaTemperaturaNaZewnatrz; zakresMinSym = -30; zakresMaxSym = 50;
-      } else if (poleSym == "ogrz_powrot") {
-        aktywnaSym = &symulacjaPowrotuAktywna; doCzasuSym = &symulacjaPowrotuDo;
-        wartoscWskSym = &symulowanaTemperaturaPowrot; zakresMinSym = -30; zakresMaxSym = 120;
-      } else if (poleSym == "ogrz_trociny") {
-        aktywnaSym = &symulacjaTrocinAktywna; doCzasuSym = &symulacjaTrocinDo;
-        wartoscWskSym = &symulowanaTemperaturaTrociny; zakresMinSym = -30; zakresMaxSym = 120;
-      } else if (poleSym == "cisnienie") {
-        aktywnaSym = &symulacjaCisnieniaAktywna; doCzasuSym = &symulacjaCisnieniaDo;
-        wartoscWskSym = &symulowaneCisnienie; zakresMinSym = 970; zakresMaxSym = 1040;
-      } else if (poleSym == "wilgotnosc") {
-        aktywnaSym = &symulacjaWilgotnosciAktywna; doCzasuSym = &symulacjaWilgotnosciDo;
-        wartoscWskSym = &symulowanaWilgotnosc; zakresMinSym = 0; zakresMaxSym = 100;
-      } else {
-        poleSymZnalezione = false;
-      }
-
-      if (!poleSymZnalezione) {
-        lastFirebaseCmdOk = false;
-        lastFirebaseCmdError = "nieznane pole: " + poleSym;
-        zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj zdarzenie=odrzucono pole=")) + poleSym + " powod=nieznane_pole");
-      } else if (wartoscSym < zakresMinSym || wartoscSym > zakresMaxSym) {
-        lastFirebaseCmdOk = false;
-        lastFirebaseCmdError = "wartosc poza zakresem " + String(zakresMinSym, 0) + "-" + String(zakresMaxSym, 0);
-        zapiszLog(String(F("tag=FB lvl=WARN akcja=symuluj zdarzenie=odrzucono pole=")) + poleSym + " powod=wartosc_poza_zakresem wartosc=" + String(wartoscSym, 2));
-      } else {
-        if (czasMinSym < SYMULACJA_CZAS_MIN_MINUT || czasMinSym > SYMULACJA_CZAS_MAX_MINUT) {
-          czasMinSym = SYMULACJA_DOMYSLNY_CZAS_MS / 60000UL;
-        }
-        unsigned long doCzasuNowySym = millis() + (unsigned long)czasMinSym * 60000UL;
-
-        if (poleSym == "dym") {
-          symulowanyCzujnikDymu = (int)wartoscSym;
-          symulacjaDymAktywna = true;
-          symulacjaDymDo = doCzasuNowySym;
-        } else {
-          *wartoscWskSym = wartoscSym;
-          *aktywnaSym = true;
-          *doCzasuSym = doCzasuNowySym;
-        }
-        zapiszLog(String(F("tag=FB lvl=INFO akcja=symuluj czujnik=")) + poleSym + " wartosc=" + String(wartoscSym, 2) + " czas_min=" + String(czasMinSym));
-      }
-    }
-  }
-  // [FB-OTA, ta sesja] Odpowiednik przyciskow Telegrama "Sprawdz / aktualizuj
-  // centrale" i "Aktualizuj panel" (callback_data "update" / "update_panel",
-  // linie ~24093-24094) oraz komend "/update" / "/update_panel" (~24310).
-  // Bez tej galezi panel WWW wysylajacy "update" dostawal z powrotem ACK
-  // "nieznana komenda: update" (zrzut ekranu 2026-10-05). Kolejkuje DOKLADNIE
-  // ten sam TG_UPDATE / TG_UPDATE_PANEL, wiec cala istniejaca maszyna OTA
-  // (GitHub Releases -> weryfikacja -> flash -> potwierdzenie partycji ->
-  // restart) jest wykorzystana 1:1; zero nowej logiki flashowania.
-  else if (cmd == "update" || cmd == "update_centrala") {
-    tgKolejkujAlboOdpowiedzBledem(TG_UPDATE);
-    zapiszLog(F("tag=FB-OTA lvl=INFO zdarzenie=kolejkuje_ota_centrala"));
-  }
-  else if (cmd == "update_panel") {
-    tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL);
-    zapiszLog(F("tag=FB-OTA lvl=INFO zdarzenie=kolejkuje_ota_panel"));
-  }
-  // [v3.33.0 FB-REMOTE-COMMANDS] Zdalna obsluga Telegramu i synchronizacji RTC
-  // przez Firebase /piec/cmd (dla aplikacji mobilnej i panelu WWW poza LAN).
-  else if (cmd == "tg_test") {
-    if (!tgEnabled || tgBotToken.length() < 10 || tgChatId.length() < 3) {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = "Telegram nie skonfigurowany lub wylaczony";
-      zapiszLog(F("tag=FB-TG lvl=WARN msg=\"Telegram nie skonfigurowany lub wylaczony\""));
-    } else {
-      bool ok = sendTelegramMessage(buildTelegramStatusReport());
-      lastFirebaseCmdOk = ok;
-      if (!ok) lastFirebaseCmdError = "Blad wysylki Telegram (sprawdz token i chatId)";
-      zapiszLog(String(F("tag=FB-TG lvl=INFO zdarzenie=wyslano_raport_testowy ok=")) + String(ok ? "1" : "0"));
-    }
-  }
-  else if (cmd.startsWith("tg_config ")) {
-    String reszta = cmd.substring(10);
-    reszta.trim();
-    int s1 = reszta.indexOf(' ');
-    int s2 = (s1 >= 0) ? reszta.indexOf(' ', s1 + 1) : -1;
-    if (s1 < 0 || s2 < 0) {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = "niepoprawny format: tg_config <token> <chatId> <enabled 0/1>";
-    } else {
-      String newToken = reszta.substring(0, s1);
-      String newChatId = reszta.substring(s1 + 1, s2);
-      int newEn = reszta.substring(s2 + 1).toInt();
-      if (newToken.length() > 0) tgBotToken = newToken;
-      if (newChatId.length() > 0) tgChatId = newChatId;
-      tgEnabled = (newEn == 1);
-      saveTelegramConfig();
-      zapiszLog(String(F("tag=FB-TG lvl=INFO zdarzenie=zapisano_konfiguracje enabled=")) + String(tgEnabled ? "1" : "0"));
-    }
-  }
-  else if (cmd.startsWith("rtc_sync ")) {
-    String reszta = cmd.substring(9);
-    reszta.trim();
-    int parts[6];
-    int pIdx = 0, lastSpace = 0;
-    for (int i = 0; i <= (int)reszta.length() && pIdx < 6; i++) {
-      if (i == (int)reszta.length() || reszta.charAt(i) == ' ') {
-        parts[pIdx++] = reszta.substring(lastSpace, i).toInt();
-        lastSpace = i + 1;
-      }
-    }
-    if (pIdx < 6) {
-      lastFirebaseCmdOk = false;
-      lastFirebaseCmdError = "wymagane 6 parametrow czasu (rok miesiac dzien godzina minuta sekunda)";
-    } else {
-      int rok = parts[0], miesiac = parts[1], dzien = parts[2], godzina = parts[3], minuta = parts[4], sekunda = parts[5];
-      bool ok = (rok >= 2024 && rok <= 2099) && (miesiac >= 1 && miesiac <= 12) &&
-                (dzien >= 1 && dzien <= 31) && (godzina >= 0 && godzina <= 23) &&
-                (minuta >= 0 && minuta <= 59) && (sekunda >= 0 && sekunda <= 59);
-      if (!ok) {
-        lastFirebaseCmdOk = false;
-        lastFirebaseCmdError = "zakres czasu poza granicami";
-      } else {
-        Zegar.adjust(DateTime(rok, miesiac, dzien, godzina, minuta, sekunda));
-        DLOGF(DC_SYSTEM, DL_INFO, "RTC zdarzenie=sync zrodlo=firebase czas=\"%04d-%02d-%02d %02d:%02d:%02d\"",
-                      rok, miesiac, dzien, godzina, minuta, sekunda);
-        zapiszLog(String(F("tag=FB-RTC lvl=INFO zdarzenie=sync rok=")) + String(rok));
-      }
-    }
-  }
-  else {
-    lastFirebaseCmdOk = false;
-    lastFirebaseCmdError = String("nieznana komenda: ") + cmd;
-    zapiszLog(String(F("tag=FB-CMD lvl=WARN zdarzenie=nieznana_komenda cmd=")) + cmd);
+  {
+    // [v3.47.0 LAN-API] Wspolny wykonawca (definicja tuz przed ta funkcja);
+    // ta sama sciezka obsluguje komendy z /api/lan/cmd.
+    bool wynikOk = true;
+    String wynikBlad;
+    wykonajKomendePanelu(cmd, wynikOk, wynikBlad);
+    lastFirebaseCmdOk = wynikOk;
+    lastFirebaseCmdError = wynikBlad;
   }
 
     // ACK dopiero po wykonaniu/zwalidowaniu komendy.
@@ -40337,6 +41011,49 @@ unsigned long sdAutoResendLastMillis = 0;
 bool poprzedniAlarmCOTg    = false;
 bool poprzedniAlarmPanelTg = false;
 byte poprzedniAlarmDymTg   = 0;
+
+// [v3.47.0 LAN-API] Wykonanie komendy przyjetej przez POST /api/lan/cmd —
+// w tgTaskFn, tym samym wykonawca co /piec/cmd. Wolane kilka razy w iteracji
+// (takze w koncowej przerwie co 100 ms), wiec komenda z LAN nie czeka na pelny
+// cykl ani na Firebase; bez oczekujacej komendy to tylko odczyt flagi.
+static void lanObsluzOczekujacaKomende() {
+  char id[LAN_CMD_ID_MAX];
+  char tekst[LAN_CMD_TXT_MAX];
+  bool jest = false;
+  portENTER_CRITICAL(&g_lanKomendaMux);
+  if (g_lanKomenda.oczekuje) {
+    memcpy(id, g_lanKomenda.id, sizeof(id));
+    memcpy(tekst, g_lanKomenda.cmd, sizeof(tekst));
+    jest = true;
+  }
+  portEXIT_CRITICAL(&g_lanKomendaMux);
+  if (!jest) return;
+  serwisujTWDTJesliZarejestrowany();   // swieze okno WDT przed wykonaniem (jak checkFirebaseCommands())
+
+  String cmd(tekst);
+  cmd.trim();
+  // tg_config niesie token bota — nie zapisujemy go w logu.
+  const String cmdDoLogu = cmd.startsWith("tg_config") ? String("tg_config <ukryte>") : cmd;
+  zapiszLog(String(F("tag=LAN-CMD lvl=INFO zdarzenie=komenda cmdId=")) + id + " cmd=" + cmdDoLogu);
+
+  bool ok = true;
+  String blad;
+  wykonajKomendePanelu(cmd, ok, blad);
+  if (!ok && blad.length() == 0) blad = "blad";
+
+  portENTER_CRITICAL(&g_lanKomendaMux);
+  memcpy(g_lanKomenda.ackId, id, sizeof(g_lanKomenda.ackId));
+  g_lanKomenda.ackOk = ok;
+  strncpy(g_lanKomenda.ackBlad, blad.c_str(), LAN_CMD_ERR_MAX - 1);
+  g_lanKomenda.ackBlad[LAN_CMD_ERR_MAX - 1] = '\0';
+  g_lanKomenda.ackGotowy = true;
+  g_lanKomenda.oczekuje = false;
+  portEXIT_CRITICAL(&g_lanKomendaMux);
+
+  zapiszLog(String(F("tag=LAN-CMD lvl=INFO zdarzenie=ack cmdId=")) + id + " ok=" + (ok ? "1" : "0"));
+  // Z internetem: swiezy /piec/status przy najblizszej okazji (jak po /piec/cmd).
+  fbLastSendMillis = 0;
+}
 
 void tgTaskFn(void* /*pvParams*/) {
   // [v3.18.0] Brak esp_task_wdt_add(): ten worker wykonuje blokujace TCP/TLS/HTTP,
@@ -41102,6 +41819,7 @@ void tgTaskFn(void* /*pvParams*/) {
       vTaskDelay(pdMS_TO_TICKS(100));
       continue;
     }
+    lanObsluzOczekujacaKomende();   // [v3.47.0 LAN-API] komenda z sieci lokalnej przed blokujacym TLS
 
     // [FIX-ALARM-BRAK-PUSH] Powiadomienia o zmianie stanu alarmow — patrz
     // uzasadnienie architektury przy deklaracji poprzedniAlarm*Tg wyzej.
@@ -41159,6 +41877,7 @@ void tgTaskFn(void* /*pvParams*/) {
     // [TELEMETRY-C] Jeden batch telemetryczny na interwal. Wykonywany po
     // zamknieciu poprzedniego requestu, przed statusem; aktywny worker blokuje
     // wszystkie pozostale sciezki Firebase przez istniejacy globalny guard.
+    lanObsluzOczekujacaKomende();   // [v3.47.0 LAN-API]
     telemetryTrySendOneBatch(tgIterStartMs);
 
     // [FB-ETAP2A] Wysylka statusu co ~15s (albo ~1s w oknie turbo — patrz
@@ -41322,6 +42041,7 @@ void tgTaskFn(void* /*pvParams*/) {
       int fbPetlaKrokow = (int)(fbPetlaOdstepMs / 100UL);
       for (int i = 0; i < fbPetlaKrokow; i++) {
         vTaskDelay(pdMS_TO_TICKS(100));
+        lanObsluzOczekujacaKomende();   // [v3.47.0 LAN-API] odbior komendy z LAN co 100 ms
       }
     }
     tgTaskBeat(0);
@@ -42811,10 +43531,14 @@ void setup() {
 // ════════════════════════════════════════════════════════
 // LOOP
 // ════════════════════════════════════════════════════════
+// [v3.47.1] Interwal zapisu rekordow HEALTH i HEALTH-A do logu (zmiana z v3.45.1).
+static const unsigned long HEALTH_LOG_INTERVAL_MS = 300000UL;
+
 void loop() {
   serwisujTWDTJesliZarejestrowany();
   static unsigned long lastPing = 0;
   static unsigned long lastDiag = 0;
+  static unsigned long lastHealthLog = 0;
   if (millis() - lastPing > 300000UL) {
     lastPing = millis();
     debugPrint(F("tag=PING zdarzenie=alive msg=\"petla loop zyje\""));
@@ -42822,6 +43546,11 @@ void loop() {
   if (millis() - lastDiag >= 30000UL) {
     lastDiag = millis();
     diagCheckpoint(DIAG_TASK_LOOP, DIAG_OP_SETUP, DIAG_STAGE_IDLE);
+  }
+  // [v3.47.1] Heartbeat i snapshot pamieci co 5 min (wczesniej co 30 s razem
+  // z checkpointem). Pierwszy rekord po starcie pojawia sie po 5 min.
+  if (millis() - lastHealthLog >= HEALTH_LOG_INTERVAL_MS) {
+    lastHealthLog = millis();
     const unsigned long freeHeap = ESP.getFreeHeap();
     const unsigned long largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     zapiszLog(String(F("tag=HEALTH lvl=INFO zdarzenie=heartbeat heap=")) + String(freeHeap) +

@@ -270,6 +270,7 @@ body.mode-phone-frame #phone {
 .chip.stale { background: rgba(127, 147, 163, .12); color: #8EA6BA; border-color: rgba(127, 147, 163, .3); box-shadow: none; }
 .chip.err { background: rgba(255, 95, 120, .14); color: var(--err); border-color: rgba(255, 95, 120, .4); box-shadow: 0 0 10px var(--err-glow); }
 .chip.sim { background: rgba(0, 212, 245, .15); color: var(--cyan); border-color: rgba(0, 212, 245, .4); box-shadow: 0 0 10px var(--cyan-glow); }
+.chip.lan { background: rgba(0, 212, 245, .15); color: var(--cyan); border-color: rgba(0, 212, 245, .45); box-shadow: 0 0 10px var(--cyan-glow); }
 
 .iconbtn {
   width: 36px;
@@ -2526,6 +2527,16 @@ body.mode-phone-frame #phone {
   cursor: pointer;
   white-space: nowrap;
 }
+/* [LAN] Centrala wykryta w tej samej sieci — link do panelu lokalnego */
+.conn-banner.lan {
+  background: rgba(0, 212, 245, 0.08);
+  border-color: rgba(0, 212, 245, 0.3);
+  color: var(--cyan);
+}
+.conn-banner.lan .conn-banner-btn {
+  background: var(--cyan);
+  text-decoration: none;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MODUŁY: WI-FI, TELEGRAM & TERMINAL DIAGNOSTYCZNY (21 DLOG)
@@ -3184,6 +3195,14 @@ body.mode-phone-frame #phone {
           <span id="connBannerText">Brak połączenia z bazą Firebase — połącz na żywo</span>
         </div>
         <button class="conn-banner-btn" id="connBannerBtn">🔑 POŁĄCZ</button>
+      </div>
+
+      <div class="conn-banner lan hidden" id="lanBanner">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span data-ico="shield" style="width:16px;height:16px;display:inline-flex"></span>
+          <span id="lanBannerText">Sterownik jest w tej samej sieci — panel lokalny działa także bez internetu</span>
+        </div>
+        <a class="conn-banner-btn" id="lanBannerLink" href="#" rel="noopener">OTWÓRZ PANEL LOKALNY</a>
       </div>
 
       <div class="alarmbanner" id="alarmBanner">
@@ -4539,7 +4558,8 @@ body.mode-phone-frame #phone {
     const simSuffix = Object.keys(S.sym).length ? ' · SYMULACJA STEROWNIKA' : '';
     const connectionLabel = _isDemoMode ? '🧪 SYMULACJA' : !_isFirebaseConnected ? '○ BRAK SESJI' + simSuffix :
       Date.now() - _lastFirebaseFetch >= 20000 ? '○ DANE NIEAKTUALNE' + simSuffix :
-        !S.online ? (hasData('online') ? '○ OFFLINE' : '○ BRAK TELEMETRII') + simSuffix : '● LIVE' + simSuffix;
+        !S.online ? (hasData('online') ? '○ OFFLINE' : '○ BRAK TELEMETRII') + simSuffix :
+          (_linkSource === 'lan' ? '● LAN' + (S.ip ? ' · ' + S.ip : '') : '● LIVE') + simSuffix;
     const ht = $('#heroTemp');
     if (ht) {
       ht.textContent = (symAktywna('ogrz') ? '~' : '') + fmt1(to) + ' °C';
@@ -4584,7 +4604,7 @@ body.mode-phone-frame #phone {
     const chip = $('#chip');
     if (chip) {
       chip.textContent = connectionLabel;
-      chip.className = 'chip' + (_isDemoMode ? ' demo' : S.online ? '' : ' stale');
+      chip.className = 'chip' + (_isDemoMode ? ' demo' : !S.online ? ' stale' : _linkSource === 'lan' ? ' lan' : '');
     }
     const pg = $('#pg-pulpit');
     if (pg) pg.classList.toggle('offline', !S.online);
@@ -4741,13 +4761,21 @@ body.mode-phone-frame #phone {
     return fetch(url, options).finally(() => clearTimeout(timer));
   }
 
+  // Zapytania historii mają już własny query string (?orderBy=…): token musi
+  // dojść jako &auth=. Wcześniej doklejany drugi „?” psuł limitToFirst i gubił
+  // autoryzację, więc zapytanie po indeksie `ts` nigdy się nie udawało.
+  function fbAuthQuery(path, token) {
+    if (!token) return '';
+    return (String(path).indexOf('?') >= 0 ? '&' : '?') + 'auth=' + encodeURIComponent(token);
+  }
+
   async function fbGet(path) {
-    const authQuery = _fbIdToken ? `?auth=${encodeURIComponent(_fbIdToken)}` : '';
+    const authQuery = fbAuthQuery(path, _fbIdToken);
     const res = await fetchWithTimeout(DB_URL + path + authQuery, { cache: 'no-store' }, 8000);
     if (res.status === 401 || res.status === 403) {
       if (_fbRefreshToken && _fbApiKey) {
         await fbRefreshIdToken();
-        const retryAuth = `?auth=${encodeURIComponent(_fbIdToken)}`;
+        const retryAuth = fbAuthQuery(path, _fbIdToken);
         const r2 = await fetchWithTimeout(DB_URL + path + retryAuth, { cache: 'no-store' }, 8000);
         if (!r2.ok) throw new Error('HTTP ' + r2.status);
         return await r2.json();
@@ -4759,7 +4787,7 @@ body.mode-phone-frame #phone {
   }
 
   async function fbPatch(path, bodyObj) {
-    const authQuery = _fbIdToken ? `?auth=${encodeURIComponent(_fbIdToken)}` : '';
+    const authQuery = fbAuthQuery(path, _fbIdToken);
     const res = await fetchWithTimeout(DB_URL + path + authQuery, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -4789,22 +4817,177 @@ body.mode-phone-frame #phone {
     }
   }
 
+  // ─── [LAN] PRACA W SIECI LOKALNEJ CENTRALI (TAKŻE BEZ INTERNETU) ───
+  // Strona serwowana przez ESP (http://<IP centrali>/) czyta status z
+  // GET /api/lan/status (ten sam JSON co /piec/status) i wysyła komendy przez
+  // POST /api/lan/cmd + GET /api/lan/ack (firmware v3.47.0+) — Firebase nie jest
+  // wtedy potrzebny, więc panel działa także, gdy padnie internet. Starszy
+  // firmware: odczyt z /api/status (bez ustawień), komendy tylko przez Firebase.
+  // _isFirebaseConnected/_lastFirebaseFetch znaczą odtąd „świeże łącze statusu”
+  // (Firebase albo LAN); źródło trzyma _linkSource.
+  let _linkSource = '';            // 'lan' | 'firebase' | ''
+  let _lanApiFull = false;         // centrala obsługuje /api/lan/* (status + komendy)
+  const LAN_IP_KEY = 'piec_lan_ip';
+
+  // Adres centrali w sieci lokalnej (z /piec/status) — do wykrywania jej
+  // z panelu otwartego spoza ESP, także gdy internet przestanie działać.
+  function lanRememberControllerIp() {
+    const ip = String(S.ip || '').trim();
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) && espHostLooksLocal(ip) && !/^127\./.test(ip)) {
+      safeStorage.set(LAN_IP_KEY, ip, true);
+    }
+  }
+
+  async function pollLanStatus() {
+    try {
+      let full = true;
+      let res = await fetchWithTimeout('/api/lan/status', { cache: 'no-store' }, 4000);
+      // Starszy firmware nie zna /api/lan/*: odpowiada 404 albo przekierowaniem na „/” (captive portal).
+      if (res.status === 404 || res.redirected) {
+        full = false;
+        res = await fetchWithTimeout('/api/status', { cache: 'no-store' }, 4000);
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (!data || typeof data !== 'object' || (data.wifi_mode !== 'AP' && data.wifi_mode !== 'STA')) {
+        throw new Error('odpowiedź nie pochodzi z centrali');
+      }
+      if (_linkSource !== 'lan' || _lanApiFull !== full) {
+        addLog('SYSTEM', full
+          ? 'Połączono lokalnie z centralą (LAN) — status i polecenia bez Firebase'
+          : 'Połączono lokalnie z centralą (LAN) — starszy firmware: tylko odczyt', 'info');
+      }
+      _lanApiFull = full;
+      _linkSource = 'lan';
+      _isFirebaseConnected = true;
+      _lastFirebaseFetch = Date.now();
+      applyIncomingData(data);
+      return true;
+    } catch (e) {
+      if (_linkSource === 'lan') {
+        _linkSource = '';
+        _isFirebaseConnected = false;
+        updateConnectionStateUI();
+      }
+      return false;
+    }
+  }
+
+  // Odpowiednik ścieżki /piec/cmd + /piec/ack: ten sam wykonawca w centrali,
+  // token w nagłówku X-Piec-Token (obca strona nie wyśle go bez preflightu).
+  async function sendLanCommand(cmd, t0) {
+    const cmdId = makeFireCmdId();
+    try {
+      const body = new URLSearchParams();
+      body.set('id', cmdId);
+      body.set('cmd', cmd);
+      const res = await fetchWithTimeout('/api/lan/cmd', {
+        method: 'POST', cache: 'no-store', headers: { 'X-Piec-Token': _cmdToken }, body: body
+      }, 5000);
+      if (res.redirected || res.status === 404) throw new Error('firmware centrali bez /api/lan/cmd');
+      let j = null;
+      try { j = await res.json(); } catch (e) {}
+      if (res.status === 403) throw new Error('nieprawidłowy token poleceń');
+      if (res.status === 409) throw new Error('centrala wykonuje poprzednie polecenie — spróbuj za chwilę');
+      if (res.status !== 200 && res.status !== 202) throw new Error((j && j.error) || ('HTTP ' + res.status));
+      addLog('CMD', `Wysłano przez sieć lokalną (id: ${cmdId}); oczekiwanie na sterownik`, 'cmd');
+
+      let ack = j && j.done === true ? j : null;
+      const ackStart = Date.now();
+      while (!ack && Date.now() - ackStart < 12000) {
+        await new Promise(r => setTimeout(r, 300));
+        try {
+          const ra = await fetchWithTimeout('/api/lan/ack?id=' + encodeURIComponent(cmdId), { cache: 'no-store' }, 3000);
+          if (ra.status === 404) break;
+          const ja = await ra.json();
+          if (ja && ja.done === true) ack = ja;
+        } catch (e) {}
+      }
+      const latency = Math.round(performance.now() - t0);
+      if (ack && ack.ok === true) {
+        showToast(cmd, `Potwierdzone przez sterownik (LAN, ${latency}ms)`, 'ok');
+        addLog('ACK', `ACK OK przez LAN (${latency}ms): ` + cmd, 'ack');
+        if (navigator.vibrate) navigator.vibrate(15);
+        await pollFirebase();
+        [350, 1000].forEach(ms => setTimeout(() => {
+          if (!document.hidden && !_isDemoMode) pollFirebase();
+        }, ms));
+        return true;
+      }
+      if (ack && ack.ok === false) {
+        showToast(cmd, 'Sterownik odrzucił polecenie: ' + (ack.error || 'błąd'), 'err');
+        addLog('NACK', 'Odrzucone (' + (ack.error || 'błąd') + '): ' + cmd, 'err');
+        return false;
+      }
+      showToast(cmd, 'Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie', 'warn');
+      addLog('ACK_WARN', 'Wysłano przez sieć lokalną, ale sterownik nie potwierdził polecenia', 'warn');
+      setTimeout(pollFirebase, 1500);
+      return false;
+    } catch (err) {
+      showToast(cmd, 'Błąd wysyłki (LAN): ' + (err.message || err), 'err');
+      addLog('CMD_ERR', 'Błąd wysyłki przez sieć lokalną: ' + (err.message || err), 'err');
+      return false;
+    }
+  }
+
+  // Panel otwarty spoza centrali (plik / http): sprawdź zapamiętany adres
+  // centrali i zaproponuj panel lokalny. Na https przeglądarka blokuje
+  // zapytania http do sieci lokalnej — wtedy nic nie robimy.
+  let _lanProbeBusy = false;
+  let _lanProbeAt = 0;
+  async function lanDiscoveryProbe(force) {
+    if (_lanProbeBusy || location.protocol === 'https:') return;
+    const now = Date.now();
+    if (!force && now - _lanProbeAt < 60000) return;
+    _lanProbeAt = now;
+    if (await isEspLocalChartPage()) return;   // strona z ESP: tryb LAN obsługuje pollFirebase()
+    const ip = String(safeStorage.get(LAN_IP_KEY) || '').trim();
+    const banner = $('#lanBanner');
+    if (!ip || !banner || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) || !espHostLooksLocal(ip)) return;
+    _lanProbeBusy = true;
+    try {
+      const res = await fetchWithTimeout('http://' + ip + '/api/lan/status', { cache: 'no-store' }, 2500);
+      const data = res.ok ? await res.json() : null;
+      const found = !!data && (data.wifi_mode === 'AP' || data.wifi_mode === 'STA');
+      banner.classList.toggle('hidden', !found);
+      if (found) {
+        const link = $('#lanBannerLink');
+        if (link) link.href = 'http://' + ip + '/';
+        const txt = $('#lanBannerText');
+        if (txt) txt.textContent = `Sterownik jest w tej samej sieci (${ip}) — panel lokalny działa także bez internetu`;
+      }
+    } catch (e) {
+      banner.classList.add('hidden');
+    } finally {
+      _lanProbeBusy = false;
+    }
+  }
+
   async function pollFirebase() {
     if (_isDemoMode) return;
-    // Na lokalnym ESP zakladka Wykresy korzysta wyłącznie z /api/history*.
-    // Nie odpytuj Firebase, gdy ekran wykresów jest aktywny.
-    if (currentPage === 1 && await isEspLocalChartPage()) return;
+    if (await isEspLocalChartPage()) {
+      // [LAN] Strona z ESP: status z sieci lokalnej — działa bez internetu.
+      // Status nie dopisuje punktów do wykresu, więc działa też na zakładce Wykresy.
+      if (await pollLanStatus()) return;
+      // Na lokalnym ESP zakladka Wykresy korzysta wyłącznie z /api/history*.
+      // Nie odpytuj Firebase, gdy ekran wykresów jest aktywny.
+      if (currentPage === 1) return;
+    }
     try {
       const data = await fbGet('/piec/status.json');
       if (data && typeof data === 'object') {
+        _linkSource = 'firebase';
         _isFirebaseConnected = true;
         _lastFirebaseFetch = Date.now();
         applyIncomingData(data);
+        lanRememberControllerIp();
       }
     } catch (e) {
       _isFirebaseConnected = false;
+      if (_linkSource === 'firebase') _linkSource = '';
       updateConnectionStateUI();
     }
+    lanDiscoveryProbe(false);
   }
 
   function applyIncomingData(d) {
@@ -4962,7 +5145,21 @@ body.mode-phone-frame #phone {
 
     if (demoBtn) demoBtn.style.display = _isDemoMode ? 'block' : 'none';
 
-    if (_isFirebaseConnected) {
+    if (_isFirebaseConnected && _linkSource === 'lan') {
+      if (chip) {
+        chip.className = 'chip lan';
+        chip.textContent = `● LAN · ${S.ip || 'ESP32'}`;
+      }
+      if (banner) banner.classList.add('hidden');
+      if (sysstripSub) sysstripSub.textContent = `stan na żywo z ESP32 (${S.ip || 'sieć lokalna'}) · sieć lokalna — bez Firebase`;
+      if (ustStatus) {
+        ustStatus.textContent = _lanApiFull ? '🟢 Połączono lokalnie (LAN) — sterowanie bez internetu'
+          : '🟡 Sieć lokalna — tylko odczyt (firmware centrali < v3.47.0)';
+        ustStatus.style.color = _lanApiFull ? 'var(--ok)' : 'var(--warn)';
+      }
+      if (ustEmail) ustEmail.textContent = _fbEmail ? _fbEmail + ' (w sieci lokalnej niewymagane)' : 'niewymagane w sieci lokalnej';
+      if (ustMode) ustMode.textContent = _lanApiFull ? 'LAN · STEROWANIE LOKALNE' : 'LAN · TYLKO ODCZYT';
+    } else if (_isFirebaseConnected) {
       if (chip) {
         chip.className = 'chip live';
         chip.textContent = `● LIVE · ${S.ip || 'ESP32'}`;
@@ -5128,6 +5325,12 @@ body.mode-phone-frame #phone {
   }
 
   async function tryAutoLogin() {
+    // [LAN] Strona z ESP z działającym API lokalnym nie potrzebuje Firebase —
+    // bez internetu automatyczne logowanie zgłaszałoby tylko błędy połączenia.
+    if (await isEspLocalChartPage() && await pollLanStatus()) {
+      updateConnectionStateUI();
+      return true;
+    }
     const k = safeStorage.get('piec_fb_api_key') || DEFAULT_FB_API_KEY;
     const e = safeStorage.get('piec_fb_email') || DEFAULT_FB_EMAIL;
     const p = safeStorage.get('piec_fb_password') || DEFAULT_FB_PASS;
@@ -5187,6 +5390,13 @@ body.mode-phone-frame #phone {
     // W trybie rzeczywistym nie zmieniaj stanu optymistycznie. UI odświeży
     // dopiero odpowiedź centrali; powodzenie komunikuj wyłącznie po zgodnym ACK.
     if (_isFirebaseConnected && !_isDemoMode) {
+      // [LAN] Strona z ESP (firmware v3.47.0+): polecenie prosto do centrali.
+      if (_linkSource === 'lan' && _lanApiFull) return sendLanCommand(cmd, t0);
+      if (_linkSource === 'lan' && !_fbIdToken && !_fbRefreshToken) {
+        showToast(cmd, 'Starszy firmware centrali — sterowanie w sieci lokalnej wymaga v3.47.0', 'err');
+        addLog('CMD_ERR', 'Polecenie nie zostało wysłane: firmware bez /api/lan/cmd i brak sesji Firebase', 'err');
+        return false;
+      }
       const cmdId = makeFireCmdId();
       try {
         await fbPatch('/piec/cmd.json', { id: cmdId, cmd: cmd, token: _cmdToken, ts: Date.now() });
@@ -7405,7 +7615,11 @@ body.mode-phone-frame #phone {
     showSheet('Sesja operatora & Firebase', 'session', () => {
       const b = h('div');
       const authCard = h('div', 'diag-card');
-      authCard.innerHTML = `<div class="lbl">POŁĄCZENIE Z FIREBASE</div><div class="val">${_isFirebaseConnected ? '🟢 Połączono LIVE' : _isDemoMode ? '🟡 Tryb symulacji' : '🔴 Brak sesji'}</div><div class="sub">Konto: ${_fbEmail || 'Brak'} · IP: ${S.ip} · RSSI: ${S.wifi_rssi} dBm</div>`;
+      const lanLive = _isFirebaseConnected && _linkSource === 'lan';
+      const linkLbl = lanLive ? 'POŁĄCZENIE LOKALNE (LAN)' : 'POŁĄCZENIE Z FIREBASE';
+      const linkVal = lanLive ? (_lanApiFull ? '🟢 Sieć lokalna — sterowanie bez internetu' : '🟡 Sieć lokalna — tylko odczyt (firmware < v3.47.0)')
+        : _isFirebaseConnected ? '🟢 Połączono LIVE' : _isDemoMode ? '🟡 Tryb symulacji' : '🔴 Brak sesji';
+      authCard.innerHTML = `<div class="lbl">${linkLbl}</div><div class="val">${linkVal}</div><div class="sub">Konto: ${_fbEmail || 'Brak'} · IP: ${S.ip} · RSSI: ${S.wifi_rssi} dBm</div>`;
       b.appendChild(authCard);
       b.appendChild(note('Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Komendy sterujące /piec/cmd są zabezpieczone osobnym tokenem.'));
 
@@ -7417,6 +7631,16 @@ body.mode-phone-frame #phone {
       };
       acts.appendChild(authBtn);
 
+      // Awaryjnie: usuwa WYŁĄCZNIE kopię dób wykresów w tej przeglądarce.
+      const histBtn = h('button', 'ust-btn', 'Wykresy: pobierz historię od nowa');
+      histBtn.onclick = async () => {
+        await teldayClear();
+        showToast('WYKRESY', 'Pamięć wykresów w przeglądarce wyczyszczona — historia z Firebase bez zmian', 'ok');
+        addLog('WYKRESY', 'Wyczyszczono lokalną pamięć dób wykresów (Firebase bez zmian)', 'info');
+        if (currentPage === 1) loadTelemetryRange(activeRangeSec);
+      };
+      acts.appendChild(histBtn);
+
       if (_isFirebaseConnected) {
         const logoutBtn = h('button', 'ust-btn danger', 'Rozłącz i wyloguj');
         logoutBtn.onclick = () => {
@@ -7424,6 +7648,7 @@ body.mode-phone-frame #phone {
           safeStorage.remove('piec_fb_token');
           safeStorage.remove('piec_fb_ref_token');
           safeStorage.remove('piec_fb_password');
+          teldayClear();   // kopia dób wykresu tylko w tej przeglądarce; Firebase bez zmian
           updateConnectionStateUI();
           showToast('sesja', 'Wylogowano operatora', 'ok');
           dismissSheet();
@@ -7593,7 +7818,7 @@ body.mode-phone-frame #phone {
     ];
   }
 
-  const HISTORY_PAGE_SIZE = 300;
+  const HISTORY_PAGE_SIZE = 1000; // pełna doba = ~1440 rekordów = 2 strony
   let _historyIndexFallback = false;
   let _espLocalChartMode = null;
   let _espLocalChartProbe = null;
@@ -7838,70 +8063,231 @@ body.mode-phone-frame #phone {
       Number.isSafeInteger(row.sim) && (row.sim & (1 << channel)) !== 0));
   }
 
-  async function historyFetchShard(day, startTs, endTs) {
-    const base = historyShardPath(day);
-    if (_historyIndexFallback) {
-      return historyFetchShardFallback(base, startTs, endTs);
-    }
-    const rows = [];
-    let cursor = startTs;
-    try {
-      for (let guard = 0; guard < 100; guard++) {
-        const q = base + '.json?orderBy=' + encodeURIComponent('"ts"') + '&startAt=' + encodeURIComponent(String(cursor)) + '&endAt=' + encodeURIComponent(String(endTs)) + '&limitToFirst=' + HISTORY_PAGE_SIZE;
-        const data = await fbGet(q);
-        const page = [];
-        if (data && typeof data === 'object') {
-          Object.keys(data).forEach(id => {
-            const r = historyParseRecord(id, data[id]);
-            if (r && r.ts >= startTs && r.ts <= endTs) page.push(r);
-          });
-        }
-        if (!page.length) break;
-        rows.push(...page);
-        if (page.length < HISTORY_PAGE_SIZE) break;
-        const maxTs = Math.max(...page.map(r => r.ts));
-        if (maxTs < cursor) break;
-        cursor = maxTs + 1;
-      }
-      return historyUniqueSort(rows);
-    } catch (e) {
-      const msg = String(e && e.message || e);
-      if (/Index not defined/i.test(msg) || /indexOn/i.test(msg) || /400/i.test(msg)) {
-        _historyIndexFallback = true;
-        return historyFetchShardFallback(base, startTs, endTs);
-      }
-      throw e;
-    }
-  }
-
-  async function historyFetchShardFallback(base, startTs, endTs) {
-    const q = base + '.json';
-    const data = await fbGet(q);
-    const rows = [];
-    if (data && typeof data === 'object') {
-      Object.keys(data).forEach(id => {
+  // Rekordy doby z `ts >= fromTs`: zapytanie po indeksie `ts` stronami po
+  // HISTORY_PAGE_SIZE z kursorem WŁĄCZNYM (rekordy z tym samym ts na granicy
+  // strony nie giną; duplikat usuwa deduplikacja po id). Bez indeksu w regułach
+  // (HTTP 400) — cały shard doby. Rzuca przy błędzie sieci/HTTP.
+  async function historyFetchDayRows(dayStart, fromTs) {
+    const dayEnd = dayStart + 86399;
+    const base = historyShardPath(new Date(dayStart * 1000));
+    const parsePage = data => {
+      const rows = [];
+      const keys = data && typeof data === 'object' ? Object.keys(data) : [];
+      keys.forEach(id => {
         const r = historyParseRecord(id, data[id]);
-        if (r && r.ts >= startTs && r.ts <= endTs) rows.push(r);
+        if (r && r.ts >= dayStart && r.ts <= dayEnd) rows.push(r);
       });
+      return { rows, count: keys.length };
+    };
+    if (!_historyIndexFallback) {
+      try {
+        const rows = [];
+        let cursor = Math.max(fromTs, dayStart);
+        for (let pageNo = 0; pageNo < 64; pageNo++) {
+          const q = base + '.json?orderBy=' + encodeURIComponent('"ts"') + '&startAt=' + cursor +
+            '&endAt=' + dayEnd + '&limitToFirst=' + HISTORY_PAGE_SIZE;
+          const page = parsePage(await fbGet(q));
+          rows.push(...page.rows);
+          if (page.count < HISTORY_PAGE_SIZE) return historyUniqueSort(rows);
+          if (!page.rows.length) throw new Error('Nieczytelna strona telemetrii');
+          const maxTs = page.rows.reduce((m, r) => Math.max(m, r.ts), cursor);
+          cursor = maxTs > cursor ? maxTs : cursor + 1;
+          if (cursor > dayEnd) return historyUniqueSort(rows);
+        }
+        throw new Error('Zbyt wiele stron telemetrii');
+      } catch (e) {
+        const msg = String(e && e.message || e);
+        if (!(/Index not defined/i.test(msg) || /indexOn/i.test(msg) || /HTTP 400/.test(msg))) throw e;
+        _historyIndexFallback = true;
+      }
     }
-    return historyUniqueSort(rows);
+    return historyUniqueSort(parsePage(await fbGet(base + '.json')).rows);
   }
 
-  async function fetchTelemetryFromFirebase(rangeSec, endSec, updateTrend = true) {
-    if (!_isFirebaseConnected && !_fbIdToken) return null;
+  // ─── [PAMIĘĆ DÓB] Lokalna kopia pobranych dób telemetrii (IndexedDB) ───
+  // Doby kompletne nie są ponownie pobierane z Firebase; o dobę otwartą
+  // (zwykle dzisiejszą) pytamy tylko od ostatniego znanego ts (włącznie).
+  // Doba jest kompletna, gdy przed zapytaniem widzieliśmy w bazie rekord
+  // nowszy niż jej koniec (ESP wysyła telemetrię po kolei, od najstarszej),
+  // dlatego doby odpytujemy od najnowszej. Kopia jest wyłącznie w tej
+  // przeglądarce — historia w Firebase nie jest usuwana ani zmieniana.
+  const TELDAY_DB_NAME = 'piec-telemetry-1m-v1';
+  const TELDAY_STORE = 'days';
+  const TELDAY_KEEP_DAYS = 35;
+  const _teldayOpenDays = new Map();   // RAM: tylko doby otwarte z bieżącego zakresu
+  let _teldayDbPromise = null;
+  let _teldayPruned = false;
+  let _historyLastLoad = null;
+
+  function teldayDb() {
+    if (_teldayDbPromise) return _teldayDbPromise;
+    _teldayDbPromise = new Promise(resolve => {
+      try {
+        if (typeof indexedDB === 'undefined' || !indexedDB) { resolve(null); return; }
+        const req = indexedDB.open(TELDAY_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(TELDAY_STORE)) db.createObjectStore(TELDAY_STORE, { keyPath: 'key' });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+        req.onblocked = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+    return _teldayDbPromise;
+  }
+
+  // Jedna transakcja; wynik żądania albo null (pamięć jest tylko pomocnicza).
+  function teldayRequest(db, mode, fn) {
+    return new Promise(resolve => {
+      try {
+        const tx = db.transaction(TELDAY_STORE, mode);
+        const req = fn(tx.objectStore(TELDAY_STORE));
+        let result = null;
+        if (req) req.onsuccess = () => { result = req.result; };
+        tx.oncomplete = () => resolve(result === undefined ? null : result);
+        tx.onerror = () => resolve(null);
+        tx.onabort = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  function teldayKey(dayStart) { return new Date(dayStart * 1000).toISOString().slice(0, 10); }
+  function teldayPack(r) {
+    return [r._id, r.seq, r.ts, r.mono, r.a, r.k, r.s, r.state, r.stateKnown ? 1 : 0, r.q, r.sim, r.simulated ? 1 : 0];
+  }
+  function teldayUnpack(p) {
+    const id = String(p[0] || '');
+    const dash = id.indexOf('-');
+    return {
+      _id: id, session: dash > 0 ? id.slice(0, dash) : '', seq: p[1], ts: p[2], mono: p[3],
+      a: Array.isArray(p[4]) ? p[4] : [], k: p[5], s: p[6], state: p[7], stateKnown: p[8] === 1,
+      q: p[9], sim: p[10], simulated: p[11] === 1
+    };
+  }
+
+  async function teldayRead(db, dayStart) {
+    const rec = await teldayRequest(db, 'readonly', store => store.get(teldayKey(dayStart)));
+    if (!rec || rec.db !== DB_URL || rec.dayStart !== dayStart || !Array.isArray(rec.rows) ||
+        !(rec.completeBefore >= dayStart && rec.completeBefore <= dayStart + 86400)) return null;
+    try {
+      const rows = rec.rows.map(teldayUnpack).filter(r => r._id && r.ts >= dayStart && r.ts <= dayStart + 86399);
+      return { dayStart: dayStart, completeBefore: rec.completeBefore, rows: historyUniqueSort(rows) };
+    } catch (e) { return null; }
+  }
+
+  function teldayWrite(db, entry) {
+    return teldayRequest(db, 'readwrite', store => store.put({
+      key: teldayKey(entry.dayStart), db: DB_URL, dayStart: entry.dayStart,
+      completeBefore: entry.completeBefore, rows: entry.rows.map(teldayPack)
+    }));
+  }
+
+  async function teldayPrune(db, todayStart) {
+    if (_teldayPruned) return;
+    _teldayPruned = true;
+    const keys = await teldayRequest(db, 'readonly', store => store.getAllKeys());
+    if (!Array.isArray(keys)) return;
+    const keepFrom = teldayKey(todayStart - TELDAY_KEEP_DAYS * 86400);
+    const old = keys.filter(k => typeof k !== 'string' || k < keepFrom);
+    if (old.length) await teldayRequest(db, 'readwrite', store => { old.forEach(k => store.delete(k)); return null; });
+  }
+
+  // Usuwa WYŁĄCZNIE kopię w przeglądarce (wylogowanie / „pobierz od nowa”).
+  async function teldayClear() {
+    _teldayOpenDays.clear();
+    const db = await teldayDb();
+    if (db) await teldayRequest(db, 'readwrite', store => store.clear());
+  }
+
+  function teldayMerge(dayStart, prev, fetched, latestKnownBefore) {
+    const dayEnd = dayStart + 86399;
+    const inDay = fetched.filter(r => r && r.ts >= dayStart && r.ts <= dayEnd);
+    const rows = historyUniqueSort((prev ? prev.rows : []).concat(inDay));
+    let bound = latestKnownBefore === null ? -Infinity : latestKnownBefore;
+    inDay.forEach(r => { if (r.ts > bound) bound = r.ts; });
+    const prevComplete = prev ? prev.completeBefore : dayStart;
+    return { dayStart: dayStart, completeBefore: Math.max(prevComplete, Math.min(bound, dayEnd + 1)), rows: rows };
+  }
+
+  async function historyLoadRowsCached(start, end, canFetch, onProgress) {
+    const days = [];
+    for (let d = Math.floor(start / 86400) * 86400; d <= end; d += 86400) days.push(d);
+    const db = await teldayDb();
+    if (db) await teldayPrune(db, Math.floor(end / 86400) * 86400);
+    const entries = new Map();
+    for (const d of days) {
+      let e = _teldayOpenDays.get(d) || null;
+      if (!e && db) e = await teldayRead(db, d);
+      if (e) entries.set(d, e);
+    }
+    Array.from(_teldayOpenDays.keys()).forEach(d => { if (!entries.has(d)) _teldayOpenDays.delete(d); });
+    let latestKnown = null;
+    entries.forEach(e => {
+      const n = e.rows.length;
+      if (n && (latestKnown === null || e.rows[n - 1].ts > latestKnown)) latestKnown = e.rows[n - 1].ts;
+    });
+    // Od najnowszej doby: jej rekordy domykają starsze doby w tym samym odświeżeniu.
+    const pending = days.slice().reverse().filter(d => {
+      const e = entries.get(d);
+      return !(e && e.completeBefore > d + 86399);
+    });
+    const info = { days: days.length, cached: days.length - pending.length, refreshed: 0, failed: 0, newRows: 0, rows: [] };
+    let aborted = !canFetch;
+    for (let i = 0; i < pending.length; i++) {
+      const d = pending[i];
+      if (aborted) { info.failed++; continue; }
+      const prev = entries.get(d) || null;
+      try {
+        const fetched = await historyFetchDayRows(d, prev ? Math.max(d, prev.completeBefore) : d);
+        const merged = teldayMerge(d, prev, fetched, latestKnown);
+        const added = merged.rows.length - (prev ? prev.rows.length : 0);
+        const changed = prev ? (added !== 0 || merged.completeBefore !== prev.completeBefore)
+          : (merged.rows.length > 0 || merged.completeBefore !== d);
+        if (changed && db) await teldayWrite(db, merged);
+        entries.set(d, merged);
+        if (merged.completeBefore > d + 86399) _teldayOpenDays.delete(d); else _teldayOpenDays.set(d, merged);
+        info.refreshed++;
+        info.newRows += Math.max(0, added);
+        const n = merged.rows.length;
+        if (n && (latestKnown === null || merged.rows[n - 1].ts > latestKnown)) latestKnown = merged.rows[n - 1].ts;
+      } catch (e) {
+        // Brak sieci: doba nie zostaje uznana za kompletną, kolejnych nie odpytujemy.
+        console.warn('Historia: nie udało się pobrać doby ' + teldayKey(d), e);
+        aborted = true;
+        info.failed++;
+      }
+      if (onProgress) onProgress(i + 1, pending.length);
+    }
+    days.forEach(d => {
+      const e = entries.get(d);
+      if (e) e.rows.forEach(r => { if (r.ts >= start && r.ts <= end) info.rows.push(r); });
+    });
+    return info;
+  }
+
+  function historyCacheSummary(info) {
+    if (!info) return '';
+    const dni = n => n === 1 ? '1 dzień' : n + ' dni';
+    const parts = [];
+    if (info.cached > 0) parts.push('z pamięci przeglądarki: ' + dni(info.cached));
+    if (info.refreshed > 0) parts.push('nowe z RTDB: ' + info.newRows);
+    if (info.failed > 0) parts.push('nie odświeżono: ' + dni(info.failed));
+    return parts.length ? ' · ' + parts.join(' · ') : '';
+  }
+
+  async function fetchTelemetryFromFirebase(rangeSec, endSec, updateTrend = true, onProgress = null) {
     const end = Number.isFinite(endSec) ? Math.floor(endSec) : Math.floor(Date.now() / 1000);
     const start = end - rangeSec;
-    const days = historyDayRange(start, end);
-    const all = [];
-    for (let i = 0; i < days.length; i++) {
-      const dayStart = Math.max(start, Math.floor(days[i].getTime() / 1000));
-      const nextDay = Math.floor(days[i].getTime() / 1000) + 86400;
-      const dayEnd = Math.min(end, nextDay - 1);
-      const part = await historyFetchShard(days[i], dayStart, dayEnd);
-      all.push(...part);
+    // Doby kompletne idą z pamięci przeglądarki; bez sesji — wyłącznie z niej.
+    const canFetch = !!(_fbIdToken || _fbRefreshToken);
+    const loaded = await historyLoadRowsCached(start, end, canFetch, onProgress);
+    _historyLastLoad = loaded;
+    const sorted = loaded.rows;
+    if (!sorted.length) {
+      if (canFetch && loaded.failed > 0) throw new Error('Nie udało się pobrać historii z Firebase');
+      return null;
     }
-    const sorted = historyUniqueSort(all);
-    if (!sorted.length) return null;
 
     const parsedRows = sorted.map(r => {
       const getVal = (idx, ch, scale, minBound, maxBound, key) => {
@@ -8156,31 +8542,38 @@ body.mode-phone-frame #phone {
     chartUsesEpochX = true;
 
     let historyFailed = false;
-    if (_isFirebaseConnected) {
-      $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase…`;
-      try {
-        const fbData = await fetchTelemetryFromFirebase(rangeSec, rangeEndSec);
-        if (generation !== _chartLoadGeneration) return;
-        if (fbData && fbData.length > 0) {
-          chartDataset = mergeTelemetryChartRows([], fbData, chartRangeStartMs, chartRangeEndMs);
-          lastChartArchiveSampleTs = chartDataset.reduce((latest, row) => Math.max(latest, row.ts), 0);
-          $('#chartStatusInfo').textContent = `Firebase RTDB · ${chartDataset.length} próbek archiwalnych (${rangeName}) · ${chartWindowLabel()}`;
-          $('#chartPointsStat').textContent = String(chartDataset.length);
-          $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
-          $('#chartRealityPill').textContent = 'FIREBASE RTDB';
-          $('#chartRealityPill').style.background = 'rgba(74,222,128,.15)';
-          $('#chartRealityPill').style.color = 'var(--ok)';
-          $('#chartRealityPill').style.border = '1px solid rgba(74,222,128,.3)';
-          renderSeriesChips();
-          updateChartsNowStat();
-          updateChartCanvas();
-          return;
+    const historyCanFetch = !!(_fbIdToken || _fbRefreshToken);
+    $('#chartStatusInfo').textContent = historyCanFetch ? `Pobieranie historii (${rangeName}) z bazy Firebase…`
+      : `Wczytywanie historii (${rangeName}) z pamięci przeglądarki…`;
+    try {
+      const fbData = await fetchTelemetryFromFirebase(rangeSec, rangeEndSec, true, (done, total) => {
+        // Postęp ma sens przy pierwszym pobraniu wielu dób; zwykle odpytywana jest tylko dzisiejsza.
+        if (total >= 3 && generation === _chartLoadGeneration) {
+          $('#chartStatusInfo').textContent = `Pobieranie historii (${rangeName}) z bazy Firebase… doba ${done}/${total}`;
         }
-      } catch (err) {
-        if (generation !== _chartLoadGeneration) return;
-        historyFailed = true;
-        console.warn('Błąd odczytu telemetrii Firebase:', err);
+      });
+      if (generation !== _chartLoadGeneration) return;
+      if (fbData && fbData.length > 0) {
+        const load = _historyLastLoad;
+        const onlyCache = !!load && load.refreshed === 0 && load.failed > 0;
+        chartDataset = mergeTelemetryChartRows([], fbData, chartRangeStartMs, chartRangeEndMs);
+        lastChartArchiveSampleTs = chartDataset.reduce((latest, row) => Math.max(latest, row.ts), 0);
+        $('#chartStatusInfo').textContent = `Firebase RTDB · ${chartDataset.length} próbek archiwalnych (${rangeName})${historyCacheSummary(load)} · ${chartWindowLabel()}`;
+        $('#chartPointsStat').textContent = String(chartDataset.length);
+        $('#chartRangeStat').textContent = rangeSec <= 24 * 3600 ? `${rangeSec / 3600} h` : `${rangeSec / 86400} dni`;
+        $('#chartRealityPill').textContent = onlyCache ? 'PAMIĘĆ PRZEGLĄDARKI' : 'FIREBASE RTDB';
+        $('#chartRealityPill').style.background = onlyCache ? 'rgba(251,191,36,.15)' : 'rgba(74,222,128,.15)';
+        $('#chartRealityPill').style.color = onlyCache ? 'var(--warn)' : 'var(--ok)';
+        $('#chartRealityPill').style.border = onlyCache ? '1px solid rgba(251,191,36,.3)' : '1px solid rgba(74,222,128,.3)';
+        renderSeriesChips();
+        updateChartsNowStat();
+        updateChartCanvas();
+        return;
       }
+    } catch (err) {
+      if (generation !== _chartLoadGeneration) return;
+      historyFailed = true;
+      console.warn('Błąd odczytu telemetrii Firebase:', err);
     }
 
     if (generation !== _chartLoadGeneration) return;

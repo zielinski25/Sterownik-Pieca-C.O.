@@ -1,0 +1,230 @@
+# Kompiluje firmware centrali (PlatformIO, ESP32-S3 N16R8) z przygotowanego pliku
+# firmware-patch/v3.38.0-local-html/main_centrala.cpp w projekcie z "Cenatrala Pieca.zip"
+# (ten sam platformio.ini, plytka, partycje i biblioteki co u uzytkownika).
+#
+# Nic nie wgrywa na urzadzenie i nie publikuje plikow binarnych (firmware zawiera
+# dane logowania). Najwazniejsze fragmenty logu trafiaja do adnotacji (::notice).
+name: Firmware (PlatformIO)
+
+on:
+  push:
+    paths:
+      - "firmware-patch/**"
+      - "!firmware-patch/**/*.md"
+      - "Cenatrala Pieca.zip"
+      - ".github/workflows/firmware-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: pio run -e esp32-s3-n16r8
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Projekt z "Cenatrala Pieca.zip" + przygotowany main_centrala.cpp
+        run: |
+          mkdir -p "$RUNNER_TEMP/fw"
+          unzip -q "Cenatrala Pieca.zip" -d "$RUNNER_TEMP/fw"
+          cp firmware-patch/v3.38.0-local-html/main_centrala.cpp "$RUNNER_TEMP/fw/src/main_centrala.cpp"
+          # Biblioteka DHT22 lezy u uzytkownika lokalnie w lib/dhtESP32-rmt/ (patrz komentarz
+          # przy #include "dhtESP32-rmt.h" w main_centrala.cpp); ZIP projektu jej nie zawiera.
+          git clone -q --depth 1 --branch 2.0.2 https://github.com/junkfix/dhtESP32-rmt.git "$RUNNER_TEMP/dht"
+          mkdir -p "$RUNNER_TEMP/fw/lib/dhtESP32-rmt"
+          cp "$RUNNER_TEMP/dht/dhtESP32-rmt.h" "$RUNNER_TEMP/dht/dhtESP32-rmt.cpp" "$RUNNER_TEMP/dht/LICENSE" "$RUNNER_TEMP/fw/lib/dhtESP32-rmt/"
+          ls -l "$RUNNER_TEMP/fw" "$RUNNER_TEMP/fw/src" "$RUNNER_TEMP/fw/lib/dhtESP32-rmt"
+          grep -m1 -o 'FIRMWARE_VERSION = "[^"]*"' "$RUNNER_TEMP/fw/src/main_centrala.cpp"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('Cenatrala*.zip') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Instalacja PlatformIO
+        run: pip install -U platformio && pio --version
+
+      - name: pio run -e esp32-s3-n16r8
+        run: |
+          set -o pipefail
+          cd "$RUNNER_TEMP/fw"
+          pio run -e esp32-s3-n16r8 2>&1 | tee "$RUNNER_TEMP/pio.log"
+
+      - name: Podsumowanie w adnotacjach
+        if: always()
+        run: |
+          python3 - "$RUNNER_TEMP/pio.log" <<'EOF'
+          import re, sys, os
+          path = sys.argv[1]
+          lines = open(path, encoding='utf-8', errors='replace').read().splitlines() if os.path.exists(path) else []
+
+          def notice(title, rows):
+              msg = '\n'.join(rows) or '(brak)'
+              if len(msg) > 6000:
+                  msg = '...' + msg[-6000:]
+              msg = msg.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+              title = title.replace('%', '%25').replace(':', '%3A').replace(',', '%2C')
+              print('::notice title=' + title + '::' + msg)
+
+          errors = [l for l in lines if re.search(r'error:|undefined reference|\*\*\* \[|Error [0-9]', l)]
+          if errors:
+              notice('Firmware - bledy (%d)' % len(errors), errors[:40])
+          usage = [l for l in lines if re.search(r'^(RAM|Flash):|Building in|PLATFORM:|HARDWARE:|SUCCESS|FAILED|Took', l)]
+          notice('Firmware - podsumowanie', usage[-20:])
+          notice('Firmware - koniec logu', lines[-30:])
+          EOF
+
+  # Ten sam firmware, ale przez skrypt Wgraj-Firmware.ps1 na prawdziwym Windows, w ukladzie
+  # jak u uzytkownika: projekt w Dokumenty\PlatformIO\Projects (bez lib\dhtESP32-rmt - skrypt
+  # ma ja pobrac), PlatformIO w %USERPROFILE%\.platformio\penv poza PATH (jak z VS Code).
+  # Kod pobierany recznie do C:\src: nazwa repozytorium konczy sie kropka, a Windows ucina
+  # koncowe kropki w sciezce GITHUB_WORKSPACE.
+  windows-skrypt:
+    name: Wgraj-Firmware.ps1 (Windows, bez wgrywania)
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Pobranie kodu do C:\src
+        shell: pwsh
+        working-directory: C:\
+        run: |
+          git config --global core.autocrlf true
+          git init -q C:\src
+          git -C C:\src fetch -q --depth 1 "https://github.com/${{ github.repository }}.git" "${{ github.sha }}"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git -C C:\src checkout -q FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          @'
+          function Send-Notice([string]$Title, [string[]]$Lines) {
+              $msg = (@($Lines) -join "`n")
+              if ($msg.Length -gt 6000) { $msg = '...' + $msg.Substring($msg.Length - 6000) }
+              if (-not $msg) { $msg = '(brak)' }
+              $msg = $msg.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+              $t = $Title.Replace('%', '%25').Replace(':', '%3A').Replace(',', '%2C')
+              Write-Host ('::notice title={0}::{1}' -f $t, $msg)
+          }
+          function Send-LogNotices([string]$Name, [string]$LogFile) {
+              $all = @(Get-Content -LiteralPath $LogFile -ErrorAction SilentlyContinue)
+              Send-Notice "$Name - komunikaty skryptu" ($all | Where-Object { $_ -match '^(==>|    \S|BLAD|Gotowe|Sterownik Pieca|Wgrano)' })
+              $err = @($all | Where-Object { $_ -match 'error:|FAILED|Error [0-9]' } | Select-Object -First 40)
+              if ($err.Count) { Send-Notice "$Name - bledy" $err }
+              Send-Notice "$Name - koniec logu" ($all | Select-Object -Last 25)
+          }
+          '@ | Set-Content -LiteralPath "$env:RUNNER_TEMP\notice.ps1" -Encoding utf8
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: PlatformIO jak z VS Code (poza PATH) + projekt w Dokumentach
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          # Oficjalny instalator PlatformIO (ten sam, ktorego uzywa VS Code) zaklada
+          # %USERPROFILE%\.platformio\penv i nie dopisuje pio do PATH.
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py' -OutFile "$env:RUNNER_TEMP\get-platformio.py" -UseBasicParsing
+          python "$env:RUNNER_TEMP\get-platformio.py"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Test-Path "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe")) { Write-Host 'Brak penv\Scripts\pio.exe'; exit 1 }
+          $docs = [Environment]::GetFolderPath('MyDocuments', 'Create')
+          $proj = Join-Path $docs 'PlatformIO\Projects\Cenatrala Pieca'
+          New-Item -ItemType Directory -Force -Path $proj | Out-Null
+          Expand-Archive -LiteralPath 'Cenatrala Pieca.zip' -DestinationPath $proj
+          $desk = [Environment]::GetFolderPath('Desktop', 'Create')
+          # starszy plik w Pulpit\SterownikCO - skrypt ma go odlozyc do archiwum
+          New-Item -ItemType Directory -Force -Path (Join-Path $desk 'SterownikCO') | Out-Null
+          Set-Content -LiteralPath (Join-Path $desk 'SterownikCO\firmware_v3.45.1.bin') -Value 'stary' -Encoding ascii
+          if (Get-Command pio -ErrorAction SilentlyContinue) { Write-Host 'Uwaga: pio jest w PATH' }
+          Get-ChildItem -LiteralPath $proj | Format-Table 'Name', 'Length' -AutoSize
+
+      - name: Wgraj-Firmware.ps1 w Windows PowerShell 5.1 (domyslnie - bez wgrywania)
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $log = "$env:RUNNER_TEMP\wgraj-ps51.log"
+          cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File firmware-patch\v3.38.0-local-html\Wgraj-Firmware.ps1 > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $log
+          Send-LogNotices "Wgraj-Firmware PS 5.1 (kod $code)" $log
+          exit $code
+
+      - name: Diagnostyka PlatformIO (po bledzie)
+        if: failure()
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $penv = Join-Path $env:USERPROFILE '.platformio\penv'
+          $py = Join-Path $penv 'Scripts\python.exe'
+          $uv = Join-Path $penv 'Scripts\uv.exe'
+          $rows = @()
+          $rows += ('python.exe: {0}  uv.exe: {1}' -f (Test-Path $py), (Test-Path $uv))
+          $rows += ('pio --version: ' + ((& (Join-Path $penv 'Scripts\pio.exe') --version 2>&1) -join ' '))
+          $files = @(Get-ChildItem -LiteralPath (Join-Path $env:USERPROFILE '.platformio\platforms') -Filter 'penv_setup.py' -File -Recurse -Depth 4 -ErrorAction SilentlyContinue)
+          foreach ($f in $files) {
+              $rows += ('penv_setup.py: ' + $f.FullName)
+              $rows += @(Select-String -LiteralPath $f.FullName -Pattern '"platformio"\s*:' | ForEach-Object { '  ' + $_.Line.Trim() })
+          }
+          $rows += @(& $py -m pip list 2>&1 | Select-String -Pattern '^(platformio|uv|pyyaml|PyYAML|certifi|rich|click|cryptography) ' | ForEach-Object { 'pip: ' + $_.Line })
+          Send-Notice 'Diagnostyka penv' $rows
+          $rows | ForEach-Object { Write-Host $_ }
+          if (Test-Path $uv) {
+              $out = @(& $uv pip install ('--python=' + $py) --upgrade 'https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip' 'littlefs-python>=0.16.0' 'fatfs-ng>=0.1.14' 'pyyaml>=6.0.2' 'rich-click>=1.8.6' 'zopfli>=0.2.2' 'intelhex>=2.3.0' 'rich>=14.0.0' 'cryptography>=45.0.3' 'certifi>=2025.8.3' 'ecdsa>=0.19.1' 'bitstring>=4.3.1' 'reedsolo>=1.5.3,<1.8' 'esp-idf-size>=2.0.0' 'esp-coredump>=1.14.0' 'pyelftools>=0.32' 2>&1 | ForEach-Object { [string]$_ })
+              Send-Notice ('uv pip install poza pio (kod {0})' -f $LASTEXITCODE) ($out | Select-Object -Last 30)
+              $out | Select-Object -Last 30 | ForEach-Object { Write-Host $_ }
+          }
+
+      - name: Wynik w projekcie i na pulpicie
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $proj = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PlatformIO\Projects\Cenatrala Pieca'
+          $outDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SterownikCO'
+          $rows = @()
+          $rows += @(Get-ChildItem -LiteralPath $outDir -Filter 'firmware_v*.bin' -File | ForEach-Object { 'pulpit: {0} ({1:N0} B)' -f $_.Name, $_.Length })
+          $rows += @(Get-ChildItem -LiteralPath (Join-Path $outDir 'archiwum') -Filter 'firmware_v*.bin' -File -ErrorAction SilentlyContinue | ForEach-Object { 'archiwum: ' + $_.Name })
+          $rows += @(Get-ChildItem -LiteralPath (Join-Path $proj 'kopie-firmware') -File -ErrorAction SilentlyContinue | ForEach-Object { 'kopia: ' + $_.Name })
+          $rows += @(Get-ChildItem -LiteralPath (Join-Path $proj 'lib\dhtESP32-rmt') -File -ErrorAction SilentlyContinue | ForEach-Object { 'lib: ' + $_.Name })
+          $ver = Select-String -LiteralPath (Join-Path $proj 'src\main_centrala.cpp') -Pattern 'static const char\* FIRMWARE_VERSION = "([^"]+)"' -List
+          if ($ver) { $rows += ('src: ' + $ver.Matches[0].Groups[1].Value) }
+          $rows | ForEach-Object { Write-Host $_ }
+          Send-Notice 'Wynik' $rows
+          $expected = 'pulpit: firmware_{0}.bin' -f $ver.Matches[0].Groups[1].Value
+          $checks = [ordered]@{
+              'nowy firmware w SterownikCO'      = [bool]($rows | Where-Object { $_.StartsWith($expected) })
+              'stary bin tylko w archiwum'       = (-not ($rows -match '^pulpit: firmware_v3\.45\.1')) -and [bool]($rows -match '^archiwum: firmware_v3\.45\.1\.bin')
+              'kopia poprzedniego pliku'         = [bool]($rows -match '^kopia:')
+              'biblioteka dhtESP32-rmt'          = [bool]($rows -match 'dhtESP32-rmt\.h')
+          }
+          $bad = @($checks.Keys | Where-Object { -not $checks[$_] })
+          if ($bad.Count) { Write-Host ('Niespelnione: ' + ($bad -join ', ')); exit 1 }
+
+      - name: Drugie uruchomienie w PowerShell 7 (plik juz podmieniony)
+        shell: pwsh
+        working-directory: C:\src
+        run: |
+          . "$env:RUNNER_TEMP\notice.ps1"
+          $log = "$env:RUNNER_TEMP\wgraj-ps7.log"
+          cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File firmware-patch\v3.38.0-local-html\Wgraj-Firmware.ps1 -BezPulpitu > `"$log`" 2>&1"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $log
+          Send-LogNotices "Wgraj-Firmware PS 7 (kod $code)" $log
+          if ($code -ne 0) { exit $code }
+          if (-not (Select-String -LiteralPath $log -SimpleMatch 'Projekt ma juz ten plik' -Quiet)) { Write-Host 'Oczekiwano komunikatu: Projekt ma juz ten plik'; exit 1 }

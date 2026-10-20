@@ -306,7 +306,11 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
             AlarmCenter.K_CONTROLLER_DYM_MUTE_UNTIL,
             AlarmCenter.K_CONTROLLER_OGRZ_MUTE_UNTIL,
             AlarmCenter.K_CONTROLLER_STATUS_MARKER,
-            K_ALARM_OPEN_NONCE
+            K_ALARM_OPEN_NONCE,
+            // [LAN] adres centrali w sieci lokalnej — usługa alarmów używa go także przed odblokowaniem po restarcie
+            K_LAN_ENABLED,
+            K_LAN_MANUAL_IP,
+            K_LAN_LAST_IP
         )
         private val FIREBASE_SESSION_KEYS = setOf(K_API_KEY, K_ID_TOKEN, K_REF_TOKEN)
 
@@ -331,5 +335,9 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         const val K_LON = "piec_weather_lon"
         const val K_SOLAR_ARCHIVE = "solar_archive_data" // legacy/unverified; never loaded as real telemetry
         const val K_SOLAR_REAL_ARCHIVE = "solar_real_archive_v1"
+        /** [LAN] Połączenie lokalne z centralą (bez internetu): włączone, ręczny adres, ostatnio znany adres. */
+        const val K_LAN_ENABLED = "piec_lan_enabled"
+        const val K_LAN_MANUAL_IP = "piec_lan_manual_ip"
+        const val K_LAN_LAST_IP = "piec_lan_last_ip"
     }
 }

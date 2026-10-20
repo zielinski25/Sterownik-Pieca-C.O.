@@ -24,6 +24,8 @@ import com.sterownikco.pro.core.AlarmMonitorPhase
 import com.sterownikco.pro.core.AlarmMonitorStartGate
 import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.AlarmSnapshotCoordinator
+import com.sterownikco.pro.core.LanCandidates
+import com.sterownikco.pro.core.LanLink
 import com.sterownikco.pro.core.Prefs
 import com.sterownikco.pro.core.Rtdb
 import com.sterownikco.pro.core.controllerAlarmMuteStatus
@@ -230,14 +232,14 @@ class AlarmMonitorService : Service() {
                 reportMuteSync("Brak aktywnego alarmu do synchronizacji wyciszenia.", error = true)
                 return@withLock
             }
-            if (Rtdb.refreshToken.isBlank()) {
-                reportMuteSync("Brak sesji Firebase — wyciszenie działa tylko na tym telefonie.", error = true)
+            if (Rtdb.refreshToken.isBlank() && LanLink.fresh(System.currentTimeMillis())?.fullApi != true) {
+                reportMuteSync("Brak sesji Firebase i połączenia lokalnego z centralą — wyciszenie działa tylko na tym telefonie.", error = true)
                 stopIfOnlyStartedForMute()
                 return@withLock
             }
             for ((index, command) in commands.withIndex()) {
                 val ack = try {
-                    Rtdb.sendCommand(Rtdb.makeFireCmdId(), command)
+                    Rtdb.sendCommandAuto(Rtdb.makeFireCmdId(), command)
                 } catch (e: Exception) {
                     null
                 }
@@ -278,18 +280,47 @@ class AlarmMonitorService : Service() {
         if (prefs != null && !AlarmCenter.isMonitored(prefs)) stopSelf()
     }
 
-    /** Background alarm checks use one RTDB read per minute; opening the app has its own faster UI poll. */
+    /**
+     * [LAN] Status do czuwania: świeże łącze lokalne z aplikacji → Firebase (bez zmian, gdy
+     * jest internet) → centrala w sieci lokalnej. Dzięki temu alarmy działają też bez internetu.
+     */
+    private suspend fun pollStatusForMonitor(prefs: Prefs): JSONObject? {
+        val lanEnabled = prefs.getBool(Prefs.K_LAN_ENABLED, true)
+        val recentLan = if (lanEnabled) LanLink.fresh(System.currentTimeMillis()) else null
+        if (recentLan != null) {
+            val st = try { Rtdb.lanStatus(recentLan.ip) } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+            if (st != null) {
+                LanLink.markOk(st.ip, st.fullApi, System.currentTimeMillis())
+                return st.json
+            }
+        }
+        if (Rtdb.refreshToken.isNotBlank()) {
+            val fb = try { Rtdb.pollStatus() } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+            if (fb != null) return fb
+        }
+        if (!lanEnabled) return null
+        val candidates = LanCandidates.build(prefs.get(Prefs.K_LAN_MANUAL_IP), prefs.get(Prefs.K_LAN_LAST_IP))
+        val st = try { Rtdb.lanFind(candidates) } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+            ?: return null
+        LanLink.markOk(st.ip, st.fullApi, System.currentTimeMillis())
+        Log.d(TAG, "Status z centrali w sieci lokalnej ${st.ip}")
+        return st.json
+    }
+
+    /** Background alarm checks use one status read per minute; opening the app has its own faster UI poll. */
     private suspend fun monitorLoop() {
         while (true) {
             val cycleStartedAt = SystemClock.elapsedRealtime()
             try {
                 val prefs = Prefs(applicationContext)
-                if (AlarmCenter.isMonitored(prefs) && Rtdb.refreshToken.isNotBlank()) {
+                if (AlarmCenter.isMonitored(prefs) &&
+                    (Rtdb.refreshToken.isNotBlank() || prefs.getBool(Prefs.K_LAN_ENABLED, true))
+                ) {
                     updateMonitorHealth(AlarmMonitorPhase.CONNECTING)
-                    val status = Rtdb.pollStatus()
+                    val status = pollStatusForMonitor(prefs)
                     if (status == null) {
                         updateMonitorHealth(AlarmMonitorPhase.RETRYING)
-                        Log.w(TAG, "GET /piec/status nie powiódł się; ponowię zgodnie z minutowym cyklem")
+                        Log.w(TAG, "Odczyt statusu (Firebase / sieć lokalna) nie powiódł się; ponowię zgodnie z minutowym cyklem")
                     } else {
                         onSnapshot(status)
                         Log.d(TAG, "GET /piec/status OK; dym_alarm=${alarmFlag(status, "dym_alarm")}, " +
@@ -426,11 +457,13 @@ class AlarmMonitorService : Service() {
                 return
             }
             val session = prefs.firebaseSession()
+            val lanAvailable = prefs.getBool(Prefs.K_LAN_ENABLED, true) &&
+                (!prefs.get(Prefs.K_LAN_LAST_IP).isNullOrBlank() || !prefs.get(Prefs.K_LAN_MANUAL_IP).isNullOrBlank())
             if (!AlarmMonitorStartGate.canStart(
-                    AlarmCenter.isMonitored(prefs), session.refreshToken
+                    AlarmCenter.isMonitored(prefs), session.refreshToken, lanAvailable
                 )
             ) {
-                Log.i(TAG, "Pominięto start monitoringu alarmów: monitoring wyłączony lub brak sesji Firebase")
+                Log.i(TAG, "Pominięto start monitoringu alarmów: monitoring wyłączony albo brak sesji Firebase i adresu centrali w LAN")
                 return
             }
             if (activeInstance == null) updateMonitorHealth(AlarmMonitorPhase.STARTING)
@@ -482,7 +515,8 @@ class AlarmMonitorService : Service() {
                 return
             }
             val session = try { Prefs(appContext).firebaseSession() } catch (e: Exception) { null }
-            if (session?.refreshToken.isNullOrBlank()) {
+            // [LAN] Bez sesji Firebase wyciszenie może jeszcze pójść do centrali w sieci lokalnej.
+            if (session?.refreshToken.isNullOrBlank() && LanLink.fresh(System.currentTimeMillis())?.fullApi != true) {
                 Handler(Looper.getMainLooper()).post {
                     try {
                         Toast.makeText(
