@@ -1,3 +1,19 @@
+// [v3.53.0 SOLAR-REPORT-TESTABLE] — 2026-10-21
+// Co: skladanie raportu archiwum przeniesione do SolarDailyArchive.h, gdzie
+//     da sie je uruchomic na komputerze PRZED wgraniem firmware'u.
+// Problem: v3.52.7-v3.52.11 to piec poprawek pod rzad, kazda wymagajaca OTA,
+//     bo kazda dotyczyla CALEJ wiadomosci, a testy sprawdzaly tylko
+//     pojedyncza linie dnia. Uzytkownik slusznie odmowil dalszego wgrywania
+//     na wiare.
+// Naprawa: solar_daily::buildReport() + splitForTelegram() w naglowku;
+//     firmware tylko czyta pliki i wypelnia tablice DayReport. Test
+//     tests/ReportSimulation.cpp sklada 20 scenariuszy (swiezy start, polnoc,
+//     poludnie, doba zamknieta, dziura, symulacje, zima, rekord CO, zmiana
+//     czasu 23/25 h, 30 dni, awaria GHI, brak zegara) i sprawdza gotowy tekst.
+//     Przy okazji: podzial wiadomosci na porcje (Telegram odrzuca > 4096
+//     znakow), wiec /archiwum 30 wreszcie dojdzie w calosci.
+// FIRMWARE_VERSION v3.52.11 -> v3.53.0 (MINOR, raport archiwum).
+//
 // [v3.52.11 SOLAR-REPORT-EARLY-DAY] — 2026-10-21
 // Co: linia doby, ktora wlasnie sie zaczela, nie udaje pomiaru.
 // Problem: piec minut po polnocy raport pokazal
@@ -4980,9 +4996,9 @@
 
 // [v3.52.4] Twarda bramka zgodnosci naglowka. Bez tego mozna bylo zbudowac
 // firmware meldujacy nowy numer wersji, ale liczacy URL po staremu.
-// [v3.52.11] Prog 20261031 — naglowek musi znac prog kMinSamplesForDelta.
-#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261031
-#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja liczy dT i amplitude z kilku probek."
+// [v3.53.0] Prog 20261101 — naglowek musi znac buildReport() i splitForTelegram().
+#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261101
+#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja nie ma buildReport() ani podzialu wiadomosci."
 #endif
 #include <time.h>
 #include <stdlib.h>
@@ -5379,7 +5395,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.52.11";
+static const char* FIRMWARE_VERSION = "v3.53.0";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -23580,10 +23596,8 @@ static const uint8_t kSolarReportMaxDays = 30;
 static char g_solarDeleteDate[11] = "";
 static String g_solarReportDates[kSolarReportMaxDays];
 
-// 1 -> "dzien", 2..N -> "dni" (wczesniej zawsze "dni", stad "1 dni").
-static const char* solarDaysWord(unsigned n) {
-  return (n == 1U) ? "dzien" : "dni";
-}
+// [v3.53.0] solarDaysWord() przeniesione do SolarDailyArchive.h (buildReport
+// sam odmienia "dzien"/"dni"), zeby nie zostawac z nieuzywana funkcja.
 
 // [v3.52.0] Rekordy z schemaVersion < 2 liczyly sie z bojlera pieca C.O.
 // (TELEMETRY_CH_BOJLER), a nie z ukladu slonecznego. Nie da sie ich naprawic —
@@ -23671,6 +23685,15 @@ static bool solarArchiveDeleteDay(const char *dateKey, String &info) {
   return true;
 }
 
+// [v3.53.0] Ta funkcja NIE sklada juz tekstu — tylko czyta pliki i wypelnia
+// tablice rekordow. Cala tresc wiadomosci (naglowek, linie, stopka, podzial
+// na porcje) jest w SolarDailyArchive.h jako buildReport(). Dzieki temu test
+// hostowy (tests/ReportSimulation.cpp) sprawdza DOKLADNIE to, co wychodzi
+// z urzadzenia, a nie kopie logiki, ktora moze sie rozjechac.
+static void tgRaportSink(void *ctx, const char *text, size_t len) {
+  if (ctx && text && len) static_cast<String *>(ctx)->concat(text, (unsigned)len);
+}
+
 static String buildSolarArchiveTelegramReport(uint8_t days) {
   if (days == 0) days = 7;
   if (days > kSolarReportMaxDays) days = kSolarReportMaxDays;
@@ -23716,56 +23739,29 @@ static String buildSolarArchiveTelegramReport(uint8_t days) {
     return String(F("Archiwum solarne: brak zapisanych dni. Rekord powstaje po pierwszej probce telemetrii (checkpoint co 5 min)."));
   }
 
-  String out;
-  out.reserve(1600);
-  out += F("☀️ <b>Archiwum solarne</b> (");
-  out += String((unsigned)count);
-  out += F(" ");
-  out += solarDaysWord((unsigned)count);
-  out += F(", z centrali)\n");
-  // [v3.52.7] Tryb instalacji na poczatku raportu — bez tego zimowy odczyt
-  // z pustego zbiornika wyglada jak zwykly dzien bez slonca.
-  if (g_solarOffSeason) out += F("Tryb: <b>spuszczona</b> (ZIMA — zbiornik pusty)\n");
+  // Rekordy w tablicy statycznej, nie na stosie zadania Telegrama:
+  // 30 x sizeof(DayReport) to ok. 2,7 kB.
+  static solar_daily::DayReport rekordy[kSolarReportMaxDays];
+  memset(rekordy, 0, sizeof(rekordy));
+  uint16_t ile = 0;
 
-  float ghiSum = 0.0f;
-  uint8_t forecastDays = 0;
-  uint8_t actualDays = 0;
-  // [v3.52.10] Doby jeszcze nie zaczete (prognoza na jutro) trzymamy osobno:
-  // nie wchodza do sumy GHI ani do mianownika "odczyty".
-  float ghiSumNotStarted = 0.0f;
-  uint8_t notStartedDays = 0;
-  uint8_t startedDays = 0;
-
-  // Dzisiejsza data raz, poza petla — potrzebna do rozroznienia
-  // "jutro" (jeszcze sie nie zaczelo) od "dzis" (doba w toku).
-  char dzisKey[11] = "";
-  {
-    solar_daily::LocalFields teraz;
-    if (solarArchiveLocalNow(teraz)) {
-      solar_daily::formatDateKey(teraz.year, teraz.month, teraz.day, dzisKey);
-      if (!solar_daily::isValidDateKey(dzisKey)) dzisKey[0] = 0;
-    }
-  }
   for (uint8_t i = 0; i < count; i++) {
     const String path = solarArchivePathFor(g_solarReportDates[i].c_str());
     File f = LittleFS.open(path.c_str(), "r");
-    if (!f) {
-      out += g_solarReportDates[i];
-      out += F("  (plik nieczytelny)\n");
-      continue;
-    }
+    if (!f) continue;
     JsonDocument doc;
     const DeserializationError err = deserializeJson(doc, f);
     f.close();
     if (err) {
-      out += g_solarReportDates[i];
-      out += F("  (blad JSON)\n");
+      DLOGF(DC_HISTORIA, DL_WARN, "SOLAR-ARCH zdarzenie=raport_json_blad dzien=%s",
+            g_solarReportDates[i].c_str());
       continue;
     }
 
-    solar_daily::DayReport row;
+    solar_daily::DayReport &row = rekordy[ile];
     memset(&row, 0, sizeof(row));
     strncpy(row.date, g_solarReportDates[i].c_str(), sizeof(row.date) - 1);
+
     JsonVariant fcAvail = doc["forecast"]["available"];
     row.hasForecast = fcAvail.is<bool>() ? fcAvail.as<bool>()
                                          : ((doc["forecast"]["hourCount"] | 0) > 0);
@@ -23776,7 +23772,7 @@ static String buildSolarArchiveTelegramReport(uint8_t days) {
     row.deltaC = doc["actual"]["deltaC"] | 0.0f;
     row.minC = doc["actual"]["minC"] | 0.0f;
     row.maxC = doc["actual"]["maxC"] | 0.0f;
-    // [v3.52.9] Godziny min/max — 0, gdy rekord jest starszy.
+    // 0 = rekord sprzed v3.52.9; raport nie zmysli wtedy godziny.
     row.minUtc = doc["actual"]["minUtc"] | 0;
     row.maxUtc = doc["actual"]["maxUtc"] | 0;
     row.firstUtc = doc["actual"]["firstUtc"] | 0;
@@ -23786,113 +23782,103 @@ static String buildSolarArchiveTelegramReport(uint8_t days) {
     row.expectedSamples = (uint16_t)(doc["actual"]["expectedSampleCount"] | 0);
     row.simulatedSamples = (uint16_t)(doc["actual"]["simulatedSamples"] | 0);
     row.technicalCandidate = doc["actual"]["technicalCandidate"] | false;
-    // [v3.51.1] Przyczyna braku prognozy jest zapisana tylko w rekordzie tej
-    // daty, ktorej dotyczy — nie trzeba jej dodatkowo filtrowac.
-    row.captureStatus = doc["forecast"]["captureStatus"] | "";
-    // [v3.52.0] schemaVersion < 2 = rekord liczony z bojlera pieca C.O.,
-    // nie z ukladu slonecznego.
+    // Przyczyna braku prognozy jest zapisana tylko w rekordzie tej daty.
+    strncpy(row.captureStatus, doc["forecast"]["captureStatus"] | "",
+            sizeof(row.captureStatus) - 1);
+    row.captureStatus[sizeof(row.captureStatus) - 1] = 0;
+    // schemaVersion < 2 = rekord liczony z bojlera pieca C.O.
     row.legacyChannel = (doc["schemaVersion"] | 1) < 2;
-    // [v3.52.7] Rekord zapisany przy spuszczonej wodzie.
+    // Rekord zapisany przy spuszczonej wodzie.
     row.offSeason = doc["offSeason"] | false;
 
-    // [v3.52.7] Pokrycie wzgledem czasu, ktory uplynal. Rekord niesie
-    // udzial minut w CALEJ dobie; dla dnia w toku mianownikiem jest
-    // jednak tylko czas od polnocy do teraz — inaczej raport o 18:00
-    // pokazywal 74%, choc brakowalo 15 minut z 1080 (98,6%).
-    row.inProgress = false;
-    row.elapsedCoverageRatio = row.coverageRatio;
-    // [v3.52.11] Dopiero po godzinie doby. Przy szesciu uplynietych minutach
-    // jedna minuta restartu to 17 punktow procentowych — liczba prawdziwa,
-    // ale bezuzyteczna i alarmujaca.
-    const bool maUplywCzasu = row.validSamples >= solar_daily::kMinSamplesForDelta * 2u;
-    if (row.hasActual && !row.finalized && row.expectedSamples > 0 && maUplywCzasu) {
-      solar_daily::LocalFields teraz;
-      if (solarArchiveLocalNow(teraz)) {
-        char dzis[11];
-        solar_daily::formatDateKey(teraz.year, teraz.month, teraz.day, dzis);
-        if (strcmp(dzis, row.date) == 0) {
-          const int elapsedMin = teraz.hour * 60 + teraz.minute;
-          const float pokryteMin = row.coverageRatio * (float)row.expectedSamples;
-          if (elapsedMin >= 60) {
-            float r = pokryteMin / (float)elapsedMin;
-            if (r > 1.0f) r = 1.0f;
-            if (r < 0.0f) r = 0.0f;
-            row.elapsedCoverageRatio = r;
-            row.inProgress = true;
-          }
-        }
-      }
-    }
-
-    // [v3.52.10] Rekord z data pozniejsza niz dzis to prognoza zapisana
-    // wieczorem na jutro (okno 23:30-23:59). Zero odczytow jest tam stanem
-    // oczekiwanym — doba jeszcze sie nie zaczela.
-    row.isToday = (dzisKey[0] && strcmp(row.date, dzisKey) == 0);
-    row.notStarted = (!row.hasActual && dzisKey[0] && strcmp(row.date, dzisKey) > 0);
-
-    if (row.notStarted) {
-      notStartedDays++;
-      if (row.hasForecast) ghiSumNotStarted += row.ghiKwhM2;
-    } else {
-      startedDays++;
-      if (row.hasForecast) { ghiSum += row.ghiKwhM2; forecastDays++; }
-    }
-    if (row.hasActual) actualDays++;
-
-    char line[256];
-    if (solar_daily::formatDayReportLine(row, line, sizeof(line)) > 0) {
-      out += line;
-      out += '\n';
-    } else {
-      out += g_solarReportDates[i];
-      out += F("  (nieczytelny rekord)\n");
-    }
+    ile++;
   }
 
-  // [v3.52.10] Mianownik to doby ZACZETE. Gdy wszystkie rekordy to jeszcze
-  // prognozy na jutro (swiezy start po 23:30), pokazujemy liczbe rekordow,
-  // zeby nie wyszlo "0/0".
-  const uint8_t denominator = startedDays ? startedDays : count;
-  out += F("Suma GHI: ");
-  out += String(ghiSum, 2);
-  out += F(" kWh/m2 (");
-  out += String((unsigned)forecastDays);
-  out += F("/");
-  out += String((unsigned)denominator);
-  out += F(" dni z prognoza) | odczyty: ");
-  out += String((unsigned)actualDays);
-  out += F("/");
-  out += String((unsigned)denominator);
-  if (notStartedDays > 0) {
-    out += F("\nJutro (prognoza): GHI ");
-    out += String(ghiSumNotStarted, 2);
-    out += F(" kWh/m2 — doba sie jeszcze nie zaczela.");
+  if (ile == 0) {
+    return String(F("Archiwum solarne: zadnego rekordu nie udalo sie odczytac (uszkodzone pliki)."));
   }
-  // [v3.52.4] Dowod ostatniej proby GHI — tylko gdy proba sie nie udala.
+
+  solar_daily::ReportOptions opt;
+  opt.offSeason = g_solarOffSeason;
+  opt.legacyCount = solarArchiveScanLegacy(false, nullptr);
+  solar_daily::LocalFields teraz;
+  if (solarArchiveLocalNow(teraz)) {
+    solar_daily::formatDateKey(teraz.year, teraz.month, teraz.day, opt.today);
+    if (!solar_daily::isValidDateKey(opt.today)) opt.today[0] = 0;
+    opt.nowMinutes = teraz.hour * 60 + teraz.minute;
+  }
+  // Dowod ostatniej proby GHI — tylko gdy proba sie nie udala.
   if (g_solarGhiStatus[0] && strcmp(g_solarGhiStatus, "ok") != 0 &&
       strcmp(g_solarGhiStatus, "brak_proby") != 0) {
-    out += F("\nOstatnia proba GHI: ");
-    out += g_solarGhiStatus;
-    if (g_solarGhiBody[0]) {
-      out += F(" - ");
-      out += g_solarGhiBody;
-    }
-    if (g_solarGhiUrl[0]) {
-      out += F("\nURL: ");
-      out += g_solarGhiUrl;
-    }
+    // strncpy() nie dopisze terminatora, gdy zrodlo jest dluzsze — dlatego
+    // jawnie zerujemy ostatni bajt (reszta wyzerowana w konstruktorze).
+    strncpy(opt.ghiStatus, g_solarGhiStatus, sizeof(opt.ghiStatus) - 1);
+    opt.ghiStatus[sizeof(opt.ghiStatus) - 1] = 0;
+    strncpy(opt.ghiBody, g_solarGhiBody, sizeof(opt.ghiBody) - 1);
+    opt.ghiBody[sizeof(opt.ghiBody) - 1] = 0;
+    strncpy(opt.ghiUrl, g_solarGhiUrl, sizeof(opt.ghiUrl) - 1);
+    opt.ghiUrl[sizeof(opt.ghiUrl) - 1] = 0;
   }
-  const uint16_t legacyCount = solarArchiveScanLegacy(false, nullptr);
-  if (legacyCount > 0) {
-    out += F("\nUwaga: ");
-    out += String((unsigned)legacyCount);
-    out += F(" rekord(ow) zapisano przed poprawka kanalu — dotycza bojlera pieca C.O.,");
-    out += F(" nie ukladu slonecznego. Usun je: /archiwum_czysc TAK");
-  }
-  // [v3.52.7] Usunieta linia "Pelny JSON: GET /api/solar-archive" —
-  // dostep do archiwum jest przez Telegram albo GitHuba i raport nie
-  // powinien reklamowac adresu w sieci lokalnej.
+
+  String out;
+  out.reserve(1200);
+  solar_daily::buildReport(rekordy, ile, opt, tgRaportSink, &out);
   return out;
+}
+
+// [v3.53.0] Wysyla raport porcjami. Telegram odrzuca tekst dluzszy niz 4096
+// znakow — przy 30 dniach raport ma ok. 4,6 kB i bez tego nie doszedl by
+// w ogole. Podzial liczy sie na koncach linii, wiec znaczniki <b> nie pekaja.
+// Prefiks "(ciag dalszy)" jest doklejany tutaj, do TEJ SAMEJ wiadomosci —
+// nie jako osobne wywolanie (taka pomylka dala kiedys pusta wiadomosc 14 B).
+// Liczby (limit, dlugosc porcji, prefiks) pochodza z naglowka, zeby symulator
+// hostowy sprawdzal dokladnie ten sam podzial.
+static const uint8_t kTgRaportMaxPorcji = 4;
+static String g_tgRaportPorcja[kTgRaportMaxPorcji];
+static uint8_t g_tgRaportPorcji = 0;
+static uint8_t g_tgRaportPorcjiWszystkich = 0;   // takze te odrzucone
+
+static void tgRaportPorcjaSink(void *ctx, const char *prefix, size_t prefixLen,
+                               const char *text, size_t len) {
+  g_tgRaportPorcjiWszystkich++;
+  if (g_tgRaportPorcji >= kTgRaportMaxPorcji) return;
+  String *tab = static_cast<String *>(ctx);
+  String &m = tab[g_tgRaportPorcji];
+  m = "";
+  m.reserve((unsigned)(prefixLen + len) + 8);
+  if (prefixLen) m.concat(prefix, (unsigned)prefixLen);
+  if (len) m.concat(text, (unsigned)len);
+  g_tgRaportPorcji++;
+}
+
+static void tgWyslijRaportSolarny(uint8_t days) {
+  const String raport = buildSolarArchiveTelegramReport(days);
+  if (raport.length() == 0) return;
+
+  g_tgRaportPorcji = 0;
+  g_tgRaportPorcjiWszystkich = 0;
+  for (uint8_t i = 0; i < kTgRaportMaxPorcji; i++) g_tgRaportPorcja[i] = "";
+  solar_daily::splitForTelegramParts(raport.c_str(),
+                                     solar_daily::kTelegramSplitLen,
+                                     tgRaportPorcjaSink, g_tgRaportPorcja);
+  if (g_tgRaportPorcji == 0) {
+    sendTelegramMessage(raport);
+    return;
+  }
+
+  // Zabezpieczenie: gdyby kiedys raport nie zmiescil sie w tabeli porcji,
+  // lepiej powiedziec o tym w ostatniej wiadomosci, niz uciac bez slowa.
+  const bool uciety = g_tgRaportPorcjiWszystkich > g_tgRaportPorcji;
+
+  for (uint8_t i = 0; i < g_tgRaportPorcji; i++) {
+    if (uciety && i + 1 == g_tgRaportPorcji) {
+      g_tgRaportPorcja[i] += F("\n(raport uciety — za duzo dni naraz)\n");
+    }
+    sendTelegramMessage(g_tgRaportPorcja[i]);
+    g_tgRaportPorcja[i] = "";   // zwalniamy RAM od razu
+    if (i + 1 < g_tgRaportPorcji) delay(300);   // nie zalewamy API Telegrama
+  }
+  g_tgRaportPorcji = 0;
 }
 
 // Wpiete do schedulera (dodajZadanie), co HISTORIA_PROBKA_MS.
@@ -43750,7 +43736,7 @@ void tgTaskFn(void* /*pvParams*/) {
             break;
 
           case TG_SOLAR_ARCHIVE:
-            sendTelegramMessage(buildSolarArchiveTelegramReport((uint8_t)(tgQueued.arg & 0xFF)));
+            tgWyslijRaportSolarny((uint8_t)(tgQueued.arg & 0xFF));
             break;
 
           case TG_SOLAR_DELETE_DAY: {

@@ -685,19 +685,19 @@ static void testCaptureStatusInReport() {
   DayReport row;
   std::memset(&row, 0, sizeof(row));
   std::strcpy(row.date, "2026-10-19");
-  row.captureStatus = "http_-1";
+  std::strcpy(row.captureStatus, "http_-1");
 
   char line[256];
   CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
   CHECK(std::strstr(line, "GHI brak (http_-1)") != nullptr);
 
   // Brak statusu = zwięzłe "GHI brak".
-  row.captureStatus = nullptr;
+  row.captureStatus[0] = 0;
   CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
   CHECK(std::strstr(line, "GHI brak") != nullptr);
   CHECK(std::strstr(line, "(http_-1)") == nullptr);
 
-  row.captureStatus = "";
+  row.captureStatus[0] = 0;
   CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
   CHECK(std::strstr(line, "GHI brak") != nullptr);
 }

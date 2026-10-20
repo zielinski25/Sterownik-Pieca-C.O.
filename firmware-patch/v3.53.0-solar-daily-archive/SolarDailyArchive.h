@@ -16,6 +16,11 @@
 #ifndef SOLAR_DAILY_ARCHIVE_H
 #define SOLAR_DAILY_ARCHIVE_H
 
+// [v3.53.0] API 20261101: buildReport() sklada CALA wiadomosc Telegrama
+// (naglowek, linie dni, stopka) w tym pliku, wiec test hostowy sprawdza
+// dokladnie to, co wychodzi z urzadzenia — a nie tylko pojedyncza linie.
+// Doszly: ReportOptions, ReportSinkFn, buildReport(), splitForTelegram().
+//
 // [v3.52.11] API 20261031: formatDayReportLine() nie liczy dT ani amplitudy
 // z kilku probek — ponizej kMinSamplesForDelta pisze "(za malo probek: N)".
 //
@@ -35,13 +40,14 @@
 // main_centrala.cpp wymaga dokladnie tej wersji i NIE SKOMPILUJE SIE ze starym
 // plikiem — dzieki temu nie da sie wgrac firmware'u, ktory podaje nowy numer
 // wersji, ale liczy URL po staremu (kontrola "Z" w start_hour/end_hour).
-#define SOLAR_DAILY_ARCHIVE_API 20261031
+#define SOLAR_DAILY_ARCHIVE_API 20261101
 
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <stdarg.h>
 
 namespace solar_daily {
 
@@ -602,7 +608,10 @@ struct DayReport {
   bool hasForecast;
   bool forecastComplete;
   float ghiKwhM2;
-  const char *captureStatus;   // powod braku prognozy (moze byc nullptr)
+  // [v3.53.0] Stala tablica zamiast wskaznika: rekordy sa kopiowane do
+  // tablicy przed skladaniem raportu, wiec wskaznik na JsonDocument by
+  // wisial. Pusty napis = "brak przyczyny".
+  char captureStatus[16];
   bool hasActual;
   bool finalized;
   float deltaC;
@@ -658,7 +667,7 @@ inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize)
   if (d.hasForecast) {
     snprintf(ghi, sizeof(ghi), "GHI %.2f kWh/m2%s", d.ghiKwhM2,
              d.forecastComplete ? "" : " (niepelna)");
-  } else if (d.captureStatus && d.captureStatus[0]) {
+  } else if (d.captureStatus[0]) {
     snprintf(ghi, sizeof(ghi), "GHI brak (%s)", d.captureStatus);
   } else {
     snprintf(ghi, sizeof(ghi), "GHI brak");
@@ -678,10 +687,17 @@ inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize)
     // "dT +0.0°C amplituda 0.0°C" po 5 odczytach wygladalo jak wynik dnia
     // ("zbiornik nic nie zrobil"), a bylo tylko tyle, ile zdazylo sie zebrac.
     if (d.validSamples < kMinSamplesForDelta) {
-      n = snprintf(act, sizeof(act),
-                   "dT —  amplituda —  (za malo probek: %u)  pokrycie %.1f%%  %u/%u prob.",
-                   (unsigned)d.validSamples, pctF,
-                   (unsigned)d.validSamples, (unsigned)d.expectedSamples);
+      // [v3.53.0] Bez mianownika nie piszemy "5/0 prob."
+      if (d.expectedSamples > 0) {
+        n = snprintf(act, sizeof(act),
+                     "dT —  amplituda —  (za malo probek: %u)  pokrycie %.1f%%  %u/%u prob.",
+                     (unsigned)d.validSamples, pctF,
+                     (unsigned)d.validSamples, (unsigned)d.expectedSamples);
+      } else {
+        n = snprintf(act, sizeof(act),
+                     "dT —  amplituda —  (za malo probek: %u)  %u prob.",
+                     (unsigned)d.validSamples, (unsigned)d.validSamples);
+      }
     } else {
       float amplF = d.maxC - d.minC;
       if (amplF < 0.0f) amplF = 0.0f;
@@ -771,6 +787,230 @@ inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize)
     return 0;
   }
   return (size_t)n;
+}
+
+// ── skladanie calej wiadomosci Telegrama (czysta logika, bez I/O) ──────────
+//
+// [v3.53.0] Powod: do v3.52.11 raport skladal sie w main_centrala.cpp, wiec
+// test hostowy sprawdzal tylko pojedyncza linie dnia. Piec kolejnych wersji
+// naprawialo rzeczy widoczne DOPIERO w gotowej wiadomosci (mylace "brak
+// odczytow", "TECH" przed polnoca, "dT +0.0" po 5 probkach). Teraz sklada
+// to ten plik, a test hostowy drukuje dokladnie to, co dostaje uzytkownik.
+
+typedef void (*ReportSinkFn)(void *ctx, const char *text, size_t len);
+
+struct ReportOptions {
+  bool offSeason;        // tryb "spuszczona" — linia w naglowku
+  char today[11];        // dzisiejsza data lokalna; "" = nieznana
+  int nowMinutes;        // minuty od polnocy lokalnej (0..1439)
+  char ghiStatus[20];    // "ok"/"brak_proby" = nie pokazuj; "" = nie pokazuj
+  char ghiBody[96];
+  char ghiUrl[192];
+  uint16_t legacyCount;  // rekordy sprzed poprawki kanalu
+
+  ReportOptions()
+      : offSeason(false), nowMinutes(0), legacyCount(0) {
+    // [v3.53.0] Zerujemy CALOSC, nie tylko [0]: firmware wypelnia te pola
+    // strncpy(), ktore przy zbyt dlugim zrodle NIE dopisuje terminatora.
+    // Bez tego printf("%s") czytal by poza buforem.
+    memset(today, 0, sizeof(today));
+    memset(ghiStatus, 0, sizeof(ghiStatus));
+    memset(ghiBody, 0, sizeof(ghiBody));
+    memset(ghiUrl, 0, sizeof(ghiUrl));
+  }
+};
+
+inline void reportAppend(ReportSinkFn sink, void *ctx, const char *text) {
+  if (sink && text && text[0]) sink(ctx, text, strlen(text));
+}
+
+#if defined(__GNUC__)
+__attribute__((format(printf, 3, 4)))
+#endif
+inline void reportAppendf(ReportSinkFn sink, void *ctx, const char *fmt, ...) {
+  char buf[384];
+  va_list ap;
+  va_start(ap, fmt);
+  const int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (n <= 0) return;
+  const size_t len = ((size_t)n < sizeof(buf)) ? (size_t)n : sizeof(buf) - 1;
+  if (sink) sink(ctx, buf, len);
+}
+
+// Uzupelnia pola pochodne (dzis / jeszcze sie nie zaczela / pokrycie od
+// uplywu czasu) i sklada gotowa wiadomosc. `days` MUSI byc posortowane od
+// najnowszego. Zwraca liczbe dni pokazanych w raporcie.
+inline uint16_t buildReport(const DayReport *days, uint16_t count,
+                            const ReportOptions &opt,
+                            ReportSinkFn sink, void *ctx) {
+  if (!sink) return 0;
+
+  if (count == 0) {
+    reportAppend(sink, ctx, "Archiwum solarne: brak zapisanych dni.\n");
+    return 0;
+  }
+
+  reportAppendf(sink, ctx, "\u2600\ufe0f <b>Archiwum solarne</b> (%u ", (unsigned)count);
+  reportAppend(sink, ctx, (count == 1) ? "dzien" : "dni");
+  reportAppend(sink, ctx, ", z centrali)\n");
+  if (opt.offSeason) {
+    reportAppend(sink, ctx, "Tryb: <b>spuszczona</b> (ZIMA \u2014 zbiornik pusty)\n");
+  }
+
+  float ghiSum = 0.0f;
+  float ghiSumNotStarted = 0.0f;
+  uint16_t forecastDays = 0;
+  uint16_t actualDays = 0;
+  uint16_t startedDays = 0;
+  uint16_t notStartedDays = 0;
+
+  for (uint16_t i = 0; i < count; i++) {
+    DayReport d = days[i];
+
+    // Dzis / jutro. Rekord z data pozniejsza niz dzis to prognoza zapisana
+    // wieczorem na jutro (okno 23:30-23:59) — zero odczytow jest tam stanem
+    // oczekiwanym, a nie brakujacymi danymi.
+    d.isToday = (opt.today[0] && strcmp(d.date, opt.today) == 0);
+    d.notStarted = (!d.hasActual && opt.today[0] && strcmp(d.date, opt.today) > 0);
+
+    // Pokrycie wzgledem czasu, ktory uplynal — tylko dla doby w toku,
+    // po godzinie od polnocy i przy co najmniej 60 probkach. Przy szesciu
+    // uplynietych minutach jedna minuta restartu to 17 punktow procentowych.
+    d.inProgress = false;
+    d.elapsedCoverageRatio = d.coverageRatio;
+    if (d.isToday && d.hasActual && !d.finalized && d.expectedSamples > 0 &&
+        opt.nowMinutes >= 60 && d.validSamples >= (kMinSamplesForDelta * 2u)) {
+      const float pokryteMin = d.coverageRatio * (float)d.expectedSamples;
+      float r = pokryteMin / (float)opt.nowMinutes;
+      if (r < 0.0f) r = 0.0f;
+      // [v3.53.0] Male przekroczenie (do 2%) to normalna granica doby:
+      // 1440 probek przy 1439 uplynietych minutach. Wieksze znaczy, ze
+      // dane sa niespojne (np. zegar cofnal sie po synchronizacji) —
+      // wtedy NIE chwalimy sie "100% czasu", bo to nieprawda.
+      if (r <= 1.02f) {
+        if (r > 1.0f) r = 1.0f;
+        d.elapsedCoverageRatio = r;
+        d.inProgress = true;
+      }
+    }
+
+    if (d.notStarted) {
+      notStartedDays++;
+      if (d.hasForecast) ghiSumNotStarted += d.ghiKwhM2;
+    } else {
+      startedDays++;
+      if (d.hasForecast) { ghiSum += d.ghiKwhM2; forecastDays++; }
+    }
+    if (d.hasActual) actualDays++;
+
+    char line[256];
+    if (formatDayReportLine(d, line, sizeof(line)) > 0) {
+      reportAppend(sink, ctx, line);
+      reportAppend(sink, ctx, "\n");
+    } else {
+      reportAppendf(sink, ctx, "%s  (nieczytelny rekord)\n", d.date);
+    }
+  }
+
+  // [v3.53.0] Gdy zadna doba sie jeszcze nie zaczela (swiezy start po
+  // 23:30), NIE piszemy "(0/1 dni z prognoza)" — czytalo sie jak "brak
+  // prognozy", choc prognoza byla linijke wyzej. Zostaje sama suma.
+  if (startedDays > 0) {
+    reportAppendf(sink, ctx,
+                  "Suma GHI: %.2f kWh/m2 (%u/%u dni z prognoza) | odczyty: %u/%u\n",
+                  ghiSum, (unsigned)forecastDays, (unsigned)startedDays,
+                  (unsigned)actualDays, (unsigned)startedDays);
+  } else {
+    reportAppendf(sink, ctx, "Suma GHI: %.2f kWh/m2 | odczyty: 0\n", ghiSum);
+  }
+  if (notStartedDays > 0) {
+    reportAppendf(sink, ctx,
+                  "Jutro (prognoza): GHI %.2f kWh/m2 \u2014 doba sie jeszcze nie zaczela.\n",
+                  ghiSumNotStarted);
+  }
+
+  // Dowod ostatniej proby GHI — tylko gdy proba sie nie udala.
+  if (opt.ghiStatus[0] && strcmp(opt.ghiStatus, "ok") != 0 &&
+      strcmp(opt.ghiStatus, "brak_proby") != 0) {
+    reportAppendf(sink, ctx, "Ostatnia proba GHI: %s", opt.ghiStatus);
+    if (opt.ghiBody[0]) reportAppendf(sink, ctx, " - %s", opt.ghiBody);
+    reportAppend(sink, ctx, "\n");
+    if (opt.ghiUrl[0]) reportAppendf(sink, ctx, "URL: %s\n", opt.ghiUrl);
+  }
+
+  if (opt.legacyCount > 0) {
+    reportAppendf(sink, ctx,
+                  "Uwaga: %u rekord(ow) zapisano przed poprawka kanalu \u2014 dotycza "
+                  "bojlera pieca C.O., nie ukladu slonecznego. Usun je: /archiwum_czysc TAK\n",
+                  (unsigned)opt.legacyCount);
+  }
+  return count;
+}
+
+// [v3.53.0] Limity Telegrama i podzialu w jednym miejscu — firmware i symulator
+// musza uzywac TYCH SAMYCH liczb, inaczej test przechodzi, a urzadzenie wysyla
+// inny podzial niz sprawdzony.
+static const size_t kTelegramMaxLen = 4096;   // twardszy limit API Telegrama
+static const size_t kTelegramSplitLen = 3800; // zapas na prefiks i niespodzianki
+static const char  *kContinuationPrefix = "(ciag dalszy)\n";
+
+// Jedna porcja = jedno wywolanie partFn. Prefiks kontynuacji jest CZESCIA tej
+// samej wiadomosci (nie osobnym wywolaniem) — inaczej Telegram dostawal pusta
+// wiadomosc zlozona z samego prefiksu. Nadawca sklada prefix + text w jeden
+// bufor i wysyla raz.
+typedef void (*ReportPartFn)(void *ctx, const char *prefix, size_t prefixLen,
+                             const char *text, size_t len);
+
+namespace detail {
+struct SinkAsPart {
+  ReportSinkFn sink;
+  void *ctx;
+};
+inline void sinkAsPart(void *ctx, const char *prefix, size_t prefixLen,
+                       const char *text, size_t len) {
+  (void)prefix;
+  (void)prefixLen;
+  SinkAsPart *a = static_cast<SinkAsPart *>(ctx);
+  a->sink(a->ctx, text, len);
+}
+}  // namespace detail
+
+// Dzieli gotowa wiadomosc na porcje <= maxLen, cieciem na koncach linii.
+// Kazde wywolanie partFn() = DOKLADNIE jedna wiadomosc Telegrama, w tej samej
+// kolejnosci. Telegram odrzuca tekst dluzszy niz 4096 znakow — przy 30 dniach
+// raport ma ok. 4,6 tys. znakow i bez podzialu nie doszedl by w ogole.
+inline void splitForTelegramParts(const char *text, size_t maxLen,
+                                  ReportPartFn partFn, void *ctx) {
+  if (!text || !partFn || maxLen < 64) return;
+  const size_t len = strlen(text);
+  size_t pos = 0;
+  size_t part = 0;
+  while (pos < len) {
+    const char *prefix = (part == 0) ? "" : kContinuationPrefix;
+    const size_t prefixLen = (part == 0) ? 0 : strlen(kContinuationPrefix);
+    size_t end = pos + maxLen;
+    if (end >= len) {
+      partFn(ctx, prefix, prefixLen, text + pos, len - pos);
+      return;
+    }
+    // Cofamy sie do ostatniego konca linii w oknie.
+    size_t cut = end;
+    while (cut > pos && text[cut] != '\n') cut--;
+    if (cut <= pos) cut = end;   // pojedyncza linia dluzsza niz limit
+    else cut++;                  // zostaw znak nowej linii w tej porcji
+    partFn(ctx, prefix, prefixLen, text + pos, cut - pos);
+    pos = cut;
+    part++;
+  }
+}
+
+// Wersja bez prefiksu kontynuacji — zostawiona, bo korzystaja z niej starsze
+// wywolania i testy pojedynczych porcji.
+inline void splitForTelegram(const char *text, size_t maxLen,
+                             ReportSinkFn sink, void *ctx) {
+  detail::SinkAsPart a = {sink, ctx};
+  splitForTelegramParts(text, maxLen, detail::sinkAsPart, &a);
 }
 
 // Buduje URL jednego, malego zapytania GHI na wskazana dobe.

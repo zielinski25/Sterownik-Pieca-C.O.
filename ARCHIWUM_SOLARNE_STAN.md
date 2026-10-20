@@ -2,7 +2,7 @@
 
 Dokument odtworzony 2026-10-20 po resecie środowiska (poprzednia kopia nie była w repozytorium).
 Ma być **żywy**: każda zmiana zachowania archiwum dopisuje sekcję „Historia wersji”, a ustalenia
-sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.52.11**.
+sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.53.0**.
 
 ---
 
@@ -169,12 +169,46 @@ starcie.
 | v3.52.8 | jednostka w raporcie: °C zamiast K (zmiana kosmetyczna) |
 | v3.52.9 | godzina minimum i maksimum (`@ HH:MM`) — amplituda przestaje być zagadką |
 | v3.52.10 | „prognoza na jutro” zamiast mylącego „brak odczytów”; `TECH` tylko dla doby zamkniętej |
-| **v3.52.11** | początek doby nie udaje pomiaru: `(za malo probek)`, pokrycie czasu dopiero po godzinie |
+| v3.52.11 | początek doby nie udaje pomiaru: `(za malo probek)`, pokrycie czasu dopiero po godzinie |
+| **v3.53.0** | całe składanie raportu w `SolarDailyArchive.h` + symulator 3559 sprawdzeń; podział wiadomości (limit Telegrama) |
+
+## 11a. Jak sprawdzić raport BEZ wgrywania firmware
+
+Od v3.53.0 cała treść wiadomości (nagłówek, linie dni, stopka, podział na porcje)
+jest w `SolarDailyArchive.h`, a nie w `main_centrala.cpp`. Firmware tylko czyta
+pliki i wypełnia tablicę rekordów.
+
+```sh
+cd firmware-patch/v3.53.0-solar-daily-archive/tests
+g++ -std=c++11 -Wall -Wextra -Werror -I.. ReportSimulation.cpp -o /tmp/reportsim
+/tmp/reportsim              # 3559 sprawdzeń, 0 błędów
+/tmp/reportsim --verbose    # pełna treść każdej wiadomości
+```
+
+**Zasada:** żadna zmiana w raporcie nie idzie na urządzenie, dopóki symulator
+nie przejdzie. `--verbose` pokazuje też granice wiadomości i ich rozmiar w bajtach —
+raport 30-dniowy to 4585 B, czyli **dwie wiadomości** (3777 B i 822 B), nie jedna. Wersje v3.52.7–v3.52.11 łamały tę zasadę i kosztowały pięć
+aktualizacji OTA — każda naprawiała coś, co widać było tylko w gotowym tekście.
+
+## 11b. Paczka v3.53.0
+
+| | |
+|---|---|
+| plik | `v3.53.0-solar-daily-archive.zip` |
+| rozmiar | 850 017 B |
+| sha256 | `f34336ee54273736b182946acbdaaabe2cda57e357f928fb6c1595a8ee294979` |
+| Google Drive | `1bIsQrduMa-ZMZpncFyA0zrvRSgcolbA9` |
+| katalog w repo | `firmware-patch/v3.53.0-solar-daily-archive/` |
+
+Paczka jest **jedna** i zastępuje v3.52.7–v3.52.11 (każda z nich była osobnym,
+niepełnym krokiem). Zawiera `Piec.html` bez zmian oraz dwa patche v3.49.x.
 
 ## 12. Co dalej (plan etapowy)
 
-1. **Najbliższe dni** — po wgraniu v3.52.7 sprawdzić w `/archiwum`, czy linia ma `amplituda`
-   i czy w dobie w toku pojawia się `(x% czasu)`.
+1. **Po wgraniu v3.53.0 (jedno wgranie)** — wysłać `/archiwum` i sprawdzić:
+   linia dnia ma `@ HH:MM` przy min/max, dzień w toku nie udaje pomiaru
+   (`za malo probek` zamiast `dT +0.0°C`), a 30 dni przychodzi w dwóch wiadomościach
+   (`(ciag dalszy)`), nie jako błąd Telegrama.
 2. **Przed zimą** — wpisać `/solar_tryb spuszczona` **w dniu spuszczania wody**, nie później;
    inaczej rekordy z pustego zbiornika wejdą do statystyk jako „pochmurne dni”.
 3. **Wiosną** — `/solar_tryb sezon`; prognoza GHI wróci przy najbliższym oknie.

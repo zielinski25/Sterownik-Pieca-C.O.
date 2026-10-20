@@ -1,7 +1,82 @@
-# v3.52.11 — autonomiczne dzienne archiwum solarne w centrali
+# v3.53.0 — autonomiczne dzienne archiwum solarne w centrali
 
 Paczka robocza oparta na źródłach v3.50.0. Katalogi wcześniejszych wersji pozostają bez zmian.
 **Nie zmieniano Androida, reguł Firebase ani plików historii. Firmware nie był kompilowany w tym środowisku.**
+
+## Co wnosi v3.53.0 — raport testowany PRZED wgraniem
+
+Pięć poprzednich wersji (3.52.7–3.52.11) to były poprawki rzeczy, które widać
+**dopiero w gotowej wiadomości** — a testy sprawdzały tylko **pojedynczą linię dnia**.
+Efekt: pięć aktualizacji pod rząd, każda wymagająca wgrania.
+
+To się zmienia. Składanie wiadomości przeniesione do `SolarDailyArchive.h`:
+
+| element | gdzie |
+|---|---|
+| czytanie plików z LittleFS | `main_centrala.cpp` (zostaje) |
+| wypełnienie `DayReport` | `main_centrala.cpp` (zostaje) |
+| **nagłówek, linie dni, stopka** | **`SolarDailyArchive.h` → `buildReport()`** |
+| **podział na wiadomości** | **`SolarDailyArchive.h` → `splitForTelegramParts()`** |
+
+Dzięki temu `tests/ReportSimulation.cpp` uruchamia **ten sam kod**, który jest
+w firmware, i drukuje dokładnie to, co dostajesz w Telegramie.
+
+```sh
+cd tests
+g++ -std=c++11 -Wall -Wextra -Werror -I.. ReportSimulation.cpp -o /tmp/reportsim
+/tmp/reportsim            # scenariusze + wyniki
+/tmp/reportsim --verbose  # pełna treść każdej wiadomości
+```
+
+### Co symulator znalazł w tej wersji
+
+Sześć realnych błędów, których testy jednostkowe nie widziały:
+
+| # | problem | skutek dla użytkownika |
+|---|---|---|
+| 1 | `/archiwum 30` dawało **4585 znaków**, a Telegram odrzuca powyżej 4096 | raport **nie docierał w ogóle** |
+| 2 | znacznik `(ciag dalszy)` leciał **osobnym wywołaniem** wysyłki | druga wiadomość miała **14 bajtów** i sam nagłówek kontynuacji |
+| 3 | świeży start (tylko prognoza na jutro) pokazywał `(0/1 dni z prognoza)` | czyta się jak „brak prognozy”, choć była linię wyżej |
+| 4 | pokrycie od upływu czasu przy niespójnych danych dawało `100.0% czasu` przy `pokrycie 62.5%` | fałszywe „wszystko pokryte” |
+| 5 | `strncpy` bez terminatora przy zbyt długim źródle | czytanie poza buforem (mogło wywrócić raport) |
+| 6 | symulator dzielił na **3900** znaków, a firmware na **3800** | test przechodził, ale sprawdzał **inny podział** niż wysyłany |
+
+Naprawione: podział na porcje ≤ 3800 znaków (`kTelegramSplitLen` — **jedna stała**
+dla firmware i symulatora), prefiks kontynuacji **w tej samej wiadomości** co treść,
+stopka bez mylącego mianownika, pokrycie czasu tylko przy spójnych danych,
+jawne zerowanie terminatorów, zabezpieczenie przed ucięciem raportu
+(ostatnia porcja mówi `(raport uciety — za duzo dni naraz)`).
+
+### Zakres symulacji — 3559 sprawdzeń
+
+| grupa | scenariusze |
+|---|---|
+| początek doby | 00:05 (5 próbek), 00:31 (próg 30), 01:59 |
+| doba w toku | południe, wieczór, pełne 1440/1440 |
+| doba zamknięta | pełna (TECH), z dziurą (bez TECH), z symulacjami, z rekordem CO |
+| tryby | `spuszczona` (poza sezonem), brak czasu lokalnego (brak SNTP) |
+| skrajne | doba 25 h, doba 23 h, 30 dni, 1 dzień, pusty katalog, awaria GHI |
+| **przemiatanie** | **co 10 minut przez całą dobę (145 wariantów)** |
+| **przemiatanie** | **każda liczba dni 1–30** |
+
+Każdy wyrenderowany raport jest sprawdzany automatycznie na: długość linii,
+brak `nan`/`inf`/`0/0`, potrójne spacje, zbalansowane `<b>…</b>`, zakończenie
+nową linią, oraz — dla **każdej** z 175 wyrenderowanych wiadomości — podział bez
+utraty treści, porcje ≤ 4096 znaków, brak pustych porcji, prefiks kontynuacji
+tylko na porcjach 2..N, brak rozerwanego `<b>`.
+
+`--verbose` pokazuje **granice wiadomości** i ich rozmiar w bajtach, czyli
+dokładnie to, co przyjdzie do Telegrama:
+
+```
+---- wiadomosc 1/2 (3777 B) ----
+☀️ <b>Archiwum solarne</b> (30 dni, z centrali)
+...
+---- wiadomosc 2/2 (822 B) [ciag dalszy] ----
+(ciag dalszy)
+...
+---- razem 4585 B tresci, 4599 B po podziale ----
+```
 
 ## Co wnosi v3.52.11 — początek doby nie udaje pomiaru
 
