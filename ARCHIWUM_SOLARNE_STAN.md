@@ -157,3 +157,31 @@ starcie.
 3. **Wiosną** — `/solar_tryb sezon`; prognoza GHI wróci przy najbliższym oknie.
 4. **Opcjonalnie** — po odzyskaniu źródeł odtworzyć `PLAN_ARCHIWUM_SOLARNE_CENTRALA.md`
    (plan wdrożenia i uzasadnienia decyzji) — obecnie nie istnieje.
+
+## 13. Dziennik wyników z urządzenia
+
+Zapis rzeczywistych raportów, żeby dało się porównać dni i wychwycić anomalie.
+
+### 2026-10-20 (v3.52.8, raport o ~23:01)
+
+```
+2026-10-20  GHI 0.55 kWh/m2  dT -1.5°C  amplituda 3.2°C  (min 21.8 / max 25.0)
+            pokrycie 94.6% (98.6% czasu)  1362/1440 prob.  00:00-22:58 (w toku)
+```
+
+- **`dT -1.5°C` to dokładnie ta pomyłka, dla której dodano amplitudę.** Zbiornik zaczął dobę
+  ciepły (25,0 °C po słonecznym 19.10), wystygł nocą do 21,8 °C, w dzień wrócił do 25,0 °C
+  i wieczorem zszedł do ~23,5 °C. `dT` widzi tylko „start 25,0 → teraz 23,5” = **−1,5 °C**,
+  czyli „woda się wychłodziła”. Amplituda **3,2 °C** pokazuje realny zakres doby.
+- **Amplituda też nie jest czystym uzyskiem.** Miesza wychładzanie nocne (25,0 → 21,8)
+  z grzaniem dziennym (21,8 → 25,0). W tym dniu oba ruchy mają prawie tę samą wartość,
+  więc 3,2 °C przypadkiem odpowiada grzaniu — ale to zbieg okoliczności, nie reguła.
+  Bez godzin min/max nie da się tego rozdzielić.
+- **Pokrycie:** 1362/1440 = 94,6% doby, ale 1362 z ~1381 upłyniętych minut = **98,6%**.
+  Brakuje ~19 minut — tyle, ile trwa kilka restartów przy wgrywaniu firmware'u.
+- **Kalibracja instalacji:** 3,2 °C × 0,1163 kWh/K = **0,372 kWh** ciepła w wodzie przy
+  GHI 0,547 kWh/m². Przy sprawności 45–50% odpowiada to aperaturze **~1,4 m²**,
+  a nie ~1 m², jak zakładałem w szacunkach z 19–20.10. 10 rur próżniowych ma większą
+  powierzchnię czynną, niż przyjąłem — **poprawka na przyszłość**.
+- Konsekwencja: prognoza „~9 K z 2,449 kWh/m²” na 21.10 była policzona dla zbyt małej
+  apertury. Realistyczniej **11–13 °C**, nadal jako szacunek, nie pomiar.
