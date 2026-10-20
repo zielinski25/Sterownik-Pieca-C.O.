@@ -2,7 +2,7 @@
 
 Dokument odtworzony 2026-10-20 po resecie środowiska (poprzednia kopia nie była w repozytorium).
 Ma być **żywy**: każda zmiana zachowania archiwum dopisuje sekcję „Historia wersji”, a ustalenia
-sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.52.10**.
+sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.52.11**.
 
 ---
 
@@ -110,6 +110,10 @@ prognoza GHI **nie jest pobierana**, rekord ma `offSeason = true`, a w raporcie 
 - **`brak odczytow`** — doba miniona bez danych. Tylko tu to komunikat o realnej luce.
 - **`TECH`** — doba zamknięta, kompletna, bez symulacji i bez podejrzanych poborów; kandydat
   do ręcznej oceny modelu. **Nie pojawia się przed domknięciem doby.**
+- **`(za malo probek: N)`** — mniej niż 30 próbek (< pół godziny). Wtedy `dT` i amplituda są
+  bezużyteczne, więc ich nie podajemy; liczba próbek mówi, ile jest.
+- **Pokrycie od upływu czasu** pojawia się dopiero po godzinie doby. Wcześniej jedna minuta
+  restartu to kilkanaście punktów procentowych — liczba prawdziwa, ale myląca.
 - **`@ HH:MM`** przy min/max — kiedy padło ekstremum (czas lokalny). Dopiero z tym amplituda
   się tłumaczy: minimum nad ranem + maksimum po południu = grzanie słońcem; minimum wieczorem
   = nic nie grzało i amplituda jest tylko dobową huśtawką.
@@ -164,7 +168,8 @@ starcie.
 | v3.52.7 | amplituda, pokrycie od upływu czasu, `/solar_tryb`, tablica GHI bez przesunięcia |
 | v3.52.8 | jednostka w raporcie: °C zamiast K (zmiana kosmetyczna) |
 | v3.52.9 | godzina minimum i maksimum (`@ HH:MM`) — amplituda przestaje być zagadką |
-| **v3.52.10** | „prognoza na jutro” zamiast mylącego „brak odczytów”; `TECH` tylko dla doby zamkniętej |
+| v3.52.10 | „prognoza na jutro” zamiast mylącego „brak odczytów”; `TECH` tylko dla doby zamkniętej |
+| **v3.52.11** | początek doby nie udaje pomiaru: `(za malo probek)`, pokrycie czasu dopiero po godzinie |
 
 ## 12. Co dalej (plan etapowy)
 
@@ -179,6 +184,30 @@ starcie.
 ## 13. Dziennik wyników z urządzenia
 
 Zapis rzeczywistych raportów, żeby dało się porównać dni i wychwycić anomalie.
+
+### 2026-10-21, raport o ~00:05, wersja v3.52.10
+
+```
+Archiwum solarne (2 dni, z centrali)
+2026-10-21  GHI 2.47 kWh/m2  dT +0.0°C  amplituda 0.0°C  (min 21.2 @ 00:00 / max 21.2 @ 00:00)
+            pokrycie 0.3% (83.3% czasu)  5/1440 prob. 00:00-00:04 (w toku)
+2026-10-20  GHI 0.55 kWh/m2  dT -2.0°C  amplituda 3.8°C  (min 21.2 @ 23:51 / max 25.0)
+            pokrycie 98.0%  1411/1440 prob. 00:00-23:59 TECH
+Suma GHI: 3.02 kWh/m2 (2/2 dni z prognoza) | odczyty: 2/2
+```
+
+**Co jest poprawne:**
+- 21.10 wskoczył do sumy i do „odczyty 2/2”, bo **dobę zaczęto zbierać** (5 próbek).
+  Suma 3.02 = prognoza 20.10 (0.55) + prognoza 21.10 (2.47).
+- 20.10 domknął się z **TECH** — pełne pokrycie 98.0%, 1411/1440, bez symulacji.
+- **`@` wreszcie działa**: `min 21.2 @ 23:51` — nowe minimum padło już po wgraniu v3.52.10,
+  więc dostało godzinę. `max 25.0` zostało odtworzone ze starego rekordu, więc godziny
+  nie ma i mieć nie będzie. To potwierdza mechanizm z sekcji o `@`.
+- 21.10 pokazuje `@ 00:00` przy obu ekstremach, bo pierwsza próbka doby **jest** i minimum,
+  i maksimum (wszystkie 5 odczytów to 21,2 °C).
+
+**Co było mylące (poprawione w v3.52.11):** `dT +0.0°C / amplituda 0.0°C` po pięciu próbkach
+oraz `(83.3% czasu)` policzone z sześciu minut.
 
 ### 2026-10-20/21, raport o ~23:45, wersja v3.52.10
 

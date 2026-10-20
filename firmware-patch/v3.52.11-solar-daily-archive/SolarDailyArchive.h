@@ -16,6 +16,9 @@
 #ifndef SOLAR_DAILY_ARCHIVE_H
 #define SOLAR_DAILY_ARCHIVE_H
 
+// [v3.52.11] API 20261031: formatDayReportLine() nie liczy dT ani amplitudy
+// z kilku probek — ponizej kMinSamplesForDelta pisze "(za malo probek: N)".
+//
 // [v3.52.10] API 20261030: DayReport ma pola notStarted / isToday — raport
 // odroznia "doba jeszcze sie nie zaczela" od "brak odczytow".
 //
@@ -32,7 +35,7 @@
 // main_centrala.cpp wymaga dokladnie tej wersji i NIE SKOMPILUJE SIE ze starym
 // plikiem — dzieki temu nie da sie wgrac firmware'u, ktory podaje nowy numer
 // wersji, ale liczy URL po staremu (kontrola "Z" w start_hour/end_hour).
-#define SOLAR_DAILY_ARCHIVE_API 20261030
+#define SOLAR_DAILY_ARCHIVE_API 20261031
 
 #include <stdint.h>
 #include <stddef.h>
@@ -218,6 +221,13 @@ inline bool warsawDayBounds(const char *dateKey, int32_t &startUtc, int32_t &end
 inline bool ghiHourBelongsToDay(int32_t utc, int32_t dayStartUtc, int32_t dayEndUtc) {
   return utc > dayStartUtc && utc <= dayEndUtc;
 }
+
+// [v3.52.11] Ile probek trzeba, zeby dT i amplituda cokolwiek znaczyly.
+// Pol godziny (30 probek po 60 s). Przy 5 probkach z pierwszej minuty doby
+// linia pokazywala "dT +0.0°C  amplituda 0.0°C" — technicznie prawda,
+// w praktyce "zbiornik nic nie zrobil", czyli dokladnie to, czego raport
+// ma nie robic.
+static const uint32_t kMinSamplesForDelta = 30;
 
 struct LocalFields {
   int year;
@@ -661,41 +671,53 @@ inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize)
     float pctF = d.coverageRatio * 100.0f;
     if (pctF > 100.0f) pctF = 100.0f;
     if (pctF < 0.0f) pctF = 0.0f;
-    float amplF = d.maxC - d.minC;
-    if (amplF < 0.0f) amplF = 0.0f;
-    // [v3.52.9] Temperatury z godzina, gdy rekord ja zna. Godzina lokalna
-    // jest tym, co czlowiek porownuje z pogoda za oknem.
-    char minTxt[32];
-    char maxTxt[32];
-    LocalFields fm, fx;
-    if (d.minUtc > 0 && localFieldsFromUtc(d.minUtc, fm)) {
-      snprintf(minTxt, sizeof(minTxt), "%.1f @ %02d:%02d", d.minC, fm.hour, fm.minute);
-    } else {
-      snprintf(minTxt, sizeof(minTxt), "%.1f", d.minC);
-    }
-    if (d.maxUtc > 0 && localFieldsFromUtc(d.maxUtc, fx)) {
-      snprintf(maxTxt, sizeof(maxTxt), "%.1f @ %02d:%02d", d.maxC, fx.hour, fx.minute);
-    } else {
-      snprintf(maxTxt, sizeof(maxTxt), "%.1f", d.maxC);
-    }
-    int n;
-    if (d.inProgress) {
-      float ePctF = d.elapsedCoverageRatio * 100.0f;
-      if (ePctF > 100.0f) ePctF = 100.0f;
-      if (ePctF < 0.0f) ePctF = 0.0f;
+    int n = 0;
+    size_t used = 0;
+
+    // [v3.52.11] Kilka probek z pierwszej minuty doby to nie pomiar.
+    // "dT +0.0°C amplituda 0.0°C" po 5 odczytach wygladalo jak wynik dnia
+    // ("zbiornik nic nie zrobil"), a bylo tylko tyle, ile zdazylo sie zebrac.
+    if (d.validSamples < kMinSamplesForDelta) {
       n = snprintf(act, sizeof(act),
-                   "dT %+.1f°C  amplituda %.1f°C  (min %s / max %s)  "
-                   "pokrycie %.1f%% (%.1f%% czasu)  %u/%u prob.",
-                   d.deltaC, amplF, minTxt, maxTxt, pctF, ePctF,
+                   "dT —  amplituda —  (za malo probek: %u)  pokrycie %.1f%%  %u/%u prob.",
+                   (unsigned)d.validSamples, pctF,
                    (unsigned)d.validSamples, (unsigned)d.expectedSamples);
     } else {
-      n = snprintf(act, sizeof(act),
-                   "dT %+.1f°C  amplituda %.1f°C  (min %s / max %s)  "
-                   "pokrycie %.1f%%  %u/%u prob.",
-                   d.deltaC, amplF, minTxt, maxTxt, pctF,
-                   (unsigned)d.validSamples, (unsigned)d.expectedSamples);
+      float amplF = d.maxC - d.minC;
+      if (amplF < 0.0f) amplF = 0.0f;
+      // [v3.52.9] Temperatury z godzina, gdy rekord ja zna. Godzina lokalna
+      // jest tym, co czlowiek porownuje z pogoda za oknem.
+      char minTxt[32];
+      char maxTxt[32];
+      LocalFields fm, fx;
+      if (d.minUtc > 0 && localFieldsFromUtc(d.minUtc, fm)) {
+        snprintf(minTxt, sizeof(minTxt), "%.1f @ %02d:%02d", d.minC, fm.hour, fm.minute);
+      } else {
+        snprintf(minTxt, sizeof(minTxt), "%.1f", d.minC);
+      }
+      if (d.maxUtc > 0 && localFieldsFromUtc(d.maxUtc, fx)) {
+        snprintf(maxTxt, sizeof(maxTxt), "%.1f @ %02d:%02d", d.maxC, fx.hour, fx.minute);
+      } else {
+        snprintf(maxTxt, sizeof(maxTxt), "%.1f", d.maxC);
+      }
+      if (d.inProgress) {
+        float ePctF = d.elapsedCoverageRatio * 100.0f;
+        if (ePctF > 100.0f) ePctF = 100.0f;
+        if (ePctF < 0.0f) ePctF = 0.0f;
+        n = snprintf(act, sizeof(act),
+                     "dT %+.1f°C  amplituda %.1f°C  (min %s / max %s)  "
+                     "pokrycie %.1f%% (%.1f%% czasu)  %u/%u prob.",
+                     d.deltaC, amplF, minTxt, maxTxt, pctF, ePctF,
+                     (unsigned)d.validSamples, (unsigned)d.expectedSamples);
+      } else {
+        n = snprintf(act, sizeof(act),
+                     "dT %+.1f°C  amplituda %.1f°C  (min %s / max %s)  "
+                     "pokrycie %.1f%%  %u/%u prob.",
+                     d.deltaC, amplF, minTxt, maxTxt, pctF,
+                     (unsigned)d.validSamples, (unsigned)d.expectedSamples);
+      }
     }
-    size_t used = (n > 0 && (size_t)n < sizeof(act)) ? (size_t)n : 0;
+    used = (n > 0 && (size_t)n < sizeof(act)) ? (size_t)n : 0;
     if (used == 0) act[0] = 0;
     // Zakres godzin probek (czas lokalny) — natychmiast pokazuje, czy
     // znaczniki czasu sie nie zatrzymaly.

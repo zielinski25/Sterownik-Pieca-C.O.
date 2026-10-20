@@ -1,7 +1,37 @@
-# v3.52.10 — autonomiczne dzienne archiwum solarne w centrali
+# v3.52.11 — autonomiczne dzienne archiwum solarne w centrali
 
 Paczka robocza oparta na źródłach v3.50.0. Katalogi wcześniejszych wersji pozostają bez zmian.
 **Nie zmieniano Androida, reguł Firebase ani plików historii. Firmware nie był kompilowany w tym środowisku.**
+
+## Co wnosi v3.52.11 — początek doby nie udaje pomiaru
+
+Pięć minut po północy raport pokazał:
+
+```
+2026-10-21  GHI 2.47 kWh/m2  dT +0.0°C  amplituda 0.0°C
+            (min 21.2 @ 00:00 / max 21.2 @ 00:00)  pokrycie 0.3% (83.3% czasu)  5/1440 prob.
+```
+
+Wszystko prawda — ale `dT +0.0°C / amplituda 0.0°C` czyta się jak **„zbiornik nic nie
+zrobił przez cały dzień"**, a to tylko 5 próbek z pierwszej minuty. Podobnie `(83.3% czasu)`:
+sześć upłyniętych minut, z których restart przy wgrywaniu zjadł jedną → procent skacze
+o 17 punktów przy każdym braku.
+
+| było | jest |
+|---|---|
+| `dT +0.0°C  amplituda 0.0°C  (min 21.2 @ 00:00 / max 21.2 @ 00:00)` | `dT —  amplituda —  (za malo probek: 5)` |
+| `pokrycie 0.3% (83.3% czasu)` już po 6 minutach doby | pokrycie od upływu czasu **dopiero po godzinie** |
+
+Próg: **30 próbek** (`kMinSamplesForDelta`, pół godziny). Poniżej — brak podsumowania
+temperatury, jest tylko uczciwa informacja, ile próbek jest. Powyżej — pełna linia jak dotąd.
+
+Po zmianie ta sama doba wygląda tak:
+
+```
+2026-10-21  GHI 2.47 kWh/m2  dT —  amplituda —  (za malo probek: 5)  pokrycie 0.3%  5/1440 prob. (w toku)
+```
+
+Po pół godzinie zbierania linia sama wraca do normalnego formatu.
 
 ## Co wnosi v3.52.10 — „brak odczytów”, które nie jest brakiem danych
 
@@ -453,11 +483,12 @@ g++ -std=c++11 -Wall -Wextra -Werror SolarDailyArchiveTest.cpp -o /tmp/solar-dai
 /tmp/solar-daily-test
 ```
 
-Wynik w tej sesji: `SolarDailyArchiveTest: PASS (325 sprawdzeń)` — asercje na format linii
+Wynik w tej sesji: `SolarDailyArchiveTest: PASS (339 sprawdzeń)` — asercje na format linii
 (amplituda, pokrycie od upływu czasu, godziny min/max), znacznik `(poza sezonem)`,
 okno godzinowe GHI `(start, end]`, zachowanie `minUtc`/`maxUtc` po restarcie,
 a także rozróżnienie „prognoza na jutro” / „brak próbek (doba w toku)” /
-„brak odczytów” oraz to, że `TECH` nie pojawia się przed domknięciem doby.
+„brak odczytów” oraz to, że `TECH` nie pojawia się przed domknięciem doby, a linia z mniej niż
+30 próbkami nie podaje `dT` ani amplitudy.
 
 Testy panelu (z katalogu głównego repozytorium):
 

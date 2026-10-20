@@ -1,3 +1,17 @@
+// [v3.52.11 SOLAR-REPORT-EARLY-DAY] — 2026-10-21
+// Co: linia doby, ktora wlasnie sie zaczela, nie udaje pomiaru.
+// Problem: piec minut po polnocy raport pokazal
+//     "2026-10-21 ... dT +0.0°C  amplituda 0.0°C  (min 21.2 @ 00:00 /
+//      max 21.2 @ 00:00)  pokrycie 0.3% (83.3% czasu)  5/1440 prob."
+//     Wszystko prawda, ale "dT +0.0 / amplituda 0.0" czyta sie jak
+//     "zbiornik nic nie zrobil przez caly dzien", a to tylko 5 probek.
+//     "83.3% czasu" bralo sie z szesciu uplynietych minut — restart zjada
+//     jedna minute i procent leci o 17 punktow.
+// Naprawa: (1) ponizej kMinSamplesForDelta = 30 probek (pol godziny) linia
+//     pisze "dT —  amplituda —  (za malo probek: N)" zamiast zer;
+//     (2) pokrycie od uplywu czasu pokazujemy dopiero po godzinie doby.
+// FIRMWARE_VERSION v3.52.10 -> v3.52.11 (PATCH, tylko raport archiwum).
+//
 // [v3.52.10 SOLAR-REPORT-NOT-STARTED] — 2026-10-20
 // Co: raport odroznia "doba jeszcze sie nie zaczela" od "brak odczytow",
 //     a znacznik TECH pojawia sie tylko dla doby zamknietej.
@@ -4966,9 +4980,9 @@
 
 // [v3.52.4] Twarda bramka zgodnosci naglowka. Bez tego mozna bylo zbudowac
 // firmware meldujacy nowy numer wersji, ale liczacy URL po staremu.
-// [v3.52.10] Prog 20261030 — naglowek musi znac pola notStarted/isToday.
-#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261030
-#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja nie odroznia doby, ktora sie jeszcze nie zaczela, od braku odczytow."
+// [v3.52.11] Prog 20261031 — naglowek musi znac prog kMinSamplesForDelta.
+#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261031
+#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja liczy dT i amplitude z kilku probek."
 #endif
 #include <time.h>
 #include <stdlib.h>
@@ -5365,7 +5379,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.52.10";
+static const char* FIRMWARE_VERSION = "v3.52.11";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -23787,7 +23801,11 @@ static String buildSolarArchiveTelegramReport(uint8_t days) {
     // pokazywal 74%, choc brakowalo 15 minut z 1080 (98,6%).
     row.inProgress = false;
     row.elapsedCoverageRatio = row.coverageRatio;
-    if (row.hasActual && !row.finalized && row.expectedSamples > 0) {
+    // [v3.52.11] Dopiero po godzinie doby. Przy szesciu uplynietych minutach
+    // jedna minuta restartu to 17 punktow procentowych — liczba prawdziwa,
+    // ale bezuzyteczna i alarmujaca.
+    const bool maUplywCzasu = row.validSamples >= solar_daily::kMinSamplesForDelta * 2u;
+    if (row.hasActual && !row.finalized && row.expectedSamples > 0 && maUplywCzasu) {
       solar_daily::LocalFields teraz;
       if (solarArchiveLocalNow(teraz)) {
         char dzis[11];
@@ -23795,7 +23813,7 @@ static String buildSolarArchiveTelegramReport(uint8_t days) {
         if (strcmp(dzis, row.date) == 0) {
           const int elapsedMin = teraz.hour * 60 + teraz.minute;
           const float pokryteMin = row.coverageRatio * (float)row.expectedSamples;
-          if (elapsedMin > 0) {
+          if (elapsedMin >= 60) {
             float r = pokryteMin / (float)elapsedMin;
             if (r > 1.0f) r = 1.0f;
             if (r < 0.0f) r = 0.0f;

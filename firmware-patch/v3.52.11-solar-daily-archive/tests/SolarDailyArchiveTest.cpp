@@ -226,6 +226,53 @@ static void testAggregateRestore() {
 // [v3.52.10] Rekord zapisany wieczorem na JUTRO to sama prognoza (bez
 // odczytow). Wczesniej raport pisal "brak odczytow", co wygladalo jak utrata
 // danych — a to normalny stan o 23:30.
+// [v3.52.11] Piec probek z pierwszej minuty doby to nie podsumowanie dnia.
+// "dT +0.0°C amplituda 0.0°C" wygladalo jak "zbiornik nic nie zrobil".
+static void testTooFewSamples() {
+  DayReport row;
+  std::memset(&row, 0, sizeof(row));
+  std::strcpy(row.date, "2026-10-21");
+  row.hasForecast = true;
+  row.forecastComplete = true;
+  row.ghiKwhM2 = 2.47f;
+  row.hasActual = true;
+  row.validSamples = 5;
+  row.expectedSamples = 1440;
+  row.coverageRatio = 5.0f / 1440.0f;
+  row.minC = 21.2f;
+  row.maxC = 21.2f;
+  row.deltaC = 0.0f;
+  row.firstUtc = 1792543200;
+  row.lastUtc = 1792543440;
+  row.inProgress = true;
+  row.elapsedCoverageRatio = 5.0f / 6.0f;
+
+  char line[256];
+  CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
+  CHECK(std::strstr(line, "za malo probek: 5") != nullptr);
+  // Znak zachowany, ale bez liczby: "amplituda —", nie "amplituda 0.0°C".
+  CHECK(std::strstr(line, "amplituda —") != nullptr);
+  CHECK(std::strstr(line, "amplituda 0.0") == nullptr);
+  CHECK(std::strstr(line, "dT +0.0") == nullptr);
+  CHECK(std::strstr(line, "min 21.2") == nullptr);
+  CHECK(std::strstr(line, "pokrycie 0.3%") != nullptr);
+  CHECK(std::strstr(line, "5/1440 prob.") != nullptr);
+  // Naglowek nie dopisuje "(x% czasu)" przy zbyt malej liczbie probek —
+  // licznik od uplywu czasu jest wtedy szumem (restart zjada minute z szesciu).
+  CHECK(std::strstr(line, "(83.3% czasu)") == nullptr);
+
+  // Prog: 30 probek to juz podsumowanie, 29 to jeszcze nie.
+  row.validSamples = 30;
+  row.coverageRatio = 30.0f / 1440.0f;
+  CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
+  CHECK(std::strstr(line, "amplituda 0.0") != nullptr);
+  CHECK(std::strstr(line, "za malo probek") == nullptr);
+
+  row.validSamples = 29;
+  CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
+  CHECK(std::strstr(line, "za malo probek: 29") != nullptr);
+}
+
 static void testNotStartedDay() {
   DayReport row;
   std::memset(&row, 0, sizeof(row));
@@ -668,6 +715,7 @@ int main() {
   testAggregateRestore();
   testAggregateMinMaxTimes();
   testNotStartedDay();
+  testTooFewSamples();
   testGhiSnapshot();
   testGhiHourWindow();
   testGhiUrl();
