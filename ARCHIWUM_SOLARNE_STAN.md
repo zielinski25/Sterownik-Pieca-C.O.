@@ -219,6 +219,9 @@ LittleFS, i wysyła je **drogą prawdziwego raportu** (`tgWyslijRaportTekst`). P
 linia zawsze mówi `TEST podzialu — liczby wymyslone, archiwum nietkniete`. Oczekiwany
 wynik: **dwie wiadomości**, druga zaczyna się od `(ciag dalszy)`.
 
+**Wynik 2026-10-21 00:56 (v3.53.1):** dwie wiadomości, druga z `(ciag dalszy)` —
+podział działa na urządzeniu, zgodnie z symulatorem (szczegóły w sekcji 13).
+
 ## 12. Co dalej (plan etapowy)
 
 1. **Po wgraniu v3.53.1** — `/archiwum_test`: mają przyjść **dwie** wiadomości,
@@ -253,6 +256,26 @@ Wynik na urządzeniu (zrzut Telegrama, 00:24–00:33):
 
 **Wniosek:** podziału wiadomości nie da się sprawdzić na prawdziwych danych przez
 najbliższy miesiąc (~25 dni potrzebnych linii). Stąd v3.53.1 z `/archiwum_test`.
+
+### 2026-10-21, 00:56 — `/archiwum_test` potwierdził podział (v3.53.1)
+
+Zgłoszone przez użytkownika: przyszły **dwie wiadomości**.
+
+```
+wiadomosc 1/2: TEST podzialu — ... + naglowek + 2026-09-22 ... 2026-10-15
+wiadomosc 2/2: (ciag dalszy) + 2026-10-16 ... 2026-10-21 + Suma GHI 54.45 (30/30)
+```
+
+Treść zgadza się linia w linię z wydrukiem symulatora (S24, wariant `2026-10-21`):
+te same dni, te same pokrycia (87.5%, 95.9%, … 96.5%), ta sama suma **54,45 kWh/m²**.
+Czyli droga „String → kolejka → `sendTelegramMessage()` → API Telegrama” nie zmienia
+tego, co przewidział test hostowy.
+
+**To zamyka ostatnią rzecz, której nie dało się sprawdzić na komputerze.**
+Prawdziwy raport zacznie przychodzić w dwóch wiadomościach, gdy archiwum uzbiera
+**25 dni** (przy obecnych ~150 B na linię 24 dni to jeszcze 3656 B, 25 dni to 3809 B).
+Archiwum ma 2 dni, więc nastąpi to około **13.11.2026** — i wtedy `(ciag dalszy)`
+w raporcie nie jest awarią, tylko tym, co właśnie sprawdziliśmy.
 
 Sprawdzenie podziału przenosi się na `/archiwum_test` (v3.53.1). Jeżeli przyjdzie
 jedna wiadomość albo żadna — podział nie działa, patrzeć na `/logi`. Jeżeli druga
