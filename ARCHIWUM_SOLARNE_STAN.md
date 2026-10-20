@@ -112,7 +112,12 @@ prognoza GHI **nie jest pobierana**, rekord ma `offSeason = true`, a w raporcie 
   do ręcznej oceny modelu. **Nie pojawia się przed domknięciem doby.**
 - **`@ HH:MM`** przy min/max — kiedy padło ekstremum (czas lokalny). Dopiero z tym amplituda
   się tłumaczy: minimum nad ranem + maksimum po południu = grzanie słońcem; minimum wieczorem
-  = nic nie grzało i amplituda jest tylko dobową huśtawką. Brak `@` = rekord sprzed v3.52.9.
+  = nic nie grzało i amplituda jest tylko dobową huśtawką.
+  **Brak `@`** = godzina ekstremum jest nieznana. Dwa przypadki: (1) rekord sprzed v3.52.9,
+  (2) doba, która **trwała w chwili wgrywania** v3.52.9+ — skrajne temperatury zostały
+  zapisane, zanim firmware umiał zapisać ich czas, a późniejsze próbki ich nie przebijają,
+  więc znacznik nigdy się nie pojawi. To jednorazowy koszt OTA w środku dnia; doba startująca
+  od zera ma godziny od pierwszej próbki.
 - **pokrycie** — udział minut doby, w których jest próbka. W dobie w toku drugi nawias to pokrycie
   **czasu, który już upłynął** (mianownik = minuty od północy).
 - `(w toku)`, ` sym`, `TECH`, `[dane CO]`, `(poza sezonem)` — znaczniki stanu rekordu.
@@ -174,6 +179,29 @@ starcie.
 ## 13. Dziennik wyników z urządzenia
 
 Zapis rzeczywistych raportów, żeby dało się porównać dni i wychwycić anomalie.
+
+### 2026-10-20/21, raport o ~23:45, wersja v3.52.10
+
+```
+Archiwum solarne (2 dni, z centrali)
+2026-10-21  GHI 2.47 kWh/m2  prognoza na jutro (doba sie nie zaczela)
+2026-10-20  GHI 0.55 kWh/m2  dT -1.8°C  amplituda 3.5°C  (min 21.5 / max 25.0)
+            pokrycie 97.0% (98.0% czasu)  1397/1440 prob. 00:00-23:43 (w toku)
+Suma GHI: 0.55 kWh/m2 (1/1 dni z prognoza) | odczyty: 1/1
+Jutro (prognoza): GHI 2.47 kWh/m2 — doba sie jeszcze nie zaczela.
+```
+
+**Obie poprawki v3.52.10 działają:** przyszła doba nie udaje braku odczytów, nie wchodzi
+do sumy GHI ani do mianownika, a `TECH` zniknął z doby w toku.
+
+**`@` nadal nie ma — i tak ma być.** Doba 20.10 trwała w chwili wgrywania v3.52.10.
+Restart odtworzył z pliku `minC = 21.5`, `maxC = 25.0`, ale godziny tych ekstremów nie
+istniały w starym rekordzie (`minUtc = 0`). Późniejsze próbki (~23,4 °C) nie biją żadnej
+z granic, więc znaczniki zostaną zerami do końca doby. Sprawdzone symulacją:
+po restarcie starych granic 16 nowych próbek nie ustawia godziny; doba zaczęta od zera
+ustawia ją od pierwszej próbki. **21.10 będzie miał `@`.**
+
+Próbki: 1387 → 1397 w ciągu 10 minut = dokładnie 1/min, bez luk.
 
 ### 2026-10-21 → raport o ~23:35, wersja v3.52.8
 
