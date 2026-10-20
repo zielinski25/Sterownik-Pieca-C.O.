@@ -219,6 +219,25 @@ niepełnym krokiem). Zawiera `Piec.html` bez zmian oraz dwa patche v3.49.x.
 
 Zapis rzeczywistych raportów, żeby dało się porównać dni i wychwycić anomalie.
 
+### 2026-10-21 po północy — wgrana v3.53.0 (pierwsze wgranie po testach)
+
+Użytkownik zgłosił instalację **v3.53.0**. To pierwsza paczka od v3.52.7, której treść
+raportu została sprawdzona **przed** wgraniem (339 PASS + 3559 sprawdzeń symulatora).
+
+Do potwierdzenia na urządzeniu (wynik wpisać poniżej, nie zmyślać):
+
+| sprawdzenie | oczekiwane | wynik |
+|---|---|---|
+| `/version` | `v3.53.0` (nie `v3.52.11` — to znaczyłoby rollback OTA) | — |
+| `/archiwum` | jedna wiadomość; linia dnia z `@ HH:MM` przy min i max | — |
+| `/archiwum 30` | **dwie** wiadomości; druga zaczyna się od `(ciag dalszy)` | — |
+| po ~10 min od OTA | brak komunikatu o rollbacku (potwierdzenie chodzi w `loop()`) | — |
+
+Jeżeli `/archiwum 30` przyjdzie jako jedna wiadomość albo nie przyjdzie wcale —
+podział na porcje nie działa i trzeba patrzeć na `/logi`. Jeżeli przyjdzie druga
+wiadomość **sama z nagłówkiem** — to znaczy, że wrócił błąd z v3.53.0 (prefiks
+wysyłany osobno), ale ten kod jest już pokryty testem (`checkSplit`, punkt 3).
+
 ### 2026-10-21, raport o ~00:05, wersja v3.52.10
 
 ```
