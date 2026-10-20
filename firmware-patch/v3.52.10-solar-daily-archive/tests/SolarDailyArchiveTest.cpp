@@ -223,6 +223,41 @@ static void testAggregateRestore() {
 // [v3.52.9] Agregat musi pamietac, KIEDY padlo minimum i maksimum.
 // Bez tego amplituda mowi "3.2 stopnia", ale nie mowi, czy to nocne
 // wychlodzenie, czy grzanie sloncem.
+// [v3.52.10] Rekord zapisany wieczorem na JUTRO to sama prognoza (bez
+// odczytow). Wczesniej raport pisal "brak odczytow", co wygladalo jak utrata
+// danych — a to normalny stan o 23:30.
+static void testNotStartedDay() {
+  DayReport row;
+  std::memset(&row, 0, sizeof(row));
+  std::strcpy(row.date, "2026-10-21");
+  row.hasForecast = true;
+  row.forecastComplete = true;
+  row.ghiKwhM2 = 2.47f;
+  row.hasActual = false;
+  row.notStarted = true;
+
+  char line[256];
+  CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
+  CHECK(std::strstr(line, "GHI 2.47 kWh/m2") != nullptr);
+  CHECK(std::strstr(line, "prognoza na jutro (doba sie nie zaczela)") != nullptr);
+  CHECK(std::strstr(line, "brak odczytow") == nullptr);
+
+  // Doba dzisiejsza bez probek to inny przypadek niz doba przyszla.
+  std::strcpy(row.date, "2026-10-20");
+  row.notStarted = false;
+  row.isToday = true;
+  CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
+  CHECK(std::strstr(line, "brak probek (doba w toku)") != nullptr);
+  CHECK(std::strstr(line, "brak odczytow") == nullptr);
+
+  // Doba miniona bez odczytow — tu "brak odczytow" jest uczciwe.
+  std::strcpy(row.date, "2026-10-18");
+  row.isToday = false;
+  CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
+  CHECK(std::strstr(line, "brak odczytow") != nullptr);
+  CHECK(std::strstr(line, "prognoza na jutro") == nullptr);
+}
+
 static void testAggregateMinMaxTimes() {
   int32_t start = 0, end = 0;
   uint16_t hours = 0;
@@ -475,10 +510,18 @@ static void testDayReportFormat() {
   CHECK(std::strstr(line, "(poza sezonem)") != nullptr);
   row.offSeason = false;
 
-  // Kandydat techniczny jest oznaczany, ale nie promowany na pomiar.
+  // [v3.52.10] Kandydat techniczny TYLKO dla doby zamknietej. Prog
+  // completeCoverage() przepuszcza juz od 23:30, wiec doba w toku dostawala
+  // TECH na pol godziny przed koncem.
   row.technicalCandidate = true;
+  row.finalized = false;
+  CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
+  CHECK(std::strstr(line, "TECH") == nullptr);
+
+  row.finalized = true;
   CHECK(formatDayReportLine(row, line, sizeof(line)) > 0);
   CHECK(std::strstr(line, "TECH") != nullptr);
+  row.technicalCandidate = false;
 
   // Brak prognozy i brak odczytow to osobne, uczciwe komunikaty.
   std::memset(&row, 0, sizeof(row));
@@ -624,6 +667,7 @@ int main() {
   testAggregateGapAndDraw();
   testAggregateRestore();
   testAggregateMinMaxTimes();
+  testNotStartedDay();
   testGhiSnapshot();
   testGhiHourWindow();
   testGhiUrl();

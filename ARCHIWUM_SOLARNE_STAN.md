@@ -2,7 +2,7 @@
 
 Dokument odtworzony 2026-10-20 po resecie środowiska (poprzednia kopia nie była w repozytorium).
 Ma być **żywy**: każda zmiana zachowania archiwum dopisuje sekcję „Historia wersji”, a ustalenia
-sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.52.9**.
+sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.52.10**.
 
 ---
 
@@ -102,6 +102,14 @@ prognoza GHI **nie jest pobierana**, rekord ma `offSeason = true`, a w raporcie 
 - **amplituda** — `max − min` w ciągu doby, w °C. Pokazuje, ile zbiornik realnie się zmienił.
   (W fizyce różnicę temperatur podaje się w kelwinach — 2,5 K to dokładnie 2,5 °C. W raporcie
   jest °C, bo tak się u nas czyta temperaturę.)
+- **`prognoza na jutro (doba sie nie zaczela)`** — rekord zapisany wieczorem na następną dobę
+  (okno 23:30–23:59). Zero odczytów jest tu **stanem oczekiwanym**, nie utratą danych.
+  Taki dzień nie wchodzi do sumy GHI ani do mianownika „odczyty”; prognoza jest pokazana
+  osobno w linii `Jutro (prognoza): GHI …`.
+- **`brak probek (doba w toku)`** — dzisiejsza doba, jeszcze bez próbek (np. tuż po północy).
+- **`brak odczytow`** — doba miniona bez danych. Tylko tu to komunikat o realnej luce.
+- **`TECH`** — doba zamknięta, kompletna, bez symulacji i bez podejrzanych poborów; kandydat
+  do ręcznej oceny modelu. **Nie pojawia się przed domknięciem doby.**
 - **`@ HH:MM`** przy min/max — kiedy padło ekstremum (czas lokalny). Dopiero z tym amplituda
   się tłumaczy: minimum nad ranem + maksimum po południu = grzanie słońcem; minimum wieczorem
   = nic nie grzało i amplituda jest tylko dobową huśtawką. Brak `@` = rekord sprzed v3.52.9.
@@ -150,7 +158,8 @@ starcie.
 | v3.52.6 | potwierdzenie OTA w `loop()` (10 min / 60 min) + wykrywanie cichego rollbacku |
 | v3.52.7 | amplituda, pokrycie od upływu czasu, `/solar_tryb`, tablica GHI bez przesunięcia |
 | v3.52.8 | jednostka w raporcie: °C zamiast K (zmiana kosmetyczna) |
-| **v3.52.9** | godzina minimum i maksimum (`@ HH:MM`) — amplituda przestaje być zagadką |
+| v3.52.9 | godzina minimum i maksimum (`@ HH:MM`) — amplituda przestaje być zagadką |
+| **v3.52.10** | „prognoza na jutro” zamiast mylącego „brak odczytów”; `TECH` tylko dla doby zamkniętej |
 
 ## 12. Co dalej (plan etapowy)
 
@@ -165,6 +174,21 @@ starcie.
 ## 13. Dziennik wyników z urządzenia
 
 Zapis rzeczywistych raportów, żeby dało się porównać dni i wychwycić anomalie.
+
+### 2026-10-21 → raport o ~23:35, wersja v3.52.8
+
+```
+Archiwum solarne (2 dni, z centrali)
+2026-10-21  GHI 2.47 kWh/m2  brak odczytow
+2026-10-20  GHI 0.55 kWh/m2  dT -1.8°C  amplituda 3.5°C  (min 21.5 / max 25.0)
+            pokrycie 96.3% (98.1% czasu)  1387/1440 prob. 00:00-23:33 (w toku) TECH
+Suma GHI: 3.02 kWh/m2 (2/2 dni z prognoza) | odczyty: 1/2
+```
+
+**To nie była awaria.** O 23:30 firmware zapisał z góry plik jutra z prognozą GHI
+(celowo, żeby restart o 23:59 nie zgubił prognozy). Doba 21.10 jeszcze się nie zaczęła,
+więc odczytów być nie mogło. `TECH` wziął się z tolerancji 30 minut w `completeCoverage()`.
+Oba komunikaty poprawione w v3.52.10. Brak `@` przy min/max = zapis sprzed v3.52.9.
 
 ### 2026-10-20 (v3.52.8, raport o ~23:01)
 

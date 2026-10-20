@@ -1,7 +1,51 @@
-# v3.52.9 — autonomiczne dzienne archiwum solarne w centrali
+# v3.52.10 — autonomiczne dzienne archiwum solarne w centrali
 
 Paczka robocza oparta na źródłach v3.50.0. Katalogi wcześniejszych wersji pozostają bez zmian.
 **Nie zmieniano Androida, reguł Firebase ani plików historii. Firmware nie był kompilowany w tym środowisku.**
+
+## Co wnosi v3.52.10 — „brak odczytów”, które nie jest brakiem danych
+
+Raport o 23:35 na urządzeniu pokazał:
+
+```
+2026-10-21  GHI 2.47 kWh/m2  brak odczytow
+2026-10-20  GHI 0.55 kWh/m2  dT -1.8°C  amplituda 3.5°C ... (w toku) TECH
+Suma GHI: 3.02 kWh/m2 (2/2 dni z prognoza) | odczyty: 1/2
+```
+
+Czytelnik widzi „21 października — brak odczytów” i wygląda to jak **utrata danych**.
+Tymczasem to normalny, zaprojektowany stan: o **23:30** firmware zapisuje z góry plik
+**jutra** z prognozą GHI (celowo — restart o 23:59 nie może zgubić prognozy). Doba 21.10
+jeszcze się nie zaczęła, więc odczytów być nie może.
+
+**Poprawki:**
+
+| było | jest |
+|---|---|
+| `brak odczytow` (także dla przyszłej daty) | `prognoza na jutro (doba sie nie zaczela)` |
+| `brak odczytow` dla dzisiejszej doby bez próbek | `brak probek (doba w toku)` |
+| `brak odczytow` tylko dla minionych dni | bez zmian — tu to uczciwy komunikat |
+| `odczyty: 1/2` (jutro w mianowniku) | `odczyty: 1/1` — liczą się doby **zaczęte** |
+| suma GHI wciągała prognozę na jutro | osobna linia `Jutro (prognoza): GHI 2.47 kWh/m2` |
+
+**Drugi problem — `TECH` na niedomkniętej dobie.** `completeCoverage()` ma tolerancję
+30 minut do końca doby, więc doba w toku dostawała znacznik „kandydat techniczny”
+już od **23:30** — na pół godziny przed końcem, zanim było wiadomo, czy się domknie.
+Teraz `TECH` pojawia się **wyłącznie dla doby zamkniętej**.
+
+Po zmianie ten sam raport wygląda tak:
+
+```
+☀️ Archiwum solarne (2 dni, z centrali)
+2026-10-21  GHI 2.47 kWh/m2  prognoza na jutro (doba sie nie zaczela)
+2026-10-20  GHI 0.55 kWh/m2  dT -1.8°C  amplituda 3.5°C  (min 21.5 / max 25.0)
+            pokrycie 96.3% (98.1% czasu)  1387/1440 prob. 00:00-23:33 (w toku)
+Suma GHI: 0.55 kWh/m2 (1/1 dni z prognoza) | odczyty: 1/1
+Jutro (prognoza): GHI 2.47 kWh/m2 — doba sie jeszcze nie zaczela.
+```
+
+Niczego nie ukrywam: gdy w **minionym** dniu naprawdę nie ma odczytów, nadal będzie
+`brak odczytow`.
 
 ## Co wnosi v3.52.9 — godzina minimum i maksimum
 
@@ -409,10 +453,11 @@ g++ -std=c++11 -Wall -Wextra -Werror SolarDailyArchiveTest.cpp -o /tmp/solar-dai
 /tmp/solar-daily-test
 ```
 
-Wynik w tej sesji: `SolarDailyArchiveTest: PASS (313 sprawdzeń)` — asercje na format linii
+Wynik w tej sesji: `SolarDailyArchiveTest: PASS (325 sprawdzeń)` — asercje na format linii
 (amplituda, pokrycie od upływu czasu, godziny min/max), znacznik `(poza sezonem)`,
-okno godzinowe GHI `(start, end]` oraz na to, że agregat i odtworzenie po restarcie
-zachowują `minUtc`/`maxUtc`, a stary rekord bez tych pól nie zmyśla godziny.
+okno godzinowe GHI `(start, end]`, zachowanie `minUtc`/`maxUtc` po restarcie,
+a także rozróżnienie „prognoza na jutro” / „brak próbek (doba w toku)” /
+„brak odczytów” oraz to, że `TECH` nie pojawia się przed domknięciem doby.
 
 Testy panelu (z katalogu głównego repozytorium):
 

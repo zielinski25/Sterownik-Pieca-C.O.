@@ -16,6 +16,9 @@
 #ifndef SOLAR_DAILY_ARCHIVE_H
 #define SOLAR_DAILY_ARCHIVE_H
 
+// [v3.52.10] API 20261030: DayReport ma pola notStarted / isToday — raport
+// odroznia "doba jeszcze sie nie zaczela" od "brak odczytow".
+//
 // [v3.52.9] API 20261029: DayReport ma pola minUtc / maxUtc (godzina
 // wystapienia minimum i maksimum), a formatDayReportLine() dopisuje je
 // przy temperaturach. Stara wersja naglowka nie ma tych pol.
@@ -29,7 +32,7 @@
 // main_centrala.cpp wymaga dokladnie tej wersji i NIE SKOMPILUJE SIE ze starym
 // plikiem — dzieki temu nie da sie wgrac firmware'u, ktory podaje nowy numer
 // wersji, ale liczy URL po staremu (kontrola "Z" w start_hour/end_hour).
-#define SOLAR_DAILY_ARCHIVE_API 20261029
+#define SOLAR_DAILY_ARCHIVE_API 20261030
 
 #include <stdint.h>
 #include <stddef.h>
@@ -611,6 +614,11 @@ struct DayReport {
   float elapsedCoverageRatio;  // 0..1
   bool inProgress;             // doba jeszcze trwa — pokaz "(x% czasu)"
   bool offSeason;              // [v3.52.7] zapis w trybie "spuszczona" (poza sezonem)
+  // [v3.52.10] Doba, ktora sie jeszcze NIE ZACZELA (rekord to sama prognoza
+  // zapisana wieczorem na jutro). Wczesniej raport pisal o niej "brak
+  // odczytow", co wygladalo jak utrata danych — a to normalny stan o 23:30.
+  bool notStarted;
+  bool isToday;                // [v3.52.10] data == dzis (doba w toku)
   bool technicalCandidate;
   bool legacyChannel;       // true = rekord sprzed poprawki kanalu (bojler CO)
 };
@@ -705,7 +713,11 @@ inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize)
       snprintf(act + used, sizeof(act) - used, " sym");
       used = strlen(act);
     }
-    if (used && d.technicalCandidate) {
+    // [v3.52.10] TECH tylko dla DOBY ZAMKNIETEJ. Prog "completeCoverage()"
+    // przepuszcza juz od godziny 23:30 (tolerancja 30 min do konca doby),
+    // wiec doba w toku dostawala znacznik "kandydat techniczny" na pol
+    // godziny przed koncem — zanim bylo wiadomo, czy sie domknie.
+    if (used && d.technicalCandidate && d.finalized) {
       snprintf(act + used, sizeof(act) - used, " TECH");
     }
     // [v3.52.7] Zima ze spuszczona woda: czujnik mierzy powietrze w pustym
@@ -717,6 +729,12 @@ inline size_t formatDayReportLine(const DayReport &d, char *out, size_t outSize)
     if (used && d.legacyChannel) {
       snprintf(act + used, sizeof(act) - used, " [dane CO]");
     }
+  } else if (d.notStarted) {
+    // [v3.52.10] Prognoza zapisana wieczorem na jutro. Zero odczytow jest
+    // tu stanem OCZEKIWANYM, a nie brakiem danych.
+    snprintf(act, sizeof(act), "prognoza na jutro (doba sie nie zaczela)");
+  } else if (d.isToday) {
+    snprintf(act, sizeof(act), "brak probek (doba w toku)");
   } else {
     snprintf(act, sizeof(act), "brak odczytow");
   }

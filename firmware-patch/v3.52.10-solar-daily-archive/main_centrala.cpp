@@ -1,3 +1,20 @@
+// [v3.52.10 SOLAR-REPORT-NOT-STARTED] — 2026-10-20
+// Co: raport odroznia "doba jeszcze sie nie zaczela" od "brak odczytow",
+//     a znacznik TECH pojawia sie tylko dla doby zamknietej.
+// Problem: o 23:30 firmware zapisuje z gory plik JUTRA z prognoza GHI
+//     (celowo, zeby restart o 23:59 nic nie zgubil). Raport czytal ten plik
+//     jak kazdy inny i wypisywal "2026-10-21 GHI 2.47 kWh/m2 brak odczytow"
+//     — wygladalo to jak utrata danych, a bylo stanem oczekiwanym. Do tego
+//     "odczyty: 1/2" liczylo ten dzien do mianownika.
+//     Drugi problem: completeCoverage() przepuszcza dobe juz od 23:30
+//     (tolerancja 30 min do konca), wiec doba w toku dostawala "TECH" —
+//     kandydat techniczny na 30 minut przed koncem, zanim bylo wiadomo,
+//     czy sie domknie.
+// Naprawa: DayReport.notStarted / isToday; osobny komunikat dla przyszlej
+//     daty; TECH tylko gdy finalized. Suma GHI nie wciaga juz prognozy na
+//     jutro (osobna linia), a mianownik "odczyty" liczy tylko doby zaczete.
+// FIRMWARE_VERSION v3.52.9 -> v3.52.10 (PATCH, tylko raport archiwum).
+//
 // [v3.52.9 SOLAR-REPORT-MINMAX-TIME] — 2026-10-20
 // Co: raport pokazuje GODZINE minimum i maksimum temperatury.
 // Problem: v3.52.7 dodalo amplitude (max-min), zeby dT nie klamalo, ale
@@ -4949,9 +4966,9 @@
 
 // [v3.52.4] Twarda bramka zgodnosci naglowka. Bez tego mozna bylo zbudowac
 // firmware meldujacy nowy numer wersji, ale liczacy URL po staremu.
-// [v3.52.9] Prog 20261029 — naglowek musi znac pola minUtc/maxUtc.
-#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261029
-#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja nie zna godzin minimum i maksimum (minUtc/maxUtc)."
+// [v3.52.10] Prog 20261030 — naglowek musi znac pola notStarted/isToday.
+#if !defined(SOLAR_DAILY_ARCHIVE_API) || SOLAR_DAILY_ARCHIVE_API < 20261030
+#error "Podmien TAKZE plik SolarDailyArchive.h - stara wersja nie odroznia doby, ktora sie jeszcze nie zaczela, od braku odczytow."
 #endif
 #include <time.h>
 #include <stdlib.h>
@@ -5348,7 +5365,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.52.9";
+static const char* FIRMWARE_VERSION = "v3.52.10";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -23699,6 +23716,22 @@ static String buildSolarArchiveTelegramReport(uint8_t days) {
   float ghiSum = 0.0f;
   uint8_t forecastDays = 0;
   uint8_t actualDays = 0;
+  // [v3.52.10] Doby jeszcze nie zaczete (prognoza na jutro) trzymamy osobno:
+  // nie wchodza do sumy GHI ani do mianownika "odczyty".
+  float ghiSumNotStarted = 0.0f;
+  uint8_t notStartedDays = 0;
+  uint8_t startedDays = 0;
+
+  // Dzisiejsza data raz, poza petla — potrzebna do rozroznienia
+  // "jutro" (jeszcze sie nie zaczelo) od "dzis" (doba w toku).
+  char dzisKey[11] = "";
+  {
+    solar_daily::LocalFields teraz;
+    if (solarArchiveLocalNow(teraz)) {
+      solar_daily::formatDateKey(teraz.year, teraz.month, teraz.day, dzisKey);
+      if (!solar_daily::isValidDateKey(dzisKey)) dzisKey[0] = 0;
+    }
+  }
   for (uint8_t i = 0; i < count; i++) {
     const String path = solarArchivePathFor(g_solarReportDates[i].c_str());
     File f = LittleFS.open(path.c_str(), "r");
@@ -23773,7 +23806,19 @@ static String buildSolarArchiveTelegramReport(uint8_t days) {
       }
     }
 
-    if (row.hasForecast) { ghiSum += row.ghiKwhM2; forecastDays++; }
+    // [v3.52.10] Rekord z data pozniejsza niz dzis to prognoza zapisana
+    // wieczorem na jutro (okno 23:30-23:59). Zero odczytow jest tam stanem
+    // oczekiwanym — doba jeszcze sie nie zaczela.
+    row.isToday = (dzisKey[0] && strcmp(row.date, dzisKey) == 0);
+    row.notStarted = (!row.hasActual && dzisKey[0] && strcmp(row.date, dzisKey) > 0);
+
+    if (row.notStarted) {
+      notStartedDays++;
+      if (row.hasForecast) ghiSumNotStarted += row.ghiKwhM2;
+    } else {
+      startedDays++;
+      if (row.hasForecast) { ghiSum += row.ghiKwhM2; forecastDays++; }
+    }
     if (row.hasActual) actualDays++;
 
     char line[256];
@@ -23786,16 +23831,25 @@ static String buildSolarArchiveTelegramReport(uint8_t days) {
     }
   }
 
+  // [v3.52.10] Mianownik to doby ZACZETE. Gdy wszystkie rekordy to jeszcze
+  // prognozy na jutro (swiezy start po 23:30), pokazujemy liczbe rekordow,
+  // zeby nie wyszlo "0/0".
+  const uint8_t denominator = startedDays ? startedDays : count;
   out += F("Suma GHI: ");
   out += String(ghiSum, 2);
   out += F(" kWh/m2 (");
   out += String((unsigned)forecastDays);
   out += F("/");
-  out += String((unsigned)count);
+  out += String((unsigned)denominator);
   out += F(" dni z prognoza) | odczyty: ");
   out += String((unsigned)actualDays);
   out += F("/");
-  out += String((unsigned)count);
+  out += String((unsigned)denominator);
+  if (notStartedDays > 0) {
+    out += F("\nJutro (prognoza): GHI ");
+    out += String(ghiSumNotStarted, 2);
+    out += F(" kWh/m2 — doba sie jeszcze nie zaczela.");
+  }
   // [v3.52.4] Dowod ostatniej proby GHI — tylko gdy proba sie nie udala.
   if (g_solarGhiStatus[0] && strcmp(g_solarGhiStatus, "ok") != 0 &&
       strcmp(g_solarGhiStatus, "brak_proby") != 0) {
