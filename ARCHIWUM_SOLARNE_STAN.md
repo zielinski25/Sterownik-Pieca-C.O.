@@ -282,6 +282,52 @@ jedna wiadomość albo żadna — podział nie działa, patrzeć na `/logi`. Je�
 wiadomość przyjdzie **sama z nagłówkiem** — wrócił błąd z v3.53.0 (prefiks wysyłany
 osobno), ale ten kod jest pokryty testem (`checkSplit`, punkt 3).
 
+### 2026-10-21, 18:06 — najlepsza doba w dotychczasowej historii
+
+```
+2026-10-21  GHI 2.47 kWh/m2  dT +15.8°C  amplituda 19.5°C
+            (min 19.8 @ 02:34 / max 39.2 @ 15:23)  pokrycie 74.4% (98.4% czasu)
+            1072/1440 prob. 00:00-18:06 (w toku)
+```
+
+| godzina | temperatura | co się działo |
+|---|---|---|
+| 00:00 | 21,2 °C | poziom z końca 20.10 |
+| 02:34 | **19,8 °C** | minimum nocne (wychłodzenie 1,4 K) |
+| 11:33 | 29,0 °C | +7,8 K od północy (raport z 11:35) |
+| **15:23** | **39,2 °C** | **maksimum doby** |
+| 18:06 | 37,0 °C | stygnięcie **0,81 K/h** po zachodzie słońca |
+
+**Odtworzone w symulatorze znak w znak** z tymi samymi liczbami.
+
+**Amplituda 19,5 przy min 19,8 i max 39,2 (różnica 19,4) to nie błąd.** W pliku są
+pełne wartości — najprawdopodobniej max 39,25 i min 19,75. `printf("%.1f")` zaokrągla
+je do 39,2 i 19,8 (połówka do liczby parzystej), a amplituda liczona jest z wartości
+pełnych: 39,25 − 19,75 = 19,50 → `19.5`. Dlatego trzy liczby w jednym wierszu nie
+muszą się „dodawać” co do dziesiątej.
+
+**Energia — szacunek, nie pomiar:** 19,5 K × 0,1163 kWh/K ≈ **2,27 kWh** w 100 l wody.
+Przy aperturze ~1,4 m² i prognozie 2,47 kWh/m² (≈3,46 kWh padającego) daje to **~66%**.
+To **za dużo na realną sprawność**, więc jedno z założeń jest zbyt ostrożne:
+
+1. **GHI w rekordzie to PROGNOZA, nie pomiar.** Jeśli dziś było realnie więcej niż
+   2,47 kWh/m², mianownik jest zaniżony — i to najbardziej prawdopodobne wyjaśnienie.
+2. **Apertura mogła być zaniżona.** Wcześniej (20.10) z 3,2 K wyszło ~1,4 m² przy
+   założeniu 45–50% sprawności. Dziś ten sam rachunek daje 66% — czyli albo apertura
+   jest większa (10 rur próżniowych to więcej niż 1,4 m² powierzchni czynnej),
+   albo sprawność jest wyższa.
+3. **Czujnik w połowie wysokości nie widzi stratyfikacji.** W słoneczny dzień góra
+   zbiornika jest cieplejsza od środka; średnia temperatura wody rośnie mniej niż
+   wskazanie czujnika, więc „energia z 19,5 K” jest raczej **zawyżona**.
+
+Wniosek: **do kalibracji aperatury potrzebny jest pomiar nasłonecznienia, nie prognoza.**
+Do tego czasu każdą liczbę kWh traktować jako rząd wielkości, nie wynik.
+
+**Do sprawdzenia rano (22.10):** jaką temperaturę pokaże minimum. Jeśli zbiornik
+przetrwa noc z 37,0 °C do ~30 °C, to termosyfon + 100 l trzyma ciepło lepiej, niż
+zakładaliśmy; jeśli spadnie do ~22 °C, to 15 K ucieka w ciągu nocy i wieczorny
+odczyt 37,0 °C jest mniej wart niż wygląda.
+
 ### 2026-10-21, 06:19 i 11:35 — pierwsze raporty z v3.53.1 (prawdziwe dane)
 
 ```
