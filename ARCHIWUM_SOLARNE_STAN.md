@@ -282,6 +282,38 @@ jedna wiadomość albo żadna — podział nie działa, patrzeć na `/logi`. Je�
 wiadomość przyjdzie **sama z nagłówkiem** — wrócił błąd z v3.53.0 (prefiks wysyłany
 osobno), ale ten kod jest pokryty testem (`checkSplit`, punkt 3).
 
+### 2026-10-21, 06:19 i 11:35 — pierwsze raporty z v3.53.1 (prawdziwe dane)
+
+```
+06:19  GHI 2.47 kWh/m2  dT +0.2°C  amplituda 2.0°C  (min 19.8 @ 02:34 / max 21.8 @ 03:35)
+       pokrycie 25.1% (95.3% czasu)  361/1440 prob. 00:00-06:15 (w toku)
+11:35  GHI 2.47 kWh/m2  dT +7.8°C  amplituda 9.2°C  (min 19.8 @ 02:34 / max 29.0 @ 11:33)
+       pokrycie 47.2% (97.8% czasu)  680/1440 prob. 00:00-11:34 (w toku)
+```
+
+Oba wiersze odtworzone **znak w znak** przez symulator z tymi samymi liczbami —
+urządzenie liczy to samo, co test hostowy.
+
+**Rachunek się zgadza co do dziesiątej:**
+- pierwsza próbka doby 00:00 = **21,2 °C** (dokładnie tyle, ile koniec 20.10),
+- `dT +7.8` = 29,0 − 21,2 ✓ (o 11:34 ostatnia próbka = 29,0, czyli maksimum z 11:33),
+- `amplituda 9.2` = 29,0 − 19,8 ✓ (19,8 to minimum nocne o 02:34),
+- `dT +0.2` o 06:19 = 21,4 − 21,2 ✓ (po nocnym spadku zbiornik wrócił nad poziom północy).
+
+**Dlaczego `dT` i `amplituda` się różnią:** `dT` liczy od północy (21,2 °C), a amplituda
+od nocnego minimum (19,8 °C). Różnica 1,4 °C to wychłodzenie nocne — dlatego obie liczby
+są w raporcie obok siebie.
+
+**Brakujące minuty:** o 06:19 brakowało 18 z 379 minut (95,3% czasu), o 11:35 — 15 z 695
+(97,8%). Z tego ~6 minut to restart przy OTA (~00:20–00:25), reszta to pojedyncze minuty
+gubione przez zadanie próbkujące co 60 s, gdy akurat trwa wysyłka do Telegrama albo zapis
+checkpointu. **100% nigdy nie będzie** i tak ma być — dlatego pokazujemy dwie liczby:
+udział w całej dobie (25,1%) i udział w czasie, który upłynął (95,3%).
+
+**Szacunek energii (nie pomiar):** 9,2 K × 0,1163 kWh/K ≈ **1,07 kWh** w 100 l wody.
+Czujnik jest w połowie wysokości i nie widzi stratyfikacji, więc góra zbiornika jest
+prawdopodobnie cieplejsza — wartość raczej zaniża niż zawyża.
+
 ### 2026-10-21, raport o ~00:05, wersja v3.52.10
 
 ```
