@@ -4,12 +4,21 @@ Data: 2026-10-22. Zakres: cała aplikacja `android/` (Kotlin + Compose), ze szcz
 naciskiem na to, **jak pobierane są dane z Firebase** i **czy historia jest dociągana
 przyrostowo**, czy za każdym razem ściągana od nowa.
 
-> **Ważne zastrzeżenie o wersji.** Źródła w repozytorium mają
-> `versionName = "v0.31.11"`, `versionCode = 3017` (`android/app/build.gradle.kts:15-16`).
-> Użytkownik podaje zainstalowaną wersję **31.19**. Repozytorium **nie zawiera** źródeł
-> 0.31.19 (brak w historii gita, brak innych gałęzi). Ten raport opisuje kod 0.31.11 —
-> jeżeli w 0.31.19 zmieniono `RtdbClient.kt` lub `AppModel.kt` (historia, cache),
-> wnioski trzeba sprawdzić ponownie.
+> **Wersja — ustalona (2026-10-22).** Twoje „31.19" to **v0.31.19**, czyli:
+> baza **v0.31.18** (`C:\Users\Rafcio\Desktop\SterownikCO-Android-v0.31.18-build-20261016-094945\android`)
+> plus pliki Androida z paczki **`SterownikCO-v3.50.0-ALARM-SOUND-SYNC.zip`**.
+> Ta paczka dodaje `AlarmSoundSync.kt` i podnosi numer do 0.31.19 — **zmienia wyłącznie
+> synchronizację dźwięków alarmów**, nie dotyka pobierania historii.
+>
+> Repozytorium (gałąź `arena/46f3288a…`) ma źródła **v0.31.11**. Różnicę 0.31.11 → 0.31.18
+> odtworzyłem z 22 patchy w `android-sync/*.diff` (harmonogram wykresów, inspektor,
+> pełnoekranowy wykres, nawigacja „Back", terminal DLOG, dźwięki alarmów, Direct Boot,
+> bezpieczeństwo/bateria). **Żaden z tych patchy nie zmienia `fetchTelemetry`,
+> `fetchShard` ani `loadRange`** — jedyne trafienie w tym obszarze to `Cache-Control: no-store`
+> przeniesione do stałej. Wniosek: sekcje 3–6 opisują także **Twoją 0.31.19**.
+>
+> Jeśli chcesz mieć pewność co do bajtów, w `android-sync/Check-Android-Version.ps1`
+> jest skrypt porównujący SHA256 — ale dla *drzewa 0.31.18*, nie 0.31.11.
 >
 > To **analiza statyczna kodu**. Nie uruchamiałem aplikacji (brak JDK/SDK w środowisku),
 > nie mierzyłem ruchu sieciowego na telefonie. Liczby bajtów i żądań są policzone
@@ -17,6 +26,19 @@ przyrostowo**, czy za każdym razem ściągana od nowa.
 > budująca JSON telemetrii, ~linia 39263).
 
 ---
+
+## 0. Skąd się wzięła wersja 0.31.19
+
+| element | skąd |
+|---|---|
+| baza | `SterownikCO-Android-v0.31.18-build-20261016-094945\android` (projekt lokalny, poza repo) |
+| nakładka | `v3.50.0-alarm-sound-sync\android` z paczki `SterownikCO-v3.50.0-ALARM-SOUND-SYNC.zip` |
+| efekt | `AlarmSoundSync.kt` + `alarm_sound …` wysyłane do centrali, `versionName = v0.31.19` |
+| czego **nie** zmienia | telemetria, historia, wykresy, cache |
+
+W repozytorium nie ma ani katalogu `v3.50.0-alarm-sound-sync`, ani `AlarmSoundSync.kt` —
+ta gałąź kończy się na 0.31.11. Firmware'owa część v3.50 jest obecna (przez v3.53.1,
+`grep alarm_sound` w `main_centrala.cpp` → 12 trafień), więc centrala obsługuje komendę.
 
 ## 1. Streszczenie — odpowiedź na pytanie
 
@@ -285,15 +307,17 @@ Nie mam możliwości uruchomienia aplikacji, więc te punkty trzeba potwierdzić
 4. **Test indeksu.** W konsoli Firebase → Rules: czy na
    `/piec/telemetry/1m/v1` jest `.indexOn: "ts"`. Jeśli nie ma — F5 i F3 działają
    w wariancie „pełne shardy".
-5. **Wersja.** `/version` w aplikacji vs `versionName` w źródłach (0.31.11 vs 31.19).
+5. **Wersja.** W aplikacji „Więcej → Oprogramowanie" wiersz *APLIKACJA WEB PRO*
+   (to `BuildConfig.VERSION_NAME`). Powinno być `v0.31.19` — jeśli jest `v0.31.18`,
+   paczka v3.50 nie weszła do builda.
 
 ---
 
 ## 8. Pytania otwarte
 
-1. **Czy 0.31.19 różni się w `RtdbClient.kt` / `AppModel.kt` od 0.31.11?**
-   Jeśli tak — proszę o te dwa pliki (albo o potwierdzenie, że są identyczne),
-   żeby wnioski dotyczyły wersji, którą naprawdę masz.
+1. ~~Czy 0.31.19 różni się w `RtdbClient.kt` / `AppModel.kt` od 0.31.11?~~
+   **Zamknięte:** 0.31.19 = 0.31.18 + paczka v3.50 (tylko dźwięki alarmów).
+   Kod historii jest ten sam, co w 0.31.11 — sprawdzone na 22 patchach z `android-sync/`.
 2. **Czy archiwum solarne z centrali ma być widoczne w aplikacji?**
    Jeśli tak, to osobny temat: trzeba ustalić, czy czytać z Firebase'owego
    odpowiednika `/solar_daily`, czy dodać endpoint w centrali.

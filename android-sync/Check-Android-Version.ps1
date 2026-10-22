@@ -4,6 +4,12 @@
 # numerze na ekranie. Skrypt wypisuje versionName/versionCode oraz sumy SHA256
 # czterech plikow odpowiedzialnych za pobieranie danych z Firebase.
 #
+# UWAGA (2026-10-22): wersja 31.19 = baza 0.31.18 + paczka v3.50.0-alarm-sound-sync.
+# Repozytorium ma 0.31.11, wiec "NIE" w kolumnie zgodnosci jest OCZEKIWANE dla
+# drzewa 0.31.18/0.31.19. Skrypt sluzy wtedy do sprawdzenia, czy plik historii
+# (RtdbClient.kt) rozni sie od 0.31.11 — jesli jest TAK, kod historii jest ten sam
+# i wnioski z RAPORT_ANDROID_FIREBASE_HISTORIA.md obowiazuja.
+#
 # Uruchomienie (w katalogu android/):
 #   powershell -ExecutionPolicy Bypass -File ..\android-sync\Check-Android-Version.ps1
 # albo z podaniem sciezki:
