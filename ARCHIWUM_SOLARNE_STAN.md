@@ -674,3 +674,15 @@ typ liczbowy. `1 else 0.0` wygląda niewinnie, a wywala cały build.
 
 Paczka poprawiona pod tym samym numerem (3033), nowy sha256
 `a8edd4e5…` zastępuje `41bc30e2…`.
+
+### 15.7 Build po poprawce
+
+```
+BUILD SUCCESSFUL in 22s
+37 zadań (6 wykonanych, 31 z cache)
+versionCode = 3033, versionName = "v0.31.27"
+```
+
+Zero błędów. 10 ostrzeżeń, wszystkie sprzed tej zmiany (`VIBRATOR_SERVICE`,
+`quadraticBezierTo` w `Weather.kt` i `SvgPath.kt`, `statusBarColor`, trzy
+`Condition is always 'true'` w `ChartEngine.kt`).

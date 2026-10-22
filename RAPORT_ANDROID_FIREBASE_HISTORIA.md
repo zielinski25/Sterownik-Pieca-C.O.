@@ -848,3 +848,7 @@ Stała `4.2` jest poprawna. Wpis „nieodtwarzalna" z §14 MD był błędem.
 
 `if (h.isDay) 1 else 0.0` → typ wspólny `Number`, `Double * Number` nie istnieje.
 Poprawka `1.0`. Nowy sha256 paczki: `a8edd4e5…`. Szczegóły: MD §15.6.
+### 16.6 Build po poprawce
+
+`BUILD SUCCESSFUL in 22s`, 37 zadań, **3033 / v0.31.27**. 10 ostrzeżeń,
+wszystkie sprzed zmiany.

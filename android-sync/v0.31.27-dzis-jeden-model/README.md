@@ -44,3 +44,24 @@ e: SolarAnalytics.kt:188:49 None of the following candidates is applicable
 `Number`, a `Double * Number` nie istnieje. Naprawione na `1.0`.
 
 **Pobierz ZIP jeszcze raz** — ten sam numer wersji, nowy plik.
+
+## Build potwierdzony (2026-10-22, druga paczka)
+
+```
+BUILD SUCCESSFUL in 22s
+37 zadań (6 wykonanych, 31 z cache)
+versionCode = 3033, versionName = "v0.31.27"
+```
+
+Zero błędów. Ostrzeżenia — **wszystkie sprzed tej zmiany**:
+
+```
+AppModel.kt:234      VIBRATOR_SERVICE is deprecated
+ChartEngine.kt:586-8 Condition is always 'true'   (x3)
+Weather.kt:645,651   quadraticBezierTo is deprecated
+SvgPath.kt:141,148   quadraticBezierTo is deprecated
+Theme.kt:124,125     statusBarColor / navigationBarColor is deprecated
+```
+
+Żadne nie dotyczy `SolarAnalytics`, karty DZIŚ ani modelu prognozy.
+Pierwsze podejście padło na `if (h.isDay) 1 else 0.0` — patrz §„Poprawka” wyżej.
