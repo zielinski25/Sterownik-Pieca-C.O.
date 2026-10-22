@@ -1,0 +1,42 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,13 @@
++// [v3.49.1 FIX-WDT-HISTORIA-IDLE1] — 2026-10-17
++// Co: Oddawaj czas schedulerowi podczas odtwarzania dlugiej historii LittleFS.
++// Problem: Po restarcie centrala resetowala sie przez TWDT w setup(),
++//     wewnatrz historiaDlugaWczytajZFS(), zanim parser wypisal log zakonczenia.
++// Przyczyna: serwisujTWDTJesliZarejestrowany() karmil loopTask, ale bez
++//     blokowania zadania IDLE1 nie dostawalo czasu CPU i nie moglo nakarmic TWDT.
++// Naprawa: Co 50 linii parser nadal serwisuje TWDT loopTask, a dodatkowo
++//     vTaskDelay(1) oddaje co najmniej jeden tick schedulerowi (w tym IDLE1).
++// FIRMWARE_VERSION v3.49.0 -> v3.49.1 (PATCH: usuniecie zaglodzenia IDLE1).
++//
+ // [v3.49.0 AUTO-MIESZADLO-TROCINY-30] — 2026-10-16
+ // Co: Przy swiezym odczycie trocin >30C wlacz automatyke mieszadla. Reczne
+ //     odznaczenie blokuje auto-wlaczenie do swiezego odczytu <=30C; blokada NVS.
+@@ -5115,7 +5125,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.49.0";
++static const char* FIRMWARE_VERSION = "v3.49.1";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -42865,8 +42875,15 @@
+     String linia = zawartosc.substring(start, i);
+     start = i + 1;
+     numerLinii++;
++    // Sam esp_task_wdt_reset() karmi loopTask, ale nie pozwala dzialac IDLE1.
++    // To zadanie jest monitorowane przez TWDT, wiec wczytywanie historii musi
++    // okresowo oddac schedulerowi przynajmniej jeden tick. Sprawdzamy przed
++    // pominac, aby rowniez odrzucane, nadmiarowe linie nie tworzyly busy-loopa.
++    if ((numerLinii % 50) == 0) {
++      serwisujTWDTJesliZarejestrowany();
++      vTaskDelay(1);
++    }
+     if (numerLinii <= pominac) continue;
+-    if ((numerLinii % 50) == 0) serwisujTWDTJesliZarejestrowany();
+ 
+     String kol[36];
+     int pole = 0, pStart = 0;

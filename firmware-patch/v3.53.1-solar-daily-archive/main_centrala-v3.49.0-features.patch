@@ -1,0 +1,114 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,8 @@
++// [v3.49.0 AUTO-MIESZADLO-TROCINY-30] — 2026-10-16
++// Co: Przy swiezym odczycie trocin >30C wlacz automatyke mieszadla. Reczne
++//     odznaczenie blokuje auto-wlaczenie do swiezego odczytu <=30C; blokada NVS.
++// FIRMWARE_VERSION v3.48.0 -> v3.49.0 (MINOR: automatyka mieszadla od temperatury trocin).
++//
+ // [v3.48.0 AUTO-ROZPALANIE-60MIN] — 2026-10-16
+ // Co: Po 60 min ciaglej, swiezej temperatury pieca <25C uruchom istniejacy
+ //     wspolny tryb Rozpalania (sekwencja syberka/klapy oraz override mieszadla).
+@@ -4714,6 +4719,7 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ #include "AutoIgnitionColdTimer.h"
++#include "MieszadloTrocinyAuto.h"
+ #include <time.h>
+ #include <stdlib.h>
+ #include <stdio.h>
+@@ -5109,7 +5115,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.48.0";
++static const char* FIRMWARE_VERSION = "v3.49.0";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -20957,6 +20963,9 @@
+ // Mieszadlo_TEMP, ktora miala blokowac powtorne odpalanie, ale nigdzie w
+ // kodzie nie byla ustawiana (root cause z audytu).
+ bool mieszadloWlaczony = true;              // glowny wylacznik calej funkcji — jesli false, mieszadlo w ogole nie dziala
++// Blokada recznego wylaczenia do pierwszego swiezego ochlodzenia trocin <=30C.
++// Jest trwala w NVS, w przeciwienstwie do RAM-only timera Rozpalania.
++static MieszadloTrocinyAuto::State mieszadloTrocinyAutoState = {false};
+ byte mieszadloCzasOn = 30;                  // sekundy, jak dlugo przekaznik jest ZALACZONY (1-255)
+ byte mieszadloCzasOff = 10;                 // minuty, jak dlugo przekaznik jest WYLACZONY miedzy cyklami (1-180)
+ bool mieszadloAktywnyStan = false;          // czy przekaznik jest AKTUALNIE zalaczony (faza ON, w odroznieniu od fazy OFF)
+@@ -21276,7 +21285,13 @@
+     // [MIESZADLO-CYKL] Glowny wylacznik — jesli false, mieszadlo() nie
+     // zaladuje przekaznika niezaleznie od pozostalych warunkow.
+     if (w != 0 && w != 1) { err = "mieszadloWlaczony musi byc 0 lub 1"; return false; }
+-    mieszadloWlaczony = (w != 0); config.putBool("mieszWlaczony", mieszadloWlaczony);  // [FIX NVS-15] klucz byl 17 znakow, ciche niepowodzenie zapisu
++    const bool automatWlaczony = (w != 0);
++    portENTER_CRITICAL(&ustawieniaMux);
++    mieszadloWlaczony = automatWlaczony;
++    MieszadloTrocinyAuto::applyManualChoice(mieszadloTrocinyAutoState, automatWlaczony);
++    portEXIT_CRITICAL(&ustawieniaMux);
++    config.putBool("mieszWlaczony", automatWlaczony);  // [FIX NVS-15] klucz byl 17 znakow, ciche niepowodzenie zapisu
++    config.putBool("mTrocinyOff", !automatWlaczony);  // reczny OFF trwa do swiezego odczytu <=30C
+   } else if (pole == "mieszadloCzasOn") {
+     if (w < 1 || w > 255) { err = "mieszadloCzasOn poza zakresem 1-255"; return false; }
+     mieszadloCzasOn = w; config.putUChar("mieszadloCzasOn", mieszadloCzasOn);
+@@ -21919,6 +21934,13 @@
+   return (telemetryAgeSeconds(m, nowMs) <= telemetryStaleThresholdS(ch)) ? 0 : 1;
+ }
+ 
++// Automatyka mieszadla reaguje wylacznie na zaakceptowany, swiezy kanal trocin,
++// nigdy na wartosc pozostawiona po bledzie/starym odczycie DS18B20.
++static bool temperaturaTrocinySwiezaDlaAutomatyki() {
++  const TelemetrySourceMeta &src = g_telemetrySourceMeta[TELEMETRY_CH_TROCINY];
++  return src.hasGoodValue && telemetryQuality(TELEMETRY_CH_TROCINY, telemetryMonotonicMs()) == 0;
++}
++
+ static void telemetrySetQuality(uint32_t &bits, TelemetryChannel ch, uint8_t quality) {
+   const uint8_t shift = (uint8_t)ch * 2U;
+   bits |= ((uint32_t)(quality & 0x3U) << shift);
+@@ -28498,6 +28520,28 @@
+ // wystarczajaco czesto, zeby dotrzymac sekundowej rozdzielczosci
+ // mieszadloCzasOn bez zauwazalnego opoznienia.
+ void mieszadlo() {
++  // Checkbox automatyki podaza za temperatura trocin tylko z zaakceptowanego,
++  // swiezego odczytu. Aktualizujemy to przed recznym override'em elementu,
++  // bo override dotyczy przekaznika, a nie ustawienia widocznego w zakladce.
++  const bool trocinySwieze = temperaturaTrocinySwiezaDlaAutomatyki();
++  const float temperaturaTrociny = temperaturaOgrzewania_Trociny;
++  MieszadloTrocinyAuto::UpdateResult autoTrociny = {false, false, false};
++  bool automatWlaczonySnapshot = false;
++  portENTER_CRITICAL(&ustawieniaMux);
++  autoTrociny = MieszadloTrocinyAuto::update(
++      mieszadloTrocinyAutoState, mieszadloWlaczony, trocinySwieze, temperaturaTrociny);
++  mieszadloWlaczony = autoTrociny.enabled;
++  automatWlaczonySnapshot = autoTrociny.enabled;
++  portEXIT_CRITICAL(&ustawieniaMux);
++  if (autoTrociny.lockoutReleased) {
++    config.putBool("mTrocinyOff", false);
++    zapiszLog(F("tag=MIESZADLO zdarzenie=rearm temp_trociny_lte_30C"));
++  }
++  if (autoTrociny.autoEnabled) {
++    config.putBool("mieszWlaczony", true);
++    zapiszLog(F("tag=MIESZADLO zdarzenie=auto_wlaczono temp_trociny_gt_30C"));
++  }
++
+   // [SYMULACJA-MIESZADLO, PLAN_SYMULACJA_CZUJNIKOW.md 3.2/6.4] Reczny
+   // override (Wymus WL/Wymus WYL) z panelu WWW lub API — stan fizyczny
+   // (digitalWrite + mieszadloAktywnyStan) zostal ustawiony bezposrednio w
+@@ -28511,7 +28555,7 @@
+     return;
+   }
+ 
+-  bool pracaDozwolona = mieszadloWlaczony &&
++  bool pracaDozwolona = automatWlaczonySnapshot &&
+       ((rozpalanieTrybAktywny && rozpalanieAktywne) || temperaturaOgrzewania >= TEMP_MIN_POMPY);
+ 
+   if (!pracaDozwolona) {
+@@ -43165,6 +43209,8 @@
+   // [MIESZADLO-CYKL] Stary klucz "mieszadloTemp" (martwa flaga Mieszadlo_TEMP)
+   // celowo NIE jest juz odczytywany — osierocony w NVS, nieszkodliwy.
+   mieszadloWlaczony        = config.getBool("mieszWlaczony", true);  // [FIX NVS-15] patrz PLAN_NAPRAWY_NVS_KLUCZE_15_ZNAKOW.md
++  mieszadloTrocinyAutoState.manualOffUntilCooling = config.getBool("mTrocinyOff", false);
++  if (mieszadloTrocinyAutoState.manualOffUntilCooling) mieszadloWlaczony = false;
+   mieszadloCzasOn          = config.getUChar("mieszadloCzasOn", 30);
+   mieszadloCzasOff         = config.getUChar("mieszCzasOff", 10);  // [FIX NVS-15] patrz PLAN_NAPRAWY_NVS_KLUCZE_15_ZNAKOW.md
+   Wybor                    = config.getInt("wybor", 1);
