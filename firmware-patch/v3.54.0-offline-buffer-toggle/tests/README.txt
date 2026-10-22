@@ -36,3 +36,18 @@ SYMULATOR RAPORTU (v3.53.0) -- uruchom PRZED kazda prosba o wgranie firmware:
 
 Naglowek ../SolarDailyArchive.h nie zawiera I/O ani sieci -- dzieki temu ten
 sam kod dziala na ESP32 i na komputerze.
+
+PRZELACZNIK BUFORA OFFLINE (v3.54.0) -- uruchom PRZED prosba o wgranie:
+  cd host
+  python3 run_host_tests.py            -> WYNIK KONCOWY: OK (60 sprawdzen)
+  python3 run_host_tests.py -v         -> dodatkowo JSON i logi
+
+  Skrypt wycina z ../../main_centrala.cpp DOKLADNIE funkcje dodane w v3.54.0
+  (spoolRuntimePersistArmed/Arm/Stop/RestoreFromNvs, cztery linie JSON,
+  galezie ACK spoolrt_wl/spoolrt_wyl), kompiluje je g++ z atrapa Preferences
+  i String (host/shim.h) i sprawdza: zapis/odczyt NVS, bramki ARM, odtworzenie
+  po restarcie, przypadek aktualizacji (namespace jest, klucza nie ma),
+  poprawnosc JSON-a prawdziwym parserem.
+
+  Wymaga g++ i Pythona 3 -- bez ESP32 i bez PlatformIO.
+  Sprawdzone mutacjami: kazde zepsucie tych funkcji wywala test.
