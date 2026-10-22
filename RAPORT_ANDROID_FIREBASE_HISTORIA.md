@@ -852,3 +852,24 @@ Poprawka `1.0`. Nowy sha256 paczki: `a8edd4e5…`. Szczegóły: MD §15.6.
 
 `BUILD SUCCESSFUL in 22s`, 37 zadań, **3033 / v0.31.27**. 10 ostrzeżeń,
 wszystkie sprzed zmiany.
+## 17. v0.31.28 — panel solarny bez sum narastających
+
+Decyzja użytkownika: **„Narastającą jest zbędna, resztę zrób tak aby była
+łatwa do zrozumienia dla nowej osoby"**.
+
+`gain` sumował każdy wzrost i pomijał każdy spadek — prostownik szumu.
+206 próbek dało +93,1 °C przy wodzie na 33 °C. Sumy narastające usunięte
+z ekranu (nie przemianowane).
+
+Nowy układ „BILANSU SOLARNEGO": pomiar i szacunek jawnie rozdzielone
+(„Zysk dziś · zmierzone" / „Prognoza na dziś · szacunek"), pod tabelą jedno
+zdanie dla nowego czytelnika. Karta „DZIŚ" w siatce 7 dni pokazuje teraz
+prognozę jak pozostałe dni — pomiar został w wierszu „zmierzone".
+
+| | |
+|---|---|
+| ZIP | `SterownikCO-Android-v0.31.28-CZYTELNE.zip` — 21 222 B, 4 wpisy |
+| sha256 | `0263c4fb28fa46870410ec180d5bb25e6bb73d2e44476b9ccccca26fb0e4fe6e` |
+| pliki | 3 |
+
+Szczegóły i tabela zmian nazw: `ARCHIWUM_SOLARNE_STAN.md` §16.

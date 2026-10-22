@@ -686,3 +686,75 @@ versionCode = 3033, versionName = "v0.31.27"
 Zero błędów. 10 ostrzeżeń, wszystkie sprzed tej zmiany (`VIBRATOR_SERVICE`,
 `quadraticBezierTo` w `Weather.kt` i `SvgPath.kt`, `statusBarColor`, trzy
 `Condition is always 'true'` w `ChartEngine.kt`).
+
+---
+
+## 16. Panel solarny po ludzku (v0.31.28, APK 3034)
+
+Zgłoszenie: „Narastającą jest zbędna, resztę zrób tak aby była łatwa do
+zrozumienia dla nowej osoby".
+
+### 16.1 Dlaczego suma narastająca musiała zniknąć
+
+`gain` liczy **każdy** wzrost, a **każdy spadek pomija**:
+
+```kotlin
+val deltaP = maxOf(0.0, tPanel  - prev.tPanel)
+val deltaB = maxOf(0.0, tBojler - prev.tBojler)
+gain = maxOf(deltaP, deltaB) + (if (isDraw) drawDrop else 0.0)
+```
+
+To prostownik szumu: drobne wahania czujnika o 0,3 °C w tę i z powrotem
+dodają się jak realne grzanie. Na zrzucie: **+93,1 °C z 206 próbek**, gdy
+woda w zbiorniku miała 33 °C. Liczba nie miała odpowiednika w rzeczywistości
+— więc została **usunięta z ekranu**, nie przemianowana.
+
+To samo dotyczyło „Poborów wody narastająco".
+
+### 16.2 Zasada: każda liczba mówi, skąd jest
+
+| wiersz | źródło |
+|---|---|
+| Panel teraz / powietrze | czujnik |
+| Różnica panel − powietrze | czujnik (różnica) |
+| **Zysk dziś · zmierzone** | czujnik, próbki od północy |
+| **Prognoza na dziś · szacunek** | model z prognozy GHI |
+| Pobrania ciepłej wody | czujnik, wykryte spadki |
+
+Pod tabelą jest jedno zdanie wyjaśnienia dla kogoś, kto widzi to pierwszy raz:
+
+> Zysk = o ile °C ogrzała się woda w zbiorniku 100 l. „Zmierzone" to odczyt
+> czujnika w zbiorniku, „szacunek" to wyliczenie z prognozy słońca — nie pomiar.
+
+### 16.3 Karta „DZIŚ" w siatce prognozy
+
+Wcześniej pokazywała **pomiar**, a pozostałe dni **prognozę** — w jednej
+siatce pod tytułem „PROGNOZA POTENCJAŁU". Teraz wszystkie siedem kart to
+prognoza, łącznie z DZIŚ. Pomiar dzisiejszy jest tam, gdzie jego miejsce:
+w „Zysku dziś · zmierzonym".
+
+Pod nagłówkiem sekcji doszedł podpis:
+`o ile °C może ogrzać się woda w zbiorniku 100 l · szacunek, nie pomiar`.
+
+### 16.4 Zmiany nazw (bez skrótów)
+
+| było | jest |
+|---|---|
+| Panel teraz / zewnątrz | Panel teraz / powietrze |
+| ΔT panel − zewnątrz | Różnica panel − powietrze |
+| Zysk dziś | Zysk dziś · zmierzone |
+| Prognoza zysku · dziś | Prognoza na dziś · szacunek |
+| Pobory wody dziś | Pobrania ciepłej wody |
+| ΔT PANEL - ZEWN. (kafelek) | PANEL − POWIETRZE |
+| POBORY DZIŚ (kafelek) | POBRANIA DZIŚ |
+
+### 16.5 Paczka
+
+| | |
+|---|---|
+| ZIP | `SterownikCO-Android-v0.31.28-CZYTELNE.zip` — 21 222 B, 4 wpisy |
+| sha256 | `0263c4fb28fa46870410ec180d5bb25e6bb73d2e44476b9ccccca26fb0e4fe6e` |
+| pliki | 3: `build.gradle.kts`, `Weather.kt`, `Sensors.kt` |
+
+Przy okazji: `SolarDayCard` stracił nieużywany parametr `m` (karta nie czyta
+już stanu aplikacji, dostaje tylko godziny).
