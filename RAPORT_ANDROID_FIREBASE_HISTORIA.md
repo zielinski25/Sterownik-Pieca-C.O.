@@ -611,3 +611,49 @@ Ostrzeżenia (nie błędy, wszystkie w plikach **spoza** paczek v0.31.20–v0.31
 Wniosek: kod v0.31.22 **kompiluje się**. Wcześniejszy `compileDebugKotlin` FAILED
 nie był błędem kodu, tylko brakiem trzech plików w starym drzewie użytkownika
 (§11.5). Na przyszłość: przy nieznanym drzewie wysyłać pełne źródła.
+
+## 12. v0.31.23 — kafelek SERWO i echo kwadracika
+
+Zgłoszenie użytkownika po wgraniu v0.31.22 na telefon z firmware v3.54.0
+(zrzuty: arkusz „Bufor offline" z licznikami po 0 oraz Pulpit z kafelkiem
+`AUTO (100%)` i uciętym podpisem `klapa 100% · syberek 10…`):
+
+1. po kliknięciu kwadracika widać toast ACK, ale kwadracik zmienia się dopiero
+   po wyjściu i powrocie — do 8 s;
+2. podpis kafelka SERWO nie mieści się;
+3. „AUTO (100%)" nie mówi nic o pozycji **dwóch** serw.
+
+### 12.1 Przyczyny
+
+| objaw | przyczyna |
+|---|---|
+| kwadracik po 8 s | `CheckRow` czyta wyłącznie `S.<pole>` z ostatniego statusu; pętla statusu `delay(8000)`. ACK przychodzi w 0,3–2 s, status do 8 s. |
+| ucięty podpis | `QCard.sub` ma `maxLines = 1`, krój 7,5 sp, ~87 dp szerokości → ~21 znaków; tekst `klapa 100% · syberek 10%` ma 24. |
+| brak pozycji | `value` było trybem + procentem **klapy**; syberek tylko w podpisie, który się ucinał. |
+
+Ten sam błąd zwłoki dotyczył: Kontrola → Antystop, Mieszadło → Automatyka.
+Nie dotyczył: wykresów, kafelków Dashboardu, Telegrama (stan lokalny).
+
+### 12.2 Poprawki (`android-sync/v0.31.23-serwo-poprawki/`)
+
+- `Kit.kt` — nowy `CheckRowEcho`: echo stanu docelowego + timeout 12 s,
+  `LaunchedEffect(pending, device)` zdejmuje echo po potwierdzeniu.
+  **Rytm statusu nietknięty** (decyzja „A").
+- `Chrome.kt` — `QCard` dostaje `sub2: String = ""` (druga linia podpisu,
+  domyślnie pusta → pozostałe kafelki bez zmian).
+- `Theme.kt` — `Dimens.quickH` 64 → 70 dp (czwarta linia; przy 64 dp brakowało 2 dp).
+- `Dashboard.kt` — SERWO: `klapa 100%` / `syberek 10%` / `tryb AUTO`.
+- `Offline.kt`, `Control.kt` — trzy `CheckRow` → `CheckRowEcho`.
+- `build.gradle.kts` — 3029 / `v0.31.23`.
+
+| | |
+|---|---|
+| ZIP | `SterownikCO-Android-v0.31.23-POPRAWKI.zip` — 31 298 B, 8 wpisów |
+| sha256 | `27957b011774298431ab1cbad8335c06c7fbf65510f6086825e29053991deade` |
+| baza | drzewo v0.31.22 (`SterownikCO-0.31.22`), 7 plików, 0 nowych |
+
+### 12.3 Czego nie sprawdzono
+
+Brak JDK/Kotlinc/Gradle → brak dowodu „kompiluje się". Sprawdzone: bilans
+nawiasów 5 plików (0 różnicy), asercje kotwic, `diff -rq` = dokładnie
+7 zmienionych plików, szerokości tekstów (< 87 dp).

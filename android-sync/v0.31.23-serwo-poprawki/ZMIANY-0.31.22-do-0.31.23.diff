@@ -1,0 +1,250 @@
+diff -ruN android019/app/build.gradle.kts android023/app/build.gradle.kts
+--- a/app/build.gradle.kts	2026-10-22 09:03:52.730203618 +0000
++++ b/app/build.gradle.kts	2026-10-22 09:59:14.589035593 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 3028
+-        versionName = "v0.31.22"
++        versionCode = 3029
++        versionName = "v0.31.23"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff -ruN android019/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt android023/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt	2026-10-22 07:54:29.874663412 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt	2026-10-22 09:58:55.988941716 +0000
+@@ -233,7 +233,12 @@
+ 
+ /** `.qcard` — szybka karta 3-kolumnowa. */
+ @Composable
+-fun RowScope.QCard(title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit) {
++fun RowScope.QCard(
++    title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit,
++    /** [0.31.23] Druga linia podpisu — dla kafelków, które muszą pokazać trzy rzeczy
++     *  (np. SERWO: pozycja klapa, pozycja syberek, tryb). Pusta = brak linii. */
++    sub2: String = ""
++) {
+     val bd = when (state) {
+         "ok" -> Pal.rgba(74, 222, 128, .45f); "warn" -> Pal.rgba(251, 191, 36, .5f)
+         "err" -> Pal.rgba(255, 95, 120, .55f); else -> Pal.Border
+@@ -251,6 +256,9 @@
+         }
+         Text(value, style = Txt.quickVal, color = vc, maxLines = 1, overflow = TextOverflow.Ellipsis)
+         Text(sub, style = Txt.quickSub, maxLines = 1, overflow = TextOverflow.Ellipsis)
++        if (sub2.isNotEmpty()) {
++            Text(sub2, style = Txt.quickSub, maxLines = 1, overflow = TextOverflow.Ellipsis)
++        }
+     }
+ }
+ 
+diff -ruN android019/app/src/main/java/com/sterownikco/pro/ui/components/Kit.kt android023/app/src/main/java/com/sterownikco/pro/ui/components/Kit.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/components/Kit.kt	2026-10-22 07:54:29.874663412 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/components/Kit.kt	2026-10-22 09:58:55.988941716 +0000
+@@ -29,6 +29,7 @@
+ import androidx.compose.material3.SliderDefaults
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableFloatStateOf
+ import androidx.compose.runtime.mutableStateOf
+@@ -47,6 +48,7 @@
+ import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
++import kotlinx.coroutines.delay
+ import com.sterownikco.pro.ui.icons.AppIcon
+ import com.sterownikco.pro.ui.theme.Dimens
+ import com.sterownikco.pro.ui.theme.Pal
+@@ -245,6 +247,52 @@
+     }
+ }
+ 
++/**
++ * [0.31.23] CheckRow dla stanu, który mieszka w CENTRALI, a nie w aplikacji.
++ *
++ * Problem, który to naprawia: klik w CheckRow wysyła komendę i dostaje ACK
++ * w ~0,3–2 s, ale sam kwadracik czyta wyłącznie status, który przychodzi
++ * co 8 s. Efekt: toast „Potwierdzone przez sterownik", a kwadracik pusty
++ * jeszcze przez kilka sekund — wygląda jak zepsuty.
++ *
++ * Rozwiązanie: po kliknięciu kwadracik pokazuje stan DOCELOWY (echo), podpis
++ * mówi „Wysyłanie…". Gdy przyjdzie świeży status zgodny z echem — echo znika
++ * i zostaje prawda z centrali. Jeśli w 12 s nic nie przyjdzie, echo znika samo
++ * i UI wraca do stanu z centrali (czyli uczciwie pokazuje, że się nie udało).
++ */
++@Composable
++fun CheckRowEcho(
++    name: String,
++    desc: String?,
++    device: Boolean,
++    known: Boolean = true,
++    pendingText: String = "Wysyłanie… czekam na potwierdzenie centrali",
++    onSend: (Boolean) -> Unit
++) {
++    var pending by remember { mutableStateOf<Boolean?>(null) }
++
++    // Status dogonił echo — zdejmij echo, dalej pokazujemy prawdę z centrali.
++    LaunchedEffect(pending, device) {
++        if (pending != null && device == pending) pending = null
++    }
++    // Brak potwierdzenia w 12 s — zdejmij echo (UI wroci do stanu z centrali).
++    LaunchedEffect(pending) {
++        val cel = pending ?: return@LaunchedEffect
++        delay(12_000)
++        if (pending == cel) pending = null
++    }
++
++    CheckRow(
++        name = name,
++        desc = if (pending != null) pendingText else desc,
++        checked = pending ?: device,
++        known = known
++    ) { v ->
++        pending = v
++        onSend(v)
++    }
++}
++
+ /** `.slider` — suwak z etykietą i wartością (panel: `<div class="h"><span>…</span><b></b></div>`). */
+ @Composable
+ fun SliderRow(
+diff -ruN android019/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt android023/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt	2026-10-22 08:42:19.201941082 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt	2026-10-22 09:59:14.589035593 +0000
+@@ -172,29 +172,27 @@
+             val servoKnown = servoMode != null
+             val flapKnown = S.hasData("klapa") && S.klapa in 0..180
+             val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
++            // [0.31.23] Kafelek pokazuje POZYCJĘ, nie tryb. „AUTO (100%)" mówiło tylko
++            // o klapie i wyglądało jak jedna wartość dla całego serwa — a to są DWA
++            // niezależne serwa. Kąt z centrali (klapa 0..180°, syberek 0..90°)
++            // przeliczamy na procent, bo tylko procent jest porównywalny między nimi.
+             val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
+-            // Serwo dostaje 0..100% z centrali; kąt to tylko przelicznik (klapa 180°, syberek 90°).
+             val syberkaLabel = if (syberkaKnown) "${Math.round(S.syberka * 100.0 / 90.0)}%" else "—"
+-            val pendingLabel = pendingServo?.let { "CEL ${it.second.requestedPercent}%" }
++            val servoModeLabel = when (servoMode) { 1 -> "AUTO"; 2 -> "RĘCZNY"; 3 -> "BEZPIECZNY"; else -> null }
+             QCard(
+                 title = "SERWO", icon = "servo",
+-                value = when {
+-                    pendingLabel != null -> pendingLabel
+-                    !servoKnown -> "—"
+-                    else -> when (servoMode) {
+-                        1 -> "AUTO ($flapLabel)"
+-                        2 -> "RĘCZNY ($flapLabel)"
+-                        3 -> "BEZPIECZNY"
+-                        else -> "—"
+-                    }
++                // Trzy osobne informacje: pozycja klapy, pozycja syberka, tryb.
++                value = pendingServo?.let { "CEL ${it.second.requestedPercent}%" } ?: "klapa $flapLabel",
++                sub = when {
++                    pendingServo != null -> "${pendingServo.first} ${pendingServo.second.targetDegrees}° · czekam"
++                    syberkaKnown -> "syberek $syberkaLabel"
++                    else -> "syberek —"
++                },
++                sub2 = when {
++                    pendingServo != null -> "czekam na status"
++                    servoModeLabel != null -> "tryb $servoModeLabel"
++                    else -> "tryb —"
+                 },
+-                sub = pendingServo?.let { "cel ${it.first} ${it.second.targetDegrees}° · oczekuje na status" }
+-                    ?: when {
+-                        flapKnown && syberkaKnown -> "klapa $flapLabel · syberek $syberkaLabel"
+-                        flapKnown -> "klapa $flapLabel"
+-                        syberkaKnown -> "syberek $syberkaLabel"
+-                        else -> "brak prawidłowego odczytu pozycji"
+-                    },
+                 state = if (!servoKnown || pendingServo != null) "warn" else when (servoMode) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
+                 onClick = { m.openSheet("serwo") }
+             )
+diff -ruN android019/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Control.kt android023/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Control.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Control.kt	2026-10-22 07:54:29.874663412 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Control.kt	2026-10-22 09:59:06.012992294 +0000
+@@ -33,7 +33,7 @@
+ import com.sterownikco.pro.core.AppModel
+ import com.sterownikco.pro.core.ServoPositionAxis
+ import com.sterownikco.pro.core.ServoPositionPreview
+-import com.sterownikco.pro.ui.components.CheckRow
++import com.sterownikco.pro.ui.components.CheckRowEcho
+ import com.sterownikco.pro.ui.components.ManualRow
+ import com.sterownikco.pro.ui.components.Note
+ import com.sterownikco.pro.ui.components.NumRow
+@@ -239,7 +239,7 @@
+         m.commitNum("Temp STOP (OFF)", "tempOff", 0, 100, v)
+     }
+     SectionHeader("Zabezpieczenie Antystop")
+-    CheckRow("Włączony antystop", null, S.antystopWlaczony, known = S.hasData("antystopWlaczony")) { v ->
++    CheckRowEcho("Włączony antystop", null, S.antystopWlaczony, known = S.hasData("antystopWlaczony")) { v ->
+         m.commitBool("Antystop", "antystopWlaczony", v)
+     }
+     NumRow("Dni bez ruchu", "Wymuszony puls 45s po X dniach bezczynności", S.antystopDni, 1, 45, known = S.hasData("antystopDni")) { v ->
+@@ -470,7 +470,7 @@
+         else -> "BRAK ODCZYTU"
+     }
+ 
+-    CheckRow(
++    CheckRowEcho(
+         "Automatyka włączona",
+         "Zezwolenie na cykliczną pracę mieszadła",
+         S.mieszadloWlaczony,
+diff -ruN android019/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Offline.kt android023/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Offline.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Offline.kt	2026-10-22 09:03:50.374191675 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Offline.kt	2026-10-22 09:59:06.004992254 +0000
+@@ -12,7 +12,7 @@
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.sterownikco.pro.core.AppModel
+-import com.sterownikco.pro.ui.components.CheckRow
++import com.sterownikco.pro.ui.components.CheckRowEcho
+ import com.sterownikco.pro.ui.components.Note
+ import com.sterownikco.pro.ui.components.SectionHeader
+ import com.sterownikco.pro.ui.theme.Pal
+@@ -24,9 +24,10 @@
+  * czekają w RAM (24 h). Ten bufor zapisuje je na flash, więc przeżywają
+  * restart i zanik prądu, a po powrocie sieci lecą do Firebase.
+  *
+- * Stan czytamy WYŁĄCZNIE ze statusu (`spool_rt`) — po kliknięciu nie zmieniamy
+- * UI lokalnie, bo dopiero ACK + świeży snapshot są prawdą (ta sama zasada co
+- * przy pozostałych poleceniach).
++ * Stan pochodzi ze statusu (`spool_rt`). Po kliknięciu CheckRowEcho pokazuje od
++ * razu stan docelowy (echo), a świeży status go potwierdza — albo cofa echo po
++ * 12 s. Bez tego kwadracik reagował dopiero po 8 s, gdy przyszedł kolejny
++ * status, mimo że ACK z centrali był już w telefonie.
+  */
+ @Composable
+ fun OfflineBufferSheet(m: AppModel) {
+@@ -41,14 +42,14 @@
+             "Gdy centrala nie ma internetu, próbki telemetrii trafiają na jej pamięć flash. " +
+                 "Po powrocie sieci lecą do Firebase — nic nie ginie."
+         )
+-        CheckRow(
++        CheckRowEcho(
+             name = "Bufor offline",
+             desc = when {
+                 !known -> "Ta wersja firmware nie zgłasza tego ustawienia"
+                 on -> "Włączony · ustawienie zapisane w centrali"
+                 else -> "Wyłączony · próbki czekają tylko w pamięci RAM"
+             },
+-            checked = on,
++            device = on,
+             known = known
+         ) { v -> m.setOfflineBuffer(v) }
+ 
+diff -ruN android019/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt android023/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt	2026-10-22 07:54:29.878663432 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt	2026-10-22 09:59:31.501121022 +0000
+@@ -25,7 +25,10 @@
+     val navH = 74.dp
+     val navBtnH = 56.dp
+     val tileH = 126.dp
+-    val quickH = 64.dp
++    // [0.31.23] 70 zamiast 64: kafelek SERWO ma teraz czwartą linię tekstu
++    // (klapa % / syberek % / tryb). Przy 64 dp ostatnia linia była o 2 dp od
++    // przycięcia — 70 dp daje zapas i nie rusza pozostałych wymiarów.
++    val quickH = 70.dp
+     val analysisH = 74.dp
+     val trendH = 75.dp
+     val chartH = 220.dp
