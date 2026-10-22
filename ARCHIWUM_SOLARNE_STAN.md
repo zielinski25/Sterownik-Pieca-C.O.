@@ -285,6 +285,61 @@ jedna wiadomość albo żadna — podział nie działa, patrzeć na `/logi`. Je�
 wiadomość przyjdzie **sama z nagłówkiem** — wrócił błąd z v3.53.0 (prefiks wysyłany
 osobno), ale ten kod jest pokryty testem (`checkSplit`, punkt 3).
 
+### 2026-10-22, ~17:00 — przewidywanie z 07:00 sprawdziło się co do liczby
+
+```
+Archiwum solarne (3 dni, z centrali)
+
+2026-10-22  GHI 0.19 kWh/m2  dT -3.5°C  amplituda 3.8°C  (min 31.5 @ 16:40 / max 35.2 @ 00:14)
+            pokrycie 70.7% (99.7% czasu)  1018/1440 prob.  00:00-16:59 (w toku)
+2026-10-21  GHI 2.47 kWh/m2  dT +13.8°C  amplituda 19.5°C  (min 19.8 @ 02:34 / max 39.2 @ 15:23)
+            pokrycie 99.0%  1425/1440 prob.  00:00-23:59 TECH
+2026-10-20  GHI 0.55 kWh/m2  dT -2.0°C  amplituda 3.8°C  (min 21.2 @ 23:51 / max 25.0)
+            pokrycie 98.0%  1411/1440 prob.  00:00-23:59 TECH
+
+Suma GHI: 3.21 kWh/m2 (3/3 dni z prognoza) | odczyty: 3/3
+```
+
+**Wpis z 07:00 przewidział dokładnie ten dzień:** „prognoza to 0,19 kWh/m²
+— 13× mniej niż wczoraj… zbiornik **będzie tracił** ciepło przez cały dzień…
+`dT` dla 22.10 pozostanie **ujemne**". GHI 0.19 ✓, `dT` −3.5 ✓.
+
+**Minimum o 16:40, maksimum o 00:14 — odwrotnie niż normalnie.** Gdy słońce
+grzeje, minimum jest nad ranem, a maksimum po południu (21.10: 02:34 i 15:23).
+Tu zbiornik stygł cały dzień, więc najzimniej jest wieczorem. To podpis
+dnia bez dostawy ciepła, nie awaria.
+
+**Tempo stygnięcia jest stałe — dzień i noc jednakowo:**
+
+| okres | spadek | tempo |
+|---|---|---|
+| noc 21→22 (00:14 → 06:41) | 1,4 K | 0,22 K/h |
+| dzień 22.10 (06:41 → 16:40) | 2,3 K | **0,23 K/h** |
+| cała doba (00:14 → 16:40) | 3,7 K | 0,23 K/h |
+
+Równe 0,23 K/h przez 16 godzin = izolacja pracuje przewidywalnie, bez skoków.
+
+**Pokrycie 99,7% czasu:** 1018 próbek w 1017 upłyniętych minutach (tolerancja
+`r <= 1.02`). Trzy brakujące minuty na całą dobę.
+
+**Model APK a rzeczywistość:** „Prognoza na dziś · szacunek" pokazywała
++1,5 °C, wyszło −3,5 °C. Model liczy **ile wpada** (GHI × 4,2), nie zna
+temperatury startowej ani strat zbiornika (§16.4). Przy GHI 0,19 kWh/m²
+ciepło ze słońca jest mniejsze niż ucieczka przez ścianki. To nie błąd
+modelu — to jego granica, i właśnie dlatego pomiar i szacunek są w APK
+rozdzielone.
+
+**Arytmetyka:** 0.19 + 2.47 + 0.55 = **3.21** ✓. `amplituda 3.8` przy
+min 31.5 / max 35.2 (różnica 3.7) to to samo zaokrąglenie pełnych wartości,
+co przy 21.10 (§13, 19,4 vs 19,5).
+
+**Do sprawdzenia jutro (23.10):** prognoza z APK na JUTRO to +11,2 °C przy
+438 W/m². Jeśli dzień będzie słoneczny, minimum powinno wypaść **nad ranem**,
+a maksimum **po południu** — powrót do wzorca z 21.10. Jeśli tak się nie
+stanie, warto sprawdzić, czy woda nie jest spuszczona (`/solar_tryb`).
+
+---
+
 ### 2026-10-22, 07:00 — pierwsza doba zamknięta po słonecznym dniu
 
 ```
