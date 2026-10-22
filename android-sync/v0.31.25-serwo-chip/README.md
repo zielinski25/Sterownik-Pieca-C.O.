@@ -64,3 +64,26 @@ versionCode = 3031, versionName = "v0.31.25"
 Zero ostrzeżeń `compileDebugKotlin` w tej wersji (w v0.31.24 były dwa
 o deprecated `statusBarColor` / `navigationBarColor` — te same pliki, więc
 Gradle po prostu pokazał je raz; nie dotyczą SERWO).
+
+## Jak kopiować polecenia do PowerShella
+
+`>>` na początku linii to **znak kontynuacji**, który PowerShell sam dopisuje,
+gdy polecenie nie jest jeszcze zamknięte. To nie jest część polecenia.
+
+Gdy skopiujesz cały ekran (razem z `>>`) i wkleisz go z powrotem, PowerShell
+przeczyta `>>` jako operator przekierowania i wysypie się na:
+
+```
+Missing file specification after redirection operator.
+The output stream for this command is already redirected.
+Unexpected token 'in' in expression or statement.
+```
+
+Nic się wtedy nie psuje — żadne polecenie się nie wykonało.
+
+**Zasady:**
+1. Wklejaj tylko jedną linię albo blok bez znaków `>>`.
+2. Kopiuj z czatu przyciskiem „kopiuj" — zwykłe zaznaczenie zamienia `>`
+   na `&gt;` i to też wysypuje parser.
+3. Po błędzie parsera nie trzeba nic naprawiać — wystarczy wkleić polecenie
+   ponownie, czyste.
