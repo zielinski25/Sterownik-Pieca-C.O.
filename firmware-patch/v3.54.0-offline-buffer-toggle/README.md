@@ -25,7 +25,7 @@ v3.54.0 usuwa wszystkie trzy.
 | `zbudujJsonStatusPelny()` | 4 nowe pola: `spool_rt`, `spool_pages`, `spool_spill`, `spool_replay` |
 | `spoolRuntimePersistArmed()` | **jeden bajt** w NVS: namespace `spoolg`, klucz `rt_on` |
 | `spoolRuntimeRestoreFromNvs()` | wywołane w `setup()` po `g_telemetryRing.init()` |
-| `FIRMWARE_VERSION` | `v3.53.1` → `v3.54.0` |
+| `FIRMWARE_VERSION` | `v3.53.1` → `v3.54.0` (linia **5434**) |
 
 Zapis do NVS następuje **wyłącznie przy zmianie stanu** (klik w aplikacji albo
 `/spoolrt`), nigdy przy próbce telemetrii. Jeden bajt na kliknięcie.
@@ -40,6 +40,18 @@ Zapis do NVS następuje **wyłącznie przy zmianie stanu** (klik w aplikacji alb
 | `spool_spill` / `spool_replay` | ile próbek wróciło do Firebase |
 
 Payload urósł o ~90 B (limit `FB_JSON_CAP = 3072`, dotychczasowy JSON ~1,9 KB).
+
+## Gdzie sprawdzić wersję w `main_centrala.cpp`
+
+```powershell
+Select-String -Path .\main_centrala.cpp -Pattern 'static const char\* FIRMWARE_VERSION'
+```
+
+Wynik: `static const char* FIRMWARE_VERSION = "v3.54.0";` — **linia 5434**.
+
+Uwaga: linie 20–200 to **historia zmian** (każda wersja zostawia swój wpis),
+więc pierwsze trafienie „v3.53.1" w pliku to stary wpis changelogu, nie stała.
+Od tej paczki pierwsza linia pliku też mówi wprost `v3.53.1 -> v3.54.0`.
 
 ## Czego NIE zmieniono
 

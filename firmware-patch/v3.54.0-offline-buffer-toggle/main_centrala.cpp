@@ -1,4 +1,5 @@
 // [v3.54.0 OFFLINE-BUFFER-TOGGLE] — 2026-10-22
+// FIRMWARE_VERSION v3.53.1 -> v3.54.0 (MINOR, bufor offline z aplikacji).
 // Co: przelacznik "bufor offline" (runtime Spool G2) dostepny z aplikacji
 //     Android przez /piec/cmd, ze stanem w /piec/status i zapisem w NVS.
 // Dlaczego: dotad jedyna droga byl Telegram (/spoolrt TAK). Aplikacja nie

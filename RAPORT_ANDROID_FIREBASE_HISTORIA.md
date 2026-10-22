@@ -549,8 +549,8 @@ przełącznik nieaktywny z wyjaśnieniem.
 | | Android | Firmware |
 |---|---|---|
 | plik | `SterownikCO-Android-v0.31.22-BUFOR-OFFLINE.zip` | `SterownikCO-v3.54.0-OFFLINE-BUFFER.zip` |
-| rozmiar | 108 500 B | 813 517 B |
-| sha256 | `1bb4f02ec9aa575b474ef6961684b530384b807a4fb8808d1dac3f6f581bfbe8` | `4883370d3b5392bb6e54e38a9f5a9df2e22f18acd60193d35d1208887b38961a` |
+| rozmiar | 108 500 B | 813 533 B |
+| sha256 | `1bb4f02ec9aa575b474ef6961684b530384b807a4fb8808d1dac3f6f581bfbe8` | `77092fe0efbdc3b0d715e4434966d3b7475de03271506bddd40c0cff393d67df` |
 | katalog | `android-sync/v0.31.22-offline-buffer/` | `firmware-patch/v3.54.0-offline-buffer-toggle/` |
 
 ### 11.5 Czego nie sprawdzono
