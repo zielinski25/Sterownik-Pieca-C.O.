@@ -758,3 +758,14 @@ Pod nagłówkiem sekcji doszedł podpis:
 
 Przy okazji: `SolarDayCard` stracił nieużywany parametr `m` (karta nie czyta
 już stanu aplikacji, dostaje tylko godziny).
+
+### 16.6 Build
+
+```
+BUILD SUCCESSFUL in 10s
+37 zadań (12 wykonanych, 25 z cache)
+versionCode = 3034, versionName = "v0.31.28"
+```
+
+Dwa ostrzeżenia `quadraticBezierTo` (`Weather.kt:649` i `:655`) — rysowanie
+łuku słońca, sprzed tej zmiany.

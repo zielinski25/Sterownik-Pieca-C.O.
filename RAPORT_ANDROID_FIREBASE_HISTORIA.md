@@ -873,3 +873,5 @@ prognozę jak pozostałe dni — pomiar został w wierszu „zmierzone".
 | pliki | 3 |
 
 Szczegóły i tabela zmian nazw: `ARCHIWUM_SOLARNE_STAN.md` §16.
+Build: `BUILD SUCCESSFUL in 10s`, 37 zadań, 0 błędów, 2 ostrzeżenia
+(`quadraticBezierTo` w `Weather.kt`), oba sprzed zmiany.

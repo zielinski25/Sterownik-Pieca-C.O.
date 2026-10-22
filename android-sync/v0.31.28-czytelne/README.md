@@ -35,3 +35,20 @@ pomiar jest w wierszu „zmierzone". Pod nagłówkiem sekcji dopisane:
 Brak JDK/Kotlinc/Gradle → brak dowodu „kompiluje się". Sprawdzone: bilans
 nawiasów 0/0/0, usunięty nieużywany parametr `m` z `SolarDayCard`
 (sygnatura + 2 wywołania), `diff -rq` = dokładnie 3 pliki.
+
+## Build potwierdzony (2026-10-22)
+
+```
+BUILD SUCCESSFUL in 10s
+37 zadań (12 wykonanych, 25 z cache)
+versionCode = 3034, versionName = "v0.31.28"
+```
+
+Dwa ostrzeżenia, **oba sprzed tej zmiany**:
+
+```
+Weather.kt:649  'quadraticBezierTo' is deprecated. Use quadraticTo()
+Weather.kt:655  'quadraticBezierTo' is deprecated. Use quadraticTo()
+```
+
+Rysowanie łuku słońca (Canvas), ~200 linii niżej niż zmieniany panel.
