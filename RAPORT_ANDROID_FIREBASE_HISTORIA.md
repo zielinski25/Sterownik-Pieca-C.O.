@@ -549,7 +549,7 @@ przełącznik nieaktywny z wyjaśnieniem.
 | | Android | Firmware |
 |---|---|---|
 | plik | `SterownikCO-Android-v0.31.22-BUFOR-OFFLINE.zip` | `SterownikCO-v3.54.0-OFFLINE-BUFFER.zip` |
-| rozmiar | 108 500 B | 814 727 B |
+| rozmiar | 108 500 B (+ pełne źródła 1 119 837 B) | 814 727 B |
 | sha256 | `1bb4f02ec9aa575b474ef6961684b530384b807a4fb8808d1dac3f6f581bfbe8` | `3b2859f1e5d1373555e371bd83a5cbe3329fb2063465fe4400408c856687685c` |
 | katalog | `android-sync/v0.31.22-offline-buffer/` | `firmware-patch/v3.54.0-offline-buffer-toggle/` |
 
@@ -559,3 +559,31 @@ Brak kompilatora ESP32 i brak JDK — build musi wykonać użytkownik.
 Wykonane: balans nawiasów całego `main_centrala.cpp` identyczny z v3.53.1
 (różnica 0), każda wstawka asertowana liczbą wystąpień, `kcheck.py` na
 6 plikach Kotlina, kontrola obu ZIP-ów przez rozpakowanie i `cmp`.
+
+### 11.5 Pełne źródła — po nieudanym buildzie (2026-10-22)
+
+Build na `C:\Users\Rafcio\Desktop\Nowy folder\android` padł na
+`compileDebugKotlin`: `Unresolved reference 'ServoPositionPreview'`,
+`'ServoPositionAxis'`, `'AlarmSoundSync'`, `'commandChangesDashboardState'`,
+`'acceptedAtElapsedMs'`.
+
+Powód: to drzewo **starsze niż v0.31.18**. Nakładka v0.31.22 nadpisuje 13
+plików i dokłada 3 (`TelemetryCache.kt`, `Offline.kt`,
+`TelemetryCacheTest.kt`), ale **nie dokłada** plików, które nowy `AppModel.kt`
+i `Dashboard.kt` już wywołują:
+
+| brakujący plik | symbole |
+|---|---|
+| `core/ServoPositionPreview.kt` | `ServoPositionAxis`, `ServoPositionPreview`, `parseServoPositionCommand`, `SERVO_POSITION_PREVIEW_TIMEOUT_MS`, `shouldKeepServoPositionPreview`, `acceptedAtElapsedMs`, `targetDegrees` |
+| `core/AlarmSoundSync.kt` | `AlarmSoundSync` |
+| `core/DashboardCommandRefresh.kt` | `commandChangesDashboardState` |
+
+Rozwiązanie: **`SterownikCO-Android-v0.31.22-PELNE-ZRODLA.zip`** — cały
+projekt (140 wpisów, 92 pliki `.kt`, `res/`, wrapper, `settings.gradle.kts`),
+1 119 837 B, sha256
+`28749f6b07a06baceac9b106585c686bdf2c5fcaef284bddab3c6b41a28c1748`,
+Drive `1la6HXmGvW_1TbU7ieqBTSSwlUff7Fhwn`.
+
+Wniosek na przyszłość: przy nieznanym stanie drzewa użytkownika wysyłać
+**pełne źródła**, nie nakładkę — nakładka jest tańsza, ale zakłada bazę,
+której nie da się zweryfikować zdalnie.

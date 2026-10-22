@@ -54,3 +54,14 @@ Gdy firmware jest starszy (brak `spool_rt`): przełącznik nieaktywny z napisem
 Brak JDK / Android SDK → `assembleDebug` i testy muszą pójść na laptopie.
 Wykonane: `kcheck.py` na wszystkich zmienionych plikach (balans nawiasów
 i stringów) — OK; kontrola ZIP-a przez rozpakowanie i `cmp` 13 plików — OK.
+
+## Gdy build pada na `Unresolved reference` — pełne źródła
+
+Mała paczka (13 plików) wymaga drzewa **v0.31.18/v0.31.19**. Na starszym
+projekcie kompilator zgłosi `ServoPositionPreview`, `ServoPositionAxis`,
+`AlarmSoundSync`, `commandChangesDashboardState` — brakuje trzech plików,
+których nakładka nie zawiera.
+
+Wtedy: **`SterownikCO-Android-v0.31.22-PELNE-ZRODLA.zip`** (1 119 837 B,
+140 wpisów, cały projekt) — rozpakować do nowego folderu i zbudować.
+Szczegóły: `README-PELNE-ZRODLA.md`.
