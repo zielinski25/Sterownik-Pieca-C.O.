@@ -4,6 +4,9 @@ Dokument odtworzony 2026-10-20 po resecie środowiska (poprzednia kopia nie był
 Ma być **żywy**: każda zmiana zachowania archiwum dopisuje sekcję „Historia wersji”, a ustalenia
 sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.53.1**.
 
+> **Zanim policzysz energię:** zbiornik ma **100 l**. Przelicznik to
+> **0,1163 kWh/K** — nigdy 200 kg. Patrz §12.
+
 ---
 
 ## 1. Po co to jest
@@ -504,3 +507,60 @@ Oba komunikaty poprawione w v3.52.10. Brak `@` przy min/max = zapis sprzed v3.52
   powierzchnię czynną, niż przyjąłem — **poprawka na przyszłość**.
 - Konsekwencja: prognoza „~9 K z 2,449 kWh/m²” na 21.10 była policzona dla zbyt małej
   apertury. Realistyczniej **11–13 °C**, nadal jako szacunek, nie pomiar.
+
+---
+
+## 12. Przelicznik energii — 100 l, nigdy 200 kg
+
+**Zgłoszenie użytkownika 2026-10-22:** „JAKIE 200 KG WODY". Słusznie.
+
+W instalacji jest **zbiornik 100 l** (§3). Tymczasem aplikacja Android liczy
+energię dla **200 kg wody** — liczba przejęta z `Piec.html` i nigdy nie
+dopasowana do tej instalacji.
+
+### 12.1 Co pokazuje aplikacja, a co jest w instalacji
+
+| wielkość | instalacja (ustalenie) | kod APK v0.31.25 | błąd |
+|---|---|---|---|
+| masa wody w przeliczniku | **100 l** | `200` — `SolarAnalytics.kt:146` | **2× za dużo** |
+| równoważnik energii | **0,1163 kWh/K** | 0,2326 kWh/K | **2× za dużo** |
+| powierzchnia kolektora (prognoza) | 10 rur, ~1,4 m² czynnej (§11) | `2.0` m² — `SolarAnalytics.kt:137` | ~1,4× za dużo |
+| model zysku w °C | — | `* 4.2 * 10` — `SolarAnalytics.kt:136`, `Weather.kt:423` | nieodtwarzalny |
+
+Rachunek kontrolny:
+
+```
+100 l → 100 × 4,186 / 3600 = 0,1163 kWh/K     ← tyle ma być
+200 kg → 200 × 4,186 / 3600 = 0,2326 kWh/K    ← tyle liczy APK
+                                              stosunek = dokładnie 2,00
+```
+
+**Skutek:** „~X kWh" pod „ZYSKIEM BRUTTO SŁOŃCA" jest zawyżone **dwa razy**.
+Przy 20 °C przyrostu APK pokaże ~4,65 kWh, a w 100 l jest ~2,33 kWh.
+
+### 12.2 Czego nie wiadomo
+
+- `forecastGain = totalKwhM2 * 4.2 * 10` — nie ma zapisu, czym jest `4.2`
+  ani `10`. Nie zgaduję. Wiadomo tylko, że wynik jest niespójny z
+  `forecastKwh` pokazywanym **obok** na tym samym kafelku (ten sam dzień,
+  ta sama prognoza, dwa różne układy odniesienia).
+- Sprawność 65% (`forecastKwh`) nigdy nie była mierzona na tej instalacji.
+
+### 12.3 Reguła
+
+> **Liczby o instalacji bierze się z tego dokumentu, nigdy z kodu aplikacji.**
+
+Kod może być źródłem tego, *co* się liczy — ale nie tego, *ile* jest wody,
+rura, metrów czy litrów. 200 kg w kodzie nie jest ustaleniem, jest
+pozostałością.
+
+### 12.4 Co z tym zrobić (czeka na decyzję)
+
+| wariant | zmiana | efekt |
+|---|---|---|
+| A | `200` → `100` w `SolarAnalytics.kt:146` | kWh zgodne z 100 l, reszta bez zmian |
+| B | A + usunięcie `~X kWh` z kafelków | zostaje tylko °C — mniej liczb do tłumaczenia |
+| C | A + przelicznik w jednym miejscu (stała `KWH_PER_K = 0.1163`) | jedna liczba na całą aplikację |
+
+Niezależnie od wariantu: `~X kWh` dalej jest **szacunkiem z modelu**,
+nie zmierzonym uzyskiem.
