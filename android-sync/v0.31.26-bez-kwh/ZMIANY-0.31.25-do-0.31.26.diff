@@ -1,0 +1,92 @@
+diff -ruN android025_base/app/build.gradle.kts android023/app/build.gradle.kts
+--- a/app/build.gradle.kts	2026-10-22 10:29:24.070044408 +0000
++++ b/app/build.gradle.kts	2026-10-22 10:29:24.082044468 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 3031
+-        versionName = "v0.31.25"
++        versionCode = 3032
++        versionName = "v0.31.26"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff -ruN android025_base/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt android023/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-22 10:29:24.066044388 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-22 10:29:24.082044468 +0000
+@@ -143,7 +143,10 @@
+     }
+ 
+     fun grossGain(): Double = accumulatedGrossGain
+-    fun estKwh(): Double = if (hasSamples) (accumulatedGrossGain * 200 * 4.186) / 3600.0 else Double.NaN
++    /** [0.31.26] 100 l, nie 200 kg. Instalacja ma zbiornik 100 l (ARCHIWUM_SOLARNE_STAN.md §3),
++     *  więc równoważnik to 0,1163 kWh/K, a nie 0,2326. Poprzednia wartość (200) była dziedzictwem
++     *  Piec.html i zawyżała wynik dokładnie dwa razy. Nadal rząd wielkości, nie zmierzony uzysk. */
++    fun estKwh(): Double = if (hasSamples) (accumulatedGrossGain * 100 * 4.186) / 3600.0 else Double.NaN
+ 
+     /** `exportCsv()` — zawartość pliku CSV (nazwa: archiwum_solarno_pogodowe_RRRR-MM-DD.csv). */
+     fun csv(): String {
+diff -ruN android025_base/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt android023/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-22 10:29:24.066044388 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-22 10:29:24.082044468 +0000
+@@ -335,14 +335,18 @@
+                 }) {
+                 MetricGrid(
+                     listOf(
++                        // [0.31.26] Bez „~X kWh": model nie był kalibrowany na tej instalacji
++                        // (ARCHIWUM_SOLARNE_STAN.md §10 i §13), a każda taka liczba i tak była
++                        // szacunkiem. Zostaje suma przyrostów w °C — to jest policzalne z czujnika.
+                         MCard("⚡ ZYSK BRUTTO SŁOŃCA", if (sol.hasSamples) "+" + fmt1(sol.accumulatedGrossGain) + "°C" else "—",
+-                            if (sol.hasSamples) "~" + fmt1(sol.estKwh()) + " kWh" else "", SolarY),
++                            "", SolarY),
+                         MCard("🌡️ ΔT PANEL - ZEWN.", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
+                             "", if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
+                         MCard("🚰 POBORY WODY CWU", if (sol.hasSamples) sol.drawCount.toString() + " poborów" else "—",
+                             if (sol.hasSamples) "−" + fmt1(sol.accumulatedDrawDrop) + "°C" else "", Pal.Live),
++                        // [0.31.26] Bez „~X kWh" — patrz komentarz wyżej.
+                         MCard("🔮 PROGNOZA ZYSKU", if (sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—",
+-                            if (sol.forecastKwh.isFinite()) "~" + fmt1(sol.forecastKwh) + " kWh" else "", Pal.Violet)
++                            "", Pal.Violet)
+                     )
+                 )
+                 Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+@@ -422,7 +426,6 @@
+     val estTotalKwhM2 = estRadPeak * 7.5 / 1000.0
+     val modelGain = Math.round(estTotalKwhM2 * 4.2 * 10) / 10.0
+     val estGainC = if (today && m.solar.accumulatedGrossGain > 0) maxOf(m.solar.accumulatedGrossGain, modelGain) else modelGain
+-    val estEnergyKwh = Math.round(estTotalKwhM2 * 2.0 * .65 * 10) / 10.0
+     val sunEmoji = if (avgCloud < 25) "☀️" else if (avgCloud < 60) "🌤️" else "⛅"
+     Column(modifier
+         .background(if (today) Color(0x17FFD32A) else Color(0x0AFFFFFF), RoundedCornerShape(12.dp))
+@@ -435,7 +438,6 @@
+             Text(sunEmoji, fontSize = 8.5.sp)
+         }
+         Text("+" + fmt1(estGainC) + "°C", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = SolarY)
+-        Text("~" + fmt1(estEnergyKwh) + " kWh", fontSize = 8.sp, color = Pal.TextDim)
+         Text("☀️ do $estRadPeak W/m²", fontSize = 7.5.sp, color = Pal.Cyan)
+     }
+ }
+diff -ruN android025_base/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt android023/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-22 10:29:24.066044388 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-22 10:29:24.082044468 +0000
+@@ -337,7 +337,7 @@
+         SolarMetricRow("Panel teraz / zewnątrz", "$panelText / $outsideText")
+         SolarMetricRow(
+             "Zysk brutto słońca",
+-            if (solar.hasSamples) "+${s.fmt1(solar.accumulatedGrossGain)}°C · ~${s.fmt1(solar.estKwh())} kWh" else "brak próbek"
++            if (solar.hasSamples) "+${s.fmt1(solar.accumulatedGrossGain)}°C" else "brak próbek"
+         )
+         SolarMetricRow(
+             "ΔT panel − zewnątrz",
+@@ -349,8 +349,8 @@
+         )
+         SolarMetricRow(
+             "Prognoza zysku · model godzinowy",
+-            if (solar.forecastGain.isFinite() && solar.forecastKwh.isFinite())
+-                "+${s.fmt1(solar.forecastGain)}°C · ~${s.fmt1(solar.forecastKwh)} kWh" else "brak prognozy"
++            if (solar.forecastGain.isFinite())
++                "+${s.fmt1(solar.forecastGain)}°C" else "brak prognozy"
+         )
+         SolarMultiDayForecast(m)
+     }

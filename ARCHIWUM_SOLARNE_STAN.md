@@ -5,7 +5,7 @@ Ma być **żywy**: każda zmiana zachowania archiwum dopisuje sekcję „Histori
 sprzętowe poprawia się w miejscu. Wersja opisywana: **v3.53.1**.
 
 > **Zanim policzysz energię:** zbiornik ma **100 l**. Przelicznik to
-> **0,1163 kWh/K** — nigdy 200 kg. Patrz §12.
+> **0,1163 kWh/K** — nigdy 200 kg. Patrz §14.
 
 ---
 
@@ -510,7 +510,7 @@ Oba komunikaty poprawione w v3.52.10. Brak `@` przy min/max = zapis sprzed v3.52
 
 ---
 
-## 12. Przelicznik energii — 100 l, nigdy 200 kg
+## 14. Przelicznik energii — 100 l, nigdy 200 kg
 
 **Zgłoszenie użytkownika 2026-10-22:** „JAKIE 200 KG WODY". Słusznie.
 
@@ -518,13 +518,13 @@ W instalacji jest **zbiornik 100 l** (§3). Tymczasem aplikacja Android liczy
 energię dla **200 kg wody** — liczba przejęta z `Piec.html` i nigdy nie
 dopasowana do tej instalacji.
 
-### 12.1 Co pokazuje aplikacja, a co jest w instalacji
+### 14.1 Co pokazuje aplikacja, a co jest w instalacji
 
 | wielkość | instalacja (ustalenie) | kod APK v0.31.25 | błąd |
 |---|---|---|---|
 | masa wody w przeliczniku | **100 l** | `200` — `SolarAnalytics.kt:146` | **2× za dużo** |
 | równoważnik energii | **0,1163 kWh/K** | 0,2326 kWh/K | **2× za dużo** |
-| powierzchnia kolektora (prognoza) | 10 rur, ~1,4 m² czynnej (§11) | `2.0` m² — `SolarAnalytics.kt:137` | ~1,4× za dużo |
+| powierzchnia kolektora (prognoza) | 10 rur, ~1,4 m² czynnej (§13, kalibracja 20.10) | `2.0` m² — `SolarAnalytics.kt:137` | ~1,4× za dużo |
 | model zysku w °C | — | `* 4.2 * 10` — `SolarAnalytics.kt:136`, `Weather.kt:423` | nieodtwarzalny |
 
 Rachunek kontrolny:
@@ -538,7 +538,7 @@ Rachunek kontrolny:
 **Skutek:** „~X kWh" pod „ZYSKIEM BRUTTO SŁOŃCA" jest zawyżone **dwa razy**.
 Przy 20 °C przyrostu APK pokaże ~4,65 kWh, a w 100 l jest ~2,33 kWh.
 
-### 12.2 Czego nie wiadomo
+### 14.2 Czego nie wiadomo
 
 - `forecastGain = totalKwhM2 * 4.2 * 10` — nie ma zapisu, czym jest `4.2`
   ani `10`. Nie zgaduję. Wiadomo tylko, że wynik jest niespójny z
@@ -546,7 +546,7 @@ Przy 20 °C przyrostu APK pokaże ~4,65 kWh, a w 100 l jest ~2,33 kWh.
   ta sama prognoza, dwa różne układy odniesienia).
 - Sprawność 65% (`forecastKwh`) nigdy nie była mierzona na tej instalacji.
 
-### 12.3 Reguła
+### 14.3 Reguła
 
 > **Liczby o instalacji bierze się z tego dokumentu, nigdy z kodu aplikacji.**
 
@@ -554,13 +554,29 @@ Kod może być źródłem tego, *co* się liczy — ale nie tego, *ile* jest wod
 rura, metrów czy litrów. 200 kg w kodzie nie jest ustaleniem, jest
 pozostałością.
 
-### 12.4 Co z tym zrobić (czeka na decyzję)
+### 14.4 Decyzja: wariant **B** (2026-10-22)
 
 | wariant | zmiana | efekt |
 |---|---|---|
-| A | `200` → `100` w `SolarAnalytics.kt:146` | kWh zgodne z 100 l, reszta bez zmian |
-| B | A + usunięcie `~X kWh` z kafelków | zostaje tylko °C — mniej liczb do tłumaczenia |
-| C | A + przelicznik w jednym miejscu (stała `KWH_PER_K = 0.1163`) | jedna liczba na całą aplikację |
+| A | `200` → `100` w `SolarAnalytics.kt` | kWh zgodne z 100 l, reszta bez zmian |
+| **B — wybrany** | A + usunięcie `~X kWh` z kafelków | zostaje tylko °C |
+| C | A + jedna stała `KWH_PER_K = 0.1163` | jedna liczba na całą aplikację |
 
-Niezależnie od wariantu: `~X kWh` dalej jest **szacunkiem z modelu**,
-nie zmierzonym uzyskiem.
+**Uzasadnienie B:** z §10 i §13 wynika, że w liczbie kWh siedzą **trzy**
+niepewności naraz — GHI jest prognozą, a nie pomiarem, apertura i sprawność
+nie były mierzone, a czujnik w połowie wysokości nie widzi stratyfikacji.
+Taka liczba wygląda na pomiar, którym nie jest. Stopnie Celsjusza są
+policzalne z czujnika — kWh nie były. Zostaje to, co da się obronić.
+
+### 14.5 Co zmieniono w kodzie (v0.31.26, `versionCode 3032`)
+
+| plik | zmiana |
+|---|---|
+| `core/SolarAnalytics.kt` | `estKwh()`: `* 200` → `* 100` (0,1163 kWh/K) |
+| `ui/screens/Weather.kt` | „⚡ ZYSK BRUTTO SŁOŃCA” i „🔮 PROGNOZA ZYSKU” bez podpisu kWh; karty 7 dni bez linii kWh |
+| `ui/screens/sheets/Sensors.kt` | „Zysk brutto słońca” i „Prognoza zysku” bez `· ~X kWh` |
+| `app/build.gradle.kts` | 3032 / `v0.31.26` |
+
+**Nietknięte:** ΔT, pokrycie, pobory wody, suma GHI, eksport CSV, tryb serwa.
+`forecastKwh` zostaje w kodzie jako wartość, ale **nie jest nigdzie wyświetlana** —
+gdy pojawi się pomiar nasłonecznienia, wróci bez zgadywania.
