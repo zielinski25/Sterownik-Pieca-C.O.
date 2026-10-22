@@ -657,3 +657,40 @@ Nie dotyczył: wykresów, kafelków Dashboardu, Telegrama (stan lokalny).
 Brak JDK/Kotlinc/Gradle → brak dowodu „kompiluje się". Sprawdzone: bilans
 nawiasów 5 plików (0 różnicy), asercje kotwic, `diff -rq` = dokładnie
 7 zmienionych plików, szerokości tekstów (< 87 dp).
+
+## 13. v0.31.24 — kafelek SERWO, trzecie podejście do wyglądu
+
+v0.31.23 zbudowało się i wgrało (`BUILD SUCCESSFUL`, 3029), ale na zrzucie
+z telefonu kafelek SERWO miał **cztery** linie przy **trzech** u POMPY
+i MIESZADŁA — gęstszy, nierówny, do tego zielona ramka przy trybie AUTO
+odcinała go od neutralnych sąsiadów.
+
+### 13.1 Co zmieniono (4 pliki)
+
+| plik | zmiana |
+|---|---|
+| `Dashboard.kt` | `klapa X%` + JEDEN podpis `syberek Y% · AUTO` (tryb na końcu, nie w czwartej linii); BEZPIECZNY → `BEZPIECZNY` / `tryb bezpieczeństwa`; AUTO → ramka neutralna, RĘCZNY → żółta, BEZPIECZNY → czerwona |
+| `Chrome.kt` | cofnięty parametr `sub2` z v0.31.23 |
+| `Theme.kt` | `quickH` 70 → 64 dp (podniesienie było tylko dla czwartej linii) |
+| `build.gradle.kts` | 3030 / `v0.31.24` |
+
+### 13.2 Szerokości
+
+Dostępne ~87 dp na tekst. `klapa 100%` 10 zn. × 11 sp ≈ 61 dp;
+`syberek 100% · RĘCZNY` 20 zn. × 7,5 sp ≈ 78 dp; `tryb bezpieczeństwa`
+19 zn. ≈ 74 dp. Wszystko poniżej progu — bez wielokropka.
+
+### 13.3 Wynik
+
+| | |
+|---|---|
+| ZIP | `SterownikCO-Android-v0.31.24-KAFELEK.zip` — 17 548 B, 5 wpisów |
+| sha256 | `5027211a36b00b89a6f7bf818d5644a4163799335a4fbdcbf5edaf40295f9d93` |
+| build | **BUILD SUCCESSFUL in 12s**, 37 zadań, 0 błędów |
+
+### 13.4 Wniosek na przyszłość
+
+Reguła „kafelek szybki = 3 linie" (`tytuł` / `wartość` / `podpis`) jest
+twarda: `Dimens.quickH = 64.dp` i `QCard` z `maxLines = 1` na obu tekstach.
+Dokładanie czwartej linii wymaga podniesienia wysokości i od razu psuje
+rytm rzędu — lepiej skracać tekst niż dodawać linie.

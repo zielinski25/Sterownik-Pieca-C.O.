@@ -60,3 +60,16 @@ Dostępne ~87 dp. `klapa 100%` 10 zn. × 11 sp ≈ 61 dp; najdłuższy podpis
 Brak JDK/Kotlinc/Gradle → brak dowodu „kompiluje się". Sprawdzone: bilans
 nawiasów 3 plików Kotlina (0), `diff -rq` = dokładnie 4 pliki, szerokości
 tekstów w dp.
+
+## Build potwierdzony (2026-10-22)
+
+```
+BUILD SUCCESSFUL in 12s
+37 zadań (12 wykonanych, 25 z cache)
+versionCode = 3030, versionName = "v0.31.24"
+```
+
+Ostrzeżenia tylko dwa, oba w `Theme.kt:124–125` (`statusBarColor` /
+`navigationBarColor` deprecated) — sprzed tej zmiany, nie blokują builda.
+Poprzednia wersja (v0.31.23, cztery linie) też się zbudowała i została
+odrzucona wizualnie — dlatego ta poprawka istnieje.
