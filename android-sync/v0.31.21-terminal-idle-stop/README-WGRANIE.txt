@@ -1,13 +1,13 @@
 ════════════════════════════════════════════════════════════════════════════
  SterownikCO Android  v0.31.19  →  v0.31.21
- HISTORIA: cache dzienny · TERMINAL: auto-stop po 5 min
+ HISTORIA: cache dzienny · TERMINAL: auto-stop · SERWO: procenty
 ════════════════════════════════════════════════════════════════════════════
 
 Baza: SterownikCO-Android-v0.31.18-build-20261016-094945 + nakładka v3.50.0
       (czyli dokładnie drzewo, z którego powstał Twój APK v0.31.19)
 
 W paczce są CAŁE pliki, nie łatki. Rozpakowujesz do folderu `android`
-i nadpisujesz 6 plików + dochodzą 2 nowe.
+i nadpisujesz 7 plików + dochodzą 2 nowe.
 
 
 ────────────────────────────────────────────────────────────────────────────
@@ -23,7 +23,7 @@ Objaw, który to naprawia:
   · jeden dzień z błędem = cicha dziura w wykresie bez informacji,
   · jeden przypadkowy HTTP 400 wyłączał stronicowanie do restartu aplikacji.
 
-Co zostało zrobione (8 punktów):
+Co zostało zrobione (9 punktów):
 
   [F2] Historia pobierana TYLKO na zakładce Wykresy.
        Wcześniej `onResume()` wołał `loadRange()` bezwarunkowo — powrót
@@ -60,6 +60,13 @@ Co zostało zrobione (8 punktów):
        statusu. Dotknięcie (albo samo przewinięcie) wznawia odbiór.
        Gdy odbiór jest wstrzymany, pasek statusu mówi to wprost.
 
+  [P]  Kafelek SERWO na Pulpicie pokazuje pozycje w PROCENTACH, nie w stopniach.
+       Było: „klapa 180° · syberek 90°"  →  jest: „klapa 100% · syberek 100%".
+       Duża liczba obok („AUTO (100%)") już wcześniej była w procentach — teraz
+       obie linie mówią tym samym językiem. Przelicznik: klapa 180° = 100%,
+       syberek 90° = 100%. Arkusz „Serwo" bez zmian (tam procent jest duży,
+       kąt mały — tak zostaje).
+
   [+]  Wersja podbita do v0.31.21 (versionCode 3027), żebyś na telefonie
        widział, że naprawdę masz nowy APK.
 
@@ -93,6 +100,7 @@ $pliki = @(
   "app\src\main\java\com\sterownikco\pro\core\RtdbClient.kt",
   "app\src\main\java\com\sterownikco\pro\core\Telemetry.kt",
   "app\src\main\java\com\sterownikco\pro\ui\screens\Charts.kt",
+  "app\src\main\java\com\sterownikco\pro\ui\screens\Dashboard.kt",
   "app\src\main\java\com\sterownikco\pro\ui\screens\sheets\System.kt"
 )
 foreach ($p in $pliki) {
@@ -105,7 +113,7 @@ Get-ChildItem $bak | Select-Object Name, Length
 
 --------8<--------8<--------8<--------8<--------8<--------8<--------8<--------
 
-Powinieneś zobaczyć 6 plików. Jeśli tak — możesz iść dalej.
+Powinieneś zobaczyć 7 plików. Jeśli tak — możesz iść dalej.
 
 
 ────────────────────────────────────────────────────────────────────────────
@@ -200,12 +208,16 @@ uruchamiaj „na wiarę”, wolę wiedzieć.
     „Podgląd wstrzymany po 5 min bez dotykania ekranu — dotknij, aby wznowić."
     Dotknij ekranu — odbiór wraca. Wcześniej terminal pytał dalej bez końca.
 
+ 9. Pulpit → kafelek SERWO. Podpis pod „AUTO (…)" ma mieć procenty,
+    np. „klapa 100% · syberek 100%". Jeśli widzisz „180°" — na telefonie
+    jest stary APK.
+
 
 ────────────────────────────────────────────────────────────────────────────
  6. JAK WRÓCIĆ DO 0.31.19
 ────────────────────────────────────────────────────────────────────────────
 
-Skopiuj 6 plików z folderu `_backup-0.31.19-<data>` z powrotem na swoje
+Skopiuj 7 plików z folderu `_backup-0.31.19-<data>` z powrotem na swoje
 miejsca (podkreślniki w nazwie to oryginalne ścieżki) i zbuduj ponownie:
 
   app_build.gradle.kts                     → app\build.gradle.kts
@@ -213,6 +225,7 @@ miejsca (podkreślniki w nazwie to oryginalne ścieżki) i zbuduj ponownie:
   app_src_main_java_com_sterownikco_pro_core_RtdbClient.kt  → core\RtdbClient.kt
   app_src_main_java_com_sterownikco_pro_core_Telemetry.kt   → core\Telemetry.kt
   app_src_main_java_com_sterownikco_pro_ui_screens_Charts.kt → ui\screens\Charts.kt
+  app_src_main_java_com_sterownikco_pro_ui_screens_Dashboard.kt → ui\screens\Dashboard.kt
   app_src_main_java_com_sterownikco_pro_ui_screens_sheets_System.kt → ui\screens\sheets\System.kt
 
 Plik `TelemetryCache.kt` możesz zostawić — bez wpisów w AppModel.kt jest
@@ -232,6 +245,7 @@ nieużywany i nic nie robi.
   app/src/main/java/com/sterownikco/pro/core/Telemetry.kt          (zmieniony)
   app/src/main/java/com/sterownikco/pro/core/TelemetryCache.kt     (NOWY)
   app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt       (zmieniony)
+  app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt    (zmieniony)
   app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt (zmieniony)
   app/src/test/java/com/sterownikco/pro/core/TelemetryCacheTest.kt (NOWY)
 

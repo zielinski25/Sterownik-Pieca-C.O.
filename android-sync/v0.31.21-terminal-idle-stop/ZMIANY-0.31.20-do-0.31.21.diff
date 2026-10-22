@@ -95,6 +95,31 @@ diff --git a/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt b/app/src/m
 diff --git a/app/src/main/java/com/sterownikco/pro/core/TelemetryCache.kt b/app/src/main/java/com/sterownikco/pro/core/TelemetryCache.kt
 diff --git a/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
 diff --git a/app/src/test/java/com/sterownikco/pro/core/TelemetryCacheTest.kt b/app/src/test/java/com/sterownikco/pro/core/TelemetryCacheTest.kt
+diff --git a/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt  (plik nietkniety w 0.31.20 -> diff od 0.31.19)
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+@@ -173,6 +173,8 @@
+             val flapKnown = S.hasData("klapa") && S.klapa in 0..180
+             val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
+             val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
++            // Serwo dostaje 0..100% z centrali; kąt to tylko przelicznik (klapa 180°, syberek 90°).
++            val syberkaLabel = if (syberkaKnown) "${Math.round(S.syberka * 100.0 / 90.0)}%" else "—"
+             val pendingLabel = pendingServo?.let { "CEL ${it.second.requestedPercent}%" }
+             QCard(
+                 title = "SERWO", icon = "servo",
+@@ -188,9 +190,9 @@
+                 },
+                 sub = pendingServo?.let { "cel ${it.first} ${it.second.targetDegrees}° · oczekuje na status" }
+                     ?: when {
+-                        flapKnown && syberkaKnown -> "klapa ${S.klapa}° · syberek ${S.syberka}°"
+-                        flapKnown -> "klapa ${S.klapa}°"
+-                        syberkaKnown -> "syberek ${S.syberka}°"
++                        flapKnown && syberkaKnown -> "klapa $flapLabel · syberek $syberkaLabel"
++                        flapKnown -> "klapa $flapLabel"
++                        syberkaKnown -> "syberek $syberkaLabel"
+                         else -> "brak prawidłowego odczytu pozycji"
+                     },
+                 state = if (!servoKnown || pendingServo != null) "warn" else when (servoMode) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
 diff --git a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt  (plik nietkniety w 0.31.20 -> diff od 0.31.19)
 --- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
 +++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt

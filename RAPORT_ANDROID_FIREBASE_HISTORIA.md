@@ -414,6 +414,7 @@ zapytań bez żadnej korzyści.
 | `core/AppModel.kt` | 1798 | `fun terminalTouch()` — podtrzymanie i wznowienie |
 | `core/AppModel.kt` | 1808 | `stopTerminalDlogPolling()` czyści `terminalDlogIdleStopped` |
 | `ui/screens/sheets/System.kt` | 44–45, 498–512 | `Modifier.pointerInput` na korzeniu `TerminalSheet` |
+| `ui/screens/Dashboard.kt` | 176–178, 191–194 | podpis kafelka SERWO w procentach (`flapLabel`, `syberkaLabel`) |
 | `app/build.gradle.kts` | 15–16 | `versionCode 3027`, `versionName "v0.31.21"` |
 
 Zegar: `SystemClock.elapsedRealtime()` (monotoniczny, odporny na zmianę czasu
@@ -450,10 +451,10 @@ Scenariusz T5 w symulacji sprawdza dokładnie ten przypadek.
 | | wartość |
 |---|---|
 | ZIP | `SterownikCO-Android-v0.31.21-HISTORIA-CACHE.zip` |
-| rozmiar | 84 769 B |
-| sha256 | `2b2218befe2ca411656952f3a57580259e3fd682ca77d9621fa13ed495d5fa85` |
-| Drive | `1fPuWsl1nJNmT9vV1uB-uqXoXQ11n4yBz` |
-| wpisy w ZIP | 10 (README + diff + 8 plików źródłowych) |
+| rozmiar | 92 568 B |
+| sha256 | `491f5632e25221df6d45d6eb693850a6c1708d782376b77a75c950a9da9b5400` |
+| Drive | `1fA781swQrZFQ-G5-0MAihAWuEoBbxaZc` |
+| wpisy w ZIP | 11 (README + diff + 9 plików źródłowych) |
 | katalog w repo | `android-sync/v0.31.21-terminal-idle-stop/` |
 
 Paczka jest **kumulatywna względem 0.31.19** — zawiera całe pliki, więc
@@ -476,8 +477,30 @@ zamiast tego:
 
 ### 10.7 Linki
 
-- podgląd: https://drive.google.com/file/d/1fPuWsl1nJNmT9vV1uB-uqXoXQ11n4yBz/view
-- pobranie: https://drive.google.com/uc?id=1fPuWsl1nJNmT9vV1uB-uqXoXQ11n4yBz&export=download
+- podgląd: https://drive.google.com/file/d/1fA781swQrZFQ-G5-0MAihAWuEoBbxaZc/view
+- pobranie: https://drive.google.com/uc?id=1fA781swQrZFQ-G5-0MAihAWuEoBbxaZc&export=download
 
-Poprzednia paczka (0.31.20, `1Y8v8p9ARgXgzyY_YNT5xzl0JHVNUpYYj`) przeniesiona
-do kosza — nie jest już potrzebna, bo 0.31.21 zawiera całą jej treść.
+Do kosza poszły: 0.31.20 (`1Y8v8p9ARgXgzyY_YNT5xzl0JHVNUpYYj`) oraz pierwsza
+wersja 0.31.21 bez procentów (`1fPuWsl1nJNmT9vV1uB-uqXoXQ11n4yBz`) — żeby nie
+dało się pobrać złego pliku. Wersja 0.31.21 ma **ten sam numer**, ale inną
+zawartość: 92 568 B zamiast 84 769 B.
+
+### 10.8 Kafelek SERWO w procentach (dopisane po zgłoszeniu z 22.10)
+
+Użytkownik zakreślił na zrzucie podpis kafelka: `klapa 180° · syberek 90°`.
+Duża liczba obok (`AUTO (100%)`) już była w procentach — w stopniach był tylko
+podpis, czyli dwie różne jednostki w jednym kafelku.
+
+| | przed | po |
+|---|---|---|
+| `Dashboard.kt` — klapa | `"klapa ${S.klapa}°"` | `"klapa $flapLabel"` → `klapa 100%` |
+| `Dashboard.kt` — syberek | `"syberek ${S.syberka}°"` | `"syberek $syberkaLabel"` → `syberek 100%` |
+| przelicznik | — | `Math.round(klapa * 100 / 180)`, `Math.round(syberka * 100 / 90)` |
+
+Sprawdzone wartości brzegowe: 0°→0%, 45°→25%, 90°→50%, 179°→99%, 180°→100%;
+syberek 0°→0%, 45°→50%, 89°→99%, 90°→100%. `Math.round` w Kotlinie zaokrągla
+połówki w górę — dla 91° klapy wychodzi 51%, nie 50%.
+
+**Zakres — decyzja użytkownika: tylko ten kafelek.** Arkusz „Serwo" zostaje
+bez zmian (procent duży, kąt mały), a podpis „cel … °" przy wysyłaniu komendy
+też zostaje w stopniach, bo tam kąt jest informacją o celu, nie o odczycie.
