@@ -14,7 +14,7 @@ diff -ruN android026_base/app/build.gradle.kts android023/app/build.gradle.kts
  
 diff -ruN android026_base/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt android023/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt
 --- a/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-22 10:38:16.722887432 +0000
-+++ b/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-22 10:38:16.734887492 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-22 10:40:33.347818842 +0000
 @@ -9,6 +9,7 @@
  import org.json.JSONObject
  import java.text.SimpleDateFormat
@@ -115,7 +115,7 @@ diff -ruN android026_base/app/src/main/java/com/sterownikco/pro/core/SolarAnalyt
 +            var sum = 0.0
 +            hours.forEach { h ->
 +                val rad = h.shortwaveRadiation
-+                    ?: ((100.0 - h.cloud) * 8.5 * (if (h.isDay) 1 else 0.0))
++                    ?: ((100.0 - h.cloud) * 8.5 * (if (h.isDay) 1.0 else 0.0))
 +                sum += maxOf(0.0, rad)
 +            }
 +            return sum / 1000.0

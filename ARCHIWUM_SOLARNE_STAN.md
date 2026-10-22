@@ -644,6 +644,33 @@ czego się spodziewać, żeby porównać z tym, co pokaże czujnik.
 
 | | |
 |---|---|
-| ZIP | `SterownikCO-Android-v0.31.27-DZIS.zip` — 25 556 B, 5 wpisów |
-| sha256 | `41bc30e2f16b2d2f8e002cc56f82a85c9fa8d7d93fc220120c080ab69c31cd53` |
+| ZIP | `SterownikCO-Android-v0.31.27-DZIS.zip` — 25 558 B, 5 wpisów |
+| sha256 | `a8edd4e5729c85a1fa7f8a8184a162058a706047610745389a107d3e86500ee6` |
 | pliki | 4: `build.gradle.kts`, `SolarAnalytics.kt`, `Weather.kt`, `Sensors.kt` |
+
+### 15.6 Błąd kompilacji i poprawka (ten sam numer 3033)
+
+Pierwsze wydanie v0.31.27 nie skompilowało się:
+
+```
+e: SolarAnalytics.kt:188:49 None of the following candidates is applicable:
+   fun times(other: Byte): Double … fun times(other: Short): Double
+```
+
+Przyczyna — `if` z gałęziami **różnych typów liczbowych**:
+
+```kotlin
+((100.0 - h.cloud) * 8.5 * (if (h.isDay) 1 else 0.0))
+//                                    ↑ Int   ↑ Double  → wynik: Number, nie Double
+```
+
+Kotlin nie wybiera `Double` po cichu. Typ wspólny `Int` i `Double` to
+`Number & Comparable<...>`, a `Double * Number` nie istnieje.
+
+Poprawka: `(if (h.isDay) 1.0 else 0.0)`.
+
+**Reguła:** w wyrażeniu arytmetycznym obie gałęzie `if` muszą mieć ten sam
+typ liczbowy. `1 else 0.0` wygląda niewinnie, a wywala cały build.
+
+Paczka poprawiona pod tym samym numerem (3033), nowy sha256
+`a8edd4e5…` zastępuje `41bc30e2…`.

@@ -842,5 +842,9 @@ Stała `4.2` jest poprawna. Wpis „nieodtwarzalna" z §14 MD był błędem.
 
 | | |
 |---|---|
-| ZIP | `SterownikCO-Android-v0.31.27-DZIS.zip` — 25 556 B, 5 wpisów |
-| sha256 | `41bc30e2f16b2d2f8e002cc56f82a85c9fa8d7d93fc220120c080ab69c31cd53` |
+| ZIP | `SterownikCO-Android-v0.31.27-DZIS.zip` — 25 558 B, 5 wpisów |
+| sha256 | `a8edd4e5729c85a1fa7f8a8184a162058a706047610745389a107d3e86500ee6` |
+### 16.5 Błąd kompilacji (naprawiony, numer bez zmian)
+
+`if (h.isDay) 1 else 0.0` → typ wspólny `Number`, `Double * Number` nie istnieje.
+Poprawka `1.0`. Nowy sha256 paczki: `a8edd4e5…`. Szczegóły: MD §15.6.

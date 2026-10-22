@@ -5,8 +5,8 @@ Nakładka na drzewo v0.31.26. **4 pliki.** `versionCode = 3033`, `versionName = 
 | | |
 |---|---|
 | ZIP | `SterownikCO-Android-v0.31.27-DZIS.zip` |
-| rozmiar | 25 556 B (5 wpisów) |
-| sha256 | `41bc30e2f16b2d2f8e002cc56f82a85c9fa8d7d93fc220120c080ab69c31cd53` |
+| rozmiar | 25 558 B (5 wpisów) |
+| sha256 | `a8edd4e5729c85a1fa7f8a8184a162058a706047610745389a107d3e86500ee6` |
 
 ## Defekty naprawione
 
@@ -31,3 +31,16 @@ Apertura 10 rur 58/1800 wg katalogów: 0,90–1,12 m². Uzysk roczny 450–600 k
 Brak JDK/Kotlinc/Gradle → brak dowodu „kompiluje się". Sprawdzone: bilans
 nawiasów 0/0/0, importy `SolarAnalytics` i `roundToInt` w `Weather.kt`,
 `grep forecastKwh` = 0, `diff -rq` = dokładnie 4 pliki.
+
+## Poprawka po BUILD FAILED (wciąż 3033)
+
+Pierwsza paczka nie kompilowała się:
+
+```
+e: SolarAnalytics.kt:188:49 None of the following candidates is applicable
+```
+
+`if (h.isDay) 1 else 0.0` — gałęzie `Int` i `Double`. Typ wspólny to
+`Number`, a `Double * Number` nie istnieje. Naprawione na `1.0`.
+
+**Pobierz ZIP jeszcze raz** — ten sam numer wersji, nowy plik.
