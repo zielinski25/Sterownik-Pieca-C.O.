@@ -525,7 +525,7 @@ dopasowana do tej instalacji.
 | masa wody w przeliczniku | **100 l** | `200` — `SolarAnalytics.kt:146` | **2× za dużo** |
 | równoważnik energii | **0,1163 kWh/K** | 0,2326 kWh/K | **2× za dużo** |
 | powierzchnia kolektora (prognoza) | 10 rur, ~1,4 m² czynnej (§13, kalibracja 20.10) | `2.0` m² — `SolarAnalytics.kt:137` | ~1,4× za dużo |
-| model zysku w °C | — | `* 4.2 * 10` — `SolarAnalytics.kt:136`, `Weather.kt:423` | nieodtwarzalny |
+| model zysku w °C | apertura 1,0 m² × sprawność 0,49 | `4.2 °C/(kWh/m²)` — `SolarAnalytics` | **poprawne** (patrz §15.1) |
 
 Rachunek kontrolny:
 
@@ -540,11 +540,13 @@ Przy 20 °C przyrostu APK pokaże ~4,65 kWh, a w 100 l jest ~2,33 kWh.
 
 ### 14.2 Czego nie wiadomo
 
-- `forecastGain = totalKwhM2 * 4.2 * 10` — nie ma zapisu, czym jest `4.2`
-  ani `10`. Nie zgaduję. Wiadomo tylko, że wynik jest niespójny z
-  `forecastKwh` pokazywanym **obok** na tym samym kafelku (ten sam dzień,
-  ta sama prognoza, dwa różne układy odniesienia).
-- Sprawność 65% (`forecastKwh`) nigdy nie była mierzona na tej instalacji.
+- ~~`4.2` nie ma zapisu, czym jest~~ — **sprawdzone 2026-10-22 (§15.1).**
+  `4.2` to **°C na 1 kWh/m²** padającego słońca: apertura 1,0 m² × sprawność
+  dzienna 0,49 ÷ 0,1163 kWh/K = 4,21. Zgodne z katalogami kolektorów
+  10 rur (0,90–1,12 m²). Mnożenie przez `* 10` to tylko sposób na jedno
+  miejsce po przecinku (`round(x*42)/10`), nie dodatkowy mnożnik.
+- Prognoza liczona z zachmurzenia (`(100 − cloud) × 8,5`) była osobnym,
+  gorszym modelem — usunięta w v0.31.27 (§15.2).
 
 ### 14.3 Reguła
 
@@ -580,3 +582,68 @@ policzalne z czujnika — kWh nie były. Zostaje to, co da się obronić.
 **Nietknięte:** ΔT, pokrycie, pobory wody, suma GHI, eksport CSV, tryb serwa.
 `forecastKwh` zostaje w kodzie jako wartość, ale **nie jest nigdzie wyświetlana** —
 gdy pojawi się pomiar nasłonecznienia, wróci bez zgadywania.
+
+---
+
+## 15. DZIŚ ≠ suma bufora — naprawa modelu (v0.31.27, APK 3033)
+
+**Zgłoszenie 2026-10-22 (zrzut ekranu):** karta „DZIŚ" pokazywała
+**+93,1 °C**, gdy model na dziś dawał **+9,1 °C** (289 W/m² → 2,17 kWh/m² × 4,2).
+Ta sama liczba 93,1 widniała w „Zysku brutto słońca".
+
+### 15.1 Stała 4,2 °C/(kWh/m²) — skąd się bierze
+
+Dane katalogowe kolektorów **10 rur 58/1800**:
+
+| kolektor | apertura | sprawność optyczna |
+|---|---|---|
+| SOLEKO APS 10 | 0,90 m² | 68,7% |
+| Projprzem PE10-58 | 1,00 m² | 81,5% (absorber) |
+| IB-Sol 10 | 1,12 m² | 65,8% (apertura) |
+| Hewalex KSR10 | 1,01 m² | 78% |
+
+Uzysk roczny kolektora próżniowego: **450–600 kWh/m²**
+(`powietrze.malopolska.pl`, `darmoweogrzewanie.com`).
+
+```
+apertura 1,0 m² × sprawność dzienna 0,49 ÷ 0,1163 kWh/K = 4,21 °C/(kWh/m²)
+```
+
+**Wniosek:** model dzienny był poprawny od początku. Błąd nie leżał
+w `4.2` — leżał w tym, że karta „DZIŚ" podstawiała pod niego sumę
+narastającą z bufora. Poprzedni wpis „nieodtwarzalny" w §14 był błędny
+i został poprawiony.
+
+### 15.2 Co było zepsute
+
+| defekt | kod | skutek na zrzucie |
+|---|---|---|
+| „DZIŚ" brało sumę z bufora | `estGainC = maxOf(accumulatedGrossGain, modelGain)` | +93,1 zamiast +9,1 |
+| prognoza liczona innym wzorem | `(100 − cloud) × 8,5` vs `pik × 7,5 × 4,2` | +0,0 °C obok +19,0 °C |
+| brak sufitu dobowego | mnożenie GHI bez ograniczenia | możliwe +93 °C dla 100 l |
+
+### 15.3 Jak jest teraz
+
+- **DZIŚ** = suma przyrostów z próbek **od lokalnej północy**; gdy brak
+  próbek — model. Suma narastająca **nigdy** nie wchodzi na to miejsce.
+- **Jeden wzór** dla DZIŚ, JUTRO i kart 7 dni:
+  `ΔT = min(GHI_kWh/m² × 4,2 ; 45 °C)`. Wejście: prognoza
+  `shortwave_radiation`, a gdy jej brak dla godziny — szacunek z zachmurzenia.
+- **Sufit 45 °C** na dobę: 100 l od ~20 °C nie zagotuje się w jeden dzień.
+- **Arkusz Czujniki** rozdziela „dziś" i „narastająco" — dwie osobne linie,
+  każda z własną etykietą.
+
+### 15.4 Czego to nadal nie jest
+
+Model nie zna: temperatury startowej wody, strat zbiornika, kąta padania,
+zacienienia, sprawności zależnej od różnicy temperatur. To **rząd
+wielkości** — zgodnie z §10. Model nie zastępuje pomiaru; on tylko mówi,
+czego się spodziewać, żeby porównać z tym, co pokaże czujnik.
+
+### 15.5 Paczka
+
+| | |
+|---|---|
+| ZIP | `SterownikCO-Android-v0.31.27-DZIS.zip` — 25 556 B, 5 wpisów |
+| sha256 | `41bc30e2f16b2d2f8e002cc56f82a85c9fa8d7d93fc220120c080ab69c31cd53` |
+| pliki | 4: `build.gradle.kts`, `SolarAnalytics.kt`, `Weather.kt`, `Sensors.kt` |

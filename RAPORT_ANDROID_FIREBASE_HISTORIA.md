@@ -795,3 +795,52 @@ Sekcja o przeliczniku została dopisana jako „§12", ale §12 już istniało
 („Co dalej — plan etapowy"). Przenumerowana na **§14**, odnośnik na górze
 pliku poprawiony. Wniosek: przed dopisaniem sekcji do żywego dokumentu
 sprawdzić numerację — `grep "^## "`.
+
+## 16. v0.31.27 — „DZIŚ" przestaje być sumą bufora
+
+Zrzut z 22.10: karta **DZIŚ +93,1 °C**, model na dziś **+9,1 °C**
+(289 W/m²). Ten sam 93,1 w „Zysku brutto słońca". Dodatkowo „Prognoza
+zysku" +0,0 °C obok +19,0 °C na karcie JUTRO.
+
+### 16.1 Diagnoza
+
+```
+estGainC = if (today && accumulatedGrossGain > 0)
+               maxOf(accumulatedGrossGain, modelGain)   ← zawsze wygrywała
+           else modelGain
+```
+
+`accumulatedGrossGain` to suma przyrostów z dołu bufora (do 500 próbek,
+kilka dni). Karta dzienna nie może jej używać.
+
+Sprawdzenie wszystkich kart ze zrzutu — model `4,2 × kWh/m²` zgadza się
+co do dziesiątej dla JUTRO (603→19,0), Sb (492→15,5), Nd (430→13,5),
+Pn (763→24,0), Wt (769→24,2), Śr (584→18,4). Nie zgadzała się **tylko**
+karta DZIŚ — bo nie używała modelu.
+
+### 16.2 Research
+
+Katalogi kolektorów 10 rur 58/1800: apertura 0,90–1,12 m², sprawność
+optyczna 66–82%. Uzysk roczny 450–600 kWh/m². Stąd:
+
+```
+1,0 m² × 0,49 ÷ 0,1163 kWh/K = 4,21 °C/(kWh/m²)
+```
+
+Stała `4.2` jest poprawna. Wpis „nieodtwarzalna" z §14 MD był błędem.
+
+### 16.3 Zmiany (4 pliki)
+
+| plik | zmiana |
+|---|---|
+| `core/SolarAnalytics.kt` | `todayGain`/`todayDrawCount`/`todayDrawDrop` od północy; `gainFromKwhM2()` + sufit 45 °C; `dayKwhM2()` z GHI; usunięty `forecastKwh` i model z zachmurzenia |
+| `ui/screens/Weather.kt` | karta DZIŚ z próbek; kafelki `ZYSK DZIŚ` / `POBORY DZIŚ` / `PROGNOZA DZIŚ`; pik z `shortwave_radiation` |
+| `ui/screens/sheets/Sensors.kt` | „dziś" i „narastająco" rozdzielone na osobne linie |
+| `app/build.gradle.kts` | 3033 / `v0.31.27` |
+
+### 16.4 Paczka
+
+| | |
+|---|---|
+| ZIP | `SterownikCO-Android-v0.31.27-DZIS.zip` — 25 556 B, 5 wpisów |
+| sha256 | `41bc30e2f16b2d2f8e002cc56f82a85c9fa8d7d93fc220120c080ab69c31cd53` |

@@ -1,0 +1,231 @@
+diff -ruN android026_base/app/build.gradle.kts android023/app/build.gradle.kts
+--- a/app/build.gradle.kts	2026-10-22 10:38:16.726887452 +0000
++++ b/app/build.gradle.kts	2026-10-22 10:38:16.738887512 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 3032
+-        versionName = "v0.31.26"
++        versionCode = 3033
++        versionName = "v0.31.27"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff -ruN android026_base/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt android023/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-22 10:38:16.722887432 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-22 10:38:16.734887492 +0000
+@@ -9,6 +9,7 @@
+ import org.json.JSONObject
+ import java.text.SimpleDateFormat
+ import java.util.Locale
++import kotlin.math.min
+ import kotlin.math.roundToInt
+ 
+ /* ══════════════════════════════════════════════════════════════════════════
+@@ -31,9 +32,14 @@
+     var accumulatedGrossGain by mutableDoubleStateOf(0.0)
+     var accumulatedDrawDrop by mutableDoubleStateOf(0.0)
+     var forecastGain by mutableDoubleStateOf(Double.NaN)
+-    var forecastKwh by mutableDoubleStateOf(Double.NaN)
+     var deltaT by mutableDoubleStateOf(Double.NaN)
+     var drawCount by mutableIntStateOf(0)
++    // [0.31.27] Liczby „na dziś”, liczone od lokalnej północy. Wcześniej karta DZIŚ
++    // brała accumulatedGrossGain (suma z całego bufora, sięgająca kilka dni wstecz),
++    // więc pokazywała +93 °C, gdy model na dziś dawał +9 °C.
++    var todayGain by mutableDoubleStateOf(0.0)
++    var todayDrawCount by mutableIntStateOf(0)
++    var todayDrawDrop by mutableDoubleStateOf(0.0)
+     val hasSamples: Boolean get() = archive.isNotEmpty()
+ 
+     private val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+@@ -67,6 +73,30 @@
+         accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
+         drawCount = draws.size
+         archive.lastOrNull()?.let { deltaT = it.tPanel - it.tZewn }
++        recomputeToday()
++    }
++
++    /** Początek lokalnej doby — granica „dziś” dla liczb dziennych. */
++    private fun dayStartMs(): Long {
++        val c = java.util.Calendar.getInstance()
++        c.set(java.util.Calendar.HOUR_OF_DAY, 0)
++        c.set(java.util.Calendar.MINUTE, 0)
++        c.set(java.util.Calendar.SECOND, 0)
++        c.set(java.util.Calendar.MILLISECOND, 0)
++        return c.timeInMillis
++    }
++
++    /** Przelicza „dziś” z próbek od północy. Filtr zysku ten sam, co dla sumy narastającej. */
++    private fun recomputeToday() {
++        val start = dayStartMs()
++        var g = 0.0; var n = 0; var d = 0.0
++        archive.forEach { s ->
++            if (s.ts >= start) {
++                if (s.tPanel > s.tZewn && s.rad > 30) g += s.gain
++                if (s.isDraw != 0) { n += 1; d += s.drop }
++            }
++        }
++        todayGain = g; todayDrawCount = n; todayDrawDrop = d
+     }
+ 
+     private fun save() {
+@@ -120,21 +150,46 @@
+             )
+         )
+         while (archive.size > 5000) archive.removeAt(0)
++        recomputeToday()
+         if (archive.size % 5 == 0) save()
+         updateUi(tPanel, tZewn)
+     }
+ 
+-    /** `estimateForecastGain(hourly)` — 1:1 (estymata radiacji z zachmurzenia). */
++    /** [0.31.27] Jeden model dla DZIŚ, JUTRO i kart 7 dni — ten sam wzór i to samo wejście.
++     *  Wcześniej „model godzinowy” liczył z zachmurzenia i dawał +0,0 °C obok +9,1 °C z kart
++     *  dziennych. Teraz oba biorą prognozę GHI (a gdy jej brak — szacunek z zachmurzenia). */
+     fun estimateForecastGain(hourly: List<com.sterownikco.pro.core.WHour>) {
+-        if (hourly.isEmpty()) { forecastGain = Double.NaN; forecastKwh = Double.NaN; return }
+-        var sumRad = 0.0
+-        hourly.take(24).forEach { h ->
+-            val estRad = (100 - h.cloud) * 8.5 * (if (h.isDay) 1 else 0)
+-            sumRad += maxOf(0.0, estRad)
++        val kwhM2 = dayKwhM2(hourly.take(24))
++        forecastGain = if (kwhM2.isFinite()) (gainFromKwhM2(kwhM2) * 10).roundToInt() / 10.0 else Double.NaN
++    }
++
++    companion object {
++        /** Ile °C w zbiorniku daje 1 kWh/m² padającego słońca.
++         *  Apertura 10 rur 58/1800 ≈ 1,0 m² (katalogi: 0,90–1,12), sprawność dzienna ≈ 0,49,
++         *  pojemność 100 l → 0,1163 kWh/K.  1,0 × 0,49 ÷ 0,1163 = 4,21 °C/(kWh/m²).
++         *  To szacunek, nie pomiar — patrz ARCHIWUM_SOLARNE_STAN.md §10. */
++        const val GAIN_C_PER_KWH_M2 = 4.2
++
++        /** Sufit dobowy: 100 l od ~20 °C nie zagotuje się w jednej dobie. Bez tego model
++         *  potrafił pokazać +93 °C, bo mnożył duże GHI bez ograniczenia. */
++        const val MAX_DAILY_GAIN_C = 45.0
++
++        fun gainFromKwhM2(kwhM2: Double): Double =
++            if (!kwhM2.isFinite() || kwhM2 <= 0.0) 0.0
++            else min(kwhM2 * GAIN_C_PER_KWH_M2, MAX_DAILY_GAIN_C)
++
++        /** GHI doby w kWh/m². Preferuje prognozę `shortwave_radiation`; gdy jej brak
++         *  dla danej godziny, szacuje z zachmurzenia (jak dotychczas). */
++        fun dayKwhM2(hours: List<com.sterownikco.pro.core.WHour>): Double {
++            if (hours.isEmpty()) return Double.NaN
++            var sum = 0.0
++            hours.forEach { h ->
++                val rad = h.shortwaveRadiation
++                    ?: ((100.0 - h.cloud) * 8.5 * (if (h.isDay) 1 else 0.0))
++                sum += maxOf(0.0, rad)
++            }
++            return sum / 1000.0
+         }
+-        val totalKwhM2 = sumRad / 1000.0
+-        forecastGain = (totalKwhM2 * 4.2 * 10).roundToInt() / 10.0
+-        forecastKwh = (totalKwhM2 * 2.0 * .65 * 10).roundToInt() / 10.0
+     }
+ 
+     private fun updateUi(tPanel: Double, tZewn: Double) {
+diff -ruN android026_base/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt android023/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-22 10:38:16.722887432 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-22 10:38:26.450936499 +0000
+@@ -55,6 +55,7 @@
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.sterownikco.pro.core.AppModel
++import com.sterownikco.pro.core.SolarAnalytics
+ import com.sterownikco.pro.core.WHour
+ import com.sterownikco.pro.core.Weather
+ import com.sterownikco.pro.ui.art.Ilu
+@@ -62,6 +63,7 @@
+ import com.sterownikco.pro.ui.svg.SvgView
+ import com.sterownikco.pro.ui.theme.Dimens
+ import com.sterownikco.pro.ui.theme.Pal
++import kotlin.math.roundToInt
+ import com.sterownikco.pro.ui.theme.Txt
+ 
+ /* ══════════════════════════════════════════════════════════════════════════
+@@ -335,17 +337,17 @@
+                 }) {
+                 MetricGrid(
+                     listOf(
+-                        // [0.31.26] Bez „~X kWh": model nie był kalibrowany na tej instalacji
+-                        // (ARCHIWUM_SOLARNE_STAN.md §10 i §13), a każda taka liczba i tak była
+-                        // szacunkiem. Zostaje suma przyrostów w °C — to jest policzalne z czujnika.
+-                        MCard("⚡ ZYSK BRUTTO SŁOŃCA", if (sol.hasSamples) "+" + fmt1(sol.accumulatedGrossGain) + "°C" else "—",
++                        // [0.31.27] Trzy liczby na tym kafelku dotyczą DZIŚ — ta sama doba,
++                        // ten sam model. Suma narastająca przeniosła się do arkusza Czujniki,
++                        // gdzie jest miejsce, żeby ją opisać.
++                        MCard("⚡ ZYSK DZIŚ", if (sol.todayGain > 0) "+" + fmt1(sol.todayGain) + "°C" else "—",
+                             "", SolarY),
+                         MCard("🌡️ ΔT PANEL - ZEWN.", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
+                             "", if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
+-                        MCard("🚰 POBORY WODY CWU", if (sol.hasSamples) sol.drawCount.toString() + " poborów" else "—",
+-                            if (sol.hasSamples) "−" + fmt1(sol.accumulatedDrawDrop) + "°C" else "", Pal.Live),
+-                        // [0.31.26] Bez „~X kWh" — patrz komentarz wyżej.
+-                        MCard("🔮 PROGNOZA ZYSKU", if (sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—",
++                        MCard("🚰 POBORY DZIŚ", if (sol.todayDrawCount > 0) sol.todayDrawCount.toString() + " poborów" else "—",
++                            if (sol.todayDrawCount > 0) "−" + fmt1(sol.todayDrawDrop) + "°C" else "", Pal.Live),
++                        // [0.31.27] Liczona tym samym wzorem co karta „DZIŚ" (GHI + 4,2 °C/kWh·m⁻²).
++                        MCard("🔮 PROGNOZA DZIŚ", if (sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—",
+                             "", Pal.Violet)
+                     )
+                 )
+@@ -422,10 +424,14 @@
+ @Composable
+ private fun SolarDayCard(m: AppModel, dayLabel: String, dayHours: List<WHour>, today: Boolean, modifier: Modifier = Modifier) {
+     val avgCloud = if (dayHours.isNotEmpty()) Math.round(dayHours.sumOf { it.cloud } / dayHours.size).toInt() else 30
+-    val estRadPeak = Math.round(maxOf(150.0, (100 - avgCloud * .7) * 8.8)).toInt()
+-    val estTotalKwhM2 = estRadPeak * 7.5 / 1000.0
+-    val modelGain = Math.round(estTotalKwhM2 * 4.2 * 10) / 10.0
+-    val estGainC = if (today && m.solar.accumulatedGrossGain > 0) maxOf(m.solar.accumulatedGrossGain, modelGain) else modelGain
++    val peakFallback = Math.round(maxOf(150.0, (100 - avgCloud * .7) * 8.8)).toInt()
++    // [0.31.27] Pik pokazujemy z prawdziwej prognozy GHI, a nie z zachmurzenia, gdy jest dostępna.
++    val estRadPeak = dayHours.mapNotNull { it.shortwaveRadiation }.maxOrNull()?.roundToInt() ?: peakFallback
++    // Jeden model dla wszystkich dni — ten sam, co w „PROGNOZIE ZYSKU”.
++    val modelGain = Math.round(SolarAnalytics.gainFromKwhM2(SolarAnalytics.dayKwhM2(dayHours)) * 10) / 10.0
++    // [0.31.27] DZIŚ: zmierzony przyrost z dzisiejszych próbek, a nie suma z całego bufora.
++    // Wcześniej maxOf(accumulatedGrossGain, modelGain) dawał +93 °C przy modelu +9 °C.
++    val estGainC = if (today && m.solar.todayGain > 0) m.solar.todayGain else modelGain
+     val sunEmoji = if (avgCloud < 25) "☀️" else if (avgCloud < 60) "🌤️" else "⛅"
+     Column(modifier
+         .background(if (today) Color(0x17FFD32A) else Color(0x0AFFFFFF), RoundedCornerShape(12.dp))
+diff -ruN android026_base/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt android023/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-22 10:38:16.722887432 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-22 10:38:16.738887512 +0000
+@@ -335,20 +335,30 @@
+         Text("BILANS SOLARNY", style = Txt.diagLbl)
+         Spacer(Modifier.height(2.dp))
+         SolarMetricRow("Panel teraz / zewnątrz", "$panelText / $outsideText")
++        // [0.31.27] Dziś i narastająco to dwie różne liczby — muszą być rozdzielone,
++        // bo wcześniej „+93 °C" wyglądało jak dzisiejszy zysk.
+         SolarMetricRow(
+-            "Zysk brutto słońca",
+-            if (solar.hasSamples) "+${s.fmt1(solar.accumulatedGrossGain)}°C" else "brak próbek"
++            "Zysk dziś",
++            if (solar.todayGain > 0) "+${s.fmt1(solar.todayGain)}°C" else "brak próbek z dziś"
++        )
++        SolarMetricRow(
++            "Zysk narastająco",
++            if (solar.hasSamples) "+${s.fmt1(solar.accumulatedGrossGain)}°C z ${solar.archive.size} próbek" else "brak próbek"
+         )
+         SolarMetricRow(
+             "ΔT panel − zewnątrz",
+             if (delta.isFinite()) (if (delta >= 0) "+" else "") + s.fmt1(delta) + "°C" else "brak danych"
+         )
+         SolarMetricRow(
+-            "Pobory wody C.W.U.",
+-            if (solar.hasSamples) "${solar.drawCount} wykrytych · −${s.fmt1(solar.accumulatedDrawDrop)}°C" else "brak próbek"
++            "Pobory wody dziś",
++            if (solar.todayDrawCount > 0) "${solar.todayDrawCount} wykrytych · −${s.fmt1(solar.todayDrawDrop)}°C" else "brak"
++        )
++        SolarMetricRow(
++            "Pobory wody narastająco",
++            if (solar.drawCount > 0) "${solar.drawCount} wykrytych · −${s.fmt1(solar.accumulatedDrawDrop)}°C" else "brak"
+         )
+         SolarMetricRow(
+-            "Prognoza zysku · model godzinowy",
++            "Prognoza zysku · dziś",
+             if (solar.forecastGain.isFinite())
+                 "+${s.fmt1(solar.forecastGain)}°C" else "brak prognozy"
+         )
