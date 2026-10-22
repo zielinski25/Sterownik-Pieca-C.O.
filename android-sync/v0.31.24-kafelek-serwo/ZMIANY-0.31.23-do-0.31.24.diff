@@ -1,0 +1,105 @@
+diff -ruN android023_base/app/build.gradle.kts android023/app/build.gradle.kts
+--- a/app/build.gradle.kts	2026-10-22 10:08:57.745973495 +0000
++++ b/app/build.gradle.kts	2026-10-22 10:09:07.942025044 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 3029
+-        versionName = "v0.31.23"
++        versionCode = 3030
++        versionName = "v0.31.24"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff -ruN android023_base/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt android023/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt	2026-10-22 10:08:57.745973495 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt	2026-10-22 10:08:57.753973536 +0000
+@@ -233,12 +233,7 @@
+ 
+ /** `.qcard` — szybka karta 3-kolumnowa. */
+ @Composable
+-fun RowScope.QCard(
+-    title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit,
+-    /** [0.31.23] Druga linia podpisu — dla kafelków, które muszą pokazać trzy rzeczy
+-     *  (np. SERWO: pozycja klapa, pozycja syberek, tryb). Pusta = brak linii. */
+-    sub2: String = ""
+-) {
++fun RowScope.QCard(title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit) {
+     val bd = when (state) {
+         "ok" -> Pal.rgba(74, 222, 128, .45f); "warn" -> Pal.rgba(251, 191, 36, .5f)
+         "err" -> Pal.rgba(255, 95, 120, .55f); else -> Pal.Border
+@@ -256,9 +251,6 @@
+         }
+         Text(value, style = Txt.quickVal, color = vc, maxLines = 1, overflow = TextOverflow.Ellipsis)
+         Text(sub, style = Txt.quickSub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+-        if (sub2.isNotEmpty()) {
+-            Text(sub2, style = Txt.quickSub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+-        }
+     }
+ }
+ 
+diff -ruN android023_base/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt android023/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt	2026-10-22 10:08:57.745973495 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt	2026-10-22 10:09:07.942025044 +0000
+@@ -172,28 +172,30 @@
+             val servoKnown = servoMode != null
+             val flapKnown = S.hasData("klapa") && S.klapa in 0..180
+             val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
+-            // [0.31.23] Kafelek pokazuje POZYCJĘ, nie tryb. „AUTO (100%)" mówiło tylko
+-            // o klapie i wyglądało jak jedna wartość dla całego serwa — a to są DWA
+-            // niezależne serwa. Kąt z centrali (klapa 0..180°, syberek 0..90°)
+-            // przeliczamy na procent, bo tylko procent jest porównywalny między nimi.
++            // [0.31.24] Ten kafelek ma tyle samo linii co POMPA i MIESZADŁO:
++            // wartość + JEDEN podpis. Tryb dopisany na końcu podpisu, a nie w czwartej
++            // linii — cztery linie obok trójlinijkowych sąsiadów wyglądały ciasno.
++            // Kąt z centrali (klapa 0..180°, syberek 0..90°) → procent, bo tylko
++            // procent jest porównywalny między dwoma serwami o różnym zakresie.
+             val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
+             val syberkaLabel = if (syberkaKnown) "${Math.round(S.syberka * 100.0 / 90.0)}%" else "—"
+-            val servoModeLabel = when (servoMode) { 1 -> "AUTO"; 2 -> "RĘCZNY"; 3 -> "BEZPIECZNY"; else -> null }
+             QCard(
+                 title = "SERWO", icon = "servo",
+-                // Trzy osobne informacje: pozycja klapy, pozycja syberka, tryb.
+-                value = pendingServo?.let { "CEL ${it.second.requestedPercent}%" } ?: "klapa $flapLabel",
++                value = when {
++                    pendingServo != null -> "CEL ${pendingServo.second.requestedPercent}%"
++                    servoMode == 3 -> "BEZPIECZNY"
++                    else -> "klapa $flapLabel"
++                },
+                 sub = when {
+                     pendingServo != null -> "${pendingServo.first} ${pendingServo.second.targetDegrees}° · czekam"
+-                    syberkaKnown -> "syberek $syberkaLabel"
+-                    else -> "syberek —"
+-                },
+-                sub2 = when {
+-                    pendingServo != null -> "czekam na status"
+-                    servoModeLabel != null -> "tryb $servoModeLabel"
+-                    else -> "tryb —"
++                    servoMode == 3 -> "tryb bezpieczeństwa"
++                    servoMode == 2 -> "syberek $syberkaLabel · RĘCZNY"
++                    servoMode == 1 -> "syberek $syberkaLabel · AUTO"
++                    else -> "syberek $syberkaLabel"
+                 },
+-                state = if (!servoKnown || pendingServo != null) "warn" else when (servoMode) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
++                // AUTO = normalna praca, więc ramka neutralna — tak jak POMPA i MIESZADŁO.
++                // Kolor dopiero gdy coś odbiega: RĘCZNY = żółty, BEZPIECZNY = czerwony.
++                state = if (!servoKnown || pendingServo != null) "warn" else when (servoMode) { 2 -> "warn"; 3 -> "err"; else -> "" },
+                 onClick = { m.openSheet("serwo") }
+             )
+             val mixerKnown = S.hasData("mieszadlo")
+diff -ruN android023_base/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt android023/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt	2026-10-22 10:08:57.745973495 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt	2026-10-22 10:08:57.753973536 +0000
+@@ -25,10 +25,7 @@
+     val navH = 74.dp
+     val navBtnH = 56.dp
+     val tileH = 126.dp
+-    // [0.31.23] 70 zamiast 64: kafelek SERWO ma teraz czwartą linię tekstu
+-    // (klapa % / syberek % / tryb). Przy 64 dp ostatnia linia była o 2 dp od
+-    // przycięcia — 70 dp daje zapas i nie rusza pozostałych wymiarów.
+-    val quickH = 70.dp
++    val quickH = 64.dp
+     val analysisH = 74.dp
+     val trendH = 75.dp
+     val chartH = 220.dp
