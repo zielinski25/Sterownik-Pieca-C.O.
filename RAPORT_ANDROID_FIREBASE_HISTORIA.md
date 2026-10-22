@@ -323,3 +323,66 @@ Nie mam możliwości uruchomienia aplikacji, więc te punkty trzeba potwierdzić
    odpowiednika `/solar_daily`, czy dodać endpoint w centrali.
 3. **Czy zakres 30 dni jest w ogóle potrzebny na wykresach?** Przy 14 seriach
    i braku downsamplingu to najdroższy widok w aplikacji.
+
+## 9. Wdrożone: v0.31.20 (22.10.2026)
+
+Paczka `SterownikCO-Android-v0.31.20-HISTORIA-CACHE.zip` (69 516 B,
+sha256 `61d0558f…`, Drive `18pg1TYOSSyn5UUc3gGdjxqymb-dsepei`), zbudowana
+**na drzewie 0.31.19**, które użytkownik przysłał jako źródła
+(`android-0.31.19-zrodla.zip`, 1 111 974 B). Potwierdzone w nim:
+`versionCode = 3025`, `versionName = "v0.31.19"`, 89 plików `.kt`,
+`AlarmSoundSync.kt` obecny — czyli nakładka v3.50 faktycznie weszła do builda.
+
+### 9.1 Co jest w paczce
+
+| plik | rodzaj |
+|---|---|
+| `app/build.gradle.kts` | 3025 → **3026**, `v0.31.19` → **`v0.31.20`** |
+| `core/TelemetryCache.kt` | **nowy** — dzienny cache JSON w `filesDir/telemetry/v1/` |
+| `core/Telemetry.kt` | `data class HistoryFetch` (punkty + liczniki dni) |
+| `core/RtdbClient.kt` | `fetchTelemetry` czyta/zapisuje cache, dociąga przyrostowo, raportuje błędy dni |
+| `core/AppModel.kt` | `loadRange(sec, force)`, anulowanie `Job`, 60 s blokady, historia tylko na Wykresach |
+| `ui/screens/Charts.kt` | przycisk odświeżania → `force = true` |
+| `test/…/TelemetryCacheTest.kt` | **nowy** — 8 testów JVM (`org.json` jest już w `testImplementation`) |
+
+### 9.2 Zasady ruchu sieciowego
+
+1. dzień **bez pliku** → pobranie **całego** dnia (nie wycinka zakresu) i zapis,
+2. dzień **bieżący (UTC)** → tylko rekordy nowsze od `maxTs` z pliku,
+3. dzień **wczorajszy** → jedno pełne domknięcie na proces, **scalanie, nigdy podmiana**,
+4. dzień **zamknięty** → zero sieci.
+
+Punkt 1 jest krytyczny: pobranie skróconego dnia przy zakresie 24 h zatrułoby
+pamięć i po przełączeniu na 30 dni brakowałoby próbek. Sprawdzone testem
+„24 h nie zatruwa 7 dni".
+
+### 9.3 Status znalezisk
+
+| id | status |
+|---|---|
+| F1 brak cache | **naprawione** |
+| F2 `onResume()` bezwarunkowo | **naprawione** |
+| F3 brak anulowania pobrania | **naprawione** |
+| F4 cichy `catch` per doba | **naprawione** (`daysFailed` / `daysStale`) |
+| F5 `historyIndexFallback` do końca procesu | **naprawione** (TTL 10 min; koniec z `contains("400")`) |
+| F6 brak downsamplingu | **otwarte** — osobny etap, zmienia wygląd serii |
+| F7 `no-store` | bez zmian (brak `OkHttp.Cache`) |
+| F8 `/solar_daily` nieczytane | **otwarte** — pytanie 2 w sekcji 8 |
+| F9 brak informacji o źródle | **naprawione** („7 dni z pamięci”, „brak 2 dni”) |
+| F10 numer wersji z `BuildConfig` | bez zmian, ale numer podbity |
+
+### 9.4 Czego nie udało się sprawdzić przed wysłaniem
+
+W sandboxie **nie ma JDK ani Android SDK** (`which java` → brak), więc
+`assembleDebug` i `testDebugUnitTest` muszą wykonać się na laptopie użytkownika.
+Wykonane zamiast tego:
+
+- kontrola balansu nawiasów i stringów w 5 plikach (lexer obsługujący raw stringi,
+  interpolację `${…}`, komentarze) — OK,
+- port polityki cache do Pythona, **10 scenariuszy**: zimny start 7 dni, drugie
+  wejście bez transferu, 3 nowe minuty, awaria sieci na dniu z cache, dzień bez
+  cache, prune 45 dni, klucze UTC, roundtrip NaN/sim/stateKnown, 24 h → 7 dni,
+  wczoraj domykane raz — **wszystko OK**,
+- sprawdzenie, że użyte API istnieją w tym drzewie: `String.format(Locale, …)`,
+  `lowercase(Locale)`, `catch (_: …)`, `sumOf`, `maxOfOrNull` — wszystkie już
+  używane gdzie indziej w projekcie.
