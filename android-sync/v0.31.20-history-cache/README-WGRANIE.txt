@@ -62,6 +62,10 @@ Czego ta paczka NIE zmienia:
   · nie zmienia wyglądu wykresów ani sposobu liczenia serii,
   · nie kasuje żadnych danych na telefonie (cache to nowy katalog).
 
+UWAGA: instaluj APK NA POPRZEDNI (ten sam pakiet `com.sterownikco.pro.debug`).
+Wtedy dane aplikacji zostają i cache zaczyna się od zera sam z siebie.
+Odinstalowanie aplikacji skasowałoby też ustawienia i sesję Firebase.
+
 
 ────────────────────────────────────────────────────────────────────────────
  2. ZANIM WGRASZ — kopia zapasowa (PowerShell)
@@ -159,8 +163,9 @@ uruchamiaj „na wiarę”, wolę wiedzieć.
  5. PO CZYM POZNASZ, ŻE DZIAŁA
 ────────────────────────────────────────────────────────────────────────────
 
- 1. Ustawienia → „APLIKACJA WEB PRO" → ma być v0.31.20.
-    Jeśli dalej 0.31.19 — na telefonie jest stary APK.
+ 1. Ustawienia → „APLIKACJA WEB PRO" → ma być v0.31.20-debug
+    (build debug zawsze dopisuje „-debug").
+    Jeśli dalej v0.31.19-debug — na telefonie jest stary APK.
 
  2. Pierwsze wejście na Wykresy po instalacji:
     pasek statusu pokaże „… dni pobranych” — to normalne, pamięć jest pusta.

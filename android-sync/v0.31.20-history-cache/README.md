@@ -5,9 +5,9 @@ Paczka naprawcza dla drzewa **0.31.19** (= `SterownikCO-Android-v0.31.18-build-2
 a 0.31.18/0.31.19 nigdy do niego nie trafiły.
 
 - **Wersja docelowa:** `versionName = "v0.31.20"`, `versionCode = 3026`
-- **ZIP:** `SterownikCO-Android-v0.31.20-HISTORIA-CACHE.zip` — 69 516 B,
-  sha256 `61d0558f2a84485561df7ec344081bea27dfca4adb2480a55e6ff1272edd3a09`
-- **Drive:** `18pg1TYOSSyn5UUc3gGdjxqymb-dsepei`
+- **ZIP:** `SterownikCO-Android-v0.31.20-HISTORIA-CACHE.zip` — 69 652 B,
+  sha256 `6eab3b3a7969ace4b81ef87a0a842a4197586cc704459fe0484c86bd3a77ef77`
+- **Drive:** `1V2yFS4VdA_rqWp5vVSVfegmxjaGpbyN0`
 
 ## Co zmieniono
 

@@ -326,8 +326,8 @@ Nie mam możliwości uruchomienia aplikacji, więc te punkty trzeba potwierdzić
 
 ## 9. Wdrożone: v0.31.20 (22.10.2026)
 
-Paczka `SterownikCO-Android-v0.31.20-HISTORIA-CACHE.zip` (69 516 B,
-sha256 `61d0558f…`, Drive `18pg1TYOSSyn5UUc3gGdjxqymb-dsepei`), zbudowana
+Paczka `SterownikCO-Android-v0.31.20-HISTORIA-CACHE.zip` (69 652 B,
+sha256 `6eab3b3a…`, Drive `1V2yFS4VdA_rqWp5vVSVfegmxjaGpbyN0`), zbudowana
 **na drzewie 0.31.19**, które użytkownik przysłał jako źródła
 (`android-0.31.19-zrodla.zip`, 1 111 974 B). Potwierdzone w nim:
 `versionCode = 3025`, `versionName = "v0.31.19"`, 89 plików `.kt`,
