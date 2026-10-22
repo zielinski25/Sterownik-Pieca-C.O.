@@ -234,7 +234,8 @@ Każdy plik: tablica rekordów w formacie minimalnym (to, co potrzebne do `Telem
 `id, seq, ts, mono, a[], k, s, state, q, sim`). **Bez `age`** — aplikacja go nie używa,
 a to 16 z 196 bajtów rekordu (8%).
 
-Rozmiar: 30 dni × ~150 B ≈ 4,5 MB na dysku (mniej niż 8,1 MB z sieci, bo bez `age`
+Rozmiar: ~121 B/rekord ⇒ doba ≈ 170 KB, 30 dni ≈ **5 MB**, 45 dni ≈ 7,5 MB
+(limit `TelemetryCache.MAX_BYTES` = 24 MB) — mniej niż 8,1 MB z sieci, bo bez `age`
 i bez nazw pól można zapisać zwartą tablicą).
 
 ### 6.2 Algorytm
@@ -326,8 +327,8 @@ Nie mam możliwości uruchomienia aplikacji, więc te punkty trzeba potwierdzić
 
 ## 9. Wdrożone: v0.31.20 (22.10.2026)
 
-Paczka `SterownikCO-Android-v0.31.20-HISTORIA-CACHE.zip` (69 652 B,
-sha256 `6eab3b3a…`, Drive `1V2yFS4VdA_rqWp5vVSVfegmxjaGpbyN0`), zbudowana
+Paczka `SterownikCO-Android-v0.31.20-HISTORIA-CACHE.zip` (69 741 B,
+sha256 `ec8b8854…`, Drive `1Y8v8p9ARgXgzyY_YNT5xzl0JHVNUpYYj`), zbudowana
 **na drzewie 0.31.19**, które użytkownik przysłał jako źródła
 (`android-0.31.19-zrodla.zip`, 1 111 974 B). Potwierdzone w nim:
 `versionCode = 3025`, `versionName = "v0.31.19"`, 89 plików `.kt`,

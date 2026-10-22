@@ -171,7 +171,9 @@ uruchamiaj „na wiarę”, wolę wiedzieć.
     pasek statusu pokaże „… dni pobranych” — to normalne, pamięć jest pusta.
 
  3. Wyjdź na Pulpit i wróć na Wykresy:
-    ma być „… dni z pamięci”, BEZ pobierania. Wcześniej leciało całe 8 MB.
+    ma być „… dni z pamięci”.
+    Z sieci pójdzie co najwyżej ogon dzisiejszego dnia (jeden mały request),
+    a nie całe 8 MB jak wcześniej.
 
  4. Wyjdź z aplikacji do innej apki, wróć na Wykresy w ciągu minuty:
     brak jakiegokolwiek nowego ruchu.
@@ -183,7 +185,8 @@ uruchamiaj „na wiarę”, wolę wiedzieć.
     wykres zostaje, status mówi „dzień bez odświeżenia” albo „brak N dni”.
 
  7. Sprawdź zajętość: Ustawienia → Aplikacje → SterownikCO → Pamięć.
-    30 dni mieści się w ~4,5 MB.
+    30 dni ≈ 5 MB, pełne 45 dni (limit prune) ≈ 7,5 MB.
+    Twardy limit katalogu to 24 MB — potem najstarsze dni lecą same.
 
 
 ────────────────────────────────────────────────────────────────────────────
