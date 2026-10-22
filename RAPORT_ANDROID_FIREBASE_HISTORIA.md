@@ -504,3 +504,58 @@ połówki w górę — dla 91° klapy wychodzi 51%, nie 50%.
 **Zakres — decyzja użytkownika: tylko ten kafelek.** Arkusz „Serwo" zostaje
 bez zmian (procent duży, kąt mały), a podpis „cel … °" przy wysyłaniu komendy
 też zostaje w stopniach, bo tam kąt jest informacją o celu, nie o odczycie.
+
+## 11. Bufor offline z aplikacji — firmware v3.54.0 + Android v0.31.22 (22.10.2026)
+
+### 11.1 Punkt wyjścia
+
+Mechanizm buforowania telemetrii przy braku internetu (runtime Spool G2) istniał
+od R301–R334, ale był dostępny **wyłącznie z Telegrama**:
+
+| komenda | działanie |
+|---|---|
+| `/spoolrt` | raport: ARMED/OFF, ring, strony, próbki zapisane/odtworzone |
+| `/spoolrt TAK` | uzbrojenie (`g_spoolRuntimeArmed = true`) |
+| `/spoolrt STOP` | wyłączenie (strony na LittleFS zostają) |
+
+Trzy blokady dla aplikacji: brak `spoolrt` na liście `wykonajKomendePanelu()`,
+brak stanu w `/piec/status`, flaga tylko w RAM (OFF po każdym restarcie).
+
+### 11.2 Firmware v3.54.0
+
+| miejsce | zmiana |
+|---|---|
+| `wykonajKomendePanelu()` | `spoolrt_wl` / `spoolrt_wyl` (ta sama funkcja co Telegram) |
+| `zbudujJsonStatusPelny()` | `spool_rt`, `spool_pages`, `spool_spill`, `spool_replay` |
+| `spoolRuntimePersistArmed()` | `Preferences` namespace `spoolg`, klucz `rt_on`, `putBool` |
+| `spoolRuntimeRestoreFromNvs()` | `setup()` po `g_telemetryRing.init()` |
+| `FIRMWARE_VERSION` | `v3.54.0` |
+
+Zapis do NVS **tylko przy zmianie stanu** — jeden bajt na kliknięcie.
+Polityka zapisu bez zmian: offline ≥120 s lub ring ≥120 próbek, cooldown 30 s,
+replay 10 próbek, quota i rezerwaty LittleFS nietknięte.
+
+Payload statusu +~90 B (limit `FB_JSON_CAP = 3072`).
+
+### 11.3 Android v0.31.22
+
+Nowy arkusz `Ustawienia → Bufor offline` (`ui/screens/sheets/Offline.kt`):
+przełącznik + liczniki (strony, próbki zapisane, próbki odtworzone).
+Stan czytany **wyłącznie** ze `spool_rt`; brak pola = stary firmware =
+przełącznik nieaktywny z wyjaśnieniem.
+
+### 11.4 Paczki
+
+| | Android | Firmware |
+|---|---|---|
+| plik | `SterownikCO-Android-v0.31.22-BUFOR-OFFLINE.zip` | `SterownikCO-v3.54.0-OFFLINE-BUFFER.zip` |
+| rozmiar | 108 500 B | 813 517 B |
+| sha256 | `1bb4f02ec9aa575b474ef6961684b530384b807a4fb8808d1dac3f6f581bfbe8` | `4883370d3b5392bb6e54e38a9f5a9df2e22f18acd60193d35d1208887b38961a` |
+| katalog | `android-sync/v0.31.22-offline-buffer/` | `firmware-patch/v3.54.0-offline-buffer-toggle/` |
+
+### 11.5 Czego nie sprawdzono
+
+Brak kompilatora ESP32 i brak JDK — build musi wykonać użytkownik.
+Wykonane: balans nawiasów całego `main_centrala.cpp` identyczny z v3.53.1
+(różnica 0), każda wstawka asertowana liczbą wystąpień, `kcheck.py` na
+6 plikach Kotlina, kontrola obu ZIP-ów przez rozpakowanie i `cmp`.
