@@ -587,3 +587,27 @@ Drive `1la6HXmGvW_1TbU7ieqBTSSwlUff7Fhwn`.
 Wniosek na przyszłość: przy nieznanym stanie drzewa użytkownika wysyłać
 **pełne źródła**, nie nakładkę — nakładka jest tańsza, ale zakłada bazę,
 której nie da się zweryfikować zdalnie.
+
+### 11.6 Build potwierdzony na maszynie użytkownika (2026-10-22)
+
+Pełne źródła zbudowane bez błędów:
+
+| | |
+|---|---|
+| komenda | `gradlew.bat :app:assembleDebug --console=plain` |
+| wynik | **BUILD SUCCESSFUL in 1m 17s**, 37 zadań (21 wykonanych, 16 z cache) |
+| toolchain | Gradle 8.9 (wrapper), AGP 8.7.3, Kotlin 2.0.21, JDK 17.0.20.1 Temurin, compileSdk 35 |
+| APK | `app-debug.apk` — **12 889 996 B** (~12,3 MB, build debug bez R8) |
+| błędy | **0** |
+
+Ostrzeżenia (nie błędy, wszystkie w plikach **spoza** paczek v0.31.20–v0.31.22):
+
+- `AppModel.kt:234` — `VIBRATOR_SERVICE` deprecated (linia istnieje od wcześniejszych wersji),
+- `ChartEngine.kt:586–588` — „Condition is always 'true'" ×3,
+- `Weather.kt:637,643` i `SvgPath.kt:141,148` — `quadraticBezierTo` deprecated,
+- `Theme.kt:124–125` — `statusBarColor` / `navigationBarColor` deprecated,
+- `libandroidx.graphics.path.so` — nie do stripowania, spakowana bez zmian.
+
+Wniosek: kod v0.31.22 **kompiluje się**. Wcześniejszy `compileDebugKotlin` FAILED
+nie był błędem kodu, tylko brakiem trzech plików w starym drzewie użytkownika
+(§11.5). Na przyszłość: przy nieznanym drzewie wysyłać pełne źródła.

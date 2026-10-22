@@ -65,3 +65,19 @@ których nakładka nie zawiera.
 Wtedy: **`SterownikCO-Android-v0.31.22-PELNE-ZRODLA.zip`** (1 119 837 B,
 140 wpisów, cały projekt) — rozpakować do nowego folderu i zbudować.
 Szczegóły: `README-PELNE-ZRODLA.md`.
+
+## Build potwierdzony (2026-10-22)
+
+Pełne źródła zbudowane na maszynie użytkownika bez błędów:
+
+```
+BUILD SUCCESSFUL in 1m 17s
+APK: app\build\outputs\apk\debug\app-debug.apk  (12 889 996 B)
+```
+
+Gradle 8.9 (wrapper) · AGP 8.7.3 · Kotlin 2.0.21 · JDK 17.0.20.1 Temurin ·
+compileSdk 35 · `local.properties` z `sdk.dir=C:/Users/<Ty>/AppData/Local/Android/Sdk`.
+
+Ostrzeżenia kompilatora są w plikach spoza tej paczki (deprecations w
+`ChartEngine.kt`, `Weather.kt`, `SvgPath.kt`, `Theme.kt`) — nie blokują builda
+i nie dotyczą zmian 0.31.20–0.31.22.
