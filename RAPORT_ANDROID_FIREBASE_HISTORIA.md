@@ -387,3 +387,97 @@ Wykonane zamiast tego:
 - sprawdzenie, że użyte API istnieją w tym drzewie: `String.format(Locale, …)`,
   `lowercase(Locale)`, `catch (_: …)`, `sumOf`, `maxOfOrNull` — wszystkie już
   używane gdzie indziej w projekcie.
+
+## 10. Wdrożone: v0.31.21 — auto-stop terminala DLOG (22.10.2026)
+
+### 10.1 Skąd ta zmiana
+
+Po analizie ruchu Firebase (§ 5) użytkownik wybrał **wariant A**: rytm statusu
+zostaje bez zmian — `delay(8000)` w `AppModel.kt:245` (dziś 252) oraz
+`BACKGROUND_STATUS_POLL_MS = 60_000` w `AlarmMonitorService.kt:398`. Z całej
+piątki wariantów (A–E) do wykonania została **jedna** rzecz: otwarty arkusz
+„Terminal diagnostyczny" odpytywał `/piec/dlog/<uid>/<root>/<session>`
+co 5 s **bez żadnego warunku końcowego**.
+
+Skala: 720 zapytań na godzinę to więcej niż cały polling statusu w tym samym
+czasie (450 zapytań/h przy 8 s). Terminal zostawiony otwarty na noc = ~5 800
+zapytań bez żadnej korzyści.
+
+### 10.2 Co dokładnie zmieniono
+
+| plik | linia (0.31.21) | zmiana |
+|---|---|---|
+| `core/AppModel.kt` | 42–48 | `private const val TERMINAL_DLOG_IDLE_STOP_MS = 5L * 60_000L` |
+| `core/AppModel.kt` | 1642–1645 | pola `terminalDlogLastTouch: Long`, `terminalDlogIdleStopped: Boolean` |
+| `core/AppModel.kt` | 1762 | `startTerminalDlogPolling(restart: Boolean = false)` |
+| `core/AppModel.kt` | 1775–1780 | warunek bezczynności **przed** każdym pollem |
+| `core/AppModel.kt` | 1798 | `fun terminalTouch()` — podtrzymanie i wznowienie |
+| `core/AppModel.kt` | 1808 | `stopTerminalDlogPolling()` czyści `terminalDlogIdleStopped` |
+| `ui/screens/sheets/System.kt` | 44–45, 498–512 | `Modifier.pointerInput` na korzeniu `TerminalSheet` |
+| `app/build.gradle.kts` | 15–16 | `versionCode 3027`, `versionName "v0.31.21"` |
+
+Zegar: `SystemClock.elapsedRealtime()` (monotoniczny, odporny na zmianę czasu
+w systemie). Nie używamy `System.currentTimeMillis()`.
+
+Zdarzenia dotknięć są obserwowane w `PointerEventPass.Initial` i **nie są
+konsumowane** — przewijanie konsoli DLOG działa dokładnie jak wcześniej.
+
+### 10.3 Zachowanie po zmianie
+
+| sytuacja | efekt |
+|---|---|
+| nikt nie dotyka ekranu | po 305 s ostatni poll, potem stop (61 zapytań) |
+| dotknięcie / przewinięcie | licznik wznawia się; po stopie — odbiór wraca |
+| zamknięcie arkusza | `stopTerminalDlogPolling()` (bez zmian) |
+| powrót z tła na arkusz | start od zera (bez zmian) |
+| pauza wyświetlania (`termPaused`) | **nadal** podlega auto-stopowi — pauza dotyczy tylko bufora lokalnego, sieci nie |
+| stan logów na centrali | **bez zmian** — nie wołamy `terminalRemoteOff()` |
+
+Świadoma decyzja: auto-stop jest **wyłącznie lokalny**. Wyłączenie zdalnych
+logów na ESP32 zmieniłoby stan urządzenia bez kliknięcia użytkownika, a przy
+tym ucina dane, które i tak trafiają do chmury.
+
+### 10.4 Wyścig domknięty przed wysłaniem
+
+`terminalTouch()` woła `startTerminalDlogPolling(restart = true)`. Bez flagi
+`restart` dotknięcie w klatce, w której korutyna właśnie się domykała, trafiało
+na `isActive == true` i kończyło się `return` — panel zostałby martwy do
+zamknięcia arkusza. `restart = true` anuluje dobiegający job i startuje nowy.
+Scenariusz T5 w symulacji sprawdza dokładnie ten przypadek.
+
+### 10.5 Paczka
+
+| | wartość |
+|---|---|
+| ZIP | `SterownikCO-Android-v0.31.21-HISTORIA-CACHE.zip` |
+| rozmiar | 84 769 B |
+| sha256 | `2b2218befe2ca411656952f3a57580259e3fd682ca77d9621fa13ed495d5fa85` |
+| Drive | `1fPuWsl1nJNmT9vV1uB-uqXoXQ11n4yBz` |
+| wpisy w ZIP | 10 (README + diff + 8 plików źródłowych) |
+| katalog w repo | `android-sync/v0.31.21-terminal-idle-stop/` |
+
+Paczka jest **kumulatywna względem 0.31.19** — zawiera całe pliki, więc
+nadpisuje również zmiany z 0.31.20. Kto ma 0.31.20, może wgrać tę samą paczkę
+bez cofania czegokolwiek.
+
+### 10.6 Czego nie udało się sprawdzić
+
+W sandboxie **nie ma JDK, Android SDK ani Gradle** — `assembleDebug`
+i `testDebugUnitTest` muszą wykonać się na laptopie użytkownika. Wykonane
+zamiast tego:
+
+- `kcheck.py` (balans nawiasów/stringów, lexer z raw stringami i `${…}`)
+  na `AppModel.kt`, `System.kt`, `RtdbClient.kt`, `Telemetry.kt`,
+  `TelemetryCache.kt`, `Charts.kt` — **OK**,
+- port logiki auto-stopu do Pythona, **6 scenariuszy** (T1–T6) —
+  **wszystko OK**,
+- kontrola zawartości ZIP: rozpakowanie do czystego katalogu i `cmp` każdego
+  z 8 plików względem źródła — **identyczne**.
+
+### 10.7 Linki
+
+- podgląd: https://drive.google.com/file/d/1fPuWsl1nJNmT9vV1uB-uqXoXQ11n4yBz/view
+- pobranie: https://drive.google.com/uc?id=1fPuWsl1nJNmT9vV1uB-uqXoXQ11n4yBz&export=download
+
+Poprzednia paczka (0.31.20, `1Y8v8p9ARgXgzyY_YNT5xzl0JHVNUpYYj`) przeniesiona
+do kosza — nie jest już potrzebna, bo 0.31.21 zawiera całą jej treść.

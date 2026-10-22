@@ -1,0 +1,911 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+--- a/app/build.gradle.kts	2026-10-22 07:59:39.760228605 +0000
++++ b/app/build.gradle.kts	2026-10-22 08:31:21.504090498 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 3025
+-        versionName = "v0.31.19"
++        versionCode = 3027
++        versionName = "v0.31.21"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff --git a/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/AppModel.kt	2026-10-22 07:59:39.764228625 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/AppModel.kt	2026-10-22 08:31:30.372135331 +0000
+@@ -37,6 +37,16 @@
+    + logi + toasty + timery (8 s / 45 s / 15 min / 1 s).
+    ══════════════════════════════════════════════════════════════════════════ */
+ 
++/** Minimalny odstęp między automatycznymi pobraniami historii (ms). */
++private const val HISTORY_MIN_INTERVAL_MS = 60_000L
++
++/**
++ * Po tylu ms bez dotknięcia ekranu terminal przestaje pytać Firebase.
++ * Otwarty terminal odpytywał bazę co 5 s bez końca — 720 zapytań na godzinę,
++ * więcej niż cały polling statusu.
++ */
++private const val TERMINAL_DLOG_IDLE_STOP_MS = 5L * 60_000L
++
+ private const val CHART_GROUP_TEMPERATURE = 1
+ private const val CHART_GROUP_SERVO = 2
+ private const val CHART_GROUP_PUMP = 4
+@@ -56,6 +66,8 @@
+     val prefs = Prefs(ctx)
+     val S = PiecState()
+     val solar = SolarAnalytics(prefs)
++    /** Dzienny cache telemetrii — patrz [TelemetryCache]. */
++    val tcache = TelemetryCache(ctx)
+ 
+     private val http = OkHttpClient.Builder()
+         .connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
+@@ -231,7 +243,10 @@
+ 
+     fun onResume() {
+         bgJob?.cancel(); bgJob = null
+-        poll(); refreshWeather(false); loadRange(rangeSec)
++        poll(); refreshWeather(false)
++        // Historia wyłącznie wtedy, gdy użytkownik naprawdę patrzy na wykresy.
++        // Wcześniej każde wyjście z tła pobierało cały zakres z Firebase.
++        if (page == 1) loadRange(rangeSec)
+         if (sheet == "terminal") startTerminalDlogPolling()
+         jobs = listOf(
+             scope.launch { while (true) { delay(8000); poll() } },
+@@ -436,7 +451,7 @@
+             }
+             poll()
+             if (sheet == "terminal") startTerminalDlogPolling()
+-            if (page == 1) loadRange(rangeSec)
++            if (page == 1) loadRange(rangeSec, force = true)
+         }.onFailure { e ->
+             authBusy = false; authStatusKind = "err"; authStatus = e.message ?: "Logowanie nieudane"
+             if (automatic) authOpen = true
+@@ -948,45 +963,108 @@
+     }
+ 
+     // ── historia telemetrii ─────────────────────────────────────────────────
+-    fun loadRange(sec: Int) = scope.launch {
++    /** Znacznik ostatniego pobrania — chroni przed serią identycznych żądań. */
++    private var historyLoadedElapsed = 0L
++    private var historyLoadedRange = -1
++    private var historyJob: Job? = null
++    private var cachePruned = false
++
++    /**
++     * Pobiera historię dla zakresu [sec].
++     *
++     * [force] pomija 60-sekundową blokadę — używają jej przycisk odświeżania
++     * i jawna zmiana zakresu. Zwykłe wejście na Wykresy oraz powrót z tła
++     * korzystają z cache, więc przełączanie zakładek nie generuje transferu.
++     *
++     * Poprzednie pobranie jest anulowane: wcześniej trzy szybkie zmiany
++     * zakresu uruchamiały trzy równoległe serie zapytań do Firebase.
++     */
++    fun loadRange(sec: Int, force: Boolean = false) {
++        val nowElapsed = SystemClock.elapsedRealtime()
++        val upToDate = !force && sec == historyLoadedRange && telemetry.isNotEmpty() &&
++            historyLoadedElapsed > 0L && nowElapsed - historyLoadedElapsed < HISTORY_MIN_INTERVAL_MS
+         rangeSec = sec
+-        val rangeName = when (sec) {
+-            6 * 3600 -> "6h"; 24 * 3600 -> "24h"; 7 * 86400 -> "7d"; else -> "30d"
+-        }
+-        chartStatus = "Pobieranie historii ($rangeName) z bazy Firebase…"
+-        if (connected) {
+-            try {
+-                // Uptime sam nie ustala granicy migracji. RtdbClient używa go
+-                // wyłącznie razem z wersją FW, czasem odbioru statusu oraz
+-                // ts/mono/session archiwum do jednoznacznego wskazania bieżącej sesji.
+-                val freshControllerStatus = S.online && isFbFresh
+-                val repairUptime = S.uptime.takeIf { freshControllerStatus && S.hasData("uptime") && it.isFinite() }
+-                val repairFirmware = S.firmware.takeIf { freshControllerStatus && S.hasData("fw") }
+-                val repairStatusAt = lastFetchTs.takeIf { freshControllerStatus && repairUptime != null && it > 0L }
+-                val fb = Rtdb.fetchTelemetry(
+-                    rangeSec = sec,
+-                    firmware = repairFirmware,
+-                    deviceUptimeSeconds = repairUptime,
+-                    statusObservedAtMs = repairStatusAt
+-                )
+-                if (fb != null && fb.isNotEmpty()) {
+-                    chartLive = emptyList()
+-                    telemetry = fb
+-                    chartPoints = fb.size
+-                    chartStatus = "Załadowano ${fb.size} próbek z RTDB · odcinki symulowane są kreskowane"
+-                    chartReality = "FIREBASE RTDB"
+-                    // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
+-                    // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
+-                    appendLiveFeed()
+-                    return@launch
++        if (upToDate) return
++
++        historyLoadedElapsed = nowElapsed
++        historyLoadedRange = sec
++        historyJob?.cancel()
++        historyJob = scope.launch {
++            val rangeName = when (sec) {
++                6 * 3600 -> "6h"; 24 * 3600 -> "24h"; 7 * 86400 -> "7d"; else -> "30d"
++            }
++            chartStatus = "Pobieranie historii ($rangeName) z bazy Firebase…"
++            val hadData = telemetry.isNotEmpty()
++            var failedHere = false
++            if (connected) {
++                try {
++                    if (!cachePruned) {
++                        cachePruned = true
++                        withContext(kotlinx.coroutines.Dispatchers.IO) {
++                            tcache.prune(TelemetryCache.utcDayKey(System.currentTimeMillis() / 1000))
++                        }
++                    }
++                    // Uptime sam nie ustala granicy migracji. RtdbClient używa go
++                    // wyłącznie razem z wersją FW, czasem odbioru statusu oraz
++                    // ts/mono/session archiwum do jednoznacznego wskazania bieżącej sesji.
++                    val freshControllerStatus = S.online && isFbFresh
++                    val repairUptime = S.uptime.takeIf { freshControllerStatus && S.hasData("uptime") && it.isFinite() }
++                    val repairFirmware = S.firmware.takeIf { freshControllerStatus && S.hasData("fw") }
++                    val repairStatusAt = lastFetchTs.takeIf { freshControllerStatus && repairUptime != null && it > 0L }
++                    val res = Rtdb.fetchTelemetry(
++                        rangeSec = sec,
++                        firmware = repairFirmware,
++                        deviceUptimeSeconds = repairUptime,
++                        statusObservedAtMs = repairStatusAt,
++                        cache = tcache
++                    )
++                    if (res.points.isNotEmpty()) {
++                        chartLive = emptyList()
++                        telemetry = res.points
++                        chartPoints = res.points.size
++                        chartStatus = historyStatusText(res)
++                        chartReality = "FIREBASE RTDB"
++                        // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
++                        // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
++                        appendLiveFeed()
++                        return@launch
++                    }
++                    failedHere = true
++                    chartStatus = if (res.firstError != null)
++                        "Nie udało się pobrać historii: ${res.firstError}"
++                    else "Brak próbek telemetrii dla wybranego zakresu"
++                } catch (e: CancellationException) {
++                    throw e                      // anulowanie nowszym pobraniem nie jest błędem
++                } catch (e: Exception) {
++                    failedHere = true
++                    chartStatus = "Błąd pobierania historii: ${e.message ?: "nieznany"}"
+                 }
+-            } catch (e: Exception) { /* fallback poniżej, jak w panelu */ }
++            } else {
++                failedHere = true
++                chartStatus = "Zaloguj się do Firebase, aby pobrać historię telemetrii"
++            }
++            // Chwilowy błąd sieci nie może wyczyszczać wykresu — puste osie
++            // wyglądają jak utrata archiwum.
++            if (!hadData) {
++                telemetry = emptyList()
++                chartPoints = 0
++                chartLive = emptyList()
++                chartReality = if (connected) "BRAK DANYCH" else "BRAK SESJI"
++            }
++            if (failedHere) historyLoadedElapsed = 0L   // następne wejście ponowi od razu
+         }
+-        telemetry = emptyList()
+-        chartPoints = 0
+-        chartStatus = if (connected) "Brak próbek telemetrii dla wybranego zakresu" else "Zaloguj się do Firebase, aby pobrać historię telemetrii"
+-        chartReality = if (connected) "BRAK DANYCH" else "BRAK SESJI"
+-        chartLive = emptyList()
++    }
++
++    /** `1440 próbek · 1 dzień pobrany · 29 dni z pamięci · odcinki symulowane kreskowane`. */
++    private fun historyStatusText(r: HistoryFetch): String {
++        fun pl(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
++        val parts = ArrayList<String>(4)
++        parts.add("${r.points.size} próbek")
++        if (r.daysDownloaded > 0) parts.add(pl(r.daysDownloaded, "dzień pobrany", "dni pobrane"))
++        if (r.daysFromCache > 0) parts.add(pl(r.daysFromCache, "dzień z pamięci", "dni z pamięci"))
++        if (r.daysStale > 0) parts.add(pl(r.daysStale, "dzień bez odświeżenia", "dni bez odświeżenia"))
++        if (r.daysFailed > 0) parts.add(pl(r.daysFailed, "brak 1 dnia", "brak ${r.daysFailed} dni"))
++        return parts.joinToString(" · ") + " · odcinki symulowane kreskowane"
+     }
+ 
+     /** Dokleja wyłącznie odczyt z właśnie zakończonego, udanego pollingu Firebase. */
+@@ -1084,7 +1162,7 @@
+     fun setRange(sec: Int) {
+         rangeSec = sec
+         saveChartPrefs()
+-        loadRange(sec)
++        loadRange(sec, force = true)
+     }
+ 
+     // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartMode — stqd "Platform declaration clash".
+@@ -1561,6 +1639,10 @@
+     var termStatusKind by mutableStateOf("")
+     val termCats = mutableStateMapOf<String, Boolean>()
+     private var terminalDlogJob: Job? = null
++    /** Ostatnia interakcja z arkuszem terminala (`elapsedRealtime`). */
++    private var terminalDlogLastTouch = 0L
++    /** Czy odbiór DLOG został wstrzymany z powodu bezczynności. */
++    private var terminalDlogIdleStopped = false
+     private var terminalDlogUid = ""
+     private var terminalDlogRoot = ""
+     private var terminalDlogSession = ""
+@@ -1677,12 +1759,25 @@
+     }
+ 
+     /** Odczyt prawdziwych chunków DLOG tylko wtedy, gdy arkusz terminala jest otwarty. */
+-    private fun startTerminalDlogPolling() {
+-        if (terminalDlogJob?.isActive == true) return
++    private fun startTerminalDlogPolling(restart: Boolean = false) {
++        if (terminalDlogJob?.isActive == true) {
++            // `restart` obsługuje dotknięcie w tej samej klatce, w której pętla
++            // się domyka: anulowanie zakończonej korutyny nic nie psuje.
++            if (!restart) return
++            terminalDlogJob?.cancel()
++        }
++        terminalDlogLastTouch = SystemClock.elapsedRealtime()
++        terminalDlogIdleStopped = false
+         terminalDlogJob = scope.launch {
+             termStatus = "Łączenie z rzeczywistymi wpisami DLOG z Firebase…"
+             termStatusKind = ""
+             while (isActive && sheet == "terminal") {
++                if (SystemClock.elapsedRealtime() - terminalDlogLastTouch > TERMINAL_DLOG_IDLE_STOP_MS) {
++                    terminalDlogIdleStopped = true
++                    termStatus = "Podgląd wstrzymany po 5 min bez dotykania ekranu — dotknij, aby wznowić."
++                    termStatusKind = "warn"
++                    return@launch
++                }
+                 try {
+                     terminalPollDlogOnce()
+                 } catch (e: CancellationException) {
+@@ -1696,9 +1791,21 @@
+         }
+     }
+ 
++    /**
++     * Wołane z UI przy każdym dotknięciu arkusza terminala (tap, przewinięcie).
++     * Podtrzymuje odbiór DLOG; po bezczynności wznawia go ponownie.
++     */
++    fun terminalTouch() {
++        terminalDlogLastTouch = SystemClock.elapsedRealtime()
++        if (!terminalDlogIdleStopped) return
++        terminalDlogIdleStopped = false
++        startTerminalDlogPolling(restart = true)
++    }
++
+     private fun stopTerminalDlogPolling() {
+         terminalDlogJob?.cancel()
+         terminalDlogJob = null
++        terminalDlogIdleStopped = false
+     }
+ 
+     private suspend fun terminalPollDlogOnce() {
+diff --git a/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt b/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt	2026-10-22 07:59:39.764228625 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt	2026-10-22 07:58:47.095962658 +0000
+@@ -364,7 +364,40 @@
+ 
+     // ── telemetria historyczna (szardy dzienne + paginacja po `ts`) ──────────
+     private const val HISTORY_PAGE_SIZE = 300
+-    private var historyIndexFallback = false
++
++    /**
++     * Po tym czasie ponawiamy paginację, nawet jeśli indeks `ts` kiedyś zawiódł.
++     * Wcześniej flaga zostawała do końca procesu i jeden przypadkowy HTTP 400
++     * (np. po odświeżeniu tokenu) wyłączał stronicowanie na zawsze.
++     */
++    private const val INDEX_FALLBACK_TTL_MS = 10L * 60_000L
++
++    @Volatile private var historyIndexFallback = false
++    @Volatile private var historyIndexFallbackUntil = 0L
++
++    /** Dni domknięte w tym procesie — wczoraj dociągamy najwyżej raz. */
++    private val finalizedDays = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
++
++    private fun indexFallbackActive(): Boolean {
++        if (!historyIndexFallback) return false
++        if (System.currentTimeMillis() > historyIndexFallbackUntil) {
++            historyIndexFallback = false
++            return false
++        }
++        return true
++    }
++
++    private fun enableIndexFallback() {
++        historyIndexFallback = true
++        historyIndexFallbackUntil = System.currentTimeMillis() + INDEX_FALLBACK_TTL_MS
++    }
++
++    /** Tylko prawdziwy brak indeksu `ts` usprawiedliwia pobranie całego dnia. */
++    private fun isIndexError(error: String?, body: String): Boolean {
++        val text = ((error ?: "") + " " + body).lowercase(java.util.Locale.US)
++        if (text.isBlank()) return false
++        return text.contains("index not defined") || text.contains("indexon")
++    }
+ 
+     private fun shardPath(y: Int, m: Int, d: Int) =
+         "/piec/telemetry/1m/v1/$y/" + PiecState.pad2(m) + "/" + PiecState.pad2(d)
+@@ -398,12 +431,13 @@
+                 "&startAt=" + cursor + "&endAt=" + endTs + "&limitToFirst=" + HISTORY_PAGE_SIZE
+             val res = get(q)
+             if (!res.ok) {
+-                val msg = res.error ?: ""
+-                if (msg.contains("Index not defined", true) || msg.contains("indexOn", true) || msg.contains("400")) {
+-                    historyIndexFallback = true
++                if (isIndexError(res.error, res.body)) {
++                    enableIndexFallback()
+                     return fetchShardFull(path, startTs, endTs)
+                 }
+-                throw java.io.IOException(msg)
++                // Inne błędy (401, timeout, HTTP 400 bez indeksu) nie mogą
++                // udawać pustego dnia — dzień zostanie ponowiony przy kolejnym wejściu.
++                throw java.io.IOException(res.error ?: "błąd pobierania dnia")
+             }
+             val page = ArrayList<TelemRow>()
+             if (res.body.isNotBlank()) {
+@@ -471,28 +505,110 @@
+         return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
+     }
+ 
+-    /** `fetchTelemetryFromFirebase(rangeSec)` — zwraca gotowe serie lub null. */
++    /**
++     * Pobiera zakres historii, korzystając z dziennego cache, jeśli został podany.
++     *
++     * Zasady ruchu sieciowego:
++     *  - dzień bez pliku w pamięci  → pełne pobranie tego dnia i zapis,
++     *  - dzień bieżący (UTC)        → wyłącznie rekordy nowsze od ostatniego zapisanego,
++     *  - dzień zamknięty            → tylko z pamięci, bez sieci.
++     *
++     * Błąd jednego dnia nie przerywa pozostałych, ale jest zwracany w [HistoryFetch],
++     * żeby UI mogło powiedzieć "brak 2 dni" zamiast milcząco pokazać dziurę.
++     */
+     suspend fun fetchTelemetry(
+         rangeSec: Int,
+         firmware: String? = null,
+         deviceUptimeSeconds: Double? = null,
+-        statusObservedAtMs: Long? = null
+-    ): List<TelemPoint>? {
+-        if (idToken.isEmpty()) return null
++        statusObservedAtMs: Long? = null,
++        cache: TelemetryCache? = null
++    ): HistoryFetch = withContext(Dispatchers.IO) {
++        if (idToken.isEmpty()) return@withContext HistoryFetch()
++
+         val end = System.currentTimeMillis() / 1000
+         val start = end - rangeSec
+         val queryEnd = TelemetryTimeRepair.queryEndSeconds(
+             end, firmware, deviceUptimeSeconds, statusObservedAtMs
+         )
+         val all = ArrayList<TelemRow>()
++        var daysRequested = 0
++        var daysFromCache = 0
++        var daysDownloaded = 0
++        var daysStale = 0
++        var daysFailed = 0
++        var firstError: String? = null
++        val todayKey = TelemetryCache.utcDayKey(end)
++        val yesterdayKey = TelemetryCache.utcDayKey(end - 86_400)
++
+         for (day in dayRange(start, queryEnd)) {
+-            val dayStart = max(start, day[0] / 1000)
+-            val dayEnd = minOf(queryEnd, day[0] / 1000 + 86_400 - 1)
++            daysRequested++
++            // Cały dzień, nie tylko wycinek zakresu: ten sam plik posłuży potem
++            // szerszemu zakresowi. Pobranie skróconego dnia (np. przy 24 h)
++            // zatrułoby pamięć i po przełączeniu na 30 dni brakowałoby próbek.
++            val dayStart = day[0] / 1000
++            val dayEnd = dayStart + 86_400 - 1
+             val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
+-            try { all.addAll(fetchShard(path, dayStart, dayEnd)) } catch (e: Exception) { /* pusty dzień */ }
++            val key = TelemetryCache.utcDayKey(dayStart)
++            val cached = cache?.read(key)
++            try {
++                if (cached == null) {
++                    val rows = fetchShard(path, dayStart, dayEnd)
++                    all.addAll(rows)
++                    cache?.write(key, rows)
++                    finalizedDays[key] = true
++                    daysDownloaded++
++                } else if (key == todayKey) {
++                    // Doba w toku: dociągamy tylko ogon, nie całe 24 h.
++                    // `startAt` jest domknięty, więc ostatni zapisany rekord wraca
++                    // zawsze — o tym, czy są nowe dane, decyduje porównanie `id`.
++                    val fresh = fetchShard(path, max(dayStart, cached.maxTs), dayEnd)
++                    val known = cached.rows.mapTo(HashSet()) { it.id }
++                    val added = fresh.filter { it.id !in known }
++                    if (added.isEmpty()) {
++                        all.addAll(cached.rows)
++                        daysFromCache++
++                    } else {
++                        val merged = uniqueSort(cached.rows + added)
++                        all.addAll(merged)
++                        cache?.write(key, merged)
++                        daysDownloaded++
++                    }
++                } else if (key == yesterdayKey && !finalizedDays.containsKey(key)) {
++                    // Wczoraj domykamy raz na proces: rekordy mogły dopisać się
++                    // po północy UTC. Scalanie, nigdy podmiana — nie zgubimy próbek.
++                    val full = fetchShard(path, dayStart, dayEnd)
++                    finalizedDays[key] = true
++                    val merged = uniqueSort(cached.rows + full)
++                    all.addAll(merged)
++                    cache?.write(key, merged)
++                    daysDownloaded++
++                } else {
++                    all.addAll(cached.rows)
++                    daysFromCache++
++                }
++            } catch (e: kotlinx.coroutines.CancellationException) {
++                throw e
++            } catch (e: Exception) {
++                if (firstError == null) firstError = e.message ?: "błąd sieci"
++                if (cached != null) {
++                    // Dzień z pamięci jest lepszy niż dziura w wykresie,
++                    // ale oznaczamy go jako nieodświeżony.
++                    all.addAll(cached.rows)
++                    daysStale++
++                } else {
++                    daysFailed++
++                }
++            }
+         }
++
+         val sorted = uniqueSort(all)
+-        if (sorted.isEmpty()) return null
++        if (sorted.isEmpty()) {
++            return@withContext HistoryFetch(
++                daysRequested = daysRequested, daysFromCache = daysFromCache,
++                daysDownloaded = daysDownloaded, daysStale = daysStale,
++                daysFailed = daysFailed, firstError = firstError
++            )
++        }
+         val repaired = TelemetryTimeRepair.normalize(
+             rows = sorted,
+             firmware = firmware,
+@@ -504,6 +620,14 @@
+             .map { it.toPoint() }
+             .filter { it.hasValues() }
+             .toList()
+-        return chartPoints.ifEmpty { null }
++        HistoryFetch(
++            points = chartPoints,
++            daysRequested = daysRequested,
++            daysFromCache = daysFromCache,
++            daysDownloaded = daysDownloaded,
++            daysStale = daysStale,
++            daysFailed = daysFailed,
++            firstError = firstError
++        )
+     }
+ }
+diff --git a/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt b/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt	2026-10-22 07:59:39.764228625 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt	2026-10-22 07:57:04.911446505 +0000
+@@ -51,6 +51,23 @@
+ }
+ 
+ /**
++ * Wynik pobrania historii: punkty wykresu oraz diagnostyka ruchu sieciowego.
++ *
++ * `daysFromCache` — dni wzięte z pamięci bez sieci, `daysDownloaded` — dni
++ * pobrane lub dociągnięte przyrostowo, `daysStale` — dni, których nie udało
++ * się odświeżyć (pokazane z pamięci), `daysFailed` — dni bez żadnych danych.
++ */
++data class HistoryFetch(
++    val points: List<TelemPoint> = emptyList(),
++    val daysRequested: Int = 0,
++    val daysFromCache: Int = 0,
++    val daysDownloaded: Int = 0,
++    val daysStale: Int = 0,
++    val daysFailed: Int = 0,
++    val firstError: String? = null
++)
++
++/**
+  * Chronological merge for the chart's archived telemetry and live status feed.
+  * Keep equal-time archive/live observations (the renderer can show both), but
+  * replace duplicate live polls at the exact same timestamp with the newest one.
+diff --git a/app/src/main/java/com/sterownikco/pro/core/TelemetryCache.kt b/app/src/main/java/com/sterownikco/pro/core/TelemetryCache.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/TelemetryCache.kt	1970-01-01 00:00:00.000000000 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/TelemetryCache.kt	2026-10-22 08:00:12.884395887 +0000
+@@ -0,0 +1,211 @@
++package com.sterownikco.pro.core
++
++import android.content.Context
++import org.json.JSONArray
++import org.json.JSONObject
++import java.io.File
++import java.time.Instant
++import java.time.LocalDate
++import java.time.ZoneOffset
++import java.util.Locale
++
++/* ══════════════════════════════════════════════════════════════════════════
++   DZIENNY CACHE TELEMETRII — pamięć prywatna aplikacji.
++
++   Jeden plik = jeden dzień UTC (`RRRR-MM-DD.json`), dokładnie w tym samym
++   podziale, w jakim Firebase trzyma shardy `/piec/telemetry/1m/v1/RRRR/MM/DD`.
++
++   W środku leżą surowe [TelemRow], a nie gotowe punkty wykresu, ponieważ
++   korekta czasu ([TelemetryTimeRepair]) musi być policzona na całym zbiorze.
++   Zapis punktów po korekcie zamroziłby raz policzone przesunięcie sesji.
++
++   Cache jest wyłącznie optymalizacją: każdy błąd zapisu lub odczytu kończy
++   się cichym powrotem do pobierania z Firebase, nigdy wyjątkiem w UI.
++   ══════════════════════════════════════════════════════════════════════════ */
++class TelemetryCache(private val root: File) {
++
++    /** Wersja produkcyjna: katalog w prywatnej pamięci aplikacji. */
++    constructor(ctx: Context) : this(File(ctx.filesDir, CACHE_DIR))
++
++    /** Zawartość jednego dnia razem z czasem zapisu pliku. */
++    data class Day(val rows: List<TelemRow>, val savedAtMs: Long) {
++        /** Najnowszy znacznik czasu w tym dniu — punkt startowy dla przyrostowego dociągania. */
++        val maxTs: Long = rows.maxOfOrNull { it.ts } ?: 0L
++    }
++
++    /** Zwraca `null`, gdy dnia nie ma w pamięci albo plik jest nieczytelny. */
++    fun read(dayKey: String): Day? {
++        val f = file(dayKey)
++        if (!f.isFile) return null
++        return try {
++            val text = f.readText(Charsets.UTF_8)
++            if (text.isBlank()) return null
++            val o = JSONObject(text)
++            if (o.optInt("v", 0) != CACHE_VERSION) return null
++            val arr = o.optJSONArray("rows") ?: return null
++            val rows = ArrayList<TelemRow>(arr.length())
++            for (i in 0 until arr.length()) {
++                val row = rowFromJson(arr.optJSONArray(i))
++                if (row != null) rows.add(row)
++            }
++            if (rows.isEmpty()) null else Day(rows, o.optLong("saved", 0L))
++        } catch (e: Exception) {
++            // Uszkodzony plik nie może blokować dnia na zawsze.
++            try { f.delete() } catch (_: Exception) { }
++            null
++        }
++    }
++
++    /** Zapisuje cały dzień. Pusty zbiór nie tworzy pliku. */
++    fun write(dayKey: String, rows: List<TelemRow>) {
++        if (rows.isEmpty()) return
++        try {
++            if (!root.isDirectory && !root.mkdirs()) return
++            val o = JSONObject()
++            o.put("v", CACHE_VERSION)
++            o.put("day", dayKey)
++            o.put("saved", System.currentTimeMillis())
++            val arr = JSONArray()
++            rows.forEach { arr.put(rowToJson(it)) }
++            o.put("rows", arr)
++            val target = file(dayKey)
++            val tmp = File(root, dayKey + ".json.tmp")
++            tmp.writeText(o.toString(), Charsets.UTF_8)
++            // Zapis atomowy: przerwany rename nie zostawia połowy dnia.
++            if (!tmp.renameTo(target)) {
++                target.delete()
++                if (!tmp.renameTo(target)) {
++                    tmp.delete()
++                    return
++                }
++            }
++            enforceLimit()
++        } catch (e: Exception) {
++            // Brak miejsca lub I/O — cache nie może wywrócić aplikacji.
++        }
++    }
++
++    fun delete(dayKey: String) {
++        try { file(dayKey).delete() } catch (_: Exception) { }
++    }
++
++    fun clear() {
++        try { root.listFiles()?.forEach { it.delete() } } catch (_: Exception) { }
++    }
++
++    fun countDays(): Int = try {
++        root.listFiles()?.count { it.isFile && it.name.endsWith(".json") } ?: 0
++    } catch (e: Exception) { 0 }
++
++    fun sizeBytes(): Long = try {
++        root.listFiles()?.sumOf { if (it.isFile) it.length() else 0L } ?: 0L
++    } catch (e: Exception) { 0L }
++
++    /**
++     * Usuwa dni starsze niż [keepDays] względem [todayKey].
++     * Wywoływane raz na proces, przy pierwszym pobraniu historii.
++     */
++    fun prune(todayKey: String, keepDays: Int = KEEP_DAYS) {
++        val cutoff = try {
++            LocalDate.parse(todayKey).minusDays(keepDays.toLong()).toString()
++        } catch (e: Exception) {
++            return
++        }
++        try {
++            root.listFiles()?.forEach { f ->
++                val key = dayKeyOf(f.name) ?: return@forEach
++                if (key < cutoff) try { f.delete() } catch (_: Exception) { }
++            }
++        } catch (e: Exception) { }
++    }
++
++    /** Twardy limit katalogu — po przekroczeniu usuwamy najstarsze dni. */
++    private fun enforceLimit() {
++        val files = try { root.listFiles() ?: return } catch (e: Exception) { return }
++        var total = files.sumOf { if (it.isFile) it.length() else 0L }
++        if (total <= MAX_BYTES) return
++        val oldest = files.filter { it.isFile && dayKeyOf(it.name) != null }.sortedBy { it.name }
++        for (f in oldest) {
++            if (total <= MAX_BYTES) break
++            val len = f.length()
++            val removed = try { f.delete() } catch (e: Exception) { false }
++            if (removed) total -= len
++        }
++    }
++
++    /** `RRRR-MM-DD` z nazwy pliku cache albo `null` dla plików tymczasowych. */
++    private fun dayKeyOf(name: String): String? {
++        if (!name.endsWith(".json")) return null
++        val key = name.substring(0, name.length - 5)
++        if (key.length != 10) return null
++        if (key[4] != '-' || key[7] != '-') return null
++        return key
++    }
++
++    private fun file(dayKey: String) = File(root, dayKey + ".json")
++
++    /** Surowe [TelemRow] → tablica pól; NaN zapisujemy jako null (JSON go nie zna). */
++    private fun rowToJson(r: TelemRow): JSONArray {
++        val out = JSONArray()
++        out.put(r.id)
++        out.put(r.seq)
++        out.put(r.ts)
++        out.put(r.mono)
++        val a = JSONArray()
++        r.a.forEach { v -> if (v.isFinite()) a.put(v) else a.put(JSONObject.NULL) }
++        out.put(a)
++        out.put(r.k)
++        out.put(r.s)
++        out.put(r.state)
++        out.put(r.q)
++        out.put(r.sim)
++        out.put(if (r.simulated) 1 else 0)
++        out.put(if (r.stateKnown) 1 else 0)
++        return out
++    }
++
++    private fun rowFromJson(arr: JSONArray?): TelemRow? {
++        if (arr == null || arr.length() < 12) return null
++        val id = arr.optString(0, "")
++        if (id.isEmpty()) return null
++        val raw = arr.optJSONArray(4)
++        val a = ArrayList<Double>(raw?.length() ?: 0)
++        if (raw != null) {
++            for (i in 0 until raw.length()) {
++                val v = if (raw.isNull(i)) null else (raw.opt(i) as? Number)?.toDouble()
++                a.add(v ?: Double.NaN)
++            }
++        }
++        return TelemRow(
++            id = id,
++            seq = arr.optLong(1, 0L),
++            ts = arr.optLong(2, 0L),
++            mono = arr.optLong(3, 0L),
++            a = a,
++            k = arr.optLong(5, -1L),
++            s = arr.optLong(6, -1L),
++            state = arr.optLong(7, 0L),
++            q = arr.optLong(8, 0L),
++            sim = arr.optLong(9, 0L),
++            simulated = arr.optInt(10, 0) != 0,
++            stateKnown = arr.optInt(11, 0) != 0
++        )
++    }
++
++    companion object {
++        private const val CACHE_VERSION = 1
++        private const val CACHE_DIR = "telemetry/v1"
++
++        /** 45 dni zapasu — wykres 30-dniowy i raporty mieszczą się z nadwyżką. */
++        private const val KEEP_DAYS = 45
++
++        /** Twardy limit katalogu; po przekroczeniu usuwamy najstarsze dni. */
++        private const val MAX_BYTES = 24L * 1024L * 1024L
++
++        /** Klucz dnia UTC (`RRRR-MM-DD`) — ten sam podział, co shardy Firebase. */
++        fun utcDayKey(epochSec: Long): String {
++            val d: LocalDate = Instant.ofEpochSecond(epochSec).atZone(ZoneOffset.UTC).toLocalDate()
++            return String.format(Locale.US, "%04d-%02d-%02d", d.year, d.monthValue, d.dayOfMonth)
++        }
++    }
++}
+diff --git a/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt	2026-10-22 07:59:39.768228645 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt	2026-10-22 07:57:20.423524852 +0000
+@@ -127,7 +127,7 @@
+         verticalArrangement = Arrangement.spacedBy(Dimens.gap)
+     ) {
+         PageHead("WYKRESY TELEMETRII", "historia pomiarów · temperatury · serwa · pompa",
+-            action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec) }) })
++            action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec, force = true) }) })
+ 
+         // `.chart-status-rail`
+         Row(
+diff --git a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt	2026-10-22 07:59:39.768228645 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt	2026-10-22 08:31:16.560065550 +0000
+@@ -41,6 +41,8 @@
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.Brush
++import androidx.compose.ui.input.pointer.PointerEventPass
++import androidx.compose.ui.input.pointer.pointerInput
+ import androidx.compose.ui.graphics.SolidColor
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.text.TextStyle
+@@ -492,7 +494,21 @@
+         servoCommand = null
+     }
+ 
+-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++    Column(
++        Modifier.fillMaxWidth()
++            // Samo dotknięcie (tap, przewinięcie) podtrzymuje odbiór DLOG.
++            // Zdarzenia są tylko obserwowane (Pass.Initial), nie konsumowane,
++            // więc przewijanie konsoli działa bez zmian.
++            .pointerInput(Unit) {
++                awaitPointerEventScope {
++                    while (true) {
++                        awaitPointerEvent(PointerEventPass.Initial)
++                        m.terminalTouch()
++                    }
++                }
++            },
++        verticalArrangement = Arrangement.spacedBy(12.dp)
++    ) {
+         // 1. nagłówek + status
+         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)
+             .border(BorderStroke(width = 1.dp, color = Pal.Border), RoundedCornerShape(bottomStart = 0.dp, bottomEnd = 0.dp)),
+diff --git a/app/src/test/java/com/sterownikco/pro/core/TelemetryCacheTest.kt b/app/src/test/java/com/sterownikco/pro/core/TelemetryCacheTest.kt
+--- a/app/src/test/java/com/sterownikco/pro/core/TelemetryCacheTest.kt	1970-01-01 00:00:00.000000000 +0000
++++ b/app/src/test/java/com/sterownikco/pro/core/TelemetryCacheTest.kt	2026-10-22 08:00:19.360428623 +0000
+@@ -0,0 +1,141 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import java.io.File
++
++/**
++ * Testy dziennego cache telemetrii (v0.31.20).
++ *
++ * Nie dotykają Androida ani sieci: `TelemetryCache(rootDir)` przyjmuje zwykły
++ * katalog tymczasowy, a `org.json` jest dostępny w testach jednostkowych.
++ */
++class TelemetryCacheTest {
++
++    private fun tempRoot(): File =
++        java.nio.file.Files.createTempDirectory("telemetry-cache-test").toFile()
++
++    private fun row(
++        id: String,
++        ts: Long,
++        values: List<Double> = listOf(21.5, Double.NaN, -1270.0, 0.0)
++    ) = TelemRow(
++        id = id, seq = 7L, ts = ts, mono = 1_234L, a = values,
++        k = 3L, s = -1L, state = 1L, q = 2L, sim = 5L,
++        simulated = false, stateKnown = true
++    )
++
++    @Test
++    fun utcDayKeySplitsOnMidnightUtc() {
++        // 2026-10-22 00:00:00 UTC
++        assertEquals("2026-10-22", TelemetryCache.utcDayKey(1_792_627_200L))
++        assertEquals("2026-10-21", TelemetryCache.utcDayKey(1_792_627_199L))
++        // 2026-10-22 23:59:59 UTC
++        assertEquals("2026-10-22", TelemetryCache.utcDayKey(1_792_713_599L))
++        assertEquals("2026-10-23", TelemetryCache.utcDayKey(1_792_713_600L))
++    }
++
++    @Test
++    fun writeAndReadRoundTripKeepsChannelGapsAndFlags() {
++        val root = tempRoot()
++        val cache = TelemetryCache(root)
++        cache.write("2026-10-22", listOf(row("r1", 1_000L), row("r2", 1_060L)))
++
++        val day = cache.read("2026-10-22")
++        assertNotNull(day)
++        assertEquals(2, day!!.rows.size)
++        assertEquals(1_060L, day.maxTs)
++
++        val first = day.rows[0]
++        assertEquals("r1", first.id)
++        assertEquals(7L, first.seq)
++        assertEquals(1_234L, first.mono)
++        assertEquals(3L, first.k)
++        assertEquals(-1L, first.s)
++        assertEquals(1L, first.state)
++        assertEquals(2L, first.q)
++        assertEquals(5L, first.sim)
++        assertEquals(true, first.stateKnown)
++        assertEquals(false, first.simulated)
++        // Przerwy w kanałach muszą przetrwać zapis: NaN nie istnieje w JSON.
++        assertEquals(4, first.a.size)
++        assertEquals(21.5, first.a[0], 0.0)
++        assertTrue(first.a[1].isNaN())
++        assertEquals(-1270.0, first.a[2], 0.0)
++    }
++
++    @Test
++    fun emptyWriteCreatesNoFile() {
++        val root = tempRoot()
++        val cache = TelemetryCache(root)
++        cache.write("2026-10-22", emptyList())
++        assertNull(cache.read("2026-10-22"))
++        assertEquals(0, cache.countDays())
++    }
++
++    @Test
++    fun corruptFileIsDroppedInsteadOfCrashing() {
++        val root = tempRoot()
++        val cache = TelemetryCache(root)
++        root.mkdirs()
++        val broken = File(root, "2026-10-22.json")
++        broken.writeText("{to nie jest json", Charsets.UTF_8)
++
++        assertNull(cache.read("2026-10-22"))
++        assertEquals(false, broken.exists())
++    }
++
++    @Test
++    fun wrongCacheVersionIsIgnored() {
++        val root = tempRoot()
++        val cache = TelemetryCache(root)
++        root.mkdirs()
++        File(root, "2026-10-22.json").writeText(
++            "{\"v\":99,\"day\":\"2026-10-22\",\"saved\":1,\"rows\":[]}", Charsets.UTF_8
++        )
++        assertNull(cache.read("2026-10-22"))
++    }
++
++    @Test
++    fun pruneKeepsTheWholeWindowAndDropsOlderDays() {
++        val root = tempRoot()
++        val cache = TelemetryCache(root)
++        cache.write("2026-10-22", listOf(row("a", 1L)))
++        cache.write("2026-09-07", listOf(row("b", 2L)))   // dokładnie 45 dni wstecz
++        cache.write("2026-09-06", listOf(row("c", 3L)))   // 46 dni — poza oknem
++
++        cache.prune("2026-10-22", keepDays = 45)
++
++        assertNotNull(cache.read("2026-10-22"))
++        assertNotNull(cache.read("2026-09-07"))
++        assertNull(cache.read("2026-09-06"))
++        assertEquals(2, cache.countDays())
++    }
++
++    @Test
++    fun deleteAndClearRemoveFiles() {
++        val root = tempRoot()
++        val cache = TelemetryCache(root)
++        cache.write("2026-10-22", listOf(row("a", 1L)))
++        cache.write("2026-10-21", listOf(row("b", 2L)))
++        assertEquals(2, cache.countDays())
++        assertTrue(cache.sizeBytes() > 0L)
++
++        cache.delete("2026-10-21")
++        assertEquals(1, cache.countDays())
++
++        cache.clear()
++        assertEquals(0, cache.countDays())
++        assertEquals(0L, cache.sizeBytes())
++    }
++
++    @Test
++    fun missingDayReturnsNull() {
++        val cache = TelemetryCache(tempRoot())
++        assertNull(cache.read("2026-01-01"))
++        assertEquals(0, cache.countDays())
++    }
++}
