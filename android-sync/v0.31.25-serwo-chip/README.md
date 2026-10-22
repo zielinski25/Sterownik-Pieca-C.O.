@@ -52,3 +52,15 @@ Czyli: tryb nie może być zwykłą linią tekstu pod wartością — ma być
 Brak JDK/Kotlinc/Gradle → brak dowodu „kompiluje się". Sprawdzone: bilans
 nawiasów 2 plików Kotlina (0), `diff -rq` = dokładnie 3 pliki, szerokość
 wiersza tytułu ≈ 71 dp < 87 dp.
+
+## Build potwierdzony (2026-10-22)
+
+```
+BUILD SUCCESSFUL in 10s
+37 zadań (12 wykonanych, 25 z cache)
+versionCode = 3031, versionName = "v0.31.25"
+```
+
+Zero ostrzeżeń `compileDebugKotlin` w tej wersji (w v0.31.24 były dwa
+o deprecated `statusBarColor` / `navigationBarColor` — te same pliki, więc
+Gradle po prostu pokazał je raz; nie dotyczą SERWO).

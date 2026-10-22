@@ -694,3 +694,60 @@ Reguła „kafelek szybki = 3 linie" (`tytuł` / `wartość` / `podpis`) jest
 twarda: `Dimens.quickH = 64.dp` i `QCard` z `maxLines = 1` na obu tekstach.
 Dokładanie czwartej linii wymaga podniesienia wysokości i od razu psuje
 rytm rzędu — lepiej skracać tekst niż dodawać linie.
+
+## 14. v0.31.25 — tryb serwa jako pigułka obok tytułu
+
+v0.31.24 miała tryb dopisany do podpisu (`syberek 100% · AUTO`). Użytkownik
+odrzucił to: tryb ma być **obok tytułu, innym stylem**, a pod spodem tylko
+dwie pozycje z procentami.
+
+> „NIE BOSOBA MI SIE POWINNO BYC OBOK SERWO INNYM STYLEM PISAAC AUTO
+> A NA DOLE SYBERK X% KALAP X%"
+
+### 14.1 Realizacja
+
+`QCard` (Chrome.kt) dostał dwa nowe, domyślnie puste parametry:
+
+```kotlin
+tag: String = "",
+tagColor: Color = Pal.Cyan
+```
+
+Pigułka renderuje się tylko gdy `tag.isNotEmpty()` — POMPA i MIESZADŁO
+pozostają nietknięte. Styl: `Txt.badge` (7,2 sp, ExtraBold), tło = `tagColor`
+z alfą 0,14, `RoundedCornerShape(4.dp)`, padding 4×1 dp, 5 dp odstępu od ikony.
+
+### 14.2 Stany
+
+| stan | pigułka | wartość (11 sp) | podpis (7,5 sp) |
+|---|---|---|---|
+| AUTO | `AUTO` cyjan | `klapa X%` | `syberek Y%` |
+| RĘCZNY | `RĘCZNY` żółty | `klapa X%` | `syberek Y%` |
+| BEZPIECZNY | — | `BEZPIECZNY` | `tryb bezpieczeństwa` |
+| czekam na ACK | — | `CEL X%` | `klapa 45° · czekam` |
+| brak odczytu | — | `klapa —` | `syberek —` |
+
+**Dlaczego BEZPIECZNY bez pigułki:** 10 znaków ≈ 48 dp + tytuł „SERWO"
+≈ 30 dp + 5 dp odstępu + ikona 15 dp = 86 dp przy ~87 dp dostępnych —
+zostaje 1 dp zapasu, czyli w praktyce obcięcie. Tryb przejmuje więc wartość,
+a pigułka znika.
+
+### 14.3 Wymiary
+
+Kafelek bez zmian: `Dimens.quickH = 64.dp`, 3 linie. Szerokość wiersza
+tytułu z pigułką `RĘCZNY`: 30 + 5 + 29 + 15 ≈ 79 dp < 87 dp.
+
+### 14.4 Wynik
+
+| | |
+|---|---|
+| ZIP | `SterownikCO-Android-v0.31.25-CHIP.zip` — 15 504 B, 4 wpisy |
+| sha256 | `6687884b76e7fdd6f6e752369ee828b1a73a7cc6802909384048a207e8b06cec` |
+| pliki | **3**: `build.gradle.kts`, `Chrome.kt`, `Dashboard.kt` |
+| build | **BUILD SUCCESSFUL in 10s**, 37 zadań, 0 błędów |
+
+### 14.5 Reguła na przyszłość
+
+`QCard` ma teraz trzy poziomy ważności tekstu: **pigułka** (meta, 7,2 sp) /
+**wartość** (11 sp) / **podpis** (7,5 sp). Informacja poboczna (tryb, status,
+znacznik) ma iść do pigułki — nie do podpisu i nie jako czwarta linia.
