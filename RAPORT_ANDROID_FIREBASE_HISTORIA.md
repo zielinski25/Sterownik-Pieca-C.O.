@@ -751,3 +751,47 @@ tytułu z pigułką `RĘCZNY`: 30 + 5 + 29 + 15 ≈ 79 dp < 87 dp.
 `QCard` ma teraz trzy poziomy ważności tekstu: **pigułka** (meta, 7,2 sp) /
 **wartość** (11 sp) / **podpis** (7,5 sp). Informacja poboczna (tryb, status,
 znacznik) ma iść do pigułki — nie do podpisu i nie jako czwarta linia.
+
+## 15. v0.31.26 — wariant B: 100 l zamiast 200 kg, koniec „~X kWh"
+
+### 15.1 Skąd
+
+Użytkownik: „JAKIE 200 KG WODY, GADASZ GŁUPOTY". `estKwh()` liczyło energię
+dla **200 kg**, a zbiornik ma **100 l** — liczba przejęta z `Piec.html`,
+nigdy nie dopasowana. Wynik był zawyżony **dokładnie 2×** (0,2326 vs
+0,1163 kWh/K). Szczegóły i rachunek kontrolny: `ARCHIWUM_SOLARNE_STAN.md` §14.
+
+### 15.2 Decyzja
+
+Wariant **B**: poprawić przelicznik **i** usunąć `~X kWh` z ekranu.
+Uzasadnienie z §10 i §13 MD: GHI jest prognozą (nie pomiarem), apertura
+(~1,4 m²) i sprawność nigdy nie były mierzone, czujnik w połowie wysokości
+nie widzi stratyfikacji. Trzy niepewności naraz — liczba wyglądała na pomiar,
+którym nie była. Stopnie Celsjusza są policzalne z czujnika, kWh nie były.
+
+### 15.3 Zmiany
+
+| plik | zmiana |
+|---|---|
+| `core/SolarAnalytics.kt` | `estKwh()`: `* 200` → `* 100` |
+| `ui/screens/Weather.kt` | 3 miejsca: `ZYSK BRUTTO SŁOŃCA`, `PROGNOZA ZYSKU`, karta dnia |
+| `ui/screens/sheets/Sensors.kt` | 2 miejsca w „BILANSIE SOLARNYM" |
+| `app/build.gradle.kts` | 3032 / `v0.31.26` |
+
+Nietknięte: ΔT, pokrycie, pobory wody, suma GHI, eksport CSV, tryb serwa.
+`forecastKwh` zostaje w kodzie jako wartość, ale **nie jest wyświetlana**.
+
+### 15.4 Wynik
+
+| | |
+|---|---|
+| ZIP | `SterownikCO-Android-v0.31.26-KWH.zip` — 23 380 B, 5 wpisów |
+| sha256 | `7f84017541bacaaac99ebeeacc45ab0c0f78f5424979c0bf4121691bd6c271e6` |
+| build | **BUILD SUCCESSFUL in 12s**, 37 zadań, 0 błędów |
+
+### 15.5 Poprawka w dokumentacji
+
+Sekcja o przeliczniku została dopisana jako „§12", ale §12 już istniało
+(„Co dalej — plan etapowy"). Przenumerowana na **§14**, odnośnik na górze
+pliku poprawiony. Wniosek: przed dopisaniem sekcji do żywego dokumentu
+sprawdzić numerację — `grep "^## "`.

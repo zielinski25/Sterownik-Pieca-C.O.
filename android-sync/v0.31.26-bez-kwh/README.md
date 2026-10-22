@@ -41,3 +41,21 @@ Liczba wyglądająca na pomiar, którym nie jest, jest gorsza niż jej brak.
 Brak JDK/Kotlinc/Gradle → brak dowodu „kompiluje się”. Sprawdzone: bilans
 nawiasów 3 plików Kotlina (0/0/0), `diff -rq` = dokładnie 4 pliki,
 `grep` wyświetlanych kWh = 0 trafień (zostały 3 komentarze).
+
+## Build potwierdzony (2026-10-22)
+
+```
+BUILD SUCCESSFUL in 12s
+37 zadań (12 wykonanych, 25 z cache)
+versionCode = 3032, versionName = "v0.31.26"
+```
+
+Dwa ostrzeżenia, **oba sprzed tej zmiany**:
+
+```
+Weather.kt:639  'quadraticBezierTo' is deprecated. Use quadraticTo()
+Weather.kt:645  'quadraticBezierTo' is deprecated. Use quadraticTo()
+```
+
+To rysowanie łuku słońca (Canvas), ~300 linii niżej niż zmieniane kafelki.
+Nie blokuje builda, nie dotyczy kWh ani przelicznika.
