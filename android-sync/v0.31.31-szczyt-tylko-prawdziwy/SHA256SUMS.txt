@@ -1,0 +1,31 @@
+Paczka: SterownikCO-Android-v0.31.31-SZCZYT.zip
+Data:   2026-10-23
+
+ZIP
+  rozmiar  29448 B
+  sha256   68E6F5C6A522A8DD673F7976ABA6A0F348307A29B43D09CB7ED471F044DA7080
+
+Pliki w środku
+  77832507553BE910EE09186615900AEAE84DBB4364777F98B32367F3E86A4542
+    app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt        (304 linie, 15498 B)
+
+  F013DDD4FC0729A20545C89E6669FD96F92CDCB8AEF259F6BE97BA7364A62954
+    app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt         (927 linii, 51460 B)
+
+  4226DEBA1F19F418D980A93287F14EDF4FDA596D2A078A1A03016DD9DC03AC21
+    app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt   (408 linii, 21382 B)
+
+Punkt wyjścia (stan z repo po v0.31.30)
+  1FBD82686DD8FED69D2F30D14FFAF4F30E45BF47BD3C49DF3C473A716407E630  SolarAnalytics.kt
+  386B367A6EA5F413F6E2B9AEFBA6887D088D4DF411606E1FFC9E1DB3AC97246E  Weather.kt
+  B5DEA99128C693C3F13AD8B558BE9F986E87324E70EA1495D918EF19E07E8BC1  Sensors.kt
+
+Łatka ZMIANY-0.31.30-do-0.31.31.diff (75 linii, +26 / -4)
+  - suchy przebieg na czystej kopii v0.31.30: "checking file" x3, bez FAILED
+  - po nałożeniu: cmp bit w bit z plikami tej paczki — 3/3 OK
+  - nawiasy: SolarAnalytics ( +3/+3, {} 0/0 · Weather ( 0/0, {} 0/0
+             Sensors ( 0/0, {} 0/0 — balans 0 we wszystkich
+
+Logika sprawdzona na 6 scenariuszach (symulacja w Pythonie):
+  po zachodzie / dzień słoneczny / mroźny poranek / brak danych
+  / przyrost 0,03 pod progiem / przyrost 0,06 nad progiem

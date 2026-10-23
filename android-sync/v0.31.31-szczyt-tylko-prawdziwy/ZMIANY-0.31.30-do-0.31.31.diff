@@ -1,0 +1,75 @@
+diff -ruN a/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt b/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-23 16:41:17.329500552 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-23 16:41:17.333500580 +0000
+@@ -37,6 +37,11 @@
+     var forecastPeakC by mutableDoubleStateOf(Double.NaN)
+     var forecastPeakLabel by mutableStateOf("")
+     var forecastEnergyKwh by mutableDoubleStateOf(Double.NaN)
++    // [0.31.31] Czy model znalazł REALNY szczyt. `peakHour` zostaje 0.0, gdy woda
++    // przez całą dobę tylko stygnie — a 0.0 zamieniało się w etykietę „szczyt 08:00”,
++    // czyli w bieżącą godzinę wyssaną z palca. Materiał: mroźny poranek, gdy słońce
++    // nie przebija strat ciepła. UI pyta o tę flagę, zamiast wierzyć `peakHour`.
++    var forecastPeakReal by mutableStateOf(false)
+     var deltaT by mutableDoubleStateOf(Double.NaN)
+     var drawCount by mutableIntStateOf(0)
+     // [0.31.27] Liczby „na dziś”, liczone od lokalnej północy. Wcześniej karta DZIŚ
+@@ -188,6 +193,7 @@
+         forecastPeakC = Double.NaN
+         forecastPeakLabel = ""
+         forecastEnergyKwh = Double.NaN
++        forecastPeakReal = false
+ 
+         val startT = archive.lastOrNull()?.tPanel
+         if (startT == null || hourly.isEmpty()) return
+@@ -199,7 +205,11 @@
+ 
+         val res = SolarThermalModel.simulate(startT, SolarThermalModel.fromWeather(remaining)) ?: return
+         forecastPeakC = res.peakTempC
+-        forecastPeakLabel = formatClock(nowHour + (res.peakHour * 3_600_000.0).toLong())
++        // [0.31.31] Etykietę ustawiamy TYLKO wtedy, gdy szczyt jest prawdziwy.
++        // Przy samym wychładzaniu `peakHour` = 0.0, więc etykieta kłamała.
++        forecastPeakReal = res.deltaPeakC > PEAK_EPS_C
++        forecastPeakLabel = if (forecastPeakReal)
++            formatClock(nowHour + (res.peakHour * 3_600_000.0).toLong()) else ""
+         forecastEnergyKwh = res.energyKwh
+         // Karta pokazuje „+X °C”, więc przy wychładzaniu dajemy 0 — pełną wartość
+         // (także ujemną) niesie peakC i deltaEndC w modelu.
+@@ -234,6 +244,12 @@
+         /** Sufit dobowy: 100 l od ~20 °C nie zagotuje się w jednej dobie. */
+         const val MAX_DAILY_GAIN_C = 45.0
+ 
++        /** [0.31.31] Poniżej tego przyrostu uznajemy, że szczytu nie było.
++         *  Próg 0,05 °C leży pod rozdzielczością wyświetlania (0,1 °C), więc nie
++         *  pokażemy „+0,0 °C · szczyt 08:00”: albo jest przyrost widoczny na
++         *  ekranie, albo mówimy wprost, że słońce nie przebiło strat. */
++        const val PEAK_EPS_C = 0.05
++
+         /** Szacunkowy przyrost doby. Może wyjść 0, gdy dzień nie dogrzeje wody. */
+         fun gainFromKwhM2(kwhM2: Double): Double {
+             if (!kwhM2.isFinite() || kwhM2 <= 0.0) return 0.0
+diff -ruN a/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-23 16:41:17.329500552 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-23 16:41:17.337500607 +0000
+@@ -857,6 +857,10 @@
+ private fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
+     !sunLeft -> "bez słońca do końca dnia"
+     !sol.forecastGain.isFinite() -> "brak prognozy"
++    // [0.31.31] Słońce jeszcze jest, ale model policzył samo wychładzanie —
++    // woda nie dogrzeje się ponad straty. Wcześniej w tym miejscu stała
++    // godzina szczytu 0.0, czyli „08:00”, wzięta znikąd.
++    !sol.forecastPeakReal -> "słońce nie przebije strat ciepła"
+     sol.forecastPeakLabel.isNotEmpty() && sol.forecastEnergyKwh.isFinite() ->
+         "szczyt " + sol.forecastPeakLabel + " · " + fmt1(sol.forecastEnergyKwh) + " kWh"
+     else -> ""
+diff -ruN a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-23 16:41:17.333500580 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-23 16:41:17.337500607 +0000
+@@ -357,6 +357,8 @@
+             when {
+                 !sunLeft -> "bez słońca do końca dnia"
+                 !solar.forecastGain.isFinite() -> "brak prognozy"
++                // [0.31.31] Ten sam warunek co karta „DO KOŃCA DNIA” — patrz Weather.kt.
++                !solar.forecastPeakReal -> "słońce nie przebije strat ciepła"
+                 solar.forecastPeakLabel.isNotEmpty() && solar.forecastEnergyKwh.isFinite() ->
+                     "+${s.fmt1(solar.forecastGain)}°C · szczyt ${solar.forecastPeakLabel} · ${s.fmt1(solar.forecastEnergyKwh)} kWh"
+                 else -> "+${s.fmt1(solar.forecastGain)}°C"
