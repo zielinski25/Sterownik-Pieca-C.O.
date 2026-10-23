@@ -1,0 +1,118 @@
+diff -ruN a/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-23 16:26:37.504673760 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-23 16:26:37.508673780 +0000
+@@ -321,6 +321,9 @@
+ 
+             // `.weather-card` — BILANS & ZYSK KOLEKTORA (+eksport CSV, siatka 7 dni)
+             val sol = m.solar
++            // [0.31.30] Czy do końca doby zostało jeszcze słońce zdolne cokolwiek podgrzać.
++            // Liczone z tych samych godzin prognozy, z których liczy model — GTI, potem GHI.
++            val sunLeftToday = solarSunLeft(hours, currentHourStart)
+             val realSolarTemps = m.S.hasAllData("t_panel", "t_zewn") &&
+                 !m.S.symAktywna("panel") && !m.S.symAktywna("zewn")
+             val dT = if (realSolarTemps) m.S.t_panel - m.S.t_zewn else Double.NaN
+@@ -346,9 +349,12 @@
+                             "", if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
+                         MCard("🚰 POBRANIA DZIŚ", if (sol.todayDrawCount > 0) sol.todayDrawCount.toString() + " razy" else "—",
+                             if (sol.todayDrawCount > 0) "−" + fmt1(sol.todayDrawDrop) + "°C" else "", Pal.Live),
+-                        // [0.31.27] Liczona tym samym wzorem co karta „DZIŚ" (GHI + 4,2 °C/kWh·m⁻²).
+-                        MCard("🔮 PROGNOZA DZIŚ", if (sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—",
+-                            "", Pal.Violet)
++                        // [0.31.30] Nazwa mówi wprost, że to horyzont „od teraz do północy”, a nie
++                        // cała doba. Wcześniej obok siebie stały dwa różne „DZIŚ”: +0,0 °C po
++                        // zachodzie i +16,0 °C za cały dzień. Po zachodzie pokazujemy „—”, bo
++                        // model nie ma czego grzać — „+0,0” wyglądało jak awaria.
++                        MCard("🔮 DO KOŃCA DNIA", endOfDayGain(sol, sunLeftToday),
++                            endOfDaySub(sol, sunLeftToday), Pal.Violet)
+                     )
+                 )
+                 Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+@@ -427,8 +433,11 @@
+ private fun SolarDayCard(dayLabel: String, dayHours: List<WHour>, today: Boolean, modifier: Modifier = Modifier) {
+     val avgCloud = if (dayHours.isNotEmpty()) Math.round(dayHours.sumOf { it.cloud } / dayHours.size).toInt() else 30
+     val peakFallback = Math.round(maxOf(150.0, (100 - avgCloud * .7) * 8.8)).toInt()
+-    // [0.31.27] Pik pokazujemy z prawdziwej prognozy GHI, a nie z zachmurzenia, gdy jest dostępna.
+-    val estRadPeak = dayHours.mapNotNull { it.shortwaveRadiation }.maxOrNull()?.roundToInt() ?: peakFallback
++    // [0.31.30] Pik z GTI — płaszczyzny KOLEKTORA — a nie z GHI (płaszczyzna pozioma).
++    // Dla 23.10.2026 GHI dawało 436 W/m², gdy na kolektor padało 778 W/m².
++    // GHI zostaje jako zapas, gdy API nie zwróci GTI; na końcu szacunek z zachmurzenia.
++    val estRadPeak = (dayHours.mapNotNull { it.tiltedIrradiance }.maxOrNull()
++        ?: dayHours.mapNotNull { it.shortwaveRadiation }.maxOrNull())?.roundToInt() ?: peakFallback
+     // Jeden model dla wszystkich dni — ten sam, co w „PROGNOZIE ZYSKU”.
+     val modelGain = Math.round(SolarAnalytics.gainFromKwhM2(SolarAnalytics.dayKwhM2(dayHours)) * 10) / 10.0
+     // [0.31.28] Wszystkie karty tej sekcji to PROGNOZA — także DZIŚ. Zmierzony zysk
+@@ -825,6 +834,34 @@
+ 
+ private val W_DOW = listOf("Nd", "Pn", "Wt", "Śr", "Cz", "Pt", "Sb")
+ 
++// ── [0.31.30] Wspólne dla karty „DO KOŃCA DNIA” i arkusza Czujniki ─────────────
++
++/** Czy do końca doby jest jeszcze słońce dające >20 W/m² w płaszczyźnie kolektora.
++ *  Poniżej tego progu model i tak nic nie ugrzeje, a „+0,0 °C” czyta się jak awaria. */
++internal fun solarSunLeft(hours: List<WHour>, fromTs: Long): Boolean {
++    val end = calOf(fromTs).apply {
++        set(java.util.Calendar.HOUR_OF_DAY, 23)
++        set(java.util.Calendar.MINUTE, 59)
++        set(java.util.Calendar.SECOND, 59)
++    }.timeInMillis
++    return hours.any { h ->
++        h.time in fromTs..end && ((h.tiltedIrradiance ?: h.shortwaveRadiation ?: 0.0) > 20.0)
++    }
++}
++
++/** Wartość karty „DO KOŃCA DNIA”. */
++private fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String =
++    if (sunLeft && sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—"
++
++/** Podpis karty: godzina szczytu i energia, które model liczył, ale nigdzie nie pokazywał. */
++private fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
++    !sunLeft -> "bez słońca do końca dnia"
++    !sol.forecastGain.isFinite() -> "brak prognozy"
++    sol.forecastPeakLabel.isNotEmpty() && sol.forecastEnergyKwh.isFinite() ->
++        "szczyt " + sol.forecastPeakLabel + " · " + fmt1(sol.forecastEnergyKwh) + " kWh"
++    else -> ""
++}
++
+ private fun calOf(ts: Long) = java.util.Calendar.getInstance().apply { timeInMillis = ts }
+ private fun hh00(ts: Long) = pad2(calOf(ts).get(java.util.Calendar.HOUR_OF_DAY).toLong()) + ":00"
+ private fun hh2(ts: Long) = pad2(calOf(ts).get(java.util.Calendar.HOUR_OF_DAY).toLong())
+diff -ruN a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-23 16:26:37.504673760 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-23 16:26:37.508673780 +0000
+@@ -37,6 +37,7 @@
+ import com.sterownikco.pro.core.PiecState
+ import com.sterownikco.pro.core.SensorDef
+ import com.sterownikco.pro.ui.screens.SolarMultiDayForecast
++import com.sterownikco.pro.ui.screens.solarSunLeft
+ import com.sterownikco.pro.ui.components.ManualRow
+ import com.sterownikco.pro.ui.components.Note
+ import com.sterownikco.pro.ui.components.NumRow
+@@ -315,6 +316,11 @@
+ 
+ @Composable
+ private fun SolarMetricsCard(m: AppModel) {
++    // [0.31.30] Czy do końca doby zostało jeszcze słońce — ten sam warunek co karta
++    // „DO KOŃCA DNIA” na ekranie Pogoda. Bez tego po zachodzie wychodziło „+0,0 °C”,
++    // co czyta się jak awaria modelu, a jest poprawnym wynikiem.
++    val sunnyHours = m.weather?.hourly.orEmpty()
++    val sunLeft = solarSunLeft(sunnyHours, com.sterownikco.pro.core.Weather.startOfHour())
+     val s = m.S
+     val solar = m.solar
+     val panelTemp = s.valOf("panel", "t_panel")
+@@ -347,8 +353,14 @@
+             if (solar.todayGain > 0) "+${s.fmt1(solar.todayGain)}°C" else "brak próbek z dziś"
+         )
+         SolarMetricRow(
+-            "Prognoza na dziś · szacunek",
+-            if (solar.forecastGain.isFinite()) "+${s.fmt1(solar.forecastGain)}°C" else "brak prognozy"
++            "Do końca dnia · szacunek",
++            when {
++                !sunLeft -> "bez słońca do końca dnia"
++                !solar.forecastGain.isFinite() -> "brak prognozy"
++                solar.forecastPeakLabel.isNotEmpty() && solar.forecastEnergyKwh.isFinite() ->
++                    "+${s.fmt1(solar.forecastGain)}°C · szczyt ${solar.forecastPeakLabel} · ${s.fmt1(solar.forecastEnergyKwh)} kWh"
++                else -> "+${s.fmt1(solar.forecastGain)}°C"
++            }
+         )
+         SolarMetricRow(
+             "Pobrania ciepłej wody",
