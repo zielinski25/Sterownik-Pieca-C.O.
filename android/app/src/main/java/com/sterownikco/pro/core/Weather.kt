@@ -19,7 +19,15 @@ import kotlin.math.min
 data class WHour(
     val time: Long, val temp: Double, val wind: Double, val cloud: Double,
     val precip: Double, val precipProb: Double, val code: Int, val isDay: Boolean,
-    val shortwaveRadiation: Double? = null
+    val shortwaveRadiation: Double? = null,
+    /**
+     * [model-solarny] Nasłonecznienie w PŁASZCZYŹNIE KOLEKTORA (GTI), W/m².
+     * Różni się od [shortwaveRadiation] (GHI, płaszczyzna pozioma) zależnie od
+     * zachmurzenia: przy pochmurnym GTI ≈ 0,88 × GHI, przy bezchmurnym ≈ 1,8 × GHI.
+     * Kolektor stoi pod kątem, więc liczy się GTI.
+     * Model: MODEL_SOLARNY_TRZEMCHA_2026-10-23.md §6.
+     */
+    val tiltedIrradiance: Double? = null
 )
 
 data class WDay(
@@ -87,7 +95,11 @@ object Weather {
             try {
                 val q = "latitude=" + enc(lat) + "&longitude=" + enc(lon) +
                     "&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index" +
-                    "&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,is_day,shortwave_radiation" +
+                    "&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,surface_pressure,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,is_day,shortwave_radiation,global_tilted_irradiance" +
+                    // [model-solarny] GTI wymaga podania kąta i azymutu płaszczyzny.
+                    // 45° / azymut 0 (południe). Między 45° a 60° różnica w październiku ≤9%,
+                    // więc kąta nie trzeba znać dokładnie — patrz MODEL_SOLARNY §7.
+                    "&tilt=45&azimuth=0" +
                     "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum" +
                     "&timezone=auto&forecast_days=" + enc(max(1, min(14, days)).toString())
                 val req = Request.Builder().url("https://api.open-meteo.com/v1/forecast?" + q)
@@ -116,7 +128,8 @@ object Weather {
                     precipProb = arr(hh, "precipitation_probability", i, 0.0),
                     code = arr(hh, "weather_code", i, 0.0).toInt(),
                     isDay = if (hh.has("is_day")) arr(hh, "is_day", i, 1.0) == 1.0 else true,
-                    shortwaveRadiation = arrOrNull(hh, "shortwave_radiation", i)
+                    shortwaveRadiation = arrOrNull(hh, "shortwave_radiation", i),
+                    tiltedIrradiance = arrOrNull(hh, "global_tilted_irradiance", i)
                 )
             )
         }
