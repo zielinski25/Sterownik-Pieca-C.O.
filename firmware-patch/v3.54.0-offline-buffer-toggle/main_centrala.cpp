@@ -5396,6 +5396,16 @@ static const int WIFI_MAX_SIECI = 8;
   #error "Brak pliku secrets.h — skopiuj secrets.h.example jako secrets.h i wpisz hasla."
 #endif
 
+// Sprawdzenie, czy secrets.h jest aktualny. Starsza kopia nie ma nowych
+// wpisow (Firebase + token komend) i bez tego komunikatu blad bylby
+// nieczytelny ("SECRET_FIREBASE_PASS was not declared").
+#ifndef SECRET_FIREBASE_PASS
+  #error "secrets.h jest nieaktualny: brak SECRET_FIREBASE_PASS. Skopiuj nowe wpisy z secrets.h.example."
+#endif
+#ifndef SECRET_CMD_TOKEN
+  #error "secrets.h jest nieaktualny: brak SECRET_CMD_TOKEN. Skopiuj nowe wpisy z secrets.h.example."
+#endif
+
 static const char* WIFI_AP_SSID     = SECRET_WIFI_AP_SSID;
 static const char* WIFI_AP_PASSWORD = SECRET_WIFI_AP_PASSWORD; // min. 8 znakow (wymog WPA2 dla AP)
 
@@ -5855,7 +5865,7 @@ static const char* FIREBASE_HOST = "akwarium-367be-default-rtdb.europe-west1.fir
 
 // [COMMIT H2] Firebase UserAuth — credentiale runtime wyłącznie z NVS.
 // API key nie jest sekretem bazy; user password jest credentialem i nigdy nie jest logowane.
-#define CMD_TOKEN "sterownikco-cmd-2026"
+#define CMD_TOKEN SECRET_CMD_TOKEN // z secrets.h
 
 Preferences fbConfig;
 String fbApiKey = "";
@@ -9899,7 +9909,7 @@ body.mode-phone-frame #phone {
         </div>
         <div class="auth-field">
           <label for="authPassword">Hasło</label>
-          <input class="auth-input" id="authPassword" type="password" value="PcTg8plOcvRrMSojv79X" placeholder="••••••••••••" autocomplete="current-password">
+          <input class="auth-input" id="authPassword" type="password" value="" placeholder="••••••••••••" autocomplete="current-password">
         </div>
         <div class="auth-check-row">
           <input type="checkbox" id="authRemember" checked>
@@ -11008,8 +11018,8 @@ body.mode-phone-frame #phone {
 
   const DEFAULT_FB_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU";
   const DEFAULT_FB_EMAIL = "piec_co_boot@akwarium.local";
-  const DEFAULT_FB_PASS = "PcTg8plOcvRrMSojv79X";
-  const DEFAULT_CMD_TOKEN = "sterownikco-cmd-2026";
+  const DEFAULT_FB_PASS = "";
+  const DEFAULT_CMD_TOKEN = "";
 
   let _fbApiKey = safeStorage.get('piec_fb_api_key') || DEFAULT_FB_API_KEY;
   let _fbIdToken = safeStorage.get('piec_fb_token') || "";
@@ -39231,7 +39241,7 @@ void pollTelegramCommands() {
 // ponizszego konta startowego i od razu zapisujemy je do NVS.
 static const char* FIREBASE_BOOT_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU";
 static const char* FIREBASE_BOOT_EMAIL   = "piec_co_boot@akwarium.local";
-static const char* FIREBASE_BOOT_PASS    = "PcTg8plOcvRrMSojv79X";
+static const char* FIREBASE_BOOT_PASS    = SECRET_FIREBASE_PASS; // z secrets.h
 
 void loadFirebaseConfig() {
   fbConfig.begin("firebase", false);

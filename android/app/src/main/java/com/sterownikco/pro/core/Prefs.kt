@@ -313,7 +313,7 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         // poświadczenia wbudowane w firmware (main_centrala.cpp) — jak w Piec.html
         const val DEFAULT_FB_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU"
         const val DEFAULT_FB_EMAIL = "piec_co_boot@akwarium.local"
-        const val DEFAULT_CMD_TOKEN = "sterownikco-cmd-2026"
+        const val DEFAULT_CMD_TOKEN = ""
 
         const val K_API_KEY = "piec_fb_api_key"
         const val K_EMAIL = "piec_fb_email"
