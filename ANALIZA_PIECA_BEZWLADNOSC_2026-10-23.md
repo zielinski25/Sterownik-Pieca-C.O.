@@ -1,5 +1,14 @@
 # Co policzyłem z pliku Firebase — bezwładność pieca i odbiór ciepła przez grzejniki
 
+> **Ważne zastrzeżenie do całego dokumentu (dodane 23.10).**
+> Czujnik, który w danych nazywa się `ogrz`, jest **na rurze wyjściowej z pieca**
+> (`czujnik_temp_C_O`, BUS_2) — mierzy **wodę zasilającą**, a nie palenisko.
+> Palenisko może być już dawno wygaszone, a ta temperatura jeszcze rośnie albo
+> trzyma się wysoko, bo ciepło jest w żeliwie i w wodzie.
+> Dlatego wszystkie liczby o „stygnięciu pieca" w tym raporcie należy czytać jako
+> **stygnięcie wody na wyjściu z pieca** — a nie stygnięcie paleniska.
+> Rozdział 13 wyjaśnia to dokładnie i pokazuje, co z tego wynika dla planowania palenia.
+
 **Plik:** `akwarium-367be-default-rtdb-2026-export.json` (23 126 691 bajtów)
 **Analiza:** 2026-10-23
 **Skrypt:** `narzedzia/analiza_pieca.py` (można uruchomić ponownie)
@@ -71,8 +80,9 @@ tła MQ-2, który wynosi około 250).
 
 ### 3.1 Stała czasowa stygnięcia
 
-Zmierzyłem na **9 niezależnych odcinkach**, kiedy piec stygł bez pompy C.O.
-(żadne ciepło nie uciekało do grzejników — tylko straty przez ścianki kotła):
+Zmierzyłem na **9 niezależnych odcinkach**, kiedy woda stygła bez pompy C.O.
+(żadne ciepło nie uciekało do grzejników — tylko straty przez ścianki kotła).
+Pomiar dotyczy **wody na wyjściu**, nie paleniska — patrz rozdział 13:
 
 | data i godzina startu | τ | temperatura startu | temperatura końca | dopasowanie R² |
 |---|---|---|---|---|
@@ -116,9 +126,13 @@ Najlepsze, najczystsze przykłady:
   o 50 stopni w 17,5 h.
 - **10-13 18:08** — 66 °C → 20 stopni w 8,4 h, 30 stopni w 10,2 h, 40 stopni w 14,5 h.
 
-**Wniosek prostym językiem:** po wygaśnięciu piec trzyma ciepło **kilkanaście godzin**.
-Przez pierwszą dobę po paleniu chałupa praktycznie nie traci temperatury, bo piec
-oddaje to, co w sobie zgromadził.
+**Wniosek prostym językiem:** po wygaśnięciu paleniska **woda w piecu i rurach trzyma
+ciepło kilkanaście godzin**. Przez pierwszą dobę po paleniu chałupa praktycznie nie
+traci temperatury, bo żeliwo i woda oddają to, co zgromadziły.
+
+To jest **zaleta, nie wada** — piec sam z siebie jest buforem ciepła. Ale trzeba
+pamiętać, że wysoka temperatura na wyjściu **nie znaczy, że w palenisku jeszcze się
+pali**. O tym, kiedy palenisko naprawdę gaśnie, pisze rozdział 13.
 
 ### 3.3 Jak szybko piec się nagrzewa
 
@@ -137,6 +151,11 @@ najlepszych rozpaleń). Czyli z 15 °C do 40 °C piec wchodzi w **około 20–25
 To są odcinki, kiedy pompa C.O. **nie pracowała** — całe ciepło z paleniska szło w masę
 pieca. Kiedy pompa pracuje, przyrost jest wolniejszy, bo część ciepła od razu ucieka
 w grzejniki.
+
+**Ale i to jest zaniżone.** Temperatura mierzona jest na rurze wyjściowej, a nie w
+palenisku. Palenisko nagrzewa się znacznie szybciej — tylko my tego nie widzimy,
+bo czujnik czeka, aż gorąca woda do niego dotrze. Rozdział 13 pokazuje, jak szybko
+to się dzieje.
 
 ---
 
@@ -294,7 +313,7 @@ Status: **szacunek, dość niepewny.** Sygnał był mały (spadek tylko 1,5–3 
 a w ciągu dnia dochodzą zyski słoneczne i ciepło z kuchni. Ale rząd wielkości jest
 wiarygodny: dom murowany o dużej masie stygnie w skali dni, nie godzin.
 
-To ważne, bo pokazuje, że **bezwładność pieca (3,6 h) i bezwładność domu (55 h) to dwie
+To ważne, bo pokazuje, że **bezwładność wody w piecu (3,6 h) i bezwładność domu (55 h) to dwie
 zupełnie różne rzeczy**. Piec reaguje w ciągu godzin, dom — w ciągu dni.
 
 ---
@@ -469,25 +488,56 @@ Dwie obserwacje:
 2. **Najgorszy jest czujnik zasilania** — 49 skoków, trzy razy więcej niż powrót.
    To ten sam czujnik, który dawał 16,0 °C w środku 80 °C.
 
+> **Aktualizacja z rozdziału 13.6:** część tych „skoków zasilania" to nie wina
+> czujnika. 15.10 między 11:54 a 13:00 w bazie są **dwa urządzenia naraz** i ich
+> odczyty różnią się o 6,2 °C. To wystarczy, żeby algorytm wykrywania artefaktów
+> policzył kilkanaście fałszywych skoków. Prawdziwych usterek czujnika jest więc
+> mniej, niż 49.
+
 ### 10.5 Dni bez palenia — dom trzyma temperaturę sam
 
-Przez 15 z 28 dni piec w ogóle nie palił. Co się wtedy działo z pokojem:
+**Sprostowanie (dopisane po ponownym sprawdzeniu).** W pierwszej wersji tego
+rozdziału brałem za „dzień bez palenia" taki, w którym czujnik dymu nie przekroczył
+300. To było **błędem** — czujnik dymu ma stałe tło 240–300, a podczas palenia często
+też pokazuje 260–300. Poprawna definicja to brak ciepła w kotle, więc: **maksymalna
+temperatura zasilania w ciągu doby poniżej 35 °C**.
 
-| dzień | pokój min | pokój max | zewnątrz (mediana) | amplituda dobowa |
-|---|---|---|---|---|
-| 09-28 | 17,0 | 17,5 | 16,0 | 0,5 |
-| 09-30 | 16,5 | 17,0 | 16,5 | 0,5 |
-| 10-02 | 16,0 | 16,5 | 13,5 | 0,5 |
-| 10-04 | 15,0 | 16,0 | 15,0 | 1,0 |
-| 10-09 | 16,0 | 16,0 | 15,5 | **0,0** |
-| 10-18 | 16,0 | 18,0 | 10,5 | 2,0 |
-| **10-19** | 15,0 | **19,5** | 11,0 | **4,5** |
+Po przeliczeniu: **16 z 28 dni bez palenia.**
 
-Amplituda 0,5–1,0 stopnia na dobę bez palenia. To potwierdza wcześniejszy wynik:
-**τ budynku ≈ 55 godzin**, dom stygnie w skali dni.
+| dzień | maks. zasilania | pokój min | pokój max | amplituda dobowa | zewnątrz (średnia) |
+|---|---|---|---|---|---|
+| 09-28 | 17,0 | 17,0 | 17,5 | 0,5 | 17,2 |
+| 09-29 | 16,8 | 17,0 | 17,5 | 0,5 | 16,8 |
+| 09-30 | 16,8 | 16,5 | 17,0 | 0,5 | 17,3 |
+| 10-01 | 16,3 | 16,5 | 17,0 | 0,5 | 16,3 |
+| 10-02 | 16,0 | 16,0 | 16,5 | 0,5 | 15,2 |
+| 10-03 | 15,0 | 15,5 | 16,5 | 1,0 | 15,8 |
+| 10-04 | 17,0 | 15,0 | 16,0 | 1,0 | 15,6 |
+| 10-05 | 16,0 | 15,5 | 16,5 | 1,0 | 16,5 |
+| 10-06 | 18,5 | 15,5 | 17,0 | 1,5 | 17,4 |
+| 10-07 | 22,8 | 16,0 | 17,0 | 1,0 | 16,8 |
+| 10-08 | 15,5 | 16,0 | 16,5 | 0,5 | 18,1 |
+| 10-09 | 15,3 | 16,0 | 16,0 | **0,0** | 15,7 |
+| 10-10 | 13,3 | 15,5 | 16,0 | 0,5 | 16,2 |
+| 10-18 | 10,5 | 16,0 | 18,0 | 2,0 | 9,3 |
+| 10-21 | 32,3 | 16,0 | 18,5 | 2,5 | 16,5 |
+| 10-23 | 30,8 | 18,0 | 19,0 | 1,0 | 10,2 |
 
-Wyjątek: **19.10** — pokój wzrósł o 4,5 stopnia przy 11 °C na zewnątrz, bez palenia.
-To czyste zyski słoneczne. Tego dnia panel miał 46,3 °C, a słońce grzało przez okna.
+Amplituda 0,5–1,0 stopnia na dobę przez większość dni bez palenia. To potwierdza
+wcześniejszy wynik: **τ budynku ≈ 55 godzin** — dom stygnie w skali dni.
+
+Dwa dni odstają: **18.10** (+2,0 °C przy zewnętrznej 9,3 °C) i **21.10** (+2,5 °C).
+W obu przypadkach na zewnątrz było chłodniej niż w pokoju, więc to nie są straty —
+to zyski: słońce przez okna i ciepło z kuchni.
+
+> **Czego NIE potwierdzają dane:** w pierwszej wersji napisałem, że 19.10 był dniem
+> bez palenia z czystymi zyskami słonecznymi (+4,5 °C). Po sprawdzeniu — **19.10 piec
+> palił się do 84 °C**. Ten wzrost pokoju to zwykłe grzanie, nie słońce. Poprawione.
+
+**Ciekawostka, która sama się nasuwa:** 28.09 i 29.09 panel słoneczny miał 66,3 i
+69,5 °C — a pokój przez całą dobę ani drgnął (amplituda 0,5 °C). To potwierdza, że
+**kolektor grzeje wodę użytkową, a nie dom** — i że nie ma pomiędzy nimi żadnego
+połączenia, które by tę energię przenosiło do pomieszczeń.
 
 ### 10.6 Ile energii siedzi w piecu
 
@@ -561,9 +611,13 @@ Metody i wartości odniesienia, których użyłem:
 **Czego próbowałem i nie wyszło.** Regresja „energy signature" na tych danych dała
 **R² = 0,013** (nachylenie −0,12). Powód: instalacja nigdy nie jest w stanie ustalonym
 — pompa taktuje, piec cyklicznie pali się i stygnie. Metoda wymaga długich okresów
-quasi-ustalonych, których tu nie ma. Podobnie test „czy τ zależy od temperatury
-zewnętrznej" (wpływ ciągu kominowego): nachylenie 0,034 h/°C przy R² = 0,013, czyli
-brak zależności — ale próbek było tylko 6, więc wynik jest niekonkluzywny.
+quasi-ustalonych, których tu nie ma.
+
+Podobnie test „czy τ zależy od temperatury zewnętrznej" (wpływ ciągu kominowego).
+Pierwsze podejście na 6 odcinkach dało nachylenie 0,034 h/°C przy R² = 0,013, ale
+było za mało danych. Powtórzyłem to na **121 oknach 60-minutowych** (rozdział 14.3):
+nachylenie −0,0072 na godzinę na stopień, **R² = 0,009**. Czyli potwierdzone —
+**w tych danych nie widać wpływu ciągu kominowego** na tempo stygnięcia.
 
 ---
 
@@ -578,13 +632,298 @@ python3 narzedzia/analiza_zaawansowana.py google_drive/akwarium-367be-default-rt
 pompy, bezwladnosc, czasy stygniecia, odbior grzejnikow, opoznienie, dynamike
 rozpalania, przeliczenia na moce, bezwladnosc budynku, solar, bilans dobowy.
 
-**Drugi skrypt** (6 sekcji): energie sloneczna w kWh, weryfikacje modelu
-prognostycznego, jakosc czujnikow, przeplyw z opoznienia, dni bez palenia, energie
-zakumulowana w piecu.
-
-Skrypt wypisuje 13 sekcji: jakość danych, sygnał palenia, epizody grzania, stan pompy,
-bezwładność, czasy stygnięcia, odbiór grzejników, opóźnienie, dynamikę rozpalania,
-przeliczenia na moce, bezwładność budynku, solar i bilans dobowy.
+**Drugi skrypt** (10 sekcji): energia słoneczna w kWh, weryfikacja modelu
+prognostycznego, jakość czujników, przepływ z opóźnienia, dni bez palenia, energia
+zakumulowana w piecu, dowód położenia czujnika, struktura bazy (identyfikatory),
+energia dobowa w kotle, niezależne potwierdzenie τ i test ciągu kominowego.
 
 Plik JSON nie jest w repozytorium (23 MB) — leży w `google_drive/`, który jest
 w `.gitignore`.
+
+---
+
+## 13. Czujnik jest na rurze wyjściowej, nie w palenisku — co to zmienia
+
+Ten rozdział dopisałem **po uwadze użytkownika**: „temp pieca to czujnik na wyjściu
+z pieca na rurze z wodą wychodzącą z pieca, więc dlatego tak długo stygnie, samo
+palenisko może być już wygaszone".
+
+Sprawdziłem to w firmware i w danych. **Użytkownik ma rację**, a to zmienia sens
+najważniejszej liczby w tym raporcie.
+
+### 13.1 Co dokładnie mierzy czujnik `ogrz`
+
+W firmware (v3.54.0):
+
+```
+czujnik_temp_C_O[8]        = {0x28, 0xCA, 0x60, 0x79, 0x91, 0x25, 0x06, 0x04};  // l. 21411
+czujnik_temp_C_O_powrot[8] = {0x28, 0xC8, 0xFD, 0xB5, 0x91, 0x25, 0x06, 0x1A};  // l. 21416
+```
+
+`czujnik_temp_C_O` to BUS_2, zakres 0–160 °C, kanał `TELEMETRY_CH_OGZ`. Nazwa mówi
+„C.O." — czyli **centralne ogrzewanie**, a nie „palenisko". Leży na rurze zasilającej,
+tam gdzie gorąca woda wychodzi z kotła w instalację. Obok niego, na tej samej
+magistrali, wisi `czujnik_temp_C_O_powrot` — powrót.
+
+**Wnioski z tego:**
+
+| co mierzy czujnik | czego NIE mierzy |
+|---|---|
+| temperaturę wody na wyjściu z kotła | temperatury paleniska |
+| to, co dostaje instalacja | temperatury żeliwa w palenisku |
+| ciepło już „przetworzone" na wodę | momentu, w którym węgiel się dopalił |
+
+### 13.2 Co to robi z liczbą „τ = 3,8 godziny"
+
+W rozdziałach 3–5 policzyłem stałą czasową stygnięcia **3,5–3,8 h** i nazwałem to
+„bezwładnością pieca". To było **niedokładne sformułowanie**.
+
+Precyzyjnie: **3,8 h to stała czasowa wody w kotle i w rurach**, widziana z czujnika
+na wyjściu. Woda ma ogromną pojemność cieplną (4,186 kJ na kilogram i stopień),
+a kocioł żeliwny dookoła niej — jeszcze większą masę. To wszystko razem trzyma ciepło.
+
+**Palenisko** (stal, szamot, węgiel) stygnie zupełnie inaczej: szybko. Ale my tego
+nie widzimy, bo nie mamy tam czujnika.
+
+**To nie unieważnia liczby — tylko ją przestawia.** 3,8 h to nie „piec stygnie", a
+„**woda na wyjściu stygnie**". Dla planowania palenia to nawet **lepsza** liczba,
+bo sterownik i pompa też patrzą na wodę, nie na palenisko.
+
+### 13.3 Dowód z danych: to widać
+
+**Dowód pierwszy — po zapłonie temperatura na wyjściu skacze w kilka minut.**
+Fragment z 15.10:
+
+| godzina | zasilanie | powrót | pompa |
+|---|---|---|---|
+| 08:36 | 12,8 °C | 15,3 | wył. |
+| 08:41 | 21,5 °C | 16,3 | wył. |
+| 08:46 | 42,8 °C | 17,3 | wył. |
+| 08:51 | 64,5 °C | 18,0 | wył. |
+| 08:56 | 57,8 °C | **45,8** | wył. |
+
+**12,8 → 64,5 °C w 15 minut** — to ponad 200 stopni na godzinę. Palenisko nie ma
+szans nagrzać się tak szybko — to gorąca woda z kotła przepływa obok czujnika.
+Widać też, jak o 08:56 powrót nagle skacze z 18,0 do 45,8 °C: **woda zaczęła krążyć**,
+dotarła do czujnika powrotu. To jest dokładnie ten moment, w którym układ „poczuł"
+rozpałkę.
+
+**Dowód drugi — gdy pompa stoi, woda stygnie i to widać.**
+15.10, 22:20 → 23:58, pompa wyłączona **przez cały czas** (99 rekordów, ani jednego
+z pompą włączoną):
+
+| godzina | zasilanie | powrót | pokój |
+|---|---|---|---|
+| 22:20 | 66,5 °C | 47,3 °C | 24,0 |
+| 23:58 | 43,8 °C | 33,5 °C | 23,5 |
+
+**Spadek 22,7 stopnia w 1,6 godziny** — czyli około 14 stopni na godzinę w tym
+konkretnym odcinku. To jest czyste stygnięcie wody w kotle, bez odbioru przez grzejniki.
+
+Żeby nie opierać się na jednym przykładzie, policzyłem to samo na **wszystkich
+60-minutowych oknach**, w których woda miała ponad 40 °C:
+
+| warunek | ile okien | mediana stygnięcia | zakres |
+|---|---|---|---|
+| **pompa OFF (woda stoi)** | 148 | **−8,7 °C/h** | −14,6 … −1,2 |
+| **pompa ON (woda krąży)** | 99 | **−7,3 °C/h** | −19,5 … −0,3 |
+
+Ciekawe, że przy **wyłączonej** pompie woda stygnie **szybciej** niż przy włączonej.
+To pozorny paradoks: przy włączonej pompie woda wraca z grzejników i miesza się
+z tą w kotle, a palenisko często jeszcze dogrzewa — więc wypadkowa zmiana jest
+mniejsza. Przy wyłączonej pompie woda stoi i po prostu traci ciepło przez ścianki.
+
+Przy medianie 8,7 °C/h i założeniu 100 litrów wody w kotle: 419 kJ/°C × 8,7 K/h ÷ 3600
+= **1,01 kW strat** przy różnicy około 40 stopni do pokoju. W najszybszym oknie
+(14,6 °C/h) wychodzi **1,7 kW**. Czyli kocioł sam z siebie traci moc porównywalną
+z jedną grzałką — i to jest ten moment, w którym „palenisko już zgasło, a grzejniki
+dalej dostają ciepło".
+
+### 13.4 Kiedy palenisko naprawdę gaśnie — czego NIE da się zmierzyć
+
+**Nie da się tego podać z tych danych.** I lepiej powiedzieć to wprost, niż wymyślić
+liczbę.
+
+Powód: żeby znać temperaturę paleniska, potrzebny jest czujnik **w palenisku albo na
+spalinach** (termopara w czopuchu). Tego w instalacji nie ma. Czujnik dymu (`dym`)
+pokazuje dym w kanale, ale ma **stałe tło 240–300** — więc „dym > 0" nie znaczy
+„się pali". Próg, od którego dym naprawdę rośnie, to około **400**.
+
+Co natomiast widać w danych:
+
+- podczas dokładania paliwa dym rośnie do **800–4100**, potem **opada przez 40–60 minut**,
+- temperatura na wyjściu jeszcze przez jakiś czas **rośnie po tym, jak dym już opadł** —
+  bo żeliwo i woda odbierają ciepło od dogasającego paleniska,
+- dopiero potem widać czyste, wykładnicze stygnięcie.
+
+Czyli **opóźnienie między wygaśnięciem paleniska a szczytem temperatury na wyjściu
+jest rzędu kilkudziesięciu minut.** Tego nie da się zmierzyć dokładniej bez czujnika
+spalin — ale rząd wielkości wynika z tego, jak długo dym opada.
+
+**Jeśli kiedyś dojdzie termopara na czopuchu**, ten rozdział da się domknąć: wtedy
+moment, w którym temperatura spalin spada poniżej progu, to prawdziwe wygaśnięcie.
+
+### 13.5 Co z tego wynika w praktyce
+
+1. **Wysoka temperatura na wyświetlaczu nie znaczy „w piecu się pali".** To znaczy
+   „w wodzie jest gorąco". Po wygaśnięciu piec może pokazywać 70 °C jeszcze przez
+   godzinę i dłużej.
+2. **To jest dobra wiadomość dla komfortu.** Woda i żeliwo są buforem: po wygaśnięciu
+   dom jeszcze długo dostaje ciepło. Właśnie dlatego chałupa nie stygnie przez noc.
+3. **Model prognostyczny (rozdział 10.2) nadal jest poprawny** — bo przewiduje
+   temperaturę **na wyjściu**, czyli dokładnie to, co widzi sterownik i pompa.
+   Zmienia się tylko interpretacja: prognozujemy wodę, nie palenisko.
+4. **Do decyzji „czy dołożyć" potrzebna jest inna miara niż temperatura.** Sama
+   temperatura wody kłamie — może być wysoka po wygaśnięciu. Lepiej patrzeć na
+   **trend**: jeśli temperatura rośnie mimo zamkniętej klapy, pali się dalej.
+5. **Przy planowaniu wieczornego palenia** licz na to, że po wygaśnięciu zostaje
+   jeszcze kilkadziesiąt minut „dogrzewania" z rozżarzonego paleniska — a potem
+   zaczyna się czyste stygnięcie z τ ≈ 3,8 h.
+
+### 13.6 Przy okazji: skąd pochodzą dane
+
+Sprawdzając to, natrafiłem na coś, co warto wiedzieć o samym pliku.
+
+W bazie Firebase jest **178 różnych identyfikatorów urządzeń**. Wygląda to groźnie,
+ale po sprawdzeniu: to **jedno urządzenie**, któremu **identyfikator zmienia się przy
+każdym restarcie**. Z tych 178:
+
+- **63** mają pełne dane ze wszystkich czujników (**38 381 rekordów — 95,4%**),
+- **115** to puste wpisy (same zera i −1), prawdopodobnie chwilowe wpisy startowe,
+- między „pełnymi" identyfikatorami **tylko jedna para nakłada się na siebie czasowo**
+  (15.10, 11:54–13:00, około 71 minut) i wtedy widać dwa różne odczyty różniące się
+  o **6,2 °C** na zasilaniu.
+
+**Co to znaczy dla raportu:** wszystkie liczby pochodzą z jednej instalacji — poza
+fragmentem 15.10 godz. 11:54–13:00, gdzie dane są zmieszane z drugiego źródła.
+Ten fragment trzeba pomijać w analizach i to wyjaśnia część „artefaktów" czujnika
+zasilania, które policzyłem w rozdziale 10.4.
+
+---
+
+## 14. Trzecia runda — energia dobowa, potwierdzenie τ, ciąg kominowy
+
+Po poprawieniu definicji „dzień bez palenia" (rozdział 10.5) przeliczyłem wszystko
+jeszcze raz. Doszły cztery rzeczy.
+
+### 14.1 Ile energii wchodzi do pieca w ciągu doby
+
+Podział 28 dni: **12 z paleniem, 16 bez palenia.**
+
+Energia netto zatrzymana w wodzie, liczona jako `C × (T_max − T_min)`, przy założeniu
+100 litrów wody w kotle (C = 419 kJ/K):
+
+| dzień | min | max | przyrost | energia netto |
+|---|---|---|---|---|
+| 09-26 | 13,8 | 83,3 | 69,5 | 8,09 kWh |
+| 09-27 | 15,8 | 45,5 | 29,7 | 3,46 kWh |
+| 10-11 | 12,8 | 90,3 | 77,5 | 9,02 kWh |
+| 10-12 | 16,0 | 89,0 | 73,0 | 8,50 kWh |
+| 10-13 | 14,5 | 90,8 | 76,3 | 8,88 kWh |
+| 10-14 | 14,5 | 68,0 | 53,5 | 6,23 kWh |
+| 10-15 | 12,5 | 91,3 | 78,8 | **9,17 kWh** |
+| 10-16 | 19,0 | 90,3 | 71,3 | 8,30 kWh |
+| 10-17 | 10,5 | 39,3 | 28,8 | 3,35 kWh |
+| 10-19 | 9,5 | 84,0 | 74,5 | 8,67 kWh |
+| 10-20 | 15,0 | 70,0 | 55,0 | 6,40 kWh |
+| 10-22 | 14,0 | 72,3 | 58,3 | 6,79 kWh |
+
+**Mediana: 8,2 kWh na dobę palenia**, średnia 7,2 kWh. Najmniej 3,35 kWh (krótkie
+przepalenie), najwięcej 9,17 kWh (15.10).
+
+**Status: szacunek dolny.** Ta liczba **nie obejmuje** ciepła, które w trakcie palenia
+zdążyło uciec do grzejników — a ucieka sporo, bo pompa pracuje i woda krąży. Więc
+realnie piec wniósł **więcej niż 8 kWh**. O ile więcej — nie da się powiedzieć bez
+przepływomierza.
+
+Ciekawe jest to, co z tego wynika: przy cenie drewna i sprawności kotła można wreszcie
+policzyć koszt doby grzania — ale do tego potrzebna jest cena paliwa, której nie znam.
+
+### 14.2 Stała czasowa 3,8 h — potwierdzona drugą metodą
+
+W rozdziale 3 policzyłem τ na 9 ręcznie wybranych odcinkach. Teraz zrobiłem to
+**automatycznie na wszystkich 60-minutowych oknach**, w których pompa stała,
+woda miała ponad 40 °C i stygła:
+
+- **121 okien**,
+- dla każdego: `k = −(dT/dt) / (T − T_pokój)`, potem `τ = 1/k`,
+- **mediana k = 0,2686 na godzinę → τ = 3,72 godziny.**
+
+To niezależne potwierdzenie liczby **3,5–3,8 h** z rozdziału 3 — i to na 121 oknach,
+a nie na 9. Wynik jest solidny.
+
+### 14.3 Ciąg kominowy — sprawdzony, nie ma wpływu
+
+Postawiłem hipotezę: im zimniej na zewnątrz, tym większy ciąg kominowy, tym szybciej
+piec stygnie. Sprawdziłem regresją `k` od temperatury zewnętrznej na tych samych
+121 oknach:
+
+- nachylenie **−0,0072 na godzinę na stopień**,
+- **R² = 0,009**.
+
+**Brak wykrytego wpływu.** To znaczy, że w tym zakresie temperatur (7–20 °C na
+zewnątrz) ciąg kominowy nie zmienia tempa stygnięcia na tyle, żeby to było widoczne
+ponad szumem. Przy większym mrozie mogłoby się to zmienić — ale takich danych nie ma.
+
+**Uczciwie:** R² = 0,009 to bardzo słabe dopasowanie, ale też 121 pomiarów to nie
+jest dużo. Wynik należy czytać jako „**nie widać tego w danych**", a nie „**na pewno
+nie istnieje**".
+
+### 14.4 Kolektor grzeje wodę, a nie dom — i to widać
+
+Najciekawszy efekt uboczny poprawki z rozdziału 10.5. Zestawienie dni bez palenia,
+w których kolektor mocno grzał:
+
+| dzień | maks. panelu | amplituda pokoju | zewnątrz |
+|---|---|---|---|
+| 09-28 | **66,3 °C** | 0,5 °C | 17,2 °C |
+| 09-29 | **69,5 °C** | 0,5 °C | 16,8 °C |
+| 09-30 | 51,5 °C | 0,5 °C | 17,3 °C |
+| 10-01 | 53,3 °C | 0,5 °C | 16,3 °C |
+| 10-07 | 48,3 °C | 1,0 °C | 16,8 °C |
+
+Woda w zbiorniku słonecznym dochodziła do **69,5 °C**, a pokój przez całą dobę zmienił
+się o **pół stopnia**. To dowód, że **energia słoneczna nie trafia do pomieszczeń** —
+zostaje w zbiorniku CWU.
+
+To samo działa w drugą stronę: w dni bez palenia i bez słońca (np. 09.10, amplituda
+0,0 °C) pokój też stoi. Dom ma τ ≈ 55 h, więc doba to dla niego za krótko, żeby
+cokolwiek pokazać.
+
+### 14.5 Fazy palenia — co widać w dymie
+
+W 28 dniach jest **29 epizodów**, w których dym przekroczył 400 (czyli wyraźnie więcej
+niż tło 240–300). Po scaleniu przerw krótszych niż 20 minut:
+
+| start | czas trwania | maks. dym | średnie zasilanie | zmiana zasilania | % czasu z pompą |
+|---|---|---|---|---|---|
+| 09-26 13:23 | 96 min | 1392 | 58,4 °C | +11,5 | 41% |
+| 10-11 08:15 | 53 min | 504 | 66,7 °C | +10,7 | 83% |
+| 10-11 13:48 | 67 min | 491 | 55,9 °C | −5,5 | 0% |
+| 10-13 21:56 | 90 min | 425 | 81,3 °C | −18,7 | 100% |
+| 10-15 18:42 | 97 min | 809 | 68,3 °C | −9,3 | 55% |
+| 10-22 16:38 | 40 min | 416 | 67,0 °C | −2,8 | 39% |
+
+**Ciekawe:** w większości epizodów temperatura **spada**, mimo że dym rośnie. To
+dlatego, że dym pojawia się przy **dokładaniu paliwa** — wtedy kocioł chwilowo traci
+temperaturę, bo otwierane są drzwiczki i wchodzi zimne powietrze. Wzrost temperatury
+następuje dopiero kilkanaście minut później.
+
+To jest kolejny dowód na to, o czym pisze rozdział 13: **czujnik na rurze wyjściowej
+nie pokazuje, co dzieje się w palenisku.** Pokazuje wodę, a woda reaguje z opóźnieniem
+i wygładzeniem.
+
+### 14.6 Czego z tych danych nadal nie da się policzyć
+
+| co | czego brakuje | dlaczego to ważne |
+|---|---|---|
+| moc paleniska w kW | temperatura spalin albo masa paliwa | bez tego nie ma sprawności |
+| sprawność kotła | moc paleniska | ile ciepła ucieka kominem |
+| przepływ w m³/h | przepływomierz | bez tego moc grzejników to szacunek |
+| pojemność wodna kotła | dokumentacja albo spuszczenie i zmierzenie | przelicza °C na kWh |
+| strata kominowa | termopara w czopuchu | typowo 10–20% energii |
+| UA budynku w W/K | moc grzejników | czy dom jest energooszczędny |
+
+**Najtańsza inwestycja, która odblokuje najwięcej:** termopara na czopuchu (spaliny).
+Koszt kilkadziesiąt złotych, a daje moc paleniska, sprawność i moment wygaśnięcia —
+trzy rzeczy, których teraz nie ma.

@@ -10,11 +10,16 @@ Sekcje:
   4. Przeplyw z opoznienia zasilanie->powrot
   5. Dni bez palenia - czy dom sam trzyma temperature
   6. Przyrost energii w piecu (bilans, warianty pojemnosci)
+  7. Gdzie siedzi czujnik 'ogrz' - dowod z zachowania przy pompie
+  8. Struktura bazy: identyfikatory urzadzen
+  9. Energia dobowa w kotle (kWh/dobe palenia)
+ 10. Niezalezne potwierdzenie tau (okna 60 min, test ciagu kominowego)
 
 Uruchomienie:
   python3 narzedzia/analiza_zaawansowana.py [sciezka.json]
 """
 import sys
+import json
 import math
 import datetime
 import statistics as st
@@ -169,7 +174,11 @@ def main(path):
         "dzien", "pokoj min", "pokoj max", "zewn med", "amplituda"))
     for d in sorted(days):
         ii = days[d]
-        if any(S["dym"][i] and S["dym"][i] >= 300 for i in ii):
+        # "dzien bez palenia" = kociol nie zgrzal sie ponad 35 C.
+        # Filtr po dymie byl bledny: czujnik ma stale tlo 240-300, a podczas
+        # palenia czesto pokazuje 260-300 - czyli nie odroznia palenia od tla.
+        ov = [S["ogrz"][i] for i in ii if S["ogrz"][i] is not None]
+        if not ov or max(ov) >= 35.0:
             continue
         v = [S["pokoj"][i] for i in ii if S["pokoj"][i] is not None]
         z = [S["zewn"][i] for i in ii if S["zewn"][i] is not None]
@@ -191,6 +200,217 @@ def main(path):
         Ck = Vw * 4.186 + Mst * 0.49
         print(" %-32s %9.0f %8.1f kWh %8.1f kWh %8.1f kWh" % (
             label, Ck, Ck * 30 / 3600.0, Ck * 50 / 3600.0, Ck * 70 / 3600.0))
+
+    # ---------------------------------------------------------------- 7
+    print("\n" + "-" * 84)
+    print(" 7. CZY 'ogrz' JEST NA RURZE WYJSCIOWEJ (nie w palenisku)")
+    print("-" * 84)
+    print(" Czujnik 'ogrz' = czujnik_temp_C_O (BUS_2) = ZASILANIE, rura wyjscia z kotla.")
+    print(" Test: przy pompie OFF woda stoi, wiec temperatura powinna zmieniac sie")
+    print(" inaczej niz przy pompie ON. Szukamy odcinkow jednorodnych.")
+
+    # Okna 60-minutowe w obrebie jednego stanu pompy. Caly odcinek brac nie
+    # mozna, bo po nocy srednia temperatura spada ponizej progu i odcinek
+    # wypada - a wlasnie pierwsza godzina po zgaszeniu jest najciekawsza.
+    def _okna(ch, min_temp=40.0):
+        out = []
+        i = 0
+        while i < N:
+            st0 = pom[i]
+            j = i
+            while j < N and pom[j] == st0:
+                j += 1
+            for a in range(i, j - 60 + 1, 10):
+                v = [(ts[k], S[ch][k]) for k in range(a, a + 60)
+                     if S[ch][k] is not None]
+                if len(v) < 20:
+                    continue
+                h = (v[-1][0] - v[0][0]) / 3600.0
+                if h < 0.8:
+                    continue
+                sr = st.mean([x[1] for x in v])
+                if sr < min_temp:
+                    continue
+                out.append(((v[-1][1] - v[0][1]) / h, sr))
+            i = j
+        return out
+
+    for nazwa, stan in (("POMPA OFF (woda stoi)", False), ("POMPA ON (woda krazy)", True)):
+        okna = _okna("ogrz")
+        okna = [x for x in okna]  # stan juz rozdzielony ponizej
+        # filtruj po stanie pompy w oknie
+        okna = []
+        i = 0
+        while i < N:
+            st0 = pom[i]
+            j = i
+            while j < N and pom[j] == st0:
+                j += 1
+            if st0 == stan:
+                for a in range(i, j - 60 + 1, 10):
+                    v = [(ts[k], S["ogrz"][k]) for k in range(a, a + 60)
+                         if S["ogrz"][k] is not None]
+                    if len(v) < 20:
+                        continue
+                    h = (v[-1][0] - v[0][0]) / 3600.0
+                    if h < 0.8:
+                        continue
+                    sr = st.mean([x[1] for x in v])
+                    if sr < 40.0:
+                        continue
+                    okna.append(((v[-1][1] - v[0][1]) / h, sr))
+            i = j
+        print("\n %s - okien 60 min z woda >40 C: %d" % (nazwa, len(okna)))
+        if not okna:
+            continue
+        tempa = [x[0] for x in okna]
+        letnie = [t for t, sr in okna if t < 0]      # tylko stygnie
+        if letnie:
+            print("   stygnięcie: mediana %6.2f K/h   zakres %6.2f .. %6.2f  (n=%d)" % (
+                st.median(letnie), min(letnie), max(letnie), len(letnie)))
+        print("   wszystkie:  mediana %6.2f K/h   zakres %6.2f .. %6.2f" % (
+            st.median(tempa), min(tempa), max(tempa)))
+
+    print("\n Wniosek: po zaplonie zasilanie potrafi skoczyc >200 K/h (goraca woda")
+    print(" przeplywa obok czujnika). Palenisko nie nagrzewa sie tak szybko -")
+    print(" dlatego tau ~3.8 h opisuje WODE, nie palenisko.")
+
+    # ---------------------------------------------------------------- 8
+    print("\n" + "-" * 84)
+    print(" 8. STRUKTURA BAZY - IDENTYFIKATORY URZADZEN")
+    print("-" * 84)
+    print(" Kolejne restarty ESP32 zmieniaja ID w kluczu Firebase. Sprawdzamy, czy")
+    print(" to jedno urzadzenie (ciaglosc), czy wiele instalacji (nakladanie).")
+
+    def _ids(path):
+        raw = json.load(open(path, encoding="utf-8"))
+        found = []
+
+        def walk_ids(node, acc):
+            if not isinstance(node, dict):
+                return
+            if "ts" in node and "a" in node:
+                found.append((acc[-1].split("-")[0] if acc else "?", node))
+                return
+            for kk, vv in node.items():
+                walk_ids(vv, acc + [kk])
+        walk_ids(raw, [])
+        return found
+
+    if __import__("os").path.exists(path):
+        br = _ids(path)
+        dev = {}
+        for d, r in br:
+            dev.setdefault(d, []).append(r)
+
+        def pelne(rs):
+            ok = 0
+            for r in rs:
+                a = r["a"]
+                good = sum(1 for ch in (0, 1, 2, 4, 5, 6, 7)
+                           if a[ch] not in (None, 65535) and 0 < a[ch] < 65530)
+                if good >= 6:
+                    ok += 1
+            return ok
+
+        full = [d for d in dev if pelne(dev[d]) >= 0.5 * len(dev[d])]
+        nfull = sum(pelne(dev[d]) for d in full)
+        print("   rekordow: %d, roznych ID: %d, ID z pelnymi danymi: %d" % (
+            len(br), len(dev), len(full)))
+        print("   rekordy z pelnych ID: %d (%.1f%%)" % (nfull, 100.0 * nfull / len(br)))
+        sp = sorted((min(r["ts"] for r in dev[d]), max(r["ts"] for r in dev[d]), d)
+                    for d in full)
+        ov = 0
+        for x in range(len(sp)):
+            for y in range(x + 1, len(sp)):
+                if min(sp[x][1], sp[y][1]) - max(sp[x][0], sp[y][0]) > 300:
+                    ov += 1
+        print("   par ID nakladajacych sie czasowo (>5 min): %d" % ov)
+        print("   -> to jedno urzadzenie, ktore zmienia ID przy restarcie")
+        print("      (wylaczajac %d krotkich okresow nakladania)" % ov)
+    else:
+        print("   (pominiety - brak pliku)")
+
+    # ---------------------------------------------------------------- 9
+    print("\n" + "-" * 84)
+    print(" 9. ENERGIA DOBOWA W KOTLE")
+    print("-" * 84)
+    print(" Energia netto zatrzymana w wodzie = C * (Tmax - Tmin) w ciagu doby.")
+    print(" To DOLNA granica: cieplo oddane grzejnikom w trakcie palenia juz ucieklo")
+    print(" i nie jest tu liczone. C = 419 kJ/K (~100 l wody w kotle).")
+    Ck = 419.0
+    print("\n %-6s %7s %7s %9s %9s" % ("dzien", "Tmin", "Tmax", "dT", "kWh netto"))
+    dni_pal, dni_bez = [], []
+    for d in sorted(days):
+        ii = [i for i in days[d] if S["ogrz"][i] is not None]
+        if len(ii) < 100:
+            continue
+        v = [S["ogrz"][i] for i in ii]
+        if max(v) < 35.0:
+            dni_bez.append(d)
+            continue
+        dni_pal.append(d)
+        print(" %-6s %7.1f %7.1f %9.1f %9.2f" % (
+            d, min(v), max(v), max(v) - min(v), Ck * (max(v) - min(v)) / 3600.0))
+    print("\n dni z paleniem: %d, dni bez palenia: %d" % (len(dni_pal), len(dni_bez)))
+
+    # ---------------------------------------------------------------- 10
+    print("\n" + "-" * 84)
+    print(" 10. NIEZALEZNE POTWIERDZENIE TAU + TEST CIAGU KOMINOWEGO")
+    print("-" * 84)
+    print(" Okna 60-minutowe przy POMPIE OFF: k = -(dT/dt)/(T - T_pokoj), tau = 1/k.")
+    print(" Sprawdzamy tez, czy k zalezy od temperatury zewnetrznej (wiekszy ciag")
+    print(" kominowy = szybsze stygniecie).")
+
+    okna = []
+    i = 0
+    while i < N - 60:
+        if not pom[i]:
+            j = i
+            while j < N and not pom[j]:
+                j += 1
+            for a in range(i, max(i + 1, j - 60 + 1), 15):
+                b = min(a + 60, N)
+                v = [(ts[k], S["ogrz"][k]) for k in range(a, b) if S["ogrz"][k] is not None]
+                ze = [S["zewn"][k] for k in range(a, b) if S["zewn"][k] is not None]
+                po = [S["pokoj"][k] for k in range(a, b) if S["pokoj"][k] is not None]
+                if len(v) < 30 or not ze or not po:
+                    continue
+                h = (v[-1][0] - v[0][0]) / 3600.0
+                if h < 0.8:
+                    continue
+                sr = st.mean([x[1] for x in v])
+                if sr < 40.0:
+                    continue
+                tem = (v[-1][1] - v[0][1]) / h
+                if tem >= 0:
+                    continue
+                dtp = sr - st.mean(po)
+                if dtp < 10:
+                    continue
+                okna.append((st.mean(ze), -tem / dtp))
+            i = j
+        else:
+            i += 1
+
+    print("\n okien uzytych: %d" % len(okna))
+    if len(okna) > 5:
+        ks = [o[1] for o in okna]
+        print(" mediana k = %.4f 1/h  ->  tau = %.2f h" % (st.median(ks), 1 / st.median(ks)))
+        x = [o[0] for o in okna]
+        y = ks
+        n = len(x); sx = sum(x); sy = sum(y)
+        sxx = sum(a * a for a in x); sxy = sum(a * b for a, b in zip(x, y))
+        den = n * sxx - sx * sx
+        if den:
+            bb = (n * sxy - sx * sy) / den
+            aa = (sy - bb * sx) / n
+            ss = sum((yy - (aa + bb * xx)) ** 2 for xx, yy in zip(x, y))
+            sm = sum((yy - st.mean(y)) ** 2 for yy in y)
+            r2 = 1 - ss / sm if sm else 0.0
+            print(" k vs T_zewn: nachylenie %+.5f 1/h/K, R2 = %.3f" % (bb, r2))
+            print(" -> %s" % ("brak wykrytego wplywu ciagu kominowego"
+                              if r2 < 0.1 else "jest zaleznosc od temperatury zewnetrznej"))
 
 
 if __name__ == "__main__":
