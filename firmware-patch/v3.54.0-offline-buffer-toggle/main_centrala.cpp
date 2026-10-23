@@ -21427,6 +21427,16 @@ SPIClass sdSPI(FSPI);
 //   C_O_powrot   — rura powrotna, przed kotłem.
 //   C_O_trociny  — na WŁASNYM PIONIE nad przystawką na trociny: woda
 //                  z jej PŁASZCZA WODNEGO (nie temperatura paleniska).
+//                  ROLA: DETEKTOR STANU PALENISKA, nie termometr pomiarowy.
+//                  Gdy woda w płaszczu się nagrzewa, program wie, że
+//                  palenisko trocin pracuje — docelowo ma to przełączać
+//                  serwa w tryb właściwy dla trocin (w v3.54.0 jeszcze
+//                  nie zaimplementowane; działa tylko automat mieszadła
+//                  przy > 30 C, patrz MieszadloTrocinyAuto.h).
+//                  Obieg płaszcza jest ODCIĘTY NA CZAS LETNI — dlatego
+//                  czujnik pokazuje temperaturę otoczenia (mediana 13.5 C,
+//                  maks. 22.3 C w danych 26.09-23.10.2026, czyli próg
+//                  30 C ani raz nie został przekroczony).
 //
 // O przystawce na trociny (opis użytkownika):
 //   Przystawka stoi przy piecu C.O. i jest osobnym paleniskiem na trociny.

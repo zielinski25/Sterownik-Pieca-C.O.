@@ -83,7 +83,7 @@ Do tego dwa czujniki I2C/analogowe.
 | 4 | `powrot` | `czujnik_temp_C_O_powrot` | BUS_2 | GPIO 5 | −30…120 °C | rura powrotna, przed kotłem |
 | 5 | `panel` | `czujnik_temp_Panel_Plus` | BUS_3 | GPIO 7 | −30…160 °C | zbiornik solarny 100 l na dachu |
 | 6 | `pokoj` | `czujnik_temp_Wewnatrz` | BUS_1 | GPIO 4 | −50…50 °C | **środek pokoju, na wysokości 2,5 m** |
-| 7 | `trociny` | `czujnik_temp_C_O_trociny` | BUS_2 | GPIO 5 | −30…120 °C | **na pionie nad przystawką — woda z jej płaszcza wodnego** |
+| 7 | `trociny` | `czujnik_temp_C_O_trociny` | BUS_2 | GPIO 5 | −30…120 °C | **na pionie nad przystawką — woda z jej płaszcza wodnego**. To **detektor stanu paleniska**, nie termometr pomiarowy |
 | 8 | `rh` | DHT22 | — | GPIO 6 | 0…100 % | **na zewnątrz** |
 | 9 | `cisn` | BMP280 | — | I2C | 970…1040 hPa | ciśnienie |
 | 10 | `dym` | czujnik dymu | — | GPIO 1 | 0…4095 | w kanale kominowym |
@@ -126,6 +126,14 @@ dokładnie to, co miały opisywać. **Nic nie trzeba przeliczać.**
 przystawki** (na jej pionie). Mediana 13,5 °C oznacza, że woda w tym obiegu stała
 zimna — czyli przystawka nie pracowała.
 
+**Do czego ten czujnik naprawdę służy (wyjaśnienie użytkownika, 23.10):** nie do
+pomiaru energii, a do **wykrywania, że palenisko trocin pracuje**. Gdy woda w płaszczu
+się nagrzewa, program wie, że to palenisko jest w użyciu — i **serwa mają wtedy
+pracować w trybie właściwym dla trocin**. To sygnał stanu, nie termometr.
+
+**Obieg jest odcięty na czas letni** (woda spuszczona / zawór zamknięty). Dlatego
+czujnik pokazuje temperaturę otoczenia.
+
 ### 3.2 `trociny` to temperatura przystawki, nie paleniska
 
 Mediana **13,5 °C**, maksimum **22,3 °C** w ciągu 28 dni. To temperatury **otoczenia**,
@@ -158,6 +166,43 @@ W 87,4% minut jest identyczna z `ogrz` co do 0,1 °C. Firmware ma osobną łatk�
 
 **Do analizy zawsze używaj `ogrz`, nie `ogrz_sr`.**
 
+### 3.7 Czujnik `trociny` jako detektor paleniska
+
+To nie jest zwykły termometr do liczenia energii. Jego zadanie to **powiedzieć
+programowi, czy palenisko trocin pracuje**.
+
+**Jak to działa w firmware v3.54.0** (sprawdzone w kodzie):
+
+| element | próg | co robi |
+|---|---|---|
+| `MieszadloTrocinyAuto` | **> 30 °C** | włącza automatycznie mieszadło trocin |
+| odczyt nieświeży | — | automatyka **ignoruje** stary lub błędny odczyt (nie włączy mieszadła na podstawie zamrożonej wartości) |
+| ręczne wyłączenie | ≤ 30 °C | blokada trzyma się do ostygnięcia poniżej progu |
+
+**W 28 dniach danych maksimum `trociny` wyniosło 22,3 °C** — próg 30 °C **ani raz nie
+został przekroczony**. Czyli mieszadło nigdy się nie włączyło, a program przez cały
+okres wiedział, że palenisko trocin stoi.
+
+**O serwach:** w tej wersji firmware **nie ma jeszcze** powiązania serw z odczytem
+trocin. Serwa mają trzy tryby (AUTO / RĘCZNY / BEZPIECZNA POZYCJA), ale żaden nie
+zależy od `t_trociny`. To znaczy, że opisana przez użytkownika automatyczna zmiana
+zachowania serw dla paleniska trocin **jest planem na przyszłość**, a nie czymś, co
+już działa. Warto to wiedzieć, żeby nie oczekiwać tego po wgraniu v3.54.0.
+
+**Co trzeba by dodać, gdy przyjdzie czas:** nową gałąź w logice serw, np.
+
+```
+if (t_trociny > PROG_TROCINY && odczyt_swiezy) {
+    tryb serw = TRYB_DLA_TROCIN;   // np. inna pozycja klapy
+} else {
+    tryb serw = TRYB_DLA_DREWNA;
+}
+```
+
+Przy czym próg trzeba dobrać **na podstawie pomiarów**, nie zgadywać — dlatego warto
+najpierw poobserwować `trociny` przez kilka dni palenia w przystawce, zanim ustali się
+liczbę.
+
 ---
 
 ## 4. Problemy znalezione w danych
@@ -179,16 +224,21 @@ Potwierdzone 23.10 przez użytkownika (razem z rysunkiem):
 - ✅ DHT22 — na zewnątrz
 - ✅ `pokoj` — środek pokoju, na wysokości 2,5 m
 
+Potwierdzone 23.10 (ciąg dalszy):
+
+- ✅ **Obieg płaszcza jest odcięty na czas letni** — woda spuszczona, zawór zamknięty.
+  Dlatego `trociny` pokazuje temperaturę otoczenia.
+- ✅ **Czujnik `trociny` pełni rolę detektora paleniska** — ma informować program, że
+  palenisko trocin pracuje, żeby serwa działały inaczej. Szczegóły i stan
+  implementacji: sekcja 3.7.
+- ✅ **Nie ma powiązania serw z `t_trociny` w v3.54.0** — to plan na przyszłość,
+  obecnie działa tylko automatyka mieszadła (> 30 °C).
+
 Nadal otwarte:
 
 1. **Gdzie dokładnie w przystawce siedzi czujnik `trociny`** — w płaszczu wodnym, czy
-   w komorze paleniska trocin? Wartości wskazują na płaszcz (albo na komorę zimnej
-   przystawki).
-2. **Czy płaszcz przystawki jest odcięty zaworem**, gdy przystawka nie pracuje?
-   Z danych wychodzi, że **raczej tak** — przy piecu 90 °C czujnik `trociny` pokazywał
-   13,5 °C. Gdyby obieg był otwarty, woda z kotła podgrzałaby go. Ale to wniosek
-   z pomiarów, nie z oględzin — warto potwierdzić przy piecu.
-3. **Który to pokój** — bo od tego zależy, jak czytać τ budynku (czy czujnik jest
+   w komorze paleniska trocin? Wartości wskazują na płaszcz.
+2. **Który to pokój** — bo od tego zależy, jak czytać τ budynku (czy czujnik jest
    w pomieszczeniu ogrzewanym bezpośrednio przez piec, czy daleko od niego).
 
 ### 3.6 Co zmienia wysokość 2,5 m i ściana wschodnia
