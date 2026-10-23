@@ -270,7 +270,10 @@ class SolarAnalytics(private val prefs: Prefs) {
     }
 
     fun grossGain(): Double = accumulatedGrossGain
-    fun estKwh(): Double = if (hasSamples) (accumulatedGrossGain * 200 * 4.186) / 3600.0 else Double.NaN
+    /** [0.31.26] 100 l, nie 200 kg. Instalacja ma zbiornik 100 l (ARCHIWUM_SOLARNE_STAN.md §3),
+     *  więc równoważnik to 0,1163 kWh/K, a nie 0,2326. Poprzednia wartość (200) była dziedzictwem
+     *  Piec.html i zawyżała wynik dokładnie dwa razy. Nadal rząd wielkości, nie zmierzony uzysk. */
+    fun estKwh(): Double = if (hasSamples) (accumulatedGrossGain * 100 * 4.186) / 3600.0 else Double.NaN
 
     /** `exportCsv()` — zawartość pliku CSV (nazwa: archiwum_solarno_pogodowe_RRRR-MM-DD.csv). */
     fun csv(): String {

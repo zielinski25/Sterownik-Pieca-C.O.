@@ -1,0 +1,17 @@
+Paczka: SterownikCO-Android-v0.31.29-MODEL.zip
+Data:   2026-10-23 (poprawka — pierwsze wydanie miało estKwh * 200)
+
+ZIP
+  rozmiar  17226 B
+  sha256   fd61516fb5bfbe0687134c461baed6aac088cc9b69b62e42fccf8d2348232859
+
+Pliki w środku (app/src/main/java/com/sterownikco/pro/core/)
+  1FBD82686DD8FED69D2F30D14FFAF4F30E45BF47BD3C49DF3C473A716407E630  SolarAnalytics.kt   (288 linii, 14424 B)
+  493009396FEA4FF889D52253E7C5C24DB615117F02F714E12D3A155F50EFFD7E  Weather.kt          (202 linie, 10594 B)
+  DBC8A0DBCFE7688B9510CE69FB3218BB0D558FD2E622B3EB48447EA87F4AAA38  SolarThermalModel.kt (224 linie, 10397 B)
+
+Podstawa: pliki użytkownika v0.31.28 (versionCode 3034)
+  Weather.kt         33EB0CE188815CBD1F126437986AF783D44A4D64EA1F033038509380842AA4BE
+  SolarAnalytics.kt  CF198F521764C1147C541307A43FAB3511ABDC7DCBF5CEDF957D312EAF8AF87B
+
+Weryfikacja: 2026-10-23, na oryginalnych plikach z telefonu (versionCode 3034).
