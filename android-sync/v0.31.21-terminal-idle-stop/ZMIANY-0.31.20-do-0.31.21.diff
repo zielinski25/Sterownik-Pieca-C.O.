@@ -1,0 +1,157 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 3026
+-        versionName = "v0.31.20"
++        versionCode = 3027
++        versionName = "v0.31.21"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff --git a/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -40,6 +40,13 @@
+ /** Minimalny odstęp między automatycznymi pobraniami historii (ms). */
+ private const val HISTORY_MIN_INTERVAL_MS = 60_000L
+ 
++/**
++ * Po tylu ms bez dotknięcia ekranu terminal przestaje pytać Firebase.
++ * Otwarty terminal odpytywał bazę co 5 s bez końca — 720 zapytań na godzinę,
++ * więcej niż cały polling statusu.
++ */
++private const val TERMINAL_DLOG_IDLE_STOP_MS = 5L * 60_000L
++
+ private const val CHART_GROUP_TEMPERATURE = 1
+ private const val CHART_GROUP_SERVO = 2
+ private const val CHART_GROUP_PUMP = 4
+@@ -1632,6 +1639,10 @@
+     var termStatusKind by mutableStateOf("")
+     val termCats = mutableStateMapOf<String, Boolean>()
+     private var terminalDlogJob: Job? = null
++    /** Ostatnia interakcja z arkuszem terminala (`elapsedRealtime`). */
++    private var terminalDlogLastTouch = 0L
++    /** Czy odbiór DLOG został wstrzymany z powodu bezczynności. */
++    private var terminalDlogIdleStopped = false
+     private var terminalDlogUid = ""
+     private var terminalDlogRoot = ""
+     private var terminalDlogSession = ""
+@@ -1748,12 +1759,25 @@
+     }
+ 
+     /** Odczyt prawdziwych chunków DLOG tylko wtedy, gdy arkusz terminala jest otwarty. */
+-    private fun startTerminalDlogPolling() {
+-        if (terminalDlogJob?.isActive == true) return
++    private fun startTerminalDlogPolling(restart: Boolean = false) {
++        if (terminalDlogJob?.isActive == true) {
++            // `restart` obsługuje dotknięcie w tej samej klatce, w której pętla
++            // się domyka: anulowanie zakończonej korutyny nic nie psuje.
++            if (!restart) return
++            terminalDlogJob?.cancel()
++        }
++        terminalDlogLastTouch = SystemClock.elapsedRealtime()
++        terminalDlogIdleStopped = false
+         terminalDlogJob = scope.launch {
+             termStatus = "Łączenie z rzeczywistymi wpisami DLOG z Firebase…"
+             termStatusKind = ""
+             while (isActive && sheet == "terminal") {
++                if (SystemClock.elapsedRealtime() - terminalDlogLastTouch > TERMINAL_DLOG_IDLE_STOP_MS) {
++                    terminalDlogIdleStopped = true
++                    termStatus = "Podgląd wstrzymany po 5 min bez dotykania ekranu — dotknij, aby wznowić."
++                    termStatusKind = "warn"
++                    return@launch
++                }
+                 try {
+                     terminalPollDlogOnce()
+                 } catch (e: CancellationException) {
+@@ -1767,9 +1791,21 @@
+         }
+     }
+ 
++    /**
++     * Wołane z UI przy każdym dotknięciu arkusza terminala (tap, przewinięcie).
++     * Podtrzymuje odbiór DLOG; po bezczynności wznawia go ponownie.
++     */
++    fun terminalTouch() {
++        terminalDlogLastTouch = SystemClock.elapsedRealtime()
++        if (!terminalDlogIdleStopped) return
++        terminalDlogIdleStopped = false
++        startTerminalDlogPolling(restart = true)
++    }
++
+     private fun stopTerminalDlogPolling() {
+         terminalDlogJob?.cancel()
+         terminalDlogJob = null
++        terminalDlogIdleStopped = false
+     }
+ 
+     private suspend fun terminalPollDlogOnce() {
+diff --git a/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt b/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+diff --git a/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt b/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt
+diff --git a/app/src/main/java/com/sterownikco/pro/core/TelemetryCache.kt b/app/src/main/java/com/sterownikco/pro/core/TelemetryCache.kt
+diff --git a/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+diff --git a/app/src/test/java/com/sterownikco/pro/core/TelemetryCacheTest.kt b/app/src/test/java/com/sterownikco/pro/core/TelemetryCacheTest.kt
+diff --git a/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt  (plik nietkniety w 0.31.20 -> diff od 0.31.19)
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+@@ -173,6 +173,8 @@
+             val flapKnown = S.hasData("klapa") && S.klapa in 0..180
+             val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
+             val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
++            // Serwo dostaje 0..100% z centrali; kąt to tylko przelicznik (klapa 180°, syberek 90°).
++            val syberkaLabel = if (syberkaKnown) "${Math.round(S.syberka * 100.0 / 90.0)}%" else "—"
+             val pendingLabel = pendingServo?.let { "CEL ${it.second.requestedPercent}%" }
+             QCard(
+                 title = "SERWO", icon = "servo",
+@@ -188,9 +190,9 @@
+                 },
+                 sub = pendingServo?.let { "cel ${it.first} ${it.second.targetDegrees}° · oczekuje na status" }
+                     ?: when {
+-                        flapKnown && syberkaKnown -> "klapa ${S.klapa}° · syberek ${S.syberka}°"
+-                        flapKnown -> "klapa ${S.klapa}°"
+-                        syberkaKnown -> "syberek ${S.syberka}°"
++                        flapKnown && syberkaKnown -> "klapa $flapLabel · syberek $syberkaLabel"
++                        flapKnown -> "klapa $flapLabel"
++                        syberkaKnown -> "syberek $syberkaLabel"
+                         else -> "brak prawidłowego odczytu pozycji"
+                     },
+                 state = if (!servoKnown || pendingServo != null) "warn" else when (servoMode) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
+diff --git a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt  (plik nietkniety w 0.31.20 -> diff od 0.31.19)
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
+@@ -41,6 +41,8 @@
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.Brush
++import androidx.compose.ui.input.pointer.PointerEventPass
++import androidx.compose.ui.input.pointer.pointerInput
+ import androidx.compose.ui.graphics.SolidColor
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.text.TextStyle
+@@ -492,7 +494,21 @@
+         servoCommand = null
+     }
+ 
+-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++    Column(
++        Modifier.fillMaxWidth()
++            // Samo dotknięcie (tap, przewinięcie) podtrzymuje odbiór DLOG.
++            // Zdarzenia są tylko obserwowane (Pass.Initial), nie konsumowane,
++            // więc przewijanie konsoli działa bez zmian.
++            .pointerInput(Unit) {
++                awaitPointerEventScope {
++                    while (true) {
++                        awaitPointerEvent(PointerEventPass.Initial)
++                        m.terminalTouch()
++                    }
++                }
++            },
++        verticalArrangement = Arrangement.spacedBy(12.dp)
++    ) {
+         // 1. nagłówek + status
+         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)
+             .border(BorderStroke(width = 1.dp, color = Pal.Border), RoundedCornerShape(bottomStart = 0.dp, bottomEnd = 0.dp)),

@@ -1,0 +1,85 @@
+diff -ruN android024_base/app/build.gradle.kts android023/app/build.gradle.kts
+--- a/app/build.gradle.kts	2026-10-22 10:16:55.217422553 +0000
++++ b/app/build.gradle.kts	2026-10-22 10:16:55.229422614 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 3030
+-        versionName = "v0.31.24"
++        versionCode = 3031
++        versionName = "v0.31.25"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff -ruN android024_base/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt android023/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt	2026-10-22 10:16:55.209422512 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt	2026-10-22 10:16:55.229422614 +0000
+@@ -233,7 +233,13 @@
+ 
+ /** `.qcard` — szybka karta 3-kolumnowa. */
+ @Composable
+-fun RowScope.QCard(title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit) {
++fun RowScope.QCard(
++    title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit,
++    /** [0.31.25] Krótka etykieta obok tytułu (np. tryb pracy serwa). Renderowana
++     *  jako kolorowa pigułka — innym stylem niż tytuł i wartość. Pusta = brak. */
++    tag: String = "",
++    tagColor: Color = Pal.Cyan
++) {
+     val bd = when (state) {
+         "ok" -> Pal.rgba(74, 222, 128, .45f); "warn" -> Pal.rgba(251, 191, 36, .5f)
+         "err" -> Pal.rgba(255, 95, 120, .55f); else -> Pal.Border
+@@ -247,6 +253,17 @@
+     ) {
+         Row(verticalAlignment = Alignment.CenterVertically) {
+             Text(title, style = Txt.quickTitle, modifier = Modifier.weight(1f), maxLines = 1)
++            if (tag.isNotEmpty()) {
++                Text(
++                    tag,
++                    style = Txt.badge,
++                    color = tagColor,
++                    maxLines = 1,
++                    modifier = Modifier.padding(end = 5.dp)
++                        .background(tagColor.copy(alpha = 0.14f), RoundedCornerShape(4.dp))
++                        .padding(horizontal = 4.dp, vertical = 1.dp)
++                )
++            }
+             AppIcon(icon, size = 15.dp, tint = Pal.Cyan)
+         }
+         Text(value, style = Txt.quickVal, color = vc, maxLines = 1, overflow = TextOverflow.Ellipsis)
+diff -ruN android024_base/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt android023/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt	2026-10-22 10:16:55.209422512 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt	2026-10-22 10:16:55.229422614 +0000
+@@ -172,15 +172,19 @@
+             val servoKnown = servoMode != null
+             val flapKnown = S.hasData("klapa") && S.klapa in 0..180
+             val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
+-            // [0.31.24] Ten kafelek ma tyle samo linii co POMPA i MIESZADŁO:
+-            // wartość + JEDEN podpis. Tryb dopisany na końcu podpisu, a nie w czwartej
+-            // linii — cztery linie obok trójlinijkowych sąsiadów wyglądały ciasno.
++            // [0.31.25] Tryb pracy (AUTO / RĘCZNY) siedzi w pigułce OBOK tytułu —
++            // innym stylem niż reszta, więc nie zabiera linii i nie udaje wartości.
++            // Pod spodem zostają dwie pozycje: klapa i syberek, każda z własnym %.
+             // Kąt z centrali (klapa 0..180°, syberek 0..90°) → procent, bo tylko
+             // procent jest porównywalny między dwoma serwami o różnym zakresie.
+             val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
+             val syberkaLabel = if (syberkaKnown) "${Math.round(S.syberka * 100.0 / 90.0)}%" else "—"
+             QCard(
+                 title = "SERWO", icon = "servo",
++                // BEZPIECZNY nie mieści się w pigułce obok tytułu (10 znaków), więc
++                // w tym trybie tryb przejmuje wartość, a pigułka znika.
++                tag = when (servoMode) { 1 -> "AUTO"; 2 -> "RĘCZNY"; else -> "" },
++                tagColor = if (servoMode == 2) Pal.Warn else Pal.Cyan,
+                 value = when {
+                     pendingServo != null -> "CEL ${pendingServo.second.requestedPercent}%"
+                     servoMode == 3 -> "BEZPIECZNY"
+@@ -189,8 +193,6 @@
+                 sub = when {
+                     pendingServo != null -> "${pendingServo.first} ${pendingServo.second.targetDegrees}° · czekam"
+                     servoMode == 3 -> "tryb bezpieczeństwa"
+-                    servoMode == 2 -> "syberek $syberkaLabel · RĘCZNY"
+-                    servoMode == 1 -> "syberek $syberkaLabel · AUTO"
+                     else -> "syberek $syberkaLabel"
+                 },
+                 // AUTO = normalna praca, więc ramka neutralna — tak jak POMPA i MIESZADŁO.

@@ -1,0 +1,53 @@
+Host tests (run from this directory):
+
+  g++ -std=c++11 -Wall -Wextra -Werror AutoIgnitionColdTimerTest.cpp -o /tmp/auto-ignition-test && /tmp/auto-ignition-test
+  g++ -std=c++11 -Wall -Wextra -Werror MieszadloTrocinyAutoTest.cpp -o /tmp/mixer-sawdust-test && /tmp/mixer-sawdust-test
+  g++ -std=c++11 -Wall -Wextra -Werror AlarmBuzzerProfilesTest.cpp -o /tmp/alarm-buzzer-test && /tmp/alarm-buzzer-test
+  g++ -std=c++11 -Wall -Wextra -Werror SolarDailyArchiveTest.cpp -o /tmp/solar-daily-test && /tmp/solar-daily-test
+
+Testy logiki archiwum (bez Arduino):
+  g++ -std=c++11 -Wall -Wextra -Werror SolarDailyArchiveTest.cpp -o /tmp/solar-daily-test
+  /tmp/solar-daily-test        -> PASS (339 sprawdzen)
+  Sprawdza granice doby Europe/Warsaw 23/24/25 h, agregat kanalu t_panel,
+  symulacje, dziury, detekcje poboru, odtworzenie po restarcie, snapshot GHI,
+  URL z granicami UTC, format linii raportu, godziny min/max, prog "za malo
+  probek", rozroznienie "prognoza na jutro" / "brak probek" / "brak odczytow".
+
+SYMULATOR RAPORTU (v3.53.0) -- uruchom PRZED kazda prosba o wgranie firmware:
+  g++ -std=c++11 -Wall -Wextra -Werror -I.. ReportSimulation.cpp -o /tmp/reportsim
+  /tmp/reportsim              -> WYNIK OK: 3665 sprawdzen, 0 bledow
+  /tmp/reportsim --verbose    -> pelna tresc kazdej wiadomosci
+
+  Sklada CALE wiadomosci Telegrama tym samym kodem, ktory jest w firmware
+  (solar_daily::buildReport + splitForTelegramParts z ../SolarDailyArchive.h)
+  i sprawdza KAZDA wiadomosc osobno: <= 4096 znakow, niepusta, prefiks
+  "(ciag dalszy)" tylko na wiadomosciach 2..N, zaden znak nie ginie:
+  swiezy start, 00:05, prog 30 probek, poludnie, wieczor, doba zamknieta,
+  dziura, symulacje, tryb "spuszczona", rekord CO, doba 23/25 h, 30 dni,
+  awaria GHI, brak zegara, pusty katalog -- plus przemiatanie calej doby co
+  10 minut (145 wariantow) i kazdej liczby dni 1..30 (30 wariantow), oba
+  z pelnym sprawdzeniem podzialu. Drukuje granice wiadomosci i ich rozmiary.
+  S24 odtwarza raport /archiwum_test (30 dni wymyslonych) w 4 wariantach dat,
+  w tym doby 23 h i 25 h -- to dowod, ze podzial zadziala na urzadzeniu.
+
+  Dlaczego to istnieje: wersje v3.52.7-v3.52.11 naprawialy rzeczy widoczne
+  dopiero w gotowej wiadomosci, bo testy sprawdzaly tylko pojedyncza linie.
+  Kazda taka poprawka kosztowala jedna aktualizacje OTA.
+
+Naglowek ../SolarDailyArchive.h nie zawiera I/O ani sieci -- dzieki temu ten
+sam kod dziala na ESP32 i na komputerze.
+
+PRZELACZNIK BUFORA OFFLINE (v3.54.0) -- uruchom PRZED prosba o wgranie:
+  cd host
+  python3 run_host_tests.py            -> WYNIK KONCOWY: OK (60 sprawdzen)
+  python3 run_host_tests.py -v         -> dodatkowo JSON i logi
+
+  Skrypt wycina z ../../main_centrala.cpp DOKLADNIE funkcje dodane w v3.54.0
+  (spoolRuntimePersistArmed/Arm/Stop/RestoreFromNvs, cztery linie JSON,
+  galezie ACK spoolrt_wl/spoolrt_wyl), kompiluje je g++ z atrapa Preferences
+  i String (host/shim.h) i sprawdza: zapis/odczyt NVS, bramki ARM, odtworzenie
+  po restarcie, przypadek aktualizacji (namespace jest, klucza nie ma),
+  poprawnosc JSON-a prawdziwym parserem.
+
+  Wymaga g++ i Pythona 3 -- bez ESP32 i bez PlatformIO.
+  Sprawdzone mutacjami: kazde zepsucie tych funkcji wywala test.
