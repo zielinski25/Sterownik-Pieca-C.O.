@@ -1,0 +1,23 @@
+Paczka: SterownikCO-Android-v0.31.30-CZYTELNE.zip
+Data:   2026-10-23
+
+ZIP
+  rozmiar  23672 B
+  sha256   3BDCD081C0507931F11FDBFF0E834E5E6B9AD40D915E71BC6640A0F7389E690E
+
+Pliki w środku
+  386B367A6EA5F413F6E2B9AEFBA6887D088D4DF411606E1FFC9E1DB3AC97246E
+    app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt       (923 linie, 51170 B)
+
+  B5DEA99128C693C3F13AD8B558BE9F986E87324E70EA1495D918EF19E07E8BC1
+    app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt (406 linii, 21204 B)
+
+Podstawa (pliki użytkownika v0.31.28 — potwierdzone na jego dysku)
+  81E6C58BF52064FD6A28F6131AFC2617F0FC160C527344CB1E2E396141465AD1  Weather.kt
+  770A4D65F5E6DAD7FBFF59C14C00288BF12FF7307550319F41CA8ED33FBA9EC6  Sensors.kt
+
+Latka ZMIANY-0.31.29-do-0.31.30.diff:
+  - suchy przebieg na czystej kopii v0.31.28: "checking file", bez FAILED
+  - po nalozeniu wynik = pliki z tej paczki, bit w bit (cmp)
+  - nawiasy: Weather.kt ( +18/) +18, { +5/} +5, balans 0
+             Sensors.kt ( +6/) +6, { +4/} +4, balans 0
