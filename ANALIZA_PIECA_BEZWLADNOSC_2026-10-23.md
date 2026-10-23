@@ -349,9 +349,162 @@ Instalacja jest „szybka" — reaguje w minutach. To dobra wiadomość dla ster
 
 ---
 
-## 10. Co jeszcze można wycisnąć z tego pliku
+## 10. Druga runda — co jeszcze wycisnąłem z danych
 
-Dane są bogatsze, niż to, o co pytałeś. Można z nich jeszcze policzyć:
+Po pierwszym raporcie wróciłem do pliku z nowymi metodami. Cztery rzeczy wyszły nowe.
+
+### 10.1 Energia słoneczna w kilowatogodzinach
+
+**Kluczowe odkrycie:** czujnik `panel` (BUS_3, `czujnik_temp_Panel_Plus`) siedzi
+**w zbiorniku**, nie na absorberze. Potwierdza to komentarz w firmware (v3.52.0):
+„czujnik W ZBIORNIKU — czyli mierzymy masę wody, a nie absorber".
+
+Skoro mierzy 100 litrów wody, to z temperatury można policzyć energię:
+
+```
+C = 100 kg × 4,186 kJ/(kg·°C) = 418,6 kJ/°C = 0,1163 kWh/°C
+energia netto = 0,1163 × (T_max − T_min)
+```
+
+| dzień | min | max | wzrost | energia netto | godzin > 40 °C |
+|---|---|---|---|---|---|
+| 09-26 | 20,8 | 46,3 | 25,5 | 2,97 kWh | 6,8 |
+| 09-27 | 18,8 | 48,8 | 30,0 | **3,49 kWh** | 14,0 |
+| 09-28 | 38,3 | 66,3 | 28,0 | 3,26 kWh | 20,6 |
+| 09-29 | 49,8 | 69,5 | 19,7 | 2,29 kWh | 25,4 |
+| 09-30 | 38,0 | 51,5 | 13,5 | 1,57 kWh | 22,6 |
+| 10-01 | 39,0 | 53,3 | 14,3 | 1,66 kWh | 21,8 |
+| 10-02 | 32,3 | 51,0 | 18,7 | 2,17 kWh | 10,7 |
+| 10-03 | 27,8 | 49,3 | 21,5 | 2,50 kWh | 7,8 |
+| 10-04 | 20,5 | 40,8 | 20,3 | 2,36 kWh | 0,5 |
+| 10-05 | 20,0 | 38,3 | 18,3 | 2,13 kWh | 0,0 |
+| 10-06 | 25,0 | 40,0 | 15,0 | 1,74 kWh | 0,0 |
+| 10-07 | 28,3 | 48,3 | 20,0 | 2,33 kWh | 10,9 |
+| 10-08 | 27,0 | 43,5 | 16,5 | 1,92 kWh | 3,9 |
+| 10-09 | 32,8 | 46,3 | 13,5 | 1,57 kWh | 12,6 |
+| 10-10 | 37,0 | 41,3 | 4,3 | 0,50 kWh | 7,0 |
+| 10-11 | 34,5 | 42,8 | 8,3 | 0,97 kWh | 4,8 |
+| 10-12 | 33,3 | 44,5 | 11,2 | 1,30 kWh | 6,2 |
+| 10-13 | 33,3 | 39,8 | 6,5 | 0,76 kWh | 0,0 |
+| 10-16 | 18,8 | 47,0 | 28,2 | **3,28 kWh** | 5,4 |
+| 10-21 | 19,8 | 39,3 | 19,5 | 2,27 kWh | 0,0 |
+
+**Suma: 41,0 kWh w 20 dni = 2,05 kWh na dzień** (szacunek dolny).
+
+Status: **szacunek dolny, nie pomiar uzysku.** Ta liczba **nie obejmuje** ciepłej wody
+pobranej ze zbiornika — jeśli ktoś brał prysznic, woda się wychładzała i energia
+„uciekała" z pomiaru. Realny uzysk jest wyższy. Nie jest to też energia Słońca na
+kolektorze — to energia, która faktycznie **została w wodzie**.
+
+Energia zatrzymana w zbiorniku przy szczycie:
+
+| dzień | szczyt | energia ponad 20 °C |
+|---|---|---|
+| 09-28 | 66,3 °C | 5,38 kWh |
+| **09-29** | **69,5 °C** | **5,76 kWh** |
+
+Czyli w najlepszym dniu zbiornik 100 l zmagazynował **5,76 kWh** — jak grzałka 2 kW
+pracująca prawie 3 godziny.
+
+### 10.2 Model prognostyczny — sprawdzony i działa
+
+Dopasowałem model stygnięcia do pierwszych 2 godzin po szczycie, a potem **sprawdziłem
+go po 4 kolejnych godzinach** na rzeczywistych danych.
+
+| τ | temperatura startu | rzeczywista po 6,2 h | prognoza | błąd |
+|---|---|---|---|---|
+| 7,37 h | 25,8 °C | 18,0 | 18,1 | +0,1 |
+| 14,58 h | 20,2 °C | 16,3 | 16,1 | −0,2 |
+| 16,41 h | 12,6 °C | 9,3 | 9,1 | −0,2 |
+| 18,27 h | 16,2 °C | 13,5 | 13,0 | −0,5 |
+| 4,49 h | 32,6 °C | 22,0 | 20,6 | −1,4 |
+| 2,03 h | 48,2 °C | 26,5 | 30,1 | +3,6 |
+| 1,87 h | 60,5 °C | 25,5 | 29,2 | +3,7 |
+
+**Błąd po 4 godzinach: mediana −0,2 stopnia**, zakres od −1,4 do +3,7.
+
+Wniosek: **można przewidywać temperaturę pieca z dokładnością poniżej stopnia**.
+Największy błąd pojawia się przy gorącym piecu (60 °C) i szybkim stygnięciu — wtedy
+model przeszacowuje o około 3,6 stopnia, bo nie zna chwilowej mocy paleniska.
+
+To otwiera konkretną funkcję: „masz 70 °C, jeśli nie dołożysz, o 22:00 będzie 48 °C".
+
+### 10.3 Drugie, niezależne oszacowanie przepływu
+
+W pierwszym raporcie przepływ szacowałem z mocy i różnicy temperatur. Teraz drugą drogą:
+**z opóźnienia i objętości wody w instalacji**.
+
+```
+przepływ = objętość instalacji / czas przejścia (6 minut)
+```
+
+| objętość instalacji | przepływ | na minutę |
+|---|---|---|
+| 80 litrów | 0,80 m³/h | 13,3 l/min |
+| **100 litrów** | **1,00 m³/h** | 16,7 l/min |
+| 120 litrów | 1,20 m³/h | 20,0 l/min |
+| 150 litrów | 1,50 m³/h | 25,0 l/min |
+| 200 litrów | 2,00 m³/h | 33,3 l/min |
+
+**Dwie niezależne metody dają ten sam rząd: 0,8 do 1,2 m³/h.** To podnosi wiarygodność
+wcześniejszego szacunku mocy grzejników (2,5–5 kW).
+
+### 10.4 Jakość czujników — konkretne liczby
+
+| kanał | brakujące minuty | artefakty (skoki > 6 stopni) |
+|---|---|---|
+| **ogrz (zasilanie)** | 1829 (4,5%) | **49 (0,12%)** |
+| powrót | 1829 (4,5%) | 14 (0,03%) |
+| bojler | 1829 (4,5%) | 4 (0,01%) |
+| pokój | 1829 (4,5%) | 0 (0,00%) |
+| panel | 1829 (4,5%) | 1 (0,00%) |
+| zewn | 1859 (4,6%) | 1 (0,00%) |
+| trociny | 1829 (4,5%) | 0 (0,00%) |
+
+Dwie obserwacje:
+
+1. **Braki są niemal identyczne we wszystkich kanałach** (1829 próbek). To znaczy, że
+   nie gubią się pojedyncze czujniki — gubią się **całe minuty zapisu**. 4,5% to około
+   **27 minut na dobę**.
+2. **Najgorszy jest czujnik zasilania** — 49 skoków, trzy razy więcej niż powrót.
+   To ten sam czujnik, który dawał 16,0 °C w środku 80 °C.
+
+### 10.5 Dni bez palenia — dom trzyma temperaturę sam
+
+Przez 15 z 28 dni piec w ogóle nie palił. Co się wtedy działo z pokojem:
+
+| dzień | pokój min | pokój max | zewnątrz (mediana) | amplituda dobowa |
+|---|---|---|---|---|
+| 09-28 | 17,0 | 17,5 | 16,0 | 0,5 |
+| 09-30 | 16,5 | 17,0 | 16,5 | 0,5 |
+| 10-02 | 16,0 | 16,5 | 13,5 | 0,5 |
+| 10-04 | 15,0 | 16,0 | 15,0 | 1,0 |
+| 10-09 | 16,0 | 16,0 | 15,5 | **0,0** |
+| 10-18 | 16,0 | 18,0 | 10,5 | 2,0 |
+| **10-19** | 15,0 | **19,5** | 11,0 | **4,5** |
+
+Amplituda 0,5–1,0 stopnia na dobę bez palenia. To potwierdza wcześniejszy wynik:
+**τ budynku ≈ 55 godzin**, dom stygnie w skali dni.
+
+Wyjątek: **19.10** — pokój wzrósł o 4,5 stopnia przy 11 °C na zewnątrz, bez palenia.
+To czyste zyski słoneczne. Tego dnia panel miał 46,3 °C, a słońce grzało przez okna.
+
+### 10.6 Ile energii siedzi w piecu
+
+| wariant kotła | C | przy 50 °C | przy 70 °C | przy 90 °C |
+|---|---|---|---|---|
+| 40 l wody + 120 kg stali | 226 kJ/°C | 1,9 kWh | 3,1 kWh | 4,4 kWh |
+| **70 l wody + 150 kg stali** | **367 kJ/°C** | **3,1 kWh** | **5,1 kWh** | **7,1 kWh** |
+| 100 l wody + 200 kg stali | 517 kJ/°C | 4,3 kWh | 7,2 kWh | 10,0 kWh |
+| 150 l wody + 250 kg stali | 750 kJ/°C | 6,3 kWh | 10,4 kWh | 14,6 kWh |
+
+To jest odpowiedź na pytanie „ile piec daje po wygaśnięciu" — **od 5 do 10 kWh**
+zakumulowanych w żeliwie i wodzie. Przy zapotrzebowaniu domu 2–3 kW to ciepło na
+2–4 godziny grzania.
+
+Status: **szacunek** — zależy od pojemności wodnej kotła, której nie ma w danych.
+
+### 10.7 Co nadal wymaga dodatkowych danych
 
 | co | czego potrzeba | po co |
 |---|---|---|
@@ -359,11 +512,7 @@ Dane są bogatsze, niż to, o co pytałeś. Można z nich jeszcze policzyć:
 | sprawność instalacji | moc paleniska + przepływ | ile ciepła dociera do domu |
 | UA grzejników w W/°C | przepływ (przepływomierz) | czy grzejniki są przewymiarowane |
 | koszt palenia | cena paliwa + moc | ile kosztuje doba grzania |
-| wykrywanie awarii | historia | kiedy czujnik zaczyna kłamać |
-
-W pliku jest też sporo **artefaktów pomiarowych** — pojedyncze odczyty 16,0 °C w środku
-80 °C, wartości −1, brakujące minuty. Warto by je filtrować już na poziomie firmware
-albo w aplikacji, żeby wykresy nie kłamały.
+| strata kominowa | temperatura spalin | ile ucieka kominem |
 
 ---
 
@@ -393,6 +542,28 @@ Metody i wartości odniesienia, których użyłem:
 10. **Stała czasowa budynku z okresów swobodnego stygnięcia** — ScienceDirect,
     „Thermal characterisation of residential building dynamics": metoda Cool-Down,
     najpierw H z okresów quasi-ustalonych, potem C z okresów bez zasilania.
+11. **Współczynnik strat budynku (HLC) z „energy signature"** — arXiv 2503.22321,
+    „Estimation of Building Energy Demand Characteristics using Bayesian Statistics and
+    Energy Signature Models": Φ = Φ0 + UA0·(T_wew − T_zewn), nachylenie = HLC [W/K].
+12. **Metoda Cool-Down dla budynku** — ScienceDirect, „Thermal characterisation of
+    residential building dynamics for demand response": C = τ·H, gdzie H z okresów
+    quasi-ustalonych, a C z okresów bez zasilania.
+13. **Fazy spalania drewna** — ScienceDirect, „Molecular characterization and optical
+    properties of primary emissions from a residential wood burning boiler": cykl dzieli
+    się na zapłon, spalanie i żarzenie; w fazie żarzenia temperatura spada, a CO rośnie.
+    Użyte do interpretacji sygnału dymu.
+14. **Stratyfikacja zbiornika solarnego** — solimpeks.com, „Tank stratification":
+    warstwowanie wody daje do 20% więcej uzysku; kolektor karmiony najzimniejszą wodą
+    pracuje sprawniej. Uzasadnia, dlaczego czujnik w zbiorniku mierzy masę wody.
+15. **Wzory hydrauliczne** — Taco / Bell & Gossett: GPM = BTU/h ÷ (500·ΔT), w metryce
+    Q[m³/h] = 0,86·P[kW] ÷ ΔT. Użyte do przeliczenia różnicy temperatur na przepływ.
+
+**Czego próbowałem i nie wyszło.** Regresja „energy signature" na tych danych dała
+**R² = 0,013** (nachylenie −0,12). Powód: instalacja nigdy nie jest w stanie ustalonym
+— pompa taktuje, piec cyklicznie pali się i stygnie. Metoda wymaga długich okresów
+quasi-ustalonych, których tu nie ma. Podobnie test „czy τ zależy od temperatury
+zewnętrznej" (wpływ ciągu kominowego): nachylenie 0,034 h/°C przy R² = 0,013, czyli
+brak zależności — ale próbek było tylko 6, więc wynik jest niekonkluzywny.
 
 ---
 
@@ -400,7 +571,16 @@ Metody i wartości odniesienia, których użyłem:
 
 ```bash
 python3 narzedzia/analiza_pieca.py google_drive/akwarium-367be-default-rtdb-2026-export.json
+python3 narzedzia/analiza_zaawansowana.py google_drive/akwarium-367be-default-rtdb-2026-export.json
 ```
+
+**Pierwszy skrypt** (13 sekcji): jakosc danych, sygnal palenia, epizody grzania, stan
+pompy, bezwladnosc, czasy stygniecia, odbior grzejnikow, opoznienie, dynamike
+rozpalania, przeliczenia na moce, bezwladnosc budynku, solar, bilans dobowy.
+
+**Drugi skrypt** (6 sekcji): energie sloneczna w kWh, weryfikacje modelu
+prognostycznego, jakosc czujnikow, przeplyw z opoznienia, dni bez palenia, energie
+zakumulowana w piecu.
 
 Skrypt wypisuje 13 sekcji: jakość danych, sygnał palenia, epizody grzania, stan pompy,
 bezwładność, czasy stygnięcia, odbiór grzejników, opóźnienie, dynamikę rozpalania,
