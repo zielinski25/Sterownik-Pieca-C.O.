@@ -676,10 +676,10 @@ czujnik_temp_C_O_powrot[8] = {0x28, 0xC8, 0xFD, 0xB5, 0x91, 0x25, 0x06, 0x1A};  
 tam gdzie gorąca woda wychodzi z kotła w instalację. Obok niego, na tej samej
 magistrali, wisi `czujnik_temp_C_O_powrot` — powrót.
 
-Doprecyzowanie z rozdziału 15: w tę samą rurę, **zaraz za kotłem**, wpięta jest rura
-z płaszcza wodnego przystawki na trociny. Czujnik leży za tym wpięciem, więc mierzy
-wodę po zmieszaniu obu źródeł. W analizowanym okresie przystawka stała zimna, więc
-praktycznie była to woda z kotła.
+Doprecyzowanie z rozdziału 15 (po rysunku użytkownika): przystawka na trociny ma
+**własny pion z własnym czujnikiem** (`trociny`), a `ogrz` siedzi na **osobnym pionie
+nad piecem**. Czyli `ogrz` mierzy **czystą wodę z kotła**, bez domieszki z płaszcza
+przystawki. Analizy w rozdziałach 3–14 opisują więc dokładnie to, co miały.
 
 **Wnioski z tego:**
 
@@ -973,12 +973,30 @@ przystawki
 
 ### 15.2 Dlaczego to jest ważne dla wcześniejszych analiz
 
-**Czujnik `ogrz` mierzy wodę po zmieszaniu dwóch źródeł** — z kotła i z płaszcza
-przystawki. Nie mierzy samego kotła.
+**Sprostowanie po rysunku użytkownika (23.10).** W pierwszej wersji tego rozdziału
+napisałem, że czujnik `ogrz` mierzy wodę po zmieszaniu kotła i płaszcza przystawki.
+Rysunek pokazał, że jest inaczej: na schemacie są **dwa osobne piony**, a na każdym
+po jednym czujniku (fioletowe kulki).
 
-Gdyby przystawka pracowała, temperatura na wyjściu zależałaby od tego, które palenisko
-akurat grzeje mocniej. **Porównywanie takich okresów z okresami, gdy przystawka stała,
-byłoby błędem.**
+```
+   ● "ogrz"  ──── woda z KOTŁA C.O.          (pion nad piecem)
+   ● "trociny" ── woda z PŁASZCZA PRZYSTAWKI (pion nad przystawką)
+                        │
+                        ▼
+              dopiero dalej łączą się w instalacji
+```
+
+**Wniosek: `ogrz` mierzy czystą wodę z kotła C.O.**, niezależnie od tego, co robi
+przystawka.
+
+**Co to znaczy dla raportu: wszystko zostaje w mocy.** Rozdziały 3–14 opisują wodę
+z kotła — dokładnie to, co miały opisywać. Nie ma żadnej domieszki, której trzeba by
+się pozbywać.
+
+**Za to `trociny` to nie palenisko trocin**, a woda w płaszczu wodnym przystawki.
+Mediana 13,5 °C oznacza, że ten obieg stał zimny — czyli albo przystawka nie była
+używana, albo jej obieg jest odcięty zaworem. Z danych nie da się tego rozstrzygnąć,
+ale przy piecu 90 °C woda w otwartym obiegu miałaby znacznie więcej.
 
 ### 15.3 Dobra wiadomość: przystawka nie pracowała
 
@@ -998,16 +1016,22 @@ rozdzielenia, co grzało.
 
 ### 15.4 Co to znaczy dla pomiarów
 
-| sytuacja | co pokazuje `ogrz` | czy da się analizować |
-|---|---|---|
-| tylko piec C.O. | wodę z kotła | **tak** — tak było w tych danych |
-| tylko przystawka | wodę z płaszcza | tak, ale to inny układ |
-| oba naraz | mieszaninę | **nie** — bez rozdzielenia źródeł |
-| oba, ale jeden zgaszony | wodę z pracującego | tak, z ostrożnością |
+Skoro czujniki są na osobnych pionach, `ogrz` **nie jest zanieczyszczone** wodą
+z przystawki:
 
-**Praktyczna wskazówka:** jeśli kiedyś zaczniesz palić w przystawce, warto w aplikacji
-zanotować datę — inaczej za pół roku analiza pokaże „skok sprawności", który będzie
-tylko zmianą źródła ciepła.
+| sytuacja | co pokazuje `ogrz` | co pokazuje `trociny` | czy da się analizować |
+|---|---|---|---|
+| tylko piec C.O. | wodę z kotła | wodę w płaszczu (zimną) | **tak** — tak było w tych danych |
+| tylko przystawka | wodę z kotła (zimną) | wodę w płaszczu (gorącą) | tak — dwa niezależne odczyty |
+| oba naraz | wodę z kotła | wodę w płaszczu | **tak** — i teraz wiadomo, które grzeje |
+
+To jest wygodniejszy układ, niż myślałem wcześniej. Dwa osobne piony dają **dwa
+niezależne termometry** — można z nich wnioskować, które palenisko pracuje, a nie tylko
+jaka jest wypadkowa temperatura.
+
+**Praktyczna wskazówka:** jeśli kiedyś zaczniesz palić w przystawce, w danych od razu
+będzie to widać — `trociny` skoczy z 13 °C do kilkudziesięciu, a `ogrz` będzie
+pokazywało osobno temperaturę kotła.
 
 ### 15.5 Gdzie wisi czujnik pokoju — i dlaczego to ważne
 

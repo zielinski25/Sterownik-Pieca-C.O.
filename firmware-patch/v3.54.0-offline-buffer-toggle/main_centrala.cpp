@@ -21412,10 +21412,10 @@ SPIClass sdSPI(FSPI);
 // Opis pochodzi od użytkownika — nie jest domysłem. Pełna mapa:
 // MAPA_CZUJNIKOW.md w katalogu głównym repozytorium.
 //
-//   C_O          — RURA WYJŚCIOWA z pieca C.O., ZA miejscem, w którym wpięta
-//                  jest rura z płaszcza wodnego przystawki na trociny.
-//                  Czyli mierzy wodę PO ZMIESZANIU dwóch źródeł: kotła C.O.
-//                  i płaszcza przystawki. Nie mierzy paleniska.
+//   C_O          — na WŁASNYM PIONIE nad piecem C.O. (rysunek użytkownika:
+//                  dwa piony, po jednym czujniku na każdym). Mierzy CZYSTĄ
+//                  wodę z kotła, zanim spotka się z wodą z płaszcza
+//                  przystawki. Nie mierzy paleniska.
 //   Panel_Plus   — zbiornik solarny 100 l na dachu (termosyfon, bez pompy).
 //   Wewnatrz     — środek pokoju, na wysokości 2,5 m (pod sufitem — przy
 //                  interpretacji komfortu odejmij 2-4 C, bo tyle wynosi
@@ -21425,7 +21425,8 @@ SPIClass sdSPI(FSPI);
 //                  kotłownią). Rano dostaje słońce, ale w danych nie widać
 //                  porannego zafałszowania — czujnik jest osłonięty.
 //   C_O_powrot   — rura powrotna, przed kotłem.
-//   C_O_trociny  — W PRZYSTAWCE NA TROCINY.
+//   C_O_trociny  — na WŁASNYM PIONIE nad przystawką na trociny: woda
+//                  z jej PŁASZCZA WODNEGO (nie temperatura paleniska).
 //
 // O przystawce na trociny (opis użytkownika):
 //   Przystawka stoi przy piecu C.O. i jest osobnym paleniskiem na trociny.
@@ -21435,13 +21436,13 @@ SPIClass sdSPI(FSPI);
 //   kilku centymetrów ogrzewa RUSZTA pieca C.O. — czyli piec C.O. jest
 //   dodatkowym wymiennikiem ciepła dla spalania trocin.
 //
-//   UWAGA dla analizy danych: gdy przystawka pracuje, "C_O" pokazuje
-//   mieszaninę wody z kotła i z płaszcza — porównywanie z okresami, gdy
-//   przystawka stała, nie jest wtedy poprawne. W danych z 26.09–23.10.2026
-//   "C_O_trociny" miało medianę 13.5 C, czyli przystawka NIE była używana
-//   i "C_O" odpowiadało samej wodzie z kotła.
+//   UWAGA dla analizy danych: "C_O" i "C_O_trociny" to dwa OSOBNE piony,
+//   więc "C_O" nie jest zanieczyszczone wodą z przystawki — mierzy czystą
+//   wodę z kotła niezależnie od tego, czy przystawka pracuje. W danych
+//   z 26.09–23.10.2026 "C_O_trociny" miało medianę 13.5 C, czyli obieg
+//   przystawki był odcięty/stał zimny.
 //
-//   "C_O_trociny" to temperatura płaszcza/komory przystawki, a NIE paleniska
+//   "C_O_trociny" to temperatura WODY w płaszczu przystawki, a NIE paleniska
 //   trocin (palenisko ma setki stopni, czujnik DS18B20 ma zakres do 125 C).
 //
 //   DHT22 (wilgotnosc, kanal "rh") jest NA ZEWNATRZ — dlatego mediana 92.9%

@@ -10,64 +10,65 @@ domysł. Wartości temperatur pochodzą z eksportu RTDB (40 205 rekordów, 28 dn
 
 ## 1. Schemat instalacji
 
+Schemat narysowany przez użytkownika (23.10). **Fioletowe kulki = czujniki.**
+Na rysunku są **dwie** — po jednej na każdym pionie.
+
 ```
-                              ┌──────────┐
-                              │  KOMIN   │
-                              └────▲─────┘
-                                   │ spaliny
-   ┌───────────────────────────────┴──────────────────────┐
-   │                      PIEC C.O.                       │
-   │                                                      │
-   │   ┌──────────────────┐                               │
-   │   │   RUSZTA         │◄─── płomień z przystawki      │
-   │   │   (palenisko     │     przez korytarz            │
-   │   │    drewna)       │     kilkucentymetrowy         │
-   │   └──────────────────┘                               │
-   │                                                      │
-   │            woda w kotle                              │
-   └────────────────┬─────────────────────────────────────┘
-                    │
-                    │  RURA WYJŚCIOWA  ──►  instalacja grzewcza
-                    │  ★ czujnik "ogrz" (C_O)        (grzejniki)
-                    │
-                    │  ← tu wpięta rura z płaszcza przystawki
-                    │
-   ┌────────────────┴─────────────────────────────────────┐
-   │            PRZYSTAWKA NA TROCINY                     │
-   │                                                      │
-   │   ┌──────────────────────┐                           │
-   │   │  palenisko trocin    │──── płomień ──► korytarz  │
-   │   └──────────────────────┘      do ruszt pieca C.O.  │
-   │                                                      │
-   │   ┌──────────────────────┐                           │
-   │   │   PŁASZCZ WODNY      │  ★ czujnik "trociny"      │
-   │   │  (chłodzi przystawkę,│                           │
-   │   │   żeby się nie        │                           │
-   │   │   przegrzewała)      │                           │
-   │   └──────────┬───────────┘                           │
-   └──────────────┼───────────────────────────────────────┘
-                  │
-                  │  rura z płaszcza ──► wpięta w rurę wyjściową
-                  │                       pieca C.O. (za kotłem)
-                  ▼
+              ┌──────────────────────────────────────┐
+              │   RURA DO INSTALACJI (grzejniki,     │
+              │   ciepła woda użytkowa)              │
+              └──────────────────┬───────────────────┘
+                                 │
+              ┌──────────────────┴──────────────────┐
+              │                                     │
+         ● "ogrz"                             ● "trociny"
+         (C_O)                                (C_O_trociny)
+              │                                     │
+              │  woda z kotła                       │  woda z płaszcza
+              │                                     │  przystawki
+       ┌──────┴───────┐                   ┌─────────┴────────┐
+       │              │                   │                  │
+       │  PIEC C.O.   │◄─── płomień ──────│   PALENISKO      │
+       │              │   korytarz        │   TROCINIAK      │
+       │  (drewno)    │   kilka cm        │  (płaszcz wodny) │
+       └──────────────┘                   └──────────────────┘
 ```
+
+Niebieska linia na rysunku użytkownika = **obieg wody** między piecem a przystawką.
+Czerwona = **płomień** idący z paleniska trociniaka do pieca C.O.
 
 ### Jak to działa
 
 1. **Przystawka na trociny** stoi przy piecu C.O. — to osobne palenisko na trociny.
-2. Przystawka ma **płaszcz wodny** — woda w nim krąży, żeby ścianki przystawki się
-   nie przegrzewały (temperatura spalania trocin jest bardzo wysoka).
+2. Przystawka ma **płaszcz wodny** — woda w nim krąży, żeby ścianki się nie
+   przegrzewały (temperatura spalania trocin jest bardzo wysoka).
 3. Z płaszcza idzie **rura z wodą do instalacji grzewczej**.
-4. Ta rura **wpina się w rurę wyjściową pieca C.O., zaraz za kotłem**.
-5. Z przystawki wychodzi **płomień**, idzie **korytarzem o długości kilku centymetrów**
-   i **ogrzewa ruszta pieca C.O.** — czyli piec C.O. jest dodatkowym wymiennikiem
-   ciepła dla spalania trocin.
+4. Z przystawki wychodzi **płomień**, idzie **korytarzem o długości kilku centymetrów**
+   i **ogrzewa ruszta pieca C.O.** — piec C.O. jest dodatkowym wymiennikiem ciepła.
+5. Na obu pionach — nad piecem i nad przystawką — siedzą **po jednym czujniku**.
 
-To znaczy, że **piec C.O. i przystawka pracują na wspólną instalację**, a ich wody
-mieszają się zaraz za kotłem.
+### Co z tego wynika dla czujnika `ogrz` — KOREKTA
+
+W pierwszej wersji tego dokumentu przyjąłem, że czujnik `ogrz` leży na **wspólnej**
+rurze, za miejscem zmieszania wody z kotła i z płaszcza (wariant A). **Rysunek
+pokazuje, że jest inaczej.**
+
+Czujnik `ogrz` siedzi na **własnym pionie nad piecem C.O.**, a czujnik `trociny` na
+**własnym pionie nad przystawką**. To dwa osobne punkty pomiarowe, a nie jeden
+po zmieszaniu.
+
+**Czyli obowiązuje wariant B: `ogrz` mierzy czystą wodę z kotła C.O.**, zanim spotka
+się z wodą z płaszcza przystawki.
+
+To **dobra wiadomość** dla analiz: wszystkie liczby w raporcie opisują wodę z kotła,
+bez domieszki. Nie ma czego przeliczać.
+
+**Czego rysunek nie rozstrzyga:** w którą stronę płynie woda w tej pętli i czy obieg
+przystawki jest normalnie otwarty, czy odcięty zaworem. Z danych wynika, że raczej
+**odcięty** — bo przy piecu o temperaturze 90 °C czujnik `trociny` pokazywał 13,5 °C.
+Gdyby woda z kotła przez niego przepływała, byłoby tam blisko 90 °C.
 
 ---
-
 ## 2. Wszystkie czujniki — tabela
 
 Wszystkie czujniki temperatury to **DS18B20** na trzech magistralach 1-Wire.
@@ -77,12 +78,12 @@ Do tego dwa czujniki I2C/analogowe.
 |---|---|---|---|---|---|---|
 | 0 | `zewn` | `czujnik_temp_zewnetrznej` | BUS_1 | GPIO 4 | −30…50 °C | **na zewnątrz, ściana wschodnia** — przy narożniku domu, nad kotłownią |
 | 1 | `bojler` | `czujnik_temp_Bojlera` | BUS_2 | GPIO 5 | 0…160 °C | **zbiornik CWU pieca** |
-| 2 | `ogrz` | `czujnik_temp_C_O` | BUS_2 | GPIO 5 | 0…160 °C | **rura wyjściowa z pieca C.O.**, za miejscem wpięcia rury z przystawki |
+| 2 | `ogrz` | `czujnik_temp_C_O` | BUS_2 | GPIO 5 | 0…160 °C | **na pionie nad piecem C.O. — woda z kotła** |
 | 3 | `ogrz_sr` | *(brak — wyliczana)* | — | — | 10…99 °C | **to nie czujnik**, to średnia z `ogrz` |
 | 4 | `powrot` | `czujnik_temp_C_O_powrot` | BUS_2 | GPIO 5 | −30…120 °C | rura powrotna, przed kotłem |
 | 5 | `panel` | `czujnik_temp_Panel_Plus` | BUS_3 | GPIO 7 | −30…160 °C | zbiornik solarny 100 l na dachu |
 | 6 | `pokoj` | `czujnik_temp_Wewnatrz` | BUS_1 | GPIO 4 | −50…50 °C | **środek pokoju, na wysokości 2,5 m** |
-| 7 | `trociny` | `czujnik_temp_C_O_trociny` | BUS_2 | GPIO 5 | −30…120 °C | **w przystawce na trociny** (płaszcz wodny) |
+| 7 | `trociny` | `czujnik_temp_C_O_trociny` | BUS_2 | GPIO 5 | −30…120 °C | **na pionie nad przystawką — woda z jej płaszcza wodnego** |
 | 8 | `rh` | DHT22 | — | GPIO 6 | 0…100 % | **na zewnątrz** |
 | 9 | `cisn` | BMP280 | — | I2C | 970…1040 hPa | ciśnienie |
 | 10 | `dym` | czujnik dymu | — | GPIO 1 | 0…4095 | w kanale kominowym |
@@ -99,51 +100,31 @@ Do tego dwa czujniki I2C/analogowe.
 zbiera zakłócenia; gdyby panel wisiał na wspólnej magistrali z piecem, zakłócenia
 z dachu psułyby odczyty pieca.
 
-### Wątpliwość interpretacyjna — do potwierdzenia
-
-Opis użytkownika mówi: *„z płaszcza idzie rura z wodą (na niej jest też czujnik) do
-instalacji grzewczej ciepłej wody zaraz za wyjściem z pieca C.O."*
-
-To można rozumieć na dwa sposoby:
-
-| wariant | gdzie jest czujnik `ogrz` | co mierzy |
-|---|---|---|
-| **A** (przyjęty w tym dokumencie) | na wspólnej rurze **za** wpięciem rury z płaszcza | mieszaninę: kocioł + przystawka |
-| **B** | na samej rurze z płaszcza, przed wpięciem | tylko wodę z płaszcza przystawki |
-
-Przyjąłem wariant **A**, bo nazwa czujnika to `C_O` (centralne ogrzewanie), a nie
-„przystawka" — czyli logicznie powinien mierzyć wodę idącą do instalacji. **Jeśli
-w rzeczywistości jest inaczej, analizy w rozdziale 3 raportu opisują wodę z płaszcza
-przystawki, a nie z kotła** — i trzeba je przeliczyć od nowa.
-
-W danych za wariantem A przemawia to, że `ogrz` reaguje na palenie drewna w piecu C.O.
-(rozpałka podnosi je o 50 °C w 15 minut), a przystawka w tym okresie stała zimna
-(`trociny` ≈ 13,5 °C). Gdyby czujnik siedział tylko na rurze z płaszcza, nie widziałby
-palenia w piecu.
-
 ---
 
 ## 3. Co to znaczy dla analizy danych
 
-### 3.1 `ogrz` mierzy wodę po zmieszaniu dwóch źródeł
+### 3.1 `ogrz` mierzy wodę z kotła — bez domieszki
 
-To najważniejszy wniosek z opisu przystawki. Czujnik `C_O` siedzi na rurze wyjściowej
-**za miejscem, w którym wpięta jest rura z płaszcza przystawki**. Więc mierzy:
+**Sprostowanie.** W pierwszej wersji tego dokumentu napisałem, że `ogrz` mierzy wodę
+po zmieszaniu kotła i płaszcza przystawki. **Rysunek od użytkownika pokazał, że jest
+inaczej:** czujniki siedzą na dwóch osobnych pionach, każdy przy swoim urządzeniu.
 
 ```
-woda z kotła C.O.  ──┐
-                     ├──► [czujnik "ogrz"] ──► instalacja
-woda z płaszcza    ──┘
-przystawki
+   ● "ogrz"  ──── woda z KOTŁA C.O.        (osobny pion, nad piecem)
+   ● "trociny" ── woda z PŁASZCZA PRZYSTAWKI (osobny pion, nad przystawką)
+                        │
+                        ▼
+              dopiero dalej łączą się w instalacji
 ```
 
-Gdyby przystawka pracowała, `ogrz` pokazywałoby temperaturę **mieszaniny** — czyli
-zaniżoną albo zawyżoną względem samego kotła, zależnie od tego, co akurat grzeje mocniej.
+**Wniosek: `ogrz` mierzy czystą wodę z kotła.** Wszystkie analizy w raporcie
+(bezwładność, stygnięcie, odbiór przez grzejniki) opisują więc wodę z kotła C.O. —
+dokładnie to, co miały opisywać. **Nic nie trzeba przeliczać.**
 
-**W praktyce w tych danych przystawka nie pracowała** — patrz 3.2. Więc `ogrz` to
-temperatura wody z kotła C.O., ale trzeba o tym pamiętać, gdyby kiedyś przystawka
-została uruchomiona: **od tego momentu porównywanie danych sprzed i po nie ma sensu
-bez rozdzielenia źródeł.**
+**Za to `trociny` to nie temperatura paleniska trocin**, a **woda w płaszczu wodnym
+przystawki** (na jej pionie). Mediana 13,5 °C oznacza, że woda w tym obiegu stała
+zimna — czyli przystawka nie pracowała.
 
 ### 3.2 `trociny` to temperatura przystawki, nie paleniska
 
@@ -203,8 +184,10 @@ Nadal otwarte:
 1. **Gdzie dokładnie w przystawce siedzi czujnik `trociny`** — w płaszczu wodnym, czy
    w komorze paleniska trocin? Wartości wskazują na płaszcz (albo na komorę zimnej
    przystawki).
-2. **Czy płaszcz przystawki jest odcięty zaworem**, gdy przystawka nie pracuje? Jeśli
-   nie — woda z pieca powinna go podgrzewać, a `trociny` pokazywałoby więcej niż 13 °C.
+2. **Czy płaszcz przystawki jest odcięty zaworem**, gdy przystawka nie pracuje?
+   Z danych wychodzi, że **raczej tak** — przy piecu 90 °C czujnik `trociny` pokazywał
+   13,5 °C. Gdyby obieg był otwarty, woda z kotła podgrzałaby go. Ale to wniosek
+   z pomiarów, nie z oględzin — warto potwierdzić przy piecu.
 3. **Który to pokój** — bo od tego zależy, jak czytać τ budynku (czy czujnik jest
    w pomieszczeniu ogrzewanym bezpośrednio przez piec, czy daleko od niego).
 
