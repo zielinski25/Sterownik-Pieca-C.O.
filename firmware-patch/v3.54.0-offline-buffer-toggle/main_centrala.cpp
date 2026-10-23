@@ -4002,7 +4002,7 @@
 //     mialby z czym sie polaczyc. (2) WIFI_AP_SSID/WIFI_AP_PASSWORD centrali
 //     ("SterownikCO-Setup"/"sterownikco") nie zgadzaly sie z wartosciami
 //     ustalonymi i wpisanymi po stronie wyswietlacza ("PiecCO_AP"/
-//     "KociolCO2026") w poprzedniej sesji — polaczenie i tak by sie nie
+//     "<haslo-z-secrets.h>") w poprzedniej sesji — polaczenie i tak by sie nie
 //     udalo, nawet z poprawka (1).
 // Przyczyna: kod AP powstal pierwotnie jako captive-portal konfiguracyjny,
 //     dzialajacy tylko do czasu polaczenia STA — zalozenie nieaktualne od
@@ -4012,7 +4012,7 @@
 //     wywolania wifiWylaczAP() z wifiSetup() (galaz sukcesu STA) i z
 //     wifiLoop() (powrot STA z trybu WIFI_STAN_PORTAL_AP) — funkcja
 //     wifiWylaczAP() zostaje zdefiniowana, ale obecnie nigdzie nie wywolywana;
-//     WIFI_AP_SSID/WIFI_AP_PASSWORD zmienione na "PiecCO_AP"/"KociolCO2026".
+//     WIFI_AP_SSID/WIFI_AP_PASSWORD zmienione na "PiecCO_AP"/"<haslo-z-secrets.h>".
 //
 // [v1.14.3] — 2026-08-06
 // Co: [FIX 13] Jawne oznaczenie "CZAS NIEZNANY" w logach (zamiast pokazywania
@@ -5382,13 +5382,26 @@ static const int WIFI_MAX_SIECI = 8;
 // [ETAP 3 KROK 1] Wartosci zsynchronizowane z main.cpp wyswietlacza
 // (WIFI_SSID/WIFI_PASS) — MUSZA byc identyczne po obu stronach, inaczej
 // wyswietlacz nie znajdzie/nie polaczy sie z AP centrali.
-static const char* WIFI_AP_SSID     = "PiecCO_AP";
-static const char* WIFI_AP_PASSWORD = "KociolCO2026"; // min. 8 znakow (wymog WPA2 dla AP)
+// [SEKRETY] Hasla NIE leza w tym pliku — sa w pliku "secrets.h", ktory jest
+// wpisany do .gitignore i zostaje TYLKO u Ciebie na komputerze.
+//   1. Skopiuj "secrets.h.example" -> "secrets.h" (ten sam folder co ten plik).
+//   2. Otworz secrets.h i wpisz swoje hasla.
+//   3. Dopiero potem kompiluj i wgraj.
+// Bez secrets.h kompilacja ZATRZYMUJE SIE z czytelnym komunikatem. To celowe:
+// lepiej zeby sie nie skompilowalo, niz zeby centrala poszla w swiat z pustym
+// haslem albo z haslem, ktore kazdy zna z repozytorium.
+#if __has_include("secrets.h")
+  #include "secrets.h"
+#else
+  #error "Brak pliku secrets.h — skopiuj secrets.h.example jako secrets.h i wpisz hasla."
+#endif
+
+static const char* WIFI_AP_SSID     = SECRET_WIFI_AP_SSID;
+static const char* WIFI_AP_PASSWORD = SECRET_WIFI_AP_PASSWORD; // min. 8 znakow (wymog WPA2 dla AP)
 
 // [PUNKT 3 — OTA] Wspolne haslo dla obu sciezek OTA (ArduinoOTA z VSCode
-// oraz upload .bin z przegladarki). Jedno haslo, zeby nie trzeba bylo
-// pamietac dwoch roznych. Zmien przed pierwszym uzyciem OTA w terenie.
-static const char* OTA_HASLO = "sterownikco-ota";
+// oraz upload .bin z przegladarki). Wartosc pochodzi z secrets.h.
+static const char* OTA_HASLO = SECRET_OTA_HASLO;
 bool otaUploadTrwa = false;          // blokuje inne operacje (np. przelaczanie AP) w trakcie uploadu
 bool otaUploadBladHasla = false;     // ustawiane w handlerze uploadu, czytane po zakonczeniu żadania
 
