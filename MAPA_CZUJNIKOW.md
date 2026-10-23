@@ -75,15 +75,15 @@ Do tego dwa czujniki I2C/analogowe.
 
 | # | kanał | czujnik w firmware | magistrala | pin | zakres | gdzie fizycznie |
 |---|---|---|---|---|---|---|
-| 0 | `zewn` | `czujnik_temp_zewnetrznej` | BUS_1 | GPIO 4 | −30…50 °C | na zewnątrz, na ścianie |
-| 1 | `bojler` | `czujnik_temp_Bojlera` | BUS_2 | GPIO 5 | 0…160 °C | zbiornik CWU pieca |
+| 0 | `zewn` | `czujnik_temp_zewnetrznej` | BUS_1 | GPIO 4 | −30…50 °C | **na zewnątrz, ściana wschodnia** — przy narożniku domu, nad kotłownią |
+| 1 | `bojler` | `czujnik_temp_Bojlera` | BUS_2 | GPIO 5 | 0…160 °C | **zbiornik CWU pieca** |
 | 2 | `ogrz` | `czujnik_temp_C_O` | BUS_2 | GPIO 5 | 0…160 °C | **rura wyjściowa z pieca C.O.**, za miejscem wpięcia rury z przystawki |
 | 3 | `ogrz_sr` | *(brak — wyliczana)* | — | — | 10…99 °C | **to nie czujnik**, to średnia z `ogrz` |
 | 4 | `powrot` | `czujnik_temp_C_O_powrot` | BUS_2 | GPIO 5 | −30…120 °C | rura powrotna, przed kotłem |
 | 5 | `panel` | `czujnik_temp_Panel_Plus` | BUS_3 | GPIO 7 | −30…160 °C | zbiornik solarny 100 l na dachu |
-| 6 | `pokoj` | `czujnik_temp_Wewnatrz` | BUS_1 | GPIO 4 | −50…50 °C | pokój |
+| 6 | `pokoj` | `czujnik_temp_Wewnatrz` | BUS_1 | GPIO 4 | −50…50 °C | **środek pokoju, na wysokości 2,5 m** |
 | 7 | `trociny` | `czujnik_temp_C_O_trociny` | BUS_2 | GPIO 5 | −30…120 °C | **w przystawce na trociny** (płaszcz wodny) |
-| 8 | `rh` | DHT22 | — | GPIO 6 | 0…100 % | wilgotność — miejsce do potwierdzenia |
+| 8 | `rh` | DHT22 | — | GPIO 6 | 0…100 % | **na zewnątrz** |
 | 9 | `cisn` | BMP280 | — | I2C | 970…1040 hPa | ciśnienie |
 | 10 | `dym` | czujnik dymu | — | GPIO 1 | 0…4095 | w kanale kominowym |
 
@@ -191,17 +191,64 @@ W 87,4% minut jest identyczna z `ogrz` co do 0,1 °C. Firmware ma osobną łatk�
 
 ## 5. Czego jeszcze nie wiem
 
-Te punkty wymagają potwierdzenia przez użytkownika — nie wpisuję ich jako faktu:
+Potwierdzone 23.10 przez użytkownika (razem z rysunkiem):
+
+- ✅ `bojler` — zbiornik CWU pieca
+- ✅ `zewn` — ściana wschodnia, przy narożniku domu nad kotłownią
+- ✅ DHT22 — na zewnątrz
+- ✅ `pokoj` — środek pokoju, na wysokości 2,5 m
+
+Nadal otwarte:
 
 1. **Gdzie dokładnie w przystawce siedzi czujnik `trociny`** — w płaszczu wodnym, czy
    w komorze paleniska trocin? Wartości wskazują na płaszcz (albo na komorę zimnej
    przystawki).
 2. **Czy płaszcz przystawki jest odcięty zaworem**, gdy przystawka nie pracuje? Jeśli
    nie — woda z pieca powinna go podgrzewać, a `trociny` pokazywałoby więcej niż 13 °C.
-3. **Gdzie jest DHT22** — kotłownia czy zewnątrz?
-4. **Na której ścianie jest `zewn`** — nasłonecznionej czy północnej? Ma to znaczenie
-   dla interpretacji (37,5 °C mogło być słońcem).
-5. **Który to pokój** dla czujnika `pokoj` — blisko pieca czy daleko?
+3. **Który to pokój** — bo od tego zależy, jak czytać τ budynku (czy czujnik jest
+   w pomieszczeniu ogrzewanym bezpośrednio przez piec, czy daleko od niego).
+
+### 3.6 Co zmienia wysokość 2,5 m i ściana wschodnia
+
+Dwa potwierdzone szczegóły mają realny wpływ na to, jak czytać wcześniejsze analizy.
+
+**Pokój na wysokości 2,5 m — to pod sufitem.** Powietrze w pomieszczeniu się
+warstwuje: pod sufitem jest zwykle **2–4 °C cieplej** niż na wysokości 1,5 m, gdzie
+przebywa człowiek. Więc:
+
+| co pokazuje czujnik | co jest naprawdę w strefie przebywania |
+|---|---|
+| 17,0 °C (mediana) | około 14–15 °C |
+| 15,0 °C (minimum) | około 12–13 °C |
+
+**To nie psuje stałej czasowej τ = 55,6 h** — bo τ liczy się z tempa zmian, a nie
+z poziomu temperatury. Przesunięcie o stałą wartość nie zmienia wyniku.
+
+**Ale zmienia wniosek o komforcie.** Zdania typu „dom trzyma 15–17 °C" trzeba czytać
+jako „**pod sufitem** 15–17 °C, czyli w strefie przebywania bliżej 12–15 °C". To już
+chłodno — i wyjaśnia, dlaczego palisz codziennie.
+
+**Ściana wschodnia.** Czujnik `zewn` dostaje bezpośrednie słońce **rano** (w Polsce
+mniej więcej od 6 do 11). Sprawdziłem w danych, czy to widać:
+
+| godzina lokalna | dni słoneczne | dni pochmurne | różnica |
+|---|---|---|---|
+| 10:00 | 14,1 °C | 13,4 °C | +0,7 |
+| 13:00 | 20,6 °C | 17,2 °C | +3,4 |
+| **17:00** | **22,9 °C** | **17,7 °C** | **+5,2** |
+| 22:00 | 15,2 °C | 14,1 °C | +1,1 |
+
+**Nie widać porannego „garbu", którego należałoby oczekiwać od wschodniej ściany.**
+Różnica między dniami słonecznymi a pochmurnymi rośnie dopiero po południu — czyli
+czujnik mierzy nagrzane **powietrze**, a nie nagrzaną ścianę. To znaczy, że jest
+prawdopodobnie **osłonięty albo w cieniu** i mierzy poprawnie.
+
+**Wniosek: dane `zewn` są w porządku do analiz.** Ale ten jeden odczyt **37,5 °C
+o 17:07 dnia 3.10** i tak jest awarią — o tej porze wschodnia ściana jest w cieniu,
+więc to na pewno zawieszony czujnik, a nie słońce.
+
+**DHT22 na zewnątrz** — to wyjaśnia medianę wilgotności **92,9%**. W październiku
+na dworze to normalne (mgły, deszcz, noce). W pokoju byłoby to niemożliwe.
 
 ---
 

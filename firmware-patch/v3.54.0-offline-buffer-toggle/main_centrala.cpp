@@ -21417,9 +21417,13 @@ SPIClass sdSPI(FSPI);
 //                  Czyli mierzy wodę PO ZMIESZANIU dwóch źródeł: kotła C.O.
 //                  i płaszcza przystawki. Nie mierzy paleniska.
 //   Panel_Plus   — zbiornik solarny 100 l na dachu (termosyfon, bez pompy).
-//   Wewnatrz     — pokój.
+//   Wewnatrz     — środek pokoju, na wysokości 2,5 m (pod sufitem — przy
+//                  interpretacji komfortu odejmij 2-4 C, bo tyle wynosi
+//                  stratyfikacja między sufitem a strefą przebywania).
 //   Bojlera      — zbiornik CWU pieca C.O.
-//   zewnetrznej  — na zewnątrz, na ścianie.
+//   zewnetrznej  — na zewnątrz, ŚCIANA WSCHODNIA (przy narożniku domu nad
+//                  kotłownią). Rano dostaje słońce, ale w danych nie widać
+//                  porannego zafałszowania — czujnik jest osłonięty.
 //   C_O_powrot   — rura powrotna, przed kotłem.
 //   C_O_trociny  — W PRZYSTAWCE NA TROCINY.
 //
@@ -21439,6 +21443,9 @@ SPIClass sdSPI(FSPI);
 //
 //   "C_O_trociny" to temperatura płaszcza/komory przystawki, a NIE paleniska
 //   trocin (palenisko ma setki stopni, czujnik DS18B20 ma zakres do 125 C).
+//
+//   DHT22 (wilgotnosc, kanal "rh") jest NA ZEWNATRZ — dlatego mediana 92.9%
+//   w pazdzierniku jest normalna. W pokoju taka wilgotnosc byla by niemozliwa.
 //
 byte czujnik_temp_C_O[8]         = {0x28, 0xCA, 0x60, 0x79, 0x91, 0x25, 0x06, 0x04};
 byte czujnik_temp_Panel_Plus[8]  = {0x28, 0xFF, 0xF1, 0x05, 0x64, 0x14, 0x03, 0xAC};

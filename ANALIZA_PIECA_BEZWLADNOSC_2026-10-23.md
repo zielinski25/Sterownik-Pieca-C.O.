@@ -537,6 +537,14 @@ to zyski: słońce przez okna i ciepło z kuchni.
 > bez palenia z czystymi zyskami słonecznymi (+4,5 °C). Po sprawdzeniu — **19.10 piec
 > palił się do 84 °C**. Ten wzrost pokoju to zwykłe grzanie, nie słońce. Poprawione.
 
+> **Uwaga o wysokości czujnika (dopisane 23.10).** Czujnik `pokoj` wisi
+> **na środku pokoju, na wysokości 2,5 m** — czyli pod sufitem. Powietrze się
+> warstwuje, więc pod sufitem jest zwykle **2–4 °C cieplej** niż na wysokości 1,5 m.
+> Czytając tabelę powyżej, odejmij około 2–3 stopnie, żeby dostać temperaturę
+> w strefie przebywania: „16–17 °C pod sufitem" to realnie **13–15 °C na wysokości
+> głowy**. Stałej czasowej τ = 55,6 h to nie zmienia (liczy się tempo zmian,
+> nie poziom), ale zmienia wniosek o komforcie.
+
 **Ciekawostka, która sama się nasuwa:** 28.09 i 29.09 panel słoneczny miał 66,3 i
 69,5 °C — a pokój przez całą dobę ani drgnął (amplituda 0,5 °C). To potwierdza, że
 **kolektor grzeje wodę użytkową, a nie dom** — i że nie ma pomiędzy nimi żadnego
@@ -1000,3 +1008,29 @@ rozdzielenia, co grzało.
 **Praktyczna wskazówka:** jeśli kiedyś zaczniesz palić w przystawce, warto w aplikacji
 zanotować datę — inaczej za pół roku analiza pokaże „skok sprawności", który będzie
 tylko zmianą źródła ciepła.
+
+### 15.5 Gdzie wisi czujnik pokoju — i dlaczego to ważne
+
+Potwierdzone 23.10: czujnik `pokoj` jest **na środku pokoju, na wysokości 2,5 metra**.
+
+To jest **pod sufitem**, a nie tam, gdzie przebywa człowiek. Powietrze w pomieszczeniu
+się warstwuje — ciepłe idzie do góry. Różnica między sufitem a wysokością 1,5 m to
+zwykle **2–4 stopnie**.
+
+| co pokazuje czujnik | realnie w strefie przebywania |
+|---|---|
+| 17,0 °C (mediana) | ~14–15 °C |
+| 15,0 °C (minimum w dni bez palenia) | ~12–13 °C |
+| 25,0 °C (maksimum) | ~22–23 °C |
+
+**Czego to nie psuje:** stałej czasowej **τ = 55,6 h**. Ta liczba wynika z tempa zmian,
+a stałe przesunięcie temperatury nie zmienia tempa.
+
+**Co to zmienia:** ocenę komfortu. Zdania „dom trzyma 15–17 °C" należy czytać jako
+„**pod sufitem** 15–17 °C". W strefie przebywania jest chłodniej — i to wyjaśnia,
+dlaczego w październiku palisz niemal codziennie.
+
+**Praktyczna rada:** jeśli kiedyś będziesz przenosił czujnik, warto zejść na 1,5 m.
+Wtedy liczby w aplikacji będą odpowiadać temu, co czujesz. Nic się nie zepsuje —
+trzeba tylko pamiętać, że **dane sprzed i po przeprowadzce nie będą porównywalne**
+(różnica kilku stopni z dnia na dzień).
