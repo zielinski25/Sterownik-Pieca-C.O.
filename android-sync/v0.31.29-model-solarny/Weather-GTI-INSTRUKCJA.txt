@@ -1,0 +1,88 @@
+════════════════════════════════════════════════════════════════════════════
+ POPRAWKA DO Weather.kt — BEZ TEGO SIE NIE SKOMPILUJE
+════════════════════════════════════════════════════════════════════════════
+
+Plik: app/src/main/java/com/sterownikco/pro/core/Weather.kt
+
+Trzy zmiany. Wszystkie w jednym pliku. Nic wiecej nie trzeba.
+
+
+────────────────────────────────────────────────────────────────────────────
+ ZMIANA 1 z 3 — nowe pole w WHour
+────────────────────────────────────────────────────────────────────────────
+
+Znajdz (to jest koniec definicji `data class WHour`):
+
+    val shortwaveRadiation: Double? = null
+)
+
+Zamien na:
+
+    val shortwaveRadiation: Double? = null,
+    val tiltedIrradiance: Double? = null
+)
+
+
+────────────────────────────────────────────────────────────────────────────
+ ZMIANA 2 z 3 — popros Open-Meteo o GTI
+────────────────────────────────────────────────────────────────────────────
+
+Znajdz fragment konczacy sie na:
+
+    is_day,shortwave_radiation" +
+
+Zamien na DWIE linie:
+
+    is_day,shortwave_radiation,global_tilted_irradiance" +
+    "&tilt=45&azimuth=0" +
+
+UWAGA: te dwie linie musza byc PRZED linia zaczynajaca sie od "&daily=".
+Jesli w Twoim pliku ten fragment wyglada inaczej — znajdz po prostu
+`shortwave_radiation" +` i dopisz `,global_tilted_irradiance` przed
+zamykajacym cudzyslowem, a `"&tilt=45&azimuth=0" +` wstaw w nastepnej linii.
+
+
+────────────────────────────────────────────────────────────────────────────
+ ZMIANA 3 z 3 — odczytaj GTI z odpowiedzi
+────────────────────────────────────────────────────────────────────────────
+
+Znajdz:
+
+    shortwaveRadiation = arrOrNull(hh, "shortwave_radiation", i)
+)
+
+Zamien na:
+
+    shortwaveRadiation = arrOrNull(hh, "shortwave_radiation", i),
+    tiltedIrradiance = arrOrNull(hh, "global_tilted_irradiance", i)
+)
+
+
+────────────────────────────────────────────────────────────────────────────
+ JAK SPRAWDZIC, ZE DOBRZE
+────────────────────────────────────────────────────────────────────────────
+
+W pliku Weather.kt ma byc dokladnie:
+
+    - 1 raz   `tiltedIrradiance: Double? = null`      (definicja pola)
+    - 1 raz   `global_tilted_irradiance"`             (w zapytaniu)
+    - 1 raz   `&tilt=45&azimuth=0`                    (w zapytaniu)
+    - 1 raz   `"global_tilted_irradiance", i)`        (w parsowaniu)
+
+Razem 4 wystapienia. Policz je Ctrl+F i porownaj.
+
+
+────────────────────────────────────────────────────────────────────────────
+ DLACZEGO TO JEST KONIECZNE
+────────────────────────────────────────────────────────────────────────────
+
+Bez zmian 1-3 plik SolarAnalytics.kt sie NIE SKOMPILUJE.
+Kompilator napisze:
+
+    Unresolved reference: tiltedIrradiance
+
+To znaczy dokladnie tyle, ze ktoras z trzech zmian nie zostala zrobiona.
+
+Bez GTI model dostaje slonce z plaszczyzny poziomej, a kolektor stoi pod
+katem. W sloneczny dzien to zaniza wynik prawie o polowe.
+════════════════════════════════════════════════════════════════════════════
