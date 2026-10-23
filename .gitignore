@@ -5,3 +5,7 @@ google_drive/
 # Artefakty Pythona
 __pycache__/
 *.pyc
+
+# Hasla do firmware (WiFi AP + OTA). Plik zostaje TYLKO lokalnie.
+# Wzorem jest secrets.h.example, ktory JEST w gicie.
+secrets.h
