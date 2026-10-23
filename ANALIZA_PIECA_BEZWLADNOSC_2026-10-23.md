@@ -8,6 +8,9 @@
 > Dlatego wszystkie liczby o „stygnięciu pieca" w tym raporcie należy czytać jako
 > **stygnięcie wody na wyjściu z pieca** — a nie stygnięcie paleniska.
 > Rozdział 13 wyjaśnia to dokładnie i pokazuje, co z tego wynika dla planowania palenia.
+>
+> Pełny opis wszystkich czujników i instalacji (w tym przystawki na trociny) jest
+> w osobnym pliku: **`MAPA_CZUJNIKOW.md`**.
 
 **Plik:** `akwarium-367be-default-rtdb-2026-export.json` (23 126 691 bajtów)
 **Analiza:** 2026-10-23
@@ -665,6 +668,11 @@ czujnik_temp_C_O_powrot[8] = {0x28, 0xC8, 0xFD, 0xB5, 0x91, 0x25, 0x06, 0x1A};  
 tam gdzie gorąca woda wychodzi z kotła w instalację. Obok niego, na tej samej
 magistrali, wisi `czujnik_temp_C_O_powrot` — powrót.
 
+Doprecyzowanie z rozdziału 15: w tę samą rurę, **zaraz za kotłem**, wpięta jest rura
+z płaszcza wodnego przystawki na trociny. Czujnik leży za tym wpięciem, więc mierzy
+wodę po zmieszaniu obu źródeł. W analizowanym okresie przystawka stała zimna, więc
+praktycznie była to woda z kotła.
+
 **Wnioski z tego:**
 
 | co mierzy czujnik | czego NIE mierzy |
@@ -927,3 +935,68 @@ i wygładzeniem.
 **Najtańsza inwestycja, która odblokuje najwięcej:** termopara na czopuchu (spaliny).
 Koszt kilkadziesiąt złotych, a daje moc paleniska, sprawność i moment wygaśnięcia —
 trzy rzeczy, których teraz nie ma.
+
+
+---
+
+## 15. Przystawka na trociny — co to zmienia
+
+Uzupełnienie po opisie instalacji od użytkownika (23.10). Pełna mapa czujników:
+`MAPA_CZUJNIKOW.md`.
+
+### 15.1 Jak to jest zbudowane
+
+Do pieca C.O. jest przystawiona **przystawka na trociny** — osobne palenisko.
+Ma **płaszcz wodny**, żeby ścianki się nie przegrzewały. Z płaszcza idzie rura
+z wodą do instalacji grzewczej, wpięta **w rurę wyjściową pieca C.O. zaraz za kotłem**.
+Z przystawki wychodzi płomień i **korytarzem o długości kilku centymetrów ogrzewa
+ruszta pieca C.O.**
+
+Czyli piec C.O. jest jednocześnie **dodatkowym wymiennikiem ciepła** dla spalania
+trocin. To sprytne rozwiązanie: ciepło, które normalnie uciekłoby kominem przystawki,
+przechodzi przez piec.
+
+```
+woda z kotła C.O.  ──┐
+                     ├──► [czujnik "ogrz"] ──► instalacja
+woda z płaszcza    ──┘
+przystawki
+```
+
+### 15.2 Dlaczego to jest ważne dla wcześniejszych analiz
+
+**Czujnik `ogrz` mierzy wodę po zmieszaniu dwóch źródeł** — z kotła i z płaszcza
+przystawki. Nie mierzy samego kotła.
+
+Gdyby przystawka pracowała, temperatura na wyjściu zależałaby od tego, które palenisko
+akurat grzeje mocniej. **Porównywanie takich okresów z okresami, gdy przystawka stała,
+byłoby błędem.**
+
+### 15.3 Dobra wiadomość: przystawka nie pracowała
+
+W całym analizowanym okresie (26.09–23.10.2026) czujnik `trociny` miał:
+
+- **medianę 13,5 °C**,
+- **maksimum 22,3 °C**,
+- korelację z temperaturą zasilania **r = 0,58**.
+
+To temperatury **otoczenia**, nie paleniska. Przystawka stała zimna obok pracującego
+pieca i nagrzewała się od jego obudowy — dlatego korelacja jest dodatnia, ale słaba.
+
+**Wniosek: wszystkie liczby w tym raporcie dotyczą samego pieca C.O.** Mieszanie
+z przystawką nie zafałszowało wyników. Ale trzeba o tym pamiętać na przyszłość:
+gdy zaczniesz palić w przystawce, dane sprzed i po **nie będą porównywalne** bez
+rozdzielenia, co grzało.
+
+### 15.4 Co to znaczy dla pomiarów
+
+| sytuacja | co pokazuje `ogrz` | czy da się analizować |
+|---|---|---|
+| tylko piec C.O. | wodę z kotła | **tak** — tak było w tych danych |
+| tylko przystawka | wodę z płaszcza | tak, ale to inny układ |
+| oba naraz | mieszaninę | **nie** — bez rozdzielenia źródeł |
+| oba, ale jeden zgaszony | wodę z pracującego | tak, z ostrożnością |
+
+**Praktyczna wskazówka:** jeśli kiedyś zaczniesz palić w przystawce, warto w aplikacji
+zanotować datę — inaczej za pół roku analiza pokaże „skok sprawności", który będzie
+tylko zmianą źródła ciepła.

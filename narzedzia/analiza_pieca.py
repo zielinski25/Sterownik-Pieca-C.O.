@@ -23,6 +23,34 @@ import math
 import datetime
 import statistics as st
 
+# --------------------------------------------------------------- mapa kanalow
+# Kolejnosc kanalow w rekordzie RTDB (pole "a") - patrz MAPA_CZUJNIKOW.md.
+# Wszystkie temperatury to DS18B20 na trzech magistralach 1-Wire:
+#   BUS_1 (GPIO4): pokoj, zewn
+#   BUS_2 (GPIO5): ogrz, powrot, bojler, trociny   <- wszystko przy piecu
+#   BUS_3 (GPIO7): panel                            <- osobno, kabel na dach
+#
+# Gdzie fizycznie siedzi kazdy czujnik:
+#   0 zewn    - na zewnatrz, na scianie
+#   1 bojler  - zbiornik CWU pieca (korelacja z zasilaniem r=0.84)
+#   2 ogrz    - RURA WYJSCIOWA z pieca C.O., ZA miejscem wpiecia rury z
+#               plaszcza przystawki na trociny. Mierzy wode po zmieszaniu
+#               dwoch zrodel (kociol + przystawka), nie temperature paleniska.
+#               Gdy przystawka nie pracuje (tak bylo w calym okresie danych),
+#               to po prostu woda z kotla.
+#   3 ogrz_sr - NIE JEST CZUJNIKIEM. Srednia z "ogrz" liczona tylko gdy pompa
+#               pracuje (firmware v2.4.0). Do analizy uzywaj "ogrz".
+#   4 powrot  - rura powrotna, przed kotlem
+#   5 panel   - zbiornik solarny 100 l na dachu (termosyfon, bez pompy)
+#   6 pokoj   - pokoj
+#   7 trociny - W PRZYSTAWCE NA TROCINY (przystawka stoi przy piecu C.O.,
+#               ma plaszcz wodny, a jej plomien korytarzem kilkucentymetrowym
+#               ogrzewa ruszta pieca C.O.). Mediana 13.5 C = przystawka
+#               NIE BYLA UZYWANA; wartosci to temperatura otoczenia.
+#   8 rh      - DHT22, wilgotnosc (miejsce do potwierdzenia - mediana 92.9%)
+#   9 cisn    - BMP280, cisnienie
+#  10 dym     - czujnik dymu w kanale, ADC. UWAGA: stale tlo 240-300,
+#               wiec "dym > 0" nie znaczy "sie pali". Prog ~400.
 CH = dict(zewn=0, bojler=1, ogrz=2, ogrz_sr=3, powrot=4, panel=5,
           pokoj=6, trociny=7, rh=8, cisn=9, dym=10)
 

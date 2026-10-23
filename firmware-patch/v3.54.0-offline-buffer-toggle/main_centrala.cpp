@@ -21408,6 +21408,38 @@ SPIClass sdSPI(FSPI);
 //=========================
 // ADRESY CZUJNIKÓW DS18B20
 //=========================
+// [MAPA-CZUJNIKOW, 2026-10-23] Skąd każdy czujnik fizycznie bierze temperaturę.
+// Opis pochodzi od użytkownika — nie jest domysłem. Pełna mapa:
+// MAPA_CZUJNIKOW.md w katalogu głównym repozytorium.
+//
+//   C_O          — RURA WYJŚCIOWA z pieca C.O., ZA miejscem, w którym wpięta
+//                  jest rura z płaszcza wodnego przystawki na trociny.
+//                  Czyli mierzy wodę PO ZMIESZANIU dwóch źródeł: kotła C.O.
+//                  i płaszcza przystawki. Nie mierzy paleniska.
+//   Panel_Plus   — zbiornik solarny 100 l na dachu (termosyfon, bez pompy).
+//   Wewnatrz     — pokój.
+//   Bojlera      — zbiornik CWU pieca C.O.
+//   zewnetrznej  — na zewnątrz, na ścianie.
+//   C_O_powrot   — rura powrotna, przed kotłem.
+//   C_O_trociny  — W PRZYSTAWCE NA TROCINY.
+//
+// O przystawce na trociny (opis użytkownika):
+//   Przystawka stoi przy piecu C.O. i jest osobnym paleniskiem na trociny.
+//   Ma PŁASZCZ WODNY, żeby ścianki się nie przegrzewały. Z płaszcza idzie
+//   rura z wodą do instalacji grzewczej — wpięta w rurę wyjściową pieca C.O.
+//   zaraz za kotłem. Z przystawki wychodzi płomień i korytarzem o długości
+//   kilku centymetrów ogrzewa RUSZTA pieca C.O. — czyli piec C.O. jest
+//   dodatkowym wymiennikiem ciepła dla spalania trocin.
+//
+//   UWAGA dla analizy danych: gdy przystawka pracuje, "C_O" pokazuje
+//   mieszaninę wody z kotła i z płaszcza — porównywanie z okresami, gdy
+//   przystawka stała, nie jest wtedy poprawne. W danych z 26.09–23.10.2026
+//   "C_O_trociny" miało medianę 13.5 C, czyli przystawka NIE była używana
+//   i "C_O" odpowiadało samej wodzie z kotła.
+//
+//   "C_O_trociny" to temperatura płaszcza/komory przystawki, a NIE paleniska
+//   trocin (palenisko ma setki stopni, czujnik DS18B20 ma zakres do 125 C).
+//
 byte czujnik_temp_C_O[8]         = {0x28, 0xCA, 0x60, 0x79, 0x91, 0x25, 0x06, 0x04};
 byte czujnik_temp_Panel_Plus[8]  = {0x28, 0xFF, 0xF1, 0x05, 0x64, 0x14, 0x03, 0xAC};
 byte czujnik_temp_Wewnatrz[8]    = {0x28, 0x15, 0x44, 0x95, 0xF0, 0x01, 0x3C, 0x6C};
