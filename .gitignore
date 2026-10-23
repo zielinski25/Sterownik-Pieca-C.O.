@@ -1,0 +1,7 @@
+# Eksporty danych z chmury (duże pliki, dane osobowe) - trzymane tylko lokalnie
+google_drive/
+*.json.gz
+
+# Artefakty Pythona
+__pycache__/
+*.pyc
