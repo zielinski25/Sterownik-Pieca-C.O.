@@ -349,3 +349,108 @@ kilkanaście sekund i zamyka największą dziurę.
 - [Play Console Help — wymagania foreground service i full-screen intent](https://support.google.com/googleplay/android-developer/answer/13392821?hl=en)
 - [AOSP — limity full-screen intent](https://source.android.com/docs/core/permissions/fsi-limits)
 - [Android Developers — Doze i App Standby](https://developer.android.com/training/monitoring-device-state/doze-standby)
+
+---
+
+## G. Procedury sprawdzające (do uruchomienia u użytkownika)
+
+Z sandboxa nie mam dostępu ani do routera, ani do `firebasedatabase.app`
+(dozwolone są tylko GitHub, npm, PyPI). Poniższe testy trzeba wykonać lokalnie.
+
+### G1. Czy port 80 centrali jest wystawiony na internet
+
+**Test 1 — z telefonu po danych komórkowych (najpewniejszy)**
+
+1. Wyłącz Wi-Fi w telefonie, zostaw LTE/5G.
+2. Ustal publiczny adres IP: w przeglądarce `https://ifconfig.me`
+   (albo w PowerShell: `(Invoke-RestMethod https://api.ipify.org)`).
+3. Otwórz w przeglądarce: `http://<publiczny-ip>` (port 80 domyślny).
+
+| wynik | znaczenie |
+|---|---|
+| strona panelu pieca / JSON | **port 80 jest wystawiony — A2 krytyczne** |
+| „nie można połączyć", timeout | port zamknięty lub filtrowany — dobrze |
+| logowanie routera | na porcie 80 siedzi router, nie centrala — sprawdź dalej |
+
+**Test 2 — panel routera**
+
+Szukaj sekcji: `Port Forwarding`, `Przekierowanie portów`, `Virtual Server`,
+`NAT`, `Reguły`. Sprawdź, czy istnieje reguła dla portu **80** albo adresu
+centrali. Jeśli nie ma — nikt tego nie przekierował.
+
+**Test 3 — IPv6 (łatwo przeoczyć)**
+
+Routery często dają publiczne adresy IPv6 **bez NAT**. Wtedy ESP32 może być
+osiągalny bez żadnego przekierowania. Sprawdź w panelu routera, czy IPv6 jest
+włączone i czy klienci dostają adresy globalne (`2...`), a nie tylko `fe80::`.
+
+**Zastrzeżenie:** sam brak przekierowania nie zamyka A2 — to nadal oznacza,
+że każde urządzenie w Twojej sieci LAN może sterować piecem. Obniża tylko
+wagę z „z internetu" na „z sieci lokalnej".
+
+**Jak znaleźć adres centrali:** widać go w aplikacji (status z Firebase) albo:
+
+```powershell
+arp -a | Select-String "192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\."
+```
+
+### G2. Czy reguły Firebase RTDB są otwarte
+
+Baza: `https://akwarium-367be-default-rtdb.europe-west1.firebasedatabase.app`
+
+**Metoda A — test anonimowy (30 sekund, nie zmienia danych)**
+
+`?print=silent` sprawia, że serwer **nie zwraca żadnych danych** — dostajemy
+tylko kod HTTP. `204` = dostęp dozwolony, `401` = odmowa.
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$db = "https://akwarium-367be-default-rtdb.europe-west1.firebasedatabase.app"
+$sciezki = @("/", "/piec", "/piec/status", "/piec/cmd", "/solar_daily")
+foreach ($s in $sciezki) {
+  $u = $db + $s.TrimEnd('/') + ".json?shallow=true&print=silent"
+  try {
+    $r = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 10
+    "OTWARTE   {0,-14} HTTP {1}" -f $s, $r.StatusCode
+  } catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    if ($code -eq 401 -or $code -eq 403) { "ZAMKNIETE {0,-14} HTTP {1}" -f $s, $code }
+    else { "BLAD      {0,-14} {1}" -f $s, ($code, $_.Exception.Message -join ' ') }
+  }
+}
+```
+
+Oczekiwany wynik: **każda linia `ZAMKNIETE ... HTTP 401`**. Jedna linia
+`OTWARTE` = ta ścieżka jest czytelna dla anonimowego użytkownika.
+
+**Metoda B — konsola (źródło prawdy)**
+
+`console.firebase.google.com` → projekt `akwarium-367be` → **Realtime Database
+→ Rules**. Reguły widoczne tam są ostateczne.
+
+| reguła | ocena |
+|---|---|
+| `"auth != null"` na `.read` i `.write` | **dobrze** — aplikacja loguje się i dostaje token |
+| reguły per ścieżka (`/piec/status` itd.) | dobrze, jeśli minimalne |
+| `".read": true` / `".write": true` | **baza otwarta — krytyczne** |
+| brak reguł / „test mode" | domyślnie **odmawia** po 30 dniach — bezpieczne, ale sprawdź, czy aplikacja dalej działa |
+
+**Uwaga o „trybie testowym":** domyślne reguły testowe wygasają po 30 dniach
+i od tego momentu **odrzucają wszystko**. Jeśli aplikacja działa, to znaczy, że
+albo reguły są ustawione świadomie, albo wygasły i nikt nie zauważył różnicy
+(aplikacja używa `?auth=<idToken>`, więc `auth != null` ją przepuszcza).
+
+**Jeśli wyjdzie `OTWARTE`:** w konsoli wklej
+
+```json
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null"
+  }
+}
+```
+
+i opublikuj. Aplikacja loguje się hasłem, więc przestanie działać tylko dla
+osób bez konta — czyli dla wszystkich obcych. **Sprawdź po zmianie, czy
+telefon nadal odczytuje status.**
