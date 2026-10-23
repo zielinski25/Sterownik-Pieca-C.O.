@@ -3,22 +3,47 @@
  Model cieplny kolektora zamiast mnożenia kWh/m² × 4,2
 ════════════════════════════════════════════════════════════════════════════
 
-Nakładka na drzewo v0.31.28. Nadpisuje 1 plik, dodaje 1 nowy,
-wymaga 3 drobnych zmian w Weather.kt.
+POPRAWKA 2026-10-23. Pierwsza wersja tej paczki miała błąd: w funkcji
+`estKwh()` mnożnik 200 zamiast 100. Podwajało to szacunek kWh i cofało
+poprawkę z wersji 0.31.26 (zbiornik ma 100 litrów, nie 200 kg).
+
+Ta wersja jest zbudowana z PLIKÓW Z TWOJEGO TELEFONU (v0.31.28,
+versionCode 3034), a nie z odtworzonej kopii. Sprawdzone hashem.
+
+Nakładka na drzewo v0.31.28. Podmienia 2 pliki, dodaje 1 nowy.
+ZERO ręcznych zmian w kodzie.
+
 
 | | |
 |---|---|
 | ZIP          | SterownikCO-Android-v0.31.29-MODEL.zip |
-| rozmiar      | 13 801 B (12 wpisów) |
-| sha256       | 88428ad93569e2d745cef953385e4bade08698a2e904ad82caae182e7aaf6b1c |
 | wersja       | versionCode 3035 / "v0.31.29" |
+| pliki w ZIP  | 3 pliki .kt + ten README |
+
+
+────────────────────────────────────────────────────────────────────────────
+ 0. HASHE — PO CZYM POZNASZ, ŻE MASZ DOBRY PLIK
+────────────────────────────────────────────────────────────────────────────
+
+Jeśli chcesz się upewnić, że skopiowałeś właściwy plik, policz SHA256:
+
+    Get-FileHash "ŚCIEŻKA\SolarAnalytics.kt" -Algorithm SHA256
+
+  SolarAnalytics.kt      288 linii    14 424 B
+    1FBD82686DD8FED69D2F30D14FFAF4F30E45BF47BD3C49DF3C473A716407E630
+
+  Weather.kt             202 linie    10 594 B
+    493009396FEA4FF889D52253E7C5C24DB615117F02F714E12D3A155F50EFFD7E
+
+  SolarThermalModel.kt   224 linie    10 397 B
+    DBC8A0DBCFE7688B9510CE69FB3218BB0D558FD2E622B3EB48447EA87F4AAA38
 
 
 ────────────────────────────────────────────────────────────────────────────
  1. CO TO ZMIENIA
 ────────────────────────────────────────────────────────────────────────────
 
-„ZYSK DZIŚ +21,5 °C" — to była SUMA samych wzrostów temperatury.
+„ZYSK DZIŚ +21,5 °C” — to była SUMA samych wzrostów temperatury.
 Każdy spadek był pomijany. Przy termosyfonie woda krąży pulsami, więc
 czujnik drga o ±0,1 °C, a każde drgnięcie w górę doliczało się od nowa.
 
@@ -27,7 +52,7 @@ czujnik drga o ±0,1 °C, a każde drgnięcie w górę doliczało się od nowa.
 
   TERAZ: pokazuje różnicę netto. Nie może przekroczyć fizyki.
 
-„PROGNOZA DZIŚ +11,2 °C" — to było 2,65 kWh/m² × 4,2, na słońcu
+„PROGNOZA DZIŚ +11,2 °C” — to było 2,65 kWh/m² × 4,2, na słońcu
 z PŁASZCZYZNY POZIOMEJ. Kolektor stoi pod kątem ~45°, więc dostaje GTI,
 które ma się do GHI jak 0,88 (pochmurno) do 1,83 (bezchmurnie).
 Do tego nie było członu strat, więc prognoza nie umiała pokazać spadku.
@@ -44,12 +69,19 @@ Do tego nie było członu strat, więc prognoza nie umiała pokazać spadku.
  2. CO JEST W PACZCE
 ────────────────────────────────────────────────────────────────────────────
 
-  SolarThermalModel.kt    NOWY plik — sam model, nic nie nadpisuje
-  SolarAnalytics.kt       NADPISUJE istniejący
-  Weather-GTI-INSTRUKCJA.txt   3 zmiany, które musisz zrobić ręcznie
-  ZMIANY-0.31.28-do-0.31.29.diff   to samo co wyżej, jako łatka
+  Wszystkie trzy idą do tego samego folderu:
 
-  SterownikCO-Android-v0.31.29-MODEL.zip   wszystkie pliki razem
+    app\src\main\java\com\sterownikco\pro\core\
+
+  SolarThermalModel.kt    NOWY plik — nie istnieje, więc nic nie nadpisujesz
+  SolarAnalytics.kt       NADPISUJE istniejący
+  Weather.kt              NADPISUJE istniejący — PEŁNY plik, gotowy
+
+  Weather.kt dostaje pole `tiltedIrradiance` i zapytanie o GTI pod kątem 45°.
+  To jedyna zmiana w tym pliku — 19 linii, wszystkie dotyczą nasłonecznienia
+  w płaszczyźnie kolektora. Reszta pliku jest nietknięta.
+
+  NIC NIE MUSISZ JUŻ POPRAWIAC RĘCZNIE.
 
 
 ────────────────────────────────────────────────────────────────────────────
@@ -58,38 +90,28 @@ Do tego nie było członu strat, więc prognoza nie umiała pokazać spadku.
 
 Skopiuj cały folder projektu gdzieś obok, np.:
 
-  SterownikCO-0.31.28  →  SterownikCO-0.31.28-KOPIA
+  C:\Users\Rafcio\Desktop\SterownikCO-0.31.23
+  C:\Users\Rafcio\Desktop\SterownikCO-0.31.23-KOPIA
 
 Jeśli coś pójdzie nie tak, wracasz do kopii. Bez tego ani rusz.
 
 
 ────────────────────────────────────────────────────────────────────────────
- 4. CO ZROBIĆ — 5 KROKÓW
+ 4. CO ZROBIĆ — 4 KROKI
 ────────────────────────────────────────────────────────────────────────────
 
-KROK 1. Nowy plik
+KROK 1. Skopiuj trzy pliki
 
-  SolarThermalModel.kt  →  app/src/main/java/com/sterownikco/pro/core/
+  Wszystkie trzy z paczki wklej do:
 
-  Plik nie istnieje, więc nic nie nadpisujesz. Po prostu wklej.
+    C:\Users\Rafcio\Desktop\SterownikCO-0.31.23\app\src\main\java\com\sterownikco\pro\core\
 
-
-KROK 2. Nadpisz
-
-  SolarAnalytics.kt  →  app/src/main/java/com/sterownikco/pro/core/
-
-  (ten sam folder, ten sam plik — podmień zawartość)
+  Pytanie „plik już istnieje, zamienić?” → TAK.
 
 
-KROK 3. Popraw Weather.kt
+KROK 2. Podbij wersję
 
-  Otwórz Weather-GTI-INSTRUKCJA.txt i zrób 3 zmiany.
-  BEZ TEGO SIĘ NIE SKOMPILUJE.
-
-
-KROK 4. Podbij wersję
-
-  Plik: app/build.gradle.kts
+  Plik: app\build.gradle.kts
 
   Znajdź:
       versionCode = 3034
@@ -100,9 +122,9 @@ KROK 4. Podbij wersję
       versionName = "v0.31.29"
 
 
-KROK 5. Zbuduj
+KROK 3. Zbuduj
 
-  cd C:\Users\Rafcio\Desktop\SterownikCO-0.31.28-KOPIA
+  cd C:\Users\Rafcio\Desktop\SterownikCO-0.31.23
   .\gradlew assembleDebug
 
   Oczekiwany koniec:
@@ -112,11 +134,17 @@ KROK 5. Zbuduj
       app\build\outputs\apk\debug\app-debug.apk
 
 
+KROK 4. Wgraj na telefon
+
+  Ten sam plik APK co zawsze. Po instalacji sprawdź w „Informacje
+  o aplikacji”, że pisze: wersja v0.31.29-debug.
+
+
 ────────────────────────────────────────────────────────────────────────────
  5. CO ZOBACZYSZ PO WGRANIU
 ────────────────────────────────────────────────────────────────────────────
 
-Karta „BILANS & ZYSK KOLEKTORA SŁONECZNEGO":
+Karta „BILANS & ZYSK KOLEKTORA SŁONECZNEGO”:
 
   ZYSK DZIŚ        — inna liczba. NIŻSZA. To jest dobrze.
                      Wcześniej +21,5 °C, teraz około +15 °C.
@@ -128,11 +156,11 @@ Karty 7-dniowe — też się zmienią, bo korzystają z tego samego wzoru.
 
 JAK SPRAWDZIĆ, ŻE DZIAŁA:
 
-  Porównaj „ZYSK DZIŚ" z różnicą temperatur:
+  Porównaj „ZYSK DZIŚ” z różnicą temperatur:
       (ostatni odczyt panelu) − (pierwszy odczyt z dziś)
 
   Powinno się zgadzać co do 0,1 °C.
-  Jeśli „ZYSK DZIŚ" jest WYŻSZY od tej różnicy — coś poszło nie tak.
+  Jeśli „ZYSK DZIŚ” jest WYŻSZY od tej różnicy — coś poszło nie tak.
 
 
 ────────────────────────────────────────────────────────────────────────────
@@ -140,13 +168,14 @@ JAK SPRAWDZIĆ, ŻE DZIAŁA:
 ────────────────────────────────────────────────────────────────────────────
 
   Unresolved reference: tiltedIrradiance
-      → KROK 3 nie zrobiony. Wróć do instrukcji Weather.kt.
+      → Weather.kt nie został podmieniony. Wróć do KROKU 1.
+        Sprawdź hash — ma być 49300939…
 
   Unresolved reference: SolarThermalModel
-      → KROK 1 nie zrobiony, albo plik wylądował w złym folderze.
+      → SolarThermalModel.kt nie trafił do folderu core/.
         Musi być w .../com/sterownikco/pro/core/.
 
-  Unresolved reference: simulator / simulate
+  Unresolved reference: simulate
       → zły plik SolarThermalModel.kt. Funkcja nazywa się `simulate`.
 
   Cokolwiek innego — wklej komunikat, sprawdzę.
