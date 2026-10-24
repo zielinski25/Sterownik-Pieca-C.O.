@@ -1,0 +1,270 @@
+diff -ruN a/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt b/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-24 07:46:56.705227231 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-24 07:46:56.709227251 +0000
+@@ -48,6 +48,11 @@
+     // brała accumulatedGrossGain (suma z całego bufora, sięgająca kilka dni wstecz),
+     // więc pokazywała +93 °C, gdy model na dziś dawał +9 °C.
+     var todayGain by mutableDoubleStateOf(0.0)
++    // [0.31.32] Czy są JAKIEKOLWIEK próbki z dzisiaj. `todayGain` = 0,0 znaczy
++    // dwa różne rzeczy: „brak danych” albo „woda się nie zmieniła”. Karta pokazywała
++    // myślnik w obu przypadkach, a arkusz Czujniki pisał „brak próbek z dziś”
++    // nawet przy 568 próbkach. Flaga rozdziela te przypadki.
++    var todayHasData by mutableStateOf(false)
+     var todayDrawCount by mutableIntStateOf(0)
+     var todayDrawDrop by mutableDoubleStateOf(0.0)
+     val hasSamples: Boolean get() = archive.isNotEmpty()
+@@ -115,7 +120,8 @@
+                 if (s.isDraw != 0) { n += 1; d += s.drop }
+             }
+         }
+-        todayGain = if (!firstT.isNaN() && !lastT.isNaN()) lastT - firstT else 0.0
++        todayHasData = !firstT.isNaN() && !lastT.isNaN()
++        todayGain = if (todayHasData) lastT - firstT else 0.0
+         todayDrawCount = n; todayDrawDrop = d
+     }
+ 
+@@ -257,6 +263,20 @@
+             return if (g <= 0.0) 0.0 else min(g, MAX_DAILY_GAIN_C)
+         }
+ 
++        /** [0.31.32] Dobowa zmiana temperatury ZE ZNAKIEM — bez przycinania do zera.
++         *
++         *  `gainFromKwhM2` obcinało wynik ujemny do 0,0, więc karta 7-dniowa
++         *  pokazywała „+0,0 °C” także wtedy, gdy model liczył wychładzanie.
++         *  A to nie to samo, co „woda się nie zmieniła”.
++         *
++         *  Próg równowagi wypada przy 1,26 kWh/m² — poniżej tej dobowej sumy GTI
++         *  zbiornik oddaje więcej, niż zbiera. Wynik ujemny jest poprawny.
++         */
++        fun dayDeltaC(kwhM2: Double): Double {
++            if (!kwhM2.isFinite() || kwhM2 <= 0.0) return -LOSS_C_PER_DAY
++            return min(kwhM2 * GAIN_C_PER_KWH_M2 - LOSS_C_PER_DAY, MAX_DAILY_GAIN_C)
++        }
++
+         /** Dobowe nasłonecznienie w kWh/m².
+          *
+          *  [0.31.29] Preferuje GTI (`global_tilted_irradiance`) — słońce w PŁASZCZYŹNIE
+diff -ruN a/app/src/main/java/com/sterownikco/pro/core/SolarThermalModel.kt b/app/src/main/java/com/sterownikco/pro/core/SolarThermalModel.kt
+--- a/app/src/main/java/com/sterownikco/pro/core/SolarThermalModel.kt	2026-10-24 07:46:56.705227231 +0000
++++ b/app/src/main/java/com/sterownikco/pro/core/SolarThermalModel.kt	2026-10-24 07:46:56.709227251 +0000
+@@ -35,6 +35,11 @@
+ 
+     private const val STEPS_PER_HOUR = 120  // 3600 / 30
+ 
++    /** [0.31.32] Przepływ w PRZÓD (dzień). Duży, bo termosyfon sam się rozpędza,
++     *  gdy kolektor jest cieplejszy od zbiornika. Chodzi o to, żeby pętla szła
++     *  za zbiornikiem, a nie żeby sama magazynowała ciepło. */
++    private const val FORWARD_FLOW_KG_S = 0.05
++
+     // ─────────────────────────────────────────────────────────────────────
+     //  Parametry
+     // ─────────────────────────────────────────────────────────────────────
+@@ -72,6 +77,34 @@
+          */
+         val collectorTempOffsetC: Double = 0.0,
+ 
++        /**
++         * [0.31.32] Przepływ WSTECZNY termosyfonu [kg/s] — nocą, gdy zbiornik jest
++         * cieplejszy od pętli kolektora. Woda spływa z dachu do zbiornika i z powrotem,
++         * zabierając ciepło na zewnątrz. Bez pompy, napędza to różnica gęstości.
++         *
++         * Literatura: OSTI biblio/116242 (Performance analysis of a thermosyphon
++         * SWH, Part 2) podaje ~0,005 kg/s i wzrost strat „nearly fourfold”.
++         * Kolektor heat-pipe ma ten przepływ MNIEJSZY niż płaski — kondensator rurki
++         * cieplnej jest osłonięty izolacją (Int. J. Low-Carbon Tech. 10(4) 2015,
++         * „Reverse flow in natural convection heat pipe solar water heater”).
++         * Dlatego 0,004, a nie 0,005.
++         */
++        val reverseFlowKgS: Double = 0.004,
++
++        /**
++         * [0.31.32] Straty cieplne pętli kolektora do otoczenia [W/K]:
++         * manifold + rury zasilanie/powrót. Decyduje, jak szybko pętla stygnie
++         * po zachodzie i jak mocna jest potem cyrkulacja wsteczna.
++         */
++        val loopUaWk: Double = 1.0,
++
++        /**
++         * [0.31.32] Pojemność cieplna pętli [kg wody równoważnej]:
++         * woda w manifoldzie (10 rur) + rurach. Mała, więc pętla reaguje szybko
++         * i to ona — nie zbiornik — trzyma ciepło tuż po zachodzie.
++         */
++        val loopWaterKg: Double = 4.0,
++
+         /** Kąt nachylenia kolektora [°]. Używany tylko do zapytania o GTI. */
+         val tiltDeg: Int = 45,
+ 
+@@ -124,8 +157,12 @@
+         if (!startTempC.isFinite() || startTempC < -30.0 || startTempC > 150.0) return null
+ 
+         val heatCapacity = params.tankVolumeL * RHO_WATER / 1000.0 * C_WATER  // J/K
++        val loopCapacity = params.loopWaterKg * C_WATER                       // J/K
+ 
+         var temp = startTempC
++        // [0.31.32] Drugi węzeł: woda w pętli kolektora (manifold + rury).
++        // Startuje z temperaturą zbiornika — różnicę wyrównuje w kilka minut.
++        var loopTemp = startTempC
+         var peak = startTempC
+         var peakHour = 0.0
+         var min = startTempC
+@@ -136,22 +173,32 @@
+             val air = if (hour.airTempC.isFinite()) hour.airTempC else temp
+ 
+             for (step in 0 until STEPS_PER_HOUR) {
+-                // Temperatura, którą „widzi" absorber.
+-                val collectorTemp = temp + params.collectorTempOffsetC
+-                val dT = collectorTemp - air
++                // ── Węzeł 1: pętla kolektora ─────────────────────────────────
++                // Absorber widzi temperaturę WODY W PĘTLI, nie zbiornika. Pętla ma
++                // małą pojemność cieplną, więc szybko idzie za słońcem i szybko
++                // stygnie po zachodzie — i to jest cała różnica.
++                val loopD = loopTemp + params.collectorTempOffsetC - air
+ 
+-                // Moc użyteczna. Przycięta do zera: nocą kolektor nie grzeje
+-                // (i nie „chłodzi na minus" — chłodzenie liczy człon zbiornika).
+                 var q = params.apertureOptical * gti
+-                    - params.lossLinear * dT
+-                    - params.lossQuadratic * dT * dT
++                    - params.lossLinear * loopD
++                    - params.lossQuadratic * loopD * loopD
+                 if (q < 0.0) q = 0.0
+ 
+                 energyJoules += q * STEP_SECONDS
+ 
+-                // Bilans zbiornika: grzanie z kolektora minus strata postojowa.
+-                val lossWatts = params.tankUa * (temp - air)
+-                temp += (q - lossWatts) * STEP_SECONDS / heatCapacity
++                // Pętla traci ciepło przez izolację manifolda i rur.
++                loopTemp += (q - params.loopUaWk * (loopTemp - air)) * STEP_SECONDS / loopCapacity
++
++                // ── Termosyfon: kierunek z różnicy temperatur ────────────────
++                // Dzień:  pętla cieplejsza  → przepływ w przód, duży strumień.
++                // Noc:    zbiornik cieplejszy → cyrkulacja WSTECZNA, mały strumień.
++                //         To ona wynosi ciepło ze zbiornika na dach.
++                val flow = if (loopTemp > temp) FORWARD_FLOW_KG_S else params.reverseFlowKgS
++                val qFlow = flow * C_WATER * (loopTemp - temp)
++
++                // ── Węzeł 2: zbiornik ────────────────────────────────────────
++                temp += (qFlow - params.tankUa * (temp - air)) * STEP_SECONDS / heatCapacity
++                loopTemp -= qFlow * STEP_SECONDS / loopCapacity
+ 
+                 val hourFraction = index + (step + 1).toDouble() / STEPS_PER_HOUR
+                 if (temp > peak) { peak = temp; peakHour = hourFraction }
+diff -ruN a/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-24 07:46:56.705227231 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-24 07:46:56.709227251 +0000
+@@ -343,8 +343,12 @@
+                         // [0.31.27] Trzy liczby na tym kafelku dotyczą DZIŚ — ta sama doba,
+                         // ten sam model. Suma narastająca przeniosła się do arkusza Czujniki,
+                         // gdzie jest miejsce, żeby ją opisać.
+-                        MCard("⚡ ZYSK DZIŚ", if (sol.todayGain > 0) "+" + fmt1(sol.todayGain) + "°C" else "—",
+-                            "", SolarY),
++                        // [0.31.32] Ze znakiem. Wcześniej spadek 8,8 °C pokazywał się
++                        // jako „—”, a arkusz Czujniki twierdził „brak próbek z dziś”.
++                        // Myślnik czyta się jak „brak danych”, a znaczy „woda ostygła”.
++                        MCard(todayGainLabel(sol),
++                            if (sol.todayHasData) signedC(sol.todayGain) else "—",
++                            "", if (sol.todayHasData && sol.todayGain < -ZERO_EPS_C) Pal.Cyan else SolarY),
+                         MCard("🌡️ PANEL − POWIETRZE", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
+                             "", if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
+                         MCard("🚰 POBRANIA DZIŚ", if (sol.todayDrawCount > 0) sol.todayDrawCount.toString() + " razy" else "—",
+@@ -364,7 +368,7 @@
+                             fontWeight = FontWeight.ExtraBold, color = SolarY, letterSpacing = 0.4.sp,
+                             lineHeight = 12.sp, modifier = Modifier.weight(1f))
+                     }
+-                    Text("o ile °C może ogrzać się woda w zbiorniku 100 l · szacunek, nie pomiar",
++                    Text("potencjał całej doby, nie od teraz · minus = woda się wychładza · szacunek, nie pomiar",
+                         fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp)
+                     BoxWithConstraints(Modifier.fillMaxWidth()) {
+                         // CSS repeat(auto-fit, minmax(110px, 1fr)) with 6px gap.
+@@ -439,7 +443,10 @@
+     val estRadPeak = (dayHours.mapNotNull { it.tiltedIrradiance }.maxOrNull()
+         ?: dayHours.mapNotNull { it.shortwaveRadiation }.maxOrNull())?.roundToInt() ?: peakFallback
+     // Jeden model dla wszystkich dni — ten sam, co w „PROGNOZIE ZYSKU”.
+-    val modelGain = Math.round(SolarAnalytics.gainFromKwhM2(SolarAnalytics.dayKwhM2(dayHours)) * 10) / 10.0
++    // [0.31.32] `dayDeltaC` zamiast `gainFromKwhM2` — wartość ZE ZNAKIEM.
++    // Poniżej progu równowagi (1,26 kWh/m²) woda się wychładza i karta ma to pokazać,
++    // a nie udawać „+0,0 °C” (= „bez zmian”).
++    val modelGain = Math.round(SolarAnalytics.dayDeltaC(SolarAnalytics.dayKwhM2(dayHours)) * 10) / 10.0
+     // [0.31.28] Wszystkie karty tej sekcji to PROGNOZA — także DZIŚ. Zmierzony zysk
+     // jest osobno w „BILANSIE SOLARNYM" jako „Zysk dziś · zmierzone".
+     // Mieszanie pomiaru i prognozy w jednej siatce myliło, który dzień jest który.
+@@ -455,7 +462,8 @@
+                 color = if (today) SolarY else Pal.TextDim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+             Text(sunEmoji, fontSize = 8.5.sp)
+         }
+-        Text("+" + fmt1(estGainC) + "°C", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = SolarY)
++        Text(signedC(estGainC), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold,
++            color = if (estGainC < -ZERO_EPS_C) Pal.Cyan else SolarY)
+         Text("☀️ do $estRadPeak W/m²", fontSize = 7.5.sp, color = Pal.Cyan)
+     }
+ }
+@@ -472,7 +480,7 @@
+     ) {
+         Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO · 7 DNI", fontSize = 9.5.sp,
+             fontWeight = FontWeight.ExtraBold, color = SolarY, letterSpacing = 0.4.sp, lineHeight = 12.sp)
+-        Text("o ile °C może ogrzać się woda w zbiorniku 100 l · szacunek, nie pomiar",
++        Text("potencjał całej doby, nie od teraz · minus = woda się wychładza · szacunek, nie pomiar",
+             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp)
+         if (dailies.isEmpty()) {
+             Text(if (m.weatherBusy) "Pobieranie prognozy…" else "Brak prognozy",
+@@ -834,6 +842,24 @@
+ 
+ private val W_DOW = listOf("Nd", "Pn", "Wt", "Śr", "Cz", "Pt", "Sb")
+ 
++// ── [0.31.32] Znak temperatury ────────────────────────────────────────────────
++
++/** Próg „zero” — pod rozdzielczością wyświetlania (0,1 °C). */
++private const val ZERO_EPS_C = 0.05
++
++/** Temperatura ze znakiem. Zero bez plusa: „+0,0” sugerowało wzrost, którego nie ma.
++ *  Minus jest informacją — woda się wychładza, i tyle. */
++private fun signedC(v: Double): String = when {
++    !v.isFinite() -> "—"
++    v > ZERO_EPS_C -> "+" + fmt1(v) + "°C"
++    v < -ZERO_EPS_C -> "−" + fmt1(-v) + "°C"
++    else -> "0.0°C"
++}
++
++/** Etykieta karty „ZYSK DZIŚ”. Przy spadku mówi wprost, że to spadek. */
++private fun todayGainLabel(sol: SolarAnalytics): String =
++    if (sol.todayHasData && sol.todayGain < -ZERO_EPS_C) "⚡ SPADEK DZIŚ" else "⚡ ZYSK DZIŚ"
++
+ // ── [0.31.30] Wspólne dla karty „DO KOŃCA DNIA” i arkusza Czujniki ─────────────
+ 
+ /** Czy do końca doby jest jeszcze słońce dające >20 W/m² w płaszczyźnie kolektora.
+diff -ruN a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-24 07:46:56.705227231 +0000
++++ b/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-24 07:46:56.709227251 +0000
+@@ -348,9 +348,16 @@
+             "Różnica panel − powietrze",
+             if (delta.isFinite()) (if (delta >= 0) "+" else "") + s.fmt1(delta) + "°C" else "brak danych"
+         )
++        // [0.31.32] Ze znakiem i bez kłamstwa „brak próbek z dziś”, gdy próbki są.
+         SolarMetricRow(
+-            "Zysk dziś · zmierzone",
+-            if (solar.todayGain > 0) "+${s.fmt1(solar.todayGain)}°C" else "brak próbek z dziś"
++            if (solar.todayHasData && solar.todayGain < -0.05) "Spadek dziś · zmierzone"
++            else "Zysk dziś · zmierzone",
++            when {
++                !solar.todayHasData -> "brak próbek z dziś"
++                solar.todayGain > 0.05 -> "+${s.fmt1(solar.todayGain)}°C"
++                solar.todayGain < -0.05 -> "−${s.fmt1(-solar.todayGain)}°C"
++                else -> "0.0°C · bez zmian"
++            }
+         )
+         SolarMetricRow(
+             "Do końca dnia · szacunek",
+@@ -369,9 +376,9 @@
+             if (solar.todayDrawCount > 0) "${solar.todayDrawCount} razy · −${s.fmt1(solar.todayDrawDrop)}°C" else "brak"
+         )
+         Text(
+-            "Zysk = o ile °C ogrzała się woda w zbiorniku 100 l. " +
+-                "„Zmierzone” to odczyt czujnika w zbiorniku, „szacunek” to wyliczenie " +
+-                "z prognozy słońca — nie pomiar.",
++            "Zysk = o ile °C ogrzała się woda w zbiorniku 100 l. Minus = woda się " +
++                "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku, „szacunek” to " +
++                "wyliczenie z prognozy słońca — nie pomiar.",
+             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp,
+             modifier = Modifier.padding(top = 6.dp)
+         )

@@ -37,6 +37,7 @@ import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.core.PiecState
 import com.sterownikco.pro.core.SensorDef
 import com.sterownikco.pro.ui.screens.SolarMultiDayForecast
+import com.sterownikco.pro.ui.screens.solarSunLeft
 import com.sterownikco.pro.ui.components.ManualRow
 import com.sterownikco.pro.ui.components.Note
 import com.sterownikco.pro.ui.components.NumRow
@@ -315,6 +316,11 @@ fun OverheatSheet(m: AppModel, panel: Boolean) {
 
 @Composable
 private fun SolarMetricsCard(m: AppModel) {
+    // [0.31.30] Czy do końca doby zostało jeszcze słońce — ten sam warunek co karta
+    // „DO KOŃCA DNIA” na ekranie Pogoda. Bez tego po zachodzie wychodziło „+0,0 °C”,
+    // co czyta się jak awaria modelu, a jest poprawnym wynikiem.
+    val sunnyHours = m.weather?.hourly.orEmpty()
+    val sunLeft = solarSunLeft(sunnyHours, com.sterownikco.pro.core.Weather.startOfHour())
     val s = m.S
     val solar = m.solar
     val panelTemp = s.valOf("panel", "t_panel")
@@ -334,23 +340,47 @@ private fun SolarMetricsCard(m: AppModel) {
     ) {
         Text("BILANS SOLARNY", style = Txt.diagLbl)
         Spacer(Modifier.height(2.dp))
-        SolarMetricRow("Panel teraz / zewnątrz", "$panelText / $outsideText")
+        // [0.31.28] Każda liczba mówi wprost, skąd pochodzi: „zmierzone" to czujnik,
+        // „szacunek" to wyliczenie z prognozy. Zniknęły sumy narastające — nie dały
+        // się obronić (sumowały każdy drobny wzrost, także szum czujnika).
+        SolarMetricRow("Panel teraz / powietrze", "$panelText / $outsideText")
         SolarMetricRow(
-            "Zysk brutto słońca",
-            if (solar.hasSamples) "+${s.fmt1(solar.accumulatedGrossGain)}°C · ~${s.fmt1(solar.estKwh())} kWh" else "brak próbek"
-        )
-        SolarMetricRow(
-            "ΔT panel − zewnątrz",
+            "Różnica panel − powietrze",
             if (delta.isFinite()) (if (delta >= 0) "+" else "") + s.fmt1(delta) + "°C" else "brak danych"
         )
+        // [0.31.32] Ze znakiem i bez kłamstwa „brak próbek z dziś”, gdy próbki są.
         SolarMetricRow(
-            "Pobory wody C.W.U.",
-            if (solar.hasSamples) "${solar.drawCount} wykrytych · −${s.fmt1(solar.accumulatedDrawDrop)}°C" else "brak próbek"
+            if (solar.todayHasData && solar.todayGain < -0.05) "Spadek dziś · zmierzone"
+            else "Zysk dziś · zmierzone",
+            when {
+                !solar.todayHasData -> "brak próbek z dziś"
+                solar.todayGain > 0.05 -> "+${s.fmt1(solar.todayGain)}°C"
+                solar.todayGain < -0.05 -> "−${s.fmt1(-solar.todayGain)}°C"
+                else -> "0.0°C · bez zmian"
+            }
         )
         SolarMetricRow(
-            "Prognoza zysku · model godzinowy",
-            if (solar.forecastGain.isFinite() && solar.forecastKwh.isFinite())
-                "+${s.fmt1(solar.forecastGain)}°C · ~${s.fmt1(solar.forecastKwh)} kWh" else "brak prognozy"
+            "Do końca dnia · szacunek",
+            when {
+                !sunLeft -> "bez słońca do końca dnia"
+                !solar.forecastGain.isFinite() -> "brak prognozy"
+                // [0.31.31] Ten sam warunek co karta „DO KOŃCA DNIA” — patrz Weather.kt.
+                !solar.forecastPeakReal -> "słońce nie przebije strat ciepła"
+                solar.forecastPeakLabel.isNotEmpty() && solar.forecastEnergyKwh.isFinite() ->
+                    "+${s.fmt1(solar.forecastGain)}°C · szczyt ${solar.forecastPeakLabel} · ${s.fmt1(solar.forecastEnergyKwh)} kWh"
+                else -> "+${s.fmt1(solar.forecastGain)}°C"
+            }
+        )
+        SolarMetricRow(
+            "Pobrania ciepłej wody",
+            if (solar.todayDrawCount > 0) "${solar.todayDrawCount} razy · −${s.fmt1(solar.todayDrawDrop)}°C" else "brak"
+        )
+        Text(
+            "Zysk = o ile °C ogrzała się woda w zbiorniku 100 l. Minus = woda się " +
+                "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku, „szacunek” to " +
+                "wyliczenie z prognozy słońca — nie pomiar.",
+            fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp,
+            modifier = Modifier.padding(top = 6.dp)
         )
         SolarMultiDayForecast(m)
     }

@@ -1,0 +1,48 @@
+Paczka: SterownikCO-Android-v0.31.32-PETLA.zip
+Data:   2026-10-24
+
+ZIP
+  rozmiar  37431 B
+  sha256   500616AB9B4AAB5A13289979418858342B447F19BE26796E6A754AA8DB5D99B6
+  wpisów   16 (11 katalogów + 4 pliki .kt + README)
+
+Pliki w środku
+  0BAAEFCE6D90FF98A8F10ACB9BCB3894ADBA914B666AE9A11169EACE337A20E3
+    app/src/main/java/com/sterownikco/pro/core/SolarThermalModel.kt      (271 linii, 13303 B)  NOWY w paczce
+
+  D2173F381AFCA5A268669CFF4FF8A81ABCDCBA6EBB27398B30B72D3A59119B92
+    app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt         (324 linie, 16646 B)
+
+  6352E05DE191D8E46521DBE96CC991EC461EDA8BF9BD65ABE35664639C243BFC
+    app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt          (953 linie, 53019 B)
+
+  E6F12741020D1004EEE63215ED3052A5F34068FFCFC9644C4C5B2D8595AC383C
+    app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt    (415 linii, 21801 B)
+
+Punkt wyjścia (stan v0.31.31, z którego liczona jest łatka)
+  DBC8A0DBCFE7688B9510CE69FB3218BB0D558FD2E622B3EB48447EA87F4AAA38  SolarThermalModel.kt  (= wersja jednowęzłowa, ta sama co w v0.31.29)
+  1FBD82686DD8FED69D2F30D14FFAF4F30E45BF47BD3C49DF3C473A716407E630  SolarAnalytics.kt     (304 linie)
+  386B367A6EA5F413F6E2B9AEFBA6887D088D4DF411606E1FFC9E1DB3AC97246E  Weather.kt            (927 linii)
+  B5DEA99128C693C3F13AD8B558BE9F986E87324E70EA1495D918EF19E07E8BC1  Sensors.kt            (408 linii)
+
+Łatka ZMIANY-0.31.31-do-0.31.32.diff (270 linii)
+  - suchy przebieg na czystej kopii v0.31.31: "checking file" x4, bez FAILED
+  - po nałożeniu: cmp bit w bit z plikami tej paczki — 4/4 OK
+  - nawiasy: ( ) { } zbalansowane w każdym z 4 plików
+
+MODEL — sprawdzenie na 5 dobach (20-24.10), symulacja ciągła co 30 s,
+temperatury powietrza z Open-Meteo, GTI w płaszczyźnie 45°:
+
+  model                    RMS błędu   obciążenie min   obciążenie max
+  stary (bez pętli)         5,85 °C       +4,4 °C          +3,1 °C
+  nowy  (pętla 0,004)       2,63 °C       −0,0 °C          −0,5 °C
+
+  szczyt 23.10:  zmierzone 47,2 °C @15:05
+                 stary     46,6 °C @18:00   (błąd godziny +2,9 h)
+                 nowy      44,7 °C @17:01   (błąd godziny +2,0 h)
+
+Parametry pętli (z literatury, nie z dopasowania na oko):
+  reverseFlowKgS = 0,004  (OSTI biblio/116242: ~0,005; heat-pipe mniej)
+  loopUaWk       = 1,0
+  loopWaterKg    = 4,0
+  FORWARD_FLOW_KG_S = 0,05 (stała prywatna)
