@@ -144,6 +144,30 @@ fun ChartsPage(m: AppModel) {
                     .border(BorderStroke(1.dp, Pal.rgba(0, 212, 245, .35f)), RoundedCornerShape(10.dp))
                     .padding(horizontal = 8.dp, vertical = 3.dp))
         }
+        // [v0.31.33 CLOUD-MARK] „Ostatnia próbka w chmurze" — ile czasu temu
+        // sterownik dostał potwierdzenie z Firebase. To jedyna liczba, która
+        // mówi, czy wykres z chmury jest kompletny: gdy rośnie do kilkunastu
+        // minut, znaczy że próbki czekają w kolejce, a nie że ich nie ma.
+        if (m.S.tel_known) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val color = when {
+                    m.S.tel_cloud_ago < 0 -> Pal.TextDim
+                    m.S.tel_cloud_ago <= 180 -> Pal.Live
+                    m.S.tel_cloud_ago <= 600 -> Pal.Accent
+                    else -> Pal.Err
+                }
+                Kpi("W CHMURZE", cloudAgeLabel(m.S.tel_cloud_ago), color)
+                // Do 10 próbek w kolejce to stan NORMALNY (tyle idzie w jednej paczce).
+                val ringColor = when {
+                    m.S.tel_ring <= 10 -> Pal.Live
+                    m.S.tel_ring <= 60 -> Pal.Accent
+                    else -> Pal.Err
+                }
+                Kpi("KOLEJKA", m.S.tel_ring.toString() + " szt.", ringColor)
+                Kpi("WYSYŁKA", if (m.S.tel_pending) "W TOKU" else "BEZ ZALEGŁOŚCI",
+                    if (m.S.tel_pending) Pal.Accent else Pal.Live)
+            }
+        }
         // `.chart-ctrl-card`
         Column(
             Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(Dimens.radiusCard))
@@ -578,6 +602,15 @@ private fun ChartLegendStroke(dashed: Boolean) {
     }
 }
 
+/** [v0.31.33 CLOUD-MARK] „3 min temu" zamiast liczby sekund. */
+private fun cloudAgeLabel(sec: Long): String = when {
+    sec < 0 -> "brak danych"
+    sec < 90 -> "teraz"
+    sec < 3600 -> "${(sec / 60).toInt()} min temu"
+    sec < 86_400 -> "${(sec / 3600).toInt()} h temu"
+    else -> "${(sec / 86_400).toInt()} dni temu"
+}
+
 /** Dymek nad wykresem: każda wartość używa koloru swojej serii, jak w Piec.html. */
 @Composable
 private fun ChartHoverTooltip(
@@ -596,6 +629,19 @@ private fun ChartHoverTooltip(
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Text(chartTimeLabel(m, row.ts), fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan)
+        // [v0.31.33 TIMELINE] Przerwa przed tą próbką — dotąd dziura była
+        // niewidoczna, bo oś liczyła numery próbek, nie czas.
+        val prev = view.rows.getOrNull(index - 1)
+        if (prev != null && row.ts - prev.ts > 360_000L) {
+            Text(
+                "⏸ przerwa w danych: " + ((row.ts - prev.ts) / 60_000L) + " min",
+                fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Pal.Accent
+            )
+        }
+        // Próbka, której nie ma w chmurze — pochodzi z lokalnego archiwum centrali.
+        if (row.seq < 0L && !row.isLive) {
+            Text("z archiwum centrali (brak w chmurze)", fontSize = 7.5.sp, color = Pal.TextDim)
+        }
         view.cat.forEach { s ->
             val x = view.values[s.id]?.getOrNull(index)
             val value = when {

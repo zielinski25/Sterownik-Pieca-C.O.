@@ -299,13 +299,16 @@ fun ChartCanvas(
                 padL = padL,
                 plotW = plotW,
                 onTap = { pos, pl, pw ->
-                    chartSampleIndexAtX(pos.x, pl, pw, viewState.value.rows.size)?.let { onCrossState.value(it) }
+                    // [v0.31.33 TIMELINE] Trafiamy w probke po CZASIE jej znacznika,
+                    // a nie po numerze w tabeli — inaczej po przerwie w danych
+                    // kursor pokazywal wartosc z zupelnie innej godziny.
+                    chartSampleIndexAtTimeX(pos.x, pl, pw, viewState.value.rows)?.let { onCrossState.value(it) }
                 },
                 onDoubleTap = { onCrossState.value(null); onResetViewState.value() },
                 onHorizontalDrag = { x, dx ->
                     if (inspectorActiveState.value) {
                         // Gdy inspektor jest otwarty, przesuwamy próbkę pod palcem zamiast panoramować wykres.
-                        chartSampleIndexAtX(x, padL, plotW, viewState.value.rows.size)?.let { onCrossState.value(it) }
+                        chartSampleIndexAtTimeX(x, padL, plotW, viewState.value.rows)?.let { onCrossState.value(it) }
                     } else if (plotW > 0f && dx != 0f) {
                         onPanState.value(dx / plotW)
                     }
@@ -375,18 +378,23 @@ fun ChartCanvas(
                 }
             }
         }
-        // Oś X: godzina zwykle; dzień/miesiąc tylko przy początku lub zmianie daty.
-        val xSteps = min(5, view.rows.size)
-        val spanMs = if (view.rows.size > 1) view.rows.last().ts - view.rows.first().ts else 0L
+        // [v0.31.33 TIMELINE] Oś X w CZASIE: podziałki co równe minuty/godziny,
+        // niezależnie od tego, ile próbek akurat jest w oknie. Dzięki temu
+        // przerwa w danych jest widoczna jako odstęp, a nie znika.
+        val timeAxis = ChartTimeAxis(view.rows.first().ts, view.rows.last().ts, padLeft, plotW)
+        val xSteps = 4
         var previousLabelTs: Long? = null
-        for (i in 0 until xSteps) {
-            val idx = ((view.rows.size - 1) * (i.toDouble() / max(1, xSteps - 1))).roundToInt()
-            val row = view.rows.getOrNull(idx) ?: continue
-            val xPos = padLeft + (plotW / max(1f, (view.rows.size - 1).toFloat())) * idx
-            val lbl = fmtXLabel(row.ts, spanMs, previousLabelTs)
+        for (i in 0..xSteps) {
+            val ts = timeAxis.tsAtFraction(i.toDouble() / xSteps)
+            val xPos = timeAxis.xOfFraction(i.toDouble() / xSteps)
+            val lbl = fmtXLabel(ts, timeAxis.spanMs, previousLabelTs)
             val tp = measure(lbl, axis)
-            drawText(tp, topLeft = Offset(xPos - tp.size.width / 2f, h - 8.dp.toPx() - tp.size.height / 2f))
-            previousLabelTs = row.ts
+            // Etykieta skrajna nie może wyjechać poza pole wykresu (wcześniej
+            // pierwsza i ostatnia były ucinane przy krawędzi).
+            val labelX = (xPos - tp.size.width / 2f)
+                .coerceIn(padLeft, (w - padRight - tp.size.width).coerceAtLeast(padLeft))
+            drawText(tp, topLeft = Offset(labelX, h - 8.dp.toPx() - tp.size.height / 2f))
+            previousLabelTs = ts
         }
 
         // serie
@@ -398,7 +406,7 @@ fun ChartCanvas(
             view.rows.forEachIndexed { idx, r ->
                 val v = vals.getOrNull(idx)
                 if (v != null && v.isFinite()) {
-                    val x = padLeft + (idx.toFloat() / max(1f, (view.rows.size - 1).toFloat())) * plotW
+                    val x = timeAxis.xOf(r.ts)
                     val y = when {
                         s.group == "pump" -> padTop + plotH * (1 - (v / 100.0).toFloat())
                         view.dual && s.group == view.secGroup ->
@@ -509,7 +517,8 @@ fun ChartCanvas(
         run {
             val idx = crossIdx
             if (idx != null && idx >= 0 && idx < view.rows.size) {
-                val x = padLeft + (idx.toFloat() / max(1f, (view.rows.size - 1).toFloat())) * plotW
+                // Kursor stoi na CZASIE próbki — tak samo jak linia serii.
+                val x = timeAxis.xOf(view.rows[idx].ts)
                 clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
                     drawLine(Pal.rgba(0, 212, 245, .7f), Offset(x, padTop), Offset(x, padTop + plotH), 1.2.dp.toPx(),
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())))
@@ -538,6 +547,70 @@ fun ChartCanvas(
             }
         }
     }
+}
+
+/**
+ * [v0.31.33 TIMELINE] Jedna geometria osi X dla rysowania, kursora i gestów.
+ * Wcześniej wszystko liczyło się z numeru próbki (`idx / (n-1)`), więc każda
+ * przerwa w transmisji „znikała": 10-minutowa dziura zajmowała tyle samo
+ * miejsca co minuta, a etykiety kłamały (np. prawa krawędź 10:34, choć dane
+ * sięgały 11:26). Teraz x = (czas próbki − czas pierwszej) / (czas ostatniej − …).
+ */
+internal class ChartTimeAxis(
+    val t0: Long,
+    val t1: Long,
+    val padLeft: Float,
+    val plotWidth: Float
+) {
+    /** Szerokość okna w ms; 1 przy zdegenerowanym czasie (jedna próbka/ten sam ts). */
+    val spanMs: Long get() = (t1 - t0).coerceAtLeast(1L)
+    val degenerate: Boolean get() = t1 <= t0
+
+    fun xOfFraction(fraction: Double): Float {
+        val f = fraction.coerceIn(0.0, 1.0)
+        return padLeft + plotWidth * f.toFloat()
+    }
+
+    fun tsAtFraction(fraction: Double): Long =
+        t0 + (spanMs * fraction.coerceIn(0.0, 1.0)).toLong()
+
+    fun xOf(ts: Long): Float =
+        xOfFraction((ts - t0).toDouble() / spanMs.toDouble())
+
+    /** Znacznik czasu pod palcem (do etykiet i testów). */
+    fun tsAtX(x: Float): Long {
+        if (!plotWidth.isFinite() || plotWidth <= 0f) return t0
+        return tsAtFraction(((x - padLeft) / plotWidth).toDouble())
+    }
+}
+
+/**
+ * [v0.31.33 TIMELINE] Najbliższa próbka pod palcem przy osi czasowej.
+ * Gdy znaczniki są zdegenerowane (wszystkie równe), wracamy do starego
+ * mapowania indeksowego — inaczej nie dałoby się nic wskazać.
+ */
+internal fun chartSampleIndexAtTimeX(
+    x: Float,
+    padLeft: Float,
+    plotWidth: Float,
+    rows: List<TelemPoint>
+): Int? {
+    if (rows.size < 2 || !plotWidth.isFinite() || plotWidth <= 0f || !x.isFinite()) return null
+    val axis = ChartTimeAxis(rows.first().ts, rows.last().ts, padLeft, plotWidth)
+    if (axis.degenerate) return chartSampleIndexAtX(x, padLeft, plotWidth, rows.size)
+    val target = axis.tsAtX(x)
+    // rows są posortowane rosnąco po ts — bisekcja na pierwszy znacznik >= target
+    var lo = 0
+    var hi = rows.size - 1
+    while (lo < hi) {
+        val mid = (lo + hi) / 2
+        if (rows[mid].ts < target) lo = mid + 1 else hi = mid
+    }
+    val left = (lo - 1).coerceAtLeast(0)
+    val right = lo
+    val dLeft = kotlin.math.abs(rows[left].ts - target)
+    val dRight = kotlin.math.abs(rows[right].ts - target)
+    return if (dRight < dLeft) right else left
 }
 
 internal fun chartSampleIndexAtX(x: Float, padLeft: Float, plotWidth: Float, sampleCount: Int): Int? {

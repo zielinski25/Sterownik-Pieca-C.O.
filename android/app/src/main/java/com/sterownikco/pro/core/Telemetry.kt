@@ -64,6 +64,70 @@ fun mergeChartPoints(history: List<TelemPoint>, live: List<TelemPoint>): List<Te
     )
 }
 
+/**
+ * [v0.31.33 ESP-HISTORY] Parser lokalnego archiwum centrali — `GET /api/history`.
+ * Układ 14 kolumn (dokładnie jak `historiaLiniaCsv()` w `main_centrala.cpp`):
+ *   0 etykieta „RRRR-MM-DD GG:MM”, 1 t_zewn, 2 t_bojler, 3 t_ogrz, 4 t_ogrz_sr,
+ *   5 t_powrot, 6 t_panel, 7 t_pokoj, 8 pompa (0/1), 9 cisnienie, 10 wilgotnosc,
+ *   11 klapa %, 12 syberka %, 13 czas_unix (dopisany w v3.0.0.2).
+ *
+ * Dlaczego to jest potrzebne: telefon dotąd rysował wykresy wyłącznie z chmury,
+ * więc próbki, których chmura nie dostała (np. 10 z 24.10 10:04–10:13), nie
+ * pojawiały się na wykresie nigdy. Centrala ma je u siebie w `/hist_short.csv`
+ * i wystawia przez `/api/history` — tutaj je czytamy.
+ *
+ * Odporność: ostatnia kolumna bywa `,0` (stare pliki), dlatego czas bierzemy
+ * z ostatniej kolumny, która wygląda na unix, a gdy takiej nie ma — z etykiety.
+ */
+fun parseEspHistoryCsv(csv: String): List<TelemPoint> {
+    if (csv.isBlank()) return emptyList()
+    val out = ArrayList<TelemPoint>()
+    var seq = 0L
+    csv.lineSequence().forEach { raw ->
+        val line = raw.trim().trimEnd('\r')
+        if (line.isEmpty() || line.startsWith("etykieta")) return@forEach
+        val c = line.split(',')
+        if (c.size < 14) return@forEach
+        val ts = espHistoryTimestamp(c) ?: return@forEach
+        fun num(i: Int): Double? = c.getOrNull(i)?.trim()?.toDoubleOrNull()?.takeIf { it.isFinite() }
+        val pump = c.getOrNull(8)?.trim()?.toIntOrNull()?.let { it != 0 }
+        out.add(
+            TelemPoint(
+                ts = ts, seq = ++seq,
+                t_zewn = num(1), t_bojler = num(2), t_ogrz = num(3), t_ogrz_sr = num(4),
+                t_powrot = num(5), t_panel = num(6), t_pokoj = num(7), t_trociny = null,
+                wilgotnosc = num(10), cisnienie = num(9), dym = null,
+                klapa = num(11), syberka = num(12),
+                sim = 0L, simulated = false, isLive = false, pumpOn = pump
+            )
+        )
+        Unit
+    }
+    // Kolejność rosnąca po czasie + jeden wiersz na znacznik (ostatni wygrywa).
+    val byTs = LinkedHashMap<Long, TelemPoint>()
+    out.sortedBy { it.ts }.forEach { byTs[it.ts] = it }
+    return byTs.values.toList()
+}
+
+private const val ESP_HISTORY_MIN_TS = 1_600_000_000L
+private const val ESP_HISTORY_MAX_TS = 2_200_000_000L
+
+/** Czas próbki: unix z CSV, a gdy go brak — z etykiety `RRRR-MM-DD GG:MM` (czas lokalny). */
+private fun espHistoryTimestamp(cols: List<String>): Long? {
+    for (i in cols.indices.reversed()) {
+        val v = cols[i].trim().toLongOrNull() ?: continue
+        if (v in ESP_HISTORY_MIN_TS..ESP_HISTORY_MAX_TS) return v
+    }
+    val label = cols.firstOrNull()?.trim() ?: return null
+    return try {
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US)
+        fmt.isLenient = false
+        fmt.parse(label)?.time?.let { it / 1000L }
+    } catch (e: Exception) {
+        null
+    }
+}
+
 private val SIM_CHANNELS = mapOf(
     "t_zewn" to 0, "t_bojler" to 1, "t_ogrz" to 2, "t_ogrz_sr" to 3,
     "t_powrot" to 4, "t_panel" to 5, "t_pokoj" to 6, "t_trociny" to 7,

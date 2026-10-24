@@ -321,6 +321,12 @@ object Rtdb {
         if (code in 200..299) try { JSONObject(text) } catch (e: Exception) { null } else null
     }
 
+    /** [v0.31.33 ESP-HISTORY] Surowy tekst z centrali — dla `/api/history` (CSV, nie JSON). */
+    private suspend fun espGetText(ip: String, path: String): String? = espUrl(ip, path)?.let { u ->
+        val (code, text) = executeEsp(Request.Builder().url(u).build())
+        if (code in 200..299) text else null
+    }
+
     private suspend fun espPost(ip: String, path: String, body: JSONObject): JSONObject? = espUrl(ip, path)?.let { u ->
         val (code, text) = executeEsp(Request.Builder().url(u).post(body.toString().toRequestBody(JSON)).build())
         if (code in 200..299) try { JSONObject(text) } catch (e: Exception) { null } else null
@@ -348,6 +354,18 @@ object Rtdb {
     suspend fun wifiScanResult(ip: String): JSONObject? = espGet(ip, "/api/wifi/scan/result")
     suspend fun rtcSync(ip: String, y: Int, mo: Int, d: Int, h: Int, mi: Int, s: Int): JSONObject? =
         espGet(ip, "/api/rtc-sync?rok=$y&miesiac=$mo&dzien=$d&godzina=$h&minuta=$mi&sekunda=$s")
+    /**
+     * [v0.31.33 ESP-HISTORY] Lokalne archiwum centrali: `GET /api/history`.
+     * To ta sama historia, którą centrala wysyła do chmury — ale z próbkami,
+     * które w chmurze się nie pojawiły (przerwy wysyłki). Zakres ~24–38 h.
+     */
+    suspend fun fetchEspHistory(ip: String): List<TelemPoint>? {
+        val csv = espGetText(ip, "/api/history") ?: return null
+        if (csv.isBlank()) return null
+        val rows = withContext(Dispatchers.Default) { parseEspHistoryCsv(csv) }
+        return rows.ifEmpty { null }
+    }
+
     suspend fun terminalSend(ip: String, line: String): JSONObject? =
         espPost(ip, "/api/terminal", JSONObject().put("cmd", line))
 
