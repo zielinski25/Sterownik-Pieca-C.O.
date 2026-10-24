@@ -40,8 +40,8 @@ TRZY rzeczy, które sprawdziliśmy na Twoich danych z 24.10:
   ChartEngine.kt          654 linie   32 675 B   (ui\chart\)
     572655B39EEE158462C018857D01F432DC57EF278AC576074BED4188DAB079F8
 
-  Charts.kt               654 linie   33 381 B   (ui\screens\)
-    B34D239001914E483C40B1166AF3CB34D19AC2674F3F95646CBC305DB763FE6A
+  Charts.kt               660 linii   33 631 B   (ui\screens\)
+    382AA7125715BAB3CEA3082DEFCA0C9D383103FFE941089B5DD39529DB518122
 
   --- nowe testy (nie trzeba ich kopiować, żeby aplikacja działała) ---
 
@@ -110,7 +110,9 @@ Pod paskiem statusu doszły trzy kafelki (pokazują się tylko z firmware
 v3.55.0 lub nowszym, bo starsze nie przysyła tych pól):
 
   W CHMURZE   →  "3 min temu"        (zielone < 3 min, pomarańczowe < 10 min)
-  KOLEJKA     →  "0 szt."           (ile próbek czeka w sterowniku)
+  KOLEJKA     →  "3 szt."           (ile próbek czeka w sterowniku;
+                                     do 10 to stan normalny — tyle idzie
+                                     w jednej paczce, zielone)
   WYSYŁKA     →  "BEZ ZALEGŁOŚCI"   albo "W TOKU"
 
 To jedyna liczba, która mówi, czy dane NAPRAWDĘ doszły do chmury —

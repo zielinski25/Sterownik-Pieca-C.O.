@@ -157,7 +157,13 @@ fun ChartsPage(m: AppModel) {
                     else -> Pal.Err
                 }
                 Kpi("W CHMURZE", cloudAgeLabel(m.S.tel_cloud_ago), color)
-                Kpi("KOLEJKA", m.S.tel_ring.toString() + " szt.", if (m.S.tel_ring > 0) Pal.Accent else Pal.Live)
+                // Do 10 próbek w kolejce to stan NORMALNY (tyle idzie w jednej paczce).
+                val ringColor = when {
+                    m.S.tel_ring <= 10 -> Pal.Live
+                    m.S.tel_ring <= 60 -> Pal.Accent
+                    else -> Pal.Err
+                }
+                Kpi("KOLEJKA", m.S.tel_ring.toString() + " szt.", ringColor)
                 Kpi("WYSYŁKA", if (m.S.tel_pending) "W TOKU" else "BEZ ZALEGŁOŚCI",
                     if (m.S.tel_pending) Pal.Accent else Pal.Live)
             }
