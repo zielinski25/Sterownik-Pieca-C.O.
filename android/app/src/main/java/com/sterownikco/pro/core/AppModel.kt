@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import com.sterownikco.pro.service.AlarmMonitorService
 import com.sterownikco.pro.widget.PiecWidget
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -867,27 +869,72 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             6 * 3600 -> "6h"; 24 * 3600 -> "24h"; 7 * 86400 -> "7d"; else -> "30d"
         }
         chartStatus = "Pobieranie historii ($rangeName) z bazy Firebase…"
+        // [v0.31.33 ESP-HISTORY] Równolegle pytamy lokalne archiwum centrali.
+        // Chmura bywa niepełna (przerwy wysyłki), a centrala ma te próbki u siebie.
+        val espIp = S.ip.trim()
+        val espTask = if (espIp.isNotEmpty()) async {
+            try { Rtdb.fetchEspHistory(espIp) } catch (e: Exception) { null }
+        } else null
+        var fb: List<TelemPoint>? = null
         if (connected) {
-            try {
-                val fb = Rtdb.fetchTelemetry(sec)
-                if (fb != null && fb.isNotEmpty()) {
-                    chartLive = emptyList()
-                    telemetry = fb
-                    chartPoints = fb.size
-                    chartStatus = "Załadowano ${fb.size} próbek z RTDB · odcinki symulowane są kreskowane"
-                    chartReality = "FIREBASE RTDB"
-                    // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
-                    // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
-                    appendLiveFeed()
-                    return@launch
+            try { fb = Rtdb.fetchTelemetry(sec) } catch (e: Exception) { /* fallback poniżej */ }
+        }
+        // 6 s sufitu: poza domową siecią centrala jest nieosiągalna, a wykresy
+        // z chmury mają się pokazać od razu (nie po 18 s timeoutów TCP).
+        val esp = espTask?.let {
+            try { withTimeoutOrNull(6_000) { it.await() } } catch (e: Exception) { null }
+        }
+        // Zakres ESP (~24–38 h) ma sens tylko dla 6h/24h; dla 7/30 dni dane
+        // z centrali i tak są podzbiorem chmury, więc ich nie mieszamy.
+        val useEsp = esp != null && sec <= 24 * 3600 && esp.isNotEmpty()
+        if ((fb != null && fb.isNotEmpty()) || useEsp) {
+            val merged = combineCloudAndEsp(fb ?: emptyList(), if (useEsp) esp!! else emptyList())
+            chartLive = emptyList()
+            telemetry = merged
+            chartPoints = merged.size
+            val fromEspOnly = if (useEsp) merged.count { it.seq < 0L } else 0
+            chartStatus = buildString {
+                append("Załadowano ${merged.size} próbek")
+                when {
+                    fromEspOnly > 0 -> append(" · z tego $fromEspOnly tylko z archiwum centrali (brak w chmurze)")
+                    useEsp -> append(" · chmura + archiwum centrali zgodne")
+                    else -> append(" z RTDB")
                 }
-            } catch (e: Exception) { /* fallback poniżej, jak w panelu */ }
+                append(" · odcinki symulowane są kreskowane")
+            }
+            chartReality = when {
+                fb == null || fb.isEmpty() -> "ARCHIWUM ESP"
+                fromEspOnly > 0 -> "RTDB + ARCHIWUM ESP"
+                else -> "FIREBASE RTDB"
+            }
+            // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
+            // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
+            appendLiveFeed()
+            return@launch
         }
         telemetry = emptyList()
         chartPoints = 0
         chartStatus = if (connected) "Brak próbek telemetrii dla wybranego zakresu" else "Zaloguj się do Firebase, aby pobrać historię telemetrii"
         chartReality = if (connected) "BRAK DANYCH" else "BRAK SESJI"
         chartLive = emptyList()
+    }
+
+    /**
+     * [v0.31.33 ESP-HISTORY] Łączy chmurę z lokalnym archiwum centrali.
+     * Klucz to znacznik czasu — ta sama próbka z obu źródeł nie dubluje się.
+     * Próbki obecne WYŁĄCZNIE w centrali dostają ujemny `seq`, żeby dało się je
+     * policzyć i pokazać użytkownikowi, ile danych nie dotarło do chmury.
+     */
+    private fun combineCloudAndEsp(cloud: List<TelemPoint>, esp: List<TelemPoint>): List<TelemPoint> {
+        if (esp.isEmpty()) return cloud
+        val byTs = LinkedHashMap<Long, TelemPoint>()
+        cloud.forEach { byTs[it.ts] = it }
+        var missing = 0L
+        esp.forEach { p ->
+            if (byTs.containsKey(p.ts)) return@forEach
+            byTs[p.ts] = p.copy(seq = -(++missing))
+        }
+        return byTs.values.sortedBy { it.ts }
     }
 
     /** Dokleja wyłącznie odczyt z właśnie zakończonego, udanego pollingu Firebase. */

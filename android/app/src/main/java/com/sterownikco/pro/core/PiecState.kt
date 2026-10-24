@@ -71,6 +71,20 @@ class PiecState {
     var wifi_quality = 0
     var ping_ms = 0
 
+    // ── [v0.31.33 CLOUD-MARK] stan wysyłki telemetrii (pola tel_* z /piec/status) ──
+    /** seq ostatniej próbki, którą chmura POTWIERDZIŁA (0 = od restartu nic). */
+    var tel_cloud_seq = 0L
+    /** unix tej próbki; 0 = brak. */
+    var tel_cloud_ts = 0L
+    /** ile sekund temu potwierdzono ostatnią próbkę; -1 = brak danych. */
+    var tel_cloud_ago = -1L
+    /** ile próbek czeka w kolejce sterownika. */
+    var tel_ring = 0L
+    /** true = w tej chwili leci (lub czeka na ponowienie) paczka do chmury. */
+    var tel_pending = false
+    /** czy firmware w ogóle przysyła te pola (starsze wersje nie przysyłają). */
+    var tel_known = false
+
     // ── ustawienia ESP: 0 jest wyłącznie wartością wewnętrzną; UI sprawdza hasData ─
     var czasOn = 0
     var czasOff = 0
@@ -206,6 +220,8 @@ class PiecState {
         dymCzasStabilizacji = 0; dymProgTemp = 0; dymTrybPracy = 0
         dzien = 0; miesiac = 0; rok = 0; uptime = Double.NaN
         wifi_rssi = 0; wifi_quality = 0; ping_ms = 0
+        tel_cloud_seq = 0; tel_cloud_ts = 0; tel_cloud_ago = -1; tel_ring = 0
+        tel_pending = false; tel_known = false
         ip = ""; firmware = ""; wifi_ssid = ""
 
         fun readNumber(key: String, min: Double, max: Double, integer: Boolean = false): Double? {
@@ -280,6 +296,17 @@ class PiecState {
         flag("alarm_dym_wyciszony") { alarm_dym_wyciszony = it }
         flag("alarm_ogrz_wyciszony") { alarm_ogrz_wyciszony = it }
         longField("alarm_dym_wyciszenie_ms", -1L, 3_600_000L) { alarm_dym_wyciszenie_ms = it }
+        // [v0.31.33 CLOUD-MARK] „ostatnia próbka w chmurze" — tylko odczyt, bez wpływu
+        // na logikę. `longField` woła przypisanie także przy braku pola, dlatego
+        // najpierw sprawdzamy, czy firmware w ogóle przysyła te pola (starsze nie).
+        if (d.has("tel_cloud_seq") && !d.isNull("tel_cloud_seq")) {
+            tel_known = true
+            longField("tel_cloud_seq", 0L, 4_000_000_000L) { tel_cloud_seq = it }
+            longField("tel_cloud_ts", 0L, 4_000_000_000L) { tel_cloud_ts = it }
+            longField("tel_cloud_ago", -1L, 4_000_000_000L) { tel_cloud_ago = it }
+            longField("tel_ring", 0L, 100_000L) { tel_ring = it }
+            flag("tel_pending") { tel_pending = it }
+        }
         longField("alarm_ogrz_wyciszenie_ms", -1L, 3_600_000L) { alarm_ogrz_wyciszenie_ms = it }
         flag("pompa") { pompa = it }
         flag("mieszadlo") { mieszadlo = it }
