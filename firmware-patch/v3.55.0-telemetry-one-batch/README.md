@@ -8,6 +8,42 @@ Test hostowy, który nie wymaga Arduino, jest w `tests/host/` (wynik: **OK**).
 
 ---
 
+## 0. ZANIM SKOMPILUJESZ — `src\secrets.h`
+
+Kompilacja **zatrzyma się celowo**, jeśli w folderze `src\` (obok `main_centrala.cpp`)
+nie ma pliku `secrets.h`. To nie jest błąd tej paczki — tak było od v3.50.0.
+Zgłaszane komunikaty:
+
+```
+#error "Brak pliku secrets.h — skopiuj secrets.h.example jako secrets.h i wpisz hasla."
+'SECRET_WIFI_AP_SSID' was not declared in this scope
+'SECRET_FIREBASE_PASS' was not declared in this scope
+'SECRET_CMD_TOKEN' was not declared in this scope
+```
+
+**Najbezpieczniejsza droga:** użyj pliku `secrets.h` z poprzedniej, działającej
+kompilacji (ten sam, którym zbudowałeś v3.54.0). Nie wymyślaj nowego hasła
+Firebase — jeśli będzie inne niż w działającej centrali, **stracisz zdalny dostęp**.
+
+Znajdź go na dysku:
+
+```powershell
+Get-ChildItem C:\Users\Rafcio -Filter secrets.h -Recurse -ErrorAction SilentlyContinue |
+  Select-Object FullName, Length, LastWriteTime
+```
+
+Skopiuj wynik do `src\` projektu (obok `main_centrala.cpp`):
+
+```powershell
+Copy-Item "TU_WKLEJ_ZNALEZIONA_SCIEZKA\secrets.h" "TU_PROJEKT\src\secrets.h" -Force
+```
+
+Gdyby pliku nigdzie nie było — skopiuj `secrets.h.example` jako `secrets.h`
+i wpisz **te same wartości, które ma wgrane urządzenie** (hasło AP, hasło OTA,
+hasło konta Firebase, token komend). Cztery wpisy, każdy w cudzysłowie.
+
+---
+
 ## 1. Co było zepsute (dowod z danych, nie domysł)
 
 W chmurze z 24.10 była **jedna** przerwa większa niż 90 s: **10:03:05 → 10:14:05 = 10,0 min**.
