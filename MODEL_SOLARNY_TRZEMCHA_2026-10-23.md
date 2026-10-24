@@ -428,12 +428,15 @@ Po 2–3 tygodniach będzie można dopasować `a₁` i offset na prawdziwych dan
 
 | miejsce | wersja |
 |---|---|
-| drzewo w repozytorium | **v0.31.11** (versionCode 3017) |
-| aplikacja na telefonie | **v0.31.28** (versionCode 3034) |
+| drzewo w repozytorium | **v0.31.32** (po commicie z 2026-10-24) |
+| aplikacja na telefonie | **v0.31.31** (versionCode 3037), v0.31.32 do wgrania |
 
-Zmiany v0.31.12 … v0.31.28 istnieją w repo **tylko jako pliki `.diff`**
-w katalogu `android-sync/`. Z repozytorium nie da się zbudować APK, który
-masz na telefonie.
+**Stan na 2026-10-24:** drzewo w repo dogoniło paczki — pliki
+`SolarThermalModel.kt`, `SolarAnalytics.kt`, `Weather.kt`, `Sensors.kt`
+są teraz w repozytorium w wersji v0.31.32. Wcześniej repo stało na
+v0.31.30, a v0.31.30 i v0.31.31 szły do projektu tylko jako paczki
+w `android-sync/`. `app/build.gradle.kts` w repo ma nadal stare
+`versionCode 3017` — podbija się go lokalnie przed budowaniem APK.
 
 **Co z tego wynika dla tego modelu:**
 
@@ -549,9 +552,128 @@ Pomiary z archiwum centrali (`SolarDailyArchive`), kanał `TELEMETRY_CH_PANEL`.
 |---|---|
 | 2026-10-23 | pierwsza wersja; model sprawdzony na 4 dniach; **nie wgrany do aplikacji** |
 | 2026-10-23 | sprostowanie: obliczenia wykonane dla Radomia, poprawione na Trzemchę Górną |
+| 2026-10-23 | `SolarThermalModel.kt` wgrany do aplikacji (v0.31.29) — model jednowęzłowy |
+| 2026-10-24 | **model dwuwęzłowy z pętlą kolektora** (§18), v0.31.32: RMS 5,85 → 2,63 °C |
 
 **Następne kroki po 2–3 tygodniach zbierania danych:**
 1. Dopasować `a₁` i offset na większej próbce.
 2. Sprawdzić, czy `UA` wychodzi stale ok. 1,4 W/°C.
 3. Dodać pobór wody (jest już wykrywany przez `SolarAnalytics`).
 4. Rozważyć dodanie strat na rurach.
+
+---
+
+## 18. Model dwuwęzłowy — pętla kolektora (v0.31.32, 2026-10-24)
+
+### 18.1 Dlaczego jeden węzeł nie wystarczał
+
+Model z §1–§13 ma **jeden węzeł**: wodę w zbiorniku. Kolektor jest w nim
+tylko źródłem ciepła w dzień. Nocą nie robi nic.
+
+W rzeczywistej instalacji termosyfonowej kolektor działa także nocą —
+inaczej niż zakładał model. Woda w kolektorze stygnie szybciej niż
+w zbiorniku (mniejsza pojemność, większe straty na jednostkę objętości),
+robi się gęstsza i spływa w dół rurą powrotną, wypychając cieplejszą wodę
+ze zbiornika w górę. Napędza to sama różnica gęstości — bez pompy.
+Zjawisko nazywa się **cyrkulacją wsteczną termosyfonu** (reverse circulation).
+
+### 18.2 Ile to zabiera — policzone z archiwum
+
+Dla każdej nocy osobno: spadek temperatury w zbiorniku × pojemność cieplna
+100 l, podzielone przez (średnia różnica zbiornik−powietrze) × godziny.
+Wynik to **efektywne UA** tej nocy.
+
+| odcinek | spadek | godzin | strata rzeczywista |
+|---|---|---|---|
+| 21.10 wieczór | 4,0 K | 8,8 | 2,3 W/K |
+| 22.10 (dzień pochmurny) | 6,0 K | 22,4 | 1,5 W/K |
+| 22.10 noc | 3,4 K | 8,3 | 2,3 W/K |
+| 23.10 wieczór (słoneczny) | 11,4 K | 8,9 | 4,6 W/K |
+| 24.10 noc (po słonecznym) | 8,8 K | 9,3 | 4,3 W/K |
+
+Po dniu pochmurnym strata zgadza się z katalogiem (1,5 ≈ 1,4 W/K).
+Po dniu słonecznym jest **trzy razy większa**. Ta różnica to cyrkulacja
+wsteczna: po słonecznym dniu cała pętla jest gorąca, więc różnica
+temperatur pętla−zbiornik jest duża i przepływ wsteczny silny.
+
+Wniosek: strat nie da się oddać jednym mnożnikiem `UA`. Potrzebny jest
+drugi węzeł.
+
+### 18.3 Równania
+
+Dwa węzły: woda w pętli (kolektor + manifold + rury) i zbiornik 100 l.
+Krok `dt = 30 s`, jak w §12.
+
+```
+q      = η₀·G·A − a₁·(T_loop − T_air) − a₂·G·(T_loop − T_air)²     [W], przycięte do ≥ 0
+dT_loop = (q − UA_loop·(T_loop − T_air))·dt / C_loop
+flow    = FORWARD  gdy T_loop > T_tank
+        = reverseFlowKgS  w przeciwnym razie
+q_flow  = flow·c_w·(T_loop − T_tank)                                [W]
+dT_tank = (q_flow − UA_tank·(T_tank − T_air))·dt / C_tank
+T_loop -= q_flow·dt / C_loop
+```
+
+Kierunek przepływu wynika z różnicy temperatur — nie ma przełącznika
+„dzień/noc”. To jest cała różnica względem modelu jednowęzłowego.
+
+### 18.4 Parametry
+
+| parametr | wartość | skąd |
+|---|---|---|
+| `FORWARD_FLOW_KG_S` | 0,05 kg/s | termosyfon słoneczny, rząd wielkości ~2–4 l/min |
+| `reverseFlowKgS` | **0,004 kg/s** | OSTI biblio/116242: ~0,005 kg/s; heat-pipe mniej (IJLCT 10(4) 2015) |
+| `loopUaWk` | 1,0 W/K | manifold + odkryte rury |
+| `loopWaterKg` | 4,0 kg | 10 rur + manifold + rury |
+| `tankUa` | 1,4 W/K | bez zmian, §7 |
+| `C_tank` | 418 600 J/K | 100 l × 4186 J/(kg·K) |
+| `C_loop` | 16 744 J/K | 4 kg × 4186 J/(kg·K) |
+
+### 18.5 Wynik — 5 dób, symulacja ciągła
+
+Start 20.10 godz. 00:00, T₀ = 24 °C, temperatury powietrza z Open-Meteo,
+GTI w płaszczyźnie 45°, porównanie z min/max z archiwum (10 punktów):
+
+| model | RMS | obciążenie min | obciążenie max |
+|---|---|---|---|
+| jednowęzłowy (v0.31.31) | 5,85 °C | +4,4 °C | +3,1 °C |
+| **dwuwęzłowy (v0.31.32)** | **2,63 °C** | **−0,0 °C** | **−0,5 °C** |
+
+Stary model był **stale za ciepły** — na każdej dobie, o 3–5 °C.
+Nowy trafia raz w górę, raz w dół.
+
+Szczyt 23.10:
+
+| | temperatura | godzina | błąd godziny |
+|---|---|---|---|
+| zmierzone | 47,2 °C | 15:05 | — |
+| jednowęzłowy | 46,6 °C | 18:00 | +2,92 h |
+| dwuwęzłowy | 44,7 °C | 17:01 | +1,95 h |
+
+### 18.6 Czego ten model nadal nie umie
+
+**Godzina szczytu jest ~2 h za późno.** To nie jest błąd rachunku, tylko
+konsekwencja traktowania zbiornika jako jednej bryły.
+
+Prawdziwy zbiornik 100 l jest uwarstwiony: góra cieplejsza, dół zimniejszy,
+czujnik w połowie wysokości. Model uśrednia całe 100 l, więc woda
+„dogrzewa się” do wieczora, gdy w rzeczywistości górna warstwa osiągnęła
+szczyt już wczesnym popołudniem.
+
+Naprawa = model warstwowy (kilka warstw zbiornika z mieszaniem).
+To osobna, większa zmiana — nie w tej wersji.
+
+Parametry pętli sprawdzone na 5 dobach. Po 2–3 tygodniach danych warto
+powtórzyć dopasowanie.
+
+### 18.7 Źródła
+
+- OSTI `biblio/116242` — *Performance analysis of a thermosyphon solar water
+  heater, Part 2: Nighttime performance*: przepływ wsteczny ~0,005 kg/s,
+  straty większe „nearly fourfold”.
+- Morrison G.L. i in., *Solar Energy* 1986, `0038092X86901556` — separacja
+  kolektor–zbiornik ≥ 200 mm (typowo 500 mm), żeby ograniczyć cyrkulację wsteczną.
+- *Int. J. Low-Carbon Technologies* 10(4) 2015, `10/4/430` — kolektor
+  heat-pipe: przepływ wsteczny mniejszy niż w płaskim; spadek nocny 2–10 °C.
+- Michaelides (EuroSun 2010) — twierdzi wpływ wsteczki „minimalny”;
+  **sprzeczne** z OSTI. Dlatego model dwuwęzłowy, a nie mnożnik na `UA`.

@@ -35,6 +35,11 @@ object SolarThermalModel {
 
     private const val STEPS_PER_HOUR = 120  // 3600 / 30
 
+    /** [0.31.32] Przepływ w PRZÓD (dzień). Duży, bo termosyfon sam się rozpędza,
+     *  gdy kolektor jest cieplejszy od zbiornika. Chodzi o to, żeby pętla szła
+     *  za zbiornikiem, a nie żeby sama magazynowała ciepło. */
+    private const val FORWARD_FLOW_KG_S = 0.05
+
     // ─────────────────────────────────────────────────────────────────────
     //  Parametry
     // ─────────────────────────────────────────────────────────────────────
@@ -71,6 +76,34 @@ object SolarThermalModel {
          * Przy parametrach katalogowych lepiej wychodzi 0 — patrz §9.3.
          */
         val collectorTempOffsetC: Double = 0.0,
+
+        /**
+         * [0.31.32] Przepływ WSTECZNY termosyfonu [kg/s] — nocą, gdy zbiornik jest
+         * cieplejszy od pętli kolektora. Woda spływa z dachu do zbiornika i z powrotem,
+         * zabierając ciepło na zewnątrz. Bez pompy, napędza to różnica gęstości.
+         *
+         * Literatura: OSTI biblio/116242 (Performance analysis of a thermosyphon
+         * SWH, Part 2) podaje ~0,005 kg/s i wzrost strat „nearly fourfold”.
+         * Kolektor heat-pipe ma ten przepływ MNIEJSZY niż płaski — kondensator rurki
+         * cieplnej jest osłonięty izolacją (Int. J. Low-Carbon Tech. 10(4) 2015,
+         * „Reverse flow in natural convection heat pipe solar water heater”).
+         * Dlatego 0,004, a nie 0,005.
+         */
+        val reverseFlowKgS: Double = 0.004,
+
+        /**
+         * [0.31.32] Straty cieplne pętli kolektora do otoczenia [W/K]:
+         * manifold + rury zasilanie/powrót. Decyduje, jak szybko pętla stygnie
+         * po zachodzie i jak mocna jest potem cyrkulacja wsteczna.
+         */
+        val loopUaWk: Double = 1.0,
+
+        /**
+         * [0.31.32] Pojemność cieplna pętli [kg wody równoważnej]:
+         * woda w manifoldzie (10 rur) + rurach. Mała, więc pętla reaguje szybko
+         * i to ona — nie zbiornik — trzyma ciepło tuż po zachodzie.
+         */
+        val loopWaterKg: Double = 4.0,
 
         /** Kąt nachylenia kolektora [°]. Używany tylko do zapytania o GTI. */
         val tiltDeg: Int = 45,
@@ -124,8 +157,12 @@ object SolarThermalModel {
         if (!startTempC.isFinite() || startTempC < -30.0 || startTempC > 150.0) return null
 
         val heatCapacity = params.tankVolumeL * RHO_WATER / 1000.0 * C_WATER  // J/K
+        val loopCapacity = params.loopWaterKg * C_WATER                       // J/K
 
         var temp = startTempC
+        // [0.31.32] Drugi węzeł: woda w pętli kolektora (manifold + rury).
+        // Startuje z temperaturą zbiornika — różnicę wyrównuje w kilka minut.
+        var loopTemp = startTempC
         var peak = startTempC
         var peakHour = 0.0
         var min = startTempC
@@ -136,22 +173,32 @@ object SolarThermalModel {
             val air = if (hour.airTempC.isFinite()) hour.airTempC else temp
 
             for (step in 0 until STEPS_PER_HOUR) {
-                // Temperatura, którą „widzi" absorber.
-                val collectorTemp = temp + params.collectorTempOffsetC
-                val dT = collectorTemp - air
+                // ── Węzeł 1: pętla kolektora ─────────────────────────────────
+                // Absorber widzi temperaturę WODY W PĘTLI, nie zbiornika. Pętla ma
+                // małą pojemność cieplną, więc szybko idzie za słońcem i szybko
+                // stygnie po zachodzie — i to jest cała różnica.
+                val loopD = loopTemp + params.collectorTempOffsetC - air
 
-                // Moc użyteczna. Przycięta do zera: nocą kolektor nie grzeje
-                // (i nie „chłodzi na minus" — chłodzenie liczy człon zbiornika).
                 var q = params.apertureOptical * gti
-                    - params.lossLinear * dT
-                    - params.lossQuadratic * dT * dT
+                    - params.lossLinear * loopD
+                    - params.lossQuadratic * loopD * loopD
                 if (q < 0.0) q = 0.0
 
                 energyJoules += q * STEP_SECONDS
 
-                // Bilans zbiornika: grzanie z kolektora minus strata postojowa.
-                val lossWatts = params.tankUa * (temp - air)
-                temp += (q - lossWatts) * STEP_SECONDS / heatCapacity
+                // Pętla traci ciepło przez izolację manifolda i rur.
+                loopTemp += (q - params.loopUaWk * (loopTemp - air)) * STEP_SECONDS / loopCapacity
+
+                // ── Termosyfon: kierunek z różnicy temperatur ────────────────
+                // Dzień:  pętla cieplejsza  → przepływ w przód, duży strumień.
+                // Noc:    zbiornik cieplejszy → cyrkulacja WSTECZNA, mały strumień.
+                //         To ona wynosi ciepło ze zbiornika na dach.
+                val flow = if (loopTemp > temp) FORWARD_FLOW_KG_S else params.reverseFlowKgS
+                val qFlow = flow * C_WATER * (loopTemp - temp)
+
+                // ── Węzeł 2: zbiornik ────────────────────────────────────────
+                temp += (qFlow - params.tankUa * (temp - air)) * STEP_SECONDS / heatCapacity
+                loopTemp -= qFlow * STEP_SECONDS / loopCapacity
 
                 val hourFraction = index + (step + 1).toDouble() / STEPS_PER_HOUR
                 if (temp > peak) { peak = temp; peakHour = hourFraction }
