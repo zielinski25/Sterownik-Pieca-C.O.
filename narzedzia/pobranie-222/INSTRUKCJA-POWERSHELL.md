@@ -29,12 +29,18 @@ W pliku, który jest w paczce, jest tak:
 
 Plik ma 46 994 linie i 2 376 655 B.
 
+## Ścieżka użytkownika (ustalona 2026-10-28)
+
+Projekt: `C:\Users\Rafcio\Documents\PlatformIO\sterownik-co-esp32`
+Plik: `...\src\main_centrala.cpp`
+
 ## Kolejność
 
 1. Pobrać ZIP z Drive (przycisk pobierania).
 2. Znaleźć folder projektu (komenda w czacie).
 3. `Expand-Archive` do `%TEMP%\v3564`, skopiować 4 pliki do projektu.
-4. Uruchomić `SPRAWDZ.ps1` — musi pokazać `SHA256 OK` przy `main_centrala.cpp`.
+4. Uruchomić `SPRAWDZ.ps1` albo porównanie SHA256 (komendy w czacie) — musi
+   wyjść `F89874F3…8E38` przy `main_centrala.cpp`.
 5. Dopisać w `secrets.h` linię `#define SECRET_HISTORIA_TOKEN "…"`.
 6. Zbudować (`pio run` albo przycisk Build w VS Code). Wgrywa użytkownik.
 
