@@ -1,0 +1,129 @@
+{
+  "etap": 212,
+  "nazwa": "Trasa pobrania historii przez HTTP (/history, /history/long)",
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "telegram_used": false,
+  "sekret_w_repo": false,
+  "wersja_z": "3.55.8",
+  "wersja_do": "3.56.0",
+  "zrodlo": {
+    "plik": "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp",
+    "sha256": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+    "linii": 46778
+  },
+  "patche": {
+    "skumulowany": {
+      "plik": "narzedzia/pobranie-trasa212/main_centrala-v3.55.8-to-v3.56.0.patch",
+      "sha256": "e9937cf7e892db4b1c12b671c50ffa55627db0b7c3e6ffeca47d6a5ff39e11a0",
+      "linie_dodane": 165,
+      "linie_usuniete": 56,
+      "fragmentow_diffu": 13,
+      "pliki": [
+        "main_centrala.cpp",
+        "secrets.h.example"
+      ]
+    },
+    "tylko_212": {
+      "plik": "narzedzia/pobranie-trasa212/main_centrala-v3.55.9-to-v3.56.0.patch",
+      "sha256": "1501cb6ab24acbb54691f27179d1bdfda67455812d8e17cb68a0b9d44d46dfa6",
+      "linie_dodane": 57,
+      "linie_usuniete": 1,
+      "fragmentow_diffu": 6,
+      "zalozenie": "plik jest juz po etapie 211 (v3.55.9)"
+    }
+  },
+  "wynik_patcha": {
+    "sha256": "e3d947ea42ada79c0509aedc88922d5409b152d7773f4b1486329834334c03a9",
+    "linii": 46879
+  },
+  "linie_kluczowe": {
+    "include_historiapobranie": [
+      5134
+    ],
+    "sekcja_tokenu": [
+      5526
+    ],
+    "firmware_version": [
+      5577
+    ],
+    "bramka": [
+      28641
+    ],
+    "obiekt_trasy": [
+      28659
+    ],
+    "rejestracja_history": [
+      28665
+    ],
+    "rejestracja_history_long": [
+      28668
+    ]
+  },
+  "co_nowe": [
+    "GET /history -> hist_short.csv, GET /history/long -> hist_long.csv, oba za tokenem Bearer",
+    "dlugosc ustalona RAZ pod logMutexem jako min(znacznik potwierdzenia, rozmiar pliku); blokada oddana przed wysylka",
+    "krotki odczyt lub blad odczytu uniewaznia odpowiedz (biblioteka zrywa polaczenie), nie konczy jej jako 200",
+    "odmowy jako prawdziwe odpowiedzi HTTP: 401/404/405/413/500/503",
+    "token pusty w secrets.h = trasa zamknieta (503), stara kopia secrets.h niczego nie otwiera",
+    "secrets.h.example: nowa sekcja 5 z zastepnikiem (bez sekretu)"
+  ],
+  "twierdzenia_sprawdzone_maszynowo": [
+    {
+      "id": "T1",
+      "twierdzenie": "patch skumulowany 3.55.8->3.56.0 i lancuch 211+212 daja identyczny plik",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T2",
+      "twierdzenie": "wynik ma FIRMWARE_VERSION = v3.56.0",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T3",
+      "twierdzenie": "trasa jest zarejestrowana na HTTP_ANY dla obu adresow",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T4",
+      "twierdzenie": "domyslny token jest pusty (pobieranie wylaczone bez secrets.h)",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T5",
+      "twierdzenie": "secrets.h.example ma jeden wpis i zastepnik, nie sekret",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T6",
+      "twierdzenie": "poprawki etapu 211 w obu wysylaczach sa nietkniete",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T7",
+      "twierdzenie": "20 grup / 132 sprawdzenia przechodzi w 3 profilach",
+      "sprawdza": "run.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T8",
+      "twierdzenie": "12 mutantow jest wykrytych",
+      "sprawdza": "mutacje.py",
+      "wynik": "PASS"
+    }
+  ],
+  "granice": [
+    "brak buildu ESP",
+    "brak testu na urzadzeniu",
+    "brak wgrania i OTA",
+    "trasa dziala tylko z prawdziwym AsyncWebServer (model w host/Serwer212.h)",
+    "limity 50 MB i jedna trasa naraz to decyzje, nie pomiary"
+  ]
+}
