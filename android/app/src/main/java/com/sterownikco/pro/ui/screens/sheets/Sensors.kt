@@ -380,7 +380,8 @@ private fun SolarMetricsCard(m: AppModel) {
             // a nie tylko z próbek zebranych przy otwartej aplikacji.
             // [0.31.36] Woda liczona z czujnika ZBIORNIKA (wcześniej brany był kolektor),
             // a pobranie to spadek podtrzymany, nie pojedyncze drgnięcie o 0,3 °C.
-            "Zysk = o ile °C ogrzała się woda w zbiorniku 100 l. Minus = woda się " +
+            "Zysk = o ile °C ogrzała się woda w zbiorniku słonecznym 100 l na dachu " +
+                "(czujnik kolektora, nie bojler pieca). Minus = woda się " +
                 "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku — z chmury, " +
                 "co minutę, także gdy aplikacja była zamknięta. „Szacunek” to " +
                 "wyliczenie z prognozy słońca — nie pomiar. Pobranie liczy się jako " +
