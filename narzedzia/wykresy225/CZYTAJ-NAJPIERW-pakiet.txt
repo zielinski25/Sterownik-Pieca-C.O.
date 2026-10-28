@@ -10,6 +10,7 @@ CO JEST W ŚRODKU
 - cały kod aplikacji (66 plików .kt + testy + zasoby + dźwięki alarmów),
 - gradle wrapper (gradle 8.9) — Gradle sam się dociągnie,
 - versionName = "0.31.35", versionCode = 31035,
+- zbuduj.ps1 (budowanie jednym poleceniem),
 - folder ZMIANY-KODU z dokładnym diffem każdej zmiany (do wglądu).
 
 CO ZMIENIONO WZGLĘDEM POPRZEDNIEJ WERSJI (0.31.33)
@@ -30,7 +31,29 @@ PANEL SŁONECZNY
  7. Metoda liczenia bez zmian (zysk = ostatnia minus pierwsza próbka doby,
     pobranie wody = spadek szybszy niż 0,3 °C/min).
 
-JAK ZBUDOWAĆ (5 kroków)
+JAK ZBUDOWAĆ POLECENIEM (najszybciej)
+-----------------------------------
+W folderze projektu (tym z settings.gradle.kts) uruchom jedna komende:
+
+  powershell -ExecutionPolicy Bypass -File .\zbuduj.ps1
+
+Skrypt sam znajduje Jave 17-22, buduje APK, kopiuje go do Pobranych jako
+SterownikCO-v0.31.35-debug.apk i wypisuje komende do instalacji.
+
+UWAGA - Java 25 nie zadziala
+----------------------------
+Android Studio 2026 ma w srodku Jave 25. Gradle 8.9 (uzyty w projekcie)
+nie obsluguje Javy 25 i konczy sie mlynnym bledem:
+
+  * What went wrong:
+  25.0.3
+
+Ta liczba to po prostu wersja Javy, ktora probowal uzyc Gradle.
+Rozwiazanie: budowac na Javie 17-21 (np. Temurin 21) - albo po prostu
+uzyc zbuduj.ps1, ktory robi to sam. NIE ustawiaj JAVA_HOME na
+"C:\Program Files\Android\Android Studio\jbr".
+
+JAK ZBUDOWAC KLIKAJAC (5 kroków)
 -----------------------
 1. Zainstaluj Android Studio (jeśli na tym komputerze jeszcze go nie ma).
 2. Android Studio > File > Open... > wskaż folder rozpakowany z tego ZIP-a

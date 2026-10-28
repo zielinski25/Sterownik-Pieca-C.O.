@@ -41,6 +41,8 @@ open(p, "w", encoding="utf-8").write(s)
 PY
 
 cp "$REPO/narzedzia/wykresy225/CZYTAJ-NAJPIERW-pakiet.txt" CZYTAJ-NAJPIERW.txt
+# Skrypt budowania: chroni przed Java 25 z Android Studio (blad "25.0.3").
+cp "$REPO/narzedzia/wykresy225/zbuduj.ps1" zbuduj.ps1
 
 mkdir -p ZMIANY-KODU
 cp "$REPO/android-sync/v0.31.34-dziury-i-pompa/ZMIANY-0.31.33-do-0.31.34.diff" ZMIANY-KODU/ || true
