@@ -14,8 +14,10 @@ import kotlin.math.roundToInt
 
 /* ══════════════════════════════════════════════════════════════════════════
    BILANS SOLARNY & DETEKCJA POBORU WODY — `SolarAnalytics` z Piec.html 1:1
-   (bramka 25 s, próg poboru rateBojler < -0.30 °C/min, archiwum 5000,
-   zapis co 5 próbek do klucza `solar_archive_data`, eksport CSV).
+   (bramka 25 s, archiwum 5000, zapis co 5 próbek do klucza
+   `solar_archive_data`, eksport CSV).
+   [0.31.36] Pobranie wody = spadek podtrzymany ≥ 0,5 °C (recomputeDraws),
+   a „zysk dziś” liczony ze zbiornika (tBojler), nie z kolektora.
    ══════════════════════════════════════════════════════════════════════════ */
 class SolarAnalytics(private val prefs: Prefs) {
 
@@ -82,6 +84,10 @@ class SolarAnalytics(private val prefs: Prefs) {
             }
         } catch (e: Exception) { /* brak archiwum zweryfikowanego */ }
         lastSampleTs = archive.lastOrNull()?.ts ?: 0L
+        // [0.31.36] Stare flagi pobrań z wersji do 0.31.35 siedzą w archiwum w pamięci
+        // telefonu (np. 24 fałszywe pobrania z 28.10). Przeliczamy je od zera nową regułą,
+        // zamiast pokazywać dalej to, co zapisała poprzednia wersja.
+        recomputeDraws()
         accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
         val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
         draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tBojler + it.drop, it.tBojler)) }
@@ -115,8 +121,13 @@ class SolarAnalytics(private val prefs: Prefs) {
         var firstT = Double.NaN; var lastT = Double.NaN
         archive.forEach { s ->
             if (s.ts >= start) {
-                if (firstT.isNaN()) firstT = s.tPanel
-                lastT = s.tPanel
+                // [0.31.36] Liczymy ze ZBIORNIKA (tBojler), nie z kolektora (tPanel).
+                // Podpis pod tabelą i karta na pulpicie mówią wprost: „Zysk = o ile °C
+                // ogrzała się woda w zbiorniku 100 l”. Tymczasem kod brał temperaturę
+                // PANELU, więc 2026-10-28 pokazywał −0,3 °C (kolektor 17,5 → 17,2),
+                // choć woda w zbiorniku zjechała z 37,5 do 21,0 °C, czyli −16,5 °C.
+                if (firstT.isNaN()) firstT = s.tBojler
+                lastT = s.tBojler
                 if (s.isDraw != 0) { n += 1; d += s.drop }
             }
         }
@@ -173,26 +184,18 @@ class SolarAnalytics(private val prefs: Prefs) {
             added++
         }
         if (added == 0) return 0
-        // Gain i pobrania przeliczamy po scaleniu, w kolejności czasu.
+        // Zysk przeliczamy po scaleniu, w kolejności czasu. Pobrania liczy
+        // `recomputeDraws()` (wołane z `rebuildDrawEvents()` niżej) — jedną regułą
+        // dla próbek lokalnych i chmurowych, z 5-minutowym potwierdzeniem spadku.
         val rebuilt = ArrayList<Sample>(today.size)
         var prev: Sample? = null
         today.values.forEach { cur ->
             val pr = prev
-            var draw = 0
-            var drop = 0.0
             var gain = 0.0
             if (pr != null) {
-                val dtMin = maxOf(.5, (cur.ts - pr.ts) / 60000.0)
-                val rateBojler = (cur.tBojler - pr.tBojler) / dtMin
-                val ratePanel = (cur.tPanel - pr.tPanel) / dtMin
-                if (rateBojler < -0.30 || (ratePanel < -0.60 && cur.tPanel > cur.tZewn + 5)) {
-                    draw = 1
-                    drop = maxOf(0.0, pr.tBojler - cur.tBojler)
-                }
-                gain = maxOf(maxOf(0.0, cur.tPanel - pr.tPanel), maxOf(0.0, cur.tBojler - pr.tBojler)) +
-                    (if (draw != 0) drop else 0.0)
+                gain = maxOf(maxOf(0.0, cur.tPanel - pr.tPanel), maxOf(0.0, cur.tBojler - pr.tBojler))
             }
-            rebuilt.add(cur.copy(isDraw = draw, drop = round1(drop), gain = round1(gain)))
+            rebuilt.add(cur.copy(gain = round1(gain)))
             prev = cur
         }
         archive.removeAll { it.ts >= start }
@@ -207,8 +210,87 @@ class SolarAnalytics(private val prefs: Prefs) {
 
     private fun round1(v: Double): Double = (v * 10).roundToInt() / 10.0
 
+    /** [0.31.36] Pobranie wody wykrywane z temperatury ZBIORNIKA, nie z szumu czujnika.
+     *
+     *  Poprzednia reguła (`rateBojler < -0.30`) łapała każde zejście o 0,3 °C między dwiema
+     *  próbkami minutowymi. Czujnik ma rozdzielczość 0,1 °C, a zbiornik stygnie przez pętlę
+     *  termosyfonu — więc takie zejście zdarza się co kilkanaście minut i wychodziło
+     *  „Pobrania ciepłej wody: 24 razy · −7,2 °C” (2026-10-28), choć nikt wody nie brał.
+     *  Dodatkowo 31,5 − 31,8 w typie Double to −0,3000000000000007, czyli minimalnie
+     *  więcej niż próg 0,30 — porównanie łapało granicę przez przypadek.
+     *
+     *  Teraz pobranie musi być SPADKIEM PODTRZYMANYM:
+     *   1. woda schodzi o co najmniej 0,5 °C od maksimum z ostatnich 5 minut,
+     *   2. i zostaje niżej przez następne 5 minut.
+     *  Drgnięcie czujnika wraca w ciągu minuty, więc punkt 2 je odrzuca.
+     *  Epizody bliższe niż 20 minut to jedno pobranie (kąpiel trwa), a spadek większy
+     *  niż 15 °C to odczepiona sonda — obcinamy, żeby nie psuł sumy.
+     *
+     *  Sprawdzone na eksporcie z chmury (28 dni, 39 602 próbki): 33 pobrania w 16 dniach,
+     *  2026-10-28 — zero (zbiornik tylko stygł).
+     */
+    private fun recomputeDraws() {
+        val n = archive.size
+        if (n == 0) return
+        // 1) kandydaci: indeks początku spadku, maksimum sprzed spadku, minimum w epizodzie
+        val candIdx = ArrayList<Int>()
+        val candBase = ArrayList<Double>()
+        val candLow = ArrayList<Double>()
+        var i = 0
+        while (i < n) {
+            val ts = archive[i].ts
+            var base = archive[i].tBojler
+            var j = i
+            while (j > 0 && ts - archive[j - 1].ts <= DRAW_WINDOW_MS) {
+                j--
+                if (archive[j].tBojler > base) base = archive[j].tBojler
+            }
+            if (base - archive[i].tBojler >= DRAW_STEP_C) {
+                var low = archive[i].tBojler
+                var k = i + 1
+                while (k < n && archive[k].ts - ts <= DRAW_HOLD_MS) {
+                    if (archive[k].tBojler < low) low = archive[k].tBojler
+                    k++
+                }
+                // Punkt 2: spadek musi się utrzymać, a nie być jedną próbką szumu.
+                if (low <= base - DRAW_STEP_C) {
+                    candIdx.add(i); candBase.add(base); candLow.add(low)
+                }
+            }
+            i++
+        }
+        // 2) scalanie epizodów bliższych niż 20 minut w jedno pobranie
+        val flag = IntArray(n)
+        val drop = DoubleArray(n)
+        var c = 0
+        while (c < candIdx.size) {
+            val startIdx = candIdx[c]
+            var base = candBase[c]
+            var low = candLow[c]
+            var c2 = c + 1
+            while (c2 < candIdx.size &&
+                archive[candIdx[c2]].ts - archive[candIdx[c2 - 1]].ts <= DRAW_MERGE_MS
+            ) {
+                if (candBase[c2] > base) base = candBase[c2]
+                if (candLow[c2] < low) low = candLow[c2]
+                c2++
+            }
+            flag[startIdx] = 1
+            drop[startIdx] = round1(minOf(maxOf(0.0, base - low), DRAW_MAX_C))
+            c = c2
+        }
+        // 3) przepisanie flag do archiwum (Sample jest niemutowalny)
+        for (idx in 0 until n) {
+            val s = archive[idx]
+            if (s.isDraw != flag[idx] || s.drop != drop[idx]) {
+                archive[idx] = s.copy(isDraw = flag[idx], drop = drop[idx])
+            }
+        }
+    }
+
     /** Lista pobrań wody z archiwum — wspólna dla startu i dla scalania z chmurą. */
     private fun rebuildDrawEvents() {
+        recomputeDraws()
         waterDrawEvents.clear()
         val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
         draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tBojler + it.drop, it.tBojler)) }
@@ -223,24 +305,12 @@ class SolarAnalytics(private val prefs: Prefs) {
         val now = System.currentTimeMillis()
         if (lastSampleTs > 0 && now - lastSampleTs < 25_000) return
         lastSampleTs = now
-        var isDraw = false
-        var drawDrop = 0.0
         var gain = 0.0
         if (archive.isNotEmpty()) {
             val prev = archive.last()
-            val dtMin = maxOf(.5, (now - prev.ts) / 60000.0)
-            val rateBojler = (tBojler - prev.tBojler) / dtMin
-            val ratePanel = (tPanel - prev.tPanel) / dtMin
-            if (rateBojler < -0.30 || (ratePanel < -0.60 && tPanel > tZewn + 5)) {
-                isDraw = true
-                drawDrop = maxOf(0.0, prev.tBojler - tBojler)
-                accumulatedDrawDrop += drawDrop
-                waterDrawEvents.add(DrawEvent(now, drawDrop, prev.tBojler, tBojler))
-                while (waterDrawEvents.size > 100) waterDrawEvents.removeAt(0)
-            }
             val deltaP = maxOf(0.0, tPanel - prev.tPanel)
             val deltaB = maxOf(0.0, tBojler - prev.tBojler)
-            gain = maxOf(deltaP, deltaB) + (if (isDraw) drawDrop else 0.0)
+            gain = maxOf(deltaP, deltaB)
             if (tPanel > tZewn && rad > 30) accumulatedGrossGain += gain
         }
         archive.add(
@@ -248,10 +318,15 @@ class SolarAnalytics(private val prefs: Prefs) {
                 now, isoFmt.format(now), (tPanel * 10).roundToInt() / 10.0,
                 (tBojler * 10).roundToInt() / 10.0, (tZewn * 10).roundToInt() / 10.0,
                 rad.roundToInt(), (uv * 10).roundToInt() / 10.0, cloud.roundToInt(),
-                if (isDraw) 1 else 0, (drawDrop * 10).roundToInt() / 10.0, (gain * 10).roundToInt() / 10.0
+                0, 0.0, (gain * 10).roundToInt() / 10.0
             )
         )
         while (archive.size > 5000) archive.removeAt(0)
+        // [0.31.36] Pobrania liczymy teraz wstecznie z całego archiwum (recomputeDraws),
+        // bo potrzebne jest 5 minut po spadku na potwierdzenie, że to nie szum.
+        // Skutek: pobranie pojawia się na karcie dopiero po tych 5 minutach — celowo,
+        // bo próg 0,3 °C/min łapał zwykłe stygnięcie zbiornika.
+        recomputeDraws()
         recomputeToday()
         if (archive.size % 5 == 0) save()
         updateUi(tPanel, tZewn)
@@ -313,6 +388,16 @@ class SolarAnalytics(private val prefs: Prefs) {
         SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date(ms))
 
     companion object {
+        /** [0.31.36] Progi wykrywania pobrania ciepłej wody — patrz `recomputeDraws()`.
+         *  Woda musi zejść o 0,5 °C od maksimum z 5 minut i utrzymać się niżej 5 minut.
+         *  Rozdzielczość czujnika to 0,1 °C, więc 0,5 daje czterokrotny zapas nad szumem,
+         *  a prawdziwa kąpiel schodzi o kilka °C. */
+        private const val DRAW_STEP_C = 0.5
+        private const val DRAW_WINDOW_MS = 5 * 60_000L
+        private const val DRAW_HOLD_MS = 5 * 60_000L
+        private const val DRAW_MERGE_MS = 20 * 60_000L
+        private const val DRAW_MAX_C = 15.0
+
         /** [0.31.29] Nachylenie dopasowania: °C przyrostu na 1 kWh/m² DOBOWEGO GTI.
          *  Dopasowane do 4 dni pomiarów z Trzemchy (r = 0,990). Poprzednie 4,2 było
          *  niemal poprawne — ale dla GTI. Aplikacja karmiła je GHI, stąd błąd.
