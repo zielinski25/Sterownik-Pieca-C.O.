@@ -1,0 +1,95 @@
+{
+  "status": "PASS",
+  "stage": 217,
+  "release_ready": false,
+  "main_changed": false,
+  "firmware_version": "v3.56.3 (bez zmian w tym etapie)",
+  "device_touched": false,
+  "inputs": {
+    "narzedzia/wytrzymalosc217/build.py": "2c36f486a43ccc736bff3953ff5c39a086f4473b74fc6da44b8a447877601c41",
+    "narzedzia/wytrzymalosc217/mutanty.py": "86cb0ad1284ed6243b8ec2e1cd42287bcdebd83cc3e682f5ae9164c929efabaf",
+    "narzedzia/wytrzymalosc217/Test.cpp": "3477af7767294faf88013aae077dc2487f474e24ea13598e27c0fa452ea7fc5c",
+    "narzedzia/panel-pobrania213/HistoriaPobranie.h": "0653a130333f476ba588bb3fa08728e10a08975c73548f30a2d35c84c5367c29",
+    "narzedzia/panel-pobrania213/HistoriaBilety.h": "339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30",
+    "narzedzia/wysylka-zapinka211/HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "narzedzia/wysylka-zapinka211/Extracted211.inc": "dd63a01984d841223d36971690499e4b283c08e2aaf6a1067bc53ae6218982fa",
+    "narzedzia/od-przycisku216/main_centrala-v3.55.8-to-v3.56.3.patch": "0a092380242787b8957c3aa66af796a5daed069806620d6ce66c305e4a3a5535",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31"
+  },
+  "profiles": {
+    "native": {
+      "compile": 0,
+      "run": 0,
+      "podsumowanie": "PASS wytrzymalosc217 sprawdzen=66 bledow=0 (max otwartych naraz: 1)"
+    },
+    "asan-ubsan": {
+      "compile": 0,
+      "run": 0,
+      "podsumowanie": "PASS wytrzymalosc217 sprawdzen=66 bledow=0 (max otwartych naraz: 1)"
+    },
+    "glibcxx-assertions": {
+      "compile": 0,
+      "run": 0,
+      "podsumowanie": "PASS wytrzymalosc217 sprawdzen=66 bledow=0 (max otwartych naraz: 1)"
+    }
+  },
+  "mutanty": {
+    "returncode": 0,
+    "linie": [
+      "PASS mutant M1 (~Odpowiedz nie zamyka zapinki) -> FAIL wytrzymalosc217 sprawdzen=66 bledow=8 (max otwartych naraz: 300)",
+      "PASS mutant M2 (~Odpowiedz nie czysci flagi zajetosci) -> FAIL wytrzymalosc217 sprawdzen=60 bledow=13 (max otwartych naraz: 1)",
+      "PASS mutant M3 (Pin::close() nie zamyka uchwytu VFS) -> FAIL wytrzymalosc217 sprawdzen=66 bledow=19 (max otwartych naraz: 300)"
+    ]
+  },
+  "kroki": [
+    {
+      "nazwa": "build",
+      "cmd": [
+        "/usr/bin/python3",
+        "-B",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/wytrzymalosc217/build.py"
+      ],
+      "returncode": 0,
+      "stdout": "PASS build217 zrodlo v3.55.8 sha256 zgodny z 210\nPASS build217 plik po patchu v3.56.3 sha256 zgodny z etapem 216\nPASS build217 Extracted217.inc 321 linii (w tym oba wysylacze: 129 i 129)\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "wytrzymalosc217 [native]",
+      "cmd": [
+        "/tmp/bin217-qxv4__oj/test-native"
+      ],
+      "returncode": 0,
+      "stdout": "-- 01 G01 300 pobran HTTP: 0 wyciekow uchwytow, zawszy wlasciwy plik\n-- 02 G02 50 zerwanych pobran w polowie: uchwyt zwolniony, flaga czysta\n-- 03 G03 drugie pobranie naraz: 503, bilet NIE spalony, po pierwszym dziala\n-- 04 G04 blad VFS w trakcie: zrodlo niewazne, uchwyt zwolniony, nastepne OK\n-- 05 G05 logMutex zajety: 503, zero uchwytow, flaga czysta\n-- 06 G06 200 wysylek hist_short do Telegramu: cialo i Content-Length zgodne\n-- 07 G07 awarie wysylki Telegram: kazda konczy sie zerwaniem, nie 'udanym' plikiem\n-- 08 G08 hist_long: wysylka poprawna, zapinka TooLarge odrzucona bez uchwytu\n-- 09 G09 bilans uchwytow po calym tescie\nPASS wytrzymalosc217 sprawdzen=66 bledow=0 (max otwartych naraz: 1)\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "wytrzymalosc217 [asan-ubsan]",
+      "cmd": [
+        "/tmp/bin217-qxv4__oj/test-asan-ubsan"
+      ],
+      "returncode": 0,
+      "stdout": "-- 01 G01 300 pobran HTTP: 0 wyciekow uchwytow, zawszy wlasciwy plik\n-- 02 G02 50 zerwanych pobran w polowie: uchwyt zwolniony, flaga czysta\n-- 03 G03 drugie pobranie naraz: 503, bilet NIE spalony, po pierwszym dziala\n-- 04 G04 blad VFS w trakcie: zrodlo niewazne, uchwyt zwolniony, nastepne OK\n-- 05 G05 logMutex zajety: 503, zero uchwytow, flaga czysta\n-- 06 G06 200 wysylek hist_short do Telegramu: cialo i Content-Length zgodne\n-- 07 G07 awarie wysylki Telegram: kazda konczy sie zerwaniem, nie 'udanym' plikiem\n-- 08 G08 hist_long: wysylka poprawna, zapinka TooLarge odrzucona bez uchwytu\n-- 09 G09 bilans uchwytow po calym tescie\nPASS wytrzymalosc217 sprawdzen=66 bledow=0 (max otwartych naraz: 1)\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "wytrzymalosc217 [glibcxx-assertions]",
+      "cmd": [
+        "/tmp/bin217-qxv4__oj/test-glibcxx-assertions"
+      ],
+      "returncode": 0,
+      "stdout": "-- 01 G01 300 pobran HTTP: 0 wyciekow uchwytow, zawszy wlasciwy plik\n-- 02 G02 50 zerwanych pobran w polowie: uchwyt zwolniony, flaga czysta\n-- 03 G03 drugie pobranie naraz: 503, bilet NIE spalony, po pierwszym dziala\n-- 04 G04 blad VFS w trakcie: zrodlo niewazne, uchwyt zwolniony, nastepne OK\n-- 05 G05 logMutex zajety: 503, zero uchwytow, flaga czysta\n-- 06 G06 200 wysylek hist_short do Telegramu: cialo i Content-Length zgodne\n-- 07 G07 awarie wysylki Telegram: kazda konczy sie zerwaniem, nie 'udanym' plikiem\n-- 08 G08 hist_long: wysylka poprawna, zapinka TooLarge odrzucona bez uchwytu\n-- 09 G09 bilans uchwytow po calym tescie\nPASS wytrzymalosc217 sprawdzen=66 bledow=0 (max otwartych naraz: 1)\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "mutanty",
+      "cmd": [
+        "/usr/bin/python3",
+        "-B",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/wytrzymalosc217/mutanty.py"
+      ],
+      "returncode": 0,
+      "stdout": "PASS mutant M1 (~Odpowiedz nie zamyka zapinki) -> FAIL wytrzymalosc217 sprawdzen=66 bledow=8 (max otwartych naraz: 300)\nPASS mutant M2 (~Odpowiedz nie czysci flagi zajetosci) -> FAIL wytrzymalosc217 sprawdzen=60 bledow=13 (max otwartych naraz: 1)\nPASS mutant M3 (Pin::close() nie zamyka uchwytu VFS) -> FAIL wytrzymalosc217 sprawdzen=66 bledow=19 (max otwartych naraz: 300)\nPASS mutanty217 sprawdzen=3 bledow=0\n",
+      "stderr_tail": ""
+    }
+  ]
+}

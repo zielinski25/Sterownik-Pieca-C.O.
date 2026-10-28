@@ -1,0 +1,70 @@
+{
+  "stage": 217,
+  "tytul": "wytrzymalosc: 300 pobran i 200 wysylek bez wycieku",
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "firmware_version": "v3.56.3 (bez zmian w tym etapie)",
+  "po_co": "usterki zasobow (wyciek uchwytu pliku) objawiaja sie dopiero po wielu pobraniach; dotad kazdy etap robil operacje raz",
+  "zakres": {
+    "pobrania_http": 300,
+    "zerwane_pobrania": 50,
+    "wysylki_telegram": 200,
+    "grupy": [
+      "G01 powtarzalnosc",
+      "G02 zerwanie w polowie",
+      "G03 dwa naraz",
+      "G04 blad VFS w trakcie",
+      "G05 zajety zapis",
+      "G06 wysylki Telegram",
+      "G07 sciezki awarii wysylki",
+      "G08 hist_long + TooLarge",
+      "G09 bilans uchwytow"
+    ]
+  },
+  "wynik": {
+    "status": "PASS",
+    "sprawdzen_na_profil": 66,
+    "profili": [
+      "native",
+      "asan-ubsan (detect_leaks=1)",
+      "glibcxx-assertions"
+    ],
+    "bledow": 0,
+    "max_otwartych_uchwytow_naraz": 1,
+    "otwarciem_rowna_sie_zamknieciom": true,
+    "content_length_rowna_sie_cialu": true,
+    "otwartych_po_tescie": 0
+  },
+  "mutanty": {
+    "M1": {
+      "zmiana": "~Odpowiedz nie zamyka zapinki",
+      "wynik": "czerwony (8 bledow, max 300 uchwytow)"
+    },
+    "M2": {
+      "zmiana": "~Odpowiedz nie czysci flagi zajetosci",
+      "wynik": "czerwony (13 bledow)"
+    },
+    "M3": {
+      "zmiana": "Pin::close() nie zamyka uchwytu VFS",
+      "wynik": "czerwony (19 bledow, max 300 uchwytow)"
+    }
+  },
+  "zrodlo_prawdziwego_kodu": {
+    "plik": "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp",
+    "plus_patch": "narzedzia/od-przycisku216/main_centrala-v3.55.8-to-v3.56.3.patch",
+    "sha256_po_patchu": "f51b0b0749e2c1e3a8b5c02848a9c0e4902e0b641d6a7313a42304bbbcef91b3",
+    "zgodny_z_etapem_216": true,
+    "wyciagniete": "oba wysylacze Telegram (po 129 linii), bramka, 3 lambdy tras, adaptery"
+  },
+  "czego_nie_dowodzi": [
+    "zachowania prawdziwego LittleFS (sektory, pelna partycja, zanik zasilania)",
+    "TLS i odpowiedzi serwera Telegram (gniazdo jest modelem)",
+    "czasu wysylki przez WiFi",
+    "kompilacji calego main_centrala.cpp (PlatformIO u uzytkownika)"
+  ],
+  "generowane": {
+    "Extracted217.inc": "5a93a11a16f5b28443db69675cc30c8ea84930b0ff67d1f6c1a91472831ad1d5"
+  },
+  "uruchomienie": "python3 -B narzedzia/wytrzymalosc217/run.py"
+}
