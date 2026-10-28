@@ -23,6 +23,26 @@ param(
 
 Set-Location -LiteralPath $PSScriptRoot
 
+# Numer wersji z app/build.gradle.kts - zeby na starcie bylo widac, CO sie buduje,
+# a nie trzeba tego szukac w Ustawieniach po instalacji.
+$ver = "?"
+$bk = "app\build.gradle.kts"
+if (Test-Path -LiteralPath $bk) {
+    $m = Select-String -LiteralPath $bk -Pattern 'versionName\s*=\s*"([^"]+)"' | Select-Object -First 1
+    if ($m) { $ver = $m.Matches[0].Groups[1].Value }
+}
+$code = "?"
+if (Test-Path -LiteralPath $bk) {
+    $mc = Select-String -LiteralPath $bk -Pattern 'versionCode\s*=\s*(\d+)' | Select-Object -First 1
+    if ($mc) { $code = $mc.Matches[0].Groups[1].Value }
+}
+Write-Host ("== Wersja projektu: " + $ver + " (versionCode " + $code + ")")
+if ($ver -eq "?") {
+    Write-Host "BLAD: nie znalazlem app\build.gradle.kts. Uruchom skrypt w folderze projektu"
+    Write-Host "       (tam, gdzie lezy settings.gradle.kts)."
+    exit 1
+}
+
 $compileSdk = 35   # musi zgadzac sie z app/build.gradle.kts
 
 # ---------------------------------------------------------------- JAVA --------
@@ -180,14 +200,8 @@ if (-not (Test-Path -LiteralPath $apk)) {
 }
 
 if ($OutApk -eq "") {
-    # Nazwa pliku z numerem wersji czytanym z app/build.gradle.kts, zeby nie bylo
-    # "v0.31.35" w nazwie APK-a, ktory w srodku jest 0.31.36.
-    $ver = "?"
-    $bk = "app\build.gradle.kts"
-    if (Test-Path -LiteralPath $bk) {
-        $m = Select-String -LiteralPath $bk -Pattern 'versionName\s*=\s*"([^"]+)"' | Select-Object -First 1
-        if ($m) { $ver = $m.Matches[0].Groups[1].Value }
-    }
+    # Nazwa pliku z numerem wersji, zeby nie bylo "v0.31.35" w nazwie APK-a,
+    # ktory w srodku jest 0.31.36.
     $OutApk = Join-Path $env:USERPROFILE ("Downloads\SterownikCO-v" + $ver + "-debug.apk")
 }
 Copy-Item -LiteralPath $apk -Destination $OutApk -Force
