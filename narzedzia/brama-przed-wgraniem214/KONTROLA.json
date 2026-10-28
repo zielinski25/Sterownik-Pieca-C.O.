@@ -1,0 +1,119 @@
+{
+  "status": "PASS",
+  "stage": 214,
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "checks": [
+    {
+      "id": "S01",
+      "nazwa": "FIRMWARE_VERSION = v3.56.2 dokladnie raz",
+      "ok": true,
+      "opis": "linie: [5591]"
+    },
+    {
+      "id": "S02",
+      "nazwa": "kazdy include etapow 211-213 wystepuje raz",
+      "ok": true,
+      "opis": "3/3 po jednym"
+    },
+    {
+      "id": "S03",
+      "nazwa": "naglowki HTTP PO <ESPAsyncWebServer.h>",
+      "ok": true,
+      "opis": "kolejnosc prawidlowa"
+    },
+    {
+      "id": "S04",
+      "nazwa": "kazdy nowy symbol globalny ma 1 definicje",
+      "ok": true,
+      "opis": "8/8 po jednej"
+    },
+    {
+      "id": "S05",
+      "nazwa": "domyslny token pusty (pobieranie wylaczone bez secrets.h)",
+      "ok": true,
+      "opis": "znaleziono"
+    },
+    {
+      "id": "S06",
+      "nazwa": "secrets.h.example: zastepnik, nie sekret",
+      "ok": true,
+      "opis": "czysto"
+    },
+    {
+      "id": "S07",
+      "nazwa": "w repo nie ma pliku secrets.h",
+      "ok": true,
+      "opis": "brak"
+    },
+    {
+      "id": "S08",
+      "nazwa": "rejestracje: /history ANY, /history/long ANY, /history/link GET",
+      "ok": true,
+      "opis": "3/3"
+    },
+    {
+      "id": "S09",
+      "nazwa": "panel w literalzie HTML, bez tokenu, z biletem",
+      "ok": true,
+      "opis": "przycisk 2611 znakow"
+    },
+    {
+      "id": "S10",
+      "nazwa": "patch odwracalny (--dry-run -R)",
+      "ok": true,
+      "opis": "odwraca sie czysto"
+    },
+    {
+      "id": "S11",
+      "nazwa": "bez CRLF i bez BOM",
+      "ok": true,
+      "opis": "czysto"
+    },
+    {
+      "id": "S12",
+      "nazwa": "naglowki firmware bez STL (tylko 6 dozwolonych)",
+      "ok": true,
+      "opis": "czysto"
+    },
+    {
+      "id": "S13",
+      "nazwa": "naglowki bez wyjatkow, RTTI i std::string",
+      "ok": true,
+      "opis": "czysto"
+    },
+    {
+      "id": "S14",
+      "nazwa": "oba wysylacze Telegramu nadal na zapince 211",
+      "ok": true,
+      "opis": "2 wysylacze x (pin.open + pin.close)"
+    },
+    {
+      "id": "S15",
+      "nazwa": "historiaSys zdefiniowany przed bramka",
+      "ok": true,
+      "opis": "linia 22826 < 28696"
+    },
+    {
+      "id": "S16",
+      "nazwa": "esp_system.h przed pierwszym esp_random()",
+      "ok": true,
+      "opis": "include linia 5163, uzycie linia 19078"
+    },
+    {
+      "id": "S17",
+      "nazwa": "naglowki kompiluja sie jako gnu++11 i gnu++17",
+      "ok": true,
+      "opis": "oba przeszly"
+    },
+    {
+      "id": "S18",
+      "nazwa": "sekcja tokenu dokladnie jedna",
+      "ok": true,
+      "opis": "1"
+    }
+  ],
+  "errors": 0,
+  "patched_sha256": "369026dbe324a05805518b22f1e12eb950b5abffa6d17c65e3c32fd8762cf800"
+}

@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "stage": 214,
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "inputs": {
+    "narzedzia/brama-przed-wgraniem214/zrob_patch.py": "0b66d27dbdc906a1f8a57147bf898a2f536cf41f24162893d6ca10089f894752",
+    "narzedzia/brama-przed-wgraniem214/build.py": "3dcbd16d81d10ab72720446ba966d0402cd6b1149107dbacafbc842f64dbe98c",
+    "narzedzia/brama-przed-wgraniem214/sprawdz.py": "70d2cc26765e2c4f62b848645318b94771ccbecd1cfa80059d2be51cb5fc1fb8",
+    "narzedzia/brama-przed-wgraniem214/selftest.py": "e793e3742f4825e2d134da5e0ddd7207ad3ff954b5c2cac097319db9f1f6edd0",
+    "narzedzia/brama-przed-wgraniem214/main_centrala-v3.56.1-to-v3.56.2.patch": "8a3602359955882bb452df38fd6973a43610bdb2056f5624d55fd6689d9257e7",
+    "narzedzia/brama-przed-wgraniem214/main_centrala-v3.55.8-to-v3.56.2.patch": "0ae0629b97a2594ed03d48500d471a8e29d09de95f35b1319a4a137497464ac7",
+    "narzedzia/wysylka-zapinka211/HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "narzedzia/panel-pobrania213/HistoriaPobranie.h": "0653a130333f476ba588bb3fa08728e10a08975c73548f30a2d35c84c5367c29",
+    "narzedzia/panel-pobrania213/HistoriaBilety.h": "339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30",
+    "narzedzia/panel-pobrania213/host/Serwer213.h": "0c2fcc6ac17a3d8688f9c98f15b6e17ef2b0e066498a859d61e9d628e0967b90",
+    "narzedzia/wysylka-zapinka211/host/Arduino.h": "ab6ba1701b167930d23ee83f62616b8f4ff4cda17c00710c1734f333370887c4",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/secrets.h.example": "69a5cd6c8db1e3ae7e7c541735f47b66832deda61d51ebdaf4060fcd38031570"
+  },
+  "kroki": {
+    "brama": {
+      "returncode": 0,
+      "stdout": "PASS brama214 zrodlo v3.55.8 sha256 zgodny z 210\nPASS brama214 patch skumulowany == 211+212+213+214 (bajt w bajt)\nPASS brama214 wynik sha256 369026dbe324a05805518b22f1e12eb950b5abffa6d17c65e3c32fd8762cf800\nPASS brama214 patch odwracalny: tak\nPASS S01  FIRMWARE_VERSION = v3.56.2 dokladnie raz  (linie: [5591])\nPASS S02  kazdy include etapow 211-213 wystepuje raz  (3/3 po jednym)\nPASS S03  naglowki HTTP PO <ESPAsyncWebServer.h>  (kolejnosc prawidlowa)\nPASS S04  kazdy nowy symbol globalny ma 1 definicje  (8/8 po jednej)\nPASS S05  domyslny token pusty (pobieranie wylaczone bez secrets.h)  (znaleziono)\nPASS S06  secrets.h.example: zastepnik, nie sekret  (czysto)\nPASS S07  w repo nie ma pliku secrets.h  (brak)\nPASS S08  rejestracje: /history ANY, /history/long ANY, /history/link GET  (3/3)\nPASS S09  panel w literalzie HTML, bez tokenu, z biletem  (przycisk 2611 znakow)\nPASS S10  patch odwracalny (--dry-run -R)  (odwraca sie czysto)\nPASS S11  bez CRLF i bez BOM  (czysto)\nPASS S12  naglowki firmware bez STL (tylko 6 dozwolonych)  (czysto)\nPASS S13  naglowki bez wyjatkow, RTTI i std::string  (czysto)\nPASS S14  oba wysylacze Telegramu nadal na zapince 211  (2 wysylacze x (pin.open + pin.close))\nPASS S15  historiaSys zdefiniowany przed bramka  (linia 22826 < 28696)\nPASS S16  esp_system.h przed pierwszym esp_random()  (include linia 5163, uzycie linia 19078)\nPASS S17  naglowki kompiluja sie jako gnu++11 i gnu++17  (oba przeszly)\nPASS S18  sekcja tokenu dokladnie jedna  (1)\n\nPASS brama214 sprawdzen=18 bledow=0\n",
+      "stderr": ""
+    },
+    "selftest": {
+      "returncode": 0,
+      "stdout": "PASS selftest [baza] poprawny plik v3.56.2 przechodzi bez bledow\nPASS selftest [plik-z-etapu-213] zlapane przez S03 (plik v3.56.1 (dostarczony w 213) jest ZATRZYMYWANY)\nPASS selftest [include-przed-serwerem] zlapane przez S03 (przywrocony blad 212/213)\nPASS selftest [wersja-stara] zlapane przez S01 (wersja nie podniesiona)\nPASS selftest [duplikat-tokenu] zlapane przez S04 (dwie definicje tej samej zmiennej)\nPASS selftest [token-niepusty] zlapane przez S05 (domyslny token nie jest pusty)\nPASS selftest [link-post] zlapane przez S08 (/history/link nie jest GET)\nPASS selftest [panel-rozbija-literal] zlapane przez S09 (koniec literalu HTML w srodku panelu)\nPASS selftest [panel-z-tokenem] zlapane przez S09 (staly token w tekscie panelu)\nPASS selftest [sekret-w-przykladzie] zlapane przez S06 (prawdziwy sekret w secrets.h.example)\nPASS selftest [stl-w-naglowku] zlapane przez S12 (STL w naglowku firmware)\nPASS selftest [wyjatek-w-naglowku] zlapane przez S13 (wyjatek w naglowku firmware)\nPASS selftest [zapinka-zepsuta] zlapane przez S14 (brak zamkniecia zapinki w wysylaczu)\nPASS selftest [bez-esp-system] zlapane przez S16 (brak include'a dla esp_random())\nPASS selftest [crlf] zlapane przez S11 (CRLF w pliku)\n\nPASS selftest214 przypadkow=16 wszystkie zachowania zgodne z opisem\n",
+      "stderr": ""
+    }
+  }
+}
