@@ -180,7 +180,15 @@ if (-not (Test-Path -LiteralPath $apk)) {
 }
 
 if ($OutApk -eq "") {
-    $OutApk = Join-Path $env:USERPROFILE "Downloads\SterownikCO-v0.31.35-debug.apk"
+    # Nazwa pliku z numerem wersji czytanym z app/build.gradle.kts, zeby nie bylo
+    # "v0.31.35" w nazwie APK-a, ktory w srodku jest 0.31.36.
+    $ver = "?"
+    $bk = "app\build.gradle.kts"
+    if (Test-Path -LiteralPath $bk) {
+        $m = Select-String -LiteralPath $bk -Pattern 'versionName\s*=\s*"([^"]+)"' | Select-Object -First 1
+        if ($m) { $ver = $m.Matches[0].Groups[1].Value }
+    }
+    $OutApk = Join-Path $env:USERPROFILE ("Downloads\SterownikCO-v" + $ver + "-debug.apk")
 }
 Copy-Item -LiteralPath $apk -Destination $OutApk -Force
 
