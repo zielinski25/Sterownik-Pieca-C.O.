@@ -1,0 +1,771 @@
+{
+  "v3.56.3": {
+    "plik": "do-analizy-v3563.cpp",
+    "tras": 46,
+    "gole_napisy": 31,
+    "exact": 15,
+    "nieznane": 0,
+    "martwe": [
+      {
+        "martwa_linia": 28756,
+        "martwa": "\"/history/long\" HTTP_ANY",
+        "przechwytuje_linia": 28753,
+        "przechwytuje": "\"/history\" HTTP_ANY"
+      },
+      {
+        "martwa_linia": 28762,
+        "martwa": "\"/history/link\" HTTP_GET",
+        "przechwytuje_linia": 28753,
+        "przechwytuje": "\"/history\" HTTP_ANY"
+      }
+    ],
+    "tabela": [
+      {
+        "linia": 28371,
+        "wyrazenie": "\"/\"",
+        "typ": "backward",
+        "sciezka": "/",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28391,
+        "wyrazenie": "\"/api/status\"",
+        "typ": "backward",
+        "sciezka": "/api/status",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28452,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/lan/status\")",
+        "typ": "exact",
+        "sciezka": "/api/lan/status",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 28458,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/lan/status\")",
+        "typ": "exact",
+        "sciezka": "/api/lan/status",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28474,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/lan/cmd\")",
+        "typ": "exact",
+        "sciezka": "/api/lan/cmd",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 28500,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/lan/ack\")",
+        "typ": "exact",
+        "sciezka": "/api/lan/ack",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28530,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/prognoza\")",
+        "typ": "exact",
+        "sciezka": "/api/prognoza",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 28540,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/prognoza\")",
+        "typ": "exact",
+        "sciezka": "/api/prognoza",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28553,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/solar-archive\")",
+        "typ": "exact",
+        "sciezka": "/api/solar-archive",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 28563,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/solar-archive\")",
+        "typ": "exact",
+        "sciezka": "/api/solar-archive",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28601,
+        "wyrazenie": "\"/api/rtc-sync\"",
+        "typ": "backward",
+        "sciezka": "/api/rtc-sync",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28642,
+        "wyrazenie": "\"/panel-ota.bin\"",
+        "typ": "backward",
+        "sciezka": "/panel-ota.bin",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28670,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/history\")",
+        "typ": "exact",
+        "sciezka": "/api/history",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28673,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/history/clear\")",
+        "typ": "exact",
+        "sciezka": "/api/history/clear",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 28687,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/history/long\")",
+        "typ": "exact",
+        "sciezka": "/api/history/long",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28696,
+        "wyrazenie": "\"/api/log-stats\"",
+        "typ": "backward",
+        "sciezka": "/api/log-stats",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28704,
+        "wyrazenie": "\"/api/log-lines\"",
+        "typ": "backward",
+        "sciezka": "/api/log-lines",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28753,
+        "wyrazenie": "\"/history\"",
+        "typ": "backward",
+        "sciezka": "/history",
+        "metoda": "HTTP_ANY",
+        "mask": 255
+      },
+      {
+        "linia": 28756,
+        "wyrazenie": "\"/history/long\"",
+        "typ": "backward",
+        "sciezka": "/history/long",
+        "metoda": "HTTP_ANY",
+        "mask": 255
+      },
+      {
+        "linia": 28762,
+        "wyrazenie": "\"/history/link\"",
+        "typ": "backward",
+        "sciezka": "/history/link",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28766,
+        "wyrazenie": "\"/api/log-download\"",
+        "typ": "backward",
+        "sciezka": "/api/log-download",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28771,
+        "wyrazenie": "\"/api/log-clear\"",
+        "typ": "backward",
+        "sciezka": "/api/log-clear",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 28782,
+        "wyrazenie": "\"/api/fs-list\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-list",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28833,
+        "wyrazenie": "\"/api/fs-view\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-view",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28877,
+        "wyrazenie": "\"/api/fs-download\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-download",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28887,
+        "wyrazenie": "\"/api/fs-delete\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-delete",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 28940,
+        "wyrazenie": "\"/api/fs-upload\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-upload",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29065,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/wifi/list\")",
+        "typ": "exact",
+        "sciezka": "/api/wifi/list",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 29073,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/wifi/scan/start\")",
+        "typ": "exact",
+        "sciezka": "/api/wifi/scan/start",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 29081,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/wifi/scan/result\")",
+        "typ": "exact",
+        "sciezka": "/api/wifi/scan/result",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 29090,
+        "wyrazenie": "\"/api/wifi/list\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/list",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 29114,
+        "wyrazenie": "\"/api/wifi/scan/start\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/scan/start",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29124,
+        "wyrazenie": "\"/api/wifi/scan/result\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/scan/result",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 29158,
+        "wyrazenie": "\"/api/wifi/add\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/add",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29208,
+        "wyrazenie": "\"/api/wifi/delete\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/delete",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29256,
+        "wyrazenie": "\"/ota-upload\"",
+        "typ": "backward",
+        "sciezka": "/ota-upload",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29326,
+        "wyrazenie": "\"/api/telegram/save\"",
+        "typ": "backward",
+        "sciezka": "/api/telegram/save",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29363,
+        "wyrazenie": "\"/api/telegram/send\"",
+        "typ": "backward",
+        "sciezka": "/api/telegram/send",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29380,
+        "wyrazenie": "\"/api/telegram/status\"",
+        "typ": "backward",
+        "sciezka": "/api/telegram/status",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 29396,
+        "wyrazenie": "\"/api/ustawienia-get\"",
+        "typ": "backward",
+        "sciezka": "/api/ustawienia-get",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 29441,
+        "wyrazenie": "\"/api/ustawienia-set\"",
+        "typ": "backward",
+        "sciezka": "/api/ustawienia-set",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29474,
+        "wyrazenie": "\"/api/servo-manual\"",
+        "typ": "backward",
+        "sciezka": "/api/servo-manual",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29517,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/rozpalanie-serwa\")",
+        "typ": "exact",
+        "sciezka": "/api/rozpalanie-serwa",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29549,
+        "wyrazenie": "\"/api/pompa-manual\"",
+        "typ": "backward",
+        "sciezka": "/api/pompa-manual",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29589,
+        "wyrazenie": "\"/api/mieszadlo-manual\"",
+        "typ": "backward",
+        "sciezka": "/api/mieszadlo-manual",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29630,
+        "wyrazenie": "\"/api/symulacja-czujnik\"",
+        "typ": "backward",
+        "sciezka": "/api/symulacja-czujnik",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      }
+    ]
+  },
+  "v3.56.4": {
+    "plik": "do-analizy-v3564.cpp",
+    "tras": 46,
+    "gole_napisy": 28,
+    "exact": 18,
+    "nieznane": 0,
+    "martwe": [],
+    "tabela": [
+      {
+        "linia": 28381,
+        "wyrazenie": "\"/\"",
+        "typ": "backward",
+        "sciezka": "/",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28401,
+        "wyrazenie": "\"/api/status\"",
+        "typ": "backward",
+        "sciezka": "/api/status",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28462,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/lan/status\")",
+        "typ": "exact",
+        "sciezka": "/api/lan/status",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 28468,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/lan/status\")",
+        "typ": "exact",
+        "sciezka": "/api/lan/status",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28484,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/lan/cmd\")",
+        "typ": "exact",
+        "sciezka": "/api/lan/cmd",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 28510,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/lan/ack\")",
+        "typ": "exact",
+        "sciezka": "/api/lan/ack",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28540,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/prognoza\")",
+        "typ": "exact",
+        "sciezka": "/api/prognoza",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 28550,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/prognoza\")",
+        "typ": "exact",
+        "sciezka": "/api/prognoza",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28563,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/solar-archive\")",
+        "typ": "exact",
+        "sciezka": "/api/solar-archive",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 28573,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/solar-archive\")",
+        "typ": "exact",
+        "sciezka": "/api/solar-archive",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28611,
+        "wyrazenie": "\"/api/rtc-sync\"",
+        "typ": "backward",
+        "sciezka": "/api/rtc-sync",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28652,
+        "wyrazenie": "\"/panel-ota.bin\"",
+        "typ": "backward",
+        "sciezka": "/panel-ota.bin",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28680,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/history\")",
+        "typ": "exact",
+        "sciezka": "/api/history",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28683,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/history/clear\")",
+        "typ": "exact",
+        "sciezka": "/api/history/clear",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 28697,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/history/long\")",
+        "typ": "exact",
+        "sciezka": "/api/history/long",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28706,
+        "wyrazenie": "\"/api/log-stats\"",
+        "typ": "backward",
+        "sciezka": "/api/log-stats",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28714,
+        "wyrazenie": "\"/api/log-lines\"",
+        "typ": "backward",
+        "sciezka": "/api/log-lines",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28772,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/history\")",
+        "typ": "exact",
+        "sciezka": "/history",
+        "metoda": "HTTP_ANY",
+        "mask": 255
+      },
+      {
+        "linia": 28775,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/history/long\")",
+        "typ": "exact",
+        "sciezka": "/history/long",
+        "metoda": "HTTP_ANY",
+        "mask": 255
+      },
+      {
+        "linia": 28783,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/history/link\")",
+        "typ": "exact",
+        "sciezka": "/history/link",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28787,
+        "wyrazenie": "\"/api/log-download\"",
+        "typ": "backward",
+        "sciezka": "/api/log-download",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28792,
+        "wyrazenie": "\"/api/log-clear\"",
+        "typ": "backward",
+        "sciezka": "/api/log-clear",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 28803,
+        "wyrazenie": "\"/api/fs-list\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-list",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28854,
+        "wyrazenie": "\"/api/fs-view\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-view",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28898,
+        "wyrazenie": "\"/api/fs-download\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-download",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 28908,
+        "wyrazenie": "\"/api/fs-delete\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-delete",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 28961,
+        "wyrazenie": "\"/api/fs-upload\"",
+        "typ": "backward",
+        "sciezka": "/api/fs-upload",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29086,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/wifi/list\")",
+        "typ": "exact",
+        "sciezka": "/api/wifi/list",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 29094,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/wifi/scan/start\")",
+        "typ": "exact",
+        "sciezka": "/api/wifi/scan/start",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 29102,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/wifi/scan/result\")",
+        "typ": "exact",
+        "sciezka": "/api/wifi/scan/result",
+        "metoda": "HTTP_OPTIONS",
+        "mask": 64
+      },
+      {
+        "linia": 29111,
+        "wyrazenie": "\"/api/wifi/list\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/list",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 29135,
+        "wyrazenie": "\"/api/wifi/scan/start\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/scan/start",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29145,
+        "wyrazenie": "\"/api/wifi/scan/result\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/scan/result",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 29179,
+        "wyrazenie": "\"/api/wifi/add\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/add",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29229,
+        "wyrazenie": "\"/api/wifi/delete\"",
+        "typ": "backward",
+        "sciezka": "/api/wifi/delete",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29277,
+        "wyrazenie": "\"/ota-upload\"",
+        "typ": "backward",
+        "sciezka": "/ota-upload",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29347,
+        "wyrazenie": "\"/api/telegram/save\"",
+        "typ": "backward",
+        "sciezka": "/api/telegram/save",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29384,
+        "wyrazenie": "\"/api/telegram/send\"",
+        "typ": "backward",
+        "sciezka": "/api/telegram/send",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29401,
+        "wyrazenie": "\"/api/telegram/status\"",
+        "typ": "backward",
+        "sciezka": "/api/telegram/status",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 29417,
+        "wyrazenie": "\"/api/ustawienia-get\"",
+        "typ": "backward",
+        "sciezka": "/api/ustawienia-get",
+        "metoda": "HTTP_GET",
+        "mask": 1
+      },
+      {
+        "linia": 29462,
+        "wyrazenie": "\"/api/ustawienia-set\"",
+        "typ": "backward",
+        "sciezka": "/api/ustawienia-set",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29495,
+        "wyrazenie": "\"/api/servo-manual\"",
+        "typ": "backward",
+        "sciezka": "/api/servo-manual",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29538,
+        "wyrazenie": "AsyncURIMatcher::exact(\"/api/rozpalanie-serwa\")",
+        "typ": "exact",
+        "sciezka": "/api/rozpalanie-serwa",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29570,
+        "wyrazenie": "\"/api/pompa-manual\"",
+        "typ": "backward",
+        "sciezka": "/api/pompa-manual",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29610,
+        "wyrazenie": "\"/api/mieszadlo-manual\"",
+        "typ": "backward",
+        "sciezka": "/api/mieszadlo-manual",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      },
+      {
+        "linia": 29651,
+        "wyrazenie": "\"/api/symulacja-czujnik\"",
+        "typ": "backward",
+        "sciezka": "/api/symulacja-czujnik",
+        "metoda": "HTTP_POST",
+        "mask": 4
+      }
+    ]
+  }
+}
