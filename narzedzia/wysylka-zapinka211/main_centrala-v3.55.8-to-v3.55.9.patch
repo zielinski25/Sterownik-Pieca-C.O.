@@ -1,0 +1,275 @@
+diff -u -r a/main_centrala.cpp b/main_centrala.cpp
+--- a/main_centrala.cpp	2026-10-28 11:57:57.508482663 +0000
++++ b/main_centrala.cpp	2026-10-28 11:57:57.512482683 +0000
+@@ -1,3 +1,8 @@
++// FIRMWARE_VERSION v3.55.8 -> v3.55.9 (KANDYDAT: zapinka historii w wysylaczach dokumentow Telegram; NIE WGRYWAC).
++// v3.55.9: wysylacze hist_short/hist_long czytaja plik przez zapinke (dlugosc pod
++// logMutexem, jedno otwarcie, tylko zapowiedziany prefiks). Krotki odczyt i krotki
++// zapis do gniazda koncza sie zerwaniem polaczenia, nie "udanym" ucietym dokumentem.
++// Zapis historii, rotacja, CSV, NVS, OTA, sterowanie i rytm 8s/60s bez zmian.
+ // FIRMWARE_VERSION v3.55.7 -> v3.55.8 (KANDYDAT: blokada calego dostepu Arduino FS po bledzie startu; NIE WGRYWAC).
+ // FIRMWARE_VERSION v3.55.6 -> v3.55.7 (KANDYDAT: A1 tylko na istniejace poprawne zadanie; NIE WGRYWAC).
+ // FIRMWARE_VERSION v3.55.5 -> v3.55.6 (KANDYDAT: kontrola startu historii, bez kasowania; NIE WGRYWAC).
+@@ -5120,6 +5125,7 @@
+ #include "HistoryStartup.h"
+ #include "HistoryBoot.h"
+ #include "EspVfsCalls.h"
++#include "HistoriaPin.h"   // [v3.55.9 HISTORIA-PIN] zapinka prefiksu historii
+ #include "AutoIgnitionColdTimer.h"
+ #include "MieszadloTrocinyAuto.h"
+ #include "AlarmBuzzerProfiles.h"
+@@ -5553,7 +5559,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.55.8";
++static const char* FIRMWARE_VERSION = "v3.55.9";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -22742,6 +22748,12 @@
+ // miejscu, standardowy C++ wymog "znane przed uzyciem" (ten sam wzorzec co
+ // forward-deklaracja historiaDlugaAkumulujProbke() ponizej).
+ bool historiaFlushDoFS();
++// [v3.55.9 HISTORIA-PIN] Wlasciciel VFS historii przeniesiony wyzej.
++// Powod: sendTelegramDocumentHistKrotka()/...Dluga() (sekcja Telegram, nizej)
++// otwieraja zapinke tym samym wywolaniem VFS, ktorym pisze historiaFlushDoFS(),
++// a ich definicje sa PRZED sekcja [v3.55.5 HISTORIA-IO], gdzie ten obiekt stal.
++// Typ jest kompletny (CheckedHistoryIO.h jest wciagniety wyzej), obiekt bez stanu.
++static history193::SystemCalls historiaSys;
+ 
+ // [WYKRESY-FS, POPRAWKA] Forward-deklaracja historiaLiniaCsv() - jej jedyna
+ // PELNA definicja jest przy historiaZbudujCsv() nizej, ale
+@@ -33809,28 +33821,40 @@
+ }
+ 
+ // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 7] Wysylka hist_short.csv
+-// jako dokument Telegram. Wzorem sendTelegramDocumentSD() (swiezy
+-// File.open()+size(), bez cache'a - hist_short.csv jest pisany przez
+-// historiaFlushDoFS(), wolana periodycznie z wykonajZaplanowaneZadania(),
+-// nie z hot-path alarmowego, wiec ten sam niski poziom ryzyka co przy
+-// archiwum SD jest tu akceptowalny bez dodatkowego cache'a).
++// jako dokument Telegram.
++// [v3.55.9 HISTORIA-PIN] Zamiast wlasnej petli open()/read() po nazwie pliku
++// i dlugosci z cache - zapinka historia211::Pin. Dlugosc jest ustalana RAZ,
++// pod logMutexem (ta sama blokada, ktora bierze historiaFlushDoFS()), jako
++// min(cache, rozmiar fizyczny); plik jest otwierany RAZ i czytany tylko do
++// tej dlugosci. Skutki:
++//   * ogloszony Content-Length zawsze zgadza sie z cialem,
++//   * krotszy plik, blad odczytu i krotki zapis do gniazda koncza sie
++//     zerwaniem polaczenia, a nie "udanym" wyslaniem ucietego dokumentu,
++//   * logMutex jest trzymany wylacznie przy otwieraniu zapinki, nigdy
++//     w trakcie wysylki - zapis historii nie czeka minutami.
+ bool sendTelegramDocumentHistKrotka() {
+   if (!historiaDostepGotowy()) return false;
+   if (!tgEnabled || tgBotToken.length() < 10 || tgChatId.length() < 3) return false;
+   if (WiFi.status() != WL_CONNECTED) return false;
+   if (!littlefsReady) return false;
+-  if (!systemFS196.exists(HISTORIA_PLIK)) return false;
+ 
+-  // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 14.2] Cache zamiast
+-  // swiezego File.open()+size() - teraz, gdy historiaFlushDoFS() opakowuje
+-  // swoje zapisy w logMutex, ten sam wzorzec co g_logKrytycznySize/
+-  // g_logUstawienSize jest bezpieczny i tu.
+-  size_t totalLogSize = g_histShortSize;
+-  if (totalLogSize == 0) return false;
++  historia211::Pin pin;
++  {
++    if (!logMutex || xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) != pdTRUE) return false;
++    const historia211::OpenCode zapinka =
++        pin.open(historiaSys, historia211::kShortVfsPath, g_histShortSize, historia211::kMaxDocumentBytes);
++    xSemaphoreGive(logMutex);
++    if (zapinka != historia211::OpenCode::Ok) {
++      DLOG(DC_TELEGRAM, DL_WARN, F("TG-DOC-HIST msg=\"brak zapinki na plik historii - nie wyslano\""));
++      return false;
++    }
++  }
++  const size_t totalLogSize = static_cast<size_t>(pin.length());
+ 
+   if (!tgWezmijSendMutex("TG-DOC-HIST")) return false;
+ 
+   bool ok = false;
++  bool cialoOk = true;
+   bool tgDocNetFailCounted = false;
+   auto tgDocNetFail = [&]() {
+     if (!tgDocNetFailCounted) { TG_NET_FAIL(); tgDocNetFailCounted = true; }
+@@ -33874,31 +33898,38 @@
+ 
+       if (!chBuf) {
+         DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-HIST msg=\"brak pamieci na bufor 4KB\""));
++        tgDocNetFail();
++        cialoOk = false;
+       } else {
+-        File plik = systemFS196.open(HISTORIA_PLIK, "r");
+-        if (plik) {
+-          size_t wyslano = 0;
+-          while (wyslano < totalLogSize) {
+-            size_t doOdczytu = (totalLogSize - wyslano > DOC_CHUNK) ? DOC_CHUNK : (totalLogSize - wyslano);
+-            size_t n = plik.read(chBuf, doOdczytu);
+-            if (n == 0) break;
+-            if (!tgWriteGuard(tgClient)) { tgDocNetFail(); break; }
+-            size_t zapisano = 0;
+-            while (zapisano < n) {
+-              size_t w = tgClient.write(chBuf + zapisano, n - zapisano);
+-              if (w == 0) break;
+-              zapisano += w;
+-            }
+-            if (zapisano == 0) break;
+-            wyslano += zapisano;
+-            serwisujTWDTJesliZarejestrowany();
++        while (pin.sent() < pin.length()) {
++          const historia211::ReadResult odczyt = pin.read(chBuf, DOC_CHUNK);
++          if (odczyt.code != historia211::ReadCode::Data) {
++            DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-HIST msg=\"odczyt historii niepotwierdzony - zrywam polaczenie\""));
++            tgDocNetFail();
++            cialoOk = false;
++            break;
+           }
+-          plik.close();
++          if (!tgWriteGuard(tgClient)) { tgDocNetFail(); cialoOk = false; break; }
++          size_t zapisano = 0;
++          while (zapisano < odczyt.bytes) {
++            const size_t w = tgClient.write(chBuf + zapisano, odczyt.bytes - zapisano);
++            if (w == 0) break;
++            zapisano += w;
++          }
++          if (zapisano != odczyt.bytes) {
++            DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-HIST msg=\"krotki zapis do gniazda - zrywam polaczenie\""));
++            tgDocNetFail();
++            cialoOk = false;
++            break;
++          }
++          serwisujTWDTJesliZarejestrowany();
+         }
+         free(chBuf);
+       }
+     }
+ 
++    if (!cialoOk) goto tgDocHistSSendDone;
++
+     serwisujTWDTJesliZarejestrowany();
+     if (!tgWriteGuard(tgClient)) { tgDocNetFail(); goto tgDocHistSSendDone; }
+     tgClient.print(partTail);
+@@ -33926,28 +33957,41 @@
+   tgDocHistSSendDone:
+   tgClient.stop();
+   tgClientReady = false;
++  if (!pin.close()) DLOG(DC_TELEGRAM, DL_WARN, F("TG-DOC-HIST msg=\"zamkniecie zapinki niepotwierdzone\""));
+   xSemaphoreGive(tgSendMutex);
+   return ok;
+ }
+ 
+ // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 7] Identyczna jak
+ // sendTelegramDocumentHistKrotka() powyzej, tylko dla hist_long.csv (7 dni,
+-// agregaty godzinowe) - patrz komentarz tam po uzasadnienie braku cache'a.
++// agregaty godzinowe).
++// [v3.55.9 HISTORIA-PIN] Ten sam mechanizm zapinki co przy historii krotkiej:
++// dlugosc pod logMutexem, plik otwarty raz, czytany tylko do zapowiedzianej
++// dlugosci, krotki odczyt/zapis konczy sie zerwaniem polaczenia. Uzasadnienie
++// i pelna lista skutkow - komentarz przy sendTelegramDocumentHistKrotka().
+ bool sendTelegramDocumentHistDluga() {
+   if (!historiaDostepGotowy()) return false;
+   if (!tgEnabled || tgBotToken.length() < 10 || tgChatId.length() < 3) return false;
+   if (WiFi.status() != WL_CONNECTED) return false;
+   if (!littlefsReady) return false;
+-  if (!systemFS196.exists(HISTORIA_DLUGA_PLIK)) return false;
+ 
+-  // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 14.2] Cache - patrz
+-  // komentarz w sendTelegramDocumentHistKrotka() powyzej.
+-  size_t totalLogSize = g_histLongSize;
+-  if (totalLogSize == 0) return false;
++  historia211::Pin pin;
++  {
++    if (!logMutex || xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) != pdTRUE) return false;
++    const historia211::OpenCode zapinka =
++        pin.open(historiaSys, historia211::kLongVfsPath, g_histLongSize, historia211::kMaxDocumentBytes);
++    xSemaphoreGive(logMutex);
++    if (zapinka != historia211::OpenCode::Ok) {
++      DLOG(DC_TELEGRAM, DL_WARN, F("TG-DOC-HISTL msg=\"brak zapinki na plik historii - nie wyslano\""));
++      return false;
++    }
++  }
++  const size_t totalLogSize = static_cast<size_t>(pin.length());
+ 
+   if (!tgWezmijSendMutex("TG-DOC-HISTL")) return false;
+ 
+   bool ok = false;
++  bool cialoOk = true;
+   bool tgDocNetFailCounted = false;
+   auto tgDocNetFail = [&]() {
+     if (!tgDocNetFailCounted) { TG_NET_FAIL(); tgDocNetFailCounted = true; }
+@@ -33991,31 +34035,38 @@
+ 
+       if (!chBuf) {
+         DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-HISTL msg=\"brak pamieci na bufor 4KB\""));
++        tgDocNetFail();
++        cialoOk = false;
+       } else {
+-        File plik = systemFS196.open(HISTORIA_DLUGA_PLIK, "r");
+-        if (plik) {
+-          size_t wyslano = 0;
+-          while (wyslano < totalLogSize) {
+-            size_t doOdczytu = (totalLogSize - wyslano > DOC_CHUNK) ? DOC_CHUNK : (totalLogSize - wyslano);
+-            size_t n = plik.read(chBuf, doOdczytu);
+-            if (n == 0) break;
+-            if (!tgWriteGuard(tgClient)) { tgDocNetFail(); break; }
+-            size_t zapisano = 0;
+-            while (zapisano < n) {
+-              size_t w = tgClient.write(chBuf + zapisano, n - zapisano);
+-              if (w == 0) break;
+-              zapisano += w;
+-            }
+-            if (zapisano == 0) break;
+-            wyslano += zapisano;
+-            serwisujTWDTJesliZarejestrowany();
++        while (pin.sent() < pin.length()) {
++          const historia211::ReadResult odczyt = pin.read(chBuf, DOC_CHUNK);
++          if (odczyt.code != historia211::ReadCode::Data) {
++            DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-HISTL msg=\"odczyt historii niepotwierdzony - zrywam polaczenie\""));
++            tgDocNetFail();
++            cialoOk = false;
++            break;
+           }
+-          plik.close();
++          if (!tgWriteGuard(tgClient)) { tgDocNetFail(); cialoOk = false; break; }
++          size_t zapisano = 0;
++          while (zapisano < odczyt.bytes) {
++            const size_t w = tgClient.write(chBuf + zapisano, odczyt.bytes - zapisano);
++            if (w == 0) break;
++            zapisano += w;
++          }
++          if (zapisano != odczyt.bytes) {
++            DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-HISTL msg=\"krotki zapis do gniazda - zrywam polaczenie\""));
++            tgDocNetFail();
++            cialoOk = false;
++            break;
++          }
++          serwisujTWDTJesliZarejestrowany();
+         }
+         free(chBuf);
+       }
+     }
+ 
++    if (!cialoOk) goto tgDocHistLSendDone;
++
+     serwisujTWDTJesliZarejestrowany();
+     if (!tgWriteGuard(tgClient)) { tgDocNetFail(); goto tgDocHistLSendDone; }
+     tgClient.print(partTail);
+@@ -34043,6 +34094,7 @@
+   tgDocHistLSendDone:
+   tgClient.stop();
+   tgClientReady = false;
++  if (!pin.close()) DLOG(DC_TELEGRAM, DL_WARN, F("TG-DOC-HISTL msg=\"zamkniecie zapinki niepotwierdzone\""));
+   xSemaphoreGive(tgSendMutex);
+   return ok;
+ }
+@@ -45283,7 +45335,8 @@
+ // [v3.55.5 HISTORIA-IO-BEGIN]
+ // One owner task; logMutex held by caller. This latch covers BOTH history
+ // streams, not yet every other LittleFS user. No automatic restart/remount.
+-static history193::SystemCalls historiaSys;
++// [v3.55.9 HISTORIA-PIN] static history193::SystemCalls historiaSys; - patrz
++// forward-deklaracja wyzej (sekcja HISTORIA-PENDING), tam tez uzasadnienie.
+ static void historiaIoService() { serwisujTWDTJesliZarejestrowany(); vTaskDelay(1); }
+ static history193::Engine historiaIo(historiaSys, historiaIoService, historiaBladIO);
+ static void historiaPrzytnijPlik(history193::Stream stream, int &linie, size_t &rozmiar, unsigned limit, unsigned margines) {

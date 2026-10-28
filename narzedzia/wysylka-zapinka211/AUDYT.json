@@ -1,0 +1,101 @@
+{
+  "etap": 211,
+  "nazwa": "Zapinka historii w wysylaczach dokumentow Telegram",
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "telegram_used": false,
+  "wersja_z": "3.55.8",
+  "wersja_do": "3.55.9",
+  "zrodlo": {
+    "plik": "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp",
+    "sha256": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+    "linii": 46777
+  },
+  "patch": {
+    "plik": "narzedzia/wysylka-zapinka211/main_centrala-v3.55.8-to-v3.55.9.patch",
+    "sha256": "ff638e2b15c5555a0c34c14129eb5b6cea901af2a78a797d0f5d97c6ab12e2f6",
+    "zmian_tekstowych": 5,
+    "fragmentow_diffu": 10,
+    "linie_dodane": 109,
+    "linie_usuniete": 56
+  },
+  "wynik_patcha": {
+    "sha256": "28545285b7f11fe48e051cf007c1ee5cd44fcf41260e4ec65ed88f34bc31a49e",
+    "linii": 46830,
+    "linie_kluczowe": {
+      "include_historia_pin": 5128,
+      "firmware_version": 5562,
+      "definicja_historiaSys": 22756,
+      "sendTelegramDocumentHistKrotka": 33835,
+      "etykieta_tgDocHistSSendDone": 33957,
+      "sendTelegramDocumentHistDluga": 33972,
+      "etykieta_tgDocHistLSendDone": 34094
+    }
+  },
+  "usterki_naprawione": [
+    {
+      "id": "U1",
+      "wersja_3558": "size_t totalLogSize = g_histShortSize; (linia 33828, 33945)",
+      "problem": "dlugosc dokumentu ze znacznika zapisu, nie z pliku; znacznik moze byc wyzej niz plik",
+      "naprawa": "min(znacznik, fstat) pod logMutexem w historia211::Pin::open",
+      "wykrywa": "grupa 02 (cache > plik), grupa 03 (cache < plik)"
+    },
+    {
+      "id": "U2",
+      "wersja_3558": "systemFS196.exists(HISTORIA_PLIK) (33822) i open() po nazwie (33878)",
+      "problem": "TOCTOU miedzy sprawdzeniem i otwarciem; Content-Length ogłaszany przed otwarciem",
+      "naprawa": "jedno open + fstat na tym samym uchwycie, odmowa przed jakimkolwiek bajtem",
+      "wykrywa": "grupa 04 (brak pliku), grupa 09 (skrocenie przed odczytem)"
+    },
+    {
+      "id": "U3",
+      "wersja_3558": "size_t n = plik.read(...); if (n == 0) break; (33880)",
+      "problem": "koniec pliku przed zapowiedziana dlugoscia traktowany jak normalny koniec; ogon multipart leci, ok moze byc true",
+      "naprawa": "ReadCode::Short/Fault => TG_NET_FAIL, cialoOk=false, goto konca bez ogona",
+      "wykrywa": "grupa 09, 09b, 10, 25"
+    },
+    {
+      "id": "U4",
+      "wersja_3558": "if (zapisano == 0) break; (33884)",
+      "problem": "czesciowy zapis porcji do gniazda gubi reszte porcji po cichu",
+      "naprawa": "zapisano != odczyt.bytes => zerwanie polaczenia",
+      "wykrywa": "grupa 12; mutacja krotki-zapis-przyjety"
+    },
+    {
+      "id": "U5",
+      "wersja_3558": "brak zwiazku odczytu z logMutexem pisarza",
+      "problem": "Engine::append rosnie porcjami po 256 B - fstat bez blokady moze zobaczyc polowe linii",
+      "naprawa": "open()+fstat pod logMutexem, blokada oddana natychmiast po otwarciu zapinki",
+      "wykrywa": "grupa 19 (blokada trzymana przy otwarciu, wolna przy wysylce); mutacja otwarcie-bez-blokady-pisarza"
+    }
+  ],
+  "twierdzenia_sprawdzone_maszynowo": [
+    "zrodlo ma SHA-256 zgodny z audytowanym w etapie 210",
+    "patch naklada sie czysto (patch -p1 --dry-run i patch -p1)",
+    "po patchu FIRMWARE_VERSION = v3.55.9",
+    "patch ma dokladnie 10 fragmentow diffu (5 zmian tekstowych, kazda funkcja dzieli sie na dwa)",
+    "po patchu istnieje dokladnie jedna definicja static history193::SystemCalls historiaSys",
+    "sciezki VFS w HistoriaPin.h sa identyczne z history193::Engine::name()",
+    "obie funkcje uzywaja historia211::Pin i otwieraja plik na wlasnym VFS historii",
+    "obie funkcje biora logMutex przy otwieraniu zapinki",
+    "obie funkcje jawnie zamykaja zapinke",
+    "obie funkcje przerywaja po nieudanym ciele (if (!cialoOk) goto)",
+    "obie funkcje rozrozniaja blad odczytu od konca (ReadCode::Data)",
+    "obie funkcje wykrywaja krotki zapis do gniazda (zapisano != odczyt.bytes)",
+    "obie funkcje nie wolaja juz systemFS196.exists dla pliku historii",
+    "obie funkcje nie otwieraja juz pliku historii po nazwie (File plik =)",
+    "obie funkcje nie biora juz dlugosci z g_histShortSize/g_histLongSize bez zapinki",
+    "obie funkcje nie traktuja juz n == 0 jako konca",
+    "26 grup testowych, 128 sprawdzen, 0 bledow w trzech profilach",
+    "12 skompilowanych mutacji wykrytych, kontrola niemutowanego kodu przechodzi",
+    "po replayu z paczki pliki sa bajtowo niezmienione"
+  ],
+  "granice": [
+    "To nie jest dowod na urzadzeniu: brak LittleFS, mbedTLS, AsyncTCP, WDT, PSRAM i prawdziwego Telegramu",
+    "Gniazdo TLS, semafory, VFS, zegar i alokacja sa modelowane",
+    "Zapinka nie blokuje rotacji (w 3.55.8 rotacja w czasie pracy jest wylaczona)",
+    "Wysylacz moze teraz odmowic, gdy logMutex jest zajety dluzej niz 200 ms",
+    "Brak: Range, kompresji, ponowien, limitu prob, keepalive"
+  ]
+}
