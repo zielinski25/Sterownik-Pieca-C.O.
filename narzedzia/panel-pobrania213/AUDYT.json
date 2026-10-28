@@ -1,0 +1,119 @@
+{
+  "etap": 213,
+  "nazwa": "Przycisk pobrania historii w panelu (bilety jednorazowe)",
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "telegram_used": false,
+  "sekret_w_repo": false,
+  "token_w_html": false,
+  "wersja_z": "3.56.0",
+  "wersja_do": "3.56.1",
+  "zrodlo": {
+    "plik": "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp",
+    "sha256": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+    "linii": 46777
+  },
+  "patche": {
+    "tylko_213": {
+      "plik": "narzedzia/panel-pobrania213/main_centrala-v3.56.0-to-v3.56.1.patch",
+      "sha256": "8faa7404841e55a0ecf289e2f1c1ba37061adff584650e25b4b4bbcd1a05ea83",
+      "linie_dodane": 72,
+      "linie_usuniete": 1,
+      "fragmentow_diffu": 6,
+      "zalozenie": "plik jest po etapie 212 (v3.56.0)"
+    },
+    "skumulowany": {
+      "plik": "narzedzia/panel-pobrania213/main_centrala-v3.55.8-to-v3.56.1.patch",
+      "sha256": "80733de744da4bbf36a63ee3086e0b781a20ecb7b5ffd59861cb01afe839e520",
+      "linie_dodane": 236,
+      "linie_usuniete": 56,
+      "fragmentow_diffu": 14,
+      "zalozenie": "czyste 3.55.8; zawiera 211 + 212 + 213"
+    }
+  },
+  "wynik_patcha": {
+    "sha256": "a971802fdbd57bbf7350cd143a77a5c2fe75da09c7d79dd6247feee297325fc9",
+    "linii": 46950
+  },
+  "linie_kluczowe": {
+    "include_biletow": [
+      5141
+    ],
+    "firmware_version": [
+      5584
+    ],
+    "obiekt_biletow": [
+      28716
+    ],
+    "podpiecie": [
+      28722
+    ],
+    "rejestracja_link": [
+      28739
+    ],
+    "przycisk_panelu": [
+      10097
+    ]
+  },
+  "co_nowe": [
+    "GET /history/link?stream=short|long -> 32 znaki hex, Cache-Control: no-store",
+    "bilet: 16 bajtow esp_random, 4 miejsca, 5 minut, jednorazowy, przypiety do strumienia",
+    "trasa /history przyjmuje Bearer (jak 212) albo ?k=<bilet>",
+    "bilet sprawdzany DOPIERO po zajetosci i gotowosci magazynu - zajeta centrala nie spala linku",
+    "zly naglowek Bearer NIE spada awaryjnie na bilet",
+    "panel: przycisk + maly panel z dwoma pobraniami, bez stalego tokenu w HTML"
+  ],
+  "twierdzenia_sprawdzone_maszynowo": [
+    {
+      "id": "T1",
+      "twierdzenie": "patch skumulowany 3.55.8->3.56.1 == lancuch 211+212+213",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T2",
+      "twierdzenie": "HistoriaPobranie.h = plik 212 + wstawki 213 (bajt w bajt)",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T3",
+      "twierdzenie": "host/Serwer213.h = model 212 + parametry zapytania",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T4",
+      "twierdzenie": "tekst panelu nie zawiera stalego tokenu ani slowa Bearer",
+      "sprawdza": "build.py + Test.cpp grupa 17",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T5",
+      "twierdzenie": "20 grup / 126 sprawdzen przechodzi w 3 profilach",
+      "sprawdza": "run.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T6",
+      "twierdzenie": "zestaw etapu 212 (132 sprawdzenia) przechodzi na nowym naglowku",
+      "sprawdza": "run.py (regresja)",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T7",
+      "twierdzenie": "12 mutantow jest wykrytych",
+      "sprawdza": "mutacje.py",
+      "wynik": "PASS"
+    }
+  ],
+  "granice": [
+    "brak buildu ESP",
+    "brak testu na urzadzeniu",
+    "brak wgrania i OTA",
+    "/history/link nie jest uwierzytelniony (jak /api/history)",
+    "bilet spala sie takze przy 404/413/500",
+    "jeden tekst panelu sprawdzany jako napis - nie jest to test w przegladarce"
+  ]
+}
