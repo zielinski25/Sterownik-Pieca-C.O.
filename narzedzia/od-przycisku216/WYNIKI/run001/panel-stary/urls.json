@@ -1,0 +1,161 @@
+{
+  "panel": "panel-stary.html",
+  "idy": [
+    "histBtn",
+    "histPanel",
+    "histShort",
+    "histLong",
+    "histInfo"
+  ],
+  "pary": [
+    {
+      "strumien": "short",
+      "link": "/history/link?stream=short",
+      "pobranie": "/history?k={BILET}&s=short"
+    },
+    {
+      "strumien": "long",
+      "link": "/history/link?stream=long",
+      "pobranie": "/history?k={BILET}&s=long"
+    }
+  ],
+  "zadaneIdy": [
+    "histBtn",
+    "histPanel",
+    "histInfo",
+    "histShort",
+    "histLong"
+  ],
+  "sprawdzenia": [
+    {
+      "nazwa": "J01 jeden blok <script> w panelu",
+      "ok": true,
+      "szczegol": "jest 1"
+    },
+    {
+      "nazwa": "J02 brak duplikatow id w HTML",
+      "ok": true,
+      "szczegol": ""
+    },
+    {
+      "nazwa": "J03 skrypt wykonuje sie bez wyjatku",
+      "ok": true,
+      "szczegol": ""
+    },
+    {
+      "nazwa": "J04 kazdy element, o ktory prosi skrypt, istnieje w HTML",
+      "ok": true,
+      "szczegol": ""
+    },
+    {
+      "nazwa": "J05 przycisk i panel sa podpiete",
+      "ok": true,
+      "szczegol": "przycisk=true panel=true"
+    },
+    {
+      "nazwa": "J06 przycisk rozwija i zwija panel",
+      "ok": true,
+      "szczegol": "none -> block -> none"
+    },
+    {
+      "nazwa": "J07-1 przycisk histShort istnieje",
+      "ok": true,
+      "szczegol": "histShort"
+    },
+    {
+      "nazwa": "J08-1 jeden request o bilet",
+      "ok": true,
+      "szczegol": "bylo 1"
+    },
+    {
+      "nazwa": "J09-1 panel wola /history/link",
+      "ok": true,
+      "szczegol": "/history/link?stream=short"
+    },
+    {
+      "nazwa": "J10-1 panel podaje wlasciwy strumien w linku",
+      "ok": true,
+      "szczegol": "/history/link?stream=short"
+    },
+    {
+      "nazwa": "J11-1 bilet nie jest cache'owany",
+      "ok": true,
+      "szczegol": "{\"cache\":\"no-store\"}"
+    },
+    {
+      "nazwa": "J12-1 krotka konczy sie adresem /history?k=<bilet>",
+      "ok": true,
+      "szczegol": "/history?k=0123456789abcdef0123456789abcdef&s=short"
+    },
+    {
+      "nazwa": "J07-2 przycisk histLong istnieje",
+      "ok": true,
+      "szczegol": "histLong"
+    },
+    {
+      "nazwa": "J08-2 jeden request o bilet",
+      "ok": true,
+      "szczegol": "bylo 1"
+    },
+    {
+      "nazwa": "J09-2 panel wola /history/link",
+      "ok": true,
+      "szczegol": "/history/link?stream=long"
+    },
+    {
+      "nazwa": "J10-2 panel podaje wlasciwy strumien w linku",
+      "ok": true,
+      "szczegol": "/history/link?stream=long"
+    },
+    {
+      "nazwa": "J11-2 bilet nie jest cache'owany",
+      "ok": true,
+      "szczegol": "{\"cache\":\"no-store\"}"
+    },
+    {
+      "nazwa": "J12-2 dluga konczy sie adresem /history/long?k=<bilet>",
+      "ok": false,
+      "szczegol": "/history?k=fedcba9876543210fedcba9876543210&s=long"
+    },
+    {
+      "nazwa": "J13-krotka adres pobrania zgadza sie ze strumieniem biletu",
+      "ok": true,
+      "szczegol": "/history != /history"
+    },
+    {
+      "nazwa": "J13-dluga adres pobrania zgadza sie ze strumieniem biletu",
+      "ok": false,
+      "szczegol": "/history != /history/long"
+    },
+    {
+      "nazwa": "J14 przy 503 nie ma nawigacji",
+      "ok": true,
+      "szczegol": "/history?k=fedcba9876543210fedcba9876543210&s=long"
+    },
+    {
+      "nazwa": "J15 przy 503 komunikat mowi o HTTP 503",
+      "ok": true,
+      "szczegol": "Nie udało się: HTTP 503"
+    },
+    {
+      "nazwa": "J16 zla dlugosc biletu nie powoduje nawigacji",
+      "ok": true,
+      "szczegol": "/history?k=fedcba9876543210fedcba9876543210&s=long"
+    },
+    {
+      "nazwa": "J17 zla dlugosc biletu ma komunikat",
+      "ok": true,
+      "szczegol": "Nie udało się: centrala nie dała biletu"
+    },
+    {
+      "nazwa": "J18-short adres pobrania ma miejsce na bilet",
+      "ok": true,
+      "szczegol": "/history?k={BILET}&s=short"
+    },
+    {
+      "nazwa": "J18-long adres pobrania ma miejsce na bilet",
+      "ok": true,
+      "szczegol": "/history?k={BILET}&s=long"
+    }
+  ]
+}
