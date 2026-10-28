@@ -123,3 +123,38 @@ przez Telegram działa już na v3.55.1.
 Rozsądna kolejność: sprawdzić końcówkę CSV → jeśli OK, wgrać przy okazji
 (na miejscu albo zdalnie, gdy jest ktoś z USB pod ręką) → **nigdy nie wgrywać
 zdalnie bez planu B przy urządzeniu**.
+
+---
+
+## Poprawione polecenie sprawdzające (PowerShell 5.1)
+
+Pierwsza wersja nie zadziałała z dwóch powodów:
+
+1. pliki leżą na Dysku Google, nie w `Pobrane`,
+2. czat zamienia `[System.IO.File]` na link markdown — wklejony kod był
+   niepoprawny składniowo (`[[System.IO](http://System.IO).File]`).
+
+Wersja poniżej nie zawiera **ani jednego nawiasu kwadratowego** (typ bajtowy
+odczytujemy przez `Get-Content -Encoding Byte`, ostatni bajt przez `.GetValue()`),
+więc czat nie ma czego zepsuć, i szuka plików w całym profilu użytkownika:
+
+```powershell
+$pliki = Get-ChildItem "$env:USERPROFILE" -Filter "hist_*.csv" -Depth 4 -ErrorAction SilentlyContinue |
+         Sort-Object LastWriteTime -Descending
+if (-not $pliki) {
+  Write-Host "Brak hist_*.csv na tym komputerze." -ForegroundColor Red
+  Write-Host "Pobierz oba pliki z Dysku Google (przycisk Pobierz) i uruchom jeszcze raz." -ForegroundColor Yellow
+} else {
+  $pliki | Select-Object -First 5 Name, Length, LastWriteTime, DirectoryName | Format-List
+  foreach ($g in "hist_short","hist_long") {
+    $f = $pliki | Where-Object { $_.Name -like "$g*" } | Select-Object -First 1
+    if (-not $f) { Write-Host ("brak " + $g) -ForegroundColor Yellow; continue }
+    $b = Get-Content -Path $f.FullName -Encoding Byte -ReadCount 0
+    $ost = $b.GetValue($b.Length - 1)
+    if ($ost -eq 10) { Write-Host ("OK    " + $f.Name) -ForegroundColor Green }
+    else { Write-Host ("UWAGA " + $f.Name + " - ostatni bajt " + $ost) -ForegroundColor Red }
+  }
+}
+```
+
+`10` = `\n` = plik kompletny. Każda inna wartość = nie wgrywać zdalnie.
