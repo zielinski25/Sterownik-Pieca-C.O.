@@ -285,18 +285,31 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private var solarHistoryAt = 0L
 
     fun refreshSolarFromCloud() = scope.launch {
-        if (!connected || Rtdb.refreshToken.isBlank()) return@launch
-        val now = System.currentTimeMillis()
-        // Jedno pobranie doby na 5 minut — polling statusu leci co 8 s i nie może
-        // zamieniać się w 180 zapytań do RTDB na kwadrans.
-        if (now - solarHistoryAt < 5 * 60_000L) return@launch
-        solarHistoryAt = now
-        try {
-            val pts = Rtdb.fetchTelemetry(24 * 3600) ?: return@launch
-            val added = solar.mergeCloudToday(pts)
-            if (added > 0) { S.bump(); refreshSheet() }
-        } catch (e: Exception) {
-            // Brak chmury nie może psuć karty — zostaje to, co już wiadomo.
+        if (connected && Rtdb.refreshToken.isNotBlank()) {
+            val now = System.currentTimeMillis()
+            // Jedno pobranie doby na 5 minut — polling statusu leci co 8 s i nie może
+            // zamieniać się w 180 zapytań do RTDB na kwadrans.
+            if (now - solarHistoryAt >= 5 * 60_000L) {
+                solarHistoryAt = now
+                try {
+                    val pts = Rtdb.fetchTelemetry(24 * 3600)
+                    if (pts != null) {
+                        val added = solar.mergeCloudToday(pts)
+                        if (added > 0) { S.bump(); refreshSheet() }
+                    }
+                } catch (e: Exception) {
+                    // Brak chmury nie może psuć karty — zostaje to, co już wiadomo.
+                }
+            }
+        }
+        // [0.31.38] „Do końca dnia · szacunek” potrzebuje DWÓCH rzeczy naraz:
+        // próbki wody i godzin pogody. Po starcie pogoda przychodzi pierwsza (sieć),
+        // historia z chmury dopiero po niej — model startował bez próbki, zwracał NaN
+        // i karta zostawała na „brak prognozy” do najbliższego odświeżenia pogody
+        // (15 min), a na ekranie 2026-10-29 00:37 pokazywała to obok poprawnych kart
+        // 7-dniowych. Dlatego po scaleniu historii ponawiamy obliczenie.
+        if (!solar.forecastGain.isFinite()) {
+            solar.estimateForecastGain(weather?.hourly ?: emptyList())
         }
     }
 

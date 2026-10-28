@@ -363,6 +363,9 @@ private fun SolarMetricsCard(m: AppModel) {
             "Do końca dnia · szacunek",
             when {
                 !sunLeft -> "bez słońca do końca dnia"
+                // [0.31.38] „brak prognozy” myliło dwie przyczyny: brak pogody
+                // i brak próbki wody do wystartowania modelu.
+                !solar.hasSamples -> "brak próbki wody z czujnika"
                 !solar.forecastGain.isFinite() -> "brak prognozy"
                 // [0.31.31] Ten sam warunek co karta „DO KOŃCA DNIA” — patrz Weather.kt.
                 !solar.forecastPeakReal -> "słońce nie przebije strat ciepła"

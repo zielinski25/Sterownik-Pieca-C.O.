@@ -882,6 +882,8 @@ private fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String =
 /** Podpis karty: godzina szczytu i energia, które model liczył, ale nigdzie nie pokazywał. */
 private fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
     !sunLeft -> "bez słońca do końca dnia"
+    // [0.31.38] Rozdzielone: brak próbki wody vs brak pogody.
+    !sol.hasSamples -> "brak próbki wody z czujnika"
     !sol.forecastGain.isFinite() -> "brak prognozy"
     // [0.31.31] Słońce jeszcze jest, ale model policzył samo wychładzanie —
     // woda nie dogrzeje się ponad straty. Wcześniej w tym miejscu stała
