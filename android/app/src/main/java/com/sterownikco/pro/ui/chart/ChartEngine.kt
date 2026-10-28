@@ -326,6 +326,14 @@ fun ChartCanvas(
         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
         val pumpOnly = view.cat.isNotEmpty() && view.cat.all { it.group == "pump" }
+        // [v0.31.34 PUMP-BAND] W trybie mieszanym pompa zajmuje niski pasek przy dolnej
+        // krawedzi zamiast calej wysokosci. Szybkie przelaczanie 0/100 rysowalo pionowe
+        // "sciany" na cala wysokosc i zaslanialo temperatury.
+        val pumpBase = padTop + plotH - 1.5.dp.toPx()
+        val pumpBandH = 10.dp.toPx()
+        fun pumpY(v: Double): Float =
+            if (pumpOnly) padTop + plotH * (1 - (v / 100.0).toFloat())
+            else pumpBase - (v / 100.0).toFloat() * pumpBandH
 
         // FIX-BRAK-DANYCH: uczciwy komunikat jak w HTML (zamiast pustego boxa)
         val hasPts = view.values.values.any { vs -> vs.any { v -> v != null && v.isFinite() } }
@@ -397,6 +405,31 @@ fun ChartCanvas(
             previousLabelTs = ts
         }
 
+        // [v0.31.34 GAP-MARK] Przerwa > 6 min jest zaznaczona i podpisana.
+        // Puste miejsce ma byc widoczne jako BRAK PROBEK, a nie jako blad rysowania.
+        run {
+            val markColor = Pal.rgba(255, 138, 101, .55f)
+            var prevTs = view.rows.first().ts
+            for (i in 1 until view.rows.size) {
+                val ts = view.rows[i].ts
+                if (ts - prevTs > 360_000L) {
+                    val xa = timeAxis.xOf(prevTs)
+                    val xb = timeAxis.xOf(ts)
+                    val dash = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
+                    drawLine(markColor, Offset(xa, padTop), Offset(xa, padTop + plotH), 1.dp.toPx(), pathEffect = dash)
+                    drawLine(markColor, Offset(xb, padTop), Offset(xb, padTop + plotH), 1.dp.toPx(), pathEffect = dash)
+                    val gapMin = (ts - prevTs) / 60_000L
+                    val txt = if (gapMin >= 60L) "luka " + (gapMin / 60L) + " h " + (gapMin % 60L) + " min"
+                    else "luka " + gapMin + " min"
+                    val tp = measure(txt, TextStyle(fontSize = 8.5.sp, color = markColor))
+                    if (xb - xa > tp.size.width + 6.dp.toPx()) {
+                        drawText(tp, topLeft = Offset((xa + xb - tp.size.width) / 2f, padTop + 4.dp.toPx()))
+                    }
+                }
+                prevTs = ts
+            }
+        }
+
         // serie
         view.cat.forEach { s ->
             val vals = view.values[s.id] ?: return@forEach
@@ -408,7 +441,7 @@ fun ChartCanvas(
                 if (v != null && v.isFinite()) {
                     val x = timeAxis.xOf(r.ts)
                     val y = when {
-                        s.group == "pump" -> padTop + plotH * (1 - (v / 100.0).toFloat())
+                        s.group == "pump" -> pumpY(v)
                         view.dual && s.group == view.secGroup ->
                             padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
                         mode == "NORMALIZED" -> {
@@ -527,7 +560,7 @@ fun ChartCanvas(
                         val v = vals.getOrNull(idx)
                         if (v != null && v.isFinite()) {
                             val y = when {
-                                s.group == "pump" -> padTop + plotH * (1 - (v / 100.0).toFloat())
+                                s.group == "pump" -> pumpY(v)
                                 view.dual && s.group == view.secGroup ->
                                     padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
                                 mode == "NORMALIZED" -> {

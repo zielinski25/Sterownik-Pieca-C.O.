@@ -129,6 +129,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         sheet = id
         refreshSheet()
         if (id == "terminal") startTerminalDlogPolling() else stopTerminalDlogPolling()
+        // [0.31.35] Karta solarna ma pokazać dzisiejszy zysk od razu, a nie po
+        // pierwszym własnym pollingu za 8 s — dociągamy dobę z chmury.
+        if (id == "panel") refreshSolarFromCloud()
     }
 
     // ── toasty i logi ───────────────────────────────────────────────────────
@@ -230,7 +233,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
     fun onResume() {
         bgJob?.cancel(); bgJob = null
-        poll(); refreshWeather(false); loadRange(rangeSec)
+        poll(); refreshWeather(false); loadRange(rangeSec); refreshSolarFromCloud()
         if (sheet == "terminal") startTerminalDlogPolling()
         jobs = listOf(
             scope.launch { while (true) { delay(8000); poll() } },
@@ -269,6 +272,32 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         val outside = S.t_zewn
         if (!panel.isFinite() || !boiler.isFinite() || !outside.isFinite()) return
         solar.recordSample(panel, boiler, outside, radEst(w), w.uv, w.cloud)
+    }
+
+    /**
+     * [0.31.35 SOLAR-HISTORY] Dzisiejsza temperatura zbiornika prosto z chmury.
+     *
+     * Karta „Zysk dziś · zmierzone” liczyła się wyłącznie z próbek zebranych, gdy
+     * aplikacja była otwarta na wierzchu — dlatego wieczorem pokazywała
+     * „brak próbek z dziś”, choć chmura ma zbiornik co minutę. Tu dociągamy
+     * dobę z RTDB i przekazujemy do SolarAnalytics (metoda liczenia bez zmian).
+     */
+    private var solarHistoryAt = 0L
+
+    fun refreshSolarFromCloud() = scope.launch {
+        if (!connected || Rtdb.refreshToken.isBlank()) return@launch
+        val now = System.currentTimeMillis()
+        // Jedno pobranie doby na 5 minut — polling statusu leci co 8 s i nie może
+        // zamieniać się w 180 zapytań do RTDB na kwadrans.
+        if (now - solarHistoryAt < 5 * 60_000L) return@launch
+        solarHistoryAt = now
+        try {
+            val pts = Rtdb.fetchTelemetry(24 * 3600) ?: return@launch
+            val added = solar.mergeCloudToday(pts)
+            if (added > 0) { S.bump(); refreshSheet() }
+        } catch (e: Exception) {
+            // Brak chmury nie może psuć karty — zostaje to, co już wiadomo.
+        }
     }
 
     /** Promieniowanie krótkofalowe Open-Meteo z bieżącej godziny; nie estymujemy go z UV. */
@@ -347,6 +376,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             S.bump()
             if (S.online) {
                 recordSolar()
+                // [0.31.35] Po pierwszym udanym pollingu dociągnij dzisiejszą dobę
+                // z chmury, żeby karta solarna nie czekała na otwarcie arkusza.
+                refreshSolarFromCloud()
                 if (page == 1) appendLiveFeed()
             }
             // Alarmy oceniaj wyłącznie na podstawie flag zwróconych przez sterownik.
@@ -893,12 +925,28 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             telemetry = merged
             chartPoints = merged.size
             val fromEspOnly = if (useEsp) merged.count { it.seq < 0L } else 0
+            // [v0.31.34 GAP-MARK] Ile jest przerw w danych i jak długa jest najdłuższa.
+            // Liczone z tego, co faktycznie przyszło — podpis nie może kłamać.
+            var gapCount = 0
+            var gapMax = 0L
+            var prevTs = 0L
+            merged.forEach { p ->
+                if (prevTs != 0L && p.ts - prevTs > 360_000L) {
+                    gapCount++
+                    if (p.ts - prevTs > gapMax) gapMax = p.ts - prevTs
+                }
+                prevTs = p.ts
+            }
             chartStatus = buildString {
                 append("Załadowano ${merged.size} próbek")
                 when {
                     fromEspOnly > 0 -> append(" · z tego $fromEspOnly tylko z archiwum centrali (brak w chmurze)")
                     useEsp -> append(" · chmura + archiwum centrali zgodne")
+                    sec > 24 * 3600 -> append(" z RTDB (tylko chmura — archiwum centrali jest w domu)")
                     else -> append(" z RTDB")
+                }
+                if (gapCount > 0) {
+                    append(" · luk: " + gapCount + " (najdłuższa " + (gapMax / 60_000L) / 60L + " h " + (gapMax / 60_000L) % 60L + " min)")
                 }
                 append(" · odcinki symulowane są kreskowane")
             }

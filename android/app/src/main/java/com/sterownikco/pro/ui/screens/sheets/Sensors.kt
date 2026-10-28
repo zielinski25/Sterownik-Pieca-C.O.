@@ -376,8 +376,11 @@ private fun SolarMetricsCard(m: AppModel) {
             if (solar.todayDrawCount > 0) "${solar.todayDrawCount} razy · −${s.fmt1(solar.todayDrawDrop)}°C" else "brak"
         )
         Text(
+            // [0.31.35] „Zmierzone" liczy się też z historii chmury (co minutę),
+            // a nie tylko z próbek zebranych przy otwartej aplikacji.
             "Zysk = o ile °C ogrzała się woda w zbiorniku 100 l. Minus = woda się " +
-                "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku, „szacunek” to " +
+                "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku — z chmury, " +
+                "co minutę, także gdy aplikacja była zamknięta. „Szacunek” to " +
                 "wyliczenie z prognozy słońca — nie pomiar.",
             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp,
             modifier = Modifier.padding(top = 6.dp)

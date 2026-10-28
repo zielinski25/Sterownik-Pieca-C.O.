@@ -414,7 +414,15 @@ object Rtdb {
         for (guard in 0 until 100) {
             val q = path + ".json?orderBy=" + java.net.URLEncoder.encode("\"ts\"", "UTF-8") +
                 "&startAt=" + cursor + "&endAt=" + endTs + "&limitToFirst=" + HISTORY_PAGE_SIZE
-            val res = get(q)
+            // [v0.31.34 GAP-REPAIR] Błąd sieci w środku dnia nie może skasować
+            // całego dnia — zachowujemy to, co już pobraliśmy. Resztę dopyta
+            // repairGaps() po zebraniu wszystkich dni.
+            val res = try {
+                get(q)
+            } catch (e: Exception) {
+                if (rows.isNotEmpty()) return uniqueSort(rows)
+                throw e
+            }
             if (!res.ok) {
                 val msg = res.error ?: ""
                 if (msg.contains("Index not defined", true) || msg.contains("indexOn", true) || msg.contains("400")) {
@@ -489,6 +497,44 @@ object Rtdb {
         return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
     }
 
+    /**
+     * [v0.31.34 GAP-REPAIR] Po pobraniu całego zakresu sprawdza, czy nie została
+     * przerwa dłuższa niż 3 minuty, i dopyta dokładnie ten przedział.
+     *
+     * Powód: pojedyncza nieudana strona paginacji (albo krótka odpowiedź RTDB)
+     * zostawiała dziurę w środku dnia, mimo że dane w chmurze są. Wtedy wykres
+     * pokazywał pustkę, której w bazie nie ma. Prawdziwa przerwa w chmurze
+     * zwróci 0 wierszy — wtedy dziura zostaje i jest uczciwie opisana na wykresie.
+     */
+    private suspend fun repairGaps(rows: List<TelemRow>): List<TelemRow> {
+        if (rows.size < 2) return rows
+        val holes = ArrayList<LongArray>()
+        for (i in 1 until rows.size) {
+            val a = rows[i - 1].ts
+            val b = rows[i].ts
+            if (b - a > 180L) holes.add(longArrayOf(a + 1L, b - 1L))
+        }
+        if (holes.isEmpty()) return rows
+        val extra = ArrayList<TelemRow>()
+        for (h in holes.take(40)) {
+            for (day in dayRange(h[0], h[1])) {
+                val ds = max(h[0], day[0] / 1000)
+                val de = minOf(h[1], day[0] / 1000 + 86_400 - 1)
+                if (de < ds) continue
+                try {
+                    extra.addAll(
+                        fetchShard(shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt()), ds, de)
+                    )
+                } catch (e: Exception) { /* przerwa zostaje — pokazujemy ją na wykresie */ }
+            }
+        }
+        if (extra.isEmpty()) return rows
+        val map = LinkedHashMap<String, TelemRow>()
+        rows.forEach { map[it.id] = it }
+        extra.forEach { map[it.id] = it }
+        return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
+    }
+
     /** `fetchTelemetryFromFirebase(rangeSec)` — zwraca gotowe serie lub null. */
     suspend fun fetchTelemetry(rangeSec: Int): List<TelemPoint>? {
         if (idToken.isEmpty()) return null
@@ -501,7 +547,7 @@ object Rtdb {
             val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
             try { all.addAll(fetchShard(path, dayStart, dayEnd)) } catch (e: Exception) { /* pusty dzień */ }
         }
-        val sorted = uniqueSort(all)
+        val sorted = repairGaps(uniqueSort(all))
         if (sorted.isEmpty()) return null
         val chartPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
         return chartPoints.ifEmpty { null }

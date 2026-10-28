@@ -141,6 +141,82 @@ class SolarAnalytics(private val prefs: Prefs) {
         } catch (e: Exception) { /* ignore */ }
     }
 
+    /**
+     * [0.31.35 SOLAR-HISTORY] Wciąga DZISIEJSZE próbki z historii chmury do archiwum.
+     *
+     * Powód: `recordSample()` zbiera próbki tylko wtedy, gdy aplikacja jest otwarta
+     * na wierzchu (cykl pollingu żyje w `onResume`/`onPause`). Kto zagląda do pieca
+     * wieczorem, ten przez cały dzień nie ma ANI JEDNEJ próbki — karta pokazywała
+     * „brak próbek z dziś", mimo że chmura ma temperaturę zbiornika co minutę.
+     * Zmierzone 2026-10-28: 27.10 zbiornik +6,0 °C (panel do 31,3 °C), 28.10 −15,8 °C.
+     *
+     * Metoda liczenia jest TA SAMA co przy próbkach na żywo: zysk = ostatnia minus
+     * pierwsza próbka doby; pobranie wody = spadek szybszy niż 0,3 °C/min.
+     * Zwraca liczbę próbek, których wcześniej nie było (0 = nic nowego).
+     */
+    fun mergeCloudToday(points: List<TelemPoint>): Int {
+        val start = dayStartMs()
+        if (points.isEmpty()) return 0
+        val today = java.util.TreeMap<Long, Sample>()
+        archive.forEach { if (it.ts >= start) today[it.ts] = it }
+        var added = 0
+        points.forEach { p ->
+            if (p.ts < start || today.containsKey(p.ts)) return@forEach
+            val b = p.t_bojler; val pn = p.t_panel; val z = p.t_zewn
+            if (b == null || pn == null || z == null) return@forEach
+            if (!b.isFinite() || !pn.isFinite() || !z.isFinite()) return@forEach
+            if (pn !in 0.0..140.0 || b !in 10.0..95.0 || z !in -25.0..45.0) return@forEach
+            today[p.ts] = Sample(
+                p.ts, isoFmt.format(p.ts), round1(pn), round1(b), round1(z),
+                0, Double.NaN, 0, 0, 0.0, 0.0
+            )
+            added++
+        }
+        if (added == 0) return 0
+        // Gain i pobrania przeliczamy po scaleniu, w kolejności czasu.
+        val rebuilt = ArrayList<Sample>(today.size)
+        var prev: Sample? = null
+        today.values.forEach { cur ->
+            val pr = prev
+            var draw = 0
+            var drop = 0.0
+            var gain = 0.0
+            if (pr != null) {
+                val dtMin = maxOf(.5, (cur.ts - pr.ts) / 60000.0)
+                val rateBojler = (cur.tBojler - pr.tBojler) / dtMin
+                val ratePanel = (cur.tPanel - pr.tPanel) / dtMin
+                if (rateBojler < -0.30 || (ratePanel < -0.60 && cur.tPanel > cur.tZewn + 5)) {
+                    draw = 1
+                    drop = maxOf(0.0, pr.tBojler - cur.tBojler)
+                }
+                gain = maxOf(maxOf(0.0, cur.tPanel - pr.tPanel), maxOf(0.0, cur.tBojler - pr.tBojler)) +
+                    (if (draw != 0) drop else 0.0)
+            }
+            rebuilt.add(cur.copy(isDraw = draw, drop = round1(drop), gain = round1(gain)))
+            prev = cur
+        }
+        archive.removeAll { it.ts >= start }
+        archive.addAll(rebuilt)
+        archive.sortBy { it.ts }
+        while (archive.size > 5000) archive.removeAt(0)
+        rebuildDrawEvents()
+        recomputeToday()
+        save()
+        return added
+    }
+
+    private fun round1(v: Double): Double = (v * 10).roundToInt() / 10.0
+
+    /** Lista pobrań wody z archiwum — wspólna dla startu i dla scalania z chmurą. */
+    private fun rebuildDrawEvents() {
+        waterDrawEvents.clear()
+        val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
+        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tBojler + it.drop, it.tBojler)) }
+        drawCount = draws.size
+        accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
+        accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
+    }
+
     fun recordSample(tPanel: Double, tBojler: Double, tZewn: Double, rad: Double, uv: Double, cloud: Double) {
         if (!listOf(tPanel, tBojler, tZewn, rad, uv, cloud).all { it.isFinite() }) return
         if (tPanel !in 0.0..140.0 || tBojler !in 10.0..95.0 || tZewn !in -25.0..45.0 || rad < 0.0) return
