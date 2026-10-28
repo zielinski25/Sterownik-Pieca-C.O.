@@ -1,0 +1,60 @@
+{
+  "release_ready": false,
+  "status": "PASS_COMPONENT_TESTS_ONLY",
+  "main_changed": false,
+  "hardware_actions": false,
+  "final_run": "WYNIKI/run002/wynik.json",
+  "test_groups": 23,
+  "profiles": [
+    "native, chunk-inflight 0",
+    "native, chunk-inflight 1",
+    "ASan+UBSan, detect_leaks=1, chunk-inflight 0",
+    "ASan+UBSan, detect_leaks=1, chunk-inflight 1"
+  ],
+  "build_gate": "build.py prints PASS 209 real matcher, real handler selection, real attach order extracted from pinned sources and proves each snippet byte-identical to its pinned source",
+  "compiled_mutants_detected": 12,
+  "equivalent_mutants_rejected_not_counted": [
+    "equalConstantTime without the initial length xor: content comparison still separates every real token, so the mutant is behaviourally identical",
+    "ignoring the finish() result: finish only fails when the handle no longer matches, which the parser flow cannot cause, so no test can reach it"
+  ],
+  "real_code": [
+    "AsyncURIMatcher + WebRequestMethodComposite classes from ESPAsyncWebServer.h at ref c47917dc (byte-identical)",
+    "AsyncURIMatcher constructors and matches from WebServer.cpp (206 candidate, byte-identical)",
+    "AsyncWebServer::_attachHandler from WebServer.cpp (byte-identical)",
+    "AsyncCallbackWebHandler::canHandle and handleRequest from WebHandlers.cpp (byte-identical)",
+    "request parsing: _parseReqHead, _parseReqHeader, _parseLine, _onData, urlDecode, _addGetParams from 206",
+    "199 write_send_buffs loop and _finished/_onAck/_onTimeout",
+    "203 request hooks: send, _send, pause, abort, _onPoll, _onDisconnect, deferred poll",
+    "207 pin, leases, generation handles, rotation and expiry",
+    "208 adapter",
+    "197 RuntimeFilesystem.h owner/Lease and Arduino FS.cpp"
+  ],
+  "modeled": [
+    "String shim (superset of the frozen 206 shim, checked line by line)",
+    "TCP client window and per-write acceptance",
+    "four header bytes marker HEAD",
+    "error response body: status code only, zero bytes",
+    "file backend name->content map (no inodes, no O_APPEND)"
+  ],
+  "scope": "Production-shaped download route: real parsed request, real URI matcher and handler selection, method and bearer-token decision with constant-time comparison, pool and storage refusals answered with 405/401/409/503, success sent through the 199 loop with the 207 pin",
+  "regressions": {
+    "208": "narzedzia/pobieranie-http208/WYNIKI/run002/wynik.json",
+    "207": "narzedzia/pobieranie-historia207/WYNIKI/run001/wynik.json",
+    "206": "narzedzia/naglowki-upload206/WYNIKI/run003/wynik.json",
+    "205": "narzedzia/parser-upload205/WYNIKI/run006/wynik.json",
+    "204": "narzedzia/adapter-upload204/WYNIKI/run006/wynik.json",
+    "203": "narzedzia/odpowiedz-odroczona203/WYNIKI/run007/wynik.json",
+    "202": "narzedzia/kolejka-upload202/WYNIKI/run005/wynik.json"
+  },
+  "not_qualified": [
+    "registration of the route in the real main_centrala.cpp",
+    "token provisioning and rotation for the device",
+    "attempt throttling and TLS for the download endpoint",
+    "AsyncBasicResponse style error bodies",
+    "AsyncTCP in-flight credit behaviour under real memory pressure",
+    "FreeRTOS scheduling, WDT, RAM headroom and power loss",
+    "full library and firmware build",
+    "whole-program line-by-line audit",
+    "device qualification"
+  ]
+}
