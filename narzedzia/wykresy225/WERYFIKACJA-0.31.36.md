@@ -1,46 +1,62 @@
-# Weryfikacja 0.31.36 na telefonie — 2026-10-28, 23:47
+# Weryfikacja 0.31.36/0.31.37 — sprostowanie
 
-Wersja **0.31.36** zainstalowana (wersja sprawdzona po zrzutach: nowy podpis pod
-tabelą bilansu, nowe liczby). Temat **226 (panel słoneczny) uznaję za domknięty w kodzie
-i potwierdzony na żywo**.
+> **Ten plik został sprostowany 2026-10-28 po przeczytaniu `ARCHIWUM_SOLARNE_STAN.md`.**
+> Pierwotna wersja twierdziła, że −17,5 °C w 0.31.36 „jest poprawne, bo to woda
+> w zbiorniku”. To było błędne — patrz niżej.
 
-## Co pokazują zrzuty z 23:47
+## Co mówi dokumentacja instalacji
 
-| Ekran | Przed (0.31.35, 23:09) | Po (0.31.36, 23:47) |
+`ARCHIWUM_SOLARNE_STAN.md` §2:
+
+| | Układ słoneczny | Bojler pieca C.O. |
 |---|---|---|
-| Karta „SPADEK DZIŚ” | −0,3 °C (kolektor 17,5 → 17,2) | **−17,5 °C** (zbiornik) |
-| Karta „POBRANIA DZIŚ” | „25 razy · −7,5 °C” | **—** (brak) |
-| Arkusz „Spadek dziś · zmierzone” | −0,3 °C | **−17,5 °C** |
-| Arkusz „Pobrania ciepłej wody” | „24 razy · −7,2 °C” | **brak** |
-| Podpis pod tabelą | kończył się na „…nie pomiar.” | + zdanie o progu 0,5 °C / 5 min |
+| czujnik | `czujnik_temp_Panel_Plus` | `czujnik_temp_Bojlera` |
+| magistrala | `BUS_3` | `BUS_2` |
+| kanał telemetrii | `TELEMETRY_CH_PANEL` → **`t_panel` (a[5])** | `TELEMETRY_CH_BOJLER` → `t_bojler` (a[1]) |
 
-Pulpit i arkusz pokazują **tę samą liczbę** — to był jeden z objawów błędu w 0.31.35
-(arkusz „brak”, pulpit „25 razy”).
+§3: kolektor próżniowy rurowy **10 rur**, zbiornik **100 l** na dachu zintegrowany
+z kolektorem, obieg **termosyfonowy**, czujnik **w wodzie, z boku, w połowie wysokości
+zbiornika**. W kotłowni jest **drugi** bojler, grzany wężownicą z pieca.
 
-## Dlaczego −17,5, a nie −16,5
+**Wniosek:** `t_panel` to woda w zbiorniku słonecznym na dachu, a `t_bojler` to bojler
+pieca w kotłowni. Wszystkie liczby solarne muszą brać `t_panel`.
 
-Eksport z chmury, na którym liczyłem, kończy się **28.10 o 20:07 UTC (21:07 czasu
-polskiego)**. Do tej chwili zbiornik zszedł z 37,5 do 21,0 °C, czyli −16,5.
-Do 23:47 zbiornik stygł dalej (przez pętlę termosyfonu ok. 0,5 °C/h) i zszedł do
-około 20,0 °C — stąd **−17,5**. To są dane na żywo, nie rozjazd.
+## Błąd 0.31.36
 
-Liczba rośnie więc dalej przez noc i **o 00:00 (lokalna północ) licznik startuje od
-zera** — 29.10 pokaże własną dobę.
+W 0.31.36 przełączyłem „Zysk/Spadek dziś” i „Pobrania ciepłej wody” na `tBojler`.
+Efekt: 28.10 aplikacja pokazała −17,5 °C, czyli spadek **bojlera pieca** w kotłowni.
+Zbiornik słoneczny zmienił się tego dnia o **−0,2 °C** (tak podaje `/archiwum` centrali).
 
-## Co jeszcze nie jest sprawdzone
+Liczba −0,3 °C, którą pokazywała 0.31.35, była **prawidłowa** dla solarów. Błędne
+w 0.31.35 było tylko liczenie pobrań (szum czujnika, 24 „pobrania” dziennie).
 
-1. **Temat 225 — wykresy.** Wciąż brak zrzutu wykresu. Do potwierdzenia:
-   - zakres **24.10, 12:00–14:00** → podpisana przerwa **„luka 77 min”** (12:26 → 13:43),
-   - poza luką linie **ciągłe** (brak cichych przerw),
-   - pompa nie zasłania linii temperatur.
-2. **Pierwsze prawdziwe pobranie wody.** Dziś wyszło „brak”, bo zbiornik tylko stygł —
-   to jest poprawne, ale nie sprawdza dodatniej strony reguły. Przy następnym poborze
-   karta powinna pokazać „1 raz · −X °C” (X zależnie od ilości wody).
+## Co robi 0.31.37
 
-## Jak to policzono (skrót)
+- „Zysk/Spadek dziś” z `t_panel` (jak przed 0.31.36), metoda bez zmian:
+  ostatnia próbka doby − pierwsza.
+- „Pobrania ciepłej wody” z `t_panel` — spadek ≥ 0,5 °C od maksimum z 5 minut,
+  utrzymany 5 minut, epizody < 20 min scalane, spadek > 12 °C odrzucany jako usterka sondy.
 
-- „Zysk / Spadek dziś” = ostatnia minus pierwsza próbka **zbiornika** od lokalnej północy.
-- Pobranie = spadek ≥ 0,5 °C od maksimum z 5 minut, utrzymany przez następne 5 minut;
-  epizody bliższe niż 20 min scalane; spadek > 15 °C obcinany (odczepiona sonda).
-- Sprawdzone offline na eksporcie 28 dni (39 602 próbki): 32 pobrania w 16 dniach,
-  28.10 — zero. Poprzednia reguła dawała 1042 „pobrania” z szumu czujnika.
+## Zgodność z `/archiwum` centrali
+
+| Dzień | centrala dT | aplikacja 0.31.37 | pobrania |
+|---|---|---|---|
+| 23.10 | +6,2 | +6,3 | 0 |
+| 24.10 | −17,2 | −17,3 | 1 · −1,0 |
+| 25.10 | −1,2 | −1,2 | 0 |
+| 26.10 | −3,8 | −3,7 | 0 |
+| 27.10 | +4,2 | +4,2 | 2 · −2,0 |
+| 28.10 | −0,2 | ~0,0 (eksport do 21:07) | 0 |
+
+Różnice 0,1–0,2 °C wynikają z granicy doby: aplikacja liczy od lokalnej północy,
+eksport z chmury kończył się 21:07.
+
+Pobrania w całym miesiącu (eksport 28 dni): **26 w 17 dniach**, po 1–2 na dobę,
+każde 0,5–5 °C, głównie po południu. Poprzednia reguła (>0,3 °C/min) dawała
+**1042** „pobrania” z szumu o rozdzielczości 0,1 °C.
+
+## Co pozostaje do sprawdzenia
+
+1. **Temat 225 — wykresy.** Brak zrzutu wykresu. Do potwierdzenia: zakres 24.10
+   12:00–14:00 → podpisana przerwa „luka 77 min” (12:26 → 13:43), poza nią linie ciągłe.
+2. Jedno realne pobranie wody — czy karta pokaże „1 raz · −X °C”.
