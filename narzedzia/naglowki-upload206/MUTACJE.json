@@ -1,0 +1,105 @@
+{
+  "status": "PASS",
+  "profile": "ASan+UBSan, LSan enabled",
+  "inputs": {
+    "narzedzia/naglowki-upload206/Test.cpp": "d01a1972b1a8d981847d044ce4a72e624f8dfbd202d1b9ad48ccf981e18b46d2",
+    "narzedzia/naglowki-upload206/Fixture206.inc": "164aedea46d436a9129698369b4074521f3b2228132d9b786bed50aacabec5b5",
+    "narzedzia/naglowki-upload206/Methods206.inc": "83b0f429b247d1c5c3c9e807166f87580cbd31214e3c9b4d0e11525e350e0b9d",
+    "narzedzia/naglowki-upload206/Parser206.inc": "ec0cd8a8996ec9767641b7df3fd25c79018c047e6a970cdad1da71212ef5c73a",
+    "narzedzia/naglowki-upload206/AsyncWebHeader.inc": "1ef0d8efbe0efa14a4ffafe5465a5f2eafc6faa5b893d6503e10a3795cfaa95d",
+    "narzedzia/adapter-upload204/UploadAdapter.h": "147b564a18350b7ce6d4c250c034d1cca9e8aba80f51394ac5e4337630a6b18d",
+    "narzedzia/naglowki-upload206/mutacje.py": "925d4f2d640b6a535e311d821978e49faefd2a41cf8161b5b63a12cf94a1c4c6",
+    "narzedzia/parser-upload205/StrictMultipartEnd.h": "06717f659ba3115d0bf5b7a67bcb5b84ee8464cb53a3860b498d54dd3b4152a6",
+    "narzedzia/odpowiedz-odroczona203/Fields.inc": "d57e789c2777ec82dbad46a66dabc51d71092989f6e9d8246999289fa885867f",
+    "narzedzia/naglowki-upload206/upstream/literals.h": "2df08b5947a05fdb6b890a486708b046cc2bc903aa9c7d7a227c0a4a49b51fb3",
+    "narzedzia/naglowki-upload206/upstream/AsyncWebHeader.cpp": "820dc02429e0de56b72a1a7a91a603b87819a18e2501c4a83041a0e69ea39190",
+    "narzedzia/odpowiedz-odroczona203/Fixture202.inc": "3cf5515c77f1ca13fa5dce3c13732c1a5af2962da06b10cf66edce15561b4df6",
+    "narzedzia/kolejka-upload202/UploadPump.h": "fe33787b482ba7b8084226e2af454c68f35b7a98570fa3df38840829280e76e0",
+    "narzedzia/kolejka-upload202/Fixture201.inc": "38ac1ad4445574190e75a4b4eda3763d8c6fb35cae02f5b653014b927fb382e6",
+    "narzedzia/kontekst-upload201/RequestRegistry.h": "5aff513e7bd8023e914501ddce7a2af9cc4a9a526b638335ae4297b4af2a8488",
+    "narzedzia/upload-zadania200/UploadPool.h": "ae8063b3cf4bd122d296fa420aeb4eaab2d3cc45226ed92361f693d37fe82aef",
+    "narzedzia/upload-zadania200/Raw198.inc": "6248ce9b4f848c8bc41f50f0cccef593925c0e7fa2d41d1b87b3491418174cd8",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690"
+  },
+  "cases": [
+    {
+      "name": "allow-wrong-token",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "allow-noncanonical-length",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "accept-other-route",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "admit-get",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "skip-strict-enable",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "framing-not-fatal",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "refused-not-trivial",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "replace-policy",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "skip-policy-call",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "early-file-final",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "length-rewrite",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    }
+  ]
+}

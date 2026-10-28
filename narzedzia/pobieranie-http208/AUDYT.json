@@ -1,0 +1,54 @@
+{
+  "release_ready": false,
+  "status": "PASS_COMPONENT_TESTS_ONLY",
+  "main_changed": false,
+  "hardware_actions": false,
+  "final_run": "WYNIKI/run002/wynik.json",
+  "test_groups": 21,
+  "profiles": [
+    "native, chunk-inflight 0",
+    "native, chunk-inflight 1",
+    "ASan+UBSan, detect_leaks=1, chunk-inflight 0",
+    "ASan+UBSan, detect_leaks=1, chunk-inflight 1"
+  ],
+  "build_gate": "build.py prints PASS 199 transport split: only stock _onPoll replaced by the 203 candidate",
+  "compiled_mutants_detected": 14,
+  "equivalent_mutants_rejected_not_counted": [
+    "isSent() guard in begin(): removing it still returns Invalid because an already sent request carries a response",
+    "duplicate admission scan: removing it still returns Conflict because installDeferred203 refuses a request that already has a deferred hook, and the pin is closed on that path",
+    "release() before abort() in the deadline branch: removing it still frees the pin because marking the slot disconnected invalidates the source and the 199 loop closes the client, which runs the disconnect handler"
+  ],
+  "real_code": [
+    "narzedzia/pobieranie-http208/Transport208.inc generated from the pinned 199 send loop with only stock _onPoll replaced by the 203 candidate",
+    "narzedzia/odpowiedz-odroczona203 Methods.inc request hooks (send/_send/_onAck/_onDisconnect/pause/abort/installDeferred203)",
+    "narzedzia/pobieranie-historia207 Snapshots.h pin, lease, generation handles, rotation and expiry",
+    "narzedzia/uchwyty-runtime197 RuntimeFilesystem.h owner/Lease",
+    "Arduino FS.cpp open/seek/read/close",
+    "narzedzia/odpowiedz-http199 CheckedFileBody.inc and Abstract.inc"
+  ],
+  "modeled": [
+    "TCP client: window, per-write acceptance limit, close/abort, ack with real length, poll only when nothing is in flight",
+    "four header bytes marker HEAD before the body",
+    "Arduino String from the 206 host shim",
+    "file backend name->content map (no inodes, no O_APPEND)"
+  ],
+  "scope": "Adapter that admits a history download in network context, allocates a fixed Content-Length response, sends it through the real 199 write_send_buffs loop, and releases the 207 pin on finish, disconnect, deadline, read fault and failed allocation; slot reuse needs disconnect and weak expiry; storage fault invalidates the source so a short file is never a 200",
+  "regressions": {
+    "207": "narzedzia/pobieranie-historia207/WYNIKI/run001/wynik.json",
+    "206": "narzedzia/naglowki-upload206/WYNIKI/run003/wynik.json",
+    "205": "narzedzia/parser-upload205/WYNIKI/run006/wynik.json",
+    "204": "narzedzia/adapter-upload204/WYNIKI/run006/wynik.json",
+    "203": "narzedzia/odpowiedz-odroczona203/WYNIKI/run007/wynik.json",
+    "202": "narzedzia/kolejka-upload202/WYNIKI/run005/wynik.json"
+  },
+  "not_qualified": [
+    "production routing, path, authentication and handler wiring",
+    "any other code opening the history file without the 207 pin",
+    "HTTP Range, compression and templated responses",
+    "AsyncTCP in-flight credit behaviour under real memory pressure",
+    "FreeRTOS scheduling, WDT, RAM headroom and power loss",
+    "full library and firmware build",
+    "whole-program line-by-line audit",
+    "device qualification"
+  ]
+}

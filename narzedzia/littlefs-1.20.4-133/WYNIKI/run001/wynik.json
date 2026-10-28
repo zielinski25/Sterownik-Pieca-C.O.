@@ -1,0 +1,269 @@
+{
+  "status": "PASS",
+  "scope": "upstream of esp_littlefs1.20.4, RAM callbacks, not ESP VFS or flash",
+  "release_ready": false,
+  "inputs": {
+    "kwalifikacja-zapisu-esp128/test_error_latch.c": "b84c29fc6a112fb7806fe350a3dc7033446bd568481bd0114af692cf805ba64d",
+    "straznik-zapisu129/WriteSession.h": "f801b5fb79967d4d2f98c55f9cb40070d19027b0830bdbf359da7cb5acd9824e",
+    "straznik-zapisu129/WriteSession.cpp": "baad472b8298322a774134c0bb895e366488351e3464f289357e0c2c032dda53",
+    "straznik-zapisu129/test_session.cpp": "a4fe9fc4d772d9932c1bd506675b079b033b71febb6097e193b24453900a4a5b",
+    "straznik-zapisu129/test_littlefs.cpp": "4d2c898c843fcde567948fa8e25b1abd9236f979ce6a12168ea6382246c80623",
+    "littlefs-1.20.4-133/testuj.py": "7f087d49efbd82c034463a1a7e331bf6a66591c52261905f89e83486dc269e17",
+    "littlefs-1.20.4-133/zrodla/Kconfig": "4bd38dd56dffd0493059b9ea1db42b6609eb031bad975a6ba812f4eb524c3aac",
+    "littlefs-1.20.4-133/zrodla/LICENSE": "b6bbf3bd17c2b5532bc25a7acf1760faac0b995d6e0ad8bec29435166727d4c5",
+    "littlefs-1.20.4-133/zrodla/LICENSE.md": "0cb4ff1daf5fdc1359c6a6ee3116092f08fc100c9d58b1b77ab17bfd801f856d",
+    "littlefs-1.20.4-133/zrodla/esp_littlefs.c": "925fd9e1810fc0449c9c32f54d6799798afb5d825a8cbd5003663125defef8c3",
+    "littlefs-1.20.4-133/zrodla/esp_littlefs.h": "02ff93d30c9840235a995a6825aae72fa6bb0eb701d702740560d9f6d1bd1617",
+    "littlefs-1.20.4-133/zrodla/idf_component.yml": "428c125bb650254177b7f4b53e5b39ef01b987a3c8192418f0f9ca2489209e68",
+    "littlefs-1.20.4-133/zrodla/lfs.c": "41b7aa8d6e1601ef26129399cc2e5988e736c82a4b89e31183be787722aebf07",
+    "littlefs-1.20.4-133/zrodla/lfs.h": "51c8215142691c2c177ef757ad09c95d96d75e5260eb403368d59ed14d5f11c0",
+    "littlefs-1.20.4-133/zrodla/lfs_util.c": "f2fbde533670560434bd9f5a547174cc7c5a4670a02c47b4bd85180dced8b2ec",
+    "littlefs-1.20.4-133/zrodla/lfs_util.h": "548d46aa524dc7449e16739286c1a422a52f9de727ff0be0c2ffc5593f5ca981",
+    "littlefs-1.20.4-133/zrodla/littlefs_esp_part.c": "d557968b22c8426c17739844d922d65cabe43582f88abc1e5493c01d5e7445f0"
+  },
+  "commands": [
+    {
+      "label": "native-compile-lfs",
+      "exit": 0,
+      "command": [
+        "cc",
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "-c",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla/lfs.c",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/lfs.o"
+      ]
+    },
+    {
+      "label": "native-compile-lfs_util",
+      "exit": 0,
+      "command": [
+        "cc",
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "-c",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla/lfs_util.c",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/lfs_util.o"
+      ]
+    },
+    {
+      "label": "native-core-compile",
+      "exit": 0,
+      "command": [
+        "cc",
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/kwalifikacja-zapisu-esp128/test_error_latch.c",
+        "/tmp/littlefs133-icsfek_1/lfs.o",
+        "/tmp/littlefs133-icsfek_1/lfs_util.o",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "native-core-run",
+      "exit": 0,
+      "command": [
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "native-guard-compile",
+      "exit": 0,
+      "command": [
+        "c++",
+        "-std=c++11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129/WriteSession.cpp",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129/test_littlefs.cpp",
+        "/tmp/littlefs133-icsfek_1/lfs.o",
+        "/tmp/littlefs133-icsfek_1/lfs_util.o",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "native-guard-run",
+      "exit": 0,
+      "command": [
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "native-unit-compile",
+      "exit": 0,
+      "command": [
+        "c++",
+        "-std=c++11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129/WriteSession.cpp",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129/test_session.cpp",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "native-unit-run",
+      "exit": 0,
+      "command": [
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "sanitized-compile-lfs",
+      "exit": 0,
+      "command": [
+        "cc",
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer",
+        "-fno-pie",
+        "-no-pie",
+        "-g",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "-c",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla/lfs.c",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/lfs.o"
+      ]
+    },
+    {
+      "label": "sanitized-compile-lfs_util",
+      "exit": 0,
+      "command": [
+        "cc",
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer",
+        "-fno-pie",
+        "-no-pie",
+        "-g",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "-c",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla/lfs_util.c",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/lfs_util.o"
+      ]
+    },
+    {
+      "label": "sanitized-core-compile",
+      "exit": 0,
+      "command": [
+        "cc",
+        "-std=c99",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer",
+        "-fno-pie",
+        "-no-pie",
+        "-g",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/kwalifikacja-zapisu-esp128/test_error_latch.c",
+        "/tmp/littlefs133-icsfek_1/lfs.o",
+        "/tmp/littlefs133-icsfek_1/lfs_util.o",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "sanitized-core-run",
+      "exit": 0,
+      "command": [
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "sanitized-guard-compile",
+      "exit": 0,
+      "command": [
+        "c++",
+        "-std=c++11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer",
+        "-fno-pie",
+        "-no-pie",
+        "-g",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129/WriteSession.cpp",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129/test_littlefs.cpp",
+        "/tmp/littlefs133-icsfek_1/lfs.o",
+        "/tmp/littlefs133-icsfek_1/lfs_util.o",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "sanitized-guard-run",
+      "exit": 0,
+      "command": [
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "sanitized-unit-compile",
+      "exit": 0,
+      "command": [
+        "c++",
+        "-std=c++11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer",
+        "-fno-pie",
+        "-no-pie",
+        "-g",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/littlefs-1.20.4-133/zrodla",
+        "-I/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129/WriteSession.cpp",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/straznik-zapisu129/test_session.cpp",
+        "-o",
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    },
+    {
+      "label": "sanitized-unit-run",
+      "exit": 0,
+      "command": [
+        "/tmp/littlefs133-icsfek_1/test"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+scenario=0 write=1024 first_sync=0 second_sync=0 close=0 PASS
+scenario=1 write=-5 first_sync=0 second_sync=0 close=0 PASS
+scenario=2 write=1024 first_sync=-5 second_sync=0 close=0 PASS
+3 host scenarios PASS; RAM model only; no ESP/power-loss test

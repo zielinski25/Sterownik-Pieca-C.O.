@@ -1,0 +1,18 @@
+{
+  "libraries/FS/src/FS.h": {
+    "url": "https://api.github.com/repos/espressif/arduino-esp32/contents/libraries/FS/src/FS.h?ref=b4f85baa2d4a251eb435e0f78fcdda1fb193791f",
+    "sha256": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f"
+  },
+  "libraries/FS/src/FS.cpp": {
+    "url": "https://api.github.com/repos/espressif/arduino-esp32/contents/libraries/FS/src/FS.cpp?ref=b4f85baa2d4a251eb435e0f78fcdda1fb193791f",
+    "sha256": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690"
+  },
+  "libraries/FS/src/FSImpl.h": {
+    "url": "https://api.github.com/repos/espressif/arduino-esp32/contents/libraries/FS/src/FSImpl.h?ref=b4f85baa2d4a251eb435e0f78fcdda1fb193791f",
+    "sha256": "5187168c8e15583d1b55e935987532f221f1d3ca958e293494c221e5b2bc538a"
+  },
+  "libraries/LittleFS/src/LittleFS.h": {
+    "url": "https://api.github.com/repos/espressif/arduino-esp32/contents/libraries/LittleFS/src/LittleFS.h?ref=b4f85baa2d4a251eb435e0f78fcdda1fb193791f",
+    "sha256": "394d3cf42f869417e247d26c6dff7cff59a26d4393d7a183a801fc6c949f18ae"
+  }
+}

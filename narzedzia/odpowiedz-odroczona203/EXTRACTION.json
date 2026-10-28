@@ -1,0 +1,11 @@
+{
+  "request_sha256": "3ca1c44ffef44e4fd7d8e900857e797469cd336bf846f2a9af61e02a0956e7ad",
+  "header_sha256": "25db7c8fb30943307b28b181722187a65576f6ee778eeb99e29b1ef8db7915ba",
+  "original_methods": 6,
+  "modified_methods": [
+    "poll",
+    "disconnect"
+  ],
+  "combined_with_199": true,
+  "full_library_compiled": false
+}

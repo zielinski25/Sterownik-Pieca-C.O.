@@ -1,0 +1,6 @@
+{
+  "status": "PASS",
+  "git_apply_to_clean_pinned_sources": true,
+  "candidate_byte_equal": true,
+  "full_library_compiled": false
+}

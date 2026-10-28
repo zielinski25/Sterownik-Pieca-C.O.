@@ -1,0 +1,38 @@
+{
+  "release_ready": false,
+  "request_sha256": "3ca1c44ffef44e4fd7d8e900857e797469cd336bf846f2a9af61e02a0956e7ad",
+  "header_sha256": "25db7c8fb30943307b28b181722187a65576f6ee778eeb99e29b1ef8db7915ba",
+  "server_sha256": "4ed4725bf35e3392eb75bffb86ae47220d069783032840d935136faa0fad1e60",
+  "asyncwebheader_sha256": "820dc02429e0de56b72a1a7a91a603b87819a18e2501c4a83041a0e69ea39190",
+  "literals_sha256": "2df08b5947a05fdb6b890a486708b046cc2bc903aa9c7d7a227c0a4a49b51fb3",
+  "real_methods": [
+    "_parseReqHead",
+    "_addGetParams",
+    "urlDecode",
+    "_parseReqHeader",
+    "_parseLine",
+    "header",
+    "headerName",
+    "getHeader",
+    "headers",
+    "_onData",
+    "_handleUploadByte",
+    "_parseMultipartPostByte",
+    "strict frames",
+    "AsyncWebHeader::parse",
+    "stringToMethod"
+  ],
+  "candidate_methods": [
+    "setAttachPolicy206",
+    "clearAttachPolicy206",
+    "_runAttachPolicy206"
+  ],
+  "modeled": [
+    "String/Stream",
+    "TCP client and response",
+    "route selection",
+    "FreeRTOS scheduling",
+    "full library build"
+  ],
+  "full_library_compiled": false
+}

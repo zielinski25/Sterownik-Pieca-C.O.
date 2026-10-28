@@ -1,0 +1,38 @@
+{
+  "status": "PASS",
+  "release_ready": false,
+  "firmware_modified": false,
+  "inputs": {
+    "narzedzia/most-runtime198/Engine198.h": "75cb86de2b443cd732bfb6fc7eda1f02534c36aaedc3d929d5bbdd5bdbf12013",
+    "narzedzia/most-runtime198/RuntimeHistory.h": "75d9045321636b2b9203928b36397a02c7be47bf5dde06d8a47a96ee9fb88045",
+    "narzedzia/most-runtime198/Test.cpp": "10986ede254835350d1e4ad11f88cba16ecdc6c41520278f0c1df65102c87191",
+    "narzedzia/most-runtime198/CoreTest.cpp": "accc26c0dc9cb6f0fcb6792121e3b36b4e5a599098018642a0b6b2214a2ee73d",
+    "narzedzia/most-runtime198/extract.py": "076c84130957f8eaef271648514b53916cea2e12d8d00864f18f2c95a2487211",
+    "narzedzia/most-runtime198/run.py": "5310da274acbe1813d26da6d2fa84711b1789753b35ae50a276daef7e1983d48",
+    "narzedzia/most-runtime198/mutacje.py": "7d6bac1d11860af7c7c6f41e1cf3781396a4c270abb7a4986c240eccde681b93",
+    "narzedzia/most-runtime198/audit.py": "6a9e74967673111530270fe6735a8dc1671a6316e6baad63cfe12e3b33203d84",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/uchwyty-runtime197/CheckedRead.h": "88a3fba5db1638e43a570bd467ba1c41e17d506e347da79eb23e4eaa45f0569d",
+    "narzedzia/uchwyty-runtime197/Test.cpp": "e17cb214db4c81b7971b1703ff986cfee18152fd2b1d0c97f8bf9d1abed74f35",
+    "narzedzia/uchwyty-runtime197/host/Arduino.h": "917e0db8ca511c83faa564044ef127f2e94da1bcc3c812608fcc3e2455d2aa7b",
+    "narzedzia/uchwyty-runtime197/host/sdkconfig.h": "f408125c3544c6e211698722d508f4fd544a28e8a1ab79691b09cd4bf87a6cc8",
+    "narzedzia/blokada-startu-fs196/upstream/SOURCES.json": "6ce0f554274c50003424686c77a5a3b6dc5ba371baae0f504f37ecb85387db5e",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690",
+    "narzedzia/blokada-startu-fs196/upstream/FS.h": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+    "narzedzia/blokada-startu-fs196/upstream/FSImpl.h": "5187168c8e15583d1b55e935987532f221f1d3ca958e293494c221e5b2bc538a",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9",
+    "narzedzia/littlefs-1.20.4-133/ZRODLA.json": "079dde8477b89091894644a3606ad83a454535e629f19152148a6a96bc75a6a3",
+    "narzedzia/littlefs-1.20.4-133/zrodla/lfs.c": "41b7aa8d6e1601ef26129399cc2e5988e736c82a4b89e31183be787722aebf07",
+    "narzedzia/littlefs-1.20.4-133/zrodla/lfs.h": "51c8215142691c2c177ef757ad09c95d96d75e5260eb403368d59ed14d5f11c0",
+    "narzedzia/littlefs-1.20.4-133/zrodla/lfs_util.c": "f2fbde533670560434bd9f5a547174cc7c5a4670a02c47b4bd85180dced8b2ec",
+    "narzedzia/littlefs-1.20.4-133/zrodla/lfs_util.h": "548d46aa524dc7449e16739286c1a422a52f9de727ff0be0c2ffc5593f5ca981"
+  },
+  "profiles": {
+    "native-model": "PASS runtime198 groups=36 injected-call-cases=153 fixtures=199; real FS.cpp + extracted Engine; not ESP\n",
+    "native-core": "PASS pinned LittleFS core runtime198 media-faults=220 stopped=220 recovered=0; immediate RAM medium; no uncertain-state cleanup; not ESP VFS\n",
+    "asan-ubsan-model": "PASS runtime198 groups=36 injected-call-cases=153 fixtures=199; real FS.cpp + extracted Engine; not ESP\n",
+    "asan-ubsan-core": "PASS pinned LittleFS core runtime198 media-faults=220 stopped=220 recovered=0; immediate RAM medium; no uncertain-state cleanup; not ESP VFS\n"
+  },
+  "compiler": "c++ (Debian 12.2.0-14+deb12u1) 12.2.0"
+}

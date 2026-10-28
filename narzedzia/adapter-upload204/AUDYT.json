@@ -1,0 +1,16 @@
+{
+  "release_ready": false,
+  "status": "PASS_COMPONENT_TESTS_ONLY",
+  "main_changed": false,
+  "hardware_actions": false,
+  "final_run": "WYNIKI/run003/wynik.json",
+  "test_groups": 29,
+  "profiles": ["native", "ASan+UBSan, detect_leaks=1"],
+  "compiled_mutants_detected": 12,
+  "regressions": {
+    "203": "narzedzia/odpowiedz-odroczona203/WYNIKI/run005/wynik.json",
+    "202": "narzedzia/kolejka-upload202/WYNIKI/run003/wynik.json"
+  },
+  "scope": "Fixed network-context pool; begin/chunk/end and lifecycle integration with real Pump202/Registry201/Pool200/Owner197/FS.cpp and extracted request methods",
+  "not_qualified": ["real multipart parser and route wiring", "actual AsyncTCP scheduling", "full ESP library/firmware build", "FreeRTOS worker dispatch", "ESP RAM and WDT", "power loss", "immutable history download during rotation", "hard deadline with no poll events", "generation exhaustion runtime test"]
+}
