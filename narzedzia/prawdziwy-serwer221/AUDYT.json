@@ -1,0 +1,43 @@
+{
+  "etap": 221,
+  "kiedy": "2026-10-28 18:14:22",
+  "zrodlo_prawdy": "main_centrala.cpp v3.56.4 (sha f89874f3390009acd79632db1031d04cd90e67435eda68e2007ea7c4b3168e38)",
+  "wyciete_z_v3564": {
+    "bramka": {
+      "plik": "nasz/bramka221.inc",
+      "linia_w_v3564": 28722,
+      "sha256": "69f34a9ef7637831e30cc035e3f4783445ebcde9105ac2a4fc49c18be48d2612"
+    },
+    "trasy": {
+      "plik": "nasz/trasy221.inc",
+      "linia_w_v3564": 28772,
+      "sha256": "8276c56a2f122b21af3a7182af05d2a2d74568d325b950092d96e315d6a6b414"
+    }
+  },
+  "nasze_naglowki": {
+    "HistoriaPobranie.h": "b58d1a4c299e339798d3f229ad81177b0ee34f44dd37dae1776ba48279a4ede8",
+    "HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "HistoriaBilety.h": "339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30",
+    "CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9"
+  },
+  "biblioteka": {
+    "espasyncwebserver": "c47917dcaba2acefb04277cd679f58a60b4fab30",
+    "arduino-core-api": "0f4e57ea193a00163ae59f0f0ff478feae7eb5db",
+    "esp32-core": "387c69d039405df51e594590a4e2e8b93ed76774 (FS.h: sha b0f42cd3...)",
+    "libb64": "d86057c7382913ffc4ce82a9e71cec639267d130"
+  },
+  "granica_emulacji": [
+    "gniazdo sieciowe (platforma/AsyncTCP.*)",
+    "dysk flash (platforma/FS.cpp + KorzenCalls)",
+    "cbuf (platforma/cbuf.h)",
+    "authenticate() biblioteki (platforma/AuthZaslepki.cpp)",
+    "millis/esp_random/itoa/dtostrf (platforma/Platform.cpp)"
+  ],
+  "wynik": "PASS brama221 kontrol=28 profili=2 mutantow=12",
+  "czego_nie_udowadnia": [
+    "kompilacji PlatformIO na komputerze uzytkownika",
+    "prawdziwego lwIP/WiFi/LittleFS",
+    "wygladu panelu na telefonie",
+    "zachowania pod obciazeniem sieciowym"
+  ]
+}

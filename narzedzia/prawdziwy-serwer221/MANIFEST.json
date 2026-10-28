@@ -1,0 +1,15 @@
+{
+  "v3564_sha256": "f89874f3390009acd79632db1031d04cd90e67435eda68e2007ea7c4b3168e38",
+  "baza_sha256": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+  "patch_sha256": "15e8226b454947b61c4469b732a764f648c0eb34a2e542af252cd5ea81db0211",
+  "bramka": {
+    "linia": 28722,
+    "sha256": "69f34a9ef7637831e30cc035e3f4783445ebcde9105ac2a4fc49c18be48d2612",
+    "bajtow": 1928
+  },
+  "trasy": {
+    "linia": 28772,
+    "sha256": "8276c56a2f122b21af3a7182af05d2a2d74568d325b950092d96e315d6a6b414",
+    "bajtow": 763
+  }
+}
