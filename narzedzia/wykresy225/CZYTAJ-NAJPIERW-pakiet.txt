@@ -53,6 +53,15 @@ Rozwiazanie: budowac na Javie 17-21 (np. Temurin 21) - albo po prostu
 uzyc zbuduj.ps1, ktory robi to sam. NIE ustawiaj JAVA_HOME na
 "C:\Program Files\Android\Android Studio\jbr".
 
+Druga typowa przeszkoda to brak wskazania Android SDK:
+
+  SDK location not found. Define a valid SDK location with an
+  ANDROID_HOME environment variable or by setting the sdk.dir path ...
+
+zbuduj.ps1 szuka SDK sam (ANDROID_HOME, %LOCALAPPDATA%\Android\Sdk,
+C:\Android\Sdk, a na koncu po pliku adb.exe) i zapisuje plik
+local.properties. Jesli brakuje platformy android-35, skrypt to wypisze.
+
 JAK ZBUDOWAC KLIKAJAC (5 kroków)
 -----------------------
 1. Zainstaluj Android Studio (jeśli na tym komputerze jeszcze go nie ma).
