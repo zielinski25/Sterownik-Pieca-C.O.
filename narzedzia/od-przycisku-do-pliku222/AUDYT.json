@@ -1,0 +1,30 @@
+{
+  "etap": 222,
+  "kiedy": "2026-10-28 18:22:39",
+  "cel": "klik w panelu -> bilet -> pobranie -> plik CSV na dysku, po prawdziwym TCP",
+  "prawdziwe": [
+    "parser i dyspozytor biblioteki (z etapu 221)",
+    "nasze trasy i bramka z v3.56.4",
+    "skrypt panelu z v3.56.4 w V8",
+    "gniazdo TCP",
+    "pliki CSV na dysku"
+  ],
+  "nasze": [
+    "DOM (model dokladnie uzywanej czesci)",
+    "emulator AsyncClient z etapu 221",
+    "katalog zamiast LittleFS"
+  ],
+  "pliki": {
+    "Panel222.html": "8b60ecf97818dea770cd9e0e7ad38aed84537acfea5ae2398bf341eab7fe5dad",
+    "nasz/trasy221.inc": "8276c56a2f122b21af3a7182af05d2a2d74568d325b950092d96e315d6a6b414",
+    "nasz/bramka221.inc": "69f34a9ef7637831e30cc035e3f4783445ebcde9105ac2a4fc49c18be48d2612",
+    "nasz/HistoriaPobranie.h": "b58d1a4c299e339798d3f229ad81177b0ee34f44dd37dae1776ba48279a4ede8"
+  },
+  "wynik": "PASS brama222 profili=2 mutantow=6",
+  "odkrycie": "M5: gdy _fillBuffer zwraca 0 bajtow przy Content-Length > 0, biblioteka nie zamyka polaczenia - klient wisi. Dlatego test ma budzik, a _sourceValid() musi byc prawdziwe.",
+  "czego_nie_udowadnia": [
+    "wygladu panelu i CSS w przegladarce",
+    "prawdziwego lwIP",
+    "kompilacji PlatformIO"
+  ]
+}
