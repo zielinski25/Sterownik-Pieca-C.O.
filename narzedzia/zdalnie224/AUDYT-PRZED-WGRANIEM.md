@@ -158,3 +158,52 @@ if (-not $pliki) {
 ```
 
 `10` = `\n` = plik kompletny. Każda inna wartość = nie wgrywać zdalnie.
+
+---
+
+## WYNIK SPRAWDZENIA (2026-10-28, pliki pobrane z Dysku i zbadane bajt po bajcie)
+
+Test wykonany przez agenta na oryginalnych plikach z Dysku
+(`hist_short (7).csv` 107 130 B, `hist_long (7).csv` 233 391 B),
+nie na kopii z komputera użytkownika.
+
+| plik | rozmiar | ostatnie bajty | kończy się `\n` |
+|---|---|---|---|
+| `hist_short (7).csv` | 107 130 B | `...,90,1793214847\n` | **TAK** |
+| `hist_long (7).csv` | 233 391 B | `...,90,90,90,1793214427,0\n` | **TAK** |
+
+**Warunek `Reason::Boundary` jest spełniony dla obu plików → wgranie bezpieczne
+pod tym względem.**
+
+### Jakość danych — lepsza, niż zakładano
+
+`hist_short.csv`:
+
+* 1 515 wierszy, **wszystkie po 14 kolumn** (żadnego uszkodzonego wiersza),
+* zakres 27.10 19:00 → 28.10 20:14 = 25 h 14 min,
+* **1 515 wierszy przy 1 514 minutach różnicy → jedna próbka na minutę, zero luk**,
+* czas monotoniczny, zero powtórzeń.
+
+To mocny dowód, że pętla próbkowania i zapisu w v3.55.1 działa bezbłędnie.
+
+`hist_long.csv`:
+
+* 1 305 wierszy, **wszystkie po 36 kolumn** (poprzednia dokumentacja podawała
+  35 — błąd rachunku: 11 kanałów × 3 = 33, + etykieta + czas_unix + flaga pompy = **36**),
+* zakres 24.10 19:06 → 28.10 20:07,
+* 773 odstępy > 2 min — **zgodne z projektem** (zapis zdarzeniowy, nie czasowy).
+
+### Znaleziska w danych
+
+1. **Zmiana czasu letniego obsłużona poprawnie.** Etykiety przed 25.10 są
+   w CEST (UTC+2), po — w CET (UTC+1); kolumna `czas_unix` pozostaje ciągła.
+2. **Jedna korekta zegara w tył o 51 minut** — 25.10, wiersz 447→448:
+   `1792951567` (19:06) → `1792948497` (18:14). To nie zmiana czasu (ta
+   przypadła na 03:00), tylko przestawienie zegara — najpewniej synchronizacja
+   NTP po starcie. Dane bezstratne, ale w pliku jest 51-minutowe nakładanie się
+   etykiet. Do obserwacji, czy powtarza się często.
+3. **Piec nie grzeje.** Przez całe 25 h pompa = 0, a temperatura bojlera spadła
+   równomiernie 48,5 → 21,5 °C (maks. 0,3 °C na minutę — czyli naturalne
+   stygnięcie, nie skok czujnika). Zasilanie 58,7 → 13,5 °C, pokój 17,5 → 15,0 °C.
+   To wygląda na wyłączone ogrzewanie, nie na awarię — ale przy 15 °C na
+   zewnątrz i końcu października wymaga potwierdzenia przez użytkownika.
