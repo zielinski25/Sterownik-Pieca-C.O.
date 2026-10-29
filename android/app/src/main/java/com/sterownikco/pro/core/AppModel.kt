@@ -938,18 +938,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             telemetry = merged
             chartPoints = merged.size
             val fromEspOnly = if (useEsp) merged.count { it.seq < 0L } else 0
-            // [v0.31.34 GAP-MARK] Ile jest przerw w danych i jak długa jest najdłuższa.
-            // Liczone z tego, co faktycznie przyszło — podpis nie może kłamać.
-            var gapCount = 0
-            var gapMax = 0L
-            var prevTs = 0L
-            merged.forEach { p ->
-                if (prevTs != 0L && p.ts - prevTs > 360_000L) {
-                    gapCount++
-                    if (p.ts - prevTs > gapMax) gapMax = p.ts - prevTs
-                }
-                prevTs = p.ts
-            }
+            // [0.31.41] Licznik luk zdjety razem z kreskami na wykresie —
+            // uzytkownik nie chce zadnych dodatkowych wartosci w tym pasku.
             chartStatus = buildString {
                 append("Załadowano ${merged.size} próbek")
                 when {
@@ -957,9 +947,6 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     useEsp -> append(" · chmura + archiwum centrali zgodne")
                     sec > 24 * 3600 -> append(" z RTDB (tylko chmura — archiwum centrali jest w domu)")
                     else -> append(" z RTDB")
-                }
-                if (gapCount > 0) {
-                    append(" · luk: " + gapCount + " (najdłuższa " + (gapMax / 60_000L) / 60L + " h " + (gapMax / 60_000L) % 60L + " min)")
                 }
                 append(" · odcinki symulowane są kreskowane")
             }

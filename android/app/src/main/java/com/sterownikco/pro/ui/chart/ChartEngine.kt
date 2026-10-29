@@ -405,30 +405,11 @@ fun ChartCanvas(
             previousLabelTs = ts
         }
 
-        // [v0.31.34 GAP-MARK] Przerwa > 6 min jest zaznaczona dwiema pionowymi kreskami.
-        // Puste miejsce ma byc widoczne jako BRAK PROBEK, a nie jako blad rysowania.
-        //
-        // [0.31.40] Zdjete napisy "luka ... min" i tlo luki dodane w 0.31.39.
-        // Na zrzucie z 29.10 02:26 bylo ich szesc i nachodzily na siebie
-        // ("luka 8 h 8 min" na "luka 1 h 1 min") — zaslanialy wykres i nic nie
-        // wyjasnialy, bo pasek statusu nad wykresem podaje to samo dokladniej:
-        // "luk: 6 (najdłuższa 1 h 17 min)". Zostaja same kreski: tanie, ciche
-        // i wystarczajace, zeby zobaczyc, gdzie danych brakuje.
-        run {
-            val markColor = Pal.rgba(255, 138, 101, .55f)
-            val dash = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
-            var prevTs = view.rows.first().ts
-            for (i in 1 until view.rows.size) {
-                val ts = view.rows[i].ts
-                if (ts - prevTs > 360_000L) {
-                    val xa = timeAxis.xOf(prevTs)
-                    val xb = timeAxis.xOf(ts)
-                    drawLine(markColor, Offset(xa, padTop), Offset(xa, padTop + plotH), 1.dp.toPx(), pathEffect = dash)
-                    drawLine(markColor, Offset(xb, padTop), Offset(xb, padTop + plotH), 1.dp.toPx(), pathEffect = dash)
-                }
-                prevTs = ts
-            }
-        }
+        // [0.31.41] Cale oznaczenie luk zdjete na prosbe uzytkownika.
+        // 0.31.34 dodawalo dwie pionowe kreski, 0.31.39 napisy "luka ... min",
+        // 0.31.40 zostawilo same kreski. Uzytkownik: kreski tez sa zbedne.
+        // Przerwa w danych jest widoczna sama z siebie — jako puste miejsce
+        // miedzy probkami (tak samo jak w widoku HTML). Nic nie rysujemy.
 
         // serie
         view.cat.forEach { s ->
