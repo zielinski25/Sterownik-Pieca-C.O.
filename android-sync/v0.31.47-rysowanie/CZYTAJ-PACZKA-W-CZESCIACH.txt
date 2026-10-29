@@ -1,0 +1,67 @@
+Sterownik CO — Android 0.31.47 — PACZKA W DWÓCH CZĘŚCIACH
+=========================================================
+
+Dlaczego dwie części: cały plik (1 334 327 B) urywał się przy pobieraniu.
+Dwie części po ~700 kB pobierają się pewniej, a po złożeniu wychodzi
+dokładnie ten sam plik, co sprawdziłem sumą SHA256.
+
+CZĘŚCI
+------
+1) PELNY-0.31.47-czesc0.bin   716 800 B
+   SHA256 3909ed27a0298571027b5d5bbdc30727f53394175a0143523122769c739efafc
+
+2) PELNY-0.31.47-czesc1.bin   617 527 B
+   SHA256 b10bd7dafe5083f766c21c27f5745129148a5abf4048a09c8a45f2456980e12a
+
+PO ZŁOŻENIU (to jest cała paczka)
+---------------------------------
+SterownikCO-0.31.47.zip       1 334 327 B
+SHA256 914b429fb23f8069b35603b31d9a07252f9486f9565ca1f8e3b27a215bee689d
+
+SKŁADANIE — PowerShell, PO JEDNEJ LINII, Enter po każdej
+---------------------------------------------------------
+$p = "$env:USERPROFILE\Downloads"
+
+curl.exe -L --retry 3 -o "$p\czesc0.bin" "TU_WKLEJ_LINK_CZESCI_0"
+
+curl.exe -L --retry 3 -o "$p\czesc1.bin" "TU_WKLEJ_LINK_CZESCI_1"
+
+(Get-Item -LiteralPath "$p\czesc0.bin").Length      # ma być 716800
+
+(Get-Item -LiteralPath "$p\czesc1.bin").Length      # ma być 617527
+
+cmd /c copy /b "$p\czesc0.bin"+"$p\czesc1.bin" "$p\SterownikCO-0.31.47.zip"
+
+Get-FileHash -LiteralPath "$p\SterownikCO-0.31.47.zip" -Algorithm SHA256
+# ma być 914b429fb23f8069b35603b31d9a07252f9486f9565ca1f8e3b27a215bee689d
+
+Expand-Archive -LiteralPath "$p\SterownikCO-0.31.47.zip" -DestinationPath "$p\SterownikCO-0.31.47" -Force
+
+cd "$p\SterownikCO-0.31.47\SterownikCO-Android-v0.31.47"
+
+powershell -ExecutionPolicy Bypass -File .\zbuduj.ps1
+
+JEŻELI KTÓRAŚ CZĘŚĆ SIĘ NIE ZGADZA
+----------------------------------
+Sprawdź sam rozmiar tej części. Zły rozmiar = pobieranie przerwane,
+pobierz tę jedną część jeszcze raz. Nie składaj, dopóki oba rozmiary
+się nie zgadzają.
+
+CO JEST W ŚRODKU (bez zmian względem opisu 0.31.47)
+---------------------------------------------------
+- cały projekt Android: 96 plików .kt, gradle wrapper, zbuduj.ps1,
+- CZYTAJ-NAJPIERW.txt, README-WGRANIE.txt,
+- ZMIANY-KODU/ — diff każdej zmiany,
+- SHA256SUMS.txt — suma każdego pliku .kt (96 wpisów, nagłówek 0.31.47),
+- versionName "0.31.47", versionCode 31047.
+
+W paczce NIE MA: secrets.h, ZMIEN-MNIE, local.properties, keystore.
+Sprawdzone.
+
+CO ZMIENIONO W 0.31.47 (skrót)
+------------------------------
+Rysowanie wykresu: koszyk = 1 piksel szerokości, z koszyka minimum
+i maksimum. 30 dni: 43 200 -> ok. 1 800 punktów na serię, sześć serii
+259 194 -> ok. 10 800 (−96%). Tryb NORMALIZOWANY i kursor liczyły
+min/max dla każdej próbki (O(n²)) — teraz raz na serię.
+Wygląd bez zmian: żadnych napisów, plikietek, liczników.
