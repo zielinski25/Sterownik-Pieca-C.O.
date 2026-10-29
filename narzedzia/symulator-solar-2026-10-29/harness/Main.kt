@@ -433,6 +433,28 @@ fun testG(n: Int): Wyniki {
     return w
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════
+// TEST H — ile model traci w nocy, w porownaniu z archiwum z centrali
+// ══════════════════════════════════════════════════════════════════════════
+fun testH() {
+    println("TEST H — nocne wychładzanie: model vs archiwum 7 dni z centrali")
+    println("  archiwum (zmierzone, zawiera ewentualne pobrania wody):")
+    println("    26.10: 19.5 °C (14:15) -> 13.2 °C (23:40) = -6.3 °C / 9.4 h = 0.67 °C/h")
+    println("    23.10: 47.2 °C (15:05) -> 35.8 °C (24.10 00:01) = -11.4 °C / 8.9 h = 1.28 °C/h")
+    println("    28.10: 20.5 °C (11:49) -> ~16.5 °C (29.10 00:00) ~= -4.0 °C / 12.2 h = 0.33 °C/h")
+    println()
+    println("  model (SolarThermalModel, 4 h bez slonca):")
+    for ((t0, air) in listOf(19.5 to 8.0, 19.5 to 11.0, 27.0 to 8.0, 35.0 to 8.0, 16.5 to 6.0)) {
+        val night = (0 until 4).map { SolarThermalModel.Hour(0.0, air) }
+        val r = SolarThermalModel.simulate(t0, night) ?: continue
+        val perH = (r.endTempC - t0) / 4.0
+        println("    woda %.1f °C, powietrze %.1f °C  ->  %.2f °C/h".format(t0, air, perH))
+    }
+    println()
+}
+
+
 fun main() {
     println("╔══════════════════════════════════════════════════════════════╗")
     println("║  SYMULATOR 0.31.49 — realny kod, prawdziwy kompilator Kotlin ║")
@@ -444,6 +466,7 @@ fun main() {
     testE()
     testF(200)
     val g = testG(1000)
+    testH()
     println("══════════════════════════════════════════════════════════════")
     println("RAZEM: OK=${b.ok + c.ok + d.ok + g.ok}  BLEDY=${b.fail + c.fail + d.fail + g.fail}")
     println("TEST A (regresja 3.6): " + if (a) "OK" else "BLAD")

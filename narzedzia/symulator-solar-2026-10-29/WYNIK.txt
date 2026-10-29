@@ -53,10 +53,10 @@ TEST E — czy ekran z 29.10 jest fizycznie spójny (suma GTI 0.7156 kWh/m2, szc
   ekran pokazał +2.1 °C -> OSIĄGALNE przy ~90% dobowego słońca po 13:00 => ekran jest spójny
 
 TEST F — czas wykonania (to samo, co woła ekran przy każdej recompozycji)
-  simulate() 1 doba (24 h)          =   0.04 ms
+  simulate() 1 doba (24 h)          =   0.05 ms
   estimateForecastGain (reszta doby) =   0.02 ms
-  dailyForecast7 (7 dób)             =   0.24 ms
-  ekran wola oba =   0.26 ms na recompozycje
+  dailyForecast7 (7 dób)             =   0.29 ms
+  ekran wola oba =   0.31 ms na recompozycje
   klatka 60 Hz = 16.7 ms -> mieszczi sie z zapasem
 
 TEST G — odtwarzalność karty DZIŚ z górnej karty (1000 dób)
@@ -65,6 +65,19 @@ TEST G — odtwarzalność karty DZIŚ z górnej karty (1000 dób)
   dni bez słońca (karta u góry pokazuje "—"): 550
     z tego DZIŚ nadal dodaje/odejmuje noc: 539 = 98.0%
   sprawdzen OK=1000  BLEDOW=0
+TEST H — nocne wychładzanie: model vs archiwum 7 dni z centrali
+  archiwum (zmierzone, zawiera ewentualne pobrania wody):
+    26.10: 19.5 °C (14:15) -> 13.2 °C (23:40) = -6.3 °C / 9.4 h = 0.67 °C/h
+    23.10: 47.2 °C (15:05) -> 35.8 °C (24.10 00:01) = -11.4 °C / 8.9 h = 1.28 °C/h
+    28.10: 20.5 °C (11:49) -> ~16.5 °C (29.10 00:00) ~= -4.0 °C / 12.2 h = 0.33 °C/h
+
+  model (SolarThermalModel, 4 h bez slonca):
+    woda 19.5 °C, powietrze 8.0 °C  ->  -0.21 °C/h
+    woda 19.5 °C, powietrze 11.0 °C  ->  -0.16 °C/h
+    woda 27.0 °C, powietrze 8.0 °C  ->  -0.35 °C/h
+    woda 35.0 °C, powietrze 8.0 °C  ->  -0.49 °C/h
+    woda 16.5 °C, powietrze 6.0 °C  ->  -0.19 °C/h
+
 ══════════════════════════════════════════════════════════════
 RAZEM: OK=25028  BLEDY=0
 TEST A (regresja 3.6): OK
