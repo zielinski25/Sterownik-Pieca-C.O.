@@ -220,3 +220,54 @@ Nie zmieniono żadnego pliku `.kt`. Pozycje do rozważenia:
 | `tankUa` | 1,4 W/K | 2,9–3,6 W/K | model zaniża straty nocne ~2× |
 | `reverseFlowKgS` | 0,004 kg/s | niezmierzony | zgadza się z Ong 2015 (mniej niż 0,005 dla płaskiego) |
 | karty 7-dniowe | `4,43·GTI − 5,57` | R² modelu nieznane | stała strata 5,57 °C/dobę nie zna temperatury wody |
+
+---
+
+## 11. Korekta po uściśleniu użytkownika (2026-10-29): instalacja BEZPOŚREDNIA, bez wężownicy
+
+Użytkownik: *„instalacja na dachu to nie woda z wodociągów rurką idzie do zbiornika na dachu,
+a druga rurka podłączona do zbiornika wylatuje już ciepła woda, tam nie ma żadnej wężownicy,
+tam jest spychająca woda i wypychająca"*.
+
+### 11.1 Potwierdzenie z literatury — to układ termosyfonowy BEZPOŚREDNI
+
+| źródło | co mówi |
+|---|---|
+| instsani.pl, *Budowa i schematy instalacji solarnych* | „W instalacji z termosyfonem woda zimna doprowadzona jest **bezpośrednio** do zasobnika na dachu, a stąd po ogrzaniu przepływa do instalacji w budynku" |
+| instsani.pl, *Zasobniki i podgrzewacze solarne* | „Z uwagi na sposób wymiany ciepła — **systemy bezpośrednie i pośrednie**. W pierwszym przypadku **woda użytkowa krąży z zasobnika do kolektora i z powrotem**" |
+| pvsky.pl | „Zimna woda z sieci wpływa do dolnej części zbiornika, a stamtąd do szklanych rur próżniowych. Podgrzana woda, jako lżejsza, unosi się do górnej części zbiornika" |
+| ecozone.solar (LP-100) | „W rurach próżniowych oraz zasobniku kolektora bezciśnieniowego **znajduje się woda**... cyrkulacja powoduje stały wzrost temperatury" |
+
+**Wniosek: użytkownik ma rację.** To nie jest układ z wężownicą i glikolem. Woda użytkowa
+krąży ze zbiornika do kolektora iz powrotem, grawitacyjnie, bez pompy.
+
+### 11.2 Co to wyjaśnia w naszych danych
+
+Rozkład `UA` był **dwumodalny** (1–4 W/K albo 14–28 W/K). W układzie **bezpośrednim**
+to naturalne: nie ma wężownicy ani zaworu, który zatrzyma obieg wsteczny. Gdy różnica
+gęstości wystarczy, cała woda ze zbiornika płynie przez kolektor i oddaje ciepło w niebo.
+Gdy nie wystarczy — zostaje tylko przewodzenie przez ścianki.
+
+W układzie **pośrednim** (glikol + wężownica) ten mechanizm jest odcięty od wody użytkowej.
+Dlatego literatura (Michaelides, OSTI) daje różne wyniki — badano różne układy.
+
+### 11.3 Nowe pytanie: ile wody jest w rurach
+
+W układzie bezpośrednim woda jest **także w rurach kolektora**. To zmienia pojemność cieplną:
+
+| wariant | pojemność | przelicznik |
+|---|---|---|
+| tylko zbiornik 100 l (założenie MD) | 100 l | 0,1163 kWh/K |
+| 100 l + 10 rur 58/1800 wypełnionych wodą | ~131 l | ~0,152 kWh/K |
+| heat-pipe (rury puste, tylko pręt miedziany) | 100 l | 0,1163 kWh/K |
+
+Rura 58 mm zewn./47 mm wewn., dł. 1,8 m → π·0,0235²·1,8 = 3,1 l każda → **~31 l na 10 rur**.
+
+**To trzeba potwierdzić okiem, nie z danych** — patrz pytanie do użytkownika.
+Błąd w tę stronę zaniża energię o ~30%.
+
+### 11.4 Ryzyko, którego nikt nie zapisał
+
+W układzie bezpośrednim woda w rurach **zamarza zimą i rozsadza rury**. Dokument
+`MODEL_SOLARNY_TRZEMCHA` §13 wspomina „tryb zimowy — kolektor jest opróżniony",
+ale nie ma tego w żadnej procedurze obsługi.
