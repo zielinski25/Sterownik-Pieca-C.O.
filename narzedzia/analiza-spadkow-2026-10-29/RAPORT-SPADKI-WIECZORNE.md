@@ -454,3 +454,73 @@ To rozmiar jednej paczki (`TELEMETRY_BATCH_MAX_RECORDS = 10`). Rozruch się NIE 
 Ryzyko „spóźnionego ACK" (§12.4, hipoteza 1) jest nadal nieobalone, ale jego częstość
 to **1 zdarzenie na ~28 dni**. Nie uzasadnia kolejnej zmiany w firmware.
 Priorytet: zero zmian, obserwacja.
+
+---
+
+## §15. PRAWDZIWA PRZYCZYNA „DZIUR" W WYKRESIE — ZNALEZIONA
+
+### 15.1 Metoda
+Rozbiór `akwarium-367be-default-rtdb-29-export.json` (680 rekordów, 5 rozruchów).
+Każdy rekord ma tablice `a[11]` (wartości ×10) i `age[11]` (wiek odczytu w s).
+`age == 65535` znaczy „ten kanał NIGDY nie miał poprawnego odczytu".
+
+### 15.2 Mapowanie kanałów (z firmware, `telemetryJsonAppend`, l. 39754)
+| idx | pole | opis |
+|---|---|---|
+| 0 | tZewnX10 | zewnątrz |
+| 1 | tBojlerX10 | bojler CWU |
+| 2 | tOgrzX10 | kocioł C.O. |
+| **3** | **tOgrzSrX10** | **„Ogrz. śr." — średnia** |
+| 4 | tPowrotX10 | powrót |
+| 5 | tPanelX10 | panel solarny |
+| 6 | tPokojX10 | pokój |
+| 7 | tTrocinyX10 | trociny |
+| 8 | rhX10 | wilgotność |
+| 9 | pressureX10 | ciśnienie |
+| 10 | dym | dym |
+
+### 15.3 Co pokazały dane
+`age[3] == 65535` występuje w **trzech** przebiegach i **każdy zaczyna się w chwili startu pieca**:
+
+| boot | przebieg braku | długość |
+|---|---|---|
+| `FC764B1F` (boot=3) | 10:31:22 → 10:50:22 | 20 próbek |
+| `77A3CAC8` (boot=4) | 11:30:54 → 11:49:54 | 20 próbek |
+| `BCA88359` + `48B6D607` | 12:09:05 → 12:41:59 (koniec danych) | 32 próbki |
+
+Pierwszy poprawny odczyt pojawia się **~20 min 50 s po starcie** (boot=3: start 10:30:33,
+pierwszy dobry 10:51:22; boot=4: start 11:30:00, pierwszy dobry ~11:50:54).
+Żaden inny kanał nie ma tego problemu (poza kanałem 10 = dym, który nie jest podłączony,
+i pojedynczymi 8 próbkami na kanale 8).
+
+### 15.4 Mechanizm w firmware
+`temperaturaOgrzewaniaSrednia` (l. 21773) jest liczone w funkcji `obliczanie_srednia()`:
+- tryb AUTO (Wybor != 1) → gałąź `else`: średnia krocząca z 4 próbek, ale
+  `telemetryOgrzSrAccepted = true` **tylko gdy `pompaWlSrednia`** (pompa pracuje).
+- **Pompa stoi** (STOP), więc ta ścieżka nigdy nie oznacza kanału jako dobrego.
+- Ratunkowa gałąź `piecUznanyZaWygasly` ustawia `telemetryOgrzSrAccepted = true`,
+  ale wymaga `millis() - ostatniRazPompaPracowalaMs >= Czas_OFF * 60000`.
+- `ostatniRazPompaPracowalaMs` to `static` **zerowany przy każdym starcie**.
+
+**Skutek:** po każdym restarcie pieca kanał „Ogrz. śr." jest pusty przez pełne
+`Czas_OFF` minut — mimo że piec jest zimny od wielu godzin i pompa nie pracowała
+dużo dłużej niż `Czas_OFF`. Dopiero po tym czasie nadzór „zauważa", że piec wygasł.
+Zaobserwowane ~20,8 min ⇒ ustawione `Czas_OFF` = 20 min (domyślne w kodzie to 30).
+
+### 15.5 Wniosek
+**„Dziury" w wykresie to nie gubienie próbek.** To kanał pochodny, który po restarcie
+nie ma czym się wypełnić. Aplikacja rysuje go poprawnie — po prostu nie ma wartości.
+Dodatkowo: przy każdym restarcie użytkownik „zyskuje" kolejne 20 minut dziury.
+
+### 15.6 Możliwe poprawki (do decyzji)
+- **A) Firmware:** zapisywać `ostatniRazPompaPracowalaMs` (albo sam znacznik „piec wygasł")
+  w NVS/RTC, żeby po restarcie od razu wiadomo było, że piec jest zimny.
+  Poprawka mała, ale dotyka logiki sterowania — wymaga wydania 3.56.8.
+- **B) Firmware, minimalna:** w `setup()` ustawić `ostatniRazPompaPracowalaMs = -Czas_OFF*60000`
+  (czyli „dawno temu"), skoro po restarcie i tak nie wiemy, kiedy pompa ostatnio pracowała.
+  Efekt: kanał dostępny od pierwszej próbki. Ryzyko: jeśli piec faktycznie pracował
+  tuż przed restartem, średnia ruszy od surowego odczytu zamiast od wygładzonej wartości.
+- **C) Aplikacja:** traktować `age == 65535` jako „brak danych" i nie rysować —
+  już tak robi. Nic do zmiany.
+
+**Rekomendacja:** B, jako osobne wydanie 3.56.8, po obserwacji obecnej 3.56.7.
