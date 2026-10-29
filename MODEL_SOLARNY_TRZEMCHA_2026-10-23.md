@@ -677,3 +677,77 @@ powtórzyć dopasowanie.
   heat-pipe: przepływ wsteczny mniejszy niż w płaskim; spadek nocny 2–10 °C.
 - Michaelides (EuroSun 2010) — twierdzi wpływ wsteczki „minimalny”;
   **sprzeczne** z OSTI. Dlatego model dwuwęzłowy, a nie mnożnik na `UA`.
+
+---
+
+## 19. Kalibracja z archiwum — sprawdzona i odrzucona (2026-10-29)
+
+Sekcja 18 kończyła się zdaniem „po 2–3 tygodniach danych warto powtórzyć
+dopasowanie". Dane są — 11 pełnych nocy 18–28.10 — więc dopasowanie zostało
+zrobione. **Wynik jest negatywny i to też jest wynik.**
+
+### 19.1 Ranga parametrów — co w ogóle da się ruszyć
+
+| parametr | z 1,0 → | reakcja | ocena |
+|---|---|---|---|
+| `reverseFlowKgS` | 0,002 → 0,050 (25×) | 0,02 °C/h | **bezwładny** — nic nie zmienia |
+| `loopUaWk` | 1,0 → 5,0 | noc −1,26 °C ✅, ale dzień 33,3 → 26,9 (−19%) ❌ | nie da się |
+| `loopUaWk` + `apertureOptical` | 5,0 + 0,85 | dzień 34,2 ✅, ale η₀ = 0,89 | **fizycznie niemożliwe** |
+| `tankUa` | 1,4 | na nocach z ΔT 12–19 K wychodzi 1,2–1,4 W/K | **potwierdzone, nie ruszać** |
+
+Ograniczeniem nocnym jest `loopUaWk`, nie przepływ. Podniesienie go psuje dzień.
+Podniesienie obu naraz wypycha sprawność optyczną ponad granicę fizyki.
+
+### 19.2 Cztery metody uczenia na własnym archiwum
+
+Każda uczy się na 10 nocach, sprawdzana na jedenastej (leave-one-out), 11 nocy:
+
+| metoda | średni błąd |
+|---|---|
+| **model fizyczny (0.31.51)** | **2,05 °C** |
+| uczony współczynnik `k` zamiast modelu | 2,89 °C |
+| persystencja (tempo z pierwszych 2 h) | 1,95 °C |
+| model × mnożnik uczony na pozostałych | 2,28 °C |
+| model + stała poprawka uczona na pozostałych | 2,10 °C |
+
+Na teście praktycznym „ile zostanie do 24:00" (66 przypadków, godziny 17:00–22:00)
+persystencja przegrywa zdecydowanie: **2,00 °C vs 1,29 °C** — bo o 17:00–18:00
+jeszcze grzeje słońce, a persystencja o tym nie wie.
+
+Skrypt odtwarzalny: `narzedzia/symulator-solar-2026-10-29/kalibracja/porownanie.py`.
+
+### 19.3 Dlaczego uczenie tu nie może działać
+
+Błąd modelu nie zależy od niczego mierzalnego:
+
+| z czym porównane | korelacja |
+|---|---|
+| temperatura wody o 19:00 | +0,33 |
+| temperatura powietrza | −0,31 |
+| różnica woda − powietrze | +0,24 |
+
+Przy braku korelacji jedyne, co robi uczenie, to wpisuje na stałe średnią
+pomyłkę — psując noce, które wcześniej wychodziły dobrze.
+
+### 19.4 Cały błąd siedzi w jednej nocy
+
+Mediana błędu bezwzględnego: **1,40 °C**. Bez nocy 23/24.10 średnia spada
+z 2,05 do **1,45 °C** — ta jedna noc to 36% sumy błędu.
+
+23/24.10: zbiornik 42,5 → 27,8 °C, bez skoków, bez wykrytego poboru, ~1,5 °C/h
+przy ΔT ≈ 30 K → **UA_eff ≈ 5,8 W/K** (4× katalog). Na pozostałych nocach
+1,2–1,4 W/K = katalog.
+
+Przy 100 l ubytek 1,5 °C/h odpowiada stałemu dopływowi ok. **4,4 l/h** zimnej
+wody z sieci. To ta sama liczba, którą niezależnie dała analiza instalacji
+bezpośredniej (stały przepływ 4–9 l/h — dlatego detektor pobrań, wymagający
+0,5 °C / 5 min, nigdy nic nie widzi). Wniosek: to nie model jest zły, tylko
+**gdzieś kapie** — kran, mieszacz albo zawór zwrotny.
+
+### 19.5 Decyzja
+
+`MODEL_SOLARNY` **zostaje bez zmian**. Wersja 0.31.51 zostaje wgrana.
+Kalibracja z archiwum **nie wchodzi do kodu** — nie z powodu ostrożności,
+ale dlatego, że cztery niezależne sposoby uczenia wypadły gorzej niż model.
+
+Jeżeli kiedyś będzie 40+ nocy bez poborów i bez wycieku, temat można wrócić.

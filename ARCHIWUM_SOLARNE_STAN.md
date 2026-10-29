@@ -824,3 +824,67 @@ versionCode = 3034, versionName = "v0.31.28"
 
 Dwa ostrzeżenia `quadraticBezierTo` (`Weather.kt:649` i `:655`) — rysowanie
 łuku słońca, sprzed tej zmiany.
+
+---
+
+## 17. Stan aplikacji 0.31.51 i weryfikacja modelu (2026-10-29)
+
+### 17.1 Co jest wgrane / opublikowane
+
+| element | wersja | status |
+|---|---|---|
+| firmware centrali | 3.56.7 (przywrócenie 3.56.5) | wgrane 29.10 |
+| firmware — czeka | 3.56.8 (średnia + detektor luki) | paczka gotowa, **nie wgrana** |
+| aplikacja Android | **0.31.51** | paczka gotowa, **nie wgrana** |
+| ESP (biblioteka) | 3.55.1 | bez zmian |
+
+Paczka 0.31.51: `android-sync/v0.31.51-karta-dzis/`, 5 plików, ZIP 45 277 B,
+SHA-256 `42c6b86e9c5c4bc8bf0cca65f3960946dc739586061677bcb9f572417f5e7ddd`.
+Względem 0.31.50 zmienia się `build.gradle.kts`, `SolarAnalytics.kt`,
+`TileSpecs.kt`, `Weather.kt`, `ChartEngine.kt`.
+
+Zmiana widoczna na ekranie: po zachodzie słońca karta **DZIŚ** przestaje
+dodawać zysk i pokazuje `signedC(forecastEndDeltaC)` — „woda stygnie do północy".
+Symulator: 24 340 sprawdzeń, 0 błędów; test zgodności tekstu karty
+**0/1000 dni niezgodnych** (w 0.31.50 było 539/1000 = 53,9%).
+
+### 17.2 Model nocny — potwierdzony, nie zmieniany
+
+Na 11 prawdziwych nocach (18–28.10) średni błąd prognozy „całej doby"
+to **2,05 °C**, mediana 1,40 °C. Model myli się **w obie strony** — nie jest
+ani za szybki, ani za wolny. `tankUa = 1.4 W/K` **potwierdzone pomiarem**:
+na nocach z ΔT 12–19 K wychodzi 1,2–1,4 W/K, czyli katalog.
+
+Dwie wcześniejsze diagnozy **wycofane** i nie należy do nich wracać:
+- „model liczy nocne chłodzenie 2× za wolno" — nieprawda,
+- „wszystko wyjaśniają pobory wody" — nieprawda.
+
+### 17.3 Instalacja jest BEZPOŚREDNIA
+
+Potwierdzone przez użytkownika: brak wężownicy, brak drugiego obiegu. Rura
+ze zbiornika idzie prosto do instalacji domowej. Skutki policzone z danych:
+
+- UA_eff liczony z pomiarów **zmienia się 4,4×** (4,6 W/K przy gorącej wodzie,
+  20,3 W/K przy zimnej) — czyli to **nie są straty cieplne**, tylko ruch wody,
+- stały przepływ **4–9 l/h** tłumaczy wszystkie odcinki naraz,
+- detektor pobrań wymaga 0,5 °C / 5 min; przy 5–9 l/h daje to ~0,02 °C / 5 min,
+  czyli **20× pod progiem** — dlatego ekran pokazuje „Pobrania: brak" i to jest
+  poprawne działanie kodu przy złym założeniu o instalacji.
+
+### 17.4 Kalibracja z archiwum — sprawdzona, odrzucona
+
+Użytkownik zgodził się na wdrożenie samouczenia z archiwum. Zostało to
+**przetestowane przed wdrożeniem** i odrzucone: 4 metody uczenia na 11 nocach
+wypadły gorzej niż model fizyczny (2,28 / 2,10 / 2,89 / 1,95 °C vs 2,05 °C),
+a na teście „do końca dnia" persystencja przegrywa 2,00 vs 1,29 °C.
+Szczegóły: `MODEL_SOLARNY_TRZEMCHA_2026-10-23.md` §19.
+
+**Nic nie zmieniono w kodzie modelu.** To jest świadoma decyzja oparta na danych.
+
+### 17.5 Co zostało do zrobienia
+
+1. Wgrać 0.31.51 (aplikacja) i 3.56.8 (centrala) — paczki gotowe.
+2. **Znaleźć wyciek 4–9 l/h** — to jedyna rzecz, która realnie psuje nocny
+   bilans (noc 23/24.10 z UA 5,8 W/K to 36% całego błędu modelu).
+3. Telemetria: audyt 29 dni dał 0,50% brakujących próbek; czekać na pełną dobę
+   po 3.56.8, żeby sprawdzić `telemetry_gap_events`.

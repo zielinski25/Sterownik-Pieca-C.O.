@@ -288,3 +288,83 @@ Zalety: brak nowych czujników, brak wchodzenia na dach, liczy się samo.
 Wady: nowy kod, ryzyko, i trzeba go przetestować.
 
 **Nie wprowadzam tego bez Twojej zgody.**
+
+---
+
+## WERDYKT NA PROPOZYCJĘ „KALIBRACJA Z ARCHIWUM" (2026-10-29)
+
+Dostałem zgodę na wdrożenie tego pomysłu. **Najpierw go sprawdziłem — i pomysł
+nie działa.** Poniżej dowód, żeby nie było wątpliwości, że to nie „nie chciało
+mi się", tylko że dane mówią „nie".
+
+Skrypt: `kalibracja/porownanie.py`, wynik: `kalibracja/WYNIK-POROWNANIE.txt`,
+dane: log centrali 18–29.10, 11 nocy z pełnym pokryciem (19:00 → 06:00).
+
+### 1. Pięć metod, jeden komplet nocy, leave-one-out
+
+Każda metoda uczy się na 10 nocach i jest sprawdzana na tej jedenastej.
+
+| metoda | co robi | średni błąd |
+|---|---|---|
+| **A — model fizyczny (stan teraz, 0.31.51)** | równanie zbiornika + pętla | **2,05 °C** |
+| B — uczony współczynnik `k` | zastępuje model: `spadek = k · ΔT · t` | 2,89 °C |
+| C — persystencja | tempo z pierwszych 2 h nocy, przeskalowane ΔT | 1,95 °C |
+| D — model × mnożnik | mnożnik 0,5–2,0 uczony na pozostałych nocach | 2,28 °C |
+| E — model + stała poprawka | stała −1…+1 K uczona na pozostałych nocach | 2,10 °C |
+
+**Żadna forma uczenia nie bije modelu fizycznego.** Jedyna, która wyszła o 0,1 °C
+lepiej (C), przegrywa na teście praktycznym — patrz punkt 3.
+
+### 2. Dlaczego nie ma czego nauczyć
+
+Błąd modelu na 11 nocach: −1,4 · −1,1 · 0,0 · −1,4 · +0,9 · **+8,1** · +1,9 ·
++3,2 · +1,4 · +2,9 · +0,3.
+
+Korelacja błędu z tym, co da się zmierzyć:
+
+| z czym porównane | współczynnik korelacji |
+|---|---|
+| temperatura wody o 19:00 | +0,33 |
+| temperatura powietrza | −0,31 |
+| różnica woda − powietrze | +0,24 |
+
+Wszystkie trzy w granicach szumu. **Skoro błąd nie zależy od niczego mierzalnego,
+to nie ma z czego zrobić poprawki** — jedyne, co uczenie może zrobić, to
+wpisać na stałe średnią pomyłkę i psuć noce, które były dobre.
+
+### 3. Test praktyczny: „ile zostanie do 24:00" (66 przypadków)
+
+Sprawdzone o każdej pełnej godzinie 17:00–22:00, dla dni 18–28.10:
+
+| metoda | średni błąd |
+|---|---|
+| persystencja (tempo z ostatnich 2 h) | 2,00 °C |
+| model | **1,29 °C** |
+
+Persystencja przegrywa, bo o 17:00–18:00 **jeszcze grzeje słońce**. 26.10 o 17:00
+przewidywała spadek −12,6 °C, a woda straciła 2,6 °C. Model fizyczny wie o
+zachodzie słońca, persystencja nie.
+
+### 4. Cały średni błąd to jedna noc
+
+Mediana błędu bezwzględnego to **1,40 °C**. Po odjęciu nocy 23/24.10 średni błąd
+spada z 2,05 do **1,45 °C**. Ta jedna noc to **36% całego błędu**.
+
+Co tam się stało: zbiornik szedł 42,5 → 27,8 °C, równiutko, bez skoków, bez
+poboru, ~1,5 °C/h przy ΔT ≈ 30 K. To daje **UA_eff ≈ 5,8 W/K**, czyli 4× katalog.
+Na pozostałych nocach wychodzi 1,2–1,4 W/K, czyli dokładnie katalog.
+
+To wygląda na **stały dopływ zimnej wody z sieci** — przy 100 l i mieszaniu
+ubytek 1,5 °C/h odpowiada ok. **4,4 l/h**. Ta sama liczba, którą niezależnie dała
+analiza instalacji bezpośredniej („stały przepływ 4–9 l/h, dlatego detektor
+pobrań nic nie widzi"). Czyli: **kapie gdzieś kran albo zawór**, a nie „model
+jest zły".
+
+To jest jedyna rzecz z tego całego wątku, którą warto naprawić — ale to nie jest
+poprawka w kodzie. To trzeba znaleźć w instalacji.
+
+### 5. Decyzja
+
+**Nie wdrażam kalibracji z archiwum.** Model zostaje taki, jaki jest w 0.31.51.
+Powód nie jest filozoficzny: cztery niezależne sposoby uczenia na 11 nocach
+wypadły gorzej niż to, co już jest w aplikacji.
