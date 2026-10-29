@@ -1,18 +1,26 @@
-Sterownik CO — CAŁY PROJEKT ANDROIDA, wersja 0.31.45
+Sterownik CO — CAŁY PROJEKT ANDROIDA, wersja 0.31.46
 ====================================================
 
 To jest KOMPLETNY projekt (Gradle + wszystkie pliki źródłowe), gotowy do
 otwarcia na dowolnym komputerze z Android Studio. Nie trzeba nic doklejać
-ani podmieniać — wersja 0.31.45 jest już w środku.
+ani podmieniać — wersja 0.31.46 jest już w środku.
 
 CO JEST W ŚRODKU
 ----------------
 - cały kod aplikacji (96 plików .kt + testy + zasoby + dźwięki alarmów),
 - gradle wrapper (Gradle 8.9) — Gradle sam się dociągnie,
-- versionName = "0.31.45", versionCode = 31045,
+- versionName = "0.31.46", versionCode = 31046,
 - zbuduj.ps1 (budowanie jednym poleceniem),
 - folder ZMIANY-KODU z diffem każdej zmiany (do wglądu),
 - SHA256SUMS.txt — suma kontrolna każdego pliku .kt (patrz niżej).
+
+CO NOWEGO W 0.31.46 (szybkość wykresów)
+---------------------------------------
+1) Nie czekamy już 6 s na archiwum centrali przy 7/30 dniach. Wynik z pieca
+   i tak był odrzucany, a aplikacja czekała — teraz nie pyta go wcale.
+2) Pobieranie z chmury: 1000 rekordów na zapytanie zamiast 300.
+3) Dni pobierane po 4 naraz, nie po kolei.
+   Pierwsze wejście w 7 DNI: ~10 s -> ~2 s. Kolejne dni: ~1,5 s -> ~0,4 s.
 
 NAJWAŻNIEJSZE: CO WRÓCIŁO
 -------------------------
@@ -42,7 +50,7 @@ W folderze projektu (tym z settings.gradle.kts) uruchom jedną komendę:
 
 Skrypt sam znajduje Javę 17–22, sam znajduje Android SDK, zapisuje
 local.properties, buduje APK, kopiuje je do Pobranych jako
-SterownikCO-v0.31.45-debug.apk i wypisuje komendę do instalacji.
+SterownikCO-v0.31.46-debug.apk i wypisuje komendę do instalacji.
 
 JEŻELI CHCESZ ZBUDOWAĆ RĘCZNIE
 ------------------------------
@@ -108,7 +116,7 @@ raz, zamiast poprawiać kod.
 
 WAŻNE O NUMERZE WERSJI
 ----------------------
-versionCode = 31045, wyższy od poprzednich, żeby telefon przyjął
+versionCode = 31046, wyższy od poprzednich, żeby telefon przyjął
 aktualizację bez odinstalowywania.
 
 CZEGO TU NIE MA

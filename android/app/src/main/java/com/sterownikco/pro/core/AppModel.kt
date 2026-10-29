@@ -1059,8 +1059,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             val fromMs = nowMs - sec * 1000L
 
             // Archiwum centrali w domu — tylko 6h/24h i tylko w domowej sieci.
+            // [0.31.46] Dla 7/30 dni NIE pytamy wcale: wynik i tak byl odrzucany
+            // (warunek useEsp), a samo czekanie na nieodpowiadajacy piec kosztowalo
+            // do 6 s przy KAZDYM wejsciu w wykresy. To byla glowna przyczyna
+            // "dlugo sie laduje" mimo dzialajacej pamieci historii.
             val espIp = S.ip.trim()
-            val espTask = if (espIp.isNotEmpty()) async {
+            val espTask = if (espIp.isNotEmpty() && sec <= 24 * 3600) async {
                 try { Rtdb.fetchEspHistory(espIp) } catch (e: Exception) { null }
             } else null
 
@@ -1109,7 +1113,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
 
             // 4) Archiwum centrali (maks. 6 s — poza domem i tak nie odpowie).
             val esp = espTask?.let {
-                try { withTimeoutOrNull(6_000) { it.await() } } catch (e: Exception) { null }
+                try { withTimeoutOrNull(2_000) { it.await() } } catch (e: Exception) { null }
             }
             val useEsp = esp != null && sec <= 24 * 3600 && esp.isNotEmpty()
             val merged = combineCloudAndEsp(cloudPts, if (useEsp) esp!! else emptyList())

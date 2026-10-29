@@ -1,6 +1,9 @@
 package com.sterownikco.pro.core
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
@@ -381,7 +384,12 @@ object Rtdb {
     }
 
     // ── telemetria historyczna (szardy dzienne + paginacja po `ts`) ──────────
-    private const val HISTORY_PAGE_SIZE = 300
+    // [0.31.46] 300 -> 1000. Firebase RTDB spokojnie oddaje 1000 rekordow
+    // w jednej odpowiedzi, a to 3x mniej zapytan: 7 dni = 11 zamiast 34.
+    private const val HISTORY_PAGE_SIZE = 1000
+
+    /** Ile dni pobieramy naraz. 4 to kompromis: 7 dni = 2 fale, 30 dni = 8. */
+    private const val FETCH_PARALLEL_DAYS = 4
 
     /**
      * Po tym czasie ponawiamy paginację, nawet jeśli indeks `ts` kiedyś zawiódł.
@@ -711,18 +719,37 @@ object Rtdb {
     suspend fun fetchWindow(startSec: Long, endSec: Long): WindowResult {
         if (idToken.isEmpty()) return WindowResult(emptyList(), false)
         if (endSec <= startSec) return WindowResult(emptyList(), true)
-        val rows = ArrayList<TelemRow>()
-        var complete = true
+        // [0.31.46 ROWNOLEGLE] Dni pobieramy po FETCH_PARALLEL_DAYS naraz zamiast
+        // po kolei. Wczesniej 7 dni = 7 kolejnych dni, kazdy z wlasnymi zapytaniami
+        // — sumarycznie ~34 zapytania wykonywane JEDNO PO DRUGIM (~10 s).
+        // Teraz sa to 2 fale. Kolejnosc nie ma znaczenia, bo uniqueSort() i tak
+        // porzadkuje po czasie, a kazdy dzien trafia do wlasnego sharda.
+        val zadania = ArrayList<Pair<String, LongArray>>()
         for (day in dayRange(startSec, endSec)) {
             val dayStart = max(startSec, day[0] / 1000)
             val dayEnd = minOf(endSec, day[0] / 1000 + 86_400 - 1)
             if (dayEnd < dayStart) continue
-            val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
-            try {
-                rows.addAll(fetchShard(path, dayStart, dayEnd))
-            } catch (e: Exception) {
-                complete = false
-            }
+            zadania.add(Pair(shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt()),
+                             longArrayOf(dayStart, dayEnd)))
+        }
+        // null = ten dzien sie nie udal (blad sieci). Reszta zostaje, a kompletność
+        // jest falszywa — dzieki temu nie zapamietamy "tu pusto" dla brakujacego dnia.
+        val czesci: List<List<TelemRow>?> = coroutineScope {
+            zadania.chunked(FETCH_PARALLEL_DAYS).map { fala ->
+                fala.map { zadanie ->
+                    val path = zadanie.first
+                    val od = zadanie.second[0]
+                    val doT = zadanie.second[1]
+                    async {
+                        try { fetchShard(path, od, doT) } catch (e: Exception) { null }
+                    }
+                }.awaitAll()
+            }.flatten()
+        }
+        val rows = ArrayList<TelemRow>()
+        var complete = true
+        for (czesc in czesci) {
+            if (czesc == null) complete = false else rows.addAll(czesc)
         }
         val sorted = repairGaps(uniqueSort(rows))
         val pts = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
