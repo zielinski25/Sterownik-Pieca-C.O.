@@ -16,6 +16,18 @@ package com.sterownikco.pro.core
    oraz bilans zbiornika:
        C·dT/dt = Q − UA·(T−Ta)
 
+   [0.31.52] Zbiornik stoi NA DACHU (zestaw kompaktowy heat-pipe), więc nocą
+   jego strata ma dwa kanały — do powietrza i DO NIEBA:
+       C·dT/dt = Q − (tankUa + skyRadWk·(1−zachmurzenie)·noc)·(T−Ta)
+   Przy czystej nocy niebo jest o kilkadziesiąt stopni zimniejsze od powietrza
+   i zbiornik wypromieniowuje przez to znacznie więcej. Pominięcie tego członu
+   kosztowało 0,237 K/h błędu nocnego; z nim jest 0,097 K/h (59% mniej),
+   a na walidacji leave-one-out 0,113 K/h.
+
+   [0.31.52] Cykl wsteczny termosyfonu = 0. Instalacja jest kompaktowa
+   z rurami heat-pipe, a rurka cieplna jest diodą termiczną — ciepło nie płynie
+   w dół, a woda użytkowa nigdy nie krąży przez rury.
+
    G to GTI — nasłonecznienie W PŁASZCZYŹNIE KOLEKTORA, nie GHI.
    To jest cała różnica: przy pochmurnym dniu GTI jest mniejsze od GHI
    (×0,88), przy bezchmurnym prawie dwa razy większe (×1,83).
@@ -64,8 +76,38 @@ object SolarThermalModel {
         /** Współczynnik strat kwadratowych a₂ [W/(m²·K²)]. */
         val lossQuadratic: Double = 0.009,
 
-        /** Straty postojowe zbiornika UA [W/K]. Literatura: 1,07–1,46. */
+        /**
+         * Straty postojowe zbiornika przez ściankę [W/K]. Literatura: 1,07–1,46.
+         *
+         * [0.31.52] ZOSTAJE 1,4 — celowo. Ten współczynnik opisuje dzień
+         * i sprawdza się na nocach pochmurnych (zmierzone UA 1,20–1,53 W/K).
+         * Nocne straty przy czystym niebie dokłada osobny człon [skyRadWk];
+         * dzięki temu model dzienny jest dokładnie taki, jaki był sprawdzony
+         * na czterech dobach i NIE zmienia się.
+         */
         val tankUa: Double = 1.4,
+
+        /**
+         * [0.31.52] Dodatkowa strata zbiornika przy BEZCHMURNYM niebie [W/K].
+         *
+         * Zbiornik stoi na dachu (zestaw kompaktowy heat-pipe) i patrzy w niebo.
+         * Przy czystej nocy niebo ma temperaturę efektywną o kilkadziesiąt stopni
+         * niższą od powietrza — powierzchnia zbiornika wypromieniowuje wtedy
+         * znacznie więcej, niż wynikałoby to z różnicy do powietrza.
+         *
+         * Człon: `skyRadWk · (1 − zachmurzenie) · (T − Ta)`, liczony WYŁĄCZNIE
+         * wtedy, gdy kolektor nic nie daje (noc). W dzień słońce na powierzchni
+         * zbiornika równoważy to promieniowanie, a model dzienny jest już
+         * sprawdzony — nie ruszamy go.
+         *
+         * Dopasowane na 11 nocach 18–28.10.2026 przy niezmienionym tankUa = 1,4.
+         * Błąd tempa nocnego: 0,237 → 0,097 K/h (59% mniej), a na walidacji
+         * leave-one-out 0,237 → 0,113 K/h. Zmierzone 8,20 W/K odpowiada ok.
+         * 1,5 m² patrzących w niebo; zbiornik 100 l jako poziomy walec
+         * Ø 0,45 × 1,0 m ma 1,73 m².
+         * Patrz MODEL_SOLARNY_TRZEMCHA_2026-10-23.md §19.5a.
+         */
+        val skyRadWk: Double = 8.20,
 
         /** Pojemność zbiornika [l]. */
         val tankVolumeL: Double = 100.0,
@@ -78,18 +120,23 @@ object SolarThermalModel {
         val collectorTempOffsetC: Double = 0.0,
 
         /**
-         * [0.31.32] Przepływ WSTECZNY termosyfonu [kg/s] — nocą, gdy zbiornik jest
-         * cieplejszy od pętli kolektora. Woda spływa z dachu do zbiornika i z powrotem,
-         * zabierając ciepło na zewnątrz. Bez pompy, napędza to różnica gęstości.
+         * [0.31.32] Przepływ WSTECZNY termosyfonu [kg/s].
          *
-         * Literatura: OSTI biblio/116242 (Performance analysis of a thermosyphon
-         * SWH, Part 2) podaje ~0,005 kg/s i wzrost strat „nearly fourfold”.
-         * Kolektor heat-pipe ma ten przepływ MNIEJSZY niż płaski — kondensator rurki
-         * cieplnej jest osłonięty izolacją (Int. J. Low-Carbon Tech. 10(4) 2015,
-         * „Reverse flow in natural convection heat pipe solar water heater”).
-         * Dlatego 0,004, a nie 0,005.
+         * [0.31.52] USTAWIONE NA ZERO. Ten parametr opisywał mechanizm, którego
+         * w tej instalacji NIE MA. Zestaw jest kompaktowy z rurami próżniowymi
+         * heat-pipe: woda użytkowa siedzi wyłącznie w zbiorniku i nigdy nie
+         * krąży przez rury, a sama rurka cieplna jest **diodą termiczną** —
+         * czynnik paruje w rurze i skrapla się w zbiorniku, więc gdy rura jest
+         * zimniejsza od wody, parowania nie ma i ciepło NIE płynie w dół.
+         *
+         * Potwierdzone pomiarem: przy 0,004 model tracił na tym 0,02 °C/h,
+         * a podniesienie loopUaWk do 5,0 poprawiało noc, ale psuło dzień o 19%
+         * — bo dokładało straty pętli także w dzień, kiedy ich nie ma.
+         * Nocne straty zbiornika opisuje teraz człon [skyRadWk].
+         *
+         * Pole zostaje (nie usuwam API), ale domyślnie wyłączone.
          */
-        val reverseFlowKgS: Double = 0.004,
+        val reverseFlowKgS: Double = 0.0,
 
         /**
          * [0.31.32] Straty cieplne pętli kolektora do otoczenia [W/K]:
@@ -112,8 +159,21 @@ object SolarThermalModel {
         val azimuthDeg: Int = 0
     )
 
-    /** Jedna godzina prognozy: nasłonecznienie w płaszczyźnie kolektora i temperatura powietrza. */
-    data class Hour(val gtiWm2: Double, val airTempC: Double)
+    /**
+     * Jedna godzina prognozy.
+     *
+     * @param gtiWm2 nasłonecznienie w płaszczyźnie kolektora [W/m²]
+     * @param airTempC temperatura powietrza [°C]
+     * @param cloudPct zachmurzenie [%] 0–100. [0.31.52] Wejście członu „niebo".
+     *   Gdy brak danych — `NaN`, wtedy człon nieba jest pomijany (model działa
+     *   jak przed 0.31.52). Nie podstawiamy zera, bo zero znaczy „niebo czyste",
+     *   czyli NAJWIĘKSZĄ stratę.
+     */
+    data class Hour(
+        val gtiWm2: Double,
+        val airTempC: Double,
+        val cloudPct: Double = Double.NaN
+    )
 
     /** Wynik symulacji doby. Wszystkie temperatury w °C, energia w kWh. */
     data class Result(
@@ -172,6 +232,22 @@ object SolarThermalModel {
             val gti = if (hour.gtiWm2.isFinite()) maxOf(0.0, hour.gtiWm2) else 0.0
             val air = if (hour.airTempC.isFinite()) hour.airTempC else temp
 
+            // [0.31.52] Człon „niebo": przy czystym niebie zbiornik na dachu
+            // wypromieniowuje ciepło do nieba, którego temperatura jest dużo
+            // niższa od powietrza. Zachmurzenie 100% — człon znika.
+            // Brak danych (NaN) — człon wyłączony, model jak przed 0.31.52.
+            //
+            // Liczony TYLKO nocą: gdy kolektor daje choć trochę, słońce na
+            // powierzchni zbiornika równoważy to promieniowanie, a model dzienny
+            // jest już sprawdzony na czterech dobach. Przejście jest łagodne
+            // (0 W/m² → pełny człon, 50 W/m² → zero), żeby nie było skoku
+            // o wschodzie i zachodzie.
+            val skyWk = if (hour.cloudPct.isFinite()) {
+                val noc = (1.0 - gti / 50.0).coerceIn(0.0, 1.0)
+                params.skyRadWk * (1.0 - (hour.cloudPct.coerceIn(0.0, 100.0) / 100.0)) * noc
+            } else 0.0
+            val tankLossWk = params.tankUa + skyWk
+
             for (step in 0 until STEPS_PER_HOUR) {
                 // ── Węzeł 1: pętla kolektora ─────────────────────────────────
                 // Absorber widzi temperaturę WODY W PĘTLI, nie zbiornika. Pętla ma
@@ -191,13 +267,14 @@ object SolarThermalModel {
 
                 // ── Termosyfon: kierunek z różnicy temperatur ────────────────
                 // Dzień:  pętla cieplejsza  → przepływ w przód, duży strumień.
-                // Noc:    zbiornik cieplejszy → cyrkulacja WSTECZNA, mały strumień.
-                //         To ona wynosi ciepło ze zbiornika na dach.
+                // Noc:    zbiornik cieplejszy → przepływ wsteczny. [0.31.52]
+                //         W instalacji heat-pipe ten przepływ NIE ISTNIEJE
+                //         (rurka cieplna to dioda), więc reverseFlowKgS = 0.
                 val flow = if (loopTemp > temp) FORWARD_FLOW_KG_S else params.reverseFlowKgS
                 val qFlow = flow * C_WATER * (loopTemp - temp)
 
                 // ── Węzeł 2: zbiornik ────────────────────────────────────────
-                temp += (qFlow - params.tankUa * (temp - air)) * STEP_SECONDS / heatCapacity
+                temp += (qFlow - tankLossWk * (temp - air)) * STEP_SECONDS / heatCapacity
                 loopTemp -= qFlow * STEP_SECONDS / loopCapacity
 
                 val hourFraction = index + (step + 1).toDouble() / STEPS_PER_HOUR
@@ -265,7 +342,11 @@ object SolarThermalModel {
         hours.map { w ->
             Hour(
                 gtiWm2 = w.tiltedIrradiance ?: w.shortwaveRadiation ?: 0.0,
-                airTempC = w.temp
+                airTempC = w.temp,
+                // [0.31.52] Zachmurzenie jest już w prognozie godzinowej —
+                // bez tego wejścia model nocą widzi tylko temperaturę powietrza
+                // i grubo zaniża stratę przy czystym niebie.
+                cloudPct = w.cloud
             )
         }
 }

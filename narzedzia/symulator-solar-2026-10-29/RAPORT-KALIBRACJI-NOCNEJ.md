@@ -426,6 +426,18 @@ i zobaczy bzdurę.
 
 ### 6. Decyzja
 
-**Nie wdrażam kalibracji z archiwum.** Model zostaje taki, jaki jest w 0.31.51.
-Powód nie jest filozoficzny: cztery niezależne sposoby uczenia na 11 nocach
-wypadły gorzej niż to, co już jest w aplikacji.
+**Nie wdrażam kalibracji z archiwum.** Powód nie jest filozoficzny: cztery
+niezależne sposoby uczenia na 11 nocach wypadły gorzej niż model fizyczny.
+
+**Wdrażam natomiast człon fizyczny „niebo"** (19.5a w dokumencie modelu),
+w wersji **0.31.52**. To nie jest uczenie się z archiwum — to brakujący człon
+równania: zbiornik stoi na dachu i przy czystym niebie wypromieniowuje ciepło
+do nieba, którego temperatura jest dużo niższa od powietrza.
+
+Test na prawdziwym kodzie z paczki, 11 nocy:
+
+| | średni błąd o 06:00 |
+|---|---|
+| 0.31.51 | 2,07 °C |
+| 0.31.52 | **0,88 °C** |
+| poprawa | **58%** |

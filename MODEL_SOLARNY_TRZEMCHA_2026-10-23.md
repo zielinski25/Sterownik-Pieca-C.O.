@@ -927,25 +927,47 @@ gdzie fizycznie przykręcony jest czujnik od kanału `BUS_3`? Jeśli na zbiornik
 to znaczy, że etykieta „Panel solarny" w aplikacji jest myląca, a modelowi
 brakuje jednego wejścia.
 
-### 19.7 Decyzja
+### 19.7 Decyzja i wdrożenie — 0.31.52
 
-`MODEL_SOLARNY` **zostaje bez zmian w 0.31.51**. Wersja 0.31.51 zostaje wgrana.
+**Kalibracja z archiwum (opcja b) NIE wchodzi do kodu.** Cztery metody uczenia
+wypadły gorzej niż model fizyczny.
 
-**Kalibracja z archiwum nie wchodzi do kodu** — nie z powodu ostrożności, ale
-dlatego, że cztery niezależne sposoby uczenia (współczynnik, persystencja,
-mnożnik, stała poprawka) wypadły gorzej niż model fizyczny.
+**Człon „niebo" (19.5a) WCHODZI** — bo to nie uczenie, tylko brakująca fizyka.
+Wdrożone w **0.31.52**, zmienione dwa pliki:
 
-**Ale wątek nie jest zamknięty.** Z 19.5a wynika konkretna zmiana modelu
-(„patrzenie w niebo" przez zachmurzenie) z poprawą 55% i walidacją
-leave-one-out. To nie jest „uczenie się z archiwum" — to **brakujący człon
-fizyczny**, a różnica jest zasadnicza:
+| plik | zmiana |
+|---|---|
+| `core/SolarThermalModel.kt` | człon nieba, `reverseFlowKgS` 0,004 → 0,0, `Hour.cloudPct` |
+| `app/build.gradle.kts` | `versionCode` 31052, `versionName` „0.31.52" |
 
-| | uczenie z archiwum (odrzucone) | człon nieba (19.5a) |
-|---|---|---|
-| czego uczy | jednej stałej na całą instalację | dwóch własności fizycznych |
-| wynik | 4 metody gorsze od modelu | **55% lepiej niż model** |
-| walidacja | leave-one-out | leave-one-out, parametry stabilne |
-| nowe dane | żadne | żadne (zachmurzenie już jest w prognozie) |
+Szczegóły zmiany:
 
-Do wdrożenia potrzebna jest zgoda użytkownika — zmiana dotyka
-`SolarThermalModel.kt` i wymaga podbicia wersji.
+```
+C·dT/dt = Q − (tankUa + skyRadWk·(1−zachmurzenie)·noc)·(T−Ta)
+tankUa    = 1,4   W/K   (bez zmian — model dzienny nietknięty)
+skyRadWk  = 8,20  W/K   (nowe)
+noc       = 0 przy GTI 0, liniowo do 0 przy GTI 50 W/m²
+reverseFlowKgS = 0      (było 0,004)
+```
+
+**Test na prawdziwym kodzie z paczki**, 11 nocy 18–28.10, zachmurzenie
+z Open-Meteo, temperatura powietrza godzinowa z logu centrali:
+
+| | średni błąd temperatury o 06:00 |
+|---|---|
+| model z 0.31.51 | **2,07 °C** |
+| model z 0.31.52 | **0,88 °C** |
+| poprawa | **58%** |
+
+Gdy w prognozie nie ma zachmurzenia (`NaN`), model liczy dokładnie jak przed
+0.31.52 — sprawdzone.
+
+Model dzienny: przy pełnym zachmurzeniu bez zmian (±0,1 °C). Przy czystym niebie
+szczyt niższy o 0,4–3,3 °C, bo woda wchodzi w dzień chłodniejsza — to jest
+poprawka wieczornego i nocnego stygnięcia, a nie zmiana sprawności kolektora.
+
+Kontrola: plik kompiluje się (`K2JVMCompiler`, 0 błędów), a testy w
+`narzedzia/symulator-solar-2026-10-29/test-0.31.52/` uruchamiają **ten sam**
+`SolarThermalModel.kt`, który idzie do aplikacji.
+
+**Nie flashowane.** Paczka i polecenia — patrz `android-sync/v0.31.52-niebo/`.

@@ -264,6 +264,42 @@ Detektor myli **przemijający ruch wody wieczorem** (pętla oddaje ciepło po
 słonecznym dniu) z trwałą stratą. Zamienia bardzo dobrą prognozę w bardzo złą.
 Na 11 nocach średnia tego nie pokaże — ale trafisz na taki dzień i zobaczysz bzdurę.
 
+## 6a. Wdrożone — 0.31.52
+
+Zgoda jest, więc człon „niebo" wchodzi. Zmienione **dwa pliki**:
+
+| plik | co |
+|---|---|
+| `core/SolarThermalModel.kt` | człon nieba `skyRadWk = 8,20 W/K`; `reverseFlowKgS` 0,004 → **0,0**; `Hour` dostał `cloudPct`; `fromWeather` przekazuje zachmurzenie |
+| `app/build.gradle.kts` | `versionCode` 31052, `versionName` „0.31.52" |
+
+`tankUa` **zostaje 1,4 W/K** — model dzienny jest sprawdzony i nietknięty.
+Człon nieba liczy się tylko nocą (przy GTI 0 pełny, przy 50 W/m² zero), a przy
+braku danych o chmurach (`NaN`) model liczy dokładnie jak przed 0.31.52.
+
+### Test na prawdziwym kodzie — nie na makiecie
+
+Uruchomiłem **ten sam** `SolarThermalModel.kt`, który idzie do aplikacji.
+11 prawdziwych nocy 18–28.10, temperatura powietrza godzinowa z logu centrali,
+zachmurzenie z Open-Meteo:
+
+| | średni błąd temperatury o 06:00 |
+|---|---|
+| model 0.31.51 | **2,07 °C** |
+| model 0.31.52 | **0,88 °C** |
+| **poprawa** | **58%** |
+
+Największa pojedyncza poprawa: noc 23/24.10 — było 36,6 °C przy zmierzonych
+28,5 °C (błąd 8,1), jest 29,1 °C (błąd 0,6).
+
+### Co zobaczy się na ekranie
+
+- wieczorem karta „do końca dnia" pokaże **większy** spadek niż w 0.31.51 —
+  i to jest ta poprawka,
+- przy pełnym zachmurzeniu wynik zostaje bez zmian (±0,1 °C),
+- przy czystym niebie szczyt dzienny niżej o 0,4–3,3 °C, bo woda wchodzi
+  w dzień chłodniejsza.
+
 ## 6. Wniosek
 
 **Kalibracja z archiwum nie wchodzi do kodu.** Ale wyszło przy tym coś lepszego:
@@ -280,15 +316,10 @@ Różnica między jednym a drugim jest zasadnicza, więc żeby nie było nieporo
 | walidacja | leave-one-out | leave-one-out, parametry stabilne |
 | nowe dane | żadne | żadne |
 
-**Do wdrożenia potrzebna jest Twoja zgoda** — zmienia `SolarThermalModel.kt`
-i wymaga podbicia wersji. Nie ruszam bez pytania.
+**Wdrożone w 0.31.52** — patrz 6a.
 
-W tej samej zmianie wypada **wyłączyć cyrkulację wsteczną** (`reverseFlowKgS`
-i nocne straty pętli `loopUaWk`), bo — jak pokazało zdjęcie — w instalacji
-heat-pipe ten mechanizm nie istnieje. Czyli dwie zmiany w jednym pliku:
-
-1. dodać człon nieba do zbiornika (`a`, `b`),
-2. wyzerować nocny przepływ wsteczny pętli.
+W tej samej zmianie **wyłączona została cyrkulacja wsteczna** — jak pokazało
+zdjęcie, w instalacji heat-pipe ten mechanizm nie istnieje.
 
 Zastrzeżenie, które trzeba powiedzieć wprost: 11 nocy to jeden sezon, a
 zachmurzenie biorę z modelu Open-Meteo, nie z czujnika. Przed wgraniem warto
@@ -311,7 +342,8 @@ powtórzyć na 3–4 tygodniach archiwum — kod do tego jest gotowy
 |---|---|---|
 | firmware centrali | 3.56.7 | wgrane 29.10 |
 | firmware — czeka | 3.56.8 (średnia + detektor luki telemetrii) | paczka gotowa, **nie wgrana** |
-| aplikacja Android | 0.31.51 (karta DZIŚ po zachodzie) | paczka gotowa, **nie wgrana** |
+| aplikacja Android | **0.31.52** (człon „niebo") | paczka gotowa, **nie wgrana** |
+| aplikacja — poprzednia | 0.31.51 (karta DZIŚ po zachodzie) | wgrana |
 
 ## 9. Dowód do odtworzenia
 
@@ -320,6 +352,7 @@ Skrypt i wynik są w repozytorium, nie „w głowie":
 - `narzedzia/symulator-solar-2026-10-29/kalibracja/porownanie.py` (5 metod uczenia)
 - `narzedzia/symulator-solar-2026-10-29/kalibracja/ua_noc.py` (UA osobno dla każdej nocy)
 - `narzedzia/symulator-solar-2026-10-29/kalibracja/niebo.py` (człon „niebo", walidacja leave-one-out)
+- `narzedzia/symulator-solar-2026-10-29/test-0.31.52/` (test na PRAWDZIWYM kodzie z paczki)
 - `narzedzia/symulator-solar-2026-10-29/kalibracja/WYNIK-POROWNANIE.txt`
 - `narzedzia/symulator-solar-2026-10-29/RAPORT-KALIBRACJI-NOCNEJ.md` §„WERDYKT"
 - `MODEL_SOLARNY_TRZEMCHA_2026-10-23.md` §19

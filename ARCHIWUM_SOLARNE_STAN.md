@@ -835,7 +835,7 @@ Dwa ostrzeżenia `quadraticBezierTo` (`Weather.kt:649` i `:655`) — rysowanie
 |---|---|---|
 | firmware centrali | 3.56.7 (przywrócenie 3.56.5) | wgrane 29.10 |
 | firmware — czeka | 3.56.8 (średnia + detektor luki) | paczka gotowa, **nie wgrana** |
-| aplikacja Android | **0.31.51** | paczka gotowa, **nie wgrana** |
+| aplikacja Android | **0.31.52** (człon „niebo") | paczka gotowa, **nie wgrana** |
 | ESP (biblioteka) | 3.55.1 | bez zmian |
 
 Paczka 0.31.51: `android-sync/v0.31.51-karta-dzis/`, 5 plików, ZIP 45 277 B,
@@ -902,12 +902,12 @@ Szczegóły: `MODEL_SOLARNY_TRZEMCHA_2026-10-23.md` §19.
 ### 17.5 Co zostało do zrobienia
 
 1. Wgrać 0.31.51 (aplikacja) i 3.56.8 (centrala) — paczki gotowe.
-2. **Człon „niebo"** — efektywne UA zbiornika wychodzi 1,2–12,3 W/K (rozrzut 10×,
-   `kalibracja/ua_noc.py`) i **to jest wyjaśnione**: zbiornik stoi na dachu
-   i promieniuje do nieba. Korelacja z zachmurzeniem −0,53, z wiatrem 0,00.
-   Model z członem „niebo" (a = 0,65 W/K, b = 9,90 W/K) daje **55% mniejszy błąd
-   tempa** na walidacji leave-one-out (`kalibracja/niebo.py`).
-   Zachmurzenie już jest w prognozie (`cloud_cover`) — **czeka na zgodę
-   użytkownika**, bo zmienia `SolarThermalModel.kt` i podbija wersję.
+2. **Człon „niebo" — ZROBIONE w 0.31.52.** Efektywne UA zbiornika wychodzi
+   1,2–12,3 W/K (`kalibracja/ua_noc.py`) i **to jest wyjaśnione**: zbiornik
+   stoi na dachu i promieniuje do nieba (korelacja z zachmurzeniem −0,53,
+   z wiatrem 0,00). Model dostał człon `skyRadWk = 8,20 W/K` przy niezmienionym
+   `tankUa = 1,4`, a `reverseFlowKgS` wyzerowano — rura heat-pipe to dioda.
+   **Test na prawdziwym kodzie: 2,07 → 0,88 °C, poprawa 58%.**
+   Paczka: `android-sync/v0.31.52-niebo/`.
 3. Telemetria: audyt 29 dni dał 0,50% brakujących próbek; czekać na pełną dobę
    po 3.56.8, żeby sprawdzić `telemetry_gap_events`.
