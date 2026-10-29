@@ -45,6 +45,11 @@ class SolarAnalytics(private val prefs: Prefs) {
     // czyli w bieżącą godzinę wyssaną z palca. Materiał: mroźny poranek, gdy słońce
     // nie przebija strat ciepła. UI pyta o tę flagę, zamiast wierzyć `peakHour`.
     var forecastPeakReal by mutableStateOf(false)
+    /** [0.31.48] Zmiana temperatury od teraz do KOŃCA doby, ze znakiem.
+     *  `forecastGain` jest przycięte do zera, więc przy samym wychładzaniu
+     *  traciło minus. Tu jest surowy wynik modelu — potrzebny do sklejania
+     *  kolejnych dni w prognozie 7-dniowej. */
+    var forecastEndDeltaC by mutableDoubleStateOf(Double.NaN)
     var deltaT by mutableDoubleStateOf(Double.NaN)
     var drawCount by mutableIntStateOf(0)
     // [0.31.27] Liczby „na dziś”, liczone od lokalnej północy. Wcześniej karta DZIŚ
@@ -362,6 +367,7 @@ class SolarAnalytics(private val prefs: Prefs) {
         forecastPeakLabel = ""
         forecastEnergyKwh = Double.NaN
         forecastPeakReal = false
+        forecastEndDeltaC = Double.NaN
 
         val startT = archive.lastOrNull()?.tPanel
         if (startT == null || hourly.isEmpty()) return
@@ -382,6 +388,51 @@ class SolarAnalytics(private val prefs: Prefs) {
         // Karta pokazuje „+X °C”, więc przy wychładzaniu dajemy 0 — pełną wartość
         // (także ujemną) niesie peakC i deltaEndC w modelu.
         forecastGain = maxOf(0.0, res.deltaPeakC)
+        forecastEndDeltaC = res.deltaEndC
+    }
+
+    /**
+     * [0.31.48] Prognoza 7 dni modelem FIZYCZNYM, dzień po dniu.
+     *
+     *  Po co: do 0.31.47 karty liczyły wzór liniowy `4,43 × GTI − 5,57`
+     *  ze STAŁĄ dobową stratą 5,57 °C. Ten wzór nie zna temperatury wody ani
+     *  powietrza, więc w ciepły dzień zaniżał wynik o kilka °C i pokazywał minus
+     *  tam, gdzie woda realnie się grzała. Obok, w karcie „DO KOŃCA DNIA”, stał już
+     *  model fizyczny — i obie liczby przeczyły sobie na tym samym ekranie
+     *  (29.10.2026: −2,4 °C vs +2,5 °C, przy zmierzonym +0,5 °C).
+     *
+     *  Teraz jedno źródło: [SolarThermalModel] (MODEL_SOLARNY §14.3 i §18.5).
+     *  Dzień 0 = zmierzone do teraz + model na resztę doby, więc zgadza się z kartą
+     *  „DO KOŃCA DNIA” z definicji. Każdy następny dzień startuje z temperatury,
+     *  w jakiej skończył się poprzedni — tak jak symulacja ciągła z §18.5.
+     *
+     *  @param dayHours kolejne doby po 24 godziny (dzień 0 = dzisiejsza)
+     *  @return zmiany dobowe ZE ZNAKIEM; NaN, gdy model nie ma danych dla doby
+     */
+    fun dailyForecast7(dayHours: List<List<WHour>>): List<Double> {
+        if (dayHours.isEmpty() || !hasSamples) return emptyList()
+        val nowT = archive.lastOrNull()?.tPanel ?: return emptyList()
+        if (!nowT.isFinite()) return emptyList()
+
+        // Reszta dzisiejszej doby — ten sam wynik, który pokazuje karta
+        // „DO KOŃCA DNIA”. Gdy model nie znalazł szczytu (samo wychładzanie),
+        // bierzemy zmianę do końca doby, żeby minus nie zamienił się w zero.
+        val restOfDay = when {
+            forecastPeakReal && forecastGain.isFinite() -> forecastGain
+            forecastEndDeltaC.isFinite() -> forecastEndDeltaC
+            else -> 0.0
+        }
+
+        val out = ArrayList<Double>(dayHours.size)
+        out.add(todayGain + restOfDay)
+        var t = nowT + restOfDay
+        for (i in 1 until dayHours.size) {
+            val res = SolarThermalModel.simulate(t, SolarThermalModel.fromWeather(dayHours[i]))
+            if (res == null) { out.add(Double.NaN); continue }
+            out.add(res.deltaEndC)
+            t = res.endTempC
+        }
+        return out
     }
 
     /** Północ następnej doby — koniec horyzontu prognozy „na dziś". */

@@ -374,6 +374,11 @@ fun WeatherPage(m: AppModel) {
                         // CSS repeat(auto-fit, minmax(110px, 1fr)) with 6px gap.
                         val columns = ((maxWidth.value + 6f) / 116f).toInt().coerceAtLeast(1)
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // [0.31.48] Jedna prognoza dla wszystkich kart: model fizyczny,
+                            // dzień po dniu. Ten sam, który liczy kartę „DO KOŃCA DNIA”.
+                            val dayDeltas = sol.dailyForecast7(
+                                (0 until minOf(7, dailies.size)).map { i -> hours.drop(i * 24).take(24) }
+                            )
                             dailies.take(7).chunked(columns).forEach { row ->
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     row.forEach { d ->
@@ -382,7 +387,8 @@ fun WeatherPage(m: AppModel) {
                                             dayLabelSolar(idx, d.date),
                                             hours.drop(idx * 24).take(24),
                                             idx == 0,
-                                            Modifier.weight(1f)
+                                            Modifier.weight(1f),
+                                            dayDeltas.getOrNull(idx)
                                         )
                                     }
                                     repeat(columns - row.size) { Box(Modifier.weight(1f)) }
@@ -434,7 +440,7 @@ fun WeatherPage(m: AppModel) {
 /** Karta dnia prognozy solarnej — dokladny port petli z updateSunArcAndSolarMultiDay. */
 @Composable
 // [0.31.28] Bez parametru `m` — karta nie czyta już stanu aplikacji, tylko dostaje godziny.
-private fun SolarDayCard(dayLabel: String, dayHours: List<WHour>, today: Boolean, modifier: Modifier = Modifier) {
+private fun SolarDayCard(dayLabel: String, dayHours: List<WHour>, today: Boolean, modifier: Modifier = Modifier, deltaC: Double? = null) {
     val avgCloud = if (dayHours.isNotEmpty()) Math.round(dayHours.sumOf { it.cloud } / dayHours.size).toInt() else 30
     val peakFallback = Math.round(maxOf(150.0, (100 - avgCloud * .7) * 8.8)).toInt()
     // [0.31.30] Pik z GTI — płaszczyzny KOLEKTORA — a nie z GHI (płaszczyzna pozioma).
@@ -443,10 +449,16 @@ private fun SolarDayCard(dayLabel: String, dayHours: List<WHour>, today: Boolean
     val estRadPeak = (dayHours.mapNotNull { it.tiltedIrradiance }.maxOrNull()
         ?: dayHours.mapNotNull { it.shortwaveRadiation }.maxOrNull())?.roundToInt() ?: peakFallback
     // Jeden model dla wszystkich dni — ten sam, co w „PROGNOZIE ZYSKU”.
-    // [0.31.32] `dayDeltaC` zamiast `gainFromKwhM2` — wartość ZE ZNAKIEM.
-    // Poniżej progu równowagi (1,26 kWh/m²) woda się wychładza i karta ma to pokazać,
-    // a nie udawać „+0,0 °C” (= „bez zmian”).
-    val modelGain = Math.round(SolarAnalytics.dayDeltaC(SolarAnalytics.dayKwhM2(dayHours)) * 10) / 10.0
+    // [0.31.48] `deltaC` przychodzi z zewnątrz i jest wynikiem modelu FIZYCZNEGO
+    // (SolarThermalModel, ten sam co karta „DO KOŃCA DNIA”), liczonym dzień po dniu.
+    // Do 0.31.47 stał tu wzór liniowy `4,43 × GTI − 5,57`, który nie znał temperatury
+    // wody ani powietrza i dawał −2,4 °C tam, gdzie model dawał +2,5 °C.
+    // Wzór zostaje tylko jako zapas, gdy model nie ma danych dla tej doby.
+    // [0.31.32] Wartość ZE ZNAKIEM — poniżej progu równowagi woda się wychładza.
+    val modelGain = if (deltaC != null && deltaC.isFinite())
+        Math.round(deltaC * 10) / 10.0
+    else
+        Math.round(SolarAnalytics.dayDeltaC(SolarAnalytics.dayKwhM2(dayHours)) * 10) / 10.0
     // [0.31.28] Wszystkie karty tej sekcji to PROGNOZA — także DZIŚ. Zmierzony zysk
     // jest osobno w „BILANSIE SOLARNYM" jako „Zysk dziś · zmierzone".
     // Mieszanie pomiaru i prognozy w jednej siatce myliło, który dzień jest który.
@@ -474,6 +486,10 @@ fun SolarMultiDayForecast(m: AppModel) {
     val weather = m.weather
     val dailies = weather?.daily?.take(7).orEmpty()
     val hours = weather?.hourly.orEmpty()
+    // [0.31.48] Model fizyczny dzień po dniu — ten sam, co karta „DO KOŃCA DNIA”.
+    val dayDeltas = m.solar.dailyForecast7(
+        (0 until minOf(7, dailies.size)).map { i -> hours.drop(i * 24).take(24) }
+    )
     Column(
         Modifier.fillMaxWidth().padding(top = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -497,7 +513,8 @@ fun SolarMultiDayForecast(m: AppModel) {
                                     dayLabelSolar(index, day.date),
                                     hours.drop(index * 24).take(24),
                                     index == 0,
-                                    Modifier.weight(1f)
+                                    Modifier.weight(1f),
+                                    dayDeltas.getOrNull(index)
                                 )
                             }
                             repeat(columns - row.size) { Box(Modifier.weight(1f)) }
