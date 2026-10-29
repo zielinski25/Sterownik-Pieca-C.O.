@@ -356,3 +356,48 @@ ale to opis stanu **przed** v3.55.0, bo v3.55.0 wprowadziła kontrolę tożsamo�
 
 **Zasada na przyszłość:** nie zmieniać nic w spoolu, dopóki nie mamy dowodu z logu,
 że luka powstaje w spoolu.
+
+---
+
+## §13. ZAMKNIĘCIE ŚLEDZTWA „DLACZEGO PIEC SIĘ RESTARTUJE" (29.10, po 12:40)
+
+### 13.1 Ustalenie użytkownika
+Użytkownik potwierdził: **„Dzisiaj dwa albo trzy razy wgrywałem"** firmware.
+
+### 13.2 Dopasowanie do logu — pełna zgodność
+W logu `piec_log (29).txt` są DOKŁADNIE trzy starty z partycji w stanie
+`ESP_OTA_IMG_PENDING_VERIFY` (`zdarzenie=potwierdzenie_odroczone`):
+10:30:34, 11:30:01, 12:22:07. Każdy z nich to świeżo zapisany obraz firmware.
+
+| boot | start | koniec | czas | jak się skończył | zdrowie przed końcem |
+|---|---|---|---|---|---|
+| 3 (3.56.6) | 10:30:33 | 11:27:52 | 57 min | **wgranie nr 2** (użytkownik) | PING 11:20 i 11:25, heap 87 576→87 688, **0 błędów FB** |
+| 4 (3.56.6) | 11:30:00 | 12:03:00 | 33 min | **NADZOR nr=1** o 12:08:15 | od 11:59:34 lawina timeoutów FB |
+| 5 (3.56.6) | 12:08:15 | 12:20:40 | 12 min | **wgranie nr 3** (3.56.7) | PING 12:13 i 12:18, heap 87 964→87 492, **0 błędów FB** |
+| 6 (3.56.7) | 12:22:06 | — | działa | — | obraz potwierdzony 12:32:07 |
+
+### 13.3 Wniosek — sprostowanie Drugie
+**Nie ma dowodu, że v3.56.6 była wadliwa.** Dwa z trzech jej rozruchów były
+całkowicie zdrowe do ostatniej sekundy i zostały przerwane przez użytkownika,
+który wgrywał firmware. Jedyny prawdziwy restart (boot=4) to zadziałanie
+nadzoru po 300 s milczenia `tgTask`, a nie awaria oprogramowania jako takiego.
+
+### 13.4 Co pozostaje realnym problemem
+1. **NADZOR o 12:08:15.** `tgTask` milczał 300 s. Circuit breaker Firebase był
+   otwarty, `FB-CMD`/`FB-SEND` dostawały TIMEOUT 5–6 s. To zdarzyło się RAZ.
+   v3.56.5 miał 30 otwarć breakera w 4,5 dnia i nigdy nie osiągnął 300 s ciszy —
+   więc próg jest blisko i przy gorszej sieci może zadziałać ponownie.
+2. **Luki 10 próbek na wykresie.** Nierozwiązane. v3.56.7 = zachowanie v3.56.5,
+   więc luki będą wracać. Patrz §12.
+3. Literówka `vv3.56.7` w raporcie startowym (linia 34500:
+   `F(" • 📦 Wersja: <b>v")` + `FIRMWARE_VERSION` = `"v3.56.7"`). Kosmetyka,
+   obecna od dawna, do poprawy przy następnej paczce.
+
+### 13.5 Decyzja
+**Zostajemy na v3.56.7.** Powrót do v3.56.6 nie ma sensu: jego jedyna zmiana
+funkcjonalna (progi spoola + force-spill) nie mogła naprawić luk (§12), a OTA
+odrzuci downgrade — powrót wymagałby wydania v3.56.8. v3.56.7 jest
+funkcjonalnie v3.56.5, który chodził 4 dni 15 h bez restartu.
+
+**Zasada operacyjna: nie wgrywać firmware bez potrzeby.** Każde wgranie
+zeruje uptime i niszczy dowody z logu.
