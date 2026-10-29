@@ -36,9 +36,11 @@ fun sunLeft(hours: List<WHour>, fromTs: Long): Boolean {
 fun endOfDayStaraTekst(sol: SolarAnalytics, sunLeft: Boolean): String =
     if (sunLeft && sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—"
 
-/** LUSTRO Weather.kt / endOfDayGain — NOWA (0.31.50). */
+/** LUSTRO Weather.kt / endOfDayGain — NOWA (0.31.51). Po zachodzie pokazuje noc. */
 fun endOfDayNowaTekst(sol: SolarAnalytics, sunLeft: Boolean): String {
-    if (!sunLeft) return "—"
+    if (!sunLeft) {
+        return if (sol.forecastEndDeltaC.isFinite()) signedC(sol.forecastEndDeltaC) else "—"
+    }
     if (!sol.forecastPeakReal && sol.forecastEndDeltaC.isFinite())
         return signedC(sol.forecastEndDeltaC)
     if (!sol.forecastGain.isFinite()) return "—"

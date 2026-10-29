@@ -894,11 +894,17 @@ internal fun solarSunLeft(hours: List<WHour>, fromTs: Long): Boolean {
 
 /** Wartość karty „DO KOŃCA DNIA”. */
 private fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String {
-    if (!sunLeft) return "—"
-    // [0.31.50] Model przewiduje samo wychładzanie: `forecastGain` jest obcięte do zera,
-    // więc karta pokazywała „+0,0 °C", a karta DZIŚ obok dodawała ujemne `forecastEndDeltaC`
-    // i wychodziło np. −2,8 °C. Dwie sprzeczne liczby na jednym ekranie.
-    // Symulacja 29.10.2026: dotyczyło 12,6% dób. Pokazujemy realną zmianę, nie zero.
+    // [0.31.51] Karta DZIŚ w prognozie 7-dniowej liczy CAŁĄ dobę: zmierzone +
+    // reszta dnia + noc do północy (SolarAnalytics.dailyForecast7, wiersze 421-425).
+    // Ten kafelek musi pokazywać to samo, inaczej liczba na karcie DZIŚ jest
+    // nieodtwarzalna z ekranu. 29.10.2026 17:20: ZYSK DZIŚ +0,2, kafelek „—",
+    // karta DZIŚ −1,0 — nie dało się zgadnąć, skąd ta różnica.
+    // Po zachodzie pokazujemy więc nocne stygnięcie do północy.
+    if (!sunLeft) {
+        return if (sol.forecastEndDeltaC.isFinite()) signedC(sol.forecastEndDeltaC) else "—"
+    }
+    // Słońce jeszcze jest, ale model liczy samo wychładzanie: `forecastGain` jest
+    // obcięte do zera, więc karta pokazywałaby „+0,0 °C", a DZIŚ obok −2,8 °C.
     if (!sol.forecastPeakReal && sol.forecastEndDeltaC.isFinite())
         return signedC(sol.forecastEndDeltaC)
     if (!sol.forecastGain.isFinite()) return "—"
@@ -907,7 +913,10 @@ private fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String {
 
 /** Podpis karty: godzina szczytu i energia, które model liczył, ale nigdzie nie pokazywał. */
 private fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
-    !sunLeft -> "bez słońca do końca dnia"
+    // [0.31.51] Po zachodzie kafelek pokazuje nocne stygnięcie do północy —
+    // podpis musi to nazwać, inaczej liczba wygląda jak prognoza słońca.
+    !sunLeft -> if (sol.forecastEndDeltaC.isFinite()) "bez słońca · woda stygnie do północy"
+               else "bez słońca do końca dnia"
     // [0.31.38] Rozdzielone: brak próbki wody vs brak pogody.
     !sol.hasSamples -> "brak próbki wody z czujnika"
     !sol.forecastGain.isFinite() -> "brak prognozy"
