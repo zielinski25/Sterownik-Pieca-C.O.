@@ -292,3 +292,67 @@ Nie „spuść wodę z rur", a: **sprawdź, czy obwód wodny (manifold + rury) j
 opróżniany albo zabezpieczony przed mrozem.** Jeśli jest zawór spustowy — dobrze.
 Jeśli nie ma, to jedyne zabezpieczenie to ruch wody (nie zamarznie, gdy krąży),
 a w bezsłoneczny mróz krążenia nie ma.
+
+---
+
+## §12. SPROSTOWANIE (29.10, po wgraniu 3.56.7) — MOJA DIAGNOZA LUK BYŁA BŁĘDNA
+
+### 12.1 Co twierdziłem wcześniej
+Twierdziłem, że przy `TELEMETRY_BATCH_MAX_ATTEMPTS = 3` porzucona paczka 10 próbek
+**przepada**, bo `telemetryPendingAbandon("attempts_exhausted")` kasuje ją z pamięci.
+Na tym opierałem zmianę w v3.56.6 (progi 15→2 / 600→180 s + `g_spoolRuntimeForceSpill`).
+
+### 12.2 Jak jest naprawdę — cytat z kodu (v3.56.7, funkcja `telemetryPendingAbandon`, ~l. 40178)
+
+```cpp
+// [v3.55.0] Zwolnienie bufora serializacji BEZ ruszania kolejki. Wolno to
+// zrobic zawsze i tylko dlatego, ze probki NIGDY nie sa zdejmowane z ringu
+// przed potwierdzonym sukcesem — porzucenie kopii JSON nie gubi danych,
+// najwyzej opoznia wysylke do nastepnego cyklu.
+static void telemetryPendingAbandon(const char *why) {
+  if (!g_telemetryPendingValid) return;
+  g_telemetryPendingValid = false;
+  g_telemetryPendingCount = 0;
+  ...
+}
+```
+
+`telemetryPendingAbandon()` **nie dotyka ringu**. Zeruje tylko licznik i zwalnia bufor JSON.
+
+Jedyne miejsca, które zdejmują próbki z ringu (`commitPopN`), to:
+
+| linia | funkcja | warunek |
+|---|---|---|
+| 40224 | `telemetryFinalizeCompletedRequest()` | tylko po `ok == true` **i** zgodności `sampleSeq` ostatniej próbki |
+| 40640 | `spoolRuntimeMaybeSpill()` | dopiero po zapisaniu strony, reopen i weryfikacji CRC |
+| 36802 | `spoolGTest...` | tryb testowy |
+
+Wszystkie trzy są zabezpieczone. **Nie ma ścieżki, w której porzucenie paczki gubi próbki.**
+
+### 12.3 Wniosek dla v3.56.6
+Punkty 2 i 3 zmiany v3.56.6 (progi spoola) oraz `g_spoolRuntimeForceSpill` **nie mogły
+naprawić luk**, bo luki nie powstawały w tym miejscu. Zmiana była ryzykiem bez zysku.
+To dodatkowo uzasadnia cofnięcie do zachowania v3.56.5 (wydanie v3.56.7).
+
+### 12.4 Co nadal jest nieznane
+Nagłówek pliku (l. 137–144) dokumentuje realnie zaobserwowaną lukę 24.10
+10:03:05 → 10:14:05 = dokładnie 10 próbek, i 5 takich „równo 10,0 min" przerw
+w 28 dni. Komentarz przypisuje to temu, że „tail ringu przesunął się nad nimi" —
+ale to opis stanu **przed** v3.55.0, bo v3.55.0 wprowadziła kontrolę tożsamości.
+
+**Hipotezy do sprawdzenia (żadna niepotwierdzona):**
+1. Spóźnione ACK po timeoucie — `telemetryFinalizeCompletedRequest()` dostaje
+   `success = true` od **porzuconego** żądania, `commitPopN(10)` zdejmuje próbki,
+   których RTDB nigdy nie zapisał. Jedyna ścieżka, która pasuje do „dokładnie 10".
+2. Spill → strona na LittleFS bez udanego replay → próbki są lokalnie, nie ma ich
+   w chmurze. Wykluczone, jeśli `Pages created = 0`.
+3. Filtrowanie po stronie odbiorcy (`tPanel = 0.0`, odrzucone 376 próbek) — nie
+   daje przerw równych 10.
+
+### 12.5 Czego potrzeba, żeby rozstrzygnąć
+- `/spoolrt` **pełny** (`Samples spilled`, `Pages created`, `Ring N/1440`) — rozstrzyga hipotezę 2
+- eksport RTDB + `/hist_short.csv` za **ten sam** przedział — porównanie trzech źródeł
+- log z `DLOGF(DC_TELEMETRY, ...)` w oknie luki — `batch_ok` / `batch_fail` / `pending_abandon`
+
+**Zasada na przyszłość:** nie zmieniać nic w spoolu, dopóki nie mamy dowodu z logu,
+że luka powstaje w spoolu.
