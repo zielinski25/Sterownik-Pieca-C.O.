@@ -235,7 +235,7 @@ object ChartSeries {
         SeriesDef("bojler", "Bojler", "t_bojler", 1, 1, "°C", "temp", "#ffb04a", "255,176,74", true),
         SeriesDef("zewn", "Zewn.", "t_zewn", 0, 0, "°C", "temp", "#55d7ff", "85,215,255", true),
         SeriesDef("powrot", "Powrót", "t_powrot", 4, 4, "°C", "temp", "#a879ff", "168,121,255", false),
-        SeriesDef("panel", "Panel", "t_panel", 5, 5, "°C", "temp", "#ffd32a", "255,211,42", false),
+        SeriesDef("panel", "Zbiornik", "t_panel", 5, 5, "°C", "temp", "#ffd32a", "255,211,42", false),
         SeriesDef("pokoj", "Pokój", "t_pokoj", 6, 6, "°C", "temp", "#c084fc", "192,132,252", false),
         SeriesDef("trociny", "Trociny", "t_trociny", 7, 7, "°C", "temp", "#fb7185", "251,113,133", false),
         SeriesDef("wilgotnosc", "Wilgotność", "wilgotnosc", 8, 8, "%", "rh", "#00d4f5", "0,212,245", false),

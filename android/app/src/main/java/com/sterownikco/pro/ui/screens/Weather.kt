@@ -349,7 +349,7 @@ fun WeatherPage(m: AppModel) {
                         MCard(todayGainLabel(sol),
                             if (sol.todayHasData) signedC(sol.todayGain) else "—",
                             "", if (sol.todayHasData && sol.todayGain < -ZERO_EPS_C) Pal.Cyan else SolarY),
-                        MCard("🌡️ PANEL − POWIETRZE", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
+                        MCard("🌡️ ZBIORNIK − POWIETRZE", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
                             "", if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
                         MCard("🚰 POBRANIA DZIŚ", if (sol.todayDrawCount > 0) sol.todayDrawCount.toString() + " razy" else "—",
                             if (sol.todayDrawCount > 0) "−" + fmt1(sol.todayDrawDrop) + "°C" else "", Pal.Live),

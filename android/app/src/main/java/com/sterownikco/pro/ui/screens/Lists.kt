@@ -74,10 +74,10 @@ fun SettingsPage(m: AppModel) {
             "Włączone · wymuszenie ręczne · cykl pracy")
         MenuCard(m, "dym", "shield", Pal.Err, "Czujnik dymu",
             "Próg alarmu · aktywacja temperaturowa · symulacja ADC")
-        MenuCard(m, "ogrz", "thermo", Pal.Accent, "Przegrzanie kotła & panelu",
+        MenuCard(m, "ogrz", "thermo", Pal.Accent, "Przegrzanie kotła & zbiornika",
             "Wspólny próg bezpieczeństwa · histereza · symulacja")
         MenuCard(m, "czujniki", "outside", Slonce, "Czujniki instalacji (10 czujników)",
-            "Zewnętrzna, Bojler, Pokój, Piec, Panel, Powrót, Podajnik, Ciśnienie, Wilgotność, Dym")
+            "Zewnętrzna, Bojler, Pokój, Piec, Zbiornik, Powrót, Podajnik, Ciśnienie, Wilgotność, Dym")
         MenuCard(m, "czas", "clock", Pal.TextDim, "Data i czas zegara RTC",
             "Synchronizacja zegara sterownika z czasem telefonu")
         MenuCard(m, "bufor", "logs", Pal.Warn, "Bufor offline",

@@ -835,18 +835,21 @@ Dwa ostrzeżenia `quadraticBezierTo` (`Weather.kt:649` i `:655`) — rysowanie
 |---|---|---|
 | firmware centrali | 3.56.7 (przywrócenie 3.56.5) | wgrane 29.10 |
 | firmware — czeka | 3.56.8 (średnia + detektor luki) | paczka gotowa, **nie wgrana** |
-| aplikacja Android | **0.31.52** (człon „niebo") | paczka gotowa, **nie wgrana** |
+| aplikacja Android | **0.31.53** (człon „niebo" + nazwy „zbiornik") | paczka gotowa, **nie wgrana** |
 | ESP (biblioteka) | 3.55.1 | bez zmian |
 
-Paczka 0.31.51: `android-sync/v0.31.51-karta-dzis/`, 5 plików, ZIP 45 277 B,
-SHA-256 `42c6b86e9c5c4bc8bf0cca65f3960946dc739586061677bcb9f572417f5e7ddd`.
-Względem 0.31.50 zmienia się `build.gradle.kts`, `SolarAnalytics.kt`,
-`TileSpecs.kt`, `Weather.kt`, `ChartEngine.kt`.
+**Paczka bieżąca: 0.31.53** — `android-sync/v0.31.53-zbiornik/`, **13 plików**,
+ZIP 96 295 B, SHA-256 `d06b1634…4d81cd`. Zawiera **całą** 0.31.52 (model
+z niebem) i poprawki nazw — jedna paczka zastępuje dwie.
 
-Zmiana widoczna na ekranie: po zachodzie słońca karta **DZIŚ** przestaje
-dodawać zysk i pokazuje `signedC(forecastEndDeltaC)` — „woda stygnie do północy".
-Symulator: 24 340 sprawdzeń, 0 błędów; test zgodności tekstu karty
-**0/1000 dni niezgodnych** (w 0.31.50 było 539/1000 = 53,9%).
+Kolejność wersji: 0.31.51 (karta DZIŚ) → 0.31.52 (człon „niebo") → **0.31.53
+(nazwy „zbiornik")**. Kto wgrywa 0.31.53, nie potrzebuje dwóch poprzednich.
+
+0.31.51 sam (`android-sync/v0.31.51-karta-dzis/`, 5 plików, ZIP 45 277 B):
+po zachodzie słońca karta **DZIŚ** przestaje dodawać zysk i pokazuje
+`signedC(forecastEndDeltaC)` — „woda stygnie do północy". Symulator: 24 340
+sprawdzeń, 0 błędów; test zgodności tekstu karty **0/1000 dni niezgodnych**
+(w 0.31.50 było 539/1000 = 53,9%).
 
 ### 17.2 Model nocny — gdzie był błąd, a gdzie go nie było
 
@@ -917,7 +920,7 @@ W kodzie zmieniono coś innego i mniejszego: **człon fizyczny „niebo"**
 
 ### 17.5 Co zostało do zrobienia
 
-1. Wgrać 0.31.51 (aplikacja) i 3.56.8 (centrala) — paczki gotowe.
+1. Wgrać **0.31.53** (aplikacja — zastępuje 0.31.51 i 0.31.52) i 3.56.8 (centrala) — paczki gotowe.
 2. **Człon „niebo" — ZROBIONE w 0.31.52.** Efektywne UA zbiornika wychodzi
    1,2–12,3 W/K (`kalibracja/ua_noc.py`) i **to jest wyjaśnione**: zbiornik
    stoi na dachu i promieniuje do nieba (korelacja z zachmurzeniem −0,53,
@@ -927,3 +930,22 @@ W kodzie zmieniono coś innego i mniejszego: **człon fizyczny „niebo"**
    Paczka: `android-sync/v0.31.52-niebo/`.
 3. Telemetria: audyt 29 dni dał 0,50% brakujących próbek; czekać na pełną dobę
    po 3.56.8, żeby sprawdzić `telemetry_gap_events`.
+
+### 17.6 Nazwy: „zbiornik", nie „panel" (0.31.53)
+
+Czujnik `t_panel` mierzy **wodę w zbiorniku 100 l na dachu**, a aplikacja
+nazywała go „kolektorem glikolowym". Glikolu w instalacji **nie ma** (woda
+z wodociągu, układ bezpośredni), a drugiego obiegu też nie. Dowód z logu:
+maksimum w dziesięciu dniach to **47,2 °C** (rura próżniowa bez odbioru ciepła
+miałaby 80–100 °C) i **11 godzin** stygnięcia 42,5 → 27,8 °C w nocy 23/24.10.
+
+Poprawione napisy w 12 plikach; klucze w bazie (`panel`, `t_panel`) **bez
+zmian** — inaczej padłaby historia i wykresy. Szczegóły:
+`narzedzia/symulator-solar-2026-10-29/228-NAZWY-ZBIORNIKA.md`.
+
+Przy okazji znaleziony **błąd**: `Dashboard.kt` przy alarmie przegrzania panelu
+pokazywał temperaturę **bojlera pieca** (`t_bojler`) zamiast zbiornika.
+Poprawione — pokazuje `t_panel`.
+
+Paczka: `android-sync/v0.31.53-zbiornik/` (13 plików, ZIP 96 295 B,
+zawiera całą 0.31.52).

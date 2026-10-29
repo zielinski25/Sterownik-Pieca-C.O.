@@ -162,7 +162,7 @@ class PiecWidget : AppWidgetProvider() {
         private val SENSOR_OPTIONS = listOf(
             WidgetSensor("t_ogrz", "PIEC C.O.", "Temperatura obiegu grzewczego", "PIEC", 2, 10.0, 99.0),
             WidgetSensor("t_bojler", "BOJLER C.W.U.", "Temperatura zasobnika ciepłej wody", "BOJLER", 1, 10.0, 95.0),
-            WidgetSensor("t_panel", "PANEL SŁONECZNY", "Temperatura kolektora słonecznego", "PANEL", 5, 0.0, 140.0, accent = true),
+            WidgetSensor("t_panel", "ZB. SOLARNY", "Temperatura wody w zbiorniku słonecznym", "SOLAR", 5, 0.0, 100.0, accent = true),
             WidgetSensor("t_zewn", "ZEWNĘTRZNA", "Temperatura zewnętrzna", "ZEWN.", 0, -25.0, 45.0)
         )
 
@@ -400,7 +400,7 @@ internal object WidgetTemperatureColors {
                 t < 65.0 -> HOT
                 else -> HIGH
             }
-            // Kolektor słoneczny zwykle pracuje cieplej niż obieg grzewczy.
+            // Woda w zbiorniku solarnym 100 l na dachu — nie płytka kolektora.
             "t_panel" -> when {
                 t < 15.0 -> COLD
                 t < 35.0 -> COOL
