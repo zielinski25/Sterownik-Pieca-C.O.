@@ -333,14 +333,13 @@ fun ChartCanvas(
         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
         val pumpOnly = view.cat.isNotEmpty() && view.cat.all { it.group == "pump" }
-        // [v0.31.34 PUMP-BAND] W trybie mieszanym pompa zajmuje niski pasek przy dolnej
-        // krawedzi zamiast calej wysokosci. Szybkie przelaczanie 0/100 rysowalo pionowe
-        // "sciany" na cala wysokosc i zaslanialo temperatury.
-        val pumpBase = padTop + plotH - 1.5.dp.toPx()
-        val pumpBandH = 10.dp.toPx()
-        fun pumpY(v: Double): Float =
-            if (pumpOnly) padTop + plotH * (1 - (v / 100.0).toFloat())
-            else pumpBase - (v / 100.0).toFloat() * pumpBandH
+        // [0.31.54] Pompa wraca na CAŁĄ wysokość wykresu — tak było przed 0.31.34 i tak
+        // chce uzytkownik (29.10: "wczesniej bylo do samej gory, a teraz nisko takie
+        // pierdki"). Powód, dla którego 0.31.34 to zwęziło, został rozwiązany inaczej:
+        // w trybie mieszanym pompa jest teraz rysowana jako PÓŁPRZEZROCZYSTA KOLUMNA
+        // (patrz blok "KOLUMNY PRACY POMPY" niżej), a nie gruba kreska — więc nie
+        // zaslania temperatur, mimo ze siega do gornej krawedzi.
+        fun pumpY(v: Double): Float = padTop + plotH * (1 - (v / 100.0).toFloat())
 
         // FIX-BRAK-DANYCH: uczciwy komunikat jak w HTML (zamiast pustego boxa)
         val hasPts = view.values.values.any { vs -> vs.any { v -> v != null && v.isFinite() } }
@@ -425,6 +424,42 @@ fun ChartCanvas(
         // Teraz dzielimy os X na koszyki szerokosci jednego piksela i z kazdego
         // bierzemy MINIMUM i MAKSIMUM — czyli najwyzej 2 punkty na piksel.
         // Ksztalt, szczyty i dolki zostaja te same, a punktow jest ~10x mniej.
+        // [0.31.54 KOLUMNY PRACY POMPY] W trybie mieszanym (temperatury + pompa) praca
+        // pompy jest pelna, polprzezroczysta kolumna od dolu do gornej krawedzi — dokladnie
+        // tak, jak bylo przed 0.31.34. Kolumny ida POD seriami temperatur, wiec nic nie
+        // zaslaniaja, a jednoczesnie widac kazdy impuls, nawet 5-minutowy.
+        if (!pumpOnly) {
+            view.cat.filter { it.group == "pump" }.forEach { s ->
+                val vals = view.values[s.id] ?: return@forEach
+                val c = hexColor(s.accent)
+                val fillC = c.copy(alpha = .18f)
+                val edgeC = c.copy(alpha = .55f)
+                val yTop = padTop
+                val yBot = padTop + plotH
+                val minW = 2.dp.toPx()
+                val n = view.rows.size
+                var i = 0
+                while (i < n) {
+                    val v = vals.getOrNull(i)
+                    if (v == null || !v.isFinite() || v < 50.0) { i++; continue }
+                    var j = i
+                    while (j + 1 < n) {
+                        val nv = vals.getOrNull(j + 1)
+                        if (nv == null || !nv.isFinite() || nv < 50.0) break
+                        j++
+                    }
+                    val xa = timeAxis.xOf(view.rows[i].ts)
+                    val xb = max(timeAxis.xOf(view.rows[j].ts), xa + minW)
+                    clipRect(padLeft, yTop, w - padRight, yBot) {
+                        drawLine(fillC, Offset((xa + xb) / 2f, yTop), Offset((xa + xb) / 2f, yBot), (xb - xa))
+                        drawLine(edgeC, Offset(xa, yTop), Offset(xa, yBot), 1f.dp.toPx())
+                        drawLine(edgeC, Offset(xb, yTop), Offset(xb, yBot), 1f.dp.toPx())
+                    }
+                    i = j + 1
+                }
+            }
+        }
+
         val maxBuckets = max(200, plotW.toInt())
         // [0.31.49 SZYBKOSC] Jedna kreska, jedno pioro i jeden pedzel na cala klatke.
         // Wczesniej PathEffect i Stroke powstawaly wewnatrz rysowania kazdego
@@ -433,6 +468,9 @@ fun ChartCanvas(
         val strokeSolid = Stroke(width = 2.dp.toPx())
         val strokeDash = Stroke(width = 2.dp.toPx(), pathEffect = dashFx)
         view.cat.forEach { s ->
+            // [0.31.54] W trybie mieszanym pompe rysuja kolumny (wyzej) — linia pompy
+            // po calym wykresie byla wlasnie tym, co zaslanialo temperatury.
+            if (!pumpOnly && s.group == "pump") return@forEach
             val vals = view.values[s.id] ?: return@forEach
             // [0.31.47] Min/max dla trybu NORMALIZED liczone RAZ na serie, a nie dla
             // kazdej probki. Poprzednio vals.filterNotNull()+min()+max() stało
