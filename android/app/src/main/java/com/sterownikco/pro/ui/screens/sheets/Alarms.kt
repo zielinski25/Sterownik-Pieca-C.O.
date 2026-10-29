@@ -37,6 +37,7 @@ import com.sterownikco.pro.core.AlarmMuteSync
 import com.sterownikco.pro.core.AlarmMonitorHealthText
 import com.sterownikco.pro.core.AlarmMonitorPhase
 import com.sterownikco.pro.core.AlarmNotify
+import com.sterownikco.pro.core.AlarmSoundSync
 import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.core.Prefs
 import com.sterownikco.pro.service.AlarmMonitorService
@@ -70,6 +71,14 @@ fun AlarmSheet(m: AppModel) {
     val nowElapsedMs = SystemClock.elapsedRealtime()
     var soundKind by remember { mutableStateOf("dym") }
     val sound = AlarmCenter.sound(p, soundKind)
+    val soundTarget = AlarmSoundSync.targetFor(soundKind)
+    val controllerSound = when (soundTarget?.statusField) {
+        "alarm_sound_dym" -> m.S.alarm_sound_dym
+        "alarm_sound_ogrz" -> m.S.alarm_sound_ogrz
+        "alarm_sound_both" -> m.S.alarm_sound_both
+        else -> ""
+    }
+    val controllerSoundReported = soundTarget?.let { m.S.hasData(it.statusField) } == true
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // 1. Status — brak flag nie jest równoznaczny ze stanem bez alarmu.
@@ -169,9 +178,8 @@ fun AlarmSheet(m: AppModel) {
             AlarmNotify.SOUNDS.forEach { (id, label) ->
                 val selected = sound == id
                 Row(Modifier.fillMaxWidth().clickable {
-                    AlarmCenter.setSound(p, soundKind, id)
+                    m.selectAlarmSound(soundKind, id)
                     playTest(ctx, id)
-                    m.alarmUiTick++
                 }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (selected) "◉" else "○", fontSize = 15.sp,
                         color = if (selected) Pal.Cyan else Pal.TextDim)
@@ -179,10 +187,23 @@ fun AlarmSheet(m: AppModel) {
                     if (selected) Text("♪", fontSize = 11.sp, color = Pal.Cyan)
                 }
             }
-            Text("Każdy rodzaj alarmu zapamiętuje własny wybór. Dotknij dźwięku, aby go ustawić i odsłuchać.",
+            Text("Każdy rodzaj alarmu zapamiętuje własny wybór. Dotknięcie zapisuje go w telefonie, wysyła do centrali i odtwarza próbkę.",
                 fontSize = 11.sp, color = Pal.TextDim)
-            Text("Podczas aktywnego alarmu dźwięk jest zapętlony; zatrzyma go skasowanie alarmu, drzemka lub wyciszenie.",
+            Text(
+                if (controllerSoundReported) {
+                    val label = AlarmNotify.SOUNDS.firstOrNull { it.first == controllerSound }?.second ?: controllerSound
+                    "Ustawienie centrali: $label"
+                } else {
+                    "Centrala nie raportuje jeszcze wyboru dźwięku — synchronizacja wymaga firmware v3.50.0 lub nowszego."
+                },
+                fontSize = 11.sp, color = if (controllerSoundReported) Pal.Live else Pal.Warn
+            )
+            Text("W centrali bieżący brzęczyk odtwarza odpowiadający wzór tonów (nie plik WAV); zmiana działa także przy aktywnym alarmie.",
                 fontSize = 11.sp, color = Pal.TextDim)
+            Text(
+                "Podczas aktywnego alarmu dźwięk jest zapętlony; zatrzyma go skasowanie alarmu, drzemka lub wyciszenie.",
+                fontSize = 11.sp, color = Pal.TextDim
+            )
         }
 
         // 4. Drzemka / wyciszenie

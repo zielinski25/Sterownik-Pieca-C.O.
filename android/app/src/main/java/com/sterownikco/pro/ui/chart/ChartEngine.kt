@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.ChartSeries
 import com.sterownikco.pro.core.SeriesDef
 import com.sterownikco.pro.core.TelemPoint
+import com.sterownikco.pro.core.chartTimestampFraction
+import com.sterownikco.pro.core.nearestChartTimestampIndex
 import com.sterownikco.pro.ui.theme.Pal
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -34,6 +36,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /* ══════════════════════════════════════════════════════════════════════════
    SILNIK RYSOWANIA WYKRESU — port `updateChartCanvas()` (Piec.html 7289-7700).
@@ -281,9 +284,8 @@ fun ChartCanvas(
 ) {
     val measurer = rememberTextMeasurer()
     val famRes = androidx.compose.ui.platform.LocalFontFamilyResolver.current
-    // Gesty czytaja SWIEZY view bez restartu detektora: kluczem sa tylko pady
-    // (zoom/offset przebudowuja view co klatke — pointerInput(view) rwalo by gest).
-    val viewState = rememberUpdatedState(view)
+    // Gesty używają świeżych czasów próbek bez restartu detektora.
+    val rowTimestampsState = rememberUpdatedState(view.rows.map { it.ts })
     val inspectorActiveState = rememberUpdatedState(crossIdx != null)
     val onCrossState = rememberUpdatedState(onCross)
     val onPanState = rememberUpdatedState(onPan)
@@ -322,6 +324,10 @@ fun ChartCanvas(
         val padTop = 16.dp.toPx(); val padBottom = 24.dp.toPx()
         val plotW = (w - padLeft - padRight).coerceAtLeast(0f)
         val plotH = (h - padTop - padBottom).coerceAtLeast(0f)
+        val xDomainStartMs = view.rows.firstOrNull()?.ts ?: 0L
+        val xDomainEndMs = view.rows.lastOrNull()?.ts?.takeIf { it > xDomainStartMs } ?: (xDomainStartMs + 1L)
+        fun xForTimestamp(timestampMs: Long): Float =
+            padLeft + chartTimestampFraction(timestampMs, xDomainStartMs, xDomainEndMs) * plotW
         val axis = TextStyle(fontSize = 8.5.sp, color = Pal.AxisText)
         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
@@ -631,6 +637,17 @@ internal fun chartSampleIndexAtX(x: Float, padLeft: Float, plotWidth: Float, sam
     if (sampleCount < 2 || !plotWidth.isFinite() || plotWidth <= 0f) return null
     val fraction = ((x - padLeft) / plotWidth).coerceIn(0f, 1f)
     return (fraction * (sampleCount - 1)).roundToInt()
+}
+
+/** Resolve a touch against elapsed time, so scrubbing follows the plotted timestamps. */
+internal fun chartSampleIndexAtX(x: Float, padLeft: Float, plotWidth: Float, sortedTimestamps: List<Long>): Int? {
+    if (sortedTimestamps.size < 2 || !plotWidth.isFinite() || plotWidth <= 0f) return null
+    val fraction = ((x - padLeft) / plotWidth).coerceIn(0f, 1f)
+    val startMs = sortedTimestamps.first()
+    val endMs = sortedTimestamps.last()
+    val spanMs = (endMs - startMs).coerceAtLeast(1L)
+    val targetMs = startMs + (spanMs.toDouble() * fraction).roundToLong()
+    return nearestChartTimestampIndex(sortedTimestamps, targetMs)
 }
 
 private class SegPoint(val x: Float, val y: Float, val v: Double, val ts: Long, val idx: Int, val simulated: Boolean)

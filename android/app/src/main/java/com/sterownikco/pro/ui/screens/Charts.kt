@@ -127,7 +127,7 @@ fun ChartsPage(m: AppModel) {
         verticalArrangement = Arrangement.spacedBy(Dimens.gap)
     ) {
         PageHead("WYKRESY TELEMETRII", "historia pomiarów · temperatury · serwa · pompa",
-            action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec) }) })
+            action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec, force = true) }) })
 
         // [0.31.42] Na prosbe uzytkownika (zrzut 02:54) zdjete z nad wykresu:
         //   - pasek statusu "Załadowano 9944 próbek z RTDB ... · odcinki

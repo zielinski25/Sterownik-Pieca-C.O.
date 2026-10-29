@@ -38,6 +38,7 @@ import com.sterownikco.pro.ui.components.Sheet
 import com.sterownikco.pro.ui.icons.AppIcon
 import com.sterownikco.pro.ui.screens.sheets.AlarmSheet
 import com.sterownikco.pro.ui.screens.sheets.CzasSheet
+import com.sterownikco.pro.ui.screens.sheets.OfflineBufferSheet
 import com.sterownikco.pro.ui.screens.sheets.DashboardWidgetsSheet
 import com.sterownikco.pro.ui.screens.sheets.DymSheet
 import com.sterownikco.pro.ui.screens.sheets.LogsSheet
@@ -90,6 +91,7 @@ fun SheetHost(m: AppModel) {
             "logi" -> { title = "Logi sterownika"; icon = "logs" }
             "ota" -> { title = "Aktualizacja firmware (OTA & GitHub)"; icon = "upload" }
             "sesja" -> { title = "Sesja operatora & Firebase"; icon = "session" }
+            "bufor" -> { title = "Bufor offline"; icon = "logs" }
             "alarmy" -> { title = "Alarmy dymu i przegrzania"; icon = "warn" }
             "widgets" -> { title = "Kafelki aplikacji"; icon = "dashboard" }
             "chartSeries" -> { title = "Wybór serii wykresu"; icon = "chart" }
@@ -121,6 +123,7 @@ fun SheetHost(m: AppModel) {
             id == "logi" -> LogsSheet(m)
             id == "ota" -> OtaSheet(m)
             id == "sesja" -> SessionSheet(m)
+            id == "bufor" -> OfflineBufferSheet(m)
             id == "alarmy" -> AlarmSheet(m)
             id == "widgets" -> DashboardWidgetsSheet(m)
             id == "chartSeries" -> ChartSeriesSheet(m)

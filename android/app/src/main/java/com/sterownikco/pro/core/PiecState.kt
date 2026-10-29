@@ -37,6 +37,9 @@ class PiecState {
     var alarm_dym_wyciszenie_ms = 0L
     var alarm_ogrz_wyciszony = false
     var alarm_ogrz_wyciszenie_ms = 0L
+    var alarm_sound_dym = ""
+    var alarm_sound_ogrz = ""
+    var alarm_sound_both = ""
 
     // ── urządzenia ──────────────────────────────────────────────────────────
     var pompa = false
@@ -51,6 +54,12 @@ class PiecState {
     var trybSerwa = 0
     var klapa = 0
     var syberka = 0
+    // [0.31.22] Bufor offline — pola z /piec/status (firmware v3.54.0+).
+    // spoolRt = 1 wlaczony / 0 wylaczony; reszta to liczniki od startu centrali.
+    var spoolRt = 0
+    var spoolPages = 0
+    var spoolSpill = 0
+    var spoolReplay = 0
     var wybor = 0
     var pompa_override_min = 0
     var mieszadlo_override_min = 0
@@ -206,6 +215,7 @@ class PiecState {
         alarm_ogrzewanie = false; alarm_panel = false
         alarm_dym_wyciszony = false; alarm_dym_wyciszenie_ms = 0L
         alarm_ogrz_wyciszony = false; alarm_ogrz_wyciszenie_ms = 0L
+        alarm_sound_dym = ""; alarm_sound_ogrz = ""; alarm_sound_both = ""
         pompa = false; mieszadlo = false; rozpalanie = false
         rozpalanie_potwierdzone = false; rozpalanie_pozostalo_s = 0
         rozpalanie_serwa_aktywne = false; rozpalanie_serwa_dostepne = false
@@ -253,6 +263,17 @@ class PiecState {
             val value = if (d.has(key) && !d.isNull(key)) d.opt(key) as? String else null
             if (value.isNullOrBlank()) receivedFields.remove(key)
             else { receivedFields.add(key); assign(value.trim()) }
+        }
+
+        fun soundId(key: String, assign: (String) -> Unit) {
+            val value = if (d.has(key) && !d.isNull(key)) d.opt(key) as? String else null
+            val normalized = value?.trim()?.lowercase()
+            if (normalized.isNullOrBlank() || normalized !in AlarmSoundSync.SOUND_IDS) {
+                receivedFields.remove(key)
+            } else {
+                receivedFields.add(key)
+                assign(normalized)
+            }
         }
 
         fun intField(key: String, min: Int, max: Int, assign: (Int) -> Unit) {
@@ -308,6 +329,9 @@ class PiecState {
             flag("tel_pending") { tel_pending = it }
         }
         longField("alarm_ogrz_wyciszenie_ms", -1L, 3_600_000L) { alarm_ogrz_wyciszenie_ms = it }
+        soundId("alarm_sound_dym") { alarm_sound_dym = it }
+        soundId("alarm_sound_ogrz") { alarm_sound_ogrz = it }
+        soundId("alarm_sound_both") { alarm_sound_both = it }
         flag("pompa") { pompa = it }
         flag("mieszadlo") { mieszadlo = it }
         flag("rozpalanie") { rozpalanie = it }
@@ -330,6 +354,10 @@ class PiecState {
 
         intField("klapa", 0, 180) { klapa = it }
         intField("syberka", 0, 90) { syberka = it }
+        intField("spool_rt", 0, 1) { spoolRt = it }
+        intField("spool_pages", 0, 9_999_999) { spoolPages = it }
+        intField("spool_spill", 0, 9_999_999) { spoolSpill = it }
+        intField("spool_replay", 0, 9_999_999) { spoolReplay = it }
         intField("wybor", 1, 3) { wybor = it }
         intField("pompa_override_min", 0, 1440) { pompa_override_min = it }
         intField("mieszadlo_override_min", 0, 1440) { mieszadlo_override_min = it }

@@ -31,7 +31,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
-import com.sterownikco.pro.ui.components.CheckRow
+import com.sterownikco.pro.core.ServoPositionAxis
+import com.sterownikco.pro.core.ServoPositionPreview
+import com.sterownikco.pro.ui.components.CheckRowEcho
 import com.sterownikco.pro.ui.components.ManualRow
 import com.sterownikco.pro.ui.components.Note
 import com.sterownikco.pro.ui.components.NumRow
@@ -237,7 +239,7 @@ fun PompaSheet(m: AppModel) {
         m.commitNum("Temp STOP (OFF)", "tempOff", 0, 100, v)
     }
     SectionHeader("Zabezpieczenie Antystop")
-    CheckRow("Włączony antystop", null, S.antystopWlaczony, known = S.hasData("antystopWlaczony")) { v ->
+    CheckRowEcho("Włączony antystop", null, S.antystopWlaczony, known = S.hasData("antystopWlaczony")) { v ->
         m.commitBool("Antystop", "antystopWlaczony", v)
     }
     NumRow("Dni bez ruchu", "Wymuszony puls 45s po X dniach bezczynności", S.antystopDni, 1, 45, known = S.hasData("antystopDni")) { v ->
@@ -273,11 +275,16 @@ private fun RowScope.ServoPositionMetric(
     name: String,
     angleDegrees: Int?,
     percent: Int?,
+    preview: ServoPositionPreview?,
     live: Boolean,
     accent: Color
 ) {
-    val hasValue = angleDegrees != null && percent != null
+    val shownDegrees = preview?.targetDegrees ?: angleDegrees
+    val shownPercent = preview?.requestedPercent ?: percent
+    val pending = preview != null
+    val hasValue = shownDegrees != null && shownPercent != null
     val valueColor = when {
+        pending -> Pal.Warn
         !hasValue -> Pal.TextDim
         live -> accent
         else -> Pal.Warn
@@ -285,36 +292,37 @@ private fun RowScope.ServoPositionMetric(
     Column(
         Modifier.weight(1f)
             .background(Pal.Surface2, RoundedCornerShape(11.dp))
-            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(11.dp))
+            .border(BorderStroke(1.dp, if (pending) Pal.Warn.copy(alpha = .55f) else Pal.Border), RoundedCornerShape(11.dp))
             .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(name, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Pal.TextDim)
+        Text(name, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = if (pending) Pal.Warn else Pal.TextDim)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                angleDegrees?.let { "$it°" } ?: "—",
-                fontSize = 16.sp,
+                shownPercent?.let { "$it%" } ?: "—",
+                fontSize = 18.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = valueColor,
+                color = if (hasValue) valueColor else Pal.TextDim,
                 maxLines = 1
             )
-            Text(
-                percent?.let { "$it%" } ?: "brak odczytu",
-                fontSize = 8.5.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (hasValue) valueColor else Pal.TextDim,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(bottom = 2.dp)
-            )
+            shownDegrees?.let {
+                Text(
+                    "$it°",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Pal.TextDim,
+                    maxLines = 1,
+                    modifier = Modifier.padding(bottom = 3.dp)
+                )
+            }
         }
         Box(
             Modifier.fillMaxWidth().height(4.dp)
                 .background(Pal.rgba(255, 255, 255, .08f), RoundedCornerShape(4.dp))
         ) {
-            if (percent != null) {
+            if (shownPercent != null) {
                 Box(
-                    Modifier.fillMaxWidth(percent.coerceIn(0, 100) / 100f).fillMaxHeight()
+                    Modifier.fillMaxWidth(shownPercent.coerceIn(0, 100) / 100f).fillMaxHeight()
                         .background(valueColor, RoundedCornerShape(4.dp))
                 )
             }
@@ -329,14 +337,19 @@ private fun ServoPositionSummary(m: AppModel) {
     val damperAngle = s.syberka.takeIf { s.hasData("syberka") && it in 0..90 }
     val flapPercent = flapAngle?.let { Math.round(it * 100.0 / 180.0).toInt() }
     val damperPercent = damperAngle?.let { Math.round(it * 100.0 / 90.0).toInt() }
-    val hasPosition = flapAngle != null || damperAngle != null
+    val flapPreview = m.servoPositionPreview(ServoPositionAxis.KLAPA)
+    val damperPreview = m.servoPositionPreview(ServoPositionAxis.SYBEREK)
+    val hasPending = flapPreview != null || damperPreview != null
+    val hasPosition = flapAngle != null || damperAngle != null || hasPending
     val live = m.isFbFresh && s.online
     val stateColor = when {
+        hasPending -> Pal.Warn
         !hasPosition -> Pal.TextDim
         live -> Pal.Live
         else -> Pal.Warn
     }
     val stateLabel = when {
+        hasPending -> "OCZEKUJE NA STATUS"
         !hasPosition -> "BRAK ODCZYTU"
         live -> "NA ŻYWO"
         else -> "OSTATNI ODCZYT"
@@ -350,7 +363,7 @@ private fun ServoPositionSummary(m: AppModel) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("BIEŻĄCA POZYCJA", style = Txt.sect, modifier = Modifier.weight(1f))
+            Text(if (hasPending) "OCZEKUJĄCY CEL" else "BIEŻĄCA POZYCJA", style = Txt.sect, modifier = Modifier.weight(1f))
             Box(
                 Modifier.background(stateColor.copy(alpha = .12f), RoundedCornerShape(999.dp))
                     .border(BorderStroke(1.dp, stateColor.copy(alpha = .38f)), RoundedCornerShape(999.dp))
@@ -360,8 +373,8 @@ private fun ServoPositionSummary(m: AppModel) {
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ServoPositionMetric("KLAPA", flapAngle, flapPercent, live, Pal.Cyan)
-            ServoPositionMetric("SYBEREK", damperAngle, damperPercent, live, Pal.Live)
+            ServoPositionMetric("KLAPA", flapAngle, flapPercent, flapPreview, live, Pal.Cyan)
+            ServoPositionMetric("SYBEREK", damperAngle, damperPercent, damperPreview, live, Pal.Live)
         }
     }
 }
@@ -371,7 +384,9 @@ private fun ServoPositionSummary(m: AppModel) {
 fun SerwoSheet(m: AppModel) {
     val S = m.S
     val modePresentation = m.servoModePresentation()
-    val servoMode = modePresentation.mode
+    val positionPending = m.servoPositionPreview(ServoPositionAxis.KLAPA) != null ||
+        m.servoPositionPreview(ServoPositionAxis.SYBEREK) != null
+    val servoMode = if (positionPending) 2 else modePresentation.mode
     val modeKnown = servoMode != null
     Note("Tryb pracy klapy i syberka")
     ServoPositionSummary(m)
@@ -386,17 +401,23 @@ fun SerwoSheet(m: AppModel) {
         Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x14FFFFFF)))
             Text("Ręczna pozycja", style = Txt.rowLabel)
-            if (S.hasData("klapa") && S.klapa in 0..180) {
+            val flapPreview = m.servoPositionPreview(ServoPositionAxis.KLAPA)
+            if ((S.hasData("klapa") && S.klapa in 0..180) || flapPreview != null) {
                 SliderRow(
-                    name = "Klapa", value = Math.round(S.klapa / 1.8).toFloat(), min = 0f, max = 100f, step = 1f,
+                    name = "Klapa",
+                    value = flapPreview?.requestedPercent?.toFloat() ?: Math.round(S.klapa / 1.8).toFloat(),
+                    min = 0f, max = 100f, step = 1f,
                     fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("klapa ${v.toInt()}") }
                 )
             } else {
                 Note("Pozycja klapy: brak prawidłowego odczytu z centrali.")
             }
-            if (S.hasData("syberka") && S.syberka in 0..90) {
+            val syberkaPreview = m.servoPositionPreview(ServoPositionAxis.SYBEREK)
+            if ((S.hasData("syberka") && S.syberka in 0..90) || syberkaPreview != null) {
                 SliderRow(
-                    name = "Syberek", value = Math.round(S.syberka / 0.9).toFloat(), min = 0f, max = 100f, step = 1f,
+                    name = "Syberek",
+                    value = syberkaPreview?.requestedPercent?.toFloat() ?: Math.round(S.syberka / 0.9).toFloat(),
+                    min = 0f, max = 100f, step = 1f,
                     fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("syberek ${v.toInt()}") }
                 )
             } else {
@@ -449,7 +470,7 @@ fun MieszadloSheet(m: AppModel) {
         else -> "BRAK ODCZYTU"
     }
 
-    CheckRow(
+    CheckRowEcho(
         "Automatyka włączona",
         "Zezwolenie na cykliczną pracę mieszadła",
         S.mieszadloWlaczony,

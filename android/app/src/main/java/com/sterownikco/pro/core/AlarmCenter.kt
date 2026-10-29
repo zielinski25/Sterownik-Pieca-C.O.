@@ -40,10 +40,7 @@ object AlarmCenter {
     /** Ponowne zgłoszenie powiadomienia; właściwy dźwięk alarmu gra w pętli w AlarmMonitorService. */
     const val REPEAT_MS = 30L * 60_000
 
-    private val soundIds = setOf(
-        "syrena", "dzwonek", "pikanie", "dwutonowy", "impulsowy", "narastajacy", "niski_puls",
-        "syrena_falujaca", "syrena_ratunkowa", "klakson_pulsacyjny", "gong_ostrzegawczy", "system"
-    )
+    private val soundIds = AlarmSoundSync.SOUND_IDS
 
     fun isMonitored(p: AlarmPrefsStore): Boolean = p.get(K_MONITOR) != "0"
     fun setMonitored(p: AlarmPrefsStore, on: Boolean) = p.set(K_MONITOR, if (on) "1" else "0")

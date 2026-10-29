@@ -233,7 +233,13 @@ private fun HStat(lbl: String, value: String, color: Color, modifier: Modifier =
 
 /** `.qcard` — szybka karta 3-kolumnowa. */
 @Composable
-fun RowScope.QCard(title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit) {
+fun RowScope.QCard(
+    title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit,
+    /** [0.31.25] Krótka etykieta obok tytułu (np. tryb pracy serwa). Renderowana
+     *  jako kolorowa pigułka — innym stylem niż tytuł i wartość. Pusta = brak. */
+    tag: String = "",
+    tagColor: Color = Pal.Cyan
+) {
     val bd = when (state) {
         "ok" -> Pal.rgba(74, 222, 128, .45f); "warn" -> Pal.rgba(251, 191, 36, .5f)
         "err" -> Pal.rgba(255, 95, 120, .55f); else -> Pal.Border
@@ -247,6 +253,17 @@ fun RowScope.QCard(title: String, icon: String, value: String, sub: String, stat
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = Txt.quickTitle, modifier = Modifier.weight(1f), maxLines = 1)
+            if (tag.isNotEmpty()) {
+                Text(
+                    tag,
+                    style = Txt.badge,
+                    color = tagColor,
+                    maxLines = 1,
+                    modifier = Modifier.padding(end = 5.dp)
+                        .background(tagColor.copy(alpha = 0.14f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                )
+            }
             AppIcon(icon, size = 15.dp, tint = Pal.Cyan)
         }
         Text(value, style = Txt.quickVal, color = vc, maxLines = 1, overflow = TextOverflow.Ellipsis)

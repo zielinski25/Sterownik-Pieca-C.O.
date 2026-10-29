@@ -34,7 +34,9 @@ data class TelemPoint(
     /** Świeży snapshot statusu sterownika; nie może zostać odrzucony jako anomalia końcowa. */
     val isLive: Boolean = false,
     /** Stan pompy z bitu 0 `state`; null oznacza brak wiarygodnego pola stanu. */
-    val pumpOn: Boolean? = null
+    val pumpOn: Boolean? = null,
+    /** Id rekordu RTDB, używane do deduplikacji nakładających się odczytów archiwum. */
+    val sourceId: String = ""
 ) {
     fun hasValues(): Boolean = pumpOn != null || listOf(
         t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot, t_panel, t_pokoj, t_trociny,
@@ -47,6 +49,23 @@ data class TelemPoint(
         return channel in 0..62 && (sim and (1L shl channel)) != 0L
     }
 }
+
+/**
+ * Wynik pobrania historii: punkty wykresu oraz diagnostyka ruchu sieciowego.
+ *
+ * `daysFromCache` — dni wzięte z pamięci bez sieci, `daysDownloaded` — dni
+ * pobrane lub dociągnięte przyrostowo, `daysStale` — dni, których nie udało
+ * się odświeżyć (pokazane z pamięci), `daysFailed` — dni bez żadnych danych.
+ */
+data class HistoryFetch(
+    val points: List<TelemPoint> = emptyList(),
+    val daysRequested: Int = 0,
+    val daysFromCache: Int = 0,
+    val daysDownloaded: Int = 0,
+    val daysStale: Int = 0,
+    val daysFailed: Int = 0,
+    val firstError: String? = null
+)
 
 /**
  * Chronological merge for the chart's archived telemetry and live status feed.
@@ -140,6 +159,11 @@ private val SIM_BOUNDS_BY_CHANNEL = mapOf(
     8 to (0.0 to 100.0), 9 to (970.0 to 1040.0), 10 to (0.0 to 4095.0)
 )
 
+/**
+ * Mapowanie wykonywane po ewentualnej korekcie `TelemRow` w RTDB readerze.
+ * `TelemPoint` celowo nie przenosi session/mono, dlatego rozpoznawanie sesji
+ * musi zakończyć się przed tym etapem.
+ */
 fun TelemRow.toPoint(): TelemPoint {
     fun isSimulatedChannel(channel: Int): Boolean =
         channel in 0..62 && (sim and (1L shl channel)) != 0L
@@ -161,7 +185,7 @@ fun TelemRow.toPoint(): TelemPoint {
 
     fun getServoVal(deg: Long, maxDeg: Double, channel: Int): Double? {
         if (simulated || deg < 0L || deg.toDouble() > maxDeg) return null
-        return (deg / maxDeg * 100).roundToInt().toDouble()
+        return deg.toDouble() / maxDeg * 100.0
     }
 
     return TelemPoint(
@@ -180,7 +204,8 @@ fun TelemRow.toPoint(): TelemPoint {
         klapa = getServoVal(k, 180.0, 11),
         syberka = getServoVal(s, 90.0, 12),
         sim = sim, simulated = simulated,
-        pumpOn = if (stateKnown) (state and PUMP_ON_STATE_BIT) != 0L else null
+        pumpOn = if (stateKnown) (state and PUMP_ON_STATE_BIT) != 0L else null,
+        sourceId = id
     )
 }
 
