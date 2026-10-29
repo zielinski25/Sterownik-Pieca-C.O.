@@ -531,6 +531,7 @@ object Rtdb {
         return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
     }
 
+    /**
      * [v0.31.34 GAP-REPAIR] Po pobraniu całego zakresu sprawdza, czy nie została
      * przerwa dłuższa niż 3 minuty, i dopyta dokładnie ten przedział.
      *

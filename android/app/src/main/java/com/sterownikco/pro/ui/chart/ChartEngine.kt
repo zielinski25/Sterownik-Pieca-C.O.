@@ -286,6 +286,7 @@ fun ChartCanvas(
     val famRes = androidx.compose.ui.platform.LocalFontFamilyResolver.current
     // Gesty używają świeżych czasów próbek bez restartu detektora.
     val rowTimestampsState = rememberUpdatedState(view.rows.map { it.ts })
+    val viewState = rememberUpdatedState(view)
     val inspectorActiveState = rememberUpdatedState(crossIdx != null)
     val onCrossState = rememberUpdatedState(onCross)
     val onPanState = rememberUpdatedState(onPan)
