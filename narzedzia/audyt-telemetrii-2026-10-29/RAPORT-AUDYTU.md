@@ -145,6 +145,60 @@ jako osobna zmiana.
 
 ---
 
+## CZĘŚĆ IV — Kontrola samego detektora (przed wgraniem 3.56.8)
+
+Detektor mierzy coś, czego wcześniej nikt nie mierzył. Zanim uznamy jego liczby
+za prawdę, trzeba wykluczyć, że sam produkuje fałszywe alarmy. Sprawdzone trzy
+miejsca, w których mógłby kłamać.
+
+### IV.1 Granica restartu — BRAK fałszywego alarmu (dowód z kodu)
+
+`g_telemetryLastCloudSeq` to `static volatile uint32_t = 0` (linia 6229) i po
+restarcie nie jest odtwarzane z NVS. Pierwsza udana paczka ustawia je na swoją
+ostatnią próbkę (linia 40317), a porównanie z kolejką następuje **dopiero po
+tym ustawieniu**. Kolejka (`TelemetryRing`) też jest w RAM, więc po starcie
+jest pusta — `peek()` zwraca `false` i warunek w linii 40326 nie ma czego
+porównywać.
+
+`g_telemetrySampleSeq` również startuje od 0 (linia 20898), ale numeracja i tak
+nie koliduje między bootami, bo klucz w chmurze to `BOOTID-0000SEQ`.
+
+Wniosek: pierwsza paczka po każdym restarcie jest **bazą odniesienia**, nie
+kandydatem na lukę. Detektor nie może zgłosić przerwy na starcie.
+
+### IV.2 Zrzut do spoola — detektor tego NIE widzi (ograniczenie, nie błąd)
+
+`spoolRuntimeMaybeSpill()` zdejmuje próbki z kolejki przez `commitPopN(count)`
+(linia 40740), ale **nie aktualizuje** `g_telemetryLastCloudSeq`. To znaczy, że
+po zrzucie następna normalna paczka zaczyna się od wyższego `seq` i ustawia
+bazę na swoim tailu — przerwy więc nie zgłosi.
+
+Skutek: jeżeli próbki poszły do spoola i **nigdy** nie wrócą do chmury, detektor
+milczy. To jest realna luka pomiarowa. Nie ma jej jak usunąć bez przebudowy
+księgowania, a przebudowa księgowania to dokładnie to P2, które świadomie
+odłożyliśmy. Zapamiętane, nie naprawiane.
+
+Warunek, żeby to w ogóle wystąpiło: `spool_rt = 1` w `/api/status`. Przy
+wyłączonym buforze offline ta ścieżka nie działa.
+
+### IV.3 Zapis do NVS przy każdym zaniku pompy — do obserwacji
+
+P1 zapisuje `srOstPompa` przy każdej zmianie stanu pompy (linia 32236), a
+`Preferences::putUInt` kończy się realnym zapisem do flasha. To nie jest
+problem przy kilku cyklach na godzinę, ale przy pompie taktującej co minutę
+byłby to niepotrzebny zużyty sektor.
+
+Do sprawdzenia po dobie: `srOstPompa` ma się zmieniać **rzadko** (kilka razy
+na dobę), nie co kilka minut. Jeśli będzie inaczej — dopiszemy próg czasowy
+(zapis nie częściej niż raz na 10 min).
+
+### IV.4 Oczekiwany wynik pierwszego startu po wgraniu
+
+Klucz `srOstPompa` powstaje w NVS dopiero **przy pierwszym zaniku pompy po
+wgraniu**. Na tym jednym starcie go jeszcze nie ma, więc dziura w `Ogrz. śr.`
+wystąpi ostatni raz. Od następnego restartu — znika.
+
+
 ## PLIKI
 
 - `audyt.py` — skrypt audytu (uruchamiany na eksporcie RTDB)
