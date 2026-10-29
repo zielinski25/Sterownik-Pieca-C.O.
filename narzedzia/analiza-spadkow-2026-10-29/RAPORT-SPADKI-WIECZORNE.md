@@ -251,23 +251,44 @@ Gdy nie wystarczy — zostaje tylko przewodzenie przez ścianki.
 W układzie **pośrednim** (glikol + wężownica) ten mechanizm jest odcięty od wody użytkowej.
 Dlatego literatura (Michaelides, OSTI) daje różne wyniki — badano różne układy.
 
-### 11.3 Nowe pytanie: ile wody jest w rurach
+### 11.3 ROZSTRZYGNIĘTE: rury heat-pipe (wersja B), zbiornik 100 l bez zmian
 
-W układzie bezpośrednim woda jest **także w rurach kolektora**. To zmienia pojemność cieplną:
+Użytkownik potwierdził 2026-10-29: **„Na 100% to jest ta wersja B"** — rury heat-pipe:
+sucha rura szklana, w środku miedziany pręt z oczkiem wchodzącym w górną belkę.
 
-| wariant | pojemność | przelicznik |
-|---|---|---|
-| tylko zbiornik 100 l (założenie MD) | 100 l | 0,1163 kWh/K |
-| 100 l + 10 rur 58/1800 wypełnionych wodą | ~131 l | ~0,152 kWh/K |
-| heat-pipe (rury puste, tylko pręt miedziany) | 100 l | 0,1163 kWh/K |
+Skutki:
 
-Rura 58 mm zewn./47 mm wewn., dł. 1,8 m → π·0,0235²·1,8 = 3,1 l każda → **~31 l na 10 rur**.
+| pozycja | wniosek |
+|---|---|
+| pojemność cieplna | **100 l, 0,1163 kWh/K — BEZ ZMIAN** |
+| woda w rurach | **nie ma** — w rurach krąży czynnik w zamkniętym pręcie |
+| wariant „131 l / 0,152 kWh/K" | **odpada** |
 
-**To trzeba potwierdzić okiem, nie z danych** — patrz pytanie do użytkownika.
-Błąd w tę stronę zaniża energię o ~30%.
+To potwierdza też aperturę z MD §5.1: 10 rur 58/1800 daje aperturę ~0,95 m²,
+a kod aplikacji liczy `apertureOptical = 0,678` (0,95 × η₀ 0,714) — zgadza się.
 
-### 11.4 Ryzyko, którego nikt nie zapisał
+### 11.4 SPROSTOWANIE: nie ma ryzyka zamarznięcia rur
 
-W układzie bezpośrednim woda w rurach **zamarza zimą i rozsadza rury**. Dokument
-`MODEL_SOLARNY_TRZEMCHA` §13 wspomina „tryb zimowy — kolektor jest opróżniony",
-ale nie ma tego w żadnej procedurze obsługi.
+**Poprzednia wersja tego raportu (i moja odpowiedź) twierdziła, że woda w rurach
+zamarznie zimą i rozsadzi rury. To było BŁĘDNE dla tej instalacji.**
+
+Rura heat-pipe jest **sucha** — zawiera zamknięty miedziany pręt z niewielką ilością
+czynnika, nie wodę użytkową. Woda jest tylko w zbiorniku, manifoldzie i rurach
+zasilanie/powrót. Zamarznięcie grozi więc **wyłącznie obwodowi wodnemu**
+(manifold + rury), a nie szklanym rurom.
+
+Dodatkowo rury heat-pipe mają **właściwość diody cieplnej**: ciepło płynie tylko
+od absorbera do manifolda, nigdy w drugą stronę (Alwaer & Gryzagoridis). To ogranicza
+nocne straty przez same rury — ale **nie zatrzymuje obiegu wstecznego wody
+w manifoldzie i rurach**, i to on odpowiada za straty zmierzone w §5–6.
+
+Literatura potwierdza: Ong 2015 — „nocturnal reverse flow in heat pipe collectors
+is LESS than that occurring in flat plate ones because the condenser section
+of the former is well insulated".
+
+### 11.5 Co zostaje do zrobienia zimą
+
+Nie „spuść wodę z rur", a: **sprawdź, czy obwód wodny (manifold + rury) jest
+opróżniany albo zabezpieczony przed mrozem.** Jeśli jest zawór spustowy — dobrze.
+Jeśli nie ma, to jedyne zabezpieczenie to ruch wody (nie zamarznie, gdy krąży),
+a w bezsłoneczny mróz krążenia nie ma.
