@@ -84,6 +84,30 @@ Przy 100 l ubytek 1,5 °C/h odpowiada **stałemu dopływowi ok. 4,4 l/h**
 zimnej wody z sieci. To ta sama liczba, którą niezależnie dała analiza
 instalacji bezpośredniej: **stały przepływ 4–9 l/h**.
 
+
+## 5a. Wariant „z detektorem" — też sprawdzony, też odpada
+
+Naturalna myśl: nie ucz się globalnie, tylko **wykrywaj nietypową stratę**.
+Jedź na modelu, a gdy zmierzone tempo stygnięcia jest wyraźnie większe od
+modelowego — przełącz się na zmierzone. To by złapało noc 23/24.10.
+
+Sprawdzone dla prognozy o 21:00, 22:00 i 23:00 (do 06:00), próg 1,8×:
+
+| okno | model | model + detektor |
+|---|---|---|
+| 21:00 | 1,63 °C | 1,62 °C |
+| 22:00 | **1,29 °C** | 1,74 °C |
+| 23:00 | 1,20 °C | 1,10 °C |
+
+Średnia raz lepsza, raz gorsza — ale nie o średnią tu chodzi:
+
+- 22:00, noc 20/21.10: model **0,45 °C** → z detektorem **4,23 °C**
+- 21:00, noc 27/28.10: model **0,98 °C** → z detektorem **4,61 °C**
+
+Detektor myli **przemijający ruch wody wieczorem** (pętla oddaje ciepło po
+słonecznym dniu) z trwałą stratą. Zamienia bardzo dobrą prognozę w bardzo złą.
+Na 11 nocach średnia tego nie pokaże — ale trafisz na taki dzień i zobaczysz bzdurę.
+
 ## 6. Wniosek — i jedna rzecz do naprawy
 
 **Kalibracja z archiwum nie wchodzi do kodu.** Model zostaje taki, jaki jest

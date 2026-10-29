@@ -363,7 +363,35 @@ jest zły".
 To jest jedyna rzecz z tego całego wątku, którą warto naprawić — ale to nie jest
 poprawka w kodzie. To trzeba znaleźć w instalacji.
 
-### 5. Decyzja
+### 5. Wariant „z detektorem" — też sprawdzony, też odpada
+
+Pomyślałem, że skoro uczenie globalne nie działa, to może działa **detektor
+nietypowej straty**: jedź na modelu, ale gdy zmierzone tempo stygnięcia jest
+wyraźnie większe od modelowego, przełącz się na zmierzone. To by złapało
+właśnie taką noc jak 23/24.10.
+
+Sprawdzone dla prognozy robionej o 21:00, 22:00 i 23:00 (do 06:00), próg 1,8×:
+
+| okno | model | model + detektor | ile razy zadziałał |
+|---|---|---|---|
+| 21:00 | 1,63 °C | 1,62 °C | 7/11 |
+| 22:00 | **1,29 °C** | 1,74 °C | 8/11 |
+| 23:00 | 1,20 °C | 1,10 °C | 7/11 |
+
+Średnia raz lepsza, raz gorsza — ale to nie jest prawdziwy problem. Problem
+jest w ogonie:
+
+- 22:00, noc 20/21.10: model **0,45 °C** → z detektorem **4,23 °C**
+- 21:00, noc 27/28.10: model **0,98 °C** → z detektorem **4,61 °C**
+
+Detektor myli **przemijający ruch wody wieczorem** (pętla oddaje ciepło po
+słonecznym dniu) z trwałą stratą. Efekt: zamienia bardzo dobrą prognozę w bardzo
+złą. Na 11 nocach średnia tego nie pokaże, ale użytkownik trafi na taki dzień
+i zobaczy bzdurę.
+
+**Przycisk „przełącz na zmierzone" jest loterią. Nie wchodzi do kodu.**
+
+### 6. Decyzja
 
 **Nie wdrażam kalibracji z archiwum.** Model zostaje taki, jaki jest w 0.31.51.
 Powód nie jest filozoficzny: cztery niezależne sposoby uczenia na 11 nocach
