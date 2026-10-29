@@ -69,7 +69,7 @@ Wszystko w granicach szumu. **Skoro błąd nie zależy od niczego mierzalnego,
 nie ma z czego zrobić poprawki.** Uczenie w takiej sytuacji robi jedną rzecz:
 wpisuje na stałe średnią pomyłkę i psuje noce, które wcześniej wychodziły dobrze.
 
-## 5. Cały błąd siedzi w jednej nocy
+## 5. Cały błąd siedzi w jednej nocy — ale nie tylko ona odstaje
 
 - mediana błędu: **1,40 °C**
 - bez nocy 23/24.10: średnia spada z 2,05 do **1,45 °C**
@@ -77,15 +77,57 @@ wpisuje na stałe średnią pomyłkę i psuje noce, które wcześniej wychodził
 
 Co się tam stało: zbiornik szedł 42,5 → 27,8 °C, równiutko, bez skoków,
 bez wykrytego poboru, ~1,5 °C/h przy różnicy do powietrza ok. 30 K.
-To daje **UA_eff ≈ 5,8 W/K**, czyli 4× katalog. Na pozostałych nocach
-wychodzi 1,2–1,4 W/K, czyli dokładnie katalog.
+To daje **UA_eff ≈ 6,1 W/K**, czyli 4,4× katalog.
 
-Przy 100 l ubytek 1,5 °C/h odpowiada **stałemu dopływowi ok. 4,4 l/h**
-zimnej wody z sieci. To ta sama liczba, którą niezależnie dała analiza
-instalacji bezpośredniej: **stały przepływ 4–9 l/h**.
+### 5a. Pomyłka, którą sam zrobiłem — i którą trzeba wycofać
+
+Napisałem najpierw, że ten ubytek odpowiada stałemu dopływowi 4,4 l/h, czyli
+że **gdzieś cieknie kran**. Powiedziałeś: „nic nie kapie". Sprawdziłem to
+jeszcze raz, inaczej — licząc UA osobno dla każdej nocy regresją, a nie
+z dwóch punktów:
+
+| noc | UA_eff [W/K] | × katalog |
+|---|---|---|
+| 18/19.10 | 1,33 | 0,95 |
+| 19/20.10 | 1,20 | 0,86 |
+| 20/21.10 | 1,53 | 1,09 |
+| 21/22.10 | 1,38 | 0,99 |
+| 22/23.10 | 2,88 | 2,06 |
+| 23/24.10 | 6,14 | 4,38 |
+| 24/25.10 | 4,63 | 3,31 |
+| 25/26.10 | 12,27 | 8,77 |
+| 26/27.10 | 4,88 | 3,48 |
+| 27/28.10 | 7,19 | 5,13 |
+| 28/29.10 | 3,52 | 2,51 |
+
+**Miałem złe założenie.** Zakładałem, że tylko ta jedna noc odstaje, a resztę
+trzyma katalog. W rzeczywistości z katalogiem zgadzają się **4 noce z 11**,
+a rozrzut jest dziesięciokrotny (1,2 → 12,3 W/K). Skoro tak, to „ubytek
+odpowiada 4,4 l/h" było jednym z wielu możliwych wyjaśnień, a nie wynikiem.
+Zdanie o kapiącym kranie wycofuję.
+
+### 5b. Co zostało wykluczone, a co nie
+
+Wykluczone:
+- **wyciek** — sprawdziłeś, nic nie kapie,
+- **pojedynczy pobór wody** — na 23/24.10 spadek był gładki, −0,2…−0,3 °C co
+  5 minut; 40 l pobrane naraz dałoby skok ~4 K w jednej próbce, a takiego nie ma,
+- **pompa** — 0 z 132 próbek ON przez całą noc,
+- **błąd czujnika** — w całym logu jest jedna próbka −1,0 °C (24.10 13:47,
+  zaraz po restarcie) i nie trafiła w żadne okno nocne.
+
+Nie wykluczone, od najbardziej prawdopodobnego:
+1. **wiatr** — zbiornik stoi na dachu, a wiatr potrafi zwiększyć straty
+   kilkukrotnie. Aplikacja **już pobiera** prędkość wiatru z prognozy
+   (`wind_speed_10m`), ale model cieplny tej liczby w ogóle nie używa.
+2. **cyrkulacja wody użytkowej** — jeśli jest, to ciągły mały przepływ,
+   którego nie widać jako skok.
+3. **cyrkulacja wsteczna pętli solarnej** — literatura mówi „nearly fourfold",
+   zmierzone 4,4× pasuje, ale nie tłumaczy nocy 25/26.10 (8,8×) przy zbiorniku
+   o temperaturze zaledwie 20 °C, czyli bez ciągu termicznego.
 
 
-## 5a. Wariant „z detektorem" — też sprawdzony, też odpada
+## 5c. Wariant „z detektorem" — też sprawdzony, też odpada
 
 Naturalna myśl: nie ucz się globalnie, tylko **wykrywaj nietypową stratę**.
 Jedź na modelu, a gdy zmierzone tempo stygnięcia jest wyraźnie większe od
@@ -108,17 +150,19 @@ Detektor myli **przemijający ruch wody wieczorem** (pętla oddaje ciepło po
 słonecznym dniu) z trwałą stratą. Zamienia bardzo dobrą prognozę w bardzo złą.
 Na 11 nocach średnia tego nie pokaże — ale trafisz na taki dzień i zobaczysz bzdurę.
 
-## 6. Wniosek — i jedna rzecz do naprawy
+## 6. Wniosek
 
 **Kalibracja z archiwum nie wchodzi do kodu.** Model zostaje taki, jaki jest
-w 0.31.51. To nie ostrożność, to wynik pomiaru.
+w 0.31.51. To nie ostrożność, to wynik pomiaru — i teraz wiadomo dokładniej,
+dlaczego: skoro efektywna strata zbiornika zmienia się dziesięciokrotnie między
+nocami, to **żadna stała jej nie opisze**, ani 1,4 z katalogu, ani nauczona
+z archiwum.
 
-Ale wyszło przy okazji coś ważniejszego: **gdzieś kapie 4–9 litrów na godzinę.**
-Kran, mieszacz albo zawór zwrotny. To nie jest błąd w kodzie i żaden kod tego
-nie naprawi. Objaw dodatkowy: detektor pobrań wymaga spadku 0,5 °C na 5 minut,
-a przy 5–9 l/h spadek wynosi ~0,02 °C na 5 minut — **20× pod progiem**.
-Dlatego ekran pokazuje „Pobrania: brak" i jest to poprawne działanie kodu
-przy takim wycieku.
+Czego to nie znaczy: że model jest do wyrzucenia. Znaczy, że **model nie zna
+jednej rzeczy, której nie ma w danych** — co tej nocy działo się na dachu
+i w instalacji. Najtańsze podejrzenie do sprawdzenia to **wiatr**: aplikacja
+już go pobiera i wystarczy dopisać go do równania, żeby to sprawdzić na
+istniejącej historii (bez nowych czujników, bez wchodzenia na dach).
 
 ## 7. Co w temacie 226 jest już nieaktualne
 
@@ -142,7 +186,8 @@ przy takim wycieku.
 
 Skrypt i wynik są w repozytorium, nie „w głowie":
 
-- `narzedzia/symulator-solar-2026-10-29/kalibracja/porownanie.py`
+- `narzedzia/symulator-solar-2026-10-29/kalibracja/porownanie.py` (5 metod uczenia)
+- `narzedzia/symulator-solar-2026-10-29/kalibracja/ua_noc.py` (UA osobno dla każdej nocy)
 - `narzedzia/symulator-solar-2026-10-29/kalibracja/WYNIK-POROWNANIE.txt`
 - `narzedzia/symulator-solar-2026-10-29/RAPORT-KALIBRACJI-NOCNEJ.md` §„WERDYKT"
 - `MODEL_SOLARNY_TRZEMCHA_2026-10-23.md` §19

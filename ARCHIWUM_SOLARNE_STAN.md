@@ -865,11 +865,17 @@ Potwierdzone przez użytkownika: brak wężownicy, brak drugiego obiegu. Rura
 ze zbiornika idzie prosto do instalacji domowej. Skutki policzone z danych:
 
 - UA_eff liczony z pomiarów **zmienia się 4,4×** (4,6 W/K przy gorącej wodzie,
-  20,3 W/K przy zimnej) — czyli to **nie są straty cieplne**, tylko ruch wody,
-- stały przepływ **4–9 l/h** tłumaczy wszystkie odcinki naraz,
-- detektor pobrań wymaga 0,5 °C / 5 min; przy 5–9 l/h daje to ~0,02 °C / 5 min,
-  czyli **20× pod progiem** — dlatego ekran pokazuje „Pobrania: brak" i to jest
-  poprawne działanie kodu przy złym założeniu o instalacji.
+  20,3 W/K przy zimnej) — czyli to **nie są same straty cieplne**, jest w tym
+  ruch wody,
+- detektor pobrań wymaga 0,5 °C / 5 min; przy wolnym, ciągłym przepływie daje to
+  ~0,02 °C / 5 min, czyli **20× pod progiem** — dlatego ekran pokazuje
+  „Pobrania: brak".
+
+**WYCOFANE 29.10 (zgłoszenie użytkownika: „nic nie kapie").** W pierwszej wersji
+tej sekcji twierdziłem, że z danych wychodzi stały przepływ **4–9 l/h**, czyli
+że gdzieś cieknie. Użytkownik sprawdził instalację — nie cieknie. Liczba 4–9 l/h
+była wyliczona z założenia, że cała różnica to podmiana wody; nie miała
+potwierdzenia w pomiarze przepływu (w instalacji **nie ma przepływomierza**).
 
 ### 17.4 Kalibracja z archiwum — sprawdzona, odrzucona
 
@@ -884,7 +890,11 @@ Szczegóły: `MODEL_SOLARNY_TRZEMCHA_2026-10-23.md` §19.
 ### 17.5 Co zostało do zrobienia
 
 1. Wgrać 0.31.51 (aplikacja) i 3.56.8 (centrala) — paczki gotowe.
-2. **Znaleźć wyciek 4–9 l/h** — to jedyna rzecz, która realnie psuje nocny
-   bilans (noc 23/24.10 z UA 5,8 W/K to 36% całego błędu modelu).
+2. **Ustalić, co różni noce** — efektywne UA zbiornika wychodzi 1,2–12,3 W/K,
+   czyli rozrzut 10×, i tylko 4 noce na 11 zgadzają się z katalogiem
+   (`kalibracja/ua_noc.py`). Wykluczone: wyciek, pojedynczy pobór, pompa, czujnik.
+   Nie wykluczone: wiatr, cyrkulacja wody użytkowej, cyrkulacja wsteczna pętli.
+   **Wiatr jest najtańszy do sprawdzenia** — aplikacja już go pobiera
+   (`wind_speed_10m`), a model cieplny nie używa.
 3. Telemetria: audyt 29 dni dał 0,50% brakujących próbek; czekać na pełną dobę
    po 3.56.8, żeby sprawdzić `telemetry_gap_events`.

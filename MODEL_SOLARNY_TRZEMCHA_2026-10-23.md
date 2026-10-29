@@ -735,14 +735,56 @@ Mediana błędu bezwzględnego: **1,40 °C**. Bez nocy 23/24.10 średnia spada
 z 2,05 do **1,45 °C** — ta jedna noc to 36% sumy błędu.
 
 23/24.10: zbiornik 42,5 → 27,8 °C, bez skoków, bez wykrytego poboru, ~1,5 °C/h
-przy ΔT ≈ 30 K → **UA_eff ≈ 5,8 W/K** (4× katalog). Na pozostałych nocach
-1,2–1,4 W/K = katalog.
+przy ΔT ≈ 30 K → **UA_eff ≈ 6,1 W/K** (4,4× katalog).
 
-Przy 100 l ubytek 1,5 °C/h odpowiada stałemu dopływowi ok. **4,4 l/h** zimnej
-wody z sieci. To ta sama liczba, którą niezależnie dała analiza instalacji
-bezpośredniej (stały przepływ 4–9 l/h — dlatego detektor pobrań, wymagający
-0,5 °C / 5 min, nigdy nic nie widzi). Wniosek: to nie model jest zły, tylko
-**gdzieś kapie** — kran, mieszacz albo zawór zwrotny.
+**KOREKTA tego samego dnia (zgłoszenie użytkownika: „nic nie kapie").**
+Pierwsza wersja tej sekcji twierdziła, że ubytek odpowiada stałemu dopływowi
+4,4 l/h, czyli że gdzieś cieknie kran. Wniosek wycofany — opierał się na tym,
+że tylko ta jedna noc odstawała od katalogu. Po policzeniu UA_eff **regresją**
+(każda noc osobno, nie z dwóch punktów) okazało się, że odstawanie jest regułą,
+a nie wyjątkiem:
+
+| noc | T o 19:00 | spadek | UA_eff [W/K] | × katalog (1,4) |
+|---|---|---|---|---|
+| 18/19.10 | 28,0 | −2,0 | 1,33 | 0,95 |
+| 19/20.10 | 24,2 | −1,4 | 1,20 | 0,86 |
+| 20/21.10 | 23,2 | −1,7 | 1,53 | 1,09 |
+| 21/22.10 | 36,5 | −2,5 | 1,38 | 0,99 |
+| 22/23.10 | 30,8 | −4,6 | 2,88 | 2,06 |
+| **23/24.10** | 42,8 | **−14,3** | **6,14** | **4,38** |
+| 24/25.10 | 21,8 | −4,3 | 4,63 | 3,31 |
+| 25/26.10 | 20,0 | −4,5 | **12,27** | **8,77** |
+| 26/27.10 | 14,8 | −3,0 | 4,88 | 3,48 |
+| 27/28.10 | 22,5 | −5,5 | 7,19 | 5,13 |
+| 28/29.10 | 17,5 | −1,0 | 3,52 | 2,51 |
+
+Czyli **tylko 4 noce z 11 zgadzają się z katalogiem**, a rozrzut wynosi 1,2–12,3 W/K,
+czyli dziesięciokrotnie. Zdanie „tankUa = 1.4 potwierdzone pomiarem" też było
+za mocne — opierało się na tej samej zgrubnej metodzie. `tankUa = 1.4` to nadal
+najlepszy **pojedynczy** parametr (bo taki jest katalog tego zbiornika), ale
+**nie jest to prawda o każdej nocy**.
+
+Co z tego wynika dla modelu: skoro efektywna strata zmienia się dziesięciokrotnie,
+to **żadna stała nie opisze wszystkich nocy** — ani 1,4, ani nauczona z archiwum.
+To domyka wątek kalibracji: nie ma czego dopasowywać, bo w każdej nocy działa
+inny mechanizm.
+
+Czego NIE wiadomo: co te noce różni. Sprawdzone i wykluczone:
+- **wyciek** — użytkownik: „nic nie kapie",
+- **pojedynczy pobór wody** — na 23/24.10 spadek był gładki, −0,2…−0,3 °C co 5 min,
+  żadnego skoku; przy poborze 40 l byłby skok ~4 K w jednej próbce,
+- **pompa** — na 23/24.10 `pompa=OFF` przez całą noc (0/132 próbek ON),
+- **błąd czujnika** — w całym logu jest **jedna** próbka −1,0 °C (24.10 13:47,
+  zaraz po restarcie) i nie trafiła w żadne okno nocne.
+
+Nie wykluczone, w kolejności prawdopodobieństwa:
+1. **wiatr** — zbiornik stoi na dachu; aplikacja **już pobiera** `wind_speed_10m`
+   (`Weather.kt`), ale model cieplny tej liczby nigdzie nie używa,
+2. **cyrkulacja wody użytkowej** (jeśli jest) — ciągły, mały przepływ, którego
+   nie widać jako skok,
+3. **cyrkulacja wsteczna pętli solarnej** — literatura (OSTI 116242) mówi
+   „nearly fourfold", zmierzone 4,4×, ale to nie tłumaczy nocy 25/26.10 (8,8×)
+   przy zbiorniku zaledwie 20 °C, czyli bez ciągu termicznego.
 
 ### 19.5 Decyzja
 
@@ -750,4 +792,4 @@ bezpośredniej (stały przepływ 4–9 l/h — dlatego detektor pobrań, wymagaj
 Kalibracja z archiwum **nie wchodzi do kodu** — nie z powodu ostrożności,
 ale dlatego, że cztery niezależne sposoby uczenia wypadły gorzej niż model.
 
-Jeżeli kiedyś będzie 40+ nocy bez poborów i bez wycieku, temat można wrócić.
+Jeżeli kiedyś uda się zmierzyć, co różni te noce (patrz wyżej), temat można wrócić.

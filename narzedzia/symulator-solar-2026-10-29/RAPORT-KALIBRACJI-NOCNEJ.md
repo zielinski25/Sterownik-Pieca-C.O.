@@ -345,23 +345,52 @@ Persystencja przegrywa, bo o 17:00–18:00 **jeszcze grzeje słońce**. 26.10 o 
 przewidywała spadek −12,6 °C, a woda straciła 2,6 °C. Model fizyczny wie o
 zachodzie słońca, persystencja nie.
 
-### 4. Cały średni błąd to jedna noc
+### 4. Największy błąd to jedna noc — ale nie jedyna podejrzana
 
 Mediana błędu bezwzględnego to **1,40 °C**. Po odjęciu nocy 23/24.10 średni błąd
 spada z 2,05 do **1,45 °C**. Ta jedna noc to **36% całego błędu**.
 
 Co tam się stało: zbiornik szedł 42,5 → 27,8 °C, równiutko, bez skoków, bez
-poboru, ~1,5 °C/h przy ΔT ≈ 30 K. To daje **UA_eff ≈ 5,8 W/K**, czyli 4× katalog.
-Na pozostałych nocach wychodzi 1,2–1,4 W/K, czyli dokładnie katalog.
+poboru, ~1,5 °C/h przy ΔT ≈ 30 K. To daje **UA_eff ≈ 6,1 W/K**, czyli 4,4× katalog.
 
-To wygląda na **stały dopływ zimnej wody z sieci** — przy 100 l i mieszaniu
-ubytek 1,5 °C/h odpowiada ok. **4,4 l/h**. Ta sama liczba, którą niezależnie dała
-analiza instalacji bezpośredniej („stały przepływ 4–9 l/h, dlatego detektor
-pobrań nic nie widzi"). Czyli: **kapie gdzieś kran albo zawór**, a nie „model
-jest zły".
+**WYCOFANE (zgłoszenie użytkownika: „nic nie kapie").** Pierwotnie napisałem, że
+to odpowiada stałemu dopływowi 4,4 l/h, czyli że cieknie kran. Błędne, i to z
+dwóch powodów: użytkownik sprawdził instalację, a poza tym wniosek opierał się
+na założeniu, że **tylko ta noc** odstaje od katalogu. Po policzeniu UA_eff
+regresją osobno dla każdej nocy (skrypt `kalibracja/ua_noc.py`) okazało się,
+że odstaje **7 nocy z 11**:
 
-To jest jedyna rzecz z tego całego wątku, którą warto naprawić — ale to nie jest
-poprawka w kodzie. To trzeba znaleźć w instalacji.
+| noc | UA_eff [W/K] | × katalog |
+|---|---|---|
+| 18/19.10 | 1,33 | 0,95 |
+| 19/20.10 | 1,20 | 0,86 |
+| 20/21.10 | 1,53 | 1,09 |
+| 21/22.10 | 1,38 | 0,99 |
+| 22/23.10 | 2,88 | 2,06 |
+| 23/24.10 | 6,14 | 4,38 |
+| 24/25.10 | 4,63 | 3,31 |
+| 25/26.10 | 12,27 | 8,77 |
+| 26/27.10 | 4,88 | 3,48 |
+| 27/28.10 | 7,19 | 5,13 |
+| 28/29.10 | 3,52 | 2,51 |
+
+Rozrzut **10,2×**. Tylko 4 noce zgadzają się z katalogiem 1,4 W/K. To znaczy,
+że zdanie „`tankUa = 1.4` potwierdzone pomiarem" też było za mocne — ono jest
+najlepszą **pojedynczą** liczbą, ale nie jest prawdą o każdej nocy.
+
+Sprawdzone i wykluczone jako przyczyna:
+- **wyciek** — użytkownik: „nic nie kapie",
+- **pojedynczy pobór wody** — na 23/24.10 spadek gładki, −0,2…−0,3 °C co 5 min;
+  40 l pobrane naraz dałoby skok ~4 K w jednej próbce, a takiego nie ma,
+- **pompa** — 0/132 próbek ON przez całą noc 23/24.10,
+- **błąd czujnika** — w całym logu jedna próbka −1,0 °C (24.10 13:47, po restarcie),
+  poza oknami nocnymi.
+
+Nie wykluczone, w kolejności prawdopodobieństwa: **wiatr** (zbiornik na dachu;
+aplikacja już pobiera `wind_speed_10m`, ale model cieplny tej liczby nie używa),
+**cyrkulacja wody użytkowej**, **cyrkulacja wsteczna pętli** (literatura: „nearly
+fourfold", zmierzone 4,4× — ale nie tłumaczy nocy 25/26.10 z UA 8,8× przy
+zbiorniku 20 °C).
 
 ### 5. Wariant „z detektorem" — też sprawdzony, też odpada
 
