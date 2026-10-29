@@ -1,0 +1,8 @@
+a02d8d603fe8dc55b970472b54d92cf5ddc49bae8a964e5d6a34b8462bab48ba  SterownikCO-Android-v0.31.45-PELNY-PROJEKT.zip
+9fd81be403107d5dd6cc53e11dbb510ebd54fea46e89e33a516c2d51612c54ad  SterownikCO-Android-v0.31.45-ZMIENIONE-PLIKI.zip
+== dodatkowo wazniejsze pliki zrodlowe ==
+07b460f762cf3eb6c1dce5539efcd105fee4512b55d0e063a740ff059fcf1625  android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+7827d08edb134de68ffacb462fc7c93928d1bc29f19242f6231498df757aa7f1  android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+26cc12140c089c18be96ba685a68e7304b19a59e7f76b11aba0880013d58808a  android/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+07d8db175114aa4573ea57da32988a9fb20a8b8db4d9c7c9b8bc4e6f0fee3a3e  android/app/src/main/java/com/sterownikco/pro/ui/screens/Lists.kt
+d9ce00a5b9f67758a760c4acda89121fcf95a94006ff85ccdfb23f5f58c45033  android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Offline.kt

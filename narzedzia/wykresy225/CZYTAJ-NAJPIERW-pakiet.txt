@@ -1,56 +1,65 @@
-Sterownik CO — CAŁY PROJEKT ANDROIDA, wersja 0.31.35
+Sterownik CO — CAŁY PROJEKT ANDROIDA, wersja 0.31.45
 ====================================================
 
 To jest KOMPLETNY projekt (Gradle + wszystkie pliki źródłowe), gotowy do
 otwarcia na dowolnym komputerze z Android Studio. Nie trzeba nic doklejać
-ani podmieniać — wersja 0.31.35 jest już w środku.
+ani podmieniać — wersja 0.31.45 jest już w środku.
 
 CO JEST W ŚRODKU
 ----------------
-- cały kod aplikacji (66 plików .kt + testy + zasoby + dźwięki alarmów),
-- gradle wrapper (gradle 8.9) — Gradle sam się dociągnie,
-- versionName = "0.31.35", versionCode = 31035,
+- cały kod aplikacji (96 plików .kt + testy + zasoby + dźwięki alarmów),
+- gradle wrapper (Gradle 8.9) — Gradle sam się dociągnie,
+- versionName = "0.31.45", versionCode = 31045,
 - zbuduj.ps1 (budowanie jednym poleceniem),
-- folder ZMIANY-KODU z dokładnym diffem każdej zmiany (do wglądu).
+- folder ZMIANY-KODU z diffem każdej zmiany (do wglądu),
+- SHA256SUMS.txt — suma kontrolna każdego pliku .kt (patrz niżej).
 
-CO ZMIENIONO WZGLĘDEM POPRZEDNIEJ WERSJI (0.31.33)
---------------------------------------------------
-WYKRESY
- 1. Pompa CO nie rysuje już pionowych zielonych „ścian" na całą wysokość.
-    W trybie mieszanym zajmuje niski pasek przy dolnej krawędzi wykresu.
- 2. Przerwa w danych jest podpisana: dwie przerywane kreski + „luka 1 h 12 min".
- 3. Podpis pod wykresem: „· luk: N (najdłuższa X h Y min)".
- 4. Pobieranie historii odporniejsze: nieudana strona nie kasuje całego dnia,
-    a po pobraniu aplikacja dopytuje każdą lukę dłuższą niż 3 minuty.
+NAJWAŻNIEJSZE: CO WRÓCIŁO
+-------------------------
+1) USTAWIENIA → „Bufor offline"
+   Przełącznik zapisu na flash centrali + liczniki od startu.
+   Wymaga firmware v3.54.0 lub nowszego; na starszym jest nieaktywny
+   z wyjaśnieniem.
+2) KAFELEK „SERWO" W PROCENTACH
+   „klapa 42%" + „syberek 17%" w podpisie, pigułka AUTO / RĘCZNY,
+   po komendzie „CEL 65% · czekam", osobny opis dla BEZPIECZNEGO.
+3) DŹWIĘKI ALARMÓW z aplikacji + synchronizacja z centralą.
+4) TERMINAL DLOG sam się zatrzymuje po 5 min bez dotykania ekranu.
+5) PAMIĘĆ HISTORII w telefonie — dociągane są tylko brakujące przedziały.
 
-PANEL SŁONECZNY
- 5. „Zysk dziś · zmierzone" liczone z historii chmury co minutę — także gdy
-    aplikacja była zamknięta. Wcześniej wieczorem pokazywało
-    „brak próbek z dziś", mimo że chmura ma całą dobę.
- 6. „Pobrania ciepłej wody" — tak samo, z historii.
- 7. Metoda liczenia bez zmian (zysk = ostatnia minus pierwsza próbka doby,
-    pobranie wody = spadek szybszy niż 0,3 °C/min).
+CZEGO CELOWO NIE MA (tak zostało ustalone)
+------------------------------------------
+- ŻADNYCH napisów, plakietek i liczników nad wykresem ani w jego polu.
+  Brak etykiet typu „luka 1 h 12 min", brak „luk: N", brak paska statusu
+  pobierania. Przerwa w danych to po prostu odstęp na wykresie.
+- Brak kafelków W CHMURZE / KOLEJKA / WYSYŁKA.
 
 JAK ZBUDOWAĆ POLECENIEM (najszybciej)
------------------------------------
-W folderze projektu (tym z settings.gradle.kts) uruchom jedna komende:
+------------------------------------
+W folderze projektu (tym z settings.gradle.kts) uruchom jedną komendę:
 
   powershell -ExecutionPolicy Bypass -File .\zbuduj.ps1
 
-Skrypt sam znajduje Jave 17-22, buduje APK, kopiuje go do Pobranych jako
-SterownikCO-v0.31.35-debug.apk i wypisuje komende do instalacji.
+Skrypt sam znajduje Javę 17–22, sam znajduje Android SDK, zapisuje
+local.properties, buduje APK, kopiuje je do Pobranych jako
+SterownikCO-v0.31.45-debug.apk i wypisuje komendę do instalacji.
 
-UWAGA - Java 25 nie zadziala
+JEŻELI CHCESZ ZBUDOWAĆ RĘCZNIE
+------------------------------
+  .\gradlew.bat :app:assembleDebug --console=plain
+Plik APK: app\build\outputs\apk\debug\app-debug.apk
+
+UWAGA — Java 25 nie zadziała
 ----------------------------
-Android Studio 2026 ma w srodku Jave 25. Gradle 8.9 (uzyty w projekcie)
-nie obsluguje Javy 25 i konczy sie mlynnym bledem:
+Android Studio 2026 ma w środku Javę 25. Gradle 8.9 nie obsługuje Javy 25
+i kończy się mylącym błędem:
 
   * What went wrong:
   25.0.3
 
-Ta liczba to po prostu wersja Javy, ktora probowal uzyc Gradle.
-Rozwiazanie: budowac na Javie 17-21 (np. Temurin 21) - albo po prostu
-uzyc zbuduj.ps1, ktory robi to sam. NIE ustawiaj JAVA_HOME na
+Ta liczba to po prostu wersja Javy, której próbował użyć Gradle.
+Rozwiązanie: budować na Javie 17–21 (np. Temurin 21) albo po prostu użyć
+zbuduj.ps1, który robi to sam. NIE ustawiaj JAVA_HOME na
 "C:\Program Files\Android\Android Studio\jbr".
 
 Druga typowa przeszkoda to brak wskazania Android SDK:
@@ -59,51 +68,48 @@ Druga typowa przeszkoda to brak wskazania Android SDK:
   ANDROID_HOME environment variable or by setting the sdk.dir path ...
 
 zbuduj.ps1 szuka SDK sam (ANDROID_HOME, %LOCALAPPDATA%\Android\Sdk,
-C:\Android\Sdk, a na koncu po pliku adb.exe) i zapisuje plik
-local.properties. Jesli brakuje platformy android-35, skrypt to wypisze.
+C:\Android\Sdk, a na końcu po pliku adb.exe) i zapisuje local.properties.
+Jeśli brakuje platformy android-35, skrypt to wypisze.
 
-JAK ZBUDOWAC KLIKAJAC (5 kroków)
------------------------
-1. Zainstaluj Android Studio (jeśli na tym komputerze jeszcze go nie ma).
-2. Android Studio > File > Open... > wskaż folder rozpakowany z tego ZIP-a
+JAK ZBUDOWAĆ KLIKAJĄC
+---------------------
+1. Android Studio > File > Open... > wskaż folder rozpakowany z tego ZIP-a
    (ten, w którym leży plik settings.gradle.kts — NIE folder app).
-3. Studio samo dociągnie Gradle 8.9 i biblioteki (potrzebny internet,
+2. Studio samo dociągnie Gradle 8.9 i biblioteki (potrzebny internet,
    pierwszy raz może potrwać kilka minut).
-4. Gdy zapyta o JDK — wybierz JDK 17 (Studio ma je wbudowane).
-5. Build > Generate Signed Bundle / APK > APK > Next > wybierz swój plik
-   klucza (.jks), wpisz hasła > release > Create.
-
-Plik APK wyląduje w:
-  app\build\outputs\apk\release\app-release.apk
+3. Jeżeli zapyta o JDK — wybierz JDK 17 lub 21.
+4. Build > Build Bundle(s) / APK(s) > Build APK(s).
 
 JAK ZAINSTALOWAĆ NA TELEFONIE
 -----------------------------
-- Przez kabel: włącz w telefonie „Debugowanie USB" i użyj przycisku Run.
-- Bez kabla: przenieś app-release.apk na telefon (kabel, Dysk Google,
-  Telegram) i otwórz go w telefonie — trzeba zezwolić na „instalację
-  z nieznanych źródeł".
+- Przez kabel: włącz w telefonie „Debugowanie USB" i użyj przycisku Run,
+  albo:
+    adb.exe install -r "app\build\outputs\apk\debug\app-debug.apk"
+- Bez kabla: przenieś APK na telefon (kabel, Dysk Google, Telegram) i
+  otwórz go w telefonie — trzeba zezwolić na „instalację z nieznanych
+  źródeł".
 - Nadinstalowanie na starszą wersję działa, dane i ustawienia zostają.
+
+PO CZYM POZNASZ, ŻE MASZ WŁAŚCIWĄ WERSJĘ
+----------------------------------------
+Ustawienia → lista kafelków. Musi być „Bufor offline"
+(między „Czujnik dymu" a „Data i czas").
+Pulpit → kafelek SERWO pokazuje procenty: „klapa 42%".
+
+JAK SPRAWDZIĆ, CZY PLIKI DOJAZDY BEZ USZKODZENIA
+------------------------------------------------
+W folderze projektu:
+
+  Get-FileHash -Algorithm SHA256 -Path (Get-ChildItem -Recurse -Filter *.kt).FullName
+
+albo porównaj pojedynczo z plikiem SHA256SUMS.txt. Jeśli któraś suma się
+nie zgadza, plik jest uszkodzony przy kopiowaniu — pobierz paczkę jeszcze
+raz, zamiast poprawiać kod.
 
 WAŻNE O NUMERZE WERSJI
 ----------------------
-versionCode ustawiony na 31035, żeby NA PEWNO był wyższy od tego, co masz
-w telefonie (inaczej Android odmówi instalacji: „App not installed").
-Jeśli chcesz wrócić do swojego projektu z innym numerem, po tej instalacji
-może być potrzebne odinstalowanie aplikacji z telefonu.
-
-JAK SPRAWDZIĆ, ŻE DZIAŁA
-------------------------
-Solar:
-- kafelek „Panel słoneczny (solary)" — „Zysk dziś · zmierzone" pokazuje
-  LICZBĘ, nie „brak próbek z dziś". Wzorzec z chmury: 28.10 = −15,8 °C
-  (woda stygła), 27.10 = +6,0 °C (kolektor dogrzał).
-
-Wykresy:
-- wykres „TEMPERATURY + POMPA C.O.", zakres 7 DNI:
-  * okolice 24.10 godz. 12–14 — przerwa z napisem „luka 77 min"
-    (ta przerwa jest prawdziwa, w chmurze nie ma tych minut),
-  * noc 24/25.10 — wielogodzinna dziura znika,
-  * pompa — cienki pasek na dole zamiast zielonych słupów.
+versionCode = 31045, wyższy od poprzednich, żeby telefon przyjął
+aktualizację bez odinstalowywania.
 
 CZEGO TU NIE MA
 ---------------
@@ -116,5 +122,8 @@ JEŚLI COŚ SIĘ NIE ZBUDUJE
 Najczęstsze przyczyny:
 - otwarty zły folder (trzeba ten z settings.gradle.kts),
 - brak internetu przy pierwszym otwarciu (Gradle nie dociągnął bibliotek),
-- brak JDK 17 (File > Settings > Build > Gradle > Gradle JDK).
-Napisz, co dokładnie pokazało Studio — poprawię.
+- brak JDK 17–21 (File > Settings > Build > Gradle > Gradle JDK).
+
+Jeżeli Gradle wypisze błąd inny niż powyższe — prześlij dokładnie tę
+linijkę, w której jest napisane „e: file:///...: (N, M) Unresolved
+reference: ...". To wystarcza do poprawki.
