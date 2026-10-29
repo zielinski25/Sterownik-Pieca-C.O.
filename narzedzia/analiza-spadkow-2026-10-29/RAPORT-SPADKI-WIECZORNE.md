@@ -401,3 +401,56 @@ funkcjonalnie v3.56.5, który chodził 4 dni 15 h bez restartu.
 
 **Zasada operacyjna: nie wgrywać firmware bez potrzeby.** Każde wgranie
 zeruje uptime i niszczy dowody z logu.
+
+---
+
+## §14. WERYFIKACJA NA ŚWIEŻEJ BAZIE RTDB (29.10, eksport z 12:42)
+
+Źródło: `google_drive/akwarium-367be-default-rtdb-29-export.json`
+(295 928 B, 680 rekordów, węzeł „29" = cały dzień 29.10, 01:00:09 → 12:41:59).
+
+### 14.1 Kompletność liczników seq w obrębie każdego rozruchu
+
+| bootId | wersja | seq | próbek | **brakuje** | zakres czasu |
+|---|---|---|---|---|---|
+| `4A008BE708AE217C` | 3.56.5 | 6166–6734 | 559 | **10** (6543–6552) | 01:00:09 → 10:28:12 |
+| `FC764B1F9A59366C` | 3.56.6 (boot=3) | 1–57 | 57 | **0** | 10:31:22 → 11:27:23 |
+| `77A3CAC8F5BB8032` | 3.56.6 (boot=4) | 1–32 | 32 | **0** | 11:30:54 → 12:01:54 |
+| `BCA88359DE792844` | 3.56.6 (boot=5) | 1–12 | 12 | **0** | 12:09:05 → 12:20:05 |
+| `48B6D6073BC34CD4` | 3.56.7 (boot=6) | 1–20 | 20 | **0** | 12:22:58 → 12:41:59 |
+
+Odstęp między próbkami wewnątrz rozruchu: **mediana 60,0 s, min 60 s, max 61 s.**
+Czyli **ani jednej brakującej próbki** poza jedną luką w starym rozruchu.
+
+### 14.2 Wszystkie przerwy czasowe > 90 s w dniu 29.10
+
+| od | do | przerwa | przyczyna |
+|---|---|---|---|
+| 07:16:11 | 07:27:11 | **11 min 00 s** | **TEN SAM boot** `4A008BE7` — jedyna prawdziwa utrata danych |
+| 10:28:12 | 10:31:22 | 3 min 10 s | przejście boot `4A008BE7` → `FC764B1F` (wgranie nr 1) |
+| 11:27:23 | 11:30:54 | 3 min 31 s | przejście boot `FC764B1F` → `77A3CAC8` (wgranie nr 2) |
+| 12:01:54 | 12:09:05 | 7 min 11 s | przejście boot `77A3CAC8` → `BCA88359` (**restart nadzoru**) |
+| 12:20:05 | 12:22:58 | 2 min 53 s | przejście boot `BCA88359` → `48B6D607` (wgranie nr 3) |
+
+**Razem 27 min 45 s przerw, z czego 16 min 45 s to wyłącznie restarty urządzenia**
+(2–7 min bez zasilania aplikacji). Prawdziwa utrata danych: **11 minut, raz**.
+
+### 14.3 Luka 07:16 — szczegół
+seq 6542 = 07:16:11, seq 6553 = 07:27:11. Brakuje 6543–6552 = **10 próbek**.
+To rozmiar jednej paczki (`TELEMETRY_BATCH_MAX_RECORDS = 10`). Rozruch się NIE zmienił
+(ten sam bootId), więc nie był to restart. To jedyne zdarzenie tego typu w całym dniu.
+
+### 14.4 Wnioski — trzeci i najważniejszy
+1. **v3.56.6 nie zgubiła ani jednej próbki.** Trzy rozruchy, 101 próbek, kompletne seq.
+2. **v3.56.7 też nie gubi** (20 próbek, komplet).
+3. Luka, od której zaczęło się całe śledztwo (07:16), zdarzyła się na **v3.56.5**.
+4. „Dziury" widoczne w aplikacji 29.10 to w 16/27 minuty **okresy restartów**, a nie
+   gubienie próbek. Wykres nie ma jak pokazać danych z urządzenia, które nie działa.
+5. Moje wcześniejsze pomiary pikselowe ze zrzutów („dziura 11:50–12:00", „12:30–12:41")
+   były **błędne** — rozróżnienie kolorów żółty/pomarańcz na JPEG jest niewiarygodne.
+   Dane z RTDB są źródłem prawdy i one mówią: ciągłość co 60 s.
+
+### 14.5 Co pozostaje
+Ryzyko „spóźnionego ACK" (§12.4, hipoteza 1) jest nadal nieobalone, ale jego częstość
+to **1 zdarzenie na ~28 dni**. Nie uzasadnia kolejnej zmiany w firmware.
+Priorytet: zero zmian, obserwacja.
