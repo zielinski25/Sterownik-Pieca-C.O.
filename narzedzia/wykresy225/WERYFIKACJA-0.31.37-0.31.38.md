@@ -52,3 +52,33 @@ mówią to wprost („potencjał całej doby, nie od teraz”).
 Dzień 24.10 ma w `/archiwum` pokrycie **93,3%** (1344/1440) — czyli luka jest
 potwierdzona po stronie centrali. Zostaje sprawdzić, czy aplikacja ją **opisuje**,
 a nie tylko zostawia puste miejsce.
+
+---
+
+# Temat 225 — analiza wykresu (zrzut 2026-10-29 00:56)
+
+## Co pokazuje zrzut
+
+Zakres **7 DNI**, dane 24.10 07:15 → 25.10 02:43, cztery pionowe przerywane kreski
+(dwie pary). **Zero napisów** „luka … min”.
+
+## Co zmierzyłem na pikselach
+
+Kolumny z danymi i bez danych (klasyfikacja kolorów serii) pokazują jedną dużą
+przerwę na prawym skraju, o szerokości **≈64 px**, czyli **≈77 min** — zgadza się
+z luką 12:26 → 13:43 znaną z eksportu RTDB. Poza nią serie są ciągłe
+(pojedyncze 2–4 px to antyaliasing ciemnych kolorów, nie przerwy).
+
+## Przyczyna braku podpisu — arytmetyka
+
+```kotlin
+if (xb - xa > tp.size.width + 6.dp) { drawText(...) }
+```
+
+Przy 7 dniach cała doba ma ~590 px → 77 min to **~4 px**, a napis
+„luka 1 h 17 min” ma **~70 px**. Warunek nigdy nie był spełniony, więc podpis
+znikał bez śladu. Przy powiększeniu do 6 H luka ma ~120 px i napis się pojawia —
+dlatego błąd nie wyszedł wcześniej.
+
+**Wniosek:** wykrywanie luk działa (0.31.34), brakowało tylko czytelnego podpisu
+przy małym powiększeniu. Poprawka: **0.31.39**.
