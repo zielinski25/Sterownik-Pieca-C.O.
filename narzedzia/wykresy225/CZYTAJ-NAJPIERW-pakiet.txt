@@ -1,26 +1,39 @@
-Sterownik CO — CAŁY PROJEKT ANDROIDA, wersja 0.31.46
+Sterownik CO — CAŁY PROJEKT ANDROIDA, wersja 0.31.47
 ====================================================
 
 To jest KOMPLETNY projekt (Gradle + wszystkie pliki źródłowe), gotowy do
 otwarcia na dowolnym komputerze z Android Studio. Nie trzeba nic doklejać
-ani podmieniać — wersja 0.31.46 jest już w środku.
+ani podmieniać — wersja 0.31.47 jest już w środku.
 
 CO JEST W ŚRODKU
 ----------------
 - cały kod aplikacji (96 plików .kt + testy + zasoby + dźwięki alarmów),
 - gradle wrapper (Gradle 8.9) — Gradle sam się dociągnie,
-- versionName = "0.31.46", versionCode = 31046,
+- versionName = "0.31.47", versionCode = 31047,
 - zbuduj.ps1 (budowanie jednym poleceniem),
 - folder ZMIANY-KODU z diffem każdej zmiany (do wglądu),
 - SHA256SUMS.txt — suma kontrolna każdego pliku .kt (patrz niżej).
 
-CO NOWEGO W 0.31.46 (szybkość wykresów)
----------------------------------------
-1) Nie czekamy już 6 s na archiwum centrali przy 7/30 dniach. Wynik z pieca
-   i tak był odrzucany, a aplikacja czekała — teraz nie pyta go wcale.
-2) Pobieranie z chmury: 1000 rekordów na zapytanie zamiast 300.
-3) Dni pobierane po 4 naraz, nie po kolei.
-   Pierwsze wejście w 7 DNI: ~10 s -> ~2 s. Kolejne dni: ~1,5 s -> ~0,4 s.
+CO NOWEGO W 0.31.47 (rysowanie wykresu — to było wąskie gardło)
+--------------------------------------------------------------
+0.31.46 skróciło POBieranie. Zostało RYSOwanie i ono odpowiadało za to,
+że wykresy dalej nie były natychmiastowe.
+
+1) Redukcja punktów do rysowania: jeden koszyk = jeden piksel szerokości,
+   z koszyka bierzemy MINIMUM i MAKSYMIUM. Przy 30 dniach: 43 200 punktów
+   na serię -> ok. 1 800. Sześć serii: 259 194 -> ok. 10 800 punktów.
+   Kształt, szczyty i dołki zostają — zmienia się tylko liczba liczonych
+   kawałków krzywej, nie jej przebieg.
+2) Tryb NORMALIZOWANY liczył min/max całej serii DLA KAŻDEJ PRÓBKI
+   (7 dni ~100 mln operacji). Teraz liczy raz na serię.
+3) Kursor (palec po wykresie) miał ten sam błąd — poprawiony.
+4) Zwolnienie ruchu i przejście fizyczne/symulacja dalej rysują się tak samo
+   (odcinek przerywany w tym samym miejscu, przerwy w danych bez linii).
+
+0.31.46 (poprzednia, dalej w środku):
+- brak 6-sekundowego czekania na archiwum centrali przy 7/30 dniach,
+- 1000 rekordów na zapytanie zamiast 300, dni po 4 naraz.
+  Pierwsze wejście w 7 DNI: ~10 s -> ~2 s. Kolejne dni: ~1,5 s -> ~0,4 s.
 
 NAJWAŻNIEJSZE: CO WRÓCIŁO
 -------------------------
@@ -50,7 +63,7 @@ W folderze projektu (tym z settings.gradle.kts) uruchom jedną komendę:
 
 Skrypt sam znajduje Javę 17–22, sam znajduje Android SDK, zapisuje
 local.properties, buduje APK, kopiuje je do Pobranych jako
-SterownikCO-v0.31.46-debug.apk i wypisuje komendę do instalacji.
+SterownikCO-v0.31.47-debug.apk i wypisuje komendę do instalacji.
 
 JEŻELI CHCESZ ZBUDOWAĆ RĘCZNIE
 ------------------------------
@@ -116,7 +129,7 @@ raz, zamiast poprawiać kod.
 
 WAŻNE O NUMERZE WERSJI
 ----------------------
-versionCode = 31046, wyższy od poprzednich, żeby telefon przyjął
+versionCode = 31047, wyższy od poprzednich, żeby telefon przyjął
 aktualizację bez odinstalowywania.
 
 CZEGO TU NIE MA
