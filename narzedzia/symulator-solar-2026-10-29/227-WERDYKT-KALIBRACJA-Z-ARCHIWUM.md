@@ -79,7 +79,7 @@ Co się tam stało: zbiornik szedł 42,5 → 27,8 °C, równiutko, bez skoków,
 bez wykrytego poboru, ~1,5 °C/h przy różnicy do powietrza ok. 30 K.
 To daje **UA_eff ≈ 6,1 W/K**, czyli 4,4× katalog.
 
-### 5a. Pomyłka, którą sam zrobiłem — i którą trzeba wycofać
+## 5a. Pomyłka, którą sam zrobiłem — i którą trzeba wycofać
 
 Napisałem najpierw, że ten ubytek odpowiada stałemu dopływowi 4,4 l/h, czyli
 że **gdzieś cieknie kran**. Powiedziałeś: „nic nie kapie". Sprawdziłem to
@@ -106,13 +106,17 @@ a rozrzut jest dziesięciokrotny (1,2 → 12,3 W/K). Skoro tak, to „ubytek
 odpowiada 4,4 l/h" było jednym z wielu możliwych wyjaśnień, a nie wynikiem.
 Zdanie o kapiącym kranie wycofuję.
 
-### 5b. Co zostało wykluczone, a co nie
+## 5b. Co zostało wykluczone, a co nie
 
 Wykluczone:
 - **wyciek** — sprawdziłeś, nic nie kapie,
 - **pojedynczy pobór wody** — na 23/24.10 spadek był gładki, −0,2…−0,3 °C co
   5 minut; 40 l pobrane naraz dałoby skok ~4 K w jednej próbce, a takiego nie ma,
-- **pompa** — 0 z 132 próbek ON przez całą noc,
+- **pompa obiegu pieca** — pole `pompa=` w logu to `pinPompa`, pompa CO pieca;
+  0 z 132 próbek ON przez całą noc. **Uwaga: w instalacji solarnej NIE MA
+  pompy** — w firmware nie ma ani jednego odwołania do pompy solarnej, a obieg
+  działa grawitacyjnie (termosyfon). Ten punkt wyklucza więc tylko podbieranie
+  ciepła przez obieg pieca, a nie ruch wody w solarze.
 - **błąd czujnika** — w całym logu jest jedna próbka −1,0 °C (24.10 13:47,
   zaraz po restarcie) i nie trafiła w żadne okno nocne.
 
@@ -127,7 +131,42 @@ Nie wykluczone, od najbardziej prawdopodobnego:
    o temperaturze zaledwie 20 °C, czyli bez ciągu termicznego.
 
 
-## 5c. Wariant „z detektorem" — też sprawdzony, też odpada
+## 5c. Czujnik „panel" mierzy zbiornik, nie kolektor
+
+Sprawdziłem przy okazji, **co naprawdę mierzy** kanał, na którym stoi model.
+W firmware to `temperaturaPaneluSlonecznego`, czujnik `czujnik_temp_Panel_Plus`
+na `BUS_3`; log i aplikacja pokazują go jako „Panel solarny".
+
+Trzy liczby z 11 dób:
+
+| co | kolektor płaski na dachu | zmierzone |
+|---|---|---|
+| najwyższa temperatura w 11 dni | 80–120 °C | **47,2 °C** |
+| największa zmiana w 5 min | 5–10 °C | **1,0 °C** |
+| noc, 11 godzin | wyrównuje do powietrza w minuty | **stoi 20 K nad powietrzem** |
+
+Goła płyta tak się nie zachowuje. Tak zachowuje się **zbiornik 100 l**.
+Czyli czujnik podpisany „panel solarny" siedzi najprawdopodobniej na zbiorniku,
+a model **nigdy nie widzi temperatury dachu**.
+
+To ma bezpośredni skutek: cyrkulacja wsteczna (jedyny mechanizm pasujący do nocy
+z UA 4–12 W/K) zależy właśnie od różnicy zbiornik–kolektor, a tej drugiej liczby
+w danych nie ma.
+
+**Istotne przy tym:** w instalacji **nie ma pompy** — użytkownik potwierdził,
+a w firmware nie ma ani jednego odwołania do pompy solarnej; obieg jest
+grawitacyjny. Pole `pompa=` w logu to pompa CO pieca (`pinPompa`), nie solar.
+Skoro nie ma pompy, to **nic nie stoi na przeszkodzie, żeby obieg nocą kręcił się
+wstecz** — grawitacja działa w obie strony.
+
+## 5d. Jedno pytanie do użytkownika
+
+Gdzie fizycznie przykręcony jest czujnik z kanału `BUS_3` — na zbiorniku czy na
+kolektorze na dachu? Od tego zależy, czy:
+- etykieta „Panel solarny" w aplikacji jest tylko myląca (czujnik na zbiorniku), czy
+- mamy prawdziwy pomiar kolektora i cyrkulację wsteczną można policzyć z danych.
+
+## 5e. Wariant „z detektorem" — też sprawdzony, też odpada
 
 Naturalna myśl: nie ucz się globalnie, tylko **wykrywaj nietypową stratę**.
 Jedź na modelu, a gdy zmierzone tempo stygnięcia jest wyraźnie większe od
@@ -159,10 +198,19 @@ nocami, to **żadna stała jej nie opisze**, ani 1,4 z katalogu, ani nauczona
 z archiwum.
 
 Czego to nie znaczy: że model jest do wyrzucenia. Znaczy, że **model nie zna
-jednej rzeczy, której nie ma w danych** — co tej nocy działo się na dachu
-i w instalacji. Najtańsze podejrzenie do sprawdzenia to **wiatr**: aplikacja
-już go pobiera i wystarczy dopisać go do równania, żeby to sprawdzić na
-istniejącej historii (bez nowych czujników, bez wchodzenia na dach).
+jednej rzeczy, której nie ma w danych** — co w nocy dzieje się na dachu.
+
+Dwa tropy, oba tanie, w kolejności:
+
+1. **Ustalić, gdzie wisi czujnik z `BUS_3`** (punkt 5d). Jeśli na zbiorniku,
+   to model nie ma żadnego pomiaru z dachu i żadna kalibracja tego nie naprawi —
+   trzeba jednego czujnika na kolektorze. Firmware ma wolne wejście na tej
+   samej magistrali, więc to kwestia podłączenia, nie przepisywania.
+2. **Wiatr** — aplikacja już go pobiera (`wind_speed_10m`), a model cieplny nie
+   używa; da się sprawdzić na istniejącej historii, bez nowych czujników.
+
+Dopiero po jednym z tych dwóch będzie wiadomo, czy w ogóle jest co poprawiać
+w równaniu.
 
 ## 7. Co w temacie 226 jest już nieaktualne
 

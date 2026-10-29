@@ -382,7 +382,9 @@ Sprawdzone i wykluczone jako przyczyna:
 - **wyciek** — użytkownik: „nic nie kapie",
 - **pojedynczy pobór wody** — na 23/24.10 spadek gładki, −0,2…−0,3 °C co 5 min;
   40 l pobrane naraz dałoby skok ~4 K w jednej próbce, a takiego nie ma,
-- **pompa** — 0/132 próbek ON przez całą noc 23/24.10,
+- **pompa obiegu pieca** — 0/132 próbek ON przez całą noc 23/24.10; w instalacji
+  solarnej **nie ma pompy** (termosyfon, w firmware zero kodu pompy solarnej),
+  więc ten punkt nic nie mówi o ruchu wody w solarze,
 - **błąd czujnika** — w całym logu jedna próbka −1,0 °C (24.10 13:47, po restarcie),
   poza oknami nocnymi.
 

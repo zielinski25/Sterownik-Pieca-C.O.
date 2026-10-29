@@ -773,7 +773,9 @@ Czego NIE wiadomo: co te noce różni. Sprawdzone i wykluczone:
 - **wyciek** — użytkownik: „nic nie kapie",
 - **pojedynczy pobór wody** — na 23/24.10 spadek był gładki, −0,2…−0,3 °C co 5 min,
   żadnego skoku; przy poborze 40 l byłby skok ~4 K w jednej próbce,
-- **pompa** — na 23/24.10 `pompa=OFF` przez całą noc (0/132 próbek ON),
+- **pompa obiegu pieca** — na 23/24.10 `pompa=OFF` przez całą noc (0/132 próbek
+  ON). To pompa CO pieca (`pinPompa`); **w solarze pompy nie ma** — obieg jest
+  grawitacyjny, w firmware nie ma żadnego kodu pompy solarnej,
 - **błąd czujnika** — w całym logu jest **jedna** próbka −1,0 °C (24.10 13:47,
   zaraz po restarcie) i nie trafiła w żadne okno nocne.
 
@@ -786,7 +788,37 @@ Nie wykluczone, w kolejności prawdopodobieństwa:
    „nearly fourfold", zmierzone 4,4×, ale to nie tłumaczy nocy 25/26.10 (8,8×)
    przy zbiorniku zaledwie 20 °C, czyli bez ciągu termicznego.
 
-### 19.5 Decyzja
+### 19.5 Czujnik „panel solarny" mierzy zbiornik, nie kolektor
+
+Przy okazji liczenia tych nocy sprawdziłem, **co właściwie mierzy** kanał,
+na którym stoi cały model. W firmware to `temperaturaPaneluSlonecznego`,
+czujnik `czujnik_temp_Panel_Plus` na `BUS_3`, a log i aplikacja pokazują go
+jako „Panel solarny".
+
+Trzy liczby z 11 dób:
+
+| obserwacja | kolektor płaski na dachu | zmierzone |
+|---|---|---|
+| najwyższa temperatura przez 11 dni | 80–120 °C (stagnacja) | **47,2 °C** |
+| największa zmiana w 5 min | 5–10 °C (przechodząca chmura) | **1,0 °C** |
+| nocą, 11 godzin | spada do temperatury powietrza w minuty | **stoi 20 K nad powietrzem** |
+
+Żadna z tych trzech rzeczy nie jest możliwa dla gołej płyty kolektora.
+Taki przebieg ma **zbiornik 100 l**: duża bezwładność, wąski zakres temperatur,
+nocą stygnie powoli. Czyli czujnik podpisany „panel solarny" siedzi
+najprawdopodobniej **na zbiorniku albo na jego wyjściu**, a nie na kolektorze.
+
+**Dlaczego to jest ważne:** model nigdy nie widzi temperatury dachu.
+A to od niej zależy cyrkulacja wsteczna — jedyny mechanizm, który z danych
+pasuje do nocy z UA 4–12 W/K. Bez pomiaru po stronie kolektora nie da się
+tego ani potwierdzić, ani odjąć w modelu.
+
+**Do sprawdzenia u użytkownika (jedno pytanie, nie trzeba wchodzić na dach):**
+gdzie fizycznie przykręcony jest czujnik od kanału `BUS_3`? Jeśli na zbiorniku —
+to znaczy, że etykieta „Panel solarny" w aplikacji jest myląca, a modelowi
+brakuje jednego wejścia.
+
+### 19.6 Decyzja
 
 `MODEL_SOLARNY` **zostaje bez zmian**. Wersja 0.31.51 zostaje wgrana.
 Kalibracja z archiwum **nie wchodzi do kodu** — nie z powodu ostrożności,
