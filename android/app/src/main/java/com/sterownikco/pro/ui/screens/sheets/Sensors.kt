@@ -300,7 +300,7 @@ fun DymSheet(m: AppModel) {
     SymUnit(m, "dym", "Dym", "ADC", 0.0, 4095.0, 1.0)
 }
 
-/** `overheat(panel)` — próg przegrzania pieca / zbiornika solarnego. */
+/** `overheat(panel)` — próg przegrzania pieca / kolektora. */
 @Composable
 fun OverheatSheet(m: AppModel, panel: Boolean) {
     val S = m.S
@@ -310,7 +310,7 @@ fun OverheatSheet(m: AppModel, panel: Boolean) {
     NumRow("Próg alarmu przegrzania", "°C", S.progAlarmTemp, 0, 100, known = S.hasData("progAlarmTemp")) { v ->
         m.commitNum("Próg alarmu przegrzania", "progAlarmTemp", 0, 100, v)
     }
-    if (panel) SymUnit(m, "panel", "Zbiornik solarny", "°C", -30.0, 160.0, 0.5)
+    if (panel) SymUnit(m, "panel", "Panel słoneczny", "°C", -30.0, 160.0, 0.5)
     else SymUnit(m, "ogrz", "Piec C.O.", "°C", 0.0, 160.0, 0.5)
 }
 
@@ -343,9 +343,9 @@ private fun SolarMetricsCard(m: AppModel) {
         // [0.31.28] Każda liczba mówi wprost, skąd pochodzi: „zmierzone" to czujnik,
         // „szacunek" to wyliczenie z prognozy. Zniknęły sumy narastające — nie dały
         // się obronić (sumowały każdy drobny wzrost, także szum czujnika).
-        SolarMetricRow("Zbiornik teraz / powietrze", "$panelText / $outsideText")
+        SolarMetricRow("Panel teraz / powietrze", "$panelText / $outsideText")
         SolarMetricRow(
-            "Różnica zbiornik − powietrze",
+            "Różnica panel − powietrze",
             if (delta.isFinite()) (if (delta >= 0) "+" else "") + s.fmt1(delta) + "°C" else "brak danych"
         )
         // [0.31.32] Ze znakiem i bez kłamstwa „brak próbek z dziś”, gdy próbki są.
@@ -384,7 +384,7 @@ private fun SolarMetricsCard(m: AppModel) {
             // [0.31.36] Woda liczona z czujnika ZBIORNIKA (wcześniej brany był kolektor),
             // a pobranie to spadek podtrzymany, nie pojedyncze drgnięcie o 0,3 °C.
             "Zysk = o ile °C ogrzała się woda w zbiorniku słonecznym 100 l na dachu " +
-                "(czujnik w wodzie zbiornika, nie bojler pieca). Minus = woda się " +
+                "(czujnik kolektora, nie bojler pieca). Minus = woda się " +
                 "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku — z chmury, " +
                 "co minutę, także gdy aplikacja była zamknięta. „Szacunek” to " +
                 "wyliczenie z prognozy słońca — nie pomiar. Pobranie liczy się jako " +

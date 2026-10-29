@@ -95,7 +95,7 @@ fun Dashboard(m: AppModel) {
     val measurementTiles = selectedTiles.filter { it.grid == 1 }
     val controlTiles = selectedTiles.filter { it.grid == 2 }
     val to = S.valOf("ogrz", "t_ogrz")
-    val tp = S.valOf("panel", "t_panel")
+    val tb = S.valOf("bojler", "t_bojler")
     val anyAl = anyAlarm(m)
     var setpointDialogOpen by remember { mutableStateOf(false) }
 
@@ -125,7 +125,7 @@ fun Dashboard(m: AppModel) {
                         "ALARM DYMU — wejście symulowane, alarm sterownika aktywny; sprawdź kotłownię"
                     else "ALARM DYMU — sprawdź kotłownię"
                     S.alarm_ogrzewanie -> "PRZEGRZANIE PIECA — " + S.fmt1(to) + " °C"
-                    else -> "PRZEGRZANIE ZBIORNIKA — " + S.fmt1(tp) + " °C"
+                    else -> "PRZEGRZANIE PANELU — " + S.fmt1(tb) + " °C"
                 },
                 kind = "alarm",
                 onAction = null

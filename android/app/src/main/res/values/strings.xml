@@ -7,6 +7,6 @@
     <string name="widget_label_compact">Sterownik CO — kompaktowy</string>
     <string name="widget_label_strip">Sterownik CO — temperatury</string>
     <string name="widget_desc_full">Do czterech wybranych temperatur, stan sterownika i czas odczytu.</string>
-    <string name="widget_desc_compact">Do dwóch wybranych temperatur; domyślnie bojler i zbiornik solarny.</string>
+    <string name="widget_desc_compact">Do dwóch wybranych temperatur; domyślnie bojler i panel słoneczny.</string>
     <string name="widget_desc_strip">Do czterech wybranych temperatur w szerokim, niskim widżecie.</string>
 </resources>

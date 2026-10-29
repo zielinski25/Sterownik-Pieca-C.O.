@@ -70,7 +70,7 @@ object TileDefs {
         DashboardTileDef("zewn", "Zewnętrzna", 1, "Temperatura na zewnątrz", true),
         DashboardTileDef("ogrz", "Piec C.O.", 1, "Bieżąca temperatura pieca", true),
         DashboardTileDef("bojler", "Bojler", 1, "Temperatura wody w bojlerze", true),
-        DashboardTileDef("panel", "Zbiornik solarny", 1, "Temperatura wody w zbiorniku 100 l", true),
+        DashboardTileDef("panel", "Panel słoneczny", 1, "Temperatura kolektora", true),
         DashboardTileDef("pokoj", "Pomieszczenie", 1, "Temperatura w pomieszczeniu", true),
         DashboardTileDef("cisnienie", "Ciśnienie", 1, "Ciśnienie atmosferyczne", true),
         DashboardTileDef("wilgotnosc", "Wilgotność", 1, "Wilgotność powietrza", true),
@@ -82,7 +82,7 @@ object TileDefs {
         DashboardTileDef("serwo", "Serwo", 2, "Tryb oraz położenie klapy i syberka", true),
         DashboardTileDef("mieszadlo", "Mieszadło", 2, "Stan pracy mieszadła", true),
         DashboardTileDef("dym", "Czujnik dymu", 2, "Odczyt ADC i stan czujnika", true),
-        DashboardTileDef("alarmy", "Bezpieczeństwo", 2, "Podsumowanie alarmów kotła i zbiornika solarnego")
+        DashboardTileDef("alarmy", "Bezpieczeństwo", 2, "Podsumowanie alarmów kotła i kolektora")
     )
     val DEFAULT_VISIBLE_IDS: Set<String> = TILES.filter { it.defaultOn }.map { it.id }.toSet()
 }
@@ -195,9 +195,9 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
     }
     out.add(
         TileSpec(
-            id = "panel", title = "Zbiornik", grid = 1, value = fmt1(tp), unit = "°C", cls = if (tp.isFinite()) "c-slonce" else "c-none",
-            frac = norm(tp, 0.0, 100.0),
-            desc = symDesc("panel", if (!tp.isFinite()) "oczekiwanie na odczyt" else if (S.night) "noc" else "dzień") +
+            id = "panel", title = "Panel słon.", grid = 1, value = fmt1(tp), unit = "°C", cls = if (tp.isFinite()) "c-slonce" else "c-none",
+            frac = norm(tp, 0.0, 140.0),
+            desc = symDesc("panel", if (!tp.isFinite()) "oczekiwanie na odczyt" else if (S.night) "noc" else "nasłonecznienie ok") +
                 if (!panelAlarmKnown) " · alarm: brak danych" else if (panelAlarm) " · alarm" else "",
             state = if (panelAlarm) "err" else "",
             badge = panelBadge.first, badgeCls = panelBadge.second,

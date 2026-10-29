@@ -1520,12 +1520,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         else when {
             S.dym_alarm -> "🚨 ALARM DYMU"
             S.alarm_ogrzewanie -> "🚨 ALARM PRZEGRZANIA"
-            S.alarm_panel -> "🚨 ALARM ZBIORNIKA SOLARNEGO"
+            S.alarm_panel -> "🚨 ALARM PANELU"
             else -> "BRAK (stan odczytany)"
         }
         val wifi = if (S.hasData("wifi_rssi")) "${S.wifi_rssi} dBm" else "—"
         return "🔥 *Sterownik C.O.* — Raport stanu\n" +
-            "• *Piec:* ${deg("t_ogrz", S.t_ogrz)} | *Bojler:* ${deg("t_bojler", S.t_bojler)} | *Zbiornik:* ${deg("t_panel", S.t_panel)} | *Zewn:* ${deg("t_zewn", S.t_zewn)}\n" +
+            "• *Piec:* ${deg("t_ogrz", S.t_ogrz)} | *Bojler:* ${deg("t_bojler", S.t_bojler)} | *Panel:* ${deg("t_panel", S.t_panel)} | *Zewn:* ${deg("t_zewn", S.t_zewn)}\n" +
             "• *Pompa:* $pump — $pumpDesc\n" +
             "• *Serwa:* $servo\n" +
             "• *Alerty:* $alarm\n" +

@@ -78,7 +78,7 @@ fun SheetHost(m: AppModel) {
         id == "dym" -> { title = "Czujnik dymu i spalin"; icon = "shield" }
         sen != null -> { title = sen.sheetTitle; icon = sen.sheetIcon }
         id == "ogrz" -> { title = "Próg przegrzania — Piec C.O."; icon = "thermo" }
-        id == "panel" -> { title = "Zbiornik solarny 100 l (na dachu)"; icon = "panel" }
+        id == "panel" -> { title = "Kolektor słoneczny próżniowy"; icon = "panel" }
         else -> when (id) {
             "czujniki" -> { title = "Czujniki instalacji (10 czujników)"; icon = "outside" }
             "pompa" -> { title = "Pompa C.O. — Strategia i sterowanie"; icon = "pump" }
