@@ -971,3 +971,23 @@ Kontrola: plik kompiluje się (`K2JVMCompiler`, 0 błędów), a testy w
 `SolarThermalModel.kt`, który idzie do aplikacji.
 
 **Nie flashowane.** Paczka i polecenia — patrz `android-sync/v0.31.52-niebo/`.
+
+### 19.8 Co jeszcze trzeba sprawdzić na 0.31.52 (29.10)
+
+Dwie rzeczy, których nie da się sprawdzić z archiwum, bo archiwum powstało
+na kodzie bez tego członu:
+
+1. **Dzień.** Przy starcie 06:00 z 15 °C i czystym niebem koniec doby wychodzi
+   29,4 °C, przy pełnym zachmurzeniu 43,1 °C — przy szczycie różniącym się
+   tylko o 0,9 °C. Ten rozrzut jest **fizyczny** (woda wchodzi w dzień
+   chłodniejsza), ale wielkości nie da się potwierdzić bez pomiarów z nowym
+   kodem. Kontrola: wieczorem po zachodzie słońca odczytać na karcie „DZIŚ"
+   prognozę „do końca dnia" i porównać z tym, co faktycznie będzie o 06:00.
+2. **Zerowanie `reverseFlowKgS`.** Dioda termiczna w rurze heat-pipe
+   nie przewodzi ciepła w dół, ale **kolektor i rura nad zbiornikiem** nadal
+   są nocą zimniejsze od zbiornika. Jeśli nocne pomiary pokażą szybsze
+   stygnięcie niż przewiduje model, wina jest po stronie tego członu,
+   nie członu „niebo".
+
+**Punkt kontrolny:** po 3–5 nocach z 0.31.52 ponowić `kalibracja/ua_noc.py`.
+Kryterium sukcesu: rozrzut UA_eff spada z **10,2×** do **poniżej 3×**.

@@ -827,7 +827,7 @@ Dwa ostrzeżenia `quadraticBezierTo` (`Weather.kt:649` i `:655`) — rysowanie
 
 ---
 
-## 17. Stan aplikacji 0.31.51 i weryfikacja modelu (2026-10-29)
+## 17. Stan aplikacji 0.31.51 → 0.31.52 i weryfikacja modelu (2026-10-29)
 
 ### 17.1 Co jest wgrane / opublikowane
 
@@ -848,12 +848,25 @@ dodawać zysk i pokazuje `signedC(forecastEndDeltaC)` — „woda stygnie do pó
 Symulator: 24 340 sprawdzeń, 0 błędów; test zgodności tekstu karty
 **0/1000 dni niezgodnych** (w 0.31.50 było 539/1000 = 53,9%).
 
-### 17.2 Model nocny — potwierdzony, nie zmieniany
+### 17.2 Model nocny — gdzie był błąd, a gdzie go nie było
 
 Na 11 prawdziwych nocach (18–28.10) średni błąd prognozy „całej doby"
 to **2,05 °C**, mediana 1,40 °C. Model myli się **w obie strony** — nie jest
 ani za szybki, ani za wolny. `tankUa = 1.4 W/K` **potwierdzone pomiarem**:
 na nocach z ΔT 12–19 K wychodzi 1,2–1,4 W/K, czyli katalog.
+
+**Co się okazało po dodaniu członu „niebo" (0.31.52):** błąd 2,05 °C nie był
+równomierny. Po dopisaniu promieniowania do nieba spada do **0,88 °C**,
+a mediana z 1,40 °C do **0,60 °C**. Czyli model grzeszył głównie na nocach
+z czystym niebem — dokładnie tam, gdzie brakowało członu.
+
+**Jedna noc z jedenastu psuła całą średnią:** 23/24.10 zbiornik wystygł
+**14,3 °C** (42,8 → 28,5), czyli 5× szybciej niż każda inna noc przy podobnym
+ΔT. W starym modelu ta jedna noc to 8,1 z 22,6 °C sumy błędów — **36%
+średniej**. Po dodaniu członu „niebo" jej błąd spadł do 0,6 °C. Teraz największy
+błąd to 25.10 (2,4 °C, model przewidział 17,9 przy zmierzonych 15,5). Przyczyna tej jednej nocy **nie jest ustalona**;
+wykluczone: czujnik (jedna próbka −1,0 °C), pompa CO (0/132 ON), wiatr
+(korelacja 0,00), wyciek (użytkownik sprawdził).
 
 Dwie wcześniejsze diagnozy **wycofane** i nie należy do nich wracać:
 - „model liczy nocne chłodzenie 2× za wolno" — nieprawda,
@@ -897,7 +910,10 @@ wypadły gorzej niż model fizyczny (2,28 / 2,10 / 2,89 / 1,95 °C vs 2,05 °C),
 a na teście „do końca dnia" persystencja przegrywa 2,00 vs 1,29 °C.
 Szczegóły: `MODEL_SOLARNY_TRZEMCHA_2026-10-23.md` §19.
 
-**Nic nie zmieniono w kodzie modelu.** To jest świadoma decyzja oparta na danych.
+**Samouczenia nie wdrożono** — to świadoma decyzja oparta na danych.
+W kodzie zmieniono coś innego i mniejszego: **człon fizyczny „niebo"**
+(§17.5 pkt 2). Różnica jest zasadnicza — samouczęnie zgadywało stałą, a człon
+„niebo" dopisuje brakujące ogniwo równania.
 
 ### 17.5 Co zostało do zrobienia
 
