@@ -1,4 +1,4 @@
-e4937b6cad97285a9cb2f93030427c978f0e2dbe1ef49a22d600f16abc2d4f63  SterownikCO-Android-v0.31.46-PELNY-PROJEKT.zip
+934602722dbfd21bcd3644e668f2e785e373ac430da450d6a68314805e37d9fb  SterownikCO-Android-v0.31.46-PELNY-PROJEKT.zip
 1f82b8c7a38c494958571129f759ed41802f2020c00306788d77fdc9e2e7be64  SterownikCO-Android-v0.31.46-ZMIENIONE-PLIKI.zip
 6adb24419f296d4f9060111438d979f0e9d8fd28027923259e4c2042587eae6b  android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
 bf5db1fafaa6b836e6207b07a13d46ca7a868976c4b700946647a9950934e59d  android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
