@@ -36,7 +36,7 @@ Pełne wyjście: `WYNIK.txt`.
 | D | ten sam dzień policzony 100× | **identyczny co do 0,1 °C** |
 | E | czy ekran z 29.10 jest fizycznie spójny | model daje +1,9 °C przy +2,1 z ekranu |
 | F | czas wykonania | 0,40 ms na recompozycję |
-| G | **poprawka 0.31.50** — zgodność kart | stara: 128/1000 dni źle, nowa: **0/1000** |
+| G | zgodność kart (WERSJA POPRAWIONA) | ze słońcem: **0%** niezgodnych; **po zachodzie: 98%** |
 
 ## Błąd, który sam popełniłem w teście
 
@@ -67,15 +67,26 @@ W nocy karta pokazuje „—", więc problem dotyczy tylko dnia.
 **Poprawka wprowadzona w 0.31.50** (`Weather.kt`, `endOfDayGain`): gdy
 `forecastPeakReal == false`, bierzemy `forecastEndDeltaC` zamiast obciętego zera.
 
-Dowód poprawki — test G, 1000 dób:
+### KOREKTA — mój pierwszy test G był błędny
 
-| wersja | dni, gdzie „ZYSK DZIŚ" + „DO KOŃCA DNIA" ≠ karta DZIŚ |
-|---|---|
-| 0.31.49 (stara) | **128 / 1000 = 12,8%** |
-| 0.31.50 (nowa) | **0 / 1000 = 0,0%** |
+Pierwsza wersja testu G zakładała, że gdy karta „DO KOŃCA DNIA" pokazuje „—",
+karta DZIŚ nic nie dodaje. **To nieprawda.** `dailyForecast7` (wiersze 421–425)
+dodaje `forecastEndDeltaC` niezależnie od tego, co pokazuje górna karta.
 
-Poprawka zmienia liczbę na ekranie w 12,8% dób — dokładnie w tych, w których
-stara wersja się rozjeżdżała. W pozostałych 87,2% nic się nie zmienia.
+Poprawiony test G (1000 dób, połowa po zachodzie) daje prawdziwe liczby:
+
+| sytuacja | dni | niezgodne z ekranu |
+|---|---|---|
+| słońce jeszcze jest, górna karta podaje liczbę | 450 | **0 = 0,0%** |
+| po zachodzie, górna karta pokazuje „—" | 550 | **539 = 98,0%** |
+
+Czyli: **dopóki jest słońce, karty się zgadzają. Po zachodzie — prawie nigdy.**
+Widać to na zrzucie z 29.10 godz. 17:20: ZYSK DZIŚ +0,2 °C, DO KOŃCA DNIA „—",
+karta DZIŚ **−1,0 °C**.
+
+Liczba −1,0 jest fizycznie poprawna (0,2 zmierzone + (−1,2) nocnego wychładzania
+do północy), ale **ekran ukrywa ten środkowy składnik**. Użytkownik nie ma jak
+jej odtworzyć — i słusznie uznaje to za błąd.
 
 ### 2. `forecastGain` nigdy nie jest ujemny, a `forecastEndDeltaC` może być bardzo ujemny
 

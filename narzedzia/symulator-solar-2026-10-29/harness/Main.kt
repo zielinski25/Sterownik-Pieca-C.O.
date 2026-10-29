@@ -32,16 +32,36 @@ fun sunLeft(hours: List<WHour>, fromTs: Long): Boolean {
     }
 }
 
-/** LUSTRO Weather.kt / endOfDayGain — STARA (0.31.49). Zwraca NaN dla „—". */
-fun endOfDayStara(sol: SolarAnalytics, sunLeft: Boolean): Double =
-    if (sunLeft && sol.forecastGain.isFinite()) sol.forecastGain else Double.NaN
+/** LUSTRO Weather.kt / endOfDayGain — STARA (0.31.49). */
+fun endOfDayStaraTekst(sol: SolarAnalytics, sunLeft: Boolean): String =
+    if (sunLeft && sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—"
 
-/** LUSTRO Weather.kt / endOfDayGain — NOWA (0.31.50). Zwraca NaN dla „—". */
-fun endOfDayNowa(sol: SolarAnalytics, sunLeft: Boolean): Double {
-    if (!sunLeft) return Double.NaN
-    if (!sol.forecastPeakReal && sol.forecastEndDeltaC.isFinite()) return sol.forecastEndDeltaC
-    if (!sol.forecastGain.isFinite()) return Double.NaN
-    return sol.forecastGain
+/** LUSTRO Weather.kt / endOfDayGain — NOWA (0.31.50). */
+fun endOfDayNowaTekst(sol: SolarAnalytics, sunLeft: Boolean): String {
+    if (!sunLeft) return "—"
+    if (!sol.forecastPeakReal && sol.forecastEndDeltaC.isFinite())
+        return signedC(sol.forecastEndDeltaC)
+    if (!sol.forecastGain.isFinite()) return "—"
+    return "+" + fmt1(sol.forecastGain) + "°C"
+}
+
+private fun fmt1(v: Double) = if (v.isFinite()) String.format(java.util.Locale.US, "%.1f", v) else "—"
+private const val ZERO_EPS_C = 0.05
+private fun signedC(v: Double): String = when {
+    !v.isFinite() -> "—"
+    v > ZERO_EPS_C -> "+" + fmt1(v) + "°C"
+    v < -ZERO_EPS_C -> "−" + fmt1(-v) + "°C"
+    else -> "0.0°C"
+}
+
+/** LUSTRO SolarAnalytics.dailyForecast7 — DZIEŃ 0. To jest sedno. */
+fun kartaDzisRealna(s: SolarAnalytics, shown: Double): Double = shown
+
+/** Co dailyForecast7 dodaje do todayGain dla dnia 0 (kod, wiersze 421-425). */
+fun restOfDayZDZIEN0(s: SolarAnalytics): Double = when {
+    s.forecastPeakReal && s.forecastGain.isFinite() -> s.forecastGain
+    s.forecastEndDeltaC.isFinite() -> s.forecastEndDeltaC
+    else -> 0.0
 }
 
 class Wyniki {
@@ -351,48 +371,64 @@ fun testF(n: Int) {
 
 
 // ══════════════════════════════════════════════════════════════════════════
-// TEST G — poprawka 0.31.50: czy "DO KOŃCA DNIA" + "ZYSK DZIŚ" = karta DZIŚ
+// TEST G (POPRAWIONY) — czy gracz moze odtworzyc karte DZIŚ z gornych kart
+//
+// BLAD W POPRZEDNIEJ WERSJI: zakladałem, że gdy "DO KOŃCA DNIA" pokazuje "—",
+// karta DZIŚ nic nie dodaje. Nieprawda. dailyForecast7 (wiersze 421-425)
+// dodaje forecastEndDeltaC NIEZALEŻNIE od tego, co pokazuje karta u gory.
+// Po zachodzie słońca karta u gory mówi "—", a DZIŚ nadal odejmuje nocne
+// wychładzanie. Dokladnie to widac na zrzucie z 17:20: +0.2 i -1.0.
 // ══════════════════════════════════════════════════════════════════════════
 fun testG(n: Int): Wyniki {
-    println("TEST G — spójność kart po poprawce 0.31.50 ($n dób)")
+    println("TEST G — odtwarzalność karty DZIŚ z górnej karty ($n dób)")
     val w = Wyniki()
     val rnd = Random(424242)
     val start = nowHourStart()
-    var roznych = 0
-    var staraZle = 0
-    var nowaZle = 0
+    var nocnych = 0
+    var nocnychRozjazd = 0
+    var dziennych = 0
+    var dziennychZle = 0
 
     for (i in 0 until n) {
         val tNow = 5.0 + rnd.nextDouble() * 55.0
         val todayGain = rnd.nextDouble(-6.0, 8.0)
-        val hours = zbudujGodziny(rnd, start, 7 * 24, 50.0 + rnd.nextDouble() * 900.0,
+        var hours = zbudujGodziny(rnd, start, 7 * 24, 50.0 + rnd.nextDouble() * 900.0,
             rnd.nextDouble(0.0, 100.0), -12.0 + rnd.nextDouble() * 32.0)
+        // polowa dob ma "po zachodzie": zero promieniowania w reszcie dzisiejszej doby
+        val poZachodzie = (i % 2 == 1)
+        if (poZachodzie) {
+            hours = hours.mapIndexed { k, h ->
+                if (k < 24) h.copy(tiltedIrradiance = 0.0) else h
+            }.map { it.copy(tiltedIrradiance = if (start + 24 * 3_600_000L > it.time) 0.0 else it.tiltedIrradiance) }
+        }
+
         val s = nowaAnaliza(tNow, todayGain)
         s.estimateForecastGain(hours)
         val deltas = s.dailyForecast7((0 until 7).map { d -> hours.drop(d * 24).take(24) })
         val shown0 = kartaWartosc(deltas.getOrNull(0), hours.take(24))
         val sl = sunLeft(hours, start)
+        val cap = endOfDayNowaTekst(s, sl)
+        val rest = restOfDayZDZIEN0(s)
 
-        val stara = endOfDayStara(s, sl)
-        val nowa = endOfDayNowa(s, sl)
-        if (stara.isFinite() && nowa.isFinite() && Math.abs(stara - nowa) > 0.05) roznych++
-
-        // I9a — STARA wersja: karta DZIŚ musi być sumą górnych kart. Ma prawo nie być.
-        if (shown0.isFinite() && stara.isFinite()) {
-            if (Math.abs(shown0 - r1(todayGain + stara)) > 0.1001) staraZle++
-        } else if (shown0.isFinite() && Math.abs(shown0 - r1(todayGain)) > 0.1001) {
-            staraZle++   // karta pokazuje "—", a DZIŚ i tak coś dodała
-        }
-
-        // I9b — NOWA wersja: ZAWSZE suma. To jest sedno poprawki.
-        val baza = if (nowa.isFinite()) r1(todayGain + nowa) else r1(todayGain)
+        // I9 — karta DZIŚ musi być DOKŁADNIE todayGain + restOfDay (kod z 421-425)
+        val baza = r1(todayGain + rest)
         w.sprawdz(shown0.isFinite() && Math.abs(shown0 - baza) <= 0.1001,
-            "I9b i=$i DZIŚ=$shown0 a ${r1(todayGain)}+${if (nowa.isFinite()) r1(nowa) else "brak"} = $baza")
-        if (Math.abs(shown0 - baza) > 0.1001) nowaZle++
+            "I9 i=$i DZIŚ=$shown0 a gain=${r1(todayGain)}+rest=${r1(rest)}=$baza")
+
+        // I10 — czy gracz MOŻE odtworzyć liczbę z ekranu?
+        if (cap == "—") {
+            nocnych++
+            if (Math.abs(shown0 - r1(todayGain)) > 0.1001) nocnychRozjazd++
+        } else {
+            dziennych++
+            val zCap = r1(todayGain + cap.replace("−", "-").replace("°C", "").replace("+", "").toDouble())
+            if (Math.abs(shown0 - zCap) > 0.1001) dziennychZle++
+        }
     }
-    println("  dni, gdzie poprawka zmienia liczbę na ekranie: $roznych / $n = ${"%.1f".format(100.0 * roznych / n)}%")
-    println("  STARA wersja — DZIŚ nie zgadza się z górnymi kartami: $staraZle / $n = ${"%.1f".format(100.0 * staraZle / n)}%")
-    println("  NOWA wersja  — DZIŚ nie zgadza się z górnymi kartami: $nowaZle / $n = ${"%.1f".format(100.0 * nowaZle / n)}%")
+    println("  dni z widocznym słońcem (karta u góry podaje liczbę): $dziennych")
+    println("    z tego NIEODTWARZALNE z ekranu: $dziennychZle = ${"%.1f".format(100.0 * dziennychZle / dziennych.coerceAtLeast(1))}%")
+    println("  dni bez słońca (karta u góry pokazuje \"—\"): $nocnych")
+    println("    z tego DZIŚ nadal dodaje/odejmuje noc: $nocnychRozjazd = ${"%.1f".format(100.0 * nocnychRozjazd / nocnych.coerceAtLeast(1))}%")
     println(w.podsumowanie())
     return w
 }

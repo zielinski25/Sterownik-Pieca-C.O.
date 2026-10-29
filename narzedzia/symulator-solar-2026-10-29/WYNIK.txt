@@ -6,65 +6,66 @@ TEST A — odtworzenie ekranu z 29.10.2026 (ZYSK +1.5, DO KOŃCA DNIA +2.1)
   ZYSK DZIŚ          = +1.5
   DO KOŃCA DNIA      = +2.1
   karta DZIŚ (nowa)  = 3.6
-  karta DZIŚ (stara) = 1.0
+  karta DZIŚ (stara) = 0.9
   WYNIK: OK — 1.5 + 2.1 = 3.6
 
 TEST B — 1000 losowych dób, niezmienniki na realnym kodzie
-  sprawdzen OK=24748  BLEDOW=0
-  I8 rozjazd wyswietlania (model chlodzi, karta pokaze +0.0): 126 / 1000 dob = 12.6%
+  sprawdzen OK=23798  BLEDOW=0
+  I8 rozjazd wyswietlania (model chlodzi, karta pokaze +0.0): 601 / 1000 dob = 60.1%
 TEST C — przypadki brzegowe
   pusta lista godzin                 DZIŚ=   1.0  JUTRO=  -5.6  prognoza=NaN
-  jedna godzina                      DZIŚ=   2.8  JUTRO=  -5.6  prognoza=1.8
-  sama noc (GTI=0)                   DZIŚ=  -0.3  JUTRO=  -2.0  prognoza=0.0
-  brak GTI (null)                    DZIŚ=  -0.3  JUTRO=  -2.0  prognoza=0.0
-  tylko GHI (GTI null)               DZIŚ=   7.4  JUTRO=   3.6  prognoza=6.4
-  woda 0 C                           DZIŚ=   8.7  JUTRO=  10.3  prognoza=8.7
-  woda 140 C                         DZIŚ= -18.3  JUTRO= -32.1  prognoza=0.0
-  woda -30 C (poza zakresem)         DZIŚ=  14.6  JUTRO=  19.4  prognoza=14.6
-  woda 200 C (poza zakresem)         DZIŚ=   0.0  JUTRO=   2.8  prognoza=NaN
-  woda NaN                           DZIŚ=   4.9  JUTRO=   2.8  prognoza=NaN
-  powietrze -40 C                    DZIŚ=   0.5  JUTRO= -14.3  prognoza=0.5
-  powietrze +50 C                    DZIŚ=   8.7  JUTRO=  17.8  prognoza=8.7
-  słońce 1200 W/m2                   DZIŚ=  22.7  JUTRO=  28.9  prognoza=22.7
-  dzień bez słońca                   DZIŚ=  -2.5  JUTRO=  -4.1  prognoza=0.0
-  prognoza 48 h (krótka)             DZIŚ=   7.4  JUTRO=   3.6  prognoza=6.4
-  prognoza 25 h                      DZIŚ=   7.4  JUTRO=   1.3  prognoza=6.4
+  jedna godzina                      DZIŚ=   1.4  JUTRO=  -5.6  prognoza=0.4
+  sama noc (GTI=0)                   DZIŚ=   0.0  JUTRO=  -2.0  prognoza=0.0
+  brak GTI (null)                    DZIŚ=   0.0  JUTRO=  -2.0  prognoza=0.0
+  tylko GHI (GTI null)               DZIŚ=   1.4  JUTRO=   6.1  prognoza=0.4
+  woda 0 C                           DZIŚ=   2.0  JUTRO=  13.0  prognoza=2.0
+  woda 140 C                         DZIŚ= -15.7  JUTRO= -32.9  prognoza=0.0
+  woda -30 C (poza zakresem)         DZIŚ=   5.9  JUTRO=  22.9  prognoza=5.9
+  woda 200 C (poza zakresem)         DZIŚ=   0.0  JUTRO=   2.0  prognoza=NaN
+  woda NaN                           DZIŚ=   2.7  JUTRO=   2.0  prognoza=NaN
+  powietrze -40 C                    DZIŚ=  -7.2  JUTRO=  -9.8  prognoza=0.0
+  powietrze +50 C                    DZIŚ=   4.1  JUTRO=  21.1  prognoza=4.1
+  słońce 1200 W/m2                   DZIŚ=   2.0  JUTRO=  44.6  prognoza=2.0
+  dzień bez słońca                   DZIŚ=  -1.8  JUTRO=  -4.3  prognoza=0.0
+  prognoza 48 h (krótka)             DZIŚ=   1.4  JUTRO=   6.1  prognoza=0.4
+  prognoza 25 h                      DZIŚ=   1.4  JUTRO=   0.2  prognoza=0.4
   puste archiwum                     dailyForecast7=[] (puste = karta uzyje zapasu)
   sprawdzen OK=130  BLEDOW=0
 TEST D — powtarzalność: ten sam dzień policzony 100 razy
-  wynik powtarzalny: 8.6
+  wynik powtarzalny: 1.9
   sprawdzen OK=100  BLEDOW=0
 TEST E — czy ekran z 29.10 jest fizycznie spójny (suma GTI 0.7156 kWh/m2, szczyt 147)
   stara karta = -2.4 °C  =>  dobowy GTI = 0.7156 kWh/m2
   kontrola wzoru: dayDeltaC(0.7156) = -2.4
 
   udział doby                                  model od 18.5 °C
-  10% promieniowania (0.072 kWh/m2)          +0.1 °C, 0.05 kWh
-  20% promieniowania (0.143 kWh/m2)          +0.2 °C, 0.10 kWh
-  30% promieniowania (0.215 kWh/m2)          +0.3 °C, 0.16 kWh
-  40% promieniowania (0.286 kWh/m2)          +0.5 °C, 0.21 kWh
-  50% promieniowania (0.358 kWh/m2)          +0.7 °C, 0.26 kWh
-  60% promieniowania (0.429 kWh/m2)          +0.8 °C, 0.31 kWh
-  70% promieniowania (0.501 kWh/m2)          +1.0 °C, 0.36 kWh
-  80% promieniowania (0.572 kWh/m2)          +1.2 °C, 0.42 kWh
-  90% promieniowania (0.644 kWh/m2)          +1.5 °C, 0.47 kWh
-  100% promieniowania (0.716 kWh/m2)         +1.9 °C, 0.52 kWh
+  10% promieniowania (0.072 kWh/m2)          +0.0 °C, 0.05 kWh
+  20% promieniowania (0.143 kWh/m2)          +0.0 °C, 0.11 kWh
+  30% promieniowania (0.215 kWh/m2)          +0.0 °C, 0.16 kWh
+  40% promieniowania (0.286 kWh/m2)          +0.0 °C, 0.22 kWh
+  50% promieniowania (0.358 kWh/m2)          +0.4 °C, 0.27 kWh
+  60% promieniowania (0.429 kWh/m2)          +0.8 °C, 0.33 kWh
+  70% promieniowania (0.501 kWh/m2)          +1.3 °C, 0.38 kWh
+  80% promieniowania (0.572 kWh/m2)          +1.7 °C, 0.44 kWh
+  90% promieniowania (0.644 kWh/m2)          +2.1 °C, 0.49 kWh
+  100% promieniowania (0.716 kWh/m2)         +2.5 °C, 0.55 kWh
 
-  ekran pokazał +2.1 °C -> OSIĄGALNE przy ~100% dobowego słońca po 13:00 => ekran jest spójny
+  ekran pokazał +2.1 °C -> OSIĄGALNE przy ~90% dobowego słońca po 13:00 => ekran jest spójny
 
 TEST F — czas wykonania (to samo, co woła ekran przy każdej recompozycji)
-  simulate() 1 doba (24 h)          =   0.06 ms
-  estimateForecastGain (reszta doby) =   0.03 ms
-  dailyForecast7 (7 dób)             =   0.35 ms
-  ekran wola oba =   0.39 ms na recompozycje
+  simulate() 1 doba (24 h)          =   0.04 ms
+  estimateForecastGain (reszta doby) =   0.02 ms
+  dailyForecast7 (7 dób)             =   0.24 ms
+  ekran wola oba =   0.26 ms na recompozycje
   klatka 60 Hz = 16.7 ms -> mieszczi sie z zapasem
 
-TEST G — spójność kart po poprawce 0.31.50 (1000 dób)
-  dni, gdzie poprawka zmienia liczbę na ekranie: 128 / 1000 = 12.8%
-  STARA wersja — DZIŚ nie zgadza się z górnymi kartami: 128 / 1000 = 12.8%
-  NOWA wersja  — DZIŚ nie zgadza się z górnymi kartami: 0 / 1000 = 0.0%
+TEST G — odtwarzalność karty DZIŚ z górnej karty (1000 dób)
+  dni z widocznym słońcem (karta u góry podaje liczbę): 450
+    z tego NIEODTWARZALNE z ekranu: 0 = 0.0%
+  dni bez słońca (karta u góry pokazuje "—"): 550
+    z tego DZIŚ nadal dodaje/odejmuje noc: 539 = 98.0%
   sprawdzen OK=1000  BLEDOW=0
 ══════════════════════════════════════════════════════════════
-RAZEM: OK=25978  BLEDY=0
+RAZEM: OK=25028  BLEDY=0
 TEST A (regresja 3.6): OK
 ══════════════════════════════════════════════════════════════
