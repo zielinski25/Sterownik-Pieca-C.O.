@@ -166,6 +166,45 @@ w prognozie godzinowej, którą aplikacja pobiera (`Weather.kt`, pole
 `cloud_cover`). Model cieplny tej liczby po prostu nie używa.
 
 
+## 5c-2. Zdjęcie z dachu wyjaśnia resztę
+
+Przysłałeś zdjęcie instalacji. To **zestaw kompaktowy**: zbiornik leży poziomo
+bezpośrednio na rzędzie **rur próżniowych heat-pipe** (ok. 10 szt., 58/1800),
+na tej samej ramie, na dachu. Zgadza się z parametrami w kodzie — apertura
+0,95 m², komentarz w `SolarThermalModel.kt` mówi wprost „10 rur 58/1800".
+
+Dwie rzeczy z tego wynikają:
+
+**1. Zbiornik jest najwyżej i patrzy w niebo.** Potwierdza to człon „niebo".
+
+**2. Cyrkulacji wstecznej nie ma i nie może być.** Rura próżniowa heat-pipe jest
+**termiczną diodą** — czynnik paruje w rurze i skrapla się w zbiorniku; gdy rura
+jest zimniejsza od zbiornika, parowania nie ma i ciepło **nie płynie w dół**.
+Do tego woda użytkowa w ogóle nie krąży przez rury: ona siedzi w zbiorniku,
+a rury to zamknięte heat-pipy.
+
+Czyli parametry `reverseFlowKgS = 0,004` i `loopUaWk = 1,0` w modelu opisują
+mechanizm, **którego w tej instalacji nie ma**. To wyjaśnia, dlaczego zabawa
+nimi nie działała: `loopUaWk = 5,0` poprawiał noc o 1,26 °C, ale psuł dzień
+o 19% — bo model dokładał straty pętli także w dzień, kiedy ich nie ma.
+
+**Kontrola rzędu wielkości:** współczynnik promieniowania do zimnego nieba to
+ok. 5,5 W/(m²·K). Zmierzone `b = 9,9 W/K` odpowiada ok. **1,8 m² patrzących
+w niebo**. Zbiornik 100 l jako poziomy walec Ø 0,45 × 1,0 m ma **1,73 m²**.
+Zgadza się co do 5%.
+
+## 5c-3. Za darmo: okryć zbiornik
+
+Przy czystym niebie zbiornik traci do **9,9 W/K**. Przy różnicy 30 K to
+**~300 W** — więcej niż grzałka, tylko w drugą stronę. Przez 10 godzin nocy
+około **3 kWh**, czyli **~2,5 °C na 100 l wody**.
+
+Najtańsza naprawa nie jest w kodzie: **okryć zbiornik od góry** — koc izolacyjny,
+mata alufoil, ekran odbijający promieniowanie. Nic nie trzeba rozbierać.
+
+**Jak sprawdzisz, że zadziałało:** po okryciu powtórz `kalibracja/niebo.py` na
+nowym logu. Jeśli `b` spadnie z ~9,9 do ~2–3 W/K, okrycie działa. Pomiar, nie wiara.
+
 ## 5d. Czujnik „panel" mierzy zbiornik, nie kolektor
 
 Sprawdziłem przy okazji, **co naprawdę mierzy** kanał, na którym stoi model.
@@ -194,12 +233,13 @@ grawitacyjny. Pole `pompa=` w logu to pompa CO pieca (`pinPompa`), nie solar.
 Skoro nie ma pompy, to **nic nie stoi na przeszkodzie, żeby obieg nocą kręcił się
 wstecz** — grawitacja działa w obie strony.
 
-## 5e. Jedno pytanie do użytkownika
+## 5e. Jedno pytanie, które zostało
 
 Gdzie fizycznie przykręcony jest czujnik z kanału `BUS_3` — na zbiorniku czy na
-kolektorze na dachu? Od tego zależy, czy:
-- etykieta „Panel solarny" w aplikacji jest tylko myląca (czujnik na zbiorniku), czy
-- mamy prawdziwy pomiar kolektora i cyrkulację wsteczną można policzyć z danych.
+którejś z rur? Na zdjęciu widać, że zbiornik jest jedynym sensownym miejscem,
+a dane to potwierdzają (max 47,2 °C w 11 dni, max 1,0 °C na 5 min — płyta
+kolektora tak się nie zachowuje). Ale to Twoje słowo jest tu rozstrzygające,
+nie moje domysły.
 
 ## 5f. Wariant „z detektorem" — też sprawdzony, też odpada
 
@@ -242,6 +282,13 @@ Różnica między jednym a drugim jest zasadnicza, więc żeby nie było nieporo
 
 **Do wdrożenia potrzebna jest Twoja zgoda** — zmienia `SolarThermalModel.kt`
 i wymaga podbicia wersji. Nie ruszam bez pytania.
+
+W tej samej zmianie wypada **wyłączyć cyrkulację wsteczną** (`reverseFlowKgS`
+i nocne straty pętli `loopUaWk`), bo — jak pokazało zdjęcie — w instalacji
+heat-pipe ten mechanizm nie istnieje. Czyli dwie zmiany w jednym pliku:
+
+1. dodać człon nieba do zbiornika (`a`, `b`),
+2. wyzerować nocny przepływ wsteczny pętli.
 
 Zastrzeżenie, które trzeba powiedzieć wprost: 11 nocy to jeden sezon, a
 zachmurzenie biorę z modelu Open-Meteo, nie z czujnika. Przed wgraniem warto

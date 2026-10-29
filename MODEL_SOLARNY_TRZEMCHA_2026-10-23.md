@@ -841,6 +841,62 @@ z czujnika). Przed wdrożeniem warto powtórzyć na 3–4 tygodniach archiwum.
 Skrypt odtwarzalny: `narzedzia/symulator-solar-2026-10-29/kalibracja/niebo.py`,
 wynik `WYNIK-NIEBO.txt`.
 
+### 19.5b Zdjęcie z dachu — co potwierdza, a co wywala
+
+Użytkownik przysłał zdjęcie instalacji (2026-10-15, `IMG20261015172628.jpg`).
+Widać na nim:
+
+- **zestaw kompaktowy** — zbiornik leży poziomo **bezpośrednio na** rzędzie rur,
+  na tej samej ramie, na dachu,
+- **rury próżniowe heat-pipe** (ok. 10 szt., typ 58/1800),
+- zbiornik jest **najwyżej położonym elementem** i ma pełne pole widzenia nieba,
+- żadnej wężownicy, żadnego drugiego obiegu.
+
+To zgadza się z parametrami w kodzie (`apertureOptical = 0,678` = 0,95 m² apertury
+× η₀ 0,714, komentarz w `SolarThermalModel.kt` mówi wprost „10 rur 58/1800").
+
+**Co zdjęcie potwierdza:** zbiornik jest wystawiony na niebo i to on jest
+głównym kanałem strat nocnych — zgodnie z 19.5a.
+
+**Co zdjęcie wywala: cyrkulację wsteczną.** Rura próżniowa heat-pipe jest
+**termiczną diodą**: czynnik paruje w rurze i skrapla się w kondensatorze
+w zbiorniku; gdy rura jest zimniejsza od zbiornika, parowania nie ma i **ciepło
+nie płynie w dół**. Do tego woda użytkowa w ogóle nie krąży przez rury — ona
+siedzi w zbiorniku, a rury to zamknięte heat-pipy.
+
+Czyli parametry `reverseFlowKgS = 0,004` i `loopUaWk = 1,0` w modelu opisują
+**mechanizm, którego w tej instalacji fizycznie nie ma**. I to wyjaśnia, dlaczego
+zabawa nimi nie działała: podniesienie `loopUaWk` do 5,0 poprawiało noc, ale
+psuło dzień o 19% — bo model dokładał straty pętli również w dzień, kiedy ich
+nie ma.
+
+| co | czy w tej instalacji działa |
+|---|---|
+| przewodzenie przez ściankę zbiornika | **tak** — dopasowane `a = 0,65 W/K` |
+| promieniowanie zbiornika do nieba | **tak** — dopasowane `b = 9,90 W/K` |
+| cyrkulacja wsteczna przez rury | **nie** — heat-pipe to dioda |
+| przepływ wody przez kolektor | **nie** — woda zostaje w zbiorniku |
+
+**Kontrola rzędu wielkości:** dla nieba o temperaturze efektywnej dużo niższej
+od powierzchni, współczynnik promieniowania wynosi ok. 5,5 W/(m²·K). Zmierzone
+`b = 9,9 W/K` odpowiada więc ok. **1,8 m² powierzchni patrzącej w niebo**.
+Zbiornik 100 l jako poziomy walec Ø 0,45 m × 1,0 m ma **1,73 m²**. Zgadza się
+co do 5%.
+
+### 19.5c Praktyczny wniosek: okryć zbiornik
+
+Skoro przy czystym niebie zbiornik traci do **9,9 W/K**, to przy różnicy 30 K
+jest to **ok. 300 W** — czyli więcej niż grzałka w bojlerze, tylko w drugą
+stronę. Przy 10 godzinach nocy to ok. **3 kWh ciepła na dobę**, czyli ~2,5 °C
+na 100 l wody.
+
+Najtańsza naprawa nie jest w kodzie: **okryć zbiornik od góry** (koc izolacyjny,
+mata alufoil, ekran odbijający promieniowanie). Nie trzeba niczego rozbierać.
+
+**Jak sprawdzić, że zadziałało:** po okryciu powtórzyć `kalibracja/niebo.py` na
+nowym logu. Jeśli `b` spadnie z ~9,9 do ~2–3 W/K, okrycie działa. To jest
+pomiar, nie wiara.
+
 ### 19.6 Czujnik „panel solarny" mierzy zbiornik, nie kolektor
 
 Przy okazji liczenia tych nocy sprawdziłem, **co właściwie mierzy** kanał,
