@@ -210,7 +210,7 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
     out.add(
         TileSpec(
             id = "pokoj", title = "Pomieszczenie", grid = 1, value = fmt1(tr), unit = "°C", cls = if (tr.isFinite()) "c-ok" else "c-none",
-            frac = norm(tr, 8.0, 45.0), desc = symDesc("pokoj", if (tr.isFinite()) "komfort cieplny" else "oczekiwanie na odczyt"),
+            frac = norm(tr, 8.0, 45.0), desc = symDesc("pokoj", if (!tr.isFinite()) "oczekiwanie na odczyt" else if (tr < 16.0) "zimno" else if (tr < 19.0) "chłodno" else if (tr <= 24.0) "komfort cieplny" else "ciepło"),
             badge = badge("pokoj")?.first ?: "LIVE", badgeCls = badge("pokoj")?.second ?: "live",
             sim = S.symAktywna("pokoj"), stale = stale, artKey = "pokoj"
         )

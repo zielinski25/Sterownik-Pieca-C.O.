@@ -19,6 +19,31 @@ fun r1(v: Double): Double = Math.round(v * 10) / 10.0
 
 fun nowHourStart(): Long = Weather.startOfHour()
 
+
+// ── LUSTRO Weather.kt / solarSunLeft (wiersze 884–893) ─────────────────────
+fun sunLeft(hours: List<WHour>, fromTs: Long): Boolean {
+    val end = java.util.Calendar.getInstance().apply {
+        timeInMillis = fromTs
+        set(java.util.Calendar.HOUR_OF_DAY, 23); set(java.util.Calendar.MINUTE, 59)
+        set(java.util.Calendar.SECOND, 59)
+    }.timeInMillis
+    return hours.any { h ->
+        h.time in fromTs..end && ((h.tiltedIrradiance ?: h.shortwaveRadiation ?: 0.0) > 20.0)
+    }
+}
+
+/** LUSTRO Weather.kt / endOfDayGain — STARA (0.31.49). Zwraca NaN dla „—". */
+fun endOfDayStara(sol: SolarAnalytics, sunLeft: Boolean): Double =
+    if (sunLeft && sol.forecastGain.isFinite()) sol.forecastGain else Double.NaN
+
+/** LUSTRO Weather.kt / endOfDayGain — NOWA (0.31.50). Zwraca NaN dla „—". */
+fun endOfDayNowa(sol: SolarAnalytics, sunLeft: Boolean): Double {
+    if (!sunLeft) return Double.NaN
+    if (!sol.forecastPeakReal && sol.forecastEndDeltaC.isFinite()) return sol.forecastEndDeltaC
+    if (!sol.forecastGain.isFinite()) return Double.NaN
+    return sol.forecastGain
+}
+
 class Wyniki {
     var ok = 0
     var fail = 0
@@ -324,6 +349,54 @@ fun testF(n: Int) {
     println()
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════
+// TEST G — poprawka 0.31.50: czy "DO KOŃCA DNIA" + "ZYSK DZIŚ" = karta DZIŚ
+// ══════════════════════════════════════════════════════════════════════════
+fun testG(n: Int): Wyniki {
+    println("TEST G — spójność kart po poprawce 0.31.50 ($n dób)")
+    val w = Wyniki()
+    val rnd = Random(424242)
+    val start = nowHourStart()
+    var roznych = 0
+    var staraZle = 0
+    var nowaZle = 0
+
+    for (i in 0 until n) {
+        val tNow = 5.0 + rnd.nextDouble() * 55.0
+        val todayGain = rnd.nextDouble(-6.0, 8.0)
+        val hours = zbudujGodziny(rnd, start, 7 * 24, 50.0 + rnd.nextDouble() * 900.0,
+            rnd.nextDouble(0.0, 100.0), -12.0 + rnd.nextDouble() * 32.0)
+        val s = nowaAnaliza(tNow, todayGain)
+        s.estimateForecastGain(hours)
+        val deltas = s.dailyForecast7((0 until 7).map { d -> hours.drop(d * 24).take(24) })
+        val shown0 = kartaWartosc(deltas.getOrNull(0), hours.take(24))
+        val sl = sunLeft(hours, start)
+
+        val stara = endOfDayStara(s, sl)
+        val nowa = endOfDayNowa(s, sl)
+        if (stara.isFinite() && nowa.isFinite() && Math.abs(stara - nowa) > 0.05) roznych++
+
+        // I9a — STARA wersja: karta DZIŚ musi być sumą górnych kart. Ma prawo nie być.
+        if (shown0.isFinite() && stara.isFinite()) {
+            if (Math.abs(shown0 - r1(todayGain + stara)) > 0.1001) staraZle++
+        } else if (shown0.isFinite() && Math.abs(shown0 - r1(todayGain)) > 0.1001) {
+            staraZle++   // karta pokazuje "—", a DZIŚ i tak coś dodała
+        }
+
+        // I9b — NOWA wersja: ZAWSZE suma. To jest sedno poprawki.
+        val baza = if (nowa.isFinite()) r1(todayGain + nowa) else r1(todayGain)
+        w.sprawdz(shown0.isFinite() && Math.abs(shown0 - baza) <= 0.1001,
+            "I9b i=$i DZIŚ=$shown0 a ${r1(todayGain)}+${if (nowa.isFinite()) r1(nowa) else "brak"} = $baza")
+        if (Math.abs(shown0 - baza) > 0.1001) nowaZle++
+    }
+    println("  dni, gdzie poprawka zmienia liczbę na ekranie: $roznych / $n = ${"%.1f".format(100.0 * roznych / n)}%")
+    println("  STARA wersja — DZIŚ nie zgadza się z górnymi kartami: $staraZle / $n = ${"%.1f".format(100.0 * staraZle / n)}%")
+    println("  NOWA wersja  — DZIŚ nie zgadza się z górnymi kartami: $nowaZle / $n = ${"%.1f".format(100.0 * nowaZle / n)}%")
+    println(w.podsumowanie())
+    return w
+}
+
 fun main() {
     println("╔══════════════════════════════════════════════════════════════╗")
     println("║  SYMULATOR 0.31.49 — realny kod, prawdziwy kompilator Kotlin ║")
@@ -334,8 +407,9 @@ fun main() {
     val d = testD(100)
     testE()
     testF(200)
+    val g = testG(1000)
     println("══════════════════════════════════════════════════════════════")
-    println("RAZEM: OK=${b.ok + c.ok + d.ok}  BLEDY=${b.fail + c.fail + d.fail}")
+    println("RAZEM: OK=${b.ok + c.ok + d.ok + g.ok}  BLEDY=${b.fail + c.fail + d.fail + g.fail}")
     println("TEST A (regresja 3.6): " + if (a) "OK" else "BLAD")
     println("══════════════════════════════════════════════════════════════")
 }

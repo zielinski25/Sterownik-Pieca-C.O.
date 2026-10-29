@@ -54,12 +54,17 @@ TEST E — czy ekran z 29.10 jest fizycznie spójny (suma GTI 0.7156 kWh/m2, szc
 
 TEST F — czas wykonania (to samo, co woła ekran przy każdej recompozycji)
   simulate() 1 doba (24 h)          =   0.06 ms
-  estimateForecastGain (reszta doby) =   0.04 ms
-  dailyForecast7 (7 dób)             =   0.37 ms
-  ekran wola oba =   0.41 ms na recompozycje
+  estimateForecastGain (reszta doby) =   0.03 ms
+  dailyForecast7 (7 dób)             =   0.35 ms
+  ekran wola oba =   0.39 ms na recompozycje
   klatka 60 Hz = 16.7 ms -> mieszczi sie z zapasem
 
+TEST G — spójność kart po poprawce 0.31.50 (1000 dób)
+  dni, gdzie poprawka zmienia liczbę na ekranie: 128 / 1000 = 12.8%
+  STARA wersja — DZIŚ nie zgadza się z górnymi kartami: 128 / 1000 = 12.8%
+  NOWA wersja  — DZIŚ nie zgadza się z górnymi kartami: 0 / 1000 = 0.0%
+  sprawdzen OK=1000  BLEDOW=0
 ══════════════════════════════════════════════════════════════
-RAZEM: OK=24978  BLEDY=0
+RAZEM: OK=25978  BLEDY=0
 TEST A (regresja 3.6): OK
 ══════════════════════════════════════════════════════════════

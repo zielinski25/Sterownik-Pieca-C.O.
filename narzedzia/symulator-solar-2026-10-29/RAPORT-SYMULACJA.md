@@ -35,7 +35,8 @@ Pełne wyjście: `WYNIK.txt`.
 | C | 17 przypadków brzegowych (NaN, puste, −40 °C, 1200 W/m²) | **130 sprawdzeń, 0 błędów**, żadnego NaN na ekranie |
 | D | ten sam dzień policzony 100× | **identyczny co do 0,1 °C** |
 | E | czy ekran z 29.10 jest fizycznie spójny | model daje +1,9 °C przy +2,1 z ekranu |
-| F | czas wykonania | 0,41 ms na recompozycję |
+| F | czas wykonania | 0,40 ms na recompozycję |
+| G | **poprawka 0.31.50** — zgodność kart | stara: 128/1000 dni źle, nowa: **0/1000** |
 
 ## Błąd, który sam popełniłem w teście
 
@@ -63,8 +64,18 @@ Częstość w symulacji: **126 z 1000 dób = 12,6%**. W realu rzadsze (mój gene
 wodę 46 °C przy powietrzu −6 °C), ale w lecie po zachodzie słońca to typowa sytuacja.
 W nocy karta pokazuje „—", więc problem dotyczy tylko dnia.
 
-Poprawka (nie wprowadzona — czeka na zgodę): `endOfDayGain()` ma brać
-`forecastEndDeltaC`, gdy `forecastPeakReal == false`. Jedna linia.
+**Poprawka wprowadzona w 0.31.50** (`Weather.kt`, `endOfDayGain`): gdy
+`forecastPeakReal == false`, bierzemy `forecastEndDeltaC` zamiast obciętego zera.
+
+Dowód poprawki — test G, 1000 dób:
+
+| wersja | dni, gdzie „ZYSK DZIŚ" + „DO KOŃCA DNIA" ≠ karta DZIŚ |
+|---|---|
+| 0.31.49 (stara) | **128 / 1000 = 12,8%** |
+| 0.31.50 (nowa) | **0 / 1000 = 0,0%** |
+
+Poprawka zmienia liczbę na ekranie w 12,8% dób — dokładnie w tych, w których
+stara wersja się rozjeżdżała. W pozostałych 87,2% nic się nie zmienia.
 
 ### 2. `forecastGain` nigdy nie jest ujemny, a `forecastEndDeltaC` może być bardzo ujemny
 
@@ -79,3 +90,24 @@ Ale obie wartości idą na ekran bez rozróżnienia, co opisano w punkcie 1.
 - **Czy model fizyczny zgadza się z rzeczywistością.** Symulacja sprawdza spójność
   wewnętrzną, nie zgodność z prawdziwym słońcem. To było robione wcześniej na 4 dniach
   pomiarów (błąd średni 1,3 °C).
+
+## 0.31.50 — co zmieniono i czego to dotyczy
+
+| plik | zmiana |
+|---|---|
+| `build.gradle.kts` | versionCode 31050, versionName 0.31.50 |
+| `SolarAnalytics.kt` | bez zmian względem 0.31.49 (model fizyczny z 0.31.48) |
+| `Weather.kt` | `endOfDayGain()` pokazuje realną zmianę, nie `+0,0` przy chłodzeniu |
+| `TileSpecs.kt` | podpis kafelka pokoju z progami zamiast stałego „komfort cieplny" |
+| `ChartEngine.kt` | bez zmian względem 0.31.49 (szybsze rysowanie z 0.31.49) |
+
+Podpis kafelka pokoju:
+
+| temperatura | podpis |
+|---|---|
+| < 16 °C | zimno |
+| 16–18,9 °C | chłodno |
+| 19–24 °C | komfort cieplny |
+| > 24 °C | ciepło |
+
+Przy 14,5 °C (stan z 29.10.2026) kafelek pokaże **„zimno"** zamiast „komfort cieplny".

@@ -893,8 +893,17 @@ internal fun solarSunLeft(hours: List<WHour>, fromTs: Long): Boolean {
 }
 
 /** Wartość karty „DO KOŃCA DNIA”. */
-private fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String =
-    if (sunLeft && sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—"
+private fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String {
+    if (!sunLeft) return "—"
+    // [0.31.50] Model przewiduje samo wychładzanie: `forecastGain` jest obcięte do zera,
+    // więc karta pokazywała „+0,0 °C", a karta DZIŚ obok dodawała ujemne `forecastEndDeltaC`
+    // i wychodziło np. −2,8 °C. Dwie sprzeczne liczby na jednym ekranie.
+    // Symulacja 29.10.2026: dotyczyło 12,6% dób. Pokazujemy realną zmianę, nie zero.
+    if (!sol.forecastPeakReal && sol.forecastEndDeltaC.isFinite())
+        return signedC(sol.forecastEndDeltaC)
+    if (!sol.forecastGain.isFinite()) return "—"
+    return "+" + fmt1(sol.forecastGain) + "°C"
+}
 
 /** Podpis karty: godzina szczytu i energia, które model liczył, ale nigdzie nie pokazywał. */
 private fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
