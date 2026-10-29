@@ -4,7 +4,7 @@
 # Po co: użytkownik pracuje na różnych komputerach. Paczka z samymi plikami .kt
 # wymaga posiadania projektu — komplet nie wymaga niczego.
 #
-# Wynik: /tmp/pakiet/SterownikCO-Android-v0.31.41-PELNY-PROJEKT.zip
+# Wynik: /tmp/pakiet/SterownikCO-Android-v0.31.42-PELNY-PROJEKT.zip
 #
 # Od 0.31.36 skrypt NIE podmienia plików ze starych katalogów android-sync/:
 # bierze android/ dokładnie takie, jakie jest w repo (numer wersji też jest już
@@ -14,8 +14,8 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT=/tmp/pakiet
-NAME=SterownikCO-Android-v0.31.41
-want="${NAME##*-v}"   # 0.31.41 - jedno zrodlo prawdy: nazwa paczki
+NAME=SterownikCO-Android-v0.31.42
+want="${NAME##*-v}"   # 0.31.42 - jedno zrodlo prawdy: nazwa paczki
 
 rm -rf "$OUT"; mkdir -p "$OUT"
 cp -r "$REPO/android" "$OUT/$NAME"
@@ -38,7 +38,7 @@ mkdir -p ZMIANY-KODU
 for d in "$REPO"/android-sync/v0.31.*/ZMIANY-*.diff; do
     [ -f "$d" ] && cp "$d" ZMIANY-KODU/ || true
 done
-cp "$REPO"/android-sync/v0.31.41-czysty-wykres/README-WGRANIE.txt README-WGRANIE.txt
+cp "$REPO"/android-sync/v0.31.42-bez-paska/README-WGRANIE.txt README-WGRANIE.txt
 
 cd "$OUT"
 zip -qr "$OUT/$NAME-PELNY-PROJEKT.zip" "$NAME" -x "*.DS_Store"

@@ -129,44 +129,20 @@ fun ChartsPage(m: AppModel) {
         PageHead("WYKRESY TELEMETRII", "historia pomiarów · temperatury · serwa · pompa",
             action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec) }) })
 
-        // `.chart-status-rail`
-        Row(
-            Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(12.dp))
-                .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            AppIcon("clock", size = 16.dp, tint = Pal.Cyan)
-            Text(m.chartStatus, style = Txt.sect.copy(fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.sp, color = Pal.TextDim), modifier = Modifier.weight(1f))
-            Text(m.chartReality, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan,
-                modifier = Modifier.background(Pal.rgba(0, 212, 245, .12f), RoundedCornerShape(10.dp))
-                    .border(BorderStroke(1.dp, Pal.rgba(0, 212, 245, .35f)), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp))
-        }
-        // [v0.31.33 CLOUD-MARK] „Ostatnia próbka w chmurze" — ile czasu temu
-        // sterownik dostał potwierdzenie z Firebase. To jedyna liczba, która
-        // mówi, czy wykres z chmury jest kompletny: gdy rośnie do kilkunastu
-        // minut, znaczy że próbki czekają w kolejce, a nie że ich nie ma.
-        if (m.S.tel_known) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val color = when {
-                    m.S.tel_cloud_ago < 0 -> Pal.TextDim
-                    m.S.tel_cloud_ago <= 180 -> Pal.Live
-                    m.S.tel_cloud_ago <= 600 -> Pal.Accent
-                    else -> Pal.Err
-                }
-                Kpi("W CHMURZE", cloudAgeLabel(m.S.tel_cloud_ago), color)
-                // Do 10 próbek w kolejce to stan NORMALNY (tyle idzie w jednej paczce).
-                val ringColor = when {
-                    m.S.tel_ring <= 10 -> Pal.Live
-                    m.S.tel_ring <= 60 -> Pal.Accent
-                    else -> Pal.Err
-                }
-                Kpi("KOLEJKA", m.S.tel_ring.toString() + " szt.", ringColor)
-                Kpi("WYSYŁKA", if (m.S.tel_pending) "W TOKU" else "BEZ ZALEGŁOŚCI",
-                    if (m.S.tel_pending) Pal.Accent else Pal.Live)
-            }
+        // [0.31.42] Na prosbe uzytkownika (zrzut 02:54) zdjete z nad wykresu:
+        //   - pasek statusu "Załadowano 9944 próbek z RTDB ... · odcinki
+        //     symulowane są kreskowane" razem z plakietka "FIREBASE RTDB",
+        //   - trzy kafelki W CHMURZE / KOLEJKA / WYSYŁKA.
+        // Po pobraniu nad wykresem nie ma ZADNEGO tekstu — od razu karta DANE.
+        // Zostaje tylko cienka linijka na czas pobierania: bez niej nie widac,
+        // czy przycisk "Odśwież" cokolwiek robi (7 dni to kilka sekund).
+        if (m.chartLoading) {
+            Text(
+                m.chartStatus,
+                fontSize = 8.5.sp,
+                color = Pal.TextDim,
+                modifier = Modifier.fillMaxWidth().padding(start = 2.dp)
+            )
         }
         // `.chart-ctrl-card`
         Column(
