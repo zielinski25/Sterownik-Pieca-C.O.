@@ -132,3 +132,72 @@ Po 2–3 tygodniach archiwum będzie dość danych, żeby dopasować model warst
 - `reverseFlowKgS` zacznie wreszcie cokolwiek robić.
 
 Do tego czasu **nie ruszamy parametrów**.
+
+---
+
+# KOREKTA 29.10.2026, godz. 17:40 — instalacja jest BEZPOŚREDNIA
+
+Użytkownik doprecyzował budowę instalacji: woda z sieci przychodzi **pod
+ciśnieniem sieci**, drugą rurą wychodzi do kranów, **innej rury nie ma** —
+brak wężownicy, brak oddzielnego obiegu. Zbiornik 100 l i kolektory stoją
+razem na dachu, woda w kolektorach to **ta sama woda**, którą bierze się
+z kranu.
+
+## Dlaczego to przewraca wniosek z §5
+
+W układzie bezpośrednim **każde odkręcenie kranu** wpuszcza do zbiornika
+od dołu zimną wodę z sieci (~10 °C), a gorącą wypycha do kranu. Czujnik
+w połowie wysokości widzi to jako spadek temperatury — **identyczny
+z pozorem straty ciepła**.
+
+Policzone od nowa (skrypt: `kalibracja/`):
+
+| odcinek | spadek | moc | **UA, które by to tłumaczyło** | × katalog 1,4 W/K |
+|---|---|---|---|---|
+| 21.10 wieczór | 4,0 K / 8,8 h | 53 W | 6,6 W/K | 4,7× |
+| 22.10 noc | 3,4 K / 8,3 h | 48 W | 6,0 W/K | 4,3× |
+| 23.10 wieczór | 11,4 K / 8,9 h | 149 W | **5,0 W/K** | 3,5× |
+| 24.10 noc | 8,8 K / 9,3 h | 110 W | **4,6 W/K** | 3,3× |
+| 29.10 16:13–17:20 | 0,8 K / 1,1 h | 83 W | **20,3 W/K** | 14,5× |
+
+**UA zmienia się 4,4× między ciepłą i zimną wodą.** Przy przewodzeniu ciepła
+UA jest stałe. Czyli to **nie są straty cieplne zbiornika**.
+
+## Co pasuje zamiast tego
+
+Zwykły, stały przepływ wody przez zbiornik:
+
+| odcinek | ΔT woda−sieć | potrzebny przepływ |
+|---|---|---|
+| 21.10 wieczór | 6,0 K | 7,6 l/h |
+| 22.10 noc | 5,0 K | 8,2 l/h |
+| 23.10 wieczór | 31,5 K | **4,1 l/h** |
+| 24.10 noc | 17,0 K | **5,6 l/h** |
+| 29.10 16:13–17:20 | 7,6 K | **9,4 l/h** |
+
+**4–9 litrów na godzinę** tłumaczy wszystkie pomiary naraz — od zimnej wody
+po gorącą. To dużo bardziej spójne niż UA zmieniające się czterokrotnie.
+
+## Dlaczego aplikacja tego nigdy nie pokazała jako „pobrania"
+
+Detektor pobrań (`recomputeDraws`, `DRAW_STEP_C = 0.5`, `DRAW_WINDOW_MS = 5 min`)
+wymaga spadku **0,5 °C w 5 minut**. Przy 5–9 l/h woda schodzi o ~0,02 °C
+na 5 minut. **Ponad 20× pod progiem.** Aplikacja pokazuje „Pobrania: brak",
+bo z definicji nie widzi poboru rozłożonego w czasie.
+
+## Wniosek
+
+**Wycofuję zdanie „model zaniża nocne chłodzenie 2×".** Nie jest udowodnione.
+Zmierzone spadki można w całości wyjaśnić zużyciem wody, a nie stratami.
+
+Model fizyczny mógł cały czas być poprawny — nie da się tego rozstrzygnąć
+bez pomiaru zużycia wody.
+
+## Test rozstrzygający (bez ryzyka, bez wchodzenia na dach)
+
+Odczyt licznika wody wieczorem i rano, w noc, gdy nikt nie używa wody.
+- **Licznik stoi** → cała woda poszła wieczorem na normalne zużycie,
+  model jest w porządku, temat zamknięty.
+- **Licznik się kręci** (5–10 l/h) → gdzieś jest stały przepływ:
+  cieknący kran, zawór spłuczki, nieszczelny zawór zwrotny.
+  Wtedy to nie jest problem aplikacji, tylko hydrauliki.
