@@ -34,8 +34,20 @@ jednolinijkowa.
 
 JAK ZBUDOWAC
 -------------
-powershell -ExecutionPolicy Bypass -File .\zbuduj.ps1
-albo w Android Studio: Build -> Build Bundle(s)/APK(s) -> Build APK(s)
+UWAGA: w tej paczce NIE MA pliku zbuduj.ps1 — poprzednia wersja README
+podawala go omyłkowo. Jest projekt Gradle, buduje sie tak:
+
+A) Android Studio (najprosciej, tak jak poprzednio):
+   1. File -> Open -> wskaz katalog ...\android  (ten, w ktorym lezy
+      settings.gradle.kts i gradlew.bat)
+   2. Poczekaj na "Gradle sync finished"
+   3. Build -> Build Bundle(s)/APK(s) -> Build APK(s)
+   4. APK lezy w: app\build\outputs\apk\debug\app-debug.apk
+
+B) Wiersz polecenia (jesli masz ustawione ANDROID_HOME):
+   cd <katalog rozpakowania>\android
+   .\gradlew.bat assembleDebug
+   APK takze w app\build\outputs\apk\debug\app-debug.apk
 
 CO ZOSTALO Z POPRZEDNICH WERSJI
 --------------------------------
