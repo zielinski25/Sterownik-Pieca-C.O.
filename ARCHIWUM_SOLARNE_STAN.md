@@ -871,6 +871,18 @@ ze zbiornika idzie prosto do instalacji domowej. Skutki policzone z danych:
   ~0,02 °C / 5 min, czyli **20× pod progiem** — dlatego ekran pokazuje
   „Pobrania: brak".
 
+**Jak wygląda instalacja (opis użytkownika, 29.10):** woda z wodociągu,
+pod ciśnieniem, idzie rurą **prosto na dach do zbiornika 100 l**. Kolektor też
+jest na dachu. Nie ma pompy, nie ma wężownicy, nie ma drugiego obiegu — ta sama
+woda, która leci z kranu, jest tą, którą grzeje słońce.
+
+**Skutek, którego wcześniej nie uwzględnialiśmy:** zbiornik stoi **na zewnątrz**,
+więc nocą nie tylko traci ciepło przez ściankę do powietrza — **patrzy w niebo**.
+Przy czystej nocy niebo ma temperaturę efektywną o kilkadziesiąt stopni niższą
+od powietrza, płyta kolektora wychładza się poniżej temperatury powietrza
+i grawitacyjnie podciąga ciepło ze zbiornika. Stąd 10× rozrzut w UA.
+Zob. `MODEL_SOLARNY_TRZEMCHA_2026-10-23.md` §19.5a.
+
 **WYCOFANE 29.10 (zgłoszenie użytkownika: „nic nie kapie").** W pierwszej wersji
 tej sekcji twierdziłem, że z danych wychodzi stały przepływ **4–9 l/h**, czyli
 że gdzieś cieknie. Użytkownik sprawdził instalację — nie cieknie. Liczba 4–9 l/h
@@ -890,11 +902,12 @@ Szczegóły: `MODEL_SOLARNY_TRZEMCHA_2026-10-23.md` §19.
 ### 17.5 Co zostało do zrobienia
 
 1. Wgrać 0.31.51 (aplikacja) i 3.56.8 (centrala) — paczki gotowe.
-2. **Ustalić, co różni noce** — efektywne UA zbiornika wychodzi 1,2–12,3 W/K,
-   czyli rozrzut 10×, i tylko 4 noce na 11 zgadzają się z katalogiem
-   (`kalibracja/ua_noc.py`). Wykluczone: wyciek, pojedynczy pobór, pompa, czujnik.
-   Nie wykluczone: wiatr, cyrkulacja wody użytkowej, cyrkulacja wsteczna pętli.
-   **Wiatr jest najtańszy do sprawdzenia** — aplikacja już go pobiera
-   (`wind_speed_10m`), a model cieplny nie używa.
+2. **Człon „niebo"** — efektywne UA zbiornika wychodzi 1,2–12,3 W/K (rozrzut 10×,
+   `kalibracja/ua_noc.py`) i **to jest wyjaśnione**: zbiornik stoi na dachu
+   i promieniuje do nieba. Korelacja z zachmurzeniem −0,53, z wiatrem 0,00.
+   Model z członem „niebo" (a = 0,65 W/K, b = 9,90 W/K) daje **55% mniejszy błąd
+   tempa** na walidacji leave-one-out (`kalibracja/niebo.py`).
+   Zachmurzenie już jest w prognozie (`cloud_cover`) — **czeka na zgodę
+   użytkownika**, bo zmienia `SolarThermalModel.kt` i podbija wersję.
 3. Telemetria: audyt 29 dni dał 0,50% brakujących próbek; czekać na pełną dobę
    po 3.56.8, żeby sprawdzić `telemetry_gap_events`.

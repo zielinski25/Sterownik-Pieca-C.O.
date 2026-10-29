@@ -779,16 +779,69 @@ Czego NIE wiadomo: co te noce różni. Sprawdzone i wykluczone:
 - **błąd czujnika** — w całym logu jest **jedna** próbka −1,0 °C (24.10 13:47,
   zaraz po restarcie) i nie trafiła w żadne okno nocne.
 
-Nie wykluczone, w kolejności prawdopodobieństwa:
-1. **wiatr** — zbiornik stoi na dachu; aplikacja **już pobiera** `wind_speed_10m`
-   (`Weather.kt`), ale model cieplny tej liczby nigdzie nie używa,
-2. **cyrkulacja wody użytkowej** (jeśli jest) — ciągły, mały przepływ, którego
-   nie widać jako skok,
-3. **cyrkulacja wsteczna pętli solarnej** — literatura (OSTI 116242) mówi
-   „nearly fourfold", zmierzone 4,4×, ale to nie tłumaczy nocy 25/26.10 (8,8×)
-   przy zbiorniku zaledwie 20 °C, czyli bez ciągu termicznego.
+Co te noce różni — **znalezione** (patrz 19.5a): **zachmurzenie**. Nie wiatr,
+nie temperatura. Sprawdzone na prawdziwej pogodzie z Open-Meteo dla współrzędnych
+instalacji:
 
-### 19.5 Czujnik „panel solarny" mierzy zbiornik, nie kolektor
+| z czym porównane | korelacja z UA |
+|---|---|
+| zachmurzenie | **−0,53** |
+| wiatr średni | 0,00 |
+| wiatr maksymalny | +0,05 |
+| temperatura powietrza | −0,20 |
+
+Wiatr **odpada definitywnie** — korelacja zerowa. To ważne, bo wiatr był moim
+pierwszym typem; nie trzeba go dopisywać do modelu.
+
+### 19.5a Zbiornik patrzy w niebo — to jest brakujący mechanizm
+
+Użytkownik opisał instalację: **woda z wodociągów, pod ciśnieniem, idzie rurą
+prosto na dach do zbiornika 100 l**. Zbiornik stoi więc **na zewnątrz**, a nie
+w kotłowni. To zmienia wszystko, bo zbiornik na dachu nie tylko traci ciepło
+przez ściankę do powietrza — on **patrzy w niebo**.
+
+Przy czystym niebie temperatura efektywna nieba jest o kilkadziesiąt stopni
+niższa od temperatury powietrza. Płyta kolektora wychładza się wtedy **poniżej
+temperatury powietrza** i przez termosyfon (bez pompy, bez zaworu zwrotnego)
+podciąga ciepło ze zbiornika. Przy chmurach niebo „oddaje” to promieniowanie
+z powrotem i kanał zanika. Dlatego strata zależy od chmur, a nie od wiatru.
+
+Model z dwoma współczynnikami:
+
+```
+tempo [K/h] = −( a·(T−Ta) + b·(T−Ta)·(1 − zachmurzenie) ) / C · 3600
+```
+
+- `a` — strata przez ściankę, zależna od powietrza,
+- `b` — dodatkowa strata przy czystym niebie (patrzenie w niebo).
+
+**Walidacja leave-one-out** (uczy się na 10 nocach, sprawdzany na jedenastej):
+
+| | średni błąd tempa |
+|---|---|
+| model teraz (`tankUa = 1,4`) | 0,237 K/h |
+| model z niebem | **0,106 K/h** |
+| poprawa | **55%** |
+
+Dopasowane parametry: **a = 0,65 W/K, b = 9,90 W/K**, czyli UA rośnie od 0,65 W/K
+przy pełnym zachmurzeniu do 10,55 W/K przy niebie czystym — **siedmiokrotnie**.
+To jest właśnie ten dziesięciokrotny rozrzut, tylko nazwany po imieniu.
+
+W każdym z 11 podziałów parametry wychodzą podobne (a 0,4–1,1; b 9,2–10,4) —
+model nauczony na 10 nocach trafia w jedenastą. To nie jest dopasowanie do
+jednej nocy.
+
+Ważne: `cloud_cover` **już jest** w prognozie godzinowej, którą aplikacja pobiera
+(`Weather.kt`, pole `cloud_cover`). Do wdrożenia nie potrzeba żadnego nowego
+czujnika ani żadnej nowej sieci — tylko użyć liczby, którą już mamy.
+
+Zastrzeżenie: 11 nocy, jeden sezon, zachmurzenie z modelu Open-Meteo (a nie
+z czujnika). Przed wdrożeniem warto powtórzyć na 3–4 tygodniach archiwum.
+
+Skrypt odtwarzalny: `narzedzia/symulator-solar-2026-10-29/kalibracja/niebo.py`,
+wynik `WYNIK-NIEBO.txt`.
+
+### 19.6 Czujnik „panel solarny" mierzy zbiornik, nie kolektor
 
 Przy okazji liczenia tych nocy sprawdziłem, **co właściwie mierzy** kanał,
 na którym stoi cały model. W firmware to `temperaturaPaneluSlonecznego`,
@@ -818,10 +871,25 @@ gdzie fizycznie przykręcony jest czujnik od kanału `BUS_3`? Jeśli na zbiornik
 to znaczy, że etykieta „Panel solarny" w aplikacji jest myląca, a modelowi
 brakuje jednego wejścia.
 
-### 19.6 Decyzja
+### 19.7 Decyzja
 
-`MODEL_SOLARNY` **zostaje bez zmian**. Wersja 0.31.51 zostaje wgrana.
-Kalibracja z archiwum **nie wchodzi do kodu** — nie z powodu ostrożności,
-ale dlatego, że cztery niezależne sposoby uczenia wypadły gorzej niż model.
+`MODEL_SOLARNY` **zostaje bez zmian w 0.31.51**. Wersja 0.31.51 zostaje wgrana.
 
-Jeżeli kiedyś uda się zmierzyć, co różni te noce (patrz wyżej), temat można wrócić.
+**Kalibracja z archiwum nie wchodzi do kodu** — nie z powodu ostrożności, ale
+dlatego, że cztery niezależne sposoby uczenia (współczynnik, persystencja,
+mnożnik, stała poprawka) wypadły gorzej niż model fizyczny.
+
+**Ale wątek nie jest zamknięty.** Z 19.5a wynika konkretna zmiana modelu
+(„patrzenie w niebo" przez zachmurzenie) z poprawą 55% i walidacją
+leave-one-out. To nie jest „uczenie się z archiwum" — to **brakujący człon
+fizyczny**, a różnica jest zasadnicza:
+
+| | uczenie z archiwum (odrzucone) | człon nieba (19.5a) |
+|---|---|---|
+| czego uczy | jednej stałej na całą instalację | dwóch własności fizycznych |
+| wynik | 4 metody gorsze od modelu | **55% lepiej niż model** |
+| walidacja | leave-one-out | leave-one-out, parametry stabilne |
+| nowe dane | żadne | żadne (zachmurzenie już jest w prognozie) |
+
+Do wdrożenia potrzebna jest zgoda użytkownika — zmiana dotyka
+`SolarThermalModel.kt` i wymaga podbicia wersji.

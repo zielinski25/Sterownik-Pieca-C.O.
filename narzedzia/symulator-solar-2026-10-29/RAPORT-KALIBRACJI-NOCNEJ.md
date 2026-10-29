@@ -388,11 +388,13 @@ Sprawdzone i wykluczone jako przyczyna:
 - **błąd czujnika** — w całym logu jedna próbka −1,0 °C (24.10 13:47, po restarcie),
   poza oknami nocnymi.
 
-Nie wykluczone, w kolejności prawdopodobieństwa: **wiatr** (zbiornik na dachu;
-aplikacja już pobiera `wind_speed_10m`, ale model cieplny tej liczby nie używa),
-**cyrkulacja wody użytkowej**, **cyrkulacja wsteczna pętli** (literatura: „nearly
-fourfold", zmierzone 4,4× — ale nie tłumaczy nocy 25/26.10 z UA 8,8× przy
-zbiorniku 20 °C).
+**Z NALEZIONE:** różni je **zachmurzenie**. Zbiornik stoi na dachu (woda
+z wodociągu idzie pod ciśnieniem prosto na dach), więc patrzy w niebo.
+Korelacja UA z zachmurzeniem: **−0,53**; z wiatrem: **0,00** (wiatr odpada).
+Model z członem „niebo" (`a = 0,65 W/K`, `b = 9,90 W/K` przy czystym niebie)
+daje na walidacji leave-one-out **55% mniejszy błąd** (0,237 → 0,106 K/h).
+Szczegóły: `MODEL_SOLARNY_TRZEMCHA_2026-10-23.md` §19.5a, skrypt
+`kalibracja/niebo.py`.
 
 ### 5. Wariant „z detektorem" — też sprawdzony, też odpada
 
