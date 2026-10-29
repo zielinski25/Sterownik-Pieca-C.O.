@@ -52,8 +52,8 @@ Pliki testu: `narzedzia/symulator-solar-2026-10-29/test-0.31.52/`
 
 ## Sprawdzenie paczki
 
-- ZIP: 9 780 B
-- SHA-256: `209dea955090a6dbc1cb7fd227b563c7fd17b632ad1f7a03ac28cf4c1f711bd5`
+- ZIP: 9 574 B
+- SHA-256: `3a1eb6d62150b8dc8a5bc48a1d02c356430b236e700f470298c271653efecedb`
 - `unzip -t`: bez błędów
 - 2/2 plików w ZIP mają **identyczny SHA-256** jak pliki w repozytorium
 - `SolarThermalModel.kt` kompiluje się (`K2JVMCompiler`, 0 błędów)
