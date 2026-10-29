@@ -552,4 +552,38 @@ object Rtdb {
         val chartPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
         return chartPoints.ifEmpty { null }
     }
+
+    /** Wynik pobrania dokładnego przedziału: próbki + informacja, czy nic nie wypadło. */
+    data class WindowResult(val points: List<TelemPoint>, val complete: Boolean)
+
+    /**
+     * [0.31.43 INCREMENTAL] Pobiera DOKŁADNIE przedział [startSec, endSec].
+     *
+     * Po co: `fetchTelemetry(rangeSec)` zawsze brało całe okno od teraz w tył.
+     * Pamięć telefonu (`TelemetryCache`) wie, czego już nie musi pobierać, więc
+     * pyta tylko o brakujące fragmenty — zwykle o ogon od ostatniej próbki.
+     *
+     * `complete = false` znaczy, że choć jeden dzień się nie pobrał (sieć).
+     * Wtedy nie wolno zapamiętywać „tu jest pusto", bo to nieprawda.
+     */
+    suspend fun fetchWindow(startSec: Long, endSec: Long): WindowResult {
+        if (idToken.isEmpty()) return WindowResult(emptyList(), false)
+        if (endSec <= startSec) return WindowResult(emptyList(), true)
+        val rows = ArrayList<TelemRow>()
+        var complete = true
+        for (day in dayRange(startSec, endSec)) {
+            val dayStart = max(startSec, day[0] / 1000)
+            val dayEnd = minOf(endSec, day[0] / 1000 + 86_400 - 1)
+            if (dayEnd < dayStart) continue
+            val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
+            try {
+                rows.addAll(fetchShard(path, dayStart, dayEnd))
+            } catch (e: Exception) {
+                complete = false
+            }
+        }
+        val sorted = repairGaps(uniqueSort(rows))
+        val pts = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
+        return WindowResult(pts, complete)
+    }
 }

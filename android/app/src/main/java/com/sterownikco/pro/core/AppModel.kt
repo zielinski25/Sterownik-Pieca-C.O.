@@ -57,6 +57,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     val prefs = Prefs(ctx)
     val S = PiecState()
     val solar = SolarAnalytics(prefs)
+    // [0.31.43] Pamięć historii telemetrii na dysku telefonu (filesDir/telemetria).
+    val telCache = TelemetryCache(ctx)
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
@@ -910,6 +912,14 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     // ── historia telemetrii ─────────────────────────────────────────────────
+    /**
+     * [0.31.43 INCREMENTAL] Wczytanie historii do wykresów.
+     *
+     * Zamiast ściągać całe okno od nowa (7 dni = 9944 próbek, 30 dni = ~43 000),
+     * bierzemy to, co już jest w pamięci telefonu, i pytamy Firebase WYŁĄCZNIE
+     * o przedziały, których tam nie ma. Zwykle jest to ogon: od ostatniej
+     * zapamiętanej próbki do teraz. Bez zasięgu wykres rysuje się z pamięci.
+     */
     fun loadRange(sec: Int) = scope.launch {
         chartLoading = true
         try {
@@ -917,45 +927,82 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             val rangeName = when (sec) {
                 6 * 3600 -> "6h"; 24 * 3600 -> "24h"; 7 * 86400 -> "7d"; else -> "30d"
             }
-            chartStatus = "Pobieranie historii ($rangeName) z bazy Firebase…"
-            // [v0.31.33 ESP-HISTORY] Równolegle pytamy lokalne archiwum centrali.
-            // Chmura bywa niepełna (przerwy wysyłki), a centrala ma te próbki u siebie.
+            val nowMs = System.currentTimeMillis()
+            val fromMs = nowMs - sec * 1000L
+
+            // Archiwum centrali w domu — tylko 6h/24h i tylko w domowej sieci.
             val espIp = S.ip.trim()
             val espTask = if (espIp.isNotEmpty()) async {
                 try { Rtdb.fetchEspHistory(espIp) } catch (e: Exception) { null }
             } else null
-            var fb: List<TelemPoint>? = null
-            if (connected) {
-                try { fb = Rtdb.fetchTelemetry(sec) } catch (e: Exception) { /* fallback poniżej */ }
+
+            // 1) Pamięć telefonu: co już mamy i czego brakuje.
+            chartStatus = "Czytam pamięć telefonu…"
+            val plan = telCache.plan(fromMs, nowMs)
+
+            // 2) Chmura: wyłącznie brakujące przedziały (przy pustej pamięci — całe okno).
+            val fetched = ArrayList<TelemPoint>()
+            val confirmedEmpty = ArrayList<LongRange>()
+            if (connected && plan.missing.isNotEmpty()) {
+                plan.missing.forEachIndexed { idx, seg ->
+                    chartStatus = when {
+                        plan.missing.size == 1 && idx == 0 && plan.cached.isEmpty() ->
+                            "Pobieranie historii ($rangeName) z bazy Firebase…"
+                        plan.missing.size == 1 ->
+                            "Pobieranie brakujących danych ($rangeName) — dociągam tylko nowe…"
+                        else ->
+                            "Pobieranie brakujących danych (${idx + 1}/${plan.missing.size})…"
+                    }
+                    val res = try {
+                        Rtdb.fetchWindow(seg.first / 1000L, seg.last / 1000L)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (res != null) {
+                        fetched.addAll(res.points)
+                        // „Tu pusto" zapamiętujemy TYLKO po udanym pobraniu.
+                        if (res.complete) confirmedEmpty.addAll(telCache.emptyParts(seg, res.points))
+                    } else {
+                        // Choć jedno zapytanie padło — nie twierdzimy, że luka jest pusta,
+                        // ale to, co przyszło, i tak zapisujemy.
+                        Unit
+                    }
+                }
             }
-            // 6 s sufitu: poza domową siecią centrala jest nieosiągalna, a wykresy
-            // z chmury mają się pokazać od razu (nie po 18 s timeoutów TCP).
+            if (fetched.isNotEmpty() || confirmedEmpty.isNotEmpty()) {
+                telCache.store(fetched, confirmedEmpty)
+            }
+
+            // 3) Pamięć + świeżo dociągnięte próbki (klucz = znacznik czasu).
+            val byTs = LinkedHashMap<Long, TelemPoint>()
+            plan.cached.forEach { byTs[it.ts] = it }
+            fetched.forEach { byTs[it.ts] = it }
+            val cloudPts = byTs.values.sortedBy { it.ts }
+
+            // 4) Archiwum centrali (maks. 6 s — poza domem i tak nie odpowie).
             val esp = espTask?.let {
                 try { withTimeoutOrNull(6_000) { it.await() } } catch (e: Exception) { null }
             }
-            // Zakres ESP (~24–38 h) ma sens tylko dla 6h/24h; dla 7/30 dni dane
-            // z centrali i tak są podzbiorem chmury, więc ich nie mieszamy.
             val useEsp = esp != null && sec <= 24 * 3600 && esp.isNotEmpty()
-            if ((fb != null && fb.isNotEmpty()) || useEsp) {
-                val merged = combineCloudAndEsp(fb ?: emptyList(), if (useEsp) esp!! else emptyList())
+            val merged = combineCloudAndEsp(cloudPts, if (useEsp) esp!! else emptyList())
+
+            if (merged.isNotEmpty()) {
                 chartLive = emptyList()
                 telemetry = merged
                 chartPoints = merged.size
-                // [0.31.42] Tu stal pasek "Załadowano N próbek ..." + plakietka
-                // "FIREBASE RTDB" — zdjete, bo uzytkownik ich nie chce nad wykresem.
                 // Historia może kończyć się przed ostatnim odczytem statusu (np. po
-                // rozpaleniu). Dołączamy świeży pomiar ESP32 od razu, bez czekania
-                // na kolejny polling.
+                // rozpaleniu) — dołączamy świeży pomiar ESP32 bez czekania na polling.
                 appendLiveFeed()
                 return@launch
             }
+
             telemetry = emptyList()
             chartPoints = 0
+            chartLive = emptyList()
             chartStatus = if (connected) "Brak próbek telemetrii dla wybranego zakresu"
                 else "Zaloguj się do Firebase, aby pobrać historię telemetrii"
-            chartLive = emptyList()
         } finally {
-            // Linijka "Pobieranie historii…" znika zawsze — takze po bledzie sieci.
+            // Linijka „Pobieranie historii…" znika zawsze — także po błędzie sieci.
             chartLoading = false
         }
     }
