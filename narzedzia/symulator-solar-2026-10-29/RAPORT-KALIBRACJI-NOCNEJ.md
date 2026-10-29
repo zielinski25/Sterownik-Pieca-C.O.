@@ -201,3 +201,90 @@ Odczyt licznika wody wieczorem i rano, w noc, gdy nikt nie używa wody.
 - **Licznik się kręci** (5–10 l/h) → gdzieś jest stały przepływ:
   cieknący kran, zawór spłuczki, nieszczelny zawór zwrotny.
   Wtedy to nie jest problem aplikacji, tylko hydrauliki.
+
+---
+
+# TEST NA 11 PRAWDZIWYCH NOCACH (29.10.2026, 17:40)
+
+Zamiast zgadywać parametry — uruchomiłem model na **każdej z 11 nocy** z logu
+centrali. Dane wejściowe: rzeczywista temperatura powietrza co godzinę
+(z logu, `STATUS`), rzeczywista temperatura wody o 19:00. Wyjście: temperatura
+o 06:00. Porównanie z tym, co naprawdę pokazał czujnik.
+
+Plik: `kalibracja/WYNIK-NOCE.txt`, dane: `kalibracja/noce.csv`.
+
+| noc | T 19:00 | zmierzone | model | błąd |
+|---|---|---|---|---|
+| 18.10 | 28,0 | −2,0 | −3,4 | **−1,4** model za szybko |
+| 19.10 | 24,2 | −1,4 | −2,5 | **−1,1** model za szybko |
+| 20.10 | 23,2 | −1,7 | −1,7 | 0,0 OK |
+| 21.10 | 36,5 | −2,5 | −3,9 | **−1,4** model za szybko |
+| 22.10 | 30,8 | −4,6 | −3,7 | +0,9 |
+| **23.10** | **42,8** | **−14,3** | **−6,2** | **+8,1** ⚠ |
+| 24.10 | 21,8 | −4,3 | −2,4 | +1,9 |
+| 25.10 | 20,0 | −4,5 | −1,3 | +3,2 |
+| 26.10 | 14,8 | −3,0 | −1,6 | +1,4 |
+| 27.10 | 22,5 | −5,5 | −2,6 | +2,9 |
+| 28.10 | 17,5 | −1,0 | −0,7 | +0,3 OK |
+
+**Średni błąd bezwzględny: 2,07 °C na noc. W granicach 0,5 °C: 2 z 11 nocy.**
+
+## Co z tego wynika
+
+### 1. Wycofuję OBA wcześniejsze twierdzenia
+
+- „model zaniża nocne chłodzenie 2×" — **nieprawda**, bo na 3 nocach (18, 19, 21.10)
+  model chłodzi **za szybko** o 1,1–1,4 °C.
+- „wszystko wyjaśniają pobory wody" — **też nieprawda**, bo pobory mogą tylko
+  dodawać chłodzenia. Nie wyjaśnią nocy, na których model chłodzi ZA SZYBKO.
+
+Model myli się **w obie strony**, średnio 2 °C. To gorsze niż jedna systematyczna pomyłka
+— znaczy, że brakuje zjawiska, nie współczynnika.
+
+### 2. Noc 23.10 to nie „błąd modelu", to inny tryb pracy
+
+−14,3 °C w jedenaście godzin przy starcie z 42,8 °C. Model daje −6,2 °C.
+Tego typu noc zdarzyła się **raz w jedenastu**. To ta sama noc, którą
+`MODEL_SOLARNY` §18.2 opisał jako UA_eff = 4,6 W/K (po bardzo słonecznym dniu,
+szczyt 47,2 °C).
+
+### 3. Bazowe straty zbiornika są POPRAWNE
+
+Na nocach z dużą różnicą wodа−powietrze (18, 19, 21.10, ΔT = 12–19 K)
+pozorne UA wynosi **1,2–1,4 W/K**, czyli dokładnie tyle, ile w katalogu.
+**`tankUa = 1.4` jest prawidłowe i nie wolno go ruszać.**
+
+Rozrzut pozornego UA (1,2–12,2 W/K) bierze się z tego, że przy małej różnicy
+temperatur (3–9 K) spadek jest na granicy rozdzielczości czujnika 0,1 °C.
+
+### 4. Czego model nie ma
+
+Model nie zna:
+- **uwarstwienia** zbiornika — 100 l to nie jedna bryła; czujnik w połowie
+  widzi inną temperaturę niż średnia,
+- **stanu pętli kolektora o zachodzie** — po słonecznym dniu pętla jest gorąca
+  i nocą oddaje ciepło inaczej niż po pochmurnym,
+- **poboru wody** — w instalacji bezpośredniej każde odkręcenie kranu wpuszcza
+  zimną wodę z sieci do zbiornika.
+
+Dlatego dopasowanie jednego współczynnika jest skazane na porażkę — i dlatego
+go nie robię.
+
+## Wniosek praktyczny
+
+Prognoza „całej doby" ma **błąd rzędu 2 °C**, czasem 8 °C. Karta jest podpisana
+„szacunek, nie pomiar" i to jest uczciwe. Ale **nie da się tego naprawić
+parametrem** — potrzebny jest model warstwowy z jawnym węzłem pętli i z
+odetnieniem poborów.
+
+## Propozycja: kalibracja z własnego archiwum
+
+Aplikacja ma już 7–14 dni własnych nocy. Zamiast stałej `tankUa = 1.4` mogłaby
+**mierzyć** rzeczywiste tempo stygnięcia z własnych danych (regresja
+spadek ↔ różnica wodа−powietrze, tylko na nocach bez poborów) i używać
+zmierzonej wartości.
+
+Zalety: brak nowych czujników, brak wchodzenia na dach, liczy się samo.
+Wady: nowy kod, ryzyko, i trzeba go przetestować.
+
+**Nie wprowadzam tego bez Twojej zgody.**

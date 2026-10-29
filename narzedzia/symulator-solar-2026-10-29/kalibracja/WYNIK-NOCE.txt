@@ -1,0 +1,20 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  MODEL vs RZECZYWISTOSC — 11 prawdziwych nocy z Twojej centrali             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+noc          T19:00  zmierzone  model   blad     ocena
+--------     ------  ---------  -----  ------   ------
+2026-10-18     28.0       -2.0   -3.4    -1.4   model za szybko chlodzi
+2026-10-19     24.2       -1.4   -2.5    -1.1   model za szybko chlodzi
+2026-10-20     23.2       -1.7   -1.7    -0.0   OK
+2026-10-21     36.5       -2.5   -3.9    -1.4   model za szybko chlodzi
+2026-10-22     30.8       -4.6   -3.7    +0.9   model za wolno chlodzi
+2026-10-23     42.8      -14.3   -6.2    +8.1   model za wolno chlodzi
+2026-10-24     21.8       -4.3   -2.4    +1.9   model za wolno chlodzi
+2026-10-25     20.0       -4.5   -1.3    +3.2   model za wolno chlodzi
+2026-10-26     14.8       -3.0   -1.6    +1.4   model za wolno chlodzi
+2026-10-27     22.5       -5.5   -2.6    +2.9   model za wolno chlodzi
+2026-10-28     17.5       -1.0   -0.7    +0.3   OK
+
+Sredni blad bezwzgledny: 2.07 °C na noc (11 h)
+Nocy w granicach 0,5 °C: 2 / 11
