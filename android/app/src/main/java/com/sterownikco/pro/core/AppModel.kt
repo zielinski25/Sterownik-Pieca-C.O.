@@ -36,28 +36,26 @@ import java.util.concurrent.TimeUnit
 /* ══════════════════════════════════════════════════════════════════════════
    MODEL APLIKACJI — odpowiednik warstwy sterującej Piec.html:
    `pollFirebase` + `sendCommand/ACK` + `refreshWeatherTab` + `loadTelemetryRange`
-   + logi + toasty + timery (2 s / 45 s / 15 min / 1 s).
+   + logi + toasty + timery (8 s / 45 s / 15 min / 1 s).
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Minimalny odstęp między automatycznymi pobraniami historii (ms). */
 private const val HISTORY_MIN_INTERVAL_MS = 60_000L
 
 /**
- * [0.31.56 SZYBKI-POLLING] Odstęp odpytywania `/piec/status` przy OTWARTEJ aplikacji.
+ * Odstęp odpytywania `/piec/status` przy OTWARTEJ aplikacji.
  *
- * Było 8 s. Po kliknięciu w kafelek nowy stan dochodził dopiero przy kolejnym
- * ticku — do 8 s po ACK — i wyglądało to jak zawieszona aplikacja. Teraz 2 s.
+ * [0.31.56] było tu 2 s (zamiast 8 s) — po to, żeby kafelek zmieniał się zaraz
+ * po komendzie. [0.31.58] przywrócone 8 s: ustalenie z 2026-10-30 — aplikacja
+ * chodzi po LTE/„przez internet", a to odpytywanie jest największym kosztem
+ * danych (2 s ≈ 3,6 MB/h, 8 s ≈ 0,9 MB/h). SZYBKOŚĆ KOMEND tego nie dotyczy:
+ * odpowiada za nią heartbeat `podglad_wl` + firmware 3.57.x (odczyt komend
+ * co 2 s) oraz sprawdzanie ACK co 300 ms — a nie ten polling.
  *
  * W tle nadal ZERO zapytań z UI (`onPause` kasuje `jobs`); alarmy w tle
  * obsługuje `AlarmMonitorService` jednym zapytaniem na 60 s.
- *
- * Górnej granicy świeżości to nie podnosi: centrala publikuje `/piec/status`
- * co 15 s (`FB_SEND_INTERVAL_MS`), a po każdej komendzie co 1 s przez 60 s
- * (`FB_TURBO_SEND_INTERVAL_MS` / `FB_TURBO_WINDOW_MS`). Telefon nie zobaczy
- * nic świeższego niż to, co centrala już zapisała — 2 s skraca tylko czas
- * oczekiwania na odbiór tego zapisu.
  */
-private const val FOREGROUND_POLL_MS = 2_000L
+private const val FOREGROUND_POLL_MS = 8_000L
 
 /**
  * [0.31.57 PODGLAD-PANELU] Co ile (ms) aplikacja melduje centrali „wciąż patrzę".
@@ -76,6 +74,19 @@ private const val PODGLAD_HEARTBEAT_MS = 50_000L
  * po ACK. 30 s ciszy gwarantuje, że nie ma czego nadpisywać (timeout ACK to 12 s).
  */
 private const val PODGLAD_QUIET_BEFORE_MS = 30_000L
+
+/**
+ * [0.31.58] Po tylu ms bez DOTKNIĘCIA ekranu heartbeat przestaje lecieć.
+ *
+ * Scenariusz, który to naprawia: telefon leży na stole z otwartą aplikacją.
+ * Bez tego limitu machałby całą noc, a centrala całą noc czytałaby komendy
+ * co 2 s bez powodu. Po tym czasie wysyłamy jedno `podglad_wyl` i centrala
+ * wraca do 7 s; pierwsze dotknięcie ekranu natychmiast wznawia podgląd.
+ */
+private const val PODGLAD_IDLE_STOP_MS = 10L * 60_000L
+
+/** [0.31.58] Jak często sprawdzać „czy już minęło 10 min ciszy", gdy heartbeat jest wstrzymany. */
+private const val PODGLAD_IDLE_RECHECK_MS = 15_000L
 
 /**
  * Po tylu ms bez dotknięcia ekranu terminal przestaje pytać Firebase.
@@ -182,7 +193,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         refreshSheet()
         if (id == "terminal") startTerminalDlogPolling() else stopTerminalDlogPolling()
         // [0.31.35] Karta solarna ma pokazać dzisiejszy zysk od razu, a nie po
-        // pierwszym własnym pollingu za 2 s — dociągamy dobę z chmury.
+        // pierwszym własnym pollingu za 8 s — dociągamy dobę z chmury.
         if (id == "panel") refreshSolarFromCloud()
     }
 
@@ -291,6 +302,27 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** [0.31.57] Kiedy poszła ostatnia PRAWDZIWA komenda (ms, elapsedRealtime). */
     private var lastUserCommandMs = 0L
 
+    /** [0.31.58] Ostatnie dotknięcie ekranu — od tego liczy się 10 min ciszy. */
+    private var lastInteractionMs = 0L
+
+    /** [0.31.58] Czy heartbeat jest teraz „włączony" po stronie centrali. */
+    private var podgladActive = false
+
+    /** [0.31.58] Czy aplikacja jest na pierwszym planie. */
+    private var foreground = false
+
+    /**
+     * [0.31.58] Wołane z MainActivity przy każdym dotknięciu ekranu.
+     *
+     * Gdy heartbeat był wygaszony z powodu ciszy, wznawiamy go NATYCHMIAST
+     * (pierwsza iteracja pętli wysyła `podglad_wl` bez czekania), żeby pierwsze
+     * kliknięcie po przerwie znów było obsłużone w ~2 s.
+     */
+    fun noteInteraction() {
+        lastInteractionMs = SystemClock.elapsedRealtime()
+        if (foreground && !podgladActive) startPodgladHeartbeat()
+    }
+
     fun onResume() {
         bgJob?.cancel(); bgJob = null
         poll(); refreshWeather(false)
@@ -314,10 +346,13 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 }
             }
         )
+        foreground = true
+        lastInteractionMs = SystemClock.elapsedRealtime()
         startPodgladHeartbeat()
     }
 
     fun onPause() {
+        foreground = false
         stopPodgladHeartbeat(sendOff = true)
         jobs.forEach { it.cancel() }; jobs = emptyList()
         stopTerminalDlogPolling()
@@ -330,9 +365,14 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
      * [0.31.57 PODGLAD-PANELU] Meldunek „aplikacja otwarta" do centrali.
      *
      * Wysyła `podglad_wl` od razu po wejściu na pierwszy plan i potem co
-     * [PODGLAD_HEARTBEAT_MS]. Firmware 3.57.0 dzięki temu czyta komendy co 2 s
-     * (zamiast 7 s) i publikuje status co 5 s (zamiast 15 s) — czyli dokładnie
-     * „wysokie obroty, dopóki ktoś patrzy".
+     * [PODGLAD_HEARTBEAT_MS]. Firmware 3.57.1 dzięki temu czyta KOMENDY co 2 s
+     * (zamiast 7 s). Statusu to nie dotyczy — zostaje 15 s (decyzja 2026-10-30:
+     * „chodzi o komendy i potwierdzenie").
+     *
+     * [0.31.58] Po [PODGLAD_IDLE_STOP_MS] bez dotknięcia ekranu heartbeat się
+     * wyłącza (jedno `podglad_wyl`), a pierwsze dotknięcie wznawia go od razu —
+     * dzięki temu telefon leżący na stole z otwartą aplikacją nie trzyma
+     * centrali w trybie szybkim bez powodu.
      *
      * Na starszym firmware (3.56.x i wcześniej) te komendy są nieznane, ale
      * sam PAYLOAD w `/piec/cmd` i tak uruchamia tryb turbo 1 s/1 s (firmware
@@ -340,16 +380,32 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
      * szybciej — kosztem wpisu `nieznana_komenda` w logu centrali.
      *
      * Gdy aplikacja zejdzie w tło: `podglad_wyl` (natychmiastowy powrót do normy)
-     * albo — przy zabiciu procesu — samo wygaśnięcie okna po 90 s.
+     * albo — przy zabiciu procesu — samo wygaśnięcie okna po 90 s (firmware).
      */
     private fun startPodgladHeartbeat() {
         podgladJob?.cancel()
         podgladJob = scope.launch {
             while (isActive) {
-                val quiet = SystemClock.elapsedRealtime() - lastUserCommandMs > PODGLAD_QUIET_BEFORE_MS
-                if (quiet && connected && Rtdb.refreshToken.isNotBlank()) {
+                val now = SystemClock.elapsedRealtime()
+                val idle = now - lastInteractionMs > PODGLAD_IDLE_STOP_MS
+                val quiet = now - lastUserCommandMs > PODGLAD_QUIET_BEFORE_MS
+                val canSend = connected && Rtdb.refreshToken.isNotBlank()
+                if (idle) {
+                    // [0.31.58] Nikt nie dotknął ekranu od 10 min — zwalniamy centralę.
+                    if (podgladActive) {
+                        podgladActive = false
+                        if (canSend) {
+                            try { Rtdb.sendCommandQuiet("podglad_wyl") } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) { /* brak sieci — okno i tak wygaśnie */ }
+                        }
+                    }
+                    delay(PODGLAD_IDLE_RECHECK_MS)
+                    continue
+                }
+                if (quiet && canSend) {
                     try {
-                        Rtdb.sendCommandQuiet("podglad_wl")
+                        if (Rtdb.sendCommandQuiet("podglad_wl")) podgladActive = true
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -364,7 +420,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** [0.31.57] Koniec podglądu: opcjonalnie zwolnij centralę od razu, bez czekania na wygaśnięcie okna. */
     private fun stopPodgladHeartbeat(sendOff: Boolean) {
         podgladJob?.cancel(); podgladJob = null
-        if (!sendOff || Rtdb.refreshToken.isBlank()) return
+        val wasActive = podgladActive
+        podgladActive = false
+        if (!sendOff || !wasActive || Rtdb.refreshToken.isBlank()) return
         scope.launch {
             try {
                 Rtdb.sendCommandQuiet("podglad_wyl")
@@ -400,7 +458,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun refreshSolarFromCloud() = scope.launch {
         if (connected && Rtdb.refreshToken.isNotBlank()) {
             val now = System.currentTimeMillis()
-            // Jedno pobranie doby na 5 minut — polling statusu leci co 2 s i nie może
+            // Jedno pobranie doby na 5 minut — polling statusu leci co 8 s i nie może
             // zamieniać się w 180 zapytań do RTDB na kwadrans.
             if (now - solarHistoryAt >= 5 * 60_000L) {
                 solarHistoryAt = now
@@ -440,7 +498,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /**
      * Routine refreshes are best-effort and coalesce while a poll is active. After an ACK,
      * the caller must wait for the active poll to finish and then fetch a fresh snapshot;
-     * dropping that request leaves every state-driven sheet stale until the next 2 s tick.
+     * dropping that request leaves every state-driven sheet stale until the next 8 s tick.
      */
     private suspend fun pollAwait(waitForInFlight: Boolean = false): Boolean {
         if (Rtdb.refreshToken.isBlank()) {
@@ -910,7 +968,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     showToast("SERWO", "Status centrali potwierdził nowy tryb.", "ok")
                     return@launch
                 }
-                // Routine RTDB polling continues every 2 s; no extra status requests are
+                // Routine RTDB polling continues every 8 s; no extra status requests are
                 // generated here. This waiter only reacts as soon as one of those snapshots
                 // reaches the Compose UI.
                 delay(500L)
@@ -980,6 +1038,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         if (command.isEmpty()) return false
         // [0.31.57] Heartbeat podglądu ma się wstrzymać, dopóki idzie prawdziwa komenda.
         lastUserCommandMs = SystemClock.elapsedRealtime()
+        // [0.31.58] Komenda to też „dowód obecności" — bez tego wysłanie polecenia
+        // nie przedłużałoby podglądu, gdy heartbeat akurat stoi z powodu ciszy.
+        lastInteractionMs = lastUserCommandMs
         val sensitive = CommandRedactor.isSensitive(command)
         val commandLabel = CommandRedactor.forDisplay(command)
         if (!connected) {
