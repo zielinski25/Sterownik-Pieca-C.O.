@@ -1,0 +1,76 @@
+--- v3.57.0-podglad-panelu/main_centrala.cpp	2026-10-30 10:46:54.375065623 +0000
++++ v3.57.1-podglad-komendy/main_centrala.cpp	2026-10-30 11:07:22.240825153 +0000
+@@ -1,3 +1,22 @@
++// FIRMWARE_VERSION v3.57.0 -> v3.57.1 (2026-10-30) — PODGLAD TYLKO DLA KOMEND.
++// Co: Tryb podgladu (heartbeat `podglad_wl` z otwartej aplikacji) przyspiesza
++//     TERAZ WYLACZNIE odczyt /piec/cmd: 7 s -> 2 s. Wysylka /piec/status
++//     zostaje bez zmian (FB_SEND_INTERVAL_MS = 15 s) — usunieta stala
++//     FB_PODGLAD_SEND_INTERVAL_MS i jej uzycie.
++// Problem: v3.57.0 przyspieszala tez status (15 s -> 5 s), a ustalenie z
++//     uzytkownikiem bylo wezsze: „chodzi o komendy i potwierdzenie", nie
++//     o swiezosc temperatur. Zbedny ruch i zbedne obciazenie przy kazdym
++//     otwartym panelu.
++// Przyczyna: w v3.57.0 obie bramki (send/cmd) braly interwal z trybu podgladu.
++// Naprawa: bramka statusu wybiera tylko turbo albo norme; bramka komend nadal
++//     ma trzy stopnie (turbo 1 s / podglad 2 s / norma 7 s). Krok petli
++//     w podgladzie zostaje 1 s, inaczej bramka 2 s bylaby sprawdzana co 3 s.
++// Bez zmian wobec v3.57.0: komendy podglad_wl/podglad_wyl, okno 90 s,
++//     cofanie turbo rozpetanego samym heartbeat, tryb turbo po prawdziwej
++//     komendzie (tam status nadal leci co 1 s — tak bylo od v3.12.0).
++//
++// ----------------------------------------------------------------------------
++//
+ // FIRMWARE_VERSION v3.56.9 -> v3.57.0 (2026-10-30) — PODGLAD PANELU: SZYBSZY ODBIOR KOMEND.
+ // Co: Nowe komendy `podglad_wl` / `podglad_wyl` (heartbeat „ktoś patrzy na panel"
+ //     wysylany przez aplikacje co ~50 s, dopoki jest OTWARTA). Gdy okno podgladu
+@@ -5711,7 +5730,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.57.0";
++static const char* FIRMWARE_VERSION = "v3.57.1";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -42914,9 +42933,10 @@
+ // Gdy aplikacja zostanie zabita (bez podglad_wyl), okno samo wygasa i centrala
+ // wraca do 15 s / 7 s — nie ma stanu, z ktorego trzeba by ja „wyprowadzac".
+ //
+-// Stopnie szybkosci w tgTaskFn: turbo (1s/1s) > podglad (5s/2s) > norma (15s/7s).
++// Stopnie szybkosci w tgTaskFn: turbo (status 1s / komendy 1s) >
++// podglad (status BEZ ZMIAN 15s / komendy 2s) > norma (15s/7s).
++// [v3.57.1] Podglad NIE przyspiesza statusu — ustalenie: licza sie komendy.
+ static const unsigned long FB_PODGLAD_WINDOW_MS        = 90000UL; // jak dlugo wazny jest heartbeat panelu
+-static const unsigned long FB_PODGLAD_SEND_INTERVAL_MS = 5000UL;  // status w podgladzie (norma 15s)
+ static const unsigned long FB_PODGLAD_CMD_INTERVAL_MS  = 2000UL;  // odczyt komend w podgladzie (norma 7s)
+ static const unsigned long FB_PODGLAD_LOOP_STEP_MS     = 1000UL;  // krok petli w podgladzie (norma 3s)
+ unsigned long fbPodgladUntilMs = 0; // 0 = podglad nieaktywny
+@@ -43385,7 +43405,7 @@
+     // Log WYLACZNIE przy przejsciu nieaktywne -> aktywne: heartbeat leci
+     // co ~50 s, wiec logowanie kazdego zabiloby log.
+     if (!fbPodgladAktywne()) {
+-      zapiszLog(F("tag=FB-PODGLAD lvl=INFO zdarzenie=aktywacja msg=\"panel otwarty - cmd 2s, status 5s\""));
++      zapiszLog(F("tag=FB-PODGLAD lvl=INFO zdarzenie=aktywacja msg=\"panel otwarty - komendy co 2s (status 15s)\""));
+     }
+     fbPodgladUntilMs = millis() + FB_PODGLAD_WINDOW_MS;
+   }
+@@ -45103,12 +45123,14 @@
+     // Commands() przyspiesza dopiero od NASTEPNEJ iteracji (fbTurboAktywne()
+     // jest odpytywane ponownie przy koncowym opoznieniu petli, patrz nizej).
+     bool fbTrybTurbo = fbTurboAktywne();
+-    // [v3.57.0 PODGLAD-PANELU] Trzeci stopien: turbo (1s/1s) > podglad (5s/2s)
+-    // > norma (15s/7s). Podglad liczy sie tylko poza turbo — turbo zawsze wygrywa.
++    // [v3.57.0 PODGLAD-PANELU] Trzeci stopien: turbo (1s/1s) > podglad (komendy 2s)
++    // > norma (7s). Podglad liczy sie tylko poza turbo — turbo zawsze wygrywa.
+     bool fbTrybPodglad = !fbTrybTurbo && fbPodgladAktywne();
+-    unsigned long fbSendInterval = fbTrybTurbo   ? FB_TURBO_SEND_INTERVAL_MS
+-                                 : fbTrybPodglad ? FB_PODGLAD_SEND_INTERVAL_MS
+-                                                 : FB_SEND_INTERVAL_MS;
++    // [v3.57.1] Podglad przyspiesza WYLACZNIE odczyt komend. Status zostaje
++    // co FB_SEND_INTERVAL_MS (15 s) — ustalenie z 2026-10-30: „chodzi o komendy
++    // i potwierdzenie", nie o swiezosc temperatur. Turbo (po prawdziwej
++    // komendzie) nadal wysyla status co 1 s — tak bylo od v3.12.0.
++    unsigned long fbSendInterval = fbTrybTurbo ? FB_TURBO_SEND_INTERVAL_MS : FB_SEND_INTERVAL_MS;
+     unsigned long fbCmdInterval  = fbTrybTurbo   ? FB_TURBO_CMD_INTERVAL_MS
+                                  : fbTrybPodglad ? FB_PODGLAD_CMD_INTERVAL_MS
+                                                  : FB_CMD_INTERVAL_MS;
