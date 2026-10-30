@@ -60,6 +60,24 @@ private const val HISTORY_MIN_INTERVAL_MS = 60_000L
 private const val FOREGROUND_POLL_MS = 2_000L
 
 /**
+ * [0.31.57 PODGLAD-PANELU] Co ile (ms) aplikacja melduje centrali „wciąż patrzę".
+ *
+ * Firmware 3.57.0 trzyma okno podglądu 90 s (FB_PODGLAD_WINDOW_MS), więc 50 s
+ * daje zapas na jeden zgubiony heartbeat. Skutek: gdy aplikacja jest otwarta,
+ * centrala czyta /piec/cmd co 2 s zamiast 7 s — pierwsze kliknięcie po długiej
+ * ciszy jest obsługiwane w ~2 s, a nie do 7 s.
+ */
+private const val PODGLAD_HEARTBEAT_MS = 50_000L
+
+/**
+ * [0.31.57] Nie wysyłaj heartbeatu, jeśli w tym czasie szła prawdziwa komenda.
+ *
+ * Heartbeat i komenda idą tą samą ścieżką `/piec/cmd`; firmware kasuje payload
+ * po ACK. 30 s ciszy gwarantuje, że nie ma czego nadpisywać (timeout ACK to 12 s).
+ */
+private const val PODGLAD_QUIET_BEFORE_MS = 30_000L
+
+/**
  * Po tylu ms bez dotknięcia ekranu terminal przestaje pytać Firebase.
  * Otwarty terminal odpytywał bazę co 5 s bez końca — 720 zapytań na godzinę,
  * więcej niż cały polling statusu.
@@ -267,6 +285,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private var jobs: List<Job> = emptyList()
     private var bgJob: Job? = null
 
+    /** [0.31.57] Heartbeat „panel otwarty" — żyje tylko na pierwszym planie. */
+    private var podgladJob: Job? = null
+
+    /** [0.31.57] Kiedy poszła ostatnia PRAWDZIWA komenda (ms, elapsedRealtime). */
+    private var lastUserCommandMs = 0L
+
     fun onResume() {
         bgJob?.cancel(); bgJob = null
         poll(); refreshWeather(false)
@@ -290,14 +314,64 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 }
             }
         )
+        startPodgladHeartbeat()
     }
 
     fun onPause() {
+        stopPodgladHeartbeat(sendOff = true)
         jobs.forEach { it.cancel() }; jobs = emptyList()
         stopTerminalDlogPolling()
         // W tle NIE odpytujemy — oszczędność baterii; alarmy przejmuje
         // AlarmMonitorService z minutowym pollingiem statusu.
         bgJob?.cancel(); bgJob = null
+    }
+
+    /**
+     * [0.31.57 PODGLAD-PANELU] Meldunek „aplikacja otwarta" do centrali.
+     *
+     * Wysyła `podglad_wl` od razu po wejściu na pierwszy plan i potem co
+     * [PODGLAD_HEARTBEAT_MS]. Firmware 3.57.0 dzięki temu czyta komendy co 2 s
+     * (zamiast 7 s) i publikuje status co 5 s (zamiast 15 s) — czyli dokładnie
+     * „wysokie obroty, dopóki ktoś patrzy".
+     *
+     * Na starszym firmware (3.56.x i wcześniej) te komendy są nieznane, ale
+     * sam PAYLOAD w `/piec/cmd` i tak uruchamia tryb turbo 1 s/1 s (firmware
+     * przyspiesza PRZED walidacją tokenu i treści), więc komendy i tak docierają
+     * szybciej — kosztem wpisu `nieznana_komenda` w logu centrali.
+     *
+     * Gdy aplikacja zejdzie w tło: `podglad_wyl` (natychmiastowy powrót do normy)
+     * albo — przy zabiciu procesu — samo wygaśnięcie okna po 90 s.
+     */
+    private fun startPodgladHeartbeat() {
+        podgladJob?.cancel()
+        podgladJob = scope.launch {
+            while (isActive) {
+                val quiet = SystemClock.elapsedRealtime() - lastUserCommandMs > PODGLAD_QUIET_BEFORE_MS
+                if (quiet && connected && Rtdb.refreshToken.isNotBlank()) {
+                    try {
+                        Rtdb.sendCommandQuiet("podglad_wl")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Brak sieci nie może niczego psuć — następny heartbeat za 50 s.
+                    }
+                }
+                delay(PODGLAD_HEARTBEAT_MS)
+            }
+        }
+    }
+
+    /** [0.31.57] Koniec podglądu: opcjonalnie zwolnij centralę od razu, bez czekania na wygaśnięcie okna. */
+    private fun stopPodgladHeartbeat(sendOff: Boolean) {
+        podgladJob?.cancel(); podgladJob = null
+        if (!sendOff || Rtdb.refreshToken.isBlank()) return
+        scope.launch {
+            try {
+                Rtdb.sendCommandQuiet("podglad_wyl")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) { /* w tle — bez znaczenia */ }
+        }
     }
 
     private fun recordSolar() {
@@ -904,6 +978,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private suspend fun sendAwait(cmd: String, onAck: (() -> Unit)? = null): Boolean {
         val command = cmd.trim()
         if (command.isEmpty()) return false
+        // [0.31.57] Heartbeat podglądu ma się wstrzymać, dopóki idzie prawdziwa komenda.
+        lastUserCommandMs = SystemClock.elapsedRealtime()
         val sensitive = CommandRedactor.isSensitive(command)
         val commandLabel = CommandRedactor.forDisplay(command)
         if (!connected) {

@@ -27,6 +27,16 @@ import kotlin.math.max
    oraz endpointów `http://<ip>/api/...` z Piec.html.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * [0.31.57] Odstęp sprawdzania `/piec/ack` po wysłaniu komendy.
+ *
+ * Było 1000 ms — do sekundy „martwego" czasu PO tym, jak centrala już potwierdziła.
+ * Przy komendach, które centrala wykonuje w ~0,2 s, ten 1 s był większą częścią
+ * opóźnienia niż samo przesłanie. 300 ms = 3 sprawdzenia na sekundę, nadal tanio
+ * (odpowiedź to ~60 bajtów).
+ */
+private const val ACK_POLL_MS = 300L
+
 object Rtdb {
     const val DB_URL = "https://akwarium-367be-default-rtdb.europe-west1.firebasedatabase.app"
     const val AUTH_SIGNIN_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key="
@@ -299,12 +309,34 @@ object Rtdb {
                     }
                 }
             } catch (e: Exception) { /* continue */ }
-            delay(1000)
+            delay(ACK_POLL_MS)
         }
         null
     }
 
     data class Ack(val ok: Boolean, val error: String)
+
+    /**
+     * [0.31.57 PODGLAD-PANELU] „Cicha" wysyłka komendy — bez czekania na ACK.
+     *
+     * Używana wyłącznie do heartbeatu `podglad_wl` / `podglad_wyl`: firmware
+     * traktuje taki payload jako „ktoś patrzy na panel" i sam przyspiesza odczyt
+     * komend (7 s → 2 s) oraz wysyłkę statusu (15 s → 5 s). Heartbeat nie
+     * potrzebuje potwierdzenia, a czekanie do 12 s na ACK blokowałoby kolejne
+     * prawdziwe polecenia użytkownika.
+     *
+     * Ten sam [commandSendMutex] co [sendCommand] jest celowy: heartbeat nie
+     * może nadpisać payloadu prawdziwej komendy, zanim centrala go odczyta.
+     */
+    suspend fun sendCommandQuiet(cmd: String): Boolean = commandSendMutex.withLock {
+        val body = JSONObject()
+            .put("id", makeFireCmdId())
+            .put("cmd", cmd)
+            .put("token", cmdToken)
+            .put("ts", System.currentTimeMillis())
+        val p = patch("/piec/cmd.json", body)
+        p.ok
+    }
 
     // ── lokalne API centrali (ESP32) ─────────────────────────────────────────
     internal fun localControllerUrl(ip: String, path: String): String? =
