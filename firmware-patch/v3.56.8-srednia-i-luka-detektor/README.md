@@ -47,7 +47,14 @@ Po co: audyt 29 dni pokazał **65 pojedynczych strat**, dla których w kodzie
 nie ma żadnej ścieżki. Ten detektor powie wprost, kiedy i ile numerów
 przeskoczyło.
 
-Nowe liczniki (w logu `HEALTH-A`, czyli w `/logi`, oraz w `/api/status`):
+Nowe liczniki — **tylko w logu `HEALTH-A`** (czyli w `/logi` albo Telegram `/logi`).
+
+> **SPROSTOWANIE (30.10).** Wcześniej ten plik twierdził, że liczniki są też
+> w JSON `/api/status`. **To nieprawda** — sprawdzone w kodzie: każde z pól
+> `telemetry_*` występuje dokładnie raz, w linii HEALTH-A (linie 47119–47124).
+> `/api/status` ich nie zawiera. Do odczytu potrzebny jest więc log, nie status.
+
+
 
 | licznik | znaczenie |
 |---|---|
@@ -79,7 +86,7 @@ Zmiana 2 to wyłącznie dodanie liczników i logu.
 
 ## 5. Co będzie dalej
 
-Po **jednym dniu** pracy wyślij `/logi` albo `/status`. Z nowych liczników
+Po **jednym dniu** pracy wyślij `/logi` (`/status` nie zawiera tych liczników). Z nowych liczników
 odczytam, gdzie ginie ta jedna próbka. Wtedy dopiero — na dowodzie, nie na
 hipotezie — zrobimy ewentualną poprawkę mechanizmu paczek.
 
