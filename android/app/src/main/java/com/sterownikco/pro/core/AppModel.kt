@@ -36,11 +36,28 @@ import java.util.concurrent.TimeUnit
 /* ══════════════════════════════════════════════════════════════════════════
    MODEL APLIKACJI — odpowiednik warstwy sterującej Piec.html:
    `pollFirebase` + `sendCommand/ACK` + `refreshWeatherTab` + `loadTelemetryRange`
-   + logi + toasty + timery (8 s / 45 s / 15 min / 1 s).
+   + logi + toasty + timery (2 s / 45 s / 15 min / 1 s).
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** Minimalny odstęp między automatycznymi pobraniami historii (ms). */
 private const val HISTORY_MIN_INTERVAL_MS = 60_000L
+
+/**
+ * [0.31.56 SZYBKI-POLLING] Odstęp odpytywania `/piec/status` przy OTWARTEJ aplikacji.
+ *
+ * Było 8 s. Po kliknięciu w kafelek nowy stan dochodził dopiero przy kolejnym
+ * ticku — do 8 s po ACK — i wyglądało to jak zawieszona aplikacja. Teraz 2 s.
+ *
+ * W tle nadal ZERO zapytań z UI (`onPause` kasuje `jobs`); alarmy w tle
+ * obsługuje `AlarmMonitorService` jednym zapytaniem na 60 s.
+ *
+ * Górnej granicy świeżości to nie podnosi: centrala publikuje `/piec/status`
+ * co 15 s (`FB_SEND_INTERVAL_MS`), a po każdej komendzie co 1 s przez 60 s
+ * (`FB_TURBO_SEND_INTERVAL_MS` / `FB_TURBO_WINDOW_MS`). Telefon nie zobaczy
+ * nic świeższego niż to, co centrala już zapisała — 2 s skraca tylko czas
+ * oczekiwania na odbiór tego zapisu.
+ */
+private const val FOREGROUND_POLL_MS = 2_000L
 
 /**
  * Po tylu ms bez dotknięcia ekranu terminal przestaje pytać Firebase.
@@ -147,7 +164,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         refreshSheet()
         if (id == "terminal") startTerminalDlogPolling() else stopTerminalDlogPolling()
         // [0.31.35] Karta solarna ma pokazać dzisiejszy zysk od razu, a nie po
-        // pierwszym własnym pollingu za 8 s — dociągamy dobę z chmury.
+        // pierwszym własnym pollingu za 2 s — dociągamy dobę z chmury.
         if (id == "panel") refreshSolarFromCloud()
     }
 
@@ -258,7 +275,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         refreshSolarFromCloud()
         if (sheet == "terminal") startTerminalDlogPolling()
         jobs = listOf(
-            scope.launch { while (true) { delay(8000); poll() } },
+            scope.launch { while (true) { delay(FOREGROUND_POLL_MS); poll() } },
             scope.launch { while (true) { delay(15L * 60_000); refreshWeather(true) } },
             scope.launch {
                 while (true) {
@@ -309,7 +326,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun refreshSolarFromCloud() = scope.launch {
         if (connected && Rtdb.refreshToken.isNotBlank()) {
             val now = System.currentTimeMillis()
-            // Jedno pobranie doby na 5 minut — polling statusu leci co 8 s i nie może
+            // Jedno pobranie doby na 5 minut — polling statusu leci co 2 s i nie może
             // zamieniać się w 180 zapytań do RTDB na kwadrans.
             if (now - solarHistoryAt >= 5 * 60_000L) {
                 solarHistoryAt = now
@@ -349,7 +366,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /**
      * Routine refreshes are best-effort and coalesce while a poll is active. After an ACK,
      * the caller must wait for the active poll to finish and then fetch a fresh snapshot;
-     * dropping that request leaves every state-driven sheet stale until the next 8 s tick.
+     * dropping that request leaves every state-driven sheet stale until the next 2 s tick.
      */
     private suspend fun pollAwait(waitForInFlight: Boolean = false): Boolean {
         if (Rtdb.refreshToken.isBlank()) {
@@ -819,7 +836,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     showToast("SERWO", "Status centrali potwierdził nowy tryb.", "ok")
                     return@launch
                 }
-                // Routine RTDB polling continues every 8 s; no extra status requests are
+                // Routine RTDB polling continues every 2 s; no extra status requests are
                 // generated here. This waiter only reacts as soon as one of those snapshots
                 // reaches the Compose UI.
                 delay(500L)
