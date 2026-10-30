@@ -270,27 +270,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         refreshWeather(false)
 
         // [0.31.62] Po odtworzeniu aktywności wracamy tam, gdzie użytkownik był
-        // (koniec skoku na pulpit) i od razu pokazujemy wykres z pamięci procesu.
+        // (koniec skoku na pulpit). Reszta stanu wykresów jest odtwarzana w
+        // restoreRuntimeState() — tamte pola są zadeklarowane NIŻEJ w klasie,
+        // więc nie wolno ich dotykać z bloku init (błąd kompilacji w 0.31.62).
         page = prefs.getInt(Prefs.K_LAST_PAGE, 0).coerceIn(0, 4)
-        val restoredPoints = AppRuntime.lastTelemetry
-        if (restoredPoints.isNotEmpty()) {
-            telemetry = restoredPoints
-            chartLive = AppRuntime.lastLive
-            chartPoints = restoredPoints.size
-            if (AppRuntime.lastRangeSec > 0) {
-                rangeSec = AppRuntime.lastRangeSec
-                historyLoadedRange = AppRuntime.lastRangeSec
-            }
-            historyLoadedElapsed = AppRuntime.lastLoadedAtMs
-        }
-        // Wpis diagnostyczny: PID i wiek procesu rozstrzygają, czy Android zabił
-        // proces (inny PID), czy tylko odtworzył aktywność (ten sam PID).
-        addLog(
-            "SYSTEM",
-            "Start panelu: " + AppRuntime.processTag() + " · zakładka " + page +
-                (if (restoredPoints.isNotEmpty()) " · wykres z pamięci (" + restoredPoints.size + " pkt)" else ""),
-            "info"
-        )
 
         // Przywróć konto po udanym wcześniejszym logowaniu; hasło jest w Android Keystore.
         val savedPassword = prefs.getSecret(Prefs.K_PASS)
@@ -364,6 +347,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** [0.31.58] Czy aplikacja jest na pierwszym planie. */
     private var foreground = false
 
+    /** [0.31.63] Czy stan wykresów został już odtworzony w tym modelu. */
+    private var runtimeRestored = false
+
     /**
      * [0.31.58] Wołane z MainActivity przy każdym dotknięciu ekranu.
      *
@@ -376,7 +362,43 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         if (foreground && !podgladActive) startPodgladHeartbeat()
     }
 
+    /**
+     * [0.31.63] Odtworzenie stanu wykresów po powrocie do aplikacji.
+     *
+     * Wolane z [onResume] (a nie z bloku `init`), bo `historyLoadedRange`
+     * i `historyLoadedElapsed` są zadeklarowane niżej w klasie — przypisanie
+     * ich w `init` kończyło się błędem „Variable cannot be initialized before
+     * declaration" i 0.31.62 nie dało się zbudować.
+     *
+     * Robi to tylko raz na życie modelu: zakładka wraca z zapisu, a ostatnio
+     * policzony wykres z pamięci PROCESU (bez czytania dysku i bez sieci).
+     */
+    private fun restoreRuntimeState() {
+        if (runtimeRestored) return
+        runtimeRestored = true
+        val restoredPoints = AppRuntime.lastTelemetry
+        if (restoredPoints.isNotEmpty()) {
+            telemetry = restoredPoints
+            chartLive = AppRuntime.lastLive
+            chartPoints = restoredPoints.size
+            if (AppRuntime.lastRangeSec > 0) {
+                rangeSec = AppRuntime.lastRangeSec
+                historyLoadedRange = AppRuntime.lastRangeSec
+            }
+            historyLoadedElapsed = AppRuntime.lastLoadedAtMs.coerceAtLeast(1L)
+        }
+        // Wpis diagnostyczny: PID i wiek procesu rozstrzygają, czy Android zabił
+        // proces (inny PID), czy tylko odtworzył aktywność (ten sam PID).
+        addLog(
+            "SYSTEM",
+            "Start panelu: " + AppRuntime.processTag() + " · zakładka " + page +
+                (if (restoredPoints.isNotEmpty()) " · wykres z pamięci (" + restoredPoints.size + " pkt)" else ""),
+            "info"
+        )
+    }
+
     fun onResume() {
+        restoreRuntimeState()
         bgJob?.cancel(); bgJob = null
         poll(); refreshWeather(false)
         // [0.31.61] Pamięć historii czytamy z dysku od razu po wejściu do aplikacji,
