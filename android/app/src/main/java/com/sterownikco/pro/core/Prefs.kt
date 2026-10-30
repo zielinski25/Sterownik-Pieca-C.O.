@@ -327,6 +327,8 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         const val K_TG_TOKEN = "piec_tg_token"
         const val K_TG_CHAT = "piec_tg_chat_id"
         const val K_CHART_PREFS = "piec_chart_prefs_v2"
+        /** [0.31.62] Ostatnia zakładka — po powrocie do aplikacji nie wracamy na pulpit. */
+        const val K_LAST_PAGE = "piec_last_page"
         const val K_LAT = "piec_weather_lat"
         const val K_LON = "piec_weather_lon"
         const val K_SOLAR_ARCHIVE = "solar_archive_data" // legacy/unverified; never loaded as real telemetry

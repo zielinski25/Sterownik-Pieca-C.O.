@@ -39,8 +39,15 @@ import java.util.concurrent.TimeUnit
    + logi + toasty + timery (8 s / 45 s / 15 min / 1 s).
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** Minimalny odstęp między automatycznymi pobraniami historii (ms). */
-private const val HISTORY_MIN_INTERVAL_MS = 60_000L
+/**
+ * Minimalny odstęp między automatycznymi pobraniami historii (ms).
+ *
+ * [0.31.62] 60 s -> 5 min. Zgłoszenie 30.10: „niech wykresy zostaną przez parę
+ * minut i pokazują się od razu". Wracanie na zakładkę w tym oknie nie rusza
+ * sieci — wykres bierze się z pamięci. Przycisk „Odśwież" i zmiana zakresu
+ * nadal wymuszają pobranie (force = true).
+ */
+private const val HISTORY_MIN_INTERVAL_MS = 5L * 60_000L
 
 /**
  * Odstęp odpytywania `/piec/status` przy OTWARTEJ aplikacji.
@@ -125,7 +132,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     val S = PiecState()
     val solar = SolarAnalytics(prefs)
     // [0.31.43] Pamięć historii telemetrii na dysku telefonu (filesDir/telemetria).
-    val telCache = TelemetryCache(ctx)
+    // [0.31.62] Jedna pamięć historii na PROCES, nie na aktywność — po odtworzeniu
+    // aktywności nie czytamy pliku z dysku od nowa.
+    val telCache = AppRuntime.telemetryCache(ctx)
     /** Dzienny cache telemetrii z 0.31.20 (jeden plik na dzień) — zostawiony dla starszej ścieżki. */
     val tcache = TelemetryDayCache(ctx)
 
@@ -259,6 +268,29 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         loadDashboardWidgets()
         loadDashboardWidgetOrder()
         refreshWeather(false)
+
+        // [0.31.62] Po odtworzeniu aktywności wracamy tam, gdzie użytkownik był
+        // (koniec skoku na pulpit) i od razu pokazujemy wykres z pamięci procesu.
+        page = prefs.getInt(Prefs.K_LAST_PAGE, 0).coerceIn(0, 4)
+        val restoredPoints = AppRuntime.lastTelemetry
+        if (restoredPoints.isNotEmpty()) {
+            telemetry = restoredPoints
+            chartLive = AppRuntime.lastLive
+            chartPoints = restoredPoints.size
+            if (AppRuntime.lastRangeSec > 0) {
+                rangeSec = AppRuntime.lastRangeSec
+                historyLoadedRange = AppRuntime.lastRangeSec
+            }
+            historyLoadedElapsed = AppRuntime.lastLoadedAtMs
+        }
+        // Wpis diagnostyczny: PID i wiek procesu rozstrzygają, czy Android zabił
+        // proces (inny PID), czy tylko odtworzył aktywność (ten sam PID).
+        addLog(
+            "SYSTEM",
+            "Start panelu: " + AppRuntime.processTag() + " · zakładka " + page +
+                (if (restoredPoints.isNotEmpty()) " · wykres z pamięci (" + restoredPoints.size + " pkt)" else ""),
+            "info"
+        )
 
         // Przywróć konto po udanym wcześniejszym logowaniu; hasło jest w Android Keystore.
         val savedPassword = prefs.getSecret(Prefs.K_PASS)
@@ -1386,6 +1418,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 // Historia może kończyć się przed ostatnim odczytem statusu (np. po
                 // rozpaleniu) — dołączamy świeży pomiar ESP32 bez czekania na polling.
                 appendLiveFeed()
+                // [0.31.62] Zapamiętaj wynik w pamięci PROCESU — po odtworzeniu
+                // aktywności wykres rysuje się bez czytania dysku i bez sieci.
+                AppRuntime.lastTelemetry = merged
+                AppRuntime.lastLive = chartLive
+                AppRuntime.lastRangeSec = sec
+                AppRuntime.lastLoadedAtMs = SystemClock.elapsedRealtime()
                 return@launch
             }
 
@@ -2657,6 +2695,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** `navigate(i)` — PAGES = pulpit, wykresy, pogoda, ustawienia, więcej. */
     fun navigate(i: Int) {
         page = i
+        prefs.setInt(Prefs.K_LAST_PAGE, i)
         when (i) {
             // `drawTrend()` w oryginale — w Compose trend jest reaktywny (S.hist)
             1 -> { loadRange(rangeSec) }              // loadTelemetryRange + updateChartCanvas
