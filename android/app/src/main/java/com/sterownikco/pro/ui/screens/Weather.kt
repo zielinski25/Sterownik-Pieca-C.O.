@@ -716,20 +716,28 @@ private fun SunArcCard(m: AppModel) {
                 append("☀️ Promieniowanie: ")
                 withStyle(SpanStyle(color = SolarY, fontWeight = FontWeight.Bold)) { append(rad) }
             }, fontSize = 8.5.sp, color = Pal.TextDim,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(buildAnnotatedString {
-                append("📐 Elewacja słońca: ")
-                withStyle(SpanStyle(color = Pal.Cyan, fontWeight = FontWeight.Bold)) { append(elevTxt) }
-            }, fontSize = 8.5.sp, color = Pal.TextDim,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.weight(1.2f))
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.15f))
             Text(buildAnnotatedString {
                 append("⏳ Długość dnia: ")
                 withStyle(SpanStyle(color = Color.White, fontWeight = FontWeight.Bold)) {
                     append("${dl / 3600000}h ${(dl % 3600000) / 60000}m")
                 }
             }, fontSize = 8.5.sp, color = Pal.TextDim,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, modifier = Modifier.weight(0.8f))
+                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End,
+                modifier = Modifier.weight(0.85f))
         }
+        // [0.31.55 ELEWACJA-OSOBNY-WIERSZ] Bylo: trzy wartosci w jednym Row
+        // (wagi 1 / 1,2 / 0,8). Przy szerokosci ~360 dp kazda dostawala 80-130 dp,
+        // a same etykiety sa szersze — efekt: „Promieniowanie: 2…",
+        // „Elewacja slonca: ≈47° (…", „Dlugosc dnia: …" — trzy liczby, zadnej
+        // nie dalo sie odczytac. Teraz dwie wartosci w wierszu, trzecia pod spodem:
+        // najdluzsza etykieta dostaje cale 332 dp i miesci sie w calosci.
+        Text(buildAnnotatedString {
+            append("📐 Elewacja słońca: ")
+            withStyle(SpanStyle(color = Pal.Cyan, fontWeight = FontWeight.Bold)) { append(elevTxt) }
+        }, fontSize = 8.5.sp, color = Pal.TextDim,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp))
     }
 }
 
