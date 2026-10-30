@@ -964,6 +964,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         updateServoModeAckOverride(null)
         scope.launch {
             var waitToastId = 0L
+            // [0.31.60] Punkt odniesienia dla „świeżości": znacznik ostatniego udanego
+            // odczytu statusu SPRZED wysłania komendy. Bez tego „świeży odczyt" nie ma
+            // z czym się porównać (w 0.31.59 brakowało tej deklaracji i się nie kompilowało).
+            val statusStampBefore = lastFetchTs
             servoModeCommandMutex.lock()
             val acknowledged = try {
                 if (requestId != servoModeRequestId) false
