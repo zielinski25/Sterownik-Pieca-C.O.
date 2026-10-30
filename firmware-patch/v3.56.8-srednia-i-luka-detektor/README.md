@@ -103,3 +103,26 @@ SHA256SUMS.txt                            <- sumy kontrolne
 *.h (14 plików)                           <- BEZ ZMIAN wobec v3.56.7
 secrets.h.example                         <- wzór, NIE nadpisuj swojego
 ```
+
+---
+
+## 7. Wynik sprawdzenia po dobie (30.10) — łata NIE zadziałała
+
+Sprawdzone na logu z 20 godzin pracy (`piec_log (13).txt`). Pełny raport:
+`narzedzia/audyt-telemetrii-2026-10-29/234-WYNIK-3.56.8-PO-DOBIE.md`.
+
+**Detektor luk:** działa. `telemetry_gap_events=0`, 1200 próbek na 1200
+wysłanych, zero strat. Był test — 11-minutowa awaria Firebase (02:39–02:50)
+i ani jedna próbka nie zginęła.
+
+**Łata na „Ogrz. śr.":** nie zadziałała i nie miała jak. Klucz `srOstPompa`
+powstaje **wyłącznie przy zaniku pompy** (ON→OFF), a od wgrania pompa nie
+ruszyła ani raz (piec stoi zimny, 12 °C). W logu **0** wystąpień
+`SREDNIA po restarcie`. Łata jest uśpiona do pierwszego rozpalenia.
+
+**Skutek widoczny w danych:** po restarcie kanał trzyma wartość startową
+`ostatni_poprawny = 20` przez ~20 minut. Zmierzone 19 razy w 12 dni. Przy
+piecu 52 °C pokazuje 20,0 °C — błąd −32 K. To nie dziura, to fałszywa liczba,
+i wygląda jak prawdziwy pomiar.
+
+**Wniosek:** poprawka potrzebna w 3.56.9, ale najpierw decyzja użytkownika.

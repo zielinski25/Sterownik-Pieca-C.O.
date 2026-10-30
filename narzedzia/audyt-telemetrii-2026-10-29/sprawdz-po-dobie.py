@@ -70,15 +70,26 @@ def main():
         return 2
 
     wpisy = []
+    pominiete_stare = 0
     for L in linie:
         if RE_HEALTH.search(L):
             d = parsuj(L)
-            if "telemetry_produced" in d:
+            # Liczniki telemetry_sent/ring/gap_* istnieją dopiero od 3.56.8.
+            # Starsze wpisy HEALTH-A mają tylko produced/dropped — pomijamy je,
+            # bo inaczej "wysłano 0" robi sztuczną stratę setek próbek.
+            if "telemetry_gap_events" in d:
                 wpisy.append(d)
+            elif "telemetry_produced" in d:
+                pominiete_stare += 1
+    # Log bywa poskładany z dwóch plików (log_a/log_b) — kolejność w pliku
+    # nie jest kolejnością czasu. Sortujemy, żeby sesje wyszły poprawnie.
+    wpisy.sort(key=lambda d: d.get("t", ""))
 
     print("=" * 66)
     print("LOG:", sciezka)
     print("linii w pliku:", len(linie), "| wpisów HEALTH-A z licznikami:", len(wpisy))
+    if pominiete_stare:
+        print("pominięto starych wpisów HEALTH-A (sprzed 3.56.8):", pominiete_stare)
     print("=" * 66)
 
     if not wpisy:
@@ -92,8 +103,8 @@ def main():
     pierwszy, ostatni = wpisy[0], wpisy[-1]
     print()
     print("ZAKRES")
-    print("  pierwszy wpis :", znacznik(pierwszy.get("t", "?")), "boot=", pierwszy.get("boot", "?"))
-    print("  ostatni wpis  :", znacznik(ostatni.get("t", "?")), "boot=", ostatni.get("boot", "?"))
+    print("  pierwszy wpis :", znacznik(pierwszy.get("t", "?")), " boot=", pierwszy.get("boot", "?"))
+    print("  ostatni wpis  :", znacznik(ostatni.get("t", "?")), " boot=", ostatni.get("boot", "?"))
     booty = sorted({w.get("boot") for w in wpisy if "boot" in w})
     print("  bootów w logu :", len(booty), "->", ", ".join(booty[:12]))
     if len(booty) > 1:
@@ -105,11 +116,13 @@ def main():
     print(" odejmować ich przez granicę startu)")
     print()
 
+    # Sesja = ciągły przedział czasu między resetami licznika "produced".
+    # Numer boot bywa mylący: po wgraniu firmware'u licznik startuje od 1,
+    # a w logu mogą być wpisy odtworzone z plików. Reset licznika jest pewny.
     grupy = []
     for w in wpisy:
-        b = w.get("boot")
-        if not grupy or grupy[-1][0] != b:
-            grupy.append((b, []))
+        if not grupy or w.get("telemetry_produced", 0) < grupy[-1][1][-1].get("telemetry_produced", 0):
+            grupy.append((w.get("boot"), []))
         grupy[-1][1].append(w)
 
     suma_zniklo = 0
@@ -120,8 +133,6 @@ def main():
         sent = z.get("telemetry_sent", 0) - a.get("telemetry_sent", 0)
         drop = z.get("telemetry_dropped", 0) - a.get("telemetry_dropped", 0)
         ring = z.get("telemetry_ring", 0)
-        if prod < 0:      # po restarcie liczniki od zera — ten wpis jest pierwszy
-            prod = z.get("telemetry_produced", 0)
         zniklo = prod - sent - drop - ring
         suma_zniklo += zniklo
         suma_prod += prod
@@ -149,9 +160,13 @@ def main():
     gs0, gs1 = 0, gs_sum
     print("  zdarzeń przerwy w numeracji :", ge1 - ge0)
     print("  próbek łącznie przeskoczonych:", gs1 - gs0)
-    if ge1 - ge0 == 0:
+    if ge1 - ge0 == 0 and suma_zniklo <= 0:
         print()
-        print("  -> Detektor MILCZY, a strata jest. To znaczy, że próbki znikają")
+        print("  -> Detektor milczy I nic nie zginęło. Potok szczelny — nie ma")
+        print("     czego szukać. Wystarczy zbierać kolejne doby.")
+    elif ge1 - ge0 == 0 and suma_zniklo > 0:
+        print()
+        print("  -> Detektor MILCZY, a strata JEST. To znaczy, że próbki znikają")
         print("     ŚCIEŻKĄ, KTÓREJ DETEKTOR NIE WIDZI (np. spool / fałszywe")
         print("     potwierdzenie paczki). Wtedy 3.56.9 ma sens — ale najpierw")
         print("     musimy wiedzieć, KTÓRA to ścieżka.")
