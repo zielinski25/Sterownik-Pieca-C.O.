@@ -1,0 +1,77 @@
+--- /home/user/Sterownik-Pieca-C.O./firmware-patch/v3.56.8-srednia-i-luka-detektor/main_centrala.cpp	2026-10-30 09:06:21.554126336 +0000
++++ main_centrala.cpp	2026-10-30 09:21:25.508257112 +0000
+@@ -1,3 +1,30 @@
++// FIRMWARE_VERSION v3.56.8 -> v3.56.9 (2026-10-30) — SREDNIA: KONIEC FALSZYWEGO 20.0 C.
++//
++//   Objaw (log z 12 dni, 19 okien; widac tez na wykresach 29.10):
++//     Po kazdym restarcie kanal "Ogrz. sr." pokazywal DOKLADNIE 20.0 C
++//     przez Czas_OFF minut (domyslnie 20), niezaleznie od realnej
++//     temperatury pieca. Przy piecu 52 C blad siegal -32 K. Wartosc
++//     wygladala jak pomiar, bo nie byla dziura — byla linia. Jednoczesnie
++//     probka byla odrzucana jako "stale", wiec na wykresie linia sie
++//     urywala dokladnie w chwili restartu.
++//
++//   Przyczyna:
++//     static int ostatni_poprawny = 20;  — stala wartosc startowa.
++//     Przez pierwsze Czas_OFF minut piec nie jest jeszcze uznany za
++//     wygasly, a oba bufory usredniajace sa puste (same zera). Wyliczona
++//     srednia jest wiec odrzucana i na kanal trafia ta wlasnie stala.
++//
++//   Naprawa (wariant A — minimalny, bez nowej logiki czasowej):
++//     1. Ziarno ostatni_poprawny bierzemy z pierwszego poprawnego
++//        odczytu czujnika, a nie ze stalej 20.
++//     2. Gdy pompa stoi, a srednia nie odbiega od biezacego odczytu
++//        (<= 6 K), publikujemy ja mimo braku bufora. Bez tego probka
++//        jest odrzucana jako "stale" i wykres ma dziure.
++//
++//   Swiadomie NIE ruszamy niczego, co dzieje sie przy pracujacej pompie:
++//   progow, wygladzania, trybow Wybor 1/2/3, buforow, zapisu tempSrednia
++//   przy zboczu OFF->ON, telemetrii ani detektora luk.
++//
+ // FIRMWARE_VERSION v3.56.7 -> v3.56.8 (2026-10-29) — SREDNIA PO RESTARCIE + DETEKTOR LUK.
+ //
+ // Zmiana 1 (P1) SREDNIA-PO-RESTARCIE:
+@@ -5661,7 +5688,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.56.8";
++static const char* FIRMWARE_VERSION = "v3.56.9";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -32227,6 +32254,15 @@
+   }
+   bool pompaWlSrednia = pompaJestWlaczona();
+   if (pompaWlSrednia) ostatniRazPompaPracowalaMs = millis();
++  // [v3.56.9 SREDNIA-REALNA] Ziarno z pierwszego poprawnego odczytu.
++  // Bylo: static int ostatni_poprawny = 20 i ta stala trafiala na kanal po
++  // kazdym restarcie, dopoki piec nie zostal uznany za wygasly. Teraz, zanim
++  // cokolwiek opublikujemy, podstawiamy realna temperature z czujnika.
++  static bool ostatniPoprawnyZeZrodla = false;
++  if (!ostatniPoprawnyZeZrodla && temperaturaOgrzewania > 0) {
++    ostatni_poprawny = (int)lroundf(temperaturaOgrzewania);
++    ostatniPoprawnyZeZrodla = true;
++  }
+   // Zanik pompy = zapamietujemy moment. Jeden zapis NVS na cykl pracy pompy,
+   // wiec zuzycie pamieci NVS jest pomijalne.
+   if (srPoprzedniaPompa && !pompaWlSrednia && srCzasZnany) {
+@@ -32334,6 +32370,18 @@
+     }
+   }
+ 
++  // [v3.56.9 SREDNIA-REALNA] Publikacja takze wtedy, gdy pompa stoi, a srednia
++  // jest realna (blisko biezacego odczytu). Wczesniej probka byla odrzucana,
++  // kanal lecial w stan "stale" i wykres mial dziure dokladnie w chwili
++  // restartu — czyli tam, gdzie najbardziej ja widac. Warunek "pompa stoi"
++  // jest celowy: przy pracujacej pompie zostaje dotychczasowe zachowanie co
++  // do znaku, wiec odczyt skokowy/awaryjny (np. 85 C z DS18B20) nadal nie
++  // przejdzie, bo fallback jest wtedy aktualizowany tylko z prawdziwych probek.
++  if (!telemetryOgrzSrAccepted && !pompaWlSrednia && temperaturaOgrzewania > 0 &&
++      fabsf(temperaturaOgrzewaniaSrednia - temperaturaOgrzewania) <= 6.0f) {
++    telemetryOgrzSrAccepted = true;
++  }
++
+   if (telemetryOgrzSourceNew && telemetryOgrzSrAccepted) {
+     telemetryMarkDerivedOgrzSrFromSource();
+   }
