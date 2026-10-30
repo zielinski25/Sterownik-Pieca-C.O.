@@ -91,6 +91,15 @@ class TelemetryCache(ctx: Context) {
     }
 
     /**
+     * [0.31.61] Wczytuje plik w tle, zanim użytkownik otworzy Wykresy.
+     * Bez tego pierwsze wejście na wykresy płaciło za rozpakowanie i sparsowanie
+     * całej historii (przy 30 dniach ~43 000 wierszy).
+     */
+    suspend fun warmUp() = withContext(Dispatchers.IO) {
+        lock.withLock { ensureLoadedLocked() }
+    }
+
+    /**
      * Zapisuje to, co przyszło z chmury, i zapamiętuje potwierdzone puste luki.
      * [confirmedEmpty] wolno podać wyłącznie dla zapytań, które się udały —
      * inaczej zapamiętalibyśmy jako „puste" miejsce, o które nie zdążyliśmy spytać.
@@ -180,10 +189,19 @@ class TelemetryCache(ctx: Context) {
     /** Luka, w której pojawiły się dane, przestaje być luką. */
     private fun forgetHolesWithDataLocked() {
         if (holes.isEmpty() || points.isEmpty()) return
+        // [0.31.61] Jedno przejście po posortowanych znacznikach zamiast
+        // `points.keys.any { it in h }` dla KAŻDEJ luki — przy kilkudziesięciu
+        // lukach i 43 000 próbek to było kilkaset tysięcy porównań na zapis.
+        val stamps = points.keys.sorted()
         val it = holes.iterator()
         while (it.hasNext()) {
             val h = it.next()
-            if (points.keys.any { ts -> ts in h }) it.remove()
+            val idx = stamps.binarySearch(h.first)
+            val hit = if (idx >= 0) true else {
+                val insertAt = -idx - 1
+                insertAt < stamps.size && stamps[insertAt] <= h.last
+            }
+            if (hit) it.remove()
         }
     }
 
@@ -200,12 +218,16 @@ class TelemetryCache(ctx: Context) {
         points.clear()
         if (!dataFile.isFile) return
         try {
-            val lines: List<String> = GZIPInputStream(dataFile.inputStream().buffered()).use { input ->
-                input.bufferedReader(Charsets.UTF_8).readLines()
-            }
-            lines.forEach { line ->
-                if (line.isEmpty() || line.startsWith("#")) return@forEach
-                decodePoint(line)?.let { p -> points[p.ts] = p }
+            // [0.31.61] Strumień wiersz po wierszu zamiast `readLines()` — nie
+            // tworzymy listy wszystkich linii naraz (przy 30 dniach ~43 000
+            // łańcuchów w jednej alokacji).
+            GZIPInputStream(dataFile.inputStream().buffered()).use { input ->
+                input.bufferedReader(Charsets.UTF_8).useLines { lines ->
+                    lines.forEach { line ->
+                        if (line.isEmpty() || line.startsWith("#")) return@forEach
+                        decodePoint(line)?.let { p -> points[p.ts] = p }
+                    }
+                }
             }
         } catch (e: Exception) {
             // Plik uszkodzony (np. starsza wersja) — startujemy z pustą pamięcią,
@@ -236,7 +258,13 @@ class TelemetryCache(ctx: Context) {
         try {
             if (!dir.isDirectory && !dir.mkdirs()) return
             val tmp = File(dir, "historia.tsv.gz.tmp")
-            GZIPOutputStream(tmp.outputStream().buffered()).use { out ->
+            // [0.31.61] Poziom 3 zamiast domyślnego 6. Plik rośnie o kilka procent
+            // (i tak jest ~5x mniejszy niż tekst), a kompresja jest około dwa razy
+            // szybsza — a to ten zapis blokował wątek IO po każdym dociągnięciu.
+            val gz = object : GZIPOutputStream(tmp.outputStream().buffered()) {
+                init { def.setLevel(3) }
+            }
+            gz.use { out ->
                 val w = BufferedWriter(OutputStreamWriter(out, Charsets.UTF_8))
                 w.write(MAGIC)
                 w.write("\n")

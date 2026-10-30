@@ -347,6 +347,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun onResume() {
         bgJob?.cancel(); bgJob = null
         poll(); refreshWeather(false)
+        // [0.31.61] Pamięć historii czytamy z dysku od razu po wejściu do aplikacji,
+        // a nie dopiero przy otwarciu Wykresów — pierwsze wejście na wykresy nie
+        // płaci wtedy za rozpakowanie pliku.
+        scope.launch { telCache.warmUp() }
         // Historia tylko wtedy, gdy użytkownik naprawdę patrzy na wykresy.
         if (page == 1) loadRange(rangeSec)
         refreshSolarFromCloud()
@@ -1248,6 +1252,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private var historyLoadedRange = -1
     private var historyJob: Job? = null
 
+    /** [0.31.61] Czytelny czas etapu do dziennika: „340 ms" albo „1,8 s". */
+    private fun fmtMs(ms: Long): String =
+        if (ms < 1000L) "$ms ms" else String.format(java.util.Locale.US, "%.1f s", ms / 1000.0)
+
     /**
      * Wczytuje historię dla zakresu [sec].
      *
@@ -1255,6 +1263,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
      * i jawna zmiana zakresu. Zwykłe wejście na Wykresy korzysta z pamięci
      * telefonu, więc przełączanie zakładek nie generuje transferu.
      * Poprzednie pobranie jest anulowane.
+     *
+     * [0.31.61] Kolejność etapów jest teraz taka, żeby wykres był widoczny jak
+     * najszybciej: pamięć → (pokazanie wykresu) → sieć → zapis → archiwum pieca.
      */
     fun loadRange(sec: Int, force: Boolean = false) {
         val nowElapsed = SystemClock.elapsedRealtime()
@@ -1275,23 +1286,42 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             val nowMs = System.currentTimeMillis()
             val fromMs = nowMs - sec * 1000L
 
+            // 1) Pamięć telefonu: co już mamy i czego brakuje.
+            chartStatus = "Czytam pamięć telefonu…"
+            val tCacheStart = SystemClock.elapsedRealtime()
+            val plan = telCache.plan(fromMs, nowMs)
+            val cacheMs = SystemClock.elapsedRealtime() - tCacheStart
+
+            // [0.31.61 NATYCHMIAST] Wykres z pamięci pokazujemy OD RAZU — zanim
+            // polecimy do Firebase, przepiszemy plik pamięci i zapytamy archiwum
+            // centrali. Do 0.31.60 użytkownik czekał na SUMĘ tych etapów (~6 s
+            // przy 24 H): pamięć + sieć + zapis + do 2 s na piec.
+            var shownFromCache = false
+            if (plan.cached.isNotEmpty()) {
+                telemetry = plan.cached
+                chartPoints = plan.cached.size
+                chartLive = emptyList()
+                appendLiveFeed()
+                shownFromCache = true
+                chartStatus = "Z pamięci telefonu — dociągam nowe dane…"
+            }
+
             // Archiwum centrali w domu — tylko 6h/24h i tylko w domowej sieci.
+            // [0.31.61] Pytamy o nie ZAWSZE (dane z pieca bywają tylko tam), ale
+            // czekamy na nie dopiero PO pokazaniu wykresu z pamięci — dlatego nie
+            // blokuje ono pierwszego rysowania tak jak do 0.31.60.
             // [0.31.46] Dla 7/30 dni NIE pytamy wcale: wynik i tak byl odrzucany
             // (warunek useEsp), a samo czekanie na nieodpowiadajacy piec kosztowalo
-            // do 6 s przy KAZDYM wejsciu w wykresy. To byla glowna przyczyna
-            // "dlugo sie laduje" mimo dzialajacej pamieci historii.
+            // do 6 s przy KAZDYM wejsciu w wykresy.
             val espIp = S.ip.trim()
             val espTask = if (espIp.isNotEmpty() && sec <= 24 * 3600) async {
                 try { Rtdb.fetchEspHistory(espIp) } catch (e: Exception) { null }
             } else null
 
-            // 1) Pamięć telefonu: co już mamy i czego brakuje.
-            chartStatus = "Czytam pamięć telefonu…"
-            val plan = telCache.plan(fromMs, nowMs)
-
             // 2) Chmura: wyłącznie brakujące przedziały (przy pustej pamięci — całe okno).
             val fetched = ArrayList<TelemPoint>()
             val confirmedEmpty = ArrayList<LongRange>()
+            val tNetStart = SystemClock.elapsedRealtime()
             if (connected && plan.missing.isNotEmpty()) {
                 plan.missing.forEachIndexed { idx, seg ->
                     chartStatus = when {
@@ -1318,9 +1348,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     }
                 }
             }
+            val tNet = SystemClock.elapsedRealtime() - tNetStart
+            val tStoreStart = SystemClock.elapsedRealtime()
             if (fetched.isNotEmpty() || confirmedEmpty.isNotEmpty()) {
                 telCache.store(fetched, confirmedEmpty)
             }
+            val storeMs = SystemClock.elapsedRealtime() - tStoreStart
 
             // 3) Pamięć + świeżo dociągnięte próbki (klucz = znacznik czasu).
             val byTs = LinkedHashMap<Long, TelemPoint>()
@@ -1334,6 +1367,17 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             }
             val useEsp = esp != null && sec <= 24 * 3600 && esp.isNotEmpty()
             val merged = combineCloudAndEsp(cloudPts, if (useEsp) esp!! else emptyList())
+
+            // [0.31.61] Czasy etapów idą do dziennika (arkusz TERMINAL), więc przy
+            // kolejnym „długo się ładuje" wiadomo, który etap faktycznie zjada czas.
+            // Na ekranie nic dodatkowego nie wisi.
+            addLog(
+                "WYKRESY",
+                "$rangeName: pamięć ${fmtMs(cacheMs)} · sieć ${fmtMs(tNet)} · " +
+                    "zapis ${fmtMs(storeMs)} · punktów ${merged.size}" +
+                    (if (shownFromCache) " · wykres z pamięci od razu" else ""),
+                "info"
+            )
 
             if (merged.isNotEmpty()) {
                 chartLive = emptyList()
