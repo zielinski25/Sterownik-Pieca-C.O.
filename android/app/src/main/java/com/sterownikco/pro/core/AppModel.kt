@@ -89,6 +89,16 @@ private const val PODGLAD_IDLE_STOP_MS = 10L * 60_000L
 private const val PODGLAD_IDLE_RECHECK_MS = 15_000L
 
 /**
+ * [0.31.59] Ile czekać na świeży status po ACK trybu serwa.
+ *
+ * Wcześniej pętla czekała aż status poda DOKŁADNIE żądany tryb — jeśli centrala
+ * sama wybrała inny (np. bezpieczny), warunek nigdy nie był spełniony i toast
+ * „oczekuję na świeży odczyt" wisiał do 30 s, a przy przerwanym żądaniu
+ * (kolejne kliknięcie) zostawał na ekranie na zawsze.
+ */
+private const val SERVO_MODE_STATUS_WAIT_MS = 10_000L
+
+/**
  * Po tylu ms bez dotknięcia ekranu terminal przestaje pytać Firebase.
  * Otwarty terminal odpytywał bazę co 5 s bez końca — 720 zapytań na godzinę,
  * więcej niż cały polling statusu.
@@ -282,6 +292,17 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             delay(if (cls == "ok") 2500 else 4500)
             if (toast?.id == message.id) toast = null
         }
+    }
+
+    /** [0.31.59] Jak [showToast], ale zwraca id — żeby ścieżka bez potwierdzenia mogła posprzątać. */
+    private fun showToastTracked(cmd: String, stage: String, cls: String = "ok"): Long {
+        showToast(cmd, stage, cls)
+        return toast?.id ?: 0L
+    }
+
+    /** [0.31.59] Zdejmuje toast tylko wtedy, gdy na ekranie wciąż wisi TEN toast. */
+    private fun clearToast(id: Long) {
+        if (id != 0L && toast?.id == id) toast = null
     }
 
     private fun buzz() {
@@ -928,15 +949,21 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     /**
-     * After a positive ESP32 ACK, show the selected mode and manual controls immediately.
-     * Firebase status is sent on a slower cadence than command ACKs, so keep this
-     * presentation override only until the reported mode catches up (or 30 s elapse).
+     * Po dodatnim ACK pokazuje wybrany tryb od razu (status centrali nadchodzi rzadziej),
+     * ale NIE trzyma na ekranie „oczekuję" bez końca.
+     *
+     * [0.31.59] Poprawka zgłoszenia „wisi na oczekuję na świeży odczyt":
+     *  - czekamy na ŚWIEŻY ODCZYT, a nie na to, żeby status podał dokładnie żądany
+     *    tryb (centrala jest nadrzędna i może sama wybrać inny — np. bezpieczny),
+     *  - każde wyjście z funkcji zdejmuje toast „wait" (wcześniej zostawał na ekranie),
+     *  - limit 10 s zamiast 30 s; potem uczciwy komunikat z tym, co raportuje centrala.
      */
     fun setServoMode(mode: Int) {
         if (mode !in 1..3) return
         val requestId = ++servoModeRequestId
         updateServoModeAckOverride(null)
         scope.launch {
+            var waitToastId = 0L
             servoModeCommandMutex.lock()
             val acknowledged = try {
                 if (requestId != servoModeRequestId) false
@@ -946,40 +973,72 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     if (requestId == servoModeRequestId) {
                         updateServoModeAckOverride(mode)
                         if (servoModePresentation().awaitingStatus) {
-                            showToast("SERWO", "Sterownik przyjął tryb — oczekuję na świeży odczyt.", "wait")
+                            waitToastId = showToastTracked(
+                                "SERWO",
+                                "Sterownik przyjął tryb — czekam na najbliższy odczyt statusu.",
+                                "wait"
+                            )
                         }
                     }
                 }
             } finally {
                 servoModeCommandMutex.unlock()
             }
-            if (!acknowledged || requestId != servoModeRequestId) return@launch
 
+            // Każda ścieżka MUSI zdjąć toast „wait" — inaczej wisi na ekranie bez końca.
+            if (requestId != servoModeRequestId) {
+                clearToast(waitToastId)
+                return@launch
+            }
+            if (!acknowledged) {
+                updateServoModeAckOverride(null)
+                clearToast(waitToastId)
+                return@launch
+            }
             if (!servoModePresentation().awaitingStatus) {
                 updateServoModeAckOverride(null)
+                clearToast(waitToastId)
                 return@launch
             }
 
-            showToast("SERWO", "Sterownik przyjął tryb — oczekuję na świeży odczyt.", "wait")
-            val deadline = System.currentTimeMillis() + 30_000L
+            // Punkt odniesienia: co centrala raportowała w chwili ACK. Czekamy, aż to
+            // się ZMIENI (albo na żądany tryb) — porównywanie do wartości z chwili ACK
+            // chroni przed uznaniem starego snapshotu za świeży.
+            val reportedAtAck = if (S.hasData("tryb_serwa")) S.tryb_serwa else null
+            val deadline = System.currentTimeMillis() + SERVO_MODE_STATUS_WAIT_MS
             while (isActive && requestId == servoModeRequestId && System.currentTimeMillis() < deadline) {
-                if (!servoModePresentation().awaitingStatus) {
-                    updateServoModeAckOverride(null)
-                    showToast("SERWO", "Status centrali potwierdził nowy tryb.", "ok")
-                    return@launch
-                }
-                // Routine RTDB polling continues every 8 s; no extra status requests are
-                // generated here. This waiter only reacts as soon as one of those snapshots
-                // reaches the Compose UI.
-                delay(500L)
+                val reportedNow = if (S.hasData("tryb_serwa")) S.tryb_serwa else null
+                if (reportedNow == mode || reportedNow != reportedAtAck) break
+                // Routine RTDB polling continues every 8 s; this waiter only reacts to
+                // snapshots that already arrived — no extra status requests are made here.
+                delay(250L)
             }
-            if (requestId == servoModeRequestId && servoModeAckOverride == mode) {
-                updateServoModeAckOverride(null)
-                showToast(
-                    "SERWO",
-                    "ACK odebrany, ale świeży status nie potwierdził trybu po 30 s. Pokazuję ostatni odczyt centrali.",
-                    "warn"
-                )
+            if (requestId != servoModeRequestId) {
+                clearToast(waitToastId)
+                return@launch
+            }
+
+            updateServoModeAckOverride(null)
+            val reported = if (S.hasData("tryb_serwa")) S.tryb_serwa else null
+            val fresh = lastFetchTs != statusStampBefore
+            fun nazwa(v: Int) = PiecState.TRYB_NAZWA[v] ?: v.toString()
+            when {
+                reported == mode ->
+                    showToast("SERWO", "Status centrali potwierdził tryb: ${nazwa(mode)}.", "ok")
+                reported != null ->
+                    showToast(
+                        "SERWO",
+                        "Centrala raportuje tryb ${nazwa(reported)}, nie ${nazwa(mode)} — pokazuję stan z centrali.",
+                        "warn"
+                    )
+                fresh ->
+                    showToast("SERWO", "Świeży status nie zawiera trybu serwa — pokazuję ostatni odczyt.", "warn")
+                else ->
+                    showToast(
+                        "SERWO",
+                        "Brak świeżego statusu po ${SERVO_MODE_STATUS_WAIT_MS / 1000} s — pokazuję ostatni odczyt centrali.",
+                        "warn"
+                    )
             }
         }
     }
