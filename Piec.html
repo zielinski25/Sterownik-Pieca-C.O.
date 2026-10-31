@@ -4595,19 +4595,19 @@ body.mode-phone-frame #phone {
       S.wybor === 1 ? '⏱️ Czasowy' : S.wybor === 2 ? '🌡️ Temperaturowy' : '⚡ Auto';
     setQuick('qPompa', pumpKnown ? (S.pompa ? 'WŁĄCZONA' : 'WYŁĄCZONA') : '—', pumpKnown && S.pompa ? 'ok' : '', pumpSub);
 
+    // [3.57.7 PANEL] „AUTO (100%)” było mylące — takiej wielkości nie ma.
+    // Serwo ma TRYB i dwie pozycje: klapę (0..180°) i syberek (0..90°).
+    // Duża wartość = sam tryb, pod nią obie pozycje w procentach.
     let serwoStatus = '—';
-    let serwoSub = flapKnown ? 'klapa ' + S.klapa + '°' : 'pozycja klapy: brak prawidłowego odczytu';
+    let serwoSub = 'pozycja klapy i syberka: brak odczytu';
     let serwoCls = '';
-    if (servoKnown && S.tryb_serwa === 1) {
-      serwoStatus = 'AUTO' + (flapKnown ? ' (' + klapaPct + '%)' : '');
-      serwoCls = 'ok';
-    } else if (servoKnown && S.tryb_serwa === 2) {
-      serwoStatus = 'RĘCZNY' + (flapKnown ? ' (' + klapaPct + '%)' : '');
-      serwoCls = 'warn';
-    } else if (servoKnown && S.tryb_serwa === 3) {
-      serwoStatus = 'BEZPIECZNY';
-      serwoSub = 'tryb bezpieczny';
-      serwoCls = 'err';
+    const obie = 'klapa ' + (flapKnown ? klapaPct + '%' : '—') +
+                 ' · syberek ' + (damperKnown ? sybPct + '%' : '—');
+    if (servoKnown) {
+      serwoSub = obie;
+      if (S.tryb_serwa === 1) { serwoStatus = 'AUTO'; serwoCls = 'ok'; }
+      else if (S.tryb_serwa === 2) { serwoStatus = 'RĘCZNY'; serwoCls = 'warn'; }
+      else if (S.tryb_serwa === 3) { serwoStatus = 'BEZPIECZNY'; serwoCls = 'err'; }
     }
     setQuick('qSerwo', serwoStatus, serwoCls, serwoSub);
     setQuick('qMiesz', mixerKnown ? (S.mieszadlo ? 'WŁĄCZONE' : 'WYŁĄCZONE') : '—',
