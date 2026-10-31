@@ -1,0 +1,394 @@
+--- a/src/WebResponses.cpp
++++ b/src/WebResponses.cpp
+@@ -409,12 +409,18 @@
+   }
+ 
+   // send content body
+-  if (_state == RESPONSE_CONTENT) {
++  if (_state == RESPONSE_CONTENT || (_state == RESPONSE_END && _send_buffer_len)) {
+     do {
++      if (!_sourceValid()) {
++        _state = RESPONSE_FAILED;
++        request->client()->close();
++        return 0;
++      }
+       if (_send_buffer_len && _send_buffer) {
+         // data is pending in buffer from a previous call or previous iteration
+         size_t const added_len =
+           request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);
++        payloadlen += added_len;
+         if (added_len != _send_buffer_len - _send_buffer_offset) {
+           // we were not able to add entire buffer's content to tcp buffs, leave it for later
+           // (this should not happen normally unless connection's TCP window suddenly changed from remote or mem pressure)
+@@ -423,7 +429,6 @@
+         } else {
+           _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+         }
+-        payloadlen += added_len;
+       }
+ 
+       auto tcp_win = request->client()->space();
+@@ -451,6 +456,9 @@
+         // See https://datatracker.ietf.org/doc/html/rfc9112#section-7.1
+         size_t const readLen =
+           _fillBufferAndProcessTemplates(_send_buffer->data() + 6, std::min(_send_buffer->size(), tcp_win) - 8);  // reserve 8 bytes for chunk size data
++        if (!_sourceValid() || (readLen != RESPONSE_TRY_AGAIN && readLen > std::min(_send_buffer->size(), tcp_win) - 8)) {
++          _state = RESPONSE_FAILED; request->client()->close(); return 0;
++        }
+         if (readLen != RESPONSE_TRY_AGAIN) {
+           // Write 4 hex digits directly without null terminator
+           static constexpr char hexChars[] = "0123456789abcdef";
+@@ -481,6 +489,9 @@
+ 
+         size_t const readLen = _fillBufferAndProcessTemplates(_send_buffer->data(), maxLen);
+ 
++        if (!_sourceValid() || (readLen != RESPONSE_TRY_AGAIN && readLen > maxLen)) {
++          _state = RESPONSE_FAILED; request->client()->close(); return 0;
++        }
+         if (readLen == 0) {
+           // no more data to send
+           _state = RESPONSE_END;
+@@ -495,6 +506,11 @@
+       }
+     } while (_send_buffer_len);  // go on till we have something in buffer pending to send
+ 
++    if (!_sourceValid()) {
++        _state = RESPONSE_FAILED;
++        request->client()->close();
++        return 0;
++      }
+     // execute sending whatever we have in sock buffs now
+     request->client()->send();
+     _writtenLength += payloadlen;
+--- a/src/WebResponseImpl.h
++++ b/src/WebResponseImpl.h
+@@ -61,6 +61,7 @@
+   size_t write_send_buffs(AsyncWebServerRequest *request, size_t len, uint32_t time);
+ };
+ 
++#define HISTORY199_RESPONSE_GUARD 1
+ class AsyncAbstractResponse : public AsyncWebServerResponse {
+ private:
+ #if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
+@@ -102,6 +103,9 @@
+ public:
+   AsyncAbstractResponse(AwsTemplateProcessor callback = nullptr);
+   virtual ~AsyncAbstractResponse() {}
++  bool _finished() const override {
++    return _state == RESPONSE_FAILED || (_state > RESPONSE_WAIT_ACK && _send_buffer_len == 0);
++  }
+   void _respond(AsyncWebServerRequest *request) final;
+   size_t _ack(AsyncWebServerRequest *request, size_t len, uint32_t time) final {
+     return write_send_buffs(request, len, time);
+--- a/src/ESPAsyncWebServer.h
++++ b/src/ESPAsyncWebServer.h
+@@ -434,7 +434,13 @@
+ 
+   bool _sent = false;                            // response is sent
+   bool _paused = false;                          // request is paused (request continuation)
+-  std::shared_ptr<AsyncWebServerRequest> _this;  // shared pointer to this request
++  std::shared_ptr<AsyncWebServerRequest> _this;
++  void (*_deferredPoll203)(AsyncWebServerRequest*, void*) = nullptr;
++  void (*_deferredDisconnect203)(void*) = nullptr;
++  void* _deferredContext203 = nullptr;
++  bool _disconnected203 = false;
++  bool _pollBusy203 = false;
++  // shared pointer to this request
+ 
+   String _temp;
+   uint8_t _parseState;
+@@ -599,6 +605,16 @@
+   }
+ 
+   void onDisconnect(ArDisconnectHandler fn);
++#define HISTORY203_DEFERRED_POLL 1
++
++  // Only from the request/network context. Does not replace AsyncClient callbacks.
++  bool installDeferred203(void (*poll)(AsyncWebServerRequest*, void*), void (*gone)(void*), void* context) {
++    if (!poll || !gone || _sent || _disconnected203 || _pollBusy203 || _deferredDisconnect203) return false;
++    _deferredContext203 = context; _deferredDisconnect203 = gone; _deferredPoll203 = poll; return true;
++  }
++  void stopDeferredPoll203() { _deferredPoll203 = nullptr; }
++  bool disconnected203() const { return _disconnected203; }
++
+ 
+   // hash is the string representation of:
+   //  base64(user:pass) for basic or
+--- a/src/WebRequest.cpp
++++ b/src/WebRequest.cpp
+@@ -238,8 +238,13 @@
+ }
+ 
+ void AsyncWebServerRequest::_onPoll() {
+-  std::shared_ptr<AsyncWebServerRequest> self = _this;  // Ensure we stay in scope over the function
+-  // os_printf("p\n");
++  std::shared_ptr<AsyncWebServerRequest> self = _this;
++  if (!self || _disconnected203 || _pollBusy203) return;
++  if (_deferredPoll203) {
++    auto poll = _deferredPoll203; auto context = _deferredContext203;
++    _pollBusy203 = true; poll(this, context); _pollBusy203 = false;
++    if (_disconnected203 || !_client || !_this) return;
++  }
+   if (_response && _client && _client->canSend()) {
+     _response->_ack(this, 0, 0);
+   }
+@@ -281,16 +286,14 @@
+ }
+ 
+ void AsyncWebServerRequest::_onDisconnect() {
+-  async_ws_log_v("onDisconnect() cb for request: %s", _url.c_str());
+-  if (_onDisconnectfn) {
+-    _onDisconnectfn();
+-  }
+-  // Pull shared pointer on to this context
+-  // This will induce self-destruction if there are no other active handles
+-  // This is safe to call here as it is the last operation in this callback
+-  // We move to a stack local before destruction a simple reset would attempt to
+-  // write through the now-destroyed object.
+-  std::shared_ptr<AsyncWebServerRequest> self = std::move(_this);
++  if (_disconnected203) return;
++  std::shared_ptr<AsyncWebServerRequest> self = _this;
++  _disconnected203 = true;
++  auto gone = _deferredDisconnect203; auto context = _deferredContext203;
++  _deferredPoll203 = nullptr; _deferredDisconnect203 = nullptr; _deferredContext203 = nullptr;
++  if (gone) gone(context);
++  if (_onDisconnectfn) _onDisconnectfn();
++  _this.reset();
+ }
+ 
+ void AsyncWebServerRequest::_addGetParams(const String &params) {
+--- a/src/ESPAsyncWebServer.h
++++ b/src/ESPAsyncWebServer.h
+@@ -440,6 +440,10 @@
+   void* _deferredContext203 = nullptr;
+   bool _disconnected203 = false;
+   bool _pollBusy203 = false;
++  bool _strictMultipart205 = false;
++  bool _strictMultipartDone205 = false;
++  uint8_t _strictTail205 = 0;
++
+   // shared pointer to this request
+ 
+   String _temp;
+@@ -614,6 +618,11 @@
+   }
+   void stopDeferredPoll203() { _deferredPoll203 = nullptr; }
+   bool disconnected203() const { return _disconnected203; }
++  // Call in the serialized network context after headers, before any body byte.
++  bool enableStrictMultipart205(size_t maxBody);
++  bool strictMultipartComplete205() const;
++  bool strictMultipartError205() const;
++
+ 
+ 
+   // hash is the string representation of:
+--- a/src/WebRequest.cpp
++++ b/src/WebRequest.cpp
+@@ -122,6 +122,8 @@
+ void AsyncWebServerRequest::_onData(void *buf, size_t len) {
+   std::shared_ptr<AsyncWebServerRequest> self = _this;  // Ensure we stay in scope over the function
+ 
++  if (_strictMultipart205 && (_disconnected203 || _sent || !len)) return;
++
+   // SSL/TLS handshake detection
+ #ifndef ASYNC_TCP_SSL_ENABLED
+   if (_parseState == PARSE_REQ_START && len && ((uint8_t *)buf)[0] == 0x16) {  // 0x16 indicates a Handshake message (SSL/TLS).
+@@ -192,6 +194,10 @@
+           for (i = 0; i < len; i++) {
+             _parseMultipartPostByte(((uint8_t *)buf)[i], i == len - 1);
+             _parsedLength++;
++            if (_strictMultipart205) {
++              if (strictMultipartError205()) { _parseState = PARSE_REQ_FAIL; abort(); return; }
++              if (_disconnected203 || _sent) return;
++            }
+           }
+         } else {
+           _parsedLength += len;
+@@ -228,6 +234,9 @@
+         }
+       }
+       if (_parsedLength == _contentLength) {
++        if (_strictMultipart205 && !_strictMultipartDone205) {
++          _parseState = PARSE_REQ_FAIL; abort(); return;
++        }
+         _parseState = PARSE_REQ_END;
+         _runMiddlewareChain();
+         _send();
+@@ -774,7 +783,8 @@
+   DASH3_OR_RETURN2,
+   EXPECT_FEED2,
+   PARSING_FINISHED,
+-  PARSE_ERROR
++  PARSE_ERROR,
++  STRICT_CLOSING205
+ };
+ 
+ void AsyncWebServerRequest::_parseMultipartPostByte(uint8_t data, bool last) {
+@@ -793,6 +803,44 @@
+     _itemName = asyncsrv::emptyString;
+     _itemFilename = asyncsrv::emptyString;
+     _itemType = asyncsrv::emptyString;
++  }
++
++  if (_strictMultipart205 && _multiParseState == STRICT_CLOSING205) {
++    static const uint8_t tail[] = {'-', '\r', '\n'};
++    if (_strictTail205 >= sizeof(tail) || data != tail[_strictTail205++]) {
++      _multiParseState = PARSE_ERROR;
++      return;
++    }
++    if (_strictTail205 == sizeof(tail)) {
++      if (_parsedLength + 1 != _contentLength) {
++        _multiParseState = PARSE_ERROR;
++        return;
++      }
++      _multiParseState = PARSING_FINISHED;
++      _strictMultipartDone205 = true;
++      if (!_itemIsFile) {
++        _params.emplace_back(_itemName, _itemValue, true);
++      } else {
++        if (_handler) {
++          _handler->handleUpload(this, _itemFilename, _itemSize - _itemBufferIndex, _itemBuffer, _itemBufferIndex, true);
++        }
++        _itemBufferIndex = 0;
++        _params.emplace_back(_itemName, _itemFilename, true, true, _itemSize);
++        // remove previous occurrence(s) of content-disposition parameters for this upload
++        _params.remove_if([this](const AsyncWebParameter &p) {
++          return p.isPost() && p.isFile() && (p.name() == T_name || p.name() == T_filename);
++        });
++        free(_itemBuffer);
++        _itemBuffer = NULL;
++        // CWE-476 fix: _itemIsFile must be cleared when the buffer is freed.
++        // Otherwise, if the next byte does not confirm a clean boundary close
++        // (e.g. '--<boundary>' appeared in the file data by coincidence), the
++        // rewind logic in DASH3_OR_RETURN2 / EXPECT_FEED2 calls itemWriteByte()
++        // which dereferences the now-NULL _itemBuffer and crashes (DoS).
++        _itemIsFile = false;
++      }
++    }
++    return;
+   }
+ 
+   if (_multiParseState == WAIT_FOR_RETURN1) {
+@@ -868,6 +916,10 @@
+         _temp = asyncsrv::emptyString;
+       } else {
+         _multiParseState = WAIT_FOR_RETURN1;
++        if (_strictMultipart205 && (!_itemIsFile || !_itemName.length() || !_itemFilename.length())) {
++          _multiParseState = PARSE_ERROR;
++          return;
++        }
+         // value starts from here
+         _itemSize = 0;
+         _itemStartIndex = _parsedLength;
+@@ -930,6 +982,7 @@
+       _parseMultipartPostByte(data, last);
+     } else if (_boundaryPosition == _boundary.length() - 1) {
+       _multiParseState = DASH3_OR_RETURN2;
++      if (_strictMultipart205) return; // no final before the delimiter suffix is validated
+       if (!_itemIsFile) {
+         _params.emplace_back(_itemName, _itemValue, true);
+       } else {
+@@ -956,6 +1009,12 @@
+       _boundaryPosition++;
+     }
+   } else if (_multiParseState == DASH3_OR_RETURN2) {
++    if (_strictMultipart205) {
++      if (data != '-') { _multiParseState = PARSE_ERROR; return; }
++      _strictTail205 = 0;
++      _multiParseState = STRICT_CLOSING205;
++      return;
++    }
+     if (data == '-' && (_contentLength - _parsedLength - 4) != 0) {
+       // os_printf("ERROR: The parser got to the end of the POST but is expecting %u bytes more!\nDrop an issue so we can have more info on the matter!\n", _contentLength - _parsedLength - 4);
+       _contentLength = _parsedLength + 4;  // lets close the request gracefully
+@@ -992,6 +1051,24 @@
+       _parseMultipartPostByte(data, last);
+     }
+   }
++}
++
++bool AsyncWebServerRequest::enableStrictMultipart205(size_t maxBody) {
++  if (_strictMultipart205 || _parsedLength || _sent || _paused || _disconnected203 || !_handler ||
++      (_parseState != PARSE_REQ_HEADERS && _parseState != PARSE_REQ_BODY) ||
++      !_isMultipart || _chunkedParseState != CHUNK_NONE || !_contentLength ||
++      !maxBody || _contentLength > maxBody || !_boundary.length() || _boundary.length() > 70) return false;
++  _strictMultipart205 = true;
++  return true;
++}
++
++bool AsyncWebServerRequest::strictMultipartComplete205() const {
++  return _strictMultipart205 && _strictMultipartDone205 && !_disconnected203 &&
++         _parseState == PARSE_REQ_END && _parsedLength == _contentLength;
++}
++
++bool AsyncWebServerRequest::strictMultipartError205() const {
++  return _strictMultipart205 && _multiParseState == PARSE_ERROR;
+ }
+ 
+ void AsyncWebServerRequest::_parseLine() {
+--- a/src/ESPAsyncWebServer.h
++++ b/src/ESPAsyncWebServer.h
+@@ -1708,6 +1708,8 @@
+   std::list<std::shared_ptr<AsyncWebRewrite>> _rewrites;
+   std::list<std::unique_ptr<AsyncWebHandler>> _handlers;
+   AsyncCallbackWebHandler *_catchAllHandler;
++  AttachPolicy206 _attachPolicy206 = nullptr;
++  void *_attachPolicyContext206 = nullptr;
+ 
+ public:
+   AsyncWebServer(uint16_t port);
+@@ -1796,6 +1798,12 @@
+ 
+   void reset();  // remove all writers and handlers, with onNotFound/onFileUpload/onRequestBody
+ 
++  // Optional upload policy. It runs on the request context after handler
++  // selection and before the first body byte / 100-continue. False aborts.
++  typedef bool (*AttachPolicy206)(AsyncWebServerRequest *, void *);
++  bool setAttachPolicy206(AttachPolicy206 policy, void *context);
++  void clearAttachPolicy206();
++  bool _runAttachPolicy206(AsyncWebServerRequest *request);
+   void _attachHandler(AsyncWebServerRequest *request);
+   void _rewriteRequest(AsyncWebServerRequest *request);
+ };
+--- a/src/WebRequest.cpp
++++ b/src/WebRequest.cpp
+@@ -1092,6 +1092,11 @@
+       // end of headers
+       _server->_rewriteRequest(this);
+       _server->_attachHandler(this);
++      if (!_server->_runAttachPolicy206(this)) {
++        _parseState = PARSE_REQ_FAIL;
++        abort();
++        return;
++      }
+       if (_expectingContinue) {
+         String response(T_HTTP_100_CONT);
+         _client->write(response.c_str(), response.length());
+--- a/src/WebServer.cpp
++++ b/src/WebServer.cpp
+@@ -139,6 +139,25 @@
+   }
+ }
+ 
++bool AsyncWebServer::setAttachPolicy206(AttachPolicy206 policy, void *context) {
++  if (!policy || _attachPolicy206) {
++    return false;
++  }
++  _attachPolicy206 = policy;
++  _attachPolicyContext206 = context;
++  return true;
++}
++
++void AsyncWebServer::clearAttachPolicy206() {
++  _attachPolicy206 = nullptr;
++  _attachPolicyContext206 = nullptr;
++}
++
++bool AsyncWebServer::_runAttachPolicy206(AsyncWebServerRequest *request) {
++  AttachPolicy206 policy = _attachPolicy206;
++  return !policy || policy(request, _attachPolicyContext206);
++}
++
+ void AsyncWebServer::_attachHandler(AsyncWebServerRequest *request) {
+   for (auto &h : _handlers) {
+     if (h->filter(request) && h->canHandle(request)) {

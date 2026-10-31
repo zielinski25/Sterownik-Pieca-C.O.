@@ -1,0 +1,382 @@
+{
+  "ok": true,
+  "kontrol": 7,
+  "checks": [
+    {
+      "kod": "Z01",
+      "nazwa": "naglowki biblioteki sa te same co w etapach 196-215 (SHA-256)",
+      "ok": true,
+      "szczegoly": "4 plikow, SHA zgodne"
+    },
+    {
+      "kod": "Z02",
+      "nazwa": "nasz kod ustawia tylko pola protected/public klasy bazowej",
+      "ok": true,
+      "szczegoly": "5 pol protected, konstruktor public, destruktor wirtualny"
+    },
+    {
+      "kod": "Z03",
+      "nazwa": "nadpisania w naszym kodzie pasuja do prawdziwych metod wirtualnych",
+      "ok": true,
+      "szczegoly": "nadpisane: _fillBuffer, _sourceValid, ~Odpowiedz"
+    },
+    {
+      "kod": "Z04",
+      "nazwa": "kazde wywolanie metody biblioteki ma dokladnie jednego kandydata",
+      "ok": true,
+      "szczegoly": "19 wywolan, kazde z jednym dopasowaniem"
+    },
+    {
+      "kod": "Z05",
+      "nazwa": "w naglowkach firmware nie ma nazw istniejacych tylko w zaslepkach",
+      "ok": true,
+      "szczegoly": "14 zakazanych nazw, zadnej nie ma"
+    },
+    {
+      "kod": "Z06",
+      "nazwa": "wywolania historii w zapince istnieja w prawdziwym CheckedHistoryIO.h",
+      "ok": true,
+      "szczegoly": "uzyte: close, error, open, read, stat"
+    },
+    {
+      "kod": "Z07",
+      "nazwa": "nowe symbole (HTTP_ANY, exact, on z matcherem) sa w tej samej bibliotece",
+      "ok": true,
+      "szczegoly": "HTTP_ALL/HTTP_ANY + exact() + on(matcher) znalezione"
+    }
+  ],
+  "wywolania": [
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 148,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "method",
+      "argumenty": [],
+      "rodzaje": [],
+      "kandydatow": 1,
+      "dobrych": 1,
+      "wybrany": "WebRequestMethod method() const",
+      "ranga": 0,
+      "model_wybrany": "int method() const",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 159,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "getHeader",
+      "argumenty": [
+        "\"Authorization\""
+      ],
+      "rodzaje": [
+        "cstr"
+      ],
+      "kandydatow": 5,
+      "dobrych": 2,
+      "wybrany": "const AsyncWebHeader *getHeader(const char *name) const",
+      "ranga": 0,
+      "model_wybrany": "const AsyncWebHeader *getHeader(const char *n) const",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 164,
+      "klasa": "AsyncWebParameter",
+      "metoda": "value",
+      "argumenty": [],
+      "rodzaje": [],
+      "kandydatow": 1,
+      "dobrych": 1,
+      "wybrany": "const String &value() const",
+      "ranga": 0,
+      "model_wybrany": "const String &value() const",
+      "model_zgodny": true
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 164,
+      "klasa": "AsyncWebParameter",
+      "metoda": "value",
+      "argumenty": [],
+      "rodzaje": [],
+      "kandydatow": 1,
+      "dobrych": 1,
+      "wybrany": "const String &value() const",
+      "ranga": 0,
+      "model_wybrany": "const String &value() const",
+      "model_zgodny": true
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 169,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "hasParam",
+      "argumenty": [
+        "\"k\""
+      ],
+      "rodzaje": [
+        "cstr"
+      ],
+      "kandydatow": 3,
+      "dobrych": 2,
+      "wybrany": "bool hasParam(const char *name, bool post = false, bool file = false) const",
+      "ranga": 0,
+      "model_wybrany": "bool hasParam(const char *n) const",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 185,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "getParam",
+      "argumenty": [
+        "\"k\""
+      ],
+      "rodzaje": [
+        "cstr"
+      ],
+      "kandydatow": 5,
+      "dobrych": 2,
+      "wybrany": "const AsyncWebParameter *getParam(const char *name, bool post = false, bool file = false) const",
+      "ranga": 0,
+      "model_wybrany": "const AsyncWebParameter *getParam(const char *n) const",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 185,
+      "klasa": "AsyncWebParameter",
+      "metoda": "value",
+      "argumenty": [],
+      "rodzaje": [],
+      "kandydatow": 1,
+      "dobrych": 1,
+      "wybrany": "const String &value() const",
+      "ranga": 0,
+      "model_wybrany": "const String &value() const",
+      "model_zgodny": true
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 235,
+      "klasa": "AsyncWebServerResponse",
+      "metoda": "addHeader",
+      "argumenty": [
+        "\"Content-Disposition\"",
+        "strumien == Strumien::Dluga\n                       ? \"attachment; filename=\\\"historia-dluga.csv\\\"\"\n                       : \"attachment; filename=\\\"historia-krotka.csv\\\"\""
+      ],
+      "rodzaje": [
+        "cstr",
+        "cstr"
+      ],
+      "kandydatow": 6,
+      "dobrych": 2,
+      "wybrany": "bool addHeader(const char *name, const char *value, bool replaceExisting = true)",
+      "ranga": 0,
+      "model_wybrany": "void addHeader(const String &n, const String &v)",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 240,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "send",
+      "argumenty": [
+        "odp"
+      ],
+      "rodzaje": [
+        "resp_pochodna"
+      ],
+      "kandydatow": 14,
+      "dobrych": 1,
+      "wybrany": "void send(AsyncWebServerResponse *response)",
+      "ranga": 0,
+      "model_wybrany": "void send(AsyncWebServerResponse *r)",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 248,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "method",
+      "argumenty": [],
+      "rodzaje": [],
+      "kandydatow": 1,
+      "dobrych": 1,
+      "wybrany": "WebRequestMethod method() const",
+      "ranga": 0,
+      "model_wybrany": "int method() const",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 260,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "hasParam",
+      "argumenty": [
+        "\"stream\""
+      ],
+      "rodzaje": [
+        "cstr"
+      ],
+      "kandydatow": 3,
+      "dobrych": 2,
+      "wybrany": "bool hasParam(const char *name, bool post = false, bool file = false) const",
+      "ranga": 0,
+      "model_wybrany": "bool hasParam(const char *n) const",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 260,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "getParam",
+      "argumenty": [
+        "\"stream\""
+      ],
+      "rodzaje": [
+        "cstr"
+      ],
+      "kandydatow": 5,
+      "dobrych": 2,
+      "wybrany": "const AsyncWebParameter *getParam(const char *name, bool post = false, bool file = false) const",
+      "ranga": 0,
+      "model_wybrany": "const AsyncWebParameter *getParam(const char *n) const",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 260,
+      "klasa": "AsyncWebParameter",
+      "metoda": "value",
+      "argumenty": [],
+      "rodzaje": [],
+      "kandydatow": 1,
+      "dobrych": 1,
+      "wybrany": "const String &value() const",
+      "ranga": 0,
+      "model_wybrany": "const String &value() const",
+      "model_zgodny": true
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 266,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "beginResponse",
+      "argumenty": [
+        "200",
+        "\"text/plain\"",
+        "String(bilet)"
+      ],
+      "rodzaje": [
+        "int",
+        "cstr",
+        "string"
+      ],
+      "kandydatow": 13,
+      "dobrych": 1,
+      "wybrany": "AsyncWebServerResponse *beginResponse(int code, const String &contentType, const String &content, AwsTemplateProcessor callback = nullptr)",
+      "ranga": 2,
+      "model_wybrany": "AsyncWebServerResponse *beginResponse(int kod_, const char *typ, const String &tresc)",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 267,
+      "klasa": "AsyncWebServerResponse",
+      "metoda": "addHeader",
+      "argumenty": [
+        "\"Cache-Control\"",
+        "\"no-store\""
+      ],
+      "rodzaje": [
+        "cstr",
+        "cstr"
+      ],
+      "kandydatow": 6,
+      "dobrych": 2,
+      "wybrany": "bool addHeader(const char *name, const char *value, bool replaceExisting = true)",
+      "ranga": 0,
+      "model_wybrany": "void addHeader(const String &n, const String &v)",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 268,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "send",
+      "argumenty": [
+        "r"
+      ],
+      "rodzaje": [
+        "resp"
+      ],
+      "kandydatow": 14,
+      "dobrych": 1,
+      "wybrany": "void send(AsyncWebServerResponse *response)",
+      "ranga": 0,
+      "model_wybrany": "void send(AsyncWebServerResponse *r)",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 276,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "beginResponse",
+      "argumenty": [
+        "kod",
+        "\"text/plain\"",
+        "String(tekst)"
+      ],
+      "rodzaje": [
+        "int",
+        "cstr",
+        "string"
+      ],
+      "kandydatow": 13,
+      "dobrych": 1,
+      "wybrany": "AsyncWebServerResponse *beginResponse(int code, const String &contentType, const String &content, AwsTemplateProcessor callback = nullptr)",
+      "ranga": 2,
+      "model_wybrany": "AsyncWebServerResponse *beginResponse(int kod_, const char *typ, const String &tresc)",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 277,
+      "klasa": "AsyncWebServerResponse",
+      "metoda": "addHeader",
+      "argumenty": [
+        "naglowek",
+        "wartosc"
+      ],
+      "rodzaje": [
+        "cstr",
+        "cstr"
+      ],
+      "kandydatow": 6,
+      "dobrych": 2,
+      "wybrany": "bool addHeader(const char *name, const char *value, bool replaceExisting = true)",
+      "ranga": 0,
+      "model_wybrany": "void addHeader(const String &n, const String &v)",
+      "model_zgodny": false
+    },
+    {
+      "plik": "HistoriaPobranie.h",
+      "linia": 278,
+      "klasa": "AsyncWebServerRequest",
+      "metoda": "send",
+      "argumenty": [
+        "r"
+      ],
+      "rodzaje": [
+        "resp"
+      ],
+      "kandydatow": 14,
+      "dobrych": 1,
+      "wybrany": "void send(AsyncWebServerResponse *response)",
+      "ranga": 0,
+      "model_wybrany": "void send(AsyncWebServerResponse *r)",
+      "model_zgodny": false
+    }
+  ]
+}

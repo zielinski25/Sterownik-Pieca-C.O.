@@ -1,0 +1,100 @@
+{
+  "status": "PASS",
+  "profile": "ASan+UBSan, LSan, -fno-exceptions",
+  "kontrola": "niemutowany kod przechodzi",
+  "inputs": {
+    "narzedzia/panel-pobrania213/HistoriaBilety.h": "339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30",
+    "narzedzia/panel-pobrania213/HistoriaPobranie.h": "0653a130333f476ba588bb3fa08728e10a08975c73548f30a2d35c84c5367c29",
+    "narzedzia/panel-pobrania213/Extracted213.inc": "a7b5d095324eb87c66324bcb46ddfbf9ba920826647bceca54750342b6602f7a",
+    "narzedzia/panel-pobrania213/Test.cpp": "5f2504780651983f7c0273cd0e0378619bc772a909a8a6e272ee62c4f2113e7a",
+    "narzedzia/panel-pobrania213/host/Serwer213.h": "0c2fcc6ac17a3d8688f9c98f15b6e17ef2b0e066498a859d61e9d628e0967b90",
+    "narzedzia/panel-pobrania213/host/Model213.h": "112175de643549199c57654097f005ba1f7cfe3c6a9c52160f0bee9eb678e840",
+    "narzedzia/panel-pobrania213/mutacje.py": "afbe6ae1b20560be22b7374a7c39d9db1d5be0ac44ef1793467c360597edbd34"
+  },
+  "cases": [
+    {
+      "name": "bilet-nie-jednorazowy",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "bilet-na-kazdy-strumien",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "bilet-bez-terminu",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "bilet-krotki-kod-wystarczy",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "bilet-wypycha-najnowszy",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "link-bez-sprawdzenia-metody",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "link-bez-tokenu",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "bilet-niesprawdzany-w-trasie",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "zly-bearer-ratuje-bilet",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "link-bez-cache-control",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "panel-ze-stalym-tokenem",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "panel-bez-sprawdzenia-dlugosci",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    }
+  ]
+}

@@ -3511,6 +3511,7 @@ body.mode-phone-frame #phone {
 
       <div class="setcard" data-menu="firebase"><div class="ic" style="color:var(--cyan)" data-ico="shield"></div><div class="t"><b>Połączenie z bazą Firebase</b><span>Logowanie kontem Firebase, token komend, stan połączenia</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
       <div class="setcard" data-menu="wifi"><div class="ic" style="color:var(--cyan)" data-ico="wifi"></div><div class="t"><b>Sieci Wi-Fi & Łączność</b><span>Skanowanie sieci, siła RSSI, konfiguracja SSID/hasło, lista sieci</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+      <div class="setcard" data-menu="histfs"><div class="ic" style="color:var(--warn,#ffb74d)" data-ico="logs"></div><div class="t"><b>Zapis historii na flash</b><span>hist_short.csv i hist_long.csv — włączanie, wyłączanie i czyszczenie plików</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
       <div class="setcard" data-menu="telegram"><div class="ic" style="color:#2AABEE" data-ico="telegram"></div><div class="t"><b>Powiadomienia Telegram</b><span>Bot powiadomień, Chat ID, testowy raport, alerty CO i dymu</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
       <div class="setcard" data-menu="pompa"><div class="ic" style="color:var(--cyan)" data-ico="pump"></div><div class="t"><b>Pompa C.O.</b><span>Strategia (Trociniak czasowy / Kopciuch temp.) · wymuszenia · antystop</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
       <div class="setcard" data-menu="serwo"><div class="ic" style="color:var(--cyan)" data-ico="servo"></div><div class="t"><b>Serwo klapy & syberka</b><span>Tryb Auto / Ręczny / Bezpieczna · automatyka histerezy</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
@@ -4194,7 +4195,7 @@ body.mode-phone-frame #phone {
     rozpalanie_serwa_aktywne: false, rozpalanie_serwa_dostepne: false, rozpalanie_serwa_blokada_dymu: false,
     tryb_serwa: 0, trybSerwa: 0, klapa: NaN, syberka: NaN,
     wybor: 0, pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
-    rtc_ok: false, dzien: 0, miesiac: 0, rok: 0,
+    rtc_ok: false, hist_fs: false, dzien: 0, miesiac: 0, rok: 0,
     ip: '', firmware: '', uptime: NaN, appVersion: 'v0.30.5',
     wifi_rssi: NaN, wifi_quality: NaN, ping_ms: NaN, wifi_ssid: '', weatherCode: NaN,
     czasOn: NaN, czasOff: NaN, tempOn: NaN, tempOff: NaN, antystopWlaczony: false, antystopDni: NaN,
@@ -4594,19 +4595,19 @@ body.mode-phone-frame #phone {
       S.wybor === 1 ? '⏱️ Czasowy' : S.wybor === 2 ? '🌡️ Temperaturowy' : '⚡ Auto';
     setQuick('qPompa', pumpKnown ? (S.pompa ? 'WŁĄCZONA' : 'WYŁĄCZONA') : '—', pumpKnown && S.pompa ? 'ok' : '', pumpSub);
 
+    // [3.57.7 PANEL] „AUTO (100%)” było mylące — takiej wielkości nie ma.
+    // Serwo ma TRYB i dwie pozycje: klapę (0..180°) i syberek (0..90°).
+    // Duża wartość = sam tryb, pod nią obie pozycje w procentach.
     let serwoStatus = '—';
-    let serwoSub = flapKnown ? 'klapa ' + S.klapa + '°' : 'pozycja klapy: brak prawidłowego odczytu';
+    let serwoSub = 'pozycja klapy i syberka: brak odczytu';
     let serwoCls = '';
-    if (servoKnown && S.tryb_serwa === 1) {
-      serwoStatus = 'AUTO' + (flapKnown ? ' (' + klapaPct + '%)' : '');
-      serwoCls = 'ok';
-    } else if (servoKnown && S.tryb_serwa === 2) {
-      serwoStatus = 'RĘCZNY' + (flapKnown ? ' (' + klapaPct + '%)' : '');
-      serwoCls = 'warn';
-    } else if (servoKnown && S.tryb_serwa === 3) {
-      serwoStatus = 'BEZPIECZNY';
-      serwoSub = 'tryb bezpieczny';
-      serwoCls = 'err';
+    const obie = 'klapa ' + (flapKnown ? klapaPct + '%' : '—') +
+                 ' · syberek ' + (damperKnown ? sybPct + '%' : '—');
+    if (servoKnown) {
+      serwoSub = obie;
+      if (S.tryb_serwa === 1) { serwoStatus = 'AUTO'; serwoCls = 'ok'; }
+      else if (S.tryb_serwa === 2) { serwoStatus = 'RĘCZNY'; serwoCls = 'warn'; }
+      else if (S.tryb_serwa === 3) { serwoStatus = 'BEZPIECZNY'; serwoCls = 'err'; }
     }
     setQuick('qSerwo', serwoStatus, serwoCls, serwoSub);
     setQuick('qMiesz', mixerKnown ? (S.mieszadlo ? 'WŁĄCZONE' : 'WYŁĄCZONE') : '—',
@@ -4896,7 +4897,7 @@ body.mode-phone-frame #phone {
       'online', 'night', 'dym_wlaczony', 'dym_swiezy', 'dym_alarm', 'alarm_ogrzewanie',
       'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie', 'rozpalanie_potwierdzone',
       'rozpalanie_serwa_aktywne', 'rozpalanie_serwa_dostepne', 'rozpalanie_serwa_blokada_dymu',
-      'antystopWlaczony', 'mieszadloWlaczony', 'rtc_ok'
+      'antystopWlaczony', 'mieszadloWlaczony', 'rtc_ok', 'hist_fs'
     ];
     flagKeys.forEach(key => {
       const raw = d[key];
@@ -5767,6 +5768,7 @@ body.mode-phone-frame #phone {
   }
 
   const MENUS = {
+    histfs: () => showHistFsSheet(),
     zewn: () => showSheet('Temperatura zewnętrzna', 'outside', () => sensorModalContent(ALL_SENSORS.find(s => s.id === 'zewn'))),
     bojler: () => showSheet('Bojler C.W.U.', 'thermo', () => sensorModalContent(ALL_SENSORS.find(s => s.id === 'bojler'))),
     pokoj: () => showSheet('Temperatura pomieszczenia', 'thermo', () => sensorModalContent(ALL_SENSORS.find(s => s.id === 'pokoj'))),
@@ -6717,6 +6719,60 @@ body.mode-phone-frame #phone {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // B2. ZAPIS HISTORII NA FLASH (firmware v3.57.4)
+  function showHistFsSheet() {
+    showSheet('Zapis historii', 'logs', () => {
+      const b = h('div');
+      const known = () => hasData('hist_fs');
+      const on = () => known() && !!S.hist_fs;
+
+      const trg = toggleRow(
+        'Zapisuj historię na flash centrali',
+        'hist_short.csv (24 h, ~130 kB) i hist_long.csv (archiwum, do ~1,8 MB). '
+          + 'Wyłączenie oszczędza pamięć i cykle zapisu. Dane w pamięci RAM oraz '
+          + 'wysyłka do Firebase działają bez zmian.',
+        on(),
+        v => {
+          // Komenda nieudana (NACK albo brak ACK) = wroc do stanu z centrali,
+          // ten sam wzorzec co CheckRowEcho w aplikacji. Przy sukcesie nie
+          // zmieniamy nic - status dogoni nas w ciagu ~15 s.
+          sendCommand(v ? 'histfs_wl' : 'histfs_wyl').then(ok => {
+            if (ok === false) { trgStan = on(); trgBox.checked = on(); }
+          });
+        }
+      );
+      // Status zmienia sie co ~15 s; przepisz pole tylko WTEDY, gdy wartosc
+      // naprawde sie zmienila - inaczej liveTick co 2 s cofalby klik uzytkownika.
+      const trgBox = trg.querySelector('input');
+      let trgStan = on();
+      live$(trgBox, el => { const cur = on(); if (cur !== trgStan) { trgStan = cur; el.checked = cur; } });
+      b.appendChild(trg);
+
+      b.appendChild(sectionHeader('Czyszczenie plików'));
+      const btnRow = h('div', 'btnrow');
+      const bCzysc = h('button', 'ust-btn', 'Wyczyść oba pliki');
+      bCzysc.onclick = () => sendCommand('histfs_czysc');
+      btnRow.appendChild(bCzysc);
+      b.appendChild(btnRow);
+      b.appendChild(h('div', 'note',
+        'Pliki zostaną usunięte przy najbliższym restarcie centrali — wtedy nic już '
+        + 'do nich nie pisze, więc nie ma ryzyka przerwanego zapisu.'));
+
+      b.appendChild(sectionHeader('Stan'));
+      const stan = h('div', 'note');
+      const odswiez = () => {
+        stan.textContent = known()
+          ? (on() ? 'Zapis WŁĄCZONY — pliki rosną na flashu centrali.'
+                  : 'Zapis WYŁĄCZONY — flash nie rośnie, Firebase i wykresy bez zmian.')
+          : 'Ta wersja firmware nie zgłasza tego ustawienia (potrzebna 3.57.4).';
+      };
+      live$(stan, odswiez); odswiez();
+      b.appendChild(stan);
+
+      return b;
+    });
+  }
+
   // C. ROZBUDOWANY TERMINAL DIAGNOSTYCZNY (21 KATEGORII DLOG)
   // ═══════════════════════════════════════════════════════════════════════════
   const DLOG_CATEGORIES = [

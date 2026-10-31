@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Porównanie wykresów · Firebase ↔ plik lokalny</title>
+<style>
+:root{
+  --bg:#070d16; --bg2:#0b1424; --card:#0e1a2b; --card2:#12223633;
+  --line:#1d3350; --txt:#e8f1fb; --dim:#8aa4c0; --cyan:#00d4f5; --cyan2:#00a3c4;
+  --ok:#3ddc97; --warn:#ffcf5c; --err:#ff6b6b; --a:#00d4f5; --b:#ffcf5c;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+body{padding:14px 16px 40px;max-width:1500px;margin:0 auto}
+h1{font-size:17px;margin:0 0 2px;letter-spacing:.4px}
+.sub{color:var(--dim);font-size:12px;margin-bottom:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:900px){.row{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px}
+.card h2{font-size:12px;margin:0 0 10px;letter-spacing:1.2px;color:var(--dim);font-weight:600;text-transform:uppercase}
+.card.a{border-color:#124a5c} .card.a h2{color:var(--a)}
+.card.b{border-color:#4a3f12} .card.b h2{color:var(--b)}
+label{display:block;font-size:10px;color:var(--dim);letter-spacing:.6px;margin:8px 0 3px;text-transform:uppercase}
+input[type=text],input[type=password],input[type=date],input[type=number]{
+  width:100%;background:#081222;border:1px solid var(--line);border-radius:7px;
+  color:var(--txt);padding:7px 9px;font-size:12.5px;font-family:inherit;outline:none}
+input:focus{border-color:var(--cyan2)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button{cursor:pointer;font-family:inherit;font-size:12px;border-radius:8px;border:1px solid var(--line);
+  background:#132033;color:var(--txt);padding:7px 11px;transition:.15s}
+button:hover{border-color:var(--cyan2);color:#fff}
+button.primary{background:linear-gradient(180deg,#0e6d84,#0a5468);border-color:#1aa7c4;color:#eafcff;font-weight:600}
+button.primary:hover{filter:brightness(1.15)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.small{padding:4px 8px;font-size:11px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;
+  padding:4px 10px;font-size:11.5px;color:var(--dim);background:#0a1524;user-select:none;cursor:pointer}
+.chip .dot{width:7px;height:7px;border-radius:50%}
+.chip.on{color:#fff;border-color:#2a5f7a;background:#10283c}
+.status{font-size:11.5px;color:var(--dim);margin-top:8px;min-height:16px;line-height:1.45}
+.status.ok{color:var(--ok)} .status.err{color:var(--err)} .status.warn{color:var(--warn)}
+.drop{border:1.5px dashed #24405f;border-radius:10px;padding:16px 12px;text-align:center;color:var(--dim);
+  font-size:12px;transition:.15s;margin-top:8px}
+.drop.hot{border-color:var(--cyan);color:var(--cyan);background:#07161f}
+.drop b{color:var(--txt)}
+.bar{height:4px;background:#0a1524;border-radius:99px;overflow:hidden;margin-top:8px;display:none}
+.bar.on{display:block}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#0d7f9a,#2ee6ff);transition:width .2s}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 10px;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:#0a1524;padding:6px 11px}
+.seg button.on{background:#123a4d;color:#bff4ff;font-weight:600}
+.spacer{flex:1}
+.charts{display:grid;gap:10px}
+.charts.two{grid-template-columns:1fr 1fr}
+@media(max-width:1000px){.charts.two{grid-template-columns:1fr}}
+.chartbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 8px 6px}
+.chartbox .cap{font-size:11px;color:var(--dim);padding:2px 4px 6px;display:flex;justify-content:space-between}
+.chartbox .cap b{letter-spacing:.5px}
+canvas{width:100%;display:block;border-radius:6px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+@media(max-width:900px){.stats{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+th,td{padding:4px 6px;text-align:right;border-bottom:1px solid #16283d}
+th{color:var(--dim);font-weight:600;font-size:10px;letter-spacing:.5px;text-transform:uppercase}
+td:first-child,th:first-child{text-align:left}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10.5px;border:1px solid var(--line);color:var(--dim)}
+.note{color:var(--dim);font-size:11px;margin-top:10px;line-height:1.55}
+.hidden{display:none!important}
+.wide{margin-top:12px}
+</style>
+</head>
+<body>
+
+<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v7 · 31.10</span></h1>
+<div class="sub">Dwa źródła historii obok siebie: chmura (RTDB) i plik pobrany z centrali. Ta sama skala, ta sama os czasu, różnice widać wprost.<br>
+<span style="opacity:.75">Logowanie: plik wchodzi <b>sam</b> — konto jest w środku, żadnego formularza — i od razu pobiera ostatnią dobę.</span></div>
+
+<div class="row">
+  <!-- ───────────── A: FIREBASE ───────────── -->
+  <div class="card a">
+    <h2>A · Firebase (chmura)</h2>
+    <div class="status" id="authLine">Łączę z Firebase…</div>
+
+    <!-- Konto i klucz API są wpisane w plik, ale schowane — nie ma czego wypełniać.
+         Pole hasła pojawia się WYŁĄCZNIE wtedy, gdy ta przeglądarka nie ma
+         jeszcze zapamiętanego logowania (raz na komputer). -->
+    <div style="display:none">
+      <input type="text" id="fbEmail" value="piec_co_boot@akwarium.local" autocomplete="username">
+      <input type="text" id="fbKey" value="AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU">
+    </div>
+    <!-- Celowo NIE MA tu żadnego pola do wypełniania. Hasło jest w pliku
+         (stała FB_HASLO_WBUDOWANE) albo w pamięci przeglądarki. -->
+    <div class="grid2" style="margin-top:8px">
+      <div><label>Od</label><input type="date" id="fbFrom"></div>
+      <div><label>Do</label><input type="date" id="fbTo"></div>
+    </div>
+    <div class="chips" style="margin-top:9px">
+      <button class="small" data-q="6h">6 h</button>
+      <button class="small" data-q="1d">24 h</button>
+      <button class="small" data-q="7d">7 dni</button>
+      <button class="small" data-q="30d">30 dni</button>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="primary" id="btnFb">Pobierz z Firebase</button>
+      <button id="btnFbClear">Wyczyść</button>
+    </div>
+    <div class="bar" id="fbBar"><i></i></div>
+    <div class="status" id="fbStatus">Nie pobrano.</div>
+  </div>
+
+  <!-- ───────────── B: PLIK ───────────── -->
+  <div class="card b">
+    <h2>B · Plik lokalny</h2>
+    <div class="drop" id="drop">
+      <b>Przeciągnij plik tutaj</b> albo kliknij, żeby wybrać<br>
+      <span style="font-size:11px">hist_short.csv · hist_long.csv · eksport JSON z Firebase</span>
+      <input type="file" id="fileIn" accept=".csv,.txt,.json" class="hidden">
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button id="btnFileClear">Wyczyść</button>
+      <span class="spacer"></span>
+      <span class="pill" id="fileFmt">format: —</span>
+    </div>
+    <div class="status" id="fileStatus">Nie wczytano.</div>
+    <div class="note" style="margin-top:12px">
+      <b>Skąd wziąć plik:</b> panel centrali → Wykresy → przycisk pobierania historii
+      (<code>/api/history</code> daje <b>hist_short.csv</b> — 24 h, 14 kolumn;
+      <code>/api/history/long</code> daje <b>hist_long.csv</b> — archiwum, 35+ kolumn).
+      Można też wczytać surowy eksport JSON z konsoli Firebase.
+    </div>
+  </div>
+</div>
+
+<!-- ───────────── TOOLBAR ───────────── -->
+<div class="toolbar">
+  <span style="font-size:11px;color:var(--dim);letter-spacing:.5px">SYGNAŁY</span>
+  <div class="chips" id="chips" style="margin:0"></div>
+</div>
+
+<div class="toolbar">
+  <span style="font-size:11px;color:var(--dim);letter-spacing:.5px">WIDOK</span>
+  <div class="seg" id="modeSeg">
+    <button data-mode="two" class="on">OBOK SIEBIE</button>
+    <button data-mode="overlay">NAKŁADKA</button>
+    <button data-mode="diff">RÓŻNICA B−A</button>
+  </div>
+  <span class="spacer"></span>
+  <label style="margin:0;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;text-transform:none;letter-spacing:0">
+    <input type="checkbox" id="cutX" style="width:auto;margin:0">
+    tylko wspólny czas
+  </label>
+  <label style="margin:0;display:inline-block">Tolerancja parowania</label>
+  <input type="number" id="tolS" value="90" min="5" max="1800" step="5" style="width:86px;display:inline-block">
+  <span style="font-size:11px;color:var(--dim)">s</span>
+  <button id="btnCsv" class="small">Zapisz CSV</button>
+  <button id="btnPng" class="small">Zapisz PNG</button>
+</div>
+
+<div id="osiInfo" class="note" style="margin:8px 0 0;font-size:11px"></div>
+
+<div class="charts two" id="charts">
+  <div class="chartbox" id="boxA"><div class="cap"><b>A · FIREBASE</b><span id="capA">—</span></div><canvas id="cvA" height="330"></canvas></div>
+  <div class="chartbox" id="boxB"><div class="cap"><b>B · PLIK LOKALNY</b><span id="capB">—</span></div><canvas id="cvB" height="330"></canvas></div>
+</div>
+<div class="chartbox hidden" id="boxSingle" style="margin-top:10px">
+  <div class="cap"><b id="capSingle">—</b><span id="capSingleInfo">—</span></div>
+  <canvas id="cvS" height="380"></canvas>
+</div>
+
+<!-- ───────────── STATYSTYKI ───────────── -->
+<div class="stats">
+  <div class="card"><h2>Próbki</h2><div id="statSamples" class="note" style="margin:0"></div>
+    <div id="rhZeroInfo" class="note" style="margin:8px 0 0;font-size:11px;opacity:.85"></div></div>
+  <div class="card"><h2>Różnice (B − A)</h2><div id="statDiff" class="note" style="margin:0"></div></div>
+</div>
+<div class="card wide"><h2>Statystyki kanałów</h2><div id="statTable" class="note" style="margin:0">Brak danych.</div></div>
+<div class="card wide"><h2>Największe różnice (B − A) — co dokładnie odbiega</h2><div id="statTop" class="note" style="margin:0">Brak danych.</div></div>
+
+<div class="note">
+  <b>Logowanie:</b> w tym pliku <b>nie ma żadnego pola do wypełniania</b>. Konto i klucz API
+  są w środku, a hasło bierze się z jednego z trzech miejsc, w tej kolejności:
+  (1) stała <code>FB_HASLO_WBUDOWANE</code> w pliku (Ctrl+F w Notatniku) — wtedy działa zawsze i wszędzie;
+  (2) adres z dopiskiem <code>#haslo=twojehaslo</code> — otwierasz raz, hasło zapisuje się
+  w przeglądarce, a dopisek znika z adresu;
+  (3) sesja zapamiętana wcześniej przez panel centrali (<code>Piec.html</code>).
+  Hasło i tokeny leżą wyłącznie w pamięci tej przeglądarki i nigdzie nie są wysyłane poza Google.
+  <b>Plik z wpisanym hasłem jest poufny</b> — nie publikuj go na publicznym linku.
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════
+   1. STAŁE I MODEL DANYCH
+   ═══════════════════════════════════════════════════════════════ */
+const DB_URL   = "https://akwarium-367be-default-rtdb.europe-west1.firebasedatabase.app";
+const AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=";
+const AUTH_REFRESH_URL = "https://securetoken.googleapis.com/v1/token?key=";
+const TELEM    = "/piec/telemetry/1m/v1/";
+
+const DEFAULT_FB_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU";
+const DEFAULT_FB_EMAIL   = "piec_co_boot@akwarium.local";
+
+// Hasło można wpisać TUTAJ (jeden raz, w pliku) — wtedy narzędzie nie zapyta
+// o nie nigdy, nawet po wyczyszczeniu przeglądarki. Plik z wpisanym hasłem
+// jest poufny: nie wysyłaj go na publiczny link.
+const FB_HASLO_WBUDOWANE = "";
+
+/* ── Pamięć przeglądarki — CELOWO te same klucze i ta sama logika co w Piec.html.
+      Dzięki temu sesja zapamiętana w panelu centrali jest widoczna także tutaj:
+      otwierasz plik i jesteś zalogowany, bez wpisywania hasła. ── */
+const safeStorage = {
+  get: (key) => {
+    try { if (typeof localStorage !== 'undefined' && localStorage.getItem) {
+      const v = localStorage.getItem(key); if (v !== null) return v; } } catch (e) {}
+    try { if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem) {
+      const v = sessionStorage.getItem(key); if (v !== null) return v; } } catch (e) {}
+    return null;
+  },
+  set: (key, val, persistent) => {
+    try { if (persistent && typeof localStorage !== 'undefined' && localStorage.setItem)
+      localStorage.setItem(key, val); } catch (e) {}
+    try { if (typeof sessionStorage !== 'undefined' && sessionStorage.setItem)
+      sessionStorage.setItem(key, val); } catch (e) {}
+  },
+  remove: (key) => {
+    try { if (typeof localStorage !== 'undefined' && localStorage.removeItem)
+      localStorage.removeItem(key); } catch (e) {}
+    try { if (typeof sessionStorage !== 'undefined' && sessionStorage.removeItem)
+      sessionStorage.removeItem(key); } catch (e) {}
+  }
+};
+const savedPass = () => FB_HASLO_WBUDOWANE || hasloZAdresu() || safeStorage.get('piec_fb_password') || '';
+
+// indeks w tablicy wartości = kolejność poniżej (0..13)
+const CH = [
+  { id:'t_zewn',     label:'Zewn.',   unit:'°C',  color:'#00d4f5', dec:1, lo:-35, hi:55  },
+  { id:'t_bojler',   label:'Bojler',  unit:'°C',  color:'#ffd166', dec:1, lo:0,   hi:99  },
+  { id:'t_ogrz',     label:'Piec',    unit:'°C',  color:'#ff7a59', dec:1, lo:0,   hi:110 },
+  { id:'t_ogrz_sr',  label:'Piec śr.',unit:'°C',  color:'#ff9f43', dec:1, lo:0,   hi:110 },
+  { id:'t_powrot',   label:'Powrót',  unit:'°C',  color:'#b388ff', dec:1, lo:0,   hi:99  },
+  { id:'t_panel',    label:'Panel',   unit:'°C',  color:'#ffd32a', dec:1, lo:-20, hi:150 },
+  { id:'t_pokoj',    label:'Pokój',   unit:'°C',  color:'#4cd964', dec:1, lo:0,   hi:50  },
+  { id:'t_trociny',  label:'Trociny', unit:'°C',  color:'#a1887f', dec:1, lo:-20, hi:99  },
+  { id:'wilgotnosc', label:'Wilg.',   unit:'%',   color:'#4dd0e1', dec:1, lo:0,   hi:100 },
+  { id:'cisnienie',  label:'Ciśn.',   unit:'hPa', color:'#90a4ae', dec:1, lo:850, hi:1150},
+  { id:'dym',        label:'Dym',     unit:'',    color:'#e57373', dec:0, lo:0,   hi:4095},
+  { id:'klapa',      label:'Klapa',   unit:'%',   color:'#64b5f6', dec:0, lo:0,   hi:100 },
+  { id:'syberka',    label:'Syberek', unit:'%',   color:'#ffb74d', dec:0, lo:0,   hi:100 },
+  { id:'pompa',      label:'Pompa',   unit:'%',   color:'#26a69a', dec:0, lo:0,   hi:100 }
+];
+const NCH = CH.length;
+
+const state = {
+  A: [],            // źródło A — Firebase
+  B: [],            // źródło B — plik
+  sel: new Set(['t_ogrz','t_bojler','t_zewn']),
+  mode: 'two',
+  token: '',
+  tokenExp: 0
+};
+
+const $ = id => document.getElementById(id);
+const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+
+/* ═══════════════════════════════════════════════════════════════
+   2. PARSERY — wszystkie sprowadzają dane do [{ts, v[14]}]
+   ═══════════════════════════════════════════════════════════════ */
+function emptyV(){ return new Array(NCH).fill(null); }
+
+// q: kanał ma 2 bity jakości; >=2 = odrzucone. Dokładnie jak w Piec.html.
+function qOk(q, ch){
+  if (!Number.isFinite(q)) return true;          // brak pola q — nie filtrujemy
+  return ((q >>> (ch * 2)) & 3) < 2;
+}
+
+function fbRecordToSample(rec, bounds){
+  if (!rec || typeof rec !== 'object') return null;
+  const ts = Number(rec.ts);
+  if (!isFinite(ts) || ts <= 0) return null;
+  const out = emptyV();
+  const a = Array.isArray(rec.a) ? rec.a : null;
+  if (a){
+    const scales = [0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.1,1];
+    for (let i=0;i<11;i++){
+      const raw = Number(a[i]);
+      if (!isFinite(raw)) continue;
+      if (raw <= -1200 || raw >= 15000) continue;          // kody błędów DS18B20
+      if (!qOk(Number(rec.q), i)) continue;
+      let val = raw * scales[i];
+      // 0,0 % wilgotności w kotłowni nie istnieje — to odczyt śmieciowy DHT22
+      // (firmware odrzuca NaN, ale nie zero). Takiej próbki nie porównujemy.
+      if (i === 8 && val === 0){ state.rhZero = (state.rhZero || 0) + 1; continue; }
+      if (bounds){                                          // filtr zakresu
+        const c = CH[i];
+        if (val < c.lo || val > c.hi) continue;
+      }
+      out[i] = val;
+    }
+  }
+  const k = Number(rec.k), s = Number(rec.s);
+  if (isFinite(k) && k >= 0 && k <= 180) out[11] = k / 180 * 100;
+  if (isFinite(s) && s >= 0 && s <= 90)  out[12] = s / 90  * 100;
+  if (Number.isFinite(Number(rec.state))) out[13] = (Number(rec.state) & 1) ? 100 : 0;
+  return { ts: ts * 1000, v: out };
+}
+
+// Eksport JSON z Firebase — dowolne zagnieżdżenie (cała gałąź albo jeden dzień).
+function parseFbJson(txt){
+  const root = JSON.parse(txt);
+  const out = [];
+  (function walk(node){
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)){ node.forEach(walk); return; }
+    if (Object.prototype.hasOwnProperty.call(node, 'ts') &&
+        Object.prototype.hasOwnProperty.call(node, 'a')){
+      const s = fbRecordToSample(node, true);
+      if (s) out.push(s);
+      return;
+    }
+    for (const k in node) if (Object.prototype.hasOwnProperty.call(node, k)) walk(node[k]);
+  })(root);
+  return out;
+}
+
+function csvNums(line){ return line.split(',').map(x => {
+  const t = x.trim(); if (!t) return NaN;
+  const n = Number(t); return Number.isFinite(n) ? n : NaN; }); }
+
+function rhOk(v){ if (v === 0){ state.rhZero = (state.rhZero || 0) + 1; return null; } return v; }
+function servoPct(deg, max){ if (!isFinite(deg) || deg < 0 || deg > max) return null; return deg / max * 100; }
+function pumpPct(v){ if (!isFinite(v)) return null; return v === 0 ? 0 : v === 1 ? 100 : null; }
+
+// hist_short.csv — 14 kolumn, ostatnia = unix s. (zgodnie z parserem panelu)
+function parseShortCsv(txt){
+  const out = [];
+  txt.split(/\r?\n/).forEach(line => {
+    if (!line.trim()) return;
+    const c = csvNums(line);
+    if (c.length < 14) return;
+    const ts = c[13];
+    if (!isFinite(ts) || ts <= 0) return;
+    const v = emptyV();
+    v[0]=num(c[1]); v[1]=num(c[2]); v[2]=num(c[3]); v[3]=num(c[4]);
+    v[4]=num(c[5]); v[5]=num(c[6]); v[6]=num(c[7]);
+    v[13]=pumpPct(c[8]); v[9]=num(c[9]); v[8]=rhOk(num(c[10]));
+    v[11]=servoPct(c[11],180); v[12]=servoPct(c[12],90);
+    out.push({ ts: ts*1000, v });
+  });
+  return out;
+}
+
+// hist_long.csv — 35 kolumn + opcjonalna 36. (pompa)
+function parseLongCsv(txt){
+  const out = [];
+  txt.split(/\r?\n/).forEach(line => {
+    if (!line.trim()) return;
+    const c = csvNums(line);
+    if (c.length < 35) return;
+    const ts = c[34];
+    if (!isFinite(ts) || ts <= 0) return;
+    const v = emptyV();
+    v[0]=num(c[1]); v[1]=num(c[4]); v[2]=num(c[7]); v[3]=num(c[10]);
+    v[4]=num(c[13]); v[5]=num(c[16]); v[6]=num(c[19]);
+    v[9]=num(c[22]); v[8]=rhOk(num(c[25]));
+    v[11]=servoPct(c[28],180); v[12]=servoPct(c[31],90);
+    if (c.length >= 36) v[13]=pumpPct(c[35]);
+    out.push({ ts: ts*1000, v });
+  });
+  return out;
+}
+
+// uniwersalne wejście pliku
+function parseAnyFile(text, name){
+  const t = text.trim();
+  if (t.startsWith('{') || t.startsWith('[')){
+    const rows = parseFbJson(t);
+    if (rows.length) return { rows, fmt: 'JSON z Firebase' };
+    throw new Error('JSON wczytany, ale nie znalazłem rekordów z polem "ts" i "a".');
+  }
+  const firstLine = t.split(/\r?\n/)[0] || '';
+  const cols = firstLine.split(',').length;
+  if (cols >= 35){
+    const rows = parseLongCsv(t);
+    if (rows.length) return { rows, fmt: 'hist_long.csv (' + cols + ' kol.)' };
+  }
+  if (cols >= 14){
+    const rows = parseShortCsv(t);
+    if (rows.length) return { rows, fmt: 'hist_short.csv (' + cols + ' kol.)' };
+  }
+  const longTry = parseLongCsv(t);
+  if (longTry.length) return { rows: longTry, fmt: 'hist_long.csv (wykryty)' };
+  const shortTry = parseShortCsv(t);
+  if (shortTry.length) return { rows: shortTry, fmt: 'hist_short.csv (wykryty)' };
+  throw new Error('Nie rozpoznałem formatu "' + name + '" (ani CSV 14/35 kol., ani JSON z Firebase).');
+}
+
+function sortUnique(rows){
+  const m = new Map();
+  rows.forEach(r => { if (r) m.set(r.ts, r); });
+  return Array.from(m.values()).sort((x,y) => x.ts - y.ts);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   3. FIREBASE — logowanie i pobieranie
+   ═══════════════════════════════════════════════════════════════ */
+/* Rok ważności tokenu ID — bez bibliotek, tylko odczyt „exp" z JWT. */
+function jwtExp(t){
+  try{
+    const p = String(t).split('.')[1];
+    if (!p) return 0;
+    const s = atob(p.replace(/-/g,'+').replace(/_/g,'/'));
+    const j = JSON.parse(s);
+    return Number(j.exp) * 1000 || 0;
+  } catch(e){ return 0; }
+}
+
+function authKey(){
+  return (($('fbKey') && $('fbKey').value) || safeStorage.get('piec_fb_api_key') || DEFAULT_FB_API_KEY).trim();
+}
+function authEmail(){
+  return (($('fbEmail') && $('fbEmail').value) || safeStorage.get('piec_fb_email') || DEFAULT_FB_EMAIL).trim();
+}
+// Zawsze zapamiętujemy — plik ma wchodzić sam, bez pytania.
+function rememberOn(){ return true; }
+
+/* Zapamiętanie sesji — te same klucze, których używa Piec.html. */
+function authSave(j, email, pass){
+  if (j && j.idToken){
+    state.token = j.idToken;
+    state.tokenExp = Date.now() + (Number(j.expiresIn || 3600) * 1000);
+    try { safeStorage.set('piec_fb_token', j.idToken, false); } catch(e) {}
+  }
+  try {
+    safeStorage.set('piec_fb_api_key', authKey(), true);
+    safeStorage.set('piec_fb_email', email || authEmail(), true);
+    if (pass && rememberOn()) safeStorage.set('piec_fb_password', pass, true);
+    if (j && j.refreshToken) safeStorage.set('piec_fb_ref_token', j.refreshToken, true);
+  } catch(e) {}
+}
+
+async function fbLogin(){
+  const email = authEmail();
+  const pass  = (($('fbPass') && $('fbPass').value) || savedPass()).trim();
+  const key   = authKey();
+  if (!email || !key) throw new Error('Brak e-maila lub klucza API.');
+  if (!pass) throw new Error('Brak hasła — wpisz je raz w polu „Hasło" (potem już nie trzeba).');
+  const res = await fetch(AUTH_URL + encodeURIComponent(key), {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ email, password: pass, returnSecureToken: true })
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j || !j.idToken){
+    const msg = (j && j.error && j.error.message) || ('HTTP ' + res.status);
+    throw new Error('Logowanie odrzucone: ' + msg);
+  }
+  authSave(j, email, pass);
+  return true;
+}
+
+/* Odświeżenie sesji tokenem, który już mamy — bez hasła. */
+async function fbRefreshIdToken(){
+  const key = authKey();
+  const rt  = safeStorage.get('piec_fb_ref_token');
+  if (!key || !rt) throw new Error('Brak zapamiętanej sesji.');
+  const r = await fetch(AUTH_REFRESH_URL + encodeURIComponent(key), {
+    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(rt)
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !j.id_token){
+    const msg = (j && j.error && (j.error.message || j.error)) || ('HTTP ' + r.status);
+    throw new Error('Sesja wygasła (' + msg + ')');
+  }
+  state.token = j.id_token;
+  state.tokenExp = Date.now() + (Number(j.expires_in || 3600) * 1000);
+  try {
+    safeStorage.set('piec_fb_token', state.token, false);
+    safeStorage.set('piec_fb_ref_token', j.refresh_token || rt, true);
+  } catch(e) {}
+  return true;
+}
+
+/* Jedno wejście do logowania: token w pamięci → token z pamięci przeglądarki
+   → odświeżenie → hasło. Zwraca skąd wzięliśmy sesję (do komunikatu). */
+async function ensureAuth(){
+  if (state.token && Date.now() < state.tokenExp - 60000) return 'sesja';
+
+  const stored = safeStorage.get('piec_fb_token');
+  if (stored && jwtExp(stored) - Date.now() > 60000){
+    state.token = stored;
+    state.tokenExp = jwtExp(stored);
+    return 'zapamiętana sesja';
+  }
+
+  if (safeStorage.get('piec_fb_ref_token')){
+    try { await fbRefreshIdToken(); return 'odświeżona sesja'; } catch(e){ /* niżej próba hasłem */ }
+  }
+
+  if (($('fbPass') && $('fbPass').value) || savedPass()){
+    await fbLogin();
+    return 'hasło';
+  }
+  throw new Error('Nie ma zapamiętanego logowania — wpisz hasło raz i zostaw „zapamiętaj hasło".');
+}
+
+function forgetAuth(){
+  ['piec_fb_token','piec_fb_ref_token','piec_fb_password'].forEach(k => safeStorage.remove(k));
+  state.token = ''; state.tokenExp = 0;
+}
+
+function dayPath(d){ return TELEM + d.getUTCFullYear() + '/' +
+  String(d.getUTCMonth()+1).padStart(2,'0') + '/' + String(d.getUTCDate()).padStart(2,'0') + '.json'; }
+
+async function fbFetchDay(d){
+  const url = DB_URL + dayPath(d) + '?auth=' + encodeURIComponent(state.token);
+  const res = await fetch(url, { cache:'no-store' });
+  if (res.status === 401 || res.status === 403) throw new Error('AUTH');
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' dla ' + dayPath(d));
+  const txt = await res.text();
+  if (!txt || txt === 'null') return [];
+  const rows = [];
+  try {
+    const obj = JSON.parse(txt);
+    for (const id in obj){
+      if (!Object.prototype.hasOwnProperty.call(obj,id)) continue;
+      const s = fbRecordToSample(obj[id], true);
+      if (s) rows.push(s);
+    }
+  } catch(e){ throw new Error('Niepoprawny JSON z ' + dayPath(d)); }
+  return rows;
+}
+
+async function fbFetchRange(fromD, toD, onProgress){
+  if (Date.now() > state.tokenExp - 60000) await ensureAuth();
+  const days = [];
+  const cur = new Date(Date.UTC(fromD.getUTCFullYear(), fromD.getUTCMonth(), fromD.getUTCDate()));
+  const end = new Date(Date.UTC(toD.getUTCFullYear(), toD.getUTCMonth(), toD.getUTCDate()));
+  while (cur <= end){ days.push(new Date(cur.getTime())); cur.setUTCDate(cur.getUTCDate()+1); }
+  const all = [];
+  for (let i=0;i<days.length;i++){
+    if (onProgress) onProgress((i+1)/days.length, i+1, days.length);
+    try {
+      all.push(...await fbFetchDay(days[i]));
+    } catch(e){
+      if (e.message === 'AUTH'){ state.token = ''; await ensureAuth(); all.push(...await fbFetchDay(days[i])); }
+      else if (i === days.length-1 && all.length === 0) throw e;   // brak sieci przy pierwszym dniu
+    }
+  }
+  return all;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   4. RYSOWANIE
+   ═══════════════════════════════════════════════════════════════ */
+function designCanvas(cv, cssH){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = cv.clientWidth || 600;
+  cv.width = Math.round(w*dpr); cv.height = Math.round(cssH*dpr);
+  cv.style.height = cssH + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return { ctx, w, h: cssH };
+}
+
+function niceStep(range, target){
+  const raw = range / Math.max(target,1);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / mag;
+  const m = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+  return m * mag;
+}
+
+function fmtVal(v, dec){ return v == null ? '—' : v.toFixed(dec); }
+function fmtTime(ms, withDate){
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2,'0');
+  const hhmm = p(d.getHours()) + ':' + p(d.getMinutes());
+  return withDate ? (p(d.getDate()) + '.' + p(d.getMonth()+1) + ' ' + hhmm) : hhmm;
+}
+
+/* series: [{rows, color, dash}] ; sel: Set id ; opts:{sameY, yDomain, showLegend} */
+function drawChart(cv, series, sel, opts){
+  opts = opts || {};
+  const { ctx, w, h } = designCanvas(cv, opts.cssH || 330);
+  const pad = { l: 44, r: 12, t: 10, b: 26 };
+  const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#0a1524'; ctx.fillRect(0,0,w,h);
+
+  const chosen = CH.filter(c => sel.has(c.id));
+  const all = [];
+  series.forEach(s => s.rows.forEach(r => {
+    s.ch.forEach(ci => { const v = r.v[ci]; if (v != null) all.push(v); });
+  }));
+  if (!series.length || !chosen.length || !all.length){
+    ctx.fillStyle = '#6c86a3'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('brak danych do narysowania', w/2, h/2);
+    return;
+  }
+  const tsAll = [];
+  series.forEach(s => s.rows.forEach(r => tsAll.push(r.ts)));
+  // Wspólna oś czasu, gdy podana — bez tego KAŻDY wykres rozciąga własne dane
+  // na całą szerokość i identyczne krzywe lądują w różnych miejscach.
+  const x0 = opts.xDomain ? opts.xDomain[0] : Math.min(...tsAll);
+  const x1 = opts.xDomain ? opts.xDomain[1] : Math.max(...tsAll);
+  let y0, y1;
+  if (opts.yDomain){ y0 = opts.yDomain[0]; y1 = opts.yDomain[1]; }
+  else {
+    y0 = Math.min(...all); y1 = Math.max(...all);
+    if (opts.includeZero){ y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
+    if (y0 === y1){ y0 -= 1; y1 += 1; }
+    const padY = (y1-y0)*0.08; y0 -= padY; y1 += padY;
+  }
+  const X = ts => pad.l + (x1 === x0 ? 0.5 : (ts - x0)/(x1 - x0)) * pw;
+  const Y = v  => pad.t + (1 - (v - y0)/(y1 - y0)) * ph;
+
+  // siatka
+  const yStep = niceStep(y1-y0, 5);
+  ctx.strokeStyle = '#14263c'; ctx.lineWidth = 1; ctx.font = '10px ui-monospace,monospace';
+  ctx.fillStyle = '#6c86a3'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let v = Math.ceil(y0/yStep)*yStep; v <= y1; v += yStep){
+    const y = Math.round(Y(v)) + .5;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l+pw, y); ctx.stroke();
+    ctx.fillText(v.toFixed(yStep < 1 ? 1 : 0), pad.l-6, y);
+  }
+  // os X
+  const span = x1 - x0;
+  const nTicks = Math.max(2, Math.min(7, Math.floor(pw/95)));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let i=0;i<=nTicks;i++){
+    const t = x0 + span*i/nTicks;
+    const x = Math.round(X(t)) + .5;
+    ctx.strokeStyle = '#14263c'; ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t+ph); ctx.stroke();
+    ctx.fillStyle = '#6c86a3';
+    ctx.fillText(fmtTime(t, span > 36*3600*1000), x, pad.t+ph+6);
+  }
+
+  // linia zera dla widoku różnicy
+  if (opts.includeZero && 0 > y0 && 0 < y1){
+    const y = Math.round(Y(0)) + .5;
+    ctx.strokeStyle = '#5b7fa6'; ctx.setLineDash([4,4]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l+pw, y); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // serie
+  series.forEach(s => {
+    s.ch.forEach(ci => {
+      const col = s.color || CH[ci].color;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+      ctx.setLineDash(s.dash ? [5,4] : []);
+      ctx.beginPath();
+      let open = false, prevT = null;
+      s.rows.forEach(r => {
+        const v = r.v[ci];
+        if (v == null){ open = false; prevT = null; return; }
+        const gap = prevT != null && (r.ts - prevT) > 12*60*1000;   // przerwa > 12 min
+        if (!open || gap){ ctx.moveTo(X(r.ts), Y(v)); open = true; }
+        else ctx.lineTo(X(r.ts), Y(v));
+        prevT = r.ts;
+      });
+      ctx.stroke(); ctx.setLineDash([]);
+    });
+  });
+
+  // legenda
+  if (opts.legend !== false && chosen.length){
+    let lx = pad.l + 6, ly = pad.t + 6;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = '10px sans-serif';
+    chosen.forEach(c => {
+      const txt = c.label + (c.unit ? ' ['+c.unit+']' : '');
+      const wTxt = ctx.measureText(txt).width + 22;
+      ctx.fillStyle = c.color; ctx.fillRect(lx, ly-3, 10, 3);
+      ctx.fillStyle = '#cfe4f7'; ctx.fillText(txt, lx+14, ly);
+      lx += wTxt;
+      if (lx > w - 140){ lx = pad.l + 6; ly += 13; }
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   5. PAROWANIE I STATYSTYKI
+   ═══════════════════════════════════════════════════════════════ */
+// Parowanie: dla każdej próbki B bierzemy NAJBLIŻSZĄ próbkę A (i-1 albo i).
+// Wcześniej szedł „pierwszy mieszczący się w tolerancji" — przy próbkach
+// minutowych i tolerancji 90 s potrafiło to sparować próbkę oddaloną o 60 s,
+// mimo że obok była próbka 0 s. Stąd brały się różnice tam, gdzie danych
+// wcale nie brakowało.
+function pairSamples(A, B, tolMs){
+  const pairs = [];
+  if (!A.length || !B.length) return pairs;
+  let i = 0;
+  for (let j = 0; j < B.length; j++){
+    const t = B[j].ts;
+    while (i < A.length && A[i].ts < t) i++;
+    let best = -1, bestD = Infinity;
+    if (i < A.length){ const d = Math.abs(A[i].ts - t); if (d < bestD){ bestD = d; best = i; } }
+    if (i > 0){ const d = Math.abs(A[i-1].ts - t); if (d < bestD){ bestD = d; best = i-1; } }
+    if (best >= 0 && bestD <= tolMs) pairs.push([A[best], B[j]]);
+  }
+  return pairs;
+}
+
+// Wspólny zakres czasu dla obu wykresów. Bez tego każdy wykres rozciąga
+// własne dane na całą szerokość — dwie identyczne krzywe wyglądają wtedy
+// jak „przesunięte", choć w danych różnica wynosi 0,0.
+function osCzasuWspolna(A, B, przytnij){
+  let t0 = Infinity, t1 = -Infinity;
+  A.forEach(r => { if (r.ts < t0) t0 = r.ts; if (r.ts > t1) t1 = r.ts; });
+  B.forEach(r => { if (r.ts < t0) t0 = r.ts; if (r.ts > t1) t1 = r.ts; });
+  if (przytnij && A.length && B.length){
+    const m0 = Math.max(A[0].ts, B[0].ts), m1 = Math.min(A[A.length-1].ts, B[B.length-1].ts);
+    if (m1 > m0){ t0 = m0; t1 = m1; }
+  }
+  return (isFinite(t0) && isFinite(t1)) ? [t0, t1] : null;
+}
+
+function channelStats(rows, ci){
+  let n=0, min=Infinity, max=-Infinity, sum=0;
+  rows.forEach(r => { const v = r.v[ci]; if (v != null){ n++; sum+=v; if(v<min)min=v; if(v>max)max=v; } });
+  return n ? { n, min, max, avg: sum/n } : { n:0, min:NaN, max:NaN, avg:NaN };
+}
+
+/* Diagnostyka: 15 największych różnic z surowymi wartościami A i B.
+   Po to, żeby dało się odpowiedzieć „co to za skok" bez zgadywania:
+   widać czas, obie wartości i przesunięcie czasowe pary. */
+function renderTopDiffs(pairs){
+  const el = $('statTop');
+  if (!el) return;
+  const chs = [];
+  CH.forEach((c, i) => { if (state.sel.has(c.id)) chs.push({ c, i }); });
+  if (!pairs.length || !chs.length){
+    el.innerHTML = 'Za mało par — wczytaj oba źródła i wybierz kanały.';
+    return;
+  }
+  const rows = [];
+  chs.forEach(o => {
+    pairs.forEach(([ra, rb]) => {
+      const va = ra.v[o.i], vb = rb.v[o.i];
+      if (va == null || vb == null) return;
+      rows.push({ tA: ra.ts, tB: rb.ts, c: o.c, va, vb, d: vb - va });
+    });
+  });
+  if (!rows.length){ el.innerHTML = 'Brak wspólnych próbek w wybranych kanałach.'; return; }
+  rows.sort((x, y) => Math.abs(y.d) - Math.abs(x.d));
+
+  let h = '<table><thead><tr><th>czas</th><th>kanał</th><th>A (chmura)</th><th>B (plik)</th>' +
+          '<th>B − A</th><th>przesunięcie pary</th></tr></thead><tbody>';
+  rows.slice(0, 15).forEach(r => {
+    const off = Math.round((r.tB - r.tA) / 1000);
+    const prog = r.c.unit === '°C' ? 3 : 20;
+    const mocno = Math.abs(r.d) >= prog;
+    h += '<tr' + (mocno ? ' style="color:#ffb74d"' : '') + '>' +
+         '<td>' + fmtTime(r.tB, true) + '</td>' +
+         '<td><span style="color:' + r.c.color + '">■</span> ' + r.c.label +
+           (r.c.unit ? ' [' + r.c.unit + ']' : '') + '</td>' +
+         '<td>' + fmtVal(r.va, r.c.dec) + '</td>' +
+         '<td>' + fmtVal(r.vb, r.c.dec) + '</td>' +
+         '<td>' + (r.d > 0 ? '+' : '') + r.d.toFixed(r.c.dec) + '</td>' +
+         '<td>' + (off > 0 ? '+' : '') + off + ' s</td></tr>';
+  });
+  h += '</tbody></table>';
+  h += '<div style="margin-top:8px;opacity:.78;font-size:11px;line-height:1.5">' +
+       '<b>Jak to czytać.</b> „Przesunięcie pary" to różnica czasu między próbką B a próbką A, ' +
+       'z którą ją sparowano. Duże przesunięcie przy pompie, klapie albo syberku oznacza, że ' +
+       'w oknie tolerancji zmienił się stan — porównujesz wtedy migawkę sprzed zmiany z próbką ' +
+       'po zmianie (stąd skok ±100). To nie błąd danych: zmniejsz tolerancję (np. do 10 s), ' +
+       'żeby takie pary wypadły. Małe przesunięcie i duża różnica = naprawdę różne wartości ' +
+       'w tym samym czasie — wtedy warto spojrzeć na sam czujnik.' +
+       '</div>';
+  el.innerHTML = h;
+}
+
+function renderStats(){
+  const A = state.A, B = state.B;
+  const tolMs = Math.max(5, Number($('tolS').value)||90) * 1000;
+  const pairs = pairSamples(A, B, tolMs);
+
+  // ── próbki
+  const span = rows => rows.length ? (rows[rows.length-1].ts - rows[0].ts)/3600000 : 0;
+  const gaps = rows => {
+    let g=0;
+    for (let i=1;i<rows.length;i++) if (rows[i].ts - rows[i-1].ts > 6*60*1000) g++;
+    return g;
+  };
+  const line = (lbl, rows, cls) => rows.length ?
+    `<div style="margin:2px 0"><b style="color:${cls}">${lbl}</b> — ${rows.length} próbek ·
+     ${span(rows).toFixed(1)} h · ${fmtTime(rows[0].ts,true)} → ${fmtTime(rows[rows.length-1].ts,true)} ·
+     przerw &gt;6 min: ${gaps(rows)}</div>` :
+    `<div style="margin:2px 0"><b style="color:${cls}">${lbl}</b> — brak danych</div>`;
+  let html = line('A · Firebase', A, 'var(--a)') + line('B · plik', B, 'var(--b)');
+
+  // brakujące minuty — co jest tylko w jednym źródle
+  if (A.length && B.length){
+    const keyA = new Set(A.map(r => Math.floor(r.ts/60000)));
+    const keyB = new Set(B.map(r => Math.floor(r.ts/60000)));
+    const onlyA = [...keyA].filter(k => !keyB.has(k)).sort((x,y)=>x-y);
+    const onlyB = [...keyB].filter(k => !keyA.has(k)).sort((x,y)=>x-y);
+    const sample = arr => arr.slice(0,6).map(k => fmtTime(k*60000,true)).join(', ') + (arr.length>6 ? ' …' : '');
+    html += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #16283d">
+      minuty tylko w A: <b>${onlyA.length}</b>${onlyA.length?' <span style="color:var(--dim)">('+sample(onlyA)+')</span>':''}<br>
+      minuty tylko w B: <b>${onlyB.length}</b>${onlyB.length?' <span style="color:var(--dim)">('+sample(onlyB)+')</span>':''}
+    </div>`;
+  }
+  $('statSamples').innerHTML = html;
+
+  // ── różnice
+  if (!pairs.length){
+    $('statDiff').innerHTML = '<span style="color:var(--dim)">Brak par do porównania (żadne próbki nie wypadają w tej samej chwili ±' + (tolMs/1000) + ' s).</span>';
+  } else {
+    const ch = CH.filter(c => state.sel.has(c.id));
+    let html = `<div style="margin-bottom:6px">sparowanych próbek: <b>${pairs.length}</b> ·
+      tolerancja ±${tolMs/1000} s</div>`;
+    html += '<table><thead><tr><th>kanał</th><th>śr. B−A</th><th>max |B−A|</th><th>par</th></tr></thead><tbody>';
+    ch.forEach(c => {
+      const ci = CH.indexOf(c);
+      let n=0, s=0, mx=0;
+      pairs.forEach(([ra,rb]) => {
+        const va = ra.v[ci], vb = rb.v[ci];
+        if (va == null || vb == null) return;
+        const d = vb - va; n++; s += d; if (Math.abs(d) > mx) mx = Math.abs(d);
+      });
+      html += `<tr><td><span style="color:${c.color}">■</span> ${c.label}</td>
+        <td>${n ? (s/n).toFixed(c.dec) : '—'}</td>
+        <td>${n ? mx.toFixed(c.dec) : '—'}</td><td>${n}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    $('statDiff').innerHTML = html;
+  }
+
+  // ── tabela kanałów
+  const chs = CH.filter(c => state.sel.has(c.id));
+  if (!chs.length || (!A.length && !B.length)){
+    $('statTable').innerHTML = 'Brak danych.';
+  } else {
+    let t = '<table><thead><tr><th>kanał</th><th>A min</th><th>A śr.</th><th>A max</th><th>A n</th>' +
+            '<th>B min</th><th>B śr.</th><th>B max</th><th>B n</th></tr></thead><tbody>';
+    chs.forEach(c => {
+      const ci = CH.indexOf(c);
+      const a = channelStats(A, ci), b = channelStats(B, ci);
+      const f = v => isFinite(v) ? v.toFixed(c.dec) : '—';
+      t += `<tr><td><span style="color:${c.color}">■</span> ${c.label}${c.unit?' ['+c.unit+']':''}</td>
+        <td>${f(a.min)}</td><td>${f(a.avg)}</td><td>${f(a.max)}</td><td>${a.n}</td>
+        <td>${f(b.min)}</td><td>${f(b.avg)}</td><td>${f(b.max)}</td><td>${b.n}</td></tr>`;
+    });
+    t += '</tbody></table>';
+    $('statTable').innerHTML = t;
+  }
+
+  // ── informacja o odrzuconych zerach wilgotności
+  const rhZeroEl = $('rhZeroInfo');
+  if (rhZeroEl){
+    rhZeroEl.innerHTML = state.rhZero
+      ? 'Pominięto <b>' + state.rhZero + '</b> odczytów wilgotności <b>0,0 %</b> — to śmieciowa '
+        + 'wartość z DHT22 (w kotłowni nie ma 0 % wilgotności), nie brak danych.'
+      : '';
+  }
+
+  // ── diagnostyka: największe różnice z surowymi wartościami
+  renderTopDiffs(pairs);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   6. RENDER CAŁOŚCI
+   ═══════════════════════════════════════════════════════════════ */
+function render(){
+  const sel = state.sel;
+  const idx = CH.map((c,i) => sel.has(c.id) ? i : -1).filter(i => i >= 0);
+  const A = state.A, B = state.B;
+
+  const zakres = rows => rows.length
+    ? fmtTime(rows[0].ts, true) + ' – ' + fmtTime(rows[rows.length-1].ts, true) : '';
+  $('capA').textContent = A.length ? (A.length + ' próbek · ' + zakres(A)) : 'brak';
+  $('capB').textContent = B.length ? (B.length + ' próbek · ' + zakres(B)) : 'brak';
+
+  const isTwo = state.mode === 'two';
+  $('boxA').style.display = isTwo ? '' : 'none';
+  $('boxB').style.display = isTwo ? '' : 'none';
+  $('boxSingle').classList.toggle('hidden', isTwo);
+
+  // wspólna skala Y dla widoku obok siebie
+  let domain = null;
+  if (isTwo && idx.length){
+    let lo = Infinity, hi = -Infinity;
+    [A,B].forEach(rows => rows.forEach(r => idx.forEach(i => {
+      const v = r.v[i]; if (v != null){ if (v<lo) lo=v; if (v>hi) hi=v; }
+    })));
+    if (isFinite(lo) && isFinite(hi)){
+      if (lo === hi){ lo -= 1; hi += 1; }
+      const p = (hi-lo)*0.08; domain = [lo-p, hi+p];
+    }
+  }
+
+  // wspólna oś czasu dla widoku „obok siebie"
+  const xDomain = (isTwo && (A.length || B.length))
+    ? osCzasuWspolna(A, B, $('cutX') && $('cutX').checked) : null;
+
+  if (isTwo){
+    drawChart($('cvA'), A.length ? [{rows:A, ch:idx, color:null}] : [], sel, { yDomain: domain, xDomain });
+    drawChart($('cvB'), B.length ? [{rows:B, ch:idx, color:null}] : [], sel, { yDomain: domain, xDomain });
+    $('capSingle').textContent = '';
+    $('capSingleInfo').textContent = '';
+    const ox = $('osiInfo');
+    if (ox){
+      if (xDomain){
+        const pelny = Math.max(A.length?A[A.length-1].ts:0, B.length?B[B.length-1].ts:0) -
+                      Math.min(A.length?A[0].ts:0, B.length?B[0].ts:0);
+        ox.innerHTML = 'Oś czasu <b>wspólna dla obu wykresów</b>: '
+          + fmtTime(xDomain[0], true) + ' – ' + fmtTime(xDomain[1], true)
+          + (($('cutX') && $('cutX').checked) ? ' (przycięta do wspólnego zakresu)' : '')
+          + (A.length && B.length && Math.abs(pelny - (xDomain[1]-xDomain[0])) > 60000
+              ? ' · źródła pokrywają różne okresy — puste miejsce to brak danych w tym źródle' : '');
+      } else ox.innerHTML = '';
+    }
+  } else if (state.mode === 'overlay'){
+    const ser = [];
+    if (A.length) ser.push({ rows:A, ch:idx, color:null, dash:false });
+    if (B.length) ser.push({ rows:B, ch:idx, color:null, dash:true });
+    $('capSingle').textContent = 'NAKŁADKA · ciągła = A (Firebase) · przerywana = B (plik)';
+    $('capSingleInfo').textContent = (A.length?('A '+A.length):'A 0') + ' / ' + (B.length?('B '+B.length):'B 0');
+    drawChart($('cvS'), ser, sel, { cssH: 380 });
+  } else {
+    // różnica B − A na parach
+    const tolMs = Math.max(5, Number($('tolS').value)||90) * 1000;
+    const pairs = pairSamples(A, B, tolMs);
+    const rows = pairs.map(([ra,rb]) => {
+      const v = new Array(NCH).fill(null);
+      CH.forEach((c,i) => {
+        const a = ra.v[i], b = rb.v[i];
+        if (a != null && b != null) v[i] = b - a;
+      });
+      return { ts: ra.ts, v };
+    });
+    $('capSingle').textContent = 'RÓŻNICA B − A · zero = zgodność';
+    $('capSingleInfo').textContent = rows.length + ' par';
+    drawChart($('cvS'), rows.length ? [{ rows, ch:idx, color:null }] : [], sel,
+              { cssH: 380, includeZero: true });
+  }
+
+  renderStats();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   7. UI — chipy, tryby, przyciski
+   ═══════════════════════════════════════════════════════════════ */
+function buildChips(){
+  const host = $('chips');
+  host.innerHTML = '';
+  CH.forEach(c => {
+    const el = document.createElement('span');
+    el.className = 'chip' + (state.sel.has(c.id) ? ' on' : '');
+    el.innerHTML = `<span class="dot" style="background:${c.color}"></span>${c.label}`;
+    el.onclick = () => {
+      if (state.sel.has(c.id)) state.sel.delete(c.id); else state.sel.add(c.id);
+      el.classList.toggle('on');
+      render();
+    };
+    host.appendChild(el);
+  });
+}
+
+function setStatus(id, msg, cls){
+  const el = $(id);
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+// Linia stanu logowania — widoczna bez rozwijania danych konta.
+function setAuthLine(msg, cls){
+  const el = $('authLine');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+// Nie ma już żadnego pola do wypełniania. Gdy brakuje hasła, mówi o tym
+// wyłącznie linia statusu (i stopka) — nigdy formularz.
+const BRAK_HASLA = 'brak hasła — otwórz plik w Notatniku, znajdź FB_HASLO_WBUDOWANE '
+  + 'i wpisz je w cudzysłowie; albo otwórz plik raz z dopiskiem #haslo=twojehaslo';
+
+// Hasło można też podać w adresie: ...html#haslo=xxx — wtedy zapisuje się
+// w przeglądarce i adres jest od razu czyszczony (nie zostaje w historii).
+function hasloZAdresu(){
+  try {
+    const m = String(location.hash || '').match(/haslo=([^&]*)/);
+    if (!m) return '';
+    const p = decodeURIComponent(m[1]);
+    if (!p) return '';
+    try { safeStorage.set('piec_fb_password', p, true); } catch(e) {}
+    try { history.replaceState(null, '', location.pathname + location.search); } catch(e) {}
+    return p;
+  } catch(e){ return ''; }
+}
+
+function setBar(id, frac){
+  const bar = $(id);
+  bar.classList.toggle('on', frac != null);
+  if (frac != null) bar.querySelector('i').style.width = Math.round(frac*100) + '%';
+}
+
+function dayFromInput(v){
+  const [y,m,d] = v.split('-').map(Number);
+  return new Date(Date.UTC(y, m-1, d));
+}
+function isoToday(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function isoMinus(days){
+  const d = new Date(); d.setDate(d.getDate()-days);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   8. START
+   ═══════════════════════════════════════════════════════════════ */
+(function init(){
+  $('fbFrom').value = isoMinus(1);
+  $('fbTo').value = isoToday();
+  buildChips();
+
+  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => {
+    const q = b.dataset.q;
+    const days = q === '6h' ? 0 : q === '1d' ? 1 : q === '7d' ? 7 : 30;
+    $('fbFrom').value = days === 0 ? isoToday() : isoMinus(days);
+    $('fbTo').value = isoToday();
+  });
+
+  $('modeSeg').querySelectorAll('button').forEach(b => b.onclick = () => {
+    $('modeSeg').querySelectorAll('button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    state.mode = b.dataset.mode;
+    render();
+  });
+
+  // ── jedno miejsce pobierania: używa go przycisk i automatyczny start
+  async function fetchFromFirebase(){
+    const from = $('fbFrom').value, to = $('fbTo').value;
+    if (!from || !to) return setStatus('fbStatus', 'Wybierz zakres dat.', 'err');
+    $('btnFb').disabled = true;
+    setStatus('fbStatus', 'Łączenie z Firebase…');
+    try {
+      const how = await ensureAuth();
+      setAuthLine('zalogowano — ' + how, 'ok');
+      setStatus('fbStatus', 'Pobieranie…');
+      const rows = await fbFetchRange(dayFromInput(from), dayFromInput(to), (f, i, n) => {
+        setBar('fbBar', f);
+        setStatus('fbStatus', `Dzień ${i}/${n}…`);
+      });
+      state.rhZero = 0; state.A = sortUnique(rows);
+      setBar('fbBar', null);
+      if (!state.A.length) setStatus('fbStatus', 'Pobrano 0 próbek — sprawdź zakres (może być pusty) albo uprawnienia.', 'warn');
+      else setStatus('fbStatus', `OK — ${state.A.length} próbek z Firebase.`, 'ok');
+      render();
+      return true;
+    } catch(e){
+      setBar('fbBar', null);
+      setStatus('fbStatus', 'Błąd: ' + e.message, 'err');
+      setAuthLine('nie zalogowano — ' + BRAK_HASLA, 'err');
+      return false;
+    } finally { $('btnFb').disabled = false; }
+  }
+
+  $('btnFb').onclick = fetchFromFirebase;
+
+  $('btnFbClear').onclick = () => {
+    state.A = []; setStatus('fbStatus', 'Nie pobrano.'); render();
+  };
+
+
+
+  // ── plik
+  const drop = $('drop'), fileIn = $('fileIn');
+  drop.onclick = () => fileIn.click();
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('hot'); };
+  drop.ondragleave = () => drop.classList.remove('hot');
+  drop.ondrop = e => {
+    e.preventDefault(); drop.classList.remove('hot');
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) readFile(f);
+  };
+  fileIn.onchange = () => { if (fileIn.files[0]) readFile(fileIn.files[0]); };
+
+  async function readFile(f){
+    setStatus('fileStatus', 'Wczytywanie ' + f.name + ' (' + Math.round(f.size/1024) + ' kB)…');
+    try {
+      const text = await f.text();
+      const { rows, fmt } = parseAnyFile(text, f.name);
+      state.rhZero = 0; state.B = sortUnique(rows);
+      $('fileFmt').textContent = 'format: ' + fmt;
+      setStatus('fileStatus', `OK — ${state.B.length} próbek z pliku "${f.name}".`, 'ok');
+      render();
+    } catch(e){
+      setStatus('fileStatus', 'Błąd: ' + e.message, 'err');
+    }
+  }
+
+  $('btnFileClear').onclick = () => {
+    state.B = []; $('fileFmt').textContent = 'format: —';
+    setStatus('fileStatus', 'Nie wczytano.'); render();
+  };
+
+  $('tolS').onchange = render;
+  if ($('cutX')) $('cutX').onchange = render;
+
+  // ── eksporty
+  $('btnCsv').onclick = () => {
+    const tolMs = Math.max(5, Number($('tolS').value)||90) * 1000;
+    const pairs = pairSamples(state.A, state.B, tolMs);
+    if (!pairs.length) return alert('Brak par do zapisania.');
+    const chs = CH.filter(c => state.sel.has(c.id));
+    let csv = 'ts_iso;ts_unix;' + chs.map(c => 'A_' + c.id).join(';') + ';' + chs.map(c => 'B_' + c.id).join(';') +
+              ';' + chs.map(c => 'd_' + c.id).join(';') + '\n';
+    pairs.forEach(([ra,rb]) => {
+      const row = [new Date(ra.ts).toISOString(), Math.round(ra.ts/1000)];
+      chs.forEach(c => { const i = CH.indexOf(c); row.push(ra.v[i] == null ? '' : ra.v[i].toFixed(c.dec)); });
+      chs.forEach(c => { const i = CH.indexOf(c); row.push(rb.v[i] == null ? '' : rb.v[i].toFixed(c.dec)); });
+      chs.forEach(c => { const i = CH.indexOf(c);
+        row.push((ra.v[i] != null && rb.v[i] != null) ? (rb.v[i]-ra.v[i]).toFixed(c.dec) : ''); });
+      csv += row.join(';') + '\n';
+    });
+    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'porownanie_' + new Date().toISOString().slice(0,16).replace(/[:T]/g,'-') + '.csv';
+    a.click(); URL.revokeObjectURL(a.href);
+  };
+
+  // PNG: w trybie "obok siebie" oba wykresy sklejone w jeden obraz (jeden pod drugim)
+  $('btnPng').onclick = () => {
+    const srcs = state.mode === 'two' ? [$('cvA'), $('cvB')] : [$('cvS')];
+    const live = srcs.filter(c => c && c.width > 0 && c.height > 0);
+    if (!live.length) return alert('Brak wykresu do zapisania.');
+    const pad = 10;
+    const W = Math.max(...live.map(c => c.width));
+    const H = live.reduce((s,c) => s + c.height + pad, pad);
+    const out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    const g = out.getContext('2d');
+    g.fillStyle = '#0a1524'; g.fillRect(0,0,W,H);
+    let y = pad;
+    live.forEach(c => { g.drawImage(c, 0, y); y += c.height + pad; });
+    const a = document.createElement('a');
+    a.href = out.toDataURL('image/png');
+    a.download = 'wykres_' + state.mode + '_' + new Date().toISOString().slice(0,16).replace(/[:T]/g,'-') + '.png';
+    a.click();
+  };
+
+  window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(render, 150); });
+
+  render();
+
+  /* ═══ AUTOMATYCZNE WEJŚCIE ═══
+     Plik ma być „już zalogowany": bierzemy sesję zapamiętaną przez panel
+     (Piec.html) albo przez to narzędzie i od razu pobieramy ostatnie 24 h.
+     Jeśli nic nie ma zapamiętanego — nie męczymy: pokazujemy pole hasła. */
+  (async function autoStart(){
+    const mail = safeStorage.get('piec_fb_email');
+    const key  = safeStorage.get('piec_fb_api_key');
+    const pss  = savedPass();
+    if (mail) $('fbEmail').value = mail;
+    if (key)  $('fbKey').value  = key;
+    if (pss && $('fbPass')) $('fbPass').value = pss;
+
+    const maToken = !!safeStorage.get('piec_fb_token') || !!safeStorage.get('piec_fb_ref_token');
+    if (!maToken && !pss){
+      setAuthLine(BRAK_HASLA, 'warn');
+      setStatus('fbStatus', 'Nie pobrano.');
+      return;
+    }
+
+    setAuthLine('łączę z Firebase…');
+    await fetchFromFirebase();
+  })();
+})();
+</script>
+</body>
+</html>

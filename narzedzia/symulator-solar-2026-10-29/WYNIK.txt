@@ -1,0 +1,84 @@
+╔══════════════════════════════════════════════════════════════╗
+║  SYMULATOR 0.31.49 — realny kod, prawdziwy kompilator Kotlin ║
+╚══════════════════════════════════════════════════════════════╝
+
+TEST A — odtworzenie ekranu z 29.10.2026 (ZYSK +1.5, DO KOŃCA DNIA +2.1)
+  ZYSK DZIŚ          = +1.5
+  DO KOŃCA DNIA      = +2.1
+  karta DZIŚ (nowa)  = 3.6
+  karta DZIŚ (stara) = 1.1
+  WYNIK: OK — 1.5 + 2.1 = 3.6
+
+TEST B — 1000 losowych dób, niezmienniki na realnym kodzie
+  sprawdzen OK=23110  BLEDOW=0
+  I8 rozjazd wyswietlania (model chlodzi, karta pokaze +0.0): 890 / 1000 dob = 89.0%
+TEST C — przypadki brzegowe
+  pusta lista godzin                 DZIŚ=   1.0  JUTRO=  -5.6  prognoza=NaN
+  jedna godzina                      DZIŚ=   0.9  JUTRO=  -5.6  prognoza=0.0
+  sama noc (GTI=0)                   DZIŚ=   0.1  JUTRO=  -2.1  prognoza=0.0
+  brak GTI (null)                    DZIŚ=   0.1  JUTRO=  -2.1  prognoza=0.0
+  tylko GHI (GTI null)               DZIŚ=   0.1  JUTRO=   6.5  prognoza=0.0
+  woda 0 C                           DZIŚ=   1.3  JUTRO=  13.2  prognoza=1.3
+  woda 140 C                         DZIŚ= -13.9  JUTRO= -33.6  prognoza=0.0
+  woda -30 C (poza zakresem)         DZIŚ=   4.7  JUTRO=  23.3  prognoza=4.7
+  woda 200 C (poza zakresem)         DZIŚ=   0.0  JUTRO=   2.0  prognoza=NaN
+  woda NaN                           DZIŚ=   2.6  JUTRO=   2.0  prognoza=NaN
+  powietrze -40 C                    DZIŚ=  -6.4  JUTRO=  -9.8  prognoza=0.0
+  powietrze +50 C                    DZIŚ=   3.3  JUTRO=  21.4  prognoza=3.3
+  słońce 1200 W/m2                   DZIŚ=   0.1  JUTRO=  47.2  prognoza=0.1
+  dzień bez słońca                   DZIŚ=  -1.6  JUTRO=  -4.4  prognoza=0.0
+  prognoza 48 h (krótka)             DZIŚ=   0.1  JUTRO=   6.5  prognoza=0.0
+  prognoza 25 h                      DZIŚ=   0.1  JUTRO=  -0.1  prognoza=0.0
+  puste archiwum                     dailyForecast7=[] (puste = karta uzyje zapasu)
+  sprawdzen OK=130  BLEDOW=0
+TEST D — powtarzalność: ten sam dzień policzony 100 razy
+  wynik powtarzalny: 0.8
+  sprawdzen OK=100  BLEDOW=0
+TEST E — czy ekran z 29.10 jest fizycznie spójny (suma GTI 0.7156 kWh/m2, szczyt 147)
+  stara karta = -2.4 °C  =>  dobowy GTI = 0.7156 kWh/m2
+  kontrola wzoru: dayDeltaC(0.7156) = -2.4
+
+  udział doby                                  model od 18.5 °C
+  10% promieniowania (0.072 kWh/m2)          +0.0 °C, 0.05 kWh
+  20% promieniowania (0.143 kWh/m2)          +0.0 °C, 0.11 kWh
+  30% promieniowania (0.215 kWh/m2)          +0.0 °C, 0.16 kWh
+  40% promieniowania (0.286 kWh/m2)          +0.0 °C, 0.22 kWh
+  50% promieniowania (0.358 kWh/m2)          +0.4 °C, 0.27 kWh
+  60% promieniowania (0.429 kWh/m2)          +0.8 °C, 0.33 kWh
+  70% promieniowania (0.501 kWh/m2)          +1.3 °C, 0.38 kWh
+  80% promieniowania (0.572 kWh/m2)          +1.7 °C, 0.44 kWh
+  90% promieniowania (0.644 kWh/m2)          +2.1 °C, 0.49 kWh
+  100% promieniowania (0.716 kWh/m2)         +2.5 °C, 0.55 kWh
+
+  ekran pokazał +2.1 °C -> OSIĄGALNE przy ~90% dobowego słońca po 13:00 => ekran jest spójny
+
+TEST F — czas wykonania (to samo, co woła ekran przy każdej recompozycji)
+  simulate() 1 doba (24 h)          =   0.06 ms
+  estimateForecastGain (reszta doby) =   0.02 ms
+  dailyForecast7 (7 dób)             =   0.36 ms
+  ekran wola oba =   0.38 ms na recompozycje
+  klatka 60 Hz = 16.7 ms -> mieszczi sie z zapasem
+
+TEST G — odtwarzalność karty DZIŚ z górnej karty (1000 dób)
+  dni z widocznym słońcem (karta u góry podaje liczbę): 1000
+    z tego NIEODTWARZALNE z ekranu: 0 = 0.0%
+  dni bez słońca (karta u góry pokazuje "—"): 0
+    z tego DZIŚ nadal dodaje/odejmuje noc: 0 = 0.0%
+  sprawdzen OK=1000  BLEDOW=0
+TEST H — nocne wychładzanie: model vs archiwum 7 dni z centrali
+  archiwum (zmierzone, zawiera ewentualne pobrania wody):
+    26.10: 19.5 °C (14:15) -> 13.2 °C (23:40) = -6.3 °C / 9.4 h = 0.67 °C/h
+    23.10: 47.2 °C (15:05) -> 35.8 °C (24.10 00:01) = -11.4 °C / 8.9 h = 1.28 °C/h
+    28.10: 20.5 °C (11:49) -> ~16.5 °C (29.10 00:00) ~= -4.0 °C / 12.2 h = 0.33 °C/h
+
+  model (SolarThermalModel, 4 h bez slonca):
+    woda 19.5 °C, powietrze 8.0 °C  ->  -0.21 °C/h
+    woda 19.5 °C, powietrze 11.0 °C  ->  -0.16 °C/h
+    woda 27.0 °C, powietrze 8.0 °C  ->  -0.35 °C/h
+    woda 35.0 °C, powietrze 8.0 °C  ->  -0.49 °C/h
+    woda 16.5 °C, powietrze 6.0 °C  ->  -0.19 °C/h
+
+══════════════════════════════════════════════════════════════
+RAZEM: OK=24340  BLEDY=0
+TEST A (regresja 3.6): OK
+══════════════════════════════════════════════════════════════

@@ -1,0 +1,32 @@
+{
+  "AsyncWebHeader.cpp": {
+    "api": "https://api.github.com/repos/ESP32Async/ESPAsyncWebServer/contents/src/AsyncWebHeader.cpp?ref=c47917dcaba2acefb04277cd679f58a60b4fab30",
+    "git_blob_sha1": "04041fbf62c9fdbfdabb994d7f106c3d547121c8",
+    "sha256": "820dc02429e0de56b72a1a7a91a603b87819a18e2501c4a83041a0e69ea39190",
+    "bytes": 1294
+  },
+  "literals.h": {
+    "api": "https://api.github.com/repos/ESP32Async/ESPAsyncWebServer/contents/src/literals.h?ref=c47917dcaba2acefb04277cd679f58a60b4fab30",
+    "git_blob_sha1": "85d04dfd6009821fc69a2f4675855d5a36c74b7a",
+    "sha256": "2df08b5947a05fdb6b890a486708b046cc2bc903aa9c7d7a227c0a4a49b51fb3",
+    "bytes": 13955
+  },
+  "WebServer.cpp": {
+    "api": "https://api.github.com/repos/ESP32Async/ESPAsyncWebServer/contents/src/WebServer.cpp?ref=c47917dcaba2acefb04277cd679f58a60b4fab30",
+    "git_blob_sha1": "a8ef376b4f06e7d9b4e6a07e56a996c4f055b287",
+    "sha256": "4ed4725bf35e3392eb75bffb86ae47220d069783032840d935136faa0fad1e60",
+    "bytes": 10060
+  },
+  "WebHandlers.cpp": {
+    "api": "https://api.github.com/repos/ESP32Async/ESPAsyncWebServer/contents/src/WebHandlers.cpp?ref=c47917dcaba2acefb04277cd679f58a60b4fab30",
+    "git_blob_sha1": "5a0977b2e19ee65c74c03af835c7f7905ed79d9d",
+    "sha256": "43c01d2fb1208552bc940b44678086d0fae62a8756fa2db6ff68df0506ef9755",
+    "bytes": 10603
+  },
+  "WebHandlerImpl.h": {
+    "api": "https://api.github.com/repos/ESP32Async/ESPAsyncWebServer/contents/src/WebHandlerImpl.h?ref=c47917dcaba2acefb04277cd679f58a60b4fab30",
+    "git_blob_sha1": "fbff491fe8073506481c7c8edf371003e8089b78",
+    "sha256": "e2ab3f7b6af3544934bea31a06c803240a3d8a6c3bbeda9669854cf5d840a006",
+    "bytes": 2872
+  }
+}

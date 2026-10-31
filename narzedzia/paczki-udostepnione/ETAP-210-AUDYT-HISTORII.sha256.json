@@ -1,0 +1,58 @@
+{
+  "release_ready": false,
+  "status": "PASS",
+  "zip": "ETAP-210-AUDYT-HISTORII.zip",
+  "bytes": 1521294,
+  "sha256": "8715469b9c7a90c6d95e3c5a0490b2734b8c795fbb1e929468a2be57a0fe94ca",
+  "manifest_entries": 308,
+  "frozen209_verified": true,
+  "verified_claims": 28,
+  "replays": {
+    "210-audit": {
+      "returncode": 0,
+      "stdout": "PASS audyt210 verified_claims=28 source_sha256=3fb7510ae8cd0f52...\n",
+      "stderr": ""
+    },
+    "209": {
+      "returncode": 0,
+      "stdout": "PASS 209 real matcher, real handler selection, real attach order extracted from pinned sources\nPASS route209 groups=23 benches=23; real parse + real matcher + real handler selection + real 199 loop + 203 hooks + 207 pin + 208 adapter\nPASS route209 groups=23 benches=23; real parse + real matcher + real handler selection + real 199 loop + 203 hooks + 207 pin + 208 adapter\nPASS route209 groups=23 benches=23; real parse + real matcher + real handler selection + real 199 loop + 203 hooks + 207 pin + 208 adapter\nPASS route209 groups=23 benches=23; real parse + real matcher + real handler selection + real 199 loop + 203 hooks + 207 pin + 208 adapter\n/tmp/replay210-93pjq6l3/narzedzia/trasa-pobrania209/WYNIKI/run001\n",
+      "stderr": ""
+    },
+    "208": {
+      "returncode": 0,
+      "stdout": "PASS 199 transport split: only stock _onPoll replaced by the 203 candidate\nPASS download208 groups=21 benches=21; real 199 send loop + 203 hooks + 207 pin + 197/FS.cpp; modeled client, not ESP\n\nPASS download208 groups=21 benches=21; real 199 send loop + 203 hooks + 207 pin + 197/FS.cpp; modeled client, not ESP\n\nPASS download208 groups=21 benches=21; real 199 send loop + 203 hooks + 207 pin + 197/FS.cpp; modeled client, not ESP\n\nPASS download208 groups=21 benches=21; real 199 send loop + 203 hooks + 207 pin + 197/FS.cpp; modeled client, not ESP\n\n/tmp/replay210-93pjq6l3/narzedzia/pobieranie-http208/WYNIKI/run001\n",
+      "stderr": ""
+    },
+    "207": {
+      "returncode": 0,
+      "stdout": "PASS snapshots207 groups=23 fixtures=23; real 197 owner + Arduino FS.cpp; modeled backend/writer, not ESP\n\nPASS snapshots207 groups=23 fixtures=23; real 197 owner + Arduino FS.cpp; modeled backend/writer, not ESP\n\n/tmp/replay210-93pjq6l3/narzedzia/pobieranie-historia207/WYNIKI/run002\n",
+      "stderr": ""
+    },
+    "206": {
+      "returncode": 0,
+      "stdout": "PASS pinned header parser, cumulative 199+203+205+206 patch and exact extraction\nPASS headers206 groups=20 instances=301; real pinned header/body parsing + adapter204/205; modeled String/TCP/route match, not ESP\n\nPASS headers206 groups=20 instances=301; real pinned header/body parsing + adapter204/205; modeled String/TCP/route match, not ESP\n\n/tmp/replay210-93pjq6l3/narzedzia/naglowki-upload206/WYNIKI/run004\n",
+      "stderr": ""
+    },
+    "205": {
+      "returncode": 0,
+      "stdout": "PASS pinned parser extraction and cumulative candidate205 patch\nPASS parser205 groups=38 fixtures=554; real body parser + adapter204; modeled headers/String/TCP, not ESP\n\nPASS parser205 groups=38 fixtures=554; real body parser + adapter204; modeled headers/String/TCP, not ESP\n\nPASS original vulnerability reproduced cases=3; not a production fix\n\nPASS original vulnerability reproduced cases=3; not a production fix\n\n/tmp/replay210-93pjq6l3/narzedzia/parser-upload205/WYNIKI/run005\n",
+      "stderr": ""
+    },
+    "204": {
+      "returncode": 0,
+      "stdout": "PASS adapter204 groups=29; bounded begin/chunk/end; modeled TCP/parser, not ESP; host sizeof=144\n\nPASS adapter204 groups=29; bounded begin/chunk/end; modeled TCP/parser, not ESP; host sizeof=144\n\n/tmp/replay210-93pjq6l3/narzedzia/adapter-upload204/WYNIKI/run007\n",
+      "stderr": ""
+    },
+    "203": {
+      "returncode": 0,
+      "stdout": "PASS 203 pinned sources, combined patch and exact method extraction\nPASS deferred203 groups=25; real request factory/pause/send/_send/destructor, patched poll/disconnect; modeled client/response, not ESP\n\nPASS deferred203 groups=25; real request factory/pause/send/_send/destructor, patched poll/disconnect; modeled client/response, not ESP\n\n/tmp/replay210-93pjq6l3/narzedzia/odpowiedz-odroczona203/WYNIKI/run008\n",
+      "stderr": ""
+    },
+    "202": {
+      "returncode": 0,
+      "stdout": "host sizeof default pump=6048 bytes, NOT ESP ABI\nqueue syscall-fault cases=24\nPASS queue202 groups=23; owned buffers + real 197/200/201/FS.cpp; not AsyncTCP/ESP\n\nhost sizeof default pump=6048 bytes, NOT ESP ABI\nqueue syscall-fault cases=24\nPASS queue202 groups=23; owned buffers + real 197/200/201/FS.cpp; not AsyncTCP/ESP\n\n/tmp/replay210-93pjq6l3/narzedzia/kolejka-upload202/WYNIKI/run006\n",
+      "stderr": ""
+    }
+  },
+  "packaged_files_unchanged_after_replay": true
+}

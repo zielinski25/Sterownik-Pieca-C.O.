@@ -1,0 +1,220 @@
+--- a/ui/screens/sheets/Sensors.kt
++++ b/ui/screens/sheets/Sensors.kt
+@@ -363,6 +363,9 @@
+             "Do końca dnia · szacunek",
+             when {
+                 !sunLeft -> "bez słońca do końca dnia"
++                // [0.31.38] „brak prognozy” myliło dwie przyczyny: brak pogody
++                // i brak próbki wody do wystartowania modelu.
++                !solar.hasSamples -> "brak próbki wody z czujnika"
+                 !solar.forecastGain.isFinite() -> "brak prognozy"
+                 // [0.31.31] Ten sam warunek co karta „DO KOŃCA DNIA” — patrz Weather.kt.
+                 !solar.forecastPeakReal -> "słońce nie przebije strat ciepła"
+--- a/core/AppModel.kt
++++ b/core/AppModel.kt
+@@ -15,6 +15,7 @@
+ import com.sterownikco.pro.service.AlarmMonitorService
+ import com.sterownikco.pro.widget.PiecWidget
+ import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.async
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.currentCoroutineContext
+@@ -24,6 +25,7 @@
+ import kotlinx.coroutines.sync.Mutex
+ import kotlinx.coroutines.sync.withLock
+ import kotlinx.coroutines.withContext
++import kotlinx.coroutines.withTimeoutOrNull
+ import okhttp3.OkHttpClient
+ import org.json.JSONArray
+ import org.json.JSONObject
+@@ -127,6 +129,9 @@
+         sheet = id
+         refreshSheet()
+         if (id == "terminal") startTerminalDlogPolling() else stopTerminalDlogPolling()
++        // [0.31.35] Karta solarna ma pokazać dzisiejszy zysk od razu, a nie po
++        // pierwszym własnym pollingu za 8 s — dociągamy dobę z chmury.
++        if (id == "panel") refreshSolarFromCloud()
+     }
+ 
+     // ── toasty i logi ───────────────────────────────────────────────────────
+@@ -228,7 +233,7 @@
+ 
+     fun onResume() {
+         bgJob?.cancel(); bgJob = null
+-        poll(); refreshWeather(false); loadRange(rangeSec)
++        poll(); refreshWeather(false); loadRange(rangeSec); refreshSolarFromCloud()
+         if (sheet == "terminal") startTerminalDlogPolling()
+         jobs = listOf(
+             scope.launch { while (true) { delay(8000); poll() } },
+@@ -269,6 +274,45 @@
+         solar.recordSample(panel, boiler, outside, radEst(w), w.uv, w.cloud)
+     }
+ 
++    /**
++     * [0.31.35 SOLAR-HISTORY] Dzisiejsza temperatura zbiornika prosto z chmury.
++     *
++     * Karta „Zysk dziś · zmierzone” liczyła się wyłącznie z próbek zebranych, gdy
++     * aplikacja była otwarta na wierzchu — dlatego wieczorem pokazywała
++     * „brak próbek z dziś”, choć chmura ma zbiornik co minutę. Tu dociągamy
++     * dobę z RTDB i przekazujemy do SolarAnalytics (metoda liczenia bez zmian).
++     */
++    private var solarHistoryAt = 0L
++
++    fun refreshSolarFromCloud() = scope.launch {
++        if (connected && Rtdb.refreshToken.isNotBlank()) {
++            val now = System.currentTimeMillis()
++            // Jedno pobranie doby na 5 minut — polling statusu leci co 8 s i nie może
++            // zamieniać się w 180 zapytań do RTDB na kwadrans.
++            if (now - solarHistoryAt >= 5 * 60_000L) {
++                solarHistoryAt = now
++                try {
++                    val pts = Rtdb.fetchTelemetry(24 * 3600)
++                    if (pts != null) {
++                        val added = solar.mergeCloudToday(pts)
++                        if (added > 0) { S.bump(); refreshSheet() }
++                    }
++                } catch (e: Exception) {
++                    // Brak chmury nie może psuć karty — zostaje to, co już wiadomo.
++                }
++            }
++        }
++        // [0.31.38] „Do końca dnia · szacunek” potrzebuje DWÓCH rzeczy naraz:
++        // próbki wody i godzin pogody. Po starcie pogoda przychodzi pierwsza (sieć),
++        // historia z chmury dopiero po niej — model startował bez próbki, zwracał NaN
++        // i karta zostawała na „brak prognozy” do najbliższego odświeżenia pogody
++        // (15 min), a na ekranie 2026-10-29 00:37 pokazywała to obok poprawnych kart
++        // 7-dniowych. Dlatego po scaleniu historii ponawiamy obliczenie.
++        if (!solar.forecastGain.isFinite()) {
++            solar.estimateForecastGain(weather?.hourly ?: emptyList())
++        }
++    }
++
+     /** Promieniowanie krótkofalowe Open-Meteo z bieżącej godziny; nie estymujemy go z UV. */
+     fun radEst(w: WCurrent?): Double {
+         if (w == null) return Double.NaN
+@@ -345,6 +389,9 @@
+             S.bump()
+             if (S.online) {
+                 recordSolar()
++                // [0.31.35] Po pierwszym udanym pollingu dociągnij dzisiejszą dobę
++                // z chmury, żeby karta solarna nie czekała na otwarcie arkusza.
++                refreshSolarFromCloud()
+                 if (page == 1) appendLiveFeed()
+             }
+             // Alarmy oceniaj wyłącznie na podstawie flag zwróconych przez sterownik.
+@@ -867,21 +914,64 @@
+             6 * 3600 -> "6h"; 24 * 3600 -> "24h"; 7 * 86400 -> "7d"; else -> "30d"
+         }
+         chartStatus = "Pobieranie historii ($rangeName) z bazy Firebase…"
++        // [v0.31.33 ESP-HISTORY] Równolegle pytamy lokalne archiwum centrali.
++        // Chmura bywa niepełna (przerwy wysyłki), a centrala ma te próbki u siebie.
++        val espIp = S.ip.trim()
++        val espTask = if (espIp.isNotEmpty()) async {
++            try { Rtdb.fetchEspHistory(espIp) } catch (e: Exception) { null }
++        } else null
++        var fb: List<TelemPoint>? = null
+         if (connected) {
+-            try {
+-                val fb = Rtdb.fetchTelemetry(sec)
+-                if (fb != null && fb.isNotEmpty()) {
+-                    chartLive = emptyList()
+-                    telemetry = fb
+-                    chartPoints = fb.size
+-                    chartStatus = "Załadowano ${fb.size} próbek z RTDB · odcinki symulowane są kreskowane"
+-                    chartReality = "FIREBASE RTDB"
+-                    // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
+-                    // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
+-                    appendLiveFeed()
+-                    return@launch
+-                }
+-            } catch (e: Exception) { /* fallback poniżej, jak w panelu */ }
++            try { fb = Rtdb.fetchTelemetry(sec) } catch (e: Exception) { /* fallback poniżej */ }
++        }
++        // 6 s sufitu: poza domową siecią centrala jest nieosiągalna, a wykresy
++        // z chmury mają się pokazać od razu (nie po 18 s timeoutów TCP).
++        val esp = espTask?.let {
++            try { withTimeoutOrNull(6_000) { it.await() } } catch (e: Exception) { null }
++        }
++        // Zakres ESP (~24–38 h) ma sens tylko dla 6h/24h; dla 7/30 dni dane
++        // z centrali i tak są podzbiorem chmury, więc ich nie mieszamy.
++        val useEsp = esp != null && sec <= 24 * 3600 && esp.isNotEmpty()
++        if ((fb != null && fb.isNotEmpty()) || useEsp) {
++            val merged = combineCloudAndEsp(fb ?: emptyList(), if (useEsp) esp!! else emptyList())
++            chartLive = emptyList()
++            telemetry = merged
++            chartPoints = merged.size
++            val fromEspOnly = if (useEsp) merged.count { it.seq < 0L } else 0
++            // [v0.31.34 GAP-MARK] Ile jest przerw w danych i jak długa jest najdłuższa.
++            // Liczone z tego, co faktycznie przyszło — podpis nie może kłamać.
++            var gapCount = 0
++            var gapMax = 0L
++            var prevTs = 0L
++            merged.forEach { p ->
++                if (prevTs != 0L && p.ts - prevTs > 360_000L) {
++                    gapCount++
++                    if (p.ts - prevTs > gapMax) gapMax = p.ts - prevTs
++                }
++                prevTs = p.ts
++            }
++            chartStatus = buildString {
++                append("Załadowano ${merged.size} próbek")
++                when {
++                    fromEspOnly > 0 -> append(" · z tego $fromEspOnly tylko z archiwum centrali (brak w chmurze)")
++                    useEsp -> append(" · chmura + archiwum centrali zgodne")
++                    sec > 24 * 3600 -> append(" z RTDB (tylko chmura — archiwum centrali jest w domu)")
++                    else -> append(" z RTDB")
++                }
++                if (gapCount > 0) {
++                    append(" · luk: " + gapCount + " (najdłuższa " + (gapMax / 60_000L) / 60L + " h " + (gapMax / 60_000L) % 60L + " min)")
++                }
++                append(" · odcinki symulowane są kreskowane")
++            }
++            chartReality = when {
++                fb == null || fb.isEmpty() -> "ARCHIWUM ESP"
++                fromEspOnly > 0 -> "RTDB + ARCHIWUM ESP"
++                else -> "FIREBASE RTDB"
++            }
++            // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
++            // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
++            appendLiveFeed()
++            return@launch
+         }
+         telemetry = emptyList()
+         chartPoints = 0
+@@ -890,6 +980,24 @@
+         chartLive = emptyList()
+     }
+ 
++    /**
++     * [v0.31.33 ESP-HISTORY] Łączy chmurę z lokalnym archiwum centrali.
++     * Klucz to znacznik czasu — ta sama próbka z obu źródeł nie dubluje się.
++     * Próbki obecne WYŁĄCZNIE w centrali dostają ujemny `seq`, żeby dało się je
++     * policzyć i pokazać użytkownikowi, ile danych nie dotarło do chmury.
++     */
++    private fun combineCloudAndEsp(cloud: List<TelemPoint>, esp: List<TelemPoint>): List<TelemPoint> {
++        if (esp.isEmpty()) return cloud
++        val byTs = LinkedHashMap<Long, TelemPoint>()
++        cloud.forEach { byTs[it.ts] = it }
++        var missing = 0L
++        esp.forEach { p ->
++            if (byTs.containsKey(p.ts)) return@forEach
++            byTs[p.ts] = p.copy(seq = -(++missing))
++        }
++        return byTs.values.sortedBy { it.ts }
++    }
++
+     /** Dokleja wyłącznie odczyt z właśnie zakończonego, udanego pollingu Firebase. */
+     fun appendLiveFeed() {
+         if (page != 1 || !isFbFresh || !S.online || lastFetchTs <= 0L) return
+--- a/ui/screens/Weather.kt
++++ b/ui/screens/Weather.kt
+@@ -882,6 +882,8 @@
+ /** Podpis karty: godzina szczytu i energia, które model liczył, ale nigdzie nie pokazywał. */
+ private fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
+     !sunLeft -> "bez słońca do końca dnia"
++    // [0.31.38] Rozdzielone: brak próbki wody vs brak pogody.
++    !sol.hasSamples -> "brak próbki wody z czujnika"
+     !sol.forecastGain.isFinite() -> "brak prognozy"
+     // [0.31.31] Słońce jeszcze jest, ale model policzył samo wychładzanie —
+     // woda nie dogrzeje się ponad straty. Wcześniej w tym miejscu stała

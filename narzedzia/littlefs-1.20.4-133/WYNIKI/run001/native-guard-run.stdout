@@ -1,0 +1,4 @@
+littlefs mode=0 committed=1 close=0 PASS
+littlefs mode=1 committed=0 close=0 PASS
+littlefs mode=2 committed=0 close=0 PASS
+3 real littlefs host integration scenarios PASS; no ESP/power-loss qualification

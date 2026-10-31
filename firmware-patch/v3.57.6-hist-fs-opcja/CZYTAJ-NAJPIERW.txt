@@ -1,0 +1,41 @@
+FIRMWARE 3.57.6 - ZAPIS HISTORII NA FLASH (PO SYMULACJACH)
+===========================================================
+Baza: 3.57.3. Zastepuje 3.57.5 i 3.57.4 (zadna z nich nie poszla na piec).
+Data: 2026-10-31.
+
+CO WYKRYLY SYMULACJE (dwie dziury, obie na zanik pradu)
+1) Zapis zadania czyszczenia nie byl atomowy: tryb "w" najpierw skracal plik
+   do zera. Zanik pradu w tym oknie zostawial puste albo krotsze zadanie,
+   a start historii traktuje takie zadanie jak blad i NIE WSTAJE - na zawsze.
+   Teraz: plik tymczasowy -> odczyt kontrolny (17 B) -> rename() (atomowy).
+2) Uszkodzone zadanie lezace na dysku blokowalo historie na zawsze. Teraz
+   setup() przenosi je do .req.bad PRZED startem historii; CSV zostaja.
+
+DWIE MNIEJSZE
+3) Po ponownym wlaczeniu zapisu resztka z kolejki czekala do 5 probek - teraz
+   leci od razu.
+4) W panelu przelacznik nie wracal po odrzuconej komendzie - teraz wraca.
+
+CO ROBI (bez zmian wzgledem 3.57.4/3.57.5)
+  - /piec/status i /api/status: hist_fs (1 = WL, 0 = WYL), ustawienie w NVS,
+    domyslnie WLACZONE;
+  - komendy: histfs_wl / histfs_wyl / histfs_czysc (czysc = po restarcie,
+    kanalem A1: /history_reset_a1.req);
+  - wylaczenie = ZERO zapisu do hist_short.csv i hist_long.csv (takze kolejka);
+  - wilgotnosc 0,0 % z DHT22 traktowana jak BLAD odczytu (byla: pomiar).
+
+CZEGO NIE RUSZA
+  Firebase (telemetria co minute), bufory RAM, /api/history*, wykresy, kolejka,
+  WDT, nadzor, TLS z 3.57.3, OTA, Telegram, format CSV.
+
+JAK WGRAC
+1. Podmien CALY folder src (pliki .h tez).
+2. Zbuduj i wgraj (OTA albo kabel).
+3. Ustawienia -> ma byc v3.57.6.
+4. Ustawienia -> "Zapis historii na flash" -> ma byc WLACZONY.
+
+SPRAWDZONE PRZED WYDANIEM
+  test statyczny 33/33, symulacja C++ 80/80, panel w jsdom 26/26.
+  (bash narzedzia/symulacje-firmware/run-all.sh)
+
+NIE WGRYWAC 3.55.3-3.55.8 (wycofane) ani 3.57.4 / 3.57.5 (zastapione).

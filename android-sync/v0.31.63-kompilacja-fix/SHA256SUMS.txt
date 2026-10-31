@@ -1,0 +1,2 @@
+d0ce2cd18eb0283efb82f110f0066fdf813d8ebd308e7ad6b451a7f6a5c5537e  SterownikCO-Android-v0.31.63-PELNY-PROJEKT.zip
+b651caeb15d0aeea5d234dfc6adfb05f102a1a0d3e216390e59dd8be04d26a0f  README-WGRANIE.txt

@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "release_ready": false,
+  "firmware_modified": false,
+  "inputs": {
+    "narzedzia/upload-zadania200/UploadPool.h": "ae8063b3cf4bd122d296fa420aeb4eaab2d3cc45226ed92361f693d37fe82aef",
+    "narzedzia/upload-zadania200/Test.cpp": "a1ca03f226937bf21f03241f2c6a2cd006c99e5b9502a9d190bdd288daef8578",
+    "narzedzia/upload-zadania200/NativeTest.cpp": "651f1fc62a497dc7c7306d253b9981dc1a10d56bd7d1afa73ee643680935031a",
+    "narzedzia/upload-zadania200/Raw198.inc": "6248ce9b4f848c8bc41f50f0cccef593925c0e7fa2d41d1b87b3491418174cd8",
+    "narzedzia/upload-zadania200/extract.py": "e7249a28f552eab50de61090994985daec746d3ce3a2fe7c6b760060cc646734",
+    "narzedzia/upload-zadania200/run.py": "afe70d1f872ba2e04c53759e95d5379f44081a3ff9658efff8433d580c1e932b",
+    "narzedzia/upload-zadania200/mutacje.py": "bdc1701e143e59284d8d4b2d22ea1062bc77e84c542924871c84bc55379c1704",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/uchwyty-runtime197/CheckedRead.h": "88a3fba5db1638e43a570bd467ba1c41e17d506e347da79eb23e4eaa45f0569d",
+    "narzedzia/uchwyty-runtime197/host/Arduino.h": "917e0db8ca511c83faa564044ef127f2e94da1bcc3c812608fcc3e2455d2aa7b",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/most-runtime198/Test.cpp": "10986ede254835350d1e4ad11f88cba16ecdc6c41520278f0c1df65102c87191",
+    "narzedzia/most-runtime198/MANIFEST.json": "8346c5e9e15489e51fad15fcf925532c87e5170c6cdae0c287f266284578d5a8",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690",
+    "narzedzia/blokada-startu-fs196/upstream/FS.h": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+    "narzedzia/blokada-startu-fs196/upstream/FSImpl.h": "5187168c8e15583d1b55e935987532f221f1d3ca958e293494c221e5b2bc538a",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9"
+  },
+  "profiles": {
+    "native": {
+      "stdout": "PASS upload200 groups=55 syscall-faults=48; per-request state, checked sync/readback/close, real FS.cpp; not HTTP/ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "native-posix": {
+      "stdout": "PASS native POSIX upload200: checked binary upload, existing file unchanged, partial file retained; path translation, NOT ESP VFS\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "asan-ubsan": {
+      "stdout": "PASS upload200 groups=55 syscall-faults=48; per-request state, checked sync/readback/close, real FS.cpp; not HTTP/ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "asan-ubsan-posix": {
+      "stdout": "PASS native POSIX upload200: checked binary upload, existing file unchanged, partial file retained; path translation, NOT ESP VFS\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  }
+}

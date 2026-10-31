@@ -677,3 +677,317 @@ powtórzyć dopasowanie.
   heat-pipe: przepływ wsteczny mniejszy niż w płaskim; spadek nocny 2–10 °C.
 - Michaelides (EuroSun 2010) — twierdzi wpływ wsteczki „minimalny”;
   **sprzeczne** z OSTI. Dlatego model dwuwęzłowy, a nie mnożnik na `UA`.
+
+---
+
+## 19. Kalibracja z archiwum — sprawdzona i odrzucona (2026-10-29)
+
+Sekcja 18 kończyła się zdaniem „po 2–3 tygodniach danych warto powtórzyć
+dopasowanie". Dane są — 11 pełnych nocy 18–28.10 — więc dopasowanie zostało
+zrobione. **Wynik jest negatywny i to też jest wynik.**
+
+### 19.1 Ranga parametrów — co w ogóle da się ruszyć
+
+| parametr | z 1,0 → | reakcja | ocena |
+|---|---|---|---|
+| `reverseFlowKgS` | 0,002 → 0,050 (25×) | 0,02 °C/h | **bezwładny** — nic nie zmienia |
+| `loopUaWk` | 1,0 → 5,0 | noc −1,26 °C ✅, ale dzień 33,3 → 26,9 (−19%) ❌ | nie da się |
+| `loopUaWk` + `apertureOptical` | 5,0 + 0,85 | dzień 34,2 ✅, ale η₀ = 0,89 | **fizycznie niemożliwe** |
+| `tankUa` | 1,4 | na nocach z ΔT 12–19 K wychodzi 1,2–1,4 W/K | **potwierdzone, nie ruszać** |
+
+Ograniczeniem nocnym jest `loopUaWk`, nie przepływ. Podniesienie go psuje dzień.
+Podniesienie obu naraz wypycha sprawność optyczną ponad granicę fizyki.
+
+### 19.2 Cztery metody uczenia na własnym archiwum
+
+Każda uczy się na 10 nocach, sprawdzana na jedenastej (leave-one-out), 11 nocy:
+
+| metoda | średni błąd |
+|---|---|
+| **model fizyczny (0.31.51)** | **2,05 °C** |
+| uczony współczynnik `k` zamiast modelu | 2,89 °C |
+| persystencja (tempo z pierwszych 2 h) | 1,95 °C |
+| model × mnożnik uczony na pozostałych | 2,28 °C |
+| model + stała poprawka uczona na pozostałych | 2,10 °C |
+
+Na teście praktycznym „ile zostanie do 24:00" (66 przypadków, godziny 17:00–22:00)
+persystencja przegrywa zdecydowanie: **2,00 °C vs 1,29 °C** — bo o 17:00–18:00
+jeszcze grzeje słońce, a persystencja o tym nie wie.
+
+Skrypt odtwarzalny: `narzedzia/symulator-solar-2026-10-29/kalibracja/porownanie.py`.
+
+### 19.3 Dlaczego uczenie tu nie może działać
+
+Błąd modelu nie zależy od niczego mierzalnego:
+
+| z czym porównane | korelacja |
+|---|---|
+| temperatura wody o 19:00 | +0,33 |
+| temperatura powietrza | −0,31 |
+| różnica woda − powietrze | +0,24 |
+
+Przy braku korelacji jedyne, co robi uczenie, to wpisuje na stałe średnią
+pomyłkę — psując noce, które wcześniej wychodziły dobrze.
+
+### 19.4 Cały błąd siedzi w jednej nocy
+
+Mediana błędu bezwzględnego: **1,40 °C**. Bez nocy 23/24.10 średnia spada
+z 2,05 do **1,45 °C** — ta jedna noc to 36% sumy błędu.
+
+23/24.10: zbiornik 42,5 → 27,8 °C, bez skoków, bez wykrytego poboru, ~1,5 °C/h
+przy ΔT ≈ 30 K → **UA_eff ≈ 6,1 W/K** (4,4× katalog).
+
+**KOREKTA tego samego dnia (zgłoszenie użytkownika: „nic nie kapie").**
+Pierwsza wersja tej sekcji twierdziła, że ubytek odpowiada stałemu dopływowi
+4,4 l/h, czyli że gdzieś cieknie kran. Wniosek wycofany — opierał się na tym,
+że tylko ta jedna noc odstawała od katalogu. Po policzeniu UA_eff **regresją**
+(każda noc osobno, nie z dwóch punktów) okazało się, że odstawanie jest regułą,
+a nie wyjątkiem:
+
+| noc | T o 19:00 | spadek | UA_eff [W/K] | × katalog (1,4) |
+|---|---|---|---|---|
+| 18/19.10 | 28,0 | −2,0 | 1,33 | 0,95 |
+| 19/20.10 | 24,2 | −1,4 | 1,20 | 0,86 |
+| 20/21.10 | 23,2 | −1,7 | 1,53 | 1,09 |
+| 21/22.10 | 36,5 | −2,5 | 1,38 | 0,99 |
+| 22/23.10 | 30,8 | −4,6 | 2,88 | 2,06 |
+| **23/24.10** | 42,8 | **−14,3** | **6,14** | **4,38** |
+| 24/25.10 | 21,8 | −4,3 | 4,63 | 3,31 |
+| 25/26.10 | 20,0 | −4,5 | **12,27** | **8,77** |
+| 26/27.10 | 14,8 | −3,0 | 4,88 | 3,48 |
+| 27/28.10 | 22,5 | −5,5 | 7,19 | 5,13 |
+| 28/29.10 | 17,5 | −1,0 | 3,52 | 2,51 |
+
+Czyli **tylko 4 noce z 11 zgadzają się z katalogiem**, a rozrzut wynosi 1,2–12,3 W/K,
+czyli dziesięciokrotnie. Zdanie „tankUa = 1.4 potwierdzone pomiarem" też było
+za mocne — opierało się na tej samej zgrubnej metodzie. `tankUa = 1.4` to nadal
+najlepszy **pojedynczy** parametr (bo taki jest katalog tego zbiornika), ale
+**nie jest to prawda o każdej nocy**.
+
+Co z tego wynika dla modelu: skoro efektywna strata zmienia się dziesięciokrotnie,
+to **żadna stała nie opisze wszystkich nocy** — ani 1,4, ani nauczona z archiwum.
+To domyka wątek kalibracji: nie ma czego dopasowywać, bo w każdej nocy działa
+inny mechanizm.
+
+Czego NIE wiadomo: co te noce różni. Sprawdzone i wykluczone:
+- **wyciek** — użytkownik: „nic nie kapie",
+- **pojedynczy pobór wody** — na 23/24.10 spadek był gładki, −0,2…−0,3 °C co 5 min,
+  żadnego skoku; przy poborze 40 l byłby skok ~4 K w jednej próbce,
+- **pompa obiegu pieca** — na 23/24.10 `pompa=OFF` przez całą noc (0/132 próbek
+  ON). To pompa CO pieca (`pinPompa`); **w solarze pompy nie ma** — obieg jest
+  grawitacyjny, w firmware nie ma żadnego kodu pompy solarnej,
+- **błąd czujnika** — w całym logu jest **jedna** próbka −1,0 °C (24.10 13:47,
+  zaraz po restarcie) i nie trafiła w żadne okno nocne.
+
+Co te noce różni — **znalezione** (patrz 19.5a): **zachmurzenie**. Nie wiatr,
+nie temperatura. Sprawdzone na prawdziwej pogodzie z Open-Meteo dla współrzędnych
+instalacji:
+
+| z czym porównane | korelacja z UA |
+|---|---|
+| zachmurzenie | **−0,53** |
+| wiatr średni | 0,00 |
+| wiatr maksymalny | +0,05 |
+| temperatura powietrza | −0,20 |
+
+Wiatr **odpada definitywnie** — korelacja zerowa. To ważne, bo wiatr był moim
+pierwszym typem; nie trzeba go dopisywać do modelu.
+
+### 19.5a Zbiornik patrzy w niebo — to jest brakujący mechanizm
+
+Użytkownik opisał instalację: **woda z wodociągów, pod ciśnieniem, idzie rurą
+prosto na dach do zbiornika 100 l**. Zbiornik stoi więc **na zewnątrz**, a nie
+w kotłowni. To zmienia wszystko, bo zbiornik na dachu nie tylko traci ciepło
+przez ściankę do powietrza — on **patrzy w niebo**.
+
+Przy czystym niebie temperatura efektywna nieba jest o kilkadziesiąt stopni
+niższa od temperatury powietrza. Płyta kolektora wychładza się wtedy **poniżej
+temperatury powietrza** i przez termosyfon (bez pompy, bez zaworu zwrotnego)
+podciąga ciepło ze zbiornika. Przy chmurach niebo „oddaje” to promieniowanie
+z powrotem i kanał zanika. Dlatego strata zależy od chmur, a nie od wiatru.
+
+Model z dwoma współczynnikami:
+
+```
+tempo [K/h] = −( a·(T−Ta) + b·(T−Ta)·(1 − zachmurzenie) ) / C · 3600
+```
+
+- `a` — strata przez ściankę, zależna od powietrza,
+- `b` — dodatkowa strata przy czystym niebie (patrzenie w niebo).
+
+**Walidacja leave-one-out** (uczy się na 10 nocach, sprawdzany na jedenastej):
+
+| | średni błąd tempa |
+|---|---|
+| model teraz (`tankUa = 1,4`) | 0,237 K/h |
+| model z niebem | **0,106 K/h** |
+| poprawa | **55%** |
+
+Dopasowane parametry: **a = 0,65 W/K, b = 9,90 W/K**, czyli UA rośnie od 0,65 W/K
+przy pełnym zachmurzeniu do 10,55 W/K przy niebie czystym — **siedmiokrotnie**.
+To jest właśnie ten dziesięciokrotny rozrzut, tylko nazwany po imieniu.
+
+W każdym z 11 podziałów parametry wychodzą podobne (a 0,4–1,1; b 9,2–10,4) —
+model nauczony na 10 nocach trafia w jedenastą. To nie jest dopasowanie do
+jednej nocy.
+
+Ważne: `cloud_cover` **już jest** w prognozie godzinowej, którą aplikacja pobiera
+(`Weather.kt`, pole `cloud_cover`). Do wdrożenia nie potrzeba żadnego nowego
+czujnika ani żadnej nowej sieci — tylko użyć liczby, którą już mamy.
+
+Zastrzeżenie: 11 nocy, jeden sezon, zachmurzenie z modelu Open-Meteo (a nie
+z czujnika). Przed wdrożeniem warto powtórzyć na 3–4 tygodniach archiwum.
+
+Skrypt odtwarzalny: `narzedzia/symulator-solar-2026-10-29/kalibracja/niebo.py`,
+wynik `WYNIK-NIEBO.txt`.
+
+### 19.5b Zdjęcie z dachu — co potwierdza, a co wywala
+
+Użytkownik przysłał zdjęcie instalacji (2026-10-15, `IMG20261015172628.jpg`).
+Widać na nim:
+
+- **zestaw kompaktowy** — zbiornik leży poziomo **bezpośrednio na** rzędzie rur,
+  na tej samej ramie, na dachu,
+- **rury próżniowe heat-pipe** (ok. 10 szt., typ 58/1800),
+- zbiornik jest **najwyżej położonym elementem** i ma pełne pole widzenia nieba,
+- żadnej wężownicy, żadnego drugiego obiegu.
+
+To zgadza się z parametrami w kodzie (`apertureOptical = 0,678` = 0,95 m² apertury
+× η₀ 0,714, komentarz w `SolarThermalModel.kt` mówi wprost „10 rur 58/1800").
+
+**Co zdjęcie potwierdza:** zbiornik jest wystawiony na niebo i to on jest
+głównym kanałem strat nocnych — zgodnie z 19.5a.
+
+**Co zdjęcie wywala: cyrkulację wsteczną.** Rura próżniowa heat-pipe jest
+**termiczną diodą**: czynnik paruje w rurze i skrapla się w kondensatorze
+w zbiorniku; gdy rura jest zimniejsza od zbiornika, parowania nie ma i **ciepło
+nie płynie w dół**. Do tego woda użytkowa w ogóle nie krąży przez rury — ona
+siedzi w zbiorniku, a rury to zamknięte heat-pipy.
+
+Czyli parametry `reverseFlowKgS = 0,004` i `loopUaWk = 1,0` w modelu opisują
+**mechanizm, którego w tej instalacji fizycznie nie ma**. I to wyjaśnia, dlaczego
+zabawa nimi nie działała: podniesienie `loopUaWk` do 5,0 poprawiało noc, ale
+psuło dzień o 19% — bo model dokładał straty pętli również w dzień, kiedy ich
+nie ma.
+
+| co | czy w tej instalacji działa |
+|---|---|
+| przewodzenie przez ściankę zbiornika | **tak** — dopasowane `a = 0,65 W/K` |
+| promieniowanie zbiornika do nieba | **tak** — dopasowane `b = 9,90 W/K` |
+| cyrkulacja wsteczna przez rury | **nie** — heat-pipe to dioda |
+| przepływ wody przez kolektor | **nie** — woda zostaje w zbiorniku |
+
+**Kontrola rzędu wielkości:** dla nieba o temperaturze efektywnej dużo niższej
+od powierzchni, współczynnik promieniowania wynosi ok. 5,5 W/(m²·K). Zmierzone
+`b = 9,9 W/K` odpowiada więc ok. **1,8 m² powierzchni patrzącej w niebo**.
+Zbiornik 100 l jako poziomy walec Ø 0,45 m × 1,0 m ma **1,73 m²**. Zgadza się
+co do 5%.
+
+### 19.5c Praktyczny wniosek: okryć zbiornik
+
+Skoro przy czystym niebie zbiornik traci do **9,9 W/K**, to przy różnicy 30 K
+jest to **ok. 300 W** — czyli więcej niż grzałka w bojlerze, tylko w drugą
+stronę. Przy 10 godzinach nocy to ok. **3 kWh ciepła na dobę**, czyli ~2,5 °C
+na 100 l wody.
+
+Najtańsza naprawa nie jest w kodzie: **okryć zbiornik od góry** (koc izolacyjny,
+mata alufoil, ekran odbijający promieniowanie). Nie trzeba niczego rozbierać.
+
+**Jak sprawdzić, że zadziałało:** po okryciu powtórzyć `kalibracja/niebo.py` na
+nowym logu. Jeśli `b` spadnie z ~9,9 do ~2–3 W/K, okrycie działa. To jest
+pomiar, nie wiara.
+
+### 19.6 Czujnik „panel solarny" mierzy zbiornik, nie kolektor
+
+Przy okazji liczenia tych nocy sprawdziłem, **co właściwie mierzy** kanał,
+na którym stoi cały model. W firmware to `temperaturaPaneluSlonecznego`,
+czujnik `czujnik_temp_Panel_Plus` na `BUS_3`, a log i aplikacja pokazują go
+jako „Panel solarny".
+
+Trzy liczby z 11 dób:
+
+| obserwacja | kolektor płaski na dachu | zmierzone |
+|---|---|---|
+| najwyższa temperatura przez 11 dni | 80–120 °C (stagnacja) | **47,2 °C** |
+| największa zmiana w 5 min | 5–10 °C (przechodząca chmura) | **1,0 °C** |
+| nocą, 11 godzin | spada do temperatury powietrza w minuty | **stoi 20 K nad powietrzem** |
+
+Żadna z tych trzech rzeczy nie jest możliwa dla gołej płyty kolektora.
+Taki przebieg ma **zbiornik 100 l**: duża bezwładność, wąski zakres temperatur,
+nocą stygnie powoli. Czyli czujnik podpisany „panel solarny" siedzi
+najprawdopodobniej **na zbiorniku albo na jego wyjściu**, a nie na kolektorze.
+
+**Dlaczego to jest ważne:** model nigdy nie widzi temperatury dachu.
+A to od niej zależy cyrkulacja wsteczna — jedyny mechanizm, który z danych
+pasuje do nocy z UA 4–12 W/K. Bez pomiaru po stronie kolektora nie da się
+tego ani potwierdzić, ani odjąć w modelu.
+
+**Do sprawdzenia u użytkownika (jedno pytanie, nie trzeba wchodzić na dach):**
+gdzie fizycznie przykręcony jest czujnik od kanału `BUS_3`? Jeśli na zbiorniku —
+to znaczy, że etykieta „Panel solarny" w aplikacji jest myląca, a modelowi
+brakuje jednego wejścia.
+
+### 19.7 Decyzja i wdrożenie — 0.31.52
+
+**Kalibracja z archiwum (opcja b) NIE wchodzi do kodu.** Cztery metody uczenia
+wypadły gorzej niż model fizyczny.
+
+**Człon „niebo" (19.5a) WCHODZI** — bo to nie uczenie, tylko brakująca fizyka.
+Wdrożone w **0.31.52**, zmienione dwa pliki:
+
+| plik | zmiana |
+|---|---|
+| `core/SolarThermalModel.kt` | człon nieba, `reverseFlowKgS` 0,004 → 0,0, `Hour.cloudPct` |
+| `app/build.gradle.kts` | `versionCode` 31052, `versionName` „0.31.52" |
+
+Szczegóły zmiany:
+
+```
+C·dT/dt = Q − (tankUa + skyRadWk·(1−zachmurzenie)·noc)·(T−Ta)
+tankUa    = 1,4   W/K   (bez zmian — model dzienny nietknięty)
+skyRadWk  = 8,20  W/K   (nowe)
+noc       = 0 przy GTI 0, liniowo do 0 przy GTI 50 W/m²
+reverseFlowKgS = 0      (było 0,004)
+```
+
+**Test na prawdziwym kodzie z paczki**, 11 nocy 18–28.10, zachmurzenie
+z Open-Meteo, temperatura powietrza godzinowa z logu centrali:
+
+| | średni błąd temperatury o 06:00 |
+|---|---|
+| model z 0.31.51 | **2,07 °C** |
+| model z 0.31.52 | **0,88 °C** |
+| poprawa | **58%** |
+
+Gdy w prognozie nie ma zachmurzenia (`NaN`), model liczy dokładnie jak przed
+0.31.52 — sprawdzone.
+
+Model dzienny: przy pełnym zachmurzeniu bez zmian (±0,1 °C). Przy czystym niebie
+szczyt niższy o 0,4–3,3 °C, bo woda wchodzi w dzień chłodniejsza — to jest
+poprawka wieczornego i nocnego stygnięcia, a nie zmiana sprawności kolektora.
+
+Kontrola: plik kompiluje się (`K2JVMCompiler`, 0 błędów), a testy w
+`narzedzia/symulator-solar-2026-10-29/test-0.31.52/` uruchamiają **ten sam**
+`SolarThermalModel.kt`, który idzie do aplikacji.
+
+**Nie flashowane.** Paczka i polecenia — patrz `android-sync/v0.31.52-niebo/`.
+
+### 19.8 Co jeszcze trzeba sprawdzić na 0.31.52 (29.10)
+
+Dwie rzeczy, których nie da się sprawdzić z archiwum, bo archiwum powstało
+na kodzie bez tego członu:
+
+1. **Dzień.** Przy starcie 06:00 z 15 °C i czystym niebem koniec doby wychodzi
+   29,4 °C, przy pełnym zachmurzeniu 43,1 °C — przy szczycie różniącym się
+   tylko o 0,9 °C. Ten rozrzut jest **fizyczny** (woda wchodzi w dzień
+   chłodniejsza), ale wielkości nie da się potwierdzić bez pomiarów z nowym
+   kodem. Kontrola: wieczorem po zachodzie słońca odczytać na karcie „DZIŚ"
+   prognozę „do końca dnia" i porównać z tym, co faktycznie będzie o 06:00.
+2. **Zerowanie `reverseFlowKgS`.** Dioda termiczna w rurze heat-pipe
+   nie przewodzi ciepła w dół, ale **kolektor i rura nad zbiornikiem** nadal
+   są nocą zimniejsze od zbiornika. Jeśli nocne pomiary pokażą szybsze
+   stygnięcie niż przewiduje model, wina jest po stronie tego członu,
+   nie członu „niebo".
+
+**Punkt kontrolny:** po 3–5 nocach z 0.31.52 ponowić `kalibracja/ua_noc.py`.
+Kryterium sukcesu: rozrzut UA_eff spada z **10,2×** do **poniżej 3×**.

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -15,6 +16,7 @@ import androidx.compose.runtime.setValue
 import com.sterownikco.pro.service.AlarmMonitorService
 import com.sterownikco.pro.widget.PiecWidget
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -24,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -35,6 +38,79 @@ import java.util.concurrent.TimeUnit
    `pollFirebase` + `sendCommand/ACK` + `refreshWeatherTab` + `loadTelemetryRange`
    + logi + toasty + timery (8 s / 45 s / 15 min / 1 s).
    ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Minimalny odstęp między automatycznymi pobraniami historii (ms).
+ *
+ * [0.31.62] 60 s -> 5 min. Zgłoszenie 30.10: „niech wykresy zostaną przez parę
+ * minut i pokazują się od razu". Wracanie na zakładkę w tym oknie nie rusza
+ * sieci — wykres bierze się z pamięci. Przycisk „Odśwież" i zmiana zakresu
+ * nadal wymuszają pobranie (force = true).
+ */
+private const val HISTORY_MIN_INTERVAL_MS = 5L * 60_000L
+
+/**
+ * Odstęp odpytywania `/piec/status` przy OTWARTEJ aplikacji.
+ *
+ * [0.31.56] było tu 2 s (zamiast 8 s) — po to, żeby kafelek zmieniał się zaraz
+ * po komendzie. [0.31.58] przywrócone 8 s: ustalenie z 2026-10-30 — aplikacja
+ * chodzi po LTE/„przez internet", a to odpytywanie jest największym kosztem
+ * danych (2 s ≈ 3,6 MB/h, 8 s ≈ 0,9 MB/h). SZYBKOŚĆ KOMEND tego nie dotyczy:
+ * odpowiada za nią heartbeat `podglad_wl` + firmware 3.57.x (odczyt komend
+ * co 2 s) oraz sprawdzanie ACK co 300 ms — a nie ten polling.
+ *
+ * W tle nadal ZERO zapytań z UI (`onPause` kasuje `jobs`); alarmy w tle
+ * obsługuje `AlarmMonitorService` jednym zapytaniem na 60 s.
+ */
+private const val FOREGROUND_POLL_MS = 8_000L
+
+/**
+ * [0.31.57 PODGLAD-PANELU] Co ile (ms) aplikacja melduje centrali „wciąż patrzę".
+ *
+ * Firmware 3.57.0 trzyma okno podglądu 90 s (FB_PODGLAD_WINDOW_MS), więc 50 s
+ * daje zapas na jeden zgubiony heartbeat. Skutek: gdy aplikacja jest otwarta,
+ * centrala czyta /piec/cmd co 2 s zamiast 7 s — pierwsze kliknięcie po długiej
+ * ciszy jest obsługiwane w ~2 s, a nie do 7 s.
+ */
+private const val PODGLAD_HEARTBEAT_MS = 50_000L
+
+/**
+ * [0.31.57] Nie wysyłaj heartbeatu, jeśli w tym czasie szła prawdziwa komenda.
+ *
+ * Heartbeat i komenda idą tą samą ścieżką `/piec/cmd`; firmware kasuje payload
+ * po ACK. 30 s ciszy gwarantuje, że nie ma czego nadpisywać (timeout ACK to 12 s).
+ */
+private const val PODGLAD_QUIET_BEFORE_MS = 30_000L
+
+/**
+ * [0.31.58] Po tylu ms bez DOTKNIĘCIA ekranu heartbeat przestaje lecieć.
+ *
+ * Scenariusz, który to naprawia: telefon leży na stole z otwartą aplikacją.
+ * Bez tego limitu machałby całą noc, a centrala całą noc czytałaby komendy
+ * co 2 s bez powodu. Po tym czasie wysyłamy jedno `podglad_wyl` i centrala
+ * wraca do 7 s; pierwsze dotknięcie ekranu natychmiast wznawia podgląd.
+ */
+private const val PODGLAD_IDLE_STOP_MS = 10L * 60_000L
+
+/** [0.31.58] Jak często sprawdzać „czy już minęło 10 min ciszy", gdy heartbeat jest wstrzymany. */
+private const val PODGLAD_IDLE_RECHECK_MS = 15_000L
+
+/**
+ * [0.31.59] Ile czekać na świeży status po ACK trybu serwa.
+ *
+ * Wcześniej pętla czekała aż status poda DOKŁADNIE żądany tryb — jeśli centrala
+ * sama wybrała inny (np. bezpieczny), warunek nigdy nie był spełniony i toast
+ * „oczekuję na świeży odczyt" wisiał do 30 s, a przy przerwanym żądaniu
+ * (kolejne kliknięcie) zostawał na ekranie na zawsze.
+ */
+private const val SERVO_MODE_STATUS_WAIT_MS = 10_000L
+
+/**
+ * Po tylu ms bez dotknięcia ekranu terminal przestaje pytać Firebase.
+ * Otwarty terminal odpytywał bazę co 5 s bez końca — 720 zapytań na godzinę,
+ * więcej niż cały polling statusu.
+ */
+private const val TERMINAL_DLOG_IDLE_STOP_MS = 5L * 60_000L
 
 private const val CHART_GROUP_TEMPERATURE = 1
 private const val CHART_GROUP_SERVO = 2
@@ -55,6 +131,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     val prefs = Prefs(ctx)
     val S = PiecState()
     val solar = SolarAnalytics(prefs)
+    // [0.31.43] Pamięć historii telemetrii na dysku telefonu (filesDir/telemetria).
+    // [0.31.62] Jedna pamięć historii na PROCES, nie na aktywność — po odtworzeniu
+    // aktywności nie czytamy pliku z dysku od nowa.
+    val telCache = AppRuntime.telemetryCache(ctx)
+    /** Dzienny cache telemetrii z 0.31.20 (jeden plik na dzień) — zostawiony dla starszej ścieżki. */
+    val tcache = TelemetryDayCache(ctx)
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
@@ -82,6 +164,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private var mixerModeAckOverride by mutableStateOf<Int?>(null)
     private var smokeModeAckOverride by mutableStateOf<Int?>(null)
     private var servoModeAckOverride by mutableStateOf<Int?>(null)
+    private var pendingKlapaPosition by mutableStateOf<ServoPositionPreview?>(null)
+    private var pendingSyberkaPosition by mutableStateOf<ServoPositionPreview?>(null)
     var dashboardWidgets by mutableStateOf(TileDefs.DEFAULT_VISIBLE_IDS)
     var dashboardWidgetOrder by mutableStateOf(TileDefs.TILES.map { it.id })
     var authOpen by mutableStateOf(false)
@@ -127,6 +211,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         sheet = id
         refreshSheet()
         if (id == "terminal") startTerminalDlogPolling() else stopTerminalDlogPolling()
+        // [0.31.35] Karta solarna ma pokazać dzisiejszy zysk od razu, a nie po
+        // pierwszym własnym pollingu za 8 s — dociągamy dobę z chmury.
+        if (id == "panel") refreshSolarFromCloud()
     }
 
     // ── toasty i logi ───────────────────────────────────────────────────────
@@ -151,7 +238,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var chartZoom by mutableFloatStateOf(1f)
     var chartOffset by mutableFloatStateOf(1f)
     var chartStatus by mutableStateOf("—")
-    var chartReality by mutableStateOf("BRAK SESJI")
+    // [0.31.42] Pasek statusu i plakietka "FIREBASE RTDB" zdjete z UI.
+    // `chartStatus` jest teraz widoczny WYLACZNIE podczas pobierania historii.
+    var chartLoading by mutableStateOf(false)
     var chartPoints by mutableIntStateOf(0)
     var chartLive by mutableStateOf<List<TelemPoint>>(emptyList())
     val seriesOn = mutableStateMapOf<String, Boolean>()
@@ -179,6 +268,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         loadDashboardWidgets()
         loadDashboardWidgetOrder()
         refreshWeather(false)
+
+        // [0.31.62] Po odtworzeniu aktywności wracamy tam, gdzie użytkownik był
+        // (koniec skoku na pulpit). Reszta stanu wykresów jest odtwarzana w
+        // restoreRuntimeState() — tamte pola są zadeklarowane NIŻEJ w klasie,
+        // więc nie wolno ich dotykać z bloku init (błąd kompilacji w 0.31.62).
+        page = prefs.getInt(Prefs.K_LAST_PAGE, 0).coerceIn(0, 4)
 
         // Przywróć konto po udanym wcześniejszym logowaniu; hasło jest w Android Keystore.
         val savedPassword = prefs.getSecret(Prefs.K_PASS)
@@ -214,6 +309,17 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         }
     }
 
+    /** [0.31.59] Jak [showToast], ale zwraca id — żeby ścieżka bez potwierdzenia mogła posprzątać. */
+    private fun showToastTracked(cmd: String, stage: String, cls: String = "ok"): Long {
+        showToast(cmd, stage, cls)
+        return toast?.id ?: 0L
+    }
+
+    /** [0.31.59] Zdejmuje toast tylko wtedy, gdy na ekranie wciąż wisi TEN toast. */
+    private fun clearToast(id: Long) {
+        if (id != 0L && toast?.id == id) toast = null
+    }
+
     private fun buzz() {
         try {
             val v = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
@@ -226,12 +332,85 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private var jobs: List<Job> = emptyList()
     private var bgJob: Job? = null
 
+    /** [0.31.57] Heartbeat „panel otwarty" — żyje tylko na pierwszym planie. */
+    private var podgladJob: Job? = null
+
+    /** [0.31.57] Kiedy poszła ostatnia PRAWDZIWA komenda (ms, elapsedRealtime). */
+    private var lastUserCommandMs = 0L
+
+    /** [0.31.58] Ostatnie dotknięcie ekranu — od tego liczy się 10 min ciszy. */
+    private var lastInteractionMs = 0L
+
+    /** [0.31.58] Czy heartbeat jest teraz „włączony" po stronie centrali. */
+    private var podgladActive = false
+
+    /** [0.31.58] Czy aplikacja jest na pierwszym planie. */
+    private var foreground = false
+
+    /** [0.31.63] Czy stan wykresów został już odtworzony w tym modelu. */
+    private var runtimeRestored = false
+
+    /**
+     * [0.31.58] Wołane z MainActivity przy każdym dotknięciu ekranu.
+     *
+     * Gdy heartbeat był wygaszony z powodu ciszy, wznawiamy go NATYCHMIAST
+     * (pierwsza iteracja pętli wysyła `podglad_wl` bez czekania), żeby pierwsze
+     * kliknięcie po przerwie znów było obsłużone w ~2 s.
+     */
+    fun noteInteraction() {
+        lastInteractionMs = SystemClock.elapsedRealtime()
+        if (foreground && !podgladActive) startPodgladHeartbeat()
+    }
+
+    /**
+     * [0.31.63] Odtworzenie stanu wykresów po powrocie do aplikacji.
+     *
+     * Wolane z [onResume] (a nie z bloku `init`), bo `historyLoadedRange`
+     * i `historyLoadedElapsed` są zadeklarowane niżej w klasie — przypisanie
+     * ich w `init` kończyło się błędem „Variable cannot be initialized before
+     * declaration" i 0.31.62 nie dało się zbudować.
+     *
+     * Robi to tylko raz na życie modelu: zakładka wraca z zapisu, a ostatnio
+     * policzony wykres z pamięci PROCESU (bez czytania dysku i bez sieci).
+     */
+    private fun restoreRuntimeState() {
+        if (runtimeRestored) return
+        runtimeRestored = true
+        val restoredPoints = AppRuntime.lastTelemetry
+        if (restoredPoints.isNotEmpty()) {
+            telemetry = restoredPoints
+            chartLive = AppRuntime.lastLive
+            chartPoints = restoredPoints.size
+            if (AppRuntime.lastRangeSec > 0) {
+                rangeSec = AppRuntime.lastRangeSec
+                historyLoadedRange = AppRuntime.lastRangeSec
+            }
+            historyLoadedElapsed = AppRuntime.lastLoadedAtMs.coerceAtLeast(1L)
+        }
+        // Wpis diagnostyczny: PID i wiek procesu rozstrzygają, czy Android zabił
+        // proces (inny PID), czy tylko odtworzył aktywność (ten sam PID).
+        addLog(
+            "SYSTEM",
+            "Start panelu: " + AppRuntime.processTag() + " · zakładka " + page +
+                (if (restoredPoints.isNotEmpty()) " · wykres z pamięci (" + restoredPoints.size + " pkt)" else ""),
+            "info"
+        )
+    }
+
     fun onResume() {
+        restoreRuntimeState()
         bgJob?.cancel(); bgJob = null
-        poll(); refreshWeather(false); loadRange(rangeSec)
+        poll(); refreshWeather(false)
+        // [0.31.61] Pamięć historii czytamy z dysku od razu po wejściu do aplikacji,
+        // a nie dopiero przy otwarciu Wykresów — pierwsze wejście na wykresy nie
+        // płaci wtedy za rozpakowanie pliku.
+        scope.launch { telCache.warmUp() }
+        // Historia tylko wtedy, gdy użytkownik naprawdę patrzy na wykresy.
+        if (page == 1) loadRange(rangeSec)
+        refreshSolarFromCloud()
         if (sheet == "terminal") startTerminalDlogPolling()
         jobs = listOf(
-            scope.launch { while (true) { delay(8000); poll() } },
+            scope.launch { while (true) { delay(FOREGROUND_POLL_MS); poll() } },
             scope.launch { while (true) { delay(15L * 60_000); refreshWeather(true) } },
             scope.launch {
                 while (true) {
@@ -246,14 +425,90 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                 }
             }
         )
+        foreground = true
+        lastInteractionMs = SystemClock.elapsedRealtime()
+        startPodgladHeartbeat()
     }
 
     fun onPause() {
+        foreground = false
+        stopPodgladHeartbeat(sendOff = true)
         jobs.forEach { it.cancel() }; jobs = emptyList()
         stopTerminalDlogPolling()
         // W tle NIE odpytujemy — oszczędność baterii; alarmy przejmuje
         // AlarmMonitorService z minutowym pollingiem statusu.
         bgJob?.cancel(); bgJob = null
+    }
+
+    /**
+     * [0.31.57 PODGLAD-PANELU] Meldunek „aplikacja otwarta" do centrali.
+     *
+     * Wysyła `podglad_wl` od razu po wejściu na pierwszy plan i potem co
+     * [PODGLAD_HEARTBEAT_MS]. Firmware 3.57.1 dzięki temu czyta KOMENDY co 2 s
+     * (zamiast 7 s). Statusu to nie dotyczy — zostaje 15 s (decyzja 2026-10-30:
+     * „chodzi o komendy i potwierdzenie").
+     *
+     * [0.31.58] Po [PODGLAD_IDLE_STOP_MS] bez dotknięcia ekranu heartbeat się
+     * wyłącza (jedno `podglad_wyl`), a pierwsze dotknięcie wznawia go od razu —
+     * dzięki temu telefon leżący na stole z otwartą aplikacją nie trzyma
+     * centrali w trybie szybkim bez powodu.
+     *
+     * Na starszym firmware (3.56.x i wcześniej) te komendy są nieznane, ale
+     * sam PAYLOAD w `/piec/cmd` i tak uruchamia tryb turbo 1 s/1 s (firmware
+     * przyspiesza PRZED walidacją tokenu i treści), więc komendy i tak docierają
+     * szybciej — kosztem wpisu `nieznana_komenda` w logu centrali.
+     *
+     * Gdy aplikacja zejdzie w tło: `podglad_wyl` (natychmiastowy powrót do normy)
+     * albo — przy zabiciu procesu — samo wygaśnięcie okna po 90 s (firmware).
+     */
+    private fun startPodgladHeartbeat() {
+        podgladJob?.cancel()
+        podgladJob = scope.launch {
+            while (isActive) {
+                val now = SystemClock.elapsedRealtime()
+                val idle = now - lastInteractionMs > PODGLAD_IDLE_STOP_MS
+                val quiet = now - lastUserCommandMs > PODGLAD_QUIET_BEFORE_MS
+                val canSend = connected && Rtdb.refreshToken.isNotBlank()
+                if (idle) {
+                    // [0.31.58] Nikt nie dotknął ekranu od 10 min — zwalniamy centralę.
+                    if (podgladActive) {
+                        podgladActive = false
+                        if (canSend) {
+                            try { Rtdb.sendCommandQuiet("podglad_wyl") } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) { /* brak sieci — okno i tak wygaśnie */ }
+                        }
+                    }
+                    delay(PODGLAD_IDLE_RECHECK_MS)
+                    continue
+                }
+                if (quiet && canSend) {
+                    try {
+                        if (Rtdb.sendCommandQuiet("podglad_wl")) podgladActive = true
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Brak sieci nie może niczego psuć — następny heartbeat za 50 s.
+                    }
+                }
+                delay(PODGLAD_HEARTBEAT_MS)
+            }
+        }
+    }
+
+    /** [0.31.57] Koniec podglądu: opcjonalnie zwolnij centralę od razu, bez czekania na wygaśnięcie okna. */
+    private fun stopPodgladHeartbeat(sendOff: Boolean) {
+        podgladJob?.cancel(); podgladJob = null
+        val wasActive = podgladActive
+        podgladActive = false
+        if (!sendOff || !wasActive || Rtdb.refreshToken.isBlank()) return
+        scope.launch {
+            try {
+                Rtdb.sendCommandQuiet("podglad_wyl")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) { /* w tle — bez znaczenia */ }
+        }
     }
 
     private fun recordSolar() {
@@ -267,6 +522,45 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         val outside = S.t_zewn
         if (!panel.isFinite() || !boiler.isFinite() || !outside.isFinite()) return
         solar.recordSample(panel, boiler, outside, radEst(w), w.uv, w.cloud)
+    }
+
+    /**
+     * [0.31.35 SOLAR-HISTORY] Dzisiejsza temperatura zbiornika prosto z chmury.
+     *
+     * Karta „Zysk dziś · zmierzone” liczyła się wyłącznie z próbek zebranych, gdy
+     * aplikacja była otwarta na wierzchu — dlatego wieczorem pokazywała
+     * „brak próbek z dziś”, choć chmura ma zbiornik co minutę. Tu dociągamy
+     * dobę z RTDB i przekazujemy do SolarAnalytics (metoda liczenia bez zmian).
+     */
+    private var solarHistoryAt = 0L
+
+    fun refreshSolarFromCloud() = scope.launch {
+        if (connected && Rtdb.refreshToken.isNotBlank()) {
+            val now = System.currentTimeMillis()
+            // Jedno pobranie doby na 5 minut — polling statusu leci co 8 s i nie może
+            // zamieniać się w 180 zapytań do RTDB na kwadrans.
+            if (now - solarHistoryAt >= 5 * 60_000L) {
+                solarHistoryAt = now
+                try {
+                    val pts = Rtdb.fetchTelemetry(24 * 3600).points
+                    if (pts.isNotEmpty()) {
+                        val added = solar.mergeCloudToday(pts)
+                        if (added > 0) { S.bump(); refreshSheet() }
+                    }
+                } catch (e: Exception) {
+                    // Brak chmury nie może psuć karty — zostaje to, co już wiadomo.
+                }
+            }
+        }
+        // [0.31.38] „Do końca dnia · szacunek” potrzebuje DWÓCH rzeczy naraz:
+        // próbki wody i godzin pogody. Po starcie pogoda przychodzi pierwsza (sieć),
+        // historia z chmury dopiero po niej — model startował bez próbki, zwracał NaN
+        // i karta zostawała na „brak prognozy” do najbliższego odświeżenia pogody
+        // (15 min), a na ekranie 2026-10-29 00:37 pokazywała to obok poprawnych kart
+        // 7-dniowych. Dlatego po scaleniu historii ponawiamy obliczenie.
+        if (!solar.forecastGain.isFinite()) {
+            solar.estimateForecastGain(weather?.hourly ?: emptyList())
+        }
     }
 
     /** Promieniowanie krótkofalowe Open-Meteo z bieżącej godziny; nie estymujemy go z UV. */
@@ -331,6 +625,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             connected = true
             lastFetchTs = System.currentTimeMillis()
             S.applyIncomingData(d)
+            AlarmSoundSync.applyStatus(prefs, d, SystemClock.elapsedRealtime())
+            reconcileAckedServoPositions()
             val smokeFlag = S.dym_alarm.takeIf { S.hasData("dym_alarm") }
             val overheatFlag = S.alarm_ogrzewanie.takeIf { S.hasData("alarm_ogrzewanie") }
             AlarmCenter.applyControllerMuteSnapshot(
@@ -345,6 +641,9 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             S.bump()
             if (S.online) {
                 recordSolar()
+                // [0.31.35] Po pierwszym udanym pollingu dociągnij dzisiejszą dobę
+                // z chmury, żeby karta solarna nie czekała na otwarcie arkusza.
+                refreshSolarFromCloud()
                 if (page == 1) appendLiveFeed()
             }
             // Alarmy oceniaj wyłącznie na podstawie flag zwróconych przez sterownik.
@@ -431,7 +730,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
             }
             poll()
             if (sheet == "terminal") startTerminalDlogPolling()
-            if (page == 1) loadRange(rangeSec)
+            if (page == 1) loadRange(rangeSec, force = true)
         }.onFailure { e ->
             authBusy = false; authStatusKind = "err"; authStatus = e.message ?: "Logowanie nieudane"
             if (automatic) authOpen = true
@@ -660,6 +959,45 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         reportedMode = S.tryb_serwa.takeIf { S.hasData("tryb_serwa") }
     )
 
+    /** ACKed servo target is presentation-only until `/piec/status` reports its physical angle. */
+    internal fun servoPositionPreview(axis: ServoPositionAxis): ServoPositionPreview? = when (axis) {
+        ServoPositionAxis.KLAPA -> pendingKlapaPosition
+        ServoPositionAxis.SYBEREK -> pendingSyberkaPosition
+    }
+
+    private fun recordAckedServoPosition(commandText: String) {
+        val command = parseServoPositionCommand(commandText) ?: return
+        val preview = command.preview(SystemClock.elapsedRealtime())
+        when (command.axis) {
+            ServoPositionAxis.KLAPA -> pendingKlapaPosition = preview
+            ServoPositionAxis.SYBEREK -> pendingSyberkaPosition = preview
+        }
+        // Both the dashboard tile and the open servo sheet consume this revision.
+        S.bump()
+        scope.launch {
+            delay(SERVO_POSITION_PREVIEW_TIMEOUT_MS)
+            if (servoPositionPreview(command.axis) == preview) {
+                when (command.axis) {
+                    ServoPositionAxis.KLAPA -> pendingKlapaPosition = null
+                    ServoPositionAxis.SYBEREK -> pendingSyberkaPosition = null
+                }
+                S.bump()
+            }
+        }
+    }
+
+    private fun reconcileAckedServoPositions() {
+        val now = SystemClock.elapsedRealtime()
+        pendingKlapaPosition?.let { preview ->
+            val reported = S.klapa.takeIf { S.hasData("klapa") && it in 0..180 }
+            if (!shouldKeepServoPositionPreview(preview, reported, now)) pendingKlapaPosition = null
+        }
+        pendingSyberkaPosition?.let { preview ->
+            val reported = S.syberka.takeIf { S.hasData("syberka") && it in 0..90 }
+            if (!shouldKeepServoPositionPreview(preview, reported, now)) pendingSyberkaPosition = null
+        }
+    }
+
     private fun updateServoModeAckOverride(mode: Int?) {
         val valid = mode?.takeIf { it in 1..3 }
         if (servoModeAckOverride == valid) return
@@ -669,15 +1007,25 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     /**
-     * After a positive ESP32 ACK, show the selected mode and manual controls immediately.
-     * Firebase status is sent on a slower cadence than command ACKs, so keep this
-     * presentation override only until the reported mode catches up (or 30 s elapse).
+     * Po dodatnim ACK pokazuje wybrany tryb od razu (status centrali nadchodzi rzadziej),
+     * ale NIE trzyma na ekranie „oczekuję" bez końca.
+     *
+     * [0.31.59] Poprawka zgłoszenia „wisi na oczekuję na świeży odczyt":
+     *  - czekamy na ŚWIEŻY ODCZYT, a nie na to, żeby status podał dokładnie żądany
+     *    tryb (centrala jest nadrzędna i może sama wybrać inny — np. bezpieczny),
+     *  - każde wyjście z funkcji zdejmuje toast „wait" (wcześniej zostawał na ekranie),
+     *  - limit 10 s zamiast 30 s; potem uczciwy komunikat z tym, co raportuje centrala.
      */
     fun setServoMode(mode: Int) {
         if (mode !in 1..3) return
         val requestId = ++servoModeRequestId
         updateServoModeAckOverride(null)
         scope.launch {
+            var waitToastId = 0L
+            // [0.31.60] Punkt odniesienia dla „świeżości": znacznik ostatniego udanego
+            // odczytu statusu SPRZED wysłania komendy. Bez tego „świeży odczyt" nie ma
+            // z czym się porównać (w 0.31.59 brakowało tej deklaracji i się nie kompilowało).
+            val statusStampBefore = lastFetchTs
             servoModeCommandMutex.lock()
             val acknowledged = try {
                 if (requestId != servoModeRequestId) false
@@ -687,46 +1035,137 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     if (requestId == servoModeRequestId) {
                         updateServoModeAckOverride(mode)
                         if (servoModePresentation().awaitingStatus) {
-                            showToast("SERWO", "Sterownik przyjął tryb — oczekuję na świeży odczyt.", "wait")
+                            waitToastId = showToastTracked(
+                                "SERWO",
+                                "Sterownik przyjął tryb — czekam na najbliższy odczyt statusu.",
+                                "wait"
+                            )
                         }
                     }
                 }
             } finally {
                 servoModeCommandMutex.unlock()
             }
-            if (!acknowledged || requestId != servoModeRequestId) return@launch
 
+            // Każda ścieżka MUSI zdjąć toast „wait" — inaczej wisi na ekranie bez końca.
+            if (requestId != servoModeRequestId) {
+                clearToast(waitToastId)
+                return@launch
+            }
+            if (!acknowledged) {
+                updateServoModeAckOverride(null)
+                clearToast(waitToastId)
+                return@launch
+            }
             if (!servoModePresentation().awaitingStatus) {
                 updateServoModeAckOverride(null)
+                clearToast(waitToastId)
                 return@launch
             }
 
-            showToast("SERWO", "Sterownik przyjął tryb — oczekuję na świeży odczyt.", "wait")
-            val deadline = System.currentTimeMillis() + 30_000L
+            // Punkt odniesienia: co centrala raportowała w chwili ACK. Czekamy, aż to
+            // się ZMIENI (albo na żądany tryb) — porównywanie do wartości z chwili ACK
+            // chroni przed uznaniem starego snapshotu za świeży.
+            val reportedAtAck = if (S.hasData("tryb_serwa")) S.tryb_serwa else null
+            val deadline = System.currentTimeMillis() + SERVO_MODE_STATUS_WAIT_MS
             while (isActive && requestId == servoModeRequestId && System.currentTimeMillis() < deadline) {
-                if (!servoModePresentation().awaitingStatus) {
-                    updateServoModeAckOverride(null)
-                    showToast("SERWO", "Status centrali potwierdził nowy tryb.", "ok")
-                    return@launch
-                }
-                // Routine RTDB polling continues every 8 s; no extra status requests are
-                // generated here. This waiter only reacts as soon as one of those snapshots
-                // reaches the Compose UI.
-                delay(500L)
+                val reportedNow = if (S.hasData("tryb_serwa")) S.tryb_serwa else null
+                if (reportedNow == mode || reportedNow != reportedAtAck) break
+                // Routine RTDB polling continues every 8 s; this waiter only reacts to
+                // snapshots that already arrived — no extra status requests are made here.
+                delay(250L)
             }
-            if (requestId == servoModeRequestId && servoModeAckOverride == mode) {
-                updateServoModeAckOverride(null)
-                showToast(
-                    "SERWO",
-                    "ACK odebrany, ale świeży status nie potwierdził trybu po 30 s. Pokazuję ostatni odczyt centrali.",
-                    "warn"
-                )
+            if (requestId != servoModeRequestId) {
+                clearToast(waitToastId)
+                return@launch
+            }
+
+            updateServoModeAckOverride(null)
+            val reported = if (S.hasData("tryb_serwa")) S.tryb_serwa else null
+            val fresh = lastFetchTs != statusStampBefore
+            fun nazwa(v: Int) = PiecState.TRYB_NAZWA[v] ?: v.toString()
+            when {
+                reported == mode ->
+                    showToast("SERWO", "Status centrali potwierdził tryb: ${nazwa(mode)}.", "ok")
+                reported != null ->
+                    showToast(
+                        "SERWO",
+                        "Centrala raportuje tryb ${nazwa(reported)}, nie ${nazwa(mode)} — pokazuję stan z centrali.",
+                        "warn"
+                    )
+                fresh ->
+                    showToast("SERWO", "Świeży status nie zawiera trybu serwa — pokazuję ostatni odczyt.", "warn")
+                else ->
+                    showToast(
+                        "SERWO",
+                        "Brak świeżego statusu po ${SERVO_MODE_STATUS_WAIT_MS / 1000} s — pokazuję ostatni odczyt centrali.",
+                        "warn"
+                    )
             }
         }
     }
 
+    /** Save the phone selection immediately, then send the same sound profile to the controller. */
+    fun selectAlarmSound(kind: String, soundId: String) {
+        val target = AlarmSoundSync.targetFor(kind) ?: return
+        val normalizedSound = AlarmSoundSync.normalizeSoundId(soundId) ?: return
+        val command = AlarmSoundSync.command(kind, normalizedSound) ?: return
+
+        val requestId = AlarmSoundSync.rememberSelection(
+            target, normalizedSound, SystemClock.elapsedRealtime()
+        ) ?: return
+        AlarmCenter.setSound(prefs, target.preferenceKind, normalizedSound)
+        alarmUiTick++
+        restartActivePhoneAlarmSound()
+
+        scope.launch {
+            val acknowledged = sendAwait(command)
+            if (!acknowledged) {
+                // A rejected command must not keep a stale optimistic value over the controller.
+                AlarmSoundSync.clearPendingSelection(target, requestId)
+                pollAwait(waitForInFlight = true)
+            }
+        }
+    }
+
+    private fun restartActivePhoneAlarmSound() {
+        if (!S.hasAllData("dym_alarm", "alarm_ogrzewanie")) return
+        if (!AlarmCenter.shouldLoopSound(prefs, S.dym_alarm, S.alarm_ogrzewanie)) return
+        val kind = AlarmCenter.kindFor(S.dym_alarm, S.alarm_ogrzewanie)
+        AlarmMonitorService.startAlarmLoop(ctx, AlarmCenter.sound(prefs, kind))
+    }
+
     // ── polecenia; stan urządzenia zmienia się dopiero po ACK / odczycie ─────
     fun send(cmd: String) = scope.launch { sendAwait(cmd) }
+
+    /**
+     * [0.31.22] Bufor offline w centrali (firmware v3.54.0+).
+     * `null` = firmware nie przysyła pola `spool_rt`, czyli jest starszy.
+     */
+    fun offlineBufferState(): Boolean? =
+        if (!S.hasData("spool_rt")) null else S.spoolRt == 1
+
+    /** Włącza/wyłącza bufor offline. Stan zmienia dopiero ACK + świeży status. */
+    fun setOfflineBuffer(on: Boolean) {
+        send(if (on) "spoolrt_wl" else "spoolrt_wyl")
+    }
+
+    /**
+     * [0.31.64] Zapis historii na flash centrali (firmware v3.57.4+).
+     * `null` = firmware nie przysyła pola `hist_fs`, czyli jest starszy.
+     */
+    fun histFsState(): Boolean? =
+        if (!S.hasData("hist_fs")) null else S.histFs == 1
+
+    /** Włącza/wyłącza dopisywanie hist_short.csv i hist_long.csv na flash. */
+    fun setHistFs(on: Boolean) {
+        send(if (on) "histfs_wl" else "histfs_wyl")
+    }
+
+    /** Usuwa oba pliki historii — centrala robi to przy najbliższym restarcie. */
+    fun clearHistFiles() {
+        send("histfs_czysc")
+    }
 
     /**
      * Sends a command without mutating reported device state. Optional [onAck] is for a
@@ -735,6 +1174,11 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     private suspend fun sendAwait(cmd: String, onAck: (() -> Unit)? = null): Boolean {
         val command = cmd.trim()
         if (command.isEmpty()) return false
+        // [0.31.57] Heartbeat podglądu ma się wstrzymać, dopóki idzie prawdziwa komenda.
+        lastUserCommandMs = SystemClock.elapsedRealtime()
+        // [0.31.58] Komenda to też „dowód obecności" — bez tego wysłanie polecenia
+        // nie przedłużałoby podglądu, gdy heartbeat akurat stoi z powodu ciszy.
+        lastInteractionMs = lastUserCommandMs
         val sensitive = CommandRedactor.isSensitive(command)
         val commandLabel = CommandRedactor.forDisplay(command)
         if (!connected) {
@@ -761,10 +1205,23 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                     showToast(commandLabel, "Potwierdzone przez sterownik (ACK, ${latency}ms)", "ok")
                     addLog("ACK", "ACK OK (${latency}ms): $commandLabel", "ack")
                     buzz()
+                    recordAckedServoPosition(command)
                     onAck?.invoke()
-                    // Dociągnij świeży snapshot po ACK. Wymuś oczekiwanie na ewentualny
-                    // cykliczny poll, zamiast gubić odświeżenie w jego trakcie.
+                    // Pierwszy odczyt może jeszcze wyprzedzić zapis statusu ESP32 po ACK.
+                    // Zrób snapshot od razu, a dla komend zmieniających kafelki dociągnij
+                    // drugi po cyklu publikacji statusu sterownika (~3 s po przyjęciu komendy).
                     pollAwait(waitForInFlight = true)
+                    if (commandChangesDashboardState(command)) {
+                        delay(3_250L)
+                        pollAwait(waitForInFlight = true)
+                        val servoAxis = parseServoPositionCommand(command)?.axis
+                        if (servoAxis != null && servoPositionPreview(servoAxis) != null) {
+                            // Ruch serwa jest nieblokujący; jeśli pierwszy status zapisał się
+                            // w trakcie ruchu, sprawdź jeszcze raz jego końcową pozycję.
+                            delay(3_250L)
+                            pollAwait(waitForInFlight = true)
+                        }
+                    }
                     true
                 }
                 else -> {
@@ -861,33 +1318,182 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     // ── historia telemetrii ─────────────────────────────────────────────────
-    fun loadRange(sec: Int) = scope.launch {
+    /** Znacznik ostatniego pobrania — chroni przed serią identycznych żądań. */
+    private var historyLoadedElapsed = 0L
+    private var historyLoadedRange = -1
+    private var historyJob: Job? = null
+
+    /** [0.31.61] Czytelny czas etapu do dziennika: „340 ms" albo „1,8 s". */
+    private fun fmtMs(ms: Long): String =
+        if (ms < 1000L) "$ms ms" else String.format(java.util.Locale.US, "%.1f s", ms / 1000.0)
+
+    /**
+     * Wczytuje historię dla zakresu [sec].
+     *
+     * [force] pomija 60-sekundową blokadę — używają jej przycisk odświeżania
+     * i jawna zmiana zakresu. Zwykłe wejście na Wykresy korzysta z pamięci
+     * telefonu, więc przełączanie zakładek nie generuje transferu.
+     * Poprzednie pobranie jest anulowane.
+     *
+     * [0.31.61] Kolejność etapów jest teraz taka, żeby wykres był widoczny jak
+     * najszybciej: pamięć → (pokazanie wykresu) → sieć → zapis → archiwum pieca.
+     */
+    fun loadRange(sec: Int, force: Boolean = false) {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val upToDate = !force && sec == historyLoadedRange && telemetry.isNotEmpty() &&
+            historyLoadedElapsed > 0L && nowElapsed - historyLoadedElapsed < HISTORY_MIN_INTERVAL_MS
         rangeSec = sec
-        val rangeName = when (sec) {
-            6 * 3600 -> "6h"; 24 * 3600 -> "24h"; 7 * 86400 -> "7d"; else -> "30d"
-        }
-        chartStatus = "Pobieranie historii ($rangeName) z bazy Firebase…"
-        if (connected) {
-            try {
-                val fb = Rtdb.fetchTelemetry(sec)
-                if (fb != null && fb.isNotEmpty()) {
-                    chartLive = emptyList()
-                    telemetry = fb
-                    chartPoints = fb.size
-                    chartStatus = "Załadowano ${fb.size} próbek z RTDB · odcinki symulowane są kreskowane"
-                    chartReality = "FIREBASE RTDB"
-                    // Historia może kończyć się przed ostatnim odczytem statusu (np. po rozpaleniu).
-                    // Dołącz świeży pomiar ESP32 od razu, bez czekania na kolejny polling.
-                    appendLiveFeed()
-                    return@launch
+        if (upToDate) return
+        historyLoadedElapsed = nowElapsed
+        historyLoadedRange = sec
+        historyJob?.cancel()
+        historyJob = scope.launch {
+        chartLoading = true
+        try {
+            rangeSec = sec
+            val rangeName = when (sec) {
+                6 * 3600 -> "6h"; 24 * 3600 -> "24h"; 7 * 86400 -> "7d"; else -> "30d"
+            }
+            val nowMs = System.currentTimeMillis()
+            val fromMs = nowMs - sec * 1000L
+
+            // 1) Pamięć telefonu: co już mamy i czego brakuje.
+            chartStatus = "Czytam pamięć telefonu…"
+            val tCacheStart = SystemClock.elapsedRealtime()
+            val plan = telCache.plan(fromMs, nowMs)
+            val cacheMs = SystemClock.elapsedRealtime() - tCacheStart
+
+            // [0.31.61 NATYCHMIAST] Wykres z pamięci pokazujemy OD RAZU — zanim
+            // polecimy do Firebase, przepiszemy plik pamięci i zapytamy archiwum
+            // centrali. Do 0.31.60 użytkownik czekał na SUMĘ tych etapów (~6 s
+            // przy 24 H): pamięć + sieć + zapis + do 2 s na piec.
+            var shownFromCache = false
+            if (plan.cached.isNotEmpty()) {
+                telemetry = plan.cached
+                chartPoints = plan.cached.size
+                chartLive = emptyList()
+                appendLiveFeed()
+                shownFromCache = true
+                chartStatus = "Z pamięci telefonu — dociągam nowe dane…"
+            }
+
+            // Archiwum centrali w domu — tylko 6h/24h i tylko w domowej sieci.
+            // [0.31.61] Pytamy o nie ZAWSZE (dane z pieca bywają tylko tam), ale
+            // czekamy na nie dopiero PO pokazaniu wykresu z pamięci — dlatego nie
+            // blokuje ono pierwszego rysowania tak jak do 0.31.60.
+            // [0.31.46] Dla 7/30 dni NIE pytamy wcale: wynik i tak byl odrzucany
+            // (warunek useEsp), a samo czekanie na nieodpowiadajacy piec kosztowalo
+            // do 6 s przy KAZDYM wejsciu w wykresy.
+            val espIp = S.ip.trim()
+            val espTask = if (espIp.isNotEmpty() && sec <= 24 * 3600) async {
+                try { Rtdb.fetchEspHistory(espIp) } catch (e: Exception) { null }
+            } else null
+
+            // 2) Chmura: wyłącznie brakujące przedziały (przy pustej pamięci — całe okno).
+            val fetched = ArrayList<TelemPoint>()
+            val confirmedEmpty = ArrayList<LongRange>()
+            val tNetStart = SystemClock.elapsedRealtime()
+            if (connected && plan.missing.isNotEmpty()) {
+                plan.missing.forEachIndexed { idx, seg ->
+                    chartStatus = when {
+                        plan.missing.size == 1 && idx == 0 && plan.cached.isEmpty() ->
+                            "Pobieranie historii ($rangeName) z bazy Firebase…"
+                        plan.missing.size == 1 ->
+                            "Pobieranie brakujących danych ($rangeName) — dociągam tylko nowe…"
+                        else ->
+                            "Pobieranie brakujących danych (${idx + 1}/${plan.missing.size})…"
+                    }
+                    val res = try {
+                        Rtdb.fetchWindow(seg.first / 1000L, seg.last / 1000L)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (res != null) {
+                        fetched.addAll(res.points)
+                        // „Tu pusto" zapamiętujemy TYLKO po udanym pobraniu.
+                        if (res.complete) confirmedEmpty.addAll(telCache.emptyParts(seg, res.points))
+                    } else {
+                        // Choć jedno zapytanie padło — nie twierdzimy, że luka jest pusta,
+                        // ale to, co przyszło, i tak zapisujemy.
+                        Unit
+                    }
                 }
-            } catch (e: Exception) { /* fallback poniżej, jak w panelu */ }
+            }
+            val tNet = SystemClock.elapsedRealtime() - tNetStart
+            val tStoreStart = SystemClock.elapsedRealtime()
+            if (fetched.isNotEmpty() || confirmedEmpty.isNotEmpty()) {
+                telCache.store(fetched, confirmedEmpty)
+            }
+            val storeMs = SystemClock.elapsedRealtime() - tStoreStart
+
+            // 3) Pamięć + świeżo dociągnięte próbki (klucz = znacznik czasu).
+            val byTs = LinkedHashMap<Long, TelemPoint>()
+            plan.cached.forEach { byTs[it.ts] = it }
+            fetched.forEach { byTs[it.ts] = it }
+            val cloudPts = byTs.values.sortedBy { it.ts }
+
+            // 4) Archiwum centrali (maks. 6 s — poza domem i tak nie odpowie).
+            val esp = espTask?.let {
+                try { withTimeoutOrNull(2_000) { it.await() } } catch (e: Exception) { null }
+            }
+            val useEsp = esp != null && sec <= 24 * 3600 && esp.isNotEmpty()
+            val merged = combineCloudAndEsp(cloudPts, if (useEsp) esp!! else emptyList())
+
+            // [0.31.61] Czasy etapów idą do dziennika (arkusz TERMINAL), więc przy
+            // kolejnym „długo się ładuje" wiadomo, który etap faktycznie zjada czas.
+            // Na ekranie nic dodatkowego nie wisi.
+            addLog(
+                "WYKRESY",
+                "$rangeName: pamięć ${fmtMs(cacheMs)} · sieć ${fmtMs(tNet)} · " +
+                    "zapis ${fmtMs(storeMs)} · punktów ${merged.size}" +
+                    (if (shownFromCache) " · wykres z pamięci od razu" else ""),
+                "info"
+            )
+
+            if (merged.isNotEmpty()) {
+                chartLive = emptyList()
+                telemetry = merged
+                chartPoints = merged.size
+                // Historia może kończyć się przed ostatnim odczytem statusu (np. po
+                // rozpaleniu) — dołączamy świeży pomiar ESP32 bez czekania na polling.
+                appendLiveFeed()
+                // [0.31.62] Zapamiętaj wynik w pamięci PROCESU — po odtworzeniu
+                // aktywności wykres rysuje się bez czytania dysku i bez sieci.
+                AppRuntime.lastTelemetry = merged
+                AppRuntime.lastLive = chartLive
+                AppRuntime.lastRangeSec = sec
+                AppRuntime.lastLoadedAtMs = SystemClock.elapsedRealtime()
+                return@launch
+            }
+
+            telemetry = emptyList()
+            chartPoints = 0
+            chartLive = emptyList()
+            chartStatus = if (connected) "Brak próbek telemetrii dla wybranego zakresu"
+                else "Zaloguj się do Firebase, aby pobrać historię telemetrii"
+        } finally {
+            // Linijka „Pobieranie historii…" znika zawsze — także po błędzie sieci.
+            chartLoading = false
         }
-        telemetry = emptyList()
-        chartPoints = 0
-        chartStatus = if (connected) "Brak próbek telemetrii dla wybranego zakresu" else "Zaloguj się do Firebase, aby pobrać historię telemetrii"
-        chartReality = if (connected) "BRAK DANYCH" else "BRAK SESJI"
-        chartLive = emptyList()
+    }
+    }
+
+    /**
+     * [v0.31.33 ESP-HISTORY] Łączy chmurę z lokalnym archiwum centrali.
+     * Klucz to znacznik czasu — ta sama próbka z obu źródeł nie dubluje się.
+     * Próbki obecne WYŁĄCZNIE w centrali dostają ujemny `seq`, żeby dało się je
+     * policzyć i pokazać użytkownikowi, ile danych nie dotarło do chmury.
+     */
+    private fun combineCloudAndEsp(cloud: List<TelemPoint>, esp: List<TelemPoint>): List<TelemPoint> {
+        if (esp.isEmpty()) return cloud
+        val byTs = LinkedHashMap<Long, TelemPoint>()
+        cloud.forEach { byTs[it.ts] = it }
+        var missing = 0L
+        esp.forEach { p ->
+            if (byTs.containsKey(p.ts)) return@forEach
+            byTs[p.ts] = p.copy(seq = -(++missing))
+        }
+        return byTs.values.sortedBy { it.ts }
     }
 
     /** Dokleja wyłącznie odczyt z właśnie zakończonego, udanego pollingu Firebase. */
@@ -985,7 +1591,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     fun setRange(sec: Int) {
         rangeSec = sec
         saveChartPrefs()
-        loadRange(sec)
+        loadRange(sec, force = true)
     }
 
     // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartMode — stqd "Platform declaration clash".
@@ -1462,6 +2068,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var termStatusKind by mutableStateOf("")
     val termCats = mutableStateMapOf<String, Boolean>()
     private var terminalDlogJob: Job? = null
+    /** Ostatnia interakcja z arkuszem terminala (`elapsedRealtime`). */
+    private var terminalDlogLastTouch = 0L
+    /** Czy odbiór DLOG został wstrzymany z powodu bezczynności. */
+    private var terminalDlogIdleStopped = false
     private var terminalDlogUid = ""
     private var terminalDlogRoot = ""
     private var terminalDlogSession = ""
@@ -1578,12 +2188,25 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     /** Odczyt prawdziwych chunków DLOG tylko wtedy, gdy arkusz terminala jest otwarty. */
-    private fun startTerminalDlogPolling() {
-        if (terminalDlogJob?.isActive == true) return
+    private fun startTerminalDlogPolling(restart: Boolean = false) {
+        if (terminalDlogJob?.isActive == true) {
+            // `restart` obsługuje dotknięcie w tej samej klatce, w której pętla
+            // się domyka: anulowanie zakończonej korutyny nic nie psuje.
+            if (!restart) return
+            terminalDlogJob?.cancel()
+        }
+        terminalDlogLastTouch = SystemClock.elapsedRealtime()
+        terminalDlogIdleStopped = false
         terminalDlogJob = scope.launch {
             termStatus = "Łączenie z rzeczywistymi wpisami DLOG z Firebase…"
             termStatusKind = ""
             while (isActive && sheet == "terminal") {
+                if (SystemClock.elapsedRealtime() - terminalDlogLastTouch > TERMINAL_DLOG_IDLE_STOP_MS) {
+                    terminalDlogIdleStopped = true
+                    termStatus = "Podgląd wstrzymany po 5 min bez dotykania ekranu — dotknij, aby wznowić."
+                    termStatusKind = "warn"
+                    return@launch
+                }
                 try {
                     terminalPollDlogOnce()
                 } catch (e: CancellationException) {
@@ -1597,9 +2220,21 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * Wołane z UI przy każdym dotknięciu arkusza terminala (tap, przewinięcie).
+     * Podtrzymuje odbiór DLOG; po bezczynności wznawia go ponownie.
+     */
+    fun terminalTouch() {
+        terminalDlogLastTouch = SystemClock.elapsedRealtime()
+        if (!terminalDlogIdleStopped) return
+        terminalDlogIdleStopped = false
+        startTerminalDlogPolling(restart = true)
+    }
+
     private fun stopTerminalDlogPolling() {
         terminalDlogJob?.cancel()
         terminalDlogJob = null
+        terminalDlogIdleStopped = false
     }
 
     private suspend fun terminalPollDlogOnce() {
@@ -2099,6 +2734,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     /** `navigate(i)` — PAGES = pulpit, wykresy, pogoda, ustawienia, więcej. */
     fun navigate(i: Int) {
         page = i
+        prefs.setInt(Prefs.K_LAST_PAGE, i)
         when (i) {
             // `drawTrend()` w oryginale — w Compose trend jest reaktywny (S.hist)
             1 -> { loadRange(rangeSec) }              // loadTelemetryRange + updateChartCanvas

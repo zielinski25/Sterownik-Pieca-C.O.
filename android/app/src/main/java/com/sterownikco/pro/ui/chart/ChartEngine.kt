@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.ChartSeries
 import com.sterownikco.pro.core.SeriesDef
 import com.sterownikco.pro.core.TelemPoint
+import com.sterownikco.pro.core.chartTimestampFraction
+import com.sterownikco.pro.core.nearestChartTimestampIndex
 import com.sterownikco.pro.ui.theme.Pal
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -34,6 +36,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /* ══════════════════════════════════════════════════════════════════════════
    SILNIK RYSOWANIA WYKRESU — port `updateChartCanvas()` (Piec.html 7289-7700).
@@ -281,8 +284,8 @@ fun ChartCanvas(
 ) {
     val measurer = rememberTextMeasurer()
     val famRes = androidx.compose.ui.platform.LocalFontFamilyResolver.current
-    // Gesty czytaja SWIEZY view bez restartu detektora: kluczem sa tylko pady
-    // (zoom/offset przebudowuja view co klatke — pointerInput(view) rwalo by gest).
+    // Gesty używają świeżych czasów próbek bez restartu detektora.
+    val rowTimestampsState = rememberUpdatedState(view.rows.map { it.ts })
     val viewState = rememberUpdatedState(view)
     val inspectorActiveState = rememberUpdatedState(crossIdx != null)
     val onCrossState = rememberUpdatedState(onCross)
@@ -299,13 +302,16 @@ fun ChartCanvas(
                 padL = padL,
                 plotW = plotW,
                 onTap = { pos, pl, pw ->
-                    chartSampleIndexAtX(pos.x, pl, pw, viewState.value.rows.size)?.let { onCrossState.value(it) }
+                    // [v0.31.33 TIMELINE] Trafiamy w probke po CZASIE jej znacznika,
+                    // a nie po numerze w tabeli — inaczej po przerwie w danych
+                    // kursor pokazywal wartosc z zupelnie innej godziny.
+                    chartSampleIndexAtTimeX(pos.x, pl, pw, viewState.value.rows)?.let { onCrossState.value(it) }
                 },
                 onDoubleTap = { onCrossState.value(null); onResetViewState.value() },
                 onHorizontalDrag = { x, dx ->
                     if (inspectorActiveState.value) {
                         // Gdy inspektor jest otwarty, przesuwamy próbkę pod palcem zamiast panoramować wykres.
-                        chartSampleIndexAtX(x, padL, plotW, viewState.value.rows.size)?.let { onCrossState.value(it) }
+                        chartSampleIndexAtTimeX(x, padL, plotW, viewState.value.rows)?.let { onCrossState.value(it) }
                     } else if (plotW > 0f && dx != 0f) {
                         onPanState.value(dx / plotW)
                     }
@@ -319,10 +325,21 @@ fun ChartCanvas(
         val padTop = 16.dp.toPx(); val padBottom = 24.dp.toPx()
         val plotW = (w - padLeft - padRight).coerceAtLeast(0f)
         val plotH = (h - padTop - padBottom).coerceAtLeast(0f)
+        val xDomainStartMs = view.rows.firstOrNull()?.ts ?: 0L
+        val xDomainEndMs = view.rows.lastOrNull()?.ts?.takeIf { it > xDomainStartMs } ?: (xDomainStartMs + 1L)
+        fun xForTimestamp(timestampMs: Long): Float =
+            padLeft + chartTimestampFraction(timestampMs, xDomainStartMs, xDomainEndMs) * plotW
         val axis = TextStyle(fontSize = 8.5.sp, color = Pal.AxisText)
         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
         val pumpOnly = view.cat.isNotEmpty() && view.cat.all { it.group == "pump" }
+        // [0.31.54] Pompa wraca na CAŁĄ wysokość wykresu — tak było przed 0.31.34 i tak
+        // chce uzytkownik (29.10: "wczesniej bylo do samej gory, a teraz nisko takie
+        // pierdki"). Powód, dla którego 0.31.34 to zwęziło, został rozwiązany inaczej:
+        // w trybie mieszanym pompa jest teraz rysowana jako PÓŁPRZEZROCZYSTA KOLUMNA
+        // (patrz blok "KOLUMNY PRACY POMPY" niżej), a nie gruba kreska — więc nie
+        // zaslania temperatur, mimo ze siega do gornej krawedzi.
+        fun pumpY(v: Double): Float = padTop + plotH * (1 - (v / 100.0).toFloat())
 
         // FIX-BRAK-DANYCH: uczciwy komunikat jak w HTML (zamiast pustego boxa)
         val hasPts = view.values.values.any { vs -> vs.any { v -> v != null && v.isFinite() } }
@@ -375,65 +392,188 @@ fun ChartCanvas(
                 }
             }
         }
-        // Oś X: godzina zwykle; dzień/miesiąc tylko przy początku lub zmianie daty.
-        val xSteps = min(5, view.rows.size)
-        val spanMs = if (view.rows.size > 1) view.rows.last().ts - view.rows.first().ts else 0L
+        // [v0.31.33 TIMELINE] Oś X w CZASIE: podziałki co równe minuty/godziny,
+        // niezależnie od tego, ile próbek akurat jest w oknie. Dzięki temu
+        // przerwa w danych jest widoczna jako odstęp, a nie znika.
+        val timeAxis = ChartTimeAxis(view.rows.first().ts, view.rows.last().ts, padLeft, plotW)
+        val xSteps = 4
         var previousLabelTs: Long? = null
-        for (i in 0 until xSteps) {
-            val idx = ((view.rows.size - 1) * (i.toDouble() / max(1, xSteps - 1))).roundToInt()
-            val row = view.rows.getOrNull(idx) ?: continue
-            val xPos = padLeft + (plotW / max(1f, (view.rows.size - 1).toFloat())) * idx
-            val lbl = fmtXLabel(row.ts, spanMs, previousLabelTs)
+        for (i in 0..xSteps) {
+            val ts = timeAxis.tsAtFraction(i.toDouble() / xSteps)
+            val xPos = timeAxis.xOfFraction(i.toDouble() / xSteps)
+            val lbl = fmtXLabel(ts, timeAxis.spanMs, previousLabelTs)
             val tp = measure(lbl, axis)
-            drawText(tp, topLeft = Offset(xPos - tp.size.width / 2f, h - 8.dp.toPx() - tp.size.height / 2f))
-            previousLabelTs = row.ts
+            // Etykieta skrajna nie może wyjechać poza pole wykresu (wcześniej
+            // pierwsza i ostatnia były ucinane przy krawędzi).
+            val labelX = (xPos - tp.size.width / 2f)
+                .coerceIn(padLeft, (w - padRight - tp.size.width).coerceAtLeast(padLeft))
+            drawText(tp, topLeft = Offset(labelX, h - 8.dp.toPx() - tp.size.height / 2f))
+            previousLabelTs = ts
         }
 
+        // [0.31.41] Cale oznaczenie luk zdjete na prosbe uzytkownika.
+        // 0.31.34 dodawalo dwie pionowe kreski, 0.31.39 napisy "luka ... min",
+        // 0.31.40 zostawilo same kreski. Uzytkownik: kreski tez sa zbedne.
+        // Przerwa w danych jest widoczna sama z siebie — jako puste miejsce
+        // miedzy probkami (tak samo jak w widoku HTML). Nic nie rysujemy.
+
         // serie
+        // [0.31.47] POWOD ZACINANIA: kazda probka tworzyla osobny SegPoint i osobny
+        // odcinek sciezki PRZY KAZDYM odrysowaniu. 7 dni = 10 081 probek, 30 dni
+        // ok. 43 000; przy 6 seriach to kilkaset tysiecy obiektow na klatke.
+        // Teraz dzielimy os X na koszyki szerokosci jednego piksela i z kazdego
+        // bierzemy MINIMUM i MAKSIMUM — czyli najwyzej 2 punkty na piksel.
+        // Ksztalt, szczyty i dolki zostaja te same, a punktow jest ~10x mniej.
+        // [0.31.54 KOLUMNY PRACY POMPY] W trybie mieszanym (temperatury + pompa) praca
+        // pompy jest pelna, polprzezroczysta kolumna od dolu do gornej krawedzi — dokladnie
+        // tak, jak bylo przed 0.31.34. Kolumny ida POD seriami temperatur, wiec nic nie
+        // zaslaniaja, a jednoczesnie widac kazdy impuls, nawet 5-minutowy.
+        if (!pumpOnly) {
+            view.cat.filter { it.group == "pump" }.forEach { s ->
+                val vals = view.values[s.id] ?: return@forEach
+                val c = hexColor(s.accent)
+                val fillC = c.copy(alpha = .18f)
+                val edgeC = c.copy(alpha = .55f)
+                val yTop = padTop
+                val yBot = padTop + plotH
+                val minW = 2.dp.toPx()
+                val n = view.rows.size
+                var i = 0
+                while (i < n) {
+                    val v = vals.getOrNull(i)
+                    if (v == null || !v.isFinite() || v < 50.0) { i++; continue }
+                    var j = i
+                    while (j + 1 < n) {
+                        val nv = vals.getOrNull(j + 1)
+                        if (nv == null || !nv.isFinite() || nv < 50.0) break
+                        j++
+                    }
+                    val xa = timeAxis.xOf(view.rows[i].ts)
+                    val xb = max(timeAxis.xOf(view.rows[j].ts), xa + minW)
+                    clipRect(padLeft, yTop, w - padRight, yBot) {
+                        drawLine(fillC, Offset((xa + xb) / 2f, yTop), Offset((xa + xb) / 2f, yBot), (xb - xa))
+                        drawLine(edgeC, Offset(xa, yTop), Offset(xa, yBot), 1f.dp.toPx())
+                        drawLine(edgeC, Offset(xb, yTop), Offset(xb, yBot), 1f.dp.toPx())
+                    }
+                    i = j + 1
+                }
+            }
+        }
+
+        val maxBuckets = max(200, plotW.toInt())
+        // [0.31.49 SZYBKOSC] Jedna kreska, jedno pioro i jeden pedzel na cala klatke.
+        // Wczesniej PathEffect i Stroke powstawaly wewnatrz rysowania kazdego
+        // odcinka kazdej serii — czyli nawet kilkaset obiektow na jedno odrysowanie.
+        val dashFx = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
+        val strokeSolid = Stroke(width = 2.dp.toPx())
+        val strokeDash = Stroke(width = 2.dp.toPx(), pathEffect = dashFx)
         view.cat.forEach { s ->
+            // [0.31.54] W trybie mieszanym pompe rysuja kolumny (wyzej) — linia pompy
+            // po calym wykresie byla wlasnie tym, co zaslanialo temperatury.
+            if (!pumpOnly && s.group == "pump") return@forEach
             val vals = view.values[s.id] ?: return@forEach
+            // [0.31.47] Min/max dla trybu NORMALIZED liczone RAZ na serie, a nie dla
+            // kazdej probki. Poprzednio vals.filterNotNull()+min()+max() stało
+            // WEWNATRZ petli po wierszach — koszt rzedu n^2 (7 dni ~100 mln operacji
+            // i 10 tys. alokacji list), czyli realne zawieszenie po wlaczeniu trybu.
+            var normLo = 0.0
+            var normHi = 100.0
+            if (mode == "NORMALIZED") {
+                var lo = Double.POSITIVE_INFINITY
+                var hi = Double.NEGATIVE_INFINITY
+                vals.forEach { v -> if (v != null && v.isFinite()) { if (v < lo) lo = v; if (v > hi) hi = v } }
+                if (lo != Double.POSITIVE_INFINITY) { normLo = lo; normHi = hi }
+            }
+            val stride = if (view.rows.size > maxBuckets)
+                (view.rows.size + maxBuckets - 1) / maxBuckets else 1
             var lastTs = 0L
             val segs = ArrayList<ArrayList<SegPoint>>()
             var cur = ArrayList<SegPoint>()
+            var bCount = 0
+            var bSim = false
+            var minIdx = -1
+            var minY = 0f
+            var maxIdx = -1
+            var maxY = 0f
+
+            fun dodajPunkt(i: Int, y: Float) {
+                val row = view.rows[i]
+                cur.add(SegPoint(timeAxis.xOf(row.ts), y, vals[i] ?: 0.0, row.ts, i, row.isSimulated(s.ch)))
+            }
+
+            fun zamknijKoszyk() {
+                if (bCount == 0) return
+                if (minIdx >= 0 && maxIdx >= 0) {
+                    if (minIdx == maxIdx) {
+                        dodajPunkt(minIdx, minY)
+                    } else if (minIdx < maxIdx) {
+                        dodajPunkt(minIdx, minY); dodajPunkt(maxIdx, maxY)
+                    } else {
+                        dodajPunkt(maxIdx, maxY); dodajPunkt(minIdx, minY)
+                    }
+                }
+                bCount = 0; minIdx = -1; maxIdx = -1
+            }
+
+            fun zamknijOdcinek() {
+                zamknijKoszyk()
+                if (cur.isNotEmpty()) { segs.add(cur); cur = ArrayList() }
+            }
+
             view.rows.forEachIndexed { idx, r ->
                 val v = vals.getOrNull(idx)
                 if (v != null && v.isFinite()) {
-                    val x = padLeft + (idx.toFloat() / max(1f, (view.rows.size - 1).toFloat())) * plotW
                     val y = when {
-                        s.group == "pump" -> padTop + plotH * (1 - (v / 100.0).toFloat())
+                        s.group == "pump" -> pumpY(v)
                         view.dual && s.group == view.secGroup ->
                             padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
                         mode == "NORMALIZED" -> {
-                            val all = vals.filterNotNull()
-                            val lo = if (all.isNotEmpty()) all.min() else 0.0
-                            val hi = if (all.isNotEmpty()) all.max() else 100.0
-                            val nv = if (hi > lo) (v - lo) / (hi - lo) else 0.5
+                            val nv = if (normHi > normLo) (v - normLo) / (normHi - normLo) else 0.5
                             padTop + plotH * (1 - nv.toFloat())
                         }
                         else -> padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
                     }
-                    if (lastTs != 0L && r.ts - lastTs > 360_000L) { if (cur.isNotEmpty()) segs.add(cur); cur = ArrayList() }
-                    cur.add(SegPoint(x, y, v, r.ts, idx, r.isSimulated(s.ch)))
+                    val sim = r.isSimulated(s.ch)
+                    // Przerwa w danych zamyka odcinek (bez tego linia przecialaby luke).
+                    if (lastTs != 0L && r.ts - lastTs > 360_000L) zamknijOdcinek()
+                    // Zmiana fizyczna/symulacja tez zamyka odcinek — inaczej kreskowanie
+                    // zamalowaloby sie na calej dlugosci.
+                    if (bCount > 0 && sim != bSim) zamknijOdcinek()
+                    if (bCount == 0) { bSim = sim; minIdx = idx; minY = y; maxIdx = idx; maxY = y }
+                    else {
+                        if (y < minY) { minY = y; minIdx = idx }
+                        if (y > maxY) { maxY = y; maxIdx = idx }
+                    }
+                    bCount++
                     lastTs = r.ts
+                    if (bCount >= stride) zamknijKoszyk()
                 } else {
-                    if (cur.isNotEmpty()) segs.add(cur); cur = ArrayList(); lastTs = 0L
+                    zamknijOdcinek()
+                    lastTs = 0L
                 }
             }
-            if (cur.isNotEmpty()) segs.add(cur)
+            zamknijOdcinek()
+            // [0.31.49 WYDajnosc] Wszystko, co nie zalezy od pojedynczego odcinka,
+            // liczone RAZ na serie: kolor, pedzel gradientu, PathEffect kreskowania
+            // i obiekt Stroke. Wczesniej kazdy z nich powstawal dla KAZDEGO odcinka
+            // i przy KAZDYM odrysowaniu — przy 6 seriach i kilkudziesieciu odcinkach
+            // to setki alokacji shaderow i obiektow Paint na klatke.
+            val accent = hexColor(s.accent)
+            val fillBrush = if (areaBand && s.group != "pump" && mode != "NORMALIZED")
+                Brush.verticalGradient(
+                    listOf(accent.copy(alpha = .22f), accent.copy(alpha = 0f)),
+                    startY = padTop, endY = padTop + plotH
+                ) else null
             segs.forEach { seg ->
                 if (seg.isEmpty()) return@forEach
-                val accent = hexColor(s.accent)
-                if (areaBand && s.group != "pump" && mode != "NORMALIZED" && seg.size >= 2) {
+                if (fillBrush != null && seg.size >= 2) {
                     val path = Path()
                     path.moveTo(seg.first().x, padTop + plotH)
                     seg.forEach { path.lineTo(it.x, it.y) }
                     path.lineTo(seg.last().x, padTop + plotH)
                     path.close()
                     clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
-                        drawPath(path, Brush.verticalGradient(
-                            listOf(accent.copy(alpha = .22f), accent.copy(alpha = 0f)),
-                            startY = padTop, endY = padTop + plotH
-                        ))
+                        drawPath(path, fillBrush)
                     }
                 }
                 fun drawStrokeRun(run: List<SegPoint>, isSimulated: Boolean) {
@@ -464,12 +604,12 @@ fun ChartCanvas(
                     }
                     // Only edges touching a simulated sample get the dashed style;
                     // genuine-to-genuine edges retain the series' ordinary stroke.
-                    val dash = if (isSimulated) PathEffect.dashPathEffect(
-                        floatArrayOf(6.dp.toPx(), 4.dp.toPx())
-                    ) else null
+                    // [0.31.49] PathEffect i Stroke sa gotowe (patrz dashFx/strokeSolid
+                    // wyzej) — tutaj tylko wybor, zero alokacji.
+                    val style = if (isSimulated) strokeDash else strokeSolid
                     // Catmull–Rom bezier tangents can overshoot the mapped y-range.
                     clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
-                        drawPath(line, accent, style = Stroke(width = 2.dp.toPx(), pathEffect = dash))
+                        drawPath(line, accent, style = style)
                     }
                 }
 
@@ -509,7 +649,8 @@ fun ChartCanvas(
         run {
             val idx = crossIdx
             if (idx != null && idx >= 0 && idx < view.rows.size) {
-                val x = padLeft + (idx.toFloat() / max(1f, (view.rows.size - 1).toFloat())) * plotW
+                // Kursor stoi na CZASIE próbki — tak samo jak linia serii.
+                val x = timeAxis.xOf(view.rows[idx].ts)
                 clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
                     drawLine(Pal.rgba(0, 212, 245, .7f), Offset(x, padTop), Offset(x, padTop + plotH), 1.2.dp.toPx(),
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())))
@@ -517,15 +658,22 @@ fun ChartCanvas(
                         val vals = view.values[s.id] ?: return@forEach
                         val v = vals.getOrNull(idx)
                         if (v != null && v.isFinite()) {
+                            // [0.31.47] To samo co przy rysowaniu serii: min/max trybu
+                            // NORMALIZED liczone raz, nie przy kazdym ruchu palca.
+                            var cLo = 0.0
+                            var cHi = 100.0
+                            if (mode == "NORMALIZED") {
+                                var lo = Double.POSITIVE_INFINITY
+                                var hi = Double.NEGATIVE_INFINITY
+                                vals.forEach { x -> if (x != null && x.isFinite()) { if (x < lo) lo = x; if (x > hi) hi = x } }
+                                if (lo != Double.POSITIVE_INFINITY) { cLo = lo; cHi = hi }
+                            }
                             val y = when {
-                                s.group == "pump" -> padTop + plotH * (1 - (v / 100.0).toFloat())
+                                s.group == "pump" -> pumpY(v)
                                 view.dual && s.group == view.secGroup ->
                                     padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
                                 mode == "NORMALIZED" -> {
-                                    val all = vals.filterNotNull()
-                                    val lo = if (all.isNotEmpty()) all.min() else 0.0
-                                    val hi = if (all.isNotEmpty()) all.max() else 100.0
-                                    val nv = if (hi > lo) (v - lo) / (hi - lo) else 0.5
+                                    val nv = if (cHi > cLo) (v - cLo) / (cHi - cLo) else 0.5
                                     padTop + plotH * (1 - nv.toFloat())
                                 }
                                 else -> padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
@@ -540,10 +688,85 @@ fun ChartCanvas(
     }
 }
 
+/**
+ * [v0.31.33 TIMELINE] Jedna geometria osi X dla rysowania, kursora i gestów.
+ * Wcześniej wszystko liczyło się z numeru próbki (`idx / (n-1)`), więc każda
+ * przerwa w transmisji „znikała": 10-minutowa dziura zajmowała tyle samo
+ * miejsca co minuta, a etykiety kłamały (np. prawa krawędź 10:34, choć dane
+ * sięgały 11:26). Teraz x = (czas próbki − czas pierwszej) / (czas ostatniej − …).
+ */
+internal class ChartTimeAxis(
+    val t0: Long,
+    val t1: Long,
+    val padLeft: Float,
+    val plotWidth: Float
+) {
+    /** Szerokość okna w ms; 1 przy zdegenerowanym czasie (jedna próbka/ten sam ts). */
+    val spanMs: Long get() = (t1 - t0).coerceAtLeast(1L)
+    val degenerate: Boolean get() = t1 <= t0
+
+    fun xOfFraction(fraction: Double): Float {
+        val f = fraction.coerceIn(0.0, 1.0)
+        return padLeft + plotWidth * f.toFloat()
+    }
+
+    fun tsAtFraction(fraction: Double): Long =
+        t0 + (spanMs * fraction.coerceIn(0.0, 1.0)).toLong()
+
+    fun xOf(ts: Long): Float =
+        xOfFraction((ts - t0).toDouble() / spanMs.toDouble())
+
+    /** Znacznik czasu pod palcem (do etykiet i testów). */
+    fun tsAtX(x: Float): Long {
+        if (!plotWidth.isFinite() || plotWidth <= 0f) return t0
+        return tsAtFraction(((x - padLeft) / plotWidth).toDouble())
+    }
+}
+
+/**
+ * [v0.31.33 TIMELINE] Najbliższa próbka pod palcem przy osi czasowej.
+ * Gdy znaczniki są zdegenerowane (wszystkie równe), wracamy do starego
+ * mapowania indeksowego — inaczej nie dałoby się nic wskazać.
+ */
+internal fun chartSampleIndexAtTimeX(
+    x: Float,
+    padLeft: Float,
+    plotWidth: Float,
+    rows: List<TelemPoint>
+): Int? {
+    if (rows.size < 2 || !plotWidth.isFinite() || plotWidth <= 0f || !x.isFinite()) return null
+    val axis = ChartTimeAxis(rows.first().ts, rows.last().ts, padLeft, plotWidth)
+    if (axis.degenerate) return chartSampleIndexAtX(x, padLeft, plotWidth, rows.size)
+    val target = axis.tsAtX(x)
+    // rows są posortowane rosnąco po ts — bisekcja na pierwszy znacznik >= target
+    var lo = 0
+    var hi = rows.size - 1
+    while (lo < hi) {
+        val mid = (lo + hi) / 2
+        if (rows[mid].ts < target) lo = mid + 1 else hi = mid
+    }
+    val left = (lo - 1).coerceAtLeast(0)
+    val right = lo
+    val dLeft = kotlin.math.abs(rows[left].ts - target)
+    val dRight = kotlin.math.abs(rows[right].ts - target)
+    return if (dRight < dLeft) right else left
+}
+
 internal fun chartSampleIndexAtX(x: Float, padLeft: Float, plotWidth: Float, sampleCount: Int): Int? {
     if (sampleCount < 2 || !plotWidth.isFinite() || plotWidth <= 0f) return null
     val fraction = ((x - padLeft) / plotWidth).coerceIn(0f, 1f)
     return (fraction * (sampleCount - 1)).roundToInt()
+}
+
+/** Resolve a touch against elapsed time, so scrubbing follows the plotted timestamps. */
+internal fun chartSampleIndexAtX(x: Float, padLeft: Float, plotWidth: Float, sortedTimestamps: List<Long>): Int? {
+    if (sortedTimestamps.size < 2 || !plotWidth.isFinite() || plotWidth <= 0f) return null
+    val fraction = ((x - padLeft) / plotWidth).coerceIn(0f, 1f)
+    val startMs = sortedTimestamps.first()
+    val endMs = sortedTimestamps.last()
+    val spanMs = (endMs - startMs).coerceAtLeast(1L)
+    val targetMs = startMs + (spanMs.toDouble() * fraction).roundToLong()
+    return nearestChartTimestampIndex(sortedTimestamps, targetMs)
 }
 
 private class SegPoint(val x: Float, val y: Float, val v: Double, val ts: Long, val idx: Int, val simulated: Boolean)

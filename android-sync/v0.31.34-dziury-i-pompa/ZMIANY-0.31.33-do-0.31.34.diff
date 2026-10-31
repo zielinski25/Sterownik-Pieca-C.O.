@@ -1,0 +1,172 @@
+--- v0.31.33-os-czasu-i-archiwum-esp/AppModel.kt	2026-10-28 18:51:32.593451797 +0000
++++ v0.31.34-dziury-i-pompa/AppModel.kt	2026-10-28 20:16:01.115758657 +0000
+@@ -893,13 +893,29 @@
+             telemetry = merged
+             chartPoints = merged.size
+             val fromEspOnly = if (useEsp) merged.count { it.seq < 0L } else 0
++            // [v0.31.34 GAP-MARK] Ile jest przerw w danych i jak długa jest najdłuższa.
++            // Liczone z tego, co faktycznie przyszło — podpis nie może kłamać.
++            var gapCount = 0
++            var gapMax = 0L
++            var prevTs = 0L
++            merged.forEach { p ->
++                if (prevTs != 0L && p.ts - prevTs > 360_000L) {
++                    gapCount++
++                    if (p.ts - prevTs > gapMax) gapMax = p.ts - prevTs
++                }
++                prevTs = p.ts
++            }
+             chartStatus = buildString {
+                 append("Załadowano ${merged.size} próbek")
+                 when {
+                     fromEspOnly > 0 -> append(" · z tego $fromEspOnly tylko z archiwum centrali (brak w chmurze)")
+                     useEsp -> append(" · chmura + archiwum centrali zgodne")
++                    sec > 24 * 3600 -> append(" z RTDB (tylko chmura — archiwum centrali jest w domu)")
+                     else -> append(" z RTDB")
+                 }
++                if (gapCount > 0) {
++                    append(" · luk: " + gapCount + " (najdłuższa " + (gapMax / 60_000L) / 60L + " h " + (gapMax / 60_000L) % 60L + " min)")
++                }
+                 append(" · odcinki symulowane są kreskowane")
+             }
+             chartReality = when {
+--- v0.31.33-os-czasu-i-archiwum-esp/RtdbClient.kt	2026-10-28 18:51:32.593451797 +0000
++++ v0.31.34-dziury-i-pompa/RtdbClient.kt	2026-10-28 20:15:34.751395569 +0000
+@@ -414,7 +414,15 @@
+         for (guard in 0 until 100) {
+             val q = path + ".json?orderBy=" + java.net.URLEncoder.encode("\"ts\"", "UTF-8") +
+                 "&startAt=" + cursor + "&endAt=" + endTs + "&limitToFirst=" + HISTORY_PAGE_SIZE
+-            val res = get(q)
++            // [v0.31.34 GAP-REPAIR] Błąd sieci w środku dnia nie może skasować
++            // całego dnia — zachowujemy to, co już pobraliśmy. Resztę dopyta
++            // repairGaps() po zebraniu wszystkich dni.
++            val res = try {
++                get(q)
++            } catch (e: Exception) {
++                if (rows.isNotEmpty()) return uniqueSort(rows)
++                throw e
++            }
+             if (!res.ok) {
+                 val msg = res.error ?: ""
+                 if (msg.contains("Index not defined", true) || msg.contains("indexOn", true) || msg.contains("400")) {
+@@ -489,6 +497,44 @@
+         return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
+     }
+ 
++    /**
++     * [v0.31.34 GAP-REPAIR] Po pobraniu całego zakresu sprawdza, czy nie została
++     * przerwa dłuższa niż 3 minuty, i dopyta dokładnie ten przedział.
++     *
++     * Powód: pojedyncza nieudana strona paginacji (albo krótka odpowiedź RTDB)
++     * zostawiała dziurę w środku dnia, mimo że dane w chmurze są. Wtedy wykres
++     * pokazywał pustkę, której w bazie nie ma. Prawdziwa przerwa w chmurze
++     * zwróci 0 wierszy — wtedy dziura zostaje i jest uczciwie opisana na wykresie.
++     */
++    private suspend fun repairGaps(rows: List<TelemRow>): List<TelemRow> {
++        if (rows.size < 2) return rows
++        val holes = ArrayList<LongArray>()
++        for (i in 1 until rows.size) {
++            val a = rows[i - 1].ts
++            val b = rows[i].ts
++            if (b - a > 180L) holes.add(longArrayOf(a + 1L, b - 1L))
++        }
++        if (holes.isEmpty()) return rows
++        val extra = ArrayList<TelemRow>()
++        for (h in holes.take(40)) {
++            for (day in dayRange(h[0], h[1])) {
++                val ds = max(h[0], day[0] / 1000)
++                val de = minOf(h[1], day[0] / 1000 + 86_400 - 1)
++                if (de < ds) continue
++                try {
++                    extra.addAll(
++                        fetchShard(shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt()), ds, de)
++                    )
++                } catch (e: Exception) { /* przerwa zostaje — pokazujemy ją na wykresie */ }
++            }
++        }
++        if (extra.isEmpty()) return rows
++        val map = LinkedHashMap<String, TelemRow>()
++        rows.forEach { map[it.id] = it }
++        extra.forEach { map[it.id] = it }
++        return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
++    }
++
+     /** `fetchTelemetryFromFirebase(rangeSec)` — zwraca gotowe serie lub null. */
+     suspend fun fetchTelemetry(rangeSec: Int): List<TelemPoint>? {
+         if (idToken.isEmpty()) return null
+@@ -501,7 +547,7 @@
+             val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
+             try { all.addAll(fetchShard(path, dayStart, dayEnd)) } catch (e: Exception) { /* pusty dzień */ }
+         }
+-        val sorted = uniqueSort(all)
++        val sorted = repairGaps(uniqueSort(all))
+         if (sorted.isEmpty()) return null
+         val chartPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
+         return chartPoints.ifEmpty { null }
+--- v0.31.33-os-czasu-i-archiwum-esp/ChartEngine.kt	2026-10-28 18:51:32.593451797 +0000
++++ v0.31.34-dziury-i-pompa/ChartEngine.kt	2026-10-28 20:15:51.479625933 +0000
+@@ -326,6 +326,14 @@
+         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
+         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
+         val pumpOnly = view.cat.isNotEmpty() && view.cat.all { it.group == "pump" }
++        // [v0.31.34 PUMP-BAND] W trybie mieszanym pompa zajmuje niski pasek przy dolnej
++        // krawedzi zamiast calej wysokosci. Szybkie przelaczanie 0/100 rysowalo pionowe
++        // "sciany" na cala wysokosc i zaslanialo temperatury.
++        val pumpBase = padTop + plotH - 1.5.dp.toPx()
++        val pumpBandH = 10.dp.toPx()
++        fun pumpY(v: Double): Float =
++            if (pumpOnly) padTop + plotH * (1 - (v / 100.0).toFloat())
++            else pumpBase - (v / 100.0).toFloat() * pumpBandH
+ 
+         // FIX-BRAK-DANYCH: uczciwy komunikat jak w HTML (zamiast pustego boxa)
+         val hasPts = view.values.values.any { vs -> vs.any { v -> v != null && v.isFinite() } }
+@@ -397,6 +405,31 @@
+             previousLabelTs = ts
+         }
+ 
++        // [v0.31.34 GAP-MARK] Przerwa > 6 min jest zaznaczona i podpisana.
++        // Puste miejsce ma byc widoczne jako BRAK PROBEK, a nie jako blad rysowania.
++        run {
++            val markColor = Pal.rgba(255, 138, 101, .55f)
++            var prevTs = view.rows.first().ts
++            for (i in 1 until view.rows.size) {
++                val ts = view.rows[i].ts
++                if (ts - prevTs > 360_000L) {
++                    val xa = timeAxis.xOf(prevTs)
++                    val xb = timeAxis.xOf(ts)
++                    val dash = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
++                    drawLine(markColor, Offset(xa, padTop), Offset(xa, padTop + plotH), 1.dp.toPx(), pathEffect = dash)
++                    drawLine(markColor, Offset(xb, padTop), Offset(xb, padTop + plotH), 1.dp.toPx(), pathEffect = dash)
++                    val gapMin = (ts - prevTs) / 60_000L
++                    val txt = if (gapMin >= 60L) "luka " + (gapMin / 60L) + " h " + (gapMin % 60L) + " min"
++                    else "luka " + gapMin + " min"
++                    val tp = measure(txt, TextStyle(fontSize = 8.5.sp, color = markColor))
++                    if (xb - xa > tp.size.width + 6.dp.toPx()) {
++                        drawText(tp, topLeft = Offset((xa + xb - tp.size.width) / 2f, padTop + 4.dp.toPx()))
++                    }
++                }
++                prevTs = ts
++            }
++        }
++
+         // serie
+         view.cat.forEach { s ->
+             val vals = view.values[s.id] ?: return@forEach
+@@ -408,7 +441,7 @@
+                 if (v != null && v.isFinite()) {
+                     val x = timeAxis.xOf(r.ts)
+                     val y = when {
+-                        s.group == "pump" -> padTop + plotH * (1 - (v / 100.0).toFloat())
++                        s.group == "pump" -> pumpY(v)
+                         view.dual && s.group == view.secGroup ->
+                             padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
+                         mode == "NORMALIZED" -> {
+@@ -527,7 +560,7 @@
+                         val v = vals.getOrNull(idx)
+                         if (v != null && v.isFinite()) {
+                             val y = when {
+-                                s.group == "pump" -> padTop + plotH * (1 - (v / 100.0).toFloat())
++                                s.group == "pump" -> pumpY(v)
+                                 view.dual && s.group == view.secGroup ->
+                                     padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
+                                 mode == "NORMALIZED" -> {

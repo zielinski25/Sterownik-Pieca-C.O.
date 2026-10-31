@@ -1,0 +1,101 @@
+{
+  "etap": 214,
+  "nazwa": "Brama przed wgraniem + poprawka kolejnosci include",
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "telegram_used": false,
+  "wersja_z": "3.55.8",
+  "wersja_do": "3.56.2",
+  "znaleziony_blad": {
+    "id": "D1",
+    "opis": "HistoriaPobranie.h i HistoriaBilety.h wciagniete PRZED <ESPAsyncWebServer.h>; klasy AsyncAbstractResponse/AsyncWebServerRequest jeszcze nieznane",
+    "wprowadzony_w": "212 (include trasy), odziedziczony przez 213",
+    "gdzie": "linie 5140-5141 vs 5227 w v3.56.1",
+    "dlaczego_testy_nie_zlapaly": "kazdy Test.cpp wciaga najpierw model serwera, wiec kolejnosc w main_centrala.cpp nie ma wplywu na test",
+    "naprawa": "oba include'y przeniesione za <ESPAsyncWebServer.h> (v3.56.2)",
+    "wykrywane_przez": "brama S03 + selftest (plik v3.56.1 zatrzymany)"
+  },
+  "patche": {
+    "skumulowany": {
+      "plik": "narzedzia/brama-przed-wgraniem214/main_centrala-v3.55.8-to-v3.56.2.patch",
+      "sha256": "0ae0629b97a2594ed03d48500d471a8e29d09de95f35b1319a4a137497464ac7",
+      "linie_dodane": 243,
+      "linie_usuniete": 56,
+      "fragmentow_diffu": 15
+    },
+    "tylko_214": {
+      "plik": "narzedzia/brama-przed-wgraniem214/main_centrala-v3.56.1-to-v3.56.2.patch",
+      "sha256": "8a3602359955882bb452df38fd6973a43610bdb2056f5624d55fd6689d9257e7",
+      "linie_dodane": 10,
+      "linie_usuniete": 3,
+      "fragmentow_diffu": 4
+    }
+  },
+  "wynik_patcha": {
+    "sha256": "369026dbe324a05805518b22f1e12eb950b5abffa6d17c65e3c32fd8762cf800",
+    "linii": 46957
+  },
+  "linie_kluczowe": {
+    "include_historiapin": 5146,
+    "include_serwer": 5232,
+    "include_pobranie": 5233,
+    "include_bilety": 5234,
+    "firmware_version": 5591,
+    "bramka": 28696,
+    "obiekt_trasy": 28714,
+    "obiekt_biletow": 28723,
+    "rejestracja_history": 28737,
+    "rejestracja_history_long": 28740,
+    "rejestracja_history_link": 28746
+  },
+  "brama": {
+    "kontrol": 18,
+    "bledow": 0,
+    "plik_raportu": "narzedzia/brama-przed-wgraniem214/RAPORT.md"
+  },
+  "twierdzenia_sprawdzone_maszynowo": [
+    {
+      "id": "T1",
+      "twierdzenie": "patch skumulowany 3.55.8->3.56.2 == lancuch 211+212+213+214",
+      "sprawdza": "build.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T2",
+      "twierdzenie": "patch odwraca sie czysto na wyniku",
+      "sprawdza": "build.py (S10)",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T3",
+      "twierdzenie": "naglowki HTTP sa PO <ESPAsyncWebServer.h>",
+      "sprawdza": "build.py (S03)",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T4",
+      "twierdzenie": "brama ZATRZYMUJE plik z etapu 213 (dowod, ze blad byl realny)",
+      "sprawdza": "selftest.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T5",
+      "twierdzenie": "11 celowych zepsuć jest lapanych przez wlasciwa kontrole",
+      "sprawdza": "selftest.py",
+      "wynik": "PASS"
+    },
+    {
+      "id": "T6",
+      "twierdzenie": "naglowki kompiluja sie jako gnu++11 i gnu++17",
+      "sprawdza": "build.py (S17)",
+      "wynik": "PASS"
+    }
+  ],
+  "granice": [
+    "brak kompilacji ESP - to nadal nie jest dowod, ze plik zbuduje sie na toolchainie",
+    "brak testu na urzadzeniu",
+    "brak wgrania i OTA",
+    "brama sprawdza plik tekstowo; nie zastepuje kompilatora"
+  ]
+}

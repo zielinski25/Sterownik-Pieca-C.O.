@@ -1,0 +1,48 @@
+{
+  "status": "PASS",
+  "release_ready": false,
+  "inputs": {
+    "narzedzia/odpowiedz-http199/build.py": "b44bc045a4b92d11f66957f9ba9ec64dd29783c9da22f8710209798f49d2e7df",
+    "narzedzia/odpowiedz-http199/CheckedFileBody.h": "e68cd4e5cf852e3ac0605f8815bdd596d64a75577bbaeb4dcac532bc3b5ac561",
+    "narzedzia/odpowiedz-http199/CheckedFileResponse.h": "4391dde92f830e1891a041bce81a199e4e7d9d73464f877432a120010c8d5ce2",
+    "narzedzia/odpowiedz-http199/Abstract.inc": "75b8797dc29aec6f54edcc4ee19e05374923e01630a256c4d0f82761dd00d0c2",
+    "narzedzia/odpowiedz-http199/Transport.inc": "fb998ab2f9817876d4b7743b2e3299a60b5557b4c717aa4568465ba39f61ad68",
+    "narzedzia/odpowiedz-http199/Test.cpp": "1571b4104b87aa6a16b82b5c841f6d5ca083640379ba92beb9775323c72d8851",
+    "narzedzia/odpowiedz-http199/run.py": "c13b7607d5ac6531f255fb82c06a30da78046a677693a8471098ae1618e580a9",
+    "narzedzia/odpowiedz-http199/mutacje.py": "156b7a8da7136fbb09a212decc5de5b75921c12b88fdf46b475cc58c3c3b9c90",
+    "narzedzia/odpowiedz-http199/upstream/WebResponseImpl.h": "b90de8322a97af18e8cd6817b7a5c27999c6a5e0097f23ecd77a4e167d9ced75",
+    "narzedzia/odpowiedz-http199/upstream/WebRequest.cpp": "3ca1c44ffef44e4fd7d8e900857e797469cd336bf846f2a9af61e02a0956e7ad",
+    "narzedzia/odpowiedz-http199/candidate/WebResponses.cpp": "6348303d3f4a7f858a4ed12a42d78301f2c600d36938a68a8eae31c0a1721d02",
+    "narzedzia/odpowiedz-http199/candidate/WebResponseImpl.h": "fdafc0c25f3544fd1acc89ba0048d30b29a0b26823221544a49c2aa74f02eb90",
+    "narzedzia/odpowiedz-http199/host/Arduino.h": "5d821ad30182ec818a425f0f32fe5984686935dee7168f413decdbfd7931ad99",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/uchwyty-runtime197/CheckedRead.h": "88a3fba5db1638e43a570bd467ba1c41e17d506e347da79eb23e4eaa45f0569d",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690",
+    "narzedzia/blokada-startu-fs196/upstream/FS.h": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+    "narzedzia/blokada-startu-fs196/upstream/FSImpl.h": "5187168c8e15583d1b55e935987532f221f1d3ca958e293494c221e5b2bc538a",
+    "narzedzia/uchwyty-runtime197/upstream/WebResponses.cpp": "12055aa687cd0f6f719b65057c7a1d203baf6f0ef88e96b3fb4909ac68d0e6f8"
+  },
+  "profiles": {
+    "native-flow0": {
+      "stdout": "PASS http199 groups=44 flow=0; real patched send loop + request ack/poll; modeled TCP, no templates or ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "native-flow1": {
+      "stdout": "PASS http199 groups=44 flow=1; real patched send loop + request ack/poll; modeled TCP, no templates or ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "asan-ubsan-flow0": {
+      "stdout": "PASS http199 groups=44 flow=0; real patched send loop + request ack/poll; modeled TCP, no templates or ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "asan-ubsan-flow1": {
+      "stdout": "PASS http199 groups=44 flow=1; real patched send loop + request ack/poll; modeled TCP, no templates or ESP\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  }
+}

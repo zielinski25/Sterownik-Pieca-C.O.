@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "release_ready": false,
+  "firmware_modified": false,
+  "inputs": {
+    "uchwyty-runtime197/RuntimeFilesystem.h": "bda7a69c80d9cdf650baa43fc3fcc94babbc93797e822ddfb63f488575d7c94e",
+    "uchwyty-runtime197/CheckedRead.h": "88a3fba5db1638e43a570bd467ba1c41e17d506e347da79eb23e4eaa45f0569d",
+    "uchwyty-runtime197/Test.cpp": "78cc5a6d1649e2419f4c4c6ecb279915f06755231f7d1782fd8ebf4691fd2c12",
+    "uchwyty-runtime197/Allocations.cpp": "6b50f2053cc32326cc6e4e714ae311cc49a5127bef39ffa7925349a0f692b16a",
+    "uchwyty-runtime197/run.py": "f3a5daf0324c2baf2caf7961883fbe6bf5124bfb7d5fbad231ac8202c8613c13",
+    "uchwyty-runtime197/mutacje.py": "07bdcb08ca3702ec6f9bb21b486b77eef58d381c91ef5ed01793af617e14fcfa",
+    "uchwyty-runtime197/host/Arduino.h": "917e0db8ca511c83faa564044ef127f2e94da1bcc3c812608fcc3e2455d2aa7b",
+    "blokada-startu-fs196/upstream/SOURCES.json": "6ce0f554274c50003424686c77a5a3b6dc5ba371baae0f504f37ecb85387db5e",
+    "blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690",
+    "blokada-startu-fs196/upstream/FS.h": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+    "blokada-startu-fs196/upstream/FSImpl.h": "5187168c8e15583d1b55e935987532f221f1d3ca958e293494c221e5b2bc538a"
+  },
+  "profiles": {
+    "native": {
+      "stdout": "PASS runtime197 groups=31 bounded slots=4; 1000 reuse cycles; real FS.cpp; explicit post-stop read sentinel; not integrated firmware\nhost sizeof Owner4=2240 Owner10=5120; not ESP ABI\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "asan-ubsan": {
+      "stdout": "PASS runtime197 groups=31 bounded slots=4; 1000 reuse cycles; real FS.cpp; explicit post-stop read sentinel; not integrated firmware\nhost sizeof Owner4=2240 Owner10=5120; not ESP ABI\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  }
+}

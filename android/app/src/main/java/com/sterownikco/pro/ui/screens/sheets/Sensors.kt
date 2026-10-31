@@ -363,6 +363,9 @@ private fun SolarMetricsCard(m: AppModel) {
             "Do końca dnia · szacunek",
             when {
                 !sunLeft -> "bez słońca do końca dnia"
+                // [0.31.38] „brak prognozy” myliło dwie przyczyny: brak pogody
+                // i brak próbki wody do wystartowania modelu.
+                !solar.hasSamples -> "brak próbki wody z czujnika"
                 !solar.forecastGain.isFinite() -> "brak prognozy"
                 // [0.31.31] Ten sam warunek co karta „DO KOŃCA DNIA” — patrz Weather.kt.
                 !solar.forecastPeakReal -> "słońce nie przebije strat ciepła"
@@ -376,9 +379,17 @@ private fun SolarMetricsCard(m: AppModel) {
             if (solar.todayDrawCount > 0) "${solar.todayDrawCount} razy · −${s.fmt1(solar.todayDrawDrop)}°C" else "brak"
         )
         Text(
-            "Zysk = o ile °C ogrzała się woda w zbiorniku 100 l. Minus = woda się " +
-                "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku, „szacunek” to " +
-                "wyliczenie z prognozy słońca — nie pomiar.",
+            // [0.31.35] „Zmierzone" liczy się też z historii chmury (co minutę),
+            // a nie tylko z próbek zebranych przy otwartej aplikacji.
+            // [0.31.36] Woda liczona z czujnika ZBIORNIKA (wcześniej brany był kolektor),
+            // a pobranie to spadek podtrzymany, nie pojedyncze drgnięcie o 0,3 °C.
+            "Zysk = o ile °C ogrzała się woda w zbiorniku słonecznym 100 l na dachu " +
+                "(czujnik kolektora, nie bojler pieca). Minus = woda się " +
+                "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku — z chmury, " +
+                "co minutę, także gdy aplikacja była zamknięta. „Szacunek” to " +
+                "wyliczenie z prognozy słońca — nie pomiar. Pobranie liczy się jako " +
+                "spadek o co najmniej 0,5 °C utrzymany ponad 5 minut; krótkie " +
+                "drgnięcia czujnika nie są liczone.",
             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp,
             modifier = Modifier.padding(top = 6.dp)
         )

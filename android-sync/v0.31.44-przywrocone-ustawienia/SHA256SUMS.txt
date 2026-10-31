@@ -1,0 +1,6 @@
+4f72fdc7c1f9d56201c1a63c6e21b277bf1e93e629a38c5b4667ed094465a86a  android-sync/v0.31.44-przywrocone-ustawienia/SterownikCO-Android-v0.31.44-PELNY-PROJEKT.zip
+8845e7f30de8860c7a834c296f9217f3a757248ac8dc0f9ab77000cdb1c63915  android-sync/v0.31.44-przywrocone-ustawienia/SterownikCO-Android-v0.31.44-ZMIENIONE-PLIKI.zip
+07b460f762cf3eb6c1dce5539efcd105fee4512b55d0e063a740ff059fcf1625  core/AppModel.kt
+7827d08edb134de68ffacb462fc7c93928d1bc29f19242f6231498df757aa7f1  core/RtdbClient.kt
+26cc12140c089c18be96ba685a68e7304b19a59e7f76b11aba0880013d58808a  ui/screens/Dashboard.kt
+07d8db175114aa4573ea57da32988a9fb20a8b8db4d9c7c9b8bc4e6f0fee3a3e  ui/screens/Lists.kt

@@ -1,0 +1,106 @@
+═══════════════════════════════════════════════════════════════
+  FIRMWARE v3.56.9 — INSTRUKCJA WGRANIA
+  Data: 2026-10-30
+═══════════════════════════════════════════════════════════════
+
+WERSJA PODBITA: TAK (3.56.8 -> 3.56.9)
+
+CO TO DAJE
+----------
+Znika fałszywe 20,0 °C na kanale "Ogrz. śr." po restarcie centrali.
+Do tej pory po każdym starcie przez 15-30 minut było 20,0 °C niezależnie
+od tego, czy piec miał 12 °C, czy 52 °C. Zmierzone 19 razy w 12 dni.
+
+
+CZY WARTO TERAZ WGRYWAĆ
+-----------------------
+Tak, i to jest wyjątkowo tani moment: piec stoi zimny, nic nie pali.
+Po wgraniu od razu zobaczysz różnicę — bez czekania na sezon.
+
+
+KROK 1 — PODMIEŃ PLIK
+---------------------
+Skopiuj main_centrala.cpp z tej paczki do:
+
+    C:\Users\Rafcio\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp
+
+NADPISZ istniejący plik.
+Plików .h NIE ruszaj — są bez zmian.
+NIE nadpisuj src\secrets.h.
+
+
+KROK 2 — SPRAWDŹ WERSJĘ W PLIKU
+-------------------------------
+Ctrl+F w VSCode, szukaj DOKŁADNIE:
+
+    static const char* FIRMWARE_VERSION
+
+Musisz zobaczyć:
+
+    static const char* FIRMWARE_VERSION = "v3.56.9";
+
+NIE szukaj samego "FIRMWARE_VERSION = " — trafisz w komentarz.
+
+
+KROK 3 — ZBUDUJ
+---------------
+Ctrl+Alt+B
+
+Jeśli nie działa:
+    & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run
+
+Na końcu musi być SUCCESS. Jeśli ERROR — nie wgrywaj, wyślij mi 30 linii.
+
+
+KROK 4 — W GRAJ PRZEZ OTA
+-------------------------
+Tak samo jak 3.56.8. Wersja podbita, OTA przyjmie.
+
+
+KROK 5 — SPRAWDŹ (2 minuty po wgraniu)
+--------------------------------------
+Wyślij do bota:
+
+    /version
+
+Musi być: v3.56.9
+
+
+KROK 6 — TEST, KTÓRY ZAJMUJE MINUTĘ (bez palenia w piecu)
+---------------------------------------------------------
+1. Zrestartuj centralę (albo wyłącz i włącz zasilanie).
+2. Wejdź w Dashboard.
+3. Popatrz na kafelek "Ogrz. śr."
+
+   MA BYĆ:  ~12 °C  (tyle, ile realnie ma piec)
+   NIE MOŻE BYĆ: 20,0 °C
+
+4. Wykresy -> TEMPERATURY -> 6 H -> zaznacz "Ogrz. śr."
+
+   Linia ma być CIĄGŁA przez moment restartu. Wcześniej urywała się
+   dokładnie w chwili startu.
+
+Jeśli po restarcie nadal widać 20,0 — napisz mi. To znaczy, że coś innego
+podstawia tę wartość i szukamy dalej.
+
+
+CZEGO NIE SPRAWDZAĆ TERAZ
+-------------------------
+Zachowania przy palącym się piecu — to sprawdzimy, gdy zaczniesz palić.
+Poprawka celowo nie dotyka niczego, co dzieje się przy pracującej pompie.
+
+
+PO DOBIE — NIC NIE MUSISZ WYSYŁAĆ
+----------------------------------
+Telemetria w 3.56.8 wyszła czysto: 1200 próbek na 1200 wysłanych, zero luk,
+mimo 11-minutowej awarii Firebase. Detektor luk działa. Jeśli chcesz, możesz
+przysłać /logi za kilka dni — sprawdzę, czy nadal jest czysto.
+
+
+JESLI COS SIE ZEPSUJE
+---------------------
+Wróć do 3.56.8 — masz ją na Dysku Google jako
+SterownikCO-v3.56.8-...zip (albo w repo, katalog firmware-patch).
+
+Nie panikuj: 3.56.9 nie zmienia niczego w sterowaniu piecem. Dotyka jednej
+zmiennej w jednej funkcji — tej, która liczy wyświetlaną średnią.

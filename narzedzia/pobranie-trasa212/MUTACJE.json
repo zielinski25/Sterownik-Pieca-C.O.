@@ -1,0 +1,99 @@
+{
+  "status": "PASS",
+  "profile": "ASan+UBSan, LSan, -fno-exceptions",
+  "kontrola": "niemutowany kod przechodzi",
+  "inputs": {
+    "narzedzia/pobranie-trasa212/HistoriaPobranie.h": "5af0ada473e9b04caa84ca0ec790776930492fd6ab5298d2c806a99f77b65e8d",
+    "narzedzia/pobranie-trasa212/Extracted212.inc": "22f00c8fb421d0aca2cc9b6bc89b16fc5483ea521b67a98d5bb56bb49101dab1",
+    "narzedzia/pobranie-trasa212/Test.cpp": "df281711ce26ba902ebc338c7baad43228d9c5960537c426194d93e6e3b6f0f9",
+    "narzedzia/pobranie-trasa212/host/Serwer212.h": "4ebc3a5a63453444770140e110677d22b9aec95a0d1ab8b3b4f69c050ef33e1b",
+    "narzedzia/wysylka-zapinka211/HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "narzedzia/pobranie-trasa212/mutacje.py": "8033b34ede84ded2c350cf4d4cb4aa58db32dcdb68632134b3ffba4cf712c3d2"
+  },
+  "cases": [
+    {
+      "name": "metoda-zawsze-dozwolona",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "token-nie-sprawdzany",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "token-prefiks-wystarczy",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "zajetosc-nie-ustawiana",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "dlugosc-o-jeden-za-duzo",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "krotki-odczyt-jako-koniec",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "zrodlo-zawsze-wazne",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "zajetosc-nie-zwalniana",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "zamknij-bez-mutexa",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "magazyn-zawsze-gotowy",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "za-duzy-plik-jako-200",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "zla-metoda-jako-200",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    }
+  ]
+}

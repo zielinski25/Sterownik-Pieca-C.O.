@@ -1,0 +1,296 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,30 @@
++// [v3.55.2 NADZOR-ZADAN] — 2026-10-24
++// FIRMWARE_VERSION v3.55.1 -> v3.55.2 (PATCH: urzadzenie samo wraca po zawieszeniu).
++// Co:
++//   1. Nadzor zadan sieciowych. loop() co obieg sprawdza, czy tgTask i
++//      tgPollTask daja znak zycia. Milczenie dluzej niz NADZOR_PROG_MS
++//      (5 min) = restart urzadzenia + wiadomosc na Telegram po starcie
++//      ("wrocilem po automatycznym restarcie, zadanie X milczalo Y s").
++//   2. Lekki slad kroku w wifiLoop() (diagSladWifiLoop, detail=1..6), zeby
++//      nastepny raport po resecie wskazal DOKLADNIE, na ktorym wywolaniu
++//      stanelo — bez dopasowywania pliku ELF do zrzutu pamieci.
++// Dlaczego: 24.10.2026 centrala przestala odpowiadac i NIE wrocila sama —
++//   trzeba bylo jechac z kablem. Coredump (dump_seq0000000054_boot2.bin)
++//   pokazal "Task watchdog got triggered ... IDLE1 (CPU 1)": rdzen 1 nie
++//   oddal czasu zadaniu bezczynnosci przez >15 s, a loopTask stal w kodzie
++//   ROM z wylaczonymi przerwaniami. Po takim resecie problem potrafi wrocic,
++//   a bez nadzoru nie ma zadnej drogi wyjscia poza wtyczka.
++// Bezpieczenstwa:
++//   - nadzor nie dziala w pierwszych 3 minutach po starcie (rozbieg),
++//   - nie dziala podczas OTA (otaOperacjaWTrakcie/otaUploadTrwa) ani testow
++//     mega (stabilityMega/finalMega/recoveryOtaMega/spoolGTest),
++//   - maksymalnie 3 restarty w ciagu 30 min; potem nadzor sie wycofuje i tylko
++//     loguje (zabezpieczenie przed petla restartow przy trwalej awarii),
++//   - po 30 min nieprzerwanej pracy licznik restartow jest zerowany.
++//   - logika decyzyjna jest czysta funkcja (nadzorDecyzja) i ma test hostowy
++//     tests/host/NadzorHostTest.cpp (34 sprawdzenia).
++// Czego NIE zmieniono: telemetria, Firebase, OTA, historia, archiwum solarne.
++//
+ // [v3.55.1 BEZPIECZNY-START] — 2026-10-24
+ // FIRMWARE_VERSION v3.55.0 -> v3.55.1 (PATCH: start nie zalezy od rozmiaru plikow historii).
+ // Co: oba pliki historii (/hist_short.csv, /hist_long.csv) sa czytane PORCJAMI
+@@ -5505,7 +5532,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.55.1";
++static const char* FIRMWARE_VERSION = "v3.55.2";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -29920,12 +29947,37 @@
+   }
+ }
+ 
++// [v3.55.2] Lekki slad pojedynczego kroku wifiLoop().
++// Zapisuje TYLKO numer kroku (op/stage/detail/uptime) — bez pomiaru sterty.
++// Powod: wifiLoop() jest wolane w kazdej iteracji loop(), wiec te zapisy musza
++// byc tanie. Numer kroku wystarcza, zeby po resecie odczytac z raportu
++// "LOOP op=WIFI_LOOP detail=3" i wiedziec, na ktorym wywolaniu stanelo.
++// Seq nie jest podbijany — dzieki temu nie zmienia sie rytm probkowania sterty
++// w zwyklych punktach kontrolnych.
++static inline void diagSladWifiLoop(uint16_t krok) {
++  CrashDiagTaskState &snap = rtcCrashDiag.task[DIAG_TASK_LOOP - 1U];
++  snap.op       = DIAG_OP_WIFI_LOOP;
++  snap.stage    = DIAG_STAGE_START;
++  snap.detail   = krok;
++  snap.uptimeMs = millis();
++}
++
+ // Wywolywane w kazdej iteracji loop() — nieblokujace.
+ void wifiLoop() {
+   diagCheckpoint(DIAG_TASK_LOOP, DIAG_OP_WIFI_LOOP, DIAG_STAGE_START);
+   diagCheckpoint(DIAG_TASK_LOOP, DIAG_OP_WIFI_LOOP, DIAG_STAGE_BEFORE);
+   ArduinoOTA.handle(); // [PUNKT 3 — OTA] musi byc wolane co iteracje, niezaleznie od trybu AP/STA
+   diagCheckpoint(DIAG_TASK_LOOP, DIAG_OP_WIFI_LOOP, DIAG_STAGE_AFTER);
++  // [v3.55.2] detail = krok wifiLoop, w ktorym jestesmy TERAZ. Dzieki temu
++  // raport po resecie mowi "LOOP op=WIFI_LOOP detail=3" i od razu wiadomo,
++  // ktore wywolanie zamarlo — bez dopasowywania ELF do zrzutu pamieci.
++  //   1 = zaraz po ArduinoOTA.handle()
++  //   2 = po flushWsQueue()
++  //   3 = po bloku WS-CLEANUP (wsTerminal.cleanupClients, co 30 s)
++  //   4 = po wifiDnsServer.processNextRequest()
++  //   5 = po wifiPolaczSTA_Krok()
++  //   6 = koniec wifiLoop() (powrot do loop())
++  diagSladWifiLoop(1);
+ 
+   // [PUNKT 3 — OTA] Restart zaplanowany przez upload z przegladarki
+   // (patrz endpoint /ota-upload) — opoznienie, zeby odpowiedz HTTP zdazyla
+@@ -29960,6 +30012,7 @@
+   // loop()/wifiLoop() (NIE z ISR/critical section) — patrz komentarz przy
+   // flushWsQueue() (definicja przy logZapisz(), wzorem Ryby FIX HEAP-LEAK-1).
+   flushWsQueue();
++  diagSladWifiLoop(2);
+ 
+   // [TERMINAL] cleanupClients() wymagane przez ESPAsyncWebServer, inaczej
+   // martwe polaczenia WS trwale zajmuja HEAP (wzorem Ryby v41 FIX HEAP-LEAK-2).
+@@ -29984,9 +30037,12 @@
+     }
+   }
+ 
++  diagSladWifiLoop(3);   // [v3.55.2] po bloku WS-CLEANUP (wykonywanym co 30 s)
++
+   if (wifiApAktywny) {
+     wifiDnsServer.processNextRequest();
+   }
++  diagSladWifiLoop(4);
+ 
+   // [FIX-WIFI-NONBLOCKING-STA, v2.12.1.1/2.12.1.2] Zastepuje stare, w pelni
+   // blokujace wywolania wifiPolaczSTA() (funkcja nadal istnieje w kodzie,
+@@ -30003,6 +30059,7 @@
+   // musi dostawac szanse na postep w kazdej iteracji az do rozstrzygniecia,
+   // inaczej PORTAL_AP/POLACZONY_STA ponizej nigdy by jej nie dokonczyly.
+   if (staProbaAktywna) {
++    diagSladWifiLoop(5);
+     WifiStaProbaWynik wynik = wifiPolaczSTA_Krok();
+     if (wynik == STA_PROBA_SUKCES) {
+       wifiStan = WIFI_STAN_POLACZONY_STA;
+@@ -30059,6 +30116,7 @@
+       wifiPolaczSTA_Krok(); // odpala 1. zapisana siec; wynik ocenimy w kolejnych iteracjach (blok wyzej)
+     }
+   }
++  diagSladWifiLoop(6);
+ }
+ 
+ int procentNaKat(int procent, int zakresMin, int zakresMax) {
+@@ -43672,6 +43730,28 @@
+   fbLastSendMillis = 0;
+ }
+ 
++// [v3.55.2 TASK-SUPERVISOR] Jednorazowa wiadomosc po restarcie z nadzoru.
++// Wysylana z tgTask (juz w kontekscie sieciowym), nie z setup() — sendTelegramMessage()
++// blokuje na TLS i nie wolno tego robic w loopTask.
++static bool g_nadzorRaportWyslany = false;
++
++static void wyslijRaportNadzoru() {
++  if (g_nadzorRaportWyslany) return;
++  g_nadzorRaportWyslany = true;
++  if (!config.getBool("nadzorRestart", false)) return;
++  const String kto = config.getString("nadzorKto", "?");
++  const uint32_t ms = (uint32_t)config.getUInt("nadzorMs", 0U);
++  const uint32_t nr = (uint32_t)config.getUInt("nadzorCnt", 0U);
++  config.putBool("nadzorRestart", false);
++  if (!tgEnabled) return;
++  sendTelegramMessage("Wrocilem po automatycznym restarcie.\n"
++                      "Zadanie \"" + kto + "\" nie dalam znaku zycia przez " +
++                      String((unsigned long)(ms / 1000UL)) + " s.\n"
++                      "Restart zrobil nadzor w firmware — nie bylo potrzebne wyciaganie wtyczki.\n"
++                      "To juz restart numer " + String((unsigned long)nr) + " w ciagu 30 minut.");
++  zapiszLog(String(F("tag=NADZOR lvl=WARN zdarzenie=raport_po_restarcie nr=")) + String((unsigned long)nr));
++}
++
+ void tgTaskFn(void* /*pvParams*/) {
+   // [v3.18.0] Brak esp_task_wdt_add(): ten worker wykonuje blokujace TCP/TLS/HTTP,
+   // ktorych czas powrotu nie jest twardo ograniczony przez warstwe wyzej.
+@@ -43694,6 +43774,7 @@
+     tgTaskBeat(1);
+     wyslijZalegleRaportyCrash();
+     wyslijZaleglePowiadomieniePowerOn();
++    wyslijRaportNadzoru();   // [v3.55.2] jednorazowo po restarcie z nadzoru
+     // [AUDYT-PKT3] Znacznik startu tej iteracji — punkt odniesienia dla
+     // TG_ITER_HAS_BUDGET() ponizej (patrz uzasadnienie przy deklaracji
+     // TG_ITER_BUDGET_MS wyzej).
+@@ -46539,9 +46620,141 @@
+ // [v3.47.1] Interwal zapisu rekordow HEALTH i HEALTH-A do logu (zmiana z v3.45.1).
+ static const unsigned long HEALTH_LOG_INTERVAL_MS = 300000UL;
+ 
++// [v3.55.2 TASK-SUPERVISOR] Nadzor zadan sieciowych — patrz changelog na gorze.
++//
++// Wykrywa przypadek, w ktorym Telegram/Firebase zamilkly na dobre: wtedy nie ma
++// juz ZADNEJ zdalnej drogi powrotu, wiec jedynym wyjsciem jest restart.
++//
++// Podzial na dwie czesci jest celowy:
++//   * nadzorDecyzja()  — czysta funkcja, zero I/O, zero config, zero millis.
++//     Dzieki temu ta sama logika jest sprawdzana testem hostowym
++//     (tests/host/NadzorHostTest.cpp) na zwyklym komputerze, bez plytki.
++//   * nadzorZadanSieciowych() — cienka otoczka: czyta licznik z NVS, pisze log
++//     i restartuje. Nic wiecej.
++static const uint32_t NADZOR_PROG_MS           = 300000UL;  // 5 min milczenia
++static const uint32_t NADZOR_ROZBIEG_MS        = 180000UL;  // 3 min po starcie
++static const uint32_t NADZOR_LICZNIK_WAZNY_MS  = 1800000UL; // 30 min = sukces
++static const uint8_t  NADZOR_MAX_RESTARTOW     = 3U;
++
++enum NadzorDecyzja : uint8_t {
++  NADZOR_BRAK    = 0,   // wszystko zyje — nic nie robimy
++  NADZOR_RESTART = 1,   // zadanie milczy za dlugo — restartuj
++  NADZOR_LIMIT   = 2,   // przekroczony limit restartow — tylko loguj
++  NADZOR_USPIONY = 3    // rozbieg / OTA / testy / zadania jeszcze nie ruszajace
++};
++
++// kto: 0 = nikt, 1 = tgTask, 2 = tgPollTask
++struct NadzorWejscie {
++  uint32_t nowMs;
++  uint32_t hbTg;
++  uint32_t hbPoll;
++  uint32_t licznikRestartow;
++  bool     blokada;      // OTA / test regresyjny w trakcie
++};
++
++static NadzorDecyzja nadzorDecyzja(const NadzorWejscie &w, uint8_t *kto, uint32_t *wiekMs) {
++  if (kto)     *kto = 0;
++  if (wiekMs)  *wiekMs = 0U;
++
++  if (w.nowMs < NADZOR_ROZBIEG_MS) return NADZOR_USPIONY;   // dopiero wstalismy
++  if (w.blokada)                   return NADZOR_USPIONY;   // OTA / testy
++  if (w.hbTg == 0U && w.hbPoll == 0U) return NADZOR_USPIONY; // zadania jeszcze nie wystartowaly
++
++  const uint32_t wiekTg   = (w.hbTg   == 0U) ? 0U : (uint32_t)(w.nowMs - w.hbTg);
++  const uint32_t wiekPoll = (w.hbPoll == 0U) ? 0U : (uint32_t)(w.nowMs - w.hbPoll);
++
++  uint8_t  k = 0U;
++  uint32_t wiek = 0U;
++  if (wiekTg >= NADZOR_PROG_MS)        { k = 1U; wiek = wiekTg; }
++  else if (wiekPoll >= NADZOR_PROG_MS) { k = 2U; wiek = wiekPoll; }
++  if (k == 0U) return NADZOR_BRAK;
++  if (kto)    *kto = k;
++  if (wiekMs) *wiekMs = wiek;
++
++  return (w.licznikRestartow >= NADZOR_MAX_RESTARTOW) ? NADZOR_LIMIT : NADZOR_RESTART;
++}
++
++static const char *nadzorKtoNazwa(uint8_t kto) {
++  switch (kto) {
++    case 1U: return "tgTask (Telegram i Firebase)";
++    case 2U: return "tgPollTask (odbieranie komend)";
++    default: return "?";
++  }
++}
++
++static void nadzorZadanSieciowych() {
++  // Sprawdzamy raz na sekunde — prog to 5 minut, wiec czesciej nie ma sensu.
++  // Dzieki temu nadzor nie doklada zadnego kosztu do kazdej iteracji loop().
++  static uint32_t ostatnieSprawdzenieMs = 0U;
++  const uint32_t now = millis();
++  if (ostatnieSprawdzenieMs != 0U && (uint32_t)(now - ostatnieSprawdzenieMs) < 1000UL) return;
++  ostatnieSprawdzenieMs = now;
++
++  // Licznik restartow czytamy z NVS RAZ na start, potem trzymamy w pamieci —
++  // odczyt NVS w kazdej iteracji petli glownej bylby zbednym kosztem.
++  static uint32_t licznikRestartow = 0U;
++  static bool     licznikWczytany  = false;
++  static bool     licznikWyczyszczony = false;
++  if (!licznikWczytany) {
++    licznikWczytany = true;
++    licznikRestartow = (uint32_t)config.getUInt("nadzorCnt", 0U);
++  }
++
++  // Po 30 min nieprzerwanej pracy licznik restartow jest juz nieaktualny —
++  // zerujemy go RAZ, ale nadzoru NIE wylaczamy.
++  if (!licznikWyczyszczony && now >= NADZOR_LICZNIK_WAZNY_MS) {
++    licznikWyczyszczony = true;
++    licznikRestartow = 0U;
++    if (config.getUInt("nadzorCnt", 0U) != 0U) config.putUInt("nadzorCnt", 0U);
++  }
++
++  const bool blokada = (otaOperacjaWTrakcie || otaUploadTrwa ||
++                        g_stabilityMegaActive || g_finalMegaActive ||
++                        g_recoveryOtaMegaActive || g_spoolGTestActive);
++
++  NadzorWejscie wejscie;
++  wejscie.nowMs            = now;
++  wejscie.hbTg             = __atomic_load_n(&g_tgTaskHeartbeatMs, __ATOMIC_ACQUIRE);
++  wejscie.hbPoll           = __atomic_load_n(&g_tgPollHeartbeatMs, __ATOMIC_ACQUIRE);
++  wejscie.licznikRestartow = licznikRestartow;
++  wejscie.blokada          = blokada;
++
++  uint8_t  kto  = 0U;
++  uint32_t wiek = 0U;
++  const NadzorDecyzja decyzja = nadzorDecyzja(wejscie, &kto, &wiek);
++
++  if (decyzja == NADZOR_BRAK || decyzja == NADZOR_USPIONY) return;
++
++  if (decyzja == NADZOR_LIMIT) {
++    // Trzecia proba z rzedu nie pomogla — nie robimy petli restartow.
++    // Log najwyzej raz na 10 min, zeby nie zawalic pamieci flash.
++    static uint32_t ostatniLogMs = 0U;
++    if (ostatniLogMs == 0U || (uint32_t)(now - ostatniLogMs) > 600000UL) {
++      ostatniLogMs = now;
++      zapiszLog(String(F("tag=NADZOR lvl=ERR zdarzenie=limit_restartow kto=")) +
++                nadzorKtoNazwa(kto) + " wiek_ms=" + String((unsigned long)wiek) +
++                " msg=\"poddalem sie - wymagana interwencja\"");
++    }
++    return;
++  }
++
++  // NADZOR_RESTART
++  licznikRestartow += 1U;
++  zapiszLog(String(F("tag=NADZOR lvl=ERR zdarzenie=zawieszenie kto=")) +
++            nadzorKtoNazwa(kto) + " wiek_ms=" + String((unsigned long)wiek) +
++            " restart_nr=" + String((unsigned long)licznikRestartow));
++  config.putUInt("nadzorCnt", licznikRestartow);
++  config.putBool("nadzorRestart", true);
++  config.putString("nadzorKto", nadzorKtoNazwa(kto));
++  config.putUInt("nadzorMs", wiek);
++  delay(50);
++  ESP.restart();
++}
++
+ void loop() {
+   serwisujTWDTJesliZarejestrowany();
+   otaPotwierdzTick();
++  nadzorZadanSieciowych();   // [v3.55.2] samo-ratunek po zawieszeniu zadania sieciowego
+   static unsigned long lastPing = 0;
+   static unsigned long lastDiag = 0;
+   static unsigned long lastHealthLog = 0;

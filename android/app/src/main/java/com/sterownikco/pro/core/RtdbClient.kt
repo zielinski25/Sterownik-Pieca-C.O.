@@ -1,6 +1,9 @@
 package com.sterownikco.pro.core
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
@@ -23,6 +26,16 @@ import kotlin.math.max
    `fbGet / fbPatch / fetchWithTimeout / doFirebaseLogin / pollFirebase`
    oraz endpointów `http://<ip>/api/...` z Piec.html.
    ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * [0.31.57] Odstęp sprawdzania `/piec/ack` po wysłaniu komendy.
+ *
+ * Było 1000 ms — do sekundy „martwego" czasu PO tym, jak centrala już potwierdziła.
+ * Przy komendach, które centrala wykonuje w ~0,2 s, ten 1 s był większą częścią
+ * opóźnienia niż samo przesłanie. 300 ms = 3 sprawdzenia na sekundę, nadal tanio
+ * (odpowiedź to ~60 bajtów).
+ */
+private const val ACK_POLL_MS = 300L
 
 object Rtdb {
     const val DB_URL = "https://akwarium-367be-default-rtdb.europe-west1.firebasedatabase.app"
@@ -296,12 +309,34 @@ object Rtdb {
                     }
                 }
             } catch (e: Exception) { /* continue */ }
-            delay(1000)
+            delay(ACK_POLL_MS)
         }
         null
     }
 
     data class Ack(val ok: Boolean, val error: String)
+
+    /**
+     * [0.31.57 PODGLAD-PANELU] „Cicha" wysyłka komendy — bez czekania na ACK.
+     *
+     * Używana wyłącznie do heartbeatu `podglad_wl` / `podglad_wyl`: firmware
+     * traktuje taki payload jako „ktoś patrzy na panel" i sam przyspiesza odczyt
+     * komend (7 s → 2 s) oraz wysyłkę statusu (15 s → 5 s). Heartbeat nie
+     * potrzebuje potwierdzenia, a czekanie do 12 s na ACK blokowałoby kolejne
+     * prawdziwe polecenia użytkownika.
+     *
+     * Ten sam [commandSendMutex] co [sendCommand] jest celowy: heartbeat nie
+     * może nadpisać payloadu prawdziwej komendy, zanim centrala go odczyta.
+     */
+    suspend fun sendCommandQuiet(cmd: String): Boolean = commandSendMutex.withLock {
+        val body = JSONObject()
+            .put("id", makeFireCmdId())
+            .put("cmd", cmd)
+            .put("token", cmdToken)
+            .put("ts", System.currentTimeMillis())
+        val p = patch("/piec/cmd.json", body)
+        p.ok
+    }
 
     // ── lokalne API centrali (ESP32) ─────────────────────────────────────────
     internal fun localControllerUrl(ip: String, path: String): String? =
@@ -319,6 +354,12 @@ object Rtdb {
     private suspend fun espGet(ip: String, path: String): JSONObject? = espUrl(ip, path)?.let { u ->
         val (code, text) = executeEsp(Request.Builder().url(u).build())
         if (code in 200..299) try { JSONObject(text) } catch (e: Exception) { null } else null
+    }
+
+    /** [v0.31.33 ESP-HISTORY] Surowy tekst z centrali — dla `/api/history` (CSV, nie JSON). */
+    private suspend fun espGetText(ip: String, path: String): String? = espUrl(ip, path)?.let { u ->
+        val (code, text) = executeEsp(Request.Builder().url(u).build())
+        if (code in 200..299) text else null
     }
 
     private suspend fun espPost(ip: String, path: String, body: JSONObject): JSONObject? = espUrl(ip, path)?.let { u ->
@@ -348,6 +389,18 @@ object Rtdb {
     suspend fun wifiScanResult(ip: String): JSONObject? = espGet(ip, "/api/wifi/scan/result")
     suspend fun rtcSync(ip: String, y: Int, mo: Int, d: Int, h: Int, mi: Int, s: Int): JSONObject? =
         espGet(ip, "/api/rtc-sync?rok=$y&miesiac=$mo&dzien=$d&godzina=$h&minuta=$mi&sekunda=$s")
+    /**
+     * [v0.31.33 ESP-HISTORY] Lokalne archiwum centrali: `GET /api/history`.
+     * To ta sama historia, którą centrala wysyła do chmury — ale z próbkami,
+     * które w chmurze się nie pojawiły (przerwy wysyłki). Zakres ~24–38 h.
+     */
+    suspend fun fetchEspHistory(ip: String): List<TelemPoint>? {
+        val csv = espGetText(ip, "/api/history") ?: return null
+        if (csv.isBlank()) return null
+        val rows = withContext(Dispatchers.Default) { parseEspHistoryCsv(csv) }
+        return rows.ifEmpty { null }
+    }
+
     suspend fun terminalSend(ip: String, line: String): JSONObject? =
         espPost(ip, "/api/terminal", JSONObject().put("cmd", line))
 
@@ -363,8 +416,46 @@ object Rtdb {
     }
 
     // ── telemetria historyczna (szardy dzienne + paginacja po `ts`) ──────────
-    private const val HISTORY_PAGE_SIZE = 300
-    private var historyIndexFallback = false
+    // [0.31.46] 300 -> 1000. Firebase RTDB spokojnie oddaje 1000 rekordow
+    // w jednej odpowiedzi, a to 3x mniej zapytan: 7 dni = 11 zamiast 34.
+    private const val HISTORY_PAGE_SIZE = 1000
+
+    /** Ile dni pobieramy naraz. 4 to kompromis: 7 dni = 2 fale, 30 dni = 8. */
+    private const val FETCH_PARALLEL_DAYS = 4
+
+    /**
+     * Po tym czasie ponawiamy paginację, nawet jeśli indeks `ts` kiedyś zawiódł.
+     * Wcześniej flaga zostawała do końca procesu i jeden przypadkowy HTTP 400
+     * (np. po odświeżeniu tokenu) wyłączał stronicowanie na zawsze.
+     */
+    private const val INDEX_FALLBACK_TTL_MS = 10L * 60_000L
+
+    @Volatile private var historyIndexFallback = false
+    @Volatile private var historyIndexFallbackUntil = 0L
+
+    /** Dni domknięte w tym procesie — wczoraj dociągamy najwyżej raz. */
+    private val finalizedDays = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    private fun indexFallbackActive(): Boolean {
+        if (!historyIndexFallback) return false
+        if (System.currentTimeMillis() > historyIndexFallbackUntil) {
+            historyIndexFallback = false
+            return false
+        }
+        return true
+    }
+
+    private fun enableIndexFallback() {
+        historyIndexFallback = true
+        historyIndexFallbackUntil = System.currentTimeMillis() + INDEX_FALLBACK_TTL_MS
+    }
+
+    /** Tylko prawdziwy brak indeksu `ts` usprawiedliwia pobranie całego dnia. */
+    private fun isIndexError(error: String?, body: String): Boolean {
+        val text = ((error ?: "") + " " + body).lowercase(java.util.Locale.US)
+        if (text.isBlank()) return false
+        return text.contains("index not defined") || text.contains("indexon")
+    }
 
     private fun shardPath(y: Int, m: Int, d: Int) =
         "/piec/telemetry/1m/v1/$y/" + PiecState.pad2(m) + "/" + PiecState.pad2(d)
@@ -396,14 +487,23 @@ object Rtdb {
         for (guard in 0 until 100) {
             val q = path + ".json?orderBy=" + java.net.URLEncoder.encode("\"ts\"", "UTF-8") +
                 "&startAt=" + cursor + "&endAt=" + endTs + "&limitToFirst=" + HISTORY_PAGE_SIZE
-            val res = get(q)
+            // [v0.31.34 GAP-REPAIR] Błąd sieci w środku dnia nie może skasować
+            // całego dnia — zachowujemy to, co już pobraliśmy. Resztę dopyta
+            // repairGaps() po zebraniu wszystkich dni.
+            val res = try {
+                get(q)
+            } catch (e: Exception) {
+                if (rows.isNotEmpty()) return uniqueSort(rows)
+                throw e
+            }
             if (!res.ok) {
-                val msg = res.error ?: ""
-                if (msg.contains("Index not defined", true) || msg.contains("indexOn", true) || msg.contains("400")) {
-                    historyIndexFallback = true
+                if (isIndexError(res.error, res.body)) {
+                    enableIndexFallback()
                     return fetchShardFull(path, startTs, endTs)
                 }
-                throw java.io.IOException(msg)
+                // Inne błędy (401, timeout, HTTP 400 bez indeksu) nie mogą
+                // udawać pustego dnia — dzień zostanie ponowiony przy kolejnym wejściu.
+                throw java.io.IOException(res.error ?: "błąd pobierania dnia")
             }
             val page = ArrayList<TelemRow>()
             if (res.body.isNotBlank()) {
@@ -471,21 +571,220 @@ object Rtdb {
         return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
     }
 
-    /** `fetchTelemetryFromFirebase(rangeSec)` — zwraca gotowe serie lub null. */
-    suspend fun fetchTelemetry(rangeSec: Int): List<TelemPoint>? {
-        if (idToken.isEmpty()) return null
+    /**
+     * [v0.31.34 GAP-REPAIR] Po pobraniu całego zakresu sprawdza, czy nie została
+     * przerwa dłuższa niż 3 minuty, i dopyta dokładnie ten przedział.
+     *
+     * Powód: pojedyncza nieudana strona paginacji (albo krótka odpowiedź RTDB)
+     * zostawiała dziurę w środku dnia, mimo że dane w chmurze są. Wtedy wykres
+     * pokazywał pustkę, której w bazie nie ma. Prawdziwa przerwa w chmurze
+     * zwróci 0 wierszy — wtedy dziura zostaje i jest uczciwie opisana na wykresie.
+     */
+    private suspend fun repairGaps(rows: List<TelemRow>): List<TelemRow> {
+        if (rows.size < 2) return rows
+        val holes = ArrayList<LongArray>()
+        for (i in 1 until rows.size) {
+            val a = rows[i - 1].ts
+            val b = rows[i].ts
+            if (b - a > 180L) holes.add(longArrayOf(a + 1L, b - 1L))
+        }
+        if (holes.isEmpty()) return rows
+        val extra = ArrayList<TelemRow>()
+        for (h in holes.take(40)) {
+            for (day in dayRange(h[0], h[1])) {
+                val ds = max(h[0], day[0] / 1000)
+                val de = minOf(h[1], day[0] / 1000 + 86_400 - 1)
+                if (de < ds) continue
+                try {
+                    extra.addAll(
+                        fetchShard(shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt()), ds, de)
+                    )
+                } catch (e: Exception) { /* przerwa zostaje — pokazujemy ją na wykresie */ }
+            }
+        }
+        if (extra.isEmpty()) return rows
+        val map = LinkedHashMap<String, TelemRow>()
+        rows.forEach { map[it.id] = it }
+        extra.forEach { map[it.id] = it }
+        return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
+    }
+
+    /**
+     * Pobiera zakres historii, korzystając z dziennego cache, jeśli został podany.
+     *
+     * Zasady ruchu sieciowego:
+     *  - dzień bez pliku w pamięci  → pełne pobranie tego dnia i zapis,
+     *  - dzień bieżący (UTC)        → wyłącznie rekordy nowsze od ostatniego zapisanego,
+     *  - dzień zamknięty            → tylko z pamięci, bez sieci.
+     *
+     * Błąd jednego dnia nie przerywa pozostałych, ale jest zwracany w [HistoryFetch],
+     * żeby UI mogło powiedzieć "brak 2 dni" zamiast milcząco pokazać dziurę.
+     */
+    suspend fun fetchTelemetry(
+        rangeSec: Int,
+        firmware: String? = null,
+        deviceUptimeSeconds: Double? = null,
+        statusObservedAtMs: Long? = null,
+        cache: TelemetryDayCache? = null
+    ): HistoryFetch = withContext(Dispatchers.IO) {
+        if (idToken.isEmpty()) return@withContext HistoryFetch()
+
         val end = System.currentTimeMillis() / 1000
         val start = end - rangeSec
+        val queryEnd = TelemetryTimeRepair.queryEndSeconds(
+            end, firmware, deviceUptimeSeconds, statusObservedAtMs
+        )
         val all = ArrayList<TelemRow>()
-        for (day in dayRange(start, end)) {
-            val dayStart = max(start, day[0] / 1000)
-            val dayEnd = minOf(end, day[0] / 1000 + 86_400 - 1)
+        var daysRequested = 0
+        var daysFromCache = 0
+        var daysDownloaded = 0
+        var daysStale = 0
+        var daysFailed = 0
+        var firstError: String? = null
+        val todayKey = TelemetryDayCache.utcDayKey(end)
+        val yesterdayKey = TelemetryDayCache.utcDayKey(end - 86_400)
+
+        for (day in dayRange(start, queryEnd)) {
+            daysRequested++
+            // Cały dzień, nie tylko wycinek zakresu: ten sam plik posłuży potem
+            // szerszemu zakresowi. Pobranie skróconego dnia (np. przy 24 h)
+            // zatrułoby pamięć i po przełączeniu na 30 dni brakowałoby próbek.
+            val dayStart = day[0] / 1000
+            val dayEnd = dayStart + 86_400 - 1
             val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
-            try { all.addAll(fetchShard(path, dayStart, dayEnd)) } catch (e: Exception) { /* pusty dzień */ }
+            val key = TelemetryDayCache.utcDayKey(dayStart)
+            val cached = cache?.read(key)
+            try {
+                if (cached == null) {
+                    val rows = fetchShard(path, dayStart, dayEnd)
+                    all.addAll(rows)
+                    cache?.write(key, rows)
+                    finalizedDays[key] = true
+                    daysDownloaded++
+                } else if (key == todayKey) {
+                    // Doba w toku: dociągamy tylko ogon, nie całe 24 h.
+                    // `startAt` jest domknięty, więc ostatni zapisany rekord wraca
+                    // zawsze — o tym, czy są nowe dane, decyduje porównanie `id`.
+                    val fresh = fetchShard(path, max(dayStart, cached.maxTs), dayEnd)
+                    val known = cached.rows.mapTo(HashSet()) { it.id }
+                    val added = fresh.filter { it.id !in known }
+                    if (added.isEmpty()) {
+                        all.addAll(cached.rows)
+                        daysFromCache++
+                    } else {
+                        val merged = uniqueSort(cached.rows + added)
+                        all.addAll(merged)
+                        cache?.write(key, merged)
+                        daysDownloaded++
+                    }
+                } else if (key == yesterdayKey && !finalizedDays.containsKey(key)) {
+                    // Wczoraj domykamy raz na proces: rekordy mogły dopisać się
+                    // po północy UTC. Scalanie, nigdy podmiana — nie zgubimy próbek.
+                    val full = fetchShard(path, dayStart, dayEnd)
+                    finalizedDays[key] = true
+                    val merged = uniqueSort(cached.rows + full)
+                    all.addAll(merged)
+                    cache?.write(key, merged)
+                    daysDownloaded++
+                } else {
+                    all.addAll(cached.rows)
+                    daysFromCache++
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (firstError == null) firstError = e.message ?: "błąd sieci"
+                if (cached != null) {
+                    // Dzień z pamięci jest lepszy niż dziura w wykresie,
+                    // ale oznaczamy go jako nieodświeżony.
+                    all.addAll(cached.rows)
+                    daysStale++
+                } else {
+                    daysFailed++
+                }
+            }
         }
+
         val sorted = uniqueSort(all)
-        if (sorted.isEmpty()) return null
-        val chartPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
-        return chartPoints.ifEmpty { null }
+        if (sorted.isEmpty()) {
+            return@withContext HistoryFetch(
+                daysRequested = daysRequested, daysFromCache = daysFromCache,
+                daysDownloaded = daysDownloaded, daysStale = daysStale,
+                daysFailed = daysFailed, firstError = firstError
+            )
+        }
+        val repaired = TelemetryTimeRepair.normalize(
+            rows = sorted,
+            firmware = firmware,
+            deviceUptimeSeconds = deviceUptimeSeconds,
+            statusObservedAtMs = statusObservedAtMs
+        ).rows
+        val chartPoints = repaired.asSequence()
+            .filter { it.ts in start..end }
+            .map { it.toPoint() }
+            .filter { it.hasValues() }
+            .toList()
+        HistoryFetch(
+            points = chartPoints,
+            daysRequested = daysRequested,
+            daysFromCache = daysFromCache,
+            daysDownloaded = daysDownloaded,
+            daysStale = daysStale,
+            daysFailed = daysFailed,
+            firstError = firstError
+        )
+    }
+
+    /** Wynik pobrania dokładnego przedziału: próbki + informacja, czy nic nie wypadło. */
+    data class WindowResult(val points: List<TelemPoint>, val complete: Boolean)
+
+    /**
+     * [0.31.43 INCREMENTAL] Pobiera DOKŁADNIE przedział [startSec, endSec].
+     *
+     * Po co: `fetchTelemetry(rangeSec)` zawsze brało całe okno od teraz w tył.
+     * Pamięć telefonu (`TelemetryCache`) wie, czego już nie musi pobierać, więc
+     * pyta tylko o brakujące fragmenty — zwykle o ogon od ostatniej próbki.
+     *
+     * `complete = false` znaczy, że choć jeden dzień się nie pobrał (sieć).
+     * Wtedy nie wolno zapamiętywać „tu jest pusto", bo to nieprawda.
+     */
+    suspend fun fetchWindow(startSec: Long, endSec: Long): WindowResult {
+        if (idToken.isEmpty()) return WindowResult(emptyList(), false)
+        if (endSec <= startSec) return WindowResult(emptyList(), true)
+        // [0.31.46 ROWNOLEGLE] Dni pobieramy po FETCH_PARALLEL_DAYS naraz zamiast
+        // po kolei. Wczesniej 7 dni = 7 kolejnych dni, kazdy z wlasnymi zapytaniami
+        // — sumarycznie ~34 zapytania wykonywane JEDNO PO DRUGIM (~10 s).
+        // Teraz sa to 2 fale. Kolejnosc nie ma znaczenia, bo uniqueSort() i tak
+        // porzadkuje po czasie, a kazdy dzien trafia do wlasnego sharda.
+        val zadania = ArrayList<Pair<String, LongArray>>()
+        for (day in dayRange(startSec, endSec)) {
+            val dayStart = max(startSec, day[0] / 1000)
+            val dayEnd = minOf(endSec, day[0] / 1000 + 86_400 - 1)
+            if (dayEnd < dayStart) continue
+            zadania.add(Pair(shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt()),
+                             longArrayOf(dayStart, dayEnd)))
+        }
+        // null = ten dzien sie nie udal (blad sieci). Reszta zostaje, a kompletność
+        // jest falszywa — dzieki temu nie zapamietamy "tu pusto" dla brakujacego dnia.
+        val czesci: List<List<TelemRow>?> = coroutineScope {
+            zadania.chunked(FETCH_PARALLEL_DAYS).map { fala ->
+                fala.map { zadanie ->
+                    val path = zadanie.first
+                    val od = zadanie.second[0]
+                    val doT = zadanie.second[1]
+                    async {
+                        try { fetchShard(path, od, doT) } catch (e: Exception) { null }
+                    }
+                }.awaitAll()
+            }.flatten()
+        }
+        val rows = ArrayList<TelemRow>()
+        var complete = true
+        for (czesc in czesci) {
+            if (czesc == null) complete = false else rows.addAll(czesc)
+        }
+        val sorted = repairGaps(uniqueSort(rows))
+        val pts = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
+        return WindowResult(pts, complete)
     }
 }

@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "release_ready": false,
+  "main_changed": false,
+  "inputs": {
+    "narzedzia/pobieranie-historia207/Snapshots.h": "1ebcf3dd331cdaadc2610a8854c76310341406c05e6b3605e92708991fc88ee7",
+    "narzedzia/pobieranie-historia207/Test.cpp": "3e919a4dd0a01ea54dc1140d0980de864934ef43580d9ccdd5497a5a14c59c50",
+    "narzedzia/pobieranie-historia207/run.py": "def23f16b653f11cd705e2d6d45a40b1db7915915ed5bde17b30479a60dd0c3c",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/uchwyty-runtime197/CheckedRead.h": "88a3fba5db1638e43a570bd467ba1c41e17d506e347da79eb23e4eaa45f0569d",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/odpowiedz-http199/CheckedFileBody.h": "e68cd4e5cf852e3ac0605f8815bdd596d64a75577bbaeb4dcac532bc3b5ac561",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690",
+    "narzedzia/blokada-startu-fs196/upstream/FS.h": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+    "narzedzia/blokada-startu-fs196/upstream/FSImpl.h": "5187168c8e15583d1b55e935987532f221f1d3ca958e293494c221e5b2bc538a",
+    "narzedzia/blokada-startu-fs196/upstream/LittleFS.h": "394d3cf42f869417e247d26c6dff7cff59a26d4393d7a183a801fc6c949f18ae"
+  },
+  "profiles": {
+    "native": {
+      "stdout": "PASS snapshots207 groups=23 fixtures=23; real 197 owner + Arduino FS.cpp; modeled backend/writer, not ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "asan-ubsan": {
+      "stdout": "PASS snapshots207 groups=23 fixtures=23; real 197 owner + Arduino FS.cpp; modeled backend/writer, not ESP\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  }
+}

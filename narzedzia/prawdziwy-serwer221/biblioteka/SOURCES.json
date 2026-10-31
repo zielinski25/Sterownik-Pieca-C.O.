@@ -1,0 +1,358 @@
+{
+  "espasyncwebserver": {
+    "repo": "https://github.com/ESP32Async/ESPAsyncWebServer",
+    "ref": "c47917dcaba2acefb04277cd679f58a60b4fab30",
+    "opis": "Prawdziwe zrodla serwera HTTP uzywane na urzadzeniu (parser, dyspozytor, odpowiedzi).",
+    "pliki": {
+      "AsyncEventSource.h": {
+        "sha256": "3466e69d948043dfc42e1b62a3846db8507a0e2b61466f8382f895448906432a",
+        "bajtow": 10949
+      },
+      "AsyncJson.h": {
+        "sha256": "173395025538798dbcb1d957c53143865e2026e54300884281ade1c90fcfc0d3",
+        "bajtow": 3783
+      },
+      "AsyncMessagePack.h": {
+        "sha256": "a5b7193ed9375dfab9206147f029f65ebbdf3e0ae9203508f6a1ef72637a85ac",
+        "bajtow": 254
+      },
+      "AsyncWebHeader.cpp": {
+        "sha256": "820dc02429e0de56b72a1a7a91a603b87819a18e2501c4a83041a0e69ea39190",
+        "bajtow": 1294
+      },
+      "AsyncWebServerLogging.h": {
+        "sha256": "f168a69855b300b62430541a76b3406fb09f3b646292630f22ddc1f494959d16",
+        "bajtow": 10438
+      },
+      "AsyncWebServerRequest.cpp": {
+        "sha256": "1fd05f95ad72f42855654cc8b0f9c710c7e26dae6d519cdae054fda871f32d24",
+        "bajtow": 3747
+      },
+      "AsyncWebServerVersion.h": {
+        "sha256": "4bb11fd2550ac5ef061097502fd4169993a31714db1b20a0fef0e401b6536ff0",
+        "bajtow": 1263
+      },
+      "AsyncWebSocket.h": {
+        "sha256": "d769838f7502f1269572290f35ee543cc2ae8ea7a78c1b07a9859530071db783",
+        "bajtow": 19329
+      },
+      "BackPort_SHA1Builder.h": {
+        "sha256": "9e6c332a48f29ee000dd2fd2c255bd50f118bb165a12788ad0f7b10e2fb0edd7",
+        "bajtow": 1241
+      },
+      "ChunkPrint.cpp": {
+        "sha256": "3ee09f634f88690add6a2196a850c04cbe6265b85ad3eea04d76835067ab88f7",
+        "bajtow": 567
+      },
+      "ChunkPrint.h": {
+        "sha256": "399fb551e6f7d1202b4cedcd7f6934ddd418f3f95622b64c39f0d1e25d72ea14",
+        "bajtow": 594
+      },
+      "ESPAsyncWebServer.h": {
+        "sha256": "25db7c8fb30943307b28b181722187a65576f6ee778eeb99e29b1ef8db7915ba",
+        "bajtow": 63079
+      },
+      "Middleware.cpp": {
+        "sha256": "c59543b4cdf8f3ee5ff3e0d15a0e71eb62a02148000423083227519e98bd9d0c",
+        "bajtow": 8927
+      },
+      "WebAuthentication.cpp": {
+        "sha256": "92bae4a3083bf7556ccbf5015c64aca724cf1ccdec8c06bd4d909630073692d0",
+        "bajtow": 6603
+      },
+      "WebAuthentication.h": {
+        "sha256": "c57a43a3c15e418ed3fd0cda680b8d6b5552afa6f346e2305e4965f370e0603b",
+        "bajtow": 742
+      },
+      "WebHandlerImpl.h": {
+        "sha256": "e2ab3f7b6af3544934bea31a06c803240a3d8a6c3bbeda9669854cf5d840a006",
+        "bajtow": 2872
+      },
+      "WebHandlers.cpp": {
+        "sha256": "43c01d2fb1208552bc940b44678086d0fae62a8756fa2db6ff68df0506ef9755",
+        "bajtow": 10603
+      },
+      "WebRequest.cpp": {
+        "sha256": "3ca1c44ffef44e4fd7d8e900857e797469cd336bf846f2a9af61e02a0956e7ad",
+        "bajtow": 54803
+      },
+      "WebResponseImpl.h": {
+        "sha256": "b90de8322a97af18e8cd6817b7a5c27999c6a5e0097f23ecd77a4e167d9ced75",
+        "bajtow": 8834
+      },
+      "WebResponses.cpp": {
+        "sha256": "12055aa687cd0f6f719b65057c7a1d203baf6f0ef88e96b3fb4909ac68d0e6f8",
+        "bajtow": 35488
+      },
+      "WebServer.cpp": {
+        "sha256": "4ed4725bf35e3392eb75bffb86ae47220d069783032840d935136faa0fad1e60",
+        "bajtow": 10060
+      },
+      "literals.h": {
+        "sha256": "2df08b5947a05fdb6b890a486708b046cc2bc903aa9c7d7a227c0a4a49b51fb3",
+        "bajtow": 13955
+      }
+    }
+  },
+  "arduino-core-api": {
+    "repo": "https://github.com/arduino/ArduinoCore-API",
+    "ref": "master (commit 0f4e57ea193a00163ae59f0f0ff478feae7eb5db w chwili pobrania)",
+    "opis": "Prawdziwe String/Print/Stream/IPAddress - to samo API, na ktorym stoi Arduino na ESP32.",
+    "pliki": {
+      "ArduinoAPI.h": {
+        "sha256": "421b66ccbbf038cef50df9860f7da13a6b4e92358b0550e52202b0aaabfc84ec",
+        "bajtow": 1468
+      },
+      "Binary.h": {
+        "sha256": "e424df9221d724316d151bb7b132d6448c3b100263ff2a5de78e7b22c1f515b4",
+        "bajtow": 22593
+      },
+      "CanMsg.cpp": {
+        "sha256": "c488b4ad4b975153e9111aced3fc6f9506f97bc979945664a024034d13ba97d1",
+        "bajtow": 1812
+      },
+      "CanMsg.h": {
+        "sha256": "a32b3119f44ba32c352129344aa0792c36acd0f74aca60d7b89b86745a98981a",
+        "bajtow": 4648
+      },
+      "CanMsgRingbuffer.cpp": {
+        "sha256": "094d7a15e3883ebe154c67222f38abde076b7f14813a725f8fd0b2c4837a3e2c",
+        "bajtow": 2293
+      },
+      "CanMsgRingbuffer.h": {
+        "sha256": "fb5445501ce011e1b9af2908e67b51fe2cd0571acebccae1e9db26728146e1c1",
+        "bajtow": 2403
+      },
+      "Client.h": {
+        "sha256": "8a50aacda9bf79c5df0453159571b5b33c2f81a91cb8a8286ea31d66daa41c62",
+        "bajtow": 1505
+      },
+      "Common.cpp": {
+        "sha256": "f0194c591de2b66b4f702739a0fc83be2bad49b6907488f1ef371773dd9072a1",
+        "bajtow": 1130
+      },
+      "Common.h": {
+        "sha256": "f50252fe58ee67f4d9ed4f38b91d718c129976b65f2e0eb726b80c51d31265f1",
+        "bajtow": 5175
+      },
+      "Compat.h": {
+        "sha256": "cb940ac0d23e0ed6a591771e550527f2efd3dacafbaa37d1385da007b163a1ff",
+        "bajtow": 1108
+      },
+      "DMAPool.h": {
+        "sha256": "0f8f2e9c97a815958f091e2e15ab71f3c5d87f8d4c9ecbca32ccad06f4a6c2b3",
+        "bajtow": 9134
+      },
+      "HardwareCAN.h": {
+        "sha256": "4a1f9d08dd99f430b8edc834e9015fb39695a727c12821995b33afc5e1593d73",
+        "bajtow": 4004
+      },
+      "HardwareI2C.h": {
+        "sha256": "180ef79ccd4c71d8e5941f8ee25607d9a52d0c552fbce6b8fec31a3187db9f8d",
+        "bajtow": 1520
+      },
+      "HardwareSPI.h": {
+        "sha256": "98ee3c7595140c29f96bb186cb0e08ee21cb3df95b315ec11970f1c8331b51d6",
+        "bajtow": 4168
+      },
+      "HardwareSerial.h": {
+        "sha256": "fcaaf0f9489baf2a2f0c60079f6807d1e896a2462ef82ecfdd6077472337f464",
+        "bajtow": 5656
+      },
+      "IPAddress.cpp": {
+        "sha256": "8f72c8b5202a5e0df2512f22b61760feba1a40d457419aa0396f4fe45dfd43dd",
+        "bajtow": 11813
+      },
+      "IPAddress.h": {
+        "sha256": "1cd22c5ca261cf96f375d7f81d62f540d8fc422ce44e2581b00f5632020f4e98",
+        "bajtow": 4166
+      },
+      "Interrupts.h": {
+        "sha256": "e65784666f16d2fce53c3c06cb0f528f35e69b7b0bbf3e349708305accdc4db3",
+        "bajtow": 2055
+      },
+      "PluggableUSB.cpp": {
+        "sha256": "9198a9062f9df6d0e64152b7e5ab9b20aa7fc1a4e1cc0b15e5f5a8901a4f5ac8",
+        "bajtow": 2404
+      },
+      "PluggableUSB.h": {
+        "sha256": "6c5ca4f28328a7c0cd0cc5f5b25892248af521dda737dde2f6f055532b4618d3",
+        "bajtow": 2240
+      },
+      "Print.cpp": {
+        "sha256": "49e04533150ed3e97799953e4ec830da51ed61d2440b302deae30dd150a25273",
+        "bajtow": 7867
+      },
+      "Print.h": {
+        "sha256": "963cc68cbe6cc635226797c83b8ebfc1a70254f13ddbd6ecdba6d35b120133bb",
+        "bajtow": 3104
+      },
+      "Printable.h": {
+        "sha256": "f0e4430449dbb08940468ea3598816e6057c61783b75bda2dd9069d796fafd01",
+        "bajtow": 1318
+      },
+      "RingBuffer.h": {
+        "sha256": "56516afcd8703c89b3da68ea16a72f789e9b5aed990e3786594f6c049c31ef8c",
+        "bajtow": 3123
+      },
+      "Server.h": {
+        "sha256": "58542091129cfa3ce873ba7f461b05281df4addfbe5d26cc684e52aafe4623c0",
+        "bajtow": 962
+      },
+      "Stream.cpp": {
+        "sha256": "ec269d975e383ab2ef40fc7aabb54a4eef798c314ddfe9006572f7a4522ef5ef",
+        "bajtow": 8874
+      },
+      "Stream.h": {
+        "sha256": "c6944b04e52f07c2383887e747c726977c5c86ab0bdf76330dfeb143ff843694",
+        "bajtow": 6215
+      },
+      "String.cpp": {
+        "sha256": "aa056fa2aa79f267739ae5403d99ce13bd6cff9c05bd7e7ff45ce2ca11c63da4",
+        "bajtow": 17165
+      },
+      "String.h": {
+        "sha256": "959929883f582a09f263f99e9aba0a24ce2efafc44e41692c76ff616185a8ba9",
+        "bajtow": 11086
+      },
+      "USBAPI.h": {
+        "sha256": "e98bc2119ebfd0f1c0026683ccd7ee65950ccdae9371194d64d664ee681ac7c7",
+        "bajtow": 1982
+      },
+      "Udp.h": {
+        "sha256": "e5bbe2b7c9c3434ddc39f242dbfc3285fad158463d64eb3d7477eeeb58a54ed3",
+        "bajtow": 4386
+      },
+      "WCharacter.h": {
+        "sha256": "d92830148b49de2f9b806847e5918f5c130aae20b05a01c3b0fb60e4d3719a67",
+        "bajtow": 4522
+      },
+      "itoa.h": {
+        "sha256": "2eae998324bda3decb5d9901447aa4d722ce2b4424b668fe50dde6eee5fdff43",
+        "bajtow": 1325
+      },
+      "deprecated-avr-comp/avr/dtostrf.c.impl": {
+        "sha256": "90a276235838028de5e1731eccbf2b62b4b35194cc76f98e2991372db476b58f",
+        "bajtow": 1470
+      },
+      "deprecated-avr-comp/avr/dtostrf.h": {
+        "sha256": "7137a464dc2f1f461eb0e1f9379546b05747d571b07d71d5731dd41efb446b26",
+        "bajtow": 1044
+      },
+      "deprecated-avr-comp/avr/interrupt.h": {
+        "sha256": "647a88260e4b0545fce33900845c7961224c9c65db0fcf0202ddca658992bea0",
+        "bajtow": 909
+      },
+      "deprecated-avr-comp/avr/pgmspace.h": {
+        "sha256": "65c7816bc442a775ddbcd9cb4fab04272d4dabfe9810455f5bee5b39d34cfc13",
+        "bajtow": 5214
+      },
+      "deprecated/Client.h": {
+        "sha256": "94f7b9296db12f38eabcc98900354f70e71008af302b4b01abf745027a0906b7",
+        "bajtow": 996
+      },
+      "deprecated/HardwareSerial.h": {
+        "sha256": "9ecf9348411fc5cfb758c7990e8afb47109b0fa0a64a4b8b828877713e2622ba",
+        "bajtow": 1012
+      },
+      "deprecated/IPAddress.h": {
+        "sha256": "56df6cc1590217fc6a6ba552f3bae27dc70ee8257ff2cb88f0a78a532dca21aa",
+        "bajtow": 1002
+      },
+      "deprecated/Print.h": {
+        "sha256": "d1dc25758645e5844f689c6a12acf82797948dcc4b9ed1c5f98fffb627fc3221",
+        "bajtow": 993
+      },
+      "deprecated/Printable.h": {
+        "sha256": "82c6c892a9cff931b608166e2f89f48faaf4b09046b5b82dc34358838535a2c3",
+        "bajtow": 1001
+      },
+      "deprecated/Server.h": {
+        "sha256": "910a6bbfa681d7fae79be67ae17590f9e28ef96f0cdee4d814b75cc53746a7f6",
+        "bajtow": 996
+      },
+      "deprecated/Stream.h": {
+        "sha256": "b15261084ed766d8144b7c542c9e9c381ed0f39cd414fdafab433e5611821c4d",
+        "bajtow": 996
+      },
+      "deprecated/Udp.h": {
+        "sha256": "677ce38f59de2d3f7ae98e516161c0db3559c59b584d1245325341e817dd7fc0",
+        "bajtow": 990
+      },
+      "deprecated/WString.h": {
+        "sha256": "4c21b7bfc4ffb90450a4124329d29a54aed9c8fd4bfd27dc8d14656805a49377",
+        "bajtow": 994
+      }
+    }
+  },
+  "esp32-core": {
+    "repo": "https://github.com/espressif/arduino-esp32",
+    "ref": "master (commit 387c69d039405df51e594590a4e2e8b93ed76774 w chwili pobrania); FS.h z etapu 196",
+    "opis": "FS.h (przypiety w etapie 196) i cbuf.h/cbuf.cpp z rdzenia ESP32.",
+    "pliki": {
+      "FS.h": {
+        "sha256": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+        "bajtow": 3141
+      },
+      "zrodla-urzadzenia/cbuf.cpp": {
+        "sha256": "b972b3843b143f54e24581eb844b0640b7da3b32babab8254ebc2af33c20127c",
+        "bajtow": 7236
+      },
+      "zrodla-urzadzenia/cbuf.h": {
+        "sha256": "abd17744bbbc0bea263a12355b28ee973354a1139928d74f333be7aa4090f291",
+        "bajtow": 1663
+      }
+    }
+  },
+  "libb64": {
+    "repo": "https://github.com/libb64/libb64",
+    "ref": "master (commit d86057c7382913ffc4ce82a9e71cec639267d130 w chwili pobrania)",
+    "opis": "Zaleznosc WebAuthentication.cpp biblioteki (Basic auth).",
+    "pliki": {
+      "include/b64/ccommon.h": {
+        "sha256": "dcdf977bfb33bee3e7557e1dc01a6da75ff01bc7ea86c087a2af63ca9ce9809c",
+        "bajtow": 340
+      },
+      "include/b64/cdecode.h": {
+        "sha256": "04f43f0745b2beb80234aa5259f23e76334d56c0bf3eda93df0777c47ee129f4",
+        "bajtow": 852
+      },
+      "include/b64/cencode.h": {
+        "sha256": "eb0891906fa36deeb9c296d4c39cae6ba15b9dddba8d5e5753706a7858b0e39b",
+        "bajtow": 1036
+      },
+      "include/b64/decode.h": {
+        "sha256": "120d73912d5b06f5af39d160df449330bed76d66081b446b6961a6be45a82f40",
+        "bajtow": 1479
+      },
+      "include/b64/encode.h": {
+        "sha256": "ff9e1197f49a82caa25084cbe570da2bc414a59fdb1341d272477b2ac365dd54",
+        "bajtow": 1641
+      },
+      "include/libb64/ccommon.h": {
+        "sha256": "dcdf977bfb33bee3e7557e1dc01a6da75ff01bc7ea86c087a2af63ca9ce9809c",
+        "bajtow": 340
+      },
+      "include/libb64/cdecode.h": {
+        "sha256": "04f43f0745b2beb80234aa5259f23e76334d56c0bf3eda93df0777c47ee129f4",
+        "bajtow": 852
+      },
+      "include/libb64/cencode.h": {
+        "sha256": "eb0891906fa36deeb9c296d4c39cae6ba15b9dddba8d5e5753706a7858b0e39b",
+        "bajtow": 1036
+      },
+      "include/libb64/decode.h": {
+        "sha256": "120d73912d5b06f5af39d160df449330bed76d66081b446b6961a6be45a82f40",
+        "bajtow": 1479
+      },
+      "include/libb64/encode.h": {
+        "sha256": "ff9e1197f49a82caa25084cbe570da2bc414a59fdb1341d272477b2ac365dd54",
+        "bajtow": 1641
+      },
+      "src/cencode.c": {
+        "sha256": "e1642f236eb9c535e3b2538cab85a92d58b34a9b826d17b606a849e843cba886",
+        "bajtow": 4043
+      }
+    }
+  }
+}

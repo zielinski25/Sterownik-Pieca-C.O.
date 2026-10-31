@@ -1,0 +1,148 @@
+{
+  "release_ready": false,
+  "status": "PASS",
+  "source_sha256": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+  "checked": 28,
+  "checks": [
+    {
+      "name": "main_centrala.cpp zgadza sie z SHA256SUMS.txt",
+      "ok": true,
+      "detail": "3fb7510ae8cd0f52"
+    },
+    {
+      "name": "BootFilesystem.h zgodny z SHA256SUMS.txt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "CheckedHistoryIO.h zgodny z SHA256SUMS.txt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "EspVfsCalls.h zgodny z SHA256SUMS.txt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "HistoryBoot.h zgodny z SHA256SUMS.txt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "HistoryStartup.h zgodny z SHA256SUMS.txt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Storage.h zgodny z SHA256SUMS.txt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Transition.h zgodny z SHA256SUMS.txt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dokladnie 8 wywolan z nazwa pliku historii",
+      "ok": true,
+      "detail": "8"
+    },
+    {
+      "name": "dokladnie 4 funkcje dotykaja plikow historii",
+      "ok": true,
+      "detail": "['historiaDlugaWczytajZFS', 'historiaWczytajZFS', 'sendTelegramDocumentHistDluga', 'sendTelegramDocumentHistKrotka']"
+    },
+    {
+      "name": "zadna z tych funkcji nie bierze blokady",
+      "ok": true,
+      "detail": "[('sendTelegramDocumentHistKrotka', []), ('sendTelegramDocumentHistKrotka', []), ('sendTelegramDocumentHistDluga', []), ('sendTelegramDocumentHistDluga', []), ('historiaWczytajZFS', []), ('historiaWczytajZFS', []), ('historiaDlugaWczytajZFS', []), ('historiaDlugaWczytajZFS', [])]"
+    },
+    {
+      "name": "brak bezposredniego zapisu (tryb a/w) do plikow historii",
+      "ok": true,
+      "detail": "[('sendTelegramDocumentHistKrotka', ''), ('sendTelegramDocumentHistKrotka', ''), ('sendTelegramDocumentHistDluga', ''), ('sendTelegramDocumentHistDluga', ''), ('historiaWczytajZFS', ''), ('historiaWczytajZFS', ''), ('historiaDlugaWczytajZFS', ''), ('historiaDlugaWczytajZFS', '')]"
+    },
+    {
+      "name": "zapis historii przez historiaIo.append",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "zapis historii pod logMutex",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "historiaWyczysc jest wylaczone",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "/api/history korzysta z historiaZbudujCsv",
+      "ok": true,
+      "detail": "exact(\"/api/history\"), HTTP_GET, [](AsyncWebServerRequest *request) {\n    reques"
+    },
+    {
+      "name": "/api/history/long korzysta z historiaDlugaZbudujCsv",
+      "ok": true,
+      "detail": "exact(\"/api/history/long\"), HTTP_GET, [](AsyncWebServerRequest *request) {\n    r"
+    },
+    {
+      "name": "sciezki historii chronione przed edytorem",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "kanal A1 chroniony przed edytorem",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "czytanie przy starcie przed utworzeniem zadania historii",
+      "ok": true,
+      "detail": "2289901 < 2308022"
+    },
+    {
+      "name": "sendTelegramDocumentHistKrotka(); ma dokladnie jedno wywolanie",
+      "ok": true,
+      "detail": "[44248]"
+    },
+    {
+      "name": "sendTelegramDocumentHistKrotka(); wywolywane bez logMutex w oknie",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sendTelegramDocumentHistDluga(); ma dokladnie jedno wywolanie",
+      "ok": true,
+      "detail": "[44249]"
+    },
+    {
+      "name": "sendTelegramDocumentHistDluga(); wywolywane bez logMutex w oknie",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sendTelegramDocumentHistKrotka otwiera plik bez blokady i bez zapinki",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sendTelegramDocumentHistKrotka oglasza dlugosc z cache",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sendTelegramDocumentHistDluga otwiera plik bez blokady i bez zapinki",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sendTelegramDocumentHistDluga oglasza dlugosc z cache",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

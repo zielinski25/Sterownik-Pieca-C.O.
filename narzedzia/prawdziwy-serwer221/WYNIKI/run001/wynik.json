@@ -1,0 +1,244 @@
+{
+  "etap": 221,
+  "kiedy": "2026-10-28 18:13:22",
+  "kroki": [
+    {
+      "krok": "ekstrakcja",
+      "rc": 0,
+      "opis": "OK ekstrakcja221: bramka i trasy zgodne z v3.56.4 (sha pliku f89874f3390009ac...)"
+    },
+    {
+      "krok": "naglowki",
+      "rc": 0,
+      "opis": "4 naglowki zgodne co do bajtu ze zrodlami"
+    },
+    {
+      "krok": "kompilacja_biblioteki",
+      "rc": 0,
+      "opis": "16 plikow .o z prawdziwych zrodel biblioteki i platformy"
+    },
+    {
+      "krok": "kompilacja_testu",
+      "rc": 0,
+      "opis": "Test.cpp + wyciagniety kod v3.56.4 skompilowane g++ -std=gnu++17 -DHOST"
+    }
+  ],
+  "mutanty": [
+    {
+      "nazwa": "M1_trasa_history_goly_napis",
+      "czerwone": [
+        "A01_dluga_200",
+        "A04_dluga_nazwa_pliku",
+        "C01_link_200_hex32",
+        "C02_link_no_store",
+        "C03_bilet_dziala",
+        "C06_bilet_dlugi_na_dluga_200"
+      ],
+      "oczekiwane": [
+        "A01_dluga_200"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=6"
+    },
+    {
+      "nazwa": "M2_link_metoda_post",
+      "czerwone": [
+        "C01_link_200_hex32",
+        "C02_link_no_store",
+        "C03_bilet_dziala",
+        "C06_bilet_dlugi_na_dluga_200"
+      ],
+      "oczekiwane": [
+        "C01_link_200_hex32"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=4"
+    },
+    {
+      "nazwa": "M3_trasa_dluga_podaje_krotki",
+      "czerwone": [
+        "A01_dluga_200",
+        "A04_dluga_nazwa_pliku",
+        "C06_bilet_dlugi_na_dluga_200"
+      ],
+      "oczekiwane": [
+        "A01_dluga_200"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=3"
+    },
+    {
+      "nazwa": "M4_bramka_zawsze_krotka_sciezka",
+      "czerwone": [
+        "A01_dluga_200",
+        "C06_bilet_dlugi_na_dluga_200"
+      ],
+      "oczekiwane": [
+        "A01_dluga_200"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=2"
+    },
+    {
+      "nazwa": "M5_bez_content_disposition",
+      "czerwone": [
+        "A03_naglowki_csv",
+        "A04_dluga_nazwa_pliku"
+      ],
+      "oczekiwane": [
+        "A03_naglowki_csv"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=2"
+    },
+    {
+      "nazwa": "M6_bez_content_length",
+      "czerwone": [
+        "A01_dluga_200",
+        "A02_krotka_200",
+        "A03_naglowki_csv",
+        "A04_dluga_nazwa_pliku",
+        "B03_male_litery_ok",
+        "C03_bilet_dziala",
+        "C06_bilet_dlugi_na_dluga_200",
+        "D02_pierwsze_dokonczone",
+        "D03_po_zwolnieniu_200",
+        "E01_tylko_potwierdzony_prefiks",
+        "E02_potwierdzony_wiekszy_niz_plik"
+      ],
+      "oczekiwane": [
+        "A03_naglowki_csv"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=11"
+    },
+    {
+      "nazwa": "M7_odpowiedz_bez_zrodla",
+      "czerwone": [
+        "A01_dluga_200",
+        "A02_krotka_200",
+        "A03_naglowki_csv",
+        "A04_dluga_nazwa_pliku",
+        "B03_male_litery_ok",
+        "C03_bilet_dziala",
+        "C06_bilet_dlugi_na_dluga_200",
+        "D01_drugie_pobranie_503",
+        "D03_po_zwolnieniu_200",
+        "E01_tylko_potwierdzony_prefiks",
+        "E02_potwierdzony_wiekszy_niz_plik"
+      ],
+      "oczekiwane": [
+        "A02_krotka_200"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=11"
+    },
+    {
+      "nazwa": "M8_token_zawsze_zgodny",
+      "czerwone": [
+        "B02_zly_token_401"
+      ],
+      "oczekiwane": [
+        "B02_zly_token_401"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=1"
+    },
+    {
+      "nazwa": "M9_bez_kontroli_zajetosci",
+      "czerwone": [
+        "D01_drugie_pobranie_503"
+      ],
+      "oczekiwane": [
+        "D01_drugie_pobranie_503"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=1"
+    },
+    {
+      "nazwa": "M10_zuzycie_biletu_zawsze_krotki",
+      "czerwone": [
+        "C06_bilet_dlugi_na_dluga_200"
+      ],
+      "oczekiwane": [
+        "C06_bilet_dlugi_na_dluga_200"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=1"
+    },
+    {
+      "nazwa": "M11_bez_cache_control",
+      "czerwone": [
+        "C02_link_no_store"
+      ],
+      "oczekiwane": [
+        "C02_link_no_store"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=1"
+    },
+    {
+      "nazwa": "M12_pusty_bufor_odpowiedzi",
+      "czerwone": [
+        "A01_dluga_200",
+        "A02_krotka_200",
+        "B03_male_litery_ok",
+        "C03_bilet_dziala",
+        "C06_bilet_dlugi_na_dluga_200",
+        "D03_po_zwolnieniu_200",
+        "E01_tylko_potwierdzony_prefiks",
+        "E02_potwierdzony_wiekszy_niz_plik"
+      ],
+      "oczekiwane": [
+        "A02_krotka_200"
+      ],
+      "ok": true,
+      "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=8"
+    }
+  ],
+  "bledy": [],
+  "profil_z_tokenem": {
+    "podsumowanie": "PODSUMOWANIE kontrola=24 bledow=0",
+    "rc": 0,
+    "kontrole": {
+      "S00_start": true,
+      "A01_dluga_200": true,
+      "A02_krotka_200": true,
+      "A03_naglowki_csv": true,
+      "A04_dluga_nazwa_pliku": true,
+      "B01_bez_tokenu_401": true,
+      "B02_zly_token_401": true,
+      "B03_male_litery_ok": true,
+      "B04_post_405": true,
+      "C01_link_200_hex32": true,
+      "C02_link_no_store": true,
+      "C03_bilet_dziala": true,
+      "C04_bilet_jednorazowy": true,
+      "C05_bilet_dlugi_na_krotka_401": true,
+      "C06_bilet_dlugi_na_dluga_200": true,
+      "C07_bilet_wygasl_401": true,
+      "D01_drugie_pobranie_503": true,
+      "D02_pierwsze_dokonczone": true,
+      "D03_po_zwolnieniu_200": true,
+      "D04_magazyn_niegotowy_503": true,
+      "E01_tylko_potwierdzony_prefiks": true,
+      "E02_potwierdzony_wiekszy_niz_plik": true,
+      "E03_plik_ponad_limit_413": true,
+      "E04_brak_potwierdzonych_404": true
+    }
+  },
+  "profil_bez_tokenu": {
+    "podsumowanie": "PODSUMOWANIE kontrola=5 bledow=0",
+    "rc": 0,
+    "kontrole": {
+      "S00_start": true,
+      "F01_bez_tokenu_503": true,
+      "F02_dluga_503": true,
+      "F03_link_503": true,
+      "F04_trasa_istnieje": true
+    }
+  },
+  "czas_s": 21.0,
+  "ok": true,
+  "kontrol": 28
+}

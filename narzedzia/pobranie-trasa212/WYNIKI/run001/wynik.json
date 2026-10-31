@@ -1,0 +1,44 @@
+{
+  "status": "PASS",
+  "stage": 212,
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "inputs": {
+    "narzedzia/pobranie-trasa212/Test.cpp": "df281711ce26ba902ebc338c7baad43228d9c5960537c426194d93e6e3b6f0f9",
+    "narzedzia/pobranie-trasa212/HistoriaPobranie.h": "5af0ada473e9b04caa84ca0ec790776930492fd6ab5298d2c806a99f77b65e8d",
+    "narzedzia/pobranie-trasa212/zrob_patch.py": "ca395161c88712372c2ba394fd81c003fc367cbe3b1642574a64a735e85b7a37",
+    "narzedzia/pobranie-trasa212/build.py": "3bcf03ecd6e7a31b808145f5b22dc40fa871f11c1916f0d97bac6b38043d1702",
+    "narzedzia/pobranie-trasa212/host/Serwer212.h": "4ebc3a5a63453444770140e110677d22b9aec95a0d1ab8b3b4f69c050ef33e1b",
+    "narzedzia/pobranie-trasa212/main_centrala-v3.55.8-to-v3.56.0.patch": "e9937cf7e892db4b1c12b671c50ffa55627db0b7c3e6ffeca47d6a5ff39e11a0",
+    "narzedzia/pobranie-trasa212/main_centrala-v3.55.9-to-v3.56.0.patch": "1501cb6ab24acbb54691f27179d1bdfda67455812d8e17cb68a0b9d44d46dfa6",
+    "narzedzia/wysylka-zapinka211/HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "narzedzia/wysylka-zapinka211/main_centrala-v3.55.8-to-v3.55.9.patch": "ff638e2b15c5555a0c34c14129eb5b6cea901af2a78a797d0f5d97c6ab12e2f6",
+    "narzedzia/wysylka-zapinka211/host/Arduino.h": "ab6ba1701b167930d23ee83f62616b8f4ff4cda17c00710c1734f333370887c4",
+    "narzedzia/wysylka-zapinka211/host/RamCalls.h": "155325012af495c0017b4c9283b007c7fae99acac48cf9f9849e6bb17ab6971d",
+    "narzedzia/wysylka-zapinka211/host/Firmware211.h": "e657756463c41e4ccca08a3f46a53544b7baeece62cd2577877d377fe7a9e7a6",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/secrets.h.example": "69a5cd6c8db1e3ae7e7c541735f47b66832deda61d51ebdaf4060fcd38031570"
+  },
+  "profiles": {
+    "native": {
+      "compile": "ok",
+      "returncode": 0,
+      "stdout": "-- 01 01 GET + Bearer: 200, dlugosc i cialo z pliku\n-- 02 02 POST/PUT/DELETE/HEAD: 405 + Allow, plik nietkniety\n-- 03 03 brak Authorization: 401 + WWW-Authenticate\n-- 04 04 zly token, Basic, go\u0142y token, inna wielkosc liter: 401\n-- 05 05 BEARER/bEaReR i spacje wokol tokenu: 200\n-- 06 06 pusty token w konfiguracji: 503, pobieranie wylaczone\n-- 07 07 logMutex zajety: 503, ani jednego otwarcia pliku\n-- 08 08 magazyn niegotowy / brak LittleFS: 503\n-- 09 09 brak pliku i zero potwierdzone: 404\n-- 10 10 prefiks powyzej limitu: 413, zapinka zamknieta\n-- 11 11 VFS odmawia otwarcia: 500\n-- 12 12 dwa pobrania naraz: drugie 503, bez otwierania pliku\n-- 13 13 /history/long: inny plik, inna dlugosc\n-- 14 14 znacznik wyzej niz plik: wysylamy tylko to, co jest\n-- 15 15 plik skrocony w polowie: zrodlo NIEWAZNE, biblioteka zerwie\n-- 16 16 bufor odpowiedzi 1 bajt: cialo nadal dokladne\n-- 17 17 bramka: wlasciwy znacznik i wlasciwa sciezka dla strumienia\n-- 18 18 bramka: magazynGotowy wymaga OBU warunkow\n-- 19 19 bramka: zamknij bierze logMutex, otworz oddaje\n-- 20 20 30 pobran pod rzad: brak wycieku zapinek i uchwytow\n\nPASS trasa212 grup=20 sprawdzen=132 bledow=0\n",
+      "stderr_tail": ""
+    },
+    "asan-ubsan": {
+      "compile": "ok",
+      "returncode": 0,
+      "stdout": "-- 01 01 GET + Bearer: 200, dlugosc i cialo z pliku\n-- 02 02 POST/PUT/DELETE/HEAD: 405 + Allow, plik nietkniety\n-- 03 03 brak Authorization: 401 + WWW-Authenticate\n-- 04 04 zly token, Basic, go\u0142y token, inna wielkosc liter: 401\n-- 05 05 BEARER/bEaReR i spacje wokol tokenu: 200\n-- 06 06 pusty token w konfiguracji: 503, pobieranie wylaczone\n-- 07 07 logMutex zajety: 503, ani jednego otwarcia pliku\n-- 08 08 magazyn niegotowy / brak LittleFS: 503\n-- 09 09 brak pliku i zero potwierdzone: 404\n-- 10 10 prefiks powyzej limitu: 413, zapinka zamknieta\n-- 11 11 VFS odmawia otwarcia: 500\n-- 12 12 dwa pobrania naraz: drugie 503, bez otwierania pliku\n-- 13 13 /history/long: inny plik, inna dlugosc\n-- 14 14 znacznik wyzej niz plik: wysylamy tylko to, co jest\n-- 15 15 plik skrocony w polowie: zrodlo NIEWAZNE, biblioteka zerwie\n-- 16 16 bufor odpowiedzi 1 bajt: cialo nadal dokladne\n-- 17 17 bramka: wlasciwy znacznik i wlasciwa sciezka dla strumienia\n-- 18 18 bramka: magazynGotowy wymaga OBU warunkow\n-- 19 19 bramka: zamknij bierze logMutex, otworz oddaje\n-- 20 20 30 pobran pod rzad: brak wycieku zapinek i uchwytow\n\nPASS trasa212 grup=20 sprawdzen=132 bledow=0\n",
+      "stderr_tail": ""
+    },
+    "glibcxx-assertions": {
+      "compile": "ok",
+      "returncode": 0,
+      "stdout": "-- 01 01 GET + Bearer: 200, dlugosc i cialo z pliku\n-- 02 02 POST/PUT/DELETE/HEAD: 405 + Allow, plik nietkniety\n-- 03 03 brak Authorization: 401 + WWW-Authenticate\n-- 04 04 zly token, Basic, go\u0142y token, inna wielkosc liter: 401\n-- 05 05 BEARER/bEaReR i spacje wokol tokenu: 200\n-- 06 06 pusty token w konfiguracji: 503, pobieranie wylaczone\n-- 07 07 logMutex zajety: 503, ani jednego otwarcia pliku\n-- 08 08 magazyn niegotowy / brak LittleFS: 503\n-- 09 09 brak pliku i zero potwierdzone: 404\n-- 10 10 prefiks powyzej limitu: 413, zapinka zamknieta\n-- 11 11 VFS odmawia otwarcia: 500\n-- 12 12 dwa pobrania naraz: drugie 503, bez otwierania pliku\n-- 13 13 /history/long: inny plik, inna dlugosc\n-- 14 14 znacznik wyzej niz plik: wysylamy tylko to, co jest\n-- 15 15 plik skrocony w polowie: zrodlo NIEWAZNE, biblioteka zerwie\n-- 16 16 bufor odpowiedzi 1 bajt: cialo nadal dokladne\n-- 17 17 bramka: wlasciwy znacznik i wlasciwa sciezka dla strumienia\n-- 18 18 bramka: magazynGotowy wymaga OBU warunkow\n-- 19 19 bramka: zamknij bierze logMutex, otworz oddaje\n-- 20 20 30 pobran pod rzad: brak wycieku zapinek i uchwytow\n\nPASS trasa212 grup=20 sprawdzen=132 bledow=0\n",
+      "stderr_tail": ""
+    }
+  }
+}

@@ -1,0 +1,2 @@
+short	/history/link?stream=short	/history?k={BILET}&s=short
+long	/history/link?stream=long	/history?k={BILET}&s=long

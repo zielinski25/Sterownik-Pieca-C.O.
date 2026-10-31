@@ -1,0 +1,96 @@
+{
+  "status": "PASS",
+  "inputs": {
+    "RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "CheckedRead.h": "88a3fba5db1638e43a570bd467ba1c41e17d506e347da79eb23e4eaa45f0569d",
+    "Test.cpp": "e17cb214db4c81b7971b1703ff986cfee18152fd2b1d0c97f8bf9d1abed74f35",
+    "Allocations.cpp": "6b50f2053cc32326cc6e4e714ae311cc49a5127bef39ffa7925349a0f692b16a",
+    "mutacje.py": "9b7a6178bcd7b07841bb270d4b2afc426525bad23ae92a39a6560206dd4e9470"
+  },
+  "cases": [
+    {
+      "name": "admit-after-stop",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "omit-stop-publication",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "allow-reenable",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "omit-last-reference-close",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "close-after-stop",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "drop-close-shadow",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "reuse-live-control-block",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ignore-short-write",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ignore-invalid-read-count",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "escape-raw-FS",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "drain-without-owner",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ack-write-after-stop",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ignore-input-path-bound",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "lose-child-path",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    }
+  ]
+}

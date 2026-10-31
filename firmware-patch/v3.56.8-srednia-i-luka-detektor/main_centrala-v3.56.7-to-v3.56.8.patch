@@ -1,0 +1,166 @@
+--- v3.56.7-przywroc-3.56.5/main_centrala.cpp	2026-10-29 11:15:54.842819828 +0000
++++ v3.56.8-srednia-i-luka-detektor/main_centrala.cpp	2026-10-29 12:08:10.686670463 +0000
+@@ -1,3 +1,31 @@
++// FIRMWARE_VERSION v3.56.7 -> v3.56.8 (2026-10-29) — SREDNIA PO RESTARCIE + DETEKTOR LUK.
++//
++// Zmiana 1 (P1) SREDNIA-PO-RESTARCIE:
++//   Objaw: kanal a[3] "Ogrz. sr." ma age=65535 (brak odczytu) przez ~Czas_OFF
++//     minut po KAZDYM restarcie pieca. Zmierzone na danych z 29.10: 20 probek
++//     po kazdym z trzech restartow (10:31-10:50, 11:30-11:49, 12:09-...).
++//     W wykresie wyglada to jak dziura w danych, choc dane NIE sa tracone.
++//   Przyczyna: obliczanie_srednia() uznaje piec za wygasly po Czas_OFF minutach
++//     od zmiennej ostatniRazPompaPracowalaMs, a ta jest static i po restarcie
++//     ma 0. Wiec piec, ktory stoi od wczoraj, musi odczekac pelne Czas_OFF,
++//     zeby "zauwazyc", ze jest zimny.
++//   Naprawa: przy zaniku pompy zapisujemy w NVS czas unix ostatniej pracy
++//     ("srOstPompa"). Po restarcie odejmujemy ten czas od zegara i wstawiamy
++//     wynik do ostatniRazPompaPracowalaMs. Jesli piec stoi dluzej niz Czas_OFF,
++//     warunek "wygasl" jest spelniony od pierwszej probki.
++//   Czego NIE zmieniono: logika wygladzania, progi, tryby Wybor 1/2/3,
++//     zapis tempSrednia przy zboczu OFF->ON.
++//
++// Zmiana 2 (P3) DETEKTOR LUK — czysto diagnostyczna, nic nie zmienia w wysylce:
++//   Po kazdym potwierdzonym commitPopN sprawdzamy, czy nowy poczatek kolejki
++//   ma numer dokladnie o 1 wiekszy od ostatnio potwierdzonego. Jesli nie —
++//   miedzy jednym a drugim numerem zniknely probki. Liczymy je i logujemy
++//   konkretne numery seq.
++//   Po co: audyt 29 dni pokazal 65 pojedynczych strat, dla ktorych NIE MA
++//     sciezki w kodzie (zaden commitPopN nie zdejmuje 1 probki). Ten detektor
++//     powie wprost, kiedy i ile numerow przeskoczylo.
++//   Dodatkowo liczniki trafiaja do logu HEALTH-A i do JSON /api/status.
++//
+ // FIRMWARE_VERSION v3.56.6 -> v3.56.7 (2026-10-29) — PRZYWRÓCENIE ZACHOWANIA v3.56.5.
+ // Co: trzy zmiany z v3.56.6 zostaly COFNIETE w calosci. Plik jest teraz
+ //   funkcjonalnie identyczny z v3.56.5 (roznica: sam numer wersji).
+@@ -5633,7 +5661,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.56.7";
++static const char* FIRMWARE_VERSION = "v3.56.8";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -6206,6 +6234,13 @@
+ static uint32_t g_telemetryBatchAbandoned = 0;
+ static uint32_t g_telemetrySamplesSent = 0;
+ static uint32_t g_telemetryTransportFailures = 0;
++// [v3.56.8 LUKA-DETEKTOR] Wykrywanie przerw w numeracji seq. Czysta diagnostyka:
++// nic nie zmienia w wysylce, tylko liczy i loguje. Wartosci trafiaja do
++// HEALTH-A (czyli do /logi) oraz do JSON /api/status.
++static uint32_t g_telemetryGapEvents = 0;    // ile razy wykryto przerwe
++static uint32_t g_telemetryGapSamples = 0;   // ile probek lacznie "przeskoczono"
++static uint32_t g_telemetryGapLastFrom = 0;  // pierwszy brakujacy seq
++static uint32_t g_telemetryGapLastTo = 0;    // ostatni brakujacy seq
+ 
+ // [FB-CMD-ID] Jednoznaczny identyfikator komendy zastępuje wadliwą deduplikację
+ // przez 32-bitowe toInt() na Date.now(). cmdId jest tekstem bezpiecznym dla
+@@ -32176,14 +32211,57 @@
+   // pompy w trakcie zwyklego cyklu (krotsze niz Czas_OFF) nadal korzystaja z
+   // dotychczasowego wygladzania ponizej - bez zmian.
+   static unsigned long ostatniRazPompaPracowalaMs = 0;
++  // [v3.56.8 SREDNIA-PO-RESTARCIE] Stan odtwarzania "kiedy pompa ostatnio
++  // pracowala" z NVS. Zapis robimy przy zaniku pompy (ON->OFF), odczyt raz
++  // na starcie. Bez tego po kazdym restarcie piec czeka pelne Czas_OFF minut,
++  // zanim uzna sie za wygasly — i przez ten czas kanal a[3] "Ogrz. sr." nie ma
++  // odczytu (age=65535), co w wykresie wyglada jak dziura w danych.
++  static bool srNvsWczytane = false;
++  static bool srOdtworzone = false;
++  static uint32_t srOstPompaUnix = 0;
++  static bool srPoprzedniaPompa = false;
++  const bool srCzasZnany = (g_rtcGotowy || g_rtcNtpZsynchronizowany);
++  if (!srNvsWczytane) {
++    srNvsWczytane = true;
++    srOstPompaUnix = config.getUInt("srOstPompa", 0);
++  }
+   bool pompaWlSrednia = pompaJestWlaczona();
+   if (pompaWlSrednia) ostatniRazPompaPracowalaMs = millis();
++  // Zanik pompy = zapamietujemy moment. Jeden zapis NVS na cykl pracy pompy,
++  // wiec zuzycie pamieci NVS jest pomijalne.
++  if (srPoprzedniaPompa && !pompaWlSrednia && srCzasZnany) {
++    const uint32_t srZanikUnix = (uint32_t)dataLokalnaNaUnixUtc(pobierzCzas());
++    if (srZanikUnix != 0U) {
++      srOstPompaUnix = srZanikUnix;
++      config.putUInt("srOstPompa", srZanikUnix);
++    }
++  }
++  srPoprzedniaPompa = pompaWlSrednia;
+ 
+   byte Czas_OFF_snap;
+   portENTER_CRITICAL(&ustawieniaMux);
+   Czas_OFF_snap = Czas_OFF;
+   portEXIT_CRITICAL(&ustawieniaMux);
+   unsigned long progWygasnieciaMs = (unsigned long)Czas_OFF_snap * 60000UL;
++  // [v3.56.8 SREDNIA-PO-RESTARCIE] Odtworzenie licznika po restarcie.
++  // ostatniRazPompaPracowalaMs jest static, wiec po starcie ma 0 i piec musi
++  // odczekac pelne Czas_OFF. Zamiast tego liczymy odstep zegarem unix od
++  // momentu zapisanego w NVS i cofamy licznik o ten odstep. Arytmetyka na
++  // unsigned long jest poprawna rowniez przy zawinieciu (roznica modulo 2^32).
++  if (!srOdtworzone && !pompaWlSrednia && srCzasZnany && srOstPompaUnix != 0U) {
++    srOdtworzone = true;
++    const uint32_t srTerazUnix = (uint32_t)dataLokalnaNaUnixUtc(pobierzCzas());
++    if (srTerazUnix > srOstPompaUnix) {
++      uint32_t srIleS = srTerazUnix - srOstPompaUnix;
++      if (srIleS > 604800UL) srIleS = 604800UL;  // 7 dni: ochrona przed smieciem w NVS
++      ostatniRazPompaPracowalaMs = millis() - (unsigned long)srIleS * 1000UL;
++      DLOGF(DC_TELEMETRY, DL_INFO,
++            "SREDNIA po restarcie: ile_s=%lu prog_s=%u wygasly=%u",
++            (unsigned long)srIleS,
++            (unsigned)((unsigned long)Czas_OFF_snap * 60UL),
++            (unsigned)(((unsigned long)srIleS * 1000UL) >= progWygasnieciaMs ? 1U : 0U));
++    }
++  }
+   bool piecUznanyZaWygasly = !pompaWlSrednia &&
+       (millis() - ostatniRazPompaPracowalaMs) >= progWygasnieciaMs;
+ 
+@@ -40239,6 +40317,28 @@
+     g_telemetryLastCloudSeq = tailCheck.sampleSeq;
+     g_telemetryLastCloudUnixTs = tailCheck.unixTs;
+     g_telemetryLastCloudUptimeMs = (uint32_t)millis();
++    // [v3.56.8 LUKA-DETEKTOR] Po zdjeciu paczki poczatek kolejki musi byc
++    // numerem nastepnym po potwierdzonym. Kazdy inny numer = miedzy jednym
++    // a drugim cos zniknelo i w chmurze zostanie dziura. Nic nie naprawiamy —
++    // tylko liczymy i zapisujemy konkretne numery, zeby dalo sie to wyjasnic.
++    {
++      TelemetrySample nastepnaLuka{};
++      if (g_telemetryRing.peek(nastepnaLuka) && nastepnaLuka.sampleSeq != 0U &&
++          nastepnaLuka.sampleSeq != g_telemetryLastCloudSeq + 1U) {
++        const uint32_t brak = nastepnaLuka.sampleSeq - g_telemetryLastCloudSeq - 1U;
++        g_telemetryGapSamples += brak;
++        ++g_telemetryGapEvents;
++        g_telemetryGapLastFrom = g_telemetryLastCloudSeq + 1U;
++        g_telemetryGapLastTo = nastepnaLuka.sampleSeq - 1U;
++        DLOGF(DC_TELEMETRY, DL_WARN,
++              "LUKA seq from=%lu to=%lu brak=%lu zdarzen=%lu lacznie=%lu",
++              (unsigned long)g_telemetryGapLastFrom,
++              (unsigned long)g_telemetryGapLastTo,
++              (unsigned long)brak,
++              (unsigned long)g_telemetryGapEvents,
++              (unsigned long)g_telemetryGapSamples);
++      }
++    }
+     DLOGF(DC_TELEMETRY, DL_DEBUG, "batch_ok count=%u last_seq=%lu sent=%lu attempt=%u resends=%lu",
+           (unsigned)batchCount, (unsigned long)g_telemetryBatchLastSeq,
+           (unsigned long)g_telemetrySamplesSent, (unsigned)g_telemetryPendingAttempts,
+@@ -42401,6 +42501,10 @@
+   }
+   ja("\"tel_ring\":" + String((unsigned long)(g_telemetryRing.ready() ? g_telemetryRing.size() : 0U)) + ",");
+   ja("\"tel_pending\":" + String(g_telemetryPendingValid ? 1 : 0) + ",");
++  // [v3.56.8 LUKA-DETEKTOR]
++  ja("\"tel_sent\":" + String((unsigned long)g_telemetrySamplesSent) + ",");
++  ja("\"tel_gap_events\":" + String((unsigned long)g_telemetryGapEvents) + ",");
++  ja("\"tel_gap_samples\":" + String((unsigned long)g_telemetryGapSamples) + ",");
+   ja("\"fw\":\""); ja(FIRMWARE_VERSION); ja("\",");
+   ja("\"uptime\":" + String(millis() / 1000) + ",");
+   ja("\"updatedAt\":" + String(millis()) + "}");
+@@ -47014,6 +47118,10 @@
+               "B fb_tasks=" + String(g_runtimeDiag.fbTaskCount) +
+               " telemetry_produced=" + String(g_telemetrySamplesProduced) +
+               " telemetry_dropped=" + String(g_telemetrySamplesDropped) +
++              " telemetry_sent=" + String(g_telemetrySamplesSent) +
++              " telemetry_ring=" + String((unsigned long)(g_telemetryRing.ready() ? g_telemetryRing.size() : 0U)) +
++              " telemetry_gap_events=" + String(g_telemetryGapEvents) +
++              " telemetry_gap_samples=" + String(g_telemetryGapSamples) +
+               " tg_state=" + String((unsigned)__atomic_load_n(&g_tgTaskState, __ATOMIC_ACQUIRE)) +
+               " tg_hb_age_ms=" + String(_tgHbAge) +
+               " tg_poll_state=" + String((unsigned)__atomic_load_n(&g_tgPollTaskState, __ATOMIC_ACQUIRE)) +

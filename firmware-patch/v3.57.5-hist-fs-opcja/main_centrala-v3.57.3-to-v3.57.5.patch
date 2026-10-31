@@ -1,0 +1,387 @@
+--- v3.57.3-timeout-tls/main_centrala.cpp
++++ v3.57.5-hist-fs-opcja/main_centrala.cpp
+@@ -1,3 +1,51 @@
++// FIRMWARE_VERSION v3.57.4 -> v3.57.5 (2026-10-31) — POPRAWKI PO PRZEGLADZIE 3.57.4.
++//
++// [1] CZYSZCZENIE PLIKOW HISTORII idzie teraz ISTNIEJACYM kanalem A1.
++//     W firmware jest gotowy, audytowany mechanizm jednorazowego czyszczenia
++//     przy starcie: history_a190::Transition + history_a191::Storage. Jesli w
++//     chwili startu istnieje /history_reset_a1.req o tresci "RESET-HISTORY-A1\n",
++//     transition usuwa OBA pliki CSV, potwierdza ich nieobecnosc (stat),
++//     tworzy /history_reset_a1.done i konsumuje zadanie. 3.57.4 kasowalo pliki
++//     wlasnym kodem (LittleFS.remove po starcie) i trzymalo drugi znacznik
++//     w NVS - dwa mechanizmy na jedna operacje. Teraz "histfs_czysc" tylko
++//     UZBRAJA kanal A1: usuwa stary .done (bez tego transition poszedlby
++//     sciezka "juz czyszczono" i NIE tknal plikow) i sklada zadanie w
++//     dokladnie takim formacie, jakiego oczekuje Storage. Efekt: po restarcie.
++// [2] PUBLICZNE API panelu: pole "hist_fs" bylo w JSON-ach, ale panel
++//     (WIFI_LOCAL_PANEL_HTML) i Piec.html nie parsowaly go wcale - kafelek
++//     pokazywalby "brak danych" nawet na 3.57.5. Dodane do listy flag i do
++//     stanu poczatkowego; przelacznik dogania zmiane statusu.
++// [3] ZAPIS NA FLASH: bramka obejmuje teraz takze oproznianie kolejki
++//     (historiaFlushDoFS / historiaDlugaFlushDoFS). W 3.57.4 wylaczenie
++//     zatrzymywalo tylko NOWE probki, a resztka z kolejki RAM mogla jeszcze
++//     doleciec na flash. Teraz "wylaczone" = zadnego dopisania.
++//
++// Bez zmian: format CSV, bufory RAM, telemetria Firebase, /api/history*,
++// kolejnosc i znaczenie pol, NVS (namespace "hist", klucz "fs_on"), OTA.
++//
++// FIRMWARE_VERSION v3.57.3 -> v3.57.4 (2026-10-31) — PRZELACZNIK ZAPISU HISTORII NA FLASH + WILGOTNOSC.
++//
++// [1] NOWE: /piec/status dostaje pole "hist_fs" (1 = zapis na flash wlaczony,
++//     0 = wylaczony). Ustawienie lezy w NVS (namespace "hist", klucz "fs_on"),
++//     wiec przezywa restart i zanik pradu. Domyslnie WLACZONE - zachowanie
++//     identyczne jak w 3.57.3 dla kazdego, kto tego nie dotknie.
++//      Komendy: "histfs_wl", "histfs_wyl", "histfs_czysc".
++//      Wylaczenie zatrzymuje WYLACZNIE dopisywanie do /hist_short.csv
++//      i /hist_long.csv. Bufor RAM, /api/history*, /api/history/long, wykresy
++//      i CALA telemetria do Firebase dzialaja bez zmian - to osobne sciezki.
++// [2] "histfs_czysc": ustawia znacznik w NVS; oba pliki historii sa usuwane
++//      przy NASTEPNYM starcie, PRZED ich wczytaniem. Celowo nie kasujemy
++//      plikow w locie: pisze do nich wylacznie historiaTaskFn i tylko on
++//      moglby to zrobic bezpiecznie, a usuniecie pliku spod otwartego
++//      strumienia historii to proszenie sie o blad I/O.
++// [3] WILGOTNOSC: odczyt DHT22 rowny 0,0 % jest traktowany jak BLAD (dotad
++//      przechodzil jako pomiar - read_dht() zwraca wtedy DHT_OK). W kotlowni
++//      nie ma 0 % wilgotnosci; takie zera trafialy do telemetrii i do plikow,
++//      zanizajac srednia i robiac skoki +100 na wykresach roznic.
++//
++// Czego NIE zmieniono: format CSV, kolejnosc i znaczenie kolumn, bufory RAM,
++// kolejka zapisu, WDT, nadzor, TLS/Firebase, OTA, zadne inne ustawienie.
++
+ // FIRMWARE_VERSION v3.57.2 -> v3.57.3 (2026-10-31) — UZBROJENIE TIMEOUTU TLS PRZED KAZDYM fbApp.loop().
+ // Co: dwa miejsca, ktore wolaly fbApp.loop() BEZ uzbrojonego timeoutu, dostaja
+ //     przed wywolaniem ten sam komplet co petle oczekiwania:
+@@ -5795,7 +5843,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.57.3";
++static const char* FIRMWARE_VERSION = "v3.57.5";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -10200,6 +10248,7 @@
+ 
+       <div class="setcard" data-menu="firebase"><div class="ic" style="color:var(--cyan)" data-ico="shield"></div><div class="t"><b>Połączenie z bazą Firebase</b><span>Logowanie kontem Firebase, token komend, stan połączenia</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+       <div class="setcard" data-menu="wifi"><div class="ic" style="color:var(--cyan)" data-ico="wifi"></div><div class="t"><b>Sieci Wi-Fi & Łączność</b><span>Skanowanie sieci, siła RSSI, konfiguracja SSID/hasło, lista sieci</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
++      <div class="setcard" data-menu="histfs"><div class="ic" style="color:var(--warn, #ffb74d)" data-ico="logs"></div><div class="t"><b>Zapis historii na flash</b><span>hist_short.csv i hist_long.csv — włączanie, wyłączanie i czyszczenie plików</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+       <div class="setcard" data-menu="telegram"><div class="ic" style="color:#2AABEE" data-ico="telegram"></div><div class="t"><b>Powiadomienia Telegram</b><span>Bot powiadomień, Chat ID, testowy raport, alerty CO i dymu</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+       <div class="setcard" data-menu="pompa"><div class="ic" style="color:var(--cyan)" data-ico="pump"></div><div class="t"><b>Pompa C.O.</b><span>Strategia (Trociniak czasowy / Kopciuch temp.) · wymuszenia · antystop</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+       <div class="setcard" data-menu="serwo"><div class="ic" style="color:var(--cyan)" data-ico="servo"></div><div class="t"><b>Serwo klapy & syberka</b><span>Tryb Auto / Ręczny / Bezpieczna · automatyka histerezy</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+@@ -10930,7 +10979,7 @@
+     rozpalanie_serwa_aktywne: false, rozpalanie_serwa_dostepne: false, rozpalanie_serwa_blokada_dymu: false,
+     tryb_serwa: 0, trybSerwa: 0, klapa: NaN, syberka: NaN,
+     wybor: 0, pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
+-    rtc_ok: false, dzien: 0, miesiac: 0, rok: 0,
++    rtc_ok: false, hist_fs: false, dzien: 0, miesiac: 0, rok: 0,
+     ip: '', firmware: '', uptime: NaN, appVersion: 'v0.30.5',
+     wifi_rssi: NaN, wifi_quality: NaN, ping_ms: NaN, wifi_ssid: '', weatherCode: NaN,
+     czasOn: NaN, czasOff: NaN, tempOn: NaN, tempOff: NaN, antystopWlaczony: false, antystopDni: NaN,
+@@ -11637,7 +11686,7 @@
+       'online', 'night', 'dym_wlaczony', 'dym_swiezy', 'dym_alarm', 'alarm_ogrzewanie',
+       'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie', 'rozpalanie_potwierdzone',
+       'rozpalanie_serwa_aktywne', 'rozpalanie_serwa_dostepne', 'rozpalanie_serwa_blokada_dymu',
+-      'antystopWlaczony', 'mieszadloWlaczony', 'rtc_ok'
++      'antystopWlaczony', 'mieszadloWlaczony', 'rtc_ok', 'hist_fs'
+     ];
+     flagKeys.forEach(key => {
+       const raw = d[key];
+@@ -12512,6 +12561,7 @@
+   }
+ 
+   const MENUS = {
++    histfs: () => showHistFsSheet(),
+     zewn: () => showSheet('Temperatura zewnętrzna', 'outside', () => sensorModalContent(ALL_SENSORS.find(s => s.id === 'zewn'))),
+     bojler: () => showSheet('Bojler C.W.U.', 'thermo', () => sensorModalContent(ALL_SENSORS.find(s => s.id === 'bojler'))),
+     pokoj: () => showSheet('Temperatura pomieszczenia', 'thermo', () => sensorModalContent(ALL_SENSORS.find(s => s.id === 'pokoj'))),
+@@ -13471,6 +13521,59 @@
+   }
+ 
+   // ═══════════════════════════════════════════════════════════════════════════
++  // ═══════════════════════════════════════════════════════════════════════════
++  // B2. ZAPIS HISTORII NA FLASH (v3.57.4)
++  // ═══════════════════════════════════════════════════════════════════════════
++  // Stan przychodzi w /piec/status jako "hist_fs" (1/0). Przelacznik wysyla
++  // komende do centrali i NIE zmienia stanu optymistycznie — dokladnie ten sam
++  // wzorzec co przy Telegramie i Wi-Fi: UI czeka na potwierdzenie.
++  function showHistFsSheet() {
++    showSheet('Zapis historii', 'logs', () => {
++      const b = h('div');
++      const known = () => hasData('hist_fs');
++      const on = () => known() && !!S.hist_fs;
++
++      const trg = toggleRow(
++        'Zapisuj historię na flash centrali',
++        'hist_short.csv (24 h, ~130 kB) i hist_long.csv (archiwum, do ~1,8 MB). '
++          + 'Wyłączenie oszczędza pamięć i cykle zapisu. Dane w pamięci RAM oraz '
++          + 'wysyłka do Firebase działają bez zmian.',
++        on(),
++        v => sendCommand(v ? 'histfs_wl' : 'histfs_wyl')
++      );
++      // Status zmienia sie co ~15 s; przepisz pole tylko WTEDY, gdy wartosc
++      // naprawde sie zmienila - inaczej liveTick co 2 s cofalby klik uzytkownika.
++      const trgBox = trg.querySelector('input');
++      let trgStan = on();
++      live$(trgBox, el => { const cur = on(); if (cur !== trgStan) { trgStan = cur; el.checked = cur; } });
++      b.appendChild(trg);
++
++      b.appendChild(sectionHeader('Czyszczenie plików'));
++      const btnRow = h('div', 'btnrow');
++      const bCzysc = h('button', 'ust-btn', 'Wyczyść oba pliki');
++      bCzysc.onclick = () => sendCommand('histfs_czysc');
++      btnRow.appendChild(bCzysc);
++      b.appendChild(btnRow);
++      b.appendChild(h('div', 'note',
++        'Pliki zostaną usunięte przy najbliższym restarcie centrali — wtedy nic już '
++        + 'do nich nie pisze, więc nie ma ryzyka przerwanego zapisu.'));
++
++      b.appendChild(sectionHeader('Stan'));
++      const stan = h('div', 'note');
++      const odswiez = () => {
++        stan.textContent = known()
++          ? (on() ? 'Zapis WŁĄCZONY — pliki rosną na flashu centrali.'
++                  : 'Zapis WYŁĄCZONY — flash nie rośnie, Firebase i wykresy bez zmian.')
++          : 'Ta wersja firmware nie zgłasza tego ustawienia (potrzebna 3.57.4).';
++      };
++      live$(stan, odswiez); odswiez();
++      b.appendChild(stan);
++
++      return b;
++    });
++  }
++
++  // ═══════════════════════════════════════════════════════════════════════════
+   // C. ROZBUDOWANY TERMINAL DIAGNOSTYCZNY (21 KATEGORII DLOG)
+   // ═══════════════════════════════════════════════════════════════════════════
+   const DLOG_CATEGORIES = [
+@@ -23025,6 +23128,47 @@
+ // jego czyszczenia w historiaWyczysc().
+ volatile bool historiaClearPending = false;
+ 
++// ═══════════════════════════════════════════════════════════════════════════
++// [v3.57.4 HIST-FS-OPT] Przelacznik zapisu historii na LittleFS + czyszczenie.
++//
++// Po co: /hist_long.csv rosnie do ~1,8 MB (8000 probek), /hist_short.csv do
++// ~130 kB. Ktos, kto nie potrzebuje archiwum na flashu, moze je wylaczyc i
++// oszczedzic pamiec oraz cykle zapisu. Wylaczenie NIE dotyka telemetrii do
++// Firebase ani buforow w RAM - odcina wylacznie append do dwoch plikow.
++//
++// Stan: NVS namespace "hist". Brak klucza = WLACZONE (tak jak dotad).
++// ═══════════════════════════════════════════════════════════════════════════
++static std::atomic<bool> g_histFsZapisWlaczony{true};
++
++bool historiaZapisNaFsWlaczony() {
++  return g_histFsZapisWlaczony.load(std::memory_order_acquire);
++}
++
++static bool historiaFsZapiszNvs(bool wlaczony) {
++  Preferences p;
++  if (!p.begin("hist", false)) return false;
++  const bool ok = (p.putBool("fs_on", wlaczony) == sizeof(uint8_t));
++  p.end();
++  return ok;
++}
++
++// Zwraca true, gdy stan trafil do NVS (przetrwa restart).
++bool historiaFsUstaw(bool wlaczony) {
++  g_histFsZapisWlaczony.store(wlaczony, std::memory_order_release);
++  const bool nvs = historiaFsZapiszNvs(wlaczony);
++  if (wlaczony) DLOG(DC_HISTORIA, DL_INFO, F("HIST-FS zdarzenie=wlaczony msg=\"zapis historii na flash przywrocony\""));
++  else          DLOG(DC_HISTORIA, DL_INFO, F("HIST-FS zdarzenie=wylaczony msg=\"zapis historii na flash zatrzymany, RAM i Firebase bez zmian\""));
++  return nvs;
++}
++
++// [v3.57.5] Czyszczenie obu plikow historii. PELNA definicja jest nizej,
++// tuz przed setup() - potrzebuje littlefsReady/systemFS196, ktore w tym pliku
++// sa zadeklarowane w sekcji [LOGI-FS], czyli PO tym miejscu. Tutaj tylko
++// deklaracja, zeby dispatcher komend (wyzej niz tamta definicja) ja widzial -
++// ten sam wzorzec co forward-deklaracja historiaFlushDoFS() nizej.
++bool historiaFsCzyscZadaj();
++
++
+ // [WYKRESY-FS, POPRAWKA] extern - littlefsReady jest NAPRAWDE zdefiniowane
+ // (bool littlefsReady = false;) duzo nizej, w sekcji [LOGI-FS], PO calej
+ // sekcji HISTORIA. historiaWyczysc() (ponizej) czyta ta zmienna dużo
+@@ -24616,7 +24760,9 @@
+   // czyli kilkadziesiat wejsc w malloc/free z wylaczonymi przerwaniami. Teraz
+   // linia powstaje CALKOWICIE poza jakakolwiek blokada (do lokalnego Stringa),
+   // a pod mutexem dzieje sie juz tylko jedno dopisanie.
+-  if (!historiaClearPending) {
++  // [v3.57.4 HIST-FS-OPT] Wylaczony zapis: probka zostaje w RAM (bufor krotki,
++  // wykresy, /api/history), ale nie powstaje zadna linia do dopisania na flash.
++  if (!historiaClearPending && historiaZapisNaFsWlaczony()) {
+     String linia;
+     bool przyjeto = linia.reserve(128);
+     if (przyjeto) {
+@@ -24914,7 +25060,9 @@
+   // dzieje sie tam, asynchronicznie. xQueueSend() sam w sobie jest
+   // watkowo-bezpieczny (kopiuje "nowa" do wewnetrznego bufora kolejki),
+   // wiec nie potrzeba tu dodatkowego spinlocka.
+-  if (!historiaClearPending && historiaDlugaFlushKolejka) {
++  // [v3.57.4 HIST-FS-OPT] Wylaczony zapis: probka zostaje w buforze RAM
++  // (archiwum czytane przez /api/history/long do restartu), ale nie jedzie na flash.
++  if (!historiaClearPending && historiaZapisNaFsWlaczony() && historiaDlugaFlushKolejka) {
+     if (xQueueSend(historiaDlugaFlushKolejka, &nowa, 0) != pdTRUE) {
+       DLOG(DC_HISTORIA, DL_WARN, F("HISTORIA_DLUGA msg=\"kolejka zapisu pelna - probka pominieta na dysku (w RAM juz jest)\""));
+     }
+@@ -28257,6 +28405,8 @@
+   j += F("\"t_trociny\":"); j += String(temperaturaOgrzewania_Trociny, 1); j += F(",");
+   j += F("\"t_powrot\":"); j += String(temperaturaOgrzewania_Powrot, 1); j += F(",");
+   j += F("\"wilgotnosc\":"); j += String(wilgotnoscOdczytana, 0); j += F(",");
++  // [v3.57.4 HIST-FS-OPT] stan przelacznika zapisu historii.
++  j += F("\"hist_fs\":"); j += String(historiaZapisNaFsWlaczony() ? 1 : 0); j += F(",");
+   j += F("\"cisnienie\":"); j += String(cisnienieOdczytane, 2); j += F(",");
+   j += F("\"dym\":"); j += String(czujnikDymuOdczyt); j += F(",");
+   // [FIX-DYM-WYSWIETLANIE-ZERO] true = "dym" to swiezy odczyt ADC z tego
+@@ -31040,7 +31190,9 @@
+   } else {
+     telemetryMarkAttempt(TELEMETRY_CH_RH, telemetryRhNowMs);
+     uint8_t dhtErr = read_dht(dhtTempPomijana, wilgotnoscOdczytanaLok, DHT_PIN, DHT22);
+-    if (dhtErr != DHT_OK || !isfinite(wilgotnoscOdczytanaLok)) {
++    // [v3.57.4] 0,0 % z DHT22 to odczyt smieciowy, nie pomiar - traktujemy go
++    // jak blad (zostaje poprzednia dobra wartosc). W kotlowni nie ma 0 %.
++    if (dhtErr != DHT_OK || !isfinite(wilgotnoscOdczytanaLok) || wilgotnoscOdczytanaLok <= 0.1f) {
+       wilgotnoscOdczytanaLok = NAN;
+       telemetryMarkInvalid(TELEMETRY_CH_RH);
+     } else {
+@@ -42650,6 +42802,8 @@
+   // [v3.54.0] Bufor offline — stan przelacznika (NVS) + liczniki spoola.
+   // 4 pola ~90 B; FB_JSON_CAP=3072 przy payloadzie ~1.9 KB, wiec zapas zostaje.
+   ja("\"spool_rt\":" + String(g_spoolRuntimeArmed ? 1 : 0) + ",");
++  // [v3.57.4 HIST-FS-OPT] 1 = historia zapisywana na flash, 0 = nie.
++  ja("\"hist_fs\":" + String(historiaZapisNaFsWlaczony() ? 1 : 0) + ",");
+   ja("\"spool_pages\":" + String((unsigned long)g_spoolRuntimePagesCreated) + ",");
+   ja("\"spool_spill\":" + String((unsigned long)g_spoolRuntimeSamplesSpilled) + ",");
+   ja("\"spool_replay\":" + String((unsigned long)g_spoolRuntimeSamplesReplayed) + ",");
+@@ -43456,6 +43610,23 @@
+       }
+     }
+   }
++  else if (cmd == "histfs_wl" || cmd == "histfs_wyl") {
++    // [v3.57.4 HIST-FS-OPT] Zapis historii na flash: WL / WYL.
++    const bool wl = (cmd == "histfs_wl");
++    const bool nvs = historiaFsUstaw(wl);
++    wynikOk = true;
++    wynikBlad = "";
++    zapiszLog(String(F("tag=FB lvl=INFO akcja=histfs stan=")) + (wl ? "ON" : "OFF")
++              + F(" nvs=") + (nvs ? "OK" : "BLAD"));
++  }
++  else if (cmd == "histfs_czysc") {
++    // [v3.57.5] Skladamy zadanie w kanale A1 - pliki znikna przy nastepnym
++    // starcie, PRZED pierwszym odczytem (patrz historiaFsCzyscZadaj()).
++    const bool zadane = historiaFsCzyscZadaj();
++    wynikOk = zadane;
++    wynikBlad = zadane ? "" : "nie udalo sie zlozyc zadania czyszczenia (LittleFS)";
++    zapiszLog(String(F("tag=FB lvl=INFO akcja=histfs_czysc zadanie=")) + (zadane ? "OK" : "BLAD"));
++  }
+   else if (cmd == "spoolrt_wl") {
+     // [v3.54.0] Wlaczenie bufora offline z aplikacji. Identyczna sciezka jak
+     // /spoolrt TAK w Telegramie — ta sama funkcja, wiec te same bramki
+@@ -45915,7 +46086,10 @@
+   // Retiring an already handed-off prefix does not repeat filesystem I/O.
+   if (!s.oddanoDoFile) {
+     if (!historiaDostepGotowy() || historiaIo.blocked()) return false;
+-    if (!littlefsReady || historiaClearPending) return false;
++    // [v3.57.5] Wylaczony zapis = takze ZADNEGO oprozniania kolejki. Resztka
++    // czekajaca w historiaPendingCsv zostaje w RAM (limit 4096 B, nic nowego
++    // tam nie dochodzi) i po ponownym wlaczeniu pojedzie jednym appendem.
++    if (!littlefsReady || historiaClearPending || !historiaZapisNaFsWlaczony()) return false;
+     if (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 8192) return false;
+     if (s.kopia.length() == 0) {
+       if (!historiaPendingMux || xSemaphoreTake(historiaPendingMux, pdMS_TO_TICKS(200)) != pdTRUE) return false;
+@@ -45977,6 +46151,9 @@
+   if (!historiaDostepGotowy() || historiaDlugaZapisZablokowany || historiaIo.blocked()) return false;
+   if (!littlefsReady) return false;
+   if (historiaClearPending) return false;
++  // [v3.57.5] To samo co przy krotkiej: wylaczone = nic nie dopisujemy, ale
++  // probka zostaje na czele kolejki (peek bez dequeue) i po wlaczeniu pojedzie.
++  if (!historiaZapisNaFsWlaczony()) return false;
+   if (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 8192) {
+     if (historiaDlugaOczekiwanie != 1) { historiaDlugaOczekiwanie = 1; DLOG(DC_HISTORIA, DL_WARN, F("HISTORIA_DLUGA-FS msg=\"malo pamieci - zapis odlozony, kolejka zachowana\"")); }
+     return false;
+@@ -46431,7 +46608,75 @@
+ 
+ // ════════════════════════════════════════════════════════
+ // SETUP
+-// ════════════════════════════════════════════════════════
++// ═══════════════════════════════════════════════════════════════════════════
++// [v3.57.5 HIST-FS-CZYSZCZENIE] Zadanie usuniecia obu plikow historii.
++//
++// NIE kasujemy plikow w locie. Powod jest techniczny i sprawdzony: usuniecie
++// pliku, do ktorego ktos ma otwarty uchwyt i wlasnie go synchronizuje, potrafi
++// zepsuc INNE wpisy w katalogu (littlefs-project/littlefs#1237 - poprawka
++// weszla po v2.5.0: usuniety uchwyt zostaje przeniesiony na nastepna pare
++// metadanych i jego kolejny sync nadpisuje obcy wpis; katalog zaczyna
++// zwracac LFS_ERR_CORRUPT). U nas dokladnie taki uklad: historiaTaskFn trzyma
++// zapis otwarty co 5 probek.
++//
++// Dlatego korzystamy z gotowego kanalu A1, ktory w tym firmware juz jest i
++// dziala WYLACZNIE przy starcie, zanim ktokolwiek otworzy te pliki:
++//   /history_reset_a1.req  tresc "RESET-HISTORY-A1\n"  <- zadanie
++//   /history_reset_a1.done tresc "HISTORY-A1-COMPLETE\n" <- potwierdzenie
++// history_a190::Transition kasuje wtedy oba CSV, sprawdza stat-em, ze ich nie
++// ma, tworzy .done i zjada zadanie. Nic tu nie duplikujemy - tylko skladamy
++// zadanie w formacie, ktorego oczekuje history_a191::Storage.
++//
++// Uwaga na kolejnosc: .done MUSI zniknac PRZED zlozeniem zadania. Gdy .done
++// istnieje, transition idzie sciezka "juz czyszczono" (release) i zadania
++// nie wykorzystuje do kasowania plikow.
++// ═══════════════════════════════════════════════════════════════════════════
++bool historiaFsCzyscZadaj() {
++  if (!littlefsReady) {
++    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"brak LittleFS\""));
++    return false;
++  }
++  if (systemFS196.exists("/history_reset_a1.done") &&
++      !systemFS196.remove("/history_reset_a1.done")) {
++    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"nie mozna usunac znacznika ukonczenia\""));
++    return false;
++  }
++  // 17 bajtow, bez NUL - Storage::request() wymaga dokladnie tej dlugosci.
++  static const char ZADANIE[] = "RESET-HISTORY-A1\n";
++  const size_t dlugosc = sizeof(ZADANIE) - 1;
++  File f = systemFS196.open("/history_reset_a1.req", "w");
++  if (!f) {
++    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"nie mozna zalozyc znacznika zadania\""));
++    return false;
++  }
++  const size_t zapisane = f.write(reinterpret_cast<const uint8_t*>(ZADANIE), dlugosc);
++  f.flush();
++  f.close();
++  if (zapisane != dlugosc || !systemFS196.exists("/history_reset_a1.req")) {
++    systemFS196.remove("/history_reset_a1.req");
++    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"zadanie nie zapisalo sie w calosci\""));
++    return false;
++  }
++  DLOG(DC_HISTORIA, DL_INFO, F("HIST-FS zdarzenie=czyszczenie_zadane msg=\"oba pliki usuniete przy nastepnym starcie, przed pierwszym odczytem\""));
++  return true;
++}
++
++// [v3.57.4 HIST-FS-OPT / v3.57.5] Odtworzenie przelacznika z NVS na starcie.
++// Wolane w setup() przed historiaWczytajZFS()/historiaDlugaWczytajZFS().
++// Czyszczenia tu nie ma - robi je kanal A1 wewnatrz historiaBoot.start(),
++// czyli WCZESNIEJ niz to wywolanie (patrz komentarz wyzej).
++// Serial.printf, nie DLOG: diagInit() jest dopiero nizej w setup().
++void historiaFsInicjalizujPrzyStarcie() {
++  bool wlaczony = true;
++  Preferences p;
++  if (p.begin("hist", true)) {
++    wlaczony = p.getBool("fs_on", true);
++    p.end();
++  }
++  g_histFsZapisWlaczony.store(wlaczony, std::memory_order_release);
++  Serial.printf("tag=HIST-FS lvl=INFO zdarzenie=start zapis_na_flash=%s\n", wlaczony ? "WL" : "WYL");
++}
++
+ void setup() {
+   // Wymagane bez Wi-Fi: konwersja lokalnego RTC i normalizacja historii.
+   setenv("TZ", RTC_NTP_TZ_POLSKA, 1);
+@@ -46552,6 +46797,7 @@
+   g_telemetryRing.init();
+   spoolRuntimeRestoreFromNvs();   // [v3.54.0] przelacznik bufora offline z NVS
+   historiaDlugaInit();
++  historiaFsInicjalizujPrzyStarcie();  // [v3.57.4] przelacznik + ewentualne czyszczenie plikow
+   historiaWczytajZFS();       // [WYKRESY-FS] odtworz bufor krotki z dysku - wzorem logZaladujZFS()
+   historiaDlugaWczytajZFS();  // [WYKRESY-FS] odtworz bufor dlugi z dysku
+ 

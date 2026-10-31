@@ -5,6 +5,17 @@ package com.sterownikco.pro.core
    kafelków (wartość, jednostka, opis, plakietka, kolor, pasek, ilustracja).
    ══════════════════════════════════════════════════════════════════════════ */
 
+data class TilePositionMeter(
+    val label: String,
+    val degrees: Int?,
+    val percentage: Int?,
+    val pendingTarget: Boolean = false
+) {
+    val fraction: Double? get() = percentage?.div(100.0)
+    val angleText: String get() = degrees?.let { "${it}°" } ?: "—"
+    val percentageText: String get() = percentage?.let { "$it%" } ?: "—"
+}
+
 data class TileSpec(
     val id: String,
     val title: String,
@@ -17,11 +28,34 @@ data class TileSpec(
     val cls: String = "c-none",
     val state: String = "",
     val frac: Double = 0.0,
+    val positionMeters: List<TilePositionMeter> = emptyList(),
     val vcol: String = "",
     val sim: Boolean = false,
     val stale: Boolean = false,
     val artKey: String = ""
 )
+
+internal fun buildServoPositionMeters(
+    klapaDegrees: Int?,
+    syberkaDegrees: Int?,
+    klapaPreview: ServoPositionPreview? = null,
+    syberkaPreview: ServoPositionPreview? = null
+): List<TilePositionMeter> {
+    fun meter(label: String, degrees: Int?, maxDegrees: Int, preview: ServoPositionPreview?): TilePositionMeter {
+        val validPreview = preview?.takeIf {
+            it.targetDegrees in 0..maxDegrees && it.requestedPercent in 0..100
+        }
+        val validDegrees = validPreview?.targetDegrees ?: degrees?.takeIf { it in 0..maxDegrees }
+        val percentage = validPreview?.requestedPercent
+            ?: validDegrees?.let { Math.round(it * 100.0 / maxDegrees).toInt() }
+        return TilePositionMeter(label, validDegrees, percentage, pendingTarget = validPreview != null)
+    }
+
+    return listOf(
+        meter("KLAPA", klapaDegrees, maxDegrees = 180, preview = klapaPreview),
+        meter("SYBEREK", syberkaDegrees, maxDegrees = 90, preview = syberkaPreview)
+    )
+}
 
 data class DashboardTileDef(
     val id: String,
@@ -45,7 +79,7 @@ object TileDefs {
         DashboardTileDef("trociny", "Temperatura trocin", 1, "Temperatura czujnika zasobnika"),
         DashboardTileDef("weather", "Pogoda teraz", 1, "Aktualna pogoda z Open-Meteo"),
         DashboardTileDef("pompa", "Pompa", 2, "Stan i wybrana strategia pompy", true),
-        DashboardTileDef("serwo", "Serwo", 2, "Tryb i położenie klapy", true),
+        DashboardTileDef("serwo", "Serwo", 2, "Tryb oraz położenie klapy i syberka", true),
         DashboardTileDef("mieszadlo", "Mieszadło", 2, "Stan pracy mieszadła", true),
         DashboardTileDef("dym", "Czujnik dymu", 2, "Odczyt ADC i stan czujnika", true),
         DashboardTileDef("alarmy", "Bezpieczeństwo", 2, "Podsumowanie alarmów kotła i kolektora")
@@ -176,7 +210,7 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
     out.add(
         TileSpec(
             id = "pokoj", title = "Pomieszczenie", grid = 1, value = fmt1(tr), unit = "°C", cls = if (tr.isFinite()) "c-ok" else "c-none",
-            frac = norm(tr, 8.0, 45.0), desc = symDesc("pokoj", if (tr.isFinite()) "komfort cieplny" else "oczekiwanie na odczyt"),
+            frac = norm(tr, 8.0, 45.0), desc = symDesc("pokoj", if (!tr.isFinite()) "oczekiwanie na odczyt" else if (tr < 16.0) "zimno" else if (tr < 19.0) "chłodno" else if (tr <= 24.0) "komfort cieplny" else "ciepło"),
             badge = badge("pokoj")?.first ?: "LIVE", badgeCls = badge("pokoj")?.second ?: "live",
             sim = S.symAktywna("pokoj"), stale = stale, artKey = "pokoj"
         )
@@ -285,12 +319,20 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
     )
 
     // ── serwo ───────────────────────────────────────────────────────────────
-    val servoMode = m.servoModePresentation().mode
-    val servoKnown = servoMode != null
     val klapaKnown = S.hasData("klapa") && S.klapa in 0..180
     val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
-    val klapaPct = if (klapaKnown) Math.round(S.klapa * 100.0 / 180.0) else null
-    val sybPct = if (syberkaKnown) Math.round(S.syberka * 100.0 / 90.0) else null
+    val klapaPreview = m.servoPositionPreview(ServoPositionAxis.KLAPA)
+    val syberkaPreview = m.servoPositionPreview(ServoPositionAxis.SYBEREK)
+    val servoMode = if (klapaPreview != null || syberkaPreview != null) 2 else m.servoModePresentation().mode
+    val servoKnown = servoMode != null
+    val servoPositionMeters = buildServoPositionMeters(
+        klapaDegrees = S.klapa.takeIf { klapaKnown },
+        syberkaDegrees = S.syberka.takeIf { syberkaKnown },
+        klapaPreview = klapaPreview,
+        syberkaPreview = syberkaPreview
+    )
+    val klapaPct = servoPositionMeters[0].percentage
+    val servoPositionPending = klapaPreview != null || syberkaPreview != null
     out.add(
         TileSpec(
             id = "serwo", title = "Serwo", grid = 2,
@@ -298,10 +340,14 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
             cls = if (servoKnown) "c-flame" else "c-none",
             state = when (servoMode) { 2 -> "warn"; 3 -> "err"; else -> "" },
             frac = if (klapaPct != null) klapaPct / 100.0 else 0.0,
-            desc = "klapa ${if (klapaKnown) "${S.klapa}°" else "—"} • syberek ${if (syberkaKnown) "${S.syberka}°" else "—"}",
-            badge = if (klapaPct != null && sybPct != null) "K$klapaPct% S$sybPct%" else "BRAK DANYCH",
-            badgeCls = if (servoKnown && klapaKnown && syberkaKnown && !stale) "active" else "stale",
-            stale = stale || !servoKnown || !klapaKnown || !syberkaKnown, artKey = "serwo"
+            positionMeters = servoPositionMeters,
+            desc = "klapa ${klapaPreview?.let { "cel ${it.requestedPercent}% (${it.targetDegrees}°)" } ?: if (klapaKnown) "${S.klapa}°" else "—"} • syberek ${syberkaPreview?.let { "cel ${it.requestedPercent}% (${it.targetDegrees}°)" } ?: if (syberkaKnown) "${S.syberka}°" else "—"}",
+            // Procenty i kąty pozostają w dwóch wierszach; „CEL” pojawia się tylko po ACK,
+            // gdy aplikacja czeka jeszcze na zgodny, świeży odczyt z centrali.
+            badge = if (servoPositionPending) "CEL" else "",
+            badgeCls = if (servoPositionPending) "active" else if (servoKnown && klapaKnown && syberkaKnown && !stale) "active" else "stale",
+            stale = stale || !servoKnown || (!klapaKnown && klapaPreview == null) || (!syberkaKnown && syberkaPreview == null),
+            artKey = "serwo"
         )
     )
 

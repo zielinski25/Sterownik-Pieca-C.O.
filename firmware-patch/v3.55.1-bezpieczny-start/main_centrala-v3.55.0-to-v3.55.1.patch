@@ -1,0 +1,405 @@
+--- a/main_centrala.cpp	2026-10-24 09:52:13.349039905 +0000
++++ b/main_centrala.cpp	2026-10-24 11:31:14.079232107 +0000
+@@ -1,3 +1,25 @@
++// [v3.55.1 BEZPIECZNY-START] — 2026-10-24
++// FIRMWARE_VERSION v3.55.0 -> v3.55.1 (PATCH: start nie zalezy od rozmiaru plikow historii).
++// Co: oba pliki historii (/hist_short.csv, /hist_long.csv) sa czytane PORCJAMI
++//     po 4 KB, z oddawaniem czasu schedulerowi po kazdej porcji, tylko z ogona
++//     pliku (limit 512 KB / 2 MB) i z twardym limitem czasu (4 s / 9 s).
++// Dlaczego: 24.10.2026 centrala przestala odpowiadac w Telegramie i zniknela
++//     z sieci. Log z USB pokazal Task WDT w setup(), tuz po
++//     "HISTORIA-FS wczytano_z_dysku probek=1440". /hist_long.csv rozrosl sie do
++//     1 465 977 B, a historiaDlugaWczytajZFS() czytala go JEDNYM f.readString()
++//     (bajt po bajcie, doklejanie do Stringa), po czym skalowala na wiersze
++//     String::substring(). Wczytywanie przekroczylo okno WDT 15 s -> watchdog
++//     ubijal loopTask PRZED startem WiFi -> petla restartow -> brak Telegrama,
++//     brak AP PieCO_AP, brak panelu, brak danych w aplikacji. Wersja 3.54.0 ma
++//     ten sam kod, wiec powrot do niej nic nie zmienial.
++// Skutek: czas startu jest ograniczony z gory i nie zalezy od rozmiaru pliku.
++//     Plik 100 KB i plik 100 MB startuja tyle samo dlugo.
++// Dodatkowo: pusty obszar LittleFS (same 0xFF, np. po recznym wyczyszczeniu
++//     partycji) jest teraz automatycznie formatowany - uszkodzona, ale niepusta
++//     partycja nadal NIE jest formatowana.
++// Czego NIE zmieniono: format CSV, kolejnosc i znaczenie kolumn, /api/history*,
++//     zapis na flash, resync, telemetria, Firebase, Telegram, OTA.
++//
+ // [v3.55.0 ONE-BATCH-RESEND] — 2026-10-24
+ // FIRMWARE_VERSION v3.54.0 -> v3.55.0 (MINOR, koniec z gubieniem probek telemetrii).
+ // Co: jedna paczka telemetrii naraz. Do Firebase nie idzie nowa paczka, dopoki
+@@ -5141,7 +5163,8 @@
+ #include <Update.h>       // [PUNKT 3 — OTA] Upload pliku .bin przez przegladarke (endpoint /ota-upload)
+ #include <HTTPClient.h>   // [PUNKT 7 — OTA GitHub] zapytanie do api.github.com (sprawdzenie tagu najnowszego Release)
+ #include <HTTPUpdate.h>   // [PUNKT 7 — OTA GitHub] pobranie firmware.bin + Update.begin/write/end + obsluga przekierowan 302
+-#include <esp_ota_ops.h>  // [SYNC-OTA/Ustalenie #5, ta sesja] esp_ota_mark_app_valid_cancel_rollback() — patrz verifyRollbackLater() i potwierdzPartycjeJesliCzeka() nizej
++#include <esp_ota_ops.h>
++#include <esp_partition.h>  // [v3.55.1 FS-BLANK-FORMAT] sprawdzenie, czy partycja LittleFS jest PUSTA (same 0xFF) - patrz littlefsPartycjaPusta()  // [SYNC-OTA/Ustalenie #5, ta sesja] esp_ota_mark_app_valid_cancel_rollback() — patrz verifyRollbackLater() i potwierdzPartycjeJesliCzeka() nizej
+ 
+ // [PUNKT 6 — Telegram] WiFiClientSecure — ten sam mechanizm TLS co w Rybach
+ // (tgClient.setInsecure(), brak weryfikacji certyfikatu — jak w referencji).
+@@ -5482,7 +5505,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.55.0";
++static const char* FIRMWARE_VERSION = "v3.55.1";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -45420,6 +45443,153 @@
+ // HISTORIA_MAX_PROBEK (gdyby resync z jakiegos powodu sie nie wykonal) -
+ // wtedy pomijamy najstarsze, ten sam wzorzec co histStartLine w
+ // Ryby_LED_fi_S3.cpp.
++// ═══════════════════════════════════════════════════════════════════════════
++// [v3.55.1 BOOT-FS-STREAM] Strumieniowy czytnik plikow historii.
++//
++// Problem, ktory to rozwiazuje (awaria 24.10.2026): obie funkcje
++// historiaWczytajZFS()/historiaDlugaWczytajZFS() czytaly CALY plik jednym
++// f.readString(), a potem skalowaly go String::substring() na wiersze.
++// File::readString() na ESP32 czyta bajt po bajcie i dokleja do Stringa, wiec
++// koszt rosnie szybciej niz liniowo od rozmiaru pliku. Przy /hist_long.csv
++// rozrosnietym do 1 465 977 B wczytywanie przekroczylo okno Task WDT (15 s)
++// i watchdog ubijal loopTask w srodku setup(), ZANIM setup() doszedl do WiFi.
++// Objaw: urzadzenie w petli restartow — brak Telegrama, brak AP PieCO_AP,
++// brak panelu WWW, brak danych w aplikacji. Wersja firmware nie miala tu
++// nic do rzeczy (3.54.0 zachowuje sie identycznie).
++//
++// Naprawa — trzy niezalezne warstwy:
++//   1. PLIK CZYTANY PORCJAMI (HISTORIA_STRUMIEN_PORCJA_BAJTOW). Po kazdej
++//      porcji serwisujTWDTJesliZarejestrowany() + vTaskDelay(1), wiec
++//      zadne pojedyncze zatrzymanie nie trwa dluzej niz kilka ms i IDLE1
++//      dostaje czas na nakarmienie WDT.
++//   2. CZYTAMY TYLKO OGON PLIKU (limit bajtow). W RAM i tak trzymamy tylko
++//      ostatnie HISTORIA_MAX_PROBEK / HISTORIA_DLUGA_MAX_PROBEK probek,
++//      wiec starsze bajty sa bezuzyteczne. Rozmiar pliku przestaje
++//      wydluzac start — 10 MB i 100 KB kosztuja tyle samo.
++//   3. TWARDY LIMIT CZASU (HISTORIA_*_WCZYTAJ_LIMIT_MS). Po jego przekroczeniu
++//      czytanie konczy sie i setup() idzie dalej z tym, co zdazyl wczytac.
++//      Start NIGDY sie nie zawiesi, nawet na wolnej/kazdej koszmarnie duzej
++//      pamieci flash.
++// Pamiec: zamiast Stringa wielkosci pliku (1,46 MB) jest jeden bufor
++// porcji 4 KB + jedna linia (~200 B).
++// ═══════════════════════════════════════════════════════════════════════════
++#define HISTORIA_STRUMIEN_PORCJA_BAJTOW     4096U
++#define HISTORIA_STRUMIEN_LINIA_MAX_BAJTOW  512U
++
++// Bufor krotki: 1440 probek x ~150 B = ~216 KB. 512 KB to zapas 2x.
++#define HISTORIA_WCZYTAJ_LIMIT_BAJTOW       (512UL * 1024UL)
++#define HISTORIA_WCZYTAJ_LIMIT_MS           4000UL
++// Bufor dlugi: 8000 probek x ~172 B = ~1,38 MB. 2 MB to zapas na dluzsze
++// wiersze i na plik rozrosniety do 8500 linii (margines resync +500).
++#define HISTORIA_DLUGA_WCZYTAJ_LIMIT_BAJTOW (2048UL * 1024UL)
++#define HISTORIA_DLUGA_WCZYTAJ_LIMIT_MS     9000UL
++
++// Minimalny czytnik CSV po liniach. Nie zna LittleFS — dostaje otwarty File,
++// wiec ten sam kod obsluguje i bufor krotki, i dlugi (i nadaje sie do testu
++// hostowego bez Arduino).
++class HistoriaStrumien {
++public:
++  ~HistoriaStrumien() { zamknij(); }
++
++  // limitBajtow = 0 -> czytaj od poczatku. limitCzasuMs = 0 -> bez limitu.
++  bool otworz(File &f, uint32_t limitBajtow, uint32_t limitCzasuMs) {
++    zamknij();
++    if (!f) return false;
++    const uint32_t rozmiar = (uint32_t)f.size();
++    uint32_t pomin = 0U;
++    if (limitBajtow > 0U && rozmiar > limitBajtow) pomin = rozmiar - limitBajtow;
++    if (pomin > 0U) {
++      if (!f.seek(pomin)) return false;
++      _pierwszaNiepelna = true;   // trafilismy w srodek wiersza — odrzucimy go
++    }
++    _buf = (uint8_t *)ps_malloc(HISTORIA_STRUMIEN_PORCJA_BAJTOW);
++    if (!_buf) _buf = (uint8_t *)malloc(HISTORIA_STRUMIEN_PORCJA_BAJTOW);
++    if (!_buf) return false;
++    _f = f;
++    _rozmiar = rozmiar;
++    _pominBajtow = pomin;
++    _bufLen = 0U; _bufPos = 0U;
++    _eof = false; _przerwano = false;
++    _startMs = millis(); _limitMs = limitCzasuMs;
++    _linie = 0U; _bajty = 0U;
++    return true;
++  }
++
++  // Zwraca kolejna linie (bez '\n' i bez '\r'). false = koniec danych.
++  bool nastepna(String &out) {
++    out = "";
++    if (!_buf) return false;
++    for (;;) {
++      if (_bufPos >= _bufLen) {
++        if (_eof) {
++          if (out.length() == 0U) return false;
++          _pierwszaNiepelna = false;
++          ++_linie;                    // ostatni wiersz bez znaku konca
++          return true;
++        }
++        // Limit czasu sprawdzamy na granicy porcji — rzadko, a wystarczajaco.
++        if (_limitMs > 0U && (uint32_t)(millis() - _startMs) > _limitMs) {
++          _przerwano = true;
++          return false;
++        }
++        if (!doladuj()) return false;
++        continue;
++      }
++      const char c = (char)_buf[_bufPos++];
++      if (c == '\r') continue;         // CRLF -> traktujemy jak LF
++      if (c == '\n') {
++        if (_pierwszaNiepelna) {       // niedokonczony pierwszy wiersz
++          _pierwszaNiepelna = false;
++          out = "";
++          continue;
++        }
++        ++_linie;
++        return true;
++      }
++      if (out.length() < HISTORIA_STRUMIEN_LINIA_MAX_BAJTOW) out += c;
++      else {                           // wiersz absurdalnie dlugi — obetnij
++        while (_bufPos < _bufLen && _buf[_bufPos] != '\n') _bufPos++;
++      }
++    }
++  }
++
++  void zamknij() {
++    if (_buf) { free(_buf); _buf = nullptr; }
++    if (_f) _f.close();
++    _bufLen = 0U; _bufPos = 0U;
++    _eof = false;
++  }
++
++  uint32_t linie()     const { return _linie; }
++  uint32_t bajty()     const { return _bajty; }
++  bool     przerwano() const { return _przerwano; }
++  uint32_t czasMs()    const { return (uint32_t)(millis() - _startMs); }
++  uint32_t rozmiar()   const { return _rozmiar; }
++  uint32_t pominBajtow() const { return _pominBajtow; }
++
++private:
++  bool doladuj() {
++    if (!_f) { _eof = true; return true; }
++    _bufLen = (size_t)_f.read(_buf, HISTORIA_STRUMIEN_PORCJA_BAJTOW);
++    _bufPos = 0U;
++    if (_bufLen == 0U) { _eof = true; return true; }
++    _bajty += (uint32_t)_bufLen;
++    // Oddajemy czas schedulerowi (IDLE1 karmi Task WDT) po KAZDEJ porcji.
++    serwisujTWDTJesliZarejestrowany();
++    vTaskDelay(1);
++    return true;
++  }
++
++  File     _f;
++  uint8_t *_buf = nullptr;
++  size_t   _bufLen = 0U, _bufPos = 0U;
++  bool     _eof = false, _pierwszaNiepelna = false, _przerwano = false;
++  uint32_t _startMs = 0U, _limitMs = 0U, _linie = 0U, _bajty = 0U;
++  uint32_t _rozmiar = 0U, _pominBajtow = 0U;
++};
++
++// Odtworzenie bufora krotkiego z /hist_short.csv.
++// [v3.55.1] Bylo: f.readString() na calym pliku. Teraz: porcje + limit czasu.
+ void historiaWczytajZFS() {
+   if (!historiaBufor) return;
+   if (!littlefsReady) return;
+@@ -45427,30 +45597,24 @@
+ 
+   File f = LittleFS.open(HISTORIA_PLIK, "r");
+   if (!f) { historiaPlikLiczbaLinii = 0; return; }
+-  String zawartosc = f.readString();   // caly plik na raz - maks. ok. 90 KB (1440 linii), OK na starcie z 8 MB PSRAM
+-  f.close();
+ 
+-  int liczbaLinii = 0;
+-  for (unsigned int i = 0; i < zawartosc.length(); i++) if (zawartosc[i] == '\n') liczbaLinii++;
+-  int pominac = (liczbaLinii > HISTORIA_MAX_PROBEK) ? (liczbaLinii - HISTORIA_MAX_PROBEK) : 0;
+-
+-  int wczytane = 0, numerLinii = 0, start = 0;
+-  for (unsigned int i = 0; i <= zawartosc.length(); i++) {
+-    if (i < zawartosc.length() && zawartosc[i] != '\n') continue;
+-    if (i == (unsigned int)start) { start = i + 1; continue; }  // pusta linia
+-    String linia = zawartosc.substring(start, i);
+-    start = i + 1;
++  HistoriaStrumien st;
++  if (!st.otworz(f, HISTORIA_WCZYTAJ_LIMIT_BAJTOW, HISTORIA_WCZYTAJ_LIMIT_MS)) {
++    f.close();
++    historiaPlikLiczbaLinii = 0;
++    DLOG(DC_HISTORIA, DL_ERR, F("HISTORIA-FS msg=\"nie mozna zainicjalizowac czytnika (brak pamieci na bufor porcji)\""));
++    return;
++  }
++
++  int wczytane = 0, numerLinii = 0;
++  String linia;
++  while (st.nastepna(linia)) {
+     numerLinii++;
+-    if (numerLinii <= pominac) continue;
+-    if ((numerLinii % 200) == 0) serwisujTWDTJesliZarejestrowany();
++    if (linia.length() == 0) continue;
+ 
+     // etykieta,t_zewn,t_bojler,t_ogrz,t_ogrz_sr,t_powrot,t_panel,t_pokoj,
+     // pompa,cisnienie,wilgotnosc,klapa_proc,syberko_proc,czas_unix (14 kolumn)
+-// Uwaga: legacy klapa_proc/syberko_proc przechowuja stopnie fizyczne.
+-    // [DZIURY-CZAS, v3.0.0.2] Bylo 13 kolumn - stare pliki z dysku (sprzed
+-    // tej zmiany) nie osiagna pole==14 ponizej i zostana pominiete (bufor
+-    // startuje pusty przy pierwszym uruchomieniu tego firmware), bez ryzyka
+-    // crasha.
++    // Uwaga: legacy klapa_proc/syberko_proc przechowuja stopnie fizyczne.
+     HistoriaProbka p;
+     int pole = 0, pStart = 0;
+     for (unsigned int j = 0; j <= linia.length() && pole < 14; j++) {
+@@ -45476,23 +45640,38 @@
+         pStart = j + 1;
+       }
+     }
+-    if (pole == 14 && wczytane < HISTORIA_MAX_PROBEK) {
++    if (pole == 14) {
+       p.czas_unix = historiaNormalizujLegacyUnix(p.etykieta, p.czas_unix, false);
+-      historiaBufor[wczytane] = p;
++      // Zapis w pierscieniu: przy pliku dluzszym niz bufor NADPISUJEMY
++      // najstarsze probki, zamiast je po cichu odrzucac (stara wersja
++      // odrzucala wszystko powyzej HISTORIA_MAX_PROBEK).
++      historiaBufor[wczytane % HISTORIA_MAX_PROBEK] = p;
+       wczytane++;
+     }
+   }
++  st.zamknij();
++  f.close();
+ 
+   historiaGlowa           = wczytane % HISTORIA_MAX_PROBEK;
+-  historiaLiczbaProbek    = wczytane;
++  historiaLiczbaProbek    = (wczytane > HISTORIA_MAX_PROBEK) ? HISTORIA_MAX_PROBEK : wczytane;
+   historiaPelna           = (wczytane >= HISTORIA_MAX_PROBEK);
+-  historiaPlikLiczbaLinii = liczbaLinii - pominac;
++  historiaPlikLiczbaLinii = (int)st.linie();
+ 
+-  DLOGF(DC_HISTORIA, DL_INFO, "HISTORIA-FS zdarzenie=wczytano_z_dysku probek=%d", wczytane);
++  DLOGF(DC_HISTORIA, DL_INFO,
++        "HISTORIA-FS zdarzenie=wczytano_z_dysku probek=%d linii=%lu bajtow=%lu/%lu t=%lums przerwano=%u",
++        wczytane, (unsigned long)st.linie(), (unsigned long)st.bajty(),
++        (unsigned long)st.rozmiar(), (unsigned long)st.czasMs(),
++        st.przerwano() ? 1U : 0U);
++  if (st.przerwano()) {
++    DLOG(DC_HISTORIA, DL_WARN,
++         F("HISTORIA-FS msg=\"limit czasu wczytywania - start kontynuowany z czesciowa historia\""));
++  }
+ }
+ 
+ // Analogicznie dla bufora dlugiego - starsze pliki maja 35 kolumn, nowe
+ // 36 (koncowa kolumna pompa); makro WCZYTAJ_FLOAT wzorem AKUM_DOMKNIJ_FLOAT.
++// [v3.55.1] Bylo: f.readString() na calym pliku (1,46 MB = ponad okno WDT).
++// Teraz: porcje po 4 KB + limit 2 MB od konca + limit czasu 9 s.
+ void historiaDlugaWczytajZFS() {
+   if (!historiaDlugaBufor) return;
+   if (!littlefsReady) return;
+@@ -45500,29 +45679,20 @@
+ 
+   File f = LittleFS.open(HISTORIA_DLUGA_PLIK, "r");
+   if (!f) { historiaDlugaPlikLiczbaLinii = 0; return; }
+-  String zawartosc = f.readString();   // maks. ok. 8000 linii x ok. 140 B = ok. 1,1 MB (gorna granica, patrz PLAN_HISTORIA_JEDNOPLIKOWA.md Czesc 3.4)
+-  f.close();
+ 
+-  int liczbaLinii = 0;
+-  for (unsigned int i = 0; i < zawartosc.length(); i++) if (zawartosc[i] == '\n') liczbaLinii++;
+-  int pominac = (liczbaLinii > HISTORIA_DLUGA_MAX_PROBEK) ? (liczbaLinii - HISTORIA_DLUGA_MAX_PROBEK) : 0;
+-
+-  int wczytane = 0, numerLinii = 0, start = 0;
+-  for (unsigned int i = 0; i <= zawartosc.length(); i++) {
+-    if (i < zawartosc.length() && zawartosc[i] != '\n') continue;
+-    if (i == (unsigned int)start) { start = i + 1; continue; }
+-    String linia = zawartosc.substring(start, i);
+-    start = i + 1;
++  HistoriaStrumien st;
++  if (!st.otworz(f, HISTORIA_DLUGA_WCZYTAJ_LIMIT_BAJTOW, HISTORIA_DLUGA_WCZYTAJ_LIMIT_MS)) {
++    f.close();
++    historiaDlugaPlikLiczbaLinii = 0;
++    DLOG(DC_HISTORIA, DL_ERR, F("HISTORIA_DLUGA-FS msg=\"nie mozna zainicjalizowac czytnika (brak pamieci na bufor porcji)\""));
++    return;
++  }
++
++  int wczytane = 0, numerLinii = 0;
++  String linia;
++  while (st.nastepna(linia)) {
+     numerLinii++;
+-    // Sam esp_task_wdt_reset() karmi loopTask, ale nie pozwala dzialac IDLE1.
+-    // To zadanie jest monitorowane przez TWDT, wiec wczytywanie historii musi
+-    // okresowo oddac schedulerowi przynajmniej jeden tick. Sprawdzamy przed
+-    // pominac, aby rowniez odrzucane, nadmiarowe linie nie tworzyly busy-loopa.
+-    if ((numerLinii % 50) == 0) {
+-      serwisujTWDTJesliZarejestrowany();
+-      vTaskDelay(1);
+-    }
+-    if (numerLinii <= pominac) continue;
++    if (linia.length() == 0) continue;
+ 
+     String kol[36];
+     int pole = 0, pStart = 0;
+@@ -45566,18 +45736,42 @@
+       p.pompa = pumpValue == "0" ? 0 : (pumpValue == "1" ? 1 : -1);
+     }
+ 
+-    if (wczytane < HISTORIA_DLUGA_MAX_PROBEK) {
+-      historiaDlugaBufor[wczytane] = p;
+-      wczytane++;
+-    }
++    // [v3.55.1] Pierscien zamiast "odrzuc wszystko powyzej MAX".
++    historiaDlugaBufor[wczytane % HISTORIA_DLUGA_MAX_PROBEK] = p;
++    wczytane++;
+   }
++  st.zamknij();
++  f.close();
+ 
+   historiaDlugaGlowa           = wczytane % HISTORIA_DLUGA_MAX_PROBEK;
+-  historiaDlugaLiczbaProbek    = wczytane;
++  historiaDlugaLiczbaProbek    = (wczytane > HISTORIA_DLUGA_MAX_PROBEK) ? HISTORIA_DLUGA_MAX_PROBEK : wczytane;
+   historiaDlugaPelna           = (wczytane >= HISTORIA_DLUGA_MAX_PROBEK);
+-  historiaDlugaPlikLiczbaLinii = liczbaLinii - pominac;
++  historiaDlugaPlikLiczbaLinii = (int)st.linie();
++
++  DLOGF(DC_HISTORIA, DL_INFO,
++        "HISTORIA_DLUGA-FS zdarzenie=wczytano_z_dysku probek=%d linii=%lu bajtow=%lu/%lu t=%lums przerwano=%u",
++        wczytane, (unsigned long)st.linie(), (unsigned long)st.bajty(),
++        (unsigned long)st.rozmiar(), (unsigned long)st.czasMs(),
++        st.przerwano() ? 1U : 0U);
++  if (st.przerwano()) {
++    DLOG(DC_HISTORIA, DL_WARN,
++         F("HISTORIA_DLUGA-FS msg=\"limit czasu wczytywania - start kontynuowany z czesciowa historia\""));
++  }
++}
+ 
+-  DLOGF(DC_HISTORIA, DL_INFO, "HISTORIA_DLUGA-FS zdarzenie=wczytano_z_dysku probek=%d", wczytane);
++// [v3.55.1 FS-BLANK-FORMAT] Czy partycja LittleFS jest fizycznie pusta?
++// Czytamy pierwsze 64 B: same 0xFF = obszar nigdy nie byl zapisany (albo
++// zostal wyczyszczony erase_region). Tylko wtedy wolno sformatowac automatycznie.
++static bool littlefsPartycjaPusta() {
++  const esp_partition_t *part =
++      esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, NULL);
++  if (!part) return false;
++  uint8_t bajty[64];
++  if (esp_partition_read(part, 0, bajty, sizeof(bajty)) != ESP_OK) return false;
++  for (size_t i = 0; i < sizeof(bajty); i++) {
++    if (bajty[i] != 0xFF) return false;
++  }
++  return true;
+ }
+ 
+ // ════════════════════════════════════════════════════════
+@@ -45662,7 +45856,22 @@
+   // jawnym dzialaniem operatora poza normalnym bootem.
+   if (!LittleFS.begin(false)) {
+     littlefsReady = false;
+-    Serial.println(F("tag=LOGI-FS lvl=ERR zdarzenie=mount_nieudany msg=\"LittleFS pozostawiony nietkniety; brak automatycznego formatowania\""));
++    // [v3.55.1 FS-BLANK-FORMAT] Zasada "nigdy nie formatuj automatycznie"
++    // zostaje, z JEDNYM wyjatkiem: obszar jest fizycznie PUSTY (same 0xFF).
++    // Wtedy nie ma czego stracic - to stan po recznym wyczyszczeniu partycji,
++    // a bez systemu plikow urzadzenie dziala trwale okaleczone (brak logow,
++    // brak zapisu historii). Uszkodzona, ale NIEpusta partycja nadal nie jest
++    // formatowana - tam zasada "dane produkcyjne ponad wszystko" obowiazuje.
++    if (littlefsPartycjaPusta()) {
++      Serial.println(F("tag=LOGI-FS lvl=WARN zdarzenie=partycja_pusta msg=\"obszar wypelniony 0xFF - tworze nowy system plikow\""));
++      if (LittleFS.begin(true)) {
++        littlefsReady = true;
++        Serial.println(F("tag=LOGI-FS lvl=INFO zdarzenie=format_ok msg=\"nowy, pusty LittleFS gotowy\""));
++      }
++    }
++    if (!littlefsReady) {
++      Serial.println(F("tag=LOGI-FS lvl=ERR zdarzenie=mount_nieudany msg=\"LittleFS pozostawiony nietkniety; brak automatycznego formatowania\""));
++    }
+   } else {
+     littlefsReady = true;
+   }

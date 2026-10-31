@@ -1,0 +1,115 @@
+diff -u -r c/main_centrala.cpp b/main_centrala.cpp
+--- c/main_centrala.cpp	2026-10-28 12:45:21.573754334 +0000
++++ b/main_centrala.cpp	2026-10-28 12:45:21.617754556 +0000
+@@ -1,3 +1,9 @@
++// FIRMWARE_VERSION v3.56.0 -> v3.56.1 (KANDYDAT: przycisk pobrania historii w panelu; NIE WGRYWAC).
++// v3.56.1: panel WWW dostaje przycisk "Pobierz historie". Token z secrets.h NIE trafia
++// do strony - przycisk prosi centrale o JEDNORAZOWY bilet (GET /history/link), ktory
++// wygasa po 5 minutach i jest zwiazany ze strumieniem. Trasa /history przyjmuje wiec
++// albo naglowek Bearer, albo ?k=<bilet>. Staly token, pliki CSV, zapis historii,
++// NVS, OTA i rytm 8s/60s bez zmian.
+ // FIRMWARE_VERSION v3.55.9 -> v3.56.0 (KANDYDAT: trasa pobrania historii /history i /history/long, za tokenem; NIE WGRYWAC).
+ // v3.56.0: pobranie historii przez HTTP dziala na tej samej zapince co wysylacze
+ // Telegramu (etap 211): dlugosc pod logMutexem, plik otwarty raz, tylko potwierdzony
+@@ -5132,6 +5138,7 @@
+ #include "EspVfsCalls.h"
+ #include "HistoriaPin.h"   // [v3.55.9 HISTORIA-PIN] zapinka prefiksu historii
+ #include "HistoriaPobranie.h"   // [v3.56.0 HISTORIA-POBRANIE] trasa pobrania historii
++#include "HistoriaBilety.h"   // [v3.56.1 HISTORIA-BILETY] jednorazowe linki do pobrania
+ #include "AutoIgnitionColdTimer.h"
+ #include "MieszadloTrocinyAuto.h"
+ #include "AlarmBuzzerProfiles.h"
+@@ -5574,7 +5581,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.56.0";
++static const char* FIRMWARE_VERSION = "v3.56.1";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -10083,6 +10090,47 @@
+   <div id="demoBody"></div>
+ </aside>
+ 
++<!-- [v3.56.1 HISTORIA-POBRANIE] Pobranie plikow historii (CSV) na komputer/telefon.
++     Staly token z secrets.h NIE jest tu wklejony: przycisk prosi centrale o
++     jednorazowy bilet (GET /history/link), a potem otwiera /history?k=<bilet>.
++     Bilet wygasa po 5 minutach i dziala tylko raz. -->
++<button id="histBtn" type="button" style="position:fixed;left:12px;bottom:12px;z-index:60;padding:10px 16px;border:0;border-radius:999px;background:#1f6feb;color:#fff;font-weight:700;font-size:14px;box-shadow:0 6px 18px rgba(0,0,0,.35);cursor:pointer">&#11015; HISTORIA CSV</button>
++<div id="histPanel" style="display:none;position:fixed;left:12px;bottom:66px;z-index:60;width:290px;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:14px;padding:14px;box-shadow:0 12px 32px rgba(0,0,0,.5)">
++  <div style="font-weight:700;margin-bottom:10px">Pobierz historię</div>
++  <button id="histShort" type="button" style="display:block;width:100%;margin-bottom:8px;padding:10px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer">Krótka (24 h)</button>
++  <button id="histLong" type="button" style="display:block;width:100%;padding:10px;border:0;border-radius:10px;background:#374151;color:#fff;font-weight:600;cursor:pointer">Długa (archiwum)</button>
++  <div id="histInfo" role="status" style="margin-top:10px;font-size:12px;line-height:1.35;opacity:.85">Link jest jednorazowy i wygasa po 5 minutach. Jeśli pobieranie się nie zacznie, kliknij jeszcze raz.</div>
++</div>
++<script>
++/* [v3.56.1 HISTORIA-POBRANIE] Obsluga przycisku pobrania. Celowo bez zaleznosci
++   od reszty panelu: jesli ktorys element nie istnieje, nic sie nie dzieje. */
++(function () {
++  var przycisk = document.getElementById('histBtn');
++  var panel = document.getElementById('histPanel');
++  var info = document.getElementById('histInfo');
++  if (!przycisk || !panel) return;
++  function komunikat(t) { if (info) info.textContent = t; }
++  function pobierz(strumien) {
++    komunikat('Przygotowuję link…');
++    fetch('/history/link?stream=' + strumien, { cache: 'no-store' })
++      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
++      .then(function (bilet) {
++        bilet = (bilet || '').trim();
++        if (bilet.length !== 32) throw new Error('centrala nie dała biletu');
++        window.location.href = '/history?k=' + encodeURIComponent(bilet) + '&s=' + strumien;
++      })
++      .catch(function (e) { komunikat('Nie udało się: ' + e.message); });
++  }
++  przycisk.addEventListener('click', function () {
++    panel.style.display = (panel.style.display === 'none' ? 'block' : 'none');
++  });
++  var krotka = document.getElementById('histShort');
++  var dluga = document.getElementById('histLong');
++  if (krotka) krotka.addEventListener('click', function () { pobierz('short'); });
++  if (dluga) dluga.addEventListener('click', function () { pobierz('long'); });
++})();
++</script>
++
+ <script>
+ /* ═══════════════════════════════════════════════════════════════════════════
+    STEROWNIK CO — Ilustracje SVG i ikony wektorowe (Lustro Android TileArt & App PRO)
+@@ -28658,6 +28706,23 @@
+ static HistoriaBramka212 historiaBramka;
+ static historia212::Pobranie historiaPobranie(historiaBramka, HISTORIA_TOKEN);
+ 
++// [v3.56.1 HISTORIA-BILETY] Zrodlo losowosci i zegar dla biletow. esp_random()
++// to sprzetowy generator ESP32; zegar to millis() (32 bity, przewija sie co
++// ~49 dni - porownania w Biletach sa na roznicy, wiec przewiniecie nie szkodzi).
++static void historiaLosuj213(std::uint8_t *out, std::size_t n) {
++  for (std::size_t i = 0; i < n; ++i) out[i] = static_cast<std::uint8_t>(esp_random() & 0xFFu);
++}
++static std::uint32_t historiaZegar213() { return static_cast<std::uint32_t>(millis()); }
++static historia213::Bilety historiaBilety(historiaLosuj213, historiaZegar213);
++
++// Podpiecie biletow do trasy robi konstruktor ponizszego obiektu - w tej samej
++// jednostce kompilacji kolejnosc inicjalizacji jest z gory na dol, wiec
++// historiaPobranie (wyzej) jest juz zbudowane.
++struct HistoriaBiletyPodpiecie213 {
++  HistoriaBiletyPodpiecie213() { historiaPobranie.ustawBilety(&historiaBilety); }
++};
++static HistoriaBiletyPodpiecie213 historiaBiletyPodpiecie;
++
+ // [v3.56.0 HISTORIA-POBRANIE] Dwa punkty pobrania: /history (krotka) i
+ // /history/long (dluga). HTTP_ANY, bo metode sprawdzamy sami - inaczej inna
+ // metoda dostalaby ciche 404 zamiast 405. Odpowiedz odmowy jest prawdziwa
+@@ -28669,6 +28734,12 @@
+     historiaPobranie.obsluz(request, historia212::Strumien::Dluga);
+   });
+ 
++  // [v3.56.1 HISTORIA-BILETY] Panel prosi o bilet, dostaje 32 znaki hex i sam
++  // otwiera /history?k=<bilet>. Tu NIE ma tokenu z secrets.h - tylko bilet.
++  wifiWebServer.on("/history/link", HTTP_GET, [](AsyncWebServerRequest *request) {
++    historiaPobranie.link(request);
++  });
++
+   wifiWebServer.on("/api/log-download", HTTP_GET, [](AsyncWebServerRequest *request) {
+     AsyncWebServerResponse *resp = request->beginResponse(200, "text/plain", logPobierzTekst(0));
+     resp->addHeader("Content-Disposition", "attachment; filename=log.txt");
