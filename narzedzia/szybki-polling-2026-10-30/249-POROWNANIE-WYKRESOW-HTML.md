@@ -1,16 +1,60 @@
 # 249 — Porównanie wykresów: Firebase ↔ plik lokalny (drugi plik HTML)
 
-Data: 2026-10-31
+Data: 2026-10-31 · **wersja narzędzia: v2** (poprawka: wchodzi już zalogowany)
 Plik: `porownanie-wykresow.html` (w korzeniu repo)
-Dysk: **`1f0JiB2-JEYFxYhwoPxETh0wdigfJEhdf`** · 40 289 B ·
-SHA-256 `aa3752b157e0c0b343b17e24a6eb8e18c67629ba68e783359cf0af81ca7df58c`
+**48 613 B · 1 053 linie · SHA-256 `5a1a87909806d068cf07ce4ac155f90ad3cb3ee9203e6452cccbb46315602abf`**
+
+| wersja | Dysk | uwaga |
+|---|---|---|
+| **v2 (ta)** | **`1mhffsci_QIm8qc1YHr-Aw2zoyzsM_rA8`** | auto-logowanie, sama pobiera ostatnią dobę |
+| v1 | `1f0JiB2-JEYFxYhwoPxETh0wdigfJEhdf` (nazwa zmieniona na `…-v1-BEZ-AUTOLOGOWANIA.html`) | pytała o hasło za każdym otwarciem — **nie używać** |
+
+---
+
+## 0. Poprawka v2 — „ma tam być już wszystko zalogowane" (31.10)
+
+**Co było źle w v1:** przy każdym otwarciu plik pytał o hasło od zera i nie wiedział
+nic o sesji, którą panel centrali (`Piec.html`) już dawno zapisał w przeglądarce.
+Czyli: panel był zalogowany, a narzędzie obok — nie.
+
+**Co jest teraz (kolejność, w jakiej plik próbuje wejść):**
+
+1. token, który już ma w pamięci karty (ważny? używa),
+2. token zapisany w przeglądarce przez **panel** albo przez to narzędzie,
+3. **odświeżenie sesji** tokenem odświeżania — bez hasła (endpoint `securetoken.googleapis.com`),
+4. hasło zapamiętane przy pierwszym logowaniu,
+5. dopiero teraz: pokazuje pole hasła.
+
+Po wejściu **od razu pobiera ostatnią dobę** i rysuje wykresy — nie trzeba klikać
+„Pobierz z Firebase".
+
+**Wspólne klucze z panelem** (celowo identyczne, żeby sesja była jedna):
+
+| klucz | co trzyma |
+|---|---|
+| `piec_fb_email` | e-mail konta pieca |
+| `piec_fb_password` | hasło, **tylko jeśli zaznaczysz „zapamiętaj hasło"** |
+| `piec_fb_ref_token` | token odświeżania (to on pozwala wchodzić bez hasła) |
+| `piec_fb_token` | token ID (pamięć karty, nie dysk) |
+| `piec_fb_api_key` | klucz API |
+
+Dzięki temu: logujesz się **raz** (w panelu albo tutaj) → oba pliki wchodzą same.
+Przycisk **„Wyloguj / zapomnij hasło"** kasuje hasło i tokeny.
+
+Jeśli nic nie ma zapamiętanego, plik **sam rozwija** sekcję „Konto, hasło i klucz API",
+więc widać, gdzie wpisać hasło. Po udanym logowaniu zwija ją z powrotem.
+
+> Uczciwie: to działa, gdy oba pliki otwierasz **tą samą przeglądarką**. Sesja
+> w przeglądarce jest przypisana do adresu, z którego plik pochodzi. Otwieranie
+> panelu z sieci (`http://192.168.…`) a narzędzia z pliku na dysku to dwa różne
+> miejsca — wtedy zadziała punkt 4 (hasło wpisane raz w tym pliku).
 
 ---
 
 ## 1. Po co to jest
 
-`Piec.html` to panel centrali — pokazuje wykresy z **jednego** źródła, wybranego w danej chwili.
-Ten plik jest **drugim, osobnym narzędziem**: ładuje **dwa źródła naraz** i pozwala je zestawić.
+`Piec.html` to panel centrali — pokazuje wykresy z **jednego** źródła.
+Ten plik jest **drugim, osobnym narzędziem**: ładuje **dwa źródła naraz** i zestawia je.
 
 | | źródło A | źródło B |
 |---|---|---|
@@ -23,27 +67,23 @@ Ten plik jest **drugim, osobnym narzędziem**: ładuje **dwa źródła naraz** i
 
 | tryb | co pokazuje |
 |---|---|
-| **OBOK SIEBIE** | dwa wykresy, **identyczna skala Y i identyczna os czasu** — różnicę widać bez mierzenia |
+| **OBOK SIEBIE** | dwa wykresy, **identyczna skala Y i identyczna os czasu** |
 | **NAKŁADKA** | jeden wykres: A ciągłą, B przerywaną |
-| **RÓŻNICA B−A** | jeden wykres wartości `B − A` na sparowanych próbkach, z linią zera |
+| **RÓŻNICA B−A** | wartości `B − A` na sparowanych próbkach, z linią zera |
 
 ## 3. Co liczy pod spodem
 
 - **parowanie próbek** po czasie z tolerancją (domyślnie ±90 s, regulowane),
 - **średnia i maksymalna różnica** `B − A` na kanał,
 - **statystyki** min / średnia / max / liczba próbek dla każdego źródła,
-- **brakujące minuty** — ile minut jest tylko w A, a ile tylko w B, z pierwszymi sześcioma
-  (to bezpośrednio pokazuje luki, o których była mowa przy wykresach),
+- **brakujące minuty** — ile tylko w A, ile tylko w B, z pierwszymi sześcioma,
 - **przerwy > 6 min** w każdym źródle.
 
 ## 4. Kanały
 
-13 sygnałów + pompa:
-
 `Zewn.` · `Bojler` · `Piec` · `Piec śr.` · `Powrót` · `Panel` · `Pokój` · `Trociny` ·
 `Wilg.` · `Ciśn.` · `Dym` · `Klapa %` · `Syberek %` · `Pompa %`
-
-Domyślnie włączone: Piec, Bojler, Zewn.
+(Domyślnie włączone: Piec, Bojler, Zewn.)
 
 ## 5. Zgodność z tym, co robi firmware (sprawdzone w kodzie)
 
@@ -59,37 +99,41 @@ Rekord w RTDB (`telemetryAppendPathForSample`, v3.57.x):
 - `a[10]` (dym) — surowe, bez skalowania,
 - `k` 0–180° → % (×100/180), `s` 0–90° → % (×100/90),
 - `state` bit 0 → pompa 0/100 %,
-- `q` — 2 bity jakości na kanał; `≥2` = odrzucone (ta sama reguła co w `Piec.html`),
+- `q` — 2 bity jakości na kanał; `≥2` = odrzucone (reguła jak w `Piec.html`),
 - kody błędów DS18B20 (`≤ −1200`, `≥ 15000`) odrzucane.
 
 CSV: `hist_short.csv` — 14 kolumn, czas w kolumnie 13 (unix s);
 `hist_long.csv` — 35 kolumn (+ opcjonalna 36. = pompa), czas w kolumnie 34.
-Kolumnę pompy i pozycje temperatur odwzorowano 1:1 z parserów `Piec.html`,
-więc plik pobrany z panelu i rekord z chmury opisują to samo.
 
-## 6. Bezpieczeństwo
+## 6. Bezpieczeństwo — jak jest naprawdę
 
-- hasło **nie jest nigdzie zapisywane** — trafia tylko do `identitytoolkit` Google,
-- token trzymany **w pamięci karty**, nie w `localStorage`,
-- poza zapytaniami do Google (logowanie + odczyt RTDB) nic nie wychodzi z przeglądarki,
-- brak zewnętrznych bibliotek i CDN — plik działa offline (poza samym pobieraniem danych).
+- Hasło **nie jest wkodowane w plik** — jest puste, wpisujesz swoje.
+- Hasło i tokeny leżą **tylko w pamięci przeglądarki na Twoim komputerze**
+  (`localStorage`), dokładnie tak jak w panelu. Nie idą nigdzie poza Google.
+- Jeśli nie chcesz zapamiętywać hasła — odznacz „zapamiętaj" przy logowaniu;
+  zostanie sam token odświeżania (ważny do unieważnienia sesji w konsoli Firebase).
+- Brak CDN i bibliotek zewnętrznych — poza zapytaniami do Google plik działa offline.
 
 ## 7. Jak użyć
 
-1. Pobierz `porownanie-wykresow.html` i otwórz w przeglądarce (dwuklik).
-2. **A:** wpisz hasło do konta `piec_co_boot@akwarium.local`, wybierz zakres (6 h / 24 h / 7 dni / 30 dni), „Pobierz z Firebase".
-3. **B:** przeciągnij plik `hist_short.csv` albo `hist_long.csv` (albo JSON z Firebase).
-4. Wybierz sygnały i tryb widoku. Na dole statystyki i lista brakujących minut.
-5. „Zapisz CSV" — zestawienie par (A, B, różnica dla każdego kanału).
-   „Zapisz PNG" — obraz wykresów (w trybie obok siebie oba sklejone pionowo).
+1. Pobierz plik, otwórz **dwuklikiem** w przeglądarce (Chrome/Edge).
+2. Jeśli wcześniej logowałeś się w panelu z „zapamiętaj" — **jest już zalogowany**
+   i sam wczytuje ostatnią dobę. Jeśli nie — rozwiń „Konto, hasło i klucz API",
+   wpisz hasło, zaznacz „zapamiętaj" (domyślnie zaznaczone).
+3. **B:** przeciągnij `hist_short.csv` / `hist_long.csv` (albo JSON z Firebase).
+4. Wybierz sygnały i tryb widoku. Na dole statystyki i brakujące minuty.
+5. „Zapisz CSV" — pary (A, B, różnica). „Zapisz PNG" — obraz wykresów.
 
 ## 8. Ograniczenia — mówię wprost
 
-- **Nie testowałem tego w przeglądarce** — sandbox nie ma przeglądarki ani dostępu
-  do `firebaseio`. Sprawdzone: składnia JS (`node --check`), wszystkie trzy parsery
-  na danych wzorcowych, rysowanie w trzech trybach na zaślepce DOM (bez wyjątków).
-  Pierwsze uruchomienie u Ciebie to prawdziwy test.
-- Logowanie wymaga hasła — nie da się go wpisać za Ciebie.
-- Odczyt RTDB zależy od reguł (`auth != null`) — ten samym mechanizmem co `Piec.html`.
-- Bardzo duże zakresy (30 dni ≈ 43 200 próbek) rysują się wolniej; dane są pełne,
-  rysowanie idzie po wszystkich punktach.
+- **Nie testowałem tego w prawdziwej przeglądarce** — sandbox nie ma przeglądarki
+  ani dostępu do `firebaseio`. Sprawdzone automatycznie: składnia JS (`node --check`),
+  cztery scenariusze logowania na zaślepce DOM i sieci (**22 sprawdzenia, 22 OK**),
+  rysowanie w trzech trybach (**3/3**), parsery na danych wzorcowych.
+- Pierwsze uruchomienie u Ciebie to prawdziwy test — jak coś nie zagra, podeślij
+  komunikat z konsoli (F12 → Console).
+- Reguły bazy wymagają `auth != null`, więc **logowanie jest obowiązkowe** —
+  nie da się czytać anonimowo.
+- Podgląd w aplikacji (okienko z piaskownicą) bywa bez sieci i bez pamięci
+  przeglądarki — tam logowanie nie zadziała. Do tego pliku potrzebna jest
+  prawdziwa przeglądarka.

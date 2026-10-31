@@ -76,19 +76,31 @@ td:first-child,th:first-child{text-align:left}
 </head>
 <body>
 
-<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny</h1>
-<div class="sub">Dwa źródła historii obok siebie: chmura (RTDB) i plik pobrany z centrali. Ta sama skala, ta sama os czasu, różnice widać wprost.</div>
+<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v2 · 31.10</span></h1>
+<div class="sub">Dwa źródła historii obok siebie: chmura (RTDB) i plik pobrany z centrali. Ta sama skala, ta sama os czasu, różnice widać wprost.<br>
+<span style="opacity:.75">Logowanie: plik wchodzi <b>sam</b>, jeśli panel centrali zapamiętał sesję — i od razu pobiera ostatnią dobę.</span></div>
 
 <div class="row">
   <!-- ───────────── A: FIREBASE ───────────── -->
   <div class="card a">
     <h2>A · Firebase (chmura)</h2>
-    <label>E-mail konta pieca</label>
-    <input type="text" id="fbEmail" value="piec_co_boot@akwarium.local" autocomplete="username">
-    <label>Hasło</label>
-    <input type="password" id="fbPass" placeholder="hasło do konta Firebase" autocomplete="current-password">
-    <label>Klucz API</label>
-    <input type="text" id="fbKey" value="AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU">
+    <div class="status" id="authLine">Sprawdzam zapamiętaną sesję…</div>
+    <details id="credBox" style="margin:6px 0 2px">
+      <summary style="cursor:pointer;font-size:11.5px;opacity:.75;user-select:none">
+        Konto, hasło i klucz API <span style="opacity:.7">(rozwijasz tylko, gdy trzeba wpisać hasło)</span>
+      </summary>
+      <label style="margin-top:9px">E-mail konta pieca</label>
+      <input type="text" id="fbEmail" value="piec_co_boot@akwarium.local" autocomplete="username">
+      <label>Hasło</label>
+      <input type="password" id="fbPass" placeholder="hasło do konta Firebase" autocomplete="current-password">
+      <label style="display:flex;gap:7px;align-items:center;margin-top:8px;font-size:11.5px;text-transform:none;letter-spacing:0">
+        <input type="checkbox" id="rememberPass" checked style="width:auto;margin:0">
+        Zapamiętaj hasło i sesję (potem plik wchodzi sam)
+      </label>
+      <label style="margin-top:9px">Klucz API</label>
+      <input type="text" id="fbKey" value="AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU">
+      <button id="btnLogout" class="small" style="margin-top:8px">Wyloguj / zapomnij hasło</button>
+    </details>
     <div class="grid2" style="margin-top:8px">
       <div><label>Od</label><input type="date" id="fbFrom"></div>
       <div><label>Do</label><input type="date" id="fbTo"></div>
@@ -168,8 +180,13 @@ td:first-child,th:first-child{text-align:left}
 <div class="card wide"><h2>Statystyki kanałów</h2><div id="statTable" class="note" style="margin:0">Brak danych.</div></div>
 
 <div class="note">
-  Dane nie opuszczają przeglądarki poza zapytaniami do Google (logowanie i odczyt bazy).
-  Hasło nie jest nigdzie zapisywane — token trzymany jest tylko w pamięci karty.
+  <b>Logowanie:</b> plik korzysta z tej samej zapamiętanej sesji, co panel centrali
+  (<code>Piec.html</code>) — jeśli logowałeś się tam z zaznaczonym „zapamiętaj",
+  to narzędzie wejdzie samo i od razu pobierze ostatnią dobę. Hasło i token są trzymane
+  <b>tylko w pamięci tej przeglądarki</b> (te same klucze: <code>piec_fb_email</code>,
+  <code>piec_fb_password</code>, <code>piec_fb_ref_token</code>), nigdzie nie są wysyłane poza Google.
+  Przycisk „Wyloguj / zapomnij hasło" czyści je. Poza logowaniem i odczytem bazy
+  żadne dane nie opuszczają przeglądarki.
 </div>
 
 <script>
@@ -179,7 +196,37 @@ td:first-child,th:first-child{text-align:left}
    ═══════════════════════════════════════════════════════════════ */
 const DB_URL   = "https://akwarium-367be-default-rtdb.europe-west1.firebasedatabase.app";
 const AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=";
+const AUTH_REFRESH_URL = "https://securetoken.googleapis.com/v1/token?key=";
 const TELEM    = "/piec/telemetry/1m/v1/";
+
+const DEFAULT_FB_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU";
+const DEFAULT_FB_EMAIL   = "piec_co_boot@akwarium.local";
+
+/* ── Pamięć przeglądarki — CELOWO te same klucze i ta sama logika co w Piec.html.
+      Dzięki temu sesja zapamiętana w panelu centrali jest widoczna także tutaj:
+      otwierasz plik i jesteś zalogowany, bez wpisywania hasła. ── */
+const safeStorage = {
+  get: (key) => {
+    try { if (typeof localStorage !== 'undefined' && localStorage.getItem) {
+      const v = localStorage.getItem(key); if (v !== null) return v; } } catch (e) {}
+    try { if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem) {
+      const v = sessionStorage.getItem(key); if (v !== null) return v; } } catch (e) {}
+    return null;
+  },
+  set: (key, val, persistent) => {
+    try { if (persistent && typeof localStorage !== 'undefined' && localStorage.setItem)
+      localStorage.setItem(key, val); } catch (e) {}
+    try { if (typeof sessionStorage !== 'undefined' && sessionStorage.setItem)
+      sessionStorage.setItem(key, val); } catch (e) {}
+  },
+  remove: (key) => {
+    try { if (typeof localStorage !== 'undefined' && localStorage.removeItem)
+      localStorage.removeItem(key); } catch (e) {}
+    try { if (typeof sessionStorage !== 'undefined' && sessionStorage.removeItem)
+      sessionStorage.removeItem(key); } catch (e) {}
+  }
+};
+const savedPass = () => safeStorage.get('piec_fb_password') || '';
 
 // indeks w tablicy wartości = kolejność poniżej (0..13)
 const CH = [
@@ -349,11 +396,49 @@ function sortUnique(rows){
 /* ═══════════════════════════════════════════════════════════════
    3. FIREBASE — logowanie i pobieranie
    ═══════════════════════════════════════════════════════════════ */
+/* Rok ważności tokenu ID — bez bibliotek, tylko odczyt „exp" z JWT. */
+function jwtExp(t){
+  try{
+    const p = String(t).split('.')[1];
+    if (!p) return 0;
+    const s = atob(p.replace(/-/g,'+').replace(/_/g,'/'));
+    const j = JSON.parse(s);
+    return Number(j.exp) * 1000 || 0;
+  } catch(e){ return 0; }
+}
+
+function authKey(){
+  return (($('fbKey') && $('fbKey').value) || safeStorage.get('piec_fb_api_key') || DEFAULT_FB_API_KEY).trim();
+}
+function authEmail(){
+  return (($('fbEmail') && $('fbEmail').value) || safeStorage.get('piec_fb_email') || DEFAULT_FB_EMAIL).trim();
+}
+function rememberOn(){
+  const c = $('rememberPass');
+  return c ? !!c.checked : true;
+}
+
+/* Zapamiętanie sesji — te same klucze, których używa Piec.html. */
+function authSave(j, email, pass){
+  if (j && j.idToken){
+    state.token = j.idToken;
+    state.tokenExp = Date.now() + (Number(j.expiresIn || 3600) * 1000);
+    try { safeStorage.set('piec_fb_token', j.idToken, false); } catch(e) {}
+  }
+  try {
+    safeStorage.set('piec_fb_api_key', authKey(), true);
+    safeStorage.set('piec_fb_email', email || authEmail(), true);
+    if (pass && rememberOn()) safeStorage.set('piec_fb_password', pass, true);
+    if (j && j.refreshToken) safeStorage.set('piec_fb_ref_token', j.refreshToken, true);
+  } catch(e) {}
+}
+
 async function fbLogin(){
-  const email = $('fbEmail').value.trim();
-  const pass  = $('fbPass').value;
-  const key   = $('fbKey').value.trim();
-  if (!email || !pass || !key) throw new Error('Podaj e-mail, hasło i klucz API.');
+  const email = authEmail();
+  const pass  = (($('fbPass') && $('fbPass').value) || savedPass()).trim();
+  const key   = authKey();
+  if (!email || !key) throw new Error('Brak e-maila lub klucza API.');
+  if (!pass) throw new Error('Brak hasła — wpisz je raz w polu „Hasło" (potem już nie trzeba).');
   const res = await fetch(AUTH_URL + encodeURIComponent(key), {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ email, password: pass, returnSecureToken: true })
@@ -363,9 +448,59 @@ async function fbLogin(){
     const msg = (j && j.error && j.error.message) || ('HTTP ' + res.status);
     throw new Error('Logowanie odrzucone: ' + msg);
   }
-  state.token = j.idToken;
-  state.tokenExp = Date.now() + (Number(j.expiresIn || 3600) * 1000);
+  authSave(j, email, pass);
   return true;
+}
+
+/* Odświeżenie sesji tokenem, który już mamy — bez hasła. */
+async function fbRefreshIdToken(){
+  const key = authKey();
+  const rt  = safeStorage.get('piec_fb_ref_token');
+  if (!key || !rt) throw new Error('Brak zapamiętanej sesji.');
+  const r = await fetch(AUTH_REFRESH_URL + encodeURIComponent(key), {
+    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(rt)
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !j.id_token){
+    const msg = (j && j.error && (j.error.message || j.error)) || ('HTTP ' + r.status);
+    throw new Error('Sesja wygasła (' + msg + ')');
+  }
+  state.token = j.id_token;
+  state.tokenExp = Date.now() + (Number(j.expires_in || 3600) * 1000);
+  try {
+    safeStorage.set('piec_fb_token', state.token, false);
+    safeStorage.set('piec_fb_ref_token', j.refresh_token || rt, true);
+  } catch(e) {}
+  return true;
+}
+
+/* Jedno wejście do logowania: token w pamięci → token z pamięci przeglądarki
+   → odświeżenie → hasło. Zwraca skąd wzięliśmy sesję (do komunikatu). */
+async function ensureAuth(){
+  if (state.token && Date.now() < state.tokenExp - 60000) return 'sesja';
+
+  const stored = safeStorage.get('piec_fb_token');
+  if (stored && jwtExp(stored) - Date.now() > 60000){
+    state.token = stored;
+    state.tokenExp = jwtExp(stored);
+    return 'zapamiętana sesja';
+  }
+
+  if (safeStorage.get('piec_fb_ref_token')){
+    try { await fbRefreshIdToken(); return 'odświeżona sesja'; } catch(e){ /* niżej próba hasłem */ }
+  }
+
+  if (($('fbPass') && $('fbPass').value) || savedPass()){
+    await fbLogin();
+    return 'hasło';
+  }
+  throw new Error('Nie ma zapamiętanego logowania — wpisz hasło raz i zostaw „zapamiętaj hasło".');
+}
+
+function forgetAuth(){
+  ['piec_fb_token','piec_fb_ref_token','piec_fb_password'].forEach(k => safeStorage.remove(k));
+  state.token = ''; state.tokenExp = 0;
 }
 
 function dayPath(d){ return TELEM + d.getUTCFullYear() + '/' +
@@ -392,7 +527,7 @@ async function fbFetchDay(d){
 }
 
 async function fbFetchRange(fromD, toD, onProgress){
-  if (Date.now() > state.tokenExp - 60000) await fbLogin();
+  if (Date.now() > state.tokenExp - 60000) await ensureAuth();
   const days = [];
   const cur = new Date(Date.UTC(fromD.getUTCFullYear(), fromD.getUTCMonth(), fromD.getUTCDate()));
   const end = new Date(Date.UTC(toD.getUTCFullYear(), toD.getUTCMonth(), toD.getUTCDate()));
@@ -403,7 +538,7 @@ async function fbFetchRange(fromD, toD, onProgress){
     try {
       all.push(...await fbFetchDay(days[i]));
     } catch(e){
-      if (e.message === 'AUTH'){ await fbLogin(); all.push(...await fbFetchDay(days[i])); }
+      if (e.message === 'AUTH'){ state.token = ''; await ensureAuth(); all.push(...await fbFetchDay(days[i])); }
       else if (i === days.length-1 && all.length === 0) throw e;   // brak sieci przy pierwszym dniu
     }
   }
@@ -720,6 +855,14 @@ function setStatus(id, msg, cls){
   el.className = 'status' + (cls ? ' ' + cls : '');
 }
 
+// Linia stanu logowania — widoczna bez rozwijania danych konta.
+function setAuthLine(msg, cls){
+  const el = $('authLine');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
 function setBar(id, frac){
   const bar = $(id);
   bar.classList.toggle('on', frac != null);
@@ -758,13 +901,15 @@ function isoMinus(days){
     render();
   });
 
-  $('btnFb').onclick = async () => {
+  // ── jedno miejsce pobierania: używa go przycisk i automatyczny start
+  async function fetchFromFirebase(){
     const from = $('fbFrom').value, to = $('fbTo').value;
     if (!from || !to) return setStatus('fbStatus', 'Wybierz zakres dat.', 'err');
     $('btnFb').disabled = true;
-    setStatus('fbStatus', 'Logowanie…');
+    setStatus('fbStatus', 'Łączenie z Firebase…');
     try {
-      await fbLogin();
+      const how = await ensureAuth();
+      setAuthLine('zalogowano (' + how + ')', 'ok');
       setStatus('fbStatus', 'Pobieranie…');
       const rows = await fbFetchRange(dayFromInput(from), dayFromInput(to), (f, i, n) => {
         setBar('fbBar', f);
@@ -775,14 +920,27 @@ function isoMinus(days){
       if (!state.A.length) setStatus('fbStatus', 'Pobrano 0 próbek — sprawdź zakres (może być pusty) albo uprawnienia.', 'warn');
       else setStatus('fbStatus', `OK — ${state.A.length} próbek z Firebase.`, 'ok');
       render();
+      return true;
     } catch(e){
       setBar('fbBar', null);
       setStatus('fbStatus', 'Błąd: ' + e.message, 'err');
+      setAuthLine('nie zalogowano — rozwiń „Konto, hasło i klucz API" i wpisz hasło', 'err');
+      if ($('credBox')) $('credBox').open = true;
+      return false;
     } finally { $('btnFb').disabled = false; }
-  };
+  }
+
+  $('btnFb').onclick = fetchFromFirebase;
 
   $('btnFbClear').onclick = () => {
     state.A = []; setStatus('fbStatus', 'Nie pobrano.'); render();
+  };
+
+  if ($('btnLogout')) $('btnLogout').onclick = () => {
+    forgetAuth();
+    if ($('fbPass')) $('fbPass').value = '';
+    setAuthLine('wylogowano — wpisz hasło, żeby połączyć ponownie', 'warn');
+    if ($('credBox')) $('credBox').open = true;
   };
 
   // ── plik
@@ -864,6 +1022,31 @@ function isoMinus(days){
   window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz = setTimeout(render, 150); });
 
   render();
+
+  /* ═══ AUTOMATYCZNE WEJŚCIE ═══
+     Plik ma być „już zalogowany": bierzemy sesję zapamiętaną przez panel
+     (Piec.html) albo przez to narzędzie i od razu pobieramy ostatnie 24 h.
+     Jeśli nic nie ma zapamiętanego — nie męczymy: pokazujemy pole hasła. */
+  (async function autoStart(){
+    const mail = safeStorage.get('piec_fb_email');
+    const key  = safeStorage.get('piec_fb_api_key');
+    const pss  = savedPass();
+    if (mail) $('fbEmail').value = mail;
+    if (key)  $('fbKey').value  = key;
+    if (pss && $('fbPass')) $('fbPass').value = pss;
+
+    const maToken = !!safeStorage.get('piec_fb_token') || !!safeStorage.get('piec_fb_ref_token');
+    if (!maToken && !pss){
+      setAuthLine('brak zapamiętanego logowania — rozwiń „Konto, hasło i klucz API" i wpisz hasło raz', 'warn');
+      if ($('credBox')) $('credBox').open = true;
+      setStatus('fbStatus', 'Nie pobrano.');
+      return;
+    }
+
+    setAuthLine('łączę z zapamiętaną sesją…');
+    const ok = await fetchFromFirebase();
+    if (ok && $('credBox')) $('credBox').open = false;
+  })();
 })();
 </script>
 </body>
