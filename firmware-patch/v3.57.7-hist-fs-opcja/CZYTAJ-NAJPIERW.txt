@@ -11,9 +11,12 @@ Skopiuj main_centrala.cpp z tej paczki do:
 
 NADPISZ istniejacy plik. Nic wiecej nie zmieniaj.
 
-Kopia bezpieczenstwa przed podmiana (PowerShell, jedna linia):
+Kopia bezpieczenstwa przed podmiana (PowerShell):
 
     Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-3.57.6" -Force
+
+Albo jedno polecenie, ktore samo pobiera paczke z Dysku, sprawdza jej SHA-256,
+robi kopie i podmienia plik: narzedzia/3.57.7-podmien.ps1 w repo.
 
 KROK 2 - WGRANIE
 ----------------
