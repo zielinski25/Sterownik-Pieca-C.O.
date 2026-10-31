@@ -1,12 +1,13 @@
 # 249 — Porównanie wykresów: Firebase ↔ plik lokalny (drugi plik HTML)
 
-Data: 2026-10-31 · **wersja narzędzia: v6** (parowanie po najbliższej próbce, zero % wilgotności odrzucone)
+Data: 2026-10-31 · **wersja narzędzia: v7** (wspólna oś czasu — koniec „przesuniętych” wykresów)
 Plik: `porownanie-wykresow.html` (w korzeniu repo)
-**53 057 B · SHA-256 `a8f1b0a0bdf7792ff2e5022138b2f6da494823ab64b7456f6541fd5397c43d46`**
+**55 426 B · SHA-256 `1ff983c6ae0a5aaacf5c948f94381730bb27950b0d4a1c930f7c733dc0dabde8`**
 
 | wersja | Dysk | uwaga |
 |---|---|---|
-| **v6 (ta)** | **patrz `LINKI-2026-10-29.md`** | + parowanie z **najbliższą** próbką, 0,0 % wilgotności odrzucone |
+| **v7 (ta)** | **patrz `LINKI-2026-10-29.md`** | + **wspólna oś czasu** obu wykresów (i opcja „tylko wspólny czas”) |
+| v6 | — | parowanie z najbliższą próbką, 0,0 % odrzucone |
 | v5 | — | zero formularzy, hasło w pliku lub w adresie |
 | v4 | — | pole hasła pokazywane raz na komputer |
 | v3 | `1EuJkotLEVpuseQpeXKrvzos5315RRgYu` | + tabela „Największe różnice” |
@@ -175,6 +176,28 @@ Warunek w `main_centrala.cpp` (~31043) sprawdza tylko `dhtErr != DHT_OK || !isfi
 Wystarczy dołożyć `|| wilgotnoscOdczytanaLok <= 0.1f`, żeby zero było traktowane jak
 błąd i zastępowane ostatnią dobrą wartością. To zmiana w firmware — **czeka na zgodę**,
 bo najpierw trzeba wgrać i sprawdzić 3.57.3.
+
+## 0f. v7 — dlaczego wykresy były „przesunięte” (31.10)
+
+Użytkownik zauważył, że w trybie OBOK SIEBIE obie krzywe są względem siebie
+przesunięte. **To był błąd rysowania, nie dane.**
+
+Co się działo:
+
+- każdy wykres liczył własny zakres czasu i rozciągał go na **całą szerokość**,
+- A (chmura) miało 24.10 02:00 → 31.10 08:07, B (plik) 24.10 19:06 → 31.10 07:25,
+- ten sam punkt na ekranie oznaczał więc **inną godzinę** na każdym wykresie.
+
+Dowód, że dane były dobre: tabela różnic pokazywała dla bojlera
+śr. B−A = **−0,0 °C**, max 0,1 °C na 1835 parach.
+
+Co zmienione:
+
+- `osCzasuWspolna()` liczy **jeden zakres dla obu wykresów** (suma zakresów),
+- pod wykresami widnieje linia: „Oś czasu wspólna dla obu wykresów: … – …",
+- checkbox **„tylko wspólny czas”** przycina zakres do części pokrytej przez oba źródła,
+- jeśli źródła pokrywają różne okresy, puste miejsce na wykresie **jest informacją**
+  (B nie ma pierwszych 17 godzin), a nie błędem osi.
 
 ## 1. Po co to jest
 

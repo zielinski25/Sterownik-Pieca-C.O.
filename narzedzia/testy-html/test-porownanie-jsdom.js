@@ -78,7 +78,7 @@ async function load(cfg, plik, hash){
   {
     const d = r1.doc;
     // każdy element, którego szuka skrypt
-    const ids = ['fbEmail','fbKey','authLine','fbFrom','fbTo','btnFb','btnFbClear','fbBar','fbStatus','drop','fileIn','fileFmt','fileStatus','btnFileClear','chips','modeSeg','tolS','btnCsv','btnPng','charts','boxA','boxB','boxSingle','cvA','cvB','cvS','capA','capB','capSingle','capSingleInfo','statSamples','statDiff','statTable','statTop'];
+    const ids = ['fbEmail','fbKey','authLine','fbFrom','fbTo','btnFb','btnFbClear','fbBar','fbStatus','drop','fileIn','fileFmt','fileStatus','btnFileClear','chips','modeSeg','tolS','btnCsv','btnPng','charts','boxA','boxB','boxSingle','cvA','cvB','cvS','capA','capB','capSingle','capSingleInfo','statSamples','statDiff','statTable','statTop','osiInfo','cutX'];
     const missing = ids.filter(i => !d.getElementById(i));
     A('wszystkie elementy istnieją ('+ids.length+')', missing.length===0, missing.join(','));
     A('brak błędów skryptu', r1.errors.length===0, r1.errors.slice(0,3).join(' | '));
@@ -248,6 +248,30 @@ async function load(cfg, plik, hash){
     A('0 % wilgotności odrzucone', r.wilg === null, r.wilg);
     A('licznik odrzuconych zer działa', r.licznik === 1, r.licznik);
     r8.dom.window.close();
+  }
+
+  console.log('\n[9] wspólna oś czasu — wykresy nie mogą być „przesunięte"');
+  {
+    const r9 = await load({ localStorage: { piec_fb_ref_token:'RT1', piec_fb_email:'piec_co_boot@akwarium.local' } });
+    const w = r9.w;
+    const res = w.eval(`(function(){
+      const T = 1800000000000, H = 3600000;
+      const A = [{ts:T, v:[]}, {ts:T+24*H, v:[]}];          // doba
+      const B = [{ts:T+17*H, v:[]}, {ts:T+23*H, v:[]}];      // start 17 h później
+      const suma = osCzasuWspolna(A, B, false);
+      const wspolny = osCzasuWspolna(A, B, true);
+      return JSON.stringify({ suma, wspolny });
+    })()`);
+    const o = JSON.parse(res);
+    A('zakres sumy obejmuje oba źródła', o.suma && o.suma[0] === 1800000000000, JSON.stringify(o.suma));
+    A('„tylko wspólny czas" przycina start do B', o.wspolny && o.wspolny[0] === 1800000000000 + 17*3600000, JSON.stringify(o.wspolny));
+    A('koniec wspólny = koniec B', o.wspolny && o.wspolny[1] === 1800000000000 + 23*3600000, JSON.stringify(o.wspolny));
+
+    // po narysowaniu oba wykresy muszą dostać ten sam zakres — sprawdzamy przez podpis
+    const d = r9.doc;
+    A('linia o wspólnej osi jest widoczna', /wspólna dla obu wykresów/i.test(d.getElementById('osiInfo').innerHTML), d.getElementById('osiInfo').innerHTML.slice(0,90));
+    A('zakres w podpisie = zakres danych', /wspólna/i.test(d.getElementById('osiInfo').textContent));
+    r9.dom.window.close();
   }
 
   console.log('\nWYNIK jsdom: ' + ok + ' OK, ' + bad + ' FAIL');

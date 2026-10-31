@@ -76,7 +76,7 @@ td:first-child,th:first-child{text-align:left}
 </head>
 <body>
 
-<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v6 · 31.10</span></h1>
+<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v7 · 31.10</span></h1>
 <div class="sub">Dwa źródła historii obok siebie: chmura (RTDB) i plik pobrany z centrali. Ta sama skala, ta sama os czasu, różnice widać wprost.<br>
 <span style="opacity:.75">Logowanie: plik wchodzi <b>sam</b> — konto jest w środku, żadnego formularza — i od razu pobiera ostatnią dobę.</span></div>
 
@@ -150,12 +150,18 @@ td:first-child,th:first-child{text-align:left}
     <button data-mode="diff">RÓŻNICA B−A</button>
   </div>
   <span class="spacer"></span>
+  <label style="margin:0;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;text-transform:none;letter-spacing:0">
+    <input type="checkbox" id="cutX" style="width:auto;margin:0">
+    tylko wspólny czas
+  </label>
   <label style="margin:0;display:inline-block">Tolerancja parowania</label>
   <input type="number" id="tolS" value="90" min="5" max="1800" step="5" style="width:86px;display:inline-block">
   <span style="font-size:11px;color:var(--dim)">s</span>
   <button id="btnCsv" class="small">Zapisz CSV</button>
   <button id="btnPng" class="small">Zapisz PNG</button>
 </div>
+
+<div id="osiInfo" class="note" style="margin:8px 0 0;font-size:11px"></div>
 
 <div class="charts two" id="charts">
   <div class="chartbox" id="boxA"><div class="cap"><b>A · FIREBASE</b><span id="capA">—</span></div><canvas id="cvA" height="330"></canvas></div>
@@ -599,7 +605,10 @@ function drawChart(cv, series, sel, opts){
   }
   const tsAll = [];
   series.forEach(s => s.rows.forEach(r => tsAll.push(r.ts)));
-  const x0 = Math.min(...tsAll), x1 = Math.max(...tsAll);
+  // Wspólna oś czasu, gdy podana — bez tego KAŻDY wykres rozciąga własne dane
+  // na całą szerokość i identyczne krzywe lądują w różnych miejscach.
+  const x0 = opts.xDomain ? opts.xDomain[0] : Math.min(...tsAll);
+  const x1 = opts.xDomain ? opts.xDomain[1] : Math.max(...tsAll);
   let y0, y1;
   if (opts.yDomain){ y0 = opts.yDomain[0]; y1 = opts.yDomain[1]; }
   else {
@@ -696,6 +705,20 @@ function pairSamples(A, B, tolMs){
     if (best >= 0 && bestD <= tolMs) pairs.push([A[best], B[j]]);
   }
   return pairs;
+}
+
+// Wspólny zakres czasu dla obu wykresów. Bez tego każdy wykres rozciąga
+// własne dane na całą szerokość — dwie identyczne krzywe wyglądają wtedy
+// jak „przesunięte", choć w danych różnica wynosi 0,0.
+function osCzasuWspolna(A, B, przytnij){
+  let t0 = Infinity, t1 = -Infinity;
+  A.forEach(r => { if (r.ts < t0) t0 = r.ts; if (r.ts > t1) t1 = r.ts; });
+  B.forEach(r => { if (r.ts < t0) t0 = r.ts; if (r.ts > t1) t1 = r.ts; });
+  if (przytnij && A.length && B.length){
+    const m0 = Math.max(A[0].ts, B[0].ts), m1 = Math.min(A[A.length-1].ts, B[B.length-1].ts);
+    if (m1 > m0){ t0 = m0; t1 = m1; }
+  }
+  return (isFinite(t0) && isFinite(t1)) ? [t0, t1] : null;
 }
 
 function channelStats(rows, ci){
@@ -851,8 +874,10 @@ function render(){
   const idx = CH.map((c,i) => sel.has(c.id) ? i : -1).filter(i => i >= 0);
   const A = state.A, B = state.B;
 
-  $('capA').textContent = A.length ? (A.length + ' próbek') : 'brak';
-  $('capB').textContent = B.length ? (B.length + ' próbek') : 'brak';
+  const zakres = rows => rows.length
+    ? fmtTime(rows[0].ts, true) + ' – ' + fmtTime(rows[rows.length-1].ts, true) : '';
+  $('capA').textContent = A.length ? (A.length + ' próbek · ' + zakres(A)) : 'brak';
+  $('capB').textContent = B.length ? (B.length + ' próbek · ' + zakres(B)) : 'brak';
 
   const isTwo = state.mode === 'two';
   $('boxA').style.display = isTwo ? '' : 'none';
@@ -872,10 +897,27 @@ function render(){
     }
   }
 
+  // wspólna oś czasu dla widoku „obok siebie"
+  const xDomain = (isTwo && (A.length || B.length))
+    ? osCzasuWspolna(A, B, $('cutX') && $('cutX').checked) : null;
+
   if (isTwo){
-    drawChart($('cvA'), A.length ? [{rows:A, ch:idx, color:null}] : [], sel, { yDomain: domain });
-    drawChart($('cvB'), B.length ? [{rows:B, ch:idx, color:null}] : [], sel, { yDomain: domain });
+    drawChart($('cvA'), A.length ? [{rows:A, ch:idx, color:null}] : [], sel, { yDomain: domain, xDomain });
+    drawChart($('cvB'), B.length ? [{rows:B, ch:idx, color:null}] : [], sel, { yDomain: domain, xDomain });
     $('capSingle').textContent = '';
+    $('capSingleInfo').textContent = '';
+    const ox = $('osiInfo');
+    if (ox){
+      if (xDomain){
+        const pelny = Math.max(A.length?A[A.length-1].ts:0, B.length?B[B.length-1].ts:0) -
+                      Math.min(A.length?A[0].ts:0, B.length?B[0].ts:0);
+        ox.innerHTML = 'Oś czasu <b>wspólna dla obu wykresów</b>: '
+          + fmtTime(xDomain[0], true) + ' – ' + fmtTime(xDomain[1], true)
+          + (($('cutX') && $('cutX').checked) ? ' (przycięta do wspólnego zakresu)' : '')
+          + (A.length && B.length && Math.abs(pelny - (xDomain[1]-xDomain[0])) > 60000
+              ? ' · źródła pokrywają różne okresy — puste miejsce to brak danych w tym źródle' : '');
+      } else ox.innerHTML = '';
+    }
   } else if (state.mode === 'overlay'){
     const ser = [];
     if (A.length) ser.push({ rows:A, ch:idx, color:null, dash:false });
@@ -1062,6 +1104,7 @@ function isoMinus(days){
   };
 
   $('tolS').onchange = render;
+  if ($('cutX')) $('cutX').onchange = render;
 
   // ── eksporty
   $('btnCsv').onclick = () => {
