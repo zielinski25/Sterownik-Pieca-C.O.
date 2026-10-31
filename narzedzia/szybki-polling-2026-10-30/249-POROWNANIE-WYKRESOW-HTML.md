@@ -1,12 +1,13 @@
 # 249 — Porównanie wykresów: Firebase ↔ plik lokalny (drugi plik HTML)
 
-Data: 2026-10-31 · **wersja narzędzia: v5** (zero formularzy, hasło schowane w pliku)
+Data: 2026-10-31 · **wersja narzędzia: v6** (parowanie po najbliższej próbce, zero % wilgotności odrzucone)
 Plik: `porownanie-wykresow.html` (w korzeniu repo)
-**51 599 B · SHA-256 `3101db03ad1afe84f37baf4c264323c521fff8606419b95b6114ab427cc45ebd`**
+**53 057 B · SHA-256 `a8f1b0a0bdf7792ff2e5022138b2f6da494823ab64b7456f6541fd5397c43d46`**
 
 | wersja | Dysk | uwaga |
 |---|---|---|
-| **v5 (ta)** | **patrz `LINKI-2026-10-29.md`** | **zero formularzy** — hasło tylko w pliku albo w adresie `#haslo=` |
+| **v6 (ta)** | **patrz `LINKI-2026-10-29.md`** | + parowanie z **najbliższą** próbką, 0,0 % wilgotności odrzucone |
+| v5 | — | zero formularzy, hasło w pliku lub w adresie |
 | v4 | — | pole hasła pokazywane raz na komputer |
 | v3 | `1EuJkotLEVpuseQpeXKrvzos5315RRgYu` | + tabela „Największe różnice” |
 | v2 | `1mhffsci_QIm8qc1YHr-Aw2zoyzsM_rA8` | auto-logowanie, sama pobiera ostatnią dobę |
@@ -142,6 +143,38 @@ w linii statusu piszą, gdzie wpisać hasło. Wykresy są wtedy puste do pierwsz
 
 **Cena za wygodę:** plik z hasłem w środku jest **poufny**. Wersja publikowana na Dysku
 ma tę stałą **pustą** i dlatego może być publiczna.
+
+## 0e. v6 — co pokazała tabela z 31.10 (prawdziwa diagnoza)
+
+Użytkownik przesłał zrzut tabeli „Największe różnice”. Wszystkie 15 wierszy miało
+ten sam wzór:
+
+```
+czas          kanał     A (chmura)   B (plik)   B − A     przesunięcie pary
+29.10 00:45   Wilg. [%]   0,0          100,0      +100,0      +60 s
+```
+
+Czyli: **chmura mówi 0,0 %, archiwum mówi 100 %**, a różnica wynosi dokładnie +100.
+
+### Co się okazało
+
+1. **Przesunięcie +60 s było błędem narzędzia.** Parowanie szło „po kolei": brało
+   pierwszą próbkę A mieszczącą się w tolerancji zamiast najbliższej. Przy próbkach
+   minutowych i tolerancji 90 s para mogła się rozjechać o całą minutę, choć obok
+   leżała próbka co do sekundy. **Naprawione w v6** — wybierana jest najbliższa.
+2. **0,0 % wilgotności to śmieciowy odczyt DHT22, nie pomiar.** W kotłowni wilgotność
+   oscyluje 88–100 %. Firmware odrzuca `NaN` z DHT22 (podstawia poprzednią wartość),
+   ale **przepuszcza zero** — `read_dht()` zwraca wtedy `DHT_OK` z zerem, a warunek
+   sprawdza tylko `isnan()`. Takie zero trafia do telemetrii i do chmury.
+   **Narzędzie odrzuca teraz 0,0 % wilgotności** i pokazuje, ile odczytów pominęło.
+3. **Archiwum było w porządku** — to nie plik kłamie, tylko chmura ma dziury zerowe.
+
+### Wniosek dla firmware (do decyzji użytkownika, NIE wprowadzone)
+
+Warunek w `main_centrala.cpp` (~31043) sprawdza tylko `dhtErr != DHT_OK || !isfinite(...)`.
+Wystarczy dołożyć `|| wilgotnoscOdczytanaLok <= 0.1f`, żeby zero było traktowane jak
+błąd i zastępowane ostatnią dobrą wartością. To zmiana w firmware — **czeka na zgodę**,
+bo najpierw trzeba wgrać i sprawdzić 3.57.3.
 
 ## 1. Po co to jest
 

@@ -221,6 +221,35 @@ async function load(cfg, plik, hash){
     r7.dom.window.close();
   }
 
+  console.log('\n[8] parowanie bierze NAJBLIŻSZĄ próbkę + pomija 0 % wilgotności');
+  {
+    const r8 = await load({ localStorage: { piec_fb_ref_token:'RT1', piec_fb_email:'piec_co_boot@akwarium.local' } });
+    const w = r8.w;
+    const res = w.eval(`(function(){
+      const T = 1800000000000;
+      const A = [{ts:T, v:[1]}, {ts:T+60000, v:[2]}, {ts:T+120000, v:[3]}];
+      const B = [{ts:T+60000, v:[9]}];
+      const p = pairSamples(A, B, 90000);
+      const offset = p.length ? (p[0][1].ts - p[0][0].ts) : null;
+      const picked = p.length ? p[0][0].v[0] : null;
+      return JSON.stringify({ n:p.length, offset, picked });
+    })()`);
+    const o = JSON.parse(res);
+    A('para jest', o.n === 1, o.n);
+    A('przesunięcie 0 s (nie 60)', o.offset === 0, o.offset);
+    A('wybrana próbka A o tej samej godzinie', o.picked === 2, o.picked);
+
+    const rh = w.eval(`(function(){
+      state.rhZero = 0;
+      const s = fbRecordToSample({ ts: 1800000000, a:[100,200,650,640,450,-50,210,50,0,10130,300], k:0, s:0, state:0, q:0 }, false);
+      return JSON.stringify({ wilg: s ? s.v[8] : 'brak', licznik: state.rhZero });
+    })()`);
+    const r = JSON.parse(rh);
+    A('0 % wilgotności odrzucone', r.wilg === null, r.wilg);
+    A('licznik odrzuconych zer działa', r.licznik === 1, r.licznik);
+    r8.dom.window.close();
+  }
+
   console.log('\nWYNIK jsdom: ' + ok + ' OK, ' + bad + ' FAIL');
   process.exit(bad ? 1 : 0);
 })();

@@ -76,7 +76,7 @@ td:first-child,th:first-child{text-align:left}
 </head>
 <body>
 
-<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v5 · 31.10</span></h1>
+<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v6 · 31.10</span></h1>
 <div class="sub">Dwa źródła historii obok siebie: chmura (RTDB) i plik pobrany z centrali. Ta sama skala, ta sama os czasu, różnice widać wprost.<br>
 <span style="opacity:.75">Logowanie: plik wchodzi <b>sam</b> — konto jest w środku, żadnego formularza — i od razu pobiera ostatnią dobę.</span></div>
 
@@ -168,7 +168,8 @@ td:first-child,th:first-child{text-align:left}
 
 <!-- ───────────── STATYSTYKI ───────────── -->
 <div class="stats">
-  <div class="card"><h2>Próbki</h2><div id="statSamples" class="note" style="margin:0"></div></div>
+  <div class="card"><h2>Próbki</h2><div id="statSamples" class="note" style="margin:0"></div>
+    <div id="rhZeroInfo" class="note" style="margin:8px 0 0;font-size:11px;opacity:.85"></div></div>
   <div class="card"><h2>Różnice (B − A)</h2><div id="statDiff" class="note" style="margin:0"></div></div>
 </div>
 <div class="card wide"><h2>Statystyki kanałów</h2><div id="statTable" class="note" style="margin:0">Brak danych.</div></div>
@@ -285,6 +286,9 @@ function fbRecordToSample(rec, bounds){
       if (raw <= -1200 || raw >= 15000) continue;          // kody błędów DS18B20
       if (!qOk(Number(rec.q), i)) continue;
       let val = raw * scales[i];
+      // 0,0 % wilgotności w kotłowni nie istnieje — to odczyt śmieciowy DHT22
+      // (firmware odrzuca NaN, ale nie zero). Takiej próbki nie porównujemy.
+      if (i === 8 && val === 0){ state.rhZero = (state.rhZero || 0) + 1; continue; }
       if (bounds){                                          // filtr zakresu
         const c = CH[i];
         if (val < c.lo || val > c.hi) continue;
@@ -321,6 +325,7 @@ function csvNums(line){ return line.split(',').map(x => {
   const t = x.trim(); if (!t) return NaN;
   const n = Number(t); return Number.isFinite(n) ? n : NaN; }); }
 
+function rhOk(v){ if (v === 0){ state.rhZero = (state.rhZero || 0) + 1; return null; } return v; }
 function servoPct(deg, max){ if (!isFinite(deg) || deg < 0 || deg > max) return null; return deg / max * 100; }
 function pumpPct(v){ if (!isFinite(v)) return null; return v === 0 ? 0 : v === 1 ? 100 : null; }
 
@@ -336,7 +341,7 @@ function parseShortCsv(txt){
     const v = emptyV();
     v[0]=num(c[1]); v[1]=num(c[2]); v[2]=num(c[3]); v[3]=num(c[4]);
     v[4]=num(c[5]); v[5]=num(c[6]); v[6]=num(c[7]);
-    v[13]=pumpPct(c[8]); v[9]=num(c[9]); v[8]=num(c[10]);
+    v[13]=pumpPct(c[8]); v[9]=num(c[9]); v[8]=rhOk(num(c[10]));
     v[11]=servoPct(c[11],180); v[12]=servoPct(c[12],90);
     out.push({ ts: ts*1000, v });
   });
@@ -355,7 +360,7 @@ function parseLongCsv(txt){
     const v = emptyV();
     v[0]=num(c[1]); v[1]=num(c[4]); v[2]=num(c[7]); v[3]=num(c[10]);
     v[4]=num(c[13]); v[5]=num(c[16]); v[6]=num(c[19]);
-    v[9]=num(c[22]); v[8]=num(c[25]);
+    v[9]=num(c[22]); v[8]=rhOk(num(c[25]));
     v[11]=servoPct(c[28],180); v[12]=servoPct(c[31],90);
     if (c.length >= 36) v[13]=pumpPct(c[35]);
     out.push({ ts: ts*1000, v });
@@ -673,14 +678,22 @@ function drawChart(cv, series, sel, opts){
 /* ═══════════════════════════════════════════════════════════════
    5. PAROWANIE I STATYSTYKI
    ═══════════════════════════════════════════════════════════════ */
+// Parowanie: dla każdej próbki B bierzemy NAJBLIŻSZĄ próbkę A (i-1 albo i).
+// Wcześniej szedł „pierwszy mieszczący się w tolerancji" — przy próbkach
+// minutowych i tolerancji 90 s potrafiło to sparować próbkę oddaloną o 60 s,
+// mimo że obok była próbka 0 s. Stąd brały się różnice tam, gdzie danych
+// wcale nie brakowało.
 function pairSamples(A, B, tolMs){
   const pairs = [];
-  let i = 0, j = 0;
-  while (i < A.length && j < B.length){
-    const d = B[j].ts - A[i].ts;
-    if (Math.abs(d) <= tolMs){ pairs.push([A[i], B[j]]); i++; j++; }
-    else if (d > 0) i++;
-    else j++;
+  if (!A.length || !B.length) return pairs;
+  let i = 0;
+  for (let j = 0; j < B.length; j++){
+    const t = B[j].ts;
+    while (i < A.length && A[i].ts < t) i++;
+    let best = -1, bestD = Infinity;
+    if (i < A.length){ const d = Math.abs(A[i].ts - t); if (d < bestD){ bestD = d; best = i; } }
+    if (i > 0){ const d = Math.abs(A[i-1].ts - t); if (d < bestD){ bestD = d; best = i-1; } }
+    if (best >= 0 && bestD <= tolMs) pairs.push([A[best], B[j]]);
   }
   return pairs;
 }
@@ -815,6 +828,15 @@ function renderStats(){
     });
     t += '</tbody></table>';
     $('statTable').innerHTML = t;
+  }
+
+  // ── informacja o odrzuconych zerach wilgotności
+  const rhZeroEl = $('rhZeroInfo');
+  if (rhZeroEl){
+    rhZeroEl.innerHTML = state.rhZero
+      ? 'Pominięto <b>' + state.rhZero + '</b> odczytów wilgotności <b>0,0 %</b> — to śmieciowa '
+        + 'wartość z DHT22 (w kotłowni nie ma 0 % wilgotności), nie brak danych.'
+      : '';
   }
 
   // ── diagnostyka: największe różnice z surowymi wartościami
@@ -986,7 +1008,7 @@ function isoMinus(days){
         setBar('fbBar', f);
         setStatus('fbStatus', `Dzień ${i}/${n}…`);
       });
-      state.A = sortUnique(rows);
+      state.rhZero = 0; state.A = sortUnique(rows);
       setBar('fbBar', null);
       if (!state.A.length) setStatus('fbStatus', 'Pobrano 0 próbek — sprawdź zakres (może być pusty) albo uprawnienia.', 'warn');
       else setStatus('fbStatus', `OK — ${state.A.length} próbek z Firebase.`, 'ok');
@@ -1025,7 +1047,7 @@ function isoMinus(days){
     try {
       const text = await f.text();
       const { rows, fmt } = parseAnyFile(text, f.name);
-      state.B = sortUnique(rows);
+      state.rhZero = 0; state.B = sortUnique(rows);
       $('fileFmt').textContent = 'format: ' + fmt;
       setStatus('fileStatus', `OK — ${state.B.length} próbek z pliku "${f.name}".`, 'ok');
       render();
