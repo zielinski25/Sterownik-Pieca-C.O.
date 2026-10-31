@@ -18,8 +18,18 @@
 const fs = require('fs');
 const path = require('path');
 
-const root = process.cwd();
-const FW = path.join(root, 'firmware-patch', 'v3.57.5-hist-fs-opcja', 'src');
+// Katalog repo liczymy z polozenia testu (nie z cwd), zeby dalo sie go uruchomic
+// z dowolnego miejsca. Wersje firmware bierzemy jako NAJNOWSZY folder
+// firmware-patch/v3.57.*-hist-fs-opcja - test nie wymaga poprawiania po kazdym
+// podbiciu numeru.
+const root = path.resolve(__dirname, '..', '..');
+const patchDir = path.join(root, 'firmware-patch');
+const fwDir = fs.readdirSync(patchDir)
+  .filter(n => /^v3\.57\.\d+-hist-fs-opcja$/.test(n))
+  .sort((a, b) => parseInt(a.match(/v3\.57\.(\d+)/)[1], 10) - parseInt(b.match(/v3\.57\.(\d+)/)[1], 10))
+  .pop();
+if (!fwDir) { console.error('Brak folderu firmware-patch/v3.57.*-hist-fs-opcja'); process.exit(2); }
+const FW = path.join(patchDir, fwDir, 'src');
 const fw = fs.readFileSync(path.join(FW, 'main_centrala.cpp'), 'utf8');
 const storage = fs.readFileSync(path.join(FW, 'Storage.h'), 'utf8');
 const vfs = fs.readFileSync(path.join(FW, 'EspVfsCalls.h'), 'utf8');
@@ -58,24 +68,39 @@ check('EspVfsCalls: .done = /littlefs/history_reset_a1.done',
   doneVfs === '/littlefs/history_reset_a1.done', String(doneVfs));
 check('firmware usuwa .done spod tej samej sciezki (Arduino: /history_reset_a1.done)',
   fw.includes('systemFS196.remove("/history_reset_a1.done")') &&
-  fw.includes('systemFS196.open("/history_reset_a1.req", "w")'));
+  fw.includes('systemFS196.open("/history_reset_a1.req.tmp", "w")'));
+
+// [3.57.6] Zapis musi byc atomowy: tymczasowy plik + odczyt kontrolny + rename.
+check('zapis zadania przez plik tymczasowy + rename',
+  fw.includes('systemFS196.rename("/history_reset_a1.req.tmp", "/history_reset_a1.req")'));
+check('odczyt kontrolny zadania (17 B, ta sama tresc)',
+  /memcmp\(odczyt, ZADANIE, dlugosc\)/.test(fw));
+check('naprawa uszkodzonego .req przy starcie (przed historiaBoot.start)',
+  fw.includes('historiaFsNaprawUszkodzoneZadanie();') &&
+  fw.indexOf('historiaFsNaprawUszkodzoneZadanie();') < fw.indexOf('historiaBoot.start(littlefsReady') &&
+  fw.includes('"/history_reset_a1.req.bad"'));
 
 // .done musi zniknac PRZED zlozeniem zadania - inaczej Transition::release()
 // tylko konsumuje zadanie i nie kasuje plikow.
 const iDone = fw.indexOf('systemFS196.remove("/history_reset_a1.done")');
-const iReq = fw.indexOf('systemFS196.open("/history_reset_a1.req", "w")');
+const iReq = fw.indexOf('systemFS196.open("/history_reset_a1.req.tmp", "w")');
 check('kolejnosc: najpierw .done, potem .req', iDone > 0 && iReq > iDone, iDone + ' / ' + iReq);
 
 // ───────────────────────────────────────────────── B. wersja i brak martwego kodu
 section('B. Wersja i porzadki');
 
-check('FIRMWARE_VERSION = v3.57.5', fw.includes('FIRMWARE_VERSION = "v3.57.5";'));
+const wersjaFolderu = fwDir.match(/^v(3\.57\.\d+)-/)[1];
+check('FIRMWARE_VERSION = ' + wersjaFolderu + ' (zgodna z folderem)',
+  fw.includes('FIRMWARE_VERSION = "v' + wersjaFolderu + '";'), 'folder: ' + fwDir);
 check('brak starego znacznika NVS "czysc" (jeden mechanizm, nie dwa)',
   !fw.includes('putBool("czysc"') && !fw.includes('getBool("czysc"'));
-check('brak kasowania plikow historii wlasnym kodem (LittleFS.remove)',
-  !/^\s*LittleFS\.remove/m.test(fw));
+check('brak kasowania plikow historii wlasnym kodem (LittleFS.remove tylko dla .req)',
+  !/^\s*LittleFS\.remove\((HISTORIA_PLIK|HISTORIA_DLUGA_PLIK)/m.test(fw));
 const histFsJson = fw.split(String.raw`hist_fs\":`).length - 1;
 check('pole hist_fs w /api/status i w JSON dla Firebase', histFsJson === 2, String(histFsJson));
+// Panel i aplikacja przyjmuja WYLACZNIE liczbe 0/1 - nie "true"/"false".
+const histFsNum = fw.split(String.raw`historiaZapisNaFsWlaczony() ? 1 : 0`).length - 1;
+check('hist_fs wysylane jako liczba 0/1 (nie bool)', histFsNum === 2, String(histFsNum));
 check('bramka obejmuje oproznianie kolejki krotkiej',
   fw.includes('!littlefsReady || historiaClearPending || !historiaZapisNaFsWlaczony()'));
 check('bramka obejmuje oproznianie kolejki dlugiej',
@@ -102,6 +127,8 @@ for (const [nazwa, src] of [['panel centrali', panel], ['Piec.html', piec]]) {
   check(nazwa + ': hist_fs jest w stanie poczatkowym S', /rtc_ok:\s*false,\s*hist_fs:\s*false/.test(src));
   check(nazwa + ': przelacznik dogania status przez live$',
     /live\$\(trgBox, el =>/.test(src));
+  check(nazwa + ': nieudana komenda cofa checkbox (wzorem aplikacji)',
+    /sendCommand\(v \? 'histfs_wl' : 'histfs_wyl'\)\.then\(ok =>/.test(src));
   check(nazwa + ': kafelek data-menu="histfs" i MENUS.histfs',
     src.includes('data-menu="histfs"') && /histfs:\s*\(\)\s*=>\s*showHistFsSheet\(\)/.test(src));
 }

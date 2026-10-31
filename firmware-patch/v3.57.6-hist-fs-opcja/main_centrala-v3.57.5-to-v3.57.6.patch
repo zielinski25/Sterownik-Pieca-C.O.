@@ -1,0 +1,213 @@
+--- src/main_centrala.cpp	v3.57.5
++++ src/main_centrala.cpp	v3.57.6
+@@ -1,3 +1,24 @@
++// FIRMWARE_VERSION v3.57.5 -> v3.57.6 (2026-10-31) — ODPORNOSC ZADANIA CZYSZCZENIA NA ZANIK PRADU.
++//
++// Symulacja startu (narzedzia/symulacje-firmware/) pokazala dwa przypadki, w ktorych
++// uszkodzone zadanie czyszczenia moze ZATRZYMAC HISTORIE na stale: Transition traktuje
++// kazde niezgodne /history_reset_a1.req jako blad i blokuje history194::Startup, a wtedy
++// historia nie dziala do konca zycia urzadzenia (edytor plikow w panelu te sciezke blokuje).
++//
++// [1] ZAPIS ZADANIA JEST ATOMOWY. 3.57.5 pisalo /history_reset_a1.req trybem "w", czyli
++//     najpierw skracalo istniejacy plik do zera, potem wpuszczalo 17 bajtow. Zanik pradu
++//     w tym oknie zostawial plik pusty albo krotszy - i historia nie wstawala.
++//     Teraz: zapis do /history_reset_a1.req.tmp, odczyt kontrolny (17 B, ta sama tresc),
++//     dopiero potem rename() na .req. Rename w LittleFS jest atomowy: plik albo jest
++//     w calosci, albo go nie ma.
++// [2] NAPRAWA PRZY STARCIE. Jesli mimo wszystko /history_reset_a1.req istnieje z inna
++//     trescia lub dlugoscia (np. plik zostawiony przez starsza wersje albo obcy zapis),
++//     setup() przenosi go do /history_reset_a1.req.bad PRZED historiaBoot.start().
++//     Historia startuje normalnie, a pliki CSV zostaja nietkniete - to nie jest zadanie
++//     czyszczenia, wiec nic nie usuwamy. Bez tego jeden uszkodzony plik = brak historii.
++//
++// Bez zmian: format zadania, kolejnosc (.done przed .req), bramki zapisu, wilgotnosc.
++//
+ // FIRMWARE_VERSION v3.57.4 -> v3.57.5 (2026-10-31) — POPRAWKI PO PRZEGLADZIE 3.57.4.
+ //
+ // [1] CZYSZCZENIE PLIKOW HISTORII idzie teraz ISTNIEJACYM kanalem A1.
+@@ -5843,7 +5864,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.57.5";
++static const char* FIRMWARE_VERSION = "v3.57.6";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -13539,7 +13560,14 @@
+           + 'Wyłączenie oszczędza pamięć i cykle zapisu. Dane w pamięci RAM oraz '
+           + 'wysyłka do Firebase działają bez zmian.',
+         on(),
+-        v => sendCommand(v ? 'histfs_wl' : 'histfs_wyl')
++        v => {
++          // Komenda nieudana (NACK albo brak ACK) = wroc do stanu z centrali,
++          // ten sam wzorzec co CheckRowEcho w aplikacji. Przy sukcesie nie
++          // zmieniamy nic - status dogoni nas w ciagu ~15 s.
++          sendCommand(v ? 'histfs_wl' : 'histfs_wyl').then(ok => {
++            if (ok === false) { trgStan = on(); trgBox.checked = on(); }
++          });
++        }
+       );
+       // Status zmienia sie co ~15 s; przepisz pole tylko WTEDY, gdy wartosc
+       // naprawde sie zmienila - inaczej liveTick co 2 s cofalby klik uzytkownika.
+@@ -23147,7 +23175,9 @@
+ static bool historiaFsZapiszNvs(bool wlaczony) {
+   Preferences p;
+   if (!p.begin("hist", false)) return false;
+-  const bool ok = (p.putBool("fs_on", wlaczony) == sizeof(uint8_t));
++  // nvsPutBool(), nie p.putBool(): wrapper ma static_assert na limit 15 znakow
++  // (patrz [FIX NVS-15]) - tak kaze robic ten plik przy kazdym nowym kluczu.
++  const bool ok = (nvsPutBool(p, "fs_on", wlaczony) == sizeof(uint8_t));
+   p.end();
+   return ok;
+ }
+@@ -23155,6 +23185,13 @@
+ // Zwraca true, gdy stan trafil do NVS (przetrwa restart).
+ bool historiaFsUstaw(bool wlaczony) {
+   g_histFsZapisWlaczony.store(wlaczony, std::memory_order_release);
++  if (wlaczony) {
++    // [v3.57.6] Po ponownym wlaczeniu nie czekamy do nastepnych 5 probek:
++    // resztka, ktora zostala w kolejce RAM (do 4096 B), ma pojechac od razu.
++    // Pusta kolejka = zwykly no-op w historiaFlushDoFS().
++    historiaFlushKrotkiOczekuje.store(true, std::memory_order_release);
++    if (historiaTaskWakeSem) xSemaphoreGive(historiaTaskWakeSem);
++  }
+   const bool nvs = historiaFsZapiszNvs(wlaczony);
+   if (wlaczony) DLOG(DC_HISTORIA, DL_INFO, F("HIST-FS zdarzenie=wlaczony msg=\"zapis historii na flash przywrocony\""));
+   else          DLOG(DC_HISTORIA, DL_INFO, F("HIST-FS zdarzenie=wylaczony msg=\"zapis historii na flash zatrzymany, RAM i Firebase bez zmian\""));
+@@ -46631,11 +46668,8 @@
+ // istnieje, transition idzie sciezka "juz czyszczono" (release) i zadania
+ // nie wykorzystuje do kasowania plikow.
+ // ═══════════════════════════════════════════════════════════════════════════
+-bool historiaFsCzyscZadaj() {
+-  if (!littlefsReady) {
+-    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"brak LittleFS\""));
+-    return false;
+-  }
++// Cialo bez blokady - wolane wylacznie z historiaFsCzyscZadaj() pod logMutex.
++static bool historiaFsCzyscZadajBezBlokady() {
+   if (systemFS196.exists("/history_reset_a1.done") &&
+       !systemFS196.remove("/history_reset_a1.done")) {
+     DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"nie mozna usunac znacznika ukonczenia\""));
+@@ -46644,7 +46678,11 @@
+   // 17 bajtow, bez NUL - Storage::request() wymaga dokladnie tej dlugosci.
+   static const char ZADANIE[] = "RESET-HISTORY-A1\n";
+   const size_t dlugosc = sizeof(ZADANIE) - 1;
+-  File f = systemFS196.open("/history_reset_a1.req", "w");
++  // [v3.57.6] Zapis przez plik tymczasowy + rename. Tryb "w" na istniejacym .req
++  // najpierw skracal plik do zera - zanik pradu w tym oknie zostawial PUSTE
++  // zadanie, a Transition blokuje na tym cala historie. Rename jest atomowy.
++  if (systemFS196.exists("/history_reset_a1.req.tmp")) systemFS196.remove("/history_reset_a1.req.tmp");
++  File f = systemFS196.open("/history_reset_a1.req.tmp", "w");
+   if (!f) {
+     DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"nie mozna zalozyc znacznika zadania\""));
+     return false;
+@@ -46652,25 +46690,83 @@
+   const size_t zapisane = f.write(reinterpret_cast<const uint8_t*>(ZADANIE), dlugosc);
+   f.flush();
+   f.close();
+-  if (zapisane != dlugosc || !systemFS196.exists("/history_reset_a1.req")) {
+-    systemFS196.remove("/history_reset_a1.req");
++  // Odczyt kontrolny: plik tymczasowy musi miec dokladnie te 17 bajtow.
++  bool zgodne = false;
++  File r = systemFS196.open("/history_reset_a1.req.tmp", "r");
++  if (r) {
++    char odczyt[24] = {0};
++    const int n = static_cast<int>(r.readBytes(odczyt, sizeof(odczyt)));
++    zgodne = (zapisane == dlugosc) && (n == static_cast<int>(dlugosc)) &&
++             (memcmp(odczyt, ZADANIE, dlugosc) == 0);
++    r.close();
++  }
++  if (!zgodne) {
++    systemFS196.remove("/history_reset_a1.req.tmp");
+     DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"zadanie nie zapisalo sie w calosci\""));
+     return false;
+   }
++  if (!systemFS196.rename("/history_reset_a1.req.tmp", "/history_reset_a1.req")) {
++    systemFS196.remove("/history_reset_a1.req.tmp");
++    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"nie mozna opublikowac zadania (rename)\""));
++    return false;
++  }
+   DLOG(DC_HISTORIA, DL_INFO, F("HIST-FS zdarzenie=czyszczenie_zadane msg=\"oba pliki usuniete przy nastepnym starcie, przed pierwszym odczytem\""));
+   return true;
+ }
+ 
++bool historiaFsCzyscZadaj() {
++  if (!littlefsReady) {
++    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"brak LittleFS\""));
++    return false;
++  }
++  // [v3.57.6] Jeden pisarz na LittleFS. Komenda przychodzi z zadania Firebase/
++  // Telegram, a w tym samym czasie historiaTaskFn moze konczyc append - bez
++  // wspolnej blokady dwa zadania wchodza do VFS naraz (ESP32 nie ma tego
++  // zagwarantowanego samo z siebie, patrz [v3.55.9 HISTORIA-PIN]). Ten sam
++  // logMutex, ktory bierze historiaFlushDoFS() i historiaPrzytnijPlik().
++  if (!logMutex || xSemaphoreTake(logMutex, pdMS_TO_TICKS(500)) != pdTRUE) {
++    DLOG(DC_HISTORIA, DL_WARN, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"zapis do LittleFS zajety, sprobuj ponownie\""));
++    return false;
++  }
++  const bool ok = historiaFsCzyscZadajBezBlokady();
++  xSemaphoreGive(logMutex);
++  return ok;
++}
++
+ // [v3.57.4 HIST-FS-OPT / v3.57.5] Odtworzenie przelacznika z NVS na starcie.
+ // Wolane w setup() przed historiaWczytajZFS()/historiaDlugaWczytajZFS().
+ // Czyszczenia tu nie ma - robi je kanal A1 wewnatrz historiaBoot.start(),
+ // czyli WCZESNIEJ niz to wywolanie (patrz komentarz wyzej).
+ // Serial.printf, nie DLOG: diagInit() jest dopiero nizej w setup().
++// [v3.57.6 HIST-FS-REPAIR] Wolane z setup() po udanym mountcie, PRZED
++// historiaBoot.start(). Surowy LittleFS (nie systemFS196): nakladka jest
++// w fazie Checking i nie wydaje jeszcze uchwytow.
++static void historiaFsNaprawUszkodzoneZadanie() {
++  if (!littlefsReady) return;
++  if (!LittleFS.exists("/history_reset_a1.req")) return;
++  static const char ZADANIE[] = "RESET-HISTORY-A1\n";
++  const size_t dlugosc = sizeof(ZADANIE) - 1;
++  bool poprawny = false;
++  File r = LittleFS.open("/history_reset_a1.req", "r");
++  if (r) {
++    char odczyt[24] = {0};
++    const int n = static_cast<int>(r.readBytes(odczyt, sizeof(odczyt)));
++    poprawny = (n == static_cast<int>(dlugosc)) && (memcmp(odczyt, ZADANIE, dlugosc) == 0);
++    r.close();
++  }
++  if (poprawny) return;
++  if (LittleFS.exists("/history_reset_a1.req.bad")) LittleFS.remove("/history_reset_a1.req.bad");
++  bool ok = LittleFS.rename("/history_reset_a1.req", "/history_reset_a1.req.bad");
++  if (!ok) ok = LittleFS.remove("/history_reset_a1.req");
++  Serial.printf("tag=HIST-FS lvl=WARN zdarzenie=zadanie_a1_uszkodzone odlozone=%d msg=\"uszkodzone zadanie czyszczenia odlozone; historia startuje normalnie, pliki CSV nietkniete\"\n",
++                ok ? 1 : 0);
++}
++
+ void historiaFsInicjalizujPrzyStarcie() {
+   bool wlaczony = true;
+   Preferences p;
+   if (p.begin("hist", true)) {
+-    wlaczony = p.getBool("fs_on", true);
++    wlaczony = nvsGetBool(p, "fs_on", true);
+     p.end();
+   }
+   g_histFsZapisWlaczony.store(wlaczony, std::memory_order_release);
+@@ -46760,6 +46856,12 @@
+   } else {
+     littlefsReady = true;
+   }
++  // [v3.57.6 HIST-FS-REPAIR] Uszkodzone /history_reset_a1.req (zla tresc albo
++  // dlugosc) blokuje history194::Startup na zawsze - Transition traktuje je jak
++  // blad, a edytor plikow w panelu te sciezke blokuje. Dlatego PRZED startem
++  // historii odkladamy taki plik na bok. Nie kasujemy przy tym zadnych CSV:
++  // uszkodzone zadanie to nie zadanie czyszczenia.
++  historiaFsNaprawUszkodzoneZadanie();
+   // [v3.55.6 HISTORIA-START-SETUP-BEGIN]
+   history194::Sizes historiaRozmiary;
+   const bool historiaBootOK196 = historiaBoot.start(littlefsReady, historiaRozmiary);
+@@ -46797,7 +46899,7 @@
+   g_telemetryRing.init();
+   spoolRuntimeRestoreFromNvs();   // [v3.54.0] przelacznik bufora offline z NVS
+   historiaDlugaInit();
+-  historiaFsInicjalizujPrzyStarcie();  // [v3.57.4] przelacznik + ewentualne czyszczenie plikow
++  historiaFsInicjalizujPrzyStarcie();  // [v3.57.4/3.57.6] tylko przelacznik z NVS (czyszczenie robi kanal A1 wczesniej)
+   historiaWczytajZFS();       // [WYKRESY-FS] odtworz bufor krotki z dysku - wzorem logZaladujZFS()
+   historiaDlugaWczytajZFS();  // [WYKRESY-FS] odtworz bufor dlugi z dysku
+ 

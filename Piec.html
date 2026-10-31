@@ -6732,7 +6732,14 @@ body.mode-phone-frame #phone {
           + 'Wyłączenie oszczędza pamięć i cykle zapisu. Dane w pamięci RAM oraz '
           + 'wysyłka do Firebase działają bez zmian.',
         on(),
-        v => sendCommand(v ? 'histfs_wl' : 'histfs_wyl')
+        v => {
+          // Komenda nieudana (NACK albo brak ACK) = wroc do stanu z centrali,
+          // ten sam wzorzec co CheckRowEcho w aplikacji. Przy sukcesie nie
+          // zmieniamy nic - status dogoni nas w ciagu ~15 s.
+          sendCommand(v ? 'histfs_wl' : 'histfs_wyl').then(ok => {
+            if (ok === false) { trgStan = on(); trgBox.checked = on(); }
+          });
+        }
       );
       // Status zmienia sie co ~15 s; przepisz pole tylko WTEDY, gdy wartosc
       // naprawde sie zmienila - inaczej liveTick co 2 s cofalby klik uzytkownika.
