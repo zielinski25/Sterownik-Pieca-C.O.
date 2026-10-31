@@ -1,12 +1,13 @@
 # 249 — Porównanie wykresów: Firebase ↔ plik lokalny (drugi plik HTML)
 
-Data: 2026-10-31 · **wersja narzędzia: v4** (bez okna logowania + tabela największych różnic)
+Data: 2026-10-31 · **wersja narzędzia: v5** (zero formularzy, hasło schowane w pliku)
 Plik: `porownanie-wykresow.html` (w korzeniu repo)
-**51 520 B · SHA-256 `fd9358b0b8be481eef788e894f2156ecff5b7f42ca30e31aaa21d9d391cfd6b7`**
+**51 599 B · SHA-256 `3101db03ad1afe84f37baf4c264323c521fff8606419b95b6114ab427cc45ebd`**
 
 | wersja | Dysk | uwaga |
 |---|---|---|
-| **v4 (ta)** | **patrz `LINKI-2026-10-29.md`** | **bez okna logowania** — hasło pytane raz na komputer, potem zero pytań |
+| **v5 (ta)** | **patrz `LINKI-2026-10-29.md`** | **zero formularzy** — hasło tylko w pliku albo w adresie `#haslo=` |
+| v4 | — | pole hasła pokazywane raz na komputer |
 | v3 | `1EuJkotLEVpuseQpeXKrvzos5315RRgYu` | + tabela „Największe różnice” |
 | v2 | `1mhffsci_QIm8qc1YHr-Aw2zoyzsM_rA8` | auto-logowanie, sama pobiera ostatnią dobę |
 | v1 | `1f0JiB2-JEYFxYhwoPxETh0wdigfJEhdf` (nazwa zmieniona na `…-v1-BEZ-AUTOLOGOWANIA.html`) | pytała o hasło za każdym otwarciem — **nie używać** |
@@ -124,6 +125,23 @@ po wyczyszczeniu przeglądarki, na każdym komputerze.
 > **Uwaga, mówię wprost:** plik z wpisanym hasłem jest **poufny** — kto go ma, ma dostęp
 > do bazy pieca. Nie publikuj takiej kopii na publicznym linku (Dysk/GitHub).
 > Wersja podawana na Dysku ma tę linię **pustą** i dlatego jest bezpieczna.
+
+## 0d. v5 — nie ma żadnego formularza (31.10, na polecenie użytkownika)
+
+Pole hasła **zostało usunięte z pliku**. Nie ma go w kodzie HTML w ogóle — nie da się
+go pokazać żadnym warunkiem. Hasło trafia do narzędzia jedną z trzech dróg:
+
+| sposób | jak | kiedy |
+|---|---|---|
+| **1. stała w pliku** | w pliku, wyszukaj `FB_HASLO_WBUDOWANE`, wpisz hasło w cudzysłowie | raz, działa wszędzie i zawsze |
+| **2. adres z dopiskiem** | otwórz plik raz jako `...html#haslo=twojehaslo` | szybko, bez edytora; hasło zapisuje się w przeglądarce, dopisek znika z adresu |
+| **3. sesja panelu** | zaloguj się w `Piec.html` z zapamiętaniem | jeśli oba pliki otwierasz z tego samego miejsca |
+
+Gdy żadna z tych dróg nie jest dostępna, narzędzenie **nie pokazuje formularza** — tylko
+w linii statusu piszą, gdzie wpisać hasło. Wykresy są wtedy puste do pierwszego logowania.
+
+**Cena za wygodę:** plik z hasłem w środku jest **poufny**. Wersja publikowana na Dysku
+ma tę stałą **pustą** i dlatego może być publiczna.
 
 ## 1. Po co to jest
 

@@ -76,9 +76,9 @@ td:first-child,th:first-child{text-align:left}
 </head>
 <body>
 
-<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v4 · 31.10</span></h1>
+<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v5 · 31.10</span></h1>
 <div class="sub">Dwa źródła historii obok siebie: chmura (RTDB) i plik pobrany z centrali. Ta sama skala, ta sama os czasu, różnice widać wprost.<br>
-<span style="opacity:.75">Logowanie: plik wchodzi <b>sam</b> — konto jest w środku, hasło pyta tylko raz — i od razu pobiera ostatnią dobę.</span></div>
+<span style="opacity:.75">Logowanie: plik wchodzi <b>sam</b> — konto jest w środku, żadnego formularza — i od razu pobiera ostatnią dobę.</span></div>
 
 <div class="row">
   <!-- ───────────── A: FIREBASE ───────────── -->
@@ -93,13 +93,8 @@ td:first-child,th:first-child{text-align:left}
       <input type="text" id="fbEmail" value="piec_co_boot@akwarium.local" autocomplete="username">
       <input type="text" id="fbKey" value="AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU">
     </div>
-    <div id="authBox" style="display:none;margin-top:8px">
-      <label>Hasło do konta pieca — wpisz raz, potem plik wchodzi sam</label>
-      <div style="display:flex;gap:8px">
-        <input type="password" id="fbPass" placeholder="hasło" autocomplete="current-password" style="flex:1">
-        <button class="primary" id="btnLogin">Zaloguj</button>
-      </div>
-    </div>
+    <!-- Celowo NIE MA tu żadnego pola do wypełniania. Hasło jest w pliku
+         (stała FB_HASLO_WBUDOWANE) albo w pamięci przeglądarki. -->
     <div class="grid2" style="margin-top:8px">
       <div><label>Od</label><input type="date" id="fbFrom"></div>
       <div><label>Do</label><input type="date" id="fbTo"></div>
@@ -180,12 +175,14 @@ td:first-child,th:first-child{text-align:left}
 <div class="card wide"><h2>Największe różnice (B − A) — co dokładnie odbiega</h2><div id="statTop" class="note" style="margin:0">Brak danych.</div></div>
 
 <div class="note">
-  <b>Logowanie:</b> nie ma czego wypełniać — konto i klucz API są w pliku, a plik
-  wchodzi sam, korzystając z sesji zapamiętanej przez panel centrali (<code>Piec.html</code>)
-  albo przez to narzędzie. Hasło pytamy <b>raz na komputer</b> i od tej pory nie wracamy do tematu.
-  Hasło i token leżą wyłącznie w pamięci tej przeglądarki (klucze <code>piec_fb_password</code>,
-  <code>piec_fb_ref_token</code>), nigdzie nie są wysyłane poza Google. Poza logowaniem
-  i odczytem bazy żadne dane nie opuszczają przeglądarki.
+  <b>Logowanie:</b> w tym pliku <b>nie ma żadnego pola do wypełniania</b>. Konto i klucz API
+  są w środku, a hasło bierze się z jednego z trzech miejsc, w tej kolejności:
+  (1) stała <code>FB_HASLO_WBUDOWANE</code> w pliku (Ctrl+F w Notatniku) — wtedy działa zawsze i wszędzie;
+  (2) adres z dopiskiem <code>#haslo=twojehaslo</code> — otwierasz raz, hasło zapisuje się
+  w przeglądarce, a dopisek znika z adresu;
+  (3) sesja zapamiętana wcześniej przez panel centrali (<code>Piec.html</code>).
+  Hasło i tokeny leżą wyłącznie w pamięci tej przeglądarki i nigdzie nie są wysyłane poza Google.
+  <b>Plik z wpisanym hasłem jest poufny</b> — nie publikuj go na publicznym linku.
 </div>
 
 <script>
@@ -230,7 +227,7 @@ const safeStorage = {
       sessionStorage.removeItem(key); } catch (e) {}
   }
 };
-const savedPass = () => FB_HASLO_WBUDOWANE || safeStorage.get('piec_fb_password') || '';
+const savedPass = () => FB_HASLO_WBUDOWANE || hasloZAdresu() || safeStorage.get('piec_fb_password') || '';
 
 // indeks w tablicy wartości = kolejność poniżej (0..13)
 const CH = [
@@ -918,11 +915,23 @@ function setAuthLine(msg, cls){
   el.className = 'status' + (cls ? ' ' + cls : '');
 }
 
-// Pole hasła jest domyślnie ukryte. Pokazuje się tylko wtedy, gdy nie ma
-// z czego się zalogować — czyli raz na komputer, nie przy każdym otwarciu.
-function showAuthBox(tak){
-  const b = $('authBox');
-  if (b) b.style.display = tak ? 'block' : 'none';
+// Nie ma już żadnego pola do wypełniania. Gdy brakuje hasła, mówi o tym
+// wyłącznie linia statusu (i stopka) — nigdy formularz.
+const BRAK_HASLA = 'brak hasła — otwórz plik w Notatniku, znajdź FB_HASLO_WBUDOWANE '
+  + 'i wpisz je w cudzysłowie; albo otwórz plik raz z dopiskiem #haslo=twojehaslo';
+
+// Hasło można też podać w adresie: ...html#haslo=xxx — wtedy zapisuje się
+// w przeglądarce i adres jest od razu czyszczony (nie zostaje w historii).
+function hasloZAdresu(){
+  try {
+    const m = String(location.hash || '').match(/haslo=([^&]*)/);
+    if (!m) return '';
+    const p = decodeURIComponent(m[1]);
+    if (!p) return '';
+    try { safeStorage.set('piec_fb_password', p, true); } catch(e) {}
+    try { history.replaceState(null, '', location.pathname + location.search); } catch(e) {}
+    return p;
+  } catch(e){ return ''; }
 }
 
 function setBar(id, frac){
@@ -972,7 +981,6 @@ function isoMinus(days){
     try {
       const how = await ensureAuth();
       setAuthLine('zalogowano — ' + how, 'ok');
-      showAuthBox(false);
       setStatus('fbStatus', 'Pobieranie…');
       const rows = await fbFetchRange(dayFromInput(from), dayFromInput(to), (f, i, n) => {
         setBar('fbBar', f);
@@ -987,8 +995,7 @@ function isoMinus(days){
     } catch(e){
       setBar('fbBar', null);
       setStatus('fbStatus', 'Błąd: ' + e.message, 'err');
-      setAuthLine('nie zalogowano — wpisz hasło poniżej (raz na ten komputer)', 'err');
-      showAuthBox(true);
+      setAuthLine('nie zalogowano — ' + BRAK_HASLA, 'err');
       return false;
     } finally { $('btnFb').disabled = false; }
   }
@@ -999,11 +1006,7 @@ function isoMinus(days){
     state.A = []; setStatus('fbStatus', 'Nie pobrano.'); render();
   };
 
-  // Pole hasła: jedno kliknięcie i od tej pory plik wchodzi sam.
-  if ($('btnLogin')) $('btnLogin').onclick = () => {
-    if (!$('fbPass').value.trim()) { setAuthLine('wpisz hasło', 'err'); showAuthBox(true); return; }
-    fetchFromFirebase();
-  };
+
 
   // ── plik
   const drop = $('drop'), fileIn = $('fileIn');
@@ -1099,15 +1102,13 @@ function isoMinus(days){
 
     const maToken = !!safeStorage.get('piec_fb_token') || !!safeStorage.get('piec_fb_ref_token');
     if (!maToken && !pss){
-      setAuthLine('pierwsze uruchomienie na tym komputerze — wpisz hasło raz, potem już nie zapyta', 'warn');
-      showAuthBox(true);
+      setAuthLine(BRAK_HASLA, 'warn');
       setStatus('fbStatus', 'Nie pobrano.');
       return;
     }
 
     setAuthLine('łączę z Firebase…');
-    const ok = await fetchFromFirebase();
-    if (ok) showAuthBox(false);
+    await fetchFromFirebase();
   })();
 })();
 </script>
