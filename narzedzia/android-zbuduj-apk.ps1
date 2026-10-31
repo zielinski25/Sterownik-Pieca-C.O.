@@ -128,6 +128,24 @@ if (-not $maProjekt) {
 }
 Set-Location -LiteralPath $proj
 
+# -- 2b. znana wada paczki 0.31.64 --------------------------------------------
+# 0.31.64 nie kompiluje sie: Overlays.kt nie importuje HistFsSheet
+# ("Unresolved reference"). Jesli importu brakuje, dopisujemy go i podbijamy numer.
+$overlays = Join-Path $proj 'app\src\main\java\com\sterownikco\pro\ui\screens\Overlays.kt'
+if (-not (Test-Path -LiteralPath $overlays)) { throw "Brak pliku: $overlays" }
+$tekst = [IO.File]::ReadAllText($overlays, [Text.Encoding]::UTF8)
+if ($tekst -notlike '*sheets.HistFsSheet*') {
+  $tekst = $tekst.Replace('import com.sterownikco.pro.ui.screens.sheets.DymSheet',
+    "import com.sterownikco.pro.ui.screens.sheets.DymSheet`r`nimport com.sterownikco.pro.ui.screens.sheets.HistFsSheet")
+  [IO.File]::WriteAllText($overlays, $tekst, (New-Object Text.UTF8Encoding($false)))
+  $gradleNaprawa = Join-Path $proj 'app\build.gradle.kts'
+  $trescNaprawa = [IO.File]::ReadAllText($gradleNaprawa)
+  $trescNaprawa = [regex]::Replace($trescNaprawa, 'versionCode\s*=\s*\d+', 'versionCode = 31065')
+  $trescNaprawa = [regex]::Replace($trescNaprawa, 'versionName\s*=\s*"\d+\.\d+\.\d+"', 'versionName = "0.31.65"')
+  [IO.File]::WriteAllText($gradleNaprawa, $trescNaprawa, (New-Object Text.UTF8Encoding($false)))
+  Write-Host "Paczka bez importu HistFsSheet (0.31.64) - poprawiona do 0.31.65" -ForegroundColor Yellow
+}
+
 # Wersja z projektu (pewniejsza niz nazwa paczki)
 $gradle = Join-Path $proj 'app\build.gradle.kts'
 $tresc = Get-Content -LiteralPath $gradle -Raw
