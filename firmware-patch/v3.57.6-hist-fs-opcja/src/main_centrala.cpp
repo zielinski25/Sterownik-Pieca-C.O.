@@ -1,21 +1,3 @@
-// FIRMWARE_VERSION v3.57.6 -> v3.57.7 (2026-10-31) — TELEGRAM NIE ZGLASZA BLEDU, GDY PLIKU PO PROSTU NIE MA.
-//
-// Zgloszenie uzytkownika (31.10, 09:37): po wylaczeniu zapisu historii, czyszczeniu
-// i restarcie centrali bot odpowiedzial "hist_short.csv: wysylka nieudana - kopiuje
-// na SD" (to samo dla hist_long.csv), a log_ustawien.txt wyslal sie poprawnie.
-// Czyli siec i Telegram dzialaly - brakowalo wylacznie dwoch plikow historii,
-// ktore zostaly usuniete przy starcie, dokladnie tak, jak mialo byc.
-//
-// [1] BRAK PLIKU TO NIE BLAD WYSYLKI. Przed wysylka sprawdzamy, czy plik istnieje
-//     i nie jest pusty. Jesli nie ma - bot mowi wprost, ze nie ma czego wyslac.
-//     Wysylka nie jest wtedy w ogole wolana, wiec nie ma tez proby kopiowania
-//     nieistniejacego pliku na SD.
-// [2] Komunikat rozroznia dwie sytuacje: "historia na flashu jest pusta (np. po
-//     czyszczeniu)" oraz "zapis historii na flash jest WYLACZONY".
-//
-// Bez zmian: zapis historii, kolejnosc A1 (.done przed .req), przelacznik i NVS,
-// format dokumentu, reszta Telegrama, OTA.
-
 // FIRMWARE_VERSION v3.57.5 -> v3.57.6 (2026-10-31) — ODPORNOSC ZADANIA CZYSZCZENIA NA ZANIK PRADU.
 //
 // Symulacja startu (narzedzia/symulacje-firmware/) pokazala dwa przypadki, w ktorych
@@ -72,8 +54,7 @@
 //      Wylaczenie zatrzymuje WYLACZNIE dopisywanie do /hist_short.csv
 //      i /hist_long.csv. Bufor RAM, /api/history*, /api/history/long, wykresy
 //      i CALA telemetria do Firebase dzialaja bez zmian - to osobne sciezki.
-// [2] "histfs_czysc": (od 3.57.5 realizacja przez kanal A1, nie przez NVS) sklada
-//      zadanie /history_reset_a1.req; oba pliki historii sa usuwane
+// [2] "histfs_czysc": ustawia znacznik w NVS; oba pliki historii sa usuwane
 //      przy NASTEPNYM starcie, PRZED ich wczytaniem. Celowo nie kasujemy
 //      plikow w locie: pisze do nich wylacznie historiaTaskFn i tylko on
 //      moglby to zrobic bezpiecznie, a usuniecie pliku spod otwartego
@@ -5883,7 +5864,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.57.7";
+static const char* FIRMWARE_VERSION = "v3.57.6";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -34453,28 +34434,6 @@ static bool sendTelegramCoredumpListMenu() {
   return sendTelegramMessage(txt, kb);
 }
 
-// [v3.57.7 HIST-TG-JASNO] "Nie ma pliku" to nie to samo co "nie udalo sie wyslac".
-// W 3.57.6 po czyszczeniu historii (albo przy wylaczonym zapisie) bot wysylal
-// "wysylka nieudana - kopiuje na SD", choc plik zniknal celowo i nic nie bylo
-// zepsute. Teraz najpierw sprawdzamy plik, a komunikat mowi, dlaczego go nie ma.
-static bool historiaPlikNaFlashu(const char *sciezka) {
-  if (!littlefsReady) return false;
-  if (!systemFS196.exists(sciezka)) return false;
-  File f = systemFS196.open(sciezka, "r");
-  if (!f) return false;
-  const bool niepusty = f.size() > 0;
-  f.close();
-  return niepusty;
-}
-
-static String historiaBrakPlikuKomunikat(const char *nazwa) {
-  String s = String(nazwa) + F(": brak pliku - ");
-  s += historiaZapisNaFsWlaczony()
-         ? F("historia na flashu jest pusta (np. po czyszczeniu), nie ma czego wyslac.")
-         : F("zapis historii na flash jest WYLACZONY - wlacz go, aby pliki wrocily.");
-  return s;
-}
-
 // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 7] Wysylka hist_short.csv
 // jako dokument Telegram.
 // [v3.55.9 HISTORIA-PIN] Zamiast wlasnej petli open()/read() po nazwie pliku
@@ -45077,19 +45036,9 @@ void tgTaskFn(void* /*pvParams*/) {
           case TG_HIST:
             sendTelegramMessage(F("Wysylam wykresy (hist_short+hist_long) i dziennik nastaw..."));
             {
-              // [v3.57.7 HIST-TG-JASNO] Najpierw sprawdzamy, czy plik lezy na
-              // flashu. Po czyszczeniu (albo przy wylaczonym zapisie) pliku nie
-              // ma i wtedy NIE wolamy wysylki - inaczej konczyla sie komunikatem
-              // "wysylka nieudana", choc wszystko dzialalo zgodnie z ustawieniem.
-              const bool jestS = historiaPlikNaFlashu(HISTORIA_PLIK);
-              const bool jestL = historiaPlikNaFlashu(HISTORIA_DLUGA_PLIK);
-              bool okS = true;
-              bool okL = true;
-              if (jestS) okS = sendTelegramDocumentHistKrotka();
-              else sendTelegramMessage(historiaBrakPlikuKomunikat("hist_short.csv"));
-              if (jestL) okL = sendTelegramDocumentHistDluga();
-              else sendTelegramMessage(historiaBrakPlikuKomunikat("hist_long.csv"));
-              const bool okU = sendTelegramDocumentUstawien();
+              bool okS = sendTelegramDocumentHistKrotka();
+              bool okL = sendTelegramDocumentHistDluga();
+              bool okU = sendTelegramDocumentUstawien();
               // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 6/9] Kazdy
               // plik niezalezny - porazka jednego nie przerywa prob
               // wyslania pozostalych, i kazdy ma wlasny fallback na SD.
