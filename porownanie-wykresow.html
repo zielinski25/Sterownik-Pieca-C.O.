@@ -76,7 +76,7 @@ td:first-child,th:first-child{text-align:left}
 </head>
 <body>
 
-<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v2 · 31.10</span></h1>
+<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v3 · 31.10</span></h1>
 <div class="sub">Dwa źródła historii obok siebie: chmura (RTDB) i plik pobrany z centrali. Ta sama skala, ta sama os czasu, różnice widać wprost.<br>
 <span style="opacity:.75">Logowanie: plik wchodzi <b>sam</b>, jeśli panel centrali zapamiętał sesję — i od razu pobiera ostatnią dobę.</span></div>
 
@@ -178,6 +178,7 @@ td:first-child,th:first-child{text-align:left}
   <div class="card"><h2>Różnice (B − A)</h2><div id="statDiff" class="note" style="margin:0"></div></div>
 </div>
 <div class="card wide"><h2>Statystyki kanałów</h2><div id="statTable" class="note" style="margin:0">Brak danych.</div></div>
+<div class="card wide"><h2>Największe różnice (B − A) — co dokładnie odbiega</h2><div id="statTop" class="note" style="margin:0">Brak danych.</div></div>
 
 <div class="note">
   <b>Logowanie:</b> plik korzysta z tej samej zapamiętanej sesji, co panel centrali
@@ -692,6 +693,56 @@ function channelStats(rows, ci){
   return n ? { n, min, max, avg: sum/n } : { n:0, min:NaN, max:NaN, avg:NaN };
 }
 
+/* Diagnostyka: 15 największych różnic z surowymi wartościami A i B.
+   Po to, żeby dało się odpowiedzieć „co to za skok" bez zgadywania:
+   widać czas, obie wartości i przesunięcie czasowe pary. */
+function renderTopDiffs(pairs){
+  const el = $('statTop');
+  if (!el) return;
+  const chs = [];
+  CH.forEach((c, i) => { if (state.sel.has(c.id)) chs.push({ c, i }); });
+  if (!pairs.length || !chs.length){
+    el.innerHTML = 'Za mało par — wczytaj oba źródła i wybierz kanały.';
+    return;
+  }
+  const rows = [];
+  chs.forEach(o => {
+    pairs.forEach(([ra, rb]) => {
+      const va = ra.v[o.i], vb = rb.v[o.i];
+      if (va == null || vb == null) return;
+      rows.push({ tA: ra.ts, tB: rb.ts, c: o.c, va, vb, d: vb - va });
+    });
+  });
+  if (!rows.length){ el.innerHTML = 'Brak wspólnych próbek w wybranych kanałach.'; return; }
+  rows.sort((x, y) => Math.abs(y.d) - Math.abs(x.d));
+
+  let h = '<table><thead><tr><th>czas</th><th>kanał</th><th>A (chmura)</th><th>B (plik)</th>' +
+          '<th>B − A</th><th>przesunięcie pary</th></tr></thead><tbody>';
+  rows.slice(0, 15).forEach(r => {
+    const off = Math.round((r.tB - r.tA) / 1000);
+    const prog = r.c.unit === '°C' ? 3 : 20;
+    const mocno = Math.abs(r.d) >= prog;
+    h += '<tr' + (mocno ? ' style="color:#ffb74d"' : '') + '>' +
+         '<td>' + fmtTime(r.tB, true) + '</td>' +
+         '<td><span style="color:' + r.c.color + '">■</span> ' + r.c.label +
+           (r.c.unit ? ' [' + r.c.unit + ']' : '') + '</td>' +
+         '<td>' + fmtVal(r.va, r.c.dec) + '</td>' +
+         '<td>' + fmtVal(r.vb, r.c.dec) + '</td>' +
+         '<td>' + (r.d > 0 ? '+' : '') + r.d.toFixed(r.c.dec) + '</td>' +
+         '<td>' + (off > 0 ? '+' : '') + off + ' s</td></tr>';
+  });
+  h += '</tbody></table>';
+  h += '<div style="margin-top:8px;opacity:.78;font-size:11px;line-height:1.5">' +
+       '<b>Jak to czytać.</b> „Przesunięcie pary" to różnica czasu między próbką B a próbką A, ' +
+       'z którą ją sparowano. Duże przesunięcie przy pompie, klapie albo syberku oznacza, że ' +
+       'w oknie tolerancji zmienił się stan — porównujesz wtedy migawkę sprzed zmiany z próbką ' +
+       'po zmianie (stąd skok ±100). To nie błąd danych: zmniejsz tolerancję (np. do 10 s), ' +
+       'żeby takie pary wypadły. Małe przesunięcie i duża różnica = naprawdę różne wartości ' +
+       'w tym samym czasie — wtedy warto spojrzeć na sam czujnik.' +
+       '</div>';
+  el.innerHTML = h;
+}
+
 function renderStats(){
   const A = state.A, B = state.B;
   const tolMs = Math.max(5, Number($('tolS').value)||90) * 1000;
@@ -767,6 +818,9 @@ function renderStats(){
     t += '</tbody></table>';
     $('statTable').innerHTML = t;
   }
+
+  // ── diagnostyka: największe różnice z surowymi wartościami
+  renderTopDiffs(pairs);
 }
 
 /* ═══════════════════════════════════════════════════════════════

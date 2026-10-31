@@ -34,8 +34,11 @@ function netMock(cfg, calls){
     if (String(url).includes('firebasedatabase')){
       calls.db = (calls.db||0)+1;
       const m = String(url).match(/v1\/(\d{4})\/(\d{2})\/(\d{2})/);
-      const ts = m ? Date.UTC(+m[1], +m[2]-1, +m[3], 12)/1000 : 0;
-      const body = { r1:{ ts, a:[100,200,650,640,450,-50,210,50,600,10130,300], k:90, s:45, state:1, q:0 } };
+      const t0 = m ? Date.UTC(+m[1], +m[2]-1, +m[3], 12)/1000 : 0;
+      const body = {};
+      for (let k = 0; k < 12; k++){               // co 10 min, żeby było z czym parować plik
+        body['r' + k] = { ts: t0 + k*600, a:[100,200,650,640,450,-50,210,50,600,10130,300], k:90, s:45, state:1, q:0 };
+      }
       return { ok:true, status:200, text: async()=>JSON.stringify(body) };
     }
     return { ok:false, status:500, text: async()=>'' };
@@ -74,7 +77,7 @@ async function load(cfg){
   {
     const d = r1.doc;
     // każdy element, którego szuka skrypt
-    const ids = ['fbEmail','fbPass','fbKey','rememberPass','btnLogout','credBox','authLine','fbFrom','fbTo','btnFb','btnFbClear','fbBar','fbStatus','drop','fileIn','fileFmt','fileStatus','btnFileClear','chips','modeSeg','tolS','btnCsv','btnPng','charts','boxA','boxB','boxSingle','cvA','cvB','cvS','capA','capB','capSingle','capSingleInfo','statSamples','statDiff','statTable'];
+    const ids = ['fbEmail','fbPass','fbKey','rememberPass','btnLogout','credBox','authLine','fbFrom','fbTo','btnFb','btnFbClear','fbBar','fbStatus','drop','fileIn','fileFmt','fileStatus','btnFileClear','chips','modeSeg','tolS','btnCsv','btnPng','charts','boxA','boxB','boxSingle','cvA','cvB','cvS','capA','capB','capSingle','capSingleInfo','statSamples','statDiff','statTable','statTop'];
     const missing = ids.filter(i => !d.getElementById(i));
     A('wszystkie elementy istnieją ('+ids.length+')', missing.length===0, missing.join(','));
     A('brak błędów skryptu', r1.errors.length===0, r1.errors.slice(0,3).join(' | '));
@@ -141,6 +144,53 @@ async function load(cfg){
     A('konto rozwinięte', d.getElementById('credBox').open === true);
     A('brak danych', r4.st().A.length === 0);
     r4.dom.window.close();
+  }
+
+  console.log('\n[5] DOM + plik hist_long.csv wgrany upuszczeniem → tabela największych różnic');
+  {
+    const teraz = new Date();
+    const base = Math.floor(Date.UTC(teraz.getUTCFullYear(), teraz.getUTCMonth(), teraz.getUTCDate(), 12, 0, 0)/1000);
+    const row = (k, wilg) => {
+      const ts = base + k*600;                       // co 10 min
+      const t = (v) => [v, v, v].map(x => x.toFixed(1)).join(',');
+      const cols = ['27.10 12:' + String(k).padStart(2,'0')];
+      cols.push(t(5.0));                       // t_zewn sr/min/max
+      cols.push(t(45.0));                      // t_bojler
+      cols.push(t(60.0));                      // t_ogrz
+      cols.push(t(59.0));                      // t_ogrz_sr
+      cols.push(t(40.0));                      // t_powrot
+      cols.push(t(-2.0));                      // t_panel
+      cols.push(t(21.0));                      // t_pokoj
+      cols.push(t(1013.0));                    // cisnienie
+      cols.push([wilg, wilg, wilg].map(x => String(x)).join(','));  // wilgotnosc
+      cols.push([0, 0, 0].map(String).join(','));      // klapa (stopnie)
+      cols.push([0, 0, 0].map(String).join(','));      // syberek (stopnie)
+      cols.push(String(ts));                   // 35. kolumna: unix
+      cols.push('0');                          // 36. kolumna: pompa
+      return cols.join(',');
+    };
+    // wiersz 3. ma wilgotność 99 zamiast 60 → powinien wylądować na górze tabeli
+    const csv = [0,1,2,3,4,5,6,7,8].map(k => row(k, k === 3 ? 99 : 60)).join('\n') + '\n';
+
+    const r5 = await load({ localStorage: { piec_fb_ref_token:'RT1', piec_fb_email:'piec_co_boot@akwarium.local' } });
+    const d = r5.doc, w = r5.w;
+    const comp = d.getElementById('fileFmt');
+    const drop = d.getElementById('drop');
+    const file = new w.File([csv], 'hist_long.csv', { type:'text/csv' });
+    const ev = new w.Event('drop', { bubbles:true, cancelable:true });
+    ev.dataTransfer = { files: [file] };
+    drop.dispatchEvent(ev);
+    await new Promise(r => setTimeout(r, 250));
+    w.eval("state.sel.add('wilgotnosc'); render();");
+
+    A('plik wczytany', /hist_long/.test(comp.textContent), comp.textContent);
+    A('B ma próbki', r5.st().B.length > 0, r5.st().B.length);
+    const top = d.getElementById('statTop').innerHTML;
+    A('tabela największych różnic powstała', /<table>/.test(top), top.slice(0,80));
+    A('wskazuje wilgotność', /Wilg\./.test(top));
+    A('pokazuje obie wartości (A i B)', /99/.test(top) && /60/.test(top));
+    A('jest kolumna przesunięcia', /przesuni/.test(top));
+    r5.dom.window.close();
   }
 
   console.log('\nWYNIK jsdom: ' + ok + ' OK, ' + bad + ' FAIL');

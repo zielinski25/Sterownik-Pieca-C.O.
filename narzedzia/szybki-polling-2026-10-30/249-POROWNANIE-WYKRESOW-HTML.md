@@ -1,12 +1,13 @@
 # 249 — Porównanie wykresów: Firebase ↔ plik lokalny (drugi plik HTML)
 
-Data: 2026-10-31 · **wersja narzędzia: v2** (poprawka: wchodzi już zalogowany)
+Data: 2026-10-31 · **wersja narzędzia: v3** (auto-logowanie + tabela największych różnic)
 Plik: `porownanie-wykresow.html` (w korzeniu repo)
-**48 613 B · 1 053 linie · SHA-256 `5a1a87909806d068cf07ce4ac155f90ad3cb3ee9203e6452cccbb46315602abf`**
+**51 385 B · SHA-256 `4412f03ff22c71a8320b9d87b8998508201604e61c5b615c7d5b11e852aa4925`**
 
 | wersja | Dysk | uwaga |
 |---|---|---|
-| **v2 (ta)** | **`1mhffsci_QIm8qc1YHr-Aw2zoyzsM_rA8`** | auto-logowanie, sama pobiera ostatnią dobę |
+| **v3 (ta)** | **patrz `LINKI-2026-10-29.md`** | + tabela „Największe różnice” (diagnostyka skoków) |
+| v2 | `1mhffsci_QIm8qc1YHr-Aw2zoyzsM_rA8` | auto-logowanie, sama pobiera ostatnią dobę |
 | v1 | `1f0JiB2-JEYFxYhwoPxETh0wdigfJEhdf` (nazwa zmieniona na `…-v1-BEZ-AUTOLOGOWANIA.html`) | pytała o hasło za każdym otwarciem — **nie używać** |
 
 ---
@@ -50,6 +51,49 @@ więc widać, gdzie wpisać hasło. Po udanym logowaniu zwija ją z powrotem.
 > miejsca — wtedy zadziała punkt 4 (hasło wpisane raz w tym pliku).
 
 ---
+
+## 0a. v3 — tabela „Największe różnice (B − A)” (31.10)
+
+Po pierwszych wykresach z prawdziwych danych było widać skoki w trybie RÓŻNICA B−A.
+Żeby dało się je rozpoznać bez zgadywania, pod statystykami jest teraz tabela
+**15 największych różnic** w wybranych kanałach. Dla każdej pary pokazuje:
+
+| kolumna | co mówi |
+|---|---|
+| czas | kiedy (czas lokalny, z próbki B) |
+| kanał | który sygnał |
+| A (chmura) / B (plik) | **surowe wartości z obu źródeł** — nie różnica |
+| B − A | różnica |
+| przesunięcie pary | ile sekund było między próbką B i próbką A, z którą ją sparowano |
+
+**Jak to czytać (najważniejsze w całym narzędziu):**
+
+- **duże przesunięcie + kanał skokowy** (pompa 0/100, klapa, syberek) → w oknie
+  tolerancji zmienił się stan. Porównujesz migawkę sprzed zmiany z próbką po zmianie,
+  stąd skok ±100. To **nie błąd danych**. Zmniejsz tolerancję (np. do 10 s).
+- **małe przesunięcie + duża różnica** → naprawdę różne wartości w tym samym czasie.
+  Wtedy warto patrzeć na czujnik albo na to, czy próbka B nie jest zerem / kodem błędu.
+
+## 0b. Skąd biorą się skoki na wykresie różnic (31.10)
+
+Z pierwszego uruchomienia na danych użytkownika (24.10 19:06 — 31.10 07:25):
+
+| sygnał | średnia B−A | max \|B−A\| | co to znaczy |
+|---|---|---|---|
+| Zewn. | −0,0 °C | 1,0 °C | zgoda — mapowanie kolumn jest poprawne |
+| Bojler | −0,0 °C | 2,3 °C | zgoda |
+| Piec | +0,1 °C | 12,9 °C | pojedyncze skoki |
+| Piec śr. | +0,1 °C | 46,0 °C | pojedyncze skoki (średnia po restarcie) |
+
+Średnia ≈ 0 przy każdym kanale dowodzi, że **kolumny nie są przesunięte** — gdyby
+były, średnia byłaby ogromna. Skoki to sprawa pojedynczych próbek:
+
+1. **skokowe sygnały** (pompa, klapa, syberek) — porównanie migawki z próbką minutową,
+   patrz 0a;
+2. **momenty restartu centrali** — średnia `t_ogrz_sr` startuje od nowa, serwa wracają
+   do pozycji wyjściowej; w chmurze i w archiwum widać to w tej samej sekundzie;
+3. **wilgotność** — skoki ±100 wymagają jeszcze potwierdzenia w pliku; tabela
+   z 0a pokaże wprost, czy B ma tam 0, 99 czy 100.
 
 ## 1. Po co to jest
 
