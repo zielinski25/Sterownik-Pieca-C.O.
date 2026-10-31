@@ -172,26 +172,28 @@ fun Dashboard(m: AppModel) {
             val servoKnown = servoMode != null
             val flapKnown = S.hasData("klapa") && S.klapa in 0..180
             val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
-            // [0.31.25] Tryb pracy (AUTO / RĘCZNY) siedzi w pigułce OBOK tytułu —
-            // innym stylem niż reszta, więc nie zabiera linii i nie udaje wartości.
-            // Pod spodem zostają dwie pozycje: klapa i syberek, każda z własnym %.
+            // [0.31.67] SERWO wyglądało jak obcy kafelek: jedyny z pigułką w nagłówku
+            // i jedyny, którego duża wartość była małą literą („klapa 100%”) obok
+            // wersalików „WYŁĄCZONA” i „WYŁĄCZONE” z sąsiednich kart. Pigułka ściskała
+            // też tytuł. Teraz duża wartość to STAN wersalikami, a procent klapy jest
+            // dopisany po nim — tak samo jak w panelu HTML („AUTO (100%)”).
             // Kąt z centrali (klapa 0..180°, syberek 0..90°) → procent, bo tylko
             // procent jest porównywalny między dwoma serwami o różnym zakresie.
             val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
             val syberkaLabel = if (syberkaKnown) "${Math.round(S.syberka * 100.0 / 90.0)}%" else "—"
+            val servoStan = when (servoMode) { 1 -> "AUTO"; 2 -> "RĘCZNY"; 3 -> "BEZPIECZNY"; else -> "" }
             QCard(
                 title = "SERWO", icon = "servo",
-                // BEZPIECZNY nie mieści się w pigułce obok tytułu (10 znaków), więc
-                // w tym trybie tryb przejmuje wartość, a pigułka znika.
-                tag = when (servoMode) { 1 -> "AUTO"; 2 -> "RĘCZNY"; else -> "" },
-                tagColor = if (servoMode == 2) Pal.Warn else Pal.Cyan,
                 value = when {
                     pendingServo != null -> "CEL ${pendingServo.second.requestedPercent}%"
+                    !servoKnown -> "—"
                     servoMode == 3 -> "BEZPIECZNY"
-                    else -> "klapa $flapLabel"
+                    flapKnown -> "$servoStan $flapLabel"
+                    else -> servoStan
                 },
                 sub = when {
                     pendingServo != null -> "${pendingServo.first} ${pendingServo.second.targetDegrees}° · czekam"
+                    !servoKnown -> "oczekiwanie na stan"
                     servoMode == 3 -> "tryb bezpieczeństwa"
                     else -> "syberek $syberkaLabel"
                 },
