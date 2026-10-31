@@ -1,0 +1,20 @@
+FIRMWARE 3.57.7 - co zrobic w 3 krokach
+=======================================
+1. Rozpakuj SterownikCO-v3.57.7-HIST-FS-OPCJA.zip.
+2. Podmien CALY folder src w projekcie PlatformIO (16 plikow, nie tylko main_centrala.cpp).
+3. Skompiluj i wgraj (pio run -t upload albo OTA z panelu).
+   Po restarcie wersja w panelu i aplikacji: v3.57.7
+
+CO NOWEGO
+---------
+Bot na Telegramie nie pisze juz "wysylka nieudana - kopiuje na SD", gdy pliku
+historii po prostu nie ma (np. po czyszczeniu albo przy wylaczonym zapisie).
+Pisze wprost:
+  - "brak pliku - historia na flashu jest pusta (np. po czyszczeniu)"
+  - "brak pliku - zapis historii na flash jest WYLACZONY - wlacz go, aby pliki wrocily"
+W obu przypadkach NIE probuje wysylac ani kopiowac nieistniejacego pliku na SD.
+
+BEZ ZMIAN
+---------
+Zapis historii, przelacznik i jego NVS, kanal A1, format CSV, Firebase, OTA.
+Ta wersja nie odtwarza usunietych plikow - powstana od nowa po WLACZENIU zapisu.

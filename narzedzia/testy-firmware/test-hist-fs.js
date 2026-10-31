@@ -192,5 +192,24 @@ section('D. Bilans nawiasow main_centrala.cpp (bez stringow i komentarzy)');
   check('[] ' + counts['['] + '/' + counts[']'], counts['['] === counts[']']);
 })();
 
+// ─────────────────────────────────────────────── E. [3.57.7] Telegram i brak pliku
+section('E. Telegram: brak pliku to nie blad wysylki [3.57.7]');
+
+check('helper sprawdza istnienie i rozmiar pliku historii',
+  /static bool historiaPlikNaFlashu\(const char \*sciezka\)[\s\S]{0,500}?systemFS196\.exists\(sciezka\)/.test(fw));
+check('TG_HIST pyta o plik PRZED wysylka krotkiej historii',
+  fw.indexOf('const bool jestS = historiaPlikNaFlashu(HISTORIA_PLIK);') > 0 &&
+  fw.indexOf('const bool jestS = historiaPlikNaFlashu(HISTORIA_PLIK);') <
+    fw.indexOf('if (jestS) okS = sendTelegramDocumentHistKrotka();'));
+check('TG_HIST pyta o plik PRZED wysylka dlugiej historii',
+  fw.includes('const bool jestL = historiaPlikNaFlashu(HISTORIA_DLUGA_PLIK);') &&
+  fw.includes('if (jestL) okL = sendTelegramDocumentHistDluga();'));
+check('komunikat rozroznia pusta historie i wylaczony zapis',
+  fw.includes('historia na flashu jest pusta') &&
+  fw.includes('zapis historii na flash jest WYLACZONY'));
+check('brak pliku nie konczy sie komunikatem o bledzie wysylki',
+  fw.includes('else sendTelegramMessage(historiaBrakPlikuKomunikat(\"hist_short.csv\"));') &&
+  fw.includes('else sendTelegramMessage(historiaBrakPlikuKomunikat(\"hist_long.csv\"));'));
+
 console.log('\n' + ok + ' OK / ' + fail + ' FAIL');
 process.exit(fail ? 1 : 0);
