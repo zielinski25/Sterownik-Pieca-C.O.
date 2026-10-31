@@ -144,6 +144,10 @@ if ($tekst -notlike '*sheets.HistFsSheet*') {
   $trescNaprawa = [regex]::Replace($trescNaprawa, 'versionName\s*=\s*"\d+\.\d+\.\d+"', 'versionName = "0.31.65"')
   [IO.File]::WriteAllText($gradleNaprawa, $trescNaprawa, (New-Object Text.UTF8Encoding($false)))
   Write-Host "Paczka bez importu HistFsSheet (0.31.64) - poprawiona do 0.31.65" -ForegroundColor Yellow
+  # 0.31.64 ma dodatkowo bledny test ChartTimeAxisTest (oczekuje 60 px zamiast 100 px),
+  # wiec przy tej starej paczce testy pomijamy. W 0.31.66 test jest juz naprawiony.
+  $BezTestow = $true
+  Write-Host "Testy pomijam - paczka 0.31.64 ma bledny test. Nowa paczka: 0.31.66." -ForegroundColor Yellow
 }
 
 # Wersja z projektu (pewniejsza niz nazwa paczki)

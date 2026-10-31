@@ -23,10 +23,12 @@ class ChartTimeAxisTest {
 
     @Test
     fun placesSamplesProportionallyToElapsedTime() {
-        // 0, 1, 2, 12 minut — ostatnia próbka jest 12× dalej niż pierwsza.
+        // 0, 4, 6, 12 minut — oś liczona z czasu, nie z numeru próbki.
         val axis = ChartTimeAxis(t0 = 0L, t1 = 12 * 60_000L, padLeft = 20f, plotWidth = 240f)
         assertEquals(20f, axis.xOf(0L), 0.01f)
-        assertEquals(60f, axis.xOf(4 * 60_000L), 0.01f)   // 1/3 szerokości
+        // 4 z 12 minut = 1/3 szerokości: 20 + 240/3 = 100 (wcześniej stało tu 60,
+        // czyli wartość dla 2 minut - test był błędny, nie wykres).
+        assertEquals(100f, axis.xOf(4 * 60_000L), 0.01f)
         assertEquals(140f, axis.xOf(6 * 60_000L), 0.01f)  // połowa
         assertEquals(260f, axis.xOf(12 * 60_000L), 0.01f) // prawa krawędź
     }
