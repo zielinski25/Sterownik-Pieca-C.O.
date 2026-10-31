@@ -1,3 +1,28 @@
+// FIRMWARE_VERSION v3.57.4 -> v3.57.5 (2026-10-31) — POPRAWKI PO PRZEGLADZIE 3.57.4.
+//
+// [1] CZYSZCZENIE PLIKOW HISTORII idzie teraz ISTNIEJACYM kanalem A1.
+//     W firmware jest gotowy, audytowany mechanizm jednorazowego czyszczenia
+//     przy starcie: history_a190::Transition + history_a191::Storage. Jesli w
+//     chwili startu istnieje /history_reset_a1.req o tresci "RESET-HISTORY-A1\n",
+//     transition usuwa OBA pliki CSV, potwierdza ich nieobecnosc (stat),
+//     tworzy /history_reset_a1.done i konsumuje zadanie. 3.57.4 kasowalo pliki
+//     wlasnym kodem (LittleFS.remove po starcie) i trzymalo drugi znacznik
+//     w NVS - dwa mechanizmy na jedna operacje. Teraz "histfs_czysc" tylko
+//     UZBRAJA kanal A1: usuwa stary .done (bez tego transition poszedlby
+//     sciezka "juz czyszczono" i NIE tknal plikow) i sklada zadanie w
+//     dokladnie takim formacie, jakiego oczekuje Storage. Efekt: po restarcie.
+// [2] PUBLICZNE API panelu: pole "hist_fs" bylo w JSON-ach, ale panel
+//     (WIFI_LOCAL_PANEL_HTML) i Piec.html nie parsowaly go wcale - kafelek
+//     pokazywalby "brak danych" nawet na 3.57.5. Dodane do listy flag i do
+//     stanu poczatkowego; przelacznik dogania zmiane statusu.
+// [3] ZAPIS NA FLASH: bramka obejmuje teraz takze oproznianie kolejki
+//     (historiaFlushDoFS / historiaDlugaFlushDoFS). W 3.57.4 wylaczenie
+//     zatrzymywalo tylko NOWE probki, a resztka z kolejki RAM mogla jeszcze
+//     doleciec na flash. Teraz "wylaczone" = zadnego dopisania.
+//
+// Bez zmian: format CSV, bufory RAM, telemetria Firebase, /api/history*,
+// kolejnosc i znaczenie pol, NVS (namespace "hist", klucz "fs_on"), OTA.
+//
 // FIRMWARE_VERSION v3.57.3 -> v3.57.4 (2026-10-31) — PRZELACZNIK ZAPISU HISTORII NA FLASH + WILGOTNOSC.
 //
 // [1] NOWE: /piec/status dostaje pole "hist_fs" (1 = zapis na flash wlaczony,
@@ -5818,7 +5843,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.57.4";
+static const char* FIRMWARE_VERSION = "v3.57.5";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -10954,7 +10979,7 @@ body.mode-phone-frame #phone {
     rozpalanie_serwa_aktywne: false, rozpalanie_serwa_dostepne: false, rozpalanie_serwa_blokada_dymu: false,
     tryb_serwa: 0, trybSerwa: 0, klapa: NaN, syberka: NaN,
     wybor: 0, pompa_override_min: 0, mieszadlo_override_min: 0, serwo_override_min: 0,
-    rtc_ok: false, dzien: 0, miesiac: 0, rok: 0,
+    rtc_ok: false, hist_fs: false, dzien: 0, miesiac: 0, rok: 0,
     ip: '', firmware: '', uptime: NaN, appVersion: 'v0.30.5',
     wifi_rssi: NaN, wifi_quality: NaN, ping_ms: NaN, wifi_ssid: '', weatherCode: NaN,
     czasOn: NaN, czasOff: NaN, tempOn: NaN, tempOff: NaN, antystopWlaczony: false, antystopDni: NaN,
@@ -11661,7 +11686,7 @@ body.mode-phone-frame #phone {
       'online', 'night', 'dym_wlaczony', 'dym_swiezy', 'dym_alarm', 'alarm_ogrzewanie',
       'alarm_panel', 'pompa', 'mieszadlo', 'rozpalanie', 'rozpalanie_potwierdzone',
       'rozpalanie_serwa_aktywne', 'rozpalanie_serwa_dostepne', 'rozpalanie_serwa_blokada_dymu',
-      'antystopWlaczony', 'mieszadloWlaczony', 'rtc_ok'
+      'antystopWlaczony', 'mieszadloWlaczony', 'rtc_ok', 'hist_fs'
     ];
     flagKeys.forEach(key => {
       const raw = d[key];
@@ -13508,14 +13533,20 @@ body.mode-phone-frame #phone {
       const known = () => hasData('hist_fs');
       const on = () => known() && !!S.hist_fs;
 
-      b.appendChild(toggleRow(
+      const trg = toggleRow(
         'Zapisuj historię na flash centrali',
         'hist_short.csv (24 h, ~130 kB) i hist_long.csv (archiwum, do ~1,8 MB). '
           + 'Wyłączenie oszczędza pamięć i cykle zapisu. Dane w pamięci RAM oraz '
           + 'wysyłka do Firebase działają bez zmian.',
         on(),
         v => sendCommand(v ? 'histfs_wl' : 'histfs_wyl')
-      ));
+      );
+      // Status zmienia sie co ~15 s; przepisz pole tylko WTEDY, gdy wartosc
+      // naprawde sie zmienila - inaczej liveTick co 2 s cofalby klik uzytkownika.
+      const trgBox = trg.querySelector('input');
+      let trgStan = on();
+      live$(trgBox, el => { const cur = on(); if (cur !== trgStan) { trgStan = cur; el.checked = cur; } });
+      b.appendChild(trg);
 
       b.appendChild(sectionHeader('Czyszczenie plików'));
       const btnRow = h('div', 'btnrow');
@@ -23121,14 +23152,6 @@ static bool historiaFsZapiszNvs(bool wlaczony) {
   return ok;
 }
 
-static bool historiaFsCzyscZapiszNvs(bool zadane) {
-  Preferences p;
-  if (!p.begin("hist", false)) return false;
-  const bool ok = (p.putBool("czysc", zadane) == sizeof(uint8_t));
-  p.end();
-  return ok;
-}
-
 // Zwraca true, gdy stan trafil do NVS (przetrwa restart).
 bool historiaFsUstaw(bool wlaczony) {
   g_histFsZapisWlaczony.store(wlaczony, std::memory_order_release);
@@ -23138,12 +23161,12 @@ bool historiaFsUstaw(bool wlaczony) {
   return nvs;
 }
 
-// Znacznik czyszczenia - pliki znikna przy najblizszym starcie.
-bool historiaFsCzyscZadaj() {
-  const bool nvs = historiaFsCzyscZapiszNvs(true);
-  DLOG(DC_HISTORIA, DL_INFO, F("HIST-FS zdarzenie=czyszczenie_zadane msg=\"pliki usuniete przy nastepnym starcie\""));
-  return nvs;
-}
+// [v3.57.5] Czyszczenie obu plikow historii. PELNA definicja jest nizej,
+// tuz przed setup() - potrzebuje littlefsReady/systemFS196, ktore w tym pliku
+// sa zadeklarowane w sekcji [LOGI-FS], czyli PO tym miejscu. Tutaj tylko
+// deklaracja, zeby dispatcher komend (wyzej niz tamta definicja) ja widzial -
+// ten sam wzorzec co forward-deklaracja historiaFlushDoFS() nizej.
+bool historiaFsCzyscZadaj();
 
 
 // [WYKRESY-FS, POPRAWKA] extern - littlefsReady jest NAPRAWDE zdefiniowane
@@ -43597,11 +43620,12 @@ static void wykonajKomendePanelu(const String& cmd, bool& wynikOk, String& wynik
               + F(" nvs=") + (nvs ? "OK" : "BLAD"));
   }
   else if (cmd == "histfs_czysc") {
-    // Pliki znikna przy nastepnym starcie - patrz naglowek changelogu.
-    const bool nvs = historiaFsCzyscZadaj();
-    wynikOk = nvs;
-    wynikBlad = nvs ? "" : "nie udalo sie zapisac znacznika w NVS";
-    zapiszLog(String(F("tag=FB lvl=INFO akcja=histfs_czysc nvs=")) + (nvs ? "OK" : "BLAD"));
+    // [v3.57.5] Skladamy zadanie w kanale A1 - pliki znikna przy nastepnym
+    // starcie, PRZED pierwszym odczytem (patrz historiaFsCzyscZadaj()).
+    const bool zadane = historiaFsCzyscZadaj();
+    wynikOk = zadane;
+    wynikBlad = zadane ? "" : "nie udalo sie zlozyc zadania czyszczenia (LittleFS)";
+    zapiszLog(String(F("tag=FB lvl=INFO akcja=histfs_czysc zadanie=")) + (zadane ? "OK" : "BLAD"));
   }
   else if (cmd == "spoolrt_wl") {
     // [v3.54.0] Wlaczenie bufora offline z aplikacji. Identyczna sciezka jak
@@ -46062,7 +46086,10 @@ bool historiaFlushDoFS() {
   // Retiring an already handed-off prefix does not repeat filesystem I/O.
   if (!s.oddanoDoFile) {
     if (!historiaDostepGotowy() || historiaIo.blocked()) return false;
-    if (!littlefsReady || historiaClearPending) return false;
+    // [v3.57.5] Wylaczony zapis = takze ZADNEGO oprozniania kolejki. Resztka
+    // czekajaca w historiaPendingCsv zostaje w RAM (limit 4096 B, nic nowego
+    // tam nie dochodzi) i po ponownym wlaczeniu pojedzie jednym appendem.
+    if (!littlefsReady || historiaClearPending || !historiaZapisNaFsWlaczony()) return false;
     if (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 8192) return false;
     if (s.kopia.length() == 0) {
       if (!historiaPendingMux || xSemaphoreTake(historiaPendingMux, pdMS_TO_TICKS(200)) != pdTRUE) return false;
@@ -46124,6 +46151,9 @@ bool historiaDlugaFlushDoFS(const HistoriaProbkaDluga &nowa) {
   if (!historiaDostepGotowy() || historiaDlugaZapisZablokowany || historiaIo.blocked()) return false;
   if (!littlefsReady) return false;
   if (historiaClearPending) return false;
+  // [v3.57.5] To samo co przy krotkiej: wylaczone = nic nie dopisujemy, ale
+  // probka zostaje na czele kolejki (peek bez dequeue) i po wlaczeniu pojedzie.
+  if (!historiaZapisNaFsWlaczony()) return false;
   if (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 8192) {
     if (historiaDlugaOczekiwanie != 1) { historiaDlugaOczekiwanie = 1; DLOG(DC_HISTORIA, DL_WARN, F("HISTORIA_DLUGA-FS msg=\"malo pamieci - zapis odlozony, kolejka zachowana\"")); }
     return false;
@@ -46578,36 +46608,73 @@ void historiaDlugaWczytajZFS() {
 
 // ════════════════════════════════════════════════════════
 // SETUP
-// ════════════════════════════════════════════════════════
-// [v3.57.4 HIST-FS-OPT] Odtworzenie przelacznika z NVS + jednorazowe
-// czyszczenie plikow historii, zadane komenda "histfs_czysc".
-// Wolane w setup() PRZED historiaWczytajZFS()/historiaDlugaWczytajZFS():
-// czyszczenie musi sie wykonac, zanim ktokolwiek zacznie czytac te pliki.
-void historiaFsInicjalizujPrzyStarcie() {
-  bool czysc = false;
-  {
-    Preferences p;
-    if (p.begin("hist", true)) {
-      g_histFsZapisWlaczony.store(p.getBool("fs_on", true), std::memory_order_release);
-      czysc = p.getBool("czysc", false);
-      p.end();
-    }
-  }
-  if (!czysc) return;
+// ═══════════════════════════════════════════════════════════════════════════
+// [v3.57.5 HIST-FS-CZYSZCZENIE] Zadanie usuniecia obu plikow historii.
+//
+// NIE kasujemy plikow w locie. Powod jest techniczny i sprawdzony: usuniecie
+// pliku, do ktorego ktos ma otwarty uchwyt i wlasnie go synchronizuje, potrafi
+// zepsuc INNE wpisy w katalogu (littlefs-project/littlefs#1237 - poprawka
+// weszla po v2.5.0: usuniety uchwyt zostaje przeniesiony na nastepna pare
+// metadanych i jego kolejny sync nadpisuje obcy wpis; katalog zaczyna
+// zwracac LFS_ERR_CORRUPT). U nas dokladnie taki uklad: historiaTaskFn trzyma
+// zapis otwarty co 5 probek.
+//
+// Dlatego korzystamy z gotowego kanalu A1, ktory w tym firmware juz jest i
+// dziala WYLACZNIE przy starcie, zanim ktokolwiek otworzy te pliki:
+//   /history_reset_a1.req  tresc "RESET-HISTORY-A1\n"  <- zadanie
+//   /history_reset_a1.done tresc "HISTORY-A1-COMPLETE\n" <- potwierdzenie
+// history_a190::Transition kasuje wtedy oba CSV, sprawdza stat-em, ze ich nie
+// ma, tworzy .done i zjada zadanie. Nic tu nie duplikujemy - tylko skladamy
+// zadanie w formacie, ktorego oczekuje history_a191::Storage.
+//
+// Uwaga na kolejnosc: .done MUSI zniknac PRZED zlozeniem zadania. Gdy .done
+// istnieje, transition idzie sciezka "juz czyszczono" (release) i zadania
+// nie wykorzystuje do kasowania plikow.
+// ═══════════════════════════════════════════════════════════════════════════
+bool historiaFsCzyscZadaj() {
   if (!littlefsReady) {
-    DLOG(DC_HISTORIA, DL_WARN, F("HIST-FS zdarzenie=czyszczenie_odlozone msg=\"brak LittleFS\""));
-    return;
+    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"brak LittleFS\""));
+    return false;
   }
-  const bool usunietoKrotki = LittleFS.remove(HISTORIA_PLIK);
-  const bool usunietoDlugi  = LittleFS.remove(HISTORIA_DLUGA_PLIK);
-  g_histShortSize = 0;
-  g_histLongSize = 0;
-  historiaPlikLiczbaLinii = 0;
-  historiaDlugaPlikLiczbaLinii = 0;
-  historiaProbekOdZapisu = 0;
-  historiaFsCzyscZapiszNvs(false);
-  DLOGF(DC_HISTORIA, DL_INFO, "HIST-FS zdarzenie=wyczyszczono krotki=%d dlugi=%d",
-        usunietoKrotki ? 1 : 0, usunietoDlugi ? 1 : 0);
+  if (systemFS196.exists("/history_reset_a1.done") &&
+      !systemFS196.remove("/history_reset_a1.done")) {
+    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"nie mozna usunac znacznika ukonczenia\""));
+    return false;
+  }
+  // 17 bajtow, bez NUL - Storage::request() wymaga dokladnie tej dlugosci.
+  static const char ZADANIE[] = "RESET-HISTORY-A1\n";
+  const size_t dlugosc = sizeof(ZADANIE) - 1;
+  File f = systemFS196.open("/history_reset_a1.req", "w");
+  if (!f) {
+    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"nie mozna zalozyc znacznika zadania\""));
+    return false;
+  }
+  const size_t zapisane = f.write(reinterpret_cast<const uint8_t*>(ZADANIE), dlugosc);
+  f.flush();
+  f.close();
+  if (zapisane != dlugosc || !systemFS196.exists("/history_reset_a1.req")) {
+    systemFS196.remove("/history_reset_a1.req");
+    DLOG(DC_HISTORIA, DL_ERR, F("HIST-FS zdarzenie=czysc_odrzucony msg=\"zadanie nie zapisalo sie w calosci\""));
+    return false;
+  }
+  DLOG(DC_HISTORIA, DL_INFO, F("HIST-FS zdarzenie=czyszczenie_zadane msg=\"oba pliki usuniete przy nastepnym starcie, przed pierwszym odczytem\""));
+  return true;
+}
+
+// [v3.57.4 HIST-FS-OPT / v3.57.5] Odtworzenie przelacznika z NVS na starcie.
+// Wolane w setup() przed historiaWczytajZFS()/historiaDlugaWczytajZFS().
+// Czyszczenia tu nie ma - robi je kanal A1 wewnatrz historiaBoot.start(),
+// czyli WCZESNIEJ niz to wywolanie (patrz komentarz wyzej).
+// Serial.printf, nie DLOG: diagInit() jest dopiero nizej w setup().
+void historiaFsInicjalizujPrzyStarcie() {
+  bool wlaczony = true;
+  Preferences p;
+  if (p.begin("hist", true)) {
+    wlaczony = p.getBool("fs_on", true);
+    p.end();
+  }
+  g_histFsZapisWlaczony.store(wlaczony, std::memory_order_release);
+  Serial.printf("tag=HIST-FS lvl=INFO zdarzenie=start zapis_na_flash=%s\n", wlaczony ? "WL" : "WYL");
 }
 
 void setup() {
