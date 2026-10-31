@@ -82,6 +82,8 @@ fun SettingsPage(m: AppModel) {
             "Synchronizacja zegara sterownika z czasem telefonu")
         MenuCard(m, "bufor", "logs", Pal.Warn, "Bufor offline",
             "Zapis próbek w pamięci centrali, gdy nie ma internetu · stan i liczniki")
+        MenuCard(m, "histfs", "logs", Pal.Warn, "Zapis historii na flash",
+            "hist_short.csv i hist_long.csv · włączanie, wyłączanie i czyszczenie plików")
     }
 }
 

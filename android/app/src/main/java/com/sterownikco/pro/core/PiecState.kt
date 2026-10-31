@@ -57,6 +57,9 @@ class PiecState {
     // [0.31.22] Bufor offline — pola z /piec/status (firmware v3.54.0+).
     // spoolRt = 1 wlaczony / 0 wylaczony; reszta to liczniki od startu centrali.
     var spoolRt = 0
+    // [0.31.64] Zapis historii na flash centrali (firmware v3.57.4+).
+    // histFs = 1 zapis wlaczony / 0 wylaczony (ustawienie w NVS centrali).
+    var histFs = 0
     var spoolPages = 0
     var spoolSpill = 0
     var spoolReplay = 0
@@ -355,6 +358,7 @@ class PiecState {
         intField("klapa", 0, 180) { klapa = it }
         intField("syberka", 0, 90) { syberka = it }
         intField("spool_rt", 0, 1) { spoolRt = it }
+        intField("hist_fs", 0, 1) { histFs = it }
         intField("spool_pages", 0, 9_999_999) { spoolPages = it }
         intField("spool_spill", 0, 9_999_999) { spoolSpill = it }
         intField("spool_replay", 0, 9_999_999) { spoolReplay = it }

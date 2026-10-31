@@ -92,6 +92,7 @@ fun SheetHost(m: AppModel) {
             "ota" -> { title = "Aktualizacja firmware (OTA & GitHub)"; icon = "upload" }
             "sesja" -> { title = "Sesja operatora & Firebase"; icon = "session" }
             "bufor" -> { title = "Bufor offline"; icon = "logs" }
+            "histfs" -> { title = "Zapis historii na flash"; icon = "logs" }
             "alarmy" -> { title = "Alarmy dymu i przegrzania"; icon = "warn" }
             "widgets" -> { title = "Kafelki aplikacji"; icon = "dashboard" }
             "chartSeries" -> { title = "Wybór serii wykresu"; icon = "chart" }
@@ -124,6 +125,7 @@ fun SheetHost(m: AppModel) {
             id == "ota" -> OtaSheet(m)
             id == "sesja" -> SessionSheet(m)
             id == "bufor" -> OfflineBufferSheet(m)
+            id == "histfs" -> HistFsSheet(m)
             id == "alarmy" -> AlarmSheet(m)
             id == "widgets" -> DashboardWidgetsSheet(m)
             id == "chartSeries" -> ChartSeriesSheet(m)

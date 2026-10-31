@@ -1151,6 +1151,23 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     /**
+     * [0.31.64] Zapis historii na flash centrali (firmware v3.57.4+).
+     * `null` = firmware nie przysyła pola `hist_fs`, czyli jest starszy.
+     */
+    fun histFsState(): Boolean? =
+        if (!S.hasData("hist_fs")) null else S.histFs == 1
+
+    /** Włącza/wyłącza dopisywanie hist_short.csv i hist_long.csv na flash. */
+    fun setHistFs(on: Boolean) {
+        send(if (on) "histfs_wl" else "histfs_wyl")
+    }
+
+    /** Usuwa oba pliki historii — centrala robi to przy najbliższym restarcie. */
+    fun clearHistFiles() {
+        send("histfs_czysc")
+    }
+
+    /**
      * Sends a command without mutating reported device state. Optional [onAck] is for a
      * transient UI acknowledgement only; the fresh RTDB snapshot remains authoritative.
      */
