@@ -1,0 +1,87 @@
+--- firmware-patch/v3.57.2-raport-zawieszenia/main_centrala.cpp	2026-10-31 04:15:40.364497163 +0000
++++ firmware-patch/v3.57.3-timeout-tls/main_centrala.cpp	2026-10-31 05:08:22.406726498 +0000
+@@ -1,3 +1,43 @@
++// FIRMWARE_VERSION v3.57.2 -> v3.57.3 (2026-10-31) — UZBROJENIE TIMEOUTU TLS PRZED KAZDYM fbApp.loop().
++// Co: dwa miejsca, ktore wolaly fbApp.loop() BEZ uzbrojonego timeoutu, dostaja
++//     przed wywolaniem ten sam komplet co petle oczekiwania:
++//       setHandshakeTimeout(4000) + applyFbSockTimeouts(8) + applyTcpKeepalive.
++//     Miejsca: (1) pompa konca iteracji tgTaskFn (co 100 ms), (2) krotka
++//     sciezka fbInitialize() przy juz zainicjowanej aplikacji.
++// Problem: 31.10.2026 o 04:09:00 tgTask zamilkl na 300 s tuz po
++//     "FB-CMD get_error TIMEOUT t=5005ms". Nadzor zrestartowal centrale
++//     o ~04:14. Log konczy sie dokladnie na tym timeoucie — wszystko po nim
++//     zginelo, bo logFlushDoFS() jest wolane wylacznie z tgTaskFn co 5 s.
++// Przyczyna (potwierdzona zrodlowo, nie zgadywana):
++//   1. Sciezka bledu get()/set() robi fbSSLClient.stop().
++//   2. stop() w WiFiClientSecure ZERUJE handshake_timeout
++//      (arduino-esp32 issue #6077, PR #5945 — "clears ssl_client in several
++//      places, which sets handshake_timeout to 0"). Domyslna wartosc
++//      w konstruktorze to 120000 ms, wiec po stop() kolejne connect() moze
++//      czekac do 2 minut na handshake albo wisiec bezterminowo.
++//   3. Pompa na koncu iteracji wolala fbApp.loop() bez ponownego uzbrojenia
++//      timeoutu — czyli dokladnie na gniazdzie po stop(), w scenariuszu opisanym
++//      we wlasnym komentarzu przy tym miejscu ("po stop() na martwym gniazdku
++//      fbApp.loop() moze zablokowac").
++//   4. tgTask nie jest zapisany do Task WDT (swiadomie — obsluguje blokujace
++//      TLS), wiec nic tego nie przerwie. Reaguje dopiero nadzor po 300 s.
++// Research: mobizt (autor FirebaseClient, dyskusja #203) — "nie ma sposobu,
++//     by wyjsc z tego procesu, jesli uzywasz WiFiClientSecure; czas blokady
++//     connect() i handshake zalezy od ustawien timeoutu klienta SSL". Issue #333
++//     pokazuje ten sam wzorzec: po smierci gniazda w polowie odpowiedzi
++//     available() zwraca 0 i wewnetrzna petla biblioteki nie konczy sie.
++// Naprawa: timeouty uzbrajane PRZED kazdym fbApp.loop(), tak jak juz bylo
++//     w fbCzekajImpl() (tam co 10 ms). To nie zmienia logiki — tylko stan
++//     gniazda, ktory stop() wyczyscil. Zero zmian w progach, CB, formatach.
++// Diagnostyka: krotka sciezka fbInitialize() dostaje checkpointy FB_INIT
++//     BEFORE/AFTER — dotad raport po zawieszeniu nie mogl odroznic jej od
++//     FB_CMD/FB_SEND. Teraz odrozni.
++// Bez zmian: progi nadzoru, circuit breaker, telemetria, Telegram, OTA,
++//     historia, archiwum solarne, format /piec/status i /piec/cmd, rytm 15/7/2 s.
++//     Raport nadzoru z v3.57.2 (ostatni znacznik + NVS) zostaje bez zmian.
++//
++// ----------------------------------------------------------------------------
++//
+ // FIRMWARE_VERSION v3.57.1 -> v3.57.2 (2026-10-31) — RAPORT NADZORU MOWI, GDZIE STANELO.
+ // Co: wiadomosc Telegram wysylana po restarcie z nadzoru dostaje jedna linijke
+ //     z ostatnim znacznikiem kontrolnym zawieszonego zadania:
+@@ -5755,7 +5795,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.57.2";
++static const char* FIRMWARE_VERSION = "v3.57.3";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -42217,8 +42257,18 @@
+     // Auth juz jest uruchomiony. Nie wywoluj initializeApp() drugi raz — tylko
+     // zrob pojedynczy krok auth w tgTask i pozwol kolejnym iteracjom kontynuowac.
+     if (tgTaskHandle != nullptr) {
++      // [v3.57.3] Przed fbApp.loop() UZBRAJAMY timeouty. Powod: sciezka bledu
++      // get()/set() robi fbSSLClient.stop(), a stop() ZERUJE handshake_timeout
++      // (arduino-esp32 #6077 / PR #5945). Bez tego ponizsze loop() moze wejsc
++      // w connect() z domyslnym timeoutem 120 s albo bez limitu i zablokowac
++      // cale zadanie — dokladnie to, co zdarzylo sie 31.10 o 04:09.
++      // Czyste ustawienie stanu gniazda, zero zmiany logiki.
++      fbSSLClient.setHandshakeTimeout(4000);
++      applyFbSockTimeouts(fbSSLClient, 8);
++      diagCheckpoint(diagIdBiezacegoTasku(), DIAG_OP_FB_INIT, DIAG_STAGE_BEFORE);
+       fbApp.loop();
+       fbAppReady = fbApp.ready();
++      diagCheckpoint(diagIdBiezacegoTasku(), DIAG_OP_FB_INIT, DIAG_STAGE_AFTER);
+     }
+     return;
+   }
+@@ -45307,6 +45357,12 @@
+     // realnie wisialy w logu, sa juz odciete twardym limitem.
+     if (g_fbAppInitialized && WiFi.status() == WL_CONNECTED) {
+       diagCheckpoint(DIAG_TASK_TG, DIAG_OP_FB_LOOP, DIAG_STAGE_BEFORE);
++      // [v3.57.3] Uzbrojenie timeoutu przed pompa — patrz changelog na gorze
++      // pliku i ten sam komplet w krotkiej sciezce fbInitialize(). Bez tego
++      // po fbSSLClient.stop() (sciezka bledu get()/set()) to loop() wchodzi
++      // w connect() z wyzerowanym handshake_timeout i moze wisiec minutami.
++      fbSSLClient.setHandshakeTimeout(4000);
++      applyFbSockTimeouts(fbSSLClient, 8);
+       fbApp.loop();
+       fbAppReady = fbApp.ready();
+       diagCheckpoint(DIAG_TASK_TG, DIAG_OP_FB_LOOP, DIAG_STAGE_AFTER);
