@@ -1,0 +1,23 @@
+FIRMWARE 3.57.4 — PRZELACZNIK ZAPISU HISTORII NA FLASH + WILGOTNOSC
+===================================================================
+Baza: 3.57.3 (ta wersja ja zastepuje). Data: 2026-10-31.
+
+CO ROBI
+1) Nowe pole /piec/status: hist_fs (1 = zapis historii na flash WL, 0 = WYL).
+   Ustawienie w NVS centrali — przezywa restart. Domyslnie WLACZONE.
+2) Nowe komendy: histfs_wl / histfs_wyl / histfs_czysc.
+   histfs_czysc = oba pliki usuniete przy NASTEPNYM restarcie (bezpiecznie).
+3) Wilgotnosc 0,0 % z DHT22 jest traktowana jak BLAD odczytu (byla: pomiar).
+   Koniec falszywych zer w telemetrii i w plikach.
+
+CZEGO NIE RUSZA
+   Firebase (telemetria co minute), bufory RAM, /api/history*, wykresy,
+   WDT, nadzor, TLS z 3.57.3, OTA, Telegram, format CSV.
+
+JAK WGRAC
+1. Podmien CALY folder src (pliki .h tez).
+2. Zbuduj i wgraj (OTA albo kabel).
+3. Ustawienia -> ma byc v3.57.4.
+4. Ustawienia -> "Zapis historii na flash" -> ma byc WLACZONY.
+
+NIE WGRYWAC 3.55.3-3.55.8 (wycofane).
