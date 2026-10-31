@@ -1,0 +1,104 @@
+═══════════════════════════════════════════════════════════════
+  FIRMWARE v3.57.2 — INSTRUKCJA WGRANIA
+  Data: 2026-10-31
+═══════════════════════════════════════════════════════════════
+
+WERSJA PODBITA: TAK (3.57.1 -> 3.57.2)
+
+CO TO DAJE
+----------
+Po restarcie z nadzoru wiadomosc na Telegramie mowi, GDZIE zadanie
+stanelo. Dotad bylo tylko "tgTask nie dalo znaku zycia przez 300 s"
+i nic wiecej.
+
+PRZYKLAD nowej wiadomosci:
+
+    Wrocilem po automatycznym restarcie.
+    Zadanie "tgTask (Telegram i Firebase)" nie dalam znaku zycia przez 300 s.
+    Ostatni znacznik: FB_SEND / BEFORE (po 11520 s pracy, wolna pamiec 94 kB)
+    Restart zrobil nadzor w firmware — nie bylo potrzebne wyciaganie wtyczki.
+    To juz restart numer 1 w ciagu 30 minut.
+
+CO ZNACZA "Ostatni znacznik"
+----------------------------
+To OSTATNIA CZYNNOSC, jaka zadanie zdazylo zglosic przed zamilknieciem.
+Nazwy sa techniczne, ale mowia wprost, gdzie szukac:
+
+    FB_SEND    - wysylka statusu do Firebase
+    FB_CMD     - odbior polecen z Firebase
+    FB_LOOP    - obsluga polaczenia Firebase
+    TG_POST    - wysylka wiadomosci na Telegram
+    TG_CONNECT - laczenie z serwerem Telegramu
+    TG_POLL    - odbior komend Telegramu
+    WIFI_DNS   - tlumaczenie adresu (DNS)
+    TG_ITER    - poczatek obiegu petli (zadanie zyje)
+    TG_COMMAND - wykonywanie polecenia z kolejki
+    HIST_FS    - zapis historii na dysk
+    LOG_FS     - zapis logu na dysk
+
+BEFORE / AFTER = przed / po wejsciu w te czynnosc.
+Jesli widzisz "FB_SEND / BEFORE", zadanie weszlo w wysylke statusu
+i z niej nie wrocilo.
+
+"po 11520 s pracy" = uptime w chwili ostatniego znacznika (3 godz 12 min).
+"wolna pamiec 94 kB" = ile zostalo wolnego RAM w tym momencie.
+
+Jesli zamiast tego zobaczysz:
+    Ostatni znacznik: brak — zadanie nie zapisalo ani jednego znacznika od startu.
+to znaczy, ze zawiesilo sie PRZED pierwsza iteracja swojej petli.
+To tez jest odpowiedz.
+
+CZEGO TO NIE ROBI
+-----------------
+NIE naprawia przyczyny zawieszenia. To diagnoza, nie lek.
+Progi nadzoru (5 min ciszy, 3 restarty, okno 30 min) zostaja bez zmian.
+Logika pieca, pomp, serwa, alarmow, historii, Telegrama i Firebase -
+bez zmian. Format /piec/status i /piec/cmd - bez zmian.
+
+CZY WARTO TERAZ WGRYWAĆ
+-----------------------
+Tak, ale bez pospiechu. Zmiana dotyczy wylacznie tego, co sie zapisuje
+i wysyla PO restarcie z nadzoru. Jesli centrala chodzi stabilnie,
+mozesz wgrac przy okazji.
+
+UWAGA: aplikacja 0.31.63 NIE jest do tego potrzebna i nie wymaga zmian.
+
+
+KROK 1 — PODMIEŃ PLIK
+---------------------
+Skopiuj main_centrala.cpp z tej paczki do:
+
+    C:\Users\Rafcio\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp
+
+NADPISZ istniejacy plik.
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h.
+
+Kopia bezpieczenstwa przed podmiana (PowerShell):
+
+    Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-3.57.1" -Force
+
+
+KROK 2 — WGRANIE
+----------------
+PlatformIO -> Upload  (albo w terminalu: pio run -t upload)
+
+
+KROK 3 — SPRAWDZENIE (30 sekund)
+--------------------------------
+1. Ustawienia (albo komenda /status w Telegramie) -> wersja firmware: v3.57.2
+2. Nic wiecej nie trzeba klikac. Nowa linia pojawi sie dopiero przy
+   nastepnym restarcie z nadzoru - wtedy od razu bedzie wiadomo, gdzie stanelo.
+
+
+COFNIECIE
+---------
+Podmiana pliku na wersje z paczki 3.57.1 i ponowne wgranie.
+Aplikacja nie wymaga wtedy zadnych zmian.
+
+
+PLIKI
+-----
+- main_centrala.cpp                           (pelny plik do podmiany)
+- main_centrala-v3.57.1-to-v3.57.2.patch      (sama roznica wobec 3.57.1)
+- README.md                                   (szczegoly + tabele)
+- SHA256SUMS.txt                              (sumy kontrolne)
