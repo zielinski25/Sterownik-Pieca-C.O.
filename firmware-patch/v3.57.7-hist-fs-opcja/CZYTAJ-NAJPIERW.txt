@@ -1,20 +1,54 @@
 FIRMWARE 3.57.7 - co zrobic w 3 krokach
 =======================================
-1. Rozpakuj SterownikCO-v3.57.7-HIST-FS-OPCJA.zip.
-2. Podmien CALY folder src w projekcie PlatformIO (16 plikow, nie tylko main_centrala.cpp).
-3. Skompiluj i wgraj (pio run -t upload albo OTA z panelu).
-   Po restarcie wersja w panelu i aplikacji: v3.57.7
+Zmienia sie JEDEN plik: main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+
+KROK 1 - PODMIEN PLIK
+---------------------
+Skopiuj main_centrala.cpp z tej paczki do:
+
+    %USERPROFILE%\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp
+
+NADPISZ istniejacy plik. Nic wiecej nie zmieniaj.
+
+Kopia bezpieczenstwa przed podmiana (PowerShell, jedna linia):
+
+    Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-3.57.6" -Force
+
+KROK 2 - WGRANIE
+----------------
+PlatformIO -> Upload   (albo w terminalu: pio run -t upload)
+
+KROK 3 - SPRAWDZENIE (1 minuta)
+-------------------------------
+1. Ustawienia -> wersja firmware: v3.57.7
+2. Telegram -> menu -> "Wyslij wykresy":
+   - zapis WYLACZONY albo pliki wyczyszczone:
+       "hist_short.csv: brak pliku - zapis historii na flash jest WYLACZONY..."
+     (zamiast dawnego "wysylka nieudana - kopiuje na SD")
+   - zapis WLACZONY i pliki sa: dokumenty przychodza jak dotad
+3. log_ustawien.txt wysyla sie zawsze.
 
 CO NOWEGO
 ---------
-Bot na Telegramie nie pisze juz "wysylka nieudana - kopiuje na SD", gdy pliku
-historii po prostu nie ma (np. po czyszczeniu albo przy wylaczonym zapisie).
-Pisze wprost:
-  - "brak pliku - historia na flashu jest pusta (np. po czyszczeniu)"
-  - "brak pliku - zapis historii na flash jest WYLACZONY - wlacz go, aby pliki wrocily"
-W obu przypadkach NIE probuje wysylac ani kopiowac nieistniejacego pliku na SD.
+Bot nie zglasza juz bledu wysylki, gdy pliku historii po prostu nie ma.
+Pisze wprost, czy historia jest pusta (po czyszczeniu), czy zapis jest
+wylaczony. W obu przypadkach NIE probuje wysylac ani kopiowac
+nieistniejacego pliku na SD.
 
 BEZ ZMIAN
 ---------
-Zapis historii, przelacznik i jego NVS, kanal A1, format CSV, Firebase, OTA.
-Ta wersja nie odtwarza usunietych plikow - powstana od nowa po WLACZENIU zapisu.
+Zapis historii, przelacznik i jego NVS, kanal A1, format CSV, oba panele,
+Firebase, OTA. Ta wersja NIE odtwarza usunietych plikow - powstana od nowa
+po WLACZENIU zapisu (krotka po ~5 min, dluga przy pierwszym zdarzeniu).
+
+COFNIECIE
+---------
+Przywroc main_centrala.cpp.bak-3.57.6 i wgraj ponownie.
+
+PLIKI W PACZCE
+--------------
+- src/main_centrala.cpp                     <- TEN plik podmieniasz
+- src/*.h                                   <- bez zmian, nie ruszaj
+- main_centrala-v3.57.6-to-v3.57.7.patch     <- sama roznica (podglad)
+- README.md, SHA256SUMS.txt

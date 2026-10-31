@@ -37,9 +37,14 @@ Firebase, OTA, nadzór, TLS.
 
 ## Jak wgrać
 
-1. Rozpakuj ZIP, podmień **cały** folder `src` w projekcie PlatformIO.
+Zmienia się **jeden plik**: `main_centrala.cpp`. Pliki `.h` są identyczne jak
+w 3.57.6 (sprawdzone `diff -rq`) — **nie ruszaj ich i nie nadpisuj `src/secrets.h`**.
+
+1. Podmień `src/main_centrala.cpp` w projekcie PlatformIO (kopia: `.bak-3.57.6`).
 2. `pio run -t upload` albo OTA z panelu (karta „Aktualizacja”).
 3. Po restarcie wersja w panelu i aplikacji: **v3.57.7**.
+
+Kontrola, że masz właściwy plik: `sha256sum -c SHA256SUMS.txt`.
 
 ## Czego ta wersja NIE zmienia
 
