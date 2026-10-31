@@ -65,14 +65,45 @@ function Szukaj-Sdk {
 }
 
 # -- 1. paczka ----------------------------------------------------------------
-if (-not $Zip) {
-  $paczka = Get-ChildItem -LiteralPath "$env:USERPROFILE\Downloads", ([Environment]::GetFolderPath('Desktop')) `
-    -Filter 'SterownikCO-Android-v*.zip' -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime | Select-Object -Last 1
-  if (-not $paczka) {
-    throw "Nie znalazlem zadnej paczki SterownikCO-Android-v*.zip w Pobranych ani na Pulpicie. Podaj sciezke: -Zip ""C:\...\plik.zip"""
+function Szukaj-Paczki {
+  # Folder "Pobrane" bywa przeniesiony do OneDrive, a systemowy Downloads nie zawsze
+  # jest w %USERPROFILE%\Downloads - dlatego pytamy rejestr i sprawdzamy kilka miejsc.
+  $script:korzenie = New-Object System.Collections.Generic.List[string]
+  foreach ($p in @("$env:USERPROFILE\Downloads", "$env:USERPROFILE\Pobrane",
+                   "$env:USERPROFILE\OneDrive\Pobrane", "$env:USERPROFILE\OneDrive\Downloads",
+                   "$env:USERPROFILE\OneDrive\Pulpit", "$env:USERPROFILE\Desktop",
+                   "$env:USERPROFILE\Pulpit")) {
+    if ((Test-Path -LiteralPath $p) -and -not $korzenie.Contains($p)) { $korzenie.Add($p) }
   }
-  $Zip = $paczka.FullName
+  $klucze = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders' -ErrorAction SilentlyContinue
+  if ($klucze) {
+    foreach ($k in @('{374DE290-123F-4565-9164-39C4925E467B}', 'Desktop')) {
+      $d = $klucze.$k
+      if ($d) {
+        $d = [Environment]::ExpandEnvironmentVariables($d)
+        if ((Test-Path -LiteralPath $d) -and -not $korzenie.Contains($d)) { $korzenie.Add($d) }
+      }
+    }
+  }
+  foreach ($r in $korzenie) {
+    $f = Get-ChildItem -LiteralPath $r -Filter 'SterownikCO-Android-v*.zip' -File -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime | Select-Object -Last 1
+    if ($f) { return $f.FullName }
+  }
+  # Ostatnia szansa: caly profil uzytkownika (pierwsze 3 poziomy folderow).
+  $f = Get-ChildItem -LiteralPath $env:USERPROFILE -Filter 'SterownikCO-Android-v*.zip' -File `
+        -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime | Select-Object -Last 1
+  if ($f) { return $f.FullName }
+  return $null
+}
+
+if (-not $Zip) {
+  $Zip = Szukaj-Paczki
+  if (-not $Zip) {
+    throw ("Nie znalazlem paczki SterownikCO-Android-v*.zip. Szukalem w: " + ($korzenie -join '; ') +
+           " i w calym profilu. Pobierz ZIP z linku (przycisk pobierania) albo podaj sciezke: -Zip ""C:\...\plik.zip""")
+  }
 }
 if (-not (Test-Path -LiteralPath $Zip)) { throw "Nie ma pliku: $Zip" }
 Write-Host "Paczka: $Zip" -ForegroundColor Cyan
@@ -138,7 +169,12 @@ if ($LASTEXITCODE -ne 0) {
 
 # -- 5. APK na Pulpit ---------------------------------------------------------
 $apk = Join-Path $proj 'app\build\outputs\apk\debug\app-debug.apk'
-if (-not (Test-Path -LiteralPath $apk)) { throw "Gradle zameldowal sukces, ale nie ma pliku: $apk" }
+if (-not (Test-Path -LiteralPath $apk)) {
+  $g = Get-ChildItem -LiteralPath (Join-Path $proj 'app\build\outputs') -Filter '*.apk' -File -Recurse -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime | Select-Object -Last 1
+  if (-not $g) { throw "Gradle zameldowal sukces, ale nie ma zadnego APK w app\build\outputs" }
+  $apk = $g.FullName
+}
 $cel = Join-Path ([Environment]::GetFolderPath('Desktop')) "SterownikCO-$wersja-debug.apk"
 Copy-Item -LiteralPath $apk -Destination $cel -Force
 
