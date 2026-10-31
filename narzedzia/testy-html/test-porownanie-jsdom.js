@@ -2,6 +2,7 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 const fs = require('fs');
 const path = require('path');
 const FILE = process.env.PLIK || path.join(__dirname, '..', '..', 'porownanie-wykresow.html');
+const FILE_WBUD = '/tmp/dom/porownanie-wbudowane.html';
 
 const draw = { stroke:0, fillText:0, lineTo:0, fillRect:0 };
 function fakeCtx(){
@@ -45,14 +46,14 @@ function netMock(cfg, calls){
   };
 }
 
-async function load(cfg){
+async function load(cfg, plik){
   const errors = [];
   const calls = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', e => errors.push('jsdomError: ' + e.message));
   vc.on('error', e => errors.push('console.error: ' + e));
   vc.on('warn', () => {});
-  const dom = await JSDOM.fromFile(FILE, {
+  const dom = await JSDOM.fromFile(plik || FILE, {
     runScripts:'dangerously', pretendToBeVisual:true, url:'https://test.local/porownanie.html',
     virtualConsole: vc,
     beforeParse(win){
@@ -77,14 +78,13 @@ async function load(cfg){
   {
     const d = r1.doc;
     // każdy element, którego szuka skrypt
-    const ids = ['fbEmail','fbPass','fbKey','rememberPass','btnLogout','credBox','authLine','fbFrom','fbTo','btnFb','btnFbClear','fbBar','fbStatus','drop','fileIn','fileFmt','fileStatus','btnFileClear','chips','modeSeg','tolS','btnCsv','btnPng','charts','boxA','boxB','boxSingle','cvA','cvB','cvS','capA','capB','capSingle','capSingleInfo','statSamples','statDiff','statTable','statTop'];
+    const ids = ['fbEmail','fbPass','fbKey','authBox','btnLogin','authLine','fbFrom','fbTo','btnFb','btnFbClear','fbBar','fbStatus','drop','fileIn','fileFmt','fileStatus','btnFileClear','chips','modeSeg','tolS','btnCsv','btnPng','charts','boxA','boxB','boxSingle','cvA','cvB','cvS','capA','capB','capSingle','capSingleInfo','statSamples','statDiff','statTable','statTop'];
     const missing = ids.filter(i => !d.getElementById(i));
     A('wszystkie elementy istnieją ('+ids.length+')', missing.length===0, missing.join(','));
     A('brak błędów skryptu', r1.errors.length===0, r1.errors.slice(0,3).join(' | '));
     A('authLine ostrzega o haśle', /wpisz hasło/i.test(d.getElementById('authLine').textContent), d.getElementById('authLine').textContent);
-    A('sekcja konta rozwinięta', d.getElementById('credBox').open === true);
+    A('pole hasła widoczne', d.getElementById('authBox').style.display === 'block', d.getElementById('authBox').style.display);
     A('brak zapytań sieciowych', r1.calls.length===0, r1.calls.join(','));
-    A('checkbox zapamiętaj zaznaczony', d.getElementById('rememberPass').checked === true);
     A('3 przyciski trybu', d.querySelectorAll('#modeSeg button').length===3);
     A('14 kanałów na liście', d.querySelectorAll('#chips button, #chips .chip, #chips label, #chips input').length>=14, d.getElementById('chips').innerHTML.length);
     A('data w polach zakresu', !!d.getElementById('fbFrom').value && !!d.getElementById('fbTo').value, d.getElementById('fbFrom').value + '..' + d.getElementById('fbTo').value);
@@ -105,7 +105,7 @@ async function load(cfg){
     A('rysowanie poszło (stroke>0)', draw.stroke > 0, draw.stroke);
     A('statystyki wypełnione', d.getElementById('statSamples').textContent.length > 0 || d.getElementById('statSamples').innerHTML.length > 0);
     A('tabela kanałów wypełniona', d.getElementById('statTable').innerHTML.length > 100, d.getElementById('statTable').innerHTML.length);
-    A('konto zwinięte po sukcesie', d.getElementById('credBox').open === false);
+    A('pole hasła schowane po sukcesie', d.getElementById('authBox').style.display === 'none', d.getElementById('authBox').style.display);
     A('refresh zapisany w localStorage', r2.w.localStorage.getItem('piec_fb_ref_token') === 'RT2', r2.w.localStorage.getItem('piec_fb_ref_token'));
 
     // przełączanie trybów klikaniem
@@ -118,11 +118,10 @@ async function load(cfg){
     A('tryb ustawiony na ostatni', ['two','overlay','diff'].includes(r2.st().mode), r2.st().mode);
     A('canvas cvS rysowany w pojedynczym widoku', d.getElementById('boxSingle').classList.contains('hidden') === false || r2.st().mode === 'two', d.getElementById('boxSingle').className);
 
-    // wylogowanie
-    d.getElementById('btnLogout').click();
-    A('wyloguj czyści token', r2.w.localStorage.getItem('piec_fb_ref_token') === null, r2.w.localStorage.getItem('piec_fb_ref_token'));
-    A('wyloguj czyści hasło', r2.w.localStorage.getItem('piec_fb_password') === null);
-    A('po wylogowaniu otwarte konto', d.getElementById('credBox').open === true);
+    // wymazanie sesji (funkcja nadal jest, choć przycisku już nie ma w UI)
+    r2.w.eval('forgetAuth()');
+    A('forgetAuth czyści token', r2.w.localStorage.getItem('piec_fb_ref_token') === null, r2.w.localStorage.getItem('piec_fb_ref_token'));
+    A('forgetAuth czyści hasło', r2.w.localStorage.getItem('piec_fb_password') === null);
     r2.dom.window.close();
   }
 
@@ -141,7 +140,7 @@ async function load(cfg){
   {
     const d = r4.doc;
     A('komunikat o odrzuceniu', /Logowanie odrzucone/.test(d.getElementById('fbStatus').textContent), d.getElementById('fbStatus').textContent);
-    A('konto rozwinięte', d.getElementById('credBox').open === true);
+    A('pole hasła pokazane', d.getElementById('authBox').style.display === 'block', d.getElementById('authBox').style.display);
     A('brak danych', r4.st().A.length === 0);
     r4.dom.window.close();
   }
@@ -191,6 +190,21 @@ async function load(cfg){
     A('pokazuje obie wartości (A i B)', /99/.test(top) && /60/.test(top));
     A('jest kolumna przesunięcia', /przesuni/.test(top));
     r5.dom.window.close();
+  }
+
+  console.log('\n[6] hasło wpisane w plik (FB_HASLO_WBUDOWANE) → zero pytań, zero okna');
+  {
+    const src = fs.readFileSync(FILE, 'utf8')
+      .replace('const FB_HASLO_WBUDOWANE = "";', 'const FB_HASLO_WBUDOWANE = "TajneHaslo123";');
+    fs.writeFileSync(FILE_WBUD, src);
+    const r6 = await load({}, FILE_WBUD);
+    const d = r6.doc;
+    A('brak błędów skryptu', r6.errors.length===0, r6.errors.slice(0,3).join(' | '));
+    A('zalogował się sam', r6.calls.login === 1, r6.calls.login);
+    A('pole hasła ukryte', d.getElementById('authBox').style.display === 'none', d.getElementById('authBox').style.display);
+    A('dane pobrane', r6.st().A.length > 0, r6.st().A.length);
+    A('authLine: zalogowano', /zalogowano/i.test(d.getElementById('authLine').textContent), d.getElementById('authLine').textContent);
+    r6.dom.window.close();
   }
 
   console.log('\nWYNIK jsdom: ' + ok + ' OK, ' + bad + ' FAIL');

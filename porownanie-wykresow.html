@@ -76,31 +76,30 @@ td:first-child,th:first-child{text-align:left}
 </head>
 <body>
 
-<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v3 · 31.10</span></h1>
+<h1>PORÓWNANIE WYKRESÓW · Firebase ↔ plik lokalny <span style="font-size:12px;opacity:.55;font-weight:400">v4 · 31.10</span></h1>
 <div class="sub">Dwa źródła historii obok siebie: chmura (RTDB) i plik pobrany z centrali. Ta sama skala, ta sama os czasu, różnice widać wprost.<br>
-<span style="opacity:.75">Logowanie: plik wchodzi <b>sam</b>, jeśli panel centrali zapamiętał sesję — i od razu pobiera ostatnią dobę.</span></div>
+<span style="opacity:.75">Logowanie: plik wchodzi <b>sam</b> — konto jest w środku, hasło pyta tylko raz — i od razu pobiera ostatnią dobę.</span></div>
 
 <div class="row">
   <!-- ───────────── A: FIREBASE ───────────── -->
   <div class="card a">
     <h2>A · Firebase (chmura)</h2>
-    <div class="status" id="authLine">Sprawdzam zapamiętaną sesję…</div>
-    <details id="credBox" style="margin:6px 0 2px">
-      <summary style="cursor:pointer;font-size:11.5px;opacity:.75;user-select:none">
-        Konto, hasło i klucz API <span style="opacity:.7">(rozwijasz tylko, gdy trzeba wpisać hasło)</span>
-      </summary>
-      <label style="margin-top:9px">E-mail konta pieca</label>
+    <div class="status" id="authLine">Łączę z Firebase…</div>
+
+    <!-- Konto i klucz API są wpisane w plik, ale schowane — nie ma czego wypełniać.
+         Pole hasła pojawia się WYŁĄCZNIE wtedy, gdy ta przeglądarka nie ma
+         jeszcze zapamiętanego logowania (raz na komputer). -->
+    <div style="display:none">
       <input type="text" id="fbEmail" value="piec_co_boot@akwarium.local" autocomplete="username">
-      <label>Hasło</label>
-      <input type="password" id="fbPass" placeholder="hasło do konta Firebase" autocomplete="current-password">
-      <label style="display:flex;gap:7px;align-items:center;margin-top:8px;font-size:11.5px;text-transform:none;letter-spacing:0">
-        <input type="checkbox" id="rememberPass" checked style="width:auto;margin:0">
-        Zapamiętaj hasło i sesję (potem plik wchodzi sam)
-      </label>
-      <label style="margin-top:9px">Klucz API</label>
       <input type="text" id="fbKey" value="AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU">
-      <button id="btnLogout" class="small" style="margin-top:8px">Wyloguj / zapomnij hasło</button>
-    </details>
+    </div>
+    <div id="authBox" style="display:none;margin-top:8px">
+      <label>Hasło do konta pieca — wpisz raz, potem plik wchodzi sam</label>
+      <div style="display:flex;gap:8px">
+        <input type="password" id="fbPass" placeholder="hasło" autocomplete="current-password" style="flex:1">
+        <button class="primary" id="btnLogin">Zaloguj</button>
+      </div>
+    </div>
     <div class="grid2" style="margin-top:8px">
       <div><label>Od</label><input type="date" id="fbFrom"></div>
       <div><label>Do</label><input type="date" id="fbTo"></div>
@@ -181,13 +180,12 @@ td:first-child,th:first-child{text-align:left}
 <div class="card wide"><h2>Największe różnice (B − A) — co dokładnie odbiega</h2><div id="statTop" class="note" style="margin:0">Brak danych.</div></div>
 
 <div class="note">
-  <b>Logowanie:</b> plik korzysta z tej samej zapamiętanej sesji, co panel centrali
-  (<code>Piec.html</code>) — jeśli logowałeś się tam z zaznaczonym „zapamiętaj",
-  to narzędzie wejdzie samo i od razu pobierze ostatnią dobę. Hasło i token są trzymane
-  <b>tylko w pamięci tej przeglądarki</b> (te same klucze: <code>piec_fb_email</code>,
-  <code>piec_fb_password</code>, <code>piec_fb_ref_token</code>), nigdzie nie są wysyłane poza Google.
-  Przycisk „Wyloguj / zapomnij hasło" czyści je. Poza logowaniem i odczytem bazy
-  żadne dane nie opuszczają przeglądarki.
+  <b>Logowanie:</b> nie ma czego wypełniać — konto i klucz API są w pliku, a plik
+  wchodzi sam, korzystając z sesji zapamiętanej przez panel centrali (<code>Piec.html</code>)
+  albo przez to narzędzie. Hasło pytamy <b>raz na komputer</b> i od tej pory nie wracamy do tematu.
+  Hasło i token leżą wyłącznie w pamięci tej przeglądarki (klucze <code>piec_fb_password</code>,
+  <code>piec_fb_ref_token</code>), nigdzie nie są wysyłane poza Google. Poza logowaniem
+  i odczytem bazy żadne dane nie opuszczają przeglądarki.
 </div>
 
 <script>
@@ -202,6 +200,11 @@ const TELEM    = "/piec/telemetry/1m/v1/";
 
 const DEFAULT_FB_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU";
 const DEFAULT_FB_EMAIL   = "piec_co_boot@akwarium.local";
+
+// Hasło można wpisać TUTAJ (jeden raz, w pliku) — wtedy narzędzie nie zapyta
+// o nie nigdy, nawet po wyczyszczeniu przeglądarki. Plik z wpisanym hasłem
+// jest poufny: nie wysyłaj go na publiczny link.
+const FB_HASLO_WBUDOWANE = "";
 
 /* ── Pamięć przeglądarki — CELOWO te same klucze i ta sama logika co w Piec.html.
       Dzięki temu sesja zapamiętana w panelu centrali jest widoczna także tutaj:
@@ -227,7 +230,7 @@ const safeStorage = {
       sessionStorage.removeItem(key); } catch (e) {}
   }
 };
-const savedPass = () => safeStorage.get('piec_fb_password') || '';
+const savedPass = () => FB_HASLO_WBUDOWANE || safeStorage.get('piec_fb_password') || '';
 
 // indeks w tablicy wartości = kolejność poniżej (0..13)
 const CH = [
@@ -414,10 +417,8 @@ function authKey(){
 function authEmail(){
   return (($('fbEmail') && $('fbEmail').value) || safeStorage.get('piec_fb_email') || DEFAULT_FB_EMAIL).trim();
 }
-function rememberOn(){
-  const c = $('rememberPass');
-  return c ? !!c.checked : true;
-}
+// Zawsze zapamiętujemy — plik ma wchodzić sam, bez pytania.
+function rememberOn(){ return true; }
 
 /* Zapamiętanie sesji — te same klucze, których używa Piec.html. */
 function authSave(j, email, pass){
@@ -917,6 +918,13 @@ function setAuthLine(msg, cls){
   el.className = 'status' + (cls ? ' ' + cls : '');
 }
 
+// Pole hasła jest domyślnie ukryte. Pokazuje się tylko wtedy, gdy nie ma
+// z czego się zalogować — czyli raz na komputer, nie przy każdym otwarciu.
+function showAuthBox(tak){
+  const b = $('authBox');
+  if (b) b.style.display = tak ? 'block' : 'none';
+}
+
 function setBar(id, frac){
   const bar = $(id);
   bar.classList.toggle('on', frac != null);
@@ -963,7 +971,8 @@ function isoMinus(days){
     setStatus('fbStatus', 'Łączenie z Firebase…');
     try {
       const how = await ensureAuth();
-      setAuthLine('zalogowano (' + how + ')', 'ok');
+      setAuthLine('zalogowano — ' + how, 'ok');
+      showAuthBox(false);
       setStatus('fbStatus', 'Pobieranie…');
       const rows = await fbFetchRange(dayFromInput(from), dayFromInput(to), (f, i, n) => {
         setBar('fbBar', f);
@@ -978,8 +987,8 @@ function isoMinus(days){
     } catch(e){
       setBar('fbBar', null);
       setStatus('fbStatus', 'Błąd: ' + e.message, 'err');
-      setAuthLine('nie zalogowano — rozwiń „Konto, hasło i klucz API" i wpisz hasło', 'err');
-      if ($('credBox')) $('credBox').open = true;
+      setAuthLine('nie zalogowano — wpisz hasło poniżej (raz na ten komputer)', 'err');
+      showAuthBox(true);
       return false;
     } finally { $('btnFb').disabled = false; }
   }
@@ -990,11 +999,10 @@ function isoMinus(days){
     state.A = []; setStatus('fbStatus', 'Nie pobrano.'); render();
   };
 
-  if ($('btnLogout')) $('btnLogout').onclick = () => {
-    forgetAuth();
-    if ($('fbPass')) $('fbPass').value = '';
-    setAuthLine('wylogowano — wpisz hasło, żeby połączyć ponownie', 'warn');
-    if ($('credBox')) $('credBox').open = true;
+  // Pole hasła: jedno kliknięcie i od tej pory plik wchodzi sam.
+  if ($('btnLogin')) $('btnLogin').onclick = () => {
+    if (!$('fbPass').value.trim()) { setAuthLine('wpisz hasło', 'err'); showAuthBox(true); return; }
+    fetchFromFirebase();
   };
 
   // ── plik
@@ -1091,15 +1099,15 @@ function isoMinus(days){
 
     const maToken = !!safeStorage.get('piec_fb_token') || !!safeStorage.get('piec_fb_ref_token');
     if (!maToken && !pss){
-      setAuthLine('brak zapamiętanego logowania — rozwiń „Konto, hasło i klucz API" i wpisz hasło raz', 'warn');
-      if ($('credBox')) $('credBox').open = true;
+      setAuthLine('pierwsze uruchomienie na tym komputerze — wpisz hasło raz, potem już nie zapyta', 'warn');
+      showAuthBox(true);
       setStatus('fbStatus', 'Nie pobrano.');
       return;
     }
 
-    setAuthLine('łączę z zapamiętaną sesją…');
+    setAuthLine('łączę z Firebase…');
     const ok = await fetchFromFirebase();
-    if (ok && $('credBox')) $('credBox').open = false;
+    if (ok) showAuthBox(false);
   })();
 })();
 </script>

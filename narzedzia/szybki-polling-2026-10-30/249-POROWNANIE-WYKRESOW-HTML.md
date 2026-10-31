@@ -1,12 +1,13 @@
 # 249 — Porównanie wykresów: Firebase ↔ plik lokalny (drugi plik HTML)
 
-Data: 2026-10-31 · **wersja narzędzia: v3** (auto-logowanie + tabela największych różnic)
+Data: 2026-10-31 · **wersja narzędzia: v4** (bez okna logowania + tabela największych różnic)
 Plik: `porownanie-wykresow.html` (w korzeniu repo)
-**51 385 B · SHA-256 `4412f03ff22c71a8320b9d87b8998508201604e61c5b615c7d5b11e852aa4925`**
+**51 520 B · SHA-256 `fd9358b0b8be481eef788e894f2156ecff5b7f42ca30e31aaa21d9d391cfd6b7`**
 
 | wersja | Dysk | uwaga |
 |---|---|---|
-| **v3 (ta)** | **patrz `LINKI-2026-10-29.md`** | + tabela „Największe różnice” (diagnostyka skoków) |
+| **v4 (ta)** | **patrz `LINKI-2026-10-29.md`** | **bez okna logowania** — hasło pytane raz na komputer, potem zero pytań |
+| v3 | `1EuJkotLEVpuseQpeXKrvzos5315RRgYu` | + tabela „Największe różnice” |
 | v2 | `1mhffsci_QIm8qc1YHr-Aw2zoyzsM_rA8` | auto-logowanie, sama pobiera ostatnią dobę |
 | v1 | `1f0JiB2-JEYFxYhwoPxETh0wdigfJEhdf` (nazwa zmieniona na `…-v1-BEZ-AUTOLOGOWANIA.html`) | pytała o hasło za każdym otwarciem — **nie używać** |
 
@@ -94,6 +95,35 @@ były, średnia byłaby ogromna. Skoki to sprawa pojedynczych próbek:
    do pozycji wyjściowej; w chmurze i w archiwum widać to w tej samej sekundzie;
 3. **wilgotność** — skoki ±100 wymagają jeszcze potwierdzenia w pliku; tabela
    z 0a pokaże wprost, czy B ma tam 0, 99 czy 100.
+
+## 0c. v4 — nie ma czego wypełniać (31.10, na polecenie użytkownika)
+
+**Było:** rozwinięta sekcja „Konto, hasło i klucz API” z e-mailem, polem hasła,
+check boxem i przyciskiem „Wyloguj”. Wyglądało jak formularz do wypełniania.
+
+**Jest:**
+
+- **konto i klucz API są w pliku, ale niewidoczne** — nie ma czego uzupełniać,
+- plik **wchodzi sam**: token z pamięci → sesja zapamiętana przez panel → odświeżenie
+  bez hasła → hasło zapamiętane,
+- **pole hasła pojawia się tylko wtedy**, gdy nie ma z czego się zalogować —
+  czyli **raz na komputer**. Po pierwszym udanym logowaniu chowa się i nie wraca,
+- po zalogowaniu od razu pobiera ostatnią dobę i rysuje wykresy.
+
+### Chcesz zero pytań także przy pierwszym uruchomieniu?
+
+W pliku jest jedna linia (207):
+
+```javascript
+const FB_HASLO_WBUDOWANE = "";
+```
+
+Wpisz hasło w cudzysłów, zapisz plik — i wtedy **nigdy** o nic nie zapyta, nawet
+po wyczyszczeniu przeglądarki, na każdym komputerze.
+
+> **Uwaga, mówię wprost:** plik z wpisanym hasłem jest **poufny** — kto go ma, ma dostęp
+> do bazy pieca. Nie publikuj takiej kopii na publicznym linku (Dysk/GitHub).
+> Wersja podawana na Dysku ma tę linię **pustą** i dlatego jest bezpieczna.
 
 ## 1. Po co to jest
 
