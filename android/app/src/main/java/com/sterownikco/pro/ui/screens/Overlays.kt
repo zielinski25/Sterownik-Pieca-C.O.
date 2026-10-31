@@ -41,6 +41,7 @@ import com.sterownikco.pro.ui.screens.sheets.CzasSheet
 import com.sterownikco.pro.ui.screens.sheets.OfflineBufferSheet
 import com.sterownikco.pro.ui.screens.sheets.DashboardWidgetsSheet
 import com.sterownikco.pro.ui.screens.sheets.DymSheet
+import com.sterownikco.pro.ui.screens.sheets.HistFsSheet
 import com.sterownikco.pro.ui.screens.sheets.LogsSheet
 import com.sterownikco.pro.ui.screens.sheets.MieszadloSheet
 import com.sterownikco.pro.ui.screens.sheets.OverheatSheet

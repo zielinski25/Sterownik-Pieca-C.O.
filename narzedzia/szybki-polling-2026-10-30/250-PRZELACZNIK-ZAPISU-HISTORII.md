@@ -1,7 +1,9 @@
 > **DOKUMENT HISTORYCZNY.** Opisuje firmware **3.57.5**, który został wycofany:
 > symulacje (dokument 251) wykazały, że zanik prądu w trakcie zapisu zadania
 > czyszczenia potrafił zablokować historię na stałe. Aktualna wersja: **3.57.6**
-> (`14p8XKDBj9pwp7bOghICpOkGZ_Fa5wwhz`). Aplikacja 0.31.64 i `Piec.html` — bez zmian.
+> (`14p8XKDBj9pwp7bOghICpOkGZ_Fa5wwhz`). **Aplikacja 0.31.64 NIE SKOMPILOWAŁA SIĘ**
+> (`Overlays.kt:128 Unresolved reference 'HistFsSheet'`) — użyj **0.31.65**
+> (`1XkbooTIrGznNvS0pql2a9luBCzGLYaxM`). `Piec.html` — bez zmian.
 
 # 250 — Przełącznik „Zapis historii na flash" (firmware 3.57.5 + aplikacja 0.31.64 + Piec.html)
 
