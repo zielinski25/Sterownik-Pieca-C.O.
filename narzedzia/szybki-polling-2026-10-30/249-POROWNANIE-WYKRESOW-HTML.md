@@ -124,16 +124,39 @@ CSV: `hist_short.csv` — 14 kolumn, czas w kolumnie 13 (unix s);
 4. Wybierz sygnały i tryb widoku. Na dole statystyki i brakujące minuty.
 5. „Zapisz CSV" — pary (A, B, różnica). „Zapisz PNG" — obraz wykresów.
 
-## 8. Ograniczenia — mówię wprost
+## 8. Co sprawdzono i czego nie
 
-- **Nie testowałem tego w prawdziwej przeglądarce** — sandbox nie ma przeglądarki
-  ani dostępu do `firebaseio`. Sprawdzone automatycznie: składnia JS (`node --check`),
-  cztery scenariusze logowania na zaślepce DOM i sieci (**22 sprawdzenia, 22 OK**),
-  rysowanie w trzech trybach (**3/3**), parsery na danych wzorcowych.
-- Pierwsze uruchomienie u Ciebie to prawdziwy test — jak coś nie zagra, podeślij
-  komunikat z konsoli (F12 → Console).
-- Reguły bazy wymagają `auth != null`, więc **logowanie jest obowiązkowe** —
-  nie da się czytać anonimowo.
-- Podgląd w aplikacji (okienko z piaskownicą) bywa bez sieci i bez pamięci
-  przeglądarki — tam logowanie nie zadziała. Do tego pliku potrzebna jest
-  prawdziwa przeglądarka.
+**Sprawdzone 31.10 — w prawdziwym DOM (`jsdom`), nie na mojej zaślepce:
+`WYNIK jsdom: 34 OK, 0 FAIL`.** Test leży w repo: `narzedzia/testy-html/`
+(`test-porownanie-jsdom.js` + `README.md` — jak uruchomić u siebie, jedna komenda).
+
+| grupa | sprawdzenia | wynik |
+|---|---|---|
+| struktura | wszystkie 37 elementów, których szuka skrypt | OK |
+| start bez sesji | brak zapytań, ostrzeżenie „wpisz hasło", konto rozwinięte | OK |
+| start z sesją | odświeżenie bez hasła, pobranie bazy, rysowanie, statystyki, tabela | OK |
+| tryby | kliknięcie 3 przycisków, poprawny tryb po kliknięciu | OK |
+| wylogowanie | czyści token i hasło, rozwija konto | OK |
+| token martwy | odświeżenie → hasło, dane pobrane | OK |
+| złe hasło | czytelny komunikat, brak danych | OK |
+
+Dodatkowo wcześniej: składnia JS (`node --check`), trzy parsery na danych
+wzorcowych, rysowanie w trzech trybach, 22 sprawdzenia logiki bez DOM.
+
+**Czego to dalej nie dowodzi:**
+
+- **Prawdziwe rysowanie** — `jsdom` nie ma canvasa; test liczy wywołania rysowania.
+  Krzywy wykres (zła geometria) wyjdzie tylko u Ciebie na ekranie.
+- **Prawdziwe Google** — sieć w teście jest zaślepiona. Złe hasło albo zmienione
+  reguły bazy wyjdą dopiero w rzeczywistym połączeniu.
+- **Wygląd (CSS)** — tego `jsdom` nie liczy.
+
+Pierwsze otwarcie u Ciebie to więc wciąż pierwszy prawdziwy kontakt z siecią.
+Jak coś nie zagra — F12 → Console i podeślij tekst.
+
+**Znane ograniczenia samego narzędzia:**
+
+- Reguły bazy wymagają `auth != null` → **logowanie jest obowiązkowe**, nie ma
+  czytania anonimowego.
+- Podgląd w aplikacji (piaskownica) bywa bez sieci i bez pamięci przeglądarki —
+  tam logowanie nie zadziała. Potrzebna jest prawdziwa przeglądarka.
