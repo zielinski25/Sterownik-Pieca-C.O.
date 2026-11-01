@@ -5,8 +5,9 @@ set -uo pipefail
 cd "$(dirname "$0")"
 REPO="$(cd ../.. && pwd)"
 
-FW_DIR="$(ls -d "$REPO"/firmware-patch/v3.57.*-hist-fs-opcja 2>/dev/null | sort -V | tail -1)"
-if [ -z "${FW_DIR:-}" ]; then echo "Brak folderu firmware-patch/v3.57.*-hist-fs-opcja"; exit 2; fi
+# [3.57.8] Kazdy folder v3.57.N z pelnymi zrodlami (nazwa moze byc dowolna).
+FW_DIR="$(ls -d "$REPO"/firmware-patch/v3.57.* 2>/dev/null | sort -V | while read -r d; do [ -f "$d/src/main_centrala.cpp" ] && echo "$d"; done | tail -1)"
+if [ -z "${FW_DIR:-}" ]; then echo "Brak folderu firmware-patch/v3.57.*/src/main_centrala.cpp"; exit 2; fi
 FW_SRC="$FW_DIR/src"
 echo "Firmware: $(basename "$FW_DIR")"
 

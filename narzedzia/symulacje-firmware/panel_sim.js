@@ -26,7 +26,7 @@ try { ({ JSDOM } = require('jsdom')); } catch (e) { /* sprawdzamy nizej */ }
 const root = path.resolve(__dirname, '..', '..');
 const patchDir = path.join(root, 'firmware-patch');
 const fwDir = fs.readdirSync(patchDir)
-  .filter(n => /^v3\.57\.\d+-hist-fs-opcja$/.test(n))
+  .filter(n => /^v3\.57\.\d+/.test(n) && fs.existsSync(path.join(patchDir, n, 'src', 'main_centrala.cpp')))
   .sort((a, b) => parseInt(a.match(/v3\.57\.(\d+)/)[1], 10) - parseInt(b.match(/v3\.57\.(\d+)/)[1], 10))
   .pop();
 const fwSrc = fs.readFileSync(path.join(patchDir, fwDir, 'src', 'main_centrala.cpp'), 'utf8');

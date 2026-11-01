@@ -24,8 +24,10 @@ const path = require('path');
 // podbiciu numeru.
 const root = path.resolve(__dirname, '..', '..');
 const patchDir = path.join(root, 'firmware-patch');
+// [3.57.8] Folder wersji nie musi juz konczyc sie na "-hist-fs-opcja" — liczy sie
+// to, ze jest to v3.57.N i ma src/main_centrala.cpp. Bierzemy NAJWYZSZE N.
 const fwDir = fs.readdirSync(patchDir)
-  .filter(n => /^v3\.57\.\d+-hist-fs-opcja$/.test(n))
+  .filter(n => /^v3\.57\.\d+/.test(n) && fs.existsSync(path.join(patchDir, n, 'src', 'main_centrala.cpp')))
   .sort((a, b) => parseInt(a.match(/v3\.57\.(\d+)/)[1], 10) - parseInt(b.match(/v3\.57\.(\d+)/)[1], 10))
   .pop();
 if (!fwDir) { console.error('Brak folderu firmware-patch/v3.57.*-hist-fs-opcja'); process.exit(2); }
@@ -210,6 +212,33 @@ check('komunikat rozroznia pusta historie i wylaczony zapis',
 check('brak pliku nie konczy sie komunikatem o bledzie wysylki',
   fw.includes('else sendTelegramMessage(historiaBrakPlikuKomunikat(\"hist_short.csv\"));') &&
   fw.includes('else sendTelegramMessage(historiaBrakPlikuKomunikat(\"hist_long.csv\"));'));
+
+// ─────────────────────────────────── F. [3.57.8] Klucze NVS i wersja w raporcie
+section('F. Klucze NVS <=15 znakow i wersja bez podwojnego "v" [3.57.8]');
+
+// NVS (ESP-IDF) przyjmuje klucze do 15 znakow. Dluzszy zapis konczy sie CICHO,
+// a odczyt zwraca zero — tak wlasnie raport nadzoru zawsze mowil "po 0 s pracy".
+(function kluczeNvs() {
+  const uzyte = new Set();
+  const wzor = /(?:config|prefs|preferencje|p)\s*\.\s*(?:put|get)(?:Bool|UInt|UChar|UShort|String|Float|Int|Bytes|ULong|Char|Short|Double)\s*\(\s*"([^"]+)"/g;
+  let m;
+  while ((m = wzor.exec(fw)) !== null) uzyte.add(m[1]);
+  const wzorNvs = /nvs(?:Put|Get)(?:Bool|UInt|UChar|UShort|String|Float|Int)\s*\([^,]+,\s*"([^"]+)"/g;
+  while ((m = wzorNvs.exec(fw)) !== null) uzyte.add(m[1]);
+  const zaDlugie = [...uzyte].filter(k => k.length > 15);
+  check('klucze NVS: ' + uzyte.size + ' sprawdzonych, za dlugich: ' + zaDlugie.length,
+    zaDlugie.length === 0, zaDlugie.join(', '));
+  check('klucz wieku znacznika istnieje (nadzorWiekS)', uzyte.has('nadzorWiekS'));
+  // Sprawdzamy UZYCIE w kodzie, nie wzmianke w komentarzu (changelog tlumaczy stary blad).
+  check('stary, 17-znakowy klucz zniknal z kodu',
+    !/config\.(?:get|put)UInt\("nadzorKrokUptimeS"/.test(fw));
+})();
+
+check('Telegram nie dokleja drugiego "v" do FIRMWARE_VERSION',
+  !fw.includes('Wersja: <b>v"') && fw.includes('Wersja: <b>"'));
+
+check('raport nadzoru pokazuje wiek znacznika przed restartem',
+  fw.includes('s przed restartem (po '));
 
 console.log('\n' + ok + ' OK / ' + fail + ' FAIL');
 process.exit(fail ? 1 : 0);
