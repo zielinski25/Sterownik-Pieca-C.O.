@@ -1,0 +1,98 @@
+═══════════════════════════════════════════════════════════════
+  FIRMWARE v3.56.8 — INSTRUKCJA WGRANIA
+  Data: 2026-10-29
+═══════════════════════════════════════════════════════════════
+
+WERSJA PODBITA: TAK (3.56.7 -> 3.56.8)
+
+CO TO DAJE
+----------
+1. Znika dziura w linii "Ogrz. sr." po restarcie pieca (bylo ~20 minut).
+2. Piec zaczyna liczyc luki w numeracji probek i logowac je.
+   Po jednym dniu bede wiedzial, gdzie ginie ta jedna probka z 65.
+
+CZY WARTO TERAZ WGRYWAC
+-----------------------
+Piec chodzi na 3.56.7 od 12:22. Jesli uptime rosnie — NIE SPIESZ SIE.
+Mozesz wgrac wieczorem albo jutro. To nie jest naprawa awarii, to poprawka
+jakosci i diagnostyka.
+
+Jesli uptime znowu sie zeruje — wgraj od razu.
+
+
+KROK 1 — PODMIEN PLIK
+---------------------
+Skopiuj main_centrala.cpp z tej paczki do:
+
+    C:\Users\Rafcio\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp
+
+NADPISZ istniejacy plik.
+Plikow .h NIE ruszaj — sa bez zmian.
+NIE nadpisuj src\secrets.h.
+
+
+KROK 2 — SPRAWDZ WERSJE W PLIKU
+-------------------------------
+Ctrl+F w VSCode, szukaj DOKLADNIE:
+
+    static const char* FIRMWARE_VERSION
+
+Musisz zobaczyc:
+
+    static const char* FIRMWARE_VERSION = "v3.56.8";
+
+NIE szukaj samego "FIRMWARE_VERSION = " — trafisz w komentarz.
+
+
+KROK 3 — ZBUDUJ
+---------------
+Ctrl+Alt+B
+
+Jesli nie dziala:
+    & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run
+
+Na koncu musi byc SUCCESS. Jesli ERROR — nie wgrywaj, wyslij mi 30 linii.
+
+
+KROK 4 — W GRAJ PRZEZ OTA
+-------------------------
+Tak samo jak 3.56.7. Wersja podbita, OTA przyjmie.
+
+
+KROK 5 — SPRAWDZ (2 minuty po wgraniu)
+--------------------------------------
+    /version
+
+Musi byc: v3.56.8
+
+
+KROK 6 — CO OBSERWOWAC
+----------------------
+Natychmiast po wgraniu sprawdz wykres:
+
+    Wykresy -> TEMPERATURY -> 6 H -> zaznacz "Ogrz. sr."
+
+Linia powinna miec wartosc OD RAZU po starcie pieca, bez 20-minutowej
+przerwy na poczatku.
+
+PO JEDNYM DNIU pracy wyslij mi:
+
+    /logi
+
+albo (krotsze) wejdz na http://192.168.100.19/api/status i skopiuj mi
+fragment z:
+
+    "tel_sent"
+    "tel_gap_events"
+    "tel_gap_samples"
+
+To trzy liczby. Na ich podstawie powiem Ci, czy detektor cos zlapal.
+
+
+JESLI COS SIE ZEPSUJE
+---------------------
+Wroc do 3.56.7 — masz ja na Dysku Google jako
+firmware-v3.56.7-przywroc-3.56.5.zip.
+
+Nie panikuj: 3.56.8 nie zmienia niczego w sterowaniu piecem. Zmienia
+jeden licznik czasu i dodaje liczniki diagnostyczne.

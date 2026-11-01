@@ -1,0 +1,62 @@
+{
+  "status": "PASS",
+  "release_ready": false,
+  "inputs": {
+    "narzedzia/parser-upload205/host/Arduino.h": "052e51a58b39c969c208787d73b8b70478ddd3b3347492bd7041b3a7e59d9da0",
+    "narzedzia/adapter-upload204/UploadAdapter.h": "147b564a18350b7ce6d4c250c034d1cca9e8aba80f51394ac5e4337630a6b18d",
+    "narzedzia/odpowiedz-odroczona203/Fields.inc": "d57e789c2777ec82dbad46a66dabc51d71092989f6e9d8246999289fa885867f",
+    "narzedzia/odpowiedz-odroczona203/Factory.inc": "503e9ab60b42f5878763d3b2966f2f219be84372f08fc3a466b20df47219d404",
+    "narzedzia/odpowiedz-odroczona203/API.inc": "b8c5abb30e2e0f8ea51c0144bc519164c2afae7aee9f4bc13938d2ee5d9c6277",
+    "narzedzia/odpowiedz-odroczona203/Methods.inc": "7ba90061180f6976c83fb8b47f2690cf927d68dc8e5307d5d47abaa5892a72e6",
+    "narzedzia/odpowiedz-odroczona203/Fixture202.inc": "3cf5515c77f1ca13fa5dce3c13732c1a5af2962da06b10cf66edce15561b4df6",
+    "narzedzia/odpowiedz-odroczona203/DeferredUploadReply.h": "a73151171ff65752a251e0fcbda440b3d8708d34c8eab526d767af4dde9c6b39",
+    "narzedzia/parser-upload205/ParserModel.h": "2065cc12a399398c3105a6c8f5682328e52dbfd4b6e99897f508f085fd2d846b",
+    "narzedzia/parser-upload205/StrictMultipartEnd.h": "06717f659ba3115d0bf5b7a67bcb5b84ee8464cb53a3860b498d54dd3b4152a6",
+    "narzedzia/parser-upload205/Test.cpp": "7488bfcdcd27298750b2f2d466e4bfbc939415bc153dfcc7332219d781207239",
+    "narzedzia/parser-upload205/build.py": "ff4fbe76749eee8f835ad42867aa9aa1622a34e6ac9ae472b12fa55e81c47b51",
+    "narzedzia/parser-upload205/run.py": "ddbf88747345856d21fe44fb1a91f7992234f0f801bca94eaf83db4f238d679f",
+    "narzedzia/parser-upload205/mutacje.py": "17589a1cb8e2a738d1476875babbb0d0697b9a76e9c37f899831066bf4e846ad",
+    "narzedzia/parser-upload205/Model203.inc": "ab3df00a1fa9a7671c903fd8205f4efce17b48e13d8c0be9d11e8207f112ce7b",
+    "narzedzia/parser-upload205/Fields205.inc": "aa543114dc2b875024ef3588f75bdd5102051676e944d60361e21325e5e787e8",
+    "narzedzia/parser-upload205/API205.inc": "bb893995bd7480bcf4debac42e77010b9cb0a85d4bff19defc3deef7e53606f3",
+    "narzedzia/parser-upload205/Enums.inc": "2f3c16afa6ea2c4616ffdaee58001b2d4de7992bb27da237bcb58f04acf03a8d",
+    "narzedzia/parser-upload205/Parser205.inc": "1a586eba84cfd592de9ddf2f0470db77502153cb3538d01e843f543ab0c7ebad",
+    "narzedzia/parser-upload205/ParserOriginal.inc": "4404e0f5cdbe71cafabd7775ffebe0c2a8fb0bb366c9cf5a4d7f0a8af2ab245b",
+    "narzedzia/parser-upload205/ParserFields.inc": "c6f6b92b625c70bb94d3a4a280d73b04cfb56655b0312ee839e6479ad0229523",
+    "narzedzia/kontekst-upload201/RequestRegistry.h": "5aff513e7bd8023e914501ddce7a2af9cc4a9a526b638335ae4297b4af2a8488",
+    "narzedzia/kolejka-upload202/UploadPump.h": "fe33787b482ba7b8084226e2af454c68f35b7a98570fa3df38840829280e76e0",
+    "narzedzia/kolejka-upload202/Fixture201.inc": "38ac1ad4445574190e75a4b4eda3763d8c6fb35cae02f5b653014b927fb382e6",
+    "narzedzia/upload-zadania200/UploadPool.h": "ae8063b3cf4bd122d296fa420aeb4eaab2d3cc45226ed92361f693d37fe82aef",
+    "narzedzia/upload-zadania200/Raw198.inc": "6248ce9b4f848c8bc41f50f0cccef593925c0e7fa2d41d1b87b3491418174cd8",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/uchwyty-runtime197/CheckedRead.h": "88a3fba5db1638e43a570bd467ba1c41e17d506e347da79eb23e4eaa45f0569d",
+    "narzedzia/uchwyty-runtime197/host/Arduino.h": "917e0db8ca511c83faa564044ef127f2e94da1bcc3c812608fcc3e2455d2aa7b",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690",
+    "narzedzia/blokada-startu-fs196/upstream/FS.h": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+    "narzedzia/blokada-startu-fs196/upstream/FSImpl.h": "5187168c8e15583d1b55e935987532f221f1d3ca958e293494c221e5b2bc538a",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9"
+  },
+  "profiles": {
+    "native": {
+      "stdout": "PASS parser205 groups=38 fixtures=554; real body parser + adapter204; modeled headers/String/TCP, not ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "asan-ubsan": {
+      "stdout": "PASS parser205 groups=38 fixtures=554; real body parser + adapter204; modeled headers/String/TCP, not ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "original-native": {
+      "stdout": "PASS original vulnerability reproduced cases=3; not a production fix\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "original-asan": {
+      "stdout": "PASS original vulnerability reproduced cases=3; not a production fix\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  }
+}

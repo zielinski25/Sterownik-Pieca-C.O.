@@ -1,0 +1,59 @@
+diff -u -r b/main_centrala.cpp c/main_centrala.cpp
+--- b/main_centrala.cpp
++++ c/main_centrala.cpp
+@@ -1,3 +1,13 @@
++// FIRMWARE_VERSION v3.56.3 -> v3.56.4 (KANDYDAT: przycisk pobrania historii nie dzialal w ogole; NIE WGRYWAC).
++// v3.56.4: /history bylo zarejestrowane golym napisem, czyli matcherem
++// BackwardCompatible (^{uri}(/.*)?$), a serwer bierze PIERWSZY pasujacy
++// handler w kolejnosci rejestracji. /history przechwytywalo wiec
++// /history/link (panel dostawal 401 zamiast biletu - zaden przycisk
++// pobierania nie dzialal) i /history/long (bilet dlugi nie pasowal do
++// handlera krotkiego). Teraz wszystkie trzy trasy /history* uzywaja
++// AsyncURIMatcher::exact, tak jak /api/history* po [FIX 17].
++// Poza trzema rejestracjami i numerem wersji NIC sie nie zmienia:
++// panel, HistoriaPobranie.h, uklad include'ow i reszta pliku bez zmian.
+ // FIRMWARE_VERSION v3.56.2 -> v3.56.3 (KANDYDAT: przycisk "Dluga" i nazwa pliku CSV; NIE WGRYWAC).
+ // v3.56.3: dwa bledy na styku panelu z trasa, niewidoczne w testach kazdej
+ // strony osobno - znalazl je test "od przycisku do pliku":
+@@ -5598,7 +5608,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.56.3";
++static const char* FIRMWARE_VERSION = "v3.56.4";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -28750,16 +28760,27 @@
+ // /history/long (dluga). HTTP_ANY, bo metode sprawdzamy sami - inaczej inna
+ // metoda dostalaby ciche 404 zamiast 405. Odpowiedz odmowy jest prawdziwa
+ // odpowiedzia HTTP, nie zerwaniem polaczenia.
+-  wifiWebServer.on("/history", HTTP_ANY, [](AsyncWebServerRequest *request) {
++  // [v3.56.4 HISTORIA-TRASY] Wszystkie trzy trasy /history* przez
++  // AsyncURIMatcher::exact. Goly napis to matcher BackwardCompatible
++  // (^{uri}(/.*)?$, WebServer.cpp), a _attachHandler() bierze PIERWSZY
++  // pasujacy handler w kolejnosci rejestracji - "/history" zarejestrowane
++  // golym napisem pasowalo wiec TAKZE do "/history/long" i "/history/link".
++  // Oba te adresy nigdy nie dochodzily do swoich handlerow: panel dostawal
++  // 401 na prosbe o bilet (zaden przycisk pobierania nie dzialal), a dluga
++  // historia nie miala jak trafic na wlasciwy strumien. Ten sam blad co
++  // [FIX 17] przy /api/history* - tam exact() juz jest.
++  wifiWebServer.on(AsyncURIMatcher::exact("/history"), HTTP_ANY, [](AsyncWebServerRequest *request) {
+     historiaPobranie.obsluz(request, historia212::Strumien::Krotki);
+   });
+-  wifiWebServer.on("/history/long", HTTP_ANY, [](AsyncWebServerRequest *request) {
++  wifiWebServer.on(AsyncURIMatcher::exact("/history/long"), HTTP_ANY, [](AsyncWebServerRequest *request) {
+     historiaPobranie.obsluz(request, historia212::Strumien::Dluga);
+   });
+ 
+-  // [v3.56.1 HISTORIA-BILETY] Panel prosi o bilet, dostaje 32 znaki hex i sam
+-  // otwiera /history?k=<bilet>. Tu NIE ma tokenu z secrets.h - tylko bilet.
+-  wifiWebServer.on("/history/link", HTTP_GET, [](AsyncWebServerRequest *request) {
++  // [v3.56.1 HISTORIA-BILETY, v3.56.4 exact()] Panel prosi o bilet, dostaje
++  // 32 znaki hex i sam otwiera trase swojego strumienia: /history?k=<bilet>
++  // (krotka) albo /history/long?k=<bilet> (dluga). Tu NIE ma tokenu z
++  // secrets.h - tylko bilet.
++  wifiWebServer.on(AsyncURIMatcher::exact("/history/link"), HTTP_GET, [](AsyncWebServerRequest *request) {
+     historiaPobranie.link(request);
+   });
+ 

@@ -1,0 +1,159 @@
+--- a/src/WebResponses.cpp
++++ b/src/WebResponses.cpp
+@@ -409,12 +409,18 @@
+   }
+ 
+   // send content body
+-  if (_state == RESPONSE_CONTENT) {
++  if (_state == RESPONSE_CONTENT || (_state == RESPONSE_END && _send_buffer_len)) {
+     do {
++      if (!_sourceValid()) {
++        _state = RESPONSE_FAILED;
++        request->client()->close();
++        return 0;
++      }
+       if (_send_buffer_len && _send_buffer) {
+         // data is pending in buffer from a previous call or previous iteration
+         size_t const added_len =
+           request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);
++        payloadlen += added_len;
+         if (added_len != _send_buffer_len - _send_buffer_offset) {
+           // we were not able to add entire buffer's content to tcp buffs, leave it for later
+           // (this should not happen normally unless connection's TCP window suddenly changed from remote or mem pressure)
+@@ -423,7 +429,6 @@
+         } else {
+           _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+         }
+-        payloadlen += added_len;
+       }
+ 
+       auto tcp_win = request->client()->space();
+@@ -451,6 +456,9 @@
+         // See https://datatracker.ietf.org/doc/html/rfc9112#section-7.1
+         size_t const readLen =
+           _fillBufferAndProcessTemplates(_send_buffer->data() + 6, std::min(_send_buffer->size(), tcp_win) - 8);  // reserve 8 bytes for chunk size data
++        if (!_sourceValid() || (readLen != RESPONSE_TRY_AGAIN && readLen > std::min(_send_buffer->size(), tcp_win) - 8)) {
++          _state = RESPONSE_FAILED; request->client()->close(); return 0;
++        }
+         if (readLen != RESPONSE_TRY_AGAIN) {
+           // Write 4 hex digits directly without null terminator
+           static constexpr char hexChars[] = "0123456789abcdef";
+@@ -481,6 +489,9 @@
+ 
+         size_t const readLen = _fillBufferAndProcessTemplates(_send_buffer->data(), maxLen);
+ 
++        if (!_sourceValid() || (readLen != RESPONSE_TRY_AGAIN && readLen > maxLen)) {
++          _state = RESPONSE_FAILED; request->client()->close(); return 0;
++        }
+         if (readLen == 0) {
+           // no more data to send
+           _state = RESPONSE_END;
+@@ -495,6 +506,11 @@
+       }
+     } while (_send_buffer_len);  // go on till we have something in buffer pending to send
+ 
++    if (!_sourceValid()) {
++        _state = RESPONSE_FAILED;
++        request->client()->close();
++        return 0;
++      }
+     // execute sending whatever we have in sock buffs now
+     request->client()->send();
+     _writtenLength += payloadlen;
+--- a/src/WebResponseImpl.h
++++ b/src/WebResponseImpl.h
+@@ -61,6 +61,7 @@
+   size_t write_send_buffs(AsyncWebServerRequest *request, size_t len, uint32_t time);
+ };
+ 
++#define HISTORY199_RESPONSE_GUARD 1
+ class AsyncAbstractResponse : public AsyncWebServerResponse {
+ private:
+ #if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
+@@ -102,6 +103,9 @@
+ public:
+   AsyncAbstractResponse(AwsTemplateProcessor callback = nullptr);
+   virtual ~AsyncAbstractResponse() {}
++  bool _finished() const override {
++    return _state == RESPONSE_FAILED || (_state > RESPONSE_WAIT_ACK && _send_buffer_len == 0);
++  }
+   void _respond(AsyncWebServerRequest *request) final;
+   size_t _ack(AsyncWebServerRequest *request, size_t len, uint32_t time) final {
+     return write_send_buffs(request, len, time);
+--- a/src/ESPAsyncWebServer.h
++++ b/src/ESPAsyncWebServer.h
+@@ -434,7 +434,13 @@
+ 
+   bool _sent = false;                            // response is sent
+   bool _paused = false;                          // request is paused (request continuation)
+-  std::shared_ptr<AsyncWebServerRequest> _this;  // shared pointer to this request
++  std::shared_ptr<AsyncWebServerRequest> _this;
++  void (*_deferredPoll203)(AsyncWebServerRequest*, void*) = nullptr;
++  void (*_deferredDisconnect203)(void*) = nullptr;
++  void* _deferredContext203 = nullptr;
++  bool _disconnected203 = false;
++  bool _pollBusy203 = false;
++  // shared pointer to this request
+ 
+   String _temp;
+   uint8_t _parseState;
+@@ -599,6 +605,16 @@
+   }
+ 
+   void onDisconnect(ArDisconnectHandler fn);
++#define HISTORY203_DEFERRED_POLL 1
++
++  // Only from the request/network context. Does not replace AsyncClient callbacks.
++  bool installDeferred203(void (*poll)(AsyncWebServerRequest*, void*), void (*gone)(void*), void* context) {
++    if (!poll || !gone || _sent || _disconnected203 || _pollBusy203 || _deferredDisconnect203) return false;
++    _deferredContext203 = context; _deferredDisconnect203 = gone; _deferredPoll203 = poll; return true;
++  }
++  void stopDeferredPoll203() { _deferredPoll203 = nullptr; }
++  bool disconnected203() const { return _disconnected203; }
++
+ 
+   // hash is the string representation of:
+   //  base64(user:pass) for basic or
+--- a/src/WebRequest.cpp
++++ b/src/WebRequest.cpp
+@@ -238,8 +238,13 @@
+ }
+ 
+ void AsyncWebServerRequest::_onPoll() {
+-  std::shared_ptr<AsyncWebServerRequest> self = _this;  // Ensure we stay in scope over the function
+-  // os_printf("p\n");
++  std::shared_ptr<AsyncWebServerRequest> self = _this;
++  if (!self || _disconnected203 || _pollBusy203) return;
++  if (_deferredPoll203) {
++    auto poll = _deferredPoll203; auto context = _deferredContext203;
++    _pollBusy203 = true; poll(this, context); _pollBusy203 = false;
++    if (_disconnected203 || !_client || !_this) return;
++  }
+   if (_response && _client && _client->canSend()) {
+     _response->_ack(this, 0, 0);
+   }
+@@ -281,16 +286,14 @@
+ }
+ 
+ void AsyncWebServerRequest::_onDisconnect() {
+-  async_ws_log_v("onDisconnect() cb for request: %s", _url.c_str());
+-  if (_onDisconnectfn) {
+-    _onDisconnectfn();
+-  }
+-  // Pull shared pointer on to this context
+-  // This will induce self-destruction if there are no other active handles
+-  // This is safe to call here as it is the last operation in this callback
+-  // We move to a stack local before destruction a simple reset would attempt to
+-  // write through the now-destroyed object.
+-  std::shared_ptr<AsyncWebServerRequest> self = std::move(_this);
++  if (_disconnected203) return;
++  std::shared_ptr<AsyncWebServerRequest> self = _this;
++  _disconnected203 = true;
++  auto gone = _deferredDisconnect203; auto context = _deferredContext203;
++  _deferredPoll203 = nullptr; _deferredDisconnect203 = nullptr; _deferredContext203 = nullptr;
++  if (gone) gone(context);
++  if (_onDisconnectfn) _onDisconnectfn();
++  _this.reset();
+ }
+ 
+ void AsyncWebServerRequest::_addGetParams(const String &params) {

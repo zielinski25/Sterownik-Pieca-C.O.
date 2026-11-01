@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "stage": 215,
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "compiled_against": "real ESPAsyncWebServer.h (mathieucarbou fork, pinned)",
+  "inputs": {
+    "narzedzia/brama-api-esp215/kompiluj.py": "ddcc5a81c0380a3f326aa1a4a5654dc4f7170c239fc0821353278ee721283e3e",
+    "narzedzia/brama-api-esp215/przygotuj_api.py": "447f954ba6b608ad5e7df1cd32f5bd19aeb795958ed26c133a7294d48619c3d3",
+    "narzedzia/brama-api-esp215/Extracted215.inc": "a97de242167d2d557b03ad3464971b84a66c1575485aabdc4a812fb0f54c7587",
+    "narzedzia/brama-api-esp215/shim/Arduino.h": "e66b5d87ab169f95711354f6f78e407629dcf5ed0fe2c17e5bf2da9b36829d17",
+    "narzedzia/brama-api-esp215/shim/WString.h": "d9cd77a69f1a40870d44abf96e85f94909bca49a72d32911a9a79e6be5a50a96",
+    "narzedzia/brama-api-esp215/shim/sdkconfig.h": "f408125c3544c6e211698722d508f4fd544a28e8a1ab79691b09cd4bf87a6cc8",
+    "narzedzia/uchwyty-runtime197/upstream/ESPAsyncWebServer.h": "25db7c8fb30943307b28b181722187a65576f6ee778eeb99e29b1ef8db7915ba",
+    "narzedzia/odpowiedz-http199/upstream/WebResponseImpl.h": "b90de8322a97af18e8cd6817b7a5c27999c6a5e0097f23ecd77a4e167d9ced75",
+    "narzedzia/naglowki-upload206/upstream/literals.h": "2df08b5947a05fdb6b890a486708b046cc2bc903aa9c7d7a227c0a4a49b51fb3",
+    "narzedzia/naglowki-upload206/upstream/WebHandlerImpl.h": "e2ab3f7b6af3544934bea31a06c803240a3d8a6c3bbeda9669854cf5d840a006",
+    "narzedzia/blokada-startu-fs196/upstream/FS.h": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+    "narzedzia/wysylka-zapinka211/HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "narzedzia/panel-pobrania213/HistoriaPobranie.h": "0653a130333f476ba588bb3fa08728e10a08975c73548f30a2d35c84c5367c29",
+    "narzedzia/panel-pobrania213/HistoriaBilety.h": "339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30",
+    "narzedzia/brama-przed-wgraniem214/main_centrala-v3.55.8-to-v3.56.2.patch": "0ae0629b97a2594ed03d48500d471a8e29d09de95f35b1319a4a137497464ac7",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9"
+  },
+  "checks": {
+    "api": {
+      "returncode": 0,
+      "stdout": "PASS api215 przygotowano 13 plikow API i 4 shimow\nPASS A  czysto\nPASS B-gnu++11  czysto\nPASS B-gnu++17  czysto\nPASS C-gnu++11  czysto (57 linii wyciagnietych)\nPASS C-gnu++17  czysto (57 linii wyciagnietych)\nPASS D  /home/user/Sterownik-Pieca-C.O./narzedzia/panel-pobrania213/HistoriaPobranie.h:103:54: error: expected class-name before \u2018{\u2019 token\nPASS E  /tmp/api215-hzpm13hm/e.cpp:9:10: error: \u2018size_t historia212::Zatruta::_fillBuffer(uint8_t*, unsigned int)\u2019 marked \u2018override\u2019, but does not override\n\nPASS api215 sprawdzen=7 bledow=0\n",
+      "stderr": ""
+    }
+  }
+}

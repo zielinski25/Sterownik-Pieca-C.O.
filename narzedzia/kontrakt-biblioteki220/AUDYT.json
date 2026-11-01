@@ -1,0 +1,66 @@
+{
+  "stage": 220,
+  "tytul": "kontrakt z prawdziwa biblioteka - nasz kod sprawdzony na prawdziwych naglowkach ESPAsyncWebServer",
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "firmware": "v3.56.4 (bez zmian w tym etapie)",
+  "po_co": "caly nowy kod byl dotad kompilowany tylko przeciwko naszym zaslepkom; jesli zaslepka ma inna sygnature niz biblioteka, zielone testy nic nie znacza",
+  "zrodla_prawdziwe": {
+    "ESPAsyncWebServer.h": {"sha256": "25db7c8fb30943307b28b181722187a65576f6ee778eeb99e29b1ef8db7915ba", "ref": "c47917d"},
+    "WebResponseImpl.h": {"sha256": "b90de8322a97af18e8cd6817b7a5c27999c6a5e0097f23ecd77a4e167d9ced75", "ref": "c47917d"},
+    "WebHandlerImpl.h": {"sha256": "e2ab3f7b6af3544934bea31a06c803240a3d8a6c3bbeda9669854cf5d840a006", "ref": "c47917d"},
+    "literals.h": {"sha256": "2df08b5947a05fdb6b890a486708b046cc2bc903aa9c7d7a227c0a4a49b51fb3", "ref": "c47917d"},
+    "CheckedHistoryIO.h": {"sha256": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9", "opis": "prawdziwy naglowek projektu w firmware-patch/v3.55.8-blokada-fs-po-starcie"}
+  },
+  "kontrol": {
+    "Z01": "naglowki biblioteki te same (SHA-256) - 4 pliki",
+    "Z02": "pola klasy bazowej protected/public, konstruktor publiczny, destruktor wirtualny - 5 pol",
+    "Z03": "nasze override pasuja do prawdziwych wirtualnych; nic final nie jest nadpisane - 3 nadpisania",
+    "Z04": "kazde wywolanie metody biblioteki ma dokladnie jednego kandydata - 19 wywolan",
+    "Z05": "brak nazw z zaslepek w kodzie firmware - 14 zakazanych nazw",
+    "Z06": "wywolania historia193::Calls istnieja w prawdziwym naglowku - open, stat, read, close, error",
+    "Z07": "HTTP_ANY, AsyncURIMatcher::exact i on(matcher,...) sa w tej samej bibliotece"
+  },
+  "wynik": {
+    "status": "PASS",
+    "kontrol": 7,
+    "wywolan_biblioteki": 19,
+    "roznic_model_vs_biblioteka": 15,
+    "bledow": 0
+  },
+  "wybrane_rozstrzygniecia": {
+    "method()": "WebRequestMethod method() const (enum, wiec porownanie z HTTP_GET poprawne)",
+    "getHeader(\"Authorization\")": "const AsyncWebHeader *getHeader(const char*) const (dokladne dopasowanie)",
+    "hasParam(\"k\")": "bool hasParam(const char*, bool=false, bool=false) const",
+    "getParam(\"k\")": "const AsyncWebParameter *getParam(const char*, bool=false, bool=false) const",
+    "addHeader(literaly)": "bool addHeader(const char*, const char*, bool=true) - bez konwersji do String",
+    "send(odp)": "void send(AsyncWebServerResponse*)",
+    "beginResponse(200, \"text/plain\", String(...))": "beginResponse(int, const String&, const String&, AwsTemplateProcessor=nullptr) - jedyny kandydat"
+  },
+  "mutanty": {
+    "M1_fillbuffer_const": ["Z03"],
+    "M2_override_respond": ["Z03"],
+    "M3_std_str": ["Z05"],
+    "M4_addheader_int": ["Z04"],
+    "M5_calls_openn": ["Z06"],
+    "M6_pole_prywatne": ["Z02"],
+    "M7_inny_sha": ["Z01"],
+    "M8_brak_http_any": ["Z07"],
+    "M9_include_modelu": ["Z05"],
+    "M10_brak_exact": ["Z07"]
+  },
+  "pliki": {
+    "kontrakt.py": "551e92bfa04dff2cb1b3c7784c280b1e2718bbf52d5c89ee251b5e339e1ceee9",
+    "mutanty.py": "07b439d82c349e3402d2b7aa6fe3968000bfad00aabdca9aefa8f0165e29845b",
+    "run.py": "dd3f3595d643e98418134ae613886beaa518cb6660cd17f3710be654bef58f15"
+  },
+  "czego_nie_dowodzi": [
+    "kompilacji przez PlatformIO (brak toolchainu ESP w tym srodowisku)",
+    "zachowania w czasie dzialania (to etapy 211-219)",
+    "zgodnosci Arduino core i FreeRTOS (te symbole sa uzywane od dawna w bazowym pliku)"
+  ],
+  "uruchomienie": "python3 -B narzedzia/kontrakt-biblioteki220/run.py",
+  "polecenie_dla_uzytkownika": "bez zmian: patch z etapu 218 (main_centrala-v3.55.8-to-v3.56.4.patch) + HistoriaPobranie.h z etapu 216, potem PlatformIO",
+  "kryterium_odbioru": "telefon -> HISTORIA CSV -> 'Krotka (24 h)' zapisuje historia-krotka.csv, 'Dluga (archiwum)' zapisuje historia-dluga.csv"
+}

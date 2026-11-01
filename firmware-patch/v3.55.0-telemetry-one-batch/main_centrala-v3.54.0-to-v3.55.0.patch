@@ -1,0 +1,402 @@
+--- a/main_centrala.cpp
++++ b/main_centrala.cpp
+@@ -1,3 +1,31 @@
++// [v3.55.0 ONE-BATCH-RESEND] — 2026-10-24
++// FIRMWARE_VERSION v3.54.0 -> v3.55.0 (MINOR, koniec z gubieniem probek telemetrii).
++// Co: jedna paczka telemetrii naraz. Do Firebase nie idzie nowa paczka, dopoki
++//     poprzednia nie jest ROZLICZONA. Po timeoucie (6 s) wysylamy PONOWNIE ten
++//     sam payload (te same bajty, te same probki), a nie nastepna paczke.
++// Dlaczego: analiza eksportu RTDB z 24.10 pokazala dziure 10:03:05 -> 10:14:05
++//     = dokladnie 10 brakujacych probek, przy TELEMETRY_BATCH_MAX_RECORDS = 10.
++//     Te same 10 probek JEST w lokalnym archiwum centrali (/hist_short.csv),
++//     wiec zostaly zmierzone i zapisane lokalnie, ale nie dotarly do chmury
++//     i nigdy nie byly ponowione — czyli tail ringu przesunal sie nad nimi.
++//     W calym eksporcie (28 dni, ~40 tys. probek) przerw "rown o 10,0 min"
++//     bylo 5, a zwyklych 1-3 min (zwykle zerwanie sieci) — 107.
++// Naprawa — trzy warstwy, kazda niezalezna:
++//   1. JEDNA PACZKA NARAZ: g_telemetryPendingValid blokuje zbudowanie nowej
++//      paczki, dopoki poprzednia nie ma rozstrzygniecia. Bufor JSON nie jest
++//      nadpisywany, wiec to, co realnie leci do chmury, jest dokladnie tym, co
++//      zostanie rozliczone.
++//   2. PONOWIENIE TYCH SAMYCH BAJTOW: timeout nie buduje nowej paczki —
++//      powtarza identyczny payload (maks. TELEMETRY_BATCH_MAX_ATTEMPTS razy).
++//      Spoznione ACK dotyczy wtedy tych samych probek, wiec jest bezpieczne.
++//   3. KONTROLA TOZSAMOSCI PRZED POPEM: commitPopN() wykonuje sie tylko, gdy
++//      ostatnia probka w ringu nadal ma sampleSeq == g_telemetryPendingLastSeq.
++//      Rozjazd = NIE zdejmujemy nic z kolejki (probki zostaja do ponowienia).
++// Co jeszcze: Spool V2 dostaje wyzwalacz zaleglosci (ring >= 15 zamiast 120
++//     albo najstarsza probka starsza niz 10 min) — patrz [v3.55.0 SPOOL-BACKLOG].
++// Czego NIE zmieniono: format JSON i sciezki RTDB, interwal 60 s, limity
++//     rozmiaru payloadu, circuit breaker, format stron Spool V2, replay.
++//
+ // [v3.54.0 OFFLINE-BUFFER-TOGGLE] — 2026-10-22
+ // FIRMWARE_VERSION v3.53.1 -> v3.54.0 (MINOR, bufor offline z aplikacji).
+ // Co: przelacznik "bufor offline" (runtime Spool G2) dostepny z aplikacji
+@@ -5454,7 +5482,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.54.0";
++static const char* FIRMWARE_VERSION = "v3.55.0";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -5984,7 +6012,13 @@
+ static uint32_t g_spoolRuntimeReplayPageRecordCount = 0U;
+ static constexpr uint32_t SPOOL_RUNTIME_PAGESEQ_BASE = 0xE0000000UL;
+ static constexpr uint32_t SPOOL_RUNTIME_SPILL_MAX_RECORDS = 128U;
+-static constexpr uint32_t SPOOL_RUNTIME_RING_WATERMARK = 120U;
++// [v3.55.0 SPOOL-BACKLOG] Bylo 120 probek (~2 h przy 1 probce/min), wiec
++// kilkunastominutowa zaleglosc wysylki NIE uruchamiala zapisu do flasha.
++// Probki siedzialy tylko w RAM i znikaly przy restarcie. Teraz prog ilosciowy
++// to 15 probek, a dodatkowo dziala prog CZASOWY: najstarsza probka starsza
++// niz SPOOL_RUNTIME_BACKLOG_MAX_AGE_S (10 min) = zapis.
++static constexpr uint32_t SPOOL_RUNTIME_RING_WATERMARK = 15U;
++static constexpr uint32_t SPOOL_RUNTIME_BACKLOG_MAX_AGE_S = 600UL;
+ static constexpr uint32_t SPOOL_RUNTIME_OFFLINE_TRIGGER_MS = 120000UL;
+ static constexpr uint32_t SPOOL_RUNTIME_SPILL_COOLDOWN_MS = 30000UL;
+ static constexpr uint8_t SPOOL_RUNTIME_REPLAY_BATCH_MAX = 10U;
+@@ -5998,6 +6032,25 @@
+ static uint16_t g_telemetryBatchCount = 0;
+ static uint32_t g_telemetryBatchLastSeq = 0;
+ static uint32_t g_telemetryLastAttemptMillis = 0;
++// [v3.55.0 ONE-BATCH-RESEND] Stan "paczka w toku". Póki g_telemetryPendingValid
++// jest true, g_telemetryJsonBuffer zawiera DOKLADNIE te bajty, ktore leca (lub
++// lecialy) do chmury — nikt nie ma prawa ich nadpisac. Dopiero rozliczenie
++// (sukces + zgodny sampleSeq albo wyczerpanie prob) zwalnia bufor.
++static volatile bool g_telemetryPendingValid = false;
++static uint8_t  g_telemetryPendingCount = 0;
++static uint32_t g_telemetryPendingLastSeq = 0;
++static uint8_t  g_telemetryPendingAttempts = 0;
++static size_t   g_telemetryPendingBytes = 0;
++// [v3.55.0 CLOUD-MARK] Znacznik ostatniej probki POTWIERDZONEJ przez chmure.
++// Wystawiany w /piec/status jako tel_cloud_seq / tel_cloud_ts / tel_cloud_ago,
++// zeby telefon mogl pokazac "ostatnia probka w chmurze: 3 min temu" bez
++// pobierania calej historii. 0 = od restartu nie potwierdzono jeszcze nic.
++static volatile uint32_t g_telemetryLastCloudSeq = 0;
++static volatile uint32_t g_telemetryLastCloudUnixTs = 0;
++static volatile uint32_t g_telemetryLastCloudUptimeMs = 0;
++// [v3.55.0] Liczniki diagnostyczne — widoczne w logu, nie w /piec/status.
++static uint32_t g_telemetryBatchResends = 0;
++static uint32_t g_telemetryBatchAbandoned = 0;
+ static uint32_t g_telemetrySamplesSent = 0;
+ static uint32_t g_telemetryTransportFailures = 0;
+ 
+@@ -39311,6 +39364,10 @@
+ static constexpr uint8_t TELEMETRY_BATCH_MAX_RECORDS = 10U;
+ static constexpr unsigned long TELEMETRY_SEND_INTERVAL_MS = 60000UL;
+ static constexpr uint32_t TELEMETRY_REQUEST_LIMIT_MS = 6000UL;
++// [v3.55.0] Ile razy wolno powtorzyc TE SAME bajty, zanim paczka wroci do
++// kolejki. 3 proby x 6 s mieszcza sie w jednym interwale 60 s.
++static constexpr uint8_t  TELEMETRY_BATCH_MAX_ATTEMPTS = 3U;
++static constexpr unsigned long TELEMETRY_RETRY_INTERVAL_MS = 5000UL;
+ 
+ static bool telemetryEnsureJsonBuffer() {
+   if (g_telemetryJsonBuffer) return true;
+@@ -39786,6 +39843,22 @@
+   return true;
+ }
+ 
++// [v3.55.0] Zwolnienie bufora serializacji BEZ ruszania kolejki. Wolno to
++// zrobic zawsze i tylko dlatego, ze probki NIGDY nie sa zdejmowane z ringu
++// przed potwierdzonym sukcesem — porzucenie kopii JSON nie gubi danych,
++// najwyzej opoznia wysylke do nastepnego cyklu.
++static void telemetryPendingAbandon(const char *why) {
++  if (!g_telemetryPendingValid) return;
++  g_telemetryPendingValid = false;
++  g_telemetryPendingCount = 0;
++  g_telemetryPendingLastSeq = 0;
++  g_telemetryPendingBytes = 0;
++  g_telemetryPendingAttempts = 0;
++  ++g_telemetryBatchAbandoned;
++  DLOGF(DC_TELEMETRY, DL_WARN, "pending_abandon why=%s abandoned=%lu",
++        why ? why : "?", (unsigned long)g_telemetryBatchAbandoned);
++}
++
+ static void telemetryFinalizeCompletedRequest() {
+   if (!g_telemetryRequestActive) return;
+   if (fbLoopWorkerZajety()) return;
+@@ -39797,27 +39870,64 @@
+   g_telemetryRequestActive = false;
+ 
+   if (ok && batchCount > 0U) {
++    // [v3.55.0] Zanim zdejmiemy cokolwiek z kolejki, sprawdzamy CZY to nadal
++    // te same probki. commitPopN() zdejmuje z tailu, wiec wystarczy porownac
++    // ostatnia probke paczki. Rozjazd = nie ruszamy kolejki: lepiej wyslac
++    // paczke drugi raz niz policzyc jako wyslane cos, czego nie ma w chmurze.
++    TelemetrySample tailCheck{};
++    const bool haveSample = g_telemetryRing.peekAt((uint32_t)batchCount - 1U, tailCheck);
++    if (!haveSample || tailCheck.sampleSeq != g_telemetryBatchLastSeq) {
++      if (g_telemetryCountersMutex) xSemaphoreTake(g_telemetryCountersMutex, portMAX_DELAY);
++      ++g_telemetryTransportFailures;
++      if (g_telemetryCountersMutex) xSemaphoreGive(g_telemetryCountersMutex);
++      DLOGF(DC_TELEMETRY, DL_ERR, "batch_identity_mismatch count=%u want_seq=%lu got_seq=%lu have=%u",
++            (unsigned)batchCount, (unsigned long)g_telemetryBatchLastSeq,
++            (unsigned long)tailCheck.sampleSeq, haveSample ? 1U : 0U);
++      telemetryPendingAbandon("identity_mismatch");
++      g_telemetryBatchCount = 0;
++      g_telemetryBatchLastSeq = 0;
++      return;
++    }
+     if (!g_telemetryRing.commitPopN(batchCount)) {
+       if (g_telemetryCountersMutex) xSemaphoreTake(g_telemetryCountersMutex, portMAX_DELAY);
+       ++g_telemetryTransportFailures;
+       if (g_telemetryCountersMutex) xSemaphoreGive(g_telemetryCountersMutex);
+       DLOGF(DC_TELEMETRY, DL_ERR, "commit_tail_fail count=%u", (unsigned)batchCount);
++      telemetryPendingAbandon("commit_tail_fail");
++      g_telemetryBatchCount = 0;
++      g_telemetryBatchLastSeq = 0;
+       return;
+     }
+     if (g_telemetryCountersMutex) xSemaphoreTake(g_telemetryCountersMutex, portMAX_DELAY);
+     g_telemetrySamplesSent += batchCount;
+     if (g_telemetryCountersMutex) xSemaphoreGive(g_telemetryCountersMutex);
+-    DLOGF(DC_TELEMETRY, DL_DEBUG, "batch_ok count=%u last_seq=%lu sent=%lu",
++    // [v3.55.0 CLOUD-MARK] tailCheck to OSTATNIA probka wlasnie potwierdzonej
++    // paczki — dokladnie to, co lezy w chmurze jako najswiezszy rekord.
++    g_telemetryLastCloudSeq = tailCheck.sampleSeq;
++    g_telemetryLastCloudUnixTs = tailCheck.unixTs;
++    g_telemetryLastCloudUptimeMs = (uint32_t)millis();
++    DLOGF(DC_TELEMETRY, DL_DEBUG, "batch_ok count=%u last_seq=%lu sent=%lu attempt=%u resends=%lu",
+           (unsigned)batchCount, (unsigned long)g_telemetryBatchLastSeq,
+-          (unsigned long)g_telemetrySamplesSent);
++          (unsigned long)g_telemetrySamplesSent, (unsigned)g_telemetryPendingAttempts,
++          (unsigned long)g_telemetryBatchResends);
++    // Rozliczone — bufor wolny, nastepny cykl zbuduje swieza paczke.
++    g_telemetryPendingValid = false;
++    g_telemetryPendingCount = 0;
++    g_telemetryPendingLastSeq = 0;
++    g_telemetryPendingBytes = 0;
++    g_telemetryPendingAttempts = 0;
+   } else {
+     if (g_telemetryCountersMutex) xSemaphoreTake(g_telemetryCountersMutex, portMAX_DELAY);
+     ++g_telemetryTransportFailures;
+     if (g_telemetryCountersMutex) xSemaphoreGive(g_telemetryCountersMutex);
+-    DLOGF(DC_TELEMETRY, DL_WARN, "batch_fail count=%u", (unsigned)batchCount);
++    DLOGF(DC_TELEMETRY, DL_WARN, "batch_fail count=%u attempt=%u/%u",
++          (unsigned)batchCount, (unsigned)g_telemetryPendingAttempts,
++          (unsigned)TELEMETRY_BATCH_MAX_ATTEMPTS);
+     fbAppReady = false;
+     fbSSLClient.stop();
+     FB_NET_FAIL();
++    // [v3.55.0] CELOWO nie zwalniamy paczki. W nastepnym cyklu pojdzie
++    // DOKLADNIE ten sam payload — te same probki, te same recordId.
+   }
+   g_telemetryBatchCount = 0;
+   g_telemetryBatchLastSeq = 0;
+@@ -40029,6 +40139,24 @@
+   } else {
+     s += F("\nOldest runtime page: NONE");
+   }
++  // [v3.55.0 CLOUD-MARK] Ostatnia probka potwierdzona przez chmure — jedyna
++  // liczba, ktora mowi "czy dane naprawde doszly", a nie "czy probowalismy".
++  s += F("\nLast cloud sample: ");
++  if (g_telemetryLastCloudSeq == 0U) {
++    s += F("brak od restartu");
++  } else {
++    s += F("seq=");
++    s += String((unsigned long)g_telemetryLastCloudSeq);
++    s += F(" ts=");
++    s += String((unsigned long)g_telemetryLastCloudUnixTs);
++    s += F(" ago=");
++    s += String((unsigned long)((millis() - g_telemetryLastCloudUptimeMs) / 1000UL));
++    s += F("s");
++  }
++  s += F("\nRing now: ");
++  s += String((unsigned long)(g_telemetryRing.ready() ? g_telemetryRing.size() : 0U));
++  s += F(" pending=");
++  s += String(g_telemetryPendingValid ? 1 : 0);
+   s += F("\nPolicy test: offline>=");
+   s += String((unsigned long)(SPOOL_RUNTIME_OFFLINE_TRIGGER_MS / 1000UL));
+   s += F("s lub ring>=");
+@@ -40096,6 +40224,9 @@
+   if (!g_spoolRuntimeArmed || g_spoolGTestActive) return false;
+   if (!littlefsReady || !g_telemetryRing.ready()) return false;
+   if (g_telemetryRequestActive || fbLoopWorkerZajety()) return false;
++  // [v3.55.0] Nie wolno zrzucac probek, na ktore czeka serializowana paczka —
++  // commitPopN() w spoolu zdjalby wlasnie jej rekordy z tailu.
++  if (g_telemetryPendingValid) return false;
+   const uint32_t ringSize = g_telemetryRing.size();
+   if (ringSize == 0U) return false;
+ 
+@@ -40111,7 +40242,20 @@
+   const bool offlineDue =
+       g_spoolRuntimeOfflineSinceMs != 0U &&
+       (uint32_t)(now - g_spoolRuntimeOfflineSinceMs) >= SPOOL_RUNTIME_OFFLINE_TRIGGER_MS;
+-  const bool backlogDue = ringSize >= SPOOL_RUNTIME_RING_WATERMARK;
++  // [v3.55.0] Zaleglosc czasowa: roznica znacznikow unix miedzy najstarsza
++  // i najnowsza probka w kolejce. Liczona z probek, nie z zegara sciennego —
++  // odporna na brak RTC i na korekte czasu.
++  bool ageDue = false;
++  if (ringSize >= 2U) {
++    TelemetrySample oldest{};
++    TelemetrySample newest{};
++    if (g_telemetryRing.peekAt(0U, oldest) &&
++        g_telemetryRing.peekAt(ringSize - 1U, newest) &&
++        oldest.unixTs != 0U && newest.unixTs > oldest.unixTs) {
++      ageDue = (uint32_t)(newest.unixTs - oldest.unixTs) >= SPOOL_RUNTIME_BACKLOG_MAX_AGE_S;
++    }
++  }
++  const bool backlogDue = ringSize >= SPOOL_RUNTIME_RING_WATERMARK || ageDue;
+   if (!offlineDue && !backlogDue) return false;
+   if ((uint32_t)(now - g_spoolRuntimeLastSpillMs) < SPOOL_RUNTIME_SPILL_COOLDOWN_MS) return false;
+ 
+@@ -40182,6 +40326,8 @@
+   if (!g_spoolRuntimeArmed || g_spoolGTestActive) return false;
+   if (millis() - tgIterStartMs >= 10000UL) return false;
+   if (g_telemetryRequestActive || fbLoopWorkerZajety()) return false;
++  // [v3.55.0] Replay buduje JSON w tym samym buforze co telemetria.
++  if (g_telemetryPendingValid) return false;
+ 
+   // Po powrocie WAN sesja Firebase mogla zostac oznaczona jako niegotowa
+   // podczas awarii. Replay ma samodzielnie odtworzyc UserAuth, zamiast
+@@ -41386,6 +41532,35 @@
+ static const unsigned long TG_ITER_BUDGET_MS = 10000UL;
+ #define TG_ITER_HAS_BUDGET(startMs) (millis() - (startMs) < TG_ITER_BUDGET_MS)
+ 
++// [v3.55.0 ONE-BATCH-RESEND] Wysyla to, co lezy w g_telemetryJsonBuffer —
++// pierwsza probe albo ponowienie DOKLADNIE tych samych bajtow.
++// Wywolujacy gwarantuje, ze g_telemetryPendingValid jest true.
++static void telemetrySendPendingBatch() {
++  ++g_telemetryPendingAttempts;
++  if (g_telemetryPendingAttempts > 1U) ++g_telemetryBatchResends;
++
++  g_fbTelemetryResult = AsyncResult{};
++  g_telemetryBatchCount = g_telemetryPendingCount;
++  g_telemetryBatchLastSeq = g_telemetryPendingLastSeq;
++  g_telemetryRequestActive = true;
++  g_telemetryLastAttemptMillis = millis();
++
++  fbSSLClient.setHandshakeTimeout(4000);
++  serwisujTWDTJesliZarejestrowany();
++  object_t payload(g_telemetryJsonBuffer);
++  fbDatabase.update<object_t>(fbAsyncClient, "/piec/telemetry/1m/v1", payload, g_fbTelemetryResult);
++  fbCzekajNaWynikZLimitem(g_fbTelemetryResult, TELEMETRY_REQUEST_LIMIT_MS);
++  telemetryPublishCompletionFromResult();
++  telemetryFinalizeCompletedRequest();
++
++  if (g_telemetryRequestActive && g_telemetryPendingValid) {
++    DLOGF(DC_TELEMETRY, DL_WARN, "batch_timeout count=%u bytes=%u attempt=%u/%u worker=%u",
++          (unsigned)g_telemetryPendingCount, (unsigned)g_telemetryPendingBytes,
++          (unsigned)g_telemetryPendingAttempts, (unsigned)TELEMETRY_BATCH_MAX_ATTEMPTS,
++          fbLoopWorkerZajety() ? 1U : 0U);
++  }
++}
++
+ static void telemetryTrySendOneBatch(unsigned long tgIterStartMs) {
+   // [v3.27.2 LOCAL] R325-R334 potrzebuje stabilnego wejścia w TelemetryRing.
+   if (g_spoolGTestActive) return;
+@@ -41396,27 +41571,49 @@
+   if (!TG_ITER_HAS_BUDGET(tgIterStartMs)) return;
+   if (fbLoopWorkerZajety()) return;
+ 
++  // [v3.55.0] Bez sieci nie ma czego wysylac, a probki czekajace na wysylke
++  // blokowalyby zrzut do flasha. Porzucenie KOPII JSON jest bezpieczne —
++  // kolejka (ring) jest nietknieta, wiec spool zapisze je z ringu.
++  if (g_telemetryPendingValid && WiFi.status() != WL_CONNECTED) {
++    telemetryPendingAbandon("wifi_down");
++  }
++  // [v3.55.0] Wyczerpane proby: oddajemy paczke kolejce i pozwalamy zrzutowi
++  // zadzialac. Probki nadal sa w ringu — nic nie ginie, tylko czekaja.
++  if (g_telemetryPendingValid &&
++      g_telemetryPendingAttempts >= TELEMETRY_BATCH_MAX_ATTEMPTS) {
++    telemetryPendingAbandon("attempts_exhausted");
++  }
++
+   // [G2 LOCAL] Spill musi byc oceniany PRZED bramka WiFi/Firebase,
+   // bo wlasnie brak transportu jest jednym z wyzwalaczy zapisu do spool.
+-  if (g_spoolRuntimeArmed) spoolRuntimeMaybeSpill();
++  if (g_spoolRuntimeArmed && !g_telemetryPendingValid) spoolRuntimeMaybeSpill();
+ 
+-  // [G2 v3.30.1] Po powrocie WAN sama zmiana WiFi.status() na WL_CONNECTED
+-  // nie przywraca fbAppReady. Po bledzie/timeoutcie sciezki Firebase ustawiaja
+-  // fbAppReady=false, dlatego aktywny runtime musi jednorazowo odtworzyc
+-  // UserAuth/Firebase przed proba replay.
+-  if (g_spoolRuntimeArmed && WiFi.status() == WL_CONNECTED &&
+-      (!fbAppReady || !fbApp.ready()) && !fbLoopWorkerZajety()) {
+-    fbInitialize();
++  // [G2 v3.30.1 / v3.55.0] Po timeoucie sciezka telemetrii ustawia
++  // fbAppReady=false. Gdy czeka ponowienie, trzeba jawnie odtworzyc sesje,
++  // inaczej retry nigdy by nie ruszyl (bramka nizej by go odrzucila).
++  if (WiFi.status() == WL_CONNECTED && (!fbAppReady || !fbApp.ready()) &&
++      !fbLoopWorkerZajety()) {
++    if (g_spoolRuntimeArmed || g_telemetryPendingValid) fbInitialize();
+   }
+ 
+   if (WiFi.status() != WL_CONNECTED || !fbAppReady || !fbApp.ready()) return;
+-  if (millis() - g_telemetryLastAttemptMillis < TELEMETRY_SEND_INTERVAL_MS) return;
+ 
+-  // [G2 LOCAL] Przy aktywnym runtime najpierw replayujemy najstarsze zamkniete strony.
+-  if (g_spoolRuntimeArmed) {
++  // [G2 LOCAL] Przy aktywnym runtime najpierw replayujemy najstarsze zamkniete
++  // strony — ale nigdy nie wtedy, gdy czeka wlasna paczka (ten sam bufor JSON).
++  if (g_spoolRuntimeArmed && !g_telemetryPendingValid) {
+     if (spoolRuntimeReplayOneBatch(tgIterStartMs)) return;
+   }
+ 
++  if (g_telemetryPendingValid) {
++    // [v3.55.0] Ponowienie TYCH SAMYCH bajtow. Bez tego po timeoucie
++    // budowalismy nowa paczke, a spoznione ACK potwierdzalo nie te probki.
++    if (millis() - g_telemetryLastAttemptMillis < TELEMETRY_RETRY_INTERVAL_MS) return;
++    telemetrySendPendingBatch();
++    return;
++  }
++
++  if (millis() - g_telemetryLastAttemptMillis < TELEMETRY_SEND_INTERVAL_MS) return;
++
+   if (!g_telemetryRing.ready() || g_telemetryRing.size() == 0U) return;
+ 
+   uint8_t batchCount = 0;
+@@ -41424,24 +41621,15 @@
+   size_t bytes = 0;
+   if (!telemetryBuildBatch(batchCount, lastSeq, bytes)) return;
+ 
+-  g_fbTelemetryResult = AsyncResult{};
+-  g_telemetryBatchCount = batchCount;
+-  g_telemetryBatchLastSeq = lastSeq;
+-  g_telemetryRequestActive = true;
+-  g_telemetryLastAttemptMillis = millis();
+-
+-  fbSSLClient.setHandshakeTimeout(4000);
+-  serwisujTWDTJesliZarejestrowany();
+-  object_t payload(g_telemetryJsonBuffer);
+-  fbDatabase.update<object_t>(fbAsyncClient, "/piec/telemetry/1m/v1", payload, g_fbTelemetryResult);
+-  fbCzekajNaWynikZLimitem(g_fbTelemetryResult, TELEMETRY_REQUEST_LIMIT_MS);
+-  telemetryPublishCompletionFromResult();
+-  telemetryFinalizeCompletedRequest();
++  // Bufor zawiera teraz dokladnie te bajty — od tej chwili nikt go nie nadpisze,
++  // dopoki paczka nie zostanie rozliczona.
++  g_telemetryPendingValid = true;
++  g_telemetryPendingCount = batchCount;
++  g_telemetryPendingLastSeq = lastSeq;
++  g_telemetryPendingBytes = bytes;
++  g_telemetryPendingAttempts = 0;
+ 
+-  if (g_telemetryRequestActive) {
+-    DLOGF(DC_TELEMETRY, DL_WARN, "batch_timeout count=%u bytes=%u worker=%u",
+-                  (unsigned)batchCount, (unsigned)bytes, fbLoopWorkerZajety() ? 1U : 0U);
+-  }
++  telemetrySendPendingBatch();
+ }
+ 
+ // Zamiennik petli inline w fbInitialize() ("Czekaj na gotowosc"). Ta petla
+@@ -41864,6 +42052,19 @@
+   ja("\"spool_pages\":" + String((unsigned long)g_spoolRuntimePagesCreated) + ",");
+   ja("\"spool_spill\":" + String((unsigned long)g_spoolRuntimeSamplesSpilled) + ",");
+   ja("\"spool_replay\":" + String((unsigned long)g_spoolRuntimeSamplesReplayed) + ",");
++  // [v3.55.0 CLOUD-MARK] "ostatnia probka w chmurze" — 5 malych pol (~70 B).
++  // tel_cloud_ago = -1, gdy od restartu nic jeszcze nie potwierdzono.
++  {
++    const uint32_t cloudSeq = g_telemetryLastCloudSeq;
++    const uint32_t cloudUptime = g_telemetryLastCloudUptimeMs;
++    ja("\"tel_cloud_seq\":" + String((unsigned long)cloudSeq) + ",");
++    ja("\"tel_cloud_ts\":" + String((unsigned long)g_telemetryLastCloudUnixTs) + ",");
++    long agoSec = -1;
++    if (cloudSeq != 0U) agoSec = (long)((millis() - cloudUptime) / 1000UL);
++    ja("\"tel_cloud_ago\":" + String(agoSec) + ",");
++  }
++  ja("\"tel_ring\":" + String((unsigned long)(g_telemetryRing.ready() ? g_telemetryRing.size() : 0U)) + ",");
++  ja("\"tel_pending\":" + String(g_telemetryPendingValid ? 1 : 0) + ",");
+   ja("\"fw\":\""); ja(FIRMWARE_VERSION); ja("\",");
+   ja("\"uptime\":" + String(millis() / 1000) + ",");
+   ja("\"updatedAt\":" + String(millis()) + "}");

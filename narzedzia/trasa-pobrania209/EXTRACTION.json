@@ -1,0 +1,23 @@
+{
+  "release_ready": false,
+  "ref": "c47917dcaba2acefb04277cd679f58a60b4fab30",
+  "header_sha256": "25db7c8fb30943307b28b181722187a65576f6ee778eeb99e29b1ef8db7915ba",
+  "server_candidate_sha256": "c3dd7c7d57df2a291504c1eaecf76acadcc78daee8beb99068d19f35e6b3c021",
+  "webhandlers_sha256": "43c01d2fb1208552bc940b44678086d0fae62a8756fa2db6ff68df0506ef9755",
+  "extracted": {
+    "AsyncURIMatcher (+WebRequestMethodComposite)": "9aa72ec5edbf769565967ed65cf416dec0001523927033b33bf6aac44e2cc16e",
+    "AsyncURIMatcher::matches + constructors": "e0e54ddcfd3b2310a9e53d6d86aa14deae9727b52201923a4240dad58547ffe8",
+    "AsyncWebServer::_attachHandler": "b12d03e9c29c95fdd7a5ce6aea0c34f7aac11c92b0accb68e0838d9edadd067d",
+    "AsyncCallbackWebHandler::canHandle + handleRequest": "fb7090452668ecbaada4c7eadd91421cab77eb859e1a5d5ec87121c09ee10ef0",
+    "AsyncWebHandler::filter expression": "56e94cb00d63326e158e63525b8f0a63e0ddcb4501403f012579e5f4c9ba041a"
+  },
+  "byte_identical_to_source": true,
+  "host_string_shim": "own host/Arduino.h is a superset of the frozen 206 shim (checked line by line)",
+  "modeled": [
+    "String shim",
+    "TCP client",
+    "HTTP header serialisation (marker HEAD)",
+    "error response body",
+    "FreeRTOS scheduling"
+  ]
+}

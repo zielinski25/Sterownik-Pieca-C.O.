@@ -1,0 +1,164 @@
+--- v0.31.34-dziury-i-pompa/AppModel.kt	2026-10-28 21:10:32.134729682 +0000
++++ v0.31.35-solar-z-chmury/AppModel.kt	2026-10-28 21:13:49.011724082 +0000
+@@ -129,6 +129,9 @@
+         sheet = id
+         refreshSheet()
+         if (id == "terminal") startTerminalDlogPolling() else stopTerminalDlogPolling()
++        // [0.31.35] Karta solarna ma pokazać dzisiejszy zysk od razu, a nie po
++        // pierwszym własnym pollingu za 8 s — dociągamy dobę z chmury.
++        if (id == "panel") refreshSolarFromCloud()
+     }
+ 
+     // ── toasty i logi ───────────────────────────────────────────────────────
+@@ -230,7 +233,7 @@
+ 
+     fun onResume() {
+         bgJob?.cancel(); bgJob = null
+-        poll(); refreshWeather(false); loadRange(rangeSec)
++        poll(); refreshWeather(false); loadRange(rangeSec); refreshSolarFromCloud()
+         if (sheet == "terminal") startTerminalDlogPolling()
+         jobs = listOf(
+             scope.launch { while (true) { delay(8000); poll() } },
+@@ -271,6 +274,32 @@
+         solar.recordSample(panel, boiler, outside, radEst(w), w.uv, w.cloud)
+     }
+ 
++    /**
++     * [0.31.35 SOLAR-HISTORY] Dzisiejsza temperatura zbiornika prosto z chmury.
++     *
++     * Karta „Zysk dziś · zmierzone” liczyła się wyłącznie z próbek zebranych, gdy
++     * aplikacja była otwarta na wierzchu — dlatego wieczorem pokazywała
++     * „brak próbek z dziś”, choć chmura ma zbiornik co minutę. Tu dociągamy
++     * dobę z RTDB i przekazujemy do SolarAnalytics (metoda liczenia bez zmian).
++     */
++    private var solarHistoryAt = 0L
++
++    fun refreshSolarFromCloud() = scope.launch {
++        if (!connected || Rtdb.refreshToken.isBlank()) return@launch
++        val now = System.currentTimeMillis()
++        // Jedno pobranie doby na 5 minut — polling statusu leci co 8 s i nie może
++        // zamieniać się w 180 zapytań do RTDB na kwadrans.
++        if (now - solarHistoryAt < 5 * 60_000L) return@launch
++        solarHistoryAt = now
++        try {
++            val pts = Rtdb.fetchTelemetry(24 * 3600) ?: return@launch
++            val added = solar.mergeCloudToday(pts)
++            if (added > 0) { S.bump(); refreshSheet() }
++        } catch (e: Exception) {
++            // Brak chmury nie może psuć karty — zostaje to, co już wiadomo.
++        }
++    }
++
+     /** Promieniowanie krótkofalowe Open-Meteo z bieżącej godziny; nie estymujemy go z UV. */
+     fun radEst(w: WCurrent?): Double {
+         if (w == null) return Double.NaN
+@@ -347,6 +376,9 @@
+             S.bump()
+             if (S.online) {
+                 recordSolar()
++                // [0.31.35] Po pierwszym udanym pollingu dociągnij dzisiejszą dobę
++                // z chmury, żeby karta solarna nie czekała na otwarcie arkusza.
++                refreshSolarFromCloud()
+                 if (page == 1) appendLiveFeed()
+             }
+             // Alarmy oceniaj wyłącznie na podstawie flag zwróconych przez sterownik.
+--- ../android/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-28 21:10:32.218730105 +0000
++++ v0.31.35-solar-z-chmury/SolarAnalytics.kt	2026-10-28 21:13:28.639621185 +0000
+@@ -141,6 +141,82 @@
+         } catch (e: Exception) { /* ignore */ }
+     }
+ 
++    /**
++     * [0.31.35 SOLAR-HISTORY] Wciąga DZISIEJSZE próbki z historii chmury do archiwum.
++     *
++     * Powód: `recordSample()` zbiera próbki tylko wtedy, gdy aplikacja jest otwarta
++     * na wierzchu (cykl pollingu żyje w `onResume`/`onPause`). Kto zagląda do pieca
++     * wieczorem, ten przez cały dzień nie ma ANI JEDNEJ próbki — karta pokazywała
++     * „brak próbek z dziś", mimo że chmura ma temperaturę zbiornika co minutę.
++     * Zmierzone 2026-10-28: 27.10 zbiornik +6,0 °C (panel do 31,3 °C), 28.10 −15,8 °C.
++     *
++     * Metoda liczenia jest TA SAMA co przy próbkach na żywo: zysk = ostatnia minus
++     * pierwsza próbka doby; pobranie wody = spadek szybszy niż 0,3 °C/min.
++     * Zwraca liczbę próbek, których wcześniej nie było (0 = nic nowego).
++     */
++    fun mergeCloudToday(points: List<TelemPoint>): Int {
++        val start = dayStartMs()
++        if (points.isEmpty()) return 0
++        val today = java.util.TreeMap<Long, Sample>()
++        archive.forEach { if (it.ts >= start) today[it.ts] = it }
++        var added = 0
++        points.forEach { p ->
++            if (p.ts < start || today.containsKey(p.ts)) return@forEach
++            val b = p.t_bojler; val pn = p.t_panel; val z = p.t_zewn
++            if (b == null || pn == null || z == null) return@forEach
++            if (!b.isFinite() || !pn.isFinite() || !z.isFinite()) return@forEach
++            if (pn !in 0.0..140.0 || b !in 10.0..95.0 || z !in -25.0..45.0) return@forEach
++            today[p.ts] = Sample(
++                p.ts, isoFmt.format(p.ts), round1(pn), round1(b), round1(z),
++                0, Double.NaN, 0, 0, 0.0, 0.0
++            )
++            added++
++        }
++        if (added == 0) return 0
++        // Gain i pobrania przeliczamy po scaleniu, w kolejności czasu.
++        val rebuilt = ArrayList<Sample>(today.size)
++        var prev: Sample? = null
++        today.values.forEach { cur ->
++            val pr = prev
++            var draw = 0
++            var drop = 0.0
++            var gain = 0.0
++            if (pr != null) {
++                val dtMin = maxOf(.5, (cur.ts - pr.ts) / 60000.0)
++                val rateBojler = (cur.tBojler - pr.tBojler) / dtMin
++                val ratePanel = (cur.tPanel - pr.tPanel) / dtMin
++                if (rateBojler < -0.30 || (ratePanel < -0.60 && cur.tPanel > cur.tZewn + 5)) {
++                    draw = 1
++                    drop = maxOf(0.0, pr.tBojler - cur.tBojler)
++                }
++                gain = maxOf(maxOf(0.0, cur.tPanel - pr.tPanel), maxOf(0.0, cur.tBojler - pr.tBojler)) +
++                    (if (draw != 0) drop else 0.0)
++            }
++            rebuilt.add(cur.copy(isDraw = draw, drop = round1(drop), gain = round1(gain)))
++            prev = cur
++        }
++        archive.removeAll { it.ts >= start }
++        archive.addAll(rebuilt)
++        archive.sortBy { it.ts }
++        while (archive.size > 5000) archive.removeAt(0)
++        rebuildDrawEvents()
++        recomputeToday()
++        save()
++        return added
++    }
++
++    private fun round1(v: Double): Double = (v * 10).roundToInt() / 10.0
++
++    /** Lista pobrań wody z archiwum — wspólna dla startu i dla scalania z chmurą. */
++    private fun rebuildDrawEvents() {
++        waterDrawEvents.clear()
++        val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
++        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tBojler + it.drop, it.tBojler)) }
++        drawCount = draws.size
++        accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
++        accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
++    }
++
+     fun recordSample(tPanel: Double, tBojler: Double, tZewn: Double, rad: Double, uv: Double, cloud: Double) {
+         if (!listOf(tPanel, tBojler, tZewn, rad, uv, cloud).all { it.isFinite() }) return
+         if (tPanel !in 0.0..140.0 || tBojler !in 10.0..95.0 || tZewn !in -25.0..45.0 || rad < 0.0) return
+--- ../android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-28 21:10:32.218730105 +0000
++++ v0.31.35-solar-z-chmury/Sensors.kt	2026-10-28 21:13:51.903738721 +0000
+@@ -376,8 +376,11 @@
+             if (solar.todayDrawCount > 0) "${solar.todayDrawCount} razy · −${s.fmt1(solar.todayDrawDrop)}°C" else "brak"
+         )
+         Text(
++            // [0.31.35] „Zmierzone" liczy się też z historii chmury (co minutę),
++            // a nie tylko z próbek zebranych przy otwartej aplikacji.
+             "Zysk = o ile °C ogrzała się woda w zbiorniku 100 l. Minus = woda się " +
+-                "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku, „szacunek” to " +
++                "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku — z chmury, " +
++                "co minutę, także gdy aplikacja była zamknięta. „Szacunek” to " +
+                 "wyliczenie z prognozy słońca — nie pomiar.",
+             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp,
+             modifier = Modifier.padding(top = 6.dp)

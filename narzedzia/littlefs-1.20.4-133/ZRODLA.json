@@ -1,0 +1,66 @@
+{
+  "esp_littlefs_commit": "92ac3c2dce8c62c4b47bdb33e8461a4670411475",
+  "upstream_gitlink": {
+    "path": "src/littlefs",
+    "mode": "160000",
+    "type": "commit",
+    "sha": "adad0fbbcf5382c20978d07f94f9c13be9041c1b"
+  },
+  "files": {
+    "esp_littlefs.c": {
+      "url": "https://api.github.com/repos/joltwallet/esp_littlefs/contents/src/esp_littlefs.c?ref=92ac3c2dce8c62c4b47bdb33e8461a4670411475",
+      "bytes": 80264,
+      "sha256": "925fd9e1810fc0449c9c32f54d6799798afb5d825a8cbd5003663125defef8c3"
+    },
+    "littlefs_esp_part.c": {
+      "url": "https://api.github.com/repos/joltwallet/esp_littlefs/contents/src/littlefs_esp_part.c?ref=92ac3c2dce8c62c4b47bdb33e8461a4670411475",
+      "bytes": 2841,
+      "sha256": "d557968b22c8426c17739844d922d65cabe43582f88abc1e5493c01d5e7445f0"
+    },
+    "Kconfig": {
+      "url": "https://api.github.com/repos/joltwallet/esp_littlefs/contents/Kconfig?ref=92ac3c2dce8c62c4b47bdb33e8461a4670411475",
+      "bytes": 10820,
+      "sha256": "4bd38dd56dffd0493059b9ea1db42b6609eb031bad975a6ba812f4eb524c3aac"
+    },
+    "LICENSE": {
+      "url": "https://api.github.com/repos/joltwallet/esp_littlefs/contents/LICENSE?ref=92ac3c2dce8c62c4b47bdb33e8461a4670411475",
+      "bytes": 1057,
+      "sha256": "b6bbf3bd17c2b5532bc25a7acf1760faac0b995d6e0ad8bec29435166727d4c5"
+    },
+    "idf_component.yml": {
+      "url": "https://api.github.com/repos/joltwallet/esp_littlefs/contents/idf_component.yml?ref=92ac3c2dce8c62c4b47bdb33e8461a4670411475",
+      "bytes": 177,
+      "sha256": "428c125bb650254177b7f4b53e5b39ef01b987a3c8192418f0f9ca2489209e68"
+    },
+    "esp_littlefs.h": {
+      "url": "https://api.github.com/repos/joltwallet/esp_littlefs/contents/include/esp_littlefs.h?ref=92ac3c2dce8c62c4b47bdb33e8461a4670411475",
+      "bytes": 6235,
+      "sha256": "02ff93d30c9840235a995a6825aae72fa6bb0eb701d702740560d9f6d1bd1617"
+    },
+    "lfs.c": {
+      "url": "https://api.github.com/repos/littlefs-project/littlefs/contents/lfs.c?ref=adad0fbbcf5382c20978d07f94f9c13be9041c1b",
+      "bytes": 197434,
+      "sha256": "41b7aa8d6e1601ef26129399cc2e5988e736c82a4b89e31183be787722aebf07"
+    },
+    "lfs.h": {
+      "url": "https://api.github.com/repos/littlefs-project/littlefs/contents/lfs.h?ref=adad0fbbcf5382c20978d07f94f9c13be9041c1b",
+      "bytes": 26733,
+      "sha256": "51c8215142691c2c177ef757ad09c95d96d75e5260eb403368d59ed14d5f11c0"
+    },
+    "lfs_util.c": {
+      "url": "https://api.github.com/repos/littlefs-project/littlefs/contents/lfs_util.c?ref=adad0fbbcf5382c20978d07f94f9c13be9041c1b",
+      "bytes": 988,
+      "sha256": "f2fbde533670560434bd9f5a547174cc7c5a4670a02c47b4bd85180dced8b2ec"
+    },
+    "lfs_util.h": {
+      "url": "https://api.github.com/repos/littlefs-project/littlefs/contents/lfs_util.h?ref=adad0fbbcf5382c20978d07f94f9c13be9041c1b",
+      "bytes": 8049,
+      "sha256": "548d46aa524dc7449e16739286c1a422a52f9de727ff0be0c2ffc5593f5ca981"
+    },
+    "LICENSE.md": {
+      "url": "https://api.github.com/repos/littlefs-project/littlefs/contents/LICENSE.md?ref=adad0fbbcf5382c20978d07f94f9c13be9041c1b",
+      "bytes": 1523,
+      "sha256": "0cb4ff1daf5fdc1359c6a6ee3116092f08fc100c9d58b1b77ab17bfd801f856d"
+    }
+  }
+}

@@ -1,0 +1,152 @@
+{
+  "status": "PASS",
+  "stage": 219,
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "firmware": "v3.56.4 (plik z etapu 218 - bez zmian w tym etapie)",
+  "stany": {
+    "v3.55.8": {
+      "returncode": 1,
+      "zielony": false,
+      "kontrol": 16,
+      "czerwone": [
+        "B04",
+        "B09",
+        "B10",
+        "B11",
+        "B12",
+        "B13",
+        "B16"
+      ]
+    },
+    "v3.56.3": {
+      "returncode": 1,
+      "zielony": false,
+      "kontrol": 16,
+      "czerwone": [
+        "B11",
+        "B13",
+        "B14",
+        "B16"
+      ]
+    },
+    "v3.56.4": {
+      "returncode": 0,
+      "zielony": true,
+      "kontrol": 16,
+      "czerwone": []
+    }
+  },
+  "mutacje": {
+    "M1_urwany_nawias": {
+      "opis": "usuniety jeden zamykajacy nawias klamrowy",
+      "returncode": 1,
+      "czerwone": [
+        "B02"
+      ],
+      "oczekiwane": [
+        "B02"
+      ]
+    },
+    "M2_raw_string_bez_cudzyslowu": {
+      "opis": "raw string strony bez zamykajacego cudzyslowu",
+      "returncode": 1,
+      "czerwone": [
+        "B02",
+        "B03",
+        "B04",
+        "B05",
+        "B06",
+        "B07",
+        "B08",
+        "B16"
+      ],
+      "oczekiwane": [
+        "B03"
+      ]
+    },
+    "M3_panel_bez_id": {
+      "opis": "panel nie ma id=\"histBtn\" (skrypt wyszedlby wczesniej)",
+      "returncode": 1,
+      "czerwone": [
+        "B04"
+      ],
+      "oczekiwane": [
+        "B04"
+      ]
+    },
+    "M4_zla_kolejnosc_include": {
+      "opis": "HistoriaPobranie.h przed ESPAsyncWebServer.h (blad D1 z etapu 214)",
+      "returncode": 1,
+      "czerwone": [
+        "B09"
+      ],
+      "oczekiwane": [
+        "B09"
+      ]
+    },
+    "M5_stara_wersja": {
+      "opis": "FIRMWARE_VERSION cofniete na v3.56.3",
+      "returncode": 1,
+      "czerwone": [
+        "B11"
+      ],
+      "oczekiwane": [
+        "B11"
+      ]
+    },
+    "M6_goly_napis_trasy": {
+      "opis": "/history/long zarejestrowane golym napisem (blad v3.56.3)",
+      "returncode": 1,
+      "czerwone": [
+        "B13",
+        "B16"
+      ],
+      "oczekiwane": [
+        "B13"
+      ]
+    },
+    "M7_blad_skladni_js": {
+      "opis": "nawias w skrypcie panelu (JavaScript sie nie sparsuje)",
+      "returncode": 1,
+      "czerwone": [
+        "B08",
+        "B16"
+      ],
+      "oczekiwane": [
+        "B08"
+      ]
+    },
+    "M8_nadmiarowy_div": {
+      "opis": "dodatkowy </div> przed </body> (niedomkniety tag w stronie)",
+      "returncode": 1,
+      "czerwone": [
+        "B06"
+      ],
+      "oczekiwane": [
+        "B06"
+      ]
+    },
+    "M9_duplikat_globalnej": {
+      "opis": "druga definicja historiaBramka (duplikat globalnej)",
+      "returncode": 1,
+      "czerwone": [
+        "B12"
+      ],
+      "oczekiwane": [
+        "B12"
+      ]
+    },
+    "M10_konce_linii_crlf": {
+      "opis": "konce linii CRLF w calym pliku",
+      "returncode": 1,
+      "czerwone": [
+        "B01"
+      ],
+      "oczekiwane": [
+        "B01"
+      ]
+    }
+  }
+}

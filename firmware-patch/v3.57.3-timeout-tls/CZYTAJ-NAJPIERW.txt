@@ -1,0 +1,105 @@
+═══════════════════════════════════════════════════════════════
+  FIRMWARE v3.57.3 — INSTRUKCJA WGRANIA
+  Data: 2026-10-31
+═══════════════════════════════════════════════════════════════
+
+WERSJA PODBITA: TAK (3.57.2 -> 3.57.3)
+ZASTEPUJE 3.57.2 — zawiera wszystko z 3.57.2 I poprawke nizej.
+Jesli 3.57.2 jeszcze nie wgrales: wgraj od razu 3.57.3.
+
+
+CO TO DAJE
+----------
+Dwie rzeczy naraz.
+
+1) NAPRAWA ZAWIESZENIA Z 31.10 (04:09 -> restart 04:14)
+
+   Co sie stalo: odczyt komend z Firebase przekroczyl limit 5 s. Firmware
+   zareagowal poprawnie — zamknal gniazdo (fbSSLClient.stop()) i poszedl
+   dalej. Ale zamkniecie gniazda ZERUJE timeout nawiazania TLS, a pompa
+   Firebase na koncu kazdej iteracji wolala fbApp.loop() bez ponownego
+   ustawienia tego timeoutu. Efekt: biblioteka probowala sie polaczyc
+   z domyslnym limitem 120 s (albo bez limitu) i zadanie wisialo.
+   Po 300 s ciszy nadzor zrestartowal centrale.
+
+   Poprawka: timeout jest teraz ustawiany PRZED kazdym fbApp.loop() —
+   dokladnie tak, jak juz bylo w petlach oczekiwania. To nie zmienia
+   logiki, tylko stan gniazda, ktory stop() wyczyscil.
+
+2) RAPORT PO RESTARCIE MOWI, GDZIE STANELO (to bylo juz w 3.57.2)
+
+   Po restarcie z nadzoru dostaniesz linijke:
+     Ostatni znacznik: FB_SEND / BEFORE (po 11520 s pracy, wolna pamiec 94 kB)
+   albo FB_CMD / FB_INIT / FB_LOOP / TG_POST / WIFI_DNS i etap.
+
+   Dolozony zostal tez znacznik FB_INIT, zeby odroznic krotka sciezke
+   fbInitialize() od sciezki zadania (FB_CMD/FB_SEND).
+
+
+UWAGA O DOWODZIE
+----------------
+Poprawka nie jest zgadywaniem. Log z nocy pokazal dokladnie:
+
+  04:09:00  FB-CMD lvl=ERR zdarzenie=get_error blad="TIMEOUT" t=5005ms
+            ^ to OSTATNIA linia przed cisza
+  04:14:11  NADZOR zdarzenie=raport_po_restarcie nr=1
+  04:14:1x  BOOT zdarzenie=restart powod=SW streak=0
+
+Pamiec byla w normie (76-85 kB wolnego), stos tgTask 1020 B, brak panic,
+restart programowy. Czyli nie pamiec, nie stos, nie watchdog sprzetowy —
+zadanie stanelo w wywolaniu sieciowym. Mechanizm zerowania timeoutu przez
+stop() jest udokumentowany w arduino-esp32 (issue #6077, PR #5945),
+a autor biblioteki FirebaseClient pisze wprost, ze czas blokady zalezy
+wylacznie od ustawien timeoutu klienta SSL.
+
+
+CZEGO TO NIE ROBI
+-----------------
+- Nie zmienia progow nadzoru (5 min ciszy, 3 restarty, okno 30 min).
+- Nie zmienia circuit breakera, telemetrii, Telegrama, OTA, historii,
+  archiwum solarnego, formatu /piec/status ani /piec/cmd, rytmu 15 s / 7 s / 2 s.
+- Nie zmienia logiki pieca, pomp, serwa, alarmow.
+- Aplikacja 0.31.63 bez zmian.
+
+Jesli zawieszenie wroci — raport nadzoru powie teraz, ktora sciezka.
+To jest roznica miedzy "cos sie zawiesilo" a "stanelo na FB_LOOP".
+
+
+KROK 1 — PODMIEŃ PLIK
+---------------------
+Skopiuj main_centrala.cpp z tej paczki do:
+
+    C:\Users\Rafcio\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp
+
+NADPISZ istniejacy plik.
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h.
+
+Kopia bezpieczenstwa przed podmiana (PowerShell):
+
+    Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-3.57.1" -Force
+
+
+KROK 2 — WGRANIE
+----------------
+PlatformIO -> Upload  (albo w terminalu: pio run -t upload)
+
+
+KROK 3 — SPRAWDZENIE (1 minuta)
+-------------------------------
+1. Ustawienia -> wersja firmware: v3.57.3
+2. Log po starcie: brak nowych bledow, po ~15 s pierwsze "FB-SEND ... ok".
+3. Aplikacja: kliknij cokolwiek — potwierdzenie w ~1-2 s jak dotad.
+
+
+COFNIECIE
+---------
+Podmiana pliku na wersje z paczki 3.57.1 i ponowne wgranie.
+(3.57.2 nie ma sensu przywracac — 3.57.3 to 3.57.2 + poprawka timeoutu.)
+
+
+PLIKI
+-----
+- main_centrala.cpp                           (pelny plik do podmiany)
+- main_centrala-v3.57.2-to-v3.57.3.patch      (sama roznica wobec 3.57.2)
+- README.md                                   (szczegoly + research)
+- SHA256SUMS.txt                              (sumy kontrolne)

@@ -1,0 +1,152 @@
+--- a/core/SolarAnalytics.kt
++++ b/core/SolarAnalytics.kt
+@@ -16,8 +16,9 @@
+    BILANS SOLARNY & DETEKCJA POBORU WODY — `SolarAnalytics` z Piec.html 1:1
+    (bramka 25 s, archiwum 5000, zapis co 5 próbek do klucza
+    `solar_archive_data`, eksport CSV).
+-   [0.31.36] Pobranie wody = spadek podtrzymany ≥ 0,5 °C (recomputeDraws),
+-   a „zysk dziś” liczony ze zbiornika (tBojler), nie z kolektora.
++   [0.31.37] Wszystko liczone z `tPanel` = woda w zbiorniku słonecznym na dachu
++   (BUS_3), nie z bojlera pieca (tBojler/BUS_2). Pobranie wody = spadek
++   podtrzymany ≥ 0,5 °C, skok > 12 °C odrzucany jako usterka sondy.
+    ══════════════════════════════════════════════════════════════════════════ */
+ class SolarAnalytics(private val prefs: Prefs) {
+ 
+@@ -90,7 +91,7 @@
+         recomputeDraws()
+         accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
+         val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
+-        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tBojler + it.drop, it.tBojler)) }
++        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tPanel + it.drop, it.tPanel)) }
+         accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
+         drawCount = draws.size
+         archive.lastOrNull()?.let { deltaT = it.tPanel - it.tZewn }
+@@ -121,13 +122,15 @@
+         var firstT = Double.NaN; var lastT = Double.NaN
+         archive.forEach { s ->
+             if (s.ts >= start) {
+-                // [0.31.36] Liczymy ze ZBIORNIKA (tBojler), nie z kolektora (tPanel).
+-                // Podpis pod tabelą i karta na pulpicie mówią wprost: „Zysk = o ile °C
+-                // ogrzała się woda w zbiorniku 100 l”. Tymczasem kod brał temperaturę
+-                // PANELU, więc 2026-10-28 pokazywał −0,3 °C (kolektor 17,5 → 17,2),
+-                // choć woda w zbiorniku zjechała z 37,5 do 21,0 °C, czyli −16,5 °C.
+-                if (firstT.isNaN()) firstT = s.tBojler
+-                lastT = s.tBojler
++                // [0.31.37] tPanel to WODA w zbiorniku słonecznym na dachu, nie płytka
++                // kolektora. Potwierdza to ARCHIWUM_SOLARNE_STAN.md §2–§3: czujnik
++                // `czujnik_temp_Panel_Plus` (BUS_3, kanał TELEMETRY_CH_PANEL) leży
++                // w wodzie, z boku, w połowie wysokości zbiornika 100 l.
++                // `tBojler` (BUS_2) to BOJLER PIECA w kotłowni — inna instalacja.
++                // 0.31.36 przez pomyłkę liczyła z bojlera pieca i pokazywała −17,5 °C
++                // (woda w kotłowni), gdy zbiornik słoneczny zmienił się o −0,2 °C.
++                if (firstT.isNaN()) firstT = s.tPanel
++                lastT = s.tPanel
+                 if (s.isDraw != 0) { n += 1; d += s.drop }
+             }
+         }
+@@ -212,7 +215,10 @@
+ 
+     /** [0.31.36] Pobranie wody wykrywane z temperatury ZBIORNIKA, nie z szumu czujnika.
+      *
+-     *  Poprzednia reguła (`rateBojler < -0.30`) łapała każde zejście o 0,3 °C między dwiema
++     *  Liczone z `tPanel` — czyli z WODY w zbiorniku słonecznym na dachu
++     *  (ARCHIWUM_SOLARNE_STAN.md §2–§3), a nie z bojlera pieca w kotłowni.
++     *
++     *  Stara reguła (`rateBojler < -0.30`) łapała każde zejście o 0,3 °C między dwiema
+      *  próbkami minutowymi. Czujnik ma rozdzielczość 0,1 °C, a zbiornik stygnie przez pętlę
+      *  termosyfonu — więc takie zejście zdarza się co kilkanaście minut i wychodziło
+      *  „Pobrania ciepłej wody: 24 razy · −7,2 °C” (2026-10-28), choć nikt wody nie brał.
+@@ -223,11 +229,11 @@
+      *   1. woda schodzi o co najmniej 0,5 °C od maksimum z ostatnich 5 minut,
+      *   2. i zostaje niżej przez następne 5 minut.
+      *  Drgnięcie czujnika wraca w ciągu minuty, więc punkt 2 je odrzuca.
+-     *  Epizody bliższe niż 20 minut to jedno pobranie (kąpiel trwa), a spadek większy
+-     *  niż 15 °C to odczepiona sonda — obcinamy, żeby nie psuł sumy.
++     *  Epizody bliższe niż 20 minut to jedno pobranie (kąpiel trwa). Spadek większy
++     *  niż 12 °C jest ODRZUCANY jako usterka sondy — 100 l nie traci 25 °C od kranu.
+      *
+-     *  Sprawdzone na eksporcie z chmury (28 dni, 39 602 próbki): 33 pobrania w 16 dniach,
+-     *  2026-10-28 — zero (zbiornik tylko stygł).
++     *  Sprawdzone na eksporcie z chmury (28 dni): 26 pobrań w 17 dniach, po 1–2 na dobę,
++     *  każde 0,5–5 °C, głównie po południu. 2026-10-28 — zero (nikt nie brał wody).
+      */
+     private fun recomputeDraws() {
+         val n = archive.size
+@@ -239,17 +245,17 @@
+         var i = 0
+         while (i < n) {
+             val ts = archive[i].ts
+-            var base = archive[i].tBojler
++            var base = archive[i].tPanel
+             var j = i
+             while (j > 0 && ts - archive[j - 1].ts <= DRAW_WINDOW_MS) {
+                 j--
+-                if (archive[j].tBojler > base) base = archive[j].tBojler
++                if (archive[j].tPanel > base) base = archive[j].tPanel
+             }
+-            if (base - archive[i].tBojler >= DRAW_STEP_C) {
+-                var low = archive[i].tBojler
++            if (base - archive[i].tPanel >= DRAW_STEP_C) {
++                var low = archive[i].tPanel
+                 var k = i + 1
+                 while (k < n && archive[k].ts - ts <= DRAW_HOLD_MS) {
+-                    if (archive[k].tBojler < low) low = archive[k].tBojler
++                    if (archive[k].tPanel < low) low = archive[k].tPanel
+                     k++
+                 }
+                 // Punkt 2: spadek musi się utrzymać, a nie być jedną próbką szumu.
+@@ -275,8 +281,13 @@
+                 if (candLow[c2] < low) low = candLow[c2]
+                 c2++
+             }
+-            flag[startIdx] = 1
+-            drop[startIdx] = round1(minOf(maxOf(0.0, base - low), DRAW_MAX_C))
++            val span = maxOf(0.0, base - low)
++            if (span <= DRAW_FAULT_C) {
++                flag[startIdx] = 1
++                drop[startIdx] = round1(span)
++            }
++            // span > DRAW_FAULT_C: sonda się odczepiła albo wróciła po restarcie —
++            // nie udajemy, że ktoś wylał 20 °C wody.
+             c = c2
+         }
+         // 3) przepisanie flag do archiwum (Sample jest niemutowalny)
+@@ -293,7 +304,7 @@
+         recomputeDraws()
+         waterDrawEvents.clear()
+         val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
+-        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tBojler + it.drop, it.tBojler)) }
++        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tPanel + it.drop, it.tPanel)) }
+         drawCount = draws.size
+         accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
+         accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
+@@ -388,7 +399,7 @@
+         SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date(ms))
+ 
+     companion object {
+-        /** [0.31.36] Progi wykrywania pobrania ciepłej wody — patrz `recomputeDraws()`.
++        /** [0.31.37] Progi wykrywania pobrania ciepłej wody — patrz `recomputeDraws()`.
+          *  Woda musi zejść o 0,5 °C od maksimum z 5 minut i utrzymać się niżej 5 minut.
+          *  Rozdzielczość czujnika to 0,1 °C, więc 0,5 daje czterokrotny zapas nad szumem,
+          *  a prawdziwa kąpiel schodzi o kilka °C. */
+@@ -396,7 +407,7 @@
+         private const val DRAW_WINDOW_MS = 5 * 60_000L
+         private const val DRAW_HOLD_MS = 5 * 60_000L
+         private const val DRAW_MERGE_MS = 20 * 60_000L
+-        private const val DRAW_MAX_C = 15.0
++        private const val DRAW_FAULT_C = 12.0
+ 
+         /** [0.31.29] Nachylenie dopasowania: °C przyrostu na 1 kWh/m² DOBOWEGO GTI.
+          *  Dopasowane do 4 dni pomiarów z Trzemchy (r = 0,990). Poprzednie 4,2 było
+--- a/ui/screens/sheets/Sensors.kt
++++ b/ui/screens/sheets/Sensors.kt
+@@ -380,7 +380,8 @@
+             // a nie tylko z próbek zebranych przy otwartej aplikacji.
+             // [0.31.36] Woda liczona z czujnika ZBIORNIKA (wcześniej brany był kolektor),
+             // a pobranie to spadek podtrzymany, nie pojedyncze drgnięcie o 0,3 °C.
+-            "Zysk = o ile °C ogrzała się woda w zbiorniku 100 l. Minus = woda się " +
++            "Zysk = o ile °C ogrzała się woda w zbiorniku słonecznym 100 l na dachu " +
++                "(czujnik kolektora, nie bojler pieca). Minus = woda się " +
+                 "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku — z chmury, " +
+                 "co minutę, także gdy aplikacja była zamknięta. „Szacunek” to " +
+                 "wyliczenie z prognozy słońca — nie pomiar. Pobranie liczy się jako " +

@@ -1,0 +1,71 @@
+═══════════════════════════════════════════════════════════════
+  FIRMWARE v3.57.1 — INSTRUKCJA WGRANIA
+  Data: 2026-10-30
+═══════════════════════════════════════════════════════════════
+
+WERSJA PODBITA: TAK (3.57.0 -> 3.57.1)
+
+CO TO DAJE
+----------
+Gdy aplikacja jest OTWARTA, centrala zaglada do skrzynki z poleceniami
+co 2 s zamiast co 7 s. Dzieki temu klik w aplikacji jest wykonywany
+w ~1-2 s, a potwierdzenie wraca w ~1,3-2,3 s (bylo do ~8 s).
+
+STATUS I TEMPERATURY: BEZ ZMIAN. Centrala wysyla stan co 15 s, tak jak
+dotad. Wersja 3.57.0 przyspieszala tez status do 5 s - to wycofane,
+bo ustalenie bylo: "chodzi o komendy i potwierdzenie".
+
+Jak to dziala: aplikacja 0.31.57 co 50 s melduje "podglad_wl". Centrala
+trzyma okno podgladu 90 s i tylko w tym oknie czesciej pyta o polecenia.
+Zamkniecie aplikacji = "podglad_wyl" = natychmiastowy powrot do 7 s.
+Zabita aplikacja = okno samo wygasa po 90 s.
+
+UWAGA: potrzebna aplikacja 0.31.57 (ona wysyla heartbeat). Starsza
+aplikacja tez zadziala, tylko heartbeat nie bedzie wysylany.
+
+
+CZY WARTO TERAZ WGRYWAĆ
+-----------------------
+Tak. Zmiana dotyczy wylacznie czestotliwosci pytania "czy jest polecenie?".
+Nie dotyka logiki pieca, pomp, serwa, alarmow, historii ani Telegrama.
+
+
+KROK 1 — PODMIEŃ PLIK
+---------------------
+Skopiuj main_centrala.cpp z tej paczki do:
+
+    C:\Users\Rafcio\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp
+
+NADPISZ istniejacy plik.
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h.
+
+
+KROK 2 — WGRANIE
+----------------
+PlatformIO -> Upload  (albo w terminalu: pio run -t upload)
+
+
+KROK 3 — SPRAWDZENIE (1 minuta)
+-------------------------------
+1. Ustawienia -> wersja firmware: v3.57.1
+2. Otworz aplikacje, kliknij pompe -> potwierdzenie w ~1-2 s.
+3. Log centrali po otwarciu aplikacji: JEDNA linia
+
+       tag=FB-PODGLAD lvl=INFO zdarzenie=aktywacja msg="panel otwarty - komendy co 2s (status 15s)"
+
+   po zamknieciu aplikacji: zdarzenie=deaktywacja.
+   Brak powtarzajacych sie wpisow, brak "nieznana_komenda".
+
+
+COFNIECIE
+---------
+Podmiana pliku na wersje z paczki 3.56.9 (albo 3.57.0) i ponowne wgranie.
+Aplikacja nie wymaga wtedy zadnych zmian.
+
+
+PLIKI
+-----
+- main_centrala.cpp                          (pelny plik do podmiany)
+- main_centrala-v3.57.0-to-v3.57.1.patch     (sama roznica wobec 3.57.0)
+- README.md                                  (szczegoly + tabele)
+- SHA256SUMS.txt                             (sumy kontrolne)

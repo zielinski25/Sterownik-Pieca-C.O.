@@ -1,0 +1,38 @@
+Zrodlo: ../../firmware-patch/v3.57.9-limity-sieci/src/main_centrala.cpp
+Znane zmienne: client:WiFiClientSecure, fbSSLClient:WiFiClientSecure, http:HTTPClient, strumien:WiFiClient, tgClient:WiFiClientSecure, tgPollClient:WiFiClientSecure
+
+=== setHandshakeTimeout (zawsze sekundy): 22 miejsc ===
+  wartosc     8 -> limit      8 s  x 22
+
+=== setTimeout (jednostka zalezna od klasy) ===
+     linia  24099  client.setTimeout(7)  [WiFiClientSecure, sekundy] = 7.0 s
+     linia  24104  http.setTimeout(7000)  [HTTPClient, milisekundy] = 7.0 s
+     linia  33401  client.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  39343  client.setTimeout(8)  [WiFiClientSecure, sekundy] = 8.0 s
+     linia  39347  http.setTimeout(8000)  [HTTPClient, milisekundy] = 8.0 s
+     linia  39432  client.setTimeout(15)  [WiFiClientSecure, sekundy] = 15.0 s
+     linia  39483  client.setTimeout(15)  [WiFiClientSecure, sekundy] = 15.0 s
+     linia  39487  http.setTimeout(15000)  [HTTPClient, milisekundy] = 15.0 s
+     linia  40447  fbSSLClient.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  40560  fbSSLClient.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  41968  fbSSLClient.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  41990  fbSSLClient.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  42012  fbSSLClient.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  42141  client.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  42191  fbSSLClient.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  42677  fbSSLClient.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  44165  client.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  44170  http.setTimeout(4000)  [HTTPClient, milisekundy] = 4.0 s
+     linia  44426  client.setTimeout(4)  [WiFiClientSecure, sekundy] = 4.0 s
+     linia  44431  http.setTimeout(4000)  [HTTPClient, milisekundy] = 4.0 s
+
+=== do zmiany w 3.57.9 ===
+  setHandshakeTimeout (zawsze sekundy):        22
+    - DO POPRAWY (nie 8 s):                    0
+    - juz poprawne (8 s):                      22
+  setTimeout w SEKUNDACH razem:                15
+    - BŁĘDNE (do poprawy):                     0
+    - POPRAWNE (setTimeout(4) - nie ruszamy):  15
+  setTimeout w milisekundach (nie ruszamy):    5
+  RAZEM DO ZMIANY:                             0
+  (wszystko juz w sekundach - nic do zrobienia)

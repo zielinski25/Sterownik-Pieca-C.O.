@@ -1,0 +1,9 @@
+Zrodlo: ../../firmware-patch/v3.57.9-limity-sieci/src/main_centrala.cpp
+Wywolan: setHandshakeTimeout=22, setTimeout=20 (sekundy: 15, milisekundy: 5)
+
+  OK   wszystkie setHandshakeTimeout maja wartosc 8 s - 0 do poprawy: 
+  OK   wszystkie client.setTimeout (sekundy) <= 20 s - 0 do poprawy: 
+  OK   http.setTimeout (milisekundy) nietkniete - baza=[4000, 4000, 7000, 8000, 15000] teraz=[4000, 4000, 7000, 8000, 15000]
+  OK   diff dotyka tylko timeoutow, FIRMWARE_VERSION i changelogu - 0 innych linii: 
+
+BRAMA KROKU 3: 4 OK / 0 FAIL

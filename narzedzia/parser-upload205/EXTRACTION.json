@@ -1,0 +1,15 @@
+{
+  "release_ready": false,
+  "request_sha256": "3ca1c44ffef44e4fd7d8e900857e797469cd336bf846f2a9af61e02a0956e7ad",
+  "original_methods": [
+    "_onData",
+    "_handleUploadByte",
+    "_parseMultipartPostByte"
+  ],
+  "candidate_methods": [
+    "strict multipart framing",
+    "strict-mode _onData checks"
+  ],
+  "full_headers_parser_and_library_compiled": false,
+  "String": "host model, not Arduino implementation"
+}

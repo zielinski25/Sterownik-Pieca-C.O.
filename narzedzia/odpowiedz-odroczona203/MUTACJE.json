@@ -1,0 +1,115 @@
+{
+  "status": "PASS",
+  "profile": "ASan+UBSan, LSan enabled",
+  "inputs": {
+    "narzedzia/odpowiedz-odroczona203/Test.cpp": "2a74638f1662eddfe478029761124adbe864dcc98bfef2de78c403b57152a136",
+    "narzedzia/odpowiedz-odroczona203/Fixture202.inc": "3cf5515c77f1ca13fa5dce3c13732c1a5af2962da06b10cf66edce15561b4df6",
+    "narzedzia/odpowiedz-odroczona203/Fields.inc": "d57e789c2777ec82dbad46a66dabc51d71092989f6e9d8246999289fa885867f",
+    "narzedzia/odpowiedz-odroczona203/Factory.inc": "503e9ab60b42f5878763d3b2966f2f219be84372f08fc3a466b20df47219d404",
+    "narzedzia/odpowiedz-odroczona203/API.inc": "b8c5abb30e2e0f8ea51c0144bc519164c2afae7aee9f4bc13938d2ee5d9c6277",
+    "narzedzia/odpowiedz-odroczona203/Methods.inc": "7ba90061180f6976c83fb8b47f2690cf927d68dc8e5307d5d47abaa5892a72e6",
+    "narzedzia/odpowiedz-odroczona203/DeferredUploadReply.h": "a73151171ff65752a251e0fcbda440b3d8708d34c8eab526d767af4dde9c6b39",
+    "narzedzia/odpowiedz-odroczona203/mutacje.py": "4011ee99af0d6322a8962375d578a82fe7f757aa5e29bed365ac662dde1f6222",
+    "narzedzia/kolejka-upload202/UploadPump.h": "fe33787b482ba7b8084226e2af454c68f35b7a98570fa3df38840829280e76e0",
+    "narzedzia/kolejka-upload202/Fixture201.inc": "38ac1ad4445574190e75a4b4eda3763d8c6fb35cae02f5b653014b927fb382e6",
+    "narzedzia/kontekst-upload201/RequestRegistry.h": "5aff513e7bd8023e914501ddce7a2af9cc4a9a526b638335ae4297b4af2a8488",
+    "narzedzia/upload-zadania200/UploadPool.h": "ae8063b3cf4bd122d296fa420aeb4eaab2d3cc45226ed92361f693d37fe82aef",
+    "narzedzia/upload-zadania200/Raw198.inc": "6248ce9b4f848c8bc41f50f0cccef593925c0e7fa2d41d1b87b3491418174cd8",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690"
+  },
+  "cases": [
+    {
+      "name": "reuse-before-request-destruction",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "no-poll-lifetime-pin",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "asan_error": true
+    },
+    {
+      "name": "no-reentrancy-guard",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "continue-after-disconnect",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "lost-disconnect-notification",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "break-existing-callback-lifetime",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "poll-only-when-writable",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "ignore-factory-race",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "false-status-success",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "ignore-foreign-response",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "ignore-oom",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "hook-overwrite",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "ignore-prior-pause",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    }
+  ]
+}

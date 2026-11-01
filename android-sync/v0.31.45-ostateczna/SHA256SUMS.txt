@@ -1,0 +1,5 @@
+45a25cb8b58c048674ed3279b76679968a82b6d139b55e177eb6ea2535aa3331  SterownikCO-Android-v0.31.45-PELNY-PROJEKT.zip
+14f174325eb23ce68ebf44ce9eeed327fcfe33e842f7014255848824ab15840e  SterownikCO-Android-v0.31.45-ZMIENIONE-PLIKI.zip
+33336cebfaebfaeb6dc6a7519e53981f5520f422b39bbea16c3b7904d9e35518  android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+0a913f6033f1028fb59abec6b89d4de704b884a1fd43f1ca0521aa3d4e0539e9  android/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
+07b460f762cf3eb6c1dce5539efcd105fee4512b55d0e063a740ff059fcf1625  android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt

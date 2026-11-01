@@ -15,6 +15,26 @@ cd android
 
 Windows PowerShell equivalent: `cd android; .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest --rerun-tasks`.
 
+### Jedno polecenie (Windows) — z paczki ZIP do APK na Pulpicie
+
+Zamiast rozpakowywać i ustawiać SDK ręcznie:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\narzedzia\android-zbuduj-apk.ps1
+```
+
+Skrypt (`narzedzia/android-zbuduj-apk.ps1`) sam: znajdzie najnowszy ZIP
+`SterownikCO-Android-v*.zip` w Pobranych/Pulpicie, rozpakuje do
+`%USERPROFILE%\SterownikCO-<wersja>`, znajdzie Android SDK i zapisze
+`local.properties` (bez tego Gradle pada na `SDK location not found`),
+zbuduje `:app:testDebugUnitTest :app:assembleDebug` i skopiuje
+`SterownikCO-<wersja>-debug.apk` na Pulpit. Opcje: `-Zip <ścieżka>`,
+`-Czysto` (rozpakuj od nowa), `-BezTestów` (szybciej).
+
+Wymaga **Android SDK 35** — jeśli go nie ma, skrypt powie to wprost;
+wtedy Android Studio → *SDK Manager* → *Android 15 (API 35)* + *Build-Tools*
++ *Platform-Tools*.
+
 ### Wspólny tryb rozpalania
 
 Jeden przycisk uruchamia sekwencję serw oraz czasowy override mieszadła. Start wymaga świeżego statusu, temperatury pieca do 30°C i braku alarmu; rozpalenie potwierdza temperatura powyżej 30°C lub wzrost o co najmniej 5°C od startu. Bez potwierdzenia tryb wyłącza się po 30 minutach, a bezwzględny limit wynosi 60 minut. Zatrzymanie wysyła `rozpalanie_stop`; sterowanie pozostaje zablokowane, gdy status nie zawiera pól `rozpalanie_potwierdzone` i `rozpalanie_pozostalo_s`.

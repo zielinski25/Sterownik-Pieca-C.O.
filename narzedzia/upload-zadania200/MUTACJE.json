@@ -1,0 +1,105 @@
+{
+  "status": "PASS",
+  "inputs": {
+    "narzedzia/upload-zadania200/UploadPool.h": "ae8063b3cf4bd122d296fa420aeb4eaab2d3cc45226ed92361f693d37fe82aef",
+    "narzedzia/upload-zadania200/Test.cpp": "a1ca03f226937bf21f03241f2c6a2cd006c99e5b9502a9d190bdd288daef8578",
+    "narzedzia/upload-zadania200/Raw198.inc": "6248ce9b4f848c8bc41f50f0cccef593925c0e7fa2d41d1b87b3491418174cd8",
+    "narzedzia/upload-zadania200/mutacje.py": "bdc1701e143e59284d8d4b2d22ea1062bc77e84c542924871c84bc55379c1704",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9"
+  },
+  "cases": [
+    {
+      "name": "stale-token",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "duplicate-success",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "accept-without-final",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ignore-readback-corruption",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "omit-per-block-sync",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "omit-final-sync",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "skip-close",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "close-after-stop",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "forget-quarantine",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "allow-existing-file",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ignore-read-count",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ignore-write-count",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ignore-stop-after-io",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "release-before-complete",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "missing-offset-check",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    }
+  ]
+}

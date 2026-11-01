@@ -1,0 +1,82 @@
+{
+  "stage": 219,
+  "tytul": "ostateczna brama pliku do wgrania - 16 kontroli calego pliku + 10 mutantow",
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "firmware": {
+    "wersja": "v3.56.4 (plik z etapu 218 - bez zmian w tym etapie)",
+    "sha256": "f89874f3390009acd79632db1031d04cd90e67435eda68e2007ea7c4b3168e38",
+    "bajtow": 2376655,
+    "linii": 46995
+  },
+  "co_sprawdza": {
+    "kontrol": 16,
+    "kody": {
+      "B01": "UTF-8, brak NUL, brak CRLF",
+      "B02": "nawiasy {} () [] zbalansowane w calym pliku (wlasny lekser)",
+      "B03": "dokladnie jeden raw string strony (PIECHTML) z DOCTYPE i </html>",
+      "B04": "panel id=histBtn wewnatrz raw stringa strony",
+      "B05": "strona: DOCTYPE na poczatku, </html> na koncu",
+      "B06": "wszystkie tagi HTML zbalansowane",
+      "B07": "bloki <script> policzone i domkniete",
+      "B08": "skladnia kazdego bloku JS (node --check)",
+      "B09": "ESPAsyncWebServer.h przed HistoriaPobranie/HistoriaBilety (D1 z 214)",
+      "B10": "cztery includy dokladnie raz",
+      "B11": "FIRMWARE_VERSION dokladnie jedna definicja = v3.56.4",
+      "B12": "nowe globalne zdefiniowane dokladnie raz",
+      "B13": "trzy trasy /history* przez exact()",
+      "B14": "zadna z 46 tras nie jest martwa",
+      "B15": "brak TODO/FIXME/XXX/znacznikow konfliktu w kodzie",
+      "B16": "matryca poprawek 211-218: obecne w v3.56.4 i nieobecne w v3.55.8"
+    }
+  },
+  "wynik": {
+    "status": "PASS",
+    "stany": {
+      "v3.55.8": {"zielony": false, "czerwone": ["B04", "B09", "B10", "B11", "B12", "B13", "B16"],
+                  "opis": "baza bez poprawek"},
+      "v3.56.3": {"zielony": false, "czerwone": ["B11", "B13", "B14", "B16"],
+                  "opis": "przed etapem 218: trasy /history* na golym napisie, 2 martwe"},
+      "v3.56.4": {"zielony": true, "czerwone": [], "opis": "plik do wgrania"}
+    },
+    "mutantow": 10,
+    "mutanty_czerwone": 10,
+    "bledow": 0
+  },
+  "mutanty": {
+    "M1_urwany_nawias": ["B02"],
+    "M2_raw_string_bez_cudzyslowu": ["B02", "B03", "B04", "B05", "B06", "B07", "B08", "B16"],
+    "M3_panel_bez_id": ["B04"],
+    "M4_zla_kolejnosc_include": ["B09"],
+    "M5_stara_wersja": ["B11"],
+    "M6_goly_napis_trasy": ["B13", "B16"],
+    "M7_blad_skladni_js": ["B08", "B16"],
+    "M8_nadmiarowy_div": ["B06"],
+    "M9_duplikat_globalnej": ["B12"],
+    "M10_konce_linii_crlf": ["B01"]
+  },
+  "pomiar_pliku": {
+    "raw_stringow": 5,
+    "raw_string_strony_bajtow": 503330,
+    "blokow_script": 2,
+    "tagi_najczestsze": {"div": 285, "span": 93, "button": 44, "b": 25},
+    "tras": 46,
+    "martwych_tras": 0
+  },
+  "pliki": {
+    "audyt.py": "590812568b643e6c9fda18040c96300a48cfae6bb7f72609ae4940a676834869",
+    "build.py": "f97b19f0929f5e6bffde7bcdc48fbad49a9671e76de7419c133631367faec342",
+    "mutanty.py": "b723fc647f7859d77980ac7486f5b4047be59a29c905392ce9e834be566383b6",
+    "run.py": "495dc5aa2c09b23571aca8d9f431339587a8e537d3c3762f9bac72d0c197b9a7"
+  },
+  "czego_nie_dowodzi": [
+    "kompilacji przez PlatformIO (kompilator ESP jest u uzytkownika)",
+    "poprawnosci semantycznej kodu (brama sprawdza strukture, nie logike)",
+    "wygladu strony w telefonie (CSS nie jest sprawdzany)",
+    "zachowania WiFi, LittleFS i czujnikow"
+  ],
+  "uruchomienie": "python3 -B narzedzia/ostateczna-brama219/run.py",
+  "polecenie_dla_uzytkownika": "bez zmian: patch z etapu 218 (main_centrala-v3.55.8-to-v3.56.4.patch) + HistoriaPobranie.h z etapu 216, potem PlatformIO",
+  "kryterium_odbioru": "telefon -> HISTORIA CSV -> 'Krotka (24 h)' zapisuje historia-krotka.csv, 'Dluga (archiwum)' zapisuje historia-dluga.csv"
+}

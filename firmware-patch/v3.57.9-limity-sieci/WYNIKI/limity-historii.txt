@@ -1,0 +1,97 @@
+=== 1/2  symulacja C++ (prawdziwy history193::Engine) ===
+Symulacja limitow historii - firmware 3.57.8 (prawdziwy history193::Engine)
+Linie: krotka 71 B, dluga 180 B (srednie z prawdziwych plikow centrali)
+
+L1 - dluga historia: 8600 probek na dysku 8 MB (powyzej progu 8500)
+  OK   wszystkie 8600 zapisow przeszly
+  OK   Engine nie zablokowany
+  OK   po rotacji linii w [8000, 8501] - linii=8099
+  OK   rotacja faktycznie wykonala rename - rename=1
+       plik 1.39 MB, szczyt zajecia dysku 2.84 MB (2973696 B)
+
+L2 - najmniejsza pojemnosc dysku, przy ktorej 8600 probek dlugich przechodzi
+  OK   znalazlem najmniejsza dzialajaca pojemnosc
+       najmniejsza dzialajaca pojemnosc: 2.84 MB (2981888 B)
+       szczyt zajecia w tej symulacji:   2.84 MB (2973696 B)
+       analitycznie: 1.46 MB (1530180 B) + 1.37 MB (1440000 B) = 2.83 MB (2970180 B)
+  OK   wynik symulacji zgadza sie z analiza (2 x plik + bloki) - przedzial [2970180, 2994756]
+
+L3 - brak miejsca w trakcie rotacji (dysk 2,0 MB, szczyt potrzebny ~3 MB)
+  OK   Engine zablokowany po nieudanej rotacji - po 8500 probkach, fault=6
+  OK   do blokady doszlo dopiero przy rotacji, nie przy zapisie - probek zapisanych=8500
+  OK   plik historii nadal istnieje (nie skasowany)
+  OK   plik nie zostal wyzerowany - rozmiar=1530180 B
+  OK   po nieudanej rotacji ZOSTAJE plik roboczy .rebuild (Engine go nie kasuje)
+  OK   po bledzie dlugiej historii NIE zapisuje sie tez krotka (wspolny Engine)
+  OK   blokada jest trwala do restartu - 100 kolejnych prob bez skutku
+
+L3b - na dysku lezy stary hist_long.csv.rebuild (zanik pradu w trakcie rotacji)
+  OK   stary plik roboczy istnieje na dysku
+  OK   pierwsza rotacja konczy sie bledem - po 8501 probkach, fault=2
+  OK   powod: O_EXCL na istniejacym .rebuild
+  OK   restart NIE pomaga - rotacja dalej nie przejdzie - fault=2
+
+L4 - dysk 4 MB zapchany logami tak, ze zostaje mniej niz jeden blok
+  OK   logi zajely miejsce
+       zajete przed probka: 4.00 MB (4194304 B) z 4.00 MB (4194304 B)
+  OK   zapis odrzucony przy braku miejsca (ENOSPC)
+  OK   pojedynczy ENOSPC blokuje CALY zapis historii (obie historie)
+  OK   model odrzucil zapis, nie dopisal czesci - odrzuconych=1
+
+L4b - plik historii konczy sie w polowie linii (uszkodzony ogon)
+  OK   plik istnieje i ma urwany ogon - 690 B
+  OK   kolejny zapis odrzucony
+  OK   powod: kontrola granicy linii (Boundary) - fault=4
+  OK   restart NIE naprawia ogona - zapis dalej odrzucany
+  OK   dane w pliku nie zostaly skasowane
+
+L5 - granica krotkiej historii: 1440 + 1000 = 2440 linii
+  OK   przy 2440 liniach rotacji jeszcze NIE ma - linii=2440 rename=0
+  OK   przy 2441 linii rotacja robi sie raz - linii=1440 rename=1
+  OK   po rotacji zostaje dokladnie 1440 linii - linii=1440
+
+L6 - granica dlugiej historii: 8000 + 500 = 8500 linii
+  OK   przy 8500 liniach rotacji jeszcze NIE ma - linii=8500
+  OK   przy 8501 linii rotacja robi sie raz - linii=8000
+  OK   po rotacji zostaje dokladnie 8000 linii - linii=8000
+
+L7 - kolejka RAM (HISTORIA_PENDING_LIMIT_B = 4096 B): ile probek
+       linia 71 B: miesci sie 57 probek (57.0 min przy probce co 60 s)
+  OK   co najmniej jedna probka wchodzi do kolejki - 57 przy linii 71 B
+  OK   limit 4096 B nie zostal przekroczony
+       linia 180 B: miesci sie 22 probek (22.0 min przy probce co 60 s)
+  OK   co najmniej jedna probka wchodzi do kolejki - 22 przy linii 180 B
+  OK   limit 4096 B nie zostal przekroczony
+  OK   typowy wsad (5 probek krotkich) miesci sie z zapasem - 355 B z 4096 B
+
+L8: ile miejsca musza zmiescic OBIE historie naraz (dysk 4 MB)
+  OK   obie historie doszly do progu rotacji bez bledu
+       szczyt zajecia (obie + kopia robocza): 2.93 MB (3076096 B)
+       po rotacjach zajete: 1.47 MB (1544192 B)
+
+RAZEM: 38 OK / 0 FAIL
+
+=== 2/2  zgodnosc z zrodlem firmware ===
+  OK   HISTORIA_MAX_PROBEK = 1440
+  OK   HISTORIA_DLUGA_MAX_PROBEK = 8000
+  OK   HISTORIA_RESYNC_MARGINES = 1000
+  OK   HISTORIA_DLUGA_RESYNC_MARGINES = 500
+  OK   HISTORIA_PENDING_LIMIT_B = 4096
+  OK   trim odpala sie tylko gdy linie > limit + margines
+  OK   krotka historia: trim(limit=1440, margines=1000)
+  OK   dluga historia: trim(limit=8000, margines=500)
+  OK   w firmware jest dokladnie jeden history193::Engine
+  OK   oba strumienie ida przez ten sam obiekt historiaIo
+  OK   FS_RESERVE_HIST_LONG_B = 2 MB - 2097152 B
+  OK   nazwy .rebuild wystepuja w zrodle
+  OK   firmware NIE kasuje pliku .rebuild
+  OK   Engine otwiera plik roboczy z O_EXCL (stary .rebuild = blad Open)
+  OK   Engine nigdzie nie usuwa pliku roboczego
+  OK   komunikat 'blad rotacji - zatrzymano obie historie'
+  OK   komunikat 'zapis niepotwierdzony ... obie historie zatrzymane'
+  OK   odrzucenie z pelnej kolejki JEST logowane (WARN), nie ciche
+  OK   wszystkie klucze NVS <= 15 znakow (sprawdzono 71)
+
+ZGODNOSC: 19 OK / 0 FAIL
+
+WYNIK: wszystko zielone.

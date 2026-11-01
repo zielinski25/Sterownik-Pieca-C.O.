@@ -1,0 +1,102 @@
+--- a/main_centrala.cpp
++++ b/main_centrala.cpp
+@@ -1,3 +1,23 @@
++// FIRMWARE_VERSION v3.56.5 -> v3.56.6 (2026-10-29) — KONIEC Z GUBIENIEM 10 PROBEK.
++// Co: trzy niezalezne zabezpieczenia, kazde samo wystarcza w swojej sytuacji.
++//  1. SESJA FIREBASE ODBUDOWYWANA ZAWSZE. Po nieudanej wysylce funkcja
++//     telemetryFinalizeCompletedRequest() ustawia fbAppReady=false i zamyka
++//     SSL. Dotad odbudowa (fbInitialize) byla warunkowa: tylko gdy bufor
++//     offline byl WLACZONY albo paczka czekala na ponowienie. Po porzuceniu
++//     paczki oba warunki byly falszywe, wiec sesja zostawala martwa, a probki
++//     czekaly w ringu na przypadkowa odbudowe. Teraz odbudowa jest bezwarunkowa.
++//  2. PORZUCONA PACZKA IDZIE NA FLASH. Przed telemetryPendingAbandon() ustawiamy
++//     g_spoolRuntimeForceSpill, ktory omija progi ilosciowy (15) i wiekowy
++//     (600 s). Wczesniej 10-probkowa paczka (= dokladnie 10 minut) wpadała
++//     ponizej obu progow i nie byla zapisywana.
++//  3. PROGI SPOOLA OBNIZONE: watermark 15 -> 2 probki, wiek 600 s -> 180 s.
++// Dowod z eksportu RTDB: 29.10 07:16:11 -> 07:27:11, mono ciagly (bez restartu),
++//   seq 6542 -> 6553 = dokladnie 10 brakujacych probek. Te same 10 minut jest
++//   w /hist_short.csv centrali. W calym eksporcie 01.10-29.10: 40789 probek
++//   w chmurze, 596 brakujacych minut (1,44%), 46 luk > 3 min, a najwieksze
++//   (30, 20, 11, 10, 10, 10, 10 min) to wielokrotnosci paczki 10 probek.
++// Czego NIE zmieniono: format JSON, sciezki RTDB, interwal 60 s, limity
++//   payloadu, TELEMETRY_BATCH_MAX_RECORDS i MAX_ATTEMPTS, format stron Spool V2.
+ // FIRMWARE_VERSION v3.56.3 -> v3.56.4 (KANDYDAT: przycisk pobrania historii nie dzialal w ogole; NIE WGRYWAC).
+ // FIRMWARE_VERSION v3.56.4 -> v3.56.5 (KANDYDAT: blok historii wyniesiony z ciala funkcji; NIE WGRYWAC).
+ // v3.56.5: bramka historii, obiekt Pobranie, zrodlo losowosci i bilety byly
+@@ -5615,7 +5635,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.56.5";
++static const char* FIRMWARE_VERSION = "v3.56.6";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -6150,8 +6170,12 @@
+ // Probki siedzialy tylko w RAM i znikaly przy restarcie. Teraz prog ilosciowy
+ // to 15 probek, a dodatkowo dziala prog CZASOWY: najstarsza probka starsza
+ // niz SPOOL_RUNTIME_BACKLOG_MAX_AGE_S (10 min) = zapis.
+-static constexpr uint32_t SPOOL_RUNTIME_RING_WATERMARK = 15U;
+-static constexpr uint32_t SPOOL_RUNTIME_BACKLOG_MAX_AGE_S = 600UL;
++// [v3.56.6] 15 -> 2. Paczka telemetrii to 10 probek; przy nieudanej wysylce
++// zaleglosc 10 probek byla PONIZEJ progu 15, wiec zapis do flasha nie startowal.
++static constexpr uint32_t SPOOL_RUNTIME_RING_WATERMARK = 2U;
++// [v3.56.6] 600 -> 180 s. 10 probek to 540 s roznicy znacznikow, czyli tez
++// ponizej starego progu 600 s — oba progi zawodziy jednoczesnie.
++static constexpr uint32_t SPOOL_RUNTIME_BACKLOG_MAX_AGE_S = 180UL;
+ static constexpr uint32_t SPOOL_RUNTIME_OFFLINE_TRIGGER_MS = 120000UL;
+ static constexpr uint32_t SPOOL_RUNTIME_SPILL_COOLDOWN_MS = 30000UL;
+ static constexpr uint8_t SPOOL_RUNTIME_REPLAY_BATCH_MAX = 10U;
+@@ -6160,6 +6184,9 @@
+ static constexpr char SPOOL_RUNTIME_NVS_KEY_ARMED[] = "rt_on";
+ static AsyncResult g_spoolRuntimeReplayResult;
+ static bool g_spoolRuntimeReplayActive = false;
++// [v3.56.6] Wymuszenie zrzutu do flasha bez sprawdzania progow (uzywane, gdy
++// paczka telemetrii zostaje porzucona — wtedy wlasnie te probki moga zginac).
++static volatile bool g_spoolRuntimeForceSpill = false;
+ static volatile bool g_telemetryCompletionPending = false;
+ static volatile bool g_telemetryCompletionSuccess = false;
+ static uint16_t g_telemetryBatchCount = 0;
+@@ -40569,8 +40596,13 @@
+     }
+   }
+   const bool backlogDue = ringSize >= SPOOL_RUNTIME_RING_WATERMARK || ageDue;
+-  if (!offlineDue && !backlogDue) return false;
+-  if ((uint32_t)(now - g_spoolRuntimeLastSpillMs) < SPOOL_RUNTIME_SPILL_COOLDOWN_MS) return false;
++  // [v3.56.6] Wymuszenie: paczka telemetrii wlasnie zostala porzucona. Te probki
++  // sa jedyne w kolejce i moga zniknac, wiec zapisujemy je NATYCHMIAST — bez
++  // progu ilosciowego, bez progu wieku i bez cooldownu.
++  const bool forced = g_spoolRuntimeForceSpill;
++  g_spoolRuntimeForceSpill = false;
++  if (!forced && !offlineDue && !backlogDue) return false;
++  if (!forced && (uint32_t)(now - g_spoolRuntimeLastSpillMs) < SPOOL_RUNTIME_SPILL_COOLDOWN_MS) return false;
+ 
+   const uint32_t count = min(ringSize, SPOOL_RUNTIME_SPILL_MAX_RECORDS);
+   if (count == 0U) return false;
+@@ -41894,8 +41926,12 @@
+   }
+   // [v3.55.0] Wyczerpane proby: oddajemy paczke kolejce i pozwalamy zrzutowi
+   // zadzialac. Probki nadal sa w ringu — nic nie ginie, tylko czekaja.
++  // [v3.56.6] Zanim porzucimy paczke, wymuszamy zapis tych probek do flasha.
++  // Wczesniej paczka 10 probek (= 10 minut) byla ponizej progow 15 probek
++  // i 600 s, wiec NIE trafiala ani do chmury, ani na flash — i przepadala.
+   if (g_telemetryPendingValid &&
+       g_telemetryPendingAttempts >= TELEMETRY_BATCH_MAX_ATTEMPTS) {
++    if (g_spoolRuntimeArmed && !g_spoolGTestActive) g_spoolRuntimeForceSpill = true;
+     telemetryPendingAbandon("attempts_exhausted");
+   }
+ 
+@@ -41908,7 +41944,11 @@
+   // inaczej retry nigdy by nie ruszyl (bramka nizej by go odrzucila).
+   if (WiFi.status() == WL_CONNECTED && (!fbAppReady || !fbApp.ready()) &&
+       !fbLoopWorkerZajety()) {
+-    if (g_spoolRuntimeArmed || g_telemetryPendingValid) fbInitialize();
++    // [v3.56.6] BYLO: if (g_spoolRuntimeArmed || g_telemetryPendingValid).
++    // Po porzuceniu paczki oba warunki sa falszywe, a nieudana wysylka ustawila
++    // fbAppReady=false i zamknela SSL — sesja zostawala martwa i zalegle probki
++    // czekaly w ringu na przypadkowa odbudowe. Teraz odbudowa jest bezwarunkowa.
++    fbInitialize();
+   }
+ 
+   if (WiFi.status() != WL_CONNECTED || !fbAppReady || !fbApp.ready()) return;

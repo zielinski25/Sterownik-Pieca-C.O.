@@ -1,0 +1,69 @@
+{
+  "status": "PASS",
+  "inputs": {
+    "narzedzia/kontekst-upload201/RequestRegistry.h": "5aff513e7bd8023e914501ddce7a2af9cc4a9a526b638335ae4297b4af2a8488",
+    "narzedzia/kontekst-upload201/Test.cpp": "b8ab57c4ca4f68de2a92ba89158077c910ab6d3c7326110eed6443374d7fdeae",
+    "narzedzia/kontekst-upload201/mutacje.py": "05883d80184be65d8b20729ae365ffbda05fcc2c631f2a6e524961af341f82c1",
+    "narzedzia/upload-zadania200/UploadPool.h": "ae8063b3cf4bd122d296fa420aeb4eaab2d3cc45226ed92361f693d37fe82aef",
+    "narzedzia/upload-zadania200/Raw198.inc": "6248ce9b4f848c8bc41f50f0cccef593925c0e7fa2d41d1b87b3491418174cd8",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690"
+  },
+  "cases": [
+    {
+      "name": "stale-token",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "duplicate-attach",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ignore-disconnect",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "lose-disconnect-publication",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "forget-quarantine",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "name-mismatch",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "missing-file-success",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "ignore-authorization",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    },
+    {
+      "name": "repeat-error-reply",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6
+    }
+  ]
+}

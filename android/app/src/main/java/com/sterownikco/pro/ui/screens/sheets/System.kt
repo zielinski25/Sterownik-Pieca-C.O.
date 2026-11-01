@@ -41,6 +41,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -492,7 +494,21 @@ fun TerminalSheet(m: AppModel) {
         servoCommand = null
     }
 
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        Modifier.fillMaxWidth()
+            // Samo dotknięcie (tap, przewinięcie) podtrzymuje odbiór DLOG.
+            // Zdarzenia są tylko obserwowane (Pass.Initial), nie konsumowane,
+            // więc przewijanie konsoli działa bez zmian.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        m.terminalTouch()
+                    }
+                }
+            },
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         // 1. nagłówek + status
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)
             .border(BorderStroke(width = 1.dp, color = Pal.Border), RoundedCornerShape(bottomStart = 0.dp, bottomEnd = 0.dp)),

@@ -1,0 +1,82 @@
+--- a/src/WebResponses.cpp
++++ b/src/WebResponses.cpp
+@@ -409,12 +409,18 @@
+   }
+ 
+   // send content body
+-  if (_state == RESPONSE_CONTENT) {
++  if (_state == RESPONSE_CONTENT || (_state == RESPONSE_END && _send_buffer_len)) {
+     do {
++      if (!_sourceValid()) {
++        _state = RESPONSE_FAILED;
++        request->client()->close();
++        return 0;
++      }
+       if (_send_buffer_len && _send_buffer) {
+         // data is pending in buffer from a previous call or previous iteration
+         size_t const added_len =
+           request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);
++        payloadlen += added_len;
+         if (added_len != _send_buffer_len - _send_buffer_offset) {
+           // we were not able to add entire buffer's content to tcp buffs, leave it for later
+           // (this should not happen normally unless connection's TCP window suddenly changed from remote or mem pressure)
+@@ -423,7 +429,6 @@
+         } else {
+           _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+         }
+-        payloadlen += added_len;
+       }
+ 
+       auto tcp_win = request->client()->space();
+@@ -451,6 +456,9 @@
+         // See https://datatracker.ietf.org/doc/html/rfc9112#section-7.1
+         size_t const readLen =
+           _fillBufferAndProcessTemplates(_send_buffer->data() + 6, std::min(_send_buffer->size(), tcp_win) - 8);  // reserve 8 bytes for chunk size data
++        if (!_sourceValid() || (readLen != RESPONSE_TRY_AGAIN && readLen > std::min(_send_buffer->size(), tcp_win) - 8)) {
++          _state = RESPONSE_FAILED; request->client()->close(); return 0;
++        }
+         if (readLen != RESPONSE_TRY_AGAIN) {
+           // Write 4 hex digits directly without null terminator
+           static constexpr char hexChars[] = "0123456789abcdef";
+@@ -481,6 +489,9 @@
+ 
+         size_t const readLen = _fillBufferAndProcessTemplates(_send_buffer->data(), maxLen);
+ 
++        if (!_sourceValid() || (readLen != RESPONSE_TRY_AGAIN && readLen > maxLen)) {
++          _state = RESPONSE_FAILED; request->client()->close(); return 0;
++        }
+         if (readLen == 0) {
+           // no more data to send
+           _state = RESPONSE_END;
+@@ -495,6 +506,11 @@
+       }
+     } while (_send_buffer_len);  // go on till we have something in buffer pending to send
+ 
++    if (!_sourceValid()) {
++        _state = RESPONSE_FAILED;
++        request->client()->close();
++        return 0;
++      }
+     // execute sending whatever we have in sock buffs now
+     request->client()->send();
+     _writtenLength += payloadlen;
+--- a/src/WebResponseImpl.h
++++ b/src/WebResponseImpl.h
+@@ -61,6 +61,7 @@
+   size_t write_send_buffs(AsyncWebServerRequest *request, size_t len, uint32_t time);
+ };
+ 
++#define HISTORY199_RESPONSE_GUARD 1
+ class AsyncAbstractResponse : public AsyncWebServerResponse {
+ private:
+ #if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
+@@ -102,6 +103,9 @@
+ public:
+   AsyncAbstractResponse(AwsTemplateProcessor callback = nullptr);
+   virtual ~AsyncAbstractResponse() {}
++  bool _finished() const override {
++    return _state == RESPONSE_FAILED || (_state > RESPONSE_WAIT_ACK && _send_buffer_len == 0);
++  }
+   void _respond(AsyncWebServerRequest *request) final;
+   size_t _ack(AsyncWebServerRequest *request, size_t len, uint32_t time) final {
+     return write_send_buffs(request, len, time);

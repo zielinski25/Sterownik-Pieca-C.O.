@@ -1,0 +1,104 @@
+{
+  "plik": "main_centrala-v3.56.3.cpp",
+  "wersja": "v3.56.4",
+  "ok": false,
+  "kontrol": 16,
+  "checks": [
+    {
+      "kod": "B01",
+      "nazwa": "kodowanie i konce linii",
+      "ok": true,
+      "szczegoly": "UTF-8, LF, 2375107 bajtow, 46973 linii, bez nowej linii na koncu"
+    },
+    {
+      "kod": "B02",
+      "nazwa": "nawiasy {} () [] zbalansowane w calym pliku",
+      "ok": true,
+      "szczegoly": ""
+    },
+    {
+      "kod": "B03",
+      "nazwa": "dokladnie jeden raw string strony + DOCTYPE i </html>",
+      "ok": true,
+      "szczegoly": "wszystkich raw stringow=5, delim='PIECHTML', 503330 bajtow, DOCTYPE/</html> sa"
+    },
+    {
+      "kod": "B04",
+      "nazwa": "panel (id=\"histBtn\") jest WEWNATRZ raw stringa strony",
+      "ok": true,
+      "szczegoly": "panel offset 529951, raw string 410939..914290"
+    },
+    {
+      "kod": "B05",
+      "nazwa": "strona konczy sie </html> i ma DOCTYPE",
+      "ok": true,
+      "szczegoly": "'ipt>\\n</body>\\n</html>'"
+    },
+    {
+      "kod": "B06",
+      "nazwa": "wszystkie tagi HTML zbalansowane",
+      "ok": true,
+      "szczegoly": "tagi: div=285, span=93, button=44, b=25, section=5, h4=5"
+    },
+    {
+      "kod": "B07",
+      "nazwa": "bloki <script> policzone i domkniete",
+      "ok": true,
+      "szczegoly": "otwarciem=2 zamkniec=2 zebranych=2"
+    },
+    {
+      "kod": "B08",
+      "nazwa": "skladnia JS kazdego bloku <script> (node --check)",
+      "ok": true,
+      "szczegoly": "blokow 2, wszystkie poprawne"
+    },
+    {
+      "kod": "B09",
+      "nazwa": "ESPAsyncWebServer.h PRZED HistoriaPobranie/HistoriaBilety (D1 z 214)",
+      "ok": true,
+      "szczegoly": "serwer=340959 pobranie=340990 bilety=341077 (pin=335668, samodzielny)"
+    },
+    {
+      "kod": "B10",
+      "nazwa": "kazdy z czterech include'ow dokladnie raz",
+      "ok": true,
+      "szczegoly": "{'<ESPAsyncWebServer.h>': 1, '\"HistoriaPobranie.h\"': 1, '\"HistoriaBilety.h\"': 1, '\"HistoriaPin.h\"': 1}"
+    },
+    {
+      "kod": "B11",
+      "nazwa": "FIRMWARE_VERSION: dokladnie jedna definicja = v3.56.4",
+      "ok": false,
+      "szczegoly": "['v3.56.3']"
+    },
+    {
+      "kod": "B12",
+      "nazwa": "kazda nowa zmienna globalna zdefiniowana dokladnie raz",
+      "ok": true,
+      "szczegoly": "4 x 1"
+    },
+    {
+      "kod": "B13",
+      "nazwa": "wszystkie trasy /history* przez exact()",
+      "ok": false,
+      "szczegoly": "trasy /history*: 3, gole: 3"
+    },
+    {
+      "kod": "B14",
+      "nazwa": "zadna trasa w pliku nie jest martwa (przechwycona)",
+      "ok": false,
+      "szczegoly": "tras 46, martwych 2 [('\"/history/long\" HTTP_ANY', '\"/history\" HTTP_ANY'), ('\"/history/link\" HTTP_GET', '\"/history\" HTTP_ANY')]"
+    },
+    {
+      "kod": "B15",
+      "nazwa": "brak znacznikow tymczasowych w kodzie (TODO/FIXME/XXX/konflikt)",
+      "ok": true,
+      "szczegoly": "znaleziono 0"
+    },
+    {
+      "kod": "B16",
+      "nazwa": "matryca poprawek 211-218: kazda jest i kazdej nie ma w bazie",
+      "ok": false,
+      "szczegoly": "M06: brak w v3.56.4 (0); M06b: goly napis /history zostal (3)"
+    }
+  ]
+}

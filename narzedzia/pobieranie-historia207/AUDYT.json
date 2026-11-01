@@ -1,0 +1,30 @@
+{
+  "release_ready": false,
+  "status": "PASS_COMPONENT_TESTS_ONLY",
+  "main_changed": false,
+  "hardware_actions": false,
+  "final_run": "WYNIKI/run001/wynik.json",
+  "test_groups": 23,
+  "profiles": ["native", "ASan+UBSan, detect_leaks=1"],
+  "compiled_mutants_detected": 13,
+  "real_code": ["narzedzia/uchwyty-runtime197/RuntimeFilesystem.h owner/Lease", "Arduino FS.cpp open/seek/read/rename/remove/close", "narzedzia/odpowiedz-http199/CheckedFileBody.h"],
+  "modeled": ["file backend name->content map (no inodes, no O_APPEND)", "history writer and rotation policy", "HTTP/TCP response layer", "FreeRTOS scheduling"],
+  "scope": "Pinned, bounded download prefix taken under the same mutex as append/rotation; deferred rotation while any download is active; generation handles; deadline sweep; error never reported as clean end",
+  "regressions": {
+    "206": "narzedzia/naglowki-upload206/WYNIKI/run003/wynik.json",
+    "205": "narzedzia/parser-upload205/WYNIKI/run006/wynik.json",
+    "204": "narzedzia/adapter-upload204/WYNIKI/run006/wynik.json",
+    "203": "narzedzia/odpowiedz-odroczona203/WYNIKI/run007/wynik.json",
+    "202": "narzedzia/kolejka-upload202/WYNIKI/run005/wynik.json"
+  },
+  "not_qualified": [
+    "HTTP response integration and client disconnect wiring",
+    "any other code opening the history file without this component",
+    "HTTP Range, compression and templated responses",
+    "ESP filesystem, open-handle-after-rename semantics",
+    "RAM, WDT, power loss and fsync timing",
+    "partial or temporary file cleanup",
+    "full library and firmware build",
+    "device qualification"
+  ]
+}

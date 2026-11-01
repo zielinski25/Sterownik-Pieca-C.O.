@@ -1,0 +1,105 @@
+  wifiWebServer.on("/api/fs-upload", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+      // Leci PO zakonczeniu calego uploadu (albo od razu, jesli walidacja
+      // w pierwszym fragmencie juz ustawila fsUploadBlad).
+      if (fsUploadBlad) {
+        String t = fsUploadBladTekst;
+        fsUploadBlad = false;
+        fsUploadBladTekst = "";
+        request->send(400, "text/plain", t.length() ? t : "Blad uploadu");
+        return;
+      }
+      zapiszLog("tag=LOGI-FS lvl=INFO zdarzenie=wgrano_z_panelu plik=" + fsUploadNazwa +
+                " rozmiar=" + String((unsigned)fsUploadZapisano));
+      // [v3.55.4] Upload historii odrzucony; brak automatycznego restartu z tego powodu.
+      String odp = "OK";
+      request->send(200, "text/plain", odp);
+    },
+    [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+      if (index == 0) {
+        fsUploadBlad = false;
+        fsUploadBladTekst = "";
+        fsUploadZapisano = 0;
+        fsUploadNazwa = "";
+
+        if (!littlefsReady) {
+          fsUploadBlad = true; fsUploadBladTekst = "LittleFS nie gotowy";
+          return;
+        }
+
+        // Sama nazwa pliku (bez katalogow) — multipart wysyla tylko
+        // filename, wiec "/" lub ".." w nazwie oznacza probe wyjscia
+        // poza plaska przestrzen plikow, ktorej ten panel uzywa wszedzie
+        // indziej (fs-view/fs-download/fs-delete maja ten sam warunek).
+        if (filename.indexOf("..") >= 0 || filename.indexOf("/") >= 0 || filename.length() == 0) {
+          fsUploadBlad = true; fsUploadBladTekst = "Niedozwolona nazwa pliku";
+          return;
+        }
+        String nm = "/" + filename;
+        if (historiaChronionaSciezka(nm)) {
+          fsUploadBlad = true; fsUploadBladTekst = "Nie mozna nadpisac aktywnej historii ani plikow przejscia";
+          return;
+        }
+
+        // [v3.55.4] Aktywna historia i znaczniki A1 chronione wyzej.
+        if (nm == LOG_FILE_B || nm == LOG_FILE_A || nm == LOG_FILE_KRYTYCZNY ||
+            nm == "/panel_firmware.bin") {
+          fsUploadBlad = true; fsUploadBladTekst = "Nie mozna nadpisac pliku systemowego (" + nm + ")";
+          return;
+        }
+
+        size_t used  = systemFS196.usedBytes();
+        size_t total = systemFS196.totalBytes();
+        size_t wolne = (used < total) ? (total - used) : 0;
+        if (wolne <= LOG_FS_CIRCULAR_MARGIN_B) {
+          fsUploadBlad = true; fsUploadBladTekst = "Za malo wolnego miejsca na LittleFS";
+          return;
+        }
+
+        fsUploadNazwa = nm;
+        if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+          fsUploadFile = systemFS196.open(nm, "w");
+          xSemaphoreGive(logMutex);
+        }
+        if (!fsUploadFile) {
+          fsUploadBlad = true; fsUploadBladTekst = "Nie mozna otworzyc pliku do zapisu";
+          return;
+        }
+        DLOGF(DC_LOGI, DL_INFO, "LOGI-FS zdarzenie=upload_start plik=%s", nm.c_str());
+      }
+
+      if (fsUploadBlad) return;   // walidacja w index==0 juz odrzucila zadanie — ignoruj reszte fragmentow
+      if (!fsUploadFile) return;  // brak otwartego pliku (nie powinno sie zdarzyc bez fsUploadBlad, ale ostroznie)
+
+      if (len) {
+        bool zapisOk = false;
+        if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+          zapisOk = (fsUploadFile.write(data, len) == len);
+          xSemaphoreGive(logMutex);
+        }
+        if (zapisOk) {
+          fsUploadZapisano += len;
+        } else {
+          DLOGF(DC_LOGI, DL_ERR, "LOGI-FS zdarzenie=upload_write plik=%s", fsUploadNazwa.c_str());
+          fsUploadBlad = true; fsUploadBladTekst = "Blad zapisu na LittleFS";
+          if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+            fsUploadFile.close();
+            xSemaphoreGive(logMutex);
+          }
+        }
+        serwisujTWDTJesliZarejestrowany();
+      }
+
+      if (final && fsUploadFile) {
+        if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+          fsUploadFile.close();
+          xSemaphoreGive(logMutex);
+        }
+        if (!fsUploadBlad) {
+          DLOGF(DC_LOGI, DL_INFO, "LOGI-FS zdarzenie=upload_koniec plik=%s rozmiar=%uB",
+                        fsUploadNazwa.c_str(), (unsigned)fsUploadZapisano);
+        }
+      }
+    }
+  );
+

@@ -1,0 +1,83 @@
+═══════════════════════════════════════════════════════════════
+  FIRMWARE v3.57.0 — INSTRUKCJA WGRANIA
+  Data: 2026-10-30
+═══════════════════════════════════════════════════════════════
+
+WERSJA PODBITA: TAK (3.56.9 -> 3.57.0)
+
+CO TO DAJE
+----------
+Komendy z aplikacji docierają do centrali w ~2 s zamiast do 7 s, a
+potwierdzenie (ACK) wraca w ~1,3-2,5 s zamiast do 8 s — ale tylko wtedy,
+gdy aplikacja jest OTWARTA. Gdy nikt nie patrzy, centrala pracuje jak dotąd
+(15 s status / 7 s komendy), więc zużycie łącza i obciążenie zostają.
+
+Jak to działa: aplikacja 0.31.57 co 50 s melduje "podglad_wl" (heartbeat).
+Centrala trzyma wtedy okno podglądu 90 s: czyta komendy co 2 s i publikuje
+status co 5 s. Zamknięcie aplikacji = "podglad_wyl" = natychmiastowy powrót
+do 15 s / 7 s. Zabita aplikacja = okno samo wygasa po 90 s.
+
+UWAGA: efekt jest pełny dopiero z aplikacją 0.31.57. Ze starszą aplikacją
+firmware działa normalnie (nic nie psuje), tylko heartbeat nie jest wysyłany.
+
+
+CZY WARTO TERAZ WGRYWAĆ
+-----------------------
+Tak. To zmiana wyłącznie w taktowaniu odczytu komend — nie dotyka logiki
+pieca, pomp, serwa, alarmów, historii ani Telegrama. Można wgrać w każdej
+chwili, także gdy piec pracuje.
+
+
+KROK 1 — PODMIEŃ PLIK
+---------------------
+Skopiuj main_centrala.cpp z tej paczki do:
+
+    C:\Users\Rafcio\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp
+
+NADPISZ istniejący plik.
+Plików .h NIE ruszaj — są bez zmian (leżą w paczce tylko dla kompletności).
+NIE nadpisuj src\secrets.h.
+
+
+KROK 2 — WGRANIE
+----------------
+W PlatformIO (albo w VS Code z rozszerzeniem PlatformIO):
+
+    Upload  (strzałka w prawo, "Upload and Monitor")
+
+Albo z terminala w folderze projektu:
+
+    pio run -t upload
+
+
+KROK 3 — SPRAWDZENIE (2 minuty)
+-------------------------------
+1. W aplikacji: Ustawienia -> wersja firmware ma pokazać v3.57.0
+   (pole "fw" w /piec/status).
+2. Otwórz aplikację i kliknij cokolwiek sterującego (np. pompę).
+   Potwierdzenie powinno przyjść w ~1-2 s.
+3. W logu centrali po otwarciu aplikacji pojawi się JEDNA linia:
+
+       tag=FB-PODGLAD lvl=INFO zdarzenie=aktywacja
+
+   a po zamknięciu aplikacji:
+
+       tag=FB-PODGLAD lvl=INFO zdarzenie=deaktywacja
+
+   W trakcie pracy NIE ma linii "nieznana_komenda" ani powtarzających się
+   wpisów FB-PODGLAD — heartbeat loguje się tylko przy zmianie stanu.
+
+
+COFNIĘCIE
+---------
+Zostaw kopię starego main_centrala.cpp (masz ją w paczce 3.56.9). Powrót =
+podmiana pliku i ponowne wgranie. Po stronie aplikacji nic nie trzeba zmieniać:
+0.31.57 działa też ze starym firmware (kosztem wpisów "nieznana_komenda").
+
+
+PLIKI
+-----
+- main_centrala.cpp                            (pełny plik do podmiany)
+- main_centrala-v3.56.9-to-v3.57.0.patch       (sama różnica, 141 linii)
+- README.md                                    (szczegóły + tabela czasów)
+- SHA256SUMS.txt                               (sumy kontrolne)

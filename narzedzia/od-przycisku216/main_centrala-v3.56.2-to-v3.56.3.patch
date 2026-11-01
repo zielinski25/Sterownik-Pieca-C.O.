@@ -1,0 +1,50 @@
+diff -u -r b/main_centrala.cpp c/main_centrala.cpp
+--- b/main_centrala.cpp
++++ c/main_centrala.cpp
+@@ -1,3 +1,13 @@
++// FIRMWARE_VERSION v3.56.2 -> v3.56.3 (KANDYDAT: przycisk "Dluga" i nazwa pliku CSV; NIE WGRYWAC).
++// v3.56.3: dwa bledy na styku panelu z trasa, niewidoczne w testach kazdej
++// strony osobno - znalazl je test "od przycisku do pliku":
++//  1) przycisk "Dluga (archiwum)" otwieral /history?k=<bilet>, choc bilet byl
++//     wydany dla strumienia dlugiego. Trasa /history podaje ZAWSZE krotka,
++//     wiec bilet nie pasowal i panel dostawal 401 "link wygasl". Teraz panel
++//     wybiera trase wedlug strumienia: /history albo /history/long.
++//  2) odpowiedz CSV nie miala Content-Disposition, wiec telefon pokazywal tekst
++//     zamiast zapisac plik (poprawka w HistoriaPobranie.h v3.56.3).
++// Uklad include'ow z v3.56.2 i cala reszta pliku zostaja bez zmian.
+ // FIRMWARE_VERSION v3.56.1 -> v3.56.2 (KANDYDAT: poprawka KOLEJNOSCI include; NIE WGRYWAC).
+ // v3.56.2: "HistoriaPobranie.h" i "HistoriaBilety.h" byly wciagniete PRZED
+ // <ESPAsyncWebServer.h> (linia 5140-5141 vs 5227), wiec AsyncAbstractResponse
+@@ -5588,7 +5598,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.56.2";
++static const char* FIRMWARE_VERSION = "v3.56.3";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -10099,7 +10109,9 @@
+ 
+ <!-- [v3.56.1 HISTORIA-POBRANIE] Pobranie plikow historii (CSV) na komputer/telefon.
+      Staly token z secrets.h NIE jest tu wklejony: przycisk prosi centrale o
+-     jednorazowy bilet (GET /history/link), a potem otwiera /history?k=<bilet>.
++     jednorazowy bilet (GET /history/link), a potem otwiera trase
++     swojego strumienia: /history?k=<bilet> (krotka) albo
++     /history/long?k=<bilet> (dluga).
+      Bilet wygasa po 5 minutach i dziala tylko raz. -->
+ <button id="histBtn" type="button" style="position:fixed;left:12px;bottom:12px;z-index:60;padding:10px 16px;border:0;border-radius:999px;background:#1f6feb;color:#fff;font-weight:700;font-size:14px;box-shadow:0 6px 18px rgba(0,0,0,.35);cursor:pointer">&#11015; HISTORIA CSV</button>
+ <div id="histPanel" style="display:none;position:fixed;left:12px;bottom:66px;z-index:60;width:290px;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:14px;padding:14px;box-shadow:0 12px 32px rgba(0,0,0,.5)">
+@@ -10124,7 +10136,11 @@
+       .then(function (bilet) {
+         bilet = (bilet || '').trim();
+         if (bilet.length !== 32) throw new Error('centrala nie dała biletu');
+-        window.location.href = '/history?k=' + encodeURIComponent(bilet) + '&s=' + strumien;
++        // [v3.56.3] Trasa musi byc ta sama, dla ktorej wydano bilet:
++        // /history podaje ZAWSZE krotka, /history/long - dluga. Bilet
++        // na dluga na trasie krotkiej nie pasuje i dawal 401.
++        var trasa = (strumien === 'long') ? '/history/long' : '/history';
++        window.location.href = trasa + '?k=' + encodeURIComponent(bilet);
+       })
+       .catch(function (e) { komunikat('Nie udało się: ' + e.message); });
+   }

@@ -1,0 +1,141 @@
+--- v3.56.9-srednia-realna/main_centrala.cpp	2026-10-30 09:22:15.980758917 +0000
++++ v3.57.0-podglad-panelu/main_centrala.cpp	2026-10-30 10:46:54.375065623 +0000
+@@ -1,3 +1,26 @@
++// FIRMWARE_VERSION v3.56.9 -> v3.57.0 (2026-10-30) — PODGLAD PANELU: SZYBSZY ODBIOR KOMEND.
++// Co: Nowe komendy `podglad_wl` / `podglad_wyl` (heartbeat „ktoś patrzy na panel"
++//     wysylany przez aplikacje co ~50 s, dopoki jest OTWARTA). Gdy okno podgladu
++//     jest aktywne, centrala czyta /piec/cmd co 2 s (bylo 7 s) i wysyla status
++//     co 5 s (bylo 15 s). Okno ma 90 s i samo wygasa.
++// Problem: FB_CMD_INTERVAL_MS=7s oznacza, ze pierwsza komenda po dluzszej ciszy
++//     czekala na odbior do 7 s — ACK wracal dopiero po tym czasie, mimo ze
++//     telefon byl otwarty i uzytkownik wlasnie klikal. Tryb turbo (1s/1s) startuje
++//     DOPIERO po ODCZYTANIU payloadu, wiec pierwszej komendy nie przyspieszal.
++// Przyczyna: firmware nie mial zadnego sygnalu „ktos patrzy" — znal tylko cisze
++//     i pojedyncza komende.
++// Naprawa: podglad_wl przesuwa fbPodgladUntilMs o FB_PODGLAD_WINDOW_MS (90 s).
++//     W tgTaskFn wybor interwalu ma teraz trzy stopnie: turbo (1s/1s) >
++//     podglad (5s/2s, krok petli 1 s) > norma (15s/7s, krok 3 s). Heartbeat
++//     podgladu NIE wrzuca centrali w pelne turbo — jesli TEN odczyt wlasnie je
++//     uruchomil (a nie wczesniejsza prawdziwa komenda), turbo jest cofane.
++//     Brak podglad_wyl (aplikacja zabita) = powrot do normy po 90 s.
++// Wplyw: +~1800 odczytow /piec/cmd i +~720 zapisow /piec/status na godzine przy
++//     otwartej aplikacji; po zamknieciu zero roznicy wobec 3.56.9.
++// Bez zmian: format /piec/cmd, /piec/status, /piec/ack; tryb turbo; reszta logiki.
++//
++// ----------------------------------------------------------------------------
++//
+ // FIRMWARE_VERSION v3.56.8 -> v3.56.9 (2026-10-30) — SREDNIA: KONIEC FALSZYWEGO 20.0 C.
+ //
+ //   Objaw (log z 12 dni, 19 okien; widac tez na wykresach 29.10):
+@@ -5688,7 +5711,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.56.9";
++static const char* FIRMWARE_VERSION = "v3.57.0";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -42880,6 +42903,33 @@
+   zapiszLog(F("tag=FB-TURBO lvl=INFO zdarzenie=wygasl msg=\"minuta ciszy z panelu - wracam do 15s/7s/3s\""));
+   return false;
+ }
++
++// ── [v3.57.0 PODGLAD-PANELU] ────────────────────────────────────────────────
++// Gdy aplikacja jest OTWARTA, telefon co ~50 s pisze /piec/cmd = `podglad_wl`.
++// To NIE komenda sterujaca — to meldunek „ktos patrzy". Dzieki niemu centrala
++// czyta komendy co 2 s zamiast 7 s, wiec pierwsze klikniecie po dluzszej ciszy
++// jest obslugiwane w ~2 s, a nie do 7 s.
++//
++// Okno 90 s > heartbeat 50 s, wiec jeden zgubiony heartbeat nic nie psuje.
++// Gdy aplikacja zostanie zabita (bez podglad_wyl), okno samo wygasa i centrala
++// wraca do 15 s / 7 s — nie ma stanu, z ktorego trzeba by ja „wyprowadzac".
++//
++// Stopnie szybkosci w tgTaskFn: turbo (1s/1s) > podglad (5s/2s) > norma (15s/7s).
++static const unsigned long FB_PODGLAD_WINDOW_MS        = 90000UL; // jak dlugo wazny jest heartbeat panelu
++static const unsigned long FB_PODGLAD_SEND_INTERVAL_MS = 5000UL;  // status w podgladzie (norma 15s)
++static const unsigned long FB_PODGLAD_CMD_INTERVAL_MS  = 2000UL;  // odczyt komend w podgladzie (norma 7s)
++static const unsigned long FB_PODGLAD_LOOP_STEP_MS     = 1000UL;  // krok petli w podgladzie (norma 3s)
++unsigned long fbPodgladUntilMs = 0; // 0 = podglad nieaktywny
++
++// Ten sam wzorzec co fbTurboAktywne(): guard "!= 0" przed porownaniem z millis(),
++// zerowanie przy wygasnieciu, log tylko przy przejsciu aktywny -> nieaktywny.
++bool fbPodgladAktywne() {
++  if (fbPodgladUntilMs == 0) return false;
++  if (millis() < fbPodgladUntilMs) return true;
++  fbPodgladUntilMs = 0;
++  zapiszLog(F("tag=FB-PODGLAD lvl=INFO zdarzenie=wygasl msg=\"brak heartbeatu panelu - wracam do 15s/7s/3s\""));
++  return false;
++}
+ // ════════════════════════════════════════════════════════
+ // Osobny LogThrottleStan od g_fbSkipStatusLogStan (sekcja przy
+ // sendStatusToFirebase()) — "jeden LogThrottleStan na kazde NIEZALEZNE
+@@ -43329,6 +43379,22 @@
+     spoolRuntimeStop(wynik);
+     zapiszLog(String(F("tag=FB lvl=INFO akcja=spoolrt stan=OFF wynik=")) + wynik);
+   }
++  else if (cmd == "podglad_wl") {
++    // [v3.57.0] Heartbeat „ktoś patrzy na panel". Nic nie przelacza i nie
++    // zmienia stanu urzadzenia — przesuwa tylko okno szybszego odczytu komend.
++    // Log WYLACZNIE przy przejsciu nieaktywne -> aktywne: heartbeat leci
++    // co ~50 s, wiec logowanie kazdego zabiloby log.
++    if (!fbPodgladAktywne()) {
++      zapiszLog(F("tag=FB-PODGLAD lvl=INFO zdarzenie=aktywacja msg=\"panel otwarty - cmd 2s, status 5s\""));
++    }
++    fbPodgladUntilMs = millis() + FB_PODGLAD_WINDOW_MS;
++  }
++  else if (cmd == "podglad_wyl") {
++    // Jawne zamkniecie panelu: natychmiastowy powrot do 15s/7s, bez czekania
++    // na wygasniecie okna (przydatne, gdy ktos chce oszczedzac lacze).
++    fbPodgladUntilMs = 0;
++    zapiszLog(F("tag=FB-PODGLAD lvl=INFO zdarzenie=deaktywacja msg=\"panel zamkniety - powrot 15s/7s/3s\""));
++  }
+   else {
+     wynikOk = false;
+     wynikBlad = String("nieznana komenda: ") + cmd;
+@@ -43491,6 +43557,15 @@
+   cmd = cmd.substring(0, cmdEnd);
+   cmd.trim();
+ 
++  // [v3.57.0 PODGLAD-PANELU] Kazdy niepusty payload przesuwa okno turbo (wyzej,
++  // celowo przed walidacja tokenu). Heartbeat podgladu payloadem jest, ale nie
++  // jest komenda uzytkownika — nie ma powodu wrzucac centrali w 1s/1s na minute.
++  // Cofamy turbo TYLKO wtedy, gdy uruchomil je ten wlasnie odczyt
++  // (fbTurboJuzByl == false). Turbo po prawdziwej komendzie zostaje nietkniete.
++  if ((cmd == "podglad_wl" || cmd == "podglad_wyl") && !fbTurboJuzByl) {
++    fbTurboUntilMs = 0;
++  }
++
+   // [FB-CMD-ID/RETRY-ACK] Ten sam cmdId oznacza retry transportowe:
+   // NIE wykonuj drugi raz fizycznej komendy — tylko ponów ACK, a następnie
+   // spróbuj ponownie usunąć /piec/cmd.
+@@ -45028,8 +45103,15 @@
+     // Commands() przyspiesza dopiero od NASTEPNEJ iteracji (fbTurboAktywne()
+     // jest odpytywane ponownie przy koncowym opoznieniu petli, patrz nizej).
+     bool fbTrybTurbo = fbTurboAktywne();
+-    unsigned long fbSendInterval = fbTrybTurbo ? FB_TURBO_SEND_INTERVAL_MS : FB_SEND_INTERVAL_MS;
+-    unsigned long fbCmdInterval  = fbTrybTurbo ? FB_TURBO_CMD_INTERVAL_MS  : FB_CMD_INTERVAL_MS;
++    // [v3.57.0 PODGLAD-PANELU] Trzeci stopien: turbo (1s/1s) > podglad (5s/2s)
++    // > norma (15s/7s). Podglad liczy sie tylko poza turbo — turbo zawsze wygrywa.
++    bool fbTrybPodglad = !fbTrybTurbo && fbPodgladAktywne();
++    unsigned long fbSendInterval = fbTrybTurbo   ? FB_TURBO_SEND_INTERVAL_MS
++                                 : fbTrybPodglad ? FB_PODGLAD_SEND_INTERVAL_MS
++                                                 : FB_SEND_INTERVAL_MS;
++    unsigned long fbCmdInterval  = fbTrybTurbo   ? FB_TURBO_CMD_INTERVAL_MS
++                                 : fbTrybPodglad ? FB_PODGLAD_CMD_INTERVAL_MS
++                                                 : FB_CMD_INTERVAL_MS;
+ 
+     // [TELEMETRY-C] Jeden batch telemetryczny na interwal. Wykonywany po
+     // zamknieciu poprzedniego requestu, przed statusem; aktywny worker blokuje
+@@ -45205,7 +45287,10 @@
+     // z nich ma WLASNY, dluzszy interwal pilnowany osobnym gate'em wyzej,
+     // wiec czestsze "czy juz pora" nic w nich nie zmienia poza samym Firebase.
+     {
+-      unsigned long fbPetlaOdstepMs = fbTurboAktywne() ? FB_TURBO_LOOP_STEP_MS : 3000UL;
++      // [v3.57.0] Podglad tez wymaga krotszego kroku petli (1 s), inaczej bramki
++      // 5s/2s bylyby sprawdzane tylko raz na 3 s i sufit zostalby na 3 s.
++      unsigned long fbPetlaOdstepMs = fbTurboAktywne()   ? FB_TURBO_LOOP_STEP_MS
++                                    : (fbPodgladAktywne() ? FB_PODGLAD_LOOP_STEP_MS : 3000UL);
+       int fbPetlaKrokow = (int)(fbPetlaOdstepMs / 100UL);
+       for (int i = 0; i < fbPetlaKrokow; i++) {
+         vTaskDelay(pdMS_TO_TICKS(100));

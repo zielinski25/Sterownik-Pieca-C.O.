@@ -1,0 +1,50 @@
+============================================================================================
+CZY Z ARCHIWUM DA SIE NAUCZYC POPRAWE? — 5 metod, 11 nocy, leave-one-out
+============================================================================================
+
+noc            akt[C]   model
+--------------------------------------------------------------------------------------------
+2026-10-18       -2.0    -3.4
+2026-10-19       -1.4    -2.5
+2026-10-20       -1.7    -1.7
+2026-10-21       -2.5    -3.9
+2026-10-22       -4.6    -3.7
+2026-10-23      -14.3    -6.2
+2026-10-24       -4.3    -2.4
+2026-10-25       -4.5    -1.3
+2026-10-26       -3.0    -1.6
+2026-10-27       -5.5    -2.6
+2026-10-28       -1.0    -0.7
+--------------------------------------------------------------------------------------------
+
+A) model fizyczny (STAN TERAZ, 0.31.51)        MAE = 2.05 C
+B) uczenony wspolczynnik k (zastepuje model)   MAE = 2.89 C
+C) persystencja: tempo z pierwszych 2 h        MAE = 1.95 C
+D) model x wspolczynnik (uczony, LOO)          MAE = 2.28 C
+E) model + stala poprawka (uczona, LOO)        MAE = 2.10 C
+
+Model fizyczny — statystyka bledu:
+  sredni blad bezwzgledny      = 2.05 C
+  mediana bledu bezwzglednego  = 1.40 C
+  bez nocy 23/24.10 (odstep)   = 1.45 C
+  ta jedna noc to 36% sumy bledu
+
+Korelacja bledu modelu z wielkosciami mierzalnymi (0 = brak zwiazku):
+  blad vs temperatura o 19:00 : +0.33
+  blad vs temperatura zewn.   : -0.31
+  blad vs roznica T-Tzewn     : +0.24
+
+WNIOSEK: zaden sposob uczenia na archiwum nie bije modelu fizycznego.
+         Brak korelacji bledu z czymkolwiek mierzalnym = nie ma czego nauczyc.
+         NIE WDRAZAMY opcji (b).
+
+============================================================================================
+TEST PRAKTYCZNY — ile zostanie do 24:00, liczony o kazdej pelnej godzinie
+  (tak dziala karta 'Do konca dnia'; 66 przypadkow)
+============================================================================================
+  n = 66 przypadkow
+  sredni blad PERSYSTENCJA (tempo z ostatnich 2 h) = 2.00 C
+  sredni blad MODEL (UA 2,0 W/K, liniowo)          = 1.29 C
+
+  Persystencja przegrywa, bo o 17:00-18:00 dochodzi jeszcze slonce
+  (26.10 o 17:00 dawala -12,6 C, a woda stracila tylko 2,6 C).

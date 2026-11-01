@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.content.ContextCompat
@@ -81,6 +82,20 @@ class MainActivity : ComponentActivity() {
             alarmReceiverRegistered = false
         }
         super.onStop()
+    }
+
+    /**
+     * [0.31.58] Każde dotknięcie ekranu to „dowód obecności": heartbeat podglądu
+     * (`podglad_wl`, dzięki któremu centrala czyta komendy co 2 s) gaśnie po
+     * 10 min ciszy i wznawia się natychmiast przy pierwszym dotknięciu.
+     * Celowo `dispatchTouchEvent`, a nie nasłuch na pojedynczych kontrolkach —
+     * łapie też przewijanie i kliknięcia w tło.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent?): Boolean {
+        if (::model.isInitialized && ev?.actionMasked == MotionEvent.ACTION_DOWN) {
+            model.noteInteraction()
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onResume() {

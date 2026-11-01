@@ -1,0 +1,79 @@
+FIRMWARE 3.57.9 - co zrobic w 3 krokach
+=======================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+
+
+ZAIMPORTANTNIEJSZE: 3.57.9 zawiera TAKZE poprawki z 3.57.8
+----------------------------------------------------------
+3.57.8 NIE byla wgrywana na piec. 3.57.9 to 3.57.8 + limity sieci, wiec numer
+przeskakuje o dwie wersje. Wgranie 3.57.9 daje OBA zestawy poprawek:
+
+  z 3.57.8 (nie byla wgrywana):
+    - koniec podwojnego "vv" - Telegram pokazywal "Wersja: vv3.57.7",
+    - raport nadzoru podaje prawdziwy czas: klucz NVS "nadzorWiekS" mowi,
+      ile sekund przed restartem powstal ostatni znacznik (wczesniej klucz
+      mial 17 znakow, a NVS przyjmuje 15, wiec zapis cicho nie wychodzil
+      i zawsze bylo "po 0 s pracy").
+
+  z 3.57.9 (to wydanie):
+    - limity sieci w sekundach: 22 miejsca setHandshakeTimeout na 8 s,
+    - 6 miejsc client.setTimeout przeliczonych z milisekund na sekundy.
+
+
+KROK 1 - PODMIEN PLIK
+---------------------
+Skopiuj src\main_centrala.cpp z tej paczki do:
+
+    %USERPROFILE%\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp
+
+NADPISZ istniejacy plik. Kopia bezpieczenstwa (PowerShell):
+
+    Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-3.57.8" -Force
+
+Albo jednym poleceniem, ktore samo pobiera paczke i sprawdza SHA-256:
+    narzedzia\3.57.9-podmien.ps1
+
+
+KROK 2 - WGRANIE
+----------------
+PlatformIO -> Upload   (albo w terminalu: pio run -t upload)
+Nie wgrywam nic za Ciebie - OTA/upload robisz sam.
+
+
+KROK 3 - SPRAWDZENIE (1 minuta)
+-------------------------------
+1. Telegram -> menu -> "System": ma byc "Wersja: v3.57.9"
+   (bez podwojnego "v" - to poprawka z 3.57.8, ktora teraz wchodzi po raz pierwszy).
+2. Raport nadzoru, jesli sie zdarzy, pokaze prawdziwy wiek znacznika:
+   "Ostatni znacznik: DESZCZ / BEFORE - 305 s przed restartem (po 26000 s pracy, ...)"
+   Wczesniej zawsze bylo "po 0 s pracy".
+3. Najwazniejsze: zadanie sieciowe nie powinno juz znikac na 5 minut.
+   W 3.57.8 jedno pobranie moglo wisiec do ~66 minut (limit TLS ustawiony
+   na 4000 SEKUND zamiast 4). Teraz najgorszy przypadek to 17 sekund.
+
+
+CO SIE ZMIENILO W 3.57.9
+------------------------
+1. setHandshakeTimeout(4000) i (7000) -> (8) w 22 miejscach.
+   Metoda przyjmuje SEKUNDY, a nie milisekundy; 4000 dawalo limit 66 minut.
+2. client.setTimeout(4000/7000/8000/15000) -> (4/7/8/15) w 6 miejscach.
+   To samo pomylenie jednostek.
+3. Naglowek pliku: wpis changelogu z pelnym uzasadnieniem.
+
+Nie zmieniono: progow nadzoru, WDT, formatow JSON, telemetrii, Telegrama,
+historii na flashu, archiwum solarnego, ustawien. http.setTimeout zostaje
+w milisekundach (HTTPClient liczy w ms) - to nie jest blad.
+
+
+CZEGO TA WERSJA NIE ROBI
+------------------------
+1. Nie naprawia odpowiedzi, ktora "kapie" (serwer wysyla 1 bajt co kilka sekund).
+   Limit odczytu resetuje sie przy kazdym bajcie. Potrzebny limit CALEGO
+   pobrania - osobny temat.
+2. Nie naprawia rotacji historii i pliku .rebuild - to idzie osobno w 3.57.10.
+
+
+COFNIECIE
+---------
+Przywroc main_centrala.cpp.bak-3.57.8 i wgraj ponownie.

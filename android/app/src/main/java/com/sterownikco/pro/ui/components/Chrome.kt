@@ -233,7 +233,12 @@ private fun HStat(lbl: String, value: String, color: Color, modifier: Modifier =
 
 /** `.qcard` — szybka karta 3-kolumnowa. */
 @Composable
-fun RowScope.QCard(title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit) {
+fun RowScope.QCard(
+    title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit,
+    /** [0.31.68] Drobniejszy podpis — gdy musi zmieścić DWIE liczby
+     *  („klapa 100% · syberek 100%”) w karcie o szerokości 1/3 ekranu. */
+    subCompact: Boolean = false
+) {
     val bd = when (state) {
         "ok" -> Pal.rgba(74, 222, 128, .45f); "warn" -> Pal.rgba(251, 191, 36, .5f)
         "err" -> Pal.rgba(255, 95, 120, .55f); else -> Pal.Border
@@ -250,7 +255,8 @@ fun RowScope.QCard(title: String, icon: String, value: String, sub: String, stat
             AppIcon(icon, size = 15.dp, tint = Pal.Cyan)
         }
         Text(value, style = Txt.quickVal, color = vc, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(sub, style = Txt.quickSub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(sub, style = if (subCompact) Txt.quickSub.copy(fontSize = 6.6.sp) else Txt.quickSub,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

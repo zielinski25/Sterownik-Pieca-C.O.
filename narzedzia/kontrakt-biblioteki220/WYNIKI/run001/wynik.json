@@ -1,0 +1,128 @@
+{
+  "status": "PASS",
+  "stage": 220,
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "firmware": "v3.56.4 (bez zmian w tym etapie)",
+  "kontrol": {
+    "returncode": 0,
+    "ok": true,
+    "kontrol": 7,
+    "czerwone": [],
+    "wywolan": 19,
+    "model_inny": 15
+  },
+  "mutacje": {
+    "M1_fillbuffer_const": {
+      "opis": "nasze _fillBuffer staje sie const - nie pasuje do wirtualnej w bibliotece",
+      "plik": "HistoriaPobranie.h",
+      "oczekiwane": [
+        "Z03"
+      ],
+      "czerwone": [
+        "Z03"
+      ],
+      "returncode": 1
+    },
+    "M2_override_respond": {
+      "opis": "nadpisujemy _respond, ktore w bibliotece jest final",
+      "plik": "HistoriaPobranie.h",
+      "oczekiwane": [
+        "Z03"
+      ],
+      "czerwone": [
+        "Z03"
+      ],
+      "returncode": 1
+    },
+    "M3_std_str": {
+      "opis": "w naglowku firmware pojawia sie metoda z naszego modelu (std_str)",
+      "plik": "HistoriaPobranie.h",
+      "oczekiwane": [
+        "Z05"
+      ],
+      "czerwone": [
+        "Z05"
+      ],
+      "returncode": 1
+    },
+    "M4_addheader_int": {
+      "opis": "addHeader z dwiema liczbami - zadne przeciazenie tego nie przyjmie",
+      "plik": "HistoriaPobranie.h",
+      "oczekiwane": [
+        "Z04"
+      ],
+      "czerwone": [
+        "Z04"
+      ],
+      "returncode": 1
+    },
+    "M5_calls_openn": {
+      "opis": "zapinka wola io.openn(), ktorego w CheckedHistoryIO.h nie ma",
+      "plik": "HistoriaPin.h",
+      "oczekiwane": [
+        "Z06"
+      ],
+      "czerwone": [
+        "Z06"
+      ],
+      "returncode": 1
+    },
+    "M6_pole_prywatne": {
+      "opis": "w bibliotece _code staje sie prywatne - nasz konstruktor nie ma prawa go ustawic",
+      "plik": "ESPAsyncWebServer.h",
+      "oczekiwane": [
+        "Z02"
+      ],
+      "czerwone": [
+        "Z02"
+      ],
+      "returncode": 1
+    },
+    "M7_inny_sha": {
+      "opis": "biblioteka inna niz przypieta (ktos podmienil naglowek)",
+      "plik": "ESPAsyncWebServer.h",
+      "oczekiwane": [
+        "Z01"
+      ],
+      "czerwone": [
+        "Z01"
+      ],
+      "returncode": 1
+    },
+    "M8_brak_http_any": {
+      "opis": "biblioteka nie definiuje HTTP_ANY",
+      "plik": "ESPAsyncWebServer.h",
+      "oczekiwane": [
+        "Z07"
+      ],
+      "czerwone": [
+        "Z07"
+      ],
+      "returncode": 1
+    },
+    "M9_include_modelu": {
+      "opis": "naglowek firmware wciaga plik z zaslepka testowa",
+      "plik": "HistoriaPobranie.h",
+      "oczekiwane": [
+        "Z05"
+      ],
+      "czerwone": [
+        "Z05"
+      ],
+      "returncode": 1
+    },
+    "M10_brak_exact": {
+      "opis": "biblioteka nie ma AsyncURIMatcher::exact (etap 218 by sie nie skompilowal)",
+      "plik": "ESPAsyncWebServer.h",
+      "oczekiwane": [
+        "Z07"
+      ],
+      "czerwone": [
+        "Z07"
+      ],
+      "returncode": 1
+    }
+  }
+}

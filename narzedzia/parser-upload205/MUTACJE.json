@@ -1,0 +1,108 @@
+{
+  "status": "PASS",
+  "profile": "ASan+UBSan, LSan enabled",
+  "inputs": {
+    "narzedzia/parser-upload205/Test.cpp": "7488bfcdcd27298750b2f2d466e4bfbc939415bc153dfcc7332219d781207239",
+    "narzedzia/parser-upload205/Model203.inc": "ab3df00a1fa9a7671c903fd8205f4efce17b48e13d8c0be9d11e8207f112ce7b",
+    "narzedzia/parser-upload205/Parser205.inc": "1a586eba84cfd592de9ddf2f0470db77502153cb3538d01e843f543ab0c7ebad",
+    "narzedzia/parser-upload205/StrictMultipartEnd.h": "06717f659ba3115d0bf5b7a67bcb5b84ee8464cb53a3860b498d54dd3b4152a6",
+    "narzedzia/parser-upload205/ParserFields.inc": "c6f6b92b625c70bb94d3a4a280d73b04cfb56655b0312ee839e6479ad0229523",
+    "narzedzia/parser-upload205/ParserModel.h": "2065cc12a399398c3105a6c8f5682328e52dbfd4b6e99897f508f085fd2d846b",
+    "narzedzia/adapter-upload204/UploadAdapter.h": "147b564a18350b7ce6d4c250c034d1cca9e8aba80f51394ac5e4337630a6b18d",
+    "narzedzia/parser-upload205/mutacje.py": "17589a1cb8e2a738d1476875babbb0d0697b9a76e9c37f899831066bf4e846ad",
+    "narzedzia/kolejka-upload202/UploadPump.h": "fe33787b482ba7b8084226e2af454c68f35b7a98570fa3df38840829280e76e0",
+    "narzedzia/kolejka-upload202/Fixture201.inc": "38ac1ad4445574190e75a4b4eda3763d8c6fb35cae02f5b653014b927fb382e6",
+    "narzedzia/kontekst-upload201/RequestRegistry.h": "5aff513e7bd8023e914501ddce7a2af9cc4a9a526b638335ae4297b4af2a8488",
+    "narzedzia/upload-zadania200/UploadPool.h": "ae8063b3cf4bd122d296fa420aeb4eaab2d3cc45226ed92361f693d37fe82aef",
+    "narzedzia/upload-zadania200/Raw198.inc": "6248ce9b4f848c8bc41f50f0cccef593925c0e7fa2d41d1b87b3491418174cd8",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690"
+  },
+  "cases": [
+    {
+      "name": "early-final",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "ignore-tail-byte",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "rewrite-length",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "ignore-completion",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "continue-after-gone",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "allow-multipart-fields",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "lost-route-end-gate",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "no-file-length-check",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "allow-chunked",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "unbounded-body",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "invalid-boundary",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "missing-parse-error-abort",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    }
+  ]
+}

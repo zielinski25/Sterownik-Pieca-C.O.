@@ -1,0 +1,51 @@
+{
+  "status": "PASS",
+  "release_ready": false,
+  "inputs": {
+    "narzedzia/naglowki-upload206/host/Arduino.h": "2b98cf85985ff10be95b4fe719b921b52a8bb4d43beb9aed7985da6aa4c773f6",
+    "narzedzia/adapter-upload204/UploadAdapter.h": "147b564a18350b7ce6d4c250c034d1cca9e8aba80f51394ac5e4337630a6b18d",
+    "narzedzia/parser-upload205/StrictMultipartEnd.h": "06717f659ba3115d0bf5b7a67bcb5b84ee8464cb53a3860b498d54dd3b4152a6",
+    "narzedzia/odpowiedz-odroczona203/Fields.inc": "d57e789c2777ec82dbad46a66dabc51d71092989f6e9d8246999289fa885867f",
+    "narzedzia/odpowiedz-odroczona203/Factory.inc": "503e9ab60b42f5878763d3b2966f2f219be84372f08fc3a466b20df47219d404",
+    "narzedzia/odpowiedz-odroczona203/API.inc": "b8c5abb30e2e0f8ea51c0144bc519164c2afae7aee9f4bc13938d2ee5d9c6277",
+    "narzedzia/odpowiedz-odroczona203/Methods.inc": "7ba90061180f6976c83fb8b47f2690cf927d68dc8e5307d5d47abaa5892a72e6",
+    "narzedzia/odpowiedz-odroczona203/Fixture202.inc": "3cf5515c77f1ca13fa5dce3c13732c1a5af2962da06b10cf66edce15561b4df6",
+    "narzedzia/odpowiedz-odroczona203/DeferredUploadReply.h": "a73151171ff65752a251e0fcbda440b3d8708d34c8eab526d767af4dde9c6b39",
+    "narzedzia/naglowki-upload206/upstream/literals.h": "2df08b5947a05fdb6b890a486708b046cc2bc903aa9c7d7a227c0a4a49b51fb3",
+    "narzedzia/naglowki-upload206/upstream/AsyncWebHeader.cpp": "820dc02429e0de56b72a1a7a91a603b87819a18e2501c4a83041a0e69ea39190",
+    "narzedzia/naglowki-upload206/upstream/WebServer.cpp": "4ed4725bf35e3392eb75bffb86ae47220d069783032840d935136faa0fad1e60",
+    "narzedzia/naglowki-upload206/Test.cpp": "5c48cc0b7dbd6c73e1613a1d57d6578c25f66c46c958df997ac036c566160336",
+    "narzedzia/naglowki-upload206/build.py": "588c0a20818e6047f274180bb176cfe65caca4699742f45e369019f6c9c1c6fe",
+    "narzedzia/naglowki-upload206/run.py": "bec0416b51298ebc2f686089ce143bb000a6232bd1951dc17b7e051f4d3d9cc7",
+    "narzedzia/naglowki-upload206/Methods206.inc": "83b0f429b247d1c5c3c9e807166f87580cbd31214e3c9b4d0e11525e350e0b9d",
+    "narzedzia/naglowki-upload206/AsyncWebHeader.inc": "1ef0d8efbe0efa14a4ffafe5465a5f2eafc6faa5b893d6503e10a3795cfaa95d",
+    "narzedzia/naglowki-upload206/Parser206.inc": "ec0cd8a8996ec9767641b7df3fd25c79018c047e6a970cdad1da71212ef5c73a",
+    "narzedzia/naglowki-upload206/Enums206.inc": "06eaf89a41dcba5f79480120d045f48c4bb4943b5b80d50b14660f104abe0a7f",
+    "narzedzia/naglowki-upload206/Fixture206.inc": "164aedea46d436a9129698369b4074521f3b2228132d9b786bed50aacabec5b5",
+    "narzedzia/kontekst-upload201/RequestRegistry.h": "5aff513e7bd8023e914501ddce7a2af9cc4a9a526b638335ae4297b4af2a8488",
+    "narzedzia/kolejka-upload202/UploadPump.h": "fe33787b482ba7b8084226e2af454c68f35b7a98570fa3df38840829280e76e0",
+    "narzedzia/kolejka-upload202/Fixture201.inc": "38ac1ad4445574190e75a4b4eda3763d8c6fb35cae02f5b653014b927fb382e6",
+    "narzedzia/upload-zadania200/UploadPool.h": "ae8063b3cf4bd122d296fa420aeb4eaab2d3cc45226ed92361f693d37fe82aef",
+    "narzedzia/upload-zadania200/Raw198.inc": "6248ce9b4f848c8bc41f50f0cccef593925c0e7fa2d41d1b87b3491418174cd8",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/uchwyty-runtime197/CheckedRead.h": "88a3fba5db1638e43a570bd467ba1c41e17d506e347da79eb23e4eaa45f0569d",
+    "narzedzia/uchwyty-runtime197/host/Arduino.h": "917e0db8ca511c83faa564044ef127f2e94da1bcc3c812608fcc3e2455d2aa7b",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690",
+    "narzedzia/blokada-startu-fs196/upstream/FS.h": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+    "narzedzia/blokada-startu-fs196/upstream/FSImpl.h": "5187168c8e15583d1b55e935987532f221f1d3ca958e293494c221e5b2bc538a",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9"
+  },
+  "profiles": {
+    "native": {
+      "stdout": "PASS headers206 groups=18 instances=299; real pinned header/body parsing + adapter204/205; modeled String/TCP/route match, not ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "asan-ubsan": {
+      "stdout": "PASS headers206 groups=18 instances=299; real pinned header/body parsing + adapter204/205; modeled String/TCP/route match, not ESP\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  }
+}

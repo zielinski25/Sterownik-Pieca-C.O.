@@ -1,0 +1,83 @@
+diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
+index 6d0d02c..cde712d 100644
+--- a/android/app/build.gradle.kts
++++ b/android/app/build.gradle.kts
+@@ -12,8 +12,8 @@ android {
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31048
+-        versionName = "0.31.48"
++        versionCode = 31049
++        versionName = "0.31.49"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt b/android/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
+index 2f4b4e8..37dc4cd 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
+@@ -426,6 +426,12 @@ fun ChartCanvas(
+         // bierzemy MINIMUM i MAKSIMUM — czyli najwyzej 2 punkty na piksel.
+         // Ksztalt, szczyty i dolki zostaja te same, a punktow jest ~10x mniej.
+         val maxBuckets = max(200, plotW.toInt())
++        // [0.31.49 SZYBKOSC] Jedna kreska, jedno pioro i jeden pedzel na cala klatke.
++        // Wczesniej PathEffect i Stroke powstawaly wewnatrz rysowania kazdego
++        // odcinka kazdej serii — czyli nawet kilkaset obiektow na jedno odrysowanie.
++        val dashFx = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
++        val strokeSolid = Stroke(width = 2.dp.toPx())
++        val strokeDash = Stroke(width = 2.dp.toPx(), pathEffect = dashFx)
+         view.cat.forEach { s ->
+             val vals = view.values[s.id] ?: return@forEach
+             // [0.31.47] Min/max dla trybu NORMALIZED liczone RAZ na serie, a nie dla
+@@ -509,20 +515,27 @@ fun ChartCanvas(
+                 }
+             }
+             zamknijOdcinek()
++            // [0.31.49 WYDajnosc] Wszystko, co nie zalezy od pojedynczego odcinka,
++            // liczone RAZ na serie: kolor, pedzel gradientu, PathEffect kreskowania
++            // i obiekt Stroke. Wczesniej kazdy z nich powstawal dla KAZDEGO odcinka
++            // i przy KAZDYM odrysowaniu — przy 6 seriach i kilkudziesieciu odcinkach
++            // to setki alokacji shaderow i obiektow Paint na klatke.
++            val accent = hexColor(s.accent)
++            val fillBrush = if (areaBand && s.group != "pump" && mode != "NORMALIZED")
++                Brush.verticalGradient(
++                    listOf(accent.copy(alpha = .22f), accent.copy(alpha = 0f)),
++                    startY = padTop, endY = padTop + plotH
++                ) else null
+             segs.forEach { seg ->
+                 if (seg.isEmpty()) return@forEach
+-                val accent = hexColor(s.accent)
+-                if (areaBand && s.group != "pump" && mode != "NORMALIZED" && seg.size >= 2) {
++                if (fillBrush != null && seg.size >= 2) {
+                     val path = Path()
+                     path.moveTo(seg.first().x, padTop + plotH)
+                     seg.forEach { path.lineTo(it.x, it.y) }
+                     path.lineTo(seg.last().x, padTop + plotH)
+                     path.close()
+                     clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
+-                        drawPath(path, Brush.verticalGradient(
+-                            listOf(accent.copy(alpha = .22f), accent.copy(alpha = 0f)),
+-                            startY = padTop, endY = padTop + plotH
+-                        ))
++                        drawPath(path, fillBrush)
+                     }
+                 }
+                 fun drawStrokeRun(run: List<SegPoint>, isSimulated: Boolean) {
+@@ -553,12 +566,12 @@ fun ChartCanvas(
+                     }
+                     // Only edges touching a simulated sample get the dashed style;
+                     // genuine-to-genuine edges retain the series' ordinary stroke.
+-                    val dash = if (isSimulated) PathEffect.dashPathEffect(
+-                        floatArrayOf(6.dp.toPx(), 4.dp.toPx())
+-                    ) else null
++                    // [0.31.49] PathEffect i Stroke sa gotowe (patrz dashFx/strokeSolid
++                    // wyzej) — tutaj tylko wybor, zero alokacji.
++                    val style = if (isSimulated) strokeDash else strokeSolid
+                     // Catmull–Rom bezier tangents can overshoot the mapped y-range.
+                     clipRect(padLeft, padTop, w - padRight, padTop + plotH) {
+-                        drawPath(line, accent, style = Stroke(width = 2.dp.toPx(), pathEffect = dash))
++                        drawPath(line, accent, style = style)
+                     }
+                 }
+ 
