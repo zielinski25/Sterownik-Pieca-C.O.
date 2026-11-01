@@ -1,13 +1,13 @@
 # Buduje APK z katalogu `android/` na czystym runnerze Linuksa.
 #
-# Po co: komputer użytkownika nie ma ustawionego `sdk.dir` (a jego lokalizacja
-# zależy od maszyny), więc każdy czysty build kończył się „SDK location not
-# found". Tutaj SDK instaluje `android-actions/setup-android`, a APK wychodzi
-# jako artefakt do pobrania.
+# Po co: komputer użytkownika nie ma ustawionego `sdk.dir` (ścieżka zależy od
+# maszyny), więc każdy czysty build kończył się „SDK location not found".
+# Tutaj SDK jest już na obrazie runnera (`ANDROID_HOME`), a `local.properties`
+# tworzymy w locie — nic wrażliwego nie trafia do repo.
 #
 # UWAGA: APK jest podpisany losowym kluczem debug runnera, więc nie zainstaluje
-# się jako aktualizacja nad APK zbudowanym lokalnie — trzeba najpierw odinstalować
-# starą aplikację (dane z Firebase i tak są w chmurze, ustawienia lokalne znikną).
+# się jako aktualizacja nad APK zbudowanym lokalnie — najpierw odinstaluj starą
+# aplikację (dane w Firebase zostają, ustawienia lokalne znikną).
 name: APK (Android)
 
 on:
@@ -33,20 +33,32 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Wersja w projekcie
+      - name: Wersja i SDK
         working-directory: android
-        run: grep -n 'versionCode\|versionName' app/build.gradle.kts
+        run: |
+          grep -n 'versionCode\|versionName' app/build.gradle.kts
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" || true
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
 
       - name: assembleDebug
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace assembleDebug
+          ./gradlew --no-daemon --stacktrace assembleDebug 2>&1 | tee build.log
+
+      - name: Blad - ostatnie linie jako adnotacja
+        if: failure()
+        working-directory: android
+        run: |
+          if [ -f build.log ]; then
+            tail -n 25 build.log | while IFS= read -r l; do
+              echo "::error::$(printf '%s' "$l" | sed 's/%/%25/g')"
+            done
+          fi
 
       - name: APK jako artefakt
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: SterownikCO-debug-apk
