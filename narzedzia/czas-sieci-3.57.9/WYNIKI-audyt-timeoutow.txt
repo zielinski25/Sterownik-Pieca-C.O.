@@ -28,7 +28,11 @@ Znane zmienne: client:WiFiClientSecure, fbSSLClient:WiFiClientSecure, http:HTTPC
      linia  44387  http.setTimeout(4000)  [HTTPClient, milisekundy] = 4.0 s
 
 === do zmiany w 3.57.9 ===
-  setHandshakeTimeout: 22
-  setTimeout w SEKUNDACH: 15
-  setTimeout w milisekundach (NIE ruszac): 5
-  RAZEM do zmiany: 37
+  setHandshakeTimeout (zawsze sekundy):        22
+    - DO POPRAWY (nie 8 s):                    22
+    - juz poprawne (8 s):                      0
+  setTimeout w SEKUNDACH razem:                15
+    - BŁĘDNE (do poprawy):                     6
+    - POPRAWNE (setTimeout(4) - nie ruszamy):  9
+  setTimeout w milisekundach (nie ruszamy):    5
+  RAZEM DO ZMIANY:                             28

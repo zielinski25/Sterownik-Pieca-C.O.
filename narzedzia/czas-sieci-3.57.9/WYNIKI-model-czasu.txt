@@ -1,5 +1,5 @@
-MODEL CZASU SIECI — firmware 3.57.8
-zrodlo parametrow: ../../firmware-patch/v3.57.8-raport-i-wersja/src/main_centrala.cpp (SHA-256 db3da8854cd8408a...)
+MODEL CZASU SIECI — 3.57.8 -> 3.57.9
+zrodlo parametrow: ../../firmware-patch/v3.57.8-raport-i-wersja/src/main_centrala.cpp (SHA-256 db3da8854cd8408a...) | PO: ../../firmware-patch/v3.57.9-limity-sieci/src/main_centrala.cpp (SHA-256 e263437b1fb850cb...)
 semantyka: setHandshakeTimeout(x) => x*1000 ms; http.setTimeout(x) => x ms, klient dostaje (x+500)/1000 s
 
 --- PRZED (3.57.8): setHandshakeTimeout(4000) => limit TLS 66.7 min (4000 s) ---
@@ -12,7 +12,7 @@ S5   wolny TLS 4,5 s                                                 4.7 s      
 S6   wolny TLS 9 s                                                   9.2 s           ok          brak restartu
 S7   odpowiedz kapie: 1 bajt co 3 s przez 400 s            6.7 min (400 s)           ok       RESTART po 300 s
 
---- PO (3.57.9, decyzja: 8 s): setHandshakeTimeout(8) => limit TLS 8.0 s ---
+--- PO (3.57.9 — w pliku 8 s): setHandshakeTimeout(8) => limit TLS 8.0 s ---
      scenariusz                                                       czas       status                 nadzor
 S1   normalny serwer                                                610 ms           ok          brak restartu
 S2   TLS stoi (serwer przyjal TCP, milczy na ClientHello)            8.1 s  tls_timeout          brak restartu
@@ -41,6 +41,7 @@ S7   odpowiedz kapie: 1 bajt co 3 s przez 400 s            6.7 min (400 s)      
   OK   S7 wolna odpowiedz (kapie): restart, bo caly odczyt trwa > 300 s - 6.7 min (400 s)
 
 === Asercje: PO (setHandshakeTimeout(8) — decyzja z 1.11) ===
+  OK   w pliku 3.57.9 stoi setHandshakeTimeout(8) - jest 8
   OK   S2 TLS stoi: konczy sie po 8 s (a nie po 66 min) - 8.1 s
   OK   S2 => brak restartu, znacznik AFTER zostaje zapisany
   OK   S2: limit 8 s to nadal 37x mniej niz prog nadzoru 300 s
@@ -78,4 +79,4 @@ S7   odpowiedz kapie: 1 bajt co 3 s przez 400 s            6.7 min (400 s)      
   OK   PO: zero restartow w ciagu 2 h - restartow=0
   OK   PRZED: seria restartow w ciagu 2 h - restartow=5
 
-RAZEM: 22 OK / 0 FAIL
+RAZEM: 23 OK / 0 FAIL

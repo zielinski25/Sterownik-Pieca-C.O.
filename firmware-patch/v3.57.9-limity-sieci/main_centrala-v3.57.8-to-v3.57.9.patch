@@ -1,0 +1,290 @@
+--- src/main_centrala.cpp
++++ src/main_centrala.cpp
+@@ -1,3 +1,47 @@
++// FIRMWARE_VERSION v3.57.8 -> v3.57.9 (2026-11-01) — LIMITY SIECI W SEKUNDACH.
++//
++// Zgloszenie uzytkownika (1.11): raport nadzoru po restarcie pokazal
++// "Ostatni znacznik: DESZCZ / BEFORE" (31.10, 23:49) oraz "FB_LOOP / BEFORE"
++// (1.11, 03:35). Zadanie sieciowe zamilklo na 300 s, nadzor zrestartowal
++// centrale. Zawieszenie bylo rzadkie (~4 h odstepu), ale kosztowalo 5 minut
++// bez Telegrama i Firebase przy kazdym zdarzeniu.
++//
++// [1] PRZYCZYNA: ZLA JEDNOSTKA W setHandshakeTimeout(). W arduino-esp32 2.0.x
++//     metoda mnozy argument przez 1000 (WiFiClientSecure.cpp:
++//     "sslclient->handshake_timeout = handshake_timeout * 1000"), czyli
++//     przyjmuje SEKUNDY. W firmware stalo 4000 i 7000 - czyli limit handshake
++//     TLS wynosil 4000 s (66 min) i 7000 s (117 min), a nie 4 s i 7 s.
++//     Jedno pobranie moglo wiec wisiec dluzej niz prog nadzoru (300 s).
++//     Dotyczy to TAKZE pompy fbApp.loop() na koncu tgTaskFn - czyli obu
++//     znacznikow z 1.11.
++//     Poprawka: 22 miejsca, wszystkie na 8 s (decyzja uzytkownika; 8 s to
++//     nadal 37x mniej niz prog nadzoru, a wystarcza na wolne lacze).
++// [2] TA SAMA POMYLKA W client.setTimeout(). WiFiClientSecure::setTimeout()
++//     tez liczy w sekundach. W szesciu miejscach staly wartosci w
++//     milisekundach (4000, 7000, 8000, 15000), czyli 4000-15000 SEKUND.
++//     Dzis przykrywa je HTTPClient::connect(), ktore po polaczeniu nadpisuje
++//     timeout klienta wartoscia z http.setTimeout() - ale to ta sama pomylka
++//     i wracalaby przy kazdym uproszczeniu warstwy HTTP. Poprawka: te same
++//     wartosci w sekundach (4, 7, 8, 15).
++//     NIE zmieniono: 9 miejsc z juz poprawnym client.setTimeout(4) oraz
++//     5 miejsc http.setTimeout(...) - HTTPClient liczy w MILISEKUNDACH.
++//
++// Efekt: najgorszy czas jednego GET spada z ~66 min do 17 s
++// (TCP 5 s + TLS 8 s + odczyt 4 s), czyli 17x mniej niz prog 300 s.
++//
++// Czego ta wersja NIE naprawia:
++//   * odpowiedzi, ktora "kapie" (1 bajt co 3 s) - limit odczytu resetuje sie
++//     przy kazdym bajcie; potrzebny limit CALEGO pobrania, nie bezczynnosci,
++//   * rotacji historii i pliku .rebuild - osobno w 3.57.10 (decyzja).
++//
++// TA WERSJA ZAWIERA TAKZE POPRAWKI Z 3.57.8 (3.57.8 nie byla wgrywana):
++//   * koniec podwojnego "vv" w wersji pokazywanej przez Telegram,
++//   * klucz NVS "nadzorWiekS" - raport nadzoru podaje, ile sekund przed
++//     restartem powstal ostatni znacznik.
++//
++// Bez zmian: progi nadzoru, WDT, formaty JSON, telemetria, Telegram, OTA,
++// historia na flashu, archiwum solarne, zadne inne ustawienie.
++//
+ // FIRMWARE_VERSION v3.57.7 -> v3.57.8 (2026-11-01) — RAPORT NADZORU MOWI WRESZCIE KIEDY I GDZIE.
+ //
+ // Zgloszenie uzytkownika (1.11, po wgraniu 3.57.7): Telegram pokazal
+@@ -5910,7 +5954,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.57.8";
++static const char* FIRMWARE_VERSION = "v3.57.9";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -23962,7 +24006,7 @@
+ 
+   const String fbPath = String(SOLAR_ARCHIVE_FB_PATH_PREFIX) + dateKey + ".json";
+   g_solarFbResult = AsyncResult{};
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   serwisujTWDTJesliZarejestrowany();
+   object_t data(payload.c_str());
+   fbDatabase.update<object_t>(fbAsyncClient, fbPath, data, g_solarFbResult);
+@@ -24052,8 +24096,8 @@
+   client.setInsecure();  // spojnie z istniejacym pobieraniem Open-Meteo
+   // [v3.51.1] 4 s to za malo na zimny TLS do Open-Meteo; przez to 3 proby
+   // w 15-minutowym oknie potrafily wszystkie pasc. 7 s < WDT (15 s).
+-  client.setTimeout(7000);
+-  client.setHandshakeTimeout(7000);
++  client.setTimeout(7);
++  client.setHandshakeTimeout(8);
+ 
+   HTTPClient http;
+   http.setUserAgent("SterownikCO-ESP32");
+@@ -26956,7 +27000,7 @@
+ 
+   g_diagRemoteResult = AsyncResult{};
+   object_t payload(json.c_str());
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   serwisujTWDTJesliZarejestrowany();
+   fbDatabase.set<object_t>(fbAsyncClient, path, payload, g_diagRemoteResult);
+   fbCzekajNaWynikZLimitem(g_diagRemoteResult, 5000UL);
+@@ -33416,7 +33460,7 @@
+     // sie do 0 po kazdym stop() (issue #6165: start_ssl_client() czysci CALY
+     // sslclient_context) — wiec MUSI byc wolane tuz przed KAZDA proba
+     // connect(), nie raz przy starcie.
+-    client.setHandshakeTimeout(4000);  // margines: TCP(8000ms, bez zmian) + TLS(4000ms) = 12000ms w oknie WDT(15000ms)
++    client.setHandshakeTimeout(8);  // 8 s — argument w SEKUNDACH (metoda mnozy przez 1000). [v3.57.9] TCP(8s) + TLS(8s) = max 16 s na probe: tgTask NIE jest w Task WDT (patrz v3.18.0 przy tgTaskFn), a nadzor restartuje dopiero po 300 s ciszy
+ 
+     // [FIX-DNS-BLOKUJACY-BEZ-LIMITU, v3.7.0.2] bylo: ternary z fallbackiem
+     // na client.connect(TG_HOST,...) gdy DNS zawiodl. Teraz zbedne — DNS
+@@ -39296,7 +39340,7 @@
+ bool sprawdzNajnowszaWersjeGithub(String &tagOut, String &bladOut) {
+   WiFiClientSecure client;
+   client.setInsecure();     // jak tgClient — bez weryfikacji certyfikatu (patrz komentarz przy #include WiFiClientSecure.h)
+-  client.setTimeout(8000);
++  client.setTimeout(8);
+ 
+   HTTPClient http;
+   http.setUserAgent("SterownikCO-ESP32");
+@@ -39385,7 +39429,7 @@
+ bool wykonajAktualizacjeOTA(const String &tag, String &bladOut) {
+   WiFiClientSecure client;
+   client.setInsecure();
+-  client.setTimeout(15000);
++  client.setTimeout(15);
+ 
+   httpUpdate.rebootOnUpdate(false);  // restart robimy sami, PO wyslaniu wiadomosci na Telegram
+   httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+@@ -39436,7 +39480,7 @@
+ bool pobierzFirmwarePanelaZGithub(const String &tag, String &bladOut) {
+   WiFiClientSecure client;
+   client.setInsecure();
+-  client.setTimeout(15000);
++  client.setTimeout(15);
+ 
+   HTTPClient http;
+   http.setUserAgent("SterownikCO-ESP32");
+@@ -40399,7 +40443,7 @@
+ 
+     static AsyncResult securityReadResult;
+     securityReadResult = AsyncResult{};
+-    fbSSLClient.setHandshakeTimeout(4000);
++    fbSSLClient.setHandshakeTimeout(8);
+     fbSSLClient.setTimeout(4);
+     serwisujTWDTJesliZarejestrowany();
+     if (fbLoopWorkerZajety()) {
+@@ -40512,7 +40556,7 @@
+   Serial.println(F("tag=SEC-H2 lvl=INFO zdarzenie=R352_start"));
+   static AsyncResult r352;
+     r352 = AsyncResult{};
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   fbSSLClient.setTimeout(4);
+   if (fbLoopWorkerZajety()) {
+     add(F("R352:legacyStatusGET=SKIPPED workerBusy"));
+@@ -41256,7 +41300,7 @@
+ 
+   g_spoolRuntimeReplayResult = AsyncResult{};
+   g_spoolRuntimeReplayActive = true;
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   serwisujTWDTJesliZarejestrowany();
+   object_t payload(g_telemetryJsonBuffer);
+   fbDatabase.update<object_t>(fbAsyncClient, "/piec/telemetry/1m/v1", payload, g_spoolRuntimeReplayResult);
+@@ -41922,7 +41966,7 @@
+   if (fbLoopWorkerZajety()) { errorOut = "workerBusy"; return false; }
+   // Re-arm przed kazda proba: stop() po bledzie czysci timeout handshake.
+   fbSSLClient.setTimeout(4);
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   static AsyncResult r;
+   r = AsyncResult{};
+   object_t data(json.c_str());
+@@ -41944,7 +41988,7 @@
+   if (fbLoopWorkerZajety()) { errorOut = "workerBusy"; return false; }
+   // Re-arm przed kazda proba: stop() po bledzie czysci timeout handshake.
+   fbSSLClient.setTimeout(4);
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   static AsyncResult r;
+   r = AsyncResult{};
+   object_t data(json.c_str());
+@@ -41966,7 +42010,7 @@
+   if (fbLoopWorkerZajety()) { errorOut = "workerBusy"; return false; }
+   // Re-arm przed kazda proba: stop() po bledzie czysci timeout handshake.
+   fbSSLClient.setTimeout(4);
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   static AsyncResult r;
+   r = AsyncResult{};
+   fbDatabase.get(fbAsyncClient, path, r);
+@@ -42095,7 +42139,7 @@
+   WiFiClientSecure client;
+   client.setCACert(FIREBASE_TLS_TRUST_CA);
+   client.setTimeout(4);
+-  client.setHandshakeTimeout(4000);
++  client.setHandshakeTimeout(8);
+ 
+   do {
+     if (WiFi.status() != WL_CONNECTED) { ctx->error = "WiFi_NOT_CONNECTED"; break; }
+@@ -42145,7 +42189,7 @@
+   if (fbLoopWorkerZajety()) { errorOut = "workerBusy"; return false; }
+   // Re-arm przed kazda proba: stop() po bledzie czysci timeout handshake.
+   fbSSLClient.setTimeout(4);
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   static AsyncResult r;
+   r = AsyncResult{};
+   fbDatabase.remove(fbAsyncClient, path, r);
+@@ -42393,7 +42437,7 @@
+   g_telemetryRequestActive = true;
+   g_telemetryLastAttemptMillis = millis();
+ 
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   serwisujTWDTJesliZarejestrowany();
+   object_t payload(g_telemetryJsonBuffer);
+   fbDatabase.update<object_t>(fbAsyncClient, "/piec/telemetry/1m/v1", payload, g_fbTelemetryResult);
+@@ -42521,7 +42565,7 @@
+       // w connect() z domyslnym timeoutem 120 s albo bez limitu i zablokowac
+       // cale zadanie — dokladnie to, co zdarzylo sie 31.10 o 04:09.
+       // Czyste ustawienie stanu gniazda, zero zmiany logiki.
+-      fbSSLClient.setHandshakeTimeout(4000);
++      fbSSLClient.setHandshakeTimeout(8);
+       applyFbSockTimeouts(fbSSLClient, 8);
+       diagCheckpoint(diagIdBiezacegoTasku(), DIAG_OP_FB_INIT, DIAG_STAGE_BEFORE);
+       fbApp.loop();
+@@ -42631,7 +42675,7 @@
+   // v3.5.0 -> v3.6.0 (coredump/testcrash/WiFi-sleep) — stad w v3.6.0 tej
+   // poprawki jeszcze nie bylo.
+   fbSSLClient.setTimeout(4);              // limit odczytu, jak przy tgClient
+-  fbSSLClient.setHandshakeTimeout(4000);  // limit handshake'u w ms, jak przy tgClient — margines w oknie WDT(15000ms)
++  fbSSLClient.setHandshakeTimeout(8);  // limit handshake'u 8 s — argument w SEKUNDACH (metoda mnozy przez 1000), jak przy tgClient
+ 
+   // H2: Firebase UserAuth z per-device credential z NVS. LegacyToken nie jest uzywany.
+   if (fbUserAuth == nullptr) {
+@@ -43051,7 +43095,7 @@
+   // handshake_timeout) przy identycznym ustawieniu w fbInitialize() wyzej.
+   // fbSSLClient.stop() jest wolane na KAZDEJ sciezce bledu ponizej (timeout/
+   // error), wiec do kolejnego set() ten timeout musi byc zalozony na nowo.
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   serwisujTWDTJesliZarejestrowany();                              // swieze okno WDT przed set() (moze inicjowac TCP+TLS)
+   fbDatabase.set<object_t>(fbAsyncClient, "/piec/status", fbJsonData, fbSendResult);
+ 
+@@ -43150,7 +43194,7 @@
+   g_fbAckResult = AsyncResult{};
+   AsyncResult& fbAckResult = g_fbAckResult;
+   unsigned long _fbAckT = millis();
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   serwisujTWDTJesliZarejestrowany();
+   fbDatabase.set<object_t>(fbAsyncClient, "/piec/ack", ackData, fbAckResult);
+   fbCzekajNaWynikZLimitem(fbAckResult, 4000UL);
+@@ -43819,7 +43863,7 @@
+   // polaczenia — patrz uzasadnienie przy identycznym ustawieniu w
+   // fbInitialize()/sendStatusToFirebase() wyzej (#6165: stop() na sciezce
+   // bledu ponizej czysci handshake_timeout).
+-  fbSSLClient.setHandshakeTimeout(4000);
++  fbSSLClient.setHandshakeTimeout(8);
+   serwisujTWDTJesliZarejestrowany();                              // swieze okno WDT przed get() (moze inicjowac TCP+TLS)
+   fbDatabase.get(fbAsyncClient, "/piec/cmd", fbCmdResult);
+ 
+@@ -43974,7 +44018,7 @@
+     // get()/set() wyzej — w praktyce ten konkretny connect zwykle reuseuje
+     // gniazdo z powodzenia GET (bez stop() pomiedzy), ale koszt jest zerowy,
+     // a zalozenie "reuse bez stop()" nie jest tu zagwarantowane kodem.
+-    fbSSLClient.setHandshakeTimeout(4000);
++    fbSSLClient.setHandshakeTimeout(8);
+     serwisujTWDTJesliZarejestrowany();
+     fbDatabase.remove(fbAsyncClient, "/piec/cmd", fbDelResult);
+     // [FIX-FB-LOOP-BEZ-LIMITU, v3.10.3] Bylo: trzecie wystapienie petli
+@@ -44118,8 +44162,8 @@
+ void pobierzPrognozeDeszczu() {
+   WiFiClientSecure client;
+   client.setInsecure();
+-  client.setTimeout(4000);
+-  client.setHandshakeTimeout(4000);
++  client.setTimeout(4);
++  client.setHandshakeTimeout(8);
+ 
+   HTTPClient http;
+   http.setUserAgent("SterownikCO-ESP32");
+@@ -44379,8 +44423,8 @@
+ void pobierzPelnaPrognoze() {
+   WiFiClientSecure client;
+   client.setInsecure();
+-  client.setTimeout(4000);
+-  client.setHandshakeTimeout(4000);
++  client.setTimeout(4);
++  client.setHandshakeTimeout(8);
+ 
+   HTTPClient http;
+   http.setUserAgent("SterownikCO-ESP32");
+@@ -45659,7 +45703,7 @@
+       // pliku i ten sam komplet w krotkiej sciezce fbInitialize(). Bez tego
+       // po fbSSLClient.stop() (sciezka bledu get()/set()) to loop() wchodzi
+       // w connect() z wyzerowanym handshake_timeout i moze wisiec minutami.
+-      fbSSLClient.setHandshakeTimeout(4000);
++      fbSSLClient.setHandshakeTimeout(8);
+       applyFbSockTimeouts(fbSSLClient, 8);
+       fbApp.loop();
+       fbAppReady = fbApp.ready();

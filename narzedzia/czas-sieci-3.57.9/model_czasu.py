@@ -252,7 +252,8 @@ def tabela(konf, nadzor):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default=None, help="main_centrala.cpp z 3.57.8")
+    ap.add_argument("--src", default=None, help="main_centrala.cpp z 3.57.8 (stan PRZED)")
+    ap.add_argument("--po", default=None, help="main_centrala.cpp z 3.57.9 (stan PO)")
     args = ap.parse_args()
 
     param = 4000          # tyle jest w 3.57.8
@@ -269,13 +270,26 @@ def main():
         http_to = d["deszcz"]["http_setTimeout"][0]
         zrodlo_info = f"{args.src} (SHA-256 {d['zrodlo']['sha256'][:16]}...)"
 
+    # Stan PO: jesli podano plik 3.57.9, bierzemy z niego REALNA wartosc,
+    # a nie zakladana. Model ma mierzyc to, co jest w pliku.
+    param_po = 8
+    if args.po:
+        out_po = subprocess.run([sys.executable, os.path.join(TU, "zbierz_parametry.py"),
+                                 "--src", args.po, "--json"], capture_output=True, text=True)
+        if out_po.returncode != 0:
+            print(out_po.stderr)
+            return 1
+        d_po = json.loads(out_po.stdout)
+        param_po = d_po["deszcz"]["setHandshakeTimeout"][0]
+        zrodlo_info += f" | PO: {args.po} (SHA-256 {d_po['zrodlo']['sha256'][:16]}...)"
+
     przed = Konfiguracja("PRZED (3.57.8)", param, http_to)
     # DECYZJA UZYTKOWNIKA (2026-11-01): limit handshake TLS = 8 s.
-    po = Konfiguracja("PO (3.57.9, decyzja: 8 s)", 8, http_to)
+    po = Konfiguracja(f"PO (3.57.9 — w pliku {param_po} s)", param_po, http_to)
     po4 = Konfiguracja("wariant odrzucony (4 s)", 4, http_to)
     nadzor = Nadzor()
 
-    print("MODEL CZASU SIECI — firmware 3.57.8")
+    print("MODEL CZASU SIECI — 3.57.8 -> 3.57.9")
     print(f"zrodlo parametrow: {zrodlo_info}")
     print(f"semantyka: setHandshakeTimeout(x) => x*1000 ms; http.setTimeout(x) => x ms, "
           f"klient dostaje (x+500)/1000 s")
@@ -307,6 +321,8 @@ def main():
 
     # ── asercje: PO (8 s — decyzja uzytkownika) ─────────────────────────
     print("\n=== Asercje: PO (setHandshakeTimeout(8) — decyzja z 1.11) ===")
+    if args.po:
+        spr(param_po == 8, "w pliku 3.57.9 stoi setHandshakeTimeout(8)", f"jest {param_po}")
     o = w_po["S2"]
     spr(o["wynik"].status == "tls_timeout" and o["wynik"].czas_ms == 8090,
         "S2 TLS stoi: konczy sie po 8 s (a nie po 66 min)", fmt_czas(o["wynik"].czas_ms))

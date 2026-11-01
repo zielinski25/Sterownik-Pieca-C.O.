@@ -118,6 +118,9 @@ def main():
             "faktyczne_s": round(faktyczne_ms / 1000.0, 3),
             # "zle" = wynik odbiega od zamiaru 8 s o wiecej niz 2x
             "podejrzane": oczekiwane_ms is not None and faktyczne_ms > oczekiwane_ms * 2,
+            # "do zmiany" = wartosc inna niz cel (dla handshake: != 8 s)
+            "do_zmiany": (wartosc != 8) if metoda == "setHandshakeTimeout"
+                          else (faktyczne_ms > 20000),
             # "zgodne z zamiarem 8 s" — w granicach 4..16 s
             "okolo_8s": oczekiwane_ms is not None and 4000 <= faktyczne_ms <= 16000,
         })
@@ -146,12 +149,22 @@ def main():
         print(f"  {znak} linia {w['linia']:>6}  {w['obiekt']}.setTimeout({w['wartosc']})  "
               f"[{w['typ']}, {w['jednostka']}] = {w['faktyczne_s']} s")
     print("\n=== do zmiany w 3.57.9 ===")
-    print(f"  setHandshakeTimeout: {len(handshake)}")
-    print(f"  setTimeout w SEKUNDACH: "
-          f"{len([w for w in auto if w['jednostka'] == 'sekundy'])}")
-    print(f"  setTimeout w milisekundach (NIE ruszac): "
-          f"{len([w for w in auto if w['jednostka'] == 'milisekundy'])}")
-    print(f"  RAZEM do zmiany: {len(handshake) + len([w for w in auto if w['jednostka'] == 'sekundy'])}")
+    sek = [w for w in auto if w["jednostka"] == "sekundy"]
+    zle_sek = [w for w in sek if w["do_zmiany"]]
+    dobre_sek = [w for w in sek if not w["do_zmiany"]]
+    mili = [w for w in auto if w["jednostka"] == "milisekundy"]
+    hs_do_zmiany = [w for w in handshake if w["do_zmiany"]]
+    print(f"  setHandshakeTimeout (zawsze sekundy):        {len(handshake)}")
+    print(f"    - DO POPRAWY (nie 8 s):                    {len(hs_do_zmiany)}")
+    print(f"    - juz poprawne (8 s):                      {len(handshake) - len(hs_do_zmiany)}")
+    print(f"  setTimeout w SEKUNDACH razem:                {len(sek)}")
+    print(f"    - BŁĘDNE (do poprawy):                     {len(zle_sek)}")
+    print(f"    - POPRAWNE (setTimeout(4) - nie ruszamy):  {len(dobre_sek)}")
+    print(f"  setTimeout w milisekundach (nie ruszamy):    {len(mili)}")
+    print(f"  RAZEM DO ZMIANY:                             {len(hs_do_zmiany) + len(zle_sek)}")
+    if not hs_do_zmiany and not zle_sek:
+        print("  (wszystko juz w sekundach - nic do zrobienia)")
+    return 0
     return 0
 
 

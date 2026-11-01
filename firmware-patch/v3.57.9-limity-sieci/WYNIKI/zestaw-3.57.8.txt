@@ -1,0 +1,222 @@
+Firmware: v3.57.9-limity-sieci
+
+════════ 1/3  Test statyczny (firmware + oba panele) ════════
+
+[A. Zadanie czyszczenia = format history_a191::Storage]
+  OK   Storage.h ma requestText
+  OK   requestText ma 17 znakow (tyle czyta token())
+  OK   firmware sklada zadanie o tej samej tresci
+  OK   EspVfsCalls: .done = /littlefs/history_reset_a1.done
+  OK   firmware usuwa .done spod tej samej sciezki (Arduino: /history_reset_a1.done)
+  OK   zapis zadania przez plik tymczasowy + rename
+  OK   odczyt kontrolny zadania (17 B, ta sama tresc)
+  OK   naprawa uszkodzonego .req przy starcie (przed historiaBoot.start)
+  OK   kolejnosc: najpierw .done, potem .req
+
+[B. Wersja i porzadki]
+  OK   FIRMWARE_VERSION = 3.57.9 (zgodna z folderem)
+  OK   brak starego znacznika NVS "czysc" (jeden mechanizm, nie dwa)
+  OK   brak kasowania plikow historii wlasnym kodem (LittleFS.remove tylko dla .req)
+  OK   pole hist_fs w /api/status i w JSON dla Firebase
+  OK   hist_fs wysylane jako liczba 0/1 (nie bool)
+  OK   bramka obejmuje oproznianie kolejki krotkiej
+  OK   bramka obejmuje oproznianie kolejki dlugiej
+
+[C. Parsowanie hist_fs w panelu centrali i Piec.html]
+  OK   panel centrali: jest lista flagKeys
+  OK   panel centrali: hist_fs jest w flagKeys
+  OK   panel centrali: hist_fs jest w stanie poczatkowym S
+  OK   panel centrali: przelacznik dogania status przez live$
+  OK   panel centrali: nieudana komenda cofa checkbox (wzorem aplikacji)
+  OK   panel centrali: kafelek data-menu="histfs" i MENUS.histfs
+  OK   Piec.html: jest lista flagKeys
+  OK   Piec.html: hist_fs jest w flagKeys
+  OK   Piec.html: hist_fs jest w stanie poczatkowym S
+  OK   Piec.html: przelacznik dogania status przez live$
+  OK   Piec.html: nieudana komenda cofa checkbox (wzorem aplikacji)
+  OK   Piec.html: kafelek data-menu="histfs" i MENUS.histfs
+  OK   symulacja: hist_fs=1 daje S.hist_fs=true i hasData
+  OK   symulacja: brak pola (3.57.3 i starsze) => brak danych
+
+[D. Bilans nawiasow main_centrala.cpp (bez stringow i komentarzy)]
+  OK   {} 3490/3490
+  OK   () 15904/15904
+  OK   [] 1008/1008
+
+[E. Telegram: brak pliku to nie blad wysylki [3.57.7]]
+  OK   helper sprawdza istnienie i rozmiar pliku historii
+  OK   TG_HIST pyta o plik PRZED wysylka krotkiej historii
+  OK   TG_HIST pyta o plik PRZED wysylka dlugiej historii
+  OK   komunikat rozroznia pusta historie i wylaczony zapis
+  OK   brak pliku nie konczy sie komunikatem o bledzie wysylki
+
+[F. Klucze NVS <=15 znakow i wersja bez podwojnego "v" [3.57.8]]
+  OK   klucze NVS: 63 sprawdzonych, za dlugich: 0
+  OK   klucz wieku znacznika istnieje (nadzorWiekS)
+  OK   stary, 17-znakowy klucz zniknal z kodu
+  OK   Telegram nie dokleja drugiego "v" do FIRMWARE_VERSION
+  OK   raport nadzoru pokazuje wiek znacznika przed restartem
+
+43 OK / 0 FAIL
+
+════════ 2/3  Symulacja A1 i bramek zapisu (C++) ════════
+=== SYMULACJA PROTOKOLU A1 + BRAMEK ZAPISU (3.57.6) ===
+zadanie: 'RESET-HISTORY-A1
+' = 17 B, potwierdzenie: 'HISTORY-A1-COMPLETE
+' = 20 B
+
+[S1] Zwykly start, brak znacznikow
+  OK    start OK, Startup Ready
+  OK    A1 = Existing (nic nie kasuje)
+  OK    oba CSV nietkniete
+  OK    rozmiary z dysku przeliczone
+  OK    brak .done i .req
+
+[S2] Komenda czyszczenia -> restart
+  OK    czyscZadaj() zwraca true
+  OK    po komendzie .done nie ma, .req jest 17 B
+  OK    pliki CSV jeszcze sa (kasowanie dopiero przy starcie)
+  OK    start OK, Startup Ready
+  OK    A1 = Fresh (skasowalo)
+  OK    oba CSV usuniete
+  OK    .done zapisane z poprawna trescia
+  OK    .req zjedzone, .tmp nie zostal
+  OK    rozmiary w statusie = 0
+
+[S3] Zadanie bez usuniecia .done (stary blad) — pliki MUSZA zostac
+  OK    start OK
+  OK    A1 = Fresh (sciezka release)
+  OK    pliki CSV NIE zostaly usuniete
+  OK    .req zjedzone
+  OK    => dlatego 3.57.6 usuwa .done PRZED zlozeniem zadania
+
+[S4] Piec cykli czyszczenia pod rzad
+  OK    kazdy cykl kasuje oba pliki i zostawia .done
+  OK    po 5 cyklach brak .req/.tmp
+
+[S5] Zanik pradu po usunieciu .done, przed zapisem
+  OK    start OK, historia dziala
+  OK    pliki nietkniete (nie bylo zadania)
+  OK    brak .req
+
+[S6] Zanik pradu W TRAKCIE zapisu pliku tymczasowego
+  OK    powstal tylko kawalek .tmp (9 z 17 B)
+  OK    start OK, historia dziala
+  OK    pliki nietkniete
+  OK    .req nie powstal (to jest poprawka 3.57.6)
+  OK    nastepna komenda sprzata .tmp
+
+[S7] Zanik pradu po zapisie .tmp, przed rename
+  OK    .tmp ma pelne 17 B
+  OK    .req nie powstal
+  OK    start OK, historia dziala
+  OK    pliki nietkniete
+  OK    nastepna komenda konczy sprawe
+
+[S8] 3.57.5: zanik pradu przy zapisie BEZPOSREDNIM do .req
+  OK    .req istnieje, ale ma tylko 9 B
+  OK    Transition BLOKUJE (RequestRead)
+  OK    Startup NIE wstal — historia nie dziala
+  OK    pliki CSV zostaly (nic nie skasowane)
+  OK    => bez naprawy ten stan trwalby na zawsze
+  OK    naprawa przenosi uszkodzone zadanie
+  OK    .req.bad istnieje, .req nie ma
+  OK    po naprawie historia startuje
+  OK    pliki CSV nietkniete
+
+[S9] Naprawa przy poprawnym zadaniu
+  OK    naprawa nic nie robi
+  OK    zadanie wykonane, pliki usuniete
+
+[S10] Blad I/O przy usuwaniu .done
+  OK    czyscZadaj() zwraca false
+  OK    zadanie NIE zostalo zlozone
+  OK    po restarcie nic sie nie dzieje, historia zyje
+
+[S11] Brak miejsca / blad przy zakladaniu .tmp
+  OK    czyscZadaj() zwraca false
+  OK    brak .req i .tmp
+  OK    pliki CSV nietkniete
+
+[S12] Blad rename (zadanie sie nie publikuje)
+  OK    czyscZadaj() zwraca false
+  OK    .tmp posprzatany, brak .req
+  OK    historia startuje normalnie
+
+[S13] Poprawne zadanie przy istniejacym .done
+  OK    A1 = Fresh, ale to sciezka release
+  OK    pliki NIE usuniete
+  OK    .req zjedzone, .done przepieczetowane
+
+[S14] Istnieje tylko hist_short.csv
+  OK    czyscZadaj(), potem start
+  OK    krotki usuniety, dlugi i tak nie istnial
+  OK    .done zapisane
+
+[S15] LittleFS nie zamontowany
+  OK    historia nie startuje
+  OK    nic nie skasowane
+  OK    brak .done
+
+[S16] CSV uciety — ostatni bajt to nie '\n'
+  OK    Startup odrzuca plik (Boundary), historia nie startuje
+  OK    nic nie skasowane (fail-closed, bez formatowania)
+
+[S17] Istnieje hist_short.csv.rebuild
+  OK    start zatrzymany, brak zmian
+
+[S18] Model bramek zapisu — przelacznik hist_fs
+  OK    WL: 1000 probek = 1000 linii w pliku
+  OK    WL: brak resztki w kolejce
+  OK    WL: RAM ma wszystkie 1000
+  OK    WYL: plik nie urosl ani o bajt
+  OK    WYL: kolejka pusta (nic nie zbieramy)
+  OK    WYL: RAM mimo to ma 1000 probek
+  OK    7 probek WL = 5 linii + 2 w kolejce
+  OK    po wylaczeniu plik stoi na 5 liniach
+  OK    po wlaczeniu resztka (2) dojezdza od razu
+  OK    5 kolejnych probek: 3 w pliku, 2 w kolejce (nic nie zginelo)
+  OK    50 przelaczen: kolejnosc czasu rosnaca
+  OK    50 przelaczen: na flash tylko probki z wlaczonym zapisem (75)
+  OK    50 przelaczen: brak duplikatow linii
+  OK    50 przelaczen: RAM ma 150 probek
+
+80 OK / 0 FAIL
+
+════════ 3/3  Symulacja panelu w DOM (jsdom) ════════
+
+[A. Parsowanie statusu — prawdziwy kod obu paneli]
+  OK    Piec.html · 3.57.6, zapis WLACZONY
+  OK    Piec.html · 3.57.6, zapis WYLACZONY
+  OK    Piec.html · 3.57.3 i starsze (brak pola)
+  OK    Piec.html · pole tekstowe "1" (nie liczba)
+  OK    Piec.html · pole null
+  OK    Piec.html · pole true (bool)
+  OK    panel w firmware · 3.57.6, zapis WLACZONY
+  OK    panel w firmware · 3.57.6, zapis WYLACZONY
+  OK    panel w firmware · 3.57.3 i starsze (brak pola)
+  OK    panel w firmware · pole tekstowe "1" (nie liczba)
+  OK    panel w firmware · pole null
+  OK    panel w firmware · pole true (bool)
+
+[B. Przelacznik w DOM — klik, ACK, brak ACK, zmiana statusu]
+  OK    start: status WL => checkbox zaznaczony
+  OK    klik WYL => wyslana komenda histfs_wyl
+  OK    status jeszcze stary: checkbox zostaje na zyczenie uzytkownika
+  OK    status WYL => checkbox nadal odznaczony
+  OK    status WL (zmiana zdalna) => checkbox sam sie zaznacza
+  OK    brak potwierdzenia => checkbox wraca do stanu centrali
+  OK    brak pola hist_fs => brak wyjatku, checkbox odznaczony
+
+[C. Aplikacja — model intField("hist_fs", 0, 1) z PiecState.kt]
+  OK    aplikacja · 1 => zapis WL
+  OK    aplikacja · 0 => zapis WYL
+  OK    aplikacja · brak pola => nieznane
+  OK    aplikacja · "1" jako tekst => nieznane
+  OK    aplikacja · null => nieznane
+  OK    aplikacja · true (bool) => nieznane
+  OK    aplikacja · 2 spoza zakresu => nieznane
+
+26 OK / 0 FAIL
+
+WSZYSTKO OK
