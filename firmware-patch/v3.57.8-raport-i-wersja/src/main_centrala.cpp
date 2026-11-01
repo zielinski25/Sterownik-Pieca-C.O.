@@ -44608,9 +44608,12 @@ static void wyslijRaportNadzoru() {
   config.putBool("nadzorRestart", false);
   config.putBool("nadzorKrokZnany", false);
   if (!tgEnabled) return;
-  // [v3.57.8] Wiek znacznika idzie PIERWSZY: to on mowi, czy zadanie stanelo
-  // od razu w wywolaniu (wiek ~= 300 s, czyli caly czas ciszy), czy szlo dalej
-  // jeszcze dlugo po zapisaniu znacznika (wiek maly, a potem dluga cisza).
+  // [v3.57.8] Wiek znacznika idzie PIERWSZY, bo to on odroznia dwie sytuacje:
+  //  - wiek ~= 300 s (tyle, ile nadzor czeka na znak zycia): znacznik powstal
+  //    tuz przed zatrzymaniem — TO JEST miejsce zawieszenia;
+  //  - wiek wyraznie wiekszy: po znaczniku zadanie szlo dalej przez
+  //    (wiek - 300) s i stanelo dopiero pozniej, wiec znacznik jest tylko
+  //    dolna granica, a nie dokladnym miejscem.
   const String liniaKroku = krokZnany
     ? ("Ostatni znacznik: " + krokOp + " / " + krokStage + " — " +
        String((unsigned long)krokWiekS) + " s przed restartem (po " +

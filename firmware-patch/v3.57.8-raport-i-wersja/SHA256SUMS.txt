@@ -1,5 +1,5 @@
 # SHA-256 plikow firmware 3.57.8 (sprawdz: sha256sum -c SHA256SUMS.txt)
-7a615e64b60cb96889ddccaaee07f4f5da9e749f9fb33ec0127f1220e946af8d  src/main_centrala.cpp
+db3da8854cd8408a31978d8391e8290a38b474ef31c03e4d7550e14cf38bc525  src/main_centrala.cpp
 3ea3ddf118bae45149d02bd88b3284bb54c8f18fad7f736e382702ff982d971d  src/BootFilesystem.h
 d7ddd929dca6e66f62655482653daf68d710d5573c68d89640a544922cba100b  src/AlarmBuzzerProfiles.h
 7055a28c7d7bc8b817f75875a2cd2499f4b22370aa483e88f26543ec67c35f47  src/AutoIgnitionColdTimer.h
@@ -16,6 +16,6 @@ df2b0b8feabb99b8f07095122330e3173aec180bcec3511188c52aac3069122d  src/SolarDaily
 e7b8b7631fc302ea501506723520142858b86d5f399b24ad97a44d94babe51b2  src/Transition.h
 a7b6e1640304b944fed2e10cbf7e8f8d15037bd0c6559835383bccb7aab81ea5  src/secrets.h.example
 
-f66b91e1ba4a9b5e59eeae4173892f2ff22821c1fe8536a8be75cc7ad3bdfcbe  main_centrala-v3.57.7-to-v3.57.8.patch
-03bca188f176547fddcd6fb178c6fb94ce8e76c29615b3cf30afe2e76c4053d6  README.md
-95aed3ce5c5ba2840484b50e8aa1d184c0f99113eca60796bfad9c754481e39e  CZYTAJ-NAJPIERW.txt
+69c5de6e78a007aada5dac402ca28652ed748f3f1125d1e2cd10af0505d03265  main_centrala-v3.57.7-to-v3.57.8.patch
+66c2070fccc1c236ce58fd4a5cdc42eca2c273e62fdd337fe2855b7c56918fd4  README.md
+d26d6d23153db42a02986e62fe14ae1ca453a4ad3b26fa3b3654ed4e5e40dd4d  CZYTAJ-NAJPIERW.txt

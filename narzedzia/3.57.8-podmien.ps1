@@ -1,6 +1,6 @@
 $ErrorActionPreference='Stop'
-$id='1H0Rftgp711Z31RNqiyJAXadVsRHK_gYF'
-$sha='5775103200fa55424a992f16e37a48f69429f46dd2adbabcba1a9278af1ee71e'
+$id='1OeqD1TKT5_x8EWHg2SDoywpHzSDQY1Gi'
+$sha='da3d3b6d4468df85b73f49bb6aad52a079f5f389e421000c0df96edd4e06d5ed'
 $proj=$null
 foreach($p in (Get-ChildItem -LiteralPath "$env:USERPROFILE\Documents\PlatformIO" -Directory -ErrorAction SilentlyContinue)){if(Test-Path -LiteralPath (Join-Path $p.FullName 'src\main_centrala.cpp')){$proj=$p.FullName;break}}
 if(-not $proj){foreach($p in (Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -Recurse -Depth 3 -ErrorAction SilentlyContinue)){if(Test-Path -LiteralPath (Join-Path $p.FullName 'src\main_centrala.cpp')){$proj=$p.FullName;break}}}

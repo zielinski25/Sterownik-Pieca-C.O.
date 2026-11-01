@@ -29,12 +29,18 @@ Pierwsze to literówka, drugie — **cichy błąd zapisu do NVS**.
 Nowy komunikat:
 
 ```
-Ostatni znacznik: DESZCZ / BEFORE — 12 s przed restartem (po 25800 s pracy, wolna pamiec 81 kB)
+Ostatni znacznik: DESZCZ / BEFORE — 302 s przed restartem (po 25800 s pracy, wolna pamiec 81 kB)
 ```
 
-`12 s przed restartem` znaczy: zadanie weszło w `http.GET()` i **od razu stanęło**.
-Gdyby było tam np. `290 s`, znaczyłoby to, że po znaczniku szło jeszcze prawie 5 minut
-i stanęło gdzie indziej — to dwie różne diagnozy i teraz je rozróżniamy.
+**Jak to czytać:** nadzór restartuje centralę po ok. **300 s ciszy**. Więc:
+
+| wiek znacznika | co to znaczy |
+|---|---|
+| ok. **300 s** (295–310) | znacznik powstał **tuż przed zatrzymaniem** — to jest dokładnie miejsce zawieszenia, np. wejście w `http.GET()` |
+| **wyraźnie więcej** (np. 640 s) | po znaczniku zadanie pracowało jeszcze (wiek − 300) s i stanęło **później**; znacznik to tylko dolna granica |
+| **`brak`** | zadanie nie zapisało ani jednego znacznika od startu |
+
+Czyli: `302 s` = „stanęło w tym miejscu”, `640 s` = „to miejsce było dawno, stanęło gdzieś dalej”.
 
 ## Czego ta wersja NIE robi
 
