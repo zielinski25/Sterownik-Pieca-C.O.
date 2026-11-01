@@ -1,0 +1,3 @@
+# SHA-256 — paczka Android 0.31.75
+6d53bdea82702a8ed9614b60c32e1aaf95df041cb063a4f104ca3be7ef164aa7  SterownikCO-Android-v0.31.75-PELNY-PROJEKT.zip
+ffb1371c3fe925be605ba9c89df24548ecc7f87086e0fa9ff3343d3b8a486e19  README-WGRANIE.txt

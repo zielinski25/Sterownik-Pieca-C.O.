@@ -1,0 +1,23 @@
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31074
+-        versionName = "0.31.74"
++        versionCode = 31075
++        versionName = "0.31.75"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+--- a/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+@@ -21,7 +21,6 @@
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.height
+-import androidx.compose.foundation.layout.calculateBottomPadding
+ import androidx.compose.foundation.layout.calculateEndPadding
+ import androidx.compose.foundation.layout.navigationBars
+ import androidx.compose.foundation.layout.padding

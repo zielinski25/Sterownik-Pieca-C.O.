@@ -24,8 +24,8 @@ TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.74"
-KOD_WERSJI = "31074"
+WERSJA = "0.31.75"
+KOD_WERSJI = "31075"
 
 wyniki = []
 
@@ -307,12 +307,31 @@ def main():
         "najdluzsza etykieta (Ustawienia) ma ~44 dp",
     )
 
+    # ---- 0.31.75: import funkcji, ktora NIE jest rozszerzeniem ----
+    # `calculateBottomPadding()` (oraz top/left/right) to METODY interfejsu
+    # PaddingValues, a nie funkcje-rozszerzenia w foundation.layout. Import
+    # `androidx.compose.foundation.layout.calculateBottomPadding` nie istnieje
+    # i wywala kompilacje ("Unresolved reference"), choc samo wywolanie jest OK.
+    # Rozszerzeniami sa tylko calculateStartPadding i calculateEndPadding.
+    importy_calc = re.findall(r"import androidx\.compose\.foundation\.layout\.(calculate\w+)", krok)
+    zle_importy = [n for n in importy_calc if n not in ("calculateStartPadding", "calculateEndPadding")]
+    sprawdz(
+        "brak importu metody PaddingValues jako rozszerzenia",
+        not zle_importy,
+        ("usun import: " + ", ".join(zle_importy)) if zle_importy else "ok",
+    )
+    sprawdz(
+        "wciecie nawigacji: koniec z asPaddingValues + metoda interfejsu",
+        "asPaddingValues()" in kod and "calculateBottomPadding()" in kod,
+        "calculateBottomPadding() wolamy bez importu",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.74 (szyna 68 dp, insety per strona, bez dubla wyciecia)")
+    print("BRAMA UKŁADU EKRANU — 0.31.75 (szyna 68 dp, insety per strona, kontrola importów Compose)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:
