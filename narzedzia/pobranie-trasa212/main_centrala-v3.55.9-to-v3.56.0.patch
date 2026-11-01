@@ -1,0 +1,100 @@
+diff -u -r c/main_centrala.cpp b/main_centrala.cpp
+--- c/main_centrala.cpp	2026-10-28 12:24:41.167261257 +0000
++++ b/main_centrala.cpp	2026-10-28 12:24:41.139261117 +0000
+@@ -1,3 +1,8 @@
++// FIRMWARE_VERSION v3.55.9 -> v3.56.0 (KANDYDAT: trasa pobrania historii /history i /history/long, za tokenem; NIE WGRYWAC).
++// v3.56.0: pobranie historii przez HTTP dziala na tej samej zapince co wysylacze
++// Telegramu (etap 211): dlugosc pod logMutexem, plik otwarty raz, tylko potwierdzony
++// prefiks. Trasa jest wylaczona, dopoki w secrets.h nie ma SECRET_HISTORIA_TOKEN.
++// Zapis historii, rotacja, CSV, NVS, OTA, sterowanie i rytm 8s/60s bez zmian.
+ // FIRMWARE_VERSION v3.55.8 -> v3.55.9 (KANDYDAT: zapinka historii w wysylaczach dokumentow Telegram; NIE WGRYWAC).
+ // v3.55.9: wysylacze hist_short/hist_long czytaja plik przez zapinke (dlugosc pod
+ // logMutexem, jedno otwarcie, tylko zapowiedziany prefiks). Krotki odczyt i krotki
+@@ -5126,6 +5131,7 @@
+ #include "HistoryBoot.h"
+ #include "EspVfsCalls.h"
+ #include "HistoriaPin.h"   // [v3.55.9 HISTORIA-PIN] zapinka prefiksu historii
++#include "HistoriaPobranie.h"   // [v3.56.0 HISTORIA-POBRANIE] trasa pobrania historii
+ #include "AutoIgnitionColdTimer.h"
+ #include "MieszadloTrocinyAuto.h"
+ #include "AlarmBuzzerProfiles.h"
+@@ -5511,6 +5517,15 @@
+   #error "secrets.h jest nieaktualny: brak SECRET_CMD_TOKEN. Skopiuj nowe wpisy z secrets.h.example."
+ #endif
+ 
++// [v3.56.0 HISTORIA-POBRANIE] Token pobierania historii. Pusty = pobieranie
++// wylaczone (trasa odpowiada 503), zeby starsza kopia secrets.h nie otworzyla
++// plikow historii bez tokenu. Wartosc pochodzi z secrets.h.
++#ifndef SECRET_HISTORIA_TOKEN
++  #define SECRET_HISTORIA_TOKEN ""
++#endif
++static const char* HISTORIA_TOKEN = SECRET_HISTORIA_TOKEN;
++
++
+ static const char* WIFI_AP_SSID     = SECRET_WIFI_AP_SSID;
+ static const char* WIFI_AP_PASSWORD = SECRET_WIFI_AP_PASSWORD; // min. 8 znakow (wymog WPA2 dla AP)
+ 
+@@ -5559,7 +5574,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.55.9";
++static const char* FIRMWARE_VERSION = "v3.56.0";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -28620,6 +28635,40 @@
+     if (request->hasParam("lines")) linie = request->getParam("lines")->value().toInt();
+     request->send(200, "text/plain", logPobierzTekst(linie));
+   });
++// [v3.56.0 HISTORIA-POBRANIE] Bramka trasy pobrania: jedyne miejsce, ktore
++// siega po logMutex, historiaSys i cache rozmiarow historii. Trasa sama nie
++// zna zadnej zmiennej globalnej - dzieki temu jest testowalna hostowo.
++struct HistoriaBramka212 : historia212::Bramka {
++  history193::Calls &io() override { return historiaSys; }
++  bool magazynGotowy() override { return historiaDostepGotowy() && littlefsReady; }
++  std::uint64_t potwierdzony(historia212::Strumien s) override {
++    return (s == historia212::Strumien::Krotki) ? static_cast<std::uint64_t>(g_histShortSize)
++                                                : static_cast<std::uint64_t>(g_histLongSize);
++  }
++  const char *sciezka(historia212::Strumien s) override {
++    return (s == historia212::Strumien::Krotki) ? historia211::kShortVfsPath
++                                                : historia211::kLongVfsPath;
++  }
++  bool zamknij() override {
++    if (!logMutex) return false;
++    return xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE;
++  }
++  void otworz() override { xSemaphoreGive(logMutex); }
++};
++static HistoriaBramka212 historiaBramka;
++static historia212::Pobranie historiaPobranie(historiaBramka, HISTORIA_TOKEN);
++
++// [v3.56.0 HISTORIA-POBRANIE] Dwa punkty pobrania: /history (krotka) i
++// /history/long (dluga). HTTP_ANY, bo metode sprawdzamy sami - inaczej inna
++// metoda dostalaby ciche 404 zamiast 405. Odpowiedz odmowy jest prawdziwa
++// odpowiedzia HTTP, nie zerwaniem polaczenia.
++  wifiWebServer.on("/history", HTTP_ANY, [](AsyncWebServerRequest *request) {
++    historiaPobranie.obsluz(request, historia212::Strumien::Krotki);
++  });
++  wifiWebServer.on("/history/long", HTTP_ANY, [](AsyncWebServerRequest *request) {
++    historiaPobranie.obsluz(request, historia212::Strumien::Dluga);
++  });
++
+   wifiWebServer.on("/api/log-download", HTTP_GET, [](AsyncWebServerRequest *request) {
+     AsyncWebServerResponse *resp = request->beginResponse(200, "text/plain", logPobierzTekst(0));
+     resp->addHeader("Content-Disposition", "attachment; filename=log.txt");
+diff -u -r c/secrets.h.example b/secrets.h.example
+--- c/secrets.h.example	2026-10-28 12:24:41.167261257 +0000
++++ b/secrets.h.example	2026-10-28 12:24:41.147261157 +0000
+@@ -33,3 +33,10 @@
+ // (pompa_wl, pompa_wyl, reset_alarmow, update_centrala...).
+ // Kto go zna i ma dostep do bazy — steruje piecem. Trzymaj poza gitem.
+ #define SECRET_CMD_TOKEN        "ZMIEN-MNIE-NA-SWOJ-TOKEN"
++
++// ----- 5. TOKEN POBRANIA HISTORII -------------------------------------
++// Token do pobrania plikow historii przez HTTP (/history, /history/long).
++// Bez niego te dwa adresy sa ZAMKNIETE (503). Token jedzie w naglowku
++// "Authorization: Bearer <token>". Minimum 32 znaki, inne niz pozostale.
++// Wpisz tu wlasny, losowy ciag; nie wklejaj go do gita ani na czat.
++#define SECRET_HISTORIA_TOKEN   "ZMIEN-MNIE-NA-DLUGI-LOSOWY-TOKEN-32-ZNAKI"

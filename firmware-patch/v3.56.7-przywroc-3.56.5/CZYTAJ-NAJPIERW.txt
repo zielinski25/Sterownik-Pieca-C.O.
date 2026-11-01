@@ -1,0 +1,148 @@
+═══════════════════════════════════════════════════════════════════
+  FIRMWARE v3.56.7 — INSTRUKCJA WGRANIA (krok po kroku)
+  Data: 2026-10-29
+  Paczka: firmware-v3.56.7-przywroc-3.56.5.zip
+═══════════════════════════════════════════════════════════════════
+
+CO TO JEST
+----------
+To v3.56.5 z numerem 3.56.7. Cofnąłem trzy zmiany z v3.56.6, po których
+piec zaczął się restartować. Kod jest identyczny z v3.56.5 — sprawdzone
+porównaniem plików (23 linie różnicy, same komentarze i numer wersji).
+
+WERSJA PODBITA: TAK (3.56.6 → 3.56.7)
+
+
+ZANIM ZACZNIESZ — 3 RZECZY
+---------------------------
+1. NIE jesteś przy piecu. Wszystko robisz zdalnie, przez VSCode
+   na C:\Users\Rafcio\Documents\PlatformIO\sterownik-co-esp32
+2. Upewnij się, że folder projektu otwarty w VSCode to
+   sterownik-co-esp32, a plik main_centrala.cpp leży w src\
+3. Zrób kopię obecnego src\main_centrala.cpp (np. main_centrala-3.56.6.bak)
+   — na wypadek, gdybyś chciał wrócić
+
+
+KROK 1 — PODMIEŃ PLIK
+---------------------
+Skopiuj main_centrala.cpp z tej paczki do:
+
+    C:\Users\Rafcio\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp
+
+NADPISZ istniejący plik.
+
+Pliki .h są BEZ ZMIAN — nie musisz ich ruszać.
+
+NIE NADPISUJ src\secrets.h. Twoje hasła zostają nietknięte.
+Plik secrets.h.example jest tylko wzorem.
+
+
+KROK 2 — SPRAWDŹ NUMER WERSJI W PLIKU
+--------------------------------------
+W VSCode naciśnij Ctrl+F i szukaj DOKŁADNIE tak (z gwiazdką):
+
+    static const char* FIRMWARE_VERSION
+
+Musisz zobaczyć w linii wynikowej:
+
+    static const char* FIRMWARE_VERSION = "v3.56.7";
+
+WAŻNE: nie szukaj samego "FIRMWARE_VERSION = " — trafisz w komentarz
+w linii 1358 i pomyślisz, że jest dobrze, kiedy nie jest.
+
+
+KROK 3 — ZBUDUJ
+---------------
+Ctrl+Alt+B   (albo ikonka ✓ w dolnym pasku VSCode)
+
+Jeśli Ctrl+Alt+B nic nie robi, wpisz w terminalu VSCode:
+
+    & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run
+
+Czekaj na koniec. Na końcu musi być:
+
+    SUCCESS
+
+Jeśli jest ERROR — NIE WGRYWAJ. Wyślij mi ostatnie 30 linii z terminala.
+
+
+KROK 4 — W GRAJ PRZEZ OTA
+-------------------------
+Sposób, którym wgrywałeś 3.56.6 (ten sam, który zadziałał).
+Numer wersji podbity, więc OTA przyjmie plik jako nowszy.
+
+Po wgraniu piec sam się zrestartuje. To normalne.
+
+
+KROK 5 — SPRAWDŹ, CZY WSTAŁ (2 minuty po wgraniu)
+--------------------------------------------------
+W Telegramie wyślij do bota:
+
+    /version
+
+Musi odpowiedzieć:  v3.56.7
+
+Potem:
+
+    /spoolrt
+
+Musisz zobaczyć:
+
+    Policy test: offline>=120s lub ring>=15
+
+Jeśli widzisz "ring>=2" — to znaczy, że plik się nie podmienił,
+masz jeszcze starą wersję. Zrób KROK 1 i KROK 3 jeszcze raz.
+
+UWAGA: "Samples spilled: 0" to stan PRAWIDŁOWY. W v3.56.5 ten licznik
+też stał na 0 — właśnie dlatego piec chodził stabilnie.
+
+
+KROK 6 — CO OBSERWOWAĆ PRZEZ NAJBLIŻSZE 24 H
+---------------------------------------------
+Nie musisz siedzieć nad tym. Wystarczy, że raz na kilka godzin
+wyślesz /status i spojrzysz na dwie liczby:
+
+  • "Uptime" — musi ROSNĄĆ. Jeśli spadnie do kilku minut, piec się
+    zrestartował i musisz mi to napisać.
+  • "heap free" — powinno być w okolicach 80–95 kB. Jeśli spadnie
+    poniżej 50 kB, napisz mi.
+
+Co mnie interesuje najbardziej:
+
+  Jeśli piec przetrwa 2 godziny bez restartu — jest dobrze.
+  Jeśli przetrwa 6 godzin — jest bardzo dobrze.
+  Jeśli przetrwa do jutra rano — wracamy do luk na wykresie,
+  ale już spokojnie, jedną zmianą naraz.
+
+
+JEŚLI PIEc ZNOWU SIĘ ZRESTARTUJE
+--------------------------------
+Nie panikuj i nie wgrywaj niczego nowego. Wyślij mi:
+
+  /logi
+
+...i napisz, o której godzinie zauważyłeś restart. Z logu wyczytam,
+czy to było to samo, czy coś innego.
+
+
+GDZIE SZUKAĆ, JEŚLI COŚ NIE DZIAŁA
+-----------------------------------
+Objaw: Ctrl+Alt+B nic nie robi
+  → użyj polecenia platformio.exe z KROKU 3
+
+Objaw: platformio.exe nie istnieje
+  → w VSCode rozszerzenie PlatformIO musi być zainstalowane i raz
+    uruchomione (wtedy samo tworzy folder .platformio)
+
+Objaw: build przechodzi, ale OTA odrzuca plik
+  → sprawdź KROKU 2, czy wersja to naprawdę v3.56.7
+
+Objaw: wklejam adres URL do PowerShella i błąd CommandNotFoundException
+  → URL trzeba wziąć w cudzysłów albo użyć curl.exe -L "adres" -o plik
+
+
+PODSUMOWANIE JEDNYM ZDANIEM
+---------------------------
+Podmień main_centrala.cpp w src\, zbuduj Ctrl+Alt+B, wgraj przez OTA,
+sprawdź /version = v3.56.7 i /spoolrt = ring>=15. Potem tylko patrz,
+czy uptime rośnie.

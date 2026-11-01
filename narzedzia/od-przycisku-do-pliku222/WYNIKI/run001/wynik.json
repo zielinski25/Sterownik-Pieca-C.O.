@@ -1,0 +1,73 @@
+{
+  "etap": 222,
+  "kiedy": "2026-10-28 18:21:43",
+  "mutanty": [
+    {
+      "nazwa": "M1_panel_zawsze_krotka_trasa",
+      "wykryty": true,
+      "pierwszy_blad": "FAIL [panel222] panel otwiera /history/long?k=<32 hex>, jest: /history?k=588c3ac1e62757ae5851a5194d480994"
+    },
+    {
+      "nazwa": "M2_panel_inna_dlugosc_biletu",
+      "wykryty": true,
+      "pierwszy_blad": "FAIL [panel222] blad pobrania krotkiego: pobranie nie zakonczylo sie w limicie czasu"
+    },
+    {
+      "nazwa": "M3_trasa_history_goly_napis",
+      "wykryty": true,
+      "pierwszy_blad": "FAIL [panel222] blad pobrania krotkiego: pobranie nie zakonczylo sie w limicie czasu"
+    },
+    {
+      "nazwa": "M4_bez_content_disposition",
+      "wykryty": true,
+      "pierwszy_blad": "FAIL [panel222] nazwa pliku krotkiego: null"
+    },
+    {
+      "nazwa": "M5_pusty_bufor_odpowiedzi",
+      "wykryty": true,
+      "pierwszy_blad": "FAIL [panel222] przekroczono czas 25000 ms - odpowiedz nie doszla do konca"
+    },
+    {
+      "nazwa": "M6_bilet_nie_jednorazowy",
+      "wykryty": true,
+      "pierwszy_blad": "FAIL [panel222] ten sam link drugi raz daje 401, jest: 200"
+    }
+  ],
+  "bledy": [],
+  "kroki": [
+    {
+      "krok": "zrodla",
+      "rc": 0,
+      "opis": "6 plikow naszych + panel zgodne co do bajtu z etapami 218/221"
+    },
+    {
+      "krok": "ekstrakcja",
+      "rc": 0,
+      "opis": "OK ekstrakcja221: bramka i trasy zgodne z v3.56.4 (sha pliku f89874f3390009ac...)"
+    },
+    {
+      "krok": "kompilacja",
+      "rc": 0,
+      "opis": "16 .o biblioteki + mostek"
+    }
+  ],
+  "profil_z_tokenem": {
+    "rc": 0,
+    "podsumowanie": [
+      "PASS panel222 sprawdzen=33 bledow=0 tryb=token"
+    ],
+    "pobrane": {
+      "historia-krotka.csv": "d0543dccee8c82ef0d327149fafb9e91024ac0f2e1932ec437954e8878563ea6",
+      "historia-dluga.csv": "b27e2d2dcd4f893dd06657dca6149b37b117094f8d31a3588a51c0e804b4558c"
+    }
+  },
+  "profil_bez_tokenu": {
+    "rc": 0,
+    "podsumowanie": [
+      "PASS panel222 sprawdzen=22 bledow=0 tryb=bez-tokenu"
+    ],
+    "pobrane": {}
+  },
+  "czas_s": 37.1,
+  "ok": true
+}

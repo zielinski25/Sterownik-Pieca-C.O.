@@ -1,0 +1,46 @@
+{
+  "release_ready": false,
+  "status": "PASS_COMPONENT_TESTS_ONLY",
+  "main_changed": false,
+  "hardware_actions": false,
+  "final_run": "WYNIKI/run004/wynik.json",
+  "test_groups": 38,
+  "fixtures": 554,
+  "profiles": [
+    "native",
+    "ASan+UBSan, detect_leaks=1",
+    "original pinned parser, native",
+    "original pinned parser, ASan+UBSan"
+  ],
+  "original_vulnerability_reproduced_cases": 3,
+  "compiled_mutants_detected": 12,
+  "cumulative_patch": "199 + 203 + 205 applies to clean pinned sources and reproduces four candidate files byte-for-byte",
+  "regressions": {
+    "204": "narzedzia/adapter-upload204/WYNIKI/run004/wynik.json",
+    "203": "narzedzia/odpowiedz-odroczona203/WYNIKI/run005/wynik.json",
+    "202": "narzedzia/kolejka-upload202/WYNIKI/run003/wynik.json"
+  },
+  "real_code": [
+    "pinned WebRequest.cpp _onData/_handleUploadByte/_parseMultipartPostByte",
+    "Adapter204, UploadPump202, Registry201, UploadPool200, Owner197, Arduino FS.cpp"
+  ],
+  "modeled": [
+    "String/Stream host implementation",
+    "request constructor and surrounding fields",
+    "HTTP headers and header parser",
+    "routing, middleware and handler attachment",
+    "TCP client and response"
+  ],
+  "scope": "Optional strict single-new-file multipart mode: final only after full closing delimiter and exact declared body; no Content-Length rewrite; parser abort cancels admitted upload. Legacy default parser behavior unchanged.",
+  "not_qualified": [
+    "full header/request pipeline and real route authorization",
+    "chunked upload, multiple parts and multipart text fields in strict mode",
+    "full ESP library/firmware build",
+    "Arduino String allocation and ESP RAM",
+    "AsyncTCP/FreeRTOS scheduling and WDT",
+    "power loss and fsync timing",
+    "partial-file cleanup after rejection",
+    "immutable history download during append/rotation",
+    "ESP device behaviour"
+  ]
+}

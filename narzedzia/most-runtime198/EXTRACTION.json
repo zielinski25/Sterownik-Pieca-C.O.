@@ -1,0 +1,9 @@
+{
+  "source_sha256": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9",
+  "result_sha256": "75cb86de2b443cd732bfb6fc7eda1f02534c36aaedc3d929d5bbdd5bdbf12013",
+  "changes": {
+    "void(*faultObserver_)();": "void(*faultObserver_)(void*);void*faultContext_;",
+    "faultObserver_();": "faultObserver_(faultContext_);",
+    "void(*observer)()=nullptr):io_(io),service_(service),faultObserver_(observer){}": "void(*observer)(void*)=nullptr,void*context=nullptr):io_(io),service_(service),faultObserver_(observer),faultContext_(context){}"
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "status": "PASS",
+  "profile": "ASan+UBSan, LSan enabled, chunk-inflight on",
+  "inputs": {
+    "narzedzia/trasa-pobrania209/Test.cpp": "178f5f8ffead9c6a0a9533aa891b225628d2a59d80554ec127b3e4a1c26e57ee",
+    "narzedzia/trasa-pobrania209/DownloadRoute.h": "00a5d67dd275f36eb1bb57ee604df20374f36cf8ebc0d7bb65d1c76f11bf8315",
+    "narzedzia/trasa-pobrania209/Fixture209.inc": "6e5a928301e3735cb0fd2e613bea5730f6dcd3462a8b6906e7bd937ba210b989",
+    "narzedzia/trasa-pobrania209/Real209Decl.inc": "bee38b83cd3739f00ced2a99db2236eb010a6560ae7e81f619d1afa2613764e2",
+    "narzedzia/trasa-pobrania209/Real209Impl.inc": "45871cb01f141e2c5c426c7a5ba1e1e9e32618344ae2aabac23ac534d40fe650",
+    "narzedzia/trasa-pobrania209/mutacje.py": "7998ef162eeeb5755d4f5709a7d8bd616b515623df67e8a3f4859f613b25f0a6",
+    "narzedzia/pobieranie-http208/DownloadAdapter.h": "18d57e8bc93466594ed8602639e6bb3b2d84a551f7b46941f20950873034ced2",
+    "narzedzia/pobieranie-historia207/Snapshots.h": "1ebcf3dd331cdaadc2610a8854c76310341406c05e6b3605e92708991fc88ee7",
+    "narzedzia/naglowki-upload206/Methods206.inc": "83b0f429b247d1c5c3c9e807166f87580cbd31214e3c9b4d0e11525e350e0b9d",
+    "narzedzia/naglowki-upload206/Parser206.inc": "ec0cd8a8996ec9767641b7df3fd25c79018c047e6a970cdad1da71212ef5c73a",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690"
+  },
+  "cases": [
+    {
+      "name": "no-credentials-check",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "scheme-not-checked",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "token-ignored",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "compare-first-byte-only",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "refusal-not-sent",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "method-not-checked",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "full-answered-as-download",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "unavailable-answered-as-200",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "admission-without-rights",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "route-prefix-not-exact",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "handler-get-only",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "response-before-send",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    }
+  ]
+}

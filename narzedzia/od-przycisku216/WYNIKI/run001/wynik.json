@@ -1,0 +1,164 @@
+{
+  "status": "PASS",
+  "stage": 216,
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "inputs": {
+    "narzedzia/od-przycisku216/zrob_patch.py": "36f454a56bbd910fee592b0ad5db7a581ee5a39859123ee6c0950fddb65286db",
+    "narzedzia/od-przycisku216/build.py": "07e4640839a2774666853eaecb78e8027b9ca0b490fc87edeae55af14ca84da0",
+    "narzedzia/od-przycisku216/api216.py": "d3025855fc008250d7bf6138b2f52873e5b61e9410dda96578c5b1f9a2c17c79",
+    "narzedzia/od-przycisku216/panel_test.mjs": "6b4364cc0f5ad47acfb2ebd9be37ec51a27bf6a737eb980d1215d1e11652e4b9",
+    "narzedzia/od-przycisku216/Test.cpp": "2d58cd4bc26faadaf602d47237abd0494ed4c0389bf06d2edfacbcd14d633cff",
+    "narzedzia/od-przycisku216/main_centrala-v3.56.2-to-v3.56.3.patch": "26a97fe756f1fa95a83ff1c4d8e5ccd35e0ff2911cfa0b5bf7b5fce15d20d091",
+    "narzedzia/od-przycisku216/main_centrala-v3.55.8-to-v3.56.3.patch": "0a092380242787b8957c3aa66af796a5daed069806620d6ce66c305e4a3a5535",
+    "narzedzia/od-przycisku216/HistoriaPobranie.h": "b58d1a4c299e339798d3f229ad81177b0ee34f44dd37dae1776ba48279a4ede8",
+    "narzedzia/panel-pobrania213/HistoriaPobranie.h": "0653a130333f476ba588bb3fa08728e10a08975c73548f30a2d35c84c5367c29",
+    "narzedzia/panel-pobrania213/HistoriaBilety.h": "339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30",
+    "narzedzia/wysylka-zapinka211/HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31"
+  },
+  "profiles": {
+    "native": {
+      "compile": 0,
+      "run": 0
+    },
+    "asan-ubsan": {
+      "compile": 0,
+      "run": 0
+    },
+    "glibcxx-assertions": {
+      "compile": 0,
+      "run": 0
+    }
+  },
+  "kontrole_negatywne": {
+    "N1a_stary_panel_js": "FAIL panel216 sprawdzen=26 bledow=2",
+    "N1b_stary_panel_trasa": "FAIL trasa216 sprawdzen=24 bledow=2",
+    "N2_stary_naglowek": "FAIL trasa216 sprawdzen=28 bledow=4",
+    "N3_literowka_w_id_przycisku": "FAIL panel216 sprawdzen=16 bledow=13",
+    "N4_zla_dlugosc_biletu": "FAIL panel216 sprawdzen=26 bledow=6"
+  },
+  "kroki": [
+    {
+      "nazwa": "build",
+      "cmd": [
+        "/usr/bin/python3",
+        "-B",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/build.py"
+      ],
+      "returncode": 0,
+      "stdout": "PASS build216 zrodlo v3.55.8 sha256 zgodny z 210\nPASS build216 patch skumulowany cofa sie dokladnie do v3.55.8\nPASS build216 patch skumulowany == 211 + 212 + 213 + 214 + 216 (bajt w bajt)\nPASS build216 wynik sha256 f51b0b0749e2c1e3a8b5c02848a9c0e4902e0b641d6a7313a42304bbbcef91b3, linii 46974\nPASS build216 panel: nowy adres, bez staleho tokenu i bez s=\nPASS build216 kolejnosc include z v3.56.2 zachowana (D1 nie wrocil)\nPASS build216 Trasy216.inc 32 tras (w tym 3 nasze)\nPASS build216 Extracted216.inc 58 linii\nPASS build216 panel/panel.html 3267 znakow, panel.js 1653 znakow, panel-stary.html\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "api",
+      "cmd": [
+        "/usr/bin/python3",
+        "-B",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/api216.py"
+      ],
+      "returncode": 0,
+      "stdout": "PASS api216 przygotowano 13 plikow API i 4 shimow\nPASS api216 A naglowek biblioteki kompiluje sie (gnu++11, gnu++17)\nPASS api216 B-gnu++11 nasze naglowki v3.56.3 wobec prawdziwego API\nPASS api216 B-gnu++17 nasze naglowki v3.56.3 wobec prawdziwego API\nPASS api216 C-gnu++11 kod z pliku v3.56.3 kompiluje sie, static_asserty przechodza\nPASS api216 C-gnu++17 kod z pliku v3.56.3 kompiluje sie, static_asserty przechodza\nPASS api216 F kontrola negatywna: kolejnosc include z 213 odrzucona (/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/HistoriaPobranie.h:103:54: error: expected class-name before \u2018)\nPASS api216 sprawdzen=6 bledow=0\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "panel-js",
+      "cmd": [
+        "node",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/panel_test.mjs",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/panel/panel.html",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel"
+      ],
+      "returncode": 0,
+      "stdout": "PASS panel216 sprawdzen=26 bledow=0\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "trasa216 [native]",
+      "cmd": [
+        "/tmp/bin216-nt2c2w3w/test-native",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel/urls.txt"
+      ],
+      "returncode": 0,
+      "stdout": "adresy z panelu: /home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel/urls.txt\n-- 01 short z panelu: /history/link?stream=short -> /history?k={BILET}\n-- 02 long z panelu: /history/link?stream=long -> /history/long?k={BILET}\nPASS trasa216 sprawdzen=28 bledow=0\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "trasa216 [asan-ubsan]",
+      "cmd": [
+        "/tmp/bin216-nt2c2w3w/test-asan-ubsan",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel/urls.txt"
+      ],
+      "returncode": 0,
+      "stdout": "adresy z panelu: /home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel/urls.txt\n-- 01 short z panelu: /history/link?stream=short -> /history?k={BILET}\n-- 02 long z panelu: /history/link?stream=long -> /history/long?k={BILET}\nPASS trasa216 sprawdzen=28 bledow=0\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "trasa216 [glibcxx-assertions]",
+      "cmd": [
+        "/tmp/bin216-nt2c2w3w/test-glibcxx-assertions",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel/urls.txt"
+      ],
+      "returncode": 0,
+      "stdout": "adresy z panelu: /home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel/urls.txt\n-- 01 short z panelu: /history/link?stream=short -> /history?k={BILET}\n-- 02 long z panelu: /history/link?stream=long -> /history/long?k={BILET}\nPASS trasa216 sprawdzen=28 bledow=0\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "N1a panel-test na starym panelu",
+      "cmd": [
+        "node",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/panel_test.mjs",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/panel/panel-stary.html",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel-stary"
+      ],
+      "returncode": 1,
+      "stdout": "FAIL panel216 [J12-2 dluga konczy sie adresem /history/long?k=<bilet>] /history?k=fedcba9876543210fedcba9876543210&s=long\nFAIL panel216 [J13-dluga adres pobrania zgadza sie ze strumieniem biletu] /history != /history/long\nFAIL panel216 sprawdzen=26 bledow=2\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "N1b stary panel -> trasa",
+      "cmd": [
+        "/tmp/bin216-nt2c2w3w/test-native",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel-stary/urls.txt"
+      ],
+      "returncode": 1,
+      "stdout": "adresy z panelu: /home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel-stary/urls.txt\n-- 01 short z panelu: /history/link?stream=short -> /history?k={BILET}&s=short\n-- 02 long z panelu: /history/link?stream=long -> /history?k={BILET}&s=long\nFAIL [long z panelu: /history/link?stream=long -> /history?k={BILET}&s=long] d.kod == 200 (Test.cpp:298)\nFAIL [long z panelu: /history/link?stream=long -> /history?k={BILET}&s=long] strumien != nullptr (Test.cpp:300)\nFAIL trasa216 sprawdzen=24 bledow=2\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "N2 stary naglowek",
+      "cmd": [
+        "/tmp/n2-216-4ku1cw5j/test-stary-naglowek",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel/urls.txt"
+      ],
+      "returncode": 1,
+      "stdout": "adresy z panelu: /home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/WYNIKI/run001/panel/urls.txt\n-- 01 short z panelu: /history/link?stream=short -> /history?k={BILET}\nFAIL [short z panelu: /history/link?stream=short -> /history?k={BILET}] disp == (dluga ? \"attachment; filename=\\\"historia-dluga.csv\\\"\" : \"attachment; filename=\\\"historia-krotka.csv\\\"\") (Test.cpp:310)\nFAIL [short z panelu: /history/link?stream=short -> /history?k={BILET}] d.odpowiedz->naglowki.size() >= 1 (Test.cpp:312)\n-- 02 long z panelu: /history/link?stream=long -> /history/long?k={BILET}\nFAIL [long z panelu: /history/link?stream=long -> /history/long?k={BILET}] disp == (dluga ? \"attachment; filename=\\\"historia-dluga.csv\\\"\" : \"attachment; filename=\\\"historia-krotka.csv\\\"\") (Test.cpp:310)\nFAIL [long z panelu: /history/link?stream=long -> /history/long?k={BILET}] d.odpowiedz->naglowki.size() >= 1 (Test.cpp:312)\nFAIL trasa216 sprawdzen=28 bledow=4\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "N3 literowka w id przycisku",
+      "cmd": [
+        "node",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/panel_test.mjs",
+        "/tmp/n-216-4orl8v73/panel.html",
+        "/tmp/n-216-4orl8v73"
+      ],
+      "returncode": 1,
+      "stdout": "FAIL panel216 [J04 kazdy element, o ktory prosi skrypt, istnieje w HTML] histBtn\nFAIL panel216 [J05 przycisk i panel sa podpiete] przycisk=false panel=true\nFAIL panel216 [J06 przycisk rozwija i zwija panel] brak elementow\nFAIL panel216 [J07-1 przycisk histShort istnieje] histShort\nFAIL panel216 [J12-1 krotka konczy sie adresem /history?k=<bilet>] https://centrala.local/\nFAIL panel216 [J07-2 przycisk histLong istnieje] histLong\nFAIL panel216 [J12-2 dluga konczy sie adresem /history/long?k=<bilet>] https://centrala.local/\nFAIL panel216 [J13-krotka adres pobrania zgadza sie ze strumieniem biletu] brak adresu\nFAIL panel216 [J13-dluga adres pobrania zgadza sie ze strumieniem biletu] brak adresu\nFAIL panel216 [J14 przy 503 nie ma nawigacji] brak przycisku\nFAIL panel216 [J16 zla dlugosc biletu nie powoduje nawigacji] brak przycisku\nFAIL panel216 [J18-short adres pobrania ma miejsce na bilet] null\nFAIL panel216 [J18-long adres pobrania ma miejsce na bilet] null\nFAIL panel216 sprawdzen=16 bledow=13\n",
+      "stderr_tail": ""
+    },
+    {
+      "nazwa": "N4 zla dlugosc biletu",
+      "cmd": [
+        "node",
+        "/home/user/Sterownik-Pieca-C.O./narzedzia/od-przycisku216/panel_test.mjs",
+        "/tmp/n-216-bx2drrvw/panel.html",
+        "/tmp/n-216-bx2drrvw"
+      ],
+      "returncode": 1,
+      "stdout": "FAIL panel216 [J12-1 krotka konczy sie adresem /history?k=<bilet>] https://centrala.local/\nFAIL panel216 [J12-2 dluga konczy sie adresem /history/long?k=<bilet>] https://centrala.local/\nFAIL panel216 [J13-krotka adres pobrania zgadza sie ze strumieniem biletu] / != /history\nFAIL panel216 [J13-dluga adres pobrania zgadza sie ze strumieniem biletu] / != /history/long\nFAIL panel216 [J18-short adres pobrania ma miejsce na bilet] null\nFAIL panel216 [J18-long adres pobrania ma miejsce na bilet] null\nFAIL panel216 sprawdzen=26 bledow=6\n",
+      "stderr_tail": ""
+    }
+  ]
+}

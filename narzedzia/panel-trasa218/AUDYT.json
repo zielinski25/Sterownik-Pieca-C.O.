@@ -1,0 +1,129 @@
+{
+  "stage": 218,
+  "tytul": "przycisk pobierania nie dzialal w ogole - trasa /history przechwytywala /history/link i /history/long",
+  "release_ready": false,
+  "main_changed": true,
+  "device_touched": false,
+  "firmware": {
+    "przed": "v3.56.3",
+    "po": "v3.56.4",
+    "sha256_przed": "f51b0b0749e2c1e3a8b5c02848a9c0e4902e0b641d6a7313a42304bbbcef91b3",
+    "sha256_po": "f89874f3390009acd79632db1031d04cd90e67435eda68e2007ea7c4b3168e38",
+    "linii_przed": 46974,
+    "linii_po": 46995,
+    "wersja_w_pliku_linia": 5601,
+    "include_bez_zmian": true
+  },
+  "odkryty_blad": {
+    "objaw_na_urzadzeniu": "po nalozeniu latki etapu 216 ZADEN przycisk pobierania historii by nie dzialal - panel pokazywalby 'Nie udalo sie: HTTP 401'",
+    "przyczyna": "trasy /history, /history/long i /history/link zarejestrowane golym napisem; goly napis to matcher BackwardCompatible (^{uri}(/.*)?$), a _attachHandler() bierze PIERWSZY pasujacy handler w kolejnosci rejestracji - /history lapalo oba pozostale adresy",
+    "skutki": [
+      "GET /history/link?stream=... -> handler pobrania -> 401 'Brak poswiadczen' (panel nigdy nie dostawal biletu)",
+      "GET /history/long?k=... -> handler strumienia KROTKIEGO -> 401 (bilet dlugi nie pasuje do krotkiego)"
+    ],
+    "dlaczego_wczesniej_niewidoczne": "etapy 212/213 wolaly handler bezposrednio (historiaPobranie.obsluz), z pominieciem tabeli tras serwera",
+    "ten_sam_blad_co": "[FIX 17] przy /api/history* w tym samym pliku (tam juz naprawiony exact())"
+  },
+  "poprawka": {
+    "co": "trzy rejestracje /history* przez AsyncURIMatcher::exact(...) + komentarz przy /history/link",
+    "dlaczego_exact_jest_dostepne": "ten sam plik uzywa AsyncURIMatcher::exact(...) juz od /api/lan/status (linia ~28452) - to API jest w bibliotece uzytkownika",
+    "historiapobranie_h": "bez zmian (sha256 b58d1a4c299e339798d3f229ad81177b0ee34f44dd37dae1776ba48279a4ede8)",
+    "panel": "bez zmian (panel juz wybiera trase wedlug strumienia od v3.56.3)"
+  },
+  "patche": {
+    "przyrostowy": {
+      "plik": "narzedzia/panel-trasa218/main_centrala-v3.56.3-to-v3.56.4.patch",
+      "sha256": "45d0ea6287f38917b5125e0489159c6e863f739420999716a0d29e4b29501f78",
+      "plus": 27,
+      "minus": 6,
+      "hunki": 3
+    },
+    "skumulowany": {
+      "plik": "narzedzia/panel-trasa218/main_centrala-v3.55.8-to-v3.56.4.patch",
+      "sha256": "15e8226b454947b61c4469b732a764f648c0eb34a2e542af252cd5ea81db0211",
+      "plus": 280,
+      "minus": 56,
+      "hunki": 15,
+      "daje_ten_sam_plik_co_przyrostowy": true
+    }
+  },
+  "zakres": {
+    "tras_w_pliku": 46,
+    "martwe_trasy_v3563": 2,
+    "martwe_trasy_v3564": 0,
+    "grupy_testu_cpp": [
+      "01 tabela tras: trzy trasy /history* przez exact",
+      "02 stara tabela (goly napis) przechwytuje /history/link i /history/long",
+      "03 panel podaje adresy, ktore serwer przyjmuje (z panel218.mjs)",
+      "04 krotka: bilet -> 200, CSV == plik, bilet jednorazowy",
+      "05 dluga: adres z panelu trafia na /history/long, CSV == plik dlugi",
+      "06 bilet dlugi na trasie krotkiej (i odwrotnie) to 401",
+      "07 bez biletu: /history i /history/long 401, /history/link 200",
+      "08 metoda: POST /history -> 405, POST /history/link nie istnieje",
+      "09 bilet wygasa po 5 minutach",
+      "10 stara droga: naglowek Bearer dziala bez zmian"
+    ]
+  },
+  "wynik": {
+    "status": "PASS",
+    "build": 10,
+    "panel_node_sprawdzen": 37,
+    "cpp_sprawdzen_na_profil": 78,
+    "profili": [
+      "native",
+      "asan-ubsan (detect_leaks=1)",
+      "glibcxx-assertions"
+    ],
+    "bledow": 0
+  },
+  "mutanty": {
+    "M1_goly_napis_history": "czerwony (35 bledow) - dokladnie blad v3.56.3",
+    "M2_goly_napis_long": "czerwony",
+    "M3_goly_napis_link": "czerwony",
+    "M4_panel_zawsze_krotka": "czerwony (panel + test C++)",
+    "M5_panel_bez_kontroli_biletu": "czerwony (panel)"
+  },
+  "zrodlo_prawdziwego_kodu": {
+    "plik": "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp",
+    "plus_patche": [
+      "211",
+      "212",
+      "213",
+      "214",
+      "216",
+      "218"
+    ],
+    "sha256_po_patchu": "f89874f3390009acd79632db1031d04cd90e67435eda68e2007ea7c4b3168e38",
+    "zgodny_z_etapem_216": true,
+    "wyciagniete": "trzy rejestracje tras /history* i blok adapterow biletow (losowosc, zegar, podpiecie) - doslownie z pliku",
+    "panel": "skrypt panelu wyciagniety z pliku, uruchamiany silnikiem V8 (node:vm)"
+  },
+  "modelowane": {
+    "serwer": "AsyncURIMatcher + _attachHandler przeniesione z WebServer.cpp (ref c47917d); brak regexow i parametrow sciezki - plik ich nie uzywa",
+    "dom": "tylko getElementById, addEventListener/click, style.display, textContent, window.location, fetch; kazde uzycie spoza modelu rzuca wyjatek",
+    "reszta": "VFS w RAM, semafory, esp_random (deterministyczny LCG)"
+  },
+  "czego_nie_dowodzi": [
+    "kompilacji calego main_centrala.cpp (PlatformIO u uzytkownika)",
+    "wygladu przycisku i CSS w przegladarce telefonu",
+    "zachowania prawdziwego LittleFS i WiFi",
+    "ze aplikacja (inny klient) uzywa tych samych adresow"
+  ],
+  "generowane": {
+    "Extracted218.inc": "d86a8d8167ecef17942091015e6d743f0ae525b385d7eb84f9b899fe658c82b8",
+    "Panel218.html": "8b60ecf97818dea770cd9e0e7ad38aed84537acfea5ae2398bf341eab7fe5dad",
+    "Trasy218.json": "144a6635b3c8bc96711a6326a6dacc4dd8e4dd56e1d53e171f6f5dff2313b8e6"
+  },
+  "pliki": {
+    "trasy.py": "f9845e08aee541d8f8d5871ce8e7c28dbf71a65aee5fc8df0bf8b7a2837e7a10",
+    "zrob_patch.py": "11c70efec442acc94c6207981fcb84215abcb6c7728aa75f0d8266aff0b69efc",
+    "build.py": "969e5e3a9be1beec3ad5624972c0ecc065511cc0196364adb6b18d248039d23a",
+    "panel218.mjs": "76e5bde3da53902f6194029e0271a0c2666f82e286e4665fed8d87be635add10",
+    "Test.cpp": "17be7842df94e0b461a5f60857f4fcbc94f99e726d4781589294b19068b57d8c",
+    "host/Serwer218.h": "17342907a4a2f2de4a1bfbb3a9dd2de00999833fbcae423b3b777225e742489b",
+    "run.py": "74be80d7d4446808eff72378f718c81fb1ff0d27e73a1213963daa96ebde8eff"
+  },
+  "uruchomienie": "python3 -B narzedzia/panel-trasa218/run.py",
+  "polecenie_dla_uzytkownika": "patch -p1 -i main_centrala-v3.55.8-to-v3.56.4.patch (skumulowany; latka v3.56.3 z etapu 216 jest NIEAKTUALNA)",
+  "kryterium_odbioru": "telefon -> HISTORIA CSV -> 'Krotka (24 h)' zapisuje historia-krotka.csv, 'Dluga (archiwum)' zapisuje historia-dluga.csv"
+}

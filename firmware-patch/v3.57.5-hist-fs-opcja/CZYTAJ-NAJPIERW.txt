@@ -1,0 +1,29 @@
+FIRMWARE 3.57.5 — ZAPIS HISTORII NA FLASH (POPRAWIONY PO PRZEGLADZIE)
+====================================================================
+Baza: 3.57.3. Zastepuje 3.57.4 (ta NIE poszla na piec). Data: 2026-10-31.
+
+CO SIE ZMIENILO WZGLEDEM 3.57.4 (trzy poprawki)
+1) Czyszczenie plikow idzie gotowym kanalem A1 (Transition + /history_reset_a1.req),
+   a nie wlasnym LittleFS.remove() + drugim znacznikiem w NVS. Usuwa oba pliki
+   przy starcie, PRZED pierwszym odczytem i potwierdza, ze ich nie ma.
+2) Panel centrali i Piec.html parsuja pole hist_fs (wczesniej kafelek pokazywalby
+   "brak danych" nawet na tej wersji).
+3) Wylaczenie zatrzymuje TAKZE oproznianie kolejki - po wylaczeniu na flash
+   nie leci juz ani jedna linia.
+
+CO ROBI (bez zmian)
+  - /piec/status: hist_fs (1 = WL, 0 = WYL), ustawienie w NVS, domyslnie WL;
+  - komendy: histfs_wl / histfs_wyl / histfs_czysc (czysc = po restarcie);
+  - wilgotnosc 0,0 % z DHT22 traktowana jak BLAD odczytu (byla: pomiar).
+
+CZEGO NIE RUSZA
+  Firebase (telemetria co minute), bufory RAM, /api/history*, wykresy, kolejka,
+  WDT, nadzor, TLS z 3.57.3, OTA, Telegram, format CSV.
+
+JAK WGRAC
+1. Podmien CALY folder src (pliki .h tez).
+2. Zbuduj i wgraj (OTA albo kabel).
+3. Ustawienia -> ma byc v3.57.5.
+4. Ustawienia -> "Zapis historii na flash" -> ma byc WLACZONY.
+
+NIE WGRYWAC 3.55.3-3.55.8 (wycofane) ani 3.57.4 (zastapiona przez ta wersje).

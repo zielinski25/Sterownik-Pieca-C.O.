@@ -1,0 +1,117 @@
+--- src/main_centrala.cpp
++++ src/main_centrala.cpp
+@@ -1,3 +1,30 @@
++// FIRMWARE_VERSION v3.57.7 -> v3.57.8 (2026-11-01) — RAPORT NADZORU MOWI WRESZCIE KIEDY I GDZIE.
++//
++// Zgloszenie uzytkownika (1.11, po wgraniu 3.57.7): Telegram pokazal
++// "Wersja: vv3.57.7" oraz dwa raporty po restarcie z nadzoru, w ktorych
++// "Ostatni znacznik: DESZCZ / BEFORE (po 0 s pracy, wolna pamiec 81 kB)"
++// i "FB_LOOP / BEFORE (po 0 s pracy, wolna pamiec 85 kB)".
++//
++// [1] PODWOJNE "v" W WERSJI. Komunikat dokladal wlasne "v" do stalej
++//     FIRMWARE_VERSION, ktora juz zawiera "v" -> "vv3.57.7". Teraz stala
++//     jest wypisywana bez dodatkowego prefiksu.
++// [2] "PO 0 S PRACY" PRZY KAZDYM ZAWIESZENIU. Klucz NVS "nadzorKrokUptimeS"
++//     mial 17 znakow, a NVS przyjmuje najwyzej 15. Zapis konczyl sie cichym
++//     niepowodzeniem (ten sam blad, ktory opisuje [FIX NVS-15] przy kluczach
++//     ustawien), a odczyt zwracal 0 - raport ZAWSZE mowil "po 0 s pracy",
++//     niezaleznie od tego, kiedy naprawde padlo. Klucz skrocony do
++//     "nadzorKrokS" (11 znakow). Stary klucz nie byl nigdy zapisany, wiec
++//     nic nie tracimy.
++// [3] NOWE: ILE SEKUND PRZED RESTARTEM. Sam uptime mowi, kiedy znacznik
++//     powstAL, ale nie ile czasu zdazyl przejsc od niego do zawieszenia.
++//     Nadzor liczy teraz wiek znacznika w chwili restartu i zapisuje go
++//     w kluczu "nadzorWiekS" (12 znakow). Raport pokazuje najpierw wiek,
++//     bo to on odroznia "zadanie stanelo od razu w wywolaniu" od
++//     "chodzilo jeszcze dlugo po znaczniku".
++//
++// Bez zmian: progi nadzoru (300 s ciszy, 3 restarty / 30 min), sama diagnoza
++// (checkpointy, RTC), logika pieca, telemetria, Telegram, OTA, historia.
++
+ // FIRMWARE_VERSION v3.57.6 -> v3.57.7 (2026-10-31) — TELEGRAM NIE ZGLASZA BLEDU, GDY PLIKU PO PROSTU NIE MA.
+ //
+ // Zgloszenie uzytkownika (31.10, 09:37): po wylaczeniu zapisu historii, czyszczeniu
+@@ -5883,7 +5910,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.57.7";
++static const char* FIRMWARE_VERSION = "v3.57.8";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -34960,7 +34987,8 @@
+   s += F(" • ⏱️ Uptime: ");
+   if (upD > 0) { s += String(upD); s += F("d "); }
+   s += String(upH); s += F("h "); s += String(upM); s += F("m\n");
+-  s += F(" • 📦 Wersja: <b>v"); s += String(FIRMWARE_VERSION); s += F("</b>");
++  // [v3.57.8] FIRMWARE_VERSION zawiera juz "v" — wczesniej wychodzilo "vv3.57.7".
++  s += F(" • 📦 Wersja: <b>"); s += String(FIRMWARE_VERSION); s += F("</b>");
+ 
+   return s;
+ }
+@@ -44572,13 +44600,23 @@
+   const bool     krokZnany = config.getBool("nadzorKrokZnany", false);
+   const String   krokOp    = config.getString("nadzorOp", "?");
+   const String   krokStage = config.getString("nadzorStage", "?");
+-  const uint32_t krokS     = (uint32_t)config.getUInt("nadzorKrokUptimeS", 0U);
++  // [v3.57.8 FIX NVS-15] "nadzorKrokS" (11 znakow) zamiast 17-znakowego
++  // klucza, ktory NVS po cichu odrzucal — patrz komentarz przy zapisie.
++  const uint32_t krokS     = (uint32_t)config.getUInt("nadzorKrokS", 0U);
++  const uint32_t krokWiekS = (uint32_t)config.getUInt("nadzorWiekS", 0U);
+   const uint32_t heapB     = (uint32_t)config.getUInt("nadzorHeap", 0U);
+   config.putBool("nadzorRestart", false);
+   config.putBool("nadzorKrokZnany", false);
+   if (!tgEnabled) return;
++  // [v3.57.8] Wiek znacznika idzie PIERWSZY, bo to on odroznia dwie sytuacje:
++  //  - wiek ~= 300 s (tyle, ile nadzor czeka na znak zycia): znacznik powstal
++  //    tuz przed zatrzymaniem — TO JEST miejsce zawieszenia;
++  //  - wiek wyraznie wiekszy: po znaczniku zadanie szlo dalej przez
++  //    (wiek - 300) s i stanelo dopiero pozniej, wiec znacznik jest tylko
++  //    dolna granica, a nie dokladnym miejscem.
+   const String liniaKroku = krokZnany
+-    ? ("Ostatni znacznik: " + krokOp + " / " + krokStage + " (po " +
++    ? ("Ostatni znacznik: " + krokOp + " / " + krokStage + " — " +
++       String((unsigned long)krokWiekS) + " s przed restartem (po " +
+        String((unsigned long)krokS) + " s pracy, wolna pamiec " +
+        String((unsigned long)(heapB / 1024UL)) + " kB)")
+     : String("Ostatni znacznik: brak — zadanie nie zapisalo ani jednego znacznika od startu.");
+@@ -44591,6 +44629,7 @@
+   zapiszLog(String(F("tag=NADZOR lvl=WARN zdarzenie=raport_po_restarcie nr=")) +
+             String((unsigned long)nr) + " krok=" + krokOp + "/" + krokStage +
+             " krok_uptime_s=" + String((unsigned long)krokS) +
++            " krok_wiek_s=" + String((unsigned long)krokWiekS) +
+             " free_heap=" + String((unsigned long)heapB));
+ }
+ 
+@@ -47749,12 +47788,17 @@
+   const String krokOp    = krok.znany ? String(diagOpName(krok.op))       : String("?");
+   const String krokStage = krok.znany ? String(diagStageName(krok.stage)) : String("?");
+   const uint32_t krokUptimeS = krok.znany ? (krok.uptimeMs / 1000UL) : 0UL;
++  // [v3.57.8] Ile sekund uplynelo od OSTATNIEGO znacznika do zawieszenia.
++  // Uptime mowi, kiedy znacznik powstal; wiek mowi, jak dlugo zadanie szlo
++  // dalej, zanim stanelo. Odejmowanie na uint32_t jest odporne na przeplot.
++  const uint32_t krokWiekS = krok.znany ? ((uint32_t)(now - krok.uptimeMs) / 1000UL) : 0UL;
+ 
+   zapiszLog(String(F("tag=NADZOR lvl=ERR zdarzenie=zawieszenie kto=")) +
+             nadzorKtoNazwa(kto) + " wiek_ms=" + String((unsigned long)wiek) +
+             " restart_nr=" + String((unsigned long)licznikRestartow) +
+             " krok=" + krokOp + "/" + krokStage +
+             " krok_uptime_s=" + String((unsigned long)krokUptimeS) +
++            " krok_wiek_s=" + String((unsigned long)krokWiekS) +
+             " free_heap=" + String((unsigned long)krok.freeHeap));
+   config.putUInt("nadzorCnt", licznikRestartow);
+   config.putBool("nadzorRestart", true);
+@@ -47765,7 +47809,11 @@
+   config.putBool("nadzorKrokZnany", krok.znany);
+   config.putString("nadzorOp", krokOp);
+   config.putString("nadzorStage", krokStage);
+-  config.putUInt("nadzorKrokUptimeS", krokUptimeS);
++  // [v3.57.8 FIX NVS-15] Klucz "nadzorKrokUptimeS" mial 17 znakow, a NVS
++  // przyjmuje najwyzej 15 — zapis cicho nie udawal sie i raport zawsze
++  // pokazywal "po 0 s pracy". Teraz "nadzorKrokS" (11) i "nadzorWiekS" (12).
++  config.putUInt("nadzorKrokS", krokUptimeS);
++  config.putUInt("nadzorWiekS", krokWiekS);
+   config.putUInt("nadzorHeap", krok.freeHeap);
+   delay(50);
+   ESP.restart();

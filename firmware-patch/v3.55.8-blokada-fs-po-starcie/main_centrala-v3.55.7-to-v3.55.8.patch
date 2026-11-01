@@ -1,0 +1,1942 @@
+--- v3.55.7/main_centrala.cpp
++++ v3.55.8/main_centrala.cpp
+@@ -1,3 +1,4 @@
++// FIRMWARE_VERSION v3.55.7 -> v3.55.8 (KANDYDAT: blokada calego dostepu Arduino FS po bledzie startu; NIE WGRYWAC).
+ // FIRMWARE_VERSION v3.55.6 -> v3.55.7 (KANDYDAT: A1 tylko na istniejace poprawne zadanie; NIE WGRYWAC).
+ // FIRMWARE_VERSION v3.55.5 -> v3.55.6 (KANDYDAT: kontrola startu historii, bez kasowania; NIE WGRYWAC).
+ // FIRMWARE_VERSION v3.55.4 -> v3.55.5 (KANDYDAT: sprawdzany zapis i rotacja z pliku; NIE WGRYWAC).
+@@ -5145,6 +5146,8 @@
+ #include <esp_flash.h>         // [COREDUMP] esp_flash_read()/esp_flash_default_chip — surowy odczyt partycji coredump
+ #include <Preferences.h>      // ZAMIAST EEPROM.h — patrz sekcja 3.3 planu migracji
+ #include <LittleFS.h>         // [LOGI-FS] trwalosc bufora logow na partycji spiffs — patrz sekcja przy logBufor nizej
++#include "BootFilesystem.h"
++static history196::BootFilesystem<fs::LittleFSFS> systemFS196(LittleFS);
+ // [PLAN_SD_LOGI_AWARYJNE.md, Czesc 1] SPI.h/SD.h przywrocone WYLACZNIE dla
+ // karty SD logow awaryjnych (patrz sekcja "KARTA SD" dalej w pliku) — osobna
+ // magistrala FSPI (sdSPI), zero wplywu na to, co zostalo usuniete w
+@@ -5550,7 +5553,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.55.7";
++static const char* FIRMWARE_VERSION = "v3.55.8";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -23122,13 +23125,13 @@
+ // nie zostawil polowy JSON-a. Nie dotyka zadnego pliku historii.
+ static bool solarArchiveWriteDoc(const char *dateKey, JsonDocument &doc) {
+   if (!littlefsReady || !dateKey || !solar_daily::isValidDateKey(dateKey)) return false;
+-  if (!LittleFS.exists(SOLAR_ARCHIVE_DIR)) {
+-    if (!LittleFS.mkdir(SOLAR_ARCHIVE_DIR)) {
++  if (!systemFS196.exists(SOLAR_ARCHIVE_DIR)) {
++    if (!systemFS196.mkdir(SOLAR_ARCHIVE_DIR)) {
+       DLOG(DC_HISTORIA, DL_ERR, F("SOLAR-ARCH msg=\"nie mozna utworzyc katalogu archiwum\""));
+       return false;
+     }
+   }
+-  File f = LittleFS.open(SOLAR_ARCHIVE_TMP_FILE, "w");
++  File f = systemFS196.open(SOLAR_ARCHIVE_TMP_FILE, "w");
+   if (!f) {
+     DLOG(DC_HISTORIA, DL_ERR, F("SOLAR-ARCH msg=\"nie mozna otworzyc pliku tymczasowego\""));
+     return false;
+@@ -23137,13 +23140,13 @@
+   f.flush();
+   f.close();
+   if (written == 0) {
+-    LittleFS.remove(SOLAR_ARCHIVE_TMP_FILE);
++    systemFS196.remove(SOLAR_ARCHIVE_TMP_FILE);
+     DLOG(DC_HISTORIA, DL_ERR, F("SOLAR-ARCH msg=\"pusty zapis JSON\""));
+     return false;
+   }
+   const String finalPath = solarArchivePathFor(dateKey);
+-  if (LittleFS.exists(finalPath.c_str())) LittleFS.remove(finalPath.c_str());
+-  if (!LittleFS.rename(SOLAR_ARCHIVE_TMP_FILE, finalPath.c_str())) {
++  if (systemFS196.exists(finalPath.c_str())) systemFS196.remove(finalPath.c_str());
++  if (!systemFS196.rename(SOLAR_ARCHIVE_TMP_FILE, finalPath.c_str())) {
+     DLOG(DC_HISTORIA, DL_ERR, F("SOLAR-ARCH msg=\"rename nieudany\""));
+     return false;
+   }
+@@ -23276,7 +23279,7 @@
+   if (!littlefsReady || !g_solarAggDate[0]) return;
+   char cutoff[11];
+   if (!solar_daily::addDays(g_solarAggDate, -SOLAR_ARCHIVE_KEEP_DAYS, cutoff)) return;
+-  File dir = LittleFS.open(SOLAR_ARCHIVE_DIR);
++  File dir = systemFS196.open(SOLAR_ARCHIVE_DIR);
+   if (!dir || !dir.isDirectory()) return;
+ 
+   String victim;
+@@ -23296,7 +23299,7 @@
+     entry = dir.openNextFile();
+   }
+   dir.close();
+-  if (victim.length() && LittleFS.remove(victim.c_str())) {
++  if (victim.length() && systemFS196.remove(victim.c_str())) {
+     DLOG(DC_HISTORIA, DL_INFO, F("SOLAR-ARCH zdarzenie=retencja msg=\"usunieto najstarszy plik\""));
+   }
+ }
+@@ -23310,9 +23313,9 @@
+ 
+   if (!littlefsReady || !solar_daily::isValidDateKey(dateKey)) return;
+   const String path = solarArchivePathFor(dateKey);
+-  if (!LittleFS.exists(path.c_str())) return;
+-
+-  File f = LittleFS.open(path.c_str(), "r");
++  if (!systemFS196.exists(path.c_str())) return;
++
++  File f = systemFS196.open(path.c_str(), "r");
+   if (!f) return;
+   JsonDocument doc;
+   const DeserializationError err = deserializeJson(doc, f);
+@@ -23404,7 +23407,7 @@
+   if (fbLoopWorkerZajety() || g_telemetryRequestActive) return false;
+ 
+   const String path = solarArchivePathFor(dateKey);
+-  File f = LittleFS.open(path.c_str(), "r");
++  File f = systemFS196.open(path.c_str(), "r");
+   if (!f) return false;
+   String payload;
+   payload.reserve(1024);
+@@ -23842,7 +23845,7 @@
+     }
+   }
+   for (uint8_t i = 0; i < keyCount; i++) {
+-    File f = LittleFS.open(solarArchivePathFor(keys[i]).c_str(), "r");
++    File f = systemFS196.open(solarArchivePathFor(keys[i]).c_str(), "r");
+     if (!f) continue;
+     String body;
+     body.reserve(768);
+@@ -23875,7 +23878,7 @@
+ static uint16_t solarArchiveScanLegacy(bool removeThem, uint16_t *removed) {
+   if (removed) *removed = 0;
+   if (!littlefsReady) return 0;
+-  File dir = LittleFS.open(SOLAR_ARCHIVE_DIR);
++  File dir = systemFS196.open(SOLAR_ARCHIVE_DIR);
+   if (!dir || !dir.isDirectory()) return 0;
+ 
+   uint16_t found = 0;
+@@ -23892,7 +23895,7 @@
+       const String key = name.substring(0, 10);
+       if (solar_daily::isValidDateKey(key.c_str())) {
+         const String path = String(SOLAR_ARCHIVE_DIR "/") + name;
+-        File f = LittleFS.open(path.c_str(), "r");
++        File f = systemFS196.open(path.c_str(), "r");
+         if (f) {
+           JsonDocument doc;
+           const DeserializationError err = deserializeJson(doc, f);
+@@ -23915,7 +23918,7 @@
+ 
+   if (removeThem) {
+     for (uint8_t i = 0; i < nDoUsuniecia; i++) {
+-      if (LittleFS.remove(doUsuniecia[i].c_str()) && removed) (*removed)++;
++      if (systemFS196.remove(doUsuniecia[i].c_str()) && removed) (*removed)++;
+     }
+     if (*removed) {
+       DLOGF(DC_HISTORIA, DL_INFO, "SOLAR-ARCH zdarzenie=czyszczenie_starych usunieto=%u",
+@@ -23936,8 +23939,8 @@
+     return false;
+   }
+   const String path = solarArchivePathFor(dateKey);
+-  const bool existed = LittleFS.exists(path.c_str());
+-  if (existed && !LittleFS.remove(path.c_str())) {
++  const bool existed = systemFS196.exists(path.c_str());
++  if (existed && !systemFS196.remove(path.c_str())) {
+     info = "Nie udalo sie usunac pliku.";
+     return false;
+   }
+@@ -23970,7 +23973,7 @@
+ 
+   if (!littlefsReady) return String(F("Archiwum solarne: LittleFS niegotowy."));
+ 
+-  File dir = LittleFS.open(SOLAR_ARCHIVE_DIR);
++  File dir = systemFS196.open(SOLAR_ARCHIVE_DIR);
+   if (!dir || !dir.isDirectory()) {
+     return String(F("Archiwum solarne: brak katalogu /solar_daily — nic jeszcze nie zapisano."));
+   }
+@@ -24017,7 +24020,7 @@
+ 
+   for (uint8_t i = 0; i < count; i++) {
+     const String path = solarArchivePathFor(g_solarReportDates[i].c_str());
+-    File f = LittleFS.open(path.c_str(), "r");
++    File f = systemFS196.open(path.c_str(), "r");
+     if (!f) continue;
+     JsonDocument doc;
+     const DeserializationError err = deserializeJson(doc, f);
+@@ -25003,9 +25006,9 @@
+ }
+ 
+ static uint32_t coredumpNajwyzszeSeqZFS() {
+-  if (!littlefsReady || !LittleFS.exists(COREDUMP_DIR)) return 0;
++  if (!littlefsReady || !systemFS196.exists(COREDUMP_DIR)) return 0;
+   uint32_t maxSeq = 0;
+-  File dir = LittleFS.open(COREDUMP_DIR);
++  File dir = systemFS196.open(COREDUMP_DIR);
+   if (!dir || !dir.isDirectory()) return 0;
+   File entry = dir.openNextFile();
+   while (entry) {
+@@ -25055,9 +25058,9 @@
+   sciezka = String();
+   boot = 0;
+   rozmiar = 0;
+-  if (seq == 0 || !littlefsReady || !LittleFS.exists(COREDUMP_DIR)) return false;
+-
+-  File dir = LittleFS.open(COREDUMP_DIR);
++  if (seq == 0 || !littlefsReady || !systemFS196.exists(COREDUMP_DIR)) return false;
++
++  File dir = systemFS196.open(COREDUMP_DIR);
+   if (!dir || !dir.isDirectory()) return false;
+   File entry = dir.openNextFile();
+   while (entry) {
+@@ -25089,7 +25092,7 @@
+   seq = 0;
+   legacy = false;
+   rozmiar = 0;
+-  if (wantedBoot == 0 || !littlefsReady || !LittleFS.exists(COREDUMP_DIR)) return false;
++  if (wantedBoot == 0 || !littlefsReady || !systemFS196.exists(COREDUMP_DIR)) return false;
+ 
+   bool foundNew = false;
+   uint32_t bestSeq = 0;
+@@ -25099,7 +25102,7 @@
+   String bestLegacyPath;
+   size_t bestLegacySize = 0;
+ 
+-  File dir = LittleFS.open(COREDUMP_DIR);
++  File dir = systemFS196.open(COREDUMP_DIR);
+   if (!dir || !dir.isDirectory()) return false;
+   File entry = dir.openNextFile();
+   while (entry) {
+@@ -25156,7 +25159,7 @@
+   seq = 0;
+   legacy = false;
+   rozmiar = 0;
+-  if (!littlefsReady || !LittleFS.exists(COREDUMP_DIR)) return false;
++  if (!littlefsReady || !systemFS196.exists(COREDUMP_DIR)) return false;
+ 
+   bool foundNew = false;
+   uint32_t bestSeq = 0;
+@@ -25169,7 +25172,7 @@
+   String bestLegacyPath;
+   size_t bestLegacySize = 0;
+ 
+-  File dir = LittleFS.open(COREDUMP_DIR);
++  File dir = systemFS196.open(COREDUMP_DIR);
+   if (!dir || !dir.isDirectory()) return false;
+   File entry = dir.openNextFile();
+   while (entry) {
+@@ -25241,7 +25244,7 @@
+   String victimPath;
+   size_t victimSize = 0;
+ 
+-  File dir = LittleFS.open(COREDUMP_DIR);
++  File dir = systemFS196.open(COREDUMP_DIR);
+   if (!dir || !dir.isDirectory()) return;
+   File entry = dir.openNextFile();
+   while (entry) {
+@@ -25280,7 +25283,7 @@
+   dir.close();
+ 
+   if (victimPath.length() == 0) return;
+-  if (LittleFS.remove(victimPath)) {
++  if (systemFS196.remove(victimPath)) {
+     zapiszLog(String(F("tag=COREDUMP lvl=INFO zdarzenie=usunieto_najstarszy plik=")) + victimPath +
+               " seq=" + String((unsigned long)victimSeq) +
+               " boot=" + String((unsigned long)victimBoot) +
+@@ -25292,10 +25295,10 @@
+ }
+ 
+ void coredumpPrzytnijArchiwum() {
+-  if (!littlefsReady || !LittleFS.exists(COREDUMP_DIR)) return;
++  if (!littlefsReady || !systemFS196.exists(COREDUMP_DIR)) return;
+ 
+   uint16_t ile = 0;
+-  File dir = LittleFS.open(COREDUMP_DIR);
++  File dir = systemFS196.open(COREDUMP_DIR);
+   if (!dir || !dir.isDirectory()) return;
+   File entry = dir.openNextFile();
+   while (entry) {
+@@ -25316,7 +25319,7 @@
+     // Ponownie licz: po usunieciu pliku nie chcemy opierac sie na stalej
+     // tablicy ani zakladac, ze LittleFS.remove() faktycznie zadzialalo.
+     ile = 0;
+-    File d = LittleFS.open(COREDUMP_DIR);
++    File d = systemFS196.open(COREDUMP_DIR);
+     if (d && d.isDirectory()) {
+       File e = d.openNextFile();
+       while (e) {
+@@ -25367,8 +25370,8 @@
+     return;
+   }
+ 
+-  if (!LittleFS.exists(COREDUMP_DIR)) {
+-    if (!LittleFS.mkdir(COREDUMP_DIR)) {
++  if (!systemFS196.exists(COREDUMP_DIR)) {
++    if (!systemFS196.mkdir(COREDUMP_DIR)) {
+       zapiszLogKrytyczny(F("tag=COREDUMP lvl=ERR zdarzenie=mkdir_nieudany"));
+       return;
+     }
+@@ -25389,14 +25392,14 @@
+   // Stary .part po przerwanym archiwizowaniu nigdy nie jest uznawany za
+   // kompletne archiwum. Zrodlo coredump pozostaje zachowane w partycji
+   // coredump, wiec mozemy bezpiecznie rozpoczac kopie od nowa.
+-  if (LittleFS.exists(sciezkaPart)) {
+-    if (!LittleFS.remove(sciezkaPart)) {
++  if (systemFS196.exists(sciezkaPart)) {
++    if (!systemFS196.remove(sciezkaPart)) {
+       zapiszLogKrytyczny(String(F("tag=COREDUMP lvl=ERR zdarzenie=stary_part_nieusuwalny plik=")) + sciezkaPart);
+       return;
+     }
+   }
+ 
+-  File f = LittleFS.open(sciezkaPart, "w");
++  File f = systemFS196.open(sciezkaPart, "w");
+   if (!f) {
+     zapiszLogKrytyczny(String(F("tag=COREDUMP lvl=ERR zdarzenie=part_otwarcie_nieudane plik=")) + sciezkaPart);
+     return;
+@@ -25436,15 +25439,15 @@
+   f.close();
+ 
+   if (!powodzenie || pozostalo != 0 || lacznieZapisano != rozmiarZrzutu) {
+-    LittleFS.remove(sciezkaPart);
++    systemFS196.remove(sciezkaPart);
+     return;
+   }
+ 
+-  File checkPart = LittleFS.open(sciezkaPart, "r");
++  File checkPart = systemFS196.open(sciezkaPart, "r");
+   size_t rozmiarPart = checkPart ? checkPart.size() : 0;
+   if (checkPart) checkPart.close();
+   if (rozmiarPart != rozmiarZrzutu) {
+-    LittleFS.remove(sciezkaPart);
++    systemFS196.remove(sciezkaPart);
+     zapiszLogKrytyczny(String(F("tag=COREDUMP lvl=ERR zdarzenie=walidacja_rozmiaru_part_nieudana plik=")) + sciezkaPart +
+                        " oczekiwano=" + String((unsigned long)rozmiarZrzutu) +
+                        " zapisano=" + String((unsigned long)rozmiarPart));
+@@ -25452,17 +25455,17 @@
+   }
+ 
+   // Nazwa finalna pojawia sie dopiero po pelnym potwierdzeniu zapisu.
+-  if (LittleFS.exists(sciezka)) {
++  if (systemFS196.exists(sciezka)) {
+     // Kolizja nie powinna wystapic przy monotonicznym seq. W razie czego
+     // nie nadpisujemy istniejacego archiwum.
+-    LittleFS.remove(sciezkaPart);
++    systemFS196.remove(sciezkaPart);
+     zapiszLogKrytyczny(String(F("tag=COREDUMP lvl=ERR zdarzenie=kolizja_pliku_finalnego plik=")) + sciezka);
+     return;
+   }
+ 
+-  if (!LittleFS.rename(sciezkaPart, sciezka)) {
++  if (!systemFS196.rename(sciezkaPart, sciezka)) {
+     // Oryginalny coredump nadal istnieje w partycji coredump.
+-    LittleFS.remove(sciezkaPart);
++    systemFS196.remove(sciezkaPart);
+     zapiszLogKrytyczny(String(F("tag=COREDUMP lvl=ERR zdarzenie=rename_part_nieudany part=")) + sciezkaPart +
+                        " final=" + sciezka);
+     return;
+@@ -25803,8 +25806,8 @@
+   if (!littlefsReady) return;
+   uint8_t buf[512];
+   auto wczytajPlik = [&](const char* sciezka) {
+-    if (!LittleFS.exists(sciezka)) return;
+-    File f = LittleFS.open(sciezka, "r");
++    if (!systemFS196.exists(sciezka)) return;
++    File f = systemFS196.open(sciezka, "r");
+     if (!f) return;
+     while (f.available()) {
+       size_t n = f.read(buf, sizeof(buf));
+@@ -25841,7 +25844,7 @@
+       bufor = "";
+       return;
+     }
+-    File f = LittleFS.open(LOG_FILE_B, "a");
++    File f = systemFS196.open(LOG_FILE_B, "a");
+     if (!f) {
+       Serial.printf("tag=LOGI-FS lvl=ERR plik=log_b.txt bufor=%s msg=\"nie mozna otworzyc do zapisu\"\n", etykieta);
+       return;
+@@ -25968,15 +25971,15 @@
+ bool logTrimKeepTail(const char* sciezka, const char* sciezkaTmp,
+                       size_t rozmiarPrzed, size_t keepBytes,
+                       const char* etykieta) {
+-  File src = LittleFS.open(sciezka, "r");
++  File src = systemFS196.open(sciezka, "r");
+   if (!src) return false;
+   if (!src.seek(rozmiarPrzed - keepBytes)) {
+     src.close();
+     Serial.printf("tag=LOGI-FS lvl=ERR akcja=trim bufor=%s msg=\"seek() nieudany - pominieto\"\n", etykieta);
+     return false;
+   }
+-  LittleFS.remove(sciezkaTmp);
+-  File tmp = LittleFS.open(sciezkaTmp, "w");
++  systemFS196.remove(sciezkaTmp);
++  File tmp = systemFS196.open(sciezkaTmp, "w");
+   if (!tmp) {
+     src.close();
+     Serial.printf("tag=LOGI-FS lvl=ERR akcja=trim bufor=%s msg=\"brak pliku tymczasowego\"\n", etykieta);
+@@ -25997,13 +26000,13 @@
+   src.close();
+   tmp.close();
+   if (bladZapisu || pozostalo > 0) {
+-    LittleFS.remove(sciezkaTmp);
++    systemFS196.remove(sciezkaTmp);
+     Serial.printf("tag=LOGI-FS lvl=ERR akcja=trim bufor=%s msg=\"zapis tymczasowy niepelny, oryginal nie ruszony\"\n", etykieta);
+     return false;
+   }
+   if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-    bool okRemove = LittleFS.remove(sciezka);
+-    bool okRename = okRemove && LittleFS.rename(sciezkaTmp, sciezka);
++    bool okRemove = systemFS196.remove(sciezka);
++    bool okRename = okRemove && systemFS196.rename(sciezkaTmp, sciezka);
+     if (okRename) {
+       // [FIX-WSPOLBIEZNOSC] Cache aktualizowany w TEJ SAMEJ sekcji co
+       // faktyczna podmiana pliku (nadal trzymamy logMutex) — nowy rozmiar
+@@ -26023,7 +26026,7 @@
+     Serial.printf("tag=LOGI-FS lvl=ERR akcja=trim bufor=%s msg=\"remove/rename nieudane\"\n", etykieta);
+     return false;
+   }
+-  LittleFS.remove(sciezkaTmp);
++  systemFS196.remove(sciezkaTmp);
+   Serial.printf("tag=LOGI-FS lvl=ERR akcja=trim bufor=%s msg=\"brak logMutex - pominieto\"\n", etykieta);
+   return false;
+ }
+@@ -26035,7 +26038,7 @@
+ // log_a.txt samo w sobie nie przywrocilo wystarczajaco wolnego miejsca.
+ void logCircularTrim() {
+   if (!littlefsReady || g_logFsTotalBytes == 0) return;
+-  if (!LittleFS.exists(LOG_FILE_B)) return;
++  if (!systemFS196.exists(LOG_FILE_B)) return;
+ 
+   // [FIX-WSPOLBIEZNOSC] Zamiast LittleFS.usedBytes() (nieosloniete
+   // mutexem, wiec mogloby trafic na zapis z Core 1/AsyncTCP w trakcie) —
+@@ -26063,7 +26066,7 @@
+ 
+   if (keepBytes == 0) {
+     if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-      bool ok = LittleFS.remove(LOG_FILE_B);
++      bool ok = systemFS196.remove(LOG_FILE_B);
+       if (ok) g_logBSize = 0;  // [FIX-WSPOLBIEZNOSC]
+       xSemaphoreGive(logMutex);
+       Serial.printf("tag=LOGI-FS lvl=ERR zdarzenie=fs_guard_critical wolne=%uB plik=log_b.txt wynik=%s\n",
+@@ -26094,7 +26097,7 @@
+ // tkniety w tej rundzie.
+ void logCircularTrimA() {
+   if (!littlefsReady || g_logFsTotalBytes == 0) return;
+-  if (!LittleFS.exists(LOG_FILE_A)) return;
++  if (!systemFS196.exists(LOG_FILE_A)) return;
+ 
+   // [FIX-WSPOLBIEZNOSC] Jak w logCircularTrim() — cache zamiast usedBytes(),
+   // teraz tez z g_panelFirmwareSize.
+@@ -26163,7 +26166,7 @@
+     }
+   }
+ 
+-  if (!LittleFS.exists(LOG_FILE_B)) return;
++  if (!systemFS196.exists(LOG_FILE_B)) return;
+   // [FIX-WSPOLBIEZNOSC] g_logBSize zamiast kolejnego open()+size()+close() —
+   // ten sam cache co wyzej, zawsze aktualny wzgledem ostatniego zapisu.
+   size_t rozmiar = g_logBSize;
+@@ -26177,8 +26180,8 @@
+       // co logWyczysc() wyzej: logZapisz() wywolane z Core 1 w tym samym
+       // momencie nie powinno trafic na polowicznie skasowany/rotowany stan.
+       if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-        bool okA = !LittleFS.exists(LOG_FILE_A) || LittleFS.remove(LOG_FILE_A);
+-        bool okB = !LittleFS.exists(LOG_FILE_B) || LittleFS.remove(LOG_FILE_B);
++        bool okA = !systemFS196.exists(LOG_FILE_A) || systemFS196.remove(LOG_FILE_A);
++        bool okB = !systemFS196.exists(LOG_FILE_B) || systemFS196.remove(LOG_FILE_B);
+         if (okA && okB) { g_logASize = 0; g_logBSize = 0; }  // [FIX-WSPOLBIEZNOSC]
+         xSemaphoreGive(logMutex);
+         if (okA && okB) {
+@@ -26212,8 +26215,8 @@
+   // z logWyczysc()/"/api/fs-delete" (AsyncTCP), ktore biora logMutex tylko
+   // po swojej stronie.
+   if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-    if (LittleFS.exists(LOG_FILE_A)) LittleFS.remove(LOG_FILE_A);
+-    bool okRename = LittleFS.rename(LOG_FILE_B, LOG_FILE_A);
++    if (systemFS196.exists(LOG_FILE_A)) systemFS196.remove(LOG_FILE_A);
++    bool okRename = systemFS196.rename(LOG_FILE_B, LOG_FILE_A);
+     if (okRename) { g_logASize = g_logBSize; g_logBSize = 0; }
+     xSemaphoreGive(logMutex);
+     if (!okRename) {
+@@ -26651,7 +26654,7 @@
+     // loop() jest na samym poczatku petli, wiec bez tego odswiezenia zapis
+     // polegalby wylacznie na zapasie z poczatku iteracji.
+     serwisujTWDTJesliZarejestrowany();
+-    File f = LittleFS.open(LOG_FILE_KRYTYCZNY, "a");
++    File f = systemFS196.open(LOG_FILE_KRYTYCZNY, "a");
+     if (f) {
+       f.print(linia);
+       // [FIX-WSPOLBIEZNOSC] Rozmiar z TEGO SAMEGO uchwytu, przed close() —
+@@ -26690,7 +26693,7 @@
+   if (!linia.endsWith("\n")) linia += '\n';
+ 
+   if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-    File f = LittleFS.open(LOG_USTAWIEN_PLIK, "a");
++    File f = systemFS196.open(LOG_USTAWIEN_PLIK, "a");
+     if (f) {
+       f.print(linia);
+       g_logUstawienSize = f.size();
+@@ -27016,8 +27019,8 @@
+     blad = true;
+   } else {
+     auto kopiujZLittleFS = [&](const char* sciezka) -> bool {
+-      if (!LittleFS.exists(sciezka)) return true;  // nic do skopiowania — to NIE jest blad
+-      File src = LittleFS.open(sciezka, "r");
++      if (!systemFS196.exists(sciezka)) return true;  // nic do skopiowania — to NIE jest blad
++      File src = systemFS196.open(sciezka, "r");
+       if (!src) return false;
+       size_t rozmiar = src.size();
+       size_t skopiowano = 0;
+@@ -27079,7 +27082,7 @@
+ bool kopiujDoSDAwaryjnie(const char* sciezkaLittleFS, const char* prefiksNazwy, const char* rozszerzenie) {
+   if (!historiaDostepGotowy() && historiaChronionaSciezka(String(sciezkaLittleFS))) return false;
+   if (!sdDostepna) return false;
+-  if (!LittleFS.exists(sciezkaLittleFS)) return false;
++  if (!systemFS196.exists(sciezkaLittleFS)) return false;
+ 
+   char znacznik[20];
+   if (g_rtcGotowy) {
+@@ -27101,7 +27104,7 @@
+     return false;
+   }
+ 
+-  File src = LittleFS.open(sciezkaLittleFS, "r");
++  File src = systemFS196.open(sciezkaLittleFS, "r");
+   if (!src) {
+     dst.close();
+     xSemaphoreGive(sdLogMutex);
+@@ -27177,8 +27180,8 @@
+   // zrotowany stan w logFsSizeGuard() albo na trwajacy zapis w
+   // logFlushDoFS()/zapiszLogKrytyczny().
+   if (littlefsReady && logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-    if (LittleFS.exists(LOG_FILE_A)) LittleFS.remove(LOG_FILE_A);
+-    if (LittleFS.exists(LOG_FILE_B)) LittleFS.remove(LOG_FILE_B);
++    if (systemFS196.exists(LOG_FILE_A)) systemFS196.remove(LOG_FILE_A);
++    if (systemFS196.exists(LOG_FILE_B)) systemFS196.remove(LOG_FILE_B);
+     g_logASize = 0;
+     g_logBSize = 0;
+     xSemaphoreGive(logMutex);
+@@ -28545,11 +28548,11 @@
+       request->send(401, "text/plain", "Bledne haslo OTA");
+       return;
+     }
+-    if (!LittleFS.exists("/panel_firmware.bin")) {
++    if (!systemFS196.exists("/panel_firmware.bin")) {
+       request->send(404, "text/plain", "Brak pobranego firmware panelu");
+       return;
+     }
+-    request->send(LittleFS, "/panel_firmware.bin", "application/octet-stream");
++    request->send(systemFS196, "/panel_firmware.bin", "application/octet-stream");
+   });
+ 
+   // [WYKRESY] CSV z bufora historii (PSRAM) dla zakladki "Wykresy" —
+@@ -28637,7 +28640,7 @@
+     String json = "{\"files\":[";
+     bool listOk = false;
+     if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-      File root = LittleFS.open("/");
++      File root = systemFS196.open("/");
+       if (root && root.isDirectory()) {
+         bool first = true;
+         File entry = root.openNextFile();
+@@ -28658,8 +28661,8 @@
+         root.close();
+       }
+       json += "]";
+-      json += ",\"used\":"  + String(LittleFS.usedBytes());
+-      json += ",\"total\":" + String(LittleFS.totalBytes());
++      json += ",\"used\":"  + String(systemFS196.usedBytes());
++      json += ",\"total\":" + String(systemFS196.totalBytes());
+       json += ",\"limit\":" + String((unsigned)g_logFsTotalBytes) + "}";
+       listOk = true;
+       xSemaphoreGive(logMutex);
+@@ -28679,16 +28682,16 @@
+     if (fname.indexOf("..") >= 0) { request->send(400, "text/plain", "Niedozwolona sciezka"); return; }
+     if (!fname.startsWith("/")) fname = "/" + fname;
+     if (!historiaDostepGotowy() && historiaChronionaSciezka(fname)) { request->send(503, "text/plain", "Historia zablokowana po kontroli startu lub bledzie zapisu; pliki zachowane"); return; }
+-    if (!LittleFS.exists(fname)) { request->send(404, "text/plain", "Plik nie istnieje"); return; }
++    if (!systemFS196.exists(fname)) { request->send(404, "text/plain", "Plik nie istnieje"); return; }
+     int lines = 0;
+     if (request->hasParam("lines")) lines = request->getParam("lines")->value().toInt();
+-    File f = LittleFS.open(fname, "r");
++    File f = systemFS196.open(fname, "r");
+     if (!f) { request->send(500, "text/plain", "Blad otwarcia"); return; }
+     size_t sz = f.size();
+     if (sz == 0) { f.close(); request->send(200, "text/plain; charset=utf-8", "(plik pusty)"); return; }
+     if (lines <= 0) {
+       f.close();
+-      request->send(LittleFS, fname, "text/plain; charset=utf-8");
++      request->send(systemFS196, fname, "text/plain; charset=utf-8");
+       return;
+     }
+     const size_t CHUNK = 65536;
+@@ -28723,8 +28726,8 @@
+     if (fname.indexOf("..") >= 0) { request->send(400, "text/plain", "Niedozwolona sciezka"); return; }
+     if (!fname.startsWith("/")) fname = "/" + fname;
+     if (!historiaDostepGotowy() && historiaChronionaSciezka(fname)) { request->send(503, "text/plain", "Historia zablokowana po kontroli startu lub bledzie zapisu; pliki zachowane"); return; }
+-    if (!LittleFS.exists(fname)) { request->send(404, "text/plain", "Plik nie istnieje"); return; }
+-    request->send(LittleFS, fname, "application/octet-stream", true);
++    if (!systemFS196.exists(fname)) { request->send(404, "text/plain", "Plik nie istnieje"); return; }
++    request->send(systemFS196, fname, "application/octet-stream", true);
+   });
+   wifiWebServer.on("/api/fs-delete", HTTP_POST, [](AsyncWebServerRequest *request) {
+     if (!littlefsReady) { request->send(500, "text/plain", "LittleFS nie gotowy"); return; }
+@@ -28733,7 +28736,7 @@
+     if (fname.indexOf("..") >= 0) { request->send(400, "text/plain", "Niedozwolona sciezka"); return; }
+     if (!fname.startsWith("/")) fname = "/" + fname;
+     if (historiaChronionaSciezka(fname)) { request->send(409, "text/plain", "Chroniona historia/plik przejscia lub niekanoniczna sciezka"); return; }
+-    if (!LittleFS.exists(fname)) { request->send(404, "text/plain", "Plik nie istnieje"); return; }
++    if (!systemFS196.exists(fname)) { request->send(404, "text/plain", "Plik nie istnieje"); return; }
+     // [FIX-WSPOLBIEZNOSC] To narzedzie usuwa dozwolony plik na partycji z
+     // AsyncTCP, wiec moze trafic wprost w log_a.txt/log_b.txt/
+     // log_krytyczny.txt rownolegle z zapisem z Core 0/Core 1 — ten sam
+@@ -28741,7 +28744,7 @@
+     // odpowiedniego cache'a, zeby nie zostal "duch" po recznie skasowanym pliku.
+     bool ok = false;
+     if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-      ok = LittleFS.remove(fname);
++      ok = systemFS196.remove(fname);
+       if (ok) {
+         if (fname == LOG_FILE_B) g_logBSize = 0;
+         else if (fname == LOG_FILE_A) g_logASize = 0;
+@@ -28829,8 +28832,8 @@
+           return;
+         }
+ 
+-        size_t used  = LittleFS.usedBytes();
+-        size_t total = LittleFS.totalBytes();
++        size_t used  = systemFS196.usedBytes();
++        size_t total = systemFS196.totalBytes();
+         size_t wolne = (used < total) ? (total - used) : 0;
+         if (wolne <= LOG_FS_CIRCULAR_MARGIN_B) {
+           fsUploadBlad = true; fsUploadBladTekst = "Za malo wolnego miejsca na LittleFS";
+@@ -28839,7 +28842,7 @@
+ 
+         fsUploadNazwa = nm;
+         if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-          fsUploadFile = LittleFS.open(nm, "w");
++          fsUploadFile = systemFS196.open(nm, "w");
+           xSemaphoreGive(logMutex);
+         }
+         if (!fsUploadFile) {
+@@ -32993,7 +32996,7 @@
+   if (!tgEnabled || tgBotToken.length() < 10 || tgChatId.length() < 3) return false;
+   if (WiFi.status() != WL_CONNECTED) return false;
+   if (!littlefsReady) return false;
+-  if (!LittleFS.exists(LOG_FILE_KRYTYCZNY)) return false;
++  if (!systemFS196.exists(LOG_FILE_KRYTYCZNY)) return false;
+ 
+   size_t totalLogSize = g_logKrytycznySize;
+   if (totalLogSize == 0) return false;
+@@ -33046,7 +33049,7 @@
+       if (!chBuf) chBuf = (uint8_t*) malloc(DOC_CHUNK);
+ 
+       if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+-        File fKryt = LittleFS.open(LOG_FILE_KRYTYCZNY, "r");
++        File fKryt = systemFS196.open(LOG_FILE_KRYTYCZNY, "r");
+         if (fKryt) {
+           while (fKryt.available()) {
+             serwisujTWDTJesliZarejestrowany();
+@@ -33220,8 +33223,8 @@
+       size_t leftB = szB - skipB;
+ 
+       auto wyslijPlik = [&](const char* sciezka, size_t skipBajtow, size_t leftBajtow) {
+-        if (leftBajtow == 0 || !LittleFS.exists(sciezka)) return;
+-        File plik = LittleFS.open(sciezka, "r");
++        if (leftBajtow == 0 || !systemFS196.exists(sciezka)) return;
++        File plik = systemFS196.open(sciezka, "r");
+         if (!plik) return;
+         plik.seek(skipBajtow);
+         size_t wyslano = 0;
+@@ -33490,7 +33493,7 @@
+ 
+   size_t rozmiarPliku = 0;
+   {
+-    File probka = LittleFS.open(sciezka, "r");
++    File probka = systemFS196.open(sciezka, "r");
+     if (!probka) return false;
+     rozmiarPliku = probka.size();
+     probka.close();
+@@ -33564,7 +33567,7 @@
+       DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-CORE msg=brak_pamieci_na_bufor_4KB"));
+       tgDocNetFail();
+     } else {
+-      File plik = LittleFS.open(sciezka, "r");
++      File plik = systemFS196.open(sciezka, "r");
+       if (!plik) {
+         DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-CORE msg=nie_udalo_sie_otworzyc_pliku_coredump"));
+         tgDocNetFail();
+@@ -33648,7 +33651,7 @@
+   String s;
+   s.reserve(1400);
+   s += "<b>Coredumpy /coredumps</b>\n";
+-  if (!littlefsReady || !LittleFS.exists(COREDUMP_DIR)) {
++  if (!littlefsReady || !systemFS196.exists(COREDUMP_DIR)) {
+     s += "brak katalogu /coredumps";
+     return s;
+   }
+@@ -33657,7 +33660,7 @@
+   TmpItem items[COREDUMP_MAX_FILES + 8];
+   uint8_t count = 0;
+ 
+-  File dir = LittleFS.open(COREDUMP_DIR);
++  File dir = systemFS196.open(COREDUMP_DIR);
+   if (dir && dir.isDirectory()) {
+     File entry = dir.openNextFile();
+     while (entry) {
+@@ -33717,7 +33720,7 @@
+   txt.reserve(1200);
+   txt += F("<b>Coredumpy</b>\nWybierz boot, ktory chcesz pobrac:");
+ 
+-  if (!littlefsReady || !LittleFS.exists(COREDUMP_DIR)) {
++  if (!littlefsReady || !systemFS196.exists(COREDUMP_DIR)) {
+     txt += F("\nBrak katalogu /coredumps.");
+     String kb = F("{\"inline_keyboard\":[");
+     kb += F("[{\"text\":\"Najnowszy coredump\",\"callback_data\":\"coredump_latest\"}],");
+@@ -33729,7 +33732,7 @@
+   uint32_t boots[COREDUMP_MAX_FILES + 8];
+   uint8_t count = 0;
+ 
+-  File dir = LittleFS.open(COREDUMP_DIR);
++  File dir = systemFS196.open(COREDUMP_DIR);
+   if (dir && dir.isDirectory()) {
+     File entry = dir.openNextFile();
+     while (entry) {
+@@ -33816,7 +33819,7 @@
+   if (!tgEnabled || tgBotToken.length() < 10 || tgChatId.length() < 3) return false;
+   if (WiFi.status() != WL_CONNECTED) return false;
+   if (!littlefsReady) return false;
+-  if (!LittleFS.exists(HISTORIA_PLIK)) return false;
++  if (!systemFS196.exists(HISTORIA_PLIK)) return false;
+ 
+   // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 14.2] Cache zamiast
+   // swiezego File.open()+size() - teraz, gdy historiaFlushDoFS() opakowuje
+@@ -33872,7 +33875,7 @@
+       if (!chBuf) {
+         DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-HIST msg=\"brak pamieci na bufor 4KB\""));
+       } else {
+-        File plik = LittleFS.open(HISTORIA_PLIK, "r");
++        File plik = systemFS196.open(HISTORIA_PLIK, "r");
+         if (plik) {
+           size_t wyslano = 0;
+           while (wyslano < totalLogSize) {
+@@ -33935,7 +33938,7 @@
+   if (!tgEnabled || tgBotToken.length() < 10 || tgChatId.length() < 3) return false;
+   if (WiFi.status() != WL_CONNECTED) return false;
+   if (!littlefsReady) return false;
+-  if (!LittleFS.exists(HISTORIA_DLUGA_PLIK)) return false;
++  if (!systemFS196.exists(HISTORIA_DLUGA_PLIK)) return false;
+ 
+   // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 14.2] Cache - patrz
+   // komentarz w sendTelegramDocumentHistKrotka() powyzej.
+@@ -33989,7 +33992,7 @@
+       if (!chBuf) {
+         DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-HISTL msg=\"brak pamieci na bufor 4KB\""));
+       } else {
+-        File plik = LittleFS.open(HISTORIA_DLUGA_PLIK, "r");
++        File plik = systemFS196.open(HISTORIA_DLUGA_PLIK, "r");
+         if (plik) {
+           size_t wyslano = 0;
+           while (wyslano < totalLogSize) {
+@@ -34056,7 +34059,7 @@
+   if (!tgEnabled || tgBotToken.length() < 10 || tgChatId.length() < 3) return false;
+   if (WiFi.status() != WL_CONNECTED) return false;
+   if (!littlefsReady) return false;
+-  if (!LittleFS.exists(LOG_USTAWIEN_PLIK)) return false;
++  if (!systemFS196.exists(LOG_USTAWIEN_PLIK)) return false;
+ 
+   size_t totalLogSize = g_logUstawienSize;
+   if (totalLogSize == 0) return false;
+@@ -34111,7 +34114,7 @@
+       if (!chBuf) {
+         DLOG(DC_TELEGRAM, DL_ERR, F("TG-DOC-UST msg=\"brak pamieci na bufor 4KB\""));
+       } else {
+-        File plik = LittleFS.open(LOG_USTAWIEN_PLIK, "r");
++        File plik = systemFS196.open(LOG_USTAWIEN_PLIK, "r");
+         if (plik) {
+           size_t wyslano = 0;
+           while (wyslano < sendSize) {
+@@ -34308,8 +34311,8 @@
+   snap = FsUsageSnapshot();
+   if (!littlefsReady) return false;
+ 
+-  snap.totalBytes = LittleFS.totalBytes();
+-  snap.usedBytes = LittleFS.usedBytes();
++  snap.totalBytes = systemFS196.totalBytes();
++  snap.usedBytes = systemFS196.usedBytes();
+   snap.freeBytes = (snap.usedBytes < snap.totalBytes)
+       ? (snap.totalBytes - snap.usedBytes) : 0;
+ 
+@@ -34321,8 +34324,8 @@
+ 
+   snap.coredumpBytes = 0;
+   snap.coredumpFileCount = 0;
+-  if (LittleFS.exists(COREDUMP_DIR)) {
+-    File dir = LittleFS.open(COREDUMP_DIR);
++  if (systemFS196.exists(COREDUMP_DIR)) {
++    File dir = systemFS196.open(COREDUMP_DIR);
+     if (dir && dir.isDirectory()) {
+       File entry = dir.openNextFile();
+       while (entry) {
+@@ -34368,8 +34371,8 @@
+   q = FsQuotaShadow();
+   if (!littlefsReady) return false;
+ 
+-  q.totalBytes = LittleFS.totalBytes();
+-  q.usedBytes = LittleFS.usedBytes();
++  q.totalBytes = systemFS196.totalBytes();
++  q.usedBytes = systemFS196.usedBytes();
+   q.freeBytes = (q.usedBytes < q.totalBytes) ? (q.totalBytes - q.usedBytes) : 0;
+   q.reservedBytes = FS_RESERVE_COREDUMP_B +
+                     FS_RESERVE_HIST_SHORT_B +
+@@ -34545,8 +34548,8 @@
+ 
+ static bool spoolR252EnsureDir() {
+   if (!littlefsReady) return false;
+-  if (LittleFS.exists(SPOOL_R252_TEST_DIR)) return true;
+-  return LittleFS.mkdir(SPOOL_R252_TEST_DIR);
++  if (systemFS196.exists(SPOOL_R252_TEST_DIR)) return true;
++  return systemFS196.mkdir(SPOOL_R252_TEST_DIR);
+ }
+ 
+ static uint32_t spoolR252UpdateCrc(uint32_t crc, const uint8_t *data, size_t len) {
+@@ -34585,7 +34588,7 @@
+       resultOut = "Nie utworzono katalogu /telemetry_spool";
+       break;
+     }
+-    if (LittleFS.exists(SPOOL_R252_TEST_FILE) && !LittleFS.remove(SPOOL_R252_TEST_FILE)) {
++    if (systemFS196.exists(SPOOL_R252_TEST_FILE) && !systemFS196.remove(SPOOL_R252_TEST_FILE)) {
+       resultOut = "nie usunieto poprzedniego pliku R252";
+       break;
+     }
+@@ -34637,7 +34640,7 @@
+     if (!spoolR252EnsureDir()) break;
+ 
+     const bool first = (count == 0U);
+-    f = LittleFS.open(SPOOL_R252_TEST_FILE, first ? "w" : "a");
++    f = systemFS196.open(SPOOL_R252_TEST_FILE, first ? "w" : "a");
+     if (!f) break;
+ 
+     uint8_t recBytes[SPOOL_RECORD_BYTES] = {};
+@@ -34729,7 +34732,7 @@
+   bool ok = false;
+   size_t finalSize = 0U;
+   do {
+-    File f = LittleFS.open(SPOOL_R252_TEST_FILE, "r");
++    File f = systemFS196.open(SPOOL_R252_TEST_FILE, "r");
+     if (!f) { resultOut = "brak pliku R252 — najpierw /spool252 TAK"; break; }
+     finalSize = f.size();
+     if (finalSize != SPOOL_R252_PAGE_BYTES) {
+@@ -34825,12 +34828,12 @@
+ 
+ static bool spoolBatchEnsureDir() {
+   if (!littlefsReady) return false;
+-  if (LittleFS.exists(SPOOL_BATCH_DIR)) return true;
+-  return LittleFS.mkdir(SPOOL_BATCH_DIR);
++  if (systemFS196.exists(SPOOL_BATCH_DIR)) return true;
++  return systemFS196.mkdir(SPOOL_BATCH_DIR);
+ }
+ 
+ static void spoolBatchRemove(const char* path) {
+-  if (LittleFS.exists(path)) LittleFS.remove(path);
++  if (systemFS196.exists(path)) systemFS196.remove(path);
+ }
+ 
+ static bool spoolBatchWriteRecord(File &f, uint32_t seq, uint32_t tag,
+@@ -34854,7 +34857,7 @@
+                                           bool corruptPageCrc, bool corruptFooterCommit) {
+   spoolBatchRemove(path);
+   if (!spoolBatchEnsureDir()) return false;
+-  File f = LittleFS.open(path, "w");
++  File f = systemFS196.open(path, "w");
+   if (!f) return false;
+ 
+   SpoolPageHeader header{};
+@@ -34909,7 +34912,7 @@
+                                         uint32_t firstSeq, uint32_t records, size_t tailBytes) {
+   spoolBatchRemove(path);
+   if (!spoolBatchEnsureDir()) return false;
+-  File f = LittleFS.open(path, "w");
++  File f = systemFS196.open(path, "w");
+   if (!f) return false;
+   SpoolPageHeader header{};
+   header.magic = SPOOL_PAGE_MAGIC;
+@@ -34945,7 +34948,7 @@
+ 
+ static bool spoolBatchScan(const char* path, SpoolBatchScan &r) {
+   r = SpoolBatchScan();
+-  File f = LittleFS.open(path, "r");
++  File f = systemFS196.open(path, "r");
+   if (!f) return false;
+   r.fileOk = true;
+   r.fileSize = f.size();
+@@ -35084,7 +35087,7 @@
+   const char* path = "/telemetry_spool/r_batch_256.bin";
+   spoolBatchRemove(path);
+   if (!spoolBatchEnsureDir()) { why = "mkdir"; return false; }
+-  File f = LittleFS.open(path, "w");
++  File f = systemFS196.open(path, "w");
+   if (!f) { why = "open"; return false; }
+   SpoolPageHeader h{};
+   h.magic=SPOOL_PAGE_MAGIC; h.formatVersion=SPOOL_PAGE_FORMAT_VERSION; h.headerBytes=SPOOL_HEADER_BYTES;
+@@ -35096,11 +35099,11 @@
+   f.flush(); f.close();
+   // Zapisz rekord #2 z CRC policzonym dla niezmienionego payloadu,
+   // ale sam payload celowo zmien po obliczeniu CRC. Nie potrzebujemy r+.
+-  f = LittleFS.open(path, "a");
++  f = systemFS196.open(path, "a");
+   if (!f) { why="reopen"; return false; }
+   // Nic nie dopisujemy — plik testowy przygotowujemy od nowa ponizej.
+   f.close();
+-  f = LittleFS.open(path, "w");
++  f = systemFS196.open(path, "w");
+   if (!f) { why="rewrite"; return false; }
+   h.headerCrc32 = spoolR245HeaderCrc(h);
+   if (f.write(reinterpret_cast<uint8_t*>(&h), sizeof(h)) != sizeof(h)) { f.close(); why="rewrite header"; return false; }
+@@ -35180,10 +35183,10 @@
+   if (!spoolBatchWriteCommittedPage(part, 2611ULL, 0xF2611001UL, 1U, false, false, false, false)) { why="part write"; return false; }
+   SpoolBatchScan before;
+   if (!spoolBatchScan(part,before) || !before.footerOk) { why="part not valid"; return false; }
+-  if (LittleFS.exists(dest) && !LittleFS.remove(dest)) { why="remove old dest"; return false; }
+-  if (!LittleFS.rename(part,dest)) { why="rename"; return false; }
++  if (systemFS196.exists(dest) && !systemFS196.remove(dest)) { why="remove old dest"; return false; }
++  if (!systemFS196.rename(part,dest)) { why="rename"; return false; }
+   String w;
+-  if (!spoolBatchCheckCommitted(dest,1U,2611ULL,w) || LittleFS.exists(part)) { why="published page invalid"; return false; }
++  if (!spoolBatchCheckCommitted(dest,1U,2611ULL,w) || systemFS196.exists(part)) { why="published page invalid"; return false; }
+   why=".part verified -> rename -> final verified"; return true;
+ }
+ 
+@@ -35361,7 +35364,7 @@
+   spoolR252MirrorOnTelemetrySample(s[1]);
+   spoolR252MirrorOnTelemetrySample(s[2]);
+ 
+-  File f = LittleFS.open(SPOOL_R252_TEST_FILE, "r");
++  File f = systemFS196.open(SPOOL_R252_TEST_FILE, "r");
+   if (!f) { why = "open mirror FAIL"; return false; }
+   if (!f.seek(SPOOL_HEADER_BYTES)) { f.close(); why = "seek header FAIL"; return false; }
+   uint8_t rec[SPOOL_RECORD_BYTES] = {};
+@@ -35410,18 +35413,18 @@
+ }
+ 
+ static bool spoolR279CommitOnlyAtTarget(String &why) {
+-  if (LittleFS.exists(SPOOL_R252_TEST_FILE)) LittleFS.remove(SPOOL_R252_TEST_FILE);
++  if (systemFS196.exists(SPOOL_R252_TEST_FILE)) systemFS196.remove(SPOOL_R252_TEST_FILE);
+   if (!spoolR252ArmTelemetryMirror(why)) return false;
+   TelemetrySample s[3]{};
+   if (!spoolR273MakeTelemetrySamples(s, why)) { __atomic_store_n(&g_spoolR252MirrorArmed, false, __ATOMIC_RELEASE); return false; }
+   spoolR252MirrorOnTelemetrySample(s[0]);
+-  File mid = LittleFS.open(SPOOL_R252_TEST_FILE, "r");
++  File mid = systemFS196.open(SPOOL_R252_TEST_FILE, "r");
+   const size_t sizeAfter1 = mid ? mid.size() : 0U; if (mid) mid.close();
+   spoolR252MirrorOnTelemetrySample(s[1]);
+-  mid = LittleFS.open(SPOOL_R252_TEST_FILE, "r");
++  mid = systemFS196.open(SPOOL_R252_TEST_FILE, "r");
+   const size_t sizeAfter2 = mid ? mid.size() : 0U; if (mid) mid.close();
+   spoolR252MirrorOnTelemetrySample(s[2]);
+-  mid = LittleFS.open(SPOOL_R252_TEST_FILE, "r");
++  mid = systemFS196.open(SPOOL_R252_TEST_FILE, "r");
+   const size_t sizeAfter3 = mid ? mid.size() : 0U; if (mid) mid.close();
+   String verify;
+   const bool v = spoolR252VerifyTelemetryMirror(verify);
+@@ -35448,7 +35451,7 @@
+   TelemetrySample s[3]{};
+   if (!spoolR273MakeTelemetrySamples(s, why)) { __atomic_store_n(&g_spoolR252MirrorArmed, false, __ATOMIC_RELEASE); return false; }
+   for (uint32_t i = 0; i < 3U; ++i) spoolR252MirrorOnTelemetrySample(s[i]);
+-  File f = LittleFS.open(SPOOL_R252_TEST_FILE, "r");
++  File f = systemFS196.open(SPOOL_R252_TEST_FILE, "r");
+   if (!f) { why = "open final FAIL"; return false; }
+   const size_t size = f.size(); f.close();
+   String verify;
+@@ -35486,7 +35489,7 @@
+     resultOut += "R" + String(cases[i].id) + ":" + (ok ? "PASS " : "FAIL ") + one;
+     if (i + 1U < sizeof(cases)/sizeof(cases[0])) resultOut += "\n";
+   }
+-  if (LittleFS.exists(SPOOL_R252_TEST_FILE)) LittleFS.remove(SPOOL_R252_TEST_FILE);
++  if (systemFS196.exists(SPOOL_R252_TEST_FILE)) systemFS196.remove(SPOOL_R252_TEST_FILE);
+   __atomic_store_n(&g_spoolR252MirrorArmed, false, __ATOMIC_RELEASE);
+   return allOk;
+ }
+@@ -35510,8 +35513,8 @@
+ 
+ static bool spoolReplayEnsureDir() {
+   if (!littlefsReady) return false;
+-  if (LittleFS.exists(SPOOL_REPLAY_TEST_DIR)) return true;
+-  return LittleFS.mkdir(SPOOL_REPLAY_TEST_DIR);
++  if (systemFS196.exists(SPOOL_REPLAY_TEST_DIR)) return true;
++  return systemFS196.mkdir(SPOOL_REPLAY_TEST_DIR);
+ }
+ 
+ static bool spoolReplayWritePage(const char* path, uint64_t pageSeq, uint32_t firstSeq, uint32_t records) {
+@@ -35523,7 +35526,7 @@
+ static bool spoolReplayReadRecord(const char* path, uint32_t index, TelemetrySample& sample, String& recordId) {
+   sample = {};
+   recordId = "";
+-  File f = LittleFS.open(path, "r");
++  File f = systemFS196.open(path, "r");
+   if (!f) return false;
+   const size_t off = SPOOL_HEADER_BYTES + (size_t)index * SPOOL_RECORD_BYTES;
+   if (!f.seek(off)) { f.close(); return false; }
+@@ -35546,7 +35549,7 @@
+ }
+ 
+ static bool spoolReplayFlipByte(const char* path, size_t offset, uint8_t mask) {
+-  File f = LittleFS.open(path, "r+");
++  File f = systemFS196.open(path, "r+");
+   if (!f) return false;
+   if (!f.seek(offset)) { f.close(); return false; }
+   int v = f.read();
+@@ -35562,8 +35565,8 @@
+ static bool spoolReplayCleanup(const char* const* paths, size_t count) {
+   bool ok = true;
+   for (size_t i = 0; i < count; ++i) {
+-    if (paths[i] && LittleFS.exists(paths[i])) {
+-      if (!LittleFS.remove(paths[i])) ok = false;
++    if (paths[i] && systemFS196.exists(paths[i])) {
++      if (!systemFS196.remove(paths[i])) ok = false;
+     }
+   }
+   return ok;
+@@ -35600,7 +35603,7 @@
+   SpoolBatchScan before{};
+   if (!spoolReplayScanPage(p, before)) { why="scan before"; return false; }
+   const uint32_t acked = 7U;
+-  const bool pageRetained = LittleFS.exists(p) && acked < before.validRecords;
++  const bool pageRetained = systemFS196.exists(p) && acked < before.validRecords;
+   const bool cursorAdvanced = false;
+   const bool ok = pageRetained && !cursorAdvanced;
+   why = "acked=7/10 cursorAdvanced=NO pageRetained=YES";
+@@ -35613,8 +35616,8 @@
+   SpoolBatchScan r{};
+   if (!spoolReplayScanPage(p, r)) { why="scan"; return false; }
+   const bool allAck = (r.validRecords == 10U);
+-  if (allAck && !LittleFS.remove(p)) { why="delete"; return false; }
+-  const bool ok = allAck && !LittleFS.exists(p);
++  if (allAck && !systemFS196.remove(p)) { why="delete"; return false; }
++  const bool ok = allAck && !systemFS196.exists(p);
+   why = "acked=10/10 pageDeleted=YES";
+   return ok;
+ }
+@@ -35628,7 +35631,7 @@
+   String id1, id2;
+   if (!spoolReplayReadRecord(p, 0U, s1, id1)) { why="read1"; return false; }
+   // Simulated "ACK + restart before delete": page deliberately remains on LittleFS.
+-  const bool restartPreservesPage = LittleFS.exists(p);
++  const bool restartPreservesPage = systemFS196.exists(p);
+   if (!spoolReplayReadRecord(p, 0U, s2, id2)) { why="read2"; return false; }
+   const bool stableId = (id1 == id2 && memcmp(&s1, &s2, sizeof(TelemetrySample)) == 0);
+   const bool ok = restartPreservesPage && stableId;
+@@ -35658,9 +35661,9 @@
+   if (!spoolReplayWritePage(b, 3072ULL, 0xF3071001UL, 2U)) { why="write b"; return false; }
+   SpoolBatchScan sa{}, sb{};
+   if (!spoolReplayScanPage(a, sa) || !spoolReplayScanPage(b, sb)) { why="scan"; return false; }
+-  const bool nextBlocked = LittleFS.exists(a) && sa.pageSeq < sb.pageSeq;
+-  if (nextBlocked && !LittleFS.remove(a)) { why="delete a"; return false; }
+-  const bool ok = nextBlocked && LittleFS.exists(b);
++  const bool nextBlocked = systemFS196.exists(a) && sa.pageSeq < sb.pageSeq;
++  if (nextBlocked && !systemFS196.remove(a)) { why="delete a"; return false; }
++  const bool ok = nextBlocked && systemFS196.exists(b);
+   why = "oldest=3071 retained -> next=3072 blocked; after full ACK next admitted=YES";
+   return ok;
+ }
+@@ -35682,7 +35685,7 @@
+   if (!spoolReplayFlipByte(p, SPOOL_HEADER_BYTES + 3U * SPOOL_RECORD_BYTES + 20U, 0x01U)) { why="flip footer"; return false; }
+   SpoolBatchScan r{};
+   if (!spoolBatchScan(p, r)) { why="scan"; return false; }
+-  const bool ok = !r.footerOk && LittleFS.exists(p);
++  const bool ok = !r.footerOk && systemFS196.exists(p);
+   why = "footerCRC=FAIL replay=REJECT pageRetained=YES";
+   return ok;
+ }
+@@ -35708,7 +35711,7 @@
+   TelemetrySample a{}, b{};
+   String idA, idB;
+   if (!spoolReplayReadRecord(p, 5U, a, idA)) { why="read a"; return false; }
+-  File f = LittleFS.open(p, "r");
++  File f = systemFS196.open(p, "r");
+   const bool reopened = (bool)f;
+   if (f) f.close();
+   if (!spoolReplayReadRecord(p, 5U, b, idB)) { why="read b"; return false; }
+@@ -35732,9 +35735,9 @@
+   }
+   bool allUnique = true;
+   for (size_t i = 0; i < n; ++i) for (size_t j = i + 1U; j < n; ++j) if (ids[i] == ids[j]) allUnique = false;
+-  if (allUnique && !LittleFS.remove(a)) { why="delete a"; return false; }
+-  if (allUnique && !LittleFS.remove(b)) { why="delete b"; return false; }
+-  const bool ok = allUnique && n == 12U && !LittleFS.exists(a) && !LittleFS.exists(b);
++  if (allUnique && !systemFS196.remove(a)) { why="delete a"; return false; }
++  if (allUnique && !systemFS196.remove(b)) { why="delete b"; return false; }
++  const bool ok = allUnique && n == 12U && !systemFS196.exists(a) && !systemFS196.exists(b);
+   why = "pages=2 records=12 oldest-first=YES uniqueIds=YES fullACK=YES deleted=YES missing=0";
+   return ok;
+ }
+@@ -35841,7 +35844,7 @@
+   if (!spoolReplayFlipByte(p, footerStart + 60U, 0x01U)) { why="flip footer crc"; return false; }
+   SpoolBatchScan r{};
+   if (!spoolBatchScan(p, r)) { why="scan"; return false; }
+-  const bool ok = r.footerPresent && !r.footerOk && LittleFS.exists(p);
++  const bool ok = r.footerPresent && !r.footerOk && systemFS196.exists(p);
+   why = "footerCRC=FAIL replay=REJECT pageRetained=YES";
+   return ok;
+ }
+@@ -35864,7 +35867,7 @@
+   if (!spoolReplayFlipByte(p, lastCrc, 0x01U)) { why="flip last crc"; return false; }
+   SpoolBatchScan r{};
+   if (!spoolBatchScan(p, r)) { why="scan"; return false; }
+-  const bool ok = r.badRecord == 3 && r.validRecords == 2U && !r.footerOk && LittleFS.exists(p);
++  const bool ok = r.badRecord == 3 && r.validRecords == 2U && !r.footerOk && systemFS196.exists(p);
+   why = "lastRecordCRC=FAIL validPrefix=2 replay=REJECT pageRetained=YES";
+   return ok;
+ }
+@@ -35901,7 +35904,7 @@
+   if (!spoolReplayFlipByte(newp, 60U, 0x01U)) { why="flip new header"; return false; }
+   SpoolBatchScan ro{}, rn{};
+   if (!spoolBatchScan(oldp, ro) || !spoolBatchScan(newp, rn)) { why="scan"; return false; }
+-  const bool ok = ro.footerOk && rn.headerOk == false && LittleFS.exists(oldp) && LittleFS.exists(newp);
++  const bool ok = ro.footerOk && rn.headerOk == false && systemFS196.exists(oldp) && systemFS196.exists(newp);
+   why = "old=VALID new=REJECTED oldestReady=YES newPageDeleted=NO";
+   return ok;
+ }
+@@ -35913,7 +35916,7 @@
+   if (!spoolBatchWriteOpenPartial(newp, 3232ULL, 0xF3231001UL, 2U, 20U)) { why="write new"; return false; }
+   SpoolBatchScan ro{}, rn{};
+   if (!spoolBatchScan(oldp, ro) || !spoolBatchScan(newp, rn)) { why="scan"; return false; }
+-  const bool ok = ro.footerOk && !rn.footerPresent && rn.validRecords == 2U && LittleFS.exists(oldp) && LittleFS.exists(newp);
++  const bool ok = ro.footerOk && !rn.footerPresent && rn.validRecords == 2U && systemFS196.exists(oldp) && systemFS196.exists(newp);
+   why = "oldest=3231 committed; newest=3232 open tail=20; newestCannotBypass=YES";
+   return ok;
+ }
+@@ -36015,7 +36018,7 @@
+                                                     uint32_t footerLastSeq) {
+   spoolBatchRemove(path);
+   if (!spoolBatchEnsureDir()) return false;
+-  File f = LittleFS.open(path, "w");
++  File f = systemFS196.open(path, "w");
+   if (!f) return false;
+   SpoolPageHeader h{};
+   h.magic=SPOOL_PAGE_MAGIC; h.formatVersion=SPOOL_PAGE_FORMAT_VERSION; h.headerBytes=SPOOL_HEADER_BYTES;
+@@ -36050,7 +36053,7 @@
+ static bool spoolR264DuplicateSeq(String &why) {
+   const char* path="/telemetry_spool/r_batch_264.bin";
+   spoolBatchRemove(path); if (!spoolBatchEnsureDir()) { why="mkdir"; return false; }
+-  File f=LittleFS.open(path,"w"); if(!f){why="open";return false;}
++  File f=systemFS196.open(path,"w"); if(!f){why="open";return false;}
+   SpoolPageHeader h{}; h.magic=SPOOL_PAGE_MAGIC; h.formatVersion=SPOOL_PAGE_FORMAT_VERSION; h.headerBytes=SPOOL_HEADER_BYTES;
+   h.pageSeq=264ULL; h.firstSampleSeq=0xF2640001UL; h.recordBytes=SPOOL_RECORD_BYTES; h.capacity=SPOOL_64K_SAFE_RECORDS;
+   h.headerCrc32=spoolR245HeaderCrc(h); if(f.write((uint8_t*)&h,sizeof(h))!=sizeof(h)){f.close();why="header";return false;}
+@@ -36093,7 +36096,7 @@
+ static bool spoolR268TrailingByte(String &why) {
+   const char* path="/telemetry_spool/r_batch_268.bin";
+   if(!spoolBatchWriteCommittedPage(path,268ULL,0xF2680001UL,2U,false,false,false,false)){why="write";return false;}
+-  File f=LittleFS.open(path,"a"); if(!f){why="reopen";return false;} const uint8_t b=0xA5; const bool w=f.write(&b,1)==1; f.flush(); f.close(); if(!w){why="append";return false;}
++  File f=systemFS196.open(path,"a"); if(!f){why="reopen";return false;} const uint8_t b=0xA5; const bool w=f.write(&b,1)==1; f.flush(); f.close(); if(!w){why="append";return false;}
+   SpoolBatchScan r; if(!spoolBatchScan(path,r)){why="scan";return false;}
+   if(r.footerOk){why="trailing byte accepted";return false;}
+   why="size="+String((unsigned long)r.fileSize)+" trailing=1 rejected"; return true;
+@@ -36104,15 +36107,15 @@
+   if(!spoolBatchWriteCommittedPage(dest,2690ULL,0xF2690001UL,1U,false,false,false,false)){why="dest write";return false;}
+   if(!spoolBatchWriteCommittedPage(part,2691ULL,0xF2691001UL,1U,false,false,false,false)){why="part write";return false;}
+   // Celowo psujemy footer commit w .part, zachowujac plik finalny nietkniety.
+-  File f=LittleFS.open(part,"r"); if(!f){why="part open";return false;} const size_t sz=f.size(); uint8_t* buf=(uint8_t*)malloc(sz); if(!buf){f.close();why="malloc";return false;}
++  File f=systemFS196.open(part,"r"); if(!f){why="part open";return false;} const size_t sz=f.size(); uint8_t* buf=(uint8_t*)malloc(sz); if(!buf){f.close();why="malloc";return false;}
+   const size_t got=f.read(buf,sz); f.close(); if(got!=sz){free(buf);why="read";return false;}
+   SpoolPageFooter* ft=reinterpret_cast<SpoolPageFooter*>(buf+sz-SPOOL_FOOTER_BYTES); ft->commitMarker^=1U; ft->footerCrc32=spoolR245FooterCrc(*ft);
+-  if(!LittleFS.remove(part)){free(buf);why="remove part";return false;} f=LittleFS.open(part,"w"); if(!f){free(buf);why="rewrite part";return false;}
++  if(!systemFS196.remove(part)){free(buf);why="remove part";return false;} f=systemFS196.open(part,"w"); if(!f){free(buf);why="rewrite part";return false;}
+   const bool ww=f.write(buf,sz)==sz; f.flush(); f.close(); free(buf); if(!ww){why="rewrite";return false;}
+   SpoolBatchScan bad; if(!spoolBatchScan(part,bad)||bad.footerOk){why="bad part accepted";return false;}
+   SpoolBatchScan before; if(!spoolBatchScan(dest,before)||!before.footerOk||before.pageSeq!=2690ULL){why="dest before bad";return false;}
+   // Simulacja gate: nie publikujemy, skoro verify .part nie przeszlo.
+-  SpoolBatchScan after; if(!spoolBatchScan(dest,after)||!after.footerOk||after.pageSeq!=2690ULL||LittleFS.exists(part)==false){why="dest changed or part vanished";return false;}
++  SpoolBatchScan after; if(!spoolBatchScan(dest,after)||!after.footerOk||after.pageSeq!=2690ULL||systemFS196.exists(part)==false){why="dest changed or part vanished";return false;}
+   why="bad .part rejected; final pageSeq=2690 preserved"; return true;
+ }
+ 
+@@ -36121,8 +36124,8 @@
+   if(!spoolBatchEnsureDir()) {why="mkdir";return false;} spoolBatchRemove(path);
+   TelemetrySample src{}; if(!spoolR245BuildSample(270U,src)){why="sample";return false;} src.sampleSeq=0xF2701234UL; src.unixTs=1790470000UL; src.monoMs=123456U;
+   uint8_t rec[SPOOL_RECORD_BYTES]={}; memcpy(rec,&src,sizeof(src)); uint32_t crc=spoolR245Crc32(rec,sizeof(src)); memcpy(rec+sizeof(src),&crc,4);
+-  File f=LittleFS.open(path,"w"); if(!f){why="open";return false;} bool ok=f.write(rec,sizeof(rec))==sizeof(rec); f.flush(); f.close(); if(!ok){why="write";return false;}
+-  f=LittleFS.open(path,"r"); if(!f){why="reopen";return false;} uint8_t back[SPOOL_RECORD_BYTES]={}; bool rd=f.read(back,sizeof(back))==sizeof(back); f.close(); if(!rd){why="read";return false;}
++  File f=systemFS196.open(path,"w"); if(!f){why="open";return false;} bool ok=f.write(rec,sizeof(rec))==sizeof(rec); f.flush(); f.close(); if(!ok){why="write";return false;}
++  f=systemFS196.open(path,"r"); if(!f){why="reopen";return false;} uint8_t back[SPOOL_RECORD_BYTES]={}; bool rd=f.read(back,sizeof(back))==sizeof(back); f.close(); if(!rd){why="read";return false;}
+   TelemetrySample dst{}; memcpy(&dst,back,sizeof(dst)); uint32_t backCrc=0; memcpy(&backCrc,back+sizeof(dst),4);
+   if(memcmp(&src,&dst,sizeof(src))!=0 || backCrc!=spoolR245Crc32(back,sizeof(dst))){why="roundtrip mismatch";return false;}
+   why="sampleABI=80B byteExact=YES recordCRC=OK"; return true;
+@@ -36158,10 +36161,10 @@
+   char secondaryFinal[96] = {}, secondaryPart[100] = {};
+   if (g_spoolGPrimaryPageSeq) { spoolGMakePagePath(g_spoolGPrimaryPageSeq,primaryFinal,sizeof(primaryFinal),primaryPart,sizeof(primaryPart)); }
+   if (g_spoolGSecondaryPageSeq) { spoolGMakePagePath(g_spoolGSecondaryPageSeq,secondaryFinal,sizeof(secondaryFinal),secondaryPart,sizeof(secondaryPart)); }
+-  if (primaryFinal[0] && LittleFS.exists(primaryFinal)) LittleFS.remove(primaryFinal);
+-  if (primaryPart[0] && LittleFS.exists(primaryPart)) LittleFS.remove(primaryPart);
+-  if (secondaryFinal[0] && LittleFS.exists(secondaryFinal)) LittleFS.remove(secondaryFinal);
+-  if (secondaryPart[0] && LittleFS.exists(secondaryPart)) LittleFS.remove(secondaryPart);
++  if (primaryFinal[0] && systemFS196.exists(primaryFinal)) systemFS196.remove(primaryFinal);
++  if (primaryPart[0] && systemFS196.exists(primaryPart)) systemFS196.remove(primaryPart);
++  if (secondaryFinal[0] && systemFS196.exists(secondaryFinal)) systemFS196.remove(secondaryFinal);
++  if (secondaryPart[0] && systemFS196.exists(secondaryPart)) systemFS196.remove(secondaryPart);
+ 
+   const char* cleanup[]={
+     "/telemetry_spool/r_batch_263.bin","/telemetry_spool/r_batch_264.bin","/telemetry_spool/r_batch_265.bin","/telemetry_spool/r_batch_266.bin","/telemetry_spool/r_batch_267.bin","/telemetry_spool/r_batch_268.bin","/telemetry_spool/r_batch_269.bin","/telemetry_spool/r_batch_269.bin.part","/telemetry_spool/r_batch_270.bin","/telemetry_spool/r_batch_272.bin"};
+@@ -36208,8 +36211,8 @@
+ }
+ 
+ static uint32_t spoolGHighestPageSeqFS() {
+-  if (!littlefsReady || !LittleFS.exists(SPOOL_G_DIR)) return 0U;
+-  File dir = LittleFS.open(SPOOL_G_DIR);
++  if (!littlefsReady || !systemFS196.exists(SPOOL_G_DIR)) return 0U;
++  File dir = systemFS196.open(SPOOL_G_DIR);
+   if (!dir || !dir.isDirectory()) return 0U;
+   uint32_t maxSeq = 0U;
+   File entry = dir.openNextFile();
+@@ -36276,7 +36279,7 @@
+   firstSeq = first.sampleSeq;
+   lastSeq = firstSeq;
+ 
+-  File f = LittleFS.open(part, "w");
++  File f = systemFS196.open(part, "w");
+   if (!f) { why="open .part"; return false; }
+ 
+   SpoolPageHeader h{};
+@@ -36341,7 +36344,7 @@
+   }
+ 
+   if (deletePartBeforePublish) {
+-    if (!LittleFS.remove(part)) { why="remove .part test"; return false; }
++    if (!systemFS196.remove(part)) { why="remove .part test"; return false; }
+     why=".part removed before publish";
+     return true;
+   }
+@@ -36388,11 +36391,11 @@
+   char finalPath[96] = {}, partPath[100] = {};
+   if (!spoolGMakePagePath(pageSeq, finalPath, sizeof(finalPath), partPath, sizeof(partPath))) { why="path"; return false; }
+   g_spoolGPrimaryPageSeq = pageSeq;
+-  if (LittleFS.exists(finalPath)) LittleFS.remove(finalPath);
+-  if (LittleFS.exists(partPath)) LittleFS.remove(partPath);
++  if (systemFS196.exists(finalPath)) systemFS196.remove(finalPath);
++  if (systemFS196.exists(partPath)) systemFS196.remove(partPath);
+   uint32_t firstSeq=0,lastSeq=0;
+   if (!spoolGWritePageFromRing(partPath,count,pageSeq,false,false,firstSeq,lastSeq,why)) return false;
+-  if (!LittleFS.rename(partPath,finalPath)) { why="rename"; return false; }
++  if (!systemFS196.rename(partPath,finalPath)) { why="rename"; return false; }
+   SpoolBatchScan scan{};
+   if (!spoolBatchScan(finalPath,scan) || !scan.footerOk || scan.validRecords != count ||
+       scan.firstSeq != firstSeq || scan.lastSeq != lastSeq) { why="final verify"; return false; }
+@@ -36408,7 +36411,7 @@
+ 
+ static bool spoolGR326WriteFailureKeepsRing(String &why) {
+   const char* part = "/telemetry_spool/page_g326.bin.part";
+-  if (LittleFS.exists(part)) LittleFS.remove(part);
++  if (systemFS196.exists(part)) systemFS196.remove(part);
+   const uint32_t before = g_telemetryRing.size();
+   if (before == 0U) { why="ring pusty"; return false; }
+   uint64_t pageSeq=0ULL;
+@@ -36417,9 +36420,9 @@
+   if (!spoolGWritePageFromRing(part, 1U, pageSeq, false, false, a,b,w)) { why=w; return false; }
+   // Jawne przerwanie PRZED publish. To jest odpowiednik błędu po zapisie danych,
+   // ale przed zmianą widocznego finalnego page_*.bin.
+-  const bool abortBeforePublish = LittleFS.remove(part);
++  const bool abortBeforePublish = systemFS196.remove(part);
+   const bool retained = (g_telemetryRing.size() == before);
+-  const bool noFinal = !LittleFS.exists("/telemetry_spool/page_g326.bin");
++  const bool noFinal = !systemFS196.exists("/telemetry_spool/page_g326.bin");
+   const bool ok = abortBeforePublish && retained && noFinal;
+   why="abortBeforePublish=YES ringRetained=" + String(retained?"YES":"NO") +
+       " tailUnchanged=" + String(retained?"YES":"NO") + " finalAbsent=YES";
+@@ -36428,7 +36431,7 @@
+ 
+ static bool spoolGR327CorruptPageBlocksTail(String &why) {
+   const char* part = "/telemetry_spool/page_g327.bin.part";
+-  if (LittleFS.exists(part)) LittleFS.remove(part);
++  if (systemFS196.exists(part)) systemFS196.remove(part);
+   const uint32_t before = g_telemetryRing.size();
+   if (before < 1U) { why="ring pusty"; return false; }
+   uint64_t seq=0ULL;
+@@ -36439,7 +36442,7 @@
+   SpoolBatchScan scan{};
+   const bool rejected = spoolBatchScan(part,scan) && !scan.footerOk && scan.badRecord == 1;
+   const bool retained = g_telemetryRing.size() == before;
+-  if (LittleFS.exists(part)) LittleFS.remove(part);
++  if (systemFS196.exists(part)) systemFS196.remove(part);
+   const bool ok = rejected && retained;
+   why="corruptRecordCRC=REJECTED finalAbsent=YES ringRetained=YES";
+   return ok;
+@@ -36448,17 +36451,17 @@
+ static bool spoolGR328PartNotAdmitted(String &why) {
+   const char* part = "/telemetry_spool/page_0000004004.bin.part";
+   const char* finalPath = "/telemetry_spool/page_0000004004.bin";
+-  if (LittleFS.exists(part)) LittleFS.remove(part);
+-  if (LittleFS.exists(finalPath)) LittleFS.remove(finalPath);
++  if (systemFS196.exists(part)) systemFS196.remove(part);
++  if (systemFS196.exists(finalPath)) systemFS196.remove(finalPath);
+   uint32_t firstSeq=0U, lastSeq=0U;
+   if (!spoolGWritePageFromRing(part, 1U, 4004ULL, false, false, firstSeq, lastSeq, why)) {
+-    if (LittleFS.exists(part)) LittleFS.remove(part);
++    if (systemFS196.exists(part)) systemFS196.remove(part);
+     return false;
+   }
+   SpoolBatchScan scan{};
+   const bool partValid = spoolBatchScan(part, scan) && scan.footerOk;
+-  const bool beforePublishIgnored = partValid && !LittleFS.exists(finalPath);
+-  if (LittleFS.exists(part)) LittleFS.remove(part);
++  const bool beforePublishIgnored = partValid && !systemFS196.exists(finalPath);
++  if (systemFS196.exists(part)) systemFS196.remove(part);
+   const bool ok = beforePublishIgnored;
+   why="partValid=YES finalAbsent=YES replayExcluded=YES";
+   return ok;
+@@ -36470,12 +36473,12 @@
+   g_spoolGSecondaryPageSeq = seq;
+   char finalPath[96] = {}, partPath[100] = {};
+   if (!spoolGMakePagePath(seq,finalPath,sizeof(finalPath),partPath,sizeof(partPath))) { why="path"; return false; }
+-  if (LittleFS.exists(finalPath)) LittleFS.remove(finalPath);
+-  if (LittleFS.exists(partPath)) LittleFS.remove(partPath);
++  if (systemFS196.exists(finalPath)) systemFS196.remove(finalPath);
++  if (systemFS196.exists(partPath)) systemFS196.remove(partPath);
+   if (g_telemetryRing.size() == 0U) { why="ring pusty"; return false; }
+   uint32_t a=0,b=0; String w;
+   if (!spoolGWritePageFromRing(partPath,1U,seq,false,false,a,b,w)) { why=w; return false; }
+-  if (!LittleFS.rename(partPath,finalPath)) { why="rename"; return false; }
++  if (!systemFS196.rename(partPath,finalPath)) { why="rename"; return false; }
+   SpoolBatchScan scan{};
+   if (!spoolBatchScan(finalPath,scan) || !scan.footerOk || scan.validRecords != 1U || scan.pageSeq != seq) { why="reopen"; return false; }
+   TelemetrySample sample1{},sample2{}; String id1,id2;
+@@ -36516,10 +36519,10 @@
+   const char* p="/telemetry_spool/page_0000033232.bin";
+   if (!spoolReplayWritePage(p,33232ULL,0xF3320001UL,4U)) { why="write"; return false; }
+   SpoolBatchScan r{}; if(!spoolBatchScan(p,r) || !r.footerOk) { why="scan"; return false; }
+-  const bool partialKeeps=LittleFS.exists(p) && r.validRecords==4U;
++  const bool partialKeeps=systemFS196.exists(p) && r.validRecords==4U;
+   const bool fullAck=r.validRecords==4U;
+-  if (fullAck && !LittleFS.remove(p)) { why="delete"; return false; }
+-  const bool deleted=!LittleFS.exists(p);
++  if (fullAck && !systemFS196.remove(p)) { why="delete"; return false; }
++  const bool deleted=!systemFS196.exists(p);
+   why="partialACK=RETAIN fullACK=DELETE deleted=" + String(deleted?"YES":"NO");
+   return partialKeeps&&deleted;
+ }
+@@ -36607,7 +36610,7 @@
+     "/telemetry_spool/page_0000033232.bin","/telemetry_spool/page_0000000033.bin.part",
+     "/telemetry_spool/page_g326.bin.part","/telemetry_spool/page_g327.bin.part"
+   };
+-  for(const char* path:cleanup){ if(LittleFS.exists(path)) LittleFS.remove(path); }
++  for(const char* path:cleanup){ if(systemFS196.exists(path)) systemFS196.remove(path); }
+   g_spoolGTestActive = false;
+   xSemaphoreGive(logMutex);
+   return allOk;
+@@ -36671,8 +36674,8 @@
+ 
+ static bool spoolR245EnsureDir() {
+   if (!littlefsReady) return false;
+-  if (LittleFS.exists(SPOOL_R245_TEST_DIR)) return true;
+-  return LittleFS.mkdir(SPOOL_R245_TEST_DIR);
++  if (systemFS196.exists(SPOOL_R245_TEST_DIR)) return true;
++  return systemFS196.mkdir(SPOOL_R245_TEST_DIR);
+ }
+ 
+ static bool spoolR245WriteCompletePage(String &resultOut) {
+@@ -36708,9 +36711,9 @@
+   }
+ 
+   // Test jest powtarzalny: usuwamy tylko STALY plik testowy.
+-  if (LittleFS.exists(SPOOL_R245_TEST_FILE)) LittleFS.remove(SPOOL_R245_TEST_FILE);
+-
+-  f = LittleFS.open(SPOOL_R245_TEST_FILE, "w");
++  if (systemFS196.exists(SPOOL_R245_TEST_FILE)) systemFS196.remove(SPOOL_R245_TEST_FILE);
++
++  f = systemFS196.open(SPOOL_R245_TEST_FILE, "w");
+   if (!f) {
+     xSemaphoreGive(logMutex);
+     resultOut = "open test page do zapisu nieudany";
+@@ -36792,7 +36795,7 @@
+   const size_t sizeBeforeClose = f.size();
+   f.close();
+ 
+-  File verify = LittleFS.open(SPOOL_R245_TEST_FILE, "r");
++  File verify = systemFS196.open(SPOOL_R245_TEST_FILE, "r");
+   const size_t finalSize = verify ? verify.size() : 0U;
+   if (verify) verify.close();
+ 
+@@ -36825,7 +36828,7 @@
+     return false;
+   }
+ 
+-  File f = LittleFS.open(SPOOL_R245_TEST_FILE, "r");
++  File f = systemFS196.open(SPOOL_R245_TEST_FILE, "r");
+   if (!f) {
+     xSemaphoreGive(logMutex);
+     resultOut = "brak pliku testowego — najpierw /spooltest TAK";
+@@ -36944,9 +36947,9 @@
+     resultOut = "Nie utworzono katalogu /telemetry_spool";
+     return false;
+   }
+-  if (LittleFS.exists(SPOOL_R246_OPEN_FILE)) LittleFS.remove(SPOOL_R246_OPEN_FILE);
+-
+-  File f = LittleFS.open(SPOOL_R246_OPEN_FILE, "w");
++  if (systemFS196.exists(SPOOL_R246_OPEN_FILE)) systemFS196.remove(SPOOL_R246_OPEN_FILE);
++
++  File f = systemFS196.open(SPOOL_R246_OPEN_FILE, "w");
+   if (!f) {
+     xSemaphoreGive(logMutex);
+     resultOut = "open open-page do zapisu nieudany";
+@@ -36988,7 +36991,7 @@
+   f.flush();
+   const size_t sizeAfterFlush = f.size();
+   f.close();
+-  File v = LittleFS.open(SPOOL_R246_OPEN_FILE, "r");
++  File v = systemFS196.open(SPOOL_R246_OPEN_FILE, "r");
+   const size_t finalSize = v ? v.size() : 0U;
+   if (v) v.close();
+   xSemaphoreGive(logMutex);
+@@ -37012,7 +37015,7 @@
+   if (!logMutex || xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+     resultOut = "logMutex niedostepny >200ms"; return false;
+   }
+-  File f = LittleFS.open(SPOOL_R246_OPEN_FILE, "r");
++  File f = systemFS196.open(SPOOL_R246_OPEN_FILE, "r");
+   if (!f) {
+     xSemaphoreGive(logMutex);
+     resultOut = "brak open-page — najpierw /spoolopen TAK";
+@@ -37089,9 +37092,9 @@
+     resultOut = "Nie utworzono katalogu /telemetry_spool";
+     return false;
+   }
+-  if (LittleFS.exists(SPOOL_R247_POWER_FILE)) LittleFS.remove(SPOOL_R247_POWER_FILE);
+-
+-  File f = LittleFS.open(SPOOL_R247_POWER_FILE, "w");
++  if (systemFS196.exists(SPOOL_R247_POWER_FILE)) systemFS196.remove(SPOOL_R247_POWER_FILE);
++
++  File f = systemFS196.open(SPOOL_R247_POWER_FILE, "w");
+   if (!f) {
+     xSemaphoreGive(logMutex);
+     resultOut = "open R247 do zapisu nieudany";
+@@ -37204,7 +37207,7 @@
+     return false;
+   }
+ 
+-  File f = LittleFS.open(SPOOL_R247_POWER_FILE, "r");
++  File f = systemFS196.open(SPOOL_R247_POWER_FILE, "r");
+   if (!f) {
+     xSemaphoreGive(logMutex);
+     resultOut = "brak pliku R247 — najpierw /spool247 TAK i power loss";
+@@ -37303,7 +37306,7 @@
+ static_assert(SPOOL_R248_REPAIRED_BYTES == 316U, "R248 repaired geometry changed");
+ 
+ static bool spoolR248VerifyThreeRecords(const char *path, String &whyOut) {
+-  File vf = LittleFS.open(path, "r");
++  File vf = systemFS196.open(path, "r");
+   if (!vf) { whyOut = "open verify nieudany"; return false; }
+   const size_t sz = vf.size();
+   if (sz != SPOOL_R248_REPAIRED_BYTES) {
+@@ -37371,7 +37374,7 @@
+     return false;
+   }
+ 
+-  File src = LittleFS.open(SPOOL_R247_POWER_FILE, "r");
++  File src = systemFS196.open(SPOOL_R247_POWER_FILE, "r");
+   if (!src) {
+     xSemaphoreGive(logMutex);
+     resultOut = "brak R247 page — najpierw /spool247 TAK + power loss";
+@@ -37437,8 +37440,8 @@
+   }
+   src.close();
+ 
+-  LittleFS.remove(SPOOL_R248_PART_FILE);
+-  File part = LittleFS.open(SPOOL_R248_PART_FILE, "w");
++  systemFS196.remove(SPOOL_R248_PART_FILE);
++  File part = systemFS196.open(SPOOL_R248_PART_FILE, "w");
+   if (!part) {
+     xSemaphoreGive(logMutex);
+     resultOut = "open .part R248 nieudany";
+@@ -37446,32 +37449,32 @@
+   }
+   if (part.write(reinterpret_cast<const uint8_t*>(&header), sizeof(header)) != sizeof(header)) {
+     part.close();
+-    LittleFS.remove(SPOOL_R248_PART_FILE);
++    systemFS196.remove(SPOOL_R248_PART_FILE);
+     xSemaphoreGive(logMutex);
+     resultOut = "write header do .part nieudany";
+     return false;
+   }
+ 
+   // Odczyt zachowanych 2 rekordow z oryginalnego pliku i zapis do .part.
+-  File src2 = LittleFS.open(SPOOL_R247_POWER_FILE, "r");
++  File src2 = systemFS196.open(SPOOL_R247_POWER_FILE, "r");
+   if (!src2) {
+-    part.close(); LittleFS.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
++    part.close(); systemFS196.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
+     resultOut = "reopen R247 do kopiowania nieudany";
+     return false;
+   }
+   if (!src2.seek(SPOOL_HEADER_BYTES)) {
+-    src2.close(); part.close(); LittleFS.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
++    src2.close(); part.close(); systemFS196.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
+     resultOut = "seek R247 po headerze nieudany";
+     return false;
+   }
+   for (uint32_t i = 0; i < 2U; ++i) {
+     if (src2.readBytes(reinterpret_cast<char*>(recBytes), sizeof(recBytes)) != (int)sizeof(recBytes)) {
+-      src2.close(); part.close(); LittleFS.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
++      src2.close(); part.close(); systemFS196.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
+       resultOut = "copy rekordu #" + String((unsigned)(i + 1U)) + " nieudane";
+       return false;
+     }
+     if (part.write(recBytes, sizeof(recBytes)) != sizeof(recBytes)) {
+-      src2.close(); part.close(); LittleFS.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
++      src2.close(); part.close(); systemFS196.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
+       resultOut = "write zachowanego rekordu #" + String((unsigned)(i + 1U)) + " nieudany";
+       return false;
+     }
+@@ -37481,7 +37484,7 @@
+   // Nowy, pelny rekord #3: ten sam sampleSeq, ktory mial niedokonczony ogon.
+   TelemetrySample continued{};
+   if (!spoolR245BuildSample(3U, continued)) {
+-    part.close(); LittleFS.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
++    part.close(); systemFS196.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
+     resultOut = "build nowego rekordu #3 nieudany";
+     return false;
+   }
+@@ -37491,7 +37494,7 @@
+   const uint32_t recordCrc = spoolR245Crc32(recBytes, sizeof(TelemetrySample));
+   memcpy(recBytes + sizeof(TelemetrySample), &recordCrc, sizeof(recordCrc));
+   if (part.write(recBytes, sizeof(recBytes)) != sizeof(recBytes)) {
+-    part.close(); LittleFS.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
++    part.close(); systemFS196.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
+     resultOut = "write nowego rekordu #3 nieudany";
+     return false;
+   }
+@@ -37499,26 +37502,26 @@
+   const size_t afterFlush = part.size();
+   part.close();
+   if (afterFlush != SPOOL_R248_REPAIRED_BYTES) {
+-    LittleFS.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
++    systemFS196.remove(SPOOL_R248_PART_FILE); xSemaphoreGive(logMutex);
+     resultOut = "zly size po flush .part=" + String((unsigned long)afterFlush) + " expected=316";
+     return false;
+   }
+ 
+   String verifyWhy;
+   if (!spoolR248VerifyThreeRecords(SPOOL_R248_PART_FILE, verifyWhy)) {
+-    LittleFS.remove(SPOOL_R248_PART_FILE);
++    systemFS196.remove(SPOOL_R248_PART_FILE);
+     xSemaphoreGive(logMutex);
+     resultOut = "verify .part FAIL: " + verifyWhy;
+     return false;
+   }
+ 
+-  if (!LittleFS.remove(SPOOL_R247_POWER_FILE)) {
+-    LittleFS.remove(SPOOL_R248_PART_FILE);
++  if (!systemFS196.remove(SPOOL_R247_POWER_FILE)) {
++    systemFS196.remove(SPOOL_R248_PART_FILE);
+     xSemaphoreGive(logMutex);
+     resultOut = "usuniecie starego R247 page nieudane";
+     return false;
+   }
+-  if (!LittleFS.rename(SPOOL_R248_PART_FILE, SPOOL_R247_POWER_FILE)) {
++  if (!systemFS196.rename(SPOOL_R248_PART_FILE, SPOOL_R247_POWER_FILE)) {
+     // Probujemy zostawic .part do diagnostyki; nie raportujemy PASS.
+     xSemaphoreGive(logMutex);
+     resultOut = "rename .part -> R247 page nieudany";
+@@ -37527,7 +37530,7 @@
+ 
+   const bool finalOk = spoolR248VerifyThreeRecords(SPOOL_R247_POWER_FILE, verifyWhy);
+   const size_t finalSize = [&]() -> size_t {
+-    File chk = LittleFS.open(SPOOL_R247_POWER_FILE, "r");
++    File chk = systemFS196.open(SPOOL_R247_POWER_FILE, "r");
+     if (!chk) return 0U;
+     const size_t s = chk.size();
+     chk.close();
+@@ -37563,7 +37566,7 @@
+ 
+ static bool spoolR249VerifyFullPage(const char *path, String &whyOut) {
+   whyOut = "";
+-  File f = LittleFS.open(path, "r");
++  File f = systemFS196.open(path, "r");
+   if (!f) { whyOut = "open verify nieudany"; return false; }
+ 
+   const size_t actualSize = f.size();
+@@ -37702,9 +37705,9 @@
+     return false;
+   }
+ 
+-  LittleFS.remove(SPOOL_R249_FULL_PART);
+-
+-  File f = LittleFS.open(SPOOL_R249_FULL_PART, "w");
++  systemFS196.remove(SPOOL_R249_FULL_PART);
++
++  File f = systemFS196.open(SPOOL_R249_FULL_PART, "w");
+   if (!f) {
+     xSemaphoreGive(logMutex);
+     resultOut = "open .part R249 nieudany";
+@@ -37726,7 +37729,7 @@
+ 
+   if (f.write(reinterpret_cast<const uint8_t*>(&header), sizeof(header)) != sizeof(header)) {
+     f.close();
+-    LittleFS.remove(SPOOL_R249_FULL_PART);
++    systemFS196.remove(SPOOL_R249_FULL_PART);
+     xSemaphoreGive(logMutex);
+     resultOut = "write header .part nieudany";
+     return false;
+@@ -37739,7 +37742,7 @@
+     TelemetrySample sample{};
+     if (!spoolR245BuildSample(i, sample)) {
+       f.close();
+-      LittleFS.remove(SPOOL_R249_FULL_PART);
++      systemFS196.remove(SPOOL_R249_FULL_PART);
+       xSemaphoreGive(logMutex);
+       resultOut = "build rekordu #" + String((unsigned)(i + 1U)) + " nieudany";
+       return false;
+@@ -37752,7 +37755,7 @@
+ 
+     if (f.write(recBytes, sizeof(recBytes)) != sizeof(recBytes)) {
+       f.close();
+-      LittleFS.remove(SPOOL_R249_FULL_PART);
++      systemFS196.remove(SPOOL_R249_FULL_PART);
+       xSemaphoreGive(logMutex);
+       resultOut = "write rekordu #" + String((unsigned)(i + 1U)) + " nieudany";
+       return false;
+@@ -37781,7 +37784,7 @@
+ 
+   if (f.write(reinterpret_cast<const uint8_t*>(&footer), sizeof(footer)) != sizeof(footer)) {
+     f.close();
+-    LittleFS.remove(SPOOL_R249_FULL_PART);
++    systemFS196.remove(SPOOL_R249_FULL_PART);
+     xSemaphoreGive(logMutex);
+     resultOut = "write footer/commit .part nieudany";
+     return false;
+@@ -37791,12 +37794,12 @@
+   const size_t afterFlush = f.size();
+   f.close();
+ 
+-  File reopened = LittleFS.open(SPOOL_R249_FULL_PART, "r");
++  File reopened = systemFS196.open(SPOOL_R249_FULL_PART, "r");
+   const size_t finalPartSize = reopened ? reopened.size() : 0U;
+   if (reopened) reopened.close();
+ 
+   if (afterFlush != SPOOL_R249_FULL_BYTES || finalPartSize != SPOOL_R249_FULL_BYTES) {
+-    LittleFS.remove(SPOOL_R249_FULL_PART);
++    systemFS196.remove(SPOOL_R249_FULL_PART);
+     xSemaphoreGive(logMutex);
+     resultOut = "zly rozmiar: expected=64640 afterFlush=" +
+                 String((unsigned long)afterFlush) +
+@@ -37806,25 +37809,25 @@
+ 
+   String why;
+   if (!spoolR249VerifyFullPage(SPOOL_R249_FULL_PART, why)) {
+-    LittleFS.remove(SPOOL_R249_FULL_PART);
++    systemFS196.remove(SPOOL_R249_FULL_PART);
+     xSemaphoreGive(logMutex);
+     resultOut = "verify .part FAIL: " + why;
+     return false;
+   }
+ 
+-  if (LittleFS.exists(SPOOL_R249_FULL_FILE) && !LittleFS.remove(SPOOL_R249_FULL_FILE)) {
++  if (systemFS196.exists(SPOOL_R249_FULL_FILE) && !systemFS196.remove(SPOOL_R249_FULL_FILE)) {
+     xSemaphoreGive(logMutex);
+     resultOut = "usuniecie starego R249 final nieudane";
+     return false;
+   }
+-  if (!LittleFS.rename(SPOOL_R249_FULL_PART, SPOOL_R249_FULL_FILE)) {
++  if (!systemFS196.rename(SPOOL_R249_FULL_PART, SPOOL_R249_FULL_FILE)) {
+     xSemaphoreGive(logMutex);
+     resultOut = "rename .part -> final R249 nieudany";
+     return false;
+   }
+ 
+   const bool finalOk = spoolR249VerifyFullPage(SPOOL_R249_FULL_FILE, why);
+-  File finalCheck = LittleFS.open(SPOOL_R249_FULL_FILE, "r");
++  File finalCheck = systemFS196.open(SPOOL_R249_FULL_FILE, "r");
+   const size_t finalSize = finalCheck ? finalCheck.size() : 0U;
+   if (finalCheck) finalCheck.close();
+ 
+@@ -37903,8 +37906,8 @@
+   const size_t corruptOffset = SPOOL_HEADER_BYTES + SPOOL_RECORD_BYTES + 7U;
+   page[corruptOffset] ^= 0x5AU;
+ 
+-  LittleFS.remove(SPOOL_R250_FILE);
+-  File f = LittleFS.open(SPOOL_R250_FILE, "w");
++  systemFS196.remove(SPOOL_R250_FILE);
++  File f = systemFS196.open(SPOOL_R250_FILE, "w");
+   if (!f) {
+     xSemaphoreGive(logMutex);
+     resultOut = "open R250 nieudany";
+@@ -37915,7 +37918,7 @@
+   const size_t afterFlush = f.size();
+   f.close();
+ 
+-  File reopened = LittleFS.open(SPOOL_R250_FILE, "r");
++  File reopened = systemFS196.open(SPOOL_R250_FILE, "r");
+   const size_t finalSize = reopened ? reopened.size() : 0U;
+   if (reopened) reopened.close();
+   xSemaphoreGive(logMutex);
+@@ -37939,7 +37942,7 @@
+     resultOut = "logMutex niedostepny >200ms";
+     return false;
+   }
+-  File f = LittleFS.open(SPOOL_R250_FILE, "r");
++  File f = systemFS196.open(SPOOL_R250_FILE, "r");
+   if (!f) {
+     xSemaphoreGive(logMutex);
+     resultOut = "brak R250 page — najpierw /spool250 TAK";
+@@ -38757,8 +38760,8 @@
+   bool tmpGotowy = false;
+   File f;
+   if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-    if (LittleFS.exists(sciezkaTmp)) LittleFS.remove(sciezkaTmp);
+-    f = LittleFS.open(sciezkaTmp, "w");
++    if (systemFS196.exists(sciezkaTmp)) systemFS196.remove(sciezkaTmp);
++    f = systemFS196.open(sciezkaTmp, "w");
+     tmpGotowy = (bool)f;
+     xSemaphoreGive(logMutex);
+   }
+@@ -38815,17 +38818,17 @@
+     if (bladOut.length() == 0) {
+       bladOut = "Zly naglowek pliku (oczekiwano 0xE9 na starcie) — zly Asset albo uszkodzony Release";
+     }
+-    if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) { LittleFS.remove(sciezkaTmp); xSemaphoreGive(logMutex); }
++    if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) { systemFS196.remove(sciezkaTmp); xSemaphoreGive(logMutex); }
+     return false;
+   }
+   if (oczekiwanyRozmiar > 0 && (int)zapisano != oczekiwanyRozmiar) {
+     bladOut = "Rozmiar niezgodny: pobrano " + String(zapisano) + " z oczekiwanych " + String(oczekiwanyRozmiar);
+-    if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) { LittleFS.remove(sciezkaTmp); xSemaphoreGive(logMutex); }
++    if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) { systemFS196.remove(sciezkaTmp); xSemaphoreGive(logMutex); }
+     return false;
+   }
+   if (zapisano == 0) {
+     bladOut = "Pobrano 0 bajtow";
+-    if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) { LittleFS.remove(sciezkaTmp); xSemaphoreGive(logMutex); }
++    if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) { systemFS196.remove(sciezkaTmp); xSemaphoreGive(logMutex); }
+     return false;
+   }
+ 
+@@ -38835,8 +38838,8 @@
+   // wyzej), wewnatrz tej samej sekcji.
+   bool rotacjaOk = false;
+   if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+-    if (LittleFS.exists(sciezkaDocelowa)) LittleFS.remove(sciezkaDocelowa);
+-    rotacjaOk = LittleFS.rename(sciezkaTmp, sciezkaDocelowa);
++    if (systemFS196.exists(sciezkaDocelowa)) systemFS196.remove(sciezkaDocelowa);
++    rotacjaOk = systemFS196.rename(sciezkaTmp, sciezkaDocelowa);
+     if (rotacjaOk) g_panelFirmwareSize = zapisano;
+     xSemaphoreGive(logMutex);
+   }
+@@ -40067,7 +40070,7 @@
+   if (!littlefsReady || seq < SPOOL_RUNTIME_PAGESEQ_BASE) return false;
+   String candidate;
+   if (!spoolRuntimeMakeFinalPath(seq, candidate)) return false;
+-  if (!LittleFS.exists(candidate.c_str())) return false;
++  if (!systemFS196.exists(candidate.c_str())) return false;
+   SpoolBatchScan scan{};
+   if (!spoolBatchScan(candidate.c_str(), scan) || !scan.footerOk || scan.validRecords == 0U || scan.pageSeq != seq) return false;
+   pathOut = candidate;
+@@ -40138,8 +40141,8 @@
+   }
+ 
+   // Fallback dla starych stron utworzonych przed wprowadzeniem hintu.
+-  if (!LittleFS.exists(SPOOL_G_DIR)) return false;
+-  File dir = LittleFS.open(SPOOL_G_DIR);
++  if (!systemFS196.exists(SPOOL_G_DIR)) return false;
++  File dir = systemFS196.open(SPOOL_G_DIR);
+   if (!dir || !dir.isDirectory()) return false;
+ 
+   bool found = false;
+@@ -40360,8 +40363,8 @@
+   if (!spoolRuntimeAllocatePageSeq(pageSeq)) return false;
+   char finalPath[96] = {}, partPath[100] = {};
+   if (!spoolGMakePagePath(pageSeq, finalPath, sizeof(finalPath), partPath, sizeof(partPath))) return false;
+-  if (LittleFS.exists(partPath)) LittleFS.remove(partPath);
+-  if (LittleFS.exists(finalPath)) return false;
++  if (systemFS196.exists(partPath)) systemFS196.remove(partPath);
++  if (systemFS196.exists(finalPath)) return false;
+ 
+   if (!logMutex || xSemaphoreTake(logMutex, pdMS_TO_TICKS(1000)) != pdTRUE) return false;
+   uint32_t firstSeq = 0U, lastSeq = 0U;
+@@ -40370,13 +40373,13 @@
+                                                firstSeq, lastSeq, why);
+   if (!wrote) {
+     xSemaphoreGive(logMutex);
+-    if (LittleFS.exists(partPath)) LittleFS.remove(partPath);
++    if (systemFS196.exists(partPath)) systemFS196.remove(partPath);
+     DLOGF(DC_SPOOL, DL_ERR, "spill_write_fail why=%s", why.c_str());
+     return false;
+   }
+-  if (!LittleFS.rename(partPath, finalPath)) {
++  if (!systemFS196.rename(partPath, finalPath)) {
+     xSemaphoreGive(logMutex);
+-    if (LittleFS.exists(partPath)) LittleFS.remove(partPath);
++    if (systemFS196.exists(partPath)) systemFS196.remove(partPath);
+     DLOG(DC_SPOOL, DL_ERR, F("spill_rename_fail"));
+     return false;
+   }
+@@ -40443,7 +40446,7 @@
+ 
+   const uint32_t cursor = g_spoolRuntimeReplayCursor;
+   if (cursor >= recordCount) {
+-    if (LittleFS.remove(pagePath.c_str())) {
++    if (systemFS196.remove(pagePath.c_str())) {
+       g_spoolRuntimePagesDeleted++;
+       {
+         Preferences prefs;
+@@ -40525,7 +40528,7 @@
+       g_spoolRuntimeReplayFailures++;
+       return false;
+     }
+-    const bool deleted = LittleFS.remove(pagePath.c_str());
++    const bool deleted = systemFS196.remove(pagePath.c_str());
+     xSemaphoreGive(logMutex);
+     if (deleted) {
+       g_spoolRuntimePagesDeleted++;
+@@ -40947,21 +40950,21 @@
+ 
+ static bool recoveryOtaMegaTempFsTest(String &detail) {
+   const char *path = "/recoverymega_probe.tmp";
+-  LittleFS.remove(path);
+-  File f = LittleFS.open(path, "w");
++  systemFS196.remove(path);
++  File f = systemFS196.open(path, "w");
+   if (!f) { detail = "open_write=FAIL"; return false; }
+   const uint8_t payload[] = { 'R','4','3','1','-','4','7','0', 0x00, 0x5A, 0xA5 };
+   size_t n = f.write(payload, sizeof(payload));
+   f.flush();
+   f.close();
+-  if (n != sizeof(payload)) { LittleFS.remove(path); detail = "write=FAIL"; return false; }
+-  f = LittleFS.open(path, "r");
+-  if (!f) { LittleFS.remove(path); detail = "open_read=FAIL"; return false; }
++  if (n != sizeof(payload)) { systemFS196.remove(path); detail = "write=FAIL"; return false; }
++  f = systemFS196.open(path, "r");
++  if (!f) { systemFS196.remove(path); detail = "open_read=FAIL"; return false; }
+   uint8_t got[sizeof(payload)] = {};
+   size_t rn = f.read(got, sizeof(got));
+   f.close();
+   const bool exact = rn == sizeof(payload) && memcmp(got, payload, sizeof(payload)) == 0;
+-  const bool removed = LittleFS.remove(path);
++  const bool removed = systemFS196.remove(path);
+   detail = String("write_read_exact=") + (exact ? "YES" : "NO") +
+            " removed=" + (removed ? "YES" : "NO");
+   return exact && removed;
+@@ -41013,7 +41016,7 @@
+   gateNoMutate(436, "coredumpLatest=DISCOVERABLE", dump && dumpSeq > 0U && dumpSize > 0U,
+                String("path=") + dumpPath + " seq=" + String((unsigned long)dumpSeq) +
+                " boot=" + String((unsigned long)dumpBoot) + " size=" + String((unsigned long)dumpSize));
+-  bool dumpFile = dump && LittleFS.exists(dumpPath);
++  bool dumpFile = dump && systemFS196.exists(dumpPath);
+   gateNoMutate(437, "coredumpFile=EXISTS", dumpFile);
+   gateNoMutate(438, "coredumpSize=NONZERO", dumpSize > 0U);
+ 
+@@ -44995,7 +44998,7 @@
+ 
+ static void otaZapiszZnacznikOczekiwania() {
+   if (!littlefsReady) return;
+-  File f = LittleFS.open(OTA_PENDING_FILE, "w");
++  File f = systemFS196.open(OTA_PENDING_FILE, "w");
+   if (!f) return;
+   f.print(FIRMWARE_VERSION);
+   f.close();
+@@ -45003,21 +45006,21 @@
+ 
+ static void otaUsunZnacznik() {
+   if (!littlefsReady) return;
+-  if (LittleFS.exists(OTA_PENDING_FILE)) LittleFS.remove(OTA_PENDING_FILE);
++  if (systemFS196.exists(OTA_PENDING_FILE)) systemFS196.remove(OTA_PENDING_FILE);
+ }
+ 
+ // Po restarcie: znacznik z INNA wersja = poprzednia aktualizacja nie
+ // potwierdzila sie i bootloader wrocil do nas.
+ static void otaOdczytajZnacznikPoRollbacku() {
+   if (!littlefsReady) return;
+-  File f = LittleFS.open(OTA_PENDING_FILE, "r");
++  File f = systemFS196.open(OTA_PENDING_FILE, "r");
+   if (!f) return;
+   String v = f.readString();
+   f.close();
+   v.trim();
+-  if (v.length() == 0) { LittleFS.remove(OTA_PENDING_FILE); return; }
++  if (v.length() == 0) { systemFS196.remove(OTA_PENDING_FILE); return; }
+   if (v == FIRMWARE_VERSION) return;   // nasz wlasny, oczekujacy znacznik
+-  LittleFS.remove(OTA_PENDING_FILE);
++  systemFS196.remove(OTA_PENDING_FILE);
+   strncpy(g_otaRollbackWersja, v.c_str(), sizeof(g_otaRollbackWersja) - 1);
+   g_otaRollbackWersja[sizeof(g_otaRollbackWersja) - 1] = 0;
+   zapiszLog(String(F("tag=OTA-ROLLBACK lvl=WARN zdarzenie=wykryto_niepotwierdzona wersja=")) +
+@@ -45655,9 +45658,9 @@
+   if (!historiaDostepGotowy()) return;
+   if (!historiaBufor) return;
+   if (!littlefsReady) return;
+-  if (!LittleFS.exists(HISTORIA_PLIK)) { historiaPlikLiczbaLinii = 0; return; }
+-
+-  File f = LittleFS.open(HISTORIA_PLIK, "r");
++  if (!systemFS196.exists(HISTORIA_PLIK)) { historiaPlikLiczbaLinii = 0; return; }
++
++  File f = systemFS196.open(HISTORIA_PLIK, "r");
+   if (!f) { historiaPlikLiczbaLinii = 0; return; }
+ 
+   HistoriaStrumien st;
+@@ -45738,9 +45741,9 @@
+   if (!historiaDostepGotowy()) return;
+   if (!historiaDlugaBufor) return;
+   if (!littlefsReady) return;
+-  if (!LittleFS.exists(HISTORIA_DLUGA_PLIK)) { historiaDlugaPlikLiczbaLinii = 0; return; }
+-
+-  File f = LittleFS.open(HISTORIA_DLUGA_PLIK, "r");
++  if (!systemFS196.exists(HISTORIA_DLUGA_PLIK)) { historiaDlugaPlikLiczbaLinii = 0; return; }
++
++  File f = systemFS196.open(HISTORIA_DLUGA_PLIK, "r");
+   if (!f) { historiaDlugaPlikLiczbaLinii = 0; return; }
+ 
+   HistoriaStrumien st;
+@@ -45904,7 +45907,7 @@
+   // Pojedynczy blad mount nie jest powodem do kasowania danych produkcyjnych.
+   // Formatowanie, jezeli kiedykolwiek bedzie potrzebne, musi byc osobnym,
+   // jawnym dzialaniem operatora poza normalnym bootem.
+-  if (!LittleFS.begin(false)) {
++  if (!systemFS196.begin(false)) {
+     littlefsReady = false;
+     Serial.println(F("tag=LOGI-FS lvl=ERR zdarzenie=mount_nieudany msg=\"LittleFS niedostepny; automatyczne formatowanie zabronione\""));
+   } else {
+@@ -45912,28 +45915,31 @@
+   }
+   // [v3.55.6 HISTORIA-START-SETUP-BEGIN]
+   history194::Sizes historiaRozmiary;
+-  if (historiaBoot.start(littlefsReady, historiaRozmiary)) {
++  const bool historiaBootOK196 = historiaBoot.start(littlefsReady, historiaRozmiary);
++  littlefsReady = systemFS196.finish(historiaBootOK196);
++  if (!littlefsReady) historiaBladIO();
++  if (littlefsReady) {
+     g_histShortSize = static_cast<size_t>(historiaRozmiary.shortBytes);
+     g_histLongSize = static_cast<size_t>(historiaRozmiary.longBytes);
+     Serial.println(F("tag=HISTORIA-START lvl=INFO msg=\"kontrola startu i protokolu A1 zakonczona\""));
+   } else {
+-    Serial.printf("tag=HISTORIA-START lvl=ERR boot=%u a1=%u powod=%u errno=%d msg=\"historia zatrzymana; bez ponowienia; stare CSV mogly byc usuniete przez zadane A1\"\n", static_cast<unsigned>(historiaBoot.failure()), static_cast<unsigned>(historiaBoot.transition().reason), static_cast<unsigned>(historiaStart.reason()), historiaStart.errorNumber());
++    Serial.printf("tag=HISTORIA-START lvl=ERR boot=%u a1=%u powod=%u errno=%d msg=\"dostep Arduino LittleFS zatrzymany po bledzie startu; bez ponowienia; stare CSV mogly byc usuniete przez zadane A1\"\n", static_cast<unsigned>(historiaBoot.failure()), static_cast<unsigned>(historiaBoot.transition().reason), static_cast<unsigned>(historiaStart.reason()), historiaStart.errorNumber());
+   }
+   // [v3.55.6 HISTORIA-START-SETUP-END]
+   if (littlefsReady) {
+-    g_logFsTotalBytes = LittleFS.totalBytes();
++    g_logFsTotalBytes = systemFS196.totalBytes();
+     // [FIX-WSPOLBIEZNOSC] Jednorazowa inicjalizacja cache'y rozmiarow
+     // (g_logASize/g_logBSize/g_logKrytycznySize/g_panelFirmwareSize) z
+     // realnego stanu na dysku — pliki moga juz zawierac dane sprzed
+     // restartu. Bezpieczne bez mutexa: setup() dziala tu jeszcze
+     // jednowatkowo, zadne zadanie (tgTaskFn/loop/AsyncTCP) jeszcze nie ruszylo.
+-    if (LittleFS.exists(LOG_FILE_A)) { File fa = LittleFS.open(LOG_FILE_A, "r"); if (fa) { g_logASize = fa.size(); fa.close(); } }
+-    if (LittleFS.exists(LOG_FILE_B)) { File fb = LittleFS.open(LOG_FILE_B, "r"); if (fb) { g_logBSize = fb.size(); fb.close(); } }
+-    if (LittleFS.exists(LOG_FILE_KRYTYCZNY)) { File fk = LittleFS.open(LOG_FILE_KRYTYCZNY, "r"); if (fk) { g_logKrytycznySize = fk.size(); fk.close(); } }
++    if (systemFS196.exists(LOG_FILE_A)) { File fa = systemFS196.open(LOG_FILE_A, "r"); if (fa) { g_logASize = fa.size(); fa.close(); } }
++    if (systemFS196.exists(LOG_FILE_B)) { File fb = systemFS196.open(LOG_FILE_B, "r"); if (fb) { g_logBSize = fb.size(); fb.close(); } }
++    if (systemFS196.exists(LOG_FILE_KRYTYCZNY)) { File fk = systemFS196.open(LOG_FILE_KRYTYCZNY, "r"); if (fk) { g_logKrytycznySize = fk.size(); fk.close(); } }
+     // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 5] Ten sam wzorzec.
+-    if (LittleFS.exists(LOG_USTAWIEN_PLIK)) { File fu = LittleFS.open(LOG_USTAWIEN_PLIK, "r"); if (fu) { g_logUstawienSize = fu.size(); fu.close(); } }
++    if (systemFS196.exists(LOG_USTAWIEN_PLIK)) { File fu = systemFS196.open(LOG_USTAWIEN_PLIK, "r"); if (fu) { g_logUstawienSize = fu.size(); fu.close(); } }
+     // [PLAN_HISTORIA_I_USTAWIENIA_TELEGRAM.md, Czesc 14.2] Analogicznie.
+-    if (LittleFS.exists("/panel_firmware.bin")) { File fp = LittleFS.open("/panel_firmware.bin", "r"); if (fp) { g_panelFirmwareSize = fp.size(); fp.close(); } }
++    if (systemFS196.exists("/panel_firmware.bin")) { File fp = systemFS196.open("/panel_firmware.bin", "r"); if (fp) { g_panelFirmwareSize = fp.size(); fp.close(); } }
+     Serial.printf("tag=LOGI-FS lvl=INFO zdarzenie=gotowy pojemnosc=%uB logA=%uB logB=%uB logKryt=%uB logUstawien=%uB histS=%uB histL=%uB panelFw=%uB\n",
+                   (unsigned)g_logFsTotalBytes, (unsigned)g_logASize, (unsigned)g_logBSize, (unsigned)g_logKrytycznySize, (unsigned)g_logUstawienSize, (unsigned)g_histShortSize, (unsigned)g_histLongSize, (unsigned)g_panelFirmwareSize);
+   }
+@@ -46196,7 +46202,7 @@
+   // przy pierwszym boocie (plik jeszcze nie istnieje). Kazda kolejna
+   // zmiana trafia tu przez hook w ustawParametrPieca() (Czesc 4), nie
+   // przez ponowne wywolanie tej funkcji.
+-  if (littlefsReady && !LittleFS.exists(LOG_USTAWIEN_PLIK)) {
++  if (littlefsReady && !systemFS196.exists(LOG_USTAWIEN_PLIK)) {
+     logUstawienBaseline();
+   }
+ 

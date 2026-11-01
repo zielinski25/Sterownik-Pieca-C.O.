@@ -1,0 +1,62 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "piec": {
+      "status": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      "cmd": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      "ack": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      "telemetry": {
+        "1m": {
+          "v1": {
+            ".read": "auth != null",
+            ".write": "auth != null",
+            "$y": {
+              "$m": {
+                "$d": {
+                  ".indexOn": ["ts"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "devices": {
+        "$uid": {
+          "telemetry": {
+            ".read": "auth != null && (auth.uid === $uid || auth.token.operator === true)",
+            ".write": "auth != null && auth.uid === $uid",
+            "_rtdb_test": {
+              "$run": {
+                "cross_midnight": {
+                  ".indexOn": ["ts"]
+                }
+              }
+            }
+          },
+          "status": {
+            ".read": "auth != null && (auth.uid === $uid || auth.token.operator === true)",
+            ".write": "auth != null && auth.uid === $uid"
+          },
+          "ack": {
+            ".read": "auth != null && (auth.uid === $uid || auth.token.operator === true)",
+            ".write": "auth != null && auth.uid === $uid"
+          },
+          "cmd": {
+            ".read": "auth != null && auth.token.operator === true",
+            ".write": "auth != null && auth.token.operator === true"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "frozen_202_entries_verified": 147,
+  "fixture_source_sha256": "9f70b82b4d5f5ab6007b0da209521a151ed78101dab89d97b517b8d90b371649",
+  "combined_patch_applied_to_four_clean_files": true,
+  "candidate_byte_equal": true,
+  "firmware_modified": false,
+  "full_HTTP_executed": false,
+  "full_library_compiled": false,
+  "release_ready": false
+}

@@ -1,0 +1,1590 @@
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt b/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt
+index 144cc5d..cbe9e22 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AlarmCenter.kt
+@@ -40,10 +40,7 @@ object AlarmCenter {
+     /** Ponowne zgłoszenie powiadomienia; właściwy dźwięk alarmu gra w pętli w AlarmMonitorService. */
+     const val REPEAT_MS = 30L * 60_000
+ 
+-    private val soundIds = setOf(
+-        "syrena", "dzwonek", "pikanie", "dwutonowy", "impulsowy", "narastajacy", "niski_puls",
+-        "syrena_falujaca", "syrena_ratunkowa", "klakson_pulsacyjny", "gong_ostrzegawczy", "system"
+-    )
++    private val soundIds = AlarmSoundSync.SOUND_IDS
+ 
+     fun isMonitored(p: AlarmPrefsStore): Boolean = p.get(K_MONITOR) != "0"
+     fun setMonitored(p: AlarmPrefsStore, on: Boolean) = p.set(K_MONITOR, if (on) "1" else "0")
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+index b408252..9626415 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -4,6 +4,7 @@ import android.content.Context
+ import android.os.Build
+ import android.os.VibrationEffect
+ import android.os.Vibrator
++import android.os.SystemClock
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableFloatStateOf
+ import androidx.compose.runtime.mutableIntStateOf
+@@ -38,6 +39,16 @@ import java.util.concurrent.TimeUnit
+    + logi + toasty + timery (8 s / 45 s / 15 min / 1 s).
+    ══════════════════════════════════════════════════════════════════════════ */
+ 
++/** Minimalny odstęp między automatycznymi pobraniami historii (ms). */
++private const val HISTORY_MIN_INTERVAL_MS = 60_000L
++
++/**
++ * Po tylu ms bez dotknięcia ekranu terminal przestaje pytać Firebase.
++ * Otwarty terminal odpytywał bazę co 5 s bez końca — 720 zapytań na godzinę,
++ * więcej niż cały polling statusu.
++ */
++private const val TERMINAL_DLOG_IDLE_STOP_MS = 5L * 60_000L
++
+ private const val CHART_GROUP_TEMPERATURE = 1
+ private const val CHART_GROUP_SERVO = 2
+ private const val CHART_GROUP_PUMP = 4
+@@ -59,6 +70,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     val solar = SolarAnalytics(prefs)
+     // [0.31.43] Pamięć historii telemetrii na dysku telefonu (filesDir/telemetria).
+     val telCache = TelemetryCache(ctx)
++    /** Dzienny cache telemetrii z 0.31.20 (jeden plik na dzień) — zostawiony dla starszej ścieżki. */
++    val tcache = TelemetryDayCache(ctx)
+ 
+     private val http = OkHttpClient.Builder()
+         .connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)
+@@ -86,6 +99,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     private var mixerModeAckOverride by mutableStateOf<Int?>(null)
+     private var smokeModeAckOverride by mutableStateOf<Int?>(null)
+     private var servoModeAckOverride by mutableStateOf<Int?>(null)
++    private var pendingKlapaPosition by mutableStateOf<ServoPositionPreview?>(null)
++    private var pendingSyberkaPosition by mutableStateOf<ServoPositionPreview?>(null)
+     var dashboardWidgets by mutableStateOf(TileDefs.DEFAULT_VISIBLE_IDS)
+     var dashboardWidgetOrder by mutableStateOf(TileDefs.TILES.map { it.id })
+     var authOpen by mutableStateOf(false)
+@@ -237,7 +252,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+ 
+     fun onResume() {
+         bgJob?.cancel(); bgJob = null
+-        poll(); refreshWeather(false); loadRange(rangeSec); refreshSolarFromCloud()
++        poll(); refreshWeather(false)
++        // Historia tylko wtedy, gdy użytkownik naprawdę patrzy na wykresy.
++        if (page == 1) loadRange(rangeSec)
++        refreshSolarFromCloud()
+         if (sheet == "terminal") startTerminalDlogPolling()
+         jobs = listOf(
+             scope.launch { while (true) { delay(8000); poll() } },
+@@ -296,8 +314,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+             if (now - solarHistoryAt >= 5 * 60_000L) {
+                 solarHistoryAt = now
+                 try {
+-                    val pts = Rtdb.fetchTelemetry(24 * 3600)
+-                    if (pts != null) {
++                    val pts = Rtdb.fetchTelemetry(24 * 3600).points
++                    if (pts.isNotEmpty()) {
+                         val added = solar.mergeCloudToday(pts)
+                         if (added > 0) { S.bump(); refreshSheet() }
+                     }
+@@ -379,6 +397,8 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+             connected = true
+             lastFetchTs = System.currentTimeMillis()
+             S.applyIncomingData(d)
++            AlarmSoundSync.applyStatus(prefs, d, SystemClock.elapsedRealtime())
++            reconcileAckedServoPositions()
+             val smokeFlag = S.dym_alarm.takeIf { S.hasData("dym_alarm") }
+             val overheatFlag = S.alarm_ogrzewanie.takeIf { S.hasData("alarm_ogrzewanie") }
+             AlarmCenter.applyControllerMuteSnapshot(
+@@ -482,7 +502,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+             }
+             poll()
+             if (sheet == "terminal") startTerminalDlogPolling()
+-            if (page == 1) loadRange(rangeSec)
++            if (page == 1) loadRange(rangeSec, force = true)
+         }.onFailure { e ->
+             authBusy = false; authStatusKind = "err"; authStatus = e.message ?: "Logowanie nieudane"
+             if (automatic) authOpen = true
+@@ -711,6 +731,45 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+         reportedMode = S.tryb_serwa.takeIf { S.hasData("tryb_serwa") }
+     )
+ 
++    /** ACKed servo target is presentation-only until `/piec/status` reports its physical angle. */
++    internal fun servoPositionPreview(axis: ServoPositionAxis): ServoPositionPreview? = when (axis) {
++        ServoPositionAxis.KLAPA -> pendingKlapaPosition
++        ServoPositionAxis.SYBEREK -> pendingSyberkaPosition
++    }
++
++    private fun recordAckedServoPosition(commandText: String) {
++        val command = parseServoPositionCommand(commandText) ?: return
++        val preview = command.preview(SystemClock.elapsedRealtime())
++        when (command.axis) {
++            ServoPositionAxis.KLAPA -> pendingKlapaPosition = preview
++            ServoPositionAxis.SYBEREK -> pendingSyberkaPosition = preview
++        }
++        // Both the dashboard tile and the open servo sheet consume this revision.
++        S.bump()
++        scope.launch {
++            delay(SERVO_POSITION_PREVIEW_TIMEOUT_MS)
++            if (servoPositionPreview(command.axis) == preview) {
++                when (command.axis) {
++                    ServoPositionAxis.KLAPA -> pendingKlapaPosition = null
++                    ServoPositionAxis.SYBEREK -> pendingSyberkaPosition = null
++                }
++                S.bump()
++            }
++        }
++    }
++
++    private fun reconcileAckedServoPositions() {
++        val now = SystemClock.elapsedRealtime()
++        pendingKlapaPosition?.let { preview ->
++            val reported = S.klapa.takeIf { S.hasData("klapa") && it in 0..180 }
++            if (!shouldKeepServoPositionPreview(preview, reported, now)) pendingKlapaPosition = null
++        }
++        pendingSyberkaPosition?.let { preview ->
++            val reported = S.syberka.takeIf { S.hasData("syberka") && it in 0..90 }
++            if (!shouldKeepServoPositionPreview(preview, reported, now)) pendingSyberkaPosition = null
++        }
++    }
++
+     private fun updateServoModeAckOverride(mode: Int?) {
+         val valid = mode?.takeIf { it in 1..3 }
+         if (servoModeAckOverride == valid) return
+@@ -776,9 +835,51 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+         }
+     }
+ 
++    /** Save the phone selection immediately, then send the same sound profile to the controller. */
++    fun selectAlarmSound(kind: String, soundId: String) {
++        val target = AlarmSoundSync.targetFor(kind) ?: return
++        val normalizedSound = AlarmSoundSync.normalizeSoundId(soundId) ?: return
++        val command = AlarmSoundSync.command(kind, normalizedSound) ?: return
++
++        val requestId = AlarmSoundSync.rememberSelection(
++            target, normalizedSound, SystemClock.elapsedRealtime()
++        ) ?: return
++        AlarmCenter.setSound(prefs, target.preferenceKind, normalizedSound)
++        alarmUiTick++
++        restartActivePhoneAlarmSound()
++
++        scope.launch {
++            val acknowledged = sendAwait(command)
++            if (!acknowledged) {
++                // A rejected command must not keep a stale optimistic value over the controller.
++                AlarmSoundSync.clearPendingSelection(target, requestId)
++                pollAwait(waitForInFlight = true)
++            }
++        }
++    }
++
++    private fun restartActivePhoneAlarmSound() {
++        if (!S.hasAllData("dym_alarm", "alarm_ogrzewanie")) return
++        if (!AlarmCenter.shouldLoopSound(prefs, S.dym_alarm, S.alarm_ogrzewanie)) return
++        val kind = AlarmCenter.kindFor(S.dym_alarm, S.alarm_ogrzewanie)
++        AlarmMonitorService.startAlarmLoop(ctx, AlarmCenter.sound(prefs, kind))
++    }
++
+     // ── polecenia; stan urządzenia zmienia się dopiero po ACK / odczycie ─────
+     fun send(cmd: String) = scope.launch { sendAwait(cmd) }
+ 
++    /**
++     * [0.31.22] Bufor offline w centrali (firmware v3.54.0+).
++     * `null` = firmware nie przysyła pola `spool_rt`, czyli jest starszy.
++     */
++    fun offlineBufferState(): Boolean? =
++        if (!S.hasData("spool_rt")) null else S.spoolRt == 1
++
++    /** Włącza/wyłącza bufor offline. Stan zmienia dopiero ACK + świeży status. */
++    fun setOfflineBuffer(on: Boolean) {
++        send(if (on) "spoolrt_wl" else "spoolrt_wyl")
++    }
++
+     /**
+      * Sends a command without mutating reported device state. Optional [onAck] is for a
+      * transient UI acknowledgement only; the fresh RTDB snapshot remains authoritative.
+@@ -812,10 +913,23 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+                     showToast(commandLabel, "Potwierdzone przez sterownik (ACK, ${latency}ms)", "ok")
+                     addLog("ACK", "ACK OK (${latency}ms): $commandLabel", "ack")
+                     buzz()
++                    recordAckedServoPosition(command)
+                     onAck?.invoke()
+-                    // Dociągnij świeży snapshot po ACK. Wymuś oczekiwanie na ewentualny
+-                    // cykliczny poll, zamiast gubić odświeżenie w jego trakcie.
++                    // Pierwszy odczyt może jeszcze wyprzedzić zapis statusu ESP32 po ACK.
++                    // Zrób snapshot od razu, a dla komend zmieniających kafelki dociągnij
++                    // drugi po cyklu publikacji statusu sterownika (~3 s po przyjęciu komendy).
+                     pollAwait(waitForInFlight = true)
++                    if (commandChangesDashboardState(command)) {
++                        delay(3_250L)
++                        pollAwait(waitForInFlight = true)
++                        val servoAxis = parseServoPositionCommand(command)?.axis
++                        if (servoAxis != null && servoPositionPreview(servoAxis) != null) {
++                            // Ruch serwa jest nieblokujący; jeśli pierwszy status zapisał się
++                            // w trakcie ruchu, sprawdź jeszcze raz jego końcową pozycję.
++                            delay(3_250L)
++                            pollAwait(waitForInFlight = true)
++                        }
++                    }
+                     true
+                 }
+                 else -> {
+@@ -912,15 +1026,29 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     }
+ 
+     // ── historia telemetrii ─────────────────────────────────────────────────
++    /** Znacznik ostatniego pobrania — chroni przed serią identycznych żądań. */
++    private var historyLoadedElapsed = 0L
++    private var historyLoadedRange = -1
++    private var historyJob: Job? = null
++
+     /**
+-     * [0.31.43 INCREMENTAL] Wczytanie historii do wykresów.
++     * Wczytuje historię dla zakresu [sec].
+      *
+-     * Zamiast ściągać całe okno od nowa (7 dni = 9944 próbek, 30 dni = ~43 000),
+-     * bierzemy to, co już jest w pamięci telefonu, i pytamy Firebase WYŁĄCZNIE
+-     * o przedziały, których tam nie ma. Zwykle jest to ogon: od ostatniej
+-     * zapamiętanej próbki do teraz. Bez zasięgu wykres rysuje się z pamięci.
++     * [force] pomija 60-sekundową blokadę — używają jej przycisk odświeżania
++     * i jawna zmiana zakresu. Zwykłe wejście na Wykresy korzysta z pamięci
++     * telefonu, więc przełączanie zakładek nie generuje transferu.
++     * Poprzednie pobranie jest anulowane.
+      */
+-    fun loadRange(sec: Int) = scope.launch {
++    fun loadRange(sec: Int, force: Boolean = false) {
++        val nowElapsed = SystemClock.elapsedRealtime()
++        val upToDate = !force && sec == historyLoadedRange && telemetry.isNotEmpty() &&
++            historyLoadedElapsed > 0L && nowElapsed - historyLoadedElapsed < HISTORY_MIN_INTERVAL_MS
++        rangeSec = sec
++        if (upToDate) return
++        historyLoadedElapsed = nowElapsed
++        historyLoadedRange = sec
++        historyJob?.cancel()
++        historyJob = scope.launch {
+         chartLoading = true
+         try {
+             rangeSec = sec
+@@ -1006,6 +1134,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+             chartLoading = false
+         }
+     }
++    }
+ 
+     /**
+      * [v0.31.33 ESP-HISTORY] Łączy chmurę z lokalnym archiwum centrali.
+@@ -1120,7 +1249,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     fun setRange(sec: Int) {
+         rangeSec = sec
+         saveChartPrefs()
+-        loadRange(sec)
++        loadRange(sec, force = true)
+     }
+ 
+     // Wlasciwosc o tej samej nazwie generuje JVM-owy setChartMode — stqd "Platform declaration clash".
+@@ -1597,6 +1726,10 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     var termStatusKind by mutableStateOf("")
+     val termCats = mutableStateMapOf<String, Boolean>()
+     private var terminalDlogJob: Job? = null
++    /** Ostatnia interakcja z arkuszem terminala (`elapsedRealtime`). */
++    private var terminalDlogLastTouch = 0L
++    /** Czy odbiór DLOG został wstrzymany z powodu bezczynności. */
++    private var terminalDlogIdleStopped = false
+     private var terminalDlogUid = ""
+     private var terminalDlogRoot = ""
+     private var terminalDlogSession = ""
+@@ -1713,12 +1846,25 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+     }
+ 
+     /** Odczyt prawdziwych chunków DLOG tylko wtedy, gdy arkusz terminala jest otwarty. */
+-    private fun startTerminalDlogPolling() {
+-        if (terminalDlogJob?.isActive == true) return
++    private fun startTerminalDlogPolling(restart: Boolean = false) {
++        if (terminalDlogJob?.isActive == true) {
++            // `restart` obsługuje dotknięcie w tej samej klatce, w której pętla
++            // się domyka: anulowanie zakończonej korutyny nic nie psuje.
++            if (!restart) return
++            terminalDlogJob?.cancel()
++        }
++        terminalDlogLastTouch = SystemClock.elapsedRealtime()
++        terminalDlogIdleStopped = false
+         terminalDlogJob = scope.launch {
+             termStatus = "Łączenie z rzeczywistymi wpisami DLOG z Firebase…"
+             termStatusKind = ""
+             while (isActive && sheet == "terminal") {
++                if (SystemClock.elapsedRealtime() - terminalDlogLastTouch > TERMINAL_DLOG_IDLE_STOP_MS) {
++                    terminalDlogIdleStopped = true
++                    termStatus = "Podgląd wstrzymany po 5 min bez dotykania ekranu — dotknij, aby wznowić."
++                    termStatusKind = "warn"
++                    return@launch
++                }
+                 try {
+                     terminalPollDlogOnce()
+                 } catch (e: CancellationException) {
+@@ -1732,9 +1878,21 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+         }
+     }
+ 
++    /**
++     * Wołane z UI przy każdym dotknięciu arkusza terminala (tap, przewinięcie).
++     * Podtrzymuje odbiór DLOG; po bezczynności wznawia go ponownie.
++     */
++    fun terminalTouch() {
++        terminalDlogLastTouch = SystemClock.elapsedRealtime()
++        if (!terminalDlogIdleStopped) return
++        terminalDlogIdleStopped = false
++        startTerminalDlogPolling(restart = true)
++    }
++
+     private fun stopTerminalDlogPolling() {
+         terminalDlogJob?.cancel()
+         terminalDlogJob = null
++        terminalDlogIdleStopped = false
+     }
+ 
+     private suspend fun terminalPollDlogOnce() {
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/PiecState.kt b/android/app/src/main/java/com/sterownikco/pro/core/PiecState.kt
+index 05a999d..5af8ec3 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/PiecState.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/PiecState.kt
+@@ -37,6 +37,9 @@ class PiecState {
+     var alarm_dym_wyciszenie_ms = 0L
+     var alarm_ogrz_wyciszony = false
+     var alarm_ogrz_wyciszenie_ms = 0L
++    var alarm_sound_dym = ""
++    var alarm_sound_ogrz = ""
++    var alarm_sound_both = ""
+ 
+     // ── urządzenia ──────────────────────────────────────────────────────────
+     var pompa = false
+@@ -51,6 +54,12 @@ class PiecState {
+     var trybSerwa = 0
+     var klapa = 0
+     var syberka = 0
++    // [0.31.22] Bufor offline — pola z /piec/status (firmware v3.54.0+).
++    // spoolRt = 1 wlaczony / 0 wylaczony; reszta to liczniki od startu centrali.
++    var spoolRt = 0
++    var spoolPages = 0
++    var spoolSpill = 0
++    var spoolReplay = 0
+     var wybor = 0
+     var pompa_override_min = 0
+     var mieszadlo_override_min = 0
+@@ -206,6 +215,7 @@ class PiecState {
+         alarm_ogrzewanie = false; alarm_panel = false
+         alarm_dym_wyciszony = false; alarm_dym_wyciszenie_ms = 0L
+         alarm_ogrz_wyciszony = false; alarm_ogrz_wyciszenie_ms = 0L
++        alarm_sound_dym = ""; alarm_sound_ogrz = ""; alarm_sound_both = ""
+         pompa = false; mieszadlo = false; rozpalanie = false
+         rozpalanie_potwierdzone = false; rozpalanie_pozostalo_s = 0
+         rozpalanie_serwa_aktywne = false; rozpalanie_serwa_dostepne = false
+@@ -255,6 +265,17 @@ class PiecState {
+             else { receivedFields.add(key); assign(value.trim()) }
+         }
+ 
++        fun soundId(key: String, assign: (String) -> Unit) {
++            val value = if (d.has(key) && !d.isNull(key)) d.opt(key) as? String else null
++            val normalized = value?.trim()?.lowercase()
++            if (normalized.isNullOrBlank() || normalized !in AlarmSoundSync.SOUND_IDS) {
++                receivedFields.remove(key)
++            } else {
++                receivedFields.add(key)
++                assign(normalized)
++            }
++        }
++
+         fun intField(key: String, min: Int, max: Int, assign: (Int) -> Unit) {
+             assign(readNumber(key, min.toDouble(), max.toDouble(), integer = true)?.toInt() ?: 0)
+         }
+@@ -308,6 +329,9 @@ class PiecState {
+             flag("tel_pending") { tel_pending = it }
+         }
+         longField("alarm_ogrz_wyciszenie_ms", -1L, 3_600_000L) { alarm_ogrz_wyciszenie_ms = it }
++        soundId("alarm_sound_dym") { alarm_sound_dym = it }
++        soundId("alarm_sound_ogrz") { alarm_sound_ogrz = it }
++        soundId("alarm_sound_both") { alarm_sound_both = it }
+         flag("pompa") { pompa = it }
+         flag("mieszadlo") { mieszadlo = it }
+         flag("rozpalanie") { rozpalanie = it }
+@@ -330,6 +354,10 @@ class PiecState {
+ 
+         intField("klapa", 0, 180) { klapa = it }
+         intField("syberka", 0, 90) { syberka = it }
++        intField("spool_rt", 0, 1) { spoolRt = it }
++        intField("spool_pages", 0, 9_999_999) { spoolPages = it }
++        intField("spool_spill", 0, 9_999_999) { spoolSpill = it }
++        intField("spool_replay", 0, 9_999_999) { spoolReplay = it }
+         intField("wybor", 1, 3) { wybor = it }
+         intField("pompa_override_min", 0, 1440) { pompa_override_min = it }
+         intField("mieszadlo_override_min", 0, 1440) { mieszadlo_override_min = it }
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/Prefs.kt b/android/app/src/main/java/com/sterownikco/pro/core/Prefs.kt
+index bb837c0..6ff9dfe 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/Prefs.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/Prefs.kt
+@@ -313,7 +313,7 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
+         // poświadczenia wbudowane w firmware (main_centrala.cpp) — jak w Piec.html
+         const val DEFAULT_FB_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU"
+         const val DEFAULT_FB_EMAIL = "piec_co_boot@akwarium.local"
+-        const val DEFAULT_CMD_TOKEN = ""
++        const val DEFAULT_CMD_TOKEN = "sterownikco-cmd-2026"
+ 
+         const val K_API_KEY = "piec_fb_api_key"
+         const val K_EMAIL = "piec_fb_email"
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+index 80346e4..c6fe8af 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+@@ -382,7 +382,40 @@ object Rtdb {
+ 
+     // ── telemetria historyczna (szardy dzienne + paginacja po `ts`) ──────────
+     private const val HISTORY_PAGE_SIZE = 300
+-    private var historyIndexFallback = false
++
++    /**
++     * Po tym czasie ponawiamy paginację, nawet jeśli indeks `ts` kiedyś zawiódł.
++     * Wcześniej flaga zostawała do końca procesu i jeden przypadkowy HTTP 400
++     * (np. po odświeżeniu tokenu) wyłączał stronicowanie na zawsze.
++     */
++    private const val INDEX_FALLBACK_TTL_MS = 10L * 60_000L
++
++    @Volatile private var historyIndexFallback = false
++    @Volatile private var historyIndexFallbackUntil = 0L
++
++    /** Dni domknięte w tym procesie — wczoraj dociągamy najwyżej raz. */
++    private val finalizedDays = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
++
++    private fun indexFallbackActive(): Boolean {
++        if (!historyIndexFallback) return false
++        if (System.currentTimeMillis() > historyIndexFallbackUntil) {
++            historyIndexFallback = false
++            return false
++        }
++        return true
++    }
++
++    private fun enableIndexFallback() {
++        historyIndexFallback = true
++        historyIndexFallbackUntil = System.currentTimeMillis() + INDEX_FALLBACK_TTL_MS
++    }
++
++    /** Tylko prawdziwy brak indeksu `ts` usprawiedliwia pobranie całego dnia. */
++    private fun isIndexError(error: String?, body: String): Boolean {
++        val text = ((error ?: "") + " " + body).lowercase(java.util.Locale.US)
++        if (text.isBlank()) return false
++        return text.contains("index not defined") || text.contains("indexon")
++    }
+ 
+     private fun shardPath(y: Int, m: Int, d: Int) =
+         "/piec/telemetry/1m/v1/$y/" + PiecState.pad2(m) + "/" + PiecState.pad2(d)
+@@ -424,12 +457,13 @@ object Rtdb {
+                 throw e
+             }
+             if (!res.ok) {
+-                val msg = res.error ?: ""
+-                if (msg.contains("Index not defined", true) || msg.contains("indexOn", true) || msg.contains("400")) {
+-                    historyIndexFallback = true
++                if (isIndexError(res.error, res.body)) {
++                    enableIndexFallback()
+                     return fetchShardFull(path, startTs, endTs)
+                 }
+-                throw java.io.IOException(msg)
++                // Inne błędy (401, timeout, HTTP 400 bez indeksu) nie mogą
++                // udawać pustego dnia — dzień zostanie ponowiony przy kolejnym wejściu.
++                throw java.io.IOException(res.error ?: "błąd pobierania dnia")
+             }
+             val page = ArrayList<TelemRow>()
+             if (res.body.isNotBlank()) {
+@@ -497,7 +531,6 @@ object Rtdb {
+         return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
+     }
+ 
+-    /**
+      * [v0.31.34 GAP-REPAIR] Po pobraniu całego zakresu sprawdza, czy nie została
+      * przerwa dłuższa niż 3 minuty, i dopyta dokładnie ten przedział.
+      *
+@@ -535,22 +568,130 @@ object Rtdb {
+         return map.values.sortedWith(compareBy({ it.ts }, { it.seq }))
+     }
+ 
+-    /** `fetchTelemetryFromFirebase(rangeSec)` — zwraca gotowe serie lub null. */
+-    suspend fun fetchTelemetry(rangeSec: Int): List<TelemPoint>? {
+-        if (idToken.isEmpty()) return null
++    /**
++     * Pobiera zakres historii, korzystając z dziennego cache, jeśli został podany.
++     *
++     * Zasady ruchu sieciowego:
++     *  - dzień bez pliku w pamięci  → pełne pobranie tego dnia i zapis,
++     *  - dzień bieżący (UTC)        → wyłącznie rekordy nowsze od ostatniego zapisanego,
++     *  - dzień zamknięty            → tylko z pamięci, bez sieci.
++     *
++     * Błąd jednego dnia nie przerywa pozostałych, ale jest zwracany w [HistoryFetch],
++     * żeby UI mogło powiedzieć "brak 2 dni" zamiast milcząco pokazać dziurę.
++     */
++    suspend fun fetchTelemetry(
++        rangeSec: Int,
++        firmware: String? = null,
++        deviceUptimeSeconds: Double? = null,
++        statusObservedAtMs: Long? = null,
++        cache: TelemetryDayCache? = null
++    ): HistoryFetch = withContext(Dispatchers.IO) {
++        if (idToken.isEmpty()) return@withContext HistoryFetch()
++
+         val end = System.currentTimeMillis() / 1000
+         val start = end - rangeSec
++        val queryEnd = TelemetryTimeRepair.queryEndSeconds(
++            end, firmware, deviceUptimeSeconds, statusObservedAtMs
++        )
+         val all = ArrayList<TelemRow>()
+-        for (day in dayRange(start, end)) {
+-            val dayStart = max(start, day[0] / 1000)
+-            val dayEnd = minOf(end, day[0] / 1000 + 86_400 - 1)
++        var daysRequested = 0
++        var daysFromCache = 0
++        var daysDownloaded = 0
++        var daysStale = 0
++        var daysFailed = 0
++        var firstError: String? = null
++        val todayKey = TelemetryDayCache.utcDayKey(end)
++        val yesterdayKey = TelemetryDayCache.utcDayKey(end - 86_400)
++
++        for (day in dayRange(start, queryEnd)) {
++            daysRequested++
++            // Cały dzień, nie tylko wycinek zakresu: ten sam plik posłuży potem
++            // szerszemu zakresowi. Pobranie skróconego dnia (np. przy 24 h)
++            // zatrułoby pamięć i po przełączeniu na 30 dni brakowałoby próbek.
++            val dayStart = day[0] / 1000
++            val dayEnd = dayStart + 86_400 - 1
+             val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
+-            try { all.addAll(fetchShard(path, dayStart, dayEnd)) } catch (e: Exception) { /* pusty dzień */ }
++            val key = TelemetryDayCache.utcDayKey(dayStart)
++            val cached = cache?.read(key)
++            try {
++                if (cached == null) {
++                    val rows = fetchShard(path, dayStart, dayEnd)
++                    all.addAll(rows)
++                    cache?.write(key, rows)
++                    finalizedDays[key] = true
++                    daysDownloaded++
++                } else if (key == todayKey) {
++                    // Doba w toku: dociągamy tylko ogon, nie całe 24 h.
++                    // `startAt` jest domknięty, więc ostatni zapisany rekord wraca
++                    // zawsze — o tym, czy są nowe dane, decyduje porównanie `id`.
++                    val fresh = fetchShard(path, max(dayStart, cached.maxTs), dayEnd)
++                    val known = cached.rows.mapTo(HashSet()) { it.id }
++                    val added = fresh.filter { it.id !in known }
++                    if (added.isEmpty()) {
++                        all.addAll(cached.rows)
++                        daysFromCache++
++                    } else {
++                        val merged = uniqueSort(cached.rows + added)
++                        all.addAll(merged)
++                        cache?.write(key, merged)
++                        daysDownloaded++
++                    }
++                } else if (key == yesterdayKey && !finalizedDays.containsKey(key)) {
++                    // Wczoraj domykamy raz na proces: rekordy mogły dopisać się
++                    // po północy UTC. Scalanie, nigdy podmiana — nie zgubimy próbek.
++                    val full = fetchShard(path, dayStart, dayEnd)
++                    finalizedDays[key] = true
++                    val merged = uniqueSort(cached.rows + full)
++                    all.addAll(merged)
++                    cache?.write(key, merged)
++                    daysDownloaded++
++                } else {
++                    all.addAll(cached.rows)
++                    daysFromCache++
++                }
++            } catch (e: kotlinx.coroutines.CancellationException) {
++                throw e
++            } catch (e: Exception) {
++                if (firstError == null) firstError = e.message ?: "błąd sieci"
++                if (cached != null) {
++                    // Dzień z pamięci jest lepszy niż dziura w wykresie,
++                    // ale oznaczamy go jako nieodświeżony.
++                    all.addAll(cached.rows)
++                    daysStale++
++                } else {
++                    daysFailed++
++                }
++            }
+         }
+-        val sorted = repairGaps(uniqueSort(all))
+-        if (sorted.isEmpty()) return null
+-        val chartPoints = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()
+-        return chartPoints.ifEmpty { null }
++
++        val sorted = uniqueSort(all)
++        if (sorted.isEmpty()) {
++            return@withContext HistoryFetch(
++                daysRequested = daysRequested, daysFromCache = daysFromCache,
++                daysDownloaded = daysDownloaded, daysStale = daysStale,
++                daysFailed = daysFailed, firstError = firstError
++            )
++        }
++        val repaired = TelemetryTimeRepair.normalize(
++            rows = sorted,
++            firmware = firmware,
++            deviceUptimeSeconds = deviceUptimeSeconds,
++            statusObservedAtMs = statusObservedAtMs
++        ).rows
++        val chartPoints = repaired.asSequence()
++            .filter { it.ts in start..end }
++            .map { it.toPoint() }
++            .filter { it.hasValues() }
++            .toList()
++        HistoryFetch(
++            points = chartPoints,
++            daysRequested = daysRequested,
++            daysFromCache = daysFromCache,
++            daysDownloaded = daysDownloaded,
++            daysStale = daysStale,
++            daysFailed = daysFailed,
++            firstError = firstError
++        )
+     }
+ 
+     /** Wynik pobrania dokładnego przedziału: próbki + informacja, czy nic nie wypadło. */
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt b/android/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt
+index 6e14ba2..431fda1 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/Telemetry.kt
+@@ -34,7 +34,9 @@ data class TelemPoint(
+     /** Świeży snapshot statusu sterownika; nie może zostać odrzucony jako anomalia końcowa. */
+     val isLive: Boolean = false,
+     /** Stan pompy z bitu 0 `state`; null oznacza brak wiarygodnego pola stanu. */
+-    val pumpOn: Boolean? = null
++    val pumpOn: Boolean? = null,
++    /** Id rekordu RTDB, używane do deduplikacji nakładających się odczytów archiwum. */
++    val sourceId: String = ""
+ ) {
+     fun hasValues(): Boolean = pumpOn != null || listOf(
+         t_zewn, t_bojler, t_ogrz, t_ogrz_sr, t_powrot, t_panel, t_pokoj, t_trociny,
+@@ -48,6 +50,23 @@ data class TelemPoint(
+     }
+ }
+ 
++/**
++ * Wynik pobrania historii: punkty wykresu oraz diagnostyka ruchu sieciowego.
++ *
++ * `daysFromCache` — dni wzięte z pamięci bez sieci, `daysDownloaded` — dni
++ * pobrane lub dociągnięte przyrostowo, `daysStale` — dni, których nie udało
++ * się odświeżyć (pokazane z pamięci), `daysFailed` — dni bez żadnych danych.
++ */
++data class HistoryFetch(
++    val points: List<TelemPoint> = emptyList(),
++    val daysRequested: Int = 0,
++    val daysFromCache: Int = 0,
++    val daysDownloaded: Int = 0,
++    val daysStale: Int = 0,
++    val daysFailed: Int = 0,
++    val firstError: String? = null
++)
++
+ /**
+  * Chronological merge for the chart's archived telemetry and live status feed.
+  * Keep equal-time archive/live observations (the renderer can show both), but
+@@ -140,6 +159,11 @@ private val SIM_BOUNDS_BY_CHANNEL = mapOf(
+     8 to (0.0 to 100.0), 9 to (970.0 to 1040.0), 10 to (0.0 to 4095.0)
+ )
+ 
++/**
++ * Mapowanie wykonywane po ewentualnej korekcie `TelemRow` w RTDB readerze.
++ * `TelemPoint` celowo nie przenosi session/mono, dlatego rozpoznawanie sesji
++ * musi zakończyć się przed tym etapem.
++ */
+ fun TelemRow.toPoint(): TelemPoint {
+     fun isSimulatedChannel(channel: Int): Boolean =
+         channel in 0..62 && (sim and (1L shl channel)) != 0L
+@@ -161,7 +185,7 @@ fun TelemRow.toPoint(): TelemPoint {
+ 
+     fun getServoVal(deg: Long, maxDeg: Double, channel: Int): Double? {
+         if (simulated || deg < 0L || deg.toDouble() > maxDeg) return null
+-        return (deg / maxDeg * 100).roundToInt().toDouble()
++        return deg.toDouble() / maxDeg * 100.0
+     }
+ 
+     return TelemPoint(
+@@ -180,7 +204,8 @@ fun TelemRow.toPoint(): TelemPoint {
+         klapa = getServoVal(k, 180.0, 11),
+         syberka = getServoVal(s, 90.0, 12),
+         sim = sim, simulated = simulated,
+-        pumpOn = if (stateKnown) (state and PUMP_ON_STATE_BIT) != 0L else null
++        pumpOn = if (stateKnown) (state and PUMP_ON_STATE_BIT) != 0L else null,
++        sourceId = id
+     )
+ }
+ 
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/TileSpecs.kt b/android/app/src/main/java/com/sterownikco/pro/core/TileSpecs.kt
+index 97b13b8..017e941 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/TileSpecs.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/TileSpecs.kt
+@@ -5,6 +5,17 @@ package com.sterownikco.pro.core
+    kafelków (wartość, jednostka, opis, plakietka, kolor, pasek, ilustracja).
+    ══════════════════════════════════════════════════════════════════════════ */
+ 
++data class TilePositionMeter(
++    val label: String,
++    val degrees: Int?,
++    val percentage: Int?,
++    val pendingTarget: Boolean = false
++) {
++    val fraction: Double? get() = percentage?.div(100.0)
++    val angleText: String get() = degrees?.let { "${it}°" } ?: "—"
++    val percentageText: String get() = percentage?.let { "$it%" } ?: "—"
++}
++
+ data class TileSpec(
+     val id: String,
+     val title: String,
+@@ -17,12 +28,35 @@ data class TileSpec(
+     val cls: String = "c-none",
+     val state: String = "",
+     val frac: Double = 0.0,
++    val positionMeters: List<TilePositionMeter> = emptyList(),
+     val vcol: String = "",
+     val sim: Boolean = false,
+     val stale: Boolean = false,
+     val artKey: String = ""
+ )
+ 
++internal fun buildServoPositionMeters(
++    klapaDegrees: Int?,
++    syberkaDegrees: Int?,
++    klapaPreview: ServoPositionPreview? = null,
++    syberkaPreview: ServoPositionPreview? = null
++): List<TilePositionMeter> {
++    fun meter(label: String, degrees: Int?, maxDegrees: Int, preview: ServoPositionPreview?): TilePositionMeter {
++        val validPreview = preview?.takeIf {
++            it.targetDegrees in 0..maxDegrees && it.requestedPercent in 0..100
++        }
++        val validDegrees = validPreview?.targetDegrees ?: degrees?.takeIf { it in 0..maxDegrees }
++        val percentage = validPreview?.requestedPercent
++            ?: validDegrees?.let { Math.round(it * 100.0 / maxDegrees).toInt() }
++        return TilePositionMeter(label, validDegrees, percentage, pendingTarget = validPreview != null)
++    }
++
++    return listOf(
++        meter("KLAPA", klapaDegrees, maxDegrees = 180, preview = klapaPreview),
++        meter("SYBEREK", syberkaDegrees, maxDegrees = 90, preview = syberkaPreview)
++    )
++}
++
+ data class DashboardTileDef(
+     val id: String,
+     val title: String,
+@@ -45,7 +79,7 @@ object TileDefs {
+         DashboardTileDef("trociny", "Temperatura trocin", 1, "Temperatura czujnika zasobnika"),
+         DashboardTileDef("weather", "Pogoda teraz", 1, "Aktualna pogoda z Open-Meteo"),
+         DashboardTileDef("pompa", "Pompa", 2, "Stan i wybrana strategia pompy", true),
+-        DashboardTileDef("serwo", "Serwo", 2, "Tryb i położenie klapy", true),
++        DashboardTileDef("serwo", "Serwo", 2, "Tryb oraz położenie klapy i syberka", true),
+         DashboardTileDef("mieszadlo", "Mieszadło", 2, "Stan pracy mieszadła", true),
+         DashboardTileDef("dym", "Czujnik dymu", 2, "Odczyt ADC i stan czujnika", true),
+         DashboardTileDef("alarmy", "Bezpieczeństwo", 2, "Podsumowanie alarmów kotła i kolektora")
+@@ -285,12 +319,20 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
+     )
+ 
+     // ── serwo ───────────────────────────────────────────────────────────────
+-    val servoMode = m.servoModePresentation().mode
+-    val servoKnown = servoMode != null
+     val klapaKnown = S.hasData("klapa") && S.klapa in 0..180
+     val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
+-    val klapaPct = if (klapaKnown) Math.round(S.klapa * 100.0 / 180.0) else null
+-    val sybPct = if (syberkaKnown) Math.round(S.syberka * 100.0 / 90.0) else null
++    val klapaPreview = m.servoPositionPreview(ServoPositionAxis.KLAPA)
++    val syberkaPreview = m.servoPositionPreview(ServoPositionAxis.SYBEREK)
++    val servoMode = if (klapaPreview != null || syberkaPreview != null) 2 else m.servoModePresentation().mode
++    val servoKnown = servoMode != null
++    val servoPositionMeters = buildServoPositionMeters(
++        klapaDegrees = S.klapa.takeIf { klapaKnown },
++        syberkaDegrees = S.syberka.takeIf { syberkaKnown },
++        klapaPreview = klapaPreview,
++        syberkaPreview = syberkaPreview
++    )
++    val klapaPct = servoPositionMeters[0].percentage
++    val servoPositionPending = klapaPreview != null || syberkaPreview != null
+     out.add(
+         TileSpec(
+             id = "serwo", title = "Serwo", grid = 2,
+@@ -298,10 +340,14 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
+             cls = if (servoKnown) "c-flame" else "c-none",
+             state = when (servoMode) { 2 -> "warn"; 3 -> "err"; else -> "" },
+             frac = if (klapaPct != null) klapaPct / 100.0 else 0.0,
+-            desc = "klapa ${if (klapaKnown) "${S.klapa}°" else "—"} • syberek ${if (syberkaKnown) "${S.syberka}°" else "—"}",
+-            badge = if (klapaPct != null && sybPct != null) "K$klapaPct% S$sybPct%" else "BRAK DANYCH",
+-            badgeCls = if (servoKnown && klapaKnown && syberkaKnown && !stale) "active" else "stale",
+-            stale = stale || !servoKnown || !klapaKnown || !syberkaKnown, artKey = "serwo"
++            positionMeters = servoPositionMeters,
++            desc = "klapa ${klapaPreview?.let { "cel ${it.requestedPercent}% (${it.targetDegrees}°)" } ?: if (klapaKnown) "${S.klapa}°" else "—"} • syberek ${syberkaPreview?.let { "cel ${it.requestedPercent}% (${it.targetDegrees}°)" } ?: if (syberkaKnown) "${S.syberka}°" else "—"}",
++            // Procenty i kąty pozostają w dwóch wierszach; „CEL” pojawia się tylko po ACK,
++            // gdy aplikacja czeka jeszcze na zgodny, świeży odczyt z centrali.
++            badge = if (servoPositionPending) "CEL" else "",
++            badgeCls = if (servoPositionPending) "active" else if (servoKnown && klapaKnown && syberkaKnown && !stale) "active" else "stale",
++            stale = stale || !servoKnown || (!klapaKnown && klapaPreview == null) || (!syberkaKnown && syberkaPreview == null),
++            artKey = "serwo"
+         )
+     )
+ 
+diff --git a/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt b/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
+index 437d6b8..b38c938 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/service/AlarmMonitorService.kt
+@@ -24,6 +24,7 @@ import com.sterownikco.pro.core.AlarmMonitorPhase
+ import com.sterownikco.pro.core.AlarmMonitorStartGate
+ import com.sterownikco.pro.core.AlarmNotify
+ import com.sterownikco.pro.core.AlarmSnapshotCoordinator
++import com.sterownikco.pro.core.AlarmSoundSync
+ import com.sterownikco.pro.core.Prefs
+ import com.sterownikco.pro.core.Rtdb
+ import com.sterownikco.pro.core.controllerAlarmMuteStatus
+@@ -316,6 +317,7 @@ class AlarmMonitorService : Service() {
+                 val overheat = alarmFlag(d, "alarm_ogrzewanie")
+                 val complete = smoke != null && overheat != null
+                 val prefs = Prefs(applicationContext)
++                AlarmSoundSync.applyStatus(prefs, d, SystemClock.elapsedRealtime())
+                 val activeSignature = AlarmMuteCommands.signature(
+                     smoke, overheat, prefs.get(AlarmCenter.K_LAST_SIG).orEmpty()
+                 )
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt b/android/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
+index e862235..752ab1b 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
+@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.sp
+ import com.sterownikco.pro.core.ChartSeries
+ import com.sterownikco.pro.core.SeriesDef
+ import com.sterownikco.pro.core.TelemPoint
++import com.sterownikco.pro.core.chartTimestampFraction
++import com.sterownikco.pro.core.nearestChartTimestampIndex
+ import com.sterownikco.pro.ui.theme.Pal
+ import kotlin.math.abs
+ import kotlin.math.ceil
+@@ -34,6 +36,7 @@ import kotlin.math.floor
+ import kotlin.math.max
+ import kotlin.math.min
+ import kotlin.math.roundToInt
++import kotlin.math.roundToLong
+ 
+ /* ══════════════════════════════════════════════════════════════════════════
+    SILNIK RYSOWANIA WYKRESU — port `updateChartCanvas()` (Piec.html 7289-7700).
+@@ -281,9 +284,8 @@ fun ChartCanvas(
+ ) {
+     val measurer = rememberTextMeasurer()
+     val famRes = androidx.compose.ui.platform.LocalFontFamilyResolver.current
+-    // Gesty czytaja SWIEZY view bez restartu detektora: kluczem sa tylko pady
+-    // (zoom/offset przebudowuja view co klatke — pointerInput(view) rwalo by gest).
+-    val viewState = rememberUpdatedState(view)
++    // Gesty używają świeżych czasów próbek bez restartu detektora.
++    val rowTimestampsState = rememberUpdatedState(view.rows.map { it.ts })
+     val inspectorActiveState = rememberUpdatedState(crossIdx != null)
+     val onCrossState = rememberUpdatedState(onCross)
+     val onPanState = rememberUpdatedState(onPan)
+@@ -322,6 +324,10 @@ fun ChartCanvas(
+         val padTop = 16.dp.toPx(); val padBottom = 24.dp.toPx()
+         val plotW = (w - padLeft - padRight).coerceAtLeast(0f)
+         val plotH = (h - padTop - padBottom).coerceAtLeast(0f)
++        val xDomainStartMs = view.rows.firstOrNull()?.ts ?: 0L
++        val xDomainEndMs = view.rows.lastOrNull()?.ts?.takeIf { it > xDomainStartMs } ?: (xDomainStartMs + 1L)
++        fun xForTimestamp(timestampMs: Long): Float =
++            padLeft + chartTimestampFraction(timestampMs, xDomainStartMs, xDomainEndMs) * plotW
+         val axis = TextStyle(fontSize = 8.5.sp, color = Pal.AxisText)
+         fun measure(txt: String, st: TextStyle) = measurer.measure(AnnotatedString(txt), st, density = this, fontFamilyResolver = famRes)
+         val axisSec = TextStyle(fontSize = 8.5.sp, color = hexColor(view.secColor))
+@@ -633,6 +639,17 @@ internal fun chartSampleIndexAtX(x: Float, padLeft: Float, plotWidth: Float, sam
+     return (fraction * (sampleCount - 1)).roundToInt()
+ }
+ 
++/** Resolve a touch against elapsed time, so scrubbing follows the plotted timestamps. */
++internal fun chartSampleIndexAtX(x: Float, padLeft: Float, plotWidth: Float, sortedTimestamps: List<Long>): Int? {
++    if (sortedTimestamps.size < 2 || !plotWidth.isFinite() || plotWidth <= 0f) return null
++    val fraction = ((x - padLeft) / plotWidth).coerceIn(0f, 1f)
++    val startMs = sortedTimestamps.first()
++    val endMs = sortedTimestamps.last()
++    val spanMs = (endMs - startMs).coerceAtLeast(1L)
++    val targetMs = startMs + (spanMs.toDouble() * fraction).roundToLong()
++    return nearestChartTimestampIndex(sortedTimestamps, targetMs)
++}
++
+ private class SegPoint(val x: Float, val y: Float, val v: Double, val ts: Long, val idx: Int, val simulated: Boolean)
+ 
+ /**
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt b/android/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+index 85b6a27..9121eff 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+@@ -233,7 +233,13 @@ private fun HStat(lbl: String, value: String, color: Color, modifier: Modifier =
+ 
+ /** `.qcard` — szybka karta 3-kolumnowa. */
+ @Composable
+-fun RowScope.QCard(title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit) {
++fun RowScope.QCard(
++    title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit,
++    /** [0.31.25] Krótka etykieta obok tytułu (np. tryb pracy serwa). Renderowana
++     *  jako kolorowa pigułka — innym stylem niż tytuł i wartość. Pusta = brak. */
++    tag: String = "",
++    tagColor: Color = Pal.Cyan
++) {
+     val bd = when (state) {
+         "ok" -> Pal.rgba(74, 222, 128, .45f); "warn" -> Pal.rgba(251, 191, 36, .5f)
+         "err" -> Pal.rgba(255, 95, 120, .55f); else -> Pal.Border
+@@ -247,6 +253,17 @@ fun RowScope.QCard(title: String, icon: String, value: String, sub: String, stat
+     ) {
+         Row(verticalAlignment = Alignment.CenterVertically) {
+             Text(title, style = Txt.quickTitle, modifier = Modifier.weight(1f), maxLines = 1)
++            if (tag.isNotEmpty()) {
++                Text(
++                    tag,
++                    style = Txt.badge,
++                    color = tagColor,
++                    maxLines = 1,
++                    modifier = Modifier.padding(end = 5.dp)
++                        .background(tagColor.copy(alpha = 0.14f), RoundedCornerShape(4.dp))
++                        .padding(horizontal = 4.dp, vertical = 1.dp)
++                )
++            }
+             AppIcon(icon, size = 15.dp, tint = Pal.Cyan)
+         }
+         Text(value, style = Txt.quickVal, color = vc, maxLines = 1, overflow = TextOverflow.Ellipsis)
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/components/Hmi.kt b/android/app/src/main/java/com/sterownikco/pro/ui/components/Hmi.kt
+index 8bf3deb..035e853 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/components/Hmi.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/components/Hmi.kt
+@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.Path
+ import androidx.compose.ui.graphics.drawscope.Stroke
+ import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+@@ -137,19 +138,21 @@ fun Tile(
+                 animFor = { t -> Ilu.anim(t, art) }
+             )
+         }
+-        // Plakietka stanu — przesuwanie jest dostępne z całej karty, bez dodatkowego uchwytu.
+-        val (bfg, bbg) = badgeColors(if (spec.sim) "sim" else spec.badgeCls)
+-        Row(
+-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)
+-                .height(18.dp)
+-                .background(bbg, RoundedCornerShape(9.dp))
+-                .border(1.dp, bfg.copy(alpha = .3f), RoundedCornerShape(9.dp))
+-                .padding(horizontal = 7.dp),
+-            verticalAlignment = Alignment.CenterVertically,
+-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+-        ) {
+-            Box(Modifier.size(4.dp).background(bfg, RoundedCornerShape(50)))
+-            Text(spec.badge, style = Txt.badge, color = bfg, maxLines = 1, overflow = TextOverflow.Ellipsis)
++        // Plakietka stanu — pusta plakietka jest pomijana (np. Serwo ma pozycje niżej).
++        if (spec.badge.isNotBlank()) {
++            val (bfg, bbg) = badgeColors(if (spec.sim) "sim" else spec.badgeCls)
++            Row(
++                modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)
++                    .height(18.dp)
++                    .background(bbg, RoundedCornerShape(9.dp))
++                    .border(1.dp, bfg.copy(alpha = .3f), RoundedCornerShape(9.dp))
++                    .padding(horizontal = 7.dp),
++                verticalAlignment = Alignment.CenterVertically,
++                horizontalArrangement = Arrangement.spacedBy(4.dp)
++            ) {
++                Box(Modifier.size(4.dp).background(bfg, RoundedCornerShape(50)))
++                Text(spec.badge, style = Txt.badge, color = bfg, maxLines = 1, overflow = TextOverflow.Ellipsis)
++            }
+         }
+         // tytuł / wartość / opis
+         Text(
+@@ -170,21 +173,74 @@ fun Tile(
+                 Text(" " + spec.unit, style = Txt.tileUnit, color = Pal.TextDim, modifier = Modifier.padding(bottom = 2.dp))
+             }
+         }
+-        Text(
+-            spec.desc, style = Txt.tileDesc,
+-            modifier = Modifier.align(Alignment.TopStart).padding(top = 98.dp, start = 10.dp, end = 10.dp),
+-            maxLines = 1, overflow = TextOverflow.Ellipsis
+-        )
+-        // pasek postępu
+-        Box(
+-            modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, end = 10.dp, bottom = 4.dp)
+-                .fillMaxWidth().height(2.5.dp).background(Pal.rgba(48, 71, 93, .2f), RoundedCornerShape(2.dp))
+-        ) {
++        if (spec.positionMeters.isEmpty()) {
++            Text(
++                spec.desc, style = Txt.tileDesc,
++                modifier = Modifier.align(Alignment.TopStart).padding(top = 98.dp, start = 10.dp, end = 10.dp),
++                maxLines = 1, overflow = TextOverflow.Ellipsis
++            )
++            // W pozostałych kafelkach pojedynczy pasek ogólnego postępu.
+             Box(
+-                modifier = Modifier.fillMaxWidth(spec.frac.coerceIn(0.0, 1.0).toFloat())
+-                    .height(2.5.dp)
+-                    .background(if (spec.cls == "c-none") Pal.TextDim2 else accent, RoundedCornerShape(2.dp))
++                modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, end = 10.dp, bottom = 4.dp)
++                    .fillMaxWidth().height(2.5.dp).background(Pal.rgba(48, 71, 93, .2f), RoundedCornerShape(2.dp))
++            ) {
++                Box(
++                    modifier = Modifier.fillMaxWidth(spec.frac.coerceIn(0.0, 1.0).toFloat())
++                        .height(2.5.dp)
++                        .background(if (spec.cls == "c-none") Pal.TextDim2 else accent, RoundedCornerShape(2.dp))
++                )
++            }
++        } else {
++            // Procent jest na pierwszym planie; kąt pozostaje mniejszą informacją pomocniczą.
++            val meterLabelStyle = Txt.tileDesc.copy(fontSize = 6.5.sp, lineHeight = 8.sp)
++            val meterAngleStyle = Txt.tileDesc.copy(fontSize = 6.sp, lineHeight = 7.sp)
++            val meterPercentStyle = Txt.tileDesc.copy(
++                fontSize = 9.sp, lineHeight = 10.sp, fontWeight = FontWeight.ExtraBold
+             )
++            Column(
++                modifier = Modifier.align(Alignment.BottomStart)
++                    .padding(start = 10.dp, end = 10.dp, bottom = 3.dp)
++                    .fillMaxWidth(),
++                verticalArrangement = Arrangement.spacedBy(1.dp)
++            ) {
++                spec.positionMeters.take(2).forEachIndexed { index, meter ->
++                    val meterColor = when {
++                        meter.pendingTarget -> Pal.Warn
++                        index == 0 -> accent
++                        else -> Pal.Accent
++                    }
++                    val fraction = meter.fraction?.coerceIn(0.0, 1.0)?.toFloat() ?: 0f
++                    Row(
++                        modifier = Modifier.fillMaxWidth().height(11.dp),
++                        verticalAlignment = Alignment.CenterVertically,
++                        horizontalArrangement = Arrangement.spacedBy(3.dp)
++                    ) {
++                        Text(
++                            meter.label, style = meterLabelStyle.copy(fontWeight = FontWeight.Bold),
++                            color = meterColor, modifier = Modifier.width(35.dp), maxLines = 1,
++                            overflow = TextOverflow.Clip
++                        )
++                        Text(
++                            meter.percentageText, style = meterPercentStyle, color = meterColor,
++                            modifier = Modifier.width(30.dp), maxLines = 1, textAlign = TextAlign.Start
++                        )
++                        Text(
++                            meter.angleText, style = meterAngleStyle, color = Pal.TextDim,
++                            modifier = Modifier.width(20.dp), maxLines = 1
++                        )
++                        Box(
++                            modifier = Modifier.weight(1f).height(3.dp)
++                                .clip(RoundedCornerShape(2.dp))
++                                .background(Pal.rgba(48, 71, 93, .55f))
++                        ) {
++                            Box(
++                                modifier = Modifier.fillMaxWidth(fraction).height(3.dp)
++                                    .background(meterColor, RoundedCornerShape(2.dp))
++                            )
++                        }
++                    }
++                }
++            }
+         }
+     }
+ }
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/components/Kit.kt b/android/app/src/main/java/com/sterownikco/pro/ui/components/Kit.kt
+index cb78f0e..85c6dcc 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/components/Kit.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/components/Kit.kt
+@@ -29,6 +29,7 @@ import androidx.compose.material3.Slider
+ import androidx.compose.material3.SliderDefaults
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableFloatStateOf
+ import androidx.compose.runtime.mutableStateOf
+@@ -47,6 +48,7 @@ import androidx.compose.ui.text.input.VisualTransformation
+ import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
++import kotlinx.coroutines.delay
+ import com.sterownikco.pro.ui.icons.AppIcon
+ import com.sterownikco.pro.ui.theme.Dimens
+ import com.sterownikco.pro.ui.theme.Pal
+@@ -245,6 +247,52 @@ fun CheckRow(
+     }
+ }
+ 
++/**
++ * [0.31.23] CheckRow dla stanu, który mieszka w CENTRALI, a nie w aplikacji.
++ *
++ * Problem, który to naprawia: klik w CheckRow wysyła komendę i dostaje ACK
++ * w ~0,3–2 s, ale sam kwadracik czyta wyłącznie status, który przychodzi
++ * co 8 s. Efekt: toast „Potwierdzone przez sterownik", a kwadracik pusty
++ * jeszcze przez kilka sekund — wygląda jak zepsuty.
++ *
++ * Rozwiązanie: po kliknięciu kwadracik pokazuje stan DOCELOWY (echo), podpis
++ * mówi „Wysyłanie…". Gdy przyjdzie świeży status zgodny z echem — echo znika
++ * i zostaje prawda z centrali. Jeśli w 12 s nic nie przyjdzie, echo znika samo
++ * i UI wraca do stanu z centrali (czyli uczciwie pokazuje, że się nie udało).
++ */
++@Composable
++fun CheckRowEcho(
++    name: String,
++    desc: String?,
++    device: Boolean,
++    known: Boolean = true,
++    pendingText: String = "Wysyłanie… czekam na potwierdzenie centrali",
++    onSend: (Boolean) -> Unit
++) {
++    var pending by remember { mutableStateOf<Boolean?>(null) }
++
++    // Status dogonił echo — zdejmij echo, dalej pokazujemy prawdę z centrali.
++    LaunchedEffect(pending, device) {
++        if (pending != null && device == pending) pending = null
++    }
++    // Brak potwierdzenia w 12 s — zdejmij echo (UI wroci do stanu z centrali).
++    LaunchedEffect(pending) {
++        val cel = pending ?: return@LaunchedEffect
++        delay(12_000)
++        if (pending == cel) pending = null
++    }
++
++    CheckRow(
++        name = name,
++        desc = if (pending != null) pendingText else desc,
++        checked = pending ?: device,
++        known = known
++    ) { v ->
++        pending = v
++        onSend(v)
++    }
++}
++
+ /** `.slider` — suwak z etykietą i wartością (panel: `<div class="h"><span>…</span><b></b></div>`). */
+ @Composable
+ fun SliderRow(
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+index 5371706..451696b 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Charts.kt
+@@ -127,7 +127,7 @@ fun ChartsPage(m: AppModel) {
+         verticalArrangement = Arrangement.spacedBy(Dimens.gap)
+     ) {
+         PageHead("WYKRESY TELEMETRII", "historia pomiarów · temperatury · serwa · pompa",
+-            action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec) }) })
++            action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec, force = true) }) })
+ 
+         // [0.31.42] Na prosbe uzytkownika (zrzut 02:54) zdjete z nad wykresu:
+         //   - pasek statusu "Załadowano 9944 próbek z RTDB ... · odcinki
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+index 1274de7..8f1a06e 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Dashboard.kt
+@@ -46,6 +46,7 @@ import androidx.compose.ui.zIndex
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.sterownikco.pro.core.AppModel
++import com.sterownikco.pro.core.ServoPositionAxis
+ import com.sterownikco.pro.core.buildTiles
+ import com.sterownikco.pro.ui.components.Banner
+ import com.sterownikco.pro.ui.components.Hero
+@@ -70,11 +71,24 @@ import com.sterownikco.pro.ui.components.Tile
+ fun Dashboard(m: AppModel) {
+     val rev = m.S.rev.intValue // subskrypcja zmian stanu
+     val S = m.S
+-    val servoMode = m.servoModePresentation().mode
++    val flapPreview = m.servoPositionPreview(ServoPositionAxis.KLAPA)
++    val syberkaPreview = m.servoPositionPreview(ServoPositionAxis.SYBEREK)
++    val pendingServo = when {
++        flapPreview == null -> syberkaPreview?.let { "syberek" to it }
++        syberkaPreview == null -> "klapa" to flapPreview
++        flapPreview.acceptedAtElapsedMs >= syberkaPreview.acceptedAtElapsedMs -> "klapa" to flapPreview
++        else -> "syberek" to syberkaPreview
++    }
++    val servoMode = if (pendingServo != null) 2 else m.servoModePresentation().mode
+     val weatherCode = m.weather?.current?.code ?: -1
+     val isDay = m.weather?.current?.isDay ?: (!S.night)
+-    val art = remember(rev, servoMode, weatherCode, isDay) { S.art(weatherCode, isDay, servoMode) }
+-    val tiles = remember(rev, servoMode, weatherCode, isDay, m.weather, m.weatherBusy) { buildTiles(m, weatherCode, isDay) }
++    val art = remember(rev, servoMode, weatherCode, isDay, flapPreview) {
++        val reported = S.art(weatherCode, isDay, servoMode)
++        flapPreview?.let { reported.copy(klapa = it.targetDegrees.toFloat(), klapaKnown = true) } ?: reported
++    }
++    val tiles = remember(rev, servoMode, weatherCode, isDay, m.weather, m.weatherBusy, flapPreview, syberkaPreview) {
++        buildTiles(m, weatherCode, isDay)
++    }
+     val orderIndex = m.dashboardWidgetOrder.withIndex().associate { it.value to it.index }
+     val selectedTiles = tiles.filter { it.id in m.dashboardWidgets }
+         .sortedBy { orderIndex[it.id] ?: Int.MAX_VALUE }
+@@ -157,17 +171,33 @@ fun Dashboard(m: AppModel) {
+             )
+             val servoKnown = servoMode != null
+             val flapKnown = S.hasData("klapa") && S.klapa in 0..180
++            val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
++            // [0.31.25] Tryb pracy (AUTO / RĘCZNY) siedzi w pigułce OBOK tytułu —
++            // innym stylem niż reszta, więc nie zabiera linii i nie udaje wartości.
++            // Pod spodem zostają dwie pozycje: klapa i syberek, każda z własnym %.
++            // Kąt z centrali (klapa 0..180°, syberek 0..90°) → procent, bo tylko
++            // procent jest porównywalny między dwoma serwami o różnym zakresie.
+             val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
++            val syberkaLabel = if (syberkaKnown) "${Math.round(S.syberka * 100.0 / 90.0)}%" else "—"
+             QCard(
+                 title = "SERWO", icon = "servo",
+-                value = if (!servoKnown) "—" else when (servoMode) {
+-                    1 -> "AUTO ($flapLabel)"
+-                    2 -> "RĘCZNY ($flapLabel)"
+-                    3 -> "BEZPIECZNY"
+-                    else -> "—"
++                // BEZPIECZNY nie mieści się w pigułce obok tytułu (10 znaków), więc
++                // w tym trybie tryb przejmuje wartość, a pigułka znika.
++                tag = when (servoMode) { 1 -> "AUTO"; 2 -> "RĘCZNY"; else -> "" },
++                tagColor = if (servoMode == 2) Pal.Warn else Pal.Cyan,
++                value = when {
++                    pendingServo != null -> "CEL ${pendingServo.second.requestedPercent}%"
++                    servoMode == 3 -> "BEZPIECZNY"
++                    else -> "klapa $flapLabel"
++                },
++                sub = when {
++                    pendingServo != null -> "${pendingServo.first} ${pendingServo.second.targetDegrees}° · czekam"
++                    servoMode == 3 -> "tryb bezpieczeństwa"
++                    else -> "syberek $syberkaLabel"
+                 },
+-                sub = if (flapKnown) "klapa ${S.klapa}°" else "brak prawidłowego odczytu pozycji",
+-                state = if (!servoKnown) "warn" else when (servoMode) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
++                // AUTO = normalna praca, więc ramka neutralna — tak jak POMPA i MIESZADŁO.
++                // Kolor dopiero gdy coś odbiega: RĘCZNY = żółty, BEZPIECZNY = czerwony.
++                state = if (!servoKnown || pendingServo != null) "warn" else when (servoMode) { 2 -> "warn"; 3 -> "err"; else -> "" },
+                 onClick = { m.openSheet("serwo") }
+             )
+             val mixerKnown = S.hasData("mieszadlo")
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Lists.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Lists.kt
+index a334159..2938ef5 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Lists.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Lists.kt
+@@ -80,6 +80,8 @@ fun SettingsPage(m: AppModel) {
+             "Zewnętrzna, Bojler, Pokój, Piec, Panel, Powrót, Podajnik, Ciśnienie, Wilgotność, Dym")
+         MenuCard(m, "czas", "clock", Pal.TextDim, "Data i czas zegara RTC",
+             "Synchronizacja zegara sterownika z czasem telefonu")
++        MenuCard(m, "bufor", "logs", Pal.Warn, "Bufor offline",
++            "Zapis próbek w pamięci centrali, gdy nie ma internetu · stan i liczniki")
+     }
+ }
+ 
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Overlays.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Overlays.kt
+index 33b3ff5..dfb931a 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/Overlays.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/Overlays.kt
+@@ -38,6 +38,7 @@ import com.sterownikco.pro.ui.components.Sheet
+ import com.sterownikco.pro.ui.icons.AppIcon
+ import com.sterownikco.pro.ui.screens.sheets.AlarmSheet
+ import com.sterownikco.pro.ui.screens.sheets.CzasSheet
++import com.sterownikco.pro.ui.screens.sheets.OfflineBufferSheet
+ import com.sterownikco.pro.ui.screens.sheets.DashboardWidgetsSheet
+ import com.sterownikco.pro.ui.screens.sheets.DymSheet
+ import com.sterownikco.pro.ui.screens.sheets.LogsSheet
+@@ -90,6 +91,7 @@ fun SheetHost(m: AppModel) {
+             "logi" -> { title = "Logi sterownika"; icon = "logs" }
+             "ota" -> { title = "Aktualizacja firmware (OTA & GitHub)"; icon = "upload" }
+             "sesja" -> { title = "Sesja operatora & Firebase"; icon = "session" }
++            "bufor" -> { title = "Bufor offline"; icon = "logs" }
+             "alarmy" -> { title = "Alarmy dymu i przegrzania"; icon = "warn" }
+             "widgets" -> { title = "Kafelki aplikacji"; icon = "dashboard" }
+             "chartSeries" -> { title = "Wybór serii wykresu"; icon = "chart" }
+@@ -121,6 +123,7 @@ fun SheetHost(m: AppModel) {
+             id == "logi" -> LogsSheet(m)
+             id == "ota" -> OtaSheet(m)
+             id == "sesja" -> SessionSheet(m)
++            id == "bufor" -> OfflineBufferSheet(m)
+             id == "alarmy" -> AlarmSheet(m)
+             id == "widgets" -> DashboardWidgetsSheet(m)
+             id == "chartSeries" -> ChartSeriesSheet(m)
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt
+index 3ed775e..ad8c7dc 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Alarms.kt
+@@ -37,6 +37,7 @@ import com.sterownikco.pro.core.AlarmMuteSync
+ import com.sterownikco.pro.core.AlarmMonitorHealthText
+ import com.sterownikco.pro.core.AlarmMonitorPhase
+ import com.sterownikco.pro.core.AlarmNotify
++import com.sterownikco.pro.core.AlarmSoundSync
+ import com.sterownikco.pro.core.AppModel
+ import com.sterownikco.pro.core.Prefs
+ import com.sterownikco.pro.service.AlarmMonitorService
+@@ -70,6 +71,14 @@ fun AlarmSheet(m: AppModel) {
+     val nowElapsedMs = SystemClock.elapsedRealtime()
+     var soundKind by remember { mutableStateOf("dym") }
+     val sound = AlarmCenter.sound(p, soundKind)
++    val soundTarget = AlarmSoundSync.targetFor(soundKind)
++    val controllerSound = when (soundTarget?.statusField) {
++        "alarm_sound_dym" -> m.S.alarm_sound_dym
++        "alarm_sound_ogrz" -> m.S.alarm_sound_ogrz
++        "alarm_sound_both" -> m.S.alarm_sound_both
++        else -> ""
++    }
++    val controllerSoundReported = soundTarget?.let { m.S.hasData(it.statusField) } == true
+ 
+     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+         // 1. Status — brak flag nie jest równoznaczny ze stanem bez alarmu.
+@@ -169,9 +178,8 @@ fun AlarmSheet(m: AppModel) {
+             AlarmNotify.SOUNDS.forEach { (id, label) ->
+                 val selected = sound == id
+                 Row(Modifier.fillMaxWidth().clickable {
+-                    AlarmCenter.setSound(p, soundKind, id)
++                    m.selectAlarmSound(soundKind, id)
+                     playTest(ctx, id)
+-                    m.alarmUiTick++
+                 }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                     Text(if (selected) "◉" else "○", fontSize = 15.sp,
+                         color = if (selected) Pal.Cyan else Pal.TextDim)
+@@ -179,10 +187,23 @@ fun AlarmSheet(m: AppModel) {
+                     if (selected) Text("♪", fontSize = 11.sp, color = Pal.Cyan)
+                 }
+             }
+-            Text("Każdy rodzaj alarmu zapamiętuje własny wybór. Dotknij dźwięku, aby go ustawić i odsłuchać.",
++            Text("Każdy rodzaj alarmu zapamiętuje własny wybór. Dotknięcie zapisuje go w telefonie, wysyła do centrali i odtwarza próbkę.",
+                 fontSize = 11.sp, color = Pal.TextDim)
+-            Text("Podczas aktywnego alarmu dźwięk jest zapętlony; zatrzyma go skasowanie alarmu, drzemka lub wyciszenie.",
++            Text(
++                if (controllerSoundReported) {
++                    val label = AlarmNotify.SOUNDS.firstOrNull { it.first == controllerSound }?.second ?: controllerSound
++                    "Ustawienie centrali: $label"
++                } else {
++                    "Centrala nie raportuje jeszcze wyboru dźwięku — synchronizacja wymaga firmware v3.50.0 lub nowszego."
++                },
++                fontSize = 11.sp, color = if (controllerSoundReported) Pal.Live else Pal.Warn
++            )
++            Text("W centrali bieżący brzęczyk odtwarza odpowiadający wzór tonów (nie plik WAV); zmiana działa także przy aktywnym alarmie.",
+                 fontSize = 11.sp, color = Pal.TextDim)
++            Text(
++                "Podczas aktywnego alarmu dźwięk jest zapętlony; zatrzyma go skasowanie alarmu, drzemka lub wyciszenie.",
++                fontSize = 11.sp, color = Pal.TextDim
++            )
+         }
+ 
+         // 4. Drzemka / wyciszenie
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Control.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Control.kt
+index a2dbf25..f1cbb19 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Control.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Control.kt
+@@ -31,7 +31,9 @@ import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import com.sterownikco.pro.core.AppModel
+-import com.sterownikco.pro.ui.components.CheckRow
++import com.sterownikco.pro.core.ServoPositionAxis
++import com.sterownikco.pro.core.ServoPositionPreview
++import com.sterownikco.pro.ui.components.CheckRowEcho
+ import com.sterownikco.pro.ui.components.ManualRow
+ import com.sterownikco.pro.ui.components.Note
+ import com.sterownikco.pro.ui.components.NumRow
+@@ -237,7 +239,7 @@ fun PompaSheet(m: AppModel) {
+         m.commitNum("Temp STOP (OFF)", "tempOff", 0, 100, v)
+     }
+     SectionHeader("Zabezpieczenie Antystop")
+-    CheckRow("Włączony antystop", null, S.antystopWlaczony, known = S.hasData("antystopWlaczony")) { v ->
++    CheckRowEcho("Włączony antystop", null, S.antystopWlaczony, known = S.hasData("antystopWlaczony")) { v ->
+         m.commitBool("Antystop", "antystopWlaczony", v)
+     }
+     NumRow("Dni bez ruchu", "Wymuszony puls 45s po X dniach bezczynności", S.antystopDni, 1, 45, known = S.hasData("antystopDni")) { v ->
+@@ -273,11 +275,16 @@ private fun RowScope.ServoPositionMetric(
+     name: String,
+     angleDegrees: Int?,
+     percent: Int?,
++    preview: ServoPositionPreview?,
+     live: Boolean,
+     accent: Color
+ ) {
+-    val hasValue = angleDegrees != null && percent != null
++    val shownDegrees = preview?.targetDegrees ?: angleDegrees
++    val shownPercent = preview?.requestedPercent ?: percent
++    val pending = preview != null
++    val hasValue = shownDegrees != null && shownPercent != null
+     val valueColor = when {
++        pending -> Pal.Warn
+         !hasValue -> Pal.TextDim
+         live -> accent
+         else -> Pal.Warn
+@@ -285,36 +292,37 @@ private fun RowScope.ServoPositionMetric(
+     Column(
+         Modifier.weight(1f)
+             .background(Pal.Surface2, RoundedCornerShape(11.dp))
+-            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(11.dp))
++            .border(BorderStroke(1.dp, if (pending) Pal.Warn.copy(alpha = .55f) else Pal.Border), RoundedCornerShape(11.dp))
+             .padding(horizontal = 9.dp, vertical = 8.dp),
+         verticalArrangement = Arrangement.spacedBy(4.dp)
+     ) {
+-        Text(name, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Pal.TextDim)
++        Text(name, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = if (pending) Pal.Warn else Pal.TextDim)
+         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+             Text(
+-                angleDegrees?.let { "$it°" } ?: "—",
+-                fontSize = 16.sp,
++                shownPercent?.let { "$it%" } ?: "—",
++                fontSize = 18.sp,
+                 fontWeight = FontWeight.ExtraBold,
+-                color = valueColor,
+-                maxLines = 1
+-            )
+-            Text(
+-                percent?.let { "$it%" } ?: "brak odczytu",
+-                fontSize = 8.5.sp,
+-                fontWeight = FontWeight.Bold,
+                 color = if (hasValue) valueColor else Pal.TextDim,
+-                maxLines = 1,
+-                overflow = TextOverflow.Ellipsis,
+-                modifier = Modifier.weight(1f).padding(bottom = 2.dp)
++                maxLines = 1
+             )
++            shownDegrees?.let {
++                Text(
++                    "$it°",
++                    fontSize = 9.sp,
++                    fontWeight = FontWeight.SemiBold,
++                    color = Pal.TextDim,
++                    maxLines = 1,
++                    modifier = Modifier.padding(bottom = 3.dp)
++                )
++            }
+         }
+         Box(
+             Modifier.fillMaxWidth().height(4.dp)
+                 .background(Pal.rgba(255, 255, 255, .08f), RoundedCornerShape(4.dp))
+         ) {
+-            if (percent != null) {
++            if (shownPercent != null) {
+                 Box(
+-                    Modifier.fillMaxWidth(percent.coerceIn(0, 100) / 100f).fillMaxHeight()
++                    Modifier.fillMaxWidth(shownPercent.coerceIn(0, 100) / 100f).fillMaxHeight()
+                         .background(valueColor, RoundedCornerShape(4.dp))
+                 )
+             }
+@@ -329,14 +337,19 @@ private fun ServoPositionSummary(m: AppModel) {
+     val damperAngle = s.syberka.takeIf { s.hasData("syberka") && it in 0..90 }
+     val flapPercent = flapAngle?.let { Math.round(it * 100.0 / 180.0).toInt() }
+     val damperPercent = damperAngle?.let { Math.round(it * 100.0 / 90.0).toInt() }
+-    val hasPosition = flapAngle != null || damperAngle != null
++    val flapPreview = m.servoPositionPreview(ServoPositionAxis.KLAPA)
++    val damperPreview = m.servoPositionPreview(ServoPositionAxis.SYBEREK)
++    val hasPending = flapPreview != null || damperPreview != null
++    val hasPosition = flapAngle != null || damperAngle != null || hasPending
+     val live = m.isFbFresh && s.online
+     val stateColor = when {
++        hasPending -> Pal.Warn
+         !hasPosition -> Pal.TextDim
+         live -> Pal.Live
+         else -> Pal.Warn
+     }
+     val stateLabel = when {
++        hasPending -> "OCZEKUJE NA STATUS"
+         !hasPosition -> "BRAK ODCZYTU"
+         live -> "NA ŻYWO"
+         else -> "OSTATNI ODCZYT"
+@@ -350,7 +363,7 @@ private fun ServoPositionSummary(m: AppModel) {
+         verticalArrangement = Arrangement.spacedBy(8.dp)
+     ) {
+         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+-            Text("BIEŻĄCA POZYCJA", style = Txt.sect, modifier = Modifier.weight(1f))
++            Text(if (hasPending) "OCZEKUJĄCY CEL" else "BIEŻĄCA POZYCJA", style = Txt.sect, modifier = Modifier.weight(1f))
+             Box(
+                 Modifier.background(stateColor.copy(alpha = .12f), RoundedCornerShape(999.dp))
+                     .border(BorderStroke(1.dp, stateColor.copy(alpha = .38f)), RoundedCornerShape(999.dp))
+@@ -360,8 +373,8 @@ private fun ServoPositionSummary(m: AppModel) {
+             }
+         }
+         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+-            ServoPositionMetric("KLAPA", flapAngle, flapPercent, live, Pal.Cyan)
+-            ServoPositionMetric("SYBEREK", damperAngle, damperPercent, live, Pal.Live)
++            ServoPositionMetric("KLAPA", flapAngle, flapPercent, flapPreview, live, Pal.Cyan)
++            ServoPositionMetric("SYBEREK", damperAngle, damperPercent, damperPreview, live, Pal.Live)
+         }
+     }
+ }
+@@ -371,7 +384,9 @@ private fun ServoPositionSummary(m: AppModel) {
+ fun SerwoSheet(m: AppModel) {
+     val S = m.S
+     val modePresentation = m.servoModePresentation()
+-    val servoMode = modePresentation.mode
++    val positionPending = m.servoPositionPreview(ServoPositionAxis.KLAPA) != null ||
++        m.servoPositionPreview(ServoPositionAxis.SYBEREK) != null
++    val servoMode = if (positionPending) 2 else modePresentation.mode
+     val modeKnown = servoMode != null
+     Note("Tryb pracy klapy i syberka")
+     ServoPositionSummary(m)
+@@ -386,17 +401,23 @@ fun SerwoSheet(m: AppModel) {
+         Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+             Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x14FFFFFF)))
+             Text("Ręczna pozycja", style = Txt.rowLabel)
+-            if (S.hasData("klapa") && S.klapa in 0..180) {
++            val flapPreview = m.servoPositionPreview(ServoPositionAxis.KLAPA)
++            if ((S.hasData("klapa") && S.klapa in 0..180) || flapPreview != null) {
+                 SliderRow(
+-                    name = "Klapa", value = Math.round(S.klapa / 1.8).toFloat(), min = 0f, max = 100f, step = 1f,
++                    name = "Klapa",
++                    value = flapPreview?.requestedPercent?.toFloat() ?: Math.round(S.klapa / 1.8).toFloat(),
++                    min = 0f, max = 100f, step = 1f,
+                     fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("klapa ${v.toInt()}") }
+                 )
+             } else {
+                 Note("Pozycja klapy: brak prawidłowego odczytu z centrali.")
+             }
+-            if (S.hasData("syberka") && S.syberka in 0..90) {
++            val syberkaPreview = m.servoPositionPreview(ServoPositionAxis.SYBEREK)
++            if ((S.hasData("syberka") && S.syberka in 0..90) || syberkaPreview != null) {
+                 SliderRow(
+-                    name = "Syberek", value = Math.round(S.syberka / 0.9).toFloat(), min = 0f, max = 100f, step = 1f,
++                    name = "Syberek",
++                    value = syberkaPreview?.requestedPercent?.toFloat() ?: Math.round(S.syberka / 0.9).toFloat(),
++                    min = 0f, max = 100f, step = 1f,
+                     fmt = { v -> v.toInt().toString() + "%" }, onValue = { }, onCommit = { v -> m.send("syberek ${v.toInt()}") }
+                 )
+             } else {
+@@ -449,7 +470,7 @@ fun MieszadloSheet(m: AppModel) {
+         else -> "BRAK ODCZYTU"
+     }
+ 
+-    CheckRow(
++    CheckRowEcho(
+         "Automatyka włączona",
+         "Zezwolenie na cykliczną pracę mieszadła",
+         S.mieszadloWlaczony,
+diff --git a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
+index bf10ee9..4caa5cf 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/System.kt
+@@ -41,6 +41,8 @@ import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.Brush
++import androidx.compose.ui.input.pointer.PointerEventPass
++import androidx.compose.ui.input.pointer.pointerInput
+ import androidx.compose.ui.graphics.SolidColor
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.text.TextStyle
+@@ -492,7 +494,21 @@ fun TerminalSheet(m: AppModel) {
+         servoCommand = null
+     }
+ 
+-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
++    Column(
++        Modifier.fillMaxWidth()
++            // Samo dotknięcie (tap, przewinięcie) podtrzymuje odbiór DLOG.
++            // Zdarzenia są tylko obserwowane (Pass.Initial), nie konsumowane,
++            // więc przewijanie konsoli działa bez zmian.
++            .pointerInput(Unit) {
++                awaitPointerEventScope {
++                    while (true) {
++                        awaitPointerEvent(PointerEventPass.Initial)
++                        m.terminalTouch()
++                    }
++                }
++            },
++        verticalArrangement = Arrangement.spacedBy(12.dp)
++    ) {
+         // 1. nagłówek + status
+         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)
+             .border(BorderStroke(width = 1.dp, color = Pal.Border), RoundedCornerShape(bottomStart = 0.dp, bottomEnd = 0.dp)),
+diff --git a/android/app/src/test/java/com/sterownikco/pro/ui/chart/ChartScrubIndexTest.kt b/android/app/src/test/java/com/sterownikco/pro/ui/chart/ChartScrubIndexTest.kt
+index ea32fab..149da78 100644
+--- a/android/app/src/test/java/com/sterownikco/pro/ui/chart/ChartScrubIndexTest.kt
++++ b/android/app/src/test/java/com/sterownikco/pro/ui/chart/ChartScrubIndexTest.kt
+@@ -14,6 +14,14 @@ class ChartScrubIndexTest {
+         assertEquals(10, chartSampleIndexAtX(x = 180f, padLeft = 20f, plotWidth = 100f, sampleCount = 11))
+     }
+ 
++    @Test
++    fun scrubbingUsesElapsedTimeWhenSampleSpacingIsUneven() {
++        val timestamps = listOf(0L, 100L, 1_000L)
++        // At 60% of elapsed time the nearest timestamp is 1,000 ms (index 2),
++        // whereas an index-based mapping would incorrectly select index 1.
++        assertEquals(2, chartSampleIndexAtX(x = 60f, padLeft = 0f, plotWidth = 100f, sortedTimestamps = timestamps))
++    }
++
+     @Test
+     fun ignoresEmptyOrInvalidPlot() {
+         assertNull(chartSampleIndexAtX(x = 50f, padLeft = 20f, plotWidth = 100f, sampleCount = 1))

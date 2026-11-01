@@ -14,8 +14,11 @@ import kotlin.math.roundToInt
 
 /* ══════════════════════════════════════════════════════════════════════════
    BILANS SOLARNY & DETEKCJA POBORU WODY — `SolarAnalytics` z Piec.html 1:1
-   (bramka 25 s, próg poboru rateBojler < -0.30 °C/min, archiwum 5000,
-   zapis co 5 próbek do klucza `solar_archive_data`, eksport CSV).
+   (bramka 25 s, archiwum 5000, zapis co 5 próbek do klucza
+   `solar_archive_data`, eksport CSV).
+   [0.31.37] Wszystko liczone z `tPanel` = woda w zbiorniku słonecznym na dachu
+   (BUS_3), nie z bojlera pieca (tBojler/BUS_2). Pobranie wody = spadek
+   podtrzymany ≥ 0,5 °C, skok > 12 °C odrzucany jako usterka sondy.
    ══════════════════════════════════════════════════════════════════════════ */
 class SolarAnalytics(private val prefs: Prefs) {
 
@@ -42,6 +45,11 @@ class SolarAnalytics(private val prefs: Prefs) {
     // czyli w bieżącą godzinę wyssaną z palca. Materiał: mroźny poranek, gdy słońce
     // nie przebija strat ciepła. UI pyta o tę flagę, zamiast wierzyć `peakHour`.
     var forecastPeakReal by mutableStateOf(false)
+    /** [0.31.48] Zmiana temperatury od teraz do KOŃCA doby, ze znakiem.
+     *  `forecastGain` jest przycięte do zera, więc przy samym wychładzaniu
+     *  traciło minus. Tu jest surowy wynik modelu — potrzebny do sklejania
+     *  kolejnych dni w prognozie 7-dniowej. */
+    var forecastEndDeltaC by mutableDoubleStateOf(Double.NaN)
     var deltaT by mutableDoubleStateOf(Double.NaN)
     var drawCount by mutableIntStateOf(0)
     // [0.31.27] Liczby „na dziś”, liczone od lokalnej północy. Wcześniej karta DZIŚ
@@ -82,9 +90,13 @@ class SolarAnalytics(private val prefs: Prefs) {
             }
         } catch (e: Exception) { /* brak archiwum zweryfikowanego */ }
         lastSampleTs = archive.lastOrNull()?.ts ?: 0L
+        // [0.31.36] Stare flagi pobrań z wersji do 0.31.35 siedzą w archiwum w pamięci
+        // telefonu (np. 24 fałszywe pobrania z 28.10). Przeliczamy je od zera nową regułą,
+        // zamiast pokazywać dalej to, co zapisała poprzednia wersja.
+        recomputeDraws()
         accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
         val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
-        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tBojler + it.drop, it.tBojler)) }
+        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tPanel + it.drop, it.tPanel)) }
         accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
         drawCount = draws.size
         archive.lastOrNull()?.let { deltaT = it.tPanel - it.tZewn }
@@ -115,6 +127,13 @@ class SolarAnalytics(private val prefs: Prefs) {
         var firstT = Double.NaN; var lastT = Double.NaN
         archive.forEach { s ->
             if (s.ts >= start) {
+                // [0.31.37] tPanel to WODA w zbiorniku słonecznym na dachu, nie płytka
+                // kolektora. Potwierdza to ARCHIWUM_SOLARNE_STAN.md §2–§3: czujnik
+                // `czujnik_temp_Panel_Plus` (BUS_3, kanał TELEMETRY_CH_PANEL) leży
+                // w wodzie, z boku, w połowie wysokości zbiornika 100 l.
+                // `tBojler` (BUS_2) to BOJLER PIECA w kotłowni — inna instalacja.
+                // 0.31.36 przez pomyłkę liczyła z bojlera pieca i pokazywała −17,5 °C
+                // (woda w kotłowni), gdy zbiornik słoneczny zmienił się o −0,2 °C.
                 if (firstT.isNaN()) firstT = s.tPanel
                 lastT = s.tPanel
                 if (s.isDraw != 0) { n += 1; d += s.drop }
@@ -141,30 +160,173 @@ class SolarAnalytics(private val prefs: Prefs) {
         } catch (e: Exception) { /* ignore */ }
     }
 
+    /**
+     * [0.31.35 SOLAR-HISTORY] Wciąga DZISIEJSZE próbki z historii chmury do archiwum.
+     *
+     * Powód: `recordSample()` zbiera próbki tylko wtedy, gdy aplikacja jest otwarta
+     * na wierzchu (cykl pollingu żyje w `onResume`/`onPause`). Kto zagląda do pieca
+     * wieczorem, ten przez cały dzień nie ma ANI JEDNEJ próbki — karta pokazywała
+     * „brak próbek z dziś", mimo że chmura ma temperaturę zbiornika co minutę.
+     * Zmierzone 2026-10-28: 27.10 zbiornik +6,0 °C (panel do 31,3 °C), 28.10 −15,8 °C.
+     *
+     * Metoda liczenia jest TA SAMA co przy próbkach na żywo: zysk = ostatnia minus
+     * pierwsza próbka doby; pobranie wody = spadek szybszy niż 0,3 °C/min.
+     * Zwraca liczbę próbek, których wcześniej nie było (0 = nic nowego).
+     */
+    fun mergeCloudToday(points: List<TelemPoint>): Int {
+        val start = dayStartMs()
+        if (points.isEmpty()) return 0
+        val today = java.util.TreeMap<Long, Sample>()
+        archive.forEach { if (it.ts >= start) today[it.ts] = it }
+        var added = 0
+        points.forEach { p ->
+            if (p.ts < start || today.containsKey(p.ts)) return@forEach
+            val b = p.t_bojler; val pn = p.t_panel; val z = p.t_zewn
+            if (b == null || pn == null || z == null) return@forEach
+            if (!b.isFinite() || !pn.isFinite() || !z.isFinite()) return@forEach
+            if (pn !in 0.0..140.0 || b !in 10.0..95.0 || z !in -25.0..45.0) return@forEach
+            today[p.ts] = Sample(
+                p.ts, isoFmt.format(p.ts), round1(pn), round1(b), round1(z),
+                0, Double.NaN, 0, 0, 0.0, 0.0
+            )
+            added++
+        }
+        if (added == 0) return 0
+        // Zysk przeliczamy po scaleniu, w kolejności czasu. Pobrania liczy
+        // `recomputeDraws()` (wołane z `rebuildDrawEvents()` niżej) — jedną regułą
+        // dla próbek lokalnych i chmurowych, z 5-minutowym potwierdzeniem spadku.
+        val rebuilt = ArrayList<Sample>(today.size)
+        var prev: Sample? = null
+        today.values.forEach { cur ->
+            val pr = prev
+            var gain = 0.0
+            if (pr != null) {
+                gain = maxOf(maxOf(0.0, cur.tPanel - pr.tPanel), maxOf(0.0, cur.tBojler - pr.tBojler))
+            }
+            rebuilt.add(cur.copy(gain = round1(gain)))
+            prev = cur
+        }
+        archive.removeAll { it.ts >= start }
+        archive.addAll(rebuilt)
+        archive.sortBy { it.ts }
+        while (archive.size > 5000) archive.removeAt(0)
+        rebuildDrawEvents()
+        recomputeToday()
+        save()
+        return added
+    }
+
+    private fun round1(v: Double): Double = (v * 10).roundToInt() / 10.0
+
+    /** [0.31.36] Pobranie wody wykrywane z temperatury ZBIORNIKA, nie z szumu czujnika.
+     *
+     *  Liczone z `tPanel` — czyli z WODY w zbiorniku słonecznym na dachu
+     *  (ARCHIWUM_SOLARNE_STAN.md §2–§3), a nie z bojlera pieca w kotłowni.
+     *
+     *  Stara reguła (`rateBojler < -0.30`) łapała każde zejście o 0,3 °C między dwiema
+     *  próbkami minutowymi. Czujnik ma rozdzielczość 0,1 °C, a zbiornik stygnie przez pętlę
+     *  termosyfonu — więc takie zejście zdarza się co kilkanaście minut i wychodziło
+     *  „Pobrania ciepłej wody: 24 razy · −7,2 °C” (2026-10-28), choć nikt wody nie brał.
+     *  Dodatkowo 31,5 − 31,8 w typie Double to −0,3000000000000007, czyli minimalnie
+     *  więcej niż próg 0,30 — porównanie łapało granicę przez przypadek.
+     *
+     *  Teraz pobranie musi być SPADKIEM PODTRZYMANYM:
+     *   1. woda schodzi o co najmniej 0,5 °C od maksimum z ostatnich 5 minut,
+     *   2. i zostaje niżej przez następne 5 minut.
+     *  Drgnięcie czujnika wraca w ciągu minuty, więc punkt 2 je odrzuca.
+     *  Epizody bliższe niż 20 minut to jedno pobranie (kąpiel trwa). Spadek większy
+     *  niż 12 °C jest ODRZUCANY jako usterka sondy — 100 l nie traci 25 °C od kranu.
+     *
+     *  Sprawdzone na eksporcie z chmury (28 dni): 26 pobrań w 17 dniach, po 1–2 na dobę,
+     *  każde 0,5–5 °C, głównie po południu. 2026-10-28 — zero (nikt nie brał wody).
+     */
+    private fun recomputeDraws() {
+        val n = archive.size
+        if (n == 0) return
+        // 1) kandydaci: indeks początku spadku, maksimum sprzed spadku, minimum w epizodzie
+        val candIdx = ArrayList<Int>()
+        val candBase = ArrayList<Double>()
+        val candLow = ArrayList<Double>()
+        var i = 0
+        while (i < n) {
+            val ts = archive[i].ts
+            var base = archive[i].tPanel
+            var j = i
+            while (j > 0 && ts - archive[j - 1].ts <= DRAW_WINDOW_MS) {
+                j--
+                if (archive[j].tPanel > base) base = archive[j].tPanel
+            }
+            if (base - archive[i].tPanel >= DRAW_STEP_C) {
+                var low = archive[i].tPanel
+                var k = i + 1
+                while (k < n && archive[k].ts - ts <= DRAW_HOLD_MS) {
+                    if (archive[k].tPanel < low) low = archive[k].tPanel
+                    k++
+                }
+                // Punkt 2: spadek musi się utrzymać, a nie być jedną próbką szumu.
+                if (low <= base - DRAW_STEP_C) {
+                    candIdx.add(i); candBase.add(base); candLow.add(low)
+                }
+            }
+            i++
+        }
+        // 2) scalanie epizodów bliższych niż 20 minut w jedno pobranie
+        val flag = IntArray(n)
+        val drop = DoubleArray(n)
+        var c = 0
+        while (c < candIdx.size) {
+            val startIdx = candIdx[c]
+            var base = candBase[c]
+            var low = candLow[c]
+            var c2 = c + 1
+            while (c2 < candIdx.size &&
+                archive[candIdx[c2]].ts - archive[candIdx[c2 - 1]].ts <= DRAW_MERGE_MS
+            ) {
+                if (candBase[c2] > base) base = candBase[c2]
+                if (candLow[c2] < low) low = candLow[c2]
+                c2++
+            }
+            val span = maxOf(0.0, base - low)
+            if (span <= DRAW_FAULT_C) {
+                flag[startIdx] = 1
+                drop[startIdx] = round1(span)
+            }
+            // span > DRAW_FAULT_C: sonda się odczepiła albo wróciła po restarcie —
+            // nie udajemy, że ktoś wylał 20 °C wody.
+            c = c2
+        }
+        // 3) przepisanie flag do archiwum (Sample jest niemutowalny)
+        for (idx in 0 until n) {
+            val s = archive[idx]
+            if (s.isDraw != flag[idx] || s.drop != drop[idx]) {
+                archive[idx] = s.copy(isDraw = flag[idx], drop = drop[idx])
+            }
+        }
+    }
+
+    /** Lista pobrań wody z archiwum — wspólna dla startu i dla scalania z chmurą. */
+    private fun rebuildDrawEvents() {
+        recomputeDraws()
+        waterDrawEvents.clear()
+        val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
+        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tPanel + it.drop, it.tPanel)) }
+        drawCount = draws.size
+        accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
+        accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
+    }
+
     fun recordSample(tPanel: Double, tBojler: Double, tZewn: Double, rad: Double, uv: Double, cloud: Double) {
         if (!listOf(tPanel, tBojler, tZewn, rad, uv, cloud).all { it.isFinite() }) return
         if (tPanel !in 0.0..140.0 || tBojler !in 10.0..95.0 || tZewn !in -25.0..45.0 || rad < 0.0) return
         val now = System.currentTimeMillis()
         if (lastSampleTs > 0 && now - lastSampleTs < 25_000) return
         lastSampleTs = now
-        var isDraw = false
-        var drawDrop = 0.0
         var gain = 0.0
         if (archive.isNotEmpty()) {
             val prev = archive.last()
-            val dtMin = maxOf(.5, (now - prev.ts) / 60000.0)
-            val rateBojler = (tBojler - prev.tBojler) / dtMin
-            val ratePanel = (tPanel - prev.tPanel) / dtMin
-            if (rateBojler < -0.30 || (ratePanel < -0.60 && tPanel > tZewn + 5)) {
-                isDraw = true
-                drawDrop = maxOf(0.0, prev.tBojler - tBojler)
-                accumulatedDrawDrop += drawDrop
-                waterDrawEvents.add(DrawEvent(now, drawDrop, prev.tBojler, tBojler))
-                while (waterDrawEvents.size > 100) waterDrawEvents.removeAt(0)
-            }
             val deltaP = maxOf(0.0, tPanel - prev.tPanel)
             val deltaB = maxOf(0.0, tBojler - prev.tBojler)
-            gain = maxOf(deltaP, deltaB) + (if (isDraw) drawDrop else 0.0)
+            gain = maxOf(deltaP, deltaB)
             if (tPanel > tZewn && rad > 30) accumulatedGrossGain += gain
         }
         archive.add(
@@ -172,10 +334,15 @@ class SolarAnalytics(private val prefs: Prefs) {
                 now, isoFmt.format(now), (tPanel * 10).roundToInt() / 10.0,
                 (tBojler * 10).roundToInt() / 10.0, (tZewn * 10).roundToInt() / 10.0,
                 rad.roundToInt(), (uv * 10).roundToInt() / 10.0, cloud.roundToInt(),
-                if (isDraw) 1 else 0, (drawDrop * 10).roundToInt() / 10.0, (gain * 10).roundToInt() / 10.0
+                0, 0.0, (gain * 10).roundToInt() / 10.0
             )
         )
         while (archive.size > 5000) archive.removeAt(0)
+        // [0.31.36] Pobrania liczymy teraz wstecznie z całego archiwum (recomputeDraws),
+        // bo potrzebne jest 5 minut po spadku na potwierdzenie, że to nie szum.
+        // Skutek: pobranie pojawia się na karcie dopiero po tych 5 minutach — celowo,
+        // bo próg 0,3 °C/min łapał zwykłe stygnięcie zbiornika.
+        recomputeDraws()
         recomputeToday()
         if (archive.size % 5 == 0) save()
         updateUi(tPanel, tZewn)
@@ -200,6 +367,7 @@ class SolarAnalytics(private val prefs: Prefs) {
         forecastPeakLabel = ""
         forecastEnergyKwh = Double.NaN
         forecastPeakReal = false
+        forecastEndDeltaC = Double.NaN
 
         val startT = archive.lastOrNull()?.tPanel
         if (startT == null || hourly.isEmpty()) return
@@ -220,6 +388,51 @@ class SolarAnalytics(private val prefs: Prefs) {
         // Karta pokazuje „+X °C”, więc przy wychładzaniu dajemy 0 — pełną wartość
         // (także ujemną) niesie peakC i deltaEndC w modelu.
         forecastGain = maxOf(0.0, res.deltaPeakC)
+        forecastEndDeltaC = res.deltaEndC
+    }
+
+    /**
+     * [0.31.48] Prognoza 7 dni modelem FIZYCZNYM, dzień po dniu.
+     *
+     *  Po co: do 0.31.47 karty liczyły wzór liniowy `4,43 × GTI − 5,57`
+     *  ze STAŁĄ dobową stratą 5,57 °C. Ten wzór nie zna temperatury wody ani
+     *  powietrza, więc w ciepły dzień zaniżał wynik o kilka °C i pokazywał minus
+     *  tam, gdzie woda realnie się grzała. Obok, w karcie „DO KOŃCA DNIA”, stał już
+     *  model fizyczny — i obie liczby przeczyły sobie na tym samym ekranie
+     *  (29.10.2026: −2,4 °C vs +2,5 °C, przy zmierzonym +0,5 °C).
+     *
+     *  Teraz jedno źródło: [SolarThermalModel] (MODEL_SOLARNY §14.3 i §18.5).
+     *  Dzień 0 = zmierzone do teraz + model na resztę doby, więc zgadza się z kartą
+     *  „DO KOŃCA DNIA” z definicji. Każdy następny dzień startuje z temperatury,
+     *  w jakiej skończył się poprzedni — tak jak symulacja ciągła z §18.5.
+     *
+     *  @param dayHours kolejne doby po 24 godziny (dzień 0 = dzisiejsza)
+     *  @return zmiany dobowe ZE ZNAKIEM; NaN, gdy model nie ma danych dla doby
+     */
+    fun dailyForecast7(dayHours: List<List<WHour>>): List<Double> {
+        if (dayHours.isEmpty() || !hasSamples) return emptyList()
+        val nowT = archive.lastOrNull()?.tPanel ?: return emptyList()
+        if (!nowT.isFinite()) return emptyList()
+
+        // Reszta dzisiejszej doby — ten sam wynik, który pokazuje karta
+        // „DO KOŃCA DNIA”. Gdy model nie znalazł szczytu (samo wychładzanie),
+        // bierzemy zmianę do końca doby, żeby minus nie zamienił się w zero.
+        val restOfDay = when {
+            forecastPeakReal && forecastGain.isFinite() -> forecastGain
+            forecastEndDeltaC.isFinite() -> forecastEndDeltaC
+            else -> 0.0
+        }
+
+        val out = ArrayList<Double>(dayHours.size)
+        out.add(todayGain + restOfDay)
+        var t = nowT + restOfDay
+        for (i in 1 until dayHours.size) {
+            val res = SolarThermalModel.simulate(t, SolarThermalModel.fromWeather(dayHours[i]))
+            if (res == null) { out.add(Double.NaN); continue }
+            out.add(res.deltaEndC)
+            t = res.endTempC
+        }
+        return out
     }
 
     /** Północ następnej doby — koniec horyzontu prognozy „na dziś". */
@@ -237,6 +450,16 @@ class SolarAnalytics(private val prefs: Prefs) {
         SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date(ms))
 
     companion object {
+        /** [0.31.37] Progi wykrywania pobrania ciepłej wody — patrz `recomputeDraws()`.
+         *  Woda musi zejść o 0,5 °C od maksimum z 5 minut i utrzymać się niżej 5 minut.
+         *  Rozdzielczość czujnika to 0,1 °C, więc 0,5 daje czterokrotny zapas nad szumem,
+         *  a prawdziwa kąpiel schodzi o kilka °C. */
+        private const val DRAW_STEP_C = 0.5
+        private const val DRAW_WINDOW_MS = 5 * 60_000L
+        private const val DRAW_HOLD_MS = 5 * 60_000L
+        private const val DRAW_MERGE_MS = 20 * 60_000L
+        private const val DRAW_FAULT_C = 12.0
+
         /** [0.31.29] Nachylenie dopasowania: °C przyrostu na 1 kWh/m² DOBOWEGO GTI.
          *  Dopasowane do 4 dni pomiarów z Trzemchy (r = 0,990). Poprzednie 4,2 było
          *  niemal poprawne — ale dla GTI. Aplikacja karmiła je GHI, stąd błąd.

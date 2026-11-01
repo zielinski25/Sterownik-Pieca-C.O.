@@ -1,0 +1,106 @@
+{
+  "status": "PASS",
+  "profile": "ASan+UBSan, LSan enabled",
+  "inputs": {
+    "narzedzia/pobieranie-historia207/Test.cpp": "3e919a4dd0a01ea54dc1140d0980de864934ef43580d9ccdd5497a5a14c59c50",
+    "narzedzia/pobieranie-historia207/Snapshots.h": "1ebcf3dd331cdaadc2610a8854c76310341406c05e6b3605e92708991fc88ee7",
+    "narzedzia/pobieranie-historia207/mutacje.py": "9b08d6eedceadc34ff72b9f0e0e36c7a9ca2864bec1154db6b61c91356e12d51",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/odpowiedz-http199/CheckedFileBody.h": "e68cd4e5cf852e3ac0605f8815bdd596d64a75577bbaeb4dcac532bc3b5ac561",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690"
+  },
+  "cases": [
+    {
+      "name": "unpinned-length",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "read-past-end",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "short-read-is-end",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "rotation-ignores-pins",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "open-during-rotation",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "no-expiry-on-read",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "expire-noop",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "no-generation-bump",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "release-keeps-slot",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "stop-reported-as-end",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "stale-handle-accepted",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "zero-read-accepted",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    },
+    {
+      "name": "commit-without-file",
+      "compiled": true,
+      "detected": true,
+      "returncode": -6,
+      "asan_error": false
+    }
+  ]
+}

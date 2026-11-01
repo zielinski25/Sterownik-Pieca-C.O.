@@ -1,0 +1,3406 @@
+{
+  "release_ready": false,
+  "status": "SCAN",
+  "source": "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp",
+  "source_scan": {
+    "sha256": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+    "lines": 46778,
+    "functions": 586,
+    "scopes": [
+      {
+        "name": "verifyRollbackLater",
+        "start": 5251,
+        "end": 5253
+      },
+      {
+        "name": "serwisujTWDTJesliZarejestrowany",
+        "start": 5275,
+        "end": 5279
+      },
+      {
+        "name": "<blok>",
+        "start": 5311,
+        "end": 5316
+      },
+      {
+        "name": "<blok>",
+        "start": 5319,
+        "end": 5327
+      },
+      {
+        "name": "nvsPutUChar",
+        "start": 5417,
+        "end": 5420
+      },
+      {
+        "name": "nvsGetUChar",
+        "start": 5422,
+        "end": 5425
+      },
+      {
+        "name": "nvsPutBool",
+        "start": 5427,
+        "end": 5430
+      },
+      {
+        "name": "nvsGetBool",
+        "start": 5432,
+        "end": 5435
+      },
+      {
+        "name": "nvsPutInt",
+        "start": 5437,
+        "end": 5440
+      },
+      {
+        "name": "nvsGetInt",
+        "start": 5442,
+        "end": 5445
+      },
+      {
+        "name": "nvsPutUInt",
+        "start": 5447,
+        "end": 5450
+      },
+      {
+        "name": "nvsGetUInt",
+        "start": 5452,
+        "end": 5455
+      },
+      {
+        "name": "mbedtls_psram_calloc",
+        "start": 5616,
+        "end": 5627
+      },
+      {
+        "name": "tgWezmijSendMutex",
+        "start": 5676,
+        "end": 5687
+      },
+      {
+        "name": "<blok>",
+        "start": 5700,
+        "end": 5769
+      },
+      {
+        "name": "<blok>",
+        "start": 5827,
+        "end": 5836
+      },
+      {
+        "name": "<blok>",
+        "start": 5850,
+        "end": 5853
+      },
+      {
+        "name": "tgTaskBeat",
+        "start": 5912,
+        "end": 5915
+      },
+      {
+        "name": "tgPollTaskBeat",
+        "start": 5917,
+        "end": 5920
+      },
+      {
+        "name": "<blok>",
+        "start": 6185,
+        "end": 6198
+      },
+      {
+        "name": "<blok>",
+        "start": 6203,
+        "end": 6213
+      },
+      {
+        "name": "<blok>",
+        "start": 6240,
+        "end": 6253
+      },
+      {
+        "name": "<blok>",
+        "start": 6257,
+        "end": 6266
+      },
+      {
+        "name": "<blok>",
+        "start": 6298,
+        "end": 6307
+      },
+      {
+        "name": "<blok>",
+        "start": 6311,
+        "end": 6315
+      },
+      {
+        "name": "<blok>",
+        "start": 6397,
+        "end": 6400
+      },
+      {
+        "name": "<blok>",
+        "start": 20606,
+        "end": 20611
+      },
+      {
+        "name": "<blok>",
+        "start": 20613,
+        "end": 20619
+      },
+      {
+        "name": "<blok>",
+        "start": 20621,
+        "end": 20641
+      },
+      {
+        "name": "<blok>",
+        "start": 20643,
+        "end": 20653
+      },
+      {
+        "name": "<blok>",
+        "start": 20655,
+        "end": 20666
+      },
+      {
+        "name": "<blok>",
+        "start": 20672,
+        "end": 20681
+      },
+      {
+        "name": "<blok>",
+        "start": 20694,
+        "end": 20707
+      },
+      {
+        "name": "<blok>",
+        "start": 20709,
+        "end": 20716
+      },
+      {
+        "name": "<blok>",
+        "start": 20718,
+        "end": 20724
+      },
+      {
+        "name": "telemetryMonotonicMs",
+        "start": 20726,
+        "end": 20729
+      },
+      {
+        "name": "<blok>",
+        "start": 20737,
+        "end": 20762
+      },
+      {
+        "name": "<blok>",
+        "start": 20790,
+        "end": 20864
+      },
+      {
+        "name": "spoolMaxRecordsForPage",
+        "start": 20880,
+        "end": 20883
+      },
+      {
+        "name": "spoolUsedBytes",
+        "start": 20885,
+        "end": 20887
+      },
+      {
+        "name": "<blok>",
+        "start": 20907,
+        "end": 20920
+      },
+      {
+        "name": "<blok>",
+        "start": 20922,
+        "end": 20934
+      },
+      {
+        "name": "<blok>",
+        "start": 20967,
+        "end": 20978
+      },
+      {
+        "name": "<blok>",
+        "start": 20980,
+        "end": 20986
+      },
+      {
+        "name": "<blok>",
+        "start": 20996,
+        "end": 21002
+      },
+      {
+        "name": "esp_task_wdt_isr_user_handler",
+        "start": 21005,
+        "end": 21009
+      },
+      {
+        "name": "diagTaskName",
+        "start": 21012,
+        "end": 21020
+      },
+      {
+        "name": "diagStageName",
+        "start": 21022,
+        "end": 21031
+      },
+      {
+        "name": "diagOpName",
+        "start": 21033,
+        "end": 21056
+      },
+      {
+        "name": "diagStanPoprawny",
+        "start": 21058,
+        "end": 21060
+      },
+      {
+        "name": "crashQueuePoprawna",
+        "start": 21062,
+        "end": 21064
+      },
+      {
+        "name": "diagInicjalizujBoota",
+        "start": 21066,
+        "end": 21081
+      },
+      {
+        "name": "diagCheckpoint",
+        "start": 21083,
+        "end": 21108
+      },
+      {
+        "name": "diagRuntimeSnapshot",
+        "start": 21112,
+        "end": 21131
+      },
+      {
+        "name": "<blok>",
+        "start": 21139,
+        "end": 21170
+      },
+      {
+        "name": "crashReportQueuePusta",
+        "start": 21172,
+        "end": 21174
+      },
+      {
+        "name": "crashReportQueueNajstarszy",
+        "start": 21176,
+        "end": 21183
+      },
+      {
+        "name": "crashReportQueueZapiszNajstarszy",
+        "start": 21185,
+        "end": 21188
+      },
+      {
+        "name": "crashReportQueueUsunNajstarszy",
+        "start": 21190,
+        "end": 21194
+      },
+      {
+        "name": "buildTelegramCrashReport",
+        "start": 21196,
+        "end": 21245
+      },
+      {
+        "name": "wyslijZalegleRaportyCrash",
+        "start": 21250,
+        "end": 21315
+      },
+      {
+        "name": "powerOnNoticeStatePoprawny",
+        "start": 21319,
+        "end": 21325
+      },
+      {
+        "name": "powerOnNoticeZainicjalizuj",
+        "start": 21327,
+        "end": 21331
+      },
+      {
+        "name": "powerOnNoticeZaplanuj",
+        "start": 21333,
+        "end": 21339
+      },
+      {
+        "name": "wyslijZaleglePowiadomieniePowerOn",
+        "start": 21344,
+        "end": 21372
+      },
+      {
+        "name": "<blok>",
+        "start": 21375,
+        "end": 21380
+      },
+      {
+        "name": "dodajZadanie",
+        "start": 21395,
+        "end": 21402
+      },
+      {
+        "name": "wstrzymajZadanie",
+        "start": 21403,
+        "end": 21405
+      },
+      {
+        "name": "wznowZadanie",
+        "start": 21406,
+        "end": 21408
+      },
+      {
+        "name": "diagSchedulerName",
+        "start": 21413,
+        "end": 21442
+      },
+      {
+        "name": "wykonajZaplanowaneZadania",
+        "start": 21444,
+        "end": 21456
+      },
+      {
+        "name": "<blok>",
+        "start": 21491,
+        "end": 21506
+      },
+      {
+        "name": "<blok>",
+        "start": 21625,
+        "end": 21630
+      },
+      {
+        "name": "alarmSoundReadId",
+        "start": 21772,
+        "end": 21785
+      },
+      {
+        "name": "alarmSoundReadSnapshot",
+        "start": 21787,
+        "end": 21796
+      },
+      {
+        "name": "alarmSoundWriteId",
+        "start": 21798,
+        "end": 21809
+      },
+      {
+        "name": "alarmBuzzerRequestReset",
+        "start": 21811,
+        "end": 21815
+      },
+      {
+        "name": "alarmBuzzerTakeResetRequest",
+        "start": 21817,
+        "end": 21823
+      },
+      {
+        "name": "alarmBuzzerStopHardware",
+        "start": 21825,
+        "end": 21831
+      },
+      {
+        "name": "pompaUstaw",
+        "start": 21926,
+        "end": 21952
+      },
+      {
+        "name": "pompaJestWlaczona",
+        "start": 21953,
+        "end": 21955
+      },
+      {
+        "name": "bylCrash",
+        "start": 22018,
+        "end": 22031
+      },
+      {
+        "name": "resetReasonNaTekst",
+        "start": 22040,
+        "end": 22054
+      },
+      {
+        "name": "hardeningBackoffDelay",
+        "start": 22091,
+        "end": 22100
+      },
+      {
+        "name": "ustawParametrPieca",
+        "start": 22143,
+        "end": 22291
+      },
+      {
+        "name": "pobierzCzas",
+        "start": 22309,
+        "end": 22339
+      },
+      {
+        "name": "dataLokalnaNaUnixUtc",
+        "start": 22344,
+        "end": 22357
+      },
+      {
+        "name": "<blok>",
+        "start": 22364,
+        "end": 22391
+      },
+      {
+        "name": "formatujZnacznikCzasu",
+        "start": 22405,
+        "end": 22448
+      },
+      {
+        "name": "debugPrint",
+        "start": 22521,
+        "end": 22528
+      },
+      {
+        "name": "debugPrint",
+        "start": 22530,
+        "end": 22537
+      },
+      {
+        "name": "wifiWczytajSieci",
+        "start": 22544,
+        "end": 22554
+      },
+      {
+        "name": "wifiZapiszSieci",
+        "start": 22556,
+        "end": 22565
+      },
+      {
+        "name": "wifiDodajSiec",
+        "start": 22568,
+        "end": 22585
+      },
+      {
+        "name": "wifiUsunSiec",
+        "start": 22587,
+        "end": 22598
+      },
+      {
+        "name": "<blok>",
+        "start": 22619,
+        "end": 22643
+      },
+      {
+        "name": "historiaDodajPending",
+        "start": 22696,
+        "end": 22707
+      },
+      {
+        "name": "historiaChronionaSciezka",
+        "start": 22710,
+        "end": 22717
+      },
+      {
+        "name": "historiaInit",
+        "start": 22757,
+        "end": 22772
+      },
+      {
+        "name": "telemetryStaleThresholdS",
+        "start": 22792,
+        "end": 22799
+      },
+      {
+        "name": "telemetryMarkAttempt",
+        "start": 22801,
+        "end": 22805
+      },
+      {
+        "name": "telemetryMarkInvalid",
+        "start": 22807,
+        "end": 22810
+      },
+      {
+        "name": "telemetryMarkRejected",
+        "start": 22812,
+        "end": 22815
+      },
+      {
+        "name": "telemetryMarkAccepted",
+        "start": 22817,
+        "end": 22824
+      },
+      {
+        "name": "telemetryEnsureSessionNonce",
+        "start": 22826,
+        "end": 22834
+      },
+      {
+        "name": "telemetryAgeSeconds",
+        "start": 22836,
+        "end": 22841
+      },
+      {
+        "name": "telemetrySimulationActive",
+        "start": 22843,
+        "end": 22861
+      },
+      {
+        "name": "telemetryQuality",
+        "start": 22863,
+        "end": 22874
+      },
+      {
+        "name": "temperaturaTrocinySwiezaDlaAutomatyki",
+        "start": 22878,
+        "end": 22881
+      },
+      {
+        "name": "telemetrySetQuality",
+        "start": 22883,
+        "end": 22886
+      },
+      {
+        "name": "telemetryEncodeX10",
+        "start": 22888,
+        "end": 22895
+      },
+      {
+        "name": "telemetryMarkDerivedOgrzSrFromSource",
+        "start": 22897,
+        "end": 22902
+      },
+      {
+        "name": "telemetryServoDegrees",
+        "start": 22907,
+        "end": 22909
+      },
+      {
+        "name": "telemetryServoUnitsRegressionTest",
+        "start": 22912,
+        "end": 22924
+      },
+      {
+        "name": "<blok>",
+        "start": 22928,
+        "end": 22976
+      },
+      {
+        "name": "solarArchivePathFor",
+        "start": 23079,
+        "end": 23086
+      },
+      {
+        "name": "solarArchiveNowUtc",
+        "start": 23090,
+        "end": 23094
+      },
+      {
+        "name": "solarArchiveLocalNow",
+        "start": 23096,
+        "end": 23100
+      },
+      {
+        "name": "solarArchiveIsoNowUtc",
+        "start": 23102,
+        "end": 23108
+      },
+      {
+        "name": "solarArchiveSetGhiStatus",
+        "start": 23113,
+        "end": 23122
+      },
+      {
+        "name": "solarArchiveWriteDoc",
+        "start": 23126,
+        "end": 23154
+      },
+      {
+        "name": "solarArchiveCopyAggregate",
+        "start": 23158,
+        "end": 23162
+      },
+      {
+        "name": "<blok>",
+        "start": 23170,
+        "end": 23274
+      },
+      {
+        "name": "solarArchivePruneOld",
+        "start": 23278,
+        "end": 23305
+      },
+      {
+        "name": "solarArchiveRestoreFor",
+        "start": 23309,
+        "end": 23397
+      },
+      {
+        "name": "solarArchiveSyncOne",
+        "start": 23403,
+        "end": 23466
+      },
+      {
+        "name": "solarArchiveIsoNoZ",
+        "start": 23472,
+        "end": 23486
+      },
+      {
+        "name": "solarArchiveBuildGhiUrlLocal",
+        "start": 23490,
+        "end": 23508
+      },
+      {
+        "name": "solarArchiveFetchGhi",
+        "start": 23510,
+        "end": 23627
+      },
+      {
+        "name": "solarArchiveBeginDay",
+        "start": 23629,
+        "end": 23657
+      },
+      {
+        "name": "solarArchiveFinalizeDay",
+        "start": 23661,
+        "end": 23677
+      },
+      {
+        "name": "<blok>",
+        "start": 23682,
+        "end": 23688
+      },
+      {
+        "name": "solarArchiveLocalTick",
+        "start": 23691,
+        "end": 23720
+      },
+      {
+        "name": "solarArchiveLoopLocalOnly",
+        "start": 23723,
+        "end": 23725
+      },
+      {
+        "name": "solarArchiveLoop",
+        "start": 23728,
+        "end": 23819
+      },
+      {
+        "name": "solarArchiveAppendApiJson",
+        "start": 23823,
+        "end": 23860
+      },
+      {
+        "name": "solarArchiveScanLegacy",
+        "start": 23878,
+        "end": 23929
+      },
+      {
+        "name": "solarArchiveDeleteDay",
+        "start": 23934,
+        "end": 23959
+      },
+      {
+        "name": "tgRaportSink",
+        "start": 23966,
+        "end": 23968
+      },
+      {
+        "name": "buildSolarArchiveTelegramReport",
+        "start": 23970,
+        "end": 24100
+      },
+      {
+        "name": "<blok>",
+        "start": 24115,
+        "end": 24125
+      },
+      {
+        "name": "tgWyslijRaportTekst",
+        "start": 24129,
+        "end": 24156
+      },
+      {
+        "name": "tgWyslijRaportSolarny",
+        "start": 24158,
+        "end": 24160
+      },
+      {
+        "name": "tgWyslijRaportTestowy",
+        "start": 24165,
+        "end": 24191
+      },
+      {
+        "name": "historiaZapiszProbke",
+        "start": 24194,
+        "end": 24348
+      },
+      {
+        "name": "historiaWyczysc",
+        "start": 24350,
+        "end": 24355
+      },
+      {
+        "name": "historiaLiniaCsv",
+        "start": 24367,
+        "end": 24383
+      },
+      {
+        "name": "historiaZbudujCsv",
+        "start": 24385,
+        "end": 24410
+      },
+      {
+        "name": "<blok>",
+        "start": 24461,
+        "end": 24484
+      },
+      {
+        "name": "historiaDlugaInit",
+        "start": 24496,
+        "end": 24504
+      },
+      {
+        "name": "<blok>",
+        "start": 24513,
+        "end": 24521
+      },
+      {
+        "name": "<blok>",
+        "start": 24547,
+        "end": 24619
+      },
+      {
+        "name": "<blok>",
+        "start": 24640,
+        "end": 24686
+      },
+      {
+        "name": "historiaDlugaLiniaCsv",
+        "start": 24696,
+        "end": 24712
+      },
+      {
+        "name": "historiaDlugaZbudujCsv",
+        "start": 24714,
+        "end": 24733
+      },
+      {
+        "name": "logFsRotateThresholdBytes",
+        "start": 24919,
+        "end": 24922
+      },
+      {
+        "name": "coredumpParsujNazwe",
+        "start": 24966,
+        "end": 24999
+      },
+      {
+        "name": "coredumpZbudujSciezke",
+        "start": 25001,
+        "end": 25006
+      },
+      {
+        "name": "coredumpNajwyzszeSeqZFS",
+        "start": 25008,
+        "end": 25027
+      },
+      {
+        "name": "coredumpAlokujSeq",
+        "start": 25029,
+        "end": 25055
+      },
+      {
+        "name": "coredumpZnajdzPoSeq",
+        "start": 25057,
+        "end": 25087
+      },
+      {
+        "name": "coredumpZnajdzPoBoot",
+        "start": 25089,
+        "end": 25154
+      },
+      {
+        "name": "coredumpZnajdzNajnowszy",
+        "start": 25156,
+        "end": 25225
+      },
+      {
+        "name": "coredumpSeqJestOczekiwanyNaWysylke",
+        "start": 25227,
+        "end": 25235
+      },
+      {
+        "name": "coredumpUsunNajstarszyNieoczekiwany",
+        "start": 25237,
+        "end": 25295
+      },
+      {
+        "name": "coredumpPrzytnijArchiwum",
+        "start": 25297,
+        "end": 25343
+      },
+      {
+        "name": "archiwizujCoredumpJesliCrash",
+        "start": 25345,
+        "end": 25489
+      },
+      {
+        "name": "testCrashCzyUzbrojony",
+        "start": 25506,
+        "end": 25513
+      },
+      {
+        "name": "stabilityMegaOznaczUpdateZuzyty",
+        "start": 25518,
+        "end": 25544
+      },
+      {
+        "name": "testCrashOznaczUpdateZuzyty",
+        "start": 25546,
+        "end": 25572
+      },
+      {
+        "name": "wywolajTestowyCrash",
+        "start": 25574,
+        "end": 25586
+      },
+      {
+        "name": "logInit",
+        "start": 25588,
+        "end": 25614
+      },
+      {
+        "name": "_wsEnqueue",
+        "start": 25656,
+        "end": 25665
+      },
+      {
+        "name": "flushWsQueue",
+        "start": 25672,
+        "end": 25687
+      },
+      {
+        "name": "logZapisz",
+        "start": 25701,
+        "end": 25785
+      },
+      {
+        "name": "logZapiszSurowoBlok",
+        "start": 25791,
+        "end": 25799
+      },
+      {
+        "name": "logZaladujZFS",
+        "start": 25805,
+        "end": 25823
+      },
+      {
+        "name": "logFlushDoFS",
+        "start": 25837,
+        "end": 25919
+      },
+      {
+        "name": "<blok>",
+        "start": 25973,
+        "end": 26032
+      },
+      {
+        "name": "logCircularTrim",
+        "start": 26039,
+        "end": 26081
+      },
+      {
+        "name": "logCircularTrimA",
+        "start": 26098,
+        "end": 26117
+      },
+      {
+        "name": "logFsSizeGuard",
+        "start": 26133,
+        "end": 26230
+      },
+      {
+        "name": "logFsRozmiarUzyty",
+        "start": 26234,
+        "end": 26241
+      },
+      {
+        "name": "zapiszLog",
+        "start": 26258,
+        "end": 26261
+      },
+      {
+        "name": "zapiszLog",
+        "start": 26262,
+        "end": 26265
+      },
+      {
+        "name": "<blok>",
+        "start": 26268,
+        "end": 26273
+      },
+      {
+        "name": "diagCatName",
+        "start": 26294,
+        "end": 26301
+      },
+      {
+        "name": "diagLevelName",
+        "start": 26302,
+        "end": 26305
+      },
+      {
+        "name": "diagCatFromName",
+        "start": 26306,
+        "end": 26311
+      },
+      {
+        "name": "diagAllowed",
+        "start": 26312,
+        "end": 26314
+      },
+      {
+        "name": "diagRemotePush",
+        "start": 26315,
+        "end": 26334
+      },
+      {
+        "name": "diagRemoteCommitLine",
+        "start": 26335,
+        "end": 26346
+      },
+      {
+        "name": "diagRemoteBufferedBytes",
+        "start": 26347,
+        "end": 26353
+      },
+      {
+        "name": "diagRemotePeekBatch",
+        "start": 26354,
+        "end": 26375
+      },
+      {
+        "name": "diagJsonAppendEscaped",
+        "start": 26376,
+        "end": 26386
+      },
+      {
+        "name": "diagRemoteTrySendOneBatch",
+        "start": 26387,
+        "end": 26441
+      },
+      {
+        "name": "diagInit",
+        "start": 26443,
+        "end": 26458
+      },
+      {
+        "name": "diagLoadPolicy",
+        "start": 26459,
+        "end": 26475
+      },
+      {
+        "name": "diagBuildLine",
+        "start": 26476,
+        "end": 26490
+      },
+      {
+        "name": "<blok>",
+        "start": 26493,
+        "end": 26502
+      },
+      {
+        "name": "diagEmit",
+        "start": 26504,
+        "end": 26511
+      },
+      {
+        "name": "diagEmit",
+        "start": 26512,
+        "end": 26515
+      },
+      {
+        "name": "diagEmitf",
+        "start": 26516,
+        "end": 26527
+      },
+      {
+        "name": "diagPolicyReply",
+        "start": 26528,
+        "end": 26546
+      },
+      {
+        "name": "diagSavePolicy",
+        "start": 26547,
+        "end": 26557
+      },
+      {
+        "name": "diagRemoteAutoOffService",
+        "start": 26562,
+        "end": 26573
+      },
+      {
+        "name": "diagSetDestination",
+        "start": 26574,
+        "end": 26585
+      },
+      {
+        "name": "diagSetLevel",
+        "start": 26586,
+        "end": 26592
+      },
+      {
+        "name": "diagSetCategory",
+        "start": 26593,
+        "end": 26601
+      },
+      {
+        "name": "diagApplyCommand",
+        "start": 26603,
+        "end": 26633
+      },
+      {
+        "name": "zapiszLogKrytyczny",
+        "start": 26640,
+        "end": 26677
+      },
+      {
+        "name": "zapiszLogUstawien",
+        "start": 26687,
+        "end": 26712
+      },
+      {
+        "name": "logUstawienBaseline",
+        "start": 26720,
+        "end": 26747
+      },
+      {
+        "name": "symulacjaTrwa",
+        "start": 26759,
+        "end": 26766
+      },
+      {
+        "name": "<blok>",
+        "start": 26781,
+        "end": 26786
+      },
+      {
+        "name": "<blok>",
+        "start": 26797,
+        "end": 26822
+      },
+      {
+        "name": "<blok>",
+        "start": 26829,
+        "end": 26841
+      },
+      {
+        "name": "sdLogArchiwumMaxBytes",
+        "start": 26871,
+        "end": 26874
+      },
+      {
+        "name": "sdKartaInit",
+        "start": 26894,
+        "end": 26926
+      },
+      {
+        "name": "<blok>",
+        "start": 26936,
+        "end": 26985
+      },
+      {
+        "name": "zapiszLogNaSD",
+        "start": 26995,
+        "end": 27069
+      },
+      {
+        "name": "kopiujDoSDAwaryjnie",
+        "start": 27082,
+        "end": 27144
+      },
+      {
+        "name": "sdArchiwumCzekaNaWyslanie",
+        "start": 27151,
+        "end": 27159
+      },
+      {
+        "name": "logWyczysc",
+        "start": 27161,
+        "end": 27189
+      },
+      {
+        "name": "logRozmiarUzyty",
+        "start": 27194,
+        "end": 27196
+      },
+      {
+        "name": "logPobierzTekst",
+        "start": 27201,
+        "end": 27229
+      },
+      {
+        "name": "wifiLocalActionTokenEnsure",
+        "start": 27235,
+        "end": 27246
+      },
+      {
+        "name": "wifiZbudujStrone",
+        "start": 27251,
+        "end": 27927
+      },
+      {
+        "name": "wifiZbudujJsonStatus",
+        "start": 27939,
+        "end": 28115
+      },
+      {
+        "name": "<blok>",
+        "start": 28140,
+        "end": 28148
+      },
+      {
+        "name": "lanIdPoprawny",
+        "start": 28152,
+        "end": 28161
+      },
+      {
+        "name": "lanKomendaTekstPoprawny",
+        "start": 28164,
+        "end": 28171
+      },
+      {
+        "name": "lanJsonTekst",
+        "start": 28173,
+        "end": 28183
+      },
+      {
+        "name": "lanWyslijJson",
+        "start": 28185,
+        "end": 28189
+      },
+      {
+        "name": "lanDodajCorsOdczytu",
+        "start": 28194,
+        "end": 28200
+      },
+      {
+        "name": "lanKomendaPrzyjmij",
+        "start": 28203,
+        "end": 28236
+      },
+      {
+        "name": "lanAckOdpowiedz",
+        "start": 28239,
+        "end": 28265
+      },
+      {
+        "name": "wifiZarejestrujTrasy",
+        "start": 28269,
+        "end": 29594
+      },
+      {
+        "name": "wifiUruchomAP",
+        "start": 29603,
+        "end": 29619
+      },
+      {
+        "name": "wifiWylaczAP",
+        "start": 29624,
+        "end": 29630
+      },
+      {
+        "name": "wifiPolaczSTA",
+        "start": 29662,
+        "end": 29689
+      },
+      {
+        "name": "wifiPolaczSTA_Krok",
+        "start": 29712,
+        "end": 29751
+      },
+      {
+        "name": "wifiOtaSetup",
+        "start": 29758,
+        "end": 29800
+      },
+      {
+        "name": "zadanieSyncNTP",
+        "start": 29809,
+        "end": 29833
+      },
+      {
+        "name": "wifiZdarzenieDiag",
+        "start": 29853,
+        "end": 29870
+      },
+      {
+        "name": "wifiZdarzeniePowerSave",
+        "start": 29901,
+        "end": 29906
+      },
+      {
+        "name": "wifiSetup",
+        "start": 29908,
+        "end": 29954
+      },
+      {
+        "name": "diagSladWifiLoop",
+        "start": 29963,
+        "end": 29969
+      },
+      {
+        "name": "wifiLoop",
+        "start": 29972,
+        "end": 30126
+      },
+      {
+        "name": "procentNaKat",
+        "start": 30128,
+        "end": 30136
+      },
+      {
+        "name": "dsZglosBladOdczytu",
+        "start": 30169,
+        "end": 30184
+      },
+      {
+        "name": "dsZglosOdczytPoprawny",
+        "start": 30186,
+        "end": 30189
+      },
+      {
+        "name": "dsObslugaPowerCycle",
+        "start": 30194,
+        "end": 30246
+      },
+      {
+        "name": "<blok>",
+        "start": 30295,
+        "end": 30302
+      },
+      {
+        "name": "zastosujFiltrWiarygodnosci",
+        "start": 30323,
+        "end": 30381
+      },
+      {
+        "name": "odczytajTemperature",
+        "start": 30386,
+        "end": 30523
+      },
+      {
+        "name": "Czujnik_DS",
+        "start": 30525,
+        "end": 30573
+      },
+      {
+        "name": "ustawInterwalPomiaru",
+        "start": 30575,
+        "end": 30581
+      },
+      {
+        "name": "cisnienie",
+        "start": 30586,
+        "end": 30625
+      },
+      {
+        "name": "obliczSkorygowanaWilgotnoscWzgledna",
+        "start": 30627,
+        "end": 30632
+      },
+      {
+        "name": "obliczWilgotnoscAbsolutna",
+        "start": 30634,
+        "end": 30639
+      },
+      {
+        "name": "wilgotnosc",
+        "start": 30641,
+        "end": 30709
+      },
+      {
+        "name": "mieszadlo",
+        "start": 30720,
+        "end": 30784
+      },
+      {
+        "name": "obslugaWygasanSymulacjiElementow",
+        "start": 30794,
+        "end": 30810
+      },
+      {
+        "name": "<blok>",
+        "start": 30827,
+        "end": 30837
+      },
+      {
+        "name": "alarmBezpieczenstwaSerwaAktywny",
+        "start": 30840,
+        "end": 30842
+      },
+      {
+        "name": "temperaturaPiecZnanaDlaRozpalania",
+        "start": 30844,
+        "end": 30847
+      },
+      {
+        "name": "rozpalanieSerwaWymuszenieAktywne",
+        "start": 30849,
+        "end": 30854
+      },
+      {
+        "name": "zapiszStanRozpalaniaSerwa",
+        "start": 30856,
+        "end": 30860
+      },
+      {
+        "name": "zatrzymajRuchSerwa",
+        "start": 30862,
+        "end": 30868
+      },
+      {
+        "name": "dymNadzorAktywny",
+        "start": 30870,
+        "end": 30881
+      },
+      {
+        "name": "odnowDymNadzorPoRuchu",
+        "start": 30883,
+        "end": 30902
+      },
+      {
+        "name": "<blok>",
+        "start": 30909,
+        "end": 30929
+      },
+      {
+        "name": "serwoTickJeden",
+        "start": 30933,
+        "end": 30955
+      },
+      {
+        "name": "serwoTick",
+        "start": 30964,
+        "end": 30974
+      },
+      {
+        "name": "rozpalaniePozostaloSekundy",
+        "start": 30976,
+        "end": 30984
+      },
+      {
+        "name": "zakonczTrybRozpalania",
+        "start": 30986,
+        "end": 31008
+      },
+      {
+        "name": "uruchomRozpalanieSerwa",
+        "start": 31010,
+        "end": 31035
+      },
+      {
+        "name": "obslugaRozpalaniaSerwa",
+        "start": 31037,
+        "end": 31153
+      },
+      {
+        "name": "servo_manual",
+        "start": 31163,
+        "end": 31223
+      },
+      {
+        "name": "sprawdzInterlockPrzedRuchem",
+        "start": 31230,
+        "end": 31240
+      },
+      {
+        "name": "servo",
+        "start": 31247,
+        "end": 31330
+      },
+      {
+        "name": "temperatura_alarmowa",
+        "start": 31335,
+        "end": 31365
+      },
+      {
+        "name": "aktywujAlarmCO",
+        "start": 31367,
+        "end": 31400
+      },
+      {
+        "name": "dezaktywujAlarmCO",
+        "start": 31402,
+        "end": 31411
+      },
+      {
+        "name": "aktywujAlarmPanelu",
+        "start": 31413,
+        "end": 31427
+      },
+      {
+        "name": "dezaktywujAlarmPanelu",
+        "start": 31429,
+        "end": 31438
+      },
+      {
+        "name": "alarmMuteRemainingMs",
+        "start": 31443,
+        "end": 31469
+      },
+      {
+        "name": "alarmMuteSet",
+        "start": 31471,
+        "end": 31478
+      },
+      {
+        "name": "alarmMuteClear",
+        "start": 31480,
+        "end": 31487
+      },
+      {
+        "name": "alarmMuteStopSoundIfOwned",
+        "start": 31489,
+        "end": 31496
+      },
+      {
+        "name": "wyciszAlarmDzwiekowy",
+        "start": 31499,
+        "end": 31505
+      },
+      {
+        "name": "wyciszAktywneAlarmyDoKasowania",
+        "start": 31507,
+        "end": 31512
+      },
+      {
+        "name": "obsluzKomendeAlarmSound",
+        "start": 31514,
+        "end": 31559
+      },
+      {
+        "name": "obsluzKomendeAlarmMute",
+        "start": 31561,
+        "end": 31604
+      },
+      {
+        "name": "pozar",
+        "start": 31606,
+        "end": 31860
+      },
+      {
+        "name": "alarmBuzzerPlayStep",
+        "start": 31865,
+        "end": 31873
+      },
+      {
+        "name": "<blok>",
+        "start": 31876,
+        "end": 31915
+      },
+      {
+        "name": "buzzerAlarmuCentrali",
+        "start": 31917,
+        "end": 31941
+      },
+      {
+        "name": "wyciszAlarmDzwiekowyOgrzewania",
+        "start": 31944,
+        "end": 31950
+      },
+      {
+        "name": "obliczanie_srednia",
+        "start": 31955,
+        "end": 32071
+      },
+      {
+        "name": "RTC",
+        "start": 32079,
+        "end": 32108
+      },
+      {
+        "name": "zadanieObslugaPompy",
+        "start": 32113,
+        "end": 32382
+      },
+      {
+        "name": "zadanieStatusSerial",
+        "start": 32387,
+        "end": 32420
+      },
+      {
+        "name": "aktualizujScenariuszTestowy",
+        "start": 32423,
+        "end": 32458
+      },
+      {
+        "name": "loadTelegramConfig",
+        "start": 32470,
+        "end": 32493
+      },
+      {
+        "name": "saveTelegramConfig",
+        "start": 32496,
+        "end": 32502
+      },
+      {
+        "name": "<blok>",
+        "start": 32564,
+        "end": 32571
+      },
+      {
+        "name": "dnsCtxGotowe",
+        "start": 32573,
+        "end": 32575
+      },
+      {
+        "name": "dnsCtxRelease",
+        "start": 32577,
+        "end": 32581
+      },
+      {
+        "name": "dnsWorkerTaskFn",
+        "start": 32583,
+        "end": 32593
+      },
+      {
+        "name": "wifiHostByNameZLimitem",
+        "start": 32595,
+        "end": 32650
+      },
+      {
+        "name": "tgEnsureConnected",
+        "start": 32652,
+        "end": 32815
+      },
+      {
+        "name": "<blok>",
+        "start": 32841,
+        "end": 32856
+      },
+      {
+        "name": "diagIdBiezacegoTasku",
+        "start": 32858,
+        "end": 32864
+      },
+      {
+        "name": "tgPostJson",
+        "start": 32880,
+        "end": 32942
+      },
+      {
+        "name": "sendTelegramMessage",
+        "start": 32953,
+        "end": 32992
+      },
+      {
+        "name": "sendTelegramDocumentKrytyczny",
+        "start": 32995,
+        "end": 33098
+      },
+      {
+        "name": "sendTelegramDocument",
+        "start": 33109,
+        "end": 33301
+      },
+      {
+        "name": "sendTelegramDocumentSD",
+        "start": 33325,
+        "end": 33483
+      },
+      {
+        "name": "sendTelegramCoredumpPlik",
+        "start": 33489,
+        "end": 33637
+      },
+      {
+        "name": "sendTelegramCoredump",
+        "start": 33641,
+        "end": 33648
+      },
+      {
+        "name": "buildTelegramCoredumpList",
+        "start": 33650,
+        "end": 33712
+      },
+      {
+        "name": "sendTelegramCoredumpListMenu",
+        "start": 33718,
+        "end": 33809
+      },
+      {
+        "name": "sendTelegramDocumentHistKrotka",
+        "start": 33817,
+        "end": 33931
+      },
+      {
+        "name": "sendTelegramDocumentHistDluga",
+        "start": 33936,
+        "end": 34048
+      },
+      {
+        "name": "sendTelegramDocumentUstawien",
+        "start": 34058,
+        "end": 34170
+      },
+      {
+        "name": "tgAutoWyslijZaleglySD",
+        "start": 34177,
+        "end": 34198
+      },
+      {
+        "name": "trybSerwaTekst",
+        "start": 34201,
+        "end": 34206
+      },
+      {
+        "name": "buildTelegramStatusReport",
+        "start": 34209,
+        "end": 34259
+      },
+      {
+        "name": "buildTelegramTempReport",
+        "start": 34262,
+        "end": 34277
+      },
+      {
+        "name": "buildTelegramServaReport",
+        "start": 34280,
+        "end": 34291
+      },
+      {
+        "name": "<blok>",
+        "start": 34296,
+        "end": 34308
+      },
+      {
+        "name": "fsAccountingSnapshot",
+        "start": 34310,
+        "end": 34350
+      },
+      {
+        "name": "<blok>",
+        "start": 34360,
+        "end": 34368
+      },
+      {
+        "name": "fsQuotaShadowEvaluate",
+        "start": 34370,
+        "end": 34386
+      },
+      {
+        "name": "fsQuotaShadowIsLow",
+        "start": 34388,
+        "end": 34400
+      },
+      {
+        "name": "<blok>",
+        "start": 34407,
+        "end": 34420
+      },
+      {
+        "name": "fsQuotaDynamicEvaluate",
+        "start": 34422,
+        "end": 34456
+      },
+      {
+        "name": "<blok>",
+        "start": 34465,
+        "end": 34476
+      },
+      {
+        "name": "fsQuotaHardEvaluate",
+        "start": 34478,
+        "end": 34510
+      },
+      {
+        "name": "<blok>",
+        "start": 34515,
+        "end": 34525
+      },
+      {
+        "name": "spoolR252EnsureDir",
+        "start": 34549,
+        "end": 34553
+      },
+      {
+        "name": "spoolR252UpdateCrc",
+        "start": 34555,
+        "end": 34563
+      },
+      {
+        "name": "spoolR252ArmTelemetryMirror",
+        "start": 34565,
+        "end": 34622
+      },
+      {
+        "name": "spoolR252MirrorOnTelemetrySample",
+        "start": 34624,
+        "end": 34719
+      },
+      {
+        "name": "spoolR252VerifyTelemetryMirror",
+        "start": 34721,
+        "end": 34801
+      },
+      {
+        "name": "<blok>",
+        "start": 34814,
+        "end": 34827
+      },
+      {
+        "name": "spoolBatchEnsureDir",
+        "start": 34829,
+        "end": 34833
+      },
+      {
+        "name": "spoolBatchRemove",
+        "start": 34835,
+        "end": 34837
+      },
+      {
+        "name": "<blok>",
+        "start": 34840,
+        "end": 34852
+      },
+      {
+        "name": "<blok>",
+        "start": 34857,
+        "end": 34909
+      },
+      {
+        "name": "<blok>",
+        "start": 34912,
+        "end": 34947
+      },
+      {
+        "name": "spoolBatchScan",
+        "start": 34949,
+        "end": 35032
+      },
+      {
+        "name": "<blok>",
+        "start": 35035,
+        "end": 35047
+      },
+      {
+        "name": "spoolR253Roundtrip",
+        "start": 35049,
+        "end": 35054
+      },
+      {
+        "name": "spoolR254OpenTail",
+        "start": 35056,
+        "end": 35066
+      },
+      {
+        "name": "spoolR255Fifo",
+        "start": 35068,
+        "end": 35084
+      },
+      {
+        "name": "spoolR256RecordCrc",
+        "start": 35086,
+        "end": 35127
+      },
+      {
+        "name": "spoolR257HeaderCrc",
+        "start": 35129,
+        "end": 35136
+      },
+      {
+        "name": "spoolR258FooterCommit",
+        "start": 35138,
+        "end": 35147
+      },
+      {
+        "name": "spoolR259PageCrc",
+        "start": 35149,
+        "end": 35158
+      },
+      {
+        "name": "spoolR260Rollover",
+        "start": 35160,
+        "end": 35176
+      },
+      {
+        "name": "spoolR261PartPublish",
+        "start": 35178,
+        "end": 35191
+      },
+      {
+        "name": "spoolR262PhysicalAccounting",
+        "start": 35193,
+        "end": 35218
+      },
+      {
+        "name": "spoolR253R262RunBatch",
+        "start": 35220,
+        "end": 35272
+      },
+      {
+        "name": "spoolR273MakeTelemetrySamples",
+        "start": 35287,
+        "end": 35304
+      },
+      {
+        "name": "spoolR273SnapshotRoundtrip",
+        "start": 35306,
+        "end": 35320
+      },
+      {
+        "name": "spoolR274BuilderSeqNonce",
+        "start": 35322,
+        "end": 35329
+      },
+      {
+        "name": "spoolR275RealBuilderToMirror",
+        "start": 35331,
+        "end": 35340
+      },
+      {
+        "name": "spoolR276DuplicateSuppression",
+        "start": 35342,
+        "end": 35354
+      },
+      {
+        "name": "spoolR277FieldsByteExact",
+        "start": 35356,
+        "end": 35379
+      },
+      {
+        "name": "spoolR278CountersUnchanged",
+        "start": 35381,
+        "end": 35413
+      },
+      {
+        "name": "spoolR279CommitOnlyAtTarget",
+        "start": 35415,
+        "end": 35437
+      },
+      {
+        "name": "spoolR280QuotaForMirror",
+        "start": 35439,
+        "end": 35447
+      },
+      {
+        "name": "spoolR281FinalMirrorRecovery",
+        "start": 35449,
+        "end": 35461
+      },
+      {
+        "name": "spoolR282CapacityCoverage",
+        "start": 35463,
+        "end": 35472
+      },
+      {
+        "name": "spoolR273R282RunBatch",
+        "start": 35474,
+        "end": 35495
+      },
+      {
+        "name": "<blok>",
+        "start": 35507,
+        "end": 35512
+      },
+      {
+        "name": "spoolReplayEnsureDir",
+        "start": 35514,
+        "end": 35518
+      },
+      {
+        "name": "spoolReplayWritePage",
+        "start": 35520,
+        "end": 35524
+      },
+      {
+        "name": "spoolReplayReadRecord",
+        "start": 35526,
+        "end": 35545
+      },
+      {
+        "name": "spoolReplayScanPage",
+        "start": 35547,
+        "end": 35549
+      },
+      {
+        "name": "spoolReplayFlipByte",
+        "start": 35551,
+        "end": 35563
+      },
+      {
+        "name": "spoolReplayCleanup",
+        "start": 35565,
+        "end": 35573
+      },
+      {
+        "name": "spoolR301ReplayFifo",
+        "start": 35575,
+        "end": 35585
+      },
+      {
+        "name": "spoolR302ReplayBatchMax10",
+        "start": 35587,
+        "end": 35598
+      },
+      {
+        "name": "spoolR303PartialAckKeepsPage",
+        "start": 35600,
+        "end": 35611
+      },
+      {
+        "name": "spoolR304FullAckDeletesPage",
+        "start": 35613,
+        "end": 35623
+      },
+      {
+        "name": "spoolR305RestartBeforeDeleteAtLeastOnce",
+        "start": 35625,
+        "end": 35640
+      },
+      {
+        "name": "spoolR306DuplicateRetryIdentity",
+        "start": 35642,
+        "end": 35655
+      },
+      {
+        "name": "spoolR307OldestPageBlocksNext",
+        "start": 35657,
+        "end": 35669
+      },
+      {
+        "name": "spoolR308CorruptPageNeverAdmitted",
+        "start": 35671,
+        "end": 35680
+      },
+      {
+        "name": "spoolR309FooterMismatchNeverAdmitted",
+        "start": 35682,
+        "end": 35691
+      },
+      {
+        "name": "spoolR310TenRecordRequestBoundary",
+        "start": 35693,
+        "end": 35706
+      },
+      {
+        "name": "spoolR311ReopenPreservesCursorSource",
+        "start": 35708,
+        "end": 35721
+      },
+      {
+        "name": "spoolR312TwoPageReplayEndToEnd",
+        "start": 35723,
+        "end": 35743
+      },
+      {
+        "name": "spoolR301R312RunReplayBatch",
+        "start": 35745,
+        "end": 35789
+      },
+      {
+        "name": "spoolR313PartialRecordRecovery",
+        "start": 35799,
+        "end": 35807
+      },
+      {
+        "name": "spoolR314AfterRecordBeforeFooter",
+        "start": 35809,
+        "end": 35818
+      },
+      {
+        "name": "spoolR315FullPageBeforeFooter",
+        "start": 35820,
+        "end": 35829
+      },
+      {
+        "name": "spoolR316AfterFooterCommit",
+        "start": 35831,
+        "end": 35838
+      },
+      {
+        "name": "spoolR317FooterCrcCorrupt",
+        "start": 35840,
+        "end": 35850
+      },
+      {
+        "name": "spoolR318FirstRecordCorrupt",
+        "start": 35852,
+        "end": 35861
+      },
+      {
+        "name": "spoolR319LastRecordCorrupt",
+        "start": 35863,
+        "end": 35873
+      },
+      {
+        "name": "spoolR320PageCrcCorrupt",
+        "start": 35875,
+        "end": 35885
+      },
+      {
+        "name": "spoolR321SequenceGap",
+        "start": 35887,
+        "end": 35897
+      },
+      {
+        "name": "spoolR322MixedValidInvalidPages",
+        "start": 35899,
+        "end": 35910
+      },
+      {
+        "name": "spoolR323OpenNewestDoesNotBypassOldest",
+        "start": 35912,
+        "end": 35922
+      },
+      {
+        "name": "spoolR324TwoPageQuota",
+        "start": 35924,
+        "end": 35964
+      },
+      {
+        "name": "spoolR313R324RunFaultBatch",
+        "start": 35966,
+        "end": 36007
+      },
+      {
+        "name": "<blok>",
+        "start": 36018,
+        "end": 36041
+      },
+      {
+        "name": "spoolR263FooterBounds",
+        "start": 36043,
+        "end": 36051
+      },
+      {
+        "name": "spoolR264DuplicateSeq",
+        "start": 36053,
+        "end": 36070
+      },
+      {
+        "name": "spoolR265FooterCountMismatch",
+        "start": 36072,
+        "end": 36078
+      },
+      {
+        "name": "spoolR266FooterPageSeqMismatch",
+        "start": 36080,
+        "end": 36086
+      },
+      {
+        "name": "spoolR267FooterFirstLastMismatch",
+        "start": 36088,
+        "end": 36094
+      },
+      {
+        "name": "spoolR268TrailingByte",
+        "start": 36096,
+        "end": 36103
+      },
+      {
+        "name": "spoolR269BadPartNoPublish",
+        "start": 36105,
+        "end": 36120
+      },
+      {
+        "name": "spoolR270SampleRoundtrip",
+        "start": 36122,
+        "end": 36132
+      },
+      {
+        "name": "spoolR271QualityAgeBits",
+        "start": 36134,
+        "end": 36141
+      },
+      {
+        "name": "spoolR272FullPageSemantic",
+        "start": 36143,
+        "end": 36150
+      },
+      {
+        "name": "spoolR263R272RunBatch",
+        "start": 36152,
+        "end": 36172
+      },
+      {
+        "name": "<blok>",
+        "start": 36204,
+        "end": 36211
+      },
+      {
+        "name": "spoolGHighestPageSeqFS",
+        "start": 36213,
+        "end": 36235
+      },
+      {
+        "name": "spoolGAllocatePageSeq",
+        "start": 36237,
+        "end": 36256
+      },
+      {
+        "name": "spoolGBuildRecordFromSample",
+        "start": 36258,
+        "end": 36266
+      },
+      {
+        "name": "<blok>",
+        "start": 36270,
+        "end": 36353
+      },
+      {
+        "name": "spoolGEnsureCommitGInput",
+        "start": 36360,
+        "end": 36378
+      },
+      {
+        "name": "spoolGR325RealRingDurable",
+        "start": 36380,
+        "end": 36410
+      },
+      {
+        "name": "spoolGR326WriteFailureKeepsRing",
+        "start": 36412,
+        "end": 36430
+      },
+      {
+        "name": "spoolGR327CorruptPageBlocksTail",
+        "start": 36432,
+        "end": 36449
+      },
+      {
+        "name": "spoolGR328PartNotAdmitted",
+        "start": 36451,
+        "end": 36468
+      },
+      {
+        "name": "spoolGR329PublishAndReopen",
+        "start": 36470,
+        "end": 36491
+      },
+      {
+        "name": "spoolGR330SequenceFIFO",
+        "start": 36493,
+        "end": 36504
+      },
+      {
+        "name": "spoolGR331QuotaBlocksOversize",
+        "start": 36506,
+        "end": 36516
+      },
+      {
+        "name": "spoolGR332FullAckDeleteOnly",
+        "start": 36518,
+        "end": 36528
+      },
+      {
+        "name": "spoolGR333NoTailAdvanceBeforeDurability",
+        "start": 36530,
+        "end": 36564
+      },
+      {
+        "name": "spoolGR334CommitGSummary",
+        "start": 36566,
+        "end": 36569
+      },
+      {
+        "name": "spoolR325R334RunCommitGBatch",
+        "start": 36571,
+        "end": 36617
+      },
+      {
+        "name": "spoolR245Crc32",
+        "start": 36632,
+        "end": 36641
+      },
+      {
+        "name": "spoolR245HeaderCrc",
+        "start": 36643,
+        "end": 36647
+      },
+      {
+        "name": "spoolR245FooterCrc",
+        "start": 36649,
+        "end": 36653
+      },
+      {
+        "name": "spoolR245BuildSample",
+        "start": 36655,
+        "end": 36673
+      },
+      {
+        "name": "spoolR245EnsureDir",
+        "start": 36675,
+        "end": 36679
+      },
+      {
+        "name": "spoolR245WriteCompletePage",
+        "start": 36681,
+        "end": 36817
+      },
+      {
+        "name": "spoolR245VerifyCompletePage",
+        "start": 36819,
+        "end": 36924
+      },
+      {
+        "name": "spoolR246WriteOpenPage",
+        "start": 36938,
+        "end": 37010
+      },
+      {
+        "name": "spoolR246RecoverOpenPage",
+        "start": 37012,
+        "end": 37065
+      },
+      {
+        "name": "spoolR247WritePowerLossPage",
+        "start": 37083,
+        "end": 37200
+      },
+      {
+        "name": "spoolR247RecoverPowerLossPage",
+        "start": 37202,
+        "end": 37291
+      },
+      {
+        "name": "spoolR248VerifyThreeRecords",
+        "start": 37308,
+        "end": 37362
+      },
+      {
+        "name": "spoolR248RecoverAndContinue",
+        "start": 37364,
+        "end": 37549
+      },
+      {
+        "name": "spoolR249VerifyFullPage",
+        "start": 37567,
+        "end": 37681
+      },
+      {
+        "name": "spoolR249WriteAndVerifyFullPage",
+        "start": 37683,
+        "end": 37844
+      },
+      {
+        "name": "spoolR250WriteCorruptRecord",
+        "start": 37860,
+        "end": 37936
+      },
+      {
+        "name": "spoolR250RecoverCorruptRecord",
+        "start": 37938,
+        "end": 38018
+      },
+      {
+        "name": "spoolR251QuotaBoundary",
+        "start": 38032,
+        "end": 38080
+      },
+      {
+        "name": "buildTelegramTelemetryDiagReport",
+        "start": 38082,
+        "end": 38275
+      },
+      {
+        "name": "buildTelegramDiagReport",
+        "start": 38281,
+        "end": 38343
+      },
+      {
+        "name": "sendTelegramSterowanieMenu",
+        "start": 38346,
+        "end": 38361
+      },
+      {
+        "name": "sendTelegramAlarmyMenu",
+        "start": 38364,
+        "end": 38374
+      },
+      {
+        "name": "sendTelegramDaneMenu",
+        "start": 38377,
+        "end": 38391
+      },
+      {
+        "name": "sendTelegramDiagnostykaMenu",
+        "start": 38394,
+        "end": 38405
+      },
+      {
+        "name": "sendTelegramOtaMenu",
+        "start": 38408,
+        "end": 38417
+      },
+      {
+        "name": "sendTelegramInlineMenu",
+        "start": 38422,
+        "end": 38445
+      },
+      {
+        "name": "sendTelegramTrybMenu",
+        "start": 38448,
+        "end": 38463
+      },
+      {
+        "name": "sendTelegramConfirmClearLogs",
+        "start": 38470,
+        "end": 38489
+      },
+      {
+        "name": "sendTelegramConfirmRestart",
+        "start": 38494,
+        "end": 38502
+      },
+      {
+        "name": "answerTelegramCallback",
+        "start": 38510,
+        "end": 38518
+      },
+      {
+        "name": "otaGithubApiUrl",
+        "start": 38538,
+        "end": 38540
+      },
+      {
+        "name": "otaGithubDownloadUrl",
+        "start": 38553,
+        "end": 38555
+      },
+      {
+        "name": "sprawdzNajnowszaWersjeGithub",
+        "start": 38561,
+        "end": 38607
+      },
+      {
+        "name": "porownajWersje",
+        "start": 38617,
+        "end": 38637
+      },
+      {
+        "name": "wykonajAktualizacjeOTA",
+        "start": 38650,
+        "end": 38677
+      },
+      {
+        "name": "otaGithubDownloadUrlPanel",
+        "start": 38686,
+        "end": 38689
+      },
+      {
+        "name": "pobierzFirmwarePanelaZGithub",
+        "start": 38701,
+        "end": 38853
+      },
+      {
+        "name": "tgKolejkujAlboOdpowiedzBledem",
+        "start": 38878,
+        "end": 38884
+      },
+      {
+        "name": "pollTelegramCommands",
+        "start": 38886,
+        "end": 39371
+      },
+      {
+        "name": "loadFirebaseConfig",
+        "start": 39388,
+        "end": 39423
+      },
+      {
+        "name": "telemetryEnsureJsonBuffer",
+        "start": 39461,
+        "end": 39471
+      },
+      {
+        "name": "telemetryJsonAppend",
+        "start": 39473,
+        "end": 39482
+      },
+      {
+        "name": "telemetryFormatRecordId",
+        "start": 39484,
+        "end": 39487
+      },
+      {
+        "name": "telemetryAppendPathForSample",
+        "start": 39489,
+        "end": 39528
+      },
+      {
+        "name": "telemetryBuildBatch",
+        "start": 39530,
+        "end": 39566
+      },
+      {
+        "name": "fbLoopWorkerZajety",
+        "start": 39572,
+        "end": 39574
+      },
+      {
+        "name": "fbFirebaseSocketStopSafe",
+        "start": 39576,
+        "end": 39579
+      },
+      {
+        "name": "fbWarunekSpelniony",
+        "start": 39584,
+        "end": 39586
+      },
+      {
+        "name": "fbCzekajImpl",
+        "start": 39588,
+        "end": 39598
+      },
+      {
+        "name": "fbCzekajNaWynikZLimitem",
+        "start": 39600,
+        "end": 39602
+      },
+      {
+        "name": "securityH1R335R344RunBatch",
+        "start": 39610,
+        "end": 39702
+      },
+      {
+        "name": "securityH2R345R356RunBatch",
+        "start": 39710,
+        "end": 39876
+      },
+      {
+        "name": "securityH2TaskFn",
+        "start": 39890,
+        "end": 39908
+      },
+      {
+        "name": "securityH2LaunchTask",
+        "start": 39910,
+        "end": 39933
+      },
+      {
+        "name": "telemetryPendingAbandon",
+        "start": 39939,
+        "end": 39949
+      },
+      {
+        "name": "telemetryFinalizeCompletedRequest",
+        "start": 39951,
+        "end": 40023
+      },
+      {
+        "name": "telemetryPublishCompletionFromResult",
+        "start": 40025,
+        "end": 40032
+      },
+      {
+        "name": "spoolRuntimeParsePageSeq",
+        "start": 40041,
+        "end": 40057
+      },
+      {
+        "name": "spoolRuntimeMakeFinalPath",
+        "start": 40059,
+        "end": 40065
+      },
+      {
+        "name": "spoolRuntimeValidateFinalBySeq",
+        "start": 40067,
+        "end": 40079
+      },
+      {
+        "name": "spoolRuntimeGetOldestHint",
+        "start": 40081,
+        "end": 40087
+      },
+      {
+        "name": "spoolRuntimeSetOldestHint",
+        "start": 40089,
+        "end": 40095
+      },
+      {
+        "name": "spoolRuntimeFindOldestFinalPage",
+        "start": 40097,
+        "end": 40183
+      },
+      {
+        "name": "spoolRuntimeAllocatePageSeq",
+        "start": 40185,
+        "end": 40197
+      },
+      {
+        "name": "spoolRuntimeBuildReport",
+        "start": 40199,
+        "end": 40256
+      },
+      {
+        "name": "spoolRuntimePersistArmed",
+        "start": 40262,
+        "end": 40268
+      },
+      {
+        "name": "spoolRuntimeArm",
+        "start": 40270,
+        "end": 40281
+      },
+      {
+        "name": "spoolRuntimeStop",
+        "start": 40283,
+        "end": 40291
+      },
+      {
+        "name": "spoolRuntimeRestoreFromNvs",
+        "start": 40297,
+        "end": 40310
+      },
+      {
+        "name": "spoolRuntimeMaybeSpill",
+        "start": 40312,
+        "end": 40412
+      },
+      {
+        "name": "spoolRuntimeReplayOneBatch",
+        "start": 40414,
+        "end": 40547
+      },
+      {
+        "name": "finalMegaEnsureRealTelemetrySnapshot",
+        "start": 40557,
+        "end": 40600
+      },
+      {
+        "name": "finalMegaR380R400RunBatch",
+        "start": 40602,
+        "end": 40701
+      },
+      {
+        "name": "finalMegaTaskFn",
+        "start": 40703,
+        "end": 40714
+      },
+      {
+        "name": "finalMegaLaunchTask",
+        "start": 40716,
+        "end": 40737
+      },
+      {
+        "name": "stabilityMegaHealthSentinel",
+        "start": 40747,
+        "end": 40761
+      },
+      {
+        "name": "stabilityMegaR401R430RunBatch",
+        "start": 40763,
+        "end": 40867
+      },
+      {
+        "name": "stabilityMegaTaskFn",
+        "start": 40869,
+        "end": 40880
+      },
+      {
+        "name": "stabilityMegaLaunchTask",
+        "start": 40882,
+        "end": 40898
+      },
+      {
+        "name": "recoveryOtaMegaEnsureRealTelemetrySnapshot",
+        "start": 40906,
+        "end": 40949
+      },
+      {
+        "name": "recoveryOtaMegaTempFsTest",
+        "start": 40951,
+        "end": 40971
+      },
+      {
+        "name": "recoveryOtaMegaR431R470RunBatch",
+        "start": 40973,
+        "end": 41105
+      },
+      {
+        "name": "recoveryOtaMegaTaskFn",
+        "start": 41107,
+        "end": 41118
+      },
+      {
+        "name": "recoveryOtaMegaLaunchTask",
+        "start": 41120,
+        "end": 41134
+      },
+      {
+        "name": "rtdbTestCountToken",
+        "start": 41141,
+        "end": 41152
+      },
+      {
+        "name": "rtdbTestResultOk",
+        "start": 41158,
+        "end": 41160
+      },
+      {
+        "name": "rtdbTestSet",
+        "start": 41162,
+        "end": 41182
+      },
+      {
+        "name": "rtdbTestUpdate",
+        "start": 41184,
+        "end": 41204
+      },
+      {
+        "name": "rtdbTestGet",
+        "start": 41206,
+        "end": 41225
+      },
+      {
+        "name": "rtdbRangeReadAll",
+        "start": 41227,
+        "end": 41249
+      },
+      {
+        "name": "rtdbExtractHttpBody",
+        "start": 41251,
+        "end": 41283
+      },
+      {
+        "name": "<blok>",
+        "start": 41286,
+        "end": 41330
+      },
+      {
+        "name": "rtdbRangeWorkerTaskFn",
+        "start": 41332,
+        "end": 41383
+      },
+      {
+        "name": "rtdbTestRemove",
+        "start": 41385,
+        "end": 41404
+      },
+      {
+        "name": "rtdbIntegrationR367R379RunBatch",
+        "start": 41406,
+        "end": 41619
+      },
+      {
+        "name": "telemetrySendPendingBatch",
+        "start": 41629,
+        "end": 41653
+      },
+      {
+        "name": "telemetryTrySendOneBatch",
+        "start": 41655,
+        "end": 41724
+      },
+      {
+        "name": "fbCzekajNaGotowoscZLimitem",
+        "start": 41735,
+        "end": 41737
+      },
+      {
+        "name": "fbInitialize",
+        "start": 41740,
+        "end": 41912
+      },
+      {
+        "name": "psramAllocSafe",
+        "start": 41942,
+        "end": 41948
+      },
+      {
+        "name": "<blok>",
+        "start": 41968,
+        "end": 41978
+      },
+      {
+        "name": "applyFbSockTimeouts",
+        "start": 41991,
+        "end": 42000
+      },
+      {
+        "name": "zbudujJsonStatusPelny",
+        "start": 42006,
+        "end": 42162
+      },
+      {
+        "name": "sendStatusToFirebase",
+        "start": 42187,
+        "end": 42335
+      },
+      {
+        "name": "fbJsonEscape",
+        "start": 42339,
+        "end": 42354
+      },
+      {
+        "name": "fbSendCommandAck",
+        "start": 42359,
+        "end": 42410
+      },
+      {
+        "name": "fbTurboAktywne",
+        "start": 42479,
+        "end": 42485
+      },
+      {
+        "name": "fbCbSkipEpisodesReset",
+        "start": 42494,
+        "end": 42497
+      },
+      {
+        "name": "wykonajKomendePanelu",
+        "start": 42503,
+        "end": 42940
+      },
+      {
+        "name": "checkFirebaseCommands",
+        "start": 42942,
+        "end": 43171
+      },
+      {
+        "name": "deszcz_json_pozycja_k",
+        "start": 43244,
+        "end": 43253
+      },
+      {
+        "name": "deszcz_json_liczba",
+        "start": 43258,
+        "end": 43264
+      },
+      {
+        "name": "pobierzPrognozeDeszczu",
+        "start": 43274,
+        "end": 43418
+      },
+      {
+        "name": "<blok>",
+        "start": 43436,
+        "end": 43446
+      },
+      {
+        "name": "prognoza_wyliczMrozZaGodzin",
+        "start": 43509,
+        "end": 43515
+      },
+      {
+        "name": "prognoza_wyliczTrendTemp",
+        "start": 43521,
+        "end": 43530
+      },
+      {
+        "name": "pobierzPelnaPrognoze",
+        "start": 43535,
+        "end": 43660
+      },
+      {
+        "name": "lanObsluzOczekujacaKomende",
+        "start": 43704,
+        "end": 43741
+      },
+      {
+        "name": "wyslijRaportNadzoru",
+        "start": 43748,
+        "end": 43763
+      },
+      {
+        "name": "tgTaskFn",
+        "start": 43765,
+        "end": 44820
+      },
+      {
+        "name": "tgPollTaskFn",
+        "start": 44834,
+        "end": 44866
+      },
+      {
+        "name": "potwierdzPartycjeJesliCzeka",
+        "start": 44879,
+        "end": 44962
+      },
+      {
+        "name": "otaZapiszZnacznikOczekiwania",
+        "start": 44999,
+        "end": 45005
+      },
+      {
+        "name": "otaUsunZnacznik",
+        "start": 45007,
+        "end": 45010
+      },
+      {
+        "name": "otaOdczytajZnacznikPoRollbacku",
+        "start": 45014,
+        "end": 45028
+      },
+      {
+        "name": "otaZaplanujPotwierdzenie",
+        "start": 45031,
+        "end": 45046
+      },
+      {
+        "name": "otaPotwierdzTick",
+        "start": 45049,
+        "end": 45076
+      },
+      {
+        "name": "handleWsCmd",
+        "start": 45100,
+        "end": 45240
+      },
+      {
+        "name": "<blok>",
+        "start": 45247,
+        "end": 45263
+      },
+      {
+        "name": "historiaPrzytnijPlik",
+        "start": 45289,
+        "end": 45297
+      },
+      {
+        "name": "<blok>",
+        "start": 45302,
+        "end": 45307
+      },
+      {
+        "name": "historiaFlushDoFS",
+        "start": 45310,
+        "end": 45362
+      },
+      {
+        "name": "historiaDlugaFlushDoFS",
+        "start": 45374,
+        "end": 45414
+      },
+      {
+        "name": "<blok>",
+        "start": 45420,
+        "end": 45425
+      },
+      {
+        "name": "historiaObsluzKolejkeDluga",
+        "start": 45427,
+        "end": 45456
+      },
+      {
+        "name": "historiaTaskFn",
+        "start": 45485,
+        "end": 45502
+      },
+      {
+        "name": "<blok>",
+        "start": 45554,
+        "end": 45653
+      },
+      {
+        "name": "historiaWczytajZFS",
+        "start": 45657,
+        "end": 45734
+      },
+      {
+        "name": "historiaDlugaWczytajZFS",
+        "start": 45740,
+        "end": 45826
+      },
+      {
+        "name": "setup",
+        "start": 45833,
+        "end": 46583
+      },
+      {
+        "name": "<blok>",
+        "start": 46607,
+        "end": 46612
+      },
+      {
+        "name": "<blok>",
+        "start": 46615,
+        "end": 46621
+      },
+      {
+        "name": "nadzorDecyzja",
+        "start": 46623,
+        "end": 46643
+      },
+      {
+        "name": "*nadzorKtoNazwa",
+        "start": 46645,
+        "end": 46651
+      },
+      {
+        "name": "nadzorZadanSieciowych",
+        "start": 46653,
+        "end": 46720
+      },
+      {
+        "name": "loop",
+        "start": 46722,
+        "end": 46778
+      }
+    ],
+    "usages": [
+      {
+        "line": 25847,
+        "call": "open",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "logFlushDoFS",
+        "function_lines": [
+          25837,
+          25919
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "File f = systemFS196.open(LOG_FILE_B, \"a\");"
+      },
+      {
+        "line": 26041,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "logCircularTrim",
+        "function_lines": [
+          26039,
+          26081
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "if (!systemFS196.exists(LOG_FILE_B)) return;"
+      },
+      {
+        "line": 26069,
+        "call": "remove",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "logCircularTrim",
+        "function_lines": [
+          26039,
+          26081
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "bool ok = systemFS196.remove(LOG_FILE_B);"
+      },
+      {
+        "line": 26100,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_A",
+        "function": "logCircularTrimA",
+        "function_lines": [
+          26098,
+          26117
+        ],
+        "locks_in_function": [],
+        "source": "if (!systemFS196.exists(LOG_FILE_A)) return;"
+      },
+      {
+        "line": 26169,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "logFsSizeGuard",
+        "function_lines": [
+          26133,
+          26230
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "if (!systemFS196.exists(LOG_FILE_B)) return;"
+      },
+      {
+        "line": 26183,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_A",
+        "function": "logFsSizeGuard",
+        "function_lines": [
+          26133,
+          26230
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "bool okA = !systemFS196.exists(LOG_FILE_A) || systemFS196.remove(LOG_FILE_A);"
+      },
+      {
+        "line": 26183,
+        "call": "remove",
+        "mode": "",
+        "path": "LOG_FILE_A",
+        "function": "logFsSizeGuard",
+        "function_lines": [
+          26133,
+          26230
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "bool okA = !systemFS196.exists(LOG_FILE_A) || systemFS196.remove(LOG_FILE_A);"
+      },
+      {
+        "line": 26184,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "logFsSizeGuard",
+        "function_lines": [
+          26133,
+          26230
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "bool okB = !systemFS196.exists(LOG_FILE_B) || systemFS196.remove(LOG_FILE_B);"
+      },
+      {
+        "line": 26184,
+        "call": "remove",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "logFsSizeGuard",
+        "function_lines": [
+          26133,
+          26230
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "bool okB = !systemFS196.exists(LOG_FILE_B) || systemFS196.remove(LOG_FILE_B);"
+      },
+      {
+        "line": 26218,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_A",
+        "function": "logFsSizeGuard",
+        "function_lines": [
+          26133,
+          26230
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "if (systemFS196.exists(LOG_FILE_A)) systemFS196.remove(LOG_FILE_A);"
+      },
+      {
+        "line": 26218,
+        "call": "remove",
+        "mode": "",
+        "path": "LOG_FILE_A",
+        "function": "logFsSizeGuard",
+        "function_lines": [
+          26133,
+          26230
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "if (systemFS196.exists(LOG_FILE_A)) systemFS196.remove(LOG_FILE_A);"
+      },
+      {
+        "line": 26219,
+        "call": "rename",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "logFsSizeGuard",
+        "function_lines": [
+          26133,
+          26230
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "bool okRename = systemFS196.rename(LOG_FILE_B, LOG_FILE_A);"
+      },
+      {
+        "line": 27183,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_A",
+        "function": "logWyczysc",
+        "function_lines": [
+          27161,
+          27189
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "if (systemFS196.exists(LOG_FILE_A)) systemFS196.remove(LOG_FILE_A);"
+      },
+      {
+        "line": 27183,
+        "call": "remove",
+        "mode": "",
+        "path": "LOG_FILE_A",
+        "function": "logWyczysc",
+        "function_lines": [
+          27161,
+          27189
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "if (systemFS196.exists(LOG_FILE_A)) systemFS196.remove(LOG_FILE_A);"
+      },
+      {
+        "line": 27184,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "logWyczysc",
+        "function_lines": [
+          27161,
+          27189
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "if (systemFS196.exists(LOG_FILE_B)) systemFS196.remove(LOG_FILE_B);"
+      },
+      {
+        "line": 27184,
+        "call": "remove",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "logWyczysc",
+        "function_lines": [
+          27161,
+          27189
+        ],
+        "locks_in_function": [
+          "xSemaphoreTake",
+          "logMutex"
+        ],
+        "source": "if (systemFS196.exists(LOG_FILE_B)) systemFS196.remove(LOG_FILE_B);"
+      },
+      {
+        "line": 33822,
+        "call": "exists",
+        "mode": "",
+        "path": "HISTORIA_PLIK",
+        "function": "sendTelegramDocumentHistKrotka",
+        "function_lines": [
+          33817,
+          33931
+        ],
+        "locks_in_function": [],
+        "source": "if (!systemFS196.exists(HISTORIA_PLIK)) return false;"
+      },
+      {
+        "line": 33878,
+        "call": "open",
+        "mode": "",
+        "path": "HISTORIA_PLIK",
+        "function": "sendTelegramDocumentHistKrotka",
+        "function_lines": [
+          33817,
+          33931
+        ],
+        "locks_in_function": [],
+        "source": "File plik = systemFS196.open(HISTORIA_PLIK, \"r\");"
+      },
+      {
+        "line": 33941,
+        "call": "exists",
+        "mode": "",
+        "path": "HISTORIA_DLUGA_PLIK",
+        "function": "sendTelegramDocumentHistDluga",
+        "function_lines": [
+          33936,
+          34048
+        ],
+        "locks_in_function": [],
+        "source": "if (!systemFS196.exists(HISTORIA_DLUGA_PLIK)) return false;"
+      },
+      {
+        "line": 33995,
+        "call": "open",
+        "mode": "",
+        "path": "HISTORIA_DLUGA_PLIK",
+        "function": "sendTelegramDocumentHistDluga",
+        "function_lines": [
+          33936,
+          34048
+        ],
+        "locks_in_function": [],
+        "source": "File plik = systemFS196.open(HISTORIA_DLUGA_PLIK, \"r\");"
+      },
+      {
+        "line": 45661,
+        "call": "exists",
+        "mode": "",
+        "path": "HISTORIA_PLIK",
+        "function": "historiaWczytajZFS",
+        "function_lines": [
+          45657,
+          45734
+        ],
+        "locks_in_function": [],
+        "source": "if (!systemFS196.exists(HISTORIA_PLIK)) { historiaPlikLiczbaLinii = 0; return; }"
+      },
+      {
+        "line": 45663,
+        "call": "open",
+        "mode": "",
+        "path": "HISTORIA_PLIK",
+        "function": "historiaWczytajZFS",
+        "function_lines": [
+          45657,
+          45734
+        ],
+        "locks_in_function": [],
+        "source": "File f = systemFS196.open(HISTORIA_PLIK, \"r\");"
+      },
+      {
+        "line": 45744,
+        "call": "exists",
+        "mode": "",
+        "path": "HISTORIA_DLUGA_PLIK",
+        "function": "historiaDlugaWczytajZFS",
+        "function_lines": [
+          45740,
+          45826
+        ],
+        "locks_in_function": [],
+        "source": "if (!systemFS196.exists(HISTORIA_DLUGA_PLIK)) { historiaDlugaPlikLiczbaLinii = 0; return; }"
+      },
+      {
+        "line": 45746,
+        "call": "open",
+        "mode": "",
+        "path": "HISTORIA_DLUGA_PLIK",
+        "function": "historiaDlugaWczytajZFS",
+        "function_lines": [
+          45740,
+          45826
+        ],
+        "locks_in_function": [],
+        "source": "File f = systemFS196.open(HISTORIA_DLUGA_PLIK, \"r\");"
+      },
+      {
+        "line": 45936,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_A",
+        "function": "setup",
+        "function_lines": [
+          45833,
+          46583
+        ],
+        "locks_in_function": [],
+        "source": "if (systemFS196.exists(LOG_FILE_A)) { File fa = systemFS196.open(LOG_FILE_A, \"r\"); if (fa) { g_logASize = fa.size(); fa.close(); } }"
+      },
+      {
+        "line": 45936,
+        "call": "open",
+        "mode": "",
+        "path": "LOG_FILE_A",
+        "function": "setup",
+        "function_lines": [
+          45833,
+          46583
+        ],
+        "locks_in_function": [],
+        "source": "if (systemFS196.exists(LOG_FILE_A)) { File fa = systemFS196.open(LOG_FILE_A, \"r\"); if (fa) { g_logASize = fa.size(); fa.close(); } }"
+      },
+      {
+        "line": 45937,
+        "call": "exists",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "setup",
+        "function_lines": [
+          45833,
+          46583
+        ],
+        "locks_in_function": [],
+        "source": "if (systemFS196.exists(LOG_FILE_B)) { File fb = systemFS196.open(LOG_FILE_B, \"r\"); if (fb) { g_logBSize = fb.size(); fb.close(); } }"
+      },
+      {
+        "line": 45937,
+        "call": "open",
+        "mode": "",
+        "path": "LOG_FILE_B",
+        "function": "setup",
+        "function_lines": [
+          45833,
+          46583
+        ],
+        "locks_in_function": [],
+        "source": "if (systemFS196.exists(LOG_FILE_B)) { File fb = systemFS196.open(LOG_FILE_B, \"r\"); if (fb) { g_logBSize = fb.size(); fb.close(); } }"
+      }
+    ]
+  },
+  "headers": {
+    "BootFilesystem.h": {
+      "sha256": "3ea3ddf118bae45149d02bd88b3284bb54c8f18fad7f736e382702ff982d971d",
+      "lines": 43
+    },
+    "CheckedHistoryIO.h": {
+      "sha256": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9",
+      "lines": 116
+    },
+    "EspVfsCalls.h": {
+      "sha256": "5feb306f52faa0c6099fa1dd133f09c0a37dd8538a0419fccab35576ba5f93cf",
+      "lines": 64
+    },
+    "HistoryBoot.h": {
+      "sha256": "a26634c6d65900d11f82dae0043a75d7df81f76b3dd6266bfed727b9e24a8661",
+      "lines": 34
+    },
+    "HistoryStartup.h": {
+      "sha256": "961e3385d4b90591c7bb9c8170cb6df4409e7d856f8152ccf9e038ba437eeac4",
+      "lines": 54
+    },
+    "Storage.h": {
+      "sha256": "9aa0ab963e90787cf56842c36d252f361e27f780b806ee03bdb14eb59b3e0b3f",
+      "lines": 81
+    },
+    "Transition.h": {
+      "sha256": "e7b8b7631fc302ea501506723520142858b86d5f399b24ad97a44d94babe51b2",
+      "lines": 59
+    }
+  },
+  "summary": {
+    "history_calls": 8,
+    "log_calls": 20,
+    "history_functions": [
+      "historiaDlugaWczytajZFS",
+      "historiaWczytajZFS",
+      "sendTelegramDocumentHistDluga",
+      "sendTelegramDocumentHistKrotka"
+    ],
+    "history_readers": [
+      "historiaDlugaWczytajZFS",
+      "historiaWczytajZFS",
+      "sendTelegramDocumentHistDluga",
+      "sendTelegramDocumentHistKrotka"
+    ],
+    "history_writers": [],
+    "history_functions_without_lock": [
+      "historiaDlugaWczytajZFS",
+      "historiaWczytajZFS",
+      "sendTelegramDocumentHistDluga",
+      "sendTelegramDocumentHistKrotka"
+    ]
+  }
+}

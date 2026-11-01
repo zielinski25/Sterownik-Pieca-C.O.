@@ -1,0 +1,87 @@
+{
+  "stage": 216,
+  "tytul": "od przycisku do pliku - szew panel <-> trasa",
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "firmware_version": "v3.56.3 (KANDYDAT, NIE WGRYWAC)",
+  "znalezione_bledy": {
+    "D2": {
+      "objaw": "przycisk \"Dluga (archiwum)\" zawsze konczyl sie 401 \"link wygasl\" (bilet na strumien dlugi, trasa /history podaje krotki)",
+      "poprawka": "panel wybiera trase wedlug strumienia (/history albo /history/long)",
+      "dowod_przed": "bilet(long) -> /history?k=... = 401; ten sam bilet na /history/long = 200 (patrz raport etapu)",
+      "dowod_po": "N1a/N1b: stary panel = brama czerwona; nowy = 200 i wlasciwy plik"
+    },
+    "D3": {
+      "objaw": "odpowiedz CSV bez Content-Disposition - telefon pokazywal tekst albo zapisywal plik bez nazwy",
+      "poprawka": "HistoriaPobranie.h v3.56.3 dodaje attachment z nazwa pliku",
+      "dowod_przed": "naglowki odpowiedzi 200: puste",
+      "dowod_po": "Test.cpp sprawdza dokladnie attachment; filename=\"historia-*.csv\""
+    }
+  },
+  "patche": {
+    "przyrostowy": {
+      "plik": "narzedzia/od-przycisku216/main_centrala-v3.56.2-to-v3.56.3.patch",
+      "sha256": "26a97fe756f1fa95a83ff1c4d8e5ccd35e0ff2911cfa0b5bf7b5fce15d20d091",
+      "plus": 19,
+      "minus": 3,
+      "hunki": 4
+    },
+    "skumulowany": {
+      "plik": "narzedzia/od-przycisku216/main_centrala-v3.55.8-to-v3.56.3.patch",
+      "sha256": "0a092380242787b8957c3aa66af796a5daed069806620d6ce66c305e4a3a5535",
+      "plus": 259,
+      "minus": 56,
+      "hunki": 15
+    }
+  },
+  "wynik_patcha": {
+    "sha256": "f51b0b0749e2c1e3a8b5c02848a9c0e4902e0b641d6a7313a42304bbbcef91b3",
+    "linii": 46973,
+    "wersja_linia": 5601,
+    "include_serwer": 5242,
+    "include_pobranie": 5243,
+    "include_bilety": 5244,
+    "cofa_sie_do_v3_55_8": true
+  },
+  "naglowek_historiapobranie": {
+    "plik": "narzedzia/od-przycisku216/HistoriaPobranie.h",
+    "sha256": "b58d1a4c299e339798d3f229ad81177b0ee34f44dd37dae1776ba48279a4ede8",
+    "linii": 288,
+    "zmiana": "Content-Disposition: attachment; filename=\"historia-krotka.csv\" / \"historia-dluga.csv\""
+  },
+  "wynik": {
+    "kontrol": 68,
+    "bledow": 0,
+    "status": "PASS",
+    "profile": [
+      "native",
+      "asan-ubsan (detect_leaks=1)",
+      "glibcxx-assertions"
+    ],
+    "kontrol_api": 6,
+    "sprawdzen_js": 26,
+    "sprawdzen_trasy": 28,
+    "kontrole_negatywne": [
+      "N1a_stary_panel_js",
+      "N1b_stary_panel_trasa",
+      "N2_stary_naglowek",
+      "N3_literowka_w_id_przycisku",
+      "N4_zla_dlugosc_biletu"
+    ],
+    "compile_against_real_api": {
+      "standardy": [
+        "gnu++11",
+        "gnu++17"
+      ],
+      "biblioteka": "ESPAsyncWebServer (fork mathieucarbou), przypiety naglowek, LGPL-3.0-or-later"
+    }
+  },
+  "czego_nie_dowodzi": [
+    "wygladu panelu w przegladarce (DOM w tescie JS to atrapa)",
+    "ze telefon zapisze plik w \"Pobranych\" (decyduje przegladarka)",
+    "kompilacji calego main_centrala.cpp (to PlatformIO u uzytkownika)",
+    "TLS, LittleFS, kolejek TCP i zachowania po zerwaniu (etapy 196-211)"
+  ],
+  "uruchomienie": "python3 -B narzedzia/od-przycisku216/run.py"
+}

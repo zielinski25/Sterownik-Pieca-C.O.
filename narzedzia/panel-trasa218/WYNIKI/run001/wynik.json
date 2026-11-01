@@ -1,0 +1,90 @@
+{
+  "status": "PASS",
+  "stage": 218,
+  "release_ready": false,
+  "main_changed": true,
+  "device_touched": false,
+  "firmware": {
+    "przed": "v3.56.3",
+    "po": "v3.56.4"
+  },
+  "inputs": {
+    "narzedzia/panel-trasa218/Test.cpp": "17be7842df94e0b461a5f60857f4fcbc94f99e726d4781589294b19068b57d8c",
+    "narzedzia/panel-trasa218/build.py": "969e5e3a9be1beec3ad5624972c0ecc065511cc0196364adb6b18d248039d23a",
+    "narzedzia/panel-trasa218/zrob_patch.py": "11c70efec442acc94c6207981fcb84215abcb6c7728aa75f0d8266aff0b69efc",
+    "narzedzia/panel-trasa218/trasy.py": "f9845e08aee541d8f8d5871ce8e7c28dbf71a65aee5fc8df0bf8b7a2837e7a10",
+    "narzedzia/panel-trasa218/panel218.mjs": "76e5bde3da53902f6194029e0271a0c2666f82e286e4665fed8d87be635add10",
+    "narzedzia/panel-trasa218/Extracted218.inc": "d86a8d8167ecef17942091015e6d743f0ae525b385d7eb84f9b899fe658c82b8",
+    "narzedzia/panel-trasa218/Panel218.html": "8b60ecf97818dea770cd9e0e7ad38aed84537acfea5ae2398bf341eab7fe5dad",
+    "narzedzia/panel-trasa218/Trasy218.json": "144a6635b3c8bc96711a6326a6dacc4dd8e4dd56e1d53e171f6f5dff2313b8e6",
+    "narzedzia/panel-trasa218/host/Serwer218.h": "17342907a4a2f2de4a1bfbb3a9dd2de00999833fbcae423b3b777225e742489b",
+    "narzedzia/panel-trasa218/main_centrala-v3.56.3-to-v3.56.4.patch": "45d0ea6287f38917b5125e0489159c6e863f739420999716a0d29e4b29501f78",
+    "narzedzia/panel-trasa218/main_centrala-v3.55.8-to-v3.56.4.patch": "15e8226b454947b61c4469b732a764f648c0eb34a2e542af252cd5ea81db0211",
+    "narzedzia/od-przycisku216/HistoriaPobranie.h": "b58d1a4c299e339798d3f229ad81177b0ee34f44dd37dae1776ba48279a4ede8",
+    "narzedzia/panel-pobrania213/HistoriaBilety.h": "339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30",
+    "narzedzia/wysylka-zapinka211/HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "narzedzia/wysylka-zapinka211/host/Arduino.h": "ab6ba1701b167930d23ee83f62616b8f4ff4cda17c00710c1734f333370887c4",
+    "narzedzia/wysylka-zapinka211/host/RamCalls.h": "155325012af495c0017b4c9283b007c7fae99acac48cf9f9849e6bb17ab6971d",
+    "narzedzia/pobranie-trasa212/Extracted212.inc": "22f00c8fb421d0aca2cc9b6bc89b16fc5483ea521b67a98d5bb56bb49101dab1",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31"
+  },
+  "profiles": {
+    "native": {
+      "compile": "ok",
+      "returncode": 0,
+      "stdout": "-- 01 tabela tras: trzy trasy /history* przez exact\n-- 02 stara tabela (goly napis) przechwytuje /history/link i /history/long\n-- 03 panel podaje adresy, ktore serwer przyjmuje (z panel218.mjs)\n-- 04 krotka: bilet -> 200, CSV == plik, bilet jednorazowy\n-- 05 dluga: adres z panelu trafia na /history/long, CSV == plik dlugi\n-- 06 bilet dlugi na trasie krotkiej (i odwrotnie) to 401\n-- 07 bez biletu: /history i /history/long 401, /history/link 200\n-- 08 metoda: POST /history -> 405, POST /history/link nie istnieje\n-- 09 bilet wygasa po 5 minutach\n-- 10 stara droga: naglowek Bearer dziala bez zmian\nPASS trasa218 sprawdzen=78 grup=10\n",
+      "stderr_tail": ""
+    },
+    "asan-ubsan": {
+      "compile": "ok",
+      "returncode": 0,
+      "stdout": "-- 01 tabela tras: trzy trasy /history* przez exact\n-- 02 stara tabela (goly napis) przechwytuje /history/link i /history/long\n-- 03 panel podaje adresy, ktore serwer przyjmuje (z panel218.mjs)\n-- 04 krotka: bilet -> 200, CSV == plik, bilet jednorazowy\n-- 05 dluga: adres z panelu trafia na /history/long, CSV == plik dlugi\n-- 06 bilet dlugi na trasie krotkiej (i odwrotnie) to 401\n-- 07 bez biletu: /history i /history/long 401, /history/link 200\n-- 08 metoda: POST /history -> 405, POST /history/link nie istnieje\n-- 09 bilet wygasa po 5 minutach\n-- 10 stara droga: naglowek Bearer dziala bez zmian\nPASS trasa218 sprawdzen=78 grup=10\n",
+      "stderr_tail": ""
+    },
+    "glibcxx-assertions": {
+      "compile": "ok",
+      "returncode": 0,
+      "stdout": "-- 01 tabela tras: trzy trasy /history* przez exact\n-- 02 stara tabela (goly napis) przechwytuje /history/link i /history/long\n-- 03 panel podaje adresy, ktore serwer przyjmuje (z panel218.mjs)\n-- 04 krotka: bilet -> 200, CSV == plik, bilet jednorazowy\n-- 05 dluga: adres z panelu trafia na /history/long, CSV == plik dlugi\n-- 06 bilet dlugi na trasie krotkiej (i odwrotnie) to 401\n-- 07 bez biletu: /history i /history/long 401, /history/link 200\n-- 08 metoda: POST /history -> 405, POST /history/link nie istnieje\n-- 09 bilet wygasa po 5 minutach\n-- 10 stara droga: naglowek Bearer dziala bez zmian\nPASS trasa218 sprawdzen=78 grup=10\n",
+      "stderr_tail": ""
+    }
+  },
+  "mutacje": {
+    "M1_goly_napis_history": {
+      "opis": "trasa /history zarejestrowana gołym napisem (dokladnie blad v3.56.3)",
+      "returncode": 1,
+      "stdout_tail": "-- 05 dluga: adres z panelu trafia na /history/long, CSV == plik dlugi\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] b.trasa == 2 (Test.cpp:410)\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] b.kod == 200 (Test.cpp:411)\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] wszystkieHex218(b.cialo) (Test.cpp:412)\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] w.trasa == 1 (Test.cpp:420)\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] w.kod == 200 (Test.cpp:421)\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] maNaglowek218(w.odpowiedz, \"Content-Disposition\", \"attachment; filename=\\\"historia-dluga.csv\\\"\") (Test.cpp:423)\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] o.cialo == dluga (Test.cpp:425)\n-- 06 bilet dlugi na trasie krotkiej (i odwrotnie) to 401\nFAIL [bilet dlugi na trasie krotkiej (i odwrotnie) to 401] b.kod == 200 (Test.cpp:441)\nFAIL [bilet dlugi na trasie krotkiej (i odwrotnie) to 401] b2.kod == 200 (Test.cpp:450)\nFAIL [bilet dlugi na trasie krotkiej (i odwrotnie) to 401] zle2.trasa == 1 (Test.cpp:454)\n-- 07 bez biletu: /history i /history/long 401, /history/link 200\nFAIL [bez biletu: /history i /history/long 401, /history/link 200] b.trasa == 1 (Test.cpp:473)\nFAIL [bez biletu: /history i /history/long 401, /history/link 200] l.trasa == 2 (Test.cpp:480)\nFAIL [bez biletu: /history i /history/long 401, /history/link 200] l.kod == 200 (Test.cpp:481)\nFAIL [bez biletu: /history i /history/long 401, /history/link 200] wszystkieHex218(l.cialo) (Test.cpp:482)\n-- 08 metoda: POST /history -> 405, POST /history/link nie istnieje\nFAIL [metoda: POST /history -> 405, POST /history/link nie istnieje] b.trasa == -1 (Test.cpp:497)\n-- 09 bilet wygasa po 5 minutach\nFAIL [bilet wygasa po 5 minutach] b.kod == 200 (Test.cpp:508)\n-- 10 stara droga: naglowek Bearer dziala bez zmian\nFAIL trasa218 sprawdzen=78 grup=10\n",
+      "wykryty": true
+    },
+    "M2_goly_napis_long": {
+      "opis": "/history/long zarejestrowane gołym napisem",
+      "returncode": 1,
+      "stdout_tail": "-- 01 tabela tras: trzy trasy /history* przez exact\nFAIL [tabela tras: trzy trasy /history* przez exact] wifiWebServer.trasa(1).matcher.typ() == AsyncURIMatcher::EXACT (Test.cpp:295)\nFAIL [tabela tras: trzy trasy /history* przez exact] wifiWebServer.dopasuj(\"/history/long/x\", HTTP_GET) == -1 (Test.cpp:308)\n-- 02 stara tabela (goly napis) przechwytuje /history/link i /history/long\n-- 03 panel podaje adresy, ktore serwer przyjmuje (z panel218.mjs)\n-- 04 krotka: bilet -> 200, CSV == plik, bilet jednorazowy\n-- 05 dluga: adres z panelu trafia na /history/long, CSV == plik dlugi\n-- 06 bilet dlugi na trasie krotkiej (i odwrotnie) to 401\n-- 07 bez biletu: /history i /history/long 401, /history/link 200\n-- 08 metoda: POST /history -> 405, POST /history/link nie istnieje\n-- 09 bilet wygasa po 5 minutach\n-- 10 stara droga: naglowek Bearer dziala bez zmian\nFAIL trasa218 sprawdzen=78 grup=10\n",
+      "wykryty": true
+    },
+    "M3_goly_napis_link": {
+      "opis": "/history/link zarejestrowane gołym napisem - panel nie dostaje biletu",
+      "returncode": 1,
+      "stdout_tail": "-- 01 tabela tras: trzy trasy /history* przez exact\nFAIL [tabela tras: trzy trasy /history* przez exact] wifiWebServer.trasa(2).matcher.typ() == AsyncURIMatcher::EXACT (Test.cpp:296)\n-- 02 stara tabela (goly napis) przechwytuje /history/link i /history/long\n-- 03 panel podaje adresy, ktore serwer przyjmuje (z panel218.mjs)\n-- 04 krotka: bilet -> 200, CSV == plik, bilet jednorazowy\n-- 05 dluga: adres z panelu trafia na /history/long, CSV == plik dlugi\n-- 06 bilet dlugi na trasie krotkiej (i odwrotnie) to 401\n-- 07 bez biletu: /history i /history/long 401, /history/link 200\n-- 08 metoda: POST /history -> 405, POST /history/link nie istnieje\n-- 09 bilet wygasa po 5 minutach\n-- 10 stara droga: naglowek Bearer dziala bez zmian\nFAIL trasa218 sprawdzen=78 grup=10\n",
+      "wykryty": true
+    },
+    "M4_panel_zawsze_krotka": {
+      "opis": "panel otwiera /history takze dla dlugiej (blad v3.56.2)",
+      "cpp_stdout_tail": "-- 01 tabela tras: trzy trasy /history* przez exact\nFAIL [tabela tras: trzy trasy /history* przez exact] wifiWebServer.trasa(2).matcher.typ() == AsyncURIMatcher::EXACT (Test.cpp:296)\n-- 02 stara tabela (goly napis) przechwytuje /history/link i /history/long\n-- 03 panel podaje adresy, ktore serwer przyjmuje (z panel218.mjs)\nFAIL [panel podaje adresy, ktore serwer przyjmuje (z panel218.mjs)] adres pobrania z panelu trafia do wlasciwej trasy (Test.cpp:348)\n-- 04 krotka: bilet -> 200, CSV == plik, bilet jednorazowy\n-- 05 dluga: adres z panelu trafia na /history/long, CSV == plik dlugi\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] w.trasa == 1 (Test.cpp:420)\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] w.kod == 200 (Test.cpp:421)\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] maNaglowek218(w.odpowiedz, \"Content-Disposition\", \"attachment; filename=\\\"historia-dluga.csv\\\"\") (Test.cpp:423)\nFAIL [dluga: adres z panelu trafia na /history/long, CSV == plik dlugi] o.cialo == dluga (Test.cpp:425)\n-- 06 bilet dlugi na trasie krotkiej (i odwrotnie) to 401\n-- 07 bez biletu: /history i /history/long 401, /history/link 200\n-- 08 metoda: POST /history -> 405, POST /history/link nie istnieje\n-- 09 bilet wygasa po 5 minutach\n-- 10 stara droga: naglowek Bearer dziala bez zmian\nFAIL trasa218 sprawdzen=78 grup=10\n",
+      "panel_returncode": 1,
+      "panel_stdout_tail": "FAIL [panel218] dluga otwiera /history/long?k=<bilet>, jest: /history?k=22222222222222222222222222222222\nPASS panel218 sprawdzen=37 bledow=1\n",
+      "wykryty": true
+    },
+    "M5_panel_bez_kontroli_biletu": {
+      "opis": "panel nie sprawdza dlugosci biletu",
+      "cpp_stdout_tail": "-- 01 tabela tras: trzy trasy /history* przez exact\nFAIL [tabela tras: trzy trasy /history* przez exact] wifiWebServer.trasa(2).matcher.typ() == AsyncURIMatcher::EXACT (Test.cpp:296)\n-- 02 stara tabela (goly napis) przechwytuje /history/link i /history/long\n-- 03 panel podaje adresy, ktore serwer przyjmuje (z panel218.mjs)\n-- 04 krotka: bilet -> 200, CSV == plik, bilet jednorazowy\n-- 05 dluga: adres z panelu trafia na /history/long, CSV == plik dlugi\n-- 06 bilet dlugi na trasie krotkiej (i odwrotnie) to 401\n-- 07 bez biletu: /history i /history/long 401, /history/link 200\n-- 08 metoda: POST /history -> 405, POST /history/link nie istnieje\n-- 09 bilet wygasa po 5 minutach\n-- 10 stara droga: naglowek Bearer dziala bez zmian\nFAIL trasa218 sprawdzen=78 grup=10\n",
+      "panel_returncode": 1,
+      "panel_stdout_tail": "FAIL [panel218] przy krotkim bilecie NIE ma przekierowania\nFAIL [panel218] przy krotkim bilecie jest komunikat bledu: Przygotowuję link…\nPASS panel218 sprawdzen=37 bledow=2\n",
+      "wykryty": true
+    }
+  },
+  "panel": {
+    "returncode": 0,
+    "stdout": "PASS panel218 sprawdzen=37 bledow=0\n     krotka: /history/link?stream=short  ->  /history?k=11111111111111111111111111111111\n     dluga: /history/link?stream=long  ->  /history/long?k=22222222222222222222222222222222\n",
+    "stderr_tail": ""
+  }
+}

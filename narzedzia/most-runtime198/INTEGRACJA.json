@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "scope": "three history transaction call sites, not whole-program lock audit",
+  "firmware_modified": false,
+  "release_ready": false,
+  "firmware_sha256": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+  "sites": {
+    "HISTORIA-IO": {
+      "call_line": 45293,
+      "current_order": "logMutex -> Engine; prospective 198 adds Owner Lease inside Engine facade"
+    },
+    "HISTORIA-SHORT": {
+      "call_line": 45334,
+      "current_order": "logMutex -> Engine; prospective 198 adds Owner Lease inside Engine facade"
+    },
+    "HISTORIA-LONG": {
+      "call_line": 45400,
+      "current_order": "logMutex -> Engine; prospective 198 adds Owner Lease inside Engine facade"
+    }
+  },
+  "remaining_raw_objects": [
+    "historiaStartSys (boot)",
+    "historiaA1Sys (A1 boot)",
+    "historiaSys (current runtime, not replaced)"
+  ],
+  "result_contract": "retire confirmed prefix even if a later ready snapshot is false; do not use ready as future admission token"
+}

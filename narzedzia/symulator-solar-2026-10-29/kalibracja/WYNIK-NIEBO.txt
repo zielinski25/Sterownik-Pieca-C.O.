@@ -1,0 +1,37 @@
+==============================================================================================
+CZY ZBIORNIK ODDAJE CIEPLO NIEBU? — walidacja leave-one-out na 11 nocach
+==============================================================================================
+
+noc           zmierzone  teraz 1,4  nowy model     a      b  chmury
+----------------------------------------------------------------------------------------------
+2026-10-18        -0.18      -0.20       -0.09   0.4   10.4     98%
+2026-10-19        -0.13      -0.15       -0.08   0.6   10.2     98%
+2026-10-20        -0.15      -0.09       -0.14   0.7    9.9     85%
+2026-10-21        -0.23      -0.23       -0.40   1.1    9.2     85%
+2026-10-22        -0.42      -0.20       -0.57   0.8    9.9     68%
+2026-10-23        -1.30      -0.30       -1.24   0.7    9.4     46%
+2026-10-24        -0.39      -0.11       -0.36   0.7    9.8     60%
+2026-10-25        -0.41      -0.05       -0.12   0.6   10.0     70%
+2026-10-26        -0.27      -0.08       -0.33   0.7   10.0     48%
+2026-10-27        -0.50      -0.11       -0.34   0.6    9.8     63%
+2026-10-28        -0.09      -0.04       -0.02   0.6   10.0    100%
+----------------------------------------------------------------------------------------------
+
+  blad sredni  teraz (tankUa = 1,4)  = 0.237 K/h
+  blad sredni  model z niebem       = 0.106 K/h
+  poprawa                           = 55%
+
+  parametry z calego zbioru: a = 0.65 W/K,  b = 9.90 W/K
+    przy 100% chmur: UA = 0.65 W/K  (tyle, ile katalog)
+    przy 0% chmur:   UA = 10.55 W/K  (7x wiecej)
+
+  Parametry sa stabilne w kazdym podziale (a 0,4-1,1; b 9,2-10,4),
+  czyli model nauczony na 10 nocach trafia w jedenasta. To nie jest dopasowanie
+  do jednej nocy.
+
+FIZYKA: kolektor i zbiornik stoja na dachu, patrza w niebo. Przy czystym niebie
+niebo ma temperature efektywna kilkadziesiat stopni nizsza od powietrza — plyta
+kolektora wychladza sie PONIZEJ temperatury powietrza i przez termosyfon
+podciaga cieplo ze zbiornika. Przy chmurach niebo 'grzeje' z powrotem i ten
+kanal zanika. Dlatego strata nie ma zwiazku z wiatrem (r = 0,00) ani
+z temperatura powietrza (r = -0,20), tylko z zachmurzeniem (r = -0,53).

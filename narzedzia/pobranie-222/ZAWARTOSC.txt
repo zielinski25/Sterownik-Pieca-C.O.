@@ -1,0 +1,16 @@
+Etap 222 - paczka "gotowe pliki do podmiany" (bez latki, bez gita)
+
+PROJEKT-v3.56.4-DO-WGRANIA.zip   694959 B   sha256 1af31910236ad49a71309ccd86d5cebfb411a5cbc34f34bae5b3a9d99b22cf2f
+
+W srodku (pliki na wierzchu, bez podfolderu):
+  main_centrala.cpp   2376655 B  sha256 f89874f3390009acd79632db1031d04cd90e67435eda68e2007ea7c4b3168e38
+                                 FIRMWARE_VERSION w linii 5611 = "v3.56.4"
+                                 46994 linie, 3 trasy exact("/history..."), 0 golych
+  HistoriaPobranie.h    11835 B  sha256 b58d1a4c299e339798d3f229ad81177b0ee34f44dd37dae1776ba48279a4ede8
+  HistoriaBilety.h       4982 B  sha256 339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30
+  HistoriaPin.h          7190 B  sha256 547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307
+  SPRAWDZ.ps1                   skrypt PowerShell: szuka projektu i sprawdza SHA
+  CZYTAJ-TO.txt                 krotka instrukcja
+
+Nie zawiera secrets.h (hasla uzytkownika) - uzytkownik dopisuje SECRET_HISTORIA_TOKEN sam.
+Nic nie jest wgrywane na urzadzenie.

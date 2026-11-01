@@ -1,0 +1,5 @@
+PASS 150 prior manifests;7 related inventories;121 regression hashes
+PASS selected ESP header matches SDK131 hash;run001 source hashes
+PASS core3+integration3+unit23 in each of2 profiles
+BOUNDARY no ESP VFS/runtime/MTIME/power-loss test;binary provenance incomplete
+release_ready=false;firmware unchanged

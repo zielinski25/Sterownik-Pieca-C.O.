@@ -1,0 +1,72 @@
+{
+  "etap": 215,
+  "nazwa": "Brama API: kompilacja wobec prawdziwego ESPAsyncWebServer",
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "wersja_firmware": "3.56.2 (bez zmian w tym etapie)",
+  "po_co": "model serwera z etapow 212/213 przepuscil blad D1; ta brama kompiluje nasz kod wobec prawdziwego naglowka biblioteki",
+  "zrodla_api": {
+    "ESPAsyncWebServer.h": {
+      "skad": "narzedzia/uchwyty-runtime197/upstream/",
+      "sha256": "25db7c8fb30943307b28b181722187a65576f6ee778eeb99e29b1ef8db7915ba",
+      "licencja": "LGPL-3.0-or-later"
+    },
+    "WebResponseImpl.h": {
+      "skad": "narzedzia/odpowiedz-http199/upstream/",
+      "sha256": "b90de8322a97af18e8cd6817b7a5c27999c6a5e0097f23ecd77a4e167d9ced75"
+    },
+    "literals.h": {
+      "skad": "narzedzia/naglowki-upload206/upstream/",
+      "sha256": "2df08b5947a05fdb6b890a486708b046cc2bc903aa9c7d7a227c0a4a49b51fb3"
+    },
+    "WebHandlerImpl.h": {
+      "skad": "narzedzia/naglowki-upload206/upstream/",
+      "sha256": "e2ab3f7b6af3544934bea31a06c803240a3d8a6c3bbeda9669854cf5d840a006"
+    },
+    "FS.h": {
+      "skad": "narzedzia/blokada-startu-fs196/upstream/",
+      "sha256": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f"
+    }
+  },
+  "shimy": [
+    "AsyncTCP.h",
+    "AsyncWebServerVersion.h",
+    "AsyncEventSource.h",
+    "AsyncWebSocket.h",
+    "cbuf.h",
+    "FileOpenMode.h",
+    "Arduino.h",
+    "WString.h",
+    "sdkconfig.h",
+    "PosixArduino.h"
+  ],
+  "kontrola": {
+    "A": "prawdziwy naglowek biblioteki kompiluje sie na komputerze",
+    "B-gnu++11": "3 naglowki firmware wobec prawdziwego API",
+    "B-gnu++17": "to samo w C++17",
+    "C-gnu++11": "szkielet z prawdziwym kodem z pliku po patchu v3.56.2",
+    "C-gnu++17": "to samo w C++17",
+    "D": "kolejnosc include z etapu 213 MUSI sie nie kompilowac (kontrola negatywna)",
+    "E": "zly podpis _fillBuffer MUSI byc wykryty (kontrola negatywna)"
+  },
+  "wynik": {
+    "status": "PASS",
+    "kontrol": 7,
+    "bledow": 0,
+    "plik": "narzedzia/brama-api-esp215/WYNIKI/run001/wynik.json"
+  },
+  "wlasciwosci_typow_sprawdzone_kompilatorem": [
+    "historia212::Odpowiedz dziedziczy po prawdziwym AsyncAbstractResponse",
+    "_fillBuffer ma podpis size_t(uint8_t*, size_t)",
+    "_sourceValid jest const",
+    "pola _code/_contentType/_contentLength/_sendContentLength/_chunked sa protected w prawdziwej klasie",
+    "getParam/hasParam/getHeader/beginResponse/addHeader/send istnieja z uzywanymi argumentami"
+  ],
+  "granice": [
+    "nie kompiluje calego main_centrala.cpp (20+ bibliotek zewnetrznych) - to zostaje dla PlatformIO",
+    "shim Arduino nie jest pelnym API Arduino",
+    "brak testu na urzadzeniu",
+    "brak wgrania"
+  ]
+}

@@ -1,0 +1,143 @@
+--- firmware-patch/v3.57.1-podglad-komendy/main_centrala.cpp	2026-10-31 03:58:47.960309612 +0000
++++ firmware-patch/v3.57.2-raport-zawieszenia/main_centrala.cpp	2026-10-31 04:15:34.216466097 +0000
+@@ -1,3 +1,28 @@
++// FIRMWARE_VERSION v3.57.1 -> v3.57.2 (2026-10-31) — RAPORT NADZORU MOWI, GDZIE STANELO.
++// Co: wiadomosc Telegram wysylana po restarcie z nadzoru dostaje jedna linijke
++//     z ostatnim znacznikiem kontrolnym zawieszonego zadania:
++//       "Ostatni znacznik: FB_SEND / BEFORE (po 11520 s pracy, wolna pamiec 94 kB)"
++//     Ten sam komplet trafia do logu (tag=NADZOR, zdarzenie=zawieszenie).
++// Problem: 31.10.2026 o 04:14 przyszlo "Zadanie tgTask nie dalo znaku zycia
++//     przez 300 s" — i nic wiecej. Wiadomo KTO milczal, nie wiadomo, NA CZYM
++//     stanelo. Bez tego kazda diagnoza jest zgadywaniem, a zgadywanie kosztowalo
++//     juz dwie wersje (3.56.6 -> 3.56.7 cofnieta w calosci).
++// Przyczyna: dane byly, tylko nikt ich nie zapisal. diagCheckpoint() od v3.18.0
++//     trzyma w pamieci RTC ostatni (op, stage, uptime, freeHeap) kazdego
++//     zadania — ale nadzor restartowal, a setup() nowego boota zeruje ten stan
++//     (diagInicjalizujBoota), wiec informacja przepadala.
++// Naprawa: nadzorZadanSieciowych() czyta znacznik PRZED ESP.restart() i zapisuje
++//     go do NVS (4 klucze); wyslijRaportNadzoru() dokleja go do wiadomosci.
++//     Nowa czysta funkcja nadzorOdczytajKrok() — tylko odczyt, zero I/O.
++//     Gdy zadanie nie zapisalo ANI JEDNEGO znacznika od startu (seq == 0),
++//     raport mowi to wprost zamiast pokazywac przypadkowa operacje.
++// Czego to NIE robi: nie naprawia przyczyny zawieszenia. To diagnoza, nie lek.
++// Bez zmian: progi nadzoru (5 min / 3 min rozbieg / 3 restarty / 30 min okno),
++//     logika nadzorDecyzja(), telemetria, Firebase, Telegram, OTA, historia,
++//     archiwum solarne, format /piec/status i /piec/cmd, rytm 15 s / 7 s.
++//
++// ----------------------------------------------------------------------------
++//
+ // FIRMWARE_VERSION v3.57.0 -> v3.57.1 (2026-10-30) — PODGLAD TYLKO DLA KOMEND.
+ // Co: Tryb podgladu (heartbeat `podglad_wl` z otwartej aplikacji) przyspiesza
+ //     TERAZ WYLACZNIE odczyt /piec/cmd: 7 s -> 2 s. Wysylka /piec/status
+@@ -5730,7 +5755,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.57.1";
++static const char* FIRMWARE_VERSION = "v3.57.2";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -44244,14 +44269,30 @@
+   const String kto = config.getString("nadzorKto", "?");
+   const uint32_t ms = (uint32_t)config.getUInt("nadzorMs", 0U);
+   const uint32_t nr = (uint32_t)config.getUInt("nadzorCnt", 0U);
++  // [v3.57.2] Gdzie stanelo — zapisane przed restartem przez nadzorZadanSieciowych().
++  const bool     krokZnany = config.getBool("nadzorKrokZnany", false);
++  const String   krokOp    = config.getString("nadzorOp", "?");
++  const String   krokStage = config.getString("nadzorStage", "?");
++  const uint32_t krokS     = (uint32_t)config.getUInt("nadzorKrokUptimeS", 0U);
++  const uint32_t heapB     = (uint32_t)config.getUInt("nadzorHeap", 0U);
+   config.putBool("nadzorRestart", false);
++  config.putBool("nadzorKrokZnany", false);
+   if (!tgEnabled) return;
++  const String liniaKroku = krokZnany
++    ? ("Ostatni znacznik: " + krokOp + " / " + krokStage + " (po " +
++       String((unsigned long)krokS) + " s pracy, wolna pamiec " +
++       String((unsigned long)(heapB / 1024UL)) + " kB)")
++    : String("Ostatni znacznik: brak — zadanie nie zapisalo ani jednego znacznika od startu.");
+   sendTelegramMessage("Wrocilem po automatycznym restarcie.\n"
+                       "Zadanie \"" + kto + "\" nie dalam znaku zycia przez " +
+-                      String((unsigned long)(ms / 1000UL)) + " s.\n"
++                      String((unsigned long)(ms / 1000UL)) + " s.\n" +
++                      liniaKroku + "\n" +
+                       "Restart zrobil nadzor w firmware — nie bylo potrzebne wyciaganie wtyczki.\n"
+                       "To juz restart numer " + String((unsigned long)nr) + " w ciagu 30 minut.");
+-  zapiszLog(String(F("tag=NADZOR lvl=WARN zdarzenie=raport_po_restarcie nr=")) + String((unsigned long)nr));
++  zapiszLog(String(F("tag=NADZOR lvl=WARN zdarzenie=raport_po_restarcie nr=")) +
++            String((unsigned long)nr) + " krok=" + krokOp + "/" + krokStage +
++            " krok_uptime_s=" + String((unsigned long)krokS) +
++            " free_heap=" + String((unsigned long)heapB));
+ }
+ 
+ void tgTaskFn(void* /*pvParams*/) {
+@@ -47155,6 +47196,35 @@
+   }
+ }
+ 
++// [v3.57.2] Ostatni znacznik kontrolny zawieszonego zadania — czytany z pamieci
++// RTC (rtcCrashDiag), ktora diagCheckpoint() wypelnia przy kazdym kroku zadania.
++// Czysty odczyt: zero I/O, zero millis, zero zapisow.
++//
++// seq == 0 znaczy "to zadanie nie zapisalo ANI JEDNEGO znacznika od startu" —
++// czyli zawiesilo sie przed pierwsza iteracja. To tez jest odpowiedz, wiec
++// zwracamy znany=false zamiast pokazywac przypadkowe (zerowe) pola.
++struct NadzorKrok {
++  bool     znany;
++  uint16_t op;
++  uint8_t  stage;
++  uint32_t uptimeMs;
++  uint32_t freeHeap;
++};
++
++static NadzorKrok nadzorOdczytajKrok(uint8_t kto) {
++  NadzorKrok k = {false, 0U, 0U, 0U, 0U};
++  if (kto != 1U && kto != 2U) return k;
++  const uint8_t taskId = (kto == 1U) ? (uint8_t)DIAG_TASK_TG : (uint8_t)DIAG_TASK_TGPOLL;
++  const CrashDiagTaskState &snap = rtcCrashDiag.task[taskId - 1U];
++  if (snap.seq == 0U) return k;
++  k.znany    = true;
++  k.op       = snap.op;
++  k.stage    = snap.stage;
++  k.uptimeMs = snap.uptimeMs;
++  k.freeHeap = snap.freeHeap;
++  return k;
++}
++
+ static void nadzorZadanSieciowych() {
+   // Sprawdzamy raz na sekunde — prog to 5 minut, wiec czesciej nie ma sensu.
+   // Dzieki temu nadzor nie doklada zadnego kosztu do kazdej iteracji loop().
+@@ -47213,13 +47283,32 @@
+ 
+   // NADZOR_RESTART
+   licznikRestartow += 1U;
++  // [v3.57.2] Odczyt znacznika MUSI byc TU, przed ESP.restart(): po restarcie
++  // setup() wola diagInicjalizujBoota(), ktore memsetem zeruje rtcCrashDiag,
++  // a raport leci juz z nowego boota. To jedyny moment, kiedy stan zawieszonego
++  // zadania jest jeszcze aktualny.
++  const NadzorKrok krok = nadzorOdczytajKrok(kto);
++  const String krokOp    = krok.znany ? String(diagOpName(krok.op))       : String("?");
++  const String krokStage = krok.znany ? String(diagStageName(krok.stage)) : String("?");
++  const uint32_t krokUptimeS = krok.znany ? (krok.uptimeMs / 1000UL) : 0UL;
++
+   zapiszLog(String(F("tag=NADZOR lvl=ERR zdarzenie=zawieszenie kto=")) +
+             nadzorKtoNazwa(kto) + " wiek_ms=" + String((unsigned long)wiek) +
+-            " restart_nr=" + String((unsigned long)licznikRestartow));
++            " restart_nr=" + String((unsigned long)licznikRestartow) +
++            " krok=" + krokOp + "/" + krokStage +
++            " krok_uptime_s=" + String((unsigned long)krokUptimeS) +
++            " free_heap=" + String((unsigned long)krok.freeHeap));
+   config.putUInt("nadzorCnt", licznikRestartow);
+   config.putBool("nadzorRestart", true);
+   config.putString("nadzorKto", nadzorKtoNazwa(kto));
+   config.putUInt("nadzorMs", wiek);
++  // [v3.57.2] Miejsce zawieszenia — 5 malych kluczy NVS, czytane przez
++  // wyslijRaportNadzoru() po starcie.
++  config.putBool("nadzorKrokZnany", krok.znany);
++  config.putString("nadzorOp", krokOp);
++  config.putString("nadzorStage", krokStage);
++  config.putUInt("nadzorKrokUptimeS", krokUptimeS);
++  config.putUInt("nadzorHeap", krok.freeHeap);
+   delay(50);
+   ESP.restart();
+ }

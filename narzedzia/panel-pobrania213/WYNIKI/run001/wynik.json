@@ -1,0 +1,70 @@
+{
+  "status": "PASS",
+  "stage": 213,
+  "release_ready": false,
+  "main_changed": false,
+  "device_touched": false,
+  "inputs": {
+    "narzedzia/panel-pobrania213/Test.cpp": "5f2504780651983f7c0273cd0e0378619bc772a909a8a6e272ee62c4f2113e7a",
+    "narzedzia/panel-pobrania213/HistoriaBilety.h": "339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30",
+    "narzedzia/panel-pobrania213/HistoriaPobranie.h": "0653a130333f476ba588bb3fa08728e10a08975c73548f30a2d35c84c5367c29",
+    "narzedzia/panel-pobrania213/zrob_patch.py": "8ee040367082507ffeed6900c19ab7caa9708b977f9f8bfddc499ad857528145",
+    "narzedzia/panel-pobrania213/build.py": "f9ae07756187b5837164a5455ba5eb42dd1c7b2f97ec934b33ddaf7d13480416",
+    "narzedzia/panel-pobrania213/host/Model213.h": "112175de643549199c57654097f005ba1f7cfe3c6a9c52160f0bee9eb678e840",
+    "narzedzia/panel-pobrania213/host/Serwer213.h": "0c2fcc6ac17a3d8688f9c98f15b6e17ef2b0e066498a859d61e9d628e0967b90",
+    "narzedzia/panel-pobrania213/main_centrala-v3.56.0-to-v3.56.1.patch": "8faa7404841e55a0ecf289e2f1c1ba37061adff584650e25b4b4bbcd1a05ea83",
+    "narzedzia/panel-pobrania213/main_centrala-v3.55.8-to-v3.56.1.patch": "80733de744da4bbf36a63ee3086e0b781a20ecb7b5ffd59861cb01afe839e520",
+    "narzedzia/wysylka-zapinka211/HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "narzedzia/wysylka-zapinka211/host/Arduino.h": "ab6ba1701b167930d23ee83f62616b8f4ff4cda17c00710c1734f333370887c4",
+    "narzedzia/wysylka-zapinka211/host/RamCalls.h": "155325012af495c0017b4c9283b007c7fae99acac48cf9f9849e6bb17ab6971d",
+    "narzedzia/pobranie-trasa212/Test.cpp": "df281711ce26ba902ebc338c7baad43228d9c5960537c426194d93e6e3b6f0f9",
+    "narzedzia/pobranie-trasa212/Extracted212.inc": "22f00c8fb421d0aca2cc9b6bc89b16fc5483ea521b67a98d5bb56bb49101dab1",
+    "narzedzia/pobranie-trasa212/HistoriaPobranie.h": "5af0ada473e9b04caa84ca0ec790776930492fd6ab5298d2c806a99f77b65e8d",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31"
+  },
+  "profiles": {
+    "native": {
+      "panel213": {
+        "compile": "ok",
+        "returncode": 0,
+        "stdout": "-- 01 01 bilet 32 hex, pobranie krotkie 200, bilet jednorazowy\n-- 02 02 bilet zwiazany ze strumieniem: dluga != krotka\n-- 03 03 brak naglowka i brak biletu: 401 + WWW-Authenticate\n-- 04 04 bilet o zlej dlugosci: 401, bez otwierania pliku\n-- 05 05 nieznany bilet 32 hex: 401\n-- 06 06 bilet wazny 299999 ms, po 300000 ms juz nie\n-- 07 07 przewiniecie millis() po ~49 dniach nie psuje waznosci\n-- 08 08 Bearer dziala; zly Bearer + dobry bilet = 401 (bez awaryjnego linku)\n-- 09 09 pusty token w secrets.h: link i pobranie 503\n-- 10 10 POST na /history/link: 405 + Allow: GET\n-- 11 11 trwa inne pobranie: 503, bilet NIE spalony\n-- 12 12 magazyn niegotowy: 503, bilet NIE spalony\n-- 13 13 brak pliku: 404, bilet spalony - drugi raz 401\n-- 14 14 cztery bilety; piaty wypycha najstarszy\n-- 15 15 bilety bez zrodla losowosci albo zegara nie wydaja biletu\n-- 16 16 wyczysc() uniewaznia wszystkie bilety\n-- 17 17 panel: siega po bilet, nie zna stalego tokenu\n-- 18 18 /history, /history/long, /history/link: wlasciwe strumienie\n-- 19 19 20 pobran pod rzad: brak wycieku biletow i uchwytow\n-- 20 20 wydanie biletu nie otwiera pliku historii\n\nPASS panel213 grup=20 sprawdzen=126 bledow=0\n",
+        "stderr_tail": ""
+      },
+      "trasa212-regresja": {
+        "compile": "ok",
+        "returncode": 0,
+        "stdout": "-- 01 01 GET + Bearer: 200, dlugosc i cialo z pliku\n-- 02 02 POST/PUT/DELETE/HEAD: 405 + Allow, plik nietkniety\n-- 03 03 brak Authorization: 401 + WWW-Authenticate\n-- 04 04 zly token, Basic, go\u0142y token, inna wielkosc liter: 401\n-- 05 05 BEARER/bEaReR i spacje wokol tokenu: 200\n-- 06 06 pusty token w konfiguracji: 503, pobieranie wylaczone\n-- 07 07 logMutex zajety: 503, ani jednego otwarcia pliku\n-- 08 08 magazyn niegotowy / brak LittleFS: 503\n-- 09 09 brak pliku i zero potwierdzone: 404\n-- 10 10 prefiks powyzej limitu: 413, zapinka zamknieta\n-- 11 11 VFS odmawia otwarcia: 500\n-- 12 12 dwa pobrania naraz: drugie 503, bez otwierania pliku\n-- 13 13 /history/long: inny plik, inna dlugosc\n-- 14 14 znacznik wyzej niz plik: wysylamy tylko to, co jest\n-- 15 15 plik skrocony w polowie: zrodlo NIEWAZNE, biblioteka zerwie\n-- 16 16 bufor odpowiedzi 1 bajt: cialo nadal dokladne\n-- 17 17 bramka: wlasciwy znacznik i wlasciwa sciezka dla strumienia\n-- 18 18 bramka: magazynGotowy wymaga OBU warunkow\n-- 19 19 bramka: zamknij bierze logMutex, otworz oddaje\n-- 20 20 30 pobran pod rzad: brak wycieku zapinek i uchwytow\n\nPASS trasa212 grup=20 sprawdzen=132 bledow=0\n",
+        "stderr_tail": ""
+      }
+    },
+    "asan-ubsan": {
+      "panel213": {
+        "compile": "ok",
+        "returncode": 0,
+        "stdout": "-- 01 01 bilet 32 hex, pobranie krotkie 200, bilet jednorazowy\n-- 02 02 bilet zwiazany ze strumieniem: dluga != krotka\n-- 03 03 brak naglowka i brak biletu: 401 + WWW-Authenticate\n-- 04 04 bilet o zlej dlugosci: 401, bez otwierania pliku\n-- 05 05 nieznany bilet 32 hex: 401\n-- 06 06 bilet wazny 299999 ms, po 300000 ms juz nie\n-- 07 07 przewiniecie millis() po ~49 dniach nie psuje waznosci\n-- 08 08 Bearer dziala; zly Bearer + dobry bilet = 401 (bez awaryjnego linku)\n-- 09 09 pusty token w secrets.h: link i pobranie 503\n-- 10 10 POST na /history/link: 405 + Allow: GET\n-- 11 11 trwa inne pobranie: 503, bilet NIE spalony\n-- 12 12 magazyn niegotowy: 503, bilet NIE spalony\n-- 13 13 brak pliku: 404, bilet spalony - drugi raz 401\n-- 14 14 cztery bilety; piaty wypycha najstarszy\n-- 15 15 bilety bez zrodla losowosci albo zegara nie wydaja biletu\n-- 16 16 wyczysc() uniewaznia wszystkie bilety\n-- 17 17 panel: siega po bilet, nie zna stalego tokenu\n-- 18 18 /history, /history/long, /history/link: wlasciwe strumienie\n-- 19 19 20 pobran pod rzad: brak wycieku biletow i uchwytow\n-- 20 20 wydanie biletu nie otwiera pliku historii\n\nPASS panel213 grup=20 sprawdzen=126 bledow=0\n",
+        "stderr_tail": ""
+      },
+      "trasa212-regresja": {
+        "compile": "ok",
+        "returncode": 0,
+        "stdout": "-- 01 01 GET + Bearer: 200, dlugosc i cialo z pliku\n-- 02 02 POST/PUT/DELETE/HEAD: 405 + Allow, plik nietkniety\n-- 03 03 brak Authorization: 401 + WWW-Authenticate\n-- 04 04 zly token, Basic, go\u0142y token, inna wielkosc liter: 401\n-- 05 05 BEARER/bEaReR i spacje wokol tokenu: 200\n-- 06 06 pusty token w konfiguracji: 503, pobieranie wylaczone\n-- 07 07 logMutex zajety: 503, ani jednego otwarcia pliku\n-- 08 08 magazyn niegotowy / brak LittleFS: 503\n-- 09 09 brak pliku i zero potwierdzone: 404\n-- 10 10 prefiks powyzej limitu: 413, zapinka zamknieta\n-- 11 11 VFS odmawia otwarcia: 500\n-- 12 12 dwa pobrania naraz: drugie 503, bez otwierania pliku\n-- 13 13 /history/long: inny plik, inna dlugosc\n-- 14 14 znacznik wyzej niz plik: wysylamy tylko to, co jest\n-- 15 15 plik skrocony w polowie: zrodlo NIEWAZNE, biblioteka zerwie\n-- 16 16 bufor odpowiedzi 1 bajt: cialo nadal dokladne\n-- 17 17 bramka: wlasciwy znacznik i wlasciwa sciezka dla strumienia\n-- 18 18 bramka: magazynGotowy wymaga OBU warunkow\n-- 19 19 bramka: zamknij bierze logMutex, otworz oddaje\n-- 20 20 30 pobran pod rzad: brak wycieku zapinek i uchwytow\n\nPASS trasa212 grup=20 sprawdzen=132 bledow=0\n",
+        "stderr_tail": ""
+      }
+    },
+    "glibcxx-assertions": {
+      "panel213": {
+        "compile": "ok",
+        "returncode": 0,
+        "stdout": "-- 01 01 bilet 32 hex, pobranie krotkie 200, bilet jednorazowy\n-- 02 02 bilet zwiazany ze strumieniem: dluga != krotka\n-- 03 03 brak naglowka i brak biletu: 401 + WWW-Authenticate\n-- 04 04 bilet o zlej dlugosci: 401, bez otwierania pliku\n-- 05 05 nieznany bilet 32 hex: 401\n-- 06 06 bilet wazny 299999 ms, po 300000 ms juz nie\n-- 07 07 przewiniecie millis() po ~49 dniach nie psuje waznosci\n-- 08 08 Bearer dziala; zly Bearer + dobry bilet = 401 (bez awaryjnego linku)\n-- 09 09 pusty token w secrets.h: link i pobranie 503\n-- 10 10 POST na /history/link: 405 + Allow: GET\n-- 11 11 trwa inne pobranie: 503, bilet NIE spalony\n-- 12 12 magazyn niegotowy: 503, bilet NIE spalony\n-- 13 13 brak pliku: 404, bilet spalony - drugi raz 401\n-- 14 14 cztery bilety; piaty wypycha najstarszy\n-- 15 15 bilety bez zrodla losowosci albo zegara nie wydaja biletu\n-- 16 16 wyczysc() uniewaznia wszystkie bilety\n-- 17 17 panel: siega po bilet, nie zna stalego tokenu\n-- 18 18 /history, /history/long, /history/link: wlasciwe strumienie\n-- 19 19 20 pobran pod rzad: brak wycieku biletow i uchwytow\n-- 20 20 wydanie biletu nie otwiera pliku historii\n\nPASS panel213 grup=20 sprawdzen=126 bledow=0\n",
+        "stderr_tail": ""
+      },
+      "trasa212-regresja": {
+        "compile": "ok",
+        "returncode": 0,
+        "stdout": "-- 01 01 GET + Bearer: 200, dlugosc i cialo z pliku\n-- 02 02 POST/PUT/DELETE/HEAD: 405 + Allow, plik nietkniety\n-- 03 03 brak Authorization: 401 + WWW-Authenticate\n-- 04 04 zly token, Basic, go\u0142y token, inna wielkosc liter: 401\n-- 05 05 BEARER/bEaReR i spacje wokol tokenu: 200\n-- 06 06 pusty token w konfiguracji: 503, pobieranie wylaczone\n-- 07 07 logMutex zajety: 503, ani jednego otwarcia pliku\n-- 08 08 magazyn niegotowy / brak LittleFS: 503\n-- 09 09 brak pliku i zero potwierdzone: 404\n-- 10 10 prefiks powyzej limitu: 413, zapinka zamknieta\n-- 11 11 VFS odmawia otwarcia: 500\n-- 12 12 dwa pobrania naraz: drugie 503, bez otwierania pliku\n-- 13 13 /history/long: inny plik, inna dlugosc\n-- 14 14 znacznik wyzej niz plik: wysylamy tylko to, co jest\n-- 15 15 plik skrocony w polowie: zrodlo NIEWAZNE, biblioteka zerwie\n-- 16 16 bufor odpowiedzi 1 bajt: cialo nadal dokladne\n-- 17 17 bramka: wlasciwy znacznik i wlasciwa sciezka dla strumienia\n-- 18 18 bramka: magazynGotowy wymaga OBU warunkow\n-- 19 19 bramka: zamknij bierze logMutex, otworz oddaje\n-- 20 20 30 pobran pod rzad: brak wycieku zapinek i uchwytow\n\nPASS trasa212 grup=20 sprawdzen=132 bledow=0\n",
+        "stderr_tail": ""
+      }
+    }
+  }
+}

@@ -1,0 +1,116 @@
+diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
+index 8d7c5a7..276b8b6 100644
+--- a/android/app/build.gradle.kts
++++ b/android/app/build.gradle.kts
+@@ -12,8 +12,8 @@ android {
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31045
+-        versionName = "0.31.45"
++        versionCode = 31046
++        versionName = "0.31.46"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+index 9626415..17078f2 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -1059,8 +1059,12 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+             val fromMs = nowMs - sec * 1000L
+ 
+             // Archiwum centrali w domu — tylko 6h/24h i tylko w domowej sieci.
++            // [0.31.46] Dla 7/30 dni NIE pytamy wcale: wynik i tak byl odrzucany
++            // (warunek useEsp), a samo czekanie na nieodpowiadajacy piec kosztowalo
++            // do 6 s przy KAZDYM wejsciu w wykresy. To byla glowna przyczyna
++            // "dlugo sie laduje" mimo dzialajacej pamieci historii.
+             val espIp = S.ip.trim()
+-            val espTask = if (espIp.isNotEmpty()) async {
++            val espTask = if (espIp.isNotEmpty() && sec <= 24 * 3600) async {
+                 try { Rtdb.fetchEspHistory(espIp) } catch (e: Exception) { null }
+             } else null
+ 
+@@ -1109,7 +1113,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
+ 
+             // 4) Archiwum centrali (maks. 6 s — poza domem i tak nie odpowie).
+             val esp = espTask?.let {
+-                try { withTimeoutOrNull(6_000) { it.await() } } catch (e: Exception) { null }
++                try { withTimeoutOrNull(2_000) { it.await() } } catch (e: Exception) { null }
+             }
+             val useEsp = esp != null && sec <= 24 * 3600 && esp.isNotEmpty()
+             val merged = combineCloudAndEsp(cloudPts, if (useEsp) esp!! else emptyList())
+diff --git a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+index 353ea74..5624c87 100644
+--- a/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
++++ b/android/app/src/main/java/com/sterownikco/pro/core/RtdbClient.kt
+@@ -1,6 +1,9 @@
+ package com.sterownikco.pro.core
+ 
+ import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.async
++import kotlinx.coroutines.awaitAll
++import kotlinx.coroutines.coroutineScope
+ import kotlinx.coroutines.delay
+ import kotlinx.coroutines.ensureActive
+ import kotlinx.coroutines.job
+@@ -381,7 +384,12 @@ object Rtdb {
+     }
+ 
+     // ── telemetria historyczna (szardy dzienne + paginacja po `ts`) ──────────
+-    private const val HISTORY_PAGE_SIZE = 300
++    // [0.31.46] 300 -> 1000. Firebase RTDB spokojnie oddaje 1000 rekordow
++    // w jednej odpowiedzi, a to 3x mniej zapytan: 7 dni = 11 zamiast 34.
++    private const val HISTORY_PAGE_SIZE = 1000
++
++    /** Ile dni pobieramy naraz. 4 to kompromis: 7 dni = 2 fale, 30 dni = 8. */
++    private const val FETCH_PARALLEL_DAYS = 4
+ 
+     /**
+      * Po tym czasie ponawiamy paginację, nawet jeśli indeks `ts` kiedyś zawiódł.
+@@ -711,18 +719,37 @@ object Rtdb {
+     suspend fun fetchWindow(startSec: Long, endSec: Long): WindowResult {
+         if (idToken.isEmpty()) return WindowResult(emptyList(), false)
+         if (endSec <= startSec) return WindowResult(emptyList(), true)
+-        val rows = ArrayList<TelemRow>()
+-        var complete = true
++        // [0.31.46 ROWNOLEGLE] Dni pobieramy po FETCH_PARALLEL_DAYS naraz zamiast
++        // po kolei. Wczesniej 7 dni = 7 kolejnych dni, kazdy z wlasnymi zapytaniami
++        // — sumarycznie ~34 zapytania wykonywane JEDNO PO DRUGIM (~10 s).
++        // Teraz sa to 2 fale. Kolejnosc nie ma znaczenia, bo uniqueSort() i tak
++        // porzadkuje po czasie, a kazdy dzien trafia do wlasnego sharda.
++        val zadania = ArrayList<Pair<String, LongArray>>()
+         for (day in dayRange(startSec, endSec)) {
+             val dayStart = max(startSec, day[0] / 1000)
+             val dayEnd = minOf(endSec, day[0] / 1000 + 86_400 - 1)
+             if (dayEnd < dayStart) continue
+-            val path = shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt())
+-            try {
+-                rows.addAll(fetchShard(path, dayStart, dayEnd))
+-            } catch (e: Exception) {
+-                complete = false
+-            }
++            zadania.add(Pair(shardPath(day[1].toInt(), day[2].toInt(), day[3].toInt()),
++                             longArrayOf(dayStart, dayEnd)))
++        }
++        // null = ten dzien sie nie udal (blad sieci). Reszta zostaje, a kompletność
++        // jest falszywa — dzieki temu nie zapamietamy "tu pusto" dla brakujacego dnia.
++        val czesci: List<List<TelemRow>?> = coroutineScope {
++            zadania.chunked(FETCH_PARALLEL_DAYS).map { fala ->
++                fala.map { zadanie ->
++                    val path = zadanie.first
++                    val od = zadanie.second[0]
++                    val doT = zadanie.second[1]
++                    async {
++                        try { fetchShard(path, od, doT) } catch (e: Exception) { null }
++                    }
++                }.awaitAll()
++            }.flatten()
++        }
++        val rows = ArrayList<TelemRow>()
++        var complete = true
++        for (czesc in czesci) {
++            if (czesc == null) complete = false else rows.addAll(czesc)
+         }
+         val sorted = repairGaps(uniqueSort(rows))
+         val pts = sorted.asSequence().map { it.toPoint() }.filter { it.hasValues() }.toList()

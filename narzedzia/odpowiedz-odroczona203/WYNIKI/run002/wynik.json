@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "release_ready": false,
+  "inputs": {
+    "narzedzia/odpowiedz-odroczona203/DeferredUploadReply.h": "5c61e54a7a293299591ed6f0bd0b05883b53fc0034de1e6c45f86ed4d5232204",
+    "narzedzia/odpowiedz-odroczona203/Test.cpp": "53ac2153a7a08b53d8b2ee839d8b3c1db14048ddf73f67c65c1e0848b375f92f",
+    "narzedzia/odpowiedz-odroczona203/build.py": "ee625e20c3f1a45c23a8fc155910c9b22c6c0f80d8d2da5fc2ed3b238da89187",
+    "narzedzia/odpowiedz-odroczona203/run.py": "b9adc4004f77e4fb6cf9b16559a7d69a76e8eea494a9cd4ae22b42bbbfbf5eb3",
+    "narzedzia/odpowiedz-odroczona203/Fields.inc": "d57e789c2777ec82dbad46a66dabc51d71092989f6e9d8246999289fa885867f",
+    "narzedzia/odpowiedz-odroczona203/API.inc": "b8c5abb30e2e0f8ea51c0144bc519164c2afae7aee9f4bc13938d2ee5d9c6277",
+    "narzedzia/odpowiedz-odroczona203/Methods.inc": "7ba90061180f6976c83fb8b47f2690cf927d68dc8e5307d5d47abaa5892a72e6",
+    "narzedzia/odpowiedz-odroczona203/Factory.inc": "503e9ab60b42f5878763d3b2966f2f219be84372f08fc3a466b20df47219d404",
+    "narzedzia/odpowiedz-odroczona203/Fixture202.inc": "3cf5515c77f1ca13fa5dce3c13732c1a5af2962da06b10cf66edce15561b4df6",
+    "narzedzia/kontekst-upload201/RequestRegistry.h": "5aff513e7bd8023e914501ddce7a2af9cc4a9a526b638335ae4297b4af2a8488",
+    "narzedzia/kolejka-upload202/UploadPump.h": "fe33787b482ba7b8084226e2af454c68f35b7a98570fa3df38840829280e76e0",
+    "narzedzia/kolejka-upload202/Fixture201.inc": "38ac1ad4445574190e75a4b4eda3763d8c6fb35cae02f5b653014b927fb382e6",
+    "narzedzia/upload-zadania200/UploadPool.h": "ae8063b3cf4bd122d296fa420aeb4eaab2d3cc45226ed92361f693d37fe82aef",
+    "narzedzia/upload-zadania200/Raw198.inc": "6248ce9b4f848c8bc41f50f0cccef593925c0e7fa2d41d1b87b3491418174cd8",
+    "narzedzia/uchwyty-runtime197/RuntimeFilesystem.h": "37b98a235271824cc668c17bcdc6d01d30b51c218d1491394e5344b5ad073127",
+    "narzedzia/uchwyty-runtime197/CheckedRead.h": "88a3fba5db1638e43a570bd467ba1c41e17d506e347da79eb23e4eaa45f0569d",
+    "narzedzia/uchwyty-runtime197/host/Arduino.h": "917e0db8ca511c83faa564044ef127f2e94da1bcc3c812608fcc3e2455d2aa7b",
+    "narzedzia/most-runtime198/Model197.inc": "4107ab6c878aabc9f4a771759db6e255eaeddd5917876a9a0e95dd0ebe10ac10",
+    "narzedzia/blokada-startu-fs196/upstream/FS.cpp": "4fd185e8785d5a83ba38a3402510da90ba21dc39856622620555dfe2dc7c1690",
+    "narzedzia/blokada-startu-fs196/upstream/FS.h": "b0f42cd30763dbcd70d1a465f407a8b257749459b8169f603d92df4a8ef9100f",
+    "narzedzia/blokada-startu-fs196/upstream/FSImpl.h": "5187168c8e15583d1b55e935987532f221f1d3ca958e293494c221e5b2bc538a",
+    "firmware-patch/v3.55.8-blokada-fs-po-starcie/CheckedHistoryIO.h": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9"
+  },
+  "profiles": {
+    "native": {
+      "stdout": "PASS deferred203 groups=19; real request factory/pause/send/_send/destructor, patched poll/disconnect; modeled client/response, not ESP\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "asan-ubsan": {
+      "stdout": "PASS deferred203 groups=19; real request factory/pause/send/_send/destructor, patched poll/disconnect; modeled client/response, not ESP\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  }
+}

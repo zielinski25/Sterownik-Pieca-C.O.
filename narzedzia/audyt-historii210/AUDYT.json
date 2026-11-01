@@ -1,0 +1,36 @@
+{
+  "release_ready": false,
+  "status": "PASS_STATIC_AUDIT_ONLY",
+  "main_changed": false,
+  "hardware_actions": false,
+  "audited": {
+    "file": "firmware-patch/v3.55.8-blokada-fs-po-starcie/main_centrala.cpp",
+    "sha256_prefix": "3fb7510ae8cd0f52",
+    "lines": 46777,
+    "headers_pinned_by_sha256sums": ["BootFilesystem.h", "CheckedHistoryIO.h", "EspVfsCalls.h", "HistoryBoot.h", "HistoryStartup.h", "Storage.h", "Transition.h"]
+  },
+  "method": {
+    "scanner": "skan.py masks comments and string/raw literals, rebuilds function scopes by braces (586 functions), finds open/remove/rename/exists with a file name, and records which lock primitives appear in the enclosing body",
+    "machine_checked_claims": 28,
+    "verifier": "sprawdz.py",
+    "failure_mode": "any change of the firmware without updating the report fails the check on purpose"
+  },
+  "findings": {
+    "single_writer": "historiaFlushDoFS() -> historiaIo.append(Stream::Short/Long, ...) under logMutex; no direct open(...,\"a\") anywhere",
+    "startup_readers": "historiaWczytajZFS() and historiaDlugaWczytajZFS() run before the history task is created, so they are single threaded",
+    "runtime_readers": "sendTelegramDocumentHistKrotka() and sendTelegramDocumentHistDluga() open the file with no lock and no pin and stream it to Telegram; the call site has no logMutex in a +-25 line window",
+    "http_endpoints": "/api/history and /api/history/long serve RAM buffers, not the file",
+    "clear_disabled": "historiaWyczysc() returns false without touching the filesystem, so there is no runtime rotation today",
+    "editor_blocked": "historiaChronionaSciezka() rejects the history paths and the A1 request files"
+  },
+  "risk": [
+    "The two Telegram readers are safe only by accident: append-only file plus a prefix length taken from cache. They break when rotation returns, and they can announce a Content-Length larger than the bytes they actually read.",
+    "The download route from 209 must go through the 207 pin; those two senders are its natural clients."
+  ],
+  "not_qualified": [
+    "no firmware was run: LittleFS, WDT, RAM and timing behaviour are not proven",
+    "only history files were analysed; logs and settings were not",
+    "a missing lock in a function is a static fact, not a proof about all call paths",
+    "the 586 function count comes from a brace heuristic, not a full C++ parser"
+  ]
+}

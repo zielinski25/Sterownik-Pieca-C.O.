@@ -1,0 +1,100 @@
+{
+  "status": "PASS",
+  "profile": "ASan+UBSan, LSan, -fno-exceptions",
+  "kontrola": "niemutowany kod przechodzi",
+  "inputs": {
+    "narzedzia/wysylka-zapinka211/Test.cpp": "16ba5d30008d0d770936849be0b3cc76ddd6dcce83f9c07af38c2d79478f0477",
+    "narzedzia/wysylka-zapinka211/HistoriaPin.h": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "narzedzia/wysylka-zapinka211/Extracted211.inc": "dd63a01984d841223d36971690499e4b283c08e2aaf6a1067bc53ae6218982fa",
+    "narzedzia/wysylka-zapinka211/host/Arduino.h": "ab6ba1701b167930d23ee83f62616b8f4ff4cda17c00710c1734f333370887c4",
+    "narzedzia/wysylka-zapinka211/host/RamCalls.h": "155325012af495c0017b4c9283b007c7fae99acac48cf9f9849e6bb17ab6971d",
+    "narzedzia/wysylka-zapinka211/host/Firmware211.h": "e657756463c41e4ccca08a3f46a53544b7baeece62cd2577877d377fe7a9e7a6",
+    "narzedzia/wysylka-zapinka211/mutacje.py": "bffdb77329c958dbb7e82565c79fb3198f46e89df23c66cc2315209c99397dce"
+  },
+  "cases": [
+    {
+      "name": "dlugosc-ignoruje-znacznik-zapisu",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "dlugosc-ignoruje-rozmiar-pliku",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "krotki-odczyt-jako-koniec",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "blad-odczytu-jako-koniec",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "brak-limitu-rozmiaru",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "zero-potwierdzone-przyjete",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "brak-fstat",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "zamkniecie-nie-zamyka",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "krotki-zapis-przyjety",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "nieudane-cialo-bez-przerwania",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "brak-zapinki-przyjety",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    },
+    {
+      "name": "otwarcie-bez-blokady-pisarza",
+      "compiled": true,
+      "detected": true,
+      "returncode": 1,
+      "reason": "wynik-testu"
+    }
+  ]
+}

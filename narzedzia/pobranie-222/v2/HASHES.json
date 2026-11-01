@@ -1,0 +1,62 @@
+{
+  "AlarmBuzzerProfiles.h": {
+    "sha256": "d7ddd929dca6e66f62655482653daf68d710d5573c68d89640a544922cba100b",
+    "bajtow": 6015
+  },
+  "AutoIgnitionColdTimer.h": {
+    "sha256": "7055a28c7d7bc8b817f75875a2cd2499f4b22370aa483e88f26543ec67c35f47",
+    "bajtow": 1648
+  },
+  "BootFilesystem.h": {
+    "sha256": "3ea3ddf118bae45149d02bd88b3284bb54c8f18fad7f736e382702ff982d971d",
+    "bajtow": 2207
+  },
+  "CheckedHistoryIO.h": {
+    "sha256": "8eb1869329308cbec2d09d087e12eb896c3bce59e3b4099d4b295360f1bc78b9",
+    "bajtow": 6985
+  },
+  "EspVfsCalls.h": {
+    "sha256": "5feb306f52faa0c6099fa1dd133f09c0a37dd8538a0419fccab35576ba5f93cf",
+    "bajtow": 3156
+  },
+  "HistoriaBilety.h": {
+    "sha256": "339f83fdda1219f7c925be468787c2d102c756b2da0366fab1833d8f88dbde30",
+    "bajtow": 4982
+  },
+  "HistoriaPin.h": {
+    "sha256": "547512387489bffcfe4e7fc0ed11fa7e64a1b6f32e7764f5f67e61f51e13f307",
+    "bajtow": 7190
+  },
+  "HistoriaPobranie.h": {
+    "sha256": "b58d1a4c299e339798d3f229ad81177b0ee34f44dd37dae1776ba48279a4ede8",
+    "bajtow": 11835
+  },
+  "HistoryBoot.h": {
+    "sha256": "a26634c6d65900d11f82dae0043a75d7df81f76b3dd6266bfed727b9e24a8661",
+    "bajtow": 1739
+  },
+  "HistoryStartup.h": {
+    "sha256": "961e3385d4b90591c7bb9c8170cb6df4409e7d856f8152ccf9e038ba437eeac4",
+    "bajtow": 3663
+  },
+  "MieszadloTrocinyAuto.h": {
+    "sha256": "108cf30d609d5d02ec0a6645538d687fd4801cb3c9349cc0bc6088995d1db0d9",
+    "bajtow": 1512
+  },
+  "SolarDailyArchive.h": {
+    "sha256": "df2b0b8feabb99b8f07095122330e3173aec180bcec3511188c52aac3069122d",
+    "bajtow": 43002
+  },
+  "Storage.h": {
+    "sha256": "9aa0ab963e90787cf56842c36d252f361e27f780b806ee03bdb14eb59b3e0b3f",
+    "bajtow": 3357
+  },
+  "Transition.h": {
+    "sha256": "e7b8b7631fc302ea501506723520142858b86d5f399b24ad97a44d94babe51b2",
+    "bajtow": 2608
+  },
+  "main_centrala.cpp": {
+    "sha256": "f89874f3390009acd79632db1031d04cd90e67435eda68e2007ea7c4b3168e38",
+    "bajtow": 2376655
+  }
+}

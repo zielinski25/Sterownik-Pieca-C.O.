@@ -1,0 +1,151 @@
+diff --git a/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt b/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
+--- a/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/chart/ChartEngine.kt
+@@ -419,36 +419,96 @@
+         // miedzy probkami (tak samo jak w widoku HTML). Nic nie rysujemy.
+ 
+         // serie
++        // [0.31.47] POWOD ZACINANIA: kazda probka tworzyla osobny SegPoint i osobny
++        // odcinek sciezki PRZY KAZDYM odrysowaniu. 7 dni = 10 081 probek, 30 dni
++        // ok. 43 000; przy 6 seriach to kilkaset tysiecy obiektow na klatke.
++        // Teraz dzielimy os X na koszyki szerokosci jednego piksela i z kazdego
++        // bierzemy MINIMUM i MAKSIMUM — czyli najwyzej 2 punkty na piksel.
++        // Ksztalt, szczyty i dolki zostaja te same, a punktow jest ~10x mniej.
++        val maxBuckets = max(200, plotW.toInt())
+         view.cat.forEach { s ->
+             val vals = view.values[s.id] ?: return@forEach
++            // [0.31.47] Min/max dla trybu NORMALIZED liczone RAZ na serie, a nie dla
++            // kazdej probki. Poprzednio vals.filterNotNull()+min()+max() stało
++            // WEWNATRZ petli po wierszach — koszt rzedu n^2 (7 dni ~100 mln operacji
++            // i 10 tys. alokacji list), czyli realne zawieszenie po wlaczeniu trybu.
++            var normLo = 0.0
++            var normHi = 100.0
++            if (mode == "NORMALIZED") {
++                var lo = Double.POSITIVE_INFINITY
++                var hi = Double.NEGATIVE_INFINITY
++                vals.forEach { v -> if (v != null && v.isFinite()) { if (v < lo) lo = v; if (v > hi) hi = v } }
++                if (lo != Double.POSITIVE_INFINITY) { normLo = lo; normHi = hi }
++            }
++            val stride = if (view.rows.size > maxBuckets)
++                (view.rows.size + maxBuckets - 1) / maxBuckets else 1
+             var lastTs = 0L
+             val segs = ArrayList<ArrayList<SegPoint>>()
+             var cur = ArrayList<SegPoint>()
++            var bCount = 0
++            var bSim = false
++            var minIdx = -1
++            var minY = 0f
++            var maxIdx = -1
++            var maxY = 0f
++
++            fun dodajPunkt(i: Int, y: Float) {
++                val row = view.rows[i]
++                cur.add(SegPoint(timeAxis.xOf(row.ts), y, vals[i] ?: 0.0, row.ts, i, row.isSimulated(s.ch)))
++            }
++
++            fun zamknijKoszyk() {
++                if (bCount == 0) return
++                if (minIdx >= 0 && maxIdx >= 0) {
++                    if (minIdx == maxIdx) {
++                        dodajPunkt(minIdx, minY)
++                    } else if (minIdx < maxIdx) {
++                        dodajPunkt(minIdx, minY); dodajPunkt(maxIdx, maxY)
++                    } else {
++                        dodajPunkt(maxIdx, maxY); dodajPunkt(minIdx, minY)
++                    }
++                }
++                bCount = 0; minIdx = -1; maxIdx = -1
++            }
++
++            fun zamknijOdcinek() {
++                zamknijKoszyk()
++                if (cur.isNotEmpty()) { segs.add(cur); cur = ArrayList() }
++            }
++
+             view.rows.forEachIndexed { idx, r ->
+                 val v = vals.getOrNull(idx)
+                 if (v != null && v.isFinite()) {
+-                    val x = timeAxis.xOf(r.ts)
+                     val y = when {
+                         s.group == "pump" -> pumpY(v)
+                         view.dual && s.group == view.secGroup ->
+                             padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
+                         mode == "NORMALIZED" -> {
+-                            val all = vals.filterNotNull()
+-                            val lo = if (all.isNotEmpty()) all.min() else 0.0
+-                            val hi = if (all.isNotEmpty()) all.max() else 100.0
+-                            val nv = if (hi > lo) (v - lo) / (hi - lo) else 0.5
++                            val nv = if (normHi > normLo) (v - normLo) / (normHi - normLo) else 0.5
+                             padTop + plotH * (1 - nv.toFloat())
+                         }
+                         else -> padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
+                     }
+-                    if (lastTs != 0L && r.ts - lastTs > 360_000L) { if (cur.isNotEmpty()) segs.add(cur); cur = ArrayList() }
+-                    cur.add(SegPoint(x, y, v, r.ts, idx, r.isSimulated(s.ch)))
++                    val sim = r.isSimulated(s.ch)
++                    // Przerwa w danych zamyka odcinek (bez tego linia przecialaby luke).
++                    if (lastTs != 0L && r.ts - lastTs > 360_000L) zamknijOdcinek()
++                    // Zmiana fizyczna/symulacja tez zamyka odcinek — inaczej kreskowanie
++                    // zamalowaloby sie na calej dlugosci.
++                    if (bCount > 0 && sim != bSim) zamknijOdcinek()
++                    if (bCount == 0) { bSim = sim; minIdx = idx; minY = y; maxIdx = idx; maxY = y }
++                    else {
++                        if (y < minY) { minY = y; minIdx = idx }
++                        if (y > maxY) { maxY = y; maxIdx = idx }
++                    }
++                    bCount++
+                     lastTs = r.ts
++                    if (bCount >= stride) zamknijKoszyk()
+                 } else {
+-                    if (cur.isNotEmpty()) segs.add(cur); cur = ArrayList(); lastTs = 0L
++                    zamknijOdcinek()
++                    lastTs = 0L
+                 }
+             }
+-            if (cur.isNotEmpty()) segs.add(cur)
++            zamknijOdcinek()
+             segs.forEach { seg ->
+                 if (seg.isEmpty()) return@forEach
+                 val accent = hexColor(s.accent)
+@@ -547,15 +607,22 @@
+                         val vals = view.values[s.id] ?: return@forEach
+                         val v = vals.getOrNull(idx)
+                         if (v != null && v.isFinite()) {
++                            // [0.31.47] To samo co przy rysowaniu serii: min/max trybu
++                            // NORMALIZED liczone raz, nie przy kazdym ruchu palca.
++                            var cLo = 0.0
++                            var cHi = 100.0
++                            if (mode == "NORMALIZED") {
++                                var lo = Double.POSITIVE_INFINITY
++                                var hi = Double.NEGATIVE_INFINITY
++                                vals.forEach { x -> if (x != null && x.isFinite()) { if (x < lo) lo = x; if (x > hi) hi = x } }
++                                if (lo != Double.POSITIVE_INFINITY) { cLo = lo; cHi = hi }
++                            }
+                             val y = when {
+                                 s.group == "pump" -> pumpY(v)
+                                 view.dual && s.group == view.secGroup ->
+                                     padTop + plotH * (1 - ((v - view.secMin) / max(1.0, view.secMax - view.secMin)).toFloat())
+                                 mode == "NORMALIZED" -> {
+-                                    val all = vals.filterNotNull()
+-                                    val lo = if (all.isNotEmpty()) all.min() else 0.0
+-                                    val hi = if (all.isNotEmpty()) all.max() else 100.0
+-                                    val nv = if (hi > lo) (v - lo) / (hi - lo) else 0.5
++                                    val nv = if (cHi > cLo) (v - cLo) / (cHi - cLo) else 0.5
+                                     padTop + plotH * (1 - nv.toFloat())
+                                 }
+                                 else -> padTop + plotH * (1 - ((v - view.min) / max(1e-9, view.max - view.min)).toFloat())
+
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31046
+-        versionName = "0.31.46"
++        versionCode = 31047
++        versionName = "0.31.47"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 

@@ -1,0 +1,13 @@
+{
+  "firmware_modified": false,
+  "release_ready": false,
+  "source_sha256": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+  "legacy_upload_issues": [
+    "global state shared across requests",
+    "index 0 clears previous error",
+    "missing File silently skips chunk",
+    "final close lock failure not latched",
+    "void close cannot certify success"
+  ],
+  "scope": "new-file-only offline prototype; original route unchanged"
+}

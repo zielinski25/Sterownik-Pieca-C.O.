@@ -1,0 +1,17 @@
+{
+  "v3.55.8": {
+    "sha256": "3fb7510ae8cd0f52256e04bb25ac2b30a7489be422f5d0bf8e18ba0e153c7a31",
+    "linii": 46778,
+    "plik": "main_centrala-v3.55.8.cpp"
+  },
+  "v3.56.3": {
+    "sha256": "f51b0b0749e2c1e3a8b5c02848a9c0e4902e0b641d6a7313a42304bbbcef91b3",
+    "linii": 46974,
+    "plik": "main_centrala-v3.56.3.cpp"
+  },
+  "v3.56.4": {
+    "sha256": "f89874f3390009acd79632db1031d04cd90e67435eda68e2007ea7c4b3168e38",
+    "linii": 46995,
+    "plik": "main_centrala-v3.56.4.cpp"
+  }
+}
