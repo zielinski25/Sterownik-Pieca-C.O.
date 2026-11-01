@@ -1,0 +1,4 @@
+# SHA-256 — paczka Android 0.31.71
+fd89b026fa615ec7ee4b35b6a1620f6500088b393de2c9fcf8d5fa6fcd6f2165  android-sync/v0.31.71-szyna-bez-szwu/SterownikCO-Android-v0.31.71-PELNY-PROJEKT.zip
+09e876673718d9aef5e92d5fd48c02118c1f8ac9d98e3cb2c4e0b09dea287eb6  android-sync/v0.31.71-szyna-bez-szwu/README-WGRANIE.txt
+6d831504cc7730c769cb5f36c90a28db3ce47f307f10a3a0deb1f3fdd090229e  android-sync/v0.31.71-szyna-bez-szwu/sprawdz_uklad.py

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Brama układu ekranu (0.31.70) — sprawdzenia, które da się wykonać bez Gradle/JDK.
+Brama układu ekranu (0.31.71) — sprawdzenia, które da się wykonać bez Gradle/JDK.
 
 Pilnuje błędu z 0.31.68: po obrocie telefonu aplikacja nie rozciągała się na całe
 okno, bo sztywna ramka 412 dp włączała się od samej szerokości (maxWidth > 560.dp).
@@ -23,8 +23,8 @@ CORE = APP / "core/ScreenLayout.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.70"
-KOD_WERSJI = "31070"
+WERSJA = "0.31.71"
+KOD_WERSJI = "31071"
 
 wyniki = []
 
@@ -190,12 +190,40 @@ def main():
         vcode.group(1) if vcode else "brak versionCode",
     )
 
+    # ---- 0.31.71: wciecie pochlania szyna, bez szwu przy krawedzi ----
+    chrome = czytaj(CHROME)
+    sprawdz(
+        "NavRail przyjmuje startInset (wciecie wyciecia po lewej)",
+        "fun NavRail(page: Int, startInset: Dp = 0.dp" in chrome,
+        "szyna musi sama pochlanac wciecie",
+    )
+    sprawdz(
+        "NavRail powieksza szerokosc o wciecie (tlo do krawedzi)",
+        "Dimens.railW + startInset" in chrome,
+        "inaczej przy krawedzi zostaje pas tla",
+    )
+    sprawdz(
+        "NavRail odsuwa zawartosc o wciecie (ikony poza obiektywem)",
+        "8.dp + startInset" in chrome,
+        "ikony nie moga wejsc pod kamere",
+    )
+    sprawdz(
+        "SterownikApp liczy wciecie z WindowInsets.displayCutout",
+        "WindowInsets.displayCutout" in kod and "calculateStartPadding" in kod,
+        "wciecie musi byc realne, nie stala",
+    )
+    sprawdz(
+        "w trybie szyny tresc nie dostaje drugiego paddingu",
+        "if (rail) Modifier else Modifier.displayCutoutPadding()" in kod,
+        "podwojne odsuniecie = szew albo zwezenie tresci",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.70 (bez ramki 412 dp, szyna w poziomie, wyciecie kamery)")
+    print("BRAMA UKŁADU EKRANU — 0.31.71 (bez ramki, szyna, wyciecie kamery bez szwu)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:
