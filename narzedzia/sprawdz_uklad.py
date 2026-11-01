@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Brama układu ekranu (0.31.69) — sprawdzenia, które da się wykonać bez Gradle/JDK.
+Brama układu ekranu (0.31.70) — sprawdzenia, które da się wykonać bez Gradle/JDK.
 
 Pilnuje błędu z 0.31.68: po obrocie telefonu aplikacja nie rozciągała się na całe
 okno, bo sztywna ramka 412 dp włączała się od samej szerokości (maxWidth > 560.dp).
@@ -21,6 +21,10 @@ KROK = APP / "ui/SterownikApp.kt"
 CHROME = APP / "ui/components/Chrome.kt"
 CORE = APP / "core/ScreenLayout.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
+
+# Jedno miejsce do zmiany przy kolejnej paczce.
+WERSJA = "0.31.70"
+KOD_WERSJI = "31070"
 
 wyniki = []
 
@@ -113,8 +117,8 @@ def main():
     gradle = czytaj(PROJEKT / "app/build.gradle.kts")
     vn = re.search(r'versionName = "([^"]+)"', gradle)
     sprawdz(
-        "versionName == 0.31.69",
-        bool(vn) and vn.group(1) == "0.31.69",
+        f"versionName == {WERSJA}",
+        bool(vn) and vn.group(1) == WERSJA,
         f"jest: {vn.group(1) if vn else 'brak'}",
     )
 
@@ -136,12 +140,62 @@ def main():
         sprawdz(f"{nazwa}: nawiasy zbalansowane", ok and all(v == 0 for v in bal.values()),
                 str({k: v for k, v in bal.items() if v}))
 
+    # ---- 0.31.70: pas przy wycieciu kamery nie moze byc czarny ----
+    # Objaw ze zrzutu 1.11.2026: w poziomie po lewej stronie 37 dp (110 px)
+    # CZYSTEJ czerni (#000000). To nie uklad aplikacji — to system zamalowuje
+    # obszar wyciecia, gdy motyw nie dopuszcza rysowania pod nim.
+    motyw27 = PROJEKT / "app/src/main/res/values-v27/themes.xml"
+    tm27 = czytaj(motyw27)
+    main_akt = czytaj(APP / "MainActivity.kt")
+
+    sprawdz("jest values-v27/themes.xml (atrybut wyciecia od API 27)", motyw27.exists(), str(motyw27))
+    sprawdz(
+        'motyw zezwala na rysowanie pod wycieciem (shortEdges)',
+        "windowLayoutInDisplayCutoutMode" in tm27 and "shortEdges" in tm27,
+        "bez tego w poziomie system maluje pas na czarno",
+    )
+    sprawdz(
+        "ten sam tryb ustawiany w kodzie (niektore urzadzenia ignoruja motyw)",
+        "LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES" in main_akt,
+        "MainActivity powinno ustawic window.attributes.layoutInDisplayCutoutMode",
+    )
+    sprawdz(
+        "ustawienie w kodzie chronione wersja API (stala od API 28)",
+        "VERSION_CODES.P" in main_akt or "SDK_INT >= 28" in main_akt,
+        "na API 26-27 nie ma tej stalej",
+    )
+    sprawdz(
+        "interfejs odsunięty od dziurki kamery (displayCutoutPadding)",
+        "displayCutoutPadding" in kod,
+        "inaczej przyciski wchodza pod obiektyw",
+    )
+    sprawdz(
+        "tlo pod wycieciem to Pal.Bg, nie czern",
+        "background(Pal.Bg)" in kod,
+        "pas ma wygladac jak tlo aplikacji",
+    )
+    sprawdz("brak martwej sceny (Pal.Stage) w korzeniu", "Pal.Stage" not in kod, "")
+
+    gradle = czytaj(PROJEKT / "app/build.gradle.kts")
+    wersja = re.search(r'versionName\s*=\s*"([^"]+)"', gradle)
+    sprawdz(
+        f"wersja podbita na {WERSJA}",
+        bool(wersja) and wersja.group(1) == WERSJA,
+        wersja.group(1) if wersja else "brak versionName",
+    )
+    vcode = re.search(r"versionCode\s*=\s*(\d+)", gradle)
+    sprawdz(
+        f"versionCode {KOD_WERSJI}",
+        bool(vcode) and vcode.group(1) == KOD_WERSJI,
+        vcode.group(1) if vcode else "brak versionCode",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.69 (bez ramki 412 dp, szyna w poziomie)")
+    print("BRAMA UKŁADU EKRANU — 0.31.70 (bez ramki 412 dp, szyna w poziomie, wyciecie kamery)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:

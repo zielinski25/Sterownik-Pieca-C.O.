@@ -1,0 +1,94 @@
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31069
+-        versionName = "0.31.69"
++        versionCode = 31070
++        versionName = "0.31.70"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+--- a/app/src/main/java/com/sterownikco/pro/MainActivity.kt
++++ b/app/src/main/java/com/sterownikco/pro/MainActivity.kt
+@@ -4,8 +4,10 @@
+ import android.content.Context
+ import android.content.Intent
+ import android.content.IntentFilter
++import android.os.Build
+ import android.os.Bundle
+ import android.view.MotionEvent
++import android.view.WindowManager
+ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.setContent
+ import androidx.core.content.ContextCompat
+@@ -48,6 +50,17 @@
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
++        // [0.31.70] Ten sam efekt co w motywie (values-v27/themes.xml), ale
++        // ustawiony w kodzie: czesc urzadzen (m.in. Samsung) ignoruje sam
++        // atrybut z motywu i dalej zamalowuje pas przy wycieciu kamery na
++        // czarno w poziomie. Ustawienie na oknie przed pierwszym rysowaniem
++        // dziala na wszystkich. Stala SHORT_EDGES istnieje od API 28.
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
++            window.attributes = window.attributes.apply {
++                layoutInDisplayCutoutMode =
++                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
++            }
++        }
+         model = AppModel(applicationContext, lifecycleScope)
+         applyAlarmIntent(intent)
+         // AppModel przywraca zapamiętane konto albo otwiera modal logowania.
+--- a/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+@@ -12,6 +12,7 @@
+ import androidx.compose.foundation.layout.BoxWithConstraints
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.displayCutoutPadding
+ import androidx.compose.foundation.layout.fillMaxHeight
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
+@@ -66,7 +67,10 @@
+                 modifier = Modifier.fillMaxSize().background(Pal.Bg)
+             ) {
+                 val rail = ScreenLayout.useNavRail(maxWidth.value.toInt(), maxHeight.value.toInt())
+-                Row(Modifier.fillMaxSize()) {
++                // [0.31.70] Motyw dopuszcza rysowanie pod wycieciem kamery (w poziomie
++                // system zamalowywal ten pas na czarno). Tu odsuwamy od niego interfejs,
++                // zeby zaden przycisk ani napis nie schowal sie pod obiektywem.
++                Row(Modifier.fillMaxSize().displayCutoutPadding()) {
+                     if (rail) NavRail(page = m.page) { m.navigate(it) }
+                     Column(Modifier.weight(1f).fillMaxHeight()) {
+                         TopBar(m)
+--- /dev/null
++++ b/app/src/main/res/values-v27/themes.xml
+@@ -0,0 +1,25 @@
++<resources>
++    <!--
++      0.31.70: ten sam motyw co values/themes.xml, plus zezwolenie na rysowanie
++      w obszarze wyciecia ekranu (kamera w ekranie / notch).
++
++      Dlaczego: domyslny tryb (DEFAULT) pozwala rysowac pod wycieciem TYLKO
++      w pionie. W poziomie system rezerwuje na wyciecie pas i zamalowuje go
++      CZERNYM - dokladnie ten pasek widac po lewej stronie ekranu.
++      "shortEdges" pozwala rysowac pod wycieciem zarowno w pionie, jak i w
++      poziomie (wyciecie jest na krotkiej krawedzi), wiec czarny pas znika.
++
++      Trescia pod kamera zajmuje sie Compose: Modifier.displayCutoutPadding()
++      w SterownikApp.kt odsuwa interfejs od samej dziurki, wiec nic nie
++      chowa sie pod obiektywem.
++
++      Atrybut istnieje od API 27, dlatego ten plik jest w values-v27.
++    -->
++    <style name="Theme.SterownikCo" parent="android:Theme.Material.NoActionBar">
++        <item name="android:windowBackground">@color/bg</item>
++        <item name="android:statusBarColor">@color/top</item>
++        <item name="android:navigationBarColor">@color/nav</item>
++        <item name="android:windowLightStatusBar">false</item>
++        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
++    </style>
++</resources>
