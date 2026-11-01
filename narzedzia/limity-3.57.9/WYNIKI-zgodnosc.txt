@@ -1,0 +1,21 @@
+  OK   HISTORIA_MAX_PROBEK = 1440
+  OK   HISTORIA_DLUGA_MAX_PROBEK = 8000
+  OK   HISTORIA_RESYNC_MARGINES = 1000
+  OK   HISTORIA_DLUGA_RESYNC_MARGINES = 500
+  OK   HISTORIA_PENDING_LIMIT_B = 4096
+  OK   trim odpala sie tylko gdy linie > limit + margines
+  OK   krotka historia: trim(limit=1440, margines=1000)
+  OK   dluga historia: trim(limit=8000, margines=500)
+  OK   w firmware jest dokladnie jeden history193::Engine
+  OK   oba strumienie ida przez ten sam obiekt historiaIo
+  OK   FS_RESERVE_HIST_LONG_B = 2 MB - 2097152 B
+  OK   nazwy .rebuild wystepuja w zrodle
+  OK   firmware NIE kasuje pliku .rebuild
+  OK   Engine otwiera plik roboczy z O_EXCL (stary .rebuild = blad Open)
+  OK   Engine nigdzie nie usuwa pliku roboczego
+  OK   komunikat 'blad rotacji - zatrzymano obie historie'
+  OK   komunikat 'zapis niepotwierdzony ... obie historie zatrzymane'
+  OK   odrzucenie z pelnej kolejki JEST logowane (WARN), nie ciche
+  OK   wszystkie klucze NVS <= 15 znakow (sprawdzono 71)
+
+ZGODNOSC: 19 OK / 0 FAIL
