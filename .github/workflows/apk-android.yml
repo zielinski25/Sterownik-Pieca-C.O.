@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # APK wraca do repo jako transport (artefakty runnera sa nieosiagalne z srodowiska agenta)
 
 jobs:
   build:
@@ -65,3 +65,19 @@ jobs:
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      # Artefakty Actions leza na blob.core.windows.net, do ktorego srodowisko
+      # agenta nie ma dostepu. Dlatego APK wraca do repo jako plik w commitcie -
+      # git idzie po github.com i to jedyny kanal, ktory tu dziala.
+      - name: APK do repo (transport dla agenta)
+        if: success()
+        run: |
+          V=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts)
+          mkdir -p android-sync/apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk "android-sync/apk/SterownikCO-${V}-debug.apk"
+          ls -l android-sync/apk
+          git config user.name "Arena CI"
+          git config user.email "ci@users.noreply.github.com"
+          git add android-sync/apk
+          git commit -m "CI: APK ${V} (debug), zbudowany z android/ na runnerze"
+          git push
