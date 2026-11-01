@@ -1,0 +1,99 @@
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31073
+-        versionName = "0.31.73"
++        versionCode = 31074
++        versionName = "0.31.74"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+--- a/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+@@ -21,7 +21,9 @@
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.height
+-import androidx.compose.foundation.layout.navigationBarsPadding
++import androidx.compose.foundation.layout.calculateBottomPadding
++import androidx.compose.foundation.layout.calculateEndPadding
++import androidx.compose.foundation.layout.navigationBars
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.ui.platform.LocalLayoutDirection
+ import androidx.compose.foundation.shape.RoundedCornerShape
+@@ -83,14 +85,22 @@
+                 // do krawedzi ekranu), a tresc obok nie dostaje juz zadnego paddingu.
+                 val cutoutStart = WindowInsets.displayCutout.asPaddingValues()
+                     .calculateStartPadding(LocalLayoutDirection.current)
++                // [0.31.74] Wciecie paska nawigacji liczymy sami — i bierzemy
++                // z niego wylacznie koniec i dol.
++                val navVals = WindowInsets.navigationBars.asPaddingValues()
++                val navEnd = navVals.calculateEndPadding(LocalLayoutDirection.current)
++                val navBottom = navVals.calculateBottomPadding()
+                 Row(Modifier.fillMaxSize()) {
+                     if (rail) NavRail(page = m.page, startInset = cutoutStart) { m.navigate(it) }
+                     Column(
+                         Modifier.weight(1f).fillMaxHeight()
+                             .then(if (rail) Modifier else Modifier.displayCutoutPadding())
+-                            // Pas nawigacji Androida (dolny albo boczny) — tresc nie
+-                            // moze pod nim znikac, a przyciski musza byc klikalne.
+-                            .navigationBarsPadding()
++                            // [0.31.74] Tylko KONIEC i DOL paska nawigacji.
++                            // Gotowy `navigationBarsPadding()` bral wszystkie cztery
++                            // strony, a po lewej doliczal wyciecie kamery (39 dp):
++                            // szyna 119 dp + drugie 39 dp pustki obok = 158 dp
++                            // z 813 dp szerokosci ekranu zjadalo 1/5 ekranu.
++                            .padding(end = navEnd, bottom = navBottom)
+                     ) {
+                         TopBar(m)
+                         Box(Modifier.weight(1f).fillMaxWidth()) {
+--- a/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+@@ -77,10 +77,12 @@
+             // tlo DOPIERO pod paskiem statusu — nad nim zostawaloby tło okna i
+             // gradient zaczynalby sie od nowa (widoczna linia pod paskiem).
+             // Dlatego: najpierw tlo (do samej gornej krawedzi), potem wciecie.
++            // [0.31.74] Obramowanie PRZED wcieciem paska statusu: postawione po
++            // wcieciu rysowalo pozioma linie pod paskiem statusu (widoczny szew).
+             .background(Brush.linearGradient(listOf(Pal.Top, Pal.Top2)))
++            .border(1.dp, Pal.TopBorder, RoundedCornerShape(0.dp))
+             .statusBarsPadding()
+             .height(Dimens.topBarH)
+-            .border(1.dp, Pal.TopBorder, RoundedCornerShape(0.dp))
+             .padding(start = 14.dp, end = 10.dp),
+         verticalAlignment = Alignment.CenterVertically
+     ) {
+@@ -386,10 +388,14 @@
+         modifier = Modifier.width(Dimens.railW + startInset).fillMaxHeight()
+             // [0.31.73] Tlo PRZED wcieciem paska statusu — tak samo jak w TopBarze.
+             // Inaczej gorny rog ekranu mial kolor paska gornego zamiast koloru szyny.
++            // [0.31.74] Obramowanie przed wcieciem — inaczej pozioma linia na
++            // gorze szyny (to ja widac bylo jako szew pod paskiem statusu).
+             .background(Brush.linearGradient(listOf(Pal.Nav, Pal.Nav2)))
+-            .statusBarsPadding()
+             .border(1.dp, Pal.NavBorder, RoundedCornerShape(0.dp))
+-            .padding(start = 8.dp + startInset, end = 8.dp, top = 10.dp, bottom = 10.dp),
++            .statusBarsPadding()
++            // [0.31.74] 8 -> 6 dp: przy szynie 68 dp wewnatrz zostaje 56 dp,
++            // a najdluzsza etykieta (Ustawienia, 9 sp) ma ~44 dp.
++            .padding(start = 6.dp + startInset, end = 6.dp, top = 10.dp, bottom = 10.dp),
+         horizontalAlignment = Alignment.CenterHorizontally,
+         verticalArrangement = Arrangement.spacedBy(6.dp)
+     ) {
+--- a/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt
+@@ -24,7 +24,10 @@
+     val topBarH = 62.dp
+     val navH = 74.dp
+     val navBtnH = 56.dp
+-    val railW = 80.dp
++    // [0.31.74] 80 dp bylo szersze niz trzeba: najdluzsza etykieta
++    // („Ustawienia" przy 9 sp) ma ~44 dp, a wewnatrz szyny zostaje
++    // railW - 12 dp. 68 dp daje 56 dp na etykiety i 12 dp mniej szerokosci.
++    val railW = 68.dp
+     val tileH = 126.dp
+     val quickH = 64.dp
+     val analysisH = 74.dp

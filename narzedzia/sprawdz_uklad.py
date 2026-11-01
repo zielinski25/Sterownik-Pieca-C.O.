@@ -20,11 +20,12 @@ APP = PROJEKT / "app/src/main/java/com/sterownikco/pro"
 KROK = APP / "ui/SterownikApp.kt"
 CHROME = APP / "ui/components/Chrome.kt"
 CORE = APP / "core/ScreenLayout.kt"
+TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.73"
-KOD_WERSJI = "31073"
+WERSJA = "0.31.74"
+KOD_WERSJI = "31074"
 
 wyniki = []
 
@@ -49,6 +50,7 @@ def main():
 
     krok = czytaj(KROK)
     kod = bez_komentarzy(krok)
+    tema = czytaj(TEMA)
 
     # 1) ramka symulatora nie może wrócić
     sprawdz(
@@ -204,7 +206,7 @@ def main():
     )
     sprawdz(
         "NavRail odsuwa zawartosc o wciecie (ikony poza obiektywem)",
-        "8.dp + startInset" in chrome,
+        "6.dp + startInset" in chrome,
         "ikony nie moga wejsc pod kamere",
     )
     sprawdz(
@@ -234,9 +236,22 @@ def main():
         "inaczej pasek 62 dp traci 37 dp na wciecie",
     )
     sprawdz(
-        "tresc omija pasek nawigacji (navigationBarsPadding)",
-        "navigationBarsPadding" in kod and "navigationBarsPadding" in chrome,
+        "tresc omija pasek nawigacji (koniec + dol)",
+        ".padding(end = navEnd, bottom = navBottom)" in kod,
         "przyciski nie moga byc pod paskiem systemowym",
+    )
+    # [0.31.74] `navigationBarsPadding()` w korzeniu dokladalo 39 dp z LEWEJ
+    # (system raportuje pas nawigacji razem z wycieciem kamery), przez co szyna
+    # 119 dp miala obok siebie drugie 39 dp pustki. W korzeniu ma go nie byc.
+    sprawdz(
+        "korzen NIE uzywa navigationBarsPadding (dublowal wciecie wyciecia)",
+        "navigationBarsPadding" not in kod,
+        "wtedy tresc startuje 39 dp za daleko od szyny",
+    )
+    sprawdz(
+        "szyna nie szersza niz 70 dp (mniej zabiera pulpitowi)",
+        "val railW = 68.dp" in tema,
+        "80 dp bylo szersze niz najdluzsza etykieta",
     )
 
     # ---- 0.31.73: kolejnosc modyfikatorow (blad 0.31.72) ----
@@ -271,12 +286,33 @@ def main():
         "import bez uzycia",
     )
 
+    # ---- 0.31.74: szyna wezsza + obramowanie przed wcieciem paska statusu ----
+    # Obramowanie postawione PO .statusBarsPadding() rysowalo pozioma linie pod
+    # paskiem statusu (widoczny "szew" na gorze szyny i paska gornego).
+    i_bord_top = frag_top.find(".border(")
+    i_bord_rail = frag_rail.find(".border(")
+    sprawdz(
+        "TopBar: obramowanie przed wcieciem paska statusu",
+        i_bord_top != -1 and i_bord_top < frag_top.find(".statusBarsPadding()"),
+        "inaczej linia tla pod paskiem statusu",
+    )
+    sprawdz(
+        "NavRail: obramowanie przed wcieciem paska statusu",
+        i_bord_rail != -1 and i_bord_rail < frag_rail.find(".statusBarsPadding()"),
+        "inaczej pozioma linia na gorze szyny",
+    )
+    sprawdz(
+        "NavRail: wewnatrz zostaje >= 50 dp na etykiety",
+        ("val railW = 68.dp" in tema) and ("6.dp + startInset" in chrome) and ("end = 6.dp" in chrome),
+        "najdluzsza etykieta (Ustawienia) ma ~44 dp",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.73 (edge-to-edge + kolejnosc modyfikatorow)")
+    print("BRAMA UKŁADU EKRANU — 0.31.74 (szyna 68 dp, insety per strona, bez dubla wyciecia)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:
