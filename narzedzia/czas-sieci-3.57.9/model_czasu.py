@@ -270,8 +270,9 @@ def main():
         zrodlo_info = f"{args.src} (SHA-256 {d['zrodlo']['sha256'][:16]}...)"
 
     przed = Konfiguracja("PRZED (3.57.8)", param, http_to)
-    po = Konfiguracja("PO (propozycja 3.57.9)", 4, http_to)
-    po8 = Konfiguracja("PO, wariant 8 s", 8, http_to)
+    # DECYZJA UZYTKOWNIKA (2026-11-01): limit handshake TLS = 8 s.
+    po = Konfiguracja("PO (3.57.9, decyzja: 8 s)", 8, http_to)
+    po4 = Konfiguracja("wariant odrzucony (4 s)", 4, http_to)
     nadzor = Nadzor()
 
     print("MODEL CZASU SIECI — firmware 3.57.8")
@@ -281,7 +282,7 @@ def main():
 
     w_przed = tabela(przed, nadzor)
     w_po = tabela(po, nadzor)
-    w_po8 = tabela(po8, nadzor)
+    w_po4 = tabela(po4, nadzor)
 
     # ── asercje: PRZED ───────────────────────────────────────────────────
     print("\n=== Asercje: PRZED (3.57.8, setHandshakeTimeout(4000)) ===")
@@ -304,28 +305,40 @@ def main():
         "S7 wolna odpowiedz (kapie): restart, bo caly odczyt trwa > 300 s",
         fmt_czas(o["wynik"].czas_ms))
 
-    # ── asercje: PO ──────────────────────────────────────────────────────
-    print("\n=== Asercje: PO (setHandshakeTimeout(4)) ===")
+    # ── asercje: PO (8 s — decyzja uzytkownika) ─────────────────────────
+    print("\n=== Asercje: PO (setHandshakeTimeout(8) — decyzja z 1.11) ===")
     o = w_po["S2"]
-    spr(o["wynik"].status == "tls_timeout" and o["wynik"].czas_ms == 4090,
-        "S2 TLS stoi: konczy sie po 4 s (a nie po 66 min)", fmt_czas(o["wynik"].czas_ms))
+    spr(o["wynik"].status == "tls_timeout" and o["wynik"].czas_ms == 8090,
+        "S2 TLS stoi: konczy sie po 8 s (a nie po 66 min)", fmt_czas(o["wynik"].czas_ms))
     spr(o["restart"] is False and o["checkpoint"] == "AFTER",
         "S2 => brak restartu, znacznik AFTER zostaje zapisany")
+    spr(o["wynik"].czas_ms * 37 < nadzor.prog_ms,
+        "S2: limit 8 s to nadal 37x mniej niz prog nadzoru 300 s")
     o = w_po["S1"]
     spr(o["wynik"].status == "ok" and o["wynik"].czas_ms == 610,
         "S1 normalny: bez zmian (610 ms)", fmt_czas(o["wynik"].czas_ms))
     o = w_po["S3"]
     spr(o["wynik"].czas_ms == 5030, "S3 brak trasy: bez zmian (5 s)", fmt_czas(o["wynik"].czas_ms))
     o = w_po["S4"]
-    spr(o["wynik"].status == "ok", "S4 wolny TLS 3,2 s: nadal przechodzi", fmt_czas(o["wynik"].czas_ms))
+    spr(o["wynik"].status == "ok", "S4 wolny TLS 3,2 s: przechodzi", fmt_czas(o["wynik"].czas_ms))
     o = w_po["S5"]
+    spr(o["wynik"].status == "ok",
+        "S5 wolny TLS 4,5 s: przechodzi (to przewaga 8 s nad 4 s)", fmt_czas(o["wynik"].czas_ms))
+    o = w_po4["S5"]
     spr(o["wynik"].status == "tls_timeout",
-        "S5 wolny TLS 4,5 s: przy limicie 4 s NIE przechodzi (granica!)")
-    o = w_po8["S5"]
-    spr(o["wynik"].status == "ok", "S5 ten sam przypadek przy limicie 8 s: przechodzi")
+        "wariant 4 s: ten sam przypadek NIE przechodzi — dlatego odrzucony")
+    o = w_po["S6"]
+    spr(o["wynik"].status == "tls_timeout" and o["wynik"].czas_ms == 8090,
+        "S6 wolny TLS 9 s: odcięty po 8 s, bez restartu", fmt_czas(o["wynik"].czas_ms))
+    # S7 (odpowiedz "kapie") jest z zalozenia nieograniczony czasowo — limit
+    # odczytu resetuje sie przy kazdym bajcie, wiec liczymy max dla S1-S6.
+    najgorszy = max(symuluj(po, sc).czas_ms for sc in SCENARIUSZE if sc.strumien is None)
+    spr(najgorszy < nadzor.prog_ms,
+        "najgorszy czas jednego GET po zmianie (S1-S6) < 300 s",
+        f"max={fmt_czas(najgorszy)} = TCP 5 s + TLS 8 s + odczyt 4 s")
     o = w_po["S7"]
     spr(o["restart"] is True,
-        "S7 wolna odpowiedz: ten fix tego NIE naprawia (osobny powod)",
+        "S7 wolna odpowiedz (kapie): 8 s tego NIE naprawia — osobny temat",
         f"restart={o['restart']}")
 
     # ── hipoteza numer jeden: petla ponowien ─────────────────────────────

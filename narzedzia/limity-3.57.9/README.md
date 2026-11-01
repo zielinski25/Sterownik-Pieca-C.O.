@@ -50,8 +50,20 @@ bash narzedzia/limity-3.57.9/run.sh
 FIRMWARE_SRC=/sciezka/src/main_centrala.cpp bash narzedzia/limity-3.57.9/run.sh
 ```
 
-Bez `FIRMWARE_SRC` część „zgodność” kończy się `POMINIETO` — źródło firmware
-nie leży w repo, tylko w paczce ZIP na Dysku.
+Bez `FIRMWARE_SRC` część „zgodność” kończy się `POMINIETO`. Źródło 3.57.8 leży teraz
+**w tej samej gałęzi**: `firmware-patch/v3.57.8-raport-i-wersja/src/main_centrala.cpp`,
+więc wystarczy:
+
+```
+FIRMWARE_SRC=firmware-patch/v3.57.8-raport-i-wersja/src/main_centrala.cpp \
+  bash narzedzia/limity-3.57.9/run.sh
+```
+
+## Co dalej z tymi znaleziskami
+
+**Decyzja użytkownika (2026-11-01):** tematy historii/`.rebuild` (F2, F4 z raportu)
+idą **osobno w 3.57.10** — 3.57.9 zajmuje się wyłącznie limitami sieci.
+Raport z tego kroku zostaje jako gotowa lista do 3.57.10.
 
 ## Wynik
 
