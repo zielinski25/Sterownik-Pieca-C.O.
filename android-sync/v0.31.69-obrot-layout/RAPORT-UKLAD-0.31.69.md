@@ -157,6 +157,28 @@ tekstowa. Wszystkie użyte API (`Row`, `weight`, `fillMaxHeight`, `BoxWithConstr
 `Modifier.width`, `Brush.linearGradient`) są już w projekcie używane w tym samym
 pliku lub w `NavBar`.
 
+## 7a. Wynik na urzadzeniu (1.11.2026, zrzut po wgraniu)
+
+Zbudowane i wgrane przez uzytkownika: `testDebugUnitTest assembleDebug` →
+**BUILD SUCCESSFUL** (1 min 50 s), APK 12 955 576 B,
+SHA-256 `1C11AB379AF9278146A92B8500A169288D73D0D72D9B2F9B40F2ED0969F4B8D1`.
+Zero ostrzezen kompilatora w nowych plikach (`ScreenLayout.kt`, `NavRail`,
+`SterownikApp.kt`) — wszystkie ostrzezenia w logu dotycza kodu sprzed zmiany.
+
+Pomiar ze zrzutu (2400x1080 px, 2,94 px/dp):
+
+| co | 0.31.68 | 0.31.69 |
+|---|---|---|
+| okno aplikacji | 2158 x 996 px = **734 x 339 dp** | bez zmian |
+| aplikacja zajmuje | 1210 px = 411 dp (**56 %** szerokosci) | 2158 px = **734 dp (100 %)** |
+| martwe pole | 948 px = 322 dp = **44 % szerokosci** | **0** |
+| szyna nawigacji | brak (dolny pasek 74 dp) | **80,4 dp** (ustawione 80 dp) |
+| wysokosc tresci | 339 − 62 − 74 = **203 dp** | 339 − 62 = **277 dp** (+74 dp) |
+| wykres 220 dp | nie miescil sie | miesci sie w calosci |
+
+Reguła `useNavRail(734, 339)` → `339 < 480 && 734 >= 600` = **true** → szyna.
+Na zywym urzadzeniu zgadza sie co dp z modelem uzytym w testach.
+
 ## 8. Do sprawdzenia po wgraniu
 
 1. Pion: wygląd bez zmian.
