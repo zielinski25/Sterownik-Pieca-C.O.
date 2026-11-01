@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Brama układu ekranu (0.31.71) — sprawdzenia, które da się wykonać bez Gradle/JDK.
+Brama układu ekranu (0.31.72) — sprawdzenia, które da się wykonać bez Gradle/JDK.
 
 Pilnuje błędu z 0.31.68: po obrocie telefonu aplikacja nie rozciągała się na całe
 okno, bo sztywna ramka 412 dp włączała się od samej szerokości (maxWidth > 560.dp).
@@ -23,8 +23,8 @@ CORE = APP / "core/ScreenLayout.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.71"
-KOD_WERSJI = "31071"
+WERSJA = "0.31.72"
+KOD_WERSJI = "31072"
 
 wyniki = []
 
@@ -218,12 +218,43 @@ def main():
         "podwojne odsuniecie = szew albo zwezenie tresci",
     )
 
+    # ---- 0.31.72: wlasciwa przyczyna pasa = wciecie SYSTEMOWE, nie nasze ----
+    # 0.31.71 nie mogla pomoc: system ustawial poczatek widoku tresci 37 dp od
+    # krawedzi (decorFitsSystemWindows = true), wiec szyna zawsze zaczynala sie
+    # od x=59 px — potwierdzone na zrzucie 12:30 (ramka szyny przy x=59 i brak
+    # ramki przy x=0). Ratunkiem jest tryb edge-to-edge.
+    sprawdz(
+        "MainActivity wlacza edge-to-edge (setDecorFitsSystemWindows false)",
+        "setDecorFitsSystemWindows(window, false)" in main_akt,
+        "bez tego system dalej odsuwa cala tresc od wyciecia",
+    )
+    sprawdz(
+        "TopBar: wciecie statusu DODANE do wysokosci paska, nie w srodku",
+        ".statusBarsPadding()\n            .height(Dimens.topBarH)" in chrome,
+        "inaczej pasek 62 dp traci 37 dp na wciecie",
+    )
+    sprawdz(
+        "tresc omija pasek nawigacji (navigationBarsPadding)",
+        "navigationBarsPadding" in kod and "navigationBarsPadding" in chrome,
+        "przyciski nie moga byc pod paskiem systemowym",
+    )
+    sprawdz(
+        "pas pod paskiem statusu malowany przez nas",
+        "windowInsetsTopHeight(WindowInsets.statusBars)" in kod,
+        "edge-to-edge zdejmuje kolor paska statusu z systemu",
+    )
+    sprawdz(
+        "szyna: tlo startuje pod paskiem statusu",
+        ".statusBarsPadding()\n            .background(Brush.linearGradient(listOf(Pal.Nav, Pal.Nav2)))" in chrome,
+        "inaczej gorny pas szyny mialby inny kolor",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.71 (bez ramki, szyna, wyciecie kamery bez szwu)")
+    print("BRAMA UKŁADU EKRANU — 0.31.72 (edge-to-edge: tresc pod paskami, szyna od krawedzi)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:

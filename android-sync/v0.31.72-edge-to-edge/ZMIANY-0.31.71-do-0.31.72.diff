@@ -1,0 +1,121 @@
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31071
+-        versionName = "0.31.71"
++        versionCode = 31072
++        versionName = "0.31.72"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+--- a/app/src/main/java/com/sterownikco/pro/MainActivity.kt
++++ b/app/src/main/java/com/sterownikco/pro/MainActivity.kt
+@@ -11,6 +11,7 @@
+ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.setContent
+ import androidx.core.content.ContextCompat
++import androidx.core.view.WindowCompat
+ import androidx.lifecycle.lifecycleScope
+ import com.sterownikco.pro.core.AlarmInfo
+ import com.sterownikco.pro.core.AlarmNotify
+@@ -61,6 +62,12 @@
+                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+             }
+         }
++        // [0.31.72] TRYB edge-to-edge. Bez tego system nie wpuszcza tresci w obszar
++        // wyciecia kamery: okno rozciaga sie na caly ekran, ale WIDOK tresci (Compose)
++        // dostaje od systemu 37 dp marginesu z lewej. Dlatego 0.31.71 nie mogla nic
++        // zmienic — pas tla nie byl juz naszym paddingiem, tylko wcieciem systemowym.
++        // Teraz tresc rysuje pod paskami, a odstepy ustawiamy sami (Insets w UI).
++        WindowCompat.setDecorFitsSystemWindows(window, false)
+         model = AppModel(applicationContext, lifecycleScope)
+         applyAlarmIntent(intent)
+         // AppModel przywraca zapamiętane konto albo otwiera modal logowania.
+--- a/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+@@ -21,7 +21,10 @@
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.navigationBarsPadding
+ import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.windowInsetsTopHeight
++import androidx.compose.ui.graphics.Brush
+ import androidx.compose.ui.platform.LocalLayoutDirection
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material3.Text
+@@ -71,6 +74,14 @@
+             BoxWithConstraints(
+                 modifier = Modifier.fillMaxSize().background(Pal.Bg)
+             ) {
++                // [0.31.72] Tresc siega teraz pod pasek statusu (edge-to-edge), wiec
++                // pas pod nim malujemy sami — inaczej przy szynie bylby tam kolor tla
++                // zamiast koloru paska gornego.
++                Box(
++                    Modifier.fillMaxWidth()
++                        .windowInsetsTopHeight(WindowInsets.statusBars)
++                        .background(Brush.linearGradient(listOf(Pal.Top, Pal.Top2)))
++                )
+                 val rail = ScreenLayout.useNavRail(maxWidth.value.toInt(), maxHeight.value.toInt())
+                 // [0.31.70/0.31.71] Motyw dopuszcza rysowanie pod wycieciem kamery
+                 // (w poziomie system zamalowywal ten pas na czarno). Interfejs musi byc
+@@ -84,6 +95,9 @@
+                     Column(
+                         Modifier.weight(1f).fillMaxHeight()
+                             .then(if (rail) Modifier else Modifier.displayCutoutPadding())
++                            // Pas nawigacji Androida (dolny albo boczny) — tresc nie
++                            // moze pod nim znikac, a przyciski musza byc klikalne.
++                            .navigationBarsPadding()
+                     ) {
+                         TopBar(m)
+                         Box(Modifier.weight(1f).fillMaxWidth()) {
+--- a/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+@@ -23,6 +23,7 @@
+ import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.layout.size
++import androidx.compose.foundation.layout.navigationBarsPadding
+ import androidx.compose.foundation.layout.statusBarsPadding
+ import androidx.compose.foundation.layout.width
+ import androidx.compose.foundation.layout.widthIn
+@@ -70,10 +71,14 @@
+ @Composable
+ fun TopBar(m: AppModel) {
+     Row(
+-        modifier = Modifier.fillMaxWidth().height(Dimens.topBarH)
++        modifier = Modifier.fillMaxWidth()
++            // [0.31.72] Kolejnosc ma znaczenie: wciecie paska statusu DODAJE sie do
++            // wysokosci paska (62 dp), a nie zjada go. W trybie edge-to-edge tresc
++            // okna zaczyna sie od y=0, wiec bez tego zabralibyśmy paskowi 37 dp.
++            .statusBarsPadding()
++            .height(Dimens.topBarH)
+             .background(Brush.linearGradient(listOf(Pal.Top, Pal.Top2)))
+             .border(1.dp, Pal.TopBorder, RoundedCornerShape(0.dp))
+-            .statusBarsPadding()
+             .padding(start = 14.dp, end = 10.dp),
+         verticalAlignment = Alignment.CenterVertically
+     ) {
+@@ -377,6 +382,9 @@
+     val items = listOf("dashboard" to "Dashboard", "chart" to "Wykresy", "weather" to "Pogoda", "settings" to "Ustawienia", "more" to "Więcej")
+     Column(
+         modifier = Modifier.width(Dimens.railW + startInset).fillMaxHeight()
++            // [0.31.72] Tlo szyny startuje POD paskiem statusu (edge-to-edge),
++            // a nie pod nim schowane — inaczej gorny pas mialby inny kolor.
++            .statusBarsPadding()
+             .background(Brush.linearGradient(listOf(Pal.Nav, Pal.Nav2)))
+             .border(1.dp, Pal.NavBorder, RoundedCornerShape(0.dp))
+             .padding(start = 8.dp + startInset, end = 8.dp, top = 10.dp, bottom = 10.dp),
+@@ -421,6 +429,9 @@
+     ) {
+         Column(
+             modifier = Modifier.fillMaxWidth().fillMaxHeight(if (fullScreen) 1f else .75f)
++                // [0.31.72] edge-to-edge: dolny arkusz nie moze wchodzic pod pasek
++                // nawigacji Androida (tam nie da sie kliknac).
++                .navigationBarsPadding()
+                 .background(Pal.Surface, sheetShape)
+                 .border(1.dp, Pal.BorderStrong, sheetShape)
+                 .clickable(enabled = false) {}
