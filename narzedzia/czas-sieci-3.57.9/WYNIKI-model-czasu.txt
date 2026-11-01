@@ -1,0 +1,78 @@
+MODEL CZASU SIECI — firmware 3.57.8
+zrodlo parametrow: /home/user/work/src3578/main_centrala.cpp (SHA-256 db3da8854cd8408a...)
+semantyka: setHandshakeTimeout(x) => x*1000 ms; http.setTimeout(x) => x ms, klient dostaje (x+500)/1000 s
+
+--- PRZED (3.57.8): setHandshakeTimeout(4000) => limit TLS 66.7 min (4000 s) ---
+     scenariusz                                                       czas       status                 nadzor
+S1   normalny serwer                                                610 ms           ok          brak restartu
+S2   TLS stoi (serwer przyjal TCP, milczy na ClientHello) 66.7 min (4000 s)  tls_timeout       RESTART po 300 s
+S3   brak trasy (SYN bez odpowiedzi)                                 5.0 s  tcp_timeout          brak restartu
+S4   wolny TLS 3,2 s                                                 3.4 s           ok          brak restartu
+S5   wolny TLS 4,5 s                                                 4.7 s           ok          brak restartu
+S6   wolny TLS 9 s                                                   9.2 s           ok          brak restartu
+S7   odpowiedz kapie: 1 bajt co 3 s przez 400 s            6.7 min (400 s)           ok       RESTART po 300 s
+
+--- PO (propozycja 3.57.9): setHandshakeTimeout(4) => limit TLS 4.0 s ---
+     scenariusz                                                       czas       status                 nadzor
+S1   normalny serwer                                                610 ms           ok          brak restartu
+S2   TLS stoi (serwer przyjal TCP, milczy na ClientHello)            4.1 s  tls_timeout          brak restartu
+S3   brak trasy (SYN bez odpowiedzi)                                 5.0 s  tcp_timeout          brak restartu
+S4   wolny TLS 3,2 s                                                 3.4 s           ok          brak restartu
+S5   wolny TLS 4,5 s                                                 4.1 s  tls_timeout          brak restartu
+S6   wolny TLS 9 s                                                   4.1 s  tls_timeout          brak restartu
+S7   odpowiedz kapie: 1 bajt co 3 s przez 400 s            6.7 min (400 s)           ok       RESTART po 300 s
+
+--- PO, wariant 8 s: setHandshakeTimeout(8) => limit TLS 8.0 s ---
+     scenariusz                                                       czas       status                 nadzor
+S1   normalny serwer                                                610 ms           ok          brak restartu
+S2   TLS stoi (serwer przyjal TCP, milczy na ClientHello)            8.1 s  tls_timeout          brak restartu
+S3   brak trasy (SYN bez odpowiedzi)                                 5.0 s  tcp_timeout          brak restartu
+S4   wolny TLS 3,2 s                                                 3.4 s           ok          brak restartu
+S5   wolny TLS 4,5 s                                                 4.7 s           ok          brak restartu
+S6   wolny TLS 9 s                                                   8.1 s  tls_timeout          brak restartu
+S7   odpowiedz kapie: 1 bajt co 3 s przez 400 s            6.7 min (400 s)           ok       RESTART po 300 s
+
+=== Asercje: PRZED (3.57.8, setHandshakeTimeout(4000)) ===
+  OK   S1 normalny: pobranie konczy sie w milisekundach, bez restartu - 610 ms
+  OK   S2 TLS stoi: konczy sie timeoutem TLS
+  OK   S2 limit TLS to 4 000 000 ms (66 min), nie 4 s - 66.7 min (4000 s)
+  OK   S2 => nadzor restartuje po 300 s, ostatni znacznik DESZCZ / BEFORE - restart=True, checkpoint=BEFORE
+  OK   S3 brak trasy: 5 s i konczy sie sam, bez restartu - 5.0 s
+  OK   S7 wolna odpowiedz (kapie): restart, bo caly odczyt trwa > 300 s - 6.7 min (400 s)
+
+=== Asercje: PO (setHandshakeTimeout(4)) ===
+  OK   S2 TLS stoi: konczy sie po 4 s (a nie po 66 min) - 4.1 s
+  OK   S2 => brak restartu, znacznik AFTER zostaje zapisany
+  OK   S1 normalny: bez zmian (610 ms) - 610 ms
+  OK   S3 brak trasy: bez zmian (5 s) - 5.0 s
+  OK   S4 wolny TLS 3,2 s: nadal przechodzi - 3.4 s
+  OK   S5 wolny TLS 4,5 s: przy limicie 4 s NIE przechodzi (granica!)
+  OK   S5 ten sam przypadek przy limicie 8 s: przechodzi
+  OK   S7 wolna odpowiedz: ten fix tego NIE naprawia (osobny powod) - restart=True
+
+=== Hipoteza 1: czy kod ponawia probe (3 x 125 s = 375 s)? ===
+  OK   w funkcji jest dokladnie jedno http.GET() - GET=1
+  OK   zadne GET nie jest w petli - GET w petli=0
+  OK   setConnectTimeout nie jest wolane (domyslne 5000 ms)
+       Gdyby kod robil 3 proby: 3 x 125 s = 375 s > 300 s -> restart.
+       Ale kod robi JEDNO GET, wiec hipoteza 'petla ponowien' NIE tlumaczy
+       objawu. Tlumaczy go limit TLS: 4000 trafia jako SEKUNDY, nie ms.
+
+=== N pobran w 2 h (S2, pobranie co 15 min po starcie) ===
+  PRZED: pobran=5, restartow=5
+  PO   : pobran=7, restartow=0
+  os PRZED (pierwsze 10 zdarzen):
+    t=    900 s  pobranie WISI (tls_timeout) — TLS handshake
+    t=   1200 s  RESTART (licznik=1)
+    t=   2100 s  pobranie WISI (tls_timeout) — TLS handshake
+    t=   2400 s  RESTART (licznik=2)
+    t=   3300 s  pobranie WISI (tls_timeout) — TLS handshake
+    t=   3600 s  RESTART (licznik=3)
+    t=   4500 s  pobranie WISI (tls_timeout) — TLS handshake
+    t=   4800 s  NADZOR_LIMIT — bez restartu
+    t=   5400 s  licznik wyzerowany po 30 min pracy
+    t=   5401 s  RESTART (po wyzerowaniu licznika)
+  OK   PO: zero restartow w ciagu 2 h - restartow=0
+  OK   PRZED: seria restartow w ciagu 2 h - restartow=5
+
+RAZEM: 19 OK / 0 FAIL
