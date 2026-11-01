@@ -1,0 +1,298 @@
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31068
+-        versionName = "0.31.68"
++        versionCode = 31069
++        versionName = "0.31.69"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+--- a/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
++++ b/app/src/main/java/com/sterownikco/pro/core/AppModel.kt
+@@ -246,10 +246,6 @@
+     val seriesOn = mutableStateMapOf<String, Boolean>()
+     var alarmLevels by mutableStateOf(mapOf("lolo" to 25.0, "lo" to 35.0, "hi" to 75.0, "hihi" to 85.0))
+ 
+-    /** Szerokość ramki w trybie szerokim (tablet / poziomo). */
+-    // (Przełącznik telefon/PC usunięty z APK — potrzebny tylko w Piec.html.)
+-    var frameWidth by mutableIntStateOf(412)
+-
+     val isFbFresh: Boolean get() = connected && (System.currentTimeMillis() - lastFetchTs < 20_000)
+ 
+     init {
+--- a/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+@@ -11,12 +11,12 @@
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.BoxWithConstraints
+ import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
+ import androidx.compose.foundation.layout.fillMaxHeight
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.padding
+-import androidx.compose.foundation.layout.width
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
+@@ -34,7 +34,9 @@
+ import com.sterownikco.pro.core.AlarmMuteSync
+ import com.sterownikco.pro.core.AlarmNotify
+ import com.sterownikco.pro.core.AppModel
++import com.sterownikco.pro.core.ScreenLayout
+ import com.sterownikco.pro.ui.components.NavBar
++import com.sterownikco.pro.ui.components.NavRail
+ import com.sterownikco.pro.ui.components.Toast
+ import com.sterownikco.pro.ui.components.TopBar
+ import com.sterownikco.pro.ui.screens.AuthModal
+@@ -57,31 +59,28 @@
+ fun SterownikApp(m: AppModel) {
+     SterownikTheme {
+         CompositionLocalProvider(LocalModel provides m) {
++            // Rozmiar okna (dp) decyduje o układzie — nigdy orientacja urządzenia.
++            // 0.31.69: bez sztywnej ramki 412 dp; w niskim i szerokim oknie (telefon
++            // w poziomie) nawigacja idzie na bok, żeby treść miała pełną wysokość.
+             BoxWithConstraints(
+-                modifier = Modifier.fillMaxSize().background(Pal.Stage)
++                modifier = Modifier.fillMaxSize().background(Pal.Bg)
+             ) {
+-                val wide = maxWidth > 560.dp
+-                Column(
+-                    Modifier
+-                        .then(if (wide) Modifier.width(m.frameWidth.dp).fillMaxHeight(0.98f) else Modifier.fillMaxSize())
+-                        .background(Pal.Bg)
+-                        .then(
+-                            if (wide) Modifier.border(
+-                                1.dp, Pal.BorderStrong, RoundedCornerShape(22.dp)
+-                            ) else Modifier
+-                        )
+-                ) {
+-                    TopBar(m)
+-                    Box(Modifier.weight(1f).fillMaxWidth()) {
+-                        when (m.page) {
+-                            0 -> Dashboard(m)
+-                            1 -> ChartsPage(m)
+-                            2 -> WeatherPage(m)
+-                            3 -> SettingsPage(m)
+-                            else -> MorePage(m)
++                val rail = ScreenLayout.useNavRail(maxWidth.value.toInt(), maxHeight.value.toInt())
++                Row(Modifier.fillMaxSize()) {
++                    if (rail) NavRail(page = m.page) { m.navigate(it) }
++                    Column(Modifier.weight(1f).fillMaxHeight()) {
++                        TopBar(m)
++                        Box(Modifier.weight(1f).fillMaxWidth()) {
++                            when (m.page) {
++                                0 -> Dashboard(m)
++                                1 -> ChartsPage(m)
++                                2 -> WeatherPage(m)
++                                3 -> SettingsPage(m)
++                                else -> MorePage(m)
++                            }
+                         }
++                        if (!rail) NavBar(page = m.page) { m.navigate(it) }
+                     }
+-                    NavBar(page = m.page) { m.navigate(it) }
+                 }
+ 
+                 // `#sheet` + `#scrim`
+--- a/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+@@ -353,6 +353,46 @@
+     }
+ }
+ 
++/**
++ * `.nav` w wariancie pionowym (0.31.69) — te same 5 zakładek co w [NavBar], ale
++ * ustawione w kolumnie po lewej stronie. Włączane przez [com.sterownikco.pro.core.ScreenLayout.useNavRail]
++ * wtedy, gdy okno jest niskie i szerokie (telefon w poziomie): dolny pasek zabrałby
++ * wtedy 74 dp z ~330 dp wysokości i wykres (220 dp) nie zmieściłby się na ekranie.
++ *
++ * Pozycje mają `weight(1f)`, więc przy bardzo niskim oknie równo się kurczą
++ * zamiast wychodzić poza ekran.
++ */
++@Composable
++fun NavRail(page: Int, onNav: (Int) -> Unit) {
++    val items = listOf("dashboard" to "Dashboard", "chart" to "Wykresy", "weather" to "Pogoda", "settings" to "Ustawienia", "more" to "Więcej")
++    Column(
++        modifier = Modifier.width(Dimens.railW).fillMaxHeight()
++            .background(Brush.linearGradient(listOf(Pal.Nav, Pal.Nav2)))
++            .border(1.dp, Pal.NavBorder, RoundedCornerShape(0.dp))
++            .padding(start = 8.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
++        horizontalAlignment = Alignment.CenterHorizontally,
++        verticalArrangement = Arrangement.spacedBy(6.dp)
++    ) {
++        items.forEachIndexed { i, (ico, label) ->
++            val on = i == page
++            Column(
++                modifier = Modifier.weight(1f).fillMaxWidth()
++                    .background(if (on) Pal.rgba(0, 212, 245, .1f) else Color.Transparent, RoundedCornerShape(16.dp))
++                    .border(1.dp, if (on) Pal.rgba(0, 212, 245, .25f) else Color.Transparent, RoundedCornerShape(16.dp))
++                    .clickable { onNav(i) },
++                horizontalAlignment = Alignment.CenterHorizontally,
++                verticalArrangement = Arrangement.Center
++            ) {
++                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
++                    AppIcon(ico, size = 22.dp, tint = if (on) Pal.Cyan else Pal.TextDim2)
++                }
++                Spacer(Modifier.height(2.dp))
++                Text(label, style = Txt.navLabel, color = if (on) Pal.Cyan else Pal.TextDim2, maxLines = 1)
++            }
++        }
++    }
++}
++
+ /** `.sheet` — standardowo arkusz dolny 75%; wybrane okna mogą zajmować cały ekran. */
+ @Composable
+ fun Sheet(
+--- a/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt
+@@ -24,6 +24,7 @@
+     val topBarH = 62.dp
+     val navH = 74.dp
+     val navBtnH = 56.dp
++    val railW = 80.dp
+     val tileH = 126.dp
+     val quickH = 64.dp
+     val analysisH = 74.dp
+@@ -34,10 +35,6 @@
+     val pagePad = 12.dp
+     val pagePadH = 14.dp
+     val gap = 8.dp
+-
+-    /** Szerokość ramki symulatora telefonu (tryb PC/tablet). */
+-    val frameW = 420.dp
+-    val frameH = 920.dp
+ }
+ 
+ /**
+--- /dev/null
++++ b/app/src/main/java/com/sterownikco/pro/core/ScreenLayout.kt
+@@ -0,0 +1,49 @@
++package com.sterownikco.pro.core
++
++/**
++ * Decyzja o układzie ekranu — WYŁĄCZNIE z rozmiaru okna w dp, nigdy z orientacji
++ * urządzenia ani z „to tablet / to telefon”.
++ *
++ * Dlaczego tak (0.31.69):
++ *  - Okno zmienia rozmiar przy obrocie, w split-screen, po rozłożeniu foldable
++ *    i po swobodnym przeciągnięciu na ChromeOS — więc jedynym poprawnym wejściem
++ *    jest bieżący rozmiar okna (wytyczne „adaptive apps”: nigdy `isTablet`, nigdy
++ *    `Configuration.orientation`).
++ *  - Telefon w poziomie to typowo **Medium/Expanded szerokość × Compact wysokość
++ *    (< 480 dp)**. Dolny pasek zabiera wtedy 74 dp z ~330 dp wysokości i wykres
++ *    (`Dimens.chartH` = 220 dp) nie mieści się na ekranie — dlatego przy takim
++ *    oknie nawigacja przenosi się na bok (80 dp), co daje ~+23 % powierzchni treści.
++ *
++ * Do 0.31.68 obowiązywała reguła `maxWidth > 560.dp` włączająca sztywną ramkę
++ * 412 dp „symulatora telefonu” (przeniesioną z trybu PC w Piec.html). Na telefonie
++ * w poziomie oznaczała one 45–56 % okna wypełnionego tłem sceny i ucięte zakładki.
++ */
++object ScreenLayout {
++
++    /** Górna granica klasy „Compact height” wg wytycznych Androida (telefon w poziomie). */
++    const val COMPACT_HEIGHT_MAX_DP = 480
++
++    /** Dolna granica klasy „Medium width” — poniżej niej okno jest za wąskie na szynę. */
++    const val MEDIUM_WIDTH_MIN_DP = 600
++
++    /**
++     * Czy narysować nawigację jako pionową szynę z boku zamiast dolnego paska.
++     *
++     * Szyna tylko wtedy, gdy okno jest **niskie i jednocześnie dostatecznie szerokie**:
++     *  - wysokość < [COMPACT_HEIGHT_MAX_DP] — brak pionowego miejsca na dolny pasek,
++     *  - szerokość >= [MEDIUM_WIDTH_MIN_DP] — jest z czego odjąć 80 dp.
++     *
++     * Wąskie i niskie okno (np. tablet w postawie „tabletop”, 500×400 dp) zostaje
++     * przy dolnym pasku — szyna zabrałaby mu zbyt dużą część szerokości.
++     */
++    fun useNavRail(windowWidthDp: Int, windowHeightDp: Int): Boolean =
++        windowHeightDp < COMPACT_HEIGHT_MAX_DP && windowWidthDp >= MEDIUM_WIDTH_MIN_DP
++
++    /** Ile pionu zostaje na treść przy danej wysokości okna — do symulacji i testów. */
++    fun contentHeightDp(
++        windowHeightDp: Int,
++        topBarDp: Int,
++        navBarDp: Int,
++        rail: Boolean,
++    ): Int = windowHeightDp - topBarDp - (if (rail) 0 else navBarDp)
++}
+--- /dev/null
++++ b/app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt
+@@ -0,0 +1,71 @@
++package com.sterownikco.pro.core
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/**
++ * Brama na błąd z 0.31.68: aplikacja „nie rozciągała się” po obrocie telefonu,
++ * bo sztywna ramka 412 dp włączała się od samej szerokości (`maxWidth > 560.dp`).
++ *
++ * Wymiary w dp wzięte z realnych okien (px / density):
++ *  - telefon użytkownika: 735×331 dp w poziomie (ze zrzutu: ramka 412 dp = 1210 px,
++ *    czyli 2,94 px/dp; ekran 2158 px ≈ 735 dp),
++ *  - Pixel 7: 915×412 dp w poziomie,
++ *  - tablet 10": 1280×800 dp,
++ *  - split-screen: 851×400 dp.
++ */
++class ScreenLayoutTest {
++
++    @Test
++    fun portraitPhoneKeepsBottomBar() {
++        // 331×735 dp — najczęstszy przypadek, musi zostać bez zmian.
++        assertFalse(ScreenLayout.useNavRail(windowWidthDp = 331, windowHeightDp = 735))
++    }
++
++    @Test
++    fun landscapePhoneSwitchesToRail() {
++        assertTrue(ScreenLayout.useNavRail(windowWidthDp = 735, windowHeightDp = 331))
++        assertTrue(ScreenLayout.useNavRail(windowWidthDp = 915, windowHeightDp = 412))
++        assertTrue(ScreenLayout.useNavRail(windowWidthDp = 851, windowHeightDp = 400))
++    }
++
++    @Test
++    fun tallLandscapeTabletKeepsBottomBar() {
++        // 1280×800 dp ma dużo pionu (800 dp), więc dolny pasek niczego nie zabiera:
++        // 800 - 62 - 74 = 664 dp treści, wykres 220 dp mieści się z zapasem.
++        // Szyna jest odpowiedzią na BRAK PIONU, a nie na samą szerokość — zmiana
++        // nawigacji na szerokich tabletach to osobna decyzja (krok 3), nie ta poprawka.
++        assertFalse(ScreenLayout.useNavRail(windowWidthDp = 1280, windowHeightDp = 800))
++        assertTrue(
++            ScreenLayout.contentHeightDp(800, topBarDp = 62, navBarDp = 74, rail = false) >= 220
++        )
++    }
++
++    @Test
++    fun narrowAndShortWindowKeepsBottomBar() {
++        // Tablet w postawie „tabletop” / małe okno: szyna zabrałaby zbyt dużo szerokości.
++        assertFalse(ScreenLayout.useNavRail(windowWidthDp = 500, windowHeightDp = 400))
++        assertFalse(ScreenLayout.useNavRail(windowWidthDp = 599, windowHeightDp = 400))
++    }
++
++    @Test
++    fun breakpointIsInclusiveOnWidthAndExclusiveOnHeight() {
++        assertTrue(ScreenLayout.useNavRail(windowWidthDp = 600, windowHeightDp = 479))
++        assertFalse(ScreenLayout.useNavRail(windowWidthDp = 600, windowHeightDp = 480))
++    }
++
++    @Test
++    fun railGivesBackEnoughHeightForTheChart() {
++        // Wykres ma stałą wysokość 220 dp (Dimens.chartH). Przy dolnym pasku
++        // 331 - 62 - 74 = 195 dp — za mało. Przy szynie 331 - 62 = 269 dp.
++        val bottomBar = ScreenLayout.contentHeightDp(331, topBarDp = 62, navBarDp = 74, rail = false)
++        val rail = ScreenLayout.contentHeightDp(331, topBarDp = 62, navBarDp = 74, rail = true)
++
++        assertEquals(195, bottomBar)
++        assertEquals(269, rail)
++        assertTrue("z szyną wykres 220 dp musi się zmieścić", rail >= 220)
++        assertTrue("z dolnym paskiem się nie mieści — i to jest powód szyny", bottomBar < 220)
++    }
++}
