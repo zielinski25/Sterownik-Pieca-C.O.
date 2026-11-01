@@ -1,0 +1,53 @@
+Budowa APK 0.31.76 — brakujacy local.properties
+===============================================
+
+Objaw (01.11, komputer uzytkownika):
+    Could not determine the dependencies of task ':app:lintVitalReportRelease'.
+    > SDK location not found. Define a valid SDK location with an ANDROID_HOME
+      environment variable or by setting the sdk.dir path in your project's
+      local properties file ...\local.properties
+
+Przyczyna — moj blad w pakowaniu, nie w kodzie aplikacji
+--------------------------------------------------------
+`local.properties` NIE jest czescia paczki i nie moze nia byc: zawiera
+sciezke do Android SDK konkretnego komputera (`sdk.dir=C:\Users\...`).
+Wrzucenie jej do ZIP-a psuloby build u kazdego innego czlowieka.
+Ale w instrukcji budowy zabraklo KROKU, ktory te plik tworzy — i tego
+wlasnie nie zrobilem. Kod jest w porzadku, brakuje jednej linii
+konfiguracji maszyny.
+
+Poprzednie wersje (0.31.75 i starsze) w ZIP-ie tez nie mialy
+`local.properties`, wiec kazdy czysty wypakowany katalog wymaga tej linii.
+Katalog `app03175` dzialal, bo plik powstal tam przy okazji wczesniejszego
+builda.
+
+Naprawa (jedna linia, PowerShell)
+---------------------------------
+    $sdk=@($env:ANDROID_HOME,$env:ANDROID_SDK_ROOT,"$env:LOCALAPPDATA\Android\Sdk") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1; if(-not $sdk){throw "Nie znaleziono SDK - podaj sciezke recznie"}; "SDK: $sdk"; "sdk.dir=$($sdk -replace '\\','/')" | Set-Content -Encoding ASCII local.properties; .\gradlew.bat assembleRelease
+
+Uruchamiac w katalogu projektu (tam, gdzie lezy `gradlew.bat`), czyli
+`%USERPROFILE%\SterownikCO-0.31.76\SterownikCO-0.31.76`.
+
+Dlaczego ukośniki `/` zamiast `\`
+---------------------------------
+Plik `.properties` traktuje `\` jako znak ucieczki, wiec sciezka Windows
+wymagalaby `C\:\\Users\\...`. Gradle przyjmuje tez `/` i wtedy nic nie
+trzeba escapowac — mniej okazji do literowki.
+
+Gdyby build znow padl na lincie
+-------------------------------
+    .\gradlew.bat assembleRelease -x lintVitalRelease
+(`lintVitalRelease` to analiza przed wydaniem; jej brak nie zmienia APK.
+Blad „SDK location not found" i tak trzeba naprawic pierwsza linia,
+bo bez SDK nie ma kompilacji.)
+
+Gdzie jest APK
+--------------
+    app\build\outputs\apk\release\app-release.apk
+Numer wersji: 0.31.76 (versionCode 31076). Firmware bez zmian: 3.57.9.
+
+Co poprawic w nastepnej paczce
+------------------------------
+Skrypt budujacy ZIP ma dokladac `local.properties` z komentarzem
+`# utworz: sdk.dir=...` albo README ma zawierac powyzsza linie jako
+obowiazkowy krok. Do decyzji przy 0.31.77.

@@ -88,6 +88,15 @@ APK: buduje sie z tego projektu (Gradle). W srodowisku, w ktorym powstal
 pakiet, nie ma Javy ani Android SDK, wiec APK powstaje u Ciebie jedna komenda
 z instrukcji — i wtedy ma ten sam numer 0.31.76.
 
+UWAGA — krok, ktorego brakowalo w pierwszej instrukcji (moj blad, 01.11):
+`local.properties` ze sciezka `sdk.dir` NIE jest w paczce (jest zwiazany
+z konkretnym komputerem) i trzeba go utworzyc przed buildem:
+
+    $sdk=@($env:ANDROID_HOME,$env:ANDROID_SDK_ROOT,"$env:LOCALAPPDATA\Android\Sdk") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1; if(-not $sdk){throw "Nie znaleziono SDK"}; "sdk.dir=$($sdk -replace '\\','/')" | Set-Content -Encoding ASCII local.properties; .\gradlew.bat assembleRelease
+
+Bez tego Gradle konczy sie bledem „SDK location not found" przy zadaniu
+`:app:lintVitalReportRelease`. Szczegoly: `BUDOWA-APK-local.properties.txt`.
+
 Co sprawdzic na telefonie
 -------------------------
 1. W poziomie: same ikony, brak podpisow, pasek wezszy niz byl.
