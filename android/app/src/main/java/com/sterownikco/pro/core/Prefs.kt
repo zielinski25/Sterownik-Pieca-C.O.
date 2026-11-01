@@ -313,7 +313,7 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         // poświadczenia wbudowane w firmware (main_centrala.cpp) — jak w Piec.html
         const val DEFAULT_FB_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU"
         const val DEFAULT_FB_EMAIL = "piec_co_boot@akwarium.local"
-        const val DEFAULT_CMD_TOKEN = ""
+        const val DEFAULT_CMD_TOKEN = "sterownikco-cmd-2026"
 
         const val K_API_KEY = "piec_fb_api_key"
         const val K_EMAIL = "piec_fb_email"
@@ -327,6 +327,8 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         const val K_TG_TOKEN = "piec_tg_token"
         const val K_TG_CHAT = "piec_tg_chat_id"
         const val K_CHART_PREFS = "piec_chart_prefs_v2"
+        /** [0.31.62] Ostatnia zakładka — po powrocie do aplikacji nie wracamy na pulpit. */
+        const val K_LAST_PAGE = "piec_last_page"
         const val K_LAT = "piec_weather_lat"
         const val K_LON = "piec_weather_lon"
         const val K_SOLAR_ARCHIVE = "solar_archive_data" // legacy/unverified; never loaded as real telemetry

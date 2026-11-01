@@ -37,6 +37,9 @@ class PiecState {
     var alarm_dym_wyciszenie_ms = 0L
     var alarm_ogrz_wyciszony = false
     var alarm_ogrz_wyciszenie_ms = 0L
+    var alarm_sound_dym = ""
+    var alarm_sound_ogrz = ""
+    var alarm_sound_both = ""
 
     // ── urządzenia ──────────────────────────────────────────────────────────
     var pompa = false
@@ -51,6 +54,15 @@ class PiecState {
     var trybSerwa = 0
     var klapa = 0
     var syberka = 0
+    // [0.31.22] Bufor offline — pola z /piec/status (firmware v3.54.0+).
+    // spoolRt = 1 wlaczony / 0 wylaczony; reszta to liczniki od startu centrali.
+    var spoolRt = 0
+    // [0.31.64] Zapis historii na flash centrali (firmware v3.57.4+).
+    // histFs = 1 zapis wlaczony / 0 wylaczony (ustawienie w NVS centrali).
+    var histFs = 0
+    var spoolPages = 0
+    var spoolSpill = 0
+    var spoolReplay = 0
     var wybor = 0
     var pompa_override_min = 0
     var mieszadlo_override_min = 0
@@ -70,6 +82,20 @@ class PiecState {
     var wifi_rssi = 0
     var wifi_quality = 0
     var ping_ms = 0
+
+    // ── [v0.31.33 CLOUD-MARK] stan wysyłki telemetrii (pola tel_* z /piec/status) ──
+    /** seq ostatniej próbki, którą chmura POTWIERDZIŁA (0 = od restartu nic). */
+    var tel_cloud_seq = 0L
+    /** unix tej próbki; 0 = brak. */
+    var tel_cloud_ts = 0L
+    /** ile sekund temu potwierdzono ostatnią próbkę; -1 = brak danych. */
+    var tel_cloud_ago = -1L
+    /** ile próbek czeka w kolejce sterownika. */
+    var tel_ring = 0L
+    /** true = w tej chwili leci (lub czeka na ponowienie) paczka do chmury. */
+    var tel_pending = false
+    /** czy firmware w ogóle przysyła te pola (starsze wersje nie przysyłają). */
+    var tel_known = false
 
     // ── ustawienia ESP: 0 jest wyłącznie wartością wewnętrzną; UI sprawdza hasData ─
     var czasOn = 0
@@ -192,6 +218,7 @@ class PiecState {
         alarm_ogrzewanie = false; alarm_panel = false
         alarm_dym_wyciszony = false; alarm_dym_wyciszenie_ms = 0L
         alarm_ogrz_wyciszony = false; alarm_ogrz_wyciszenie_ms = 0L
+        alarm_sound_dym = ""; alarm_sound_ogrz = ""; alarm_sound_both = ""
         pompa = false; mieszadlo = false; rozpalanie = false
         rozpalanie_potwierdzone = false; rozpalanie_pozostalo_s = 0
         rozpalanie_serwa_aktywne = false; rozpalanie_serwa_dostepne = false
@@ -206,6 +233,8 @@ class PiecState {
         dymCzasStabilizacji = 0; dymProgTemp = 0; dymTrybPracy = 0
         dzien = 0; miesiac = 0; rok = 0; uptime = Double.NaN
         wifi_rssi = 0; wifi_quality = 0; ping_ms = 0
+        tel_cloud_seq = 0; tel_cloud_ts = 0; tel_cloud_ago = -1; tel_ring = 0
+        tel_pending = false; tel_known = false
         ip = ""; firmware = ""; wifi_ssid = ""
 
         fun readNumber(key: String, min: Double, max: Double, integer: Boolean = false): Double? {
@@ -237,6 +266,17 @@ class PiecState {
             val value = if (d.has(key) && !d.isNull(key)) d.opt(key) as? String else null
             if (value.isNullOrBlank()) receivedFields.remove(key)
             else { receivedFields.add(key); assign(value.trim()) }
+        }
+
+        fun soundId(key: String, assign: (String) -> Unit) {
+            val value = if (d.has(key) && !d.isNull(key)) d.opt(key) as? String else null
+            val normalized = value?.trim()?.lowercase()
+            if (normalized.isNullOrBlank() || normalized !in AlarmSoundSync.SOUND_IDS) {
+                receivedFields.remove(key)
+            } else {
+                receivedFields.add(key)
+                assign(normalized)
+            }
         }
 
         fun intField(key: String, min: Int, max: Int, assign: (Int) -> Unit) {
@@ -280,7 +320,21 @@ class PiecState {
         flag("alarm_dym_wyciszony") { alarm_dym_wyciszony = it }
         flag("alarm_ogrz_wyciszony") { alarm_ogrz_wyciszony = it }
         longField("alarm_dym_wyciszenie_ms", -1L, 3_600_000L) { alarm_dym_wyciszenie_ms = it }
+        // [v0.31.33 CLOUD-MARK] „ostatnia próbka w chmurze" — tylko odczyt, bez wpływu
+        // na logikę. `longField` woła przypisanie także przy braku pola, dlatego
+        // najpierw sprawdzamy, czy firmware w ogóle przysyła te pola (starsze nie).
+        if (d.has("tel_cloud_seq") && !d.isNull("tel_cloud_seq")) {
+            tel_known = true
+            longField("tel_cloud_seq", 0L, 4_000_000_000L) { tel_cloud_seq = it }
+            longField("tel_cloud_ts", 0L, 4_000_000_000L) { tel_cloud_ts = it }
+            longField("tel_cloud_ago", -1L, 4_000_000_000L) { tel_cloud_ago = it }
+            longField("tel_ring", 0L, 100_000L) { tel_ring = it }
+            flag("tel_pending") { tel_pending = it }
+        }
         longField("alarm_ogrz_wyciszenie_ms", -1L, 3_600_000L) { alarm_ogrz_wyciszenie_ms = it }
+        soundId("alarm_sound_dym") { alarm_sound_dym = it }
+        soundId("alarm_sound_ogrz") { alarm_sound_ogrz = it }
+        soundId("alarm_sound_both") { alarm_sound_both = it }
         flag("pompa") { pompa = it }
         flag("mieszadlo") { mieszadlo = it }
         flag("rozpalanie") { rozpalanie = it }
@@ -303,6 +357,11 @@ class PiecState {
 
         intField("klapa", 0, 180) { klapa = it }
         intField("syberka", 0, 90) { syberka = it }
+        intField("spool_rt", 0, 1) { spoolRt = it }
+        intField("hist_fs", 0, 1) { histFs = it }
+        intField("spool_pages", 0, 9_999_999) { spoolPages = it }
+        intField("spool_spill", 0, 9_999_999) { spoolSpill = it }
+        intField("spool_replay", 0, 9_999_999) { spoolReplay = it }
         intField("wybor", 1, 3) { wybor = it }
         intField("pompa_override_min", 0, 1440) { pompa_override_min = it }
         intField("mieszadlo_override_min", 0, 1440) { mieszadlo_override_min = it }

@@ -11,12 +11,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +42,9 @@ import com.sterownikco.pro.core.AlarmCenter
 import com.sterownikco.pro.core.AlarmMuteSync
 import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.AppModel
+import com.sterownikco.pro.core.ScreenLayout
 import com.sterownikco.pro.ui.components.NavBar
+import com.sterownikco.pro.ui.components.NavRail
 import com.sterownikco.pro.ui.components.Toast
 import com.sterownikco.pro.ui.components.TopBar
 import com.sterownikco.pro.ui.screens.AuthModal
@@ -57,31 +67,62 @@ import com.sterownikco.pro.ui.theme.SterownikTheme
 fun SterownikApp(m: AppModel) {
     SterownikTheme {
         CompositionLocalProvider(LocalModel provides m) {
+            // Rozmiar okna (dp) decyduje o układzie — nigdy orientacja urządzenia.
+            // 0.31.69: bez sztywnej ramki 412 dp; w niskim i szerokim oknie (telefon
+            // w poziomie) nawigacja idzie na bok, żeby treść miała pełną wysokość.
             BoxWithConstraints(
-                modifier = Modifier.fillMaxSize().background(Pal.Stage)
+                modifier = Modifier.fillMaxSize().background(Pal.Bg)
             ) {
-                val wide = maxWidth > 560.dp
-                Column(
-                    Modifier
-                        .then(if (wide) Modifier.width(m.frameWidth.dp).fillMaxHeight(0.98f) else Modifier.fillMaxSize())
-                        .background(Pal.Bg)
-                        .then(
-                            if (wide) Modifier.border(
-                                1.dp, Pal.BorderStrong, RoundedCornerShape(22.dp)
-                            ) else Modifier
-                        )
-                ) {
-                    TopBar(m)
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
-                        when (m.page) {
-                            0 -> Dashboard(m)
-                            1 -> ChartsPage(m)
-                            2 -> WeatherPage(m)
-                            3 -> SettingsPage(m)
-                            else -> MorePage(m)
+                // [0.31.73] Pas pod paskiem statusu maluja teraz SAME paski: TopBar
+                // i NavRail (tlo przed wcieciem). Osobny Box byl tu zbedny i malowal
+                // drugi gradient na tym samym obszarze.
+                val rail = ScreenLayout.useNavRail(maxWidth.value.toInt(), maxHeight.value.toInt())
+                // [0.31.70/0.31.71] Motyw dopuszcza rysowanie pod wycieciem kamery
+                // (w poziomie system zamalowywal ten pas na czarno). Interfejs musi byc
+                // od niego odsuniety, ale tak, zeby przy krawedzi nie powstal pas tla.
+                // Dlatego w trybie szyny wciecie pochlania SAMA szyna (jej tlo dochodzi
+                // do krawedzi ekranu), a tresc obok nie dostaje juz zadnego paddingu.
+                val cutoutStart = WindowInsets.displayCutout.asPaddingValues()
+                    .calculateStartPadding(LocalLayoutDirection.current)
+                // [0.31.74] Wciecie paska nawigacji liczymy sami — i bierzemy
+                // z niego wylacznie koniec i dol.
+                val navVals = WindowInsets.navigationBars.asPaddingValues()
+                val navEnd = navVals.calculateEndPadding(LocalLayoutDirection.current)
+                val navBottom = navVals.calculateBottomPadding()
+                // [0.31.76] Waska szyna (same ikony, 56 dp) wtedy, gdy okno jest
+                // szersze niz wyzsze — czyli w poziomie. Decyzja NIE z
+                // `Configuration.orientation`, bo:
+                //  1. od 0.31.69 uklad zalezy od ROZMIARU OKNA, nie od obrotu —
+                //     jeden powod decyzji, nie dwa, ktore moga sie rozjechac,
+                //  2. w oknie dzielonym i na skladanym telefonie orientacja bywa
+                //     dokumentowa, a nie okna — `maxWidth/maxHeight` sa prawdziwe,
+                //  3. od Androida 16 (targetSdk 36) system ignoruje
+                //     `screenOrientation`, wiec obrot przestaje byc wyznacznikiem.
+                val compactRail = maxWidth > maxHeight
+                Row(Modifier.fillMaxSize()) {
+                    if (rail) NavRail(page = m.page, startInset = cutoutStart, compact = compactRail) { m.navigate(it) }
+                    Column(
+                        Modifier.weight(1f).fillMaxHeight()
+                            .then(if (rail) Modifier else Modifier.displayCutoutPadding())
+                            // [0.31.74] Tylko KONIEC i DOL paska nawigacji.
+                            // Gotowy `navigationBarsPadding()` bral wszystkie cztery
+                            // strony, a po lewej doliczal wyciecie kamery (39 dp):
+                            // szyna 119 dp + drugie 39 dp pustki obok = 158 dp
+                            // z 813 dp szerokosci ekranu zjadalo 1/5 ekranu.
+                            .padding(end = navEnd, bottom = navBottom)
+                    ) {
+                        TopBar(m)
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            when (m.page) {
+                                0 -> Dashboard(m)
+                                1 -> ChartsPage(m)
+                                2 -> WeatherPage(m)
+                                3 -> SettingsPage(m)
+                                else -> MorePage(m)
+                            }
                         }
+                        if (!rail) NavBar(page = m.page) { m.navigate(it) }
                     }
-                    NavBar(page = m.page) { m.navigate(it) }
                 }
 
                 // `#sheet` + `#scrim`

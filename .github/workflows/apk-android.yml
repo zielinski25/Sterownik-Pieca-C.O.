@@ -1,0 +1,55 @@
+# Buduje APK z katalogu `android/` na czystym runnerze Linuksa.
+#
+# Po co: komputer użytkownika nie ma ustawionego `sdk.dir` (a jego lokalizacja
+# zależy od maszyny), więc każdy czysty build kończył się „SDK location not
+# found". Tutaj SDK instaluje `android-actions/setup-android`, a APK wychodzi
+# jako artefakt do pobrania.
+#
+# UWAGA: APK jest podpisany losowym kluczem debug runnera, więc nie zainstaluje
+# się jako aktualizacja nad APK zbudowanym lokalnie — trzeba najpierw odinstalować
+# starą aplikację (dane z Firebase i tak są w chmurze, ustawienia lokalne znikną).
+name: APK (Android)
+
+on:
+  push:
+    paths:
+      - "android/**"
+      - ".github/workflows/apk-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Wersja w projekcie
+        working-directory: android
+        run: grep -n 'versionCode\|versionName' app/build.gradle.kts
+
+      - name: assembleDebug
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: APK jako artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: SterownikCO-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

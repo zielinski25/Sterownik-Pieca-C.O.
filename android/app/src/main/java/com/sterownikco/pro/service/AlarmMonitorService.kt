@@ -24,6 +24,7 @@ import com.sterownikco.pro.core.AlarmMonitorPhase
 import com.sterownikco.pro.core.AlarmMonitorStartGate
 import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.AlarmSnapshotCoordinator
+import com.sterownikco.pro.core.AlarmSoundSync
 import com.sterownikco.pro.core.Prefs
 import com.sterownikco.pro.core.Rtdb
 import com.sterownikco.pro.core.controllerAlarmMuteStatus
@@ -316,6 +317,7 @@ class AlarmMonitorService : Service() {
                 val overheat = alarmFlag(d, "alarm_ogrzewanie")
                 val complete = smoke != null && overheat != null
                 val prefs = Prefs(applicationContext)
+                AlarmSoundSync.applyStatus(prefs, d, SystemClock.elapsedRealtime())
                 val activeSignature = AlarmMuteCommands.signature(
                     smoke, overheat, prefs.get(AlarmCenter.K_LAST_SIG).orEmpty()
                 )

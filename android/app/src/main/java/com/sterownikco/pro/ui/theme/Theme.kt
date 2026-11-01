@@ -24,6 +24,13 @@ object Dimens {
     val topBarH = 62.dp
     val navH = 74.dp
     val navBtnH = 56.dp
+    // [0.31.74] 80 dp bylo szersze niz trzeba: najdluzsza etykieta
+    // („Ustawienia" przy 9 sp) ma ~44 dp, a wewnatrz szyny zostaje
+    // railW - 12 dp. 68 dp daje 56 dp na etykiety i 12 dp mniej szerokosci.
+    val railW = 68.dp
+    // [0.31.76] Telefon w poziomie: szyna to same ikony, 56 dp.
+    // 56 = 48 dp pola dotyku + 2 x 4 dp marginesu.
+    val railWCompact = 56.dp
     val tileH = 126.dp
     val quickH = 64.dp
     val analysisH = 74.dp
@@ -34,10 +41,6 @@ object Dimens {
     val pagePad = 12.dp
     val pagePadH = 14.dp
     val gap = 8.dp
-
-    /** Szerokość ramki symulatora telefonu (tryb PC/tablet). */
-    val frameW = 420.dp
-    val frameH = 920.dp
 }
 
 /**

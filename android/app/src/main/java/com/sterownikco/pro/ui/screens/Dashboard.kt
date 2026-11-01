@@ -46,6 +46,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
+import com.sterownikco.pro.core.ServoPositionAxis
 import com.sterownikco.pro.core.buildTiles
 import com.sterownikco.pro.ui.components.Banner
 import com.sterownikco.pro.ui.components.Hero
@@ -70,11 +71,24 @@ import com.sterownikco.pro.ui.components.Tile
 fun Dashboard(m: AppModel) {
     val rev = m.S.rev.intValue // subskrypcja zmian stanu
     val S = m.S
-    val servoMode = m.servoModePresentation().mode
+    val flapPreview = m.servoPositionPreview(ServoPositionAxis.KLAPA)
+    val syberkaPreview = m.servoPositionPreview(ServoPositionAxis.SYBEREK)
+    val pendingServo = when {
+        flapPreview == null -> syberkaPreview?.let { "syberek" to it }
+        syberkaPreview == null -> "klapa" to flapPreview
+        flapPreview.acceptedAtElapsedMs >= syberkaPreview.acceptedAtElapsedMs -> "klapa" to flapPreview
+        else -> "syberek" to syberkaPreview
+    }
+    val servoMode = if (pendingServo != null) 2 else m.servoModePresentation().mode
     val weatherCode = m.weather?.current?.code ?: -1
     val isDay = m.weather?.current?.isDay ?: (!S.night)
-    val art = remember(rev, servoMode, weatherCode, isDay) { S.art(weatherCode, isDay, servoMode) }
-    val tiles = remember(rev, servoMode, weatherCode, isDay, m.weather, m.weatherBusy) { buildTiles(m, weatherCode, isDay) }
+    val art = remember(rev, servoMode, weatherCode, isDay, flapPreview) {
+        val reported = S.art(weatherCode, isDay, servoMode)
+        flapPreview?.let { reported.copy(klapa = it.targetDegrees.toFloat(), klapaKnown = true) } ?: reported
+    }
+    val tiles = remember(rev, servoMode, weatherCode, isDay, m.weather, m.weatherBusy, flapPreview, syberkaPreview) {
+        buildTiles(m, weatherCode, isDay)
+    }
     val orderIndex = m.dashboardWidgetOrder.withIndex().associate { it.value to it.index }
     val selectedTiles = tiles.filter { it.id in m.dashboardWidgets }
         .sortedBy { orderIndex[it.id] ?: Int.MAX_VALUE }
@@ -157,17 +171,32 @@ fun Dashboard(m: AppModel) {
             )
             val servoKnown = servoMode != null
             val flapKnown = S.hasData("klapa") && S.klapa in 0..180
+            val syberkaKnown = S.hasData("syberka") && S.syberka in 0..90
+            // [0.31.68] „AUTO 100%” było mylące — takiej wielkości nie ma. Serwo ma
+            // TRYB (AUTO / RĘCZNY / BEZPIECZNY) i DWIE niezależne pozycje: klapę
+            // (0..180°) i syberek (0..90°). Duża wartość pokazuje więc sam tryb,
+            // a pod nią stoją obie pozycje — wiadomo, czego dotyczy każdy procent.
+            // Kąt z centrali → procent, bo tylko procent jest porównywalny między
+            // dwoma serwami o różnym zakresie.
             val flapLabel = if (flapKnown) "${Math.round(S.klapa * 100.0 / 180.0)}%" else "—"
+            val syberkaLabel = if (syberkaKnown) "${Math.round(S.syberka * 100.0 / 90.0)}%" else "—"
+            val servoStan = when (servoMode) { 1 -> "AUTO"; 2 -> "RĘCZNY"; 3 -> "BEZPIECZNY"; else -> "" }
             QCard(
                 title = "SERWO", icon = "servo",
-                value = if (!servoKnown) "—" else when (servoMode) {
-                    1 -> "AUTO ($flapLabel)"
-                    2 -> "RĘCZNY ($flapLabel)"
-                    3 -> "BEZPIECZNY"
-                    else -> "—"
+                value = when {
+                    pendingServo != null -> "CEL ${pendingServo.second.requestedPercent}%"
+                    !servoKnown -> "—"
+                    else -> servoStan
                 },
-                sub = if (flapKnown) "klapa ${S.klapa}°" else "brak prawidłowego odczytu pozycji",
-                state = if (!servoKnown) "warn" else when (servoMode) { 1 -> "ok"; 2 -> "warn"; 3 -> "err"; else -> "" },
+                sub = when {
+                    pendingServo != null -> "${pendingServo.first} ${pendingServo.second.targetDegrees}° · czekam"
+                    !servoKnown -> "oczekiwanie na stan"
+                    else -> "klapa $flapLabel · syberek $syberkaLabel"
+                },
+                subCompact = true,
+                // AUTO = normalna praca, więc ramka neutralna — tak jak POMPA i MIESZADŁO.
+                // Kolor dopiero gdy coś odbiega: RĘCZNY = żółty, BEZPIECZNY = czerwony.
+                state = if (!servoKnown || pendingServo != null) "warn" else when (servoMode) { 2 -> "warn"; 3 -> "err"; else -> "" },
                 onClick = { m.openSheet("serwo") }
             )
             val mixerKnown = S.hasData("mieszadlo")
