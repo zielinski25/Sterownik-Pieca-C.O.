@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Brama układu ekranu (0.31.72) — sprawdzenia, które da się wykonać bez Gradle/JDK.
+Brama układu ekranu (0.31.73) — sprawdzenia, które da się wykonać bez Gradle/JDK.
 
 Pilnuje błędu z 0.31.68: po obrocie telefonu aplikacja nie rozciągała się na całe
 okno, bo sztywna ramka 412 dp włączała się od samej szerokości (maxWidth > 560.dp).
@@ -23,8 +23,8 @@ CORE = APP / "core/ScreenLayout.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.72"
-KOD_WERSJI = "31072"
+WERSJA = "0.31.73"
+KOD_WERSJI = "31073"
 
 wyniki = []
 
@@ -238,15 +238,37 @@ def main():
         "navigationBarsPadding" in kod and "navigationBarsPadding" in chrome,
         "przyciski nie moga byc pod paskiem systemowym",
     )
+
+    # ---- 0.31.73: kolejnosc modyfikatorow (blad 0.31.72) ----
+    # W Compose .statusBarsPadding().background() maluje tlo DOPIERO pod paskiem
+    # statusu. Tlo musi byc wczesniej w lancuchu, inaczej gorny pas ma kolor tla
+    # okna i gradient zaczyna sie od nowa (widoczna linia pod paskiem).
+    chrome_kod = bez_komentarzy(chrome)
+    i_top = chrome_kod.find("fun TopBar(")
+    i_rail = chrome_kod.find("fun NavRail(")
+    frag_top = chrome_kod[i_top:i_top + 1200] if i_top >= 0 else ""
+    frag_rail = chrome_kod[i_rail:i_rail + 1200] if i_rail >= 0 else ""
     sprawdz(
-        "pas pod paskiem statusu malowany przez nas",
-        "windowInsetsTopHeight(WindowInsets.statusBars)" in kod,
-        "edge-to-edge zdejmuje kolor paska statusu z systemu",
+        "TopBar: tlo PRZED wcieciem paska statusu",
+        frag_top.find(".background(") != -1 and
+        frag_top.find(".background(") < frag_top.find(".statusBarsPadding()"),
+        "odwrotna kolejnosc = tlo nie pokrywa paska statusu",
     )
     sprawdz(
-        "szyna: tlo startuje pod paskiem statusu",
-        ".statusBarsPadding()\n            .background(Brush.linearGradient(listOf(Pal.Nav, Pal.Nav2)))" in chrome,
-        "inaczej gorny pas szyny mialby inny kolor",
+        "NavRail: tlo PRZED wcieciem paska statusu",
+        frag_rail.find(".background(") != -1 and
+        frag_rail.find(".background(") < frag_rail.find(".statusBarsPadding()"),
+        "inaczej gorny rog ma kolor paska gornego",
+    )
+    sprawdz(
+        "brak zbednego pasa pod paskiem statusu w korzeniu",
+        "windowInsetsTopHeight" not in kod,
+        "0.31.73: pasy maluja same TopBar i NavRail",
+    )
+    sprawdz(
+        "brak nieuzywanego importu Brush w SterownikApp",
+        not ("import androidx.compose.ui.graphics.Brush" in kod and "Brush." not in kod),
+        "import bez uzycia",
     )
 
     return raport()
@@ -254,7 +276,7 @@ def main():
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.72 (edge-to-edge: tresc pod paskami, szyna od krawedzi)")
+    print("BRAMA UKŁADU EKRANU — 0.31.73 (edge-to-edge + kolejnosc modyfikatorow)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:

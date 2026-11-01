@@ -1,0 +1,77 @@
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31072
+-        versionName = "0.31.72"
++        versionCode = 31073
++        versionName = "0.31.73"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+--- a/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+@@ -23,8 +23,6 @@
+ import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.navigationBarsPadding
+ import androidx.compose.foundation.layout.padding
+-import androidx.compose.foundation.layout.windowInsetsTopHeight
+-import androidx.compose.ui.graphics.Brush
+ import androidx.compose.ui.platform.LocalLayoutDirection
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.material3.Text
+@@ -74,14 +72,9 @@
+             BoxWithConstraints(
+                 modifier = Modifier.fillMaxSize().background(Pal.Bg)
+             ) {
+-                // [0.31.72] Tresc siega teraz pod pasek statusu (edge-to-edge), wiec
+-                // pas pod nim malujemy sami — inaczej przy szynie bylby tam kolor tla
+-                // zamiast koloru paska gornego.
+-                Box(
+-                    Modifier.fillMaxWidth()
+-                        .windowInsetsTopHeight(WindowInsets.statusBars)
+-                        .background(Brush.linearGradient(listOf(Pal.Top, Pal.Top2)))
+-                )
++                // [0.31.73] Pas pod paskiem statusu maluja teraz SAME paski: TopBar
++                // i NavRail (tlo przed wcieciem). Osobny Box byl tu zbedny i malowal
++                // drugi gradient na tym samym obszarze.
+                 val rail = ScreenLayout.useNavRail(maxWidth.value.toInt(), maxHeight.value.toInt())
+                 // [0.31.70/0.31.71] Motyw dopuszcza rysowanie pod wycieciem kamery
+                 // (w poziomie system zamalowywal ten pas na czarno). Interfejs musi byc
+--- a/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
++++ b/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+@@ -72,12 +72,14 @@
+ fun TopBar(m: AppModel) {
+     Row(
+         modifier = Modifier.fillMaxWidth()
+-            // [0.31.72] Kolejnosc ma znaczenie: wciecie paska statusu DODAJE sie do
+-            // wysokosci paska (62 dp), a nie zjada go. W trybie edge-to-edge tresc
+-            // okna zaczyna sie od y=0, wiec bez tego zabralibyśmy paskowi 37 dp.
++            // [0.31.73] KOLEJNOSC MODYFIKATOROW (bląd 0.31.72): w Compose padding
++            // dziala "na zewnatrz", wiec .statusBarsPadding().background() maluje
++            // tlo DOPIERO pod paskiem statusu — nad nim zostawaloby tło okna i
++            // gradient zaczynalby sie od nowa (widoczna linia pod paskiem).
++            // Dlatego: najpierw tlo (do samej gornej krawedzi), potem wciecie.
++            .background(Brush.linearGradient(listOf(Pal.Top, Pal.Top2)))
+             .statusBarsPadding()
+             .height(Dimens.topBarH)
+-            .background(Brush.linearGradient(listOf(Pal.Top, Pal.Top2)))
+             .border(1.dp, Pal.TopBorder, RoundedCornerShape(0.dp))
+             .padding(start = 14.dp, end = 10.dp),
+         verticalAlignment = Alignment.CenterVertically
+@@ -382,10 +384,10 @@
+     val items = listOf("dashboard" to "Dashboard", "chart" to "Wykresy", "weather" to "Pogoda", "settings" to "Ustawienia", "more" to "Więcej")
+     Column(
+         modifier = Modifier.width(Dimens.railW + startInset).fillMaxHeight()
+-            // [0.31.72] Tlo szyny startuje POD paskiem statusu (edge-to-edge),
+-            // a nie pod nim schowane — inaczej gorny pas mialby inny kolor.
+-            .statusBarsPadding()
++            // [0.31.73] Tlo PRZED wcieciem paska statusu — tak samo jak w TopBarze.
++            // Inaczej gorny rog ekranu mial kolor paska gornego zamiast koloru szyny.
+             .background(Brush.linearGradient(listOf(Pal.Nav, Pal.Nav2)))
++            .statusBarsPadding()
+             .border(1.dp, Pal.NavBorder, RoundedCornerShape(0.dp))
+             .padding(start = 8.dp + startInset, end = 8.dp, top = 10.dp, bottom = 10.dp),
+         horizontalAlignment = Alignment.CenterHorizontally,
