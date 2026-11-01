@@ -24,8 +24,8 @@ TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.75"
-KOD_WERSJI = "31075"
+WERSJA = "0.31.76"
+KOD_WERSJI = "31076"
 
 wyniki = []
 
@@ -201,12 +201,12 @@ def main():
     )
     sprawdz(
         "NavRail powieksza szerokosc o wciecie (tlo do krawedzi)",
-        "Dimens.railW + startInset" in chrome,
+        "else Dimens.railW) + startInset" in chrome,
         "inaczej przy krawedzi zostaje pas tla",
     )
     sprawdz(
         "NavRail odsuwa zawartosc o wciecie (ikony poza obiektywem)",
-        "6.dp + startInset" in chrome,
+        "start = startInset +" in chrome,
         "ikony nie moga wejsc pod kamere",
     )
     sprawdz(
@@ -303,7 +303,7 @@ def main():
     )
     sprawdz(
         "NavRail: wewnatrz zostaje >= 50 dp na etykiety",
-        ("val railW = 68.dp" in tema) and ("6.dp + startInset" in chrome) and ("end = 6.dp" in chrome),
+        ("val railW = 68.dp" in tema) and ("start = startInset +" in chrome) and ("end = if (compact) 4.dp else 6.dp" in chrome),
         "najdluzsza etykieta (Ustawienia) ma ~44 dp",
     )
 
@@ -326,12 +326,82 @@ def main():
         "calculateBottomPadding() wolamy bez importu",
     )
 
+    # ---- 0.31.76: waska szyna (56 dp, same ikony) + dostepnosc ----
+    # W poziomie pasek pokazuje tylko ikony, ale nazwa nie ginie: dymek po
+    # przytrzymaniu palca i contentDescription dla TalkBacka. Pole dotyku
+    # musi zostac 48 x 48 dp - szyna zweza sie, palec sie nie zweza.
+    sprawdz(
+        "Dimens.railWCompact = 56 dp",
+        "val railWCompact = 56.dp" in tema,
+        "56 dp = 48 dp pola dotyku + 2 x 4 dp marginesu",
+    )
+    sprawdz(
+        "NavRail ma przelacznik compact",
+        "fun NavRail(page: Int, startInset: Dp = 0.dp, compact: Boolean = false" in chrome,
+        "tryb poziomy: same ikony",
+    )
+    sprawdz(
+        "szerokosc szyny zalezy od trybu (compact/zwykly)",
+        "Dimens.railWCompact else Dimens.railW" in chrome,
+        "inaczej szyna zostaje 68 dp",
+    )
+    sprawdz(
+        "kompaktowa szyna: 48 dp pola dotyku",
+        ".size(48.dp)" in chrome,
+        "wymog dostepnosci - nie zmniejszac",
+    )
+    sprawdz(
+        "kompaktowa szyna: ikona 24 dp",
+        "AppIcon(icon, size = 24.dp" in chrome,
+        "22-24 dp wedlug ustalen",
+    )
+    sprawdz(
+        "kompaktowa szyna: odstep 4 dp i wysrodkowanie w pionie",
+        "Arrangement.spacedBy(4.dp, Alignment.CenterVertically)" in chrome,
+        "pozycje 48 dp + 4 dp odstepu",
+    )
+    sprawdz(
+        "przytrzymanie palca pokazuje nazwe (combinedClickable + onLongClick)",
+        "combinedClickable(" in chrome and "onLongClick" in chrome,
+        "bez tego Wiecej i Ustawienia sa nierozroznialne",
+    )
+    sprawdz(
+        "dymek z nazwa (TooltipBox + rememberTooltipState)",
+        "TooltipBox(" in chrome and "rememberTooltipState()" in chrome,
+        "Tooltip z M3",
+    )
+    sprawdz(
+        "TalkBack czyta nazwe (contentDescription)",
+        "contentDescription = label" in chrome,
+        "ikona bez podpisu musi miec opis",
+    )
+    sprawdz(
+        "tryb kompaktowy z rozmiaru okna, nie z orientacji",
+        "val compactRail = maxWidth > maxHeight" in kod and "compact = compactRail" in kod,
+        "jeden powod decyzji o ukladzie (jak od 0.31.69)",
+    )
+    sprawdz(
+        "korzen nie ma horizontalScroll ani requiredWidth",
+        "horizontalScroll" not in kod and "requiredWidth" not in kod,
+        "tresc ma sie zawijac do szerokosci okna, nie wystawac",
+    )
+    sprawdz(
+        "tresc pulptu na weight(1f), bez sztywnej szerokosci",
+        "Modifier.weight(1f).fillMaxHeight()" in kod and "width(342" not in kod,
+        "pulpit dostaje cala uwolniona szerokosc",
+    )
+    sprawdz(
+        "podpisy tylko w trybie niekompaktowym",
+        "if (compact) {\n                RailIcon(" in chrome and "Text(label, style = Txt.navLabel" in chrome,
+        "w poziomie podpisy znikaja, w pionie zostaja",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.75 (szyna 68 dp, insety per strona, kontrola importów Compose)")
+    print("BRAMA UKŁADU EKRANU — 0.31.76 (szyna 56 dp same ikony + dymki + kontrola importów Compose)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:

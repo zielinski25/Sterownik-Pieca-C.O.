@@ -1,0 +1,389 @@
+diff -ru /tmp/v75/README-WGRANIE.txt /tmp/v76/README-WGRANIE.txt
+--- /tmp/v75/README-WGRANIE.txt	2026-11-01 11:58:08.717968322 +0000
++++ /tmp/v76/README-WGRANIE.txt	2026-11-01 12:18:39.375516537 +0000
+@@ -1,81 +1,112 @@
+-Sterownik CO - aplikacja Android 0.31.75 (pelny projekt)
++Sterownik CO - aplikacja Android 0.31.76 (pelny projekt)
+ =========================================================
+ 
+-Co nowego w 0.31.75
++Co nowego w 0.31.76
+ -------------------
+-SZERSZE MIEJSCE NA PULPIT: 158 dp po lewej -> 107 dp.
++W POZIOMIE PASKI NAWIGACJI TO SAME IKONY: pas ikon 68 dp -> 56 dp.
++Pulpit dostaje 12 dp (19 px) wiecej szerokosci.
+ 
+-POPRAWKA BLEDU KOMPILACJI Z 0.31.74 (juz naprawiona)
+-----------------------------------------------------
+-0.31.74 nie skompilowala sie:
+-    SterownikApp.kt:24:43 Unresolved reference 'calculateBottomPadding'.
+-
+-Przyczyna: `calculateBottomPadding()` jest METODA interfejsu PaddingValues,
+-a nie funkcja-rozszerzeniem. Rozszerzeniami w foundation.layout sa tylko
+-`calculateStartPadding` i `calculateEndPadding` - i tylko te wolno importowac.
+-Import `androidx.compose.foundation.layout.calculateBottomPadding` nie istnieje,
+-choc samo wywolanie `navVals.calculateBottomPadding()` jest poprawne (metoda
+-interfejsu nie wymaga importu).
+-
+-W 0.31.75: usuniety ten jeden import. Cala reszta ukladu bez zmian
+-wobec 0.31.74.
+-
+-Dlaczego pas po lewej byl taki szeroki (pomiar Twojego zrzutu 12:45):
+-
+-    x = 0 .. 186 px   szyna (119 dp = 80 dp ikon + 39 dp wyciecia kamery)
+-    x = 187 .. 245 px PUSTKA - 39 dp tla strony
+-    x = 246 px        dopiero tu zaczynal sie pasek gorny i karty
+-
+-Te 39 dp pustki to wciecie kamery policzone DRUGI RAZ. Szyna juz je
+-pochlania (dlatego ma 119 dp zamiast 80 dp), a dodatkowo system dokladal
+-je do tresci obok. Powod: `Modifier.navigationBarsPadding()` bierze
+-wszystkie cztery strony, a na tym telefonie pas nawigacji jest raportowany
+-razem z obszarem wyciecia - czyli z lewej strony dokladal 39 dp.
+-
+-Co zmienione
+-------------
+-1. Wciecie paska nawigacji liczymy sami i bierzemy z niego WYLACZNIE
+-   koniec i dol (`calculateEndPadding` / `calculateBottomPadding`) zamiast
+-   gotowego `navigationBarsPadding()`. Lewa strona nalezy do szyny.
+-2. Szyna 80 dp -> 68 dp (padding w niej 8 dp -> 6 dp, wiec na etykiety
+-   zostaje 56 dp, a najdluzsza - "Ustawienia" przy 9 sp - ma ~44 dp).
+-   Razem z wycieciem kamery: 107 dp zamiast 119 dp.
+-3. Obramowanie szyny i paska gornego rysowane PRZED wcieciem paska
+-   statusu. Wczesniej bylo po wcieciu, wiec pod paskiem statusu zostawala
+-   pozioma linia (ten "szew", ktory widac bylo na gorze).
+-
+-Efekt: tresc zaczyna sie od razu przy szynie, bez pustego pasa.
+-Pulpit dostaje 79 px (50 dp) wiecej szerokosci - ok. 8 % ekranu.
++PUNKT 1 - co to za komponent
++----------------------------
++To NIE jest NavigationRail z Material 3. To wlasna funkcja `NavRail` w
++`app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt` — zwykla
++`Column` z szescioma linijkami wlasnego rysowania (gradient, obramowanie,
++wybor). Material 3 nie jest tu uzywany do nawigacji w ogole.
++
++PUNKT 2 - tryb poziomy (co dokladnie zmienione)
++-----------------------------------------------
++  szerokosc pasa ikon ............ 56 dp  (Dimens.railWCompact)
++  pole dotyku pozycji ............ 48 x 48 dp  (bez zmian!)
++  ikona .......................... 24 dp  (bylo 22)
++  margines po bokach ............. 2 x 4 dp (56 - 8 = 48 dp na kwadrat)
++  padding pionowy ................ 8 dp
++  odstep miedzy pozycjami ........ 4 dp
++  lewy padding ................... WindowInsets.displayCutout (wyciecie
++                                   kamery), nigdy stala liczba
++
++Pozycje maja teraz stale 48 dp zamiast `weight(1f)` (wczesniej rozciagaly sie
++na cala wysokosc), wiec ukladam je symetrycznie w pionie.
++
++PUNKT 3 - rozgalezienie: rozmiar okna, nie orientacja
++-----------------------------------------------------
++W `SterownikApp.kt`:
++        val compactRail = maxWidth > maxHeight     // BoxWithConstraints
++Dlaczego nie `LocalConfiguration.current.orientation`:
++  1. od 0.31.69 uklad zalezy od ROZMIARU OKNA — jeden powod decyzji, nie dwa,
++     ktore moga sie rozjechac (np. okno dzielone: orientacja dokumentowa,
++     a okno pionowe),
++  2. na skladanych telefonach i w trybie wielu okien orientacja nie opisuje
++     okna, `maxWidth/maxHeight` opisuja je zawsze,
++  3. od Androida 16 (targetSdk 36) system ignoruje `screenOrientation`, wiec
++     obrot przestaje cokolwiek gwarantowac.
++W pionie nic sie nie zmienia: tam nawigacja to dolny pasek `NavBar` z podpisami.
++
++PUNKT 4 - podpisy ukryte, ale dostepne
++--------------------------------------
++  - przytrzymanie palca na ikonie: `combinedClickable(onLongClick = ...)`
++    uruchamia dymek `TooltipBox` z nazwa pozycji,
++  - TalkBack czyta nazwe z `contentDescription` + `role = Tab` + `selected`,
++  - bez tego "Wiecej" i "Ustawienia" bylyby nierozroznialne.
++
++PUNKT 5 - czy pulpit ma weight(1f)
++----------------------------------
++Tak: kolumna tresci to `Modifier.weight(1f).fillMaxHeight()` (SterownikApp.kt),
++dzieki czemu dostaje cala uwolniona szerokosc. Podwojnego paddingu poziomego
++nie ma — sprawdzone pomiarem zrzutu: tresc zaczyna sie 22 px (14 dp) od szyny,
++czyli dokladnie `Dimens.pagePadH`, bez drugiego wciecia (to usunela 0.31.74).
++
++PUNKT 6 - prawa strona: zmierzone, przyczyny NIE ma w kodzie
++------------------------------------------------------------
++Zmierzone na Twoim zrzucie (1280 x 576 px, gestosc 1,5607 px/dp):
++  prawa krawedz karty ....... 1186 px
++  krawedz tresci (pasek naw.) 1209 px  -> margines 23 px = 15 dp  OK
++  brak `horizontalScroll` i `requiredWidth` w korzeniu (SterownikApp.kt)
++  kafelki meteo: `MetricGrid` uklada je `weight(1f)`, wiec zawijaja sie
++  do dostepnej szerokosci, nie wystaja.
++`horizontalScroll` jest w dwoch miejscach i tam jest celowy: pasek chipow
++parametrow (Temperatura/Wiatr/Opady/Zachmurzenie) i pasek prognozy godzinowej.
++To tasmy, ktore maja sie przewijac w bok — nie karty.
++To, co widac na gorze ("duze / brak opadow / niski" bez gornej krawedzi), to
++rzedy kafelkow ucieta przez GORNA krawedz obszaru przewijania, czyli normalne
++przewiniecie strony o pol kafelka. Nie jest to wystawanie poza ekran.
++
++PUNKT 8 - pomiar pasa
++---------------------
++PRZED (Twoj zrzut, 0.31.75): pas 167 px / 1,5607 = 107 dp
++                             (68 dp ikon z podpisami + 39 dp kamery)
++PO (0.31.76, do potwierdzenia zrzutem): 56 + 39 = 95 dp = 148 px
++Uwaga: 56 dp to pas ikon. Drugie 39 dp to wyciecie kamery — tego nie da sie
++zwolnic, ikony pod obiektywem bylyby niewidoczne. Dlatego "100 dp -> 56 dp"
++w praktyce wychodzi 107 dp -> 95 dp. Zeby zejsc nizej niz 95 dp, trzeba by
++zlamac wymog 48 x 48 dp pola dotyku.
++
++PUNKT 9 - wersja
++----------------
++versionCode 31076 / versionName 0.31.76 (app/build.gradle.kts)
++Firmware BEZ ZMIAN: FIRMWARE_VERSION zostaje 3.57.9, pieca nie ruszamy.
++APK: buduje sie z tego projektu (Gradle). W srodowisku, w ktorym powstal
++pakiet, nie ma Javy ani Android SDK, wiec APK powstaje u Ciebie jedna komenda
++z instrukcji — i wtedy ma ten sam numer 0.31.76.
+ 
+ Co sprawdzic na telefonie
+ -------------------------
+-1. Brak pustego pasa miedzy szyna a paskiem "STEROWNIK CO".
+-2. Szyna wezsza, ale etykiety ("Dashboard", "Ustawienia")Sie mieszcza -
+-   zadna nie jest ucieta ani zamieniona w wielokropek.
+-3. Brak poziomej linii pod paskiem statusu (na szynie i na pasku gornym).
+-4. Ikony w szynie nadal poza obiektywem kamery (nic pod obiektywem).
+-5. Dolne przyciski systemowe (wstecz/dom/recent) nie zaslaniaja tresci.
++1. W poziomie: same ikony, brak podpisow, pasek wezszy niz byl.
++2. Przytrzymaj palec na ikonie — pojawia sie dymek z nazwa.
++3. Kazda ikona nadal latwo trafiana palcem (48 x 48 dp).
++4. W pionie: dolny pasek z podpisami bez zmian.
++5. Prawa strona: karty koncza sie marginesem, nic nie wychodzi za ekran.
+ 
+ Jak cofnac
+ ----------
+-W MainActivity.kt zmienic jedna linie na:
+-       WindowCompat.setDecorFitsSystemWindows(window, true)
+-To wraca do zachowania 0.31.71 (z pasem 37 dp).
+-
+-Wersja
+-------
+-versionCode 31075 / versionName 0.31.75  (app/build.gradle.kts)
+-Wersje widac w: Ustawienia -> "Aktualizacja firmware (OTA & GitHub)"
+--> wiersz "APLIKACJA WEB PRO".
++W SterownikApp.kt: `compact = compactRail` zamienic na `compact = false`
++(podpisy wroca, szyna 68 dp). W MainActivity.kt jest drugi, grubszy revert:
++`setDecorFitsSystemWindows(window, true)` = powrot do zachowania 0.31.71.
+ 
+ Weryfikacja bez telefonu
+ ------------------------
+-Brama statyczna (narzedzia/sprawdz_uklad.py): 51 OK / 0 BŁĄD.
+-Ta sama brama na 0.31.74: 4 BŁĄD - m.in. wlasnie ten bledny import
+-(brama nauczona tego przypadku), a na 0.31.73: 10 BŁĄD.
+-Kompilacji NIE sprawdzono - w srodowisku, w ktorym powstal pakiet, nie ma
+-Javy ani Gradle. Pierwsza komenda Gradle w skrypcie PowerShell zrobi to
+-na Twoim komputerze i zatrzyma sie, jesli cokolwiek sie nie skompiluje.
++Brama statyczna (narzedzia/sprawdz_uklad.py): 64 OK / 0 BŁĄD.
++Ta sama brama na 0.31.75: 17 BŁĄD (brak trybu kompaktowego, brak dymkow,
++brak contentDescription).
+ 
+ Pliki zmienione (4)
+ -------------------
+diff -ru /tmp/v75/app/build.gradle.kts /tmp/v76/app/build.gradle.kts
+--- /tmp/v75/app/build.gradle.kts	2026-11-01 11:57:53.530708219 +0000
++++ /tmp/v76/app/build.gradle.kts	2026-11-01 12:16:56.138883708 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31075
+-        versionName = "0.31.75"
++        versionCode = 31076
++        versionName = "0.31.76"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff -ru /tmp/v75/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt /tmp/v76/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+--- /tmp/v75/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt	2026-11-01 11:57:53.510708097 +0000
++++ /tmp/v76/app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt	2026-11-01 12:16:56.138883708 +0000
+@@ -89,8 +89,18 @@
+                 val navVals = WindowInsets.navigationBars.asPaddingValues()
+                 val navEnd = navVals.calculateEndPadding(LocalLayoutDirection.current)
+                 val navBottom = navVals.calculateBottomPadding()
++                // [0.31.76] Waska szyna (same ikony, 56 dp) wtedy, gdy okno jest
++                // szersze niz wyzsze — czyli w poziomie. Decyzja NIE z
++                // `Configuration.orientation`, bo:
++                //  1. od 0.31.69 uklad zalezy od ROZMIARU OKNA, nie od obrotu —
++                //     jeden powod decyzji, nie dwa, ktore moga sie rozjechac,
++                //  2. w oknie dzielonym i na skladanym telefonie orientacja bywa
++                //     dokumentowa, a nie okna — `maxWidth/maxHeight` sa prawdziwe,
++                //  3. od Androida 16 (targetSdk 36) system ignoruje
++                //     `screenOrientation`, wiec obrot przestaje byc wyznacznikiem.
++                val compactRail = maxWidth > maxHeight
+                 Row(Modifier.fillMaxSize()) {
+-                    if (rail) NavRail(page = m.page, startInset = cutoutStart) { m.navigate(it) }
++                    if (rail) NavRail(page = m.page, startInset = cutoutStart, compact = compactRail) { m.navigate(it) }
+                     Column(
+                         Modifier.weight(1f).fillMaxHeight()
+                             .then(if (rail) Modifier else Modifier.displayCutoutPadding())
+diff -ru /tmp/v75/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt /tmp/v76/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+--- /tmp/v75/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt	2026-11-01 11:52:31.391538706 +0000
++++ /tmp/v76/app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt	2026-11-01 12:16:56.138883708 +0000
+@@ -7,9 +7,11 @@
+ import androidx.compose.animation.core.rememberInfiniteTransition
+ import androidx.compose.animation.core.tween
+ import androidx.compose.foundation.Canvas
++import androidx.compose.foundation.ExperimentalFoundationApi
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.border
+ import androidx.compose.foundation.clickable
++import androidx.compose.foundation.combinedClickable
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.Column
+@@ -31,10 +33,15 @@
+ import androidx.compose.foundation.shape.CircleShape
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.foundation.verticalScroll
++import androidx.compose.material3.ExperimentalMaterial3Api
+ import androidx.compose.material3.Text
++import androidx.compose.material3.TooltipBox
++import androidx.compose.material3.TooltipDefaults
++import androidx.compose.material3.rememberTooltipState
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.remember
++import androidx.compose.runtime.rememberCoroutineScope
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.draw.clip
+@@ -45,6 +52,11 @@
+ import androidx.compose.ui.graphics.Path
+ import androidx.compose.ui.graphics.drawscope.DrawScope
+ import androidx.compose.ui.graphics.drawscope.Stroke
++import androidx.compose.ui.semantics.Role
++import androidx.compose.ui.semantics.contentDescription
++import androidx.compose.ui.semantics.role
++import androidx.compose.ui.semantics.selected
++import androidx.compose.ui.semantics.semantics
+ import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.Dp
+ import androidx.compose.ui.unit.dp
+@@ -59,6 +71,7 @@
+ import com.sterownikco.pro.ui.theme.Dimens
+ import com.sterownikco.pro.ui.theme.Pal
+ import com.sterownikco.pro.ui.theme.Txt
++import kotlinx.coroutines.launch
+ 
+ /* ══════════════════════════════════════════════════════════════════════════
+    CHROME — pasek górny, pasek systemowy, banery, hero, kafelki szybkie,
+@@ -364,6 +377,61 @@
+ }
+ 
+ /**
++ * [0.31.76] Pozycja szyny w trybie kompaktowym (telefon w poziomie): sama ikona,
++ * bez podpisu — ale podpis nie znika calkiem:
++ *
++ *  - przytrzymanie palca pokazuje dymek z nazwa (`combinedClickable(onLongClick)`
++ *    + `TooltipBox`), bez tego "Wiecej" i "Ustawienia" bylyby nierozroznialne,
++ *  - TalkBack czyta nazwe z `contentDescription` (i role karty),
++ *  - pole dotyku zostaje 48 x 48 dp — nie zmniejszamy go razem z szyna.
++ */
++@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
++@Composable
++private fun RailIcon(icon: String, label: String, active: Boolean, onClick: () -> Unit) {
++    val tooltip = rememberTooltipState()
++    val scope = rememberCoroutineScope()
++    TooltipBox(
++        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
++        tooltip = {
++            Box(
++                Modifier.background(Pal.Surface3, RoundedCornerShape(8.dp))
++                    .border(1.dp, Pal.Border, RoundedCornerShape(8.dp))
++                    .padding(horizontal = 10.dp, vertical = 6.dp)
++            ) {
++                Text(label, style = Txt.navLabel, color = Pal.White, maxLines = 1)
++            }
++        },
++        state = tooltip
++    ) {
++        Box(
++            modifier = Modifier
++                .size(48.dp) // pole dotyku 48 x 48 dp — wymog dostepnosci
++                .background(
++                    if (active) Pal.rgba(0, 212, 245, .1f) else Color.Transparent,
++                    RoundedCornerShape(14.dp)
++                )
++                .border(
++                    1.dp,
++                    if (active) Pal.rgba(0, 212, 245, .25f) else Color.Transparent,
++                    RoundedCornerShape(14.dp)
++                )
++                .combinedClickable(
++                    onClick = onClick,
++                    onLongClick = { scope.launch { tooltip.show() } }
++                )
++                .semantics {
++                    contentDescription = label
++                    role = Role.Tab
++                    this.selected = active
++                },
++            contentAlignment = Alignment.Center
++        ) {
++            AppIcon(icon, size = 24.dp, tint = if (active) Pal.Cyan else Pal.TextDim2)
++        }
++    }
++}
++
++/**
+  * `.nav` w wariancie pionowym (0.31.69) — te same 5 zakładek co w [NavBar], ale
+  * ustawione w kolumnie po lewej stronie. Włączane przez [com.sterownikco.pro.core.ScreenLayout.useNavRail]
+  * wtedy, gdy okno jest niskie i szerokie (telefon w poziomie): dolny pasek zabrałby
+@@ -382,10 +450,13 @@
+  * `displayCutoutPadding()` na całym wierszu, przez co przy krawędzi zostawał
+  * pas koloru tła (Pal.Bg) — widoczny szew między tłem a szyną.
+  */
+-fun NavRail(page: Int, startInset: Dp = 0.dp, onNav: (Int) -> Unit) {
++fun NavRail(page: Int, startInset: Dp = 0.dp, compact: Boolean = false, onNav: (Int) -> Unit) {
+     val items = listOf("dashboard" to "Dashboard", "chart" to "Wykresy", "weather" to "Pogoda", "settings" to "Ustawienia", "more" to "Więcej")
+     Column(
+-        modifier = Modifier.width(Dimens.railW + startInset).fillMaxHeight()
++        // [0.31.76] W poziomie szyna jest waska (56 dp, same ikony), w pozostalych
++        // przypadkach zostaje 68 dp z podpisami. Wciecie wyciecia kamery dodajemy
++        // ZAWSZE i po stronie startu — nigdy na sztywno.
++        modifier = Modifier.width((if (compact) Dimens.railWCompact else Dimens.railW) + startInset).fillMaxHeight()
+             // [0.31.73] Tlo PRZED wcieciem paska statusu — tak samo jak w TopBarze.
+             // Inaczej gorny rog ekranu mial kolor paska gornego zamiast koloru szyny.
+             // [0.31.74] Obramowanie przed wcieciem — inaczej pozioma linia na
+@@ -395,13 +466,25 @@
+             .statusBarsPadding()
+             // [0.31.74] 8 -> 6 dp: przy szynie 68 dp wewnatrz zostaje 56 dp,
+             // a najdluzsza etykieta (Ustawienia, 9 sp) ma ~44 dp.
+-            .padding(start = 6.dp + startInset, end = 6.dp, top = 10.dp, bottom = 10.dp),
++            // [0.31.76] Kompaktowo: 4 dp po bokach (56 - 8 = 48 dp na kwadrat
++            // dotyku) i 8 dp od gory i dolu.
++            .padding(
++                start = startInset + (if (compact) 4.dp else 6.dp),
++                end = if (compact) 4.dp else 6.dp,
++                top = if (compact) 8.dp else 10.dp,
++                bottom = if (compact) 8.dp else 10.dp
++            ),
+         horizontalAlignment = Alignment.CenterHorizontally,
+-        verticalArrangement = Arrangement.spacedBy(6.dp)
++        // [0.31.76] Kompaktowo pozycje maja stale 48 dp i odstep 4 dp, wiec
++        // ukladamy je symetrycznie w pionie zamiast rozciagac na cala wysokosc.
++        verticalArrangement = if (compact) Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
++                              else Arrangement.spacedBy(6.dp)
+     ) {
+         items.forEachIndexed { i, (ico, label) ->
+             val on = i == page
+-            Column(
++            if (compact) {
++                RailIcon(ico, label, on) { onNav(i) }
++            } else Column(
+                 modifier = Modifier.weight(1f).fillMaxWidth()
+                     .background(if (on) Pal.rgba(0, 212, 245, .1f) else Color.Transparent, RoundedCornerShape(16.dp))
+                     .border(1.dp, if (on) Pal.rgba(0, 212, 245, .25f) else Color.Transparent, RoundedCornerShape(16.dp))
+diff -ru /tmp/v75/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt /tmp/v76/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt
+--- /tmp/v75/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt	2026-11-01 11:51:37.611208969 +0000
++++ /tmp/v76/app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt	2026-11-01 12:16:30.122724245 +0000
+@@ -28,6 +28,9 @@
+     // („Ustawienia" przy 9 sp) ma ~44 dp, a wewnatrz szyny zostaje
+     // railW - 12 dp. 68 dp daje 56 dp na etykiety i 12 dp mniej szerokosci.
+     val railW = 68.dp
++    // [0.31.76] Telefon w poziomie: szyna to same ikony, 56 dp.
++    // 56 = 48 dp pola dotyku + 2 x 4 dp marginesu.
++    val railWCompact = 56.dp
+     val tileH = 126.dp
+     val quickH = 64.dp
+     val analysisH = 74.dp
