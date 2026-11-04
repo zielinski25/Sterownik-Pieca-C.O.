@@ -294,19 +294,36 @@ class SolarAnalytics(private val prefs: Prefs) {
      *  @param dayHours kolejne doby po 24 godziny (dzień 0 = dzisiejsza)
      *  @return zmiany dobowe ZE ZNAKIEM; NaN, gdy model nie ma danych dla doby
      */
+    /** [0.31.79] JEDNO ŹRÓDŁO PRAWDY dla „DO KOŃCA DNIA".
+     *
+     *  Ta sama liczba trafia w trzy miejsca: kafelek „DO KOŃCA DNIA" (wartość),
+     *  jego podpis (opis słowny) i pierwszy dzień prognozy 7-dniowej („DZIŚ" =
+     *  zmierzone + ta liczba). Wcześniej wzór był przepisany w dwóch funkcjach
+     *  (endOfDayGain w Weather.kt i dailyForecast7 tutaj), więc mogły się rozjechać.
+     *
+     *  Do 0.31.78 dochodziło do sprzeczności: kafelek pokazywał +0,1 °C, a jego
+     *  podpis twierdził „woda stygnie do północy" — bo podpis był zaszyty na sztywno
+     *  dla nocy, bez patrzenia na znak. Woda miała 0,5 °C przy powietrzu 6,5 °C,
+     *  więc ocieplanie się do północy jest fizycznie poprawne, a kłamał podpis.
+     *
+     *  @return zmiana od TERAZ do północy ze znakiem; NaN, gdy model nie ma danych.
+     */
+    fun restOfDayDeltaC(): Double = when {
+        forecastPeakReal && forecastGain.isFinite() -> forecastGain
+        forecastEndDeltaC.isFinite() -> forecastEndDeltaC
+        else -> Double.NaN
+    }
+
     fun dailyForecast7(dayHours: List<List<WHour>>): List<Double> {
         if (dayHours.isEmpty() || !hasSamples) return emptyList()
         val nowT = archive.lastOrNull()?.tPanel ?: return emptyList()
         if (!nowT.isFinite()) return emptyList()
 
-        // Reszta dzisiejszej doby — ten sam wynik, który pokazuje karta
-        // „DO KOŃCA DNIA”. Gdy model nie znalazł szczytu (samo wychładzanie),
-        // bierzemy zmianę do końca doby, żeby minus nie zamienił się w zero.
-        val restOfDay = when {
-            forecastPeakReal && forecastGain.isFinite() -> forecastGain
-            forecastEndDeltaC.isFinite() -> forecastEndDeltaC
-            else -> 0.0
-        }
+        // [0.31.79] Reszta doby z JEDNEGO źródła — tej samej funkcji, której używa
+        // kafelek „DO KOŃCA DNIA". Wcześniej ten wzór był tu przepisany drugi raz,
+        // więc kafelek i karta „DZIŚ" mogły się rozjechać bez śladu w kodzie.
+        val rest = restOfDayDeltaC()
+        val restOfDay = if (rest.isFinite()) rest else 0.0
 
         val out = ArrayList<Double>(dayHours.size)
         out.add(todayGain + restOfDay)

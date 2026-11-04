@@ -24,8 +24,8 @@ TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.78"
-KOD_WERSJI = "31078"
+WERSJA = "0.31.79"
+KOD_WERSJI = "31079"
 
 wyniki = []
 
@@ -384,16 +384,18 @@ def main():
         "softWrap = false, overflow = TextOverflow.Clip" not in weather,
         "taki duet wygląda jak ucięty ekran, a nie skrócony tekst",
     )
+    # [0.31.79] Sprawdzamy FAKT, nie własne nowe sformułowanie: nagłówek musi
+    # zawierać liczbę dni, a podpis musi mówić, że to nie pomiar. Oba warunki
+    # przechodzą niezależnie od tego, jak tekst zostanie przeredagowany.
     sprawdz(
-        "nagłówek prognozy 7-dniowej nie kończy się na „SOLARNEGO”",
-        "PROGNOZA POTENCJAŁU SOLARNEGO\", fontSize" in weather
-        and "7 DNI · potencjał całej doby" in weather,
-        "tytuł i liczba dni w osobnych liniach",
+        "nagłówek prognozy 7-dniowej zawiera liczbę dni",
+        bool(re.search(r"PROGNOZA POTENCJAŁU SOLARNEGO[^\"]*7 DNI", weather)),
+        "bez „7 DNI” nagłówek nie mówi, na ile dni jest prognoza",
     )
     sprawdz(
-        "podpis prognozy mówi „nie pomiar”",
-        "szacunek z modelu cieplnego, nie pomiar" in weather,
-        "samo „szacunek” nic nie znaczyło",
+        "podpis prognozy solarnej mówi wprost „nie pomiar”",
+        bool(re.search(r"szacunek[^\"]{0,40}nie pomiar", weather)),
+        "szacunek bez tego zastrzeżenia czyta się jak pomiar",
     )
     sprawdz(
         "nota w Czujnikach definiuje zysk jako różnicę temperatur",
@@ -401,12 +403,54 @@ def main():
         "wcześniej „o ile °C ogrzała się woda” myliło różnicę z wartością",
     )
 
+    # ---- 0.31.79: „DO KOŃCA DNIA" ma JEDNO źródło prawdy ----
+    # Do 0.31.78 kafelek pokazywał +0,1 °C z podpisem „woda stygnie do północy",
+    # a arkusz Czujniki nie pokazywał tam liczby wcale. Wzór na resztę doby był
+    # przepisany w dwóch funkcjach (Weather.kt i dailyForecast7), więc mógł się
+    # rozjechać bez śladu.
+    sprawdz(
+        "jedna funkcja liczy zmianę do końca doby",
+        "fun restOfDayDeltaC()" in solar,
+        "SolarAnalytics.restOfDayDeltaC()",
+    )
+    sprawdz(
+        "prognoza 7-dniowa bierze resztę doby z tej funkcji",
+        "val rest = restOfDayDeltaC()" in solar,
+        "inaczej karta DZIŚ liczy się drugim wzorem",
+    )
+    sprawdz(
+        "kafelek DO KOŃCA DNIA bierze wartość z tej funkcji",
+        "val d = sol.restOfDayDeltaC()" in weather,
+        "Weather.endOfDayGain",
+    )
+    sprawdz(
+        "arkusz Czujniki używa tych samych funkcji co kafelek",
+        "endOfDayGain(solar" in sensors and "endOfDaySub(solar" in sensors,
+        "do 0.31.78 arkusz miał własny when-branch i gubił liczbę",
+    )
+    sprawdz(
+        "arkusz nie liczy „do końca dnia” po swojemu",
+        "solar.forecastGain" not in sensors,
+        "żadnego drugiego wzoru w UI arkusza",
+    )
+    sprawdz(
+        "opis „stygnie / ociepla” zależy od znaku, nie od pory dnia",
+        "d < -ZERO_EPS_C -> \"bez słońca · woda stygnie do północy\"" in weather
+        and "woda się jeszcze ociepla do północy" in weather,
+        "godzina 22:00 nie znaczy „na pewno stygnie”",
+    )
+    sprawdz(
+        "karta DZIŚ = zmierzone + to samo źródło",
+        "out.add(todayGain + restOfDay)" in solar,
+        "spójność kafelka i karty jest widoczna w kodzie",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.78 (0.31.75 + bez pobrań + tytuły bez ucinania)")
+    print("BRAMA UKŁADU EKRANU — 0.31.79 (0.31.75 + bez pobrań + jedno źródło dla DO KOŃCA DNIA)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:

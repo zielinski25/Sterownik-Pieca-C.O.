@@ -499,15 +499,13 @@ fun SolarMultiDayForecast(m: AppModel) {
         Modifier.fillMaxWidth().padding(top = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // [0.31.78] BYŁO: „PROGNOZA POTENCJAŁU SOLARNEGO · 7 DNI" w jednej linii —
-        // przy szerokości karty kończyło się na „SOLARNEGO" (dalsza część spadała
-        // poza kartę, bez ostrzeżenia). Teraz tytuł i liczba dni są w osobnych liniach,
-        // a podpis jest pełny: „szacunek" bez dopisku „nie pomiar" nic nie znaczył.
-        Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO", fontSize = 9.5.sp,
+        // [0.31.79] COFNIĘTE. W 0.31.78 podzieliłem ten nagłówek na trzy linie,
+        // twierdząc, że był ucięty. Nie był: na zrzucie z 23:57 widać go w całości
+        // („PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI", karta ~308 dp, tekst ~266 dp).
+        // To była zmiana wyglądu bez powodu, a nie naprawa błędu. Wraca wersja 1:1.
+        Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI", fontSize = 9.5.sp,
             fontWeight = FontWeight.ExtraBold, color = SolarY, letterSpacing = 0.4.sp, lineHeight = 12.sp)
-        Text("7 DNI · potencjał całej doby, nie od teraz · minus = woda się wychładza",
-            fontSize = 8.5.sp, color = SolarY.copy(alpha = .75f), lineHeight = 11.sp)
-        Text("szacunek z modelu cieplnego, nie pomiar",
+        Text("potencjał całej doby, nie od teraz · minus = woda się wychładza · szacunek, nie pomiar",
             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp)
         if (dailies.isEmpty()) {
             Text(if (m.weatherBusy) "Pobieranie prognozy…" else "Brak prognozy",
@@ -920,33 +918,41 @@ internal fun solarSunLeft(hours: List<WHour>, fromTs: Long): Boolean {
 }
 
 /** Wartość karty „DO KOŃCA DNIA”. */
-private fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String {
-    // [0.31.51] Karta DZIŚ w prognozie 7-dniowej liczy CAŁĄ dobę: zmierzone +
-    // reszta dnia + noc do północy (SolarAnalytics.dailyForecast7, wiersze 421-425).
-    // Ten kafelek musi pokazywać to samo, inaczej liczba na karcie DZIŚ jest
-    // nieodtwarzalna z ekranu. 29.10.2026 17:20: ZYSK DZIŚ +0,2, kafelek „—",
-    // karta DZIŚ −1,0 — nie dało się zgadnąć, skąd ta różnica.
-    // Po zachodzie pokazujemy więc nocne stygnięcie do północy.
-    if (!sunLeft) {
-        return if (sol.forecastEndDeltaC.isFinite()) signedC(sol.forecastEndDeltaC) else "—"
-    }
-    // Słońce jeszcze jest, ale model liczy samo wychładzanie: `forecastGain` jest
-    // obcięte do zera, więc karta pokazywałaby „+0,0 °C", a DZIŚ obok −2,8 °C.
-    if (!sol.forecastPeakReal && sol.forecastEndDeltaC.isFinite())
-        return signedC(sol.forecastEndDeltaC)
-    if (!sol.forecastGain.isFinite()) return "—"
-    return "+" + fmt1(sol.forecastGain) + "°C"
+/** [0.31.79] Wartość karty „DO KOŃCA DNIA". Publiczna, bo ten sam napis pokazuje
+ *  arkusz Czujniki (wiersz „Do końca dnia · szacunek") — do 0.31.78 arkusz nie
+ *  pokazywał tam liczby wcale, tylko „bez słońca do końca dnia", więc użytkownik
+ *  widział na karcie +0,1 °C i nie miał z czym tego porównać.
+ *
+ *  Liczba pochodzi z [SolarAnalytics.restOfDayDeltaC] — tego samego źródła, z
+ *  którego liczy się pierwszy dzień prognozy 7-dniowej. */
+fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String {
+    val d = sol.restOfDayDeltaC()
+    if (!d.isFinite()) return "—"
+    // Dzień z realnym szczytem: pokazujemy zysk szczytu, jak dotąd (z plusem).
+    if (sunLeft && sol.forecastPeakReal) return "+" + fmt1(d) + "°C"
+    return signedC(d)
 }
 
 /** Podpis karty: godzina szczytu i energia, które model liczył, ale nigdzie nie pokazywał. */
-private fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
-    // [0.31.51] Po zachodzie kafelek pokazuje nocne stygnięcie do północy —
-    // podpis musi to nazwać, inaczej liczba wygląda jak prognoza słońca.
-    !sunLeft -> if (sol.forecastEndDeltaC.isFinite()) "bez słońca · woda stygnie do północy"
-               else "bez słońca do końca dnia"
+/** [0.31.79] Podpis karty „DO KOŃCA DNIA" — zależny od ZNAKU, nie od pory dnia.
+ *
+ *  Do 0.31.78 po zachodzie stało na sztywno „woda stygnie do północy", także gdy
+ *  model liczył wzrost (04.11.2026: woda 0,5 °C, powietrze 6,5 °C, model +0,1 °C).
+ *  Kafelek pokazywał wtedy +0,1 °C z podpisem „stygnie" — sprzeczność na jednym
+ *  kafelku. Teraz opis wynika z tej samej liczby co wartość. */
+fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
+    !sunLeft -> {
+        val d = sol.restOfDayDeltaC()
+        when {
+            !d.isFinite() -> "bez słońca do końca dnia"
+            d < -ZERO_EPS_C -> "bez słońca · woda stygnie do północy"
+            d > ZERO_EPS_C -> "bez słońca · woda się jeszcze ociepla do północy"
+            else -> "bez słońca · bez zmian do północy"
+        }
+    }
     // [0.31.38] Rozdzielone: brak próbki wody vs brak pogody.
     !sol.hasSamples -> "brak próbki wody z czujnika"
-    !sol.forecastGain.isFinite() -> "brak prognozy"
+    !sol.restOfDayDeltaC().isFinite() -> "brak prognozy"
     // [0.31.31] Słońce jeszcze jest, ale model policzył samo wychładzanie —
     // woda nie dogrzeje się ponad straty. Wcześniej w tym miejscu stała
     // godzina szczytu 0.0, czyli „08:00”, wzięta znikąd.

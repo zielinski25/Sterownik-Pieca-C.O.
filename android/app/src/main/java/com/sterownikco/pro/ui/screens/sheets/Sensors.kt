@@ -37,6 +37,8 @@ import com.sterownikco.pro.core.AppModel
 import com.sterownikco.pro.core.PiecState
 import com.sterownikco.pro.core.SensorDef
 import com.sterownikco.pro.ui.screens.SolarMultiDayForecast
+import com.sterownikco.pro.ui.screens.endOfDayGain
+import com.sterownikco.pro.ui.screens.endOfDaySub
 import com.sterownikco.pro.ui.screens.solarSunLeft
 import com.sterownikco.pro.ui.components.ManualRow
 import com.sterownikco.pro.ui.components.Note
@@ -359,21 +361,15 @@ private fun SolarMetricsCard(m: AppModel) {
                 else -> "0.0°C · bez zmian"
             }
         )
-        SolarMetricRow(
-            "Do końca dnia · szacunek",
-            when {
-                !sunLeft -> "bez słońca do końca dnia"
-                // [0.31.38] „brak prognozy” myliło dwie przyczyny: brak pogody
-                // i brak próbki wody do wystartowania modelu.
-                !solar.hasSamples -> "brak próbki wody z czujnika"
-                !solar.forecastGain.isFinite() -> "brak prognozy"
-                // [0.31.31] Ten sam warunek co karta „DO KOŃCA DNIA” — patrz Weather.kt.
-                !solar.forecastPeakReal -> "słońce nie przebije strat ciepła"
-                solar.forecastPeakLabel.isNotEmpty() && solar.forecastEnergyKwh.isFinite() ->
-                    "+${s.fmt1(solar.forecastGain)}°C · szczyt ${solar.forecastPeakLabel} · ${s.fmt1(solar.forecastEnergyKwh)} kWh"
-                else -> "+${s.fmt1(solar.forecastGain)}°C"
-            }
-        )
+        // [0.31.79] Wartość i opis bierzemy z FUNKCJI, których używa kafelek
+        // „DO KOŃCA DNIA" (Weather.kt). Do 0.31.78 arkusz miał własny when-branch:
+        // pokazywał samo „bez słońca do końca dnia" (bez liczby), a po zachodzie
+        // gubił wartość całkowicie — więc karta +0,1 °C nie miała odpowiednika.
+        run {
+            val v = endOfDayGain(solar, sunLeft)
+            val sub = endOfDaySub(solar, sunLeft)
+            SolarMetricRow("Do końca dnia · szacunek", if (sub.isEmpty()) v else "$v · $sub")
+        }
         // [0.31.77] Wiersz „Pobrania ciepłej wody" usunięty razem z kafelkiem
         // na karcie BILANS — powód: zgadywanie ze spadku temperatury, nie pomiar.
         // [0.31.78] Nota poprawiona językowo: było „z chmury, co minutę, także
