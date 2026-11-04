@@ -323,7 +323,7 @@ fun WeatherPage(m: AppModel) {
             val sol = m.solar
             // [0.31.30] Czy do końca doby zostało jeszcze słońce zdolne cokolwiek podgrzać.
             // Liczone z tych samych godzin prognozy, z których liczy model — GTI, potem GHI.
-            val sunLeftToday = solarSunLeft(hours, currentHourStart)
+            val sunLeftToday = Weather.sunLeftToday(hours, currentHourStart)
             val realSolarTemps = m.S.hasAllData("t_panel", "t_zewn") &&
                 !m.S.symAktywna("panel") && !m.S.symAktywna("zewn")
             val dT = if (realSolarTemps) m.S.t_panel - m.S.t_zewn else Double.NaN
@@ -906,16 +906,9 @@ private fun todayGainLabel(sol: SolarAnalytics): String =
 
 /** Czy do końca doby jest jeszcze słońce dające >20 W/m² w płaszczyźnie kolektora.
  *  Poniżej tego progu model i tak nic nie ugrzeje, a „+0,0 °C” czyta się jak awaria. */
-internal fun solarSunLeft(hours: List<WHour>, fromTs: Long): Boolean {
-    val end = calOf(fromTs).apply {
-        set(java.util.Calendar.HOUR_OF_DAY, 23)
-        set(java.util.Calendar.MINUTE, 59)
-        set(java.util.Calendar.SECOND, 59)
-    }.timeInMillis
-    return hours.any { h ->
-        h.time in fromTs..end && ((h.tiltedIrradiance ?: h.shortwaveRadiation ?: 0.0) > 20.0)
-    }
-}
+// [0.31.80] Reguła „czy jest jeszcze słońce" przeniesiona do core
+// (Weather.sunLeftToday) — do 0.31.79 stała tutaj, w pliku ekranu, więc
+// prognoza 7-dniowa (SolarAnalytics.dailyForecast7) nie mogła jej użyć.
 
 /** Wartość karty „DO KOŃCA DNIA”. */
 /** [0.31.79] Wartość karty „DO KOŃCA DNIA". Publiczna, bo ten sam napis pokazuje
@@ -926,7 +919,7 @@ internal fun solarSunLeft(hours: List<WHour>, fromTs: Long): Boolean {
  *  Liczba pochodzi z [SolarAnalytics.restOfDayDeltaC] — tego samego źródła, z
  *  którego liczy się pierwszy dzień prognozy 7-dniowej. */
 fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String {
-    val d = sol.restOfDayDeltaC()
+    val d = sol.restOfDayDeltaC(sunLeft)
     if (!d.isFinite()) return "—"
     // Dzień z realnym szczytem: pokazujemy zysk szczytu, jak dotąd (z plusem).
     if (sunLeft && sol.forecastPeakReal) return "+" + fmt1(d) + "°C"
@@ -942,17 +935,22 @@ fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String {
  *  kafelku. Teraz opis wynika z tej samej liczby co wartość. */
 fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
     !sunLeft -> {
-        val d = sol.restOfDayDeltaC()
+        val d = sol.restOfDayDeltaC(sunLeft)
+        // [0.31.80] Krótkie opisy. Zmierzone (DejaVu Sans 7,5 sp, ekran 360 dp):
+        // na tekst w kafelku zostaje 85,3 dp, a „bez słońca · woda się jeszcze
+        // ociepla do północy" to 190 dp (Roboto) — trzy linie w kafelku i ucięcie
+        // wielokropkiem w wierszu arkusza (miejsca 308 dp, potrzebne 459 dp).
+        // Twarda spacja trzyma „ociepla się" razem, żeby nie zostało samo „się".
         when {
-            !d.isFinite() -> "bez słońca do końca dnia"
-            d < -ZERO_EPS_C -> "bez słońca · woda stygnie do północy"
-            d > ZERO_EPS_C -> "bez słońca · woda się jeszcze ociepla do północy"
-            else -> "bez słońca · bez zmian do północy"
+            !d.isFinite() -> "bez słońca"
+            d < -ZERO_EPS_C -> "bez słońca · stygnie"
+            d > ZERO_EPS_C -> "bez słońca · ociepla\u00A0się"
+            else -> "bez słońca · bez\u00A0zmian"
         }
     }
     // [0.31.38] Rozdzielone: brak próbki wody vs brak pogody.
     !sol.hasSamples -> "brak próbki wody z czujnika"
-    !sol.restOfDayDeltaC().isFinite() -> "brak prognozy"
+    !sol.restOfDayDeltaC(sunLeft).isFinite() -> "brak prognozy"
     // [0.31.31] Słońce jeszcze jest, ale model policzył samo wychładzanie —
     // woda nie dogrzeje się ponad straty. Wcześniej w tym miejscu stała
     // godzina szczytu 0.0, czyli „08:00”, wzięta znikąd.

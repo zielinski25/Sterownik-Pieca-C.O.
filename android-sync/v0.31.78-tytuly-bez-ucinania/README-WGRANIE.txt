@@ -1,3 +1,15 @@
+UWAGA — SPROSTOWANIE (dopisane później, treść wydania bez zmian)
+===============================================================
+Ten plik opisuje wydanie 0.31.78 i zawiera dwa zdania, które nie są
+prawdziwe: (1) że nagłówek prognozy 7-dniowej był ucięty — NIE BYŁ,
+mieścił się w całości, a podział na 3 linie był zmianą wyglądu i został
+cofnięty w 0.31.79; (2) że podpis „szacunek, nie pomiar” wystarczał za
+uczciwość ekranu — w tym samym wydaniu kafelek „DO KOŃCA DNIA” kłamał
+podpisem „woda stygnie”, gdy model liczył wzrost.
+Szczegóły i pomiary: ERRATA-0.31.78.txt w tym folderze.
+
+------------------------------------------------------------------------
+
 Sterownik CO — aplikacja Android 0.31.78 (pełny projekt)
 ========================================================
 

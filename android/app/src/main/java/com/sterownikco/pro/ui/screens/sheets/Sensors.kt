@@ -39,7 +39,7 @@ import com.sterownikco.pro.core.SensorDef
 import com.sterownikco.pro.ui.screens.SolarMultiDayForecast
 import com.sterownikco.pro.ui.screens.endOfDayGain
 import com.sterownikco.pro.ui.screens.endOfDaySub
-import com.sterownikco.pro.ui.screens.solarSunLeft
+import com.sterownikco.pro.core.Weather
 import com.sterownikco.pro.ui.components.ManualRow
 import com.sterownikco.pro.ui.components.Note
 import com.sterownikco.pro.ui.components.NumRow
@@ -322,7 +322,7 @@ private fun SolarMetricsCard(m: AppModel) {
     // „DO KOŃCA DNIA” na ekranie Pogoda. Bez tego po zachodzie wychodziło „+0,0 °C”,
     // co czyta się jak awaria modelu, a jest poprawnym wynikiem.
     val sunnyHours = m.weather?.hourly.orEmpty()
-    val sunLeft = solarSunLeft(sunnyHours, com.sterownikco.pro.core.Weather.startOfHour())
+    val sunLeft = Weather.sunLeftToday(sunnyHours)
     val s = m.S
     val solar = m.solar
     val panelTemp = s.valOf("panel", "t_panel")
@@ -365,10 +365,15 @@ private fun SolarMetricsCard(m: AppModel) {
         // „DO KOŃCA DNIA" (Weather.kt). Do 0.31.78 arkusz miał własny when-branch:
         // pokazywał samo „bez słońca do końca dnia" (bez liczby), a po zachodzie
         // gubił wartość całkowicie — więc karta +0,1 °C nie miała odpowiednika.
+        // [0.31.80] Opis w OSOBNEJ linii, nie doklejony do liczby. Zmierzone:
+        // „+0,1°C · bez słońca · woda się jeszcze ociepla do północy" to 459 dp
+        // przy 308 dp miejsca (360 dp ekranu), a wiersz ma maxLines = 1 — kończył
+        // się więc wielokropkiem. Teraz liczba jest sama (identyczna jak w kafelku),
+        // a opis pod spodem ma całą szerokość.
         run {
             val v = endOfDayGain(solar, sunLeft)
             val sub = endOfDaySub(solar, sunLeft)
-            SolarMetricRow("Do końca dnia · szacunek", if (sub.isEmpty()) v else "$v · $sub")
+            SolarMetricRow("Do końca dnia · szacunek", v, sub)
         }
         // [0.31.77] Wiersz „Pobrania ciepłej wody" usunięty razem z kafelkiem
         // na karcie BILANS — powód: zgadywanie ze spadku temperatury, nie pomiar.
@@ -395,7 +400,7 @@ private fun SolarMetricsCard(m: AppModel) {
 }
 
 @Composable
-private fun SolarMetricRow(title: String, value: String) {
+private fun SolarMetricRow(title: String, value: String, sub: String = "") {
     Column {
         Box(Modifier.fillMaxWidth().height(1.dp).background(Pal.Border))
         Row(
@@ -417,6 +422,15 @@ private fun SolarMetricRow(title: String, value: String) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+        // [0.31.80] Opcjonalny opis pod liczbą — cała szerokość wiersza, więc nie
+        // konkuruje z tytułem o miejsce i nie kończy się wielokropkiem.
+        if (sub.isNotEmpty()) {
+            Text(
+                sub,
+                fontSize = 8.5.sp, lineHeight = 11.sp, color = Pal.TextDim2,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
         }
     }

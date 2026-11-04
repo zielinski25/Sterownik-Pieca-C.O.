@@ -1,0 +1,454 @@
+diff -ru 0.31.79/README-WGRANIE.txt 0.31.80/README-WGRANIE.txt
+--- 0.31.79/README-WGRANIE.txt	2026-11-04 23:54:46.636141219 +0000
++++ 0.31.80/README-WGRANIE.txt	2026-11-04 23:54:36.719981304 +0000
+@@ -1,119 +1,127 @@
+-Sterownik CO — aplikacja Android 0.31.79 (pełny projekt)
++Sterownik CO — aplikacja Android 0.31.80 (pełny projekt)
+ ========================================================
+ 
+-Baza: 0.31.75 (ta wersja jest na telefonie) + poprawki 0.31.77, 0.31.78, 0.31.79.
++Baza: 0.31.75 (wersja z telefonu) + poprawki 0.31.77, 0.31.78, 0.31.79, 0.31.80.
++Zmiana dotyczy TYLKO aplikacji. Piec zostaje na 3.57.9.
++versionCode 31080 / versionName "0.31.80" (app/build.gradle.kts).
++
++Trzy poprawki w 0.31.80
++-----------------------
++1. Kafelek „DO KOŃCA DNIA" nie pokaże już zysku szczytu po zachodzie słońca
++   (przy nieświeżej prognozie, np. telefon offline od popołudnia).
++2. Opis pod liczbą jest krótki i mieści się w kafelku oraz w arkuszu Czujniki.
++3. Arkusz Czujniki: liczba i opis w osobnych liniach, więc opis nie kończy
++   się wielokropkiem.
++
++Do tego ERRATA-0.31.78.txt w folderze 0.31.78 prostuje nieprawdę o nagłówku.
++
++
++1) Warunek „jest jeszcze słońce" — jedno miejsce w kodzie
++----------------------------------------------------------
++Zgłoszenie: restOfDayDeltaC() nie sprawdzało, czy słońce jeszcze jest.
++
++Reguła „czy do końca doby jest jeszcze słońce" (> 20 W/m² w płaszczyźnie
++kolektora) stała do 0.31.79 w pliku ekranu (Weather.kt, funkcja
++solarSunLeft). Prognoza 7-dniowa w SolarAnalytics nie mogła jej użyć, więc
++brała zysk szczytu bez patrzenia na zegar. Po przeniesieniu reguły do
++core/Weather.sunLeftToday korzystają z niej wszystkie trzy miejsca:
++
++  • karta „DO KOŃCA DNIA"          (ui/screens/Weather.kt)
++  • arkusz Czujniki                (ui/screens/sheets/Sensors.kt)
++  • prognoza 7-dniowa, dzień DZIŚ  (core/SolarAnalytics.dailyForecast7)
++
++Sama funkcja ma teraz obowiązkowy parametr:
++
++  fun restOfDayDeltaC(sunLeft: Boolean): Double
++
++Zysk szczytu jest zwracany TYLKO gdy sunLeft == true. W przeciwnym razie
++zwracana jest zmiana „do północy" z modelu (forecastEndDeltaC). Wywołanie
++bez argumentu nie skompiluje się — to celowe, żeby ten błąd nie wrócił.
++
++Symulacja (prognoza pobrana o 14:00, telefon offline, sprawdzenie o 22:00;
++model policzył wtedy szczyt +1,5 °C na 15:00 i zmianę do północy -0,2 °C):
++
++  godzina  prognoza     0.31.79 pokazywało   0.31.80 pokazuje
++  ---------------------------------------------------------------------
++  16:00    świeża       +0,9 °C  (szczyt)    +0,9 °C  (szczyt)   bez zmian
++  22:00    świeża       -0,3 °C               -0,3 °C             bez zmian
++  22:00    z 14:00      +1,5 °C  BŁĄD         -0,2 °C             poprawione
++
++Efekt uboczny, o którym trzeba wiedzieć: przy nieświeżej prognozie liczba
++-0,2 °C też jest z 14:00 (taka sama jak w 0.31.79), ale jest to właściwy
++rodzaj liczby — zmiana do północy, a nie szczyt z południa. Aplikacja nie
++zapisuje godziny pobrania prognozy, więc nie umie oznaczyć „dane z 14:00".
++To osobna sprawa, do decyzji.
++
++
++2) Opisy „do końca dnia" — zmierzone, nie na oko
++------------------------------------------------
++Wiersz arkusza ma maxLines = 1, więc długi tekst nie zawija się w trzy
++linie — kończy się wielokropkiem. Pomiar (DejaVu Sans, górna granica;
++Roboto jest ~7 % węższy; ekran 360 dp):
++
++  gdzie            miejsce na tekst   tekst                              wynik
++  ---------------------------------------------------------------------------
++  kafelek          85,3 dp            „…woda się jeszcze ociepla do północy"  190 dp
++  wiersz arkusza   308 dp             „+0,1°C · …ociepla do północy"         459 dp
++
++Dlatego opisy są teraz krótkie (limit 26 znaków pilnuje brama):
++
++  woda stygnie          -> "bez słońca · stygnie"
++  woda się ociepla      -> "bez słońca · ociepla się"
++  bez zmian             -> "bez słońca · bez zmian"
++  brak prognozy         -> "bez słońca"
++
++Między „ociepla" a „się" jest twarda spacja (\u00A0), żeby w kafelku nie
++zostało w drugiej linii samo „się". W kafelku mieszczą się teraz 1-2 linie
++zamiast 3, a w wierszu arkusza opis mieści się w całości.
++
++
++3) Arkusz Czujniki — liczba i opis w osobnych liniach
++-----------------------------------------------------
++Przed: SolarMetricRow("Do końca dnia · szacunek", "$v · $sub")
++        wartość doklejona do opisu, jedna linia, wielokropek na końcu.
++
++Teraz:  SolarMetricRow("Do końca dnia · szacunek", v, sub)
++        liczba sama (taka jak w kafelku, np. "+0,1°C"),
++        opis w drugiej linii pod spodem, cała szerokość (308 dp).
++
++
++Co było wcześniej (bez zmian w 0.31.80)
++---------------------------------------
++0.31.77 — usunięte wykrywanie pobrań wody (zgadywanie ze spadku temperatury).
++0.31.78 — tytuł karty zawija się do 2 linii z wielokropkiem zamiast cięcia
++          w połowie słowa; nota w Czujnikach napisana od nowa.
++          UWAGA: podział nagłówka prognozy na 3 linie z 0.31.78 był pomyłką
++          (nagłówek nie był ucięty) i został cofnięty w 0.31.79.
++          Szczegóły: android-sync/v0.31.78-tytuly-bez-ucinania/ERRATA-0.31.78.txt
++0.31.79 — „DO KOŃCA DNIA" z jednego źródła: kafelek, jego podpis, karta DZIŚ
++          i wiersz w Czujnikach liczą z SolarAnalytics.restOfDayDeltaC(),
++          a opis zależy od znaku liczby, nie od pory dnia.
++
++
++Brama (bez Gradle/JDK)
++----------------------
++  python3 narzedzia/sprawdz_uklad.py
++  76 OK / 0 BŁĄD dla 0.31.80
++  kontrola: 0.31.79 -> 11 BŁĄD, 0.31.78 -> 12 BŁĄD (brama łapie te błędy)
++
++
++Instalacja
++----------
++APK z CI ma podpis debug, inny niż poprzednie wydania:
++  1. Odinstaluj starą wersję Sterownik CO.
++  2. Zainstaluj SterownikCO-0.31.80-debug.apk.
++  3. Sprawdź w Ustawieniach numer wersji: 0.31.80.
++Bez odinstalowania instalator zgłosi „aplikacja nie została zainstalowana".
++
++
++Pliki
++-----
++  SterownikCO-Android-v0.31.80-PELNY-PROJEKT.zip   pełne źródła (to drzewo)
++  ZMIANY-0.31.79-do-0.31.80.diff                  różnica wobec 0.31.79
++  SHA256SUMS.txt                                  sumy kontrolne
++  sprawdz_uklad.py                                brama (76 sprawdzeń)
+ 
+-SPROSTOWANIE MOICH BŁĘDÓW Z 0.31.78
+-===================================
+-1) Nagłówek „PROGNOZA POTENCJAŁU SOLARNEGO ..." NIE BYŁ UCIĘTY.
+-   W 0.31.78 podzieliłem go na trzy linie i napisałem w README, że był
+-   ucinany. To nieprawda: na zrzucie z 23:57 widać go w całości
+-   („PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI", karta ~308 dp, tekst ~266 dp).
+-   Była to zmiana WYGLĄDU, nie naprawa błędu. W 0.31.79 nagłówek wraca
+-   dokładnie do postaci z 0.31.75/0.31.77, jedno-linijkowy.
+-
+-2) Zdanie w README 0.31.78 „wcześniej było samo »szacunek«, bez »nie pomiar«"
+-   było FAŁSZYWE. Stary podpis brzmiał:
+-       potencjał całej doby, nie od teraz · minus = woda się wychładza · szacunek, nie pomiar
+-   czyli „nie pomiar" było tam od początku. Poprawione tu i w komentarzach
+-   w kodzie. Za wprowadzenie w błąd przepraszam.
+-
+-3) Bramka sprawdzała mój własny nowy napis („szacunek z modelu cieplnego,
+-   nie pomiar"), co dowodziło tylko tego, że tekst jest nowy. Zamienione na
+-   sprawdzenia FAKTU: nagłówek musi zawierać liczbę dni, a podpis musi
+-   zawierać słowa „nie pomiar" w dowolnym sformułowaniu (regex).
+-
+-PRAWDZIWY BŁĄD NAPRAWIONY W 0.31.79 — „DO KOŃCA DNIA"
+-=====================================================
+-Objaw (zrzuty 23:57): kafelek pokazywał „+0,1 °C" z podpisem
+-„bez słońca · woda stygnie do północy", a arkusz Czujniki w tym samym
+-wierszu nie pokazywał ŻADNEJ liczby — tylko „bez słońca do końca dnia".
+-Karta 7-dniowa „DZIŚ" liczyła −18,0 + 0,1 = −17,9.
+-
+-Dwie przyczyny, obie w kodzie:
+-  a) wzór na „resztę doby" był przepisany DWA razy: w
+-     SolarAnalytics.dailyForecast7 i w Weather.endOfDayGain.
+-     Nic nie gwarantowało, że dadzą tę samą liczbę;
+-  b) podpis karty po zachodzie był zaszyty na sztywno: „woda stygnie
+-     do północy" — bez patrzenia na znak. Tego dnia woda miała 0,5 °C
+-     przy powietrzu 6,5 °C, więc model liczył +0,1 °C (ocieplanie do
+-     temperatury powietrza). Wartość była dobra, KŁAMAŁ PODPIS.
+-
+-Naprawa:
+-  • SolarAnalytics.restOfDayDeltaC() — jedno źródło prawdy. Używają go:
+-      - kafelek „DO KOŃCA DNIA" (wartość),
+-      - podpis karty (opis słowny),
+-      - pierwszy dzień prognozy 7-dniowej („DZIŚ" = zmierzone + ta liczba),
+-      - wiersz „Do końca dnia · szacunek" w arkuszu Czujniki.
+-  • Arkusz pokazuje teraz TĘ SAMĄ liczbę co kafelek, np.
+-      „+0,1°C · bez słońca · woda się jeszcze ociepla do północy".
+-  • Opis zależy od znaku, nie od godziny:
+-      d < 0   → „woda stygnie do północy"
+-      d > 0   → „woda się jeszcze ociepla do północy"
+-      d ≈ 0   → „bez zmian do północy"
+-  • Karta „DZIŚ" zostaje −17,9 °C (= −18,0 + 0,1) — to jest poprawne,
+-    bo obie liczby pochodzą teraz z tej samej funkcji. Nic nie zmieniam
+-    w danych, tylko usuwam możliwość rozjechania się i kłamliwy podpis.
+-
+-Czego w tym wydaniu NIE ma
+---------------------------
+-WĄSKIEJ SZYNY 56 dp z 0.31.76 (same ikony w poziomie, dymki po
+-przytrzymaniu). Nie ma jej, bo nie potwierdziłeś, że ma wejść razem
+-z tą poprawką. W poziomie działa szyna 68 dp z podpisami — tak jak na
+-Twoim telefonie. Jeśli chcesz: mówisz słowo i robię kolejne wydanie
+-= 0.31.79 + wąska szyna.
+-
+-Co jest dalej w środku (z wcześniejszych wydań)
+------------------------------------------------
+-  • 0.31.77 — wykrywanie pobrań wody USUNIĘTE (kafelek, wiersz w Czujnikach,
+-    heurystyka w kodzie). Powód: brak sygnału zaworu, a 04.11 licznik
+-    pokazał −23,3 °C przy całkowitym spadku doby −15,8 °C. Kolumny
+-    `pobor_wody`/`spadek_poboru_C` w CSV zostają (zapisują 0).
+-  • 0.31.78 — tytuł karty („BILANS & ZYSK KOLEKTORA SŁONECZNEGO") nie jest
+-    już obcinany w połowie słowa: `maxLines=1 + softWrap=false + Clip`
+-    zamienione na zawijanie do 2 linii z wielokropkiem. To była prawdziwa
+-    usterka (widać ją na zrzucie: „...KOLEKTORA SŁON").
+-  • Nota w Czujnikach: „Zysk = różnica temperatur wody […]: ostatni odczyt
+-    minus pierwszy z dzisiaj" (wcześniej „o ile °C ogrzała się woda").
+-
+-Bez zmian
+----------
+-Wykresy, SERWO, historia, kolory, kolejność pozycji, „LIVE", liczniki,
+-kafelek pogody, pobieranie z Open-Meteo (co 15 min), prognoza solarna,
+-łuk słoneczny. FIRMWARE BEZ ZMIAN: piec zostaje na 3.57.9.
+-
+-Wersja
+-------
+-versionCode 31079 / versionName "0.31.79" (app/build.gradle.kts)
+-
+-Budowanie
+----------
+-APK buduje workflow .github/workflows/apk-android.yml na runnerze GitHuba
+-(Java 17 + SDK z obrazu) z katalogu android/ w repozytorium.
+-Gotowy plik: android-sync/apk/SterownikCO-0.31.79-debug.apk
+-UWAGA: podpisany kluczem debug runnera — przed instalacją odinstaluj
+-starą wersję (dane w Firebase zostają, ustawienia lokalne znikną).
+-
+-Co sprawdzić na telefonie
+--------------------------
+-1. POGODA → karta BILANS: 3 kafelki, brak „POBRANIA DZIŚ".
+-2. Tytuł karty mieści się w całości albo kończy „…" — nigdy w połowie słowa.
+-3. Nagłówek prognozy: „PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI" w jednej linii.
+-4. Kafelek „DO KOŃCA DNIA" i arkusz Czujniki → wiersz „Do końca dnia ·
+-   szacunek" pokazują TĘ SAMĄ liczbę.
+-5. Podpis kafelka zgadza się ze znakiem: przy dodatniej wartości nie pisze
+-   „stygnie".
+-6. Karta „DZIŚ" = „SPADEK/ZYSK DZIŚ" + wartość z punktu 4.
+-7. Ustawienia → numer wersji: 0.31.79.
+-
+-Weryfikacja bez telefonu
+-------------------------
+-Brama statyczna (narzedzia/sprawdz_uklad.py): 70 OK / 0 BŁĄD.
+-Kontrola negatywna: 0.31.78 → 9 BŁĄD, 0.31.75 → 17 BŁĄD.
+-
+-Pliki zmienione względem 0.31.78 (4)
+-------------------------------------
+-app/build.gradle.kts
+-app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt
+-app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt
+-app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
++Gotowy plik do telefonu: android-sync/apk/SterownikCO-0.31.80-debug.apk
++(po zbudowaniu w CI; podpis debug — patrz „Instalacja").
+diff -ru 0.31.79/app/build.gradle.kts 0.31.80/app/build.gradle.kts
+--- 0.31.79/app/build.gradle.kts	2026-11-04 23:54:46.632141154 +0000
++++ 0.31.80/app/build.gradle.kts	2026-11-04 23:53:42.351104419 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31079
+-        versionName = "0.31.79"
++        versionCode = 31080
++        versionName = "0.31.80"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff -ru 0.31.79/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt 0.31.80/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt
+--- 0.31.79/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-11-04 23:54:46.608140765 +0000
++++ 0.31.80/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-11-04 23:53:42.347104355 +0000
+@@ -308,8 +308,11 @@
+      *
+      *  @return zmiana od TERAZ do północy ze znakiem; NaN, gdy model nie ma danych.
+      */
+-    fun restOfDayDeltaC(): Double = when {
+-        forecastPeakReal && forecastGain.isFinite() -> forecastGain
++    fun restOfDayDeltaC(sunLeft: Boolean): Double = when {
++        // [0.31.80] Zysk szczytu TYLKO gdy słońce jeszcze jest. Bez tego warunku
++        // przy nieświeżej prognozie (telefon offline od popołudnia) o 22:00
++        // wychodził zysk szczytu — liczba z gatunku „co by było w południe".
++        sunLeft && forecastPeakReal && forecastGain.isFinite() -> forecastGain
+         forecastEndDeltaC.isFinite() -> forecastEndDeltaC
+         else -> Double.NaN
+     }
+@@ -322,7 +325,7 @@
+         // [0.31.79] Reszta doby z JEDNEGO źródła — tej samej funkcji, której używa
+         // kafelek „DO KOŃCA DNIA". Wcześniej ten wzór był tu przepisany drugi raz,
+         // więc kafelek i karta „DZIŚ" mogły się rozjechać bez śladu w kodzie.
+-        val rest = restOfDayDeltaC()
++        val rest = restOfDayDeltaC(Weather.sunLeftToday(dayHours.first()))
+         val restOfDay = if (rest.isFinite()) rest else 0.0
+ 
+         val out = ArrayList<Double>(dayHours.size)
+diff -ru 0.31.79/app/src/main/java/com/sterownikco/pro/core/Weather.kt 0.31.80/app/src/main/java/com/sterownikco/pro/core/Weather.kt
+--- 0.31.79/app/src/main/java/com/sterownikco/pro/core/Weather.kt	2026-11-04 23:54:46.608140765 +0000
++++ 0.31.80/app/src/main/java/com/sterownikco/pro/core/Weather.kt	2026-11-04 23:53:42.347104355 +0000
+@@ -85,6 +85,31 @@
+             set(Calendar.MILLISECOND, 0)
+         }.timeInMillis
+ 
++    /**
++     * [0.31.80] JEDNA reguła „czy do końca doby jest jeszcze słońce".
++     *
++     *  Wołający: karta „DO KOŃCA DNIA" (Weather.kt), arkusz Czujniki (Sensors.kt)
++     *  i prognoza 7-dniowa (SolarAnalytics.dailyForecast7). Do 0.31.79 reguła
++     *  mieszkała w pliku ekranu (solarSunLeft w Weather.kt), więc prognoza jej nie
++     *  znała i brała zysk szczytu także po zachodzie słońca.
++     *
++     *  Liczy się GTI (nasłonecznienie kolektora pod kątem), w braku — GHI.
++     *  Próg 20 W/m² odsiewa godziny bez realnego słońca.
++     */
++    fun sunLeftToday(hours: List<WHour>, fromTs: Long = startOfHour()): Boolean {
++        val end = Calendar.getInstance().apply {
++            timeInMillis = fromTs
++            set(Calendar.HOUR_OF_DAY, 23)
++            set(Calendar.MINUTE, 59)
++            set(Calendar.SECOND, 59)
++            set(Calendar.MILLISECOND, 0)
++        }.timeInMillis
++        return hours.any { h ->
++            h.time in fromTs..end &&
++                ((h.tiltedIrradiance ?: h.shortwaveRadiation ?: 0.0) > 20.0)
++        }
++    }
++
+     /** Lista kafelków prognozy zaczyna się od bieżącej godziny, nie od północy. */
+     fun forecastFromHour(hourly: List<WHour>, startMillis: Long, limit: Int = 48): List<WHour> =
+         hourly.filter { it.time >= startMillis }.take(max(0, limit))
+diff -ru 0.31.79/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt 0.31.80/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt
+--- 0.31.79/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-11-04 23:54:46.616140895 +0000
++++ 0.31.80/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-11-04 23:53:42.351104419 +0000
+@@ -323,7 +323,7 @@
+             val sol = m.solar
+             // [0.31.30] Czy do końca doby zostało jeszcze słońce zdolne cokolwiek podgrzać.
+             // Liczone z tych samych godzin prognozy, z których liczy model — GTI, potem GHI.
+-            val sunLeftToday = solarSunLeft(hours, currentHourStart)
++            val sunLeftToday = Weather.sunLeftToday(hours, currentHourStart)
+             val realSolarTemps = m.S.hasAllData("t_panel", "t_zewn") &&
+                 !m.S.symAktywna("panel") && !m.S.symAktywna("zewn")
+             val dT = if (realSolarTemps) m.S.t_panel - m.S.t_zewn else Double.NaN
+@@ -906,16 +906,9 @@
+ 
+ /** Czy do końca doby jest jeszcze słońce dające >20 W/m² w płaszczyźnie kolektora.
+  *  Poniżej tego progu model i tak nic nie ugrzeje, a „+0,0 °C” czyta się jak awaria. */
+-internal fun solarSunLeft(hours: List<WHour>, fromTs: Long): Boolean {
+-    val end = calOf(fromTs).apply {
+-        set(java.util.Calendar.HOUR_OF_DAY, 23)
+-        set(java.util.Calendar.MINUTE, 59)
+-        set(java.util.Calendar.SECOND, 59)
+-    }.timeInMillis
+-    return hours.any { h ->
+-        h.time in fromTs..end && ((h.tiltedIrradiance ?: h.shortwaveRadiation ?: 0.0) > 20.0)
+-    }
+-}
++// [0.31.80] Reguła „czy jest jeszcze słońce" przeniesiona do core
++// (Weather.sunLeftToday) — do 0.31.79 stała tutaj, w pliku ekranu, więc
++// prognoza 7-dniowa (SolarAnalytics.dailyForecast7) nie mogła jej użyć.
+ 
+ /** Wartość karty „DO KOŃCA DNIA”. */
+ /** [0.31.79] Wartość karty „DO KOŃCA DNIA". Publiczna, bo ten sam napis pokazuje
+@@ -926,7 +919,7 @@
+  *  Liczba pochodzi z [SolarAnalytics.restOfDayDeltaC] — tego samego źródła, z
+  *  którego liczy się pierwszy dzień prognozy 7-dniowej. */
+ fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String {
+-    val d = sol.restOfDayDeltaC()
++    val d = sol.restOfDayDeltaC(sunLeft)
+     if (!d.isFinite()) return "—"
+     // Dzień z realnym szczytem: pokazujemy zysk szczytu, jak dotąd (z plusem).
+     if (sunLeft && sol.forecastPeakReal) return "+" + fmt1(d) + "°C"
+@@ -942,17 +935,22 @@
+  *  kafelku. Teraz opis wynika z tej samej liczby co wartość. */
+ fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
+     !sunLeft -> {
+-        val d = sol.restOfDayDeltaC()
++        val d = sol.restOfDayDeltaC(sunLeft)
++        // [0.31.80] Krótkie opisy. Zmierzone (DejaVu Sans 7,5 sp, ekran 360 dp):
++        // na tekst w kafelku zostaje 85,3 dp, a „bez słońca · woda się jeszcze
++        // ociepla do północy" to 190 dp (Roboto) — trzy linie w kafelku i ucięcie
++        // wielokropkiem w wierszu arkusza (miejsca 308 dp, potrzebne 459 dp).
++        // Twarda spacja trzyma „ociepla się" razem, żeby nie zostało samo „się".
+         when {
+-            !d.isFinite() -> "bez słońca do końca dnia"
+-            d < -ZERO_EPS_C -> "bez słońca · woda stygnie do północy"
+-            d > ZERO_EPS_C -> "bez słońca · woda się jeszcze ociepla do północy"
+-            else -> "bez słońca · bez zmian do północy"
++            !d.isFinite() -> "bez słońca"
++            d < -ZERO_EPS_C -> "bez słońca · stygnie"
++            d > ZERO_EPS_C -> "bez słońca · ociepla\u00A0się"
++            else -> "bez słońca · bez\u00A0zmian"
+         }
+     }
+     // [0.31.38] Rozdzielone: brak próbki wody vs brak pogody.
+     !sol.hasSamples -> "brak próbki wody z czujnika"
+-    !sol.restOfDayDeltaC().isFinite() -> "brak prognozy"
++    !sol.restOfDayDeltaC(sunLeft).isFinite() -> "brak prognozy"
+     // [0.31.31] Słońce jeszcze jest, ale model policzył samo wychładzanie —
+     // woda nie dogrzeje się ponad straty. Wcześniej w tym miejscu stała
+     // godzina szczytu 0.0, czyli „08:00”, wzięta znikąd.
+diff -ru 0.31.79/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt 0.31.80/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
+--- 0.31.79/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-11-04 23:54:46.616140895 +0000
++++ 0.31.80/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-11-04 23:53:42.351104419 +0000
+@@ -39,7 +39,7 @@
+ import com.sterownikco.pro.ui.screens.SolarMultiDayForecast
+ import com.sterownikco.pro.ui.screens.endOfDayGain
+ import com.sterownikco.pro.ui.screens.endOfDaySub
+-import com.sterownikco.pro.ui.screens.solarSunLeft
++import com.sterownikco.pro.core.Weather
+ import com.sterownikco.pro.ui.components.ManualRow
+ import com.sterownikco.pro.ui.components.Note
+ import com.sterownikco.pro.ui.components.NumRow
+@@ -322,7 +322,7 @@
+     // „DO KOŃCA DNIA” na ekranie Pogoda. Bez tego po zachodzie wychodziło „+0,0 °C”,
+     // co czyta się jak awaria modelu, a jest poprawnym wynikiem.
+     val sunnyHours = m.weather?.hourly.orEmpty()
+-    val sunLeft = solarSunLeft(sunnyHours, com.sterownikco.pro.core.Weather.startOfHour())
++    val sunLeft = Weather.sunLeftToday(sunnyHours)
+     val s = m.S
+     val solar = m.solar
+     val panelTemp = s.valOf("panel", "t_panel")
+@@ -365,10 +365,15 @@
+         // „DO KOŃCA DNIA" (Weather.kt). Do 0.31.78 arkusz miał własny when-branch:
+         // pokazywał samo „bez słońca do końca dnia" (bez liczby), a po zachodzie
+         // gubił wartość całkowicie — więc karta +0,1 °C nie miała odpowiednika.
++        // [0.31.80] Opis w OSOBNEJ linii, nie doklejony do liczby. Zmierzone:
++        // „+0,1°C · bez słońca · woda się jeszcze ociepla do północy" to 459 dp
++        // przy 308 dp miejsca (360 dp ekranu), a wiersz ma maxLines = 1 — kończył
++        // się więc wielokropkiem. Teraz liczba jest sama (identyczna jak w kafelku),
++        // a opis pod spodem ma całą szerokość.
+         run {
+             val v = endOfDayGain(solar, sunLeft)
+             val sub = endOfDaySub(solar, sunLeft)
+-            SolarMetricRow("Do końca dnia · szacunek", if (sub.isEmpty()) v else "$v · $sub")
++            SolarMetricRow("Do końca dnia · szacunek", v, sub)
+         }
+         // [0.31.77] Wiersz „Pobrania ciepłej wody" usunięty razem z kafelkiem
+         // na karcie BILANS — powód: zgadywanie ze spadku temperatury, nie pomiar.
+@@ -395,7 +400,7 @@
+ }
+ 
+ @Composable
+-private fun SolarMetricRow(title: String, value: String) {
++private fun SolarMetricRow(title: String, value: String, sub: String = "") {
+     Column {
+         Box(Modifier.fillMaxWidth().height(1.dp).background(Pal.Border))
+         Row(
+@@ -419,5 +424,14 @@
+                 modifier = Modifier.padding(start = 8.dp)
+             )
+         }
++        // [0.31.80] Opcjonalny opis pod liczbą — cała szerokość wiersza, więc nie
++        // konkuruje z tytułem o miejsce i nie kończy się wielokropkiem.
++        if (sub.isNotEmpty()) {
++            Text(
++                sub,
++                fontSize = 8.5.sp, lineHeight = 11.sp, color = Pal.TextDim2,
++                modifier = Modifier.padding(bottom = 8.dp)
++            )
++        }
+     }
+ }

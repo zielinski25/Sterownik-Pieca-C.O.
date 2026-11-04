@@ -308,8 +308,11 @@ class SolarAnalytics(private val prefs: Prefs) {
      *
      *  @return zmiana od TERAZ do północy ze znakiem; NaN, gdy model nie ma danych.
      */
-    fun restOfDayDeltaC(): Double = when {
-        forecastPeakReal && forecastGain.isFinite() -> forecastGain
+    fun restOfDayDeltaC(sunLeft: Boolean): Double = when {
+        // [0.31.80] Zysk szczytu TYLKO gdy słońce jeszcze jest. Bez tego warunku
+        // przy nieświeżej prognozie (telefon offline od popołudnia) o 22:00
+        // wychodził zysk szczytu — liczba z gatunku „co by było w południe".
+        sunLeft && forecastPeakReal && forecastGain.isFinite() -> forecastGain
         forecastEndDeltaC.isFinite() -> forecastEndDeltaC
         else -> Double.NaN
     }
@@ -322,7 +325,7 @@ class SolarAnalytics(private val prefs: Prefs) {
         // [0.31.79] Reszta doby z JEDNEGO źródła — tej samej funkcji, której używa
         // kafelek „DO KOŃCA DNIA". Wcześniej ten wzór był tu przepisany drugi raz,
         // więc kafelek i karta „DZIŚ" mogły się rozjechać bez śladu w kodzie.
-        val rest = restOfDayDeltaC()
+        val rest = restOfDayDeltaC(Weather.sunLeftToday(dayHours.first()))
         val restOfDay = if (rest.isFinite()) rest else 0.0
 
         val out = ArrayList<Double>(dayHours.size)

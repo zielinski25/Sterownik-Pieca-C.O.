@@ -1,0 +1,63 @@
+ERRATA do wydania 0.31.78
+=========================
+
+Ten folder zawiera wydanie 0.31.78 i jego README-WGRANIE.txt. README powstało
+razem z wydaniem i zawiera DWA zdania, które nie są prawdziwe. Nie kasuję
+historii — prostuję ją tutaj, na początku (w README też jest odnośnik).
+
+
+Punkt 1 (najważniejszy): nagłówek prognozy NIE był ucięty
+---------------------------------------------------------
+README 0.31.78 twierdzi (sekcja „Nagłówek prognozy 7-dniowej też był ucięty"):
+
+    „Było: PROGNOZA POTENCJAŁU SOLARNEGO · 7 DNI w jednej linii — na karcie
+     kończyło się na SOLARNEGO, a dalsza część (· 7 DNI) nie była widoczna."
+
+To nieprawda. Zmierzone na zrzucie z 2026-11-04 23:57:
+
+  • pełny napis na zrzucie brzmi:
+        PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI
+    (nie „· 7 DNI"), czyli inny tekst niż ten, który README cytuje jako „było",
+  • napis mieści się w całości w jednej linii — nic nie było ucięte,
+  • karta ma ~308 dp szerokości, napis ~243 dp (Roboto 9,5 sp) — zapas ~65 dp.
+
+Podział nagłówka na trzy linie w 0.31.78 był więc ZMIANĄ WYGLĄDU, a nie
+naprawą błędu. Został cofnięty 1:1 w 0.31.79. Wersja w 0.31.80 i później:
+jeden wiersz, „📅 PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI".
+
+Wniosek na przyszłość: zrzut trzeba zmierzyć, zanim nazwie się coś „uciętym".
+
+
+Punkt 2: zdanie „podpis mówi wprost, że to NIE pomiar" było przedwczesne
+-----------------------------------------------------------------------
+README 0.31.78 chwali nowy podpis prognozy 7-dniowej jako uczciwy
+(„szacunek, nie pomiar"). Sam napis jest w porządku, ale w tym samym wydaniu
+na tym samym ekranie stał kafelek „DO KOŃCA DNIA", który kłamał:
+
+  04.11.2026, 22:00 — woda 0,5 °C, powietrze 6,5 °C, model liczył +0,1 °C
+  (woda się jeszcze ociepla do północy), a podpis kafelka mówił
+  „bez słońca · woda stygnie do północy", bo był zaszyty na sztywno
+  dla pory po zachodzie słońca, bez patrzenia na znak liczby.
+
+Czyli: jedno zdanie na ekranie było prawdziwe, a drugie fałszywe.
+Prawdziwa naprawa przyszła w 0.31.79 (opis zależy od znaku liczby, jedno
+źródło: SolarAnalytics.restOfDayDeltaC) i w 0.31.80 (ten sam warunek „jest
+jeszcze słońce" dla kafelka, arkusza i prognozy 7-dniowej).
+
+
+Co z 0.31.78 zostało i nadal jest poprawne
+------------------------------------------
+  • WCard: tytuł karty zawija się do 2 linii i kończy wielokropkiem.
+    To BYŁ prawdziwy błąd — `maxLines = 1` + `softWrap = false` +
+    `overflow = TextOverflow.Clip` ucinało „BILANS & ZYSK KOLEKTORA SŁONECZNEGO"
+    w połowie słowa, bez wielokropka.
+  • podtytuł karty też używa wielokropka (spójnie),
+  • nota w arkuszu Czujniki napisana od nowa (różnica temperatur, nie wartość).
+
+
+Gdzie sprawdzić
+---------------
+  0.31.79  android-sync/v0.31.79-jedno-zrodlo-koniec-dnia/README-WGRANIE.txt
+  0.31.80  android-sync/v0.31.80-warunek-slonca-krotkie-opisy/README-WGRANIE.txt
+  brama    narzedzia/sprawdz_uklad.py — sprawdzenie „nagłówek zawiera 7 DNI"
+           pilnuje faktu (regex), nie konkretnego sformułowania

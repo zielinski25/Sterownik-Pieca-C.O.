@@ -85,6 +85,31 @@ object Weather {
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
 
+    /**
+     * [0.31.80] JEDNA reguła „czy do końca doby jest jeszcze słońce".
+     *
+     *  Wołający: karta „DO KOŃCA DNIA" (Weather.kt), arkusz Czujniki (Sensors.kt)
+     *  i prognoza 7-dniowa (SolarAnalytics.dailyForecast7). Do 0.31.79 reguła
+     *  mieszkała w pliku ekranu (solarSunLeft w Weather.kt), więc prognoza jej nie
+     *  znała i brała zysk szczytu także po zachodzie słońca.
+     *
+     *  Liczy się GTI (nasłonecznienie kolektora pod kątem), w braku — GHI.
+     *  Próg 20 W/m² odsiewa godziny bez realnego słońca.
+     */
+    fun sunLeftToday(hours: List<WHour>, fromTs: Long = startOfHour()): Boolean {
+        val end = Calendar.getInstance().apply {
+            timeInMillis = fromTs
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return hours.any { h ->
+            h.time in fromTs..end &&
+                ((h.tiltedIrradiance ?: h.shortwaveRadiation ?: 0.0) > 20.0)
+        }
+    }
+
     /** Lista kafelków prognozy zaczyna się od bieżącej godziny, nie od północy. */
     fun forecastFromHour(hourly: List<WHour>, startMillis: Long, limit: Int = 48): List<WHour> =
         hourly.filter { it.time >= startMillis }.take(max(0, limit))

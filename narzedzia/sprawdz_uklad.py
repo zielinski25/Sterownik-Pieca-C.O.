@@ -24,8 +24,8 @@ TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.79"
-KOD_WERSJI = "31079"
+WERSJA = "0.31.80"
+KOD_WERSJI = "31080"
 
 wyniki = []
 
@@ -409,18 +409,25 @@ def main():
     # przepisany w dwóch funkcjach (Weather.kt i dailyForecast7), więc mógł się
     # rozjechać bez śladu.
     sprawdz(
-        "jedna funkcja liczy zmianę do końca doby",
-        "fun restOfDayDeltaC()" in solar,
-        "SolarAnalytics.restOfDayDeltaC()",
+        "jedna funkcja liczy zmianę do końca doby (z warunkiem słońca)",
+        "fun restOfDayDeltaC(sunLeft: Boolean): Double" in solar,
+        "SolarAnalytics.restOfDayDeltaC(sunLeft)",
+    )
+    # [0.31.80] Każde wołanie MUSI podać sunLeft. Wołanie bez argumentu znaczy,
+    # że ktoś znowu bierze zysk szczytu bez patrzenia, czy słońce jeszcze jest.
+    sprawdz(
+        "brak wołań restOfDayDeltaC() bez argumentu",
+        not re.search(r"restOfDayDeltaC\(\s*\)", solar + weather + sensors),
+        "wołanie bez sunLeft = zysk szczytu także po zachodzie",
     )
     sprawdz(
         "prognoza 7-dniowa bierze resztę doby z tej funkcji",
-        "val rest = restOfDayDeltaC()" in solar,
+        bool(re.search(r"val rest = restOfDayDeltaC\(\s*Weather\.sunLeftToday\(", solar)),
         "inaczej karta DZIŚ liczy się drugim wzorem",
     )
     sprawdz(
         "kafelek DO KOŃCA DNIA bierze wartość z tej funkcji",
-        "val d = sol.restOfDayDeltaC()" in weather,
+        bool(re.search(r"val d = sol\.restOfDayDeltaC\(\s*sunLeft\s*\)", weather)),
         "Weather.endOfDayGain",
     )
     sprawdz(
@@ -435,9 +442,45 @@ def main():
     )
     sprawdz(
         "opis „stygnie / ociepla” zależy od znaku, nie od pory dnia",
-        "d < -ZERO_EPS_C -> \"bez słońca · woda stygnie do północy\"" in weather
-        and "woda się jeszcze ociepla do północy" in weather,
+        bool(re.search(r"d < -ZERO_EPS_C -> \"bez słońca", weather))
+        and bool(re.search(r"d > ZERO_EPS_C -> \"bez słońca", weather)),
         "godzina 22:00 nie znaczy „na pewno stygnie”",
+    )
+    # [0.31.80] Opis musi się zmieścić w kafelku (85,3 dp przy 360 dp, 7,5 sp)
+    # i w wierszu arkusza. Zmierzone: 26 znaków ≈ 100 dp, więc limit 26.
+    opisy = re.findall(r'-> "(bez słońca[^"]*)"', weather)
+    sprawdz(
+        "opisy „do końca dnia” są krótkie (≤ 26 znaków)",
+        bool(opisy) and max(len(x.replace("\\u00A0", " ")) for x in opisy) <= 26,
+        "długi opis nie mieści się w kafelku: " + ", ".join(sorted(opisy, key=len)[-1:]),
+    )
+    # [0.31.80] Wiersz arkusza: liczba osobno, opis w drugiej linii.
+    sprawdz(
+        "arkusz nie dokleja opisu do liczby („$v · $sub”)",
+        "$v · $sub" not in sensors,
+        "doklejony opis nie mieścił się w jednej linii (459 dp przy 308 dp)",
+    )
+    sprawdz(
+        "SolarMetricRow ma drugą linię na opis",
+        bool(re.search(r"fun SolarMetricRow\(title: String, value: String, sub: String = \"\"\)", sensors))
+        and "if (sub.isNotEmpty())" in sensors,
+        "bez tego opisu nie ma gdzie pokazać",
+    )
+    # [0.31.80] Jedna implementacja reguły „jest jeszcze słońce”. Dwie kopie to
+    # dokładnie ten błąd, który dał zysk szczytu po zachodzie w prognozie 7-dniowej.
+    reguly = []
+    for plik in APP.rglob("*.kt"):
+        t = bez_komentarzy(czytaj(plik))
+        reguly += [plik.name] * len(re.findall(r"shortwaveRadiation \?: 0\.0\) > 20\.0", t))
+    sprawdz(
+        "reguła „jest jeszcze słońce” ma jedną implementację (core)",
+        reguly == ["Weather.kt"],
+        "kopie: " + (", ".join(reguly) if reguly else "brak"),
+    )
+    sprawdz(
+        "ekran nie ma własnej kopii reguły (brak solarSunLeft w UI)",
+        "fun solarSunLeft" not in weather,
+        "reguła ma być w core/Weather.sunLeftToday",
     )
     sprawdz(
         "karta DZIŚ = zmierzone + to samo źródło",
@@ -450,7 +493,7 @@ def main():
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.79 (0.31.75 + bez pobrań + jedno źródło dla DO KOŃCA DNIA)")
+    print("BRAMA UKŁADU EKRANU — 0.31.80 (0.31.75 + bez pobrań + jedno źródło dla DO KOŃCA DNIA, z warunkiem słońca)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:
