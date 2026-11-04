@@ -374,10 +374,8 @@ private fun SolarMetricsCard(m: AppModel) {
                 else -> "+${s.fmt1(solar.forecastGain)}°C"
             }
         )
-        SolarMetricRow(
-            "Pobrania ciepłej wody",
-            if (solar.todayDrawCount > 0) "${solar.todayDrawCount} razy · −${s.fmt1(solar.todayDrawDrop)}°C" else "brak"
-        )
+        // [0.31.77] Wiersz „Pobrania ciepłej wody" usunięty razem z kafelkiem
+        // na karcie BILANS — powód: zgadywanie ze spadku temperatury, nie pomiar.
         Text(
             // [0.31.35] „Zmierzone" liczy się też z historii chmury (co minutę),
             // a nie tylko z próbek zebranych przy otwartej aplikacji.
@@ -387,9 +385,9 @@ private fun SolarMetricsCard(m: AppModel) {
                 "(czujnik kolektora, nie bojler pieca). Minus = woda się " +
                 "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku — z chmury, " +
                 "co minutę, także gdy aplikacja była zamknięta. „Szacunek” to " +
-                "wyliczenie z prognozy słońca — nie pomiar. Pobranie liczy się jako " +
-                "spadek o co najmniej 0,5 °C utrzymany ponad 5 minut; krótkie " +
-                "drgnięcia czujnika nie są liczone.",
+                "wyliczenie z prognozy słońca — nie pomiar. Liczba pobrań wody NIE jest " +
+                "tu pokazywana: w telemetrii nie ma sygnału zaworu, więc każde " +
+                "wykrywanie pobrania byłoby zgadywaniem.",
             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp,
             modifier = Modifier.padding(top = 6.dp)
         )

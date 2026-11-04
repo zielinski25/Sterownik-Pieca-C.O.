@@ -7,11 +7,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,15 +31,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,11 +45,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -71,7 +59,6 @@ import com.sterownikco.pro.ui.svg.SvgView
 import com.sterownikco.pro.ui.theme.Dimens
 import com.sterownikco.pro.ui.theme.Pal
 import com.sterownikco.pro.ui.theme.Txt
-import kotlinx.coroutines.launch
 
 /* ══════════════════════════════════════════════════════════════════════════
    CHROME — pasek górny, pasek systemowy, banery, hero, kafelki szybkie,
@@ -377,61 +364,6 @@ fun NavBar(page: Int, onNav: (Int) -> Unit) {
 }
 
 /**
- * [0.31.76] Pozycja szyny w trybie kompaktowym (telefon w poziomie): sama ikona,
- * bez podpisu — ale podpis nie znika calkiem:
- *
- *  - przytrzymanie palca pokazuje dymek z nazwa (`combinedClickable(onLongClick)`
- *    + `TooltipBox`), bez tego "Wiecej" i "Ustawienia" bylyby nierozroznialne,
- *  - TalkBack czyta nazwe z `contentDescription` (i role karty),
- *  - pole dotyku zostaje 48 x 48 dp — nie zmniejszamy go razem z szyna.
- */
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
-@Composable
-private fun RailIcon(icon: String, label: String, active: Boolean, onClick: () -> Unit) {
-    val tooltip = rememberTooltipState()
-    val scope = rememberCoroutineScope()
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = {
-            Box(
-                Modifier.background(Pal.Surface3, RoundedCornerShape(8.dp))
-                    .border(1.dp, Pal.Border, RoundedCornerShape(8.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Text(label, style = Txt.navLabel, color = Pal.White, maxLines = 1)
-            }
-        },
-        state = tooltip
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp) // pole dotyku 48 x 48 dp — wymog dostepnosci
-                .background(
-                    if (active) Pal.rgba(0, 212, 245, .1f) else Color.Transparent,
-                    RoundedCornerShape(14.dp)
-                )
-                .border(
-                    1.dp,
-                    if (active) Pal.rgba(0, 212, 245, .25f) else Color.Transparent,
-                    RoundedCornerShape(14.dp)
-                )
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = { scope.launch { tooltip.show() } }
-                )
-                .semantics {
-                    contentDescription = label
-                    role = Role.Tab
-                    this.selected = active
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            AppIcon(icon, size = 24.dp, tint = if (active) Pal.Cyan else Pal.TextDim2)
-        }
-    }
-}
-
-/**
  * `.nav` w wariancie pionowym (0.31.69) — te same 5 zakładek co w [NavBar], ale
  * ustawione w kolumnie po lewej stronie. Włączane przez [com.sterownikco.pro.core.ScreenLayout.useNavRail]
  * wtedy, gdy okno jest niskie i szerokie (telefon w poziomie): dolny pasek zabrałby
@@ -450,13 +382,10 @@ private fun RailIcon(icon: String, label: String, active: Boolean, onClick: () -
  * `displayCutoutPadding()` na całym wierszu, przez co przy krawędzi zostawał
  * pas koloru tła (Pal.Bg) — widoczny szew między tłem a szyną.
  */
-fun NavRail(page: Int, startInset: Dp = 0.dp, compact: Boolean = false, onNav: (Int) -> Unit) {
+fun NavRail(page: Int, startInset: Dp = 0.dp, onNav: (Int) -> Unit) {
     val items = listOf("dashboard" to "Dashboard", "chart" to "Wykresy", "weather" to "Pogoda", "settings" to "Ustawienia", "more" to "Więcej")
     Column(
-        // [0.31.76] W poziomie szyna jest waska (56 dp, same ikony), w pozostalych
-        // przypadkach zostaje 68 dp z podpisami. Wciecie wyciecia kamery dodajemy
-        // ZAWSZE i po stronie startu — nigdy na sztywno.
-        modifier = Modifier.width((if (compact) Dimens.railWCompact else Dimens.railW) + startInset).fillMaxHeight()
+        modifier = Modifier.width(Dimens.railW + startInset).fillMaxHeight()
             // [0.31.73] Tlo PRZED wcieciem paska statusu — tak samo jak w TopBarze.
             // Inaczej gorny rog ekranu mial kolor paska gornego zamiast koloru szyny.
             // [0.31.74] Obramowanie przed wcieciem — inaczej pozioma linia na
@@ -466,25 +395,13 @@ fun NavRail(page: Int, startInset: Dp = 0.dp, compact: Boolean = false, onNav: (
             .statusBarsPadding()
             // [0.31.74] 8 -> 6 dp: przy szynie 68 dp wewnatrz zostaje 56 dp,
             // a najdluzsza etykieta (Ustawienia, 9 sp) ma ~44 dp.
-            // [0.31.76] Kompaktowo: 4 dp po bokach (56 - 8 = 48 dp na kwadrat
-            // dotyku) i 8 dp od gory i dolu.
-            .padding(
-                start = startInset + (if (compact) 4.dp else 6.dp),
-                end = if (compact) 4.dp else 6.dp,
-                top = if (compact) 8.dp else 10.dp,
-                bottom = if (compact) 8.dp else 10.dp
-            ),
+            .padding(start = 6.dp + startInset, end = 6.dp, top = 10.dp, bottom = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        // [0.31.76] Kompaktowo pozycje maja stale 48 dp i odstep 4 dp, wiec
-        // ukladamy je symetrycznie w pionie zamiast rozciagac na cala wysokosc.
-        verticalArrangement = if (compact) Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
-                              else Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         items.forEachIndexed { i, (ico, label) ->
             val on = i == page
-            if (compact) {
-                RailIcon(ico, label, on) { onNav(i) }
-            } else Column(
+            Column(
                 modifier = Modifier.weight(1f).fillMaxWidth()
                     .background(if (on) Pal.rgba(0, 212, 245, .1f) else Color.Transparent, RoundedCornerShape(16.dp))
                     .border(1.dp, if (on) Pal.rgba(0, 212, 245, .25f) else Color.Transparent, RoundedCornerShape(16.dp))

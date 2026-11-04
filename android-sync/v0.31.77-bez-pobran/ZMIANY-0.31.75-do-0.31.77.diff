@@ -1,0 +1,514 @@
+diff -ru /tmp/v75ctrl/SterownikCO-0.31.75/README-WGRANIE.txt /tmp/v77/README-WGRANIE.txt
+--- /tmp/v75ctrl/SterownikCO-0.31.75/README-WGRANIE.txt	2026-11-01 11:58:08.000000000 +0000
++++ /tmp/v77/README-WGRANIE.txt	2026-11-04 22:48:06.211837857 +0000
+@@ -1,85 +1,106 @@
+-Sterownik CO - aplikacja Android 0.31.75 (pelny projekt)
+-=========================================================
++Sterownik CO — aplikacja Android 0.31.77 (pełny projekt)
++========================================================
+ 
+-Co nowego w 0.31.75
+--------------------
+-SZERSZE MIEJSCE NA PULPIT: 158 dp po lewej -> 107 dp.
+-
+-POPRAWKA BLEDU KOMPILACJI Z 0.31.74 (juz naprawiona)
+-----------------------------------------------------
+-0.31.74 nie skompilowala sie:
+-    SterownikApp.kt:24:43 Unresolved reference 'calculateBottomPadding'.
+-
+-Przyczyna: `calculateBottomPadding()` jest METODA interfejsu PaddingValues,
+-a nie funkcja-rozszerzeniem. Rozszerzeniami w foundation.layout sa tylko
+-`calculateStartPadding` i `calculateEndPadding` - i tylko te wolno importowac.
+-Import `androidx.compose.foundation.layout.calculateBottomPadding` nie istnieje,
+-choc samo wywolanie `navVals.calculateBottomPadding()` jest poprawne (metoda
+-interfejsu nie wymaga importu).
+-
+-W 0.31.75: usuniety ten jeden import. Cala reszta ukladu bez zmian
+-wobec 0.31.74.
+-
+-Dlaczego pas po lewej byl taki szeroki (pomiar Twojego zrzutu 12:45):
+-
+-    x = 0 .. 186 px   szyna (119 dp = 80 dp ikon + 39 dp wyciecia kamery)
+-    x = 187 .. 245 px PUSTKA - 39 dp tla strony
+-    x = 246 px        dopiero tu zaczynal sie pasek gorny i karty
+-
+-Te 39 dp pustki to wciecie kamery policzone DRUGI RAZ. Szyna juz je
+-pochlania (dlatego ma 119 dp zamiast 80 dp), a dodatkowo system dokladal
+-je do tresci obok. Powod: `Modifier.navigationBarsPadding()` bierze
+-wszystkie cztery strony, a na tym telefonie pas nawigacji jest raportowany
+-razem z obszarem wyciecia - czyli z lewej strony dokladal 39 dp.
+-
+-Co zmienione
+-------------
+-1. Wciecie paska nawigacji liczymy sami i bierzemy z niego WYLACZNIE
+-   koniec i dol (`calculateEndPadding` / `calculateBottomPadding`) zamiast
+-   gotowego `navigationBarsPadding()`. Lewa strona nalezy do szyny.
+-2. Szyna 80 dp -> 68 dp (padding w niej 8 dp -> 6 dp, wiec na etykiety
+-   zostaje 56 dp, a najdluzsza - "Ustawienia" przy 9 sp - ma ~44 dp).
+-   Razem z wycieciem kamery: 107 dp zamiast 119 dp.
+-3. Obramowanie szyny i paska gornego rysowane PRZED wcieciem paska
+-   statusu. Wczesniej bylo po wcieciu, wiec pod paskiem statusu zostawala
+-   pozioma linia (ten "szew", ktory widac bylo na gorze).
+-
+-Efekt: tresc zaczyna sie od razu przy szynie, bez pustego pasa.
+-Pulpit dostaje 79 px (50 dp) wiecej szerokosci - ok. 8 % ekranu.
++Baza: 0.31.75 — dokładnie ta wersja, którą masz na telefonie.
++Zmiana jest JEDNA: usunięte wykrywanie pobrań wody.
+ 
+-Co sprawdzic na telefonie
+--------------------------
+-1. Brak pustego pasa miedzy szyna a paskiem "STEROWNIK CO".
+-2. Szyna wezsza, ale etykiety ("Dashboard", "Ustawienia")Sie mieszcza -
+-   zadna nie jest ucieta ani zamieniona w wielokropek.
+-3. Brak poziomej linii pod paskiem statusu (na szynie i na pasku gornym).
+-4. Ikony w szynie nadal poza obiektywem kamery (nic pod obiektywem).
+-5. Dolne przyciski systemowe (wstecz/dom/recent) nie zaslaniaja tresci.
+-
+-Jak cofnac
+-----------
+-W MainActivity.kt zmienic jedna linie na:
+-       WindowCompat.setDecorFitsSystemWindows(window, true)
+-To wraca do zachowania 0.31.71 (z pasem 37 dp).
++Co zniknęło z ekranu
++--------------------
++1. Kafelek „🚰 POBRANIA DZIŚ" w karcie BILANS & ZYSK KOLEKTORA SŁONECZNEGO
++   (zakładka POGODA). W tym miejscu są teraz 3 karty zamiast 4:
++     • SPADEK/ZYSK DZIŚ (zmierzony),
++     • PANEL − POWIETRZE,
++     • DO KOŃCA DNIA (prognoza).
++2. Wiersz „Pobrania ciepłej wody" w arkuszu Czujniki.
++3. Zdanie w nocie wyjaśniającej, że „pobranie liczy się jako spadek
++   o co najmniej 0,5 °C utrzymany ponad 5 minut".
++
++Dlaczego — z liczbami
++---------------------
++Nie ma sygnału zaworu w telemetrii, więc aplikacja ZGADYWAŁA pobranie
++ze spadku temperatury wody. 04.11.2026 o 22:46 pokazała:
++    5 pobrań · −23,3 °C
++a cała woda w zbiorniku straciła tego dnia tylko −15,8 °C.
++Woda traci ciepło wyłącznie przez pobrania i wychładzanie, więc suma
++ochłodzeń od pobrań NIE MOŻE przekroczyć spadku doby. 23,3 > 15,8,
++czyli co najmniej 7,5 °C było policzone podwójnie — zwykłe nocne
++wychładzanie liczone jako pobrania.
++
++Kontrola energetyczna: 100 l × 23,3 °C = 2,7 kWh, a szczyt słońca tego
++dnia to 273 W/m² (kolektor dał najwyżej ~1 kWh). Nie da się odebrać
++2,7 kWh ze zbiornika, do którego wpłynęło 1 kWh.
++
++Analiza i mapa kodu: narzedzia/uklad-2026-11-01/POBRANIA-usuniecie-analiza.md
++
++Co usunięto z kodu (wariant A — „usunąć całkiem")
++-------------------------------------------------
++  core/SolarAnalytics.kt:
++    - recomputeDraws() — heurystyka szukająca spadków (0,5 °C / 5 min,
++      scalanie epizodów do 20 min, odrzucanie skoków > 12 °C),
++    - rebuildDrawEvents(), waterDrawEvents, DrawEvent,
++    - stałe DRAW_STEP_C, DRAW_WINDOW_MS, DRAW_HOLD_MS, DRAW_MERGE_MS,
++      DRAW_FAULT_C,
++    - pola todayDrawCount, todayDrawDrop, drawCount, accumulatedDrawDrop,
++    - liczenie pobrań w recomputeToday() i w updateUi().
++  ui/screens/Weather.kt — kafelek + komentarz z uzasadnieniem.
++  ui/screens/sheets/Sensors.kt — wiersz + poprawiona nota.
++Razem ~70 linii mniej, żadnej nowej funkcji.
++
++Czego to NIE zmienia
++--------------------
++  • „SPADEK/ZYSK DZIŚ" i karta DZIŚ w prognozie 7-dniowej — liczone
++    z różnicy temperatur (todayGain), nie z pobrań. Zostają bez zmian.
++  • Prognoza solarna, „DO KOŃCA DNIA", łuk słoneczny, 7 dni,
++  • wykresy, SERWO, historia, kolory, kolejność pozycji, „LIVE", liczniki,
++  • kafelki pogody i pobieranie z Open-Meteo (co 15 min),
++  • firmware — BEZ ZMIAN, piec zostaje na 3.57.9.
++  • Eksport CSV: kolumny `pobor_wody` i `spadek_poboru_C` ZOSTAJĄ
++    (zapisują 0), żeby stare pliki i czytniki się nie rozjechały.
++
++Czego w tym wydaniu NIE ma (ważne)
++----------------------------------
++To jest 0.31.75 + usunięte pobrania. NIE ma w nim zmiany szyny
++nawigacji z 0.31.76 (56 dp, same ikony w poziomie, dymki po
++przytrzymaniu). W poziomie działa więc szyna 68 dp z podpisami —
++dokładnie jak na Twoim telefonie teraz.
++Jeśli chcesz obie zmiany razem, mówisz słowo i robię 0.31.78 =
++0.31.76 (wąska szyna) + usunięte pobrania.
+ 
+ Wersja
+ ------
+-versionCode 31075 / versionName 0.31.75  (app/build.gradle.kts)
+-Wersje widac w: Ustawienia -> "Aktualizacja firmware (OTA & GitHub)"
+--> wiersz "APLIKACJA WEB PRO".
++versionCode 31077 / versionName "0.31.77" (app/build.gradle.kts)
++Numer podbity, bo paczka różni się od 0.31.75 — dwie różne paczki
++z tym samym numerem to dokładnie pomyłka z 0.31.53, której nie chcemy
++powtarzać.
++
++Budowanie
++---------
++APK buduje workflow .github/workflows/apk-android.yml na runnerze
++GitHuba (Java 17 + SDK z obrazu), z katalogu android/ w repozytorium.
++Gotowy plik: android-sync/apk/SterownikCO-0.31.77-debug.apk.
++Lokalnie (gdy brak sdk.dir): najpierw utwórz local.properties,
++    "sdk.dir=C:/Users/<Ty>/AppData/Local/Android/Sdk" | Set-Content local.properties
++dopiero potem:  .\gradlew.bat assembleRelease
++UWAGA: APK z runnera jest podpisany kluczem debug — przed instalacją
++odinstaluj starą wersję (dane w Firebase zostają).
++
++Co sprawdzić na telefonie
++-------------------------
++1. POGODA → karta BILANS: nie ma kafelka POBRANIA DZIŚ, są 3 karty.
++2. Czujniki → nie ma wiersza „Pobrania ciepłej wody".
++3. „SPADEK/ZYSK DZIŚ" pokazuje tę samą liczbę co wcześniej (to pomiar).
++4. Prognoza 7 dni, wykresy, SERWO — bez zmian.
++5. Ustawienia → numer wersji: 0.31.77.
+ 
+ Weryfikacja bez telefonu
+ ------------------------
+-Brama statyczna (narzedzia/sprawdz_uklad.py): 51 OK / 0 BŁĄD.
+-Ta sama brama na 0.31.74: 4 BŁĄD - m.in. wlasnie ten bledny import
+-(brama nauczona tego przypadku), a na 0.31.73: 10 BŁĄD.
+-Kompilacji NIE sprawdzono - w srodowisku, w ktorym powstal pakiet, nie ma
+-Javy ani Gradle. Pierwsza komenda Gradle w skrypcie PowerShell zrobi to
+-na Twoim komputerze i zatrzyma sie, jesli cokolwiek sie nie skompiluje.
++Brama statyczna (narzedzia/sprawdz_uklad.py): 58 OK / 0 BŁĄD.
++Kontrola negatywna na 0.31.75: 8 BŁĄD (3 × numer wersji + 5 × pobrania).
+ 
+-Pliki zmienione (4)
++Pliki zmienione (5)
+ -------------------
+ app/build.gradle.kts
+-app/src/main/java/com/sterownikco/pro/ui/SterownikApp.kt
+-app/src/main/java/com/sterownikco/pro/ui/components/Chrome.kt
+-app/src/main/java/com/sterownikco/pro/ui/theme/Theme.kt
++app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt
++app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt
++app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
++README-WGRANIE.txt (ten plik)
+diff -ru /tmp/v75ctrl/SterownikCO-0.31.75/app/build.gradle.kts /tmp/v77/app/build.gradle.kts
+--- /tmp/v75ctrl/SterownikCO-0.31.75/app/build.gradle.kts	2026-11-01 11:57:53.000000000 +0000
++++ /tmp/v77/app/build.gradle.kts	2026-11-04 22:47:32.747298087 +0000
+@@ -12,8 +12,8 @@
+         applicationId = "com.sterownikco.pro"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 31075
+-        versionName = "0.31.75"
++        versionCode = 31077
++        versionName = "0.31.77"
+         vectorDrawables { useSupportLibrary = true }
+     }
+ 
+diff -ru /tmp/v75ctrl/SterownikCO-0.31.75/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt /tmp/v77/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt
+--- /tmp/v75ctrl/SterownikCO-0.31.75/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-10-31 11:45:13.000000000 +0000
++++ /tmp/v77/app/src/main/java/com/sterownikco/pro/core/SolarAnalytics.kt	2026-11-04 22:47:39.199402154 +0000
+@@ -2,7 +2,6 @@
+ 
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableDoubleStateOf
+-import androidx.compose.runtime.mutableIntStateOf
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.setValue
+ import org.json.JSONArray
+@@ -17,8 +16,14 @@
+    (bramka 25 s, archiwum 5000, zapis co 5 próbek do klucza
+    `solar_archive_data`, eksport CSV).
+    [0.31.37] Wszystko liczone z `tPanel` = woda w zbiorniku słonecznym na dachu
+-   (BUS_3), nie z bojlera pieca (tBojler/BUS_2). Pobranie wody = spadek
+-   podtrzymany ≥ 0,5 °C, skok > 12 °C odrzucany jako usterka sondy.
++   (BUS_3), nie z bojlera pieca (tBojler/BUS_2).
++   [0.31.77] WYKRYWANIE POBRAŃ WODY USUNIĘTE. Powód: brak sygnału zaworu
++   w telemetrii, więc „pobranie" było zgadywane ze spadku temperatury —
++   2026-11-04 pokazało 5 pobrań i −23,3 °C przy całkowitym spadku doby
++   −15,8 °C, czyli więcej ciepła, niż zbiornik w ogóle stracił. Szczegóły:
++   narzedzia/uklad-2026-11-01/POBRANIA-usuniecie-analiza.md.
++   Kolumny `pobor_wody` i `spadek_poboru_C` ZOSTAJĄ w CSV (zapisują 0),
++   żeby stare pliki i czytniki się nie rozjechały.
+    ══════════════════════════════════════════════════════════════════════════ */
+ class SolarAnalytics(private val prefs: Prefs) {
+ 
+@@ -27,13 +32,9 @@
+         val rad: Int, val uv: Double, val cloud: Int, val isDraw: Int, val drop: Double, val gain: Double
+     )
+ 
+-    data class DrawEvent(val ts: Long, val drop: Double, val tPrev: Double, val tNow: Double)
+-
+     val archive = ArrayList<Sample>()
+-    val waterDrawEvents = ArrayList<DrawEvent>()
+     var lastSampleTs = 0L
+     var accumulatedGrossGain by mutableDoubleStateOf(0.0)
+-    var accumulatedDrawDrop by mutableDoubleStateOf(0.0)
+     var forecastGain by mutableDoubleStateOf(Double.NaN)
+     // [0.31.29] Model cieplny zamiast mnożenia. Szczyt doby, jego godzina
+     // i energia dostarczona przez kolektor. Patrz MODEL_SOLARNY_TRZEMCHA §10.
+@@ -51,7 +52,6 @@
+      *  kolejnych dni w prognozie 7-dniowej. */
+     var forecastEndDeltaC by mutableDoubleStateOf(Double.NaN)
+     var deltaT by mutableDoubleStateOf(Double.NaN)
+-    var drawCount by mutableIntStateOf(0)
+     // [0.31.27] Liczby „na dziś”, liczone od lokalnej północy. Wcześniej karta DZIŚ
+     // brała accumulatedGrossGain (suma z całego bufora, sięgająca kilka dni wstecz),
+     // więc pokazywała +93 °C, gdy model na dziś dawał +9 °C.
+@@ -61,8 +61,6 @@
+     // myślnik w obu przypadkach, a arkusz Czujniki pisał „brak próbek z dziś”
+     // nawet przy 568 próbkach. Flaga rozdziela te przypadki.
+     var todayHasData by mutableStateOf(false)
+-    var todayDrawCount by mutableIntStateOf(0)
+-    var todayDrawDrop by mutableDoubleStateOf(0.0)
+     val hasSamples: Boolean get() = archive.isNotEmpty()
+ 
+     private val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+@@ -81,7 +79,9 @@
+                         o.optLong("ts"), o.optString("iso"), o.optDouble("t_panel", Double.NaN),
+                         o.optDouble("t_bojler", Double.NaN), o.optDouble("t_zewn", Double.NaN),
+                         o.optInt("rad"), o.optDouble("uv", Double.NaN), o.optInt("cloud"),
+-                        o.optInt("isDraw"), o.optDouble("drop"), o.optDouble("gain")
++                        // [0.31.77] Stare flagi pobrań ignorujemy (zapisujemy 0),
++                        // bo pochodziły ze zgadywania, nie z pomiaru zaworu.
++                        0, 0.0, o.optDouble("gain")
+                     )
+                     if (sample.ts > 0L && sample.tPanel.isFinite() && sample.tBojler.isFinite() && sample.tZewn.isFinite()) {
+                         archive.add(sample)
+@@ -90,15 +90,7 @@
+             }
+         } catch (e: Exception) { /* brak archiwum zweryfikowanego */ }
+         lastSampleTs = archive.lastOrNull()?.ts ?: 0L
+-        // [0.31.36] Stare flagi pobrań z wersji do 0.31.35 siedzą w archiwum w pamięci
+-        // telefonu (np. 24 fałszywe pobrania z 28.10). Przeliczamy je od zera nową regułą,
+-        // zamiast pokazywać dalej to, co zapisała poprzednia wersja.
+-        recomputeDraws()
+         accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
+-        val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
+-        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tPanel + it.drop, it.tPanel)) }
+-        accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
+-        drawCount = draws.size
+         archive.lastOrNull()?.let { deltaT = it.tPanel - it.tZewn }
+         recomputeToday()
+     }
+@@ -123,7 +115,6 @@
+      */
+     private fun recomputeToday() {
+         val start = dayStartMs()
+-        var n = 0; var d = 0.0
+         var firstT = Double.NaN; var lastT = Double.NaN
+         archive.forEach { s ->
+             if (s.ts >= start) {
+@@ -136,12 +127,10 @@
+                 // (woda w kotłowni), gdy zbiornik słoneczny zmienił się o −0,2 °C.
+                 if (firstT.isNaN()) firstT = s.tPanel
+                 lastT = s.tPanel
+-                if (s.isDraw != 0) { n += 1; d += s.drop }
+             }
+         }
+         todayHasData = !firstT.isNaN() && !lastT.isNaN()
+         todayGain = if (todayHasData) lastT - firstT else 0.0
+-        todayDrawCount = n; todayDrawDrop = d
+     }
+ 
+     private fun save() {
+@@ -192,9 +181,7 @@
+             added++
+         }
+         if (added == 0) return 0
+-        // Zysk przeliczamy po scaleniu, w kolejności czasu. Pobrania liczy
+-        // `recomputeDraws()` (wołane z `rebuildDrawEvents()` niżej) — jedną regułą
+-        // dla próbek lokalnych i chmurowych, z 5-minutowym potwierdzeniem spadku.
++        // Zysk przeliczamy po scaleniu, w kolejności czasu.
+         val rebuilt = ArrayList<Sample>(today.size)
+         var prev: Sample? = null
+         today.values.forEach { cur ->
+@@ -210,7 +197,7 @@
+         archive.addAll(rebuilt)
+         archive.sortBy { it.ts }
+         while (archive.size > 5000) archive.removeAt(0)
+-        rebuildDrawEvents()
++        accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
+         recomputeToday()
+         save()
+         return added
+@@ -218,103 +205,6 @@
+ 
+     private fun round1(v: Double): Double = (v * 10).roundToInt() / 10.0
+ 
+-    /** [0.31.36] Pobranie wody wykrywane z temperatury ZBIORNIKA, nie z szumu czujnika.
+-     *
+-     *  Liczone z `tPanel` — czyli z WODY w zbiorniku słonecznym na dachu
+-     *  (ARCHIWUM_SOLARNE_STAN.md §2–§3), a nie z bojlera pieca w kotłowni.
+-     *
+-     *  Stara reguła (`rateBojler < -0.30`) łapała każde zejście o 0,3 °C między dwiema
+-     *  próbkami minutowymi. Czujnik ma rozdzielczość 0,1 °C, a zbiornik stygnie przez pętlę
+-     *  termosyfonu — więc takie zejście zdarza się co kilkanaście minut i wychodziło
+-     *  „Pobrania ciepłej wody: 24 razy · −7,2 °C” (2026-10-28), choć nikt wody nie brał.
+-     *  Dodatkowo 31,5 − 31,8 w typie Double to −0,3000000000000007, czyli minimalnie
+-     *  więcej niż próg 0,30 — porównanie łapało granicę przez przypadek.
+-     *
+-     *  Teraz pobranie musi być SPADKIEM PODTRZYMANYM:
+-     *   1. woda schodzi o co najmniej 0,5 °C od maksimum z ostatnich 5 minut,
+-     *   2. i zostaje niżej przez następne 5 minut.
+-     *  Drgnięcie czujnika wraca w ciągu minuty, więc punkt 2 je odrzuca.
+-     *  Epizody bliższe niż 20 minut to jedno pobranie (kąpiel trwa). Spadek większy
+-     *  niż 12 °C jest ODRZUCANY jako usterka sondy — 100 l nie traci 25 °C od kranu.
+-     *
+-     *  Sprawdzone na eksporcie z chmury (28 dni): 26 pobrań w 17 dniach, po 1–2 na dobę,
+-     *  każde 0,5–5 °C, głównie po południu. 2026-10-28 — zero (nikt nie brał wody).
+-     */
+-    private fun recomputeDraws() {
+-        val n = archive.size
+-        if (n == 0) return
+-        // 1) kandydaci: indeks początku spadku, maksimum sprzed spadku, minimum w epizodzie
+-        val candIdx = ArrayList<Int>()
+-        val candBase = ArrayList<Double>()
+-        val candLow = ArrayList<Double>()
+-        var i = 0
+-        while (i < n) {
+-            val ts = archive[i].ts
+-            var base = archive[i].tPanel
+-            var j = i
+-            while (j > 0 && ts - archive[j - 1].ts <= DRAW_WINDOW_MS) {
+-                j--
+-                if (archive[j].tPanel > base) base = archive[j].tPanel
+-            }
+-            if (base - archive[i].tPanel >= DRAW_STEP_C) {
+-                var low = archive[i].tPanel
+-                var k = i + 1
+-                while (k < n && archive[k].ts - ts <= DRAW_HOLD_MS) {
+-                    if (archive[k].tPanel < low) low = archive[k].tPanel
+-                    k++
+-                }
+-                // Punkt 2: spadek musi się utrzymać, a nie być jedną próbką szumu.
+-                if (low <= base - DRAW_STEP_C) {
+-                    candIdx.add(i); candBase.add(base); candLow.add(low)
+-                }
+-            }
+-            i++
+-        }
+-        // 2) scalanie epizodów bliższych niż 20 minut w jedno pobranie
+-        val flag = IntArray(n)
+-        val drop = DoubleArray(n)
+-        var c = 0
+-        while (c < candIdx.size) {
+-            val startIdx = candIdx[c]
+-            var base = candBase[c]
+-            var low = candLow[c]
+-            var c2 = c + 1
+-            while (c2 < candIdx.size &&
+-                archive[candIdx[c2]].ts - archive[candIdx[c2 - 1]].ts <= DRAW_MERGE_MS
+-            ) {
+-                if (candBase[c2] > base) base = candBase[c2]
+-                if (candLow[c2] < low) low = candLow[c2]
+-                c2++
+-            }
+-            val span = maxOf(0.0, base - low)
+-            if (span <= DRAW_FAULT_C) {
+-                flag[startIdx] = 1
+-                drop[startIdx] = round1(span)
+-            }
+-            // span > DRAW_FAULT_C: sonda się odczepiła albo wróciła po restarcie —
+-            // nie udajemy, że ktoś wylał 20 °C wody.
+-            c = c2
+-        }
+-        // 3) przepisanie flag do archiwum (Sample jest niemutowalny)
+-        for (idx in 0 until n) {
+-            val s = archive[idx]
+-            if (s.isDraw != flag[idx] || s.drop != drop[idx]) {
+-                archive[idx] = s.copy(isDraw = flag[idx], drop = drop[idx])
+-            }
+-        }
+-    }
+-
+-    /** Lista pobrań wody z archiwum — wspólna dla startu i dla scalania z chmurą. */
+-    private fun rebuildDrawEvents() {
+-        recomputeDraws()
+-        waterDrawEvents.clear()
+-        val draws = archive.filter { it.isDraw != 0 }.takeLast(100)
+-        draws.forEach { waterDrawEvents.add(DrawEvent(it.ts, it.drop, it.tPanel + it.drop, it.tPanel)) }
+-        drawCount = draws.size
+-        accumulatedDrawDrop = archive.filter { it.isDraw != 0 }.sumOf { it.drop }
+-        accumulatedGrossGain = archive.filter { it.tPanel > it.tZewn && it.rad > 30 }.sumOf { it.gain }
+-    }
+-
+     fun recordSample(tPanel: Double, tBojler: Double, tZewn: Double, rad: Double, uv: Double, cloud: Double) {
+         if (!listOf(tPanel, tBojler, tZewn, rad, uv, cloud).all { it.isFinite() }) return
+         if (tPanel !in 0.0..140.0 || tBojler !in 10.0..95.0 || tZewn !in -25.0..45.0 || rad < 0.0) return
+@@ -338,11 +228,6 @@
+             )
+         )
+         while (archive.size > 5000) archive.removeAt(0)
+-        // [0.31.36] Pobrania liczymy teraz wstecznie z całego archiwum (recomputeDraws),
+-        // bo potrzebne jest 5 minut po spadku na potwierdzenie, że to nie szum.
+-        // Skutek: pobranie pojawia się na karcie dopiero po tych 5 minutach — celowo,
+-        // bo próg 0,3 °C/min łapał zwykłe stygnięcie zbiornika.
+-        recomputeDraws()
+         recomputeToday()
+         if (archive.size % 5 == 0) save()
+         updateUi(tPanel, tZewn)
+@@ -450,16 +335,6 @@
+         SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date(ms))
+ 
+     companion object {
+-        /** [0.31.37] Progi wykrywania pobrania ciepłej wody — patrz `recomputeDraws()`.
+-         *  Woda musi zejść o 0,5 °C od maksimum z 5 minut i utrzymać się niżej 5 minut.
+-         *  Rozdzielczość czujnika to 0,1 °C, więc 0,5 daje czterokrotny zapas nad szumem,
+-         *  a prawdziwa kąpiel schodzi o kilka °C. */
+-        private const val DRAW_STEP_C = 0.5
+-        private const val DRAW_WINDOW_MS = 5 * 60_000L
+-        private const val DRAW_HOLD_MS = 5 * 60_000L
+-        private const val DRAW_MERGE_MS = 20 * 60_000L
+-        private const val DRAW_FAULT_C = 12.0
+-
+         /** [0.31.29] Nachylenie dopasowania: °C przyrostu na 1 kWh/m² DOBOWEGO GTI.
+          *  Dopasowane do 4 dni pomiarów z Trzemchy (r = 0,990). Poprzednie 4,2 było
+          *  niemal poprawne — ale dla GTI. Aplikacja karmiła je GHI, stąd błąd.
+@@ -525,7 +400,6 @@
+ 
+     private fun updateUi(tPanel: Double, tZewn: Double) {
+         deltaT = tPanel - tZewn
+-        drawCount = waterDrawEvents.size
+     }
+ 
+     fun grossGain(): Double = accumulatedGrossGain
+diff -ru /tmp/v75ctrl/SterownikCO-0.31.75/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt /tmp/v77/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt
+--- /tmp/v75ctrl/SterownikCO-0.31.75/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-10-31 11:45:13.000000000 +0000
++++ /tmp/v77/app/src/main/java/com/sterownikco/pro/ui/screens/Weather.kt	2026-11-04 22:47:32.743298023 +0000
+@@ -351,8 +351,13 @@
+                             "", if (sol.todayHasData && sol.todayGain < -ZERO_EPS_C) Pal.Cyan else SolarY),
+                         MCard("🌡️ PANEL − POWIETRZE", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
+                             "", if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
+-                        MCard("🚰 POBRANIA DZIŚ", if (sol.todayDrawCount > 0) sol.todayDrawCount.toString() + " razy" else "—",
+-                            if (sol.todayDrawCount > 0) "−" + fmt1(sol.todayDrawDrop) + "°C" else "", Pal.Live),
++                        // [0.31.77] Kafelek „POBRANIA DZIŚ" USUNIĘTY. Nie ma sygnału
++                        // zaworu w telemetrii, więc „pobranie" było zgadywane ze spadku
++                        // temperatury: 2026-11-04 pokazało 5 pobrań i −23,3 °C przy
++                        // całkowitym spadku doby −15,8 °C, czyli więcej ciepła, niż
++                        // zbiornik stracił. Zostają 3 karty: zmierzony zysk, różnica
++                        // panel−powietrze i prognoza do końca dnia.
++                        // Uzasadnienie: narzedzia/uklad-2026-11-01/POBRANIA-usuniecie-analiza.md
+                         // [0.31.30] Nazwa mówi wprost, że to horyzont „od teraz do północy”, a nie
+                         // cała doba. Wcześniej obok siebie stały dwa różne „DZIŚ”: +0,0 °C po
+                         // zachodzie i +16,0 °C za cały dzień. Po zachodzie pokazujemy „—”, bo
+diff -ru /tmp/v75ctrl/SterownikCO-0.31.75/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt /tmp/v77/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt
+--- /tmp/v75ctrl/SterownikCO-0.31.75/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-10-31 11:45:13.000000000 +0000
++++ /tmp/v77/app/src/main/java/com/sterownikco/pro/ui/screens/sheets/Sensors.kt	2026-11-04 22:47:32.747298087 +0000
+@@ -374,10 +374,8 @@
+                 else -> "+${s.fmt1(solar.forecastGain)}°C"
+             }
+         )
+-        SolarMetricRow(
+-            "Pobrania ciepłej wody",
+-            if (solar.todayDrawCount > 0) "${solar.todayDrawCount} razy · −${s.fmt1(solar.todayDrawDrop)}°C" else "brak"
+-        )
++        // [0.31.77] Wiersz „Pobrania ciepłej wody" usunięty razem z kafelkiem
++        // na karcie BILANS — powód: zgadywanie ze spadku temperatury, nie pomiar.
+         Text(
+             // [0.31.35] „Zmierzone" liczy się też z historii chmury (co minutę),
+             // a nie tylko z próbek zebranych przy otwartej aplikacji.
+@@ -387,9 +385,9 @@
+                 "(czujnik kolektora, nie bojler pieca). Minus = woda się " +
+                 "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku — z chmury, " +
+                 "co minutę, także gdy aplikacja była zamknięta. „Szacunek” to " +
+-                "wyliczenie z prognozy słońca — nie pomiar. Pobranie liczy się jako " +
+-                "spadek o co najmniej 0,5 °C utrzymany ponad 5 minut; krótkie " +
+-                "drgnięcia czujnika nie są liczone.",
++                "wyliczenie z prognozy słońca — nie pomiar. Liczba pobrań wody NIE jest " +
++                "tu pokazywana: w telemetrii nie ma sygnału zaworu, więc każde " +
++                "wykrywanie pobrania byłoby zgadywaniem.",
+             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp,
+             modifier = Modifier.padding(top = 6.dp)
+         )

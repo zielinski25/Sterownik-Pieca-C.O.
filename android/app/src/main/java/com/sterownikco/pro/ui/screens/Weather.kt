@@ -351,8 +351,13 @@ fun WeatherPage(m: AppModel) {
                             "", if (sol.todayHasData && sol.todayGain < -ZERO_EPS_C) Pal.Cyan else SolarY),
                         MCard("🌡️ PANEL − POWIETRZE", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
                             "", if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
-                        MCard("🚰 POBRANIA DZIŚ", if (sol.todayDrawCount > 0) sol.todayDrawCount.toString() + " razy" else "—",
-                            if (sol.todayDrawCount > 0) "−" + fmt1(sol.todayDrawDrop) + "°C" else "", Pal.Live),
+                        // [0.31.77] Kafelek „POBRANIA DZIŚ" USUNIĘTY. Nie ma sygnału
+                        // zaworu w telemetrii, więc „pobranie" było zgadywane ze spadku
+                        // temperatury: 2026-11-04 pokazało 5 pobrań i −23,3 °C przy
+                        // całkowitym spadku doby −15,8 °C, czyli więcej ciepła, niż
+                        // zbiornik stracił. Zostają 3 karty: zmierzony zysk, różnica
+                        // panel−powietrze i prognoza do końca dnia.
+                        // Uzasadnienie: narzedzia/uklad-2026-11-01/POBRANIA-usuniecie-analiza.md
                         // [0.31.30] Nazwa mówi wprost, że to horyzont „od teraz do północy”, a nie
                         // cała doba. Wcześniej obok siebie stały dwa różne „DZIŚ”: +0,0 °C po
                         // zachodzie i +16,0 °C za cały dzień. Po zachodzie pokazujemy „—”, bo

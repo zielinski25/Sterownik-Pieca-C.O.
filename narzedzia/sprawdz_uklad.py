@@ -24,8 +24,8 @@ TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.76"
-KOD_WERSJI = "31076"
+WERSJA = "0.31.77"
+KOD_WERSJI = "31077"
 
 wyniki = []
 
@@ -201,12 +201,12 @@ def main():
     )
     sprawdz(
         "NavRail powieksza szerokosc o wciecie (tlo do krawedzi)",
-        "else Dimens.railW) + startInset" in chrome,
+        "Dimens.railW + startInset" in chrome,
         "inaczej przy krawedzi zostaje pas tla",
     )
     sprawdz(
         "NavRail odsuwa zawartosc o wciecie (ikony poza obiektywem)",
-        "start = startInset +" in chrome,
+        "6.dp + startInset" in chrome,
         "ikony nie moga wejsc pod kamere",
     )
     sprawdz(
@@ -303,7 +303,7 @@ def main():
     )
     sprawdz(
         "NavRail: wewnatrz zostaje >= 50 dp na etykiety",
-        ("val railW = 68.dp" in tema) and ("start = startInset +" in chrome) and ("end = if (compact) 4.dp else 6.dp" in chrome),
+        ("val railW = 68.dp" in tema) and ("6.dp + startInset" in chrome) and ("end = 6.dp" in chrome),
         "najdluzsza etykieta (Ustawienia) ma ~44 dp",
     )
 
@@ -326,74 +326,49 @@ def main():
         "calculateBottomPadding() wolamy bez importu",
     )
 
-    # ---- 0.31.76: waska szyna (56 dp, same ikony) + dostepnosc ----
-    # W poziomie pasek pokazuje tylko ikony, ale nazwa nie ginie: dymek po
-    # przytrzymaniu palca i contentDescription dla TalkBacka. Pole dotyku
-    # musi zostac 48 x 48 dp - szyna zweza sie, palec sie nie zweza.
+    # ---- 0.31.77: wykrywanie pobrań wody USUNIĘTE ----
+    weather = bez_komentarzy(czytaj(APP / "ui/screens/Weather.kt"))
+    sensors = bez_komentarzy(czytaj(APP / "ui/screens/sheets/Sensors.kt"))
+    solar = bez_komentarzy(czytaj(APP / "core/SolarAnalytics.kt"))
+    # Powód (nie kaprys): nie ma sygnału zaworu, więc "pobranie" było zgadywane
+    # ze spadku temperatury. 04.11.2026: 5 pobrań i -23,3 °C przy całkowitym
+    # spadku doby -15,8 °C — więcej ciepła, niż zbiornik stracił.
     sprawdz(
-        "Dimens.railWCompact = 56 dp",
-        "val railWCompact = 56.dp" in tema,
-        "56 dp = 48 dp pola dotyku + 2 x 4 dp marginesu",
+        "kafelek POBRANIA DZIŚ usunięty z karty BILANS",
+        "POBRANIA DZIŚ" not in weather and "todayDrawCount" not in weather,
+        "Weather.kt: 3 karty zamiast 4",
     )
     sprawdz(
-        "NavRail ma przelacznik compact",
-        "fun NavRail(page: Int, startInset: Dp = 0.dp, compact: Boolean = false" in chrome,
-        "tryb poziomy: same ikony",
+        "wiersz Pobrania ciepłej wody usunięty z arkusza Czujniki",
+        "Pobrania ciepłej wody" not in sensors and "todayDrawCount" not in sensors,
+        "Sensors.kt: brak wiersza",
     )
     sprawdz(
-        "szerokosc szyny zalezy od trybu (compact/zwykly)",
-        "Dimens.railWCompact else Dimens.railW" in chrome,
-        "inaczej szyna zostaje 68 dp",
+        "nota w Czujnikach nie obiecuje wykrywania pobrań",
+        "Pobranie liczy się jako" not in sensors and "nie ma sygnału zaworu" in sensors,
+        "inaczej UI obiecuje funkcję, której nie ma",
     )
     sprawdz(
-        "kompaktowa szyna: 48 dp pola dotyku",
-        ".size(48.dp)" in chrome,
-        "wymog dostepnosci - nie zmniejszac",
+        "heurystyka pobrań usunięta z modelu solarnego",
+        "recomputeDraws" not in solar and "rebuildDrawEvents" not in solar
+        and "DRAW_STEP_C" not in solar and "waterDrawEvents" not in solar,
+        "SolarAnalytics.kt: ~70 linii mniej",
     )
     sprawdz(
-        "kompaktowa szyna: ikona 24 dp",
-        "AppIcon(icon, size = 24.dp" in chrome,
-        "22-24 dp wedlug ustalen",
+        "liczniki pobrań usunięte z modelu solarnego",
+        "todayDrawCount" not in solar and "todayDrawDrop" not in solar
+        and "accumulatedDrawDrop" not in solar and "drawCount" not in solar,
+        "nie ma czego pokazać, więc nie ma czego liczyć",
     )
     sprawdz(
-        "kompaktowa szyna: odstep 4 dp i wysrodkowanie w pionie",
-        "Arrangement.spacedBy(4.dp, Alignment.CenterVertically)" in chrome,
-        "pozycje 48 dp + 4 dp odstepu",
+        "CSV zachowuje kolumny pobor_wody i spadek_poboru_C (zapisują 0)",
+        "pobor_wody" in solar and "spadek_poboru_C" in solar,
+        "stare pliki i czytniki nie mogą się rozjechać",
     )
     sprawdz(
-        "przytrzymanie palca pokazuje nazwe (combinedClickable + onLongClick)",
-        "combinedClickable(" in chrome and "onLongClick" in chrome,
-        "bez tego Wiecej i Ustawienia sa nierozroznialne",
-    )
-    sprawdz(
-        "dymek z nazwa (TooltipBox + rememberTooltipState)",
-        "TooltipBox(" in chrome and "rememberTooltipState()" in chrome,
-        "Tooltip z M3",
-    )
-    sprawdz(
-        "TalkBack czyta nazwe (contentDescription)",
-        "contentDescription = label" in chrome,
-        "ikona bez podpisu musi miec opis",
-    )
-    sprawdz(
-        "tryb kompaktowy z rozmiaru okna, nie z orientacji",
-        "val compactRail = maxWidth > maxHeight" in kod and "compact = compactRail" in kod,
-        "jeden powod decyzji o ukladzie (jak od 0.31.69)",
-    )
-    sprawdz(
-        "korzen nie ma horizontalScroll ani requiredWidth",
-        "horizontalScroll" not in kod and "requiredWidth" not in kod,
-        "tresc ma sie zawijac do szerokosci okna, nie wystawac",
-    )
-    sprawdz(
-        "tresc pulptu na weight(1f), bez sztywnej szerokosci",
-        "Modifier.weight(1f).fillMaxHeight()" in kod and "width(342" not in kod,
-        "pulpit dostaje cala uwolniona szerokosc",
-    )
-    sprawdz(
-        "podpisy tylko w trybie niekompaktowym",
-        "if (compact) {\n                RailIcon(" in chrome and "Text(label, style = Txt.navLabel" in chrome,
-        "w poziomie podpisy znikaja, w pionie zostaja",
+        "zmierzony zysk dnia NIE został ruszony",
+        "todayGain = if (todayHasData) lastT - firstT else 0.0" in solar,
+        "SPADEK/ZYSK DZIŚ liczy się z temperatury, nie z pobrań",
     )
 
     return raport()
@@ -401,7 +376,7 @@ def main():
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.76 (szyna 56 dp same ikony + dymki + kontrola importów Compose)")
+    print("BRAMA UKŁADU EKRANU — 0.31.77 (0.31.75 + usunięte wykrywanie pobrań wody)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:

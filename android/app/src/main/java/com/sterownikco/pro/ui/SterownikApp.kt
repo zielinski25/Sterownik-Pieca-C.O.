@@ -89,18 +89,8 @@ fun SterownikApp(m: AppModel) {
                 val navVals = WindowInsets.navigationBars.asPaddingValues()
                 val navEnd = navVals.calculateEndPadding(LocalLayoutDirection.current)
                 val navBottom = navVals.calculateBottomPadding()
-                // [0.31.76] Waska szyna (same ikony, 56 dp) wtedy, gdy okno jest
-                // szersze niz wyzsze — czyli w poziomie. Decyzja NIE z
-                // `Configuration.orientation`, bo:
-                //  1. od 0.31.69 uklad zalezy od ROZMIARU OKNA, nie od obrotu —
-                //     jeden powod decyzji, nie dwa, ktore moga sie rozjechac,
-                //  2. w oknie dzielonym i na skladanym telefonie orientacja bywa
-                //     dokumentowa, a nie okna — `maxWidth/maxHeight` sa prawdziwe,
-                //  3. od Androida 16 (targetSdk 36) system ignoruje
-                //     `screenOrientation`, wiec obrot przestaje byc wyznacznikiem.
-                val compactRail = maxWidth > maxHeight
                 Row(Modifier.fillMaxSize()) {
-                    if (rail) NavRail(page = m.page, startInset = cutoutStart, compact = compactRail) { m.navigate(it) }
+                    if (rail) NavRail(page = m.page, startInset = cutoutStart) { m.navigate(it) }
                     Column(
                         Modifier.weight(1f).fillMaxHeight()
                             .then(if (rail) Modifier else Modifier.displayCutoutPadding())
