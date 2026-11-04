@@ -24,8 +24,8 @@ TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.77"
-KOD_WERSJI = "31077"
+WERSJA = "0.31.78"
+KOD_WERSJI = "31078"
 
 wyniki = []
 
@@ -371,12 +371,42 @@ def main():
         "SPADEK/ZYSK DZIŚ liczy się z temperatury, nie z pobrań",
     )
 
+    # ---- 0.31.78: tytuły kart nie mogą być ucinane ----
+    # Użytkownik widział „BILANS & ZYSK KOLEKTORA SŁON" bez końcówki — bo tytuł
+    # miał maxLines = 1, softWrap = false i overflow = Clip (obcina w połowie słowa).
+    sprawdz(
+        "tytuł karty zawija się do 2 linii zamiast być obcinany",
+        "maxLines = 2, softWrap = true, overflow = TextOverflow.Ellipsis" in weather,
+        "WCard: wcześniej Clip ucinał w połowie słowa, bez wielokropka",
+    )
+    sprawdz(
+        "brak obcinania tytułu bez ostrzeżenia (softWrap = false + Clip)",
+        "softWrap = false, overflow = TextOverflow.Clip" not in weather,
+        "taki duet wygląda jak ucięty ekran, a nie skrócony tekst",
+    )
+    sprawdz(
+        "nagłówek prognozy 7-dniowej nie kończy się na „SOLARNEGO”",
+        "PROGNOZA POTENCJAŁU SOLARNEGO\", fontSize" in weather
+        and "7 DNI · potencjał całej doby" in weather,
+        "tytuł i liczba dni w osobnych liniach",
+    )
+    sprawdz(
+        "podpis prognozy mówi „nie pomiar”",
+        "szacunek z modelu cieplnego, nie pomiar" in weather,
+        "samo „szacunek” nic nie znaczyło",
+    )
+    sprawdz(
+        "nota w Czujnikach definiuje zysk jako różnicę temperatur",
+        "Zysk = różnica temperatur wody" in sensors,
+        "wcześniej „o ile °C ogrzała się woda” myliło różnicę z wartością",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.77 (0.31.75 + usunięte wykrywanie pobrań wody)")
+    print("BRAMA UKŁADU EKRANU — 0.31.78 (0.31.75 + bez pobrań + tytuły bez ucinania)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:

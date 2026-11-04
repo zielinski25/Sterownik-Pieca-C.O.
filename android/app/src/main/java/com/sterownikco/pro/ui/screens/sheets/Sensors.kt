@@ -376,17 +376,20 @@ private fun SolarMetricsCard(m: AppModel) {
         )
         // [0.31.77] Wiersz „Pobrania ciepłej wody" usunięty razem z kafelkiem
         // na karcie BILANS — powód: zgadywanie ze spadku temperatury, nie pomiar.
+        // [0.31.78] Nota poprawiona językowo: było „z chmury, co minutę, także
+        // gdy aplikacja była zamknięta" (zawiłe) i „Zysk = o ile °C ogrzała się
+        // woda" (mieszanie pojęć: zysk to różnica, nie wartość).
         Text(
             // [0.31.35] „Zmierzone" liczy się też z historii chmury (co minutę),
             // a nie tylko z próbek zebranych przy otwartej aplikacji.
             // [0.31.36] Woda liczona z czujnika ZBIORNIKA (wcześniej brany był kolektor),
             // a pobranie to spadek podtrzymany, nie pojedyncze drgnięcie o 0,3 °C.
-            "Zysk = o ile °C ogrzała się woda w zbiorniku słonecznym 100 l na dachu " +
-                "(czujnik kolektora, nie bojler pieca). Minus = woda się " +
-                "wychłodziła. „Zmierzone” to odczyt czujnika w zbiorniku — z chmury, " +
-                "co minutę, także gdy aplikacja była zamknięta. „Szacunek” to " +
-                "wyliczenie z prognozy słońca — nie pomiar. Liczba pobrań wody NIE jest " +
-                "tu pokazywana: w telemetrii nie ma sygnału zaworu, więc każde " +
+            "Zysk = różnica temperatur wody w zbiorniku słonecznym 100 l na dachu " +
+                "(czujnik w zbiorniku, nie bojler pieca): ostatni odczyt minus pierwszy " +
+                "z dzisiaj. Minus = woda się wychłodziła. „Zmierzone” pochodzi " +
+                "z czujnika — z chmury, co minutę, także gdy aplikacja była zamknięta. " +
+                "„Szacunek” to wyliczenie z prognozy słońca, nie pomiar. Liczby pobrań " +
+                "wody tu nie ma: w telemetrii nie ma sygnału zaworu, więc każde " +
                 "wykrywanie pobrania byłoby zgadywaniem.",
             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp,
             modifier = Modifier.padding(top = 6.dp)

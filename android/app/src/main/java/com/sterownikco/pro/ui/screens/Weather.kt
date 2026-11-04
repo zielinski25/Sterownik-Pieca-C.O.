@@ -499,9 +499,15 @@ fun SolarMultiDayForecast(m: AppModel) {
         Modifier.fillMaxWidth().padding(top = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO · 7 DNI", fontSize = 9.5.sp,
+        // [0.31.78] BYŁO: „PROGNOZA POTENCJAŁU SOLARNEGO · 7 DNI" w jednej linii —
+        // przy szerokości karty kończyło się na „SOLARNEGO" (dalsza część spadała
+        // poza kartę, bez ostrzeżenia). Teraz tytuł i liczba dni są w osobnych liniach,
+        // a podpis jest pełny: „szacunek" bez dopisku „nie pomiar" nic nie znaczył.
+        Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO", fontSize = 9.5.sp,
             fontWeight = FontWeight.ExtraBold, color = SolarY, letterSpacing = 0.4.sp, lineHeight = 12.sp)
-        Text("potencjał całej doby, nie od teraz · minus = woda się wychładza · szacunek, nie pomiar",
+        Text("7 DNI · potencjał całej doby, nie od teraz · minus = woda się wychładza",
+            fontSize = 8.5.sp, color = SolarY.copy(alpha = .75f), lineHeight = 11.sp)
+        Text("szacunek z modelu cieplnego, nie pomiar",
             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp)
         if (dailies.isEmpty()) {
             Text(if (m.weatherBusy) "Pobieranie prognozy…" else "Brak prognozy",
@@ -574,12 +580,20 @@ private fun WCard(
         Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (stackSub) {
                 Column(Modifier.weight(1f)) {
+                    // [0.31.78] BYŁO: maxLines = 1 + softWrap = false + overflow = Clip.
+                    // Długi tytuł („BILANS & ZYSK KOLEKTORA SŁONECZNEGO") kończył się
+                    // w połowie słowa, przy samej krawędzi przycisku CSV — bez wielokropka,
+                    // więc wyglądało to jak ucięty ekran, a nie jak skrócony tekst.
+                    // Teraz: zawija się do dwóch linii, a gdy nie mieści się i tak —
+                    // kończy się wielokropkiem, który widać.
                     Text(title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = titleColor,
                         letterSpacing = 0.6.sp, lineHeight = 13.sp,
-                        maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                        maxLines = 2, softWrap = true, overflow = TextOverflow.Ellipsis)
                     if (sub.isNotEmpty()) {
+                        // [0.31.78] Podtytuł też z wielokropkiem — obcięcie w połowie
+                        // słowa bez znacznika wyglądało jak usterka rysowania.
                         Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp),
-                            maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                     }
                 }
             } else {
