@@ -18,6 +18,14 @@ import org.junit.Test
  */
 class ScreenLayoutTest {
 
+    // [PRÓBA BRAMKI 0.31.82 — TYMCZASOWE, DO USUNIĘCIA W NASTĘPNYM COMMICIE]
+    // Wymuszony błąd testu. Cel: sprawdzić na żywym runnerze, że czerwony test
+    // naprawdę zatrzymuje wydanie — nie powstaje commit z APK ani CI-TESTY.txt.
+    @Test
+    fun probaBramkiWymuszonyBlad() {
+        error("proba bramki 0.31.82 - zamierzony blad, do cofniecia")
+    }
+
     @Test
     fun portraitPhoneKeepsBottomBar() {
         // 331×735 dp — najczęstszy przypadek, musi zostać bez zmian.
