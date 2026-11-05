@@ -9,3 +9,12 @@ __pycache__/
 # Hasla do firmware (WiFi AP + OTA). Plik zostaje TYLKO lokalnie.
 # Wzorem jest secrets.h.example, ktory JEST w gicie.
 secrets.h
+
+# PlatformIO (buildy firmware'u) — nie wrzucamy artefaktow kompilacji do gita
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Testy rdzenia na PC (g++) — binarki budowane do /tmp, ale na wszelki wypadek
+*.o
+*.out
