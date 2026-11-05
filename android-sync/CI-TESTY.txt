@@ -1,0 +1,41 @@
+Sterownik CO - wynik testow jednostkowych z CI
+====================================================
+
+Wersja: 0.31.82
+Plikow XML: 28
+Testow: 162
+Nieudanych (failures): 0
+Bledow (errors): 0
+Pominietych (skipped): 0
+
+Zrodlo: app/build/test-results/testDebugUnitTest/*.xml
+(suma po wszystkich <testsuite> w kazdym pliku)
+
+  com.sterownikco.pro.core.AlarmCenterTest: 27 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.AlarmFlagParserTest: 4 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.AlarmIntentNonceTest: 4 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.AlarmMonitorHealthTest: 7 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.AlarmMonitorStartGateTest: 3 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.AlarmMuteCommandsTest: 4 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.AlarmPopupSessionTest: 5 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.AlarmSnapshotGateTest: 4 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.AlarmSoundSyncTest: 6 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.ChartTimeWindowTest: 6 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.CommandRedactorTest: 5 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.EspHistoryCsvTest: 7 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.LocalControllerAddressTest: 3 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.ModeSelectionUiTest: 7 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.PiecStateIgnitionFieldsTest: 3 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.ScreenLayoutTest: 6 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.ServoModeUiTest: 4 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.ServoPositionPreviewTest: 4 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.StatusPollGateTest: 2 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.TelemetryChartTest: 11 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.TelemetryDayCacheTest: 8 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.TelemetryTimeRepairTest: 8 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.TileReorderTest: 3 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.core.TileSpecsServoPreviewTest: 4 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.ui.chart.ChartScrubIndexTest: 3 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.ui.chart.ChartTimeAxisTest: 6 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.ui.chart.ChartXLabelTest: 5 (failures 0, errors 0, skipped 0)
+  com.sterownikco.pro.widget.WidgetTemperatureColorsTest: 3 (failures 0, errors 0, skipped 0)
