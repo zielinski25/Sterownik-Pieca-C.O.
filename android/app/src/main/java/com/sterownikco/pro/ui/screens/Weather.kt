@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -542,10 +544,18 @@ private fun MetricGrid(items: List<MCard>) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // CSS .metric-grid: three equal columns; four solar metrics therefore flow 3 + 1.
         items.chunked(3).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // [0.31.81] RÓWNA WYSOKOŚĆ kafelków w jednym rzędzie. Kafel „DO KOŃCA
+            // DNIA" ma podpis w dwóch liniach („bez słońca · ociepla się"), więc
+            // rósł o ~10 dp ponad sąsiadów i dolna krawędź nie była w jednej linii.
+            // IntrinsicSize.Min liczy wysokość rzędu z najwyższego kafelka,
+            // a fillMaxHeight rozciąga pozostałe do tej samej wysokości.
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 row.forEach { item ->
                     Column(
-                        Modifier.weight(1f).background(Pal.Surface, RoundedCornerShape(14.dp))
+                        Modifier.weight(1f).fillMaxHeight().background(Pal.Surface, RoundedCornerShape(14.dp))
                             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(14.dp)).padding(10.dp)
                     ) {
                         Text(item.lbl, style = Txt.mcardLbl)

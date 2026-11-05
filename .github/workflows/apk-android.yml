@@ -47,15 +47,28 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleDebug 2>&1 | tee build.log
 
+      # [0.31.81] Testy jednostkowe JVM (app/src/test). Wcześniej CI dowodziło
+      # tylko, że źródła główne się kompilują — testy nie były uruchamiane wcale.
+      # Krok idzie PO assembleDebug (żeby APK powstał także wtedy, gdy padnie test),
+      # a PRZED uploadem, więc czerwony test zatrzymuje wydanie.
+      - name: testDebugUnitTest
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest 2>&1 | tee test.log
+
       - name: Blad - ostatnie linie jako adnotacja
         if: failure()
         working-directory: android
         run: |
-          if [ -f build.log ]; then
-            tail -n 25 build.log | while IFS= read -r l; do
-              echo "::error::$(printf '%s' "$l" | sed 's/%/%25/g')"
-            done
-          fi
+          for f in test.log build.log; do
+            if [ -f "$f" ]; then
+              echo "::error::--- $f ---"
+              tail -n 25 "$f" | while IFS= read -r l; do
+                echo "::error::$(printf '%s' "$l" | sed 's/%/%25/g')"
+              done
+            fi
+          done
 
       - name: APK jako artefakt
         if: success()

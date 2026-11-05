@@ -24,8 +24,8 @@ TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.80"
-KOD_WERSJI = "31080"
+WERSJA = "0.31.81"
+KOD_WERSJI = "31081"
 
 wyniki = []
 
@@ -488,12 +488,38 @@ def main():
         "spójność kafelka i karty jest widoczna w kodzie",
     )
 
+    # ---- 0.31.81: kafelki w jednym rzędzie mają równą wysokość ----
+    # Kafel „DO KOŃCA DNIA" ma podpis w dwóch liniach, więc był wyższy od
+    # sąsiadów i dolna krawędź nie stała w jednej linii.
+    sprawdz(
+        "rząd kafelków liczy wysokość z najwyższego (IntrinsicSize.Min)",
+        bool(re.search(r"Row\(\s*Modifier\.fillMaxWidth\(\)\.height\(IntrinsicSize\.Min\)", weather)),
+        "bez tego każdy kafelek ma własną wysokość",
+    )
+    sprawdz(
+        "kafelek rozciąga się do wysokości rzędu (fillMaxHeight)",
+        bool(re.search(r"weight\(1f\)\.fillMaxHeight\(\)", weather)),
+        "sama wysokość rzędu nie wyrówna teł kafelków",
+    )
+    # ---- 0.31.81: CI uruchamia testy jednostkowe ----
+    wf = czytaj(PROJEKT.parent / ".github/workflows/apk-android.yml")
+    if not wf:
+        wf = czytaj(Path("/home/user/Sterownik-Pieca-C.O./.github/workflows/apk-android.yml"))
+    i_asm = wf.find("assembleDebug")
+    i_test = wf.find("testDebugUnitTest")
+    i_up = wf.find("upload-artifact")
+    sprawdz(
+        "CI uruchamia testDebugUnitTest po assembleDebug, przed uploadem",
+        i_asm >= 0 and i_test > i_asm and i_up > i_test,
+        "dziś CI dowodzi tylko kompilacji źródeł głównych",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.80 (0.31.75 + bez pobrań + jedno źródło dla DO KOŃCA DNIA, z warunkiem słońca)")
+    print("BRAMA UKŁADU EKRANU — 0.31.81 (0.31.75 + bez pobrań + jedno źródło z warunkiem słońca + równe kafelki)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:
