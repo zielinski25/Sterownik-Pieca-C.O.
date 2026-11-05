@@ -32,11 +32,44 @@ Głos Robbiego używa wbudowanego `speechSynthesis` (angielski) — jeśli przeg
 
 ## Co jest w środku
 
+> **Wersja 2 · mega-baza:** 4 949 unikalnych zadań, system ocen 1–6, powtórki
+> rozłożone w czasie z tego, czego dziecko nie umie, oraz 8 dodatków.
+
+**🧠 Bardzo duża baza i zero powtórek.** `data.js` generuje deterministycznie (stałe ziarno
+`20261110`) 4 949 zadań z 41 podmiotów i 88 okoliczników; każde ma stały `id` i przypisany
+obszar umiejętności. Silnik `deal()` zapisuje w `localStorage` indeksy już widzianych zadań
+osobno dla każdego ćwiczenia — **każde wejście daje całkiem nowy zestaw**, także po
+zamknięciu karty, odświeżeniu strony i następnego dnia. Gdy pula się wyczerpie, zaczyna się
+nowy cykl (numer widać w nagłówku ćwiczenia). Baza: 546 pytań wyboru, 460 luk,
+385 rozsypanek, 376 przekształceń, 314 krótkich odpowiedzi, 252 zdań do poprawy,
+436 zdań do sortowania, 312 zadań słuchowych, 224 dyktand, 151 zadań pisowni,
+116 tłumaczeń, 27 tekstów, 1 044 pytania kartkówkowe, 84 fiszki, 54 zestawy memory/matching.
+Wszystkie treści są unikalne — `validate.js` sprawdza brak duplikatów.
+
+**🎓 System oceniania.** Po każdym ćwiczeniu, szybkiej rundzie, powtórce i próbnej kartkówce
+pojawia się ocena w skali szkolnej: `95%+ → 6 celujący`, `88%+ → 5 bardzo dobry`,
+`72%+ → 4 dobry`, `56%+ → 3 dostateczny`, `36%+ → 2 dopuszczający`, poniżej → `1 jeszcze ćwiczę`.
+W **Postępach** jest dzienniczek z wykresem ostatnich 12 wyników, średnią i **ocenami
+cząstkowymi według umiejętności** (odmiana, przeczenia, pytania, krótkie odpowiedzi,
+czytanie, słuchanie, pisownia, tłumaczenie). Raport dla rodzica uwzględnia oceny i powtórki.
+
+**🔁 Powtórka tego, czego dziecko nie umie.** Każda błędna odpowiedź trafia do zakładki
+**Powtórki** z tematem i wyjaśnieniem. Zadanie wraca po 1, 2, 4, 7, 14 i 30 dniach
+(pudełka Leitnera); poprawna odpowiedź przesuwa je dalej, błąd resetuje na jutro,
+a po 6 pudełku jest „opanowane". Są statystyki, lista trudnych zadań, przycisk
+**„Ćwicz najsłabszy temat"** i powtórka zakończona oceną.
+
+**🎁 Inne dodatki:** 3 nowe odznaki (Pracuś 100 zadań, Naprawiacz 8 błędów, Szóstkowicz),
++5 XP przy serii 5 odpowiedzi, **pytanie dnia** (stałe dla danego dnia), **tryb ciemny**,
+**wyciszanie głosu** (oba zapamiętane), **wybór liczby zadań kartkówki** (10/15/20/30),
+**losowa kartkówka do druku z kluczem dla rodzica**, licznik zestawów i rozmiaru bazy w hubie.
+
+
 **📘 Nauka** — 7 zasad z przykładami czytanymi na głos, pełna tabela odmiany (długa/krótka forma,
 przeczenie, pytanie, krótka odpowiedź), 8 pytań z podręcznika, 12 najczęstszych pułapek,
 słowniczek (kraje/narodowości, przymiotniki, miejsca) oraz **ściąga do druku** (A4).
 
-**🎮 15 ćwiczeń różnego typu** (każde losuje pytania, więc da się je powtarzać):
+**🎮 15 ćwiczeń różnego typu** (każde bierze świeży, niepowtarzalny zestaw z mega-bazy):
 
 | # | Ćwiczenie | Typ zadania / umiejętność |
 | --- | --- | --- |
@@ -56,16 +89,20 @@ słowniczek (kraje/narodowości, przymiotniki, miejsca) oraz **ściąga do druku
 | 14 | Literuj formę | spelling game (wisielec) z baterią Robbiego |
 | 15 | Szybka runda | 60 sekund, ile poprawnych form — trening automatyzacji |
 
-**🗂️ Fiszki** — 16 kart z prostą powtórką rozłożoną w czasie („Umiem" odkłada kartę,
+**🗂️ Fiszki** — 84 karty z prostą powtórką rozłożoną w czasie („Umiem" odkłada kartę,
 „Jeszcze ćwiczę" wraca szybciej).
 
-**📝 Kartkówka próbna** — 15 losowych zadań z 42-elementowej puli w dwóch trybach:
-*tryb nauki* (wyjaśnienie od razu) i *tryb kartkówki* (bez podpowiedzi, z czasem, omówienie
-wszystkich odpowiedzi na końcu, lista słabszych obszarów).
+**📝 Kartkówka próbna** — wybór 10, 15, 20 lub 30 zadań z 1 044-elementowej puli
+(każde podejście to inny zestaw) w dwóch trybach: *tryb nauki* (wyjaśnienie od razu)
+i *tryb kartkówki* (bez podpowiedzi, z czasem, oceną, omówieniem odpowiedzi na końcu
+i przyciskiem przejścia do powtórki błędów). Dodatkowo **🖨️ losowa kartkówka do druku
+z kluczem odpowiedzi** dla rodzica.
 
-**📊 Postępy** — punkty XP, serie poprawnych odpowiedzi, skuteczność, 12 odznak, wykresy dla
-każdego ćwiczenia, raport dla rodzica/nauczyciela (także do druku), 5-dniowy plan nauki
-z checkboxami. Wszystko zapisuje się wyłącznie w `localStorage` tej przeglądarki.
+**📊 Postępy** — punkty XP, serie poprawnych odpowiedzi, skuteczność, 15 odznak,
+dzienniczek ocen z wykresem, oceny cząstkowe według umiejętności, wykresy dla każdego
+ćwiczenia, raport dla rodzica/nauczyciela (także do druku), 5-dniowy plan nauki
+z checkboxami. Wszystko zapisuje się wyłącznie w `localStorage` tej przeglądarce
+(klucz `tobe-kartkowka-v1`, migracja ze starszej wersji bez utraty postępów).
 
 ## Inspiracje z sieci (typy zadań)
 
@@ -90,12 +127,12 @@ z checkboxami. Wszystko zapisuje się wyłącznie w `localStorage` tej przegląd
 
 ```
 index.html              struktura (odwołuje się do css/js)
-styles.css              wygląd, responsywność, tryb druku
-data.js                 cała baza treści: reguły, słownictwo, 15 banków zadań
-app.js                  silnik ćwiczeń, fiszki, kartkówka, postępy, głos
+styles.css              wygląd, responsywność, tryb ciemny, tryb druku
+data.js                 4 949 zadań: generator mega-bazy, reguły, słownictwo, stałe id
+app.js                  silnik bez powtórek, oceny, powtórki, kartkówka, postępy, głos
 to-be-kartkowka.html    WYGENEROWANY jeden plik (CSS + JS w środku) — główny plik do użytku
 build.py                scala powyższe w to-be-kartkowka.html:  python3 build.py
-validate.js             sprawdza spójność bazy zadań:            node validate.js
+validate.js             spójność bazy, unikalność id i treści:   node validate.js
 make_sciaga.py          generuje sciaga-to-be.png (wymaga pillow + qrcode)
 sciaga-to-be.png        ściąga do wysłania jako zdjęcie na Telegramie
 UDSTEPNIJ-TELEGRAM.txt  gotowa wiadomość, linki i instrukcja udostępniania
@@ -143,4 +180,7 @@ node --check data.js && node --check app.js && node validate.js && python3 build
 
 Dodatkowo strona została uruchomiona w jsdom i przećwiczona end-to-end: otwarcie wszystkich
 15 ćwiczeń, odpowiedzi w reprezentatywnych typach zadań, fiszki, oba tryby kartkówki,
-raport, druk i reset postępów — bez błędów JS.
+raport, druk i reset postępów — bez błędów JS. Osobny test (`smoke-extras`) ze współdzielonym
+`localStorage` potwierdza, że trzy kolejne wizyty dają rozłączne zestawy zadań, że po
+wyczerpaniu bazy startuje cykl 2, że oceny i błędy zapisują się, że powtórka kończy się
+oceną oraz że tryb ciemny, wyciszanie i wydruk kartkówki działają.

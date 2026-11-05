@@ -316,3 +316,58 @@ a{color:var(--teal-d)}
   @page{margin:12mm}
 }
 #print-sheet{display:none}
+
+/* ---------- tryb ciemny ---------- */
+body.dark{
+  --bg:#0d1a27; --card:#16283a; --line:#2b4259; --ink:#e6f0f6; --navy:#f4f9fc;
+  --muted:#a8bdcc; --teal-l:#123b3c; --coral-l:#3a2426; --sun-l:#3b331a;
+  --green-l:#14372c; --red-l:#3a2027;
+  background:var(--bg); color:var(--ink);
+}
+body.dark .topbar{background:rgba(22,40,58,.94); border-bottom-color:var(--line)}
+body.dark .tabs{background:var(--card); border-bottom-color:var(--line)}
+body.dark .tab{background:var(--card); border-color:var(--line); color:var(--ink)}
+body.dark .tab.active{background:var(--teal); color:#062b28}
+body.dark .card{background:var(--card); border-color:var(--line)}
+body.dark .qbox,body.dark .answer-input,body.dark table,body.dark .table-wrap,
+body.dark .opt,body.dark .token,body.dark .mem-card,body.dark .match-item,
+body.dark .bucket,body.dark .flash,body.dark .plan-item,body.dark .badge,
+body.dark details,body.dark select{background:#1b3044; border-color:var(--line); color:var(--ink)}
+body.dark th{background:#1b3a3c; color:#8fe3da}
+body.dark td,body.dark tr:hover td{border-bottom-color:var(--line)}
+body.dark tr:hover td{background:#1d3850}
+body.dark .chip{background:#22384c; border-color:#39536b; color:#e6f0f6}
+body.dark .chip.teal{background:#123b3c; border-color:#1c615e; color:#8fe3da}
+body.dark .chip.coral{background:#3a2426; border-color:#6a3a3a; color:#ffb9a7}
+body.dark .btn.navy{background:#29455e; color:#fff}
+body.dark .btn.ghost{background:#1b3044; color:var(--navy); border-color:var(--line)}
+body.dark .hero{color:#fff}
+body.dark .hero h1,body.dark .hero h2,body.dark .hero p,body.dark .hero b{color:#fff}
+body.dark .answer-input::placeholder{color:#8aa2b4}
+body.dark footer,body.dark .muted{color:var(--muted)}
+body.dark .reading-text{background:#1b3044; border-color:var(--line); color:var(--ink)}
+body.dark .bar,body.dark .progress-line{background:#22384c}
+body.dark .feedback.tip{background:#22384c; border-color:var(--line); color:var(--ink)}
+
+/* ---------- dzienniczek, powtórki, wykres ---------- */
+#gradebook table,#review-list table{font-size:.9rem}
+#gradebook td,#review-list td{white-space:normal}
+#review-host .options{margin-top:12px}
+#review-list .table-wrap{max-height:420px; overflow:auto}
+#skill-grid>div,#activity-bars>div{margin-bottom:10px}
+svg[aria-label]{display:block; margin:6px 0}
+
+/* ---------- kartkówka do druku ---------- */
+.print-questions{margin:0; padding-left:22px}
+.print-questions li{margin-bottom:9px; line-height:1.45; page-break-inside:avoid}
+.print-questions .answer-line{color:#888; letter-spacing:1px; overflow:hidden; white-space:nowrap}
+.answer-key{display:none}
+#print-sheet.exam-mode #print-rules,
+#print-sheet.exam-mode #print-mistakes,
+#print-sheet.exam-mode .print-sub,
+#print-sheet.exam-mode .table-wrap{display:none}
+@media print{
+  #print-sheet.exam-mode .answer-key{display:block}
+  #print-sheet.exam-mode .answer-key .card{border:1px dashed #999}
+  #print-sheet.exam-mode .print-questions li{page-break-inside:avoid}
+}

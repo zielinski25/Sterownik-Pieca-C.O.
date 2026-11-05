@@ -18,9 +18,10 @@ Skopiuj i wklej do wiadomości na Telegramie:
 https://is.gd/gAbph1
 
 To krótki link do pełnej, działającej strony. Po kliknięciu odbiorca
-widzi gotowy moduł (15 ćwiczeń, fiszki, próbna kartkówka), a nie kod
-źródłowy — adres prowadzi przez podgląd HTML, który poprawnie serwuje
-stronę i uruchamia jej skrypty. Działa na telefonie i na komputerze.
+widzi gotowy moduł (4 949 zadań, 15 typów ćwiczeń, oceny, powtórki
+błędów, fiszki i próbna kartkówka), a nie kod źródłowy — adres prowadzi
+przez podgląd HTML, który poprawnie serwuje stronę i uruchamia jej skrypty.
+Działa na telefonie i na komputerze.
 
 Pełny adres (zapasowy, gdyby skracacz kiedyś przestał działać):
 
@@ -44,9 +45,13 @@ Cześć! Przygotowałam/em stronę do powtórki przed kartkówką z angielskiego
 
 👉 https://is.gd/gAbph1
 
-Jest tam 15 różnych ćwiczeń (wybieranie, wpisywanie, memory, słuchanie,
-dyktando, poprawianie błędów, układanie zdań), fiszki i próbna kartkówka
-z omówieniem odpowiedzi. Nic nie trzeba instalować ani logować się 💪
+Jest 15 różnych ćwiczeń (wybieranie, wpisywanie, memory, słuchanie,
+dyktando, poprawianie błędów, układanie zdań) i prawie 5 tysięcy zadań —
+przy każdym wejściu dziecko dostaje całkiem inny zestaw, nic się nie
+powtarza 🔁. Strona wystawia ocenę 1–6, zapisuje błędy i przypomina
+o nich w kolejnych dniach, aż dziecko je opanuje. Są też fiszki, próbna
+kartkówka, pytanie dnia, tryb ciemny i kartkówka do wydruku z kluczem.
+Nic nie trzeba instalować ani logować się 💪
 
 W załączniku jeszcze ściąga w formie zdjęcia — warto ją mieć pod ręką
 wieczorem przed sprawdzianem 🙂
@@ -59,8 +64,8 @@ i otwórz go w Chrome / Safari.
   3) WYŚLIJ PLIK (działa też bez internetu) 📎
 ------------------------------------------------------------------------
 
-Plik:  to-be-kartkowka.html  (jeden plik, ~142 KB, wszystko w środku)
-Link z Dysku Google:  https://drive.google.com/file/d/1MJZbfjrfmYWx7bvwOAMigWR2zdd1olKq/view?usp=drivesdk
+Plik:  to-be-kartkowka.html  (jeden plik, ~197 KB, wszystko w środku)
+Link z Dysku Google:  https://drive.google.com/file/d/1tVcZ7awD8F5tYowhtgXc1q850Zio6rzQ/view?usp=drivesdk
 
 W aplikacji Telegram:
   • klip spinacz / ➕ → „Plik" (File / Document, NIE „Galeria"),
@@ -76,11 +81,12 @@ Po otwarciu strona działa całkowicie offline — można się uczyć w autobusi
 ------------------------------------------------------------------------
 
 Plik:  sciaga-to-be.png  (1080×1560, z kodem QR prowadzącym do strony)
-Link z Dysku Google:  https://drive.google.com/file/d/1n1_n3hLan00ecFXodlrsT70uf3tOQloQ/view?usp=drivesdk
+Link z Dysku Google:  https://drive.google.com/file/d/1c0qUIQf5-QP6E4b-AqOays7c0aqU0_Lk/view?usp=drivesdk
 
 Wyślij jako ZDJĘCIE (nie jako plik), żeby Telegram pokazał podgląd
 w czacie. Dziecko ma wtedy całą tabelę `be` i 3 zasady bez klikania.
-Kod QR na dole otwiera pełny trening po zeskanowaniu aparatem.
+Kod QR na dole otwiera pełny trening (4 949 zadań, oceny, powtórki)
+po zeskanowaniu aparatem.
 
 
 ------------------------------------------------------------------------
@@ -116,7 +122,11 @@ Złote zasady:
 ------------------------------------------------------------------------
 
 • Krótki link wskazuje na plik `docs/index.html` z gałęzi repozytorium;
-  po każdej aktualizacji strony pokazuje najnowszą wersję.
+  po każdej aktualizacji strony pokazuje najnowszą wersję (wersja 2:
+  mega-baza 4 949 zadań, oceny 1–6, powtórki z błędów, tryb ciemny,
+  pytanie dnia, kartkówka do druku).
+• Pliki HTML i PNG na Dysku Google są osobnymi kopiami — po przebudowie
+  strony trzeba podmienić również je, żeby załączniki były aktualne.
 • Podgląd na żywo (działa tylko dopóki trwa ta sesja Arena):
   https://8000-ihdl8hgbmywgqshdmoocj.e2b.app/to-be-kartkowka.html
 • Najlepszy docelowy adres to GitHub Pages. Wystarczy 1 minuta ręcznie:

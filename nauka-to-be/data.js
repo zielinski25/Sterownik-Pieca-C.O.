@@ -486,13 +486,435 @@
     { id: "speed", icon: "⚡", title: "Szybka runda", desc: "60 sekund, ile poprawnych odpowiedzi zdążysz?", skill: "powtórka" }
   ];
 
+  /* =======================================================================
+     MEGA-BAZA ZADAŃ — kilka tysięcy unikalnych, poprawnych językowo zadań.
+     Generator jest DETERMINISTYCZNY (stałe ziarno), więc każde zadanie ma
+     stały identyfikator: system „bez powtórek" pamięta je między wizytami,
+     a plik HTML pozostaje mały (zadania powstają przy otwarciu strony).
+     Wszystkie zdania dotyczą wyłącznie czasownika „to be" i używają słów
+     z podręcznika Together 2026, klasa 4.
+     ======================================================================= */
+  (function megaBank() {
+    "use strict";
+    let seed = 20261110;
+    function rnd() {
+      seed = (seed + 0x6D2B79F5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+    function sh(a) {
+      const x = a.slice();
+      for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = x[i]; x[i] = x[j]; x[j] = t; }
+      return x;
+    }
+    function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+    function low1(s) { return s.charAt(0).toLowerCase() + s.slice(1); }
+    function nrm(s) {
+      return String(s).toLowerCase().replace(/[’`´]/g, "'").replace(/\s+/g, " ").replace(/[.!?]+$/, "").trim();
+    }
+    function uniq(a) { const o = {}, r = []; a.forEach(function (x) { if (!o[x]) { o[x] = 1; r.push(x); } }); return r; }
+
+    const SFX = { am: "'m", is: "'s", are: "'re" };
+    const NEGW = { am: "am not", is: "isn't", are: "aren't" };
+    const ANS = {
+      I: ["Yes, I am.", "No, I'm not."], you: ["Yes, you are.", "No, you aren't."],
+      we: ["Yes, we are.", "No, we aren't."], he: ["Yes, he is.", "No, he isn't."],
+      she: ["Yes, she is.", "No, she isn't."], it: ["Yes, it is.", "No, it isn't."],
+      they: ["Yes, they are.", "No, they aren't."]
+    };
+    function plVerb(be, low) {
+      if (be === "am") return ["jestem", "nie jestem"];
+      if (be === "is") return ["jest", "nie jest"];
+      if (low === "ty") return ["jesteś", "nie jesteś"];
+      if (low === "my") return ["jesteśmy", "nie jesteśmy"];
+      return ["są", "nie są"];
+    }
+    /* s — podmiot, be — forma, ans — zaimek w krótkiej odpowiedzi,
+       pl/low — podmiot po polsku, proper — imię (zostawiamy wielką literę) */
+    function mk(s, be, ans, pl, low, proper, noShort) {
+      const v = plVerb(be, low), PRON = ["I", "You", "He", "She", "It", "We", "They"];
+      const qt = PRON.indexOf(s) !== -1 ? (s === "I" ? "I" : s.toLowerCase()) : (proper ? s : low1(s));
+      const THINGS = ["It", "Lily", "The robot", "My cat", "My bag", "The film", "My book",
+                      "My school bag", "My hoodie", "My shoes", "My jeans", "The notebooks", "My books"];
+      return {
+        s: s, be: be, qt: qt, ans: ans, pl: pl, low: low,
+        person: THINGS.indexOf(s) === -1,
+        short: noShort ? null : s + SFX[be],
+        neg: be === "am" ? "I'm not" : s + " " + NEGW[be],
+        negL: s + " " + be + " not", negW: NEGW[be],
+        q: cap(be) + " " + qt, yes: ANS[ans][0], no: ANS[ans][1],
+        plBe: v[0], plNeg: v[1]
+      };
+    }
+    const SUBS = [
+      mk("I", "am", "you", "Ja", "ja", false),
+      mk("You", "are", "I", "Ty", "ty", false),
+      mk("He", "is", "he", "On", "on", false),
+      mk("She", "is", "she", "Ona", "ona", false),
+      mk("It", "is", "it", "To", "to", false),
+      mk("We", "are", "you", "My", "my", false),
+      mk("They", "are", "they", "Oni", "oni", false),
+      mk("Mickey", "is", "he", "Mickey", "Mickey", true),
+      mk("Ana", "is", "she", "Ana", "Ana", true),
+      mk("Robbie", "is", "he", "Robbie", "Robbie", true),
+      mk("Lily", "is", "it", "Lily", "Lily", true),
+      mk("Emile", "is", "he", "Emile", "Emile", true),
+      mk("Lena", "is", "she", "Lena", "Lena", true),
+      mk("Tomek", "is", "he", "Tomek", "Tomek", true),
+      mk("Filip", "is", "he", "Filip", "Filip", true),
+      mk("Harry", "is", "he", "Harry", "Harry", true),
+      mk("Saskia", "is", "she", "Saskia", "Saskia", true),
+      mk("Ms Collins", "is", "she", "Pani Collins", "pani Collins", true),
+      mk("Mr Brown", "is", "he", "Pan Brown", "pan Brown", true),
+      mk("My dad", "is", "he", "Mój tata", "mój tata", false),
+      mk("My mum", "is", "she", "Moja mama", "moja mama", false),
+      mk("My friend", "is", "he", "Mój kolega", "mój kolega", false),
+      mk("My sister", "is", "she", "Moja siostra", "moja siostra", false),
+      mk("My teacher", "is", "she", "Moja nauczycielka", "moja nauczycielka", false),
+      mk("The robot", "is", "it", "Robot", "robot", false),
+      mk("My cat", "is", "it", "Mój kot", "mój kot", false),
+      mk("My bag", "is", "it", "Moja torba", "moja torba", false),
+      mk("The film", "is", "it", "Film", "film", false),
+      mk("My book", "is", "it", "Moja książka", "moja książka", false),
+      mk("My school bag", "is", "it", "Mój plecak", "mój plecak", false),
+      mk("My hoodie", "is", "it", "Moja bluza", "moja bluza", false),
+      mk("Mickey and Ana", "are", "they", "Mickey i Ana", "Mickey i Ana", true, true),
+      mk("Lily and Robbie", "are", "they", "Lily i Robbie", "Lily i Robbie", true, true),
+      mk("My friends", "are", "they", "Moi przyjaciele", "moi przyjaciele", false, true),
+      mk("My parents", "are", "they", "Moi rodzice", "moi rodzice", false, true),
+      mk("My shoes", "are", "they", "Moje buty", "moje buty", false, true),
+      mk("My jeans", "are", "they", "Moje dżinsy", "moje dżinsy", false, true),
+      mk("The children", "are", "they", "Dzieci", "dzieci", false, true),
+      mk("The students", "are", "they", "Uczniowie", "uczniowie", false, true),
+      mk("The notebooks", "are", "they", "Zeszyty", "zeszyty", false, true),
+      mk("My books", "are", "they", "Moje książki", "moje książki", false, true)
+    ];
+
+    const ADJ = [
+      ["amazing", "niesamowity"], ["cool", "fajny"], ["big", "duży"], ["small", "mały"],
+      ["old", "stary"], ["new", "nowy"], ["interesting", "ciekawy"], ["funny", "zabawny"],
+      ["clever", "bystry"], ["kind", "miły"], ["helpful", "pomocny"], ["shy", "nieśmiały"],
+      ["friendly", "przyjazny"], ["quiet", "cichy"], ["sporty", "sportowy"], ["smart", "bystry"],
+      ["great", "świetny"], ["fantastic", "fantastyczny"], ["ready", "gotowy"], ["happy", "szczęśliwy"],
+      ["tired", "zmęczony"], ["busy", "zajęty"], ["late", "spóźniony"], ["nice", "miły"],
+      ["brave", "odważny"], ["young", "młody"], ["strong", "silny"], ["fast", "szybki"],
+      ["sad", "smutny"], ["lucky", "szczęśliwy"]
+    ];
+    const NAT = ["Polish", "British", "American", "French", "Spanish", "Turkish", "Chinese", "Brazilian", "Australian", "Argentinian", "Canadian"];
+    const FROM = [
+      ["from Poland", "z Polski"], ["from Brazil", "z Brazylii"], ["from the UK", "z Wielkiej Brytanii"],
+      ["from the USA", "z USA"], ["from France", "z Francji"], ["from Spain", "z Hiszpanii"],
+      ["from Turkey", "z Turcji"], ["from China", "z Chin"], ["from Australia", "z Australii"],
+      ["from Argentina", "z Argentyny"], ["from Canada", "z Kanady"], ["from Manchester", "z Manchesteru"],
+      ["from Kraków", "z Krakowa"]
+    ];
+    const PLACE = [
+      ["at school", "w szkole"], ["at home", "w domu"], ["in the park", "w parku"],
+      ["in the garden", "w ogrodzie"], ["at a party", "na imprezie"], ["on holiday", "na wakacjach"],
+      ["at a summer camp", "na obozie"], ["at a café", "w kawiarni"], ["in the classroom", "w klasie"],
+      ["at the cinema", "w kinie"], ["in the library", "w bibliotece"], ["on the bus", "w autobusie"],
+      ["at the beach", "na plaży"], ["in the kitchen", "w kuchni"], ["at the zoo", "w zoo"]
+    ];
+    const NOUN = ["a student", "a teacher", "a robot", "a cat", "a friend", "a new student",
+                  "an actor", "an amazing film", "an old book", "an orange bag", "a blue hoodie", "a good answer"];
+    const AGE = ["eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen"];
+    const COLOUR = ["blue", "red", "green", "orange", "yellow", "black", "white", "pink", "purple", "brown"];
+    const COMP = [];
+    ADJ.forEach(function (a) { COMP.push({ en: a[0], pl: null, kind: "adj" }); });
+    NAT.forEach(function (a) { COMP.push({ en: a, pl: null, kind: "nat" }); });
+    FROM.forEach(function (a) { COMP.push({ en: a[0], pl: a[1], kind: "from" }); });
+    PLACE.forEach(function (a) { COMP.push({ en: a[0], pl: a[1], kind: "place" }); });
+    NOUN.forEach(function (a) { COMP.push({ en: a, pl: null, kind: "noun" }); });
+    AGE.forEach(function (a) { COMP.push({ en: a, pl: null, kind: "age" }); });
+
+    function aff(x, c) { return x.s + " " + x.be + " " + c.en + "."; }
+    function affS(x, c) { return x.short ? x.short + " " + c.en + "." : aff(x, c); }
+    function negS(x, c) { return x.neg + " " + c.en + "."; }
+    function negL(x, c) { return x.negL + " " + c.en + "."; }
+    function que(x, c) { return x.q + " " + c.en + "?"; }
+    function where(x) { return "Where " + x.be + " " + x.qt + " from?"; }
+    function howOld(x) { return "How old " + x.be + " " + x.qt + "?"; }
+
+    const DISTRACT = ["am", "is", "are", "isn't", "aren't", "am not", "do", "does", "not",
+                      "a", "an", "Yes,", "No,", "Where", "How", "What", "the", "at", "in", "on", "and"];
+    function mkTiles(sentence, n, wantExtra) {
+      const base = sentence.trim().split(/\s+/), seen = {}, used = {};
+      for (let i = 0; i < base.length; i++) { const k = base[i].toLowerCase(); if (seen[k]) return null; seen[k] = true; used[k] = true; }
+      const words = base.slice(), dist = sh(DISTRACT.filter(function (d) { return !used[d.toLowerCase()]; }));
+      let added = 0, extra = null;
+      for (let i = 0; i < dist.length && added < n; i++) {
+        const k = dist[i].toLowerCase();
+        if (seen[k]) continue;
+        seen[k] = true; words.push(dist[i]);
+        if (wantExtra && extra === null) extra = dist[i];
+        added++;
+      }
+      return { words: sh(words), extra: wantExtra ? extra : null };
+    }
+
+    const ALL = [];
+    SUBS.forEach(function (x) { COMP.forEach(function (c) {
+      if (c.kind === "noun" && x.be === "are") return;      // „They are a student” ✗
+      if (c.kind === "age" && !x.person) return;            // „The film is eleven” ✗
+      ALL.push({ x: x, c: c });
+    }); });
+    function take(n) { return sh(ALL).slice(0, n); }
+    const KEYS = {};
+    function unique(bank, str) { const k = bank + "|" + str.toLowerCase(); if (KEYS[k]) return false; KEYS[k] = true; return true; }
+
+    /* ---- 1. Wybierz formę — 4 warianty ---- */
+    take(520).forEach(function (o, k) {
+      const x = o.x, c = o.c, v = k % 4;
+      if (v === 0) choice.push({ s: x.s + " ___ " + c.en + ".", o: ["am", "is", "are"], a: x.be, w: x.s + " → " + x.be, area: "odmiana" });
+      else if (v === 1) choice.push({ s: "___ " + x.qt + " " + c.en + "?", o: ["Am", "Is", "Are"], a: cap(x.be), w: "Pytanie zaczyna się od " + cap(x.be) + ".", area: "pytania" });
+      else if (v === 2) choice.push({ s: x.s + " ___ not " + c.en + ".", o: ["am", "is", "are"], a: x.be, w: x.be + " not = " + x.negW, area: "przeczenia" });
+      else choice.push({ s: "Uzupełnij przeczenie: " + x.s + " ___ " + c.en + ".", o: ["isn't", "aren't", "am not"], a: x.negW, w: x.s + " → " + x.neg, area: "przeczenia" });
+    });
+
+    /* ---- 2. Wpisz formę ---- */
+    take(440).forEach(function (o, k) {
+      const x = o.x, c = o.c, v = k % 3;
+      if (v === 0) gap.push({ s: x.s + " ___ " + c.en + ".", a: uniq(x.short ? [x.be, SFX[x.be]] : [x.be]), h: x.s + " → " + x.be + ". Krótko: " + (x.short || "—"), w: aff(x, c), area: "odmiana" });
+      else if (v === 1) gap.push({ s: "___ " + x.qt + " " + c.en + "?", a: uniq([x.be, cap(x.be)]), h: "W pytaniu be stoi na początku.", w: que(x, c), area: "pytania" });
+      else gap.push({ s: "Uzupełnij przeczenie: " + x.s + " ___ " + c.en + ".", a: uniq([x.negW, x.be + " not", x.short ? SFX[x.be] + " not" : x.be + " not"]), h: "Dodaj not po be → " + x.negW + ".", w: negS(x, c), area: "przeczenia" });
+    });
+
+    /* ---- 5. Rozsypanka ---- */
+    take(300).forEach(function (o, k) {
+      const x = o.x, c = o.c, v = k % 4;
+      const sen = v === 0 ? aff(x, c) : v === 1 ? negS(x, c) : v === 2 ? que(x, c)
+                : (x.person ? (k % 8 === 0 ? where(x) : howOld(x)) : where(x));
+      if (!unique("order", sen)) return;
+      const t = mkTiles(sen, 2 + (k % 2), k % 4 === 3);
+      if (!t) return;
+      const it = { words: t.words, answer: sen, w: v === 2 || v === 3 ? "W pytaniu be jest przed osobą." : "Najpierw osoba, potem be.", area: v === 1 ? "przeczenia" : v === 2 || v === 3 ? "pytania" : "odmiana" };
+      if (t.extra) it.extra = t.extra;
+      order.push(it);
+    });
+
+    /* ---- 6. Przekształcenia ---- */
+    take(360).forEach(function (o, k) {
+      const x = o.x, c = o.c;
+      if (k % 2 === 0) {
+        const from = aff(x, c), show = negS(x, c);
+        const acc = [nrm(show), nrm(negL(x, c))];
+        if (x.short) acc.push(nrm(x.short + " not " + c.en + "."));
+        transform.push({ from: from, task: "przeczenie", a: uniq(acc), show: show, w: x.be + " + not → " + x.negW, area: "przeczenia" });
+      } else {
+        const from = aff(x, c), show = que(x, c);
+        transform.push({ from: from, task: "pytanie", a: uniq([nrm(show)]), show: show, w: "be na początek: " + x.q + " ...?", area: "pytania" });
+      }
+    });
+
+    /* ---- 7. Krótkie odpowiedzi ---- */
+    const TRAPS = ["Yes, I'm.", "No, I amn't.", "Yes, he's.", "Yes, they're.", "No, she are.", "Yes, it's.", "No, he aren't.", "Yes, we're."];
+    take(300).forEach(function (o, k) {
+      const x = o.x, c = o.c, tak = k % 2 === 0, good = tak ? x.yes : x.no;
+      const q = x.q + " " + c.en + "?";
+      const wrongs = [
+        tak ? x.no : x.yes,
+        ANS[sh(["I", "you", "we", "he", "she", "it", "they"])[0]][tak ? 0 : 1],
+        sh(TRAPS)[0]
+      ];
+      const opts = uniq([good].concat(wrongs));
+      ["Yes, I am.", "No, I'm not.", "Yes, he is.", "No, she isn't.", "Yes, they are.", "No, we aren't.", "Yes, it is.", "No, he isn't."].forEach(function (z) { if (opts.length < 4) opts.push(z); });
+      shorts.push({ q: q, cue: tak ? "Tak" : "Nie", o: uniq(opts).slice(0, 4), a: good, w: tak ? "Po Yes piszemy pełną formę: " + good : "Przeczenie: " + good, area: "odpowiedzi" });
+    });
+
+    /* ---- 8. Detektyw błędów ---- */
+    take(240).forEach(function (o, k) {
+      const x = o.x, c = o.c;
+      const good = aff(x, c);
+      const wrongBe = sh(["am", "is", "are"].filter(function (b) { return b !== x.be; }))[0];
+      const bad = x.s + " " + wrongBe + " " + c.en + ".";
+      const bad2 = x.s + " " + sh(["am", "is", "are"].filter(function (b) { return b !== x.be && b !== wrongBe; }))[0] + " " + c.en + ".";
+      const words = bad.split(/\s+/);
+      const bi = words.indexOf(wrongBe);
+      if (bi === -1) return;
+      detective.push({ words: words, bad: bi, o: uniq([good, bad, bad2]).slice(0, 3), a: good, w: x.s + " → " + x.be + ", nie " + wrongBe + ".", area: "pułapki" });
+      if (detective[detective.length - 1].o.length !== 3) detective.pop();
+    });
+
+    /* ---- 9. Sortownik ---- */
+    take(420).forEach(function (o, k) {
+      const x = o.x, c = o.c, v = k % 3;
+      sort.push({ s: v === 0 ? aff(x, c) : v === 1 ? negS(x, c) : que(x, c), t: v === 0 ? "affirmative" : v === 1 ? "negative" : "question", area: v === 1 ? "przeczenia" : v === 2 ? "pytania" : "odmiana" });
+    });
+
+    /* ---- 11. Słuchanie ---- */
+    take(300).forEach(function (o, k) {
+      const x = o.x, c = o.c, v = k % 3;
+      const spoken = v === 0 ? aff(x, c) : v === 1 ? negS(x, c) : que(x, c);
+      const opts = uniq([spoken, v === 1 ? aff(x, c) : negS(x, c), v === 2 ? aff(x, c) : que(x, c)]);
+      while (opts.length < 3) opts.push(affS(x, c));
+      listening.push({ spoken: spoken, o: uniq(opts).slice(0, 3), a: spoken, area: v === 1 ? "przeczenia" : v === 2 ? "pytania" : "odmiana" });
+    });
+
+    /* ---- 12. Dyktando ---- */
+    SUBS.forEach(function (x) {
+      if (x.short) dictation.push({ spoken: x.short, hint: "krótka forma: " + x.s + " " + x.be, a: uniq([nrm(x.short), nrm(x.s + " " + x.be)]) });
+      dictation.push({ spoken: x.neg, hint: "przeczenie: " + x.s + " " + x.be + " not", a: uniq([nrm(x.neg), nrm(x.negL)]) });
+      dictation.push({ spoken: x.yes, hint: "krótka odpowiedź twierdząca", a: uniq([nrm(x.yes)]) });
+      dictation.push({ spoken: x.no, hint: "krótka odpowiedź przecząca", a: uniq([nrm(x.no)]) });
+    });
+    NAT.concat(COLOUR, AGE, ADJ.map(function (a) { return a[0]; })).forEach(function (w) {
+      dictation.push({ spoken: w, hint: "słowo z rozdziału 1–2 · " + w.length + " liter", a: uniq([nrm(w)]) });
+    });
+
+    /* ---- 13. Tłumaczenie z polskiego ---- */
+    take(260).forEach(function (o, k) {
+      const x = o.x, c = o.c;
+      if (!c.pl) return;
+      const v = k % 3;
+      let pl, sen, w;
+      if (v === 0) { pl = x.pl + " " + x.plBe + " " + c.pl + "."; sen = aff(x, c); w = x.s + " → " + x.be; }
+      else if (v === 1) { pl = x.pl + " " + x.plNeg + " " + c.pl + "."; sen = negS(x, c); w = "Przeczenie: " + x.neg; }
+      else { pl = "Czy " + x.low + " " + x.plBe + " " + c.pl + "?"; sen = que(x, c); w = "be na początku: " + x.q; }
+      if (!unique("translate", sen)) return;
+      const t = mkTiles(sen, 2, false);
+      if (!t) return;
+      translate.push({ pl: pl, words: t.words, answer: sen, w: w, area: "tłumaczenie" });
+    });
+    SUBS.filter(function (x) { return x.be === "is"; }).slice(0, 14).forEach(function (x, k) {
+      const sen = x.s + " is " + AGE[k % AGE.length] + ".";
+      const pl = x.pl + " ma " + ["osiem", "dziewięć", "dziesięć", "jedenaście", "dwanaście", "trzynaście", "czternaście"][k % AGE.length] + " lat.";
+      const t = mkTiles(sen, 2, false);
+      if (t && unique("translate", sen)) translate.push({ pl: pl, words: t.words, answer: sen, w: "Uwaga! Wiek po angielsku to BE, nie have: " + sen, area: "pułapki" });
+    });
+
+    /* ---- 14. Literowanie ---- */
+    const SPELL = [];
+    SUBS.forEach(function (x) {
+      if (x.short) SPELL.push({ word: x.short, pl: x.s + " " + x.be + " — krótka forma" });
+      SPELL.push({ word: x.negW, pl: x.s + " " + x.be + " not — przeczenie" });
+    });
+    NAT.concat(COLOUR, ["student", "teacher", "robot", "friend", "Poland", "Brazil", "France", "Spain", "China", "amazing", "clever", "friendly"]).forEach(function (w) {
+      SPELL.push({ word: w, pl: "słowo z rozdziału 1–2" });
+    });
+    SPELL.forEach(function (s) { if (unique("spelling", s.word)) spelling.push(s); });
+
+    /* ---- Fiszki ---- */
+    take(70).forEach(function (o, k) {
+      const x = o.x, c = o.c, v = k % 4;
+      if (v === 0 && x.short) flashcards.push({ front: "Krótka forma: " + x.s + " " + x.be, back: x.short, tag: "odmiana" });
+      else if (v === 1) flashcards.push({ front: "Przeczenie: " + aff(x, c), back: negS(x, c), tag: "przeczenia" });
+      else if (v === 2) flashcards.push({ front: "Pytanie: " + aff(x, c), back: que(x, c), tag: "pytania" });
+      else flashcards.push({ front: "Odpowiedz twierdząco: " + que(x, c), back: x.yes, tag: "odpowiedzi" });
+    });
+
+    /* ---- Pary (memory) i łączenie ---- */
+    const SHORTABLE = SUBS.filter(function (x) { return x.short; });
+    for (let k = 0; k < 24; k++) {
+      const kind = k % 4, picked = sh(SUBS).slice(0, 8), picked2 = sh(SHORTABLE).slice(0, 8);
+      let pairs, name;
+      if (kind === 0) { name = "Osoba ↔ forma be · zestaw " + (k + 1); pairs = picked.map(function (x) { return [x.s, x.be]; }); }
+      else if (kind === 1) { name = "Długa ↔ krótka forma · zestaw " + (k + 1); pairs = picked2.map(function (x) { return [x.s + " " + x.be, x.short]; }); }
+      else if (kind === 2) { name = "Przeczenia · zestaw " + (k + 1); pairs = picked.map(function (x) { return [x.negL, x.neg]; }); }
+      else { name = "Pytanie ↔ odpowiedź · zestaw " + (k + 1); pairs = picked.map(function (x) { return [x.q + " ...?", x.yes]; }); }
+      if (pairs.length === 8) pairSets.push({ name: name, pairs: pairs });
+    }
+    for (let k = 0; k < 24; k++) {
+      const kind = k % 4, picked = sh(SUBS).slice(0, 6), cc = sh(COMP.filter(function (c) { return c.kind === "place" || c.kind === "from"; }));
+      let pairs, name;
+      if (kind === 0) { name = "Pytanie ↔ krótka odpowiedź · zestaw " + (k + 1); pairs = picked.map(function (x, i) { return [x.q + " " + cc[i % cc.length].en + "?", k % 2 ? x.no : x.yes]; }); }
+      else if (kind === 1) { name = "Twierdzenie ↔ przeczenie · zestaw " + (k + 1); pairs = picked.map(function (x, i) { return [aff(x, cc[i % cc.length]), negS(x, cc[i % cc.length])]; }); }
+      else if (kind === 2) { name = "Angielski ↔ polski · zestaw " + (k + 1); pairs = cc.slice(0, 6).map(function (c) { return [c.en, c.pl]; }); }
+      else { name = "Krótka ↔ długa forma · zestaw " + (k + 1); pairs = sh(SHORTABLE).slice(0, 6).map(function (x) { return [x.short, x.s + " " + x.be]; }); }
+      if (pairs.length === 6) matchSets.push({ name: name, pairs: pairs });
+    }
+
+    /* ---- Czytanie: Prawda / Fałsz ---- */
+    const NAMES = ["Mickey", "Ana", "Lena", "Tomek", "Emile", "Saskia", "Harry", "Nathan", "Filip", "Martin"];
+    const FRIENDS = ["Robbie", "Lily", "Caroline", "Alex", "Ms Collins", "Nathan", "Ana", "Mickey"];
+    const PLACES_EN = PLACE.map(function (p) { return p[0]; });
+    for (let k = 0; k < 24; k++) {
+      const name = NAMES[k % NAMES.length], friend = FRIENDS[k % FRIENDS.length];
+      const age = AGE[k % AGE.length], age2 = AGE[(k + 3) % AGE.length];
+      const nat = NAT[k % NAT.length], adj = ADJ[k % ADJ.length][0];
+      const place = PLACES_EN[k % PLACES_EN.length];
+      const col = COLOUR[k % COLOUR.length], col2 = COLOUR[(k + 2) % COLOUR.length];
+      reading.push({
+        title: "Hello! I'm " + name + ".",
+        text: "Hi! I'm " + name + ". I'm " + age + " and I'm " + nat + ". " + friend +
+              " is my friend. " + friend + " is " + adj + ". We are " + place + ". My bag is " + col + ". It isn't " + col2 + ".",
+        items: [
+          { s: name + " is " + nat + ".", t: true, w: "W tekście: I'm " + nat + "." },
+          { s: name + " is " + age2 + ".", t: false, w: "W tekście: I'm " + age + ", nie " + age2 + "." },
+          { s: friend + " is " + adj + ".", t: true, w: "W tekście: " + friend + " is " + adj + "." },
+          { s: name + " and " + friend + " are " + place + ".", t: true, w: "W tekście: We are " + place + "." },
+          { s: "My bag is " + col2 + ".", t: false, w: "W tekście: My bag is " + col + ". It isn't " + col2 + "." }
+        ]
+      });
+    }
+
+    /* ---- Kartkówka próbna: pula zadań ---- */
+    sh(choice).slice(0, 800).forEach(function (it) {
+      examPool.push({ type: "choice", p: it.s, o: it.o.slice(), a: it.a, w: it.w, area: it.area || "odmiana" });
+    });
+    sh(gap).slice(0, 700).forEach(function (it) {
+      examPool.push({ type: "input", p: "Uzupełnij: " + it.s, a: it.a.slice(), w: it.w, area: it.area || "odmiana" });
+    });
+
+    /* ---- Usuwamy ewentualne duplikaty (pierwszeństwo mają zadania z podręcznika) ----
+       Dzięki temu „nowy zestaw" nigdy nie zawiera tego samego zdania dwa razy. */
+    function dedupe(arr, keyFn) {
+      const seen = {}, out = [];
+      arr.forEach(function (it) { const k = keyFn(it); if (!seen[k]) { seen[k] = true; out.push(it); } });
+      arr.length = 0; out.forEach(function (it) { arr.push(it); });
+    }
+    dedupe(choice, function (x) { return x.s + "|" + x.a; });
+    dedupe(gap, function (x) { return x.s + "|" + x.a[0]; });
+    dedupe(order, function (x) { return x.answer; });
+    dedupe(translate, function (x) { return x.pl + "|" + x.answer; });
+    dedupe(transform, function (x) { return x.from + "|" + x.task; });
+    dedupe(shorts, function (x) { return x.q + "|" + x.cue; });
+    dedupe(detective, function (x) { return x.words.join(" ") + "|" + x.a; });
+    dedupe(sort, function (x) { return x.s; });
+    dedupe(listening, function (x) { return x.spoken; });
+    dedupe(dictation, function (x) { return x.spoken; });
+    dedupe(spelling, function (x) { return x.word; });
+    dedupe(flashcards, function (x) { return x.front; });
+    dedupe(reading, function (x) { return x.text; });
+    dedupe(examPool, function (x) { return x.p + "|" + JSON.stringify(x.o || x.a); });
+    dedupe(pairSets, function (x) { return x.name; });
+    dedupe(matchSets, function (x) { return x.name; });
+
+    /* ---- Stałe identyfikatory (klucz dla systemu bez powtórek) ---- */
+    const BANKS = [
+      [choice, "ch", "odmiana"], [gap, "gp", "odmiana"], [order, "or", "pytania"],
+      [transform, "tr", "przeczenia"], [shorts, "sh", "odpowiedzi"], [detective, "dt", "pułapki"],
+      [sort, "sr", "rozpoznawanie"], [listening, "li", "słuchanie"], [dictation, "dc", "pisownia"],
+      [translate, "tl", "tłumaczenie"], [spelling, "sp", "pisownia"], [flashcards, "fc", "odmiana"],
+      [examPool, "ex", "odmiana"]
+    ];
+    BANKS.forEach(function (b) {
+      b[0].forEach(function (it, i) { if (!it.id) it.id = b[1] + i; if (!it.area) it.area = b[2]; });
+    });
+    pairSets.forEach(function (s, i) { if (!s.id) s.id = "ps" + i; });
+    matchSets.forEach(function (s, i) { if (!s.id) s.id = "ms" + i; });
+    reading.forEach(function (r, i) { if (!r.id) r.id = "rd" + i; r.items.forEach(function (it, j) { if (!it.id) it.id = "rd" + i + "-" + j; if (!it.area) it.area = "czytanie"; }); });
+  })();
+
+  const BANK_COUNT = choice.length + gap.length + order.length + transform.length + shorts.length +
+    detective.length + sort.length + listening.length + dictation.length + translate.length +
+    spelling.length + flashcards.length + examPool.length + reading.length * 5 +
+    pairSets.length * 8 + matchSets.length * 6;
+
   root.TOBE_DATA = {
     meta: {
       subject: "Język angielski",
       type: "Kartkówka",
       date: "2026-11-10",
       scope: "czasownik 'to be' (być): odmiana przez osoby, twierdzenia, pytania i przeczenia",
-      book: "Together 2026 · klasa 4 · Unit 1 (s. 10–11, 13–16) i Unit 2 (s. 18–21), zeszyt ćwiczeń, 'Przygotowanie do sprawdzianu'"
+      book: "Together 2026 · klasa 4 · Unit 1 (s. 10–11, 13–16) i Unit 2 (s. 18–21), zeszyt ćwiczeń, 'Przygotowanie do sprawdzianu'",
+      bankTotal: BANK_COUNT,
+      bank: {
+        choice: choice.length, gap: gap.length, pairSets: pairSets.length, matchSets: matchSets.length,
+        order: order.length, transform: transform.length, shorts: shorts.length, detective: detective.length,
+        sort: sort.length, reading: reading.length, listening: listening.length, dictation: dictation.length,
+        translate: translate.length, spelling: spelling.length, flashcards: flashcards.length, examPool: examPool.length
+      }
     },
     be: BE, rules: RULES, mistakes: MISTAKES, bookQuestions: BOOK_QUESTIONS, words: WORDS,
     choice: choice, gap: gap, pairSets: pairSets, matchSets: matchSets, order: order,

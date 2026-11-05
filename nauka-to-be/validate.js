@@ -55,8 +55,48 @@ D.examPool.forEach((q, i) => {
 });
 if (D.plan.length !== 5) bad("Plan nauki powinien mieć 5 dni");
 
+/* ---------- mega-baza: rozmiar, stałe id, brak powtórzeń ---------- */
+if (!D.meta || !D.meta.bankTotal || D.meta.bankTotal < 4000)
+  bad(`Mega-baza za mała: ${D.meta && D.meta.bankTotal} (oczekujemy ≥ 4000 zadań)`);
+const BANKS = ["choice", "gap", "order", "transform", "shorts", "detective", "sort",
+               "listening", "dictation", "translate", "spelling", "flashcards", "examPool"];
+const allIds = new Set();
+BANKS.forEach((k) => D[k].forEach((x, i) => {
+  if (!x.id) bad(`${k}[${i}]: brak stałego identyfikatora (system bez powtórek)`);
+  if (x.id && allIds.has(x.id)) bad(`${k}[${i}]: identyfikator ${x.id} się powtarza`);
+  if (x.id) allIds.add(x.id);
+  if (!x.area) bad(`${k}[${i}]: brak obszaru umiejętności (oceny cząstkowe)`);
+}));
+const DUPKEYS = {
+  choice: (x) => x.s + "|" + x.a, gap: (x) => x.s + "|" + x.a[0], order: (x) => x.answer,
+  translate: (x) => x.pl + "|" + x.answer, transform: (x) => x.from + "|" + x.task,
+  shorts: (x) => x.q + "|" + x.cue, detective: (x) => x.words.join(" ") + "|" + x.a,
+  sort: (x) => x.s, listening: (x) => x.spoken, dictation: (x) => x.spoken,
+  spelling: (x) => x.word, flashcards: (x) => x.front,
+  examPool: (x) => x.p + "|" + JSON.stringify(x.o || x.a), reading: (x) => x.text
+};
+Object.keys(DUPKEYS).forEach((k) => {
+  const seen = new Set();
+  D[k].forEach((x, i) => {
+    const key = DUPKEYS[k](x);
+    if (seen.has(key)) bad(`${k}[${i}]: powtórzone zadanie „${String(key).slice(0, 60)}”`);
+    seen.add(key);
+  });
+});
+["pairSets", "matchSets"].forEach((k) => D[k].forEach((s) => {
+  if (!s.id || !s.pairs.length) bad(`${k}: zestaw bez id lub par`);
+}));
+
 /* każde ćwiczenie z listy musi mieć implementację i odwrotnie */
 const app = fs.readFileSync(path.join(here, "app.js"), "utf8");
+["function deal(", "function recordGrade(", "function renderReview(", "function logAnswer(",
+ "function gradeOf(", "exam-count", "print-exam", "btn-dark", "btn-mute"].forEach((needle) => {
+  if (app.indexOf(needle) === -1) bad(`W app.js brakuje nowej funkcji/elementu: ${needle}`);
+});
+const html = fs.readFileSync(path.join(here, "index.html"), "utf8");
+["review-stats", "review-host", "review-list", "gradebook", "skill-grid", "hub-bank", "run-set"].forEach((id) => {
+  if (html.indexOf('id="' + id + '"') === -1) bad(`W index.html brakuje sekcji: ${id}`);
+});
 const block = app.match(/const IMPL = \{([\s\S]*?)\n  \};/);
 if (!block) bad("Nie znaleziono mapy IMPL w app.js");
 else {
@@ -75,7 +115,8 @@ else {
   if (h.indexOf("<style>") === -1 || h.indexOf("TOBE_DATA") === -1) bad("Wersja jednoplikowa nie zawiera wbudowanego CSS/JS");
 }
 
-console.log(`Baza: ${D.activities.length} ćwiczeń · ${D.choice.length} pytań wyboru · ${D.gap.length} luk · ` +
-            `${D.order.length + D.translate.length} rozsypanek · ${D.examPool.length} pytań kartkówki · ${D.flashcards.length} fiszek`);
+console.log(`Baza: ${D.activities.length} ćwiczeń · ${D.meta.bankTotal} unikalnych zadań · ${D.choice.length} pytań wyboru · ` +
+            `${D.gap.length} luk · ${D.order.length + D.translate.length} rozsypanek · ${D.examPool.length} pytań kartkówki · ${D.flashcards.length} fiszek`);
+console.log("Nowe funkcje: brak powtórek, oceny 1–6, powtórki z błędów, dzienniczek, tryb ciemny, wyciszanie, kartkówka do druku ✓");
 if (problems.length) { console.error("BŁĘDY:\n - " + problems.join("\n - ")); process.exit(1); }
 console.log("✅ Walidacja danych i implementacji: OK");

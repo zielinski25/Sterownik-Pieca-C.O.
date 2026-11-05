@@ -4,6 +4,7 @@ Ten katalog zawiera jedyną część repozytorium przeznaczoną do udostępniani
 innym osobom (np. przez Telegram):
 
 - `index.html` — wygenerowany, samodzielny plik z `nauka-to-be/to-be-kartkowka.html`
+  (wersja 2: 4 949 unikalnych zadań, oceny 1–6, powtórki z błędów, tryb ciemny)
 - `sciaga-to-be.png` — ściąga z kodem QR (także miniaturka Open Graph)
 - `.nojekyll` — żeby GitHub Pages nie pominął plików z kropką
 

@@ -28,14 +28,142 @@
   const KEY = "tobe-kartkowka-v1";
   function fresh() {
     return { xp: 0, streak: 0, bestStreak: 0, correct: 0, wrong: 0, bestExam: 0,
-             acts: {}, badges: [], plan: [], cards: {}, weak: {}, days: [], speedBest: 0 };
+             acts: {}, badges: [], plan: [], cards: {}, weak: {}, days: [], speedBest: 0,
+             seen: {}, cycles: {}, grades: [], mistakes: {}, skills: {}, mute: false, dark: false };
   }
   let S = (function () {
     try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
     return fresh();
   })();
+  /* migracja starszych zapisów — nowe pols muszą zawsze istnieć */
+  if (!S.seen || typeof S.seen !== "object") S.seen = {};
+  if (!S.cycles || typeof S.cycles !== "object") S.cycles = {};
+  if (!S.mistakes || typeof S.mistakes !== "object") S.mistakes = {};
+  if (!S.skills || typeof S.skills !== "object") S.skills = {};
+  if (!Array.isArray(S.grades)) S.grades = [];
+  if (!Array.isArray(S.days)) S.days = [];
+  if (!Array.isArray(S.badges)) S.badges = [];
+  if (!Array.isArray(S.plan)) S.plan = [];
+  if (!S.acts || typeof S.acts !== "object") S.acts = {};
+  if (!S.cards || typeof S.cards !== "object") S.cards = {};
+  if (!S.weak || typeof S.weak !== "object") S.weak = {};
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
   if (S.days.indexOf(today()) === -1) { S.days.push(today()); save(); }
+
+  /* ---------------- oceny ---------------- */
+  const GRADE = [
+    { min: 95, g: 6, name: "celujący", ico: "🏆" },
+    { min: 88, g: 5, name: "bardzo dobry", ico: "🌟" },
+    { min: 72, g: 4, name: "dobry", ico: "👍" },
+    { min: 56, g: 3, name: "dostateczny", ico: "🙂" },
+    { min: 36, g: 2, name: "dopuszczający", ico: "🌱" },
+    { min: 0,  g: 1, name: "jeszcze ćwiczę", ico: "💪" }
+  ];
+  function gradeOf(p) { for (let i = 0; i < GRADE.length; i++) if (p >= GRADE[i].min) return GRADE[i]; return GRADE[GRADE.length - 1]; }
+  function gradeBadge(p) { const g = gradeOf(p); return g.ico + " " + g.g + " · " + g.name; }
+  function recordGrade(kind, act, ok, total, seconds) {
+    if (!total) return;
+    const p = pct(ok, total);
+    S.grades.unshift({ d: today(), t: Date.now(), kind: kind, act: act, ok: ok, total: total, p: p, g: gradeOf(p).g, sec: seconds || 0 });
+    if (S.grades.length > 80) S.grades.length = 80;
+    save();
+  }
+
+  /* ---------------- zestawy bez powtórek ---------------- */
+  /* Każde ćwiczenie ma w localStorage listę indeksów już użytych zadań.
+     Nowy zestaw bierze wyłącznie zadania „świeże". Gdy baza się wyczerpie,
+     zaczyna się nowa runda (S.cycles) — ale i tak bez powtórzeń w zestawie. */
+  function deal(key, items, count) {
+    const n = items.length;
+    if (!n) return [];
+    const seen = Array.isArray(S.seen[key]) ? S.seen[key].filter(function (i) { return Number.isInteger(i) && i >= 0 && i < n; }) : [];
+    const used = {}; seen.forEach(function (i) { used[i] = true; });
+    let freshPool = [];
+    for (let i = 0; i < n; i++) if (!used[i]) freshPool.push(i);
+    freshPool = shuffle(freshPool);
+    const out = [];
+    while (out.length < count && freshPool.length) out.push(freshPool.pop());
+    if (out.length < count) {
+      const inSet = {}; out.forEach(function (i) { inSet[i] = true; });
+      let rest = [];
+      for (let i = 0; i < n; i++) if (!inSet[i]) rest.push(i);
+      rest = shuffle(rest);
+      let j = 0;
+      while (out.length < count && j < rest.length) out.push(rest[j++]);
+      S.seen[key] = out.slice();
+      S.cycles[key] = (S.cycles[key] || 0) + 1;
+    } else {
+      S.seen[key] = seen.concat(out);
+      if (!S.cycles[key]) S.cycles[key] = 1;
+    }
+    save();
+    return shuffle(out).map(function (i) { return items[i]; });
+  }
+  const BANK_OF = {
+    choice: D.choice, gap: D.gap, order: D.order, transform: D.transform, shorts: D.shorts,
+    detective: D.detective, sort: D.sort, listen: D.listening, listening: D.listening, dictation: D.dictation,
+    translate: D.translate, spelling: D.spelling, memory: D.pairSets, match: D.matchSets,
+    reading: D.reading, speed: D.choice, exam: D.examPool, printExam: D.examPool
+  };
+  function bankSize(act) { const b = BANK_OF[act]; return b ? b.length : 0; }
+  function seenTotal() {
+    return Object.keys(S.seen).reduce(function (s, k) { return s + (Array.isArray(S.seen[k]) ? S.seen[k].length : 0); }, 0);
+  }
+
+  /* ---------------- powtórka rozłożona w czasie (to, czego dziecko nie umie) ---------------- */
+  const BOX_DAYS = [0, 1, 2, 4, 7, 14, 30];
+  function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+  function skillOf(act) { const a = D.activities.find(function (x) { return x.id === act; }); return a ? a.skill : "powtórka"; }
+  function reviewData(it, act, correctText) {
+    if (!it) return { prompt: "", correct: String(correctText || ""), options: null };
+    if (Array.isArray(it.o)) return { prompt: it.s || it.p || it.q || (it.words ? it.words.join(" ") : ""), correct: Array.isArray(it.a) ? it.a[0] : it.a, options: it.o.slice() };
+    if (act === "reading") return { prompt: it.s, correct: it.t ? "Prawda" : "Fałsz", options: ["Prawda", "Fałsz"] };
+    if (it.from && it.show) return { prompt: "Zrób " + it.task + ": " + it.from, correct: it.show, options: null };
+    if (it.pl && it.answer) return { prompt: "Po angielsku: " + it.pl, correct: it.answer, options: null };
+    if (it.words && it.answer) return { prompt: "Ułóż zdanie z wyrazów: " + shuffle(it.words).join(" "), correct: it.answer, options: null };
+    if (Array.isArray(it.a)) return { prompt: it.s || it.p || it.spoken || it.spoken || "", correct: it.a[0], options: null };
+    return { prompt: it.s || it.p || it.q || it.front || "", correct: String(correctText || it.a || ""), options: null };
+  }
+  function logAnswer(it, act, ok, correctText, why) {
+    const area = (it && it.area) || skillOf(act);
+    const st = S.skills[area] || (S.skills[area] = { tried: 0, ok: 0 });
+    st.tried++; if (ok) st.ok++;
+    if (!ok) S.weak[area] = (S.weak[area] || 0) + 1;
+    const id = it && it.id ? it.id : null;
+    if (id) {
+      if (!ok) {
+        const rd = reviewData(it, act, correctText);
+        const rec = S.mistakes[id] || (S.mistakes[id] = {
+          id: id, act: act, area: area, prompt: rd.prompt, correct: rd.correct,
+          options: rd.options, why: why || (it && it.w) || "",
+          box: 0, wrong: 0, right: 0, due: today(), mastered: false
+        });
+        rec.wrong++; rec.box = 0; rec.due = today(); rec.mastered = false;
+      } else if (S.mistakes[id] && !S.mistakes[id].mastered) {
+        const rec = S.mistakes[id];
+        rec.right++; rec.box = Math.min(6, rec.box + 1);
+        rec.due = addDays(BOX_DAYS[rec.box] || 30);
+        if (rec.box >= 6) rec.mastered = true;
+      }
+    }
+    save();
+  }
+  function dueReviews() {
+    const t = today();
+    return Object.keys(S.mistakes).map(function (k) { return S.mistakes[k]; })
+      .filter(function (r) { return !r.mastered && r.due <= t; })
+      .sort(function (a, b) { return (b.wrong - b.right) - (a.wrong - a.right); });
+  }
+  function allMistakes() { return Object.keys(S.mistakes).map(function (k) { return S.mistakes[k]; }); }
+  function weakestSkill() {
+    const arr = Object.keys(S.skills).filter(function (k) { return S.skills[k].tried >= 2; })
+      .map(function (k) { return { k: k, p: pct(S.skills[k].ok, S.skills[k].tried) }; })
+      .sort(function (a, b) { return a.p - b.p; });
+    return arr.length ? arr[0] : null;
+  }
+  const SKILL_ACT = { odmiana: "choice", twierdzenia: "gap", pytania: "transform", przeczenia: "detective",
+    odpowiedzi: "shorts", pułapki: "detective", rozpoznawanie: "sort", czytanie: "reading",
+    słuchanie: "listen", pisownia: "spelling", tłumaczenie: "translate", powtórka: "speed" };
 
   const BADGES = [
     { id: "first", ico: "🌱", name: "Pierwszy krok", need: "1 poprawna odpowiedź", t: function (s) { return s.correct >= 1; } },
@@ -49,7 +177,10 @@
     { id: "exam80", ico: "🥈", name: "80% na próbnej", need: "Wynik min. 80%", t: function (s) { return s.bestExam >= 80; } },
     { id: "exam100", ico: "🥇", name: "Bez błędu!", need: "100% na próbnej kartkówce", t: function (s) { return s.bestExam >= 100; } },
     { id: "cards", ico: "🗂️", name: "Fiszkowicz", need: "20 kart „Umiem”", t: function (s) { return Object.keys(s.cards).filter(function (k) { return s.cards[k] && s.cards[k].ok > 0; }).length >= 20; } },
-    { id: "week", ico: "📅", name: "Systematyczność", need: "Nauka w 3 różne dni", t: function (s) { return s.days.length >= 3; } }
+    { id: "week", ico: "📅", name: "Systematyczność", need: "Nauka w 3 różne dni", t: function (s) { return s.days.length >= 3; } },
+    { id: "grinder", ico: "🧠", name: "100 nowych zadań", need: "Zobacz 100 różnych zadań", t: function () { return seenTotal() >= 100; } },
+    { id: "repairer", ico: "🛠️", name: "Naprawiacz", need: "Popraw 8 trudnych zadań", t: function (s) { return Object.keys(s.mistakes).filter(function (k) { return s.mistakes[k] && s.mistakes[k].right >= 2; }).length >= 8; } },
+    { id: "six", ico: "🎓", name: "Szóstka!", need: "Dostań ocenę 6", t: function (s) { return s.grades.some(function (g) { return g.g === 6; }); } }
   ];
 
   function updateChips() {
@@ -68,7 +199,7 @@
     const a = S.acts[act] || { tried: 0, ok: 0, done: false };
     a.tried++; if (ok) a.ok++;
     S.acts[act] = a;
-    if (ok) { S.correct++; S.streak++; S.xp += 10; S.bestStreak = Math.max(S.bestStreak, S.streak); }
+    if (ok) { S.correct++; S.streak++; S.xp += 10 + (S.streak >= 5 ? 5 : 0); S.bestStreak = Math.max(S.bestStreak, S.streak); }
     else { S.wrong++; S.streak = 0; }
     save(); updateChips();
   }
@@ -99,6 +230,15 @@
     }
   };
 
+  /* ---------------- wygląd i dźwięk ---------------- */
+  function applyDark() {
+    document.body.classList.toggle("dark", !!S.dark);
+    const b = $("#btn-dark"); if (b) b.textContent = S.dark ? "☀️ Jasny" : "🌙 Ciemny";
+  }
+  function applyMute() { const b = $("#btn-mute"); if (b) b.textContent = S.mute ? "🔇 Głos wyłączony" : "🔊 Głos"; }
+  $("#btn-dark").onclick = function () { S.dark = !S.dark; save(); applyDark(); toast(S.dark ? "🌙 Tryb ciemny włączony" : "☀️ Tryb jasny"); };
+  $("#btn-mute").onclick = function () { S.mute = !S.mute; save(); applyMute(); toast(S.mute ? "🔇 Robbie zamilkł" : "🔊 Robbie znowu mówi"); };
+
   /* ---------------- efekty ---------------- */
   let toastT = null;
   function toast(msg) {
@@ -122,7 +262,7 @@
     }
   }
   function speak(text, slow) {
-    if (!text) return;
+    if (!text || S.mute) return;
     if (!("speechSynthesis" in window)) { toast("Ta przeglądarka nie ma czytania głosem — poproś kogoś o przeczytanie 🙂"); return; }
     try {
       window.speechSynthesis.cancel();
@@ -144,6 +284,7 @@
     $$(".tab").forEach(function (t) { t.classList.toggle("active", t.dataset.go === id); });
     if (id === "progress") renderProgress();
     if (id === "flashcards") renderCard();
+    if (id === "review") renderReview();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   document.addEventListener("click", function (e) {
@@ -175,6 +316,19 @@
     ].map(function (x) {
       return '<div class="card flat" style="margin:0;text-align:center"><div style="font-size:2rem">' + x[0] + "</div><b>" + x[1] + '</b><div class="muted">' + x[2] + '</div><button class="btn small ghost" style="margin-top:8px" data-act="' + x[3] + '">Ćwicz →</button></div>';
     }).join("");
+
+    // ☀️ Pytanie dnia — inne każdego dnia, z tej samej mega-bazy
+    let h = 0; const ds = today();
+    for (let i = 0; i < ds.length; i++) h = (h * 31 + ds.charCodeAt(i)) % 1000003;
+    const q = D.choice[h % D.choice.length];
+    const dc = $("#daily-card");
+    if (dc) dc.innerHTML =
+      '<div class="between"><h2 style="margin:0">☀️ Pytanie dnia</h2><span class="pill teal">zmienia się codziennie</span></div>' +
+      '<p class="muted">Jedno szybkie zadanie na rozgrzewkę. Odpowiedź jest ukryta — najpierw spróbuj sam/a!</p>' +
+      '<div class="qbox"><div class="q">' + esc(q.s).replace("___", "<em>___</em>") + '</div></div>' +
+      '<details><summary>✅ Sprawdź odpowiedź i wyjaśnienie</summary><div style="padding:10px 4px"><b>' + esc(q.a) +
+      '</b> — ' + esc(q.w) + ' <button class="icon-btn" id="daily-say">🔊</button></div></details>';
+    const dsay = $("#daily-say"); if (dsay) dsay.onclick = function () { speak(q.a); };
 
     renderPlan(); renderBadges();
   }
@@ -257,15 +411,35 @@
     $("#print-table").innerHTML = head + "<tbody>" + rows + "</tbody>";
     $("#print-mistakes").innerHTML = "<div class='card'><b>Najczęstsze błędy → poprawnie</b>" + D.mistakes.map(function (m) { return "<div>" + esc(m.bad) + " → <b>" + esc(m.good) + "</b></div>"; }).join("") + "</div>";
   }
+  function buildPrintExam() {
+    const qs = deal("printExam", D.examPool, 15);
+    return '<div class="card"><h2>Kartkówka · ' + today() + ' · zestaw nr ' + (S.cycles.printExam || 1) + '</h2>' +
+      '<p>Imię i nazwisko: __________________________________ &nbsp; Wynik: ________ / 15 &nbsp; Ocena: ________</p></div>' +
+      '<div class="card"><ol class="print-questions">' + qs.map(function (q) {
+        return '<li><div>' + esc(q.p) + '</div>' +
+          (q.o ? '<div class="muted">' + q.o.map(function (o) { return esc(o); }).join(" &nbsp;·&nbsp; ") + '</div>' : "") +
+          '<div class="answer-line">............................................................................................</div></li>';
+      }).join("") + '</ol></div>' +
+      '<div class="answer-key"><div class="card"><h3>🔑 Klucz odpowiedzi (dla rodzica)</h3><ol>' +
+      qs.map(function (q) { return '<li>' + esc(Array.isArray(q.a) ? q.a[0] : q.a) + ' <span class="muted">— ' + esc(q.w) + '</span></li>'; }).join("") +
+      '</ol></div></div>';
+  }
   function doPrint(kind) {
-    const box = $("#print-report");
-    box.innerHTML = kind === "report" ? "<div class='card'><h2>Raport postępów · " + today() + "</h2>" + $("#parent-report").innerHTML + "</div>" : "";
+    const sheet = $("#print-sheet");
+    sheet.className = kind === "exam" ? "exam-mode" : "";
+    $("#print-title").textContent = kind === "exam" ? "TO BE — kartkówka do druku" : "TO BE — ściąga przed kartkówką";
+    $("#print-report").innerHTML = kind === "report" ? "<div class='card'><h2>Raport postępów · " + today() + "</h2>" + $("#parent-report").innerHTML + "</div>" : "";
+    $("#print-exam").innerHTML = kind === "exam" ? buildPrintExam() : "";
     try { window.print(); } catch (e) { toast("Drukowanie niedostępne w tej przeglądarce."); }
   }
   ["btn-print-start", "btn-print-learn"].forEach(function (id) { $("#" + id).onclick = function () { doPrint("cheat"); }; });
+  const bpe = $("#btn-print-exam"); if (bpe) bpe.onclick = function () { doPrint("exam"); };
 
   /* ---------------- hub ćwiczeń ---------------- */
   function renderHub() {
+    const hb = $("#hub-bank");
+    if (hb) hb.innerHTML = "🧠 <b>" + D.meta.bankTotal.toLocaleString("pl-PL") + "</b> unikalnych zadań · " +
+      "każde wejście to <b>nowy, niepowtarzalny zestaw</b> (pamiętamy go między wizytami)";
     $("#activity-grid").innerHTML = D.activities.map(function (a) {
       const st = S.acts[a.id];
       const done = st && st.done ? '<span class="done">✓ ukończone · ' + st.ok + "/" + st.tried + " poprawnych</span>" : (st && st.tried ? '<span class="done">rozpoczęte · ' + st.tried + " zadań</span>" : "");
@@ -282,7 +456,7 @@
 
   /* ---------------- wspólny silnik sesji ---------------- */
   function Session(act, items, count, renderer) {
-    this.act = act; this.items = shuffle(items).slice(0, count || 8);
+    this.act = act; this.items = deal(act, items, count || 8);
     this.i = 0; this.ok = 0; this.streak = 0; this.renderer = renderer;
     this.host = $("#run-host"); this.spoken = "";
   }
@@ -311,6 +485,7 @@
   }
   function check(s, ok, correctText, why) {
     if (ok) { s.ok++; s.streak++; } else s.streak = 0;
+    logAnswer(s.items[s.i], s.act, ok, correctText, why);
     mark(s.act, ok);
     updateRun(s);
     const fb = $("#fb");
@@ -334,15 +509,23 @@
   }
   function summaryHost(host, act, ok, total, msg) {
     const p = pct(ok, total);
+    recordGrade("ćwiczenie", act, ok, total);
+    const due = dueReviews().length;
     host.innerHTML = '<div class="center" style="padding:10px 0"><div style="font-size:3.4rem">' + (p >= 80 ? "🏆" : p >= 50 ? "👍" : "🌱") + '</div>' +
-      '<h2>' + ok + " / " + total + " poprawnych · " + p + '%</h2><p class="muted">' + esc(msg) + "</p>" +
+      '<h2>' + ok + " / " + total + " poprawnych · " + p + '%</h2>' +
+      '<div style="font-size:1.25rem;font-weight:900;color:var(--teal-d)">Ocena: ' + gradeBadge(p) + '</div>' +
+      '<p class="muted">' + esc(msg) + "</p>" +
+      '<p class="muted">🎲 Następne wejście = <b>całkiem nowy zestaw</b> z ' + bankSize(act).toLocaleString("pl-PL") + " zadań.</p>" +
+      (due ? '<p class="muted">🔁 Czeka ' + due + ' zadań do powtórki w zakładce <b>Powtórki</b>.</p>' : "") +
       '<div class="row" style="justify-content:center;margin-top:16px">' +
-      '<button class="btn" id="btn-again">🔁 Jeszcze raz</button>' +
+      '<button class="btn" id="btn-again">🔁 Nowy zestaw</button>' +
       '<button class="btn ghost" id="btn-other">🎮 Inne ćwiczenia</button>' +
-      '<button class="btn orange" id="btn-to-exam">📝 Próbna kartkówka</button></div></div>';
+      '<button class="btn orange" id="btn-to-exam">📝 Próbna kartkówka</button>' +
+      (due ? '<button class="btn small yellow" id="btn-to-review">🔁 Powtórz błędy</button>' : "") + '</div></div>';
     $("#btn-again").onclick = function () { openActivity(act); };
     $("#btn-other").onclick = function () { $("#practice-run").style.display = "none"; $("#practice-hub").style.display = "block"; updateHub(); go("practice"); };
     $("#btn-to-exam").onclick = function () { go("exam"); };
+    const br = $("#btn-to-review"); if (br) br.onclick = function () { go("review"); };
     if (p >= 80) confetti(30);
     checkBadges();
   }
@@ -366,6 +549,9 @@
     $("#run-score").textContent = "Wynik: 0 / 0";
     $("#run-streak").textContent = "🔥 0 z rzędu";
     IMPL[id]();
+    /* etykieta po utworzeniu sesji — deal() może właśnie rozpocząć nowy cykl */
+    const rs = $("#run-set");
+    if (rs) rs.textContent = "🎲 Zestaw " + (S.cycles[id] || 1) + " · baza " + bankSize(id).toLocaleString("pl-PL") + " zadań · bez powtórek";
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -420,7 +606,8 @@
 
   /* ============ 3. Memory ============ */
   function actMemory() {
-    let setIndex = Math.floor(Math.random() * D.pairSets.length);
+    const first = deal("memory", D.pairSets, 1)[0];
+    let setIndex = Math.max(0, D.pairSets.indexOf(first));
     buildMemory(setIndex);
     function buildMemory(si) {
       const set = D.pairSets[si];
@@ -435,7 +622,11 @@
         '<p class="muted">Odkryj dwie karty. Jeśli tworzą parę — zostają odkryte. Kliknij kartę, żeby usłyszeć słowo 🔊 (po odkryciu).</p>' +
         '<div class="mem-grid" id="mem-grid">' + cards.map(function (c, i) { return '<button class="mem-card" data-i="' + i + '" aria-label="Zakryta karta"><span>' + esc(c.t) + "</span>?</button>"; }).join("") + "</div>";
       $$("[data-set]").forEach(function (b) { b.onclick = function () { buildMemory(+b.dataset.set); }; });
-      $("#mem-new").onclick = function () { buildMemory(si); };
+      $("#mem-new").onclick = function () {
+        const nx = deal("memory", D.pairSets, 1)[0];
+        buildMemory(Math.max(0, D.pairSets.indexOf(nx)));
+        toast("🔀 Nowy zestaw kart");
+      };
       const grid = $("#mem-grid");
       grid.onclick = function (e) {
         const b = e.target.closest(".mem-card"); if (!b || lock) return;
@@ -470,7 +661,8 @@
 
   /* ============ 4. Połącz w pary ============ */
   function actMatch() {
-    let si = Math.floor(Math.random() * D.matchSets.length);
+    const first = deal("match", D.matchSets, 1)[0];
+    let si = Math.max(0, D.matchSets.indexOf(first));
     build(si);
     function build(k) {
       const set = D.matchSets[k];
@@ -659,7 +851,7 @@
     { id: "negative", name: "➖ Przeczenie" }
   ];
   function actSort() {
-    const items = shuffle(D.sort).slice(0, 12);
+    const items = deal("sort", D.sort, 12).map(function (x) { return Object.assign({}, x, { done: false }); });
     let sel = null, done = 0, tries = 0, okCount = 0;
     const placed = { affirmative: [], question: [], negative: [] };
     function draw() {
@@ -682,6 +874,7 @@
           if (sel === null) { toast("Najpierw wybierz zdanie 🙂"); return; }
           const it = items[sel]; tries++;
           if (bbtn.dataset.b === it.t) {
+            logAnswer(it, "sort", true, it.s, "To zdanie to " + it.t + ".");
             it.done = true; placed[it.t].push(it.s); done++; okCount++; toast("✅ Dobrze!"); sel = null; draw();
             if (done === items.length) {
               award("sort", okCount, tries);
@@ -689,6 +882,7 @@
               return;
             }
           } else {
+            logAnswer(it, "sort", false, it.s, "Poprawny koszyk: " + it.t + ".");
             bbtn.classList.add("wiggle"); const bb = bbtn;
             setTimeout(function () { bb.classList.remove("wiggle"); }, 500);
             toast("❌ To nie ten koszyk — spróbuj jeszcze raz.");
@@ -702,7 +896,8 @@
 
   /* ============ 10. Prawda / Fałsz ============ */
   function actReading() {
-    let ti = Math.floor(Math.random() * D.reading.length);
+    const first = deal("reading", D.reading, 1)[0];
+    let ti = Math.max(0, D.reading.indexOf(first));
     build(ti);
     function build(k) {
       const r = D.reading[k];
@@ -712,7 +907,10 @@
           award("reading", ok, tries);
           summaryHost($("#run-host"), "reading", ok, tries, "Tekst przeczytany! 📖 Spróbuj też innego tekstu.");
           const b = document.createElement("button"); b.className = "btn ghost"; b.textContent = "📄 Inny tekst";
-          b.onclick = function () { build((k + 1) % D.reading.length); };
+          b.onclick = function () {
+            const nx = deal("reading", D.reading, 1)[0];
+            build(Math.max(0, D.reading.indexOf(nx)));
+          };
           $("#run-host .row").appendChild(b);
           return;
         }
@@ -727,6 +925,7 @@
         $("#read-wrap").onclick = function (e) {
           const b = e.target.closest("[data-tf]"); if (!b || b.disabled) return;
           const good = (b.dataset.tf === "true") === it.t;
+          logAnswer(it, "reading", good, it.t ? "Prawda" : "Fałsz", it.w);
           tries++; if (good) ok++;
           const fb = $("#fb"); fb.className = "feedback show " + (good ? "ok" : "no");
           fb.innerHTML = (good ? "✅ Zgadza się! " : "❌ Poprawnie: " + (it.t ? "Prawda" : "Fałsz") + ". ") + esc(it.w);
@@ -809,7 +1008,7 @@
 
   /* ============ 14. Literowanie form (wisielec) ============ */
   function actSpelling() {
-    const words = shuffle(D.spelling).slice(0, 6);
+    const words = deal("spelling", D.spelling, 6);
     let wi = 0, ok = 0, tries = 0;
     function draw() {
       if (wi >= words.length) {
@@ -850,6 +1049,7 @@
         };
       }
       function finishWord(good) {
+        logAnswer(it, "spelling", good, it.word, "Apostrof zastępuje znikniętą literę.");
         tries++; if (good) { ok++; toast("✅ " + it.word); confetti(10); }
         else toast("Poprawnie: " + it.word);
         speak(it.word);
@@ -865,10 +1065,10 @@
 
   /* ============ 15. Szybka runda ============ */
   function actSpeed() {
-    const pool = D.choice.map(function (x) { return { s: x.s, o: x.o, a: x.a }; });
+    const pool = deal("speed", D.choice, Math.min(60, D.choice.length));
     let time = 60, score = 0, asked = 0, cur = null;
     function draw() {
-      cur = shuffle(pool)[0];
+      cur = pool[asked % pool.length];
       $("#run-host").innerHTML =
         '<div class="card flat" style="background:var(--coral-l);border-color:#ffd3c4"><div class="between"><b>⚡ Szybka runda</b><span class="chip coral timer" id="sp-timer">⏱ ' + time + " s</span></div>" +
         '<div class="muted">Ile poprawnych form zdążysz w 60 sekund? Błąd nie kończy gry — lecimy dalej!</div></div>' +
@@ -880,6 +1080,7 @@
         asked++;
         const ok = b.dataset.v === cur.a;
         if (ok) score++;
+        logAnswer(cur, "speed", ok, cur.a, "");
         mark("speed", ok);
         const fb = $("#speed-fb"); fb.className = "feedback show " + (ok ? "ok" : "no");
         fb.innerHTML = ok ? "✅ Tak!" : "❌ Poprawnie: " + esc(cur.a);
@@ -891,8 +1092,10 @@
       clearSpeed();
       S.speedBest = Math.max(S.speedBest || 0, score);
       const a = S.acts.speed || { tried: 0, ok: 0, done: false }; a.done = true; S.acts.speed = a;
-      save();
+      recordGrade("szybka runda", "speed", score, asked, 60);
+      save(); checkBadges();
       $("#run-host").innerHTML = '<div class="center"><div style="font-size:3rem">⚡</div><h2>' + score + " poprawnych w 60 sekund!</h2>" +
+        '<div style="font-size:1.15rem;font-weight:900;color:var(--teal-d)">Ocena: ' + gradeBadge(pct(score, asked)) + '</div>' +
         '<p class="muted">Najlepszy wynik: ' + S.speedBest + '. Zobacz, jak rośnie szybkość po kilku dniach powtórek.</p>' +
         '<div class="row" style="justify-content:center"><button class="btn" id="sp-again">🔁 Jeszcze raz</button><button class="btn ghost" id="sp-other">🎮 Inne ćwiczenia</button></div></div>';
       $("#sp-again").onclick = function () { actSpeed(); };
@@ -964,7 +1167,9 @@
   let EX = null;
   function startExam(mode) {
     clearExamTimer();
-    const qs = shuffle(D.examPool).slice(0, 15);
+    const sel = $("#exam-count");
+    const n = Math.min(30, Math.max(5, +(sel ? sel.value : 15) || 15));
+    const qs = deal("exam", D.examPool, n);
     EX = { mode: mode, qs: qs, i: 0, answers: [], seconds: 0 };
     $("#exam-intro").style.display = "none";
     $("#exam-result").style.display = "none";
@@ -1009,12 +1214,13 @@
     if (q.type === "choice") ok = norm(given) === norm(q.a);
     else ok = q.a.some(function (x) { return norm(x) === norm(given); });
     EX.answers.push({ q: q, given: given, ok: ok });
+    logAnswer(q, "exam", ok, Array.isArray(q.a) ? q.a[0] : q.a, q.w);
     mark("exam", ok);
     if (!ok) noteWeak(q.area);
     if (EX.mode === "learn") {
       const fb = $("#exam-fb");
       fb.className = "feedback show " + (ok ? "ok" : "no");
-      fb.innerHTML = (ok ? "✅ Brawo! " : "❌ Poprawnie: <u>" + esc(q.a[0] || q.a) + "</u>. ") + esc(q.w);
+      fb.innerHTML = (ok ? "✅ Brawo! " : "❌ Poprawnie: <u>" + esc(Array.isArray(q.a) ? q.a[0] : q.a) + "</u>. ") + esc(q.w);
       $$("#exam-q-wrap .opt").forEach(function (x) { x.disabled = true; if (norm(x.dataset.v) === norm(q.a)) x.classList.add("correct"); });
       const inp = $("#exam-input"); if (inp) inp.disabled = true;
       $("#btn-exam-next").textContent = EX.i + 1 >= EX.qs.length ? "Zobacz wynik 🏁" : "Dalej →";
@@ -1056,6 +1262,7 @@
     const ok = EX.answers.filter(function (x) { return x.ok; }).length;
     const total = EX.qs.length, p = pct(ok, total);
     S.bestExam = Math.max(S.bestExam || 0, p);
+    recordGrade("kartkówka", "exam", ok, total, EX.seconds);
     const act = S.acts.exam || { tried: 0, ok: 0, done: false }; act.done = true; S.acts.exam = act;
     save(); updateChips(); updateHub();
     $("#exam-run").style.display = "none";
@@ -1065,7 +1272,9 @@
     const weakList = Object.keys(weak).sort(function (a, b) { return weak[b] - weak[a]; });
     $("#exam-result").innerHTML =
       '<div class="card hero center"><div style="font-size:3rem">' + (p >= 90 ? "🏆" : p >= 70 ? "👍" : "🌱") + '</div><h1>' + ok + " / " + total + " · " + p + "%</h1>" +
+      '<div style="font-size:1.5rem;font-weight:900">🎓 Ocena: ' + gradeBadge(p) + '</div>' +
       "<p>" + (p >= 90 ? "Jesteś gotowy/a na kartkówkę! 💪" : p >= 70 ? "Dobrze idzie! Popraw jeszcze poniższe zadania." : "Spokojnie — to była próba. Wróć do ćwiczeń i spróbuj ponownie.") + "</p>" +
+      '<div class="muted" style="color:rgba(255,255,255,.9)">🎲 Zestaw nr ' + (S.cycles.exam || 1) + " z " + D.examPool.length.toLocaleString("pl-PL") + " zadań · następny będzie inny</div>" +
       '<div class="muted" style="color:rgba(255,255,255,.9)">Czas: ' + Math.floor(EX.seconds / 60) + " min " + (EX.seconds % 60) + " s · tryb: " + (EX.mode === "real" ? "kartkówka" : "nauka") + "</div></div>" +
       '<div class="card"><div class="between"><h2>🔍 Omówienie wszystkich zadań</h2><span class="pill teal">Najlepszy wynik: ' + S.bestExam + "%</span></div>" +
       (weakList.length ? '<p class="muted">Nad tym warto popracować: <b>' + weakList.map(function (w) { return w + " (" + weak[w] + ")"; }).join(", ") + "</b></p>" : "<p class='muted'>Zero błędów — pięknie! 🎉</p>") +
@@ -1075,13 +1284,126 @@
           (a.ok ? "" : '<div>Poprawnie: <b>' + esc(Array.isArray(a.q.a) ? a.q.a[0] : a.q.a) + "</b></div>") +
           '<div class="review-note">💡 ' + esc(a.q.w) + "</div></div>";
       }).join("") +
-      '<div class="row" style="margin-top:14px"><button class="btn" id="ex-again">🔁 Nowa kartkówka</button><button class="btn orange" id="ex-practice">🎮 Poćwicz słabe strony</button><button class="btn ghost" id="ex-back">← Wróć</button></div></div>';
+      '<div class="row" style="margin-top:14px"><button class="btn" id="ex-again">🔁 Nowa kartkówka</button><button class="btn orange" id="ex-practice">🎮 Poćwicz słabe strony</button><button class="btn yellow" id="ex-review">🔁 Powtórka z błędów</button><button class="btn ghost" id="ex-back">← Wróć</button></div></div>';
     $("#ex-again").onclick = function () { startExam(EX.mode); };
     $("#ex-practice").onclick = function () { go("practice"); };
+    $("#ex-review").onclick = function () { go("review"); };
     $("#ex-back").onclick = function () { $("#exam-result").style.display = "none"; $("#exam-intro").style.display = "block"; };
     if (p >= 80) confetti(40);
     checkBadges();
   }
+
+  /* ---------------- POWTÓRKI: zakładka „Powtórki" ---------------- */
+  let RV = null;
+  function renderReviewStats() {
+    const all = allMistakes();
+    const due = dueReviews().length;
+    const mastered = all.filter(function (r) { return r.mastered; }).length;
+    const wk = weakestSkill();
+    $("#review-stats").innerHTML = [
+      ["🔁", String(due), "zadań do powtórki dziś"],
+      ["🛠️", String(all.length), "trudnych zadań w bazie"],
+      ["✅", String(mastered), "już opanowanych"],
+      ["🎯", wk ? wk.p + "%" : "—", wk ? "najsłabszy: " + wk.k : "za mało danych"]
+    ].map(function (x) {
+      return '<div class="card flat center" style="margin:0"><div style="font-size:1.7rem">' + x[0] + '</div><b style="font-size:1.15rem">' + esc(x[1]) + '</b><small class="muted">' + esc(x[2]) + "</small></div>";
+    }).join("");
+    const list = all.slice().sort(function (a, b) { return (b.wrong - b.right) - (a.wrong - a.right); }).slice(0, 40);
+    $("#review-list").innerHTML = list.length
+      ? '<div class="table-wrap"><table><thead><tr><th>Zadanie</th><th>Temat</th><th>Pomyłki</th><th>Pudełko</th><th>Następna powtórka</th></tr></thead><tbody>' +
+        list.map(function (r) {
+          return '<tr><td>' + esc(String(r.prompt).slice(0, 70)) + '</td><td>' + esc(r.area) + '</td><td>' + r.wrong + '</td><td>' +
+            (r.mastered ? '<span class="good">opanowane ✓</span>' : r.box + " / 6") + '</td><td>' + (r.mastered ? "—" : esc(r.due)) + "</td></tr>";
+        }).join("") + "</tbody></table></div>"
+      : "<p class='muted'>Nie ma jeszcze żadnych błędów — brawo! Gdy coś pójdzie nie tak, trafi tutaj i wróci w kolejnych dniach.</p>";
+  }
+  function renderReview() {
+    renderReviewStats();
+    RV = { list: dueReviews(), i: 0, ok: 0, total: 0 };
+    RV.total = RV.list.length;
+    drawReview();
+  }
+  function finishReview() {
+    const host = $("#review-host");
+    if (!RV.total) {
+      host.innerHTML = '<div class="center" style="padding:14px 0"><div style="font-size:3rem">🌟</div><h2>Wszystko opanowane!</h2>' +
+        '<p class="muted">Nie ma dziś żadnych zadań do powtórki. Zrób nowy zestaw ćwiczeń, a błędy automatycznie trafią tutaj.</p>' +
+        '<button class="btn" id="rv-practice">🎮 Idę poćwiczyć</button></div>';
+      $("#rv-practice").onclick = function () { go("practice"); };
+      return;
+    }
+    const p = pct(RV.ok, RV.total);
+    recordGrade("powtórka", "review", RV.ok, RV.total);
+    host.innerHTML = '<div class="center" style="padding:14px 0"><div style="font-size:3rem">' +
+      (p >= 80 ? "🏆" : p >= 50 ? "👍" : "🌱") + '</div><h2>' + RV.ok + " / " + RV.total + " · " + p + '%</h2>' +
+      '<div style="font-weight:900;color:var(--teal-d)">Ocena: ' + gradeBadge(p) + '</div>' +
+      '<p class="muted">Zadania, które umiesz, wrócą za 1, 2, 4, 7, 14 lub 30 dni. Te z błędem — jutro.</p>' +
+      '<div class="row" style="justify-content:center"><button class="btn" id="rv-reload">🔁 Jeszcze raz</button><button class="btn ghost" id="rv-practice2">🎮 Ćwiczenia</button></div></div>';
+    $("#rv-reload").onclick = renderReview;
+    $("#rv-practice2").onclick = function () { go("practice"); };
+    if (p >= 80) confetti(25);
+    checkBadges(); renderReviewStats();
+  }
+  function drawReview() {
+    const host = $("#review-host");
+    if (!RV || !RV.list.length || RV.i >= RV.list.length) { finishReview(); return; }
+    const r = RV.list[RV.i];
+    host.innerHTML =
+      '<div class="qbox"><div class="q">' + esc(r.prompt) + '</div><div class="hint">🔁 Powtórka ' + (RV.i + 1) + " / " + RV.total +
+      " · " + esc(r.area) + " · pomyłek: " + r.wrong + " · pudełko " + r.box + "/6</div></div>" +
+      (r.options
+        ? '<div class="options">' + shuffle(r.options).map(function (o) { return '<button class="opt" data-rv="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + "</div>"
+        : '<input class="answer-input" id="rv-ans" autocomplete="off" spellcheck="false" placeholder="wpisz odpowiedź po angielsku…">') +
+      '<div class="feedback" id="rv-fb"></div>' +
+      '<div class="ex-actions"><button class="btn" id="rv-check">Sprawdź ✓</button><button class="btn small ghost" id="rv-show">👀 Pokaż odpowiedź</button><button class="btn small ghost" id="rv-skip">⏭ Pomiń</button></div>';
+    let answered = false;
+    function judge(ok) {
+      if (answered) return;
+      answered = true;
+      if (ok) RV.ok++;
+      const rec = S.mistakes[r.id];
+      const st = S.skills[r.area] || (S.skills[r.area] = { tried: 0, ok: 0 });
+      st.tried++; if (ok) st.ok++;
+      if (!ok) S.weak[r.area] = (S.weak[r.area] || 0) + 1;
+      if (rec) {
+        if (ok) { rec.right++; rec.box = Math.min(6, rec.box + 1); rec.due = addDays(BOX_DAYS[rec.box] || 30); if (rec.box >= 6) rec.mastered = true; }
+        else { rec.wrong++; rec.box = 0; rec.due = today(); rec.mastered = false; }
+      }
+      if (ok) S.xp += 10;
+      save(); updateChips(); renderReviewStats();
+      const fb = $("#rv-fb");
+      fb.className = "feedback show " + (ok ? "ok" : "no");
+      fb.innerHTML = (ok ? "✅ Brawo! " : "❌ Poprawnie: <u>" + esc(r.correct) + "</u>. ") + esc(r.why || "");
+      $$("#review-host .opt").forEach(function (b) {
+        b.disabled = true;
+        if (norm(b.dataset.rv) === norm(r.correct)) b.classList.add("correct");
+      });
+      const inp = $("#rv-ans"); if (inp) inp.disabled = true;
+      $("#rv-check").style.display = "none";
+      $("#rv-show").style.display = "none";
+      $("#rv-skip").textContent = RV.i + 1 >= RV.total ? "Zobacz wynik 🏁" : "Dalej →";
+      $("#rv-skip").onclick = function () { RV.i++; drawReview(); };
+    }
+    $$("#review-host .opt").forEach(function (b) {
+      b.onclick = function () { judge(norm(b.dataset.rv) === norm(r.correct)); };
+    });
+    $("#rv-check").onclick = function () {
+      const inp = $("#rv-ans"); if (!inp) return;
+      const v = norm(inp.value);
+      if (!v) { toast("Najpierw coś wpisz 🙂"); return; }
+      judge(v === norm(r.correct));
+    };
+    const inp0 = $("#rv-ans"); if (inp0) inp0.onkeydown = function (e) { if (e.key === "Enter") $("#rv-check").click(); };
+    $("#rv-show").onclick = function () { judge(false); };
+    $("#rv-skip").onclick = function () { RV.i++; drawReview(); };
+  }
+  const brw = $("#btn-review-weak");
+  if (brw) brw.onclick = function () {
+    const w = weakestSkill();
+    if (!w) { toast("Za mało danych — zrób najpierw kilka zadań 🙂"); go("practice"); return; }
+    openActivity(SKILL_ACT[w.k] || "choice");
+    toast("🎯 Najsłabszy temat: " + w.k + " (" + w.p + "%)");
+  };
 
   /* ---------------- POSTĘPY ---------------- */
   function renderProgress() {
@@ -1103,6 +1425,43 @@
         '<div class="bar"><i style="width:' + (st.tried ? p : 0) + '%"></i></div></div>';
     }).join("");
 
+    /* --- Dzienniczek ocen + wykres --- */
+    const gs = S.grades.slice(0, 12).reverse();
+    const avg = S.grades.length ? Math.round(S.grades.reduce(function (s, g) { return s + g.p; }, 0) / S.grades.length) : 0;
+    function spark(vals) {
+      const w = 280, h = 70;
+      if (!vals.length) return '<div class="muted">Zapisz pierwszy wynik, a pojawi się wykres 📈</div>';
+      const pts = vals.map(function (v, i) {
+        const x = vals.length === 1 ? w / 2 : i * w / (vals.length - 1);
+        return x.toFixed(1) + "," + (h - (v / 100) * h).toFixed(1);
+      }).join(" ");
+      return '<svg viewBox="0 0 ' + w + " " + h + '" width="100%" height="70" preserveAspectRatio="none" aria-label="Wykres ostatnich wyników">' +
+        '<line x1="0" y1="' + h + '" x2="' + w + '" y2="' + h + '" stroke="var(--line)" stroke-width="2"/>' +
+        '<polyline points="' + pts + '" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linejoin="round"/></svg>';
+    }
+    const gb = $("#gradebook");
+    if (gb) gb.innerHTML =
+      '<div class="grid2" style="align-items:start"><div>' +
+      '<div class="qbox" style="background:var(--teal-l);border-color:#b7e9e3"><b>Średnia z ' + S.grades.length + " prac: " + avg + "%</b> · " + gradeBadge(avg) +
+      '<div class="muted">Ocena pojawia się po każdym ćwiczeniu, szybkiej rundzie, powtórce i próbnej kartkówce.</div></div>' +
+      "<h3 style='margin-top:14px'>Ostatnie wyniki</h3>" + spark(gs.map(function (g) { return g.p; })) +
+      '</div><div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Co</th><th>Wynik</th><th>Ocena</th></tr></thead><tbody>' +
+      (S.grades.length ? S.grades.slice(0, 10).map(function (g) {
+        const a = D.activities.find(function (x) { return x.id === g.act; });
+        const label = g.kind === "kartkówka" ? "📝 Kartkówka" : g.kind === "powtórka" ? "🔁 Powtórka" : (a ? a.icon + " " + a.title : g.kind);
+        return "<tr><td>" + esc(g.d) + "</td><td>" + esc(label) + "</td><td>" + g.ok + "/" + g.total + " · " + g.p + "%</td><td><b>" + gradeBadge(g.p).split(" · ")[0] + "</b></td></tr>";
+      }).join("") : '<tr><td colspan="4" class="muted">Brak wyników — rozwiąż dowolne ćwiczenie.</td></tr>') +
+      "</tbody></table></div></div></div>";
+    /* --- Oceny cząstkowe według umiejętności --- */
+    const sk = Object.keys(S.skills).map(function (k) {
+      return { k: k, tried: S.skills[k].tried, p: pct(S.skills[k].ok, S.skills[k].tried) };
+    }).sort(function (a, b) { return a.p - b.p; });
+    const sg = $("#skill-grid");
+    if (sg) sg.innerHTML = sk.length ? sk.map(function (x) {
+      return '<div><div class="between"><b>' + esc(x.k) + '</b><span class="muted">' + x.p + "% · ocena " + gradeOf(x.p).g + " · " + x.tried + " zadań</span></div>" +
+        '<div class="bar"><i style="width:' + x.p + '%"></i></div></div>';
+    }).join("") : "<p class='muted'>Brak danych — zacznij od dowolnego ćwiczenia.</p>";
+
     const ranked = D.activities.map(function (a) {
       const st = S.acts[a.id] || { tried: 0, ok: 0 };
       return { name: a.title, p: st.tried >= 3 ? pct(st.ok, st.tried) : null };
@@ -1113,6 +1472,9 @@
       "<p><b>Podsumowanie (" + today() + "):</b> dziecko rozwiązało <b>" + total + " zadań</b>, poprawnie <b>" + S.correct + "</b> (" + pct(S.correct, total) + "%), zdobyło " + S.xp + " pkt i ukończyło " + done + " z " + D.activities.length + " ćwiczeń. Najlepszy wynik próbnej kartkówki: <b>" + (S.bestExam || 0) + "%</b>.</p>" +
       (best ? "<p><b>Najlepiej idzie:</b> " + esc(best.name) + " (" + best.p + "%). <b>Warto poćwiczyć:</b> " + esc(worst.name) + " (" + worst.p + "%).</p>" : "<p>Za mało danych, by ocenić mocne i słabe strony — zacznij od dowolnego ćwiczenia.</p>") +
       (weak.length ? "<p><b>Tematy, w których pojawiły się błędy na kartkówkach:</b> " + weak.map(function (w) { return w + " (" + S.weak[w] + ")"; }).join(", ") + ".</p>" : "") +
+      "<p><b>System oceniania:</b> średnia z " + S.grades.length + " prac to <b>" + avg + "%</b> (" + gradeBadge(avg) + "). Baza ma " + D.meta.bankTotal.toLocaleString("pl-PL") + " unikalnych zadań; dziecko zobaczyło już " + seenTotal() + " z nich w " + Object.keys(S.cycles).reduce(function (s, k) { return s + S.cycles[k]; }, 0) + " różnych zestawach — żaden zestaw się nie powtarza, dopóki nie wyczerpie się pula.</p>" +
+      "<p><b>Powtórki z błędów:</b> " + allMistakes().length + " trudnych zadań w kolejce, " + allMistakes().filter(function (r) { return r.mastered; }).length + " opanowanych, " + dueReviews().length + " do powtórki dziś" +
+      (weakestSkill() ? "; najsłabszy temat: <b>" + esc(weakestSkill().k) + "</b> (" + weakestSkill().p + "%)." : ".") + "</p>" +
       "<p><b>Rekomendacja:</b> 10–15 minut dziennie według planu z zakładki Start. Dzień przed kartkówką: tabela <i>to be</i>, fiszki z błędami i jedna próbna kartkówka bez podpowiedzi. Zwróć uwagę na trzy pułapki: <i>amn't</i>, <i>Yes, I'm</i> oraz wiek z <i>have</i>.</p>" +
       "<p class='muted'>Dane pochodzą wyłącznie z tej przeglądarki (localStorage) i nie są nigdzie wysyłane.</p>";
     renderBadges();
@@ -1124,7 +1486,9 @@
     try { localStorage.removeItem(KEY); } catch (e) {}
     S = fresh(); S.days.push(today()); save();
     cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; }));
-    renderStart(); renderCard(); renderProgress(); updateChips();
+    RV = null;
+    renderStart(); renderCard(); renderProgress(); renderReview(); renderHub(); updateChips();
+    applyDark(); applyMute();
     toast("Postępy wyczyszczone — zaczynamy od nowa 🌱");
   };
 
@@ -1133,8 +1497,11 @@
   renderLearn();
   renderHub();
   renderCard();
+  renderReview();
   renderProgress();
   updateChips();
+  applyDark();
+  applyMute();
   $("#exam-best").textContent = S.bestExam ? S.bestExam + "%" : "—";
 
   // czyścimy zegary przy opuszczeniu strony
