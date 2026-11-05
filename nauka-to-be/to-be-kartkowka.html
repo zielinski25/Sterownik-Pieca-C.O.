@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Interaktywny moduł do nauki czasownika to be — przygotowanie do kartkówki z języka angielskiego (klasa 4, Together 2026). Działa offline.">
+<meta property="og:title" content="TO BE — trening przed kartkówką 🇬🇧">
+<meta property="og:description" content="15 interaktywnych ćwiczeń, fiszki i próbna kartkówka z czasownika 'to be'. Angielski, klasa 4. Bez logowania, działa w przeglądarce.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cdn.jsdelivr.net/gh/zielinski25/Sterownik-Pieca-C.O.@arena%2Ff423a839-sterownik-pieca-c-o/docs/sciaga-to-be.png">
+<meta name="twitter:card" content="summary_large_image">
 <title>TO BE · Trening przed kartkówką 🇬🇧 (wersja 1 plik)</title>
 <style>
 /* ================= TO BE — wygląd ================= */
@@ -350,6 +355,7 @@ a{color:var(--teal-d)}
     <div class="brand-txt"><b>TO BE · Trening Robbiego</b><small>Angielski · klasa 4 · Before the test</small></div>
   </div>
   <div class="topstats">
+    <button class="chip" id="btn-share" style="cursor:pointer;background:var(--teal-l);border-color:#b7e9e3;color:var(--teal-d)" title="Wyślij link na Telegram / WhatsApp / e-mail">🔗 Udostępnij</button>
     <span class="chip" id="chip-days">📅 do kartkówki: …</span>
     <span class="chip teal" id="chip-xp">⭐ 0 pkt</span>
     <span class="chip coral" id="chip-streak">🔥 0 z rzędu</span>
@@ -1205,6 +1211,24 @@ a{color:var(--teal-d)}
     save(); updateChips(); updateHub();
   }
   function noteWeak(area) { if (!area) return; S.weak[area] = (S.weak[area] || 0) + 1; save(); }
+
+  /* ---------------- udostępnianie (Telegram, WhatsApp, e-mail…) ---------------- */
+  const SHARE_URL = "https://cdn.jsdelivr.net/gh/zielinski25/Sterownik-Pieca-C.O.@arena%2Ff423a839-sterownik-pieca-c-o/docs/index.html";
+  const SHARE_TEXT = "TO BE — trening przed kartkówką (angielski, 10.11) 🇬🇧 15 ćwiczeń, fiszki i próbna kartkówka. Bez logowania.";
+  $("#btn-share").onclick = async function () {
+    const data = { title: "TO BE · trening przed kartkówką", text: SHARE_TEXT, url: SHARE_URL };
+    if (navigator.share) {
+      try { await navigator.share(data); toast("Gotowe — wybierz Telegram 💬"); return; }
+      catch (e) { /* użytkownik anulował — przechodzimy do kopiowania */ }
+    }
+    const full = SHARE_TEXT + "\n" + SHARE_URL;
+    try {
+      await navigator.clipboard.writeText(full);
+      toast("📋 Link skopiowany — wklej do Telegrama");
+    } catch (e) {
+      window.prompt("Skopiuj i wklej do Telegrama:", full);
+    }
+  };
 
   /* ---------------- efekty ---------------- */
   let toastT = null;

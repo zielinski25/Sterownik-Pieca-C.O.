@@ -81,6 +81,24 @@
   }
   function noteWeak(area) { if (!area) return; S.weak[area] = (S.weak[area] || 0) + 1; save(); }
 
+  /* ---------------- udostępnianie (Telegram, WhatsApp, e-mail…) ---------------- */
+  const SHARE_URL = "https://cdn.jsdelivr.net/gh/zielinski25/Sterownik-Pieca-C.O.@arena%2Ff423a839-sterownik-pieca-c-o/docs/index.html";
+  const SHARE_TEXT = "TO BE — trening przed kartkówką (angielski, 10.11) 🇬🇧 15 ćwiczeń, fiszki i próbna kartkówka. Bez logowania.";
+  $("#btn-share").onclick = async function () {
+    const data = { title: "TO BE · trening przed kartkówką", text: SHARE_TEXT, url: SHARE_URL };
+    if (navigator.share) {
+      try { await navigator.share(data); toast("Gotowe — wybierz Telegram 💬"); return; }
+      catch (e) { /* użytkownik anulował — przechodzimy do kopiowania */ }
+    }
+    const full = SHARE_TEXT + "\n" + SHARE_URL;
+    try {
+      await navigator.clipboard.writeText(full);
+      toast("📋 Link skopiowany — wklej do Telegrama");
+    } catch (e) {
+      window.prompt("Skopiuj i wklej do Telegrama:", full);
+    }
+  };
+
   /* ---------------- efekty ---------------- */
   let toastT = null;
   function toast(msg) {

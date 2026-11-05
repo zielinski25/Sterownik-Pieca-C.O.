@@ -96,11 +96,37 @@ app.js                  silnik ćwiczeń, fiszki, kartkówka, postępy, głos
 to-be-kartkowka.html    WYGENEROWANY jeden plik (CSS + JS w środku) — główny plik do użytku
 build.py                scala powyższe w to-be-kartkowka.html:  python3 build.py
 validate.js             sprawdza spójność bazy zadań:            node validate.js
+make_sciaga.py          generuje sciaga-to-be.png (wymaga pillow + qrcode)
+sciaga-to-be.png        ściąga do wysłania jako zdjęcie na Telegramie
+UDSTEPNIJ-TELEGRAM.txt  gotowa wiadomość, linki i instrukcja udostępniania
 README.md               ten plik
+../docs/                wersja publikowana (index.html + sciaga-to-be.png)
 ```
 
 Po każdej zmianie w `index.html` / `styles.css` / `data.js` / `app.js` uruchom `python3 build.py`,
 żeby zaktualizować wersję jednoplikową.
+
+## Udostępnianie przez Telegram 📨
+
+Telegram nie renderuje HTML-u w czacie, dlatego przygotowano trzy drogi:
+
+1. **Link (polecane)** — `docs/index.html` jest opublikowany przez publiczny CDN jsDelivr:
+   `https://cdn.jsdelivr.net/gh/zielinski25/Sterownik-Pieca-C.O.@arena%2Ff423a839-sterownik-pieca-c-o/docs/index.html`
+   Wklejony do wiadomości otwiera się od razu w przeglądarce Telegrama.
+   Strona ma tagi Open Graph (podgląd z miniaturką ściągi) oraz przycisk
+   **„🔗 Udostępnij"** (`navigator.share`, fallback = kopiowanie linku).
+2. **Plik** — `to-be-kartkowka.html` wysłany jako dokument działa u odbiorcy offline.
+3. **Zdjęcie** — `sciaga-to-be.png` (tabela + zasady + kod QR do strony) wysłane jako
+   zdjęcie pokazuje się bezpośrednio na czacie.
+
+Gotową wiadomość, instrukcję krok po kroku, linki do Dysku oraz tekstową
+„kartkówkę na czacie" (plan B) zawiera **`UDSTEPNIJ-TELEGRAM.txt`**.
+Ściągę generuje `make_sciaga.py` (`pip install pillow qrcode`).
+
+Katalog `docs/` (strona + ściąga + `.nojekyll`) jest jedyną częścią repozytorium
+przeznaczoną do publikacji; w `docs/README.md` opisano, jak go aktualizować.
+Włączenie GitHub Pages wymaga ręcznej zmiany w ustawieniach repozytorium — token
+aplikacji GitHub w tej sesji ma dostęp do kodu, ale nie do ustawień (HTTP 403).
 
 ## Sprawdzenie jakości
 

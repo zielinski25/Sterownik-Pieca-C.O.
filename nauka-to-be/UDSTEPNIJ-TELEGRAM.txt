@@ -1,0 +1,128 @@
+========================================================================
+  TO BE — JAK UDOSTĘPNIĆ PRZEZ TELEGRAM 📨
+  Angielski · klasa 4 · kartkówka 10 listopada 2026
+========================================================================
+
+Telegram NIE wyświetli interaktywnej strony bezpośrednio w czacie
+(to nie jest zwykły obrazek ani film). Ale są trzy proste drogi —
+najwygodniejsza to zwykły LINK, który otwiera się w przeglądarce
+wbudowanej w Telegrama, bez pobierania i bez logowania.
+
+
+------------------------------------------------------------------------
+  1) NAJPROŚCIEJ: WYŚLIJ LINK  ✅ POLECANE
+------------------------------------------------------------------------
+
+Skopiuj i wklej do wiadomości na Telegramie:
+
+{{LINK}}
+
+Wysyła się jak każdy link: odbiorca klika i od razu ma stronę
+z 15 ćwiczeniami, fiszkami i próbną kartkówką. Działa na telefonie
+i na komputerze. Link jest publiczny (każdy, kto go ma, może otworzyć),
+ale nie ma tam żadnych danych dziecka — postępy zapisują się tylko
+u niego w przeglądarce.
+
+Wersja „zamrożona" na konkretnej wersji pliku (gdyby CDN pokazywał
+starą wersję po aktualizacjach):
+
+{{LINK_SHA}}
+
+
+------------------------------------------------------------------------
+  2) GOTOWA WIADOMOŚĆ DO WKLEJENIA (skopiuj całość) 📋
+------------------------------------------------------------------------
+
+Cześć! Przygotowałam/em stronę do powtórki przed kartkówką z angielskiego
+(10.11): czasownik „to be" — odmiana, twierdzenia, pytania i przeczenia.
+
+👉 {{LINK}}
+
+Jest tam 15 różnych ćwiczeń (wybieranie, wpisywanie, memory, słuchanie,
+dyktando, poprawianie błędów, układanie zdań), fiszki i próbna kartkówka
+z omówieniem odpowiedzi. Nic nie trzeba instalować ani logować się 💪
+
+W załączniku jeszcze ściąga w formie zdjęcia — warto ją mieć pod ręką
+wieczorem przed sprawdzianem 🙂
+
+Uwaga: jeśli przeglądarka pokaże sam kod zamiast strony, wyślij plik
+HTML z Dysku (poniżej) i otwórz go w Chrome/Safari.
+
+
+------------------------------------------------------------------------
+  3) WYŚLIJ PLIK (działa też bez internetu) 📎
+------------------------------------------------------------------------
+
+Plik:  to-be-kartkowka.html  (jeden plik, 140 KB, wszystko w środku)
+Link z Dysku Google:  {{DRIVE_HTML}}
+
+W aplikacji Telegram:
+  • klip spinacz / ➕ → „Plik" (File / Document, NIE „Galeria"),
+  • wybierz to-be-kartkowka.html → Wyślij.
+Na telefonie odbiorcy: kliknąć plik → „Otwórz w..." → Chrome / Safari
+(na Androidzie czasem: Zapisz w Plikach → otwórz z poziomu przeglądarki).
+Na komputerze: pobrać i otworzyć podwójnym kliknięciem.
+Po otwarciu strona działa całkowicie offline — można się uczyć w autobusie.
+
+
+------------------------------------------------------------------------
+  4) ŚCIĄGA JAKO ZDJĘCIE (widoczna od razu na czacie) 🖼️
+------------------------------------------------------------------------
+
+Plik:  sciaga-to-be.png  (1080×1560, z kodem QR prowadzącym do strony)
+Link z Dysku Google:  {{DRIVE_PNG}}
+
+Wyślij jako ZDJĘCIE (nie jako plik), żeby Telegram pokazał podgląd
+w czacie. Dziecko ma wtedy całą tabelę `be` i 3 zasady bez klikania.
+Kod QR na dole otwiera pełny trening po zeskanowaniu aparatem.
+
+
+------------------------------------------------------------------------
+  5) PLAN B: KARTKÓWKA TEKSTOWA PROSTO NA CZACIE 💬
+------------------------------------------------------------------------
+
+Gdyby coś nie chciało się otworzyć, wklej jako osobną wiadomość.
+Odpowiedzi wyślij dopiero po próbie (np. jako drugą wiadomość) 🙂:
+
+Uzupełnij am / is / are / isn't / aren't / am not:
+ 1. I ___ eleven.                      → am
+ 2. Mickey and Ana ___ friends.        → are
+ 3. Robbie ___ a robot.                → is
+ 4. We ___ from China.                 → aren't
+ 5. ___ she at school today?           → Is
+ 6. Where ___ you from?                → are
+ 7. My shoes ___ new.                  → aren't
+ 8. Are you a student? — Yes, ___.     → I am   (NIE: Yes, I'm.)
+ 9. Is Robbie a child? — No, ___.      → he isn't
+10. Popraw: He are my friend.          → He is my friend.
+11. Popraw: Where you are from?        → Where are you from?
+12. Po angielsku: „Ona nie jest w szkole." → She isn't at school.
+
+Złote zasady:
+  I → am · he/she/it → is · you/we/they → are
+  Przeczenie: be + not → isn't / aren't / I'm not  (nigdy „amn't")
+  Pytanie: be na początek → Is she Polish?
+  Wiek: I'm eleven (nie: I have 11 years)
+
+
+------------------------------------------------------------------------
+  UWAGI TECHNICZNE
+------------------------------------------------------------------------
+
+• Link z pkt 1 serwuje plik z gałęzi repozytorium przez publiczny CDN
+  jsDelivr. Repozytorium jest publiczne, opublikowany jest TYLKO katalog
+  docs/ (strona + ściąga) — reszta projektu nie jest wystawiona jako strona.
+• Link podglądu na żywo (działa tylko dopóki trwa ta sesja Arena):
+  https://8000-ihdl8hgbmywgqshdmoocj.e2b.app/to-be-kartkowka.html
+• Jeśli wolisz własny, stały adres github.io: wejdź w
+  https://github.com/zielinski25/Sterownik-Pieca-C.O./settings/pages
+  → Source: Deploy from a branch → branch:
+  arena/f423a839-sterownik-pieca-c-o → folder: /docs → Save.
+  (Aplikacja GitHub w tej sesji ma dostęp do kodu, ale nie do ustawień
+  repozytorium, więc nie mogłam włączyć tego automatycznie.)
+• Strona ma też przycisk „🔗 Udostępnij" w prawym górnym rogu: na telefonie
+  wywołuje natywny arkusz udostępniania (Telegram, WhatsApp…), a na
+  komputerze kopiuje gotowy link do schowka.
+• Podgląd linku w Telegramie: tytuł, opis i miniaturka ściągi są już
+  w tagach Open Graph w HTML-u.
+========================================================================
