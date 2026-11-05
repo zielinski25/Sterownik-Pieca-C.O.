@@ -1,7 +1,7 @@
 Sterownik CO - wynik testow jednostkowych z CI
 ====================================================
 
-Wersja: 0.31.82
+Wersja: 0.31.83
 Plikow XML: 28
 Testow: 162
 Nieudanych (failures): 0
