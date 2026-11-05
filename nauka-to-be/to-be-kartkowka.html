@@ -1,0 +1,2253 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Interaktywny moduł do nauki czasownika to be — przygotowanie do kartkówki z języka angielskiego (klasa 4, Together 2026). Działa offline.">
+<title>TO BE · Trening przed kartkówką 🇬🇧 (wersja 1 plik)</title>
+<style>
+/* ================= TO BE — wygląd ================= */
+:root{
+  --teal:#12b3a6; --teal-d:#0b8f86; --teal-l:#e2f7f4;
+  --coral:#ff7a59; --coral-l:#fff0ea;
+  --navy:#123049; --ink:#1d3550; --muted:#5c7390;
+  --sun:#ffc93c; --sun-l:#fff6d9;
+  --green:#2fb673; --green-l:#e6f8ee;
+  --red:#ef5b5b; --red-l:#ffeaea;
+  --bg:#f3f8fa; --card:#fff; --line:#dbe8ee;
+  --shadow:0 6px 0 rgba(18,48,73,.06), 0 12px 28px rgba(18,48,73,.08);
+  --radius:22px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"Trebuchet MS","Segoe UI",Verdana,system-ui,sans-serif;
+  font-size:17px; line-height:1.55; -webkit-tap-highlight-color:transparent;
+}
+body::before{
+  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(circle at 8% 4%, rgba(255,201,60,.20), transparent 30%),
+    radial-gradient(circle at 92% 12%, rgba(18,179,166,.18), transparent 32%),
+    radial-gradient(circle at 50% 100%, rgba(255,122,89,.12), transparent 45%);
+}
+h1,h2,h3,h4{margin:0 0 .45em; line-height:1.2; color:var(--navy)}
+h1{font-size:clamp(1.8rem,4.6vw,2.9rem)} h2{font-size:clamp(1.4rem,3vw,2rem)} h3{font-size:1.25rem}
+p{margin:.35em 0 .8em}
+b,strong{color:var(--navy)}
+button,input{font:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--sun); outline-offset:3px}
+.good{color:var(--green); font-weight:700}
+.bad{color:var(--red); font-weight:700; text-decoration:line-through wavy}
+.muted{color:var(--muted); font-size:.92rem}
+.center{text-align:center}
+.pill{display:inline-block; padding:.18em .7em; border-radius:99px; font-size:.78rem; font-weight:700; letter-spacing:.02em}
+.pill.teal{background:var(--teal-l); color:var(--teal-d)}
+.pill.coral{background:var(--coral-l); color:#c9502f}
+.pill.sun{background:var(--sun-l); color:#9c7300}
+.pill.green{background:var(--green-l); color:#18764a}
+
+/* ---------- nagłówek ---------- */
+.topbar{
+  position:sticky; top:0; z-index:30; background:rgba(255,255,255,.94);
+  backdrop-filter:blur(10px); border-bottom:2px solid var(--line);
+  display:flex; align-items:center; gap:14px; padding:10px clamp(12px,3vw,30px);
+}
+.brand{display:flex; align-items:center; gap:11px; min-width:0}
+.brand-txt{min-width:0}
+.brand-txt b{display:block; font-size:1.05rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.brand-txt small{color:var(--muted); font-size:.78rem}
+.topstats{margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end}
+.chip{background:var(--sun-l); border:2px solid #ffe49b; color:#8a6500; border-radius:99px; padding:4px 12px; font-weight:800; font-size:.88rem; white-space:nowrap}
+.chip.teal{background:var(--teal-l); border-color:#b7e9e3; color:var(--teal-d)}
+.chip.coral{background:var(--coral-l); border-color:#ffd3c4; color:#c9502f}
+
+/* Robbie — maskotka z podręcznika (rysunek w CSS/SVG) */
+.robbie{width:52px; height:52px; flex:0 0 52px}
+.robbie.small{width:36px;height:36px;flex-basis:36px}
+.robbie.big{width:96px;height:96px;flex-basis:96px}
+
+/* ---------- nawigacja ---------- */
+.tabs{
+  display:flex; gap:8px; overflow-x:auto; padding:10px clamp(12px,3vw,30px);
+  background:#fff; border-bottom:2px solid var(--line); scrollbar-width:thin;
+}
+.tab{
+  border:2px solid var(--line); background:#fff; color:var(--ink);
+  border-radius:99px; padding:8px 17px; font-weight:800; white-space:nowrap;
+  transition:transform .15s, background .15s, border-color .15s;
+}
+.tab:hover{transform:translateY(-2px); border-color:var(--teal)}
+.tab.active{background:var(--navy); color:#fff; border-color:var(--navy)}
+main{max-width:1100px; margin:0 auto; padding:22px clamp(12px,3vw,24px) 70px}
+.section{display:none; animation:fade .28s ease}
+.section.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---------- karty ---------- */
+.card{background:var(--card); border:2px solid var(--line); border-radius:var(--radius); padding:clamp(16px,2.5vw,26px); box-shadow:var(--shadow); margin-bottom:18px}
+.card.flat{box-shadow:none}
+.hero{
+  background:linear-gradient(135deg,#0f9f95,#12b3a6 45%,#48c9bd);
+  color:#fff; border:none; position:relative; overflow:hidden;
+}
+.hero h1,.hero h2,.hero p,.hero b{color:#fff}
+.hero::after{content:""; position:absolute; right:-70px; top:-90px; width:280px; height:280px; border-radius:50%; background:rgba(255,255,255,.10)}
+.hero .grid2{align-items:center}
+.hero .robbie{filter:drop-shadow(0 6px 8px rgba(0,0,0,.15))}
+.exam-box{background:rgba(255,255,255,.16); border:2px solid rgba(255,255,255,.45); border-radius:18px; padding:16px}
+.exam-box .count{font-size:2.2rem; font-weight:900; line-height:1}
+.grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:16px}
+.grid3{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px}
+.grid4{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px}
+.row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+.between{display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap}
+hr{border:0; border-top:2px dashed var(--line); margin:20px 0}
+
+/* ---------- przyciski ---------- */
+.btn{
+  border:none; border-radius:14px; padding:11px 20px; font-weight:800;
+  background:var(--teal); color:#fff; box-shadow:0 4px 0 var(--teal-d);
+  transition:transform .12s, box-shadow .12s, filter .12s;
+}
+.btn:hover{filter:brightness(1.05); transform:translateY(-2px); box-shadow:0 6px 0 var(--teal-d)}
+.btn:active{transform:translateY(2px); box-shadow:0 2px 0 var(--teal-d)}
+.btn.orange{background:var(--coral); box-shadow:0 4px 0 #d85435}
+.btn.orange:hover{box-shadow:0 6px 0 #d85435}
+.btn.navy{background:var(--navy); box-shadow:0 4px 0 #0a1e30}
+.btn.yellow{background:var(--sun); color:#6b4d00; box-shadow:0 4px 0 #d8a400}
+.btn.ghost{background:#fff; color:var(--navy); border:2px solid var(--line); box-shadow:0 4px 0 var(--line)}
+.btn.small{padding:7px 13px; font-size:.88rem; border-radius:11px}
+.btn:disabled{opacity:.5; cursor:not-allowed; transform:none}
+.icon-btn{border:2px solid var(--line); background:#fff; border-radius:12px; padding:6px 12px; font-weight:700; color:var(--muted)}
+
+/* ---------- kafelki ćwiczeń ---------- */
+.tile{
+  text-align:left; border:2px solid var(--line); background:#fff; border-radius:18px;
+  padding:15px; box-shadow:0 4px 0 rgba(18,48,73,.05); transition:transform .15s, border-color .15s;
+  display:flex; flex-direction:column; gap:6px; min-height:126px;
+}
+.tile:hover{transform:translateY(-4px); border-color:var(--teal)}
+.tile .ico{font-size:1.9rem; line-height:1}
+.tile b{font-size:1.02rem}
+.tile small{color:var(--muted); font-size:.83rem; line-height:1.4}
+.tile .done{font-size:.75rem; color:var(--green); font-weight:800}
+
+/* ---------- teoria ---------- */
+.rule{display:flex; gap:12px; padding:12px 0; border-bottom:1px dashed var(--line)}
+.rule:last-child{border-bottom:0}
+.rule .ico{font-size:1.6rem; flex:0 0 40px; text-align:center}
+table{width:100%; border-collapse:collapse; font-size:.93rem; background:#fff}
+.table-wrap{overflow-x:auto; border:2px solid var(--line); border-radius:16px}
+th,td{padding:9px 11px; text-align:left; border-bottom:1px solid var(--line); white-space:nowrap}
+th{background:var(--teal-l); color:var(--teal-d); font-size:.82rem; text-transform:uppercase; letter-spacing:.04em}
+tr:last-child td{border-bottom:0}
+tr:hover td{background:#f7fcfd}
+td .en{font-weight:800; color:var(--navy)}
+details{background:#fff; border:2px solid var(--line); border-radius:14px; padding:10px 14px; margin-bottom:10px}
+summary{cursor:pointer; font-weight:800; color:var(--navy)}
+.mistake{display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:8px 0; border-bottom:1px dashed var(--line)}
+.mistake:last-child{border:0}
+
+/* ---------- ćwiczenia ---------- */
+.ex-head{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px}
+.ex-head .ico{font-size:2rem}
+.progress-line{height:12px; background:var(--line); border-radius:99px; overflow:hidden; margin:8px 0 16px}
+.progress-line > i{display:block; height:100%; width:0; background:linear-gradient(90deg,var(--teal),var(--green)); border-radius:99px; transition:width .3s}
+.qbox{background:var(--teal-l); border:2px solid #c6ece7; border-radius:18px; padding:18px; margin-bottom:14px}
+.qbox .q{font-size:clamp(1.2rem,2.6vw,1.6rem); font-weight:800; color:var(--navy)}
+.qbox .q em{font-style:normal; color:var(--coral); border-bottom:3px solid var(--coral); padding:0 4px}
+.qbox .hint{color:var(--muted); font-size:.9rem; margin-top:6px}
+.options{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px}
+.opt{
+  border:2px solid var(--line); background:#fff; border-radius:14px; padding:13px 15px;
+  font-weight:800; color:var(--navy); text-align:left; min-height:54px;
+  transition:transform .12s, border-color .12s, background .12s;
+}
+.opt:hover:not(:disabled){transform:translateY(-2px); border-color:var(--teal)}
+.opt.correct{background:var(--green-l); border-color:var(--green); color:#18764a}
+.opt.wrong{background:var(--red-l); border-color:var(--red); color:#b32424}
+.opt.selected{border-color:var(--navy)}
+.opt:disabled{cursor:default}
+.answer-input{
+  width:100%; max-width:460px; border:3px solid var(--line); border-radius:14px;
+  padding:13px 15px; font-size:1.1rem; font-weight:700; color:var(--navy); background:#fff;
+}
+.answer-input:focus{border-color:var(--teal); outline:none}
+.feedback{border-radius:14px; padding:12px 16px; margin-top:14px; font-weight:700; display:none}
+.feedback.show{display:block; animation:fade .2s}
+.feedback.ok{background:var(--green-l); border:2px solid var(--green); color:#18764a}
+.feedback.no{background:var(--red-l); border:2px solid var(--red); color:#b32424}
+.feedback.tip{background:var(--sun-l); border:2px solid #ffe49b; color:#8a6500; font-weight:600}
+.ex-actions{margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+.score-line{font-weight:800; color:var(--muted); font-size:.92rem}
+
+/* klocki wyrazów */
+.tiles{display:flex; flex-wrap:wrap; gap:9px; min-height:56px; margin:10px 0}
+.token{
+  border:2px solid var(--navy); background:#fff; color:var(--navy); border-radius:11px;
+  padding:9px 14px; font-weight:800; box-shadow:0 3px 0 var(--navy);
+}
+.token:hover{background:var(--sun-l)}
+.token.used{opacity:.35; pointer-events:none}
+.token.in-answer{background:var(--teal); color:#fff; border-color:var(--teal-d); box-shadow:0 3px 0 var(--teal-d); opacity:1; pointer-events:auto}
+.answer-slot{
+  min-height:64px; border:3px dashed var(--teal); border-radius:14px; background:#fff;
+  padding:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+}
+.answer-slot:empty::before{content:"Kliknij wyrazy poniżej, żeby zbudować zdanie…"; color:var(--muted); font-size:.9rem; font-weight:600}
+
+/* detektyw */
+.sentence{font-size:clamp(1.25rem,3vw,1.8rem); line-height:2.1; font-weight:800; color:var(--navy)}
+.word{
+  border:none; background:transparent; border-bottom:3px solid transparent; border-radius:7px;
+  padding:2px 5px; margin:0 1px; font-weight:800; color:inherit;
+}
+.word:hover{background:var(--sun-l); border-bottom-color:var(--sun)}
+.word.picked{background:var(--coral-l); border-bottom-color:var(--coral)}
+.word.fixed{background:var(--green-l); border-bottom-color:var(--green); color:#18764a}
+
+/* memory */
+.mem-grid{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; max-width:620px}
+.mem-card{
+  aspect-ratio:1/1; border:2px solid var(--line); border-radius:14px; background:linear-gradient(135deg,#14b8ab,#0d8e86);
+  color:#fff; font-weight:800; font-size:clamp(.72rem,2.2vw,1rem); padding:6px;
+  display:flex; align-items:center; justify-content:center; text-align:center; overflow:hidden;
+  transition:transform .18s, background .18s;
+}
+.mem-card span{display:none}
+.mem-card.open{background:#fff; color:var(--navy); border-color:var(--teal)}
+.mem-card.open span{display:block}
+.mem-card.matched{background:var(--green-l); color:#18764a; border-color:var(--green); opacity:.75}
+.mem-card:hover:not(.matched){transform:scale(1.03)}
+@media(max-width:430px){.mem-grid{gap:7px}.mem-card{border-radius:11px}}
+
+/* łączenie kolumn */
+.match-cols{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+.match-col{display:flex; flex-direction:column; gap:9px}
+.match-item{
+  border:2px solid var(--line); background:#fff; border-radius:12px; padding:11px 12px;
+  text-align:left; font-weight:700; color:var(--navy); min-height:48px;
+}
+.match-item:hover{border-color:var(--teal)}
+.match-item.sel{background:var(--sun-l); border-color:var(--sun)}
+.match-item.done{background:var(--green-l); border-color:var(--green); color:#18764a; opacity:.7}
+@media(max-width:560px){.match-cols{grid-template-columns:1fr}}
+
+/* sortownik */
+.buckets{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:10px}
+.bucket{
+  border:3px dashed var(--line); border-radius:16px; min-height:82px; padding:10px;
+  background:#fff; font-weight:800; color:var(--muted); text-align:center;
+}
+.bucket small{display:block; font-weight:600; font-size:.78rem; margin-top:6px; min-height:20px}
+.bucket:hover{border-color:var(--teal); background:var(--teal-l)}
+.bucket.affirmative{border-color:#9ad9c0; background:var(--green-l)}
+.bucket.question{border-color:#ffd08a; background:var(--sun-l)}
+.bucket.negative{border-color:#f4aeae; background:var(--red-l)}
+@media(max-width:480px){.buckets{grid-template-columns:1fr}}
+
+/* P / F */
+.tf-buttons{display:flex; gap:10px; flex-wrap:wrap}
+.reading-text{background:#fff; border-left:6px solid var(--teal); border-radius:12px; padding:14px 18px; font-size:1.05rem; margin-bottom:14px}
+
+/* literowanie / wisielec */
+.hang-word{font-size:clamp(1.8rem,5vw,2.7rem); letter-spacing:.16em; font-weight:900; color:var(--navy); word-break:break-word}
+.keyboard{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px}
+.key{border:2px solid var(--line); background:#fff; border-radius:9px; width:38px; height:40px; font-weight:800; color:var(--navy)}
+.key:disabled{opacity:.35}
+.key:hover:not(:disabled){background:var(--sun-l); border-color:var(--sun)}
+
+/* fiszki */
+.flash{
+  border:3px solid var(--teal); border-radius:20px; background:linear-gradient(135deg,#fff,#eafaf8);
+  min-height:190px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  text-align:center; padding:22px; cursor:pointer; user-select:none; box-shadow:var(--shadow);
+}
+.flash .front{font-size:clamp(1.4rem,4vw,2.1rem); font-weight:900; color:var(--navy)}
+.flash .back{font-size:clamp(1.1rem,3vw,1.55rem); font-weight:800; color:var(--teal-d)}
+.flash .flip-hint{font-size:.82rem; color:var(--muted); margin-top:14px}
+
+/* kartkówka */
+.exam-q{background:#fff; border:2px solid var(--line); border-radius:16px; padding:16px; margin-bottom:12px}
+.exam-q .num{font-weight:900; color:var(--teal-d); font-size:.85rem; letter-spacing:.06em}
+.exam-q .p{font-weight:800; font-size:1.12rem; color:var(--navy); margin:5px 0 10px}
+.exam-q.review.ok{border-color:var(--green); background:var(--green-l)}
+.exam-q.review.no{border-color:var(--red); background:var(--red-l)}
+.review-note{font-size:.9rem; font-weight:700; margin-top:9px}
+.timer{font-variant-numeric:tabular-nums}
+
+/* postępy */
+.bar{height:11px; background:var(--line); border-radius:99px; overflow:hidden; margin:5px 0 12px}
+.bar > i{display:block; height:100%; background:linear-gradient(90deg,var(--sun),var(--green)); border-radius:99px}
+.badge{border:2px solid var(--line); border-radius:14px; padding:12px; text-align:center; background:#fff; opacity:.45; filter:grayscale(1)}
+.badge.got{opacity:1; filter:none; border-color:var(--sun); background:var(--sun-l)}
+.badge .bico{font-size:1.9rem}
+.badge b{display:block; font-size:.87rem}
+
+/* plan */
+.plan-item{display:flex; gap:12px; align-items:flex-start; border:2px solid var(--line); border-radius:14px; padding:12px; background:#fff; margin-bottom:9px}
+.plan-item input{width:22px; height:22px; accent-color:var(--teal); flex:0 0 22px; margin-top:3px}
+.plan-item.done{background:var(--green-l); border-color:var(--green)}
+.plan-item.done .pt{text-decoration:line-through; color:var(--muted)}
+.plan-item b{display:block}
+.plan-item small{color:var(--muted)}
+
+/* toast + confetti */
+#toast{
+  position:fixed; left:50%; bottom:26px; transform:translate(-50%,140%); z-index:60;
+  background:var(--navy); color:#fff; padding:12px 22px; border-radius:99px; font-weight:800;
+  box-shadow:0 10px 30px rgba(0,0,0,.25); transition:transform .3s cubic-bezier(.2,1.4,.4,1); max-width:90vw; text-align:center;
+}
+#toast.show{transform:translate(-50%,0)}
+.confetti{position:fixed; top:-20px; z-index:55; width:10px; height:16px; opacity:.95; pointer-events:none; animation:fall 2.4s linear forwards}
+@keyframes fall{to{transform:translateY(105vh) rotate(720deg); opacity:0}}
+.wiggle{animation:wig .5s ease}
+@keyframes wig{0%,100%{transform:none}25%{transform:rotate(-6deg) scale(1.05)}75%{transform:rotate(6deg) scale(1.05)}}
+
+footer{text-align:center; color:var(--muted); font-size:.85rem; padding:0 16px 30px}
+a{color:var(--teal-d)}
+
+/* ---------- druk: ściągawka ---------- */
+.print-only{display:none}
+@media print{
+  body{background:#fff; font-size:12px}
+  body::before,.topbar,.tabs,.no-print,footer,#toast,.confetti{display:none !important}
+  main{max-width:none; padding:0}
+  .section{display:none !important}
+  #print-sheet{display:block !important}
+  .print-only{display:block}
+  .card{box-shadow:none; border:1px solid #bbb; page-break-inside:avoid; margin-bottom:10px; padding:10px}
+  th,td{padding:4px 6px; font-size:11px}
+  @page{margin:12mm}
+}
+#print-sheet{display:none}
+
+</style>
+</head>
+<body>
+
+<!-- maskotka: Robbie z podręcznika -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="robbie" viewBox="0 0 100 100">
+    <line x1="50" y1="5" x2="50" y2="21" stroke="#123049" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="50" cy="6" r="6" fill="#ff7a59"/>
+    <rect x="9" y="20" width="82" height="66" rx="21" fill="#eaf6f8" stroke="#123049" stroke-width="5"/>
+    <rect x="4" y="41" width="9" height="20" rx="4" fill="#12b3a6"/>
+    <rect x="87" y="41" width="9" height="20" rx="4" fill="#12b3a6"/>
+    <circle cx="34" cy="48" r="9" fill="#123049"/><circle cx="66" cy="48" r="9" fill="#123049"/>
+    <circle cx="37" cy="45" r="3" fill="#fff"/><circle cx="69" cy="45" r="3" fill="#fff"/>
+    <path d="M36 67 Q50 79 64 67" fill="none" stroke="#123049" stroke-width="5" stroke-linecap="round"/>
+    <rect x="32" y="86" width="36" height="10" rx="5" fill="#12b3a6"/>
+  </symbol>
+</svg>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="robbie" aria-hidden="true"><use href="#robbie"/></svg>
+    <div class="brand-txt"><b>TO BE · Trening Robbiego</b><small>Angielski · klasa 4 · Before the test</small></div>
+  </div>
+  <div class="topstats">
+    <span class="chip" id="chip-days">📅 do kartkówki: …</span>
+    <span class="chip teal" id="chip-xp">⭐ 0 pkt</span>
+    <span class="chip coral" id="chip-streak">🔥 0 z rzędu</span>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="Nawigacja">
+  <button class="tab active" data-go="start">🏠 Start</button>
+  <button class="tab" data-go="learn">📘 Nauka</button>
+  <button class="tab" data-go="practice">🎮 Ćwiczenia</button>
+  <button class="tab" data-go="flashcards">🗂️ Fiszki</button>
+  <button class="tab" data-go="exam">📝 Kartkówka próbna</button>
+  <button class="tab" data-go="progress">📊 Postępy</button>
+</nav>
+
+<main>
+
+<!-- ================= START ================= -->
+<section class="section active" id="start">
+  <div class="card hero">
+    <div class="grid2">
+      <div>
+        <span class="pill sun">JĘZYK ANGIELSKI · KARTKÓWKA</span>
+        <h1 style="margin-top:12px">Czasownik <i>to be</i> —<br>ogarniamy go razem! 🤖</h1>
+        <p style="font-size:1.08rem">Cześć! Jestem Robbie, robot z Twojego podręcznika. Pomogę Ci powtórzyć <b>odmianę, twierdzenia, pytania i przeczenia</b> — dokładnie to, co zapowiedziała nauczycielka.</p>
+        <div class="row" style="margin-top:14px">
+          <button class="btn yellow" data-go="practice">Zacznij ćwiczyć →</button>
+          <button class="btn ghost" data-go="learn">Najpierw przypomnij sobie zasady</button>
+        </div>
+      </div>
+      <div class="exam-box">
+        <div class="row"><svg class="robbie small" aria-hidden="true"><use href="#robbie"/></svg><b>Twoja kartkówka</b></div>
+        <hr style="border-color:rgba(255,255,255,.35)">
+        <div class="count" id="countdown">—</div>
+        <div id="countdown-label">dni do 10 listopada 2026</div>
+        <p style="margin-top:12px;font-size:.95rem" id="scope-text"></p>
+        <p class="muted" style="color:rgba(255,255,255,.85);font-size:.8rem" id="book-text"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🎯 Co dokładnie trzeba umieć?</h2>
+    <p class="muted">Cztery rzeczy z opisu kartkówki — każdą ćwiczymy na kilka różnych sposobów.</p>
+    <div class="grid4" id="skills-grid"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>🗓️ Plan na 5 dni</h2>
+      <p class="muted">Po 10–15 minut dziennie. Zaznaczaj wykonane dni — zapisujemy je na tym urządzeniu.</p>
+      <div id="plan-list"></div>
+    </div>
+    <div class="card">
+      <h2>🏅 Odznaki do zdobycia</h2>
+      <p class="muted">Zdobywaj punkty za poprawne odpowiedzi i odblokowuj odznaki.</p>
+      <div class="grid3" id="badges-mini"></div>
+      <hr>
+      <h3>Jak tu się uczyć?</h3>
+      <p><b>1.</b> Zajrzyj do <a href="#" data-go="learn">Nauki</a> (tabela + zasady).<br>
+         <b>2.</b> Zrób kilka różnych <a href="#" data-go="practice">ćwiczeń</a> — nie tylko jedno!<br>
+         <b>3.</b> Powtarzaj <a href="#" data-go="flashcards">fiszki</a> oznaczone „Jeszcze ćwiczę”.<br>
+         <b>4.</b> Na koniec rozwiąż <a href="#" data-go="exam">próbną kartkówkę</a> i popraw błędy.</p>
+      <button class="btn small ghost" id="btn-print-start">🖨️ Wydrukuj ściągę</button>
+    </div>
+  </div>
+
+  <div class="card flat" style="background:var(--sun-l);border-color:#ffe49b">
+    <b>💡 Dla rodzica:</b> strona działa bez internetu (zapisz cały folder lub jeden plik <code>to-be-kartkowka.html</code>). Postępy, wyniki i plan zapisują się tylko w przeglądarce tego urządzenia — nic nie jest wysyłane na zewnątrz. W zakładce <b>Postępy</b> znajdziesz krótki raport, nad czym jeszcze warto popracować.
+  </div>
+</section>
+
+<!-- ================= NAUKA ================= -->
+<section class="section" id="learn">
+  <div class="card">
+    <div class="between">
+      <div><h2>📘 Zasady w 7 zdaniach</h2><p class="muted">Kliknij dowolną regułę, żeby usłyszeć przykład po angielsku 🔊</p></div>
+      <button class="btn small ghost" id="btn-print-learn">🖨️ Ściąga do druku</button>
+    </div>
+    <div id="rules-list"></div>
+  </div>
+
+  <div class="card">
+    <h2>🧮 Tabela odmiany <i>to be</i></h2>
+    <p class="muted">Kliknij wiersz, a Robbie przeczyta formy po angielsku. <b>am / is / are</b> to cała odmiana!</p>
+    <div class="table-wrap"><table id="be-table"></table></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn small" id="btn-sing-table">🔊 Odczytaj całą tabelę</button>
+      <span class="muted">Pamiętaj: <b>you</b> to „ty” i „wy” — zawsze z <b>are</b>.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>❓ Pytania z podręcznika</h2>
+    <p class="muted">Rozwiń i sprawdź, jak odpowiedzieć. To słownictwo z lekcji 5 i „Przygotowania do sprawdzianu”.</p>
+    <div id="book-questions"></div>
+  </div>
+
+  <div class="card">
+    <h2>🕵️ Najczęstsze pułapki</h2>
+    <p class="muted">Nauczyciele lubią takie zdania na kartkówkach. Przeczytaj je przed sprawdzianem!</p>
+    <div id="mistakes-list"></div>
+  </div>
+
+  <div class="card">
+    <h2>📚 Słownictwo, które pojawia się w zdaniach</h2>
+    <p class="muted">Z podręcznika Together 2026, kl. 4 (rozdziały 1–2). Kartkówka jest z <i>to be</i>, ale znajome słowa ułatwią czytanie poleceń.</p>
+    <div id="words-list"></div>
+  </div>
+</section>
+
+<!-- ================= ĆWICZENIA ================= -->
+<section class="section" id="practice">
+  <div id="practice-hub">
+    <div class="card">
+      <h2>🎮 15 różnych ćwiczeń</h2>
+      <p class="muted">Każde ćwiczenie trenuje inny „mięsień”: wybieranie, wpisywanie, pamięć, słuch, układanie zdań, poprawianie błędów i szybkość. Losujemy pytania, więc możesz wracać wiele razy.</p>
+      <div class="row"><span class="pill teal" id="hub-progress">Ukończone: 0 z 15</span><button class="btn small ghost" id="btn-random">🎲 Losowe ćwiczenie</button></div>
+    </div>
+    <div class="grid3" id="activity-grid"></div>
+  </div>
+
+  <div id="practice-run" style="display:none">
+    <div class="card">
+      <div class="between">
+        <div class="ex-head" style="margin:0">
+          <span class="ico" id="run-icon">🎯</span>
+          <div><h2 id="run-title" style="margin:0">Ćwiczenie</h2><span class="muted" id="run-desc"></span></div>
+        </div>
+        <button class="btn small ghost" id="btn-back-hub">← Wszystkie ćwiczenia</button>
+      </div>
+      <div class="progress-line"><i id="run-progress"></i></div>
+      <div class="between"><span class="score-line" id="run-score">Wynik: 0 / 0</span><span class="score-line" id="run-streak">🔥 0 z rzędu</span></div>
+      <hr>
+      <div id="run-host"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FISZKI ================= -->
+<section class="section" id="flashcards">
+  <div class="card">
+    <div class="between">
+      <div><h2>🗂️ Fiszki z powtórkami</h2><p class="muted">Kliknij kartę, żeby zobaczyć odpowiedź. „Umiem” odkłada kartę na później, „Jeszcze ćwiczę” pokaże ją częściej — to prosta powtórka rozłożona w czasie.</p></div>
+      <button class="btn small ghost" id="btn-shuffle-cards">🔀 Przetasuj</button>
+    </div>
+    <div class="grid2" style="align-items:start">
+      <div>
+        <div class="flash" id="flash-card" tabindex="0" role="button" aria-label="Karta do nauki — kliknij, aby odwrócić"></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn orange" id="btn-card-again">🔁 Jeszcze ćwiczę</button>
+          <button class="btn" id="btn-card-know">✅ Umiem</button>
+        </div>
+      </div>
+      <div>
+        <div class="qbox" style="background:var(--sun-l);border-color:#ffe49b">
+          <b id="cards-stats">Fiszki</b>
+          <div class="muted" id="cards-queue"></div>
+        </div>
+        <h3>Jak to działa?</h3>
+        <p class="muted">Karty oznaczone „Jeszcze ćwiczę” wracają natychmiast. Karty „Umiem” trafiają na koniec kolejki i wrócą po kilku innych kartach. Dzięki temu powtarzasz dokładnie to, co sprawia trudność.</p>
+        <button class="btn small ghost" id="btn-reset-cards">↺ Zacznij fiszki od nowa</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= KARTKÓWKA ================= -->
+<section class="section" id="exam">
+  <div id="exam-intro">
+    <div class="card hero">
+      <div class="grid2" style="align-items:center">
+        <div>
+          <span class="pill sun">SYMULACJA KARTKÓWKI</span>
+          <h1 style="margin-top:10px">Sprawdź się na sucho 📝</h1>
+          <p>15 losowych zadań z całego zakresu: odmiana, twierdzenia, przeczenia, pytania, krótkie odpowiedzi i poprawianie błędów. Dokładnie w stylu zadań z podręcznika.</p>
+        </div>
+        <div class="exam-box center">
+          <div style="font-size:2.6rem;font-weight:900" id="exam-best">—</div>
+          <div>najlepszy wynik</div>
+          <hr style="border-color:rgba(255,255,255,.35)">
+          <div class="muted" style="color:rgba(255,255,255,.9)">Nauczycielka nie widzi tego wyniku 😉<br>Po teście dostaniesz listę błędów do poprawy.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Wybierz tryb</h2>
+      <div class="grid2">
+        <div class="card flat" style="border-color:var(--teal)">
+          <h3>🧠 Tryb nauki</h3>
+          <p class="muted">Widzisz podpowiedź od razu po każdej odpowiedzi. Idealny na pierwszy raz.</p>
+          <button class="btn" id="btn-exam-learn">Rozpocznij tryb nauki</button>
+        </div>
+        <div class="card flat" style="border-color:var(--coral)">
+          <h3>📝 Tryb kartkówki</h3>
+          <p class="muted">Bez podpowiedzi, z licznikiem czasu. Wyniki i omówienie dopiero po oddaniu pracy.</p>
+          <button class="btn orange" id="btn-exam-real">Rozpocznij kartkówkę</button>
+        </div>
+      </div>
+      <hr>
+      <p class="muted">💡 Wskazówka: powtórz <a href="#" data-go="learn">tabelę</a> i zrób <a href="#" data-go="practice">Szybką rundę</a> przed wejściem tutaj.</p>
+    </div>
+  </div>
+
+  <div id="exam-run" style="display:none">
+    <div class="card">
+      <div class="between">
+        <h2 id="exam-title" style="margin:0">📝 Kartkówka próbna</h2>
+        <span class="chip teal timer" id="exam-timer">⏱ 00:00</span>
+      </div>
+      <div class="progress-line"><i id="exam-progress"></i></div>
+      <div id="exam-host"></div>
+      <div class="ex-actions">
+        <button class="btn" id="btn-exam-next">Dalej →</button>
+        <button class="btn ghost small" id="btn-exam-skip">Pomiń zadanie</button>
+        <button class="btn ghost small" id="btn-exam-abort">Zakończ bez sprawdzania</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="exam-result" style="display:none"></div>
+</section>
+
+<!-- ================= POSTĘPY ================= -->
+<section class="section" id="progress">
+  <div class="card">
+    <h2>📊 Twój postęp</h2>
+    <div class="grid4" id="stats-grid"></div>
+  </div>
+  <div class="card">
+    <div class="between"><h2>🎮 Ćwiczenia — gdzie idzie najlepiej?</h2><button class="btn small ghost" id="btn-refresh-progress">↻ Odśwież</button></div>
+    <div id="activity-bars"></div>
+  </div>
+  <div class="card">
+    <h2>🏅 Odznaki</h2><div class="grid4" id="badges-full"></div>
+  </div>
+  <div class="card">
+    <h2>👪 Raport dla rodzica / nauczyciela</h2>
+    <div id="parent-report"></div>
+    <hr>
+    <div class="row">
+      <button class="btn small ghost" id="btn-print-report">🖨️ Wydrukuj raport</button>
+      <button class="btn small ghost" id="btn-reset-all" style="color:#b32424">↺ Wyczyść wszystkie postępy</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Materiał przygotowany na podstawie zdjęć podręcznika i zeszytu ćwiczeń <b>Together 2026 · klasa 4</b> oraz zrzutu zapowiedzi kartkówki (10.11.2026).<br>
+  Strona działa całkowicie offline · bez logowania · bez reklam · postępy tylko w tym urządzeniu.
+</footer>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<!-- ====== Ściągawka do druku (wypełniana przez JS) ====== -->
+<div id="print-sheet">
+  <h1>TO BE — ściąga przed kartkówką</h1>
+  <p><b>Zakres:</b> odmiana przez osoby, twierdzenia, pytania i przeczenia · <b>Termin:</b> 10 listopada 2026</p>
+  <div id="print-rules"></div>
+  <div class="table-wrap"><table id="print-table"></table></div>
+  <div id="print-mistakes"></div>
+  <div id="print-report"></div>
+</div>
+
+<script>
+/* =========================================================================
+   TO BE — baza treści
+   Materiał opracowany na podstawie:
+   • zrzutu e-dziennika (kartkówka 10.11.2026, język angielski),
+   • zdjęć podręcznika i zeszytu ćwiczeń "Together 2026, klasa 4"
+     (Unit 1: s. 10–11, 13–16; Unit 2: s. 18–21; Powtórka / Catch-up,
+      Przygotowanie do sprawdzianu),
+   • plików PDF SB / WB / ZP z Dysku Google.
+   Wszystkie zdania używają słownictwa i postaci z książki.
+   ========================================================================= */
+(function (root) {
+  "use strict";
+
+  const BE = [
+    { en: "I",    pl: "ja",       form: "am",  short: "I'm",    negLong: "I am not",    negShort: "I'm not",    question: "Am I",       yes: "Yes, you are.",    no: "No, you aren't." },
+    { en: "You",  pl: "ty",       form: "are", short: "You're", negLong: "You are not", negShort: "You aren't", question: "Are you",    yes: "Yes, I am.",       no: "No, I'm not." },
+    { en: "He",   pl: "on",       form: "is",  short: "He's",   negLong: "He is not",   negShort: "He isn't",   question: "Is he",      yes: "Yes, he is.",      no: "No, he isn't." },
+    { en: "She",  pl: "ona",      form: "is",  short: "She's",  negLong: "She is not",  negShort: "She isn't",  question: "Is she",     yes: "Yes, she is.",     no: "No, she isn't." },
+    { en: "It",   pl: "ono/to",   form: "is",  short: "It's",   negLong: "It is not",   negShort: "It isn't",   question: "Is it",      yes: "Yes, it is.",      no: "No, it isn't." },
+    { en: "We",   pl: "my",       form: "are", short: "We're",  negLong: "We are not",  negShort: "We aren't",  question: "Are we",     yes: "Yes, you are.",    no: "No, you aren't." },
+    { en: "You",  pl: "wy",       form: "are", short: "You're", negLong: "You are not", negShort: "You aren't", question: "Are you",    yes: "Yes, we are.",     no: "No, we aren't." },
+    { en: "They", pl: "oni/one",  form: "are", short: "They're",negLong: "They are not",negShort: "They aren't",question: "Are they",   yes: "Yes, they are.",   no: "No, they aren't." }
+  ];
+
+  const RULES = [
+    { icon: "🧩", title: "Trzy formy", text: "<b>I → am</b>, <b>he / she / it → is</b>, <b>you / we / they → are</b>. Zaimki osobowe zastępują osobę lub rzecz: <i>Mark is a student. → He is a student.</i>" },
+    { icon: "➕", title: "Twierdzenie", text: "Najpierw <b>osoba</b>, potem <b>be</b>: <i>I am from Poland. She is eleven. They are cool.</i> Krótka forma: <i>I'm, he's, we're, they're</i>." },
+    { icon: "➖", title: "Przeczenie", text: "Dodaj <b>not</b> po czasowniku <b>be</b>: <i>is not → isn't</i>, <i>are not → aren't</i>, <i>I am not → I'm not</i>. Uwaga: <b>amn't</b> nie istnieje!" },
+    { icon: "❓", title: "Pytanie", text: "Czasownik <b>be</b> wędruje <b>na początek</b>: <i>She is Polish. → Is she Polish?</i> Nie dodajemy <i>do / does</i>." },
+    { icon: "💬", title: "Krótkie odpowiedzi", text: "<i>Are you ten? — Yes, I am. / No, I'm not.</i> W twierdzącej krótkiej odpowiedzi <b>nie skracamy</b>: <span class='bad'>Yes, I'm. ✗</span> <span class='good'>Yes, I am. ✓</span>" },
+    { icon: "🔎", title: "Pytania o osobę", text: "<i>What's your name? Where are you from? How old are you? What's your nationality? How do you spell it? Who is he? What colour is it?</i>" },
+    { icon: "⚠️", title: "Pułapka z języka polskiego", text: "Wiek po angielsku to <b>be</b>, nie <i>have</i>: <span class='bad'>I have 11 years. ✗</span> <span class='good'>I'm eleven. / I'm 11 years old. ✓</span>" }
+  ];
+
+  const MISTAKES = [
+    { bad: "He are my friend.", good: "He is my friend.", why: "he → is" },
+    { bad: "I is eleven.", good: "I am eleven.", why: "I → am" },
+    { bad: "They is students.", good: "They are students.", why: "they → are" },
+    { bad: "I amn't ten.", good: "I'm not ten.", why: "Nie mówimy amn't. I am not = I'm not." },
+    { bad: "Yes, I'm.", good: "Yes, I am.", why: "W krótkiej odpowiedzi twierdzącej nie skracamy." },
+    { bad: "Is she Polish? — Yes, she's.", good: "Is she Polish? — Yes, she is.", why: "Po Yes piszemy pełną formę." },
+    { bad: "She aren't at school.", good: "She isn't at school.", why: "she → isn't" },
+    { bad: "Are he a teacher?", good: "Is he a teacher?", why: "he → Is" },
+    { bad: "Where you are from?", good: "Where are you from?", why: "W pytaniu be stoi przed osobą." },
+    { bad: "I have eleven years.", good: "I'm eleven.", why: "Po angielsku wiek wyraża czasownik be." },
+    { bad: "Are they at the park? — Yes, they aren't.", good: "Are they at the park? — Yes, they are.", why: "Yes łączy się z twierdzeniem, No z przeczeniem." },
+    { bad: "You is not Polish.", good: "You aren't Polish.", why: "you → are not → aren't" }
+  ];
+
+  const BOOK_QUESTIONS = [
+    { q: "What's your name?", pl: "Jak się nazywasz?", a: "My name's Lena. / I'm Lena." },
+    { q: "Where are you from?", pl: "Skąd jesteś?", a: "I'm from Poland." },
+    { q: "How old are you?", pl: "Ile masz lat?", a: "I'm ten. / I'm eleven." },
+    { q: "What's your nationality?", pl: "Jakiej jesteś narodowości?", a: "I'm Polish." },
+    { q: "How do you spell Martin?", pl: "Jak przeliterujesz Martin?", a: "M-A-R-T-I-N." },
+    { q: "Who is he?", pl: "Kim on jest?", a: "He's my dad." },
+    { q: "What colour is it?", pl: "Jakiego to jest koloru?", a: "It's blue." },
+    { q: "Is Robbie a robot?", pl: "Czy Robbie jest robotem?", a: "Yes, he is." }
+  ];
+
+  const WORDS = {
+    countries: [
+      ["Poland", "Polska", "Polish"], ["Brazil", "Brazylia", "Brazilian"],
+      ["the UK", "Wielka Brytania", "British"], ["the USA", "USA", "American"],
+      ["France", "Francja", "French"], ["Spain", "Hiszpania", "Spanish"],
+      ["Turkey", "Turcja", "Turkish"], ["China", "Chiny", "Chinese"],
+      ["Australia", "Australia", "Australian"], ["Argentina", "Argentyna", "Argentinian"]
+    ],
+    adjectives: [
+      ["amazing", "niesamowity"], ["cool", "fajny"], ["big", "duży"], ["small", "mały"],
+      ["old", "stary"], ["new", "nowy"], ["interesting", "ciekawy"], ["funny", "zabawny"],
+      ["clever", "bystry"], ["kind", "miły"], ["helpful", "pomocny"], ["shy", "nieśmiały"],
+      ["friendly", "przyjazny"], ["quiet", "cichy"], ["sporty", "sportowy"], ["smart", "elegancki/bystry"],
+      ["great", "świetny"], ["fantastic", "fantastyczny"], ["ready", "gotowy"], ["happy", "szczęśliwy"]
+    ],
+    places: [
+      ["at school", "w szkole"], ["at home", "w domu"], ["in the park", "w parku"],
+      ["in the garden", "w ogrodzie"], ["at a party", "na imprezie"], ["on holiday", "na wakacjach"],
+      ["at a summer camp", "na obozie"], ["at a café", "w kawiarni"], ["at the film studio", "w studiu filmowym"]
+    ]
+  };
+
+  /* ---------- 1. Wybierz formę (MCQ) ---------- */
+  const choice = [
+    { s: "I ___ eleven.", o: ["am", "is", "are"], a: "am", w: "I → am" },
+    { s: "Mickey ___ from the UK.", o: ["am", "is", "are"], a: "is", w: "Mickey = he → is" },
+    { s: "Ana and Mickey ___ friends.", o: ["am", "is", "are"], a: "are", w: "Ana and Mickey = they → are" },
+    { s: "Robbie ___ a robot.", o: ["am", "is", "are"], a: "is", w: "Robbie = he → is" },
+    { s: "We ___ students.", o: ["am", "is", "are"], a: "are", w: "we → are" },
+    { s: "The notebooks ___ new!", o: ["am", "is", "are"], a: "are", w: "notebooks = they → are" },
+    { s: "Lily ___ our cat.", o: ["am", "is", "are"], a: "is", w: "Lily = she/it → is" },
+    { s: "You ___ amazing, Robbie!", o: ["am", "is", "are"], a: "are", w: "you → are" },
+    { s: "Mr and Mrs Brown ___ cool.", o: ["am", "is", "are"], a: "are", w: "dwoje ludzi = they → are" },
+    { s: "It ___ an orange book.", o: ["am", "is", "are"], a: "is", w: "it → is" },
+    { s: "My name ___ Saskia.", o: ["am", "is", "are"], a: "is", w: "my name = it → is" },
+    { s: "They ___ from Australia.", o: ["am", "is", "are"], a: "are", w: "they → are" },
+    { s: "___ you from Brazil?", o: ["Am", "Is", "Are"], a: "Are", w: "you → Are you ...?" },
+    { s: "___ she a new student?", o: ["Am", "Is", "Are"], a: "Is", w: "she → Is she ...?" },
+    { s: "___ Robbie a child?", o: ["Am", "Is", "Are"], a: "Is", w: "Robbie = he → Is" },
+    { s: "___ they at school today?", o: ["Am", "Is", "Are"], a: "Are", w: "they → Are" },
+    { s: "The children ___ at school.", o: ["isn't", "aren't", "am not"], a: "aren't", w: "they → are not → aren't" },
+    { s: "Mickey ___ from the USA.", o: ["isn't", "aren't", "am not"], a: "isn't", w: "he → is not → isn't" },
+    { s: "I ___ at home today.", o: ["isn't", "aren't", "am not"], a: "am not", w: "I am not → I'm not / am not" },
+    { s: "My hoodie ___ new.", o: ["isn't", "aren't", "am not"], a: "isn't", w: "it → isn't" },
+    { s: "Lily and Robbie ___ robots.", o: ["isn't", "aren't", "am not"], a: "aren't", w: "they → aren't" },
+    { s: "Where ___ you from?", o: ["am", "is", "are"], a: "are", w: "Where are you from?" },
+    { s: "How old ___ Emile?", o: ["am", "is", "are"], a: "is", w: "Emile = he → is" },
+    { s: "What colour ___ your jeans?", o: ["am", "is", "are"], a: "are", w: "jeans (liczba mnoga) → are" },
+    { s: "She ___ Brazilian, she's from Spain.", o: ["is", "isn't", "are"], a: "isn't", w: "Zdanie zaprzecza: she isn't." },
+    { s: "___ I right?", o: ["Am", "Is", "Are"], a: "Am", w: "I → Am I ...?" }
+  ];
+
+  /* ---------- 2. Wpisz formę (luk do wpisania) ---------- */
+  const gap = [
+    { s: "I ___ from Poland.", a: ["am", "'m"], h: "ja → ...", w: "I am from Poland." },
+    { s: "He ___ my dad, Alex.", a: ["is", "'s"], h: "on → ...", w: "He is my dad." },
+    { s: "We ___ from Manchester.", a: ["are", "'re"], h: "my → ...", w: "We are from Manchester." },
+    { s: "They ___ cool.", a: ["are", "'re"], h: "oni → ...", w: "They are cool." },
+    { s: "It ___ our homework!", a: ["is", "'s"], h: "to → ...", w: "It is our homework!" },
+    { s: "Ana ___ ten.", a: ["is", "'s"], h: "ona → ...", w: "Ana is ten." },
+    { s: "You ___ a robot, Robbie.", a: ["are", "'re"], h: "ty → ...", w: "You are a robot." },
+    { s: "___ you a student?", a: ["are"], h: "Pytanie: be na początku.", w: "Are you a student?" },
+    { s: "___ he from Canada?", a: ["is"], h: "he → ...", w: "Is he from Canada?" },
+    { s: "___ Ana and Mickey at school today?", a: ["are"], h: "dwie osoby → ...", w: "Are Ana and Mickey at school today?" },
+    { s: "Mickey ___ from the USA. He's from the UK.", a: ["isn't", "is not", "'s not"], h: "Przeczenie: is + not.", w: "Mickey isn't from the USA." },
+    { s: "The children ___ at school today.", a: ["aren't", "are not", "'re not"], h: "Przeczenie: are + not.", w: "The children aren't at school today." },
+    { s: "I ___ an actor.", a: ["'m not", "am not"], h: "Uwaga: nie mówimy amn't!", w: "I'm not an actor." },
+    { s: "We ___ Chinese. We're from Poland.", a: ["aren't", "are not", "'re not"], h: "we → are not", w: "We aren't Chinese." },
+    { s: "It ___ the right bag.", a: ["isn't", "is not", "'s not"], h: "it → is not", w: "It isn't the right bag." },
+    { s: "Lily ___ at home.", a: ["isn't", "is not", "'s not"], h: "Lily = she → is not", w: "Lily isn't at home." },
+    { s: "My shoes ___ new.", a: ["aren't", "are not", "'re not"], h: "shoes = they → are not", w: "My shoes aren't new." },
+    { s: "___ they from China?", a: ["are"], h: "they → Are", w: "Are they from China?" },
+    { s: "___ I in your class?", a: ["am"], h: "I → Am", w: "Am I in your class?" },
+    { s: "What ___ your name?", a: ["is", "'s"], h: "What is = What's", w: "What is your name? / What's your name?" }
+  ];
+
+  /* ---------- 3/4. Pary (memory + łączenie) ---------- */
+  const pairSets = [
+    {
+      name: "Zaimki ↔ formy be",
+      pairs: [
+        ["I", "am"], ["You", "are"], ["He", "is"], ["She", "is"],
+        ["It", "is"], ["We", "are"], ["They", "are"], ["You (wy)", "are"]
+      ]
+    },
+    {
+      name: "Długa ↔ krótka forma",
+      pairs: [
+        ["I am", "I'm"], ["You are", "You're"], ["He is", "He's"], ["She is", "She's"],
+        ["It is", "It's"], ["We are", "We're"], ["They are", "They're"], ["I am not", "I'm not"]
+      ]
+    },
+    {
+      name: "Przeczenia",
+      pairs: [
+        ["is not", "isn't"], ["are not", "aren't"], ["I am not", "I'm not"], ["He is not", "He isn't"],
+        ["She is not", "She isn't"], ["We are not", "We aren't"], ["They are not", "They aren't"], ["It is not", "It isn't"]
+      ]
+    }
+  ];
+
+  const matchSets = [
+    {
+      name: "Pytanie ↔ krótka odpowiedź",
+      pairs: [
+        ["Are you from Poland?", "Yes, I am."],
+        ["Is she a student?", "No, she isn't."],
+        ["Are they at the party?", "Yes, they are."],
+        ["Is he your brother?", "Yes, he is."],
+        ["Are we late?", "No, we aren't."],
+        ["Is it a school bag?", "No, it isn't."]
+      ]
+    },
+    {
+      name: "Pytanie ↔ odpowiedź z podręcznika",
+      pairs: [
+        ["How old are you?", "I'm ten."],
+        ["What's your name?", "My name's Lena."],
+        ["Where are you from?", "I'm from Poland."],
+        ["What's your nationality?", "I'm Brazilian."],
+        ["How do you spell Nathan?", "N-A-T-H-A-N."],
+        ["Who is he?", "He's my dad."]
+      ]
+    },
+    {
+      name: "Twierdzenie ↔ przeczenie",
+      pairs: [
+        ["She is ready.", "She isn't ready."],
+        ["They are at school.", "They aren't at school."],
+        ["I am at home.", "I'm not at home."],
+        ["He is a teacher.", "He isn't a teacher."],
+        ["We are from Brazil.", "We aren't from Brazil."],
+        ["It is a new bag.", "It isn't a new bag."]
+      ]
+    }
+  ];
+
+  /* ---------- 5. Rozsypanka (układanie wyrazów) ---------- */
+  const order = [
+    { words: ["is", "Polish.", "He"], answer: "He is Polish.", w: "Najpierw osoba, potem be." },
+    { words: ["from", "are", "Brazil.", "We"], answer: "We are from Brazil.", w: "We are from Brazil." },
+    { words: ["a", "robot.", "Robbie", "is"], answer: "Robbie is a robot.", w: "Robbie is a robot." },
+    { words: ["students.", "They", "are"], answer: "They are students.", w: "They are students." },
+    { words: ["at", "school.", "isn't", "She"], answer: "She isn't at school.", w: "Przeczenie: isn't po osobie." },
+    { words: ["not", "at", "home.", "I'm"], answer: "I'm not at home.", w: "I'm not at home." },
+    { words: ["new.", "My", "shoes", "aren't"], answer: "My shoes aren't new.", w: "My shoes aren't new." },
+    { words: ["from", "you", "Are", "the UK?"], answer: "Are you from the UK?", w: "W pytaniu be jest pierwsze." },
+    { words: ["she", "Is", "a", "student?"], answer: "Is she a student?", w: "Is she a student?" },
+    { words: ["they", "Are", "at", "the park?"], answer: "Are they at the park?", w: "Are they at the park?" },
+    { words: ["you", "are", "Where", "from?"], answer: "Where are you from?", w: "Where + be + osoba." },
+    { words: ["old", "How", "are", "you?"], answer: "How old are you?", w: "How old are you?" },
+    { words: ["your", "What's", "nationality?"], answer: "What's your nationality?", w: "What's your nationality?" },
+    { words: ["Yes,", "I", "am."], answer: "Yes, I am.", w: "W krótkiej odpowiedzi NIE skracamy: Yes, I am." },
+    { words: ["he", "No,", "isn't."], answer: "No, he isn't.", w: "No, he isn't." },
+    { words: ["It's", "an", "amazing", "film."], answer: "It's an amazing film.", w: "It's an amazing film." },
+    { words: ["book", ".", "a", "is", "It", "an"], answer: "It is a book.", extra: "an", w: "Jeden wyraz jest niepotrzebny! It is a book." },
+    { words: ["are", "They", "students", ".", "a"], answer: "They are students.", extra: "a", w: "Przed liczbą mnogą nie dajemy a/an." }
+  ];
+
+  /* ---------- 6. Przekształcenia ---------- */
+  const transform = [
+    { from: "She is from Brazil.", task: "przeczenie", a: ["she isn't from brazil", "she is not from brazil", "she's not from brazil"], show: "She isn't from Brazil.", w: "is not → isn't" },
+    { from: "They are at school.", task: "przeczenie", a: ["they aren't at school", "they are not at school", "they're not at school"], show: "They aren't at school.", w: "are not → aren't" },
+    { from: "I am ten.", task: "przeczenie", a: ["i'm not ten", "i am not ten"], show: "I'm not ten.", w: "I am not → I'm not (nie: amn't!)" },
+    { from: "He is a teacher.", task: "pytanie", a: ["is he a teacher?", "is he a teacher"], show: "Is he a teacher?", w: "be na początek + znak zapytania." },
+    { from: "You are Polish.", task: "pytanie", a: ["are you polish?", "are you polish"], show: "Are you Polish?", w: "Are you Polish?" },
+    { from: "Robbie is a robot.", task: "pytanie", a: ["is robbie a robot?", "is robbie a robot"], show: "Is Robbie a robot?", w: "Is Robbie a robot?" },
+    { from: "We are from the UK.", task: "pytanie", a: ["are we from the uk?", "are we from the uk"], show: "Are we from the UK?", w: "Are we from the UK?" },
+    { from: "It is a blue backpack.", task: "pytanie", a: ["is it a blue backpack?", "is it a blue backpack"], show: "Is it a blue backpack?", w: "Is it a blue backpack?" },
+    { from: "Mickey is eleven.", task: "przeczenie", a: ["mickey isn't eleven", "mickey is not eleven", "mickey's not eleven"], show: "Mickey isn't eleven.", w: "Mickey = he → isn't" },
+    { from: "Lily and Ana are friends.", task: "przeczenie", a: ["lily and ana aren't friends", "lily and ana are not friends", "lily and ana're not friends"], show: "Lily and Ana aren't friends.", w: "they → aren't" },
+    { from: "Ms Collins is French.", task: "pytanie", a: ["is ms collins french?", "is ms collins french"], show: "Is Ms Collins French?", w: "Is Ms Collins French?" },
+    { from: "The notebooks are orange.", task: "przeczenie", a: ["the notebooks aren't orange", "the notebooks are not orange", "the notebooks're not orange"], show: "The notebooks aren't orange.", w: "they → aren't" },
+    { from: "I'm ready.", task: "pytanie", a: ["am i ready?", "am i ready"], show: "Am I ready?", w: "I → Am I ...?" },
+    { from: "It's an old book.", task: "przeczenie", a: ["it isn't an old book", "it is not an old book", "it's not an old book"], show: "It isn't an old book.", w: "It's not / It isn't." },
+    { from: "They're amazing.", task: "pytanie", a: ["are they amazing?", "are they amazing"], show: "Are they amazing?", w: "Are they amazing?" },
+    { from: "He's at a summer camp.", task: "przeczenie", a: ["he isn't at a summer camp", "he is not at a summer camp", "he's not at a summer camp"], show: "He isn't at a summer camp.", w: "he → isn't" }
+  ];
+
+  /* ---------- 7. Krótkie odpowiedzi ---------- */
+  const shorts = [
+    { q: "Are you a student?", cue: "Tak", o: ["Yes, I am.", "Yes, I'm.", "Yes, I is.", "Yes, you are."], a: "Yes, I am.", w: "Po Yes nie skracamy: Yes, I am. (nie: Yes, I'm.)" },
+    { q: "Are you from the USA, Mickey?", cue: "Nie", o: ["No, I'm not.", "No, I amn't.", "No, I isn't.", "No, you aren't."], a: "No, I'm not.", w: "Are you ...? → No, I'm not." },
+    { q: "Is she a new student?", cue: "Nie", o: ["No, she isn't.", "No, she aren't.", "No, he isn't.", "No, she is."], a: "No, she isn't.", w: "she → isn't" },
+    { q: "Is Robbie a child?", cue: "Nie", o: ["No, he isn't.", "No, she isn't.", "No, it isn't.", "No, he aren't."], a: "No, he isn't.", w: "Robbie = he. Jest robotem!" },
+    { q: "Are they at the party?", cue: "Tak", o: ["Yes, they are.", "Yes, they're.", "Yes, we are.", "Yes, they is."], a: "Yes, they are.", w: "Po Yes pełna forma: they are." },
+    { q: "Are Ana and Mickey Spanish?", cue: "Nie", o: ["No, they aren't.", "No, she isn't.", "No, we aren't.", "No, they isn't."], a: "No, they aren't.", w: "they → aren't" },
+    { q: "Is it an orange book?", cue: "Tak", o: ["Yes, it is.", "Yes, it's.", "Yes, they are.", "Yes, it isn't."], a: "Yes, it is.", w: "Uwaga: nie Yes, it's!" },
+    { q: "Is he your dad?", cue: "Tak", o: ["Yes, he is.", "Yes, he's.", "Yes, she is.", "Yes, I am."], a: "Yes, he is.", w: "he → is" },
+    { q: "Are we late?", cue: "Nie", o: ["No, you aren't.", "No, we aren't.", "No, I'm not.", "No, you isn't."], a: "No, you aren't.", w: "Pytasz 'my?', ktoś odpowiada 'wy': No, you aren't. (W książce często też: No, we aren't.)" },
+    { q: "Am I right?", cue: "Nie", o: ["No, you aren't.", "No, I'm not.", "No, you isn't.", "No, amn't."], a: "No, you aren't.", w: "Am I ...? → odpowiada druga osoba: No, you aren't." },
+    { q: "Is your school bag blue?", cue: "Tak", o: ["Yes, it is.", "Yes, he is.", "Yes, they are.", "Yes, it's."], a: "Yes, it is.", w: "school bag = it" },
+    { q: "Are your jeans new?", cue: "Nie", o: ["No, they aren't.", "No, it isn't.", "No, they isn't.", "No, we aren't."], a: "No, they aren't.", w: "jeans = liczba mnoga → they" },
+    { q: "Is Lena from Poland?", cue: "Tak", o: ["Yes, she is.", "Yes, he is.", "Yes, she's.", "Yes, it is."], a: "Yes, she is.", w: "Lena = she" },
+    { q: "Are you ten, Harry?", cue: "Tak", o: ["Yes, I am.", "Yes, I'm.", "Yes, we are.", "Yes, he is."], a: "Yes, I am.", w: "Harry: Really? Me too! — I'm ten." }
+  ];
+
+  /* ---------- 8. Detektyw błędów ---------- */
+  const detective = [
+    { words: ["He", "are", "my", "friend."], bad: 1, o: ["He is my friend.", "He am my friend.", "He are my friend."], a: "He is my friend.", w: "He → is." },
+    { words: ["I", "is", "eleven."], bad: 1, o: ["I am eleven.", "I are eleven.", "I is eleven."], a: "I am eleven.", w: "I → am." },
+    { words: ["They", "is", "students."], bad: 1, o: ["They are students.", "They is students.", "They am students."], a: "They are students.", w: "They → are." },
+    { words: ["I", "amn't", "ten."], bad: 1, o: ["I'm not ten.", "I amn't ten.", "I isn't ten."], a: "I'm not ten.", w: "Nie ma słowa amn't! Mówimy I'm not." },
+    { words: ["Yes,", "I'm."], bad: 1, o: ["Yes, I am.", "Yes, I'm.", "Yes, I is."], a: "Yes, I am.", w: "W krótkiej odpowiedzi twierdzącej nie skracamy." },
+    { words: ["Are", "he", "a", "teacher?"], bad: 0, o: ["Is he a teacher?", "Are he a teacher?", "Am he a teacher?"], a: "Is he a teacher?", w: "he → Is he ...?" },
+    { words: ["Where", "you", "are", "from?"], bad: 2, o: ["Where are you from?", "Where you are from?", "Where is you from?"], a: "Where are you from?", w: "be przed osobą: Where are you from?" },
+    { words: ["She", "aren't", "at", "school."], bad: 1, o: ["She isn't at school.", "She aren't at school.", "She am not at school."], a: "She isn't at school.", w: "She → isn't." },
+    { words: ["I", "have", "eleven", "years."], bad: 1, o: ["I'm eleven.", "I have eleven years.", "I is eleven."], a: "I'm eleven.", w: "Wiek po angielsku wyraża be: I'm eleven." },
+    { words: ["Are", "they", "at", "the", "park?", "—", "Yes,", "they", "aren't."], bad: 8, o: ["Yes, they are.", "Yes, they aren't.", "No, they are."], a: "Yes, they are.", w: "Yes, they are. / No, they aren't." },
+    { words: ["You", "is", "not", "Polish."], bad: 1, o: ["You aren't Polish.", "You is not Polish.", "You isn't Polish."], a: "You aren't Polish.", w: "You are not → You aren't." },
+    { words: ["Is", "she", "Polish?", "—", "Yes,", "she's."], bad: 5, o: ["Yes, she is.", "Yes, she's.", "Yes, she are."], a: "Yes, she is.", w: "Po Yes piszemy pełną formę: Yes, she is." }
+  ];
+
+  /* ---------- 9. Sortownik zdań ---------- */
+  const sort = [
+    { s: "I am from Poland.", t: " affirmative" },
+    { s: "She isn't at school.", t: "negative" },
+    { s: "Are you from Brazil?", t: "question" },
+    { s: "They're amazing!", t: "affirmative" },
+    { s: "Is he a teacher?", t: "question" },
+    { s: "We aren't from China.", t: "negative" },
+    { s: "Robbie is a robot.", t: "affirmative" },
+    { s: "It isn't a blue bag.", t: "negative" },
+    { s: "Where are you from?", t: "question" },
+    { s: "My shoes aren't new.", t: "negative" },
+    { s: "Am I in your class?", t: "question" },
+    { s: "You're amazing, Robbie!", t: "affirmative" },
+    { s: "No, he isn't.", t: "negative" },
+    { s: "What's your nationality?", t: "question" },
+    { s: "Mickey and Ana are friends.", t: "affirmative" },
+    { s: "I'm not at home today.", t: "negative" }
+  ].map(function (x) { return { s: x.s, t: x.t.trim() }; });
+
+  /* ---------- 10. Czytanie: Prawda / Fałsz ---------- */
+  const reading = [
+    {
+      title: "Hello! I'm Mickey.",
+      text: "Hello! I'm Mickey. I'm 11 years old and I'm British. She's my mum, Caroline, and he's my dad, Alex. They're cool. Look! It's our cat, Lily. Ana's here, too. She's 10 and she's from Brazil. Sorry! He's Robbie! He's a robot. You're amazing, Robbie!",
+      items: [
+        { s: "Mickey is from the UK.", t: true, w: "I'm British. / We're from Manchester in the UK." },
+        { s: "Ana is eleven.", t: false, w: "She's 10, nie 11." },
+        { s: "Lily and Robbie are robots.", t: false, w: "Lily to kot, tylko Robbie jest robotem." },
+        { s: "Robbie is a robot.", t: true, w: "He's a robot!" },
+        { s: "Ana isn't Brazilian.", t: false, w: "She's from Brazil → jest Brazylijką." }
+      ]
+    },
+    {
+      title: "Tomek's blog",
+      text: "Hello everyone! My name is Tomek. I'm from Kraków in Poland. I'm fourteen years old. I'm with my brother, Filip. He is eleven years old. We are at a summer camp in the Tatra Mountains. The Tatra National Park is amazing. It's my favourite place. My brother loves it, too.",
+      items: [
+        { s: "Tomek is Polish.", t: true, w: "I'm from Kraków in Poland." },
+        { s: "Tomek is 13 years old.", t: false, w: "I'm fourteen years old." },
+        { s: "Filip is 11 years old.", t: true, w: "He is eleven years old." },
+        { s: "Tomek and Filip are at home.", t: false, w: "We are at a summer camp." },
+        { s: "The park isn't amazing.", t: false, w: "The Tatra National Park is amazing." }
+      ]
+    },
+    {
+      title: "A new student",
+      text: "Hi! My name's Emile Martin. I'm a new student. I'm French and I'm from France. Ms Collins is my English teacher. She isn't from the UK — she's from Canada. My friends aren't at school today. They're at a party. It's OK!",
+      items: [
+        { s: "Emile is French.", t: true, w: "I'm French." },
+        { s: "Ms Collins is British.", t: false, w: "She isn't from the UK — she's from Canada." },
+        { s: "Emile's friends are at school.", t: false, w: "They're at a party." },
+        { s: "Emile isn't a new student.", t: false, w: "I'm a new student." },
+        { s: "Ms Collins is from Canada.", t: true, w: "she's from Canada." }
+      ]
+    }
+  ];
+
+  /* ---------- 11. Słuchanie / dyktando ---------- */
+  const listening = [
+    { spoken: "I'm eleven.", o: ["I'm eleven.", "I'm seven.", "Are you eleven?"], a: "I'm eleven." },
+    { spoken: "She isn't at school.", o: ["She isn't at school.", "She is at school.", "Is she at school?"], a: "She isn't at school." },
+    { spoken: "Are they from China?", o: ["Are they from China?", "They're from China.", "Are we from China?"], a: "Are they from China?" },
+    { spoken: "We're from Brazil.", o: ["We're from Brazil.", "We aren't from Brazil.", "Are we from Brazil?"], a: "We're from Brazil." },
+    { spoken: "It's an orange book.", o: ["It's an orange book.", "It isn't an orange book.", "Is it an orange book?"], a: "It's an orange book." },
+    { spoken: "He's a robot.", o: ["He's a robot.", "He isn't a robot.", "Is he a robot?"], a: "He's a robot." },
+    { spoken: "My shoes aren't new.", o: ["My shoes aren't new.", "My shoes are new.", "Are my shoes new?"], a: "My shoes aren't new." },
+    { spoken: "Is she a student?", o: ["Is she a student?", "She is a student.", "She isn't a student."], a: "Is she a student?" },
+    { spoken: "You're amazing, Robbie!", o: ["You're amazing, Robbie!", "Are you amazing, Robbie?", "You aren't amazing, Robbie!"], a: "You're amazing, Robbie!" },
+    { spoken: "They aren't at the party.", o: ["They aren't at the party.", "They're at the party.", "Are they at the party?"], a: "They aren't at the party." },
+    { spoken: "Where are you from?", o: ["Where are you from?", "Where is he from?", "Are you from Poland?"], a: "Where are you from?" },
+    { spoken: "No, he isn't.", o: ["No, he isn't.", "No, she isn't.", "Yes, he is."], a: "No, he isn't." }
+  ];
+
+  const dictation = [
+    { spoken: "isn't", hint: "is + not, krótko (6 liter z apostrofem)", a: ["isn't", "isnt"] },
+    { spoken: "aren't", hint: "are + not, krótko", a: ["aren't", "arent"] },
+    { spoken: "I'm", hint: "ja jestem — krótka forma", a: ["i'm", "im"] },
+    { spoken: "he's", hint: "on jest — krótka forma", a: ["he's", "hes"] },
+    { spoken: "she's", hint: "ona jest — krótka forma", a: ["she's", "shes"] },
+    { spoken: "we're", hint: "my jesteśmy — krótka forma", a: ["we're", "were"] },
+    { spoken: "they're", hint: "oni są — krótka forma", a: ["they're", "theyre"] },
+    { spoken: "it's", hint: "to jest — krótka forma", a: ["it's", "its"] },
+    { spoken: "you're", hint: "ty jesteś — krótka forma", a: ["you're", "youre"] },
+    { spoken: "I'm not", hint: "ja nie jestem", a: ["i'm not", "im not", "i am not"] },
+    { spoken: "Yes, I am.", hint: "krótka odpowiedź twierdząca", a: ["yes, i am", "yes i am"] },
+    { spoken: "Are you ready?", hint: "pytanie o gotowość", a: ["are you ready", "are you ready?"] }
+  ];
+
+  /* ---------- 12. Tłumaczenie z polskiego ---------- */
+  const translate = [
+    { pl: "Jestem z Polski.", words: ["I'm", "from", "Poland.", "is", "am"], answer: "I'm from Poland." },
+    { pl: "Ona nie jest z Brazylii.", words: ["She", "isn't", "from", "Brazil.", "is", "are"], answer: "She isn't from Brazil." },
+    { pl: "Czy oni są w szkole?", words: ["Are", "they", "at", "school?", "is", "They"], answer: "Are they at school?" },
+    { pl: "On jest robotem.", words: ["He's", "a", "robot.", "are", "is"], answer: "He's a robot." },
+    { pl: "Nie jestem w domu.", words: ["I'm", "not", "at", "home.", "am", "isn't"], answer: "I'm not at home." },
+    { pl: "Skąd jesteś?", words: ["Where", "are", "you", "from?", "is", "do"], answer: "Where are you from?" },
+    { pl: "Moje buty nie są nowe.", words: ["My", "shoes", "aren't", "new.", "isn't", "are"], answer: "My shoes aren't new." },
+    { pl: "Tak, jestem.", words: ["Yes,", "I", "am.", "I'm.", "is"], answer: "Yes, I am." },
+    { pl: "Czy ona jest nową uczennicą?", words: ["Is", "she", "a", "new", "student?", "Are", "he"], answer: "Is she a new student?" },
+    { pl: "Nie, nie jesteśmy.", words: ["No,", "we", "aren't.", "are", "isn't"], answer: "No, we aren't." },
+    { pl: "Ile masz lat?", words: ["How", "old", "are", "you?", "is", "What"], answer: "How old are you?" },
+    { pl: "To jest niesamowity film.", words: ["It's", "an", "amazing", "film.", "a", "is"], answer: "It's an amazing film." },
+    { pl: "Mickey i Ana nie są Hiszpanami.", words: ["Mickey", "and", "Ana", "aren't", "Spanish.", "isn't"], answer: "Mickey and Ana aren't Spanish." },
+    { pl: "Czy jesteś gotowy?", words: ["Are", "you", "ready?", "Is", "Do"], answer: "Are you ready?" }
+  ];
+
+  /* ---------- 13. Literowanie (wisielec) ---------- */
+  const spelling = [
+    { word: "isn't", pl: "nie jest (on/ona/to)" },
+    { word: "aren't", pl: "nie są / nie jesteśmy" },
+    { word: "I'm", pl: "ja jestem" },
+    { word: "he's", pl: "on jest" },
+    { word: "she's", pl: "ona jest" },
+    { word: "it's", pl: "to jest" },
+    { word: "we're", pl: "my jesteśmy" },
+    { word: "you're", pl: "ty jesteś / wy jesteście" },
+    { word: "they're", pl: "oni są" },
+    { word: "I'm not", pl: "ja nie jestem" },
+    { word: "Yes, I am.", pl: "Tak, jestem." },
+    { word: "Are you...?", pl: "Czy ty jesteś...?" }
+  ];
+
+  /* ---------- Fiszki ---------- */
+  const flashcards = [
+    { front: "I", back: "am • I'm • I'm not • Am I ...?", tag: "odmiana" },
+    { front: "he / she / it", back: "is • he's • isn't • Is he ...?", tag: "odmiana" },
+    { front: "you / we / they", back: "are • you're • aren't • Are you ...?", tag: "odmiana" },
+    { front: "is not =", back: "isn't", tag: "przeczenia" },
+    { front: "are not =", back: "aren't", tag: "przeczenia" },
+    { front: "I am not =", back: "I'm not (NIE: amn't)", tag: "przeczenia" },
+    { front: "Jak zrobić pytanie?", back: "be na początek: She is Polish. → Is she Polish?", tag: "pytania" },
+    { front: "Are you ten?", back: "Yes, I am. / No, I'm not.", tag: "odpowiedzi" },
+    { front: "Is she a student?", back: "Yes, she is. / No, she isn't.", tag: "odpowiedzi" },
+    { front: "Yes, I'm.", back: "BŁĄD! Poprawnie: Yes, I am.", tag: "pułapki" },
+    { front: "I have 11 years.", back: "BŁĄD! Poprawnie: I'm eleven.", tag: "pułapki" },
+    { front: "Skąd jesteś?", back: "Where are you from?", tag: "pytania" },
+    { front: "Ile masz lat?", back: "How old are you?", tag: "pytania" },
+    { front: "Jakiej jesteś narodowości?", back: "What's your nationality?", tag: "pytania" },
+    { front: "Jak się nazywasz?", back: "What's your name?", tag: "pytania" },
+    { front: "Where you are from?", back: "BŁĄD! Poprawnie: Where are you from?", tag: "pułapki" }
+  ];
+
+  /* ---------- Kartkówka próbna (ujednolicony format) ---------- */
+  const examPool = [
+    { type: "choice", p: "I ___ eleven.", o: ["am", "is", "are"], a: "am", w: "I → am", area: "odmiana" },
+    { type: "choice", p: "Mickey and Ana ___ friends.", o: ["am", "is", "are"], a: "are", w: "they → are", area: "odmiana" },
+    { type: "choice", p: "Robbie ___ a robot, not a cat.", o: ["am", "is", "are"], a: "is", w: "he → is", area: "odmiana" },
+    { type: "choice", p: "The notebooks ___ orange now!", o: ["am", "is", "are"], a: "are", w: "they → are", area: "odmiana" },
+    { type: "choice", p: "___ you from the UK?", o: ["Am", "Is", "Are"], a: "Are", w: "you → Are", area: "pytania" },
+    { type: "choice", p: "___ she at school today?", o: ["Am", "Is", "Are"], a: "Is", w: "she → Is", area: "pytania" },
+    { type: "choice", p: "Where ___ you from?", o: ["am", "is", "are"], a: "are", w: "Where are you from?", area: "pytania" },
+    { type: "choice", p: "How old ___ Filip?", o: ["am", "is", "are"], a: "is", w: "he → is", area: "pytania" },
+    { type: "choice", p: "We ___ from China. We're from Poland.", o: ["isn't", "aren't", "am not"], a: "aren't", w: "we → aren't", area: "przeczenia" },
+    { type: "choice", p: "Lily ___ at home.", o: ["isn't", "aren't", "am not"], a: "isn't", w: "she → isn't", area: "przeczenia" },
+    { type: "choice", p: "I ___ at home today.", o: ["isn't", "aren't", "am not"], a: "am not", w: "I'm not / am not", area: "przeczenia" },
+    { type: "choice", p: "My shoes ___ new.", o: ["isn't", "aren't", "am not"], a: "aren't", w: "shoes = they", area: "przeczenia" },
+    { type: "choice", p: "Are you a student? — ___", o: ["Yes, I am.", "Yes, I'm.", "Yes, I is."], a: "Yes, I am.", w: "Po Yes nie skracamy.", area: "odpowiedzi" },
+    { type: "choice", p: "Is Robbie a child? — ___", o: ["No, he isn't.", "No, she isn't.", "No, he aren't."], a: "No, he isn't.", w: "Robbie = he, jest robotem.", area: "odpowiedzi" },
+    { type: "choice", p: "Are they at the park? — Yes, ___", o: ["they are", "they're", "they is"], a: "they are", w: "Krótka odpowiedź: pełna forma.", area: "odpowiedzi" },
+    { type: "choice", p: "Is it a blue bag? — No, ___", o: ["it isn't", "it aren't", "it am not"], a: "it isn't", w: "it → isn't", area: "odpowiedzi" },
+    { type: "choice", p: "Które zdanie jest poprawne?", o: ["He is my friend.", "He are my friend.", "He am my friend."], a: "He is my friend.", w: "he → is", area: "pułapki" },
+    { type: "choice", p: "Które zdanie jest poprawne?", o: ["I'm eleven.", "I have eleven years.", "I is eleven."], a: "I'm eleven.", w: "Wiek = be.", area: "pułapki" },
+    { type: "choice", p: "Które zdanie jest poprawne?", o: ["Is he a teacher?", "Are he a teacher?", "Does he be a teacher?"], a: "Is he a teacher?", w: "be na początku, bez do/does.", area: "pułapki" },
+    { type: "choice", p: "Które zdanie jest poprawne?", o: ["Where are you from?", "Where you are from?", "Where is you from?"], a: "Where are you from?", w: "Where + be + osoba.", area: "pułapki" },
+    { type: "choice", p: "Które zdanie jest PRZECZENIEM?", o: ["They aren't students.", "Are they students?", "They're students."], a: "They aren't students.", w: "aren't = przeczenie.", area: "rozpoznawanie" },
+    { type: "choice", p: "Które zdanie jest PYTANIEM?", o: ["Is she Polish?", "She is Polish.", "She isn't Polish."], a: "Is she Polish?", w: "be przed osobą + ?.", area: "rozpoznawanie" },
+    { type: "input", p: "Uzupełnij: She ___ my mum, Caroline.", a: ["is", "'s"], w: "She is my mum.", area: "odmiana" },
+    { type: "input", p: "Uzupełnij: They ___ from Australia.", a: ["are", "'re"], w: "They are from Australia.", area: "odmiana" },
+    { type: "input", p: "Uzupełnij: ___ you OK?", a: ["are"], w: "Are you OK?", area: "pytania" },
+    { type: "input", p: "Uzupełnij: ___ he from Canada?", a: ["is"], w: "Is he from Canada?", area: "pytania" },
+    { type: "input", p: "Uzupełnij PRZECZENIE: Mickey ___ from the USA.", a: ["isn't", "is not", "'s not"], w: "Mickey isn't from the USA.", area: "przeczenia" },
+    { type: "input", p: "Uzupełnij PRZECZENIE: The children ___ at school.", a: ["aren't", "are not", "'re not"], w: "The children aren't at school.", area: "przeczenia" },
+    { type: "input", p: "Uzupełnij PRZECZENIE: I ___ an actor.", a: ["'m not", "am not"], w: "I'm not an actor. (nie: amn't!)", area: "przeczenia" },
+    { type: "input", p: "Napisz PYTANIE: He is a teacher. → ___", a: ["is he a teacher?", "is he a teacher"], w: "Is he a teacher?", area: "pytania" },
+    { type: "input", p: "Napisz PYTANIE: You are Polish. → ___", a: ["are you polish?", "are you polish"], w: "Are you Polish?", area: "pytania" },
+    { type: "input", p: "Napisz PRZECZENIE: They are ready. → ___", a: ["they aren't ready", "they are not ready", "they're not ready"], w: "They aren't ready.", area: "przeczenia" },
+    { type: "input", p: "Napisz PRZECZENIE: She is from Brazil. → ___", a: ["she isn't from brazil", "she is not from brazil", "she's not from brazil"], w: "She isn't from Brazil.", area: "przeczenia" },
+    { type: "input", p: "Odpowiedz twierdząco: Are you ten? → ___", a: ["yes, i am", "yes i am"], w: "Yes, I am. (nie: Yes, I'm.)", area: "odpowiedzi" },
+    { type: "input", p: "Odpowiedz przecząco: Is she a student? → ___", a: ["no, she isn't", "no she isn't", "no, she is not"], w: "No, she isn't.", area: "odpowiedzi" },
+    { type: "input", p: "Odpowiedz twierdząco: Are they friends? → ___", a: ["yes, they are", "yes they are"], w: "Yes, they are.", area: "odpowiedzi" },
+    { type: "input", p: "Popraw zdanie: He are my friend. → ___", a: ["he is my friend", "he is my friend.", "he's my friend"], w: "He is my friend.", area: "pułapki" },
+    { type: "input", p: "Popraw zdanie: Where you are from? → ___", a: ["where are you from?", "where are you from"], w: "Where are you from?", area: "pułapki" },
+    { type: "input", p: "Po angielsku: „Ona nie jest w szkole.” → ___", a: ["she isn't at school", "she is not at school", "she's not at school"], w: "She isn't at school.", area: "tłumaczenie" },
+    { type: "input", p: "Po angielsku: „Czy oni są z Chin?” → ___", a: ["are they from china?", "are they from china"], w: "Are they from China?", area: "tłumaczenie" },
+    { type: "input", p: "Po angielsku: „Nie jestem gotowy.” → ___", a: ["i'm not ready", "i am not ready"], w: "I'm not ready.", area: "tłumaczenie" },
+    { type: "input", p: "Po angielsku: „Jestem z Polski.” → ___", a: ["i'm from poland", "i am from poland"], w: "I'm from Poland.", area: "tłumaczenie" }
+  ];
+
+  /* ---------- Plan nauki do kartkówki ---------- */
+  const plan = [
+    { day: "Dzień 1", title: "Odmiana i twierdzenia", todo: "Tabela BE, Wybierz formę, Wpisz formę, Memory" },
+    { day: "Dzień 2", title: "Przeczenia", todo: "Przekształcenia, Detektyw błędów, Literowanie (isn't / aren't)" },
+    { day: "Dzień 3", title: "Pytania i krótkie odpowiedzi", todo: "Krótkie odpowiedzi, Rozsypanka, Połącz w pary, Sortownik" },
+    { day: "Dzień 4", title: "Wszystko naraz + słuchanie", todo: "Słuchaj i wybierz, Dyktando, Tłumaczenie, Prawda/Fałsz, Szybka runda" },
+    { day: "Dzień 5", title: "Próbna kartkówka", todo: "Kartkówka próbna ×2, Fiszki, popraw tylko to, co sprawiło trudność" }
+  ];
+
+  const ACTIVITIES = [
+    { id: "choice", icon: "🎯", title: "Wybierz formę", desc: "am / is / are, przeczenia i pytania — szybkie pytania z podpowiedzią", skill: "odmiana" },
+    { id: "gap", icon: "✏️", title: "Wpisz formę", desc: "Wpisz brakującą formę be. Sprawdzamy też krótkie formy!", skill: "odmiana" },
+    { id: "memory", icon: "🃏", title: "Memory", desc: "Odkrywaj karty i łącz zaimki z formami oraz formy długie z krótkimi", skill: "odmiana" },
+    { id: "match", icon: "🔗", title: "Połącz w pary", desc: "Pytanie ↔ odpowiedź, twierdzenie ↔ przeczenie", skill: "odpowiedzi" },
+    { id: "order", icon: "🧱", title: "Rozsypanka", desc: "Ułóż wyrazy w zdaniu. Uwaga na jeden niepotrzebny wyraz!", skill: "pytania" },
+    { id: "transform", icon: "🔄", title: "Przekształcenia", desc: "Twierdzenie → przeczenie albo pytanie. Napisz sam!", skill: "przeczenia" },
+    { id: "shorts", icon: "💬", title: "Krótkie odpowiedzi", desc: "Yes, I am. / No, he isn't. — wybierz właściwą reakcję", skill: "odpowiedzi" },
+    { id: "detective", icon: "🕵️", title: "Detektyw błędów", desc: "Znajdź błędne słowo w zdaniu i napraw je", skill: "pułapki" },
+    { id: "sort", icon: "🗂️", title: "Sortownik zdań", desc: "Wrzuć zdanie do koszyka: twierdzenie / pytanie / przeczenie", skill: "rozpoznawanie" },
+    { id: "reading", icon: "📖", title: "Prawda czy fałsz?", desc: "Krótkie teksty o postaciach z podręcznika — T czy F?", skill: "czytanie" },
+    { id: "listen", icon: "🎧", title: "Słuchaj i wybierz", desc: "Robbie czyta zdania po angielsku, a Ty wybierasz, co słyszysz", skill: "słuchanie" },
+    { id: "dictation", icon: "🔤", title: "Dyktando", desc: "Usłysz formę i wpisz ją — trenuj apostrof w isn't / aren't / I'm", skill: "pisownia" },
+    { id: "translate", icon: "🇵🇱", title: "Tłumacz z polskiego", desc: "Zbuduj angielskie zdanie z klocków (z pułapkami)", skill: "tłumaczenie" },
+    { id: "spelling", icon: "🎲", title: "Literuj formę", desc: "Odgaduj litery krótkich form, zanim Robbie straci antenkę", skill: "pisownia" },
+    { id: "speed", icon: "⚡", title: "Szybka runda", desc: "60 sekund, ile poprawnych odpowiedzi zdążysz?", skill: "powtórka" }
+  ];
+
+  root.TOBE_DATA = {
+    meta: {
+      subject: "Język angielski",
+      type: "Kartkówka",
+      date: "2026-11-10",
+      scope: "czasownik 'to be' (być): odmiana przez osoby, twierdzenia, pytania i przeczenia",
+      book: "Together 2026 · klasa 4 · Unit 1 (s. 10–11, 13–16) i Unit 2 (s. 18–21), zeszyt ćwiczeń, 'Przygotowanie do sprawdzianu'"
+    },
+    be: BE, rules: RULES, mistakes: MISTAKES, bookQuestions: BOOK_QUESTIONS, words: WORDS,
+    choice: choice, gap: gap, pairSets: pairSets, matchSets: matchSets, order: order,
+    transform: transform, shorts: shorts, detective: detective, sort: sort, reading: reading,
+    listening: listening, dictation: dictation, translate: translate, spelling: spelling,
+    flashcards: flashcards, examPool: examPool, plan: plan, activities: ACTIVITIES
+  };
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+/* =========================================================================
+   TO BE — logika aplikacji (bez zewnętrznych bibliotek, działa z file://)
+   ========================================================================= */
+(function () {
+  "use strict";
+  const D = window.TOBE_DATA;
+  const $ = function (s, r) { return (r || document).querySelector(s); };
+  const $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function shuffle(a) {
+    const x = a.slice();
+    for (let i = x.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = x[i]; x[i] = x[j]; x[j] = t; }
+    return x;
+  }
+  function norm(s) {
+    return String(s == null ? "" : s).toLowerCase()
+      .replace(/[’`´]/g, "'").replace(/\s+/g, " ").replace(/[.!?]+$/, "").trim();
+  }
+  function pct(a, b) { return b ? Math.round(100 * a / b) : 0; }
+  function today() { return new Date().toISOString().slice(0, 10); }
+
+  /* ---------------- stan (localStorage) ---------------- */
+  const KEY = "tobe-kartkowka-v1";
+  function fresh() {
+    return { xp: 0, streak: 0, bestStreak: 0, correct: 0, wrong: 0, bestExam: 0,
+             acts: {}, badges: [], plan: [], cards: {}, weak: {}, days: [], speedBest: 0 };
+  }
+  let S = (function () {
+    try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
+    return fresh();
+  })();
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+  if (S.days.indexOf(today()) === -1) { S.days.push(today()); save(); }
+
+  const BADGES = [
+    { id: "first", ico: "🌱", name: "Pierwszy krok", need: "1 poprawna odpowiedź", t: function (s) { return s.correct >= 1; } },
+    { id: "xp100", ico: "⭐", name: "100 punktów", need: "Zdobądź 100 pkt", t: function (s) { return s.xp >= 100; } },
+    { id: "xp500", ico: "🌟", name: "Gwiazda grupy", need: "Zdobądź 500 pkt", t: function (s) { return s.xp >= 500; } },
+    { id: "streak", ico: "🔥", name: "Seria 10", need: "10 odpowiedzi z rzędu", t: function (s) { return s.bestStreak >= 10; } },
+    { id: "explorer", ico: "🧭", name: "Odkrywca", need: "Zacznij 8 różnych ćwiczeń", t: function (s) { return Object.keys(s.acts).length >= 8; } },
+    { id: "all", ico: "🏆", name: "Wszystkie gry", need: "Ukończ wszystkie ćwiczenia", t: function (s) { return D.activities.every(function (a) { return s.acts[a.id] && s.acts[a.id].done; }); } },
+    { id: "detective", ico: "🕵️", name: "Detektyw", need: "8 poprawionych błędów", t: function (s) { return (s.acts.detective && s.acts.detective.ok >= 8); } },
+    { id: "ears", ico: "🎧", name: "Słuchacz", need: "10 odpowiedzi ze słuchu", t: function (s) { return ((s.acts.listen && s.acts.listen.ok) || 0) + ((s.acts.dictation && s.acts.dictation.ok) || 0) >= 10; } },
+    { id: "exam80", ico: "🥈", name: "80% na próbnej", need: "Wynik min. 80%", t: function (s) { return s.bestExam >= 80; } },
+    { id: "exam100", ico: "🥇", name: "Bez błędu!", need: "100% na próbnej kartkówce", t: function (s) { return s.bestExam >= 100; } },
+    { id: "cards", ico: "🗂️", name: "Fiszkowicz", need: "20 kart „Umiem”", t: function (s) { return Object.keys(s.cards).filter(function (k) { return s.cards[k] && s.cards[k].ok > 0; }).length >= 20; } },
+    { id: "week", ico: "📅", name: "Systematyczność", need: "Nauka w 3 różne dni", t: function (s) { return s.days.length >= 3; } }
+  ];
+
+  function updateChips() {
+    $("#chip-xp").textContent = "⭐ " + S.xp + " pkt";
+    $("#chip-streak").textContent = "🔥 " + S.streak + " z rzędu";
+    checkBadges();
+  }
+  function checkBadges() {
+    let added = false;
+    BADGES.forEach(function (b) {
+      if (S.badges.indexOf(b.id) === -1 && b.t(S)) { S.badges.push(b.id); added = true; toast("🏅 Nowa odznaka: " + b.name + "!"); confetti(16); }
+    });
+    if (added) { save(); renderBadges(); }
+  }
+  function mark(act, ok) {
+    const a = S.acts[act] || { tried: 0, ok: 0, done: false };
+    a.tried++; if (ok) a.ok++;
+    S.acts[act] = a;
+    if (ok) { S.correct++; S.streak++; S.xp += 10; S.bestStreak = Math.max(S.bestStreak, S.streak); }
+    else { S.wrong++; S.streak = 0; }
+    save(); updateChips();
+  }
+  function award(act, ok, total) {
+    const a = S.acts[act] || { tried: 0, ok: 0, done: false };
+    a.tried += total; a.ok += ok; a.done = true; S.acts[act] = a;
+    S.correct += ok; S.wrong += (total - ok); S.xp += ok * 10;
+    if (ok === total) { S.streak += ok; S.bestStreak = Math.max(S.bestStreak, S.streak); } else S.streak = 0;
+    save(); updateChips(); updateHub();
+  }
+  function noteWeak(area) { if (!area) return; S.weak[area] = (S.weak[area] || 0) + 1; save(); }
+
+  /* ---------------- efekty ---------------- */
+  let toastT = null;
+  function toast(msg) {
+    const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove("show"); }, 2600);
+  }
+  function confetti(n) {
+    const colors = ["#12b3a6", "#ff7a59", "#ffc93c", "#2fb673", "#123049", "#ff8fb1"];
+    for (let i = 0; i < (n || 20); i++) {
+      (function (i) {
+        setTimeout(function () {
+          const c = document.createElement("i"); c.className = "confetti";
+          c.style.left = (5 + Math.random() * 90) + "vw";
+          c.style.background = colors[i % colors.length];
+          c.style.transform = "rotate(" + Math.random() * 90 + "deg)";
+          c.style.animationDelay = (Math.random() * .5) + "s";
+          document.body.appendChild(c);
+          setTimeout(function () { c.remove(); }, 3200);
+        }, i * 22);
+      })(i);
+    }
+  }
+  function speak(text, slow) {
+    if (!text) return;
+    if (!("speechSynthesis" in window)) { toast("Ta przeglądarka nie ma czytania głosem — poproś kogoś o przeczytanie 🙂"); return; }
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(text));
+      u.lang = "en-GB"; u.rate = slow ? 0.68 : 0.9; u.pitch = 1.05;
+      const vs = window.speechSynthesis.getVoices() || [];
+      const v = vs.find(function (x) { return /en[-_]GB/i.test(x.lang); }) || vs.find(function (x) { return /^en/i.test(x.lang); });
+      if (v) u.voice = v;
+      window.speechSynthesis.speak(u);
+    } catch (e) { toast("Nie udało się odtworzyć głosu."); }
+  }
+  if ("speechSynthesis" in window) { try { window.speechSynthesis.getVoices(); } catch (e) {} }
+
+  /* ---------------- nawigacja ---------------- */
+  function go(id) {
+    if (id !== "practice") { clearSpeed(); }
+    if (id !== "exam") { clearExamTimer(); }
+    $$(".section").forEach(function (s) { s.classList.toggle("active", s.id === id); });
+    $$(".tab").forEach(function (t) { t.classList.toggle("active", t.dataset.go === id); });
+    if (id === "progress") renderProgress();
+    if (id === "flashcards") renderCard();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  document.addEventListener("click", function (e) {
+    const act = e.target.closest("[data-act]");
+    if (act) { openActivity(act.dataset.act); return; }
+    const g = e.target.closest("[data-go]");
+    if (g) { e.preventDefault(); go(g.dataset.go); }
+  });
+
+  /* ---------------- START ---------------- */
+  function daysLeft() {
+    const target = new Date(D.meta.date + "T00:00:00");
+    const now = new Date(); const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.round((target - now0) / 86400000);
+  }
+  function renderStart() {
+    const d = daysLeft();
+    $("#countdown").textContent = d > 0 ? d : (d === 0 ? "DZIŚ!" : "✓");
+    $("#countdown-label").textContent = d > 0 ? "dni do 10 listopada 2026" : (d === 0 ? "To dziś! Dasz radę 💪" : "kartkówka już za nami — powtórka zawsze się przyda");
+    $("#chip-days").textContent = d > 0 ? "📅 do kartkówki: " + d + " dni" : (d === 0 ? "📅 kartkówka dziś!" : "📅 po kartkówce");
+    $("#scope-text").textContent = "Zakres: " + D.meta.scope;
+    $("#book-text").textContent = "Materiał: " + D.meta.book;
+
+    $("#skills-grid").innerHTML = [
+      ["🧮", "Odmiana przez osoby", "I am · you are · he/she/it is · we/you/they are", "choice"],
+      ["➕", "Twierdzenia", "Pełne i krótkie formy: I'm, he's, they're", "gap"],
+      ["❓", "Pytania", "be na początku + pytania o imię, wiek, kraj", "transform"],
+      ["➖", "Przeczenia", "isn't · aren't · I'm not (nigdy amn't!)", "detective"]
+    ].map(function (x) {
+      return '<div class="card flat" style="margin:0;text-align:center"><div style="font-size:2rem">' + x[0] + "</div><b>" + x[1] + '</b><div class="muted">' + x[2] + '</div><button class="btn small ghost" style="margin-top:8px" data-act="' + x[3] + '">Ćwicz →</button></div>';
+    }).join("");
+
+    renderPlan(); renderBadges();
+  }
+  function renderPlan() {
+    $("#plan-list").innerHTML = D.plan.map(function (p, i) {
+      const on = S.plan.indexOf(i) !== -1;
+      return '<label class="plan-item' + (on ? " done" : "") + '"><input type="checkbox" data-plan="' + i + '"' + (on ? " checked" : "") + '><span><b class="pt">' + p.day + " · " + p.title + '</b><small class="pt">' + p.todo + "</small></span></label>";
+    }).join("");
+    $$("[data-plan]").forEach(function (c) {
+      c.onchange = function () {
+        const i = +c.dataset.plan;
+        const k = S.plan.indexOf(i);
+        if (c.checked && k === -1) S.plan.push(i);
+        if (!c.checked && k !== -1) S.plan.splice(k, 1);
+        save(); renderPlan();
+        if (c.checked) { toast("✅ " + D.plan[i].day + " zaliczone!"); confetti(10); }
+      };
+    });
+  }
+  function renderBadges() {
+    const html = BADGES.map(function (b) {
+      const got = S.badges.indexOf(b.id) !== -1;
+      return '<div class="badge' + (got ? " got" : "") + '" title="' + esc(b.need) + '"><div class="bico">' + b.ico + "</div><b>" + b.name + '</b><small class="muted">' + (got ? "zdobyta ✓" : b.need) + "</small></div>";
+    }).join("");
+    $("#badges-mini").innerHTML = BADGES.slice(0, 6).map(function (b) {
+      const got = S.badges.indexOf(b.id) !== -1;
+      return '<div class="badge' + (got ? " got" : "") + '"><div class="bico">' + b.ico + "</div><b>" + b.name + "</b></div>";
+    }).join("");
+    const full = $("#badges-full"); if (full) full.innerHTML = html;
+  }
+
+  /* ---------------- NAUKA ---------------- */
+  const RULE_SAY = [
+    "I am, you are, he is, she is, it is, we are, you are, they are.",
+    "I am from Poland. She is eleven. They are cool.",
+    "He is not ready. He isn't ready. I am not ready. I'm not ready.",
+    "Is she Polish? Are you ten? Where are you from?",
+    "Are you ten? Yes, I am. No, I'm not. Remember: not Yes, I'm.",
+    "What's your name? Where are you from? How old are you? What's your nationality?",
+    "I'm eleven. I'm eleven years old."
+  ];
+  function renderLearn() {
+    $("#rules-list").innerHTML = D.rules.map(function (r, i) {
+      return '<div class="rule" data-say="' + i + '" style="cursor:pointer"><div class="ico">' + r.icon + "</div><div><b>" + r.title + "</b><div>" + r.text + '</div><small class="muted">🔊 Kliknij, żeby usłyszeć przykład</small></div></div>';
+    }).join("");
+    $$("#rules-list .rule").forEach(function (r) { r.onclick = function () { speak(RULE_SAY[+r.dataset.say]); }; });
+
+    const head = "<thead><tr><th>Zaimek</th><th>Po polsku</th><th>Twierdzenie</th><th>Krótko</th><th>Przeczenie (długie)</th><th>Przeczenie (krótko)</th><th>Pytanie</th><th>Krótka odpowiedź</th></tr></thead>";
+    const rows = D.be.map(function (b, i) {
+      return '<tr data-be="' + i + '" style="cursor:pointer" title="Kliknij, żeby usłyszeć"><td class="en">' + b.en + "</td><td>" + b.pl + "</td><td><b>" + b.en + " " + b.form + "</b></td><td>" + b.short + "</td><td>" + b.negLong + "</td><td><b>" + b.negShort + "</b></td><td>" + b.question + " ...?</td><td>" + b.yes + " / " + b.no + "</td></tr>";
+    }).join("");
+    $("#be-table").innerHTML = head + "<tbody>" + rows + "</tbody>";
+    $$("#be-table tr[data-be]").forEach(function (tr) {
+      tr.onclick = function () {
+        const b = D.be[+tr.dataset.be];
+        speak(b.en + " " + b.form + ". " + b.short + ". " + b.negShort + ". " + b.question + "? " + b.yes);
+      };
+    });
+    $("#btn-sing-table").onclick = function () { speak(RULE_SAY[0] + " " + D.be.map(function (b) { return b.short + " " + b.negShort + "."; }).join(" ")); };
+
+    $("#book-questions").innerHTML = D.bookQuestions.map(function (q) {
+      return "<details><summary>" + esc(q.q) + " <span class=\"muted\">— " + esc(q.pl) + '</span></summary><div style="padding:8px 4px"><b>Odpowiedź:</b> ' + esc(q.a) + ' <button class="icon-btn" data-sayq="' + esc(q.q + " " + q.a) + '">🔊</button></div></details>';
+    }).join("");
+    $$("[data-sayq]").forEach(function (b) { b.onclick = function () { speak(b.dataset.sayq); }; });
+
+    $("#mistakes-list").innerHTML = D.mistakes.map(function (m) {
+      return '<div class="mistake"><span class="bad" style="text-decoration:none">' + esc(m.bad) + '</span><span>➜</span><span class="good">' + esc(m.good) + '</span><span class="muted" style="flex-basis:100%">💡 ' + esc(m.why) + '</span></div>';
+    }).join("");
+
+    $("#words-list").innerHTML =
+      "<details><summary>🌍 Kraje i narodowości (" + D.words.countries.length + ")</summary><div class='grid3' style='padding:10px 0'>" +
+      D.words.countries.map(function (w) { return "<div class='muted'><b>" + w[0] + "</b> — " + w[1] + " → <b>" + w[2] + "</b></div>"; }).join("") + "</div></details>" +
+      "<details><summary>✨ Przymiotniki (" + D.words.adjectives.length + ")</summary><div class='grid3' style='padding:10px 0'>" +
+      D.words.adjectives.map(function (w) { return "<div class='muted'><b>" + w[0] + "</b> — " + w[1] + "</div>"; }).join("") + "</div></details>" +
+      "<details><summary>📍 Miejsca (" + D.words.places.length + ")</summary><div class='grid3' style='padding:10px 0'>" +
+      D.words.places.map(function (w) { return "<div class='muted'><b>" + w[0] + "</b> — " + w[1] + "</div>"; }).join("") + "</div></details>";
+
+    // ściąga do druku
+    $("#print-rules").innerHTML = "<div class='card'><b>3 złote zasady</b><p>1. I → am, he/she/it → is, you/we/they → are.<br>2. Przeczenie: dodaj not po be (isn't, aren't, I'm not; NIGDY amn't).<br>3. Pytanie: be na początek (Is she Polish?), bez do/does.<br>4. Krótka odpowiedź: Yes, I am. / No, I'm not. (nie: Yes, I'm.)<br>5. Wiek: I'm eleven, nie I have 11 years.</p></div>";
+    $("#print-table").innerHTML = head + "<tbody>" + rows + "</tbody>";
+    $("#print-mistakes").innerHTML = "<div class='card'><b>Najczęstsze błędy → poprawnie</b>" + D.mistakes.map(function (m) { return "<div>" + esc(m.bad) + " → <b>" + esc(m.good) + "</b></div>"; }).join("") + "</div>";
+  }
+  function doPrint(kind) {
+    const box = $("#print-report");
+    box.innerHTML = kind === "report" ? "<div class='card'><h2>Raport postępów · " + today() + "</h2>" + $("#parent-report").innerHTML + "</div>" : "";
+    try { window.print(); } catch (e) { toast("Drukowanie niedostępne w tej przeglądarce."); }
+  }
+  ["btn-print-start", "btn-print-learn"].forEach(function (id) { $("#" + id).onclick = function () { doPrint("cheat"); }; });
+
+  /* ---------------- hub ćwiczeń ---------------- */
+  function renderHub() {
+    $("#activity-grid").innerHTML = D.activities.map(function (a) {
+      const st = S.acts[a.id];
+      const done = st && st.done ? '<span class="done">✓ ukończone · ' + st.ok + "/" + st.tried + " poprawnych</span>" : (st && st.tried ? '<span class="done">rozpoczęte · ' + st.tried + " zadań</span>" : "");
+      return '<button class="tile" data-act="' + a.id + '"><span class="ico">' + a.icon + "</span><b>" + a.title + "</b><small>" + a.desc + "</small>" + done + "</button>";
+    }).join("");
+    updateHub();
+  }
+  function updateHub() {
+    const done = D.activities.filter(function (a) { return S.acts[a.id] && S.acts[a.id].done; }).length;
+    const h = $("#hub-progress"); if (h) h.textContent = "Ukończone: " + done + " z " + D.activities.length;
+  }
+  $("#btn-random").onclick = function () { openActivity(shuffle(D.activities)[0].id); };
+  $("#btn-back-hub").onclick = function () { clearSpeed(); $("#practice-run").style.display = "none"; $("#practice-hub").style.display = "block"; updateHub(); };
+
+  /* ---------------- wspólny silnik sesji ---------------- */
+  function Session(act, items, count, renderer) {
+    this.act = act; this.items = shuffle(items).slice(0, count || 8);
+    this.i = 0; this.ok = 0; this.streak = 0; this.renderer = renderer;
+    this.host = $("#run-host"); this.spoken = "";
+  }
+  Session.prototype.show = function () {
+    if (this.i >= this.items.length) return finishSession(this);
+    this.spoken = "";
+    updateRun(this);
+    this.renderer(this.items[this.i], this);
+  };
+  Session.prototype.next = function () { this.i++; this.show(); };
+  function updateRun(s) {
+    $("#run-progress").style.width = pct(s.i, s.items.length) + "%";
+    $("#run-score").textContent = "Wynik: " + s.ok + " / " + s.i;
+    $("#run-streak").textContent = "🔥 " + s.streak + " z rzędu";
+  }
+  function step(s, cfg) {
+    s.host.innerHTML =
+      '<div class="qbox"><div class="q">' + (cfg.q || "") + "</div>" + (cfg.hint ? '<div class="hint">' + cfg.hint + "</div>" : "") + "</div>" +
+      (cfg.pre || "") +
+      '<div id="step-body">' + (cfg.body || "") + "</div>" +
+      '<div id="hintbox"></div><div class="feedback" id="fb"></div>' +
+      '<div class="ex-actions" id="step-actions">' + (cfg.actions || "") + "</div>";
+  }
+  function showHint(s, text) {
+    $("#hintbox").innerHTML = '<div class="feedback tip show">💡 ' + esc(text) + "</div>";
+  }
+  function check(s, ok, correctText, why) {
+    if (ok) { s.ok++; s.streak++; } else s.streak = 0;
+    mark(s.act, ok);
+    updateRun(s);
+    const fb = $("#fb");
+    fb.className = "feedback show " + (ok ? "ok" : "no");
+    fb.innerHTML = (ok ? "✅ <b>Brawo!</b> " : "❌ <b>Poprawnie:</b> <u>" + esc(correctText || "") + "</u>. ") +
+      (why ? '<span style="font-weight:600">' + esc(why) + "</span>" : "");
+    if (ok && s.streak > 0 && s.streak % 5 === 0) { confetti(12); toast("🔥 " + s.streak + " odpowiedzi z rzędu!"); }
+    const last = s.i + 1 >= s.items.length;
+    $("#step-actions").innerHTML =
+      '<button class="btn" id="btn-next-step">' + (last ? "Zobacz wynik 🏁" : "Dalej →") + "</button>" +
+      (s.spoken ? '<button class="btn small ghost" id="btn-say-sol">🔊 Posłuchaj odpowiedzi</button>' : "");
+    $("#btn-next-step").onclick = function () { s.next(); };
+    const bs = $("#btn-say-sol"); if (bs) bs.onclick = function () { speak(s.spoken); };
+  }
+  function finishSession(s) {
+    const total = s.items.length, p = pct(s.ok, total);
+    S.acts[s.act].done = true; save(); updateHub();
+    $("#run-progress").style.width = "100%";
+    $("#run-score").textContent = "Wynik: " + s.ok + " / " + total;
+    summaryHost(s.host, s.act, s.ok, total, p >= 80 ? "Świetnie! Robbie jest z Ciebie dumny 🤖" : "Dobra robota! Wróć tu jeszcze raz — powtórka robi mistrza 💪");
+  }
+  function summaryHost(host, act, ok, total, msg) {
+    const p = pct(ok, total);
+    host.innerHTML = '<div class="center" style="padding:10px 0"><div style="font-size:3.4rem">' + (p >= 80 ? "🏆" : p >= 50 ? "👍" : "🌱") + '</div>' +
+      '<h2>' + ok + " / " + total + " poprawnych · " + p + '%</h2><p class="muted">' + esc(msg) + "</p>" +
+      '<div class="row" style="justify-content:center;margin-top:16px">' +
+      '<button class="btn" id="btn-again">🔁 Jeszcze raz</button>' +
+      '<button class="btn ghost" id="btn-other">🎮 Inne ćwiczenia</button>' +
+      '<button class="btn orange" id="btn-to-exam">📝 Próbna kartkówka</button></div></div>';
+    $("#btn-again").onclick = function () { openActivity(act); };
+    $("#btn-other").onclick = function () { $("#practice-run").style.display = "none"; $("#practice-hub").style.display = "block"; updateHub(); go("practice"); };
+    $("#btn-to-exam").onclick = function () { go("exam"); };
+    if (p >= 80) confetti(30);
+    checkBadges();
+  }
+
+  /* ---------------- otwieranie ćwiczenia ---------------- */
+  let activeSpeed = null, activeExamTimer = null;
+  function clearSpeed() { if (activeSpeed) { clearInterval(activeSpeed); activeSpeed = null; } }
+  function clearExamTimer() { if (activeExamTimer) { clearInterval(activeExamTimer); activeExamTimer = null; } }
+  function openActivity(id) {
+    clearSpeed();
+    const a = D.activities.find(function (x) { return x.id === id; });
+    if (!a) return;
+    go("practice");
+    $("#practice-hub").style.display = "none";
+    $("#practice-run").style.display = "block";
+    $("#run-icon").textContent = a.icon;
+    $("#run-title").textContent = a.title;
+    $("#run-desc").textContent = a.desc;
+    $("#run-host").innerHTML = "";
+    $("#run-progress").style.width = "0%";
+    $("#run-score").textContent = "Wynik: 0 / 0";
+    $("#run-streak").textContent = "🔥 0 z rzędu";
+    IMPL[id]();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  /* ============ 1. Wybierz formę ============ */
+  function actChoice() {
+    new Session("choice", D.choice, 10, function (it, s) {
+      s.spoken = it.s.replace("___", it.a);
+      step(s, {
+        q: it.s.replace("___", "<em>___</em>"),
+        hint: "Która forma pasuje? Pomyśl o zaimku (I / he / they…).",
+        body: '<div class="options">' + shuffle(it.o).map(function (o) { return '<button class="opt" data-v="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + "</div>"
+      });
+      $$("#step-body .opt").forEach(function (b) {
+        b.onclick = function () {
+          const ok = b.dataset.v === it.a;
+          $$("#step-body .opt").forEach(function (x) {
+            x.disabled = true;
+            if (x.dataset.v === it.a) x.classList.add("correct");
+            else if (x === b) x.classList.add("wrong");
+          });
+          check(s, ok, it.a, it.w);
+        };
+      });
+    }).show();
+  }
+
+  /* ============ 2. Wpisz formę ============ */
+  function actGap() {
+    new Session("gap", D.gap, 10, function (it, s) {
+      s.spoken = it.w;
+      step(s, {
+        q: it.s.replace("___", "<em>___</em>"),
+        hint: "Wpisz brakującą formę. Możesz użyć pełnej lub krótkiej formy.",
+        body: '<input class="answer-input" id="ans" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="wpisz po angielsku…">',
+        actions: '<button class="btn" id="btn-check">Sprawdź ✓</button><button class="btn small ghost" id="btn-hint">💡 Podpowiedź</button><button class="btn small ghost" id="btn-say">🔊 Przeczytaj zdanie</button>'
+      });
+      const inp = $("#ans");
+      function submit() {
+        const v = norm(inp.value);
+        if (!v) { toast("Najpierw coś wpisz 🙂"); inp.focus(); return; }
+        const ok = it.a.some(function (x) { return norm(x) === v; });
+        inp.disabled = true;
+        check(s, ok, it.w, it.w);
+      }
+      $("#btn-check").onclick = submit;
+      inp.onkeydown = function (e) { if (e.key === "Enter") submit(); };
+      $("#btn-hint").onclick = function () { showHint(s, it.h); };
+      $("#btn-say").onclick = function () { speak(it.w); };
+      inp.focus();
+    }).show();
+  }
+
+  /* ============ 3. Memory ============ */
+  function actMemory() {
+    let setIndex = Math.floor(Math.random() * D.pairSets.length);
+    buildMemory(setIndex);
+    function buildMemory(si) {
+      const set = D.pairSets[si];
+      let lock = false, first = null, matched = 0, moves = 0;
+      const cards = shuffle(set.pairs.reduce(function (acc, p, i) {
+        acc.push({ t: p[0], id: i }, { t: p[1], id: i }); return acc;
+      }, []));
+      $("#run-host").innerHTML =
+        '<div class="card flat" style="background:var(--teal-l);border-color:#c6ece7"><div class="between"><b>🃏 ' + esc(set.name) + '</b><span class="muted" id="mem-info">Ruchy: 0 · Pary: 0/' + set.pairs.length + "</span></div>" +
+        '<div class="row" style="margin-top:10px">' + D.pairSets.map(function (p, i) { return '<button class="btn small ' + (i === si ? "" : "ghost") + '" data-set="' + i + '">' + esc(p.name) + "</button>"; }).join("") +
+        '<button class="btn small ghost" id="mem-new">🔀 Nowa rozgrywka</button></div></div>' +
+        '<p class="muted">Odkryj dwie karty. Jeśli tworzą parę — zostają odkryte. Kliknij kartę, żeby usłyszeć słowo 🔊 (po odkryciu).</p>' +
+        '<div class="mem-grid" id="mem-grid">' + cards.map(function (c, i) { return '<button class="mem-card" data-i="' + i + '" aria-label="Zakryta karta"><span>' + esc(c.t) + "</span>?</button>"; }).join("") + "</div>";
+      $$("[data-set]").forEach(function (b) { b.onclick = function () { buildMemory(+b.dataset.set); }; });
+      $("#mem-new").onclick = function () { buildMemory(si); };
+      const grid = $("#mem-grid");
+      grid.onclick = function (e) {
+        const b = e.target.closest(".mem-card"); if (!b || lock) return;
+        const i = +b.dataset.i, c = cards[i];
+        if (b.classList.contains("open") || b.classList.contains("matched")) return;
+        b.classList.add("open"); b.innerHTML = "<span>" + esc(c.t) + "</span>";
+        if (c.t.length < 14) speak(c.t);
+        if (first === null) { first = { i: i, id: c.id, btn: b }; return; }
+        moves++;
+        if (first.id === c.id) {
+          b.classList.add("matched"); first.btn.classList.add("matched");
+          matched++; first = null;
+          $("#mem-info").textContent = "Ruchy: " + moves + " · Pary: " + matched + "/" + set.pairs.length;
+          if (matched === set.pairs.length) {
+            setTimeout(function () {
+              award("memory", set.pairs.length, set.pairs.length);
+              summaryHost($("#run-host"), "memory", set.pairs.length, set.pairs.length,
+                "Wszystkie pary odnalezione w " + moves + " ruchach! 🧠");
+            }, 450);
+          }
+        } else {
+          lock = true; const f = first; first = null;
+          setTimeout(function () {
+            [f.btn, b].forEach(function (x) { x.classList.remove("open"); x.innerHTML = '<span>' + esc(cards[+x.dataset.i].t) + "</span>?"; });
+            lock = false;
+            $("#mem-info").textContent = "Ruchy: " + moves + " · Pary: " + matched + "/" + set.pairs.length;
+          }, 800);
+        }
+      };
+    }
+  }
+
+  /* ============ 4. Połącz w pary ============ */
+  function actMatch() {
+    let si = Math.floor(Math.random() * D.matchSets.length);
+    build(si);
+    function build(k) {
+      const set = D.matchSets[k];
+      const L = shuffle(set.pairs.map(function (p, i) { return { t: p[0], id: i, side: "L" }; }));
+      const R = shuffle(set.pairs.map(function (p, i) { return { t: p[1], id: i, side: "R" }; }));
+      let sel = null, done = 0, tries = 0, okCount = 0;
+      $("#run-host").innerHTML =
+        '<div class="card flat" style="background:var(--sun-l);border-color:#ffe49b"><b>🔗 ' + esc(set.name) + '</b><div class="muted">Kliknij najpierw coś z lewej kolumny, potem pasującą rzecz z prawej.</div>' +
+        '<div class="row" style="margin-top:8px">' + D.matchSets.map(function (p, i) { return '<button class="btn small ' + (i === k ? "" : "ghost") + '" data-ms="' + i + '">' + esc(p.name) + "</button>"; }).join("") + "</div></div>" +
+        '<div id="match-wrap"><div class="match-cols"><div class="match-col">' + L.map(function (x) { return '<button class="match-item" data-side="L" data-id="' + x.id + '">' + esc(x.t) + "</button>"; }).join("") + '</div><div class="match-col">' + R.map(function (x) { return '<button class="match-item" data-side="R" data-id="' + x.id + '">' + esc(x.t) + "</button>"; }).join("") + "</div></div>" +
+        '<p class="muted" id="match-info">Pozostało par: ' + set.pairs.length + "</p></div>";
+      $$("[data-ms]").forEach(function (b) { b.onclick = function () { build(+b.dataset.ms); }; });
+      const wrap = $("#match-wrap");
+      wrap.onclick = function (e) {
+        const b = e.target.closest(".match-item"); if (!b || b.classList.contains("done")) return;
+        if (!sel) { sel = b; b.classList.add("sel"); speak(b.textContent); return; }
+        if (sel === b) { b.classList.remove("sel"); sel = null; return; }
+        if (sel.dataset.side === b.dataset.side) { $$(".match-item.sel").forEach(function (x) { x.classList.remove("sel"); }); sel = b; b.classList.add("sel"); return; }
+        tries++;
+        if (sel.dataset.id === b.dataset.id) {
+          sel.classList.remove("sel"); sel.classList.add("done"); b.classList.add("done");
+          sel.disabled = true; b.disabled = true; done++; okCount++;
+          toast("✅ Para połączona!");
+        } else {
+          b.classList.add("wiggle"); sel.classList.add("wiggle");
+          const s0 = sel; sel = null;
+          setTimeout(function () { [b, s0].forEach(function (x) { x.classList.remove("wiggle", "sel"); }); }, 500);
+        }
+        $("#match-info").textContent = "Pozostało par: " + (set.pairs.length - done);
+        if (done === set.pairs.length) {
+          setTimeout(function () {
+            award("match", okCount, tries);
+            summaryHost($("#run-host"), "match", okCount, tries, "Wszystkie pary połączone! 💬");
+          }, 400);
+        }
+      };
+    }
+  }
+
+  /* ============ wspólny klockowy budowniczy zdań ============ */
+  function buildSentence(tokens) {
+    let out = "";
+    tokens.forEach(function (t) {
+      if (/^[.!?]$/.test(t)) out = out.replace(/\s+$/, "") + t + " ";
+      else out += t + " ";
+    });
+    return out.trim();
+  }
+  function wordBuilder(it, s, opts) {
+    s.picked = [];
+    s.spoken = it.answer;
+    const bankOrder = shuffle(it.words.map(function (_, i) { return i; }));
+    const extra = it.extra ? '<div class="feedback tip show">⚠️ Uwaga! Jeden wyraz jest niepotrzebny — zostaw go.</div>' : "";
+    step(s, {
+      q: opts.q + (opts.pl ? ' <span class="pill coral">' + esc(opts.pl) + "</span>" : ""),
+      hint: opts.hint,
+      pre: extra,
+      body: '<div class="answer-slot" id="slot"></div><div class="tiles" id="bank"></div>' +
+            '<div class="row"><button class="btn small ghost" id="btn-undo">↩ Cofnij</button><button class="btn small ghost" id="btn-clear">🧹 Wyczyść</button>' +
+            '<button class="btn small ghost" id="btn-say-build">🔊 Przeczytaj moje zdanie</button></div>',
+      actions: '<button class="btn" id="btn-check">Sprawdź ✓</button><button class="btn small ghost" id="btn-hint">💡 Podpowiedź</button>'
+    });
+    function tokensHTML(arr, from) {
+      return arr.map(function (idx) {
+        const w = it.words[idx];
+        return '<button class="token ' + (from === "slot" ? "in-answer" : (s.picked.indexOf(idx) !== -1 ? "used" : "")) + '" data-from="' + from + '" data-idx="' + idx + '">' + esc(w) + "</button>";
+      }).join("");
+    }
+    function draw() {
+      $("#slot").innerHTML = tokensHTML(s.picked, "slot");
+      $("#bank").innerHTML = tokensHTML(bankOrder, "bank");
+    }
+    draw();
+    $("#step-body").onclick = function (e) {
+      const b = e.target.closest("[data-idx]"); if (!b) return;
+      const idx = +b.dataset.idx;
+      if (b.dataset.from === "bank") { if (s.picked.indexOf(idx) === -1) s.picked.push(idx); }
+      else s.picked = s.picked.filter(function (x) { return x !== idx; });
+      draw();
+    };
+    $("#btn-undo").onclick = function () { s.picked.pop(); draw(); };
+    $("#btn-clear").onclick = function () { s.picked = []; draw(); };
+    $("#btn-say-build").onclick = function () { speak(buildSentence(s.picked.map(function (i) { return it.words[i]; })) || "Click the words"); };
+    $("#btn-hint").onclick = function () { showHint(s, opts.hintText || "Zacznij od osoby (I / he / they…), potem daj formę be."); };
+    $("#btn-check").onclick = function () {
+      const made = buildSentence(s.picked.map(function (i) { return it.words[i]; }));
+      if (!made) { toast("Ułóż zdanie z klocków 🙂"); return; }
+      const ok = norm(made) === norm(it.answer);
+      check(s, ok, it.answer, it.w || "Pamiętaj o kolejności: osoba → be → reszta.");
+    };
+  }
+
+  /* ============ 5. Rozsypanka ============ */
+  function actOrder() {
+    new Session("order", D.order, 8, function (it, s) {
+      wordBuilder(it, s, {
+        q: "Ułóż zdanie z wyrazów:",
+        hint: "Klikaj klocki w dobrej kolejności. Kliknięty klocek w zdaniu wraca na dół.",
+        hintText: "Pytanie zaczyna się od formy be (Are / Is / Where are…), twierdzenie od osoby.",
+        pl: ""
+      });
+    }).show();
+  }
+
+  /* ============ 6. Przekształcenia ============ */
+  function actTransform() {
+    new Session("transform", D.transform, 8, function (it, s) {
+      s.spoken = it.show;
+      const isNeg = it.task === "przeczenie";
+      step(s, {
+        q: "Zrób <span class='pill " + (isNeg ? "coral" : "teal") + "'>" + it.task.toUpperCase() + "</span> z tego zdania:",
+        hint: it.from,
+        body: '<div class="qbox" style="background:#fff;margin-bottom:12px"><div class="q">“' + esc(it.from) + '”</div></div>' +
+              '<input class="answer-input" id="ans" autocomplete="off" spellcheck="false" placeholder="napisz całe zdanie…">',
+        actions: '<button class="btn" id="btn-check">Sprawdź ✓</button><button class="btn small ghost" id="btn-hint">💡 Podpowiedź</button><button class="btn small ghost" id="btn-say">🔊 Przeczytaj zdanie</button>'
+      });
+      const inp = $("#ans");
+      function submit() {
+        const v = norm(inp.value);
+        if (!v) { toast("Napisz zdanie 🙂"); inp.focus(); return; }
+        const ok = it.a.some(function (x) { return norm(x) === v; });
+        inp.disabled = true;
+        check(s, ok, it.show, it.w);
+      }
+      $("#btn-check").onclick = submit;
+      inp.onkeydown = function (e) { if (e.key === "Enter") submit(); };
+      $("#btn-hint").onclick = function () { showHint(s, isNeg ? "Dodaj not po be: is not → isn't, are not → aren't, I am not → I'm not." : "Przenieś be na początek i dodaj znak zapytania."); };
+      $("#btn-say").onclick = function () { speak(it.from); };
+      inp.focus();
+    }).show();
+  }
+
+  /* ============ 7. Krótkie odpowiedzi ============ */
+  function actShorts() {
+    new Session("shorts", D.shorts, 8, function (it, s) {
+      s.spoken = it.a;
+      step(s, {
+        q: '<span style="font-size:.7em">💬 PYTANIE</span><br>“' + esc(it.q) + '”',
+        hint: "Odpowiedz: <b>" + esc(it.cue) + "</b> — wybierz właściwą krótką odpowiedź.",
+        body: '<div class="options">' + shuffle(it.o).map(function (o) { return '<button class="opt" data-v="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + "</div>"
+      });
+      $$("#step-body .opt").forEach(function (b) {
+        b.onclick = function () {
+          const ok = b.dataset.v === it.a;
+          $$("#step-body .opt").forEach(function (x) { x.disabled = true; if (x.dataset.v === it.a) x.classList.add("correct"); else if (x === b) x.classList.add("wrong"); });
+          check(s, ok, it.a, it.w);
+        };
+      });
+    }).show();
+  }
+
+  /* ============ 8. Detektyw błędów ============ */
+  function actDetective() {
+    new Session("detective", D.detective, 8, function (it, s) {
+      s.spoken = it.a;
+      step(s, {
+        q: "🕵️ Znajdź błędne słowo, a potem wybierz poprawne zdanie",
+        hint: "Najpierw kliknij słowo, które jest nie tak. Potem wybierz poprawną wersję całego zdania.",
+        body: '<div class="qbox" style="background:#fff"><div class="sentence" id="sent">' + it.words.map(function (w, i) { return '<button class="word" data-w="' + i + '">' + esc(w) + "</button>"; }).join(" ") + "</div></div>" +
+              '<div id="fixes"></div>'
+      });
+      $("#sent").onclick = function (e) {
+        const b = e.target.closest(".word"); if (!b || $("#fixes").innerHTML) return;
+        const i = +b.dataset.w;
+        if (i !== it.bad) { b.classList.add("wiggle"); setTimeout(function () { b.classList.remove("wiggle"); }, 500); toast("Nie to słowo… szukaj formy be 🙂"); return; }
+        $$("#sent .word").forEach(function (x) { x.classList.remove("picked"); x.disabled = true; });
+        b.classList.add("picked");
+        $("#fixes").innerHTML = '<p><b>Teraz wybierz poprawne zdanie:</b></p><div class="options">' +
+          shuffle(it.o).map(function (o) { return '<button class="opt" data-v="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + "</div>";
+        $$("#fixes .opt").forEach(function (o) {
+          o.onclick = function () {
+            const ok = o.dataset.v === it.a;
+            $$("#fixes .opt").forEach(function (x) { x.disabled = true; if (x.dataset.v === it.a) x.classList.add("correct"); else if (x === o) x.classList.add("wrong"); });
+            $("#sent").innerHTML = '<span class="fixed">' + esc(it.a) + "</span>";
+            check(s, ok, it.a, it.w);
+          };
+        });
+      };
+    }).show();
+  }
+
+  /* ============ 9. Sortownik zdań ============ */
+  const BUCKETS = [
+    { id: "affirmative", name: "➕ Twierdzenie" },
+    { id: "question", name: "❓ Pytanie" },
+    { id: "negative", name: "➖ Przeczenie" }
+  ];
+  function actSort() {
+    const items = shuffle(D.sort).slice(0, 12);
+    let sel = null, done = 0, tries = 0, okCount = 0;
+    const placed = { affirmative: [], question: [], negative: [] };
+    function draw() {
+      $("#run-host").innerHTML =
+        '<p class="muted">Kliknij zdanie, potem kliknij właściwy koszyk. Zdania z <b>not / isn’t / aren’t</b> to przeczenia, z <b>?</b> i <i>be</i> na początku to pytania.</p>' +
+        '<div id="sort-wrap"><div class="tiles" style="flex-direction:column;align-items:stretch" id="sort-list">' +
+        items.map(function (x, i) { return x.done ? "" : '<button class="token" data-s="' + i + '" style="text-align:left">' + esc(x.s) + "</button>"; }).join("") +
+        '</div><div class="buckets">' + BUCKETS.map(function (b) {
+          return '<button class="bucket ' + b.id + '" data-b="' + b.id + '">' + b.name + "<small>" + (placed[b.id].length ? esc(placed[b.id].join(" · ")) : "wrzuć tutaj") + "</small></button>";
+        }).join("") + "</div><p class='muted' id='sort-info'>Pozostało zdań: " + (items.length - done) + "</p></div>";
+      const wrap = $("#sort-wrap");
+      wrap.onclick = function (e) {
+        const sbtn = e.target.closest("[data-s]");
+        const bbtn = e.target.closest("[data-b]");
+        if (sbtn) {
+          $$("#sort-list .token").forEach(function (x) { x.classList.remove("in-answer"); });
+          sbtn.classList.add("in-answer"); sel = +sbtn.dataset.s; speak(items[sel].s); return;
+        }
+        if (bbtn) {
+          if (sel === null) { toast("Najpierw wybierz zdanie 🙂"); return; }
+          const it = items[sel]; tries++;
+          if (bbtn.dataset.b === it.t) {
+            it.done = true; placed[it.t].push(it.s); done++; okCount++; toast("✅ Dobrze!"); sel = null; draw();
+            if (done === items.length) {
+              award("sort", okCount, tries);
+              summaryHost($("#run-host"), "sort", okCount, tries, "Wszystkie zdania posegregowane! 🗂️");
+              return;
+            }
+          } else {
+            bbtn.classList.add("wiggle"); const bb = bbtn;
+            setTimeout(function () { bb.classList.remove("wiggle"); }, 500);
+            toast("❌ To nie ten koszyk — spróbuj jeszcze raz.");
+            $("#sort-info").textContent = "Pozostało zdań: " + (items.length - done);
+          }
+        }
+      };
+    }
+    draw();
+  }
+
+  /* ============ 10. Prawda / Fałsz ============ */
+  function actReading() {
+    let ti = Math.floor(Math.random() * D.reading.length);
+    build(ti);
+    function build(k) {
+      const r = D.reading[k];
+      let idx = 0, ok = 0, tries = 0;
+      function draw() {
+        if (idx >= r.items.length) {
+          award("reading", ok, tries);
+          summaryHost($("#run-host"), "reading", ok, tries, "Tekst przeczytany! 📖 Spróbuj też innego tekstu.");
+          const b = document.createElement("button"); b.className = "btn ghost"; b.textContent = "📄 Inny tekst";
+          b.onclick = function () { build((k + 1) % D.reading.length); };
+          $("#run-host .row").appendChild(b);
+          return;
+        }
+        const it = r.items[idx];
+        $("#run-host").innerHTML =
+          '<div class="card flat" style="background:var(--sun-l);border-color:#ffe49b"><b>📖 ' + esc(r.title) + '</b> <button class="btn small ghost" id="read-say">🔊 Posłuchaj tekstu</button></div>' +
+          '<div class="reading-text">' + esc(r.text) + "</div>" +
+          '<div id="read-wrap"><div class="qbox"><div class="q">' + esc(it.s) + '</div><div class="hint">Pytanie ' + (idx + 1) + " z " + r.items.length + " — prawda czy fałsz?</div></div>" +
+          '<div class="tf-buttons"><button class="btn" data-tf="true">✅ Prawda (T)</button><button class="btn orange" data-tf="false">❌ Fałsz (F)</button></div>' +
+          '<div class="feedback" id="fb"></div><div class="ex-actions" id="read-actions"></div></div>';
+        $("#read-say").onclick = function () { speak(r.text); };
+        $("#read-wrap").onclick = function (e) {
+          const b = e.target.closest("[data-tf]"); if (!b || b.disabled) return;
+          const good = (b.dataset.tf === "true") === it.t;
+          tries++; if (good) ok++;
+          const fb = $("#fb"); fb.className = "feedback show " + (good ? "ok" : "no");
+          fb.innerHTML = (good ? "✅ Zgadza się! " : "❌ Poprawnie: " + (it.t ? "Prawda" : "Fałsz") + ". ") + esc(it.w);
+          $$("[data-tf]").forEach(function (x) { x.disabled = true; });
+          $("#read-actions").innerHTML = '<button class="btn" id="read-next">' + (idx + 1 >= r.items.length ? "Zobacz wynik 🏁" : "Dalej →") + "</button>";
+          $("#read-next").onclick = function () { idx++; draw(); };
+        };
+      }
+      draw();
+    }
+  }
+
+  /* ============ 11. Słuchaj i wybierz ============ */
+  function actListen() {
+    new Session("listen", D.listening, 8, function (it, s) {
+      s.spoken = it.a;
+      step(s, {
+        q: "🎧 Co słyszysz?",
+        hint: "Robbie przeczyta jedno zdanie. Kliknij ▶ (możesz kilka razy), potem wybierz właściwą odpowiedź.",
+        body: '<div class="row"><button class="btn" id="play">▶ Odtwórz</button><button class="btn small ghost" id="play-slow">🐢 Wolniej</button><button class="btn small ghost" id="show-text">👀 Nie mam dźwięku</button></div>' +
+              '<div id="audio-text" class="qbox" style="margin-top:12px;display:none"></div>' +
+              '<div class="options" style="margin-top:14px">' + shuffle(it.o).map(function (o) { return '<button class="opt" data-v="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + "</div>" +
+              '<p class="muted" style="margin-top:12px">🎤 Powiedz to zdanie na głos 3 razy, zanim klikniesz — to świetny trening przed kartkówką!</p>',
+        actions: ""
+      });
+      $("#play").onclick = function () { speak(it.spoken); };
+      $("#play-slow").onclick = function () { speak(it.spoken, true); };
+      $("#show-text").onclick = function () { const t = $("#audio-text"); t.style.display = "block"; t.innerHTML = "<b>Tekst:</b> " + esc(it.spoken); };
+      try { speak(it.spoken); } catch (e) {}
+      $$("#step-body .opt").forEach(function (b) {
+        b.onclick = function () {
+          const ok = b.dataset.v === it.a;
+          $$("#step-body .opt").forEach(function (x) { x.disabled = true; if (x.dataset.v === it.a) x.classList.add("correct"); else if (x === b) x.classList.add("wrong"); });
+          check(s, ok, it.a, "Posłuchaj jeszcze raz i porównaj.");
+        };
+      });
+    }).show();
+  }
+
+  /* ============ 12. Dyktando ============ */
+  function actDictation() {
+    new Session("dictation", D.dictation, 8, function (it, s) {
+      s.spoken = it.spoken;
+      step(s, {
+        q: "🔤 Napisz to, co słyszysz",
+        hint: "Zwróć uwagę na apostrof: isn't, aren't, I'm, we're, they're.",
+        body: '<div class="row"><button class="btn" id="play">▶ Odtwórz</button><button class="btn small ghost" id="play-slow">🐢 Wolniej</button></div>' +
+              '<input class="answer-input" id="ans" style="margin-top:12px" autocomplete="off" spellcheck="false" placeholder="wpisz usłyszaną formę…">',
+        actions: '<button class="btn" id="btn-check">Sprawdź ✓</button><button class="btn small ghost" id="btn-hint">💡 Podpowiedź</button>'
+      });
+      const inp = $("#ans");
+      $("#play").onclick = function () { speak(it.spoken); };
+      $("#play-slow").onclick = function () { speak(it.spoken, true); };
+      $("#btn-hint").onclick = function () { showHint(s, it.hint); };
+      function submit() {
+        const v = norm(inp.value);
+        if (!v) { toast("Najpierw coś wpisz 🙂"); inp.focus(); return; }
+        const ok = it.a.some(function (x) { return norm(x) === v; });
+        inp.disabled = true;
+        check(s, ok, it.spoken, "Zapisz apostrof w miejscu, gdzie „zniknęła” litera.");
+      }
+      $("#btn-check").onclick = submit;
+      inp.onkeydown = function (e) { if (e.key === "Enter") submit(); };
+      try { speak(it.spoken); } catch (e) {}
+      inp.focus();
+    }).show();
+  }
+
+  /* ============ 13. Tłumacz z polskiego ============ */
+  function actTranslate() {
+    new Session("translate", D.translate, 8, function (it, s) {
+      wordBuilder(it, s, {
+        q: "🇬🇧 Ułóż po angielsku:",
+        pl: it.pl,
+        hint: "Wybierz właściwe klocki — w koszyku są też pułapki!",
+        hintText: "Zacznij od osoby, potem forma be (lub be na początku w pytaniu), na końcu reszta."
+      });
+    }).show();
+  }
+
+  /* ============ 14. Literowanie form (wisielec) ============ */
+  function actSpelling() {
+    const words = shuffle(D.spelling).slice(0, 6);
+    let wi = 0, ok = 0, tries = 0;
+    function draw() {
+      if (wi >= words.length) {
+        award("spelling", ok, tries);
+        summaryHost($("#run-host"), "spelling", ok, tries, "Formy odgadnięte — apostrofy na miejscu! 🔤");
+        return;
+      }
+      const it = words[wi], w = it.word.toLowerCase();
+      const guessed = new Set(); let lives = 6, solved = false;
+      function mask() {
+        return w.split("").map(function (c) {
+          return /[a-z0-9]/.test(c) ? (guessed.has(c) || solved ? c.toUpperCase() : "_") : c;
+        }).join(" ");
+      }
+      function render() {
+        const letters = "abcdefghijklmnopqrstuvwxyz".split("");
+        $("#run-host").innerHTML =
+          '<div class="card flat" style="background:var(--teal-l);border-color:#c6ece7"><div class="between"><b>🎲 Słowo ' + (wi + 1) + " z " + words.length + '</b><span class="muted">Bateria Robbiego: ' + "❤️".repeat(Math.max(0, lives)) + " · " + lives + "/6</span></div>" +
+          '<div class="muted">Znaczenie: ' + esc(it.pl) + '</div><div class="row" style="margin-top:8px"><button class="btn small ghost" id="sp-say">🔊 Posłuchaj</button><button class="btn small ghost" id="sp-hint">💡 Odkryj literę</button><button class="btn small ghost" id="sp-skip">⏭ Pomiń</button></div></div>' +
+          '<div class="qbox center"><div class="hang-word" id="sp-word">' + mask() + '</div><div class="muted" id="sp-msg">Kliknij litery na klawiaturze. Litery spoza alfabetu (apostrof, przecinek, spacja) są pokazane od razu.</div></div>' +
+          '<div id="sp-wrap"><div class="keyboard">' + letters.map(function (c) { return '<button class="key" data-c="' + c + '"' + (guessed.has(c) ? " disabled" : "") + ">" + c.toUpperCase() + "</button>"; }).join("") + "</div>" +
+          '<div class="ex-actions" id="sp-actions"></div></div>';
+        $("#sp-say").onclick = function () { speak(it.word); };
+        $("#sp-hint").onclick = function () {
+          const rest = w.split("").filter(function (c) { return /[a-z]/.test(c) && !guessed.has(c); });
+          if (rest.length) { guessed.add(rest[0]); render(); }
+        };
+        $("#sp-skip").onclick = function () { solved = true; $("#sp-word").textContent = it.word.toUpperCase(); finishWord(false); };
+        $("#sp-wrap").onclick = function (e) {
+          const b = e.target.closest("[data-c]"); if (!b || solved) return;
+          const c = b.dataset.c; guessed.add(c);
+          if (w.indexOf(c) === -1) { lives--; $("#sp-msg").textContent = "Nie ma tej litery! Zostało " + Math.max(0, lives) + " prób."; }
+          else $("#sp-msg").textContent = "Jest! ✅";
+          const remains = w.split("").filter(function (x) { return /[a-z]/.test(x) && !guessed.has(x); });
+          if (!remains.length) { solved = true; $("#sp-word").textContent = it.word.toUpperCase(); finishWord(true); return; }
+          if (lives <= 0) { solved = true; $("#sp-word").textContent = it.word.toUpperCase(); finishWord(false); return; }
+          render();
+        };
+      }
+      function finishWord(good) {
+        tries++; if (good) { ok++; toast("✅ " + it.word); confetti(10); }
+        else toast("Poprawnie: " + it.word);
+        speak(it.word);
+        $$("#sp-wrap .key").forEach(function (k) { k.disabled = true; });
+        $("#sp-actions").innerHTML = '<button class="btn" id="sp-next">' + (wi + 1 >= words.length ? "Zobacz wynik 🏁" : "Następne słowo →") + "</button>";
+        $("#sp-next").onclick = function () { wi++; draw(); };
+      }
+      render();
+      try { speak(it.word); } catch (e) {}
+    }
+    draw();
+  }
+
+  /* ============ 15. Szybka runda ============ */
+  function actSpeed() {
+    const pool = D.choice.map(function (x) { return { s: x.s, o: x.o, a: x.a }; });
+    let time = 60, score = 0, asked = 0, cur = null;
+    function draw() {
+      cur = shuffle(pool)[0];
+      $("#run-host").innerHTML =
+        '<div class="card flat" style="background:var(--coral-l);border-color:#ffd3c4"><div class="between"><b>⚡ Szybka runda</b><span class="chip coral timer" id="sp-timer">⏱ ' + time + " s</span></div>" +
+        '<div class="muted">Ile poprawnych form zdążysz w 60 sekund? Błąd nie kończy gry — lecimy dalej!</div></div>' +
+        '<div id="speed-wrap"><div class="qbox"><div class="q">' + cur.s.replace("___", "<em>___</em>") + '</div></div>' +
+        '<div class="options">' + shuffle(cur.o).map(function (o) { return '<button class="opt" data-v="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + "</div>" +
+        '<div class="feedback" id="speed-fb"></div><p class="score-line" id="speed-score">Wynik: ' + score + " / " + asked + "</p></div>";
+      $("#speed-wrap").onclick = function (e) {
+        const b = e.target.closest("[data-v]"); if (!b || time <= 0) return;
+        asked++;
+        const ok = b.dataset.v === cur.a;
+        if (ok) score++;
+        mark("speed", ok);
+        const fb = $("#speed-fb"); fb.className = "feedback show " + (ok ? "ok" : "no");
+        fb.innerHTML = ok ? "✅ Tak!" : "❌ Poprawnie: " + esc(cur.a);
+        $("#speed-score").textContent = "Wynik: " + score + " / " + asked;
+        setTimeout(draw, ok ? 220 : 650);
+      };
+    }
+    function end() {
+      clearSpeed();
+      S.speedBest = Math.max(S.speedBest || 0, score);
+      const a = S.acts.speed || { tried: 0, ok: 0, done: false }; a.done = true; S.acts.speed = a;
+      save();
+      $("#run-host").innerHTML = '<div class="center"><div style="font-size:3rem">⚡</div><h2>' + score + " poprawnych w 60 sekund!</h2>" +
+        '<p class="muted">Najlepszy wynik: ' + S.speedBest + '. Zobacz, jak rośnie szybkość po kilku dniach powtórek.</p>' +
+        '<div class="row" style="justify-content:center"><button class="btn" id="sp-again">🔁 Jeszcze raz</button><button class="btn ghost" id="sp-other">🎮 Inne ćwiczenia</button></div></div>';
+      $("#sp-again").onclick = function () { actSpeed(); };
+      $("#sp-other").onclick = function () { $("#practice-run").style.display = "none"; $("#practice-hub").style.display = "block"; updateHub(); };
+      confetti(20);
+    }
+    draw();
+    clearSpeed();
+    activeSpeed = setInterval(function () {
+      time--;
+      const t = $("#sp-timer"); if (t) t.textContent = "⏱ " + Math.max(0, time) + " s";
+      if (time <= 0) end();
+    }, 1000);
+  }
+
+  const IMPL = {
+    choice: actChoice, gap: actGap, memory: actMemory, match: actMatch, order: actOrder,
+    transform: actTransform, shorts: actShorts, detective: actDetective, sort: actSort,
+    reading: actReading, listen: actListen, dictation: actDictation, translate: actTranslate,
+    spelling: actSpelling, speed: actSpeed
+  };
+
+  /* ---------------- FISZKI ---------------- */
+  let cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; }));
+  let cardFlipped = false;
+  function renderCard() {
+    if (!cardQueue.length) cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; }));
+    const i = cardQueue[0], c = D.flashcards[i];
+    cardFlipped = false;
+    const box = $("#flash-card");
+    box.innerHTML = '<div class="front">' + esc(c.front) + '</div><span class="pill teal" style="margin-top:10px">' + esc(c.tag) + '</span><div class="flip-hint">👆 Kliknij, żeby zobaczyć odpowiedź</div>';
+    const st = S.cards[i] || { box: 0, seen: 0, ok: 0 };
+    const known = Object.keys(S.cards).filter(function (k) { return S.cards[k] && S.cards[k].ok > 0; }).length;
+    $("#cards-stats").textContent = "Poziom: " + (st.box + 1) + " · powtórzeń: " + st.seen;
+    $("#cards-queue").innerHTML = "W kolejce: " + cardQueue.length + " kart · oznaczonych „Umiem”: " + known + " z " + D.flashcards.length + "<br>Aktualna karta: <b>" + esc(c.tag) + "</b>";
+  }
+  $("#flash-card").onclick = function () {
+    const i = cardQueue[0], c = D.flashcards[i];
+    cardFlipped = !cardFlipped;
+    this.innerHTML = cardFlipped
+      ? '<div class="back">' + esc(c.back) + '</div><div class="flip-hint">👆 Kliknij, żeby wrócić do pytania</div>'
+      : '<div class="front">' + esc(c.front) + '</div><span class="pill teal" style="margin-top:10px">' + esc(c.tag) + '</span><div class="flip-hint">👆 Kliknij, żeby zobaczyć odpowiedź</div>';
+    if (cardFlipped) speak(c.back.replace(/\(.*?\)/g, ""));
+  };
+  $("#flash-card").onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.click(); } };
+  function nextCard(known) {
+    const i = cardQueue.shift();
+    const st = S.cards[i] || { box: 0, seen: 0, ok: 0 };
+    st.seen++;
+    if (known) { st.ok++; st.box = Math.min(2, st.box + 1); S.xp += 5; }
+    else st.box = 0;
+    S.cards[i] = st; save(); updateChips();
+    if (known) {
+      const pos = Math.min(cardQueue.length, 3 + st.box * 4);
+      cardQueue.splice(pos, 0, i);
+      toast("✅ Umiem! Karta wróci później.");
+    } else {
+      cardQueue.splice(Math.min(2, cardQueue.length), 0, i);
+      toast("🔁 Dobra, powtórzymy to wkrótce.");
+    }
+    renderCard();
+  }
+  $("#btn-card-again").onclick = function () { nextCard(false); };
+  $("#btn-card-know").onclick = function () { nextCard(true); };
+  $("#btn-shuffle-cards").onclick = function () { cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; })); renderCard(); toast("🔀 Karty przetasowane"); };
+  $("#btn-reset-cards").onclick = function () { S.cards = {}; save(); cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; })); renderCard(); toast("Fiszki zaczynają od nowa"); };
+
+  /* ---------------- KARTKÓWKA PRÓBNA ---------------- */
+  let EX = null;
+  function startExam(mode) {
+    clearExamTimer();
+    const qs = shuffle(D.examPool).slice(0, 15);
+    EX = { mode: mode, qs: qs, i: 0, answers: [], seconds: 0 };
+    $("#exam-intro").style.display = "none";
+    $("#exam-result").style.display = "none";
+    $("#exam-run").style.display = "block";
+    $("#exam-title").textContent = mode === "real" ? "📝 Kartkówka próbna (bez podpowiedzi)" : "🧠 Kartkówka w trybie nauki";
+    $("#exam-best").textContent = S.bestExam ? S.bestExam + "%" : "—";
+    activeExamTimer = setInterval(function () {
+      EX.seconds++;
+      const m = Math.floor(EX.seconds / 60), s = EX.seconds % 60;
+      const t = $("#exam-timer"); if (t) t.textContent = "⏱ " + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    }, 1000);
+    renderExamQ();
+  }
+  function renderExamQ() {
+    const q = EX.qs[EX.i];
+    $("#exam-progress").style.width = pct(EX.i, EX.qs.length) + "%";
+    const body = q.type === "choice"
+      ? '<div class="options">' + shuffle(q.o).map(function (o) { return '<button class="opt" data-v="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + "</div>"
+      : '<input class="answer-input" id="exam-input" autocomplete="off" spellcheck="false" placeholder="wpisz odpowiedź po angielsku…">';
+    $("#exam-host").innerHTML = '<div id="exam-q-wrap"><div class="exam-q"><div class="num">ZADANIE ' + (EX.i + 1) + " / " + EX.qs.length + ' · ' + esc(q.area) + '</div><div class="p">' + esc(q.p) + "</div>" + body +
+      '<div class="feedback" id="exam-fb"></div></div></div>';
+    const wrap = $("#exam-q-wrap");
+    wrap.onclick = function (e) {
+      const b = e.target.closest("[data-v]"); if (!b) return;
+      $$("#exam-q-wrap .opt").forEach(function (x) { x.classList.remove("selected"); });
+      b.classList.add("selected");
+      EX.picked = b.dataset.v;
+    };
+    const inp = $("#exam-input");
+    if (inp) {
+      inp.onkeydown = function (e) { if (e.key === "Enter") $("#btn-exam-next").click(); };
+      inp.focus();
+    }
+    delete EX.picked;
+  }
+  function examAnswer() {
+    const q = EX.qs[EX.i];
+    let given = q.type === "choice" ? (EX.picked || "") : ($("#exam-input") ? $("#exam-input").value.trim() : "");
+    if (!given && EX.skip !== true) { toast("Zaznacz albo wpisz odpowiedź (możesz też kliknąć „Pomiń”)"); return false; }
+    if (EX.skip) { given = "(pominięte)"; EX.skip = false; }
+    let ok;
+    if (q.type === "choice") ok = norm(given) === norm(q.a);
+    else ok = q.a.some(function (x) { return norm(x) === norm(given); });
+    EX.answers.push({ q: q, given: given, ok: ok });
+    mark("exam", ok);
+    if (!ok) noteWeak(q.area);
+    if (EX.mode === "learn") {
+      const fb = $("#exam-fb");
+      fb.className = "feedback show " + (ok ? "ok" : "no");
+      fb.innerHTML = (ok ? "✅ Brawo! " : "❌ Poprawnie: <u>" + esc(q.a[0] || q.a) + "</u>. ") + esc(q.w);
+      $$("#exam-q-wrap .opt").forEach(function (x) { x.disabled = true; if (norm(x.dataset.v) === norm(q.a)) x.classList.add("correct"); });
+      const inp = $("#exam-input"); if (inp) inp.disabled = true;
+      $("#btn-exam-next").textContent = EX.i + 1 >= EX.qs.length ? "Zobacz wynik 🏁" : "Dalej →";
+      EX.waiting = true;
+      return true;
+    }
+    return true;
+  }
+  $("#btn-exam-next").onclick = function () {
+    if (!EX) return;
+    if (EX.waiting) { EX.waiting = false; EX.i++; nextExam(); return; }
+    if (examAnswer()) {
+      if (EX.waiting) return; // tryb nauki: najpierw pokazujemy wyjaśnienie
+      EX.i++; nextExam();
+    }
+  };
+  $("#btn-exam-skip").onclick = function () {
+    if (!EX) return;
+    if (EX.waiting) { EX.waiting = false; EX.i++; nextExam(); return; }
+    EX.skip = true;
+    if (examAnswer()) {
+      if (EX.waiting) return;
+      EX.i++; nextExam();
+    }
+  };
+  function nextExam() {
+    $("#btn-exam-next").textContent = "Dalej →";
+    if (EX.i >= EX.qs.length) finishExam(); else renderExamQ();
+  }
+  $("#btn-exam-learn").onclick = function () { startExam("learn"); };
+  $("#btn-exam-real").onclick = function () { startExam("real"); };
+  $("#btn-exam-abort").onclick = function () {
+    clearExamTimer(); EX = null;
+    $("#exam-run").style.display = "none"; $("#exam-intro").style.display = "block";
+    toast("Przerwano — wróć, gdy będziesz gotowy/a 🙂");
+  };
+  function finishExam() {
+    clearExamTimer();
+    const ok = EX.answers.filter(function (x) { return x.ok; }).length;
+    const total = EX.qs.length, p = pct(ok, total);
+    S.bestExam = Math.max(S.bestExam || 0, p);
+    const act = S.acts.exam || { tried: 0, ok: 0, done: false }; act.done = true; S.acts.exam = act;
+    save(); updateChips(); updateHub();
+    $("#exam-run").style.display = "none";
+    $("#exam-result").style.display = "block";
+    const weak = {};
+    EX.answers.forEach(function (a) { if (!a.ok) weak[a.q.area] = (weak[a.q.area] || 0) + 1; });
+    const weakList = Object.keys(weak).sort(function (a, b) { return weak[b] - weak[a]; });
+    $("#exam-result").innerHTML =
+      '<div class="card hero center"><div style="font-size:3rem">' + (p >= 90 ? "🏆" : p >= 70 ? "👍" : "🌱") + '</div><h1>' + ok + " / " + total + " · " + p + "%</h1>" +
+      "<p>" + (p >= 90 ? "Jesteś gotowy/a na kartkówkę! 💪" : p >= 70 ? "Dobrze idzie! Popraw jeszcze poniższe zadania." : "Spokojnie — to była próba. Wróć do ćwiczeń i spróbuj ponownie.") + "</p>" +
+      '<div class="muted" style="color:rgba(255,255,255,.9)">Czas: ' + Math.floor(EX.seconds / 60) + " min " + (EX.seconds % 60) + " s · tryb: " + (EX.mode === "real" ? "kartkówka" : "nauka") + "</div></div>" +
+      '<div class="card"><div class="between"><h2>🔍 Omówienie wszystkich zadań</h2><span class="pill teal">Najlepszy wynik: ' + S.bestExam + "%</span></div>" +
+      (weakList.length ? '<p class="muted">Nad tym warto popracować: <b>' + weakList.map(function (w) { return w + " (" + weak[w] + ")"; }).join(", ") + "</b></p>" : "<p class='muted'>Zero błędów — pięknie! 🎉</p>") +
+      EX.answers.map(function (a, i) {
+        return '<div class="exam-q review ' + (a.ok ? "ok" : "no") + '"><div class="num">' + (i + 1) + ". " + esc(a.q.area) + (a.ok ? " ✓" : " ✗") + '</div><div class="p">' + esc(a.q.p) + "</div>" +
+          '<div class="muted">Twoja odpowiedź: <b>' + esc(a.given) + "</b></div>" +
+          (a.ok ? "" : '<div>Poprawnie: <b>' + esc(Array.isArray(a.q.a) ? a.q.a[0] : a.q.a) + "</b></div>") +
+          '<div class="review-note">💡 ' + esc(a.q.w) + "</div></div>";
+      }).join("") +
+      '<div class="row" style="margin-top:14px"><button class="btn" id="ex-again">🔁 Nowa kartkówka</button><button class="btn orange" id="ex-practice">🎮 Poćwicz słabe strony</button><button class="btn ghost" id="ex-back">← Wróć</button></div></div>';
+    $("#ex-again").onclick = function () { startExam(EX.mode); };
+    $("#ex-practice").onclick = function () { go("practice"); };
+    $("#ex-back").onclick = function () { $("#exam-result").style.display = "none"; $("#exam-intro").style.display = "block"; };
+    if (p >= 80) confetti(40);
+    checkBadges();
+  }
+
+  /* ---------------- POSTĘPY ---------------- */
+  function renderProgress() {
+    const total = S.correct + S.wrong;
+    const done = D.activities.filter(function (a) { return S.acts[a.id] && S.acts[a.id].done; }).length;
+    $("#stats-grid").innerHTML = [
+      ["⭐", S.xp + " pkt", "zdobyte punkty"], ["✅", S.correct + " / " + total, "poprawnych odpowiedzi"],
+      ["📈", pct(S.correct, total) + "%", "skuteczność"], ["🔥", S.bestStreak, "najdłuższa seria"],
+      ["📝", (S.bestExam || 0) + "%", "najlepsza próbna kartkówka"], ["🎮", done + " / " + D.activities.length, "ukończonych ćwiczeń"],
+      ["📅", S.days.length, "dni nauki"], ["🏅", S.badges.length + " / " + BADGES.length, "odznak"]
+    ].map(function (x) {
+      return '<div class="card flat center" style="margin:0"><div style="font-size:1.7rem">' + x[0] + "</div><b style='font-size:1.15rem'>" + x[1] + '</b><small class="muted">' + x[2] + "</small></div>";
+    }).join("");
+
+    $("#activity-bars").innerHTML = D.activities.map(function (a) {
+      const st = S.acts[a.id] || { tried: 0, ok: 0 };
+      const p = pct(st.ok, st.tried);
+      return '<div><div class="between"><b>' + a.icon + " " + a.title + '</b><span class="muted">' + st.ok + " / " + st.tried + (st.tried ? " · " + p + "%" : " · nie zaczęte") + "</span></div>" +
+        '<div class="bar"><i style="width:' + (st.tried ? p : 0) + '%"></i></div></div>';
+    }).join("");
+
+    const ranked = D.activities.map(function (a) {
+      const st = S.acts[a.id] || { tried: 0, ok: 0 };
+      return { name: a.title, p: st.tried >= 3 ? pct(st.ok, st.tried) : null };
+    }).filter(function (x) { return x.p !== null; }).sort(function (a, b) { return a.p - b.p; });
+    const weak = Object.keys(S.weak).sort(function (a, b) { return S.weak[b] - S.weak[a]; }).slice(0, 4);
+    const best = ranked.length ? ranked[ranked.length - 1] : null, worst = ranked.length ? ranked[0] : null;
+    $("#parent-report").innerHTML =
+      "<p><b>Podsumowanie (" + today() + "):</b> dziecko rozwiązało <b>" + total + " zadań</b>, poprawnie <b>" + S.correct + "</b> (" + pct(S.correct, total) + "%), zdobyło " + S.xp + " pkt i ukończyło " + done + " z " + D.activities.length + " ćwiczeń. Najlepszy wynik próbnej kartkówki: <b>" + (S.bestExam || 0) + "%</b>.</p>" +
+      (best ? "<p><b>Najlepiej idzie:</b> " + esc(best.name) + " (" + best.p + "%). <b>Warto poćwiczyć:</b> " + esc(worst.name) + " (" + worst.p + "%).</p>" : "<p>Za mało danych, by ocenić mocne i słabe strony — zacznij od dowolnego ćwiczenia.</p>") +
+      (weak.length ? "<p><b>Tematy, w których pojawiły się błędy na kartkówkach:</b> " + weak.map(function (w) { return w + " (" + S.weak[w] + ")"; }).join(", ") + ".</p>" : "") +
+      "<p><b>Rekomendacja:</b> 10–15 minut dziennie według planu z zakładki Start. Dzień przed kartkówką: tabela <i>to be</i>, fiszki z błędami i jedna próbna kartkówka bez podpowiedzi. Zwróć uwagę na trzy pułapki: <i>amn't</i>, <i>Yes, I'm</i> oraz wiek z <i>have</i>.</p>" +
+      "<p class='muted'>Dane pochodzą wyłącznie z tej przeglądarki (localStorage) i nie są nigdzie wysyłane.</p>";
+    renderBadges();
+  }
+  $("#btn-refresh-progress").onclick = renderProgress;
+  $("#btn-print-report").onclick = function () { renderProgress(); doPrint("report"); };
+  $("#btn-reset-all").onclick = function () {
+    if (!window.confirm("Wyczyścić wszystkie punkty, odznaki, wyniki i plan? Tej operacji nie da się cofnąć.")) return;
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    S = fresh(); S.days.push(today()); save();
+    cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; }));
+    renderStart(); renderCard(); renderProgress(); updateChips();
+    toast("Postępy wyczyszczone — zaczynamy od nowa 🌱");
+  };
+
+  /* ---------------- init ---------------- */
+  renderStart();
+  renderLearn();
+  renderHub();
+  renderCard();
+  renderProgress();
+  updateChips();
+  $("#exam-best").textContent = S.bestExam ? S.bestExam + "%" : "—";
+
+  // czyścimy zegary przy opuszczeniu strony
+  window.addEventListener("beforeunload", function () { clearSpeed(); clearExamTimer(); });
+})();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Interaktywny moduł do nauki czasownika to be — przygotowanie do kartkówki z języka angielskiego (klasa 4, Together 2026). Działa offline.">
+<title>TO BE · Trening przed kartkówką 🇬🇧</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- maskotka: Robbie z podręcznika -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="robbie" viewBox="0 0 100 100">
+    <line x1="50" y1="5" x2="50" y2="21" stroke="#123049" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="50" cy="6" r="6" fill="#ff7a59"/>
+    <rect x="9" y="20" width="82" height="66" rx="21" fill="#eaf6f8" stroke="#123049" stroke-width="5"/>
+    <rect x="4" y="41" width="9" height="20" rx="4" fill="#12b3a6"/>
+    <rect x="87" y="41" width="9" height="20" rx="4" fill="#12b3a6"/>
+    <circle cx="34" cy="48" r="9" fill="#123049"/><circle cx="66" cy="48" r="9" fill="#123049"/>
+    <circle cx="37" cy="45" r="3" fill="#fff"/><circle cx="69" cy="45" r="3" fill="#fff"/>
+    <path d="M36 67 Q50 79 64 67" fill="none" stroke="#123049" stroke-width="5" stroke-linecap="round"/>
+    <rect x="32" y="86" width="36" height="10" rx="5" fill="#12b3a6"/>
+  </symbol>
+</svg>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="robbie" aria-hidden="true"><use href="#robbie"/></svg>
+    <div class="brand-txt"><b>TO BE · Trening Robbiego</b><small>Angielski · klasa 4 · Before the test</small></div>
+  </div>
+  <div class="topstats">
+    <span class="chip" id="chip-days">📅 do kartkówki: …</span>
+    <span class="chip teal" id="chip-xp">⭐ 0 pkt</span>
+    <span class="chip coral" id="chip-streak">🔥 0 z rzędu</span>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="Nawigacja">
+  <button class="tab active" data-go="start">🏠 Start</button>
+  <button class="tab" data-go="learn">📘 Nauka</button>
+  <button class="tab" data-go="practice">🎮 Ćwiczenia</button>
+  <button class="tab" data-go="flashcards">🗂️ Fiszki</button>
+  <button class="tab" data-go="exam">📝 Kartkówka próbna</button>
+  <button class="tab" data-go="progress">📊 Postępy</button>
+</nav>
+
+<main>
+
+<!-- ================= START ================= -->
+<section class="section active" id="start">
+  <div class="card hero">
+    <div class="grid2">
+      <div>
+        <span class="pill sun">JĘZYK ANGIELSKI · KARTKÓWKA</span>
+        <h1 style="margin-top:12px">Czasownik <i>to be</i> —<br>ogarniamy go razem! 🤖</h1>
+        <p style="font-size:1.08rem">Cześć! Jestem Robbie, robot z Twojego podręcznika. Pomogę Ci powtórzyć <b>odmianę, twierdzenia, pytania i przeczenia</b> — dokładnie to, co zapowiedziała nauczycielka.</p>
+        <div class="row" style="margin-top:14px">
+          <button class="btn yellow" data-go="practice">Zacznij ćwiczyć →</button>
+          <button class="btn ghost" data-go="learn">Najpierw przypomnij sobie zasady</button>
+        </div>
+      </div>
+      <div class="exam-box">
+        <div class="row"><svg class="robbie small" aria-hidden="true"><use href="#robbie"/></svg><b>Twoja kartkówka</b></div>
+        <hr style="border-color:rgba(255,255,255,.35)">
+        <div class="count" id="countdown">—</div>
+        <div id="countdown-label">dni do 10 listopada 2026</div>
+        <p style="margin-top:12px;font-size:.95rem" id="scope-text"></p>
+        <p class="muted" style="color:rgba(255,255,255,.85);font-size:.8rem" id="book-text"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🎯 Co dokładnie trzeba umieć?</h2>
+    <p class="muted">Cztery rzeczy z opisu kartkówki — każdą ćwiczymy na kilka różnych sposobów.</p>
+    <div class="grid4" id="skills-grid"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>🗓️ Plan na 5 dni</h2>
+      <p class="muted">Po 10–15 minut dziennie. Zaznaczaj wykonane dni — zapisujemy je na tym urządzeniu.</p>
+      <div id="plan-list"></div>
+    </div>
+    <div class="card">
+      <h2>🏅 Odznaki do zdobycia</h2>
+      <p class="muted">Zdobywaj punkty za poprawne odpowiedzi i odblokowuj odznaki.</p>
+      <div class="grid3" id="badges-mini"></div>
+      <hr>
+      <h3>Jak tu się uczyć?</h3>
+      <p><b>1.</b> Zajrzyj do <a href="#" data-go="learn">Nauki</a> (tabela + zasady).<br>
+         <b>2.</b> Zrób kilka różnych <a href="#" data-go="practice">ćwiczeń</a> — nie tylko jedno!<br>
+         <b>3.</b> Powtarzaj <a href="#" data-go="flashcards">fiszki</a> oznaczone „Jeszcze ćwiczę”.<br>
+         <b>4.</b> Na koniec rozwiąż <a href="#" data-go="exam">próbną kartkówkę</a> i popraw błędy.</p>
+      <button class="btn small ghost" id="btn-print-start">🖨️ Wydrukuj ściągę</button>
+    </div>
+  </div>
+
+  <div class="card flat" style="background:var(--sun-l);border-color:#ffe49b">
+    <b>💡 Dla rodzica:</b> strona działa bez internetu (zapisz cały folder lub jeden plik <code>to-be-kartkowka.html</code>). Postępy, wyniki i plan zapisują się tylko w przeglądarce tego urządzenia — nic nie jest wysyłane na zewnątrz. W zakładce <b>Postępy</b> znajdziesz krótki raport, nad czym jeszcze warto popracować.
+  </div>
+</section>
+
+<!-- ================= NAUKA ================= -->
+<section class="section" id="learn">
+  <div class="card">
+    <div class="between">
+      <div><h2>📘 Zasady w 7 zdaniach</h2><p class="muted">Kliknij dowolną regułę, żeby usłyszeć przykład po angielsku 🔊</p></div>
+      <button class="btn small ghost" id="btn-print-learn">🖨️ Ściąga do druku</button>
+    </div>
+    <div id="rules-list"></div>
+  </div>
+
+  <div class="card">
+    <h2>🧮 Tabela odmiany <i>to be</i></h2>
+    <p class="muted">Kliknij wiersz, a Robbie przeczyta formy po angielsku. <b>am / is / are</b> to cała odmiana!</p>
+    <div class="table-wrap"><table id="be-table"></table></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn small" id="btn-sing-table">🔊 Odczytaj całą tabelę</button>
+      <span class="muted">Pamiętaj: <b>you</b> to „ty” i „wy” — zawsze z <b>are</b>.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>❓ Pytania z podręcznika</h2>
+    <p class="muted">Rozwiń i sprawdź, jak odpowiedzieć. To słownictwo z lekcji 5 i „Przygotowania do sprawdzianu”.</p>
+    <div id="book-questions"></div>
+  </div>
+
+  <div class="card">
+    <h2>🕵️ Najczęstsze pułapki</h2>
+    <p class="muted">Nauczyciele lubią takie zdania na kartkówkach. Przeczytaj je przed sprawdzianem!</p>
+    <div id="mistakes-list"></div>
+  </div>
+
+  <div class="card">
+    <h2>📚 Słownictwo, które pojawia się w zdaniach</h2>
+    <p class="muted">Z podręcznika Together 2026, kl. 4 (rozdziały 1–2). Kartkówka jest z <i>to be</i>, ale znajome słowa ułatwią czytanie poleceń.</p>
+    <div id="words-list"></div>
+  </div>
+</section>
+
+<!-- ================= ĆWICZENIA ================= -->
+<section class="section" id="practice">
+  <div id="practice-hub">
+    <div class="card">
+      <h2>🎮 15 różnych ćwiczeń</h2>
+      <p class="muted">Każde ćwiczenie trenuje inny „mięsień”: wybieranie, wpisywanie, pamięć, słuch, układanie zdań, poprawianie błędów i szybkość. Losujemy pytania, więc możesz wracać wiele razy.</p>
+      <div class="row"><span class="pill teal" id="hub-progress">Ukończone: 0 z 15</span><button class="btn small ghost" id="btn-random">🎲 Losowe ćwiczenie</button></div>
+    </div>
+    <div class="grid3" id="activity-grid"></div>
+  </div>
+
+  <div id="practice-run" style="display:none">
+    <div class="card">
+      <div class="between">
+        <div class="ex-head" style="margin:0">
+          <span class="ico" id="run-icon">🎯</span>
+          <div><h2 id="run-title" style="margin:0">Ćwiczenie</h2><span class="muted" id="run-desc"></span></div>
+        </div>
+        <button class="btn small ghost" id="btn-back-hub">← Wszystkie ćwiczenia</button>
+      </div>
+      <div class="progress-line"><i id="run-progress"></i></div>
+      <div class="between"><span class="score-line" id="run-score">Wynik: 0 / 0</span><span class="score-line" id="run-streak">🔥 0 z rzędu</span></div>
+      <hr>
+      <div id="run-host"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FISZKI ================= -->
+<section class="section" id="flashcards">
+  <div class="card">
+    <div class="between">
+      <div><h2>🗂️ Fiszki z powtórkami</h2><p class="muted">Kliknij kartę, żeby zobaczyć odpowiedź. „Umiem” odkłada kartę na później, „Jeszcze ćwiczę” pokaże ją częściej — to prosta powtórka rozłożona w czasie.</p></div>
+      <button class="btn small ghost" id="btn-shuffle-cards">🔀 Przetasuj</button>
+    </div>
+    <div class="grid2" style="align-items:start">
+      <div>
+        <div class="flash" id="flash-card" tabindex="0" role="button" aria-label="Karta do nauki — kliknij, aby odwrócić"></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn orange" id="btn-card-again">🔁 Jeszcze ćwiczę</button>
+          <button class="btn" id="btn-card-know">✅ Umiem</button>
+        </div>
+      </div>
+      <div>
+        <div class="qbox" style="background:var(--sun-l);border-color:#ffe49b">
+          <b id="cards-stats">Fiszki</b>
+          <div class="muted" id="cards-queue"></div>
+        </div>
+        <h3>Jak to działa?</h3>
+        <p class="muted">Karty oznaczone „Jeszcze ćwiczę” wracają natychmiast. Karty „Umiem” trafiają na koniec kolejki i wrócą po kilku innych kartach. Dzięki temu powtarzasz dokładnie to, co sprawia trudność.</p>
+        <button class="btn small ghost" id="btn-reset-cards">↺ Zacznij fiszki od nowa</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= KARTKÓWKA ================= -->
+<section class="section" id="exam">
+  <div id="exam-intro">
+    <div class="card hero">
+      <div class="grid2" style="align-items:center">
+        <div>
+          <span class="pill sun">SYMULACJA KARTKÓWKI</span>
+          <h1 style="margin-top:10px">Sprawdź się na sucho 📝</h1>
+          <p>15 losowych zadań z całego zakresu: odmiana, twierdzenia, przeczenia, pytania, krótkie odpowiedzi i poprawianie błędów. Dokładnie w stylu zadań z podręcznika.</p>
+        </div>
+        <div class="exam-box center">
+          <div style="font-size:2.6rem;font-weight:900" id="exam-best">—</div>
+          <div>najlepszy wynik</div>
+          <hr style="border-color:rgba(255,255,255,.35)">
+          <div class="muted" style="color:rgba(255,255,255,.9)">Nauczycielka nie widzi tego wyniku 😉<br>Po teście dostaniesz listę błędów do poprawy.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Wybierz tryb</h2>
+      <div class="grid2">
+        <div class="card flat" style="border-color:var(--teal)">
+          <h3>🧠 Tryb nauki</h3>
+          <p class="muted">Widzisz podpowiedź od razu po każdej odpowiedzi. Idealny na pierwszy raz.</p>
+          <button class="btn" id="btn-exam-learn">Rozpocznij tryb nauki</button>
+        </div>
+        <div class="card flat" style="border-color:var(--coral)">
+          <h3>📝 Tryb kartkówki</h3>
+          <p class="muted">Bez podpowiedzi, z licznikiem czasu. Wyniki i omówienie dopiero po oddaniu pracy.</p>
+          <button class="btn orange" id="btn-exam-real">Rozpocznij kartkówkę</button>
+        </div>
+      </div>
+      <hr>
+      <p class="muted">💡 Wskazówka: powtórz <a href="#" data-go="learn">tabelę</a> i zrób <a href="#" data-go="practice">Szybką rundę</a> przed wejściem tutaj.</p>
+    </div>
+  </div>
+
+  <div id="exam-run" style="display:none">
+    <div class="card">
+      <div class="between">
+        <h2 id="exam-title" style="margin:0">📝 Kartkówka próbna</h2>
+        <span class="chip teal timer" id="exam-timer">⏱ 00:00</span>
+      </div>
+      <div class="progress-line"><i id="exam-progress"></i></div>
+      <div id="exam-host"></div>
+      <div class="ex-actions">
+        <button class="btn" id="btn-exam-next">Dalej →</button>
+        <button class="btn ghost small" id="btn-exam-skip">Pomiń zadanie</button>
+        <button class="btn ghost small" id="btn-exam-abort">Zakończ bez sprawdzania</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="exam-result" style="display:none"></div>
+</section>
+
+<!-- ================= POSTĘPY ================= -->
+<section class="section" id="progress">
+  <div class="card">
+    <h2>📊 Twój postęp</h2>
+    <div class="grid4" id="stats-grid"></div>
+  </div>
+  <div class="card">
+    <div class="between"><h2>🎮 Ćwiczenia — gdzie idzie najlepiej?</h2><button class="btn small ghost" id="btn-refresh-progress">↻ Odśwież</button></div>
+    <div id="activity-bars"></div>
+  </div>
+  <div class="card">
+    <h2>🏅 Odznaki</h2><div class="grid4" id="badges-full"></div>
+  </div>
+  <div class="card">
+    <h2>👪 Raport dla rodzica / nauczyciela</h2>
+    <div id="parent-report"></div>
+    <hr>
+    <div class="row">
+      <button class="btn small ghost" id="btn-print-report">🖨️ Wydrukuj raport</button>
+      <button class="btn small ghost" id="btn-reset-all" style="color:#b32424">↺ Wyczyść wszystkie postępy</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Materiał przygotowany na podstawie zdjęć podręcznika i zeszytu ćwiczeń <b>Together 2026 · klasa 4</b> oraz zrzutu zapowiedzi kartkówki (10.11.2026).<br>
+  Strona działa całkowicie offline · bez logowania · bez reklam · postępy tylko w tym urządzeniu.
+</footer>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<!-- ====== Ściągawka do druku (wypełniana przez JS) ====== -->
+<div id="print-sheet">
+  <h1>TO BE — ściąga przed kartkówką</h1>
+  <p><b>Zakres:</b> odmiana przez osoby, twierdzenia, pytania i przeczenia · <b>Termin:</b> 10 listopada 2026</p>
+  <div id="print-rules"></div>
+  <div class="table-wrap"><table id="print-table"></table></div>
+  <div id="print-mistakes"></div>
+  <div id="print-report"></div>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
