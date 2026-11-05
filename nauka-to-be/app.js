@@ -214,7 +214,7 @@
 
   /* ---------------- udostępnianie (Telegram, WhatsApp, e-mail…) ---------------- */
   const SHARE_URL = "https://is.gd/gAbph1";
-  const SHARE_TEXT = "TO BE — trening przed kartkówką (angielski, 10.11) 🇬🇧 15 ćwiczeń, fiszki i próbna kartkówka. Bez logowania.";
+  const SHARE_TEXT = "TO BE — trening przed kartkówką (angielski, 10.11) 🇬🇧 4 949 unikalnych zadań, 15 typów ćwiczeń, oceny 1–6 i powtórki z błędów. Bez logowania.";
   $("#btn-share").onclick = async function () {
     const data = { title: "TO BE · trening przed kartkówką", text: SHARE_TEXT, url: SHARE_URL };
     if (navigator.share) {
