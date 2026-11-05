@@ -60,7 +60,7 @@ i otwórz go w Chrome / Safari.
 ------------------------------------------------------------------------
 
 Plik:  to-be-kartkowka.html  (jeden plik, ~142 KB, wszystko w środku)
-Link z Dysku Google:  https://drive.google.com/file/d/1B0sLh2KmaTnw8_Dg_OLRHflARX4GLbCg/view?usp=drivesdk
+Link z Dysku Google:  https://drive.google.com/file/d/1MJZbfjrfmYWx7bvwOAMigWR2zdd1olKq/view?usp=drivesdk
 
 W aplikacji Telegram:
   • klip spinacz / ➕ → „Plik" (File / Document, NIE „Galeria"),
@@ -76,7 +76,7 @@ Po otwarciu strona działa całkowicie offline — można się uczyć w autobusi
 ------------------------------------------------------------------------
 
 Plik:  sciaga-to-be.png  (1080×1560, z kodem QR prowadzącym do strony)
-Link z Dysku Google:  https://drive.google.com/file/d/1WPoPEINbOCvflcGW-KVnR1yky-5zmaYL/view?usp=drivesdk
+Link z Dysku Google:  https://drive.google.com/file/d/1n1_n3hLan00ecFXodlrsT70uf3tOQloQ/view?usp=drivesdk
 
 Wyślij jako ZDJĘCIE (nie jako plik), żeby Telegram pokazał podgląd
 w czacie. Dziecko ma wtedy całą tabelę `be` i 3 zasady bez klikania.
