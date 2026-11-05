@@ -14,8 +14,7 @@ except ImportError:
     sys.exit("Brak bibliotek: zainstaluj `python3 -m pip install pillow qrcode`")
 
 HERE = Path(__file__).parent
-URL = ("https://cdn.jsdelivr.net/gh/zielinski25/Sterownik-Pieca-C.O."
-       "@arena%2Ff423a839-sterownik-pieca-c-o/docs/index.html")
+URL = "https://is.gd/gAbph1"
 
 FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
 def font(name, size):

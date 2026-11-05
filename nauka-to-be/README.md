@@ -110,9 +110,13 @@ Po każdej zmianie w `index.html` / `styles.css` / `data.js` / `app.js` uruchom 
 
 Telegram nie renderuje HTML-u w czacie, dlatego przygotowano trzy drogi:
 
-1. **Link (polecane)** — `docs/index.html` jest opublikowany przez publiczny CDN jsDelivr:
-   `https://cdn.jsdelivr.net/gh/zielinski25/Sterownik-Pieca-C.O.@arena%2Ff423a839-sterownik-pieca-c-o/docs/index.html`
-   Wklejony do wiadomości otwiera się od razu w przeglądarce Telegrama.
+1. **Link (polecane)** — krótki adres **`https://is.gd/gAbph1`** prowadzi przez
+   `htmlpreview.github.io` do `docs/index.html` z tej gałęzi. Wklejony do
+   wiadomości otwiera się od razu w przeglądarce Telegrama jako gotowa strona.
+   Pełny adres zapasowy i wyjaśnienie w `UDSTEPNIJ-TELEGRAM.txt`.
+   ⚠️ Nie linkuj bezpośrednio do `cdn.jsdelivr.net/.../index.html` ani
+   `raw.githubusercontent.com/.../index.html` — serwują HTML jako tekst,
+   więc przeglądarka pokaże kod zamiast strony (do PNG i do załącznika są OK).
    Strona ma tagi Open Graph (podgląd z miniaturką ściągi) oraz przycisk
    **„🔗 Udostępnij"** (`navigator.share`, fallback = kopiowanie linku).
 2. **Plik** — `to-be-kartkowka.html` wysłany jako dokument działa u odbiorcy offline.
@@ -126,7 +130,10 @@ Gotową wiadomość, instrukcję krok po kroku, linki do Dysku oraz tekstową
 Katalog `docs/` (strona + ściąga + `.nojekyll`) jest jedyną częścią repozytorium
 przeznaczoną do publikacji; w `docs/README.md` opisano, jak go aktualizować.
 Włączenie GitHub Pages wymaga ręcznej zmiany w ustawieniach repozytorium — token
-aplikacji GitHub w tej sesji ma dostęp do kodu, ale nie do ustawień (HTTP 403).
+aplikacji GitHub w tej sesji ma dostęp do kodu, ale nie do ustawień (HTTP 403,
+tak samo zakończyła się próba włączenia Pages przez workflow Actions).
+Po ręcznym włączeniu strona dostanie własny adres
+`https://zielinski25.github.io/Sterownik-Pieca-C.O./`.
 
 ## Sprawdzenie jakości
 

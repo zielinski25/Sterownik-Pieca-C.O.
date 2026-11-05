@@ -10,23 +10,29 @@ wbudowanej w Telegrama, bez pobierania i bez logowania.
 
 
 ------------------------------------------------------------------------
-  1) NAJPROŚCIEJ: WYŚLIJ LINK  ✅ POLECANE
+  1) NAJPROŚCIEJ: WYŚLIJ LINK  ✅ POLECANE, SPRAWDZONE
 ------------------------------------------------------------------------
 
 Skopiuj i wklej do wiadomości na Telegramie:
 
-{{LINK}}
+https://is.gd/gAbph1
 
-Wysyła się jak każdy link: odbiorca klika i od razu ma stronę
-z 15 ćwiczeniami, fiszkami i próbną kartkówką. Działa na telefonie
-i na komputerze. Link jest publiczny (każdy, kto go ma, może otworzyć),
-ale nie ma tam żadnych danych dziecka — postępy zapisują się tylko
-u niego w przeglądarce.
+To krótki link do pełnej, działającej strony. Po kliknięciu odbiorca
+widzi gotowy moduł (15 ćwiczeń, fiszki, próbna kartkówka), a nie kod
+źródłowy — adres prowadzi przez podgląd HTML, który poprawnie serwuje
+stronę i uruchamia jej skrypty. Działa na telefonie i na komputerze.
 
-Wersja „zamrożona" na konkretnej wersji pliku (gdyby CDN pokazywał
-starą wersję po aktualizacjach):
+Pełny adres (zapasowy, gdyby skracacz kiedyś przestał działać):
 
-{{LINK_SHA}}
+https://htmlpreview.github.io/?https://raw.githubusercontent.com/zielinski25/Sterownik-Pieca-C.O./arena/f423a839-sterownik-pieca-c-o/docs/index.html
+
+Link jest publiczny (każdy, kto go ma, może otworzyć), ale nie ma tam
+żadnych danych dziecka — postępy zapisują się tylko u niego w przeglądarce.
+
+⚠️ UWAGA: nie używaj bezpośredniego linku `cdn.jsdelivr.net/.../index.html`
+ani `raw.githubusercontent.com/.../index.html` — te serwisy pokazują HTML
+jako zwykły tekst, czyli zamiast strony widać kod. Do plików graficznych
+i do pliku HTML wysyłanego jako załącznik nadają się bez problemu.
 
 
 ------------------------------------------------------------------------
@@ -36,7 +42,7 @@ starą wersję po aktualizacjach):
 Cześć! Przygotowałam/em stronę do powtórki przed kartkówką z angielskiego
 (10.11): czasownik „to be" — odmiana, twierdzenia, pytania i przeczenia.
 
-👉 {{LINK}}
+👉 https://is.gd/gAbph1
 
 Jest tam 15 różnych ćwiczeń (wybieranie, wpisywanie, memory, słuchanie,
 dyktando, poprawianie błędów, układanie zdań), fiszki i próbna kartkówka
@@ -45,16 +51,16 @@ z omówieniem odpowiedzi. Nic nie trzeba instalować ani logować się 💪
 W załączniku jeszcze ściąga w formie zdjęcia — warto ją mieć pod ręką
 wieczorem przed sprawdzianem 🙂
 
-Uwaga: jeśli przeglądarka pokaże sam kod zamiast strony, wyślij plik
-HTML z Dysku (poniżej) i otwórz go w Chrome/Safari.
+Jeśli link nie chce się otworzyć, wyślij plik HTML z Dysku (poniżej)
+i otwórz go w Chrome / Safari.
 
 
 ------------------------------------------------------------------------
   3) WYŚLIJ PLIK (działa też bez internetu) 📎
 ------------------------------------------------------------------------
 
-Plik:  to-be-kartkowka.html  (jeden plik, 140 KB, wszystko w środku)
-Link z Dysku Google:  {{DRIVE_HTML}}
+Plik:  to-be-kartkowka.html  (jeden plik, ~142 KB, wszystko w środku)
+Link z Dysku Google:  https://drive.google.com/file/d/1B0sLh2KmaTnw8_Dg_OLRHflARX4GLbCg/view?usp=drivesdk
 
 W aplikacji Telegram:
   • klip spinacz / ➕ → „Plik" (File / Document, NIE „Galeria"),
@@ -70,7 +76,7 @@ Po otwarciu strona działa całkowicie offline — można się uczyć w autobusi
 ------------------------------------------------------------------------
 
 Plik:  sciaga-to-be.png  (1080×1560, z kodem QR prowadzącym do strony)
-Link z Dysku Google:  {{DRIVE_PNG}}
+Link z Dysku Google:  https://drive.google.com/file/d/1WPoPEINbOCvflcGW-KVnR1yky-5zmaYL/view?usp=drivesdk
 
 Wyślij jako ZDJĘCIE (nie jako plik), żeby Telegram pokazał podgląd
 w czacie. Dziecko ma wtedy całą tabelę `be` i 3 zasady bez klikania.
@@ -106,23 +112,25 @@ Złote zasady:
 
 
 ------------------------------------------------------------------------
-  UWAGI TECHNICZNE
+  UWAGI TECHNICZNE I STAŁY ADRES WŁASNY
 ------------------------------------------------------------------------
 
-• Link z pkt 1 serwuje plik z gałęzi repozytorium przez publiczny CDN
-  jsDelivr. Repozytorium jest publiczne, opublikowany jest TYLKO katalog
-  docs/ (strona + ściąga) — reszta projektu nie jest wystawiona jako strona.
-• Link podglądu na żywo (działa tylko dopóki trwa ta sesja Arena):
+• Krótki link wskazuje na plik `docs/index.html` z gałęzi repozytorium;
+  po każdej aktualizacji strony pokazuje najnowszą wersję.
+• Podgląd na żywo (działa tylko dopóki trwa ta sesja Arena):
   https://8000-ihdl8hgbmywgqshdmoocj.e2b.app/to-be-kartkowka.html
-• Jeśli wolisz własny, stały adres github.io: wejdź w
+• Najlepszy docelowy adres to GitHub Pages. Wystarczy 1 minuta ręcznie:
   https://github.com/zielinski25/Sterownik-Pieca-C.O./settings/pages
-  → Source: Deploy from a branch → branch:
-  arena/f423a839-sterownik-pieca-c-o → folder: /docs → Save.
+  → Build and deployment → Source: Deploy from a branch
+  → Branch: arena/f423a839-sterownik-pieca-c-o → folder: /docs → Save.
+  Potem strona będzie pod własnym, krótkim adresem:
+  https://zielinski25.github.io/Sterownik-Pieca-C.O./
   (Aplikacja GitHub w tej sesji ma dostęp do kodu, ale nie do ustawień
-  repozytorium, więc nie mogłam włączyć tego automatycznie.)
-• Strona ma też przycisk „🔗 Udostępnij" w prawym górnym rogu: na telefonie
+  repozytorium — API i próba workflowu zwróciły 403, dlatego trzeba to
+  kliknąć samemu. Pliki w `docs/` są już przygotowane, łącznie z .nojekyll.)
+• Strona ma przycisk „🔗 Udostępnij" w prawym górnym rogu: na telefonie
   wywołuje natywny arkusz udostępniania (Telegram, WhatsApp…), a na
-  komputerze kopiuje gotowy link do schowka.
-• Podgląd linku w Telegramie: tytuł, opis i miniaturka ściągi są już
-  w tagach Open Graph w HTML-u.
+  komputerze kopiuje gotowy, krótki link do schowka.
+• W HTML-u są tagi Open Graph (tytuł, opis, miniaturka ściągi) — jeśli
+  przejdziesz na własny GitHub Pages, Telegram pokaże ładny podgląd linku.
 ========================================================================
