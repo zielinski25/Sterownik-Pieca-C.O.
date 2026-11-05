@@ -1,0 +1,68 @@
+ERRATA do wydania 0.31.82 — sekcja 3 (pipefail)
+===============================================
+
+Ten folder zawiera wydanie 0.31.82 razem z README-WGRANIE.txt. Sekcja
+„3) Dziura, którą przy okazji zamknąłem: | tee maskowało kod wyjścia" tego
+README jest NIEPRAWDZIWA. README zostawiam bez zmian, bo ta wersja jest
+w środku paczki ZIP 0.31.82 — prostuję tutaj.
+
+Co README twierdzi (błędnie)
+----------------------------
+  „Oba kroki Gradle kończyły się potokiem ./gradlew ... 2>&1 | tee build.log.
+   Domyślny shell runnera to bash -e BEZ pipefail, więc kod wyjścia kroku
+   brał się z tee, a nie z Gradle — nieudany build albo czerwony test mógł
+   skończyć się zielonym krokiem."
+
+Jak jest naprawdę
+-----------------
+Runner GitHuba uruchamia `run:` poleceniem
+
+  bash --noprofile --norc -e -o pipefail <skrypt>
+
+(actions/runner, ScriptHandlerHelpers.cs) — czyli pipefail jest DOMYŚLNIE.
+`| tee` nie maskowało kodu wyjścia Gradle. Zielony run 0.31.81 dowodził
+więc, że testy przeszły, a nie tylko że się wykonały.
+
+Błąd wziął się z powtarzania obiegowej opinii o „bash -e" z zakładki „shell"
+w dokumentacji, bez sprawdzenia, jaki shell runner bierze, gdy `shell:`
+nie jest podane. Nie sprawdziłem tego ani w kodzie runnera, ani próbą.
+
+Co zostaje
+----------
+  • `set -o pipefail` w obu krokach zostaje (działa też przy `shell: sh`
+    i przy ręcznym uruchomieniu), ale BEZ fałszywego uzasadnienia,
+  • komentarze w workflow poprawione: nie twierdzą już, że zamknięto dziurę,
+  • brama nie sprawdza już „liczby wystąpień" — wymaga `set -o pipefail`
+    w tym samym kroku co `| tee` (komentarz nie wystarcza).
+
+Czego brakowało i co to dało
+----------------------------
+Nikt nigdy nie widział czerwonego runu, więc nie było dowodu, że porażka
+testów zatrzymuje wydanie. Próba: commit 4a585a9 „PROBA BRAMKI (tymczasowo)"
+z testem `probaBramkiWymuszonyBlad()` rzucającym `error("proba bramki")`.
+
+Wynik runu 41942262419 (0.31.82):
+
+  Set up job                -> success
+  Java 17 / Wersja i SDK    -> success
+  assembleDebug             -> success
+  testDebugUnitTest         -> FAILURE
+  Liczba testow z JUnit XML -> skipped
+  Blad - ostatnie linie     -> success (adnotacja z test.log)
+  APK jako artefakt         -> skipped
+  APK do repo               -> skipped
+  RUN                       -> failure
+
+Po runie gałąź stała w miejscu: na origin HEAD to nadal 4a585a9, nie powstał
+commit „CI: APK 0.31.82", a CI-TESTY.txt został z poprzedniego, zielonego
+runu. Próba została cofnięta — drzewo android/ jest znowu identyczne
+z paczką ZIP 0.31.82 (sprawdzone przez rozpakowanie ZIP-a i diff -r).
+
+Próba przez workflow_dispatch nie doszła do skutku: `gh workflow run`
+zwróciło HTTP 403 „Resource not accessible by integration" (token bez prawa
+do dispatches). Dowód pochodzi z runu wywołanego pushem — ta sama ścieżka
+kodu, inne zdarzenie startowe.
+
+Gdzie szukać poprawionego tekstu
+--------------------------------
+  android-sync/v0.31.83-pipefail-sprostowanie/README-WGRANIE.txt, sekcje 1-3

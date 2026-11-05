@@ -44,9 +44,14 @@ jobs:
       - name: assembleDebug
         working-directory: android
         run: |
-          # [0.31.82] Bez pipefail kod wyjscia bierze sie z `tee`, wiec nieudany
-          # build konczyl sie zielonym krokiem. Domyslny shell runnera to
-          # `bash -e` (bez pipefail) - ustawiamy jawnie.
+          # SPROSTOWANIE (2026-11-05): runner GitHuba ma pipefail DOMYSLNIE
+          # (`bash --noprofile --norc -e -o pipefail`, actions/runner,
+          # ScriptHandlerHelpers.cs). Zdanie z 0.31.82, ze "domyslny shell to
+          # bash -e BEZ pipefail" i ze zamknieto tym dziure, bylo NIEPRAWDZIWE.
+          # Dowod z zywego runu 41942262419: wymuszony blad testu przeszedl
+          # przez `| tee` i krok byl CZERWONY.
+          # `set -o pipefail` zostaje jawnie: nic nie kosztuje, a dziala tez
+          # przy `shell: sh`.
           set -o pipefail
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleDebug 2>&1 | tee build.log
@@ -58,9 +63,11 @@ jobs:
       - name: testDebugUnitTest
         working-directory: android
         run: |
-          # [0.31.82] `set -o pipefail`: bez tego kod wyjscia bierze sie z `tee`
-          # i czerwony test konczylby sie zielonym krokiem. To nie kosmetyka —
-          # to jedyna roznica miedzy "testy sa bramka" a "testy sie wykonuja".
+          # `set -o pipefail` jawnie (patrz komentarz w assembleDebug): runner
+          # ma to domyslnie, zapis zostaje dla `shell: sh`.
+          # O tym, ze czerwony test NAPRAWDE blokuje wydanie, swiadczy nie ten
+          # zapis, a proba: run 41942262419 — krok czerwony, brak commitu z APK,
+          # brak CI-TESTY.txt, kroki uploadu pominiete.
           set -o pipefail
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace testDebugUnitTest 2>&1 | tee test.log

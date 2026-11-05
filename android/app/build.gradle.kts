@@ -12,8 +12,8 @@ android {
         applicationId = "com.sterownikco.pro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31082
-        versionName = "0.31.82"
+        versionCode = 31083
+        versionName = "0.31.83"
         vectorDrawables { useSupportLibrary = true }
     }
 

@@ -24,8 +24,8 @@ TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.82"
-KOD_WERSJI = "31082"
+WERSJA = "0.31.83"
+KOD_WERSJI = "31083"
 
 wyniki = []
 
@@ -525,13 +525,26 @@ def main():
         "CI-TESTY.txt" in wf and "git add android-sync/apk" in wf,
         "logi runów są niedostępne — potrzebny plik w commicie",
     )
-    # [0.31.82] `./gradlew ... | tee` bez pipefail: kod wyjścia bierze tee,
-    # więc nieudany test kończy się zielonym krokiem. Każdy `| tee` musi mieć
-    # nad sobą jawne `set -o pipefail`.
+    # [0.31.82, poprawione] `set -o pipefail` MUSI stać w TYM SAMYM bloku `run:`
+    # co `| tee` — liczenie wystąpień w całym pliku zaliczało też komentarz
+    # („set -o pipefail" w opisie) i krok bez potoku.
+    # Uwaga: runner GitHuba ma pipefail domyślnie (bash --noprofile --norc
+    # -e -o pipefail); jawny zapis jest dla `shell: sh`. To, że czerwony test
+    # realnie blokuje wydanie, potwierdza run 41942262419, nie ten zapis.
+    bloki = re.split(r"^      - name: ", wf, flags=re.M)[1:]
+    bez_pipefail = []
+    for b in bloki:
+        nazwa = b.split("\n", 1)[0].strip()
+        if "| tee" not in b:
+            continue
+        polecenia = [ln.strip() for ln in b.split("\n")
+                     if ln.strip().startswith(("set ", "./", "chmod ", "python3"))]
+        if "set -o pipefail" not in polecenia:
+            bez_pipefail.append(nazwa)
     sprawdz(
-        "każdy „| tee” w CI ma „set -o pipefail”",
-        wf.count("| tee") > 0 and wf.count("set -o pipefail") >= wf.count("| tee"),
-        "bez tego czerwony test nie zatrzymuje wydania",
+        "każdy potok „| tee” ma „set -o pipefail” w tym samym kroku",
+        bool(bloki) and not bez_pipefail,
+        "kroki bez pipefail: " + (", ".join(bez_pipefail) if bez_pipefail else "brak bloków"),
     )
 
     return raport()
@@ -539,7 +552,7 @@ def main():
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.82 (0.31.75 + bez pobrań + jedno źródło z warunkiem słońca + równe kafelki + testy w CI)")
+    print("BRAMA UKŁADU EKRANU — 0.31.83 (0.31.75 + bez pobrań + jedno źródło z warunkiem słońca + równe kafelki + testy w CI)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:
