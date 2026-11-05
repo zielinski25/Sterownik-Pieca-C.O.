@@ -44,6 +44,10 @@ jobs:
       - name: assembleDebug
         working-directory: android
         run: |
+          # [0.31.82] Bez pipefail kod wyjscia bierze sie z `tee`, wiec nieudany
+          # build konczyl sie zielonym krokiem. Domyslny shell runnera to
+          # `bash -e` (bez pipefail) - ustawiamy jawnie.
+          set -o pipefail
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleDebug 2>&1 | tee build.log
 
@@ -54,8 +58,76 @@ jobs:
       - name: testDebugUnitTest
         working-directory: android
         run: |
+          # [0.31.82] `set -o pipefail`: bez tego kod wyjscia bierze sie z `tee`
+          # i czerwony test konczylby sie zielonym krokiem. To nie kosmetyka —
+          # to jedyna roznica miedzy "testy sa bramka" a "testy sie wykonuja".
+          set -o pipefail
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace testDebugUnitTest 2>&1 | tee test.log
+
+      - name: Liczba testow z JUnit XML
+        working-directory: android
+        run: |
+          python3 - <<'PY'
+          import glob, os, re, sys
+          import xml.etree.ElementTree as ET
+
+          total = fail = err = skip = 0
+          klasy = []
+          pliki = sorted(glob.glob('app/build/test-results/testDebugUnitTest/*.xml'))
+          for p in pliki:
+              root = ET.parse(p).getroot()
+              suites = [root] if root.tag == 'testsuite' else list(root.iter('testsuite'))
+              for s in suites:
+                  t = int(s.get('tests', 0) or 0)
+                  f = int(s.get('failures', 0) or 0)
+                  e = int(s.get('errors', 0) or 0)
+                  k = int(s.get('skipped', 0) or 0)
+                  total += t; fail += f; err += e; skip += k
+                  klasy.append((s.get('name', '?'), t, f, e, k))
+
+          src = open('app/build.gradle.kts', encoding='utf-8').read()
+          m = re.search(r'versionName\s*=\s*"([^"]+)"', src)
+          wersja = m.group(1) if m else '?'
+
+          print(f"PLIKI XML: {len(pliki)}")
+          for n, t, f, e, k in klasy:
+              print(f"  {n}: {t} (failures {f}, errors {e}, skipped {k})")
+          print(f"RAZEM TESTY: {total} (failures {fail}, errors {err}, skipped {skip})")
+
+          raport = ["Sterownik CO - wynik testow jednostkowych z CI",
+                    "=" * 52,
+                    "",
+                    f"Wersja: {wersja}",
+                    f"Plikow XML: {len(pliki)}",
+                    f"Testow: {total}",
+                    f"Nieudanych (failures): {fail}",
+                    f"Bledow (errors): {err}",
+                    f"Pominietych (skipped): {skip}",
+                    "",
+                    "Zrodlo: app/build/test-results/testDebugUnitTest/*.xml",
+                    "(suma po wszystkich <testsuite> w kazdym pliku)",
+                    ""]
+          for n, t, f, e, k in klasy:
+              raport.append(f"  {n}: {t} (failures {f}, errors {e}, skipped {k})")
+
+          os.makedirs('../android-sync', exist_ok=True)
+          cel = '../android-sync/CI-TESTY.txt'
+          open(cel, 'w', encoding='utf-8').write("\n".join(raport) + "\n")
+          print(f"zapisano: {os.path.abspath(cel)}")
+
+          podsum = os.environ.get('GITHUB_STEP_SUMMARY')
+          if podsum:
+              with open(podsum, 'a', encoding='utf-8') as fh:
+                  fh.write(f"### Testy jednostkowe: {total} (nieudanych: {fail + err}, pominietych: {skip})\n")
+
+          if total == 0:
+              print("::error::brak wynikow testow - pliki XML sa puste albo testy sie nie wykonaly")
+              sys.exit(1)
+          if fail or err:
+              print("::error::testy nie przeszly")
+              sys.exit(1)
+          PY
 
       - name: Blad - ostatnie linie jako adnotacja
         if: failure()
@@ -91,6 +163,8 @@ jobs:
           ls -l android-sync/apk
           git config user.name "Arena CI"
           git config user.email "ci@users.noreply.github.com"
-          git add android-sync/apk
-          git commit -m "CI: APK ${V} (debug), zbudowany z android/ na runnerze"
+          # [0.31.82] Liczba testow jedzie do repo razem z APK - to jedyny kanal,
+          # ktorym agent odczyta wynik (logi runow sa niedostepne).
+          git add android-sync/apk android-sync/CI-TESTY.txt
+          git commit -m "CI: APK ${V} (debug) + wynik testow, zbudowane z android/ na runnerze"
           git push

@@ -24,8 +24,8 @@ TEMA = APP / "ui/theme/Theme.kt"
 TEST = PROJEKT / "app/src/test/java/com/sterownikco/pro/core/ScreenLayoutTest.kt"
 
 # Jedno miejsce do zmiany przy kolejnej paczce.
-WERSJA = "0.31.81"
-KOD_WERSJI = "31081"
+WERSJA = "0.31.82"
+KOD_WERSJI = "31082"
 
 wyniki = []
 
@@ -514,12 +514,32 @@ def main():
         "dziś CI dowodzi tylko kompilacji źródeł głównych",
     )
 
+    # ---- 0.31.82: wynik testów bierzemy z JUnit XML, nie z liczenia w kodzie ----
+    sprawdz(
+        "CI liczy testy z plików JUnit XML",
+        "test-results/testDebugUnitTest/*.xml" in wf,
+        "inaczej „ile testów” jest liczeniem po kodzie, nie faktem z runu",
+    )
+    sprawdz(
+        "liczba testów jedzie do repo razem z APK (CI-TESTY.txt)",
+        "CI-TESTY.txt" in wf and "git add android-sync/apk" in wf,
+        "logi runów są niedostępne — potrzebny plik w commicie",
+    )
+    # [0.31.82] `./gradlew ... | tee` bez pipefail: kod wyjścia bierze tee,
+    # więc nieudany test kończy się zielonym krokiem. Każdy `| tee` musi mieć
+    # nad sobą jawne `set -o pipefail`.
+    sprawdz(
+        "każdy „| tee” w CI ma „set -o pipefail”",
+        wf.count("| tee") > 0 and wf.count("set -o pipefail") >= wf.count("| tee"),
+        "bez tego czerwony test nie zatrzymuje wydania",
+    )
+
     return raport()
 
 
 def raport():
     print("=" * 78)
-    print("BRAMA UKŁADU EKRANU — 0.31.81 (0.31.75 + bez pobrań + jedno źródło z warunkiem słońca + równe kafelki)")
+    print("BRAMA UKŁADU EKRANU — 0.31.82 (0.31.75 + bez pobrań + jedno źródło z warunkiem słońca + równe kafelki + testy w CI)")
     print("=" * 78)
     ok = 0
     for nazwa, wynik, szczegol in wyniki:

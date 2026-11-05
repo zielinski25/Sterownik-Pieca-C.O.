@@ -1,0 +1,47 @@
+ERRATA — arytmetyka paczki 0.31.81
+==================================
+
+Ten folder opisuje wydanie 0.31.81. README-WGRANIE.txt w tym folderze podaje
+liczby dotyczące różnicy rozmiarów ZIP, które są NIEPEŁNE. Nie zmieniam
+samego README, żeby nie rozjechać go z paczką ZIP 0.31.81 (w jej środku jest
+dokładnie ta wersja README). Prostuję tutaj.
+
+Co było źle
+-----------
+README 0.31.81, sekcja „3) ZIP pakowany jak poprzednie wydania", twierdzi:
+
+  „pola rozszerzone czasu wpisów („UT", 24 B na wpis, przechowywane dwa razy
+   — w nagłówku lokalnym i w katalogu centralnym)"
+
+Policzone od nowa, przez sparsowanie nagłówków każdego z 196 wpisów:
+
+  • nagłówek lokalny:  5 488 B  (28 B na wpis)
+  • katalog centralny: 4 704 B  (24 B na wpis)
+  • razem:            10 192 B  — a nie 2 × 4 704 = 9 408 B
+
+Do tego w tabeli README jest kolumna „pola UT" z wartością 4 704 B, czyli
+tylko część z katalogu centralnego — bez 5 488 B z nagłówków lokalnych.
+
+Poprawny rachunek (domyka się co do bajtu):
+
+  1 199 370 (0.31.79)  −  10 192 (pola rozszerzone usunięte przez zip -X)
+                       +   2 784 (wzrost treści skompresowanej w 0.31.80)
+  = 1 191 962 (opublikowany ZIP 0.31.80)
+
+Kierunek zmian treści
+---------------------
+Treść 0.31.80 wobec 0.31.79 UROSŁA:
+
+  • skompresowana:  1 147 430 -> 1 150 214  (+2 784 B)
+  • nieskompresowana: 2 974 224 -> 2 976 509  (+2 285 B)
+
+Dowód bez zgadywania: to samo drzewo 0.31.80 spakowane zwykłym `zip -r`
+(czyli tak jak 0.31.79) ma 1 202 154 B, a nie 1 191 962 B. Różnica
+1 202 154 − 1 191 962 = 10 192 B to wyłącznie metadane ZIP-a.
+
+Wniosek bez zmian: w projekcie nic nie zginęło. 150 plików / 196 wpisów
+w każdym wydaniu od 0.31.70, lista nazw identyczna.
+
+Gdzie jest wersja poprawna
+--------------------------
+  android-sync/v0.31.82-arytmetyka-i-testy-z-xml/README-WGRANIE.txt, sekcja 1
