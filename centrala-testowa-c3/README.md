@@ -100,6 +100,9 @@ pio run                    # zbuduje .pio/build/esp32-c3/firmware.bin
 esptool.py --chip esp32c3 --port /dev/ttyUSB0 write_flash 0x0 firmware.bin
 ```
 
+> **Status (2026-11-06):** firmware wgrany i uruchomiony na **klasycznym ESP32**
+> (`pio run -e esp32 -t upload`, COM5/CH340). Build: RAM 20,2 %, flash 60,2 %.
+
 Po starcie w konsoli zobaczysz m.in.:
 
 ```
@@ -422,6 +425,20 @@ Inne typowe przyczyny „Odmowa dostępu”:
 ---
 
 ## 5. Checklista testu panelu LCD
+
+**Panel nie wymaga żadnej konfiguracji** — ma to zaszyte w `main.cpp` panelu:
+
+| parametr panelu | wartość | czy zgadza się z symulatorem |
+|---|---|---|
+| `WIFI_SSID` | `PiecCO_AP` | tak |
+| `WIFI_PASS` | `KociolCO2026` | tak |
+| `CENTRALA_HOST` | `192.168.4.1:80` | tak (SoftAP symulatora) |
+| IP panelu | statyczne `192.168.4.50` | tak, DHCP symulatora tego nie zajmuje |
+
+Czyli: **włącz panel, gdy symulator już stoi** — panel sam wejdzie do `PiecCO_AP`,
+dostanie `.50` i zacznie pytać `192.168.4.1`. Jeśli po ~30 s dalej wisi na
+„Łączenie…”, odłącz panel od zasilania na 5 s: trzyma w pamięci RTC **BSSID i kanał
+poprzedniej centrali** (prawdziwej) i po zimnym starcie zrobi pełne skanowanie.
 
 | Co kliknąć na panelu | Czego oczekiwać |
 |---|---|
