@@ -76,9 +76,19 @@ Potrzebujesz **tylko**: ESP32-C3 (DevKitM-1, SuperMini, WROOM-02 — dowolny z
 
 ```bash
 cd centrala-testowa-c3
-pio run -t upload          # wgrywa po USB
+pio run -t upload          # domyslne env: esp32-c3, wgrywa po USB
 pio device monitor         # konsola diagnostyczna, 115200
 ```
+
+Są **dwa środowiska** (ten sam kod, zero różnic — firmware nie używa żadnych GPIO):
+
+| env | płytka | komenda |
+|---|---|---|
+| `esp32-c3` | **domyślne** — C3 SuperMini / DevKitM-1 / WROOM-02 | `pio run -t upload` |
+| `esp32` | zapasowe — klasyczny ESP32 (WROOM-32) | `pio run -e esp32 -t upload` |
+
+To drugie jest po to, żeby dało się testować panel także wtedy, gdy C3 nie ma pod
+ręką. **Nie wgrywaj go na płytkę panelu LCD** — skasujesz firmware panelu.
 
 Bez PlatformIO (samo esptool):
 
