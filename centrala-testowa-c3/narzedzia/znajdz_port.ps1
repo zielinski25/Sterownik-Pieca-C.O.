@@ -72,21 +72,48 @@ if (-not $ChipId) {
   exit 0
 }
 
-# --- sciezki narzedzi z PlatformIO ---
-$pioHome = Join-Path $env:USERPROFILE ".platformio"
-$python  = Join-Path $pioHome "penv\Scripts\python.exe"
-$esptool = Join-Path $pioHome "packages\tool-esptoolpy\esptool.py"
+# --- czym uruchomic esptool: najpierw "pio pkg exec" (odporne na rozne
+#     uklady katalogow PlatformIO), potem python + esptool.py ---
+# UWAGA: na czesci instalacji NIE ma ...\.platformio\penv\Scripts\python.exe
+# (jest np. ...\.platformio\python3\python.exe) — dlatego najpierw probujemy
+# oficjalna sciezke PlatformIO, ktora sama znajduje wlasne narzedzia.
+function Get-Esptool {
+  $pio = $null
+  $cmd = Get-Command pio -ErrorAction SilentlyContinue
+  if ($cmd) { $pio = $cmd.Source }
+  elseif (Test-Path (Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe")) {
+    $pio = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"
+  }
+  elseif (Test-Path (Join-Path $env:USERPROFILE ".platformio\penv\Scripts\platformio.exe")) {
+    $pio = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\platformio.exe"
+  }
+  if ($pio) {
+    return @{ Plik = $pio
+              Prefix = @('pkg', 'exec', '--package', 'platformio/tool-esptoolpy', '--', 'esptool.py')
+              Opis = "pio pkg exec" }
+  }
+  $esptool = Join-Path $env:USERPROFILE ".platformio\packages\tool-esptoolpy\esptool.py"
+  $kandydaci = @(
+    (Join-Path $env:USERPROFILE ".platformio\penv\Scripts\python.exe"),
+    (Join-Path $env:USERPROFILE ".platformio\python3\python.exe")
+  )
+  $python = $kandydaci | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if ($python -and (Test-Path $esptool)) {
+    return @{ Plik = $python; Prefix = @($esptool); Opis = "python + esptool.py" }
+  }
+  return $null
+}
 
-if (-not (Test-Path $python)) {
-  Write-Host "Nie znalazlem Pythona PlatformIO: $python" -ForegroundColor Red
-  Write-Host "Uruchom najpierw 'pio run' (zainstaluje narzedzia), potem sprobuj ponownie." -ForegroundColor Yellow
+$esptoolWywolanie = Get-Esptool
+if (-not $esptoolWywolanie) {
+  Write-Host "Nie znalazlem ani 'pio' w PATH, ani esptool.py z PlatformIO." -ForegroundColor Red
+  Write-Host "Uruchom najpierw 'pio run' w tym projekcie (PlatformIO pobierze narzedzia)," -ForegroundColor Yellow
+  Write-Host "potem sprobuj ponownie. Albo sprawdz recznie:" -ForegroundColor Yellow
+  Write-Host '  pio pkg exec --package platformio/tool-esptoolpy -- esptool.py --port COM5 chip_id'
   exit 1
 }
-if (-not (Test-Path $esptool)) {
-  Write-Host "Nie znalazlem esptool: $esptool" -ForegroundColor Red
-  Write-Host "Uruchom 'pio run' w projekcie (PlatformIO pobierze tool-esptoolpy)." -ForegroundColor Yellow
-  exit 1
-}
+Write-Host ("Sposob sprawdzania ukladu: {0}" -f $esptoolWywolanie.Opis) -ForegroundColor DarkGray
+Write-Host ""
 
 $outPlik = Join-Path $env:TEMP "esptool_chipid_out.txt"
 $errPlik = Join-Path $env:TEMP "esptool_chipid_err.txt"
@@ -99,8 +126,9 @@ foreach ($p in $porty) {
   Write-Host ("Sprawdzam {0} ({1}) ... " -f $p.Port, $p.Opis) -NoNewline
   Remove-Item $outPlik, $errPlik -ErrorAction SilentlyContinue
 
-  $proc = Start-Process -FilePath $python `
-            -ArgumentList @($esptool, '--port', $p.Port, 'chip_id') `
+  $argumenty = @($esptoolWywolanie.Prefix) + @('--port', $p.Port, 'chip_id')
+  $proc = Start-Process -FilePath $esptoolWywolanie.Plik `
+            -ArgumentList $argumenty `
             -NoNewWindow -PassThru `
             -RedirectStandardOutput $outPlik -RedirectStandardError $errPlik
 

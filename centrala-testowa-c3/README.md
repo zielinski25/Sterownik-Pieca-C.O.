@@ -136,6 +136,12 @@ Kolejność działań:
    ```
    albo jednorazowo: `pio run -t upload --upload-port COM7`.
 
+   Typowy przypadek: `pio device list` pokazuje **tylko jeden** port, np.
+   `COM5 ... USB-SERIAL CH340 (VID:PID=1A86:7523)`, a `chip_id` mówi
+   `Chip is ESP32...` — czyli pod USB wisi **panel (ESP32)**, a C3 nie jest
+   podłączona wcale. Sam CH340 o niczym nie przesądza (C3 SuperMini też go ma),
+   rozstrzyga dopiero `chip_id`.
+
 4. **Jeśli C3 nie ma na liście portów:**
    * kabel USB „tylko do ładowania” (bez linii danych) — najczęstsza przyczyna,
    * brak sterownika: **CH340/CH343** (C3 SuperMini) lub **CP210x** (DevKitM),
@@ -143,13 +149,18 @@ Kolejność działań:
      puść **RESET**, puść **BOOT** — wejdzie w tryb downloadu i pokaże się port,
    * port zajęty przez `pio device monitor` → zamknij monitor (Ctrl+C).
 
-5. **Ręczne sprawdzenie jednego portu** (bez skryptu):
+5. **Ręczne sprawdzenie jednego portu** (bez skryptu). Najodporniejsza forma —
+   PlatformIO samo znajduje swoje narzędzia (nie trzeba znać ścieżek):
    ```powershell
-   & "$env:USERPROFILE\.platformio\penv\Scripts\python.exe" `
-     "$env:USERPROFILE\.platformio\packages\tool-esptoolpy\esptool.py" `
-     --port COM7 chip_id
+   pio pkg exec --package platformio/tool-esptoolpy -- esptool.py --port COM5 chip_id
    ```
    Właściwy wynik zaczyna się od `Chip is ESP32-C3 (QFN32)`.
+   Klasyczny ESP32 (np. panel LCD) odpowie `Chip is ESP32-D0WD...`.
+
+   > Jeśli wklejasz komendę z czatu/edytora, **uważaj na „ozdabianie” tekstu** —
+   > raz zdarzyło się, że `esptool.py` wkleiło się jako link `[esptool.py](http://esptool.py)`
+   > i Python szukał pliku o nazwie z nawiasami (`can't open file ... [esptool.py]`).
+   > Wtedy po prostu wpisz komendę ręcznie albo użyj `pio pkg exec` powyżej.
 
 > Uwaga: **nie** dodawaj `-DCORE_DEBUG_LEVEL` / `board = esp32dev` do tego env,
 > żeby „jakoś się wgrało” — to zmieni chip docelowy i firmware nie ruszy na C3.
