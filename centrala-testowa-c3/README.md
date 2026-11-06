@@ -204,6 +204,58 @@ Skrót: **jedna płytka pod USB → jeden port COM → `-e` wynika wprost z `chi
 
 ---
 
+## 3c. Build: `can't open file '...\packages\tool-esptoolpy\esptool.py'`
+
+Objaw (Windows):
+
+```
+Compiling .pio\build\esp32-c3\src\symulacja.cpp.o
+Building .pio\build\esp32-c3\bootloader.bin
+C:\Users\...\.platformio\python3\python.exe: can't open file
+'C:\Users\...\.platformio\packages\tool-esptoolpy\esptool.py': [Errno 2] No such file or directory
+*** [.pio\build\esp32-c3\bootloader.bin] Error 2
+```
+
+Co się stało: **kod kompiluje się dobrze** (widać `.o`), a wysypuje się dopiero
+krok `bootloader.bin` — PlatformIO woła wtedy `esptool.py` z pakietu
+`tool-esptoolpy`. Tego pliku nie ma na dysku: pakiet jest **niedociągnięty**
+(przerwany download/przerwany `pio run`), **uszkodzony**, albo **wersja pakietu
+nie pasuje** do przypiętej platformy (`espressif32 @ 6.9.0` → `tool-esptoolpy
+~1.40501.0`, wtedy plik nazywa się dokładnie `esptool.py`).
+
+Charakterystyczne: przy **pierwszej** próbie uploadu esptool jeszcze działał
+(padło dopiero `This chip is ESP32 not ESP32-C3`), a teraz pliku nie ma — czyli
+pakiet **zniknął pomiędzy uruchomieniami** (antywirus, czyszczenie cache,
+przerwane pobieranie), a nie „nigdy go nie było”.
+
+Naprawa (PowerShell, 3 komendy, ~30 s):
+
+```powershell
+pio pkg list -g
+dir C:\Users\bakoma\.platformio\packages\tool-esptoolpy
+```
+
+Jeśli katalog nie istnieje, jest pusty albo nie ma w nim `esptool.py`:
+
+```powershell
+Remove-Item -Recurse -Force C:\Users\bakoma\.platformio\packages\tool-esptoolpy
+pio pkg install -g -p platformio/tool-esptoolpy
+pio run -t upload
+```
+
+Uwagi:
+
+* **Nie usuwaj całego** `.platformio\packages` — tam siedzą też toolchainy
+  (kilkaset MB do pobrania ponownie). Kasujemy tylko katalog `tool-esptoolpy`.
+* Jeśli `pio pkg install` znów kończy się błędem sieci/proxy, powtórz — pakiet
+  jest mały (~300 kB).
+* Antywirus potrafi „kwarantannować” `.py` w `packages`. Jeśli błąd wraca, dodaj
+  `C:\Users\bakoma\.platformio` do wykluczeń.
+* Ten błąd **nie ma nic wspólnego** z kodem symulatora ani z tym, czy płytka jest
+  C3/ESP32 — to wyłącznie narzędzie uploadu na Twoim PC.
+
+---
+
 ## 4. Pierwsze uruchomienie (2 minuty)
 
 1. **Ustaw czas.** C3 nie ma RTC ani internetu (działa jako AP), więc po
