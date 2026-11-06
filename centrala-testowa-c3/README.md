@@ -97,6 +97,65 @@ Po starcie w konsoli zobaczysz m.in.:
 
 ---
 
+## 3a. Upload: „This chip is ESP32 not ESP32-C3. Wrong --chip argument?”
+
+Objaw (Windows, PlatformIO):
+
+```
+Looking for upload port...
+Auto-detected: COM5
+Serial port COM5
+Connecting.....
+A fatal error occurred: This chip is ESP32 not ESP32-C3. Wrong --chip argument?
+```
+
+Co to znaczy: **build jest dobry** (RAM ~20%, flash ~60%), ale esptool połączył się
+z **niewłaściwą płytką**. `Auto-detected` bierze pierwszy wolny port COM, a na
+biurku zwykle wisi też **panel LCD — i on jest ESP32** (projekt panelu ma env
+`esp32dev`), nie C3. Dobrze, że esptool odmówił: inaczej nadpisałby firmware panelu.
+
+Kolejność działań:
+
+1. **Lista portów:**
+   ```powershell
+   pio device list
+   ```
+
+2. **Który port to C3?** (skrypt sprawdza układ na każdym porcie esptool-em
+   z PlatformIO — nic nie instaluje):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File narzedzia\znajdz_port.ps1 -ChipId
+   ```
+   Wypisze np. `COM3  CH340 ... ESP32 (klasyczny — to NIE jest C3; pewnie panel LCD)`
+   i `COM7  USB JTAG/serial ... ESP32-C3  <-- TO TA PŁYTKA`.
+
+3. **Wpisz port na sztywno** w `platformio.ini` (są tam gotowe, zakomentowane linie):
+   ```ini
+   upload_port = COM7
+   monitor_port = COM7
+   ```
+   albo jednorazowo: `pio run -t upload --upload-port COM7`.
+
+4. **Jeśli C3 nie ma na liście portów:**
+   * kabel USB „tylko do ładowania” (bez linii danych) — najczęstsza przyczyna,
+   * brak sterownika: **CH340/CH343** (C3 SuperMini) lub **CP210x** (DevKitM),
+   * C3 z natywnym USB (złącze USB, nie UART): przytrzymaj **BOOT**, naciśnij i
+     puść **RESET**, puść **BOOT** — wejdzie w tryb downloadu i pokaże się port,
+   * port zajęty przez `pio device monitor` → zamknij monitor (Ctrl+C).
+
+5. **Ręczne sprawdzenie jednego portu** (bez skryptu):
+   ```powershell
+   & "$env:USERPROFILE\.platformio\penv\Scripts\python.exe" `
+     "$env:USERPROFILE\.platformio\packages\tool-esptoolpy\esptool.py" `
+     --port COM7 chip_id
+   ```
+   Właściwy wynik zaczyna się od `Chip is ESP32-C3 (QFN32)`.
+
+> Uwaga: **nie** dodawaj `-DCORE_DEBUG_LEVEL` / `board = esp32dev` do tego env,
+> żeby „jakoś się wgrało” — to zmieni chip docelowy i firmware nie ruszy na C3.
+
+---
+
 ## 4. Pierwsze uruchomienie (2 minuty)
 
 1. **Ustaw czas.** C3 nie ma RTC ani internetu (działa jako AP), więc po
