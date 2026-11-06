@@ -457,6 +457,58 @@ poprzedniej centrali** (prawdziwej) i po zimnym starcie zrobi pełne skanowanie.
 Wszystkie „awarie” wstrzykujesz z `http://192.168.4.1` (sekcja *Wymus awarie*)
 albo z Seriala (`dym 1`, `co 1`, `panel 1`, `deszcz 1`).
 
+### 5a. Panel „nic nie odbiera” — rozdziel WiFi od HTTP w 30 sekund
+
+W konsoli Serial symulatora wpisz:
+
+```
+diag
+```
+
+i czytaj **dwie** liczby: `stacje=` (ilu klientów w AP) i `zapytania=` (ile zadań
+HTTP przyszło od startu).
+
+| co widzisz | co to znaczy | co robić |
+|---|---|---|
+| `stacje=0`, `zapytania=0` | panel **nie wszedł do WiFi** — do serwera nic nie dotarło | punkt A |
+| `stacje=1`, `zapytania=0` | panel **jest w sieci, ale nic nie wysyła** (albo wysyła coś nieczytelnego) | punkt B |
+| `zapytania` rośnie | serwer odpowiada, problem jest po stronie ekranu panelu | punkt C |
+
+**A. Panel nie wchodzi do AP**
+* odłącz panel od zasilania na 5 s (trzyma w pamięci RTC **BSSID i kanał
+  poprzedniej** centrali — po zimnym starcie robi pełne skanowanie),
+* sprawdź, czy panel w ogóle żyje: czy na ekranie jest cokolwiek (logo, „Łączenie…”),
+  czy ekran jest biały/czarny,
+* sprawdź, czy hasło w panelu to `KociolCO2026` (a nie inne) — panel ma je zaszyte
+  na sztywno w `main.cpp`,
+* kanał: panel po zimnym starcie sam znajdzie kanał 6, ale jeśli siedzi w pamięci
+  RTC inny — patrz pierwszy punkt.
+
+**B. Panel w sieci, ale brak zadań**
+W konsoli pojawi się `[AP] stacji w sieci: 1`, a przy ewentualnych próbach
+`[HTTP] polaczenie bez rozpoznanego zadania od 192.168.4.50`. To znaczy, że
+gniazdo działa, a treść żądania nie przechodzi parsera. Z panelu zrób zrzut
+Seriala (panel podłączony po USB, `pio device monitor -b 115200`) i sprawdź, na
+czym stoi `httpPobierz()`.
+
+**C. Serwer odpowiada, ekran nie**
+`zapytania` rośnie, a panel stoi → problem w panelu (parsowanie JSON, rysowanie),
+nie w symulatorze. Warto wtedy porównać `/api/status` z symulatora
+(`python narzedzia/sprawdz_api.py`) — klucze muszą się zgadzać co do nazwy.
+
+**Test z PC (bez panelu):** wejdź laptopem do `PiecCO_AP` i:
+```powershell
+ping 192.168.4.50        # czy panel jest w sieci pod swoim statycznym IP
+curl http://192.168.4.1/api/status
+```
+Jeśli `ping` do `.50` nie odpowiada, panel **nie jest** w sieci — punkt A.
+
+> **Uwaga — najczarniejszy scenariusz.** Jeśli TFT jest fizycznie podłączony do
+> **tej samej płytki, którą wgrałeś** (tej na COM5), to znaczy, że firmware panelu
+> został nadpisany symulatorem: ekran nie ma prawa nic pokazać, bo nie ma już kodu
+> panelu. Wtedy: symulator idzie na **inną** płytkę, a panel odtwarzasz z
+> `LCD Centrali.zip`. Sprawdź to, zanim zaczniesz szukać WiFi.
+
 ---
 
 ## 6. Znalezione przy okazji (do decyzji — nie zmieniałem produktu)

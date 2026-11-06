@@ -831,6 +831,18 @@ void loop() {
       nvs.putInt("trybSerwa", ustawienia.trybSerwa);
       Serial.printf("[SERWO] tryb zmieniony automatycznie -> %d\n", ustawienia.trybSerwa);
     }
+
+    // Kto jest w AP. Bez tego nie da sie odroznic dwoch zupelnie roznych awarii:
+    //   stacje=0  -> panel w ogole nie wszedl do WiFi (zasieg/kanal/haslo/firmware)
+    //   stacje=1  -> panel w sieci, problem jest wyzej, w HTTP
+    static int zapamietaneStacje = -1;
+    const int stacje = WiFi.softAPgetStationNum();
+    if (zapamietaneStacje < 0) {
+      zapamietaneStacje = stacje;
+    } else if (zapamietaneStacje != stacje) {
+      zapamietaneStacje = stacje;
+      Serial.printf("[AP] stacji w sieci: %d\n", stacje);
+    }
   }
 
   // 2) Jedno zadanie HTTP na raz (mini-serwer). Kolejne polaczenia czekaja w
@@ -843,6 +855,17 @@ void loop() {
     if (przeczytajZadanie(klient, z)) {
       obsluzZadanie(klient, z);
     } else {
+      // Ktos sie podlaczyl, ale nie wyslal zadania, ktore parser rozpoznal.
+      // Log ograniczony do 1 linii na 5 s, zeby panel pytajacy co 2 s nie zalal
+      // konsoli — a jednoczesnie bylo widac adres klienta (np. 192.168.4.50).
+      static unsigned long ostatniLogOdrzuconego = 0;
+      const IPAddress ipKlienta = klient.remoteIP();
+      if (millis() - ostatniLogOdrzuconego > 5000UL) {
+        ostatniLogOdrzuconego = millis();
+        Serial.printf("[HTTP] polaczenie bez rozpoznanego zadania od %u.%u.%u.%u\n",
+                      (unsigned)ipKlienta[0], (unsigned)ipKlienta[1],
+                      (unsigned)ipKlienta[2], (unsigned)ipKlienta[3]);
+      }
       klient.stop();
     }
   }

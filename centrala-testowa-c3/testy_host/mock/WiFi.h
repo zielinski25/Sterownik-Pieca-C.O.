@@ -7,6 +7,7 @@ class IPAddress {
   IPAddress() {}
   IPAddress(uint8_t, uint8_t, uint8_t, uint8_t) {}
   String toString() const { return String("192.168.4.1"); }
+  uint8_t operator[](int) const { return 192; }
 };
 
 enum WiFiMode { WIFI_OFF, WIFI_STA, WIFI_AP, WIFI_AP_STA };
@@ -22,6 +23,7 @@ class WiFiClient {
   size_t write(const uint8_t*, size_t n) { return n; }
   void flush() {}
   void stop() {}
+  IPAddress remoteIP() { return IPAddress(); }
   operator bool() const { return false; }
 };
 
