@@ -80,15 +80,18 @@ pio run -t upload          # domyslne env: esp32-c3, wgrywa po USB
 pio device monitor         # konsola diagnostyczna, 115200
 ```
 
-Są **dwa środowiska** (ten sam kod, zero różnic — firmware nie używa żadnych GPIO):
+Są **trzy środowiska** (ten sam kod, zero różnic — firmware nie używa żadnych
+GPIO, więc sam układ nie ma znaczenia):
 
 | env | płytka | komenda |
 |---|---|---|
 | `esp32-c3` | **domyślne** — C3 SuperMini / DevKitM-1 / WROOM-02 | `pio run -t upload` |
-| `esp32` | zapasowe — klasyczny ESP32 (WROOM-32) | `pio run -e esp32 -t upload` |
+| `esp32` | klasyczny ESP32 (WROOM-32, DevKit V1) | `pio run -e esp32 -t upload` |
+| `esp32s3` | ESP32-S3 (DevKitC-1, S3 Mini) | `pio run -e esp32s3 -t upload` |
 
-To drugie jest po to, żeby dało się testować panel także wtedy, gdy C3 nie ma pod
-ręką. **Nie wgrywaj go na płytkę panelu LCD** — skasujesz firmware panelu.
+Po co więcej niż jedno: **symulator nie potrzebuje konkretnego układu**, a pod ręką
+bywa to, co akurat jest. Który env wybrać, mówi jedna komenda — patrz 3b.
+**Nie wgrywaj żadnego z nich na płytkę panelu LCD** — skasujesz firmware panelu.
 
 Bez PlatformIO (samo esptool):
 
@@ -174,6 +177,30 @@ Kolejność działań:
 
 > Uwaga: **nie** dodawaj `-DCORE_DEBUG_LEVEL` / `board = esp32dev` do tego env,
 > żeby „jakoś się wgrało” — to zmieni chip docelowy i firmware nie ruszy na C3.
+
+---
+
+## 3b. „Mam takie ESP” — co to za układ i który env
+
+Najpewniejsze rozstrzygnięcie to nie zdjęcie, a odpowiedź samego układu:
+
+```powershell
+pio pkg exec --package platformio/tool-esptoolpy -- esptool.py --port COM5 chip_id
+```
+
+| co pisze `chip_id` | co to jest | env | polecenie |
+|---|---|---|---|
+| `Chip is ESP32-C3 (QFN32)` | C3 SuperMini / C3-MINI-1 — mała płytka ~22×18 mm, przyciski BOOT+RESET obok siebie | `esp32-c3` | `pio run -t upload` |
+| `Chip is ESP32-D0WD-V3` (też `D0WDQ6`, `ESP32-D0WD`) | **klasyczny ESP32** — WROOM-32, płytka ~55×28 mm, 30 pinów, micro-USB | `esp32` | `pio run -e esp32 -t upload` |
+| `Chip is ESP32-S3` | S3 — zwykle USB-C + drugie gniazdo UART, napis `S3-WROOM-1` | `esp32s3` | `pio run -e esp32s3 -t upload` |
+
+Czyli: **`A fatal error occurred: This chip is ESP32 not ESP32-C3` nie jest błędem
+kodu ani złym `platformio.ini`** — to esptool mówi, jaki układ naprawdę wisi na
+porcie COM. Jeśli to Twoja płytka „centrali”, po prostu użyj env `esp32`: ten sam
+firmware, ten sam kontrakt HTTP, panel tego nie odróżni. Szukanie C3 ma sens
+tylko wtedy, gdy *koniecznie* chcesz C3.
+
+Skrót: **jedna płytka pod USB → jeden port COM → `-e` wynika wprost z `chip_id`.**
 
 ---
 
