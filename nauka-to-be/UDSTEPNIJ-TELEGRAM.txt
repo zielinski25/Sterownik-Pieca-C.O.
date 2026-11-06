@@ -18,8 +18,8 @@ Skopiuj i wklej do wiadomości na Telegramie:
 https://is.gd/gAbph1
 
 To krótki link do pełnej, działającej strony. Po kliknięciu odbiorca
-widzi gotowy moduł (4 949 zadań, 15 typów ćwiczeń, oceny, powtórki
-błędów, fiszki i próbna kartkówka), a nie kod źródłowy — adres prowadzi
+widzi gotowy moduł (4 949 zadań, 16 typów ćwiczeń, Laboratorium zdań,
+oceny, powtórki błędów, fiszki i próbna kartkówka), a nie kod źródłowy — adres prowadzi
 przez podgląd HTML, który poprawnie serwuje stronę i uruchamia jej skrypty.
 Działa na telefonie i na komputerze.
 
@@ -45,16 +45,19 @@ Cześć! Przygotowałam/em stronę do powtórki przed kartkówką z angielskiego
 
 👉 https://is.gd/gAbph1
 
-Jest 15 różnych ćwiczeń (wybieranie, wpisywanie, memory, słuchanie,
-dyktando, poprawianie błędów, układanie zdań) i prawie 5 tysięcy zadań —
-przy każdym wejściu dziecko dostaje całkiem inny zestaw, nic się nie
-powtarza 🔁. Strona wystawia ocenę 1–6, zapisuje błędy i przypomina
-o nich w kolejnych dniach, aż dziecko je opanuje. Są też fiszki, próbna
-kartkówka, pytanie dnia, tryb ciemny i kartkówka do wydruku z kluczem.
-Nic nie trzeba instalować ani logować się 💪
+Jest 16 różnych ćwiczeń (wybieranie, wpisywanie, memory, słuchanie,
+dyktando, poprawianie błędów, układanie zdań, „Miks 5 minut") i prawie
+5 tysięcy zadań — przy każdym wejściu dziecko dostaje całkiem inny
+zestaw, nic się nie powtarza 🔁. Strona wystawia ocenę 1–6, zapisuje
+błędy i przypomina o nich w kolejnych dniach, aż dziecko je opanuje.
+W „Laboratorium" można samemu składać zdania z trzech klocków i ćwiczyć
+krótkie odpowiedzi, a światełka 🚦 pozwalają zaznaczyć, co jeszcze
+sprawia trudność. Są też fiszki, próbna kartkówka, pytanie dnia, tryb
+ciemny i kartkówka do wydruku z kluczem. Nic nie trzeba instalować
+ani logować się 💪
 
-W załączniku jeszcze ściąga w formie zdjęcia — warto ją mieć pod ręką
-wieczorem przed sprawdzianem 🙂
+W załączniku jeszcze dwie ściągi w formie zdjęć (odmiana + zasady oraz
+błędy, pytania i mini-kartkówka) — warto je mieć pod ręką wieczorem 🙂
 
 Jeśli link nie chce się otworzyć, wyślij plik HTML z Dysku (poniżej)
 i otwórz go w Chrome / Safari.
@@ -64,8 +67,8 @@ i otwórz go w Chrome / Safari.
   3) WYŚLIJ PLIK (działa też bez internetu) 📎
 ------------------------------------------------------------------------
 
-Plik:  to-be-kartkowka.html  (jeden plik, ~197 KB, wszystko w środku)
-Link z Dysku Google:  https://drive.google.com/file/d/1INYGx2Tc-HCm6ITDmWmfXKfncX-vPM6W/view?usp=drivesdk
+Plik:  to-be-kartkowka.html  (jeden plik, ~225 KB, wszystko w środku)
+Link z Dysku Google:  https://drive.google.com/file/d/1aifACii5vMf65LM8ciNSVRfJP5SrGNFx/view?usp=drivesdk
 
 W aplikacji Telegram:
   • klip spinacz / ➕ → „Plik" (File / Document, NIE „Galeria"),
@@ -80,13 +83,19 @@ Po otwarciu strona działa całkowicie offline — można się uczyć w autobusi
   4) ŚCIĄGA JAKO ZDJĘCIE (widoczna od razu na czacie) 🖼️
 ------------------------------------------------------------------------
 
-Plik:  sciaga-to-be.png  (1080×1560, z kodem QR prowadzącym do strony)
-Link z Dysku Google:  https://drive.google.com/file/d/1c0qUIQf5-QP6E4b-AqOays7c0aqU0_Lk/view?usp=drivesdk
+Pliki (każdy 1080×1560, do druku A4):
+  sciaga-to-be.png    → strona 1: odmiana, 4 zasady + pułapka, duży kod QR
+  sciaga-to-be-2.png  → strona 2: 6 błędów, pytania o dane osobowe,
+                        mini-kartkówka 10 zdań z kluczem, plan + samoocena
 
-Wyślij jako ZDJĘCIE (nie jako plik), żeby Telegram pokazał podgląd
-w czacie. Dziecko ma wtedy całą tabelę `be` i 3 zasady bez klikania.
-Kod QR na dole otwiera pełny trening (4 949 zadań, oceny, powtórki)
-po zeskanowaniu aparatem.
+Linki z Dysku Google:
+  strona 1: https://drive.google.com/file/d/1qqT71ULkWq47npTHgCkFIVJFS7cm4N-Q/view?usp=drivesdk
+  strona 2: https://drive.google.com/file/d/1UVP-wXRWQrUVPIFONvH1VyXlYqyLTQ6b/view?usp=drivesdk
+
+Wyślij oba jako ZDJĘCIA (nie jako pliki), żeby Telegram pokazał podgląd
+w czacie. Dziecko ma wtedy całą tabelę `be`, zasady, najczęstsze błędy
+i gotową mini-kartkówkę bez klikania. Kod QR na stronie 1 otwiera pełny
+trening (4 949 zadań, 16 ćwiczeń, oceny, powtórki) po zeskanowaniu aparatem.
 
 
 ------------------------------------------------------------------------
@@ -122,9 +131,10 @@ Złote zasady:
 ------------------------------------------------------------------------
 
 • Krótki link wskazuje na plik `docs/index.html` z gałęzi repozytorium;
-  po każdej aktualizacji strony pokazuje najnowszą wersję (wersja 2:
-  mega-baza 4 949 zadań, oceny 1–6, powtórki z błędów, tryb ciemny,
-  pytanie dnia, kartkówka do druku).
+  po każdej aktualizacji strony pokazuje najnowszą wersję (wersja 3:
+  mega-baza 4 949 zadań, 16 ćwiczeń, Laboratorium zdań, Miks/interleaving,
+  samoocena światełkami, bilety wyjścia, oceny 1–6, powtórki z błędów,
+  tryb ciemny, pytanie dnia, kartkówka do druku).
 • Pliki HTML i PNG na Dysku Google są osobnymi kopiami — po przebudowie
   strony trzeba podmienić również je, żeby załączniki były aktualne.
 • Podgląd na żywo (działa tylko dopóki trwa ta sesja Arena):

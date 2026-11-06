@@ -4,8 +4,11 @@ Ten katalog zawiera jedyną część repozytorium przeznaczoną do udostępniani
 innym osobom (np. przez Telegram):
 
 - `index.html` — wygenerowany, samodzielny plik z `nauka-to-be/to-be-kartkowka.html`
-  (wersja 2: 4 949 unikalnych zadań, oceny 1–6, powtórki z błędów, tryb ciemny)
-- `sciaga-to-be.png` — ściąga z kodem QR (także miniaturka Open Graph)
+  (wersja 3: 4 949 zadań, 16 ćwiczeń, Laboratorium zdań, Miks, samoocena 🚦,
+  oceny 1–6, powtórki z błędów, tryb ciemny)
+- `sciaga-to-be.png` — ściąga strona 1/2: odmiana + zasady + duży kod QR
+  (także miniaturka Open Graph)
+- `sciaga-to-be-2.png` — ściąga strona 2/2: błędy, pytania, mini-kartkówka, plan
 - `.nojekyll` — żeby GitHub Pages nie pominął plików z kropką
 
 Po zmianach w źródłach:
@@ -14,7 +17,7 @@ Po zmianach w źródłach:
 cd nauka-to-be
 python3 build.py
 cp to-be-kartkowka.html ../docs/index.html
-PYTHONPATH=/tmp/pylibs python3 make_sciaga.py   # odświeża też ../docs/sciaga-to-be.png
+PYTHONPATH=/tmp/pylibs python3 make_sciaga.py   # odświeża obie ściągi w ../docs/
 ```
 
 ## Jak to otwiera odbiorca

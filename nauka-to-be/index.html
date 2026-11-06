@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Interaktywny moduł do nauki czasownika to be: prawie 5 tysięcy niepowtarzalnych zadań, oceny, powtórki z błędów i próbna kartkówka. Klasa 4, Together 2026. Działa offline.">
 <meta property="og:title" content="TO BE — trening przed kartkówką 🇬🇧">
-<meta property="og:description" content="4 949 unikalnych zadań, 15 typów ćwiczeń, oceny 1–6 i powtórki z błędów. Angielski, klasa 4. Bez logowania, działa w przeglądarce i offline.">
+<meta property="og:description" content="4 949 unikalnych zadań, 16 typów ćwiczeń, oceny 1–6, powtórki z błędów i Laboratorium zdań. Angielski, klasa 4. Bez logowania, działa w przeglądarce i offline.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cdn.jsdelivr.net/gh/zielinski25/Sterownik-Pieca-C.O.@arena%2Ff423a839-sterownik-pieca-c-o/docs/sciaga-to-be.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -38,6 +38,7 @@
     <button class="chip" id="btn-share" style="cursor:pointer;background:var(--teal-l);border-color:#b7e9e3;color:var(--teal-d)" title="Wyślij link na Telegram / WhatsApp / e-mail">🔗 Udostępnij</button>
     <button class="chip" id="btn-dark" style="cursor:pointer" title="Tryb ciemny">🌙 Ciemny</button>
     <button class="chip" id="btn-mute" style="cursor:pointer" title="Włącz / wyłącz czytanie głosem">🔊 Głos</button>
+    <span class="chip" id="chip-level">🎚️ Poziom 1</span>
     <span class="chip" id="chip-days">📅 do kartkówki: …</span>
     <span class="chip teal" id="chip-xp">⭐ 0 pkt</span>
     <span class="chip coral" id="chip-streak">🔥 0 z rzędu</span>
@@ -49,6 +50,7 @@
   <button class="tab" data-go="learn">📘 Nauka</button>
   <button class="tab" data-go="practice">🎮 Ćwiczenia</button>
   <button class="tab" data-go="flashcards">🗂️ Fiszki</button>
+  <button class="tab" data-go="lab">🧪 Laboratorium</button>
   <button class="tab" data-go="review">🔁 Powtórki</button>
   <button class="tab" data-go="exam">📝 Kartkówka próbna</button>
   <button class="tab" data-go="progress">📊 Postępy</button>
@@ -103,7 +105,8 @@
       <p><b>1.</b> Zajrzyj do <a href="#" data-go="learn">Nauki</a> (tabela + zasady).<br>
          <b>2.</b> Zrób kilka różnych <a href="#" data-go="practice">ćwiczeń</a> — nie tylko jedno!<br>
          <b>3.</b> Zajrzyj do <a href="#" data-go="review">Powtórek</a> — wracają tylko zadania, które sprawiły trudność.<br>
-         <b>4.</b> Na koniec rozwiąż <a href="#" data-go="exam">próbną kartkówkę</a> i sprawdź <a href="#" data-go="progress">ocenę</a>.</p>
+         <b>4.</b> Na koniec rozwiąż <a href="#" data-go="exam">próbną kartkówkę</a> i sprawdź <a href="#" data-go="progress">ocenę</a>.<br>
+         <b>5.</b> W <a href="#" data-go="lab">Laboratorium</a> złóż własne zdania i zaznacz <a href="#" data-go="review">światełka samooceny</a> 🚦.</p>
       <button class="btn small ghost" id="btn-print-start">🖨️ Wydrukuj ściągę</button>
     </div>
   </div>
@@ -156,9 +159,9 @@
 <section class="section" id="practice">
   <div id="practice-hub">
     <div class="card">
-      <h2>🎮 15 różnych ćwiczeń</h2>
+      <h2>🎮 16 różnych ćwiczeń</h2>
       <p class="muted">Każde ćwiczenie trenuje inny „mięsień”: wybieranie, wpisywanie, pamięć, słuch, układanie zdań, poprawianie błędów i szybkość. Losujemy pytania, więc możesz wracać wiele razy.</p>
-      <div class="row"><span class="pill teal" id="hub-progress">Ukończone: 0 z 15</span><span class="pill sun" id="hub-bank"></span><button class="btn small ghost" id="btn-random">🎲 Losowe ćwiczenie</button></div>
+      <div class="row"><span class="pill teal" id="hub-progress">Ukończone: 0 z 16</span><span class="pill sun" id="hub-bank"></span><button class="btn small ghost" id="btn-random">🎲 Losowe ćwiczenie</button></div>
       <div class="feedback tip show" style="margin-top:10px">🔁 <b>Zero powtórek:</b> strona zapamiętuje, które zadania już widziałeś/aś, i za każdym razem daje całkiem nowy zestaw — także po zamknięciu i ponownym otwarciu strony.</div>
       <p class="muted" style="margin-top:8px">Po każdym ćwiczeniu dostajesz <b>ocenę</b>, a błędy wędrują do zakładki <b>Powtórki</b> i wracają po 1, 2, 4, 7 i 14 dniach.</p>
     </div>
@@ -210,6 +213,25 @@
   </div>
 </section>
 
+<!-- ================= LABORATORIUM ================= -->
+<section class="section" id="lab">
+  <div class="card">
+    <h2>🧪 Maszyna zdań — złóż zdanie z trzech klocków</h2>
+    <p class="muted">Wybierz <b>kogo</b>, <b>co robimy</b> i <b>resztę zdania</b>. Strona od razu zbuduje poprawne zdanie po angielsku, pokaże krótką formę i wyjaśni zasadę. To ćwiczenie „kartowe" z trzech klocków: osoba + <i>be</i> + koniec zdania.</p>
+    <div id="machine-host"></div>
+  </div>
+  <div class="card">
+    <div class="between"><h2 style="margin:0">✍️ Moje zdania</h2><span class="pill teal">własna produkcja</span></div>
+    <p class="muted">Zapisuj zdania, które sam/a złożyłeś/aś. Własne pisanie utrwala gramatykę lepiej niż samo czytanie. Lista jest tylko w tej przeglądarce.</p>
+    <div id="machine-sentences"></div>
+  </div>
+  <div class="card">
+    <h2>🗣️ Znajdź kogoś, kto… (krótkie odpowiedzi)</h2>
+    <p class="muted">Wybierz rozmówcę i zadaj mu pytanie <i>Are you…?</i> Potem wybierz poprawną krótką odpowiedź — uważaj na pułapki <i>Yes, I'm.</i> i <i>amn't</i>.</p>
+    <div id="find-host"></div>
+  </div>
+</section>
+
 <!-- ================= POWTÓRKI ================= -->
 <section class="section" id="review">
   <div class="card">
@@ -226,6 +248,12 @@
     <h2>📋 Moje trudne zadania</h2>
     <p class="muted">Lista jest prywatna — zapisuje się tylko w tej przeglądarce.</p>
     <div id="review-list"></div>
+  </div>
+  <div class="card">
+    <h2>🚦 Jak mi idzie? (samoocena „Umiem…")</h2>
+    <p class="muted">Po ćwiczeniu zaznacz światełko. 🟢 umiem · 🟡 prawie · 🔴 jeszcze ćwiczę. Czerwone tematy dostają pierwszeństwo w powtórkach i w przycisku „Ćwicz najsłabszy temat".</p>
+    <div class="pill teal" id="lights-summary" style="margin-bottom:12px"></div>
+    <div id="lights-grid"></div>
   </div>
 </section>
 
@@ -345,6 +373,7 @@
   <div id="print-rules"></div>
   <div class="table-wrap"><table id="print-table"></table></div>
   <div id="print-mistakes"></div>
+  <div id="print-mine"></div>
   <div id="print-report"></div>
   <div id="print-exam"></div>
 </div>

@@ -32,8 +32,9 @@ Głos Robbiego używa wbudowanego `speechSynthesis` (angielski) — jeśli przeg
 
 ## Co jest w środku
 
-> **Wersja 2 · mega-baza:** 4 949 unikalnych zadań, system ocen 1–6, powtórki
-> rozłożone w czasie z tego, czego dziecko nie umie, oraz 8 dodatków.
+> **Wersja 3 · research + Laboratorium:** 4 949 unikalnych zadań, **16 ćwiczeń**,
+> system ocen 1–6, powtórki rozłożone w czasie i nowe moduły oparte na badaniach
+> nad uczeniem się (szczegóły w rozdziale *Co mówi research*).
 
 **🧠 Bardzo duża baza i zero powtórek.** `data.js` generuje deterministycznie (stałe ziarno
 `20261110`) 4 949 zadań z 41 podmiotów i 88 okoliczników; każde ma stały `id` i przypisany
@@ -69,7 +70,7 @@ a po 6 pudełku jest „opanowane". Są statystyki, lista trudnych zadań, przyc
 przeczenie, pytanie, krótka odpowiedź), 8 pytań z podręcznika, 12 najczęstszych pułapek,
 słowniczek (kraje/narodowości, przymiotniki, miejsca) oraz **ściąga do druku** (A4).
 
-**🎮 15 ćwiczeń różnego typu** (każde bierze świeży, niepowtarzalny zestaw z mega-bazy):
+**🎮 16 ćwiczeń różnego typu** (każde bierze świeży, niepowtarzalny zestaw z mega-bazy):
 
 | # | Ćwiczenie | Typ zadania / umiejętność |
 | --- | --- | --- |
@@ -87,7 +88,37 @@ słowniczek (kraje/narodowości, przymiotniki, miejsca) oraz **ściąga do druku
 | 12 | Dyktando | pisanie ze słuchu — apostrofy w isn't / aren't / I'm / we're |
 | 13 | Tłumacz z polskiego | budowanie angielskiego zdania z klocków z pułapkami |
 | 14 | Literuj formę | spelling game (wisielec) z baterią Robbiego |
-| 15 | Szybka runda | 60 sekund, ile poprawnych form — trening automatyzacji |
+| 15 | 🧩 Miks 5 minut | 12 zadań z 5 różnych typów w jednym zestawie — **interleaving** |
+| 16 | ⚡ Szybka runda | 60 sekund, ile poprawnych form — trening automatyzacji |
+
+**🧪 Laboratorium** (nowa zakładka) — trzy moduły zamiast „kolejnego testu":
+
+| Moduł | Co robi dziecko | Skąd pomysł |
+| --- | --- | --- |
+| **Maszyna zdań** | Wybiera 3 klocki: **kto** (12 podmiotów), **co robimy** (twierdzenie / przeczenie / pytanie / krótka odpowiedź) i **koniec zdania** (18 końcówek). Strona natychmiast buduje poprawne zdanie, pokazuje formę krótką i wyjaśnia regułę. Tryb „🎯 Sprawdź się" zamienia zdanie w lukę z opcjami. | Kartowa gra „subject + be + ending" (*It Must Be Correct*) oraz tabele substytucji [1] |
+| **Moje zdania** | Zapisuje własne zdania z maszyny, odtwarza je głosem i drukuje w ściądze/raporcie. | Własna produkcja (output) i personalizacja — „Write and draw!" [2], [4] |
+| **Znajdź kogoś, kto…** | Zadaje pytanie *Are you…?* jednej z 5 postaci i wybiera krótką odpowiedź wśród pułapek *Yes, I'm.* / *amn't*. Profile są wyraźnie oznaczone jako zmyślone. | Klasyczny „Find Someone Who" z yes/no pytaniami [1] |
+
+**🚦 Samoocena, bilety wyjścia i poziomy** — 10 zdań „Umiem…" z trzema światełkami
+(🟢 / 🟡 / 🔴) w zakładce **Powtórki**. Czerwony temat ma pierwszeństwo w przycisku
+„Ćwicz najsłabszy temat". Po każdym ćwiczeniu pojawia się krótki **bilet wyjścia**
+(samoocena od razu po zadaniu jest najtrafniejsza [5]), a w górnym pasku rośnie
+**Poziom** (co 100 pkt). Wszystko trafia też do raportu dla rodzica i wydruku.
+
+## Co mówi research (skąd wzięły się nowe moduły)
+
+| Wniosek | Zastosowanie w module | Źródło |
+| --- | --- | --- |
+| **Retrieval practice + spacing + interleaving** — samo odpowiadanie, rozłożone w czasie i z mieszanką typów zadań, daje trwalszą pamięć niż samo czytanie | Powtórki Leitnera (1/2/4/7/14/30 dni), dzienniczek ocen, ćwiczenie **Miks 5 minut** | [MindBrained / Science of Learning](https://www.mindbrained.org/2021/05/forgetting-to-remember-three-research-based-strategies-applied-to-language-teaching/) , [spaced learning in primary EFL](https://www.researchgate.net/publication/395979915_The_Impact_of_Spaced_Learning_Strategies_on_Vocabulary_Retention_in_Primary_English_Classrooms) |
+| **Interleaving**: w krótkim teście mieszaj różne obszary i typy zadań („Big Basket Quiz") | Miks losuje z 5 banków: wybór, luka, przekształcenie, krótka odpowiedź, poprawa błędu | [Teach-This — Verb to be ESL games](https://www.teach-this.com/grammar/verb-to-be) |
+| **Uczenie przez własną produkcję + dual coding** (tekst, obraz, dźwięk) wzmacnia zapamiętywanie | Maszyna zdań (kolorowe klocki + 🔊 głos + wyjaśnienie), własne zdania, dwustronicowa ściąga z kolorami | [Profe Magnan — retrieval & UDL](https://profemagnan.com/the-power-of-retrieval-practice/) , [English in Action — evidence-based teaching](https://englishinaction.com/blog/book-review-an-introduction-to-evidence-based-teaching-in-the-english-language-classroom/) |
+| **Samoocena „I can…" i światła drogowe** rozwijają metakontrolę; ocena tuż po zadaniu jest celniejsza niż ogólna | 10 zdań „Umiem…", bilety wyjścia, czerwony temat priorytetowy | [Assessment for Learning in Primary Language Learning and Teaching](https://dokumen.pub/assessment-for-learning-in-primary-language-learning-and-teaching-9781800410657.html) , [exit tickets](https://www.worksheetzoo.com/printable-exit-tickets) |
+| **T/F, wybór formy, „Make it right!", pytania o dane osobowe i rysunek o sobie** — sprawdzony zestaw zadań A1 | 15 typów ćwiczeń + mini-kartkówka na ściądze | [British Council LearnEnglish Kids — present simple: verb 'to be'](https://learnenglishkids.britishcouncil.org/sites/kids/files/attachment/grammar-practice-present-simple-verb-to-be-worksheet.pdf) , [grammar games wersja](https://learnenglishkids.britishcouncil.org/sites/kids/files/attachment/grammar-games-present-simple-verb-to-be-worksheet.pdf) |
+
+**📄 Ściąga PNG (2 strony)** — `sciaga-to-be.png` (odmiana, 4 zasady + pułapka,
+duży kod QR) oraz `sciaga-to-be-2.png` (6 najczęstszych błędów, pytania o dane osobowe,
+mini-kartkówka 10 zdań z kluczem dla rodzica, plan 3 kroków i legenda samooceny).
+Obie są 1080×1560, do druku A4 i do wysłania jako zdjęcie na Telegramie.
 
 **🗂️ Fiszki** — 84 karty z prostą powtórką rozłożoną w czasie („Umiem" odkłada kartę,
 „Jeszcze ćwiczę" wraca szybciej).
@@ -98,7 +129,7 @@ i *tryb kartkówki* (bez podpowiedzi, z czasem, oceną, omówieniem odpowiedzi n
 i przyciskiem przejścia do powtórki błędów). Dodatkowo **🖨️ losowa kartkówka do druku
 z kluczem odpowiedzi** dla rodzica.
 
-**📊 Postępy** — punkty XP, serie poprawnych odpowiedzi, skuteczność, 15 odznak,
+**📊 Postępy** — punkty XP, serie poprawnych odpowiedzi, skuteczność, 18 odznak,
 dzienniczek ocen z wykresem, oceny cząstkowe według umiejętności, wykresy dla każdego
 ćwiczenia, raport dla rodzica/nauczyciela (także do druku), 5-dniowy plan nauki
 z checkboxami. Wszystko zapisuje się wyłącznie w `localStorage` tej przeglądarce
@@ -133,11 +164,12 @@ app.js                  silnik bez powtórek, oceny, powtórki, kartkówka, post
 to-be-kartkowka.html    WYGENEROWANY jeden plik (CSS + JS w środku) — główny plik do użytku
 build.py                scala powyższe w to-be-kartkowka.html:  python3 build.py
 validate.js             spójność bazy, unikalność id i treści:   node validate.js
-make_sciaga.py          generuje sciaga-to-be.png (wymaga pillow + qrcode)
-sciaga-to-be.png        ściąga do wysłania jako zdjęcie na Telegramie
+make_sciaga.py          generuje obie ściągi PNG (wymaga pillow + qrcode)
+sciaga-to-be.png        ściąga str. 1 (odmiana + zasady + duży QR)
+sciaga-to-be-2.png      ściąga str. 2 (błędy + pytania + mini-kartkówka + plan)
 UDSTEPNIJ-TELEGRAM.txt  gotowa wiadomość, linki i instrukcja udostępniania
 README.md               ten plik
-../docs/                wersja publikowana (index.html + sciaga-to-be.png)
+../docs/                wersja publikowana (index.html + obie ściągi PNG)
 ```
 
 Po każdej zmianie w `index.html` / `styles.css` / `data.js` / `app.js` uruchom `python3 build.py`,
@@ -157,8 +189,9 @@ Telegram nie renderuje HTML-u w czacie, dlatego przygotowano trzy drogi:
    Strona ma tagi Open Graph (podgląd z miniaturką ściągi) oraz przycisk
    **„🔗 Udostępnij"** (`navigator.share`, fallback = kopiowanie linku).
 2. **Plik** — `to-be-kartkowka.html` wysłany jako dokument działa u odbiorcy offline.
-3. **Zdjęcie** — `sciaga-to-be.png` (tabela + zasady + kod QR do strony) wysłane jako
-   zdjęcie pokazuje się bezpośrednio na czacie.
+3. **Zdjęcia** — `sciaga-to-be.png` (tabela + zasady + duży kod QR do strony) oraz
+   `sciaga-to-be-2.png` (błędy, pytania, mini-kartkówka z kluczem, plan) wysłane jako
+   zdjęcia pokazują się bezpośrednio na czacie.
 
 Gotową wiadomość, instrukcję krok po kroku, linki do Dysku oraz tekstową
 „kartkówkę na czacie" (plan B) zawiera **`UDSTEPNIJ-TELEGRAM.txt`**.
@@ -179,8 +212,10 @@ node --check data.js && node --check app.js && node validate.js && python3 build
 ```
 
 Dodatkowo strona została uruchomiona w jsdom i przećwiczona end-to-end: otwarcie wszystkich
-15 ćwiczeń, odpowiedzi w reprezentatywnych typach zadań, fiszki, oba tryby kartkówki,
-raport, druk i reset postępów — bez błędów JS. Osobny test (`smoke-extras`) ze współdzielonym
+16 ćwiczeń, odpowiedzi w reprezentatywnych typach zadań, fiszki, oba tryby kartkówki,
+raport, druk i reset postępów — bez błędów JS. Test `smoke-extras` ze współdzielonym
 `localStorage` potwierdza, że trzy kolejne wizyty dają rozłączne zestawy zadań, że po
 wyczerpaniu bazy startuje cykl 2, że oceny i błędy zapisują się, że powtórka kończy się
-oceną oraz że tryb ciemny, wyciszanie i wydruk kartkówki działają.
+oceną oraz że tryb ciemny, wyciszanie i wydruk kartkówki działają. Test `smoke-lab`
+sprawdza maszynę zdań, własne zdania, „Find Someone Who", światła samooceny, Miks,
+bilet wyjścia, poziom i trwałość nowych danych po restarcie.

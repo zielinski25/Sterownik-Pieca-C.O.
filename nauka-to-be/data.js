@@ -22,6 +22,47 @@
     { en: "They", pl: "oni/one",  form: "are", short: "They're",negLong: "They are not",negShort: "They aren't",question: "Are they",   yes: "Yes, they are.",   no: "No, they aren't." }
   ];
 
+  /* ---- Laboratorium: maszyna zdań (substitution table) + „Find Someone Who" ----
+     Inspiracja: karty „subject + be + ending" oraz klasowa zabawa w pytania
+     Yes/No z krótkimi odpowiedziami (Teach-This, British Council). */
+  const MACHINE = {
+    subjects: [
+      { word: "I", bi: 0, pl: "ja" },
+      { word: "You", bi: 1, pl: "ty" },
+      { word: "He", bi: 2, pl: "on" },
+      { word: "She", bi: 3, pl: "ona" },
+      { word: "It", bi: 4, pl: "ono/to" },
+      { word: "We", bi: 5, pl: "my" },
+      { word: "They", bi: 7, pl: "oni/one" },
+      { word: "Robbie", bi: 2, pl: "robot z podręcznika" },
+      { word: "Lena", bi: 3, pl: "koleżanka z klasy" },
+      { word: "Mickey", bi: 2, pl: "kolega z klasy" },
+      { word: "Ms Collins", bi: 3, pl: "nauczycielka" },
+      { word: "My friends", bi: 7, pl: "moi koledzy" }
+    ],
+    endings: ["eleven.", "ten.", "a student.", "my friend.", "from Poland.", "Polish.",
+              "at school.", "in the park.", "happy.", "cool.", "clever.", "a robot.",
+              "my teacher.", "very tall.", "in the UK.", "shy.", "amazing.", "in Class 4."],
+    /* Dane postaci są ZMYŚLONE na potrzeby zabawy — ćwiczymy wyłącznie
+       krótkie odpowiedzi „Yes, I am. / No, I'm not.". */
+    people: [
+      { name: "Robbie", age: 10, from: "the UK", job: "a robot" },
+      { name: "Lena", age: 11, from: "Poland", job: "a student" },
+      { name: "Mickey", age: 10, from: "Brazil", job: "a student" },
+      { name: "Ana", age: 11, from: "Brazil", job: "a student" },
+      { name: "Ms Collins", age: 32, from: "the UK", job: "a teacher" }
+    ],
+    questions: [
+      { q: "Are you eleven?", test: "age11" },
+      { q: "Are you ten?", test: "age10" },
+      { q: "Are you from Poland?", test: "poland" },
+      { q: "Are you from Brazil?", test: "brazil" },
+      { q: "Are you a robot?", test: "robot" },
+      { q: "Are you a teacher?", test: "teacher" },
+      { q: "Are you a student?", test: "student" }
+    ]
+  };
+
   const RULES = [
     { icon: "🧩", title: "Trzy formy", text: "<b>I → am</b>, <b>he / she / it → is</b>, <b>you / we / they → are</b>. Zaimki osobowe zastępują osobę lub rzecz: <i>Mark is a student. → He is a student.</i>" },
     { icon: "➕", title: "Twierdzenie", text: "Najpierw <b>osoba</b>, potem <b>be</b>: <i>I am from Poland. She is eleven. They are cool.</i> Krótka forma: <i>I'm, he's, we're, they're</i>." },
@@ -483,6 +524,7 @@
     { id: "dictation", icon: "🔤", title: "Dyktando", desc: "Usłysz formę i wpisz ją — trenuj apostrof w isn't / aren't / I'm", skill: "pisownia" },
     { id: "translate", icon: "🇵🇱", title: "Tłumacz z polskiego", desc: "Zbuduj angielskie zdanie z klocków (z pułapkami)", skill: "tłumaczenie" },
     { id: "spelling", icon: "🎲", title: "Literuj formę", desc: "Odgaduj litery krótkich form, zanim Robbie straci antenkę", skill: "pisownia" },
+    { id: "mix", icon: "🧩", title: "Miks 5 minut", desc: "12 zadań z 5 różnych typów w jednym zestawie — przeplatany trening (interleaving)", skill: "powtórka" },
     { id: "speed", icon: "⚡", title: "Szybka runda", desc: "60 sekund, ile poprawnych odpowiedzi zdążysz?", skill: "powtórka" }
   ];
 
@@ -920,6 +962,7 @@
     choice: choice, gap: gap, pairSets: pairSets, matchSets: matchSets, order: order,
     transform: transform, shorts: shorts, detective: detective, sort: sort, reading: reading,
     listening: listening, dictation: dictation, translate: translate, spelling: spelling,
-    flashcards: flashcards, examPool: examPool, plan: plan, activities: ACTIVITIES
+    flashcards: flashcards, examPool: examPool, plan: plan, activities: ACTIVITIES,
+    machine: MACHINE
   };
 })(typeof window !== "undefined" ? window : globalThis);

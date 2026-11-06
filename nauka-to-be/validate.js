@@ -90,13 +90,34 @@ Object.keys(DUPKEYS).forEach((k) => {
 /* każde ćwiczenie z listy musi mieć implementację i odwrotnie */
 const app = fs.readFileSync(path.join(here, "app.js"), "utf8");
 ["function deal(", "function recordGrade(", "function renderReview(", "function logAnswer(",
- "function gradeOf(", "exam-count", "print-exam", "btn-dark", "btn-mute"].forEach((needle) => {
+ "function gradeOf(", "exam-count", "print-exam", "btn-dark", "btn-mute",
+ "function actMix(", "function renderLab(", "function renderLights(", "function machineBuild(",
+ "function renderFind(", "exitTicketHtml", "chip-level"].forEach((needle) => {
   if (app.indexOf(needle) === -1) bad(`W app.js brakuje nowej funkcji/elementu: ${needle}`);
 });
 const html = fs.readFileSync(path.join(here, "index.html"), "utf8");
-["review-stats", "review-host", "review-list", "gradebook", "skill-grid", "hub-bank", "run-set"].forEach((id) => {
+["review-stats", "review-host", "review-list", "gradebook", "skill-grid", "hub-bank", "run-set",
+ "machine-host", "machine-sentences", "find-host", "lights-grid", "lights-summary", "chip-level",
+ "print-mine"].forEach((id) => {
   if (html.indexOf('id="' + id + '"') === -1) bad(`W index.html brakuje sekcji: ${id}`);
 });
+if (html.indexOf('id="lab"') === -1) bad("W index.html brakuje zakładki Laboratorium");
+if (D.activities.length !== 16) bad(`Oczekiwano 16 ćwiczeń, jest ${D.activities.length}`);
+if (!D.machine || !D.machine.subjects || !D.machine.endings || !D.machine.people || !D.machine.questions)
+  bad("Brak danych Laboratorium (D.machine)");
+else {
+  if (D.machine.subjects.length < 8) bad("Za mało podmiotów w maszynie zdań");
+  if (D.machine.endings.length < 10) bad("Za mało końcówek zdań w maszynie");
+  D.machine.subjects.forEach((s, i) => {
+    if (!D.be[s.bi]) bad(`machine.subjects[${i}]: zły indeks formy be`);
+  });
+  D.machine.people.forEach((p, i) => {
+    if (!p.name || !p.age || !p.from || !p.job) bad(`machine.people[${i}]: niepełny profil`);
+  });
+  D.machine.questions.forEach((q, i) => {
+    if (!q.q || !q.test) bad(`machine.questions[${i}]: brak treści/testu`);
+  });
+}
 const block = app.match(/const IMPL = \{([\s\S]*?)\n  \};/);
 if (!block) bad("Nie znaleziono mapy IMPL w app.js");
 else {
@@ -117,6 +138,7 @@ else {
 
 console.log(`Baza: ${D.activities.length} ćwiczeń · ${D.meta.bankTotal} unikalnych zadań · ${D.choice.length} pytań wyboru · ` +
             `${D.gap.length} luk · ${D.order.length + D.translate.length} rozsypanek · ${D.examPool.length} pytań kartkówki · ${D.flashcards.length} fiszek`);
-console.log("Nowe funkcje: brak powtórek, oceny 1–6, powtórki z błędów, dzienniczek, tryb ciemny, wyciszanie, kartkówka do druku ✓");
+console.log("Nowe funkcje: brak powtórek, oceny 1–6, powtórki, dzienniczek, ciemny tryb, wydruk kartkówki ✓");
+console.log("Z researchu: Miks/interleaving, maszyna zdań, własne zdania, Find Someone Who, światła samooceny, bilety wyjścia, poziomy ✓");
 if (problems.length) { console.error("BŁĘDY:\n - " + problems.join("\n - ")); process.exit(1); }
 console.log("✅ Walidacja danych i implementacji: OK");

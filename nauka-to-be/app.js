@@ -29,7 +29,8 @@
   function fresh() {
     return { xp: 0, streak: 0, bestStreak: 0, correct: 0, wrong: 0, bestExam: 0,
              acts: {}, badges: [], plan: [], cards: {}, weak: {}, days: [], speedBest: 0,
-             seen: {}, cycles: {}, grades: [], mistakes: {}, skills: {}, mute: false, dark: false };
+             seen: {}, cycles: {}, grades: [], mistakes: {}, skills: {}, mute: false, dark: false,
+             lights: {}, mySentences: [], exitTickets: [] };
   }
   let S = (function () {
     try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
@@ -47,6 +48,9 @@
   if (!S.acts || typeof S.acts !== "object") S.acts = {};
   if (!S.cards || typeof S.cards !== "object") S.cards = {};
   if (!S.weak || typeof S.weak !== "object") S.weak = {};
+  if (!S.lights || typeof S.lights !== "object") S.lights = {};
+  if (!Array.isArray(S.mySentences)) S.mySentences = [];
+  if (!Array.isArray(S.exitTickets)) S.exitTickets = [];
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
   if (S.days.indexOf(today()) === -1) { S.days.push(today()); save(); }
 
@@ -99,11 +103,19 @@
     save();
     return shuffle(out).map(function (i) { return items[i]; });
   }
+  /* Miks = trening przeplatany (interleaving): jeden zestaw z 5 różnych typów zadań.
+     Kolejność jest stała, więc indeksy w S.seen.mix też są stałe → zero powtórek. */
+  const MIX_SOURCES = [["choice", D.choice], ["gap", D.gap], ["transform", D.transform],
+                       ["shorts", D.shorts], ["detective", D.detective]];
+  const MIX_POOL = [];
+  MIX_SOURCES.forEach(function (p) {
+    p[1].forEach(function (it) { const c = Object.assign({}, it); c._act = p[0]; MIX_POOL.push(c); });
+  });
   const BANK_OF = {
     choice: D.choice, gap: D.gap, order: D.order, transform: D.transform, shorts: D.shorts,
     detective: D.detective, sort: D.sort, listen: D.listening, listening: D.listening, dictation: D.dictation,
     translate: D.translate, spelling: D.spelling, memory: D.pairSets, match: D.matchSets,
-    reading: D.reading, speed: D.choice, exam: D.examPool, printExam: D.examPool
+    reading: D.reading, speed: D.choice, mix: MIX_POOL, exam: D.examPool, printExam: D.examPool
   };
   function bankSize(act) { const b = BANK_OF[act]; return b ? b.length : 0; }
   function seenTotal() {
@@ -156,14 +168,37 @@
   }
   function allMistakes() { return Object.keys(S.mistakes).map(function (k) { return S.mistakes[k]; }); }
   function weakestSkill() {
+    /* Samoocena „🔴" ma pierwszeństwo: dziecko samo wie, czego nie umie. */
+    const red = Object.keys(S.lights).filter(function (k) { return S.lights[k] === "red"; });
+    if (red.length) {
+      const k = red[0], st = S.skills[k] || { ok: 0, tried: 0 };
+      return { k: k, p: pct(st.ok, st.tried), self: true };
+    }
     const arr = Object.keys(S.skills).filter(function (k) { return S.skills[k].tried >= 2; })
       .map(function (k) { return { k: k, p: pct(S.skills[k].ok, S.skills[k].tried) }; })
       .sort(function (a, b) { return a.p - b.p; });
     return arr.length ? arr[0] : null;
   }
+  const LIGHT_SKILLS = [
+    { k: "odmiana", ican: "Umiem odmienić am / is / are" },
+    { k: "twierdzenia", ican: "Umiem zbudować twierdzenie" },
+    { k: "przeczenia", ican: "Umiem zrobić przeczenie (isn't, aren't, I'm not)" },
+    { k: "pytania", ican: "Umiem zadać pytanie z be na początku" },
+    { k: "odpowiedzi", ican: "Umiem odpowiedzieć Yes, I am. / No, I'm not." },
+    { k: "pułapki", ican: "Umiem znaleźć i poprawić błąd" },
+    { k: "czytanie", ican: "Umiem przeczytać krótki tekst o postaci" },
+    { k: "słuchanie", ican: "Umiem rozpoznać formę ze słuchu" },
+    { k: "pisownia", ican: "Umiem napisać I'm / isn't / aren't" },
+    { k: "tłumaczenie", ican: "Umiem przetłumaczyć zdanie z be" }
+  ];
+  const LIGHTS = [
+    { id: "green", ico: "🟢", label: "Umiem", color: "#2f9e6f" },
+    { id: "amber", ico: "🟡", label: "Prawie", color: "#d99b1c" },
+    { id: "red", ico: "🔴", label: "Jeszcze ćwiczę", color: "#d1564b" }
+  ];
   const SKILL_ACT = { odmiana: "choice", twierdzenia: "gap", pytania: "transform", przeczenia: "detective",
     odpowiedzi: "shorts", pułapki: "detective", rozpoznawanie: "sort", czytanie: "reading",
-    słuchanie: "listen", pisownia: "spelling", tłumaczenie: "translate", powtórka: "speed" };
+    słuchanie: "listen", pisownia: "spelling", tłumaczenie: "translate", powtórka: "mix" };
 
   const BADGES = [
     { id: "first", ico: "🌱", name: "Pierwszy krok", need: "1 poprawna odpowiedź", t: function (s) { return s.correct >= 1; } },
@@ -180,12 +215,22 @@
     { id: "week", ico: "📅", name: "Systematyczność", need: "Nauka w 3 różne dni", t: function (s) { return s.days.length >= 3; } },
     { id: "grinder", ico: "🧠", name: "100 nowych zadań", need: "Zobacz 100 różnych zadań", t: function () { return seenTotal() >= 100; } },
     { id: "repairer", ico: "🛠️", name: "Naprawiacz", need: "Popraw 8 trudnych zadań", t: function (s) { return Object.keys(s.mistakes).filter(function (k) { return s.mistakes[k] && s.mistakes[k].right >= 2; }).length >= 8; } },
-    { id: "six", ico: "🎓", name: "Szóstka!", need: "Dostań ocenę 6", t: function (s) { return s.grades.some(function (g) { return g.g === 6; }); } }
+    { id: "six", ico: "🎓", name: "Szóstka!", need: "Dostań ocenę 6", t: function (s) { return s.grades.some(function (g) { return g.g === 6; }); } },
+    { id: "mixer", ico: "🧩", name: "Mistrz miksu", need: "Ukończ Miks 5 minut", t: function (s) { return !!(s.acts.mix && s.acts.mix.done); } },
+    { id: "writer", ico: "✍️", name: "Autor zdań", need: "Zapisz 5 własnych zdań", t: function (s) { return s.mySentences.length >= 5; } },
+    { id: "honest", ico: "🚦", name: "Szczery uczeń", need: "Oceń 5 umiejętności światełkami", t: function (s) { return Object.keys(s.lights).length >= 5; } }
   ];
 
   function updateChips() {
     $("#chip-xp").textContent = "⭐ " + S.xp + " pkt";
     $("#chip-streak").textContent = "🔥 " + S.streak + " z rzędu";
+    const lv = $("#chip-level");
+    if (lv) {
+      const level = Math.floor(S.xp / 100) + 1;
+      const inLevel = S.xp % 100;
+      lv.textContent = "🎚️ Poziom " + level + " · " + inLevel + "/100";
+      lv.title = "Poziom rośnie co 100 punktów. Następny za " + (100 - inLevel) + " pkt.";
+    }
     checkBadges();
   }
   function checkBadges() {
@@ -214,7 +259,7 @@
 
   /* ---------------- udostępnianie (Telegram, WhatsApp, e-mail…) ---------------- */
   const SHARE_URL = "https://is.gd/gAbph1";
-  const SHARE_TEXT = "TO BE — trening przed kartkówką (angielski, 10.11) 🇬🇧 4 949 unikalnych zadań, 15 typów ćwiczeń, oceny 1–6 i powtórki z błędów. Bez logowania.";
+  const SHARE_TEXT = "TO BE — trening przed kartkówką (angielski, 10.11) 🇬🇧 4 949 unikalnych zadań, 16 typów ćwiczeń, oceny 1–6, powtórki z błędów i Laboratorium zdań. Bez logowania.";
   $("#btn-share").onclick = async function () {
     const data = { title: "TO BE · trening przed kartkówką", text: SHARE_TEXT, url: SHARE_URL };
     if (navigator.share) {
@@ -285,6 +330,7 @@
     if (id === "progress") renderProgress();
     if (id === "flashcards") renderCard();
     if (id === "review") renderReview();
+    if (id === "lab") renderLab();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   document.addEventListener("click", function (e) {
@@ -429,6 +475,13 @@
     sheet.className = kind === "exam" ? "exam-mode" : "";
     $("#print-title").textContent = kind === "exam" ? "TO BE — kartkówka do druku" : "TO BE — ściąga przed kartkówką";
     $("#print-report").innerHTML = kind === "report" ? "<div class='card'><h2>Raport postępów · " + today() + "</h2>" + $("#parent-report").innerHTML + "</div>" : "";
+    $("#print-mine").innerHTML = kind === "exam" ? "" :
+      '<div class="card"><h2>Moje zdania i samoocena 🚦</h2>' +
+      (S.mySentences.length ? "<p><b>Własne zdania:</b> " + S.mySentences.map(function (s) { return esc(s); }).join(" · ") + "</p>" : "<p>Nie zapisano jeszcze własnych zdań (Laboratorium).</p>") +
+      (Object.keys(S.lights).length ? "<p><b>Samoocena:</b> " + LIGHT_SKILLS.filter(function (x) { return S.lights[x.k]; }).map(function (x) {
+        const l = LIGHTS.filter(function (z) { return z.id === S.lights[x.k]; })[0];
+        return (l ? l.ico : "") + " " + esc(x.ican);
+      }).join(" · ") + "</p>" : "<p>Brak samooceny światełkami.</p>") + "</div>";
     $("#print-exam").innerHTML = kind === "exam" ? buildPrintExam() : "";
     try { window.print(); } catch (e) { toast("Drukowanie niedostępne w tej przeglądarce."); }
   }
@@ -521,7 +574,20 @@
       '<button class="btn" id="btn-again">🔁 Nowy zestaw</button>' +
       '<button class="btn ghost" id="btn-other">🎮 Inne ćwiczenia</button>' +
       '<button class="btn orange" id="btn-to-exam">📝 Próbna kartkówka</button>' +
-      (due ? '<button class="btn small yellow" id="btn-to-review">🔁 Powtórz błędy</button>' : "") + '</div></div>';
+      (due ? '<button class="btn small yellow" id="btn-to-review">🔁 Powtórz błędy</button>' : "") + '</div>' +
+      exitTicketHtml(act) + '</div>';
+    $$("#run-host [data-exit]").forEach(function (b) {
+      b.onclick = function () {
+        const sk = skillOf(act);
+        S.lights[sk] = b.dataset.exit;
+        S.exitTickets.unshift({ d: today(), act: act, skill: sk, light: b.dataset.exit });
+        if (S.exitTickets.length > 40) S.exitTickets.length = 40;
+        save();
+        $$("#run-host [data-exit]").forEach(function (x) { x.classList.toggle("on", x === b); });
+        renderLights(); renderReviewStats();
+        toast("🎫 Zapisano samoocenę — dziękuję!");
+      };
+    });
     $("#btn-again").onclick = function () { openActivity(act); };
     $("#btn-other").onclick = function () { $("#practice-run").style.display = "none"; $("#practice-hub").style.display = "block"; updateHub(); go("practice"); };
     $("#btn-to-exam").onclick = function () { go("exam"); };
@@ -1111,11 +1177,55 @@
     }, 1000);
   }
 
+  /* ============ 16. Miks 5 minut — trening przeplatany (interleaving) ============ */
+  function actMix() {
+    new Session("mix", MIX_POOL, 12, function (it, s) {
+      const rd = reviewData(it, it._act);
+      const src = D.activities.find(function (a) { return a.id === it._act; });
+      const accepted = Array.isArray(it.a) ? it.a : [rd.correct];
+      s.spoken = rd.correct;
+      step(s, {
+        q: esc(rd.prompt).replace("___", "<em>___</em>"),
+        hint: "🧩 " + esc(src ? src.title : it._act) + " · " + esc(it.area || "powtórka") + " — co chwilę inny typ zadania",
+        body: rd.options
+          ? '<div class="options">' + shuffle(rd.options).map(function (o) { return '<button class="opt" data-v="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + "</div>"
+          : '<input class="answer-input" id="ans" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="wpisz po angielsku…">',
+        actions: rd.options ? "" : '<button class="btn" id="btn-check">Sprawdź ✓</button><button class="btn small ghost" id="btn-say">🔊 Przeczytaj</button>'
+      });
+      if (rd.options) {
+        $$("#step-body .opt").forEach(function (b) {
+          b.onclick = function () {
+            const ok = norm(b.dataset.v) === norm(rd.correct);
+            $$("#step-body .opt").forEach(function (x) {
+              x.disabled = true;
+              if (norm(x.dataset.v) === norm(rd.correct)) x.classList.add("correct");
+              else if (x === b) x.classList.add("wrong");
+            });
+            check(s, ok, rd.correct, it.w || rd.correct);
+          };
+        });
+      } else {
+        const inp = $("#ans");
+        function submit() {
+          const v = norm(inp.value);
+          if (!v) { toast("Najpierw coś wpisz 🙂"); inp.focus(); return; }
+          const ok = accepted.some(function (x) { return norm(x) === v; });
+          inp.disabled = true;
+          check(s, ok, rd.correct, it.w || rd.correct);
+        }
+        $("#btn-check").onclick = submit;
+        inp.onkeydown = function (e) { if (e.key === "Enter") submit(); };
+        const bs = $("#btn-say"); if (bs) bs.onclick = function () { speak(String(rd.prompt).replace("___", rd.correct)); };
+        inp.focus();
+      }
+    }).show();
+  }
+
   const IMPL = {
     choice: actChoice, gap: actGap, memory: actMemory, match: actMatch, order: actOrder,
     transform: actTransform, shorts: actShorts, detective: actDetective, sort: actSort,
     reading: actReading, listen: actListen, dictation: actDictation, translate: actTranslate,
-    spelling: actSpelling, speed: actSpeed
+    spelling: actSpelling, mix: actMix, speed: actSpeed
   };
 
   /* ---------------- FISZKI ---------------- */
@@ -1319,6 +1429,7 @@
   }
   function renderReview() {
     renderReviewStats();
+    renderLights();
     RV = { list: dueReviews(), i: 0, ok: 0, total: 0 };
     RV.total = RV.list.length;
     drawReview();
@@ -1405,6 +1516,240 @@
     toast("🎯 Najsłabszy temat: " + w.k + " (" + w.p + "%)");
   };
 
+  /* ---------------- LABORATORIUM: maszyna zdań, własne zdania, „Znajdź kogoś, kto…" ---------------- */
+  let MCH = { subj: 0, mode: "+", end: 0, challenge: false };
+  let FSW = { person: 0, q: 0, picked: null };
+  const MCH_MODES = [
+    { id: "+", ico: "➕", label: "Twierdzenie" },
+    { id: "-", ico: "➖", label: "Przeczenie" },
+    { id: "?", ico: "❓", label: "Pytanie" },
+    { id: "ans", ico: "💬", label: "Krótka odpowiedź" }
+  ];
+  function cap(s) { return String(s).charAt(0).toUpperCase() + String(s).slice(1); }
+  function machineBuild() {
+    const subj = D.machine.subjects[MCH.subj];
+    const be = D.be[subj.bi];
+    const end = D.machine.endings[MCH.end];
+    const stem = end.replace(/\.$/, "");
+    const word = subj.word, pron = word === be.en;
+    if (MCH.mode === "+") return {
+      main: word + " " + be.form + " " + end,
+      alt: pron ? be.short + " " + end : (be.form === "is" ? word + "'s " + end : null),
+      note: "Osoba + be + reszta. „" + word + "\" → " + be.form + ".",
+      gap: word + " ___ " + end, answer: be.form, options: ["am", "is", "are"], tip: "Która forma be?"
+    };
+    if (MCH.mode === "-") {
+      const neg = be.form + " not";
+      const shortWord = pron ? be.negShort : word + " " + (be.form === "is" ? "isn't" : "aren't");
+      return { main: word + " " + neg + " " + end, alt: shortWord + " " + end,
+        note: "Przeczenie = be + not. Uwaga: „amn't\" NIE istnieje!",
+        gap: word + " ___ " + end, answer: neg,
+        options: ["am not", "is not", "are not", "isn't", "aren't", "I'm not"], tip: 'Jak powiedzieć „nie jest"?' };
+    }
+    if (MCH.mode === "?") return {
+      main: cap(be.form) + " " + word + " " + stem + "?", alt: null,
+      note: "be wędruje na początek. Nie dodajemy do / does.",
+      gap: "___ " + word + " " + stem + "?", answer: be.form,
+      options: ["am", "is", "are", "do"], tip: "Co stoi na początku pytania?"
+    };
+    return {
+      main: cap(be.form) + " " + word + " " + stem + "? → " + be.yes,
+      alt: cap(be.form) + " " + word + " " + stem + "? → " + be.no,
+      note: "W odpowiedzi TAK nie skracamy: Yes, I am. (nie: Yes, I'm.)",
+      gap: null, answer: be.yes, options: [], tip: "Krótkie odpowiedzi"
+    };
+  }
+  function renderMachine() {
+    const host = $("#machine-host"); if (!host) return;
+    const b = machineBuild();
+    const subjBtns = D.machine.subjects.map(function (x, i) {
+      return '<button class="m-chip' + (i === MCH.subj ? " on" : "") + '" data-kind="subj" data-i="' + i + '">' + esc(x.word) + "</button>";
+    }).join("");
+    const modeBtns = MCH_MODES.map(function (m) {
+      return '<button class="m-chip' + (m.id === MCH.mode ? " on" : "") + '" data-kind="mode" data-mode="' + m.id + '">' + m.ico + " " + esc(m.label) + "</button>";
+    }).join("");
+    const endBtns = D.machine.endings.map(function (x, i) {
+      return '<button class="m-chip small' + (i === MCH.end ? " on" : "") + '" data-kind="end" data-i="' + i + '">' + esc(x) + "</button>";
+    }).join("");
+    const out = MCH.challenge && b.options.length
+      ? '<div class="machine-out challenge"><div class="muted">' + esc(b.tip) + "</div><div class=\"q\">" +
+        esc(b.gap).replace("___", "<em>___</em>") + "</div>" +
+        '<div class="options">' + shuffle([b.answer].concat(shuffle(b.options.filter(function (o) { return o !== b.answer; })).slice(0, 3)))
+          .map(function (o) { return '<button class="opt" data-mans="' + esc(o) + '">' + esc(o) + "</button>"; }).join("") + "</div>" +
+        '<div class="feedback" id="mch-fb"></div></div>'
+      : '<div class="machine-out"><div class="muted">Gotowe zdanie 🔽</div><div class="q">' + esc(b.main) + "</div>" +
+        (b.alt ? '<div class="alt">Krótko / inaczej: <b>' + esc(b.alt) + "</b></div>" : "") +
+        '<div class="tip-line">💡 ' + esc(b.note) + "</div></div>";
+    host.innerHTML =
+      '<div class="machine-grid"><div><h3>1️⃣ Kto?</h3><div class="chip-list">' + subjBtns + "</div></div>" +
+      '<div><h3>2️⃣ Co robimy?</h3><div class="chip-list">' + modeBtns + "</div></div>" +
+      '<div><h3>3️⃣ Reszta zdania</h3><div class="chip-list">' + endBtns + "</div></div></div>" +
+      out +
+      '<div class="row" style="margin-top:12px">' +
+      (b.options.length ? '<button class="btn small" id="mch-challenge">' + (MCH.challenge ? "👀 Pokaż zdanie" : "🎯 Sprawdź się") + "</button>" : "") +
+      '<button class="btn small ghost" id="mch-say">🔊 Posłuchaj</button>' +
+      '<button class="btn small ghost" id="mch-save">➕ Zapisz do moich zdań</button>' +
+      '<button class="btn small ghost" id="mch-random">🎲 Losuj</button></div>';
+    $$("#machine-host [data-kind]").forEach(function (btn) {
+      btn.onclick = function () {
+        if (btn.dataset.kind === "subj") MCH.subj = +btn.dataset.i;
+        else if (btn.dataset.kind === "mode") MCH.mode = btn.dataset.mode;
+        else MCH.end = +btn.dataset.i;
+        MCH.challenge = false; renderMachine();
+      };
+    });
+    const cc = $("#mch-challenge"); if (cc) cc.onclick = function () { MCH.challenge = !MCH.challenge; renderMachine(); };
+    $("#mch-say").onclick = function () { speak(b.main); };
+    $("#mch-save").onclick = function () {
+      if (S.mySentences.indexOf(b.main) === -1) {
+        S.mySentences.unshift(b.main);
+        if (S.mySentences.length > 12) S.mySentences.length = 12;
+        S.xp += 2; save(); updateChips(); renderMySentences();
+        toast("✍️ Zapisano zdanie +2 pkt");
+      } else toast("To zdanie już masz na liście 🙂");
+    };
+    $("#mch-random").onclick = function () {
+      MCH.subj = Math.floor(Math.random() * D.machine.subjects.length);
+      MCH.mode = MCH_MODES[Math.floor(Math.random() * MCH_MODES.length)].id;
+      MCH.end = Math.floor(Math.random() * D.machine.endings.length);
+      MCH.challenge = false; renderMachine();
+    };
+    $$("#machine-host [data-mans]").forEach(function (btn) {
+      btn.onclick = function () {
+        const ok = norm(btn.dataset.mans) === norm(b.answer);
+        $$("#machine-host [data-mans]").forEach(function (x) {
+          x.disabled = true;
+          if (norm(x.dataset.mans) === norm(b.answer)) x.classList.add("correct");
+          else if (x === btn) x.classList.add("wrong");
+        });
+        if (ok) { S.xp += 5; S.correct++; } else S.wrong++;
+        save(); updateChips();
+        const fb = $("#mch-fb");
+        fb.className = "feedback show " + (ok ? "ok" : "no");
+        fb.innerHTML = (ok ? "✅ Brawo! " : "❌ Poprawnie: <u>" + esc(b.answer) + "</u>. ") + esc(b.note);
+      };
+    });
+  }
+  function renderMySentences() {
+    const host = $("#machine-sentences"); if (!host) return;
+    host.innerHTML = S.mySentences.length
+      ? '<div class="my-sentences">' + S.mySentences.map(function (s, i) {
+          return '<div class="my-sentence"><span>' + esc(s) + '</span><button class="btn small ghost" data-del="' + i + '">✕</button><button class="btn small ghost" data-say="' + esc(s) + '">🔊</button></div>';
+        }).join("") + "</div>"
+      : "<p class='muted'>Jeszcze nie zapisałeś/aś żadnego zdania. Złóż je w maszynie powyżej i kliknij „➕ Zapisz\".</p>";
+    $$("#machine-sentences [data-del]").forEach(function (b) {
+      b.onclick = function () { S.mySentences.splice(+b.dataset.del, 1); save(); renderMySentences(); };
+    });
+    $$("#machine-sentences [data-say]").forEach(function (b) {
+      b.onclick = function () { speak(b.dataset.say); };
+    });
+  }
+  function fswTruth(p, q) {
+    switch (q.test) {
+      case "age11": return p.age === 11;
+      case "age10": return p.age === 10;
+      case "poland": return p.from === "Poland";
+      case "brazil": return p.from === "Brazil";
+      case "robot": return p.job === "a robot";
+      case "teacher": return p.job === "a teacher";
+      case "student": return p.job === "a student";
+    }
+    return false;
+  }
+  function renderFind() {
+    const host = $("#find-host"); if (!host) return;
+    const p = D.machine.people[FSW.person], q = D.machine.questions[FSW.q];
+    const yes = fswTruth(p, q), correct = yes ? "Yes, I am." : "No, I'm not.";
+    const why = p.name + (q.test === "age11" || q.test === "age10" ? " ma " + p.age + " lat" :
+      q.test === "poland" || q.test === "brazil" ? " jest z " + p.from : " jest " + p.job) +
+      ", więc " + (yes ? "tak" : "nie") + ".";
+    const opts = shuffle(["Yes, I am.", "No, I'm not.", "Yes, I'm.", "No, I amn't."]);
+    host.innerHTML =
+      '<div class="find-people">' + D.machine.people.map(function (x, i) {
+        return '<button class="person-chip' + (i === FSW.person ? " on" : "") + '" data-person="' + i + '">' + esc(x.name) + "</button>";
+      }).join("") + "</div>" +
+      '<div class="find-card"><div class="who">👤 ' + esc(p.name) + "</div>" +
+      '<div class="muted">Wiek: <b>' + p.age + "</b> · Skąd: <b>" + esc(p.from) + "</b> · Kim jest: <b>" + esc(p.job) + "</b></div></div>" +
+      '<div class="find-qs">' + D.machine.questions.map(function (x, i) {
+        return '<button class="q-chip' + (i === FSW.q ? " on" : "") + '" data-q="' + i + '">' + esc(x.q) + "</button>";
+      }).join("") + "</div>" +
+      '<div class="bubble"><div class="muted">Pytasz „' + esc(q.q) + "\"</div><div class=\"q\">" + esc(correct) + "</div></div>" +
+      '<div class="options" id="fsw-options">' + opts.map(function (o) {
+        return '<button class="opt" data-fans="' + esc(o) + '">' + esc(o) + "</button>";
+      }).join("") + "</div>" +
+      '<div class="feedback" id="fsw-fb"></div>' +
+      '<div class="row"><button class="btn small ghost" id="fsw-say">🔊 Posłuchaj pytania i odpowiedzi</button>' +
+      '<button class="btn small ghost" id="fsw-random">🎲 Losuj rozmówcę i pytanie</button></div>' +
+      '<p class="muted" style="margin-top:10px">Dane postaci są zmyślone na potrzeby zabawy — ćwiczymy tylko krótkie odpowiedzi. ' +
+      "To samo ćwiczenie, które na lekcji nazywa się „Find Someone Who\".</p>";
+    $$("#find-host [data-person]").forEach(function (b) {
+      b.onclick = function () { FSW.person = +b.dataset.person; FSW.picked = null; renderFind(); };
+    });
+    $$("#find-host [data-q]").forEach(function (b) {
+      b.onclick = function () { FSW.q = +b.dataset.q; FSW.picked = null; renderFind(); };
+    });
+    $$("#find-host [data-fans]").forEach(function (btn) {
+      btn.onclick = function () {
+        const ok = norm(btn.dataset.fans) === norm(correct);
+        $$("#find-host [data-fans]").forEach(function (x) {
+          x.disabled = true;
+          if (norm(x.dataset.fans) === norm(correct)) x.classList.add("correct");
+          else if (x === btn) x.classList.add("wrong");
+        });
+        if (ok) { S.xp += 5; S.correct++; } else S.wrong++;
+        save(); updateChips();
+        const fb = $("#fsw-fb");
+        fb.className = "feedback show " + (ok ? "ok" : "no");
+        fb.innerHTML = (ok ? "✅ Brawo! " : "❌ Poprawnie: <u>" + esc(correct) + "</u>. ") + esc(why) +
+          "<br><b>W odpowiedzi TAK nie skracamy:</b> Yes, I am. (nie Yes, I'm.).";
+      };
+    });
+    $("#fsw-say").onclick = function () { speak(q.q + " " + correct); };
+    $("#fsw-random").onclick = function () {
+      FSW.person = Math.floor(Math.random() * D.machine.people.length);
+      FSW.q = Math.floor(Math.random() * D.machine.questions.length);
+      FSW.picked = null; renderFind();
+    };
+  }
+  function renderLights() {
+    const host = $("#lights-grid"); if (!host) return;
+    host.innerHTML = LIGHT_SKILLS.map(function (x) {
+      const cur = S.lights[x.k];
+      const st = S.skills[x.k];
+      return '<div class="light-row"><div class="light-ican"><b>' + esc(x.ican) + "</b>" +
+        (st && st.tried ? '<small class="muted"> · z zadań: ' + pct(st.ok, st.tried) + "%</small>" : "") + "</div>" +
+        '<div class="light-btns">' + LIGHTS.map(function (l) {
+          return '<button class="light-btn' + (cur === l.id ? " on" : "") + '" data-skill="' + esc(x.k) + '" data-light="' + l.id + '">' + l.ico + " " + esc(l.label) + "</button>";
+        }).join("") + "</div></div>";
+    }).join("");
+    $$("#lights-grid .light-btn").forEach(function (b) {
+      b.onclick = function () {
+        S.lights[b.dataset.skill] = b.dataset.light;
+        save(); renderLights(); renderReviewStats();
+        toast("🚦 Zapisano samoocenę: " + b.dataset.skill);
+      };
+    });
+    const sum = $("#lights-summary");
+    if (sum) {
+      const g = Object.keys(S.lights).filter(function (k) { return S.lights[k] === "green"; }).length;
+      const a = Object.keys(S.lights).filter(function (k) { return S.lights[k] === "amber"; }).length;
+      const r = Object.keys(S.lights).filter(function (k) { return S.lights[k] === "red"; }).length;
+      sum.innerHTML = "🟢 " + g + " umiem · 🟡 " + a + " prawie · 🔴 " + r + " do powtórki" +
+        (r ? ' — przycisk „🎯 Ćwicz najsłabszy temat" wybierze właśnie te.' : " — na razie nic na czerwono, brawo!");
+    }
+  }
+  function exitTicketHtml(act) {
+    const sk = skillOf(act);
+    return '<hr><div class="exit-ticket"><b>🎫 Bilet wyjścia · jak poszło z „' + esc(sk) + '"?</b>' +
+      '<div class="row" style="justify-content:center;margin-top:8px">' + LIGHTS.map(function (l) {
+        return '<button class="light-btn' + (S.lights[sk] === l.id ? " on" : "") + '" data-exit="' + l.id + '">' + l.ico + " " + esc(l.label) + "</button>";
+      }).join("") + "</div>" +
+      '<small class="muted">Samoocena od razu po zadaniu jest najtrafniejsza i pomaga dobrać powtórki.</small></div>';
+  }
+  function renderLab() {
+    renderMachine(); renderMySentences(); renderFind();
+  }
+
   /* ---------------- POSTĘPY ---------------- */
   function renderProgress() {
     const total = S.correct + S.wrong;
@@ -1474,7 +1819,12 @@
       (weak.length ? "<p><b>Tematy, w których pojawiły się błędy na kartkówkach:</b> " + weak.map(function (w) { return w + " (" + S.weak[w] + ")"; }).join(", ") + ".</p>" : "") +
       "<p><b>System oceniania:</b> średnia z " + S.grades.length + " prac to <b>" + avg + "%</b> (" + gradeBadge(avg) + "). Baza ma " + D.meta.bankTotal.toLocaleString("pl-PL") + " unikalnych zadań; dziecko zobaczyło już " + seenTotal() + " z nich w " + Object.keys(S.cycles).reduce(function (s, k) { return s + S.cycles[k]; }, 0) + " różnych zestawach — żaden zestaw się nie powtarza, dopóki nie wyczerpie się pula.</p>" +
       "<p><b>Powtórki z błędów:</b> " + allMistakes().length + " trudnych zadań w kolejce, " + allMistakes().filter(function (r) { return r.mastered; }).length + " opanowanych, " + dueReviews().length + " do powtórki dziś" +
-      (weakestSkill() ? "; najsłabszy temat: <b>" + esc(weakestSkill().k) + "</b> (" + weakestSkill().p + "%)." : ".") + "</p>" +
+      (weakestSkill() ? "; najsłabszy temat: <b>" + esc(weakestSkill().k) + "</b> (" + weakestSkill().p + "%" + (weakestSkill().self ? ", wskazany w samoocenie" : "") + ")." : ".") + "</p>" +
+      "<p><b>Samoocena i własna produkcja:</b> " + Object.keys(S.lights).length + " z " + LIGHT_SKILLS.length + " umiejętności ocenionych światełkami (" +
+      ["green", "amber", "red"].map(function (l) { return LIGHTS.filter(function (x) { return x.id === l; })[0].ico + " " + Object.keys(S.lights).filter(function (k) { return S.lights[k] === l; }).length; }).join(" · ") +
+      "), " + S.exitTickets.length + " biletów wyjścia, " + S.mySentences.length + " własnych zdań złożonych w <b>Laboratorium</b>.</p>" +
+      '<p><b>Trening przeplatany:</b> ćwiczenie „🧩 Miks 5 minut" łączy 5 różnych typów zadań w jednym zestawie ' +
+      '(interleaving), a „Powtórki" rozkładają błędy w czasie — oba mechanizmy mają potwierdzenie w badaniach nad pamięcią.</p>' +
       "<p><b>Rekomendacja:</b> 10–15 minut dziennie według planu z zakładki Start. Dzień przed kartkówką: tabela <i>to be</i>, fiszki z błędami i jedna próbna kartkówka bez podpowiedzi. Zwróć uwagę na trzy pułapki: <i>amn't</i>, <i>Yes, I'm</i> oraz wiek z <i>have</i>.</p>" +
       "<p class='muted'>Dane pochodzą wyłącznie z tej przeglądarki (localStorage) i nie są nigdzie wysyłane.</p>";
     renderBadges();
@@ -1487,7 +1837,7 @@
     S = fresh(); S.days.push(today()); save();
     cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; }));
     RV = null;
-    renderStart(); renderCard(); renderProgress(); renderReview(); renderHub(); updateChips();
+    renderStart(); renderCard(); renderProgress(); renderReview(); renderHub(); renderLab(); updateChips();
     applyDark(); applyMute();
     toast("Postępy wyczyszczone — zaczynamy od nowa 🌱");
   };
@@ -1498,6 +1848,7 @@
   renderHub();
   renderCard();
   renderReview();
+  renderLab();
   renderProgress();
   updateChips();
   applyDark();
