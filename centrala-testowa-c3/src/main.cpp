@@ -662,7 +662,7 @@ static void obsluzSerial() {
       dlugosc = 0;
       if (!strcmp(linia, "help") || !strcmp(linia, "pomoc")) {
         Serial.println(F("Komendy: ip | czas | czas RRRR-MM-DD GG:MM:SS | dym 0/1 | co 0/1 |"
-                         " panel 0/1 | deszcz 0/1/2 | diag | zasiej | reset"));
+                         " panel 0/1 | deszcz 0/1/2 | diag | historia [0|1] | zasiej | reset"));
       } else if (!strcmp(linia, "ip")) {
         Serial.printf("AP: %s  SSID: %s  stacje: %d\n",
                       WiFi.softAPIP().toString().c_str(), AP_SSID, WiFi.softAPgetStationNum());
@@ -671,6 +671,23 @@ static void obsluzSerial() {
                       (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
                       (unsigned long)(millis() / 1000UL), WiFi.softAPgetStationNum(),
                       (unsigned long)g_liczbaZapytan, (unsigned long)g_liczbaStatusow, g_panelFw);
+      } else if (!strcmp(linia, "historia")) {
+        Serial.printf("[HIST] krotka=%d dluga=%d (komenda: historia 0 = wyczysc,"
+                      " historia 1 = zasiej)\n",
+                      sym::histKrotkaLiczba, sym::histDlugaLiczba);
+      } else if (strncmp(linia, "historia ", 9) == 0) {
+        // [HIST] `historia 0` symuluje centrale, ktora NIC nie zapisuje:
+        // oba bufory puste. Panel powinien wtedy pokazac "Brak danych",
+        // a nie sie wywrocic — to jest wlasnie ten przypadek testowy.
+        if (atoi(linia + 9) == 0) {
+          sym::wyczyscHistorie();
+          Serial.println(F("[HIST] wyczyszczona: krotka=0 dluga=0 — panel pokaze"
+                           " \"Brak danych\""));
+        } else {
+          sym::zasiejHistorie(czasLokalny());
+          Serial.printf("[HIST] zasiano: krotka=%d dluga=%d\n",
+                        sym::histKrotkaLiczba, sym::histDlugaLiczba);
+        }
       } else if (!strcmp(linia, "zasiej")) {
         // Ponowne wypelnienie historii (6 h + 24 h) bez restartu plytki.
         sym::zasiejHistorie(czasLokalny());

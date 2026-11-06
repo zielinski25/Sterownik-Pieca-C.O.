@@ -577,6 +577,38 @@ Jeśli panel **nadal** się resetuje przy wykresach, a w konsoli widać
 `[HISTORIA] ... B` — to błąd firmware'u panelu (nie symulatora) i trzeba go
 szukać w `wykresyFetchWykonaj()` / rysowaniu serii w `LCD Centrali.zip`.
 
+#### A jeśli centrala w ogóle NIE zapisuje historii?
+
+Sprawdzone w źródłach obu projektów:
+
+**Prawdziwa centrala** (`main_centrala.cpp`): bufor krótki to
+`HISTORIA_MAX_PROBEK = 1440` próbek (24 h, jedna na minutę) w PSRAM, zrzucany na
+LittleFS (`/hist_short.csv`) co 5 próbek (`HISTORIA_ZAPIS_CO_N_PROBEK`), a bufor
+długi (`HISTORIA_DLUGA_MAX_PROBEK = 8000`) do `/hist_long.csv`. Przy starcie
+`historiaWczytajZFS()` / `historiaDlugaWczytajZFS()` odtwarzają bufory z plików.
+Czyli „historia nie jest zapisywana” w praktyce znaczy: **zapis na flash się nie
+udaje** (FS pełny/uszkodzony) albo plików nie ma. Wtedy RAM działa do restartu, a
+po restarcie bufory startują puste.
+
+**Panel LCD** (`dashboard_lvgl_poc.cpp`, `..._strumien_koniec()`): przy
+`liczbaWierszy == 0` wykres jest **ukrywany**, a na ekranie pojawia się
+`Brak danych (WiFi/centrala niedostepna)`. Pusty CSV nie wywraca panelu — to jest
+obsłużone.
+
+**Wniosek:** brak historii = komunikat „Brak danych”, nie restart. Restart
+pojawia się w stanie **pomiędzy**: gdy wiersz jest **jeden** (albo wszystkie
+wartości serii są równe) — wtedy zakres wykresu wychodzi zerowy.
+
+**Jak to sprawdzić w symulatorze (bez czekania 24 h):**
+
+| komenda w konsoli Serial | efekt |
+|---|---|
+| `historia 0` | oba bufory puste — dokładnie „centrala bez zapisu” → panel: *Brak danych* |
+| `historia 1` albo `zasiej` | pełne bufory (6 h + 24 h) → panel rysuje wykresy |
+| `historia` | tylko wypisuje, ile próbek jest w buforach |
+
+Ta sama zmiana jest dostępna po HTTP: `GET /api/test?typ=historia` (czyści).
+
 ---
 
 ## 6. Znalezione przy okazji (do decyzji — nie zmieniałem produktu)
