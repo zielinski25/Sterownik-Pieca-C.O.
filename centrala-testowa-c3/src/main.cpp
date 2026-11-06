@@ -662,7 +662,7 @@ static void obsluzSerial() {
       dlugosc = 0;
       if (!strcmp(linia, "help") || !strcmp(linia, "pomoc")) {
         Serial.println(F("Komendy: ip | czas | czas RRRR-MM-DD GG:MM:SS | dym 0/1 | co 0/1 |"
-                         " panel 0/1 | deszcz 0/1/2 | diag | reset"));
+                         " panel 0/1 | deszcz 0/1/2 | diag | zasiej | reset"));
       } else if (!strcmp(linia, "ip")) {
         Serial.printf("AP: %s  SSID: %s  stacje: %d\n",
                       WiFi.softAPIP().toString().c_str(), AP_SSID, WiFi.softAPgetStationNum());
@@ -671,6 +671,11 @@ static void obsluzSerial() {
                       (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
                       (unsigned long)(millis() / 1000UL), WiFi.softAPgetStationNum(),
                       (unsigned long)g_liczbaZapytan, (unsigned long)g_liczbaStatusow, g_panelFw);
+      } else if (!strcmp(linia, "zasiej")) {
+        // Ponowne wypelnienie historii (6 h + 24 h) bez restartu plytki.
+        sym::zasiejHistorie(czasLokalny());
+        Serial.printf("[HIST] zasiano: krotka=%d dluga=%d\n",
+                      sym::histKrotkaLiczba, sym::histDlugaLiczba);
       } else if (!strcmp(linia, "reset")) {
         Serial.println(F("Restart..."));
         delay(100);
@@ -804,7 +809,14 @@ void setup() {
   Serial.println(F("[HTTP] Panel LCD laczy sie do AP powyzej i pyta /api/status co 2 s."));
   Serial.println(F("[WWW]  Panel testowy: http://192.168.4.1 (z telefonu/PC w sieci PiecCO_AP)"));
 
-  // Historia startuje z pierwsza probka od razu, zeby wykresy nie byly puste.
+  // Historia: najpierw wypelniamy oba bufory (6 h + 24 h wymyslonych probek),
+  // zeby ekran "Wykresy" w panelu mial od razu pelny szereg. Bez tego po swiezym
+  // starcie byl tam JEDEN punkt (albo zero), a panel na takim szeregu potrafi
+  // sie wywrocic (min == max / dzielenie przez zero) i restartuje ESP.
+  sym::zasiejHistorie(czasLokalny());
+  Serial.printf("[HIST] zasiano: krotka=%d probek (%.0f h), dluga=%d probek (%.0f h)\n",
+                sym::histKrotkaLiczba, sym::histKrotkaLiczba * 60.0 / 3600.0,
+                sym::histDlugaLiczba, sym::histDlugaLiczba * 1.0);
   sym::tick(millis(), czasLokalny(), ustawienia);
 
   // Panel/PC moze wolno czytac CSV (~25 KB) — nie pozwalamy WDT ubic loop().

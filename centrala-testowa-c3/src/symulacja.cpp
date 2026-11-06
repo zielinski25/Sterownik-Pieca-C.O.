@@ -247,6 +247,101 @@ void wyczyscHistorie() {
   st.ostatniaProbkaSek = 0;
 }
 
+// ---------------------------------------------------------------------------
+// Wstepne (sztuczne) wypelnienie historii.
+// ---------------------------------------------------------------------------
+// Po co: swiezo wgrany symulator ma JEDNA probke w buforze krotkim i ZERO w
+// dlugim. Ekran "Wykresy" w panelu rysuje wtedy szereg, w ktorym min == max
+// (albo jest 1 punkt) i potrafi sie na tym wywrocic — na sprzetowym panelu
+// konczy sie to restartem ESP po wejsciu w wykresy. Prawdziwa centrala po
+// kilku godzinach pracy ma pelne bufory, wiec symulator tez powinien je miec
+// od startu. Dane sa wymyslone, ale ciagle i w realistycznych zakresach.
+static void wartosciHistoryczne(float fazaSek, float w[POL_DLUGICH]) {
+  const float t = fazaSek;
+  // fmod zeby faza ujemna (przeszlosc) dawala 0..1 doby.
+  float doba = fmodf(t / 86400.0f, 1.0f) * 24.0f;
+  if (doba < 0.0f) doba += 24.0f;
+  const float falaDoby = sinf((doba - 9.0f) / 24.0f * 2.0f * (float)M_PI);
+  w[0] = 8.0f + 4.0f * falaDoby;                                    // zewn
+  w[1] = 54.0f + 6.0f * sinf(t / 5400.0f);                          // bojler
+  w[2] = 61.0f + 5.0f * sinf(t / 3600.0f);                          // ogrz
+  w[3] = 60.0f + 4.5f * sinf(t / 3600.0f - 0.4f);                   // ogrz_sr
+  w[4] = 50.0f + 4.0f * sinf(t / 3600.0f - 0.8f);                   // powrot
+  w[5] = 55.0f + 25.0f * sinf((doba - 6.0f) / 24.0f * 2.0f * (float)M_PI);  // panel
+  w[6] = 21.0f + 1.5f * sinf(t / 7200.0f);                          // pokoj
+  w[7] = 1.9f + 0.25f * sinf(t / 1800.0f);                          // cisnienie
+  w[8] = 55.0f + 9.0f * sinf(t / 9000.0f);                          // wilgotnosc
+  w[9] = 90.0f + 70.0f * sinf(t / 2400.0f);                         // klapa 20..160
+  w[10] = 45.0f + 40.0f * sinf(t / 3000.0f + 1.2f);                 // syberka 5..85
+}
+
+void zasiejHistorie(const wsp::Czas& czas) {
+  wyczyscHistorie();
+
+  // --- bufor krotki: pelne 6 h, probka co 60 s, konczac na "teraz" ---
+  for (int i = HIST_KROTKA_MAX - 1; i >= 0; --i) {
+    float w[POL_DLUGICH];
+    wartosciHistoryczne(-(float)i * 60.0f, w);
+    ProbkaKrotka& p = histKrotka[histKrotkaGlowa];
+    if (czas.ok) {
+      // Etykieta cofa sie o i minut (modulo doba — etykieta to tylko "HH:MM").
+      int minuty = czas.godzina * 60 + czas.minuta - i;
+      minuty = ((minuty % 1440) + 1440) % 1440;
+      snprintf(p.etykieta, sizeof(p.etykieta), "%02d:%02d", minuty / 60, minuty % 60);
+      p.czas_unix = (czas.unix > (uint32_t)(i * 60)) ? czas.unix - (uint32_t)(i * 60) : 0;
+    } else {
+      snprintf(p.etykieta, sizeof(p.etykieta), "--:--");
+      p.czas_unix = 0;
+    }
+    p.t_zewn_x10 = (int16_t)wsp::roundInt(w[0] * 10.0f);
+    p.t_bojler_x10 = (int16_t)wsp::roundInt(w[1] * 10.0f);
+    p.t_ogrz_x10 = (int16_t)wsp::roundInt(w[2] * 10.0f);
+    p.t_ogrz_sr_x10 = (int16_t)wsp::roundInt(w[3] * 10.0f);
+    p.t_powrot_x10 = (int16_t)wsp::roundInt(w[4] * 10.0f);
+    p.t_panel_x10 = (int16_t)wsp::roundInt(w[5] * 10.0f);
+    p.t_pokoj_x10 = (int16_t)wsp::roundInt(w[6] * 10.0f);
+    p.pompa = (w[2] >= 55.0f) ? 1 : 0;
+    p.cisnienie_x10 = (int16_t)wsp::roundInt(w[7] * 10.0f);
+    p.wilgotnosc_x10 = (int16_t)wsp::roundInt(w[8] * 10.0f);
+    p.klapa_deg = (int16_t)wsp::roundInt(wsp::ogranicz(w[9], 0.0f, 180.0f));
+    p.syberka_deg = (int16_t)wsp::roundInt(wsp::ogranicz(w[10], 0.0f, 90.0f));
+    histKrotkaGlowa = (histKrotkaGlowa + 1) % HIST_KROTKA_MAX;
+    if (histKrotkaLiczba < HIST_KROTKA_MAX) histKrotkaLiczba++;
+  }
+
+  // --- bufor dlugi: 24 godziny, probka co 1 h (sr/min/max) ---
+  for (int i = 23; i >= 0; --i) {
+    float w[POL_DLUGICH];
+    wartosciHistoryczne(-(float)i * 3600.0f, w);
+    ProbkaDluga& d = histDluga[histDlugaGlowa];
+    if (czas.ok) {
+      int godzin = czas.godzina - i;
+      int przesunDni = 0;
+      while (godzin < 0) { godzin += 24; przesunDni++; }
+      int dzien = czas.dzien - przesunDni;
+      while (dzien < 1) dzien += 28;   // przyblizenie — etykieta jest kosmetyczna
+      snprintf(d.etykieta, sizeof(d.etykieta), "%02d.%02d %02d:00",
+               dzien, czas.miesiac, godzin);
+      d.czas_unix = (czas.unix > (uint32_t)(i * 3600)) ? czas.unix - (uint32_t)(i * 3600) : 0;
+    } else {
+      snprintf(d.etykieta, sizeof(d.etykieta), "--.-- --:--");
+      d.czas_unix = 0;
+    }
+    for (int pole = 0; pole < POL_DLUGICH; pole++) {
+      // Rozrzut w godzinie: min ponizej sredniej, max powyzej — tak jak
+      // prawdziwy akumulator (inaczej wykres min/max bylby plaski).
+      const float rozrzut = (pole >= 9) ? 12.0f : 1.2f;   // klapa/syberka w stopniach
+      d.sr_x10[pole] = (int16_t)wsp::roundInt(w[pole] * 10.0f);
+      d.min_x10[pole] = (int16_t)wsp::roundInt((w[pole] - rozrzut) * 10.0f);
+      d.max_x10[pole] = (int16_t)wsp::roundInt((w[pole] + rozrzut * 1.5f) * 10.0f);
+    }
+    histDlugaGlowa = (histDlugaGlowa + 1) % HIST_DLUGA_MAX;
+    if (histDlugaLiczba < HIST_DLUGA_MAX) histDlugaLiczba++;
+  }
+
+  st.ostatniaProbkaSek = 0;   // pierwszy prawdziwy tick dopisze wlasna probke
+}
+
 // ===========================================================================
 // TICK — glowny krok symulacji
 // ===========================================================================

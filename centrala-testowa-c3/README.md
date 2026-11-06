@@ -540,6 +540,43 @@ Czyli w tym momencie **panelu nie było w sieci** — to punkt A, nie problem HT
 > panelu. Wtedy: symulator idzie na **inną** płytkę, a panel odtwarzasz z
 > `LCD Centrali.zip`. Sprawdź to, zanim zaczniesz szukać WiFi.
 
+### 5b. Panel restartuje się po wejściu w „Wykresy”
+
+Objaw: dashboard działa, ale kliknięcie zakładki **Wykresy** (albo wybranego
+wykresu) kończy się restartem ESP — ekran wraca do logo / „Łączenie…”.
+
+**Krok 1 — ustal, KTÓRY ESP się resetuje.** Patrz w konsolę symulatora w momencie
+kliknięcia:
+
+| co widać w konsoli symulatora | resetuje się | wniosek |
+|---|---|---|
+| `[HISTORIA] krotka: N B` (lub `dluga`) i **nic więcej** | panel | symulator wysłał CSV — problem po stronie panelu |
+| znowu baner `====` + `[AP] wstalo` | symulator | nasz błąd — log do analizy |
+| **zero** `[HISTORIA]` | panel (padł, zanim wysłał żądanie) | problem po stronie panelu |
+
+`[HISTORIA]` wypisuje się przy **każdym** żądaniu `/api/history` i
+`/api/history/long`, więc jest jednoznacznym licznikiem.
+
+**Krok 2 — skąd panel może się wywracać na wykresach.** Panel rysuje wykres
+zakładając, że szereg ma wiele punktów i niezerowy zakres (`max > min`). Świeżo
+wgrany symulator miał **1 próbkę** (krótka historia) i **0 próbek** (długa) —
+rysowanie takiego szeregu to dzielenie przez zero / `min == max`, a na Xtensie
+dzielenie przez zero = wyjątek = restart.
+
+**Krok 3 — co zmieniłem.** `sym::zasiejHistorie()` wypełnia przy starcie oba
+bufory wymyślonymi, ale ciągłymi próbkami: **6 h co minutę** (360 próbek) i
+**24 h co godzinę** (24 próbki, z realnym rozrzutem min/max). W konsoli po starcie:
+
+```
+[HIST] zasiano: krotka=360 probek (6 h), dluga=24 probek (24 h)
+```
+
+To samo bez restartu płytki: wpisz w konsoli `zasiej`.
+
+Jeśli panel **nadal** się resetuje przy wykresach, a w konsoli widać
+`[HISTORIA] ... B` — to błąd firmware'u panelu (nie symulatora) i trzeba go
+szukać w `wykresyFetchWykonaj()` / rysowaniu serii w `LCD Centrali.zip`.
+
 ---
 
 ## 6. Znalezione przy okazji (do decyzji — nie zmieniałem produktu)

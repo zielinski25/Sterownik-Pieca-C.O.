@@ -236,6 +236,10 @@ size_t zbudujUstawienia(char* out, size_t n, const ustaw::Stan& u);
 // ---------------------------------------------------------------------------
 void historiaCsv(bool dlugi, wsp::PisarzFn pisarz, void* ctx);
 void wyczyscHistorie();
+// Wypelnia oba bufory historii wymyslonymi, ale ciaglymi probkami (6 h krotkiej,
+// 24 h dlugiej) — zeby ekran "Wykresy" mial od razu co rysowac i nie trafial na
+// szereg z jednym punktem albo min == max.
+void zasiejHistorie(const wsp::Czas& czas);
 
 // Ile minut zostalo do wygasniecia override'u (0 = brak) — to samo wyliczenie
 // co w wifiZbudujJsonStatus() centrali.
