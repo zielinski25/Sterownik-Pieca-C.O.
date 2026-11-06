@@ -339,6 +339,68 @@ pioarduino — koniec podmian i „raz działa, raz nie”.
 
 ---
 
+## 3e. Upload: `PermissionError(13, 'Odmowa dostępu')` / `Cannot configure port`
+
+```
+Connecting.............................
+A serial exception error occurred: Cannot configure port, something went wrong.
+Original message: PermissionError(13, 'Odmowa dostępu.', None, 5)
+```
+
+To **nie** jest błąd firmware'u ani zły `env` — build się udał, esptool nie może
+otworzyć/ustawić COM5, bo **port jest zajęty przez inny proces** (albo sterownik
+CH340 został w złym stanie po poprzedniej, przerwanej próbie).
+
+Kolejność (od najczęstszej przyczyny):
+
+1. **Zamknij monitor szeregowy.** `pio device monitor` (albo zakładka Serial
+   Monitor w VS Code) trzyma port nawet gdy nic nie wypisuje. Ctrl+C w oknie
+   monitora, ewentualnie zamknij terminal.
+
+2. **Sprawdź, kto jeszcze żyje** (stare `python.exe` po przerwanym uploadzie,
+   Arduino IDE, PuTTY):
+
+   ```powershell
+   Get-Process | Where-Object { $_.ProcessName -match 'python|platformio|arduino|putty|pio' } |
+       Select-Object Id, ProcessName, Path
+   ```
+
+   Ubij tylko te z `.platformio` w ścieżce:
+
+   ```powershell
+   Get-Process python* -ErrorAction SilentlyContinue |
+       Where-Object { $_.Path -like "*platformio*" } | Stop-Process -Force
+   ```
+
+3. **Odłącz i podłącz kabel USB** (liczy się pełne odłączenie, nie reset
+   przyciskiem). Po nieudanym `Connecting...` CH340/CP210x potrafi zostać
+   zablokowany aż do przełączenia zasilania. W Menedżerze urządzeń można też
+   wyłączyć i włączyć urządzenie `USB-SERIAL CH340 (COM5)`.
+
+4. **Ponów upload:**
+
+   ```powershell
+   pio run -e esp32 -t upload --upload-port COM5
+   ```
+
+5. **Nadal blokada?** Zejdź z prędkością — część klonów CH340 i długie kable nie
+   wyrabiają 460800:
+   ```ini
+   ; platformio.ini, w [env:...]
+   upload_speed = 115200
+   ```
+
+Inne typowe przyczyny „Odmowa dostępu”:
+
+* dwie kompilacje/uploady naraz (przycisk **Upload** w VS Code **i** `pio run`
+  w terminalu) — port bierze ten, kto pierwszy,
+* wirtualny port COM innego urządzenia o tym numerze (kolejność COM po
+  restarcie) — porównaj `pio device list` z tym, co pokazuje Menedżer urządzeń,
+* zasilanie z portu USB huba bez zasilacza — płytka resetuje się w trakcie
+  `Connecting...`.
+
+---
+
 ## 4. Pierwsze uruchomienie (2 minuty)
 
 1. **Ustaw czas.** C3 nie ma RTC ani internetu (działa jako AP), więc po
