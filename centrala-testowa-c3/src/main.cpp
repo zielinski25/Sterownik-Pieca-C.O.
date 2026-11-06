@@ -572,32 +572,27 @@ static void obsluzZadanie(WiFiClient& klient, const Zadanie& z) {
 // ===========================================================================
 // PARSOWANIE ZADANIA HTTP
 // ===========================================================================
-static bool przeczytajZadanie(WiFiClient& klient, Zadanie& z) {
-  static char surowe[1400];
-  size_t n = 0;
-  const unsigned long start = millis();
-  unsigned long limit = 300UL;  // na pierwszy bajt — w LAN przychodzi w ms
-
-  // 1) Naglowki — do "\r\n\r\n". Panel ma CALKOWITY_TIMEOUT_MS = 1500 ms na
-  //    CALA wymiane, wiec nie mozemy sobie pozwolic na dlugie czekanie na
-  //    "martwe" polaczenie (np. skaner portow): 300 ms na pierwszy bajt,
-  //    potem 700 ms na reszte naglowkow.
-  while (millis() - start < limit) {
-    while (klient.available() && n < sizeof(surowe) - 1) {
-      surowe[n++] = (char)klient.read();
-    }
-    if (n >= 4 && surowe[n - 4] == '\r' && surowe[n - 3] == '\n' &&
-        surowe[n - 2] == '\r' && surowe[n - 1] == '\n') {
-      break;
-    }
-    if (n > 0) limit = 700UL;  // pierwszy bajt juz jest — dociagamy naglowki
-    if (!klient.connected() && !klient.available()) break;
-    delay(1);
-  }
-  if (n == 0) return false;
+// Parsuje zadanie z bufora, ktory JUZ przyszedl z gniazda (patrz obsluzSloty()).
+// Nie czeka na naglowki: jesli "\r\n\r\n" jeszcze nie ma, zwraca false i
+// wolajacy sprobuje w nastepnym obrocie petli. To jest cala roznica wzgledem
+// poprzedniej wersji, ktora blokowala sie do 700 ms na JEDNYM gniezdzie —
+// panel wysyla status i ustawienia rownolegle, a na cala odpowiedz ma 1,5 s,
+// wiec blokada na pierwszym gniezdzie zjadala budzet drugiego i panel
+// raportowal "timeout calkowity".
+static bool parsujZadanie(char* surowe, size_t n, WiFiClient& klient, Zadanie& z) {
   surowe[n] = '\0';
 
-  // 2) Pierwsza linia: METODA SP SCIEZKA?QUERY SP HTTP/x.y
+  char* koniecNaglowkow = nullptr;
+  for (size_t i = 0; i + 3 < n; ++i) {
+    if (surowe[i] == '\r' && surowe[i + 1] == '\n' &&
+        surowe[i + 2] == '\r' && surowe[i + 3] == '\n') {
+      koniecNaglowkow = surowe + i;
+      break;
+    }
+  }
+  if (!koniecNaglowkow) return false;   // naglowki jeszcze nie doszly
+
+  // 1) Pierwsza linia: METODA SP SCIEZKA?QUERY SP HTTP/x.y
   char* koniecLinii = strstr(surowe, "\r\n");
   if (!koniecLinii) return false;
   *koniecLinii = '\0';
@@ -618,7 +613,7 @@ static bool przeczytajZadanie(WiFiClient& klient, Zadanie& z) {
   }
   snprintf(z.sciezka, sizeof(z.sciezka), "%s", cel);
 
-  // 3) Content-Length (POST-y panelu maja male cialo, < 100 B).
+  // 2) Content-Length (POST-y panelu maja male cialo, < 100 B).
   z.maCialo = false;
   z.cialo[0] = '\0';
   long dlugoscCiala = 0;
@@ -627,17 +622,16 @@ static bool przeczytajZadanie(WiFiClient& klient, Zadanie& z) {
     if (p) dlugoscCiala = strtol(p + 15, nullptr, 10);
   }
   if (dlugoscCiala > 0 && dlugoscCiala < (long)sizeof(z.cialo)) {
-    // Cialo zaczyna sie 4 znaki za poczatkiem "\r\n\r\n" (koniecLinii
-    // wskazuje na pierwszy z tych znakow, nadpisany potem przez '\0').
-    const size_t pozycjaCiala = (size_t)(koniecLinii - surowe) + 4;
+    const size_t pozycjaCiala = (size_t)(koniecNaglowkow - surowe) + 4;
     size_t dostepne = (pozycjaCiala <= n) ? (n - pozycjaCiala) : 0;
     size_t zebrane = 0;
     while (zebrane < dostepne && zebrane < (size_t)dlugoscCiala) {
       z.cialo[zebrane] = surowe[pozycjaCiala + zebrane];
       zebrane++;
     }
+    // Niedobitki ciala (rzadkie: panel wysyla formularz w jednym segmencie).
     const unsigned long startCiala = millis();
-    while (zebrane < (size_t)dlugoscCiala && millis() - startCiala < 600UL) {
+    while (zebrane < (size_t)dlugoscCiala && millis() - startCiala < 150UL) {
       while (klient.available() && zebrane < (size_t)dlugoscCiala) {
         z.cialo[zebrane++] = (char)klient.read();
       }
@@ -647,6 +641,70 @@ static bool przeczytajZadanie(WiFiClient& klient, Zadanie& z) {
     z.maCialo = true;
   }
   return true;
+}
+
+// ===========================================================================
+// CZTERY GNIAZDA, ZERO BLOKOWANIA
+// ===========================================================================
+// Panel trzyma DWIE-DTRZY rownolegle rozmowy (status + ustawienia + czasem
+// historia) i kazda ma wlasny budzet 1,5 s. Serwer, ktory obsluguje jedno
+// gniazdo "do konca" (czekajac na naglowki do 700 ms), zjada budzet pozostalym
+// — panel raportuje wtedy "timeout calkowity" i potrafi sie na tym wywrocic
+// (Guru Meditation po serii nieudanych /api/ustawienia-get).
+// Dlatego kazde polaczenie dostaje slot i jest czytane NIEBLOKUJACO: w jednym
+// obrocie petli zbieramy tylko to, co juz przyszlo, i przechodzimy dalej.
+// Kolejny obrot dokłada reszte. Gniazdo bez danych po 300 ms jest zamykane.
+static const int HTTP_SLOTOW = 4;
+struct SlotHttp {
+  WiFiClient klient;
+  char surowe[1024];
+  size_t n;
+  unsigned long startMs;
+  bool aktywny;
+};
+static SlotHttp g_sloty[HTTP_SLOTOW];
+
+static void obsluzSloty() {
+  // 1) Nowe polaczenia — tylko do wolnych slotow, bez czekania.
+  for (int i = 0; i < HTTP_SLOTOW; ++i) {
+    if (g_sloty[i].aktywny) continue;
+    WiFiClient k = serwer.available();
+    if (!k) break;
+    g_sloty[i].klient = k;
+    g_sloty[i].n = 0;
+    g_sloty[i].startMs = millis();
+    g_sloty[i].aktywny = true;
+  }
+
+  // 2) Kazdy slot: dokladnie tyle bajtow, ile JUZ jest w buforze gniazda.
+  for (int i = 0; i < HTTP_SLOTOW; ++i) {
+    if (!g_sloty[i].aktywny) continue;
+    while (g_sloty[i].klient.available() && g_sloty[i].n < sizeof(g_sloty[i].surowe) - 1) {
+      g_sloty[i].surowe[g_sloty[i].n++] = (char)g_sloty[i].klient.read();
+    }
+    Zadanie z;
+    memset(&z, 0, sizeof(z));
+    if (parsujZadanie(g_sloty[i].surowe, g_sloty[i].n, g_sloty[i].klient, z)) {
+      obsluzZadanie(g_sloty[i].klient, z);
+      g_sloty[i].klient.stop();          // gdyby handler nie zamknal sam
+      g_sloty[i].aktywny = false;
+      continue;
+    }
+    const bool martwe = !g_sloty[i].klient.connected() && !g_sloty[i].klient.available();
+    if (martwe || millis() - g_sloty[i].startMs > 300UL) {
+      // Diagnostyka: puste/porzucone polaczenie (skaner portow, przerwany
+      // HTTPClient panelu). Log ograniczony do 1 linii na 5 s.
+      static unsigned long ostatniLogPustego = 0;
+      if (g_sloty[i].n == 0 && millis() - ostatniLogPustego > 5000UL) {
+        ostatniLogPustego = millis();
+        const IPAddress ip = g_sloty[i].klient.remoteIP();
+        Serial.printf("[HTTP] puste polaczenie zamkniete (od %u.%u.%u.%u)\n",
+                      (unsigned)ip[0], (unsigned)ip[1], (unsigned)ip[2], (unsigned)ip[3]);
+      }
+      g_sloty[i].klient.stop();
+      g_sloty[i].aktywny = false;
+    }
+  }
 }
 
 // ===========================================================================
@@ -936,37 +994,11 @@ void loop() {
     }
   }
 
-  // 2) Jedno zadanie HTTP na raz (mini-serwer). Kolejne polaczenia czekaja w
-  //    kolejce gniazda — panel wysyla najwyzej 2-3 rownolegle, a odpowiedzi
-  //    sa male (poza historia, ktora i tak leci tylko z ekranu Wykresy).
-  // Panel po wybudzeniu/restarcie otwiera 2-3 gniazda NARAZ (status, uzytkownicy,
-  // czasem historia), a na CALA odpowiedz ma 1,5 s. Przy jednym zadaniu na obrot
-  // petli trzecie w kolejce czekalo ~1,4 s i panel zamykal gniazdo — na ekranie
-  // "brak danych", mimo ze serwer dziala. Dlatego w jednym obrocie obslugujemy
-  // wszystkie oczekujace polaczenia (z gorna granica, zeby PC nie zaglodzil
-  // symulacji).
-  for (int obsluzone = 0; obsluzone < 4; ++obsluzone) {
-    WiFiClient klient = serwer.available();
-    if (!klient) break;
-    Zadanie z;
-    memset(&z, 0, sizeof(z));
-    if (przeczytajZadanie(klient, z)) {
-      obsluzZadanie(klient, z);
-    } else {
-      // Ktos sie podlaczyl, ale nie wyslal zadania, ktore parser rozpoznal.
-      // Log ograniczony do 1 linii na 5 s, zeby panel pytajacy co 2 s nie zalal
-      // konsoli — a jednoczesnie bylo widac adres klienta (np. 192.168.4.50).
-      static unsigned long ostatniLogOdrzuconego = 0;
-      const IPAddress ipKlienta = klient.remoteIP();
-      if (millis() - ostatniLogOdrzuconego > 5000UL) {
-        ostatniLogOdrzuconego = millis();
-        Serial.printf("[HTTP] polaczenie bez rozpoznanego zadania od %u.%u.%u.%u\n",
-                      (unsigned)ipKlienta[0], (unsigned)ipKlienta[1],
-                      (unsigned)ipKlienta[2], (unsigned)ipKlienta[3]);
-      }
-      klient.stop();
-    }
-  }
+  // 2) Mini-serwer HTTP — 4 rownolegle gniazda, ZERO blokowania (patrz
+  //    obsluzSloty()). Panel pyta /api/status i /api/ustawienia-get niemal
+  //    jednoczesnie; obsluga "jedno gniazdo do konca" konczyla sie dla niego
+  //    timeoutem i panika, gdy ktorys klient nie dociagnal naglowkow.
+  obsluzSloty();
 
   // 3) Konsola Serial.
   obsluzSerial();

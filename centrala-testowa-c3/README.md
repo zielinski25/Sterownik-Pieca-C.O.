@@ -646,6 +646,42 @@ Szczegóły techniczne:
 > `hist_short.csv` / `hist_long.csv` w `data/` (to wystarczy), a przy innym
 > układzie kolumn daj znać: dopiszę mapowanie w parserze zamiast zgadywać.
 
+### 5d. Panel: `[USTAWIENIA] GET nieudany: timeout calkowity` i panika panelu
+
+Objaw z prawdziwego panelu (log Serial panelu, 2026-11-06):
+
+```
+[NET-DIAG] etap=start  sciezka=/api/status?panel_fw=v1.1.0 ms=35249
+[NET-DIAG] etap=start  sciezka=/api/ustawienia-get     ms=35252
+[NET-DIAG] etap=sukces sciezka=/api/status             ms=35796   <-- 0,5 s!
+[NET-DIAG] etap=blad   sciezka=/api/ustawienia-get info=timeout calkowity ms=36758
+[USTAWIENIA] GET nieudany: timeout calkowity   x setki
+Guru Meditation Error: Core 1 panic'ed (StoreProhibited)   <-- panel sie wywraca
+```
+
+Przyczyna była po stronie symulatora: mini-serwer obsługiwał **jedno gniazdo
+„do końca”** — czekał na nagłówki do 700 ms, zanim zajrzał do drugiego. Panel
+wysyła `/api/status` **i** `/api/ustawienia-get` niemal jednocześnie (3 ms
+odstępu), a każda rozmowa ma własny budżet **1,5 s** (`CALKOWITY_TIMEOUT_MS`).
+Jedno „martwe”/spóźnione gniazdo zjadało budżet drugiego → `timeout calkowity`
+→ panel po serii nieudanych odpowiedzi wpadał w `Guru Meditation`.
+
+**Poprawka (`obsluzSloty()`):** serwer trzyma **4 sloty** i czyta je
+**nieblokująco** — w jednym obrocie pętli zbiera tylko to, co już przyszło,
+a resztę w następnym. Gniazdo bez danych po 300 ms jest zamykane i logowane:
+
+```
+[HTTP] puste polaczenie zamkniete (od 192.168.4.50)
+```
+
+Efekt: oba zapytania panelu są obsługiwane w **tym samym** obrocie pętli, więc
+`/api/ustawienia-get` nie czeka już na `/api/status`.
+
+> Panika panelu (`StoreProhibited`, EXCVADDR 0x8) to **jego własny błąd** —
+> panel nie sprawdza, czy odpowiedź `/api/ustawienia-get` przyszła, zanim
+> narysuje ustawienia. Nasza poprawka usuwa wyzwalacz, ale w firmwarze panelu
+> warto dodać guard „brak odpowiedzi → nie rysuj / pokaż komunikat”.
+
 ---
 
 ## 6. Znalezione przy okazji (do decyzji — nie zmieniałem produktu)
