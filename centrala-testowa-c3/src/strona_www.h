@@ -19,7 +19,7 @@ static const char STRONA_HTML[] = R"HTML(<!DOCTYPE html>
 <html lang="pl"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Centrala testowa C3</title>
+<title>Centrala testowa (symulator)</title>
 <style>
 :root{--bg:#0b1220;--karta:#141f33;--karta2:#1b2942;--ramka:#24344f;
       --tekst:#d6e4f7;--dim:#7b93b3;--ogien:#ff9f43;--ok:#4ade80;--err:#ff4d6d;
@@ -53,7 +53,7 @@ input[type=number]{width:82px;background:var(--karta2);color:var(--tekst);
 a{color:var(--woda)}
 </style></head><body>
 
-<h1>Centrala <span>testowa</span> (ESP32-C3)</h1>
+<h1>Centrala <span>testowa</span> (symulator)</h1>
 <div class="pod">Zastepnik prawdziwej centrali — symulowane dane dla panelu LCD.
  <span id="lacze">lacze...</span></div>
 
@@ -123,14 +123,14 @@ a{color:var(--woda)}
   <h2>Najwazniejsze ustawienia (/api/ustawienia-get)</h2>
   <div id="ustawienia"></div>
   <div class="stopka">Zapis idzie przez TEN SAM endpoint co z panelu LCD
-   (/api/ustawienia-set) i jest trzymany w NVS — przetrwa restart C3.</div>
+   (/api/ustawienia-set) i jest trzymany w NVS — przetrwa restart plytki.</div>
 </div>
 
 <div class="sek">
   <h2>Czas</h2>
   <div class="rzad"><button onclick="syncCzas()">USTAW CZAS Z PRZEGLADARKI</button>
    <span class="pod" id="czasInfo" style="margin:0"></span></div>
-  <div class="stopka">C3 nie ma RTC ani internetu (dziala jako AP), wiec czas ustawia sie
+  <div class="stopka">Plytka z symulatorem nie ma RTC ani internetu (dziala jako AP), wiec czas ustawia sie
    recznie — po kazdym wlaczeniu zasilania. Bez ustawionego czasu panel LCD pokazuje „--:--”
    i nie przelacza widoku Lato/Zima po miesiacu (dokladnie jak centrala bez RTC).</div>
 </div>

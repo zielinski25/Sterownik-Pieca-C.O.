@@ -44,5 +44,8 @@ class EspStub {
   uint32_t getMinFreeHeap() { return 150000; }
   void restart() {}
   const char* getSdkVersion() { return "stub"; }
+  const char* getChipModel() { return "ESP32-C3"; }
+  uint8_t getChipCores() { return 1; }
+  uint32_t getCpuFreqMHz() { return 160; }
 };
 extern EspStub ESP;

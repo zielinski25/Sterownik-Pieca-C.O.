@@ -757,7 +757,11 @@ void setup() {
   delay(300);
   Serial.println();
   Serial.println(F("============================================================"));
-  Serial.println(F(" CENTRALA TESTOWA (SYMULATOR) — ESP32-C3"));
+  // Uklad bierzemy z ESP, a nie na sztywno: ten sam kod chodzi na C3, klasycznym
+  // ESP32 i S3 (patrz platformio.ini), wiec banner nie moze klamac.
+  Serial.printf(" CENTRALA TESTOWA (SYMULATOR) — %s, %u rdzeni, %lu MHz\n",
+                ESP.getChipModel(), (unsigned)ESP.getChipCores(),
+                (unsigned long)ESP.getCpuFreqMHz());
   Serial.println(F(" Zastepnik prawdziwej centrali dla testow panelu LCD."));
   Serial.println(F("============================================================"));
 
