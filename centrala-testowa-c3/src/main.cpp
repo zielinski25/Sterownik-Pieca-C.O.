@@ -848,8 +848,15 @@ void loop() {
   // 2) Jedno zadanie HTTP na raz (mini-serwer). Kolejne polaczenia czekaja w
   //    kolejce gniazda — panel wysyla najwyzej 2-3 rownolegle, a odpowiedzi
   //    sa male (poza historia, ktora i tak leci tylko z ekranu Wykresy).
-  WiFiClient klient = serwer.available();
-  if (klient) {
+  // Panel po wybudzeniu/restarcie otwiera 2-3 gniazda NARAZ (status, uzytkownicy,
+  // czasem historia), a na CALA odpowiedz ma 1,5 s. Przy jednym zadaniu na obrot
+  // petli trzecie w kolejce czekalo ~1,4 s i panel zamykal gniazdo — na ekranie
+  // "brak danych", mimo ze serwer dziala. Dlatego w jednym obrocie obslugujemy
+  // wszystkie oczekujace polaczenia (z gorna granica, zeby PC nie zaglodzil
+  // symulacji).
+  for (int obsluzone = 0; obsluzone < 4; ++obsluzone) {
+    WiFiClient klient = serwer.available();
+    if (!klient) break;
     Zadanie z;
     memset(&z, 0, sizeof(z));
     if (przeczytajZadanie(klient, z)) {

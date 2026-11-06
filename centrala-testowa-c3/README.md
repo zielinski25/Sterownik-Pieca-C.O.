@@ -496,7 +496,18 @@ czym stoi `httpPobierz()`.
 nie w symulatorze. Warto wtedy porównać `/api/status` z symulatora
 (`python narzedzia/sprawdz_api.py`) — klucze muszą się zgadzać co do nazwy.
 
-**Test z PC (bez panelu):** wejdź laptopem do `PiecCO_AP` i:
+**Test z PC (bez panelu) — jednym poleceniem:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File narzedzia\sprawdz_panel.ps1
+```
+
+Skrypt sprawdza kolejno: adres tego PC w `192.168.4.x`, ping do symulatora,
+`/api/diag` (wersja, uptime, **stacje_ap**, **zapytania**), ping do panelu,
+tablicę ARP — i wypisuje werdykt (A / B / C z tabeli wyżej). Do wklejenia w jednym
+kawałku, bez przepisywania komend.
+
+Ręcznie, z laptopa w `PiecCO_AP`:
 ```powershell
 ping 192.168.4.1         # brama = symulator (musi odpowiadac)
 ping 192.168.4.50        # panel pod swoim statycznym IP
@@ -609,6 +620,7 @@ centrala-testowa-c3/
 └── narzedzia/
     ├── sprawdz_api.py      # test kontraktu API po sieci (z PC/telefonu)
     ├── znajdz_port.ps1     # ktory port COM to ktory uklad (chip_id)
+    ├── sprawdz_panel.ps1   # czy panel jest w sieci i czy pyta serwer (patch 5a)
     └── pio-c3.cmd          # PlatformIO z osobnym core dir (patrz 3d)
 ```
 
