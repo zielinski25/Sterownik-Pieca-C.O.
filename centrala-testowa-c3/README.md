@@ -71,12 +71,13 @@ testem** — patrz sekcja 8.
 
 ## 3. Sprzęt i wgranie
 
-Potrzebujesz **tylko**: ESP32-C3 (DevKitM-1, SuperMini, WROOM-02 — dowolny z
-4 MB flash) i kabel USB. **Nic nie trzeba lutować** — firmware nie używa GPIO.
+Potrzebujesz **tylko**: dowolnej płytki ESP32 (klasyczny ESP32, C3 albo S3 — byle
+miała 4 MB flash) i kabla USB. **Nic nie trzeba lutować** — firmware nie używa GPIO.
 
 ```bash
 cd centrala-testowa-c3
-pio run -t upload          # domyslne env: esp32-c3, wgrywa po USB
+pio run -t upload          # domyslne env: esp32 (klasyczny ESP32), wgrywa po USB
+pio run -e esp32-c3 -t upload   # gdy plytka jest C3
 pio device monitor         # konsola diagnostyczna, 115200
 ```
 
@@ -85,12 +86,18 @@ GPIO, więc sam układ nie ma znaczenia):
 
 | env | płytka | komenda |
 |---|---|---|
-| `esp32-c3` | **domyślne** — C3 SuperMini / DevKitM-1 / WROOM-02 | `pio run -t upload` |
-| `esp32` | klasyczny ESP32 (WROOM-32, DevKit V1) | `pio run -e esp32 -t upload` |
+| `esp32` | **domyślne** — klasyczny ESP32 (WROOM-32, DevKit V1, ESP32-D0WD-V3) | `pio run -t upload` |
+| `esp32-c3` | C3 SuperMini / DevKitM-1 / WROOM-02 | `pio run -e esp32-c3 -t upload` |
 | `esp32s3` | ESP32-S3 (DevKitC-1, S3 Mini) | `pio run -e esp32s3 -t upload` |
 
 Po co więcej niż jedno: **symulator nie potrzebuje konkretnego układu**, a pod ręką
 bywa to, co akurat jest. Który env wybrać, mówi jedna komenda — patrz 3b.
+
+> **Dlaczego domyślne jest `esp32`, a nie `esp32-c3`:** przycisk **Upload** w VS Code
+> (i skrót Ctrl+Alt+U) uruchamia `pio run -t upload` **bez `-e`** — bierze
+> `default_envs`. Domyślne ustawienie na C3 kończyło się więc za każdym razem
+> błędem `This chip is ESP32 not ESP32-C3`, mimo że płytka pod USB to klasyczny
+> ESP32. Chcesz C3 — jedno słowo: `-e esp32-c3`.
 **Nie wgrywaj żadnego z nich na płytkę panelu LCD** — skasujesz firmware panelu.
 
 Bez PlatformIO (samo esptool):
@@ -205,7 +212,7 @@ pio pkg exec --package platformio/tool-esptoolpy -- esptool.py --port COM5 chip_
 
 | co pisze `chip_id` | co to jest | env | polecenie |
 |---|---|---|---|
-| `Chip is ESP32-C3 (QFN32)` | C3 SuperMini / C3-MINI-1 — mała płytka ~22×18 mm, przyciski BOOT+RESET obok siebie | `esp32-c3` | `pio run -t upload` |
+| `Chip is ESP32-C3 (QFN32)` | C3 SuperMini / C3-MINI-1 — mała płytka ~22×18 mm, przyciski BOOT+RESET obok siebie | `esp32-c3` | `pio run -e esp32-c3 -t upload` |
 | `Chip is ESP32-D0WD-V3` (też `D0WDQ6`, `ESP32-D0WD`) | **klasyczny ESP32** — WROOM-32, płytka ~55×28 mm, 30 pinów, micro-USB | `esp32` | `pio run -e esp32 -t upload` |
 | `Chip is ESP32-S3` | S3 — zwykle USB-C + drugie gniazdo UART, napis `S3-WROOM-1` | `esp32s3` | `pio run -e esp32s3 -t upload` |
 
