@@ -57,6 +57,7 @@ def main():
     walid_txt, reszta = podziel(reszta, "===WALIDACJA===")
     csv_krotka, reszta = podziel(reszta, "===CSV_KROTKA===")
     csv_dluga, reszta = podziel(reszta, "===CSV_DLUGA===")
+    import_txt, reszta = podziel(reszta, "===IMPORT===")
 
     # --- 1. STATUS ---
     try:
@@ -125,7 +126,16 @@ def main():
                          f"oczekiwane {KOLUMNY_DLUGIE}")
             break
 
-    # --- 4. WALIDACJA ---
+    # --- 4. IMPORT CSV (round-trip: eksport -> dodajProbkeZCsv) ---
+    # Firmware wczytuje wlasnie tym parserem /hist_short.csv i /hist_long.csv
+    # z LittleFS, wiec wiersz wyeksportowany przez historiaCsv() MUSI przejsc,
+    # wiersz zepsuty MUSI byc odrzucony, a CRLF (pliki z Windows) obslugiwany.
+    for oczekiwany in ("import_krotka|OK", "import_dluga|OK", "import_zla|OK",
+                       "import_crlf|OK"):
+        if oczekiwany not in import_txt:
+            bledy.append("import CSV: brak/niepoprawne " + oczekiwany)
+
+    # --- 5. WALIDACJA ---
     for linia in walid_txt.strip().splitlines():
         if linia.startswith("!!"):
             bledy.append("walidacja: " + linia[3:].strip())

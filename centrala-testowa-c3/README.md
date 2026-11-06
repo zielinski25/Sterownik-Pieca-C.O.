@@ -609,6 +609,43 @@ wartości serii są równe) — wtedy zakres wykresu wychodzi zerowy.
 
 Ta sama zmiana jest dostępna po HTTP: `GET /api/test?typ=historia` (czyści).
 
+### 5c. Wgrywanie PRAWDZIWEJ historii z centrali (wykresy z plików)
+
+Symulator potrafi rysować historię **skopiowaną z prawdziwej centrali** — bez
+konwersji, bo format jest ten sam (`/hist_short.csv` 14 kolumn,
+`/hist_long.csv` 35 kolumn).
+
+1. Wrzuć oba pliki do katalogu **`data/`** projektu (opis: `data/README.md`).
+2. Wgraj je na płytkę:
+   ```powershell
+   pio run -e esp32 -t uploadfs
+   ```
+3. Zrestartuj płytkę (albo w konsoli wpisz `import`). W konsoli:
+   ```
+   [HIST] /hist_short.csv: wczytano 1440 wierszy, pominietych 0
+   [HIST] z plikow: krotka=360, dluga=24 (panel rysuje PRAWDZIWA historie)
+   ```
+
+Szczegóły techniczne:
+
+* `platformio.ini` ma `board_build.filesystem = littlefs` i `data_dir = data` —
+  `uploadfs` pakuje `data/` do partycji SPIFFS z `default.csv` (~1,5 MB; doba
+  historii to ~130 KB, więc miejsce jest),
+* parser to `sym::dodajProbkeZCsv()` — waliduje **liczbę kolumn** (14 / 35),
+  obsługuje CRLF, odrzuca wiersze zepsute (wpisuje je do konsoli), nie wywala
+  reszty pliku,
+* bufor krótki ma 360 próbek, długi 120 — z pliku wchodzi „ogon” (najnowsze
+  wiersze), co jest tym, czego oczekuje panel,
+* brak plików = automatyczne zasianie 360 + 24 próbek (patrz 5b), więc nic nie
+  trzeba wgrywać, żeby wykresy w ogóle działały,
+* round-trip (eksport → parser → CSV) jest pokryty testem hostowym:
+  `testy_host/test_core.cpp` (sekcja `===IMPORT===`), sprawdzanym przez
+  `sprawdz_wynik.py` — wiersz zły **musi** zostać odrzucony, CRLF **musi** przejść.
+
+> Jeśli Twoje dwa pliki mają inne nazwy albo inny układ kolumn — zmień nazwy na
+> `hist_short.csv` / `hist_long.csv` w `data/` (to wystarczy), a przy innym
+> układzie kolumn daj znać: dopiszę mapowanie w parserze zamiast zgadywać.
+
 ---
 
 ## 6. Znalezione przy okazji (do decyzji — nie zmieniałem produktu)
@@ -692,6 +729,7 @@ centrala-testowa-c3/
 │   ├── symulacja.cpp/.h    # silnik symulacji + JSON-y + CSV historii
 │   ├── ustawienia.h        # walidacja 1:1 z ustawParametrPieca() + klucze NVS
 │   └── wspolne.h           # Czas, formatowanie liczb, budowniczy JSON
+├── data/                   # pliki do `pio run -t uploadfs` (hist_short/long.csv)
 ├── testy_host/             # testy rdzenia na PC (g++ + Python)
 └── narzedzia/
     ├── sprawdz_api.py      # test kontraktu API po sieci (z PC/telefonu)

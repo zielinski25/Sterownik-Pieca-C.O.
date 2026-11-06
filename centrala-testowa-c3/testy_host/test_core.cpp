@@ -141,6 +141,38 @@ int main() {
   sym::historiaCsv(false, pisarzStdout, nullptr);
   printf("===CSV_DLUGA===\n");
   sym::historiaCsv(true, pisarzStdout, nullptr);
+
+  // --- Import CSV (round-trip): wiersz wyeksportowany przez historiaCsv()
+  // musi dac sie wczytac przez dodajProbkeZCsv() — dokladnie tak, jak firmware
+  // wczytuje /hist_short.csv i /hist_long.csv z LittleFS.
+  printf("===IMPORT===\n");
+  {
+    char pierwszaKrotka[400] = "";
+    char pierwszaDluga[400] = "";
+    auto zbierz = [](void* ctx, const char* dane, size_t n) {
+      char* bufor = (char*)ctx;
+      if (bufor[0] != '\0') return;
+      const size_t k = (n < 399) ? n : 399;
+      memcpy(bufor, dane, k);
+      bufor[k] = '\0';
+    };
+    sym::historiaCsv(false, zbierz, pierwszaKrotka);
+    sym::historiaCsv(true, zbierz, pierwszaDluga);
+    char err[64] = "";
+    const bool okK = sym::dodajProbkeZCsv(pierwszaKrotka, false, err, sizeof(err));
+    printf("import_krotka|%s|%d\n", okK ? "OK" : "ERR", (int)sym::histKrotkaLiczba);
+    const bool okD = sym::dodajProbkeZCsv(pierwszaDluga, true, err, sizeof(err));
+    printf("import_dluga|%s|%d\n", okD ? "OK" : "ERR", (int)sym::histDlugaLiczba);
+    // Wiersz zla liczba kolumn musi byc ODRZUCONY (a nie wpisany "na sile").
+    const bool zlaOdrzucona = !sym::dodajProbkeZCsv("12:00,1,2,3", false, err, sizeof(err));
+    printf("import_zla|%s\n", zlaOdrzucona ? "OK" : "ERR");
+    // Wiersz z CRLF (pliki z Windows) musi przechodzic.
+    char zCrlf[448];
+    snprintf(zCrlf, sizeof(zCrlf), "%s\r", pierwszaKrotka);
+    const bool okCrlf = sym::dodajProbkeZCsv(zCrlf, false, err, sizeof(err));
+    printf("import_crlf|%s\n", okCrlf ? "OK" : "ERR");
+  }
+
   printf("===KONIEC===\n");
   return 0;
 }

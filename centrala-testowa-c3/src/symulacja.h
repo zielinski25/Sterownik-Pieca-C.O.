@@ -241,6 +241,13 @@ void wyczyscHistorie();
 // szereg z jednym punktem albo min == max.
 void zasiejHistorie(const wsp::Czas& czas);
 
+// Jeden wiersz CSV historii (dokladnie ten format, ktory serwuja /api/history
+// i /api/history/long — czyli takze pliki /hist_short.csv i /hist_long.csv
+// prawdziwej centrali). Dopisuje probke do odpowiedniego pierscienia.
+// `dlugi=false`: 14 kolumn, `dlugi=true`: 35 kolumn. Zwraca false, gdy wiersz
+// jest zepsuty (zla liczba kolumn / nieliczbowe pole) — wtedy nic nie dopisuje.
+bool dodajProbkeZCsv(const char* linia, bool dlugi, char* err, size_t errLen);
+
 // Ile minut zostalo do wygasniecia override'u (0 = brak) — to samo wyliczenie
 // co w wifiZbudujJsonStatus() centrali.
 int minutyDo(unsigned long terazMs, unsigned long docelowy);

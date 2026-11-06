@@ -7,6 +7,8 @@
 // ============================================================================
 #include "symulacja.h"
 
+#include <stdlib.h>   // atof/atoi/strtoul — import CSV historii
+
 namespace sym {
 
 Stan st;
@@ -236,6 +238,84 @@ static void zapiszProbke(const wsp::Czas& czas) {
     zamknijGodzine();
   }
   if (czas.ok) st.ostatniaGodzina = czas.godzina;
+}
+
+// ---------------------------------------------------------------------------
+// IMPORT WIERSZA CSV (pliki /hist_short.csv i /hist_long.csv z centrali)
+// ---------------------------------------------------------------------------
+// Format jest ten sam, co na wyjsciu /api/history, wiec plik skopiowany z
+// prawdziwej centrali (albo zrobiony przez `uploadfs`) wchodzi bez zadnej
+// konwersji. Parsujemy recznie (bez strtok na wejsciu z sieci) i walidujemy
+// LICZBE KOLUMN — krotszy/dluzszy wiersz jest odrzucany, a nie „jakos” wpisany.
+static int rozbijKolumny(char* buf, char** kol, int maks) {
+  int n = 0;
+  char* poczatek = buf;
+  while (poczatek && n < maks) {
+    char* przecinek = strchr(poczatek, ',');
+    if (przecinek) *przecinek = '\0';
+    kol[n++] = poczatek;
+    poczatek = przecinek ? przecinek + 1 : nullptr;
+  }
+  return n;
+}
+
+bool dodajProbkeZCsv(const char* linia, bool dlugi, char* err, size_t errLen) {
+  if (!linia) {
+    if (err && errLen) snprintf(err, errLen, "brak wiersza");
+    return false;
+  }
+  char buf[320];
+  snprintf(buf, sizeof(buf), "%s", linia);
+  const size_t dl = strlen(buf);
+  if (dl > 0 && (buf[dl - 1] == '\r' || buf[dl - 1] == '\n')) {
+    buf[(buf[dl - 1] == '\r' && dl > 1 && buf[dl - 2] == '\n') ? dl - 2 : dl - 1] = '\0';
+  }
+  if (buf[0] == '\0') {
+    if (err && errLen) snprintf(err, errLen, "pusty wiersz");
+    return false;
+  }
+
+  char* kol[40];
+  const int n = rozbijKolumny(buf, kol, 40);
+  const int oczekiwane = dlugi ? 35 : 14;
+  if (n != oczekiwane) {
+    if (err && errLen) snprintf(err, errLen, "kolumn %d, oczekiwano %d", n, oczekiwane);
+    return false;
+  }
+
+  if (!dlugi) {
+    ProbkaKrotka& p = histKrotka[histKrotkaGlowa];
+    snprintf(p.etykieta, sizeof(p.etykieta), "%s", kol[0]);
+    p.t_zewn_x10 = (int16_t)wsp::roundInt((float)atof(kol[1]) * 10.0f);
+    p.t_bojler_x10 = (int16_t)wsp::roundInt((float)atof(kol[2]) * 10.0f);
+    p.t_ogrz_x10 = (int16_t)wsp::roundInt((float)atof(kol[3]) * 10.0f);
+    p.t_ogrz_sr_x10 = (int16_t)wsp::roundInt((float)atof(kol[4]) * 10.0f);
+    p.t_powrot_x10 = (int16_t)wsp::roundInt((float)atof(kol[5]) * 10.0f);
+    p.t_panel_x10 = (int16_t)wsp::roundInt((float)atof(kol[6]) * 10.0f);
+    p.t_pokoj_x10 = (int16_t)wsp::roundInt((float)atof(kol[7]) * 10.0f);
+    p.pompa = (int16_t)(atoi(kol[8]) != 0 ? 1 : 0);
+    p.cisnienie_x10 = (int16_t)wsp::roundInt((float)atof(kol[9]) * 10.0f);
+    p.wilgotnosc_x10 = (int16_t)wsp::roundInt((float)atof(kol[10]) * 10.0f);
+    p.klapa_deg = (int16_t)atoi(kol[11]);
+    p.syberka_deg = (int16_t)atoi(kol[12]);
+    p.czas_unix = (uint32_t)strtoul(kol[13], nullptr, 10);
+    histKrotkaGlowa = (histKrotkaGlowa + 1) % HIST_KROTKA_MAX;
+    if (histKrotkaLiczba < HIST_KROTKA_MAX) histKrotkaLiczba++;
+    return true;
+  }
+
+  ProbkaDluga& d = histDluga[histDlugaGlowa];
+  snprintf(d.etykieta, sizeof(d.etykieta), "%s", kol[0]);
+  for (int pole = 0; pole < POL_DLUGICH; pole++) {
+    const int baza = 1 + pole * 3;
+    d.sr_x10[pole] = (int16_t)wsp::roundInt((float)atof(kol[baza]) * 10.0f);
+    d.min_x10[pole] = (int16_t)wsp::roundInt((float)atof(kol[baza + 1]) * 10.0f);
+    d.max_x10[pole] = (int16_t)wsp::roundInt((float)atof(kol[baza + 2]) * 10.0f);
+  }
+  d.czas_unix = (uint32_t)strtoul(kol[34], nullptr, 10);
+  histDlugaGlowa = (histDlugaGlowa + 1) % HIST_DLUGA_MAX;
+  if (histDlugaLiczba < HIST_DLUGA_MAX) histDlugaLiczba++;
+  return true;
 }
 
 void wyczyscHistorie() {

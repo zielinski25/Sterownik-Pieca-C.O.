@@ -34,6 +34,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Preferences.h>
+#include <LittleFS.h>
 #include <time.h>
 #include <sys/time.h>
 #include <esp_system.h>
@@ -651,6 +652,9 @@ static bool przeczytajZadanie(WiFiClient& klient, Zadanie& z) {
 // ===========================================================================
 // KONSOLA SERIAL (diagnostyka bez przegladarki)
 // ===========================================================================
+// Zdefiniowana nizej (przed setup) — potrzebna takze komendzie `import`.
+static void wczytajHistorieNaStart();
+
 static void obsluzSerial() {
   static char linia[96];
   static size_t dlugosc = 0;
@@ -662,7 +666,7 @@ static void obsluzSerial() {
       dlugosc = 0;
       if (!strcmp(linia, "help") || !strcmp(linia, "pomoc")) {
         Serial.println(F("Komendy: ip | czas | czas RRRR-MM-DD GG:MM:SS | dym 0/1 | co 0/1 |"
-                         " panel 0/1 | deszcz 0/1/2 | diag | historia [0|1] | zasiej | reset"));
+                         " panel 0/1 | deszcz 0/1/2 | diag | historia [0|1] | zasiej | import | reset"));
       } else if (!strcmp(linia, "ip")) {
         Serial.printf("AP: %s  SSID: %s  stacje: %d\n",
                       WiFi.softAPIP().toString().c_str(), AP_SSID, WiFi.softAPgetStationNum());
@@ -672,8 +676,15 @@ static void obsluzSerial() {
                       (unsigned long)(millis() / 1000UL), WiFi.softAPgetStationNum(),
                       (unsigned long)g_liczbaZapytan, (unsigned long)g_liczbaStatusow, g_panelFw);
       } else if (!strcmp(linia, "historia")) {
-        Serial.printf("[HIST] krotka=%d dluga=%d (komenda: historia 0 = wyczysc,"
-                      " historia 1 = zasiej)\n",
+        Serial.printf("[HIST] krotka=%d dluga=%d | pliki: short=%s long=%s"
+                      " (historia 0 = wyczysc, historia 1 = zasiej, import = z plikow)\n",
+                      sym::histKrotkaLiczba, sym::histDlugaLiczba,
+                      LittleFS.exists("/hist_short.csv") ? "jest" : "brak",
+                      LittleFS.exists("/hist_long.csv") ? "jest" : "brak");
+      } else if (!strcmp(linia, "import")) {
+        // Przeladuj historie z LittleFS bez restartu plytki (po `pio run -t uploadfs`).
+        wczytajHistorieNaStart();
+        Serial.printf("[HIST] po imporcie: krotka=%d dluga=%d\n",
                       sym::histKrotkaLiczba, sym::histDlugaLiczba);
       } else if (strncmp(linia, "historia ", 9) == 0) {
         // [HIST] `historia 0` symuluje centrale, ktora NIC nie zapisuje:
@@ -772,6 +783,58 @@ static void wczytajUstawienia() {
 }
 
 // ===========================================================================
+// HISTORIA Z PLIKOW (LittleFS)
+// ===========================================================================
+// Pliki maja DOKLADNIE format CSV z /api/history (14 kolumn) i
+// /api/history/long (35 kolumn) — czyli te same, ktore prawdziwa centrala
+// zapisuje jako /hist_short.csv i /hist_long.csv. Nic nie trzeba konwertowac.
+static int wczytajHistorieZFs(bool dlugi, const char* sciezka) {
+  if (!LittleFS.exists(sciezka)) return 0;
+  File f = LittleFS.open(sciezka, "r");
+  if (!f) {
+    Serial.printf("[HIST] nie moge otworzyc %s\n", sciezka);
+    return 0;
+  }
+  char linia[320];
+  int ok = 0, zle = 0;
+  while (f.available()) {
+    const size_t n = f.readBytesUntil('\n', linia, sizeof(linia) - 1);
+    if (n == 0) break;
+    linia[n] = '\0';
+    char err[64] = "";
+    if (sym::dodajProbkeZCsv(linia, dlugi, err, sizeof(err))) {
+      ok++;
+    } else {
+      if (zle < 3) Serial.printf("[HIST] pominiety wiersz (%s): %.40s\n", err, linia);
+      zle++;
+    }
+  }
+  f.close();
+  Serial.printf("[HIST] %s: wczytano %d wierszy, pominietych %d\n", sciezka, ok, zle);
+  return ok;
+}
+
+static void wczytajHistorieNaStart() {
+  if (!LittleFS.begin(false)) {
+    Serial.println(F("[FS] montuje LittleFS pierwszy raz — formatowanie partycji SPIFFS"));
+    if (!LittleFS.begin(true)) {
+      Serial.println(F("[FS] LittleFS niedostepny — historia tylko w RAM"));
+    }
+  }
+  sym::wyczyscHistorie();
+  int krotka = wczytajHistorieZFs(false, "/hist_short.csv");
+  int dluga = wczytajHistorieZFs(true, "/hist_long.csv");
+  if (krotka == 0 && dluga == 0) {
+    sym::zasiejHistorie(czasLokalny());
+    Serial.printf("[HIST] brak plikow — zasiano: krotka=%d probek (6 h), dluga=%d probek (24 h)\n",
+                  sym::histKrotkaLiczba, sym::histDlugaLiczba);
+  } else {
+    Serial.printf("[HIST] z plikow: krotka=%d, dluga=%d (panel rysuje PRAWDZIWA historie)\n",
+                  sym::histKrotkaLiczba, sym::histDlugaLiczba);
+  }
+}
+
+// ===========================================================================
 // SETUP / LOOP
 // ===========================================================================
 void setup() {
@@ -826,14 +889,13 @@ void setup() {
   Serial.println(F("[HTTP] Panel LCD laczy sie do AP powyzej i pyta /api/status co 2 s."));
   Serial.println(F("[WWW]  Panel testowy: http://192.168.4.1 (z telefonu/PC w sieci PiecCO_AP)"));
 
-  // Historia: najpierw wypelniamy oba bufory (6 h + 24 h wymyslonych probek),
-  // zeby ekran "Wykresy" w panelu mial od razu pelny szereg. Bez tego po swiezym
-  // starcie byl tam JEDEN punkt (albo zero), a panel na takim szeregu potrafi
-  // sie wywrocic (min == max / dzielenie przez zero) i restartuje ESP.
-  sym::zasiejHistorie(czasLokalny());
-  Serial.printf("[HIST] zasiano: krotka=%d probek (%.0f h), dluga=%d probek (%.0f h)\n",
-                sym::histKrotkaLiczba, sym::histKrotkaLiczba * 60.0 / 3600.0,
-                sym::histDlugaLiczba, sym::histDlugaLiczba * 1.0);
+  // Historia: najpierw PLIKI z LittleFS (mozna wgrac prawdziwe /hist_short.csv i
+  // /hist_long.csv z centrali przez `pio run -t uploadfs` — patrz README, sekcja
+  // "Wgrywanie historii z prawdziwej centrali"). Gdy plikow nie ma, wypelniamy
+  // oba bufory wymyslonymi probkami (6 h + 24 h): bez tego po swiezym starcie
+  // byl tam JEDEN punkt (albo zero), a panel na takim szeregu potrafi sie
+  // wywrocic (min == max / dzielenie przez zero) i restartuje ESP.
+  wczytajHistorieNaStart();
   sym::tick(millis(), czasLokalny(), ustawienia);
 
   // Panel/PC moze wolno czytac CSV (~25 KB) — nie pozwalamy WDT ubic loop().
