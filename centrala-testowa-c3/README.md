@@ -112,6 +112,18 @@ Po starcie w konsoli zobaczysz m.in.:
 
 ## 3a. Upload: „This chip is ESP32 not ESP32-C3. Wrong --chip argument?”
 
+**Skrót, jeśli `chip_id` mówi `Chip is ESP32-D0WD...`:** build zrobiony dla C3 nie
+poleci na klasycznym ESP32 (inny rdzeń — RISC-V vs Xtensa), trzeba **przebudować**
+pod `env:esp32`:
+
+```powershell
+pio run -e esp32 -t upload
+pio device monitor
+```
+
+Nie da się tego obejść przez `esptool.py --chip esp32 write_flash` na pliku z C3 —
+to inny zestaw instrukcji, płytka się nie uruchomi. Musi to być build z `-e esp32`.
+
 Objaw (Windows, PlatformIO):
 
 ```
