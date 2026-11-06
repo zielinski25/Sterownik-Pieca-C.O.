@@ -238,10 +238,18 @@ dir C:\Users\bakoma\.platformio\packages\tool-esptoolpy
 Jeśli katalog nie istnieje, jest pusty albo nie ma w nim `esptool.py`:
 
 ```powershell
-Remove-Item -Recurse -Force C:\Users\bakoma\.platformio\packages\tool-esptoolpy
-pio pkg install -g -p platformio/tool-esptoolpy
+Remove-Item -Recurse -Force $env:USERPROFILE\.platformio\packages\tool-esptoolpy
+pio pkg install -g --tool "platformio/tool-esptoolpy@~1.40501.0"
 pio run -t upload
 ```
+
+> **`--tool` jest obowiązkowe.** Bez niego (`pio pkg install -g -p platformio/tool-esptoolpy`)
+> PlatformIO szuka tego pakietu w rejestrze *bibliotek* i kończy się
+> `UnknownPackageError: Could not find the package with 'platformio/tool-esptoolpy' requirements`
+> — mimo że pakiet istnieje i `pio run` sam go zainstaluje.
+
+> Jeśli błąd **wraca** po kilku buildach — to nie jest już uszkodzony pakiet, a
+> konflikt wersji z drugą platformą `espressif32` na tym PC. Patrz **3d**.
 
 Uwagi:
 
@@ -253,6 +261,69 @@ Uwagi:
   `C:\Users\bakoma\.platformio` do wykluczeń.
 * Ten błąd **nie ma nic wspólnego** z kodem symulatora ani z tym, czy płytka jest
   C3/ESP32 — to wyłącznie narzędzie uploadu na Twoim PC.
+
+---
+
+## 3d. Dwie platformy `espressif32` na jednym PC → walka o `tool-esptoolpy`
+
+Objaw: build przechodzi (`.o` się kompilują), ale pada generowanie bootloadera:
+
+```
+Building .pio\build\esp32-c3\bootloader.bin
+...python.exe: can't open file '...\.platformio\packages\tool-esptoolpy\esptool.py': [Errno 2]
+```
+
+Diagnoza — `pio pkg list -g` na takiej maszynie pokazuje **dwa** wpisy:
+
+```
+tool-esptoolpy @ 5.2.0        (required: file://C:\...\.platformio\tools\tool-esptoolpy)
+tool-esptoolpy @ 1.40501.0    (required: platformio/tool-esptoolpy)
+```
+
+Skąd: obok tego projektu jest drugi — prawdziwa centrala na **pioarduino**
+(`espressif32 @ 55.3.38`, Arduino core 3.3.8, esptool **5.2.0**). Ten projekt
+używa `espressif32 @ 6.9.0`, gdzie `platform.json` wymaga `tool-esptoolpy
+~1.40501.0` (esptool **4.5.1**). PlatformIO trzyma **jedną wersję pakietu na
+nazwę**: `%USERPROFILE%\.platformio\packages\tool-esptoolpy`. Build C3 trafia
+w moment, gdy katalog jest właśnie podmieniany → pliku nie ma. To nie jest błąd
+kodu ani `platformio.ini`; to dwie platformy walczące o jeden katalog.
+
+### Naprawa A — szybka (do testu)
+
+```powershell
+pio pkg install -g --tool "platformio/tool-esptoolpy@~1.40501.0"
+pio run -t upload
+```
+
+> `pio pkg install` **wymaga `--tool`** — bez tego PlatformIO szuka
+> `platformio/tool-esptoolpy` w rejestrze *bibliotek* i odpowiada
+> `UnknownPackageError: Could not find the package...`. To nie znaczy, że
+> pakietu nie ma.
+
+Minus: przy następnym buildzie prawdziwej centrali (pioarduino) PlatformIO
+wstawi 5.2.0 i przy kolejnym buildzie C3 znowu podmieni — czyli co drugi build
+może trafić w podmianę.
+
+### Naprawa B — trwała (osobny core dir)
+
+Daj temu projektowi własny katalog rdzenia, żeby w ogóle nie dotykał
+wspólnego `packages\`:
+
+```powershell
+$env:PLATFORMIO_CORE_DIR="$env:USERPROFILE\.platformio-centrala-c3"
+pio run -t upload
+```
+
+albo gotowy wrapper (robi to samo, wygodny w VS Code):
+
+```powershell
+.\narzedzia\pio-c3.cmd run -t upload
+.\narzedzia\pio-c3.cmd device monitor
+```
+
+Cena: pierwszy build pobiera platformę + toolchain (~350 MB, 10–20 min) do
+`%USERPROFILE%\.platformio-centrala-c3`. Zysk: pełna niezależność od projektu
+pioarduino — koniec podmian i „raz działa, raz nie”.
 
 ---
 
@@ -380,7 +451,9 @@ centrala-testowa-c3/
 │   └── wspolne.h           # Czas, formatowanie liczb, budowniczy JSON
 ├── testy_host/             # testy rdzenia na PC (g++ + Python)
 └── narzedzia/
-    └── sprawdz_api.py      # test kontraktu API po sieci (z PC/telefonu)
+    ├── sprawdz_api.py      # test kontraktu API po sieci (z PC/telefonu)
+    ├── znajdz_port.ps1     # ktory port COM to ktory uklad (chip_id)
+    └── pio-c3.cmd          # PlatformIO z osobnym core dir (patrz 3d)
 ```
 
 ---
