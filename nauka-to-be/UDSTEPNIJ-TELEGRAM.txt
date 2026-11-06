@@ -68,7 +68,7 @@ i otwórz go w Chrome / Safari.
 ------------------------------------------------------------------------
 
 Plik:  to-be-kartkowka.html  (jeden plik, ~225 KB, wszystko w środku)
-Link z Dysku Google:  https://drive.google.com/file/d/1aifACii5vMf65LM8ciNSVRfJP5SrGNFx/view?usp=drivesdk
+Link z Dysku Google:  https://drive.google.com/file/d/1itGI9fUXxX9zeR1DgBO2vX-KAcG-1NNR/view?usp=drivesdk
 
 W aplikacji Telegram:
   • klip spinacz / ➕ → „Plik" (File / Document, NIE „Galeria"),
