@@ -498,10 +498,23 @@ nie w symulatorze. Warto wtedy porównać `/api/status` z symulatora
 
 **Test z PC (bez panelu):** wejdź laptopem do `PiecCO_AP` i:
 ```powershell
-ping 192.168.4.50        # czy panel jest w sieci pod swoim statycznym IP
+ping 192.168.4.1         # brama = symulator (musi odpowiadac)
+ping 192.168.4.50        # panel pod swoim statycznym IP
 curl http://192.168.4.1/api/status
 ```
-Jeśli `ping` do `.50` nie odpowiada, panel **nie jest** w sieci — punkt A.
+
+Jak czytać wynik (przypadek z 2026-11-06):
+
+```
+Pinging 192.168.4.50 with 32 bytes of data:
+Reply from 192.168.4.2: Destination host unreachable.   <- 4x
+```
+
+`192.168.4.2` to **Twój PC** (dostał ten adres z DHCP symulatora). Komunikat
+„Destination host unreachable” pochodzi od Twojego własnego stosu TCP/IP, nie od
+żadnego routera: PC wysłał ARP „kto ma 192.168.4.50?” i **nikt nie odpowiedział**.
+Czyli w tym momencie **panelu nie było w sieci** — to punkt A, nie problem HTTP.
+`Packets: Lost = 0` jest mylące: to licznik odpowiedzi ICMP, a nie odpowiedzi panelu.
 
 > **Uwaga — najczarniejszy scenariusz.** Jeśli TFT jest fizycznie podłączony do
 > **tej samej płytki, którą wgrałeś** (tej na COM5), to znaczy, że firmware panelu
