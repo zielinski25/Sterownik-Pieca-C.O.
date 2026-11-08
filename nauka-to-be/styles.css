@@ -420,3 +420,20 @@ body.dark #chip-level{background:#3b331a;border-color:#6a5a2a;color:#ffe6a3}
   .chip-list{max-height:112px}
   .machine-out .q{font-size:1.3rem}
 }
+
+/* ---------- sprawdziany do druku ---------- */
+.sheet-card h3{margin:8px 0 4px}
+.sheet-card .row{margin-top:8px}
+#sheets-preview .print-questions{columns:2;column-gap:26px}
+#sheets-preview .print-questions li{break-inside:avoid;page-break-inside:avoid}
+.sheet-page{page-break-after:always;break-after:page}
+.sheet-page:last-child{page-break-after:auto;break-after:auto}
+.sheet-head{border-bottom:3px solid var(--navy);padding-bottom:10px;margin-bottom:14px}
+.sheet-head h2{font-size:1.5rem;margin:0 0 8px;color:var(--navy)}
+.sheet-head p{font-size:1rem;margin:4px 0}
+.sheet-key h2{font-size:1.3rem;color:var(--teal-d);margin-bottom:10px}
+.sheet-key ol{font-size:1rem;line-height:1.65;padding-left:22px}
+.sheet-key li{margin-bottom:5px}
+#print-sheet.sheets-mode .sheet-page .answer-line{color:#999}
+body.dark .sheet-head h2{color:var(--ink)}
+@media (max-width:760px){#sheets-preview .print-questions{columns:1}}

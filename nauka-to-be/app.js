@@ -30,7 +30,10 @@
     return { xp: 0, streak: 0, bestStreak: 0, correct: 0, wrong: 0, bestExam: 0,
              acts: {}, badges: [], plan: [], cards: {}, weak: {}, days: [], speedBest: 0,
              seen: {}, cycles: {}, grades: [], mistakes: {}, skills: {}, mute: false, dark: false,
-             lights: {}, mySentences: [], exitTickets: [] };
+             lights: {}, mySentences: [], exitTickets: [],
+             /* JEDEN globalny rejestr użytych treści dla całej strony.
+                Klucz = kanoniczna sygnatura zadania, wartość = numer użycia. */
+             used: {}, useSeq: 0, usedMigrated: false, cardQueue: [], daily: null, sheets: [] };
   }
   let S = (function () {
     try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
@@ -51,6 +54,11 @@
   if (!S.lights || typeof S.lights !== "object") S.lights = {};
   if (!Array.isArray(S.mySentences)) S.mySentences = [];
   if (!Array.isArray(S.exitTickets)) S.exitTickets = [];
+  if (!S.used || typeof S.used !== "object") S.used = {};
+  if (!Number.isInteger(S.useSeq)) S.useSeq = Object.keys(S.used).length;
+  if (!Array.isArray(S.cardQueue)) S.cardQueue = [];
+  if (!Array.isArray(S.sheets)) S.sheets = [];
+  if (typeof S.usedMigrated !== "boolean") S.usedMigrated = false;
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
   if (S.days.indexOf(today()) === -1) { S.days.push(today()); save(); }
 
@@ -73,35 +81,76 @@
     save();
   }
 
-  /* ---------------- zestawy bez powtórek ---------------- */
-  /* Każde ćwiczenie ma w localStorage listę indeksów już użytych zadań.
-     Nowy zestaw bierze wyłącznie zadania „świeże". Gdy baza się wyczerpie,
-     zaczyna się nowa runda (S.cycles) — ale i tak bez powtórzeń w zestawie. */
+  /* ---------------- JEDEN globalny rejestr — zero powtórek ----------------
+     wcześniej: każde ćwiczenie miało WŁASNY licznik, a kartkówka, miks,
+     szybka runda i wydruk kopiowały te same zdania z `choice`/`gap`.
+     Efekt: dziecko robiło „Wybierz formę", potem dostawało to samo zdanie
+     na próbnej kartkówce. Teraz rejestr jest współdzielony przez całą stronę. */
+  function contentKey(it) {
+    if (!it) return "";
+    if (it.pairs) return "set|" + norm(it.name || it.id || "");
+    if (it.text) return "text|" + norm(String(it.text).slice(0, 200));
+    const p = it.s || it.p || it.q || it.from || it.spoken || it.front || it.word || it.pl ||
+              (it.words ? it.words.join(" ") : "") || "";
+    const a = Array.isArray(it.a) ? it.a[0] : (it.a || it.show || it.answer || it.t || "");
+    const opts = Array.isArray(it.o) ? " {" + it.o.slice().sort().map(norm).join(",") + "}" : "";
+    const task = it.task ? norm(it.task) + "|" : "";
+    let s = norm(String(p) + " | " + String(a)) + opts;
+    s = s.replace(/^uzupełnij\s*:\s*/, "").replace(/^uzupełnij\s+/, "").replace(/^po angielsku\s*:\s*/, "");
+    /* area = ćwiczona umiejętność (musi być identycznie jak sig() w data.js) */
+    return (it.area ? norm(it.area) + "|" : "") + task + s;
+  }
+  function useContent(it) { const k = contentKey(it); if (k) S.used[k] = ++S.useSeq; }
+  function seenCount() { return Object.keys(S.used).length; }
+  function globalTotal() { return D.meta.uniqueContent || D.meta.bankTotal; }
+
   function deal(key, items, count) {
     const n = items.length;
     if (!n) return [];
-    const seen = Array.isArray(S.seen[key]) ? S.seen[key].filter(function (i) { return Number.isInteger(i) && i >= 0 && i < n; }) : [];
-    const used = {}; seen.forEach(function (i) { used[i] = true; });
-    let freshPool = [];
-    for (let i = 0; i < n; i++) if (!used[i]) freshPool.push(i);
-    freshPool = shuffle(freshPool);
+    const order = shuffle(items.map(function (_, i) { return i; }));
     const out = [];
-    while (out.length < count && freshPool.length) out.push(freshPool.pop());
+    /* 1) wyłącznie treści, których dziecko NIGDZIE jeszcze nie widziało */
+    order.forEach(function (i) {
+      if (out.length >= count) return;
+      const ck = contentKey(items[i]);
+      if (ck && S.used[ck] === undefined) { out.push(i); S.used[ck] = ++S.useSeq; }
+    });
+    /* 2) gdy pula się wyczerpie: nowy cykl od NAJDAWNIEJ widzianych,
+       nigdy losowo i nigdy z powrotem z tego samego zestawu */
     if (out.length < count) {
       const inSet = {}; out.forEach(function (i) { inSet[i] = true; });
-      let rest = [];
-      for (let i = 0; i < n; i++) if (!inSet[i]) rest.push(i);
-      rest = shuffle(rest);
-      let j = 0;
-      while (out.length < count && j < rest.length) out.push(rest[j++]);
-      S.seen[key] = out.slice();
+      const rest = items.map(function (_, i) { return i; })
+        .filter(function (i) { return !inSet[i]; })
+        .sort(function (a, b) {
+          return (S.used[contentKey(items[a])] || 0) - (S.used[contentKey(items[b])] || 0);
+        });
+      rest.forEach(function (i) {
+        if (out.length >= count) return;
+        out.push(i); S.used[contentKey(items[i])] = ++S.useSeq;
+      });
       S.cycles[key] = (S.cycles[key] || 0) + 1;
-    } else {
-      S.seen[key] = seen.concat(out);
-      if (!S.cycles[key]) S.cycles[key] = 1;
-    }
+    } else if (!S.cycles[key]) S.cycles[key] = 1;
+    /* S.seen zostaje dla etykiet „Zestaw N" i wstecznej zgodności */
+    const old = Array.isArray(S.seen[key]) ? S.seen[key] : [];
+    S.seen[key] = old.concat(out);
     save();
     return shuffle(out).map(function (i) { return items[i]; });
+  }
+  /* Migracja starszych zapisów: indeksy z S.seen → sygnatury w S.used,
+     żeby po aktualizacji strony dziecko nie dostało starych zadań od nowa. */
+  function migrateSeenToUsed() {
+    if (S.usedMigrated) return;
+    Object.keys(S.seen || {}).forEach(function (k) {
+      const arr = BANK_OF[k];
+      if (!arr) return;
+      (S.seen[k] || []).forEach(function (i) {
+        if (!arr[i]) return;
+        const ck = contentKey(arr[i]);
+        if (ck && S.used[ck] === undefined) S.used[ck] = ++S.useSeq;
+      });
+    });
+    S.usedMigrated = true;
+    save();
   }
   /* Miks = trening przeplatany (interleaving): jeden zestaw z 5 różnych typów zadań.
      Kolejność jest stała, więc indeksy w S.seen.mix też są stałe → zero powtórek. */
@@ -115,12 +164,11 @@
     choice: D.choice, gap: D.gap, order: D.order, transform: D.transform, shorts: D.shorts,
     detective: D.detective, sort: D.sort, listen: D.listening, listening: D.listening, dictation: D.dictation,
     translate: D.translate, spelling: D.spelling, memory: D.pairSets, match: D.matchSets,
-    reading: D.reading, speed: D.choice, mix: MIX_POOL, exam: D.examPool, printExam: D.examPool
+    reading: D.reading, speed: D.choice, mix: MIX_POOL, exam: D.examPool, printExam: D.examPool,
+    sheets: D.sheetBank
   };
   function bankSize(act) { const b = BANK_OF[act]; return b ? b.length : 0; }
-  function seenTotal() {
-    return Object.keys(S.seen).reduce(function (s, k) { return s + (Array.isArray(S.seen[k]) ? S.seen[k].length : 0); }, 0);
-  }
+  function seenTotal() { return seenCount(); }
 
   /* ---------------- powtórka rozłożona w czasie (to, czego dziecko nie umie) ---------------- */
   const BOX_DAYS = [0, 1, 2, 4, 7, 14, 30];
@@ -259,7 +307,7 @@
 
   /* ---------------- udostępnianie (Telegram, WhatsApp, e-mail…) ---------------- */
   const SHARE_URL = "https://is.gd/gAbph1";
-  const SHARE_TEXT = "TO BE — trening przed kartkówką (angielski, 10.11) 🇬🇧 4 949 unikalnych zadań, 16 typów ćwiczeń, oceny 1–6, powtórki z błędów i Laboratorium zdań. Bez logowania.";
+  const SHARE_TEXT = "TO BE — trening przed kartkówką (angielski, 10.11) 🇬🇧 5 698 zadań bez powtórek, 16 typów ćwiczeń, 6 sprawdzianów do druku z kluczami, oceny 1–6, powtórki z błędów i Laboratorium zdań. Bez logowania.";
   $("#btn-share").onclick = async function () {
     const data = { title: "TO BE · trening przed kartkówką", text: SHARE_TEXT, url: SHARE_URL };
     if (navigator.share) {
@@ -331,6 +379,7 @@
     if (id === "flashcards") renderCard();
     if (id === "review") renderReview();
     if (id === "lab") renderLab();
+    if (id === "sheets") renderSheets();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   document.addEventListener("click", function (e) {
@@ -363,10 +412,18 @@
       return '<div class="card flat" style="margin:0;text-align:center"><div style="font-size:2rem">' + x[0] + "</div><b>" + x[1] + '</b><div class="muted">' + x[2] + '</div><button class="btn small ghost" style="margin-top:8px" data-act="' + x[3] + '">Ćwicz →</button></div>';
     }).join("");
 
-    // ☀️ Pytanie dnia — inne każdego dnia, z tej samej mega-bazy
-    let h = 0; const ds = today();
-    for (let i = 0; i < ds.length; i++) h = (h * 31 + ds.charCodeAt(i)) % 1000003;
-    const q = D.choice[h % D.choice.length];
+    // ☀️ Pytanie dnia — jedno na dzień, ale ZAWSZE z niewidzianej jeszcze puli
+    // (dawniej był to stały indeks, więc wracało to samo zadanie co w ćwiczeniach)
+    const ds = today();
+    if (!S.daily || S.daily.d !== ds) {
+      const candidates = shuffle(D.choice.map(function (_, i) { return i; }))
+        .filter(function (i) { return S.used[contentKey(D.choice[i])] === undefined; });
+      const pick = candidates.length ? candidates[0] : Math.floor(Math.random() * D.choice.length);
+      S.daily = { d: ds, i: pick };
+      if (candidates.length) useContent(D.choice[pick]);
+      save();
+    }
+    const q = D.choice[S.daily.i] || D.choice[0];
     const dc = $("#daily-card");
     if (dc) dc.innerHTML =
       '<div class="between"><h2 style="margin:0">☀️ Pytanie dnia</h2><span class="pill teal">zmienia się codziennie</span></div>' +
@@ -470,19 +527,106 @@
       qs.map(function (q) { return '<li>' + esc(Array.isArray(q.a) ? q.a[0] : q.a) + ' <span class="muted">— ' + esc(q.w) + '</span></li>'; }).join("") +
       '</ol></div></div>';
   }
+  /* ---------------- SPRAWDZIANY DO DRUKU ----------------
+     6 przygotowanych, rozłącznych arkuszy po 15 zadań + klucz dla rodzica.
+     „Nowy komplet" losuje 90 świeżych pytań z GLOBALNEGO rejestru, więc
+     papierowe sprawdziany też nie powtarzają tego, co było na ekranie. */
+  let SH = null;
+  function currentSheets() {
+    return (Array.isArray(S.sheets) && S.sheets.length === 6 && S.sheets.every(function (s) { return s.questions && s.questions.length === 15; }))
+      ? S.sheets : D.printTests;
+  }
+  function sheetQuestionsHtml(qs) {
+    return '<ol class="print-questions">' + qs.map(function (q) {
+      return '<li><div>' + esc(q.p) + '</div>' +
+        (q.o ? '<div class="muted">A) ' + esc(q.o[0]) + ' &nbsp; B) ' + esc(q.o[1]) + ' &nbsp; C) ' + esc(q.o[2]) + '</div>' : "") +
+        '<div class="answer-line">........................................................................................................</div></li>';
+    }).join("") + '</ol>';
+  }
+  function sheetKeyHtml(qs) {
+    return '<ol>' + qs.map(function (q) {
+      return '<li><b>' + esc(Array.isArray(q.a) ? q.a[0] : q.a) + '</b>' +
+        (q.w ? ' <span class="muted">— ' + esc(q.w) + '</span>' : "") + '</li>';
+    }).join("") + '</ol>';
+  }
+  function sheetPage(sh, i, withKey) {
+    let h = '<div class="sheet-page"><div class="sheet-head">' +
+      '<h2>SPRAWDZIAN ' + (i + 1) + ' · czasownik „to be"</h2>' +
+      '<p>Imię i nazwisko: ____________________________________ &nbsp; Data: ____________ &nbsp; Wynik: ______ / 15 &nbsp; Ocena: ______</p>' +
+      '<p class="muted">Zakres: odmiana, twierdzenia, pytania, przeczenia, krótkie odpowiedzi · Together 2026, klasa 4</p>' +
+      '</div>' + sheetQuestionsHtml(sh.questions) + '</div>';
+    if (withKey) h += '<div class="sheet-page sheet-key"><h2>🔑 Klucz odpowiedzi · sprawdzian ' + (i + 1) +
+      ' (dla rodzica / nauczyciela)</h2>' + sheetKeyHtml(sh.questions) + '</div>';
+    return h;
+  }
+  function renderSheets() {
+    const host = $("#sheets-grid"); if (!host) return;
+    const list = currentSheets(), custom = list !== D.printTests;
+    host.innerHTML = '<div class="grid3">' + list.map(function (sh, i) {
+      const areas = [...new Set(sh.questions.map(function (q) { return q.area || "odmiana"; }))].join(" · ");
+      return '<div class="card flat sheet-card"><span class="pill ' + (custom ? "sun" : "teal") + '">' +
+        (custom ? "NOWY KOMPLET" : "GOTOWY") + ' · ' + (i + 1) + '/6</span>' +
+        '<h3>📄 Sprawdzian ' + (i + 1) + '</h3>' +
+        '<p class="muted">15 zadań · ' + esc(areas) + '</p>' +
+        '<div class="row"><button class="btn small" data-sheet="' + i + '">🖨️ Drukuj</button>' +
+        '<button class="btn small ghost" data-key="' + i + '">🔑 Klucz</button>' +
+        '<button class="btn small ghost" data-preview="' + i + '">👀 Podgląd</button></div></div>';
+    }).join("") + "</div>";
+    $$("#sheets-grid [data-sheet]").forEach(function (b) { b.onclick = function () { doPrint("sheet:" + b.dataset.sheet); }; });
+    $$("#sheets-grid [data-key]").forEach(function (b) { b.onclick = function () { doPrint("keys:" + b.dataset.key); }; });
+    $$("#sheets-grid [data-preview]").forEach(function (b) {
+      b.onclick = function () { SH = +b.dataset.preview; drawSheetsPreview(); };
+    });
+    if (SH === null) SH = 0;
+    drawSheetsPreview();
+  }
+  function drawSheetsPreview() {
+    const host = $("#sheets-preview"); if (!host) return;
+    const list = currentSheets(), sh = list[SH] || list[0];
+    host.innerHTML = '<div class="between"><h3 style="margin:0">Podgląd: sprawdzian ' + (SH + 1) +
+      '</h3><span class="muted">Odpowiedzi są tylko w kluczu do druku 🔑</span></div>' +
+      sheetQuestionsHtml(sh.questions);
+  }
+  function generateSheets() {
+    const qs = deal("sheets", D.sheetBank, 90);
+    S.sheets = [];
+    for (let i = 0; i < 6; i++) S.sheets.push({ id: "N" + (i + 1), title: "Nowy sprawdzian " + (i + 1),
+                                                 questions: qs.slice(i * 15, (i + 1) * 15) });
+    SH = 0; save(); renderSheets(); updateHub();
+    toast("🆕 Wygenerowano 6 nowych, niepowtarzalnych sprawdzianów");
+  }
+  const bns = $("#btn-new-sheets"); if (bns) bns.onclick = generateSheets;
+  const bos = $("#btn-original-sheets");
+  if (bos) bos.onclick = function () { S.sheets = []; SH = 0; save(); renderSheets(); toast("📄 Wrócono do 6 przygotowanych sprawdzianów"); };
+  const bpa = $("#btn-print-all-sheets"); if (bpa) bpa.onclick = function () { doPrint("sheets:all"); };
+
   function doPrint(kind) {
     const sheet = $("#print-sheet");
-    sheet.className = kind === "exam" ? "exam-mode" : "";
-    $("#print-title").textContent = kind === "exam" ? "TO BE — kartkówka do druku" : "TO BE — ściąga przed kartkówką";
+    const isSheets = kind.indexOf("sheet") === 0 || kind.indexOf("keys") === 0;
+    sheet.className = isSheets ? "exam-mode sheets-mode" : (kind === "exam" ? "exam-mode" : "");
+    $("#print-title").textContent = isSheets ? "TO BE — sprawdziany do druku" :
+      (kind === "exam" ? "TO BE — kartkówka do druku" : "TO BE — ściąga przed kartkówką");
     $("#print-report").innerHTML = kind === "report" ? "<div class='card'><h2>Raport postępów · " + today() + "</h2>" + $("#parent-report").innerHTML + "</div>" : "";
-    $("#print-mine").innerHTML = kind === "exam" ? "" :
+    $("#print-mine").innerHTML = (kind === "exam" || isSheets) ? "" :
       '<div class="card"><h2>Moje zdania i samoocena 🚦</h2>' +
       (S.mySentences.length ? "<p><b>Własne zdania:</b> " + S.mySentences.map(function (s) { return esc(s); }).join(" · ") + "</p>" : "<p>Nie zapisano jeszcze własnych zdań (Laboratorium).</p>") +
       (Object.keys(S.lights).length ? "<p><b>Samoocena:</b> " + LIGHT_SKILLS.filter(function (x) { return S.lights[x.k]; }).map(function (x) {
         const l = LIGHTS.filter(function (z) { return z.id === S.lights[x.k]; })[0];
         return (l ? l.ico : "") + " " + esc(x.ican);
       }).join(" · ") + "</p>" : "<p>Brak samooceny światełkami.</p>") + "</div>";
-    $("#print-exam").innerHTML = kind === "exam" ? buildPrintExam() : "";
+    let examHtml = "";
+    if (kind === "exam") examHtml = buildPrintExam();
+    else if (kind === "sheets:all") {
+      examHtml = currentSheets().map(function (sh, i) { return sheetPage(sh, i, true); }).join("");
+    } else if (kind.indexOf("sheet:") === 0) {
+      const i = +kind.split(":")[1], list = currentSheets();
+      if (list[i]) examHtml = sheetPage(list[i], i, true);
+    } else if (kind.indexOf("keys:") === 0) {
+      const i = +kind.split(":")[1], list = currentSheets();
+      if (list[i]) examHtml = '<div class="sheet-page sheet-key"><h2>🔑 Klucz odpowiedzi · sprawdzian ' +
+        (i + 1) + ' (dla rodzica / nauczyciela)</h2>' + sheetKeyHtml(list[i].questions) + '</div>';
+    }
+    $("#print-exam").innerHTML = examHtml;
     try { window.print(); } catch (e) { toast("Drukowanie niedostępne w tej przeglądarce."); }
   }
   ["btn-print-start", "btn-print-learn"].forEach(function (id) { $("#" + id).onclick = function () { doPrint("cheat"); }; });
@@ -491,8 +635,9 @@
   /* ---------------- hub ćwiczeń ---------------- */
   function renderHub() {
     const hb = $("#hub-bank");
-    if (hb) hb.innerHTML = "🧠 <b>" + D.meta.bankTotal.toLocaleString("pl-PL") + "</b> unikalnych zadań · " +
-      "każde wejście to <b>nowy, niepowtarzalny zestaw</b> (pamiętamy go między wizytami)";
+    if (hb) hb.innerHTML = "🧠 <b>" + globalTotal().toLocaleString("pl-PL") + "</b> różnych treści · " +
+      "widziano <b>" + seenTotal().toLocaleString("pl-PL") + "</b> · pozostało <b>" +
+      Math.max(0, globalTotal() - seenTotal()).toLocaleString("pl-PL") + "</b> nowych";
     $("#activity-grid").innerHTML = D.activities.map(function (a) {
       const st = S.acts[a.id];
       const done = st && st.done ? '<span class="done">✓ ukończone · ' + st.ok + "/" + st.tried + " poprawnych</span>" : (st && st.tried ? '<span class="done">rozpoczęte · ' + st.tried + " zadań</span>" : "");
@@ -503,6 +648,10 @@
   function updateHub() {
     const done = D.activities.filter(function (a) { return S.acts[a.id] && S.acts[a.id].done; }).length;
     const h = $("#hub-progress"); if (h) h.textContent = "Ukończone: " + done + " z " + D.activities.length;
+    const hb = $("#hub-bank");
+    if (hb) hb.innerHTML = "🧠 <b>" + globalTotal().toLocaleString("pl-PL") + "</b> różnych treści · " +
+      "widziano <b>" + seenTotal().toLocaleString("pl-PL") + "</b> · pozostało <b>" +
+      Math.max(0, globalTotal() - seenTotal()).toLocaleString("pl-PL") + "</b> nowych";
   }
   $("#btn-random").onclick = function () { openActivity(shuffle(D.activities)[0].id); };
   $("#btn-back-hub").onclick = function () { clearSpeed(); $("#practice-run").style.display = "none"; $("#practice-hub").style.display = "block"; updateHub(); };
@@ -1228,12 +1377,24 @@
     spelling: actSpelling, mix: actMix, speed: actSpeed
   };
 
-  /* ---------------- FISZKI ---------------- */
-  let cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; }));
+  /* ---------------- FISZKI (kolejka zapisywana między wizytami) ---------------- */
+  function newCardQueue() {
+    /* najpierw karty, których dziecko jeszcze nie widziało nigdzie */
+    const unseen = [], seen = [];
+    D.flashcards.forEach(function (c, i) {
+      (S.used["fc|" + norm(c.front)] === undefined ? unseen : seen).push(i);
+    });
+    return shuffle(unseen).concat(shuffle(seen));
+  }
+  let cardQueue = (Array.isArray(S.cardQueue) && S.cardQueue.length)
+    ? S.cardQueue.filter(function (i) { return Number.isInteger(i) && i >= 0 && i < D.flashcards.length; })
+    : newCardQueue();
   let cardFlipped = false;
+  function saveCardQueue() { S.cardQueue = cardQueue.slice(); save(); }
   function renderCard() {
-    if (!cardQueue.length) cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; }));
+    if (!cardQueue.length) cardQueue = newCardQueue();
     const i = cardQueue[0], c = D.flashcards[i];
+    S.used["fc|" + norm(c.front)] = ++S.useSeq; save();
     cardFlipped = false;
     const box = $("#flash-card");
     box.innerHTML = '<div class="front">' + esc(c.front) + '</div><span class="pill teal" style="margin-top:10px">' + esc(c.tag) + '</span><div class="flip-hint">👆 Kliknij, żeby zobaczyć odpowiedź</div>';
@@ -1266,12 +1427,17 @@
       cardQueue.splice(Math.min(2, cardQueue.length), 0, i);
       toast("🔁 Dobra, powtórzymy to wkrótce.");
     }
+    saveCardQueue();
     renderCard();
   }
   $("#btn-card-again").onclick = function () { nextCard(false); };
   $("#btn-card-know").onclick = function () { nextCard(true); };
-  $("#btn-shuffle-cards").onclick = function () { cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; })); renderCard(); toast("🔀 Karty przetasowane"); };
-  $("#btn-reset-cards").onclick = function () { S.cards = {}; save(); cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; })); renderCard(); toast("Fiszki zaczynają od nowa"); };
+  $("#btn-shuffle-cards").onclick = function () {
+    cardQueue = shuffle(cardQueue.slice()); saveCardQueue(); renderCard(); toast("🔀 Kolejka przetasowana");
+  };
+  $("#btn-reset-cards").onclick = function () {
+    S.cards = {}; cardQueue = newCardQueue(); saveCardQueue(); renderCard(); toast("Fiszki zaczynają od nowa");
+  };
 
   /* ---------------- KARTKÓWKA PRÓBNA ---------------- */
   let EX = null;
@@ -1817,7 +1983,8 @@
       "<p><b>Podsumowanie (" + today() + "):</b> dziecko rozwiązało <b>" + total + " zadań</b>, poprawnie <b>" + S.correct + "</b> (" + pct(S.correct, total) + "%), zdobyło " + S.xp + " pkt i ukończyło " + done + " z " + D.activities.length + " ćwiczeń. Najlepszy wynik próbnej kartkówki: <b>" + (S.bestExam || 0) + "%</b>.</p>" +
       (best ? "<p><b>Najlepiej idzie:</b> " + esc(best.name) + " (" + best.p + "%). <b>Warto poćwiczyć:</b> " + esc(worst.name) + " (" + worst.p + "%).</p>" : "<p>Za mało danych, by ocenić mocne i słabe strony — zacznij od dowolnego ćwiczenia.</p>") +
       (weak.length ? "<p><b>Tematy, w których pojawiły się błędy na kartkówkach:</b> " + weak.map(function (w) { return w + " (" + S.weak[w] + ")"; }).join(", ") + ".</p>" : "") +
-      "<p><b>System oceniania:</b> średnia z " + S.grades.length + " prac to <b>" + avg + "%</b> (" + gradeBadge(avg) + "). Baza ma " + D.meta.bankTotal.toLocaleString("pl-PL") + " unikalnych zadań; dziecko zobaczyło już " + seenTotal() + " z nich w " + Object.keys(S.cycles).reduce(function (s, k) { return s + S.cycles[k]; }, 0) + " różnych zestawach — żaden zestaw się nie powtarza, dopóki nie wyczerpie się pula.</p>" +
+      "<p><b>System oceniania:</b> średnia z " + S.grades.length + " prac to <b>" + avg + "%</b> (" + gradeBadge(avg) + "). Baza ma " + globalTotal().toLocaleString("pl-PL") + " różnych treści; dziecko zobaczyło już <b>" + seenTotal() + "</b>, pozostało <b>" + Math.max(0, globalTotal() - seenTotal()) + "</b> całkiem nowych.</p>" +
+      '<p><b>Brak powtórek:</b> jeden wspólny rejestr obejmuje wszystkie ćwiczenia, próbną kartkówkę, Miks, szybką rundę, fiszki, pytanie dnia i sprawdziany do druku — to samo zdanie nie wróci w innym ćwiczeniu, dopóki nie wyczerpie się pula ' + globalTotal().toLocaleString("pl-PL") + ' zadań. Wyjątek: zakładka „Powtórki" celowo wraca do błędów.</p>' +
       "<p><b>Powtórki z błędów:</b> " + allMistakes().length + " trudnych zadań w kolejce, " + allMistakes().filter(function (r) { return r.mastered; }).length + " opanowanych, " + dueReviews().length + " do powtórki dziś" +
       (weakestSkill() ? "; najsłabszy temat: <b>" + esc(weakestSkill().k) + "</b> (" + weakestSkill().p + "%" + (weakestSkill().self ? ", wskazany w samoocenie" : "") + ")." : ".") + "</p>" +
       "<p><b>Samoocena i własna produkcja:</b> " + Object.keys(S.lights).length + " z " + LIGHT_SKILLS.length + " umiejętności ocenionych światełkami (" +
@@ -1834,21 +2001,24 @@
   $("#btn-reset-all").onclick = function () {
     if (!window.confirm("Wyczyścić wszystkie punkty, odznaki, wyniki i plan? Tej operacji nie da się cofnąć.")) return;
     try { localStorage.removeItem(KEY); } catch (e) {}
-    S = fresh(); S.days.push(today()); save();
-    cardQueue = shuffle(D.flashcards.map(function (_, i) { return i; }));
+    S = fresh(); S.days.push(today()); S.usedMigrated = true; save();
+    S.sheets = []; SH = null;
+    cardQueue = newCardQueue(); saveCardQueue();
     RV = null;
-    renderStart(); renderCard(); renderProgress(); renderReview(); renderHub(); renderLab(); updateChips();
+    renderStart(); renderCard(); renderProgress(); renderReview(); renderHub(); renderLab(); renderSheets(); updateChips();
     applyDark(); applyMute();
     toast("Postępy wyczyszczone — zaczynamy od nowa 🌱");
   };
 
   /* ---------------- init ---------------- */
+  migrateSeenToUsed();
   renderStart();
   renderLearn();
   renderHub();
   renderCard();
   renderReview();
   renderLab();
+  renderSheets();
   renderProgress();
   updateChips();
   applyDark();

@@ -18,10 +18,10 @@ Skopiuj i wklej do wiadomości na Telegramie:
 https://is.gd/gAbph1
 
 To krótki link do pełnej, działającej strony. Po kliknięciu odbiorca
-widzi gotowy moduł (4 949 zadań, 16 typów ćwiczeń, Laboratorium zdań,
-oceny, powtórki błędów, fiszki i próbna kartkówka), a nie kod źródłowy — adres prowadzi
-przez podgląd HTML, który poprawnie serwuje stronę i uruchamia jej skrypty.
-Działa na telefonie i na komputerze.
+widzi gotowy moduł (5 698 zadań, 16 typów ćwiczeń, 6 sprawdzianów do druku,
+Laboratorium zdań, oceny, powtórki błędów, fiszki i próbna kartkówka), a nie kod
+źródłowy — adres prowadzi przez podgląd HTML, który poprawnie serwuje stronę
+i uruchamia jej skrypty. Działa na telefonie i na komputerze.
 
 Pełny adres (zapasowy, gdyby skracacz kiedyś przestał działać):
 
@@ -46,15 +46,21 @@ Cześć! Przygotowałam/em stronę do powtórki przed kartkówką z angielskiego
 👉 https://is.gd/gAbph1
 
 Jest 16 różnych ćwiczeń (wybieranie, wpisywanie, memory, słuchanie,
-dyktando, poprawianie błędów, układanie zdań, „Miks 5 minut") i prawie
-5 tysięcy zadań — przy każdym wejściu dziecko dostaje całkiem inny
-zestaw, nic się nie powtarza 🔁. Strona wystawia ocenę 1–6, zapisuje
-błędy i przypomina o nich w kolejnych dniach, aż dziecko je opanuje.
-W „Laboratorium" można samemu składać zdania z trzech klocków i ćwiczyć
-krótkie odpowiedzi, a światełka 🚦 pozwalają zaznaczyć, co jeszcze
-sprawia trudność. Są też fiszki, próbna kartkówka, pytanie dnia, tryb
-ciemny i kartkówka do wydruku z kluczem. Nic nie trzeba instalować
-ani logować się 💪
+dyktando, poprawianie błędów, układanie zdań, „Miks 5 minut") i ponad
+5,6 tysiąca zadań. Poprawiłam/em to, na co zwróciło uwagę dziecko:
+teraz jest JEDEN wspólny rejestr wszystkich treści, więc to samo zdanie
+nie wraca w innym ćwiczeniu, na próbnej kartkówce, w Miksie ani na
+sprawdzianie — przy każdym wejściu dziecko dostaje całkiem inny zestaw 🔁.
+Jedyne celowe powtórzenia to zakładka „Powtórki", która wraca do błędów.
+
+Strona wystawia ocenę 1–6, zapisuje błędy i przypomina o nich w kolejnych
+dniach, aż dziecko je opanuje. W „Laboratorium" można samemu składać zdania
+z trzech klocków i ćwiczyć krótkie odpowiedzi, a światełka 🚦 pozwalają
+zaznaczyć, co jeszcze sprawia trudność. Są też fiszki, próbna kartkówka,
+pytanie dnia, tryb ciemny oraz 6 sprawdzianów A4 do wydruku — każdy ma
+15 innych zadań i osobny klucz odpowiedzi dla rodzica, a przycisk
+„Wygeneruj nowy komplet" robi kolejne 6 zupełnie nowych arkuszy 📄.
+Nic nie trzeba instalować ani logować się 💪
 
 W załączniku jeszcze dwie ściągi w formie zdjęć (odmiana + zasady oraz
 błędy, pytania i mini-kartkówka) — warto je mieć pod ręką wieczorem 🙂
@@ -67,8 +73,8 @@ i otwórz go w Chrome / Safari.
   3) WYŚLIJ PLIK (działa też bez internetu) 📎
 ------------------------------------------------------------------------
 
-Plik:  to-be-kartkowka.html  (jeden plik, ~225 KB, wszystko w środku)
-Link z Dysku Google:  https://drive.google.com/file/d/1itGI9fUXxX9zeR1DgBO2vX-KAcG-1NNR/view?usp=drivesdk
+Plik:  to-be-kartkowka.html  (jeden plik, ~247 KB, wszystko w środku)
+Link z Dysku Google:  https://drive.google.com/file/d/1qyq5M5hTOSwPHjNhct316y8LniFZblfD/view?usp=drivesdk
 
 W aplikacji Telegram:
   • klip spinacz / ➕ → „Plik" (File / Document, NIE „Galeria"),
@@ -89,13 +95,36 @@ Pliki (każdy 1080×1560, do druku A4):
                         mini-kartkówka 10 zdań z kluczem, plan + samoocena
 
 Linki z Dysku Google:
-  strona 1: https://drive.google.com/file/d/1qqT71ULkWq47npTHgCkFIVJFS7cm4N-Q/view?usp=drivesdk
-  strona 2: https://drive.google.com/file/d/1UVP-wXRWQrUVPIFONvH1VyXlYqyLTQ6b/view?usp=drivesdk
+  strona 1: https://drive.google.com/file/d/12hQuXOUiTAxrsC8pQqngwymIMfbNZ_qd/view?usp=drivesdk
+  strona 2: https://drive.google.com/file/d/1uVa5G8d9nG7Ff2ta1wUN1rrQtYMfZ3Y8/view?usp=drivesdk
 
 Wyślij oba jako ZDJĘCIA (nie jako pliki), żeby Telegram pokazał podgląd
 w czacie. Dziecko ma wtedy całą tabelę `be`, zasady, najczęstsze błędy
 i gotową mini-kartkówkę bez klikania. Kod QR na stronie 1 otwiera pełny
-trening (4 949 zadań, 16 ćwiczeń, oceny, powtórki) po zeskanowaniu aparatem.
+trening (5 698 zadań, 16 ćwiczeń, 6 sprawdzianów, oceny, powtórki) po zeskanowaniu aparatem.
+
+
+------------------------------------------------------------------------
+  4b) SPRAWDZIANY DO DRUKU (papier, bez komputera) 📄
+------------------------------------------------------------------------
+
+W zakładce „📄 Sprawdziany" na stronie jest 6 gotowych arkuszy A4 po
+15 zadań. Są rozłączne — żadne pytanie nie występuje w dwóch arkuszach —
+i każdy ma osobny klucz odpowiedzi dla rodzica / nauczyciela. Można
+wydrukować jeden, sam klucz albo wszystkie sześć naraz, a przycisk
+„🆕 Wygeneruj nowy komplet" robi 6 kolejnych, nigdzie niewidzianych
+sprawdzianów.
+
+Gotowe pliki (samodzielne HTML, A4, działają offline, w folderze docs/):
+  sprawdzian-1.html … sprawdzian-6.html   → arkusz + klucz (2 strony)
+  sprawdziany-wszystkie.html               → 6 arkuszy + 6 kluczy (13 stron)
+
+Komplet z Dysku Google (jeden plik, wszystkie 6 arkuszy + klucze):
+  https://drive.google.com/file/d/1K_w4Uf1Xk9TuXpVlfjbzS_g2mfVmL8WQ/view?usp=drivesdk
+
+Wystarczy pobrać, otworzyć w przeglądarce i Ctrl+P / ⌘P → A4, wyłączyć
+nagłówki i stopki. Zdania są ręcznie dobrane, żeby nie było dziwnych
+kombinacji typu „My shoes are French".
 
 
 ------------------------------------------------------------------------
@@ -131,10 +160,12 @@ Złote zasady:
 ------------------------------------------------------------------------
 
 • Krótki link wskazuje na plik `docs/index.html` z gałęzi repozytorium;
-  po każdej aktualizacji strony pokazuje najnowszą wersję (wersja 3:
-  mega-baza 4 949 zadań, 16 ćwiczeń, Laboratorium zdań, Miks/interleaving,
-  samoocena światełkami, bilety wyjścia, oceny 1–6, powtórki z błędów,
-  tryb ciemny, pytanie dnia, kartkówka do druku).
+  po każdej aktualizacji strony pokazuje najnowszą wersję (wersja 4:
+  mega-baza 5 698 zadań / 5 266 różnych treści, jeden globalny rejestr
+  bez powtórek, 16 ćwiczeń, 6 sprawdzianów do druku z kluczami,
+  Laboratorium zdań, Miks/interleaving, samoocena światełkami,
+  bilety wyjścia, oceny 1–6, powtórki z błędów, tryb ciemny,
+  pytanie dnia, kartkówka do druku).
 • Pliki HTML i PNG na Dysku Google są osobnymi kopiami — po przebudowie
   strony trzeba podmienić również je, żeby załączniki były aktualne.
 • Podgląd na żywo (działa tylko dopóki trwa ta sesja Arena):

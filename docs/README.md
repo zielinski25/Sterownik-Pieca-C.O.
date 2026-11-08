@@ -4,8 +4,12 @@ Ten katalog zawiera jedyną część repozytorium przeznaczoną do udostępniani
 innym osobom (np. przez Telegram):
 
 - `index.html` — wygenerowany, samodzielny plik z `nauka-to-be/to-be-kartkowka.html`
-  (wersja 3: 4 949 zadań, 16 ćwiczeń, Laboratorium zdań, Miks, samoocena 🚦,
+  (wersja 4: 5 698 zadań / 5 266 różnych treści, 16 ćwiczeń, **jeden globalny rejestr
+  bez powtórek**, 6 sprawdzianów do druku, Laboratorium zdań, Miks, samoocena 🚦,
   oceny 1–6, powtórki z błędów, tryb ciemny)
+- `sprawdzian-1.html` … `sprawdzian-6.html` — 6 rozłącznych arkuszy A4 po 15 zadań,
+  każdy z kluczem odpowiedzi dla rodzica na osobnej stronie
+- `sprawdziany-wszystkie.html` — wszystkie 6 arkuszy + 6 kluczy w jednym pliku do druku
 - `sciaga-to-be.png` — ściąga strona 1/2: odmiana + zasady + duży kod QR
   (także miniaturka Open Graph)
 - `sciaga-to-be-2.png` — ściąga strona 2/2: błędy, pytania, mini-kartkówka, plan
@@ -17,7 +21,9 @@ Po zmianach w źródłach:
 cd nauka-to-be
 python3 build.py
 cp to-be-kartkowka.html ../docs/index.html
+node make_sprawdziany.js            # odświeża 7 plików sprawdzianów w ../docs/
 PYTHONPATH=/tmp/pylibs python3 make_sciaga.py   # odświeża obie ściągi w ../docs/
+node validate.js
 ```
 
 ## Jak to otwiera odbiorca

@@ -59,7 +59,7 @@ if (D.plan.length !== 5) bad("Plan nauki powinien mieć 5 dni");
 if (!D.meta || !D.meta.bankTotal || D.meta.bankTotal < 4000)
   bad(`Mega-baza za mała: ${D.meta && D.meta.bankTotal} (oczekujemy ≥ 4000 zadań)`);
 const BANKS = ["choice", "gap", "order", "transform", "shorts", "detective", "sort",
-               "listening", "dictation", "translate", "spelling", "flashcards", "examPool"];
+               "listening", "dictation", "translate", "spelling", "flashcards", "examPool", "sheetBank"];
 const allIds = new Set();
 BANKS.forEach((k) => D[k].forEach((x, i) => {
   if (!x.id) bad(`${k}[${i}]: brak stałego identyfikatora (system bez powtórek)`);
@@ -73,7 +73,8 @@ const DUPKEYS = {
   shorts: (x) => x.q + "|" + x.cue, detective: (x) => x.words.join(" ") + "|" + x.a,
   sort: (x) => x.s, listening: (x) => x.spoken, dictation: (x) => x.spoken,
   spelling: (x) => x.word, flashcards: (x) => x.front,
-  examPool: (x) => x.p + "|" + JSON.stringify(x.o || x.a), reading: (x) => x.text
+  examPool: (x) => x.p + "|" + JSON.stringify(x.o || x.a), reading: (x) => x.text,
+  sheetBank: (x) => x.p
 };
 Object.keys(DUPKEYS).forEach((k) => {
   const seen = new Set();
@@ -87,21 +88,97 @@ Object.keys(DUPKEYS).forEach((k) => {
   if (!s.id || !s.pairs.length) bad(`${k}: zestaw bez id lub par`);
 }));
 
+/* ---------- JEDEN globalny rejestr treści (koniec powtórek) ---------- */
+if (!D.meta.uniqueContent || D.meta.uniqueContent < 4000)
+  bad(`Brak / za mała liczba rzeczywiście różnych treści: ${D.meta && D.meta.uniqueContent}`);
+if (D.meta.uniqueContent > D.meta.bankTotal)
+  bad("uniqueContent nie może być większe niż bankTotal");
+/* kanoniczna sygnatura treści — ta sama w data.js i app.js */
+const norm = (s) => String(s).toLowerCase().replace(/[’`´]/g, "'").replace(/\s+/g, " ").replace(/[.!?]+$/, "").trim();
+function sigOf(it) {
+  if (it.pairs) return "set|" + norm(it.name || it.id || "");
+  if (it.text) return "text|" + norm(String(it.text).slice(0, 200));
+  const p = it.s || it.p || it.q || it.from || it.spoken || it.front || it.word || it.pl ||
+            (it.words ? it.words.join(" ") : "") || "";
+  const a = Array.isArray(it.a) ? it.a[0] : (it.a || it.show || it.answer || it.t || "");
+  const opts = Array.isArray(it.o) ? " {" + it.o.slice().sort().map(norm).join(",") + "}" : "";
+  const task = it.task ? norm(it.task) + "|" : "";
+  return (it.area ? norm(it.area) + "|" : "") + task +
+    norm(String(p) + " | " + String(a)).replace(/^uzupełnij\s*:\s*/, "")
+    .replace(/^uzupełnij\s+/, "").replace(/^po angielsku\s*:\s*/, "") + opts;
+}
+const ALL_BANKS = ["choice", "gap", "order", "transform", "shorts", "detective", "sort",
+                   "listening", "dictation", "translate", "spelling", "flashcards",
+                   "examPool", "reading", "pairSets", "matchSets", "sheetBank"];
+const sigCount = {};
+let overlap = 0;
+function addSig(x, k) {
+  const s = sigOf(x);
+  if (sigCount[s]) overlap++;          /* globalny rejestr i tak pokaże je tylko raz */
+  else sigCount[s] = k;
+}
+ALL_BANKS.forEach((k) => D[k].forEach((x) => addSig(x, k)));
+(D.printTests || []).forEach((sh) => (sh.questions || []).forEach((q) => addSig(q, "printTests")));
+if (Object.keys(sigCount).length !== D.meta.uniqueContent)
+  bad(`uniqueContent (${D.meta.uniqueContent}) nie zgadza się z policzonymi sygnaturami (${Object.keys(sigCount).length})`);
+console.log(`Globalny rejestr: ${Object.keys(sigCount).length} różnych treści, ${overlap} nakładających się zadań pomijanych przez rejestr ✓`);
+/* próbna kartkówka nie może kopiować pytań z „Wybierz formę" / „Wpisz formę" */
+const base = new Set();
+D.choice.forEach((x) => base.add(norm(x.s)));
+D.gap.forEach((x) => base.add(norm(x.s)));
+D.examPool.forEach((q, i) => {
+  const p = norm(q.p).replace(/^uzupełnij (zdanie|pytanie):\s*/, "").replace(/^wpisz przeczenie:\s*/, "");
+  if (base.has(p)) bad(`examPool[${i}] kopiuje zdanie z ćwiczenia: „${p}”`);
+});
+
+/* ---------- 6 sprawdzianów do druku ---------- */
+if (!D.printTests || D.printTests.length !== 6) bad("Oczekiwano 6 sprawdzianów do druku");
+else {
+  const ids = new Set(), prompts = new Set();
+  D.printTests.forEach((sh, s) => {
+    if (!sh.questions || sh.questions.length !== 15) bad(`Sprawdzian ${s + 1}: oczekiwano 15 pytań, jest ${sh.questions && sh.questions.length}`);
+    const areas = {};
+    (sh.questions || []).forEach((q, i) => {
+      if (!q.id || !q.p || !q.a || !q.w || !q.area) bad(`Sprawdzian ${s + 1}[${i}]: niepełne dane`);
+      if (ids.has(q.id)) bad(`Sprawdzian ${s + 1}[${i}]: powtórzony identyfikator ${q.id}`);
+      ids.add(q.id);
+      if (prompts.has(q.p)) bad(`Sprawdzian ${s + 1}[${i}]: pytanie występuje w innym arkuszu`);
+      prompts.add(q.p);
+      if (q.type === "choice" && q.o.indexOf(q.a) === -1) bad(`Sprawdzian ${s + 1}[${i}]: brak poprawnej opcji`);
+      areas[q.area] = (areas[q.area] || 0) + 1;
+    });
+    if (Object.keys(areas).length < 3) bad(`Sprawdzian ${s + 1}: za mało różnych obszarów (${JSON.stringify(areas)})`);
+  });
+  if (ids.size !== 90) bad(`Sprawdziany powinny mieć 90 różnych pytań, mają ${ids.size}`);
+}
+if (!D.sheetBank || D.sheetBank.length < 90) bad('Pula do „nowego kompletu" sprawdzianów jest za mała');
+if (fs.existsSync(path.join(here, "make_sprawdziany.js"))) {
+  ["sprawdzian-1.html", "sprawdzian-6.html", "sprawdziany-wszystkie.html"].forEach((f) => {
+    const p = path.join(here, "..", "docs", f);
+    if (!fs.existsSync(p)) bad(`Brak gotowego pliku do druku: docs/${f} — uruchom node make_sprawdziany.js`);
+  });
+}
+
 /* każde ćwiczenie z listy musi mieć implementację i odwrotnie */
 const app = fs.readFileSync(path.join(here, "app.js"), "utf8");
 ["function deal(", "function recordGrade(", "function renderReview(", "function logAnswer(",
  "function gradeOf(", "exam-count", "print-exam", "btn-dark", "btn-mute",
  "function actMix(", "function renderLab(", "function renderLights(", "function machineBuild(",
- "function renderFind(", "exitTicketHtml", "chip-level"].forEach((needle) => {
+ "function renderFind(", "exitTicketHtml", "chip-level",
+ "function contentKey(", "function migrateSeenToUsed(", "migrateSeenToUsed();",
+ "function renderSheets(", "function generateSheets(", "sheets-mode",
+ "S.used", "renderSheets();"].forEach((needle) => {
   if (app.indexOf(needle) === -1) bad(`W app.js brakuje nowej funkcji/elementu: ${needle}`);
 });
 const html = fs.readFileSync(path.join(here, "index.html"), "utf8");
 ["review-stats", "review-host", "review-list", "gradebook", "skill-grid", "hub-bank", "run-set",
  "machine-host", "machine-sentences", "find-host", "lights-grid", "lights-summary", "chip-level",
- "print-mine"].forEach((id) => {
+ "print-mine", "sheets", "sheets-grid", "sheets-preview", "btn-new-sheets",
+ "btn-original-sheets", "btn-print-all-sheets"].forEach((id) => {
   if (html.indexOf('id="' + id + '"') === -1) bad(`W index.html brakuje sekcji: ${id}`);
 });
 if (html.indexOf('id="lab"') === -1) bad("W index.html brakuje zakładki Laboratorium");
+if (html.indexOf('data-go="sheets"') === -1) bad("W index.html brakuje zakładki Sprawdziany");
 if (D.activities.length !== 16) bad(`Oczekiwano 16 ćwiczeń, jest ${D.activities.length}`);
 if (!D.machine || !D.machine.subjects || !D.machine.endings || !D.machine.people || !D.machine.questions)
   bad("Brak danych Laboratorium (D.machine)");
@@ -136,9 +213,11 @@ else {
   if (h.indexOf("<style>") === -1 || h.indexOf("TOBE_DATA") === -1) bad("Wersja jednoplikowa nie zawiera wbudowanego CSS/JS");
 }
 
-console.log(`Baza: ${D.activities.length} ćwiczeń · ${D.meta.bankTotal} unikalnych zadań · ${D.choice.length} pytań wyboru · ` +
-            `${D.gap.length} luk · ${D.order.length + D.translate.length} rozsypanek · ${D.examPool.length} pytań kartkówki · ${D.flashcards.length} fiszek`);
-console.log("Nowe funkcje: brak powtórek, oceny 1–6, powtórki, dzienniczek, ciemny tryb, wydruk kartkówki ✓");
+console.log(`Baza: ${D.activities.length} ćwiczeń · ${D.meta.bankTotal} zadań · ${D.meta.uniqueContent} różnych treści · ` +
+            `${D.choice.length} pytań wyboru · ${D.gap.length} luk · ${D.order.length + D.translate.length} rozsypanek · ` +
+            `${D.examPool.length} pytań kartkówki · ${D.flashcards.length} fiszek · ${D.printTests.length} sprawdzianów do druku`);
+console.log("Brak powtórek: jeden globalny rejestr treści, własna pula kartkówki, rozłączne pary memory/match ✓");
+console.log("Do druku: 6 × 15 rozłącznych zadań + klucze + generator nowego kompletu ✓");
 console.log("Z researchu: Miks/interleaving, maszyna zdań, własne zdania, Find Someone Who, światła samooceny, bilety wyjścia, poziomy ✓");
 if (problems.length) { console.error("BŁĘDY:\n - " + problems.join("\n - ")); process.exit(1); }
 console.log("✅ Walidacja danych i implementacji: OK");

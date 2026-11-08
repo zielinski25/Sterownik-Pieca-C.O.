@@ -32,20 +32,43 @@ Głos Robbiego używa wbudowanego `speechSynthesis` (angielski) — jeśli przeg
 
 ## Co jest w środku
 
-> **Wersja 3 · research + Laboratorium:** 4 949 unikalnych zadań, **16 ćwiczeń**,
-> system ocen 1–6, powtórki rozłożone w czasie i nowe moduły oparte na badaniach
-> nad uczeniem się (szczegóły w rozdziale *Co mówi research*).
+> **Wersja 4 · koniec powtórek + sprawdziany do druku:** 5 698 zadań
+> (5 266 naprawdę różnych treści), **16 ćwiczeń**, **6 sprawdzianów A4 z kluczami**,
+> jeden współdzielony rejestr treści, system ocen 1–6 i powtórki rozłożone w czasie.
 
-**🧠 Bardzo duża baza i zero powtórek.** `data.js` generuje deterministycznie (stałe ziarno
-`20261110`) 4 949 zadań z 41 podmiotów i 88 okoliczników; każde ma stały `id` i przypisany
-obszar umiejętności. Silnik `deal()` zapisuje w `localStorage` indeksy już widzianych zadań
-osobno dla każdego ćwiczenia — **każde wejście daje całkiem nowy zestaw**, także po
-zamknięciu karty, odświeżeniu strony i następnego dnia. Gdy pula się wyczerpie, zaczyna się
-nowy cykl (numer widać w nagłówku ćwiczenia). Baza: 546 pytań wyboru, 460 luk,
-385 rozsypanek, 376 przekształceń, 314 krótkich odpowiedzi, 252 zdań do poprawy,
-436 zdań do sortowania, 312 zadań słuchowych, 224 dyktand, 151 zadań pisowni,
-116 tłumaczeń, 27 tekstów, 1 044 pytania kartkówkowe, 84 fiszki, 54 zestawy memory/matching.
-Wszystkie treści są unikalne — `validate.js` sprawdza brak duplikatów.
+**🧠 Jeden globalny rejestr — dziecko nie dostaje dwa razy tego samego zdania.**
+Wcześniej każde ćwiczenie miało własny licznik `S.seen[key]`, a próbna kartkówka, Miks,
+szybka runda i wydruk **kopiowały** pytania z „Wybierz formę" / „Wpisz formę" (1 006 z 1 044
+pytań kartkówki to były kopie!). Pary w Memory i „Połącz w pary" też się powtarzały, fiszki
+tasowały te same karty, a pytanie dnia było stałe. Teraz `data.js` nadaje każdemu zadaniu
+kanoniczną **sygnaturę treści** (`sig()` z obszarem umiejętności), a `app.js` trzyma jeden
+rejestr `S.used` dla całej strony. `deal()` bierze wyłącznie treści jeszcze nigdzie
+niewidziane; gdy pula się wyczerpie, zaczyna nowy cykl od **najdawniej** widzianych
+(nigdy losowo). Rejestr obejmuje ćwiczenia, próbną kartkówkę, Miks, szybką rundę, fiszki,
+pytanie dnia i sprawdziany do druku. Jedyny celowy powrót do zadania to zakładka
+**Powtórki** (błędy według pudełek Leitnera). Starsze zapisy `S.seen` są migrowane
+przy starcie (`migrateSeenToUsed()`), więc po aktualizacji strony nic nie wraca od nowa.
+
+**Baza jest też uczciwie policzona.** `examPool` (1 044 pytania) ma teraz **własną** pulę
+kombinacji podmiot + okolicznik, której nie zużyły ćwiczenia — `validate.js` sprawdza,
+że żadne pytanie kartkówki nie kopiuje zdania z „Wybierz formę" / „Wpisz formę".
+Zestawy Memory i „Połącz w pary" mają rozłączne pary (215 i 162 unikalnych), a w metadanych
+obok `bankTotal` jest `uniqueContent` — liczba faktycznie różnych treści, bez sztucznego
+zawyżania. `data.js` generuje wszystko deterministycznie (stałe ziarno `20261110`) z 41
+podmiotów i 88 okoliczników; każde zadanie ma stały `id` i obszar umiejętności.
+Baza: 546 pytań wyboru, 460 luk, 385 rozsypanek, 376 przekształceń, 314 krótkich
+odpowiedzi, 252 zdań do poprawy, 436 zdań do sortowania, 312 zadań słuchowych,
+224 dyktand, 151 zadań pisowni, 116 tłumaczeń, 27 tekstów, 84 fiszki,
+54 zestawy memory/matching, 1 044 pytania kartkówkowe i 761 pytań do sprawdzianów.
+
+**📄 6 sprawdzianów do druku.** Zakładka **Sprawdziany** ma 6 przygotowanych,
+rozłącznych arkuszy po 15 zadań (każdy: 4 × odmiana, 4 × pytania, 4 × przeczenia,
+3 × pułapki), podgląd, druk pojedynczego arkusza, osobny klucz odpowiedzi dla rodzica,
+druk wszystkich sześciu oraz **„Wygeneruj nowy komplet"** (90 świeżych pytań z globalnego
+rejestru). Zdania są ręcznie dobrane, żeby nie było nienaturalnych kombinacji typu
+„My shoes are French". Gotowe, samodzielne pliki A4: `sprawdzian-1.html` …
+`sprawdzian-6.html` i `sprawdziany-wszystkie.html` (6 arkuszy + 6 kluczy w jednym pliku),
+generowane przez `node make_sprawdziany.js`, kopiowane też do `docs/`.
 
 **🎓 System oceniania.** Po każdym ćwiczeniu, szybkiej rundzie, powtórce i próbnej kartkówce
 pojawia się ocena w skali szkolnej: `95%+ → 6 celujący`, `88%+ → 5 bardzo dobry`,
@@ -63,7 +86,8 @@ a po 6 pudełku jest „opanowane". Są statystyki, lista trudnych zadań, przyc
 **🎁 Inne dodatki:** 3 nowe odznaki (Pracuś 100 zadań, Naprawiacz 8 błędów, Szóstkowicz),
 +5 XP przy serii 5 odpowiedzi, **pytanie dnia** (stałe dla danego dnia), **tryb ciemny**,
 **wyciszanie głosu** (oba zapamiętane), **wybór liczby zadań kartkówki** (10/15/20/30),
-**losowa kartkówka do druku z kluczem dla rodzica**, licznik zestawów i rozmiaru bazy w hubie.
+**losowa kartkówka do druku z kluczem dla rodzica**, **6 sprawdzianów do druku**,
+licznik zestawów i rozmiaru bazy w hubie (pokazuje `uniqueContent`, nie zawyżone `bankTotal`).
 
 
 **📘 Nauka** — 7 zasad z przykładami czytanymi na głos, pełna tabela odmiany (długa/krótka forma,
@@ -159,11 +183,13 @@ z checkboxami. Wszystko zapisuje się wyłącznie w `localStorage` tej przegląd
 ```
 index.html              struktura (odwołuje się do css/js)
 styles.css              wygląd, responsywność, tryb ciemny, tryb druku
-data.js                 4 949 zadań: generator mega-bazy, reguły, słownictwo, stałe id
-app.js                  silnik bez powtórek, oceny, powtórki, kartkówka, postępy, głos
+data.js                 5 698 zadań: generator mega-bazy, sygnatury treści, 6 sprawdzianów, reguły, stałe id
+app.js                  JEDEN globalny rejestr S.used, oceny, powtórki, kartkówka, sprawdziany, postępy, głos
 to-be-kartkowka.html    WYGENEROWANY jeden plik (CSS + JS w środku) — główny plik do użytku
 build.py                scala powyższe w to-be-kartkowka.html:  python3 build.py
-validate.js             spójność bazy, unikalność id i treści:   node validate.js
+validate.js             spójność bazy, unikalność id i treści, globalny rejestr:  node validate.js
+make_sprawdziany.js     generuje sprawdzian-1..6.html + sprawdziany-wszystkie.html (także do ../docs/)
+sprawdzian-*.html       gotowe arkusze A4 z kluczami odpowiedzi, bez zewnętrznych zasobów
 make_sciaga.py          generuje obie ściągi PNG (wymaga pillow + qrcode)
 sciaga-to-be.png        ściąga str. 1 (odmiana + zasady + duży QR)
 sciaga-to-be-2.png      ściąga str. 2 (błędy + pytania + mini-kartkówka + plan)
@@ -208,14 +234,24 @@ Po ręcznym włączeniu strona dostanie własny adres
 ## Sprawdzenie jakości
 
 ```
-node --check data.js && node --check app.js && node validate.js && python3 build.py
+node --check data.js && node --check app.js && node validate.js
+python3 build.py && node make_sprawdziany.js
 ```
+
+`validate.js` sprawdza m.in. spójność `sig()` w `data.js` z `contentKey()` w `app.js`
+(liczba różnych treści musi się zgadzać), brak kopii zdań z ćwiczeń w `examPool`,
+rozłączność wszystkich 6 sprawdzianów, kompletność kluczy odpowiedzi i obecność
+gotowych plików HTML w `docs/`.
 
 Dodatkowo strona została uruchomiona w jsdom i przećwiczona end-to-end: otwarcie wszystkich
 16 ćwiczeń, odpowiedzi w reprezentatywnych typach zadań, fiszki, oba tryby kartkówki,
 raport, druk i reset postępów — bez błędów JS. Test `smoke-extras` ze współdzielonym
 `localStorage` potwierdza, że trzy kolejne wizyty dają rozłączne zestawy zadań, że po
-wyczerpaniu bazy startuje cykl 2, że oceny i błędy zapisują się, że powtórka kończy się
+wyczerpaniu rejestru startuje cykl 2, że oceny i błędy zapisują się, że powtórka kończy się
 oceną oraz że tryb ciemny, wyciszanie i wydruk kartkówki działają. Test `smoke-lab`
 sprawdza maszynę zdań, własne zdania, „Find Someone Who", światła samooceny, Miks,
-bilet wyjścia, poziom i trwałość nowych danych po restarcie.
+bilet wyjścia, poziom i trwałość nowych danych po restarcie. Test `smoke-norepeat`
+sprawdza migrację starych zapisów `S.seen → S.used`, współdzielenie rejestru przez
+5 różnych ćwiczeń i próbną kartkówkę, 6 kart sprawdzianów, podgląd 15 pytań,
+druk arkusza + klucza / samego klucza / wszystkich 12 stron, generator nowego kompletu
+(90 świeżych, rozłącznych pytań) oraz uczciwy licznik `uniqueContent` w hubie.

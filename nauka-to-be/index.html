@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Interaktywny moduł do nauki czasownika to be: prawie 5 tysięcy niepowtarzalnych zadań, oceny, powtórki z błędów i próbna kartkówka. Klasa 4, Together 2026. Działa offline.">
 <meta property="og:title" content="TO BE — trening przed kartkówką 🇬🇧">
-<meta property="og:description" content="4 949 unikalnych zadań, 16 typów ćwiczeń, oceny 1–6, powtórki z błędów i Laboratorium zdań. Angielski, klasa 4. Bez logowania, działa w przeglądarce i offline.">
+<meta property="og:description" content="5 698 zadań bez powtórek, 16 typów ćwiczeń, 6 sprawdzianów do druku z kluczami, oceny 1–6, powtórki z błędów i Laboratorium zdań. Angielski, klasa 4. Bez logowania, działa offline.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cdn.jsdelivr.net/gh/zielinski25/Sterownik-Pieca-C.O.@arena%2Ff423a839-sterownik-pieca-c-o/docs/sciaga-to-be.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -53,6 +53,7 @@
   <button class="tab" data-go="lab">🧪 Laboratorium</button>
   <button class="tab" data-go="review">🔁 Powtórki</button>
   <button class="tab" data-go="exam">📝 Kartkówka próbna</button>
+  <button class="tab" data-go="sheets">📄 Sprawdziany</button>
   <button class="tab" data-go="progress">📊 Postępy</button>
 </nav>
 
@@ -321,6 +322,30 @@
   </div>
 
   <div id="exam-result" style="display:none"></div>
+</section>
+
+<!-- ================= SPRAWDZIANY DO DRUKU ================= -->
+<section class="section" id="sheets">
+  <div class="card">
+    <div class="between">
+      <div><h2 style="margin:0">📄 Sprawdziany do druku (6 kompletów)</h2>
+      <p class="muted">Każdy arkusz ma 15 <b>innych</b> zadań i osobny klucz odpowiedzi dla rodzica. Zestawy są rozłączne — żadne pytanie nie występuje w dwóch sprawdzianach. Wydrukuj pojedynczy albo wszystkie sześć naraz.</p></div>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <button class="btn small" id="btn-print-all-sheets">🖨️ Wydrukuj wszystkie 6 (z kluczami)</button>
+      <button class="btn small ghost" id="btn-new-sheets">🆕 Wygeneruj nowy komplet</button>
+      <button class="btn small ghost" id="btn-original-sheets">↩️ Wróć do przygotowanych</button>
+    </div>
+    <div id="sheets-grid"></div>
+  </div>
+  <div class="card">
+    <h2>👀 Podgląd arkusza</h2>
+    <div id="sheets-preview"></div>
+  </div>
+  <div class="card">
+    <h2>🖨️ Jak wydrukować</h2>
+    <p class="muted">Kliknij „Drukuj" przy wybranym sprawdzianie → w oknie drukarki wybierz A4, „Domyślne" marginesy i wyłącz nagłówki/stopki przeglądarki. Klucz odpowiedzi wydrukuje się na osobnej stronie. Gotowe pliki HTML (także wszystkie 6 w jednym pliku) są w folderze <code>nauka-to-be/</code> i na Dysku — można je otworzyć i wydrukować bez tej strony.</p>
+  </div>
 </section>
 
 <!-- ================= POSTĘPY ================= -->

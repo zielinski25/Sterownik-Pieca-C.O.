@@ -500,6 +500,13 @@
     { type: "input", p: "Po angielsku: „Jestem z Polski.” → ___", a: ["i'm from poland", "i am from poland"], w: "I'm from Poland.", area: "tłumaczenie" }
   ];
 
+  /* Gotowe sprawdziany do druku — wypełniane w generatorze (6 rozłącznych zestawów). */
+  const PRINT_TESTS = [];
+  /* Pula pytań do „nowego kompletu" sprawdzianów (rozłączna z 90 przygotowanymi). */
+  const sheetBank = [];
+  /* Globalny zbiór sygnatur treści — ile jest NAPRAWDĘ różnych zadań. */
+  const GLOBAL_SIG = {};
+
   /* ---------- Plan nauki do kartkówki ---------- */
   const plan = [
     { day: "Dzień 1", title: "Odmiana i twierdzenia", todo: "Tabela BE, Wybierz formę, Wpisz formę, Memory" },
@@ -702,11 +709,17 @@
       ALL.push({ x: x, c: c });
     }); });
     function take(n) { return sh(ALL).slice(0, n); }
+    /* Kombinacje (podmiot + okolicznik) zużyte w ćwiczeniach „Wybierz formę"
+       i „Wpisz formę". Kartkówka MUSI użyć innych kombinacji, inaczej dziecko
+       widzi na teście dokładnie to samo zdanie, co przed chwilą w ćwiczeniu. */
+    const USED_BASE = {};
+    const baseKey = function (o) { return o.x.s + "|" + o.c.en; };
     const KEYS = {};
     function unique(bank, str) { const k = bank + "|" + str.toLowerCase(); if (KEYS[k]) return false; KEYS[k] = true; return true; }
 
     /* ---- 1. Wybierz formę — 4 warianty ---- */
     take(520).forEach(function (o, k) {
+      USED_BASE[baseKey(o)] = true;
       const x = o.x, c = o.c, v = k % 4;
       if (v === 0) choice.push({ s: x.s + " ___ " + c.en + ".", o: ["am", "is", "are"], a: x.be, w: x.s + " → " + x.be, area: "odmiana" });
       else if (v === 1) choice.push({ s: "___ " + x.qt + " " + c.en + "?", o: ["Am", "Is", "Are"], a: cap(x.be), w: "Pytanie zaczyna się od " + cap(x.be) + ".", area: "pytania" });
@@ -716,6 +729,7 @@
 
     /* ---- 2. Wpisz formę ---- */
     take(440).forEach(function (o, k) {
+      USED_BASE[baseKey(o)] = true;
       const x = o.x, c = o.c, v = k % 3;
       if (v === 0) gap.push({ s: x.s + " ___ " + c.en + ".", a: uniq(x.short ? [x.be, SFX[x.be]] : [x.be]), h: x.s + " → " + x.be + ". Krótko: " + (x.short || "—"), w: aff(x, c), area: "odmiana" });
       else if (v === 1) gap.push({ s: "___ " + x.qt + " " + c.en + "?", a: uniq([x.be, cap(x.be)]), h: "W pytaniu be stoi na początku.", w: que(x, c), area: "pytania" });
@@ -845,26 +859,43 @@
       else flashcards.push({ front: "Odpowiedz twierdząco: " + que(x, c), back: x.yes, tag: "odpowiedzi" });
     });
 
-    /* ---- Pary (memory) i łączenie ---- */
-    const SHORTABLE = SUBS.filter(function (x) { return x.short; });
-    for (let k = 0; k < 24; k++) {
-      const kind = k % 4, picked = sh(SUBS).slice(0, 8), picked2 = sh(SHORTABLE).slice(0, 8);
-      let pairs, name;
-      if (kind === 0) { name = "Osoba ↔ forma be · zestaw " + (k + 1); pairs = picked.map(function (x) { return [x.s, x.be]; }); }
-      else if (kind === 1) { name = "Długa ↔ krótka forma · zestaw " + (k + 1); pairs = picked2.map(function (x) { return [x.s + " " + x.be, x.short]; }); }
-      else if (kind === 2) { name = "Przeczenia · zestaw " + (k + 1); pairs = picked.map(function (x) { return [x.negL, x.neg]; }); }
-      else { name = "Pytanie ↔ odpowiedź · zestaw " + (k + 1); pairs = picked.map(function (x) { return [x.q + " ...?", x.yes]; }); }
-      if (pairs.length === 8) pairSets.push({ name: name, pairs: pairs });
+    /* ---- Pary (memory) i łączenie: KAŻDA PARA TYLKO RAZ ----
+       Dawniej zestawy losowały z tej samej małej puli 41 podmiotów, więc
+       np. „I → am" wracało w co drugim zestawie. Teraz każda para powstaje
+       z innej kombinacji podmiot + okolicznik, a globalny zbiór PAIR_SIG
+       pilnuje rozłączności także z zadaniami z podręcznika. */
+    const PAIR_SIG = {};
+    [].concat(pairSets, matchSets).forEach(function (s) {
+      s.pairs.forEach(function (p) { PAIR_SIG[p.join("=")] = true; });
+    });
+    const comboStream = sh(ALL);
+    let ci = 0;
+    function buildSets(target, kinds, sets, per, suffix) {
+      for (let k = 0; k < sets; k++) {
+        const spec = kinds[k % kinds.length];
+        const pairs = [];
+        let guard = 0;
+        while (pairs.length < per && ci < comboStream.length && guard++ < 6000) {
+          const o = comboStream[ci++];
+          const p = spec.make(o);
+          const sig = p.join("=");
+          if (!PAIR_SIG[sig]) { PAIR_SIG[sig] = true; pairs.push(p); }
+        }
+        if (pairs.length === per) target.push({ name: spec.name + " · " + suffix + " " + (k + 1), pairs: pairs });
+      }
     }
-    for (let k = 0; k < 24; k++) {
-      const kind = k % 4, picked = sh(SUBS).slice(0, 6), cc = sh(COMP.filter(function (c) { return c.kind === "place" || c.kind === "from"; }));
-      let pairs, name;
-      if (kind === 0) { name = "Pytanie ↔ krótka odpowiedź · zestaw " + (k + 1); pairs = picked.map(function (x, i) { return [x.q + " " + cc[i % cc.length].en + "?", k % 2 ? x.no : x.yes]; }); }
-      else if (kind === 1) { name = "Twierdzenie ↔ przeczenie · zestaw " + (k + 1); pairs = picked.map(function (x, i) { return [aff(x, cc[i % cc.length]), negS(x, cc[i % cc.length])]; }); }
-      else if (kind === 2) { name = "Angielski ↔ polski · zestaw " + (k + 1); pairs = cc.slice(0, 6).map(function (c) { return [c.en, c.pl]; }); }
-      else { name = "Krótka ↔ długa forma · zestaw " + (k + 1); pairs = sh(SHORTABLE).slice(0, 6).map(function (x) { return [x.short, x.s + " " + x.be]; }); }
-      if (pairs.length === 6) matchSets.push({ name: name, pairs: pairs });
-    }
+    buildSets(pairSets, [
+      { name: "Osoba ↔ forma be", make: function (o) { return [o.x.s + " ___ " + o.c.en + ".", o.x.be]; } },
+      { name: "Twierdzenie ↔ przeczenie", make: function (o) { return [aff(o.x, o.c), negS(o.x, o.c)]; } },
+      { name: "Długa ↔ krótka forma przeczenia", make: function (o) { return [negL(o.x, o.c), negS(o.x, o.c)]; } },
+      { name: "Pytanie ↔ odpowiedź", make: function (o) { return [que(o.x, o.c), o.x.yes]; } }
+    ], 24, 8, "zestaw");
+    buildSets(matchSets, [
+      { name: "Pytanie ↔ krótka odpowiedź", make: function (o) { return [que(o.x, o.c), o.x.no]; } },
+      { name: "Twierdzenie ↔ pytanie", make: function (o) { return [aff(o.x, o.c), que(o.x, o.c)]; } },
+      { name: "Przeczenie ↔ krótka odpowiedź", make: function (o) { return [negS(o.x, o.c), o.x.no]; } },
+      { name: "Krótka odpowiedź ↔ pytanie", make: function (o) { return [o.x.yes + " (" + o.x.s + ")", que(o.x, o.c)]; } }
+    ], 24, 6, "zestaw");
 
     /* ---- Czytanie: Prawda / Fałsz ---- */
     const NAMES = ["Mickey", "Ana", "Lena", "Tomek", "Emile", "Saskia", "Harry", "Nathan", "Filip", "Martin"];
@@ -890,13 +921,61 @@
       });
     }
 
-    /* ---- Kartkówka próbna: pula zadań ---- */
-    sh(choice).slice(0, 800).forEach(function (it) {
-      examPool.push({ type: "choice", p: it.s, o: it.o.slice(), a: it.a, w: it.w, area: it.area || "odmiana" });
+    /* ---- Kartkówka próbna: WŁASNA pula zadań ----
+       DAWNIEJ kopiowaliśmy pytania z `choice` i `gap` — przez to dziecko
+       widziało na teście dokładnie to samo zdanie, które przed chwilą
+       ćwiczyło. Teraz bierzemy wyłącznie kombinacje podmiot + okolicznik,
+       których nie zużyto w żadnym ćwiczeniu, i budujemy z nich 4 nowe
+       typy poleceń. Dzięki temu test jest naprawdę „nowy". */
+    /* Kilka pytań z podręcznika (wpisanych na stałe na początku examPool)
+       przypadkiem ma dokładnie to samo zdanie, które generator wylosował
+       dla „Wybierz formę" / „Wpisz formę". Wyrzucamy je — luki dobierze
+       poniższa pętla z wolnych kombinacji. */
+    const EXAM_BASE = {};
+    choice.forEach(function (x) { EXAM_BASE[nrm(x.s)] = true; });
+    gap.forEach(function (x) { EXAM_BASE[nrm(x.s)] = true; });
+    function examStem(p) {
+      return nrm(p)
+        .replace(/^uzupełnij\s+(przeczenie|pytanie)\s*:\s*/, "")
+        .replace(/^uzupełnij\s*:\s*/, "")
+        .replace(/^napisz\s+(pytanie|przeczenie)\s*:\s*/, "")
+        .replace(/^popraw zdanie\s*:\s*/, "")
+        .replace(/^po angielsku\s*:\s*/, "");
+    }
+    for (let i = examPool.length - 1; i >= 0; i--) {
+      if (EXAM_BASE[examStem(examPool[i].p)]) examPool.splice(i, 1);
+    }
+
+    const EXAM_WANT = 1044;
+    const freeCombos = sh(ALL).filter(function (o) {
+      if (USED_BASE[baseKey(o)]) return false;
+      /* Pytania z podręcznika dopisane na stałe na początku choice/gap
+         nie ustawiały USED_BASE — też muszą zablokować swoje kombinacje. */
+      return !EXAM_BASE[nrm(o.x.s + " ___ " + o.c.en + ".")] &&
+             !EXAM_BASE[nrm("___ " + o.x.qt + " " + o.c.en + "?")] &&
+             !EXAM_BASE[nrm("Uzupełnij przeczenie: " + o.x.s + " ___ " + o.c.en + ".")];
     });
-    sh(gap).slice(0, 700).forEach(function (it) {
-      examPool.push({ type: "input", p: "Uzupełnij: " + it.s, a: it.a.slice(), w: it.w, area: it.area || "odmiana" });
-    });
+    const examSig = {};
+    const examAdd = function (q) {
+      const k = q.p + "|" + JSON.stringify(q.o || q.a);
+      if (examSig[k]) return false;
+      examSig[k] = true;
+      examPool.push(q);
+      return true;
+    };
+    examPool.slice().forEach(function (q) { examSig[q.p + "|" + JSON.stringify(q.o || q.a)] = true; });
+    for (let k = 0; k < freeCombos.length && examPool.length < EXAM_WANT; k++) {
+      const o = freeCombos[k], x = o.x, c = o.c, v = k % 4;
+      const wrongBe = x.be === "is" ? "are" : "is";
+      if (v === 0) examAdd({ type: "choice", p: "Uzupełnij zdanie: " + x.s + " ___ " + c.en + ".",
+        o: ["am", "is", "are"], a: x.be, w: x.s + " → " + x.be + ". " + aff(x, c), area: "odmiana" });
+      else if (v === 1) examAdd({ type: "choice", p: "Uzupełnij pytanie: ___ " + x.qt + " " + c.en + "?",
+        o: ["Am", "Is", "Are"], a: cap(x.be), w: "be na początku: " + que(x, c), area: "pytania" });
+      else if (v === 2) examAdd({ type: "input", p: "Wpisz przeczenie: " + x.s + " ___ " + c.en + ".",
+        a: uniq([nrm(x.negW), nrm(x.be + " not")]), w: negS(x, c), area: "przeczenia" });
+      else examAdd({ type: "input", p: "Popraw zdanie: " + x.s + " " + wrongBe + " " + c.en + ". → ___",
+        a: uniq([nrm(aff(x, c))]), w: x.s + " → " + x.be + ", nie " + wrongBe + ". " + aff(x, c), area: "pułapki" });
+    }
 
     /* ---- Usuwamy ewentualne duplikaty (pierwszeństwo mają zadania z podręcznika) ----
        Dzięki temu „nowy zestaw" nigdy nie zawiera tego samego zdania dwa razy. */
@@ -914,13 +993,90 @@
     dedupe(detective, function (x) { return x.words.join(" ") + "|" + x.a; });
     dedupe(sort, function (x) { return x.s; });
     dedupe(listening, function (x) { return x.spoken; });
-    dedupe(dictation, function (x) { return x.spoken; });
-    dedupe(spelling, function (x) { return x.word; });
+    dedupe(dictation, function (x) { return nrm(x.spoken); });
+    dedupe(spelling, function (x) { return nrm(x.word); });
     dedupe(flashcards, function (x) { return x.front; });
     dedupe(reading, function (x) { return x.text; });
     dedupe(examPool, function (x) { return x.p + "|" + JSON.stringify(x.o || x.a); });
     dedupe(pairSets, function (x) { return x.name; });
     dedupe(matchSets, function (x) { return x.name; });
+
+    /* ---- Kanoniczna sygnatura treści: dwa zadania z różnych banków,
+       które mają ten sam klucz, to dla dziecka TO SAMO zadanie. ---- */
+    function sig(it) {
+      if (it.pairs) return "set|" + nrm(it.name || it.id || "");
+      if (it.text) return "text|" + nrm(String(it.text).slice(0, 200));
+      const p = it.s || it.p || it.q || it.from || it.spoken || it.front || it.word || it.pl ||
+                (it.words ? it.words.join(" ") : "") || "";
+      const a = Array.isArray(it.a) ? it.a[0] : (it.a || it.show || it.answer || it.t || "");
+      const opts = Array.isArray(it.o) ? " {" + it.o.slice().sort().map(nrm).join(",") + "}" : "";
+      const task = it.task ? nrm(it.task) + "|" : "";
+      let s = nrm(String(p) + " | " + String(a)) + opts;
+      s = s.replace(/^uzupełnij\s*:\s*/, "").replace(/^uzupełnij\s+/, "").replace(/^po angielsku\s*:\s*/, "");
+      /* area = ćwiczona umiejętność. To samo zdanie w rozsypance i w dyktandzie
+         to dla dziecka dwa różne zadania, więc dostają osobne klucze. */
+      return (it.area ? nrm(it.area) + "|" : "") + task + s;
+    }
+    /* ---- Pula zadań WYŁĄCZNIE do drukowanych sprawdzianów ----
+       W losowej mega-bazie trafiały się nienaturalne kombinacje w rodzaju
+       „My shoes are French". Arkusz, który trafia do rąk nauczyciela, musi
+       być językowo nienaganny, więc dostaje ręcznie dobrane podmioty
+       i okoliczniki. Polecenia są inne niż w examPool, a kombinacje
+       odfiltrowane z USED_BASE — dzięki temu sprawdzian nie powtarza ani
+       zdań z ćwiczeń, ani pytań z próbnej kartkówki. */
+    const PERSON_NAMES = ["I", "You", "He", "She", "We", "They", "Mickey", "Ana", "Robbie", "Lily",
+      "Emile", "Lena", "Tomek", "Filip", "Harry", "Saskia", "Ms Collins", "Mr Brown", "My dad",
+      "My mum", "My friend", "My sister", "My teacher", "Mickey and Ana", "Lily and Robbie",
+      "My friends", "My parents", "The children", "The students"];
+    const THING_NAMES = ["It", "The robot", "My cat", "My bag", "The film", "My book",
+      "My school bag", "My hoodie", "My shoes", "My jeans", "The notebooks", "My books"];
+    const END_PERSON = ["at school", "in the classroom", "at home", "in the park", "at a party",
+      "on holiday", "at a summer camp", "at the cinema", "in the library", "at the beach",
+      "at the zoo", "from Poland", "from the UK", "from Canada", "Polish", "British", "happy",
+      "tired", "ready", "friendly", "helpful", "funny", "nice", "eleven", "twelve", "young",
+      "brave", "late"];
+    const END_THING = ["blue", "red", "green", "new", "old", "big", "small", "cool", "nice",
+      "interesting", "in the classroom", "on the bus", "at home", "in the kitchen", "at school",
+      "from China"];
+    const SHEET_COMBOS = [];
+    SUBS.forEach(function (x) {
+      const ends = PERSON_NAMES.indexOf(x.s) !== -1 ? END_PERSON :
+                   (THING_NAMES.indexOf(x.s) !== -1 ? END_THING : null);
+      if (!ends) return;
+      ends.forEach(function (en) { SHEET_COMBOS.push({ x: x, c: { en: en } }); });
+    });
+    const SHEET_FREE = sh(SHEET_COMBOS).filter(function (o) { return !USED_BASE[baseKey(o)]; });
+    const SHEET_QUESTIONS = [], sheetSig = {};
+    SHEET_FREE.forEach(function (o, k) {
+      const x = o.x, c = o.c, v = k % 4;
+      const wrongBe = x.be === "is" ? "are" : (x.be === "are" ? "is" : "are");
+      let q;
+      if (v === 0) q = { type: "choice", p: "Dobierz formę be: " + x.s + " ___ " + c.en + ".",
+        o: ["am", "is", "are"], a: x.be, w: x.s + " → " + x.be + ". " + aff(x, c), area: "odmiana" };
+      else if (v === 1) q = { type: "choice", p: "Utwórz pytanie: ___ " + x.qt + " " + c.en + "?",
+        o: ["Am", "Is", "Are"], a: cap(x.be), w: "be na początku: " + que(x, c), area: "pytania" };
+      else if (v === 2) q = { type: "input", p: "Napisz przeczenie: " + x.s + " ___ " + c.en + ".",
+        a: uniq([nrm(x.negW), nrm(x.be + " not")]), w: negS(x, c), area: "przeczenia" };
+      else q = { type: "input", p: "Znajdź i napraw błąd: " + x.s + " " + wrongBe + " " + c.en + ". → ___",
+        a: [aff(x, c).replace(/\.$/, "")], w: x.s + " → " + x.be + ", nie " + wrongBe + ". " + aff(x, c), area: "pułapki" };
+      if (sheetSig[q.p]) return;
+      sheetSig[q.p] = true;
+      q.id = "sq" + SHEET_QUESTIONS.length;
+      SHEET_QUESTIONS.push(q);
+    });
+
+    const CONTENT_BANKS = [choice, gap, order, transform, shorts, detective, sort, listening,
+                           dictation, translate, spelling, flashcards, examPool, reading, pairSets,
+                           matchSets, SHEET_QUESTIONS];
+
+    /* ---- 6 gotowych sprawdzianów do druku: rozłączne zestawy po 15 zadań ----
+       Kolejność pytań jest przeplatana co 4 typy, więc każdy arkusz ma
+       4 × odmiana, 4 × pytania, 4 × przeczenia i 3 × pułapki. */
+    for (let s = 0; s < 6; s++) {
+      PRINT_TESTS.push({ id: "S" + (s + 1), title: "Sprawdzian " + (s + 1),
+                         questions: SHEET_QUESTIONS.slice(s * 15, (s + 1) * 15) });
+    }
+    SHEET_QUESTIONS.slice(90).forEach(function (q) { sheetBank.push(q); });
 
     /* ---- Stałe identyfikatory (klucz dla systemu bez powtórek) ---- */
     const BANKS = [
@@ -936,12 +1092,15 @@
     pairSets.forEach(function (s, i) { if (!s.id) s.id = "ps" + i; });
     matchSets.forEach(function (s, i) { if (!s.id) s.id = "ms" + i; });
     reading.forEach(function (r, i) { if (!r.id) r.id = "rd" + i; r.items.forEach(function (it, j) { if (!it.id) it.id = "rd" + i + "-" + j; if (!it.area) it.area = "czytanie"; }); });
+    /* Sygnatury liczymy NA KOŃCU, gdy każde zadanie ma już `area` i `id`.
+       Inaczej data.js i contentKey() w app.js widziałyby różne klucze. */
+    CONTENT_BANKS.forEach(function (arr) { arr.forEach(function (it) { GLOBAL_SIG[sig(it)] = true; }); });
   })();
 
   const BANK_COUNT = choice.length + gap.length + order.length + transform.length + shorts.length +
     detective.length + sort.length + listening.length + dictation.length + translate.length +
     spelling.length + flashcards.length + examPool.length + reading.length * 5 +
-    pairSets.length * 8 + matchSets.length * 6;
+    pairSets.length * 8 + matchSets.length * 6 + 90 + sheetBank.length;
 
   root.TOBE_DATA = {
     meta: {
@@ -951,18 +1110,21 @@
       scope: "czasownik 'to be' (być): odmiana przez osoby, twierdzenia, pytania i przeczenia",
       book: "Together 2026 · klasa 4 · Unit 1 (s. 10–11, 13–16) i Unit 2 (s. 18–21), zeszyt ćwiczeń, 'Przygotowanie do sprawdzianu'",
       bankTotal: BANK_COUNT,
+      uniqueContent: Object.keys(GLOBAL_SIG).length,
+      printTests: PRINT_TESTS.length,
       bank: {
         choice: choice.length, gap: gap.length, pairSets: pairSets.length, matchSets: matchSets.length,
         order: order.length, transform: transform.length, shorts: shorts.length, detective: detective.length,
         sort: sort.length, reading: reading.length, listening: listening.length, dictation: dictation.length,
-        translate: translate.length, spelling: spelling.length, flashcards: flashcards.length, examPool: examPool.length
+        translate: translate.length, spelling: spelling.length, flashcards: flashcards.length, examPool: examPool.length,
+        sheetBank: sheetBank.length
       }
     },
     be: BE, rules: RULES, mistakes: MISTAKES, bookQuestions: BOOK_QUESTIONS, words: WORDS,
     choice: choice, gap: gap, pairSets: pairSets, matchSets: matchSets, order: order,
     transform: transform, shorts: shorts, detective: detective, sort: sort, reading: reading,
     listening: listening, dictation: dictation, translate: translate, spelling: spelling,
-    flashcards: flashcards, examPool: examPool, plan: plan, activities: ACTIVITIES,
-    machine: MACHINE
+    flashcards: flashcards, examPool: examPool, sheetBank: sheetBank, plan: plan, activities: ACTIVITIES,
+    machine: MACHINE, printTests: PRINT_TESTS
   };
 })(typeof window !== "undefined" ? window : globalThis);
