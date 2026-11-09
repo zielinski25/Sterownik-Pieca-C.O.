@@ -66,9 +66,18 @@ rozłącznych arkuszy po 15 zadań (każdy: 4 × odmiana, 4 × pytania, 4 × prz
 3 × pułapki), podgląd, druk pojedynczego arkusza, osobny klucz odpowiedzi dla rodzica,
 druk wszystkich sześciu oraz **„Wygeneruj nowy komplet"** (90 świeżych pytań z globalnego
 rejestru). Zdania są ręcznie dobrane, żeby nie było nienaturalnych kombinacji typu
-„My shoes are French". Gotowe, samodzielne pliki A4: `sprawdzian-1.html` …
-`sprawdzian-6.html` i `sprawdziany-wszystkie.html` (6 arkuszy + 6 kluczy w jednym pliku),
-generowane przez `node make_sprawdziany.js`, kopiowane też do `docs/`.
+„My shoes are French".
+
+**Każdy test jest OSOBNYM plikiem PDF** (A4, 2 strony: arkusz dla dziecka + klucz):
+`sprawdzian-1.pdf` … `sprawdzian-6.pdf`. Dodatkowo `klucz-1.pdf` … `klucz-6.pdf`
+to same klucze na jednej stronie (wygodne, gdy drukujesz tylko dla siebie), a
+`sprawdziany-wszystkie.pdf` (13 stron: okładka + 6 arkuszy + 6 kluczy) i
+`klucze-wszystkie.pdf` (6 stron) to wydania zbiorcze. PDF-y powstają z tych samych danych
+co strona — `make_sprawdziany_pdf.py` czyta `data.js` przez `node`, używa fontu DejaVu Sans
+(polskie znaki) i `fpdf2`. Zakładka **Sprawdziany** ma przyciski „Pobierz PDF" prowadzące
+na publiczny Dysk Google; druk z przeglądarki działa też bez internetu.
+Wersje HTML (`sprawdzian-1.html` … `sprawdzian-6.html`, `sprawdziany-wszystkie.html`)
+generuje `node make_sprawdziany.js`. Wszystkie pliki lądują też w `docs/`.
 
 **🎓 System oceniania.** Po każdym ćwiczeniu, szybkiej rundzie, powtórce i próbnej kartkówce
 pojawia się ocena w skali szkolnej: `95%+ → 6 celujący`, `88%+ → 5 bardzo dobry`,
@@ -189,7 +198,12 @@ to-be-kartkowka.html    WYGENEROWANY jeden plik (CSS + JS w środku) — główn
 build.py                scala powyższe w to-be-kartkowka.html:  python3 build.py
 validate.js             spójność bazy, unikalność id i treści, globalny rejestr:  node validate.js
 make_sprawdziany.js     generuje sprawdzian-1..6.html + sprawdziany-wszystkie.html (także do ../docs/)
-sprawdzian-*.html       gotowe arkusze A4 z kluczami odpowiedzi, bez zewnętrznych zasobów
+make_sprawdziany_pdf.py generuje 14 PDF-ow A4: 6 osobnych testow, 6 kluczy, 2 wydania zbiorcze
+                        (wymaga: pip install fpdf2; font DejaVu Sans z systemu)
+sprawdzian-*.pdf        OSOBNE testy do druku: arkusz + klucz na 2 stronach
+klucz-*.pdf             same klucze odpowiedzi, 1 strona kazdy
+sprawdziany-wszystkie.pdf / klucze-wszystkie.pdf   wydania zbiorcze (13 / 6 stron)
+sprawdzian-*.html       wersje HTML tych samych arkuszy, bez zewnetrznych zasobow
 make_sciaga.py          generuje obie ściągi PNG (wymaga pillow + qrcode)
 sciaga-to-be.png        ściąga str. 1 (odmiana + zasady + duży QR)
 sciaga-to-be-2.png      ściąga str. 2 (błędy + pytania + mini-kartkówka + plan)
@@ -236,6 +250,7 @@ Po ręcznym włączeniu strona dostanie własny adres
 ```
 node --check data.js && node --check app.js && node validate.js
 python3 build.py && node make_sprawdziany.js
+PYTHONPATH=/tmp/pylibs python3 make_sprawdziany_pdf.py   # wymaga fpdf2 (pip install fpdf2)
 ```
 
 `validate.js` sprawdza m.in. spójność `sig()` w `data.js` z `contentKey()` w `app.js`

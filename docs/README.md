@@ -10,6 +10,10 @@ innym osobom (np. przez Telegram):
 - `sprawdzian-1.html` … `sprawdzian-6.html` — 6 rozłącznych arkuszy A4 po 15 zadań,
   każdy z kluczem odpowiedzi dla rodzica na osobnej stronie
 - `sprawdziany-wszystkie.html` — wszystkie 6 arkuszy + 6 kluczy w jednym pliku do druku
+- **`sprawdzian-1.pdf` … `sprawdzian-6.pdf`** — 6 OSOBNYCH testów w PDF (A4, 2 strony:
+  arkusz + klucz). To główna forma do druku.
+- `klucz-1.pdf` … `klucz-6.pdf` — same klucze, 1 strona każdy
+- `sprawdziany-wszystkie.pdf` (13 stron) i `klucze-wszystkie.pdf` (6 stron) — wydania zbiorcze
 - `sciaga-to-be.png` — ściąga strona 1/2: odmiana + zasady + duży kod QR
   (także miniaturka Open Graph)
 - `sciaga-to-be-2.png` — ściąga strona 2/2: błędy, pytania, mini-kartkówka, plan
@@ -21,7 +25,8 @@ Po zmianach w źródłach:
 cd nauka-to-be
 python3 build.py
 cp to-be-kartkowka.html ../docs/index.html
-node make_sprawdziany.js            # odświeża 7 plików sprawdzianów w ../docs/
+node make_sprawdziany.js            # odświeża 7 plików HTML w ../docs/
+PYTHONPATH=/tmp/pylibs python3 make_sprawdziany_pdf.py   # odświeża 14 PDF-ów w ../docs/
 PYTHONPATH=/tmp/pylibs python3 make_sciaga.py   # odświeża obie ściągi w ../docs/
 node validate.js
 ```

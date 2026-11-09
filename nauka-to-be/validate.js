@@ -158,6 +158,21 @@ if (fs.existsSync(path.join(here, "make_sprawdziany.js"))) {
     if (!fs.existsSync(p)) bad(`Brak gotowego pliku do druku: docs/${f} — uruchom node make_sprawdziany.js`);
   });
 }
+/* ---------- 6 OSOBNYCH PDF-ów + klucze + wydania zbiorcze ---------- */
+const pdfNames = [];
+for (let i = 1; i <= 6; i++) pdfNames.push(`sprawdzian-${i}.pdf`, `klucz-${i}.pdf`);
+pdfNames.push("sprawdziany-wszystkie.pdf", "klucze-wszystkie.pdf");
+pdfNames.forEach((f) => {
+  const p = path.join(here, "..", "docs", f);
+  if (!fs.existsSync(p)) bad(`Brak PDF-a do druku: docs/${f} — uruchom PYTHONPATH=/tmp/pylibs python3 make_sprawdziany_pdf.py`);
+  else {
+    const b = fs.readFileSync(p);
+    if (b.slice(0, 5).toString() !== "%PDF-") bad(`docs/${f} nie jest poprawnym plikiem PDF`);
+    if (b.length < 8000) bad(`docs/${f} podejrzanie mały (${b.length} B)`);
+  }
+});
+if (!fs.existsSync(path.join(here, "make_sprawdziany_pdf.py")))
+  bad("Brak generatora PDF: make_sprawdziany_pdf.py");
 
 /* każde ćwiczenie z listy musi mieć implementację i odwrotnie */
 const app = fs.readFileSync(path.join(here, "app.js"), "utf8");
@@ -174,7 +189,7 @@ const html = fs.readFileSync(path.join(here, "index.html"), "utf8");
 ["review-stats", "review-host", "review-list", "gradebook", "skill-grid", "hub-bank", "run-set",
  "machine-host", "machine-sentences", "find-host", "lights-grid", "lights-summary", "chip-level",
  "print-mine", "sheets", "sheets-grid", "sheets-preview", "btn-new-sheets",
- "btn-original-sheets", "btn-print-all-sheets"].forEach((id) => {
+ "btn-original-sheets", "btn-print-all-sheets", "pdf-links"].forEach((id) => {
   if (html.indexOf('id="' + id + '"') === -1) bad(`W index.html brakuje sekcji: ${id}`);
 });
 if (html.indexOf('id="lab"') === -1) bad("W index.html brakuje zakładki Laboratorium");
@@ -218,6 +233,7 @@ console.log(`Baza: ${D.activities.length} ćwiczeń · ${D.meta.bankTotal} zada�
             `${D.examPool.length} pytań kartkówki · ${D.flashcards.length} fiszek · ${D.printTests.length} sprawdzianów do druku`);
 console.log("Brak powtórek: jeden globalny rejestr treści, własna pula kartkówki, rozłączne pary memory/match ✓");
 console.log("Do druku: 6 × 15 rozłącznych zadań + klucze + generator nowego kompletu ✓");
+console.log("PDF: 6 osobnych testów + 6 osobnych kluczy + 2 wydania zbiorcze (A4) ✓");
 console.log("Z researchu: Miks/interleaving, maszyna zdań, własne zdania, Find Someone Who, światła samooceny, bilety wyjścia, poziomy ✓");
 if (problems.length) { console.error("BŁĘDY:\n - " + problems.join("\n - ")); process.exit(1); }
 console.log("✅ Walidacja danych i implementacji: OK");

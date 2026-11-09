@@ -60,6 +60,8 @@ zaznaczyć, co jeszcze sprawia trudność. Są też fiszki, próbna kartkówka,
 pytanie dnia, tryb ciemny oraz 6 sprawdzianów A4 do wydruku — każdy ma
 15 innych zadań i osobny klucz odpowiedzi dla rodzica, a przycisk
 „Wygeneruj nowy komplet" robi kolejne 6 zupełnie nowych arkuszy 📄.
+Każdy sprawdzian jest też OSOBNYM plikiem PDF do pobrania (linki w
+sekcji 4b poniżej), więc można go po prostu wydrukować.
 Nic nie trzeba instalować ani logować się 💪
 
 W załączniku jeszcze dwie ściągi w formie zdjęć (odmiana + zasady oraz
@@ -115,16 +117,27 @@ wydrukować jeden, sam klucz albo wszystkie sześć naraz, a przycisk
 „🆕 Wygeneruj nowy komplet" robi 6 kolejnych, nigdzie niewidzianych
 sprawdzianów.
 
-Gotowe pliki (samodzielne HTML, A4, działają offline, w folderze docs/):
-  sprawdzian-1.html … sprawdzian-6.html   → arkusz + klucz (2 strony)
-  sprawdziany-wszystkie.html               → 6 arkuszy + 6 kluczy (13 stron)
+📄 KAŻDY TEST TO OSOBNY PLIK PDF (A4, 2 strony: arkusz + klucz):
+  sprawdzian 1: https://drive.google.com/file/d/1v5DOwMQLha_og-Zc90T7iA2qwstJTEuk/view?usp=drivesdk
+  sprawdzian 2: https://drive.google.com/file/d/1TpqhJPBsW-DZgzgl9W-5i3-dJMPcRCqe/view?usp=drivesdk
+  sprawdzian 3: https://drive.google.com/file/d/1MrUjkfe3JfQa5ONewe106I2yqWLfl-zB/view?usp=drivesdk
+  sprawdzian 4: https://drive.google.com/file/d/16Zn0N7FqJy7oTWFkWjlMLxn9OglIkCPb/view?usp=drivesdk
+  sprawdzian 5: https://drive.google.com/file/d/1k3K2bv2GMoUMNqHzQYO-MHTSb9CdwKIJ/view?usp=drivesdk
+  sprawdzian 6: https://drive.google.com/file/d/10sUJBDR1lhOK28ZZ0YZbMOxGPdIIQM5W/view?usp=drivesdk
 
-Komplet z Dysku Google (jeden plik, wszystkie 6 arkuszy + klucze):
-  https://drive.google.com/file/d/1K_w4Uf1Xk9TuXpVlfjbzS_g2mfVmL8WQ/view?usp=drivesdk
+Wersje zbiorcze:
+  wszystkie 6 testów + 6 kluczy (13 stron):
+    https://drive.google.com/file/d/1zZWrXtw1JlQr4KwDtB1RWO45-UXACT1n/view?usp=drivesdk
+  same klucze dla rodzica (6 stron):
+    https://drive.google.com/file/d/1wdRHAJ7kjYcqniZ-cwvvwgsFGEdkAA5T/view?usp=drivesdk
 
-Wystarczy pobrać, otworzyć w przeglądarce i Ctrl+P / ⌘P → A4, wyłączyć
-nagłówki i stopki. Zdania są ręcznie dobrane, żeby nie było dziwnych
-kombinacji typu „My shoes are French".
+W folderze docs/ repozytorium są też: klucz-1.pdf … klucz-6.pdf
+(sam klucz na jednej stronie) oraz wersje HTML tych samych arkuszy
+(sprawdzian-1.html … sprawdzian-6.html, sprawdziany-wszystkie.html).
+
+PDF-y mają już ustawiony rozmiar A4 — wystarczy pobrać i kliknąć druk,
+nic nie trzeba ustawiać. Działają bez internetu. Zdania są ręcznie
+dobrane, żeby nie było dziwnych kombinacji typu „My shoes are French".
 
 
 ------------------------------------------------------------------------
