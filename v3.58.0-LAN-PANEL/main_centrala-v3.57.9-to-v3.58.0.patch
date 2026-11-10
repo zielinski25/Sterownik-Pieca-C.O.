@@ -1,0 +1,347 @@
+--- /tmp/v3579/src/main_centrala.cpp	2026-11-01 07:55:51.000000000 +0000
++++ src/main_centrala.cpp	2026-11-10 09:51:11.042276777 +0000
+@@ -1,3 +1,47 @@
++// FIRMWARE_VERSION v3.57.9 -> v3.58.0 (2026-11-10) — PANEL LOKALNY BEZ FIREBASE + POWRÓT STAREJ STRONY.
++//
++// [v3.58.0 LAN-PANEL] — 2026-11-10
++// Co: Nowy panel osadzony (WIFI_LOCAL_PANEL_HTML, serwowany na GET /) pracuje
++//     po połączeniu z siecią lokalną centrali BEZ Firebase i bez internetu:
++//     stan pobiera z GET /api/lan/status (dokładnie ten sam JSON co
++//     /piec/status — wspólny builder zbudujJsonStatusPelny()), a komendy
++//     wysyła POST /api/lan/cmd i czeka na potwierdzenie GET /api/lan/ack.
++//     To ta sama trasa LAN, z której od v3.47.0 korzysta aplikacja Android —
++//     dotąd nowy panel z niej nie korzystał.
++// Problem: Po połączeniu z WiFi centrali panel pokazywał "Brak połączenia
++//     z bazą Firebase" i nie pozwalał sterować: telemetria i komendy szły
++//     wyłącznie przez internet (REST RTDB + logowanie kontem Firebase), mimo
++//     że centrala jest w tej samej sieci i wystawia lokalne API.
++// Przyczyna: Piec.html osadzony w v3.40.0 był kopią panelu ZDALNEGO — jego
++//     JS znał tylko ścieżki Firebase (/piec/status, /piec/cmd, /piec/ack).
++//     Lokalne endpointy /api/lan/* dodane w v3.47.0 nie zostały w nim podpięte.
++// Naprawa: W JavaScripcie panelu dodano tryb lokalny, przełączany automatycznie:
++//     - wykrycie: strona zapytana z własnego originu o /api/lan/status
++//       odpowiada polami "lan":true/"lan_api":1 (panel otwarty z pliku lub
++//       innej domeny NIE dostaje tych pól i pracuje jak dotychczas przez
++//       Firebase — praca zdalna bez zmian);
++//     - pollFirebase() w trybie lokalnym czyta /api/lan/status;
++//     - sendCommand() wysyła komendę formularzem id+cmd z nagłówkiem
++//       X-Piec-Token i odpytuje /api/lan/ack?id=... aż do done (te same
++//       toasty/ACK/NACK co w trybie Firebase);
++//     - tryAutoLogin() w trybie lokalnym nie odpytuje Google Identity
++//       (status lokalny nie wymaga logowania);
++//     - komunikaty UI rozróżniają "LIVE LOCAL (LAN)" od "LIVE FIREBASE".
++// Bez zmian w zabezpieczeniach: komenda lokalna wymaga nagłówka X-Piec-Token
++//     z tym samym CMD_TOKEN co /piec/cmd (odrzucenie = HTTP 403, jak dotąd);
++//     status lokalny jest jawny jak w aplikacji Android. Zero zmian w logice
++//     pieca, automatyce, czujnikach, Firebase, Telegramie, LCD i telemetrii.
++// Co jeszcze: Powrót STAREJ strony lokalnej, wycofanej z GET / w v3.40.0:
++//     GET /stara serwuje dawny interfejs wifiZbudujStrone() (Dashboard /
++//     Ustawienia / Wykresy / Pogoda / Logi / Terminal / OTA), a przełączanie
++//     działa w obie strony: karta "Starsza strona lokalna" w Ustawieniach
++//     nowego panelu (widoczna tylko, gdy panel jest otwarty z centrali) oraz
++//     przycisk "NOWY PANEL" w pasku nagłówka strony starej.
++// Znane ograniczenie: token komend (SECRET_CMD_TOKEN z secrets.h) jest
++//     wymagany tak samo jak dotychczas — panel czyta go z pamięci przeglądarki
++//     (piec_cmd_token); bez niego odczyt działa, ale komenda dostaje 403.
++// FIRMWARE_VERSION v3.57.9 -> v3.58.0 (MINOR: lokalny panel bez Firebase + przełącznik stron).
++//
+ // FIRMWARE_VERSION v3.57.8 -> v3.57.9 (2026-11-01) — LIMITY SIECI W SEKUNDACH.
+ //
+ // Zgloszenie uzytkownika (1.11): raport nadzoru po restarcie pokazal
+@@ -5954,7 +5998,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.57.9";
++static const char* FIRMWARE_VERSION = "v3.58.0";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -10358,6 +10402,10 @@
+       </div>
+ 
+       <div class="setcard" data-menu="firebase"><div class="ic" style="color:var(--cyan)" data-ico="shield"></div><div class="t"><b>Połączenie z bazą Firebase</b><span>Logowanie kontem Firebase, token komend, stan połączenia</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
++      <!-- [v3.58.0 STRONA-STARA] Przełącznik na starszą stronę lokalną (GET /stara).
++           Karta widoczna tylko, gdy panel jest otwarty z centrali (tryb LAN) —
++           poza centralą adres /stara nie istnieje. -->
++      <div class="setcard" id="setcardStara" data-menu="stara" style="display:none"><div class="ic" style="color:var(--cyan)" data-ico="desktop"></div><div class="t"><b>Starsza strona lokalna</b><span>Poprzedni interfejs WWW centrali — Dashboard, Terminal, OTA (adres /stara)</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+       <div class="setcard" data-menu="wifi"><div class="ic" style="color:var(--cyan)" data-ico="wifi"></div><div class="t"><b>Sieci Wi-Fi & Łączność</b><span>Skanowanie sieci, siła RSSI, konfiguracja SSID/hasło, lista sieci</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+       <div class="setcard" data-menu="histfs"><div class="ic" style="color:var(--warn, #ffb74d)" data-ico="logs"></div><div class="t"><b>Zapis historii na flash</b><span>hist_short.csv i hist_long.csv — włączanie, wyłączanie i czyszczenie plików</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+       <div class="setcard" data-menu="telegram"><div class="ic" style="color:#2AABEE" data-ico="telegram"></div><div class="t"><b>Powiadomienia Telegram</b><span>Bot powiadomień, Chat ID, testowy raport, alerty CO i dymu</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
+@@ -11637,6 +11685,35 @@
+     return fetch(url, options).finally(() => clearTimeout(timer));
+   }
+ 
++  // ─── [v3.58.0 LAN-PANEL] TRYB LOKALNY: PANEL OTWARTY Z CENTRALI ───
++  // Strona serwowana przez centralę (GET http://<IP>/) pracuje bez Firebase:
++  // dane z /api/lan/status, komendy przez /api/lan/cmd (endpointy v3.47.0,
++  // ta sama trasa co aplikacja Android w sieci lokalnej). Wykrycie: odpowiedź
++  // /api/lan/status z tego samego originu zawiera "lan":true/"lan_api":1.
++  // Panel otwarty z pliku (file://) lub innej domeny nie dostaje tych pól
++  // i pracuje jak dotychczas — Firebase RTDB (praca zdalna bez zmian).
++  // Sonda odpalana raz, wynik cache'owany — poźniej każde pollFirebase()
++  // i sendCommand() korzystają ze skrótowej wartości _espServedMode.
++  let _espServedMode = null;   // null = nieustalone, true = panel z centrali
++  let _espServedProbe = null;
++  function espPanelIsServed() {
++    if (_espServedMode !== null) return Promise.resolve(_espServedMode);
++    if (_espServedProbe) return _espServedProbe;
++    _espServedProbe = (async () => {
++      try {
++        if (typeof location === 'undefined' || typeof fetch === 'undefined') return false;
++        if (location.protocol !== 'http:' && location.protocol !== 'https:') return false;
++        const r = await fetchWithTimeout('/api/lan/status', { cache: 'no-store' }, 6000);
++        if (!r.ok) return false;
++        const j = await r.json();
++        return !!(j && (j.lan === true || j.lan_api === 1) && typeof j.ip === 'string');
++      } catch (e) {
++        return false;
++      }
++    })().then(function (v) { _espServedMode = v; return v; });
++    return _espServedProbe;
++  }
++
+   // @solar-firebase-url-test-begin
+   function firebaseRestUrl(path, token = _fbIdToken) {
+     if (!token) return DB_URL + path;
+@@ -11695,6 +11772,25 @@
+     // Na lokalnym ESP zakladka Wykresy korzysta wyłącznie z /api/history*.
+     // Nie odpytuj Firebase, gdy ekran wykresów jest aktywny.
+     if (currentPage === 1 && await isEspLocalChartPage()) return;
++    // [v3.58.0 LAN-PANEL] Tryb lokalny: ten sam stan co /piec/status, ale
++    // bezpośrednio z centrali (GET /api/lan/status) — bez internetu i bez
++    // logowania Firebase. Pola lan/lan_api/internet dochodzą lokalnie.
++    if (await espPanelIsServed()) {
++      try {
++        const r = await fetchWithTimeout('/api/lan/status', { cache: 'no-store' }, 8000);
++        if (!r.ok) throw new Error('HTTP ' + r.status);
++        const data = await r.json();
++        if (data && typeof data === 'object') {
++          _isFirebaseConnected = true;
++          _lastFirebaseFetch = Date.now();
++          applyIncomingData(data);
++        }
++      } catch (e) {
++        _isFirebaseConnected = false;
++        updateConnectionStateUI();
++      }
++      return;
++    }
+     try {
+       const data = await fbGet('/piec/status.json');
+       if (data && typeof data === 'object') {
+@@ -11860,10 +11956,25 @@
+     const ustMode = $('#ustWorkMode');
+     const sysstripSub = $('#sysstripSub');
+     const demoBtn = $('#demoBtn');
++    // [v3.58.0 STRONA-STARA] Karta przełącznika stron ma sens tylko w panelu
++    // otwartym z centrali (tam istnieje /stara); zdalnie pozostaje ukryta.
++    const setcardStara = $('#setcardStara');
++    if (setcardStara) setcardStara.style.display = (_espServedMode === true) ? '' : 'none';
+ 
+     if (demoBtn) demoBtn.style.display = _isDemoMode ? 'block' : 'none';
+ 
+-    if (_isFirebaseConnected) {
++    // [v3.58.0 LAN-PANEL] Połączenie LIVE przez sieć lokalną (bez Firebase).
++    if (_isFirebaseConnected && _espServedMode) {
++      if (chip) {
++        chip.className = 'chip live';
++        chip.textContent = `● LIVE · ${S.ip || 'ESP32'}`;
++      }
++      if (banner) banner.classList.add('hidden');
++      if (sysstripSub) sysstripSub.textContent = `stan na żywo z ESP32 (${S.ip}) · lokalne API /api/lan`;
++      if (ustStatus) { ustStatus.textContent = '🟢 Połączono lokalnie (LAN, bez Firebase)'; ustStatus.style.color = 'var(--ok)'; }
++      if (ustEmail) ustEmail.textContent = 'Połączenie lokalne (sieć centrali)';
++      if (ustMode) ustMode.textContent = 'LIVE LOCAL (LAN)';
++    } else if (_isFirebaseConnected) {
+       if (chip) {
+         chip.className = 'chip live';
+         chip.textContent = `● LIVE · ${S.ip || 'ESP32'}`;
+@@ -11893,9 +12004,15 @@
+       }
+       if (banner) {
+         banner.classList.remove('hidden');
+-        if (bannerText) bannerText.textContent = 'Brak połączenia z bazą Firebase — połącz ze sterownikiem';
+-      }
+-      if (sysstripSub) sysstripSub.textContent = 'oczekiwanie na połączenie z Firebase';
++        // [v3.58.0 LAN-PANEL] Inny komunikat braku połączenia w trybie lokalnym
++        // (centrala nie odpowiada) niż w trybie zdalnym (brak sesji Firebase).
++        if (bannerText) bannerText.textContent = _espServedMode ?
++          'Brak połączenia ze sterownikiem w sieci lokalnej — centrala nie odpowiada' :
++          'Brak połączenia z bazą Firebase — połącz ze sterownikiem';
++      }
++      if (sysstripSub) sysstripSub.textContent = _espServedMode ?
++        'oczekiwanie na odpowiedź centrali (LAN)' :
++        'oczekiwanie na połączenie z Firebase';
+       if (ustStatus) { ustStatus.textContent = '🔴 Niepołączono'; ustStatus.style.color = 'var(--err)'; }
+       if (ustEmail) ustEmail.textContent = 'Brak sesji';
+       if (ustMode) ustMode.textContent = 'OCZEKIWANIE NA SESJĘ';
+@@ -12033,6 +12150,16 @@
+   }
+ 
+   async function tryAutoLogin() {
++    // [v3.58.0 LAN-PANEL] Panel otwarty z centrali nie potrzebuje Firebase:
++    // status lokalny (/api/lan/status) jest jawny, więc żadne logowanie nie
++    // jest wymagane do pracy lokalnej. Token komend czytany jak dotychczas
++    // z pamięci przeglądarki (piec_cmd_token).
++    if (await espPanelIsServed()) {
++      _cmdToken = safeStorage.get('piec_cmd_token') || DEFAULT_CMD_TOKEN;
++      try { await pollFirebase(); } catch (e) {}
++      updateConnectionStateUI();
++      return true;
++    }
+     const k = safeStorage.get('piec_fb_api_key') || DEFAULT_FB_API_KEY;
+     const e = safeStorage.get('piec_fb_email') || DEFAULT_FB_EMAIL;
+     const p = safeStorage.get('piec_fb_password') || DEFAULT_FB_PASS;
+@@ -12091,6 +12218,79 @@
+ 
+     // W trybie rzeczywistym nie zmieniaj stanu optymistycznie. UI odświeży
+     // dopiero odpowiedź centrali; powodzenie komunikuj wyłącznie po zgodnym ACK.
++
++    // [v3.58.0 LAN-PANEL] Tryb lokalny: komenda idzie bezpośrednio do centrali
++    // (POST /api/lan/cmd, formularz id+cmd, token komend w nagłówku
++    // X-Piec-Token — ten sam token co w /piec/cmd), a potwierdzenie przychodzi
++    // z GET /api/lan/ack?id=... Działa bez internetu i bez Firebase.
++    if (await espPanelIsServed() && !_isDemoMode) {
++      const cmdId = makeFireCmdId();
++      try {
++        const lanBody = new URLSearchParams();
++        lanBody.set('id', cmdId);
++        lanBody.set('cmd', cmd);
++        const res = await fetchWithTimeout('/api/lan/cmd', {
++          method: 'POST',
++          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Piec-Token': _cmdToken },
++          body: lanBody.toString()
++        }, 8000);
++        if (res.status === 403) {
++          showToast(cmd, 'Nieprawidłowy token komend (X-Piec-Token) — wpisz token w danych połączenia', 'err');
++          addLog('NACK', 'Odrzucone (HTTP 403): nieprawidłowy token komend', 'err');
++          return false;
++        }
++        if (res.status === 409) {
++          showToast(cmd, 'Centrala wykonuje poprzednią komendę — spróbuj za chwilę', 'warn');
++          addLog('CMD_WARN', 'Slot komend zajęty (HTTP 409)', 'warn');
++          return false;
++        }
++        if (!res.ok) throw new Error('HTTP ' + res.status);
++        const j = await res.json().catch(() => null);
++        if (!j || j.accepted !== true) throw new Error((j && j.error) || 'centrala nie przyjęła komendy');
++        addLog('CMD', `Wysłano lokalnie do centrali (id: ${cmdId}); oczekiwanie na sterownik`, 'cmd');
++
++        const ackStart = Date.now();
++        while (Date.now() - ackStart < 12000) {
++          try {
++            const ar = await fetchWithTimeout('/api/lan/ack?id=' + encodeURIComponent(cmdId), { cache: 'no-store' }, 5000);
++            if (ar.ok) {
++              const ack = await ar.json();
++              if (ack && ack.done) {
++                const latency = Math.round(performance.now() - t0);
++                if (ack.ok === true) {
++                  showToast(cmd, `Potwierdzone przez sterownik (ACK, ${latency}ms)`, 'ok');
++                  addLog('ACK', `ACK OK (${latency}ms): ` + cmd, 'ack');
++                  if (navigator.vibrate) navigator.vibrate(15);
++                  await pollFirebase();
++                  // ACK może wyprzedzić pełny odśwież stanu — dociągnij go jeszcze
++                  // raz, aby kafelki i otwarte kontrolki nie czekały na kolejny tick.
++                  [350, 1000].forEach(ms => setTimeout(() => {
++                    if (!document.hidden && !_isDemoMode) pollFirebase();
++                  }, ms));
++                  return true;
++                }
++                if (ack.ok === false) {
++                  showToast(cmd, 'Sterownik odrzucił polecenie: ' + (ack.error || 'błąd'), 'err');
++                  addLog('NACK', 'Odrzucone (' + (ack.error || 'błąd') + '): ' + cmd, 'err');
++                  return false;
++                }
++              }
++            }
++          } catch(e) {}
++          await new Promise(r => setTimeout(r, 500));
++        }
++
++        showToast(cmd, 'Brak potwierdzenia sterownika — stan nie został zmieniony lokalnie', 'warn');
++        addLog('ACK_WARN', 'Wysłano lokalnie, ale sterownik nie potwierdził polecenia', 'warn');
++        setTimeout(pollFirebase, 1500);
++        return false;
++      } catch (err) {
++        showToast(cmd, 'Błąd wysyłki lokalnej: ' + (err.message || err), 'err');
++        addLog('CMD_ERR', 'Błąd wysyłki lokalnej: ' + (err.message || err), 'err');
++        return false;
++      }
++    }
++
+     if (_isFirebaseConnected && !_isDemoMode) {
+       const cmdId = makeFireCmdId();
+       try {
+@@ -13069,6 +13269,8 @@
+     }),
+ 
+     firebase: () => openAuthModal(),
++    // [v3.58.0 STRONA-STARA] Przejście na starszą stronę lokalną (GET /stara).
++    stara: () => { window.location.href = '/stara'; },
+     wifi: () => showWifiSheet(),
+     telegram: () => showTelegramSheet(),
+     logi: () => showLogsSheet(),
+@@ -14380,9 +14582,13 @@
+     showSheet('Sesja operatora & Firebase', 'session', () => {
+       const b = h('div');
+       const authCard = h('div', 'diag-card');
+-      authCard.innerHTML = `<div class="lbl">POŁĄCZENIE Z FIREBASE</div><div class="val">${_isFirebaseConnected ? '🟢 Połączono LIVE' : _isDemoMode ? '🟡 Tryb symulacji' : '🔴 Brak sesji'}</div><div class="sub">Konto: ${_fbEmail || 'Brak'} · IP: ${S.ip} · RSSI: ${S.wifi_rssi} dBm</div>`;
++      // [v3.58.0 LAN-PANEL] W trybie lokalnym karta mówi prawdę o połączeniu:
++      // dane idą z centrali po LAN (API /api/lan), a nie z Firebase RTDB.
++      authCard.innerHTML = `<div class="lbl">${_espServedMode ? 'POŁĄCZENIE Z CENTRALĄ (LAN)' : 'POŁĄCZENIE Z FIREBASE'}</div><div class="val">${_isFirebaseConnected ? (_espServedMode ? '🟢 Połączono lokalnie (bez Firebase)' : '🟢 Połączono LIVE') : _isDemoMode ? '🟡 Tryb symulacji' : '🔴 Brak sesji'}</div><div class="sub">Konto: ${_espServedMode ? 'połączenie lokalne' : (_fbEmail || 'Brak')} · IP: ${S.ip} · RSSI: ${S.wifi_rssi} dBm</div>`;
+       b.appendChild(authCard);
+-      b.appendChild(note('Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Komendy sterujące /piec/cmd są zabezpieczone osobnym tokenem.'));
++      b.appendChild(note(_espServedMode ?
++        'Panel jest otwarty bezpośrednio z centrali i pracuje w sieci lokalnej: stan z GET /api/lan/status, komendy przez POST /api/lan/cmd z tokenem w nagłówku X-Piec-Token (ten sam token komend co /piec/cmd). Firebase nie jest potrzebne do pracy lokalnej; pozostaje dla panelu otwartego poza siecią centrali oraz dla aplikacji.' :
++        'Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Komendy sterujące /piec/cmd są zabezpieczone osobnym tokenem.'));
+ 
+       const acts = h('div', 'btnrow');
+       const authBtn = h('button', 'ust-btn primary', '🔑 Połącz / Zmień dane Firebase');
+@@ -17957,7 +18163,13 @@
+       initWeatherChartInteractivity();
+       refreshWeatherTab();
+ 
+-      if ($('#connBannerBtn')) $('#connBannerBtn').onclick = () => openAuthModal();
++      // [v3.58.0 LAN-PANEL] W trybie lokalnym przycisk banneru ponawia próbę
++      // połączenia z centralą (modal Firebase nie jest potrzebny); zdalnie
++      // otwiera logowanie Firebase jak dotychczas.
++      if ($('#connBannerBtn')) $('#connBannerBtn').onclick = async () => {
++        if (await espPanelIsServed()) { pollFirebase(); return; }
++        openAuthModal();
++      };
+       const servoIgnitionButton = $('#servoIgnitionButton');
+       if (servoIgnitionButton) servoIgnitionButton.onclick = () => {
+         if (!servoIgnitionButton.disabled) {
+@@ -18666,6 +18878,9 @@
+     <div id="sh-internet" class="sys-badge ok"><div class="sbdot" style="background:var(--ok)"></div><span class="sbtxt">Internet</span></div>
+     <div id="sh-rtc" class="sys-badge ok"><div class="sbdot" style="background:var(--ok)"></div><span class="sbtxt">RTC</span></div>
+     <div id="sh-mode" class="sys-badge blue">AUTO</div>
++    <!-- [v3.58.0 STRONA-STARA] Przełączenie na nowy panel lokalny (GET /).
++         Ten sam styl co .sys-badge.blue powyżej — zero nowych klas CSS. -->
++    <a href="/" title="Przełącz na nowy panel lokalny" style="display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:.68rem;font-weight:600;letter-spacing:.04em;border:1px solid rgba(0,212,245,.3);background:rgba(0,212,245,.1);color:var(--flame);text-decoration:none;cursor:pointer">✦ NOWY PANEL</a>
+   </div>
+ </div>
+ <div class="wrap">
+@@ -28899,6 +29114,21 @@
+     response->addHeader("Cache-Control", "no-store, max-age=0");
+     request->send(response);
+   });
++
++  // [v3.58.0 STRONA-STARA] Starszy lokalny interfejs (wifiZbudujStrone(),
++  // serwowany na GET / przed v3.40.0) wraca jako GET /stara — przełączanie
++  // między nowym panelem a tą stroną działa w obu kierunkach (karta
++  // "Starsza strona lokalna" w Ustawieniach panelu, przycisk "NOWY PANEL"
++  // w pasku nagłówka tej strony). Strona budowana w RAM na żądanie — dokładnie
++  // ten sam mechanizm co przed v3.40.0; PROGMEM nowego panelu pozostaje
++  // jedynym dużym blokiem HTML we flashu. AsyncURIMatcher::exact jak przy
++  // /api/lan/*, żeby goły string nie łapał pod-URL-i.
++  wifiWebServer.on(AsyncURIMatcher::exact("/stara"), HTTP_GET, [](AsyncWebServerRequest *request) {
++    AsyncWebServerResponse *response = request->beginResponse(
++      200, "text/html; charset=utf-8", wifiZbudujStrone());
++    response->addHeader("Cache-Control", "no-store, max-age=0");
++    request->send(response);
++  });
+ 
+   // [TERMINAL] WS dla zakladki "Terminal" — dopiety do TEGO SAMEGO
+   // wifiWebServer co wszystkie trasy ponizej (nie osobny port jak u Ryb,

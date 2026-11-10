@@ -1,0 +1,40 @@
+ZAKRES ZMIAN v3.57.9 -> v3.58.0 (main_centrala.cpp)
+===================================================
+Baza: v3.57.9, SHA-256 e263437b1fb850cb202c4696404a41b7777b0f12aeef928c7e57788fb2fc158c
+Wynik: v3.58.0. Razem 246 linii zmienionych w 14 blokach (hunkach) diffu.
+
+POZA literałami HTML (jedyna zmiana logiki C++): 61 linii
+  1. Wpis changeloga na górze pliku (44 linie komentarza)
+  2. FIRMWARE_VERSION "v3.57.9" -> "v3.58.0" (1 linia)
+  3. Nowa trasa GET /stara w wifiZarejestrujTrasy() (15 linii z komentarzem):
+       wifiWebServer.on(AsyncURIMatcher::exact("/stara"), HTTP_GET, [...] {
+         AsyncWebServerResponse *response = request->beginResponse(
+           200, "text/html; charset=utf-8", wifiZbudujStrone());
+         response->addHeader("Cache-Control", "no-store, max-age=0");
+         request->send(response);
+       });
+     (wifiZbudujStrone() istnieje w pliku bez zmian od v3.40.0 — funkcja
+     wraca do serwowania, treść strony bez zmian)
+
+WEWNĄTRZ literału WIFI_LOCAL_PANEL_HTML (nowy panel, 185 linii):
+  - sonda trybu lokalnego espPanelIsServed(): GET /api/lan/status,
+    akceptacja tylko przy polach lan:true / lan_api:1 (raz, cache)
+  - pollFirebase(): gałąź LAN (odczyt /api/lan/status zamiast RTDB)
+  - sendCommand(): gałąź LAN (POST /api/lan/cmd z X-Piec-Token + pętla
+    /api/lan/ack; 403/409 obsłużone komunikatami)
+  - tryAutoLogin(): w trybie LAN pomija logowanie Google Identity
+  - updateConnectionStateUI(): komunikaty LIVE LOCAL (LAN), banner
+    "Brak połączenia ze sterownikiem w sieci lokalnej", pokazywanie karty
+    "Starsza strona lokalna" tylko w trybie LAN
+  - showSessionSheet(): karta sesji mówi prawdę o połączeniu LAN
+  - connBannerBtn: w trybie LAN ponawia połączenie zamiast otwierać modal FB
+  - karta "Starsza strona lokalna" (data-menu="stara") + MENUS.stara -> /stara
+
+WEWNĄTRZ literału WIFI_STRONA_HTML_HEADER (stara strona, 3 linie):
+  - link "✦ NOWY PANEL" (href="/") w pasku nagłówka sys-hdr, styl
+    .sys-badge.blue, zero nowych klas CSS
+
+BEZ ZMIAN: logika pieca, automatyka, czujniki, wyjścia, ustawienia, NVS,
+Firebase centrali (init/loop/telemetria), Telegram, LCD, OTA, wszystkie
+istniejące endpointy, formaty /piec/status, /piec/cmd, /piec/ack,
+wifiZbudujStrone() (treść), WIFI_STRONA_HTML_FOOTER (skrypt starej strony).

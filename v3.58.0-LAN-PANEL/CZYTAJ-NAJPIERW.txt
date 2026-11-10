@@ -1,0 +1,77 @@
+FIRMWARE 3.58.0 - co zrobic w 3 krokach
+=======================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN (identyczne jak przy 3.57.9).
+
+
+CO DAJE TA WERSJA
+-----------------
+1) Nowy panel (http://<IP>/) dziala w sieci lokalnej BEZ Firebase:
+   - stan z GET /api/lan/status (ten sam JSON co /piec/status),
+   - komendy przez POST /api/lan/cmd + potwierdzenie GET /api/lan/ack,
+   - zero logowania do ODCZYTU danych.
+   Wykrywanie jest automatyczne: panel otwarty z centrali = tryb lokalny,
+   panel otwarty z pliku/innej domeny = Firebase jak dotychczas.
+
+2) Przelaczanie stron: stara strona wraca pod adresem /stara
+   (karta "Starsza strona lokalna" w Ustawieniach panelu; ze starej strony
+   przycisk "NOWY PANEL" w pasku na gorze).
+
+3) TOKEN KOMEND: wysylanie komend wymaga tokena z secrets.h
+   (SECRET_CMD_TOKEN) - TEGO SAMEGO co dotychczas dla Firebase.
+   Panel czyta go z pamieci przegladarki (piec_cmd_token), tak jak w 3.57.9.
+   Zly token = HTTP 403 + komunikat. Odczyt dziala bez tokenu.
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-3.57.9" -Force
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (powinno wyjsc warto z SHA256SUMS.txt):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+
+KROK 2 - WGRANIE
+----------------
+PlatformIO -> Upload   (albo w terminalu: pio run -t upload)
+
+
+KROK 3 - TEST NA GOLEJ PLYTCE (zanim podejdziesz do pieca)
+----------------------------------------------------------
+1. Wgraj firmware, otworz serial (115200) i zanotuj IP.
+2. W przegladarce: http://<IP>/
+   - bez internetu w sieci: panel ma pokazac "LIVE", temperature itd.
+     (dane z /api/lan/status), banner polaczenia ukryty.
+3. Ustawienia -> "Starsza strona lokalna" -> otwiera /stara;
+   ze starej strony przycisk "NOWY PANEL" wroci do /.
+4. Komenda (np. wlaczenie pompy w menu pompy):
+   - bez tokenu/zlym tokenem: toast "Nieprawidlowy token komend";
+   - z poprawnym tokenem (piec_cmd_token w localStorage przegladarki):
+     toast "Potwierdzone przez sterownik (ACK, ...ms)".
+5. Wylacz centrale (zasilanie) - banner "Brak polaczenia ze sterownikiem
+   w sieci lokalnej"; wlacz - banner znika, dane wracaja.
+
+UWAGA (zgodnie z Twoja uwaga z instrukcji): sama gola plytka NIE gwarantuje
+odlaczenia od prawdziwej bazy - moze miec zapisane dane sieci i Firebase.
+Ta wersja NIE wysyla nic do Firebase z samego panelu otwartego z centrali,
+ale centrala (firmware) laczy sie z Firebase tak samo jak 3.57.9, jesli ma
+dane sieciowe i internet.
+
+
+TESTY W PACZCE (opcjonalnie, na komputerze z Node.js >= 18)
+-----------------------------------------------------------
+cd tests
+npm install
+node run-tests.js
+(59 asercji, testy z atrapa serwera - opis w tests/README.txt)
+
+
+CZEGO TA WERSJA NIE ROBI
+------------------------
+- Nie byla testowana na sprzecie (ani plytka, ani piec) - testy na zywo
+  robisz Ty (scenariusz wyzej).
+- Nie zmienia logiki pieca, automatyki, Firebase centrali, Telegrama, LCD.
+- Nie dodaje zadnego nowego okna logowania ani pytania o token.

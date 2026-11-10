@@ -1,0 +1,12 @@
+{
+  "name": "sterownikco-v3.58.0-testy-panelu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Testy interfejsu panelu v3.58.0 z atrapą serwera ESP32 (bez sprzętu). Wymaga Node.js >= 18.",
+  "scripts": {
+    "test": "node run-tests.js"
+  },
+  "dependencies": {
+    "jsdom": "^24.1.0"
+  }
+}

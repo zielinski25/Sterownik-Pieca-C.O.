@@ -1,0 +1,80 @@
+
+[T1] Panel otwarty z centrali (LAN, bez internetu) — odczyt bez Firebase
+  [OK]   T1.1 chip LIVE po starcie (bez logowania)
+  [OK]   T1.2 banner połączenia ukryty
+  [OK]   T1.3 temperatura pieca z /api/lan/status (58.4 °C)  → heroTemp=58.4 °C
+  [OK]   T1.4 stan pompy z lokalnego statusu (ON)
+  [OK]   T1.5 karta "Starsza strona lokalna" widoczna w trybie LAN
+  [OK]   T1.6 karta sesji: POŁĄCZENIE Z CENTRALĄ (LAN)  → lbl=undefined
+  [OK]   T1.7 /api/lan/status odpytany (>0)  → odpytań: 3
+  [OK]   T1.8 ZERO zapytań do Firebase w trybie lokalnym  → other=0
+  [OK]   T1.9 pasek systemowy informuje o lokalnym API
+  [OK]   T1.10 brak błędów JS panelu
+  [OK]   T1.11 brak krytycznych błędów konsoli (init)
+
+[T4] Utrata połączenia z centralą (LAN) i powrót
+  [OK]   T4.1 banner widoczny po utracie centrali
+  [OK]   T4.2 komunikat o sterowniku w sieci lokalnej  → tekst="Brak połączenia ze sterownikiem w sieci lokalnej — centrala nie odpowiada"
+  [OK]   T4.3 chip = BRAK SESJI
+  [OK]   T4.4 banner znika po powrocie centrali
+
+[T2] Komendy lokalne: POST /api/lan/cmd + ACK (token poprawny)
+  [OK]   T2.1 sendCommand zwraca true (ACK)
+  [OK]   T2.2 komenda przyjęta przez /api/lan/cmd  → calls=[{"id":"mwaint9k-1-1n28c92llnd93","cmd":"pompa_wl","token":"TEST-TOKEN-123"}]
+  [OK]   T2.3 nagłówek X-Piec-Token z tokenu komend
+  [OK]   T2.4 treść komendy doszła cała
+  [OK]   T2.5 cmdId w formacie generatora
+  [OK]   T2.6 ACK odpytany co najmniej raz
+  [OK]   T2.7 toast potwierdzenia ACK  → toast="pompa_wlPotwierdzone przez sterownik (ACK, 524ms)"
+  [OK]   T2.8 status odświeżony po ACK (pompa wciąż ON z fixture)
+  [OK]   T2.9 brak błędów JS
+  [OK]   T2.10 NACK zwraca false
+  [OK]   T2.11 toast pokazuje powód odrzucenia  → toast="klapa 90Sterownik odrzucił polecenie: serwo_nie_w_trybie_recznym"
+  [OK]   T2.12 zajęty slot (HTTP 409) → false bez utraty ACK
+  [OK]   T2.13 pierwsza komenda dokończona po zwolnieniu slotu
+
+[T3] Komenda lokalna ze ZŁYM tokenem → HTTP 403
+  [OK]   T3.1 komenda odrzucona (false)
+  [OK]   T3.2 komunikat o nieprawidłowym tokenie komend  → toast="pompa_wlNieprawidłowy token komend (X-Piec-Token) — wpisz token w danych połączenia"
+  [OK]   T3.3 centrala widziała próbę z błędnym tokenem
+
+[T5] Praca ZDALNA przez Firebase zachowana (panel spoza centrali)
+  [OK]   T5.1 auto-logowanie Firebase i LIVE  → signin=0 statusGet=2
+  [OK]   T5.2 status pobrany z Firebase RTDB
+  [OK]   T5.3 karta "Starsza strona lokalna" UKRYTA zdalnie
+  [OK]   T5.4 karta sesji: POŁĄCZENIE Z FIREBASE (praca zdalna bez zmian)  → lbl=undefined
+  [OK]   T5.5 komenda wysłana przez /piec/cmd (PATCH)  → patches=[{"id":"mwainvqu-1-nmugl7xumj5m","cmd":"pompa_wl","token":"TEST-TOKEN-123","ts":1794304653942}]
+  [OK]   T5.6 PATCH zawiera token komend
+  [OK]   T5.7 ACK przyszedł z /piec/ack  → ackGet=2
+  [OK]   T5.8 ZERO komend lokalnych (/api/lan/cmd) w trybie zdalnym
+  [OK]   T5.9 brak błędów JS
+
+[T5b] Panel zdalny bez internetu — zachowanie oryginalne (brak sesji, demo dostępne)
+  [OK]   T5b.1 chip = BRAK SESJI (jak w oryginale)
+  [OK]   T5b.2 banner o Firebase (komunikat oryginalny)  → tekst="Brak połączenia z bazą Firebase — połącz ze sterownikiem"
+  [OK]   T5b.3 tryb symulacji nadal dostępny
+
+[T6] Przełączanie nowa ↔ stara strona
+  [OK]   T6.1 GET /stara zwraca 200 text/html
+  [OK]   T6.2 stara strona ma przycisk NOWY PANEL → /
+  [OK]   T6.3 stara strona zachowała zakładki (tabs)
+  [OK]   T6.4 token akcji wstrzyknięty w stroną
+  [OK]   T6.5 openMenu("stara") nawiguje na /stara  → MENUS.stara=() => { window.location.href = '/stara'; } | nav=1
+
+[T7] Stara strona ładuje się i odpytuje lokalne API
+  [OK]   T7.1 token akcji dostępny w JS
+  [OK]   T7.2 pasek nagłówka pokazuje IP z /api/status
+  [OK]   T7.3 /api/status odpytany przez starą stronę
+  [OK]   T7.4 funkcje zakładek dostępne (wybierzZakladke)
+  [OK]   T7.5 brak błędów JS starej strony
+
+[T8] Brama statyczna pliku main_centrala.cpp (scope zmian)
+  [OK]   T8.1 wersja podbita do v3.58.0
+  [OK]   T8.2 wpis changeloga na górze pliku
+  [OK]   T8.3 changelog opisuje LAN-PANEL i STRONA-STARA
+  [OK]   T8.4 literal PIECHTML domknięty poprawnie (2 wystąpienia)
+  [OK]   T8.5 literal HTML starej strony domknięty
+  [OK]   T8.6 plik urósł o rozsądny rozmiar (≤ 400 linii)  → delta=230
+
+══════════════════════════════════════════════
+WYNIK: 59/59 asercji OK, zero błędów
