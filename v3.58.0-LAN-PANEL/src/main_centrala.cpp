@@ -1,4 +1,21 @@
-// FIRMWARE_VERSION v3.58.1 -> v3.58.2 (2026-11-10) — TOKEN KOMEND W PANELU LOKALNYM (naprawa "nie można włączyć symulacji").
+// FIRMWARE_VERSION v3.58.2 -> v3.58.3 (2026-11-10) — TOKEN KOMEND AUTOMATYCZNIE W TRYBIE LOKALNYM.
+//
+// [v3.58.3 LAN-TOKEN-AUTO] — 2026-11-10
+// Decyzja użytkownika: "nikt nie będzie sterował, póki nie podłączy się do
+//     sieci — to jest wystarczające" (model dostępu = członkostwo w sieci
+//     lokalnej, dokładnie jak w endpointach starej strony, które od lat nie
+//     wymagają tokena: /api/pompa-manual, /api/symulacja-czujnik itd.).
+// Skutek: w trybie lokalnym NIE TRZEBA wpisywać tokena komend.
+//     - NOWY endpoint GET /api/lan/token (bez weryfikacji, j.w.) zwraca
+//       token komend; panel po potwierdzeniu trybu lokalnego pobiera go
+//       automatycznie i zapamiętuje w przeglądarce (jak ręczny zapis).
+//     - HTTP 403 przy komendzie: panel najpierw odświeża token z centrali
+//       i JEDNORAZOWO ponawia komendę (obsługa zmiany SECRET_CMD_TOKEN po
+//       wgraniu nowego firmware); okno ręczne otwiera się tylko, gdy
+//       automat nie zadziała (np. stary firmware bez /api/lan/token).
+//     - Praca ZDALNA (Firebase) bez zmian: token nadal wpisywany ręcznie.
+//     - /api/lan/cmd BEZ ZMIAN: nadal pełna walidacja X-Piec-Token
+//       (aplikacja Android bez zmian).
 //
 // [v3.58.2 TOKEN-KOMEND] — 2026-11-10
 // Problem (zgłoszony po v3.58.1): "w nowej wersji strony nie można załączyć
@@ -6039,7 +6056,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.58.2";
+static const char* FIRMWARE_VERSION = "v3.58.3";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -11801,6 +11818,9 @@ body.mode-phone-frame #phone {
     })().then(function (v) {
       _espServedMode = v;
       if (!v) _espServedLastFailMs = Date.now();
+      // [v3.58.3 LAN-TOKEN-AUTO] Potwierdzony tryb lokalny = pobierz raz
+      // token komend z centrali, żeby użytkownik niczego nie wpisywał.
+      if (v && !_isDemoMode) lanPobierzToken(false);
       return v;
     });
     return _espServedProbe;
@@ -11821,7 +11841,9 @@ body.mode-phone-frame #phone {
     _espServedMode = null;
     _espServedProbe = null;
     const p = espPanelIsServed();
-    p.then(function (v) { if (v) updateConnectionStateUI(); });
+    // [v3.58.3 LAN-TOKEN-AUTO] Po samonaprawie też dociągnij token, jeśli
+    // jeszcze go nie ma (np. centrala wróciła po restarcie z nowym secretsem).
+    p.then(function (v) { if (v) { updateConnectionStateUI(); lanPobierzToken(false); } });
     return p;
   }
 
@@ -12146,10 +12168,12 @@ body.mode-phone-frame #phone {
     if ($('#authCmdToken')) $('#authCmdToken').value = safeStorage.get('piec_cmd_token') || '';
     if ($('#authStatus')) {
       if (_espServedMode && _isFirebaseConnected) {
-        // [v3.58.2] Tryb lokalny: logowanie Firebase NIE jest wymagane —
-        // do wysyłania komend (symulacje, pompa, serwo...) wystarczy token.
+        // [v3.58.2] Tryb lokalny: logowanie Firebase NIE jest wymagane.
+        // [v3.58.3] Token komend pobiera się z centrali automatycznie —
+        // pole tokena jest potrzebne głównie do pracy zdalnej (Firebase)
+        // albo gdy autopobranie nie zadziała.
         $('#authStatus').className = 'auth-status ok';
-        $('#authStatus').textContent = '🟢 Tryb lokalny (bez Firebase). Logowanie nie jest wymagane — do wysyłania komend wpisz token komend i kliknij „ZAPISZ TOKEN".';
+        $('#authStatus').textContent = '🟢 Tryb lokalny (bez Firebase). Logowanie nie jest wymagane, a token komend pobiera się z centrali automatycznie. Pole tokena poniżej zostaw puste — jest potrzebne głównie do pracy zdalnej (przez Firebase).';
       } else if (_isFirebaseConnected) {
         $('#authStatus').className = 'auth-status ok';
         $('#authStatus').textContent = `🟢 Połączono z Firebase (${_fbEmail || 'zalogowano'})`;
@@ -12364,7 +12388,32 @@ body.mode-phone-frame #phone {
     if (cls !== 'wait') toastTimer = setTimeout(() => toast.className = '', cls === 'ok' ? 2500 : 4500);
   }
 
-  async function sendCommand(cmd) {
+  async function lanPobierzToken(force) {
+    // [v3.58.3 LAN-TOKEN-AUTO] Tryb lokalny: token komend pobierany
+    // AUTOMATYCZNIE z centrali (GET /api/lan/token). Decyzja użytkownika
+    // z 2026-11-10: "kto podłączy się do sieci, ten może sterować" — taki
+    // sam model dostępu jak endpointy starej strony (/api/pompa-manual,
+    // /api/symulacja-czujnik itd.), więc nowy panel po połączeniu z siecią
+    // centrali NIE wymaga wpisywania niczego (działa też w incognito).
+    // Praca ZDALNA (Firebase) nadal wymaga tokena wpisanego ręcznie.
+    if (_isDemoMode) return false;
+    if (_espServedMode !== true) return false;
+    if (_cmdToken && !force) return true;
+    try {
+      const res = await fetchWithTimeout('/api/lan/token', { cache: 'no-store' }, 5000);
+      if (!res.ok) return false;
+      const d = await res.json().catch(() => null);
+      if (d && d.token) {
+        _cmdToken = String(d.token);
+        safeStorage.set('piec_cmd_token', _cmdToken, true);
+        addLog('SYSTEM', 'Token komend pobrany automatycznie z centrali (tryb lokalny)', 'ok');
+        return true;
+      }
+    } catch (e) { /* brak odpowiedzi — zostaje ścieżka ręczna (okno połączenia) */ }
+    return false;
+  }
+
+  async function sendCommand(cmd, _lanTokenRetry) {
     cmd = String(cmd || '').trim();
     if (!cmd) return false;
     const t0 = performance.now();
@@ -12379,6 +12428,9 @@ body.mode-phone-frame #phone {
     // X-Piec-Token — ten sam token co w /piec/cmd), a potwierdzenie przychodzi
     // z GET /api/lan/ack?id=... Działa bez internetu i bez Firebase.
     if (await espPanelIsServed() && !_isDemoMode) {
+      // [v3.58.3 LAN-TOKEN-AUTO] Brak zapamiętanego tokena? Pobierz go
+      // automatycznie z centrali — użytkownik niczego nie wpisuje.
+      if (!_cmdToken) await lanPobierzToken(false);
       const cmdId = makeFireCmdId();
       try {
         const lanBody = new URLSearchParams();
@@ -12390,6 +12442,15 @@ body.mode-phone-frame #phone {
           body: lanBody.toString()
         }, 8000);
         if (res.status === 403) {
+          // [v3.58.3 LAN-TOKEN-AUTO] Najpierw spróbuj AUTOMATYCZNIE odświeżyć
+          // token z centrali (typowy przypadek: zmiana SECRET_CMD_TOKEN po
+          // wgraniu nowego firmware, a w przeglądarce został stary) i JEDNORAZOWO
+          // ponów komendę. Ręczne okno połączenia otwiera się dopiero, gdy
+          // automat nie może wypośrodkować tokenu (np. bardzo stary firmware
+          // bez endpointu /api/lan/token).
+          if (_espServedMode && !_lanTokenRetry && await lanPobierzToken(true)) {
+            return sendCommand(cmd, true);
+          }
           // [v3.58.2 TOKEN-KOMEND] Otwórz okno danych połączenia z fokusem
           // na polu tokena — wcześniej toast odsyłał do "danych połączenia",
           // w których nie było pola tokena (ślepa uliczka; incognito/nowa
@@ -29419,6 +29480,21 @@ void wifiZarejestrujTrasy() {
     lanDodajCorsOdczytu(resp);
     request->send(resp);
   });
+  // [v3.58.3 LAN-TOKEN-AUTO] Token komend dla panelu otwartego z centrali.
+  // Celowo BEZ weryfikacji: model dostępu = "kto podłączy się do sieci
+  // lokalnej, ten może sterować" (decyzja użytkownika z 2026-11-10) —
+  // identycznie jak endpointy starej strony (/api/pompa-manual,
+  // /api/symulacja-czujnik, /api/mieszadlo-manual, /api/ustawienia-set),
+  // które od lat nie wymagają tokena. Dzięki temu nowy panel w trybie
+  // lokalnym działa od razu (również w incognito/nowej przeglądarce),
+  // a /api/lan/cmd zachowuje PEŁNĄ walidację X-Piec-Token (aplikacja
+  // Android bez zmian). Praca zdalna przez Firebase nadal wymaga tokena
+  // wpisanego ręcznie w panelu. Uwaga: token traktowany jako alfanumeryczny
+  // (cudzysłowy/backslash w SECRET_CMD_TOKEN zepsułyby ten JSON).
+  wifiWebServer.on(AsyncURIMatcher::exact("/api/lan/token"), HTTP_GET, [](AsyncWebServerRequest *request) {
+    lanWyslijJson(request, 200, String(F("{\"token\":\"")) + String(CMD_TOKEN) + String(F("\"}")));
+  });
+
   wifiWebServer.on(AsyncURIMatcher::exact("/api/lan/cmd"), HTTP_POST, [](AsyncWebServerRequest *request) {
     const AsyncWebHeader *tokenNaglowek = request->getHeader("X-Piec-Token");
     if (tokenNaglowek == nullptr || tokenNaglowek->value() != CMD_TOKEN) {

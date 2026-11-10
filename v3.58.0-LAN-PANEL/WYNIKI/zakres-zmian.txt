@@ -1,15 +1,20 @@
-ZAKRES ZMIAN v3.57.9 -> v3.58.2 (main_centrala.cpp)
+ZAKRES ZMIAN v3.57.9 -> v3.58.3 (main_centrala.cpp)
 ===================================================
 Baza: v3.57.9, SHA-256 e263437b1fb850cb202c4696404a41b7777b0f12aeef928c7e57788fb2fc158c
-Wynik: v3.58.2 (3.58.0 + poprawki po testach użytkownika: 3.58.1, 3.58.2).
-Razem 447 zmienionych linii w 24 blokach (hunkach) diffu
-(436 dodanych, 11 usuniętych; plik: main_centrala-v3.57.9-do-v3.58.2.patch).
+Wynik: v3.58.3 (3.58.0 + poprawki po testach użytkownika: 3.58.1, 3.58.2, 3.58.3).
+Razem 525 zmienionych linii w 26 blokach (hunkach) diffu
+(513 dodanych, 12 usuniętych; plik: main_centrala-v3.57.9-do-v3.58.3.patch).
 
-POZA literałami HTML (jedyna zmiana logiki C++): 102 linie
-  1. Wpisy changeloga na górze pliku (85 linii komentarza:
+POZA literałami HTML (zmiany logiki C++): ~130 linii
+  1. Wpisy changeloga na górze pliku (~100 linii komentarza:
      v3.58.0 LAN-PANEL/STRONA-STARA + v3.58.1 LAN-PANEL-POPRAWKA +
-     v3.58.2 TOKEN-KOMEND)
-  2. FIRMWARE_VERSION "v3.57.9" -> "v3.58.2" (1 linia)
+     v3.58.2 TOKEN-KOMEND + v3.58.3 LAN-TOKEN-AUTO)
+  2. FIRMWARE_VERSION "v3.57.9" -> "v3.58.3" (1 linia)
+  3. [v3.58.3] NOWY endpoint GET /api/lan/token (14 linii z komentarzem)
+     w wifiZarejestrujTrasy(): zwraca {"token": CMD_TOKEN} BEZ weryfikacji
+     — model dostępu "kto w sieci lokalnej, ten może sterować" (decyzja
+     użytkownika 2026-11-10), spójny z endpointami starej strony;
+     /api/lan/cmd zachowuje pełną walidację X-Piec-Token
   3. Nowa trasa GET /stara w wifiZarejestrujTrasy() (15 linii z komentarzem):
        wifiWebServer.on(AsyncURIMatcher::exact("/stara"), HTTP_GET, [...] {
          AsyncWebServerResponse *response = request->beginResponse(
@@ -70,6 +75,21 @@ WEWNĄTRZ literału WIFI_LOCAL_PANEL_HTML (nowy panel):
     (cmdTokenArg → pole #authCmdToken → pamięć → DEFAULT)
   - ZERO zmian w samym mechanizmie zabezpieczeń: token nadal wymagany,
     nadal ten sam SECRET_CMD_TOKEN, nadal nie ma go w kodzie strony
+
+  v3.58.3 (zgodnie z decyzją użytkownika: "kto podłączy się do sieci, ten
+  może sterować — to wystarczy"; model = członkostwo w sieci lokalnej,
+  identyczny jak endpointy starej strony /api/pompa-manual itd.):
+  - LAN-TOKEN-AUTO: lanPobierzToken() — po potwierdzeniu trybu lokalnego
+    (sonda /api/lan/status) panel pobiera token z GET /api/lan/token
+    i zapamiętuje go w pamięci przeglądarki (piec_cmd_token); zero
+    wpisywania czegokolwiek, działa w incognito/nowej przeglądarce
+  - sendCommand(): brak tokena → autopobranie PRZED wysyłką; HTTP 403 →
+    odświeżenie tokenu (force) i JEDNORAZOWE ponowienie komendy
+    (samonaprawa po zmianie SECRET_CMD_TOKEN w firmware); okno ręczne
+    (v3.58.2) otwiera się tylko, gdy automat nie zadziała
+  - espPanelRetryServed(): po samonaprawie sondy również dociąga token
+  - okno połączenia w trybie lokalnym: komunikacja mówi, że token
+    pobiera się automatycznie (pole ręczne = praca zdalna/awaryjna)
 
 WEWNĄTRZ literału WIFI_STRONA_HTML_HEADER (stara strona, 3 linie):
   - link "✦ NOWY PANEL" (href="/") w pasku nagłówka sys-hdr, styl

@@ -37,7 +37,7 @@ function buildStatus(opts = {}) {
     tel_cloud_seq: 1234, tel_cloud_ts: 1762752000, tel_cloud_ago: 5,
     tel_ring: 1234, tel_pending: 0, tel_sent: 1234,
     tel_gap_events: 0, tel_gap_samples: 0,
-    fw: 'v3.58.2', uptime: 3600,
+    fw: 'v3.58.3', uptime: 3600,
     dzien: 10, miesiac: 11, rok: 2026,
     online: true, night: false, rtc_ok: true,
     updatedAt: 1762752000

@@ -24,6 +24,7 @@ class MockEsp {
     this.opts = Object.assign({
       port: 0,
       cmdToken: 'TEST-TOKEN-123',
+      lanTokenOk: true,         // false = symulacja starego firmware (brak /api/lan/token)
       cmdDelayMs: 300,
       internet: false,        // pole "internet" w /api/lan/status
       lan: true,              // false = serwer BEZ endpointów LAN (tryb zdalny)
@@ -31,7 +32,7 @@ class MockEsp {
       cmdResult: null         // {ok, error} wymuszone dla komendy
     }, opts);
     this.counters = {
-      root: 0, stara: 0, lanStatus: 0, lanCmd: 0, lanAck: 0, apiStatus: 0,
+      root: 0, stara: 0, lanStatus: 0, lanToken: 0, lanCmd: 0, lanAck: 0, apiStatus: 0,
       history: 0, prognoza: 0, solar: 0, other: 0
     };
     this.lanCmdCalls = [];      // {id, cmd, token}
@@ -104,6 +105,18 @@ class MockEsp {
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type'
       });
+      return;
+    }
+    // [v3.58.3 LAN-TOKEN-AUTO] Token komend dla panelu z centrali (bez
+    // weryfikacji — model "kto w sieci, ten steruje", jak endpointy starej
+    // strony). lanTokenOk:false symuluje stary firmware bez tego endpointu.
+    if (this.opts.lan && req.method === 'GET' && path === '/api/lan/token') {
+      this.counters.lanToken++;
+      if (this.opts.lanTokenOk === false) {
+        this._json(res, 500, { ok: false, error: 'token_niedostepny' });
+        return;
+      }
+      this._json(res, 200, { token: this.opts.cmdToken });
       return;
     }
     if (this.opts.lan && req.method === 'POST' && path === '/api/lan/cmd') {

@@ -321,7 +321,7 @@ async function t1_panelLokalny() {
   const sesjaSubs = w.document.querySelectorAll('#sheet .diag-card .sub');
   const sesjaDiag = Array.from(sesjaSubs).map(el => el.textContent).join(' | ');
   ok('T1.6a sesja: wersja centrali (fw) widoczna',
-    /Wersja centrali:\s*v3\.58\.2/.test(sesjaDiag), 'diag="' + sesjaDiag + '"');
+    /Wersja centrali:\s*v3\.58\.3/.test(sesjaDiag), 'diag="' + sesjaDiag + '"');
   ok('T1.6b sesja: źródło danych = lokalne API /api/lan/status',
     /Źródło danych:\s*lokalne API/.test(sesjaDiag), 'diag="' + sesjaDiag + '"');
 
@@ -410,39 +410,80 @@ async function t2_komendyLokalne() {
 }
 
 async function t3_zlyToken() {
-  console.log('\n[T3] Komenda lokalna ze ZŁYM tokenem → HTTP 403');
-  const esp = new MockEsp({ panelHtml: PANEL_HTML, cmdToken: 'TEST-TOKEN-123' });
-  await esp.start();
-  const { w } = await loadPanel({
-    url: 'http://10.178.89.36/',
-    espPort: esp.port,
-    fb: null, internetFb: false,
-    seed: { piec_cmd_token: 'ZLY-TOKEN' }
-  });
-  await waitFor(() => /LIVE/.test(w.document.querySelector('#chip').textContent), 8000);
-  const ret = await w.__PANEL_TEST__.sendCommand('pompa_wl');
-  ok('T3.1 komenda odrzucona (false)', ret === false);
-  const toast = w.document.querySelector('#toast');
-  ok('T3.2 komunikat o nieprawidłowym tokenie komend',
-    toast && /token/i.test(toast.textContent), 'toast="' + (toast && toast.textContent.trim()) + '"');
-  ok('T3.3 centrala widziała próbę z błędnym tokenem',
-    esp.lanCmdCalls.length === 1 && esp.lanCmdCalls[0].token === 'ZLY-TOKEN');
-  // [v3.58.2 TOKEN-KOMEND] 403 otwiera okno danych połączenia z polem tokena.
-  ok('T3.4 po 403 okno połączenia otwarte (auto)', !w.document.querySelector('#authModal').classList.contains('hidden'));
-  const tokField = w.document.querySelector('#authCmdToken');
-  ok('T3.5 pole tokena komend istnieje i jest wypełnione błędnym tokenem (prefill)',
-    !!tokField && tokField.value === 'ZLY-TOKEN');
-  // Zapis poprawnego tokena z okna → kolejna komenda przechodzi.
-  tokField.value = 'TEST-TOKEN-123';
-  w.document.querySelector('#authTokenBtn').click();
-  ok('T3.6 zapis tokena zamyka okno', w.document.querySelector('#authModal').classList.contains('hidden'));
-  ok('T3.7 token zapamiętany w pamięci przeglądarki',
-    w.localStorage.getItem('piec_cmd_token') === 'TEST-TOKEN-123');
-  const ret2 = await w.__PANEL_TEST__.sendCommand('pompa_wl');
-  ok('T3.8 komenda po zapisie tokena przyjęta (true)', ret2 === true);
-  ok('T3.9 nagłówek X-Piec-Token z zapisanego tokena',
-    esp.lanCmdCalls.length === 2 && esp.lanCmdCalls[1].token === 'TEST-TOKEN-123');
-  await esp.stop();
+  console.log('\n[T3] Token komend lokalnie: AUTOPOBRANIE + rotacja + ścieżka ręczna (v3.58.3)');
+
+  // ── T3a: nowa przeglądarka / incognito (pusty localStorage) — token pobiera się sam
+  {
+    const esp = new MockEsp({ panelHtml: PANEL_HTML, cmdToken: 'TEST-TOKEN-123' });
+    await esp.start();
+    const { w } = await loadPanel({
+      url: 'http://10.178.89.36/', espPort: esp.port, fb: null, internetFb: false,
+      seed: {}
+    });
+    await waitFor(() => /LIVE/.test(w.document.querySelector('#chip').textContent), 8000);
+    const ret = await w.__PANEL_TEST__.sendCommand('pompa_wl');
+    ok('T3.1 komenda przyjęta BEZ wpisywania tokenu (autopobranie z /api/lan/token)', ret === true);
+    ok('T3.2 centrala dostała poprawny nagłówek X-Piec-Token',
+      esp.lanCmdCalls.length === 1 && esp.lanCmdCalls[0].token === 'TEST-TOKEN-123');
+    ok('T3.3 token zapamiętany w pamięci przeglądarki',
+      w.localStorage.getItem('piec_cmd_token') === 'TEST-TOKEN-123');
+    ok('T3.4 okno połączenia NIE otwarło się (nic nie trzeba wpisywać)',
+      w.document.querySelector('#authModal').classList.contains('hidden'));
+    await esp.stop();
+  }
+
+  // ── T3b: rotacja tokena — w pamięci stary, centrala ma nowy (reflash z innym sekretem)
+  {
+    const esp = new MockEsp({ panelHtml: PANEL_HTML, cmdToken: 'NOWY-TOKEN-9' });
+    await esp.start();
+    const { w } = await loadPanel({
+      url: 'http://10.178.89.36/', espPort: esp.port, fb: null, internetFb: false,
+      seed: { piec_cmd_token: 'STARY-TOKEN-1' }
+    });
+    await waitFor(() => /LIVE/.test(w.document.querySelector('#chip').textContent), 8000);
+    const ret = await w.__PANEL_TEST__.sendCommand('pompa_wl');
+    ok('T3.5 rotacja: 403 → autoponowienie z nowym tokenem → ACK',
+      ret === true && esp.lanCmdCalls.length === 2 &&
+      esp.lanCmdCalls[0].token === 'STARY-TOKEN-1' && esp.lanCmdCalls[1].token === 'NOWY-TOKEN-9');
+    ok('T3.6 rotacja: pamięć zaktualizowana do nowego tokena',
+      w.localStorage.getItem('piec_cmd_token') === 'NOWY-TOKEN-9');
+    ok('T3.7 rotacja: okno połączenia NIE otwarło się (samonaprawa bez użytkownika)',
+      w.document.querySelector('#authModal').classList.contains('hidden'));
+    await esp.stop();
+  }
+
+  // ── T3c: autopobranie niedostępne (stary firmware bez /api/lan/token) → fallback ręczny
+  {
+    const esp = new MockEsp({ panelHtml: PANEL_HTML, cmdToken: 'TEST-TOKEN-123', lanTokenOk: false });
+    await esp.start();
+    const { w } = await loadPanel({
+      url: 'http://10.178.89.36/', espPort: esp.port, fb: null, internetFb: false,
+      seed: {}
+    });
+    await waitFor(() => /LIVE/.test(w.document.querySelector('#chip').textContent), 8000);
+    const ret = await w.__PANEL_TEST__.sendCommand('pompa_wl');
+    ok('T3.8 awaria autopobrania: komenda odrzucona (false)', ret === false);
+    const toast = w.document.querySelector('#toast');
+    ok('T3.9 komunikat o nieprawidłowym tokenie komend',
+      toast && /token/i.test(toast.textContent), 'toast="' + (toast && toast.textContent.trim()) + '"');
+    // [v3.58.2 TOKEN-KOMEND] 403 otwiera okno danych połączenia z polem tokena.
+    ok('T3.10 po 403 okno połączenia otwarte (auto)',
+      !w.document.querySelector('#authModal').classList.contains('hidden'));
+    const tokField = w.document.querySelector('#authCmdToken');
+    ok('T3.11 pole tokena komend istnieje (puste — autopobranie nie działa)',
+      !!tokField && tokField.value === '');
+    // Zapis poprawnego tokena z okna → kolejna komenda przechodzi.
+    tokField.value = 'TEST-TOKEN-123';
+    w.document.querySelector('#authTokenBtn').click();
+    ok('T3.12 zapis tokena zamyka okno', w.document.querySelector('#authModal').classList.contains('hidden'));
+    ok('T3.13 token zapamiętany w pamięci przeglądarki',
+      w.localStorage.getItem('piec_cmd_token') === 'TEST-TOKEN-123');
+    const ret2 = await w.__PANEL_TEST__.sendCommand('pompa_wl');
+    ok('T3.14 komenda po ręcznym zapisie przyjęta (true)', ret2 === true);
+    ok('T3.15 nagłówek X-Piec-Token z ręcznie zapisanego tokena',
+      esp.lanCmdCalls.length === 2 && esp.lanCmdCalls[1].token === 'TEST-TOKEN-123');
+    await esp.stop();
+  }
 }
 
 async function t5_pracaZdalna() {
@@ -617,15 +658,19 @@ async function t8_stalaWersjaIBrama() {
     return;
   }
   const orig = fsx.readFileSync(origPath, 'utf-8');
-  ok('T8.1 wersja podbita do v3.58.2', /FIRMWARE_VERSION = \"v3\.58\.2\"/.test(cpp));
+  ok('T8.1 wersja podbita do v3.58.3', /FIRMWARE_VERSION = \"v3\.58\.3\"/.test(cpp));
   ok('T8.2 wpis changeloga na górze pliku',
-    cpp.startsWith('// FIRMWARE_VERSION v3.58.1 -> v3.58.2'));
-  ok('T8.3 changelog opisuje LAN-PANEL, STRONA-STARA, poprawkę v3.58.1 i v3.58.2',
+    cpp.startsWith('// FIRMWARE_VERSION v3.58.2 -> v3.58.3'));
+  ok('T8.3 changelog opisuje LAN-PANEL, STRONA-STARA i poprawki v3.58.1/2/3',
     /\[v3\.58\.0 LAN-PANEL\]/.test(cpp) && /STRONA-STARA|\[v3\.58\.0 STRONA-STARA\]/.test(cpp) &&
-    /\[v3\.58\.1 LAN-PANEL-POPRAWKA\]/.test(cpp) && /\[v3\.58\.2 TOKEN-KOMEND\]/.test(cpp));
+    /\[v3\.58\.1 LAN-PANEL-POPRAWKA\]/.test(cpp) && /\[v3\.58\.2 TOKEN-KOMEND\]/.test(cpp) &&
+    /\[v3\.58\.3 LAN-TOKEN-AUTO\]/.test(cpp));
   // [v3.58.2 TOKEN-KOMEND] pole tokena + przycisk zapisu w panelu
   ok('T8.3a pole tokena komend i przycisk ZAPISZ TOKEN w panelu',
     /id=\"authCmdToken\"/.test(cpp) && /id=\"authTokenBtn\"/.test(cpp));
+  // [v3.58.3 LAN-TOKEN-AUTO] endpoint tokenu + funkcja autopobrania w panelu
+  ok('T8.3b endpoint GET /api/lan/token i autopobranie w panelu',
+    /api\/lan\/token/.test(cpp) && /lanPobierzToken/.test(cpp));
   ok('T8.4 literal PIECHTML domknięty poprawnie (2 wystąpienia)',
     (cpp.match(/PIECHTML/g) || []).length === 2);
   ok('T8.5 literal HTML starej strony domknięty',
@@ -652,9 +697,10 @@ async function t8_stalaWersjaIBrama() {
   const origLines = orig.split('\n');
   const cppLines = cpp.split('\n');
   // policz dokładnie: linie dodane poza hunkami HTML (przez porównanie liczby linii)
-  // [v3.58.2] limit 500: poprawka dodaje UI tokena komend (~83 linii JS panelu)
-  ok('T8.6 plik urósł o rozsądny rozmiar (≤ 500 linii)',
-    cppLines.length - origLines.length <= 500 && cppLines.length > origLines.length,
+  // [v3.58.3] limit 600: v3.58.2 dodała UI tokena (~83 linii), v3.58.3 dodaje
+  // autopobranie tokenu (endpoint + logika ponowienia, ~76 linii)
+  ok('T8.6 plik urósł o rozsądny rozmiar (≤ 600 linii)',
+    cppLines.length - origLines.length <= 600 && cppLines.length > origLines.length,
     'delta=' + (cppLines.length - origLines.length));
 }
 

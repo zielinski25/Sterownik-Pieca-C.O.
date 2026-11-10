@@ -1,13 +1,24 @@
-# Firmware 3.58.2 — panel lokalny bez Firebase + powrót starej strony
+# Firmware 3.58.3 — panel lokalny bez Firebase + powrót starej strony
 
 Data: 2026-11-10 · baza: **3.57.9** (SHA-256 `src/main_centrala.cpp`:
 `e263437b1fb850cb202c4696404a41b7777b0f12aeef928c7e57788fb2fc158c`) ·
-zastępuje **3.57.9 → 3.58.0 → 3.58.1 → 3.58.2** (poprawka po drugim
-teście użytkownika)
+zastępuje **3.57.9 → 3.58.0 → 3.58.1 → 3.58.2 → 3.58.3** (poprawki po
+testach użytkownika)
 
 Zmienia się **jeden plik**: `src/main_centrala.cpp`. Pliki `.h` bez zmian,
 `src/secrets.h` nietknięty. Biblioteki i `platformio.ini` bez zmian
 (dokładnie te same co przy kompilacji 3.57.9).
+
+> **v3.58.3 (poprawka):** zgodnie z decyzją użytkownika („kto podłączy się
+> do sieci, ten może sterować — to wystarczy", model dostępu identyczny jak
+> endpointy starej strony) **w trybie lokalnym nie trzeba wpisywać tokena
+> komend w ogóle**: nowy endpoint `GET /api/lan/token` (sieć lokalna) zwraca
+> token, a panel pobiera go **automatycznie** po potwierdzeniu trybu
+> lokalnego i zapamiętuje w przeglądarce. Komenda po zmianie `SECRET_CMD_TOKEN`
+> (reflash z innym sekretem) samonaprawia się: 403 → odświeżenie tokenu →
+> ponowienie — bez udziału użytkownika. Pole ręczne z v3.58.2 zostaje jako
+> awaryjne oraz dla pracy zdalnej (Firebase). `/api/lan/cmd` nadal w pełni
+> weryfikuje `X-Piec-Token` (aplikacja Android bez zmian).
 
 > **v3.58.2 (poprawka):** naprawia „**nie można załączyć symulacji**"
 > zgłoszone po v3.58.1. W nowej przeglądarce / oknie incognito panel nie ma
@@ -72,19 +83,26 @@ wskazówkę, jak otworzyć panel z adresu centrali — zamiast cicho nic nie rob
 
 | rodzaj | zakres |
 |---|---|
-| JS nowego panelu (wewnątrz literału `WIFI_LOCAL_PANEL_HTML`) | tryb LAN: sonda `/api/lan/status` (3 próby + samonaprawa), gałąź LAN w `pollFirebase()`, `sendCommand()`, `tryAutoLogin()`, komunikaty UI, karta + przycisk przełącznika (zawsze widoczne), diagnostyka sesji (wersja + źródło danych), **v3.58.2: UI tokena komend w oknie połączenia (pole + „ZAPISZ TOKEN" + auto-otwarcie przy 403)** |
+| JS nowego panelu (wewnątrz literału `WIFI_LOCAL_PANEL_HTML`) | tryb LAN: sonda `/api/lan/status` (3 próby + samonaprawa), gałąź LAN w `pollFirebase()`, `sendCommand()`, `tryAutoLogin()`, komunikaty UI, karta + przycisk przełącznika (zawsze widoczne), diagnostyka sesji (wersja + źródło danych), **v3.58.2: UI tokena w oknie połączenia**, **v3.58.3: `lanPobierzToken()` — autopobranie tokenu z `/api/lan/token` + samonaprawiające ponowienie po 403** |
 | HTML starej strony (`WIFI_STRONA_HTML_HEADER`) | 1 link „NOWY PANEL" w pasku nagłówka |
-| C++ poza HTML | **jedyna nowa logika**: rejestracja trasy `GET /stara` (15 linii) + podbicie `FIRMWARE_VERSION` + wpisy changeloga |
+| C++ poza HTML | **jedyna nowa logika**: rejestracja trasy `GET /stara` (15 linii) + **v3.58.3: endpoint `GET /api/lan/token` (14 linii z komentarzem)** + podbicie `FIRMWARE_VERSION` + wpisy changeloga |
 
-Razem 447 zmienionych linii w 24 blokach diffu (436 dodanych, 11 usuniętych),
-w tym tylko ~102 poza literałami HTML (changelog, wersja, trasa `/stara`).
-Pełny diff: `main_centrala-v3.57.9-do-v3.58.2.patch`.
+Razem 525 zmienionych linii w 26 blokach diffu (513 dodanych, 12 usuniętych),
+w tym ~130 poza literałami HTML (changelog, wersja, trasa `/stara`,
+endpoint `/api/lan/token`).
+Pełny diff: `main_centrala-v3.57.9-do-v3.58.3.patch`.
 
 ## Czego NIE zmieniono
 
-- Zabezpieczeń: komenda lokalna wymaga nagłówka `X-Piec-Token` z tym samym
-  `CMD_TOKEN` (z `secrets.h`) co `/piec/cmd` — odrzucenie = HTTP 403, jak dotąd.
-  Status lokalny jest jawny (bez tokenu) — identycznie jak w aplikacji Android.
+- Zabezpieczeń **na ścieżkach zewnętrznych**: `/api/lan/cmd` nadal wymaga
+  nagłówka `X-Piec-Token` z tym samym `CMD_TOKEN` (z `secrets.h`) co
+  `/piec/cmd` — odrzucenie = HTTP 403, jak dotąd (aplikacja Android bez
+  zmian; praca zdalna bez zmian). Nowy `GET /api/lan/token` (v3.58.3) jest
+  jawny **celowo i tylko w sieci lokalnej** — model dostępu „kto w sieci,
+  ten steruje" (decyzja użytkownika 2026-11-10), spójny z endpointami
+  starej strony (`/api/pompa-manual`, `/api/symulacja-czujnik` itd.),
+  które od lat nie wymagają tokenu. Status lokalny jest jawny — identycznie
+  jak w aplikacji Android.
 - Logiki pieca, automatyki, czujników, wyjść, ustawień, NVS, Firebase,
   Telegrama, telemetrii, LCD, OTA, formatu `/piec/status`, `/piec/cmd`,
   `/piec/ack` i wszystkich istniejących endpointów.
@@ -99,36 +117,45 @@ Odczyt danych lokalnie działa bez czegokolwiek. **Wysyłanie komend**
 `SECRET_CMD_TOKEN` z `secrets.h`, dokładnie tego samego, jakiego wymagał
 tryb Firebase. Zły token = HTTP 403 z czytelnym komunikatem.
 
-**Nowe w v3.58.2 — token można wpisać ręcznie w panelu.** Wcześniej token
-trafiał do pamięci przeglądarki tylko przy logowaniu Firebase, więc w nowej
-przeglądarce / incognito (pusta pamięć) każda komenda dostawała 403, a toast
-wskazywał „dane połączenia", w których pola tokena nie było. Teraz:
+**Nowe w v3.58.3 — w trybie lokalnym token pobiera się AUTOMATYCZNIE.**
+Model dostępu (decyzja użytkownika z 2026-11-10): **kto podłączy się do
+sieci lokalnej, ten może sterować** — identycznie jak endpointy starej
+strony (`/api/pompa-manual`, `/api/symulacja-czujnik` itd.), które od lat
+nie wymagają tokenu. Dlatego:
 
-- okno połączenia (ikona 🔑 / pasek chipa) ma pole **„Token komend
-  (X-Piec-Token)"** i przycisk **„💾 ZAPISZ TOKEN (TRYB LOKALNY)"** —
-  zapisuje token bez logowania Firebase, z zapamiętaniem w przeglądarce
-  (klucz `piec_cmd_token` jak dotychczas),
-- **HTTP 403 automatycznie otwiera to okno** i ustawia kursor w polu tokenu,
-- w trybie lokalnym okno mówi wprost: logowanie Firebase nie jest wymagane,
-  wystarczy token; przycisk w arkuszu sesji nazywa się wtedy „🔑 Token
-  komend / dane połączenia".
+- nowy endpoint **`GET /api/lan/token`** (sieć lokalna, bez weryfikacji —
+  jw.) zwraca token komend; panel pobiera go **sam** po potwierdzeniu
+  trybu lokalnego (działa też w incognito — zero wpisywania),
+- **rotacja**: jeśli w przeglądarce został stary token (np. po zmianie
+  `SECRET_CMD_TOKEN` i wgraniu nowego firmware), komenda dostaje 403,
+  panel **odświeża token z centrali i sam ponawia komendę** — bez okien,
+- **awaryjnie** (np. firmware bez `/api/lan/token`): okno połączenia
+  z polem tokena i przycisk „ZAPISZ TOKEN" z v3.58.2 — działa jak dotychczas.
 
-Token **nie jest zapisany w stronie** (nie ma go w kodzie panelu ani
-w źródle strony) — wpisujesz go raz w przeglądarce, jak hasło.
+**Praca zdalna (Firebase) bez zmian**: panel otwarty z plika/innej domeny
+nie ma dostępu do sieci centrali, więc token wpisujesz ręcznie (pole
+z v3.58.2 w oknie połączenia). `/api/lan/cmd` nadal w pełni weryfikuje
+nagłówek `X-Piec-Token` — aplikacja Android pracuje bez zmian.
+
+Token **nie jest zapisany w kodzie strony** — panel pobiera go z centrali
+dopiero po połączeniu z jej siecią (albo wpisujesz go ręcznie do pracy
+zdalnej, jak hasło).
 
 ## Testy
 
-- **Atrapa serwera (bez sprzętu)**: `tests/run-tests.js` — 85 asercji,
+- **Atrapa serwera (bez sprzętu)**: `tests/run-tests.js` — 92 asercji,
   9 scenariuszy (jsdom + mock ESP32 + mock Firebase, zero prawdziwej sieci):
   start lokalny bez Firebase, komendy z ACK/NACK/409/403, utrata i powrót
   połączenia, praca zdalna przez Firebase (w tym toast zamiast nawigacji
   przy kliku w przełącznik), przełączanie stron, ładowanie starej strony,
   brama statyczna pliku oraz **T9: sonda z 3 próbami + samonaprawa**
-  (reprodukcja usterki zgłoszonej w 3.58.0) i **T3 rozszerzony o pełny
-  przepływ tokena v3.58.2**: 403 → automatyczne otwarcie okna połączenia
-  z polem tokena → zapis „ZAPISZ TOKEN" → zapamiętanie w localStorage →
-  kolejna komenda z poprawnym nagłówkiem `X-Piec-Token` przechodzi (ACK).
-  Wynik: **85/85 OK** (pełny log: `WYNIKI/testy-atrapa-serwera.txt`).
+  (reprodukcja usterki zgłoszonej w 3.58.0) i **T3 przebudowany na przepływ
+  v3.58.3**: (a) pusta przeglądarka → komenda działa od razu, token
+  autopobrany z `/api/lan/token` i zapamiętany, okno połączenia się NIE
+  otwiera; (b) rotacja — stary token w pamięci → 403 → auto-odświeżenie →
+  ponowienie z nowym tokenem → ACK; (c) awaria autopobrania → fallback
+  ręczny z v3.58.2 (403 → okno → zapis → komenda ACK).
+  Wynik: **92/92 OK** (pełny log: `WYNIKI/testy-atrapa-serwera.txt`).
 - **Sprzęt (ESP32-S3): NIE testowane** — wersja nie była wgrywana na płytkę
   ani na piec. Testy na gołej płytce robi użytkownik.
 

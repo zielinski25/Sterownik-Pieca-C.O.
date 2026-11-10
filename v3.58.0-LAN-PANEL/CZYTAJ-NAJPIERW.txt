@@ -1,9 +1,9 @@
-FIRMWARE 3.58.2 - co zrobic w 3 krokach
+FIRMWARE 3.58.3 - co zrobic w 3 krokach
 =======================================
-(poprawka po drugim tescie 3.58.0/3.58.1: naprawione "nie mozna zalaczyc
- symulacji" - w nowej przegladarce/incognito panel nie mial tokenu komend
- i kazda komenda dostawala 403; teraz token wpisujesz w panelu; szczegoly
- w README.md)
+(poprawka po trzecim tescie: zgodnie z Twoja decyzja "kto podlaczy sie do
+ sieci, ten moze sterowac" - w trybie lokalnym token komend pobiera sie
+ AUTOMATYCZNIE z centrali; niczego nie wpisujesz, dziala tez w incognito;
+ szczegoly w README.md)
 Zmienia sie JEDEN plik: src/main_centrala.cpp
 Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
 Biblioteki i platformio.ini: BEZ ZMIAN (identyczne jak przy 3.57.9).
@@ -34,22 +34,21 @@ CO DAJE TA WERSJA
    odpowiedzialo)" a otworzyles panel z adresu centrali - kliknij
    "STARA WERSJA" (ponawia sonde) albo odswiez strone.
 
-3) TOKEN KOMEND (NOWE w 3.58.2 - wlasnie to naprawia "symulacja nie dziala"):
-   wysylanie komend (symulacje, pompa, serwo...) wymaga tokena z secrets.h
-   (SECRET_CMD_TOKEN) - TEGO SAMEGO co dotychczas dla Firebase.
-   W nowej przegladarce / incognito pamiec przegladarki jest pusta, wiec
-   w 3.58.1 kazda komenda dostawala 403, a toast wskazywal "dane polaczenia",
-   w ktorych pola tokenu NIE BYLO. Teraz:
-   - okno polaczenia (ikona klucza / pasek chipa) ma pole "Token komend
-     (X-Piec-Token)" oraz przycisk "ZAPISZ TOKEN (TRYB LOKALNY)" -
-     wpisujesz tam wartosc SECRET_CMD_TOKEN ze swojego secrets.h,
-   - HTTP 409/403: przy 403 panel SAM otwiera to okno i ustawia kursor
-     w polu tokenu; toast mowi, co zrobic,
-   - w trybie lokalnym logowanie Firebase NIE jest wymagane - wystarczy
-     token (okno samo o tym mowi),
-   - token zapamietuje sie w przegladarce (piec_cmd_token, jak dotychczas);
-     wpisujesz go raz, a w incognito po zamknieciu okna znika (taka natura
-     incognito - uzyj zwyklej karty, jezeli ma sie zapamietac).
+3) TOKEN KOMEND (NOWE w 3.58.3 - zgodnie z Twoja decyzja):
+   model dostepu = "kto podlaczy sie do sieci, ten moze sterowac"
+   (dokladnie jak w starej stronie - jej endpointy od lat nie wymagaja
+   tokena). W trybie lokalnym (panel otwarty z IP centrali):
+   - token komend POBIERA SIE AUTOMATYCZNIE z centrali (GET /api/lan/token),
+     panel zapamietuje go w przegladarce - NICZEGO NIE WPISUJESZ,
+     rowniez w nowej przegladarce / incognito,
+   - jesli zmienisz SECRET_CMD_TOKEN w secrets.h i wgriesz nowy firmware,
+     panel sam odkryje rozjazdz: 403 -> odswiezy token -> ponowi komende,
+   - awaryjnie (np. stary firmware bez tego endpointu): okno polaczenia
+     ma pole "Token komend" i przycisk "ZAPISZ TOKEN (TRYB LOKALNY)"
+     (z v3.58.2) - wpisujesz wartosc SECRET_CMD_TOKEN ze swojego secrets.h.
+   Praca ZDALNA (panel z plika/innej domeny, przez Firebase) bez zmian:
+   tam token nadal wpisujesz recznie (raz, w danych polaczenia).
+   /api/lan/cmd nadal pelnie weryfikuje token (aplikacja Android bez zmian).
    Odczyt danych dziala bez tokenu.
 
 
@@ -77,17 +76,17 @@ KROK 3 - TEST NA GOLEJ PLYTCE (zanim podejdziesz do pieca)
 3. Przelacznik stron: przycisk "STARA WERSJA" w pasku pulpitu (albo
    Ustawienia -> "Starsza strona lokalna") -> otwiera /stara;
    ze starej strony przycisk "NOWY PANEL" wroci do /.
-   Ustawienia -> "Sesja operatora": sprawdz "Wersja centrali: v3.58.2"
-   (jesli widzisz v3.58.1 lub starsza - przegladarka/cache ma stara strone,
+   Ustawienia -> "Sesja operatora": sprawdz "Wersja centrali: v3.58.3"
+   (jesli widzisz v3.58.2 lub starsza - przegladarka/cache ma stara strone,
    odswiez Ctrl+F5) oraz "Zrodlo danych" (lokalne API czy Firebase).
-4. Komenda (np. wlaczenie pompy w menu pompy) - SCENARIUSZ INCognito:
+4. Komenda/symulacja - SCENARIUSZ INCOGNITO (najlepszy test v3.58.3):
    - otworz panel w nowej karcie incognito (pusta pamiec przegladarki),
-   - sprobuj komendy/symulacji: dostaniesz 403, ale panel SAM otworzy
-     okno "dane polaczenia" i ustawi kursor w polu "Token komend",
-   - wpisz wartosc SECRET_CMD_TOKEN ze swojego secrets.h i kliknij
-     "ZAPISZ TOKEN (TRYB LOKALNY)",
-   - ponow komende: toast "Potwierdzone przez sterownik (ACK, ...ms)".
-   W zwyklej przegladarce z zapamietanym tokenem komenda przechodzi od razu.
+   - sprobuj komendy/symulacji (np. symulacja temperatury pokoju):
+     MA DZIALAC OD RAZU - token pobiera sie sam, zadne okno sie nie otwiera,
+     toast: "Potwierdzone przez sterownik (ACK, ...ms)".
+   Jezeli jednak pojawi sie 403 i okno polaczenia (awaria autopobrania):
+   wpisz wartosc SECRET_CMD_TOKEN ze swojego secrets.h i kliknij
+   "ZAPISZ TOKEN (TRYB LOKALNY)", ponow komende.
 5. Wylacz centrale (zasilanie) - banner "Brak polaczenia ze sterownikiem
    w sieci lokalnej"; wlacz - banner znika, dane wracaja.
 
@@ -103,7 +102,7 @@ TESTY W PACZCE (opcjonalnie, na komputerze z Node.js >= 18)
 cd tests
 npm install
 node run-tests.js
-(85 asercji, testy z atrapa serwera - opis w tests/README.txt)
+(92 asercje, testy z atrapa serwera - opis w tests/README.txt)
 
 
 CZEGO TA WERSJA NIE ROBI
@@ -111,6 +110,9 @@ CZEGO TA WERSJA NIE ROBI
 - Nie byla testowana na sprzecie (ani plytka, ani piec) - testy na zywo
   robisz Ty (scenariusz wyzej).
 - Nie zmienia logiki pieca, automatyki, Firebase centrali, Telegrama, LCD.
-- Nie oslabia zabezpieczen: token nadal wymagany, nadal ten sam
-  (SECRET_CMD_TOKEN z secrets.h), nie ma go w kodzie strony - po prostu
-  mozna go teraz wpisac w panelu (wczesniej nie bylo jak).
+- Nie zmienia logiki pieca, automatyki, Firebase centrali, Telegrama, LCD.
+- Nie oslabia sciezek zewnetrznych: /api/lan/cmd i praca zdalna nadal
+  wymagaja tokenu (SECRET_CMD_TOKEN z secrets.h), aplikacja Android bez
+  zmian. Nowy jawny jest tylko GET /api/lan/token - wylacznie w sieci
+  lokalnej, zgodnie z Twoja decyzja "kto w sieci, ten steruje" (stara
+  strona ma tak od zawsze: /api/pompa-manual, /api/symulacja-czujnik).

@@ -1,5 +1,5 @@
 ════════════════════════════════════════════════════════════════════
- TESTY ATRAPY SERWERA — firmware v3.58.2 (LAN-PANEL + POPRAWKI)
+ TESTY ATRAPY SERWERA — firmware v3.58.3 (LAN-PANEL + POPRAWKI)
  Data: 2026-11-10 · Node v22.22.3 · jsdom 24 · zero prawdziwej sieci
  Uruchomienie: npm install && node run-tests.js (tests/)
  Źródło panelu i strony starej wyciągnięte wprost z ../src/main_centrala.cpp
@@ -14,8 +14,8 @@
   [OK]   T1.5 karta "Starsza strona lokalna" widoczna w trybie LAN
   [OK]   T1.5a przycisk "⇄ STARA WERSJA" w pasku pulpitu (LAN)  → btn=⇄ STARA WERSJA
   [OK]   T1.6 karta sesji: POŁĄCZENIE Z CENTRALĄ (LAN)  → lbl=POŁĄCZENIE Z CENTRALĄ (LAN)
-  [OK]   T1.6a sesja: wersja centrali (fw) widoczna  → diag="Konto: połączenie lokalne · IP: 10.178.89.36 · RSSI: -58 dBm | Wersja centrali: v3.58.2 · Źródło danych: lokalne API /api/lan/status"
-  [OK]   T1.6b sesja: źródło danych = lokalne API /api/lan/status  → diag="Konto: połączenie lokalne · IP: 10.178.89.36 · RSSI: -58 dBm | Wersja centrali: v3.58.2 · Źródło danych: lokalne API /api/lan/status"
+  [OK]   T1.6a sesja: wersja centrali (fw) widoczna  → diag="Konto: połączenie lokalne · IP: 10.178.89.36 · RSSI: -58 dBm | Wersja centrali: v3.58.3 · Źródło danych: lokalne API /api/lan/status"
+  [OK]   T1.6b sesja: źródło danych = lokalne API /api/lan/status  → diag="Konto: połączenie lokalne · IP: 10.178.89.36 · RSSI: -58 dBm | Wersja centrali: v3.58.3 · Źródło danych: lokalne API /api/lan/status"
   [OK]   T1.7 /api/lan/status odpytany (>0)  → odpytań: 3
   [OK]   T1.8 ZERO zapytań do Firebase w trybie lokalnym  → other=0
   [OK]   T1.9 pasek systemowy informuje o lokalnym API
@@ -30,12 +30,12 @@
 
 [T2] Komendy lokalne: POST /api/lan/cmd + ACK (token poprawny)
   [OK]   T2.1 sendCommand zwraca true (ACK)
-  [OK]   T2.2 komenda przyjęta przez /api/lan/cmd  → calls=[{"id":"mwaxpldi-1-1t4q4hsts14r1","cmd":"pompa_wl","token":"TEST-TOKEN-123"}]
+  [OK]   T2.2 komenda przyjęta przez /api/lan/cmd  → calls=[{"id":"mwaye749-1-1h3axlw1iq1qaz","cmd":"pompa_wl","token":"TEST-TOKEN-123"}]
   [OK]   T2.3 nagłówek X-Piec-Token z tokenu komend
   [OK]   T2.4 treść komendy doszła cała
   [OK]   T2.5 cmdId w formacie generatora
   [OK]   T2.6 ACK odpytany co najmniej raz
-  [OK]   T2.7 toast potwierdzenia ACK  → toast="pompa_wlPotwierdzone przez sterownik (ACK, 517ms)"
+  [OK]   T2.7 toast potwierdzenia ACK  → toast="pompa_wlPotwierdzone przez sterownik (ACK, 568ms)"
   [OK]   T2.8 status odświeżony po ACK (pompa wciąż ON z fixture)
   [OK]   T2.9 brak błędów JS
   [OK]   T2.10 NACK zwraca false
@@ -43,16 +43,22 @@
   [OK]   T2.12 zajęty slot (HTTP 409) → false bez utraty ACK
   [OK]   T2.13 pierwsza komenda dokończona po zwolnieniu slotu
 
-[T3] Komenda lokalna ze ZŁYM tokenem → HTTP 403
-  [OK]   T3.1 komenda odrzucona (false)
-  [OK]   T3.2 komunikat o nieprawidłowym tokenie komend  → toast="pompa_wlNieprawidłowy token komend — otwieram dane połączenia: wpisz token i kliknij ZAPISZ TOKEN"
-  [OK]   T3.3 centrala widziała próbę z błędnym tokenem
-  [OK]   T3.4 po 403 okno połączenia otwarte (auto)
-  [OK]   T3.5 pole tokena komend istnieje i jest wypełnione błędnym tokenem (prefill)
-  [OK]   T3.6 zapis tokena zamyka okno
-  [OK]   T3.7 token zapamiętany w pamięci przeglądarki
-  [OK]   T3.8 komenda po zapisie tokena przyjęta (true)
-  [OK]   T3.9 nagłówek X-Piec-Token z zapisanego tokena
+[T3] Token komend lokalnie: AUTOPOBRANIE + rotacja + ścieżka ręczna (v3.58.3)
+  [OK]   T3.1 komenda przyjęta BEZ wpisywania tokenu (autopobranie z /api/lan/token)
+  [OK]   T3.2 centrala dostała poprawny nagłówek X-Piec-Token
+  [OK]   T3.3 token zapamiętany w pamięci przeglądarki
+  [OK]   T3.4 okno połączenia NIE otwarło się (nic nie trzeba wpisywać)
+  [OK]   T3.5 rotacja: 403 → autoponowienie z nowym tokenem → ACK
+  [OK]   T3.6 rotacja: pamięć zaktualizowana do nowego tokena
+  [OK]   T3.7 rotacja: okno połączenia NIE otwarło się (samonaprawa bez użytkownika)
+  [OK]   T3.8 awaria autopobrania: komenda odrzucona (false)
+  [OK]   T3.9 komunikat o nieprawidłowym tokenie komend  → toast="pompa_wlNieprawidłowy token komend — otwieram dane połączenia: wpisz token i kliknij ZAPISZ TOKEN"
+  [OK]   T3.10 po 403 okno połączenia otwarte (auto)
+  [OK]   T3.11 pole tokena komend istnieje (puste — autopobranie nie działa)
+  [OK]   T3.12 zapis tokena zamyka okno
+  [OK]   T3.13 token zapamiętany w pamięci przeglądarki
+  [OK]   T3.14 komenda po ręcznym zapisie przyjęta (true)
+  [OK]   T3.15 nagłówek X-Piec-Token z ręcznie zapisanego tokena
 
 [T5] Praca ZDALNA przez Firebase zachowana (panel spoza centrali)
   [OK]   T5.1 auto-logowanie Firebase i LIVE  → signin=0 statusGet=2
@@ -60,8 +66,8 @@
   [OK]   T5.3 karta "Starsza strona lokalna" WIDOCZNA także zdalnie (v3.58.1)
   [OK]   T5.3a podpis karty zdalnie zawiera wskazówkę (adres centrali)  → sub=Poprzedni interfejs WWW (adres /stara) — działa po otwarciu panelu z adresu centrali
   [OK]   T5.4 karta sesji: POŁĄCZENIE Z FIREBASE (praca zdalna bez zmian)  → lbl=POŁĄCZENIE Z FIREBASE
-  [OK]   T5.4a sesja zdalna: źródło danych = Firebase RTDB  → diag="Konto: test@akwarium.local · IP: 10.178.89.36 · RSSI: -58 dBm | Wersja centrali: v3.58.2 · Źródło danych: Firebase RTDB (lokalne API nie odpowiedziało)"
-  [OK]   T5.5 komenda wysłana przez /piec/cmd (PATCH)  → patches=[{"id":"mwaxpqew-1-14b8av21ho7f3y","cmd":"pompa_wl","token":"TEST-TOKEN-123","ts":1794329934584}]
+  [OK]   T5.4a sesja zdalna: źródło danych = Firebase RTDB  → diag="Konto: test@akwarium.local · IP: 10.178.89.36 · RSSI: -58 dBm | Wersja centrali: v3.58.3 · Źródło danych: Firebase RTDB (lokalne API nie odpowiedziało)"
+  [OK]   T5.5 komenda wysłana przez /piec/cmd (PATCH)  → patches=[{"id":"mwayee1q-1-ktg1kt1ds303p","cmd":"pompa_wl","token":"TEST-TOKEN-123","ts":1794331084958}]
   [OK]   T5.6 PATCH zawiera token komend
   [OK]   T5.7 ACK przyszedł z /piec/ack  → ackGet=2
   [OK]   T5.8 ZERO komend lokalnych (/api/lan/cmd) w trybie zdalnym
@@ -90,13 +96,14 @@
   [OK]   T7.5 brak błędów JS starej strony
 
 [T8] Brama statyczna pliku main_centrala.cpp (scope zmian)
-  [OK]   T8.1 wersja podbita do v3.58.2
+  [OK]   T8.1 wersja podbita do v3.58.3
   [OK]   T8.2 wpis changeloga na górze pliku
-  [OK]   T8.3 changelog opisuje LAN-PANEL, STRONA-STARA, poprawkę v3.58.1 i v3.58.2
+  [OK]   T8.3 changelog opisuje LAN-PANEL, STRONA-STARA i poprawki v3.58.1/2/3
   [OK]   T8.3a pole tokena komend i przycisk ZAPISZ TOKEN w panelu
+  [OK]   T8.3b endpoint GET /api/lan/token i autopobranie w panelu
   [OK]   T8.4 literal PIECHTML domknięty poprawnie (2 wystąpienia)
   [OK]   T8.5 literal HTML starej strony domknięty
-  [OK]   T8.6 plik urósł o rozsądny rozmiar (≤ 500 linii)  → delta=425
+  [OK]   T8.6 plik urósł o rozsądny rozmiar (≤ 600 linii)  → delta=501
 
 [T9] Sonda lokalna: 3 próby + samonaprawa po niepowodzeniu (v3.58.1)
   [OK]   T9.1 sonda kończy się wynikiem false po 3 próbach
@@ -112,4 +119,4 @@
   [OK]   T9.11 brak błędów JS
 
 ══════════════════════════════════════════════
-WYNIK: 85/85 asercji OK, zero błędów
+WYNIK: 92/92 asercji OK, zero błędów
