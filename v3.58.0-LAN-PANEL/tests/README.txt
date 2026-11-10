@@ -1,4 +1,4 @@
-TESTY PANELU v3.58.1 — ATRAPA SERWERA (bez sprzętu)
+TESTY PANELU v3.58.2 — ATRAPA SERWERA (bez sprzętu)
 ===================================================
 
 Co to jest
@@ -19,7 +19,7 @@ Uruchomienie (PowerShell):
     npm install        # raz; pobiera jsdom z rejestru npm
     node run-tests.js
 
-Scenariusze (78 asercji):
+Scenariusze (85 asercji):
     T1  panel otwarty z centrali: LIVE bez logowania, dane z /api/lan/status,
         ZERO zapytań do Firebase, karta "Starsza strona lokalna" widoczna,
         przycisk "STARA WERSJA" w pasku pulpitu, diagnostyka sesji
@@ -29,7 +29,11 @@ Scenariusze (78 asercji):
     T2  komendy lokalne: POST /api/lan/cmd z nagłówkiem X-Piec-Token,
         ACK 202→done, NACK z powodem, HTTP 409 przy zajętym slocie,
         dokończenie komendy po zwolnieniu slotu
-    T3  zły token komend: HTTP 403 + komunikat, próba widoczna w atrace
+    T3  zły token komend: HTTP 403 + komunikat, próba widoczna w atrace;
+        [v3.58.2] po 403 okno połączenia otwiera się automatycznie z polem
+        tokenu (prefill), zapis "ZAPISZ TOKEN" zamyka okno i zapamiętuje
+        token (localStorage), kolejna komenda idzie z poprawnym
+        X-Piec-Token i dostaje ACK
     T5  praca ZDALNA: auto-logowanie Firebase, status z RTDB, komenda
         PATCH /piec/cmd + ACK /piec/ack, zero komend lokalnych; karta
         i przycisk "STARA WERSJA" widoczne także zdalnie, klik = toast
@@ -40,7 +44,7 @@ Scenariusze (78 asercji):
         token akcji wstrzyknięty, MENUS.stara nawiguje na /stara
     T7  stara strona: ładuje się, odpytuje /api/status, IP w pasku, zero
         błędów JS
-    T8  brama statyczna main_centrala.cpp: wersja v3.58.1, changelog na górze,
+    T8  brama statyczna main_centrala.cpp: wersja v3.58.2, changelog na górze,
         domknięte literały raw-string, rozsądny rozmiar zmiany
         (porównanie z oryginałem 3.57.9 wymaga zmiennej CPP_ORIG_PATH)
     T9  [v3.58.1] sonda lokalna: 3 próby z odstępem 1,5 s (reprodukcja

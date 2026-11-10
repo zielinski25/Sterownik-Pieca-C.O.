@@ -6,6 +6,9 @@ google_drive/
 __pycache__/
 *.pyc
 
+# Zaleznosci testow panelu (npm install w v3.58.0-LAN-PANEL/tests)
+node_modules/
+
 # Hasla do firmware (WiFi AP + OTA). Plik zostaje TYLKO lokalnie.
 # Wzorem jest secrets.h.example, ktory JEST w gicie.
 secrets.h

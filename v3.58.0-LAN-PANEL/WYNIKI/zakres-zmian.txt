@@ -1,14 +1,15 @@
-ZAKRES ZMIAN v3.57.9 -> v3.58.1 (main_centrala.cpp)
+ZAKRES ZMIAN v3.57.9 -> v3.58.2 (main_centrala.cpp)
 ===================================================
 Baza: v3.57.9, SHA-256 e263437b1fb850cb202c4696404a41b7777b0f12aeef928c7e57788fb2fc158c
-Wynik: v3.58.1 (3.58.0 + poprawka po pierwszym teście użytkownika).
-Razem 351 zmienionych linii w 19 blokach (hunkach) diffu
-(plik: main_centrala-v3.57.9-do-v3.58.1.patch).
+Wynik: v3.58.2 (3.58.0 + poprawki po testach użytkownika: 3.58.1, 3.58.2).
+Razem 447 zmienionych linii w 24 blokach (hunkach) diffu
+(436 dodanych, 11 usuniętych; plik: main_centrala-v3.57.9-do-v3.58.2.patch).
 
-POZA literałami HTML (jedyna zmiana logiki C++): 80 linii
-  1. Wpisy changeloga na górze pliku (64 linie komentarza:
-     v3.58.0 LAN-PANEL/STRONA-STARA + v3.58.1 LAN-PANEL-POPRAWKA)
-  2. FIRMWARE_VERSION "v3.57.9" -> "v3.58.1" (1 linia)
+POZA literałami HTML (jedyna zmiana logiki C++): 102 linie
+  1. Wpisy changeloga na górze pliku (85 linii komentarza:
+     v3.58.0 LAN-PANEL/STRONA-STARA + v3.58.1 LAN-PANEL-POPRAWKA +
+     v3.58.2 TOKEN-KOMEND)
+  2. FIRMWARE_VERSION "v3.57.9" -> "v3.58.2" (1 linia)
   3. Nowa trasa GET /stara w wifiZarejestrujTrasy() (15 linii z komentarzem):
        wifiWebServer.on(AsyncURIMatcher::exact("/stara"), HTTP_GET, [...] {
          AsyncWebServerResponse *response = request->beginResponse(
@@ -49,6 +50,26 @@ WEWNĄTRZ literału WIFI_LOCAL_PANEL_HTML (nowy panel):
   - DIAGNOSTYKA: showSessionSheet() dodaje linię "Wersja centrali:
     <fw> · Źródło danych: lokalne API /api/lan/status | Firebase RTDB
     (lokalne API nie odpowiedziało) | sonda lokalna w toku…"
+  v3.58.2 (poprawka "nie można załączyć symulacji" — zgłoszone po v3.58.1;
+  przyczyna: nowa przeglądarka/incognito = pusty piec_cmd_token, każda
+  komenda 403, a toast odsyłał do danych połączenia BEZ pola tokena):
+  - TOKEN-KOMEND: NOWE pole "Token komend (X-Piec-Token)" (#authCmdToken)
+    w oknie połączenia + NOWY przycisk "💾 ZAPISZ TOKEN (TRYB LOKALNY)"
+    (#authTokenBtn) — saveCmdTokenFromModal() zapisuje token do pamięci
+    przeglądarki (piec_cmd_token) BEZ logowania Firebase; pusty wpis =
+    błąd walidacji w oknie (nie zapisuje pustego — bezpieczeństwo)
+  - openAuthModal(): prefill pola tokena z pamięci; w trybie lokalnym
+    (espServedMode + połączony) status mówi wprost, że logowanie Firebase
+    NIE jest wymagane — wystarczy token
+  - sendCommand() 403: toast z instrukcją + AUTOMATYCZNE otwarcie okna
+    połączenia i focus/select na polu tokenu (koniec ślepej uliczki)
+  - showSessionSheet(): w trybie lokalnym przycisk "🔑 Token komend /
+    dane połączenia" (zamiast "Połącz / Zmień dane Firebase"), focus
+    na polu tokenu po otwarciu
+  - doFirebaseLogin(): łańcuch źródeł tokenu rozszerzony o pole z okna
+    (cmdTokenArg → pole #authCmdToken → pamięć → DEFAULT)
+  - ZERO zmian w samym mechanizmie zabezpieczeń: token nadal wymagany,
+    nadal ten sam SECRET_CMD_TOKEN, nadal nie ma go w kodzie strony
 
 WEWNĄTRZ literału WIFI_STRONA_HTML_HEADER (stara strona, 3 linie):
   - link "✦ NOWY PANEL" (href="/") w pasku nagłówka sys-hdr, styl

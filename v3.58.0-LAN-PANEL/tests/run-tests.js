@@ -321,7 +321,7 @@ async function t1_panelLokalny() {
   const sesjaSubs = w.document.querySelectorAll('#sheet .diag-card .sub');
   const sesjaDiag = Array.from(sesjaSubs).map(el => el.textContent).join(' | ');
   ok('T1.6a sesja: wersja centrali (fw) widoczna',
-    /Wersja centrali:\s*v3\.58\.1/.test(sesjaDiag), 'diag="' + sesjaDiag + '"');
+    /Wersja centrali:\s*v3\.58\.2/.test(sesjaDiag), 'diag="' + sesjaDiag + '"');
   ok('T1.6b sesja: źródło danych = lokalne API /api/lan/status',
     /Źródło danych:\s*lokalne API/.test(sesjaDiag), 'diag="' + sesjaDiag + '"');
 
@@ -427,6 +427,21 @@ async function t3_zlyToken() {
     toast && /token/i.test(toast.textContent), 'toast="' + (toast && toast.textContent.trim()) + '"');
   ok('T3.3 centrala widziała próbę z błędnym tokenem',
     esp.lanCmdCalls.length === 1 && esp.lanCmdCalls[0].token === 'ZLY-TOKEN');
+  // [v3.58.2 TOKEN-KOMEND] 403 otwiera okno danych połączenia z polem tokena.
+  ok('T3.4 po 403 okno połączenia otwarte (auto)', !w.document.querySelector('#authModal').classList.contains('hidden'));
+  const tokField = w.document.querySelector('#authCmdToken');
+  ok('T3.5 pole tokena komend istnieje i jest wypełnione błędnym tokenem (prefill)',
+    !!tokField && tokField.value === 'ZLY-TOKEN');
+  // Zapis poprawnego tokena z okna → kolejna komenda przechodzi.
+  tokField.value = 'TEST-TOKEN-123';
+  w.document.querySelector('#authTokenBtn').click();
+  ok('T3.6 zapis tokena zamyka okno', w.document.querySelector('#authModal').classList.contains('hidden'));
+  ok('T3.7 token zapamiętany w pamięci przeglądarki',
+    w.localStorage.getItem('piec_cmd_token') === 'TEST-TOKEN-123');
+  const ret2 = await w.__PANEL_TEST__.sendCommand('pompa_wl');
+  ok('T3.8 komenda po zapisie tokena przyjęta (true)', ret2 === true);
+  ok('T3.9 nagłówek X-Piec-Token z zapisanego tokena',
+    esp.lanCmdCalls.length === 2 && esp.lanCmdCalls[1].token === 'TEST-TOKEN-123');
   await esp.stop();
 }
 
@@ -602,12 +617,15 @@ async function t8_stalaWersjaIBrama() {
     return;
   }
   const orig = fsx.readFileSync(origPath, 'utf-8');
-  ok('T8.1 wersja podbita do v3.58.1', /FIRMWARE_VERSION = "v3\.58\.1"/.test(cpp));
+  ok('T8.1 wersja podbita do v3.58.2', /FIRMWARE_VERSION = \"v3\.58\.2\"/.test(cpp));
   ok('T8.2 wpis changeloga na górze pliku',
-    cpp.startsWith('// FIRMWARE_VERSION v3.58.0 -> v3.58.1'));
-  ok('T8.3 changelog opisuje LAN-PANEL, STRONA-STARA i poprawkę v3.58.1',
+    cpp.startsWith('// FIRMWARE_VERSION v3.58.1 -> v3.58.2'));
+  ok('T8.3 changelog opisuje LAN-PANEL, STRONA-STARA, poprawkę v3.58.1 i v3.58.2',
     /\[v3\.58\.0 LAN-PANEL\]/.test(cpp) && /STRONA-STARA|\[v3\.58\.0 STRONA-STARA\]/.test(cpp) &&
-    /\[v3\.58\.1 LAN-PANEL-POPRAWKA\]/.test(cpp));
+    /\[v3\.58\.1 LAN-PANEL-POPRAWKA\]/.test(cpp) && /\[v3\.58\.2 TOKEN-KOMEND\]/.test(cpp));
+  // [v3.58.2 TOKEN-KOMEND] pole tokena + przycisk zapisu w panelu
+  ok('T8.3a pole tokena komend i przycisk ZAPISZ TOKEN w panelu',
+    /id=\"authCmdToken\"/.test(cpp) && /id=\"authTokenBtn\"/.test(cpp));
   ok('T8.4 literal PIECHTML domknięty poprawnie (2 wystąpienia)',
     (cpp.match(/PIECHTML/g) || []).length === 2);
   ok('T8.5 literal HTML starej strony domknięty',
@@ -634,8 +652,9 @@ async function t8_stalaWersjaIBrama() {
   const origLines = orig.split('\n');
   const cppLines = cpp.split('\n');
   // policz dokładnie: linie dodane poza hunkami HTML (przez porównanie liczby linii)
-  ok('T8.6 plik urósł o rozsądny rozmiar (≤ 400 linii)',
-    cppLines.length - origLines.length <= 400 && cppLines.length > origLines.length,
+  // [v3.58.2] limit 500: poprawka dodaje UI tokena komend (~83 linii JS panelu)
+  ok('T8.6 plik urósł o rozsądny rozmiar (≤ 500 linii)',
+    cppLines.length - origLines.length <= 500 && cppLines.length > origLines.length,
     'delta=' + (cppLines.length - origLines.length));
 }
 

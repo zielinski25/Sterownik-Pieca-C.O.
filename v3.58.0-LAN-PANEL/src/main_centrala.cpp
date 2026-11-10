@@ -1,4 +1,25 @@
-// FIRMWARE_VERSION v3.58.0 -> v3.58.1 (2026-11-10) — NAPRAWA WYKRYWANIA TRYBU LOKALNEGO + ZAWSZE WIDOCZNY PRZEŁĄCZNIK STAREJ STRONY.
+// FIRMWARE_VERSION v3.58.1 -> v3.58.2 (2026-11-10) — TOKEN KOMEND W PANELU LOKALNYM (naprawa "nie można włączyć symulacji").
+//
+// [v3.58.2 TOKEN-KOMEND] — 2026-11-10
+// Problem (zgłoszony po v3.58.1): "w nowej wersji strony nie można załączyć
+//     symulacji" — w trybie lokalnym każda komenda (symulacja czujników,
+//     pompa, serwo...) kończyła się HTTP 403 "Nieprawidłowy token komend".
+// Przyczyna: panel w nowej przeglądarce / oknie incognito nie ma w pamięci
+//     zapamiętanego tokena komend (piec_cmd_token), a DEFAULT_CMD_TOKEN
+//     jest pusty → X-Piec-Token pusty → centrala słusznie odrzuca 403.
+//     Toast odsyłał do "danych połączenia", ale w oknie połączenia NIE BYŁO
+//     pola tokena (tylko e-mail/hasło Firebase) — ślepa uliczka.
+// Naprawa (wyłącznie JavaScript panelu — zero zmian w zabezpieczeniach,
+//     token pozostaje ten sam, z secrets.h centrali):
+//     - NOWE pole "Token komend (X-Piec-Token)" w oknie połączenia;
+//     - NOWY przycisk "ZAPISZ TOKEN (TRYB LOKALNY)" — zapisuje token
+//       bez logowania Firebase (prefill z pamięci przeglądarki);
+//     - HTTP 403 otwiera automatycznie okno połączenia z fokusem na polu
+//       tokena (toast wprost mówi, co zrobić);
+//     - arkusz sesji w trybie lokalnym: przycisk "Token komend / dane
+//       połączenia" (zamiast "Połącz / Zmień dane Firebase");
+//     - okno połączenia w trybie lokalnym informuje, że logowanie Firebase
+//       nie jest wymagane.
 //
 // [v3.58.1 LAN-PANEL-POPRAWKA] — 2026-11-10
 // Problem (zgłoszony po v3.58.0): "nadal jest źle" + "nie widzę przełącznika
@@ -6018,7 +6039,7 @@ static const char* GITHUB_ASSET_PANEL = "firmware_panel.bin";
 // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
 // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
 // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
-static const char* FIRMWARE_VERSION = "v3.58.1";
+static const char* FIRMWARE_VERSION = "v3.58.2";
 
 // ════════════════════════════════════════════════════════
 // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
@@ -10534,6 +10555,14 @@ body.mode-phone-frame #phone {
           <label for="authPassword">Hasło</label>
           <input class="auth-input" id="authPassword" type="password" value="" placeholder="••••••••••••" autocomplete="current-password">
         </div>
+        <!-- [v3.58.2 TOKEN-KOMEND] Jedyne miejsce ręcznego wpisania tokena komend.
+             Wcześniej toast 403 odsyłał do "danych połączenia", ale nie było
+             w nich pola tokena — w incognito/nowej przeglądarce komendy
+             (także symulacja czujników) były więc niedostępne w trybie lokalnym. -->
+        <div class="auth-field">
+          <label for="authCmdToken">Token komend (X-Piec-Token)</label>
+          <input class="auth-input" id="authCmdToken" type="password" value="" placeholder="taki sam jak SECRET_CMD_TOKEN w secrets.h" autocomplete="off">
+        </div>
         <div class="auth-check-row">
           <input type="checkbox" id="authRemember" checked>
           <label for="authRemember">Zapamiętaj poświadczenia w tej przeglądarce</label>
@@ -10541,6 +10570,7 @@ body.mode-phone-frame #phone {
         <div class="auth-status" id="authStatus">Gotowy do połączenia</div>
         <div class="auth-actions">
           <button class="auth-btn primary" id="authLoginBtn">🔑 POŁĄCZ I ZALOGUJ</button>
+          <button class="auth-btn" id="authTokenBtn">💾 ZAPISZ TOKEN (TRYB LOKALNY)</button>
           <button class="auth-btn" id="authDemoBtn">🧪 TRYB SYMULACJI (OFFLINE)</button>
         </div>
       </div>
@@ -12112,8 +12142,15 @@ body.mode-phone-frame #phone {
     const p = safeStorage.get('piec_fb_password') || DEFAULT_FB_PASS;
     if ($('#authEmail')) $('#authEmail').value = e;
     if ($('#authPassword')) $('#authPassword').value = p;
+    // [v3.58.2 TOKEN-KOMEND] Prefill pola tokena z pamięci przeglądarki.
+    if ($('#authCmdToken')) $('#authCmdToken').value = safeStorage.get('piec_cmd_token') || '';
     if ($('#authStatus')) {
-      if (_isFirebaseConnected) {
+      if (_espServedMode && _isFirebaseConnected) {
+        // [v3.58.2] Tryb lokalny: logowanie Firebase NIE jest wymagane —
+        // do wysyłania komend (symulacje, pompa, serwo...) wystarczy token.
+        $('#authStatus').className = 'auth-status ok';
+        $('#authStatus').textContent = '🟢 Tryb lokalny (bez Firebase). Logowanie nie jest wymagane — do wysyłania komend wpisz token komend i kliknij „ZAPISZ TOKEN".';
+      } else if (_isFirebaseConnected) {
         $('#authStatus').className = 'auth-status ok';
         $('#authStatus').textContent = `🟢 Połączono z Firebase (${_fbEmail || 'zalogowano'})`;
       } else {
@@ -12130,11 +12167,41 @@ body.mode-phone-frame #phone {
     if (modal) modal.classList.add('hidden');
   }
 
+  function saveCmdTokenFromModal() {
+    // [v3.58.2 TOKEN-KOMEND] Zapis tokena komend bez logowania Firebase —
+    // ścieżka dla trybu lokalnego (panel z centrali), gdzie logowanie nie
+    // jest potrzebne, a komendy (symulacje!) wymagają nagłówka X-Piec-Token.
+    const inp = $('#authCmdToken');
+    const val = inp ? String(inp.value || '').trim() : '';
+    const statusEl = $('#authStatus');
+    if (!val) {
+      if (statusEl) {
+        statusEl.className = 'auth-status err';
+        statusEl.textContent = 'Podaj token komend (SECRET_CMD_TOKEN z secrets.h centrali).';
+      }
+      if (inp) inp.focus();
+      return;
+    }
+    _cmdToken = val;
+    const remember = $('#authRemember') ? $('#authRemember').checked : true;
+    safeStorage.set('piec_cmd_token', val, remember);
+    closeAuthModal();
+    updateConnectionStateUI();
+    showToast('Token komend',
+      'Zapisano token komend — wysyłanie poleceń aktywne' + (_espServedMode ? ' w trybie lokalnym' : '') + '. Spróbuj ponownie symulację/komendę.', 'ok');
+    addLog('SYSTEM', 'Zapisano token komend w danych połączenia', 'ok');
+  }
+
   async function doFirebaseLogin(apiKeyArg, emailArg, passwordArg, cmdTokenArg) {
     const apiKey = (apiKeyArg || DEFAULT_FB_API_KEY).trim();
     const email = (emailArg || ($('#authEmail') ? $('#authEmail').value : '') || DEFAULT_FB_EMAIL).trim();
     const password = (passwordArg || ($('#authPassword') ? $('#authPassword').value : '') || DEFAULT_FB_PASS).trim();
-    const cmdToken = (cmdTokenArg || safeStorage.get('piec_cmd_token') || DEFAULT_CMD_TOKEN).trim();
+    // [v3.58.2 TOKEN-KOMEND] Pole tokena z okna połączenia ma pierwszeństwo
+    // (użytkownik mógł je właśnie wpisać), potem pamięć przeglądarki.
+    const cmdToken = (cmdTokenArg
+      || ($('#authCmdToken') ? String($('#authCmdToken').value || '').trim() : '')
+      || safeStorage.get('piec_cmd_token')
+      || DEFAULT_CMD_TOKEN).trim();
     const remember = $('#authRemember') ? $('#authRemember').checked : true;
 
     const statusEl = $('#authStatus');
@@ -12323,8 +12390,15 @@ body.mode-phone-frame #phone {
           body: lanBody.toString()
         }, 8000);
         if (res.status === 403) {
-          showToast(cmd, 'Nieprawidłowy token komend (X-Piec-Token) — wpisz token w danych połączenia', 'err');
+          // [v3.58.2 TOKEN-KOMEND] Otwórz okno danych połączenia z fokusem
+          // na polu tokena — wcześniej toast odsyłał do "danych połączenia",
+          // w których nie było pola tokena (ślepa uliczka; incognito/nowa
+          // przeglądarka = brak zapamiętanego tokena = każda komenda 403).
+          showToast(cmd, 'Nieprawidłowy token komend — otwieram dane połączenia: wpisz token i kliknij ZAPISZ TOKEN', 'err');
           addLog('NACK', 'Odrzucone (HTTP 403): nieprawidłowy token komend', 'err');
+          openAuthModal();
+          const tf = $('#authCmdToken');
+          if (tf) setTimeout(() => { tf.focus(); if (tf.select) tf.select(); }, 60);
           return false;
         }
         if (res.status === 409) {
@@ -14695,10 +14769,17 @@ body.mode-phone-frame #phone {
         'Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Komendy sterujące /piec/cmd są zabezpieczone osobnym tokenem.'));
 
       const acts = h('div', 'btnrow');
-      const authBtn = h('button', 'ust-btn primary', '🔑 Połącz / Zmień dane Firebase');
+      // [v3.58.2 TOKEN-KOMEND] W trybie lokalnym przycisk prowadzi wprost do
+      // tokena komend (logowanie Firebase jest tam zbędne).
+      const authBtn = h('button', 'ust-btn primary',
+        _espServedMode ? '🔑 Token komend / dane połączenia' : '🔑 Połącz / Zmień dane Firebase');
       authBtn.onclick = () => {
         dismissSheet();
         openAuthModal();
+        if (_espServedMode) {
+          const tf = $('#authCmdToken');
+          if (tf) setTimeout(() => tf.focus(), 60);
+        }
       };
       acts.appendChild(authBtn);
 
@@ -18283,6 +18364,8 @@ body.mode-phone-frame #phone {
       if ($('#authModalClose')) $('#authModalClose').onclick = () => closeAuthModal();
       if ($('#authLoginBtn')) $('#authLoginBtn').onclick = () => doFirebaseLogin();
       if ($('#authDemoBtn')) $('#authDemoBtn').onclick = () => enableDemoMode();
+      // [v3.58.2 TOKEN-KOMEND] Zapis tokena bez logowania (tryb lokalny).
+      if ($('#authTokenBtn')) $('#authTokenBtn').onclick = () => saveCmdTokenFromModal();
       if ($('#chip')) $('#chip').onclick = () => openAuthModal();
       if ($('#chartBtnRefresh')) $('#chartBtnRefresh').onclick = () => loadTelemetryRange(activeRangeSec);
 

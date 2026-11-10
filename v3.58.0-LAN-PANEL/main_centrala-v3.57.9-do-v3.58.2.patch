@@ -1,7 +1,28 @@
---- /tmp/v3579/src/main_centrala.cpp	2026-11-01 07:55:51.000000000 +0000
-+++ src/main_centrala.cpp	2026-11-10 10:32:05.280259183 +0000
-@@ -1,3 +1,67 @@
-+// FIRMWARE_VERSION v3.58.0 -> v3.58.1 (2026-11-10) — NAPRAWA WYKRYWANIA TRYBU LOKALNEGO + ZAWSZE WIDOCZNY PRZEŁĄCZNIK STAREJ STRONY.
+--- /tmp/orig3579/recon/main_centrala.cpp	2026-11-10 16:54:59.234241996 +0000
++++ src/main_centrala.cpp	2026-11-10 16:54:38.578137678 +0000
+@@ -1,3 +1,88 @@
++// FIRMWARE_VERSION v3.58.1 -> v3.58.2 (2026-11-10) — TOKEN KOMEND W PANELU LOKALNYM (naprawa "nie można włączyć symulacji").
++//
++// [v3.58.2 TOKEN-KOMEND] — 2026-11-10
++// Problem (zgłoszony po v3.58.1): "w nowej wersji strony nie można załączyć
++//     symulacji" — w trybie lokalnym każda komenda (symulacja czujników,
++//     pompa, serwo...) kończyła się HTTP 403 "Nieprawidłowy token komend".
++// Przyczyna: panel w nowej przeglądarce / oknie incognito nie ma w pamięci
++//     zapamiętanego tokena komend (piec_cmd_token), a DEFAULT_CMD_TOKEN
++//     jest pusty → X-Piec-Token pusty → centrala słusznie odrzuca 403.
++//     Toast odsyłał do "danych połączenia", ale w oknie połączenia NIE BYŁO
++//     pola tokena (tylko e-mail/hasło Firebase) — ślepa uliczka.
++// Naprawa (wyłącznie JavaScript panelu — zero zmian w zabezpieczeniach,
++//     token pozostaje ten sam, z secrets.h centrali):
++//     - NOWE pole "Token komend (X-Piec-Token)" w oknie połączenia;
++//     - NOWY przycisk "ZAPISZ TOKEN (TRYB LOKALNY)" — zapisuje token
++//       bez logowania Firebase (prefill z pamięci przeglądarki);
++//     - HTTP 403 otwiera automatycznie okno połączenia z fokusem na polu
++//       tokena (toast wprost mówi, co zrobić);
++//     - arkusz sesji w trybie lokalnym: przycisk "Token komend / dane
++//       połączenia" (zamiast "Połącz / Zmień dane Firebase");
++//     - okno połączenia w trybie lokalnym informuje, że logowanie Firebase
++//       nie jest wymagane.
 +//
 +// [v3.58.1 LAN-PANEL-POPRAWKA] — 2026-11-10
 +// Problem (zgłoszony po v3.58.0): "nadal jest źle" + "nie widzę przełącznika
@@ -68,16 +89,16 @@
  // FIRMWARE_VERSION v3.57.8 -> v3.57.9 (2026-11-01) — LIMITY SIECI W SEKUNDACH.
  //
  // Zgloszenie uzytkownika (1.11): raport nadzoru po restarcie pokazal
-@@ -5954,7 +6018,7 @@
+@@ -5954,7 +6039,7 @@
  // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
  // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
  // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
 -static const char* FIRMWARE_VERSION = "v3.57.9";
-+static const char* FIRMWARE_VERSION = "v3.58.1";
++static const char* FIRMWARE_VERSION = "v3.58.2";
  
  // ════════════════════════════════════════════════════════
  // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
-@@ -7156,6 +7220,25 @@
+@@ -7156,6 +7241,25 @@
  .sysstrip .t b { display: block; font-size: 10px; font-weight: 800; letter-spacing: .04em; color: #fff; }
  .sysstrip .t span { display: block; font-size: 8px; color: var(--text-dim2); margin-top: 1px; }
  
@@ -103,7 +124,7 @@
  .pill {
    height: 28px;
    min-width: 86px;
-@@ -10006,6 +10089,7 @@
+@@ -10006,6 +10110,7 @@
        <div class="sysstrip">
          <div class="dot" data-ico="shield"></div>
          <div class="t"><b>CENTRALA CO</b><span id="sysstripSub">stan instalacji w czasie rzeczywistym</span></div>
@@ -111,7 +132,7 @@
          <span class="pill live" id="heroState">CZUWANIE</span>
        </div>
  
-@@ -10358,6 +10442,10 @@
+@@ -10358,6 +10463,10 @@
        </div>
  
        <div class="setcard" data-menu="firebase"><div class="ic" style="color:var(--cyan)" data-ico="shield"></div><div class="t"><b>Połączenie z bazą Firebase</b><span>Logowanie kontem Firebase, token komend, stan połączenia</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
@@ -122,7 +143,30 @@
        <div class="setcard" data-menu="wifi"><div class="ic" style="color:var(--cyan)" data-ico="wifi"></div><div class="t"><b>Sieci Wi-Fi & Łączność</b><span>Skanowanie sieci, siła RSSI, konfiguracja SSID/hasło, lista sieci</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
        <div class="setcard" data-menu="histfs"><div class="ic" style="color:var(--warn, #ffb74d)" data-ico="logs"></div><div class="t"><b>Zapis historii na flash</b><span>hist_short.csv i hist_long.csv — włączanie, wyłączanie i czyszczenie plików</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
        <div class="setcard" data-menu="telegram"><div class="ic" style="color:#2AABEE" data-ico="telegram"></div><div class="t"><b>Powiadomienia Telegram</b><span>Bot powiadomień, Chat ID, testowy raport, alerty CO i dymu</span></div><span class="nx" data-ico="next" style="width:18px;height:18px;display:inline-flex"></span></div>
-@@ -11637,6 +11725,76 @@
+@@ -10446,6 +10555,14 @@
+           <label for="authPassword">Hasło</label>
+           <input class="auth-input" id="authPassword" type="password" value="" placeholder="••••••••••••" autocomplete="current-password">
+         </div>
++        <!-- [v3.58.2 TOKEN-KOMEND] Jedyne miejsce ręcznego wpisania tokena komend.
++             Wcześniej toast 403 odsyłał do "danych połączenia", ale nie było
++             w nich pola tokena — w incognito/nowej przeglądarce komendy
++             (także symulacja czujników) były więc niedostępne w trybie lokalnym. -->
++        <div class="auth-field">
++          <label for="authCmdToken">Token komend (X-Piec-Token)</label>
++          <input class="auth-input" id="authCmdToken" type="password" value="" placeholder="taki sam jak SECRET_CMD_TOKEN w secrets.h" autocomplete="off">
++        </div>
+         <div class="auth-check-row">
+           <input type="checkbox" id="authRemember" checked>
+           <label for="authRemember">Zapamiętaj poświadczenia w tej przeglądarce</label>
+@@ -10453,6 +10570,7 @@
+         <div class="auth-status" id="authStatus">Gotowy do połączenia</div>
+         <div class="auth-actions">
+           <button class="auth-btn primary" id="authLoginBtn">🔑 POŁĄCZ I ZALOGUJ</button>
++          <button class="auth-btn" id="authTokenBtn">💾 ZAPISZ TOKEN (TRYB LOKALNY)</button>
+           <button class="auth-btn" id="authDemoBtn">🧪 TRYB SYMULACJI (OFFLINE)</button>
+         </div>
+       </div>
+@@ -11637,6 +11755,76 @@
      return fetch(url, options).finally(() => clearTimeout(timer));
    }
  
@@ -199,7 +243,7 @@
    // @solar-firebase-url-test-begin
    function firebaseRestUrl(path, token = _fbIdToken) {
      if (!token) return DB_URL + path;
-@@ -11695,6 +11853,25 @@
+@@ -11695,6 +11883,25 @@
      // Na lokalnym ESP zakladka Wykresy korzysta wyłącznie z /api/history*.
      // Nie odpytuj Firebase, gdy ekran wykresów jest aktywny.
      if (currentPage === 1 && await isEspLocalChartPage()) return;
@@ -225,7 +269,7 @@
      try {
        const data = await fbGet('/piec/status.json');
        if (data && typeof data === 'object') {
-@@ -11860,10 +12037,32 @@
+@@ -11860,10 +12067,32 @@
      const ustMode = $('#ustWorkMode');
      const sysstripSub = $('#sysstripSub');
      const demoBtn = $('#demoBtn');
@@ -259,7 +303,7 @@
        if (chip) {
          chip.className = 'chip live';
          chip.textContent = `● LIVE · ${S.ip || 'ESP32'}`;
-@@ -11893,9 +12092,15 @@
+@@ -11893,9 +12122,15 @@
        }
        if (banner) {
          banner.classList.remove('hidden');
@@ -278,7 +322,67 @@
        if (ustStatus) { ustStatus.textContent = '🔴 Niepołączono'; ustStatus.style.color = 'var(--err)'; }
        if (ustEmail) ustEmail.textContent = 'Brak sesji';
        if (ustMode) ustMode.textContent = 'OCZEKIWANIE NA SESJĘ';
-@@ -12033,6 +12238,16 @@
+@@ -11907,8 +12142,15 @@
+     const p = safeStorage.get('piec_fb_password') || DEFAULT_FB_PASS;
+     if ($('#authEmail')) $('#authEmail').value = e;
+     if ($('#authPassword')) $('#authPassword').value = p;
++    // [v3.58.2 TOKEN-KOMEND] Prefill pola tokena z pamięci przeglądarki.
++    if ($('#authCmdToken')) $('#authCmdToken').value = safeStorage.get('piec_cmd_token') || '';
+     if ($('#authStatus')) {
+-      if (_isFirebaseConnected) {
++      if (_espServedMode && _isFirebaseConnected) {
++        // [v3.58.2] Tryb lokalny: logowanie Firebase NIE jest wymagane —
++        // do wysyłania komend (symulacje, pompa, serwo...) wystarczy token.
++        $('#authStatus').className = 'auth-status ok';
++        $('#authStatus').textContent = '🟢 Tryb lokalny (bez Firebase). Logowanie nie jest wymagane — do wysyłania komend wpisz token komend i kliknij „ZAPISZ TOKEN".';
++      } else if (_isFirebaseConnected) {
+         $('#authStatus').className = 'auth-status ok';
+         $('#authStatus').textContent = `🟢 Połączono z Firebase (${_fbEmail || 'zalogowano'})`;
+       } else {
+@@ -11925,11 +12167,41 @@
+     if (modal) modal.classList.add('hidden');
+   }
+ 
++  function saveCmdTokenFromModal() {
++    // [v3.58.2 TOKEN-KOMEND] Zapis tokena komend bez logowania Firebase —
++    // ścieżka dla trybu lokalnego (panel z centrali), gdzie logowanie nie
++    // jest potrzebne, a komendy (symulacje!) wymagają nagłówka X-Piec-Token.
++    const inp = $('#authCmdToken');
++    const val = inp ? String(inp.value || '').trim() : '';
++    const statusEl = $('#authStatus');
++    if (!val) {
++      if (statusEl) {
++        statusEl.className = 'auth-status err';
++        statusEl.textContent = 'Podaj token komend (SECRET_CMD_TOKEN z secrets.h centrali).';
++      }
++      if (inp) inp.focus();
++      return;
++    }
++    _cmdToken = val;
++    const remember = $('#authRemember') ? $('#authRemember').checked : true;
++    safeStorage.set('piec_cmd_token', val, remember);
++    closeAuthModal();
++    updateConnectionStateUI();
++    showToast('Token komend',
++      'Zapisano token komend — wysyłanie poleceń aktywne' + (_espServedMode ? ' w trybie lokalnym' : '') + '. Spróbuj ponownie symulację/komendę.', 'ok');
++    addLog('SYSTEM', 'Zapisano token komend w danych połączenia', 'ok');
++  }
++
+   async function doFirebaseLogin(apiKeyArg, emailArg, passwordArg, cmdTokenArg) {
+     const apiKey = (apiKeyArg || DEFAULT_FB_API_KEY).trim();
+     const email = (emailArg || ($('#authEmail') ? $('#authEmail').value : '') || DEFAULT_FB_EMAIL).trim();
+     const password = (passwordArg || ($('#authPassword') ? $('#authPassword').value : '') || DEFAULT_FB_PASS).trim();
+-    const cmdToken = (cmdTokenArg || safeStorage.get('piec_cmd_token') || DEFAULT_CMD_TOKEN).trim();
++    // [v3.58.2 TOKEN-KOMEND] Pole tokena z okna połączenia ma pierwszeństwo
++    // (użytkownik mógł je właśnie wpisać), potem pamięć przeglądarki.
++    const cmdToken = (cmdTokenArg
++      || ($('#authCmdToken') ? String($('#authCmdToken').value || '').trim() : '')
++      || safeStorage.get('piec_cmd_token')
++      || DEFAULT_CMD_TOKEN).trim();
+     const remember = $('#authRemember') ? $('#authRemember').checked : true;
+ 
+     const statusEl = $('#authStatus');
+@@ -12033,6 +12305,16 @@
    }
  
    async function tryAutoLogin() {
@@ -295,7 +399,7 @@
      const k = safeStorage.get('piec_fb_api_key') || DEFAULT_FB_API_KEY;
      const e = safeStorage.get('piec_fb_email') || DEFAULT_FB_EMAIL;
      const p = safeStorage.get('piec_fb_password') || DEFAULT_FB_PASS;
-@@ -12091,6 +12306,79 @@
+@@ -12091,6 +12373,86 @@
  
      // W trybie rzeczywistym nie zmieniaj stanu optymistycznie. UI odświeży
      // dopiero odpowiedź centrali; powodzenie komunikuj wyłącznie po zgodnym ACK.
@@ -316,8 +420,15 @@
 +          body: lanBody.toString()
 +        }, 8000);
 +        if (res.status === 403) {
-+          showToast(cmd, 'Nieprawidłowy token komend (X-Piec-Token) — wpisz token w danych połączenia', 'err');
++          // [v3.58.2 TOKEN-KOMEND] Otwórz okno danych połączenia z fokusem
++          // na polu tokena — wcześniej toast odsyłał do "danych połączenia",
++          // w których nie było pola tokena (ślepa uliczka; incognito/nowa
++          // przeglądarka = brak zapamiętanego tokena = każda komenda 403).
++          showToast(cmd, 'Nieprawidłowy token komend — otwieram dane połączenia: wpisz token i kliknij ZAPISZ TOKEN', 'err');
 +          addLog('NACK', 'Odrzucone (HTTP 403): nieprawidłowy token komend', 'err');
++          openAuthModal();
++          const tf = $('#authCmdToken');
++          if (tf) setTimeout(() => { tf.focus(); if (tf.select) tf.select(); }, 60);
 +          return false;
 +        }
 +        if (res.status === 409) {
@@ -375,7 +486,7 @@
      if (_isFirebaseConnected && !_isDemoMode) {
        const cmdId = makeFireCmdId();
        try {
-@@ -13069,6 +13357,19 @@
+@@ -13069,6 +13431,19 @@
      }),
  
      firebase: () => openAuthModal(),
@@ -395,7 +506,7 @@
      wifi: () => showWifiSheet(),
      telegram: () => showTelegramSheet(),
      logi: () => showLogsSheet(),
-@@ -14380,9 +14681,18 @@
+@@ -14380,15 +14755,31 @@
      showSheet('Sesja operatora & Firebase', 'session', () => {
        const b = h('div');
        const authCard = h('div', 'diag-card');
@@ -415,8 +526,22 @@
 +        'Panel łączy się z bazą danych Realtime Database przy użyciu autoryzacji Firebase UserAuth. Komendy sterujące /piec/cmd są zabezpieczone osobnym tokenem.'));
  
        const acts = h('div', 'btnrow');
-       const authBtn = h('button', 'ust-btn primary', '🔑 Połącz / Zmień dane Firebase');
-@@ -17957,7 +18267,13 @@
+-      const authBtn = h('button', 'ust-btn primary', '🔑 Połącz / Zmień dane Firebase');
++      // [v3.58.2 TOKEN-KOMEND] W trybie lokalnym przycisk prowadzi wprost do
++      // tokena komend (logowanie Firebase jest tam zbędne).
++      const authBtn = h('button', 'ust-btn primary',
++        _espServedMode ? '🔑 Token komend / dane połączenia' : '🔑 Połącz / Zmień dane Firebase');
+       authBtn.onclick = () => {
+         dismissSheet();
+         openAuthModal();
++        if (_espServedMode) {
++          const tf = $('#authCmdToken');
++          if (tf) setTimeout(() => tf.focus(), 60);
++        }
+       };
+       acts.appendChild(authBtn);
+ 
+@@ -17957,7 +18348,13 @@
        initWeatherChartInteractivity();
        refreshWeatherTab();
  
@@ -431,7 +556,16 @@
        const servoIgnitionButton = $('#servoIgnitionButton');
        if (servoIgnitionButton) servoIgnitionButton.onclick = () => {
          if (!servoIgnitionButton.disabled) {
-@@ -17982,6 +18298,9 @@
+@@ -17967,6 +18364,8 @@
+       if ($('#authModalClose')) $('#authModalClose').onclick = () => closeAuthModal();
+       if ($('#authLoginBtn')) $('#authLoginBtn').onclick = () => doFirebaseLogin();
+       if ($('#authDemoBtn')) $('#authDemoBtn').onclick = () => enableDemoMode();
++      // [v3.58.2 TOKEN-KOMEND] Zapis tokena bez logowania (tryb lokalny).
++      if ($('#authTokenBtn')) $('#authTokenBtn').onclick = () => saveCmdTokenFromModal();
+       if ($('#chip')) $('#chip').onclick = () => openAuthModal();
+       if ($('#chartBtnRefresh')) $('#chartBtnRefresh').onclick = () => loadTelemetryRange(activeRangeSec);
+ 
+@@ -17982,6 +18381,9 @@
        const qp = $('#qPompa'); if (qp) qp.onclick = () => openMenu('pompa');
        const qs = $('#qSerwo'); if (qs) qs.onclick = () => openMenu('serwo');
        const qm = $('#qMiesz'); if (qm) qm.onclick = () => openMenu('mieszadlo');
@@ -441,7 +575,7 @@
        const cc = $('#cardCharts'); if (cc) cc.onclick = () => navigate(1);
        const cck = $('#cardClock'); if (cck) cck.onclick = () => openMenu('czas');
  
-@@ -18058,6 +18377,9 @@
+@@ -18058,6 +18460,9 @@
            fbIntervalId = setInterval(pollFirebase, 45000);
          } else {
            // Powrót do aplikacji: natychmiastowe jednorazowe odświeżenie i start szybkich timerów
@@ -451,7 +585,7 @@
            pollFirebase();
            if (currentPage === 1) loadTelemetryRange(activeRangeSec);
            refreshWeatherTab(true);
-@@ -18075,6 +18397,8 @@
+@@ -18075,6 +18480,8 @@
  
        startForegroundTimers();
        window.addEventListener('online', () => {
@@ -460,7 +594,7 @@
          SolarDailyArchive.refreshDays(true);
          SolarDailyArchive.syncPending(true);
        });
-@@ -18666,6 +18990,9 @@
+@@ -18666,6 +19073,9 @@
      <div id="sh-internet" class="sys-badge ok"><div class="sbdot" style="background:var(--ok)"></div><span class="sbtxt">Internet</span></div>
      <div id="sh-rtc" class="sys-badge ok"><div class="sbdot" style="background:var(--ok)"></div><span class="sbtxt">RTC</span></div>
      <div id="sh-mode" class="sys-badge blue">AUTO</div>
@@ -470,7 +604,7 @@
    </div>
  </div>
  <div class="wrap">
-@@ -28899,6 +29226,21 @@
+@@ -28899,6 +29309,21 @@
      response->addHeader("Cache-Control", "no-store, max-age=0");
      request->send(response);
    });

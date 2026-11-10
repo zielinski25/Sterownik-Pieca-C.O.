@@ -1,12 +1,24 @@
-# Firmware 3.58.1 — panel lokalny bez Firebase + powrót starej strony
+# Firmware 3.58.2 — panel lokalny bez Firebase + powrót starej strony
 
 Data: 2026-11-10 · baza: **3.57.9** (SHA-256 `src/main_centrala.cpp`:
 `e263437b1fb850cb202c4696404a41b7777b0f12aeef928c7e57788fb2fc158c`) ·
-zastępuje **3.57.9 → 3.58.0 → 3.58.1** (poprawka po pierwszym teście użytkownika)
+zastępuje **3.57.9 → 3.58.0 → 3.58.1 → 3.58.2** (poprawka po drugim
+teście użytkownika)
 
 Zmienia się **jeden plik**: `src/main_centrala.cpp`. Pliki `.h` bez zmian,
 `src/secrets.h` nietknięty. Biblioteki i `platformio.ini` bez zmian
 (dokładnie te same co przy kompilacji 3.57.9).
+
+> **v3.58.2 (poprawka):** naprawia „**nie można załączyć symulacji**"
+> zgłoszone po v3.58.1. W nowej przeglądarce / oknie incognito panel nie ma
+> zapamiętanego tokenu komend, więc każda komenda (symulacja czujników,
+> pompa, serwo...) kończyła się HTTP 403, a toast odsyłał do „danych
+> połączenia", w których **nie było pola tokena**. Teraz: okno połączenia
+> ma pole **„Token komend (X-Piec-Token)"** i przycisk **„💾 ZAPISZ TOKEN
+> (TRYB LOKALNY)"** (zapis bez logowania Firebase), a HTTP 403 **sam otwiera
+> to okno z fokusem na polu tokena**. W trybie lokalnym okno informuje,
+> że logowanie Firebase nie jest wymagane. Token pozostaje ten sam
+> (`SECRET_CMD_TOKEN` z `secrets.h`) — zabezpieczenia bez zmian.
 
 > **v3.58.1 (poprawka):** naprawia wykrywanie trybu lokalnego (sonda
 > `/api/lan/status` ma teraz 3 próby + samonaprawę po powrocie centrali —
@@ -60,13 +72,13 @@ wskazówkę, jak otworzyć panel z adresu centrali — zamiast cicho nic nie rob
 
 | rodzaj | zakres |
 |---|---|
-| JS nowego panelu (wewnątrz literału `WIFI_LOCAL_PANEL_HTML`) | tryb LAN: sonda `/api/lan/status` (3 próby + samonaprawa), gałąź LAN w `pollFirebase()`, `sendCommand()`, `tryAutoLogin()`, komunikaty UI, karta + przycisk przełącznika (zawsze widoczne), diagnostyka sesji (wersja + źródło danych) |
+| JS nowego panelu (wewnątrz literału `WIFI_LOCAL_PANEL_HTML`) | tryb LAN: sonda `/api/lan/status` (3 próby + samonaprawa), gałąź LAN w `pollFirebase()`, `sendCommand()`, `tryAutoLogin()`, komunikaty UI, karta + przycisk przełącznika (zawsze widoczne), diagnostyka sesji (wersja + źródło danych), **v3.58.2: UI tokena komend w oknie połączenia (pole + „ZAPISZ TOKEN" + auto-otwarcie przy 403)** |
 | HTML starej strony (`WIFI_STRONA_HTML_HEADER`) | 1 link „NOWY PANEL" w pasku nagłówka |
 | C++ poza HTML | **jedyna nowa logika**: rejestracja trasy `GET /stara` (15 linii) + podbicie `FIRMWARE_VERSION` + wpisy changeloga |
 
-Razem 351 zmienionych linii w 19 blokach diffu, w tym tylko ~62 poza
-literałami HTML (changelog 45, wersja 1, trasa 15 + komentarz).
-Pełny diff: `main_centrala-v3.57.9-do-v3.58.1.patch`.
+Razem 447 zmienionych linii w 24 blokach diffu (436 dodanych, 11 usuniętych),
+w tym tylko ~102 poza literałami HTML (changelog, wersja, trasa `/stara`).
+Pełny diff: `main_centrala-v3.57.9-do-v3.58.2.patch`.
 
 ## Czego NIE zmieniono
 
@@ -83,22 +95,40 @@ Pełny diff: `main_centrala-v3.57.9-do-v3.58.1.patch`.
 ## Token komend — co trzeba wiedzieć
 
 Odczyt danych lokalnie działa bez czegokolwiek. **Wysyłanie komend**
-(pompa/serwo/ustawienia...) wymaga tokenu komend — `SECRET_CMD_TOKEN` z
-`secrets.h`, dokładnie tego samego, jakiego wymagał tryb Firebase. Panel czyta
-go z pamięci przeglądarki (klucz `piec_cmd_token`, jak dotychczas — panel nie
-dodaje żadnego nowego okna ani pytania o token). Zły token = HTTP 403
-z czytelnym komunikatem.
+(pompa/serwo/ustawienia/**symulacje czujników**) wymaga tokenu komend —
+`SECRET_CMD_TOKEN` z `secrets.h`, dokładnie tego samego, jakiego wymagał
+tryb Firebase. Zły token = HTTP 403 z czytelnym komunikatem.
+
+**Nowe w v3.58.2 — token można wpisać ręcznie w panelu.** Wcześniej token
+trafiał do pamięci przeglądarki tylko przy logowaniu Firebase, więc w nowej
+przeglądarce / incognito (pusta pamięć) każda komenda dostawała 403, a toast
+wskazywał „dane połączenia", w których pola tokena nie było. Teraz:
+
+- okno połączenia (ikona 🔑 / pasek chipa) ma pole **„Token komend
+  (X-Piec-Token)"** i przycisk **„💾 ZAPISZ TOKEN (TRYB LOKALNY)"** —
+  zapisuje token bez logowania Firebase, z zapamiętaniem w przeglądarce
+  (klucz `piec_cmd_token` jak dotychczas),
+- **HTTP 403 automatycznie otwiera to okno** i ustawia kursor w polu tokenu,
+- w trybie lokalnym okno mówi wprost: logowanie Firebase nie jest wymagane,
+  wystarczy token; przycisk w arkuszu sesji nazywa się wtedy „🔑 Token
+  komend / dane połączenia".
+
+Token **nie jest zapisany w stronie** (nie ma go w kodzie panelu ani
+w źródle strony) — wpisujesz go raz w przeglądarce, jak hasło.
 
 ## Testy
 
-- **Atrapa serwera (bez sprzętu)**: `tests/run-tests.js` — 78 asercji,
+- **Atrapa serwera (bez sprzętu)**: `tests/run-tests.js` — 85 asercji,
   9 scenariuszy (jsdom + mock ESP32 + mock Firebase, zero prawdziwej sieci):
   start lokalny bez Firebase, komendy z ACK/NACK/409/403, utrata i powrót
   połączenia, praca zdalna przez Firebase (w tym toast zamiast nawigacji
   przy kliku w przełącznik), przełączanie stron, ładowanie starej strony,
-  brama statyczna pliku oraz **nowy T9: sonda z 3 próbami + samonaprawa**
-  (reprodukcja usterki zgłoszonej w 3.58.0). Wynik: **78/78 OK**
-  (pełny log: `WYNIKI/testy-atrapa-serwera.txt`).
+  brama statyczna pliku oraz **T9: sonda z 3 próbami + samonaprawa**
+  (reprodukcja usterki zgłoszonej w 3.58.0) i **T3 rozszerzony o pełny
+  przepływ tokena v3.58.2**: 403 → automatyczne otwarcie okna połączenia
+  z polem tokena → zapis „ZAPISZ TOKEN" → zapamiętanie w localStorage →
+  kolejna komenda z poprawnym nagłówkiem `X-Piec-Token` przechodzi (ACK).
+  Wynik: **85/85 OK** (pełny log: `WYNIKI/testy-atrapa-serwera.txt`).
 - **Sprzęt (ESP32-S3): NIE testowane** — wersja nie była wgrywana na płytkę
   ani na piec. Testy na gołej płytce robi użytkownik.
 
