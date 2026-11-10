@@ -1,5 +1,7 @@
-FIRMWARE 3.58.0 - co zrobic w 3 krokach
+FIRMWARE 3.58.1 - co zrobic w 3 krokach
 =======================================
+(poprawka po pierwszym tescie 3.58.0: naprawione wykrywanie trybu lokalnego
+ + przelacznik starej strony ZAWSZE widoczny; szczegoly w README.md)
 Zmienia sie JEDEN plik: src/main_centrala.cpp
 Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
 Biblioteki i platformio.ini: BEZ ZMIAN (identyczne jak przy 3.57.9).
@@ -13,10 +15,22 @@ CO DAJE TA WERSJA
    - zero logowania do ODCZYTU danych.
    Wykrywanie jest automatyczne: panel otwarty z centrali = tryb lokalny,
    panel otwarty z pliku/innej domeny = Firebase jak dotychczas.
+   OD 3.58.1: sonda ma 3 proby i samonaprawia sie (powrot do aplikacji,
+   odzyskanie sieci, klik "STARA WERSJA") - chwilowy brak odpowiedzi
+   centrali NIE blokuje juz trybu lokalnego na cala sesje.
 
-2) Przelaczanie stron: stara strona wraca pod adresem /stara
-   (karta "Starsza strona lokalna" w Ustawieniach panelu; ze starej strony
-   przycisk "NOWY PANEL" w pasku na gorze).
+2) Przelacznik stron: stara strona wraca pod adresem /stara
+   (przycisk "STARA WERSJA" w pasku pulpitu + karta "Starsza strona
+   lokalna" w Ustawieniach - OBA zawsze widoczne; ze starej strony
+   przycisk "NOWY PANEL" w pasku na gorze). Panel otwarty ZDALNIE
+   (przez Firebase) po kliknieciu pokaze wskazowke, jak otworzyc panel
+   z adresu centrali - nie przejdzie na /stara.
+
+   DIAGNOSTYKA (nowe w 3.58.1): Ustawienia -> Sesja operatora pokazuje
+   WERSJE CENTRALI (pole fw) i ZRODLO DANYCH (lokalne API /api/lan/status
+   czy Firebase RTDB). Jezeli widzisz "Firebase RTDB (lokalne API nie
+   odpowiedzialo)" a otworzyles panel z adresu centrali - kliknij
+   "STARA WERSJA" (ponawia sonde) albo odswiez strone.
 
 3) TOKEN KOMEND: wysylanie komend wymaga tokena z secrets.h
    (SECRET_CMD_TOKEN) - TEGO SAMEGO co dotychczas dla Firebase.
@@ -45,8 +59,12 @@ KROK 3 - TEST NA GOLEJ PLYTCE (zanim podejdziesz do pieca)
 2. W przegladarce: http://<IP>/
    - bez internetu w sieci: panel ma pokazac "LIVE", temperature itd.
      (dane z /api/lan/status), banner polaczenia ukryty.
-3. Ustawienia -> "Starsza strona lokalna" -> otwiera /stara;
+3. Przelacznik stron: przycisk "STARA WERSJA" w pasku pulpitu (albo
+   Ustawienia -> "Starsza strona lokalna") -> otwiera /stara;
    ze starej strony przycisk "NOWY PANEL" wroci do /.
+   Ustawienia -> "Sesja operatora": sprawdz "Wersja centrali: v3.58.1"
+   (jesli widzisz v3.58.0 lub starsza - przegladarka/cache ma stara strone,
+   odswiez Ctrl+F5) oraz "Zrodlo danych" (lokalne API czy Firebase).
 4. Komenda (np. wlaczenie pompy w menu pompy):
    - bez tokenu/zlym tokenem: toast "Nieprawidlowy token komend";
    - z poprawnym tokenem (piec_cmd_token w localStorage przegladarki):

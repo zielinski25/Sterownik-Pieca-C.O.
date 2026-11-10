@@ -1,11 +1,14 @@
-ZAKRES ZMIAN v3.57.9 -> v3.58.0 (main_centrala.cpp)
+ZAKRES ZMIAN v3.57.9 -> v3.58.1 (main_centrala.cpp)
 ===================================================
 Baza: v3.57.9, SHA-256 e263437b1fb850cb202c4696404a41b7777b0f12aeef928c7e57788fb2fc158c
-Wynik: v3.58.0. Razem 246 linii zmienionych w 14 blokach (hunkach) diffu.
+Wynik: v3.58.1 (3.58.0 + poprawka po pierwszym teście użytkownika).
+Razem 351 zmienionych linii w 19 blokach (hunkach) diffu
+(plik: main_centrala-v3.57.9-do-v3.58.1.patch).
 
-POZA literałami HTML (jedyna zmiana logiki C++): 61 linii
-  1. Wpis changeloga na górze pliku (44 linie komentarza)
-  2. FIRMWARE_VERSION "v3.57.9" -> "v3.58.0" (1 linia)
+POZA literałami HTML (jedyna zmiana logiki C++): 80 linii
+  1. Wpisy changeloga na górze pliku (64 linie komentarza:
+     v3.58.0 LAN-PANEL/STRONA-STARA + v3.58.1 LAN-PANEL-POPRAWKA)
+  2. FIRMWARE_VERSION "v3.57.9" -> "v3.58.1" (1 linia)
   3. Nowa trasa GET /stara w wifiZarejestrujTrasy() (15 linii z komentarzem):
        wifiWebServer.on(AsyncURIMatcher::exact("/stara"), HTTP_GET, [...] {
          AsyncWebServerResponse *response = request->beginResponse(
@@ -16,19 +19,36 @@ POZA literałami HTML (jedyna zmiana logiki C++): 61 linii
      (wifiZbudujStrone() istnieje w pliku bez zmian od v3.40.0 — funkcja
      wraca do serwowania, treść strony bez zmian)
 
-WEWNĄTRZ literału WIFI_LOCAL_PANEL_HTML (nowy panel, 185 linii):
+WEWNĄTRZ literału WIFI_LOCAL_PANEL_HTML (nowy panel):
+  v3.58.0:
   - sonda trybu lokalnego espPanelIsServed(): GET /api/lan/status,
-    akceptacja tylko przy polach lan:true / lan_api:1 (raz, cache)
+    akceptacja tylko przy polach lan:true / lan_api:1
   - pollFirebase(): gałąź LAN (odczyt /api/lan/status zamiast RTDB)
   - sendCommand(): gałąź LAN (POST /api/lan/cmd z X-Piec-Token + pętla
     /api/lan/ack; 403/409 obsłużone komunikatami)
   - tryAutoLogin(): w trybie LAN pomija logowanie Google Identity
   - updateConnectionStateUI(): komunikaty LIVE LOCAL (LAN), banner
-    "Brak połączenia ze sterownikiem w sieci lokalnej", pokazywanie karty
-    "Starsza strona lokalna" tylko w trybie LAN
+    "Brak połączenia ze sterownikiem w sieci lokalnej"
   - showSessionSheet(): karta sesji mówi prawdę o połączeniu LAN
   - connBannerBtn: w trybie LAN ponawia połączenie zamiast otwierać modal FB
   - karta "Starsza strona lokalna" (data-menu="stara") + MENUS.stara -> /stara
+  v3.58.1 (poprawka zgłoszonej usterki):
+  - SONDA-RETRY: espPanelProbeOnce() + pętla 3 prób z odstępem 1,5 s
+    (wcześniej: jedno niepowodzenie cache'owało "false" na CAŁĄ sesję,
+    co trwale wypychało panel w tryb Firebase mimo otwarcia z centrali
+    i ukrywało kartę przełącznika)
+  - SAMONAPRAWA: espPanelRetryServed(force) — ponawia sondę po powrocie
+    do aplikacji (visibilitychange), po odzyskaniu sieci (online) oraz
+    przy kliknięciu "STARA WERSJA" (force, natychmiast); cooldown 30 s
+    dla ponowień automatycznych; sukces odświeża pasek połączeń
+  - STRONA-STARA: karta "Starsza strona lokalna" ZAWSZE widoczna
+    (zdalnie podpis zawiera wskazówkę: działa po otwarciu z adresu
+    centrali); MENUS.stara zdalnie pokazuje toast ze wskazówką i IP
+    zamiast cicho nic nie robić; NOWY przycisk "⇄ STARA WERSJA"
+    (id=sysstripStaraBtn) w pasku pulpitu — zawsze widoczny
+  - DIAGNOSTYKA: showSessionSheet() dodaje linię "Wersja centrali:
+    <fw> · Źródło danych: lokalne API /api/lan/status | Firebase RTDB
+    (lokalne API nie odpowiedziało) | sonda lokalna w toku…"
 
 WEWNĄTRZ literału WIFI_STRONA_HTML_HEADER (stara strona, 3 linie):
   - link "✦ NOWY PANEL" (href="/") w pasku nagłówka sys-hdr, styl

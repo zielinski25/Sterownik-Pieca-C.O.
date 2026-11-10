@@ -1,11 +1,21 @@
-# Firmware 3.58.0 — panel lokalny bez Firebase + powrót starej strony
+# Firmware 3.58.1 — panel lokalny bez Firebase + powrót starej strony
 
 Data: 2026-11-10 · baza: **3.57.9** (SHA-256 `src/main_centrala.cpp`:
-`e263437b1fb850cb202c4696404a41b7777b0f12aeef928c7e57788fb2fc158c`) · zastępuje **3.57.9**
+`e263437b1fb850cb202c4696404a41b7777b0f12aeef928c7e57788fb2fc158c`) ·
+zastępuje **3.57.9 → 3.58.0 → 3.58.1** (poprawka po pierwszym teście użytkownika)
 
 Zmienia się **jeden plik**: `src/main_centrala.cpp`. Pliki `.h` bez zmian,
 `src/secrets.h` nietknięty. Biblioteki i `platformio.ini` bez zmian
 (dokładnie te same co przy kompilacji 3.57.9).
+
+> **v3.58.1 (poprawka):** naprawia wykrywanie trybu lokalnego (sonda
+> `/api/lan/status` ma teraz 3 próby + samonaprawę po powrocie centrali —
+> w 3.58.0 jedno chwilowe niepowodzenie blokowało tryb lokalny na całą
+> sesję) oraz **przełącznik starej strony jest teraz ZAWSZE widoczny**:
+> nowy przycisk „⇄ STARA WERSJA" w pasku pulpitu + karta w Ustawieniach
+> (zdalnie kliknięcie pokazuje wskazówkę zamiast nic nie robić). Karta
+> sesji pokazuje dodatkowo **wersję centrali** i **źródło danych**
+> (lokalne API czy Firebase) — od razu widać, co naprawdę działa.
 
 ---
 
@@ -31,13 +41,18 @@ automatyka, Firebase, Telegram, LCD: **bez zmian**.
 UserAuth (`/piec/status`, `/piec/cmd`, `/piec/ack`). Wykrywanie trybu jest
 automatyczne: strona pyta własny origin o `/api/lan/status`; odpowiedź z polami
 `lan:true`/`lan_api:1` = tryb lokalny, brak odpowiedzi = tryb Firebase.
+**Od v3.58.1** sonda ma 3 próby (odstęp 1,5 s) i samonaprawia się po powrocie
+do aplikacji / odzyskaniu sieci / kliknięciu „STARA WERSJA" — chwilowe
+niepowodzenie nie blokuje już trybu lokalnego na całą sesję.
 
 **3. Przełącznik nowa ↔ stara strona lokalna.** Starszy interfejs
 (`wifiZbudujStrone()`, wycofany z `GET /` w v3.40.0) wraca jako **`GET /stara`**
 — niezmieniony od tamtej wersji. Przełączanie w obie strony:
-karta **„Starsza strona lokalna"** w Ustawieniach nowego panelu (widoczna
-tylko, gdy panel jest otwarty z centrali) oraz przycisk **„✦ NOWY PANEL"**
-w pasku nagłówka strony starej.
+przycisk **„⇄ STARA WERSJA"** w pasku pulpitu nowego panelu (zawsze widoczny),
+karta **„Starsza strona lokalna"** w Ustawieniach (zawsze widoczna) oraz
+przycisk **„✦ NOWY PANEL"** w pasku nagłówka strony starej. Panel otwarty
+zdalnie (przez Firebase, spoza centrali) po kliknięciu przełącznika pokazuje
+wskazówkę, jak otworzyć panel z adresu centrali — zamiast cicho nic nie robić.
 
 ---
 
@@ -45,12 +60,13 @@ w pasku nagłówka strony starej.
 
 | rodzaj | zakres |
 |---|---|
-| JS nowego panelu (wewnątrz literału `WIFI_LOCAL_PANEL_HTML`) | tryb LAN: sonda `/api/lan/status`, gałąź LAN w `pollFirebase()`, `sendCommand()`, `tryAutoLogin()`, komunikaty UI, karta przełącznika |
+| JS nowego panelu (wewnątrz literału `WIFI_LOCAL_PANEL_HTML`) | tryb LAN: sonda `/api/lan/status` (3 próby + samonaprawa), gałąź LAN w `pollFirebase()`, `sendCommand()`, `tryAutoLogin()`, komunikaty UI, karta + przycisk przełącznika (zawsze widoczne), diagnostyka sesji (wersja + źródło danych) |
 | HTML starej strony (`WIFI_STRONA_HTML_HEADER`) | 1 link „NOWY PANEL" w pasku nagłówka |
-| C++ poza HTML | **jedyna nowa logika**: rejestracja trasy `GET /stara` (15 linii) + podbicie `FIRMWARE_VERSION` + wpis changeloga |
+| C++ poza HTML | **jedyna nowa logika**: rejestracja trasy `GET /stara` (15 linii) + podbicie `FIRMWARE_VERSION` + wpisy changeloga |
 
-Razem 246 zmienionych linii, w tym tylko ~61 poza literałami HTML
-(changelog 44, wersja 1, trasa 15 + komentarz).
+Razem 351 zmienionych linii w 19 blokach diffu, w tym tylko ~62 poza
+literałami HTML (changelog 45, wersja 1, trasa 15 + komentarz).
+Pełny diff: `main_centrala-v3.57.9-do-v3.58.1.patch`.
 
 ## Czego NIE zmieniono
 
@@ -61,7 +77,8 @@ Razem 246 zmienionych linii, w tym tylko ~61 poza literałami HTML
   Telegrama, telemetrii, LCD, OTA, formatu `/piec/status`, `/piec/cmd`,
   `/piec/ack` i wszystkich istniejących endpointów.
 - Wyglądu stron: zmiany UI to wyłącznie teksty stanu połączenia (prawdziwe
-  dla trybu LAN), jedna karta w Ustawieniach i jeden przycisk w starej stronie.
+  dla trybu LAN), karta w Ustawieniach, przycisk „⇄ STARA WERSJA" w pasku
+  pulpitu i jeden przycisk w starej stronie.
 
 ## Token komend — co trzeba wiedzieć
 
@@ -74,11 +91,13 @@ z czytelnym komunikatem.
 
 ## Testy
 
-- **Atrapa serwera (bez sprzętu)**: `tests/run-tests.js` — 59 asercji,
-  8 scenariuszy (jsdom + mock ESP32 + mock Firebase, zero prawdziwej sieci):
+- **Atrapa serwera (bez sprzętu)**: `tests/run-tests.js` — 78 asercji,
+  9 scenariuszy (jsdom + mock ESP32 + mock Firebase, zero prawdziwej sieci):
   start lokalny bez Firebase, komendy z ACK/NACK/409/403, utrata i powrót
-  połączenia, praca zdalna przez Firebase, przełączanie stron, ładowanie
-  starej strony, brama statyczna pliku. Wynik: **59/59 OK**
+  połączenia, praca zdalna przez Firebase (w tym toast zamiast nawigacji
+  przy kliku w przełącznik), przełączanie stron, ładowanie starej strony,
+  brama statyczna pliku oraz **nowy T9: sonda z 3 próbami + samonaprawa**
+  (reprodukcja usterki zgłoszonej w 3.58.0). Wynik: **78/78 OK**
   (pełny log: `WYNIKI/testy-atrapa-serwera.txt`).
 - **Sprzęt (ESP32-S3): NIE testowane** — wersja nie była wgrywana na płytkę
   ani na piec. Testy na gołej płytce robi użytkownik.

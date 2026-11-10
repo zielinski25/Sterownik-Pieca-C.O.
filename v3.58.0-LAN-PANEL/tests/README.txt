@@ -1,4 +1,4 @@
-TESTY PANELU v3.58.0 — ATRAPA SERWERA (bez sprzętu)
+TESTY PANELU v3.58.1 — ATRAPA SERWERA (bez sprzętu)
 ===================================================
 
 Co to jest
@@ -19,9 +19,11 @@ Uruchomienie (PowerShell):
     npm install        # raz; pobiera jsdom z rejestru npm
     node run-tests.js
 
-Scenariusze (59 asercji):
+Scenariusze (78 asercji):
     T1  panel otwarty z centrali: LIVE bez logowania, dane z /api/lan/status,
-        ZERO zapytań do Firebase, karta "Starsza strona lokalna" widoczna
+        ZERO zapytań do Firebase, karta "Starsza strona lokalna" widoczna,
+        przycisk "STARA WERSJA" w pasku pulpitu, diagnostyka sesji
+        (Wersja centrali + Źródło danych = lokalne API)
     T4  utrata centrali (LAN) i powrót: banner "Brak połączenia ze sterownikiem
         w sieci lokalnej", chip BRAK SESJI, powrót do LIVE
     T2  komendy lokalne: POST /api/lan/cmd z nagłówkiem X-Piec-Token,
@@ -29,16 +31,22 @@ Scenariusze (59 asercji):
         dokończenie komendy po zwolnieniu slotu
     T3  zły token komend: HTTP 403 + komunikat, próba widoczna w atrace
     T5  praca ZDALNA: auto-logowanie Firebase, status z RTDB, komenda
-        PATCH /piec/cmd + ACK /piec/ack, zero komend lokalnych
+        PATCH /piec/cmd + ACK /piec/ack, zero komend lokalnych; karta
+        i przycisk "STARA WERSJA" widoczne także zdalnie, klik = toast
+        ze wskazówką (bez nawigacji), źródło danych = Firebase RTDB
     T5b panel zdalny bez internetu: BRAK SESJI + oryginalny komunikat
         o Firebase, tryb symulacji dostępny (zachowanie 3.57.9)
     T6  przełączanie stron: GET /stara 200 text/html, przycisk NOWY PANEL → /,
         token akcji wstrzyknięty, MENUS.stara nawiguje na /stara
     T7  stara strona: ładuje się, odpytuje /api/status, IP w pasku, zero
         błędów JS
-    T8  brama statyczna main_centrala.cpp: wersja v3.58.0, changelog na górze,
+    T8  brama statyczna main_centrala.cpp: wersja v3.58.1, changelog na górze,
         domknięte literały raw-string, rozsądny rozmiar zmiany
         (porównanie z oryginałem 3.57.9 wymaga zmiennej CPP_ORIG_PATH)
+    T9  [v3.58.1] sonda lokalna: 3 próby z odstępem 1,5 s (reprodukcja
+        usterki z v3.58.0 — jedno niepowodzenie blokowało tryb lokalny),
+        cooldown 30 s dla automatycznych ponowień, samonaprawa po
+        powrocie centrali (force=true) → LIVE, nawigacja do /stara
 
 Ustawienia środowiska (opcjonalne):
     CPP_PATH        ścieżka do testowanego main_centrala.cpp

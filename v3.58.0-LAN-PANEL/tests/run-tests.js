@@ -230,6 +230,7 @@ async function loadPanel({ url, espPort, fb, internetFb, seed }) {
           ' pollFirebase: (typeof pollFirebase !== "undefined") ? pollFirebase : null,' +
           ' openMenu: (typeof openMenu !== "undefined") ? openMenu : null,' +
           ' espPanelIsServed: (typeof espPanelIsServed !== "undefined") ? espPanelIsServed : null,' +
+          ' espPanelRetryServed: (typeof espPanelRetryServed !== "undefined") ? espPanelRetryServed : null,' +
           ' MENUS: (typeof MENUS !== "undefined") ? MENUS : null };\n' +
           code.slice(tail);
       }
@@ -303,13 +304,26 @@ async function t1_panelLokalny() {
   ok('T1.5 karta "Starsza strona lokalna" widoczna w trybie LAN',
     setcard && setcard.style.display !== 'none');
 
+  // [v3.58.1] przycisk przełącznika w pasku pulpitu — zawsze widoczny
+  const staraBtn = w.document.querySelector('#sysstripStaraBtn');
+  ok('T1.5a przycisk "⇄ STARA WERSJA" w pasku pulpitu (LAN)',
+    !!staraBtn && /STARA/.test(staraBtn.textContent),
+    'btn=' + (staraBtn && staraBtn.textContent.trim()));
+
   w.__PANEL_TEST__.openMenu('sesja');
   const sesjaLbl = await waitFor(() => {
     const el = w.document.querySelector('#sheet .diag-card .lbl');
     return (el && /POŁĄCZENIE Z CENTRALĄ \(LAN\)/.test(el.textContent)) ? el : false;
   }, 5000);
   ok('T1.6 karta sesji: POŁĄCZENIE Z CENTRALĄ (LAN)',
-    !!sesjaLbl, 'lbl=' + (sesjaLbl && sesjaLbl.textContent));
+    !!sesjaLbl, 'lbl=' + ((w.document.querySelector('#sheet .diag-card .lbl') || {}).textContent));
+  // [v3.58.1] diagnostyka w karcie sesji: wersja centrali + źródło danych
+  const sesjaSubs = w.document.querySelectorAll('#sheet .diag-card .sub');
+  const sesjaDiag = Array.from(sesjaSubs).map(el => el.textContent).join(' | ');
+  ok('T1.6a sesja: wersja centrali (fw) widoczna',
+    /Wersja centrali:\s*v3\.58\.1/.test(sesjaDiag), 'diag="' + sesjaDiag + '"');
+  ok('T1.6b sesja: źródło danych = lokalne API /api/lan/status',
+    /Źródło danych:\s*lokalne API/.test(sesjaDiag), 'diag="' + sesjaDiag + '"');
 
   ok('T1.7 /api/lan/status odpytany (>0)', esp.counters.lanStatus > 0, 'odpytań: ' + esp.counters.lanStatus);
   ok('T1.8 ZERO zapytań do Firebase w trybie lokalnym',
@@ -422,7 +436,7 @@ async function t5_pracaZdalna() {
   // serwer "zdalny": NIE ma endpointów LAN (opts.lan=false)
   const esp = new MockEsp({ panelHtml: PANEL_HTML, lan: false });
   await esp.start();
-  const { w, jsdomErrors } = await loadPanel({
+  const { w, jsdomErrors, navAttempts } = await loadPanel({
     url: 'http://192.168.1.50:8080/',          // inny origin niż centrala
     espPort: esp.port,
     fb,
@@ -438,16 +452,28 @@ async function t5_pracaZdalna() {
   const live = await waitFor(() => /LIVE/.test(w.document.querySelector('#chip').textContent), 10000);
   ok('T5.1 auto-logowanie Firebase i LIVE', live, 'signin=' + fb.counters.signin + ' statusGet=' + fb.counters.statusGet);
   ok('T5.2 status pobrany z Firebase RTDB', fb.counters.statusGet >= 1);
+  // [v3.58.1] karta "Starsza strona lokalna" jest teraz ZAWSZE widoczna
+  // (w v3.58.0 była ukrywana zdalnie — nie dało się jej znaleźć); zdalnie
+  // kliknięcie pokazuje wskazówkę zamiast przechodzić na /stara.
   const setcard = w.document.querySelector('#setcardStara');
-  ok('T5.3 karta "Starsza strona lokalna" UKRYTA zdalnie',
-    !setcard || setcard.style.display === 'none');
+  ok('T5.3 karta "Starsza strona lokalna" WIDOCZNA także zdalnie (v3.58.1)',
+    !!setcard && setcard.style.display !== 'none');
+  const setcardSub = setcard && setcard.querySelector('.t span');
+  ok('T5.3a podpis karty zdalnie zawiera wskazówkę (adres centrali)',
+    !!(setcardSub && /adresu centrali/.test(setcardSub.textContent)),
+    'sub=' + (setcardSub && setcardSub.textContent));
   w.__PANEL_TEST__.openMenu('sesja');
   const sesjaLbl = await waitFor(() => {
     const el = w.document.querySelector('#sheet .diag-card .lbl');
     return (el && /POŁĄCZENIE Z FIREBASE/.test(el.textContent)) ? el : false;
   }, 5000);
   ok('T5.4 karta sesji: POŁĄCZENIE Z FIREBASE (praca zdalna bez zmian)',
-    !!sesjaLbl, 'lbl=' + (sesjaLbl && sesjaLbl.textContent));
+    !!sesjaLbl, 'lbl=' + ((w.document.querySelector('#sheet .diag-card .lbl') || {}).textContent));
+  // [v3.58.1] diagnostyka sesji zdalnie: wersja centrali + źródło Firebase
+  const sesjaSubs = w.document.querySelectorAll('#sheet .diag-card .sub');
+  const sesjaDiag = Array.from(sesjaSubs).map(el => el.textContent).join(' | ');
+  ok('T5.4a sesja zdalna: źródło danych = Firebase RTDB',
+    /Źródło danych:\s*Firebase RTDB/.test(sesjaDiag), 'diag="' + sesjaDiag + '"');
 
   const ret = await w.__PANEL_TEST__.sendCommand('pompa_wl');
   ok('T5.5 komenda wysłana przez /piec/cmd (PATCH)', fb.counters.cmdPatch === 1,
@@ -457,6 +483,24 @@ async function t5_pracaZdalna() {
   ok('T5.7 ACK przyszedł z /piec/ack', ret === true, 'ackGet=' + fb.counters.ackGet);
   ok('T5.8 ZERO komend lokalnych (/api/lan/cmd) w trybie zdalnym', esp.counters.lanCmd === 0);
   ok('T5.9 brak błędów JS', jsdomErrors.length === 0, jsdomErrors.slice(0, 3).join(' | '));
+
+  // [v3.58.1] klik w "STARA WERSJA" zdalnie → toast ze wskazówką, BRAK nawigacji
+  const navBefore = navAttempts.length;
+  const staraBtnZdalnie = w.document.querySelector('#sysstripStaraBtn');
+  ok('T5.9a przycisk "⇄ STARA WERSJA" widoczny także zdalnie',
+    !!staraBtnZdalnie && /STARA/.test(staraBtnZdalnie.textContent));
+  if (staraBtnZdalnie) staraBtnZdalnie.click();
+  const toastShown = await waitFor(() => {
+    const t = w.document.querySelector('#toast');
+    return !!(t && /dostępna tylko po otwarciu panelu/.test(t.textContent));
+  }, 10000);
+  const toastEl = w.document.querySelector('#toast');
+  ok('T5.10 klik zdalny → toast "dostępna tylko po otwarciu panelu..."',
+    !!(toastShown && toastEl && /dostępna tylko po otwarciu panelu/.test(toastEl.textContent)),
+    'toast="' + (toastEl && toastEl.textContent.trim()) + '"');
+  ok('T5.11 klik zdalny NIE nawiguje na /stara',
+    navAttempts.length === navBefore,
+    'nav przed=' + navBefore + ' po=' + navAttempts.length);
 
   await esp.stop();
   fb.dispose();
@@ -558,11 +602,12 @@ async function t8_stalaWersjaIBrama() {
     return;
   }
   const orig = fsx.readFileSync(origPath, 'utf-8');
-  ok('T8.1 wersja podbita do v3.58.0', /FIRMWARE_VERSION = "v3\.58\.0"/.test(cpp));
+  ok('T8.1 wersja podbita do v3.58.1', /FIRMWARE_VERSION = "v3\.58\.1"/.test(cpp));
   ok('T8.2 wpis changeloga na górze pliku',
-    cpp.startsWith('// FIRMWARE_VERSION v3.57.9 -> v3.58.0'));
-  ok('T8.3 changelog opisuje LAN-PANEL i STRONA-STARA',
-    /\[v3\.58\.0 LAN-PANEL\]/.test(cpp) && /STRONA-STARA|\[v3\.58\.0 STRONA-STARA\]/.test(cpp));
+    cpp.startsWith('// FIRMWARE_VERSION v3.58.0 -> v3.58.1'));
+  ok('T8.3 changelog opisuje LAN-PANEL, STRONA-STARA i poprawkę v3.58.1',
+    /\[v3\.58\.0 LAN-PANEL\]/.test(cpp) && /STRONA-STARA|\[v3\.58\.0 STRONA-STARA\]/.test(cpp) &&
+    /\[v3\.58\.1 LAN-PANEL-POPRAWKA\]/.test(cpp));
   ok('T8.4 literal PIECHTML domknięty poprawnie (2 wystąpienia)',
     (cpp.match(/PIECHTML/g) || []).length === 2);
   ok('T8.5 literal HTML starej strony domknięty',
@@ -594,6 +639,72 @@ async function t8_stalaWersjaIBrama() {
     'delta=' + (cppLines.length - origLines.length));
 }
 
+// [v3.58.1] Reprodukcja zgłoszonej usterki: chwilowe niepowodzenie sondy
+// /api/lan/status przy starcie NIE może trwale blokować trybu lokalnego
+// (w v3.58.0 wynik "false" był cache'owany na całą sesję i ukrywał kartę
+// przełącznika stron). Sonda ma 3 próby, a espPanelRetryServed() przywraca
+// tryb lokalny, gdy centrala zacznie odpowiadać.
+async function t9_sondaRetryISamonaprawa() {
+  console.log('\n[T9] Sonda lokalna: 3 próby + samonaprawa po niepowodzeniu (v3.58.1)');
+  const esp = new MockEsp({ panelHtml: PANEL_HTML, dropLan: true });
+  await esp.start();
+  const { w, jsdomErrors, navAttempts: navAttemptsT9 } = await loadPanel({
+    url: 'http://10.178.89.36/',
+    espPort: esp.port,
+    fb: null, internetFb: false
+  });
+
+  // 1) start z niedostępnym lokalnym API — sonda ma 3 próby (2 odstępy à 1,5 s);
+  //    czekamy BEZPOŚREDNIO na promise sondy (waitFor nie obsługuje fn async)
+  const probeResult = await w.__PANEL_TEST__.espPanelIsServed();
+  ok('T9.1 sonda kończy się wynikiem false po 3 próbach', probeResult === false);
+  ok('T9.2 /api/lan/status odpytany dokładnie 3 razy (retry)',
+    esp.counters.lanStatus === 3, 'odpytań: ' + esp.counters.lanStatus);
+  const chipDown = w.document.querySelector('#chip');
+  ok('T9.3 bez lokalnego API i bez Firebase: BRAK SESJI',
+    chipDown && /BRAK SESJI/.test(chipDown.textContent),
+    'chip=' + (chipDown && chipDown.textContent));
+  // karta przełącznika NIE znika nawet po niepowodzeniu sondy (v3.58.1)
+  const setcardDown = w.document.querySelector('#setcardStara');
+  ok('T9.4 karta "Starsza strona lokalna" widoczna mimo niepowodzenia sondy',
+    !!setcardDown && setcardDown.style.display !== 'none');
+  const btnDown = w.document.querySelector('#sysstripStaraBtn');
+  ok('T9.5 przycisk "⇄ STARA WERSJA" widoczny mimo niepowodzenia sondy',
+    !!btnDown && /STARA/.test(btnDown.textContent));
+
+  // 2) cooldown: natychmiastowe ponowienie bez force NIE sonduje (30 s)
+  const lanBefore = esp.counters.lanStatus;
+  const cooldownRet = await w.__PANEL_TEST__.espPanelRetryServed();
+  await new Promise(r => setTimeout(r, 300));
+  ok('T9.6 cooldown 30 s: ponowienie bez force nie bombarduje centrali',
+    cooldownRet === false && esp.counters.lanStatus === lanBefore,
+    'ret=' + cooldownRet + ' odpytań: ' + lanBefore + '→' + esp.counters.lanStatus);
+
+  // 3) centrala wraca — force=true (klik użytkownika) sonduje natychmiast
+  esp.opts.dropLan = false;
+  const healed = await w.__PANEL_TEST__.espPanelRetryServed(true);
+  ok('T9.7 force=true: sonda natychmiast po powrocie centrali → true', healed === true);
+  await w.__PANEL_TEST__.pollFirebase();
+  const live = await waitFor(() => {
+    const chip = w.document.querySelector('#chip');
+    return chip && /LIVE/.test(chip.textContent);
+  }, 8000);
+  ok('T9.8 samonaprawa: panel przechodzi w tryb lokalny LIVE', live,
+    'chip=' + (w.document.querySelector('#chip') || {}).textContent);
+  const sysstripSub = w.document.querySelector('#sysstripSub');
+  ok('T9.9 pasek systemowy wraca do "lokalne API /api/lan"',
+    sysstripSub && /lokalne API/.test(sysstripSub.textContent),
+    'sub=' + (sysstripSub && sysstripSub.textContent));
+
+  // 4) po samonaprawce klik w "STARA WERSJA" nawiguje na /stara
+  w.__PANEL_TEST__.openMenu('stara');
+  const navOk = await waitFor(() => navAttemptsT9.length > 0, 5000);
+  ok('T9.10 po samonaprawce openMenu("stara") nawiguje na /stara', navOk,
+    'nav=' + navAttemptsT9.length);
+  ok('T9.11 brak błędów JS', jsdomErrors.length === 0, jsdomErrors.slice(0, 3).join(' | '));
+  await esp.stop();
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 (async () => {
   let failed = 0;
@@ -610,6 +721,7 @@ async function t8_stalaWersjaIBrama() {
   await run(t6_przelaczanieStron);
   await run(t7_staraStronaDziala);
   await run(t8_stalaWersjaIBrama);
+  await run(t9_sondaRetryISamonaprawa);
 
   failed = results.filter(r => !r.pass).length;
   console.log('\n══════════════════════════════════════════════');
