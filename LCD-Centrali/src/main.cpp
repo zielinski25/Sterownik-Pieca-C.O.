@@ -38,6 +38,78 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-11] v1.2.0 - po zgloszeniu "kafelki sie nie aktualizuja" (log
+//   serial-20261110_200814.log: same linie "[NET-DIAG] ... sukces", zero
+//   bledow, a ekran stoi). PRZYCZYNA ZGLOSZENIA NIE JEST POTWIERDZONA - log
+//   v1.1.0 nie zawieral nic, co pozwalaloby ja wskazac. Ta wersja usuwa
+//   bledy, ktore daja taki objaw, i sprawia, ze nastepny log oraz sam ekran
+//   beda rozstrzygajace. Sprawdzone na PC (testy_host/: prawdziwy main.cpp i
+//   dashboard uruchomione zwyklym g++ z atrapami sprzetu) oraz skladniowo
+//   prawdziwymi naglowkami arduino-esp32 3.0.7 / 3.3.8 + ESP-IDF 5.1 (clang,
+//   testy_host/sprawdz_naglowki_esp32.sh). W tej sesji NIE budowane przez
+//   PlatformIO (GCC, linkowanie) i NIE uruchamiane na plytce.
+//   Logi z 2026-11-11 (panel + centrala na golej plytce): panel na biurku ma
+//   wgrany build STARSZY niz te zrodla - jeden timeout daje w nim setki linii
+//   "[USTAWIENIA] GET nieudany" (brak FIX-LOG-SPAM), a w adresie zapytan
+//   widac reset_powod=task_wdt. Centrala podawala wtedy zewn=18.5C (symulacja)
+//   i -1.0C dla pozostalych temperatur; te zrodla, uruchomione na PC z takimi
+//   danymi, pokazuja je na kafelkach (scenariusz gola_plytka).
+//   Naprawiono:
+//   - [v1.2.0 DANE-NIEAKTUALNE] "sukces" warstwy sieciowej znaczy tylko, ze
+//     centrala zamknela gniazdo. obslugaStatusFetch()/obslugaUstawieniaFetch()
+//     nie sprawdzaly kodu HTTP, a przy bledzie JSON robily ciche `return` -
+//     kafelki zostawaly ze starymi wartosciami, bez sladu w logu. Teraz kod
+//     HTTP, tresc i JSON sa sprawdzane (diag::sprawdzOdpowiedz()), blad daje
+//     linie "tag=STATUS|USTAWIENIA lvl=ERR zdarzenie=odpowiedz_nieczytelna
+//     przyczyna=..." (najwyzej raz na 10 s), a dane sa uznawane za swieze
+//     dopiero po poprawnym odczycie.
+//   - [v1.2.0 DANE-NIEAKTUALNE] Wskaznik "dane nieaktualne" (wpis z
+//     2026-09-12 nizej: "NIE podpiety") jest podpiety w galezi LVGL: po
+//     PROG_NIEAKTUALNYCH_DANYCH_MS (10 s) bez poprawnego statusu kafelki
+//     pokazuja "--", a wirnik pompy staje. Log: dane_nieaktualne /
+//     dane_wrocily.
+//   - [v1.2.0 WIFI-WYBOR] Laczenie po samej nazwie sieci bralo PIERWSZA
+//     znaleziona siec (domyslny WIFI_FAST_SCAN), a nie najsilniejsza. Przy
+//     dwoch centralach w zasiegu (prawdziwa + testowa: ta sama nazwa, haslo
+//     i adres 192.168.4.1) panel mogl pokazywac dane nie tej, w ktorej
+//     zmieniano wartosci. Teraz przy zimnym starcie: skan wszystkich kanalow
+//     (wifiSkanujCentrale()) i polaczenie po BSSID z najsilniejsza.
+//   - [v1.2.0 WIFI-WYBOR] Zapamietany BSSID nigdy nie byl porzucany: po
+//     zniknieciu TEJ centrali panel nie laczyl sie z zadna inna az do
+//     odlaczenia zasilania. Teraz po 3 nieudanych probach szuka od nowa.
+//   - [v1.2.0 FIX-WDT-WIFI] polaczWifi() czekalo do 20 s bez karmienia
+//     watchdoga (15 s, panic): bez centrali w zasiegu panel restartowalby
+//     sie w kolko (wniosek z kodu i z testu na PC, nie z plytki).
+//   - [v1.2.0 FIX-LOG-SPAM-KOMENDA] Jeden nieudany POST wypisywal linie
+//     bledu w KAZDYM obrocie loop() (brakowalo komendaFetch.skwitujBlad()).
+//   - [v1.2.0 BATERIA-BRAK] Bez ogniwa (0,28 V w logu) wskaznik pokazywal
+//     "0%" w kolorze ladowania; teraz ponizej 2,5 V pokazuje "USB".
+//   Dodano:
+//   - [v1.2.0 CENTRALA-ID] Znacznik w naglowku dashboardu:
+//     "SYMULACJA: zewn, pokoj", gdy prawdziwa centrala podaje czujniki jako
+//     symulowane (pola "symulacja_*":true w /api/status - symulacja wlaczana
+//     z jej panelu WWW); "SYMULATOR", gdy odpowiada centrala-testowa-c3;
+//     "2 CENTRALE (XX:YY)", gdy przy starcie byly widoczne co najmniej dwie
+//     sieci o nazwie centrali (XX:YY = koncowka BSSID tej, z ktora panel
+//     jest polaczony). Jedna centrala bez symulacji = brak znacznika. Log:
+//     "tag=PANEL zdarzenie=symulacja_centrali czujniki=...".
+//   - [v1.2.0 DIAG] Linia "tag=PANEL fw=... bssid=... centrala=... sym=...
+//     status_ok=... t_zewn=... t_ogrz=... dym=... heap=... blok_max=..." 5 s
+//     po starcie i potem co 30 s: z kim panel rozmawia, ile odpowiedzi
+//     odczytal i jakie wartosci podaje kafelkom (do porownania z linia
+//     "tag=STATUS" w logu centrali). Linie "tag=WIFI
+//     zdarzenie=skan_centrala|wiele_central|polaczono|reconnect_ok|
+//     porzucam_bssid" z BSSID, kanalem i sila sygnalu.
+//   Zmieniono:
+//   - Hasla (WIFI_PASS, OTA_HASLO_PANEL) nie sa juz wpisane w tym pliku -
+//     pochodza z src/secrets.h (poza gitem, wzor: secrets.h.example); ta
+//     sama konwencja i te same dwie wartosci co w centrali.
+//   - [v1.2.0 LOG-POZIOM] Linie "[NET-DIAG] start/wyslano/sukces" przy
+//     kazdym zadaniu (3 linie co 2 s) sa domyslnie wylaczone
+//     (SiecCfg::POZIOM_LOGU = 1: bledy + zadania wolniejsze niz 700 ms).
+//   - Zimny start trwa o czas skanu dluzej (ok. 1,5-2 s).
+//   NIE ZROBIONO: stary dashboard TFT (LVGL_POC_TEST=0, obecnie niebudowany)
+//   dostal logi i poprawki WiFi, ale nie przelacza kafelkow na "--".
 // [2026-09-12] Naprawiono: BLAD KOMPILACJI ("too few arguments to function
 //   'lvgl_dashboard_poc_aktualizuj'") po pierwszym realnym build+upload tej
 //   sesji. PRZYCZYNA: rozjazd dwoch rownoleglych wersji main.cpp - ta, na
@@ -161,6 +233,10 @@
 // (gole gniazda BSD w trybie O_NONBLOCK + select(), dokladnie ten wzorzec co
 // oficjalny przyklad ESP-IDF protocols/sockets/non_blocking).
 #include "siec_nieblokujaca_LCD.h"
+// [v1.2.0 DIAG] Male, czyste funkcje diagnostyki (kod HTTP, dlawik logu,
+// straznik swiezosci danych, wybor najsilniejszego AP, obecnosc baterii) -
+// bez zaleznosci od Arduino, testowane na PC (testy_host/). Opis w pliku.
+#include "diagnostyka_panelu.h"
 
 // [OTA-ROLLBACK] Potrzebne do potwierdzania partycji po OTA (prompt #6) i,
 // docelowo, do samego wgrywania aktualizacji (prompt #7). Ten sam naglowek
@@ -169,6 +245,7 @@
 #include <HTTPUpdate.h>
 #include <esp_ota_ops.h>
 #include <esp_task_wdt.h>
+#include <esp_wifi.h>    // [v1.2.0 WIFI-WYBOR] esp_wifi_scan_stop() - patrz wifiSkanujCentrale()
 #include "esp_system.h"  // [RESET-DIAG, ta sesja] esp_reset_reason() / esp_reset_reason_t
 
 // [OTA-ROLLBACK] Bez tego override arduino-esp32 SAM potwierdzi biezaca
@@ -271,7 +348,34 @@ NonBlockingHttp ustawieniaFetch;
 NonBlockingHttp komendaFetch;
 WskaznikSwiezosci swiezoscStatusu;
 WskaznikSwiezosci swiezoscUstawien;
-static const uint32_t PROG_NIEAKTUALNYCH_DANYCH_MS = 3 * STATUS_INTERWAL_MS; // 6000ms - patrz swiezoscStatusu.saNieaktualne()
+// [v1.2.0 DANE-NIEAKTUALNE] Bylo 3 * STATUS_INTERWAL_MS (6 s) i NIGDZIE nie
+// bylo uzywane. Teraz to prog, po ktorym kafelki przechodza na "--" (patrz
+// panelOznaczDaneJakoNieaktualne()). 5 okresow (10 s), zeby pojedyncze
+// zaburzenie kanalu AP centrali (jej wlasna proba STA do routera, patrz
+// HISTORIA ZMIAN z 2026-09-12) nie migalo ekranem.
+static const uint32_t PROG_NIEAKTUALNYCH_DANYCH_MS = 5 * STATUS_INTERWAL_MS; // 10000 ms
+
+// [v1.2.0 DIAG] Stan diagnostyki - patrz diagnostyka_panelu.h.
+static const uint32_t PANEL_DIAG_PIERWSZA_MS = 5000;   // pierwsza linia "tag=PANEL" krotko po starcie
+static const uint32_t PANEL_DIAG_INTERWAL_MS = 30000;  // kolejne co 30 s (ten sam rytm co tag=BATERIA)
+diag::Liczniki panelLiczniki;                 // zerowane po kazdej linii "tag=PANEL"
+diag::StraznikSwiezosci straznikSwiezosci;    // kiedy kafelki maja pokazac "--"
+diag::Dlawik dlawikBleduStatusu;              // nieczytelna odpowiedz /api/status - log najwyzej co 10 s
+diag::Dlawik dlawikBleduUstawien;             // to samo dla /api/ustawienia-get
+// [v1.2.0 CENTRALA-ID] Z KTORA centrala rozmawia panel. Prawdziwa centrala i
+// centrala testowa (centrala-testowa-c3) nadaja TA SAMA siec (WIFI_SSID) pod
+// tym samym adresem - bez tego nie da sie odroznic ich ani z ekranu, ani z
+// logu. `centralaToSymulator` pochodzi z pola "symulator":true w /api/status
+// (wysyla je tylko centrala testowa); `wifiCentralPrzyStarcie` to liczba AP
+// o naszej nazwie widzianych przy ostatnim skanowaniu (patrz polaczWifi()).
+bool centralaToSymulator = false;
+bool centralaRozpoznana = false;   // czy chocby jeden status zostal poprawnie odczytany
+int  wifiCentralPrzyStarcie = 0;   // 0 = nie skanowano (szybka sciezka z BSSID z pamieci RTC)
+// Ktore czujniki PRAWDZIWA centrala podaje w tej chwili jako symulowane
+// (pola "symulacja_<czujnik>":true w /api/status - symulacja wlaczana z jej
+// panelu WWW). Bit i = diag::CZUJNIKI_SYMULOWANE[i]. Niezerowa maska znaczy:
+// te wartosci na kafelkach nie sa pomiarem.
+uint16_t centralaSymulacjaMaska = 0;
 
 // [SIEC-NIEBLOKUJACA, ta sesja] POST przez komendaFetch i nastepujacy po nim
 // GET (odswiezenie /api/status albo /api/ustawienia-get) NIE MOGA juz byc
@@ -296,7 +400,7 @@ PoKomendzie pendingPoKomendzie = PoKomendzie::BRAK;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.1.0"; // [2026-09-12] PODNIESIONE z v1.0.0 - sieciowa warstwa nieblokujaca + zlaczenie z DESZCZ-ETAP4 (patrz HISTORIA ZMIAN); jesli wolisz inny numer, to jedyne miejsce do zmiany
+static const char* FIRMWARE_VERSION_PANEL = "v1.2.0"; // [2026-11-11] v1.2.0: wybor najsilniejszej centrali, dane nieaktualne -> "--", diagnostyka (patrz HISTORIA ZMIAN). Poprzednio: [2026-09-12] PODNIESIONE z v1.0.0 - sieciowa warstwa nieblokujaca + zlaczenie z DESZCZ-ETAP4 (patrz HISTORIA ZMIAN); jesli wolisz inny numer, to jedyne miejsce do zmiany
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1709,6 +1813,143 @@ static void symWykresyFetchAkcja(bool dlugi) {
 #endif // LVGL_POC_TEST && LVGL_POC_SYMULACJA
 
 // ----------------------------------------------------------------------------
+// [v1.2.0 DIAG] DIAGNOSTYKA: co przyszlo z centrali i co trafilo na ekran
+// ----------------------------------------------------------------------------
+// Loguje odpowiedz centrali, ktorej NIE dalo sie uzyc - z przyczyna (kod HTTP
+// / brak ciala / blad JSON), rozmiarem oraz poczatkiem i koncem tresci. W
+// v1.1.0 ten przypadek konczyl sie cichym `return`: warstwa sieciowa pisala
+// "sukces" (bo gniazdo sie zamknelo), a ekran po prostu przestawal sie
+// odswiezac. Przy bledzie JSON dochodzi `podejrzane=` - pierwsze pole, ktorego
+// wartosc nie jest JSON-em (typowo `"cisnienie":nan`, patrz
+// diag::znajdzZlaWartosc()); puste, gdy takiego pola nie znaleziono.
+// Dlawik: najwyzej jeden wpis na 10 s na endpoint, z licznikiem pominietych.
+static void zglosZlaOdpowiedz(const char *co, diag::Dlawik &dlawik, diag::Wynik wynik, int kodHttp,
+                               const char *bladJson, const String &surowa, const char *cialo) {
+  if (!dlawik.pozwol(millis(), 10000UL)) return;
+  const char *tresc = (cialo != nullptr) ? cialo : surowa.c_str();
+  char poczatek[41], koniec[33], podejrzane[49];
+  diag::skrotDoLogu(tresc, poczatek, sizeof(poczatek));
+  diag::skrotDoLogu(diag::ogon(tresc, sizeof(koniec) - 1), koniec, sizeof(koniec));
+  diag::skrotDoLogu((wynik == diag::WYNIK_JSON) ? diag::znajdzZlaWartosc(tresc) : nullptr, podejrzane, sizeof(podejrzane));
+  // heap/blok_max: json=NoMemory albo ucieta odpowiedz (IncompleteInput) przy
+  // malym blok_max wskazuje na brak pamieci w panelu, nie na blad centrali.
+  Serial.printf("tag=%s lvl=ERR zdarzenie=odpowiedz_nieczytelna przyczyna=%s http=%d json=%s bajtow=%u cialo_bajtow=%u pominieto=%lu heap=%lu blok_max=%lu poczatek=\"%s\" koniec=\"%s\" podejrzane=\"%s\"\n",
+                co, diag::wynikTekst(wynik), kodHttp, bladJson,
+                (unsigned)surowa.length(), (unsigned)(cialo != nullptr ? strlen(cialo) : 0),
+                (unsigned long)dlawik.zabierzPominiete(),
+                (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMaxAllocHeap(),
+                poczatek, koniec, podejrzane);
+}
+
+#if LVGL_POC_TEST
+// Biezacy `stan` -> dashboard LVGL. Ta sama lista argumentow co w
+// obslugaStatusFetch() i setup() (tamte dwa wywolania zostaly bez zmian).
+static void lvglPokazStan() {
+  lvgl_dashboard_poc_aktualizuj(stan.polaczono, stan.tZewn, stan.tBojler,
+                                 stan.tOgrz, stan.tOgrzSr, stan.tPanel,
+                                 stan.pompa, stan.pompaOverrideMin,
+                                 stan.dym, stan.dymAlarm,
+                                 stan.tPokoj, stan.wilgotnosc, stan.cisnienie,
+                                 stan.klapa, stan.syberka, (int)trybWyboru,
+                                 (int)trybSerwaWartosc,
+                                 stan.alarmOgrzewanie, stan.alarmPanel,
+                                 stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
+                                 stan.rtcOk,
+                                 stan.rssi,
+                                 stan.internet,
+                                 stan.deszczStan, stan.deszczMinuty);
+}
+
+// Znacznik na srodku naglowka dashboardu - Z KTORA centrala rozmawia panel
+// i czy pokazywane wartosci sa pomiarem:
+//   "SYMULATOR"              - odpowiada centrala-testowa-c3,
+//   "SYMULACJA: zewn, pokoj" - prawdziwa centrala podaje te czujniki jako
+//                              symulowane (wlaczone z jej panelu WWW),
+//   "2 CENTRALE (A4:1C)"     - przy starcie w zasiegu byly 2 sieci o nazwie
+//                              WIFI_SSID; w nawiasie dwa ostatnie bajty BSSID
+//                              tej, z ktora panel jest polaczony (pelny BSSID
+//                              jest w logu: tag=WIFI zdarzenie=polaczono).
+// Pusty = jedna, zwykla centrala bez symulacji (nic sie nie wyswietla).
+static void lvglPokazZnacznikCentrali() {
+  char znacznik[48];
+  diag::znacznikCentrali(znacznik, sizeof(znacznik),
+                         centralaRozpoznana && centralaToSymulator,
+                         wifiCentralPrzyStarcie,
+                         (WiFi.status() == WL_CONNECTED) ? WiFi.BSSID() : nullptr,
+                         centralaSymulacjaMaska);
+  lvgl_dashboard_poc_aktualizuj_centrale(znacznik);
+}
+#endif
+
+// [v1.2.0 DANE-NIEAKTUALNE] Wolane RAZ, gdy od ostatniego poprawnie
+// odczytanego /api/status minelo PROG_NIEAKTUALNYCH_DANYCH_MS (patrz loop()).
+// W v1.1.0 po utracie danych kafelki pokazywaly ostatnie znane wartosci bez
+// zadnego znaku, ze sa stare - na ekranie sterownika pieca to grozniejsze
+// niz brak wartosci. lvgl_dashboard_poc_aktualizuj(polaczono=false) pokazuje
+// "--" na kafelkach i "X" na wskazniku WiFi; ta galaz istniala od dawna, ale
+// v1.1.0 docieral do niej wylacznie z setup() (gdy nie udal sie PIERWSZY
+// odczyt) - w trakcie pracy nieudany odczyt konczyl sie `return` przed
+// jakimkolwiek rysowaniem.
+void panelOznaczDaneJakoNieaktualne() {
+  stan.polaczono = false;
+  // wiek_s=-1: od wlaczenia panelu nie bylo jeszcze ANI JEDNEGO poprawnego
+  // statusu. wifi=1 przy braku danych znaczy: siec jest, ale centrala nie
+  // odpowiada albo jej odpowiedzi sa nieczytelne (patrz tag=STATUS lvl=ERR).
+  Serial.printf("tag=PANEL lvl=WARN zdarzenie=dane_nieaktualne wiek_s=%ld prog_s=%lu wifi=%d\n",
+                swiezoscStatusu.byloKiedykolwiek ? (long)swiezoscStatusu.wiekSekund() : -1L,
+                (unsigned long)(PROG_NIEAKTUALNYCH_DANYCH_MS / 1000UL),
+                (int)(WiFi.status() == WL_CONNECTED));
+#if LVGL_POC_TEST
+  lvglPokazStan();   // polaczono=false -> "--" na wszystkich kafelkach
+#endif
+}
+
+// Jedna linia co PANEL_DIAG_INTERWAL_MS z odpowiedzia na trzy pytania, na
+// ktore log v1.1.0 nie odpowiadal: (1) z KTORYM punktem dostepowym panel jest
+// polaczony, (2) ile odpowiedzi udalo sie odczytac i ile razy dane poszly na
+// ekran, (3) jakie wartosci panel ma teraz w pamieci. Zastepuje trzy linie
+// [NET-DIAG] na kazde zapytanie (patrz SiecCfg::POZIOM_LOGU).
+void panelDiagOkresowo() {
+  static unsigned long ostatnio = 0;
+  static bool pierwszaLinia = true;
+  const unsigned long teraz = millis();
+  if (teraz - ostatnio < (pierwszaLinia ? PANEL_DIAG_PIERWSZA_MS : PANEL_DIAG_INTERWAL_MS)) return;
+  ostatnio = teraz;
+  pierwszaLinia = false;
+
+  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
+  char bssid[18];
+  diag::formatBssid(wifiOk ? WiFi.BSSID() : nullptr, bssid, sizeof(bssid));
+  char sym[72];
+  diag::listaSymulowanych(centralaSymulacjaMaska, sym, sizeof(sym));
+  // Wartosci t_*/wilg/cisn/dym/klapa/syberka/pompa to DOKLADNIE to, co panel
+  // ma w pamieci i podaje kafelkom - do porownania z linia "tag=STATUS" w
+  // logu centrali. blok_max: najwiekszy ciagly wolny blok sterty (przy
+  // pofragmentowanej stercie odpowiedz moze sie nie zmiescic mimo duzego heap).
+  Serial.printf("tag=PANEL fw=%s wifi=%d bssid=%s kanal=%d rssi=%d ap_przy_starcie=%d centrala=%s sym=%s "
+                "status_ok=%lu status_blad=%lu ust_ok=%lu ust_blad=%lu ekran=%lu wiek_danych_s=%ld "
+                "t_zewn=%.1f t_pokoj=%.1f t_ogrz=%.1f t_ogrz_sr=%.1f t_bojler=%.1f t_panel=%.1f "
+                "wilg=%.0f cisn=%.0f dym=%d klapa=%d syberka=%d pompa=%d czas=%02d:%02d "
+                "heap=%lu heap_min=%lu blok_max=%lu\n",
+                FIRMWARE_VERSION_PANEL, (int)wifiOk, bssid,
+                wifiOk ? (int)WiFi.channel() : 0, wifiOk ? (int)WiFi.RSSI() : 0,
+                wifiCentralPrzyStarcie,
+                !centralaRozpoznana ? "nieznana" : (centralaToSymulator ? "symulator" : "sterownik"),
+                sym[0] != '\0' ? sym : "brak",
+                (unsigned long)panelLiczniki.statusOk, (unsigned long)panelLiczniki.statusBlad,
+                (unsigned long)panelLiczniki.ustawieniaOk, (unsigned long)panelLiczniki.ustawieniaBlad,
+                (unsigned long)panelLiczniki.ekranOdswiezen,
+                swiezoscStatusu.byloKiedykolwiek ? (long)swiezoscStatusu.wiekSekund() : -1L,
+                stan.tZewn, stan.tPokoj, stan.tOgrz, stan.tOgrzSr, stan.tBojler, stan.tPanel,
+                stan.wilgotnosc, stan.cisnienie, (int)stan.dym,
+                stan.klapa, stan.syberka, (int)stan.pompa,
+                stan.godzina, stan.minuta,
+                (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
+                (unsigned long)ESP.getMaxAllocHeap());
+  panelLiczniki.zeruj();
+}
+
+// ----------------------------------------------------------------------------
 // POBIERANIE DANYCH
 // ----------------------------------------------------------------------------
 // [SIEC-NIEBLOKUJACA, ta sesja - PRZEPISANE] Tylko STARTUJE zadanie (albo nic
@@ -1739,18 +1980,9 @@ void obslugaStatusFetch() {
   statusFetch.poll();
   if (!statusFetch.gotowyWynik()) return;
   bool sukces = statusFetch.bylSukces();
-  // [SIEC-NIEBLOKUJACA] Pozwala pozniej (dashboard/naglowek) odroznic "dane
-  // nieaktualne od Xs" od zwyklego, chwilowego bledu - patrz WskaznikSwiezosci
-  // w siec_nieblokujaca_LCD.h (saNieaktualne()/wiekSekund(), wywolywane wzgledem
-  // PROG_NIEAKTUALNYCH_DANYCH_MS wyzej) - odnotowujemy tu TYLKO sukcesy,
-  // odnotujSukces() nie przyjmuje parametru (staros liczy sie sama, wzgledem
-  // czasu, nie wzgledem odnotowanych porazek). Podlaczenie tego do samego
-  // WYSWIETLANIA (np. napis "dane sprzed Xs" w naglowku/dashboardzie LVGL)
-  // to juz osobna zmiana w dashboard_lvgl_poc.*/rysujNaglowek() - naszkicowane
-  // tu tylko na poziomie sledzenia, nie UI.
-  if (sukces) swiezoscStatusu.odnotujSukces();
   if (!sukces) {
     stan.polaczono = false;
+    panelLiczniki.statusBlad++;
     Serial.printf("[STATUS] GET nieudany: %s\n", statusFetch.ostatniBlad().c_str());
     // [FIX-LOG-SPAM, ta sesja] Bez tego stan_ zostawal w ERROR_ na stale -
     // gotowyWynik() (a wiec i ten log) powtarzalby sie na KAZDEJ iteracji
@@ -1759,9 +1991,32 @@ void obslugaStatusFetch() {
     statusFetch.skwitujBlad();
     return;
   }
-  String odp = NonBlockingHttp::wyodrebnijCialo(statusFetch.pobierzOdpowiedz());
+  // [v1.2.0 DIAG] "sukces" warstwy sieciowej znaczy tylko, ze centrala
+  // zamknela gniazdo. Zanim uznamy dane za dobre, sprawdzamy kod HTTP i
+  // obecnosc ciala (diag::sprawdzOdpowiedz), a potem sam JSON - i KAZDA
+  // porazke logujemy z przyczyna (v1.1.0: ciche `return`, ekran przestawal
+  // sie odswiezac bez sladu w logu). JSON parsowany wprost ze wskaznika na
+  // cialo w `surowa` (bez dodatkowej kopii substring() jak dotad) - `surowa`
+  // zyje do konca tej funkcji, a wszystkie pola sa przepisywane do `stan`
+  // ponizej, wiec nic nie wskazuje na nia po wyjsciu.
+  String surowa = statusFetch.pobierzOdpowiedz();
+  int kodHttp = 0;
+  const char *cialo = nullptr;
+  diag::Wynik wynik = diag::sprawdzOdpowiedz(surowa.c_str(), &kodHttp, &cialo);
   JsonDocument doc;
-  if (deserializeJson(doc, odp) != DeserializationError::Ok) { stan.polaczono = false; return; }
+  DeserializationError bladJson = DeserializationError::Ok;
+  if (wynik == diag::WYNIK_OK) {
+    bladJson = deserializeJson(doc, cialo);
+    // is<JsonObject>(): poprawny JSON, ktory nie jest obiektem (np. sama
+    // liczba), dalby same zera we wszystkich polach - to tez blad.
+    if (bladJson != DeserializationError::Ok || !doc.is<JsonObject>()) wynik = diag::WYNIK_JSON;
+  }
+  if (wynik != diag::WYNIK_OK) {
+    stan.polaczono = false;
+    panelLiczniki.statusBlad++;
+    zglosZlaOdpowiedz("STATUS", dlawikBleduStatusu, wynik, kodHttp, bladJson.c_str(), surowa, cialo);
+    return;
+  }
   stan.polaczono   = true;
   stan.ip          = doc["ip"].as<String>();
   stan.rssi        = doc["rssi"].as<int>();
@@ -1822,6 +2077,44 @@ void obslugaStatusFetch() {
   stan.panelOtaDostepna = doc["panel_ota_dostepna"].isNull() ? false : doc["panel_ota_dostepna"].as<bool>();
   stan.panelOtaWersja   = doc["panel_ota_wersja"].isNull() ? "" : doc["panel_ota_wersja"].as<String>();
 
+  // [v1.2.0 CENTRALA-ID] Pole "symulator":true wysyla wylacznie centrala
+  // testowa (centrala-testowa-c3); prawdziwa centrala go nie ma. Patrz
+  // komentarz przy centralaToSymulator na gorze pliku.
+  const bool symulatorTeraz = doc["symulator"].isNull() ? false : doc["symulator"].as<bool>();
+  bool centralaZmieniona = !centralaRozpoznana || (symulatorTeraz != centralaToSymulator);
+  centralaRozpoznana = true;
+  centralaToSymulator = symulatorTeraz;
+  if (centralaZmieniona) {
+    Serial.printf("tag=PANEL zdarzenie=centrala_rozpoznana typ=%s\n", symulatorTeraz ? "symulator" : "sterownik");
+  }
+  // Prawdziwa centrala: ktore czujniki sa teraz symulowane (patrz komentarz
+  // przy centralaSymulacjaMaska). Wpis w logu i znacznik w naglowku TYLKO
+  // przy zmianie - to takze najprostszy dowod, ze panel odczytal swiezy
+  // status: po wlaczeniu symulacji w centrali napis pojawia sie tutaj w
+  // ciagu jednego okresu odpytywania.
+  uint16_t maskaSym = 0;
+  for (int i = 0; i < diag::LICZBA_CZUJNIKOW_SYMULOWANYCH; i++) {
+    // "| false": brak pola (starsza centrala) albo wartosc innego typu = nie symulowany
+    if (doc[diag::CZUJNIKI_SYMULOWANE[i].pole] | false) maskaSym |= (uint16_t)(1u << i);
+  }
+  if (maskaSym != centralaSymulacjaMaska) {
+    centralaSymulacjaMaska = maskaSym;
+    centralaZmieniona = true;
+    char lista[72];
+    diag::listaSymulowanych(maskaSym, lista, sizeof(lista));
+    Serial.printf("tag=PANEL zdarzenie=symulacja_centrali czujniki=%s\n", lista[0] != '\0' ? lista : "brak");
+  }
+
+  // [v1.2.0 DANE-NIEAKTUALNE] Dopiero TU dane sa "swieze" - po sprawdzeniu
+  // kodu HTTP i JSON-a. W v1.1.0 swiezoscStatusu.odnotujSukces() bylo wolane
+  // juz po samym zamknieciu gniazda, czyli takze dla odpowiedzi, ktorej nie
+  // dalo sie odczytac (a sam wskaznik nie byl nigdzie uzywany).
+  swiezoscStatusu.odnotujSukces();
+  panelLiczniki.statusOk++;
+  if (straznikSwiezosci.odnotujSwiezeDane()) {
+    Serial.println(F("tag=PANEL zdarzenie=dane_wrocily msg=\"kafelki znow pokazuja wartosci z centrali\""));
+  }
+
   // [SIEC-NIEBLOKUJACA, ta sesja] Ponizszy "ogon" byl dawniej doklejany
   // OSOBNO przez KAZDEGO wywolujacego pobierzStatus() (petla loop() w obu
   // galeziach + 4 mosty LVGL: pompaManualWyslij/pompaWyborWyslij/
@@ -1844,6 +2137,8 @@ void obslugaStatusFetch() {
                                  stan.rssi,
                                  stan.internet,
                                  stan.deszczStan, stan.deszczMinuty);
+  panelLiczniki.ekranOdswiezen++;
+  if (centralaZmieniona) lvglPokazZnacznikCentrali(); // [v1.2.0 CENTRALA-ID] "SYMULATOR" / "2 CENTRALE (..)" w naglowku
 #else
   // [LCD-SEZON] Zmiana sezonu wymusza PELNE przerysowanie dashboardu (uklad
   // kafelkow sie zmienia) i naglowka (ikona slonce/sniezynka) — w
@@ -1851,6 +2146,8 @@ void obslugaStatusFetch() {
   bool sezonZmieniony = aktualizujSezon();
   if (aktualnyEkran == EKRAN_DASHBOARD && panelOtwartyId == -1) rysujDashboard(sezonZmieniony);
   rysujNaglowek(sezonZmieniony);
+  panelLiczniki.ekranOdswiezen++;
+  (void)centralaZmieniona; // znacznik centrali istnieje tylko na dashboardzie LVGL
 #endif
 }
 
@@ -1866,17 +2163,33 @@ void obslugaUstawieniaFetch() {
   ustawieniaFetch.poll();
   if (!ustawieniaFetch.gotowyWynik()) return;
   bool sukces = ustawieniaFetch.bylSukces();
-  if (sukces) swiezoscUstawien.odnotujSukces(); // patrz komentarz w obslugaStatusFetch() wyzej
   if (!sukces) {
+    panelLiczniki.ustawieniaBlad++;
     Serial.printf("[USTAWIENIA] GET nieudany: %s\n", ustawieniaFetch.ostatniBlad().c_str());
     // [FIX-LOG-SPAM, ta sesja] Patrz identyczny komentarz w
     // obslugaStatusFetch() wyzej / skwitujBlad() w siec_nieblokujaca_LCD.h.
     ustawieniaFetch.skwitujBlad();
     return;   // zostaw ostatnie znane wartosci
   }
-  String odp = NonBlockingHttp::wyodrebnijCialo(ustawieniaFetch.pobierzOdpowiedz());
+  // [v1.2.0 DIAG] Ten sam wzorzec co w obslugaStatusFetch() wyzej: kod HTTP
+  // + cialo + JSON, kazda porazka z przyczyna w logu (bylo: ciche `return`).
+  String surowa = ustawieniaFetch.pobierzOdpowiedz();
+  int kodHttp = 0;
+  const char *cialo = nullptr;
+  diag::Wynik wynik = diag::sprawdzOdpowiedz(surowa.c_str(), &kodHttp, &cialo);
   JsonDocument doc;
-  if (deserializeJson(doc, odp) != DeserializationError::Ok) return;
+  DeserializationError bladJson = DeserializationError::Ok;
+  if (wynik == diag::WYNIK_OK) {
+    bladJson = deserializeJson(doc, cialo);
+    if (bladJson != DeserializationError::Ok || !doc.is<JsonObject>()) wynik = diag::WYNIK_JSON;
+  }
+  if (wynik != diag::WYNIK_OK) {
+    panelLiczniki.ustawieniaBlad++;
+    zglosZlaOdpowiedz("USTAWIENIA", dlawikBleduUstawien, wynik, kodHttp, bladJson.c_str(), surowa, cialo);
+    return;   // zostaw ostatnie znane wartosci
+  }
+  swiezoscUstawien.odnotujSukces();
+  panelLiczniki.ustawieniaOk++;
   for (int i = 0; i < LICZBA_POL; i++) {
     if (!doc[POLA[i].klucz].isNull()) POLA[i].wartosc = doc[POLA[i].klucz].as<long>();
   }
@@ -2570,6 +2883,15 @@ void obslugaKomendaFetch() {
     }
   } else {
     Serial.printf("[KOMENDA] POST nieudany: %s\n", komendaFetch.ostatniBlad().c_str());
+    // [v1.2.0 FIX-LOG-SPAM-KOMENDA] Ten sam blad co naprawiony wczesniej w
+    // obslugaStatusFetch()/obslugaUstawieniaFetch() (patrz FIX-LOG-SPAM przy
+    // skwitujBlad() w siec_nieblokujaca_LCD.h) - tutaj zostal przeoczony.
+    // Bez skwitujBlad() komendaFetch zostawal w stanie ERROR_ az do NASTEPNEGO
+    // dotkniecia przycisku, wiec gotowyWynik() byl prawda na kazdym obrocie
+    // loop() i powyzsza linia szla na Serial przy kazdym z nich, czyli wiele
+    // razy na sekunde - po JEDNYM nieudanym POST, np. po dotknieciu przycisku
+    // w chwili zaniku WiFi.
+    komendaFetch.skwitujBlad();
   }
 
   PoKomendzie co = pendingPoKomendzie;
@@ -2876,6 +3198,119 @@ void obsluzDotyk() {
 // ----------------------------------------------------------------------------
 // WIFI
 // ----------------------------------------------------------------------------
+// [v1.2.0 WIFI-WYBOR] Wpis do logu: z KTORYM punktem dostepowym panel jest
+// polaczony. BSSID to adres MAC nadajnika centrali - jedyne, czym od strony
+// sieci rozni sie prawdziwa centrala od centrali testowej (obie: ta sama
+// nazwa sieci, to samo haslo, ten sam adres 192.168.4.1).
+static void wifiZalogujPolaczenie(const char *zdarzenie) {
+  char bssid[18];
+  diag::formatBssid(WiFi.BSSID(), bssid, sizeof(bssid));
+  Serial.printf("tag=WIFI zdarzenie=%s bssid=%s kanal=%d rssi=%d\n",
+                zdarzenie, bssid, (int)WiFi.channel(), (int)WiFi.RSSI());
+}
+
+// [v1.2.0 WIFI-WYBOR] Skanuje wszystkie kanaly i wybiera NAJSILNIEJSZY punkt
+// dostepowy o nazwie WIFI_SSID. Zwraca liczbe znalezionych sieci o tej
+// nazwie (0 = zadnej albo skan sie nie udal; `wybrany` jest wtedy nietkniety).
+//
+// POWOD: v1.1.0 wolal WiFi.begin(ssid, haslo) bez zadnych ustawien, a
+// domyslna metoda w arduino-esp32 to WIFI_FAST_SCAN (WiFiSTA.cpp: "First
+// SSID match [WIFI_FAST_SCAN] or Sorted [WIFI_ALL_CHANNEL_SCAN]") - sterownik
+// laczy sie z PIERWSZA siecia o pasujacej nazwie, jaka znajdzie, a nie z
+// najsilniejsza. Gdy w zasiegu sa dwie centrale naraz (prawdziwa przy piecu
+// + testowa na biurku - obie nadaja te sama nazwe sieci, z tym samym haslem
+// i adresem 192.168.4.1), panel po wlaczeniu zasilania moze trafic na
+// dowolna z nich, niezaleznie od tego, ktora stoi obok - i wtedy "kafelki
+// nie reaguja na zmiany w centrali", bo pokazuja dane DRUGIEJ.
+// To jedna z HIPOTEZ dla zgloszenia z 2026-11-10 (niepotwierdzona: log z
+// tamtego dnia nie zawiera BSSID). v1.2.0 usuwa te mozliwosc i wypisuje
+// BSSID, wiec nastepny log to rozstrzygnie.
+//
+// Skan ASYNCHRONICZNY + wlasne czekanie z limitem (a nie blokujace
+// WiFi.scanNetworks()): wersja blokujaca czeka w rdzeniu bez karmienia
+// watchdoga do 60 s (WiFiScanClass::_scanTimeout w arduino-esp32 3.x), a
+// loopTask jest pod watchdogiem 15 s. Sam skan to 13 kanalow x 100-150 ms,
+// czyli ok. 1,5-2 s (z ustawien skanu - niezmierzone na plytce); dzieje sie
+// tylko raz, przy zimnym starcie, gdy ekran i tak pokazuje komunikat o
+// laczeniu.
+static int wifiSkanujCentrale(diag::KandydatAp &wybrany) {
+  static const int MAKS_KANDYDATOW = 6;
+  static const uint32_t SKAN_LIMIT_MS = 6000;
+  diag::KandydatAp kandydaci[MAKS_KANDYDATOW];
+  int liczba = 0;
+
+  WiFi.scanDelete();
+  int znalezione = WiFi.scanNetworks(true /*async*/, false /*ukryte*/, false /*pasywny*/, 150 /*ms na kanal*/);
+  if (znalezione == WIFI_SCAN_RUNNING) {
+    const unsigned long startSkanu = millis();
+    while ((znalezione = WiFi.scanComplete()) == WIFI_SCAN_RUNNING && millis() - startSkanu < SKAN_LIMIT_MS) {
+      esp_task_wdt_reset();
+      delay(50);
+    }
+    esp_task_wdt_reset();
+  }
+  if (znalezione < 0) {
+    // Skan sie nie udal albo nie zmiescil w limicie SKAN_LIMIT_MS (radio
+    // moze wtedy skanowac dalej). Przerwij go, zeby nie kolidowal z
+    // WiFi.begin() zaraz po powrocie z tej funkcji, i daj zadaniu zdarzen
+    // WiFi chwile na obsluzenie SCAN_DONE, zanim scanDelete() nizej zwolni
+    // wyniki.
+    esp_wifi_scan_stop();
+    delay(100);
+    znalezione = WIFI_SCAN_FAILED;
+  }
+
+  for (int i = 0; i < znalezione && liczba < MAKS_KANDYDATOW; i++) {
+    if (WiFi.SSID((uint8_t)i) != WIFI_SSID) continue;
+    const uint8_t *b = WiFi.BSSID((uint8_t)i);
+    if (b == nullptr) continue;
+    memcpy(kandydaci[liczba].bssid, b, 6);
+    kandydaci[liczba].kanal = WiFi.channel((uint8_t)i);
+    kandydaci[liczba].rssi = WiFi.RSSI((uint8_t)i);
+    liczba++;
+  }
+  WiFi.scanDelete();
+
+  for (int i = 0; i < liczba; i++) {
+    char bssid[18];
+    diag::formatBssid(kandydaci[i].bssid, bssid, sizeof(bssid));
+    Serial.printf("tag=WIFI zdarzenie=skan_centrala nr=%d/%d bssid=%s kanal=%d rssi=%d\n",
+                  i + 1, liczba, bssid, (int)kandydaci[i].kanal, (int)kandydaci[i].rssi);
+  }
+  if (liczba == 0) {
+    // znalezione: >= 0 = liczba WSZYSTKICH sieci w zasiegu (zadna nie ma
+    // naszej nazwy), -2 = skan sie nie udal / nie zmiescil w limicie.
+    Serial.printf("tag=WIFI lvl=WARN zdarzenie=skan_brak_centrali ssid=%s wynik_skanu=%d\n", WIFI_SSID, znalezione);
+    return 0;
+  }
+  if (liczba > 1) {
+    Serial.printf("tag=WIFI lvl=WARN zdarzenie=wiele_central liczba=%d msg=\"kilka sieci o tej samej nazwie w zasiegu - lacze z najsilniejsza\"\n", liczba);
+  }
+  wybrany = kandydaci[diag::wybierzNajsilniejszy(kandydaci, liczba)];
+  return liczba;
+}
+
+// [v1.2.0 WIFI-WYBOR] Jedno miejsce, w ktorym startuje laczenie (wolane z
+// polaczWifi() i z wifiReconnectNonBlocking() - w v1.1.0 ten sam if/else byl
+// w obu).
+//  - Znany BSSID i kanal: szybkie laczenie dokladnie jak w v1.1.0. Szybki
+//    skan zaczyna od podanego kanalu i konczy na pierwszym trafieniu, a
+//    "trafic" moze tylko ten jeden BSSID - nie ma tu czego wybierac.
+//  - Bez BSSID wyboru dokonuje sterownik WiFi: ma przeszukac wszystkie
+//    kanaly i wziac NAJSILNIEJSZA siec o tej nazwie (domyslnie wzialby
+//    pierwsza znaleziona). To kosztuje pelny skan przed kazda proba, dlatego
+//    tylko w tej galezi.
+static void wifiRozpocznijLaczenie() {
+  if (rtcBssidZnany) {
+    WiFi.setScanMethod(WIFI_FAST_SCAN);
+    WiFi.begin(WIFI_SSID, WIFI_PASS, rtcKanalCentrali, rtcBssidCentrali, true);
+  } else {
+    WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+  }
+}
+
 void polaczWifi() {
   WiFi.mode(WIFI_STA);
 
@@ -2883,33 +3318,55 @@ void polaczWifi() {
   // szybkosci (patrz komentarz przy definicji WIFI_IP_STATYCZNE wyzej).
   WiFi.config(WIFI_IP_STATYCZNE, WIFI_GATEWAY, WIFI_MASKA);
 
-  if (rtcBssidZnany) {
-    // Drugorzedna optymalizacja (zerowy koszt) — pomija skanowanie kanalu.
-    WiFi.begin(WIFI_SSID, WIFI_PASS, rtcKanalCentrali, rtcBssidCentrali, true);
-  } else {
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-  }
-
   tft.fillScreen(KOL_TLO);
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(KOL_TEKST, KOL_TLO);
   tft.setTextFont(2);
+
+  if (!rtcBssidZnany) {
+    // [v1.2.0 WIFI-WYBOR] Zimny start (pamiec RTC pusta): wlasny skan, wybor
+    // najsilniejszej centrali i polaczenie z NIA po BSSID.
+    tft.drawString("Szukam centrali", 240, 150);
+    diag::KandydatAp ap;
+    wifiCentralPrzyStarcie = wifiSkanujCentrale(ap);
+    if (wifiCentralPrzyStarcie > 0) {
+      memcpy(rtcBssidCentrali, ap.bssid, 6);
+      rtcKanalCentrali = ap.kanal;
+      rtcBssidZnany = true;
+    }
+    // Napis jest wysrodkowany na y=150 (MC_DATUM, font 16 px -> zajmuje
+    // y=142..158), a petla ponizej czysci tylko y=150..170 - bez tego spod
+    // "Laczenie z WiFi" wystawalyby resztki "Szukam centrali".
+    tft.fillRect(0, 138, 480, 24, KOL_TLO);
+  }
+
+  wifiRozpocznijLaczenie();
+
   unsigned long startMs = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startMs < 20000) {
+    // [v1.2.0 FIX-WDT-WIFI] setup() podpina loopTask pod Task WDT (15 s,
+    // panic) PRZED polaczWifi(), a ta petla czeka do 20 s i nie karmila
+    // watchdoga: przy centrali wylaczonej albo poza zasiegiem panel
+    // restartowalby sie co ok. 15 s w kolko, nie dochodzac do ekranu
+    // (wniosek z kodu i z testu na PC - nie zaobserwowane na plytce).
+    esp_task_wdt_reset();
     tft.fillRect(0, 150, 480, 20, KOL_TLO);
     tft.drawString("Laczenie z WiFi" , 240, 150);
     delay(400);
   }
+  esp_task_wdt_reset();
 
   if (WiFi.status() == WL_CONNECTED) {
     // Zapamietaj BSSID/kanal na nastepne polaczenie (np. po wybudzeniu z deep sleep).
     memcpy(rtcBssidCentrali, WiFi.BSSID(), 6);
     rtcKanalCentrali = WiFi.channel();
     rtcBssidZnany = true;
+    wifiZalogujPolaczenie("polaczono");
   } else {
     // Nieudane polaczenie (np. bledny cache po zmianie kanalu AP) — wyczysc cache,
     // zeby kolejna proba nie utknela na nieaktualnych danych.
     rtcBssidZnany = false;
+    Serial.println(F("tag=WIFI lvl=WARN zdarzenie=brak_polaczenia_na_starcie msg=\"ponawiam w tle, ekran pokaze --\""));
   }
 }
 
@@ -2920,10 +3377,20 @@ void polaczWifi() {
 // research przy WIFI_RECONNECT_MAX_MS na gorze pliku.
 void wifiReconnectNonBlocking() {
   static bool poprzednioPolaczony = true; // setup() juz polaczyl (polaczWifi())
+  // [v1.2.0 WIFI-WYBOR] Ile kolejnych prob bylo "na sztywno" do zapamietanego
+  // BSSID. v1.1.0 probowal tak w nieskonczonosc: gdy ta konkretna centrala
+  // znikla na stale (wylaczona centrala testowa, wymieniona plytka), panel
+  // nie polaczyl sie juz z zadna inna az do odlaczenia zasilania.
+  static const uint8_t WIFI_PROB_Z_BSSID = 3;
+  static uint8_t probyZBssid = 0;
 
   if (WiFi.status() == WL_CONNECTED) {
+    probyZBssid = 0;
     if (!poprzednioPolaczony) {
-      Serial.println(F("tag=WIFI zdarzenie=reconnect_ok"));
+      wifiZalogujPolaczenie("reconnect_ok"); // [v1.2.0] z BSSID - widac, czy to ta sama centrala co przedtem
+#if LVGL_POC_TEST
+      lvglPokazZnacznikCentrali();          // koncowka BSSID w naglowku mogla sie zmienic
+#endif
       // Odswiez cache BSSID/kanalu na wypadek, gdyby centrala zmienila kanal
       // AP miedzy rozlaczeniem a tym polaczeniem (patrz tez polaczWifi()).
       memcpy(rtcBssidCentrali, WiFi.BSSID(), 6);
@@ -2955,11 +3422,17 @@ void wifiReconnectNonBlocking() {
   // zatrzymuje calego stosu WiFi, wraca w <1ms.
   WiFi.disconnect(false);
   WiFi.config(WIFI_IP_STATYCZNE, WIFI_GATEWAY, WIFI_MASKA);
-  if (rtcBssidZnany) {
-    WiFi.begin(WIFI_SSID, WIFI_PASS, rtcKanalCentrali, rtcBssidCentrali, true);
-  } else {
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+  if (rtcBssidZnany && probyZBssid >= WIFI_PROB_Z_BSSID) {
+    // [v1.2.0 WIFI-WYBOR] Zapamietany punkt dostepowy nie odpowiada - dalej
+    // szuka juz sterownik WiFi (wszystkie kanaly, najsilniejszy sygnal -
+    // patrz wifiRozpocznijLaczenie()). Bez wlasnego skanu: tu nie wolno
+    // blokowac.
+    rtcBssidZnany = false;
+    probyZBssid = 0;
+    Serial.println(F("tag=WIFI lvl=WARN zdarzenie=porzucam_bssid msg=\"zapamietana centrala nie odpowiada - szukam najsilniejszej sieci o tej nazwie\""));
   }
+  if (rtcBssidZnany) probyZBssid++;
+  wifiRozpocznijLaczenie();
 
   wifiOpoznienieReconnectMs = min(wifiOpoznienieReconnectMs * 2, WIFI_RECONNECT_MAX_MS);
 }
@@ -3601,10 +4074,26 @@ void loop() {
   if (terazBat - ostatniaBateria >= BATERIA_INTERWAL_MS) {
     ostatniaBateria = terazBat;
     float napiecieBat = bateriaOdczytajNapiecie();
-    int procentBat = bateriaNapiecieNaProcent(napiecieBat);
-    Serial.printf("tag=BATERIA napiecie=%.2fV procent=%d ladowanie=%d\n",
-                  napiecieBat, procentBat, (int)zasilanieUSB());
-    lvgl_dashboard_poc_aktualizuj_bateria(procentBat, zasilanieUSB());
+    // [v1.2.0 BATERIA-BRAK] Ponizej diag::BATERIA_PROG_OBECNOSCI_V (2,5 V) na
+    // dzielniku nie ma ogniwa - panel pracuje z samego USB. v1.1.0 pokazywal
+    // wtedy "0%" w kolorze "laduje sie" (log z 2026-11-10:
+    // "napiecie=0.28V procent=0 ladowanie=1" co 30 s). Teraz: napis "USB" na
+    // wskazniku, a w logu jedna linia przy zmianie stanu zamiast co 30 s.
+    static int8_t poprzednioBateriaJest = -1;   // -1 = jeszcze nie mierzono
+    const bool bateriaJest = diag::bateriaObecna(napiecieBat);
+    if (bateriaJest) {
+      int procentBat = bateriaNapiecieNaProcent(napiecieBat);
+      Serial.printf("tag=BATERIA napiecie=%.2fV procent=%d ladowanie=%d\n",
+                    napiecieBat, procentBat, (int)zasilanieUSB());
+      lvgl_dashboard_poc_aktualizuj_bateria(procentBat, zasilanieUSB());
+    } else {
+      if (poprzednioBateriaJest != 0) {
+        Serial.printf("tag=BATERIA zdarzenie=brak_ogniwa napiecie=%.2fV prog=%.1fV msg=\"zasilanie z USB, wskaznik pokazuje USB\"\n",
+                      napiecieBat, diag::BATERIA_PROG_OBECNOSCI_V);
+      }
+      lvgl_dashboard_poc_aktualizuj_bateria(-1, false);
+    }
+    poprzednioBateriaJest = bateriaJest ? 1 : 0;
   }
 
 #if LVGL_POC_SYMULACJA
@@ -3632,6 +4121,14 @@ void loop() {
   obslugaStatusFetch();
   obslugaUstawieniaFetch();
   obslugaKomendaFetch();
+
+  // [v1.2.0 DANE-NIEAKTUALNE] Brak poprawnie odczytanego /api/status przez
+  // PROG_NIEAKTUALNYCH_DANYCH_MS -> kafelki na "--" (raz na kazdy zanik).
+  if (straznikSwiezosci.wlasniePrzeterminowane(swiezoscStatusu.saNieaktualne(PROG_NIEAKTUALNYCH_DANYCH_MS))) {
+    panelOznaczDaneJakoNieaktualne();
+  }
+  // [v1.2.0 DIAG] Jedna linia "tag=PANEL" co 30 s - patrz panelDiagOkresowo().
+  panelDiagOkresowo();
 
   unsigned long terazLvgl = millis();
   if (terazLvgl - ostatniStatus >= STATUS_INTERWAL_MS) {
@@ -3664,6 +4161,13 @@ void loop() {
   obslugaStatusFetch();
   obslugaUstawieniaFetch();
   obslugaKomendaFetch();
+  // [v1.2.0 DIAG] Ta galaz (stary dashboard TFT, LVGL_POC_TEST=0) nie jest
+  // obecnie budowana; dla spojnosci dostaje ten sam log co galaz LVGL wyzej.
+  // Samego przelaczania kafelkow na "--" tutaj nie ma.
+  if (straznikSwiezosci.wlasniePrzeterminowane(swiezoscStatusu.saNieaktualne(PROG_NIEAKTUALNYCH_DANYCH_MS))) {
+    panelOznaczDaneJakoNieaktualne();
+  }
+  panelDiagOkresowo();
 
   // [ETAP 3b] Brak interakcji przez ACTIVITY_TIMEOUT_MS -> usypiamy, CHYBA
   // ZE wykryte jest zasilanie USB — wtedy urzadzenie ma dzialac jak

@@ -58,15 +58,39 @@ namespace SiecCfg {
     static const uint32_t CONNECT_TIMEOUT_MS   = 400;   // limit fazy laczenia
     static const uint32_t CALKOWITY_TIMEOUT_MS = 1500;  // = HTTP_TIMEOUT_MS
     static const size_t   BUFOR_ROZMIAR        = 512;   // kawalek na jeden recv()
-    static const bool     LOG_DIAGNOSTYCZNY    = true;  // Serial.printf przy kazdej zmianie stanu
+    // [v1.2.0 LOG-POZIOM] Poziom logu warstwy sieciowej (bylo: bool
+    // LOG_DIAGNOSTYCZNY = true, czyli odpowiednik poziomu 2):
+    //   0 = tylko bledy ("blad", "odrzucono-zajete", "blad-socket"...),
+    //   1 = bledy + WOLNE zadania (dluzsze niz PROG_WOLNEGO_ZADANIA_MS),
+    //   2 = wszystko jak w v1.1.0: start/wyslano/sukces przy KAZDYM zadaniu,
+    //       czyli 3 linie co 2 s - wlaczaj tylko na czas szukania problemu
+    //       z sama siecia.
+    // Powod zmiany: log z 2026-11-10 to 33 kB samych linii "sukces" z 3 minut
+    // pracy i ani jednej informacji o tym, co faktycznie trafilo na ekran.
+    // Stan polaczenia i danych pokazuje teraz okresowa linia "tag=PANEL"
+    // (co 30 s, patrz panelDiagOkresowo() w main.cpp), a kazda NIEUDANA
+    // odpowiedz jest logowana z przyczyna.
+    static const uint8_t  POZIOM_LOGU             = 1;
+    // Prog "wolnego" zadania. W logu z 2026-11-10 /api/ustawienia-get trwa
+    // stale 235-270 ms, a /api/status 35-75 ms - prog musi byc wyraznie
+    // powyzej tych wartosci, zeby zwykla praca nie byla zglaszana.
+    // Prawdopodobne wyjasnienie stalych ~250 ms (z lektury zrodel obu stron,
+    // NIEZMIERZONE): ESPAsyncWebServer centrali zamyka polaczenie dopiero po
+    // potwierdzeniu TCP od panelu, a stos lwIP panelu potwierdza od razu
+    // tylko co drugi segment - odpowiedz mieszczaca sie w jednym segmencie
+    // (ustawienia) czeka na zegar opoznionego potwierdzenia (250 ms), a
+    // dluzsza (status) nie.
+    static const uint32_t PROG_WOLNEGO_ZADANIA_MS = 700;
 }
 
 // =======================================================================
 // LOG DIAGNOSTYCZNY - ten sam styl co tagWIFI-DIAG w projekcie centrali,
 // zeby dalo sie porownywac znaczniki czasu obu urzadzen w Serialu.
 // =======================================================================
-inline void siecDiagLog(const char* etap, const char* sciezka, const char* info = "") {
-    if (!SiecCfg::LOG_DIAGNOSTYCZNY) return;
+// `poziom`: najnizszy SiecCfg::POZIOM_LOGU, przy ktorym wpis sie pojawia
+// (0 = blad, zawsze; 1 = wolne zadanie; 2 = zwykly przebieg zadania).
+inline void siecDiagLog(const char* etap, const char* sciezka, const char* info = "", uint8_t poziom = 2) {
+    if (poziom > SiecCfg::POZIOM_LOGU) return;
     Serial.printf("[NET-DIAG] etap=%s sciezka=%s info=%s ms=%lu\n",
                   etap, sciezka, info, (unsigned long)millis());
 }
@@ -265,7 +289,7 @@ public:
 private:
     bool startWewn(const char* sciezka, const char* metoda, const String& cialo, const String& contentType) {
         if (stan_ != SiecState::IDLE && stan_ != SiecState::DONE && stan_ != SiecState::ERROR_) {
-            siecDiagLog("odrzucono-zajete", sciezka);
+            siecDiagLog("odrzucono-zajete", sciezka, "", 0);
             return false; // poprzednie zadanie jeszcze w toku
         }
 
@@ -280,7 +304,7 @@ private:
         if (sock_ < 0) {
             blad_ = "socket() nieudane";
             stan_ = SiecState::ERROR_;
-            siecDiagLog("blad-socket", sciezka);
+            siecDiagLog("blad-socket", sciezka, "", 0);
             return false;
         }
 
@@ -299,7 +323,7 @@ private:
             sock_ = -1;
             blad_ = "connect() natychmiastowy blad";
             stan_ = SiecState::ERROR_;
-            siecDiagLog("blad-connect-natychmiast", sciezka);
+            siecDiagLog("blad-connect-natychmiast", sciezka, "", 0);
             return false;
         }
 
@@ -310,10 +334,23 @@ private:
         return true;
     }
 
+    // UWAGA: "sukces" znaczy tu WYLACZNIE "serwer zamknal gniazdo po
+    // odpowiedzi". Nie mowi nic o kodzie HTTP ani o tym, czy tresc da sie
+    // odczytac - to sprawdza dopiero wolajacy (obslugaStatusFetch() itd. w
+    // main.cpp, przez diag::sprawdzOdpowiedz() + ArduinoJson) i TAM loguje
+    // ewentualny blad.
     void zakonczSukcesem() {
         close(sock_);
         sock_ = -1;
         stan_ = SiecState::DONE;
+        // [v1.2.0 LOG-POZIOM] Zadanie zakonczone, ale nietypowo dlugie - warte
+        // jednej linii takze przy POZIOM_LOGU = 1 (patrz PROG_WOLNEGO_ZADANIA_MS).
+        const uint32_t trwaloMs = (uint32_t)(millis() - calkowityStartMs_);
+        if (trwaloMs > SiecCfg::PROG_WOLNEGO_ZADANIA_MS) {
+            char info[24];
+            snprintf(info, sizeof(info), "%lums", (unsigned long)trwaloMs);
+            siecDiagLog("wolne", sciezka_.c_str(), info, 1);
+        }
         siecDiagLog("sukces", sciezka_.c_str());
     }
 
@@ -324,7 +361,7 @@ private:
             sock_ = -1;
         }
         stan_ = SiecState::ERROR_;
-        siecDiagLog("blad", sciezka_.c_str(), powod);
+        siecDiagLog("blad", sciezka_.c_str(), powod, 0);
     }
 
     SiecState stan_ = SiecState::IDLE;
@@ -375,6 +412,11 @@ paru miejscach odbiega od tego szkicu, celowo:
     obslugaUstawieniaFetch() w main.cpp) - podpiecie pod faktyczne
     rysowanie (rysujNaglowek()/dashboard_lvgl_poc.*) NIE zrobione w tej
     sesji, patrz HISTORIA ZMIAN w main.cpp.
+    [v1.2.0] Podpiete w galezi LVGL: po PROG_NIEAKTUALNYCH_DANYCH_MS bez
+    poprawnie odczytanego statusu kafelki przechodza na "--" (patrz
+    panelOznaczDaneJakoNieaktualne() w main.cpp), a odnotujSukces() jest
+    wolane dopiero po sprawdzeniu kodu HTTP i JSON-a, nie po samym
+    zamknieciu gniazda.
 =================================================================================
 ROZBUDOWANY SZKIC INTEGRACJI Z main.cpp (PIERWOTNY, patrz uwagi wyzej)
 =================================================================================
@@ -557,4 +599,7 @@ UWAGI KONCOWE
 - Log [NET-DIAG] mozna wylaczyc ustawiajac SiecCfg::LOG_DIAGNOSTYCZNY
   na false po zakonczeniu testow, zeby nie zasmiecac Seriala w
   normalnej pracy.
+  [v1.2.0] Zrobione inaczej: zamiast wlacz/wylacz jest SiecCfg::POZIOM_LOGU
+  (0/1/2, domyslnie 1 = same bledy i wolne zadania) - patrz komentarz przy
+  tej stalej na gorze pliku.
 */

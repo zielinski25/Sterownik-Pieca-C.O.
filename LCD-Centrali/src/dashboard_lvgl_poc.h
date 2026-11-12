@@ -2,6 +2,11 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-11] v1.2.0 Dodano: lvgl_dashboard_poc_aktualizuj_centrale() -
+//   znacznik "z ktora centrala rozmawia panel" na srodku naglowka
+//   ([v1.2.0 CENTRALA-ID]). Zmieniono: lvgl_dashboard_poc_aktualizuj_bateria()
+//   z procent < 0 pokazuje "USB" (brak ogniwa, [v1.2.0 BATERIA-BRAK]).
+//   Pelny opis: HISTORIA ZMIAN w main.cpp.
 // [2026-09-05] Dodano: typedef AlarmWyciszCb + setter
 //   lvgl_dashboard_poc_ustaw_callback_alarm_wycisz() dla nowego EKRANU
 //   ALARMOWEGO (pelnoekranowa nakladka, pokazywana automatycznie przy
@@ -246,7 +251,28 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_pompy_antystop(bool antystopWlaczo
 // wolniejszy interwal), a nie kolejny parametr _aktualizuj() powyzej.
 // `ladowanie` to wprost zasilanieUSB() z main.cpp (TP4056 CHRG/STDBY).
 // Patrz PLAN_BATERIA.md.
+//
+// [v1.2.0 BATERIA-BRAK] `procent` < 0 = ogniwa NIE MA (napiecie na dzielniku
+// ponizej diag::BATERIA_PROG_OBECNOSCI_V, patrz diagnostyka_panelu.h) -
+// wskaznik pokazuje wtedy pusty, wyszarzony obrys z napisem "USB" zamiast
+// "0%" w kolorze ladowania (tak wygladal v1.1.0 przy pracy z samego USB,
+// nie do odroznienia od rozladowanego ogniwa na ladowarce).
 void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie);
+
+// [v1.2.0 CENTRALA-ID] Krotki znacznik na srodku naglowka dashboardu: Z KTORA
+// centrala rozmawia panel i czy wartosci sa pomiarem. Pusty napis (albo
+// nullptr) = nic nie pokazuj - to normalny stan przy jednej, prawdziwej
+// centrali bez symulacji. main.cpp ustawia (diag::znacznikCentrali()):
+//   "SYMULATOR"         - odpowiada centrala-testowa-c3 (pole
+//                         "symulator":true w /api/status),
+//   "SYMULACJA: zewn"   - prawdziwa centrala podaje te czujniki jako
+//                         symulowane (pola "symulacja_*":true) - ich
+//                         wartosci na kafelkach NIE sa pomiarem,
+//   "2 CENTRALE (..)"   - przy starcie w zasiegu byly 2 (lub wiecej) sieci o
+//                         nazwie centrali; panel wybral najsilniejsza,
+//   albo dwa z nich naraz. Zawsze w kolorze ostrzezenia - to informacja
+//   "uwazaj, co czytasz", nie dekoracja.
+void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik);
 
 // Generyczny callback dla 5 pol numerycznych - dokladnie ten sam ksztalt co
 // ServoUstawieniaCb powyzej (main.cpp rejestruje funkcje ktora PO PROSTU

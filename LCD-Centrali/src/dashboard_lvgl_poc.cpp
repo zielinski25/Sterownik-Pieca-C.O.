@@ -3,6 +3,13 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-11] v1.2.0 Dodano: etykieta centralaZnacznikLabel w naglowku +
+//   lvgl_dashboard_poc_aktualizuj_centrale() ([v1.2.0 CENTRALA-ID]).
+//   Zmieniono: wskaznik baterii pokazuje "USB" dla procent < 0
+//   ([v1.2.0 BATERIA-BRAK]); przy braku danych (polaczono=false - od v1.2.0
+//   takze w trakcie pracy, nie tylko na starcie) wirnik pompy staje, a jej
+//   ikona jest wygaszona ([v1.2.0 DANE-NIEAKTUALNE]). Pelny opis: HISTORIA
+//   ZMIAN w main.cpp.
 // [2026-09-06] Naprawiono: brak drogi powrotu do WYCISZ po kliknieciu
 //   ZAMKNIJ na EKRANIE ALARMOWYM (zgloszone przez uzytkownika) - ZAMKNIJ
 //   celowo nie wycisza brzeczyka (patrz HISTORIA ZMIAN nizej, wpis
@@ -416,6 +423,9 @@ static lv_obj_t *netX = nullptr;
 static const int BAT_SZER = 22, BAT_WYS = 12, BAT_RAMKA = 2;
 static lv_obj_t *bateriaWypelnienie = nullptr;
 static lv_obj_t *bateriaEtykieta = nullptr;
+// [v1.2.0 CENTRALA-ID] Znacznik "z ktora centrala rozmawiam" na srodku
+// naglowka - patrz lvgl_dashboard_poc_aktualizuj_centrale().
+static lv_obj_t *centralaZnacznikLabel = nullptr;
 // [PIEC CO/SR - byl OGRZ_TILE_PREVIEW] Teraz staly kafelek w siatce, patrz
 // kafelek_ogrz_polaczony() i wywolanie w lvgl_dashboard_poc_init().
 static lv_obj_t *ogrzGlownaLabel = nullptr;
@@ -831,7 +841,11 @@ static uint8_t g_pompaKlatka = 0;
 static void pompa_wirnik_timer_cb(lv_timer_t *t) {
   (void)t;
   if (pompaIcon == nullptr) return;
-  if (!g_pompaWlaczona) {
+  // [v1.2.0 DANE-NIEAKTUALNE] `!g_polaczono`: od v1.2.0 kafelki przechodza na
+  // "--" takze W TRAKCIE pracy (dane starsze niz PROG_NIEAKTUALNYCH_DANYCH_MS
+  // w main.cpp), nie tylko na starcie. Wirnik krecacy sie dalej obok "--"
+  // twierdzilby, ze pompa pracuje, choc panel tego juz nie wie.
+  if (!g_pompaWlaczona || !g_polaczono) {
     if (g_pompaKlatka != 0) {
       g_pompaKlatka = 0;
       lv_img_set_src(pompaIcon, POMPA_KLATKI[0]);
@@ -6376,6 +6390,19 @@ void lvgl_dashboard_poc_init() {
   lv_obj_set_style_text_color(bateriaEtykieta, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align_to(bateriaEtykieta, bateriaNib, LV_ALIGN_OUT_RIGHT_MID, 4, 0);
 
+  // [v1.2.0 CENTRALA-ID] Srodek naglowka jest wolny od czasu usuniecia napisu
+  // "PIEC CO - LVGL proof of concept" (patrz UI-WIFI-SYGNAL wyzej): bateria
+  // konczy sie ok. x=75, globus zaczyna ok. x=400. Najdluzszy znacznik, jaki
+  // sklada diag::znacznikCentrali() ("SYMULACJA: zewn +9  2 CENTRALE (BB:CC)"),
+  // zajmuje fontem 14 x=87..393 (zmierzone w testy_host, scenariusz
+  // gola_plytka) - miesci sie, ale bez zapasu: nie wydluzac tego tekstu.
+  // Ukryty, dopoki main.cpp nie poda niepustego tekstu.
+  centralaZnacznikLabel = lv_label_create(scr);
+  lv_label_set_text(centralaZnacznikLabel, "");
+  lv_obj_set_style_text_color(centralaZnacznikLabel, rgb565(KOL_WARN), 0);
+  lv_obj_align(centralaZnacznikLabel, LV_ALIGN_TOP_MID, 0, 5);
+  lv_obj_add_flag(centralaZnacznikLabel, LV_OBJ_FLAG_HIDDEN);
+
   // [UI-SIATKA, PELNY EKRAN] User: "wywnioskuj wielkosc kafelkow, zeby objac
   // caly ekran" - policzone tak:
   //   - SZEROKOSC: bez zmian wzgledem main.cpp (juz idealnie pasuje).
@@ -6707,6 +6734,15 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_pompy_antystop(bool antystopWlaczo
 // podpiete.
 void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie) {
   if (bateriaWypelnienie == nullptr) return;
+  // [v1.2.0 BATERIA-BRAK] procent < 0 = brak ogniwa (patrz komentarz w .h).
+  // `ladowanie` jest tu celowo ignorowane: bez ogniwa nie ma czego ladowac,
+  // a sam pin detekcji (GPIO35) bez zewnetrznego rezystora plywa.
+  if (procent < 0) {
+    lv_obj_set_width(bateriaWypelnienie, 0);
+    lv_label_set_text(bateriaEtykieta, "USB");
+    lv_obj_set_style_text_color(bateriaEtykieta, rgb565(KOL_TEKST_DIM), 0);
+    return;
+  }
   procent = constrain(procent, 0, 100);
 
   int maxSzer = BAT_SZER - 2 * BAT_RAMKA;
@@ -6723,6 +6759,20 @@ void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie) {
   snprintf(buf, sizeof(buf), "%d%%", procent);
   lv_label_set_text(bateriaEtykieta, buf);
   lv_obj_set_style_text_color(bateriaEtykieta, kolor, 0);
+}
+
+// [v1.2.0 CENTRALA-ID] Patrz opis w dashboard_lvgl_poc.h.
+void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik) {
+  if (centralaZnacznikLabel == nullptr) return;
+  if (znacznik == nullptr || znacznik[0] == '\0') {
+    lv_obj_add_flag(centralaZnacznikLabel, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+  lv_label_set_text(centralaZnacznikLabel, znacznik);
+  // Ponowne wyrownanie: etykieta ma szerokosc zalezna od tekstu, a
+  // LV_ALIGN_TOP_MID liczy pozycje raz, w chwili wywolania lv_obj_align().
+  lv_obj_align(centralaZnacznikLabel, LV_ALIGN_TOP_MID, 0, 5);
+  lv_obj_clear_flag(centralaZnacznikLabel, LV_OBJ_FLAG_HIDDEN);
 }
 
 // [ROZSZERZENIE, ta sesja - PANEL DYM] Settery + updater, dokladnie ten sam
@@ -7112,6 +7162,14 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
     if (pompaValLabel != nullptr) {
       lv_label_set_text(pompaValLabel, "--");
       lv_obj_add_flag(pompaArc, LV_OBJ_FLAG_HIDDEN);
+      // [v1.2.0 DANE-NIEAKTUALNE] Od v1.2.0 ta galaz jest osiagana takze w
+      // trakcie pracy (dane starsze niz prog w main.cpp), wiec ikona moze
+      // tu trafic w stanie "pompa pracuje": wygas ja i schowaj przekreslenie
+      // - oba znaki mowilyby o stanie, ktorego panel juz nie zna. Wirnik
+      // zatrzymuje pompa_wirnik_timer_cb() (patrz !g_polaczono tam). Po
+      // powrocie danych kolor i przekreslenie ustawia pompa_tile_odswiez().
+      lv_obj_set_style_img_recolor(pompaIcon, rgb565(KOL_TEKST_DIM), 0);
+      if (pompaPrzekreslenie != nullptr) lv_obj_add_flag(pompaPrzekreslenie, LV_OBJ_FLAG_HIDDEN);
     }
     // Ta sama zasada dla SERWO - brak polaczenia nie moze pokazywac ostatnio
     // znanego trybu recznego jakby to wciaz byla aktualna prawda.
