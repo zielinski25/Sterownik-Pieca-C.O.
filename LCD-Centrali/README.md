@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.2.0
+# Panel LCD (wyświetlacz CO) — firmware v1.2.1
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip`.
@@ -17,6 +17,68 @@ centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip`.
    w v1.1.0.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.2.1
+
+Powód: zgłoszenie z 2026-11-12 — panel (według zgłoszenia z v1.2.0) nie
+pokazywał świeżych danych, aż został zresetowany; po resecie dane były od
+razu. **Przyczyna nadal nie jest potwierdzona**: przysłany został tylko log
+centrali, a to, co się dzieje w panelu, widać tylko w logu panelu. Log
+centrali wygląda na zebrany ok. 5 minut po jej starcie (wniosek z jednej
+linii `tag=HEALTH`, nie pewnik), czyli zapewne krótko przedtem była
+restartowana; w logu panelu z 2026-11-11 tuż przed takim samym resetem każda
+próba połączenia z centralą kończyła się od razu błędem.
+
+v1.2.1 robi sama to, co dotąd pomagało, i zapisuje to, czego brakuje do
+ustalenia przyczyny:
+
+| Czas bez poprawnego statusu | Co robi panel |
+|---|---|
+| 10 s | kafelki `--` (jak w v1.2.0) i **powód w nagłówku**: `BRAK WIFI`, `CENTRALA MILCZY` albo `ZLA ODPOWIEDZ`, z licznikiem sekund |
+| 12 s, gdy WiFi jest „połączone”, a centrala milczy | rozłącza się i łączy od nowa; po kolejnych 12 s jeszcze raz, szukając sieci centrali od zera. v1.1.0 i v1.2.0 w tym stanie nie robiły nic |
+| 45 s | **restartuje się sam**; ostatnie 10 s nagłówek odlicza `RESTART ZA 7 s: …` |
+| nadal bez danych | kolejne restarty po 90 s, 3 min, potem co 5 min (centrala wyłączona na dłużej nie powoduje restartów w kółko); licznik wraca do 45 s po 2 minutach poprawnych danych |
+
+Gdy centrala odpowiada, ale nieczytelnie (`ZLA ODPOWIEDZ`), restarty są
+najwyżej dwa z rzędu — trzeci nic by nie dał.
+
+Ten sam napis co w nagłówku stoi teraz także **na ekranie alarmu**, nad
+przyciskami WYCISZ / ZAMKNIJ (`ekran_alarm_bez_danych.png`). W logu centrali
+z 2026-11-12 alarm przegrzania był aktywny (`piec=134.0C` na płytce bez
+czujników). Przy takim statusie panel pokazuje pełnoekranowy alarm, który
+zasłania kafelki i nagłówek — nie było na nim widać, czy dane jeszcze
+przychodzą, ani że temperatura pochodzi z symulacji. Teraz stoi tam
+`BRAK WIFI 14 s` albo `SYMULACJA: piec`.
+
+Po takim restarcie panel **mówi centrali, dlaczego go zrobił**, a centrala
+wpisuje to do swojego logu (i wysyła wiadomość na Telegram, tak jak o każdym
+nietypowym restarcie panelu):
+
+```
+tag=RESET-DIAG lvl=WARN zdarzenie=nietypowy_restart_panelu powod=auto_wifi_r201_n1_t45_h61_b31_en118 poprzedni=poweron
+```
+
+Jeśli problem wróci, **ta linia z logu centrali powie, czego panelowi
+brakowało** — rozpisanie pól jest niżej, w rozdziale „Jak czytać log”.
+
+Każdy taki restart centrala ogłasza raz (po jej pierwszej odpowiedzi panel
+wraca do zwykłego `reset_powod=sw`). Gdy restarty idą seriami, zgłaszane są
+pierwsze trzy, a potem 6., 12., 24.… z serii — żeby łączność, która rwie się
+raz za razem, nie dawała wiadomości co kilka minut. Serię kończy godzina
+poprawnych danych; numer w serii jest w zgłoszeniu (`n6`).
+
+Alarm nie ginie przy takim restarcie: stan alarmu (dym, przegrzanie pieca
+lub panelu, WYCISZ, ZAMKNIJ) jest zapamiętywany przed restartem, a brzęczyk
+i ekran alarmu wracają po nim, zanim przyjdą dane.
+
+Przy okazji naprawione trzy błędy brzęczyka (były też w v1.1.0 i v1.2.0):
+
+- WYCISZ działał dopiero po następnym poprawnym statusie — czyli bez danych
+  z centrali wcale; teraz cisza zapada od razu;
+- drugie naciśnięcie WYCISZ włączało dźwięk z powrotem;
+- raz wyciszony rodzaj alarmu zostawał niemy przy każdym następnym
+  wystąpieniu, aż do restartu panelu; teraz wyciszenie kończy się razem
+  z alarmem.
 
 ## Co zmienia v1.2.0
 
@@ -70,6 +132,20 @@ z 10 i 11.11. Pełny opis: `HISTORIA ZMIAN` na górze `src/main.cpp`.
 - **`SYMULATOR`** — odpowiada `centrala-testowa-c3`.
 
 Kafelki z `--` znaczą: od 10 s panel nie odczytał poprawnego statusu.
+W tym samym miejscu nagłówka stoi wtedy powód (v1.2.1):
+
+- **`BRAK WIFI 14 s`** — panel nie jest połączony z siecią centrali
+  (ikona WiFi po prawej jest przekreślona).
+- **`CENTRALA MILCZY 14 s`** — WiFi jest połączone, ale centrala nie
+  odpowiada na zapytania.
+- **`ZLA ODPOWIEDZ 14 s`** — centrala odpowiada, ale treści nie da się
+  odczytać (szczegóły w logu: `tag=STATUS lvl=ERR`).
+- **`RESTART ZA 7 s: BRAK WIFI`** — za tyle sekund panel zrestartuje się sam.
+
+Tak to wygląda (zrzuty z testu na PC, nie zdjęcia płytki):
+`ekran_centrala_milczy.png` — dashboard, `ekran_alarm_bez_danych.png` — ekran
+alarmu (ten sam napis nad przyciskami; od v1.2.1).
+
 Kafelek z `-1°C` znaczy: centrala nie ma odczytu z tego czujnika.
 
 ## Jak czytać log
@@ -79,10 +155,11 @@ tag=WIFI zdarzenie=skan_centrala nr=1/1 bssid=24:6F:28:11:22:33 kanal=1 rssi=-45
 tag=WIFI zdarzenie=polaczono bssid=24:6F:28:11:22:33 kanal=1 rssi=-45
 tag=PANEL zdarzenie=centrala_rozpoznana typ=sterownik
 tag=PANEL zdarzenie=symulacja_centrali czujniki=zewn
-tag=PANEL fw=v1.2.0 wifi=1 bssid=24:6F:28:11:22:33 kanal=1 rssi=-45 ap_przy_starcie=1 centrala=sterownik sym=zewn
+tag=PANEL fw=v1.2.1 wifi=1 bssid=24:6F:28:11:22:33 kanal=1 rssi=-45 ap_przy_starcie=1 centrala=sterownik sym=zewn
           status_ok=15 status_blad=0 ust_ok=6 ust_blad=0 ekran=15 wiek_danych_s=1
           t_zewn=18.5 t_pokoj=-1.0 t_ogrz=-1.0 t_ogrz_sr=0.0 t_bojler=-1.0 t_panel=-1.0
           wilg=0 cisn=0 dym=2413 klapa=0 syberka=16 pompa=0 czas=20:41 heap=... heap_min=... blok_max=...
+          bez_danych_s=1 przyczyna=- wymuszen=0 rozl_kod=0 rozl_n=0 autorestartow=0
 ```
 
 (Przykład z testu na PC; linia `tag=PANEL fw=…` jest w logu jedną linią.)
@@ -107,14 +184,69 @@ tag=PANEL fw=v1.2.0 wifi=1 bssid=24:6F:28:11:22:33 kanal=1 rssi=-45 ap_przy_star
 - `tag=WIFI zdarzenie=skan_centrala` — każda sieć `PiecCO_AP` widziana przy
   starcie. Tylko przy zimnym starcie, więc log warto łapać od włączenia.
 
+Linie dodane w v1.2.1 (panel bez danych):
+
+```
+tag=PANEL lvl=WARN zdarzenie=dane_nieaktualne wiek_s=10 prog_s=10 wifi=1 przyczyna=milczy restart_za_s=34
+tag=WIFI lvl=WARN zdarzenie=wymuszam_polaczenie nr=1 szukam=ten_sam_bssid bssid=24:6F:28:11:22:33 kanal=6 rssi=-45 bez_danych_s=12 msg="..."
+tag=WIFI zdarzenie=rozlaczono kod=201 nazwa=NO_AP_FOUND nowych=1 lacznie=3
+[STATUS] GET nieudany: connect() natychmiastowy blad errno=118 EHOSTUNREACH
+tag=PANEL lvl=ERR zdarzenie=autorestart przyczyna=wifi bez_danych_s=45 nr_z_rzedu=1 w_serii=1 lacznie=1 wifi=0 rssi=0 rozl_kod=201 rozl_nazwa=NO_AP_FOUND rozl_n=14 ostatni_blad="..." heap=... blok_max=... alarmy=0x00 msg="..."
+tag=PANEL lvl=WARN zdarzenie=start_po_autorestarcie nr_z_rzedu=1 w_serii=1 zgloszony_nr=0 ... zglaszam_centrali=auto_wifi_r201_n1_t45_h61_b31_en118
+tag=PANEL zdarzenie=autorestart_zgloszony powod=auto_wifi_r201_n1_t45_h61_b31_en118 msg="..."
+```
+
+- `przyczyna=wifi | milczy | odp` — to samo, co napis w nagłówku.
+  `restart_za_s=-1` — przy tej przyczynie restartu już nie będzie.
+- `tag=PANEL lvl=WARN zdarzenie=autorestart_pominiety` — odpowiedzi centrali
+  są nieczytelne mimo dwóch restartów z rzędu; panel czeka bez restartu.
+- `tag=PANEL zdarzenie=autorestart_licznik_wyzerowany z_rzedu=1->0 w_serii=1->1`
+  — dane poprawne od 2 minut: następny samoczynny restart znów po 45 s.
+  Po godzinie taka sama linia z `w_serii=…->0`: koniec serii.
+- `nr_z_rzedu` — restarty bez 2 minut poprawnych danych pomiędzy (od tego
+  zależy, po ilu sekundach będzie następny); `w_serii` — restarty bez godziny
+  poprawnych danych pomiędzy (ten numer idzie do centrali jako `n…`).
+- `zglaszam_centrali=sw` w linii `start_po_autorestarcie` — ten restart
+  z serii nie jest zgłaszany centrali (zgłoszony był nr `zgloszony_nr`).
+- `autorestart_zgloszony` — centrala odpowiedziała na zapytanie z powodem
+  restartu, czyli go dostała.
+- `tag=WIFI zdarzenie=rozlaczono kod=…` — każde rozłączenie WiFi z kodem
+  przyczyny podanym przez radio. Najczęstsze: `201 NO_AP_FOUND` (sieci
+  centrali nie ma w eterze), `200 BEACON_TIMEOUT` (centrala przestała
+  nadawać), `8 ASSOC_LEAVE` (panel rozłączył się sam przed kolejną próbą),
+  `15 4WAY_HANDSHAKE_TIMEOUT` (typowo złe hasło).
+- `errno=…` w liniach `GET nieudany` — dlaczego nie udało się nawet zacząć
+  połączenia: `EHOSTUNREACH`/`ENETUNREACH` = panel nie ma połączenia WiFi
+  albo adresu, `ENOMEM`/`ENOBUFS` = w panelu zabrakło pamięci.
+- Linia `tag=PANEL fw=…` ma na końcu nowe pola: `bez_danych_s`, `przyczyna`
+  (`-` = nic nie brakuje), `wymuszen`, `rozl_kod`, `rozl_n` (rozłączenia WiFi
+  od startu), `autorestartow` (od włączenia zasilania).
+
+**Powód samoczynnego restartu w logu centrali** (`tag=RESET-DIAG … powod=…`),
+na przykładzie `auto_wifi_r201_n1_t45_h61_b31_en118`:
+
+| Pole | Znaczenie |
+|---|---|
+| `auto` | panel zrestartował się sam, bo nie miał danych |
+| `wifi` | czego brakowało: `wifi` (brak połączenia z siecią centrali), `milczy` (WiFi jest, centrala nie odpowiada), `odp` (odpowiedź nieczytelna) |
+| `r201` | ostatni kod rozłączenia WiFi (`r0` = nie było żadnego) |
+| `n1` | który to taki restart w serii (serię kończy godzina poprawnych danych); przeskok numeru, np. z `n3` na `n6`, to restarty, których panel nie zgłaszał |
+| `t45` | ile sekund panel był bez danych |
+| `h61`, `b31` | wolna pamięć i największy wolny blok, w kB |
+| `en118` | ostatnia nieudana próba statusu — etap i numer błędu: `el0` centrala nie odpowiada na próbę połączenia, `ec0` połączono, brak odpowiedzi, `en118` połączenie odrzucone od razu (118 = brak drogi do centrali, 12 = brak pamięci), `eo500` odpowiedź nieczytelna (kod HTTP) |
+
+Którą wersję panel ma wgraną, też widać w logu centrali: gdy panel zgłosi
+się z inną wersją niż poprzednio (albo pierwszy raz po restarcie centrali),
+centrala pisze `tag=OTA-PANEL lvl=INFO zdarzenie=wersja_zgloszona wersja=v1.2.1`.
+
 Stary, gęsty log `[NET-DIAG] start/wyslano/sukces` można przywrócić, ustawiając
 `SiecCfg::POZIOM_LOGU = 2` w `src/siec_nieblokujaca_LCD.h`.
 
 ## Co zostało sprawdzone, a co nie
 
 - **Na PC, z atrapami sprzętu:** prawdziwy `main.cpp` i dashboard uruchomione
-  zwykłym `g++` przeciwko udawanym centralom — 10 scenariuszy, 102
-  sprawdzenia, plus 136 sprawdzeń jednostkowych; także pod AddressSanitizer
+  zwykłym `g++` przeciwko udawanym centralom — 22 scenariusze, 216
+  sprawdzeń, plus 241 sprawdzeń jednostkowych; także pod AddressSanitizer
   i UBSan. Udawana centrala wysyła ten sam JSON co firmware 3.58.3.
 - **Składnia i typy, prawdziwymi nagłówkami ESP32:** wszystkie trzy pliki
   `.cpp` bez błędów z arduino-esp32 3.0.7 i 3.3.8, ESP-IDF 5.1, TFT_eSPI,
@@ -122,4 +254,17 @@ Stary, gęsty log `[NET-DIAG] start/wyslano/sukces` można przywrócić, ustawia
   bez linkowania).
 - **Nie sprawdzone:** build PlatformIO (GCC, linkowanie, rozmiar binarki)
   i działanie na płytce. Opis ograniczeń: `testy_host/README.md`.
+- **Zachowanie radia jest w testach założeniem.** Scenariusz
+  `martwe_polaczenie` (centrala restartuje się tak szybko, że panel dalej
+  uważa się za połączony) pokazuje, że v1.2.1 wychodzi z takiego stanu sama
+  po ok. 13 s, a v1.2.0 nie wychodzi wcale — ale czy właśnie to dzieje się
+  na płytkach, nie wiadomo. Dlatego jest też restart po 45 s, który nie
+  zależy od tego założenia.
+- **Pamięć (pomiar jednorazowy, poza `testy_host/`):** ten firmware
+  uruchomiony na PC w modelu 32-bitowym trzyma po starcie ok. 132 kB
+  (z tego 38 kB to bufor rysowania), cykl statusu bierze chwilowo ok. 6 kB,
+  a przez 4 h pracy z aktywnym alarmem przybyły 4 kB (jeden blok, raz).
+  Wyciek w kodzie panelu jest więc mało prawdopodobny; zużycia pamięci przez
+  WiFi na płytce ten pomiar nie obejmuje — pokaże je `heap=` i `blok_max=`
+  w linii `tag=PANEL`.
 - Zimny start trwa o czas skanu dłużej (szacunkowo 1,5–2 s; niezmierzone).

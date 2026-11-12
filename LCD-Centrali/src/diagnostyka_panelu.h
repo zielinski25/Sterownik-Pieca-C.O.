@@ -1,6 +1,6 @@
 // diagnostyka_panelu.h
 // ============================================================================
-// PANEL LCD - male, CZYSTE funkcje pomocnicze diagnostyki (dodane w v1.2.0)
+// PANEL LCD - male, CZYSTE funkcje pomocnicze diagnostyki (v1.2.0, v1.2.1)
 // ============================================================================
 // PO CO TEN PLIK:
 //   Log z 2026-11-10 (serial-20261110_200814.log) pokazal 3 minuty samych
@@ -27,6 +27,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <type_traits>   // static_assert przy PamiecAutorestartu
 
 namespace diag {
 
@@ -357,6 +358,376 @@ inline void znacznikCentrali(char* wyjscie, size_t n, bool symulator, int liczba
     snprintf(co, sizeof(co), "SYMULACJA: %s", lista);
   }
   snprintf(wyjscie, n, "%s%s%s", co, (co[0] != '\0' && ap[0] != '\0') ? "  " : "", ap);
+}
+
+// ---------------------------------------------------------------------------
+// [v1.2.1 RATUNEK] Panel nie ma danych z centrali: dlaczego i co z tym zrobic
+// ---------------------------------------------------------------------------
+// Zgloszenie z 2026-11-12 (v1.2.0 na plytce): "podczas pracy zresetowalem LCD
+// i dopiero wtedy odebral swieze dane". Co dokladnie przestaje dzialac, NIE
+// jest ustalone (brak logu panelu z tej chwili) - ustalone jest tylko, ze
+// pomaga restart panelu. Dlatego:
+//   1) panel pokazuje na ekranie i pisze w logu, CZEGO mu brakuje (Przyczyna),
+//   2) sam probuje sie ratowac (Ratunek): najpierw ponowne polaczenie z siecia
+//      centrali, a gdy to nie pomaga - restart, czyli to samo, co dotad robil
+//      uzytkownik reka,
+//   3) po takim restarcie zglasza centrali, dlaczego go zrobil
+//      (tokenAutorestartu() -> parametr reset_powod w /api/status -> linia
+//      "tag=RESET-DIAG" w logu centrali).
+// Makro dla testow na PC: ta wersja naglowka ma ponizsze typy.
+#define DIAG_MA_RATUNEK 1
+
+enum Przyczyna : uint8_t {
+  PRZYCZYNA_BRAK = 0,    // dane sa - nic nie brakuje
+  PRZYCZYNA_WIFI,        // panel nie jest polaczony z siecia centrali
+  PRZYCZYNA_MILCZY,      // WiFi polaczone, ale centrala nie odpowiada (timeout, blad polaczenia)
+  PRZYCZYNA_ODPOWIEDZ    // centrala odpowiada, ale tresci nie da sie odczytac (kod HTTP, JSON)
+};
+
+// `ostatniBladToTresc`: ostatnia nieudana proba /api/status skonczyla sie
+// odpowiedzia, ktorej nie dalo sie odczytac (a nie brakiem odpowiedzi).
+inline Przyczyna ustalPrzyczyne(bool wifiPolaczone, bool ostatniBladToTresc) {
+  if (!wifiPolaczone) return PRZYCZYNA_WIFI;
+  return ostatniBladToTresc ? PRZYCZYNA_ODPOWIEDZ : PRZYCZYNA_MILCZY;
+}
+
+// Napis na ekran (naglowek dashboardu) - tylko wielkie litery ASCII.
+inline const char* przyczynaNapis(Przyczyna p) {
+  switch (p) {
+    case PRZYCZYNA_BRAK:      return "";
+    case PRZYCZYNA_WIFI:      return "BRAK WIFI";
+    case PRZYCZYNA_MILCZY:    return "CENTRALA MILCZY";
+    case PRZYCZYNA_ODPOWIEDZ: return "ZLA ODPOWIEDZ";
+  }
+  return "?";
+}
+
+// Krotka nazwa do logu i do tokenu wysylanego centrali (tylko [a-z]).
+inline const char* przyczynaSkrot(Przyczyna p) {
+  switch (p) {
+    case PRZYCZYNA_BRAK:      return "brak";
+    case PRZYCZYNA_WIFI:      return "wifi";
+    case PRZYCZYNA_MILCZY:    return "milczy";
+    case PRZYCZYNA_ODPOWIEDZ: return "odp";
+  }
+  return "x";
+}
+
+// Nazwa kodu przyczyny rozlaczenia WiFi (wifi_err_reason_t z ESP-IDF, pole
+// `reason` zdarzenia STA_DISCONNECTED). Tylko kody spotykane w praktyce;
+// reszta jako "?" - w logu i tak jest liczba.
+inline const char* nazwaKoduRozlaczenia(uint8_t kod) {
+  switch (kod) {
+    case 0:   return "brak";
+    case 1:   return "UNSPECIFIED";
+    case 2:   return "AUTH_EXPIRE";
+    case 3:   return "AUTH_LEAVE";
+    case 4:   return "ASSOC_EXPIRE";
+    case 5:   return "ASSOC_TOOMANY";
+    case 6:   return "NOT_AUTHED";
+    case 7:   return "NOT_ASSOCED";
+    case 8:   return "ASSOC_LEAVE";              // rozlaczenie na wlasne zyczenie (WiFi.disconnect())
+    case 15:  return "4WAY_HANDSHAKE_TIMEOUT";   // typowo: zle haslo
+    case 16:  return "GROUP_KEY_UPDATE_TIMEOUT";
+    case 200: return "BEACON_TIMEOUT";           // centrala przestala nadawac
+    case 201: return "NO_AP_FOUND";              // sieci centrali nie ma w eterze
+    case 202: return "AUTH_FAIL";
+    case 203: return "ASSOC_FAIL";
+    case 204: return "HANDSHAKE_TIMEOUT";
+    case 205: return "CONNECTION_FAIL";
+    case 206: return "AP_TSF_RESET";
+    case 207: return "ROAMING";
+    case 208: return "ASSOC_COMEBACK_TIME_TOO_LONG";
+    case 209: return "SA_QUERY_TIMEOUT";
+    case 210: return "NO_AP_FOUND_W_COMPATIBLE_SECURITY";
+    case 211: return "NO_AP_FOUND_IN_AUTHMODE_THRESHOLD";
+    case 212: return "NO_AP_FOUND_IN_RSSI_THRESHOLD";
+  }
+  return "?";
+}
+
+// Po ilu milisekundach BEZ poprawnie odczytanego statusu panel sam sie
+// restartuje. `kolejnych` = ile takich restartow juz bylo z rzedu (bez ani
+// jednego poprawnego statusu pomiedzy nimi): 45 s, potem 90 s, 3 min i dalej
+// co 5 min - zeby przy centrali wylaczonej na dlugo panel nie restartowal sie
+// w kolko, a mimo to wrocil do pracy najdalej 5 min po jej powrocie.
+inline uint32_t progRestartuMs(uint8_t kolejnych) {
+  switch (kolejnych) {
+    case 0:  return 45000UL;
+    case 1:  return 90000UL;
+    case 2:  return 180000UL;
+    default: return 300000UL;
+  }
+}
+
+// Czy samoczynny restart ma sens. Przy nieczytelnych odpowiedziach centrali
+// (PRZYCZYNA_ODPOWIEDZ) restart pomaga tylko wtedy, gdy wina lezy w panelu
+// (np. brak pamieci). Jesli po dwoch restartach z rzedu odpowiedzi dalej sa
+// nieczytelne, wina lezy po stronie centrali i kolejne restarty nic nie
+// dadza - a kazdy konczylby sie wpisem w logu centrali i wiadomoscia, bo w
+// tym stanie zapytania panelu do centrali DOCIERAJA. Przy braku WiFi i przy
+// milczacej centrali ograniczenia nie ma (progRestartuMs() i tak rozrzedza
+// restarty do jednego na 5 min).
+static const uint8_t MAKS_RESTARTOW_PRZY_ZLEJ_ODPOWIEDZI = 2;
+inline bool restartMaSens(Przyczyna p, uint8_t kolejnych) {
+  return !(p == PRZYCZYNA_ODPOWIEDZ && kolejnych >= MAKS_RESTARTOW_PRZY_ZLEJ_ODPOWIEDZI);
+}
+
+// Licznik "restartow z rzedu" wraca do zera dopiero po tylu ms NIEPRZERWANIE
+// poprawnych danych - nie po pierwszym udanym statusie. Inaczej panel, ktory
+// po kazdym restarcie dostaje dane tylko na chwile, restartowalby sie co
+// minute bez konca.
+static const uint32_t CZAS_STABILNYCH_DANYCH_MS = 120000UL;
+
+// "Seria" samoczynnych restartow konczy sie po godzinie nieprzerwanie
+// poprawnych danych. Sluzy tylko do tego, KTORE restarty panel zglasza
+// centrali. Centrala o kazdym zgloszonym restarcie pisze w logu i wysyla
+// wiadomosc - przy lacznosci, ktora rwie sie co kilka minut, zglaszanie
+// kazdego oznaczaloby wiadomosc co kilka minut, przez cala noc. Dlatego:
+// pierwsze trzy restarty serii sa zglaszane zawsze, nastepne dopiero wtedy,
+// gdy numer w serii jest co najmniej dwa razy wiekszy od ostatnio
+// zgloszonego (czyli 6., 12., 24....). Numer jest w zgloszeniu ("n12"), wiec
+// pominiete restarty widac jako przeskok numeracji. `zgloszonyNr` = 0: w tej
+// serii centrala nie dostala jeszcze zadnego zgloszenia (np. byla wylaczona)
+// - wtedy zglaszany jest restart o dowolnym numerze.
+static const uint32_t CZAS_KONCA_SERII_MS = 3600000UL;
+static const uint8_t ZGLOSZEN_BEZ_OGRANICZEN = 3;
+
+inline bool zglosicRestart(uint8_t seria, uint8_t zgloszonyNr) {
+  if (seria <= ZGLOSZEN_BEZ_OGRANICZEN || zgloszonyNr == 0) return true;
+  return (unsigned)seria >= 2u * (unsigned)zgloszonyNr;
+}
+
+// Drabina ratunkowa. krok() wolany w kazdym obrocie petli glownej;
+// daneSwieze() po kazdym poprawnie odczytanym statusie.
+//
+// Czas bez danych jest SUMOWANY z odcinkow miedzy kolejnymi wywolaniami
+// krok(), a pojedynczy odcinek liczy sie najwyzej jako KROK_MAKS_MS. Powod:
+// panel ma operacje, ktore zatrzymuja petle na wiele sekund (pobieranie
+// wykresow, aktualizacja OTA) - po takiej przerwie licznik nie moze od razu
+// przekroczyc progu restartu, skoro w jej trakcie panel w ogole nie pytal
+// centrali o status.
+struct Ratunek {
+  enum Akcja : uint8_t {
+    NIC = 0,
+    POLACZ_PONOWNIE,            // rozlacz i polacz z ta sama centrala (zapamietany BSSID)
+    POLACZ_PONOWNIE_BEZ_BSSID,  // rozlacz i szukaj sieci centrali od nowa, na wszystkich kanalach
+    RESTART                     // ESP.restart()
+  };
+
+  static const uint32_t KROK_MAKS_MS = 1000;
+  // WiFi "polaczone", a centrala nie odpowiada od tylu ms -> wymus ponowne
+  // polaczenie. 12 s = 6 kolejnych nieudanych odpytan statusu; dluzej niz
+  // pojedyncze zaburzenie kanalu AP centrali (jej wlasna proba polaczenia z
+  // routerem - patrz wpis z 2026-09-12 w HISTORII ZMIAN main.cpp).
+  static const uint32_t PROG_MILCZENIA_MS = 12000;
+  static const uint8_t  MAKS_WYMUSZEN = 2;
+
+  uint32_t bezDanychMs;     // ile petla "przezyla" od ostatniego poprawnego statusu
+  uint32_t milczyMs;        // ...z tego nieprzerwanie z WiFi polaczonym i centrala milczaca
+  uint32_t ostatnioMs;
+  uint8_t  wymuszen;        // ile razy w tym zaniku wymuszono ponowne polaczenie
+  bool     restartZlecony;
+  bool     bylo;
+
+  Ratunek() : bezDanychMs(0), milczyMs(0), ostatnioMs(0), wymuszen(0), restartZlecony(false), bylo(false) {}
+
+  void daneSwieze() {
+    bezDanychMs = 0;
+    milczyMs = 0;
+    wymuszen = 0;
+    restartZlecony = false;
+  }
+
+  // `polaczoneAleMilczy`: WiFi zglasza polaczenie, a ostatnia proba statusu
+  // skonczyla sie brakiem odpowiedzi (nie: nieczytelna odpowiedzia - na to
+  // ponowne polaczenie z siecia nic nie poradzi).
+  Akcja krok(uint32_t terazMs, bool polaczoneAleMilczy, uint32_t progRestartu) {
+    uint32_t dt = 0;
+    if (bylo) {
+      dt = (uint32_t)(terazMs - ostatnioMs);
+      if (dt > KROK_MAKS_MS) dt = KROK_MAKS_MS;
+    }
+    bylo = true;
+    ostatnioMs = terazMs;
+    if (bezDanychMs < 0xFFFF0000UL) bezDanychMs += dt;
+    if (polaczoneAleMilczy) milczyMs += dt;
+    else milczyMs = 0;
+
+    if (bezDanychMs >= progRestartu) {
+      if (restartZlecony) return NIC;
+      restartZlecony = true;
+      return RESTART;
+    }
+    if (polaczoneAleMilczy && milczyMs >= PROG_MILCZENIA_MS && wymuszen < MAKS_WYMUSZEN) {
+      wymuszen++;
+      milczyMs = 0;
+      return (wymuszen == 1) ? POLACZ_PONOWNIE : POLACZ_PONOWNIE_BEZ_BSSID;
+    }
+    return NIC;
+  }
+
+  // Wolajacy nie wykonal zleconego restartu (restartMaSens() == false):
+  // krok() bedzie zglaszal RESTART przy kazdym nastepnym wywolaniu, dopoki
+  // danych nie ma - zeby restart nastapil, gdy tylko przyczyna sie zmieni.
+  void restartOdrzucony() { restartZlecony = false; }
+
+  // Ile zostalo do restartu (0 = juz).
+  uint32_t doRestartuMs(uint32_t progRestartu) const {
+    return (bezDanychMs >= progRestartu) ? 0 : (progRestartu - bezDanychMs);
+  }
+};
+
+// Tekst na srodku naglowka dashboardu, gdy panel NIE MA danych - zamiast
+// znacznika centrali (patrz znacznikCentrali() nizej w tym pliku):
+//   "CENTRALA MILCZY 14 s"          - czego brakuje i od ilu sekund,
+//   "RESTART ZA 7 s: BRAK WIFI"     - ostatnie 10 s przed samoczynnym restartem.
+// `doRestartuS` = BEZ_RESTARTU, gdy restartu nie bedzie (restartMaSens()).
+// Wynik zawsze zakonczony zerem i nigdy dluzszy niz n-1 znakow.
+static const uint32_t BEZ_RESTARTU = 0xFFFFFFFFUL;
+inline void znacznikBrakuDanych(char* wyjscie, size_t n, Przyczyna p, uint32_t bezDanychS, uint32_t doRestartuS) {
+  if (wyjscie == nullptr || n == 0) return;
+  wyjscie[0] = '\0';
+  if (p == PRZYCZYNA_BRAK) return;
+  if (doRestartuS <= 10) snprintf(wyjscie, n, "RESTART ZA %lu s: %s", (unsigned long)doRestartuS, przyczynaNapis(p));
+  else                   snprintf(wyjscie, n, "%s %lu s", przyczynaNapis(p), (unsigned long)bezDanychS);
+}
+
+// To, co ma przetrwac samoczynny restart (ESP.restart()). W main.cpp lezy w
+// pamieci RTC_NOINIT: restart programowy jej nie rusza, a po wlaczeniu
+// zasilania zawiera przypadkowe wartosci - stad `magia` i `suma`.
+// UWAGA: struktura MUSI pozostac bez konstruktora i bez domyslnych wartosci
+// pol - inaczej program przy starcie wpisalby je do pamieci i skasowal to,
+// co mialo przetrwac.
+struct PamiecAutorestartu {
+  uint32_t magia;
+  uint8_t  oczekuje;         // 1 = ten restart zlecil Ratunek (ustawiane tuz przed ESP.restart())
+  uint8_t  kolejnych;        // takie restarty z rzedu, bez poprawnego statusu pomiedzy nimi
+  uint8_t  przyczyna;        // Przyczyna w chwili restartu
+  uint8_t  kodRozlaczenia;   // ostatni kod rozlaczenia WiFi (0 = nie bylo zadnego)
+  uint16_t bezDanychS;       // ile sekund panel byl bez danych
+  uint16_t heapKb;           // wolna pamiec w chwili restartu [kB]
+  uint16_t blokKb;           // najwiekszy ciagly wolny blok [kB]
+  uint16_t lacznie;          // wszystkie takie restarty od wlaczenia zasilania
+  uint16_t bladNumer;        // ostatnia nieudana proba statusu: numer bledu gniazda albo kod HTTP (0 = limit czasu)
+  uint8_t  bladEtap;         // ...i etap, na ktorym padla: litera jak w NonBlockingHttp::etapBledu(), 'o' = odpowiedz nieczytelna
+  uint8_t  alarmy;           // ostatni znany stan alarmow - patrz spakujAlarmy()
+  uint8_t  seria;            // takie restarty w biezacej serii (konczy ja godzina poprawnych danych) - numer "n" w zgloszeniu
+  uint8_t  zgloszonyNr;      // numer w serii ostatniego restartu, o ktorym centrala na pewno sie dowiedziala (0 = o zadnym)
+  uint32_t suma;
+
+  static const uint32_t MAGIA = 0x41525331UL;   // "ARS1"
+
+  uint32_t policzSume() const {
+    uint32_t s = 0x9E3779B9UL ^ magia;
+    s = s * 31u + oczekuje;
+    s = s * 31u + kolejnych;
+    s = s * 31u + przyczyna;
+    s = s * 31u + kodRozlaczenia;
+    s = s * 31u + bezDanychS;
+    s = s * 31u + heapKb;
+    s = s * 31u + blokKb;
+    s = s * 31u + lacznie;
+    s = s * 31u + bladNumer;
+    s = s * 31u + bladEtap;
+    s = s * 31u + alarmy;
+    s = s * 31u + seria;
+    s = s * 31u + zgloszonyNr;
+    return s;
+  }
+  bool wazna() const { return magia == MAGIA && suma == policzSume(); }
+  void zapieczetuj() { magia = MAGIA; suma = policzSume(); }
+  void wyczysc() {
+    memset(this, 0, sizeof(*this));
+    zapieczetuj();
+  }
+
+  // Tuz przed samoczynnym restartem: liczniki o jeden w gore (z nasyceniem).
+  // Nie pieczetuje - wolajacy dopisuje jeszcze reszte pol.
+  void odnotujRestart() {
+    oczekuje = 1;
+    if (kolejnych < 250) kolejnych++;
+    if (seria < 250) seria++;
+    if (lacznie < 65000) lacznie++;
+  }
+
+  // Centrala odpowiedziala na zapytanie, w ktorym szlo zgloszenie tego
+  // restartu - czyli na pewno je dostala.
+  void zgloszenieDotarlo() {
+    zgloszonyNr = seria;
+    zapieczetuj();
+  }
+
+  // Dane sa poprawne nieprzerwanie od `dobreOdMs` milisekund: wyzeruj to, co
+  // mialo wygasnac. Zwraca true, gdy cos sie zmienilo (pamiec jest wtedy juz
+  // zapieczetowana).
+  bool poDobrychDanych(uint32_t dobreOdMs) {
+    bool zmiana = false;
+    if (kolejnych != 0 && dobreOdMs >= CZAS_STABILNYCH_DANYCH_MS) { kolejnych = 0; zmiana = true; }
+    if ((seria != 0 || zgloszonyNr != 0) && dobreOdMs >= CZAS_KONCA_SERII_MS) { seria = 0; zgloszonyNr = 0; zmiana = true; }
+    if (zmiana) zapieczetuj();
+    return zmiana;
+  }
+};
+// Pilnuje UWAGI powyzej: kompilacja nie przejdzie, jesli ktos doda
+// konstruktor albo domyslna wartosc pola.
+static_assert(std::is_trivial<PamiecAutorestartu>::value && std::is_standard_layout<PamiecAutorestartu>::value,
+              "PamiecAutorestartu lezy w pamieci RTC_NOINIT - nie moze miec konstruktora ani domyslnych wartosci pol");
+
+// Ostatni znany stan alarmow w jednym bajcie (PamiecAutorestartu::alarmy).
+// Panel restartuje sie sam wtedy, gdy NIE MA danych - a przy braku danych
+// obowiazuje w nim zasada "ostatni znany stan alarmu zostaje". Zeby restart
+// jej nie lamal (cichy brzeczyk i znikniety ekran alarmu w trakcie
+// przegrzania pieca), stan alarmow jedzie przez restart w pamieci RTC:
+//   bit 0 dym/pozar, bit 1 przegrzanie pieca, bit 2 przegrzanie panelu,
+//   bit 3 brzeczyk wyciszony przyciskiem WYCISZ, bity 4-5 ktory typ alarmu
+//   wyciszono (BrzeczykAlarmTyp w main.cpp, 0-2), bity 6-7 na jakim poziomie
+//   zamknieto ekran alarmu przyciskiem ZAMKNIJ (0-2).
+inline uint8_t spakujAlarmy(bool dym, bool ogrzewanie, bool panel, bool wyciszony, int wyciszonyTyp, int odrzuconyPoziom) {
+  return (uint8_t)((dym ? 0x01 : 0) | (ogrzewanie ? 0x02 : 0) | (panel ? 0x04 : 0) | (wyciszony ? 0x08 : 0) |
+                   ((wyciszonyTyp & 0x03) << 4) | ((odrzuconyPoziom & 0x03) << 6));
+}
+inline bool alarmyDym(uint8_t a)        { return (a & 0x01) != 0; }
+inline bool alarmyOgrzewanie(uint8_t a) { return (a & 0x02) != 0; }
+inline bool alarmyPanel(uint8_t a)      { return (a & 0x04) != 0; }
+inline bool alarmyJakikolwiek(uint8_t a) { return (a & 0x07) != 0; }
+inline bool alarmyWyciszony(uint8_t a)  { return (a & 0x08) != 0; }
+// Wartosci spoza zakresu 0-2 (bajt z pamieci RTC moze byc dowolny) -> 0.
+inline int  alarmyWyciszonyTyp(uint8_t a) { const int t = (a >> 4) & 0x03; return t <= 2 ? t : 0; }
+inline int  alarmyOdrzucony(uint8_t a)    { const int p = (a >> 6) & 0x03; return p <= 2 ? p : 0; }
+
+// Litera etapu do tokenu: tylko [a-z], wszystko inne (w tym '-' = brak
+// bledu i przypadkowe wartosci) jako 'x'.
+inline char etapDoTokenu(uint8_t etap) {
+  return (etap >= 'a' && etap <= 'z') ? (char)etap : 'x';
+}
+
+// Powod restartu zglaszany centrali po samoczynnym restarcie, np.
+// "auto_milczy_r0_n1_t45_h61_b31_el0":
+//   auto    - panel zrestartowal sie sam, bo nie mial danych,
+//   milczy  - czego brakowalo (przyczynaSkrot()): wifi | milczy | odp,
+//   r0      - ostatni kod rozlaczenia WiFi (0 = nie bylo; nazwaKoduRozlaczenia()),
+//   n1      - ktory to taki restart w serii (serie konczy godzina poprawnych
+//             danych; przeskok numeru = restarty, ktorych panel nie zglaszal
+//             - patrz zglosicRestart()),
+//   t45     - ile sekund panel byl bez danych,
+//   h61,b31 - wolna pamiec i najwiekszy wolny blok w kB,
+//   el0     - ostatnia nieudana proba statusu: litera "e", etap, numer bledu:
+//             el0   limit czasu laczenia (centrala nie odpowiada na probe polaczenia),
+//             ec0   polaczono, ale odpowiedz nie przyszla w czasie,
+//             en118 connect() odrzucony od razu, blad 118 (na ESP32: EHOSTUNREACH
+//                   - brak drogi do centrali; en12 - ENOMEM, brak pamieci),
+//             eo500 odpowiedz nieczytelna, kod HTTP 500 (eo200 = zly JSON),
+//             ex0   zadnej nieudanej proby nie bylo.
+// Tylko znaki [a-z0-9_] - token idzie do adresu zapytania bez kodowania.
+// Centrala wpisuje go do swojego logu (tag=RESET-DIAG ... powod=...).
+// Najdluzszy mozliwy token ma 50 znakow - bufor co najmniej TOKEN_AUTORESTARTU_MAKS.
+static const size_t TOKEN_AUTORESTARTU_MAKS = 56;
+inline void tokenAutorestartu(char* wyjscie, size_t n, const PamiecAutorestartu& m) {
+  if (wyjscie == nullptr || n == 0) return;
+  snprintf(wyjscie, n, "auto_%s_r%u_n%u_t%u_h%u_b%u_e%c%u", przyczynaSkrot((Przyczyna)m.przyczyna),
+           (unsigned)m.kodRozlaczenia, (unsigned)m.seria, (unsigned)m.bezDanychS, (unsigned)m.heapKb, (unsigned)m.blokKb,
+           etapDoTokenu(m.bladEtap), (unsigned)m.bladNumer);
 }
 
 // ---------------------------------------------------------------------------

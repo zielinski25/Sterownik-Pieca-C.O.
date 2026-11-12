@@ -95,6 +95,30 @@ inline void siecDiagLog(const char* etap, const char* sciezka, const char* info 
                   etap, sciezka, info, (unsigned long)millis());
 }
 
+// [v1.2.1] Nazwa numeru bledu gniazda (errno / SO_ERROR) do logu. Same numery
+// roznia sie miedzy systemami (na ESP32: EHOSTUNREACH = 118, ENOMEM = 12,
+// ENOBUFS = 105), dlatego obok liczby idzie nazwa. Co znacza przy laczeniu z
+// centrala:
+//   EHOSTUNREACH / ENETUNREACH - nie ma drogi do centrali: panel nie jest
+//                                polaczony z jej siecia WiFi albo nie ma adresu,
+//   ENOMEM / ENOBUFS           - zabraklo pamieci w panelu,
+//   ECONNREFUSED / ECONNRESET  - centrala odrzucila albo zerwala polaczenie.
+inline const char* siecNazwaBledu(int numer) {
+    switch (numer) {
+        case EHOSTUNREACH: return "EHOSTUNREACH";
+        case ENETUNREACH:  return "ENETUNREACH";
+        case ENOMEM:       return "ENOMEM";
+        case ENOBUFS:      return "ENOBUFS";
+        case ECONNREFUSED: return "ECONNREFUSED";
+        case ECONNRESET:   return "ECONNRESET";
+        case ECONNABORTED: return "ECONNABORTED";
+        case ETIMEDOUT:    return "ETIMEDOUT";
+        case ENOTCONN:     return "ENOTCONN";
+        case EADDRINUSE:   return "EADDRINUSE";
+        default:           return "?";
+    }
+}
+
 // =======================================================================
 // Wskaznik swiezosci danych - do pokazania na dashboardzie, ze wartosci
 // na ekranie moga byc nieaktualne, zamiast cichego "zamrozenia" bez
@@ -159,13 +183,13 @@ public:
 
         unsigned long teraz = millis();
         if (teraz - calkowityStartMs_ > SiecCfg::CALKOWITY_TIMEOUT_MS) {
-            zamknijZBledem("timeout calkowity");
+            zamknijZBledem("timeout calkowity", 'c');
             return;
         }
 
         if (stan_ == SiecState::CONNECTING) {
             if (teraz - krokStartMs_ > SiecCfg::CONNECT_TIMEOUT_MS) {
-                zamknijZBledem("timeout laczenia");
+                zamknijZBledem("timeout laczenia", 'l');
                 return;
             }
             fd_set wfds;
@@ -178,7 +202,7 @@ public:
                 socklen_t len = sizeof(soErr);
                 getsockopt(sock_, SOL_SOCKET, SO_ERROR, &soErr, &len);
                 if (soErr != 0) {
-                    zamknijZBledem("connect() blad asynchroniczny");
+                    zamknijZBledem("connect() blad asynchroniczny", 'a', soErr);
                     return;
                 }
                 // Polaczono - zloz i wyslij zadanie HTTP/1.0.
@@ -214,7 +238,7 @@ public:
                     if (errno == EWOULDBLOCK || errno == EAGAIN) {
                         return; // sprobuj wyslac ponownie w nastepnej iteracji poll()
                     }
-                    zamknijZBledem("send() nieudane");
+                    zamknijZBledem("send() nieudane", 's', errno);
                     return;
                 }
                 siecDiagLog("wyslano", sciezka_.c_str());
@@ -238,7 +262,7 @@ public:
                 if (errno == EWOULDBLOCK || errno == EAGAIN) {
                     return; // brak danych teraz - sprobuj w nastepnej iteracji
                 }
-                zamknijZBledem("recv() blad");
+                zamknijZBledem("recv() blad", 'r', errno);
             }
         }
     }
@@ -265,6 +289,16 @@ public:
     }
 
     String ostatniBlad() const { return blad_; }
+
+    // [v1.2.1] Ostatni blad w postaci do krotkiego zapisu: NA KTORYM ETAPIE
+    // zadanie padlo i z jakim numerem bledu (0, gdy to limit czasu):
+    //   'g' socket()            'n' connect() - blad od razu
+    //   'l' limit czasu laczenia (centrala nie odpowiada na probe polaczenia)
+    //   'a' connect() - blad po chwili           's' send()
+    //   'c' limit czasu calosci (polaczono, brak odpowiedzi)   'r' recv()
+    // '-' = od ostatniego startu zadania bledu nie bylo.
+    char etapBledu() const { return etapBledu_; }
+    int numerBledu() const { return numerBledu_; }
 
     // [FIX-LOG-SPAM, ta sesja] Jak pobierzOdpowiedz(), ale bez zwracania
     // niczego - wywolaj PO odczytaniu/zalogowaniu bledu z ostatniBlad(),
@@ -299,10 +333,14 @@ private:
         contentType_ = contentType;
         odpowiedz_ = "";
         blad_ = "";
+        etapBledu_ = '-';
+        numerBledu_ = 0;
 
         sock_ = socket(AF_INET, SOCK_STREAM, 0);
         if (sock_ < 0) {
-            blad_ = "socket() nieudane";
+            etapBledu_ = 'g';
+            numerBledu_ = errno;
+            blad_ = String("socket() nieudane errno=") + String(numerBledu_) + " " + siecNazwaBledu(numerBledu_);
             stan_ = SiecState::ERROR_;
             siecDiagLog("blad-socket", sciezka, "", 0);
             return false;
@@ -319,11 +357,17 @@ private:
 
         int r = connect(sock_, (struct sockaddr*)&adres, sizeof(adres));
         if (r < 0 && errno != EINPROGRESS) {
+            // [v1.2.1] Numer i nazwa bledu do logu. W logu z 2026-11-11
+            // (fragment sprzed resetu panelu) tym bledem konczyla sie kazda
+            // proba i nie bylo widac, CZEGO zabraklo - patrz siecNazwaBledu().
+            const int numerBledu = errno;
             close(sock_);
             sock_ = -1;
-            blad_ = "connect() natychmiastowy blad";
+            etapBledu_ = 'n';
+            numerBledu_ = numerBledu;
+            blad_ = String("connect() natychmiastowy blad errno=") + String(numerBledu) + " " + siecNazwaBledu(numerBledu);
             stan_ = SiecState::ERROR_;
-            siecDiagLog("blad-connect-natychmiast", sciezka, "", 0);
+            siecDiagLog("blad-connect-natychmiast", sciezka, blad_.c_str(), 0);
             return false;
         }
 
@@ -354,14 +398,20 @@ private:
         siecDiagLog("sukces", sciezka_.c_str());
     }
 
-    void zamknijZBledem(const char* powod) {
+    // `etap`: patrz etapBledu(). `numerBledu` (errno albo SO_ERROR), gdy jest
+    // znany - trafia do tekstu bledu, a wiec i do linii "[STATUS] GET
+    // nieudany: ..." w main.cpp.
+    void zamknijZBledem(const char* powod, char etap, int numerBledu = 0) {
+        etapBledu_ = etap;
+        numerBledu_ = numerBledu;
         blad_ = powod;
+        if (numerBledu != 0) blad_ += String(" errno=") + String(numerBledu) + " " + siecNazwaBledu(numerBledu);
         if (sock_ >= 0) {
             close(sock_);
             sock_ = -1;
         }
         stan_ = SiecState::ERROR_;
-        siecDiagLog("blad", sciezka_.c_str(), powod, 0);
+        siecDiagLog("blad", sciezka_.c_str(), blad_.c_str(), 0);
     }
 
     SiecState stan_ = SiecState::IDLE;
@@ -372,6 +422,8 @@ private:
     String contentType_;
     String odpowiedz_;
     String blad_;
+    char etapBledu_ = '-';
+    int numerBledu_ = 0;
     unsigned long krokStartMs_ = 0;
     unsigned long calkowityStartMs_ = 0;
 };

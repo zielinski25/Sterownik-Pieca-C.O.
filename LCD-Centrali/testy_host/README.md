@@ -25,9 +25,9 @@ wymyślonymi hasłami (atrapa WiFi haseł nie sprawdza).
 
 | Plik | Co robi |
 |---|---|
-| `test_diagnostyka.cpp` | Testy jednostkowe `src/diagnostyka_panelu.h` (kod HTTP, dławik logu, strażnik świeżości, wybór najsilniejszego AP, znacznik centrali, próg baterii). |
+| `test_diagnostyka.cpp` | Testy jednostkowe `src/diagnostyka_panelu.h` (kod HTTP, dławik logu, strażnik świeżości, wybór najsilniejszego AP, znacznik centrali, próg baterii; od v1.2.1: przyczyna braku danych, drabina ratunkowa, pamięć i token samoczynnego restartu). |
 | `mock/` | Atrapy nagłówków Arduino/ESP-IDF (`Arduino.h`, `WiFi.h`, `TFT_eSPI.h`, `Preferences.h`, `esp_*.h`…). Stan „płytki” opisuje `mock/atrapa.h`. |
-| `symulator_panelu.cpp` | Uruchamia `setup()` i `loop()` firmware'u, podstawia mu „centrale” (lokalny serwer HTTP) i sprawdza log oraz to, co trafiło na ekran. Odpowiedź `/api/status` ma te same pola, kolejność i format liczb co `wifiZbudujJsonStatus()` w firmware centrali 3.58.3 (ok. 1,8 kB). |
+| `symulator_panelu.cpp` | Uruchamia `setup()` i `loop()` firmware'u, podstawia mu „centrale” (lokalny serwer HTTP) i sprawdza log oraz to, co trafiło na ekran. Odpowiedź `/api/status` ma te same pola, kolejność i format liczb co `wifiZbudujJsonStatus()` w firmware centrali 3.58.3 (ok. 1,8 kB). Udawana centrala traktuje parametr `reset_powod` tak jak 3.58.3: „pisze” o powodzie restartu panelu przy każdej zmianie wartości innej niż `sw` i `deepsleep`. |
 | `uruchom_testy.sh` | Buduje i uruchamia całość. |
 | `sprawdz_naglowki_esp32.sh` | Sprawdza składnię i typy źródeł panelu prawdziwymi nagłówkami arduino-esp32 / ESP-IDF / TFT_eSPI (bez atrap). |
 
@@ -49,6 +49,18 @@ LVGL jest budowany z `include/lv_conf.h` tego projektu. Ekran to bufor
 | `skan_zawieszony` | Skan WiFi, który się nie kończy. |
 | `ustawienia_milcza` | `/api/status` działa, `/api/ustawienia-get` nie odpowiada przez 3 minuty (sytuacja z logu panelu z 2026-11-06). |
 | `gola_plytka` | Stanowisko z logów z 2026-11-11: centrala bez czujników (wszędzie −1) z symulacją jednego czujnika; zmiana i wyłączenie symulacji. |
+| `martwe_polaczenie` | v1.2.1. Wartości z logu centrali z 2026-11-12 (piec 134 °C, alarm). Centrala restartuje się tak szybko, że radio panelu nie zauważa przerwy: WiFi „połączone”, centrala milczy. Panel sam łączy się od nowa. |
+| `autorestart_centrala_milczy` | v1.2.1. Centrala trwale nie odpowiada mimo działającego WiFi: dwa wymuszone połączenia, odliczanie w nagłówku, restart po 45 s. |
+| `autorestart_brak_wifi` | v1.2.1. Panel bez centrali w zasięgu: `BRAK WIFI`, kod rozłączenia w logu, restart po 45 s. |
+| `start_po_autorestarcie` | v1.2.1. Start po samoczynnym restarcie: centrala dostaje `reset_powod=auto_…` i pisze o nim raz — także gdy sama się potem zrestartuje; licznik restartów z rzędu wraca do zera po 2 minutach poprawnych danych. |
+| `seria_restartow` | v1.2.1. Piąty samoczynny restart w serii: panel zgłasza zwykłe `sw`, centrala nie pisze o nim i nie wysyła wiadomości. |
+| `autorestart_kolejny` | v1.2.1. Drugi samoczynny restart z rzędu następuje dopiero po 90 s. |
+| `restart_po_ota` | v1.2.1. Restart programowy z innego powodu (OTA) i przypadkowe wartości w pamięci RTC: centrala dostaje zwykłe `reset_powod=sw`. |
+| `zla_odpowiedz_dlugo` | v1.2.1. Centrala stale odpowiada nieczytelnie: WiFi nie jest rozłączane, restart po 45 s z przyczyną `odp`. |
+| `zla_odpowiedz_bez_konca` | v1.2.1. Odpowiedzi nieczytelne mimo dwóch restartów z rzędu: trzeciego nie ma; gdy centrala całkiem zamilknie, restart wraca. |
+| `wycisz_alarm` | v1.2.1. Przycisk WYCISZ: cisza od razu; wyciszenie kończy się razem z alarmem. |
+| `autorestart_przy_alarmie` | v1.2.1. Alarm przy symulowanej temperaturze pieca: ekran alarmu pokazuje `SYMULACJA: … piec`. Potem centrala znika: stan alarmu (z WYCISZ i ZAMKNIJ) jest zapisany przed restartem. |
+| `start_po_autorestarcie_z_alarmem` | v1.2.1. Start po restarcie w trakcie alarmu, bez danych: brzęczyk i ekran alarmu wracają, na ekranie alarmu stoi `BRAK WIFI … s`, WYCISZ działa. |
 
 ## Czego to NIE sprawdza
 
@@ -59,22 +71,35 @@ firmware kompiluje się dla ESP32 ani że działa na płytce.
 - **Kompilacja dla ESP32.** Atrapy mają te same sygnatury co arduino-esp32 3.x,
   ale to nie jest toolchain ESP32. Zgodność z prawdziwymi nagłówkami sprawdza
   osobny skrypt (następny rozdział); buildu PlatformIO nie zastępuje nic.
-- **Radio.** Model WiFi (`mock/atrapa.cpp`) to trzy reguły:
+- **Radio.** Model WiFi (`mock/atrapa.cpp`) to kilka reguł:
   - `WiFi.begin()` z BSSID łączy się tylko z tym nadajnikiem;
   - bez BSSID, przy `WIFI_FAST_SCAN` (domyślne w arduino-esp32), wygrywa sieć
     na **najniższym kanale** — to *założenie* wynikające z opisu „scan will
     end after find SSID match AP” i kolejności kanałów, nie pomiar;
-  - bez BSSID, przy `WIFI_ALL_CHANNEL_SCAN`, wygrywa najsilniejsza.
+  - bez BSSID, przy `WIFI_ALL_CHANNEL_SCAN`, wygrywa najsilniejsza;
+  - radio samo nie ponawia połączenia (na płytce rdzeń arduino-esp32 robi to
+    w tle, równolegle z logiką panelu) i zgłasza kod rozłączenia tylko przy
+    `WiFi.disconnect()` (kod 8) albo gdy test poda go wprost;
+  - „martwe połączenie” (`AtrapaAp::wcielenie`): po szybkim restarcie
+    centrali panel dalej widzi stan „połączony”, a zapytania zostają bez
+    odpowiedzi, dopóki nie wywoła `WiFi.begin()` jeszcze raz. To
+    **przypuszczenie** co do zachowania płytek, nie obserwacja.
 
   Wynik „v1.1.0 łączy się z nie tą centralą” w scenariuszu `dwie_centrale`
   wynika wprost z drugiej reguły.
 - **Czasy sieci.** Zegar płytki jest sztuczny (`delay()` przesuwa `millis()`),
   a HTTP idzie po lokalnym gnieździe. Opóźnienia lwIP, zakłócenia kanału AP
   i czasy z prawdziwego logu nie są odtwarzane.
-- **Sprzęt.** TFT_eSPI, dotyk, brzęczyk, deep sleep, OTA, ekran Wykresy —
-  atrapy przyjmują wywołania, ale ich nie modelują.
+- **Sprzęt.** TFT_eSPI, dotyk, deep sleep, OTA, ekran Wykresy — atrapy
+  przyjmują wywołania, ale ich nie modelują. Z brzęczyka zapisywana jest
+  tylko ostatnio ustawiona częstotliwość (0 = cisza).
 - **Watchdog.** Atrapa tylko odnotowuje, że przy takim przebiegu watchdog
   zadania (15 s) by zadziałał; nie restartuje „płytki”.
+- **Restart.** `ESP.restart()` kończy w teście „życie” firmware'u (wyjątek
+  `AtrapaRestart`); program nie startuje od nowa w tym samym procesie. Start
+  po restarcie sprawdzają osobne scenariusze, które przed `setup()` wypełniają
+  pamięć RTC tak, jak zostawia ją firmware. Tego, że pamięć `RTC_NOINIT`
+  naprawdę przetrwa restart na płytce, test nie sprawdza.
 
 ## Sprawdzenie prawdziwymi nagłówkami ESP32
 

@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -56,6 +57,17 @@
 // --- z firmware'u (src/main.cpp) ---
 void setup();
 void loop();
+// v1.2.1: pamiec, ktora na plytce przetrwa ESP.restart() (RTC_NOINIT). Starsze
+// zrodla (porownanie przez SRC=...) nie maja ani naglowka, ani zmiennej.
+#if __has_include("diagnostyka_panelu.h")
+#include "diagnostyka_panelu.h"
+#endif
+#ifdef DIAG_MA_RATUNEK
+extern diag::PamiecAutorestartu rtcAutorestart __attribute__((weak));
+#define MA_RATUNEK (&rtcAutorestart != nullptr)
+#else
+#define MA_RATUNEK false
+#endif
 // --- z dashboardu (src/dashboard_lvgl_poc.cpp); w v1.1.0 tej funkcji nie ma ---
 void lvgl_dashboard_poc_aktualizuj_centrale(const char* znacznik) __attribute__((weak));
 void pompaManualWyslij(const char* stanTekst);
@@ -93,9 +105,16 @@ struct Centrala {
   double wilgotnosc = 45.0, cisnienie = 1013.2;
   int dym = 120, klapa = 40, syberka = 60, godzina = 20, minuta = 5, dzien = 10, miesiac = 11, rok = 2026;
   bool pompa = false, dymWlaczony = true, rtcOk = true;
+  bool alarmOgrzewanie = false, alarmPanel = false, dymAlarm = false;
   unsigned symulacja = 0;   // suma SYM_*: czujniki, ktore centrala podaje jako symulowane
   // liczniki zapytan, ktore do tej centrali dotarly
   int nStatus = 0, nUstawienia = 0, nPost = 0, nInne = 0;
+  std::string ostatniStatusSciezka;   // adres ostatniego zapytania /api/status (z parametrami panel_fw i reset_powod)
+  // To, co z parametrem reset_powod robi firmware centrali 3.58.3 (handler
+  // /api/status): przy kazdej ZMIANIE wartosci, o ile nowa to nie "sw" ani
+  // "deepsleep", pisze linie "tag=RESET-DIAG ... powod=" i wysyla wiadomosc.
+  std::string ostatniPowodRestartu;       // g_panelOstatniPowodRestartu centrali (pusty po jej restarcie)
+  std::vector<std::string> resetDiag;     // powody, o ktorych centrala napisala w logu i wyslala wiadomosc
 };
 
 const int LICZBA_CENTRAL = 3;
@@ -130,13 +149,13 @@ std::string jsonStatus(const Centrala& c, bool zNan) {
   j += "\"t_trociny\":" + fN(c.tTrociny, 1) + ",\"t_powrot\":" + fN(c.tPowrot, 1) + ",";
   j += "\"wilgotnosc\":" + fN(c.wilgotnosc, 0) + ",\"hist_fs\":1,";
   j += "\"cisnienie\":" + (zNan ? std::string("nan") : fN(c.cisnienie, 2)) + ",";
-  j += "\"dym\":" + std::to_string(c.dym) + ",\"dym_swiezy\":" + tn(c.dymWlaczony) + ",\"dym_wlaczony\":" + tn(c.dymWlaczony) + ",\"dym_alarm\":false,";
+  j += "\"dym\":" + std::to_string(c.dym) + ",\"dym_swiezy\":" + tn(c.dymWlaczony) + ",\"dym_wlaczony\":" + tn(c.dymWlaczony) + ",\"dym_alarm\":" + tn(c.dymAlarm) + ",";
   j += "\"alarm_dym_wyciszony\":false,\"alarm_dym_wyciszenie_ms\":0,\"alarm_ogrz_wyciszony\":false,\"alarm_ogrz_wyciszenie_ms\":0,";
   j += "\"alarm_sound_dym\":\"syrena\",\"alarm_sound_ogrz\":\"pulsujacy\",\"alarm_sound_both\":\"syrena\",";
   j += "\"klapa\":" + std::to_string(c.klapa) + ",\"syberka\":" + std::to_string(c.syberka) + ",\"tryb_serwa\":1,";
   j += std::string("\"pompa\":") + tn(c.pompa) + ",\"pompa_ms_od_zmiany\":1049000,\"pompa_override_min\":0,";
   j += "\"wybor\":1,\"mieszadlo\":false,\"rozpalanie\":false,\"rozpalanie_potwierdzone\":false,\"rozpalanie_pozostalo_s\":0,";
-  j += "\"alarm_ogrzewanie\":false,\"alarm_panel\":false,";
+  j += std::string("\"alarm_ogrzewanie\":") + tn(c.alarmOgrzewanie) + ",\"alarm_panel\":" + tn(c.alarmPanel) + ",";
   j += "\"rozpalanie_serwa_dostepne\":true,\"rozpalanie_serwa_aktywne\":false,\"rozpalanie_serwa_blokada_dymu\":false,";
   j += "\"rozpalanie_serwa_temp_ok\":true,\"rozpalanie_serwa_alarm_bezpieczenstwa\":false,";
   j += "\"miesiac\":" + std::to_string(c.rtcOk ? c.miesiac : 0) + ",\"godzina\":" + std::to_string(c.rtcOk ? c.godzina : 0);
@@ -206,6 +225,19 @@ void obsluzPolaczenie(int k, int idx) {
       cialo = "{\"ok\":true}";
     } else if (sciezka.rfind("/api/status", 0) == 0) {
       c.nStatus++;
+      c.ostatniStatusSciezka = sciezka;
+      {
+        static const char KLUCZ[] = "reset_powod=";
+        const size_t p = sciezka.find(KLUCZ);
+        if (p != std::string::npos) {
+          const size_t od = p + sizeof(KLUCZ) - 1;
+          const std::string powod = sciezka.substr(od, sciezka.find('&', od) - od);
+          if (powod != c.ostatniPowodRestartu) {
+            if (powod != "deepsleep" && powod != "sw") c.resetDiag.push_back(powod);
+            c.ostatniPowodRestartu = powod;
+          }
+        }
+      }
       tryb = c.trybStatus;
       cialo = jsonStatus(c, tryb == TRYB_NAN);
     } else if (sciezka.rfind("/api/ustawienia-get", 0) == 0) {
@@ -247,6 +279,19 @@ void obsluzPolaczenie(int k, int idx) {
   g_wLocie--;
 }
 
+// Zapytanie wyslane "martwym" polaczeniem WiFi (patrz AtrapaAp::wcielenie):
+// centrala go nie dostaje, panel nie dostaje odpowiedzi. Na plytce taka proba
+// konczy sie juz na etapie laczenia ("timeout laczenia"); tutaj polaczenie
+// TCP powstaje, a brakuje dopiero odpowiedzi ("timeout calkowity") - dla
+// panelu jedno i drugie znaczy to samo: centrala milczy.
+void obsluzMartwe(int k) {
+  char buf[2048];
+  const ssize_t n = read(k, buf, sizeof(buf));
+  g_zaparkowane.push_back(k);
+  if (g_zaparkowane.size() > 64) { close(g_zaparkowane.front()); g_zaparkowane.erase(g_zaparkowane.begin()); }
+  if (n > 0) g_wLocie--;
+}
+
 void watekSerwera() {
   while (!g_koniec.load()) {
     int k = accept(g_gniazdoSerwera, nullptr, nullptr);
@@ -258,7 +303,8 @@ void watekSerwera() {
     }
     struct timeval limit = {2, 0};
     setsockopt(k, SOL_SOCKET, SO_RCVTIMEO, &limit, sizeof(limit));
-    obsluzPolaczenie(k, idx);
+    if (idx < 0) obsluzMartwe(k);
+    else obsluzPolaczenie(k, idx);
   }
 }
 
@@ -304,9 +350,21 @@ int g_bledy = 0, g_sprawdzen = 0;
 std::string g_katalogWyjscia;
 std::string g_nazwaScenariusza;
 
+// true od chwili, gdy firmware wywolal ESP.restart(). Na plytce program
+// zaczyna sie wtedy od nowa; tutaj petla po prostu przestaje byc wolana
+// (zegar plynie dalej, zeby scenariusz mogl dobiec do konca).
+bool g_poRestarcie = false;
+
 void biegnij(unsigned long ms) {
   const unsigned long koniec = millis() + ms;
-  while (millis() < koniec) loop();
+  while (millis() < koniec) {
+    if (g_poRestarcie) { atrapa_uplyw_czasu(5); continue; }
+    try {
+      loop();
+    } catch (const AtrapaRestart&) {
+      g_poRestarcie = true;
+    }
+  }
 }
 
 void zbierzNapisy(lv_obj_t* o, std::vector<std::string>& wynik) {
@@ -732,7 +790,11 @@ void scenariuszBateriaILog() {
   info("%s", liniaLogu("tag=BATERIA", od).c_str());
   sprawdz(ileLinii("[NET-DIAG]", "", "", od) == 0, "brak linii [NET-DIAG] przy poprawnej pracy");
   sprawdz(ileLinii("tag=PANEL fw=", "", "", od) == 3, "linia tag=PANEL: 5 s po wlaczeniu i potem co 30 s (3 w ciagu 66 s)");
-  sprawdz(logMa("tag=PANEL fw=v1.2.0", "bssid=24:6F:28:11:22:33", "centrala=sterownik", od), "linia tag=PANEL podaje wersje, BSSID i rodzaj centrali");
+  sprawdz(logMa("tag=PANEL fw=v1.2.1", "bssid=24:6F:28:11:22:33", "centrala=sterownik", od), "linia tag=PANEL podaje wersje, BSSID i rodzaj centrali");
+  sprawdz(logMa("tag=PANEL fw=", "bez_danych_s=", "przyczyna=- wymuszen=0 rozl_kod=0 rozl_n=0 autorestartow=0", od),
+          "linia tag=PANEL: przy poprawnej pracy nic nie brakuje, zero rozlaczen i restartow");
+  sprawdz(kopia(0).ostatniStatusSciezka.find("panel_fw=v1.2.1&reset_powod=poweron") != std::string::npos,
+          "centrala dostaje w zapytaniu wersje panelu i zwykly powod startu (poweron)");
   sprawdz(logMa("tag=PANEL fw=", "status_ok=15", "status_blad=0", od), "linia tag=PANEL liczy poprawne odczyty (15 na 30 s)");
   sprawdz(logMa("tag=PANEL fw=", "t_ogrz=55.0", "klapa=40", od), "linia tag=PANEL pokazuje wartosci, ktore panel ma w pamieci");
   sprawdz(linii <= 12, "najwyzej 12 linii logu na minute zwyklej pracy");
@@ -866,10 +928,523 @@ void scenariuszGolaPlytka() {
     info("najdluzszy znacznik zajmuje x=%d..%d", (int)a.x1, (int)a.x2);
     zrzutEkranu("3_najdluzszy_znacznik");
     sprawdz(e != nullptr && a.x1 >= 80 && a.x2 <= 395, "najdluzszy znacznik miesci sie w naglowku (x od 80 do 395)");
+    // v1.2.1: najdluzszy znacznik braku danych (same wielkie litery - szersze).
+    lvgl_dashboard_poc_aktualizuj_centrale("RESTART ZA 10 s: CENTRALA MILCZY");
+    biegnij(200);
+    e = znajdzEtykiete(lv_scr_act(), "RESTART ZA 10 s");
+    a = {0, 0, 0, 0};
+    if (e != nullptr) lv_obj_get_coords(e, &a);
+    info("najdluzszy znacznik braku danych zajmuje x=%d..%d", (int)a.x1, (int)a.x2);
+    zrzutEkranu("4_najdluzszy_znacznik_braku_danych");
+    sprawdz(e != nullptr && a.x1 >= 80 && a.x2 <= 395, "znacznik \"RESTART ZA 10 s: CENTRALA MILCZY\" miesci sie w naglowku");
     lvgl_dashboard_poc_aktualizuj_centrale("");
   } else {
     sprawdz(false, "najdluzszy znacznik miesci sie w naglowku (x od 80 do 395)");
   }
+}
+
+
+// ===========================================================================
+// v1.2.1: panel bez danych ratuje sie sam
+// ===========================================================================
+// Wartosci z logu centrali z 2026-11-12 (gola plytka, symulacja pieca 134 C
+// i temperatury zewnetrznej 49 C, alarm przegrzania, pompa wlaczona).
+void centralaJakWLogu1112(Centrala& c) {
+  c.tOgrz = 134.0; c.tOgrzSr = 0.0; c.tBojler = -1.0; c.tPanel = -1.0; c.tPokoj = -1.0; c.tZewn = 49.0;
+  c.cisnienie = 0.0; c.wilgotnosc = 0.0; c.klapa = 0; c.syberka = 0; c.dym = 9;
+  c.pompa = true; c.alarmOgrzewanie = true; c.symulacja = SYM_OGRZ | SYM_ZEWN;
+  c.godzina = 8; c.minuta = 32; c.dzien = 12; c.miesiac = 11; c.rok = 2026;
+}
+
+// Tekst znacznika na srodku naglowka (pierwsza widoczna etykieta zaczynajaca
+// sie od jednego z podanych poczatkow) albo "".
+std::string znacznikNaglowka() {
+  static const char* const POCZATKI[] = {"BRAK WIFI", "CENTRALA MILCZY", "ZLA ODPOWIEDZ", "RESTART ZA", "SYMULA", "2 CENTRALE"};
+  for (const char* p : POCZATKI) {
+    lv_obj_t* e = znajdzEtykiete(lv_scr_act(), p);
+    if (e != nullptr) return lv_label_get_text(e);
+  }
+  return "";
+}
+
+// Klikniecie przycisku z podanym napisem na aktywnym ekranie (jak dotyk).
+bool kliknij(const char* napis) {
+  lv_obj_t* e = znajdzEtykiete(lv_scr_act(), napis);
+  if (e == nullptr) return false;
+  lv_event_send(lv_obj_get_parent(e), LV_EVENT_CLICKED, nullptr);
+  return true;
+}
+
+#ifdef DIAG_MA_RATUNEK
+// Stan pamieci RTC "po samoczynnym restarcie" - tak, jak zostawia go
+// panelAutorestart() w main.cpp.
+void pamiecPoAutorestarcie(uint8_t kolejnych, diag::Przyczyna przyczyna, uint8_t kodRozlaczenia, uint8_t alarmy = 0) {
+  rtcAutorestart.wyczysc();
+  rtcAutorestart.alarmy = alarmy;
+  rtcAutorestart.oczekuje = 1;
+  rtcAutorestart.kolejnych = kolejnych;
+  rtcAutorestart.seria = kolejnych;                                         // domyslnie: poczatek serii,
+  rtcAutorestart.zgloszonyNr = (kolejnych > 0) ? (uint8_t)(kolejnych - 1) : 0;   // poprzednie restarty zgloszone
+  rtcAutorestart.lacznie = kolejnych;
+  rtcAutorestart.przyczyna = (uint8_t)przyczyna;
+  rtcAutorestart.kodRozlaczenia = kodRozlaczenia;
+  rtcAutorestart.bezDanychS = 45;
+  rtcAutorestart.heapKb = 61;
+  rtcAutorestart.blokKb = 31;
+  rtcAutorestart.bladEtap = 'n';
+  rtcAutorestart.bladNumer = 118;   // na ESP32: EHOSTUNREACH
+  rtcAutorestart.zapieczetuj();
+  g_atrapa.powodResetu = 3;   // ESP_RST_SW
+}
+#endif
+
+// --- 11 --------------------------------------------------------------------
+// Centrala restartuje sie tak szybko, ze radio panelu nie zauwaza przerwy:
+// panel dalej uwaza sie za polaczony, ale centrala go juz nie zna i nie
+// odpowiada. To PRZYPUSZCZALNY mechanizm zgloszenia z 2026-11-12 (log centrali
+// zaczyna sie ok. 5 minut po jej starcie) - na plytce niepotwierdzony.
+// v1.2.0 w tym stanie: "--" na kafelkach az do recznego resetu panelu.
+void scenariuszMartwePolaczenie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustaw(0, centralaJakWLogu1112);
+  setup();
+  biegnij(5000);
+  sprawdz(ekranMa("PRZEGRZANIE") && ekranMa("Piec CO powyzej progu"), "alarm przegrzania z centrali: panel pokazuje ekran alarmu");
+  zrzutEkranu("1_alarm");
+  sprawdz(kliknij("ZAMKNIJ"), "ekran alarmu ma przycisk ZAMKNIJ");
+  biegnij(3000);
+  sprawdz(ekranMa("134°C") && ekranMa("49.0°C") && ekranMa("SYMULACJA: zewn, piec"),
+          "po ZAMKNIJ: dashboard z wartosciami centrali (PIEC 134, ZEWN 49.0) i znacznikiem symulacji");
+  ustaw(0, [](Centrala& c) { c.tZewn = 21.5; c.dym = 415; });
+  biegnij(3000);
+  sprawdz(ekranMa("21.5°C") && ekranMa("415"), "przy aktywnym alarmie kafelki dalej ida za centrala (ZEWN 21.5, DYM 415)");
+  zrzutEkranu("2_dashboard_przy_alarmie");
+
+  printf("  centrala restartuje sie (panel nie zauwaza przerwy w nadawaniu):\n");
+  size_t od = g_atrapa.serial.size();
+  const unsigned long chwilaRestartu = millis();
+  g_atrapa.eter[0].wcielenie++;
+  // Po restarcie centrala nie ma juz symulacji; uzytkownik ustawia nowa wartosc.
+  ustaw(0, [](Centrala& c) { c.tOgrz = 77.0; c.tZewn = -1.0; c.alarmOgrzewanie = false; c.pompa = false; c.symulacja = SYM_OGRZ; });
+  biegnij(10500);
+  info("naglowek 10,5 s po restarcie centrali: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(ileNapisow("--") >= 8 && !ekranMa("134°C"), "po 10 s bez odpowiedzi kafelki pokazuja \"--\"");
+  sprawdz(znacznikNaglowka().rfind("CENTRALA MILCZY", 0) == 0, "naglowek mowi, czego brakuje: \"CENTRALA MILCZY <sekundy> s\"");
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=dane_nieaktualne", "przyczyna=milczy", od), "log: dane_nieaktualne przyczyna=milczy");
+  zrzutEkranu("3_centrala_milczy");
+
+  // Dane wracaja: liczymy, po ilu sekundach od restartu centrali.
+  unsigned long wrocilyPo = 0;
+  for (int i = 0; i < 300 && wrocilyPo == 0; i++) {
+    biegnij(100);
+    if (ekranMa("77°C")) wrocilyPo = millis() - chwilaRestartu;
+  }
+  info("kafelki znow pokazuja dane centrali po %lu ms od jej restartu", wrocilyPo);
+  info("%s", liniaLogu("zdarzenie=wymuszam_polaczenie", od).c_str());
+  sprawdz(logMa("tag=WIFI lvl=WARN", "zdarzenie=wymuszam_polaczenie", "nr=1 szukam=ten_sam_bssid", od),
+          "log: panel sam rozlacza sie i laczy od nowa (wymuszam_polaczenie nr=1)");
+  sprawdz(logMa("tag=WIFI", "zdarzenie=rozlaczono", "kod=8 nazwa=ASSOC_LEAVE", od), "log: kod rozlaczenia WiFi (8 = na wlasne zyczenie)");
+  sprawdz(logMa("tag=WIFI", "zdarzenie=reconnect_ok", "bssid=24:6F:28:11:22:33", od), "log: reconnect_ok");
+  sprawdz(wrocilyPo > 0 && wrocilyPo <= 20000, "kafelki pokazuja nowa wartosc centrali (77°C) najdalej 20 s po jej restarcie");
+  biegnij(1000);
+  sprawdz(znacznikNaglowka() == "SYMULACJA: piec", "naglowek wraca do zwyklego znacznika (\"SYMULACJA: piec\")");
+  sprawdz(logMa("tag=PANEL", "zdarzenie=dane_wrocily", "", od), "log: dane_wrocily");
+  sprawdz(g_atrapa.restarty == 0, "restart panelu nie byl potrzebny");
+  zrzutEkranu("4_po_ponownym_polaczeniu");
+}
+
+// --- 12 --------------------------------------------------------------------
+// WiFi dziala, ale centrala trwale nie odpowiada na /api/status i ponowne
+// polaczenie nic nie daje. Panel ma zrobic to, co dotad robil uzytkownik:
+// zrestartowac sie - po 45 s, nie wczesniej.
+void scenariuszAutorestartCentralaMilczy() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(6000);
+  sprawdz(ekranMa("55°C"), "na starcie kafelki pokazuja dane");
+
+  size_t od = g_atrapa.serial.size();
+  const unsigned long start = millis();
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+  biegnij(33000);
+  info("naglowek po 33 s milczenia: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(ileLinii("zdarzenie=wymuszam_polaczenie", "", "", od) == 2 &&
+              logMa("zdarzenie=wymuszam_polaczenie", "nr=1 szukam=ten_sam_bssid", "", od) &&
+              logMa("zdarzenie=wymuszam_polaczenie", "nr=2 szukam=od_nowa", "", od),
+          "dwa wymuszone polaczenia: z tym samym nadajnikiem, potem szukanie sieci od nowa - i nie wiecej");
+  sprawdz(g_atrapa.restarty == 0, "przez pierwsze 33 s panel sie nie restartuje");
+  sprawdz(znacznikNaglowka().rfind("CENTRALA MILCZY", 0) == 0, "naglowek: \"CENTRALA MILCZY <sekundy> s\"");
+  biegnij(5000);
+  info("naglowek po 38 s milczenia: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(znacznikNaglowka().rfind("RESTART ZA ", 0) == 0 && znacznikNaglowka().find(": CENTRALA MILCZY") != std::string::npos,
+          "ostatnie 10 s: naglowek odlicza \"RESTART ZA <sekundy> s: CENTRALA MILCZY\"");
+  zrzutEkranu("1_restart_za");
+  sprawdz(g_atrapa.restarty == 0, "po 38 s jeszcze bez restartu");
+  unsigned long restartPo = 0;
+  for (int i = 0; i < 200 && restartPo == 0; i++) {
+    biegnij(100);
+    if (g_atrapa.restarty > 0) restartPo = millis() - start;
+  }
+  info("ESP.restart() po %lu ms od chwili, gdy centrala zamilkla", restartPo);
+  info("%s", liniaLogu("zdarzenie=autorestart", od).c_str());
+  sprawdz(restartPo >= 42000 && restartPo <= 46500, "restart po ok. 45 s bez danych (liczone od ostatniego poprawnego statusu)");
+  sprawdz(g_atrapa.restarty == 1, "ESP.restart() wywolany dokladnie raz");
+  sprawdz(logMa("tag=PANEL lvl=ERR", "zdarzenie=autorestart", "przyczyna=milczy", od) && logMa("zdarzenie=autorestart", "nr_z_rzedu=1", "wifi=1", od),
+          "log: autorestart przyczyna=milczy nr_z_rzedu=1 wifi=1");
+#ifdef DIAG_MA_RATUNEK
+  sprawdz(MA_RATUNEK && rtcAutorestart.wazna() && rtcAutorestart.oczekuje == 1 && rtcAutorestart.kolejnych == 1 &&
+              rtcAutorestart.przyczyna == diag::PRZYCZYNA_MILCZY && rtcAutorestart.bezDanychS >= 44 && rtcAutorestart.bezDanychS <= 46 &&
+              rtcAutorestart.bladEtap == 'c' && rtcAutorestart.bladNumer == 0,
+          "pamiec RTC: zapisane, ze to samoczynny restart nr 1, przyczyna, czas bez danych i ostatni blad (limit czasu odpowiedzi)");
+#else
+  sprawdz(false, "pamiec RTC: zapisane, ze to samoczynny restart nr 1, przyczyna i czas bez danych");
+#endif
+}
+
+// --- 13 --------------------------------------------------------------------
+// Panel wlaczony bez centrali w zasiegu (np. centrala wylaczona).
+void scenariuszAutorestartBrakWifi() {
+  setup();
+  const unsigned long start = millis();
+  info("setup() trwal %lu ms (czekanie na WiFi)", start);
+  biegnij(2000);
+  info("naglowek 2 s po starcie petli: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(znacznikNaglowka().rfind("BRAK WIFI", 0) == 0, "naglowek: \"BRAK WIFI <sekundy> s\"");
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=dane_nieaktualne", "przyczyna=wifi"), "log: dane_nieaktualne przyczyna=wifi");
+  g_atrapa.zglosRozlaczenie(201);   // radio: sieci centrali nie ma w eterze
+  biegnij(39000);
+  sprawdz(logMa("tag=WIFI", "zdarzenie=rozlaczono", "kod=201 nazwa=NO_AP_FOUND"), "log: kod rozlaczenia zgloszony przez radio (201 = NO_AP_FOUND)");
+  sprawdz(!logMa("zdarzenie=wymuszam_polaczenie"), "bez WiFi nie ma czego \"wymuszac\" - dziala zwykle ponawianie polaczenia");
+  sprawdz(g_atrapa.restarty == 0, "przez pierwsze 41 s pracy petli panel sie nie restartuje");
+  sprawdz(znacznikNaglowka().rfind("RESTART ZA ", 0) == 0 && znacznikNaglowka().find(": BRAK WIFI") != std::string::npos,
+          "ostatnie 10 s: \"RESTART ZA <sekundy> s: BRAK WIFI\"");
+  unsigned long restartPo = 0;
+  for (int i = 0; i < 100 && restartPo == 0; i++) {
+    biegnij(100);
+    if (g_atrapa.restarty > 0) restartPo = millis() - start;
+  }
+  info("ESP.restart() po %lu ms pracy petli", restartPo);
+  info("%s", liniaLogu("zdarzenie=autorestart").c_str());
+  sprawdz(restartPo >= 44000 && restartPo <= 46500, "restart po 45 s pracy petli bez danych");
+  sprawdz(logMa("zdarzenie=autorestart", "przyczyna=wifi", "rozl_kod=201 rozl_nazwa=NO_AP_FOUND"), "log: autorestart przyczyna=wifi z kodem rozlaczenia");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog zadania nie zadzialal");
+}
+
+// --- 14 --------------------------------------------------------------------
+// Start PO samoczynnym restarcie: panel mowi centrali, dlaczego sie
+// zrestartowal, a po pierwszym poprawnym statusie liczy restarty od nowa.
+void scenariuszStartPoAutorestarcie() {
+#ifdef DIAG_MA_RATUNEK
+  if (!MA_RATUNEK) { sprawdz(false, "firmware ma pamiec autorestartu"); return; }
+  pamiecPoAutorestarcie(1, diag::PRZYCZYNA_WIFI, 201);
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(3000);
+  info("%s", liniaLogu("zdarzenie=start_po_autorestarcie").c_str());
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=start_po_autorestarcie", "zglaszam_centrali=auto_wifi_r201_n1_t45_h61_b31_en118"),
+          "log: start_po_autorestarcie z tokenem dla centrali");
+  {
+    const Centrala c = kopia(0);
+    for (const std::string& powod : c.resetDiag) info("centrala pisze: tag=RESET-DIAG ... nietypowy_restart_panelu powod=%s", powod.c_str());
+    sprawdz(c.resetDiag.size() == 1 && c.resetDiag[0] == "auto_wifi_r201_n1_t45_h61_b31_en118",
+            "centrala dostaje reset_powod=auto_wifi_r201_n1_t45_h61_b31_en118 i pisze o nim jedna linie tag=RESET-DIAG");
+    info("pozniejsze zapytania: %s", c.ostatniStatusSciezka.c_str());
+    sprawdz(c.ostatniStatusSciezka == "/api/status?panel_fw=v1.2.1&reset_powod=sw" && logMa("tag=PANEL", "zdarzenie=autorestart_zgloszony"),
+            "po pierwszej odpowiedzi centrali panel zglasza dalej zwykle reset_powod=sw");
+  }
+  sprawdz(ekranMa("55°C"), "kafelki pokazuja dane");
+  sprawdz(rtcAutorestart.wazna() && rtcAutorestart.oczekuje == 0 && rtcAutorestart.kolejnych == 1 && rtcAutorestart.lacznie == 1 &&
+              rtcAutorestart.zgloszonyNr == 1,
+          "po pierwszych poprawnych statusach licznik restartow z rzedu jeszcze sie nie zeruje; zgloszenie odnotowane w pamieci RTC");
+  biegnij(30000);
+  sprawdz(logMa("tag=PANEL fw=", "autorestartow=1"), "linia tag=PANEL: autorestartow=1 (od wlaczenia zasilania)");
+  // Centrala restartuje sie (zapomina, co panel zglaszal) - nie moze oglosic
+  // tego samego restartu panelu drugi raz.
+  ustaw(0, [](Centrala& c) { c.ostatniPowodRestartu.clear(); });
+  biegnij(95000);
+  sprawdz(kopia(0).resetDiag.size() == 1, "po restarcie centrali ten sam restart panelu nie jest oglaszany drugi raz");
+  sprawdz(rtcAutorestart.wazna() && rtcAutorestart.kolejnych == 0 && rtcAutorestart.lacznie == 1 && rtcAutorestart.seria == 1 &&
+              logMa("tag=PANEL", "zdarzenie=autorestart_licznik_wyzerowany", "z_rzedu=1->0 w_serii=1->1"),
+          "po 2 minutach nieprzerwanie poprawnych danych licznik restartow z rzedu wraca do zera (seria trwa dalej)");
+  sprawdz(g_atrapa.restarty == 0, "przy dzialajacej centrali kolejnego restartu nie ma");
+#else
+  sprawdz(false, "firmware ma pamiec autorestartu");
+#endif
+}
+
+// --- 14b -------------------------------------------------------------------
+// Lacznosc rwie sie raz za razem: to juz 5. samoczynny restart w serii, a o 3.
+// centrala wie. Tego restartu panel nie zglasza (zglaszalby dopiero 6.) -
+// inaczej centrala wysylalaby wiadomosc po kazdym.
+void scenariuszSeriaRestartow() {
+#ifdef DIAG_MA_RATUNEK
+  if (!MA_RATUNEK) { sprawdz(false, "firmware ma pamiec autorestartu"); return; }
+  pamiecPoAutorestarcie(1, diag::PRZYCZYNA_MILCZY, 8);
+  rtcAutorestart.seria = 5;
+  rtcAutorestart.zgloszonyNr = 3;
+  rtcAutorestart.lacznie = 5;
+  rtcAutorestart.zapieczetuj();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(6000);
+  info("%s", liniaLogu("zdarzenie=start_po_autorestarcie").c_str());
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=start_po_autorestarcie", "w_serii=5 zgloszony_nr=3") && logMa("zglaszam_centrali=sw"),
+          "log panelu: start po 5. restarcie w serii, centrali idzie zwykle sw");
+  {
+    const Centrala c = kopia(0);
+    info("zapytanie, ktore dostala centrala: %s", c.ostatniStatusSciezka.c_str());
+    sprawdz(c.nStatus >= 2 && c.resetDiag.empty() && c.ostatniStatusSciezka == "/api/status?panel_fw=v1.2.1&reset_powod=sw",
+            "centrala nie pisze o tym restarcie i nie wysyla wiadomosci");
+  }
+  sprawdz(ekranMa("55°C"), "kafelki pokazuja dane");
+  sprawdz(rtcAutorestart.wazna() && rtcAutorestart.seria == 5 && rtcAutorestart.zgloszonyNr == 3, "pamiec RTC: seria 5, zgloszony nadal 3.");
+  sprawdz(diag::zglosicRestart(6, 3) && !diag::zglosicRestart(5, 3) && !diag::zglosicRestart(4, 3), "nastepny zglaszany bedzie 6. restart serii");
+#else
+  sprawdz(false, "firmware ma pamiec autorestartu");
+#endif
+}
+
+// --- 15 --------------------------------------------------------------------
+// Drugi samoczynny restart z rzedu (centrala nadal nieobecna): prog rosnie
+// z 45 s do 90 s, zeby panel nie restartowal sie w kolko.
+void scenariuszAutorestartKolejny() {
+#ifdef DIAG_MA_RATUNEK
+  if (!MA_RATUNEK) { sprawdz(false, "firmware ma pamiec autorestartu"); return; }
+  pamiecPoAutorestarcie(1, diag::PRZYCZYNA_WIFI, 201);
+  setup();
+  const unsigned long start = millis();
+  biegnij(60000);
+  info("naglowek po 60 s: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(g_atrapa.restarty == 0, "po pierwszym samoczynnym restarcie panel nie restartuje sie ponownie po 45 s (ani po 60 s)");
+  sprawdz(znacznikNaglowka().rfind("BRAK WIFI", 0) == 0, "naglowek: \"BRAK WIFI <sekundy> s\"");
+  unsigned long restartPo = 0;
+  for (int i = 0; i < 400 && restartPo == 0; i++) {
+    biegnij(100);
+    if (g_atrapa.restarty > 0) restartPo = millis() - start;
+  }
+  info("drugi restart po %lu ms pracy petli", restartPo);
+  sprawdz(restartPo >= 89000 && restartPo <= 91500, "drugi restart dopiero po 90 s");
+  sprawdz(rtcAutorestart.wazna() && rtcAutorestart.oczekuje == 1 && rtcAutorestart.kolejnych == 2 && rtcAutorestart.lacznie == 2,
+          "pamiec RTC: to juz drugi restart z rzedu (nastepny prog: 3 min)");
+  sprawdz(logMa("zdarzenie=autorestart", "nr_z_rzedu=2", "przyczyna=wifi"), "log: autorestart nr_z_rzedu=2");
+#else
+  sprawdz(false, "firmware ma pamiec autorestartu");
+#endif
+}
+
+// --- 16 --------------------------------------------------------------------
+// Restart po udanej aktualizacji OTA panelu (tez ESP.restart(), ale nie z
+// braku danych) oraz przypadkowe wartosci w pamieci RTC po wlaczeniu
+// zasilania - w obu przypadkach centrala ma dostac zwykly powod startu.
+void scenariuszRestartPoOta() {
+#ifdef DIAG_MA_RATUNEK
+  if (!MA_RATUNEK) { sprawdz(false, "firmware ma pamiec autorestartu"); return; }
+  memset(&rtcAutorestart, 0xA5, sizeof(rtcAutorestart));   // "smieci" po wlaczeniu zasilania
+  g_atrapa.powodResetu = 3;                                // ESP_RST_SW, np. po OTA
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(3000);
+  info("zapytanie, ktore dostala centrala: %s", kopia(0).ostatniStatusSciezka.c_str());
+  sprawdz(kopia(0).ostatniStatusSciezka == "/api/status?panel_fw=v1.2.1&reset_powod=sw", "restart programowy bez znacznika autorestartu: reset_powod=sw, jak dotad");
+  sprawdz(!logMa("zdarzenie=start_po_autorestarcie"), "log: brak wpisu start_po_autorestarcie");
+  sprawdz(rtcAutorestart.wazna() && rtcAutorestart.oczekuje == 0 && rtcAutorestart.kolejnych == 0 && rtcAutorestart.lacznie == 0,
+          "przypadkowe wartosci w pamieci RTC zostaly rozpoznane i wyczyszczone");
+#else
+  sprawdz(false, "firmware ma pamiec autorestartu");
+#endif
+}
+
+// --- 17 --------------------------------------------------------------------
+// Centrala odpowiada, ale stale nieczytelnie. Ponowne polaczenie WiFi nic tu
+// nie da, wiec panel go nie wymusza; restart po 45 s - tak (gdyby przyczyna
+// lezala w panelu, np. brak pamieci, restart ja usuwa).
+void scenariuszZlaOdpowiedzDlugo() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(6000);
+  size_t od = g_atrapa.serial.size();
+  const unsigned long start = millis();
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_HTTP500; });
+  biegnij(20000);
+  info("naglowek po 20 s: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(znacznikNaglowka().rfind("ZLA ODPOWIEDZ", 0) == 0, "naglowek: \"ZLA ODPOWIEDZ <sekundy> s\"");
+  sprawdz(logMa("zdarzenie=dane_nieaktualne", "przyczyna=odp", "", od), "log: dane_nieaktualne przyczyna=odp");
+  unsigned long restartPo = 0;
+  for (int i = 0; i < 300 && restartPo == 0; i++) {
+    biegnij(100);
+    if (g_atrapa.restarty > 0) restartPo = millis() - start;
+  }
+  info("ESP.restart() po %lu ms nieczytelnych odpowiedzi", restartPo);
+  sprawdz(!logMa("zdarzenie=wymuszam_polaczenie", "", "", od) && g_atrapa.liczbaDisconnect == 0, "WiFi nie jest rozlaczane - siec dziala");
+  sprawdz(restartPo >= 42000 && restartPo <= 46500 && logMa("zdarzenie=autorestart", "przyczyna=odp", "", od), "restart po ok. 45 s, przyczyna=odp");
+#ifdef DIAG_MA_RATUNEK
+  char token[diag::TOKEN_AUTORESTARTU_MAKS] = "";
+  if (MA_RATUNEK) diag::tokenAutorestartu(token, sizeof(token), rtcAutorestart);
+  info("token, ktory panel zglosi centrali po starcie: %s", token);
+  sprawdz(std::string(token) == "auto_odp_r0_n1_t45_h175_b107_eo500", "token dla centrali: przyczyna odp, ostatni blad o500 (kod HTTP 500)");
+#else
+  sprawdz(false, "token dla centrali: przyczyna odp, ostatni blad o500 (kod HTTP 500)");
+#endif
+}
+
+// Czy brzeczyk gra wzorzec alarmu: w ciagu 1,2 s czestotliwosc zmienia sie
+// i w kazdej chwili jest niezerowa (alarm przegrzania: 1200/1600 Hz bez przerw).
+bool brzeczykGraPrzegrzanie() {
+  const int przed = g_atrapa.zmianTonu;
+  bool caly_czas = true;
+  for (int i = 0; i < 12; i++) {
+    biegnij(100);
+    if (g_atrapa.tonHz != 1200 && g_atrapa.tonHz != 1600) caly_czas = false;
+  }
+  return caly_czas && g_atrapa.zmianTonu > przed;
+}
+
+// --- 17a -------------------------------------------------------------------
+// Centrala odpowiada nieczytelnie mimo dwoch samoczynnych restartow z rzedu:
+// trzeciego nie ma (nic by nie dal, a kazdy konczylby sie wiadomoscia z
+// centrali). Gdy przyczyna sie zmienia (centrala milknie), restart wraca.
+void scenariuszZlaOdpowiedzBezKonca() {
+#ifdef DIAG_MA_RATUNEK
+  if (!MA_RATUNEK) { sprawdz(false, "firmware ma pamiec autorestartu"); return; }
+  pamiecPoAutorestarcie(2, diag::PRZYCZYNA_ODPOWIEDZ, 0);
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_HTTP500; });
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(200000);   // prog dla trzeciego restartu to 3 min
+  info("naglowek po 200 s: \"%s\"", znacznikNaglowka().c_str());
+  info("%s", liniaLogu("zdarzenie=autorestart_pominiety").c_str());
+  sprawdz(g_atrapa.restarty == 0, "trzeciego restartu z rzedu przy nieczytelnych odpowiedziach nie ma");
+  sprawdz(ileLinii("zdarzenie=autorestart_pominiety") == 1 && logMa("zdarzenie=autorestart_pominiety", "przyczyna=odp", "nr_z_rzedu=2"),
+          "log: autorestart_pominiety - raz");
+  sprawdz(znacznikNaglowka().rfind("ZLA ODPOWIEDZ ", 0) == 0, "naglowek: \"ZLA ODPOWIEDZ <sekundy> s\", bez odliczania do restartu");
+  sprawdz(g_atrapa.liczbaDisconnect == 0, "WiFi nie jest rozlaczane");
+
+  printf("  centrala przestaje odpowiadac w ogole:\n");
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+  unsigned long restartPo = 0;
+  const unsigned long start = millis();
+  for (int i = 0; i < 100 && restartPo == 0; i++) {
+    biegnij(100);
+    if (g_atrapa.restarty > 0) restartPo = millis() - start;
+  }
+  info("ESP.restart() po %lu ms od zmiany przyczyny", restartPo);
+  sprawdz(restartPo > 0 && restartPo <= 5000 && logMa("zdarzenie=autorestart", "przyczyna=milczy", "nr_z_rzedu=3"),
+          "przyczyna zmienila sie na \"centrala milczy\": restart nastepuje od razu");
+#else
+  sprawdz(false, "firmware ma pamiec autorestartu");
+#endif
+}
+
+// --- 17b -------------------------------------------------------------------
+// Przycisk WYCISZ: cisza od razu; wyciszenie konczy sie razem z alarmem
+// (v1.2.0: raz wyciszony typ alarmu zostawal niemy az do restartu panelu).
+void scenariuszWyciszAlarm() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustaw(0, centralaJakWLogu1112);
+  setup();
+  biegnij(4000);
+  sprawdz(ekranMa("PRZEGRZANIE") && brzeczykGraPrzegrzanie(), "alarm przegrzania: ekran alarmu i dzwiek");
+  sprawdz(kliknij("WYCISZ"), "przycisk WYCISZ");
+  biegnij(50);
+  sprawdz(g_atrapa.tonHz == 0, "WYCISZ: cisza od razu");
+  biegnij(6000);
+  sprawdz(g_atrapa.tonHz == 0, "alarm trwa dalej: cisza zostaje");
+
+  printf("  alarm ustepuje i po chwili wraca:\n");
+  ustaw(0, [](Centrala& c) { c.alarmOgrzewanie = false; c.tOgrz = 70.0; });
+  biegnij(5000);
+  sprawdz(!ekranMa("PRZEGRZANIE") && ekranMa("70°C") && g_atrapa.tonHz == 0, "alarm ustapil: ekran alarmu znika, cisza");
+  ustaw(0, [](Centrala& c) { c.alarmOgrzewanie = true; c.tOgrz = 135.0; });
+  biegnij(4000);
+  sprawdz(ekranMa("PRZEGRZANIE"), "alarm wrocil: ekran alarmu");
+  sprawdz(brzeczykGraPrzegrzanie(), "nowe wystapienie alarmu znow gra (wyciszenie skonczylo sie razem z poprzednim)");
+}
+
+// --- 18 --------------------------------------------------------------------
+// Alarm przegrzania trwa, centrala znika. Do v1.2.0 panel "zamrazal" ostatni
+// znany stan alarmu. Samoczynny restart nie moze tego po cichu skasowac:
+// stan alarmu (razem z WYCISZ i ZAMKNIJ) ma pojechac przez restart.
+void scenariuszAutorestartPrzyAlarmie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustaw(0, centralaJakWLogu1112);
+  setup();
+  biegnij(4000);
+  sprawdz(ekranMa("PRZEGRZANIE"), "alarm przegrzania: ekran alarmu");
+  info("ekran alarmu, linia nad przyciskami: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(znacznikNaglowka().rfind("SYMULACJA: ", 0) == 0 && znacznikNaglowka().find("piec") != std::string::npos,
+          "ekran alarmu pokazuje, ze temperatura pieca jest symulowana (\"SYMULACJA: ... piec\")");
+  zrzutEkranu("1_alarm_z_symulacja");
+  sprawdz(brzeczykGraPrzegrzanie(), "brzeczyk gra wzorzec przegrzania (1200/1600 Hz)");
+  sprawdz(kliknij("WYCISZ"), "przycisk WYCISZ");
+  biegnij(50);
+  sprawdz(g_atrapa.tonHz == 0, "WYCISZ: cisza od razu (bez czekania na kolejny status)");
+  biegnij(3000);
+  sprawdz(g_atrapa.tonHz == 0 && ekranMa("WYCISZONO"), "po kolejnych statusach dalej cisza, przycisk pokazuje WYCISZONO");
+  kliknij("WYCISZONO");
+  biegnij(3000);
+  sprawdz(g_atrapa.tonHz == 0, "drugie nacisniecie tego samego przycisku nie wlacza dzwieku z powrotem");
+  sprawdz(kliknij("ZAMKNIJ"), "przycisk ZAMKNIJ");
+  biegnij(2500);
+  sprawdz(ekranMa("134°C"), "po ZAMKNIJ: dashboard");
+
+  printf("  centrala znika (alarm trwal):\n");
+  size_t od = g_atrapa.serial.size();
+  g_atrapa.eter.clear();
+  unsigned long restartPo = 0;
+  const unsigned long start = millis();
+  for (int i = 0; i < 600 && restartPo == 0; i++) {
+    biegnij(100);
+    if (g_atrapa.restarty > 0) restartPo = millis() - start;
+  }
+  info("%s", liniaLogu("zdarzenie=autorestart", od).c_str());
+  sprawdz(restartPo > 0 && restartPo <= 46500, "restart po ok. 45 s bez danych");
+#ifdef DIAG_MA_RATUNEK
+  info("zapisany stan alarmow: 0x%02X", MA_RATUNEK ? (unsigned)rtcAutorestart.alarmy : 0u);
+  sprawdz(MA_RATUNEK && rtcAutorestart.alarmy == diag::spakujAlarmy(false, true, false, true, 2, 1),
+          "pamiec RTC: alarm przegrzania pieca, wyciszony (typ 2 = przegrzanie), ekran alarmu zamkniety na poziomie 1");
+#else
+  sprawdz(false, "pamiec RTC: alarm przegrzania pieca, wyciszony, ekran alarmu zamkniety");
+#endif
+}
+
+// --- 19 --------------------------------------------------------------------
+// Start po samoczynnym restarcie, ktory nastapil W TRAKCIE alarmu (nie
+// wyciszonego, ekran alarmu nie zamkniety), centrali nadal nie ma.
+void scenariuszStartPoAutorestarcieZAlarmem() {
+#ifdef DIAG_MA_RATUNEK
+  if (!MA_RATUNEK) { sprawdz(false, "firmware ma pamiec autorestartu"); return; }
+  pamiecPoAutorestarcie(1, diag::PRZYCZYNA_WIFI, 201, diag::spakujAlarmy(false, true, false, false, 0, 0));
+  const int zmianPrzed = g_atrapa.zmianTonu;
+  setup();
+  info("setup() trwal %lu ms; brzeczyk w tym czasie zmienil ton %d razy, teraz %u Hz", millis(), g_atrapa.zmianTonu - zmianPrzed, (unsigned)g_atrapa.tonHz);
+  sprawdz(g_atrapa.zmianTonu - zmianPrzed >= 20, "brzeczyk gra wzorzec alarmu juz podczas startu (czekanie na WiFi)");
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=alarm_sprzed_restartu", "ogrzewanie=1"), "log: alarm_sprzed_restartu");
+  biegnij(1000);
+  sprawdz(ekranMa("PRZEGRZANIE") && ekranMa("Piec CO powyzej progu") && ekranMa("WYCISZ"), "ekran alarmu wraca po restarcie, mimo braku danych");
+  sprawdz(brzeczykGraPrzegrzanie(), "brzeczyk gra dalej w petli glownej");
+  info("ekran alarmu, linia nad przyciskami: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(znacznikNaglowka().rfind("BRAK WIFI ", 0) == 0, "ekran alarmu tez mowi, ze panel nie ma danych (\"BRAK WIFI <sekundy> s\")");
+  zrzutEkranu("1_alarm_po_restarcie");
+  sprawdz(kliknij("WYCISZ"), "przycisk WYCISZ");
+  biegnij(50);
+  sprawdz(g_atrapa.tonHz == 0, "WYCISZ dziala od razu takze BEZ danych z centrali");
+  biegnij(5000);
+  sprawdz(g_atrapa.tonHz == 0, "i cisza zostaje");
+  sprawdz(kliknij("ZAMKNIJ"), "przycisk ZAMKNIJ");
+  biegnij(1500);
+  info("naglowek po ZAMKNIJ: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(ileNapisow("--") >= 8 && znacznikNaglowka().rfind("BRAK WIFI", 0) == 0, "po ZAMKNIJ: dashboard z \"--\" i powodem w naglowku");
+  zrzutEkranu("2_dashboard_po_zamknij");
+
+  printf("  centrala wraca, alarm juz nieaktywny:\n");
+  ustaw(0, [](Centrala& c) { c.tOgrz = 62.0; });
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  biegnij(40000);
+  sprawdz(ekranMa("62°C") && !ekranMa("PRZEGRZANIE") && g_atrapa.tonHz == 0, "dane z centrali zastepuja zapamietany stan: kafelki, brak alarmu, cisza");
+  sprawdz(g_atrapa.restarty == 0, "kolejnego restartu nie bylo");
+#else
+  sprawdz(false, "firmware ma pamiec autorestartu");
+#endif
 }
 
 struct Scenariusz {
@@ -888,7 +1463,27 @@ const Scenariusz SCENARIUSZE[] = {
     {"skan_zawieszony", "skan WiFi, ktory sie nie konczy", scenariuszSkanZawieszony},
     {"ustawienia_milcza", "status dziala, /api/ustawienia-get bez odpowiedzi", scenariuszUstawieniaMilcza},
     {"gola_plytka", "centrala bez czujnikow + symulacja czujnika (stanowisko z 2026-11-11)", scenariuszGolaPlytka},
+    {"martwe_polaczenie", "szybki restart centrali: WiFi \"polaczone\", centrala milczy (v1.2.1)", scenariuszMartwePolaczenie},
+    {"autorestart_centrala_milczy", "centrala trwale nie odpowiada: restart panelu po 45 s (v1.2.1)", scenariuszAutorestartCentralaMilczy},
+    {"autorestart_brak_wifi", "panel bez centrali w zasiegu: restart po 45 s (v1.2.1)", scenariuszAutorestartBrakWifi},
+    {"start_po_autorestarcie", "start po samoczynnym restarcie: powod dla centrali (v1.2.1)", scenariuszStartPoAutorestarcie},
+    {"seria_restartow", "piaty samoczynny restart w serii: centrala nie dostaje kolejnej wiadomosci (v1.2.1)", scenariuszSeriaRestartow},
+    {"autorestart_kolejny", "drugi samoczynny restart z rzedu: dopiero po 90 s (v1.2.1)", scenariuszAutorestartKolejny},
+    {"restart_po_ota", "restart programowy bez autorestartu i smieci w pamieci RTC (v1.2.1)", scenariuszRestartPoOta},
+    {"zla_odpowiedz_dlugo", "centrala stale odpowiada nieczytelnie: bez rozlaczania WiFi, restart po 45 s (v1.2.1)", scenariuszZlaOdpowiedzDlugo},
+    {"zla_odpowiedz_bez_konca", "nieczytelne odpowiedzi mimo dwoch restartow: trzeciego nie ma (v1.2.1)", scenariuszZlaOdpowiedzBezKonca},
+    {"wycisz_alarm", "przycisk WYCISZ: cisza od razu, wyciszenie tylko do konca tego alarmu (v1.2.1)", scenariuszWyciszAlarm},
+    {"autorestart_przy_alarmie", "centrala znika w trakcie alarmu: stan alarmu zapisany przed restartem (v1.2.1)", scenariuszAutorestartPrzyAlarmie},
+    {"start_po_autorestarcie_z_alarmem", "start po restarcie w trakcie alarmu: dzwiek i ekran alarmu wracaja (v1.2.1)", scenariuszStartPoAutorestarcieZAlarmem},
 };
+
+// Scenariusze, w ktorych ESP.restart() JEST oczekiwany; w pozostalych kazdy
+// restart to blad (sprawdzane w main()).
+bool restartOczekiwany(const char* nazwa) {
+  const std::string n = nazwa;
+  return n == "autorestart_centrala_milczy" || n == "autorestart_brak_wifi" || n == "autorestart_kolejny" || n == "zla_odpowiedz_dlugo" ||
+         n == "autorestart_przy_alarmie" || n == "zla_odpowiedz_bez_konca";
+}
 
 }  // namespace
 
@@ -916,10 +1511,28 @@ extern "C" int __wrap_connect(int fd, const struct sockaddr*, socklen_t) {
   {
     std::lock_guard<std::mutex> blokada(g_mutex);
     odmawia = (g_centrale[apTeraz->centrala].trybStatus == TRYB_ODMAWIA);
-    if (!odmawia) g_kolejkaCentral.push_back(apTeraz->centrala);
+    // -1: radio "polaczone", ale centrala zrestartowala sie i nie zna panelu
+    if (!odmawia) g_kolejkaCentral.push_back(g_atrapa.polaczenieZywe() ? apTeraz->centrala : -1);
   }
   lokalny.sin_port = htons((uint16_t)(odmawia ? g_portZamkniety : g_portSerwera));
-  return __real_connect(fd, (struct sockaddr*)&lokalny, sizeof(lokalny));
+  const int r = __real_connect(fd, (struct sockaddr*)&lokalny, sizeof(lokalny));
+  if (r < 0 && errno == EINPROGRESS) {
+    // Zegar "plytki" jest sztuczny i biegnie duzo szybciej niz prawdziwy:
+    // 2 s limitu laczenia w firmware to kilka milisekund pracy tego programu.
+    // Jadro konczy nawiazywanie polaczenia lokalnego zwykle od razu, ale na
+    // obciazonej maszynie potrafi to odlozyc o kilkadziesiat milisekund - a
+    // wtedy panel widzialby "timeout laczenia", ktorego scenariusz nie
+    // przewiduje (zaobserwowane: ok. 1 na 60 przebiegow). Dlatego tutaj
+    // prawdziwe czekanie, az polaczenie powstanie albo zostanie odrzucone.
+    // Panel i tak dostaje EINPROGRESS i sprawdza wynik po swojemu.
+    struct pollfd p;
+    p.fd = fd;
+    p.events = POLLOUT;
+    p.revents = 0;
+    poll(&p, 1, 2000);
+    errno = EINPROGRESS;
+  }
+  return r;
 }
 
 extern "C" ssize_t __wrap_send(int fd, const void* bufor, size_t n, int flagi) {
@@ -955,7 +1568,13 @@ int main(int argc, char** argv) {
   uruchomSerwer();
   atrapa_hak_czasu = hakCzasu;
   plytkaDomyslna();
-  wybrany->funkcja();
+  try {
+    wybrany->funkcja();
+  } catch (const AtrapaRestart&) {
+    // ESP.restart() wywolany poza loop() (np. z setup()) - scenariusz konczy sie tutaj.
+    g_poRestarcie = true;
+  }
+  if (!restartOczekiwany(wybrany->nazwa)) sprawdz(g_atrapa.restarty == 0, "panel nie zrestartowal sie sam w tym scenariuszu");
   zapiszLog();
   g_koniec = true;
 

@@ -3,6 +3,13 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.2.1 Dodano: lvgl_dashboard_poc_alarm_odrzucony() i
+//   lvgl_dashboard_poc_przywroc_alarm() na koncu pliku - stan alarmu
+//   przetrwa samoczynny restart panelu ([v1.2.1 RATUNEK], opis w
+//   dashboard_lvgl_poc.h i w HISTORII ZMIAN main.cpp).
+//   Dodano: etykieta alarmEkranZnacznik - znacznik z naglowka dashboardu
+//   ("BRAK WIFI 14 s", "SYMULACJA: piec"...) widac tez na ekranie alarmu,
+//   ktory naglowek zaslania. Reszta pliku bez zmian.
 // [2026-11-11] v1.2.0 Dodano: etykieta centralaZnacznikLabel w naglowku +
 //   lvgl_dashboard_poc_aktualizuj_centrale() ([v1.2.0 CENTRALA-ID]).
 //   Zmieniono: wskaznik baterii pokazuje "USB" dla procent < 0
@@ -697,6 +704,9 @@ static lv_obj_t *alarmEkranTytul = nullptr;
 static lv_obj_t *alarmEkranPodtytul = nullptr;
 static lv_obj_t *alarmEkranIkona = nullptr;
 static lv_obj_t *alarmEkranWyciszLabel = nullptr;
+// [v1.2.1] Ten sam tekst co znacznik w naglowku dashboardu (ekran alarmu
+// zaslania naglowek) - patrz lvgl_dashboard_poc_aktualizuj_centrale().
+static lv_obj_t *alarmEkranZnacznik = nullptr;
 // g_alarmPokazywany: co ekran TERAZ faktycznie pokazuje (BRAK = ukryty).
 // g_alarmOdrzucony: na jakim poziomie user ostatnio kliknal ZAMKNIJ - dopoki
 // biezacy poziom alarmu nie przekroczy TEJ wartosci, ekran ma sie NIE
@@ -3455,6 +3465,18 @@ static void alarm_ekran_zbuduj(lv_obj_t *scr) {
   alarmEkranIkona = lv_img_create(alarmEkran);
   lv_img_set_src(alarmEkranIkona, &lv_ikona_alarm_duza);
   lv_obj_align(alarmEkranIkona, LV_ALIGN_TOP_MID, 0, 78);
+
+  // [v1.2.1] Jedna linia miedzy ikona (konczy sie y=206) a przyciskami
+  // (y=232): to samo, co stoi w naglowku dashboardu - "BRAK WIFI 14 s",
+  // "RESTART ZA 7 s: ...", "SYMULACJA: piec". Ekran alarmu zaslania
+  // naglowek, a wlasnie przy alarmie trzeba wiedziec, czy panel ma jeszcze
+  // dane z centrali i czy wartosc, ktora wywolala alarm, jest pomiarem.
+  // Jasny kolor tekstu, nie barwa alarmu - to informacja obok alarmu.
+  alarmEkranZnacznik = lv_label_create(alarmEkran);
+  lv_label_set_text(alarmEkranZnacznik, "");
+  lv_obj_set_style_text_color(alarmEkranZnacznik, rgb565(KOL_TEKST), 0);
+  lv_obj_align(alarmEkranZnacznik, LV_ALIGN_TOP_MID, 0, 210);
+  lv_obj_add_flag(alarmEkranZnacznik, LV_OBJ_FLAG_HIDDEN);
 
   // X w rogu - ten sam fallback co kazdy inny panel w tym pliku (patrz
   // alarm_temp_panel_zbuduj() wyzej), rownowazny duzemu przyciskowi ZAMKNIJ
@@ -6763,8 +6785,19 @@ void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie) {
 
 // [v1.2.0 CENTRALA-ID] Patrz opis w dashboard_lvgl_poc.h.
 void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik) {
+  const bool pusty = (znacznik == nullptr || znacznik[0] == '\0');
+  // [v1.2.1] Ten sam tekst na ekranie alarmu (patrz alarm_ekran_zbuduj()).
+  if (alarmEkranZnacznik != nullptr) {
+    if (pusty) {
+      lv_obj_add_flag(alarmEkranZnacznik, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_label_set_text(alarmEkranZnacznik, znacznik);
+      lv_obj_align(alarmEkranZnacznik, LV_ALIGN_TOP_MID, 0, 210);
+      lv_obj_clear_flag(alarmEkranZnacznik, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
   if (centralaZnacznikLabel == nullptr) return;
-  if (znacznik == nullptr || znacznik[0] == '\0') {
+  if (pusty) {
     lv_obj_add_flag(centralaZnacznikLabel, LV_OBJ_FLAG_HIDDEN);
     return;
   }
@@ -7329,4 +7362,21 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
       lv_label_set_text(dataCzasDataLabel, "--.--.----");
     }
   }
+}
+
+// [v1.2.1 RATUNEK] Patrz opis w dashboard_lvgl_poc.h.
+int lvgl_dashboard_poc_alarm_odrzucony() {
+  return (int)g_alarmOdrzucony;
+}
+
+void lvgl_dashboard_poc_przywroc_alarm(bool dymAlarm, bool alarmOgrzewanie, bool alarmPanel, int odrzuconyPoziom) {
+  if (odrzuconyPoziom < (int)AlarmPoziom::BRAK || odrzuconyPoziom > (int)AlarmPoziom::POZAR) odrzuconyPoziom = (int)AlarmPoziom::BRAK;
+  g_alarmOdrzucony = (AlarmPoziom)odrzuconyPoziom;
+  // Te same trzy wywolania i w tej samej kolejnosci co na koncu
+  // lvgl_dashboard_poc_aktualizuj(). Wartosci czujnika dymu po restarcie nie
+  // ma (kafelek pokazuje "--"), stad 0 - ikona zalezy wtedy tylko od alarmu.
+  dym_ikona_odswiez(0, dymAlarm);
+  piec_alarm_odswiez(alarmOgrzewanie);
+  panel_alarm_odswiez(alarmPanel);
+  alarm_ekran_odswiez(dymAlarm, alarmOgrzewanie, alarmPanel);
 }

@@ -23,7 +23,14 @@ struct AtrapaAp {              // jeden punkt dostepowy "w eterze"
   int kanal;
   int rssi;                    // dBm
   int centrala;                // ktora centrala testowa odpowiada za tym AP (indeks w tescie)
+  // Numer "wcielenia" nadajnika. Test zwieksza go, zeby udac SZYBKI restart
+  // centrali: nadajnik wraca, zanim radio panelu zauwazy przerwe, wiec panel
+  // dalej uwaza sie za polaczony - ale centrala po restarcie go nie zna i
+  // nie odpowiada mu, dopoki panel nie polaczy sie od nowa (WiFi.begin()).
+  int wcielenie = 0;
 };
+
+struct AtrapaRestart {};       // rzucany przez ESP.restart() - patrz Arduino.h
 
 struct Atrapa {
   // --- czas: millis() zwraca terazMs; delay(ms) przesuwa zegar o ms ---
@@ -56,6 +63,7 @@ struct Atrapa {
   bool skanZawieszony = false;           // true = skan nigdy sie nie konczy (test limitu czasu)
   bool celUstawiony = false;             // czy begin() znalazl pasujacy AP
   uint8_t celBssid[6] = {0};
+  int celWcielenie = 0;                  // wcielenie AP w chwili begin() - patrz AtrapaAp::wcielenie
   unsigned long polaczenieOdMs = 0;
   bool skanTrwa = false;
   unsigned long skanKoniecMs = 0;
@@ -65,6 +73,12 @@ struct Atrapa {
   int liczbaBeginZBssidPelnySkan = 0;   // ...w tym z BSSID, ale przy WIFI_ALL_CHANNEL_SCAN (niepotrzebny pelny skan przed kazdym laczeniem)
   int liczbaSkanow = 0;        // ile razy firmware wolal WiFi.scanNetworks()
   int liczbaStopSkanu = 0;     // esp_wifi_scan_stop()
+  int liczbaDisconnect = 0;    // WiFi.disconnect()
+  // WiFi.onEvent(): funkcja firmware'u wolana przy rozlaczeniu. Atrapa wola
+  // ja z kodem 8 (ASSOC_LEAVE) przy WiFi.disconnect() w stanie polaczonym;
+  // test moze zglosic dowolny kod przez zglosRozlaczenie().
+  void (*naRozlaczenie)(int kod) = nullptr;
+  void zglosRozlaczenie(int kod) { if (naRozlaczenie != nullptr) naRozlaczenie(kod); }
 
   // --- NVS (Preferences): przestrzen -> klucz -> wartosc ---
   std::map<std::string, std::map<std::string, long long>> nvs;
@@ -74,12 +88,18 @@ struct Atrapa {
   uint16_t ekran[480 * 320];
   std::vector<std::string> napisyTft;    // teksty rysowane tft.drawString()
 
+  // --- brzeczyk (ledcWriteTone) ---
+  uint32_t tonHz = 0;          // ostatnio ustawiona czestotliwosc; 0 = cisza
+  int zmianTonu = 0;           // ile razy czestotliwosc sie zmienila (wzorzec alarmu "gra")
+
   // --- inne ---
   int restarty = 0;            // ESP.restart()
   int powodResetu = 1;         // esp_reset_reason(): 1 = ESP_RST_POWERON
 
   Atrapa();
   const AtrapaAp* polaczonyAp() const;   // AP, z ktorym "radio" jest teraz polaczone (albo nullptr)
+  // true = centrala za tym AP zna panel (nie restartowala sie od chwili polaczenia).
+  bool polaczenieZywe() const;
 };
 
 // Stan jest tworzony przy PIERWSZYM uzyciu (a nie jako zwykla zmienna

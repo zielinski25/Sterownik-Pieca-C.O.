@@ -274,7 +274,290 @@ static void testBateria() {
   SPRAWDZ(bateriaObecna(4.20f));
 }
 
+// --- v1.2.1: brak danych - przyczyna, drabina ratunkowa, pamiec autorestartu ---
+static void testPrzyczyna() {
+  using namespace diag;
+  SPRAWDZ(ustalPrzyczyne(false, false) == PRZYCZYNA_WIFI);
+  SPRAWDZ(ustalPrzyczyne(false, true) == PRZYCZYNA_WIFI);        // bez WiFi rodzaj ostatniego bledu nie ma znaczenia
+  SPRAWDZ(ustalPrzyczyne(true, false) == PRZYCZYNA_MILCZY);
+  SPRAWDZ(ustalPrzyczyne(true, true) == PRZYCZYNA_ODPOWIEDZ);
+  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_WIFI), "BRAK WIFI") == 0);
+  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_MILCZY), "CENTRALA MILCZY") == 0);
+  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_ODPOWIEDZ), "ZLA ODPOWIEDZ") == 0);
+  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_BRAK), "") == 0);
+  SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_WIFI), "wifi") == 0);
+  SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_MILCZY), "milczy") == 0);
+  SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_ODPOWIEDZ), "odp") == 0);
+
+  SPRAWDZ(std::strcmp(nazwaKoduRozlaczenia(201), "NO_AP_FOUND") == 0);
+  SPRAWDZ(std::strcmp(nazwaKoduRozlaczenia(200), "BEACON_TIMEOUT") == 0);
+  SPRAWDZ(std::strcmp(nazwaKoduRozlaczenia(8), "ASSOC_LEAVE") == 0);
+  SPRAWDZ(std::strcmp(nazwaKoduRozlaczenia(15), "4WAY_HANDSHAKE_TIMEOUT") == 0);
+  SPRAWDZ(std::strcmp(nazwaKoduRozlaczenia(0), "brak") == 0);
+  SPRAWDZ(std::strcmp(nazwaKoduRozlaczenia(123), "?") == 0);       // nieznany kod nie wywraca programu
+
+  char z[48];
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_MILCZY, 14, 31);
+  SPRAWDZ(std::strcmp(z, "CENTRALA MILCZY 14 s") == 0);
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_WIFI, 34, 11);
+  SPRAWDZ(std::strcmp(z, "BRAK WIFI 34 s") == 0);                  // 11 s do restartu: jeszcze zwykly napis
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_WIFI, 35, 10);
+  SPRAWDZ(std::strcmp(z, "RESTART ZA 10 s: BRAK WIFI") == 0);      // od 10 s: odliczanie
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_ODPOWIEDZ, 45, 0);
+  SPRAWDZ(std::strcmp(z, "RESTART ZA 0 s: ZLA ODPOWIEDZ") == 0);
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_BRAK, 3, 42);
+  SPRAWDZ(std::strcmp(z, "") == 0);                                // dane sa - nic do pokazania
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_MILCZY, 299, 300);
+  SPRAWDZ(std::strlen(z) <= 31);                                   // najdluzszy zwykly napis
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_ODPOWIEDZ, 200, BEZ_RESTARTU);
+  SPRAWDZ(std::strcmp(z, "ZLA ODPOWIEDZ 200 s") == 0);             // restartu nie bedzie - bez odliczania
+  char ciasny[10];
+  znacznikBrakuDanych(ciasny, sizeof(ciasny), PRZYCZYNA_MILCZY, 14, 3);
+  SPRAWDZ(std::strlen(ciasny) == 9);                               // obciecie bez wyjscia poza bufor
+  znacznikBrakuDanych(nullptr, 0, PRZYCZYNA_MILCZY, 1, 1);         // nie moze sie wywrocic
+}
+
+static void testRatunek() {
+  using namespace diag;
+  SPRAWDZ(progRestartuMs(0) == 45000UL);
+  SPRAWDZ(progRestartuMs(1) == 90000UL);
+  SPRAWDZ(progRestartuMs(2) == 180000UL);
+  SPRAWDZ(progRestartuMs(3) == 300000UL);
+  SPRAWDZ(progRestartuMs(250) == 300000UL);                        // dalej juz zawsze co 5 min
+
+  // 1) Zwykla praca: status co 2 s -> nigdy zadnej akcji.
+  {
+    Ratunek r;
+    bool cos = false;
+    for (uint32_t t = 0; t <= 600000; t += 5) {
+      if (r.krok(t, true, 45000) != Ratunek::NIC) cos = true;
+      if (t % 2000 == 0) r.daneSwieze();
+    }
+    SPRAWDZ(!cos);
+    SPRAWDZ(r.bezDanychMs < 2100 && r.wymuszen == 0);
+  }
+  // 2) WiFi polaczone, centrala milczy: wymuszenie po 12 s, drugie po kolejnych
+  //    12 s milczenia (bez BSSID), restart w 45. sekundzie - kazda akcja raz.
+  {
+    Ratunek r;
+    uint32_t t1 = 0, t2 = 0, tRestart = 0;
+    int wymuszen = 0, restartow = 0;
+    for (uint32_t t = 0; t <= 60000; t += 5) {
+      const Ratunek::Akcja a = r.krok(t, true, 45000);
+      if (a == Ratunek::POLACZ_PONOWNIE) { t1 = t; wymuszen++; }
+      if (a == Ratunek::POLACZ_PONOWNIE_BEZ_BSSID) { t2 = t; wymuszen++; }
+      if (a == Ratunek::RESTART) { tRestart = t; restartow++; }
+    }
+    SPRAWDZ(t1 == 12000);
+    SPRAWDZ(t2 == 24000);
+    SPRAWDZ(wymuszen == 2);                                         // trzeciego wymuszenia nie ma
+    SPRAWDZ(tRestart == 45000 && restartow == 1);
+    SPRAWDZ(r.doRestartuMs(45000) == 0);
+  }
+  // 3) Bez WiFi: zadnego wymuszania (dziala zwykle ponawianie), tylko restart.
+  {
+    Ratunek r;
+    int wymuszen = 0;
+    uint32_t tRestart = 0;
+    for (uint32_t t = 0; t <= 50000; t += 5) {
+      const Ratunek::Akcja a = r.krok(t, false, 45000);
+      if (a == Ratunek::POLACZ_PONOWNIE || a == Ratunek::POLACZ_PONOWNIE_BEZ_BSSID) wymuszen++;
+      if (a == Ratunek::RESTART && tRestart == 0) tRestart = t;
+    }
+    SPRAWDZ(wymuszen == 0);
+    SPRAWDZ(tRestart == 45000);
+  }
+  // 4) WiFi na przemian jest i go nie ma: licznik milczenia liczy tylko
+  //    NIEPRZERWANE milczenie przy polaczonym WiFi.
+  {
+    Ratunek r;
+    int wymuszen = 0;
+    for (uint32_t t = 0; t <= 40000; t += 5) {
+      const bool wifi = ((t / 8000) % 2) == 0;                      // 8 s jest, 8 s nie ma
+      const Ratunek::Akcja a = r.krok(t, wifi, 45000);
+      if (a == Ratunek::POLACZ_PONOWNIE || a == Ratunek::POLACZ_PONOWNIE_BEZ_BSSID) wymuszen++;
+    }
+    SPRAWDZ(wymuszen == 0);
+    SPRAWDZ(r.bezDanychMs == 40000);                                // czas bez danych liczy sie caly czas
+  }
+  // 5) Petla zatrzymana na dlugo (pobieranie wykresow, OTA): jedna przerwa
+  //    liczy sie najwyzej jako 1 s, wiec zaraz po niej nie ma restartu.
+  {
+    Ratunek r;
+    r.daneSwieze();
+    SPRAWDZ(r.krok(1000, true, 45000) == Ratunek::NIC);
+    SPRAWDZ(r.krok(1005, true, 45000) == Ratunek::NIC);
+    SPRAWDZ(r.krok(121005, true, 45000) == Ratunek::NIC);           // 2 minuty przerwy w wywolaniach
+    SPRAWDZ(r.bezDanychMs == 1005);
+    SPRAWDZ(r.doRestartuMs(45000) == 43995);
+  }
+  // 6) Dane wracaja w trakcie: wszystko od poczatku.
+  {
+    Ratunek r;
+    for (uint32_t t = 0; t <= 30000; t += 5) r.krok(t, true, 45000);
+    SPRAWDZ(r.wymuszen == 2 && r.bezDanychMs == 30000);
+    r.daneSwieze();
+    SPRAWDZ(r.wymuszen == 0 && r.bezDanychMs == 0 && r.milczyMs == 0);
+    Ratunek::Akcja a = Ratunek::NIC;
+    for (uint32_t t = 30005; t <= 42005 && a == Ratunek::NIC; t += 5) a = r.krok(t, true, 45000);
+    SPRAWDZ(a == Ratunek::POLACZ_PONOWNIE);                         // znow najpierw lagodniejszy krok
+  }
+  // 7) Dluzszy prog (po wczesniejszym samoczynnym restarcie).
+  {
+    Ratunek r;
+    uint32_t tRestart = 0;
+    for (uint32_t t = 0; t <= 100000 && tRestart == 0; t += 5)
+      if (r.krok(t, false, progRestartuMs(1)) == Ratunek::RESTART) tRestart = t;
+    SPRAWDZ(tRestart == 90000);
+  }
+  // 7a) Restart odrzucony przez wolajacego: krok() zglasza go znowu.
+  {
+    Ratunek r;
+    int zgloszen = 0;
+    for (uint32_t t = 0; t <= 46000; t += 5) {
+      if (r.krok(t, false, 45000) == Ratunek::RESTART) { zgloszen++; r.restartOdrzucony(); }
+    }
+    SPRAWDZ(zgloszen == 201);                                       // 45000..46000 co 5 ms - przy kazdym obrocie
+  }
+  SPRAWDZ(restartMaSens(PRZYCZYNA_WIFI, 0) && restartMaSens(PRZYCZYNA_WIFI, 200));
+  SPRAWDZ(restartMaSens(PRZYCZYNA_MILCZY, 0) && restartMaSens(PRZYCZYNA_MILCZY, 200));
+  SPRAWDZ(restartMaSens(PRZYCZYNA_ODPOWIEDZ, 0) && restartMaSens(PRZYCZYNA_ODPOWIEDZ, 1));
+  SPRAWDZ(!restartMaSens(PRZYCZYNA_ODPOWIEDZ, 2) && !restartMaSens(PRZYCZYNA_ODPOWIEDZ, 9));
+  SPRAWDZ(CZAS_STABILNYCH_DANYCH_MS == 120000UL);
+  // 8) Przewiniecie zegara millis() (po ok. 49 dniach) nie robi skoku.
+  {
+    Ratunek r;
+    r.krok(0xFFFFFFF0UL, false, 45000);
+    r.krok(0x00000004UL, false, 45000);                             // 20 ms pozniej
+    SPRAWDZ(r.bezDanychMs == 20);
+  }
+}
+
+static void testPamiecAutorestartu() {
+  using namespace diag;
+  PamiecAutorestartu m;
+  std::memset(&m, 0xA5, sizeof(m));                                 // przypadkowe wartosci po wlaczeniu zasilania
+  SPRAWDZ(!m.wazna());
+  std::memset(&m, 0x00, sizeof(m));
+  SPRAWDZ(!m.wazna());                                              // same zera to tez nie jest wazny zapis
+  m.wyczysc();
+  SPRAWDZ(m.wazna());
+  SPRAWDZ(m.oczekuje == 0 && m.kolejnych == 0 && m.lacznie == 0);
+  m.kolejnych = 2;
+  SPRAWDZ(!m.wazna());                                              // zmiana bez zapieczetuj() = zapis niewazny
+  m.zapieczetuj();
+  SPRAWDZ(m.wazna());
+  m.bladNumer ^= 1;
+  SPRAWDZ(!m.wazna());                                              // nowe pola tez sa objete suma
+  m.bladNumer ^= 1;
+  SPRAWDZ(m.wazna());
+  m.seria ^= 1;
+  SPRAWDZ(!m.wazna());
+  m.seria ^= 1;
+  m.zgloszonyNr ^= 1;
+  SPRAWDZ(!m.wazna());
+  m.zgloszonyNr ^= 1;
+  SPRAWDZ(m.wazna());
+  SPRAWDZ(sizeof(PamiecAutorestartu) == 28);                        // uklad pamieci RTC - zmiana wymaga nowej wartosci MAGIA
+
+  m.wyczysc();
+  m.przyczyna = PRZYCZYNA_MILCZY; m.kodRozlaczenia = 0; m.kolejnych = 1; m.seria = 1; m.bezDanychS = 45; m.heapKb = 61; m.blokKb = 31;
+  m.bladEtap = 'l'; m.bladNumer = 0;
+  char t[TOKEN_AUTORESTARTU_MAKS];
+  tokenAutorestartu(t, sizeof(t), m);
+  SPRAWDZ(std::strcmp(t, "auto_milczy_r0_n1_t45_h61_b31_el0") == 0);
+  m.przyczyna = PRZYCZYNA_WIFI; m.kodRozlaczenia = 201; m.bladEtap = 'n'; m.bladNumer = 118;
+  tokenAutorestartu(t, sizeof(t), m);
+  SPRAWDZ(std::strcmp(t, "auto_wifi_r201_n1_t45_h61_b31_en118") == 0);
+  m.bladEtap = '-';
+  tokenAutorestartu(t, sizeof(t), m);
+  SPRAWDZ(std::strcmp(t, "auto_wifi_r201_n1_t45_h61_b31_ex118") == 0);   // '-' nie moze trafic do adresu zapytania
+  // Najgorszy przypadek: wszystkie pola maksymalne - miesci sie i ma tylko dozwolone znaki.
+  m.przyczyna = PRZYCZYNA_MILCZY; m.kodRozlaczenia = 255; m.kolejnych = 250; m.seria = 250; m.bezDanychS = 65535; m.heapKb = 65535; m.blokKb = 65535;
+  m.bladEtap = 'c'; m.bladNumer = 65535;
+  tokenAutorestartu(t, sizeof(t), m);
+  SPRAWDZ(std::strlen(t) == 50);
+  bool dozwolone = true;
+  for (const char* p = t; *p; p++)
+    if (!((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '_')) dozwolone = false;
+  SPRAWDZ(dozwolone);
+  SPRAWDZ(etapDoTokenu('l') == 'l' && etapDoTokenu('-') == 'x' && etapDoTokenu(0) == 'x' && etapDoTokenu('&') == 'x');
+
+  // Seria restartow: ktore z nich panel zglasza centrali.
+  SPRAWDZ(zglosicRestart(1, 0) && zglosicRestart(2, 1) && zglosicRestart(3, 2));        // pierwsze trzy zawsze
+  SPRAWDZ(!zglosicRestart(4, 3) && !zglosicRestart(5, 3) && zglosicRestart(6, 3));       // potem dopiero numer 2x wiekszy
+  SPRAWDZ(!zglosicRestart(11, 6) && zglosicRestart(12, 6) && zglosicRestart(13, 6));     // niedostarczone zgloszenie nie przepada
+  SPRAWDZ(zglosicRestart(37, 0) && zglosicRestart(250, 0));                              // centrala nie wie o zadnym - zglos dowolny
+  SPRAWDZ(zglosicRestart(250, 125) && !zglosicRestart(250, 126) && !zglosicRestart(250, 250));
+  {
+    // Przebieg: 300 restartow jeden po drugim, centrala za kazdym razem odpowiada.
+    PamiecAutorestartu r;
+    r.wyczysc();
+    r.przyczyna = PRZYCZYNA_WIFI; r.kodRozlaczenia = 201; r.bezDanychS = 45; r.heapKb = 61; r.blokKb = 31; r.bladEtap = 'n'; r.bladNumer = 118;
+    int zgloszen = 0;
+    bool zawszeWazna = true;
+    std::string numery;
+    for (int nr = 1; nr <= 300; nr++) {
+      r.odnotujRestart();
+      r.zapieczetuj();
+      if (!(r.wazna() && r.oczekuje == 1)) zawszeWazna = false;
+      r.oczekuje = 0;
+      if (zglosicRestart(r.seria, r.zgloszonyNr)) {
+        zgloszen++;
+        numery += std::to_string(r.seria) + " ";
+        r.zgloszenieDotarlo();
+        if (!r.wazna()) zawszeWazna = false;
+      }
+    }
+    SPRAWDZ(zawszeWazna);
+    SPRAWDZ(numery == "1 2 3 6 12 24 48 96 192 ");                 // 9 zgloszen na 300 restartow
+    SPRAWDZ(zgloszen == 9);
+    SPRAWDZ(r.seria == 250 && r.kolejnych == 250 && r.lacznie == 300 && r.zgloszonyNr == 192);   // nasycenie licznikow
+
+    // Dobre dane: 2 min zeruja "z rzedu", godzina konczy serie.
+    SPRAWDZ(!r.poDobrychDanych(119999) && r.kolejnych == 250 && r.seria == 250);
+    SPRAWDZ(r.poDobrychDanych(120000) && r.kolejnych == 0 && r.seria == 250 && r.zgloszonyNr == 192 && r.wazna());
+    SPRAWDZ(!r.poDobrychDanych(3599999) && r.seria == 250);
+    SPRAWDZ(r.poDobrychDanych(3600000) && r.seria == 0 && r.zgloszonyNr == 0 && r.wazna());
+    SPRAWDZ(!r.poDobrychDanych(4000000));                           // nic do wyzerowania - bez zmian
+    r.odnotujRestart();
+    tokenAutorestartu(t, sizeof(t), r);
+    SPRAWDZ(std::strcmp(t, "auto_wifi_r201_n1_t45_h61_b31_en118") == 0 && zglosicRestart(r.seria, r.zgloszonyNr));   // nowa seria: znow od 1
+    SPRAWDZ(r.lacznie == 301);
+
+    // Centrala wylaczona na dlugo: nic nie dociera, a gdy wroci, panel zglasza ostatni restart.
+    r.wyczysc();
+    r.przyczyna = PRZYCZYNA_WIFI; r.kodRozlaczenia = 201; r.bezDanychS = 300; r.heapKb = 61; r.blokKb = 31; r.bladEtap = 'n'; r.bladNumer = 118;
+    for (int nr = 1; nr <= 37; nr++) r.odnotujRestart();
+    SPRAWDZ(r.seria == 37 && r.zgloszonyNr == 0 && zglosicRestart(r.seria, r.zgloszonyNr));
+    tokenAutorestartu(t, sizeof(t), r);
+    SPRAWDZ(std::strcmp(t, "auto_wifi_r201_n37_t300_h61_b31_en118") == 0);
+    r.zgloszenieDotarlo();
+    SPRAWDZ(r.zgloszonyNr == 37 && r.wazna());
+  }
+
+  // Stan alarmow w jednym bajcie.
+  SPRAWDZ(spakujAlarmy(false, false, false, false, 0, 0) == 0x00);
+  SPRAWDZ(spakujAlarmy(true, false, false, false, 0, 0) == 0x01);
+  SPRAWDZ(spakujAlarmy(false, true, false, false, 0, 0) == 0x02);
+  SPRAWDZ(spakujAlarmy(false, false, true, false, 0, 0) == 0x04);
+  SPRAWDZ(spakujAlarmy(false, true, false, true, 2, 1) == 0x6A);
+  const uint8_t a = spakujAlarmy(true, false, true, true, 1, 2);
+  SPRAWDZ(alarmyDym(a) && !alarmyOgrzewanie(a) && alarmyPanel(a) && alarmyWyciszony(a));
+  SPRAWDZ(alarmyWyciszonyTyp(a) == 1 && alarmyOdrzucony(a) == 2 && alarmyJakikolwiek(a));
+  SPRAWDZ(!alarmyJakikolwiek(spakujAlarmy(false, false, false, true, 2, 2)));   // samo wyciszenie to nie alarm
+  SPRAWDZ(alarmyWyciszonyTyp(0xFF) == 0 && alarmyOdrzucony(0xFF) == 0);         // wartosc 3 spoza zakresu -> 0
+  m.wyczysc();
+  m.alarmy = 0x02;
+  SPRAWDZ(!m.wazna());                                              // pole alarmy tez jest objete suma
+  m.zapieczetuj();
+  SPRAWDZ(m.wazna());
+}
+
 int main() {
+  testPrzyczyna();
+  testRatunek();
+  testPamiecAutorestartu();
   testHttp();
   testSkrotIOgon();
   testZlaWartosc();

@@ -31,6 +31,11 @@ const AtrapaAp* Atrapa::polaczonyAp() const {
   return nullptr;   // AP zniknal z eteru -> polaczenie zerwane
 }
 
+bool Atrapa::polaczenieZywe() const {
+  const AtrapaAp* ap = polaczonyAp();
+  return ap != nullptr && ap->wcielenie == celWcielenie;
+}
+
 void atrapa_uplyw_czasu(unsigned long ms) {
   g_atrapa.terazMs += ms;
   if (g_atrapa.wdtNadzoruje && g_atrapa.wdtTimeoutMs > 0 &&
@@ -106,14 +111,33 @@ wl_status_t AtrapaWiFi::begin(const char* ssid, const char*, int32_t, const uint
   if (wybrany != nullptr) {
     g_atrapa.celUstawiony = true;
     memcpy(g_atrapa.celBssid, wybrany->bssid, 6);
+    g_atrapa.celWcielenie = wybrany->wcielenie;
     g_atrapa.polaczenieOdMs = g_atrapa.terazMs + g_atrapa.czasLaczeniaMs;
   }
   return status();
 }
 
 bool AtrapaWiFi::disconnect(bool, bool) {
+  g_atrapa.liczbaDisconnect++;
+  const bool bylPolaczony = (g_atrapa.polaczonyAp() != nullptr);
   g_atrapa.celUstawiony = false;
+  if (bylPolaczony) g_atrapa.zglosRozlaczenie(8);   // WIFI_REASON_ASSOC_LEAVE - rozlaczenie na wlasne zyczenie
   return true;
+}
+
+// WiFi.onEvent(): atrapa zna tylko zdarzenie rozlaczenia stacji.
+static AtrapaWiFi::FunkcjaZdarzenia g_funkcjaZdarzenia = nullptr;
+static void atrapaPrzekazRozlaczenie(int kod) {
+  if (g_funkcjaZdarzenia == nullptr) return;
+  arduino_event_info_t info;
+  memset(&info, 0, sizeof(info));
+  info.wifi_sta_disconnected.reason = (uint8_t)kod;
+  g_funkcjaZdarzenia(ARDUINO_EVENT_WIFI_STA_DISCONNECTED, info);
+}
+int AtrapaWiFi::onEvent(FunkcjaZdarzenia f) {
+  g_funkcjaZdarzenia = f;
+  g_atrapa.naRozlaczenie = atrapaPrzekazRozlaczenie;
+  return 1;
 }
 
 wl_status_t AtrapaWiFi::status() { return g_atrapa.polaczonyAp() != nullptr ? WL_CONNECTED : WL_DISCONNECTED; }

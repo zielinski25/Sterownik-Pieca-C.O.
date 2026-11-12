@@ -2,6 +2,12 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.2.1 Dodano: lvgl_dashboard_poc_alarm_odrzucony() i
+//   lvgl_dashboard_poc_przywroc_alarm() - stan alarmu ma przetrwac
+//   samoczynny restart panelu ([v1.2.1 RATUNEK]). Znacznik w naglowku
+//   (lvgl_dashboard_poc_aktualizuj_centrale()) pokazuje tez, czego panelowi
+//   brakuje, gdy nie ma danych, i jest powtorzony na ekranie alarmu.
+//   Pelny opis: HISTORIA ZMIAN w main.cpp.
 // [2026-11-11] v1.2.0 Dodano: lvgl_dashboard_poc_aktualizuj_centrale() -
 //   znacznik "z ktora centrala rozmawia panel" na srodku naglowka
 //   ([v1.2.0 CENTRALA-ID]). Zmieniono: lvgl_dashboard_poc_aktualizuj_bateria()
@@ -272,7 +278,28 @@ void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie);
 //                         nazwie centrali; panel wybral najsilniejsza,
 //   albo dwa z nich naraz. Zawsze w kolorze ostrzezenia - to informacja
 //   "uwazaj, co czytasz", nie dekoracja.
+// [v1.2.1 RATUNEK] Gdy panel NIE MA danych (kafelki "--"), main.cpp wpisuje
+// tu powod i licznik (diag::znacznikBrakuDanych()):
+//   "BRAK WIFI 14 s" / "CENTRALA MILCZY 14 s" / "ZLA ODPOWIEDZ 14 s",
+//   a w ostatnich 10 s przed samoczynnym restartem "RESTART ZA 7 s: BRAK WIFI".
+// [v1.2.1] Ten sam tekst pojawia sie tez na ekranie alarmu (nad przyciskami
+// WYCISZ / ZAMKNIJ) - ekran alarmu zaslania naglowek dashboardu.
 void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik);
+
+// [v1.2.1 RATUNEK] Alarm ma przetrwac samoczynny restart panelu (main.cpp,
+// panelAutorestart()): panel restartuje sie, gdy NIE MA danych z centrali, a
+// wtedy obowiazuje zasada z alarm_ekran_odswiez() - ostatni znany stan
+// alarmu zostaje. Bez tych dwoch funkcji restart po cichu gasilby ekran
+// alarmu i dzwonek w naglowku.
+//  - lvgl_dashboard_poc_alarm_odrzucony(): na jakim poziomie alarmu
+//    uzytkownik ostatnio kliknal ZAMKNIJ (0 = nie zamykal, 1 = przegrzanie,
+//    2 = pozar/dym) - do zapamietania tuz przed restartem;
+//  - lvgl_dashboard_poc_przywroc_alarm(): po restarcie, ZANIM przyjda
+//    pierwsze dane - pokazuje ekran alarmu / dzwonek i ramki kafelkow tak,
+//    jak przed restartem. Pierwszy poprawny status z centrali i tak ustawia
+//    wszystko od nowa (lvgl_dashboard_poc_aktualizuj()).
+int  lvgl_dashboard_poc_alarm_odrzucony();
+void lvgl_dashboard_poc_przywroc_alarm(bool dymAlarm, bool alarmOgrzewanie, bool alarmPanel, int odrzuconyPoziom);
 
 // Generyczny callback dla 5 pol numerycznych - dokladnie ten sam ksztalt co
 // ServoUstawieniaCb powyzej (main.cpp rejestruje funkcje ktora PO PROSTU

@@ -47,6 +47,7 @@ typedef bool boolean;
 #define F(x) (x)
 #define PSTR(x) (x)
 #define RTC_DATA_ATTR
+#define RTC_NOINIT_ATTR   // na PC zwykla zmienna globalna; test moze ja wypelnic przed setup() ("stan po restarcie")
 #define IRAM_ATTR
 #define portNUM_PROCESSORS 2
 #define constrain(amt, low, high) ((amt) < (low) ? (low) : ((amt) > (high) ? (high) : (amt)))
@@ -193,7 +194,9 @@ class AtrapaEsp {
   uint32_t getFreeHeap() { return 180000; }
   uint32_t getMinFreeHeap() { return 150000; }
   uint32_t getMaxAllocHeap() { return 110000; }
-  void restart() { g_atrapa.restarty++; }
+  // Na plytce ESP.restart() nie wraca. Tu: wyjatek AtrapaRestart, zeby kod
+  // firmware'u za wywolaniem tez sie nie wykonal; lapie go test (biegnij()).
+  [[noreturn]] void restart() { g_atrapa.restarty++; throw AtrapaRestart(); }
 };
 extern AtrapaEsp ESP;
 
@@ -213,7 +216,12 @@ inline void analogSetPinAttenuation(uint8_t, adc_attenuation_t) {}
 inline bool ledcAttach(uint8_t, uint32_t, uint8_t) { return true; }
 inline bool ledcDetach(uint8_t) { return true; }
 inline bool ledcWrite(uint8_t, uint32_t) { return true; }
-inline uint32_t ledcWriteTone(uint8_t, uint32_t f) { return f; }
+// Brzeczyk: ostatnia czestotliwosc i liczba jej zmian (0 Hz = cisza).
+inline uint32_t ledcWriteTone(uint8_t, uint32_t f) {
+  if (f != g_atrapa.tonHz) g_atrapa.zmianTonu++;
+  g_atrapa.tonHz = f;
+  return f;
+}
 inline long map(long x, long a, long b, long c, long d) { return (b == a) ? c : (x - a) * (d - c) / (b - a) + c; }
 inline long random(long m) { return m > 0 ? rand() % m : 0; }
 inline long random(long a, long b) { return b > a ? a + rand() % (b - a) : a; }

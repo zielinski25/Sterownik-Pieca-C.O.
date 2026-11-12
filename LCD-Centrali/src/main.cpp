@@ -38,6 +38,94 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.2.1 - po zgloszeniu "nadal jest problem: podczas pracy
+//   zresetowalem LCD i dopiero wtedy odebral swieze dane" (wg uzytkownika na
+//   plytce byla v1.2.0). Przyslany zostal tylko log CENTRALI; logu panelu z
+//   tej chwili nie ma, wiec PRZYCZYNA NADAL NIE JEST POTWIERDZONA.
+//   Co wiadomo:
+//   - centrala miala aktualne wartosci (piec=134.0C zewn=49.0C
+//     alarmCO=AKTYWNY pompa=ON) i buduje /api/status od nowa przy kazdym
+//     zapytaniu, z tych samych zmiennych co linia "tag=STATUS" jej logu
+//     (main_centrala.cpp 3.58.3) - starych wartosci panelowi nie podaje;
+//   - jej log zawiera wpis "tag=HEALTH" (pierwszy pojawia sie 5 min po
+//     starcie) z telemetry_produced=4 - wyglada na to, ze centrala
+//     wystartowala ok. 5 min wczesniej, czyli krotko przedtem byla
+//     restartowana (wniosek z jednej linii, nie pewnik);
+//   - log panelu z 2026-11-11 (starszy build): tuz przed takim samym resetem
+//     kazda proba konczyla sie od razu "connect() natychmiastowy blad", a po
+//     resecie panel mial dane po 1,6 s;
+//   - pamiec: ten firmware uruchomiony na PC w modelu 32-bitowym (zig,
+//     x86-linux-musl, licznik malloc/free - pomiar jednorazowy, poza
+//     testy_host/) po setup() trzyma ok. 132 kB w ok. 2480 blokach (z tego
+//     38 kB to bufor rysowania LVGL), cykl statusu bierze chwilowo ok. 6 kB,
+//     a przez 4 h pracy z aktywnym alarmem przybylo 4 kB (jeden blok, raz).
+//     Wyciek w kodzie panelu jest wiec malo prawdopodobny; zuzycia przez
+//     WiFi/lwIP na plytce ten pomiar nie obejmuje (pokaze je heap= i
+//     blok_max= w linii "tag=PANEL").
+//   Przypuszczenie (NIE potwierdzone): panel traci lacznosc z centrala,
+//   byc moze przy jej restarcie, i sam jej nie odzyskuje. Pewne jest tylko
+//   to, ze restart panelu pomaga. Na PC nie da sie tego odtworzyc, bo
+//   dotyczy radia.
+//   Dodano ([v1.2.1 RATUNEK], opis przy panelRatunekKrok()):
+//   - Naglowek dashboardu przy braku danych pokazuje, czego brakuje, i licznik
+//     sekund: "BRAK WIFI 14 s" / "CENTRALA MILCZY 14 s" / "ZLA ODPOWIEDZ 14 s";
+//     w ostatnich 10 s przed restartem "RESTART ZA 7 s: BRAK WIFI".
+//   - Ten sam znacznik (takze "SYMULACJA: piec") stoi teraz na ekranie
+//     alarmu, nad przyciskami. W logu centrali z 2026-11-12 alarm
+//     przegrzania byl aktywny (piec=134.0C na plytce bez czujnikow); przy
+//     takim statusie panel pokazuje pelnoekranowy alarm, ktory zaslania
+//     kafelki i naglowek - nie bylo na nim widac, czy dane jeszcze
+//     przychodza ani ze temperatura pochodzi z symulacji.
+//   - WiFi zglasza polaczenie, a centrala od 12 s milczy: panel rozlacza sie
+//     i laczy od nowa (po kolejnych 12 s jeszcze raz, bez zapamietanego
+//     BSSID). v1.1.0 i v1.2.0 w tym stanie nie robily nic - reconnect ruszal
+//     tylko wtedy, gdy WiFi samo zglosilo rozlaczenie.
+//   - 45 s bez poprawnego statusu: panel restartuje sie sam. Kolejne takie
+//     restarty z rzedu: po 90 s, 3 min, potem co 5 min; licznik wraca do zera
+//     po 2 min nieprzerwanie poprawnych danych. Gdy centrala odpowiada, ale
+//     nieczytelnie, restarty sa najwyzej dwa (wiecej nic nie da, a kazdy
+//     konczylby sie wiadomoscia z centrali). Czas liczony jest z obrotow
+//     petli (najwyzej 1 s na obrot), wiec dlugie pobieranie wykresow nie
+//     konczy sie restartem.
+//   - Po takim restarcie panel zglasza centrali powod zamiast "sw", np.
+//     reset_powod=auto_wifi_r201_n1_t45_h61_b31_en118 (rozpisanie pol:
+//     diag::tokenAutorestartu()). Centrala wpisuje go do SWOJEGO logu
+//     ("tag=RESET-DIAG ... nietypowy_restart_panelu powod=auto_...") i wysyla
+//     wiadomosc - tak jak o kazdym restarcie innym niz "sw"/"deepsleep".
+//     Dzieki temu nastepne zgloszenie da sie rozstrzygnac z samego logu
+//     centrali. Restart po OTA zostaje "sw".
+//     Kazdy restart jest zglaszany raz: po pierwszej odpowiedzi centrali
+//     panel wraca do zwyklego "sw", wiec centrala nie oglosi go ponownie po
+//     wlasnym restarcie. Z jednej serii restartow (serie konczy godzina
+//     poprawnych danych) zglaszane sa pierwsze trzy, potem 6., 12., 24.... -
+//     lacznosc, ktora rwie sie raz za razem, nie daje wiadomosci co kilka
+//     minut. Numer w serii jest w zgloszeniu ("n6").
+//   - Stan alarmu (dym / przegrzanie pieca / panelu, WYCISZ, ZAMKNIJ) jedzie
+//     przez taki restart w pamieci RTC: brzeczyk i ekran alarmu wracaja,
+//     zanim przyjda dane - restart z braku danych nie gasi alarmu po cichu.
+//   - Log: "tag=WIFI zdarzenie=rozlaczono kod=... nazwa=..." (kod przyczyny
+//     kazdego rozlaczenia WiFi), "wymuszam_polaczenie", "tag=PANEL
+//     zdarzenie=autorestart|start_po_autorestarcie|autorestart_zgloszony|
+//     autorestart_pominiety|autorestart_licznik_wyzerowany|alarm_sprzed_restartu";
+//     w liniach "GET nieudany" numer i nazwa bledu gniazda (errno); linia
+//     "tag=PANEL" ma nowe pola bez_danych_s, przyczyna, wymuszen, rozl_kod,
+//     rozl_n, autorestartow.
+//   Naprawiono (brzeczyk, znalezione przy okazji; potwierdzone na PC dla
+//   v1.2.0 - scenariusz wycisz_alarm):
+//   - WYCISZ dzialal dopiero po nastepnym poprawnym statusie, czyli bez
+//     danych z centrali wcale; teraz cisza zapada od razu.
+//   - Drugie nacisniecie WYCISZ wlaczalo dzwiek z powrotem.
+//   - Raz wyciszony typ alarmu zostawal niemy przy kazdym nastepnym
+//     wystapieniu, az do restartu panelu; teraz wyciszenie konczy sie razem
+//     z alarmem.
+//   Sprawdzone tak jak v1.2.0: na PC (testy_host/: 241 sprawdzen
+//   jednostkowych, 22 scenariusze / 216 sprawdzen, takze z
+//   AddressSanitizer/UBSan) i
+//   skladniowo prawdziwymi naglowkami arduino-esp32 3.0.7 / 3.3.8. NIE
+//   budowane przez PlatformIO i NIE uruchamiane na plytce. Model WiFi w
+//   testach jest zalozeniem - w szczegolnosci "martwe polaczenie" po szybkim
+//   restarcie centrali (scenariusz martwe_polaczenie) to przypuszczenie, a
+//   nie zaobserwowane zachowanie tych plytek.
 // [2026-11-11] v1.2.0 - po zgloszeniu "kafelki sie nie aktualizuja" (log
 //   serial-20261110_200814.log: same linie "[NET-DIAG] ... sukces", zero
 //   bledow, a ekran stoi). PRZYCZYNA ZGLOSZENIA NIE JEST POTWIERDZONA - log
@@ -362,6 +450,27 @@ diag::Liczniki panelLiczniki;                 // zerowane po kazdej linii "tag=P
 diag::StraznikSwiezosci straznikSwiezosci;    // kiedy kafelki maja pokazac "--"
 diag::Dlawik dlawikBleduStatusu;              // nieczytelna odpowiedz /api/status - log najwyzej co 10 s
 diag::Dlawik dlawikBleduUstawien;             // to samo dla /api/ustawienia-get
+// [v1.2.1 RATUNEK] Co panel robi, gdy nie ma danych z centrali - patrz opis
+// przy diag::Ratunek w diagnostyka_panelu.h i panelRatunekKrok() nizej.
+diag::Ratunek panelRatunek;                   // drabina: ponowne polaczenie z siecia -> restart panelu
+bool ostatniBladStatusuToTresc = false;       // ostatnia nieudana proba /api/status: true = odpowiedz nieczytelna, false = brak odpowiedzi
+char ostatniBladStatusuTekst[72] = "";        // ...jej opis do logu (np. "timeout calkowity", "connect() natychmiastowy blad errno=118 EHOSTUNREACH")
+char ostatniBladStatusuEtap = '-';            // ...etap, na ktorym padla (NonBlockingHttp::etapBledu(); 'o' = odpowiedz nieczytelna)
+int  ostatniBladStatusuNumer = 0;             // ...i numer bledu gniazda albo kod HTTP
+// Przetrwa ESP.restart() (pamiec RTC, ktorej program przy starcie nie
+// zeruje). Po wlaczeniu zasilania zawiera przypadkowe wartosci - sprawdzane
+// i czyszczone w autorestartOdczytajPrzyStarcie(), zanim cokolwiek ich uzyje.
+RTC_NOINIT_ATTR diag::PamiecAutorestartu rtcAutorestart;
+bool startPoAutorestarcie = false;            // true = ten start nastapil po samoczynnym restarcie (panelAutorestart())
+bool autorestartDoZgloszenia = false;         // true = w zapytaniach /api/status idzie powod "auto_...", a centrala jeszcze na zadne nie odpowiedziala
+// Od kiedy dane sa nieprzerwanie poprawne (do zerowania licznika restartow
+// z rzedu - patrz diag::CZAS_STABILNYCH_DANYCH_MS).
+bool daneDobreSeria = false;
+unsigned long daneDobreOdMs = 0;
+// Kod przyczyny ostatniego rozlaczenia WiFi i licznik rozlaczen. Wpisuje je
+// zadanie zdarzen WiFi (wifiZdarzenie()), czyta petla glowna - stad volatile.
+volatile uint8_t  wifiOstatniKodRozlaczenia = 0;
+volatile uint32_t wifiLiczbaRozlaczen = 0;
 // [v1.2.0 CENTRALA-ID] Z KTORA centrala rozmawia panel. Prawdziwa centrala i
 // centrala testowa (centrala-testowa-c3) nadaja TA SAMA siec (WIFI_SSID) pod
 // tym samym adresem - bez tego nie da sie odroznic ich ani z ekranu, ani z
@@ -400,7 +509,7 @@ PoKomendzie pendingPoKomendzie = PoKomendzie::BRAK;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.2.0"; // [2026-11-11] v1.2.0: wybor najsilniejszej centrali, dane nieaktualne -> "--", diagnostyka (patrz HISTORIA ZMIAN). Poprzednio: [2026-09-12] PODNIESIONE z v1.0.0 - sieciowa warstwa nieblokujaca + zlaczenie z DESZCZ-ETAP4 (patrz HISTORIA ZMIAN); jesli wolisz inny numer, to jedyne miejsce do zmiany
+static const char* FIRMWARE_VERSION_PANEL = "v1.2.1"; // [2026-11-12] v1.2.1: panel sam sie ratuje, gdy nie ma danych (ponowne polaczenie -> restart) i pokazuje, czego brakuje. v1.2.0 [2026-11-11]: wybor najsilniejszej centrali, dane nieaktualne -> "--", diagnostyka. v1.1.0 [2026-09-12]: nieblokujaca warstwa sieciowa. Patrz HISTORIA ZMIAN.
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -846,6 +955,16 @@ void brzeczykOdswiezZAlarmow(bool dym, bool ogrzewanie, bool panel) {
   // byc rowne zapamietanemu g_brzeczykWyciszonyTyp (alarm ustapil albo
   // eskalowal na inny typ), ten warunek sam przestaje byc prawdziwy - zero
   // recznego zerowania flagi gdziekolwiek indziej. Patrz alarmWyciszObsluga().
+  // [v1.2.1] Wyciszenie dotyczy TEGO wystapienia alarmu. Do v1.2.0 obie
+  // zmienne nie byly nigdy zerowane, wiec raz wyciszony typ alarmu zostawal
+  // niemy takze przy KAZDYM nastepnym wystapieniu - az do restartu panelu
+  // (alarm ustapil, wrocil po godzinie: cisza). Od v1.2.1 stan alarmu
+  // przechodzi tez przez samoczynny restart, wiec bez tej poprawki takie
+  // wyciszenie nie konczyloby sie juz nigdy.
+  if (g_brzeczykWyciszony && chciany != g_brzeczykWyciszonyTyp) {
+    g_brzeczykWyciszony = false;
+    g_brzeczykWyciszonyTyp = BRZECZYK_BRAK;
+  }
   if (g_brzeczykWyciszony && chciany == g_brzeczykWyciszonyTyp) {
     chciany = BRZECZYK_BRAK;
   }
@@ -857,9 +976,18 @@ void brzeczykOdswiezZAlarmow(bool dym, bool ogrzewanie, bool panel) {
 // ekranie alarmowym w dashboard_lvgl_poc.cpp. W 100% lokalna: brzeczyk to
 // GPIO na TEJ plytce, wiec zero HTTP do centrali - w odroznieniu od
 // wiekszosci pozostalych callbackow w tym pliku.
+// [v1.2.1] Cisza zapada OD RAZU. Do v1.2.0 ta funkcja tylko ustawiala dwie
+// zmienne, a brzeczyk milkl dopiero w brzeczykOdswiezZAlarmow(), czyli po
+// nastepnym poprawnym statusie z centrali. Skutki: (1) bez danych z centrali
+// WYCISZ nie dzialal wcale - a wlasnie wtedy alarm zostaje "zamrozony" i gra
+// dalej, takze po samoczynnym restarcie (alarmPrzywrocPoAutorestarcie());
+// (2) drugie nacisniecie WYCISZ, gdy juz bylo cicho, zapamietywalo "wyciszony
+// typ: zaden" i przy kolejnym statusie alarm zaczynal grac od nowa.
 void alarmWyciszObsluga() {
+  if (brzeczykAktywnyTyp == BRZECZYK_BRAK) return;   // nic nie gra - poprzednie wyciszenie zostaje bez zmian
   g_brzeczykWyciszony = true;
   g_brzeczykWyciszonyTyp = brzeczykAktywnyTyp;
+  brzeczykUstawTyp(BRZECZYK_BRAK);
 }
 
 // Wolane co obrot loop() (ten sam wzorzec co obsluzDotyk()) - awansuje
@@ -1870,13 +1998,27 @@ static void lvglPokazStan() {
 //                              tej, z ktora panel jest polaczony (pelny BSSID
 //                              jest w logu: tag=WIFI zdarzenie=polaczono).
 // Pusty = jedna, zwykla centrala bez symulacji (nic sie nie wyswietla).
+// [v1.2.1 RATUNEK] Gdy panel NIE MA danych (kafelki pokazuja "--"), w tym
+// samym miejscu stoi powod i licznik sekund, np. "CENTRALA MILCZY 14 s", a w
+// ostatnich 10 s przed samoczynnym restartem "RESTART ZA 7 s: BRAK WIFI"
+// (patrz diag::znacznikBrakuDanych() i panelRatunekKrok()).
 static void lvglPokazZnacznikCentrali() {
   char znacznik[48];
-  diag::znacznikCentrali(znacznik, sizeof(znacznik),
-                         centralaRozpoznana && centralaToSymulator,
-                         wifiCentralPrzyStarcie,
-                         (WiFi.status() == WL_CONNECTED) ? WiFi.BSSID() : nullptr,
-                         centralaSymulacjaMaska);
+  if (straznikSwiezosci.oznaczoneJakoStare) {
+    const diag::Przyczyna przyczyna = diag::ustalPrzyczyne(WiFi.status() == WL_CONNECTED, ostatniBladStatusuToTresc);
+    const uint32_t progRestartu = diag::progRestartuMs(rtcAutorestart.kolejnych);
+    diag::znacznikBrakuDanych(znacznik, sizeof(znacznik), przyczyna,
+                              panelRatunek.bezDanychMs / 1000UL,
+                              diag::restartMaSens(przyczyna, rtcAutorestart.kolejnych)
+                                  ? (panelRatunek.doRestartuMs(progRestartu) + 999UL) / 1000UL
+                                  : diag::BEZ_RESTARTU);
+  } else {
+    diag::znacznikCentrali(znacznik, sizeof(znacznik),
+                           centralaRozpoznana && centralaToSymulator,
+                           wifiCentralPrzyStarcie,
+                           (WiFi.status() == WL_CONNECTED) ? WiFi.BSSID() : nullptr,
+                           centralaSymulacjaMaska);
+  }
   lvgl_dashboard_poc_aktualizuj_centrale(znacznik);
 }
 #endif
@@ -1895,12 +2037,150 @@ void panelOznaczDaneJakoNieaktualne() {
   // wiek_s=-1: od wlaczenia panelu nie bylo jeszcze ANI JEDNEGO poprawnego
   // statusu. wifi=1 przy braku danych znaczy: siec jest, ale centrala nie
   // odpowiada albo jej odpowiedzi sa nieczytelne (patrz tag=STATUS lvl=ERR).
-  Serial.printf("tag=PANEL lvl=WARN zdarzenie=dane_nieaktualne wiek_s=%ld prog_s=%lu wifi=%d\n",
+  // [v1.2.1] przyczyna=wifi|milczy|odp - to samo, co panel pokazuje w naglowku
+  // (BRAK WIFI / CENTRALA MILCZY / ZLA ODPOWIEDZ), patrz diag::Przyczyna.
+  // restart_za_s=-1: przy tej przyczynie restartu juz nie bedzie (diag::restartMaSens()).
+  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
+  const diag::Przyczyna przyczyna = diag::ustalPrzyczyne(wifiOk, ostatniBladStatusuToTresc);
+  daneDobreSeria = false;   // koniec nieprzerwanie poprawnych danych
+  Serial.printf("tag=PANEL lvl=WARN zdarzenie=dane_nieaktualne wiek_s=%ld prog_s=%lu wifi=%d przyczyna=%s restart_za_s=%ld\n",
                 swiezoscStatusu.byloKiedykolwiek ? (long)swiezoscStatusu.wiekSekund() : -1L,
                 (unsigned long)(PROG_NIEAKTUALNYCH_DANYCH_MS / 1000UL),
-                (int)(WiFi.status() == WL_CONNECTED));
+                (int)wifiOk,
+                diag::przyczynaSkrot(przyczyna),
+                diag::restartMaSens(przyczyna, rtcAutorestart.kolejnych)
+                    ? (long)(panelRatunek.doRestartuMs(diag::progRestartuMs(rtcAutorestart.kolejnych)) / 1000UL) : -1L);
 #if LVGL_POC_TEST
   lvglPokazStan();   // polaczono=false -> "--" na wszystkich kafelkach
+  lvglPokazZnacznikCentrali();   // [v1.2.1] naglowek: czego brakuje
+#endif
+}
+
+// ----------------------------------------------------------------------------
+// [v1.2.1 RATUNEK] Panel bez danych ratuje sie sam
+// ----------------------------------------------------------------------------
+// Zgloszenie z 2026-11-12 (wg uzytkownika na plytce byla v1.2.0): panel nie
+// pokazywal swiezych danych, az uzytkownik go zresetowal - po resecie dane
+// byly od razu. Logu panelu z tej chwili nie ma, wiec PRZYCZYNA NIE JEST
+// USTALONA. Wiadomo tylko tyle: (1) w logu z 2026-11-11 (starszy build), tuz
+// przed takim samym resetem, kazda proba polaczenia z centrala konczyla sie
+// od razu bledem "connect() natychmiastowy blad"; (2) log centrali z
+// 2026-11-12 wyglada na zebrany ok. 5 minut po JEJ starcie, czyli centrala
+// byla zapewne krotko wczesniej restartowana. v1.2.1 robi wiec dwie rzeczy: automatyzuje
+// to, co pomaga (restart), i zapisuje to, czego brakuje do ustalenia przyczyny.
+//
+// Kolejnosc (czas liczony od ostatniego poprawnie odczytanego statusu):
+//   10 s  kafelki "--" (od v1.2.0) + w naglowku powod: BRAK WIFI /
+//         CENTRALA MILCZY / ZLA ODPOWIEDZ i licznik sekund,
+//   12 s  WiFi zglasza polaczenie, a centrala milczy -> rozlacz i polacz od
+//         nowa (wifiWymusPolaczenie()); po kolejnych 12 s milczenia jeszcze
+//         raz, juz bez zapamietanego BSSID. v1.1.0 i v1.2.0 w tym stanie nie
+//         robily NIC - reconnect ruszal tylko wtedy, gdy WiFi samo zglosilo
+//         rozlaczenie,
+//   45 s  restart panelu (panelAutorestart()). Kolejne restarty z rzedu: po
+//         90 s, 3 min i dalej co 5 min (diag::progRestartuMs()); "z rzedu"
+//         konczy sie po 2 min nieprzerwanie poprawnych danych. Przy
+//         nieczytelnych odpowiedziach centrali najwyzej 2 restarty
+//         (diag::restartMaSens()).
+// Po takim restarcie panel zglasza centrali powod (reset_powod=auto_...), a
+// centrala wpisuje go do SWOJEGO logu: "tag=RESET-DIAG ... powod=auto_...".
+// Zgloszenie idzie raz (do pierwszej odpowiedzi centrali) i nie po kazdym
+// restarcie z serii - patrz autorestartOdczytajPrzyStarcie().
+void wifiWymusPolaczenie(bool bezBssid, uint8_t nr);   // definicja w sekcji WIFI
+
+void panelAutorestart(diag::Przyczyna przyczyna) {
+  const uint32_t bezDanychS = panelRatunek.bezDanychMs / 1000UL;
+  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
+  const uint8_t kodRozlaczenia = wifiOstatniKodRozlaczenia;
+  const uint32_t heap = ESP.getFreeHeap();
+  const uint32_t blokMax = ESP.getMaxAllocHeap();
+
+  rtcAutorestart.przyczyna = (uint8_t)przyczyna;
+  rtcAutorestart.kodRozlaczenia = kodRozlaczenia;
+  rtcAutorestart.odnotujRestart();   // liczniki: z rzedu, w serii, lacznie
+  rtcAutorestart.bezDanychS = (bezDanychS > 65535UL) ? 65535 : (uint16_t)bezDanychS;
+  rtcAutorestart.heapKb = (uint16_t)(heap / 1024UL);
+  rtcAutorestart.blokKb = (uint16_t)(blokMax / 1024UL);
+  rtcAutorestart.bladEtap = (uint8_t)ostatniBladStatusuEtap;
+  rtcAutorestart.bladNumer = (ostatniBladStatusuNumer < 0 || ostatniBladStatusuNumer > 65535) ? 65535 : (uint16_t)ostatniBladStatusuNumer;
+  // Ostatni znany stan alarmow jedzie przez restart - patrz diag::spakujAlarmy()
+  // i alarmPrzywrocPoAutorestarcie(). `stan` trzyma ostatnie wartosci z
+  // centrali takze wtedy, gdy danych juz nie ma.
+#if LVGL_POC_TEST
+  const int alarmOdrzuconyPoziom = lvgl_dashboard_poc_alarm_odrzucony();
+#else
+  const int alarmOdrzuconyPoziom = 0;
+#endif
+  rtcAutorestart.alarmy = diag::spakujAlarmy(stan.dymAlarm, stan.alarmOgrzewanie, stan.alarmPanel,
+                                             g_brzeczykWyciszony, (int)g_brzeczykWyciszonyTyp, alarmOdrzuconyPoziom);
+  rtcAutorestart.zapieczetuj();
+
+  Serial.printf("tag=PANEL lvl=ERR zdarzenie=autorestart przyczyna=%s bez_danych_s=%lu nr_z_rzedu=%u w_serii=%u lacznie=%u wifi=%d rssi=%d "
+                "rozl_kod=%u rozl_nazwa=%s rozl_n=%lu ostatni_blad=\"%s\" heap=%lu blok_max=%lu alarmy=0x%02X "
+                "msg=\"brak danych z centrali - restart panelu\"\n",
+                diag::przyczynaSkrot(przyczyna), (unsigned long)bezDanychS,
+                (unsigned)rtcAutorestart.kolejnych, (unsigned)rtcAutorestart.seria, (unsigned)rtcAutorestart.lacznie,
+                (int)wifiOk, wifiOk ? (int)WiFi.RSSI() : 0,
+                (unsigned)kodRozlaczenia, diag::nazwaKoduRozlaczenia(kodRozlaczenia), (unsigned long)wifiLiczbaRozlaczen,
+                ostatniBladStatusuTekst, (unsigned long)heap, (unsigned long)blokMax, (unsigned)rtcAutorestart.alarmy);
+  Serial.flush();
+  delay(100);
+  ESP.restart();
+}
+
+// Wolane w kazdym obrocie loop().
+void panelRatunekKrok() {
+  // W trakcie pobierania nowego firmware'u panel celowo nie pyta o status.
+  if (trwaAktualizacjaOtaPanelu) return;
+  const diag::Przyczyna przyczyna = diag::ustalPrzyczyne(WiFi.status() == WL_CONNECTED, ostatniBladStatusuToTresc);
+  const uint32_t progRestartu = diag::progRestartuMs(rtcAutorestart.kolejnych);
+  switch (panelRatunek.krok(millis(), przyczyna == diag::PRZYCZYNA_MILCZY, progRestartu)) {
+    case diag::Ratunek::POLACZ_PONOWNIE:           wifiWymusPolaczenie(false, panelRatunek.wymuszen); break;
+    case diag::Ratunek::POLACZ_PONOWNIE_BEZ_BSSID: wifiWymusPolaczenie(true, panelRatunek.wymuszen);  break;
+    case diag::Ratunek::RESTART:
+      if (diag::restartMaSens(przyczyna, rtcAutorestart.kolejnych)) {
+        panelAutorestart(przyczyna);
+      } else {
+        // Odpowiedzi centrali sa nieczytelne mimo dwoch restartow z rzedu:
+        // kolejny nic nie da (patrz diag::restartMaSens()). krok() zglosi
+        // RESTART ponownie przy nastepnym obrocie - gdy przyczyna sie zmieni
+        // (np. zniknie WiFi), restart nastapi od razu.
+        panelRatunek.restartOdrzucony();
+        static bool zalogowane = false;
+        if (!zalogowane) {
+          zalogowane = true;
+          Serial.printf("tag=PANEL lvl=WARN zdarzenie=autorestart_pominiety przyczyna=%s nr_z_rzedu=%u ostatni_blad=\"%s\" "
+                        "msg=\"odpowiedzi centrali nadal nieczytelne - kolejny restart panelu nic nie da\"\n",
+                        diag::przyczynaSkrot(przyczyna), (unsigned)rtcAutorestart.kolejnych, ostatniBladStatusuTekst);
+        }
+      }
+      break;
+    case diag::Ratunek::NIC:                       break;
+  }
+  // Dane poprawne nieprzerwanie od 2 minut: nastepny samoczynny restart znow
+  // po pierwszym, najkrotszym progu. Od godziny: koniec serii restartow -
+  // numeracja zgloszen dla centrali zaczyna sie od nowa
+  // (diag::zglosicRestart()).
+  if (daneDobreSeria) {
+    const unsigned bylo = rtcAutorestart.kolejnych;
+    const unsigned byloWSerii = rtcAutorestart.seria;
+    if (rtcAutorestart.poDobrychDanych(millis() - daneDobreOdMs)) {
+      Serial.printf("tag=PANEL zdarzenie=autorestart_licznik_wyzerowany z_rzedu=%u->%u w_serii=%u->%u dobre_dane_s=%lu\n",
+                    bylo, (unsigned)rtcAutorestart.kolejnych, byloWSerii, (unsigned)rtcAutorestart.seria,
+                    (unsigned long)((millis() - daneDobreOdMs) / 1000UL));
+    }
+  }
+#if LVGL_POC_TEST
+  // Licznik sekund w naglowku ("BRAK WIFI 14 s") - raz na sekunde i tylko
+  // wtedy, gdy kafelki pokazuja "--".
+  if (straznikSwiezosci.oznaczoneJakoStare) {
+    static uint32_t pokazanaSekunda = 0xFFFFFFFFUL;
+    const uint32_t sekunda = panelRatunek.bezDanychMs / 1000UL;
+    if (sekunda != pokazanaSekunda) {
+      pokazanaSekunda = sekunda;
+      lvglPokazZnacznikCentrali();
+    }
+  }
 #endif
 }
 
@@ -1930,7 +2210,8 @@ void panelDiagOkresowo() {
                 "status_ok=%lu status_blad=%lu ust_ok=%lu ust_blad=%lu ekran=%lu wiek_danych_s=%ld "
                 "t_zewn=%.1f t_pokoj=%.1f t_ogrz=%.1f t_ogrz_sr=%.1f t_bojler=%.1f t_panel=%.1f "
                 "wilg=%.0f cisn=%.0f dym=%d klapa=%d syberka=%d pompa=%d czas=%02d:%02d "
-                "heap=%lu heap_min=%lu blok_max=%lu\n",
+                "heap=%lu heap_min=%lu blok_max=%lu "
+                "bez_danych_s=%lu przyczyna=%s wymuszen=%u rozl_kod=%u rozl_n=%lu autorestartow=%u\n",
                 FIRMWARE_VERSION_PANEL, (int)wifiOk, bssid,
                 wifiOk ? (int)WiFi.channel() : 0, wifiOk ? (int)WiFi.RSSI() : 0,
                 wifiCentralPrzyStarcie,
@@ -1945,7 +2226,16 @@ void panelDiagOkresowo() {
                 stan.klapa, stan.syberka, (int)stan.pompa,
                 stan.godzina, stan.minuta,
                 (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
-                (unsigned long)ESP.getMaxAllocHeap());
+                (unsigned long)ESP.getMaxAllocHeap(),
+                // [v1.2.1 RATUNEK] od ilu sekund bez poprawnego statusu; czego brakuje ("-" = nic,
+                // wifi | milczy | odp); ile razy wymuszono ponowne polaczenie; kod i liczba rozlaczen
+                // WiFi od startu; ile samoczynnych restartow od wlaczenia zasilania.
+                (unsigned long)(panelRatunek.bezDanychMs / 1000UL),
+                straznikSwiezosci.oznaczoneJakoStare
+                    ? diag::przyczynaSkrot(diag::ustalPrzyczyne(wifiOk, ostatniBladStatusuToTresc)) : "-",
+                (unsigned)panelRatunek.wymuszen,
+                (unsigned)wifiOstatniKodRozlaczenia, (unsigned long)wifiLiczbaRozlaczen,
+                (unsigned)rtcAutorestart.lacznie);
   panelLiczniki.zeruj();
 }
 
@@ -1983,7 +2273,11 @@ void obslugaStatusFetch() {
   if (!sukces) {
     stan.polaczono = false;
     panelLiczniki.statusBlad++;
-    Serial.printf("[STATUS] GET nieudany: %s\n", statusFetch.ostatniBlad().c_str());
+    ostatniBladStatusuToTresc = false;   // [v1.2.1 RATUNEK] centrala nie odpowiedziala (albo nie ma do niej drogi)
+    snprintf(ostatniBladStatusuTekst, sizeof(ostatniBladStatusuTekst), "%s", statusFetch.ostatniBlad().c_str());
+    ostatniBladStatusuEtap = statusFetch.etapBledu();
+    ostatniBladStatusuNumer = statusFetch.numerBledu();
+    Serial.printf("[STATUS] GET nieudany: %s\n", ostatniBladStatusuTekst);
     // [FIX-LOG-SPAM, ta sesja] Bez tego stan_ zostawal w ERROR_ na stale -
     // gotowyWynik() (a wiec i ten log) powtarzalby sie na KAZDEJ iteracji
     // loop() az do kolejnej proby, zamiast raz na niepowodzenie. Patrz
@@ -2014,6 +2308,11 @@ void obslugaStatusFetch() {
   if (wynik != diag::WYNIK_OK) {
     stan.polaczono = false;
     panelLiczniki.statusBlad++;
+    ostatniBladStatusuToTresc = true;    // [v1.2.1 RATUNEK] odpowiedz przyszla, ale jest nieczytelna
+    snprintf(ostatniBladStatusuTekst, sizeof(ostatniBladStatusuTekst), "odpowiedz nieczytelna: %s http=%d json=%s",
+             diag::wynikTekst(wynik), kodHttp, bladJson.c_str());
+    ostatniBladStatusuEtap = 'o';
+    ostatniBladStatusuNumer = kodHttp;
     zglosZlaOdpowiedz("STATUS", dlawikBleduStatusu, wynik, kodHttp, bladJson.c_str(), surowa, cialo);
     return;
   }
@@ -2111,8 +2410,28 @@ void obslugaStatusFetch() {
   // dalo sie odczytac (a sam wskaznik nie byl nigdzie uzywany).
   swiezoscStatusu.odnotujSukces();
   panelLiczniki.statusOk++;
+  // [v1.2.1 RATUNEK] Sa dane - drabina ratunkowa od poczatku. Licznik
+  // samoczynnych restartow z rzedu zeruje panelRatunekKrok(), dopiero gdy
+  // dane sa poprawne nieprzerwanie przez diag::CZAS_STABILNYCH_DANYCH_MS.
+  panelRatunek.daneSwieze();
+  if (!daneDobreSeria) {
+    daneDobreSeria = true;
+    daneDobreOdMs = millis();
+  }
+  // [v1.2.1 RATUNEK] Kazde zapytanie od startu nioslo powod "auto_...", wiec
+  // ta odpowiedz znaczy, ze centrala go dostala (zapisuje go i oglasza,
+  // zanim odpowie). Od teraz panel zglasza zwykle "sw": centrala nie oglosi
+  // tego samego restartu drugi raz po WLASNYM restarcie - chocby za tydzien.
+  if (autorestartDoZgloszenia) {
+    autorestartDoZgloszenia = false;
+    Serial.printf("tag=PANEL zdarzenie=autorestart_zgloszony powod=%s msg=\"centrala dostala powod restartu - dalej zglaszam sw\"\n",
+                  globalnyPowodResetu.c_str());
+    rtcAutorestart.zgloszenieDotarlo();
+    globalnyPowodResetu = "sw";
+  }
   if (straznikSwiezosci.odnotujSwiezeDane()) {
     Serial.println(F("tag=PANEL zdarzenie=dane_wrocily msg=\"kafelki znow pokazuja wartosci z centrali\""));
+    centralaZmieniona = true;   // [v1.2.1] naglowek: zamiast "CENTRALA MILCZY 14 s" znow zwykly znacznik centrali
   }
 
   // [SIEC-NIEBLOKUJACA, ta sesja] Ponizszy "ogon" byl dawniej doklejany
@@ -3245,6 +3564,7 @@ static int wifiSkanujCentrale(diag::KandydatAp &wybrany) {
     const unsigned long startSkanu = millis();
     while ((znalezione = WiFi.scanComplete()) == WIFI_SCAN_RUNNING && millis() - startSkanu < SKAN_LIMIT_MS) {
       esp_task_wdt_reset();
+      obsluzBrzeczyk();   // [v1.2.1] alarm przywrocony po samoczynnym restarcie ma grac swoim rytmem takze tutaj
       delay(50);
     }
     esp_task_wdt_reset();
@@ -3311,8 +3631,66 @@ static void wifiRozpocznijLaczenie() {
   }
 }
 
+// [v1.2.1 RATUNEK] Kod przyczyny kazdego rozlaczenia WiFi. Wolane przez
+// rdzen z OSOBNEGO zadania (zdarzen sieci), dlatego tylko zapisuje dwie
+// zmienne - log wypisuje petla glowna (wifiZalogujRozlaczenia()). Te sama
+// postac funkcji ma wifiZdarzenieDiag() w centrali.
+static void wifiZdarzenie(WiFiEvent_t zdarzenie, WiFiEventInfo_t info) {
+  if (zdarzenie == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    wifiOstatniKodRozlaczenia = info.wifi_sta_disconnected.reason;
+    wifiLiczbaRozlaczen = wifiLiczbaRozlaczen + 1;
+  }
+}
+
+// Jedna linia na rozlaczenie (przy serii - najwyzej co 2 s, z liczba
+// pominietych w "nowych="). Kody: diag::nazwaKoduRozlaczenia(); np. 201 =
+// sieci centrali nie ma w eterze, 200 = centrala przestala nadawac, 8 = panel
+// rozlaczyl sie sam (WiFi.disconnect() przed kolejna proba).
+static void wifiZalogujRozlaczenia() {
+  static uint32_t zalogowano = 0;
+  static unsigned long ostatnioMs = 0;
+  const uint32_t lacznie = wifiLiczbaRozlaczen;
+  if (lacznie == zalogowano) return;
+  if (zalogowano != 0 && millis() - ostatnioMs < 2000UL) return;
+  ostatnioMs = millis();
+  const uint8_t kod = wifiOstatniKodRozlaczenia;
+  Serial.printf("tag=WIFI zdarzenie=rozlaczono kod=%u nazwa=%s nowych=%lu lacznie=%lu\n",
+                (unsigned)kod, diag::nazwaKoduRozlaczenia(kod),
+                (unsigned long)(lacznie - zalogowano), (unsigned long)lacznie);
+  zalogowano = lacznie;
+}
+
+// [v1.2.1 RATUNEK] WiFi zglasza polaczenie, a centrala od 12 s nie odpowiada
+// (patrz panelRatunekKrok()): rozlacz i polacz od nowa. Mozliwy powod takiego
+// stanu (PRZYPUSZCZENIE, niesprawdzone na plytce): centrala zrestartowala sie
+// na tyle szybko, ze panel nie zauwazyl przerwy w nadawaniu - uwaza
+// polaczenie za wazne, a centrala po restarcie juz go nie zna. Niezaleznie od
+// powodu: w tym stanie v1.1.0 i v1.2.0 nie probowaly niczego.
+// `bezBssid`: zapomnij zapamietany nadajnik i szukaj sieci centrali od nowa.
+static bool wifiWymuszenieTrwa = false;
+static unsigned long wifiWymuszenieMs = 0;
+static const uint32_t WIFI_WYMUSZENIE_CZAS_MS = 5000;   // tyle ma wymuszona proba, zanim wifiReconnectNonBlocking() zacznie wlasne
+
+void wifiWymusPolaczenie(bool bezBssid, uint8_t nr) {
+  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
+  char bssid[18];
+  diag::formatBssid(wifiOk ? WiFi.BSSID() : nullptr, bssid, sizeof(bssid));
+  Serial.printf("tag=WIFI lvl=WARN zdarzenie=wymuszam_polaczenie nr=%u szukam=%s bssid=%s kanal=%d rssi=%d bez_danych_s=%lu "
+                "msg=\"WiFi polaczone, a centrala nie odpowiada - lacze od nowa\"\n",
+                (unsigned)nr, bezBssid ? "od_nowa" : "ten_sam_bssid", bssid,
+                wifiOk ? (int)WiFi.channel() : 0, wifiOk ? (int)WiFi.RSSI() : 0,
+                (unsigned long)(panelRatunek.bezDanychMs / 1000UL));
+  if (bezBssid) rtcBssidZnany = false;
+  WiFi.disconnect(false);
+  WiFi.config(WIFI_IP_STATYCZNE, WIFI_GATEWAY, WIFI_MASKA);
+  wifiRozpocznijLaczenie();
+  wifiWymuszenieTrwa = true;
+  wifiWymuszenieMs = millis();
+}
+
 void polaczWifi() {
   WiFi.mode(WIFI_STA);
+  WiFi.onEvent(wifiZdarzenie);   // [v1.2.1 RATUNEK] kody rozlaczen do logu - polaczWifi() jest wolane raz, z setup()
 
   // [ETAP 3 KROK 2] Statyczne IP PRZED WiFi.begin() — glowna dzwignia
   // szybkosci (patrz komentarz przy definicji WIFI_IP_STATYCZNE wyzej).
@@ -3352,7 +3730,13 @@ void polaczWifi() {
     esp_task_wdt_reset();
     tft.fillRect(0, 150, 480, 20, KOL_TLO);
     tft.drawString("Laczenie z WiFi" , 240, 150);
-    delay(400);
+    // [v1.2.1] Jak w petli skanu wyzej: alarm sprzed samoczynnego restartu
+    // gra dalej. 8 x 50 ms zamiast jednego delay(400), bo fazy wzorca trwaja
+    // po 500 ms; bez alarmu obsluzBrzeczyk() wraca od razu.
+    for (int i = 0; i < 8; i++) {
+      obsluzBrzeczyk();
+      delay(50);
+    }
   }
   esp_task_wdt_reset();
 
@@ -3384,8 +3768,11 @@ void wifiReconnectNonBlocking() {
   static const uint8_t WIFI_PROB_Z_BSSID = 3;
   static uint8_t probyZBssid = 0;
 
+  wifiZalogujRozlaczenia();   // [v1.2.1 RATUNEK] kod przyczyny kazdego rozlaczenia
+
   if (WiFi.status() == WL_CONNECTED) {
     probyZBssid = 0;
+    wifiWymuszenieTrwa = false;
     if (!poprzednioPolaczony) {
       wifiZalogujPolaczenie("reconnect_ok"); // [v1.2.0] z BSSID - widac, czy to ta sama centrala co przedtem
 #if LVGL_POC_TEST
@@ -3409,6 +3796,14 @@ void wifiReconnectNonBlocking() {
     wifiOstatniaProbaReconnectMs = millis();
   }
   poprzednioPolaczony = false;
+
+  // [v1.2.1 RATUNEK] Laczenie zlecone przed chwila przez wifiWymusPolaczenie()
+  // ma WIFI_WYMUSZENIE_CZAS_MS na dokonczenie - proba ponizej zaczyna sie od
+  // WiFi.disconnect(), wiec przerwalaby je w polowie.
+  if (wifiWymuszenieTrwa) {
+    if (millis() - wifiWymuszenieMs < WIFI_WYMUSZENIE_CZAS_MS) return;
+    wifiWymuszenieTrwa = false;
+  }
 
   if (millis() - wifiOstatniaProbaReconnectMs < wifiOpoznienieReconnectMs) return;
   wifiOstatniaProbaReconnectMs = millis();
@@ -3749,11 +4144,13 @@ unsigned long ostatniStatus = 0, ostatnieUstawienia = 0;
 // a to dwie zupelnie rozne diagnozy — brownout to problem zasilania
 // (kondensator/bateria), task_wdt to zawieszony task (np. podczas OTA,
 // patrz Ustalenie #6). Dwa NORMALNE powody dla tego urzadzenia:
-// ESP_RST_DEEPSLEEP (budzenie przyciskiem/timerem) i ESP_RST_SW (JEDYNE
-// wywolanie ESP.restart() w tym pliku jest po udanym OTA panelu, patrz
-// sprawdzIWykonajOtaPanelu() nizej) — logika alarmujaca po stronie
-// centrali (main_centrala.cpp, handler /api/status) traktuje oba jako
-// nie wymagajace alertu.
+// ESP_RST_DEEPSLEEP (budzenie przyciskiem/timerem) i ESP_RST_SW
+// (ESP.restart() po udanym OTA panelu, patrz sprawdzIWykonajOtaPanelu()
+// nizej) — logika alarmujaca po stronie centrali (main_centrala.cpp,
+// handler /api/status) traktuje oba jako nie wymagajace alertu.
+// [v1.2.1] Drugie wywolanie ESP.restart() jest w panelAutorestart() (brak
+// danych z centrali) - taki restart panel zglasza centrali osobnym powodem
+// "auto_...", patrz autorestartOdczytajPrzyStarcie() nizej.
 const char* powodResetuTekst(esp_reset_reason_t r) {
   switch (r) {
     case ESP_RST_POWERON:   return "poweron";     // pelna utrata zasilania (bateria padla / wymieniona)
@@ -3768,6 +4165,66 @@ const char* powodResetuTekst(esp_reset_reason_t r) {
     case ESP_RST_SDIO:      return "sdio";
     default:                return "unknown";
   }
+}
+
+// [v1.2.1 RATUNEK] Wolane raz, na poczatku setup(). Sprawdza, czy ten start
+// nastapil po SAMOCZYNNYM restarcie (panelAutorestart()). Jesli tak, powod
+// zglaszany centrali w /api/status to nie "sw", tylko token z przyczyna, np.
+// "auto_milczy_r0_n1_t45_h61_b31_el0" (diag::tokenAutorestartu()) - centrala
+// wpisuje go do swojego logu (tag=RESET-DIAG zdarzenie=nietypowy_restart_panelu)
+// i wysyla o nim wiadomosc, tak jak o kazdym restarcie innym niz "sw" i
+// "deepsleep". Restart po udanym OTA zostaje "sw" (oczekuje == 0).
+// Centrala oglasza powod przy kazdej ZMIANIE zglaszanej wartosci, dlatego:
+// - token idzie tylko do pierwszej odpowiedzi centrali, potem panel wraca do
+//   "sw" (obslugaStatusFetch()) - inaczej centrala po WLASNYM restarcie
+//   oglaszalaby od nowa stary restart panelu;
+// - nie kazdy restart z serii jest zglaszany (diag::zglosicRestart()).
+void autorestartOdczytajPrzyStarcie(esp_reset_reason_t powod) {
+  if (!rtcAutorestart.wazna()) {
+    rtcAutorestart.wyczysc();   // po wlaczeniu zasilania w tej pamieci sa przypadkowe wartosci
+    return;
+  }
+  if (powod == ESP_RST_SW && rtcAutorestart.oczekuje) {
+    startPoAutorestarcie = true;
+    char token[diag::TOKEN_AUTORESTARTU_MAKS];
+    diag::tokenAutorestartu(token, sizeof(token), rtcAutorestart);
+    // Nie kazdy restart z serii jest zglaszany (diag::zglosicRestart()) -
+    // pominiety idzie do centrali jako zwykle "sw", ktorego ona nie oglasza.
+    autorestartDoZgloszenia = diag::zglosicRestart(rtcAutorestart.seria, rtcAutorestart.zgloszonyNr);
+    if (autorestartDoZgloszenia) globalnyPowodResetu = token;
+    Serial.printf("tag=PANEL lvl=WARN zdarzenie=start_po_autorestarcie nr_z_rzedu=%u w_serii=%u zgloszony_nr=%u lacznie=%u przyczyna=%s bez_danych_s=%u "
+                  "rozl_kod=%u rozl_nazwa=%s heap_kb=%u blok_kb=%u zglaszam_centrali=%s\n",
+                  (unsigned)rtcAutorestart.kolejnych, (unsigned)rtcAutorestart.seria, (unsigned)rtcAutorestart.zgloszonyNr,
+                  (unsigned)rtcAutorestart.lacznie,
+                  diag::przyczynaSkrot((diag::Przyczyna)rtcAutorestart.przyczyna), (unsigned)rtcAutorestart.bezDanychS,
+                  (unsigned)rtcAutorestart.kodRozlaczenia, diag::nazwaKoduRozlaczenia(rtcAutorestart.kodRozlaczenia),
+                  (unsigned)rtcAutorestart.heapKb, (unsigned)rtcAutorestart.blokKb, globalnyPowodResetu.c_str());
+  } else if (powod != ESP_RST_SW) {
+    rtcAutorestart.kolejnych = 0;   // restart z innego powodu (przycisk, watchdog, zasilanie) - licz od nowa
+  }
+  rtcAutorestart.oczekuje = 0;
+  rtcAutorestart.zapieczetuj();
+}
+
+// [v1.2.1 RATUNEK] Po samoczynnym restarcie: ostatni znany stan alarmow
+// (zapisany przez panelAutorestart()) wraca do `stan` i do brzeczyka, razem z
+// tym, czy uzytkownik go wyciszyl. Bez tego restart z braku danych w trakcie
+// alarmu po cichu wylaczalby dzwiek. Ekran alarmu przywraca osobno
+// lvgl_dashboard_poc_przywroc_alarm() - dopiero gdy LVGL jest juz zbudowany.
+// Pierwszy poprawny status z centrali i tak ustawia wszystko od nowa.
+void alarmPrzywrocPoAutorestarcie() {
+  if (!startPoAutorestarcie) return;
+  const uint8_t a = rtcAutorestart.alarmy;
+  stan.dymAlarm = diag::alarmyDym(a);
+  stan.alarmOgrzewanie = diag::alarmyOgrzewanie(a);
+  stan.alarmPanel = diag::alarmyPanel(a);
+  g_brzeczykWyciszony = diag::alarmyWyciszony(a);
+  g_brzeczykWyciszonyTyp = (BrzeczykAlarmTyp)diag::alarmyWyciszonyTyp(a);
+  if (!diag::alarmyJakikolwiek(a)) return;
+  Serial.printf("tag=PANEL lvl=WARN zdarzenie=alarm_sprzed_restartu dym=%d ogrzewanie=%d panel=%d wyciszony=%d "
+                "msg=\"ostatni znany stan alarmu - obowiazuje do pierwszych danych z centrali\"\n",
+                (int)stan.dymAlarm, (int)stan.alarmOgrzewanie, (int)stan.alarmPanel, (int)g_brzeczykWyciszony);
+  brzeczykOdswiezZAlarmow(stan.dymAlarm, stan.alarmOgrzewanie, stan.alarmPanel);
 }
 
 void setup() {
@@ -3799,6 +4256,7 @@ void setup() {
   // to czysty odczyt stanu chipu, nic od niczego innego nie zalezy, a
   // chcemy znac powod restartu nawet gdyby cos ponizej samo padlo.
   globalnyPowodResetu = powodResetuTekst(esp_reset_reason());
+  autorestartOdczytajPrzyStarcie(esp_reset_reason());   // [v1.2.1 RATUNEK] po samoczynnym restarcie: "auto_..." zamiast "sw"
   Serial.printf("tag=RESET-DIAG zdarzenie=start powod=%s\n", globalnyPowodResetu.c_str());
   if (globalnyPowodResetu != "deepsleep") {
     // Jedyny NORMALNY powod dla tego urzadzenia to wybudzenie z deep
@@ -3878,6 +4336,7 @@ void setup() {
   // rejestracji callbackow WYSWIETLACZ, tu nie ma niczego do zarejestrowania
   // osobno w kazdej galezi.
   brzeczykZainicjuj();
+  alarmPrzywrocPoAutorestarcie();   // [v1.2.1 RATUNEK] alarm trwajacy przed samoczynnym restartem gra dalej
 
   // [FIX - dotyk nie dzialal w LVGL_POC_TEST] Kalibracja MUSI byc zrobiona
   // przed uzyciem dotykOdczytaj() (ktorego uzywa lvgl_touch_read() w
@@ -3981,6 +4440,13 @@ void setup() {
   lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(jasnoscDziennaWartosc, jasnoscNocnaWartosc,
                                                          godzinaStartPrzyciemnienia, godzinaKoniecPrzyciemnienia,
                                                          harmonogramWlaczonyWartosc);
+  // [v1.2.1 RATUNEK] Po samoczynnym restarcie w trakcie alarmu: ekran alarmu
+  // (albo dzwonek w naglowku, jesli byl zamkniety) i czerwone ramki kafelkow
+  // wracaja, zanim przyjda pierwsze dane.
+  if (startPoAutorestarcie && diag::alarmyJakikolwiek(rtcAutorestart.alarmy)) {
+    lvgl_dashboard_poc_przywroc_alarm(stan.dymAlarm, stan.alarmOgrzewanie, stan.alarmPanel,
+                                      diag::alarmyOdrzucony(rtcAutorestart.alarmy));
+  }
 
   polaczWifi();
   pobierzStatus();
@@ -4127,6 +4593,9 @@ void loop() {
   if (straznikSwiezosci.wlasniePrzeterminowane(swiezoscStatusu.saNieaktualne(PROG_NIEAKTUALNYCH_DANYCH_MS))) {
     panelOznaczDaneJakoNieaktualne();
   }
+  // [v1.2.1 RATUNEK] Dluzej bez danych: ponowne polaczenie z siecia centrali,
+  // a gdy to nie pomaga - restart panelu. Patrz panelRatunekKrok().
+  panelRatunekKrok();
   // [v1.2.0 DIAG] Jedna linia "tag=PANEL" co 30 s - patrz panelDiagOkresowo().
   panelDiagOkresowo();
 
@@ -4167,6 +4636,7 @@ void loop() {
   if (straznikSwiezosci.wlasniePrzeterminowane(swiezoscStatusu.saNieaktualne(PROG_NIEAKTUALNYCH_DANYCH_MS))) {
     panelOznaczDaneJakoNieaktualne();
   }
+  panelRatunekKrok();   // [v1.2.1 RATUNEK] jak w galezi LVGL wyzej
   panelDiagOkresowo();
 
   // [ETAP 3b] Brak interakcji przez ACTIVITY_TIMEOUT_MS -> usypiamy, CHYBA

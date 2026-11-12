@@ -20,6 +20,28 @@ typedef enum { WIFI_CONNECT_AP_BY_SIGNAL = 0, WIFI_CONNECT_AP_BY_SECURITY } wifi
 #define WIFI_SCAN_RUNNING (-1)
 #define WIFI_SCAN_FAILED (-2)
 
+// Zdarzenia sieci - tylko to, czego uzywa firmware (kod przyczyny rozlaczenia).
+// Nazwy typow i pol jak w arduino-esp32 3.x / ESP-IDF.
+typedef enum {
+  ARDUINO_EVENT_NONE = 0,
+  ARDUINO_EVENT_WIFI_STA_CONNECTED,
+  ARDUINO_EVENT_WIFI_STA_DISCONNECTED,
+  ARDUINO_EVENT_WIFI_STA_GOT_IP,
+  ARDUINO_EVENT_MAX
+} arduino_event_id_t;
+typedef struct {
+  uint8_t ssid[32];
+  uint8_t ssid_len;
+  uint8_t bssid[6];
+  uint8_t reason;
+  int8_t rssi;
+} wifi_event_sta_disconnected_t;
+typedef union {
+  wifi_event_sta_disconnected_t wifi_sta_disconnected;
+} arduino_event_info_t;
+typedef arduino_event_id_t WiFiEvent_t;
+typedef arduino_event_info_t WiFiEventInfo_t;
+
 class AtrapaWiFi {
  public:
   bool mode(wifi_mode_t) { return true; }
@@ -31,6 +53,8 @@ class AtrapaWiFi {
   wl_status_t begin(const char* ssid, const char* haslo = nullptr, int32_t kanal = 0, const uint8_t* bssid = nullptr, bool lacz = true);
   bool disconnect(bool wylaczRadio = false, bool wymazAp = false);
   wl_status_t status();
+  typedef void (*FunkcjaZdarzenia)(arduino_event_id_t, arduino_event_info_t);
+  int onEvent(FunkcjaZdarzenia f);   // w rdzeniu: std::function + opcjonalny numer zdarzenia
 
   int16_t scanNetworks(bool async = false, bool ukryte = false, bool pasywny = false, uint32_t msNaKanal = 300, uint8_t kanal = 0,
                        const char* ssid = nullptr, const uint8_t* bssid = nullptr);
