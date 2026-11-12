@@ -6,6 +6,7 @@
 #   ./uruchom_testy.sh --szybko        tylko testy jednostkowe (sam g++, 1 s)
 #   ./uruchom_testy.sh dwie_centrale   jeden scenariusz symulatora, z logiem
 #   SANITIZER=1 ./uruchom_testy.sh     to samo z AddressSanitizer + UBSan (wolniej)
+#   TYLKO='^ota_' ./uruchom_testy.sh   tylko scenariusze, ktorych nazwa pasuje do wzorca (grep -E)
 #
 # Porownanie ze STARSZA wersja firmware'u (bez oceniania, same obserwacje):
 #   mkdir -p /tmp/stary && unzip -q "../../LCD Centrali.zip" -d /tmp/stary   # v1.1.0
@@ -101,7 +102,7 @@ if [ -n "${1:-}" ]; then
   exit $?
 fi
 NIEZALICZONE=0
-for scenariusz in $("$BUD/symulator_panelu" --lista); do
+for scenariusz in $("$BUD/symulator_panelu" --lista | { grep -E -- "${TYLKO:-.}" || true; }); do
   "$BUD/symulator_panelu" "$scenariusz" "${OPCJE[@]}" || NIEZALICZONE=$((NIEZALICZONE + 1))
 done
 if [ "$OBSERWACJE" = "1" ]; then

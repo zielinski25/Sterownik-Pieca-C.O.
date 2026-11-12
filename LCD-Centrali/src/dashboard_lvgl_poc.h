@@ -2,6 +2,9 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.4.0 Dodano: lvgl_dashboard_poc_ota(), ..._ota_widoczna() i
+//   ..._bez_dotyku_ms() - nakladka "AKTUALIZACJA PANELU" i czas od ostatniego
+//   dotyku ([v1.4.0 OTA]). Pelny opis: HISTORIA ZMIAN w main.cpp.
 // [2026-11-12] v1.3.0 Zmieniono: most ekranu Wykresy ([v1.3.0 WYKRESY]).
 //   WykresyFetchCb dostaje zakres (LVGL_WYKRESY_TRYB_*) zamiast bool;
 //   lvgl_dashboard_poc_wykresy_strumien_koniec() dostaje wynik pobierania
@@ -307,6 +310,21 @@ void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik);
 //    wszystko od nowa (lvgl_dashboard_poc_aktualizuj()).
 int  lvgl_dashboard_poc_alarm_odrzucony();
 void lvgl_dashboard_poc_przywroc_alarm(bool dymAlarm, bool alarmOgrzewanie, bool alarmPanel, int odrzuconyPoziom);
+
+// [v1.4.0 OTA] Nakladka "AKTUALIZACJA PANELU" na wierzchu kazdego ekranu
+// (warstwa lv_layer_top()): zaslania ekran i przejmuje dotyk na czas
+// pobierania nowego firmware'u z centrali. Ekrany pod spodem zostaja takie,
+// jakie byly - po schowaniu nakladki panel jest tam, gdzie byl.
+//   procent 0..100: pokaz albo odswiez (pasek postepu, `opis` nad nim;
+//                   opis == nullptr zostawia poprzedni tekst),
+//   procent < 0:    schowaj i zwolnij pamiec nakladki.
+// Do v1.3.0 pobieranie zatrzymywalo petle i ekran byl przez ten czas pusty.
+void lvgl_dashboard_poc_ota(int procent, const char *opis);
+// [v1.4.0 OTA] true = nakladka jest teraz na ekranie.
+bool lvgl_dashboard_poc_ota_widoczna();
+// [v1.4.0 OTA] Ile milisekund temu ktos ostatnio dotknal ekranu (panel nie
+// zaczyna aktualizacji, gdy ktos wlasnie go uzywa).
+uint32_t lvgl_dashboard_poc_bez_dotyku_ms();
 
 // Generyczny callback dla 5 pol numerycznych - dokladnie ten sam ksztalt co
 // ServoUstawieniaCb powyzej (main.cpp rejestruje funkcje ktora PO PROSTU

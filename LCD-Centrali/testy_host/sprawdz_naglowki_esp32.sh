@@ -30,6 +30,8 @@
 #   SRC=/katalog PLIKI="a.cpp b.cpp" ./sprawdz_naglowki_esp32.sh   inne pliki z katalogu SRC
 #       (tak sprawdzany jest fragment firmware'u centrali - patrz
 #        firmware-patch/v3.58.5-panel-wykresy-po-restarcie/tests/sprawdz_naglowki_esp32.sh)
+#   DODATKOWE_I="-I/katalog/biblioteki/src ..." ./sprawdz_naglowki_esp32.sh   dodatkowe katalogi naglowkow
+#       (paczka centrali 3.58.6 podaje tak ESPAsyncWebServer i AsyncTCP)
 #   OSTRZEZENIA=1 ./sprawdz_naglowki_esp32.sh    dodatkowo liczy ostrzezenia clang
 #       (-Wall -Wextra -Wformat=2 -Wshadow) w plikach z katalogu SRC i pokazuje pierwsze z nich.
 #       Wynik skryptu zalezy nadal tylko od bledow: ostrzezenia clang to nie ostrzezenia GCC.
@@ -127,7 +129,7 @@ for plik in ${PLIKI:-main.cpp dashboard_lvgl_poc.cpp lvgl_port.cpp}; do
       -DARDUINO_PARTITION_default -DESP32 -DCORE_DEBUG_LEVEL=0 -DARDUINO_RUNNING_CORE=1 -DARDUINO_EVENT_RUNNING_CORE=1 \
       -DARDUINO_USB_CDC_ON_BOOT=0 -DARDUINOJSON_ENABLE_STD_STREAM=0 $PIO $ZASTEPCZE \
       -iprefix "$L/include/" $(cat "$L/flags/includes") -I"$L/dio_qspi/include" \
-      -I"$R/cores/esp32" -I"$R/variants/esp32" $BIBLIOTEKI \
+      -I"$R/cores/esp32" -I"$R/variants/esp32" $BIBLIOTEKI ${DODATKOWE_I:-} \
       -I"$INCLUDE" -I"$SRC" -I"$K/atrapa_hasel" -I"$K/TFT_eSPI" -I"$K/ArduinoJson/src" -I"$K/lvgl" -I"$K/lvgl/src" \
       "$SRC/$plik" > "$WYNIK" 2>&1; then
     echo "    $plik: bez bledow"

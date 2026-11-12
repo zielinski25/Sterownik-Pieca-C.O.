@@ -134,6 +134,21 @@ struct Atrapa {
   int otaStanPartycji = 2;            // esp_ota_get_state_partition(): 2 = VALID, 1 = PENDING_VERIFY (pierwszy start po OTA), -1 = wgrane przez USB
   int otaPotwierdzenPartycji = 0;     // ile razy firmware wolal esp_ota_mark_app_valid_cancel_rollback()
 
+  // --- aktualizacja OTA od firmware'u v1.4.0 (Update.h, esp_partition_get_sha256()) ---
+  // Pola wyzej (httpUpdate) zostaja dla starszych zrodel (SRC=...); v1.4.0 ich nie uzywa.
+  uint8_t otaSumaWlasna[32];          // suma SHA-256 programu, z ktorego "plytka" pracuje (konstruktor: a1 a2 a3 ...)
+  bool otaSumaBlad = false;           // true: sumy wlasnego programu nie da sie odczytac
+  size_t otaPartycjaB = 0x1F0000;     // rozmiar partycji na nowy program (partitions.csv: app1)
+  bool otaBeginBezPamieci = false;    // Update.begin() nie dostaje pamieci na bufor
+  long otaBladZapisuPo = -1;          // >= 0: Update.write() zawodzi po tylu zapisanych bajtach
+  unsigned long otaMsNaSektor = 15;   // czas plytki na kazdy zapisany sektor 4096 B (kasowanie + zapis)
+  std::vector<uint8_t> otaZapisane;   // to, co firmware oddal do Update.write()
+  int otaBeginWywolan = 0;            // ile razy firmware zaczynal zapis (Update.begin())
+  int otaUruchomiono = 0;             // ile razy Update.end() ustawil nowy program jako startowy
+  int otaPorzucono = 0;               // ile razy rozpoczety zapis zostal porzucony (abort albo blad)
+  bool nvsZapisOdmawia = false;       // Preferences::putBytes() zwraca 0 (NVS pelne albo uszkodzone)
+  int nvsZapisowBinarnych = 0;        // udane putBytes()
+
   Atrapa();
   const AtrapaAp* polaczonyAp() const;   // AP, z ktorym "radio" jest teraz polaczone (albo nullptr)
   // true = centrala za tym AP zna panel (nie restartowala sie od chwili polaczenia).

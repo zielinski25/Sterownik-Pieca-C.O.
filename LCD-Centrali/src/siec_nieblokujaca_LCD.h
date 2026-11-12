@@ -36,6 +36,12 @@
 //     galezie main.cpp (LVGLPOCTEST=1 i tryb bez LVGL) oraz obsluge
 //     POST-ow z touch handlerow.
 //
+// [2026-11-12] v1.4.0 Dodano: StrumienHttpGet::startBinarnie() - tresc odpowiedzi
+//   jako surowe bajty, z limitami czasu podanymi przez wolajacego - i instancja
+//   otaFetch (pobieranie nowego firmware'u panelu, /panel-ota.bin). Adres
+//   zapytania moze miec do 111 znakow (bylo 63); za dlugi jest odrzucany, a nie
+//   obcinany. Log [NET-DIAG] nie pokazuje wartosci parametru token= (haslo
+//   OTA): siecSciezkaDoLogu(). NonBlockingHttp bez zmian.
 // [2026-11-12] v1.3.0 Dodano: klasa StrumienHttpGet i instancja wykresyFetch
 //   - pobieranie historii dla ekranu Wykresy linia po linii, bez blokowania
 //   petli i bez gromadzenia odpowiedzi w RAM (opis przy klasie). Zastepuje
@@ -95,12 +101,36 @@ namespace SiecCfg {
 // LOG DIAGNOSTYCZNY - ten sam styl co tagWIFI-DIAG w projekcie centrali,
 // zeby dalo sie porownywac znaczniki czasu obu urzadzen w Serialu.
 // =======================================================================
+// [v1.4.0 OTA] Adres zapytania w postaci do logu: wartosc parametru token=
+// (haslo OTA w adresie "/panel-ota.bin?token=...") zastapiona gwiazdkami.
+// Reszta adresu bez zmian; za dlugi adres jest obcinany do rozmiaru bufora.
+inline void siecSciezkaDoLogu(const char* sciezka, char* wyjscie, size_t n) {
+    if (wyjscie == nullptr || n == 0) return;
+    static const char ZAMIENNIK[] = "token=***";
+    const char* p = (sciezka != nullptr) ? sciezka : "";
+    const char* poczatek = p;
+    size_t w = 0;
+    while (*p != '\0' && w + 1 < n) {
+        const bool poczatekParametru = (p != poczatek) && (p[-1] == '?' || p[-1] == '&');
+        if (poczatekParametru && strncmp(p, "token=", 6) == 0) {
+            for (const char* z = ZAMIENNIK; *z != '\0' && w + 1 < n; z++) wyjscie[w++] = *z;
+            p += 6;
+            while (*p != '\0' && *p != '&') p++;
+            continue;
+        }
+        wyjscie[w++] = *p++;
+    }
+    wyjscie[w] = '\0';
+}
+
 // `poziom`: najnizszy SiecCfg::POZIOM_LOGU, przy ktorym wpis sie pojawia
 // (0 = blad, zawsze; 1 = wolne zadanie; 2 = zwykly przebieg zadania).
 inline void siecDiagLog(const char* etap, const char* sciezka, const char* info = "", uint8_t poziom = 2) {
     if (poziom > SiecCfg::POZIOM_LOGU) return;
+    char bezHasla[200];   // najdluzszy adres panelu (/api/status z parametrami OTA) ma 164 znaki
+    siecSciezkaDoLogu(sciezka, bezHasla, sizeof(bezHasla));
     Serial.printf("[NET-DIAG] etap=%s sciezka=%s info=%s ms=%lu\n",
-                  etap, sciezka, info, (unsigned long)millis());
+                  etap, bezHasla, info, (unsigned long)millis());
 }
 
 // [v1.2.1] Nazwa numeru bledu gniazda (errno / SO_ERROR) do logu. Same numery
@@ -499,6 +529,12 @@ private:
 // Zapytanie idzie jako HTTP/1.0 + "Connection: close" (jak w NonBlockingHttp):
 // serwer nie uzywa wtedy "Transfer-Encoding: chunked", a koniec danych to
 // zamkniecie polaczenia albo odebranie Content-Length bajtow.
+//
+// [v1.4.0 OTA] Drugi tryb, startBinarnie(): tresc odpowiedzi idzie do
+// odbiorcy jako surowe bajty (plik), z limitami czasu podanymi przez
+// wolajacego. Tak panel pobiera od centrali nowy firmware
+// (/panel-ota.bin) - bez zatrzymywania petli, wiec ekran, odpytywanie
+// /api/status i watchdog pracuja przez cale pobieranie.
 // =======================================================================
 namespace SiecCfg {
     static const uint32_t STRUMIEN_CONNECT_TIMEOUT_MS   = 1500;   // limit fazy laczenia
@@ -522,57 +558,29 @@ enum class StrumienStan : uint8_t {
 class StrumienHttpGet {
 public:
     typedef void (*OdbiorcaLinii)(const char* linia);
+    // [v1.4.0 OTA] Kawalek tresci binarnej. Odbiorcy NIE WOLNO wolac przerwij()
+    // ani start...() tego samego obiektu - ma tylko zapamietac, ze chce
+    // przerwac; wolajacy robi to po powrocie z poll().
+    typedef void (*OdbiorcaBajtow)(const uint8_t* dane, size_t n);
 
     // Startuje GET. Trwajace zadanie jest porzucane. `odbiorca` dostaje kazda
     // linie tresci (bez znaku konca linii) - tylko gdy kod HTTP to 200.
     bool start(const char* sciezka, OdbiorcaLinii odbiorca) {
-        przerwij();
-        odbiorca_ = odbiorca;
-        snprintf(sciezka_, sizeof(sciezka_), "%s", sciezka ? sciezka : "/");
-        blad_ = "";
-        etapBledu_ = '-';
-        numerBledu_ = 0;
-        kodHttp_ = 0;
-        dlugosc_ = -1;
-        bajtowCiala_ = 0;
-        liniiCiala_ = 0;
-        zaDlugich_ = 0;
-        liniaDl_ = 0;
-        liniaUcieta_ = false;
-        pierwszaLinia_ = true;
-        startMs_ = millis();
-        krokMs_ = startMs_;
-        koniecMs_ = startMs_;
+        return startWewn(sciezka, odbiorca, nullptr, SiecCfg::STRUMIEN_CISZA_TIMEOUT_MS, SiecCfg::STRUMIEN_CALKOWITY_TIMEOUT_MS);
+    }
 
-        sock_ = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock_ < 0) {
-            sock_ = -1;
-            ustawBlad("socket() nieudane", 'g', errno);
-            return false;
-        }
-        int flags = fcntl(sock_, F_GETFL, 0);
-        fcntl(sock_, F_SETFL, flags | O_NONBLOCK);
-
-        struct sockaddr_in adres;
-        memset(&adres, 0, sizeof(adres));
-        adres.sin_family = AF_INET;
-        adres.sin_port = htons(SiecCfg::PORT);
-        adres.sin_addr.s_addr = inet_addr(SiecCfg::HOST);
-        int r = connect(sock_, (struct sockaddr*)&adres, sizeof(adres));
-        if (r < 0 && errno != EINPROGRESS) {
-            ustawBlad("connect() natychmiastowy blad", 'n', errno);
-            return false;
-        }
-        stan_ = StrumienStan::CONNECTING;
-        siecDiagLog("start", sciezka_, "GET strumien");
-        return true;
+    // [v1.4.0 OTA] Startuje GET pliku. `odbiorca` dostaje tresc kawalkami, w
+    // kolejnosci, tylko gdy kod HTTP to 200 i najwyzej tyle bajtow, ile
+    // centrala zapowiedziala w Content-Length.
+    bool startBinarnie(const char* sciezka, OdbiorcaBajtow odbiorca, uint32_t limitCiszyMs, uint32_t limitCalosciMs) {
+        return startWewn(sciezka, nullptr, odbiorca, limitCiszyMs, limitCalosciMs);
     }
 
     // Wywolywane w kazdym obrocie loop(). Nie czeka na nic.
     void poll() {
         if (!wTrakcie()) return;
         const unsigned long teraz = millis();
-        if (teraz - startMs_ > SiecCfg::STRUMIEN_CALKOWITY_TIMEOUT_MS) {
+        if (teraz - startMs_ > limitCalosciMs_) {
             ustawBlad("limit czasu calosci", 'c');
             return;
         }
@@ -595,7 +603,7 @@ public:
                 ustawBlad("connect() blad asynchroniczny", 'a', soErr);
                 return;
             }
-            char zadanie[160];
+            char zadanie[176];   // sciezka do 111 znakow + ok. 55 znakow reszty zapytania
             const int dl = snprintf(zadanie, sizeof(zadanie), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
                                     sciezka_, SiecCfg::HOST);
             if (dl <= 0 || dl >= (int)sizeof(zadanie)) {
@@ -637,7 +645,7 @@ public:
                 return;
             }
         }
-        if (wTymObrocie == 0 && teraz - krokMs_ > SiecCfg::STRUMIEN_CISZA_TIMEOUT_MS) {
+        if (wTymObrocie == 0 && teraz - krokMs_ > limitCiszyMs_) {
             if (stan_ == StrumienStan::NAGLOWKI) ustawBlad("centrala nie odpowiedziala na zapytanie", 'h');
             else ustawBlad("centrala przestala wysylac w trakcie", 'p');
         }
@@ -699,6 +707,58 @@ public:
     const char* ostatniBlad() const { return blad_; }
 
 private:
+    bool startWewn(const char* sciezka, OdbiorcaLinii odbiorcaLinii, OdbiorcaBajtow odbiorcaBajtow,
+                   uint32_t limitCiszyMs, uint32_t limitCalosciMs) {
+        przerwij();
+        odbiorca_ = odbiorcaLinii;
+        odbiorcaBajtow_ = odbiorcaBajtow;
+        limitCiszyMs_ = limitCiszyMs;
+        limitCalosciMs_ = limitCalosciMs;
+        const int dlSciezki = snprintf(sciezka_, sizeof(sciezka_), "%s", sciezka ? sciezka : "/");
+        blad_ = "";
+        etapBledu_ = '-';
+        numerBledu_ = 0;
+        kodHttp_ = 0;
+        dlugosc_ = -1;
+        bajtowCiala_ = 0;
+        liniiCiala_ = 0;
+        zaDlugich_ = 0;
+        liniaDl_ = 0;
+        liniaUcieta_ = false;
+        pierwszaLinia_ = true;
+        startMs_ = millis();
+        krokMs_ = startMs_;
+        koniecMs_ = startMs_;
+        if (dlSciezki < 0 || dlSciezki >= (int)sizeof(sciezka_)) {
+            // Obciety adres trafilby do centrali jako inne zapytanie - lepiej nie wysylac nic.
+            ustawBlad("za dlugi adres zapytania", 's');
+            return false;
+        }
+
+        sock_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock_ < 0) {
+            sock_ = -1;
+            ustawBlad("socket() nieudane", 'g', errno);
+            return false;
+        }
+        int flags = fcntl(sock_, F_GETFL, 0);
+        fcntl(sock_, F_SETFL, flags | O_NONBLOCK);
+
+        struct sockaddr_in adres;
+        memset(&adres, 0, sizeof(adres));
+        adres.sin_family = AF_INET;
+        adres.sin_port = htons(SiecCfg::PORT);
+        adres.sin_addr.s_addr = inet_addr(SiecCfg::HOST);
+        int r = connect(sock_, (struct sockaddr*)&adres, sizeof(adres));
+        if (r < 0 && errno != EINPROGRESS) {
+            ustawBlad("connect() natychmiastowy blad", 'n', errno);
+            return false;
+        }
+        stan_ = StrumienStan::CONNECTING;
+        siecDiagLog("start", sciezka_, odbiorcaBajtow_ != nullptr ? "GET plik" : "GET strumien");
+        return true;
+    }
+
     void ustawBlad(const char* powod, char etap, int numerBledu = 0) {
         blad_ = powod;
         etapBledu_ = etap;
@@ -710,6 +770,21 @@ private:
         koniecMs_ = millis();
         stan_ = StrumienStan::ERROR_;
         siecDiagLog("blad", sciezka_, powod, 0);
+    }
+
+    // [v1.4.0 OTA] Tresc binarna: caly kawalek naraz, bez szukania linii.
+    void oddajBajty(const char* dane, size_t n) {
+        size_t ile = n;
+        if (dlugosc_ >= 0) {
+            const long zostalo = dlugosc_ - (long)bajtowCiala_;
+            if (zostalo <= 0) ile = 0;
+            else if ((long)ile > zostalo) ile = (size_t)zostalo;   // to, co ponad zapowiedziana dlugosc, przepada
+        }
+        if (ile > 0) {
+            bajtowCiala_ += (uint32_t)ile;
+            if (kodHttp_ == 200) odbiorcaBajtow_((const uint8_t*)dane, ile);
+        }
+        if (dlugosc_ >= 0 && (long)bajtowCiala_ >= dlugosc_) zakoncz();
     }
 
     void zakoncz() {
@@ -794,6 +869,10 @@ private:
 
     void przetworz(const char* dane, size_t n) {
         for (size_t i = 0; i < n; i++) {
+            if (stan_ == StrumienStan::CIALO && odbiorcaBajtow_ != nullptr) {
+                oddajBajty(dane + i, n - i);   // [v1.4.0 OTA] reszta kawalka to tresc pliku
+                return;
+            }
             const char c = dane[i];
             if (stan_ == StrumienStan::CIALO) bajtowCiala_++;
             if (c == '\n') {
@@ -818,6 +897,9 @@ private:
     StrumienStan stan_ = StrumienStan::IDLE;
     int sock_ = -1;
     OdbiorcaLinii odbiorca_ = nullptr;
+    OdbiorcaBajtow odbiorcaBajtow_ = nullptr;   // [v1.4.0 OTA] ustawiony = tryb binarny
+    uint32_t limitCiszyMs_ = SiecCfg::STRUMIEN_CISZA_TIMEOUT_MS;
+    uint32_t limitCalosciMs_ = SiecCfg::STRUMIEN_CALKOWITY_TIMEOUT_MS;
     const char* blad_ = "";
     char etapBledu_ = '-';
     int numerBledu_ = 0;
@@ -832,7 +914,7 @@ private:
     unsigned long startMs_ = 0;
     unsigned long krokMs_ = 0;
     unsigned long koniecMs_ = 0;
-    char sciezka_[64];
+    char sciezka_[112];   // [v1.4.0 OTA] bylo 64; "/panel-ota.bin?token=" + haslo zakodowane do adresu (do 90 znakow)
     char linia_[SiecCfg::STRUMIEN_LINIA_MAX];
 };
 
@@ -845,6 +927,7 @@ extern NonBlockingHttp statusFetch;      // GET /api/status
 extern NonBlockingHttp ustawieniaFetch;  // GET /api/ustawienia-get
 extern NonBlockingHttp komendaFetch;     // POST z dotkniecia (pompa/servo/ustawienia-set)
 extern StrumienHttpGet wykresyFetch;     // [v1.3.0] GET historii dla ekranu Wykresy, linia po linii
+extern StrumienHttpGet otaFetch;         // [v1.4.0] GET nowego firmware'u panelu (/panel-ota.bin), tresc binarna
 
 extern WskaznikSwiezosci swiezoscStatusu;
 extern WskaznikSwiezosci swiezoscUstawien;

@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.3.0
+# Panel LCD (wyświetlacz CO) — firmware v1.4.0
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip`.
@@ -16,11 +16,151 @@ centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip`.
    `platformio.ini` i `partitions.csv` są takie same jak w v1.1.0;
    `include/lv_conf.h` zmienił się w v1.2.2 (obsługa błędu biblioteki ekranu).
 
-**Z v1.2.2 na v1.3.0** zmieniają się cztery pliki w `src/`: `main.cpp`,
-`dashboard_lvgl_poc.cpp`, `dashboard_lvgl_poc.h`, `siec_nieblokujaca_LCD.h`.
+**Z v1.3.0 na v1.4.0** zmienia się pięć plików w `src/`: `main.cpp`,
+`diagnostyka_panelu.h`, `siec_nieblokujaca_LCD.h`, `dashboard_lvgl_poc.cpp`,
+`dashboard_lvgl_poc.h`. Z v1.2.2 (ta wersja jest na płytce) — te same pięć.
 Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 
+**v1.4.0 trzeba wgrać kablem.** Firmware na płytce (v1.2.2) ma stary kod
+aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
+
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.4.0
+
+**Aktualizacja panelu przez centralę (Telegram `/update_panel`): w trakcie
+pracy, z postępem na ekranie, bez wgrywania tego samego pliku w kółko.**
+
+Powód: raport `RAPORT_OTA_PANELU_PRZEZ_CENTRALE.md` (katalog główny
+repozytorium) i odpowiedź „Działaj”. Do kompletu jest firmware centrali
+**3.58.6** (`firmware-patch/v3.58.6-panel-ota/`).
+
+| | do v1.3.0 | v1.4.0 |
+|---|---|---|
+| Kiedy panel zaczyna | tylko przy starcie — pracujący panel trzeba było wyłączyć i włączyć | sam, w trakcie pracy, zwykle w ciągu minuty od `/update_panel` |
+| Ekran w trakcie | pusty | napis `AKTUALIZACJA PANELU`, pasek postępu, procenty |
+| Alarm | panel zaczynał także w czasie alarmu, a w trakcie pobierania nie pytał centrali o nic | w czasie alarmu nie zaczyna; alarm w trakcie przerywa pobieranie przy pierwszej odpowiedzi centrali |
+| Ten sam plik drugi raz | przy każdym starcie, gdy tag wydania różnił się od wersji panelu | nigdy — panel pamięta, co wgrał |
+| Nieudane pobieranie | panel stał do końca limitu czasu biblioteki | trzy próby, potem panel zgłasza centrali odmowę z przyczyną i pracuje dalej |
+| Wynik | centrala poznawała go tylko po numerze wersji | panel zgłasza: który program działa, czego nie wgra i dlaczego, na co czeka |
+
+Zrzut z testu na PC (nie zdjęcie płytki): `ekran_aktualizacja.png`.
+
+### Jak to działa
+
+1. Panel zna **identyfikator programu, z którego pracuje**: początek sumy
+   SHA-256, którą narzędzie budujące dopisuje na końcu każdego programu ESP32.
+   Podaje go centrali w każdym zapytaniu o status.
+2. Centrala 3.58.6 podaje identyfikator pliku, który ma dla panelu. Równe —
+   nie ma czego wgrywać. Różne — panel zaczyna, gdy może.
+3. Panel zaczyna, gdy **wszystko** z tej listy jest spełnione:
+   - nie ma alarmu i dane z centrali są świeże,
+   - minęło 20 s od startu panelu,
+   - nikt nie dotykał ekranu od 15 s,
+   - nie trwa pobieranie wykresu ani wysyłanie polecenia,
+   - wolnego RAM-u jest co najmniej 30 kB (z otwartym ekranem Wykresy jest
+     mniej — trzeba z niego wyjść),
+   - bateria ma co najmniej 30 %, gdy panel nie jest zasilany z USB,
+   - od poprzedniej próby minęło 30 s.
+   Czego brakuje, panel mówi centrali, a ona po 5 minutach pisze to
+   w Telegramie.
+4. Pobieranie nie zatrzymuje panelu: do 4 kB na obrót pętli, prosto do pamięci
+   programu. Panel dalej pyta centralę o status, watchdog pilnuje pętli.
+5. Przed uruchomieniem nowego programu panel sprawdza: nagłówek pliku
+   (program dla ESP32, nie dla ESP32-S3 centrali), rozmiar, identyfikator
+   równy temu z oferty, a na końcu cały obraz (suma kontrolna i SHA-256 —
+   robi to ESP-IDF).
+6. Restart. Nowy program jest zatwierdzany dopiero po narysowaniu ekranu
+   i pierwszym odpytaniu centrali. Gdyby nie wstał, bootloader wraca do
+   poprzedniego; panel to rozpoznaje (działa inny program niż wgrany), zgłasza
+   centrali odmowę `cofnieta` i tej oferty więcej nie próbuje.
+
+Co panel pamięta (pamięć trwała NVS, przestrzeń `otapanel`): którą ofertę
+widział ostatnio, ile razy zaczynał ją pobierać, czy plik wgrał, czy nowy
+program wystartował. Jedna oferta to najwyżej **3 próby**. Próba przerwana
+alarmem albo wycofaniem oferty się nie liczy.
+
+### Co wgrać
+
+1. **Panel:** te źródła, **kablem** (`secrets.h` bez zmian).
+2. **Centrala:** `firmware-patch/v3.58.6-panel-ota/` — zmienia się jeden
+   plik, `src/main_centrala.cpp`; instrukcja w `CZYTAJ-NAJPIERW.txt` tej
+   paczki. Plik pasuje do projektu z wersją 3.58.3, 3.58.4 albo 3.58.5.
+
+Kolejność jest dowolna. Zwykła praca panelu (kafelki, wykresy, alarmy) nie
+zależy od wersji centrali.
+
+### Ze starszą centralą (do 3.58.5)
+
+Panel v1.4.0 aktualizuje się tak samo — sam, w trakcie pracy, nie w czasie
+alarmu, **raz na tag wydania**. Taka centrala nie umie jednak tego
+potwierdzić (porównuje numer wersji z tagiem wydania), więc jej oferta
+zostaje: `/update` i `/update_panel` odmawiają, a nadzór zadań centrali jest
+wyłączony — do ręcznego zdjęcia oferty adresem
+`http://<adres centrali>/api/status?panel_fw=<tag wydania>`. Dlatego
+`/update_panel` warto używać dopiero z centralą 3.58.6.
+
+### Pamięć (v1.4.0)
+
+Pomiar w modelu 32-bitowym (`testy_host/pomiar_pamieci.sh --przypadki`),
+przeliczony na płytkę z logu v1.2.2 — tak samo jak tabela dla v1.3.0 niżej.
+
+| | Firmware bierze naraz | Wolny RAM na płytce (szacunek) |
+|---|---|---|
+| Po starcie | — | 48,2 kB (v1.3.0: 49,2 kB) |
+| Zwykła praca, alarm, pozostałe ekrany, polecenie z dotyku | ok. 6,7 kB | najmniej ok. 38 kB |
+| **Aktualizacja panelu** (pobieranie i zapis pliku 1,2 MB) | 11,5 kB | najmniej ok. 25,7 kB |
+| Ekran Wykresy otwarty, bez wykresu | 24,5 kB | najmniej ok. 20 kB |
+| Wykres na ekranie | do 25,5 kB | najmniej ok. 11,7 kB |
+
+- Po starcie panel ma o ok. 1 kB mniej wolnego RAM-u niż v1.3.0: 0,9 kB
+  zmiennych statycznych (drugi obiekt pobierania — osobny od wykresów, żeby
+  jedno nie mogło przerwać drugiego — i stan aktualizacji) oraz 80 B na
+  stercie.
+- W trakcie aktualizacji najwięcej bierze bufor zapisu biblioteki `Update`
+  (4 kB), odpytanie centrali, które idzie w tym samym czasie (5,5 kB),
+  i nakładka z paskiem postępu.
+- Po przerwanej aktualizacji zostaje 16 B; bufor i nakładka są zwalniane.
+- Próg „bez jednej odmowy pamięci” się nie zmienił (24,9 kB dla firmware'u
+  po starcie); płytka ma nad nim ok. 12,3 kB (v1.3.0: ok. 13 kB).
+
+### Po wgraniu
+
+W logu panelu (serial 115200) przy każdym starcie:
+
+```
+tag=OTA-PANEL zdarzenie=stan_przy_starcie obraz=<16 znaków> zatwierdzony=1 zapis_stan=0 zapis_prob=0 zapis_klucz=-
+```
+
+`obraz=nieznany` znaczy, że panel nie odczytał sumy własnego programu —
+aktualizacja przez centralę jest wtedy wyłączona (pojawi się też linia
+`zdarzenie=brak_identyfikatora_obrazu`).
+
+**Jedno sprawdzenie zaraz po wgraniu kablem**, zanim zmienisz cokolwiek
+w źródłach: wartość `obraz=` z tej linii ma być równa temu, co dla pliku
+z tej samej kompilacji wypisze narzędzie (z katalogu głównego repozytorium):
+
+```
+python3 narzedzia/ota_panelu_sprawdz.py --tag 3.58.6 --bin LCD-Centrali/.pio/build/esp32dev/firmware.bin
+...
+          Identyfikator pliku: <16 znaków>
+```
+
+Centrala bierze identyfikator z końca pliku, panel — z własnej pamięci
+programu. Że to ta sama wartość, wynika ze źródeł ESP-IDF; na płytce nie było
+sprawdzane, a od tego zależy potwierdzenie aktualizacji. Jeśli wartości są
+różne, nie wysyłaj `/update_panel` i przyślij obie.
+
+Przebieg aktualizacji w logu panelu:
+
+```
+tag=OTA-PANEL zdarzenie=start wersja_docelowa=3.58.6 oferta=n1:a25319045fc6a202 proba=1/3 ram=… ram_blok=…
+tag=OTA-PANEL zdarzenie=pobrano_ok obraz=a25319045fc6a202 bajtow=1200000 trwalo_ms=… nvs=1 restart_za_chwile
+(restart)
+tag=OTA-PANEL zdarzenie=nowy_firmware_dziala obraz=a25319045fc6a202 wersja=…
+```
+
+Pozostałe linie `tag=OTA-PANEL`: rozdział „Jak czytać log”.
 
 ## Co zmienia v1.3.0
 
@@ -126,7 +266,8 @@ na tygodniowym przez 105 minut (gdy była starsza niż tydzień). Opis i tabela
 
 Sprawdzone 2026-11-12 na PC, przeliczone na płytkę z logu v1.2.2. Pełny
 opis, także dla centrali: `RAPORT_PAMIEC_RAM_LCD_I_CENTRALA.md` w katalogu
-głównym repozytorium.
+głównym repozytorium. **Liczby w tej tabeli są dla v1.3.0**; dla v1.4.0 —
+tabela „Pamięć (v1.4.0)” wyżej (różnica: ok. 1 kB mniej wolnego RAM-u).
 
 | | Firmware bierze naraz | Wolny RAM na płytce |
 |---|---|---|
@@ -256,7 +397,7 @@ To krótki log. Pracy przez wiele godzin jeszcze nie pokazuje.
 Powód: zgłoszenie z 2026-11-12 — panel z v1.2.0 nie pokazywał świeżych
 danych, aż został zresetowany. Gdy powstawała v1.2.1, był tylko log centrali
 i przyczyna nie była znana; pokazał ją dopiero log panelu (v1.2.2 wyżej).
-Wszystko, co poniżej, jest także w v1.2.2 i v1.3.0.
+Wszystko, co poniżej, jest także w v1.2.2, v1.3.0 i v1.4.0.
 
 Gdy panel nie ma danych z centrali, sam robi to, co dotąd pomagało:
 
@@ -371,6 +512,12 @@ W tym samym miejscu nagłówka stoi wtedy powód (v1.2.1):
 - **`BRAK PAMIECI 14 s`** (v1.2.2) — odpowiedź centrali przyszła, ale
   panelowi zabrakło pamięci RAM, żeby ją odczytać. Wina leży w panelu.
 - **`RESTART ZA 7 s: BRAK WIFI`** — za tyle sekund panel zrestartuje się sam.
+
+Napis **`AKTUALIZACJA PANELU`** z paskiem postępu, na całym ekranie (v1.4.0):
+panel pobiera z centrali nowy firmware. Po pobraniu restartuje się sam.
+Alarm przerywa pobieranie i ekran alarmu wraca. Opis: „Aktualizacja przez
+centralę i Telegram (OTA)” niżej; zrzut z testu na PC:
+`ekran_aktualizacja.png`.
 
 Czerwony pasek **`BRAK PAMIECI - RESTART`** na górze ekranu (v1.2.2):
 bibliotece ekranu zabrakło pamięci w trakcie rysowania; panel restartuje się
@@ -566,53 +713,166 @@ na przykładzie `auto_wifi_r201_n1_t45_h61_b31_en118`:
 
 Którą wersję panel ma wgraną, też widać w logu centrali: gdy panel zgłosi
 się z inną wersją niż poprzednio (albo pierwszy raz po restarcie centrali),
-centrala pisze `tag=OTA-PANEL lvl=INFO zdarzenie=wersja_zgloszona wersja=v1.3.0`.
+centrala pisze `tag=OTA-PANEL lvl=INFO zdarzenie=wersja_zgloszona wersja=v1.4.0`.
+
+**Aktualizacja przez centralę (v1.4.0)** — linie `tag=OTA-PANEL` w logu
+panelu:
+
+- `zdarzenie=stan_przy_starcie obraz=… zatwierdzony=… zapis_stan=… zapis_prob=… zapis_klucz=…`
+  — raz, przy starcie. `obraz` to identyfikator programu, z którego panel
+  pracuje (`nieznany` = nie udało się go odczytać). `zatwierdzony=0` to
+  pierwszy start po wgraniu przez centralę. `zapis_*` to to, co panel pamięta
+  o ostatniej ofercie: `zapis_stan` 0 nic, 1 próby w toku, 2 plik wgrany
+  i czeka na ocenę po restarcie, 3 nowy program działa, 4 odmowa.
+- `zdarzenie=decyzja akcja=… powod=… oferta=… nr=…` — przy każdej zmianie
+  decyzji, nie co sekundę:
+  - `akcja=nic powod=brak_oferty` — centrala nic nie oferuje;
+  - `akcja=czekaj` — oferta jest, panel jeszcze nie zaczyna. `powod`:
+    `alarm`, `brak_wifi`, `brak_danych`, `po_starcie` (pierwsze 20 s),
+    `odstep` (30 s po nieudanej próbie), `siec_zajeta` (wykres albo
+    polecenie w drodze), `dotyk` (15 s od ostatniego dotyku), `bateria`,
+    `pamiec`;
+  - `akcja=pomin` — nic do zrobienia: `juz_mam` (panel pracuje na tym
+    pliku), `juz_wgrane` (ta oferta została już wykonana), `czeka_na_ocene`;
+  - `akcja=odmow` — panel tej oferty nie wgra: `odmowa`, `proby_wyczerpane`.
+- `zdarzenie=start wersja_docelowa=… oferta=… proba=1/3 ram=… ram_blok=…` —
+  początek pobierania. `oferta=n<nr>:<identyfikator>` przy centrali 3.58.6,
+  `oferta=t:<tag>` przy starszej.
+- `zdarzenie=pobrano_ok obraz=… bajtow=… trwalo_ms=… nvs=1 restart_za_chwile`
+  — plik wgrany i sprawdzony; restart. **`trwalo_ms` to liczba, której testy
+  na PC nie dają.**
+- `zdarzenie=ten_sam_plik` — plik od centrali okazał się programem, z którego
+  panel już pracuje; nic nie zostało wgrane.
+- `lvl=WARN zdarzenie=przerwana powod=alarm|oferta_wycofana bajtow=… z=…` —
+  pobieranie przerwane; ta próba się nie liczy.
+- `lvl=ERR zdarzenie=nieudana powod=… proba=2/3 koniec_prob=0 http=… bajtow=… z=… etap=… nvs=… blad="…"`
+  — próba nieudana. `powod`: `pobieranie` (sieć albo centrala), `obraz`
+  (plik nie jest poprawnym programem dla tego panelu), `za_duzy`, `haslo`
+  (centrala odrzuciła hasło OTA — inne `SECRET_OTA_HASLO` w `secrets.h` panelu
+  i centrali), `zapis` (zapis do pamięci programu). `koniec_prob=1` — panel
+  tej oferty więcej nie próbuje i zgłasza centrali odmowę. `etap` jak
+  w liniach `tag=WYKRESY`.
+- `zdarzenie=nowy_firmware_dziala obraz=… wersja=…` — pierwszy start nowego
+  programu, zatwierdzony.
+- `lvl=ERR zdarzenie=nowy_firmware_wycofany wgrany=… dziala=…` — po wgraniu
+  i restarcie działa inny program niż wgrany: nowy nie wstał i bootloader
+  wrócił do poprzedniego.
+- `lvl=ERR zdarzenie=brak_zapisu_nvs` — panel nie mógł zapisać stanu
+  aktualizacji, więc jej nie zaczął.
+
+Hasło OTA nie pojawia się w logu: adres pliku jest wypisywany jako
+`/panel-ota.bin?token=***`.
+
+Linie `tag=OTA-PANEL` w logu centrali 3.58.6 opisuje `README.md` jej paczki.
 
 Stary, gęsty log `[NET-DIAG] start/wyslano/sukces` można przywrócić, ustawiając
 `SiecCfg::POZIOM_LOGU = 2` w `src/siec_nieblokujaca_LCD.h`.
 
 ## Aktualizacja przez centralę i Telegram (OTA)
 
-Sprawdzone 2026-11-12, bez zmian w firmware. Pełny opis:
+Od panelu **v1.4.0** i centrali **3.58.6**. Jak to działa i co się zmieniło:
+rozdział „Co zmienia v1.4.0” na górze. Stan sprzed zmian:
 `RAPORT_OTA_PANELU_PRZEZ_CENTRALE.md` w katalogu głównym repozytorium.
 
-- Komenda `/update_panel` każe centrali pobrać plik `firmware_panel.bin`
-  z najnowszego wydania na GitHubie. Panel bierze go od centrali **przy
-  starcie** — pracujący panel trzeba wyłączyć i włączyć.
-- **Tag wydania musi być tym samym tekstem co `FIRMWARE_VERSION_PANEL`**
-  (dziś `v1.3.0`). Centrala uznaje aktualizację za wykonaną tylko wtedy, gdy
-  panel zgłosi wersję identyczną z tagiem. Inaczej panel wgrywa ten sam plik
-  przy każdym starcie i nie dochodzi do kafelków.
-- Przed publikacją wydania i przed wysłaniem komendy:
+**Żadna aktualizacja tą drogą nie była jeszcze wykonana na tych
+urządzeniach.** Pierwszą warto zrobić przy panelu podłączonym do komputera
+(log) i z kablem pod ręką.
 
-  ```
-  python3 narzedzia/ota_panelu_sprawdz.py --tag v1.3.0 --bin LCD-Centrali/.pio/build/esp32dev/firmware.bin
-  ```
+### Krok po kroku
 
-  (z katalogu głównego repozytorium; kod wyjścia 1 = nie wysyłaj komendy)
+1. Zbuduj firmware panelu w PlatformIO. Plik:
+   `LCD-Centrali/.pio/build/esp32dev/firmware.bin`.
+2. Sprawdź go (z katalogu głównego repozytorium):
 
-- Wyjście awaryjne, gdy panel wgrywa plik w kółko: otworzyć w przeglądarce
-  `http://<adres centrali>/api/status?panel_fw=<tag wydania>`. Centrala
-  zdejmie flagę aktualizacji.
-- Żadna aktualizacja tą drogą nie była jeszcze wykonana na tych
-  urządzeniach.
+   ```
+   python3 narzedzia/ota_panelu_sprawdz.py --tag <tag wydania> --bin LCD-Centrali/.pio/build/esp32dev/firmware.bin
+   ```
+
+   Kod wyjścia 1 = nie wysyłaj komendy; skrypt pisze dlaczego.
+3. Dołącz plik do **najnowszego** wydania na GitHubie pod nazwą
+   `firmware_panel.bin`. Centrala zawsze bierze najnowsze wydanie — to samo,
+   z którego `/update` bierze `firmware.bin` dla siebie. Tag wydania może być
+   dowolny: od v1.4.0 nie musi być równy wersji panelu.
+4. Telegram: `/update_panel`. Centrala pobiera plik na swój dysk i pisze, że
+   czeka na panel.
+5. Panel zaczyna sam, zwykle w ciągu minuty (warunki: „Jak to działa”,
+   punkt 3). Na ekranie `AKTUALIZACJA PANELU` i pasek; potem restart.
+6. Centrala pisze `Panel zaktualizowany: …` — albo czym innym się skończyło.
+
+### Gdy coś nie idzie
+
+| Co widać | Co to znaczy |
+|---|---|
+| Po 5 minutach wiadomość, że panel jeszcze nie zaczął, z przyczyną | Centrala podaje, na co panel czeka: alarm, dotyk, bateria, pamięć, brak kontaktu. Oferta czeka dalej, do 24 h. |
+| Pasek postępu znika, panel pracuje dalej | Próba nieudana albo przerwana alarmem. Kolejna po 30 s; najwyżej trzy. Przyczyna: linia `zdarzenie=nieudana` albo `przerwana` w logu panelu. |
+| `Panel odmówił aktualizacji … (powód: …)` | Panel tej oferty nie wgra: trzy nieudane pobrania, zły plik, plik za duży, złe hasło, nowy program nie wstał. Po usunięciu przyczyny: `/update_panel` jeszcze raz. |
+| Chcę to zatrzymać | `/update_panel_anuluj`. Jeśli plik właśnie idzie, panel przerwie pobieranie przy najbliższym odpytaniu centrali (2 s). |
+| Panel po aktualizacji nie wstaje | Program jest zatwierdzany dopiero po narysowaniu ekranu i odpytaniu centrali. Jeśli zawiesi się albo zrestartuje wcześniej, bootloader wraca do poprzedniego programu. **Ta droga powrotu nie była sprawdzona na płytce** — stąd kabel pod ręką. |
+
+### Co wolno, czego nie
+
+- Ekran prosi, żeby w trakcie nie wyłączać zasilania — bo próba przepada
+  (liczy się do trzech). Samo wyłączenie nie powinno niczego zepsuć: stary
+  program zostaje nietknięty, nowy trafia do drugiej połowy pamięci programu
+  i jest ustawiany jako startowy dopiero po sprawdzeniu całości. Tak działa
+  mechanizm ESP32; na płytce nie było to próbowane.
+- Usypianie panelu jest na czas pobierania wyłączone; dotyk nie przerywa
+  pobierania, a ekrany są zasłonięte nakładką.
+- W czasie alarmu centrala nie podaje ani oferty, ani pliku, a panel nie
+  zaczyna. Alarm ma pierwszeństwo także w trakcie: pobieranie jest
+  przerywane, ekran alarmu i brzęczyk działają jak zawsze.
+- Hasło (`SECRET_OTA_HASLO` w `secrets.h` panelu i centrali) musi być to samo
+  po obu stronach. Idzie po sieci WiFi centrali w adresie zapytania — tak
+  samo jak dotąd.
+
+### Panel starszy niż v1.4.0
+
+Z centralą 3.58.6 starszy panel pobiera plik po staremu — przy starcie,
+z pustym ekranem — ale tylko raz: gdy zgłosi się ponownie, centrala kończy
+ofertę i pisze, czy wersja się zmieniła. Z centralą do 3.58.5 starszy panel
+wgrywa ten sam plik przy każdym starcie, dopóki tag wydania nie jest równy
+jego wersji (opis w raporcie).
 
 ## Co zostało sprawdzone, a co nie
 
-**v1.3.0 nie była budowana w PlatformIO ani uruchamiana na płytce.** Na
-płytce sprawdzona jest v1.2.2 (niżej). v1.3.0 różni się od niej ekranem
-Wykresy i sposobem pobierania jego danych; reszta kodu jest ta sama.
+**v1.4.0 i v1.3.0 nie były budowane w PlatformIO ani uruchamiane na
+płytce.** Na płytce sprawdzona jest v1.2.2 (niżej). v1.3.0 różni się od niej
+ekranem Wykresy i sposobem pobierania jego danych; v1.4.0 dokłada
+aktualizację przez centralę. Reszta kodu jest ta sama.
 
 - **Na PC, z atrapami sprzętu:** prawdziwy `main.cpp` i dashboard uruchomione
-  zwykłym `g++` przeciwko udawanym centralom — 41 scenariuszy, 420
-  sprawdzeń, plus 262 sprawdzenia jednostkowe; także pod AddressSanitizer
+  zwykłym `g++` przeciwko udawanym centralom — 47 scenariuszy, 486
+  sprawdzeń, plus 442 sprawdzenia jednostkowe; także pod AddressSanitizer
   i UBSan. Udawana centrala wysyła ten sam JSON co firmware 3.58.3. W czterech
   scenariuszach z v1.2.2 panel nie dostaje pamięci na żądanie testu — tak, jak
   na płytce z logu z 2026-11-12.
-- **Aktualizacja przez centralę, na PC:** sześć scenariuszy `ota_*` — kiedy
-  panel zaczyna aktualizację, o jaki adres pyta, co robi po udanym
-  i nieudanym pobraniu, co się dzieje, gdy zgłoszona wersja różni się od
-  tagu wydania. Samo pobieranie i zapis do flash są udawane.
+- **Aktualizacja przez centralę (v1.4.0), na PC:** dwanaście scenariuszy
+  `ota_*`. Po drugiej stronie nie stoi udawana logika, tylko **kod decyzji
+  wycięty z firmware'u centrali 3.58.6** (`testy_host/kod_centrali/`; testy
+  centrali pilnują, że to ten sam tekst co w jej pliku). Scenariusze:
+  - cały przebieg w trakcie pracy: oferta, pobranie 1,2 MB z paskiem
+    postępu, sprawdzenie pliku, restart; pierwszy start nowego programu
+    i potwierdzenie przez centralę;
+  - nowy program nie wstał i wrócił poprzedni — odmowa, bez ponownych prób;
+  - trzy nieudane pobrania (cisza, zerwane połączenie, błąd HTTP) — odmowa,
+    panel pracuje dalej;
+  - plik uszkodzony, złe hasło, plik za duży, program dla innego układu,
+    plik inny niż w ofercie — odmowa po jednej próbie;
+  - alarm przed i w trakcie; oferta wycofana w trakcie;
+  - każdy z warunków startu z osobna (czas po starcie, dotyk, pamięć,
+    bateria, zapis w NVS);
+  - plik, z którego panel już pracuje; centrala, która nie odpowiada na
+    status, ale plik wysyła; panel, który nie zna sumy własnego programu;
+  - centrala do 3.58.5: jedno wgranie, potem — mimo że jej flaga zostaje —
+    żadnego kolejnego.
+
+  Osobny skrypt (`testy_host/sprawdz_czulosc_ota.py`) 23 razy psuje jedną
+  rzecz w kodzie aktualizacji i sprawdza, że testy to wykrywają (23 z 23).
+  **Udawane są:** pamięć programu (zapis, sprawdzenie obrazu, wybór programu
+  startowego), bootloader i jego powrót do poprzedniego programu, pamięć
+  NVS, sieć. Czasy z tych testów (plik 1,2 MB w ok. 8 s, najdłuższy obrót
+  pętli 35 ms) wynikają z założeń atrapy: 150 kB/s i 15 ms na 4 kB zapisu.
+  Nie są pomiarem płytki.
 - **Ekran Wykresy (v1.3.0), na PC:** dziewięć scenariuszy `wykresy_*` — wykres
   z punktów centrali w trzech zakresach, starsza centrala, przerwy w danych,
   brak danych, odpowiedź urwana, cisza w połowie, brak odpowiedzi, odpowiedź,
@@ -645,29 +905,54 @@ Wykresy i sposobem pobierania jego danych; reszta kodu jest ta sama.
   liczby były o ok. 0,2 kB wyższe — 5 588, 2 884 i 5 616 B, tak też są
   w komentarzu w `src/main.cpp`. Model liczył wtedy każde zmniejszenie
   bloku pamięci jak nowy przydział; sterta ESP32 zmniejsza blok w miejscu.)
+  **v1.4.0:** po starcie 129 324 B (80 B więcej), odpytanie centrali
+  5 464 B (80 B więcej — dłuższy adres zapytania), wykres 2 452 B albo
+  5 492 B, zmiennych statycznych o 898 B więcej niż w v1.3.0 (drugi obiekt
+  pobierania i stan aktualizacji). Limit zmiennych statycznych w skrypcie
+  podniesiony z 5 000 do 6 000 B, z uzasadnieniem w skrypcie.
 - **Czy RAM-u starczy, na PC** (`testy_host/pomiar_pamieci.sh --przypadki`,
-  2026-11-12): 27 przypadków pracy — każdy ekran, wykresy na wszystkie
+  2026-11-12): 29 przypadków pracy — każdy ekran, wykresy na wszystkie
   sposoby z 8 seriami, błędy centrali i sieci, alarm w trakcie pobierania,
-  starsza centrala z całym CSV, doba pracy, 300 wykresów z rzędu. Najwięcej
-  pamięci naraz ponad stan po starcie: 25 416 B. Druga runda tych samych
-  czynności nie zostawia nic. Osobno: sterta modelu z limitem — od 24 900 B
-  wolnego RAM-u w górę nie ma ani jednej odmowy pamięci. Przeliczenie na
-  płytkę i opis: rozdział „Czy RAM-u starczy” wyżej
-  i `RAPORT_PAMIEC_RAM_LCD_I_CENTRALA.md` w katalogu głównym repozytorium.
+  starsza centrala z całym CSV, doba pracy, 300 wykresów z rzędu, a od
+  v1.4.0 także aktualizacja panelu (cały plik 1,2 MB i przerwana w połowie).
+  Najwięcej pamięci naraz ponad stan po starcie: 25 496 B (v1.3.0:
+  25 416 B) — przy otwartych Wykresach; aktualizacja bierze 11 484 B. Druga
+  runda tych samych czynności nie zostawia nic. Osobno: sterta modelu
+  z limitem — od 24 900 B wolnego RAM-u w górę nie ma ani jednej odmowy
+  pamięci. Przeliczenie na płytkę i opis: „Pamięć (v1.4.0)” i „Czy RAM-u
+  starczy” wyżej oraz `RAPORT_PAMIEC_RAM_LCD_I_CENTRALA.md` w katalogu
+  głównym repozytorium.
 - **Składnia i typy, prawdziwymi nagłówkami ESP32:** wszystkie trzy pliki
   `.cpp` bez błędów z arduino-esp32 3.0.7 i 3.3.8, ESP-IDF 5.1, TFT_eSPI,
   LVGL i ArduinoJson (`testy_host/sprawdz_naglowki_esp32.sh`; kompilator clang,
   bez linkowania).
 - **Wersje bibliotek:** `platformio.ini` dopuszcza każde LVGL 8.x od 8.3.11
   i każdy ArduinoJson 7.x od 7.2.0 — którą wersję ma dany komputer, zależy od
-  tego, kiedy PlatformIO je pobrał. Wszystko powyższe przechodzi z LVGL 8.3.11
-  i ArduinoJson 7.2.1 oraz z najnowszymi wydaniami (LVGL 8.4.0, ArduinoJson
-  7.4.3) — także v1.3.0 i `pomiar_pamieci.sh --przypadki`. Pamięć po
-  starcie wychodzi identyczna, odpytanie centrali o 140 B mniejsze.
+  tego, kiedy PlatformIO je pobrał. Testy i pomiar pamięci v1.4.0 przechodzą
+  z LVGL 8.3.11 i ArduinoJson 7.2.1 oraz z najnowszymi wydaniami (LVGL 8.4.0,
+  ArduinoJson 7.4.3): 442 sprawdzenia jednostkowe, 47 scenariuszy,
+  `pomiar_pamieci.sh --przypadki`. Z nowszymi bibliotekami pamięć po starcie
+  wychodzi identyczna, a odpytanie centrali o 140 B mniejsze (5 324 B);
+  aktualizacja panelu bierze 11 344 B zamiast 11 484 B.
 - **Na płytce** (2026-11-12, **v1.2.2**): firmware zbudowany w PlatformIO
   i wgrany przez użytkownika. Panel startuje, zgłasza centrali `v1.2.2`, ma
   49,7 kB wolnego RAM-u po starcie i w ok. 40 s logu odczytał wszystkie
   odpowiedzi. Liczby: „Wynik na płytce” wyżej.
+- **Układ pliku z programem (v1.4.0):** kod, który ocenia pobierany plik
+  (nagłówek, numer układu, identyfikator z sumy na końcu), jest sprawdzony
+  także na trzech prawdziwych obrazach zbudowanych narzędziami Espressif —
+  razem z odpowiednim kodem centrali
+  (`firmware-patch/v3.58.6-panel-ota/tests/sprawdz_prawdziwe_obrazy.sh`).
+- **Nie sprawdzone na płytce, v1.4.0:** kompilacja w PlatformIO; odczyt
+  sumy własnego programu (linia `stan_przy_starcie obraz=…` — sprawdzenie
+  opisane w „Po wgraniu”); cała aktualizacja przez centralę — pobieranie
+  pliku przez WiFi centrali, zapis do pamięci programu (biblioteka kasuje ją
+  blokami po 64 kB i każde kasowanie zatrzymuje na ułamek sekundy oba
+  rdzenie, więc pętla i ekran będą wtedy wolniejsze niż w modelu),
+  sprawdzenie obrazu, start nowego programu, powrót bootloadera do
+  poprzedniego; ile trwa (`trwalo_ms=`) i ile wolnego RAM-u wtedy zostaje;
+  zapas stosu pętli; centrala 3.58.6 (jej plik też nie był kompilowany dla
+  ESP32).
 - **Nie sprawdzone na płytce, v1.3.0:** kompilacja w PlatformIO; ekran
   Wykresy z prawdziwą centralą — ile trwa pobieranie (`ms=`), ile wolnego
   RAM-u zostaje w jego trakcie (`ram_min=`; ekran Wykresy bierze 18,6 kB na
@@ -684,7 +969,9 @@ Wykresy i sposobem pobierania jego danych; reszta kodu jest ta sama.
   v1.2.2 zajmuje o ok. 40 kB mniej niż v1.2.0: 41,3 kB mniej pamięci
   przydzielanej w trakcie pracy, 0,9 kB więcej zmiennych statycznych (bufor
   logu). v1.3.0 dokłada 0,5 kB zmiennych statycznych, więc szacunek dla niej
-  to ok. 48,1 kB po starcie.
+  to ok. 48,1 kB po starcie; v1.4.0 dokłada kolejny 1 kB — ok. 47,1 kB.
+  (Tabele wyżej liczą od zmierzonej v1.2.2, 49,7 kB, i dają o 1,1 kB więcej:
+  49,2 kB dla v1.3.0 i 48,2 kB dla v1.4.0.)
 - **Zachowanie radia jest w testach założeniem.** Scenariusz
   `martwe_polaczenie` (centrala restartuje się tak szybko, że panel dalej
   uważa się za połączony) pokazuje, że od v1.2.1 panel wychodzi z takiego

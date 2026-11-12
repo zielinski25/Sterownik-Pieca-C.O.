@@ -8,10 +8,12 @@ ESP32. PlatformIO go nie widzi i nie kompiluje — nie wpływa na firmware.
 ./uruchom_testy.sh                 # wszystko: testy jednostkowe + symulator (kilka sekund; pierwszy raz dłużej)
 ./uruchom_testy.sh --szybko        # tylko testy jednostkowe (sam g++, 1 s)
 ./uruchom_testy.sh dwie_centrale   # jeden scenariusz, z pełnym logiem Seriala na ekranie
+TYLKO='^ota_' ./uruchom_testy.sh   # tylko scenariusze o nazwach pasujących do wyrażenia (tu: aktualizacja OTA)
 SANITIZER=1 ./uruchom_testy.sh     # to samo z AddressSanitizer + UBSan (wolniej)
+python3 sprawdz_czulosc_ota.py     # czy scenariusze ota_* wykrywają celowo wprowadzone błędy (ok. 10 minut)
 ./sprawdz_naglowki_esp32.sh        # składnia i typy prawdziwymi nagłówkami ESP32 (patrz niżej)
 ./pomiar_pamieci.sh                # ile RAM-u trzyma firmware + limity (patrz niżej; wymaga: pip install ziglang)
-./pomiar_pamieci.sh --przypadki    # czy RAM-u starczy w każdym przypadku pracy (ok. 2 minut)
+./pomiar_pamieci.sh --przypadki    # czy RAM-u starczy w każdym przypadku pracy (ok. 4 minut)
 ```
 
 Wymaga: `g++` (C++17), `gcc`, `ar`, `git`, Linux albo WSL. Przy pierwszym
@@ -36,22 +38,26 @@ LCD_TESTY_CACHE=/tmp/lcd_nowe ./uruchom_testy.sh
 LCD_TESTY_CACHE=/tmp/lcd_nowe ./pomiar_pamieci.sh --wszystko
 ```
 
-Stan na 2026-11-12, v1.3.0: z LVGL 8.4.0 i ArduinoJson 7.4.3 przechodzą
-wszystkie scenariusze (także z `SANITIZER=1` i w modelu 32-bitowym), a pomiar
-pamięci daje 129 244 B po starcie, 5 244 B na jedno odpytanie i 2 452 B /
-5 272 B chwilowo na wykres (punkty z centrali / cały CSV); z opcją
-`--przypadki`: najwięcej naraz 25 276 B, próg 24 700 B.
+Stan na 2026-11-12, v1.4.0: z LVGL 8.4.0 i ArduinoJson 7.4.3 przechodzą
+wszystkie scenariusze (także w modelu 32-bitowym), a pomiar pamięci daje
+129 324 B po starcie, 5 324 B na jedno odpytanie i 2 452 B / 5 352 B chwilowo
+na wykres (punkty z centrali / cały CSV); z opcją `--przypadki`: najwięcej
+naraz 25 356 B, aktualizacja panelu 11 344 B, próg 24 800 B. Z wersjami
+z `platformio.ini` (8.3.11 i 7.2.1) te same liczby to 129 324, 5 464, 2 452 /
+5 492, 25 496, 11 484 i 24 900 B.
 
 ## Co jest w środku
 
 | Plik | Co robi |
 |---|---|
-| `test_diagnostyka.cpp` | Testy jednostkowe `src/diagnostyka_panelu.h` (kod HTTP, dławik logu, strażnik świeżości, wybór najsilniejszego AP, znacznik centrali, próg baterii; od v1.2.1: przyczyna braku danych, drabina ratunkowa, pamięć i token samoczynnego restartu; od v1.2.2: brak pamięci jako przyczyna). |
-| `mock/` | Atrapy nagłówków Arduino/ESP-IDF (`Arduino.h`, `WiFi.h`, `TFT_eSPI.h`, `Preferences.h`, `esp_*.h`…). Stan „płytki” opisuje `mock/atrapa.h`. |
-| `symulator_panelu.cpp` | Uruchamia `setup()` i `loop()` firmware'u, podstawia mu „centrale” (lokalny serwer HTTP) i sprawdza log oraz to, co trafiło na ekran. Odpowiedź `/api/status` ma te same pola, kolejność i format liczb co `wifiZbudujJsonStatus()` w firmware centrali 3.58.3 (ok. 1,8 kB). Udawana centrala traktuje parametr `reset_powod` tak jak 3.58.3: „pisze” o powodzie restartu panelu przy każdej zmianie wartości innej niż `sw` i `deepsleep`. Od v1.3.0 odpowiada też na `/api/history`, `/api/history/long` i `/api/history/panel` (jak centrala 3.58.4, jak starsza albo jak bardzo stara) i potrafi odpowiedź urwać, wstrzymać, opóźnić albo wysyłać z zadaną szybkością. |
+| `test_diagnostyka.cpp` | Testy jednostkowe `src/diagnostyka_panelu.h` (kod HTTP, dławik logu, strażnik świeżości, wybór najsilniejszego AP, znacznik centrali, próg baterii; od v1.2.1: przyczyna braku danych, drabina ratunkowa, pamięć i token samoczynnego restartu; od v1.2.2: brak pamięci jako przyczyna; od v1.4.0: aktualizacja przez centralę — identyfikator programu, klucz oferty, zapis stanu w NVS, decyzja „zacząć czy czekać”, sprawdzenie nagłówka pliku, adres zapytania o status). 442 sprawdzenia. |
+| `mock/` | Atrapy nagłówków Arduino/ESP-IDF (`Arduino.h`, `WiFi.h`, `TFT_eSPI.h`, `Preferences.h`, `esp_*.h`…). Stan „płytki” opisuje `mock/atrapa.h`. Od v1.4.0: `Update.h` (zapis nowego programu), `esp_partition.h` (suma własnego programu), `esp_ota_ops.h` (zatwierdzenie programu po starcie), `atrapa_sha256.h` (SHA-256 do sprawdzenia pliku). `HTTPUpdate.h` i `HTTPClient.h` zostały dla źródeł starszych niż v1.4.0. |
+| `symulator_panelu.cpp` | Uruchamia `setup()` i `loop()` firmware'u, podstawia mu „centrale” (lokalny serwer HTTP) i sprawdza log oraz to, co trafiło na ekran. Odpowiedź `/api/status` ma te same pola, kolejność i format liczb co `wifiZbudujJsonStatus()` w firmware centrali 3.58.3 (ok. 1,8 kB). Udawana centrala traktuje parametr `reset_powod` tak jak 3.58.3: „pisze” o powodzie restartu panelu przy każdej zmianie wartości innej niż `sw` i `deepsleep`. Od v1.3.0 odpowiada też na `/api/history`, `/api/history/long` i `/api/history/panel` (jak centrala 3.58.4, jak starsza albo jak bardzo stara) i potrafi odpowiedź urwać, wstrzymać, opóźnić albo wysyłać z zadaną szybkością. Od v1.4.0 wydaje też plik `/panel-ota.bin`, a o ofercie aktualizacji decyduje kodem wyciętym z centrali 3.58.6 (`kod_centrali/`). |
+| `kod_centrali/` | Blok decyzji o aktualizacji panelu wycięty z firmware'u centrali 3.58.6 (opis: `CZYTAJ.txt` w tym katalogu). Symulator włącza go przez `#include`; testy centrali sprawdzają przy każdym uruchomieniu, że kopia jest identyczna z jej plikiem. |
+| `sprawdz_czulosc_ota.py` | 23 razy psuje jedną rzecz w kopii źródeł (pominięte sprawdzenie, brak przerwania przy alarmie, brak zapisu stanu…) i sprawdza, że scenariusze `ota_*` albo testy jednostkowe to wykrywają. To sprawdzenie testów, nie kodu. |
 | `wzorce_centrali/` | Odpowiedzi centrali na `/api/history/panel`, wypisane przez jej własny kod — 11 plików; 9 takich samych z 3.58.4 i 3.58.5, 2 tylko z 3.58.5 (opis: `CZYTAJ.txt` w tym katalogu). Z nich korzystają scenariusze `wykresy_*`. |
 | `wzorce_v122/` | Punkty, które z tych samych starych CSV narysował firmware v1.2.2 (opis: `CZYTAJ.txt` w tym katalogu). Z nimi porównywane jest rysowanie po staremu. |
-| `uruchom_testy.sh` | Buduje i uruchamia całość. |
+| `uruchom_testy.sh` | Buduje i uruchamia całość: 442 sprawdzenia jednostkowe i 47 scenariuszy (486 sprawdzeń). |
 | `sprawdz_naglowki_esp32.sh` | Sprawdza składnię i typy źródeł panelu prawdziwymi nagłówkami arduino-esp32 / ESP-IDF / TFT_eSPI (bez atrap). |
 | `pomiar_pamieci.sh` | Mierzy, ile pamięci RAM trzyma firmware, i pilnuje limitów. Buduje ten sam program jako 32-bitowy, z `pomiar_sterty.c` zamiast zwykłego `malloc()`. Z `--przypadki`: ile pamięci trzeba w każdym przypadku pracy i co się dzieje, gdy jest jej mniej. |
 | `pomiar_sterty.c` | `malloc()` z licznikiem: dla każdego bloku pamięta rozmiar i stos wywołań; liczy go tak, jak zajmuje miejsce na stercie ESP32. Potrafi też odmawiać ponad zadany limit (jak płytka bez wolnego RAM-u) i wypisać stos wywołań, gdy program modelu sięgnie pod zły adres. |
@@ -100,21 +106,38 @@ LVGL jest budowany z `include/lv_conf.h` tego projektu. Ekran to bufor
 | `wykresy_alarm_w_trakcie` | v1.3.0. Alarm przegrzania w trakcie pobierania: ekran alarmu pojawia się w ciągu 3 s, pobieranie jest porzucane, bufory wykresów zwolnione. |
 | `wykresy_stary_csv` | v1.3.0. Stary CSV podany ekranowi wprost, bez sieci: te same punkty co w v1.2.2. Strona HTML zamiast CSV: napis (kod v1.2.2 rysował z niej wykres — zapisane we wzorcu). Ten scenariusz działa także na źródłach v1.2.2 i tak powstał `wzorce_v122/punkty.txt`. |
 | `wykresy_po_restarcie_centrali` | v1.3.0 bez zmian, centrala 3.58.5 tuż po restarcie, z wyłączonym zapisem historii i starymi plikami sprzed 3 dni. Ostatnia godzina: odpowiedź to 96 linii `#przerwa` — napis `Centrala nie ma jeszcze danych z tego zakresu` z dopiskiem o wyłączonym zapisie, bez sięgania po cały CSV. Tydzień: 55 punktów starej historii, potem 41 pustych pozycji do końca osi; podpis kończy się na bieżącej chwili. |
-| `ota_start` | Aktualizacja przez centralę. Centrala ma gotowy firmware panelu i zgłasza to w `/api/status`. Panel przy starcie zgłasza swoją wersję, pyta o `http://192.168.4.1:80/panel-ota.bin?token=…`, na czas pobierania wypisuje zadanie z watchdoga, po udanym pobraniu restartuje się. STAN OBECNY: przez cały ten czas ekran jest pusty. |
-| `ota_po_restarcie_zgodna` | Pierwszy start po aktualizacji, zgłoszona wersja równa tagowi wydania: panel potwierdza nową partycję, centrala zdejmuje flagę, panel nie pobiera drugi raz i pracuje. |
-| `ota_po_restarcie_inna_wersja` | STAN OBECNY. Zgłoszona wersja inna niż tag wydania (panel `v1.3.0`, wydanie `3.58.6`): centrala nie zdejmuje flagi, panel pobiera ten sam plik i restartuje się znowu — przy każdym starcie. |
-| `ota_flaga_w_trakcie_pracy` | STAN OBECNY. Centrala zaczyna zgłaszać aktualizację, gdy panel już pracuje: przez 2 minuty panel niczego nie pobiera. Zacznie dopiero po restarcie. |
-| `ota_nieudane` | Pobieranie nieudane: wpis `tag=OTA-PANEL lvl=ERR` w logu, watchdog znów pilnuje pętli, panel pracuje dalej i w tej sesji nie próbuje ponownie. |
-| `ota_przy_alarmie` | STAN OBECNY. Start z czekającą aktualizacją w chwili, gdy centrala zgłasza alarm: panel i tak pobiera; wzorzec alarmu na brzęczyku w tym czasie nie gra. |
+| `ota_w_trakcie_pracy` | v1.4.0, centrala 3.58.6. Pracujący panel dostaje ofertę i w ciągu kilku sekund zaczyna sam: pobiera plik 1,2 MB z paskiem postępu (ekran `AKTUALIZACJA PANELU`), zapisuje stan w NVS i restartuje się. Do pamięci programu trafia plik z centrali bajt w bajt. W trakcie panel dalej pyta centralę o status, pętla nie staje (watchdog nie działa), hasła OTA nie ma w logu. |
+| `ota_po_restarcie` | v1.4.0. Pierwszy start nowego programu: panel zgłasza `panel_obraz_proba`, zatwierdza program i odtąd zgłasza `panel_obraz`; centrala potwierdza po identyfikatorze pliku, choć panel zgłasza `v1.4.0`, a tag wydania to `3.58.6`. Drugiego pobierania nie ma. |
+| `ota_wycofany_firmware` | v1.4.0. Po wgraniu działa inny program niż wgrany (nowy nie wstał, bootloader wrócił do poprzedniego): panel zgłasza odmowę `cofnieta` z numerem oferty, centrala kończy ofertę, panel tego pliku więcej nie pobiera. |
+| `ota_stara_centrala` | v1.4.0 z centralą do 3.58.5 (flaga bez identyfikatora pliku; panel rozpoznaje ofertę po tagu wydania). W czasie alarmu panel nie zaczyna, choć taka centrala flagi nie chowa; alarm w trakcie przerywa pobieranie najdalej po 2,5 s. Po alarmie: pobranie od początku, wgranie, restart. |
+| `ota_stara_centrala_po_restarcie` | v1.4.0 z centralą do 3.58.5 po wgraniu: jej flaga zostaje (zgłoszona wersja to nie tag wydania), a panel **nie** wgrywa pliku drugi raz i się nie restartuje — pamięta, że plik z tego wydania już działa. |
+| `ota_nieudane_pobieranie` | v1.4.0. Trzy próby, każda z innym błędem: centrala milknie w połowie pliku (panel czeka 15 s), zrywa połączenie, odpowiada kodem 500. Kolejna próba nie wcześniej niż po 30 s. Po trzeciej panel zgłasza odmowę `pobieranie`; między próbami pracuje normalnie, rozpoczęty zapis jest porzucany, w logu błędu sieci jest `token=***` zamiast hasła. |
+| `ota_alarm` | v1.4.0. W czasie alarmu centrala 3.58.6 nie pokazuje oferty i panel nie zaczyna. Alarm w trakcie pobierania: przerwane przy pierwszej odpowiedzi centrali z alarmem (najdalej po 2,5 s), ekran alarmu i brzęczyk działają, próba nie liczy się do trzech; po alarmie panel pobiera od początku i kończy. |
+| `ota_zly_plik` | v1.4.0. Plik uszkodzony w środku (odrzuca go sprawdzenie obrazu przed uruchomieniem), złe hasło (401), plik większy niż partycja (odrzucony po nagłówku), program dla ESP32-S3 (centrala 3.58.6 odrzuca go sama; od starszej centrali panel poznaje go po nagłówku), plik inny niż w ofercie: za każdym razem jedna próba i odmowa z właściwą przyczyną; nic nie jest uruchamiane. |
+| `ota_warunki` | v1.4.0. Warunki startu po kolei: 20 s po włączeniu, 15 s bez dotyku, za mało wolnego RAM-u, słabe ogniwo bez zasilania z USB, nieudany zapis do NVS. Panel podaje centrali, na co czeka (`panel_ota_czeka=…`). Oferta wycofana w trakcie pobierania: przerwane najdalej po 2,5 s, próba się nie liczy. |
+| `ota_ten_sam_plik` | v1.4.0. Centrala oferuje plik, z którego panel już pracuje. 3.58.6: panel nic nie pobiera, centrala potwierdza przy pierwszym zapytaniu. Centrala do 3.58.5: panel pobiera plik raz, poznaje go po identyfikatorze z końca pliku, nie wgrywa i się nie restartuje, a potem już go nie pobiera. |
+| `ota_status_milczy` | v1.4.0. Centrala przestaje odpowiadać na `/api/status`, ale plik wysyła (wolne łącze, ok. 57 s): panel nie wymusza ponownego połączenia WiFi i nie restartuje się z braku danych; plik dochodzi do końca. |
+| `ota_bez_identyfikatora` | v1.4.0. Panel nie odczytał sumy własnego programu: w logu `brak_identyfikatora_obrazu`, zapytania o status bez `panel_obraz` (jak przed v1.4.0), a oferty centrali panel nie rusza. |
 
-Scenariusze `ota_*` z dopiskiem „STAN OBECNY” opisują to, co firmware robi
-dziś, a nie to, co powinien — po zmianie firmware'u trzeba je poprawić.
-W tych scenariuszach samo pobieranie jest udawane: atrapa `HTTPUpdate`
-zapisuje adres, „trwa” zadany czas i zwraca zadany wynik. Sprawdzane jest,
-kiedy panel zaczyna aktualizację, o co pyta i co robi potem. Udawana
-centrala zdejmuje flagę aktualizacji tak jak prawdziwa: tylko gdy tekst
-z parametru `panel_fw` jest identyczny z tagiem wydania. Opis całej drogi:
-`RAPORT_OTA_PANELU_PRZEZ_CENTRALE.md` w katalogu głównym repozytorium.
+W scenariuszach `ota_*` firmware idzie tą samą drogą co na płytce: własnym
+gniazdem pobiera plik od udawanej centrali (lokalny serwer HTTP) i oddaje go
+do `Update.write()`. Udawana jest pamięć programu i wszystko pod nią — lista
+w rozdziale „Czego to NIE sprawdza”. Restart panelu kończy scenariusz, więc
+„po restarcie” to osobne scenariusze, które zaczynają od zapisu w NVS takiego,
+jaki zostawia firmware.
+
+Po stronie centrali 3.58.6 decyduje **jej własny kod** (`kod_centrali/`):
+kiedy pokazać ofertę, kiedy wydać plik, kiedy uznać aktualizację za wykonaną.
+Centrala do 3.58.5 jest modelem jej reguły (oferta znika tylko wtedy, gdy
+zgłoszona wersja jest identyczna z tagiem wydania), nie jej kodem. Limit 24 h,
+przypomnienie po 5 minutach i treść wiadomości Telegrama sprawdzają testy
+centrali (`firmware-patch/v3.58.6-panel-ota/tests/`).
+
+Jak było do v1.3.0: `RAPORT_OTA_PANELU_PRZEZ_CENTRALE.md` w katalogu głównym
+repozytorium. Sześć scenariuszy z tamtego sprawdzenia (`ota_start`,
+`ota_po_restarcie_zgodna`, `ota_po_restarcie_inna_wersja`,
+`ota_flaga_w_trakcie_pracy`, `ota_nieudane`, `ota_przy_alarmie`) opisywało
+stary kod i zostało zastąpione powyższymi.
 
 ### Skąd odpowiedzi centrali w scenariuszach `wykresy_*`
 
@@ -180,9 +203,38 @@ firmware kompiluje się dla ESP32 ani że działa na płytce.
 - **Sprzęt.** TFT_eSPI, dotyk, deep sleep — atrapy przyjmują wywołania,
   ale ich nie modelują. Z brzęczyka zapisywana jest tylko ostatnio ustawiona
   częstotliwość (0 = cisza).
-- **Aktualizacja OTA.** Pobierania pliku, zapisu do flash, sprawdzania obrazu
-  i bootloadera tu nie ma. Atrapa odnotowuje, że firmware o aktualizację
-  poprosił, i zwraca wynik zadany przez scenariusz.
+- **Aktualizacja OTA (od v1.4.0).** Pobieranie pliku idzie prawdziwym kodem
+  firmware'u, po lokalnym gnieździe. Wszystko pod `Update.write()` jest
+  atrapą:
+  - `mock/Update.h` — zapis nowego programu. Trzyma dane w pamięci, bierze
+    ze sterty bufor 4 kB (tak jak biblioteka, żeby pomiar pamięci go liczył),
+    każde zapisane 4 kB „trwa” zadany czas (domyślnie 15 ms), a na końcu
+    sprawdza obraz w uproszczeniu: pierwszy bajt, układ ESP32, SHA-256 treści
+    równe ostatnim 32 bajtom pliku. Nie ma prawdziwej pamięci flash,
+    segmentów programu, sumy kontrolnej nagłówka ani błędów kasowania.
+  - `mock/esp_ota_ops.h` (`mock/esp_partition.h` tylko go włącza) — suma
+    własnego programu (`esp_partition_get_sha256()`): wartość wpisana przez
+    scenariusz albo błąd. Tego, że na płytce ta funkcja zwraca właśnie
+    ostatnie 32 bajty wgranego pliku, test nie sprawdza — wynika to ze źródeł
+    ESP-IDF, a pokaże pierwszy start v1.4.0 (linia `stan_przy_starcie obraz=…`
+    ma być równa identyfikatorowi z `narzedzia/ota_panelu_sprawdz.py --bin`).
+    Sam układ pliku (suma na końcu, numer układu w nagłówku) jest sprawdzony
+    na prawdziwych obrazach z repozytorium esptool:
+    `firmware-patch/v3.58.6-panel-ota/tests/sprawdz_prawdziwe_obrazy.sh`.
+  - W tym samym pliku: stan programu po starcie („do zatwierdzenia”) i samo
+    zatwierdzenie. Bootloadera, który wraca do poprzedniego programu, nie
+    ma: scenariusz `ota_wycofany_firmware` zaczyna od stanu, jaki taki powrót
+    zostawia.
+  - NVS (`mock/Preferences.h`) — mapa w pamięci, z możliwością wymuszenia
+    błędu zapisu.
+
+  Czasy z tych scenariuszy (1,2 MB w ok. 8 s, najdłuższy obrót pętli 35 ms)
+  wynikają z założeń: łącze 150 kB/s i 15 ms na każde 4 kB. Na płytce
+  rozkład jest inny: biblioteka `Update` kasuje pamięć programu blokami po
+  64 kB, a kasowanie bloku zatrzymuje oba rdzenie na ułamek sekundy. Co
+  64 kB pobranego pliku jeden obrót pętli będzie więc wyraźnie dłuższy niż
+  w modelu. Ile to trwa i jak wygląda wtedy ekran, pokaże dopiero płytka.
+  Stosu zadania pętli (8 kB) testy na PC nie mierzą wcale.
 - **Pobieranie danych na ekran Wykresy.** Od v1.3.0 idzie tym samym kodem co
   na płytce (gołe gniazda z `siec_nieblokujaca_LCD.h`), tylko gniazda są
   linuksowe, a „centrala” siedzi w tym samym programie. Szybkość łącza,
@@ -225,25 +277,26 @@ zastępuje `pomiar_sterty.c`, który liczy każdy blok, o jaki prosi firmware
 4 bajtów + 16 bajtów (arduino-esp32 3.x ma włączone lekkie „zatruwanie”
 sterty, `CONFIG_HEAP_POISONING_LIGHT`).
 
-Wynik dla v1.3.0:
+Wynik dla v1.4.0:
 
 ```
-po starcie firmware trzyma          129 244 B w 2470 blokach
-jedno odpytanie centrali, chwilowo    5 384 B wiecej
+po starcie firmware trzyma          129 324 B w 2470 blokach
+jedno odpytanie centrali, chwilowo    5 464 B wiecej
 przyrost po 10 minutach pracy             0 B
 ekran alarmu                            188 B wiecej
 ekran Wykresy otwarty                18 632 B wiecej
 ...i po jego zamknieciu                  24 B wiecej
 wykres z centrali 3.58.4 (pobranie i rysowanie), chwilowo 2 452 B wiecej
-wykres po staremu (caly CSV, 352 kB), chwilowo        5 412 B wiecej
+wykres po staremu (caly CSV, 352 kB), chwilowo        5 492 B wiecej
 po pierwszym wykresie zostaje           424 B (opisy osi i legenda, tworzone raz)
 przyrost po 5 kolejnych wykresach       -28 B
-zmienne statyczne firmware'u          4 468 B (v1.2.0: 3 092 B)
+zmienne statyczne firmware'u          5 366 B (v1.2.0: 3 092 B)
 ```
 
-Pierwsze sześć liczb jest takich samych jak w v1.2.2. v1.1.0 i v1.2.0
-trzymały po starcie 171 kB (170 324 B i 170 572 B), a jedno odpytanie brało
-7 080 B i 7 208 B.
+v1.3.0 i v1.2.2: 129 244 B po starcie i 5 384 B na odpytanie — v1.4.0 ma po
+80 B więcej (odpytanie: dłuższy adres, bo doszedł identyfikator programu).
+v1.1.0 i v1.2.0 trzymały po starcie 171 kB (170 324 B i 170 572 B), a jedno
+odpytanie brało 7 080 B i 7 208 B.
 
 Liczby „chwilowo” są od 2026-11-12 o ok. 0,2 kB niższe niż przy wydaniu
 v1.3.0 (wtedy: 5 588, 2 884 i 5 616 B; v1.1.0 i v1.2.0: 7 284 i 7 412 B).
@@ -267,15 +320,18 @@ ich nie widzi, a na płytce zabierają ten sam RAM. Sama liczba jest
 przybliżona (atrapy bibliotek mają inne rozmiary obiektów niż prawdziwe);
 wiarygodna jest różnica między wersjami: v1.2.2 ma ich o 864 B więcej niż
 v1.2.0, głównie przez bufor `logBezPamieci()` (640 B); v1.3.0 o kolejne
-512 B (bufor jednej linii pobieranej historii, 300 B, i stan pobierania).
-Skrypt odejmuje tę różnicę w szacunku i pilnuje limitem (5 000 B), żeby nie
-pojawiła się duża tablica statyczna.
+512 B (bufor jednej linii pobieranej historii, 300 B, i stan pobierania);
+v1.4.0 o kolejne 898 B (drugi obiekt pobierania — osobny dla aktualizacji,
+żeby wykres i aktualizacja nie mogły sobie przerwać — i stan aktualizacji).
+Skrypt odejmuje tę różnicę w szacunku i pilnuje limitem, żeby nie pojawiła
+się duża tablica statyczna. Limit był 5 000 B; dla v1.4.0 jest 6 000 B,
+z uzasadnieniem w nagłówku skryptu.
 
 Czego ten pomiar **nie** obejmuje: pamięci, którą na płytce biorą WiFi, lwIP
 i zadania systemu. Z logu z 2026-11-12 wychodzi na nie ok. 56 kB (płytka
 miała 234,6 kB przed budową ekranów i ok. 8 kB po starcie, a v1.2.0 trzyma
-171 kB). Dlatego „po starcie zostaje ok. 48 060 B” w wyniku skryptu
-(dla v1.2.2: 48 572 B) to **szacunek z jednego logu**. Prawdziwą liczbę
+171 kB). Dlatego „po starcie zostaje ok. 47 082 B” w wyniku skryptu
+(dla v1.3.0: 48 060 B, dla v1.2.2: 48 572 B) to **szacunek z jednego logu**. Prawdziwą liczbę
 podaje panel: `tag=PAMIEC zdarzenie=po_starcie ram=…`. To samo dotyczy
 pobierania wykresu: otwarte połączenie zajmuje na płytce pamięć stosu
 sieciowego, której tu nie widać — pokaże ją `ram_min=` w linii
@@ -293,9 +349,10 @@ o kilkanaście bajtów więcej albo mniej niż na płytce.
 
 ### Czy RAM-u starczy: `--przypadki`
 
-Krok [6] uruchamia w modelu 32-bitowym scenariusz `pomiar_przypadki`: po
-kolei 27 przypadków pracy, a dla każdego, ile pamięci firmware trzyma po nim
-i ile bierze **naraz** w najgorszej chwili — ponad stan po starcie:
+Krok [6] uruchamia w modelu 32-bitowym scenariusze `pomiar_przypadki`
+i (od v1.4.0) `pomiar_ota`: po kolei 29 przypadków pracy, a dla każdego, ile
+pamięci firmware trzyma po nim i ile bierze **naraz** w najgorszej chwili —
+ponad stan po starcie:
 
 - praca bez dotyku (10 minut i doba), ekran alarmu, każdy z pozostałych
   ekranów, polecenie z dotyku;
@@ -306,17 +363,30 @@ i ile bierze **naraz** w najgorszej chwili — ponad stan po starcie:
 - wykres w 80 różnych chwilach względem odpytań `/api/status` (5 szybkości
   łącza × 16 przesunięć) — szukany jest najgorszy zbieg;
 - alarm w trakcie pobierania; starsza centrala z całym CSV (8000 wierszy);
-  30 i 300 wykresów z rzędu.
+  30 i 300 wykresów z rzędu;
+- od v1.4.0: aktualizacja panelu — cały plik 1,2 MB aż do restartu oraz
+  aktualizacja przerwana w połowie (wycofana oferta), z pomiarem tego, co po
+  niej zostaje.
 
 Całość biegnie dwa razy: druga runda pokazuje, czy powtórzenie tych samych
 czynności coś zostawia. Na koniec doba pracy bez dotyku i 300 wykresów
-z rzędu. Wynik dla v1.3.0 (2026-11-12):
+z rzędu. Wynik dla v1.4.0 (2026-11-12):
 
 ```
-najwiecej naraz: 25 416 B (centrala po restarcie: napis zamiast wykresu)
-na plytce zostaje wtedy ok. 12 748 B wolnego RAM-u; bez otwartych Wykresow najmniej ok. 39 032 B
+aktualizacja panelu przerwana w polowie                     16    11 404       25 782
+aktualizacja panelu: caly plik 1,2 MB                  restart    11 484       25 702
+...
+najwiecej naraz: 25 496 B (centrala po restarcie: napis zamiast wykresu)
+na plytce zostaje wtedy ok. 11 690 B wolnego RAM-u; bez otwartych Wykresow najmniej ok. 25 702 B (aktualizacja panelu: caly plik 1,2 MB)
+po przerwanej aktualizacji zostaje 16 B ponad stan sprzed niej (bufor zapisu i nakladka z paskiem postepu sa zwalniane)
 po pierwszym przejsciu wszystkich przypadkow zostaje 1 248 B (tworzone raz), po drugim przybywa 0 B
 ```
+
+Kolumny dwóch pierwszych linii: ile zostaje po przypadku, ile naraz, ile
+wolnego RAM-u na płytce (szacunek). Dla v1.3.0 było: najwięcej naraz
+25 416 B, na płytce ok. 12 748 B; bez otwartych Wykresów najmniej ok.
+39 032 B (od v1.4.0 najcięższym przypadkiem poza Wykresami jest
+aktualizacja).
 
 Pojedyncze liczby różnią się między przebiegami o kilkadziesiąt bajtów.
 Udawana centrala działa w osobnym wątku i raz na kilka przebiegów któreś
@@ -329,7 +399,7 @@ skryptu, z opisem, skąd pochodzą:
 
 - `RAM_PO_STARCIE_V122_B=49676` — z logu płytki z v1.2.2; dla innych źródeł
   skrypt odejmuje to, o ile więcej trzymają po starcie i w zmiennych
-  statycznych (v1.3.0: 512 B);
+  statycznych (v1.3.0: 512 B; v1.4.0: 1 490 B);
 - `SIEC_ODPYTANIA_B=3500` — z tego samego logu: w spoczynku 50,1–50,5 kB,
   najmniej 41,6 kB, a model daje na odpytanie 5,4 kB;
 - `SIEC_WYKRES_B=7500` — nie zmierzone; górna granica z ustawień lwIP
@@ -343,6 +413,7 @@ RAM-u. Wynik:
 
 ```
 40 000 B   wszystko dziala, zadnej odmowy pamieci
+30 000 B   wszystko dziala, zadnej odmowy pamieci
 26 000 B   wszystko dziala, zadnej odmowy pamieci
 24 000 B   wykres jest; w trakcie 3 odpytan centrali bez pamieci (naglowek: BRAK PAMIECI), po wyjsciu z Wykresow wraca do normy
 20 000 B   wejscie na Wykresy (8 z 8 buforow) -> LVGL bez pamieci -> restart panelu z wpisem w logu
@@ -355,8 +426,11 @@ przedzialy (129 prob, co 250 B od 0 do 32 000 B):
   ponizej 21 000 B     wejscie na Wykresy konczy sie restartem panelu z wpisem w logu (61 z 84 prob) albo napisem (23 z 84)
   awarii modelu (siegniecie pod zly adres): 0 z 162 prob
 prog: od 24 900 B wolnego RAM-u w gore nie ma ani jednej odmowy pamieci
-plytka: 49 164 B po starcie - 11 000 B sieci = 38 164 B dla firmware'u, czyli 13 264 B ponad prog
+plytka: 48 186 B po starcie - 11 000 B sieci = 37 186 B dla firmware'u, czyli 12 286 B ponad prog
 ```
+
+(Wynik dla v1.4.0. v1.3.0: te same progi; płytka 49 164 B po starcie, czyli
+13 264 B ponad próg.)
 
 Poniżej 21 kB to, czy będzie napis, czy restart, zależy od tego, ile buforów
 punktów (po 2 304 B) zmieści się przed wyczerpaniem pamięci: bufory są
@@ -417,6 +491,11 @@ obserwacji (bez oceniania, każde sprawdzenie pokazuje `tak`/`NIE`):
 mkdir -p /tmp/stary && unzip -q "../../LCD Centrali.zip" -d /tmp/stary     # v1.1.0
 SRC=/tmp/stary/src OBSERWACJE=1 ./uruchom_testy.sh
 ```
+
+Scenariusze `ota_*` na źródłach starszych niż v1.4.0 nie są uruchamiane:
+każdy kończy się jedną linią `NIE` z wyjaśnieniem (symulator poznaje wersję
+po `DIAG_MA_OTA` w `diagnostyka_panelu.h`). Sprawdzone 2026-11-12 na
+źródłach v1.3.0: całość się buduje i przechodzi w trybie obserwacji.
 
 Scenariusze `wykresy_*` na źródłach do v1.2.2 pokazują same `NIE` — tamte
 wersje pobierały dane wykresów przez `HTTPClient`, którego atrapa nie łączy

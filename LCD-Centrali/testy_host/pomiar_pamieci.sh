@@ -6,7 +6,8 @@
 #   ./pomiar_pamieci.sh --kto      dodatkowo: ktora funkcja firmware'u trzyma ile pamieci
 #   ./pomiar_pamieci.sh --wszystko dodatkowo: wszystkie scenariusze symulatora w modelu 32-bitowym
 #   ./pomiar_pamieci.sh --przypadki dodatkowo: czy RAM-u starczy w kazdym przypadku pracy
-#                                  (kazdy ekran, wykresy na wszystkie sposoby, bledy, doba pracy)
+#                                  (kazdy ekran, wykresy na wszystkie sposoby, bledy, doba pracy,
+#                                  od v1.4.0 takze aktualizacja panelu przez centrale)
 #                                  i co robi panel, gdy wolnego RAM-u jest mniej (ok. 2 minut)
 #
 # Inna wersja zrodel (same liczby, bez limitow):
@@ -87,8 +88,16 @@ LIMIT_PRZYROST_B=256
 # staly bufor jednej linii pobieranej historii, 300 B, adres zapytania 64 B i
 # stan pobierania - dzieki nim pobieranie wykresu nie bierze nic ze sterty).
 # Limit podniesiony z 4 500 na 5 000 B: przy 4 500 v1.3.0 mialoby 32 B zapasu.
+# v1.4.0: 5 366 B. Doszlo 898 B na aktualizacje przez centrale: drugi obiekt
+# pobierania (otaFetch, 488 B - osobny od pobierania wykresow, zeby jedno nie
+# moglo przerwac drugiego), stan aktualizacji (152 B), kopia zapisu z NVS
+# (64 B), identyfikator wlasnego programu i powod czekania (33 B); reszta to
+# drobne zmienne i obiekty atrap (Update, partycja - 40 B). Tak jak przy
+# wykresach: dzieki nim samo pobieranie nie bierze nic ze sterty (bufor
+# sektora, 4 096 B, bierze biblioteka Update na czas zapisu - patrz przypadki
+# "aktualizacja panelu" w [6]). Limit podniesiony z 5 000 na 6 000 B.
 STATYCZNE_V120_B=3092
-LIMIT_STATYCZNE_B=5000
+LIMIT_STATYCZNE_B=6000
 # Plytka z logu 2026-11-12 (v1.2.0): 234 580 B wolnego RAM-u przed budowa
 # ekranow (273 480 B z logu minus 38 900 B obszaru, z ktorego malloc() nie
 # korzysta) i ok. 8 100 B po starcie. Ten model dla v1.2.0 daje 170 572 B,
@@ -117,10 +126,13 @@ STATYCZNE_V122_B=3956
 #     4 ramki po 1 436 B danych czekaja na odczyt, kazda w buforze WiFi ok.
 #     1,6 kB, plus ok. 1 kB na samo polaczenie. Dotyczy tez calego CSV ze
 #     starszej centrali - nadawca nie moze wyslac wiecej, niz miesci okno.
+#     Ta sama granica jest brana dla pobierania pliku aktualizacji (v1.4.0):
+#     to takie samo polaczenie, tylko dluzsze.
 SIEC_ODPYTANIA_B=3500
 SIEC_WYKRES_B=7500
-# Limity: najwiecej pamieci naraz ponad stan po starcie (v1.3.0: 25 416 B) i
-# najmniej wolnego RAM-u, jaki moze zostac na plytce w najgorszej chwili.
+# Limity: najwiecej pamieci naraz ponad stan po starcie (v1.3.0: 25 416 B,
+# v1.4.0: 25 496 B) i najmniej wolnego RAM-u, jaki moze zostac na plytce w
+# najgorszej chwili.
 LIMIT_NAJGORSZY_B=27000
 LIMIT_ZAPAS_PLYTKI_B=8000
 # Wolny RAM (dla firmware'u, po starcie), dla ktorego [7] sprawdza zachowanie.
@@ -314,6 +326,11 @@ if [ "$PRZYPADKI" = "1" ]; then
     echo "    BLAD: model zakonczyl sie awaria (patrz $WYNIKI/przypadki.txt)"
     WERDYKT=1
   fi
+  # Aktualizacja panelu przez centrale (v1.4.0): osobny przebieg, bo konczy sie restartem panelu.
+  if ! "$BUD/symulator32" pomiar_ota --obserwacje --wyjscie "$WYNIKI" > "$WYNIKI/przypadki_ota.txt" 2>&1; then
+    echo "    BLAD: model zakonczyl sie awaria (patrz $WYNIKI/przypadki_ota.txt)"
+    WERDYKT=1
+  fi
   # [7]: ten sam ciag czynnosci z limitem sterty: lista do tabeli, co 250 B od 0 do 32 kB
   # (przedzialy zachowan, szukanie awarii modelu) i co 100 B wokol progu.
   for F in $LISTA_MALO_RAMU $(seq 0 250 32000) $(seq 23000 100 27000); do
@@ -337,7 +354,11 @@ zle = []
 
 # ---------------------------------------------------------------- [6] --------
 r1, r2, uwagi, bledy, przyrost = {}, {}, {}, [], None
-for l in open(kat + '/przypadki.txt', errors='replace'):
+linie_przypadkow = list(open(kat + '/przypadki.txt', errors='replace'))
+# aktualizacja przez centrale: osobny przebieg modelu; zrodla starsze niz v1.4.0 jej nie maja
+linie_ota = list(open(kat + '/przypadki_ota.txt', errors='replace')) if os.path.exists(kat + '/przypadki_ota.txt') else []
+bez_ota = any(l.startswith('PRZYPADEK-INFO ota=brak') for l in linie_ota)
+for l in linie_przypadkow + linie_ota:
     m = re.match(r'(PRZYPADEK2?) (\S+) szczyt=(-?\d+) po=(-?\d+) ?(.*)', l)
     if m:
         (r1 if m.group(1) == 'PRZYPADEK' else r2)[m.group(2)] = (int(m.group(3)), int(m.group(4)))
@@ -348,7 +369,7 @@ for l in open(kat + '/przypadki.txt', errors='replace'):
 def pole(nazwa, klucz):
     m = re.search(r'\b%s=(-?\d+)' % klucz, uwagi.get(nazwa, ''))
     return int(m.group(1)) if m else None
-# (nazwa w modelu, opis, czy w trakcie idzie pobieranie wykresu, czego oczekujemy: 'wykres' / 'napis' / None)
+# (nazwa w modelu, opis, czy w trakcie idzie pobieranie (wykresu albo pliku aktualizacji), czego oczekujemy: 'wykres' / 'napis' / None)
 OPIS = [
     ('praca_10_min', 'praca bez dotyku, 10 minut', False, None),
     ('praca_24_h', 'praca bez dotyku, doba', False, None),
@@ -377,7 +398,11 @@ OPIS = [
     ('stara_centrala_tydzien_limit_20_s', 'starsza centrala: CSV nie zdazyl w 20 s', True, 'wykres'),
     ('wykresy_30_z_rzedu', '30 wykresow z rzedu', True, None),
     ('wykresy_300_z_rzedu', '300 wykresow z rzedu', True, None),
+    ('aktualizacja_przerwana', 'aktualizacja panelu przerwana w polowie', True, None),
+    ('aktualizacja_do_konca', 'aktualizacja panelu: caly plik 1,2 MB', True, None),
 ]
+# Przypadki poza ekranem Wykresy (do zdania "bez otwartych Wykresow najmniej ...").
+BEZ_WYKRESOW = ('praca_10_min', 'praca_24_h', 'alarm_przegrzania', '*ekrany', 'polecenie_z_dotyku', 'aktualizacja_przerwana', 'aktualizacja_do_konca')
 ekrany = {k: v for k, v in r1.items() if k.startswith('ekran_')}
 if ekrany: r1['*ekrany'] = (max(v[0] for v in ekrany.values()), max(v[1] for v in ekrany.values()))
 print('    plytka z logu 2026-11-12: po starcie %s B wolnego RAM-u (v1.2.2 zmierzone: %s B; te zrodla trzymaja o %s B %s)' % (
@@ -385,15 +410,18 @@ print('    plytka z logu 2026-11-12: po starcie %s B wolnego RAM-u (v1.2.2 zmier
 print('    siec plytki (model jej nie liczy): odpytania centrali do %s B, pobieranie wykresu do %s B' % (b(siec_odp), b(siec_wykres)))
 print('')
 print('    %-52s %9s %9s %12s' % ('przypadek', 'trzyma B', 'naraz B', 'na plytce B'))
-najg, najg_nazwa, najmniej_plytka = 0, '', None
+najg, najg_nazwa, najmniej_plytka, najmniej_bez_wykresow, najmniej_bez_wykresow_nazwa = 0, '', None, None, ''
 for nazwa, opis, pobieranie, oczek in OPIS:
     if nazwa not in r1:
+        if nazwa.startswith('aktualizacja_') and bez_ota: continue   # zrodla starsze niz v1.4.0
         zle.append('brak wyniku przypadku "%s"' % opis); continue
     szczyt, po = r1[nazwa]
     wolne = ram_plytki - szczyt - siec_odp - (siec_wykres if pobieranie else 0)
-    print('    %-52s %9s %9s %12s' % (opis, b(po), b(szczyt), b(wolne)))
+    # po calej aktualizacji panel sie restartuje - "trzyma" nie ma wtedy znaczenia
+    print('    %-52s %9s %9s %12s' % (opis, 'restart' if nazwa == 'aktualizacja_do_konca' else b(po), b(szczyt), b(wolne)))
     if szczyt > najg: najg, najg_nazwa = szczyt, opis
     if najmniej_plytka is None or wolne < najmniej_plytka: najmniej_plytka = wolne
+    if nazwa in BEZ_WYKRESOW and (najmniej_bez_wykresow is None or wolne < najmniej_bez_wykresow): najmniej_bez_wykresow, najmniej_bez_wykresow_nazwa = wolne, opis
     if oczek == 'wykres' and not (pole(nazwa, 'wykres') == 1 and pole(nazwa, 'serii') == 8):
         zle.append('przypadek "%s": wykresu z 8 seriami nie ma na ekranie' % opis)
     if oczek == 'napis' and not (pole(nazwa, 'wykres') == 0 and 'napis=""' not in uwagi.get(nazwa, '')):
@@ -405,8 +433,19 @@ for k in ('wykresy_30_z_rzedu', 'wykresy_300_z_rzedu'):
     if k in r1 and (pole(k, 'narysowanych') or 0) < int(k.split('_')[1]): zle.append('%s: narysowanych %s' % (k, pole(k, 'narysowanych')))
 print('')
 print('    najwiecej naraz: %s B (%s)' % (b(najg), najg_nazwa))
-print('    na plytce zostaje wtedy ok. %s B wolnego RAM-u; bez otwartych Wykresow najmniej ok. %s B' % (
-    b(najmniej_plytka), b(ram_plytki - max(r1[k][0] for k in ('praca_10_min', 'praca_24_h', 'alarm_przegrzania', '*ekrany', 'polecenie_z_dotyku') if k in r1) - siec_odp)))
+print('    na plytce zostaje wtedy ok. %s B wolnego RAM-u; bez otwartych Wykresow najmniej ok. %s B (%s)' % (
+    b(najmniej_plytka), b(najmniej_bez_wykresow if najmniej_bez_wykresow is not None else 0), najmniej_bez_wykresow_nazwa))
+# Aktualizacja przez centrale (v1.4.0): musi dojsc do konca, a przerwana nie moze nic zostawic.
+if 'aktualizacja_do_konca' in r1:
+    if not (pole('aktualizacja_do_konca', 'uruchomiono') == 1 and pole('aktualizacja_do_konca', 'caly_plik') == 1 and pole('aktualizacja_do_konca', 'restart') == 1):
+        zle.append('aktualizacja panelu w modelu nie doszla do konca: %s' % uwagi.get('aktualizacja_do_konca', ''))
+    if pole('aktualizacja_do_konca', 'wdt') not in (0, None): zle.append('w trakcie aktualizacji zadzialal watchdog')
+if 'aktualizacja_przerwana' in r1:
+    if not (pole('aktualizacja_przerwana', 'nakladka') == 1 and pole('aktualizacja_przerwana', 'nakladka_po') == 0 and pole('aktualizacja_przerwana', 'porzucono') == 1
+            and (pole('aktualizacja_przerwana', 'przerwana_ms') or -1) >= 0):
+        zle.append('przerwana aktualizacja w modelu nie przebiegla jak trzeba: %s' % uwagi.get('aktualizacja_przerwana', ''))
+    print('    po przerwanej aktualizacji zostaje %s B ponad stan sprzed niej (bufor zapisu i nakladka z paskiem postepu sa zwalniane)' % b(r1['aktualizacja_przerwana'][1]))
+    if r1['aktualizacja_przerwana'][1] > lim_przyrost: zle.append('po przerwanej aktualizacji zostaje %s B > limit %s B (wyciek pamieci?)' % (b(r1['aktualizacja_przerwana'][1]), b(lim_przyrost)))
 if przyrost is not None:
     print('    po pierwszym przejsciu wszystkich przypadkow zostaje %s B (tworzone raz), po drugim przybywa %s B' % (b(przyrost[0]), b(przyrost[1])))
     if przyrost[1] > lim_przyrost: zle.append('druga runda tych samych czynnosci: przybywa %s B > limit %s B (wyciek pamieci?)' % (b(przyrost[1]), b(lim_przyrost)))

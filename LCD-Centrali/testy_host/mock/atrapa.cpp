@@ -23,6 +23,7 @@ void (*atrapa_hak_czasu)(unsigned long ms) = nullptr;
 Atrapa::Atrapa() {
   for (int i = 0; i < 64; i++) { gpio[i] = HIGH; adcMv[i] = 0; }
   memset(ekran, 0, sizeof(ekran));
+  for (int i = 0; i < 32; i++) otaSumaWlasna[i] = (uint8_t)(0xA1 + i);   // identyfikator obrazu: "a1a2a3a4a5a6a7a8"
 }
 
 const AtrapaAp* Atrapa::polaczonyAp() const {

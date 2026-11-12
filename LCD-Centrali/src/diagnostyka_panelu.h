@@ -1,6 +1,7 @@
 // diagnostyka_panelu.h
 // ============================================================================
 // PANEL LCD - male, CZYSTE funkcje pomocnicze diagnostyki (v1.2.0 - v1.2.2)
+// i decyzje aktualizacji przez centrale (v1.4.0, sekcja "[v1.4.0 OTA]" na koncu)
 // ============================================================================
 // PO CO TEN PLIK:
 //   Log z 2026-11-10 (serial-20261110_200814.log) pokazal 3 minuty samych
@@ -787,6 +788,324 @@ static const float BATERIA_PROG_OBECNOSCI_V = 2.5f;
 
 inline bool bateriaObecna(float napiecieV) {
   return napiecieV >= BATERIA_PROG_OBECNOSCI_V;
+}
+
+// ---------------------------------------------------------------------------
+// [v1.4.0 OTA] Aktualizacja panelu przez centrale - decyzje i drobne narzedzia
+// ---------------------------------------------------------------------------
+// Jak to dziala od v1.4.0 (opis dla czlowieka: README.md, rozdzial o OTA):
+//   - Centrala podaje w /api/status, ze ma plik dla panelu. Centrala 3.58.6+
+//     podaje tez identyfikator pliku ("panel_ota_obraz": 16 znakow z sumy
+//     SHA-256, ktora esptool dopisuje na koncu kazdego programu ESP32) i numer
+//     oferty ("panel_ota_nr"). Starsza centrala podaje tylko tag wydania.
+//   - Panel zna identyfikator obrazu, z ktorego sam pracuje (ta sama suma,
+//     czytana z wlasnej partycji). Rowne = nie ma czego wgrywac.
+//   - Panel pamieta w NVS, co zrobil z ostatnia oferta (OtaZapis): ile razy
+//     zaczynal ja pobierac, czy ja wgral, czy nowy firmware wystartowal.
+//     Dzieki temu ten sam plik nie jest wgrywany w kolko - takze wtedy, gdy
+//     centrala (starsza) nigdy nie zdejmie flagi aktualizacji.
+#define DIAG_MA_OTA 1
+
+static const uint8_t  OTA_MAX_PROB         = 3;        // tyle razy panel zaczyna pobierac jedna oferte
+static const uint32_t OTA_ODSTEP_PROB_MS   = 30000;    // przerwa po nieudanej probie
+static const uint32_t OTA_PO_STARCIE_MS    = 20000;    // nie wczesniej niz tyle po wlaczeniu
+static const uint32_t OTA_BEZ_DOTYKU_MS    = 15000;    // nie w trakcie uzywania ekranu
+static const uint32_t OTA_RAM_MIN_B        = 30000;    // wolny RAM potrzebny do rozpoczecia
+static const uint32_t OTA_BLOK_MIN_B       = 12000;    // ...i najwiekszy wolny blok
+static const int      OTA_BATERIA_MIN_PROC = 30;       // na samym ogniwie: nie ponizej tylu procent
+static const uint32_t OTA_CISZA_MS         = 15000;    // tyle ciszy w trakcie pobierania konczy probe
+static const uint32_t OTA_CALOSC_MS        = 300000;   // limit calego pobierania (5 minut)
+static const size_t   OTA_NAGLOWEK_B       = 24;       // naglowek obrazu programu ESP32
+static const size_t   OTA_SUMA_B           = 32;       // suma SHA-256 na koncu obrazu
+
+// Identyfikator obrazu: 8 pierwszych bajtow sumy jako 16 malych znakow szesnastkowych.
+inline void otaObrazZSumy(const uint8_t* suma, char* wyjscie17) {
+  static const char ZNAKI[] = "0123456789abcdef";
+  for (int i = 0; i < 8; i++) {
+    wyjscie17[2 * i] = ZNAKI[(suma[i] >> 4) & 0x0F];
+    wyjscie17[2 * i + 1] = ZNAKI[suma[i] & 0x0F];
+  }
+  wyjscie17[16] = '\0';
+}
+
+// true = dokladnie 16 znakow 0-9 a-f.
+inline bool otaObrazPoprawny(const char* tekst) {
+  if (tekst == nullptr) return false;
+  for (int i = 0; i < 16; i++) {
+    const char c = tekst[i];
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+  }
+  return tekst[16] == '\0';
+}
+
+// Tekst do adresu zapytania: znaki A-Z a-z 0-9 - . _ ~ bez zmian, reszta jako
+// %XX. Haslo OTA trafia do adresu "/panel-ota.bin?token=..."; do v1.3.0 szlo
+// tam bez kodowania, wiec haslo ze znakiem & + % # albo spacja nie dzialalo.
+// false = nie zmiescilo sie (wyjscie jest wtedy pustym tekstem).
+inline bool urlKoduj(const char* wejscie, char* wyjscie, size_t n) {
+  static const char ZNAKI[] = "0123456789ABCDEF";
+  if (wyjscie == nullptr || n == 0) return false;
+  size_t dl = 0;
+  for (const char* p = (wejscie != nullptr ? wejscie : ""); *p != '\0'; p++) {
+    const unsigned char c = (unsigned char)*p;
+    const bool bezZmian = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+                          c == '-' || c == '.' || c == '_' || c == '~';
+    const size_t potrzeba = bezZmian ? 1 : 3;
+    if (dl + potrzeba + 1 > n) { wyjscie[0] = '\0'; return false; }
+    if (bezZmian) {
+      wyjscie[dl++] = (char)c;
+    } else {
+      wyjscie[dl++] = '%';
+      wyjscie[dl++] = ZNAKI[c >> 4];
+      wyjscie[dl++] = ZNAKI[c & 0x0F];
+    }
+  }
+  wyjscie[dl] = '\0';
+  return true;
+}
+
+// --- to, co panel pamieta o ostatniej ofercie (NVS, przestrzen "ota") ---
+enum OtaStanZapisu : uint8_t {
+  OTA_ZAPIS_BRAK = 0,     // nic
+  OTA_ZAPIS_PROBY = 1,    // panel zaczynal pobierac (`prob` razy), plik nie jest wgrany
+  OTA_ZAPIS_WGRANE = 2,   // plik wgrany, panel zrestartowal sie, zeby z niego wystartowac
+  OTA_ZAPIS_DZIALA = 3,   // nowy firmware wystartowal i zostal zatwierdzony
+  OTA_ZAPIS_ODMOWA = 4    // panel tej oferty juz nie wgra (`powod`)
+};
+
+// Powod odmowy. Teksty (otaPowodTekst) ida do centrali w panel_ota_odmowa=;
+// centrala 3.58.6 zna je i tlumaczy w wiadomosci (panelOtaOpisOdmowy()).
+enum OtaPowod : uint8_t {
+  OTA_POWOD_BRAK = 0,
+  OTA_POWOD_POBIERANIE = 1,   // proby pobrania sie nie udaly
+  OTA_POWOD_OBRAZ = 2,        // plik nie jest poprawnym programem dla tego panelu
+  OTA_POWOD_COFNIETA = 3,     // nowy firmware nie wystartowal - bootloader wrocil do poprzedniego
+  OTA_POWOD_ZA_DUZY = 4,      // plik wiekszy niz partycja
+  OTA_POWOD_HASLO = 5,        // centrala odrzucila haslo OTA
+  OTA_POWOD_ZAPIS = 6         // zapis do pamieci flash sie nie udal
+};
+
+inline const char* otaPowodTekst(uint8_t powod) {
+  switch (powod) {
+    case OTA_POWOD_POBIERANIE: return "pobieranie";
+    case OTA_POWOD_OBRAZ:      return "obraz";
+    case OTA_POWOD_COFNIETA:   return "cofnieta";
+    case OTA_POWOD_ZA_DUZY:    return "za_duzy";
+    case OTA_POWOD_HASLO:      return "haslo";
+    case OTA_POWOD_ZAPIS:      return "zapis";
+    default:                   return "inny";
+  }
+}
+
+static const size_t OTA_KLUCZ_MAKS = 44;
+
+struct OtaZapis {
+  char    klucz[OTA_KLUCZ_MAKS];   // ktora oferta: otaKlucz()
+  uint8_t stan;                    // OtaStanZapisu
+  uint8_t prob;                    // ile razy panel zaczal pobierac te oferte
+  uint8_t powod;                   // OtaPowod: przyczyna ostatniej nieudanej proby albo odmowy
+  char    oczekiwany[17];          // identyfikator obrazu, ktory ma dzialac po restarcie (stan WGRANE)
+};
+
+// Klucz oferty. Centrala 3.58.6+: "n<numer>:<obraz>" - kazde /update_panel to
+// nowy numer, wiec uzytkownik moze swiadomie ponowic probe tego samego pliku.
+// Starsza centrala: "t:<tag wydania>" (niczego wiecej o pliku nie podaje).
+inline void otaKlucz(char* wyjscie, size_t n, bool nowaCentrala, uint32_t nr, const char* obraz, const char* tag) {
+  if (wyjscie == nullptr || n == 0) return;
+  if (nowaCentrala) snprintf(wyjscie, n, "n%lu:%s", (unsigned long)nr, obraz != nullptr ? obraz : "");
+  else snprintf(wyjscie, n, "t:%.31s", tag != nullptr ? tag : "");
+}
+
+// Poczatek proby: licznik rosnie ZANIM cokolwiek sie zacznie i od razu idzie
+// do NVS. Gdyby panel zawieszal sie w trakcie pobierania, po trzech takich
+// startach przestanie probowac (zamiast restartowac sie bez konca).
+inline void otaZapisRozpocznijProbe(OtaZapis& z, const char* klucz) {
+  if (strcmp(z.klucz, klucz) != 0) {
+    memset(&z, 0, sizeof(z));
+    snprintf(z.klucz, sizeof(z.klucz), "%s", klucz);
+  }
+  z.stan = OTA_ZAPIS_PROBY;
+  if (z.prob < 255) z.prob++;
+}
+
+// Proba przerwana nie z winy pliku ani sieci (alarm, oferta znikla): nie liczy sie.
+inline void otaZapisOddajProbe(OtaZapis& z) {
+  if (z.stan == OTA_ZAPIS_PROBY && z.prob > 0) z.prob--;
+}
+
+// Nieudana proba. true = to byla ostatnia (albo blad, przy ktorym powtarzanie nie ma sensu).
+inline bool otaZapisNieudana(OtaZapis& z, uint8_t powod, bool ostateczna) {
+  z.powod = powod;
+  if (ostateczna || z.prob >= OTA_MAX_PROB) {
+    z.stan = OTA_ZAPIS_ODMOWA;
+    return true;
+  }
+  return false;
+}
+
+inline void otaZapisWgrane(OtaZapis& z, const char* oczekiwany) {
+  z.stan = OTA_ZAPIS_WGRANE;
+  z.powod = OTA_POWOD_BRAK;
+  snprintf(z.oczekiwany, sizeof(z.oczekiwany), "%s", oczekiwany != nullptr ? oczekiwany : "");
+}
+
+// Po starcie, PO zatwierdzeniu dzialajacej partycji: co wyszlo z ostatniego wgrania.
+//   0 = nic do oceny, 1 = nowy firmware dziala, 2 = dziala poprzedni (nowy nie
+//   wystartowal i bootloader go wycofal).
+// `obrazWlasny` pusty (nie dalo sie odczytac sumy wlasnego obrazu): 1 - nie ma
+// podstaw, zeby zglaszac wycofanie.
+inline int otaOcenPoStarcie(OtaZapis& z, const char* obrazWlasny) {
+  if (z.stan != OTA_ZAPIS_WGRANE) return 0;
+  const bool znany = (obrazWlasny != nullptr && obrazWlasny[0] != '\0' && z.oczekiwany[0] != '\0');
+  if (!znany || strcmp(obrazWlasny, z.oczekiwany) == 0) {
+    z.stan = OTA_ZAPIS_DZIALA;
+    return 1;
+  }
+  z.stan = OTA_ZAPIS_ODMOWA;
+  z.powod = OTA_POWOD_COFNIETA;
+  return 2;
+}
+
+// --- pierwsze 24 i ostatnie 32 bajty pobieranego pliku ---
+struct OtaSkan {
+  uint8_t  naglowek[OTA_NAGLOWEK_B];
+  uint8_t  ogon[OTA_SUMA_B];
+  uint32_t lacznie;
+};
+
+inline void otaSkanStart(OtaSkan& s) { memset(&s, 0, sizeof(s)); }
+
+inline void otaSkanDodaj(OtaSkan& s, const uint8_t* dane, size_t n) {
+  if (dane == nullptr || n == 0) return;
+  for (size_t i = 0; i < n && (size_t)s.lacznie + i < OTA_NAGLOWEK_B; i++) s.naglowek[(size_t)s.lacznie + i] = dane[i];
+  if (n >= OTA_SUMA_B) {
+    memcpy(s.ogon, dane + (n - OTA_SUMA_B), OTA_SUMA_B);
+  } else {
+    memmove(s.ogon, s.ogon + n, OTA_SUMA_B - n);
+    memcpy(s.ogon + (OTA_SUMA_B - n), dane, n);
+  }
+  s.lacznie += (uint32_t)n;
+}
+
+// Naglowek programu ESP32, gdy jest juz caly (24 bajty):
+//   OTA_POWOD_BRAK  = program dla ESP32 (albo naglowka jeszcze nie ma),
+//   OTA_POWOD_OBRAZ = to nie program ESP32 albo program dla innego ukladu
+//                     (np. firmware centrali, ESP32-S3) - nie ma co pobierac dalej.
+inline uint8_t otaSkanOcenNaglowek(const OtaSkan& s) {
+  if (s.lacznie < OTA_NAGLOWEK_B) return OTA_POWOD_BRAK;
+  if (s.naglowek[0] != 0xE9) return OTA_POWOD_OBRAZ;
+  const unsigned uklad = (unsigned)s.naglowek[12] | ((unsigned)s.naglowek[13] << 8);
+  return uklad == 0x0000 ? OTA_POWOD_BRAK : OTA_POWOD_OBRAZ;
+}
+
+// Identyfikator pobranego pliku (z jego ostatnich 32 bajtow). Pusty tekst, gdy
+// plik nie ma dopisanej sumy (bajt 23 naglowka) albo jest za krotki.
+inline void otaSkanObraz(const OtaSkan& s, char* wyjscie17) {
+  wyjscie17[0] = '\0';
+  if (s.lacznie < OTA_NAGLOWEK_B + OTA_SUMA_B || s.naglowek[23] != 1) return;
+  otaObrazZSumy(s.ogon, wyjscie17);
+}
+
+// --- decyzja: co zrobic z oferta centrali ---
+struct OtaOferta {
+  bool        dostepna;       // "panel_ota_dostepna"
+  bool        nowaCentrala;   // centrala podala poprawny "panel_ota_obraz" (3.58.6+)
+  uint32_t    nr;             // "panel_ota_nr"
+  const char* obraz;          // "panel_ota_obraz" ("" gdy brak)
+  const char* tag;            // "panel_ota_wersja"
+};
+
+struct OtaWarunki {
+  bool     alarm;               // centrala zglasza alarm (albo panel go wlasnie pokazuje)
+  bool     daneSwieze;          // ostatni status z centrali jest swiezy
+  bool     wifi;
+  bool     siecZajeta;          // trwa pobieranie wykresu albo wysylanie polecenia z dotyku
+  uint32_t odStartuMs;
+  uint32_t bezDotykuMs;         // ile czasu nikt nie dotykal ekranu
+  bool     bateriaJest;         // ogniwo podlaczone
+  bool     zasilanieUsb;
+  int      bateriaProcent;
+  uint32_t ramWolny;
+  uint32_t ramBlok;
+  bool     bylaProba;           // w tej sesji byla juz proba...
+  uint32_t odOstatniejProbyMs;  // ...tyle temu sie skonczyla
+};
+
+enum OtaAkcja : uint8_t {
+  OTA_AKCJA_NIC = 0,     // nie ma oferty
+  OTA_AKCJA_CZEKAJ,      // jest oferta, ale jeszcze nie teraz (`powod`)
+  OTA_AKCJA_POMIN,       // oferta nie wymaga niczego (`powod`)
+  OTA_AKCJA_ODMOW,       // panel tej oferty nie wgra - zglos centrali (`powodOdmowy`)
+  OTA_AKCJA_START        // zacznij pobierac
+};
+
+struct OtaDecyzja {
+  OtaAkcja    akcja;
+  const char* powod;         // krotki tekst do logu
+  uint8_t     powodOdmowy;   // OtaPowod, tylko przy OTA_AKCJA_ODMOW
+};
+
+inline OtaDecyzja otaDecyzja(const OtaOferta& o, const char* obrazWlasny, const OtaZapis& z, const OtaWarunki& w) {
+  if (!o.dostepna) return {OTA_AKCJA_NIC, "brak_oferty", OTA_POWOD_BRAK};
+  if (o.nowaCentrala && obrazWlasny != nullptr && obrazWlasny[0] != '\0' && strcmp(o.obraz, obrazWlasny) == 0) {
+    return {OTA_AKCJA_POMIN, "juz_mam", OTA_POWOD_BRAK};
+  }
+  char klucz[OTA_KLUCZ_MAKS];
+  otaKlucz(klucz, sizeof(klucz), o.nowaCentrala, o.nr, o.obraz, o.tag);
+  if (strcmp(z.klucz, klucz) == 0) {
+    if (z.stan == OTA_ZAPIS_ODMOWA) return {OTA_AKCJA_ODMOW, "odmowa", z.powod != OTA_POWOD_BRAK ? z.powod : (uint8_t)OTA_POWOD_POBIERANIE};
+    if (z.stan == OTA_ZAPIS_DZIALA) return {OTA_AKCJA_POMIN, "juz_wgrane", OTA_POWOD_BRAK};
+    if (z.stan == OTA_ZAPIS_WGRANE) return {OTA_AKCJA_POMIN, "czeka_na_ocene", OTA_POWOD_BRAK};
+    if (z.stan == OTA_ZAPIS_PROBY && z.prob >= OTA_MAX_PROB) {
+      return {OTA_AKCJA_ODMOW, "proby_wyczerpane", z.powod != OTA_POWOD_BRAK ? z.powod : (uint8_t)OTA_POWOD_POBIERANIE};
+    }
+  }
+  if (w.alarm) return {OTA_AKCJA_CZEKAJ, "alarm", OTA_POWOD_BRAK};
+  if (!w.wifi) return {OTA_AKCJA_CZEKAJ, "brak_wifi", OTA_POWOD_BRAK};
+  if (!w.daneSwieze) return {OTA_AKCJA_CZEKAJ, "brak_danych", OTA_POWOD_BRAK};
+  if (w.odStartuMs < OTA_PO_STARCIE_MS) return {OTA_AKCJA_CZEKAJ, "po_starcie", OTA_POWOD_BRAK};
+  if (w.bylaProba && w.odOstatniejProbyMs < OTA_ODSTEP_PROB_MS) return {OTA_AKCJA_CZEKAJ, "odstep", OTA_POWOD_BRAK};
+  if (w.siecZajeta) return {OTA_AKCJA_CZEKAJ, "siec_zajeta", OTA_POWOD_BRAK};
+  if (w.bezDotykuMs < OTA_BEZ_DOTYKU_MS) return {OTA_AKCJA_CZEKAJ, "dotyk", OTA_POWOD_BRAK};
+  if (w.bateriaJest && !w.zasilanieUsb && w.bateriaProcent < OTA_BATERIA_MIN_PROC) return {OTA_AKCJA_CZEKAJ, "bateria", OTA_POWOD_BRAK};
+  if (w.ramWolny < OTA_RAM_MIN_B || w.ramBlok < OTA_BLOK_MIN_B) return {OTA_AKCJA_CZEKAJ, "pamiec", OTA_POWOD_BRAK};
+  return {OTA_AKCJA_START, "start", OTA_POWOD_BRAK};
+}
+
+// Adres zapytania o status. Do v1.3.0: "/api/status?panel_fw=<wersja>&reset_powod=<powod>".
+// Od v1.4.0 dochodzi (starsza centrala nieznane parametry pomija):
+//   &panel_obraz=<16 znakow>        obraz, z ktorego panel pracuje - zatwierdzony,
+//   &panel_obraz_proba=<16 znakow>  to samo, ale to pierwszy start po wgraniu i
+//                                   obraz nie jest jeszcze zatwierdzony,
+//   &panel_ota_odmowa=<nr>-<powod>  panel nie wgra oferty o tym numerze,
+//   &panel_ota_czeka=<powod>        panel widzi oferte, ale jeszcze nie zaczyna
+//                                   (`czeka`: powod z otaDecyzja(), np. "dotyk",
+//                                   "bateria", "pamiec"; nullptr albo "" = bez
+//                                   tego parametru). Centrala 3.58.6 podaje ten
+//                                   powod uzytkownikowi, gdy panel dlugo nie zaczyna.
+// false = nie zmiescilo sie w buforze (wyjscie jest wtedy obciete, nie uzywac).
+inline bool otaSciezkaStatusu(char* wyjscie, size_t n, const char* wersja, const char* powodResetu, const char* obrazWlasny,
+                              bool obrazZatwierdzony, bool zglosOdmowe, uint32_t nrOferty, uint8_t powodOdmowy,
+                              const char* czeka = nullptr) {
+  if (wyjscie == nullptr || n == 0) return false;
+  int dl = snprintf(wyjscie, n, "/api/status?panel_fw=%s&reset_powod=%s", wersja != nullptr ? wersja : "", powodResetu != nullptr ? powodResetu : "");
+  if (dl < 0 || (size_t)dl >= n) return false;
+  if (obrazWlasny != nullptr && obrazWlasny[0] != '\0') {
+    const int d = snprintf(wyjscie + dl, n - (size_t)dl, "&%s=%s", obrazZatwierdzony ? "panel_obraz" : "panel_obraz_proba", obrazWlasny);
+    if (d < 0 || (size_t)(dl + d) >= n) return false;
+    dl += d;
+  }
+  if (zglosOdmowe) {
+    const int d = snprintf(wyjscie + dl, n - (size_t)dl, "&panel_ota_odmowa=%lu-%s", (unsigned long)nrOferty, otaPowodTekst(powodOdmowy));
+    if (d < 0 || (size_t)(dl + d) >= n) return false;
+    dl += d;
+  }
+  if (czeka != nullptr && czeka[0] != '\0') {
+    const int d = snprintf(wyjscie + dl, n - (size_t)dl, "&panel_ota_czeka=%s", czeka);
+    if (d < 0 || (size_t)(dl + d) >= n) return false;
+    dl += d;
+  }
+  return true;
 }
 
 }  // namespace diag

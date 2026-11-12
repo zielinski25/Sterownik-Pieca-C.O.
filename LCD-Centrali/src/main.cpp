@@ -38,6 +38,70 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.4.0 - AKTUALIZACJA PRZEZ CENTRALE (OTA): W TRAKCIE PRACY, Z
+//   POSTEPEM NA EKRANIE, BEZ WGRYWANIA W KOLKO.
+//   Decyzja uzytkownika: "Dzialaj" po raporcie
+//   RAPORT_OTA_PANELU_PRZEZ_CENTRALE.md (w repozytorium).
+//   Jak bylo (v1.1.0-v1.3.0, z czytania kodu i z uruchomienia na PC):
+//   - Panel sprawdzal oferte centrali RAZ, na koncu setup(). Pracujacy panel
+//     nie zaczynal aktualizacji, dopoki ktos go nie wylaczyl i nie wlaczyl.
+//   - Pobieranie (biblioteka HTTPUpdate) nie wracalo do petli: pusty ekran,
+//     bez odpytywania centrali, watchdog wypisany na ten czas. Zaczynalo sie
+//     takze w trakcie alarmu.
+//   - Panel nie pamietal, co juz wgral. Centrala do 3.58.5 zdejmuje oferte
+//     tylko wtedy, gdy panel zglosi wersje identyczna z tagiem wydania
+//     ("v1.3.0" kontra "3.57.9") - wiec po udanym wgraniu panel wgrywal ten
+//     sam plik przy kazdym starcie.
+//   Jak jest (kod: sekcja "[v1.4.0 OTA] AKTUALIZACJA PANELU PRZEZ CENTRALE"
+//   nizej; decyzje: diagnostyka_panelu.h, sekcja [v1.4.0 OTA]):
+//   - Panel zna identyfikator programu, z ktorego pracuje: poczatek sumy
+//     SHA-256, ktora esptool dopisuje na koncu kazdego programu ESP32
+//     (esp_partition_get_sha256()). Zglasza go centrali w kazdym zapytaniu
+//     o status (panel_obraz=..., a przy pierwszym starcie po wgraniu
+//     panel_obraz_proba=...). Centrala 3.58.6 podaje identyfikator pliku,
+//     ktory ma dla panelu ("panel_ota_obraz") - rowne = nie ma czego wgrywac.
+//   - Panel pamieta w NVS (przestrzen "otapanel"), co zrobil z ostatnia
+//     oferta: ile razy zaczynal pobierac, czy wgral, czy nowy program
+//     wystartowal. Jedna oferta = najwyzej 3 proby; plik raz wgrany nie jest
+//     wgrywany ponownie - takze przy starszej centrali, ktora oferty nie
+//     zdejmie nigdy.
+//   - Aktualizacja zaczyna sie W TRAKCIE PRACY (otaKrok() w loop()), gdy:
+//     nie ma alarmu, dane z centrali sa swieze, minelo 20 s od startu, nikt
+//     nie dotykal ekranu od 15 s, nie trwa pobieranie wykresu ani wysylanie
+//     polecenia, wolnego RAM-u jest co najmniej 30 kB (najwiekszy blok 12 kB),
+//     a na samym ogniwie bateria ma co najmniej 30 %.
+//   - Pobieranie nie zatrzymuje petli (StrumienHttpGet::startBinarnie() w
+//     siec_nieblokujaca_LCD.h): do 4 kB na obrot, prosto do Update.write().
+//     Ekran pokazuje "AKTUALIZACJA PANELU" z paskiem postepu, panel dalej
+//     pyta centrale o status, watchdog pilnuje petli jak zawsze.
+//   - Alarm albo wycofanie oferty w trakcie pobierania przerywa je od razu;
+//     taka proba sie nie liczy. Cisza 15 s albo 5 minut calosci konczy probe.
+//   - Przed uruchomieniem nowego programu: naglowek pliku (program ESP32, nie
+//     ESP32-S3 centrali), rozmiar, identyfikator rowny temu z oferty, a na
+//     koncu sprawdzenie calego obrazu przez ESP-IDF (Update.end()).
+//   - Po restarcie: jesli nowy program nie doszedl do zatwierdzenia i
+//     bootloader wrocil do poprzedniego, panel to rozpoznaje (dziala inny
+//     program niz wgrany) i tej oferty wiecej nie probuje.
+//   - Panel mowi centrali, czego nie zrobi i dlaczego
+//     (panel_ota_odmowa=<nr>-<powod>) oraz dlaczego jeszcze nie zaczal
+//     (panel_ota_czeka=<powod>). Starsza centrala te parametry pomija.
+//   - Haslo OTA jest kodowane do adresu (%XX) i nie pojawia sie w logu
+//     ([NET-DIAG] pokazuje "token=***").
+//   Zgodnosc: z centrala do 3.58.5 panel aktualizuje sie tak samo (sam, w
+//   trakcie pracy, raz na tag wydania), ale centrala nie dowie sie o wyniku i
+//   zostanie z niezdjeta oferta (blokada /update do recznego zdjecia - patrz
+//   README). Pelna obsluga: centrala 3.58.6
+//   (firmware-patch/v3.58.6-panel-ota).
+//   Usunieto: wykonajAktualizacjeOTAPanelu(), sprawdzIWykonajOtaPanelu(),
+//   OTA_TIMEOUT_MS, #include <HTTPClient.h> i <HTTPUpdate.h> (panel nie
+//   uzywa juz zadnej z tych bibliotek).
+//   Pamiec: w spoczynku bez zmian (stan OTA to ok. 250 B zmiennych
+//   globalnych); w trakcie pobierania Update trzyma bufor 4 kB.
+//   Sprawdzone na PC (testy_host/): decyzje - test_diagnostyka.cpp; caly
+//   przebieg z prawdziwym kodem decyzji centrali 3.58.6 - scenariusze ota_*.
+//   Typy i nazwy sprawdzone naglowkami arduino-esp32 3.0.7 i 3.3.8. NIE
+//   kompilowane w PlatformIO, NIE uruchamiane na plytce: sam zapis do flash,
+//   bootloader i wycofanie nieudanego programu sprawdzi dopiero plytka.
 // [2026-11-12] v1.3.0 - WYKRESY: PUNKTY LICZY CENTRALA, POBIERANIE NIE
 //   ZATRZYMUJE PANELU.
 //   Prosba uzytkownika: "jak wybiore wykresy, to centrala ma pobrac dane z
@@ -480,7 +544,6 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <HTTPClient.h>
 #include <Preferences.h>
 #include <SPI.h>
 #include <TFT_eSPI.h>
@@ -511,8 +574,12 @@
 // docelowo, do samego wgrywania aktualizacji (prompt #7). Ten sam naglowek
 // WDT co w main_centrala.cpp ([FIX-WDT]) — panel dotad nie mial ZADNEJ
 // konfiguracji Task WDT, patrz komentarz przy setup() nizej.
-#include <HTTPUpdate.h>
+// [v1.4.0 OTA] Update.h zamiast HTTPUpdate.h: panel sam pobiera plik (otaFetch,
+// bez zatrzymywania petli) i oddaje go do Update.write(). HTTPClient.h i
+// HTTPUpdate.h nie sa juz uzywane nigdzie w tym pliku.
+#include <Update.h>
 #include <esp_ota_ops.h>
+#include <esp_partition.h>   // [v1.4.0 OTA] esp_partition_get_sha256() - identyfikator wlasnego programu
 #include <esp_task_wdt.h>
 #include <esp_wifi.h>    // [v1.2.0 WIFI-WYBOR] esp_wifi_scan_stop() - patrz wifiSkanujCentrale()
 #include <esp_heap_caps.h>   // [v1.2.2 PAMIEC] heap_caps_get_*() - patrz ramWolny()
@@ -617,6 +684,7 @@ NonBlockingHttp statusFetch;
 NonBlockingHttp ustawieniaFetch;
 NonBlockingHttp komendaFetch;
 StrumienHttpGet wykresyFetch;   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy, linia po linii (patrz obslugaWykresyFetch())
+StrumienHttpGet otaFetch;       // [v1.4.0 OTA] nowy firmware panelu z centrali (/panel-ota.bin), tresc binarna (patrz otaKrok())
 WskaznikSwiezosci swiezoscStatusu;
 WskaznikSwiezosci swiezoscUstawien;
 // [v1.2.0 DANE-NIEAKTUALNE] Bylo 3 * STATUS_INTERWAL_MS (6 s) i NIGDZIE nie
@@ -741,16 +809,15 @@ PoKomendzie pendingPoKomendzie = PoKomendzie::BRAK;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.3.0"; // [2026-11-12] v1.3.0: ekran Wykresy dostaje gotowe punkty od centrali (firmware centrali 3.58.4+; ze starsza dziala po staremu), pobieranie nie zatrzymuje panelu, przyczyna braku wykresu na ekranie i w logu. v1.2.2 [2026-11-12]: o ok. 40 kB mniej zajetego RAM-u (przyczyna "json=NoMemory" z logu panelu), prawdziwy wolny RAM w logu, brak pamieci jako osobna przyczyna. v1.2.1 [2026-11-12]: panel sam sie ratuje, gdy nie ma danych (ponowne polaczenie -> restart) i pokazuje, czego brakuje. v1.2.0 [2026-11-11]: wybor najsilniejszej centrali, dane nieaktualne -> "--", diagnostyka. v1.1.0 [2026-09-12]: nieblokujaca warstwa sieciowa. Patrz HISTORIA ZMIAN.
+static const char* FIRMWARE_VERSION_PANEL = "v1.4.0"; // [2026-11-12] v1.4.0: aktualizacja przez centrale zaczyna sie w trakcie pracy, z postepem na ekranie i bez wgrywania tego samego pliku w kolko (pelna obsluga: centrala 3.58.6); opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
 // wspolnego katalogu include/. Zmieniajac jedno, zmien i drugie.
 static const char* OTA_HASLO_PANEL = SECRET_OTA_HASLO;
-// Osobny, dluzszy timeout na pobranie CALEGO firmware'u (httpUpdate.update())
-// - HTTP_TIMEOUT_MS (1500ms) wyzej jest dla drobnych zapytan /api/status i
-// za krotki na kilkasetkilobajtowy plik nawet w lokalnej sieci AP.
-static const uint32_t OTA_TIMEOUT_MS = 20000;
+// [v1.4.0 OTA] Limity czasu pobierania firmware'u sa w diagnostyka_panelu.h
+// (diag::OTA_CISZA_MS: 15 s bez danych konczy probe; diag::OTA_CALOSC_MS:
+// 5 minut na calosc). Dawny OTA_TIMEOUT_MS (20 s w HTTPUpdate) zniknal.
 
 // [v1.3.0 WYKRESY] Limity czasu pobierania historii dla ekranu Wykresy sa od
 // tej wersji w siec_nieblokujaca_LCD.h (SiecCfg::STRUMIEN_*): pobieranie nie
@@ -1374,19 +1441,54 @@ struct StanPieca {
   // internet). Ten sam wzorzec co rssi: centrala liczy/mierzy, LCD tylko
   // odczytuje z /api/status.
   bool  internet = false;
-  // [OTA-PANEL, ta sesja] Flaga i docelowa wersja z centrali — patrz
-  // wykonajAktualizacjeOTAPanelu() nizej i TG_UPDATE_PANEL w main_centrala.cpp.
-  bool   panelOtaDostepna = false;
-  String panelOtaWersja;
+  // [OTA-PANEL, ta sesja] Oferta aktualizacji z centrali (/api/status) — patrz
+  // otaKrok() nizej i TG_UPDATE_PANEL w main_centrala.cpp.
+  // [v1.4.0 OTA] Stale tablice zamiast String (bez przydzialu pamieci co 2 s)
+  // i dwa nowe pola od centrali 3.58.6.
+  bool     panelOtaDostepna = false;
+  char     panelOtaWersja[32] = "";   // "panel_ota_wersja": tag wydania, z ktorego jest plik
+  char     panelOtaObraz[17] = "";    // "panel_ota_obraz": identyfikator pliku; "" = centrala do 3.58.5 (nie podaje)
+  uint32_t panelOtaNr = 0;            // "panel_ota_nr": numer oferty (centrala 3.58.6+)
 };
 StanPieca stan;
 
 // [OTA-PANEL, ta sesja] Blokuje wejscie w deep sleep na czas pobierania/
-// flashowania panelu (prompt #8 — patrz idzSpac() nizej i
-// wykonajAktualizacjeOTAPanelu() przy setup()). Zadeklarowane TUTAJ (a nie
-// przy funkcjach OTA, blisko setup()) bo idzSpac() jest zdefiniowane
+// flashowania panelu (prompt #8 — patrz idzSpac() nizej). Zadeklarowane TUTAJ
+// (a nie przy funkcjach OTA, blisko setup()) bo idzSpac() jest zdefiniowane
 // wczesniej w pliku i musi juz ja widziec.
+// [v1.4.0 OTA] Ustawiana przez otaZacznij(), zdejmowana przez
+// otaSprzatnijPoProbie(). Wstrzymuje tez panelRatunekKrok().
 bool trwaAktualizacjaOtaPanelu = false;
+
+// [v1.4.0 OTA] Stan aktualizacji przez centrale. Zmienne sa TUTAJ (a nie przy
+// funkcjach OTA blizej setup()), bo pobierzStatus() i odczyt odpowiedzi
+// centrali, zdefiniowane wczesniej w pliku, juz z nich korzystaja.
+static char otaObrazWlasny[17] = "";        // identyfikator programu, z ktorego panel pracuje ("" = nie dalo sie odczytac)
+static bool otaObrazZatwierdzony = true;    // false = pierwszy start po wgraniu przez OTA, partycja jeszcze nie zatwierdzona
+static diag::OtaZapis otaZapis = {};        // co panel zrobil z ostatnia oferta (kopia zapisu z NVS)
+// To, co panel dokleja do adresu zapytan /api/status (pobierzStatus()):
+static bool     otaZglosOdmowe = false;     // &panel_ota_odmowa=<nr>-<powod>
+static uint32_t otaOdmowaNr = 0;
+static uint8_t  otaOdmowaPowod = diag::OTA_POWOD_BRAK;
+static char     otaCzekaPowod[16] = "";     // &panel_ota_czeka=<powod>; "" = bez tego parametru
+// Trwajace pobieranie.
+struct OtaPobieranie {
+  bool          trwa;
+  diag::OtaSkan skan;               // pierwsze 24 i ostatnie 32 bajty pliku
+  uint8_t       blad;               // diag::OtaPowod; OTA_POWOD_BRAK = dotad bez bledu
+  bool          ostateczny;         // blad, przy ktorym ponawianie nie ma sensu
+  const char   *opisBledu;          // do logu
+  bool          zapisZaczety;       // Update.begin() sie udal
+  uint32_t      zapisano;           // bajty oddane do Update.write()
+  uint32_t      rozmiar;            // rozmiar pliku zapowiedziany przez centrale (Content-Length)
+  char          klucz[diag::OTA_KLUCZ_MAKS];   // ktora oferte panel pobiera
+  char          obrazOferty[17];    // identyfikator pliku z oferty ("" = starsza centrala go nie podaje)
+  bool          nowaCentrala;
+  int           procentNaEkranie;
+};
+static OtaPobieranie otaP = {};
+static bool otaBylaProba = false;           // od startu panelu byla juz proba pobierania...
+static unsigned long otaKoniecProbyMs = 0;  // ...i wtedy sie skonczyla (albo zostala przerwana)
 
 // [RESET-DIAG, ta sesja] Wypelniane RAZ, na samym poczatku setup() —
 // patrz ponizej. Wysylane centrali w kazdym /api/status (analogicznie do
@@ -2526,7 +2628,11 @@ extern "C" void panel_lvgl_assert(void) {
 
 // Wolane w kazdym obrocie loop().
 void panelRatunekKrok() {
-  // W trakcie pobierania nowego firmware'u panel celowo nie pyta o status.
+  // [v1.4.0 OTA] W trakcie pobierania nowego firmware'u drabina ratunkowa stoi:
+  // ponowne laczenie WiFi albo restart panelu w srodku zapisu do flash nie
+  // pomoglyby, a pobieranie ma wlasne limity (15 s ciszy, 5 minut calosci) i
+  // samo sie konczy, gdy centrala zamilknie. Panel w tym czasie nadal pyta o
+  // status (do v1.3.0 nie pytal - pobieranie zatrzymywalo petle).
   if (trwaAktualizacjaOtaPanelu) return;
   const diag::Przyczyna przyczyna = panelPrzyczynaTeraz();
   const uint32_t progRestartu = diag::progRestartuMs(rtcAutorestart.kolejnych);
@@ -2672,8 +2778,17 @@ void pobierzStatus() {
   // ostatniego restartu, wypelniony raz na starcie setup(). Wartosci to
   // stale, bezpieczne tokeny (patrz powodResetuTekst()), bez potrzeby
   // url-encode.
-  statusFetch.startGet(("/api/status?panel_fw=" + String(FIRMWARE_VERSION_PANEL) +
-                        "&reset_powod=" + globalnyPowodResetu).c_str()); // startGet() bierze const char* - .c_str() na tymczasowym Stringu jest bezpieczny, bo startWewn() od razu kopiuje go do wlasnego pola String
+  // [v1.4.0 OTA] Dochodza: identyfikator programu, z ktorego panel pracuje
+  // (panel_obraz / panel_obraz_proba), a gdy centrala cos oferuje - odmowa
+  // albo powod czekania. Adres sklada diag::otaSciezkaStatusu() (opis i
+  // testy: diagnostyka_panelu.h); najdluzszy mozliwy ma 164 znaki.
+  char sciezka[200];
+  if (!diag::otaSciezkaStatusu(sciezka, sizeof(sciezka), FIRMWARE_VERSION_PANEL, globalnyPowodResetu.c_str(),
+                               otaObrazWlasny, otaObrazZatwierdzony, otaZglosOdmowe, otaOdmowaNr, otaOdmowaPowod, otaCzekaPowod)) {
+    // Nie zmiescilo sie (nie powinno): adres w postaci sprzed v1.4.0.
+    snprintf(sciezka, sizeof(sciezka), "/api/status?panel_fw=%s&reset_powod=%.60s", FIRMWARE_VERSION_PANEL, globalnyPowodResetu.c_str());
+  }
+  statusFetch.startGet(sciezka);   // startGet() od razu kopiuje adres do wlasnego pola
 }
 
 // [SIEC-NIEBLOKUJACA, ta sesja] Wywolywana z loop() PRZY KAZDEJ iteracji
@@ -2802,7 +2917,17 @@ void obslugaStatusFetch() {
   // wyzej — starsza centrala (przed tym dodatkiem) po prostu nie bedzie
   // mial tych pol, panel wtedy nigdy nie sprobuje sciagac OTA.
   stan.panelOtaDostepna = doc["panel_ota_dostepna"].isNull() ? false : doc["panel_ota_dostepna"].as<bool>();
-  stan.panelOtaWersja   = doc["panel_ota_wersja"].isNull() ? "" : doc["panel_ota_wersja"].as<String>();
+  {
+    // [v1.4.0 OTA] Tag wydania, identyfikator pliku i numer oferty. Pola,
+    // ktorych centrala nie podaje (albo podaje w innej postaci), daja "" i 0.
+    // Identyfikator jest przyjmowany tylko w poprawnej postaci (16 znakow
+    // 0-9 a-f) - inaczej oferta jest traktowana jak od starszej centrali.
+    const char *tagOferty = doc["panel_ota_wersja"] | "";
+    const char *obrazOferty = doc["panel_ota_obraz"] | "";
+    snprintf(stan.panelOtaWersja, sizeof(stan.panelOtaWersja), "%s", tagOferty);
+    snprintf(stan.panelOtaObraz, sizeof(stan.panelOtaObraz), "%s", diag::otaObrazPoprawny(obrazOferty) ? obrazOferty : "");
+    stan.panelOtaNr = doc["panel_ota_nr"] | (uint32_t)0;
+  }
 
   // [v1.2.0 CENTRALA-ID] Pole "symulator":true wysyla wylacznie centrala
   // testowa (centrala-testowa-c3); prawdziwa centrala go nie ma. Patrz
@@ -3666,8 +3791,9 @@ void obslugaKomendaFetch() {
 // dawnego httpGet()/httpPost(), ktore blokowaly tak samo w KAZDEJ iteracji
 // loop() (czyli tez w trakcie normalnej pracy, z dotykiem czekajacym).
 // Bez tego pierwszy rysujAktualnyEkran()/lvgl_dashboard_poc_aktualizuj()
-// oraz sprawdzIWykonajOtaPanelu() w setup() dostalyby same zera/domyslne
-// wartosci zamiast prawdziwych danych z centrali. Pompuje poll() tak samo
+// dostalby same zera/domyslne wartosci zamiast prawdziwych danych z centrali
+// (do v1.3.0 takze sprawdzIWykonajOtaPanelu(); od v1.4.0 oferte aktualizacji
+// sprawdza otaKrok() w loop()). Pompuje poll() tak samo
 // jak zrobilaby to petla loop(), tylko w petli while zamiast czekac na
 // kolejna iteracje - do PIERWSZA_PROBKA_TIMEOUT_MS, zeby calkiem
 // nieosiagalna centrala (np. pierwsze uruchomienie bez pary) nie zawiesila
@@ -4392,9 +4518,9 @@ void idzSpac() {
   // [OTA-PANEL, ta sesja, prompt #8] Nigdy nie usypiaj w trakcie pobierania/
   // flashowania firmware'u — przerwany zapis do flash moze zostawic panel
   // w zlym stanie (patrz BAGNO 5.1 w OTA_PANEL_CALOSC.md). Flaga jest
-  // czyszczona w KAZDEJ sciezce wyjscia z wykonajAktualizacjeOTAPanelu()
-  // (sukces LUB porazka), wiec to tylko chwilowe opoznienie usniecia, nie
-  // trwala blokada.
+  // czyszczona po KAZDEJ probie pobierania (otaSprzatnijPoProbie(), [v1.4.0
+  // OTA]) - udanej konczy sie restartem - wiec to tylko chwilowe opoznienie
+  // usniecia, nie trwala blokada.
   if (trwaAktualizacjaOtaPanelu) {
     Serial.println(F("tag=OTA-PANEL zdarzenie=usypianie_zablokowane"));
     return;
@@ -4459,7 +4585,10 @@ void idzSpac() {
 // zeby je zatwierdzic". Bezpieczne do wywolania w kazdym trybie: gdy
 // partycja NIE jest PENDING_VERIFY (np. wgranie przez USB), warunek w
 // srodku po prostu nic nie robi.
-void potwierdzPartycjeJesliCzeka() {
+// [v1.4.0 OTA] Zwraca true, gdy biezaca partycja jest zatwierdzona (albo
+// zatwierdzenia nie wymagala); false tylko wtedy, gdy czekala na zatwierdzenie
+// i nie udalo sie go zapisac. Wynik bierze otaPoZatwierdzeniu().
+bool potwierdzPartycjeJesliCzeka() {
   const esp_partition_t *biezaca = esp_ota_get_running_partition();
   esp_ota_img_states_t stanOta;
 
@@ -4468,7 +4597,7 @@ void potwierdzPartycjeJesliCzeka() {
     // Normalne przy wgraniu przez USB — otadata nie sledzi obrazow
     // wgranych przez USB, to nie blad. Patrz main_v1.cpp / Ustalenie #6.
     Serial.printf("tag=OTA-ROLLBACK zdarzenie=brak_stanu_partycji blad=%d\n", (int)wynik);
-    return;
+    return true;
   }
 
   Serial.printf("tag=OTA-ROLLBACK zdarzenie=stan_partycji partycja=%s stan=%d\n",
@@ -4478,89 +4607,409 @@ void potwierdzPartycjeJesliCzeka() {
     esp_err_t r = esp_ota_mark_app_valid_cancel_rollback();
     Serial.printf("tag=OTA-ROLLBACK zdarzenie=potwierdzono_valid wynik=%s\n",
                   esp_err_to_name(r));
+    return r == ESP_OK;
+  }
+  return true;
+}
+
+// ============================================================================
+// [v1.4.0 OTA] AKTUALIZACJA PANELU PRZEZ CENTRALE - wykonanie
+// ============================================================================
+// Decyzje (kiedy zaczac, kiedy odmowic, co zapamietac) sa w
+// diagnostyka_panelu.h, sekcja [v1.4.0 OTA] - czysty kod testowany na PC.
+// Tutaj jest to, co dotyka sprzetu: odczyt wlasnego programu, NVS, pobieranie
+// (otaFetch), zapis do flash (Update), ekran i restart.
+//
+// Przebieg:
+//   1. start panelu: otaPrzyStarcie() - identyfikator programu, z ktorego
+//      panel pracuje, i to, co panel zapamietal o ostatniej ofercie,
+//   2. po zatwierdzeniu partycji: otaPoZatwierdzeniu() - czy ostatnie wgranie
+//      sie przyjelo, czy bootloader wrocil do poprzedniego programu,
+//   3. w petli: otaKrok() - raz na sekunde decyzja (diag::otaDecyzja()), a w
+//      trakcie pobierania kolejny kawalek pliku w kazdym obrocie petli.
+// Do v1.3.0 (wykonajAktualizacjeOTAPanelu() + sprawdzIWykonajOtaPanelu(),
+// biblioteka HTTPUpdate): panel sprawdzal oferte RAZ, na koncu setup(), i
+// pobieral plik bez powrotu do petli - z pustym ekranem, bez odpytywania
+// centrali (wiec i bez alarmu), z watchdogiem wypisanym na czas pobierania.
+// Tego samego pliku nie odroznial od nowego, wiec przy centrali, ktora nie
+// zdjela oferty, wgrywal go przy kazdym starcie.
+// ----------------------------------------------------------------------------
+static const char OTA_NVS_PRZESTRZEN[] = "otapanel";
+static const char OTA_NVS_KLUCZ[] = "zapis";
+static const uint8_t OTA_NVS_WERSJA = 1;   // pierwszy bajt zapisu; inna wartosc = zapis w nieznanej postaci, pomijany
+
+// Caly zapis idzie do NVS jednym wpisem (putBytes): albo jest stary, albo
+// nowy - nigdy polowa (np. nowy klucz oferty ze starym licznikiem prob).
+static void otaZapisWczytaj() {
+  memset(&otaZapis, 0, sizeof(otaZapis));
+  Preferences p;
+  if (!p.begin(OTA_NVS_PRZESTRZEN, true)) return;   // przestrzeni jeszcze nie ma: panel nigdy nie zaczynal aktualizacji
+  uint8_t bufor[1 + sizeof(diag::OtaZapis)];
+  if (p.isKey(OTA_NVS_KLUCZ) && p.getBytesLength(OTA_NVS_KLUCZ) == sizeof(bufor) &&
+      p.getBytes(OTA_NVS_KLUCZ, bufor, sizeof(bufor)) == sizeof(bufor) && bufor[0] == OTA_NVS_WERSJA) {
+    memcpy(&otaZapis, bufor + 1, sizeof(otaZapis));
+    otaZapis.klucz[sizeof(otaZapis.klucz) - 1] = '\0';
+    otaZapis.oczekiwany[sizeof(otaZapis.oczekiwany) - 1] = '\0';
+    if (otaZapis.stan > diag::OTA_ZAPIS_ODMOWA) memset(&otaZapis, 0, sizeof(otaZapis));
+  }
+  p.end();
+}
+
+static bool otaZapisZachowaj() {
+  Preferences p;
+  if (!p.begin(OTA_NVS_PRZESTRZEN, false)) return false;
+  uint8_t bufor[1 + sizeof(diag::OtaZapis)];
+  bufor[0] = OTA_NVS_WERSJA;
+  memcpy(bufor + 1, &otaZapis, sizeof(otaZapis));
+  const bool ok = (p.putBytes(OTA_NVS_KLUCZ, bufor, sizeof(bufor)) == sizeof(bufor));
+  p.end();
+  return ok;
+}
+
+// Poczatek setup(), przed pierwszym zapytaniem o status.
+// Identyfikator wlasnego programu to poczatek sumy SHA-256, ktora esptool
+// dopisuje na koncu kazdego programu ESP32; esp_partition_get_sha256() dla
+// partycji z programem zwraca wlasnie te dopisana sume. Ta sama suma jest na
+// koncu pliku firmware.bin, z ktorego program wgrano (kablem albo przez OTA),
+// wiec centrala moze policzyc ten sam identyfikator z samego pliku.
+void otaPrzyStarcie() {
+  const esp_partition_t *biezaca = esp_ota_get_running_partition();
+  uint8_t suma[32];
+  otaObrazWlasny[0] = '\0';
+  if (biezaca != nullptr && esp_partition_get_sha256(biezaca, suma) == ESP_OK) diag::otaObrazZSumy(suma, otaObrazWlasny);
+  // Pierwszy start po wgraniu przez OTA: partycja czeka na zatwierdzenie
+  // (potwierdzPartycjeJesliCzeka() na koncu setup()). Do tej chwili panel
+  // zglasza centrali "panel_obraz_proba", nie "panel_obraz".
+  esp_ota_img_states_t stanOta;
+  otaObrazZatwierdzony = !(biezaca != nullptr && esp_ota_get_state_partition(biezaca, &stanOta) == ESP_OK &&
+                           stanOta == ESP_OTA_IMG_PENDING_VERIFY);
+  otaZapisWczytaj();
+  Serial.printf("tag=OTA-PANEL zdarzenie=stan_przy_starcie obraz=%s zatwierdzony=%d zapis_stan=%u zapis_prob=%u zapis_klucz=%s\n",
+                otaObrazWlasny[0] != '\0' ? otaObrazWlasny : "nieznany", (int)otaObrazZatwierdzony,
+                (unsigned)otaZapis.stan, (unsigned)otaZapis.prob, otaZapis.klucz[0] != '\0' ? otaZapis.klucz : "-");
+  if (otaObrazWlasny[0] == '\0') {
+    Serial.println(F("tag=OTA-PANEL lvl=WARN zdarzenie=brak_identyfikatora_obrazu msg=\"nie da sie odczytac sumy wlasnego programu - aktualizacja przez centrale wylaczona do restartu\""));
   }
 }
 
-// [OTA-PANEL, ta sesja, dokonczenie promptu #7] Pobiera /panel-ota.bin z
-// centrali i flashuje. W ODROZNIENIU od wykonajAktualizacjeOTA() w
-// main_centrala.cpp: zwykly WiFiClient, NIE WiFiClientSecure — to ruch
-// lokalny w zamknietej sieci AP centrali (192.168.4.x), nie internet, wiec
-// TLS nic by tu nie chronil, tylko kosztowal RAM/czas na urzadzeniu bez
-// PSRAM (patrz Ustalenie #4 w OTA_PANEL_CALOSC.md — ~246KB wolnego
-// heapu, TLS potrafi zjesc kilkadziesiat KB na same bufory). WDT: pelne
-// wypisanie/zapisanie tasku wokol update() (Wzorzec 1), NIE karmienie w
-// onProgress — patrz uzasadnienie przy wywolaniu esp_task_wdt_delete()
-// ponizej.
-bool wykonajAktualizacjeOTAPanelu(String &bladOut) {
-  if (WiFi.status() != WL_CONNECTED) { bladOut = "brak WiFi"; return false; }
-
-  trwaAktualizacjaOtaPanelu = true; // PRZED update() — patrz idzSpac()
-
-  WiFiClient client;
-  client.setTimeout(OTA_TIMEOUT_MS);
-
-  httpUpdate.rebootOnUpdate(false); // restart robimy sami, PO zgloszeniu wersji centrali (patrz wywolanie ponizej)
-  // [SYNC-OTA/Wzorzec 1, ta sesja] ZAMIANA wzgledem pierwszej wersji z tej
-  // sesji: zamiast karmic WDT w onProgress (ktore odpala sie TYLKO miedzy
-  // udanymi odczytami kolejnych kawalkow — jesli POJEDYNCZY odczyt utknie
-  // w warstwie TCP dluzej niz WDT_TIMEOUT_MS, onProgress w ogole sie nie
-  // wywola i watchdog i tak zapanikuje), CALKOWICIE wypisujemy biezacy
-  // task z Task WDT na czas calego update() i zapisujemy go z powrotem
-  // zaraz po (sukces lub porazka — zawsze). W trakcie swiadomej,
-  // ograniczonej operacji OTA nie potrzebujemy WDT jako siatki
-  // bezpieczenstwa — realny limit czasu i tak juz pilnuje
-  // client.setTimeout(OTA_TIMEOUT_MS) na poziomie samego polaczenia.
-  // Wzorzec z projektu Ryby LED — patrz OTA_PANEL_CALOSC.md, Wzorzec 1.
-  esp_task_wdt_reset();
-  esp_task_wdt_delete(NULL);
-
-  String url = String("http://") + CENTRALA_HOST + ":" + String(CENTRALA_PORT) +
-               "/panel-ota.bin?token=" + String(OTA_HASLO_PANEL);
-
-  t_httpUpdate_return wynik = httpUpdate.update(client, url);
-
-  esp_task_wdt_add(NULL); // z powrotem pod nadzor WDT — sukces lub porazka, zawsze, PRZED jakimkolwiek innym return
-
-  trwaAktualizacjaOtaPanelu = false; // PO update() — sukces lub porazka, zawsze
-
-  switch (wynik) {
-    case HTTP_UPDATE_FAILED:
-      bladOut = "Blad OTA (" + String(httpUpdate.getLastErrorString().c_str()) + ")";
-      return false;
-    case HTTP_UPDATE_NO_UPDATES:
-      bladOut = "Centrala zglosila 'brak aktualizacji' (brak /panel_firmware.bin?)";
-      return false;
-    case HTTP_UPDATE_OK:
-      return true;
-  }
-  bladOut = "Nieznany wynik HTTPUpdate";
-  return false;
-}
-
-// [OTA-PANEL, ta sesja] Wywolywane PO potwierdzPartycjeJesliCzeka() (w obu
-// miejscach setup(), patrz nizej) — kolejnosc ma znaczenie: najpierw
-// potwierdzamy, ze BIEZACY firmware dziala (rollback), DOPIERO POTEM,
-// jesli centrala czeka z nowa wersja, probujemy nastepnej aktualizacji.
-// Nie restartuje sam — restart robi wywolujacy, PO tym jak ekran zdazyl
-// pokazac wynik.
-void sprawdzIWykonajOtaPanelu() {
-  if (!stan.panelOtaDostepna) return;
-  Serial.printf("tag=OTA-PANEL zdarzenie=start wersja_docelowa=%s\n", stan.panelOtaWersja.c_str());
-  String blad;
-  if (wykonajAktualizacjeOTAPanelu(blad)) {
-    Serial.println(F("tag=OTA-PANEL zdarzenie=pobrano_ok restart_za_chwile"));
-    // [OTA-PANEL] Zgloszenie nowej wersji centrali NASTAPI dopiero PO
-    // restarcie, przy pierwszym pobierzStatus() (?panel_fw=...) — to
-    // wlasnie ten request zamyka petle potwierdzenia (patrz main_centrala.cpp,
-    // handler /api/status). Tutaj nic wiecej nie trzeba robic poza restartem.
-    delay(300);
-    ESP.restart();
+// Koniec setup(), zaraz po potwierdzPartycjeJesliCzeka(). `zatwierdzona` to
+// jej wynik: true = biezaca partycja jest zatwierdzona (albo nie wymagala tego).
+void otaPoZatwierdzeniu(bool zatwierdzona) {
+  if (!zatwierdzona) return;   // nie udalo sie zatwierdzic: panel dalej zglasza "panel_obraz_proba"
+  otaObrazZatwierdzony = true;
+  const int ocena = diag::otaOcenPoStarcie(otaZapis, otaObrazWlasny);
+  if (ocena == 0) return;
+  otaZapisZachowaj();
+  if (ocena == 1) {
+    Serial.printf("tag=OTA-PANEL zdarzenie=nowy_firmware_dziala obraz=%s wersja=%s\n", otaObrazWlasny, FIRMWARE_VERSION_PANEL);
   } else {
-    Serial.printf("tag=OTA-PANEL lvl=ERR zdarzenie=nieudana blad=%s\n", blad.c_str());
-    // Celowo NIE probujemy ponownie w tej samej sesji — panel wroci do
-    // normalnej pracy, centrala nadal ma flage panel_ota_dostepna=true,
-    // wiec kolejne wybudzenie sprobuje ponownie samo z siebie.
+    // Panel wgral plik i zrestartowal sie, a dziala inny program niz wgrany:
+    // nowy nie doszedl do zatwierdzenia i bootloader wrocil do poprzedniego.
+    Serial.printf("tag=OTA-PANEL lvl=ERR zdarzenie=nowy_firmware_wycofany wgrany=%s dziala=%s\n",
+                  otaZapis.oczekiwany, otaObrazWlasny[0] != '\0' ? otaObrazWlasny : "nieznany");
   }
+}
+
+// Koniec proby pobierania (udanej albo nie): gniazdo, bufor zapisu, ekran.
+static void otaSprzatnijPoProbie() {
+  if (otaFetch.wTrakcie()) otaFetch.przerwij();
+  else otaFetch.skwituj();
+  if (otaP.zapisZaczety) Update.abort();   // nic z niedokonczonego zapisu nie zostaje do uruchomienia
+  otaP.zapisZaczety = false;
+  otaP.trwa = false;
+  trwaAktualizacjaOtaPanelu = false;
+  otaBylaProba = true;
+  otaKoniecProbyMs = millis();
+  lvgl_dashboard_poc_ota(-1, nullptr);
+}
+
+// Proba nieudana z winy pliku, sieci albo zapisu - liczy sie do limitu prob.
+static void otaProbaNieudana(uint8_t powod, bool ostateczna, const char *opis) {
+  const bool koniecProb = diag::otaZapisNieudana(otaZapis, powod, ostateczna);
+  const bool zapisanoStan = otaZapisZachowaj();
+  logBezPamieci("tag=OTA-PANEL lvl=ERR zdarzenie=nieudana powod=%s proba=%u/%u koniec_prob=%d http=%d bajtow=%lu z=%ld etap=%c nvs=%d blad=\"%s\"\n",
+                diag::otaPowodTekst(powod), (unsigned)otaZapis.prob, (unsigned)diag::OTA_MAX_PROB, (int)koniecProb,
+                otaFetch.kodHttp(), (unsigned long)otaP.zapisano, otaFetch.dlugoscZapowiedziana(), otaFetch.etapBledu(),
+                (int)zapisanoStan, opis != nullptr ? opis : "");
+  otaSprzatnijPoProbie();
+}
+
+// Proba przerwana nie z winy pliku ani sieci (alarm, oferta wycofana) - nie liczy sie.
+static void otaProbaPrzerwana(const char *dlaczego) {
+  diag::otaZapisOddajProbe(otaZapis);
+  otaZapisZachowaj();
+  logBezPamieci("tag=OTA-PANEL lvl=WARN zdarzenie=przerwana powod=%s bajtow=%lu z=%ld msg=\"ta proba sie nie liczy\"\n",
+                dlaczego, (unsigned long)otaP.zapisano, otaFetch.dlugoscZapowiedziana());
+  otaSprzatnijPoProbie();
+}
+
+// Kolejny kawalek pliku od centrali (wolane z otaFetch.poll()). Nie wolno tu
+// przerywac pobierania - blad jest zapamietywany, a reaguje otaKrokPobierania().
+static void otaOdbiorcaBajtow(const uint8_t *dane, size_t n) {
+  if (otaP.blad != diag::OTA_POWOD_BRAK) return;   // po bledzie reszta danych z tego obrotu przepada
+  const size_t bylo = otaP.skan.lacznie;
+  diag::otaSkanDodaj(otaP.skan, dane, n);
+  if (otaP.skan.lacznie < diag::OTA_NAGLOWEK_B) return;   // naglowek pliku jeszcze niepelny - nic nie zapisujemy
+  if (!otaP.zapisZaczety) {
+    // Caly naglowek (24 bajty) jest: czy to w ogole program dla tego panelu?
+    if (diag::otaSkanOcenNaglowek(otaP.skan) != diag::OTA_POWOD_BRAK) {
+      otaP.blad = diag::OTA_POWOD_OBRAZ;
+      otaP.ostateczny = true;
+      otaP.opisBledu = "plik nie jest programem dla ESP32";
+      return;
+    }
+    const long zapowiedziano = otaFetch.dlugoscZapowiedziana();
+    if (zapowiedziano < (long)(diag::OTA_NAGLOWEK_B + diag::OTA_SUMA_B + 1)) {
+      otaP.blad = diag::OTA_POWOD_POBIERANIE;
+      otaP.opisBledu = "centrala nie podala rozmiaru pliku";
+      return;
+    }
+    otaP.rozmiar = (uint32_t)zapowiedziano;
+    if (!Update.begin((size_t)zapowiedziano)) {
+      const bool zaDuzy = (Update.getError() == UPDATE_ERROR_SIZE);
+      otaP.blad = zaDuzy ? diag::OTA_POWOD_ZA_DUZY : diag::OTA_POWOD_ZAPIS;
+      otaP.ostateczny = zaDuzy;
+      otaP.opisBledu = zaDuzy ? "plik wiekszy niz partycja panelu" : "Update.begin() nieudane";
+      return;
+    }
+    otaP.zapisZaczety = true;
+    if (Update.write(otaP.skan.naglowek, diag::OTA_NAGLOWEK_B) != diag::OTA_NAGLOWEK_B) {
+      otaP.blad = diag::OTA_POWOD_ZAPIS;
+      otaP.opisBledu = "zapis naglowka nieudany";
+      return;
+    }
+    otaP.zapisano = (uint32_t)diag::OTA_NAGLOWEK_B;
+    // Poczatek tego kawalka mogl nalezec do naglowka (juz zapisanego wyzej).
+    const size_t zNaglowka = (bylo < diag::OTA_NAGLOWEK_B) ? (diag::OTA_NAGLOWEK_B - bylo) : 0;
+    dane += zNaglowka;
+    n -= zNaglowka;
+  }
+  if (n == 0) return;
+  // Update.write() bierze wskaznik bez const, ale danych nie zmienia (kopiuje je do wlasnego bufora).
+  if (Update.write(const_cast<uint8_t *>(dane), n) != n) {
+    otaP.blad = diag::OTA_POWOD_ZAPIS;
+    otaP.opisBledu = "zapis do flash nieudany";
+    return;
+  }
+  otaP.zapisano += (uint32_t)n;
+}
+
+// Czy centrala nadal oferuje to samo, co panel wlasnie pobiera.
+static bool otaOfertaBezZmian() {
+  if (!stan.panelOtaDostepna) return false;
+  char klucz[diag::OTA_KLUCZ_MAKS];
+  diag::otaKlucz(klucz, sizeof(klucz), diag::otaObrazPoprawny(stan.panelOtaObraz), stan.panelOtaNr, stan.panelOtaObraz, stan.panelOtaWersja);
+  return strcmp(klucz, otaP.klucz) == 0;
+}
+
+// Caly plik odebrany: sprawdzenie, uruchomienie, restart.
+static void otaPoPobraniu() {
+  if (!otaFetch.bylSukces()) {
+    otaProbaNieudana(diag::OTA_POWOD_POBIERANIE, false, otaFetch.ostatniBlad());
+    return;
+  }
+  const int kod = otaFetch.kodHttp();
+  if (kod == 503) {   // centrala 3.58.6+: trwa alarm
+    otaProbaPrzerwana("alarm_centrali");
+    return;
+  }
+  if (kod == 401 || kod == 403) {
+    otaProbaNieudana(diag::OTA_POWOD_HASLO, true, "centrala odrzucila haslo OTA");
+    return;
+  }
+  if (kod != 200) {
+    otaProbaNieudana(diag::OTA_POWOD_POBIERANIE, false, "centrala nie wydala pliku");
+    return;
+  }
+  if (!otaP.zapisZaczety || !otaFetch.kompletna() || otaP.zapisano != otaP.rozmiar) {
+    otaProbaNieudana(diag::OTA_POWOD_POBIERANIE, false, "plik niepelny");
+    return;
+  }
+  char obrazPliku[17];
+  diag::otaSkanObraz(otaP.skan, obrazPliku);
+  if (otaP.nowaCentrala && strcmp(obrazPliku, otaP.obrazOferty) != 0) {
+    otaProbaNieudana(diag::OTA_POWOD_OBRAZ, true, "pobrany plik ma inny identyfikator niz oferta");
+    return;
+  }
+  if (obrazPliku[0] != '\0' && strcmp(obrazPliku, otaObrazWlasny) == 0) {
+    // Mozliwe tylko ze starsza centrala (nie podaje identyfikatora przed
+    // pobraniem): to ten sam program, z ktorego panel juz pracuje. Nie ma
+    // czego wgrywac ani po co sie restartowac.
+    otaZapis.stan = diag::OTA_ZAPIS_DZIALA;
+    otaZapis.powod = diag::OTA_POWOD_BRAK;
+    otaZapisZachowaj();
+    Serial.printf("tag=OTA-PANEL zdarzenie=ten_sam_plik obraz=%s msg=\"plik z centrali to program, z ktorego panel juz pracuje\"\n", obrazPliku);
+    otaSprzatnijPoProbie();
+    return;
+  }
+  lvgl_dashboard_poc_ota(100, "Sprawdzanie pliku...");
+  lvgl_port_tick();
+  // Update.end() dopisuje poczatek programu, sprawdza caly obraz (suma
+  // kontrolna i SHA-256 - robi to ESP-IDF) i dopiero wtedy ustawia go jako
+  // program startowy. Do tej chwili partycja z nowym plikiem nie da sie uruchomic.
+  if (!Update.end(false)) {
+    const bool zlyObraz = (Update.getError() == UPDATE_ERROR_ACTIVATE);
+    otaP.zapisZaczety = false;   // Update sam porzucil zapis
+    otaProbaNieudana(zlyObraz ? diag::OTA_POWOD_OBRAZ : diag::OTA_POWOD_ZAPIS, zlyObraz, Update.errorString());
+    return;
+  }
+  otaP.zapisZaczety = false;
+  diag::otaZapisWgrane(otaZapis, obrazPliku);
+  const bool zapisanoStan = otaZapisZachowaj();
+  Serial.printf("tag=OTA-PANEL zdarzenie=pobrano_ok obraz=%s bajtow=%lu trwalo_ms=%lu nvs=%d restart_za_chwile\n",
+                obrazPliku[0] != '\0' ? obrazPliku : "-", (unsigned long)otaP.zapisano, (unsigned long)otaFetch.trwaloMs(), (int)zapisanoStan);
+  otaFetch.skwituj();
+  lvgl_dashboard_poc_ota(100, "Gotowe - restart panelu");
+  for (int i = 0; i < 20; i++) {   // ok. 0,5 s, zeby napis zdazyl sie narysowac
+    lvgl_port_tick();
+    delay(25);
+  }
+  Serial.flush();
+  ESP.restart();
+}
+
+// Trwa pobieranie: jeden obrot petli.
+static void otaKrokPobierania() {
+  otaFetch.poll();   // do 4 kB na obrot; kazdy kawalek od razu idzie do otaOdbiorcaBajtow()
+  if (otaP.blad != diag::OTA_POWOD_BRAK) {
+    otaProbaNieudana(otaP.blad, otaP.ostateczny, otaP.opisBledu);
+    return;
+  }
+  // Alarm jest wazniejszy niz aktualizacja: ekran i brzeczyk maja byc wolne.
+  if (stan.dymAlarm || stan.alarmOgrzewanie || stan.alarmPanel) {
+    otaProbaPrzerwana("alarm");
+    return;
+  }
+  if (!otaOfertaBezZmian()) {
+    otaProbaPrzerwana("oferta_wycofana");
+    return;
+  }
+  if (otaFetch.gotowyWynik()) {
+    otaPoPobraniu();
+    return;
+  }
+  if (otaP.rozmiar > 0) {
+    const int procent = (int)(((uint64_t)otaP.zapisano * 100U) / otaP.rozmiar);
+    if (procent != otaP.procentNaEkranie) {
+      otaP.procentNaEkranie = procent;
+      lvgl_dashboard_poc_ota(procent, "Pobieranie z centrali");
+    }
+  }
+}
+
+// Poczatek proby: zapis w NVS, potem dopiero polaczenie.
+static void otaZacznij(const diag::OtaOferta &o) {
+  char haslo[91];
+  char sciezka[112];   // tyle miesci otaFetch (StrumienHttpGet::sciezka_)
+  const bool hasloMiesciSie = diag::urlKoduj(OTA_HASLO_PANEL, haslo, sizeof(haslo));
+  memset(&otaP, 0, sizeof(otaP));
+  otaP.opisBledu = "";
+  diag::otaKlucz(otaP.klucz, sizeof(otaP.klucz), o.nowaCentrala, o.nr, o.obraz, o.tag);
+  otaP.nowaCentrala = o.nowaCentrala;
+  snprintf(otaP.obrazOferty, sizeof(otaP.obrazOferty), "%s", o.nowaCentrala ? o.obraz : "");
+  otaP.procentNaEkranie = -1;
+  // Licznik prob rosnie i trafia do NVS ZANIM cokolwiek sie zacznie. Gdyby
+  // panel zawieszal sie w trakcie pobierania, po trzech startach przestanie
+  // probowac. Bez udanego zapisu nie zaczynamy - to on chroni przed petla.
+  diag::otaZapisRozpocznijProbe(otaZapis, otaP.klucz);
+  if (!otaZapisZachowaj()) {
+    diag::otaZapisOddajProbe(otaZapis);
+    otaBylaProba = true;
+    otaKoniecProbyMs = millis();
+    Serial.println(F("tag=OTA-PANEL lvl=ERR zdarzenie=brak_zapisu_nvs msg=\"nie udalo sie zapisac stanu aktualizacji - nie zaczynam\""));
+    return;
+  }
+  Serial.printf("tag=OTA-PANEL zdarzenie=start wersja_docelowa=%s oferta=%s proba=%u/%u ram=%lu ram_blok=%lu\n",
+                o.tag, otaP.klucz, (unsigned)otaZapis.prob, (unsigned)diag::OTA_MAX_PROB,
+                (unsigned long)ramWolny(), (unsigned long)ramBlok());
+  otaP.trwa = true;
+  trwaAktualizacjaOtaPanelu = true;
+  if (!hasloMiesciSie) {
+    // Haslo OTA po zakodowaniu do adresu ma ponad 90 znakow - z tym firmware'em nie zadziala nigdy.
+    otaProbaNieudana(diag::OTA_POWOD_HASLO, true, "haslo OTA za dlugie na adres zapytania");
+    return;
+  }
+  snprintf(sciezka, sizeof(sciezka), "/panel-ota.bin?token=%s", haslo);
+  lvgl_dashboard_poc_ota(0, "Laczenie z centrala...");
+  if (!otaFetch.startBinarnie(sciezka, otaOdbiorcaBajtow, diag::OTA_CISZA_MS, diag::OTA_CALOSC_MS)) {
+    otaProbaNieudana(diag::OTA_POWOD_POBIERANIE, false, otaFetch.ostatniBlad());
+  }
+}
+
+// Raz na sekunde: co zrobic z tym, co centrala podaje w /api/status.
+static void otaKrokDecyzji(unsigned long teraz) {
+  static const char *poprzedniPowod = "brak_oferty";   // zwykly stan po starcie - bez wpisu w logu
+  diag::OtaOferta o;
+  o.dostepna = stan.panelOtaDostepna;
+  o.nowaCentrala = diag::otaObrazPoprawny(stan.panelOtaObraz);
+  o.nr = stan.panelOtaNr;
+  o.obraz = stan.panelOtaObraz;
+  o.tag = stan.panelOtaWersja;
+
+  // Najpierw bez pomiarow: jesli wynik nie zalezy od warunkow (brak oferty,
+  // ten sam program, oferta juz wgrana albo odrzucona), nie ma po co mierzyc
+  // baterii co sekunde - starsza centrala potrafi trzymac oferte bez konca.
+  diag::OtaWarunki w;
+  memset(&w, 0, sizeof(w));
+  w.daneSwieze = true;
+  w.wifi = true;
+  w.odStartuMs = diag::OTA_PO_STARCIE_MS;
+  w.bezDotykuMs = diag::OTA_BEZ_DOTYKU_MS;
+  w.zasilanieUsb = true;
+  w.ramWolny = diag::OTA_RAM_MIN_B;
+  w.ramBlok = diag::OTA_BLOK_MIN_B;
+  diag::OtaDecyzja d = diag::otaDecyzja(o, otaObrazWlasny, otaZapis, w);
+  if (d.akcja == diag::OTA_AKCJA_START) {
+    const float napiecie = bateriaOdczytajNapiecie();
+    w.alarm = stan.dymAlarm || stan.alarmOgrzewanie || stan.alarmPanel;
+    w.daneSwieze = !swiezoscStatusu.saNieaktualne(PROG_NIEAKTUALNYCH_DANYCH_MS);
+    w.wifi = (WiFi.status() == WL_CONNECTED);
+    w.siecZajeta = wykresyFetch.wTrakcie() || komendaFetch.wTrakcie();
+    w.odStartuMs = (uint32_t)teraz;
+    w.bezDotykuMs = lvgl_dashboard_poc_bez_dotyku_ms();
+    w.bateriaJest = diag::bateriaObecna(napiecie);
+    w.zasilanieUsb = zasilanieUSB();
+    w.bateriaProcent = w.bateriaJest ? bateriaNapiecieNaProcent(napiecie) : 0;
+    w.ramWolny = ramWolny();
+    w.ramBlok = ramBlok();
+    w.bylaProba = otaBylaProba;
+    w.odOstatniejProbyMs = (uint32_t)(teraz - otaKoniecProbyMs);
+    d = diag::otaDecyzja(o, otaObrazWlasny, otaZapis, w);
+  }
+
+  // To, co pojdzie do centrali w nastepnych zapytaniach o status. Tylko
+  // centrala 3.58.6+ (podaje identyfikator pliku) rozumie te parametry.
+  otaZglosOdmowe = (d.akcja == diag::OTA_AKCJA_ODMOW && o.nowaCentrala);
+  otaOdmowaNr = o.nr;
+  otaOdmowaPowod = d.powodOdmowy;
+  snprintf(otaCzekaPowod, sizeof(otaCzekaPowod), "%s", (d.akcja == diag::OTA_AKCJA_CZEKAJ && o.nowaCentrala) ? d.powod : "");
+
+  // Jedna linia logu przy kazdej ZMIANIE decyzji, nie co sekunde. Teksty
+  // powodow to stale z diagnostyka_panelu.h, wiec wskaznik mozna zapamietac.
+  if (strcmp(d.powod, poprzedniPowod) != 0) {
+    poprzedniPowod = d.powod;
+    if (d.akcja != diag::OTA_AKCJA_START) {
+      Serial.printf("tag=OTA-PANEL zdarzenie=decyzja akcja=%s powod=%s oferta=%s nr=%lu ram=%lu ram_blok=%lu\n",
+                    d.akcja == diag::OTA_AKCJA_NIC ? "nic" : d.akcja == diag::OTA_AKCJA_CZEKAJ ? "czekaj"
+                    : d.akcja == diag::OTA_AKCJA_POMIN ? "pomin" : "odmow",
+                    d.powod, o.dostepna ? o.tag : "-", (unsigned long)o.nr, (unsigned long)ramWolny(), (unsigned long)ramBlok());
+    }
+  }
+  if (d.akcja == diag::OTA_AKCJA_START) otaZacznij(o);
+}
+
+// Wolane w kazdym obrocie loop() (galaz LVGL z centrala).
+void otaKrok() {
+  if (otaP.trwa) {
+    otaKrokPobierania();
+    return;
+  }
+  if (otaObrazWlasny[0] == '\0') return;   // bez identyfikatora wlasnego programu panel nie aktualizuje sie przez centrale
+  const unsigned long teraz = millis();
+  static unsigned long ostatniaDecyzjaMs = 0;
+  if (teraz - ostatniaDecyzjaMs < 1000) return;
+  ostatniaDecyzjaMs = teraz;
+  otaKrokDecyzji(teraz);
 }
 
 unsigned long ostatniStatus = 0, ostatnieUstawienia = 0;
@@ -4575,8 +5024,8 @@ unsigned long ostatniStatus = 0, ostatnieUstawienia = 0;
 // (kondensator/bateria), task_wdt to zawieszony task (np. podczas OTA,
 // patrz Ustalenie #6). Dwa NORMALNE powody dla tego urzadzenia:
 // ESP_RST_DEEPSLEEP (budzenie przyciskiem/timerem) i ESP_RST_SW
-// (ESP.restart() po udanym OTA panelu, patrz sprawdzIWykonajOtaPanelu()
-// nizej) — logika alarmujaca po stronie centrali (main_centrala.cpp,
+// (ESP.restart() po udanym OTA panelu, patrz otaPoPobraniu() wyzej)
+// — logika alarmujaca po stronie centrali (main_centrala.cpp,
 // handler /api/status) traktuje oba jako nie wymagajace alertu.
 // [v1.2.1] Drugie wywolanie ESP.restart() jest w panelAutorestart() (brak
 // danych z centrali) - taki restart panel zglasza centrali osobnym powodem
@@ -4687,6 +5136,7 @@ void setup() {
   // chcemy znac powod restartu nawet gdyby cos ponizej samo padlo.
   globalnyPowodResetu = powodResetuTekst(esp_reset_reason());
   autorestartOdczytajPrzyStarcie(esp_reset_reason());   // [v1.2.1 RATUNEK] po samoczynnym restarcie: "auto_..." zamiast "sw"
+  otaPrzyStarcie();   // [v1.4.0 OTA] identyfikator wlasnego programu i zapis o ostatniej ofercie - przed pierwszym zapytaniem o status
   Serial.printf("tag=RESET-DIAG zdarzenie=start powod=%s\n", globalnyPowodResetu.c_str());
   if (globalnyPowodResetu != "deepsleep") {
     // Jedyny NORMALNY powod dla tego urzadzenia to wybudzenie z deep
@@ -4922,12 +5372,11 @@ void setup() {
   // [OTA-ROLLBACK] Tutaj, nie wczesniej: ekran juz narysowany (obie galezie
   // SYMULACJA=0/1 zbiegaja sie w tym miejscu), a w galezi SYMULACJA=0
   // pierwsza probka pobierzStatus() juz sie wykonala (patrz wyzej).
-  potwierdzPartycjeJesliCzeka();
-  // [OTA-PANEL, ta sesja] PO potwierdzeniu partycji, PRZED return — jesli
-  // centrala zglosila panel_ota_dostepna=true w JSON-ie statusu (mozliwe
-  // tylko w galezi SYMULACJA=0, gdzie WiFi/pobierzStatus() realnie dzialaja;
-  // w SYMULACJA=1 stan.panelOtaDostepna zawsze false, wiec no-op).
-  sprawdzIWykonajOtaPanelu();
+  // [v1.4.0 OTA] Po zatwierdzeniu: czy ostatnie wgranie sie przyjelo, czy
+  // bootloader wrocil do poprzedniego programu. Samej aktualizacji setup() juz
+  // nie zaczyna (do v1.3.0: sprawdzIWykonajOtaPanelu() w tym miejscu, z pustym
+  // ekranem do konca pobierania) - robi to otaKrok() w loop().
+  otaPoZatwierdzeniu(potwierdzPartycjeJesliCzeka());
   return; // nie wchodz w reszte setup() (stary dashboard) w trybie testowym - kalibracja dotyku juz zrobiona wyzej
 #endif
 
@@ -4945,8 +5394,7 @@ void setup() {
   zarejestrujAktywnosc(); // start timera 5 min od momentu, gdy ekran jest juz gotowy
   // [OTA-ROLLBACK] Analogicznie do galezi LVGL_POC_TEST=1 wyzej — ekran juz
   // narysowany, pierwsza probka pobierzStatus() juz sie wykonala.
-  potwierdzPartycjeJesliCzeka();
-  sprawdzIWykonajOtaPanelu(); // [OTA-PANEL, ta sesja] analogicznie do galezi LVGL_POC_TEST=1 wyzej
+  otaPoZatwierdzeniu(potwierdzPartycjeJesliCzeka());   // [v1.4.0 OTA] jak w galezi LVGL_POC_TEST=1 wyzej; ta galaz nie wola otaKrok()
 }
 
 void loop() {
@@ -5027,6 +5475,7 @@ void loop() {
   obslugaUstawieniaFetch();
   obslugaKomendaFetch();
   obslugaWykresyFetch();   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy - po kawalku na obrot, bez blokowania
+  otaKrok();               // [v1.4.0 OTA] aktualizacja przez centrale: decyzja raz na sekunde, pobieranie po kawalku na obrot
 
   // [v1.2.0 DANE-NIEAKTUALNE] Brak poprawnie odczytanego /api/status przez
   // PROG_NIEAKTUALNYCH_DANYCH_MS -> kafelki na "--" (raz na kazdy zanik).

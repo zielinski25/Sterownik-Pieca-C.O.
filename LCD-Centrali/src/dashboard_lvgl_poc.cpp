@@ -3,6 +3,10 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.4.0 Dodano: nakladka "AKTUALIZACJA PANELU" z paskiem postepu
+//   (lvgl_dashboard_poc_ota(), ..._ota_widoczna()) i odczyt czasu od
+//   ostatniego dotyku (lvgl_dashboard_poc_bez_dotyku_ms()) - [v1.4.0 OTA],
+//   na koncu pliku. Reszta pliku bez zmian. Pelny opis: HISTORIA ZMIAN w main.cpp.
 // [2026-11-12] v1.3.0 Zmieniono: ekran Wykresy ([v1.3.0 WYKRESY]).
 //   - Rysuje z GOTOWYCH punktow centrali 3.58.4 (odpowiedz na
 //     /api/history/panel, pierwsza linia "#panel-hist"): kazdy wiersz to
@@ -7754,6 +7758,88 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
 // [v1.2.1 RATUNEK] Patrz opis w dashboard_lvgl_poc.h.
 int lvgl_dashboard_poc_alarm_odrzucony() {
   return (int)g_alarmOdrzucony;
+}
+
+// ---------------------------------------------------------------------------
+// [v1.4.0 OTA] Nakladka "AKTUALIZACJA PANELU" - opis w dashboard_lvgl_poc.h.
+// Budowana przy pierwszym pokazaniu i usuwana przy schowaniu (kilka obiektow
+// LVGL; poza aktualizacja nie zajmuje pamieci). Lezy na warstwie
+// lv_layer_top(), wiec jest nad kazdym ekranem, takze nad ekranem alarmu -
+// dlatego main.cpp chowa ja od razu, gdy centrala zglosi alarm.
+// ---------------------------------------------------------------------------
+static lv_obj_t *otaNakladka = nullptr;
+static lv_obj_t *otaNakladkaOpis = nullptr;
+static lv_obj_t *otaNakladkaPasek = nullptr;
+static lv_obj_t *otaNakladkaProcent = nullptr;
+
+void lvgl_dashboard_poc_ota(int procent, const char *opis) {
+  if (procent < 0) {
+    if (otaNakladka != nullptr) lv_obj_del(otaNakladka);   // usuwa tez etykiety i pasek (dzieci)
+    otaNakladka = nullptr;
+    otaNakladkaOpis = nullptr;
+    otaNakladkaPasek = nullptr;
+    otaNakladkaProcent = nullptr;
+    return;
+  }
+  if (procent > 100) procent = 100;
+  if (otaNakladka == nullptr) {
+    otaNakladka = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(otaNakladka);
+    lv_obj_set_size(otaNakladka, 480, 320);
+    lv_obj_set_pos(otaNakladka, 0, 0);
+    lv_obj_set_style_bg_color(otaNakladka, rgb565(KOL_TLO), 0);
+    lv_obj_set_style_bg_opa(otaNakladka, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(otaNakladka, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(otaNakladka, LV_OBJ_FLAG_CLICKABLE);   // dotyk zostaje tutaj, nie trafia w ekran pod spodem
+
+    lv_obj_t *tytul = lv_label_create(otaNakladka);
+    lv_label_set_text(tytul, "AKTUALIZACJA PANELU");
+    lv_obj_set_style_text_font(tytul, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
+    lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 56);
+
+    otaNakladkaOpis = lv_label_create(otaNakladka);
+    lv_label_set_text(otaNakladkaOpis, "");
+    lv_obj_set_style_text_font(otaNakladkaOpis, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(otaNakladkaOpis, rgb565(KOL_TEKST), 0);
+    lv_obj_align(otaNakladkaOpis, LV_ALIGN_TOP_MID, 0, 112);
+
+    otaNakladkaPasek = lv_bar_create(otaNakladka);
+    lv_obj_set_size(otaNakladkaPasek, 380, 26);
+    lv_obj_align(otaNakladkaPasek, LV_ALIGN_TOP_MID, 0, 158);
+    lv_bar_set_range(otaNakladkaPasek, 0, 100);
+    lv_obj_set_style_radius(otaNakladkaPasek, 6, 0);
+    lv_obj_set_style_radius(otaNakladkaPasek, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(otaNakladkaPasek, rgb565(KOL_KARTA), 0);
+    lv_obj_set_style_bg_opa(otaNakladkaPasek, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(otaNakladkaPasek, rgb565(KOL_RAMKA), 0);
+    lv_obj_set_style_border_width(otaNakladkaPasek, 1, 0);
+    lv_obj_set_style_bg_color(otaNakladkaPasek, rgb565(KOL_OGIEN), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(otaNakladkaPasek, LV_OPA_COVER, LV_PART_INDICATOR);
+
+    otaNakladkaProcent = lv_label_create(otaNakladka);
+    lv_label_set_text(otaNakladkaProcent, "0%");
+    lv_obj_set_style_text_font(otaNakladkaProcent, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(otaNakladkaProcent, rgb565(KOL_TEKST), 0);
+    lv_obj_align(otaNakladkaProcent, LV_ALIGN_TOP_MID, 0, 196);
+
+    lv_obj_t *stopka = lv_label_create(otaNakladka);
+    lv_label_set_text(stopka, "Nie wylaczaj zasilania. Panel zrestartuje sie sam.\nAlarm z centrali przerywa aktualizacje.");
+    lv_obj_set_style_text_align(stopka, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(stopka, rgb565(KOL_TEKST_DIM), 0);
+    lv_obj_align(stopka, LV_ALIGN_TOP_MID, 0, 246);
+  }
+  lv_bar_set_value(otaNakladkaPasek, procent, LV_ANIM_OFF);
+  lv_label_set_text_fmt(otaNakladkaProcent, "%d%%", procent);
+  if (opis != nullptr) lv_label_set_text(otaNakladkaOpis, opis);
+}
+
+bool lvgl_dashboard_poc_ota_widoczna() {
+  return otaNakladka != nullptr;
+}
+
+uint32_t lvgl_dashboard_poc_bez_dotyku_ms() {
+  return lv_disp_get_inactive_time(NULL);
 }
 
 void lvgl_dashboard_poc_przywroc_alarm(bool dymAlarm, bool alarmOgrzewanie, bool alarmPanel, int odrzuconyPoziom) {

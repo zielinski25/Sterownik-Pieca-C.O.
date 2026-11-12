@@ -29,6 +29,30 @@ class Preferences {
   ATRAPA_NVS_TYP(Bool, bool)
 #undef ATRAPA_NVS_TYP
 
+  // [v1.4.0] Zapis binarny (jeden wpis = caly zapis albo nic). g_atrapa.nvsZapisOdmawia
+  // udaje pelna albo uszkodzona pamiec NVS: putBytes() zwraca 0.
+  size_t putBytes(const char* k, const void* dane, size_t n) {
+    AtrapaBezPomiaru bezPomiaru;
+    if (g_atrapa.nvsZapisOdmawia) return 0;
+    g_atrapa.nvsTeksty[ns_][k] = std::string((const char*)dane, n);
+    g_atrapa.nvsZapisowBinarnych++;
+    return n;
+  }
+  size_t getBytesLength(const char* k) {
+    AtrapaBezPomiaru bezPomiaru;
+    auto& m = g_atrapa.nvsTeksty[ns_];
+    auto it = m.find(k);
+    return it == m.end() ? 0 : it->second.size();
+  }
+  size_t getBytes(const char* k, void* bufor, size_t maks) {
+    AtrapaBezPomiaru bezPomiaru;
+    auto& m = g_atrapa.nvsTeksty[ns_];
+    auto it = m.find(k);
+    if (it == m.end() || it->second.size() > maks) return 0;   // jak w bibliotece: za maly bufor = nic
+    memcpy(bufor, it->second.data(), it->second.size());
+    return it->second.size();
+  }
+
   size_t putString(const char* k, const String& v) { AtrapaBezPomiaru bezPomiaru; g_atrapa.nvsTeksty[ns_][k] = v.c_str(); return v.length(); }
   String getString(const char* k, const String& domyslna = String()) {
     std::string wartosc;

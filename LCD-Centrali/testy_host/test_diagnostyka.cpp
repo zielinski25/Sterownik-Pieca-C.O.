@@ -590,7 +590,303 @@ static void testPamiecAutorestartu() {
   SPRAWDZ(m.wazna());
 }
 
+// --- [v1.4.0 OTA] ------------------------------------------------------------
+static diag::OtaWarunki otaWarunkiDobre() {
+  diag::OtaWarunki w;
+  w.alarm = false;
+  w.daneSwieze = true;
+  w.wifi = true;
+  w.siecZajeta = false;
+  w.odStartuMs = 60000;
+  w.bezDotykuMs = 60000;
+  w.bateriaJest = false;
+  w.zasilanieUsb = true;
+  w.bateriaProcent = 0;
+  w.ramWolny = 45000;
+  w.ramBlok = 30000;
+  w.bylaProba = false;
+  w.odOstatniejProbyMs = 0;
+  return w;
+}
+
+static void testOtaNarzedzia() {
+  using namespace diag;
+  // --- identyfikator obrazu z sumy SHA-256
+  const uint8_t suma[32] = {0x00, 0x1f, 0xa0, 0xff, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc};
+  char id[17];
+  otaObrazZSumy(suma, id);
+  SPRAWDZ(strcmp(id, "001fa0ff12345678") == 0);   // tylko 8 pierwszych bajtow, male litery
+  SPRAWDZ(otaObrazPoprawny(id));
+  SPRAWDZ(!otaObrazPoprawny(""));
+  SPRAWDZ(!otaObrazPoprawny(nullptr));
+  SPRAWDZ(!otaObrazPoprawny("001fa0ff1234567"));     // 15 znakow
+  SPRAWDZ(!otaObrazPoprawny("001fa0ff123456789"));   // 17 znakow
+  SPRAWDZ(!otaObrazPoprawny("001FA0FF12345678"));    // wielkie litery
+  SPRAWDZ(!otaObrazPoprawny("001fa0ff1234567g"));
+  SPRAWDZ(!otaObrazPoprawny("001fa0ff 2345678"));
+
+  // --- kodowanie hasla do adresu
+  char b[64];
+  SPRAWDZ(urlKoduj("Haslo-OTA_1.2~x", b, sizeof(b)) && strcmp(b, "Haslo-OTA_1.2~x") == 0);   // zwykle haslo: bez zmian
+  SPRAWDZ(urlKoduj("a b&c=d+e%f#g?h/i", b, sizeof(b)) && strcmp(b, "a%20b%26c%3Dd%2Be%25f%23g%3Fh%2Fi") == 0);
+  SPRAWDZ(urlKoduj("z\xC5\x82oty", b, sizeof(b)) && strcmp(b, "z%C5%82oty") == 0);            // znak spoza ASCII (UTF-8)
+  SPRAWDZ(urlKoduj("", b, sizeof(b)) && b[0] == '\0');
+  SPRAWDZ(urlKoduj(nullptr, b, sizeof(b)) && b[0] == '\0');
+  char maly[6];
+  SPRAWDZ(urlKoduj("abcde", maly, sizeof(maly)) && strcmp(maly, "abcde") == 0);   // dokladnie na styk
+  SPRAWDZ(!urlKoduj("abcdef", maly, sizeof(maly)) && maly[0] == '\0');            // o jeden za duzo
+  SPRAWDZ(urlKoduj("ab&", maly, sizeof(maly)) && strcmp(maly, "ab%26") == 0);     // znak kodowany liczy sie za trzy
+  SPRAWDZ(!urlKoduj("ab&c", maly, sizeof(maly)) && maly[0] == '\0');
+  SPRAWDZ(!urlKoduj("abc&", maly, sizeof(maly)) && maly[0] == '\0');              // "%26" nie moze wejsc w polowie
+  SPRAWDZ(!urlKoduj("a", nullptr, 10));
+  SPRAWDZ(!urlKoduj("a", b, 0));
+
+  // --- teksty powodow: te same, ktore zna centrala (panelOtaOpisOdmowy)
+  SPRAWDZ(strcmp(otaPowodTekst(OTA_POWOD_POBIERANIE), "pobieranie") == 0);
+  SPRAWDZ(strcmp(otaPowodTekst(OTA_POWOD_OBRAZ), "obraz") == 0);
+  SPRAWDZ(strcmp(otaPowodTekst(OTA_POWOD_COFNIETA), "cofnieta") == 0);
+  SPRAWDZ(strcmp(otaPowodTekst(OTA_POWOD_ZA_DUZY), "za_duzy") == 0);
+  SPRAWDZ(strcmp(otaPowodTekst(OTA_POWOD_HASLO), "haslo") == 0);
+  SPRAWDZ(strcmp(otaPowodTekst(OTA_POWOD_ZAPIS), "zapis") == 0);
+  SPRAWDZ(strcmp(otaPowodTekst(200), "inny") == 0);
+
+  // --- klucz oferty
+  char k[OTA_KLUCZ_MAKS];
+  otaKlucz(k, sizeof(k), true, 7, "001fa0ff12345678", "3.58.6");
+  SPRAWDZ(strcmp(k, "n7:001fa0ff12345678") == 0);
+  otaKlucz(k, sizeof(k), true, 4294967295UL, "001fa0ff12345678", "x");
+  SPRAWDZ(strcmp(k, "n4294967295:001fa0ff12345678") == 0);   // najdluzszy numer tez sie miesci
+  otaKlucz(k, sizeof(k), false, 7, "", "3.58.6");
+  SPRAWDZ(strcmp(k, "t:3.58.6") == 0);
+  otaKlucz(k, sizeof(k), false, 0, "", "bardzo-dlugi-tag-wydania-ktory-ma-ponad-31-znakow");
+  SPRAWDZ(strcmp(k, "t:bardzo-dlugi-tag-wydania-ktory-") == 0 && strlen(k) == 33);    // tag obciety do 31 znakow
+  otaKlucz(k, sizeof(k), false, 0, nullptr, nullptr);
+  SPRAWDZ(strcmp(k, "t:") == 0);
+
+  // --- adres zapytania o status
+  char s[200];
+  SPRAWDZ(otaSciezkaStatusu(s, sizeof(s), "v1.4.0", "poweron", "", true, false, 0, 0));
+  SPRAWDZ(strcmp(s, "/api/status?panel_fw=v1.4.0&reset_powod=poweron") == 0);   // bez identyfikatora: jak do v1.3.0
+  SPRAWDZ(otaSciezkaStatusu(s, sizeof(s), "v1.4.0", "sw", "001fa0ff12345678", true, false, 0, 0));
+  SPRAWDZ(strcmp(s, "/api/status?panel_fw=v1.4.0&reset_powod=sw&panel_obraz=001fa0ff12345678") == 0);
+  SPRAWDZ(otaSciezkaStatusu(s, sizeof(s), "v1.4.0", "sw", "001fa0ff12345678", false, false, 0, 0));
+  SPRAWDZ(strcmp(s, "/api/status?panel_fw=v1.4.0&reset_powod=sw&panel_obraz_proba=001fa0ff12345678") == 0);
+  SPRAWDZ(otaSciezkaStatusu(s, sizeof(s), "v1.4.0", "sw", "001fa0ff12345678", true, true, 12, OTA_POWOD_COFNIETA));
+  SPRAWDZ(strcmp(s, "/api/status?panel_fw=v1.4.0&reset_powod=sw&panel_obraz=001fa0ff12345678&panel_ota_odmowa=12-cofnieta") == 0);
+  // najdluzszy adres: token autorestartu (50 znakow) + obraz + odmowa z najdluzszym numerem i powodem
+  SPRAWDZ(otaSciezkaStatusu(s, sizeof(s), "v1.4.0", "auto_milczy_r201_n255_t65535_h65535_b65535_eo65535", "001fa0ff12345678", false, true,
+                            4294967295UL, OTA_POWOD_POBIERANIE));
+  SPRAWDZ(strlen(s) == 164);   // bufor w main.cpp ma 200 znakow
+  // powod czekania: osobny parametr; pusty albo nullptr = bez parametru
+  SPRAWDZ(otaSciezkaStatusu(s, sizeof(s), "v1.4.0", "sw", "001fa0ff12345678", true, false, 0, 0, "bateria"));
+  SPRAWDZ(strcmp(s, "/api/status?panel_fw=v1.4.0&reset_powod=sw&panel_obraz=001fa0ff12345678&panel_ota_czeka=bateria") == 0);
+  SPRAWDZ(otaSciezkaStatusu(s, sizeof(s), "v1.4.0", "sw", "001fa0ff12345678", true, false, 0, 0, ""));
+  SPRAWDZ(strcmp(s, "/api/status?panel_fw=v1.4.0&reset_powod=sw&panel_obraz=001fa0ff12345678") == 0);
+  SPRAWDZ(otaSciezkaStatusu(s, sizeof(s), "v1.4.0", "sw", "001fa0ff12345678", true, false, 0, 0, nullptr));
+  SPRAWDZ(strcmp(s, "/api/status?panel_fw=v1.4.0&reset_powod=sw&panel_obraz=001fa0ff12345678") == 0);
+  // najdluzszy adres z powodem czekania (najdluzsze powody maja 11 znakow) - tez miesci sie w 200
+  SPRAWDZ(otaSciezkaStatusu(s, sizeof(s), "v1.4.0", "auto_milczy_r201_n255_t65535_h65535_b65535_eo65535", "001fa0ff12345678", false, false, 0, 0,
+                            "siec_zajeta"));
+  SPRAWDZ(strlen(s) == 153);
+  // kazdy powod, ktory zwraca otaDecyzja() przy CZEKAJ, sklada sie ze znakow a-z i _ i ma najwyzej 15 znakow
+  // (tyle przyjmuje centrala: panelOtaCzytajSlowo() w main_centrala.cpp 3.58.6)
+  for (const char* powod : {"alarm", "brak_wifi", "brak_danych", "po_starcie", "odstep", "siec_zajeta", "dotyk", "bateria", "pamiec"}) {
+    bool dobry = strlen(powod) >= 1 && strlen(powod) <= 15;
+    for (const char* z = powod; *z != '\0'; z++) dobry = dobry && ((*z >= 'a' && *z <= 'z') || *z == '_');
+    SPRAWDZ(dobry);
+  }
+  char ciasny[60];
+  SPRAWDZ(!otaSciezkaStatusu(ciasny, sizeof(ciasny), "v1.4.0", "sw", "001fa0ff12345678", true, false, 0, 0));   // nie miesci sie: false
+  SPRAWDZ(!otaSciezkaStatusu(nullptr, 10, "v", "sw", "", true, false, 0, 0));
+
+  // --- pierwsze 24 i ostatnie 32 bajty pliku, podawanego kawalkami dowolnej dlugosci
+  uint8_t plik[300];
+  for (int i = 0; i < 300; i++) plik[i] = (uint8_t)(i * 7 + 3);
+  plik[0] = 0xE9; plik[12] = 0; plik[13] = 0; plik[23] = 1;
+  for (int krok : {1, 2, 5, 23, 24, 31, 32, 33, 64, 299, 300}) {
+    OtaSkan sk;
+    otaSkanStart(sk);
+    for (int od = 0; od < 300; od += krok) otaSkanDodaj(sk, plik + od, (size_t)(od + krok <= 300 ? krok : 300 - od));
+    SPRAWDZ(sk.lacznie == 300);
+    SPRAWDZ(memcmp(sk.naglowek, plik, 24) == 0);
+    SPRAWDZ(memcmp(sk.ogon, plik + 300 - 32, 32) == 0);
+    SPRAWDZ(otaSkanOcenNaglowek(sk) == OTA_POWOD_BRAK);
+    char ido[17], idz[17];
+    otaSkanObraz(sk, ido);
+    otaObrazZSumy(plik + 300 - 32, idz);
+    SPRAWDZ(strcmp(ido, idz) == 0 && otaObrazPoprawny(ido));
+  }
+  {
+    OtaSkan sk;
+    otaSkanStart(sk);
+    otaSkanDodaj(sk, plik, 10);
+    SPRAWDZ(otaSkanOcenNaglowek(sk) == OTA_POWOD_BRAK);   // naglowka jeszcze nie ma: bez oceny
+    otaSkanDodaj(sk, nullptr, 5);
+    otaSkanDodaj(sk, plik, 0);
+    SPRAWDZ(sk.lacznie == 10);
+    char ido[17] = "x";
+    otaSkanObraz(sk, ido);
+    SPRAWDZ(ido[0] == '\0');                              // za krotki plik: bez identyfikatora
+  }
+  {
+    uint8_t zly[100];
+    memcpy(zly, plik, 100);
+    zly[0] = '<';                                         // strona HTML zamiast programu
+    OtaSkan sk;
+    otaSkanStart(sk);
+    otaSkanDodaj(sk, zly, 100);
+    SPRAWDZ(otaSkanOcenNaglowek(sk) == OTA_POWOD_OBRAZ);
+    zly[0] = 0xE9; zly[12] = 0x09;                        // program dla ESP32-S3 (firmware centrali)
+    otaSkanStart(sk);
+    otaSkanDodaj(sk, zly, 100);
+    SPRAWDZ(otaSkanOcenNaglowek(sk) == OTA_POWOD_OBRAZ);
+    zly[12] = 0; zly[13] = 1;
+    otaSkanStart(sk);
+    otaSkanDodaj(sk, zly, 100);
+    SPRAWDZ(otaSkanOcenNaglowek(sk) == OTA_POWOD_OBRAZ);
+    zly[13] = 0; zly[23] = 0;                             // program ESP32 bez dopisanej sumy
+    otaSkanStart(sk);
+    otaSkanDodaj(sk, zly, 100);
+    SPRAWDZ(otaSkanOcenNaglowek(sk) == OTA_POWOD_BRAK);
+    char ido[17] = "x";
+    otaSkanObraz(sk, ido);
+    SPRAWDZ(ido[0] == '\0');                              // bez sumy nie ma identyfikatora
+  }
+}
+
+static void testOtaZapisIDecyzja() {
+  using namespace diag;
+  const char* OBRAZ_A = "aaaaaaaaaaaaaaaa";   // obraz, z ktorego panel pracuje
+  const char* OBRAZ_B = "bbbbbbbbbbbbbbbb";   // obraz oferowany przez centrale
+  OtaZapis z;
+  memset(&z, 0, sizeof(z));
+  const OtaWarunki dobre = otaWarunkiDobre();
+  const OtaOferta brak = {false, false, 0, "", ""};
+  const OtaOferta nowa = {true, true, 5, OBRAZ_B, "3.58.6"};
+  const OtaOferta stara = {true, false, 0, "", "3.58.6"};
+
+  // --- bez oferty: nic, niezaleznie od reszty
+  SPRAWDZ(otaDecyzja(brak, OBRAZ_A, z, dobre).akcja == OTA_AKCJA_NIC);
+
+  // --- oferta i dobre warunki: start
+  SPRAWDZ(otaDecyzja(nowa, OBRAZ_A, z, dobre).akcja == OTA_AKCJA_START);
+  SPRAWDZ(otaDecyzja(stara, OBRAZ_A, z, dobre).akcja == OTA_AKCJA_START);
+  SPRAWDZ(otaDecyzja(nowa, "", z, dobre).akcja == OTA_AKCJA_START);          // wlasny obraz nieznany: nie blokuje
+
+  // --- panel juz pracuje z oferowanego pliku: nic do zrobienia (centrala sama to zobaczy po panel_obraz)
+  const OtaDecyzja mam = otaDecyzja(nowa, OBRAZ_B, z, dobre);
+  SPRAWDZ(mam.akcja == OTA_AKCJA_POMIN && strcmp(mam.powod, "juz_mam") == 0);
+
+  // --- kazdy warunek z osobna wstrzymuje start; kolejnosc: alarm przed wszystkim
+  struct { const char* powod; void (*zepsuj)(OtaWarunki&); } przypadki[] = {
+      {"alarm", [](OtaWarunki& w) { w.alarm = true; }},
+      {"brak_wifi", [](OtaWarunki& w) { w.wifi = false; }},
+      {"brak_danych", [](OtaWarunki& w) { w.daneSwieze = false; }},
+      {"po_starcie", [](OtaWarunki& w) { w.odStartuMs = OTA_PO_STARCIE_MS - 1; }},
+      {"odstep", [](OtaWarunki& w) { w.bylaProba = true; w.odOstatniejProbyMs = OTA_ODSTEP_PROB_MS - 1; }},
+      {"siec_zajeta", [](OtaWarunki& w) { w.siecZajeta = true; }},
+      {"dotyk", [](OtaWarunki& w) { w.bezDotykuMs = OTA_BEZ_DOTYKU_MS - 1; }},
+      {"bateria", [](OtaWarunki& w) { w.bateriaJest = true; w.zasilanieUsb = false; w.bateriaProcent = OTA_BATERIA_MIN_PROC - 1; }},
+      {"pamiec", [](OtaWarunki& w) { w.ramWolny = OTA_RAM_MIN_B - 1; }},
+      {"pamiec", [](OtaWarunki& w) { w.ramBlok = OTA_BLOK_MIN_B - 1; }},
+  };
+  for (const auto& pr : przypadki) {
+    OtaWarunki w = dobre;
+    pr.zepsuj(w);
+    const OtaDecyzja d = otaDecyzja(nowa, OBRAZ_A, z, w);
+    SPRAWDZ(d.akcja == OTA_AKCJA_CZEKAJ && strcmp(d.powod, pr.powod) == 0);
+    w.alarm = true;
+    SPRAWDZ(strcmp(otaDecyzja(nowa, OBRAZ_A, z, w).powod, "alarm") == 0);
+  }
+  {
+    OtaWarunki w = dobre;   // wartosci dokladnie na progu wystarczaja
+    w.odStartuMs = OTA_PO_STARCIE_MS; w.bezDotykuMs = OTA_BEZ_DOTYKU_MS; w.ramWolny = OTA_RAM_MIN_B; w.ramBlok = OTA_BLOK_MIN_B;
+    w.bylaProba = true; w.odOstatniejProbyMs = OTA_ODSTEP_PROB_MS;
+    w.bateriaJest = true; w.zasilanieUsb = false; w.bateriaProcent = OTA_BATERIA_MIN_PROC;
+    SPRAWDZ(otaDecyzja(nowa, OBRAZ_A, z, w).akcja == OTA_AKCJA_START);
+    w.bateriaProcent = 5; w.zasilanieUsb = true;    // slabe ogniwo, ale panel jest na USB
+    SPRAWDZ(otaDecyzja(nowa, OBRAZ_A, z, w).akcja == OTA_AKCJA_START);
+    w.zasilanieUsb = false; w.bateriaJest = false;  // ogniwa nie ma (pomiar 0%): nie blokuje
+    SPRAWDZ(otaDecyzja(nowa, OBRAZ_A, z, w).akcja == OTA_AKCJA_START);
+    w.odOstatniejProbyMs = 0; w.bylaProba = false;  // "0 ms od proby" bez proby w tej sesji: nie blokuje
+    SPRAWDZ(otaDecyzja(nowa, OBRAZ_A, z, w).akcja == OTA_AKCJA_START);
+  }
+
+  // --- trzy proby i odmowa (nowa centrala)
+  char klucz[OTA_KLUCZ_MAKS];
+  otaKlucz(klucz, sizeof(klucz), true, 5, OBRAZ_B, "3.58.6");
+  otaZapisRozpocznijProbe(z, klucz);
+  SPRAWDZ(z.stan == OTA_ZAPIS_PROBY && z.prob == 1 && strcmp(z.klucz, klucz) == 0);
+  SPRAWDZ(!otaZapisNieudana(z, OTA_POWOD_POBIERANIE, false) && z.stan == OTA_ZAPIS_PROBY);
+  SPRAWDZ(otaDecyzja(nowa, OBRAZ_A, z, dobre).akcja == OTA_AKCJA_START);     // po pierwszej nieudanej: jeszcze wolno
+  otaZapisRozpocznijProbe(z, klucz);
+  SPRAWDZ(z.prob == 2);
+  otaZapisOddajProbe(z);                                                     // przerwana przez alarm: nie liczy sie
+  SPRAWDZ(z.prob == 1);
+  otaZapisRozpocznijProbe(z, klucz);
+  otaZapisRozpocznijProbe(z, klucz);
+  SPRAWDZ(z.prob == 3);
+  // panel zawiesil sie w trakcie trzeciej proby (nie zdazyl zapisac wyniku): po restarcie juz nie zaczyna
+  const OtaDecyzja wycz = otaDecyzja(nowa, OBRAZ_A, z, dobre);
+  SPRAWDZ(wycz.akcja == OTA_AKCJA_ODMOW && wycz.powodOdmowy == OTA_POWOD_POBIERANIE && strcmp(wycz.powod, "proby_wyczerpane") == 0);
+  SPRAWDZ(otaZapisNieudana(z, OTA_POWOD_ZAPIS, false) && z.stan == OTA_ZAPIS_ODMOWA);   // trzecia nieudana = odmowa
+  const OtaDecyzja odm = otaDecyzja(nowa, OBRAZ_A, z, dobre);
+  SPRAWDZ(odm.akcja == OTA_AKCJA_ODMOW && odm.powodOdmowy == OTA_POWOD_ZAPIS);
+  {
+    OtaWarunki w = dobre;
+    w.alarm = true;                                                          // odmowa jest zglaszana takze w czasie alarmu
+    SPRAWDZ(otaDecyzja(nowa, OBRAZ_A, z, w).akcja == OTA_AKCJA_ODMOW);
+  }
+  // ta sama oferta wystawiona ponownie (/update_panel jeszcze raz = nowy numer): panel probuje od nowa
+  const OtaOferta ponowiona = {true, true, 6, OBRAZ_B, "3.58.6"};
+  SPRAWDZ(otaDecyzja(ponowiona, OBRAZ_A, z, dobre).akcja == OTA_AKCJA_START);
+  otaKlucz(klucz, sizeof(klucz), true, 6, OBRAZ_B, "3.58.6");
+  otaZapisRozpocznijProbe(z, klucz);
+  SPRAWDZ(z.prob == 1 && z.stan == OTA_ZAPIS_PROBY && z.powod == OTA_POWOD_BRAK);   // nowy klucz zeruje licznik i powod
+
+  // --- blad, przy ktorym powtarzanie nie ma sensu: odmowa od razu
+  memset(&z, 0, sizeof(z));
+  otaZapisRozpocznijProbe(z, klucz);
+  SPRAWDZ(otaZapisNieudana(z, OTA_POWOD_OBRAZ, true) && z.stan == OTA_ZAPIS_ODMOWA && z.prob == 1);
+
+  // --- udane wgranie i ocena po restarcie
+  memset(&z, 0, sizeof(z));
+  SPRAWDZ(otaOcenPoStarcie(z, OBRAZ_A) == 0);                                // nic nie bylo wgrywane
+  otaZapisRozpocznijProbe(z, klucz);
+  otaZapisWgrane(z, OBRAZ_B);
+  SPRAWDZ(z.stan == OTA_ZAPIS_WGRANE && strcmp(z.oczekiwany, OBRAZ_B) == 0);
+  SPRAWDZ(otaDecyzja(ponowiona, OBRAZ_A, z, dobre).akcja == OTA_AKCJA_POMIN);   // przed ocena: nie zaczynaj drugi raz
+  OtaZapis kopia = z;
+  SPRAWDZ(otaOcenPoStarcie(kopia, OBRAZ_B) == 1 && kopia.stan == OTA_ZAPIS_DZIALA);   // dziala nowy obraz
+  SPRAWDZ(otaOcenPoStarcie(kopia, OBRAZ_B) == 0);                                     // ocena tylko raz
+  kopia = z;
+  SPRAWDZ(otaOcenPoStarcie(kopia, OBRAZ_A) == 2 && kopia.stan == OTA_ZAPIS_ODMOWA && kopia.powod == OTA_POWOD_COFNIETA);
+  const OtaDecyzja cof = otaDecyzja(ponowiona, OBRAZ_A, kopia, dobre);
+  SPRAWDZ(cof.akcja == OTA_AKCJA_ODMOW && cof.powodOdmowy == OTA_POWOD_COFNIETA);     // wycofany plik: nie wgrywaj znowu, zglos
+  kopia = z;
+  SPRAWDZ(otaOcenPoStarcie(kopia, "") == 1);                                          // wlasny obraz nieznany: bez zgloszenia wycofania
+  kopia = z;
+  kopia.oczekiwany[0] = '\0';                                                         // plik nie mial sumy: jw.
+  SPRAWDZ(otaOcenPoStarcie(kopia, OBRAZ_A) == 1);
+
+  // --- starsza centrala (flaga nie znika nigdy): po udanym wgraniu ten sam tag jest pomijany
+  memset(&z, 0, sizeof(z));
+  otaKlucz(klucz, sizeof(klucz), false, 0, "", "3.58.6");
+  otaZapisRozpocznijProbe(z, klucz);
+  otaZapisWgrane(z, OBRAZ_B);
+  SPRAWDZ(otaOcenPoStarcie(z, OBRAZ_B) == 1);
+  const OtaDecyzja juz = otaDecyzja(stara, OBRAZ_B, z, dobre);
+  SPRAWDZ(juz.akcja == OTA_AKCJA_POMIN && strcmp(juz.powod, "juz_wgrane") == 0);
+  const OtaOferta staraInnyTag = {true, false, 0, "", "3.58.7"};
+  SPRAWDZ(otaDecyzja(staraInnyTag, OBRAZ_B, z, dobre).akcja == OTA_AKCJA_START);      // nowe wydanie: wgrywa
+  // ta sama centrala po aktualizacji do 3.58.6 oferuje INNY plik pod tym samym tagiem: klucz jest inny, wgrywa
+  const OtaOferta nowaTenSamTag = {true, true, 1, "cccccccccccccccc", "3.58.6"};
+  SPRAWDZ(otaDecyzja(nowaTenSamTag, OBRAZ_B, z, dobre).akcja == OTA_AKCJA_START);
+}
+
 int main() {
+  testOtaNarzedzia();
+  testOtaZapisIDecyzja();
   testPrzyczyna();
   testRatunek();
   testPamiecAutorestartu();
