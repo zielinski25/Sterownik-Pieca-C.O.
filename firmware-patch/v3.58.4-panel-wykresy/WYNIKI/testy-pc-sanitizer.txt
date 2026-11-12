@@ -1,0 +1,145 @@
+Wynik: SANITIZER=1 ./uruchom_testy.sh   (AddressSanitizer + UBSan; g++ 12, 2026-11-12)
+Plik: src/main_centrala.cpp  SHA-256 7c92ed2d62c00b958fe24a731db65df97eadb8db9157eb1da63c520226246bcc
+
+[1] wycinam kod z ../src/main_centrala.cpp
+    zapisano /tmp/centrala_panel_hist_test/panel_hist_wycinek.inc (481 linii)
+[2] kompilacja (g++ -Wall -Wextra)
+[3] testy
+Testy kodu [v3.58.4 PANEL-WYKRESY] (GET /api/history/panel)
+  1. godzina pracy, probka co 60 s, stale 21,5 C:
+    [ OK ] kod 200, naglowek na poczatku, "#koniec" na koncu z wlasciwa liczba
+    [ OK ] naglowek: tryb=godz pkt=96 wierszy=61 zrodlo=lokalne fs=1
+    [ OK ] naglowek: okno = 3600 s do najnowszej probki wlacznie, krok 37 s
+    [ OK ] naglowek: od_etyk=13:00 do_etyk=14:00 (czas polski) - podpis osi czasu dla panelu
+    [ OK ] 96 punktow, zadnej przerwy (wykres na cala szerokosc)
+    [ OK ] kazdy punkt: zewn 21.5 (sr, min, max), bojler 22.5, pokoj 27.5
+    [ OK ] kazdy wiersz ma 36 kolumn, jak /api/history/long
+    [ OK ] ostatni punkt: etykieta 14:00 (czas polski), czas = czas najnowszej probki
+    [ OK ] pierwszy punkt: etykieta 13:00
+    [ OK ] cisnienie 1.5, wilgotnosc 45.0, klapa 40.0, syberek 60.0, pompa 0
+    [ OK ] linia w logu centrali
+    [ OK ] pamiec zwolniona, spinlock oddany, zadnego przydzialu pod spinlockiem
+  2. skok temperatury w polowie godziny (20 C -> 30 C):
+    [ OK ] 60 punktow
+    [ OK ] polowa punktow ma 20.0, polowa 30.0, najwyzej jeden punkt przejsciowy
+    [ OK ] pierwszy punkt 20.0, ostatni 30.0
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  3. centrala wylaczona na 30 minut w srodku godziny:
+    [ OK ] 96 pozycji razem z przerwami
+    [ OK ] ok. polowa pozycji (30 z 60 minut) to "#przerwa"
+    [ OK ] przerwa jest jednym ciaglym odcinkiem w srodku wykresu
+    [ OK ] przed przerwa 20.0, po przerwie 25.0
+    [ OK ] liczba przerw w logu centrali
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  3b. odstep 5 minut (jedna zgubiona probka to nie przerwa - prog 6 minut):
+    [ OK ] zadnej przerwy
+  3c. odstep 7 minut to juz przerwa:
+    [ OK ] jest przerwa
+  4. pelny bufor krotki (1440 probek, zaczyna sie w srodku tablicy):
+    [ OK ] 96 punktow bez przerw
+    [ OK ] naglowek: wierszy=1440, krok ok. 15 minut
+    [ OK ] naglowek: od_etyk=13.11_13:00 do_etyk=14.11_12:59 (doba siega poprzedniego dnia - z data)
+    [ OK ] pierwszy punkt 0.0, ostatni 23.0
+    [ OK ] piaty punkt (druga godzina): srednia 1.0, min 0.0, max 1.0
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb godz z tego samego bufora: tylko ostatnia godzina (22.0 -> 23.0)
+  5. tydzien: bufor dlugi (zdarzenia) + ostatnia doba z bufora krotkiego:
+    [ OK ] 96 punktow bez przerw
+    [ OK ] okno: dokladnie 7 dni do najnowszej probki, krok 105 minut
+    [ OK ] naglowek: od_etyk=06.11_12:59 do_etyk=13.11_12:59 (z data, bez spacji w srodku)
+    [ OK ] 6 dni po 10.0 (dlugi), ostatnia doba 50.0 (krotki), najwyzej 1 punkt przejsciowy
+    [ OK ] etykiety z data: "DD.MM HH:MM"
+    [ OK ] ostatnia etykieta 13.11 12:59
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  5b. bufor dlugi zdarzeniowy: wartosc obowiazuje do nastepnego wpisu (srednia wazona czasem):
+    [ OK ] 8 punktow bez przerw
+    [ OK ] punkt z 10-minutowym szczytem: srednia 18.9 (a nie ok. 80 ze zwyklej sredniej wpisow), min 10.0, max 90.0
+    [ OK ] sasiednie punkty: 10.0
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  5c. przerwa w buforze dlugim (ponad 90 minut bez wpisu):
+    [ OK ] ok. 1/3 pozycji to przerwa (10 z 30 godzin)
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  6. brak danych i dane szczatkowe:
+    [ OK ] pusta historia, tryb godz: kod 200, wierszy=0, "#koniec 0"
+    [ OK ] pusta historia, tryb dzien: kod 200, wierszy=0, "#koniec 0"
+    [ OK ] pusta historia, tryb tydz: kod 200, wierszy=0, "#koniec 0"
+    [ OK ] bufory nieprzydzielone (centrala bez PSRAM): wierszy=0, bez wywrotki
+    [ OK ] jedna probka: jeden punkt z jej wartoscia i czasem
+    [ OK ] dwie probki co 60 s: 61 punktow (po sekundzie), od 10.0 do 20.0
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  7. centrala bez zegara (probki z czasem 0):
+    [ OK ] 96 punktow bez przerw (probki liczone co 60 s)
+    [ OK ] naglowek: od=0 do=0 (czas nieznany)
+    [ OK ] naglowek: od_etyk i do_etyk to "--:--"
+    [ OK ] kazda etykieta "--:--", kolumna czasu 0
+    [ OK ] wartosci rosna od 0.0; ostatni punkt: srednia 28.1, maksimum 29.0 (najnowsza probka)
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb tydz bez zegara: te same probki, etykiety "--:--"
+  7b. zegar zlapany po 10 minutach (pierwsze probki bez czasu):
+    [ OK ] probki bez czasu dostaja czas z sasiadow: okno od T0, 5.0 na poczatku, 7.0 na koncu, bez przerw
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  7c. zegar zgubiony w trakcie (ostatnie probki bez czasu):
+    [ OK ] probki bez czasu sa dopisane co 60 s po ostatniej z czasem
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  8. wartosci nietypowe:
+    [ OK ] 96 punktow
+    [ OK ] wartosc ujemna: -12.3
+    [ OK ] NaN w czujniku -> "nan,nan,nan" tylko w jego kolumnach
+    [ OK ] czujnik, ktory wrocil: najpierw nan, potem 55.5
+    [ OK ] nieskonczonosc i wartosc bez sensu -> nan
+    [ OK ] -0,04 zaokragla sie do "0.0" (bez "-0.0")
+    [ OK ] pompa wlaczona: 1
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] wartosci skrajne przechodza, pompa -1
+    - najdluzsza linia odpowiedzi: 289 znakow
+    [ OK ] najdluzsza mozliwa linia ma mniej niz 300 znakow (bufor linii panelu LCD)
+    [ OK ] wiersz z min > sr i max = NaN: min i max rowne sredniej
+  9. parametry zapytania:
+    [ OK ] pkt=0 albo ujemne: domyslne 96
+    [ OK ] pkt=1: najmniej 8
+    [ OK ] pkt=100000: najwyzej 240
+    [ OK ] pkt=37: 37 punktow; pkt=240: poprawna odpowiedz
+    [ OK ] tryb "": kod 400 z podpowiedzia
+    [ OK ] tryb "tydzien": kod 400 z podpowiedzia
+    [ OK ] tryb "GODZ": kod 400 z podpowiedzia
+    [ OK ] tryb "godz ": kod 400 z podpowiedzia
+    [ OK ] tryb "x": kod 400 z podpowiedzia
+    [ OK ] tryb = nullptr: kod 400, bez wywrotki
+    [ OK ] zapis historii na flash wylaczony: fs=0 w naglowku
+  10. brak pamieci w centrali:
+    [ OK ] bez PSRAM: kubelki ze zwyklego malloc(), wynik ten sam
+    [ OK ] brak pamieci na kubelki: kod 503, nic nie wycieka
+    [ OK ] brak pamieci na tekst odpowiedzi: kod 503, kubelki zwolnione
+    [ OK ] odmowa dopisania w dowolnym z 98 miejsc: zawsze kod 503, nigdy ucieta odpowiedz z kodem 200
+    [ OK ] po przywroceniu pamieci odpowiedz znow poprawna
+  11. zegar centrali skacze:
+    [ OK ] czas cofniety w trakcie: poprawna odpowiedz, 96 pozycji
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] probka z czasem po roku 2100 nie przesuwa okna w przyszlosc
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] wpis dlugi z czasem po roku 2100 jest pomijany
+    [ OK ] probka z roku 2000 nie psuje wykresu (reszta doby to przerwa)
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  12. dane losowe, porownanie z liczeniem sekunda po sekundzie:
+    [ OK ] 934 z 934 losowych zestawow daje dokladnie ten sam tekst odpowiedzi
+  13. oba bufory pelne (8000 zdarzen + 1440 probek) - rozmiar i czas:
+    [ OK ] 96 punktow bez przerw
+    - odpowiedz dla panelu: 18107 B; ten sam zakres po staremu (/api/history/long): 1352000 B, czyli 75 razy wiecej
+    - czas liczenia na tym komputerze: 7.69 ms (9440 wierszy zrodlowych)
+    [ OK ] odpowiedz ma mniej niz 24 kB
+    [ OK ] wierszy: 6848 zdarzen sprzed ostatniej doby + 1440 probek
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+WSZYSTKO OK: 1434 sprawdzen, 0 bledow
+[4] wzorce odpowiedzi dla testow panelu LCD
+    Wzorce odpowiedzi GET /api/history/panel?tryb=...&pkt=96 -> /tmp/centrala_panel_hist_test/wzorce
+        dzien.txt                     18207 B  pelna doba, ZEWN rosnie od -5,0 do 9,4
+        godz_ta_sama_doba.txt         18093 B  ostatnia godzina tej samej doby
+        tydz_przerwa.txt              15061 B  tydzien, centrala wylaczona przez 1,5 doby
+        godz_bez_czujnika.txt         17950 B  czujnik pokojowy bez odczytu przez pierwsze pol godziny
+        dzien_pusta.txt                 119 B  centrala bez historii
+        dzien_pusta_bez_fs.txt          119 B  centrala bez historii, zapis na flash wylaczony
+        godz_jedna_probka.txt           323 B  jeden pomiar
+        dzien_bez_zegara.txt          17397 B  centrala bez zegara
+        tydz_pelne_bufory.txt         19594 B  oba bufory pelne, najdluzsze liczby
+    zgodne z ../../../LCD-Centrali/testy_host/wzorce_centrali (testy panelu uzywaja tych samych odpowiedzi)
+kod wyjscia: 0
