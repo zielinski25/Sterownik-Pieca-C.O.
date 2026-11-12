@@ -46,7 +46,7 @@ i z pomiaru, nie obserwacja.
 | | v1.2.0 | v1.2.2 |
 |---|---|---|
 | Pamięć zajęta przez firmware po starcie (pomiar na PC) | 171 kB | 129 kB |
-| Wolny RAM na płytce po starcie | ok. 8 kB (z logu) | ok. 48 kB (szacunek) |
+| Wolny RAM na płytce po starcie | ok. 8 kB (z logu) | 49,7 kB (z logu; szacunek z PC: 48,6 kB) |
 | Bufor rysowania ekranu | 38,4 kB | 15,4 kB |
 | Bufory ekranu Wykresy (18,5 kB) | trzymane zawsze | tylko gdy ekran jest otwarty |
 | Pamięć potrzebna chwilowo na jedno odpytanie centrali | 7,4 kB | 5,6 kB (odpowiedź nie jest już kopiowana) |
@@ -69,6 +69,31 @@ panel wychodzi z tego sam, mechanizmami z v1.2.1 (niżej).
 `tag=PAMIEC zdarzenie=po_starcie ram=… ram_blok=… ram_min=…`. `ram` powinno
 wynosić kilkadziesiąt tysięcy (bajtów). To jest sprawdzian tej wersji: jeśli
 będzie poniżej 20 000, przyślij tę linię.
+
+### Wynik na płytce (2026-11-12)
+
+Log panelu z pierwszych ok. 40 s po wgraniu v1.2.2 (zbudowanej w PlatformIO
+przez użytkownika):
+
+```
+[LVGL] start lvgl_port_init(), wolny RAM=234196 B
+[LVGL] bufor rysowania zaalokowany (15360 B), wolny RAM=218148 B
+tag=PAMIEC zdarzenie=po_ekranach ram=105568 ram_blok=102388
+tag=PAMIEC zdarzenie=po_starcie ram=49676 ram_blok=42996 ram_min=43836
+tag=PANEL fw=v1.2.2 … status_ok=1 status_blad=0 ust_ok=1 ust_blad=0 … ram=50516 ram_min=43836 ram_blok=42996 … autorestartow=0
+tag=PANEL fw=v1.2.2 … status_ok=15 status_blad=0 ust_ok=6 ust_blad=0 … ram=50076 ram_min=41644 ram_blok=42996 … autorestartow=0
+```
+
+- Po starcie wolne jest 49,7 kB (v1.2.0: ok. 8 kB). Najmniej w tym czasie:
+  41,6 kB.
+- Wszystkie odpowiedzi zostały odczytane: 16 ze statusem i 7 z ustawieniami,
+  zero błędów, żadnego `json=NoMemory`, żadnego ponownego łączenia ani
+  restartu.
+- Panel zauważył zmianę symulacji w centrali (`czujniki=zewn` →
+  `czujniki=zewn,piec`), czyli dostaje świeże dane.
+- Według zgłoszenia ekran działa prawidłowo.
+
+To krótki log. Pracy przez wiele godzin jeszcze nie pokazuje.
 
 ## Co zmienia v1.2.1
 
@@ -339,14 +364,21 @@ Stary, gęsty log `[NET-DIAG] start/wyslano/sukces` można przywrócić, ustawia
   i ArduinoJson 7.2.1 oraz z najnowszymi wydaniami (LVGL 8.4.0, ArduinoJson
   7.4.3). Pamięć po starcie wychodzi identyczna, odpytanie centrali o 140 B
   mniejsze.
-- **Nie sprawdzone:** build PlatformIO (GCC, linkowanie, rozmiar binarki)
-  i działanie na płytce. Opis ograniczeń: `testy_host/README.md`.
-- **„Ok. 48 kB wolnego RAM-u” to szacunek z jednego logu.** Pomiar na PC nie
-  obejmuje pamięci, którą na płytce biorą WiFi i system (z logu wychodzi
-  ok. 56 kB). Z samego pomiaru wynika tylko tyle, że firmware zajmuje
-  o ok. 40 kB mniej niż v1.2.0: 41,3 kB mniej pamięci przydzielanej w trakcie
-  pracy, 0,9 kB więcej zmiennych statycznych (bufor logu). Prawdziwą liczbę
-  poda linia `tag=PAMIEC zdarzenie=po_starcie`.
+- **Na płytce** (2026-11-12): firmware zbudowany w PlatformIO i wgrany przez
+  użytkownika. Panel startuje, zgłasza centrali `v1.2.2`, ma 49,7 kB wolnego
+  RAM-u po starcie i w ok. 40 s logu odczytał wszystkie odpowiedzi. Liczby:
+  „Wynik na płytce” wyżej.
+- **Nadal nie sprawdzone na płytce:** praca przez wiele godzin; zachowanie
+  przy prawdziwym braku pamięci i samoczynne restarty (w tym logu nie było do
+  nich powodu); ekran Wykresy, który bierze dodatkowe 18,6 kB; szybkość
+  rysowania (nie była mierzona). Ograniczenia testów na PC opisuje
+  `testy_host/README.md`.
+- **Szacunek a pomiar.** Pomiar na PC nie obejmuje pamięci, którą na płytce
+  biorą WiFi i system; skrypt przyjmuje dla nich 55,9 kB, wyliczone z logu
+  v1.2.0. Szacował 48,6 kB wolnego RAM-u po starcie, płytka pokazała 49,7 kB.
+  Firmware zajmuje o ok. 40 kB mniej niż v1.2.0: 41,3 kB mniej pamięci
+  przydzielanej w trakcie pracy, 0,9 kB więcej zmiennych statycznych (bufor
+  logu).
 - **Zachowanie radia jest w testach założeniem.** Scenariusz
   `martwe_polaczenie` (centrala restartuje się tak szybko, że panel dalej
   uważa się za połączony) pokazuje, że od v1.2.1 panel wychodzi z takiego

@@ -200,6 +200,11 @@ miała 234,6 kB przed budową ekranów i ok. 8 kB po starcie, a v1.2.0 trzyma
 **szacunek z jednego logu**. Prawdziwą liczbę podaje panel:
 `tag=PAMIEC zdarzenie=po_starcie ram=…`.
 
+Sprawdzenie szacunku: płytka z v1.2.2 pokazała 2026-11-12
+`po_starcie ram=49676`, czyli o 1,1 kB więcej, niż szacował skrypt. Z jej
+logu (234 196 B przed budową ekranów, 49 676 B po starcie) na WiFi i system
+wychodzi 55 276 B, a skrypt przyjmuje 55 900 B.
+
 Atrapa `String` rośnie tak jak `String` z arduino-esp32 (dokładnie do
 potrzeb, w górę do 16 bajtów; przypisanie krótszego tekstu nie zwalnia
 bufora), ale pod spodem jest `std::string` — drobne teksty mogą zajmować
