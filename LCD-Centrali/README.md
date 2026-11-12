@@ -571,6 +571,32 @@ centrala pisze `tag=OTA-PANEL lvl=INFO zdarzenie=wersja_zgloszona wersja=v1.3.0`
 Stary, gęsty log `[NET-DIAG] start/wyslano/sukces` można przywrócić, ustawiając
 `SiecCfg::POZIOM_LOGU = 2` w `src/siec_nieblokujaca_LCD.h`.
 
+## Aktualizacja przez centralę i Telegram (OTA)
+
+Sprawdzone 2026-11-12, bez zmian w firmware. Pełny opis:
+`RAPORT_OTA_PANELU_PRZEZ_CENTRALE.md` w katalogu głównym repozytorium.
+
+- Komenda `/update_panel` każe centrali pobrać plik `firmware_panel.bin`
+  z najnowszego wydania na GitHubie. Panel bierze go od centrali **przy
+  starcie** — pracujący panel trzeba wyłączyć i włączyć.
+- **Tag wydania musi być tym samym tekstem co `FIRMWARE_VERSION_PANEL`**
+  (dziś `v1.3.0`). Centrala uznaje aktualizację za wykonaną tylko wtedy, gdy
+  panel zgłosi wersję identyczną z tagiem. Inaczej panel wgrywa ten sam plik
+  przy każdym starcie i nie dochodzi do kafelków.
+- Przed publikacją wydania i przed wysłaniem komendy:
+
+  ```
+  python3 narzedzia/ota_panelu_sprawdz.py --tag v1.3.0 --bin LCD-Centrali/.pio/build/esp32dev/firmware.bin
+  ```
+
+  (z katalogu głównego repozytorium; kod wyjścia 1 = nie wysyłaj komendy)
+
+- Wyjście awaryjne, gdy panel wgrywa plik w kółko: otworzyć w przeglądarce
+  `http://<adres centrali>/api/status?panel_fw=<tag wydania>`. Centrala
+  zdejmie flagę aktualizacji.
+- Żadna aktualizacja tą drogą nie była jeszcze wykonana na tych
+  urządzeniach.
+
 ## Co zostało sprawdzone, a co nie
 
 **v1.3.0 nie była budowana w PlatformIO ani uruchamiana na płytce.** Na
@@ -578,11 +604,15 @@ płytce sprawdzona jest v1.2.2 (niżej). v1.3.0 różni się od niej ekranem
 Wykresy i sposobem pobierania jego danych; reszta kodu jest ta sama.
 
 - **Na PC, z atrapami sprzętu:** prawdziwy `main.cpp` i dashboard uruchomione
-  zwykłym `g++` przeciwko udawanym centralom — 35 scenariuszy, 387
+  zwykłym `g++` przeciwko udawanym centralom — 41 scenariuszy, 420
   sprawdzeń, plus 262 sprawdzenia jednostkowe; także pod AddressSanitizer
   i UBSan. Udawana centrala wysyła ten sam JSON co firmware 3.58.3. W czterech
   scenariuszach z v1.2.2 panel nie dostaje pamięci na żądanie testu — tak, jak
   na płytce z logu z 2026-11-12.
+- **Aktualizacja przez centralę, na PC:** sześć scenariuszy `ota_*` — kiedy
+  panel zaczyna aktualizację, o jaki adres pyta, co robi po udanym
+  i nieudanym pobraniu, co się dzieje, gdy zgłoszona wersja różni się od
+  tagu wydania. Samo pobieranie i zapis do flash są udawane.
 - **Ekran Wykresy (v1.3.0), na PC:** dziewięć scenariuszy `wykresy_*` — wykres
   z punktów centrali w trzech zakresach, starsza centrala, przerwy w danych,
   brak danych, odpowiedź urwana, cisza w połowie, brak odpowiedzi, odpowiedź,

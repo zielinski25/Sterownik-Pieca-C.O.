@@ -21,7 +21,8 @@ kodu — to osobna sprawa, bez związku z wykresami na LCD (zastrzeżenie 4).
 | **Centrala, PSRAM** — jeden wykres dla panelu | 45 kB na chwilę | jw. | — |
 | **Centrala, zwykły RAM** — jeden wykres dla panelu | ramka stosu ok. 1 kB z 16 kB; ze sterty tylko drobne obiekty serwera HTTP | nieznane (podaje log centrali) | — |
 | **Centrala, flash na dane** — logi i pliki historii | logi do 8,28 MB; pliki historii do 2,23 MB przy włączonym zapisie | 10,35 MB | **nie potwierdzone** |
-| **Flash na program** — oba urządzenia | nieznane (poda PlatformIO) | LCD 2,03 MB; centrala 3,15 MB | nieznany |
+| **Flash na program** — LCD | nieznane (poda PlatformIO) | 2,03 MB | nieznany |
+| **Flash na program** — centrala | 2,47 MB w wydaniu 3.57.9 (dopisane później, patrz zastrzeżenie 3) | 3,15 MB | ok. 0,67 MB |
 
 Cztery zastrzeżenia:
 
@@ -41,6 +42,10 @@ Cztery zastrzeżenia:
    budowaniu (`Flash: [...] xx% (used ... bytes from ... bytes)`). Gdyby
    program się nie mieścił, budowanie kończy się błędem i nic nie jest
    wgrywane.
+   *Dopisane przy sprawdzaniu aktualizacji panelu:* dla centrali jest liczba
+   z GitHuba. Plik `firmware.bin` w wydaniu 3.57.9 ma 2 472 384 B, czyli 79 %
+   partycji programu (3 145 728 B); zostaje 673 344 B. Rozmiaru 3.58.5 i obu
+   wersji panelu nadal nie znam.
 4. **System plików centrali: rachunek z limitów w kodzie się nie domyka.**
    Logi mogą zająć do 80 % pojemności, a bezpiecznik, który je przycina, nie
    liczy plików historii. To kod istniejący od dawna; wersje 3.58.4 i 3.58.5
@@ -422,9 +427,10 @@ prawdziwych liczbach.
   `psram_free` powinno być liczone w megabajtach. Jeśli chcesz, przyślij
   jedną taką linię po kilku wykresach na panelu.
 - **Ile miejsca jest zajęte w systemie plików centrali** — patrz wyżej.
-- **Ile zajmuje firmware centrali we flashu.** Plik ma 2,5 MB tekstu,
-  z czego 0,7 MB to strona WWW wbudowana w program; partycja ma 3 MB.
-  Zajętość pokaże PlatformIO.
+- **Ile zajmuje firmware centrali 3.58.5 we flashu.** Wydanie 3.57.9 zajmuje
+  2 472 384 B z 3 145 728 B (liczba z GitHuba, dopisana później). Nowy kod
+  wykresów to ok. 6 kB, ale między 3.57.9 a 3.58.5 doszły też inne zmiany.
+  Dokładną zajętość pokaże PlatformIO.
 - **Stos zadania `async_tcp` na ESP32.** Ramka 1 116 B jest z kompilacji na
   PC. Log centrali podaje zapas stosu czterech innych zadań, tego nie.
 

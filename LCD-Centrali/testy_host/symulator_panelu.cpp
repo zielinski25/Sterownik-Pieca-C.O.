@@ -255,6 +255,16 @@ struct Centrala {
   // "deepsleep", pisze linie "tag=RESET-DIAG ... powod=" i wysyla wiadomosc.
   std::string ostatniPowodRestartu;       // g_panelOstatniPowodRestartu centrali (pusty po jej restarcie)
   std::vector<std::string> resetDiag;     // powody, o ktorych centrala napisala w logu i wyslala wiadomosc
+  // Posrednictwo OTA panelu - to, co z parametrem panel_fw robi ten sam
+  // handler centrali (main_centrala.cpp, znaczniki "[OTA-PANEL]"): flaga
+  // "panel_ota_dostepna" znika TYLKO wtedy, gdy tekst zgloszony przez panel
+  // jest identyczny z tagiem wydania, na ktore centrala czeka
+  // ("if (g_panelOtaDostepna && zgloszona == g_panelOtaWersja)").
+  bool panelOtaDostepna = false;          // g_panelOtaDostepna
+  std::string panelOtaWersja;             // g_panelOtaWersja: tag wydania z GitHuba
+  std::string panelWersjaZgloszona;       // g_panelWersjaZgloszona
+  int panelOtaPotwierdzen = 0;            // ile razy centrala uznala aktualizacje za wykonana
+  int nStatusZFlagaOta = 0;               // odpowiedzi /api/status wyslane z "panel_ota_dostepna":true
 
   // --- historia dla ekranu Wykresy (GET /api/history...) - opis: odpowiedzHistorii() ---
   int wersjaHistorii = HIST_PANEL;
@@ -322,7 +332,7 @@ std::string jsonStatus(const Centrala& c, bool zNan) {
   j += "\"miesiac\":" + std::to_string(c.rtcOk ? c.miesiac : 0) + ",\"godzina\":" + std::to_string(c.rtcOk ? c.godzina : 0);
   j += ",\"minuta\":" + std::to_string(c.rtcOk ? c.minuta : 0) + ",\"dzien\":" + std::to_string(c.rtcOk ? c.dzien : 0);
   j += ",\"rok\":" + std::to_string(c.rtcOk ? c.rok : 0) + ",\"rtc_ok\":" + tn(c.rtcOk) + ",\"internet\":false,";
-  j += "\"panel_ota_dostepna\":false,\"panel_ota_wersja\":\"\"";
+  j += std::string("\"panel_ota_dostepna\":") + tn(c.panelOtaDostepna) + ",\"panel_ota_wersja\":\"" + c.panelOtaWersja + "\"";
   static const char* const NAZWY_SYM[] = {"dym", "ogrz", "bojler", "panel", "pokoj", "zewn", "ogrz_powrot", "ogrz_trociny", "cisnienie", "wilgotnosc"};
   for (int i = 0; i < 10; i++) {
     const bool aktywna = (c.symulacja & (1u << i)) != 0;
@@ -658,8 +668,22 @@ void obsluzPolaczenie(int k, int idx) {
           }
         }
       }
+      {
+        static const char KLUCZ_FW[] = "panel_fw=";
+        const size_t p = sciezka.find(KLUCZ_FW);
+        if (p != std::string::npos) {
+          const size_t od = p + sizeof(KLUCZ_FW) - 1;
+          const std::string zgloszona = sciezka.substr(od, sciezka.find('&', od) - od);
+          c.panelWersjaZgloszona = zgloszona;
+          if (c.panelOtaDostepna && zgloszona == c.panelOtaWersja) {   // jak centrala: rownosc tekstow
+            c.panelOtaDostepna = false;
+            c.panelOtaPotwierdzen++;
+          }
+        }
+      }
       tryb = c.trybStatus;
       cialo = jsonStatus(c, tryb == TRYB_NAN);
+      if (c.panelOtaDostepna && tryb == TRYB_OK) c.nStatusZFlagaOta++;
     } else if (sciezka.rfind("/api/ustawienia-get", 0) == 0) {
       c.nUstawienia++;
       tryb = c.trybUstawienia;
@@ -3238,6 +3262,189 @@ void scenariuszPomiarMaloRamu() {
 }
 #endif
 
+// ===========================================================================
+// Aktualizacja OTA panelu przez centrale
+// ===========================================================================
+// Firmware panelu patrzy na flage "panel_ota_dostepna" RAZ: na koncu setup()
+// (sprawdzIWykonajOtaPanelu()). Te scenariusze sprawdzaja, KIEDY panel zaczyna
+// aktualizacje, o jaki adres pyta i co robi potem. Atrapa HTTPUpdate niczego
+// nie pobiera i nie zapisuje (mock/HTTPUpdate.h) - samego pobierania, zapisu
+// do flash i bootloadera tu NIE MA; to sprawdzi dopiero plytka.
+// Scenariusze z dopiskiem "STAN OBECNY" opisuja zachowanie, ktore jest dzis,
+// a nie takie, jakie byc powinno - po zmianie firmware'u trzeba je poprawic.
+const char OTA_TAG_WYDANIA[] = "3.58.6";   // przykladowy tag wydania na GitHubie (dotychczasowe: "3.57.9", bez "v")
+const char OTA_ADRES[] = "http://192.168.4.1:80/panel-ota.bin?token=";
+
+void otaCentralaCzekaNa(const char* tag) {
+  std::lock_guard<std::mutex> blokada(g_mutex);
+  g_centrale[0].panelOtaDostepna = true;
+  g_centrale[0].panelOtaWersja = tag;
+}
+
+// setup() z aktualizacja konczy sie ESP.restart() - atrapa zglasza to wyjatkiem.
+bool otaSetupSkonczylSieRestartem() {
+  try {
+    setup();
+  } catch (const AtrapaRestart&) {
+    g_poRestarcie = true;
+    return true;
+  }
+  return false;
+}
+
+// Ekran w czasie pobierania: LVGL rysuje dopiero w loop() (lvgl_port_tick()),
+// a start z aktualizacja do loop() nie dochodzi.
+bool otaEkranPusty() {
+  bool jednolity = true;
+  for (int i = 1; i < 480 * 320 && jednolity; i++) jednolity = (g_atrapa.ekran[i] == g_atrapa.ekran[0]);
+  info("ekran w czasie pobierania: %s (kolor RGB565 0x%04X)", jednolity ? "jednolite tlo, bez napisu i bez kafelkow" : "cos narysowane", (unsigned)g_atrapa.ekran[0]);
+  return jednolity;
+}
+
+bool otaAdresPoprawny() {
+  const size_t n = sizeof(OTA_ADRES) - 1;
+  const bool ok = g_atrapa.otaAdres.rfind(OTA_ADRES, 0) == 0 && g_atrapa.otaAdres.size() > n;
+  // Hasla OTA nie wypisujemy (z prawdziwym src/secrets.h byloby w logu testu).
+  info("adres pobierania: %s<haslo OTA, %zu znakow>", OTA_ADRES, ok ? g_atrapa.otaAdres.size() - n : (size_t)0);
+  return ok;
+}
+
+// Centrala ma juz na dysku firmware panelu (po /update_panel w Telegramie) i
+// zglasza to w /api/status. Panel zostaje wlaczony albo zrestartowany.
+void scenariuszOtaStart() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  otaCentralaCzekaNa(OTA_TAG_WYDANIA);
+  g_atrapa.otaWynik = 2;        // HTTP_UPDATE_OK
+  g_atrapa.otaTrwaMs = 40000;   // pobranie i zapis: 40 s bez powrotu do loop()
+  const bool restart = otaSetupSkonczylSieRestartem();
+  const Centrala c = kopia(0);
+  info("zapytanie o status przed aktualizacja: %s", c.ostatniStatusSciezka.c_str());
+  info("%s", liniaLogu("tag=OTA-PANEL zdarzenie=start").c_str());
+  const bool ekranJednolity = otaEkranPusty();
+  zrzutEkranu("w_czasie_pobierania");
+  sprawdz(c.nStatus >= 1 && c.ostatniStatusSciezka.find("panel_fw=" WERSJA_FW) != std::string::npos && c.panelWersjaZgloszona == WERSJA_FW,
+          "przed aktualizacja panel zglosil centrali swoja wersje (panel_fw=" WERSJA_FW ")");
+  sprawdz(g_atrapa.otaWywolan == 1, "panel zaczal aktualizacje sam, przy starcie, raz");
+  sprawdz(otaAdresPoprawny(), "adres: http://192.168.4.1:80/panel-ota.bin?token=<haslo OTA> (ten, ktory obsluguje centrala)");
+  sprawdz(g_atrapa.otaRestartSam == 0, "biblioteka nie restartuje sama (rebootOnUpdate(false)) - restart robi firmware");
+  sprawdz(!g_atrapa.otaWdtNadzorowal && g_atrapa.wdtZadzialal == 0,
+          "na czas pobierania zadanie jest wypisane z watchdoga: 40 s bez powrotu do petli, watchdog (15 s) nie zadzialal");
+  sprawdz(restart && g_atrapa.restarty == 1, "po udanym pobraniu panel restartuje sie");
+  sprawdz(ekranJednolity, "STAN OBECNY: przez caly czas pobierania ekran jest pusty (ciemne tlo) - nie ma napisu o aktualizacji");
+  sprawdz(logMa("tag=OTA-PANEL", "zdarzenie=start", std::string("wersja_docelowa=") + OTA_TAG_WYDANIA) && logMa("tag=OTA-PANEL", "zdarzenie=pobrano_ok"),
+          "log: tag=OTA-PANEL zdarzenie=start z wersja docelowa, potem pobrano_ok");
+  sprawdz(c.panelOtaDostepna && c.panelOtaPotwierdzen == 0, "centrala nadal czeka: flage zdejmie dopiero zgloszenie nowej wersji po restarcie");
+}
+
+// Pierwszy start po aktualizacji. Nowy firmware zglasza wersje IDENTYCZNA z
+// tagiem wydania, na ktore czeka centrala.
+void scenariuszOtaPoRestarcieZgodna() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  g_atrapa.powodResetu = 3;        // ESP_RST_SW: restart po udanym pobraniu
+  g_atrapa.otaStanPartycji = 1;    // ESP_OTA_IMG_PENDING_VERIFY: pierwszy start nowego firmware'u
+  otaCentralaCzekaNa(WERSJA_FW);   // tag wydania = to, co zglasza ten firmware
+  g_atrapa.otaWynik = 2;           // gdyby panel mimo to zaczal pobierac drugi raz, bylby restart (blad scenariusza)
+  setup();
+  biegnij(6000);
+  ustaw(0, [](Centrala& c) { c.tOgrz = 63.0; });
+  biegnij(5000);
+  const Centrala c = kopia(0);
+  info("%s", liniaLogu("tag=OTA-ROLLBACK zdarzenie=potwierdzono_valid").c_str());
+  info("centrala: potwierdzen=%d flaga=%d; panel: pobieran=%d restartow=%d", c.panelOtaPotwierdzen, (int)c.panelOtaDostepna, g_atrapa.otaWywolan, g_atrapa.restarty);
+  sprawdz(g_atrapa.otaPotwierdzenPartycji == 1 && logMa("tag=OTA-ROLLBACK", "zdarzenie=potwierdzono_valid"),
+          "nowy firmware potwierdzil swoja partycje (bez tego bootloader wrocilby przy nastepnym starcie do starej wersji)");
+  sprawdz(c.panelOtaPotwierdzen == 1 && !c.panelOtaDostepna, "centrala dostala panel_fw rowne tagowi wydania i zdjela flage");
+  sprawdz(g_atrapa.otaWywolan == 0, "panel nie pobiera drugi raz");
+  sprawdz(c.ostatniStatusSciezka == "/api/status?panel_fw=" WERSJA_FW "&reset_powod=sw", "centrala dostaje zwykly powod startu po aktualizacji: reset_powod=sw");
+  sprawdz(ekranMa("63°C"), "panel pracuje: kafelek PIEC pokazuje nowa wartosc z centrali (63°C)");
+}
+
+// STAN OBECNY. Pierwszy start po aktualizacji, ale nowy firmware zglasza INNY
+// tekst niz tag wydania (dzis: panel "v1.3.0", wydania "3.57.9"). Centrala nie
+// zdejmuje flagi, wiec panel robi dokladnie to samo co przed aktualizacja.
+// Stan po tym starcie jest taki sam jak przed nim - to sie powtarza bez konca.
+void scenariuszOtaPoRestarcieInnaWersja() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  g_atrapa.powodResetu = 3;        // ESP_RST_SW: restart po udanym pobraniu
+  g_atrapa.otaStanPartycji = 1;    // ESP_OTA_IMG_PENDING_VERIFY
+  otaCentralaCzekaNa(OTA_TAG_WYDANIA);
+  g_atrapa.otaWynik = 2;
+  g_atrapa.otaTrwaMs = 40000;
+  const bool restart = otaSetupSkonczylSieRestartem();
+  const Centrala c = kopia(0);
+  info("panel zglosil: panel_fw=%s; centrala czeka na: %s; potwierdzen=%d flaga=%d", c.panelWersjaZgloszona.c_str(), c.panelOtaWersja.c_str(), c.panelOtaPotwierdzen, (int)c.panelOtaDostepna);
+  info("pobieran w tym starcie: %d, restart: %d", g_atrapa.otaWywolan, (int)restart);
+  sprawdz(g_atrapa.otaPotwierdzenPartycji == 1, "nowy firmware potwierdzil swoja partycje (aktualizacja sie udala)");
+  sprawdz(c.panelWersjaZgloszona == WERSJA_FW && c.panelOtaPotwierdzen == 0 && c.panelOtaDostepna,
+          "STAN OBECNY: zgloszona wersja rozni sie od tagu wydania - centrala NIE zdejmuje flagi");
+  sprawdz(g_atrapa.otaWywolan == 1 && restart && g_atrapa.restarty == 1,
+          "STAN OBECNY: panel pobiera ten sam firmware jeszcze raz i znow sie restartuje (petla przy kazdym starcie)");
+  sprawdz(otaAdresPoprawny(), "adres pobierania ten sam co za pierwszym razem");
+}
+
+// STAN OBECNY. Panel pracuje, a centrala dopiero teraz konczy pobierac
+// firmware z GitHuba i zaczyna zglaszac aktualizacje.
+void scenariuszOtaFlagaWTrakciePracy() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  g_atrapa.otaWynik = 2;
+  setup();
+  biegnij(10000);
+  sprawdz(g_atrapa.otaWywolan == 0, "bez flagi centrali panel niczego nie pobiera");
+  otaCentralaCzekaNa(OTA_TAG_WYDANIA);
+  const int zFlagaPrzed = kopia(0).nStatusZFlagaOta;
+  biegnij(120000);
+  const Centrala c = kopia(0);
+  info("odpowiedzi centrali z \"panel_ota_dostepna\":true w ciagu 2 minut: %d; pobieran: %d", c.nStatusZFlagaOta - zFlagaPrzed, g_atrapa.otaWywolan);
+  sprawdz(c.nStatusZFlagaOta - zFlagaPrzed >= 50, "przez 2 minuty panel dostawal od centrali flage aktualizacji (co 2 s)");
+  sprawdz(g_atrapa.otaWywolan == 0 && g_atrapa.restarty == 0,
+          "STAN OBECNY: pracujacy panel nie zaczyna aktualizacji - zrobi to dopiero po restarcie (wylaczenie i wlaczenie)");
+  sprawdz(ekranMa("55°C"), "panel pracuje dalej: kafelek PIEC pokazuje wartosc z centrali");
+}
+
+// Pobieranie sie nie udaje (np. centrala nie ma pliku, zle haslo, zerwane
+// polaczenie). Panel ma wrocic do zwyklej pracy.
+void scenariuszOtaNieudane() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  otaCentralaCzekaNa(OTA_TAG_WYDANIA);
+  g_atrapa.otaWynik = 0;        // HTTP_UPDATE_FAILED
+  g_atrapa.otaTrwaMs = 20000;   // 20 s prob, zanim biblioteka sie podda
+  const bool restart = otaSetupSkonczylSieRestartem();
+  const int statusPrzed = kopia(0).nStatus;
+  if (!restart) {
+    biegnij(6000);
+    ustaw(0, [](Centrala& c) { c.tOgrz = 63.0; });
+    biegnij(60000);
+  }
+  const Centrala c = kopia(0);
+  info("%s", liniaLogu("tag=OTA-PANEL lvl=ERR").c_str());
+  info("pobieran: %d; zapytan o status po nieudanej probie (66 s): %d", g_atrapa.otaWywolan, c.nStatus - statusPrzed);
+  sprawdz(!restart && g_atrapa.restarty == 0, "po nieudanym pobraniu panel sie nie restartuje");
+  sprawdz(logMa("tag=OTA-PANEL", "lvl=ERR", "zdarzenie=nieudana"), "log: tag=OTA-PANEL lvl=ERR zdarzenie=nieudana z przyczyna");
+  sprawdz(!g_atrapa.otaWdtNadzorowal && g_atrapa.wdtNadzoruje && g_atrapa.wdtZadzialal == 0, "watchdog: wypisany na czas proby, potem znow pilnuje petli; nie zadzialal");
+  sprawdz(c.nStatus - statusPrzed >= 25 && ekranMa("63°C"), "panel wraca do zwyklej pracy: odpytuje centrale i pokazuje nowe wartosci (63°C)");
+  sprawdz(g_atrapa.otaWywolan == 1, "w tej samej sesji nie ma drugiej proby (kolejna dopiero po nastepnym restarcie panelu)");
+}
+
+// STAN OBECNY. Firmware czeka na centrali, a panel startuje w chwili, gdy
+// centrala zglasza alarm (np. po samoczynnym restarcie panelu w trakcie alarmu).
+void scenariuszOtaPrzyAlarmie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustaw(0, [](Centrala& c) { c.tOgrz = 96.0; c.alarmOgrzewanie = true; });
+  otaCentralaCzekaNa(OTA_TAG_WYDANIA);
+  g_atrapa.otaWynik = 2;
+  g_atrapa.otaTrwaMs = 40000;
+  const int zmianTonuPrzed = g_atrapa.zmianTonu;
+  const bool restart = otaSetupSkonczylSieRestartem();
+  // Zwykly alarm: ton zmienia sie co kilkaset ms (1200/1600 Hz, patrz scenariusze alarmu).
+  info("pobieran: %d, restart: %d; brzeczyk od wlaczenia do restartu (ponad 40 s): %d zmian tonu, na koncu %u Hz",
+       g_atrapa.otaWywolan, (int)restart, g_atrapa.zmianTonu - zmianTonuPrzed, (unsigned)g_atrapa.tonHz);
+  sprawdz(g_atrapa.otaWywolan == 1 && restart,
+          "STAN OBECNY: aktualizacja zaczyna sie takze wtedy, gdy centrala zglasza alarm - panel nie sprawdza alarmu przed pobieraniem");
+  sprawdz(g_atrapa.zmianTonu - zmianTonuPrzed <= 1,
+          "STAN OBECNY: przez czas pobierania (tu 40 s) wzorzec alarmu nie gra - brzeczyk zostaje w stanie sprzed pobierania, petla nie pracuje");
+  sprawdz(otaEkranPusty(), "STAN OBECNY: przez czas pobierania ekran jest pusty - ekranu alarmu nie widac");
+}
+
 struct Scenariusz {
   const char* nazwa;
   const char* opis;
@@ -3279,6 +3486,12 @@ const Scenariusz SCENARIUSZE[] = {
     {"wykresy_alarm_w_trakcie", "alarm w trakcie pobierania danych do wykresu (v1.3.0)", scenariuszWykresyAlarmWTrakcie},
     {"wykresy_stary_csv", "stary CSV podany ekranowi wprost: te same punkty co w v1.2.2 (v1.3.0)", scenariuszWykresyStaryCsv},
     {"wykresy_po_restarcie_centrali", "centrala 3.58.5 tuz po restarcie: same przerwy -> napis; przerwa do konca osi (v1.3.0 bez zmian)", scenariuszWykresyPoRestarcieCentrali},
+    {"ota_start", "OTA: centrala ma gotowy firmware panelu - panel przy starcie pobiera go i restartuje sie", scenariuszOtaStart},
+    {"ota_po_restarcie_zgodna", "OTA: pierwszy start po aktualizacji, zgloszona wersja = tag wydania - centrala zdejmuje flage, panel pracuje", scenariuszOtaPoRestarcieZgodna},
+    {"ota_po_restarcie_inna_wersja", "OTA, STAN OBECNY: zgloszona wersja inna niz tag wydania - panel pobiera i restartuje sie przy kazdym starcie", scenariuszOtaPoRestarcieInnaWersja},
+    {"ota_flaga_w_trakcie_pracy", "OTA, STAN OBECNY: pracujacy panel nie zaczyna aktualizacji, dopoki sie nie zrestartuje", scenariuszOtaFlagaWTrakciePracy},
+    {"ota_nieudane", "OTA: pobieranie nieudane - panel pracuje dalej, kolejna proba po nastepnym restarcie", scenariuszOtaNieudane},
+    {"ota_przy_alarmie", "OTA, STAN OBECNY: aktualizacja zaczyna sie takze w trakcie alarmu", scenariuszOtaPrzyAlarmie},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},
     {"pomiar_przypadki", "ile RAM-u potrzeba w kazdym przypadku pracy (tylko pomiar_pamieci.sh --przypadki)", scenariuszPomiarPrzypadki},
@@ -3292,7 +3505,7 @@ bool restartOczekiwany(const char* nazwa) {
   const std::string n = nazwa;
   return n == "autorestart_centrala_milczy" || n == "autorestart_brak_wifi" || n == "autorestart_kolejny" || n == "zla_odpowiedz_dlugo" ||
          n == "autorestart_przy_alarmie" || n == "zla_odpowiedz_bez_konca" || n == "brak_pamieci_json" || n == "brak_pamieci_lvgl" ||
-         n == "pomiar_malo_ramu";
+         n == "pomiar_malo_ramu" || n == "ota_start" || n == "ota_po_restarcie_inna_wersja" || n == "ota_przy_alarmie";
 }
 
 }  // namespace

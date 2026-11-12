@@ -120,6 +120,20 @@ struct Atrapa {
   int restarty = 0;            // ESP.restart()
   int powodResetu = 1;         // esp_reset_reason(): 1 = ESP_RST_POWERON
 
+  // --- aktualizacja OTA panelu (HTTPUpdate.h, esp_ota_ops.h) ---
+  // httpUpdate.update() atrapy niczego nie pobiera i niczego nie zapisuje:
+  // odnotowuje adres, przesuwa zegar o otaTrwaMs (na plytce pobranie i zapis
+  // do flash trwaja, a zadanie nie wraca w tym czasie do loop()) i zwraca
+  // otaWynik. Stan partycji to to, co firmware odczyta przy starcie.
+  int otaWywolan = 0;                 // ile razy firmware wolal httpUpdate.update()
+  std::string otaAdres;               // adres z ostatniego wywolania
+  int otaWynik = 0;                   // 0 = HTTP_UPDATE_FAILED (domyslnie), 1 = HTTP_UPDATE_NO_UPDATES, 2 = HTTP_UPDATE_OK
+  unsigned long otaTrwaMs = 0;        // czas plytki, ktory zajmuje jedno update()
+  bool otaWdtNadzorowal = false;      // czy watchdog pilnowal zadania w chwili wywolania update()
+  int otaRestartSam = -1;             // httpUpdate.rebootOnUpdate(): -1 = nie wolane, 0 = false, 1 = true
+  int otaStanPartycji = 2;            // esp_ota_get_state_partition(): 2 = VALID, 1 = PENDING_VERIFY (pierwszy start po OTA), -1 = wgrane przez USB
+  int otaPotwierdzenPartycji = 0;     // ile razy firmware wolal esp_ota_mark_app_valid_cancel_rollback()
+
   Atrapa();
   const AtrapaAp* polaczonyAp() const;   // AP, z ktorym "radio" jest teraz polaczone (albo nullptr)
   // true = centrala za tym AP zna panel (nie restartowala sie od chwili polaczenia).

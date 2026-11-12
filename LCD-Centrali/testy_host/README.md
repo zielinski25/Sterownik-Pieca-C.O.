@@ -100,6 +100,21 @@ LVGL jest budowany z `include/lv_conf.h` tego projektu. Ekran to bufor
 | `wykresy_alarm_w_trakcie` | v1.3.0. Alarm przegrzania w trakcie pobierania: ekran alarmu pojawia się w ciągu 3 s, pobieranie jest porzucane, bufory wykresów zwolnione. |
 | `wykresy_stary_csv` | v1.3.0. Stary CSV podany ekranowi wprost, bez sieci: te same punkty co w v1.2.2. Strona HTML zamiast CSV: napis (kod v1.2.2 rysował z niej wykres — zapisane we wzorcu). Ten scenariusz działa także na źródłach v1.2.2 i tak powstał `wzorce_v122/punkty.txt`. |
 | `wykresy_po_restarcie_centrali` | v1.3.0 bez zmian, centrala 3.58.5 tuż po restarcie, z wyłączonym zapisem historii i starymi plikami sprzed 3 dni. Ostatnia godzina: odpowiedź to 96 linii `#przerwa` — napis `Centrala nie ma jeszcze danych z tego zakresu` z dopiskiem o wyłączonym zapisie, bez sięgania po cały CSV. Tydzień: 55 punktów starej historii, potem 41 pustych pozycji do końca osi; podpis kończy się na bieżącej chwili. |
+| `ota_start` | Aktualizacja przez centralę. Centrala ma gotowy firmware panelu i zgłasza to w `/api/status`. Panel przy starcie zgłasza swoją wersję, pyta o `http://192.168.4.1:80/panel-ota.bin?token=…`, na czas pobierania wypisuje zadanie z watchdoga, po udanym pobraniu restartuje się. STAN OBECNY: przez cały ten czas ekran jest pusty. |
+| `ota_po_restarcie_zgodna` | Pierwszy start po aktualizacji, zgłoszona wersja równa tagowi wydania: panel potwierdza nową partycję, centrala zdejmuje flagę, panel nie pobiera drugi raz i pracuje. |
+| `ota_po_restarcie_inna_wersja` | STAN OBECNY. Zgłoszona wersja inna niż tag wydania (panel `v1.3.0`, wydanie `3.58.6`): centrala nie zdejmuje flagi, panel pobiera ten sam plik i restartuje się znowu — przy każdym starcie. |
+| `ota_flaga_w_trakcie_pracy` | STAN OBECNY. Centrala zaczyna zgłaszać aktualizację, gdy panel już pracuje: przez 2 minuty panel niczego nie pobiera. Zacznie dopiero po restarcie. |
+| `ota_nieudane` | Pobieranie nieudane: wpis `tag=OTA-PANEL lvl=ERR` w logu, watchdog znów pilnuje pętli, panel pracuje dalej i w tej sesji nie próbuje ponownie. |
+| `ota_przy_alarmie` | STAN OBECNY. Start z czekającą aktualizacją w chwili, gdy centrala zgłasza alarm: panel i tak pobiera; wzorzec alarmu na brzęczyku w tym czasie nie gra. |
+
+Scenariusze `ota_*` z dopiskiem „STAN OBECNY” opisują to, co firmware robi
+dziś, a nie to, co powinien — po zmianie firmware'u trzeba je poprawić.
+W tych scenariuszach samo pobieranie jest udawane: atrapa `HTTPUpdate`
+zapisuje adres, „trwa” zadany czas i zwraca zadany wynik. Sprawdzane jest,
+kiedy panel zaczyna aktualizację, o co pyta i co robi potem. Udawana
+centrala zdejmuje flagę aktualizacji tak jak prawdziwa: tylko gdy tekst
+z parametru `panel_fw` jest identyczny z tagiem wydania. Opis całej drogi:
+`RAPORT_OTA_PANELU_PRZEZ_CENTRALE.md` w katalogu głównym repozytorium.
 
 ### Skąd odpowiedzi centrali w scenariuszach `wykresy_*`
 
@@ -162,9 +177,12 @@ firmware kompiluje się dla ESP32 ani że działa na płytce.
 - **Czasy sieci.** Zegar płytki jest sztuczny (`delay()` przesuwa `millis()`),
   a HTTP idzie po lokalnym gnieździe. Opóźnienia lwIP, zakłócenia kanału AP
   i czasy z prawdziwego logu nie są odtwarzane.
-- **Sprzęt.** TFT_eSPI, dotyk, deep sleep, OTA — atrapy przyjmują wywołania,
+- **Sprzęt.** TFT_eSPI, dotyk, deep sleep — atrapy przyjmują wywołania,
   ale ich nie modelują. Z brzęczyka zapisywana jest tylko ostatnio ustawiona
   częstotliwość (0 = cisza).
+- **Aktualizacja OTA.** Pobierania pliku, zapisu do flash, sprawdzania obrazu
+  i bootloadera tu nie ma. Atrapa odnotowuje, że firmware o aktualizację
+  poprosił, i zwraca wynik zadany przez scenariusz.
 - **Pobieranie danych na ekran Wykresy.** Od v1.3.0 idzie tym samym kodem co
   na płytce (gołe gniazda z `siec_nieblokujaca_LCD.h`), tylko gniazda są
   linuksowe, a „centrala” siedzi w tym samym programie. Szybkość łącza,
