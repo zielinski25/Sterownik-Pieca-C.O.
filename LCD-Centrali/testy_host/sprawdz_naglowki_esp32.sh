@@ -27,6 +27,9 @@
 #   ./sprawdz_naglowki_esp32.sh                  rdzen 3.0.7 (spojny komplet z IDF 5.1)
 #   RDZEN=3.3.8 ./sprawdz_naglowki_esp32.sh      naglowki rdzenia 3.3.8
 #   SRC=/sciezka/do/src ./sprawdz_naglowki_esp32.sh   inne zrodla (np. starsza wersja)
+#   SRC=/katalog PLIKI="a.cpp b.cpp" ./sprawdz_naglowki_esp32.sh   inne pliki z katalogu SRC
+#       (tak sprawdzany jest fragment firmware'u centrali - patrz
+#        firmware-patch/v3.58.4-panel-wykresy/tests/sprawdz_naglowki_esp32.sh)
 # ============================================================================
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -103,7 +106,7 @@ if [ "$RDZEN" != "3.0.7" ]; then ZASTEPCZE="-Dtouch_value_t=uint32_t -Dwifi_band
 echo "[3] sprawdzanie zrodel: $SRC"
 echo "    flagi z platformio.ini: $PIO"
 BLEDY=0
-for plik in main.cpp dashboard_lvgl_poc.cpp lvgl_port.cpp; do
+for plik in ${PLIKI:-main.cpp dashboard_lvgl_poc.cpp lvgl_port.cpp}; do
   WYNIK="$K/wynik_${RDZEN}_$plik.txt"
   # -Wno-everything: ostrzezenia sa sprawa prawdziwego kompilatora (GCC); tu
   # liczą sie bledy. (clang traktuje jak blad m.in. zawezanie w {} - GCC nie.)

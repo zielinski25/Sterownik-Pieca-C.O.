@@ -18,6 +18,11 @@
 #
 # Osobno liczy zmienne statyczne firmware'u (patrz STATYCZNE_V120_B).
 #
+# Od v1.3.0 mierzy tez ekran Wykresy z danymi: ile pamieci przybywa chwilowo,
+# gdy panel pobiera i rysuje wykres (z centrali 3.58.4 i po staremu, z calego
+# CSV), i czy po kilku wykresach z rzedu cos zostaje. Z opcja --kto sprawdza
+# dodatkowo, ze sam kod pobierania nie prosi o pamiec ze sterty.
+#
 # CZEGO TU NIE MA: pamieci, ktora na plytce biora WiFi, lwIP i zadania
 # systemu - to ok. 56 kB (wyliczone z tego samego logu, patrz SYSTEM_B).
 # Dlatego "wolny RAM na plytce" na koncu to SZACUNEK oparty na jednym logu;
@@ -60,9 +65,12 @@ LIMIT_PRZYROST_B=256
 # dashboard_lvgl_poc.cpp i lvgl_port.cpp. To przyblizenie - atrapy bibliotek
 # maja inne rozmiary obiektow niz prawdziwe - ale ROZNICA miedzy wersjami
 # firmware'u jest wiarygodna. v1.2.0 w tym modelu: 3 092 B; v1.2.2: 3 956 B
-# (doszedl glownie bufor logBezPamieci(), 640 B).
+# (doszedl glownie bufor logBezPamieci(), 640 B); v1.3.0: 4 468 B (doszedl
+# staly bufor jednej linii pobieranej historii, 300 B, adres zapytania 64 B i
+# stan pobierania - dzieki nim pobieranie wykresu nie bierze nic ze sterty).
+# Limit podniesiony z 4 500 na 5 000 B: przy 4 500 v1.3.0 mialoby 32 B zapasu.
 STATYCZNE_V120_B=3092
-LIMIT_STATYCZNE_B=4500
+LIMIT_STATYCZNE_B=5000
 # Plytka z logu 2026-11-12 (v1.2.0): 234 580 B wolnego RAM-u przed budowa
 # ekranow (273 480 B z logu minus 38 900 B obszaru, z ktorego malloc() nie
 # korzysta) i ok. 8 100 B po starcie. Ten model dla v1.2.0 daje 170 572 B,
@@ -88,8 +96,13 @@ pobierz lvgl v8.3.11 https://github.com/lvgl/lvgl.git
 pobierz ArduinoJson v7.2.1 https://github.com/bblanchon/ArduinoJson.git
 
 # -fno-omit-frame-pointer: licznik odczytuje stos wywolan po wskaznikach ramek.
+# -fno-inline: kazda funkcja firmware'u ma wlasna ramke, wiec w rozbiciu
+#   "kto trzyma pamiec" (--kto) blok jest przypisany funkcji, ktora naprawde o
+#   niego poprosila, a nie tej, w ktora kompilator ja wbudowal. Bez tego
+#   sprawdzenie [4b] moglo przeoczyc przydzial w kodzie pobierania wykresu.
+#   Na liczby pomiaru (bajty na stercie) nie ma to wplywu.
 # -funwind-tables (LVGL): atrapa ESP.restart() rzuca wyjatek przez kod C.
-OPT="-O1 -g -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer"
+OPT="-O1 -g -fno-inline -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer"
 ODCISK="$(cksum < "$INCLUDE/lv_conf.h" | tr -d ' ')"
 LIB="$PODRECZNY/liblvgl32_$ODCISK.a"
 if [ ! -f "$LIB" ]; then
@@ -128,6 +141,10 @@ if [ "$BLEDY" != 0 ]; then echo "    BLAD KOMPILACJI (patrz komunikaty wyzej)"; 
 $ZCXX $OPT -o "$BUD/symulator32" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/atrapa.o "$BUD"/sym.o "$BUD"/pomiar.o \
   "$LIB" -Wl,--wrap=connect,--wrap=send,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -lpthread
 echo "    OK"
+
+# Ekran Wykresy: odpowiedzi centrali i punkty z v1.2.2 (jak w uruchom_testy.sh).
+export LCD_WZORCE_CENTRALI="$TU/wzorce_centrali"
+export LCD_WZORCE_V122="$TU/wzorce_v122"
 
 echo "[3] pomiar"
 "$BUD/symulator32" pomiar_pamieci --obserwacje --wyjscie "$WYNIKI" > "$WYNIKI/pomiar.txt"
@@ -172,6 +189,20 @@ if 'alarm_przegrzania' in m: print('    ekran alarmu                      %9s B 
 if 'wykresy_otwarte' in m:
     print('    ekran Wykresy otwarty             %9s B wiecej' % b(m['wykresy_otwarte'][0] - m['po_alarmie'][0]))
     print('    ...i po jego zamknieciu           %9s B wiecej' % b(m['wykresy_zamkniete'][0] - m['po_alarmie'][0]))
+wykres_nowy = wykres_stary = wykres_przyrost = None
+if 'wykres_nowy' in m:
+    # szczyt = najwiecej naraz od poprzedniej migawki; roznica to pamiec brana CHWILOWO w sekundach
+    # pobierania i rysowania - razem z odpytaniem /api/status, jesli wypadlo w tym samym czasie.
+    wykres_nowy = m['wykres_nowy'][2] - m['wykres_przed'][0]
+    wykres_stary = m['wykres_stary'][2] - m['wykres_stary_przed'][0]
+    wykres_przyrost = m['wykres_powtorki'][0] - m['wykres_po_zamknieciu'][0]
+    print('    wykres z centrali 3.58.4 (pobranie i rysowanie), chwilowo %s B wiecej' % b(wykres_nowy))
+    print('    wykres po staremu (caly CSV, 352 kB), chwilowo        %s B wiecej' % b(wykres_stary))
+    print('    po pierwszym wykresie zostaje     %9s B (opisy osi i legenda, tworzone raz)' % b(m['wykres_po_zamknieciu'][0] - m['po_alarmie'][0]))
+    print('    przyrost po 5 kolejnych wykresach %9s B' % b(wykres_przyrost))
+    for l in open(plik):
+        if l.startswith('POMIAR-INFO') and ('widoczny=0' in l or 'punktow=0' in l):
+            print('    BLAD: w pomiarze wykres sie nie narysowal: ' + l.strip()); sys.exit(1)
 stat = sum(statyczne(o) for o in sys.argv[10:13])
 print('    zmienne statyczne firmware\'u      %9s B (v1.2.0: %s B)' % (b(stat), b(stat_v120)))
 wolne = ram_przed - system - start - (stat - stat_v120)
@@ -187,6 +218,11 @@ if start > lim_start: zle.append('po starcie %s B > limit %s B' % (b(start), b(l
 if cykl > lim_cykl: zle.append('odpytanie centrali %s B > limit %s B' % (b(cykl), b(lim_cykl)))
 if przyrost > lim_przyrost: zle.append('przyrost w czasie pracy %s B > limit %s B (wyciek pamieci?)' % (b(przyrost), b(lim_przyrost)))
 if stat > lim_stat: zle.append('zmienne statyczne %s B > limit %s B (duza tablica globalna albo "static"?)' % (b(stat), b(lim_stat)))
+if wykres_nowy is not None:
+    # Pobieranie wykresu nie moze brac wiecej niz jedno odpytanie statusu (czyta linia po linii do stalego bufora).
+    if wykres_nowy > lim_cykl: zle.append('wykres z centrali %s B > limit %s B' % (b(wykres_nowy), b(lim_cykl)))
+    if wykres_stary > lim_cykl: zle.append('wykres po staremu %s B > limit %s B' % (b(wykres_stary), b(lim_cykl)))
+    if wykres_przyrost > lim_przyrost: zle.append('przyrost po kolejnych wykresach %s B > limit %s B (wyciek pamieci?)' % (b(wykres_przyrost), b(lim_przyrost)))
 if zle:
     for z in zle: print('    PRZEKROCZONY LIMIT: ' + z)
     sys.exit(1)
@@ -196,6 +232,20 @@ PY
 if [ "$KTO" = "1" ]; then
   echo "[4] kto trzyma pamiec po starcie (funkcja firmware'u, ktora o nia poprosila)"
   ILE=25 python3 pomiar_rozbicie.py "$BUD/symulator32" "$WYNIKI/pamiec_po_setup.txt" | sed 's/^/    /'
+  if [ -f "$WYNIKI/pamiec_wykres_nowy_szczyt.txt" ]; then
+    # Odbior danych wykresu (StrumienHttpGet, obslugaWykresyFetch, ..._strumien_linia)
+    # nie powinien prosic o pamiec wcale - czyta do stalego bufora.
+    echo "[4b] czy kod pobierania wykresu prosil o pamiec ze sterty"
+    for zrzut in wykres_nowy_szczyt wykres_stary_szczyt; do
+      ILE=1000 python3 pomiar_rozbicie.py "$BUD/symulator32" "$WYNIKI/pamiec_$zrzut.txt" > "$WYNIKI/rozbicie_$zrzut.txt"
+      if grep -E 'StrumienHttpGet|obslugaWykresyFetch|wykresyFetchStart|wykresyZakoncz|wykresyLinia|wykresy_strumien_(start|linia|koniec|zamknij|scal)' "$WYNIKI/rozbicie_$zrzut.txt" | sed 's/^/    /'; then
+        echo "    UWAGA ($zrzut): powyzsze funkcje pobierania wykresu trzymaly bloki sterty"
+        WERDYKT=1
+      else
+        echo "    $zrzut: nie - zaden blok nie pochodzi z kodu pobierania"
+      fi
+    done
+  fi
 fi
 
 if [ "$WSZYSTKO" = "1" ]; then

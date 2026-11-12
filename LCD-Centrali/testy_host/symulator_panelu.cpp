@@ -31,6 +31,7 @@
 // ============================================================================
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <poll.h>
@@ -40,10 +41,13 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <new>
 #include <string>
@@ -69,7 +73,12 @@ extern diag::PamiecAutorestartu rtcAutorestart __attribute__((weak));
 #else
 #define MA_RATUNEK false
 #endif
-// --- z dashboardu (src/dashboard_lvgl_poc.cpp); w v1.1.0 tej funkcji nie ma ---
+// --- z dashboardu (src/dashboard_lvgl_poc.cpp) ---
+// Naglowek jest we wszystkich wersjach od v1.1.0. Od v1.3.0 definiuje makro
+// LVGL_WYKRESY_PUNKTOW i ma inna postac funkcji mostu ekranu Wykresy
+// (WykresyFetchCb, ..._strumien_koniec()) - patrz scenariuszWykresyStaryCsv().
+#include "dashboard_lvgl_poc.h"
+// w v1.1.0 tej funkcji nie ma:
 void lvgl_dashboard_poc_aktualizuj_centrale(const char* znacznik) __attribute__((weak));
 void pompaManualWyslij(const char* stanTekst);
 
@@ -212,6 +221,13 @@ enum SymCentrali {
   SYM_ZEWN = 1 << 5, SYM_POWROT = 1 << 6, SYM_TROCINY = 1 << 7, SYM_CISNIENIE = 1 << 8, SYM_WILGOTNOSC = 1 << 9
 };
 
+// Jak centrala traktuje adresy /api/history... (Centrala::wersjaHistorii).
+enum WersjaHistorii {
+  HIST_PANEL = 0,    // firmware 3.58.4+: zna GET /api/history/panel (gotowe punkty wykresu)
+  HIST_302,          // firmware <= 3.58.3: nieznany adres -> przekierowanie 302 na "/" (onNotFound)
+  HIST_PRZEDROSTEK   // bardzo stary firmware: "/api/history/cokolwiek" oddaje krotki CSV z kodem 200
+};
+
 struct Centrala {
   bool symulator = false;   // true = dodaje "symulator":true, jak centrala-testowa-c3
   int trybStatus = TRYB_OK;
@@ -233,6 +249,27 @@ struct Centrala {
   // "deepsleep", pisze linie "tag=RESET-DIAG ... powod=" i wysyla wiadomosc.
   std::string ostatniPowodRestartu;       // g_panelOstatniPowodRestartu centrali (pusty po jej restarcie)
   std::vector<std::string> resetDiag;     // powody, o ktorych centrala napisala w logu i wyslala wiadomosc
+
+  // --- historia dla ekranu Wykresy (GET /api/history...) - opis: odpowiedzHistorii() ---
+  int wersjaHistorii = HIST_PANEL;
+  std::map<std::string, std::string> panelHist;   // tryb (godz/dzien/tydz) -> tresc odpowiedzi /api/history/panel
+  int panelHistKod = 200;            // 503 = centrali zabraklo pamieci na odpowiedz
+  int wierszyKrotkich = 1440;        // stary CSV /api/history: liczba wierszy (probka co 60 s)
+  int wierszyDlugich = 2000;         // stary CSV /api/history/long: liczba wierszy (zdarzenie co 5 min)
+  int histDziuraOd = -1, histDziuraIle = 0;   // stary CSV /api/history bez wierszy od..od+ile-1 (centrala wtedy nie pracowala)
+  bool histHtml = false;             // true: pod kazdym adresem /api/history... strona HTML (to nie centrala pieca)
+  bool histBezDlugosci = false;      // true: odpowiedz bez naglowka Content-Length (koniec = zamkniecie polaczenia)
+  bool histCrlf = false;             // true: linie zakonczone \r\n
+  long histUrwijPo = -1;             // >= 0: po tylu bajtach TRESCI centrala zamyka polaczenie (naglowek zapowiedzial calosc)
+  long histZamilknijPo = -1;         // >= 0: po tylu bajtach TRESCI centrala przestaje wysylac, polaczenie zostaje otwarte
+  unsigned long histZwlokaMs = 0;    // tyle czasu plytki mija, zanim centrala wysle pierwszy bajt odpowiedzi
+  double histBajtowNaMs = 0;         // szybkosc lacza: bajty na milisekunde czasu plytki; 0 = bez ograniczenia
+  // co do centrali dotarlo i jak sie skonczylo
+  int nPanelHist = 0;                // zapytania o /api/history/panel (niezaleznie od tego, czy centrala zna ten adres)
+  int nHistKrotka = 0, nHistDluga = 0;
+  int nHistWyslanych = 0;            // odpowiedzi historii wyslane do konca
+  int nHistPorzuconych = 0;          // polaczenia historii zamkniete przez PANEL, zanim centrala skonczyla
+  std::string ostatniaPanelHistSciezka;
 };
 
 const int LICZBA_CENTRAL = 3;
@@ -314,6 +351,249 @@ void zapiszWszystko(int fd, const std::string& s) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Historia dla ekranu Wykresy
+// ---------------------------------------------------------------------------
+// Koniec danych we wszystkich odpowiedziach historii: 2026-11-13 12:00:00 UTC
+// = 13:00 czasu polskiego. Ta sama chwila co T0 w testach centrali
+// (firmware-patch/v3.58.4-panel-wykresy/tests/test_panel_hist.cpp).
+const uint32_t HIST_KONIEC_UNIX = 1794571200U;
+
+// Odpowiedzi centrali 3.58.4 na GET /api/history/panel to PLIKI zapisane
+// kodem tej centrali (katalog wzorce_centrali/, opis w CZYTAJ.txt obok nich).
+std::string wzorzec(const char* nazwa) {
+  const char* katalog = getenv("LCD_WZORCE_CENTRALI");
+  const std::string sciezka = std::string(katalog != nullptr ? katalog : "wzorce_centrali") + "/" + nazwa;
+  FILE* f = fopen(sciezka.c_str(), "rb");
+  if (f == nullptr) {
+    fprintf(stderr, "brak pliku wzorca %s (zmienna LCD_WZORCE_CENTRALI ustawia katalog; robi to uruchom_testy.sh)\n", sciezka.c_str());
+    exit(2);
+  }
+  std::string s;
+  char b[4096];
+  size_t n;
+  while ((n = fread(b, 1, sizeof(b), f)) > 0) s.append(b, n);
+  fclose(f);
+  return s;
+}
+
+// Czas polski zimowy z czasu Unix - bez zaleznosci od strefy tego komputera.
+struct tm czasPolski(uint32_t czasUnix) {
+  const time_t t = (time_t)czasUnix + 3600;
+  struct tm tm;
+  gmtime_r(&t, &tm);
+  return tm;
+}
+
+// ZEWN w wierszu `i` z `n`: rowno od -5,0 do 9,4 (to samo co we wzorcu dzien.txt).
+double zewnWiersza(int i, int n) { return (n > 1) ? -5.0 + 14.4 * i / (n - 1) : -5.0; }
+
+// Stary CSV centrali <= 3.58.3, GET /api/history - format historiaLiniaCsv()
+// z main_centrala.cpp: etykieta, 7 temperatur, pompa, cisnienie, wilgotnosc,
+// klapa, syberek, czas Unix. Probka co 60 s.
+std::string csvKrotki(int wierszy, int dziuraOd, int dziuraIle) {
+  std::string s;
+  s.reserve((size_t)wierszy * 72);
+  for (int i = 0; i < wierszy; i++) {
+    if (dziuraOd >= 0 && i >= dziuraOd && i < dziuraOd + dziuraIle) continue;   // centrala wtedy nie pracowala
+    const uint32_t czas = HIST_KONIEC_UNIX - (uint32_t)(wierszy - 1 - i) * 60U;
+    const struct tm tm = czasPolski(czas);
+    char b[200];
+    snprintf(b, sizeof(b), "%02d:%02d,%.1f,45.0,%s,55.0,30.0,12.0,21.5,%d,1013.2,45,40,60,%lu\n", tm.tm_hour, tm.tm_min, zewnWiersza(i, wierszy),
+             i < wierszy / 2 ? "60.0" : "40.0", i % 2, (unsigned long)czas);
+    s += b;
+  }
+  return s;
+}
+
+// Stary CSV centrali <= 3.58.3, GET /api/history/long - format
+// historiaDlugaLiniaCsv(): etykieta, 11 x (srednia, min, max), czas Unix,
+// pompa. Zdarzenie co 5 minut.
+std::string csvDlugi(int wierszy) {
+  std::string s;
+  s.reserve((size_t)wierszy * 230);
+  for (int i = 0; i < wierszy; i++) {
+    const uint32_t czas = HIST_KONIEC_UNIX - (uint32_t)(wierszy - 1 - i) * 300U;
+    const struct tm tm = czasPolski(czas);
+    const double z = zewnWiersza(i, wierszy);
+    char b[400];
+    snprintf(b, sizeof(b),
+             "%02d.%02d %02d:%02d,%.1f,%.1f,%.1f,45.0,44.5,45.5,60.0,59.0,61.0,55.0,54.0,56.0,30.0,29.0,31.0,12.0,11.5,12.5,21.5,21.0,22.0,"
+             "1013.2,1013.0,1013.4,45,44,46,40,40,40,60,60,60,%lu,%d\n",
+             tm.tm_mday, tm.tm_mon + 1, tm.tm_hour, tm.tm_min, z, z - 0.5, z + 0.5, (unsigned long)czas, i % 2);
+    s += b;
+  }
+  return s;
+}
+
+// Odpowiedz historii wysylana po kawalku, w rytmie zegara plytki (hakCzasu()).
+// Prawdziwa centrala wysyla 20 kB..1,4 MB przez WiFi w czasie, w ktorym petla
+// panelu obraca sie wiele razy; tutaj tempo (i ewentualne urwanie albo
+// zamilkniecie w polowie) ustawia scenariusz. Wysylanie idzie z watku
+// firmware'u, w hakCzasu() - dzieki temu kazdy przebieg jest taki sam.
+struct Strumien {
+  int fd = -1;
+  int centrala = 0;
+  std::string dane;                // naglowki HTTP + tresc
+  size_t poszlo = 0;
+  size_t granica = (size_t)-1;     // tyle bajtow `dane` wolno wyslac (urwanie / zamilkniecie)
+  bool zamknijNaGranicy = false;   // true: po granicy zamknij polaczenie; false: milcz, polaczenie otwarte
+  unsigned long zwlokaMs = 0;
+  double bajtowNaMs = 0;
+  double kredyt = 0;
+};
+std::vector<Strumien> g_strumienie;   // chronione g_mutex
+
+std::string parametrAdresu(const std::string& sciezka, const char* nazwa) {
+  const std::string klucz = std::string(nazwa) + "=";
+  size_t p = sciezka.find('?');
+  while (p != std::string::npos) {
+    p++;
+    if (sciezka.compare(p, klucz.size(), klucz) == 0) {
+      const size_t od = p + klucz.size();
+      return sciezka.substr(od, sciezka.find('&', od) - od);
+    }
+    p = sciezka.find('&', p);
+  }
+  return "";
+}
+
+// Strona, ktora nie jest odpowiedzia centrali pieca (np. portal logowania
+// obcej sieci). Ma jedna linie z kilkunastoma przecinkami - tyle, ile trzeba,
+// zeby kod czytajacy CSV znalazl w niej "kolumny".
+std::string stronaHtml() {
+  return "<!DOCTYPE html>\n<html><head><title>Logowanie do sieci</title>\n"
+         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1\">\n</head>\n<body>\n<p>" +
+         std::string(700, 'x') + "</p>\n<p>Podaj haslo, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15</p>\n</body></html>\n";
+}
+
+// Co centrala odpowiada na GET /api/history... (wywolywane pod g_mutex).
+//   3.58.4:    /api/history/panel -> gotowe punkty; /api/history i /long -> stare CSV (strona WWW ich uzywa)
+//   <= 3.58.3: /api/history/panel -> 302 na "/" (onNotFound -> request->redirect("/"))
+//   prastara:  /api/history/cokolwiek -> krotki CSV (dopasowanie po przedrostku)
+// Naglowki jak ESPAsyncWebServer dla zapytania HTTP/1.0.
+void odpowiedzHistorii(Centrala& c, int idx, const std::string& sciezka, Strumien& st) {
+  const std::string adres = sciezka.substr(0, sciezka.find('?'));
+  int kod = 200;
+  std::string cialo;
+  const char* typ = "text/plain";
+  if (c.histHtml) {
+    if (adres == "/api/history/panel") c.nPanelHist++;
+    else if (adres == "/api/history/long") c.nHistDluga++;
+    else c.nHistKrotka++;
+    typ = "text/html";
+    cialo = stronaHtml();
+  } else if (adres == "/api/history") {
+    c.nHistKrotka++;
+    cialo = csvKrotki(c.wierszyKrotkich, c.histDziuraOd, c.histDziuraIle);
+  } else if (adres == "/api/history/long") {
+    c.nHistDluga++;
+    cialo = csvDlugi(c.wierszyDlugich);
+  } else if (adres == "/api/history/panel") {
+    c.nPanelHist++;
+    c.ostatniaPanelHistSciezka = sciezka;
+    if (c.wersjaHistorii == HIST_PANEL) {
+      const std::string tryb = parametrAdresu(sciezka, "tryb");
+      kod = c.panelHistKod;
+      if (kod == 503) cialo = "brak pamieci\n";
+      else if (c.panelHist.count(tryb) != 0) cialo = c.panelHist[tryb];
+      else { kod = 400; cialo = "tryb=godz|dzien|tydz\n"; }
+    } else if (c.wersjaHistorii == HIST_PRZEDROSTEK) {
+      cialo = csvKrotki(c.wierszyKrotkich, c.histDziuraOd, c.histDziuraIle);
+    } else {
+      kod = 302;
+    }
+  } else {
+    c.nInne++;
+    kod = 302;
+  }
+  if (c.histCrlf) {
+    std::string z;
+    z.reserve(cialo.size() + cialo.size() / 50);
+    for (char znak : cialo) { if (znak == '\n') z += '\r'; z += znak; }
+    cialo.swap(z);
+  }
+
+  char naglowki[320];
+  if (kod == 302) {
+    cialo.clear();
+    snprintf(naglowki, sizeof(naglowki), "HTTP/1.0 302 Found\r\nContent-Length: 0\r\nLocation: /\r\nConnection: close\r\n\r\n");
+  } else if (c.histBezDlugosci) {
+    snprintf(naglowki, sizeof(naglowki), "HTTP/1.0 %d %s\r\nContent-Type: %s\r\nConnection: close\r\n\r\n", kod,
+             kod == 200 ? "OK" : (kod == 400 ? "Bad Request" : "Service Unavailable"), typ);
+  } else {
+    snprintf(naglowki, sizeof(naglowki), "HTTP/1.0 %d %s\r\nContent-Length: %zu\r\nContent-Type: %s\r\nConnection: close\r\n\r\n", kod,
+             kod == 200 ? "OK" : (kod == 400 ? "Bad Request" : "Service Unavailable"), cialo.size(), typ);
+  }
+  const size_t dlNaglowkow = strlen(naglowki);
+  st.centrala = idx;
+  st.dane = std::string(naglowki) + cialo;
+  st.zwlokaMs = c.histZwlokaMs;
+  st.bajtowNaMs = c.histBajtowNaMs;
+  if (kod == 200 && c.histUrwijPo >= 0 && (size_t)c.histUrwijPo < cialo.size()) {
+    st.granica = dlNaglowkow + (size_t)c.histUrwijPo;
+    st.zamknijNaGranicy = true;
+  } else if (kod == 200 && c.histZamilknijPo >= 0 && (size_t)c.histZamilknijPo < cialo.size()) {
+    st.granica = dlNaglowkow + (size_t)c.histZamilknijPo;
+    st.zamknijNaGranicy = false;
+  }
+}
+
+// Wysyla kolejne kawalki odpowiedzi historii; `ms` = ile czasu plytki wlasnie
+// uplynelo. Wolane z hakCzasu(), czyli z watku firmware'u w trakcie jego
+// delay() - ale to praca "centrali", wiec poza pomiarem pamieci firmware'u.
+void pompujStrumienie(unsigned long ms) {
+  std::lock_guard<std::mutex> blokada(g_mutex);
+  for (size_t i = 0; i < g_strumienie.size();) {
+    Strumien& s = g_strumienie[i];
+    Centrala& c = g_centrale[s.centrala];
+    bool koniec = false;
+    // Panel zamknal polaczenie (wyjscie z ekranu, porzucone pobieranie)?
+    char bajt;
+    const ssize_t r = recv(s.fd, &bajt, 1, MSG_PEEK | MSG_DONTWAIT);
+    if (r == 0 || (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+      c.nHistPorzuconych++;
+      koniec = true;
+    }
+    if (!koniec && s.zwlokaMs > 0) s.zwlokaMs = (ms >= s.zwlokaMs) ? 0 : s.zwlokaMs - ms;
+    if (!koniec && s.zwlokaMs == 0) {
+      const size_t cel = s.granica < s.dane.size() ? s.granica : s.dane.size();
+      size_t wolno = cel - s.poszlo;
+      if (s.bajtowNaMs > 0) {
+        s.kredyt += s.bajtowNaMs * (double)ms;
+        if (s.kredyt > 65536.0) s.kredyt = 65536.0;   // lacze nie "nadrabia" przestojow jednym rzutem
+        if ((double)wolno > s.kredyt) wolno = (size_t)s.kredyt;
+      }
+      while (wolno > 0) {
+        const ssize_t n = write(s.fd, s.dane.data() + s.poszlo, wolno);
+        if (n > 0) {
+          s.poszlo += (size_t)n;
+          wolno -= (size_t)n;
+          if (s.bajtowNaMs > 0) s.kredyt -= (double)n;
+        } else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+          break;   // bufor gniazda pelny: panel czyta wolniej, niz centrala wysyla
+        } else {
+          c.nHistPorzuconych++;
+          koniec = true;
+          break;
+        }
+      }
+      if (!koniec && s.poszlo >= s.dane.size()) {
+        c.nHistWyslanych++;
+        koniec = true;
+      } else if (!koniec && s.poszlo >= s.granica && s.zamknijNaGranicy) {
+        koniec = true;   // urwana: zamkniecie przed koncem zapowiedzianej tresci
+      }
+    }
+    if (koniec) {
+      close(s.fd);
+      g_strumienie.erase(g_strumienie.begin() + (long)i);
+    } else {
+      i++;
+    }
+  }
+}
+
 void obsluzPolaczenie(int k, int idx) {
   // Zapytanie: naglowki do pustej linii (+ ewentualne cialo POST, ktore
   // panel wysyla w tym samym send() co naglowki).
@@ -330,6 +610,21 @@ void obsluzPolaczenie(int k, int idx) {
   const size_t a = zad.find(' ');
   const size_t b = (a == std::string::npos) ? a : zad.find(' ', a + 1);
   const std::string sciezka = (b == std::string::npos) ? "" : zad.substr(a + 1, b - a - 1);
+
+  if (!post && sciezka.rfind("/api/history", 0) == 0) {
+    // Historia: odpowiedz bywa duza i idzie po kawalku - patrz Strumien.
+    const int flagi = fcntl(k, F_GETFL, 0);
+    fcntl(k, F_SETFL, flagi | O_NONBLOCK);
+    {
+      std::lock_guard<std::mutex> blokada(g_mutex);
+      Strumien st;
+      st.fd = k;
+      odpowiedzHistorii(g_centrale[idx], idx, sciezka, st);
+      g_strumienie.push_back(std::move(st));
+    }
+    g_wLocie--;
+    return;
+  }
 
   int tryb = TRYB_OK;
   int kod = 200;
@@ -457,14 +752,27 @@ void uruchomSerwer() {
 // gniazda) dokonczyc obsluge zapytan, ktore panel juz wyslal. Dzieki temu
 // odpowiedz jest gotowa po tej samej liczbie obrotow loop() w kazdym
 // uruchomieniu - scenariusze sa powtarzalne.
-void hakCzasu(unsigned long) {
+void hakCzasu(unsigned long ms) {
   for (int i = 0; i < 4000 && g_wLocie.load() > 0; i++) usleep(50);   // najwyzej 0,2 s prawdziwego czasu
+  // Reszta to praca "centrali" wykonywana w watku firmware'u: bez odmow
+  // malloc() (scenariusze braku pamieci) i poza pomiarem pamieci firmware'u.
+  const int bylo = pamiec::wFirmware;
+  pamiec::wFirmware = 0;
+  {
+    AtrapaBezPomiaru bezPomiaru;
+    pompujStrumienie(ms);
+  }
+  pamiec::wFirmware = bylo;
 }
 
 // ===========================================================================
 // Narzedzia scenariuszy
 // ===========================================================================
 bool g_obserwacje = false;
+// Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
+// Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
+// cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
+#define WERSJA_FW "v1.3.0"
 int g_bledy = 0, g_sprawdzen = 0;
 std::string g_katalogWyjscia;
 std::string g_nazwaScenariusza;
@@ -910,10 +1218,10 @@ void scenariuszBateriaILog() {
   info("%s", liniaLogu("tag=BATERIA", od).c_str());
   sprawdz(ileLinii("[NET-DIAG]", "", "", od) == 0, "brak linii [NET-DIAG] przy poprawnej pracy");
   sprawdz(ileLinii("tag=PANEL fw=", "", "", od) == 3, "linia tag=PANEL: 5 s po wlaczeniu i potem co 30 s (3 w ciagu 66 s)");
-  sprawdz(logMa("tag=PANEL fw=v1.2.2", "bssid=24:6F:28:11:22:33", "centrala=sterownik", od), "linia tag=PANEL podaje wersje, BSSID i rodzaj centrali");
+  sprawdz(logMa("tag=PANEL fw=" WERSJA_FW, "bssid=24:6F:28:11:22:33", "centrala=sterownik", od), "linia tag=PANEL podaje wersje, BSSID i rodzaj centrali");
   sprawdz(logMa("tag=PANEL fw=", "bez_danych_s=", "przyczyna=- wymuszen=0 rozl_kod=0 rozl_n=0 autorestartow=0", od),
           "linia tag=PANEL: przy poprawnej pracy nic nie brakuje, zero rozlaczen i restartow");
-  sprawdz(kopia(0).ostatniStatusSciezka.find("panel_fw=v1.2.2&reset_powod=poweron") != std::string::npos,
+  sprawdz(kopia(0).ostatniStatusSciezka.find("panel_fw=" WERSJA_FW "&reset_powod=poweron") != std::string::npos,
           "centrala dostaje w zapytaniu wersje panelu i zwykly powod startu (poweron)");
   sprawdz(logMa("tag=PANEL fw=", "status_ok=15", "status_blad=0", od), "linia tag=PANEL liczy poprawne odczyty (15 na 30 s)");
   sprawdz(logMa("tag=PANEL fw=", "t_ogrz=55.0", "klapa=40", od), "linia tag=PANEL pokazuje wartosci, ktore panel ma w pamieci");
@@ -1270,7 +1578,7 @@ void scenariuszStartPoAutorestarcie() {
     sprawdz(c.resetDiag.size() == 1 && c.resetDiag[0] == "auto_wifi_r201_n1_t45_h61_b31_en118",
             "centrala dostaje reset_powod=auto_wifi_r201_n1_t45_h61_b31_en118 i pisze o nim jedna linie tag=RESET-DIAG");
     info("pozniejsze zapytania: %s", c.ostatniStatusSciezka.c_str());
-    sprawdz(c.ostatniStatusSciezka == "/api/status?panel_fw=v1.2.2&reset_powod=sw" && logMa("tag=PANEL", "zdarzenie=autorestart_zgloszony"),
+    sprawdz(c.ostatniStatusSciezka == "/api/status?panel_fw=" WERSJA_FW "&reset_powod=sw" && logMa("tag=PANEL", "zdarzenie=autorestart_zgloszony"),
             "po pierwszej odpowiedzi centrali panel zglasza dalej zwykle reset_powod=sw");
   }
   sprawdz(ekranMa("55°C"), "kafelki pokazuja dane");
@@ -1314,7 +1622,7 @@ void scenariuszSeriaRestartow() {
   {
     const Centrala c = kopia(0);
     info("zapytanie, ktore dostala centrala: %s", c.ostatniStatusSciezka.c_str());
-    sprawdz(c.nStatus >= 2 && c.resetDiag.empty() && c.ostatniStatusSciezka == "/api/status?panel_fw=v1.2.2&reset_powod=sw",
+    sprawdz(c.nStatus >= 2 && c.resetDiag.empty() && c.ostatniStatusSciezka == "/api/status?panel_fw=" WERSJA_FW "&reset_powod=sw",
             "centrala nie pisze o tym restarcie i nie wysyla wiadomosci");
   }
   sprawdz(ekranMa("55°C"), "kafelki pokazuja dane");
@@ -1366,7 +1674,7 @@ void scenariuszRestartPoOta() {
   setup();
   biegnij(3000);
   info("zapytanie, ktore dostala centrala: %s", kopia(0).ostatniStatusSciezka.c_str());
-  sprawdz(kopia(0).ostatniStatusSciezka == "/api/status?panel_fw=v1.2.2&reset_powod=sw", "restart programowy bez znacznika autorestartu: reset_powod=sw, jak dotad");
+  sprawdz(kopia(0).ostatniStatusSciezka == "/api/status?panel_fw=" WERSJA_FW "&reset_powod=sw", "restart programowy bez znacznika autorestartu: reset_powod=sw, jak dotad");
   sprawdz(!logMa("zdarzenie=start_po_autorestarcie"), "log: brak wpisu start_po_autorestarcie");
   sprawdz(rtcAutorestart.wazna() && rtcAutorestart.oczekuje == 0 && rtcAutorestart.kolejnych == 0 && rtcAutorestart.lacznie == 0,
           "przypadkowe wartosci w pamieci RTC zostaly rozpoznane i wyczyszczone");
@@ -1748,6 +2056,692 @@ void scenariuszWykresyPamiec() {
   sprawdz(ekranMa("WYKRESY"), "drugi pulpit pokazuje kafelki");
 }
 
+// ===========================================================================
+// Ekran Wykresy: skad panel bierze dane i co z nich rysuje (v1.3.0)
+// ===========================================================================
+template <typename F> void ustawC(int idx, F zmiana) {
+  std::lock_guard<std::mutex> blokada(g_mutex);
+  zmiana(g_centrale[idx]);
+}
+Centrala stanC(int idx) {
+  std::lock_guard<std::mutex> blokada(g_mutex);
+  return g_centrale[idx];
+}
+
+lv_obj_t* drugiPulpit() {
+  if (lv_disp_t* d = lv_disp_get_default()) {
+    for (uint32_t i = 0; i < d->screen_cnt; i++)
+      if (znajdzEtykiete(d->screens[i], "WYKRESY") != nullptr && znajdzEtykiete(d->screens[i], "WYSWIETLACZ") != nullptr) return d->screens[i];
+  }
+  return nullptr;
+}
+
+// Drugi pulpit -> kafelek WYKRESY. Ekran otwiera sie na podstronie wyboru serii.
+bool otworzWykresy() {
+  lv_obj_t* drugi = drugiPulpit();
+  if (drugi == nullptr) return false;
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  if (!kliknij("WYKRESY")) return false;
+  biegnij(300);
+  return lv_scr_act() != drugi && znajdzEtykiete(lv_scr_act(), "POKAZ WYKRES") != nullptr;
+}
+
+// Dotkniecie podstrony z wykresem (gdziekolwiek) - firmware wraca wtedy do wyboru serii.
+bool dotknijWykresu() {
+  lv_obj_t* tytul = znajdzEtykiete(lv_scr_act(), "[");
+  if (tytul == nullptr || znajdzEtykiete(lv_scr_act(), "POKAZ WYKRES") != nullptr) return false;
+  LiczFirmware licz;
+  lv_event_send(lv_obj_get_parent(tytul), LV_EVENT_PRESSED, nullptr);
+  return true;
+}
+
+lv_obj_t* znajdzWykres(lv_obj_t* o) {
+  if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return nullptr;
+  if (lv_obj_check_type(o, &lv_chart_class)) return o;
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) {
+    lv_obj_t* w = znajdzWykres(lv_obj_get_child(o, (int32_t)i));
+    if (w != nullptr) return w;
+  }
+  return nullptr;
+}
+bool wykresWidoczny() { return znajdzWykres(lv_scr_act()) != nullptr; }
+
+// To, co lv_chart ma narysowac: wartosc x10 (21,5 C -> 215) albo BRAK (linia
+// przerwana w tym miejscu). `slot`: 0..6 = serie lewej osi w kolejnosci
+// wyboru, 7 = seria prawej osi. Pusty wynik = wykresu nie ma na ekranie.
+const int BRAK = INT_MIN;
+std::vector<int> punktyWykresu(int slot) {
+  std::vector<int> wynik;
+  lv_obj_t* wykres = znajdzWykres(lv_scr_act());
+  if (wykres == nullptr) return wynik;
+  // LVGL 8.3 trzyma serie od ostatnio dodanej do pierwszej.
+  std::vector<lv_chart_series_t*> serie;
+  for (lv_chart_series_t* s = lv_chart_get_series_next(wykres, nullptr); s != nullptr; s = lv_chart_get_series_next(wykres, s)) serie.insert(serie.begin(), s);
+  if (slot < 0 || slot >= (int)serie.size()) return wynik;
+  const lv_coord_t* tab = lv_chart_get_y_array(wykres, serie[(size_t)slot]);
+  const uint16_t n = lv_chart_get_point_count(wykres);
+  for (uint16_t i = 0; i < n; i++) wynik.push_back(tab[i] == LV_CHART_POINT_NONE ? BRAK : (int)tab[i]);
+  return wynik;
+}
+int ilePunktow(const std::vector<int>& p) {
+  int n = 0;
+  for (int v : p) if (v != BRAK) n++;
+  return n;
+}
+std::string punktyTekst(const std::vector<int>& p) {
+  std::string s;
+  for (size_t i = 0; i < p.size(); i++) s += (i ? " " : "") + (p[i] == BRAK ? std::string("-") : std::to_string(p[i]));
+  return s;
+}
+
+// Porownanie tego, co jest na wykresie, z tym, co ma byc. Przy roznicy wypisuje pierwsza.
+bool tesamePunkty(const std::vector<int>& jest, const std::vector<int>& maByc, const char* co) {
+  if (jest.size() != maByc.size()) {
+    info("%s: na wykresie %zu pozycji, mialo byc %zu", co, jest.size(), maByc.size());
+    return false;
+  }
+  for (size_t i = 0; i < jest.size(); i++) {
+    if (jest[i] == maByc[i]) continue;
+    const std::string a = jest[i] == BRAK ? "brak punktu" : std::to_string(jest[i]);
+    const std::string b = maByc[i] == BRAK ? "brak punktu" : std::to_string(maByc[i]);
+    info("%s: pozycja %zu: na wykresie %s, mialo byc %s", co, i, a.c_str(), b.c_str());
+    return false;
+  }
+  return true;
+}
+
+std::vector<std::string> podzielTekst(const std::string& s, char znak) {
+  std::vector<std::string> w;
+  size_t p = 0;
+  while (true) {
+    const size_t k = s.find(znak, p);
+    if (k == std::string::npos) { w.push_back(s.substr(p)); break; }
+    w.push_back(s.substr(p, k - p));
+    p = k + 1;
+  }
+  return w;
+}
+
+// Co panel MA narysowac z odpowiedzi centrali 3.58.4 (plik wzorca) dla
+// kolumny `kolumna` (numeracja jak w /api/history/long: 1 = ZEWN srednia,
+// 4 = BOJLER, 19 = pokoj, 22 = cisnienie, 31 = syberek). Liczone tutaj,
+// niezaleznie od firmware'u: linia "#przerwa" i pole "nan" = brak punktu,
+// reszta = liczba x10. Zawsze 96 pozycji; te bez danych to brak punktu.
+std::vector<int> zWzorca(const std::string& tresc, int kolumna) {
+  std::vector<int> w;
+  for (const std::string& linia : podzielTekst(tresc, '\n')) {
+    if (linia.empty() || linia.rfind("#panel-hist", 0) == 0 || linia.rfind("#koniec", 0) == 0) continue;
+    if (linia == "#przerwa") { w.push_back(BRAK); continue; }
+    const std::vector<std::string> kol = podzielTekst(linia, ',');
+    if (kolumna >= (int)kol.size() || kol[(size_t)kolumna] == "nan") { w.push_back(BRAK); continue; }
+    w.push_back((int)lround(atof(kol[(size_t)kolumna].c_str()) * 10.0));
+  }
+  while (w.size() < 96) w.push_back(BRAK);
+  return w;
+}
+int ilePrzerwWeWzorcu(const std::string& tresc) {
+  int n = 0;
+  for (const std::string& linia : podzielTekst(tresc, '\n')) if (linia == "#przerwa") n++;
+  return n;
+}
+
+// Wartosc pola "klucz=" z ostatniej linii logu zawierajacej `fragment` (od pozycji `od`); -1 = nie ma.
+long poleLogu(const std::string& fragment, const char* klucz, size_t od) {
+  const std::string& log = g_atrapa.serial;
+  const size_t p = log.rfind(fragment);
+  if (p == std::string::npos || p < od) return -1;
+  size_t k = log.find('\n', p);
+  if (k == std::string::npos) k = log.size();
+  const std::string linia = log.substr(p, k - p);
+  const size_t q = linia.find(std::string(" ") + klucz + "=");
+  if (q == std::string::npos) return -1;
+  return atol(linia.c_str() + q + strlen(klucz) + 2);
+}
+
+// Punkty, ktore z TEGO SAMEGO starego CSV narysowal firmware v1.2.2 (plik
+// wzorce_v122/punkty.txt; jak powstal: CZYTAJ.txt obok niego).
+std::vector<int> zWzorcaV122(const char* nazwa) {
+  const char* katalog = getenv("LCD_WZORCE_V122");
+  const std::string sciezka = std::string(katalog != nullptr ? katalog : "wzorce_v122") + "/punkty.txt";
+  FILE* f = fopen(sciezka.c_str(), "rb");
+  std::vector<int> w;
+  if (f == nullptr) {
+    fprintf(stderr, "brak pliku %s (zmienna LCD_WZORCE_V122 ustawia katalog; robi to uruchom_testy.sh)\n", sciezka.c_str());
+    exit(2);
+  }
+  std::string calosc;
+  char b[4096];
+  size_t n;
+  while ((n = fread(b, 1, sizeof(b), f)) > 0) calosc.append(b, n);
+  fclose(f);
+  const std::string poczatek = std::string(nazwa) + ":";
+  for (const std::string& linia : podzielTekst(calosc, '\n')) {
+    if (linia.rfind(poczatek, 0) != 0) continue;
+    for (const std::string& pole : podzielTekst(linia.substr(poczatek.size()), ' ')) {
+      if (pole.empty()) continue;
+      w.push_back(pole == "-" ? BRAK : atoi(pole.c_str()));
+    }
+    return w;
+  }
+  fprintf(stderr, "w pliku %s nie ma wpisu \"%s\"\n", sciezka.c_str(), nazwa);
+  exit(2);
+}
+
+// Jedno "pokaz wykres": zakres, klikniecie, czekanie. Zwraca pozycje w logu sprzed klikniecia.
+size_t pokazWykres(const char* zakres, unsigned long czekajMs) {
+  if (zakres != nullptr) kliknij(zakres);
+  const size_t od = g_atrapa.serial.size();
+  kliknij("POKAZ WYKRES");
+  biegnij(czekajMs);
+  return od;
+}
+
+// --- 26 --------------------------------------------------------------------
+// Centrala 3.58.4 + panel 1.3.0: po dotknieciu "POKAZ WYKRES" panel pyta
+// centrale o gotowe punkty, a centrala bierze je ze swojej historii.
+// Odpowiedzi centrali w tym scenariuszu to pliki zapisane JEJ kodem
+// (wzorce_centrali/); to, co ma byc na wykresie, test liczy z tych plikow sam.
+void scenariuszWykresyCentralaLiczy() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  const std::string dzien = wzorzec("dzien.txt"), godz = wzorzec("godz_ta_sama_doba.txt"), tydz = wzorzec("tydz_pelne_bufory.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = dzien; c.panelHist["godz"] = godz; c.panelHist["tydz"] = tydz; });
+  setup();
+  biegnij(3000);
+  sprawdz(otworzWykresy(), "drugi pulpit -> kafelek WYKRESY: otwiera sie wybor serii");
+  sprawdz(kliknij("ZEWN") && kliknij("BOJLER"), "wybrane serie: ZEWN i BOJLER");
+
+  printf("  zakres DZIENNY (domyslny):\n");
+  const int statusPrzed = stanC(0).nStatus;
+  size_t od = g_atrapa.serial.size();
+  const unsigned long t0 = millis();
+  sprawdz(kliknij("POKAZ WYKRES"), "dotkniecie POKAZ WYKRES");
+  sprawdz(millis() == t0 && ekranMa("Ladowanie danych z centrali...") && !wykresWidoczny(),
+          "dotkniecie wraca od razu (zegar plytki nie drgnal), na ekranie \"Ladowanie danych z centrali...\"");
+  biegnij(1000);
+  Centrala c = stanC(0);
+  sprawdz(c.nPanelHist == 1 && c.ostatniaPanelHistSciezka == "/api/history/panel?tryb=dzien&pkt=96",
+          "centrala dostala jedno zapytanie: GET /api/history/panel?tryb=dzien&pkt=96");
+  sprawdz(c.nHistKrotka == 0 && c.nHistDluga == 0, "calego CSV historii (/api/history, /api/history/long) panel NIE pobieral");
+  sprawdz(wykresWidoczny() && !ekranMa("Ladowanie danych z centrali..."), "wykres jest na ekranie");
+  sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "ZEWN: wszystkie 96 punktow takie, jak policzyla centrala (od -4,9 do 9,3)");
+  sprawdz(tesamePunkty(punktyWykresu(1), zWzorca(dzien, 4), "BOJLER"), "BOJLER: wszystkie 96 punktow (45,0)");
+  sprawdz(ilePunktow(punktyWykresu(2)) == 0 && ilePunktow(punktyWykresu(7)) == 0, "pozostale serie puste");
+  sprawdz(ekranMa("12.11 13:01  -  13.11 13:00"), "podpis pod wykresem: \"12.11 13:01  -  13.11 13:00\" (zakres podany przez centrale, z data)");
+  sprawdz(ekranMa("[Dzienny] ZEWN + BOJLER"), "tytul: \"[Dzienny] ZEWN + BOJLER\"");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440", "ucietych_linii=0", "", od),
+          "log: zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440 ... ucietych_linii=0");
+  info("%s", liniaLogu("tag=WYKRESY zdarzenie=pobrano", od).c_str());
+  info("czas w symulatorze: %ld ms zegara plytki, %ld B - to NIE jest pomiar na plytce (tu siec jest lokalna)",
+       poleLogu("tag=WYKRESY zdarzenie=pobrano", "ms", od), poleLogu("tag=WYKRESY zdarzenie=pobrano", "bajtow", od));
+  sprawdz(!logMa("tag=WYKRESY", "zdarzenie=blad", "", od) && !logMa("zdarzenie=stara_centrala", "", "", od), "w logu zadnego bledu ani przejscia na stary sposob");
+  zrzutEkranu("dzien");
+
+  printf("  powrot do wyboru i zakres GODZINNY:\n");
+  sprawdz(dotknijWykresu() && ekranMa("POKAZ WYKRES"), "dotkniecie wykresu wraca do wyboru serii");
+  od = pokazWykres("GODZINNY", 1000);
+  c = stanC(0);
+  sprawdz(c.nPanelHist == 2 && c.ostatniaPanelHistSciezka == "/api/history/panel?tryb=godz&pkt=96", "zapytanie: /api/history/panel?tryb=godz&pkt=96");
+  sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(godz, 1), "ZEWN") && tesamePunkty(punktyWykresu(1), zWzorca(godz, 4), "BOJLER"),
+          "ZEWN i BOJLER: 96 punktow z ostatniej godziny (stary sposob dawal 60 punktow na 62% szerokosci)");
+  sprawdz(ekranMa("12:00  -  13:00") && ekranMa("[Godzinny] ZEWN + BOJLER"), "podpis \"12:00  -  13:00\", tytul \"[Godzinny] ZEWN + BOJLER\"");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=godz sposob=centrala punktow=96", "", "", od), "log: zdarzenie=pobrano tryb=godz sposob=centrala punktow=96");
+
+  printf("  zakres TYGODNIOWY, pelne bufory centrali, najdluzsze liczby; do tego CISNIENIE na prawej osi:\n");
+  dotknijWykresu();
+  sprawdz(kliknij("CISNIENIE"), "dobrana seria CISNIENIE (inna jednostka -> prawa os)");
+  od = pokazWykres("TYGODNIOWY", 1000);
+  c = stanC(0);
+  sprawdz(c.nPanelHist == 3 && c.ostatniaPanelHistSciezka == "/api/history/panel?tryb=tydz&pkt=96", "zapytanie: /api/history/panel?tryb=tydz&pkt=96");
+  sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(tydz, 1), "ZEWN") && tesamePunkty(punktyWykresu(1), zWzorca(tydz, 4), "BOJLER"),
+          "ZEWN (wartosci ujemne) i BOJLER: 96 punktow jak w odpowiedzi centrali");
+  sprawdz(tesamePunkty(punktyWykresu(7), zWzorca(tydz, 22), "CISNIENIE"), "CISNIENIE (1013,2 hPa) na prawej osi: 96 punktow");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=96 przerw=0 wierszy_centrali=9440", "ucietych_linii=0", "", od),
+          "log: wierszy_centrali=9440 (8000 zdarzen + 1440 probek), ucietych_linii=0");
+  info("odpowiedz centrali: %ld B (caly /api/history/long przy pelnym buforze to ponad 1 MB)", poleLogu("tag=WYKRESY zdarzenie=pobrano", "bajtow", od));
+
+  printf("  ostatnia kolumna wiersza (Syberek) - czy dlugie linie dochodza cale:\n");
+  dotknijWykresu();
+  kliknij("CISNIENIE");   // odznacz
+  sprawdz(kliknij("Syberek"), "CISNIENIE odznaczone, wybrany Syberek");
+  od = pokazWykres(nullptr, 1000);
+  sprawdz(tesamePunkty(punktyWykresu(7), zWzorca(tydz, 31), "Syberek"), "Syberek: 96 punktow (60,0, na koncu 100,0)");
+
+  c = stanC(0);
+  sprawdz(c.nPanelHist == 4 && c.nHistKrotka == 0 && c.nHistDluga == 0 && c.nHistWyslanych == 4 && c.nHistPorzuconych == 0,
+          "razem 4 zapytania o gotowe punkty, 4 odpowiedzi odebrane do konca, ani jednego pobrania calego CSV");
+  info("zapytan /api/status w tym czasie (ok. 4,5 s): %d", c.nStatus - statusPrzed);
+  sprawdz(c.nStatus >= statusPrzed + 2, "w tym czasie panel dalej odpytywal /api/status (co 2 s)");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal");
+}
+
+// --- 27 --------------------------------------------------------------------
+// Panel 1.3.0 ze STARSZA centrala (<= 3.58.3), ktora nie zna
+// /api/history/panel: panel ma to rozpoznac i narysowac wykres po staremu -
+// dokladnie taki, jaki z tego samego CSV rysowal v1.2.2 (wzorce_v122/).
+void scenariuszWykresyStaraCentrala() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; });
+  setup();
+  biegnij(3000);
+  sprawdz(otworzWykresy(), "ekran Wykresy otwarty");
+  sprawdz(kliknij("ZEWN"), "wybrana seria ZEWN");
+
+  printf("  zakres DZIENNY:\n");
+  size_t od = pokazWykres(nullptr, 3000);
+  Centrala c = stanC(0);
+  sprawdz(c.nPanelHist == 1 && c.nHistKrotka == 1 && c.nHistDluga == 0,
+          "panel najpierw zapytal o /api/history/panel (odpowiedz 302), potem pobral /api/history");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=stara_centrala kod=302", "", "", od), "log: zdarzenie=stara_centrala kod=302");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=panel", "linii=1440", "", od), "log: zdarzenie=pobrano tryb=dzien sposob=panel ... linii=1440");
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorcaV122("dzien_zewn"), "ZEWN"),
+          "wykres punkt w punkt taki, jaki z tego CSV rysowal v1.2.2");
+  info("%s", liniaLogu("tag=WYKRESY zdarzenie=pobrano", od).c_str());
+
+  printf("  zakres GODZINNY:\n");
+  dotknijWykresu();
+  od = pokazWykres("GODZINNY", 3000);
+  c = stanC(0);
+  sprawdz(c.nPanelHist == 2 && c.nHistKrotka == 2, "znowu: /api/history/panel (302), potem /api/history");
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorcaV122("godz_zewn"), "ZEWN"), "wykres taki sam jak w v1.2.2 (ostatnie 60 wierszy)");
+
+  printf("  zakres TYGODNIOWY (2000 wierszy /api/history/long, 352 kB):\n");
+  dotknijWykresu();
+  od = pokazWykres("TYGODNIOWY", 5000);
+  c = stanC(0);
+  sprawdz(c.nPanelHist == 3 && c.nHistDluga == 1, "/api/history/panel (302), potem /api/history/long");
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorcaV122("tydz_zewn"), "ZEWN"), "wykres taki sam jak w v1.2.2");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=panel", "linii=2000", "", od), "log: zdarzenie=pobrano tryb=tydz sposob=panel ... linii=2000");
+  info("%s", liniaLogu("tag=WYKRESY zdarzenie=pobrano", od).c_str());
+
+  printf("  przerwa w danych (centrala nie pracowala 30 minut):\n");
+  ustawC(0, [](Centrala& x) { x.histDziuraOd = 700; x.histDziuraIle = 30; });
+  dotknijWykresu();
+  od = pokazWykres("DZIENNY", 3000);
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorcaV122("dzien_przerwa_zewn"), "ZEWN"),
+          "wykres z przerwa taki sam jak w v1.2.2 (linia przerwana w tym samym miejscu)");
+  ustawC(0, [](Centrala& x) { x.histDziuraOd = -1; x.histDziuraIle = 0; });
+
+  printf("  polaczenie zerwane w srodku 51. wiersza starego CSV:\n");
+  {
+    // Urywamy zaraz po "HH:MM,-" 51. wiersza. Gdyby panel potraktowal ten
+    // ogryzek jak wiersz, dorysowalby 51. punkt o wartosci 0.
+    const std::string csv = csvKrotki(1440, -1, 0);
+    size_t poczatek51 = 0;
+    for (int i = 0; i < 50; i++) poczatek51 = csv.find('\n', poczatek51) + 1;
+    const long urwij = (long)poczatek51 + 7;
+    std::vector<int> maByc;
+    for (const std::string& linia : podzielTekst(csv.substr(0, poczatek51), '\n'))
+      if (!linia.empty()) maByc.push_back((int)lround(atof(podzielTekst(linia, ',')[1].c_str()) * 10.0));
+    while (maByc.size() < 96) maByc.push_back(BRAK);
+    sprawdz(csv.compare(poczatek51 + 5, 2, ",-") == 0, "(test) 51. wiersz zaczyna sie od \"HH:MM,-\"");
+    ustawC(0, [urwij](Centrala& x) { x.histUrwijPo = urwij; });
+    dotknijWykresu();
+    od = pokazWykres("DZIENNY", 3000);
+    sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), maByc, "ZEWN"), "wykres z 50 calych wierszy; urwany 51. wiersz nie jest danymi");
+    bool dopisek = false;
+    for (const std::string& t : napisyEkranu()) if (t.find("   NIEPELNE") != std::string::npos) dopisek = true;
+    sprawdz(dopisek, "podpis pod wykresem z dopiskiem NIEPELNE");
+    sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=pobrano_czesc tryb=dzien sposob=panel powod=urwana", "punktow=50 linii=50 ", "", od),
+            "log: zdarzenie=pobrano_czesc powod=urwana ... punktow=50 linii=50");
+    info("%s", liniaLogu("tag=WYKRESY lvl=WARN zdarzenie=pobrano_czesc", od).c_str());
+    ustawC(0, [](Centrala& x) { x.histUrwijPo = -1; });
+  }
+
+  printf("  bardzo stara centrala: pod /api/history/panel oddaje caly krotki CSV z kodem 200:\n");
+  ustawC(0, [](Centrala& x) { x.wersjaHistorii = HIST_PRZEDROSTEK; });
+  dotknijWykresu();
+  const Centrala przed = stanC(0);
+  od = pokazWykres("TYGODNIOWY", 5000);
+  c = stanC(0);
+  sprawdz(logMa("tag=WYKRESY zdarzenie=stara_centrala kod=200", "", "", od), "log: zdarzenie=stara_centrala kod=200 (pierwsza linia to nie \"#panel-hist\")");
+  sprawdz(c.nPanelHist == przed.nPanelHist + 1 && c.nHistDluga == przed.nHistDluga + 1, "panel nie czytal tej odpowiedzi dalej, tylko pobral /api/history/long");
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorcaV122("tydz_zewn"), "ZEWN"), "wykres tygodniowy taki sam jak w v1.2.2");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal");
+}
+
+// --- 28 --------------------------------------------------------------------
+// Przerwy w pracy centrali i czujnik bez odczytu: linia ma byc przerwana tam,
+// gdzie danych nie bylo, a nie poprowadzona "na skroty".
+void scenariuszWykresyPrzerwy() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  const std::string tydz = wzorzec("tydz_przerwa.txt"), godz = wzorzec("godz_bez_czujnika.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["tydz"] = tydz; c.panelHist["godz"] = godz; });
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+
+  printf("  tydzien, w ktorym centrala byla wylaczona przez 1,5 doby:\n");
+  size_t od = pokazWykres("TYGODNIOWY", 1000);
+  const int przerw = ilePrzerwWeWzorcu(tydz);
+  const std::vector<int> p = punktyWykresu(0);
+  sprawdz(przerw == 19 && wykresWidoczny() && tesamePunkty(p, zWzorca(tydz, 1), "ZEWN"),
+          "96 pozycji: 77 punktow i 19 przerw, dokladnie w miejscach podanych przez centrale");
+  sprawdz(p.size() == 96 && p[41] != BRAK && p[42] == BRAK && p[60] == BRAK && p[61] != BRAK,
+          "przerwa to 19 kolejnych pozycji (43. do 61. z 96) - os czasu jest rowna, 1,5 doby ma na niej swoja szerokosc");
+  sprawdz(ekranMa("06.11 13:00  -  13.11 13:00"), "podpis: \"06.11 13:00  -  13.11 13:00\" (pelne 7 dni)");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=77 przerw=19", "", "", od), "log: punktow=77 przerw=19");
+  zrzutEkranu("tydzien_z_przerwa");
+
+  printf("  godzina, w ktorej czujnik pokojowy przez pierwsze pol godziny nie dawal odczytu:\n");
+  dotknijWykresu();
+  sprawdz(kliknij("Wewnetrzna"), "dobrana seria Wewnetrzna (pokoj)");
+  od = pokazWykres("GODZINNY", 1000);
+  const std::vector<int> zewn = punktyWykresu(0), pokoj = punktyWykresu(1);
+  sprawdz(tesamePunkty(zewn, zWzorca(godz, 1), "ZEWN") && ilePunktow(zewn) == 96, "ZEWN: pelne 96 punktow (3,0)");
+  sprawdz(tesamePunkty(pokoj, zWzorca(godz, 19), "Wewnetrzna"), "Wewnetrzna: brak punktow tam, gdzie centrala podala \"nan\", potem 21,5");
+  sprawdz(pokoj.size() == 96 && pokoj[0] == BRAK && pokoj[40] == BRAK && pokoj[95] == 215 && ilePunktow(pokoj) > 40 && ilePunktow(pokoj) < 56,
+          "linia czujnika zaczyna sie w polowie wykresu - nie jest dociagnieta do zera ani do poprzedniej wartosci");
+  lv_obj_t* wykres = znajdzWykres(lv_scr_act());
+  const lv_chart_t* dane = (const lv_chart_t*)wykres;
+  info("zakres lewej osi: %d .. %d (x0,1 C)", wykres ? (int)dane->ymin[0] : 0, wykres ? (int)dane->ymax[0] : 0);
+  sprawdz(wykres != nullptr && dane->ymin[0] >= 10 && dane->ymin[0] <= 13 && dane->ymax[0] >= 232 && dane->ymax[0] <= 235,
+          "zakres osi policzony z prawdziwych wartosci (3,0..21,5 + margines), brak odczytu go nie psuje");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=godz sposob=centrala punktow=96 przerw=0", "", "", od), "log: punktow=96 przerw=0");
+  zrzutEkranu("czujnik_bez_odczytu");
+}
+
+// --- 29 --------------------------------------------------------------------
+// Centrala odpowiada poprawnie, ale nie ma z czego zrobic wykresu - albo nie
+// ma na to pamieci. Kazdy przypadek ma wlasny napis (w v1.2.2 wszystko
+// konczylo sie na "Brak danych (WiFi/centrala niedostepna)").
+void scenariuszWykresyBrakDanych() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  const std::string pusta = wzorzec("dzien_pusta.txt"), jedna = wzorzec("godz_jedna_probka.txt"), bezZegara = wzorzec("dzien_bez_zegara.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = pusta; c.panelHist["godz"] = jedna; c.panelHist["tydz"] = pusta; });
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+
+  printf("  centrala swiezo po pierwszym uruchomieniu (historia pusta):\n");
+  size_t od = pokazWykres("DZIENNY", 1000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minute po starcie)"),
+          "zamiast wykresu: \"Centrala nie ma jeszcze danych z tego zakresu (pierwszy pomiar zapisuje minute po starcie)\"");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=brak_danych tryb=dzien sposob=centrala przyczyna=pusto", "", "", od) && !logMa("zdarzenie=blad", "", "", od),
+          "log: zdarzenie=brak_danych przyczyna=pusto (to nie blad)");
+  sprawdz(stanC(0).nHistKrotka == 0, "panel nie probuje wtedy starego sposobu");
+
+  printf("  to samo, gdy centrala ma wylaczony zapis historii na flash (w naglowku odpowiedzi fs=0):\n");
+  const std::string pustaBezFs = wzorzec("dzien_pusta_bez_fs.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = pustaBezFs; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 1000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minute po starcie)\n\n"
+                                       "Zapis historii na flash jest w centrali wylaczony:\npo jej restarcie historia zaczyna sie od zera"),
+          "napis dopowiada: \"Zapis historii na flash jest w centrali wylaczony: po jej restarcie historia zaczyna sie od zera\"");
+  zrzutEkranu("zapis_wylaczony");   // najdluzszy napis tego ekranu - widac, czy sie miesci
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = pusta; });
+
+  printf("  jeden pomiar:\n");
+  dotknijWykresu();
+  od = pokazWykres("GODZINNY", 1000);
+  sprawdz(!wykresWidoczny() && ekranMa("Za malo danych na wykres (jeden pomiar)\nSprobuj za kilka minut"), "napis: \"Za malo danych na wykres (jeden pomiar) / Sprobuj za kilka minut\"");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=brak_danych tryb=godz sposob=centrala przyczyna=za_malo", "", "", od), "log: zdarzenie=brak_danych przyczyna=za_malo");
+
+  printf("  centrala bez ustawionego zegara (30 pomiarow z czasem 0):\n");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = bezZegara; });
+  dotknijWykresu();
+  od = pokazWykres("DZIENNY", 1000);
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorca(bezZegara, 1), "ZEWN"), "wykres jest: 96 punktow, wartosci rosna od 0,0");
+  sprawdz(ekranMa("czas nieznany (zegar centrali nieustawiony)"), "podpis: \"czas nieznany (zegar centrali nieustawiony)\"");
+  zrzutEkranu("bez_zegara");
+
+  printf("  centrali zabraklo pamieci na odpowiedz (HTTP 503):\n");
+  ustawC(0, [](Centrala& c) { c.panelHistKod = 503; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 1000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrali zabraklo pamieci na wykres (HTTP 503)\nSprobuj ponownie"), "napis: \"Centrali zabraklo pamieci na wykres (HTTP 503) / Sprobuj ponownie\"");
+  sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=http kod=503", "", "", od), "log: zdarzenie=blad przyczyna=http kod=503");
+  sprawdz(stanC(0).nHistKrotka == 0 && stanC(0).nHistDluga == 0, "panel NIE siega wtedy po caly CSV (centrala zna adres, tylko nie ma pamieci)");
+  ustawC(0, [](Centrala& c) { c.panelHistKod = 200; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 1000);
+  sprawdz(wykresWidoczny(), "ponowna proba, gdy centrala ma juz pamiec: wykres");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal");
+}
+
+// --- 30 --------------------------------------------------------------------
+// Odpowiedz centrali nie dochodzi cala albo wcale. Panel ma to nazwac po
+// imieniu, nie rysowac wykresu z kawalka i ani na chwile nie przestac
+// obslugiwac ekranu i /api/status.
+void scenariuszWykresyBledySieci() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  const std::string dzien = wzorzec("dzien.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = dzien; });
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+
+  printf("  polaczenie zerwane w polowie odpowiedzi (przyszlo 9000 z 18207 B):\n");
+  ustawC(0, [](Centrala& c) { c.histUrwijPo = 9000; });
+  size_t od = pokazWykres(nullptr, 1000);
+  sprawdz(!wykresWidoczny() && ekranMa("Odpowiedz centrali urwala sie w polowie\nSprobuj ponownie"), "napis: \"Odpowiedz centrali urwala sie w polowie / Sprobuj ponownie\" - wykresu z kawalka nie ma");
+  sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=urwana kod=200", "", "", od), "log: zdarzenie=blad przyczyna=urwana kod=200");
+  info("%s", liniaLogu("tag=WYKRESY lvl=WARN zdarzenie=blad", od).c_str());
+
+  printf("  to samo, gdy centrala nie podaje dlugosci odpowiedzi (brak Content-Length):\n");
+  ustawC(0, [](Centrala& c) { c.histBezDlugosci = true; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 1000);
+  sprawdz(!wykresWidoczny() && ekranMa("Odpowiedz centrali urwala sie w polowie\nSprobuj ponownie"), "tez rozpoznane (brakuje linii \"#koniec\")");
+  ustawC(0, [](Centrala& c) { c.histUrwijPo = -1; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 1000);
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "cala odpowiedz bez Content-Length: wykres, 96 punktow");
+  ustawC(0, [](Centrala& c) { c.histBezDlugosci = false; c.histCrlf = true; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 1000);
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "linie zakonczone CR LF: wykres, 96 punktow");
+  ustawC(0, [](Centrala& c) { c.histCrlf = false; });
+
+  printf("  centrala milknie w polowie odpowiedzi (polaczenie otwarte, dane nie plyna):\n");
+  ustawC(0, [](Centrala& c) { c.histZamilknijPo = 9000; });
+  dotknijWykresu();
+  int statusPrzed = stanC(0).nStatus;
+  od = pokazWykres(nullptr, 3000);
+  const lv_obj_t* postep = znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n");
+  const std::string postepTekst = postep ? std::string(lv_label_get_text(postep)).substr(31) : "(brak napisu)";
+  info("druga linia napisu: \"%s\"", postepTekst.c_str());
+  sprawdz(!wykresWidoczny() && postepTekst.find("wierszy (9 kB)") != std::string::npos, "po 3 s pod \"Ladowanie danych z centrali...\" widac, ile doszlo (9 kB)");
+  zrzutEkranu("w_trakcie_pobierania");
+  biegnij(4000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie odpowiedziala w czasie\nSprobuj ponownie"), "po 6 s ciszy: \"Centrala nie odpowiedziala w czasie / Sprobuj ponownie\"");
+  sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=limit_czasu kod=200 etap=p", "", "", od), "log: przyczyna=limit_czasu etap=p");
+  sprawdz(stanC(0).nStatus >= statusPrzed + 3, "przez te 7 s panel dalej odpytywal /api/status (w v1.2.2 petla stala)");
+  ustawC(0, [](Centrala& c) { c.histZamilknijPo = -1; });
+
+  printf("  centrala przyjmuje zapytanie i nie odpowiada wcale:\n");
+  ustawC(0, [](Centrala& c) { c.histZwlokaMs = 60000; });
+  dotknijWykresu();
+  statusPrzed = stanC(0).nStatus;
+  od = pokazWykres(nullptr, 7000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie odpowiedziala w czasie\nSprobuj ponownie"), "po 6 s: \"Centrala nie odpowiedziala w czasie / Sprobuj ponownie\"");
+  sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=limit_czasu kod=0 etap=h", "", "", od), "log: przyczyna=limit_czasu kod=0 etap=h");
+  sprawdz(stanC(0).nStatus >= statusPrzed + 3, "/api/status odpytywany przez caly ten czas");
+  ustawC(0, [](Centrala& c) { c.histZwlokaMs = 0; });
+
+  printf("  pod adresami historii odpowiada cos, co nie jest centrala pieca (strona HTML):\n");
+  ustawC(0, [](Centrala& c) { c.histHtml = true; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 2000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala odpowiedziala czyms innym niz dane wykresu"), "napis: \"Centrala odpowiedziala czyms innym niz dane wykresu\" (v1.2.2 rysowal z takiej strony wykres - patrz wykresy_stary_csv)");
+  zrzutEkranu("zla_odpowiedz");
+  sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=panel przyczyna=zla_odpowiedz", "", "", od), "log: przyczyna=zla_odpowiedz");
+  ustawC(0, [](Centrala& c) { c.histHtml = false; });
+
+  printf("  po wszystkich bledach - zwykla odpowiedz:\n");
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 1000);
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "wykres, 96 punktow - zaden blad nie zostawil sladu");
+
+  printf("  brak WiFi (centrala wylaczona):\n");
+  dotknijWykresu();
+  g_atrapa.eter.clear();
+  biegnij(4000);
+  sprawdz(WiFi.status() != WL_CONNECTED, "panel wie, ze nie ma polaczenia WiFi");
+  const int zapytanPrzed = stanC(0).nPanelHist;
+  od = pokazWykres(nullptr, 300);
+  sprawdz(!wykresWidoczny() && ekranMa("Brak polaczenia z siecia centrali (WiFi)"), "napis od razu: \"Brak polaczenia z siecia centrali (WiFi)\"");
+  sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=brak_wifi", "", "", od) && stanC(0).nPanelHist == zapytanPrzed,
+          "log: przyczyna=brak_wifi; zadne zapytanie nie wyszlo");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal w calym scenariuszu");
+}
+
+// --- 31 --------------------------------------------------------------------
+// Wyjscie z wykresu w trakcie pobierania i pobieranie, ktore nie miesci sie w
+// limicie czasu. Starsza centrala i wolne lacze, zeby pobieranie trwalo.
+void scenariuszWykresyWyjscieWTrakcie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; c.histBajtowNaMs = 15.0; });   // 15 kB/s: 352 kB szloby ok. 23 s
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+
+  printf("  dotkniecie ekranu w trakcie pobierania:\n");
+  size_t od = pokazWykres("TYGODNIOWY", 2000);
+  const lv_obj_t* napis = znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n");
+  const std::string postep1 = napis ? lv_label_get_text(napis) : "";
+  biegnij(2000);
+  napis = znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n");
+  const std::string postep2 = napis ? lv_label_get_text(napis) : "";
+  info("po 2 s: \"%s\", po 4 s: \"%s\"", postep1.substr(postep1.find('\n') + 1).c_str(), postep2.substr(postep2.find('\n') + 1).c_str());
+  sprawdz(!postep1.empty() && !postep2.empty() && postep1 != postep2, "napis \"Ladowanie...\" pokazuje rosnaca liczbe wierszy i kB");
+  sprawdz(dotknijWykresu() && ekranMa("POKAZ WYKRES"), "dotkniecie dziala od razu: powrot do wyboru serii");
+  biegnij(200);
+  Centrala c = stanC(0);
+  sprawdz(logMa("tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu tryb=tydz", "", "", od), "log: zdarzenie=przerwano powod=wyjscie_z_ekranu");
+  // nHistWyslanych == 1 to odpowiedz 302 na /api/history/panel; CSV nie zostal wyslany do konca.
+  sprawdz(c.nHistDluga == 1 && c.nHistPorzuconych == 1 && c.nHistWyslanych == 1, "panel zamknal polaczenie z /api/history/long - nie pobiera dalej w tle");
+
+  printf("  zaraz potem inny zakres:\n");
+  ustawC(0, [](Centrala& x) { x.histBajtowNaMs = 0; });
+  od = pokazWykres("GODZINNY", 3000);
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorcaV122("godz_zewn"), "ZEWN"), "wykres godzinny poprawny - nic z przerwanego pobierania do niego nie trafilo");
+
+  printf("  pobieranie dluzsze niz limit 20 s (wolne lacze 15 kB/s, 352 kB):\n");
+  ustawC(0, [](Centrala& x) { x.histBajtowNaMs = 15.0; });
+  dotknijWykresu();
+  const int statusPrzed = stanC(0).nStatus;
+  od = pokazWykres("TYGODNIOWY", 19000);
+  sprawdz(!wykresWidoczny() && znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n") != nullptr, "po 19 s jeszcze trwa");
+  biegnij(2000);
+  sprawdz(wykresWidoczny(), "po 21 s jest wykres z tego, co doszlo");
+  bool dopisek = false;
+  for (const std::string& s : napisyEkranu()) if (s.find("   NIEPELNE") != std::string::npos) { dopisek = true; info("podpis: \"%s\"", s.c_str()); }
+  sprawdz(dopisek, "podpis pod wykresem konczy sie slowem NIEPELNE (v1.2.2 rysowal kawalek bez slowa)");
+  sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=pobrano_czesc tryb=tydz sposob=panel powod=limit_czasu etap=c", "", "", od), "log: zdarzenie=pobrano_czesc powod=limit_czasu etap=c");
+  info("%s", liniaLogu("tag=WYKRESY lvl=WARN zdarzenie=pobrano_czesc", od).c_str());
+  sprawdz(stanC(0).nStatus >= statusPrzed + 8, "przez 21 s pobierania panel dalej odpytywal /api/status");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog (15 s) nie zadzialal, choc pobieranie trwalo 20 s");
+  sprawdz(lv_scr_act() != drugiPulpit(), "ekran Wykresy nie zamknal sie sam w trakcie");
+  biegnij(31000);
+  sprawdz(!wykresWidoczny(), "po 30 s bez dotyku wykres sie zamyka (jak dotad)");
+}
+
+// --- 32 --------------------------------------------------------------------
+// Alarm w trakcie pobierania danych do wykresu. W v1.2.2 petla stala do konca
+// pobierania, wiec panel dowiadywal sie o alarmie dopiero potem.
+void scenariuszWykresyAlarmWTrakcie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; c.histBajtowNaMs = 15.0; });
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+  const size_t od = pokazWykres("TYGODNIOWY", 2000);
+  sprawdz(znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n") != nullptr && pamiec::zyweBuforyWykresow() == 8, "pobieranie trwa (8 buforow punktow)");
+  ustaw(0, [](Centrala& c) { c.tOgrz = 134.0; c.alarmOgrzewanie = true; });
+  biegnij(3000);
+  sprawdz(ekranMa("PRZEGRZANIE"), "ekran alarmu pojawia sie w ciagu 3 s, mimo trwajacego pobierania");
+  sprawdz(pamiec::zyweBuforyWykresow() == 0, "bufory wykresow zwolnione");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu", "", "", od), "log: zdarzenie=przerwano powod=wyjscie_z_ekranu");
+  biegnij(500);
+  sprawdz(stanC(0).nHistPorzuconych == 1, "polaczenie z historia zamkniete");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal");
+}
+
+// --- 33 --------------------------------------------------------------------
+// Stary CSV podany ekranowi Wykresy WPROST, bez sieci - ta sama droga, ktora
+// main.cpp podaje linie odebrane od centrali. Dziala na zrodlach od v1.1.0.
+//   - na biezacych zrodlach: sprawdza, ze wynik jest taki jak w v1.2.2;
+//   - na zrodlach v1.2.2 w trybie obserwacji: ZAPISUJE punkty do pliku
+//     punkty.txt w katalogu wynikow - tak powstal wzorce_v122/punkty.txt
+//     (polecenie: wzorce_v122/CZYTAJ.txt).
+std::string g_csvDoPodania;
+template <typename T> struct ArgumentCb;
+template <typename A> struct ArgumentCb<void (*)(A)> { typedef A typ; };
+void podajCsvWprost(ArgumentCb<WykresyFetchCb>::typ arg) {
+#ifdef LVGL_WYKRESY_PUNKTOW
+  const bool dlugi = (arg == LVGL_WYKRESY_TRYB_TYDZIEN);
+#else
+  const bool dlugi = arg;
+#endif
+  lvgl_dashboard_poc_wykresy_strumien_start(dlugi);
+  uint32_t linii = 0;
+  for (const std::string& linia : podzielTekst(g_csvDoPodania, '\n')) {
+    if (linia.empty()) continue;
+    lvgl_dashboard_poc_wykresy_strumien_linia(linia.c_str());
+    linii++;
+  }
+#ifdef LVGL_WYKRESY_PUNKTOW
+  lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, linii, LVGL_WYKRESY_OK, 0);
+#else
+  lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, linii);
+#endif
+}
+
+void scenariuszWykresyStaryCsv() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(3000);
+  { LiczFirmware licz; lvgl_dashboard_poc_ustaw_callback_wykresy_fetch(podajCsvWprost); }
+  sprawdz(otworzWykresy(), "ekran Wykresy otwarty");
+  kliknij("ZEWN");
+  // nieCsv: to nie jest historia. v1.2.2 rysowal z tego wykres (co narysowal,
+  // zapisuje wzorzec); biezace zrodla maja pokazac napis.
+  struct Przypadek { const char* nazwa; const char* zakres; std::string csv; bool nieCsv; };
+  const Przypadek przypadki[] = {
+      {"dzien_zewn", "DZIENNY", csvKrotki(1440, -1, 0), false},
+      {"godz_zewn", "GODZINNY", csvKrotki(1440, -1, 0), false},
+      {"tydz_zewn", "TYGODNIOWY", csvDlugi(2000), false},
+      {"dzien_przerwa_zewn", "DZIENNY", csvKrotki(1440, 700, 30), false},
+      {"dzien_html_zewn", "DZIENNY", stronaHtml(), true},
+  };
+  std::string zapis;
+  bool pierwszy = true;
+  for (const Przypadek& p : przypadki) {
+    if (!pierwszy) dotknijWykresu();
+    pierwszy = false;
+    g_csvDoPodania = p.csv;
+    kliknij(p.zakres);
+    kliknij("POKAZ WYKRES");
+    biegnij(200);
+    const std::vector<int> punkty = punktyWykresu(0);
+    zapis += std::string(p.nazwa) + ": " + punktyTekst(punkty) + "\n";
+    info("%s: %d punktow na %zu pozycjach", p.nazwa, ilePunktow(punkty), punkty.size());
+    if (g_obserwacje) continue;
+    if (!p.nieCsv) {
+      sprawdz(tesamePunkty(punkty, zWzorcaV122(p.nazwa), p.nazwa), (std::string(p.nazwa) + ": punkty takie same jak z v1.2.2").c_str());
+      continue;
+    }
+    // Strona HTML zamiast CSV. Co z niej narysowal v1.2.2, mowi wzorzec
+    // (wartosci x10: kazda linia tekstu strony stala sie punktem).
+    const std::vector<int> stare = zWzorcaV122(p.nazwa);
+    info("%s: v1.2.2 narysowal z tej strony %d punktow: %s", p.nazwa, ilePunktow(stare), punktyTekst(std::vector<int>(stare.begin(), stare.begin() + std::min<size_t>(stare.size(), 10))).c_str());
+    sprawdz(ilePunktow(stare) > 0, (std::string(p.nazwa) + ": (wzorzec) v1.2.2 rysowal ze strony HTML wykres").c_str());
+    sprawdz(!wykresWidoczny() && ekranMa("Centrala odpowiedziala czyms innym niz dane wykresu"),
+            (std::string(p.nazwa) + ": teraz napis \"Centrala odpowiedziala czyms innym niz dane wykresu\", wykresu nie ma").c_str());
+  }
+  if (!g_katalogWyjscia.empty()) {
+    const std::string sciezka = g_katalogWyjscia + "/punkty.txt";
+    if (FILE* f = fopen(sciezka.c_str(), "wb")) { fwrite(zapis.data(), 1, zapis.size(), f); fclose(f); info("punkty zapisane: %s", sciezka.c_str()); }
+  }
+}
+
 #ifdef POMIAR_STERTY
 // --- pomiar pamieci (tylko pomiar_pamieci.sh) -------------------------------
 // 32-bitowy model firmware'u z licznikiem sterty. "Na ESP32" = tyle zajmuja te
@@ -1810,6 +2804,45 @@ void scenariuszPomiarPamieci() {
       biegnij(32000);
     }
     migawka("wykresy_3_razy");
+
+    // Pobranie danych do wykresu: ile pamieci bierze samo pobieranie i
+    // rysowanie. Najpierw gotowe punkty z centrali 3.58.4, potem to samo po
+    // staremu (caly CSV, 352 kB) ze starszej centrali.
+    const std::string dzien = wzorzec("dzien.txt");
+    ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = dzien; });
+    { LiczFirmware licz; lv_scr_load(drugi); }
+    kliknij("WYKRESY");
+    biegnij(300);
+    kliknij("ZEWN");
+    kliknij("BOJLER");
+    migawka("wykres_przed");
+    kliknij("POKAZ WYKRES");
+    biegnij(1000);
+    printf("POMIAR-INFO wykres_nowy widoczny=%d punktow=%d\n", wykresWidoczny() ? 1 : 0, ilePunktow(punktyWykresu(0)));
+    migawka("wykres_nowy");
+    dotknijWykresu();
+    ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; });
+    kliknij("TYGODNIOWY");
+    migawka("wykres_stary_przed");
+    kliknij("POKAZ WYKRES");
+    biegnij(3000);
+    printf("POMIAR-INFO wykres_stary widoczny=%d punktow=%d\n", wykresWidoczny() ? 1 : 0, ilePunktow(punktyWykresu(0)));
+    migawka("wykres_stary");
+    biegnij(60000);   // bezczynnosc zamyka wykres, ekran Wykresy i drugi pulpit
+    migawka("wykres_po_zamknieciu");
+    // Jeszcze piec wykresow (na zmiane oba sposoby): kolejne nie moga zostawiac pamieci.
+    for (int i = 0; i < 5; i++) {
+      ustawC(0, [i](Centrala& c) { c.wersjaHistorii = (i % 2 == 0) ? HIST_PANEL : HIST_302; });
+      { LiczFirmware licz; lv_scr_load(drugi); }
+      kliknij("WYKRESY");
+      biegnij(300);
+      kliknij(i % 2 == 0 ? "DZIENNY" : "TYGODNIOWY");
+      kliknij("POKAZ WYKRES");
+      biegnij(3000);
+      printf("POMIAR-INFO wykres_powtorka_%d widoczny=%d punktow=%d\n", i, wykresWidoczny() ? 1 : 0, ilePunktow(punktyWykresu(0)));
+      biegnij(60000);
+    }
+    migawka("wykres_powtorki");
   }
 }
 #endif
@@ -1846,6 +2879,14 @@ const Scenariusz SCENARIUSZE[] = {
     {"brak_pamieci_odbior", "panel nie ma pamieci nawet na odebranie odpowiedzi: to nie jest \"zla odpowiedz\" (v1.2.2)", scenariuszBrakPamieciOdbior},
     {"brak_pamieci_lvgl", "LVGL nie dostaje pamieci w trakcie rysowania: restart od razu, z powodem (v1.2.2)", scenariuszBrakPamieciLvgl},
     {"wykresy_pamiec", "bufory ekranu Wykresy istnieja tylko wtedy, gdy ekran jest otwarty (v1.2.2)", scenariuszWykresyPamiec},
+    {"wykresy_centrala_liczy", "wykres z gotowych punktow centrali 3.58.4: GET /api/history/panel (v1.3.0)", scenariuszWykresyCentralaLiczy},
+    {"wykresy_stara_centrala", "centrala <= 3.58.3 bez /api/history/panel: wykres po staremu, taki sam jak w v1.2.2 (v1.3.0)", scenariuszWykresyStaraCentrala},
+    {"wykresy_przerwy", "przerwa w pracy centrali i czujnik bez odczytu: linia przerwana, nie dociagnieta (v1.3.0)", scenariuszWykresyPrzerwy},
+    {"wykresy_brak_danych", "centrala bez historii, jeden pomiar, bez zegara, brak pamieci centrali (v1.3.0)", scenariuszWykresyBrakDanych},
+    {"wykresy_bledy_sieci", "odpowiedz urwana, cisza, brak odpowiedzi, nie-centrala, brak WiFi: napis z przyczyna (v1.3.0)", scenariuszWykresyBledySieci},
+    {"wykresy_wyjscie_w_trakcie", "wyjscie z wykresu w trakcie pobierania; pobieranie dluzsze niz limit (v1.3.0)", scenariuszWykresyWyjscieWTrakcie},
+    {"wykresy_alarm_w_trakcie", "alarm w trakcie pobierania danych do wykresu (v1.3.0)", scenariuszWykresyAlarmWTrakcie},
+    {"wykresy_stary_csv", "stary CSV podany ekranowi wprost: te same punkty co w v1.2.2 (v1.3.0)", scenariuszWykresyStaryCsv},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},
 #endif

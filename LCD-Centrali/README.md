@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.2.2
+# Panel LCD (wyświetlacz CO) — firmware v1.3.0
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip`.
@@ -13,10 +13,113 @@ centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip`.
    Bez tego pliku kompilacja zatrzymuje się z komunikatem, co zrobić.
    `secrets.h` jest w `.gitignore`.
 2. Reszta bez zmian: PlatformIO → Upload (`pio run -e esp32dev -t upload`).
-   `platformio.ini`, `partitions.csv` i `include/lv_conf.h` są takie same jak
-   w v1.1.0.
+   `platformio.ini` i `partitions.csv` są takie same jak w v1.1.0;
+   `include/lv_conf.h` zmienił się w v1.2.2 (obsługa błędu biblioteki ekranu).
+
+**Z v1.2.2 na v1.3.0** zmieniają się cztery pliki w `src/`: `main.cpp`,
+`dashboard_lvgl_poc.cpp`, `dashboard_lvgl_poc.h`, `siec_nieblokujaca_LCD.h`.
+Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.3.0
+
+**Ekran Wykresy: punkty wykresu liczy centrala, a pobieranie danych nie
+zatrzymuje panelu.**
+
+Powód: prośba „jak wybiorę wykresy, to centrala ma pobrać dane z Firebase albo
+lokalnie z pliku centrali i wysłać do panelu LCD”.
+
+Po dotknięciu `POKAZ WYKRES` panel pyta centralę o gotowe punkty:
+
+```
+GET /api/history/panel?tryb=godz|dzien|tydz&pkt=96
+```
+
+Centrala z firmware **3.58.4** (paczka `firmware-patch/v3.58.4-panel-wykresy/`
+w tym repozytorium) sama wybiera zakres — ostatnia godzina, 24 godziny albo
+7 dni — dzieli go na 96 równych odcinków czasu i odsyła najwyżej 96 wierszy
+(18–20 kB). Bierze je ze swojej lokalnej historii: tej, z której rysuje
+strona WWW centrali i którą centrala dopisuje do plików `/hist_short.csv`
+i `/hist_long.csv` na swoim flashu. **Firebase nie jest używany** — centrala
+ma te dane u siebie, a Firebase wymagałby internetu i pobierania ok. 270 kB
+na każdą dobę.
+
+Centrala starsza niż 3.58.4 odpowiada na ten adres przekierowaniem (HTTP 302).
+Panel pobiera wtedy cały CSV historii po staremu i rysuje z niego to samo co
+v1.2.2. **Kolejność wgrywania panelu i centrali jest więc dowolna**, a sam
+panel v1.3.0 działa też ze starą centralą.
+
+| | v1.2.2 | v1.3.0 + centrala 3.58.4 | v1.3.0 + starsza centrala |
+|---|---|---|---|
+| Co panel pobiera | cały CSV historii: do ok. 100 kB (godzina, dzień), do ok. 1,8 MB (tydzień) | gotowe punkty, 18–20 kB | cały CSV, jak v1.2.2 |
+| Kto liczy punkty wykresu | panel | centrala | panel; punkty te same co w v1.2.2 |
+| Ekran i dotyk w czasie pobierania | stoją | działają | działają |
+| Odpytywanie `/api/status`, ekran alarmu | czekają na koniec pobierania | działają | działają |
+| Limity czasu | 8 s na odczyt; czego panel nie zdążył pobrać, tego na wykresie nie ma, bez informacji | 1,5 s na połączenie, 6 s ciszy, 20 s na całość; niepełna odpowiedź daje komunikat, nie wykres | te same limity; niepełne dane dają wykres z dopiskiem `NIEPELNE` |
+| Oś czasu | punkty wg numeru wiersza historii | równa: każdy punkt to taki sam odcinek czasu | jak v1.2.2 |
+| Zakres „Godzinny” | 60 punktów na 62% szerokości wykresu | 96 punktów na całej szerokości | jak v1.2.2 |
+| Przerwa w pracy centrali | przerwa w linii na jednym punkcie | przerwa w linii o szerokości tej przerwy | jak v1.2.2 |
+| Podpis pod wykresem | etykiety pierwszego i ostatniego punktu | zakres podany przez centralę, z datą: `12.11 13:01  -  13.11 13:00` | jak v1.2.2 |
+| Gdy wykresu nie ma | zawsze `Brak danych (WiFi/centrala niedostepna)` | napis z przyczyną | napis z przyczyną |
+| Wpis w logu | brak | linia `tag=WYKRESY` z wynikiem | to samo i `zdarzenie=stara_centrala` |
+| Wyjście z wykresu w trakcie pobierania | niemożliwe, ekran stoi | zamyka połączenie | zamyka połączenie |
+
+Kolumna „v1.2.2” opisuje jej kod. Na PC porównane jest rysowanie: z tego
+samego CSV v1.3.0 rysuje punkt w punkt to samo co v1.2.2
+(`testy_host/wzorce_v122/`). Zachowania sieci v1.2.2 testy na PC nie
+odtwarzają.
+
+Poza tym:
+
+- pod napisem `Ladowanie danych z centrali...` widać, ile już doszło
+  (`47 wierszy (9 kB)`);
+- czujnik, który przez część zakresu nie dawał odczytu, ma w tym miejscu
+  przerwę w swojej linii; pozostałe linie rysują się dalej;
+- odpowiedź, która nie jest historią (np. strona logowania obcej sieci), daje
+  napis. Kod v1.2.2 rysował z takiej strony wykres;
+- usunięte zostało ostatnie blokujące pobieranie w panelu
+  (`wykresyFetchWykonaj()`); `HTTPClient` służy już tylko aktualizacji OTA.
+
+Zrzuty z testów na PC (nie zdjęcia płytki): `ekran_wykres_dzien.png` — wykres
+dzienny z punktów centrali, `ekran_wykres_tydzien_przerwa.png` — tydzień,
+w którym centrala nie pracowała przez 1,5 doby, `ekran_wykres_brak_danych.png`
+— najdłuższy z napisów pokazywanych zamiast wykresu.
+
+### Co wgrać
+
+1. **Panel:** te źródła, jak zwykle (`secrets.h` bez zmian).
+2. **Centrala:** `firmware-patch/v3.58.4-panel-wykresy/` — zmienia się jeden
+   plik, `src/main_centrala.cpp`; instrukcja w `CZYTAJ-NAJPIERW.txt` tej
+   paczki. Plik powstał z wersji 3.58.3.
+
+Dopóki centrala ma starszy firmware, wykresy działają po staremu (trzecia
+kolumna tabeli).
+
+### Po wgraniu
+
+Otwórz WYKRESY, wybierz serie, dotknij `POKAZ WYKRES`. W logu panelu pojawi
+się jedna z dwóch par linii:
+
+```
+tag=WYKRESY zdarzenie=start tryb=dzien ram=…
+tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440 linii=98 ucietych_linii=0 bajtow=18207 ms=… ram=… ram_min=…
+```
+
+albo, gdy centrala ma jeszcze starszy firmware:
+
+```
+tag=WYKRESY zdarzenie=stara_centrala kod=302 msg="centrala nie zna /api/history/panel (firmware starszy niz 3.58.4) - pobieram cala historie po staremu"
+tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=panel punktow=… linii=1440 … bajtow=… ms=… ram=… ram_min=…
+```
+
+`sposob=centrala` znaczy, że punkty policzyła centrala. **Przyślij te linie**
+z pierwszych kilku wykresów (dzień, godzina, tydzień): `ms=` to czas
+pobierania na płytce, a `ram_min=` najmniejszy wolny RAM od startu. Tych dwóch
+liczb testy na PC nie dają.
+
+Centrala 3.58.4 pisze przy każdej takiej prośbie w swoim logu:
+`tag=HISTORIA lvl=INFO msg="PANEL_WYKRES tryb=dzien pkt=96 wierszy=1440 punktow=96 przerw=0 bajtow=18207"`.
 
 ## Co zmienia v1.2.2
 
@@ -100,7 +203,7 @@ To krótki log. Pracy przez wiele godzin jeszcze nie pokazuje.
 Powód: zgłoszenie z 2026-11-12 — panel z v1.2.0 nie pokazywał świeżych
 danych, aż został zresetowany. Gdy powstawała v1.2.1, był tylko log centrali
 i przyczyna nie była znana; pokazał ją dopiero log panelu (v1.2.2 wyżej).
-Wszystko, co poniżej, jest także w v1.2.2.
+Wszystko, co poniżej, jest także w v1.2.2 i v1.3.0.
 
 Gdy panel nie ma danych z centrali, sam robi to, co dotąd pomagało:
 
@@ -227,6 +330,38 @@ alarmu (ten sam napis nad przyciskami; od v1.2.1).
 
 Kafelek z `-1°C` znaczy: centrala nie ma odczytu z tego czujnika.
 
+### Ekran Wykresy (v1.3.0)
+
+Zamiast wykresu może stać jeden z napisów:
+
+| Napis | Co się stało |
+|---|---|
+| `Ladowanie danych z centrali...` i pod spodem `47 wierszy (9 kB)` | pobieranie trwa. Z centralą 3.58.4 zwykle nie zdąży się pokazać; ze starszą widać, że dane płyną |
+| `Centrala nie ma jeszcze danych z tego zakresu (pierwszy pomiar zapisuje minute po starcie)` | centrala odpowiedziała, ale jej historia jest pusta |
+| …z dopiskiem `Zapis historii na flash jest w centrali wylaczony: po jej restarcie historia zaczyna sie od zera` | jak wyżej, a centrala trzyma historię tylko w pamięci (przełącznik na jej stronie WWW) |
+| `Za malo danych na wykres (jeden pomiar)` | centrala ma dopiero jeden pomiar; linia potrzebuje dwóch |
+| `Brak polaczenia z siecia centrali (WiFi)` | panel nie jest połączony z siecią centrali; zapytanie nie wyszło |
+| `Centrala nie przyjela polaczenia` | WiFi jest, ale nie udało się połączyć z centralą |
+| `Centrala nie odpowiedziala w czasie` | 6 s bez odpowiedzi albo bez dalszych danych |
+| `Odpowiedz centrali urwala sie w polowie` | połączenie zerwane przed końcem odpowiedzi; wykres z części punktów nie jest rysowany |
+| `Centrali zabraklo pamieci na wykres (HTTP 503)` | centrala 3.58.4 nie dostała pamięci na policzenie punktów |
+| `Centrala odpowiedziala bledem HTTP 500` | inny błąd po stronie centrali, z kodem |
+| `Centrala odpowiedziala czyms innym niz dane wykresu` | pod adresem centrali odpowiada coś, co nie zwraca historii |
+| `Panelowi zabraklo pamieci na wykres`, `Brak pamieci na wykres (zamknij ekran Wykresy i otworz ponownie)` | brak RAM-u w panelu |
+
+Przy każdym z nich w logu jest linia `tag=WYKRESY` z tą samą przyczyną
+i szczegółami (niżej).
+
+Podpis pod wykresem:
+
+- `12.11 13:01  -  13.11 13:00` — zakres osi czasu podany przez centralę
+  (lewa i prawa krawędź wykresu), w czasie lokalnym centrali;
+- `czas nieznany (zegar centrali nieustawiony)` — centrala nie zna godziny;
+  punkty są w dobrej kolejności, bez dat;
+- czerwony dopisek `NIEPELNE` (tylko ze starszą centralą) — cały CSV nie
+  doszedł w 20 s albo połączenie się urwało; wykres pokazuje najstarszą część
+  danych.
+
 ## Jak czytać log
 
 ```
@@ -319,6 +454,50 @@ tag=PANEL zdarzenie=autorestart_zgloszony powod=auto_wifi_r201_n1_t45_h61_b31_en
   (`-` = nic nie brakuje), `wymuszen`, `rozl_kod`, `rozl_n` (rozłączenia WiFi
   od startu), `autorestartow` (od włączenia zasilania).
 
+Linie dodane w v1.3.0 (ekran Wykresy). Przykłady z testów na PC — `ms=`
+i `ram=` na płytce będą inne:
+
+```
+tag=WYKRESY zdarzenie=start tryb=dzien ram=52000
+tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440 linii=98 ucietych_linii=0 bajtow=18207 ms=25 ram=52000 ram_min=45000
+tag=WYKRESY zdarzenie=stara_centrala kod=302 msg="centrala nie zna /api/history/panel (firmware starszy niz 3.58.4) - pobieram cala historie po staremu"
+tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=panel punktow=91 przerw=0 wierszy_centrali=-1 linii=1440 ucietych_linii=0 bajtow=99860 ms=135 ram=52000 ram_min=45000
+tag=WYKRESY lvl=WARN zdarzenie=pobrano_czesc tryb=tydz sposob=panel powod=limit_czasu etap=c punktow=55 linii=1701 bajtow=299837 z_zapowiedzianych=352084 ms=20010 msg="limit czasu calosci"
+tag=WYKRESY zdarzenie=brak_danych tryb=dzien sposob=centrala przyczyna=pusto punktow=0 wierszy_centrali=0 linii=2 bajtow=119 ms=5
+tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=limit_czasu kod=200 etap=p errno=0 punktow=0 linii=47 bajtow=9000 ms=6020 ram=52000 ram_blok=40000 msg="centrala przestala wysylac w trakcie"
+tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu tryb=tydz po_ms=2730 linii=228
+```
+
+- `zdarzenie=start` — dotknięto `POKAZ WYKRES`; `tryb=godz|dzien|tydz`.
+- `zdarzenie=pobrano` — wykres jest na ekranie.
+  - `sposob=centrala` — punkty policzyła centrala (3.58.4);
+    `sposob=panel` — panel pobrał cały CSV i policzył je sam (starsza centrala).
+  - `punktow`, `przerw` — ile punktów z danymi i ile przerw ma wykres;
+  - `wierszy_centrali` — z ilu wierszy swojej historii centrala policzyła
+    punkty (`-1` przy starym sposobie);
+  - `linii`, `bajtow` — ile linii i bajtów treści przyszło;
+    `ucietych_linii` — linie dłuższe niż bufor panelu (ma być 0);
+  - `ms` — czas od dotknięcia do wykresu; `ram`, `ram_min` — wolny RAM po
+    wszystkim i jego minimum od startu panelu.
+- `zdarzenie=stara_centrala kod=…` — centrala nie zna nowego adresu
+  (`302` to zwykła odpowiedź firmware'u do 3.58.3); panel pobiera po staremu.
+- `zdarzenie=pobrano_czesc` — tylko stary sposób: wykres z części danych,
+  z dopiskiem `NIEPELNE`; `powod=limit_czasu|urwana`,
+  `z_zapowiedzianych` — ile bajtów centrala zapowiedziała.
+- `zdarzenie=brak_danych przyczyna=pusto|za_malo` — centrala odpowiedziała
+  poprawnie, ale nie ma jeszcze z czego zrobić wykresu. To nie błąd.
+- `zdarzenie=blad przyczyna=…` — wykresu nie ma. Przyczyny:
+  `brak_wifi`, `brak_polaczenia`, `limit_czasu`, `http` (kod w `kod=`),
+  `urwana`, `zla_odpowiedz`, `brak_pamieci`. `etap=` mówi, w którym miejscu:
+  `g`, `n`, `a`, `l` nie udało się połączyć (`l` = minął limit 1,5 s),
+  `s` nie udało się wysłać zapytania, `h` połączono i brak odpowiedzi,
+  `p` odpowiedź zaczęła przychodzić i ustała, `c` limit 20 s na całość,
+  `r` błąd odczytu, `z` i `k` to nie była odpowiedź, którą panel umie czytać,
+  `-` sieć zadziałała (przyczyna jest w treści odpowiedzi albo w kodzie HTTP).
+  `errno=` to numer błędu gniazda (0 = brak).
+- `zdarzenie=przerwano powod=wyjscie_z_ekranu` — wyjście z wykresu przed
+  końcem pobierania; panel zamknął połączenie.
+
 **Powód samoczynnego restartu w logu centrali** (`tag=RESET-DIAG … powod=…`),
 na przykładzie `auto_wifi_r201_n1_t45_h61_b31_en118`:
 
@@ -334,26 +513,49 @@ na przykładzie `auto_wifi_r201_n1_t45_h61_b31_en118`:
 
 Którą wersję panel ma wgraną, też widać w logu centrali: gdy panel zgłosi
 się z inną wersją niż poprzednio (albo pierwszy raz po restarcie centrali),
-centrala pisze `tag=OTA-PANEL lvl=INFO zdarzenie=wersja_zgloszona wersja=v1.2.2`.
+centrala pisze `tag=OTA-PANEL lvl=INFO zdarzenie=wersja_zgloszona wersja=v1.3.0`.
 
 Stary, gęsty log `[NET-DIAG] start/wyslano/sukces` można przywrócić, ustawiając
 `SiecCfg::POZIOM_LOGU = 2` w `src/siec_nieblokujaca_LCD.h`.
 
 ## Co zostało sprawdzone, a co nie
 
+**v1.3.0 nie była budowana w PlatformIO ani uruchamiana na płytce.** Na
+płytce sprawdzona jest v1.2.2 (niżej). v1.3.0 różni się od niej ekranem
+Wykresy i sposobem pobierania jego danych; reszta kodu jest ta sama.
+
 - **Na PC, z atrapami sprzętu:** prawdziwy `main.cpp` i dashboard uruchomione
-  zwykłym `g++` przeciwko udawanym centralom — 26 scenariuszy, 252
-  sprawdzenia, plus 262 sprawdzenia jednostkowe; także pod AddressSanitizer
+  zwykłym `g++` przeciwko udawanym centralom — 34 scenariusze, 377
+  sprawdzeń, plus 262 sprawdzenia jednostkowe; także pod AddressSanitizer
   i UBSan. Udawana centrala wysyła ten sam JSON co firmware 3.58.3. W czterech
-  nowych scenariuszach panel nie dostaje pamięci na żądanie testu — tak, jak
+  scenariuszach z v1.2.2 panel nie dostaje pamięci na żądanie testu — tak, jak
   na płytce z logu z 2026-11-12.
+- **Ekran Wykresy (v1.3.0), na PC:** osiem scenariuszy `wykresy_*` — wykres
+  z punktów centrali w trzech zakresach, starsza centrala, przerwy w danych,
+  brak danych, odpowiedź urwana, cisza w połowie, brak odpowiedzi, odpowiedź,
+  która nie jest historią, brak WiFi, wyjście z ekranu i alarm w trakcie
+  pobierania, pobieranie dłuższe niż limit. Lista: `testy_host/README.md`.
+  - Odpowiedzi centrali w tych testach nie są pisane ręcznie: to pliki
+    wypisane przez kod centrali 3.58.4 (`testy_host/wzorce_centrali/`),
+    a testy centrali przy każdym uruchomieniu sprawdzają, że jej kod nadal
+    daje dokładnie te pliki.
+  - Rysowanie ze starego CSV jest porównane z v1.2.2 punkt w punkt
+    (`testy_host/wzorce_v122/`: dzień, godzina, tydzień, dzień z przerwą).
+  - Czasy z tych testów (np. `ms=25`) nie są pomiarem płytki — tam sieć
+    jest lokalna.
 - **Pamięć, na PC** (`testy_host/pomiar_pamieci.sh`): ten sam firmware
   zbudowany jako program 32-bitowy, z licznikiem każdego przydziału pamięci
-  i z narzutem sterty ESP32. Po starcie trzyma 129 244 B (v1.1.0: 170 324 B,
-  v1.2.0: 170 572 B), jedno odpytanie centrali bierze chwilowo 5 588 B
-  (v1.2.0: 7 412 B), przez 10 minut pracy nie przybywa nic. Zmiennych
-  statycznych przybyło 864 B. Skrypt pilnuje tych liczb limitami. Wszystkie
-  scenariusze przechodzą także w tym modelu.
+  i z narzutem sterty ESP32. Po starcie trzyma 129 244 B — tyle samo co
+  v1.2.2 (v1.1.0: 170 324 B, v1.2.0: 170 572 B); jedno odpytanie centrali
+  bierze chwilowo 5 588 B (v1.2.0: 7 412 B); przez 10 minut pracy nie
+  przybywa nic. Pobranie i narysowanie wykresu bierze chwilowo 2 884 B
+  (punkty z centrali) albo 5 616 B (cały CSV), razem z odpytaniem statusu,
+  które wypada w tym samym czasie; sam kod pobierania nie prosi o pamięć ze
+  sterty, a pięć wykresów z rzędu nie zostawia nic. Zmiennych statycznych
+  jest o 512 B więcej niż w v1.2.2 (bufor jednej linii odpowiedzi i stan
+  pobierania). Skrypt pilnuje tych liczb limitami. Wszystkie scenariusze
+  przechodzą także w tym modelu. Pamięci, którą na czas pobierania bierze
+  stos sieciowy płytki, ten pomiar nie widzi.
 - **Składnia i typy, prawdziwymi nagłówkami ESP32:** wszystkie trzy pliki
   `.cpp` bez błędów z arduino-esp32 3.0.7 i 3.3.8, ESP-IDF 5.1, TFT_eSPI,
   LVGL i ArduinoJson (`testy_host/sprawdz_naglowki_esp32.sh`; kompilator clang,
@@ -362,23 +564,29 @@ Stary, gęsty log `[NET-DIAG] start/wyslano/sukces` można przywrócić, ustawia
   i każdy ArduinoJson 7.x od 7.2.0 — którą wersję ma dany komputer, zależy od
   tego, kiedy PlatformIO je pobrał. Wszystko powyższe przechodzi z LVGL 8.3.11
   i ArduinoJson 7.2.1 oraz z najnowszymi wydaniami (LVGL 8.4.0, ArduinoJson
-  7.4.3). Pamięć po starcie wychodzi identyczna, odpytanie centrali o 140 B
-  mniejsze.
-- **Na płytce** (2026-11-12): firmware zbudowany w PlatformIO i wgrany przez
-  użytkownika. Panel startuje, zgłasza centrali `v1.2.2`, ma 49,7 kB wolnego
-  RAM-u po starcie i w ok. 40 s logu odczytał wszystkie odpowiedzi. Liczby:
-  „Wynik na płytce” wyżej.
-- **Nadal nie sprawdzone na płytce:** praca przez wiele godzin; zachowanie
-  przy prawdziwym braku pamięci i samoczynne restarty (w tym logu nie było do
-  nich powodu); ekran Wykresy, który bierze dodatkowe 18,6 kB; szybkość
-  rysowania (nie była mierzona). Ograniczenia testów na PC opisuje
-  `testy_host/README.md`.
+  7.4.3) — także v1.3.0. Pamięć po starcie wychodzi identyczna, odpytanie
+  centrali o 140 B mniejsze.
+- **Na płytce** (2026-11-12, **v1.2.2**): firmware zbudowany w PlatformIO
+  i wgrany przez użytkownika. Panel startuje, zgłasza centrali `v1.2.2`, ma
+  49,7 kB wolnego RAM-u po starcie i w ok. 40 s logu odczytał wszystkie
+  odpowiedzi. Liczby: „Wynik na płytce” wyżej.
+- **Nie sprawdzone na płytce, v1.3.0:** kompilacja w PlatformIO; ekran
+  Wykresy z prawdziwą centralą — ile trwa pobieranie (`ms=`), ile wolnego
+  RAM-u zostaje w jego trakcie (`ram_min=`; ekran Wykresy bierze 18,6 kB na
+  bufory punktów, a otwarte połączenie swoje), jak wypada przy słabym
+  sygnale; centrala 3.58.4 (jej plik też nie był kompilowany dla ESP32 —
+  opis w paczce centrali).
+- **Nadal nie sprawdzone na płytce, od v1.2.2:** praca przez wiele godzin;
+  zachowanie przy prawdziwym braku pamięci i samoczynne restarty (w logu
+  z 2026-11-12 nie było do nich powodu); szybkość rysowania (nie była
+  mierzona). Ograniczenia testów na PC opisuje `testy_host/README.md`.
 - **Szacunek a pomiar.** Pomiar na PC nie obejmuje pamięci, którą na płytce
   biorą WiFi i system; skrypt przyjmuje dla nich 55,9 kB, wyliczone z logu
   v1.2.0. Szacował 48,6 kB wolnego RAM-u po starcie, płytka pokazała 49,7 kB.
-  Firmware zajmuje o ok. 40 kB mniej niż v1.2.0: 41,3 kB mniej pamięci
+  v1.2.2 zajmuje o ok. 40 kB mniej niż v1.2.0: 41,3 kB mniej pamięci
   przydzielanej w trakcie pracy, 0,9 kB więcej zmiennych statycznych (bufor
-  logu).
+  logu). v1.3.0 dokłada 0,5 kB zmiennych statycznych, więc szacunek dla niej
+  to ok. 48,1 kB po starcie.
 - **Zachowanie radia jest w testach założeniem.** Scenariusz
   `martwe_polaczenie` (centrala restartuje się tak szybko, że panel dalej
   uważa się za połączony) pokazuje, że od v1.2.1 panel wychodzi z takiego

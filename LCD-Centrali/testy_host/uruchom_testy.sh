@@ -90,6 +90,10 @@ g++ -o "$BUD/symulator_panelu" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/
 echo "    OK"
 
 echo "[4] scenariusze (log Seriala i zrzuty ekranu: $WYNIKI)"
+# Ekran Wykresy: odpowiedzi centrali 3.58.4 zapisane jej kodem (wzorce_centrali/)
+# i punkty, ktore z tych samych starych CSV rysowal firmware v1.2.2 (wzorce_v122/).
+export LCD_WZORCE_CENTRALI="$TU/wzorce_centrali"
+export LCD_WZORCE_V122="$TU/wzorce_v122"
 OPCJE=(--wyjscie "$WYNIKI")
 if [ "$OBSERWACJE" = "1" ]; then OPCJE+=(--obserwacje); fi
 if [ -n "${1:-}" ]; then

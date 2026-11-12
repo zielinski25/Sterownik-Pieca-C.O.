@@ -1,0 +1,48 @@
+WZORCE ODPOWIEDZI CENTRALI 3.58.4 NA  GET /api/history/panel?tryb=...&pkt=96
+===========================================================================
+
+Co to jest
+----------
+Pliki .txt w tym katalogu to TRESC odpowiedzi, ktora centrala z firmware
+3.58.4 wysyla panelowi LCD, gdy ten prosi o punkty do wykresu. Nie sa pisane
+recznie: wypisal je kod centrali, wyciety z jej pliku main_centrala.cpp
+(blok [v3.58.4 PANEL-WYKRESY]) i uruchomiony na PC z przygotowana historia.
+
+Kto z nich korzysta
+-------------------
+- Testy panelu (../symulator_panelu.cpp, scenariusze wykresy_*): udawana
+  centrala odsyla panelowi dokladnie te pliki.
+- Testy centrali (firmware-patch/v3.58.4-panel-wykresy/tests/): przy kazdym
+  uruchomieniu wypisuja te same odpowiedzi od nowa i porownuja je z tymi
+  plikami bajt po bajcie.
+Dzieki temu panel jest testowany na tym, co centrala naprawde wysyla. Gdy
+ktos zmieni format po jednej stronie, testy drugiej strony to pokaza.
+
+Pliki
+-----
+  dzien.txt               pelna doba (1440 probek), ZEWN rosnie od -5,0 do 9,4
+  godz_ta_sama_doba.txt   ostatnia godzina tej samej doby
+  tydz_przerwa.txt        tydzien, w ktorym centrala byla wylaczona 1,5 doby
+                          (19 linii "#przerwa")
+  godz_bez_czujnika.txt   czujnik pokojowy bez odczytu przez pierwsze pol
+                          godziny (pola "nan" w jego kolumnach)
+  dzien_pusta.txt         centrala bez historii (sam naglowek i "#koniec 0")
+  dzien_pusta_bez_fs.txt  to samo, zapis historii na flash wylaczony (fs=0)
+  godz_jedna_probka.txt   jeden pomiar
+  dzien_bez_zegara.txt    centrala bez ustawionego zegara (od=0, "--:--")
+  tydz_pelne_bufory.txt   oba bufory centrali pelne (8000 + 1440 wierszy),
+                          najdluzsze mozliwe liczby - najwieksza odpowiedz
+
+Format (pelny opis: komentarz przy historiaPanelZbudujCsv() w centrali)
+-----------------------------------------------------------------------
+  #panel-hist 1 tryb=.. pkt=.. wierszy=.. od=.. do=.. krok_s=.. zrodlo=lokalne fs=.. od_etyk=.. do_etyk=..
+  <wiersz jak w /api/history/long: etykieta, 11 x (srednia,min,max), czas, pompa>
+  #przerwa        odcinek osi czasu bez danych
+  #koniec N       N = liczba wierszy i przerw powyzej
+
+Jak odswiezyc (tylko po SWIADOMEJ zmianie formatu odpowiedzi w centrali)
+------------------------------------------------------------------------
+  cd firmware-patch/v3.58.4-panel-wykresy/tests
+  AKTUALIZUJ_WZORCE=1 ./uruchom_testy.sh
+  cd ../../../LCD-Centrali/testy_host && ./uruchom_testy.sh
+Nie poprawiaj tych plikow recznie - testy centrali zglosza wtedy roznice.

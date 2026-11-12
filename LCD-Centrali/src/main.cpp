@@ -38,6 +38,87 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.3.0 - WYKRESY: PUNKTY LICZY CENTRALA, POBIERANIE NIE
+//   ZATRZYMUJE PANELU.
+//   Prosba uzytkownika: "jak wybiore wykresy, to centrala ma pobrac dane z
+//   Firebase albo lokalnie z pliku centrali i wyslac do panelu LCD".
+//   Jak bylo (v1.2.2, z czytania jej kodu): po "POKAZ WYKRES" panel sam
+//   pobieral od centrali CALY CSV historii (/api/history: do ok. 100 kB,
+//   /api/history/long: do ok. 1,8 MB) i sam sciskal go do 96 punktow.
+//   Pobieral blokujacym HTTPClient: do konca pobierania stal ekran, dotyk i
+//   odpytywanie /api/status. Na odczyt mial 8 s - czego nie zdazyl pobrac,
+//   tego na wykresie nie bylo, bez zadnej informacji. Kazde niepowodzenie
+//   dawalo ten sam napis "Brak danych (WiFi/centrala niedostepna)" i zadnej
+//   linii w logu.
+//   Jak jest:
+//   - Panel prosi centrale o GOTOWE punkty:
+//       GET /api/history/panel?tryb=godz|dzien|tydz&pkt=96
+//     Centrala z firmware 3.58.4 (paczka firmware-patch/v3.58.4-panel-wykresy
+//     w repozytorium) sama wybiera zakres, dzieli go na 96 rownych odcinkow
+//     czasu i odsyla najwyzej 96 wierszy (18-20 kB). Bierze je ze swojej
+//     lokalnej historii - tej, z ktorej rysuje strona WWW i ktora dopisuje do
+//     plikow /hist_short.csv i /hist_long.csv na swoim flashu. Firebase nie
+//     jest uzywany: centrala ma te dane u siebie, a Firebase wymagalby
+//     internetu.
+//   - Centrala starsza niz 3.58.4 odpowiada na ten adres przekierowaniem
+//     (302). Panel pobiera wtedy caly CSV po staremu i rysuje z niego to samo
+//     co v1.2.2 (porownane punkt po punkcie z punktami policzonymi kodem
+//     v1.2.2: testy_host/wzorce_v122/). Kolejnosc wgrywania panelu i
+//     centrali jest wiec dowolna.
+//   - Pobieranie (oba sposoby) nie blokuje petli: nowa klasa StrumienHttpGet
+//     w siec_nieblokujaca_LCD.h czyta odpowiedz linia po linii w kolejnych
+//     obrotach loop(), ok. 4 kB na obrot, do stalego bufora. Ekran, dotyk,
+//     ekran alarmu, odpytywanie /api/status i watchdog pracuja w tym czasie
+//     normalnie. Limity: 1,5 s na polaczenie, 6 s ciszy, 20 s na calosc.
+//   - Wyjscie z wykresu w trakcie pobierania (dotkniecie, X, bezczynnosc,
+//     ekran alarmu) zamyka polaczenie.
+//   - Pod "Ladowanie danych z centrali..." widac, ile juz doszlo (wiersze,
+//     kB).
+//   - Gdy wykresu nie ma, ekran mowi dlaczego: brak WiFi, centrala nie
+//     przyjela polaczenia, nie odpowiedziala w czasie, blad HTTP, odpowiedz
+//     urwana, odpowiedz nie jest historia, brak pamieci, centrala nie ma
+//     jeszcze danych, jeden pomiar to za malo. Gdy centrala ma wylaczony
+//     zapis historii na flash, napis o braku danych to dopowiada.
+//   - Kazde pobranie zostawia w logu linie "tag=WYKRESY" z wynikiem (opis:
+//     komentarz "[v1.3.0 WYKRESY] Dane do ekranu Wykresy" nizej).
+//   - Wykres z punktow centrali 3.58.4: os czasu jest rowna (v1.2.2 dzielil
+//     dane na punkty wg numeru wiersza, a wiersze historii tygodniowej nie
+//     sa rowno odlegle w czasie); przerwa w pracy centrali to przerwa w
+//     linii o szerokosci tej przerwy; czujnik bez odczytu to przerwa w linii
+//     tylko tego czujnika; podpis pod wykresem to zakres podany przez
+//     centrale, np. "12.11 13:01  -  13.11 13:00".
+//   - Stary sposob, gdy caly CSV nie dojdzie w 20 s albo polaczenie sie
+//     urwie: wykres z tego, co doszlo, z dopiskiem NIEPELNE.
+//   - Odpowiedz, ktora nie jest historia (np. strona HTML): napis zamiast
+//     wykresu. Kod v1.2.2 rysowal z takiej strony wykres - kazda linia tekstu
+//     stawala sie punktem (testy_host/wzorce_v122/punkty.txt, wpis
+//     dzien_html_zewn).
+//   - Zakres osi jest liczony tylko z prawdziwych wartosci. Dotad przerwa
+//     jako PIERWSZY punkt serii dawala zakres nieokreslony (porownania z NaN
+//     sa zawsze falszywe - wykresy_chart_zakres_osi() w
+//     dashboard_lvgl_poc.cpp). Z punktami centrali to zwykly przypadek:
+//     czujnik bez odczytu na poczatku zakresu.
+//   Usunieto: wykresyFetchWykonaj() i HISTORIA_TIMEOUT_MS. HTTPClient zostal
+//   tylko dla aktualizacji OTA.
+//   Pamiec (testy_host/pomiar_pamieci.sh, model 32-bitowy na PC): po starcie
+//   firmware trzyma tyle samo co v1.2.2 (129 244 B). Zmiennych statycznych
+//   przybylo 512 B (4 468 B zamiast 3 956 B: bufor jednej linii 300 B, adres
+//   zapytania, stan pobierania). Kod pobierania nie prosi o pamiec ze sterty.
+//   W czasie pobierania i rysowania wykresu sterta rosnie chwilowo o 2,9 kB
+//   (punkty z centrali) albo 5,6 kB (caly CSV) - to rysowanie LVGL i zwykle
+//   odpytanie /api/status, ktore wypada w tym samym czasie; mniej niz limit
+//   jednego odpytania (7,5 kB). Piec wykresow z rzedu nie zostawia nic.
+//   Pamieci, ktora na czas pobierania bierze stos sieciowy plytki (lwIP),
+//   ten pomiar nie widzi - pokaze ja "ram_min=" w linii "zdarzenie=pobrano".
+//   Sprawdzone: na PC (testy_host/: 262 sprawdzenia jednostkowe, 34
+//   scenariusze / 377 sprawdzen, takze z AddressSanitizer/UBSan i w modelu
+//   32-bitowym; 8 nowych scenariuszy wykresy_*; odpowiedzi centrali uzyte w
+//   tych testach sa plikami wypisanymi przez kod centrali 3.58.4 -
+//   testy_host/wzorce_centrali/) i skladniowo prawdziwymi naglowkami
+//   arduino-esp32 3.0.7 / 3.3.8. NIE budowane przez PlatformIO i NIE
+//   uruchamiane na plytce. Czasy pobierania z testow na PC nie sa pomiarem
+//   plytki (tam siec jest lokalna).
+//
 // [2026-11-12] v1.2.2 - PRZYCZYNA: PANELOWI BRAKUJE PAMIECI RAM.
 //   Uzytkownik doslal log PANELU (v1.2.0) z tego samego zdarzenia co log
 //   centrali opisany przy v1.2.1. Co w nim jest:
@@ -367,6 +448,8 @@
 //   bez tego pierwszy rysujAktualnyEkran()/lvgl_dashboard_poc_aktualizuj()
 //   i sprawdzIWykonajOtaPanelu() dostalyby same zera zamiast realnych
 //   danych z centrali. NIE ZROBIONO w tej sesji (celowo, poza zakresem):
+//   [dopisek z v1.3.0: punkt (1) zrobiony - wykresyFetchWykonaj() juz nie
+//   ma, ekran Wykresy pobiera dane bez blokowania; patrz wpis v1.3.0 wyzej]
 //   (1) wykresyFetchWykonaj() (GET /api/history, ekran Wykresy) NADAL uzywa
 //   HTTPClient bezposrednio - to osobny, rzadko wywolywany, strumieniowany
 //   przypadek (RAM, patrz FIX-WYKRESY-RAM), przy tym samym zaburzeniu
@@ -533,6 +616,7 @@ static const uint32_t HTTP_TIMEOUT_MS        = 1500;   // timeout pojedynczego z
 NonBlockingHttp statusFetch;
 NonBlockingHttp ustawieniaFetch;
 NonBlockingHttp komendaFetch;
+StrumienHttpGet wykresyFetch;   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy, linia po linii (patrz obslugaWykresyFetch())
 WskaznikSwiezosci swiezoscStatusu;
 WskaznikSwiezosci swiezoscUstawien;
 // [v1.2.0 DANE-NIEAKTUALNE] Bylo 3 * STATUS_INTERWAL_MS (6 s) i NIGDZIE nie
@@ -657,7 +741,7 @@ PoKomendzie pendingPoKomendzie = PoKomendzie::BRAK;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.2.2"; // [2026-11-12] v1.2.2: o ok. 40 kB mniej zajetego RAM-u (przyczyna "json=NoMemory" z logu panelu), prawdziwy wolny RAM w logu, brak pamieci jako osobna przyczyna. v1.2.1 [2026-11-12]: panel sam sie ratuje, gdy nie ma danych (ponowne polaczenie -> restart) i pokazuje, czego brakuje. v1.2.0 [2026-11-11]: wybor najsilniejszej centrali, dane nieaktualne -> "--", diagnostyka. v1.1.0 [2026-09-12]: nieblokujaca warstwa sieciowa. Patrz HISTORIA ZMIAN.
+static const char* FIRMWARE_VERSION_PANEL = "v1.3.0"; // [2026-11-12] v1.3.0: ekran Wykresy dostaje gotowe punkty od centrali (firmware centrali 3.58.4+; ze starsza dziala po staremu), pobieranie nie zatrzymuje panelu, przyczyna braku wykresu na ekranie i w logu. v1.2.2 [2026-11-12]: o ok. 40 kB mniej zajetego RAM-u (przyczyna "json=NoMemory" z logu panelu), prawdziwy wolny RAM w logu, brak pamieci jako osobna przyczyna. v1.2.1 [2026-11-12]: panel sam sie ratuje, gdy nie ma danych (ponowne polaczenie -> restart) i pokazuje, czego brakuje. v1.2.0 [2026-11-11]: wybor najsilniejszej centrali, dane nieaktualne -> "--", diagnostyka. v1.1.0 [2026-09-12]: nieblokujaca warstwa sieciowa. Patrz HISTORIA ZMIAN.
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -668,13 +752,9 @@ static const char* OTA_HASLO_PANEL = SECRET_OTA_HASLO;
 // za krotki na kilkasetkilobajtowy plik nawet w lokalnej sieci AP.
 static const uint32_t OTA_TIMEOUT_MS = 20000;
 
-// [FIX-WYKRESY-RAM, ta sesja] Osobny timeout na strumieniowe pobranie CSV
-// historii (do ~84KB przy buforze krotkim) - HTTP_TIMEOUT_MS (1500ms)
-// wyzej jest za krotki, OTA_TIMEOUT_MS (20000ms) to za duzo dla zwyklego
-// odswiezenia wykresu. Strumieniowe czytanie (patrz wykresyFetchWykonaj()
-// nizej) i tak nie trzyma calej odpowiedzi w RAM naraz, wiec ten timeout
-// dotyczy calkowitego czasu transferu, nie pojedynczej alokacji.
-static const uint32_t HISTORIA_TIMEOUT_MS = 8000;
+// [v1.3.0 WYKRESY] Limity czasu pobierania historii dla ekranu Wykresy sa od
+// tej wersji w siec_nieblokujaca_LCD.h (SiecCfg::STRUMIEN_*): pobieranie nie
+// blokuje juz petli, wiec dawny HISTORIA_TIMEOUT_MS (8 s na calosc) zniknal.
 
 // [ETAP 5, PIEC_ESPNOW_PLAN.md] Reconnect WiFi z rosnacym opoznieniem miedzy
 // probami (1s -> 2s -> 4s -> ... -> WIFI_RECONNECT_MAX_MS), zamiast probowac
@@ -1508,95 +1588,222 @@ Przycisk suwakPanelSuwak; // prostokat samego paska suwaka wewnatrz PANEL_SUWAK_
 //   httpGet("/api/status?...")   -> statusFetch.startGet(...)     + obslugaStatusFetch() nizej
 //   httpGet("/api/ustawienia-get")-> ustawieniaFetch.startGet(...) + obslugaUstawieniaFetch() nizej
 //   httpPost(sciezka, body, blad) -> komendaFetch.startPostFormUrlEncoded(...) + obslugaKomendaFetch() nizej
-// wykresyFetchWykonaj() ponizej NADAL uzywa HTTPClient bezposrednio (celowo,
-// patrz FIX-WYKRESY-RAM) - to osobny, rzadko wywolywany, strumieniowany
-// przypadek (duzy CSV), nie okresowy odpyt jak status/ustawienia, wiec na
-// razie POZA zakresem tej zmiany (przy tym samym zaburzeniu kanalu zamrozi
-// tylko ekran Wykresy, nie caly dotyk - do rozwazenia osobno w przyszlosci).
+// [v1.3.0 WYKRESY] Ekran Wykresy tez juz nie uzywa HTTPClient - patrz nizej.
 
-// [PARTIA 5e, ta sesja - EKRAN WYKRESY] Jedyne miejsce w main.cpp, ktore
-// wie, ze ekran Wykresy w ogole istnieje - wolane z dashboard_lvgl_poc.cpp
-// przez WykresyFetchCb (patrz obszerny komentarz w dashboard_lvgl_poc.h).
+// ----------------------------------------------------------------------------
+// [v1.3.0 WYKRESY] Dane do ekranu Wykresy: od centrali, bez blokowania petli
+// ----------------------------------------------------------------------------
+// Panel nie ma internetu ani wlasnej historii - wszystko do wykresow daje mu
+// centrala, ktora trzyma historie u siebie (pamiec + pliki /hist_short.csv i
+// /hist_long.csv na jej flashu).
 //
-// [FIX-WYKRESY-RAM, ta sesja - PRZEPISANE z httpGet()+String] http.getString()
-// (dawniej uzywane tu przez wspolny httpGet()) robi JEDNA alokacje na CALA
-// odpowiedz PRZED przeczytaniem czegokolwiek (sstring.reserve(_size+1) w
-// HTTPClient.cpp) - przy CSV rzedu 36-84KB i fragmentacji heapu (eager-load
-// wielu ekranow LVGL, plytka bez PSRAM) to twardy sufit: kod HTTP=200, ale
-// getString() cicho zwraca pusty String, bo nie ma jednego wystarczajaco
-// duzego CIAGLEGO bloku RAM - mimo ze SUMA wolnej pamieci by starczyla.
-// Naprawa: NIE wolamy tu httpGet() (ktory w miedzyczasie i tak zostal
-// usuniety z tego pliku na rzecz nieblokujacych statusFetch/ustawieniaFetch
-// dla malych JSON-ow /api/status i /api/ustawienia-get - patrz
-// [SIEC-NIEBLOKUJACA] wyzej; ten ekran Wykresy z HTTPClient ponizej jest
-// celowym wyjatkiem, patrz komentarz przy [SIEC-NIEBLOKUJACA] powyzej).
-// Czytamy odpowiedz WLASNYM
-// kodem ponizej - linia po linii wprost z gniazda TCP
-// (http.getStreamPtr()) do malego bufora na stosie (256B), podajac kazda
-// linie do lvgl_dashboard_poc_wykresy_strumien_linia() (patrz
-// WykresyStrumienStan w dashboard_lvgl_poc.cpp co do adaptacyjnego
-// podwajania/scalania kubelkow, ktore redukuje dowolnie dlugi CSV do
-// WYKRESY_MAX_PUNKTOW bez znajomosci liczby wierszy z gory). W kazdej
-// chwili w RAM jest wiec najwyzej 256B odpowiedzi zamiast 36-84KB.
+// Jak to idzie po dotknieciu "POKAZ WYKRES" (dashboard_lvgl_poc.cpp wola
+// wykresyFetchStart() przez WykresyFetchCb):
+//   1. GET /api/history/panel?tryb=godz|dzien|tydz&pkt=96 - centrala od wersji
+//      3.58.4 sama wybiera zakres i odsyla gotowe punkty (ok. 20 kB, pierwsza
+//      linia "#panel-hist ..."). Panel tylko rysuje.
+//   2. Centrala starsza niz 3.58.4 tego adresu nie zna (odpowiada
+//      przekierowaniem 302). Wtedy - i tylko wtedy - panel pobiera po staremu
+//      caly CSV (/api/history albo /api/history/long, ponad 1 MB) i sam sciska
+//      go do 96 punktow, jak w v1.2.2.
+// W obu przypadkach odpowiedz jest czytana linia po linii przez wykresyFetch
+// (StrumienHttpGet), w kolejnych obrotach loop() - ekran, dotyk i odpytywanie
+// /api/status pracuja w tym czasie normalnie. Do v1.2.2 robil to blokujacy
+// HTTPClient: ekran stal do konca pobierania (limit 8 s, po ktorym wykres
+// tygodniowy byl po cichu rysowany z samego poczatku danych), a watchdog nie
+// byl karmiony.
 //
-// http.useHTTP10(true): wymusza na centrali Content-Length zamiast
-// ewentualnego Transfer-Encoding: chunked, ktorego getStreamPtr() ponizej
-// NIE umie sam rozkodowac (dekodowanie chunkow siedzi wewnatrz
-// writeToStream(), ktorego tu celowo nie uzywamy - potwierdzone w
-// dokumentacji ArduinoJson dla dokladnie tego samego wzorca uzycia
-// getStream()). Centrala i tak buduje cale CSV w RAM przed wyslaniem, wiec
-// realnie zawsze wysyla Content-Length - to tylko twarda gwarancja.
-static void wykresyFetchWykonaj(bool dlugi) {
-  const char* sciezka = dlugi ? "/api/history/long" : "/api/history";
+// Kazde pobranie zostawia w logu jedna linie "tag=WYKRESY" z wynikiem:
+//   zdarzenie=pobrano       wykres narysowany (liczba punktow, bajtow, czas)
+//   zdarzenie=pobrano_czesc wykres z czesci danych, na ekranie dopisek NIEPELNE
+//                           (tylko starsza centrala: caly CSV nie zdazyl dojsc)
+//   zdarzenie=brak_danych   centrala odpowiedziala, ale nie ma jeszcze historii
+//   zdarzenie=blad          z przyczyna - ta sama przyczyna jest na ekranie
+//                           zamiast dawnego ogolnego "Brak danych"
+//   zdarzenie=przerwano     uzytkownik wyszedl z ekranu przed koncem
+static const char* const WYKRESY_TRYB_ADRES[3] = { "godz", "dzien", "tydz" };   // indeks = LVGL_WYKRESY_TRYB_*
 
-  // Wolane PRZED jakakolwiek mozliwoscia wczesnego wyjscia (brak WiFi/
-  // kod!=200) - lvgl_dashboard_poc_wykresy_strumien_koniec() sprawdza czy
-  // .aktywny i porownuje `dlugi` z aktualnie oczekiwanym trybem (odrzucenie
-  // spoznionej odpowiedzi), musi wiec byc ustawione niezaleznie od wyniku.
+struct WykresyPobieranie {
+  bool aktywne = false;
+  bool nowySposob = true;        // true = pytamy o gotowe punkty; false = stary CSV (centrala < 3.58.4)
+  uint8_t tryb = LVGL_WYKRESY_TRYB_DZIEN;
+  int kodNowego = 0;             // kod HTTP odpowiedzi na /api/history/panel (do logu)
+  unsigned long startMs = 0;
+  unsigned long postepMs = 0;
+};
+static WykresyPobieranie wykresyPob;
+
+static void wykresyLinia(const char* linia) { lvgl_dashboard_poc_wykresy_strumien_linia(linia); }
+
+// Koniec pobierania (udany albo nie): przekazuje wynik ekranowi, pisze linie
+// logu, zwalnia gniazdo. `wynik` to to, co wie warstwa sieci; ekran moze go
+// jeszcze zmienic (np. odpowiedz poprawna, ale bez danych) - do logu idzie
+// to, co faktycznie widac na ekranie.
+static void wykresyZakoncz(int wynik, int szczegol) {
+  const bool dlugi = (wykresyPob.tryb == LVGL_WYKRESY_TRYB_TYDZIEN);
+  const int naEkranie = lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, wykresyFetch.liniiCiala(), wynik, szczegol);
+  LvglWykresyStatystyka st;
+  lvgl_dashboard_poc_wykresy_statystyka(&st);
+  const char* sposob = wykresyPob.nowySposob ? "centrala" : "panel";
+  const unsigned long ms = (unsigned long)(millis() - wykresyPob.startMs);
+  if (naEkranie == LVGL_WYKRESY_OK) {
+    // sposob=centrala: punkty policzyla centrala (3.58.4+); sposob=panel: panel
+    // sam scisnal caly CSV starszej centrali. wierszy_centrali: ile wierszy
+    // historii centrala wziela pod uwage (-1 = nie podala, stary CSV).
+    logBezPamieci("tag=WYKRESY zdarzenie=pobrano tryb=%s sposob=%s punktow=%d przerw=%d wierszy_centrali=%ld linii=%lu ucietych_linii=%lu bajtow=%lu ms=%lu ram=%lu ram_min=%lu\n",
+                  WYKRESY_TRYB_ADRES[wykresyPob.tryb], sposob, st.punktow, st.przerw, st.wierszyZrodla,
+                  (unsigned long)wykresyFetch.liniiCiala(), (unsigned long)wykresyFetch.zaDlugichLinii(),
+                  (unsigned long)wykresyFetch.bajtowCiala(), ms, (unsigned long)ramWolny(), (unsigned long)ramMin());
+  } else if (naEkranie == LVGL_WYKRESY_NIEPELNE) {
+    // Tylko przy starszej centrali: caly CSV nie doszedl (powod=limit_czasu
+    // albo urwana), wykres narysowany z tego, co doszlo, z dopiskiem NIEPELNE.
+    logBezPamieci("tag=WYKRESY lvl=WARN zdarzenie=pobrano_czesc tryb=%s sposob=%s powod=%s etap=%c punktow=%d linii=%lu bajtow=%lu z_zapowiedzianych=%ld ms=%lu msg=\"%s\"\n",
+                  WYKRESY_TRYB_ADRES[wykresyPob.tryb], sposob, lvgl_dashboard_poc_wykresy_wynik_nazwa(wynik),
+                  wykresyFetch.etapBledu(), st.punktow, (unsigned long)wykresyFetch.liniiCiala(),
+                  (unsigned long)wykresyFetch.bajtowCiala(), wykresyFetch.dlugoscZapowiedziana(), ms, wykresyFetch.ostatniBlad());
+  } else if (naEkranie == LVGL_WYKRESY_PUSTO || naEkranie == LVGL_WYKRESY_ZA_MALO) {
+    // Odpowiedz poprawna, tylko centrala nie ma jeszcze z czego zrobic wykresu
+    // (swiezo po pierwszym uruchomieniu albo po wyczyszczeniu historii).
+    logBezPamieci("tag=WYKRESY zdarzenie=brak_danych tryb=%s sposob=%s przyczyna=%s punktow=%d wierszy_centrali=%ld linii=%lu bajtow=%lu ms=%lu\n",
+                  WYKRESY_TRYB_ADRES[wykresyPob.tryb], sposob, lvgl_dashboard_poc_wykresy_wynik_nazwa(naEkranie), st.punktow,
+                  st.wierszyZrodla, (unsigned long)wykresyFetch.liniiCiala(), (unsigned long)wykresyFetch.bajtowCiala(), ms);
+  } else {
+    logBezPamieci("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=%s sposob=%s przyczyna=%s kod=%d etap=%c errno=%d punktow=%d linii=%lu bajtow=%lu ms=%lu ram=%lu ram_blok=%lu msg=\"%s\"\n",
+                  WYKRESY_TRYB_ADRES[wykresyPob.tryb], sposob, lvgl_dashboard_poc_wykresy_wynik_nazwa(naEkranie),
+                  wykresyFetch.kodHttp(), wykresyFetch.etapBledu(), wykresyFetch.numerBledu(), st.punktow,
+                  (unsigned long)wykresyFetch.liniiCiala(), (unsigned long)wykresyFetch.bajtowCiala(), ms,
+                  (unsigned long)ramWolny(), (unsigned long)ramBlok(), wykresyFetch.ostatniBlad());
+  }
+  wykresyFetch.skwituj();
+  wykresyPob.aktywne = false;
+}
+
+// Blad warstwy sieci -> przyczyna dla ekranu i logu.
+static int wykresyWynikZBledu() {
+  if (diag::bladGniazdaToBrakPamieci(wykresyFetch.numerBledu())) return LVGL_WYKRESY_BRAK_PAMIECI;
+  switch (wykresyFetch.etapBledu()) {
+    case 'c': case 'h': case 'p': return LVGL_WYKRESY_LIMIT_CZASU;       // centrala nie zdazyla
+    case 'z': case 'k':           return LVGL_WYKRESY_ZLA_ODPOWIEDZ;     // to nie byla odpowiedz HTTP
+    case 'r':                     return (wykresyFetch.bajtowCiala() > 0) ? LVGL_WYKRESY_URWANA : LVGL_WYKRESY_BRAK_POLACZENIA;
+    default:                      return LVGL_WYKRESY_BRAK_POLACZENIA;   // g n l a s: nie udalo sie polaczyc / wyslac
+  }
+}
+
+// Centrala nie zna /api/history/panel: ta sama prosba po staremu.
+static void wykresyPrzejdzNaStarySposob(int kod) {
+  const bool dlugi = (wykresyPob.tryb == LVGL_WYKRESY_TRYB_TYDZIEN);
+  logBezPamieci("tag=WYKRESY zdarzenie=stara_centrala kod=%d msg=\"centrala nie zna /api/history/panel (firmware starszy niz 3.58.4) - pobieram cala historie po staremu\"\n", kod);
+  wykresyPob.nowySposob = false;
+  wykresyPob.kodNowego = kod;
+  lvgl_dashboard_poc_wykresy_strumien_start(dlugi);   // od nowa: to, co przyszlo do tej pory, nie bylo danymi
+  if (!wykresyFetch.start(dlugi ? "/api/history/long" : "/api/history", wykresyLinia)) {
+    wykresyZakoncz(wykresyWynikZBledu(), 0);
+  }
+}
+
+// Wolane z dashboard_lvgl_poc.cpp (WykresyFetchCb), gdy uzytkownik chce
+// zobaczyc wykres. Tylko STARTUJE pobieranie i od razu wraca; reszta dzieje
+// sie w obslugaWykresyFetch() w kolejnych obrotach loop().
+// (Bez "static": przy LVGL_POC_SYMULACJA=1 podpinana jest zamiast niej
+// symWykresyFetchAkcja() i kompilator ostrzegalby o nieuzywanej funkcji.)
+void wykresyFetchStart(int tryb) {
+  if (tryb < 0 || tryb > 2) tryb = LVGL_WYKRESY_TRYB_DZIEN;
+  if (wykresyPob.aktywne) {
+    // Nowa prosba w trakcie poprzedniej (zmiana zakresu): stara przepada.
+    logBezPamieci("tag=WYKRESY zdarzenie=przerwano powod=nowa_prosba tryb=%s po_ms=%lu\n",
+                  WYKRESY_TRYB_ADRES[wykresyPob.tryb], (unsigned long)(millis() - wykresyPob.startMs));
+  }
+  wykresyFetch.wyczysc();   // takze: porzuca poprzednie zadanie, jesli jeszcze trwalo
+  wykresyPob.aktywne = true;
+  wykresyPob.nowySposob = true;
+  wykresyPob.tryb = (uint8_t)tryb;
+  wykresyPob.kodNowego = 0;
+  wykresyPob.startMs = millis();
+  wykresyPob.postepMs = wykresyPob.startMs;
+  const bool dlugi = (tryb == LVGL_WYKRESY_TRYB_TYDZIEN);
+  // Przed kazda mozliwoscia wczesnego wyjscia: ekran czeka na _koniec().
   lvgl_dashboard_poc_wykresy_strumien_start(dlugi);
+  Serial.printf("tag=WYKRESY zdarzenie=start tryb=%s ram=%lu\n", WYKRESY_TRYB_ADRES[tryb], (unsigned long)ramWolny());
 
   if (WiFi.status() != WL_CONNECTED) {
-    lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, 0); // 0 wierszy = ten sam sygnal co dawny pusty String
+    wykresyZakoncz(LVGL_WYKRESY_BRAK_WIFI, 0);
+    return;
+  }
+  char sciezka[56];
+  snprintf(sciezka, sizeof(sciezka), "/api/history/panel?tryb=%s&pkt=%d", WYKRESY_TRYB_ADRES[tryb], LVGL_WYKRESY_PUNKTOW);
+  if (!wykresyFetch.start(sciezka, wykresyLinia)) {
+    wykresyZakoncz(wykresyWynikZBledu(), 0);
+  }
+}
+
+// Co obrot loop(): popycha pobieranie historii i konczy je, gdy przyszlo
+// wszystko albo cos poszlo nie tak.
+void obslugaWykresyFetch() {
+  if (!wykresyPob.aktywne) return;
+
+  // Uzytkownik wyszedl z podstrony Wykres (strzalka, X, gest, bezczynnosc,
+  // ekran alarmu) - nie ma dla kogo pobierac.
+  if (!lvgl_dashboard_poc_wykresy_czeka_na_dane()) {
+    logBezPamieci("tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu tryb=%s po_ms=%lu linii=%lu\n",
+                  WYKRESY_TRYB_ADRES[wykresyPob.tryb], (unsigned long)(millis() - wykresyPob.startMs),
+                  (unsigned long)wykresyFetch.liniiCiala());
+    wykresyFetch.przerwij();
+    wykresyPob.aktywne = false;
     return;
   }
 
-  HTTPClient http;
-  String url = String("http://") + CENTRALA_HOST + ":" + String(CENTRALA_PORT) + sciezka;
-  http.setTimeout(HISTORIA_TIMEOUT_MS);
-  http.useHTTP10(true); // patrz komentarz o chunked encoding wyzej
-  http.begin(url);
-  int kod = http.GET();
+  wykresyFetch.poll();
 
-  if (kod != 200) {
-    http.end();
-    lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, 0);
-    return;
-  }
-
-  WiFiClient *stream = http.getStreamPtr();
-  stream->setTimeout(HISTORIA_TIMEOUT_MS); // jawnie, zamiast polegac na domyslnym 1000ms Stream::setTimeout()
-  uint32_t wierszy = 0;
-  const uint32_t startMs = millis();
-  char linia[256];
-
-  // Czytaj dopoki gniazdo ma dane LUB polaczenie wciaz trwa. Koniec
-  // strumienia: readBytesUntil zwrocilo 0 ORAZ gniazdo juz nie polaczone i
-  // nic wiecej nie czeka. `millis()` to dodatkowy, twardy sufit na wypadek
-  // zawieszonego polaczenia bez czystego zamkniecia.
-  while ((stream->available() || http.connected()) && (millis() - startMs) < HISTORIA_TIMEOUT_MS) {
-    size_t n = stream->readBytesUntil('\n', linia, sizeof(linia) - 1);
-    if (n == 0) {
-      if (!stream->connected() && !stream->available()) break;
-      continue;
+  if (wykresyFetch.wTrakcie()) {
+    if (wykresyPob.nowySposob) {
+      const int kodTeraz = wykresyFetch.kodHttp();   // 0, dopoki nie przyszla linia statusu
+      // Kod inny niz 200 i 503: centrala nie zna nowego adresu (wersje do
+      // 3.58.3 odpowiadaja przekierowaniem 302). Tresci takiej odpowiedzi nie
+      // czytamy - od razu pytamy po staremu.
+      if (kodTeraz != 0 && kodTeraz != 200 && kodTeraz != 503) {
+        wykresyPrzejdzNaStarySposob(kodTeraz);
+        return;
+      }
+      // Kod 200, ale pierwsza linia tresci to nie "#panel-hist": to nie jest
+      // centrala 3.58.4 (bardzo stare wersje oddawaly pod kazdym adresem
+      // /api/history/... caly CSV). Tego tez nie czytamy do konca.
+      if (kodTeraz == 200 && wykresyFetch.liniiCiala() >= 1 && !lvgl_dashboard_poc_wykresy_strumien_zredukowany()) {
+        wykresyPrzejdzNaStarySposob(kodTeraz);
+        return;
+      }
     }
-    if (n > 0 && linia[n - 1] == '\r') n--; // CRLF -> odetnij '\r' (na wszelki wypadek)
-    linia[n] = '\0';
-    lvgl_dashboard_poc_wykresy_strumien_linia(linia);
-    wierszy++;
+    const unsigned long teraz = millis();
+    if (teraz - wykresyPob.postepMs >= 300) {
+      wykresyPob.postepMs = teraz;
+      lvgl_dashboard_poc_wykresy_postep(wykresyFetch.liniiCiala(), wykresyFetch.bajtowCiala());
+    }
+    return;
+  }
+  if (!wykresyFetch.gotowyWynik()) {   // nie powinno sie zdarzyc: aktywne pobieranie bez zadania
+    wykresyPob.aktywne = false;
+    return;
   }
 
-  http.end();
-  lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, wierszy);
+  if (!wykresyFetch.bylSukces()) {
+    wykresyZakoncz(wykresyWynikZBledu(), 0);
+    return;
+  }
+  const int kod = wykresyFetch.kodHttp();
+  if (wykresyPob.nowySposob) {
+    if (kod == 200 && lvgl_dashboard_poc_wykresy_strumien_zredukowany()) {
+      wykresyZakoncz(wykresyFetch.kompletna() ? LVGL_WYKRESY_OK : LVGL_WYKRESY_URWANA, 0);
+    } else if (kod == 503) {
+      wykresyZakoncz(LVGL_WYKRESY_HTTP, kod);   // centrala zna adres, ale zabraklo jej pamieci
+    } else {
+      wykresyPrzejdzNaStarySposob(kod);         // 302 / 404 / cos innego: centrala < 3.58.4
+    }
+    return;
+  }
+  if (kod != 200) {
+    wykresyZakoncz(LVGL_WYKRESY_HTTP, kod);
+    return;
+  }
+  wykresyZakoncz(wykresyFetch.kompletna() ? LVGL_WYKRESY_OK : LVGL_WYKRESY_URWANA, 0);
 }
 
 void pobierzStatus(); // forward declaration - pompaManualWyslij() wola ja przed jej definicja nizej
@@ -2061,11 +2268,12 @@ static String symWykresyCsvZbuduj(bool dlugi) {
 // co reszta symXAkcja() powyzej, tylko tu zwracamy dane od razu
 // (synchronicznie) zamiast zmieniac stan i wolac symOdswiezDoLvgl() - ekran
 // Wykresy nie jest czescia glownego cyklu odswiezania dashboardu.
-static void symWykresyFetchAkcja(bool dlugi) {
+static void symWykresyFetchAkcja(int tryb) {
+  const bool dlugi = (tryb == LVGL_WYKRESY_TRYB_TYDZIEN);   // [v1.3.0] most podaje tryb (godz/dzien/tydz), nie sam format
   // [FIX-WYKRESY-RAM, ta sesja] symWykresyCsvZbuduj() i tak buduje caly CSV
   // w RAM jako String (to atrapa, dane sa male) - brak RAM tu nie grozi.
   // Dzielimy go na linie i podajemy do TEGO SAMEGO strumieniowego API co
-  // prawdziwy fetch w wykresyFetchWykonaj() powyzej, zeby obie sciezki
+  // prawdziwy fetch (wykresyFetchStart()/obslugaWykresyFetch() powyzej), zeby obie sciezki
   // (symulacja/sprzet) uzywaly jednego zrodla prawdy dla logiki redukcji
   // punktow po stronie dashboard_lvgl_poc.cpp.
   Serial.printf("[LVGL-SYM] wykresy fetch (atrapa CSV) dlugi=%d\n", dlugi ? 1 : 0);
@@ -2084,7 +2292,7 @@ static void symWykresyFetchAkcja(bool dlugi) {
     if (!koniec) break;
     p = koniec + 1;
   }
-  lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, wierszy);
+  lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, wierszy, LVGL_WYKRESY_OK, 0);
 }
 #endif // LVGL_POC_TEST && LVGL_POC_SYMULACJA
 
@@ -4649,9 +4857,10 @@ void setup() {
   lvgl_dashboard_poc_ustaw_callback_dym_ustawienia(dymUstawienieWyslij);
   // [ROZSZERZENIE, ta sesja - PANEL PROG PRZEGRZANIA]
   lvgl_dashboard_poc_ustaw_callback_alarm_temp_prog(alarmTempProgWyslij);
-  // [ROZSZERZENIE, ta sesja - EKRAN WYKRESY] Patrz wykresyFetchWykonaj() -
-  // GET /api/history(/long) wolane wprost z ekranu Wykresy przez ten most.
-  lvgl_dashboard_poc_ustaw_callback_wykresy_fetch(wykresyFetchWykonaj);
+  // [ROZSZERZENIE, ta sesja - EKRAN WYKRESY; v1.3.0] Patrz wykresyFetchStart():
+  // ekran Wykresy prosi tedy o dane, a pobieranie popycha obslugaWykresyFetch()
+  // w loop().
+  lvgl_dashboard_poc_ustaw_callback_wykresy_fetch(wykresyFetchStart);
   // [ROZSZERZENIE, ta sesja - PANEL WYSWIETLACZ] Ten sam wzorzec co galaz
   // symulacji wyzej (patrz komentarz tam) - TE SAME 3 funkcje w obu
   // galeziach, bo podswietlenie tej plytki nie zalezy od tego, czy centrala
@@ -4817,6 +5026,7 @@ void loop() {
   obslugaStatusFetch();
   obslugaUstawieniaFetch();
   obslugaKomendaFetch();
+  obslugaWykresyFetch();   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy - po kawalku na obrot, bez blokowania
 
   // [v1.2.0 DANE-NIEAKTUALNE] Brak poprawnie odczytanego /api/status przez
   // PROG_NIEAKTUALNYCH_DANYCH_MS -> kafelki na "--" (raz na kazdy zanik).

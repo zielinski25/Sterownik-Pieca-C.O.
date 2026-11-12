@@ -35,9 +35,10 @@ LCD_TESTY_CACHE=/tmp/lcd_nowe ./uruchom_testy.sh
 LCD_TESTY_CACHE=/tmp/lcd_nowe ./pomiar_pamieci.sh --wszystko
 ```
 
-Stan na 2026-11-12, v1.2.2: z LVGL 8.4.0 i ArduinoJson 7.4.3 przechodzą
+Stan na 2026-11-12, v1.3.0: z LVGL 8.4.0 i ArduinoJson 7.4.3 przechodzą
 wszystkie scenariusze (także z `SANITIZER=1` i w modelu 32-bitowym), a pomiar
-pamięci daje 129 244 B po starcie i 5 448 B na jedno odpytanie.
+pamięci daje 129 244 B po starcie, 5 448 B na jedno odpytanie i 2 884 B /
+5 476 B chwilowo na wykres (punkty z centrali / cały CSV).
 
 ## Co jest w środku
 
@@ -45,7 +46,9 @@ pamięci daje 129 244 B po starcie i 5 448 B na jedno odpytanie.
 |---|---|
 | `test_diagnostyka.cpp` | Testy jednostkowe `src/diagnostyka_panelu.h` (kod HTTP, dławik logu, strażnik świeżości, wybór najsilniejszego AP, znacznik centrali, próg baterii; od v1.2.1: przyczyna braku danych, drabina ratunkowa, pamięć i token samoczynnego restartu; od v1.2.2: brak pamięci jako przyczyna). |
 | `mock/` | Atrapy nagłówków Arduino/ESP-IDF (`Arduino.h`, `WiFi.h`, `TFT_eSPI.h`, `Preferences.h`, `esp_*.h`…). Stan „płytki” opisuje `mock/atrapa.h`. |
-| `symulator_panelu.cpp` | Uruchamia `setup()` i `loop()` firmware'u, podstawia mu „centrale” (lokalny serwer HTTP) i sprawdza log oraz to, co trafiło na ekran. Odpowiedź `/api/status` ma te same pola, kolejność i format liczb co `wifiZbudujJsonStatus()` w firmware centrali 3.58.3 (ok. 1,8 kB). Udawana centrala traktuje parametr `reset_powod` tak jak 3.58.3: „pisze” o powodzie restartu panelu przy każdej zmianie wartości innej niż `sw` i `deepsleep`. |
+| `symulator_panelu.cpp` | Uruchamia `setup()` i `loop()` firmware'u, podstawia mu „centrale” (lokalny serwer HTTP) i sprawdza log oraz to, co trafiło na ekran. Odpowiedź `/api/status` ma te same pola, kolejność i format liczb co `wifiZbudujJsonStatus()` w firmware centrali 3.58.3 (ok. 1,8 kB). Udawana centrala traktuje parametr `reset_powod` tak jak 3.58.3: „pisze” o powodzie restartu panelu przy każdej zmianie wartości innej niż `sw` i `deepsleep`. Od v1.3.0 odpowiada też na `/api/history`, `/api/history/long` i `/api/history/panel` (jak centrala 3.58.4, jak starsza albo jak bardzo stara) i potrafi odpowiedź urwać, wstrzymać, opóźnić albo wysyłać z zadaną szybkością. |
+| `wzorce_centrali/` | Odpowiedzi centrali 3.58.4 na `/api/history/panel`, wypisane przez jej własny kod (opis: `CZYTAJ.txt` w tym katalogu). Z nich korzystają scenariusze `wykresy_*`. |
+| `wzorce_v122/` | Punkty, które z tych samych starych CSV narysował firmware v1.2.2 (opis: `CZYTAJ.txt` w tym katalogu). Z nimi porównywane jest rysowanie po staremu. |
 | `uruchom_testy.sh` | Buduje i uruchamia całość. |
 | `sprawdz_naglowki_esp32.sh` | Sprawdza składnię i typy źródeł panelu prawdziwymi nagłówkami arduino-esp32 / ESP-IDF / TFT_eSPI (bez atrap). |
 | `pomiar_pamieci.sh` | Mierzy, ile pamięci RAM trzyma firmware, i pilnuje limitów. Buduje ten sam program jako 32-bitowy, z `pomiar_sterty.c` zamiast zwykłego `malloc()`. |
@@ -86,6 +89,27 @@ LVGL jest budowany z `include/lv_conf.h` tego projektu. Ekran to bufor
 | `brak_pamieci_odbior` | v1.2.2. Pamięci nie starcza już na odebranie odpowiedzi (`String` przestaje rosnąć): `GET nieudany: brak pamieci na odpowiedz`, `przyczyna=pam` — a nie „zła odpowiedź centrali”, jak w v1.2.0. |
 | `brak_pamieci_lvgl` | v1.2.2. `malloc()` odmawia wszystkiego: LVGL zgłasza błąd przy rysowaniu, panel pokazuje `BRAK PAMIECI - RESTART` i restartuje się od razu, z powodem `auto_lvgl_…` dla centrali. Watchdog nie zadziałał. |
 | `wykresy_pamiec` | v1.2.2. Bufory punktów ekranu Wykresy istnieją tylko przy otwartym ekranie: znikają po wyjściu przez bezczynność i po zastąpieniu ekranu alarmem; brak pamięci na bufory nie wywraca panelu. |
+| `wykresy_centrala_liczy` | v1.3.0. Centrala 3.58.4: jedno zapytanie `/api/history/panel`, 96 punktów takich, jak policzyła centrala, w trzech zakresach; podpis z zakresem i datą; pełne bufory centrali i najdłuższe liczby (ostatnia kolumna wiersza dochodzi cała); dotknięcie wraca od razu, `/api/status` jest odpytywany dalej. |
+| `wykresy_stara_centrala` | v1.3.0. Centrala do 3.58.3 odpowiada 302: panel pobiera cały CSV i rysuje punkt w punkt to, co v1.2.2 (dzień, godzina, tydzień, dzień z przerwą). Połączenie zerwane w środku wiersza: wykres z całych wierszy, dopisek `NIEPELNE`. Bardzo stara centrala, która pod nowym adresem oddaje CSV z kodem 200. |
+| `wykresy_przerwy` | v1.3.0. Tydzień, w którym centrala nie pracowała 1,5 doby: 19 z 96 pozycji bez punktu, dokładnie tam, gdzie podała centrala. Czujnik bez odczytu przez pół godziny: przerwa tylko w jego linii, zakres osi liczony z prawdziwych wartości. |
+| `wykresy_brak_danych` | v1.3.0. Centrala bez historii, z wyłączonym zapisem na flash, z jednym pomiarem, bez ustawionego zegara, bez pamięci na odpowiedź (HTTP 503): każdy przypadek ma swój napis i linię w logu; przy 503 panel nie sięga po cały CSV. |
+| `wykresy_bledy_sieci` | v1.3.0. Odpowiedź urwana w połowie (z `Content-Length` i bez), linie z CR LF, cisza w połowie odpowiedzi, brak odpowiedzi, strona HTML zamiast historii, brak WiFi: napis z przyczyną, wykres z kawałka nie powstaje, `/api/status` jest odpytywany przez cały czas, następna próba daje poprawny wykres. |
+| `wykresy_wyjscie_w_trakcie` | v1.3.0. Starsza centrala i wolne łącze: dotknięcie ekranu w trakcie pobierania działa od razu i zamyka połączenie; pobieranie dłuższe niż 20 s kończy się wykresem z dopiskiem `NIEPELNE`; watchdog (15 s) nie zadziałał. |
+| `wykresy_alarm_w_trakcie` | v1.3.0. Alarm przegrzania w trakcie pobierania: ekran alarmu pojawia się w ciągu 3 s, pobieranie jest porzucane, bufory wykresów zwolnione. |
+| `wykresy_stary_csv` | v1.3.0. Stary CSV podany ekranowi wprost, bez sieci: te same punkty co w v1.2.2. Strona HTML zamiast CSV: napis (kod v1.2.2 rysował z niej wykres — zapisane we wzorcu). Ten scenariusz działa także na źródłach v1.2.2 i tak powstał `wzorce_v122/punkty.txt`. |
+
+### Skąd odpowiedzi centrali w scenariuszach `wykresy_*`
+
+Treść odpowiedzi `/api/history/panel` nie jest pisana ręcznie w symulatorze.
+To pliki z `wzorce_centrali/`, wypisane przez kod centrali 3.58.4 wycięty
+z jej `main_centrala.cpp` (testy w `firmware-patch/v3.58.4-panel-wykresy/tests/`).
+Te same testy centrali przy każdym uruchomieniu porównują swoje wyjście z tymi
+plikami, więc panel jest sprawdzany na tym, co centrala naprawdę wysyła,
+a zmiana formatu po jednej stronie wychodzi w testach drugiej.
+
+To, co panel ma z takiej odpowiedzi narysować, symulator liczy sam, prosto
+z pliku (wiersz = punkt, `#przerwa` i pole `nan` = brak punktu), niezależnie
+od kodu firmware'u.
 
 ### Brak pamięci na żądanie
 
@@ -133,9 +157,17 @@ firmware kompiluje się dla ESP32 ani że działa na płytce.
 - **Czasy sieci.** Zegar płytki jest sztuczny (`delay()` przesuwa `millis()`),
   a HTTP idzie po lokalnym gnieździe. Opóźnienia lwIP, zakłócenia kanału AP
   i czasy z prawdziwego logu nie są odtwarzane.
-- **Sprzęt.** TFT_eSPI, dotyk, deep sleep, OTA, pobieranie danych na ekran
-  Wykresy — atrapy przyjmują wywołania, ale ich nie modelują. Z brzęczyka zapisywana jest
-  tylko ostatnio ustawiona częstotliwość (0 = cisza).
+- **Sprzęt.** TFT_eSPI, dotyk, deep sleep, OTA — atrapy przyjmują wywołania,
+  ale ich nie modelują. Z brzęczyka zapisywana jest tylko ostatnio ustawiona
+  częstotliwość (0 = cisza).
+- **Pobieranie danych na ekran Wykresy.** Od v1.3.0 idzie tym samym kodem co
+  na płytce (gołe gniazda z `siec_nieblokujaca_LCD.h`), tylko gniazda są
+  linuksowe, a „centrala” siedzi w tym samym programie. Szybkość łącza,
+  zwłoka i zerwanie połączenia są zadawane przez scenariusz; prawdziwego WiFi
+  i lwIP płytki to nie odtwarza. `ms=` z logu takiego testu nie jest czasem
+  pobierania na płytce. Źródła do v1.2.2 pobierały te dane przez
+  `HTTPClient`, którego atrapa z udawaną centralą się nie łączy — na nich
+  scenariusze `wykresy_*` (poza `wykresy_stary_csv`) nie pokazują nic.
 - **Watchdog.** Atrapa tylko odnotowuje, że przy takim przebiegu watchdog
   zadania (15 s) by zadziałał; nie restartuje „płytki”.
 - **Pamięć płytki.** W zwykłych testach „wolny RAM”, który odczytuje
@@ -169,7 +201,7 @@ zastępuje `pomiar_sterty.c`, który liczy każdy blok, o jaki prosi firmware
 4 bajtów + 16 bajtów (arduino-esp32 3.x ma włączone lekkie „zatruwanie”
 sterty, `CONFIG_HEAP_POISONING_LIGHT`).
 
-Wynik dla v1.2.2:
+Wynik dla v1.3.0:
 
 ```
 po starcie firmware trzyma          129 244 B w 2470 blokach
@@ -178,27 +210,45 @@ przyrost po 10 minutach pracy             0 B
 ekran alarmu                            188 B wiecej
 ekran Wykresy otwarty                18 632 B wiecej
 ...i po jego zamknieciu                  24 B wiecej
-zmienne statyczne firmware'u          3 956 B (v1.2.0: 3 092 B)
+wykres z centrali 3.58.4 (pobranie i rysowanie), chwilowo 2 884 B wiecej
+wykres po staremu (caly CSV, 352 kB), chwilowo        5 616 B wiecej
+po pierwszym wykresie zostaje           424 B (opisy osi i legenda, tworzone raz)
+przyrost po 5 kolejnych wykresach       -28 B
+zmienne statyczne firmware'u          4 468 B (v1.2.0: 3 092 B)
 ```
 
-v1.1.0 i v1.2.0 trzymały po starcie 171 kB (170 324 B i 170 572 B),
-a jedno odpytanie brało 7 284 B i 7 412 B.
+Pierwsze sześć liczb jest takich samych jak w v1.2.2. v1.1.0 i v1.2.0
+trzymały po starcie 171 kB (170 324 B i 170 572 B), a jedno odpytanie brało
+7 284 B i 7 412 B.
+
+Linie o wykresie (od v1.3.0): „chwilowo” to najwięcej pamięci naraz
+w sekundach, w których panel pobiera dane i rysuje wykres — razem z odpytaniem
+`/api/status`, jeśli wypadło w tym samym czasie. Limit jest ten sam co dla
+jednego odpytania (7 500 B). Z opcją `--kto` skrypt sprawdza dodatkowo, że
+żaden blok pamięci żywy w tej chwili nie pochodzi z kodu pobierania
+(`StrumienHttpGet`, `obslugaWykresyFetch()`, `…_strumien_linia()`): ten kod
+czyta do stałego bufora. Sprawdzenie zostało wypróbowane na celowo zepsutej
+kopii źródeł (jeden `malloc()` w odbiorze linii) — wykrywa go.
 
 Ostatnia linia to zmienne globalne i `static` z trzech plików `.cpp`
 firmware'u (sekcje `.bss`/`.data` w plikach `.o` modelu). Licznik `malloc()`
 ich nie widzi, a na płytce zabierają ten sam RAM. Sama liczba jest
 przybliżona (atrapy bibliotek mają inne rozmiary obiektów niż prawdziwe);
 wiarygodna jest różnica między wersjami: v1.2.2 ma ich o 864 B więcej niż
-v1.2.0, głównie przez bufor `logBezPamieci()` (640 B). Skrypt odejmuje tę
-różnicę w szacunku i pilnuje limitem, żeby nie pojawiła się duża tablica
-statyczna.
+v1.2.0, głównie przez bufor `logBezPamieci()` (640 B); v1.3.0 o kolejne
+512 B (bufor jednej linii pobieranej historii, 300 B, i stan pobierania).
+Skrypt odejmuje tę różnicę w szacunku i pilnuje limitem (5 000 B), żeby nie
+pojawiła się duża tablica statyczna.
 
 Czego ten pomiar **nie** obejmuje: pamięci, którą na płytce biorą WiFi, lwIP
 i zadania systemu. Z logu z 2026-11-12 wychodzi na nie ok. 56 kB (płytka
 miała 234,6 kB przed budową ekranów i ok. 8 kB po starcie, a v1.2.0 trzyma
-171 kB). Dlatego „po starcie zostaje ok. 48 572 B” w wyniku skryptu to
-**szacunek z jednego logu**. Prawdziwą liczbę podaje panel:
-`tag=PAMIEC zdarzenie=po_starcie ram=…`.
+171 kB). Dlatego „po starcie zostaje ok. 48 060 B” w wyniku skryptu
+(dla v1.2.2: 48 572 B) to **szacunek z jednego logu**. Prawdziwą liczbę
+podaje panel: `tag=PAMIEC zdarzenie=po_starcie ram=…`. To samo dotyczy
+pobierania wykresu: otwarte połączenie zajmuje na płytce pamięć stosu
+sieciowego, której tu nie widać — pokaże ją `ram_min=` w linii
+`tag=WYKRESY zdarzenie=pobrano`.
 
 Sprawdzenie szacunku: płytka z v1.2.2 pokazała 2026-11-12
 `po_starcie ram=49676`, czyli o 1,1 kB więcej, niż szacował skrypt. Z jej
@@ -236,3 +286,9 @@ obserwacji (bez oceniania, każde sprawdzenie pokazuje `tak`/`NIE`):
 mkdir -p /tmp/stary && unzip -q "../../LCD Centrali.zip" -d /tmp/stary     # v1.1.0
 SRC=/tmp/stary/src OBSERWACJE=1 ./uruchom_testy.sh
 ```
+
+Scenariusze `wykresy_*` na źródłach do v1.2.2 pokazują same `NIE` — tamte
+wersje pobierały dane wykresów przez `HTTPClient`, którego atrapa nie łączy
+się z udawaną centralą (patrz „Czego to NIE sprawdza”). Wyjątkiem jest
+`wykresy_stary_csv`, który podaje CSV ekranowi wprost; uruchomiony tak na
+źródłach v1.2.2 zapisuje punkty, które ona narysowała (`wzorce_v122/CZYTAJ.txt`).

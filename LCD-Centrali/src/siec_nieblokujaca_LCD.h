@@ -35,6 +35,13 @@
 //   - Rozbudowany szkic integracji na koncu pliku, obejmujacy OBIE
 //     galezie main.cpp (LVGLPOCTEST=1 i tryb bez LVGL) oraz obsluge
 //     POST-ow z touch handlerow.
+//
+// [2026-11-12] v1.3.0 Dodano: klasa StrumienHttpGet i instancja wykresyFetch
+//   - pobieranie historii dla ekranu Wykresy linia po linii, bez blokowania
+//   petli i bez gromadzenia odpowiedzi w RAM (opis przy klasie). Zastepuje
+//   ostatnie blokujace pobieranie przez HTTPClient w main.cpp
+//   (wykresyFetchWykonaj()). Limity czasu: SiecCfg::STRUMIEN_*.
+//   NonBlockingHttp i reszta pliku bez zmian.
 
 #pragma once
 
@@ -474,6 +481,362 @@ private:
 };
 
 // =======================================================================
+// [v1.3.0 WYKRESY] Pobieranie duzej odpowiedzi LINIA PO LINII, bez blokowania.
+//
+// NonBlockingHttp (wyzej) sklada cala odpowiedz w jednym Stringu - dobre dla
+// 2 kB statusu, niemozliwe dla historii (20 kB z centrali 3.58.4, a ze
+// starszej ponad 1 MB). Do v1.2.2 ekran Wykresy pobieral historie blokujacym
+// HTTPClient: na czas pobierania stal dotyk, stalo odpytywanie /api/status i
+// nikt nie karmil watchdoga (limit laczenia + oczekiwania + pobierania
+// przekraczal jego 15 s).
+//
+// Ta klasa robi to samo co NonBlockingHttp (gole gniazdo, O_NONBLOCK, krok
+// w kazdym obrocie loop()), ale tresc odpowiedzi oddaje po jednej linii
+// przez funkcje `odbiorca` i niczego nie gromadzi: w RAM jest najwyzej
+// jedna linia (bufor staly, bez malloc). Na obrot petli czyta najwyzej
+// STRUMIEN_BAJTOW_NA_OBROT bajtow, wiec ekran i reszta programu pracuja dalej.
+//
+// Zapytanie idzie jako HTTP/1.0 + "Connection: close" (jak w NonBlockingHttp):
+// serwer nie uzywa wtedy "Transfer-Encoding: chunked", a koniec danych to
+// zamkniecie polaczenia albo odebranie Content-Length bajtow.
+// =======================================================================
+namespace SiecCfg {
+    static const uint32_t STRUMIEN_CONNECT_TIMEOUT_MS   = 1500;   // limit fazy laczenia
+    // Najdluzsza cisza w trakcie (takze: czekanie na pierwszy bajt odpowiedzi).
+    // Starsza centrala zanim cokolwiek wysle, buduje caly CSV w pamieci.
+    static const uint32_t STRUMIEN_CISZA_TIMEOUT_MS     = 6000;
+    static const uint32_t STRUMIEN_CALKOWITY_TIMEOUT_MS = 20000;  // limit calego pobierania
+    static const size_t   STRUMIEN_LINIA_MAX            = 300;    // najdluzsza linia centrali ma 289 znakow
+    static const size_t   STRUMIEN_BAJTOW_NA_OBROT      = 4096;   // ile najwyzej przeczytac w jednym poll()
+}
+
+enum class StrumienStan : uint8_t {
+    IDLE,        // gotowy do startu
+    CONNECTING,  // czekamy na polaczenie
+    NAGLOWKI,    // zapytanie wyslane, czytamy linie statusu i naglowki
+    CIALO,       // czytamy tresc i oddajemy ja liniami
+    DONE,        // koniec odpowiedzi (kod HTTP: kodHttp())
+    ERROR_       // blad sieci albo limit czasu
+};
+
+class StrumienHttpGet {
+public:
+    typedef void (*OdbiorcaLinii)(const char* linia);
+
+    // Startuje GET. Trwajace zadanie jest porzucane. `odbiorca` dostaje kazda
+    // linie tresci (bez znaku konca linii) - tylko gdy kod HTTP to 200.
+    bool start(const char* sciezka, OdbiorcaLinii odbiorca) {
+        przerwij();
+        odbiorca_ = odbiorca;
+        snprintf(sciezka_, sizeof(sciezka_), "%s", sciezka ? sciezka : "/");
+        blad_ = "";
+        etapBledu_ = '-';
+        numerBledu_ = 0;
+        kodHttp_ = 0;
+        dlugosc_ = -1;
+        bajtowCiala_ = 0;
+        liniiCiala_ = 0;
+        zaDlugich_ = 0;
+        liniaDl_ = 0;
+        liniaUcieta_ = false;
+        pierwszaLinia_ = true;
+        startMs_ = millis();
+        krokMs_ = startMs_;
+        koniecMs_ = startMs_;
+
+        sock_ = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock_ < 0) {
+            sock_ = -1;
+            ustawBlad("socket() nieudane", 'g', errno);
+            return false;
+        }
+        int flags = fcntl(sock_, F_GETFL, 0);
+        fcntl(sock_, F_SETFL, flags | O_NONBLOCK);
+
+        struct sockaddr_in adres;
+        memset(&adres, 0, sizeof(adres));
+        adres.sin_family = AF_INET;
+        adres.sin_port = htons(SiecCfg::PORT);
+        adres.sin_addr.s_addr = inet_addr(SiecCfg::HOST);
+        int r = connect(sock_, (struct sockaddr*)&adres, sizeof(adres));
+        if (r < 0 && errno != EINPROGRESS) {
+            ustawBlad("connect() natychmiastowy blad", 'n', errno);
+            return false;
+        }
+        stan_ = StrumienStan::CONNECTING;
+        siecDiagLog("start", sciezka_, "GET strumien");
+        return true;
+    }
+
+    // Wywolywane w kazdym obrocie loop(). Nie czeka na nic.
+    void poll() {
+        if (!wTrakcie()) return;
+        const unsigned long teraz = millis();
+        if (teraz - startMs_ > SiecCfg::STRUMIEN_CALKOWITY_TIMEOUT_MS) {
+            ustawBlad("limit czasu calosci", 'c');
+            return;
+        }
+
+        if (stan_ == StrumienStan::CONNECTING) {
+            if (teraz - krokMs_ > SiecCfg::STRUMIEN_CONNECT_TIMEOUT_MS) {
+                ustawBlad("limit czasu laczenia", 'l');
+                return;
+            }
+            fd_set wfds;
+            FD_ZERO(&wfds);
+            FD_SET(sock_, &wfds);
+            struct timeval tv = {0, 0};
+            int sel = select(sock_ + 1, nullptr, &wfds, nullptr, &tv);
+            if (!(sel > 0 && FD_ISSET(sock_, &wfds))) return;   // jeszcze nie polaczono
+            int soErr = 0;
+            socklen_t len = sizeof(soErr);
+            getsockopt(sock_, SOL_SOCKET, SO_ERROR, &soErr, &len);
+            if (soErr != 0) {
+                ustawBlad("connect() blad asynchroniczny", 'a', soErr);
+                return;
+            }
+            char zadanie[160];
+            const int dl = snprintf(zadanie, sizeof(zadanie), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n",
+                                    sciezka_, SiecCfg::HOST);
+            if (dl <= 0 || dl >= (int)sizeof(zadanie)) {
+                ustawBlad("za dlugi adres zapytania", 's');
+                return;
+            }
+            int wyslano = send(sock_, zadanie, (size_t)dl, 0);
+            if (wyslano < 0) {
+                if (errno == EWOULDBLOCK || errno == EAGAIN) return;   // sprobuj w nastepnym obrocie
+                ustawBlad("send() nieudane", 's', errno);
+                return;
+            }
+            if (wyslano != dl) {
+                // Zapytanie ma ok. 100 bajtow i idzie do pustego bufora gniazda -
+                // wyslanie kawalka nie powinno sie zdarzyc; nie udajemy, ze poszlo.
+                ustawBlad("send() wyslal tylko czesc zapytania", 's');
+                return;
+            }
+            stan_ = StrumienStan::NAGLOWKI;
+            krokMs_ = teraz;
+            return;
+        }
+
+        size_t wTymObrocie = 0;
+        while (wTymObrocie < SiecCfg::STRUMIEN_BAJTOW_NA_OBROT) {
+            char bufor[512];
+            int n = recv(sock_, bufor, sizeof(bufor), 0);
+            if (n > 0) {
+                krokMs_ = teraz;
+                wTymObrocie += (size_t)n;
+                przetworz(bufor, (size_t)n);
+                if (!wTrakcie()) return;   // koniec tresci (Content-Length) albo blad odpowiedzi
+            } else if (n == 0) {
+                koniecStrumienia();
+                return;
+            } else {
+                if (errno == EWOULDBLOCK || errno == EAGAIN) break;   // na razie nic wiecej
+                ustawBlad("recv() blad", 'r', errno);
+                return;
+            }
+        }
+        if (wTymObrocie == 0 && teraz - krokMs_ > SiecCfg::STRUMIEN_CISZA_TIMEOUT_MS) {
+            if (stan_ == StrumienStan::NAGLOWKI) ustawBlad("centrala nie odpowiedziala na zapytanie", 'h');
+            else ustawBlad("centrala przestala wysylac w trakcie", 'p');
+        }
+    }
+
+    // Porzuca zadanie bez wyniku (np. uzytkownik wyszedl z ekranu).
+    void przerwij() {
+        if (sock_ >= 0) {
+            close(sock_);
+            sock_ = -1;
+        }
+        stan_ = StrumienStan::IDLE;
+    }
+
+    // Po odczytaniu wyniku: z powrotem do IDLE.
+    void skwituj() { przerwij(); }
+
+    // Zeruje wynik poprzedniego zadania (kod HTTP, liczniki, blad), zeby log
+    // nowej prosby, ktora nie doszla do start(), nie pokazywal starych liczb.
+    void wyczysc() {
+        przerwij();
+        blad_ = "";
+        etapBledu_ = '-';
+        numerBledu_ = 0;
+        kodHttp_ = 0;
+        dlugosc_ = -1;
+        bajtowCiala_ = 0;
+        liniiCiala_ = 0;
+        zaDlugich_ = 0;
+        startMs_ = millis();
+        koniecMs_ = startMs_;
+    }
+
+    bool wTrakcie() const {
+        return stan_ == StrumienStan::CONNECTING || stan_ == StrumienStan::NAGLOWKI || stan_ == StrumienStan::CIALO;
+    }
+    bool gotowyWynik() const { return stan_ == StrumienStan::DONE || stan_ == StrumienStan::ERROR_; }
+    // "Sukces" = odpowiedz HTTP odebrana do konca polaczenia. Kod HTTP i to,
+    // czy tresc jest cala (kompletna()), sprawdza wolajacy.
+    bool bylSukces() const { return stan_ == StrumienStan::DONE; }
+
+    int kodHttp() const { return kodHttp_; }                 // 0 = linia statusu jeszcze nie przyszla
+    long dlugoscZapowiedziana() const { return dlugosc_; }   // Content-Length; -1 = centrala nie podala
+    uint32_t bajtowCiala() const { return bajtowCiala_; }
+    uint32_t liniiCiala() const { return liniiCiala_; }
+    uint32_t zaDlugichLinii() const { return zaDlugich_; }
+    // false, gdy centrala zapowiedziala wiecej bajtow, niz przyszlo.
+    bool kompletna() const { return dlugosc_ < 0 || (long)bajtowCiala_ >= dlugosc_; }
+    uint32_t trwaloMs() const { return (uint32_t)((wTrakcie() ? millis() : koniecMs_) - startMs_); }
+
+    // Etap bledu - te same litery co NonBlockingHttp::etapBledu(), plus:
+    //   'h' polaczono, ale przez STRUMIEN_CISZA_TIMEOUT_MS nie przyszla odpowiedz
+    //   'p' odpowiedz zaczela przychodzic i urwala sie na STRUMIEN_CISZA_TIMEOUT_MS
+    //   'c' calosc trwala dluzej niz STRUMIEN_CALKOWITY_TIMEOUT_MS
+    //   'z' to, co przyszlo, nie jest odpowiedzia HTTP
+    //   'k' odpowiedz w kawalkach (chunked) - tej klasy nie obsluguje
+    char etapBledu() const { return etapBledu_; }
+    int numerBledu() const { return numerBledu_; }
+    const char* ostatniBlad() const { return blad_; }
+
+private:
+    void ustawBlad(const char* powod, char etap, int numerBledu = 0) {
+        blad_ = powod;
+        etapBledu_ = etap;
+        numerBledu_ = numerBledu;
+        if (sock_ >= 0) {
+            close(sock_);
+            sock_ = -1;
+        }
+        koniecMs_ = millis();
+        stan_ = StrumienStan::ERROR_;
+        siecDiagLog("blad", sciezka_, powod, 0);
+    }
+
+    void zakoncz() {
+        // Ostatnia linia bez znaku konca tez jest linia - chyba ze odpowiedz
+        // urwala sie przed zapowiedziana dlugoscia: wtedy to ogryzek (np.
+        // "21.5" uciete do "2") i nie wolno go oddac jako danych.
+        if (stan_ == StrumienStan::CIALO && liniaDl_ > 0 && kompletna()) oddajLinie();
+        if (sock_ >= 0) {
+            close(sock_);
+            sock_ = -1;
+        }
+        koniecMs_ = millis();
+        stan_ = StrumienStan::DONE;
+        siecDiagLog("sukces", sciezka_);
+    }
+
+    void koniecStrumienia() {
+        if (stan_ == StrumienStan::NAGLOWKI) {
+            ustawBlad("polaczenie zamkniete przed koncem naglowkow", 'z');
+            return;
+        }
+        zakoncz();
+    }
+
+    void oddajLinie() {
+        linia_[liniaDl_] = '\0';
+        liniaDl_ = 0;
+        if (liniaUcieta_) zaDlugich_++;
+        liniaUcieta_ = false;
+        liniiCiala_++;
+        if (kodHttp_ == 200 && odbiorca_ != nullptr) odbiorca_(linia_);
+    }
+
+    // Naglowek "Nazwa: wartosc" - porownanie nazwy bez rozrozniania wielkosci liter.
+    static const char* wartoscNaglowka(const char* linia, const char* nazwaMalymi) {
+        size_t i = 0;
+        for (; nazwaMalymi[i] != '\0'; i++) {
+            char c = linia[i];
+            if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+            if (c != nazwaMalymi[i]) return nullptr;
+        }
+        if (linia[i] != ':') return nullptr;
+        i++;
+        while (linia[i] == ' ' || linia[i] == '\t') i++;
+        return linia + i;
+    }
+
+    void liniaNaglowka() {
+        linia_[liniaDl_] = '\0';
+        const size_t dlugoscLinii = liniaDl_;
+        const bool pusta = (dlugoscLinii == 0);
+        liniaDl_ = 0;
+        liniaUcieta_ = false;
+        if (pierwszaLinia_) {
+            pierwszaLinia_ = false;
+            // "HTTP/1.x KOD opis" - co najmniej 12 znakow ("HTTP/1.0 200")
+            if (dlugoscLinii < 12 || strncmp(linia_, "HTTP/1.", 7) != 0 || linia_[8] != ' ') {
+                ustawBlad("odpowiedz nie zaczyna sie od HTTP/1.x", 'z');
+                return;
+            }
+            kodHttp_ = atoi(linia_ + 9);
+            if (kodHttp_ < 100 || kodHttp_ > 599) {
+                ustawBlad("nieczytelny kod HTTP", 'z');
+                return;
+            }
+            return;
+        }
+        if (pusta) {
+            stan_ = StrumienStan::CIALO;
+            if (dlugosc_ == 0) zakoncz();   // odpowiedz bez tresci
+            return;
+        }
+        if (const char* v = wartoscNaglowka(linia_, "content-length")) {
+            dlugosc_ = atol(v);
+            if (dlugosc_ < 0) dlugosc_ = -1;
+        } else if (const char* t = wartoscNaglowka(linia_, "transfer-encoding")) {
+            if (strstr(t, "chunked") != nullptr || strstr(t, "Chunked") != nullptr) {
+                ustawBlad("odpowiedz w kawalkach (chunked)", 'k');
+            }
+        }
+    }
+
+    void przetworz(const char* dane, size_t n) {
+        for (size_t i = 0; i < n; i++) {
+            const char c = dane[i];
+            if (stan_ == StrumienStan::CIALO) bajtowCiala_++;
+            if (c == '\n') {
+                if (liniaDl_ > 0 && linia_[liniaDl_ - 1] == '\r' && !liniaUcieta_) liniaDl_--;
+                if (stan_ == StrumienStan::NAGLOWKI) liniaNaglowka();
+                else oddajLinie();
+                if (!wTrakcie()) return;
+            } else if (liniaDl_ < SiecCfg::STRUMIEN_LINIA_MAX - 1) {
+                linia_[liniaDl_++] = c;
+            } else {
+                liniaUcieta_ = true;   // reszta za dlugiej linii przepada
+            }
+            // Cala zapowiedziana tresc odebrana: nie czekamy na zamkniecie
+            // polaczenia przez centrale (bywa opoznione o ulamek sekundy).
+            if (stan_ == StrumienStan::CIALO && dlugosc_ >= 0 && (long)bajtowCiala_ >= dlugosc_) {
+                zakoncz();
+                return;
+            }
+        }
+    }
+
+    StrumienStan stan_ = StrumienStan::IDLE;
+    int sock_ = -1;
+    OdbiorcaLinii odbiorca_ = nullptr;
+    const char* blad_ = "";
+    char etapBledu_ = '-';
+    int numerBledu_ = 0;
+    int kodHttp_ = 0;
+    long dlugosc_ = -1;
+    uint32_t bajtowCiala_ = 0;
+    uint32_t liniiCiala_ = 0;
+    uint32_t zaDlugich_ = 0;
+    size_t liniaDl_ = 0;
+    bool liniaUcieta_ = false;
+    bool pierwszaLinia_ = true;
+    unsigned long startMs_ = 0;
+    unsigned long krokMs_ = 0;
+    unsigned long koniecMs_ = 0;
+    char sciezka_[64];
+    char linia_[SiecCfg::STRUMIEN_LINIA_MAX];
+};
+
+// =======================================================================
 // GOTOWE GLOBALNE INSTANCJE - po jednej na kazdy rodzaj ruchu sieciowego.
 // Osobne instancje, zeby jedna wolna operacja (np. dlugi POST) nie
 // blokowala mozliwosci wystartowania innej (np. kolejnego GET statusu).
@@ -481,6 +844,7 @@ private:
 extern NonBlockingHttp statusFetch;      // GET /api/status
 extern NonBlockingHttp ustawieniaFetch;  // GET /api/ustawienia-get
 extern NonBlockingHttp komendaFetch;     // POST z dotkniecia (pompa/servo/ustawienia-set)
+extern StrumienHttpGet wykresyFetch;     // [v1.3.0] GET historii dla ekranu Wykresy, linia po linii
 
 extern WskaznikSwiezosci swiezoscStatusu;
 extern WskaznikSwiezosci swiezoscUstawien;

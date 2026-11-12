@@ -3,6 +3,26 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.3.0 Zmieniono: ekran Wykresy ([v1.3.0 WYKRESY]).
+//   - Rysuje z GOTOWYCH punktow centrali 3.58.4 (odpowiedz na
+//     /api/history/panel, pierwsza linia "#panel-hist"): kazdy wiersz to
+//     jeden punkt, "#przerwa" to pozycja bez danych, pole "nan" to brak
+//     punktu tylko tej serii, podpis pod wykresem pochodzi z pol od_etyk i
+//     do_etyk naglowka. Stary CSV (centrala starsza niz 3.58.4) jest
+//     sciskany do 96 punktow jak w v1.2.2.
+//   - lvgl_dashboard_poc_wykresy_strumien_koniec() dostaje wynik pobierania,
+//     pokazuje przyczyne braku wykresu (wykresy_pokaz_komunikat()) i zwraca
+//     to, co faktycznie trafilo na ekran.
+//   - Dodano: lvgl_dashboard_poc_wykresy_postep() (ile danych juz doszlo),
+//     ..._wykresy_czeka_na_dane() (czy ekran jeszcze czeka na wynik),
+//     ..._wykresy_statystyka(), ..._wykresy_strumien_zredukowany(),
+//     ..._wykresy_wynik_nazwa().
+//   - WykresyFetchCb dostaje zakres (0/1/2 = godzina/dzien/tydzien) zamiast
+//     bool "dlugi".
+//   - wykresy_chart_zakres_osi() pomija punkty-przerwy.
+//   - Odpowiedz, ktora nie jest historia (np. strona HTML), daje napis
+//     zamiast wykresu.
+//   Reszta pliku bez zmian. Pelny opis: HISTORIA ZMIAN w main.cpp.
 // [2026-11-12] v1.2.1 Dodano: lvgl_dashboard_poc_alarm_odrzucony() i
 //   lvgl_dashboard_poc_przywroc_alarm() na koncu pliku - stan alarmu
 //   przetrwa samoczynny restart panelu ([v1.2.1 RATUNEK], opis w
@@ -4078,6 +4098,44 @@ static bool wykresy_csv_kolumna_float(const char *linia, int indeksKolumny, floa
   return true;
 }
 
+// [v1.3.0 WYKRESY] Jak wyzej, ale pole musi byc liczba: "nan", puste pole i
+// kazdy inny tekst daja false (brak wartosci). Uzywane dla punktow policzonych
+// przez centrale, gdzie "nan" znaczy "czujnik nie dal odczytu". strtof() samo
+// z siebie zamienia "nan" na NaN albo na 0 - zaleznie od biblioteki - wiec
+// rozstrzygamy to tutaj, a nie zdajemy sie na nia.
+static bool wykresy_csv_kolumna_liczba(const char *linia, int indeksKolumny, float &wynikWyjscie) {
+  const char *p = linia;
+  for (int kol = 0; kol < indeksKolumny; kol++) {
+    p = strchr(p, ',');
+    if (!p) return false;
+    p++;
+  }
+  const char *c = p;
+  if (*c == '-' || *c == '+') c++;
+  if (!((*c >= '0' && *c <= '9') || (*c == '.' && c[1] >= '0' && c[1] <= '9'))) return false;
+  char *koniec = nullptr;
+  const float v = strtof(p, &koniec);
+  if (koniec == p || isnan(v) || isinf(v)) return false;
+  wynikWyjscie = v;
+  return true;
+}
+
+// [v1.3.0 WYKRESY] Czy pole kolumny w ogole da sie odczytac jako liczbe
+// (takze "nan" - tak centrala wypisuje brak odczytu w starym CSV). Sluzy
+// tylko do rozpoznania, czy odpowiedz jest CSV-em historii; wartosci starego
+// CSV czyta dalej wykresy_csv_kolumna_float(), bez zmian wzgledem v1.2.2.
+static bool wykresy_csv_kolumna_czytelna(const char *linia, int indeksKolumny) {
+  const char *p = linia;
+  for (int kol = 0; kol < indeksKolumny; kol++) {
+    p = strchr(p, ',');
+    if (!p) return false;
+    p++;
+  }
+  char *koniec = nullptr;
+  (void)strtof(p, &koniec);
+  return koniec != p;
+}
+
 // [DZIURY-CZAS, ta sesja] Jak wyzej, ale zwraca uint32_t przez strtoul()
 // zamiast strtof(). Unix epoch rzedu 1.7 mld NIE miesci sie dokladnie w
 // 24-bitowej mantysie float (przy tej wielkosci liczby precyzja to
@@ -4167,6 +4225,29 @@ struct WykresyStrumienStan {
   // (swiezo po _strumien_start(), ktory zeruje cala te strukture) - w tym
   // przypadku gap nigdy nie jest zglaszany dla PIERWSZEGO wiersza.
   uint32_t czasOstatniegoWiersza;
+  // [v1.3.0 WYKRESY] Odpowiedz, w ktorej punkty policzyla juz centrala
+  // (GET /api/history/panel, centrala 3.58.4+). Poznajemy ja po pierwszej
+  // linii "#panel-hist ...". Wiersze maja wtedy ZAWSZE format dlugi (sr, min,
+  // max), niezaleznie od trybu, kazdy wiersz to jeden gotowy punkt, a
+  // przerwy w pracy centrali przychodza jako linie "#przerwa" - panel niczego
+  // nie usrednia ani nie zgaduje przerw z odstepow czasu.
+  bool zredukowany;
+  bool formatDlugi;        // format wierszy: true = jak /api/history/long (zawsze przy zredukowany)
+  bool koniecWidziany;     // przyszla linia "#koniec N"
+  int  koniecLiczba;       // N z tej linii: ile pozycji (wierszy + przerw) centrala wyslala
+  int  pozycji;            // ile pozycji faktycznie odebrano (tryb zredukowany)
+  int  przerw;             // ile z nich to przerwy (w starym formacie: ile przerw wykryl panel)
+  uint32_t wierszyZWartoscia;   // wiersze, z ktorych dalo sie odczytac wartosc choc jednej wybranej serii
+  int8_t fsCentrali;       // "fs=" z naglowka: 1 = centrala zapisuje historie do plikow, 0 = trzyma ja tylko w pamieci, -1 = nie podala
+  long wierszyZrodla;      // "wierszy=" z naglowka: ile wierszy historii centrala wziela pod uwage; -1 = nieznane
+  char etykOd[12];         // poczatek i koniec zakresu jako tekst centrali ("od_etyk=", "do_etyk=")
+  char etykDo[12];
+  // Ktore serie (indeksy WYKRESY_SERIE) byly wybrane w chwili startu
+  // pobierania. Od v1.3.0 pobieranie nie blokuje ekranu, wiec uzytkownik moze
+  // w trakcie wrocic do Selekcji; wtedy pobieranie jest porzucane
+  // (wykresy_pokaz_selekcje()). Migawka to bezpiecznik: linie sa rozkladane
+  // wedlug wyboru z chwili startu, nawet gdyby to porzucenie kiedys zawiodlo.
+  int8_t kolSerii[WYKRESY_MAX_SLOTOW];
 };
 static WykresyStrumienStan g_wykresyStrumien;
 // [UWAGA] wykresy_strumien_scal_kubelki()/wykresy_strumien_zamknij_kubelek()
@@ -4363,6 +4444,8 @@ static int  g_wykresyOstatniaOsDodania = 0;
 static const WykresySeriaDef *wykresy_wybrana_seria(int pozycja);
 static const char *wykresy_tryb_nazwa();
 static bool wykresy_tryb_jest_dlugi(); // forward - zdefiniowana nizej razem z wykresy_tryb_nazwa(); potrzebna juz w wykresy_pokaz_wykres() ponizej (PARTIA 5e - fetch)
+static int wykresy_tryb_numer();       // forward - [v1.3.0] numer trybu dla main.cpp (LVGL_WYKRESY_TRYB_*)
+static bool wykresy_bufory_wybranych_sa(); // forward - [v1.3.0] czy sa bufory punktow dla wybranych serii
 static void wykresy_chart_ukryj(); // forward - zdefiniowana nizej przy reszcie logiki lv_chart; potrzebna juz w wykresy_odswiez_wykres_fetch() ponizej (PARTIA 7)
 
 static lv_obj_t *wykresySelekcjaCont = nullptr;
@@ -4440,27 +4523,36 @@ static bool g_wykresyFetchWToku = false;
 // main.cpp, nie tutaj, ale zasada ta sama: brak callbacku = cicho nic).
 static void wykresy_odswiez_wykres_fetch() {
   if (!wykresyWykresPlaceholder) return;
+  // [v1.3.0 WYKRESY] Poprzednie pobieranie (jesli jeszcze trwa) przestaje byc
+  // potrzebne juz teraz - takze wtedy, gdy nowe z jakiegos powodu nie ruszy.
+  g_wykresyFetchWToku = false;
+  g_wykresyStrumien.aktywny = false;
   wykresy_chart_ukryj(); // [PARTIA 7] poprzedni wykres (jesli byl) znika, dopoki nowe dane nie doplyna
-  lv_label_set_text(wykresyWykresPlaceholder, "Ladowanie danych...");
+  lv_label_set_text(wykresyWykresPlaceholder, "Ladowanie danych z centrali...");
   lv_obj_set_style_text_color(wykresyWykresPlaceholder, rgb565(KOL_TEKST_DIM), 0);
   if (!g_wykresyFetchCb) {
     lv_label_set_text(wykresyWykresPlaceholder, "Brak polaczenia z fetchem (main.cpp)");
     return;
   }
-  // [WAZNE] httpGet() w main.cpp jest BLOKUJACY (synchroniczny HTTPClient,
-  // dokladnie jak pobierzStatus()) - bez wymuszenia repaintu TERAZ tekst
-  // "Ladowanie danych..." ustawiony wyzej wisialby niewidoczny w buforze
-  // LVGL do konca GET-a (LVGL normalnie odswieza ekran dopiero w kolejnym
-  // obrocie lv_timer_handler() w loop(), a ten obrot jeszcze sie nie
-  // zaczal - jestesmy w trakcie obslugi zdarzenia dotyku). lv_refr_now()
-  // wymusza natychmiastowe wypchniecie biezacej klatki na TFT, wiec user
-  // faktycznie widzi "Ladowanie..." zanim ekran na chwile "zamrozi" sie na
-  // czas GET-a (~60KB CSV, moze to byc caly sekunda przy /api/history/long).
-  lv_refr_now(nullptr);
+  // [v1.3.0 WYKRESY] Bez buforow punktow (zabraklo na nie pamieci przy
+  // wejsciu na ekran, patrz wykresy_bufory_8_zaalokuj()) nie ma gdzie
+  // odlozyc danych - nie zawracamy centrali glowy.
+  if (!wykresy_bufory_wybranych_sa()) {
+    lv_label_set_text(wykresyWykresPlaceholder, "Brak pamieci na wykres\n(zamknij ekran Wykresy i otworz ponownie)");
+    lv_obj_set_style_text_color(wykresyWykresPlaceholder, rgb565(KOL_OGIEN), 0);
+    Serial.println("tag=WYKRESY lvl=WARN zdarzenie=blad przyczyna=brak_pamieci msg=\"brak buforow punktow\"");
+    return;
+  }
+  // [v1.3.0 WYKRESY] Callback tylko STARTUJE pobieranie (main.cpp,
+  // wykresyFetchStart()) i od razu wraca - ekran rysuje sie normalnie, wiec
+  // napis "Ladowanie..." widac bez dawnego lv_refr_now(). Dane przychodza w
+  // kolejnych obrotach loop() przez _strumien_linia(), koniec przez
+  // _strumien_koniec(). (W trybie symulacji callback podaje wszystko od razu,
+  // jeszcze zanim wroci - obie kolejnosci sa poprawne.)
   bool dlugi = wykresy_tryb_jest_dlugi();
   g_wykresyFetchOczekiwanyDlugi = dlugi;
   g_wykresyFetchWToku = true;
-  g_wykresyFetchCb(dlugi);
+  g_wykresyFetchCb(wykresy_tryb_numer());
 }
 
 // Przelacza widoczna podstrone. idle-timer resetowany przy KAZDYM przejsciu
@@ -4470,6 +4562,11 @@ static void wykresy_odswiez_wykres_fetch() {
 static void wykresy_pokaz_selekcje() {
   if (wykresyWykresCont) lv_obj_add_flag(wykresyWykresCont, LV_OBJ_FLAG_HIDDEN);
   if (wykresySelekcjaCont) lv_obj_clear_flag(wykresySelekcjaCont, LV_OBJ_FLAG_HIDDEN);
+  // [v1.3.0 WYKRESY] Jesli dane jeszcze plynely, nikt juz na nie nie czeka:
+  // main.cpp zobaczy to przez _wykresy_czeka_na_dane() i porzuci pobieranie,
+  // a ewentualne spoznione linie przepadna (.aktywny).
+  g_wykresyFetchWToku = false;
+  g_wykresyStrumien.aktywny = false;
   wykresy_panel_idle_resetuj();
 }
 static void wykresy_pokaz_wykres() {
@@ -4820,6 +4917,13 @@ static bool wykresy_tryb_jest_dlugi() {
   return g_wykresyTryb == WYKR_TRYB_TYDZIEN;
 }
 
+// [v1.3.0 WYKRESY] Numer trybu dla main.cpp - te same liczby co
+// LVGL_WYKRESY_TRYB_* w naglowku (i kolejnosc przyciskow zakresu).
+static_assert((int)WYKR_TRYB_GODZINY == LVGL_WYKRESY_TRYB_GODZINY && (int)WYKR_TRYB_DZIEN == LVGL_WYKRESY_TRYB_DZIEN &&
+              (int)WYKR_TRYB_TYDZIEN == LVGL_WYKRESY_TRYB_TYDZIEN, "WykresyTryb i LVGL_WYKRESY_TRYB_* musza sie zgadzac");
+static_assert(WYKRESY_MAX_PUNKTOW == LVGL_WYKRESY_PUNKTOW, "LVGL_WYKRESY_PUNKTOW w naglowku musi byc rowne WYKRESY_MAX_PUNKTOW");
+static int wykresy_tryb_numer() { return (int)g_wykresyTryb; }
+
 // [PARTIA 8d, ta sesja - USUNIETO g_wykresyPunktyA/B] Dawne bufory na 2
 // nazwane serie zastapione ponizsza pula 8 slotow - wykresy_chart_odswiez()
 // i lvgl_dashboard_poc_wykresy_dane_gotowe() od tej partii pracuja
@@ -4849,6 +4953,11 @@ static bool wykresy_tryb_jest_dlugi() {
 // kazde uzycie sprawdza jedno albo drugie.
 static WykresyPunkt *g_wykresyPunkty[WYKRESY_MAX_SLOTOW] = { nullptr };
 static int g_wykresyLiczbaPunktow[WYKRESY_MAX_SLOTOW] = { 0 };
+// [v1.3.0 WYKRESY] Wynik ostatniego pobrania: ile punktow z danymi trafilo na
+// wykres (do logu) i czy wykres powstal tylko z czesci danych (dopisek pod
+// wykresem) - patrz lvgl_dashboard_poc_wykresy_strumien_koniec().
+static int  g_wykresyOstatnioPunktow = 0;
+static bool g_wykresyNiepelne = false;
 
 static void wykresy_bufory_8_zaalokuj() {
   for (int i = 0; i < WYKRESY_MAX_SLOTOW; i++) {
@@ -4863,10 +4972,20 @@ static void wykresy_bufory_8_zaalokuj() {
   }
 }
 
+// [v1.3.0 WYKRESY] Czy kazda wybrana seria ma swoj bufor punktow.
+static bool wykresy_bufory_wybranych_sa() {
+  for (int i = 0; i < g_wykresyLiczbaWybranych && i < WYKRESY_MAX_SLOTOW; i++) {
+    if (g_wykresyPunkty[i] == nullptr) return false;
+  }
+  return g_wykresyLiczbaWybranych > 0;
+}
+
 static void wykresy_bufory_8_zwolnij() {
   // Gdyby jakies pobieranie danych bylo jeszcze w toku, jego reszta ma
   // przepasc (strumien_linia() i strumien_koniec() sprawdzaja .aktywny).
+  // [v1.3.0] ...a main.cpp ma je porzucic (_wykresy_czeka_na_dane()).
   g_wykresyStrumien.aktywny = false;
+  g_wykresyFetchWToku = false;
   for (int i = 0; i < WYKRESY_MAX_SLOTOW; i++) {
     g_wykresyLiczbaPunktow[i] = 0;
     free(g_wykresyPunkty[i]);   // free(nullptr) jest dozwolone
@@ -4964,6 +5083,13 @@ static void wykresy_strumien_zamknij_kubelek(bool znacznikDziury = false) {
       pkt.wartosc = g_wykresyStrumien.suma[s] / g_wykresyStrumien.licznik[s];
       pkt.minimum = g_wykresyStrumien.minW[s];
       pkt.maksimum = g_wykresyStrumien.maxW[s];
+    } else if (g_wykresyStrumien.zredukowany) {
+      // [v1.3.0 WYKRESY] Punkt policzony przez centrale, a ta seria ma w nim
+      // "nan": czujnik nie dal w tym odcinku zadnego odczytu. Linia tej serii
+      // ma tu przerwe - nie wymyslamy wartosci (inne serie rysuja sie dalej).
+      pkt.wartosc = NAN;
+      pkt.minimum = NAN;
+      pkt.maksimum = NAN;
     } else {
       // Brak sparsowanych wartosci tej serii w tym kubelku (np. urwana
       // linia) - powiel poprzedni punkt zamiast wstawiac zero, ktore
@@ -5058,6 +5184,12 @@ static bool wykresy_chart_zakres_osi(int os, float &minWyjscie, float &maxWyjsci
     const WykresyPunkt *punkty = g_wykresyPunkty[p];
     for (int i = 0; i < n; i++) {
       float v = punkty[i].wartosc;
+      // [v1.3.0 WYKRESY] Znacznik przerwy (NaN) nie jest wartoscia. Do v1.2.2
+      // przerwa jako PIERWSZY punkt serii dawala min = max = NaN, a kazde
+      // pozniejsze porownanie z NaN jest falszywe - cala os dostawala zakres
+      // NaN i wykres sie rozjezdzal. (Przerwa dalej w serii byla pomijana
+      // "przypadkiem", z tego samego powodu.)
+      if (isnan(v)) continue;
       if (!mamDane) {
         minWyjscie = maxWyjscie = v;
         mamDane = true;
@@ -5400,10 +5532,24 @@ static void wykresy_chart_odswiez() {
     if (pierwszaZDanymi >= 0) {
       const WykresyPunkt *punkty = g_wykresyPunkty[pierwszaZDanymi];
       int liczbaPunktow = g_wykresyLiczbaPunktow[pierwszaZDanymi];
-      char zakresBuf[40];
-      snprintf(zakresBuf, sizeof(zakresBuf), "%s  -  %s",
-               punkty[0].etykieta, punkty[liczbaPunktow - 1].etykieta);
+      char zakresBuf[48];
+      if (g_wykresyStrumien.zredukowany && strcmp(g_wykresyStrumien.etykOd, "--:--") == 0 && strcmp(g_wykresyStrumien.etykDo, "--:--") == 0) {
+        // Centrala nie zna godziny (zegar nieustawiony, brak NTP): punkty sa
+        // w dobrej kolejnosci i odstepach, ale bez dat.
+        snprintf(zakresBuf, sizeof(zakresBuf), "czas nieznany (zegar centrali nieustawiony)");
+      } else if (g_wykresyStrumien.zredukowany && g_wykresyStrumien.etykOd[0] != '\0' && g_wykresyStrumien.etykDo[0] != '\0') {
+        // [v1.3.0 WYKRESY] Punkty policzyla centrala: podpis to zakres osi
+        // czasu, ktory sama podala (lewa krawedz wykresu - prawa krawedz).
+        // Os czasu jest liniowa na calej szerokosci, przerwy tez zajmuja
+        // na niej swoje miejsce.
+        snprintf(zakresBuf, sizeof(zakresBuf), "%s  -  %s", g_wykresyStrumien.etykOd, g_wykresyStrumien.etykDo);
+      } else {
+        snprintf(zakresBuf, sizeof(zakresBuf), "%s  -  %s%s",
+                 punkty[0].etykieta, punkty[liczbaPunktow - 1].etykieta, g_wykresyNiepelne ? "   NIEPELNE" : "");
+      }
       lv_label_set_text(wykresyChartZakresLabel, zakresBuf);
+      // Dopisek NIEPELNE ma byc widac: kolor ostrzezenia zamiast szarego.
+      lv_obj_set_style_text_color(wykresyChartZakresLabel, rgb565(g_wykresyNiepelne ? KOL_OGIEN : KOL_TEKST_DIM), 0);
     }
   }
 
@@ -5422,17 +5568,17 @@ static void wykresy_chart_odswiez() {
   // placeholder bledu) jest tym, co user widzi.
 }
 
-// [FIX-WYKRESY-RAM, ta sesja] main.cpp woła to RAZ, TUZ PRZED wyslaniem GET
-// /api/history(/long) - przygotowuje swiezy stan strumienia. `liczbaSerii`
-// (i sama kolejnosc wyboru g_wykresyKolejnoscWyboru) jest ZAMRAZANA tutaj:
-// httpGet()/strumien odbywa sie synchronicznie w obrebie jednego wywolania
-// dotykowego (dokladnie jak stare, blokujace httpGet()), wiec user fizycznie
-// nie moze zmienic wyboru serii w trakcie - nie potrzeba dodatkowej ochrony
-// przed wyscigiem.
+// [FIX-WYKRESY-RAM; v1.3.0] main.cpp wola to RAZ, tuz przed wyslaniem
+// zapytania do centrali (i jeszcze raz, gdy po nieudanej probie nowego adresu
+// pyta po staremu) - przygotowuje swiezy stan i zapamietuje wybor serii z tej
+// chwili (.kolSerii).
 void lvgl_dashboard_poc_wykresy_strumien_start(bool dlugi) {
   memset(&g_wykresyStrumien, 0, sizeof(g_wykresyStrumien));
   g_wykresyStrumien.aktywny = true;
   g_wykresyStrumien.dlugi = dlugi;
+  g_wykresyStrumien.formatDlugi = dlugi;
+  g_wykresyStrumien.wierszyZrodla = -1;
+  g_wykresyStrumien.fsCentrali = -1;
   // [FIX-WYKRESY-GODZINY] g_wykresyTryb jest juz zdefiniowany wyzej w tym
   // pliku (enum WykresyTryb) - patrz obszerny komentarz przy
   // WYKRESY_GODZINY_OKNO co do tego, dlaczego to rozroznienie w ogole tu
@@ -5441,17 +5587,82 @@ void lvgl_dashboard_poc_wykresy_strumien_start(bool dlugi) {
   // gdyby to kiedys przestalo byc prawda.
   g_wykresyStrumien.oknoPrzesuwne = !dlugi && (g_wykresyTryb == WYKR_TRYB_GODZINY);
   g_wykresyStrumien.liczbaSerii = g_wykresyLiczbaWybranych;
+  for (int s = 0; s < WYKRESY_MAX_SLOTOW; s++) {
+    g_wykresyStrumien.kolSerii[s] = (s < g_wykresyLiczbaWybranych) ? (int8_t)g_wykresyKolejnoscWyboru[s] : (int8_t)-1;
+  }
   g_wykresyStrumien.rozmiarKubelka = 1;
 }
 
-// main.cpp woła to RAZ na KAZDY wiersz CSV, w miare jak przychodzi z sieci
-// (main.cpp dzieli strumien po '\n' - patrz wykresyFetchWykonaj()). Parsuje
-// kolumny WSZYSTKICH aktualnie wybranych serii z tej JEDNEJ linii naraz
-// (zamiast osobnego przebiegu calego CSV na kazda serie, jak w starym
-// kodzie) i akumuluje je w biezacym otwartym kubelku g_wykresyStrumien.
+// [v1.3.0 WYKRESY] Wartosc pola "klucz=" z linii naglowka "#panel-hist ..."
+// (pola oddzielone spacjami) jako tekst; false, gdy pola nie ma.
+static bool wykresy_naglowek_pole(const char *linia, const char *klucz, char *wyjscie, size_t rozmiar) {
+  const size_t dlKlucza = strlen(klucz);
+  const char *p = linia;
+  while ((p = strstr(p, klucz)) != nullptr) {
+    if ((p == linia || p[-1] == ' ') && p[dlKlucza] == '=') {
+      p += dlKlucza + 1;
+      size_t i = 0;
+      while (p[i] != '\0' && p[i] != ' ' && i + 1 < rozmiar) { wyjscie[i] = p[i]; i++; }
+      wyjscie[i] = '\0';
+      return true;
+    }
+    p += dlKlucza;
+  }
+  return false;
+}
+
+// [v1.3.0 WYKRESY] Linie zaczynajace sie od '#' - naglowek i znaczniki
+// odpowiedzi centrali 3.58.4+ (GET /api/history/panel):
+//   #panel-hist 1 tryb=dzien pkt=96 wierszy=1440 od=.. do=.. krok_s=900 zrodlo=lokalne fs=1 od_etyk=.. do_etyk=..
+//   #przerwa          jeden odcinek osi czasu bez danych
+//   #koniec N         koniec; N = liczba wierszy i przerw powyzej
+// Nieznane linie '#' sa pomijane (miejsce na przyszle pola).
+static void wykresy_strumien_linia_sterujaca(const char *linia) {
+  if (strncmp(linia, "#panel-hist ", 12) == 0) {
+    // Naglowek liczy sie tylko jako PIERWSZA linia odpowiedzi.
+    if (g_wykresyStrumien.liczbaKubelkow != 0 || g_wykresyStrumien.wierszWKubelku != 0 || g_wykresyStrumien.zredukowany) return;
+    g_wykresyStrumien.zredukowany = true;
+    g_wykresyStrumien.formatDlugi = true;       // wiersze jak /api/history/long, w kazdym trybie
+    g_wykresyStrumien.oknoPrzesuwne = false;    // centrala juz wybrala okno czasu
+    char pole[16];
+    if (wykresy_naglowek_pole(linia, "wierszy", pole, sizeof(pole))) g_wykresyStrumien.wierszyZrodla = atol(pole);
+    if (wykresy_naglowek_pole(linia, "fs", pole, sizeof(pole)) && (pole[0] == '0' || pole[0] == '1') && pole[1] == '\0') {
+      g_wykresyStrumien.fsCentrali = (int8_t)(pole[0] - '0');
+    }
+    if (wykresy_naglowek_pole(linia, "od_etyk", g_wykresyStrumien.etykOd, sizeof(g_wykresyStrumien.etykOd))) {
+      for (char *c = g_wykresyStrumien.etykOd; *c; c++) if (*c == '_') *c = ' ';   // "13.11_13:00" -> "13.11 13:00"
+    }
+    if (wykresy_naglowek_pole(linia, "do_etyk", g_wykresyStrumien.etykDo, sizeof(g_wykresyStrumien.etykDo))) {
+      for (char *c = g_wykresyStrumien.etykDo; *c; c++) if (*c == '_') *c = ' ';
+    }
+    return;
+  }
+  if (!g_wykresyStrumien.zredukowany) return;
+  if (strcmp(linia, "#przerwa") == 0) {
+    if (g_wykresyStrumien.koniecWidziany) return;
+    wykresy_strumien_zamknij_kubelek(true);
+    g_wykresyStrumien.pozycji++;
+    g_wykresyStrumien.przerw++;
+    return;
+  }
+  if (strncmp(linia, "#koniec", 7) == 0) {
+    g_wykresyStrumien.koniecWidziany = true;
+    g_wykresyStrumien.koniecLiczba = atoi(linia + 7);
+  }
+}
+
+// main.cpp wola to RAZ na KAZDA linie odpowiedzi centrali, w miare jak
+// przychodzi z sieci. Wiersz danych: parsuje kolumny WSZYSTKICH wybranych
+// serii naraz i dopisuje je do biezacego otwartego kubelka.
 void lvgl_dashboard_poc_wykresy_strumien_linia(const char *linia) {
   if (!g_wykresyStrumien.aktywny || !linia) return;
-  const bool dlugi = g_wykresyStrumien.dlugi;
+  if (linia[0] == '#') {
+    wykresy_strumien_linia_sterujaca(linia);
+    return;
+  }
+  if (linia[0] == '\0') return;
+  if (g_wykresyStrumien.zredukowany && g_wykresyStrumien.koniecWidziany) return;   // nic po "#koniec"
+  const bool dlugi = g_wykresyStrumien.formatDlugi;
 
   // [DZIURY-CZAS, ta sesja] Sprawdzamy PRZED przetworzeniem wartosci z tego
   // wiersza, czy od POPRZEDNIEGO surowego wiersza minelo wiecej niz prog -
@@ -5465,27 +5676,47 @@ void lvgl_dashboard_poc_wykresy_strumien_linia(const char *linia) {
   // usrednionego (po adaptacyjnym podwojeniu) kubelka obejmujacego wiele
   // surowych wierszy. Zero kosztu pamieci per punkt (patrz uzasadnienie przy
   // WYKRESY_PROG_DZIURY_KROTKI_S/DLUGI_S i przy samej funkcji zamknij_kubelek()).
-  uint32_t czasTegoWiersza = 0;
-  wykresy_csv_kolumna_u32(linia, dlugi ? WYKRESY_KOL_DLUGI_CZAS : WYKRESY_KOL_KROTKI_CZAS, czasTegoWiersza);
-  if (czasTegoWiersza > 0 && g_wykresyStrumien.czasOstatniegoWiersza > 0 &&
-      czasTegoWiersza > g_wykresyStrumien.czasOstatniegoWiersza) {
-    uint32_t prog = dlugi ? WYKRESY_PROG_DZIURY_DLUGI_S : WYKRESY_PROG_DZIURY_KROTKI_S;
-    if (czasTegoWiersza - g_wykresyStrumien.czasOstatniegoWiersza > prog) {
-      if (g_wykresyStrumien.wierszWKubelku > 0) wykresy_strumien_zamknij_kubelek(false);
-      wykresy_strumien_zamknij_kubelek(true);
+  // [v1.3.0] Tylko dla starego CSV. W odpowiedzi zredukowanej kolejne punkty
+  // sa od siebie odlegle o caly krok (w trybie tygodniowym 105 minut - wiecej
+  // niz prog przerwy), a przerwy podaje centrala liniami "#przerwa".
+  if (!g_wykresyStrumien.zredukowany) {
+    uint32_t czasTegoWiersza = 0;
+    wykresy_csv_kolumna_u32(linia, dlugi ? WYKRESY_KOL_DLUGI_CZAS : WYKRESY_KOL_KROTKI_CZAS, czasTegoWiersza);
+    if (czasTegoWiersza > 0 && g_wykresyStrumien.czasOstatniegoWiersza > 0 &&
+        czasTegoWiersza > g_wykresyStrumien.czasOstatniegoWiersza) {
+      uint32_t prog = dlugi ? WYKRESY_PROG_DZIURY_DLUGI_S : WYKRESY_PROG_DZIURY_KROTKI_S;
+      if (czasTegoWiersza - g_wykresyStrumien.czasOstatniegoWiersza > prog) {
+        if (g_wykresyStrumien.wierszWKubelku > 0) wykresy_strumien_zamknij_kubelek(false);
+        wykresy_strumien_zamknij_kubelek(true);
+        g_wykresyStrumien.przerw++;
+      }
     }
+    if (czasTegoWiersza > 0) g_wykresyStrumien.czasOstatniegoWiersza = czasTegoWiersza;
   }
-  if (czasTegoWiersza > 0) g_wykresyStrumien.czasOstatniegoWiersza = czasTegoWiersza;
 
+  bool wierszMaWartosc = false;
   for (int s = 0; s < g_wykresyStrumien.liczbaSerii; s++) {
-    const WykresySeriaDef &seria = WYKRESY_SERIE[g_wykresyKolejnoscWyboru[s]];
+    const int idxSerii = g_wykresyStrumien.kolSerii[s];
+    if (idxSerii < 0 || idxSerii >= WYKRESY_LICZBA_SERII) continue;
+    const WykresySeriaDef &seria = WYKRESY_SERIE[idxSerii];
     const int kolSr = dlugi ? seria.kolDlugiSr : seria.kolKrotki;
     float wSr;
-    if (!wykresy_csv_kolumna_float(linia, kolSr, wSr)) continue;
-    float wMin = wSr, wMaks = wSr;
-    if (dlugi) {
-      wykresy_csv_kolumna_float(linia, WYKRESY_KOL_DLUGI_MIN(seria.kolDlugiSr), wMin);
-      wykresy_csv_kolumna_float(linia, WYKRESY_KOL_DLUGI_MAX(seria.kolDlugiSr), wMaks);
+    float wMin, wMaks;
+    if (g_wykresyStrumien.zredukowany) {
+      // Punkt policzony przez centrale: "nan" = ta seria nie ma tu wartosci.
+      if (!wykresy_csv_kolumna_liczba(linia, kolSr, wSr)) continue;
+      wMin = wMaks = wSr;
+      wykresy_csv_kolumna_liczba(linia, WYKRESY_KOL_DLUGI_MIN(seria.kolDlugiSr), wMin);
+      wykresy_csv_kolumna_liczba(linia, WYKRESY_KOL_DLUGI_MAX(seria.kolDlugiSr), wMaks);
+      wierszMaWartosc = true;
+    } else {
+      if (!wykresy_csv_kolumna_float(linia, kolSr, wSr)) continue;
+      if (wykresy_csv_kolumna_czytelna(linia, kolSr)) wierszMaWartosc = true;
+      wMin = wMaks = wSr;
+      if (dlugi) {
+        wykresy_csv_kolumna_float(linia, WYKRESY_KOL_DLUGI_MIN(seria.kolDlugiSr), wMin);
+        wykresy_csv_kolumna_float(linia, WYKRESY_KOL_DLUGI_MAX(seria.kolDlugiSr), wMaks);
+      }
     }
     if (g_wykresyStrumien.licznik[s] == 0) {
       g_wykresyStrumien.minW[s] = wMin;
@@ -5497,68 +5728,197 @@ void lvgl_dashboard_poc_wykresy_strumien_linia(const char *linia) {
     g_wykresyStrumien.suma[s] += wSr;
     g_wykresyStrumien.licznik[s]++;
   }
+  if (wierszMaWartosc) g_wykresyStrumien.wierszyZWartoscia++;
   wykresy_csv_etykieta(linia, g_wykresyStrumien.etykieta, sizeof(g_wykresyStrumien.etykieta));
 
   g_wykresyStrumien.wierszWKubelku++;
+  if (g_wykresyStrumien.zredukowany) g_wykresyStrumien.pozycji++;
   if (g_wykresyStrumien.wierszWKubelku >= g_wykresyStrumien.rozmiarKubelka) {
     wykresy_strumien_zamknij_kubelek();
   }
 }
 
-// main.cpp woła to RAZ po zakonczeniu transferu (sukces LUB blad/brak WiFi -
-// wtedy liczbaWierszy=0, dokladnie jak pusty String w starym API). Domyka
-// ewentualny niepelny ostatni kubelek i przelacza UI na wykres/komunikat
-// bledu - identyczna logika odrzucania "spoznionej" odpowiedzi i pustego
-// wyniku jak w wycofanej lvgl_dashboard_poc_wykresy_dane_gotowe().
-void lvgl_dashboard_poc_wykresy_strumien_koniec(bool dlugi, uint32_t liczbaWierszy) {
+// [v1.3.0 WYKRESY] Nazwy wynikow do logu - kolejnosc jak w enum LvglWykresyWynik.
+const char *lvgl_dashboard_poc_wykresy_wynik_nazwa(int wynik) {
+  static const char *const NAZWY[] = { "ok", "niepelne", "pusto", "za_malo", "brak_wifi", "brak_polaczenia",
+                                        "limit_czasu", "http", "urwana", "zla_odpowiedz", "brak_pamieci", "nieaktualne" };
+  if (wynik < 0 || wynik >= (int)(sizeof(NAZWY) / sizeof(NAZWY[0]))) return "?";
+  return NAZWY[wynik];
+}
+
+bool lvgl_dashboard_poc_wykresy_strumien_zredukowany() {
+  return g_wykresyStrumien.zredukowany;
+}
+
+// [v1.3.0 WYKRESY] Czy podstrona Wykres jest na ekranie i czeka na dane.
+// false po wyjsciu z niej dowolna droga (strzalka, X, gest, bezczynnosc,
+// ekran alarmu) - main.cpp porzuca wtedy pobieranie.
+bool lvgl_dashboard_poc_wykresy_czeka_na_dane() {
+  if (!g_wykresyFetchWToku) return false;
+  if (wykresyPanel == nullptr || lv_scr_act() != wykresyPanel) return false;
+  if (!wykresyWykresCont || lv_obj_has_flag(wykresyWykresCont, LV_OBJ_FLAG_HIDDEN)) return false;
+  return true;
+}
+
+// [v1.3.0 WYKRESY] Postep pobierania pod napisem "Ladowanie...". Przy centrali
+// 3.58.4+ calosc trwa ulamek sekundy i tego napisu zwykle nie widac; przy
+// starszej (ponad 1 MB) widac, ze dane plyna.
+void lvgl_dashboard_poc_wykresy_postep(uint32_t linii, uint32_t bajtow) {
+  if (!g_wykresyFetchWToku || !wykresyWykresPlaceholder) return;
+  if (lv_obj_has_flag(wykresyWykresPlaceholder, LV_OBJ_FLAG_HIDDEN)) return;
+  if (linii == 0) return;   // jeszcze nic nie przyszlo - zostaje "Ladowanie danych z centrali..."
+  lv_label_set_text_fmt(wykresyWykresPlaceholder, "Ladowanie danych z centrali...\n%lu wierszy (%lu kB)",
+                        (unsigned long)linii, (unsigned long)((bajtow + 512U) / 1024U));
+}
+
+void lvgl_dashboard_poc_wykresy_statystyka(LvglWykresyStatystyka *wyjscie) {
+  if (!wyjscie) return;
+  wyjscie->punktow = g_wykresyOstatnioPunktow;
+  wyjscie->przerw = g_wykresyStrumien.przerw;
+  wyjscie->wierszyZrodla = g_wykresyStrumien.wierszyZrodla;
+}
+
+// [v1.3.0 WYKRESY] Komunikat zamiast wykresu. Kazda przyczyna ma wlasny tekst
+// (do v1.2.2 wszystko konczylo sie napisem "Brak danych (WiFi/centrala
+// niedostepna)", z ktorego nie dalo sie wyczytac, co naprawde zaszlo).
+static void wykresy_pokaz_komunikat(int wynik, int szczegol) {
+  wykresy_chart_ukryj();
+  if (!wykresyWykresPlaceholder) return;
+  // Centrala z wylaczonym zapisem historii na flash trzyma ja tylko w pamieci:
+  // po kazdym jej restarcie wykresy zaczynaja sie od zera. Gdy danych brak,
+  // to najczestszy powod - mowimy o nim wprost (centrala podaje "fs=0").
+  const char *bezFs = (g_wykresyStrumien.fsCentrali == 0)
+                          ? "\n\nZapis historii na flash jest w centrali wylaczony:\npo jej restarcie historia zaczyna sie od zera"
+                          : "";
+  switch (wynik) {
+    case LVGL_WYKRESY_PUSTO:
+      lv_label_set_text_fmt(wykresyWykresPlaceholder, "Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minute po starcie)%s", bezFs);
+      break;
+    case LVGL_WYKRESY_ZA_MALO:
+      lv_label_set_text_fmt(wykresyWykresPlaceholder, "Za malo danych na wykres (jeden pomiar)\nSprobuj za kilka minut%s", bezFs);
+      break;
+    case LVGL_WYKRESY_BRAK_WIFI:
+      lv_label_set_text(wykresyWykresPlaceholder, "Brak polaczenia z siecia centrali (WiFi)");
+      break;
+    case LVGL_WYKRESY_BRAK_POLACZENIA:
+      lv_label_set_text(wykresyWykresPlaceholder, "Centrala nie przyjela polaczenia\nSprobuj ponownie");
+      break;
+    case LVGL_WYKRESY_LIMIT_CZASU:
+      lv_label_set_text(wykresyWykresPlaceholder, "Centrala nie odpowiedziala w czasie\nSprobuj ponownie");
+      break;
+    case LVGL_WYKRESY_HTTP:
+      if (szczegol == 503) lv_label_set_text(wykresyWykresPlaceholder, "Centrali zabraklo pamieci na wykres (HTTP 503)\nSprobuj ponownie");
+      else lv_label_set_text_fmt(wykresyWykresPlaceholder, "Centrala odpowiedziala bledem HTTP %d", szczegol);
+      break;
+    case LVGL_WYKRESY_URWANA:
+      lv_label_set_text(wykresyWykresPlaceholder, "Odpowiedz centrali urwala sie w polowie\nSprobuj ponownie");
+      break;
+    case LVGL_WYKRESY_ZLA_ODPOWIEDZ:
+      lv_label_set_text(wykresyWykresPlaceholder, "Centrala odpowiedziala czyms innym niz dane wykresu");
+      break;
+    case LVGL_WYKRESY_BRAK_PAMIECI:
+      lv_label_set_text(wykresyWykresPlaceholder, "Panelowi zabraklo pamieci na wykres");
+      break;
+    default:
+      lv_label_set_text(wykresyWykresPlaceholder, "Brak danych do wykresu");
+      break;
+  }
+  lv_obj_set_style_text_color(wykresyWykresPlaceholder, rgb565(KOL_OGIEN), 0);
+}
+
+// main.cpp wola to RAZ po zakonczeniu pobierania - udanego albo nie.
+// `wynik`: co wie warstwa sieci (LVGL_WYKRESY_OK albo przyczyna bledu),
+// `szczegol`: kod HTTP przy LVGL_WYKRESY_HTTP. Zwraca to, co ostatecznie
+// widac na ekranie (do logu): OK/NIEPELNE = wykres, reszta = komunikat.
+int lvgl_dashboard_poc_wykresy_strumien_koniec(bool dlugi, uint32_t liczbaWierszy, int wynik, int szczegol) {
+  const bool czekal = g_wykresyFetchWToku;
   g_wykresyFetchWToku = false;
   const bool bylAktywny = g_wykresyStrumien.aktywny;
   g_wykresyStrumien.aktywny = false;
-  if (!wykresyWykresPlaceholder) return;
+  g_wykresyOstatnioPunktow = 0;
+  g_wykresyNiepelne = false;
+  if (!wykresyWykresPlaceholder) return LVGL_WYKRESY_NIEAKTUALNE;
 
-  // Odpowiedz spozniona wzgledem aktualnego wyboru trybu (user zdazyl
-  // przelaczyc Godziny/Dzien/Tydzien zanim ten GET wrocil) - odrzucamy ja,
-  // nowszy fetch (wykresy_odswiez_wykres_fetch()) juz jest albo zaraz
-  // bedzie w drodze i to JEGO odpowiedz ma sie wyswietlic.
-  if (dlugi != g_wykresyFetchOczekiwanyDlugi) return;
-  // Podobnie: user zdazyl wrocic na Selekcje (lub zamknac caly ekran) -
-  // nie ma po co odswiezac ukrytej podstrony.
-  if (!wykresyWykresCont || lv_obj_has_flag(wykresyWykresCont, LV_OBJ_FLAG_HIDDEN)) return;
+  // Odpowiedz spozniona wzgledem aktualnego wyboru trybu albo ekran juz nie
+  // czeka (uzytkownik wrocil na Selekcje lub zamknal ekran) - nic nie
+  // pokazujemy. Od v1.3.0 main.cpp sam porzuca takie pobieranie, wiec to
+  // tylko bezpiecznik.
+  if (!czekal || !bylAktywny) return LVGL_WYKRESY_NIEAKTUALNE;
+  if (dlugi != g_wykresyFetchOczekiwanyDlugi) return LVGL_WYKRESY_NIEAKTUALNE;
+  if (!wykresyWykresCont || lv_obj_has_flag(wykresyWykresCont, LV_OBJ_FLAG_HIDDEN)) return LVGL_WYKRESY_NIEAKTUALNE;
 
-  if (!bylAktywny || liczbaWierszy == 0) {
-    wykresy_chart_ukryj();
-    lv_label_set_text(wykresyWykresPlaceholder, "Brak danych (WiFi/centrala niedostepna)");
-    lv_obj_set_style_text_color(wykresyWykresPlaceholder, rgb565(KOL_OGIEN), 0);
-    return;
+  // Od chwili, gdy na ekranie jest wynik, liczy sie czas ogladania (a nie od
+  // wejscia na podstrone - pobieranie ze starszej centrali moze trwac).
+  wykresy_panel_idle_resetuj(WYKRESY_WYKRES_IDLE_MS);
+
+  const bool zredukowany = g_wykresyStrumien.zredukowany;
+  if (zredukowany) {
+    // Punkty policzyla centrala. Ucieta odpowiedz to bledny wykres (brakuje
+    // NAJNOWSZEJ czesci), a ponowienie kosztuje ulamek sekundy - nie rysujemy.
+    if (wynik != LVGL_WYKRESY_OK) { wykresy_pokaz_komunikat(wynik, szczegol); return wynik; }
+    if (!g_wykresyStrumien.koniecWidziany || g_wykresyStrumien.koniecLiczba != g_wykresyStrumien.pozycji) {
+      wykresy_pokaz_komunikat(LVGL_WYKRESY_URWANA, 0);
+      return LVGL_WYKRESY_URWANA;
+    }
+    if (g_wykresyStrumien.pozycji == 0) { wykresy_pokaz_komunikat(LVGL_WYKRESY_PUSTO, 0); return LVGL_WYKRESY_PUSTO; }
+  } else {
+    // Stary CSV (centrala < 3.58.4): panel sam sciska wiersze. Gdy pobieranie
+    // urwalo sie albo przekroczylo limit czasu, a czesc wierszy juz jest -
+    // rysujemy te czesc z wyraznym dopiskiem (to NAJSTARSZA czesc danych).
+    const bool czesciowe = (wynik == LVGL_WYKRESY_LIMIT_CZASU || wynik == LVGL_WYKRESY_URWANA) && liczbaWierszy > 0 &&
+                           (g_wykresyStrumien.liczbaKubelkow > 0 || g_wykresyStrumien.wierszWKubelku > 0);
+    if (wynik != LVGL_WYKRESY_OK && !czesciowe) { wykresy_pokaz_komunikat(wynik, szczegol); return wynik; }
+    if (liczbaWierszy == 0) { wykresy_pokaz_komunikat(LVGL_WYKRESY_PUSTO, 0); return LVGL_WYKRESY_PUSTO; }
+    // W CSV historii KAZDA linia ma liczbe w kolumnie wybranej serii. Gdy ma
+    // ja mniej niz polowa linii, to nie jest historia (np. strona HTML, w
+    // ktorej trafila sie linia z przecinkiem i cyfra). Do v1.2.2 wychodzil z
+    // tego wykres: kazda linia tekstu stawala sie punktem o wartosci 0 albo
+    // przypadkowej (testowa strona HTML: 8 punktow, szesc 0,0 i dwa 1,0 -
+    // testy_host/wzorce_v122/punkty.txt, wpis dzien_html_zewn).
+    if (g_wykresyStrumien.wierszyZWartoscia * 2U < liczbaWierszy) {
+      wykresy_pokaz_komunikat(LVGL_WYKRESY_ZLA_ODPOWIEDZ, 0);
+      return LVGL_WYKRESY_ZLA_ODPOWIEDZ;
+    }
+    g_wykresyNiepelne = czesciowe;
+    // Ostatni kubelek zwykle jest NIEPELNY (liczba wierszy rzadko dzieli sie
+    // rowno przez rozmiarKubelka) - domykamy go tak samo jak kazdy poprzedni,
+    // pod warunkiem ze cokolwiek do niego trafilo.
+    if (g_wykresyStrumien.wierszWKubelku > 0) {
+      wykresy_strumien_zamknij_kubelek();
+    }
   }
 
-  // Ostatni kubelek zwykle jest NIEPELNY (liczba wierszy rzadko dzieli sie
-  // rowno przez rozmiarKubelka) - domykamy go tak samo jak kazdy poprzedni,
-  // pod warunkiem ze cokolwiek do niego trafilo.
-  if (g_wykresyStrumien.wierszWKubelku > 0) {
-    wykresy_strumien_zamknij_kubelek();
-  }
-
-  bool majaDane = false;
+  int punktowZDanymi = 0;
   for (int p = 0; p < WYKRESY_MAX_SLOTOW; p++) {
     if (p >= g_wykresyStrumien.liczbaSerii || !g_wykresyPunkty[p]) {
       g_wykresyLiczbaPunktow[p] = 0;
       continue;
     }
     g_wykresyLiczbaPunktow[p] = g_wykresyStrumien.liczbaKubelkow;
-    if (g_wykresyStrumien.liczbaKubelkow > 0) majaDane = true;
+    int zDanymi = 0;
+    for (int i = 0; i < g_wykresyStrumien.liczbaKubelkow; i++) {
+      if (!isnan(g_wykresyPunkty[p][i].wartosc)) zDanymi++;
+    }
+    if (zDanymi > punktowZDanymi) punktowZDanymi = zDanymi;
   }
+  g_wykresyOstatnioPunktow = punktowZDanymi;
 
-  if (!majaDane) {
-    wykresy_chart_ukryj();
-    lv_label_set_text(wykresyWykresPlaceholder, "CSV bez rozpoznawalnych punktow dla wybranej serii");
-    lv_obj_set_style_text_color(wykresyWykresPlaceholder, rgb565(KOL_OGIEN), 0);
-    return;
+  if (punktowZDanymi == 0) {
+    g_wykresyNiepelne = false;
+    wykresy_pokaz_komunikat(LVGL_WYKRESY_PUSTO, 0);
+    return LVGL_WYKRESY_PUSTO;
+  }
+  if (punktowZDanymi < 2) {
+    // Jeden punkt to jeszcze nie linia - lv_chart nie narysowalby nic.
+    g_wykresyNiepelne = false;
+    wykresy_pokaz_komunikat(LVGL_WYKRESY_ZA_MALO, 0);
+    return LVGL_WYKRESY_ZA_MALO;
   }
 
   // [PARTIA 7, ta sesja] Dane sparsowane poprawnie - buduje/odswieza
   // realny lv_chart i przelacza widocznosc z placeholdera na wykres.
   wykresy_chart_odswiez();
+  return g_wykresyNiepelne ? LVGL_WYKRESY_NIEPELNE : LVGL_WYKRESY_OK;
 }
 
 // Podswietla aktywny przycisk (KOL_OGIEN, jak reszta akcentow w tym pliku -

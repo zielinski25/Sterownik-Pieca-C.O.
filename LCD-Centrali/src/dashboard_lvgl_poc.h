@@ -2,6 +2,13 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.3.0 Zmieniono: most ekranu Wykresy ([v1.3.0 WYKRESY]).
+//   WykresyFetchCb dostaje zakres (LVGL_WYKRESY_TRYB_*) zamiast bool;
+//   lvgl_dashboard_poc_wykresy_strumien_koniec() dostaje wynik pobierania
+//   (enum LvglWykresyWynik) i zwraca to, co trafilo na ekran. Dodano:
+//   ..._wykresy_postep(), ..._wykresy_czeka_na_dane(),
+//   ..._wykresy_statystyka(), ..._wykresy_strumien_zredukowany(),
+//   ..._wykresy_wynik_nazwa(). Pelny opis: HISTORIA ZMIAN w main.cpp.
 // [2026-11-12] v1.2.1 Dodano: lvgl_dashboard_poc_alarm_odrzucony() i
 //   lvgl_dashboard_poc_przywroc_alarm() - stan alarmu ma przetrwac
 //   samoczynny restart panelu ([v1.2.1 RATUNEK]). Znacznik w naglowku
@@ -422,34 +429,73 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int
                                                             int godzinaStart, int godzinaKoniec,
                                                             bool harmonogramWlaczony);
 
-// [PARTIA 5e, ta sesja - MOST FETCHU HTTP DLA EKRANU WYKRESY] main.cpp jest
-// jedynym plikiem znajacym HTTPClient/WiFi (patrz httpGet() w main.cpp) -
-// dashboard_lvgl_poc.cpp NIE wie nic o tym, JAK dane trafiaja z centrali,
-// prosi tylko "pobierz mi surowy CSV" przez ponizszy callback, a main.cpp
-// oddaje wynik przez lvgl_dashboard_poc_wykresy_dane_gotowe(). Dokladnie ten
-// sam podzial obowiazkow co reszta panelu (np. PompaManualCb) - LVGL-owa
-// czesc zna tylko ksztalt danych, nie transport.
+// [PARTIA 5e - MOST DANYCH DLA EKRANU WYKRESY; przebudowany w v1.3.0]
+// dashboard_lvgl_poc.cpp nie wie, JAK dane trafiaja z centrali - prosi o nie
+// przez ponizszy callback, a main.cpp podaje mu odpowiedz linia po linii.
+// Ten sam podzial obowiazkow co reszta panelu (np. PompaManualCb).
 //
-// `dlugi`: false -> main.cpp ma zrobic GET /api/history (bufor krotki,
-//          uzywany przez tryby "Godziny"/"Dzien")
-//          true  -> GET /api/history/long (bufor dlugi, tryb "Tydzien")
-// Patrz PLAN_WYKRESY_LVGL.md, sekcja "Spojnosc z panelem WWW".
-typedef void (*WykresyFetchCb)(bool dlugi);
+// [v1.3.0 WYKRESY] Dwie zmiany wzgledem v1.2.2:
+//  1. Callback dostaje TRYB (godzinny/dzienny/tygodniowy), bo o zakres pyta
+//     sie teraz centrale (GET /api/history/panel?tryb=...), a nie tylko o
+//     "krotki" albo "dlugi" CSV.
+//  2. Callback tylko STARTUJE pobieranie i od razu wraca. Linie przychodza w
+//     kolejnych obrotach loop() (main.cpp, obslugaWykresyFetch()), a ekran
+//     w tym czasie dziala. Uzytkownik moze wiec wyjsc z wykresu, zanim dane
+//     przyjda - main.cpp pyta o to przez _wykresy_czeka_na_dane() i wtedy
+//     pobieranie porzuca.
+#define LVGL_WYKRESY_TRYB_GODZINY 0   // ostatnia godzina
+#define LVGL_WYKRESY_TRYB_DZIEN   1   // ostatnie 24 h
+#define LVGL_WYKRESY_TRYB_TYDZIEN 2   // ostatnie 7 dni
+#define LVGL_WYKRESY_PUNKTOW      96  // tyle punktow miesci wykres; o tyle panel prosi centrale (pkt=)
+typedef void (*WykresyFetchCb)(int tryb);
 void lvgl_dashboard_poc_ustaw_callback_wykresy_fetch(WykresyFetchCb cb);
 
-// [FIX-WYKRESY-RAM, ta sesja] main.cpp woła te trzy funkcje zamiast
-// (usunietej z dashboard_lvgl_poc.cpp) lvgl_dashboard_poc_wykresy_dane_gotowe -
-// patrz WykresyStrumienStan i komentarz "[WYCOFANE, FIX-WYKRESY-RAM ta
-// sesja]" w dashboard_lvgl_poc.cpp co do przyczyny (http.getString()
-// wymagal jednego ciaglego bloku RAM na cala odpowiedz ~36-84KB).
-// main.cpp czyta teraz odpowiedz linia-po-linii wprost z gniazda TCP
-// (http.getStreamPtr()) i za kazda linia woła _strumien_linia() - w
-// kazdej chwili w RAM jest wiec najwyzej jedna linia CSV, nigdy caly CSV.
-// Uzycie (dokladnie w tej kolejnosci, dla KAZDEGO fetchu, rowniez przy
-// bledzie WiFi/HTTP - wtedy liczbaWierszy=0 w p.3):
-//   1) lvgl_dashboard_poc_wykresy_strumien_start(dlugi)
-//   2) lvgl_dashboard_poc_wykresy_strumien_linia(linia) - raz na kazda linie CSV (bez '\n')
-//   3) lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, liczbaWierszy)
+// Wynik pobierania. main.cpp podaje to, co wie warstwa sieci (OK albo jeden z
+// bledow); _strumien_koniec() zwraca to, co ostatecznie widac na ekranie -
+// np. OK moze stac sie PUSTO (centrala odpowiedziala, ale nie ma danych).
+enum LvglWykresyWynik {
+  LVGL_WYKRESY_OK = 0,           // wykres narysowany
+  LVGL_WYKRESY_NIEPELNE,         // wykres narysowany z czesci danych (starsza centrala nie zdazyla wyslac wszystkiego)
+  LVGL_WYKRESY_PUSTO,            // centrala nie ma jeszcze danych z tego zakresu
+  LVGL_WYKRESY_ZA_MALO,          // jest mniej niz 2 punkty - nie ma z czego narysowac linii
+  LVGL_WYKRESY_BRAK_WIFI,        // panel nie jest polaczony z siecia centrali
+  LVGL_WYKRESY_BRAK_POLACZENIA,  // nie udalo sie polaczyc z centrala
+  LVGL_WYKRESY_LIMIT_CZASU,      // centrala nie odpowiedziala albo nie zdazyla w czasie
+  LVGL_WYKRESY_HTTP,             // centrala odpowiedziala bledem HTTP (kod w `szczegol`)
+  LVGL_WYKRESY_URWANA,           // odpowiedz urwala sie przed koncem
+  LVGL_WYKRESY_ZLA_ODPOWIEDZ,    // to, co przyszlo, nie jest odpowiedzia centrali
+  LVGL_WYKRESY_BRAK_PAMIECI,     // panelowi zabraklo pamieci
+  LVGL_WYKRESY_NIEAKTUALNE       // ekran juz na te dane nie czekal - nic nie pokazano
+};
+// Krotka nazwa wyniku do logu ("ok", "pusto", "limit_czasu", ...).
+const char *lvgl_dashboard_poc_wykresy_wynik_nazwa(int wynik);
+
+// Kolejnosc wywolan dla KAZDEGO pobrania (takze nieudanego):
+//   1) _strumien_start(dlugi)        - `dlugi`: format wierszy STAREGO CSV,
+//                                      gdyby centrala nie znala nowego adresu
+//                                      (true = /api/history/long)
+//   2) _strumien_linia(linia)        - raz na kazda linie odpowiedzi, bez '\n'.
+//                                      Pierwsza linia "#panel-hist ..." znaczy:
+//                                      punkty policzyla centrala (wiersze w
+//                                      formacie /api/history/long, przerwy jako
+//                                      "#przerwa", na koncu "#koniec N").
+//   3) _strumien_koniec(...)         - zawsze, takze przy bledzie
+// W RAM jest w kazdej chwili najwyzej jedna linia odpowiedzi.
 void lvgl_dashboard_poc_wykresy_strumien_start(bool dlugi);
 void lvgl_dashboard_poc_wykresy_strumien_linia(const char *linia);
-void lvgl_dashboard_poc_wykresy_strumien_koniec(bool dlugi, uint32_t liczbaWierszy);
+int  lvgl_dashboard_poc_wykresy_strumien_koniec(bool dlugi, uint32_t liczbaWierszy, int wynik, int szczegol);
+
+// true, gdy biezaca odpowiedz zaczela sie od "#panel-hist" (centrala 3.58.4+).
+bool lvgl_dashboard_poc_wykresy_strumien_zredukowany();
+// true, dopoki podstrona Wykres jest na ekranie i czeka na dane.
+bool lvgl_dashboard_poc_wykresy_czeka_na_dane();
+// Postep pobierania do pokazania pod napisem "Ladowanie danych...".
+void lvgl_dashboard_poc_wykresy_postep(uint32_t linii, uint32_t bajtow);
+
+// Liczby z ostatniego pobrania - do linii "tag=WYKRESY" w logu.
+struct LvglWykresyStatystyka {
+  int  punktow;          // punkty z danymi na wykresie
+  int  przerw;           // odcinki bez danych (centrala nie pracowala)
+  long wierszyZrodla;    // ile wierszy historii centrala wziela pod uwage (-1 = nie podala: stary CSV)
+};
+void lvgl_dashboard_poc_wykresy_statystyka(LvglWykresyStatystyka *wyjscie);
