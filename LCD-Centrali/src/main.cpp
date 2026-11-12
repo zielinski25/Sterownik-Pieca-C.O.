@@ -1,0 +1,3686 @@
+// ============================================================================
+// WYSWIETLACZ CO — panel dotykowy (ESP32 + 3,5" SPI TFT ILI9488 + XPT2046)
+// ============================================================================
+// Druga, ODDZIELNA plytka wobec centrali (projekt "Piec CO", main.cpp).
+// Ta plytka NIE steruje niczym bezposrednio (brak serw, czujnikow, przekaznikow
+// tutaj) — jest CIENKIM KLIENTEM HTTP centrali, po tej samej sieci WiFi:
+//
+//   GET  /api/status           -> co STATUS_INTERWAL_MS, dane live (temp., klapa,
+//                                  syberka, pompa, alarmy) — patrz StanPieca nizej
+//   GET  /api/ustawienia-get   -> co USTAWIENIA_INTERWAL_MS, wartosci parametrow
+//   POST /api/ustawienia-set   -> gdy user dotknie +/- na ekranie Ustawienia
+//                                  (pole=<nazwa>&wartosc=<int>) — DOKLADNIE ten
+//                                  sam endpoint co panel WWW w przegladarce
+//   POST /api/servo-manual     -> gdy user przesunie suwak na ekranie Serwo
+//                                  (os=klapa|syberek&procent=<0-100>)
+//
+// Wszystkie pola w /api/ustawienia-get sa CALKOWITE (byte/int po stronie
+// centrali) — zero miejsc po przecinku, wiec ten kod tez traktuje je jako long.
+//
+// PINY TFT/DOTYKU: piny EKRANU skonfigurowane w platformio.ini (build_flags,
+// TFT_eSPI czyta je jako makra -D...). PINY DOTYKU sa NATOMIAST zdefiniowane
+// PONIZEJ w tym pliku (TOUCH_SCK/TOUCH_MOSI/TOUCH_MISO/TOUCH_CS) i obslugiwane
+// WLASNYM, recznym sterownikiem SPI (bitbang) — NIE przez wbudowana obsluge
+// dotyku TFT_eSPI.
+//
+// [FIX-DOTYK-OSOBNA-MAGISTRALA] — diagnostyka w osobnej sesji wykazala, ze
+// na tej konkretnej plytce ILI9488 (klon 3,5" z AliExpress) wspoldzielenie
+// linii SCLK/MOSI/MISO miedzy ekranem a dotykiem (typowe podejscie, ktorego
+// uzywa domyslna konfiguracja TFT_eSPI z TOUCH_CS) NIE dzialalo — potwierdzone
+// wieloma niezaleznymi testami (m.in. reczny bitbang na wspoldzielonych
+// pinach zawsze zwracal zero, a analogiczna, potwierdzona dzialajaca
+// konfiguracja z innego projektu na tym samym typie modulu uzywala w pelni
+// oddzielnej magistrali SPI dla dotyku). Dodatkowo pierwotny GPIO33 uzyty
+// pod T_DO okazal sie fizycznie wadliwy na tym konkretnym ESP32 — po
+// przelutowaniu dziala poprawnie, wiec zostaje na GPIO33.
+// ============================================================================
+
+// ============================================================================
+// HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
+// ============================================================================
+// [2026-09-12] Naprawiono: BLAD KOMPILACJI ("too few arguments to function
+//   'lvgl_dashboard_poc_aktualizuj'") po pierwszym realnym build+upload tej
+//   sesji. PRZYCZYNA: rozjazd dwoch rownoleglych wersji main.cpp - ta, na
+//   ktorej oparta byla warstwa nieblokujaca (patrz wpis nizej), nie miala
+//   jeszcze DESZCZ-ETAP4 (PLAN_DESZCZ_ZEWN.md), doklejonego w miedzyczasie
+//   do dashboard_lvgl_poc.h (2 nowe parametry koncowe: deszczStan,
+//   deszczMinuty) i do OSOBNEJ kopii main.cpp (starszej architektonicznie -
+//   wciaz z blokujacym httpGet()/httpPost(), bez tego pliku non-blocking).
+//   ZLACZONO obie linie rozwoju: dodano stan.deszczStan/deszczMinuty (pole
+//   struct + parsowanie z /api/status pol deszcz_stan/deszcz_min w
+//   obslugaStatusFetch()) i dopisano oba te argumenty na koncu WSZYSTKICH
+//   TRZECH wywolan lvgl_dashboard_poc_aktualizuj() w TYM pliku (real -
+//   obslugaStatusFetch() i setup() - oraz symulacja LVGL_POC_SYMULACJA,
+//   gdzie brak centrali wiec wpisano 0,-1 "brak opadow" na sztywno) -
+//   BEZ cofania architektury nieblokujacej (10 mostow LVGL swiadomie NIE
+//   odzyskaly wlasnych bezposrednich wywolan tej funkcji - patrz
+//   pendingPoKomendzie i uzasadnienie w poprzednim wpisie ponizej). Podniesiono
+//   FIRMWARE_VERSION_PANEL v1.0.0 -> v1.1.0 (dwie funkcjonalne zmiany od
+//   ostatniego wydania, jeszcze przed pierwszym realnym flashem tej wersji).
+// [2026-09-12] Zmieniono: cala warstwa sieciowa (GET /api/status, GET
+//   /api/ustawienia-get, POST /api/*-manual i /api/ustawienia-set) przepisana
+//   z blokujacego HTTPClient (httpGet()/httpPost(), USUNIETE z tego pliku) na
+//   nieblokujaca warstwe z siec_nieblokujaca_LCD.h (klasa NonBlockingHttp -
+//   gole gniazda BSD, O_NONBLOCK + select() z zerowym czekaniem, ten sam
+//   wzorzec co juz istniejacy wifiReconnectNonBlocking() w tym pliku).
+//   PRZYCZYNA: przy wspolbieznym WIFI_MODE_APSTA (centrala), proba STA
+//   centrali do domowego routera przerywa jej WLASNY SoftAP na czas
+//   przelaczania kanalow (potwierdzony, dlugoletni znany problem sprzetowy
+//   ESP32 - jeden radiowy front-end dzielony miedzy AP i STA, patrz
+//   espressif/arduino-esp32#1040) - to fizycznie nie do naprawienia od
+//   strony sieci, wiec dawny httpGet()/httpPost() (zawsze blokujace) mrozily
+//   caly loop() (w tym obsluzDotyk()) na czas ich HTTP_TIMEOUT_MS (1500ms)
+//   przy KAZDYM takim zaburzeniu. Research (10+ jezykow + dogĺebny przeglad
+//   forow esp32.com/GitHub Espressif) potwierdzil, ze surowe nieblokujace
+//   gniazda + select() to udokumentowany, pierwszorzedny wzorzec ESP-IDF
+//   (examples/protocols/sockets/non_blocking), a dwie alternatywy (osobny
+//   task FreeRTOS na drugim rdzeniu; esp_http_client z is_async=true) sa tu
+//   gorszym wyborem - mieszalyby sie zle z glebokim usypianiem (idzSpac()) i
+//   psulyby spojnosc z istniejacym wzorcem wifiReconnectNonBlocking().
+//   ZMIANY W main.cpp: pobierzStatus()/pobierzUstawienia() to teraz same
+//   "starty" zadania (statusFetch.startGet()/ustawieniaFetch.startGet());
+//   parsowanie JSON-a + caly dawny "ogon" (aktualizacja sezonu/LVGL/starego
+//   dashboardu) przeniesione do nowych obslugaStatusFetch()/
+//   obslugaUstawieniaFetch(), wolanych z loop() co iteracje (w OBU galeziach
+//   #if LVGL_POC_TEST, bo te funkcje byly wspoldzielone). Nowa funkcja
+//   obslugaKomendaFetch() + flaga pendingPoKomendzie (enum PoKomendzie)
+//   spinaja z powrotem POST+nastepujacy-po-nim-GET, ktore juz NIE moga byc
+//   jednym synchronicznym wywolaniem (patrz obszerny komentarz przy
+//   pendingPoKomendzie) - odkryto przy tym, ze siec_nieblokujaca_LCD.h mial
+//   na wzgledzie tylko 3 miejsca POST, a w praktyce jest ich 10 (wszystkie
+//   mosty LVGL: pompaManualWyslij/pompaWyborWyslij/serwoTrybWyslij/
+//   serwoPozycjaWyslij/serwoUstawienieWyslij/pompaUstawienieWyslij/
+//   pompaAntystopWyslij/dymProgWyslij/dymUstawienieWyslij/
+//   alarmTempProgWyslij) + stary, nie-LVGL EKRAN_TRYBY/EKRAN_USTAWIENIA/
+//   EKRAN_SERWO (przez wspoldzielone wyslijTrybPracy()/wyslijUstawienie()/
+//   wyslijServoManualny()) - flaga rozwiazuje to bez oddzielnej maszyny
+//   stanow na kazde z tych miejsc. Natychmiastowe odswiezenie po udanej
+//   komendzie CELOWO zachowane (w odroznieniu od pierwotnego szkicu w
+//   siec_nieblokujaca_LCD.h, patrz uwaga tam) - bez niego kazda zmiana z
+//   dotyku odswiezalaby sie dopiero po 2-5s zamiast niemal natychmiast.
+//   USUNIETO: blokujacy czerwony pasek+delay(1200) na blad POST-a w starym,
+//   nie-LVGL EKRAN_TRYBY/EKRAN_USTAWIENIA (wyslijTrybPracy()/
+//   wyslijUstawienie()) - to byla DRUGA blokujaca operacja w tym pliku;
+//   teraz tylko log po Serialu (jak juz akceptowany wzorzec w mostach LVGL),
+//   ekran i tak pokazuje prawdziwa wartosc po automatycznym
+//   pobierzUstawienia() z obslugaKomendaFetch(). DODANO: jednorazowe,
+//   OGRANICZONE (PIERWSZA_PROBKA_TIMEOUT_MS=2500ms) oczekiwanie na siec w
+//   setup() (funkcja poczekajNaPierwszeDane()) - JEDYNE miejsce w pliku,
+//   gdzie to jeszcze robimy, bo na starcie nie ma dotyku do zamrozenia, a
+//   bez tego pierwszy rysujAktualnyEkran()/lvgl_dashboard_poc_aktualizuj()
+//   i sprawdzIWykonajOtaPanelu() dostalyby same zera zamiast realnych
+//   danych z centrali. NIE ZROBIONO w tej sesji (celowo, poza zakresem):
+//   (1) wykresyFetchWykonaj() (GET /api/history, ekran Wykresy) NADAL uzywa
+//   HTTPClient bezposrednio - to osobny, rzadko wywolywany, strumieniowany
+//   przypadek (RAM, patrz FIX-WYKRESY-RAM), przy tym samym zaburzeniu
+//   kanalu zamrozi tylko ten jeden ekran, nie caly dotyk; (2) wskaznik "dane
+//   nieaktualne" na dashboardzie (WskaznikSwiezosci.saNieaktualne()) wdrozony
+//   tylko na poziomie sledzenia (swiezoscStatusu/swiezoscUstawien.odnotujSukces()
+//   wolane poprawnie), ale NIE podpiety pod zadne rysowanie w rysujNaglowek()/
+//   dashboard_lvgl_poc.* - potencjalny nastepny krok. Patrz tez
+//   siec_nieblokujaca_LCD.h (naglowek pliku, sekcja "[ZREALIZOWANE]") i
+//   HISTORIA ZMIAN w PLAN_SD_LOGI_AWARYJNE.md/PLAN_LOGOWANIE_ANTYSPAM.md w
+//   projekcie centrali dla podobnych, wczesniejszych zmian nieblokujacych.
+// [2026-09-05] Dodano: obsluga przycisku WYCISZ na nowym EKRANIE ALARMOWYM
+//   (dashboard_lvgl_poc.cpp) - patrz PLAN_EKRAN_ALARMOWY.md. Nowe:
+//   g_brzeczykWyciszony/g_brzeczykWyciszonyTyp + funkcja alarmWyciszObsluga()
+//   (zarejestrowana jako AlarmWyciszCb, w OBU galeziach #if
+//   LVGL_POC_SYMULACJA - ten sam powod co WYSWIETLACZ powyzej: brzeczyk to
+//   GPIO na TEJ plytce, wiec dziala identycznie niezaleznie od tego, czy
+//   centrala jest akurat podlaczona). brzeczykOdswiezZAlarmow()
+//   zmodyfikowane, zeby respektowac wyciszenie - patrz komentarz tam.
+//   Wyciszenie jest CELOWO powiazane z KONKRETNYM aktywnym typem alarmu
+//   (nie globalnym "cisza na zawsze") - samo znika, gdy typ sie zmieni
+//   (alarm ustapi albo eskaluje), zeby nie ryzykowac zapomnianego,
+//   wyciszonego na trwale przyszlego pozaru. Dotyczy tez
+//   dashboard_lvgl_poc.h (typedef AlarmWyciszCb) i dashboard_lvgl_poc.cpp
+//   (caly ekran) - patrz HISTORIA ZMIAN w obu tych plikach oraz
+//   CHANGELOG.md [Unreleased].
+// ============================================================================
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <Preferences.h>
+#include <SPI.h>
+#include <TFT_eSPI.h>
+#include <ArduinoJson.h>
+#include "esp_sleep.h"
+#include "driver/rtc_io.h"
+#include "driver/gpio.h"    // [FIX-TFT-BL-HOLD, ta sesja] gpio_hold_en/gpio_hold_dis/gpio_deep_sleep_hold_en dla GPIO21 (TFT_BL)
+#include <math.h>   // cosf/sinf — uzywane w prostych ikonach wektorowych (rysujIkonaSlonce/Snieg), patrz sekcja [UI]
+#include "ikony.h"  // [LCD-IKONY] bitmapy 24x24 (plomien/kropla/suwak/alarm) - patrz komentarz w pliku
+
+// [SIEC-NIEBLOKUJACA, ta sesja] Zastepuje synchroniczne HTTPClient::GET/POST
+// (httpGet/httpPost, usuniete z tego pliku) - patrz obszerny naglowek w
+// siec_nieblokujaca_LCD.h co do PRZYCZYNY (zaburzenie kanalu SoftAP/STA na
+// centrali, potwierdzone jako znane ograniczenie sprzetowe ESP32 w trybie
+// WIFI_MODE_APSTA - jeden radiowy front-end dzielony miedzy AP i STA, wiec
+// skan/connect() po stronie STA centrali fizycznie przerywa AP na czas
+// przelaczania kanalow; patrz espressif/arduino-esp32#1040) oraz ROZWIAZANIA
+// (gole gniazda BSD w trybie O_NONBLOCK + select(), dokladnie ten wzorzec co
+// oficjalny przyklad ESP-IDF protocols/sockets/non_blocking).
+#include "siec_nieblokujaca_LCD.h"
+
+// [OTA-ROLLBACK] Potrzebne do potwierdzania partycji po OTA (prompt #6) i,
+// docelowo, do samego wgrywania aktualizacji (prompt #7). Ten sam naglowek
+// WDT co w main_centrala.cpp ([FIX-WDT]) — panel dotad nie mial ZADNEJ
+// konfiguracji Task WDT, patrz komentarz przy setup() nizej.
+#include <HTTPUpdate.h>
+#include <esp_ota_ops.h>
+#include <esp_task_wdt.h>
+#include "esp_system.h"  // [RESET-DIAG, ta sesja] esp_reset_reason() / esp_reset_reason_t
+
+// [OTA-ROLLBACK] Bez tego override arduino-esp32 SAM potwierdzi biezaca
+// partycje jako VALID w initArduino(), zanim setup() zdazy cokolwiek
+// sprawdzic — wywolanie esp_ota_mark_app_valid_cancel_rollback() ponizej
+// byloby wtedy martwym kodem. Musi byc w zasiegu GLOBALNYM, poza
+// jakakolwiek funkcja. Mechanizm zweryfikowany empirycznie w projekcie
+// testowym ota_rollback_test — patrz Ustalenie #5 i #6 w
+// OTA_PANEL_CALOSC.md.
+extern "C" bool verifyRollbackLater() {
+  return true;
+}
+
+// [LVGL - KROK 4] Wlacz na 1 zeby przetestowac LVGL zamiast normalnego
+// dashboardu (podmienia caly setup()/loop() na sciezke LVGL, patrz ponizej).
+// Ustaw z powrotem na 0, zeby wrocic do dzialajacego kodu sprite'owego -
+// NIC z reszty main.cpp nie jest przez to kasowane, to tylko przelacznik.
+#define LVGL_POC_TEST 1
+#include "lvgl_port.h"
+#include "dashboard_lvgl_poc.h"
+
+// [LVGL - PRACA BEZ CENTRALI] Wlaczone (1), dopoki pracujesz TYLKO na samej
+// plytce wyswietlacza (bez podlaczonej/wlaczonej centrali "Piec CO" obok) -
+// wtedy caly kod WiFi/HTTP jest pomijany, a dashboard dostaje dane z
+// LOKALNEJ symulacji w tym pliku (patrz symPompaAkcja()/symOdswiezDoLvgl()
+// nizej), zeby dalo sie testowac layout/dotyk/panel POMPA na biurku, bez
+// zadnego innego sprzetu. Ustaw na 0, gdy centrala bedzie fizycznie obok i
+// w tej samej sieci/AP - wraca wtedy prawdziwe polaczWifi()/pobierzStatus()/
+// POST /api/pompa-manual, dokladnie jak dotychczas. Ma znaczenie TYLKO gdy
+// LVGL_POC_TEST=1 (w trybie starego dashboardu nie jest w ogole uzywane).
+#define LVGL_POC_SYMULACJA 0
+
+// ----------------------------------------------------------------------------
+// KONFIGURACJA — podmien pod swoja siec i adres centrali
+//
+// [ETAP 3 / krok 1, PIEC_ESPNOW_PLAN.md] Wyswietlacz laczy sie teraz z
+// WLASNYM Access Pointem centrali (Piec CO), a NIE z domowa siecia WiFi —
+// patrz Podejscie A w planie. Wpisz tu DOKLADNIE te same wartosci, jakie
+// centrala ma ustawione jako WIFI_AP_SSID / WIFI_AP_PASSWORD.
+// CENTRALA_HOST zostaje na stale 192.168.4.1 (domyslna brama Soft-AP ESP32)
+// niezaleznie od tego, czy centrala ma akurat polaczenie z domowym routerem.
+//
+// Kod odpytywania (httpPobierz, pobierzStatus, pobierzUstawienia,
+// wyslijUstawienie, wyslijServoManualny) zostaje BEZ ZMIAN — zmienia sie
+// tylko adres docelowy.
+// ----------------------------------------------------------------------------
+// [SEKRETY] Hasla NIE leza w tym pliku - sa w pliku "secrets.h" (obok, w src/),
+// ktory jest wpisany do .gitignore i zostaje TYLKO u Ciebie na komputerze.
+// Ta sama konwencja i TE SAME dwie wartosci co w centrali (main_centrala.cpp):
+//   1. Skopiuj "secrets.h.example" -> "secrets.h" (folder src/ panelu).
+//   2. Wpisz SECRET_WIFI_AP_PASSWORD i SECRET_OTA_HASLO - identyczne jak w
+//      secrets.h centrali (mozna tez skopiowac caly tamten plik).
+//   3. Dopiero potem kompiluj i wgraj.
+// Bez secrets.h kompilacja ZATRZYMUJE SIE z czytelnym komunikatem.
+#if __has_include("secrets.h")
+  #include "secrets.h"
+#else
+  #error "Brak pliku src/secrets.h - skopiuj src/secrets.h.example jako src/secrets.h i wpisz hasla (te same co w secrets.h centrali)."
+#endif
+#ifndef SECRET_WIFI_AP_PASSWORD
+  #error "secrets.h: brak SECRET_WIFI_AP_PASSWORD (haslo sieci centrali - to samo co w secrets.h centrali)."
+#endif
+#ifndef SECRET_OTA_HASLO
+  #error "secrets.h: brak SECRET_OTA_HASLO (haslo OTA - to samo co w secrets.h centrali)."
+#endif
+static const char* WIFI_SSID     = "PiecCO_AP";         // SSID AP centrali (WIFI_AP_SSID w main.cpp centrali)
+static const char* WIFI_PASS     = SECRET_WIFI_AP_PASSWORD;       // haslo AP centrali (WIFI_AP_PASSWORD w main.cpp centrali)
+static const char* CENTRALA_HOST = "192.168.4.1";       // domyslna brama Soft-AP centrali — bez zmian
+static const uint16_t CENTRALA_PORT = 80;
+
+// [ETAP 3 KROK 2] Statyczne IP wyswietlacza — glowna, potwierdzona badaniem
+// dzwignia szybkosci polaczenia po wybudzeniu (~200 ms zamiast 1,5-3 s,
+// bo ESP32 nie czeka na DHCP). Musi byc w tej samej podsieci co AP centrali
+// (192.168.4.x) i NIE moze kolidowac z .1 (brama/centrala) ani z adresami,
+// ktore centrala moglaby przydzielic innym klientom AP przez DHCP.
+IPAddress WIFI_IP_STATYCZNE(192, 168, 4, 50);
+IPAddress WIFI_GATEWAY(192, 168, 4, 1);
+IPAddress WIFI_MASKA(255, 255, 255, 0);
+
+// [ETAP 3 KROK 2] Cache BSSID+kanalu centrali w pamieci RTC — przetrwa
+// deep sleep (w odroznieniu od zwyklych zmiennych), zerowy koszt, przydatne
+// przy czestym wybudzaniu/usypianiu (Etap 3b). Samo w sobie nie przyspiesza
+// polaczenia na ESP32 (w przeciwienstwie do ESP8266) — patrz research w
+// PIEC_ESPNOW_PLAN.md — ale pozwala uniknac ponownego skanowania kanalu.
+RTC_DATA_ATTR uint8_t rtcBssidCentrali[6] = {0, 0, 0, 0, 0, 0};
+RTC_DATA_ATTR int32_t rtcKanalCentrali = 0;
+RTC_DATA_ATTR bool    rtcBssidZnany = false;
+
+static const uint32_t STATUS_INTERWAL_MS     = 2000;   // jak czesto GET /api/status
+static const uint32_t USTAWIENIA_INTERWAL_MS = 5000;   // jak czesto GET /api/ustawienia-get
+static const uint32_t HTTP_TIMEOUT_MS        = 1500;   // timeout pojedynczego zapytania - patrz tez SiecCfg::CALKOWITY_TIMEOUT_MS w siec_nieblokujaca_LCD.h (ta sama wartosc, zdublowana celowo - ten sam wzorzec co OTA_HASLO_PANEL nizej; siec_nieblokujaca_LCD.h jest samodzielnym naglowkiem wlaczanym PRZED tym blokiem, wiec nie moze odwolac sie tu wprost)
+
+// [SIEC-NIEBLOKUJACA, ta sesja] Trzy stale instancje - jedna na kazdy rodzaj
+// ruchu (status/ustawienia/komenda), zeby wolny POST nie blokowal mozliwosci
+// wystartowania kolejnego GET-a statusu. Definicje klas w
+// siec_nieblokujaca_LCD.h; globalne obiekty tutaj (ANALOGICZNIE do
+// rtcBssidCentrali wyzej - jedno miejsce prawdy, widoczne w calym pliku).
+NonBlockingHttp statusFetch;
+NonBlockingHttp ustawieniaFetch;
+NonBlockingHttp komendaFetch;
+WskaznikSwiezosci swiezoscStatusu;
+WskaznikSwiezosci swiezoscUstawien;
+static const uint32_t PROG_NIEAKTUALNYCH_DANYCH_MS = 3 * STATUS_INTERWAL_MS; // 6000ms - patrz swiezoscStatusu.saNieaktualne()
+
+// [SIEC-NIEBLOKUJACA, ta sesja] POST przez komendaFetch i nastepujacy po nim
+// GET (odswiezenie /api/status albo /api/ustawienia-get) NIE MOGA juz byc
+// jednym synchronicznym wywolaniem jak dawniej (httpPost() zwracal bool
+// dopiero PO calej wymianie) - GET musi poczekac, az POST faktycznie sie
+// zakonczy (patrz obslugaKomendaFetch() przy pobierzStatus()/
+// pobierzUstawienia() nizej). Ta flaga niesie "co zrobic PO zakonczeniu
+// biezacej komendy" przez ten czas oczekiwania - ustawiana TUZ PRZED
+// wystartowaniem POST-a (po sprawdzeniu komendaFetch.wTrakcie(), wiec zawsze
+// odpowiada REALNIE wystartowanemu zadaniu, nigdy odrzuconemu), zerowana
+// zaraz po odczytaniu w obsludze. USTAWIENIA jest ustawiana WEWNATRZ
+// wyslijTrybPracy()/wyslijUstawienie() (wspolny mianownik ich wywolujacych -
+// patrz komentarze tam); STATUS ustawiaja jawnie tylko te 4 mosty LVGL,
+// ktorych ekran pokazuje pola z /api/status, nie z /api/ustawienia-get
+// (pompaManualWyslij/pompaWyborWyslij/serwoTrybWyslij/serwoPozycjaWyslij).
+enum class PoKomendzie : uint8_t { BRAK, STATUS, USTAWIENIA };
+PoKomendzie pendingPoKomendzie = PoKomendzie::BRAK;
+
+// [OTA-PANEL, ta sesja] Wersja wkompilowana w ten firmware — zglaszana
+// centrali przy KAZDYM /api/status (patrz pobierzStatus() nizej), zeby centrala
+// wiedziala co panel realnie ma wgrane (panel nie ma internetu, wiec nie
+// moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
+// Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
+// potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
+static const char* FIRMWARE_VERSION_PANEL = "v1.1.0"; // [2026-09-12] PODNIESIONE z v1.0.0 - sieciowa warstwa nieblokujaca + zlaczenie z DESZCZ-ETAP4 (patrz HISTORIA ZMIAN); jesli wolisz inny numer, to jedyne miejsce do zmiany
+// [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
+// (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
+// zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
+// wspolnego katalogu include/. Zmieniajac jedno, zmien i drugie.
+static const char* OTA_HASLO_PANEL = SECRET_OTA_HASLO;
+// Osobny, dluzszy timeout na pobranie CALEGO firmware'u (httpUpdate.update())
+// - HTTP_TIMEOUT_MS (1500ms) wyzej jest dla drobnych zapytan /api/status i
+// za krotki na kilkasetkilobajtowy plik nawet w lokalnej sieci AP.
+static const uint32_t OTA_TIMEOUT_MS = 20000;
+
+// [FIX-WYKRESY-RAM, ta sesja] Osobny timeout na strumieniowe pobranie CSV
+// historii (do ~84KB przy buforze krotkim) - HTTP_TIMEOUT_MS (1500ms)
+// wyzej jest za krotki, OTA_TIMEOUT_MS (20000ms) to za duzo dla zwyklego
+// odswiezenia wykresu. Strumieniowe czytanie (patrz wykresyFetchWykonaj()
+// nizej) i tak nie trzyma calej odpowiedzi w RAM naraz, wiec ten timeout
+// dotyczy calkowitego czasu transferu, nie pojedynczej alokacji.
+static const uint32_t HISTORIA_TIMEOUT_MS = 8000;
+
+// [ETAP 5, PIEC_ESPNOW_PLAN.md] Reconnect WiFi z rosnacym opoznieniem miedzy
+// probami (1s -> 2s -> 4s -> ... -> WIFI_RECONNECT_MAX_MS), zamiast probowac
+// co iteracje loop() — research (watki forum ESP32/Arduino, artykuly o
+// exponential backoff dla WiFi na ESP32) potwierdza, ze natychmiastowe,
+// powtarzane WiFi.begin() po zerwaniu polaczenia "zasypuje" AP probami i jest
+// niezalecane; a domyslny auto-reconnect biblioteki bywa niewystarczajaco
+// niezawodny (arduino-esp32 issue #653) — stad wlasna, jawna logika nizej
+// (wifiReconnectNonBlocking(), wywolywana w loop()).
+static const uint32_t WIFI_RECONNECT_MAX_MS = 30000;
+uint32_t wifiOpoznienieReconnectMs = 1000;
+unsigned long wifiOstatniaProbaReconnectMs = 0;
+
+// ----------------------------------------------------------------------------
+// TFT + DOTYK
+// ----------------------------------------------------------------------------
+TFT_eSPI tft = TFT_eSPI();
+
+// [KROK 3 - sprite'y] Kazdy kafelek byl do tej pory rysowany 5 oddzielnymi
+// wywolaniami WPROST na ekran (tlo, ramka, ikona, etykieta, wartosc) — kazde
+// z nich to osobny blok danych wyslany po SPI, wiec przy przerysowaniu bylo
+// widac krotki "przeblysk" (stare tlo znika, potem osobno pojawia sie ramka,
+// osobno tekst...). sprKafelek to bufor w RAM (nie na ekranie) — caly kafelek
+// skladamy w nim w pamieci, a na ekran trafia JEDNYM blokowym transferem
+// (pushSprite), wiec z zewnatrz widac tylko gotowy, kompletny kafelek.
+// Tworzony leniwie (przy pierwszym rysujKafelek) i tylko RAZ zmieniany
+// rozmiarem, jesli w,h faktycznie sie zmienia (u nas w praktyce nigdy, bo
+// wszystkie kafelki maja te sama geometrie kw x kh).
+TFT_eSprite sprKafelek = TFT_eSprite(&tft);
+int16_t sprKafelekW = 0, sprKafelekH = 0;
+Preferences kalibracja;   // NVS namespace "dotyk" — kalibracja XPT2046
+
+// --- Dotyk: WLASNY sterownik, osobna magistrala SPI (patrz FIX-DOTYK-OSOBNA-MAGISTRALA) ---
+#define TOUCH_SCK   25
+#define TOUCH_MOSI  26
+#define TOUCH_MISO  33
+#define TOUCH_CS    27
+// Prog "nacisniecia" na podstawie zlozonego wzoru Z1+Z2 (patrz funkcja
+// touchOdczytajSurowy nizej) — inna skala niz sam Z1, wiec wartosc startowa
+// do potwierdzenia/dostrojenia na podstawie live debug w Serial.
+#define TOUCH_Z_PROG 400
+
+// Jesli po kalibracji okaze sie, ze ruch pozioma/pionowy jest zamieniony
+// albo odwrocony wzgledem oczekiwanego — przelacz te flagi (nie trzeba
+// przelutowywac niczego, to tylko zamiana interpretacji odczytu w kodzie).
+#define TOUCH_SWAP_XY   0
+#define TOUCH_INVERT_X  0
+#define TOUCH_INVERT_Y  0
+
+struct KalibracjaDotyku {
+  uint16_t rawXA, rawYA;  // surowy odczyt w punkcie A (gorny-lewy znacznik)
+  uint16_t rawXB, rawYB;  // surowy odczyt w punkcie B (dolny-prawy znacznik)
+};
+KalibracjaDotyku kalDotyku;
+
+// Wspolrzedne znacznikow kalibracyjnych na ekranie (landscape 480x320)
+const int16_t KAL_A_X = 30,  KAL_A_Y = 30;
+const int16_t KAL_B_X = 450, KAL_B_Y = 290;
+
+void touchSpiDelay() { delayMicroseconds(3); }
+
+uint8_t touchXferByte(uint8_t out) {
+  uint8_t in = 0;
+  for (int i = 7; i >= 0; i--) {
+    digitalWrite(TOUCH_MOSI, (out >> i) & 0x01);
+    digitalWrite(TOUCH_SCK, LOW);
+    touchSpiDelay();
+    in <<= 1;
+    if (digitalRead(TOUCH_MISO)) in |= 0x01;
+    digitalWrite(TOUCH_SCK, HIGH);
+    touchSpiDelay();
+  }
+  return in;
+}
+
+uint16_t touchReadChannel(uint8_t cmd) {
+  digitalWrite(TOUCH_CS, LOW);
+  touchSpiDelay();
+  touchXferByte(cmd);
+  uint8_t hi = touchXferByte(0x00);
+  uint8_t lo = touchXferByte(0x00);
+  digitalWrite(TOUCH_CS, HIGH);
+  return ((uint16_t)hi << 8 | lo) >> 3;   // 12-bitowy wynik
+}
+
+// Mediana z 3 probek — odrzuca pojedyncze zaklocenia bez pelnego usredniania
+uint16_t touchReadChannelStabilnie(uint8_t cmd) {
+  uint16_t a = touchReadChannel(cmd);
+  uint16_t b = touchReadChannel(cmd);
+  uint16_t c = touchReadChannel(cmd);
+  if (a > b) { uint16_t t = a; a = b; b = t; }
+  if (b > c) { uint16_t t = b; b = c; c = t; }
+  if (a > b) { uint16_t t = a; a = b; b = t; }
+  return b;
+}
+
+void touchInicjalizujPiny() {
+  pinMode(TOUCH_SCK, OUTPUT);
+  pinMode(TOUCH_MOSI, OUTPUT);
+  pinMode(TOUCH_CS, OUTPUT);
+  pinMode(TOUCH_MISO, INPUT);
+  digitalWrite(TOUCH_CS, HIGH);
+  digitalWrite(TOUCH_SCK, LOW);
+  digitalWrite(TOUCH_MOSI, LOW);
+}
+
+// Surowy odczyt (bez kalibracji/mapowania) — zwraca true jesli wykryto nacisk.
+// DEBOUNCE: wymaga kilku KOLEJNYCH probek nad progiem (nie jednej) - pojedyncze
+// skoki Z ponizej progu 400 sa normalnym szumem tla nawet bez dotyku, wiec
+// jedna probka nie wystarczy, zeby uznac to za realny dotyk.
+#define TOUCH_WYMAGANE_PROBKI 4
+
+bool touchOdczytajSurowy(uint16_t &rawX, uint16_t &rawY) {
+  int licznik = 0;
+  uint16_t x = 0, y = 0;
+  for (int i = 0; i < TOUCH_WYMAGANE_PROBKI; i++) {
+    uint16_t z1 = touchReadChannel(0xB0);
+    uint16_t z2 = touchReadChannel(0xC0);
+    int32_t z = (4095 - (int32_t)z2) + (int32_t)z1;
+    x = touchReadChannel(0x90);
+    y = touchReadChannel(0xD0);
+    if (z >= TOUCH_Z_PROG) {
+      licznik++;
+    } else {
+      licznik = 0;   // przerwij serie - potrzeba KOLEJNYCH probek, nie sumy
+      break;
+    }
+  }
+  rawX = x;
+  rawY = y;
+  return licznik >= TOUCH_WYMAGANE_PROBKI;
+}
+
+// Zbiera kilka probek POZYCJI w trakcie trwania dotyku i zwraca median —
+// pojedynczy odczyt X/Y w momencie samego wykrycia dotyku bywa niestabilny
+// (np. na styku "dotkniecie/puszczenie" panelu rezystancyjnego), wiec kilka
+// probek + mediana daje dużo pewniejszy wynik. Jesli dotyk zniknie w trakcie
+// zbierania (falszywy alarm), zwraca false.
+bool touchPobierzStabilnaPozycje(uint16_t &outX, uint16_t &outY) {
+  const int PROBKI = 5;
+  uint16_t xs[PROBKI], ys[PROBKI];
+  for (int i = 0; i < PROBKI; i++) {
+    uint16_t rx, ry;
+    if (!touchOdczytajSurowy(rx, ry)) return false;   // dotyk znikl - falszywy alarm
+    xs[i] = rx; ys[i] = ry;
+    delay(15);
+  }
+  // sortowanie babelkowe (tablica jest mala, wydajnosc bez znaczenia)
+  for (int i = 0; i < PROBKI; i++)
+    for (int j = i + 1; j < PROBKI; j++) {
+      if (xs[j] < xs[i]) { uint16_t t = xs[i]; xs[i] = xs[j]; xs[j] = t; }
+      if (ys[j] < ys[i]) { uint16_t t = ys[i]; ys[i] = ys[j]; ys[j] = t; }
+    }
+  outX = xs[PROBKI / 2];
+  outY = ys[PROBKI / 2];
+  return true;
+}
+
+// Odczyt z zastosowaniem kalibracji — zwraca wspolrzedne piksela ekranu
+bool dotykOdczytaj(int16_t &px, int16_t &py) {
+  // Zabezpieczenie: jesli kalibracja jest zdegenerowana (oba punkty
+  // identyczne/za blisko), map() dzielilby przez zero - olej dotyk zamiast
+  // zwracac smieci.
+  if (abs((int)kalDotyku.rawXB - (int)kalDotyku.rawXA) < 50 ||
+      abs((int)kalDotyku.rawYB - (int)kalDotyku.rawYA) < 50) {
+    return false;
+  }
+
+  uint16_t rawX, rawY;
+  if (!touchOdczytajSurowy(rawX, rawY)) return false;
+
+  if (TOUCH_SWAP_XY) { uint16_t t = rawX; rawX = rawY; rawY = t; }
+
+  long x = map(rawX, kalDotyku.rawXA, kalDotyku.rawXB, KAL_A_X, KAL_B_X);
+  long y = map(rawY, kalDotyku.rawYA, kalDotyku.rawYB, KAL_A_Y, KAL_B_Y);
+
+  if (TOUCH_INVERT_X) x = 480 - x;
+  if (TOUCH_INVERT_Y) y = 320 - y;
+
+  px = constrain(x, 0, 479);
+  py = constrain(y, 0, 319);
+  return true;
+}
+
+// Podswietlenie (LED) na pinie TFT_BL (GPIO21, patrz platformio.ini) — PRZEZ
+// REZYSTOR ~100-220R w szeregu miedzy GPIO a pinem LED na module, nie na styk.
+// Sterowane PWM zamiast na sztywno do 3.3V, wiec mozna przygasic jesli za jasno.
+void ustawJasnoscPodswietlenia(uint8_t procent) {
+  procent = constrain(procent, (uint8_t)0, (uint8_t)100);
+  ledcWrite(TFT_BL, map(procent, 0, 100, 0, 255));
+}
+
+// ----------------------------------------------------------------------------
+// [ROZSZERZENIE, ta sesja - PANEL WYSWIETLACZ] Jasnosc podswietlenia (dzien/
+// noc) + automatyczne przyciemnienie w oknie godzinowym. W ODROZNIENIU od
+// WSZYSTKICH innych ustawien w tym pliku (POLA[]/wybor/trybSerwa/
+// antystopWlaczony) te wartosci NIE naleza do centrali - sa czysto lokalna
+// wlasnoscia TEJ PLYTKI (fizyczne podswietlenie TFT_BL), wiec nie ma tu
+// zadnego httpPost()/wyslijTrybPracy(). Zamiast tego zapisujemy je w lokalnej
+// pamieci NVS (Preferences, DOKLADNIE ten sam mechanizm co `kalibracja` dla
+// dotyku wyzej - patrz kalibrujDotykJesliTrzeba()) i stosujemy bezposrednio
+// przez ustawJasnoscPodswietlenia() powyzej.
+//
+// Ta plytka NIE MA wlasnego RTC (patrz komentarz przy stan.godzina nizej) -
+// "aktualna godzina" do porownania z oknem przyciemnienia jest wiec zawsze
+// OSTATNIA znana godzina, badz to prawdziwa z centrali (stan.godzina w
+// pobierzStatus()), badz symulowana lokalnie (symGodzina w symOdswiezDoLvgl(),
+// gdy LVGL_POC_SYMULACJA=1). Zamiast przekazywac ja jako parametr do kazdej
+// funkcji ponizej (i musiec pamietac, ktora galaz akurat jest aktywna),
+// obie galezie zapisuja ja tutaj, w DWOCH wspolnych zmiennych
+// (wyswietlaczOstatniaGodzina/wyswietlaczGodzinaZnana) - patrz wywolania
+// wyswietlaczHarmonogramOdswiez() w pobierzStatus() i symOdswiezDoLvgl().
+Preferences ustawieniaWyswietlacza;   // NVS namespace "wyswietlacz"
+uint8_t jasnoscDziennaWartosc = 100;  // %, 0-100 - jasnosc POZA oknem przyciemnienia
+uint8_t jasnoscNocnaWartosc   = 30;   // %, 0-100 - jasnosc WEWNATRZ okna przyciemnienia
+uint8_t godzinaStartPrzyciemnienia  = 22; // 0-23 - godzina rozpoczecia okna
+uint8_t godzinaKoniecPrzyciemnienia = 6;  // 0-23 - godzina zakonczenia okna
+bool    harmonogramWlaczonyWartosc  = true; // false = zawsze jasnoscDzienna, godziny ignorowane
+
+int  wyswietlaczOstatniaGodzina = 0;     // ostatnia znana godzina (real. lub sym.), patrz komentarz wyzej
+bool wyswietlaczGodzinaZnana    = false; // false dopoki 1. pobierzStatus()/symOdswiezDoLvgl() nie ustawi
+bool wyswietlaczPrzyciemnionyTeraz = false; // cache "co jest aktualnie zastosowane", zeby nie spamowac ledcWrite()
+
+void wyswietlaczWczytajZPamieci() {
+  // [ROZNICA wzgledem kalibracji] `kalibracja` (wyzej) robi .end() zaraz po
+  // jednorazowym uzyciu w setup() - my celowo NIE wolamy .end() tutaj, bo w
+  // odroznieniu od kalibracji dotyku (ktora pisze tylko RAZ, w trakcie
+  // interaktywnej kalibracji) ten obiekt musi zostac otwarty przez CALY czas
+  // dzialania programu - wyswietlaczJasnoscWyslij()/..._ustawieniaWyslij()/
+  // ..._harmonogramWyslij() moga dopisac do niego w KAZDEJ chwili, gdy user
+  // dotknie panelu WYSWIETLACZ (minuty czy godziny po starcie).
+  ustawieniaWyswietlacza.begin("wyswietlacz", false);
+  jasnoscDziennaWartosc = ustawieniaWyswietlacza.getUChar("jasnDzien", 100);
+  jasnoscNocnaWartosc   = ustawieniaWyswietlacza.getUChar("jasnNoc", 30);
+  godzinaStartPrzyciemnienia  = ustawieniaWyswietlacza.getUChar("godzStart", 22);
+  godzinaKoniecPrzyciemnienia = ustawieniaWyswietlacza.getUChar("godzKoniec", 6);
+  harmonogramWlaczonyWartosc  = ustawieniaWyswietlacza.getBool("harmonWlacz", true);
+  // Bezpieczne klipsy na wypadek uszkodzonych/przedawnionych danych w NVS -
+  // te same zakresy co suwaki/spinboxy w dashboard_lvgl_poc.cpp.
+  jasnoscDziennaWartosc = constrain(jasnoscDziennaWartosc, (uint8_t)0, (uint8_t)100);
+  jasnoscNocnaWartosc   = constrain(jasnoscNocnaWartosc,   (uint8_t)0, (uint8_t)100);
+  godzinaStartPrzyciemnienia  = constrain(godzinaStartPrzyciemnienia,  (uint8_t)0, (uint8_t)23);
+  godzinaKoniecPrzyciemnienia = constrain(godzinaKoniecPrzyciemnienia, (uint8_t)0, (uint8_t)23);
+}
+
+// Czy podana godzina (0-23) miesci sie w oknie od start do koniec, koniec
+// WYLACZNIE (standardowy polprzedzial czasu). Okno MOZE "zawijac sie" przez
+// polnoc (start > koniec, np. 22..6, najbardziej typowy przypadek "wieczor do
+// rana") - wtedy godzina jest W OKNIE gdy jest >=start LUB <koniec (suma, nie
+// przeciecie przedzialow). Gdy start==koniec, okno obejmuje CALA dobe (24/24)
+// - najprostsza, przewidywalna konwencja dla tego brzegowego przypadku.
+bool wyswietlaczCzyPrzyciemniona(int godzina) {
+  int s = godzinaStartPrzyciemnienia, k = godzinaKoniecPrzyciemnienia;
+  if (s == k) return true;
+  if (s < k) return (godzina >= s) && (godzina < k);
+  return (godzina >= s) || (godzina < k);
+}
+
+// Wolane po kazdej swiezej wartosci godziny (patrz wywolania w
+// pobierzStatus() i symOdswiezDoLvgl(), oraz z "mostow" ponizej po kazdej
+// recznej zmianie na panelu). Idempotentne i tanie (ledcWrite tylko przy
+// realnej ZMIANIE stanu dzien/noc, patrz wyswietlaczPrzyciemnionyTeraz), wiec
+// bezpieczne do wolania co kilka sekund. Godzina nieznana
+// (!wyswietlaczGodzinaZnana, np. tuz po starcie zanim przyjdzie 1. odpowiedz
+// centrali) -> nie zgadujemy, zostaw jasnosc jak jest.
+void wyswietlaczHarmonogramOdswiez() {
+  if (!harmonogramWlaczonyWartosc || !wyswietlaczGodzinaZnana) {
+    if (wyswietlaczPrzyciemnionyTeraz) { // wracamy z ew. przyciemnienia (np. user wlasnie wylaczyl harmonogram)
+      wyswietlaczPrzyciemnionyTeraz = false;
+      ustawJasnoscPodswietlenia(jasnoscDziennaWartosc);
+    }
+    return;
+  }
+  bool przyciemniona = wyswietlaczCzyPrzyciemniona(wyswietlaczOstatniaGodzina);
+  if (przyciemniona != wyswietlaczPrzyciemnionyTeraz) {
+    wyswietlaczPrzyciemnionyTeraz = przyciemniona;
+    ustawJasnoscPodswietlenia(przyciemniona ? jasnoscNocnaWartosc : jasnoscDziennaWartosc);
+  }
+}
+
+// [LVGL-API] Lokalny "most" dla panelu WYSWIETLACZ - w odroznieniu od
+// WSZYSTKICH innych mostow w tym pliku (pompaManualWyslij() i dalej) NIE ma
+// tu HTTP: zmiana trafia prosto do NVS + na sprzet (PWM), efekt jest wiec
+// natychmiastowy i zawsze "prawdziwy" (nic nie moze "nie dojsc" jak przy
+// POST do centrali, wiec nie ma czego czekac/potwierdzac kolejnym
+// pobierzStatus()). Te same 3 funkcje sa rejestrowane w OBU galeziach
+// setup() (symulacja i prawdziwa centrala) - w odroznieniu od reszty
+// callbackow w tym pliku, tu nie ma czego symulowac osobno, bo podswietlenie
+// tej plytki dziala identycznie niezaleznie od tego, czy centrala jest
+// akurat podlaczona.
+//
+// `id`: 0=jasnoscDzien, 1=jasnoscNoc (ten sam ksztalt co serwoPozycjaWyslij
+// dla klapa/syberek).
+void wyswietlaczJasnoscWyslij(int id, int procent, bool koncowa) {
+  procent = constrain(procent, 0, 100);
+  if (id == 0) jasnoscDziennaWartosc = (uint8_t)procent;
+  else         jasnoscNocnaWartosc   = (uint8_t)procent;
+  // [FIX, ta sesja - "jasnosc widoczna dopiero po puszczeniu"] PWM ponizej
+  // wykonuje sie przy KAZDYM wywolaniu (rowniez w trakcie przeciagania) -
+  // tanie. Zapis do NVS (patrz `if (koncowa)` ponizej) TYLKO na koncu gestu -
+  // flash ma ograniczona liczbe cykli kasowania sektora.
+  //
+  // Zastosuj NATYCHMIAST tylko jesli edytowany poziom jest AKURAT aktywny -
+  // inaczej user zobaczylby chwilowy, mylacy "przeskok" jasnosci przy edycji
+  // poziomu, ktory teraz i tak nie jest uzywany (np. ustawia jasnosc nocna w
+  // srodku slonecznego dnia).
+  bool celujeWAktywny = (id == 0) ? !wyswietlaczPrzyciemnionyTeraz : wyswietlaczPrzyciemnionyTeraz;
+  if (celujeWAktywny) ustawJasnoscPodswietlenia((uint8_t)procent);
+  if (koncowa) {
+    ustawieniaWyswietlacza.putUChar(id == 0 ? "jasnDzien" : "jasnNoc", (uint8_t)procent);
+  }
+}
+
+void wyswietlaczHarmonogramWyslij(int wlaczony) {
+  harmonogramWlaczonyWartosc = (wlaczony != 0);
+  ustawieniaWyswietlacza.putBool("harmonWlacz", harmonogramWlaczonyWartosc);
+  wyswietlaczHarmonogramOdswiez(); // przelicz i zastosuj od razu wzgledem ostatniej znanej godziny
+}
+
+void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
+  uint8_t godz = (uint8_t)constrain(wartosc, 0L, 23L);
+  if (strcmp(pole, "godzStart") == 0) {
+    godzinaStartPrzyciemnienia = godz;
+    ustawieniaWyswietlacza.putUChar("godzStart", godz);
+  } else if (strcmp(pole, "godzKoniec") == 0) {
+    godzinaKoniecPrzyciemnienia = godz;
+    ustawieniaWyswietlacza.putUChar("godzKoniec", godz);
+  }
+  wyswietlaczHarmonogramOdswiez(); // granice okna sie zmienily - przelicz i zastosuj od razu
+}
+
+// ----------------------------------------------------------------------------
+// [ROZSZERZENIE, ta sesja - BRZECZYK ALARMOWY] Piezo (najlepiej PASYWNY -
+// patrz "UWAGA SPRZETOWA" nizej) na pinie 13, sterowany PWM tak samo jak
+// podswietlenie (ledcAttach/ledcWriteTone), tylko ton zamiast jasnosci. Gra
+// dwa RZECZYWISCIE UZYWANE, rozpoznawalne wzorce alarmowe zamiast jednego
+// monotonnego piknia - research (na prosbe z tej sesji) ponizej.
+//
+// UWAGA SPRZETOWA: kod zaklada brzeczyk PASYWNY (bez wlasnego oscylatora -
+// gra dokladnie te czestotliwosc, ktora dostanie z ledcWriteTone()). Z
+// brzeczykiem AKTYWNYM (ma wlasny oscylator, ignoruje czestotliwosc, gra
+// zawsze swoim jednym stalym tonem) kod i tak zadziala - RYTM obu wzorcow
+// (patrz nizej) zostaje w pelni slyszalny, ginie tylko roznica WYSOKOSCI
+// dzwieku miedzy POZAREM a OGRZEWANIEM. Pasywny da pelny efekt.
+//
+// RESEARCH - skad te konkretne wzorce (nie wymyslone, dwa prawdziwe,
+// standaryzowane sygnaly alarmowe o swiadomie innym "charakterze"):
+// 1. POZAR/DYM = "Temporal-Three" (T3) - miedzynarodowy standard alarmow
+//    pozarowych (NFPA 72 / ISO 8201 / ANSI S3.41): 3x 0.5s ton + 0.5s cisza,
+//    potem 1.5s ciszy, cykl 4.0s. To DOKLADNIE ten rytm z prawdziwych czujek
+//    dymu - rozpoznawalny instynktownie, bez zastanowienia. Oficjalna norma
+//    ustala tez czestotliwosc na 520Hz (nizsze tony skuteczniej budza ze
+//    snu), ale to zalozenie dla dedykowanych syren - maly, tani brzeczyk
+//    piezo (jak tutaj) jest znacznie glosniejszy w swoim naturalnym pasmie
+//    rezonansu ok. 3-4kHz, wiec zostaje sam RYTM T3 (najbardziej
+//    rozpoznawalna czesc wzorca), a czestotliwosc jest dobrana praktycznie
+//    pod ten konkretny, tani podzespol.
+// 2. OGRZEWANIE/PANEL = dwuton "hi-lo" (europejska syrena typu "nee-naw") -
+//    ciagle, plynne przelaczanie miedzy dwiema stalymi czestotliwosciami co
+//    ok. 0.5s, BEZ przerw w dzwieku. Celowo skrajnie INNY charakter niz
+//    pozar (ciagly zamiast urywanego, nizszy zakres tonow) - zeby od razu,
+//    bez patrzenia na ekran, slyszec "to NIE pozar, ale cos wymaga
+//    sprawdzenia".
+//
+// Priorytet gdy kilka alarmow naraz: POZAR (dymAlarm) > OGRZEWANIE/PANEL >
+// cisza - patrz brzeczykOdswiezZAlarmow() nizej.
+#define BRZECZYK_PIN 13
+
+struct BrzeczykFaza { uint16_t czestotliwoscHz; uint16_t czasMs; }; // czestotliwoscHz=0 -> cisza w tej fazie
+
+static const BrzeczykFaza WZORZEC_POZAR[] = {
+  {3000, 500}, {0, 500}, {3000, 500}, {0, 500}, {3000, 500}, {0, 1500},
+};
+static const BrzeczykFaza WZORZEC_OGRZEWANIE[] = {
+  {1200, 500}, {1600, 500},
+};
+
+enum BrzeczykAlarmTyp { BRZECZYK_BRAK, BRZECZYK_POZAR, BRZECZYK_OGRZEWANIE };
+BrzeczykAlarmTyp brzeczykAktywnyTyp = BRZECZYK_BRAK;
+
+// [EKRAN ALARMOWY, ta sesja] Wyciszenie z przycisku WYCISZ (dashboard_lvgl_poc.cpp) -
+// patrz alarmWyciszObsluga()/brzeczykOdswiezZAlarmow() nizej i
+// PLAN_EKRAN_ALARMOWY.md. Powiazane z KONKRETNYM typem, nie globalnym
+// przelacznikiem - g_brzeczykWyciszonyTyp pamieta, KTORY typ user wyciszyl,
+// zeby wyciszenie samo przestalo obowiazywac, gdy chciany typ sie zmieni
+// (alarm ustapi albo eskaluje na inny/gorszy).
+static bool g_brzeczykWyciszony = false;
+static BrzeczykAlarmTyp g_brzeczykWyciszonyTyp = BRZECZYK_BRAK;
+int  brzeczykFazaIdx = 0;
+unsigned long brzeczykFazaStartMs = 0;
+
+const BrzeczykFaza *brzeczykWzorzec(BrzeczykAlarmTyp typ, int &liczbaFaz) {
+  if (typ == BRZECZYK_POZAR) {
+    liczbaFaz = sizeof(WZORZEC_POZAR) / sizeof(WZORZEC_POZAR[0]);
+    return WZORZEC_POZAR;
+  }
+  liczbaFaz = sizeof(WZORZEC_OGRZEWANIE) / sizeof(WZORZEC_OGRZEWANIE[0]);
+  return WZORZEC_OGRZEWANIE;
+}
+
+void brzeczykZastosujFaze() {
+  int liczbaFaz;
+  const BrzeczykFaza *wzorzec = brzeczykWzorzec(brzeczykAktywnyTyp, liczbaFaz);
+  ledcWriteTone(BRZECZYK_PIN, wzorzec[brzeczykFazaIdx].czestotliwoscHz);
+}
+
+void brzeczykUstawTyp(BrzeczykAlarmTyp nowy) {
+  if (nowy == brzeczykAktywnyTyp) return; // bez zmian - nie przerywaj w polowie juz granej frazy
+  brzeczykAktywnyTyp = nowy;
+  brzeczykFazaIdx = 0;
+  brzeczykFazaStartMs = millis();
+  if (brzeczykAktywnyTyp == BRZECZYK_BRAK) ledcWriteTone(BRZECZYK_PIN, 0);
+  else brzeczykZastosujFaze(); // wejdz w faze 0 NATYCHMIAST, nie czekaj na 1. obrot obsluzBrzeczyk()
+}
+
+// Wolane po kazdej swiezej wartosci alarmow (patrz wywolania w
+// pobierzStatus() i symOdswiezDoLvgl()) - decyduje KTORY wzorzec (jesli
+// ktorykolwiek) powinien teraz grac. Idempotentne - brzeczykUstawTyp() sam
+// pilnuje, zeby nie przerywac juz granego wzorca bez potrzeby.
+void brzeczykOdswiezZAlarmow(bool dym, bool ogrzewanie, bool panel) {
+  BrzeczykAlarmTyp chciany = dym ? BRZECZYK_POZAR
+                            : (ogrzewanie || panel) ? BRZECZYK_OGRZEWANIE
+                            : BRZECZYK_BRAK;
+  // [EKRAN ALARMOWY, ta sesja] Jesli user wyciszyl DOKLADNIE ten typ, ktory
+  // wlasnie chcemy zagrac - podstaw cisze. W chwili, gdy `chciany` przestanie
+  // byc rowne zapamietanemu g_brzeczykWyciszonyTyp (alarm ustapil albo
+  // eskalowal na inny typ), ten warunek sam przestaje byc prawdziwy - zero
+  // recznego zerowania flagi gdziekolwiek indziej. Patrz alarmWyciszObsluga().
+  if (g_brzeczykWyciszony && chciany == g_brzeczykWyciszonyTyp) {
+    chciany = BRZECZYK_BRAK;
+  }
+  brzeczykUstawTyp(chciany);
+}
+
+// [EKRAN ALARMOWY, ta sesja] Zarejestrowana jako AlarmWyciszCb (patrz setup(),
+// obie galezie #if LVGL_POC_SYMULACJA) - wolana z przycisku WYCISZ na nowym
+// ekranie alarmowym w dashboard_lvgl_poc.cpp. W 100% lokalna: brzeczyk to
+// GPIO na TEJ plytce, wiec zero HTTP do centrali - w odroznieniu od
+// wiekszosci pozostalych callbackow w tym pliku.
+void alarmWyciszObsluga() {
+  g_brzeczykWyciszony = true;
+  g_brzeczykWyciszonyTyp = brzeczykAktywnyTyp;
+}
+
+// Wolane co obrot loop() (ten sam wzorzec co obsluzDotyk()) - awansuje
+// wzorzec do kolejnej fazy, gdy czas biezacej fazy uplynal. ledcWriteTone()
+// wolane TYLKO przy realnej zmianie fazy, NIE w kazdym obrocie petli (patrz
+// arduino-esp32 issue #3617 - zbyt czeste wywolania ledcWriteTone() daja
+// niedokladny dzwiek).
+void obsluzBrzeczyk() {
+  if (brzeczykAktywnyTyp == BRZECZYK_BRAK) return;
+  int liczbaFaz;
+  const BrzeczykFaza *wzorzec = brzeczykWzorzec(brzeczykAktywnyTyp, liczbaFaz);
+  if (millis() - brzeczykFazaStartMs >= wzorzec[brzeczykFazaIdx].czasMs) {
+    brzeczykFazaIdx = (brzeczykFazaIdx + 1) % liczbaFaz;
+    brzeczykFazaStartMs = millis();
+    brzeczykZastosujFaze();
+  }
+}
+
+void brzeczykZainicjuj() {
+  ledcAttach(BRZECZYK_PIN, 3000, 8); // czestotliwosc startowa/rozdzielczosc - ledcWriteTone() i tak zmienia freq w locie
+  ledcWriteTone(BRZECZYK_PIN, 0);    // cisza na starcie
+}
+
+// Motyw kolorow — spojny z panelem WWW centrali (ciemne tlo, akcent ognisty)
+#define KOL_TLO       0x0801   // ciemny granat/czern
+#define KOL_KARTA     0x10A3
+#define KOL_RAMKA     0x2A8B
+#define KOL_TEKST     0xC638
+#define KOL_TEKST_DIM 0x4A69
+#define KOL_OGIEN     0x07FF   // cyan (jak --flame w panelu WWW)
+#define KOL_OK        0x4726   // zielony
+#define KOL_WARN      0xFDA0   // bursztyn
+#define KOL_ERR       0xF8B2   // czerwony
+#define KOL_SNIEG     0xAEDC   // jasny blekit — ikona sniezynki (zima)
+#define KOL_KROPLA    0x4C9F   // niebieski — ikona kropli (pompa)
+#define KOL_SUWAK     0xFD20   // pomaranczowy — ikony suwakow (klapa/syberka), jak w makiecie referencyjnej
+#define KOL_ZAR       0xFA80   // czerwono-pomaranczowy — ikony plomienia/termometru (bojler, ogrzewanie, panel)
+#define KOL_CHMURKA   0x2E7F   // turkusowy — ikona chmury/sniegu (zewn)
+
+// ----------------------------------------------------------------------------
+// [UI] PROSTE IKONY WEKTOROWE — rysowane wprost prymitywami TFT_eSPI (brak
+// bitmap/dekodera = zero dodatkowego miejsca we flash, spojne z reszta UI).
+// Kazda przyjmuje (x,y) = SRODEK ikony i "r" = promien/polowa rozmiaru, zeby
+// wszystkie ladnie centrowaly sie w tym samym miejscu niezaleznie od ksztaltu.
+// ----------------------------------------------------------------------------
+// [KROK 3] Wszystkie ikony przyjmuja teraz "gfx" (referencja do TFT_eSPI LUB
+// TFT_eSprite — TFT_eSprite dziedziczy po TFT_eSPI, wiec ten sam kod dziala
+// z obiema powierzchniami) zamiast zawsze rysowac na globalnym tft. Dzieki
+// temu te same funkcje ikon dzialaja bez zmian teraz, gdy kafelki renderuja
+// sie do sprite'a w pamieci, a nie bezposrednio na ekran.
+void rysujIkonaSlonce(TFT_eSPI &gfx, int16_t cx, int16_t cy, int16_t r, uint16_t kolor) {
+  gfx.fillCircle(cx, cy, r / 2, kolor);
+  // 8 promyczkow dookola — proste linie od krawedzi kola na zewnatrz
+  for (int i = 0; i < 8; i++) {
+    float kat = i * (PI / 4.0f);
+    int16_t x1 = cx + (int16_t)((r / 2 + 2) * cosf(kat));
+    int16_t y1 = cy + (int16_t)((r / 2 + 2) * sinf(kat));
+    int16_t x2 = cx + (int16_t)(r * cosf(kat));
+    int16_t y2 = cy + (int16_t)(r * sinf(kat));
+    gfx.drawLine(x1, y1, x2, y2, kolor);
+  }
+}
+
+void rysujIkonaSnieg(TFT_eSPI &gfx, int16_t cx, int16_t cy, int16_t r, uint16_t kolor) {
+  // 3 linie przez srodek (co 60 stopni) + krotkie "galazki" na koncach —
+  // klasyczny uproszczony symbol sniezynki, tani w rysowaniu.
+  for (int i = 0; i < 3; i++) {
+    float kat = i * (PI / 3.0f);
+    int16_t x1 = cx - (int16_t)(r * cosf(kat)), y1 = cy - (int16_t)(r * sinf(kat));
+    int16_t x2 = cx + (int16_t)(r * cosf(kat)), y2 = cy + (int16_t)(r * sinf(kat));
+    gfx.drawLine(x1, y1, x2, y2, kolor);
+    float katGal = PI / 5.0f;
+    auto galazka = [&](int16_t bx, int16_t by, float kierunek) {
+      int16_t gx1 = bx + (int16_t)((r / 3) * cosf(kierunek + katGal));
+      int16_t gy1 = by + (int16_t)((r / 3) * sinf(kierunek + katGal));
+      int16_t gx2 = bx + (int16_t)((r / 3) * cosf(kierunek - katGal));
+      int16_t gy2 = by + (int16_t)((r / 3) * sinf(kierunek - katGal));
+      gfx.drawLine(bx, by, gx1, gy1, kolor);
+      gfx.drawLine(bx, by, gx2, gy2, kolor);
+    };
+    galazka(x2, y2, kat);
+    galazka(x1, y1, kat + PI);
+  }
+}
+
+void rysujIkonaKropla(TFT_eSPI &gfx, int16_t cx, int16_t cy, int16_t r, uint16_t kolor) {
+  gfx.drawBitmap(cx - IKONA_ROZMIAR / 2, cy - IKONA_ROZMIAR / 2, IKONA_KROPLA, IKONA_ROZMIAR, IKONA_ROZMIAR, kolor);
+}
+
+void rysujIkonaSuwak(TFT_eSPI &gfx, int16_t cx, int16_t cy, int16_t r, uint16_t kolor) {
+  gfx.drawBitmap(cx - IKONA_ROZMIAR / 2, cy - IKONA_ROZMIAR / 2, IKONA_SUWAK, IKONA_ROZMIAR, IKONA_ROZMIAR, kolor);
+}
+
+void rysujIkonaPlomien(TFT_eSPI &gfx, int16_t cx, int16_t cy, int16_t r, uint16_t kolor) {
+  gfx.drawBitmap(cx - IKONA_ROZMIAR / 2, cy - IKONA_ROZMIAR / 2, IKONA_PLOMIEN, IKONA_ROZMIAR, IKONA_ROZMIAR, kolor);
+}
+
+void rysujIkonaAlarm(TFT_eSPI &gfx, int16_t cx, int16_t cy, int16_t r, uint16_t kolor) {
+  gfx.drawBitmap(cx - IKONA_ROZMIAR / 2, cy - IKONA_ROZMIAR / 2, IKONA_ALARM, IKONA_ROZMIAR, IKONA_ROZMIAR, kolor);
+}
+
+// ----------------------------------------------------------------------------
+// [ANIMACJA-PRZYCISKU] Krotki, celowo blokujacy "flash" stanu wcisnietego —
+// zamiast utrzymywac osobny stan "wcisniety/puszczony" przez cala petle
+// dotyku (co wymagaloby przebudowy obsluzDotyk()), rysujemy przycisk w
+// stylu wcisnietym NATYCHMIAST po wykryciu dotkniecia (zbocze narastajace),
+// czekamy krotko — na tyle dlugo, zeby oko zdazylo to zarejestrowac jako
+// realna reakcje (typowy prog postrzeganej "natychmiastowosci" UI to rzedu
+// 100ms), po czym wywolujacy i tak zaraz rysuje normalny ekran z juz
+// zaktualizowanym stanem (rysujAktualnyEkran()) — to naturalnie daje efekt
+// "wcisniety -> puszczony". Prosty, przewidywalny, spojny ze stylem reszty
+// tego pliku (ktory juz uzywa delay() przy krotkich komunikatach blokujacych,
+// np. blad wysylki ustawienia).
+void animujWcisniecie(int16_t x, int16_t y, int16_t w, int16_t h) {
+  tft.fillRoundRect(x, y, w, h, 6, KOL_OGIEN);
+  tft.drawRoundRect(x, y, w, h, 6, KOL_TEKST);
+  delay(70);
+}
+
+// ----------------------------------------------------------------------------
+// STAN POBIERANY Z CENTRALI
+// ----------------------------------------------------------------------------
+struct StanPieca {
+  bool  polaczono = false;
+  String ip;
+  int   rssi = 0;
+  float tZewn = 0, tBojler = 0, tOgrz = 0, tOgrzSr = 0, tPanel = 0, tPokoj = 0, tTrociny = 0, tPowrot = 0;
+  float wilgotnosc = 0, cisnienie = 0;
+  int   dym = 0;
+  bool  dymAlarm = false;
+  int   klapa = 0, syberka = 0;
+  bool  pompa = false;
+  // [LVGL-API] Minuty do cichego powrotu pompy do AUTO (0 = brak override,
+  // automatyka centrali decyduje) - centrala liczy to sama (pompaManualOverrideUntil),
+  // LCD tylko odczytuje, zeby nie miec wlasnego, rozjezdzajacego sie timera.
+  int   pompaOverrideMin = 0;
+  bool  alarmOgrzewanie = false, alarmPanel = false;
+  // [DESZCZ-ETAP4, PLAN_DESZCZ_ZEWN.md] Z centrali (/api/status pola
+  // deszcz_stan/deszcz_min, v2.13.2) - 0=brak opadu w widocznym oknie,
+  // 1=nadciaga (deszczMinuty=za ile zacznie), 2=pada teraz (deszczMinuty=za
+  // ile skonczy, -1=nieznane w oknie 6h). Domyslne 0/-1 dopasowane do tego,
+  // co zwraca centrala, gdy jeszcze nie zdazyla policzyc pierwszej prognozy
+  // (identyczny duch co reszta domyslnych wartosci w tej strukturze).
+  int   deszczStan = 0, deszczMinuty = -1;
+  // [LCD-SEZON] Z centrali (RTC sprzetowy tam, nie tutaj — wyswietlacz nie
+  // ma wlasnego RTC z podtrzymaniem, dziala na baterii/deep sleep) — patrz
+  // aktualizujSezon() nizej.
+  int   miesiac = 0;      // 1-12, albo 0 gdy centrala zglasza brak RTC
+  bool  rtcOk = false;
+  // [LVGL-DATA-CZAS, ta sesja] Kafelek DATA I CZAS - godzina/minuta/dzien/rok,
+  // ten sam zrodlo (RTC centrali) i ten sam fallback (0 gdy !rtcOk) co miesiac.
+  int   godzina = 0, minuta = 0, dzien = 0, rok = 0;
+  // [UI-INTERNET, ta sesja] Dostepnosc internetu (fbAppReady na centrali) -
+  // odrozniona od `polaczono` (to ostatnie oznacza tylko "LCD ma kontakt z
+  // centrala przez lokalny WiFi", nie mowi nic o tym, czy sama centrala ma
+  // internet). Ten sam wzorzec co rssi: centrala liczy/mierzy, LCD tylko
+  // odczytuje z /api/status.
+  bool  internet = false;
+  // [OTA-PANEL, ta sesja] Flaga i docelowa wersja z centrali — patrz
+  // wykonajAktualizacjeOTAPanelu() nizej i TG_UPDATE_PANEL w main_centrala.cpp.
+  bool   panelOtaDostepna = false;
+  String panelOtaWersja;
+};
+StanPieca stan;
+
+// [OTA-PANEL, ta sesja] Blokuje wejscie w deep sleep na czas pobierania/
+// flashowania panelu (prompt #8 — patrz idzSpac() nizej i
+// wykonajAktualizacjeOTAPanelu() przy setup()). Zadeklarowane TUTAJ (a nie
+// przy funkcjach OTA, blisko setup()) bo idzSpac() jest zdefiniowane
+// wczesniej w pliku i musi juz ja widziec.
+bool trwaAktualizacjaOtaPanelu = false;
+
+// [RESET-DIAG, ta sesja] Wypelniane RAZ, na samym poczatku setup() —
+// patrz ponizej. Wysylane centrali w kazdym /api/status (analogicznie do
+// FIRMWARE_VERSION_PANEL), zeby centrala mogla odroznic normalne
+// wybudzenie z deep sleep od czegos, co wymaga uwagi.
+String globalnyPowodResetu;
+
+// Podzbior /api/ustawienia-get, ktory ten panel pozwala PODGLADAC i EDYTOWAC.
+// Zeby dodac kolejne pole: dopisz wpis do tablicy POLA[] nizej — nic wiecej.
+struct PoleUstawien {
+  const char* klucz;     // dokladnie jak w JSON-ie i w ustawParametrPieca()
+  const char* etykieta;  // nazwa wyswietlana na ekranie
+  long   krok;           // wielkosc kroku +/-
+  long   minZakres, maxZakres; // TYLKO informacyjnie/klips lokalny — centrala i tak waliduje
+  long   wartosc;        // ostatnia znana wartosc (z GET /api/ustawienia-get)
+};
+
+PoleUstawien POLA[] = {
+  // [ROZSZERZENIE, ta sesja - ekran LVGL USTAWIENIA POMPY] czasOn/czasOff
+  // brakowalo tu mimo ze centrala je juz waliduje/zwraca od dawna
+  // (ustawParametrPieca()/"/api/ustawienia-get") - ten sam powod co
+  // odchylTemp/mnoznik/antystopDni nizej: ekran LVGL USTAWIENIA POMPY
+  // (patrz lvgl_dashboard_poc_aktualizuj_ustawienia_pompy() nizej) potrzebuje
+  // ich w POLA[], bo to jedyna sciezka odczytu z centrali.
+  { "czasOn",         "Pompa ON [min]",       1,   1, 180, 0 },
+  { "czasOff",        "Pompa OFF [min]",      1,   1, 180, 0 },
+  { "tempOn",         "Zal. pompe pow. [C]",  1,   0, 100, 0 },
+  { "tempOff",        "Wyl. pompe pon. [C]",  1,   0, 100, 0 },
+  { "tempZadServo",   "Temp. zadana serwo",   1,   0, 100, 0 },
+  { "histerServo",    "Histereza serwo",      1,   0,  50, 0 },
+  { "skokKlapy",      "Skok klapy [%]",       1,   1, 100, 0 },
+  { "skokSyberka",    "Skok syberka [%]",     1,   1, 100, 0 },
+  // [ROZSZERZENIE, ta sesja] Brakowalo tych dwoch mimo ze centrala je juz
+  // waliduje/zwraca od dawna (ustawParametrPieca()/"/api/ustawienia-get") -
+  // ekran LVGL USTAWIENIA SERWA (patrz lvgl_dashboard_poc_aktualizuj_ustawienia_serwa()
+  // nizej) potrzebuje ich w POLA[], bo to jedyna sciezka odczytu z centrali.
+  { "odchylTemp",     "Prog odchylenia [C]",  1,   1,  50, 0 },
+  { "mnoznik",        "Mnoznik korekty",      1,   1,  10, 0 },
+  { "antystopDni",    "Antystop co [dni]",    1,   1,  45, 0 },
+  { "mieszadloCzasOn","Mieszadlo ON [s]",     5,   1, 255, 0 },
+  { "mieszadloCzasOff","Mieszadlo OFF [s]",   5,   1, 180, 0 },
+  { "progAlarmTemp",  "Prog alarmu temp.",    1,   0, 100, 0 },
+  { "progAlarmDym",   "Prog alarmu dymu",    10,   0,4095, 0 },
+  // [ROZSZERZENIE, ta sesja - PANEL DYM] Ekran LVGL DYM (patrz
+  // lvgl_dashboard_poc_aktualizuj_ustawienia_dymu() nizej) potrzebuje ich w
+  // POLA[], ten sam powod co reszta pol dopisanych w poprzednich sesjach -
+  // centrala je juz waliduje/zwraca od dawna (main_centrala.cpp,
+  // ustawParametrPieca()), tylko nie byly dotad tu wystawione.
+  { "dymCzasOn",           "Czas WL. dymu [s]",     5, 20, 600, 0 },
+  { "dymCzasOff",          "Czas WYL. dymu [s]",    5, 10, 600, 0 },
+  { "dymCzasStabilizacji", "Stabilizacja dymu [s]", 5,  5, 590, 0 },
+};
+const int LICZBA_POL = sizeof(POLA) / sizeof(POLA[0]);
+bool ustawieniaWczytane = false;
+
+// [LCD-DYM-PANEL] Uzywane przez panel czulosci dymu (rysujPanelDym() nizej)
+// zeby nie trzymac osobnego, twardo zakodowanego indeksu do POLA[] — jesli
+// ktos przestawi kolejnosc pol w POLA[], to i tak dalej dziala.
+int znajdzIndeksPola(const char* klucz) {
+  for (int i = 0; i < LICZBA_POL; i++) if (strcmp(POLA[i].klucz, klucz) == 0) return i;
+  return -1;
+}
+
+// [LCD-TRYBY] "wybor" i "trybSerwa" to enumy (nie liczby +/-), wiec zyja
+// OSOBNO od POLA[] — ten sam JSON /api/ustawienia-get, ten sam generyczny
+// /api/ustawienia-set (pole=wybor&wartosc=..), ale inny widget na ekranie
+// (segmentowany przelacznik, patrz rysujTryby() i EKRAN_TRYBY nizej).
+// Wartosci i zakresy 1:1 z main.cpp centrali (ustawParametrPieca()):
+//   wybor:     1=Trociniak  2=Kopciuch  3=Automatyczny
+//   trybSerwa: 1=Auto       2=Reczny    3=Bezpieczna
+long trybWyboru  = 1;
+long trybSerwaWartosc = 1;
+// [ROZSZERZENIE, ta sesja - ekran LVGL USTAWIENIA POMPY] `antystopWlaczony`
+// to bool (glowny wylacznik funkcji antystop pompy - patrz PompaAntystopCb w
+// dashboard_lvgl_poc.h), nie liczba +/-, wiec ten sam powod jak przy
+// wybor/trybSerwa powyzej: zyje OSOBNO od POLA[]. Domyslnie true - ten sam
+// domyslny stan co centrala uzywa przy pierwszym uruchomieniu
+// (main_centrala.cpp, antystopWlaczony=true).
+bool antystopWlaczonyWartosc = true;
+
+// ----------------------------------------------------------------------------
+// [LCD-SEZON] Automatyczne przelaczanie widoku Lato/Zima (dashboard chowa
+// wtedy kafelki niepotrzebne sezonowo — patrz kafelekWidoczny() przy
+// rysujDashboard()). Zrodlo prawdy: "miesiac" z /api/status (RTC centrali,
+// patrz [LCD-SEZON] w main.cpp centrali, v1.16.0), z fallbackiem na
+// histereze t_panel gdy centrala zglasza brak RTC (miesiac==0) — ORAZ jako
+// naklada sie NA kalendarz w miesiacach sezonu grzewczego: goracy panel w
+// dzien sloneczny (np. marzec) czasowo przelacza widok na Lato, bo wtedy to
+// panel/bojler sa istotne, a nie piec — ustalone z uzytkownikiem wprost.
+// ----------------------------------------------------------------------------
+enum Sezon { SEZON_ZIMA, SEZON_LATO };
+Sezon aktualnySezon = SEZON_ZIMA;
+bool  sezonZainicjalizowany = false;
+
+// Sezon grzewczy = wrzesien-maj (IX-V) — najbardziej typowy dla PL, ustalone
+// z uzytkownikiem. Miesiace VI-VIII to zawsze Lato bez wzgledu na t_panel.
+bool miesiacWSezonieGrzewczym(int m) { return (m >= 9 || (m >= 1 && m <= 5)); }
+
+// Histereza na t_panel, zeby przelaczanie nie "migalo" przy wahaniach wokol
+// progu (np. chmura na chwile zasloni slonce) — proste podejscie znane z
+// termostatow: inny prog wejscia niz wyjscia.
+const float SEZON_PANEL_PROG_LATO = 25.0f;  // powyzej -> (albo utrzymaj) Lato
+const float SEZON_PANEL_PROG_ZIMA = 20.0f;  // ponizej -> (albo utrzymaj) Zima
+
+// Wywolywane po kazdym pobierzStatus() (setup() i loop()). Zwraca true, gdy
+// sezon sie realnie zmienil w tym wywolaniu — wywolujacy wtedy wymusza pelne
+// przerysowanie dashboardu (uklad kafelkow sie zmienia).
+bool aktualizujSezon() {
+  Sezon poprzedni = aktualnySezon;
+
+  if (stan.miesiac == 0) {
+    // Brak RTC w centrali — jedyne zrodlo to t_panel, czysta histereza.
+    if (!sezonZainicjalizowany) {
+      aktualnySezon = (stan.tPanel > SEZON_PANEL_PROG_LATO) ? SEZON_LATO : SEZON_ZIMA;
+    } else if (aktualnySezon == SEZON_ZIMA && stan.tPanel > SEZON_PANEL_PROG_LATO) {
+      aktualnySezon = SEZON_LATO;
+    } else if (aktualnySezon == SEZON_LATO && stan.tPanel < SEZON_PANEL_PROG_ZIMA) {
+      aktualnySezon = SEZON_ZIMA;
+    }
+  } else if (!miesiacWSezonieGrzewczym(stan.miesiac)) {
+    // Czerwiec-sierpien — kalendarz rozstrzyga jednoznacznie, zawsze Lato.
+    aktualnySezon = SEZON_LATO;
+  } else {
+    // Miesiac sezonu grzewczego — domyslnie Zima, ale goracy panel czasowo
+    // przelacza na Lato (histereza jak wyzej), np. sloneczny dzien w marcu.
+    if (!sezonZainicjalizowany) {
+      aktualnySezon = (stan.tPanel > SEZON_PANEL_PROG_LATO) ? SEZON_LATO : SEZON_ZIMA;
+    } else if (aktualnySezon == SEZON_ZIMA && stan.tPanel > SEZON_PANEL_PROG_LATO) {
+      aktualnySezon = SEZON_LATO;
+    } else if (aktualnySezon == SEZON_LATO && stan.tPanel < SEZON_PANEL_PROG_ZIMA) {
+      aktualnySezon = SEZON_ZIMA;
+    }
+  }
+
+  sezonZainicjalizowany = true;
+  return aktualnySezon != poprzedni;
+}
+
+// ----------------------------------------------------------------------------
+// EKRANY
+// ----------------------------------------------------------------------------
+enum Ekran { EKRAN_DASHBOARD, EKRAN_USTAWIENIA, EKRAN_SERWO, EKRAN_TRYBY };
+Ekran aktualnyEkran = EKRAN_DASHBOARD;
+int ustawieniaStrona = 0;              // paginacja listy POLA (kilka na ekran)
+const int POZYCJI_NA_STRONE = 4;
+
+// Suwak recznego serwa (ekran EKRAN_SERWO) — wysylany dopiero po puszczeniu
+int serwoKlapaProcent = 0, serwoSyberekProcent = 0;
+bool serwoPrzeciaganyKlapa = false, serwoPrzeciaganySyberek = false;
+
+// ----------------------------------------------------------------------------
+// PROSTY SYSTEM PRZYCISKOW DOTYKOWYCH (hit-test na prostokatach)
+// ----------------------------------------------------------------------------
+struct Przycisk {
+  int16_t x, y, w, h;
+  bool zawiera(int16_t px, int16_t py) const {
+    return px >= x && px < x + w && py >= y && py < y + h;
+  }
+};
+
+// Dolny pasek zakladek — 3 zakladki na cala szerokosc ekranu (480x320, landscape)
+const int PASEK_WYS = 44;
+// [LCD-TRYBY] 4 zakladki zamiast 3 — szerokosc 480/4=120 zamiast 480/3.
+Przycisk zakladkaDashboard { 0,               320 - PASEK_WYS, 480 / 4, PASEK_WYS };
+Przycisk zakladkaUstawienia{ 480 / 4,         320 - PASEK_WYS, 480 / 4, PASEK_WYS };
+Przycisk zakladkaSerwo     { 2 * 480 / 4,     320 - PASEK_WYS, 480 / 4, PASEK_WYS };
+Przycisk zakladkaTryby     { 3 * 480 / 4,     320 - PASEK_WYS, 480 / 4, PASEK_WYS };
+
+// [LCD-KAFELKI] Dashboard = siatka kafelkow (ikona + jedna liczba), dokladnie
+// jak w makiecie lcd_tile_ui_concept.html: dotkniecie kafelka OZNACZONEGO
+// JAKO STEROWALNY otwiera panel nakladke (overlay) na srodku ekranu,
+// dopasowany do typu urzadzenia — suwak dla KLAPA/SYBERKA (0-100%,
+// wyslijServoManualny jak na ekranie Serwo), male +/- dla DYM (czulosc
+// alarmu, jak dawniej), a czyste odczyty (temperatury, POMPA, wilgotnosc,
+// cisnienie) NIE reaguja na dotyk — sa tylko do podgladu. Rozne typy
+// urzadzen -> rozny typ nakladki, wiec trzymamy WSPOLNY "ktory panel jest
+// otwarty" (indeks kafelka, -1 = zaden) zamiast osobnej flagi bool per typ
+// jak dawniej (pokazPanelDym) — latwiej dodac kolejny sterowalny kafelek
+// w przyszlosci bez mnozenia flag.
+enum {
+  KAF_ZEWN, KAF_BOJLER, KAF_OGRZ, KAF_OGRZ_SR, KAF_PANEL, KAF_POKOJ,
+  KAF_WILGOTNOSC, KAF_CISNIENIE, KAF_POMPA, KAF_KLAPA, KAF_SYBERKA, KAF_DYM,
+  LICZBA_KAFELKOW
+};
+Przycisk kafelekRect[LICZBA_KAFELKOW]; // wypelniane na biezaco w rysujDashboard(); {0,0,0,0} = niewidoczny w tym sezonie
+int panelOtwartyId = -1; // -1 = brak otwartego panelu nakladki; wpp. jeden z KAF_*
+Przycisk panelMinus, panelPlus, panelZamknij; // wspolne dla nakladki DYM (+/-) i suwakow (tylko Zamknij)
+const Przycisk PANEL_KARTA{ 140, 90, 200, 150 };       // karta nakladki DYM (+/-), jak dawniej
+const Przycisk PANEL_SUWAK_KARTA{ 90, 96, 300, 128 };  // szersza karta nakladki KLAPA/SYBERKA (suwak poziomy)
+Przycisk suwakPanelSuwak; // prostokat samego paska suwaka wewnatrz PANEL_SUWAK_KARTA, do obslugi drag
+
+// ----------------------------------------------------------------------------
+// HTTP — pomocnicze
+// ----------------------------------------------------------------------------
+// [SIEC-NIEBLOKUJACA, ta sesja] httpGet()/httpPost() (synchroniczne
+// HTTPClient::GET/POST) USUNIETE z tego miejsca - zastapione przez
+// statusFetch/ustawieniaFetch/komendaFetch (siec_nieblokujaca_LCD.h,
+// instancje globalne wyzej). Odpowiedniki:
+//   httpGet("/api/status?...")   -> statusFetch.startGet(...)     + obslugaStatusFetch() nizej
+//   httpGet("/api/ustawienia-get")-> ustawieniaFetch.startGet(...) + obslugaUstawieniaFetch() nizej
+//   httpPost(sciezka, body, blad) -> komendaFetch.startPostFormUrlEncoded(...) + obslugaKomendaFetch() nizej
+// wykresyFetchWykonaj() ponizej NADAL uzywa HTTPClient bezposrednio (celowo,
+// patrz FIX-WYKRESY-RAM) - to osobny, rzadko wywolywany, strumieniowany
+// przypadek (duzy CSV), nie okresowy odpyt jak status/ustawienia, wiec na
+// razie POZA zakresem tej zmiany (przy tym samym zaburzeniu kanalu zamrozi
+// tylko ekran Wykresy, nie caly dotyk - do rozwazenia osobno w przyszlosci).
+
+// [PARTIA 5e, ta sesja - EKRAN WYKRESY] Jedyne miejsce w main.cpp, ktore
+// wie, ze ekran Wykresy w ogole istnieje - wolane z dashboard_lvgl_poc.cpp
+// przez WykresyFetchCb (patrz obszerny komentarz w dashboard_lvgl_poc.h).
+//
+// [FIX-WYKRESY-RAM, ta sesja - PRZEPISANE z httpGet()+String] http.getString()
+// (dawniej uzywane tu przez wspolny httpGet()) robi JEDNA alokacje na CALA
+// odpowiedz PRZED przeczytaniem czegokolwiek (sstring.reserve(_size+1) w
+// HTTPClient.cpp) - przy CSV rzedu 36-84KB i fragmentacji heapu (eager-load
+// wielu ekranow LVGL, plytka bez PSRAM) to twardy sufit: kod HTTP=200, ale
+// getString() cicho zwraca pusty String, bo nie ma jednego wystarczajaco
+// duzego CIAGLEGO bloku RAM - mimo ze SUMA wolnej pamieci by starczyla.
+// Naprawa: NIE wolamy tu httpGet() (ktory w miedzyczasie i tak zostal
+// usuniety z tego pliku na rzecz nieblokujacych statusFetch/ustawieniaFetch
+// dla malych JSON-ow /api/status i /api/ustawienia-get - patrz
+// [SIEC-NIEBLOKUJACA] wyzej; ten ekran Wykresy z HTTPClient ponizej jest
+// celowym wyjatkiem, patrz komentarz przy [SIEC-NIEBLOKUJACA] powyzej).
+// Czytamy odpowiedz WLASNYM
+// kodem ponizej - linia po linii wprost z gniazda TCP
+// (http.getStreamPtr()) do malego bufora na stosie (256B), podajac kazda
+// linie do lvgl_dashboard_poc_wykresy_strumien_linia() (patrz
+// WykresyStrumienStan w dashboard_lvgl_poc.cpp co do adaptacyjnego
+// podwajania/scalania kubelkow, ktore redukuje dowolnie dlugi CSV do
+// WYKRESY_MAX_PUNKTOW bez znajomosci liczby wierszy z gory). W kazdej
+// chwili w RAM jest wiec najwyzej 256B odpowiedzi zamiast 36-84KB.
+//
+// http.useHTTP10(true): wymusza na centrali Content-Length zamiast
+// ewentualnego Transfer-Encoding: chunked, ktorego getStreamPtr() ponizej
+// NIE umie sam rozkodowac (dekodowanie chunkow siedzi wewnatrz
+// writeToStream(), ktorego tu celowo nie uzywamy - potwierdzone w
+// dokumentacji ArduinoJson dla dokladnie tego samego wzorca uzycia
+// getStream()). Centrala i tak buduje cale CSV w RAM przed wyslaniem, wiec
+// realnie zawsze wysyla Content-Length - to tylko twarda gwarancja.
+static void wykresyFetchWykonaj(bool dlugi) {
+  const char* sciezka = dlugi ? "/api/history/long" : "/api/history";
+
+  // Wolane PRZED jakakolwiek mozliwoscia wczesnego wyjscia (brak WiFi/
+  // kod!=200) - lvgl_dashboard_poc_wykresy_strumien_koniec() sprawdza czy
+  // .aktywny i porownuje `dlugi` z aktualnie oczekiwanym trybem (odrzucenie
+  // spoznionej odpowiedzi), musi wiec byc ustawione niezaleznie od wyniku.
+  lvgl_dashboard_poc_wykresy_strumien_start(dlugi);
+
+  if (WiFi.status() != WL_CONNECTED) {
+    lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, 0); // 0 wierszy = ten sam sygnal co dawny pusty String
+    return;
+  }
+
+  HTTPClient http;
+  String url = String("http://") + CENTRALA_HOST + ":" + String(CENTRALA_PORT) + sciezka;
+  http.setTimeout(HISTORIA_TIMEOUT_MS);
+  http.useHTTP10(true); // patrz komentarz o chunked encoding wyzej
+  http.begin(url);
+  int kod = http.GET();
+
+  if (kod != 200) {
+    http.end();
+    lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, 0);
+    return;
+  }
+
+  WiFiClient *stream = http.getStreamPtr();
+  stream->setTimeout(HISTORIA_TIMEOUT_MS); // jawnie, zamiast polegac na domyslnym 1000ms Stream::setTimeout()
+  uint32_t wierszy = 0;
+  const uint32_t startMs = millis();
+  char linia[256];
+
+  // Czytaj dopoki gniazdo ma dane LUB polaczenie wciaz trwa. Koniec
+  // strumienia: readBytesUntil zwrocilo 0 ORAZ gniazdo juz nie polaczone i
+  // nic wiecej nie czeka. `millis()` to dodatkowy, twardy sufit na wypadek
+  // zawieszonego polaczenia bez czystego zamkniecia.
+  while ((stream->available() || http.connected()) && (millis() - startMs) < HISTORIA_TIMEOUT_MS) {
+    size_t n = stream->readBytesUntil('\n', linia, sizeof(linia) - 1);
+    if (n == 0) {
+      if (!stream->connected() && !stream->available()) break;
+      continue;
+    }
+    if (n > 0 && linia[n - 1] == '\r') n--; // CRLF -> odetnij '\r' (na wszelki wypadek)
+    linia[n] = '\0';
+    lvgl_dashboard_poc_wykresy_strumien_linia(linia);
+    wierszy++;
+  }
+
+  http.end();
+  lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, wierszy);
+}
+
+void pobierzStatus(); // forward declaration - pompaManualWyslij() wola ja przed jej definicja nizej
+void pobierzUstawienia(); // forward declaration - serwoUstawienieWyslij() (ponizej) wola ja przed jej definicja (linia ~959)
+void wyslijTrybPracy(const char* pole, long wartosc); // forward declaration - pompaWyborWyslij() (ponizej) wola ja przed jej definicja (linia ~1394); BLAD KOMPILACJI bez tego: "'wyslijTrybPracy' was not declared in this scope"
+// [POPRAWKA, ta sesja - panel SERWO v2] Ten sam powod co wyzej -
+// serwoTrybWyslij()/serwoPozycjaWyslij() (ponizej) wolaja wyslijServoManualny()
+// przed jej definicja (linia ~1487).
+void wyslijServoManualny(const char* os, int procent);
+
+// [LVGL-API] Lokalny odpowiednik ustawSerwo()/ustawTryb() dla pompy - jedna
+// funkcja ktora dashboard_lvgl_poc.cpp woła przez callback (patrz
+// lvgl_dashboard_poc_ustaw_callback_pompy() w setup()), zeby ten plik nie
+// musial wiedziec NIC o HTTPClient/WiFi. `stanTekst` to dokladnie to, czego
+// oczekuje centrala: "auto" / "wl" / "wyl" (patrz /api/pompa-manual).
+// Po udanym POST od razu odswieza stan (pobierzStatus() + przekazanie do
+// LVGL) - zeby uzytkownik nie czekal do kolejnego cyklu STATUS_INTERWAL_MS
+// (2s) na potwierdzenie, ze dotkniecie przycisku faktycznie cos zmienilo.
+// [SIEC-NIEBLOKUJACA, ta sesja - PRZEPISANE] POST + nastepujacy po nim GET
+// statusu NIE MOGA juz byc jednym synchronicznym wywolaniem (patrz komentarz
+// przy pendingPoKomendzie wyzej) - ta funkcja tylko STARTUJE komende, wynik
+// (sukces/porazka) i nastepujacy po nim pobierzStatus()+aktualizacja LVGL
+// obsluzy obslugaKomendaFetch() nizej, gdy komendaFetch faktycznie sie
+// zakonczy (jedna-dwie iteracje loop() pozniej, nie w tym samym wywolaniu).
+void pompaManualWyslij(const char* stanTekst) {
+  if (komendaFetch.wTrakcie()) {
+    Serial.println("[LVGL] pompaManualWyslij: poprzednia komenda jeszcze w toku, pomijam");
+    return; // user i tak zaraz zobaczy prawdziwy stan przy nastepnym apistatus
+  }
+  pendingPoKomendzie = PoKomendzie::STATUS; // ten kafelek czerpie z /api/status
+  komendaFetch.startPostFormUrlEncoded("/api/pompa-manual", String("stan=") + stanTekst);
+  // Celowo NIC nie zmieniamy tu lokalnie w UI - obslugaKomendaFetch() (przy
+  // sukcesie) doprowadzi do tego samego pobierzStatus()+aktualizacja LVGL co
+  // dawniej, a przy porazce kafelek po prostu nie "klamie" (jak dawniej,
+  // patrz TODO #1 w STATUS_PROJEKTU_LVGL.md).
+}
+
+// [ROZBUDOWA, ta sesja - strona POMPA / wybor strategii] Analogiczny
+// "lokalny most" dla wyboru Trociniak/Kopciuch/Automatyczny - dokladnie ten
+// sam ksztalt co pompaManualWyslij() wyzej, tylko woła JUZ ISTNIEJACA
+// wyslijTrybPracy() (do tej pory uzywana tylko przez stary, nie-LVGL
+// EKRAN_TRYBY - patrz komentarz [LCD-TRYBY] przy trybWyboru) zamiast
+// wlasnego httpPost(). Aktualizuje `trybWyboru` PRZED wyslaniem (ten sam
+// wzorzec co stary rysujTryby()/segmentyWybor callback), zeby stary,
+// nie-LVGL EKRAN_TRYBY (jesli ktos do niego wroci) tez od razu widzial
+// spojna wartosc, a nie musial czekac na kolejny pobierzStatus().
+void pompaWyborWyslij(int wartosc) {
+  trybWyboru = wartosc;
+  if (komendaFetch.wTrakcie()) {
+    Serial.println("[LVGL] pompaWyborWyslij: poprzednia komenda jeszcze w toku, pomijam");
+    return;
+  }
+  wyslijTrybPracy("wybor", wartosc); // ustawia domyslnie pendingPoKomendzie=USTAWIENIA (patrz komentarz przy wyslijTrybPracy)
+  pendingPoKomendzie = PoKomendzie::STATUS; // nadpisujemy - ten ekran czerpie trybWyboru z /api/status, nie z POLA[]
+}
+
+// [POPRAWKA, ta sesja - panel SERWO v2] Dwa nowe "lokalne mosty", dokladnie
+// ten sam ksztalt co pompaWyborWyslij() wyzej - wywoluja JUZ ISTNIEJACE
+// funkcje HTTP (wyslijTrybPracy/wyslijServoManualny, patrz linie ~1401 i
+// ~1448), zeby dashboard_lvgl_poc.cpp nie musial nic wiedziec o
+// HTTPClient/WiFi. Rejestrowane w setup() przez
+// lvgl_dashboard_poc_ustaw_callback_serwo_tryb()/..._pozycja().
+void serwoTrybWyslij(int wartosc) {
+  trybSerwaWartosc = wartosc;
+  if (komendaFetch.wTrakcie()) {
+    Serial.println("[LVGL] serwoTrybWyslij: poprzednia komenda jeszcze w toku, pomijam");
+    return;
+  }
+  wyslijTrybPracy("trybSerwa", wartosc); // ustawia domyslnie pendingPoKomendzie=USTAWIENIA
+  pendingPoKomendzie = PoKomendzie::STATUS; // nadpisujemy - trybSerwaWartosc tez czerpiemy z /api/status
+}
+
+// `id`: 0=klapa, 1=syberka (tak jak dashboard_lvgl_poc.cpp go uzywa) ->
+// mapowane na string, ktorego oczekuje centrala. UWAGA: centrala oczekuje
+// "syberek", NIE "syberka" (patrz main_centrala.cpp ~4777-4779) - dokladnie
+// ta literowka byla przyczyna bledu z poprzedniej sesji.
+void serwoPozycjaWyslij(int id, int pozycja) {
+  const char *os = (id == 0) ? "klapa" : "syberek";
+  if (komendaFetch.wTrakcie()) {
+    Serial.println("[LVGL] serwoPozycjaWyslij: poprzednia komenda jeszcze w toku, pomijam");
+    return;
+  }
+  pendingPoKomendzie = PoKomendzie::STATUS; // klapa/syberka wracaja przez /api/status
+  wyslijServoManualny(os, pozycja); // sam nie ustawia flagi (patrz komentarz przy jego definicji) - potrzebne bo suwak na starym, nie-LVGL EKRAN_SERWO woła go bez zadnego odswiezenia
+}
+
+// [ROZSZERZENIE, ta sesja - ekran USTAWIENIA SERWA] Jeden generyczny "most",
+// dokladnie ten sam ksztalt co pompaWyborWyslij()/serwoTrybWyslij() wyzej -
+// woła JUZ ISTNIEJACA wyslijTrybPracy(pole, wartosc) (dokladnie ta sama
+// funkcja/endpoint /api/ustawienia-set co stary EKRAN_TRYBY uzywa dla
+// POLA[]) i od razu odswieza POLA[] z centrali, zeby ekran LVGL pokazal
+// PRAWDZIWA (zwalidowana przez centrale) wartosc, nie tylko to co user
+// klepnal lokalnie - ten sam "nie klam po nieudanym poleceniu" wzorzec co
+// pompaManualWyslij(). Rejestrowana w setup() przez
+// lvgl_dashboard_poc_ustaw_callback_serwo_ustawienia().
+void serwoUstawienieWyslij(const char *pole, long wartosc) {
+  // wyslijTrybPracy() samodzielnie sprawdza komendaFetch.wTrakcie(), ustawia
+  // pendingPoKomendzie=USTAWIENIA i startuje POST; obslugaKomendaFetch()
+  // zrobi pobierzUstawienia() (odswieza POLA[] + lvgl_dashboard_poc_aktualizuj_ustawienia_serwa())
+  // dopiero PO faktycznym zakonczeniu POST-a, nie od razu tutaj.
+  wyslijTrybPracy(pole, wartosc);
+}
+
+// [ROZSZERZENIE, ta sesja - ekran USTAWIENIA POMPY] Dokladnie ten sam ksztalt
+// co serwoUstawienieWyslij() powyzej - jeden generyczny "most" dla 5 pol
+// numerycznych (czasOn/czasOff/tempOn/tempOff/antystopDni). Rejestrowana w
+// setup() przez lvgl_dashboard_poc_ustaw_callback_pompa_ustawienia().
+void pompaUstawienieWyslij(const char *pole, long wartosc) {
+  wyslijTrybPracy(pole, wartosc); // patrz komentarz w serwoUstawienieWyslij() wyzej - ten sam wzorzec
+}
+
+// Osobny "most" dla przelacznika antystopWlaczony (bool, poza POLA[] - ten
+// sam powod co trybWyboru/trybSerwaWartosc, patrz komentarz przy deklaracji
+// antystopWlaczonyWartosc). Rejestrowana przez
+// lvgl_dashboard_poc_ustaw_callback_pompa_antystop().
+void pompaAntystopWyslij(int wartosc) {
+  antystopWlaczonyWartosc = (wartosc != 0);
+  wyslijTrybPracy("antystopWlaczony", wartosc); // patrz komentarz w serwoUstawienieWyslij() wyzej
+}
+
+// [ROZSZERZENIE, ta sesja - PANEL DYM] Dwa "mosty", dokladnie ten sam ksztalt
+// co serwoUstawienieWyslij()/pompaUstawienieWyslij() powyzej - progAlarmDym
+// (suwak) i 3 pola czasowe uzywaja tego samego generycznego
+// /api/ustawienia-set (wyslijTrybPracy()) co reszta ekranow. Rejestrowane w
+// setup() przez lvgl_dashboard_poc_ustaw_callback_dym_prog()/
+// ..._dym_ustawienia().
+void dymProgWyslij(int wartosc) {
+  wyslijTrybPracy("progAlarmDym", wartosc); // patrz komentarz w serwoUstawienieWyslij() wyzej
+}
+void dymUstawienieWyslij(const char *pole, long wartosc) {
+  wyslijTrybPracy(pole, wartosc); // patrz komentarz w serwoUstawienieWyslij() wyzej
+}
+
+// [ROZSZERZENIE, ta sesja - PANEL PROG PRZEGRZANIA] Ten sam wzorzec co
+// dymProgWyslij() powyzej - jeden wspolny prog dla kafelkow PIEC CO i
+// PANEL. progAlarmTemp juz jest w POLA[] (patrz main.cpp linia ~466), wiec
+// wyslijTrybPracy()/pobierzUstawienia() dzialaja bez zmian.
+void alarmTempProgWyslij(int wartosc) {
+  wyslijTrybPracy("progAlarmTemp", wartosc); // patrz komentarz w serwoUstawienieWyslij() wyzej
+}
+
+#if LVGL_POC_TEST && LVGL_POC_SYMULACJA
+// ----------------------------------------------------------------------------
+// [LVGL-SYMULACJA] Lokalna atrapa centrali - UZYWANA WYLACZNIE gdy testujesz
+// sama plytke wyswietlacza bez fizycznej centrali obok. Odtwarza dokladnie
+// ten sam kontrakt co prawdziwa integracja (pompaManualWyslij() +
+// pobierzStatus() wyzej): dashboard_lvgl_poc.cpp NIC o tym nie wie, dostaje
+// tylko wywolania lvgl_dashboard_poc_aktualizuj() jak zawsze. Dzieki temu
+// przelaczenie LVGL_POC_SYMULACJA 1 -> 0 pozniej (gdy centrala bedzie pod
+// reka) nie wymaga ZADNYCH zmian w dashboard_lvgl_poc.*.
+//
+// Wzorzec "temporary hold" + "self-healing" jest tu SWIADOMIE odtworzony
+// lokalnie (ten sam ksztalt, co POMPA_OVERRIDE_MS na centrali, patrz
+// main_centrala.cpp) - to jedyny sposob, zeby przetestowac countdown/arc
+// na kafelku bez prawdziwego /api/status.
+#define SYM_OVERRIDE_MIN_CALKOWITE 60   // musi byc zgodne z tym co rysuje pompa_tile_odswiez() (POMPA_OVERRIDE_CALKOWITE_MIN w dashboard_lvgl_poc.cpp) - inaczej luk % bedzie klamal
+// [TESTOWANIE] Prawdziwy hold trwa godzine - zeby nie czekac godziny miedzy
+// testami self-healing powrotu do AUTO, symulacja skraca go do 2 minut.
+// Sam WYGLAD (tekst/procent luku) i tak jest liczony wzgledem
+// SYM_OVERRIDE_MIN_CALKOWITE (60), wiec luk "topnieje" po prostu szybciej
+// niz w realu - to jedyna roznica. Zmien na 60UL gdy zechcesz przetestowac
+// realny czas trwania.
+static const unsigned long SYM_OVERRIDE_TRWANIE_MS = 2UL * 60UL * 1000UL;
+
+static bool          symPompaWlaczona = false;
+static unsigned long symOverrideDoMs  = 0;   // 0 = tryb AUTO (brak aktywnego override)
+
+// Statyczne, wymyslone wartosci ZEWN/BOJLER/DYM - w tej symulacji liczy sie
+// tylko interakcja z kafelkiem POMPA (layout/dotyk/panel), reszta kafelkow
+// ma po prostu pokazywac cokolwiek sensownego, zeby ekran nie byl pusty.
+static const float SYM_T_ZEWN    = 3.5f;
+static const float SYM_T_BOJLER  = 52.0f;
+// [ROZSZERZENIE tej sesji] PIEC CO/SR nie jest juz podgladem z demo-tekstem
+// w dashboard_lvgl_poc.cpp - potrzebuje realnych (tu: symulowanych) danych.
+static const float SYM_T_OGRZ    = 45.0f;
+static const float SYM_T_OGRZ_SR = 42.0f;
+// [Partia 5, ta sesja] Nowy kafelek PANEL (patrz dashboard_lvgl_poc.cpp)
+// potrzebuje symulowanej wartosci tak samo jak reszta - 32.0 st.C.
+static const float SYM_T_PANEL   = 32.0f;
+static const int   SYM_DYM       = 12;
+// [ROZSZERZENIE, ta sesja - BRZECZYK ALARMOWY] Domyslnie brak alarmow w
+// symulacji (jak reszta linii falszywych alarmow ponizej) - zmien
+// POJEDYNCZO na true i wgraj ponownie, zeby na biurku (bez centrali)
+// przetestowac odpowiedni wzorzec brzeczyka z pinu 13.
+static const bool  SYM_DYM_ALARM            = false;
+static const bool  SYM_ALARM_OGRZEWANIE     = false;
+static const bool  SYM_ALARM_PANEL          = false;
+// [UI-WIFI-SYGNAL, ta sesja] Symulacja nie ma realnego WiFi/RSSI centrali,
+// wiec stala wartosc "srodkowa" (ok. polowa z 7 progow kresek w
+// wifi_liczba_kresek(), dashboard_lvgl_poc.cpp) - wystarczy, zeby wskaznik
+// mial cos sensownego do pokazania podczas testowania samej plytki.
+static const int   SYM_RSSI      = -60;
+static const bool  SYM_INTERNET  = true; // [UI-INTERNET, ta sesja] atrapa - w symulacji zawsze "jest internet"
+// [Partia 2, ta sesja] Symulowane wartosci 5 nowych kafelkow.
+// [FIX tej sesji] `symZima` usuniety - podzial sezonowy grupy kafelkow w
+// LVGL zostal calkowicie zlikwidowany (wszystkie kafelki, w tym PANEL, sa
+// teraz zawsze widoczne), wiec symulacja nie ma juz nic do przelaczania.
+static const float SYM_T_POKOJ     = 21.5f;
+static const float SYM_WILGOTNOSC  = 45.0f;
+static const float SYM_CISNIENIE   = 1013.0f;
+// [LVGL-DATA-CZAS, ta sesja] Symulacja nie ma prawdziwego RTC (ani centrali,
+// zeby go odczytac) - godzina/minuta licza sie z millis() od startu programu
+// (patrz symOdswiezDoLvgl() nizej), zeby kafelek DATA I CZAS mial na ekranie
+// cos, co faktycznie plynie, zamiast zamrozonej stalej. Data zostaje stala
+// (SYM_DZIEN/SYM_MIESIAC/SYM_ROK) - w symulacji nie ma znaczenia ktory to
+// dzien, tylko to, ze zegar dziala.
+static const int   SYM_DZIEN    = 12;
+static const int   SYM_MIESIAC  = 8;
+static const int   SYM_ROK      = 2026;
+// [POPRAWKA, ta sesja - panel SERWO v2] SYM_KLAPA/SYM_SYBERKA zostaja jako
+// wartosci POCZATKOWE - od momentu pierwszej interakcji z panelem SERWO w
+// symulacji ich miejsce zajmuja symKlapaPozycja/symSyberkaPozycja ponizej
+// (te dwie stale sluza tylko jako wartosc startowa).
+static const int   SYM_KLAPA       = 30;
+static const int   SYM_SYBERKA     = 60;
+
+// [ROZBUDOWA, ta sesja] Symulowana strategia pompy (1=Trociniak domyslnie,
+// tak jak `Wybor` na centrali) - pozwala przetestowac ikone "tryb pracy" +
+// cala podstrone wyboru bez fizycznej centrali obok, tym samym duchem co
+// reszta tego bloku symulacyjnego.
+static int symWybor = 1;
+
+// [POPRAWKA, ta sesja - panel SERWO v2] Symulowany stan SERWA - jeden
+// wspolny tryb (1=Auto/2=Reczny/3=Bezpieczna, jak `TrybSerwa` na centrali)
+// + osobne pozycje per os, zeby dalo sie przetestowac panel SERWO (3
+// przyciski trybu + slider + presety) na biurku, bez fizycznej centrali,
+// tym samym duchem co symWybor/symPompaWlaczona wyzej.
+static int symTrybSerwa     = 1;
+static int symKlapaPozycja   = SYM_KLAPA;
+static int symSyberkaPozycja = SYM_SYBERKA;
+
+// [ROZSZERZENIE, ta sesja - ekran USTAWIENIA SERWA] Symulowane wartosci 6
+// parametrow automatyki - domyslne = te same defaulty co centrala uzywa przy
+// pierwszym uruchomieniu (patrz main_centrala.cpp, deklaracje Skok_Klapy=5
+// itd.), tylko zeby ekran mial czym sie wypelnic w symulacji.
+static int symTempZadServo = 45;
+static int symHisterServo  = 3;
+static int symSkokKlapy    = 5;
+static int symSkokSyberka  = 5;
+static int symOdchylTemp   = 5;
+static int symMnoznik      = 1;
+
+// [ROZSZERZENIE, ta sesja - ekran USTAWIENIA POMPY] Symulowane wartosci 5
+// parametrow pompy + antystopWlaczony - ten sam powod/wzorzec co blok SERWO
+// powyzej, domyslne = te same defaulty co centrala (main_centrala.cpp:
+// Czas_ON/Czas_OFF/Temp_ON/Temp_OFF/antystopDni=10/antystopWlaczony=true).
+static int  symCzasOn          = 20;
+static int  symCzasOff         = 10;
+static int  symTempOn          = 45;
+static int  symTempOff         = 40;
+static int  symAntystopDni     = 10;
+static bool symAntystopWlaczony = true;
+
+// [ROZSZERZENIE, ta sesja - PANEL DYM] Symulowane wartosci - ten sam wzorzec
+// co bloki SERWO/POMPA powyzej, domyslne = te same defaulty co centrala
+// (main_centrala.cpp: progAlarmowyDymu=500, dymCzasOn=130/dymCzasOff=60/
+// dymCzasStabilizacji=90).
+static int symDymProg              = 500;
+static int symDymCzasOn            = 130;
+static int symDymCzasOff           = 60;
+static int symDymCzasStabilizacji  = 90;
+
+// Przelicza aktualny stan symulacji na wywolanie do LVGL - wolane zarowno po
+// kazdej akcji z panelu, jak i cyklicznie z loop() (zeby countdown/arc sie
+// faktycznie ruszaly na ekranie, a nie tylko przy zmianie trybu).
+static void symOdswiezDoLvgl() {
+  int pompaOverrideMin = 0;
+  if (symOverrideDoMs > 0) {
+    long pozostaloMs = (long)(symOverrideDoMs - millis());
+    if (pozostaloMs <= 0) {
+      // Cichy powrot do AUTO - dokladnie ten sam wzorzec self-healing co
+      // centrala (POMPA_OVERRIDE_MS), tylko liczony lokalnie w tej symulacji.
+      symOverrideDoMs = 0;
+      pompaOverrideMin = 0;
+    } else {
+      // Zaokraglenie w gore (min. 1), zeby countdown nie pokazywal "0m" tuz
+      // przed cichym powrotem do AUTO - taka sama logika jak po stronie
+      // centrali dla pompa_override_min.
+      pompaOverrideMin = (int)((pozostaloMs + 59999UL) / 60000UL);
+      // Skala minut wzgledem SKROCONEGO czasu testowego, ale WYSWIETLANA
+      // wartosc ma sensownie wypelniac luk liczony wzgledem 60 (patrz
+      // SYM_OVERRIDE_MIN_CALKOWITE) - przeskalowujemy proporcjonalnie, zeby
+      // przy SYM_OVERRIDE_TRWANIE_MS=2min luk i tak zaczynal sie od "pelna
+      // minuta odpowiadajaca 60".
+      pompaOverrideMin = (int)(((long)pompaOverrideMin * SYM_OVERRIDE_MIN_CALKOWITE)
+                                / (long)(SYM_OVERRIDE_TRWANIE_MS / 60000UL));
+      if (pompaOverrideMin < 1) pompaOverrideMin = 1;
+      if (pompaOverrideMin > SYM_OVERRIDE_MIN_CALKOWITE) pompaOverrideMin = SYM_OVERRIDE_MIN_CALKOWITE;
+    }
+  }
+
+  // [LVGL-DATA-CZAS, ta sesja] Zegar symulacji liczony z millis() od startu
+  // programu (00:00 przy starcie, plynie realnie) - patrz komentarz przy
+  // SYM_DZIEN/SYM_MIESIAC/SYM_ROK wyzej co do tego, dlaczego data jest stala.
+  unsigned long symMinutyOdStartu = millis() / 60000UL;
+  int symGodzina = (int)((symMinutyOdStartu / 60) % 24);
+  int symMinuta  = (int)(symMinutyOdStartu % 60);
+
+  // [ROZSZERZENIE, ta sesja - PANEL WYSWIETLACZ] Ten sam hak co w
+  // pobierzStatus() (galaz prawdziwej centrali) - symulacja NIE dotyka
+  // `stan`, wiec harmonogram przyciemnienia musi dostac swiezy symGodzina
+  // wprost stad. rtcOk=true - symulacja ma zawsze "gotowy zegar" (ten sam
+  // zapis co kilka linii nizej w lvgl_dashboard_poc_aktualizuj()).
+  wyswietlaczOstatniaGodzina = symGodzina;
+  wyswietlaczGodzinaZnana    = true;
+  wyswietlaczHarmonogramOdswiez();
+
+  // [ROZSZERZENIE, ta sesja - BRZECZYK ALARMOWY] Ten sam hak co WYSWIETLACZ
+  // powyzej - symulacja NIE dotyka `stan`, wiec brzeczyk musi dostac swiezy
+  // stan alarmow wprost stad (te same 3 stale, ktore zaraz nizej trafiaja
+  // tez do lvgl_dashboard_poc_aktualizuj() - jedno miejsce prawdy).
+  brzeczykOdswiezZAlarmow(SYM_DYM_ALARM, SYM_ALARM_OGRZEWANIE, SYM_ALARM_PANEL);
+
+  lvgl_dashboard_poc_aktualizuj(true, SYM_T_ZEWN, SYM_T_BOJLER,
+                                 SYM_T_OGRZ, SYM_T_OGRZ_SR, SYM_T_PANEL,
+                                 symPompaWlaczona, pompaOverrideMin,
+                                 SYM_DYM, SYM_DYM_ALARM,
+                                 SYM_T_POKOJ, SYM_WILGOTNOSC, SYM_CISNIENIE,
+                                 symKlapaPozycja, symSyberkaPozycja, symWybor,
+                                 symTrybSerwa,
+                                 SYM_ALARM_OGRZEWANIE, SYM_ALARM_PANEL,
+                                 symGodzina, symMinuta, SYM_DZIEN, SYM_MIESIAC, SYM_ROK,
+                                 true, // rtcOk=true - symulacja ma zawsze "gotowy zegar"
+                                 SYM_RSSI,
+                                 SYM_INTERNET,
+                                 0, -1); // [DESZCZ-ETAP4] symulacja: brak opadow (te same domyslne co stan.deszczStan/deszczMinuty) - bez centrali nie ma prawdziwej prognozy do pokazania
+  // [ROZSZERZENIE, ta sesja - ekran USTAWIENIA SERWA] Wartosci demo w trybie
+  // symulacji (bez centrali nie ma skad ich pobrac) - tylko zeby ekran nie
+  // pokazywal samych zer podczas testowania samej plytki.
+  lvgl_dashboard_poc_aktualizuj_ustawienia_serwa(symTempZadServo, symHisterServo,
+                                                  symSkokKlapy, symSkokSyberka,
+                                                  symOdchylTemp, symMnoznik);
+  // [ROZSZERZENIE, ta sesja - ekran USTAWIENIA POMPY] Ten sam demo-wzorzec co
+  // wywolanie serwa powyzej.
+  lvgl_dashboard_poc_aktualizuj_ustawienia_pompy(symCzasOn, symCzasOff,
+                                                  symTempOn, symTempOff,
+                                                  symAntystopDni);
+  lvgl_dashboard_poc_aktualizuj_ustawienia_pompy_antystop(symAntystopWlaczony);
+  // [ROZSZERZENIE, ta sesja - PANEL DYM] Ten sam demo-wzorzec co serwo/pompa
+  // powyzej.
+  lvgl_dashboard_poc_aktualizuj_ustawienia_dymu(symDymProg, symDymCzasOn,
+                                                 symDymCzasOff, symDymCzasStabilizacji);
+}
+
+// Podpiete pod lvgl_dashboard_poc_ustaw_callback_pompy() w setup() zamiast
+// pompaManualWyslij() - zero HTTP, tylko zmiana lokalnych zmiennych + od
+// razu odswiezenie ekranu (dokladnie ten sam UX co przy prawdziwym POST:
+// dotkniecie przycisku w panelu daje natychmiastowy efekt na kafelku).
+static void symPompaAkcja(const char *stanTekst) {
+  Serial.printf("[LVGL-SYM] pompa -> %s\n", stanTekst);
+  if (strcmp(stanTekst, "auto") == 0) {
+    symOverrideDoMs = 0;
+  } else {
+    symPompaWlaczona = (strcmp(stanTekst, "wl") == 0);
+    symOverrideDoMs = millis() + SYM_OVERRIDE_TRWANIE_MS;
+  }
+  symOdswiezDoLvgl();
+}
+
+// [ROZBUDOWA, ta sesja] Sim-odpowiednik pompaWyborWyslij() - zero HTTP,
+// tylko lokalna zmienna + odswiezenie, ten sam wzorzec co symPompaAkcja()
+// wyzej. Podpiete pod lvgl_dashboard_poc_ustaw_callback_wyboru() w setup().
+static void symWyboraAkcja(int wartosc) {
+  Serial.printf("[LVGL-SYM] wybor strategii -> %d\n", wartosc);
+  symWybor = wartosc;
+  symOdswiezDoLvgl();
+}
+
+// [POPRAWKA, ta sesja - panel SERWO v2] Sim-odpowiedniki serwoTrybWyslij()/
+// serwoPozycjaWyslij() - zero HTTP, ten sam wzorzec co symPompaAkcja()/
+// symWyboraAkcja() wyzej. Podpiete pod
+// lvgl_dashboard_poc_ustaw_callback_serwo_tryb()/..._pozycja() w setup().
+static void symServoTrybAkcja(int wartosc) {
+  Serial.printf("[LVGL-SYM] serwo tryb -> %d\n", wartosc);
+  symTrybSerwa = wartosc;
+  symOdswiezDoLvgl();
+}
+static void symServoPozycjaAkcja(int id, int pozycja) {
+  Serial.printf("[LVGL-SYM] serwo pozycja id=%d -> %d%%\n", id, pozycja);
+  if (id == 0) symKlapaPozycja = pozycja; else symSyberkaPozycja = pozycja;
+  symOdswiezDoLvgl();
+}
+// [ROZSZERZENIE, ta sesja - ekran USTAWIENIA SERWA] Symulowany "most" -
+// dokladnie ten sam ksztalt co symServoTrybAkcja() wyzej, tylko generyczny
+// po polu (jedna funkcja dla wszystkich 6 zamiast 6 osobnych).
+static void symServoUstawieniaAkcja(const char *pole, long wartosc) {
+  Serial.printf("[LVGL-SYM] serwo ustawienie %s -> %ld\n", pole, wartosc);
+  if      (strcmp(pole, "tempZadServo") == 0) symTempZadServo = wartosc;
+  else if (strcmp(pole, "histerServo")  == 0) symHisterServo  = wartosc;
+  else if (strcmp(pole, "skokKlapy")    == 0) symSkokKlapy    = wartosc;
+  else if (strcmp(pole, "skokSyberka")  == 0) symSkokSyberka  = wartosc;
+  else if (strcmp(pole, "odchylTemp")   == 0) symOdchylTemp   = wartosc;
+  else if (strcmp(pole, "mnoznik")      == 0) symMnoznik      = wartosc;
+  symOdswiezDoLvgl();
+}
+// [ROZSZERZENIE, ta sesja - ekran USTAWIENIA POMPY] Sim-odpowiedniki, ten sam
+// ksztalt co symServoUstawieniaAkcja() wyzej (5 pol numeryczne) + osobna
+// funkcja dla przelacznika antystopWlaczony (bool, ten sam podzial co
+// PompaUstawieniaCb/PompaAntystopCb w dashboard_lvgl_poc.h).
+static void symPompaUstawieniaAkcja(const char *pole, long wartosc) {
+  Serial.printf("[LVGL-SYM] pompa ustawienie %s -> %ld\n", pole, wartosc);
+  if      (strcmp(pole, "czasOn")      == 0) symCzasOn      = wartosc;
+  else if (strcmp(pole, "czasOff")     == 0) symCzasOff     = wartosc;
+  else if (strcmp(pole, "tempOn")      == 0) symTempOn      = wartosc;
+  else if (strcmp(pole, "tempOff")     == 0) symTempOff     = wartosc;
+  else if (strcmp(pole, "antystopDni") == 0) symAntystopDni = wartosc;
+  symOdswiezDoLvgl();
+}
+static void symPompaAntystopAkcja(int wartosc) {
+  Serial.printf("[LVGL-SYM] pompa antystop -> %d\n", wartosc);
+  symAntystopWlaczony = (wartosc != 0);
+  symOdswiezDoLvgl();
+}
+
+// [ROZSZERZENIE, ta sesja - PANEL DYM] Sim-odpowiedniki, ten sam ksztalt co
+// bloki SERWO/POMPA powyzej - jeden dla suwaka progu, jeden generyczny dla
+// 3 pol czasowych.
+static void symDymProgAkcja(int wartosc) {
+  Serial.printf("[LVGL-SYM] dym prog -> %d\n", wartosc);
+  symDymProg = wartosc;
+  symOdswiezDoLvgl();
+}
+static void symDymUstawieniaAkcja(const char *pole, long wartosc) {
+  Serial.printf("[LVGL-SYM] dym ustawienie %s -> %ld\n", pole, wartosc);
+  if      (strcmp(pole, "dymCzasOn")           == 0) symDymCzasOn           = wartosc;
+  else if (strcmp(pole, "dymCzasOff")          == 0) symDymCzasOff          = wartosc;
+  else if (strcmp(pole, "dymCzasStabilizacji") == 0) symDymCzasStabilizacji = wartosc;
+  symOdswiezDoLvgl();
+}
+
+// [PARTIA 5e, ta sesja - EKRAN WYKRESY] Atrapa CSV dla trybu symulacji (bez
+// centrali obok) - PLAN_WYKRESY_LVGL.md, "Tryb LVGL_POC_SYMULACJA dostaje
+// atrapę CSV do testów na biurku". Liczba kolumn MUSI pokryc najwiekszy
+// indeks, jakiego oczekuje parser w dashboard_lvgl_poc.cpp
+// (WYKRESY_SERIE[].kolKrotki/kolDlugiSr) - SYBERKO w buforze dlugim ma
+// kolDlugiSr=31, +2 na min/max = 33, wiec 34 kolumny (0=etykieta + 33
+// danych) starczaja na OBA formaty CSV (bufor dlugi uzywa mniej kolumn niz
+// deklarowane tu, ale generujemy tyle samo w obu - nadmiarowe kolumny
+// parser po prostu ignoruje). Wartosci to prosta sinusoida przesunieta
+// per-kolumna, zeby na oku bylo widac realny ksztalt linii, nie plaska
+// atrape.
+static String symWykresyCsvZbuduj(bool dlugi) {
+  const int LICZBA_KOLUMN = 34;
+  const int LICZBA_WIERSZY = dlugi ? 40 : 60;
+  String csv;
+  csv.reserve(LICZBA_WIERSZY * LICZBA_KOLUMN * 5);
+  for (int w = 0; w < LICZBA_WIERSZY; w++) {
+    if (dlugi) { csv += "01.01 "; csv += String(w % 24); csv += ":00"; }
+    else       { csv += "12:";    csv += String(w); }
+    for (int k = 1; k < LICZBA_KOLUMN; k++) {
+      float baza = 20.0f + 10.0f * sinf((w + k) * 0.15f);
+      csv += ",";
+      csv += String(baza, 1);
+    }
+    csv += "\n";
+  }
+  return csv;
+}
+
+// Podpiete pod lvgl_dashboard_poc_ustaw_callback_wykresy_fetch() w setup()
+// (galaz symulacji) - zero HTTP, ten sam wzorzec "udawaj centrale lokalnie"
+// co reszta symXAkcja() powyzej, tylko tu zwracamy dane od razu
+// (synchronicznie) zamiast zmieniac stan i wolac symOdswiezDoLvgl() - ekran
+// Wykresy nie jest czescia glownego cyklu odswiezania dashboardu.
+static void symWykresyFetchAkcja(bool dlugi) {
+  // [FIX-WYKRESY-RAM, ta sesja] symWykresyCsvZbuduj() i tak buduje caly CSV
+  // w RAM jako String (to atrapa, dane sa male) - brak RAM tu nie grozi.
+  // Dzielimy go na linie i podajemy do TEGO SAMEGO strumieniowego API co
+  // prawdziwy fetch w wykresyFetchWykonaj() powyzej, zeby obie sciezki
+  // (symulacja/sprzet) uzywaly jednego zrodla prawdy dla logiki redukcji
+  // punktow po stronie dashboard_lvgl_poc.cpp.
+  Serial.printf("[LVGL-SYM] wykresy fetch (atrapa CSV) dlugi=%d\n", dlugi ? 1 : 0);
+  String csv = symWykresyCsvZbuduj(dlugi);
+  lvgl_dashboard_poc_wykresy_strumien_start(dlugi);
+  uint32_t wierszy = 0;
+  const char *p = csv.c_str();
+  char bufLinii[256];
+  while (*p) {
+    const char *koniec = strchr(p, '\n');
+    size_t dl = koniec ? (size_t)(koniec - p) : strlen(p);
+    if (dl >= sizeof(bufLinii)) dl = sizeof(bufLinii) - 1;
+    memcpy(bufLinii, p, dl);
+    bufLinii[dl] = '\0';
+    if (dl > 0) { lvgl_dashboard_poc_wykresy_strumien_linia(bufLinii); wierszy++; }
+    if (!koniec) break;
+    p = koniec + 1;
+  }
+  lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, wierszy);
+}
+#endif // LVGL_POC_TEST && LVGL_POC_SYMULACJA
+
+// ----------------------------------------------------------------------------
+// POBIERANIE DANYCH
+// ----------------------------------------------------------------------------
+// [SIEC-NIEBLOKUJACA, ta sesja - PRZEPISANE] Tylko STARTUJE zadanie (albo nic
+// nie robi, jesli poprzednie jeszcze trwa - kolejne wywolanie z loop() i tak
+// nadejdzie za STATUS_INTERWAL_MS). Parsowanie odpowiedzi i caly "ogon"
+// (aktualizacja sezonu/ekranu) przeniesione do obslugaStatusFetch() nizej,
+// bo GET juz NIE konczy sie zanim ta funkcja wroci (patrz komentarz przy
+// pendingPoKomendzie na poczatku pliku).
+void pobierzStatus() {
+  if (statusFetch.wTrakcie()) return;
+  // [OTA-PANEL, ta sesja] Zgloszenie wlasnej wersji przy kazdym odpytaniu —
+  // jedyny sposob, w jaki centrala (panel nie ma internetu) dowiaduje sie,
+  // co panel realnie ma wgrane. Patrz FIRMWARE_VERSION_PANEL wyzej.
+  // [RESET-DIAG, ta sesja] Doklejony tym samym mechanizmem — powod
+  // ostatniego restartu, wypelniony raz na starcie setup(). Wartosci to
+  // stale, bezpieczne tokeny (patrz powodResetuTekst()), bez potrzeby
+  // url-encode.
+  statusFetch.startGet(("/api/status?panel_fw=" + String(FIRMWARE_VERSION_PANEL) +
+                        "&reset_powod=" + globalnyPowodResetu).c_str()); // startGet() bierze const char* - .c_str() na tymczasowym Stringu jest bezpieczny, bo startWewn() od razu kopiuje go do wlasnego pola String
+}
+
+// [SIEC-NIEBLOKUJACA, ta sesja] Wywolywana z loop() PRZY KAZDEJ iteracji
+// (tanio, gdy statusFetch bezczynny - patrz NonBlockingHttp::poll() w
+// siec_nieblokujaca_LCD.h). Cialo parsowania ponizej jest DOKLADNIE dawna
+// "druga polowa" pobierzStatus() - tylko teraz uruchamiana gdy GET faktycznie
+// sie zakonczy, moze wiele iteracji loop() po jego wystartowaniu.
+void obslugaStatusFetch() {
+  statusFetch.poll();
+  if (!statusFetch.gotowyWynik()) return;
+  bool sukces = statusFetch.bylSukces();
+  // [SIEC-NIEBLOKUJACA] Pozwala pozniej (dashboard/naglowek) odroznic "dane
+  // nieaktualne od Xs" od zwyklego, chwilowego bledu - patrz WskaznikSwiezosci
+  // w siec_nieblokujaca_LCD.h (saNieaktualne()/wiekSekund(), wywolywane wzgledem
+  // PROG_NIEAKTUALNYCH_DANYCH_MS wyzej) - odnotowujemy tu TYLKO sukcesy,
+  // odnotujSukces() nie przyjmuje parametru (staros liczy sie sama, wzgledem
+  // czasu, nie wzgledem odnotowanych porazek). Podlaczenie tego do samego
+  // WYSWIETLANIA (np. napis "dane sprzed Xs" w naglowku/dashboardzie LVGL)
+  // to juz osobna zmiana w dashboard_lvgl_poc.*/rysujNaglowek() - naszkicowane
+  // tu tylko na poziomie sledzenia, nie UI.
+  if (sukces) swiezoscStatusu.odnotujSukces();
+  if (!sukces) {
+    stan.polaczono = false;
+    Serial.printf("[STATUS] GET nieudany: %s\n", statusFetch.ostatniBlad().c_str());
+    // [FIX-LOG-SPAM, ta sesja] Bez tego stan_ zostawal w ERROR_ na stale -
+    // gotowyWynik() (a wiec i ten log) powtarzalby sie na KAZDEJ iteracji
+    // loop() az do kolejnej proby, zamiast raz na niepowodzenie. Patrz
+    // obszerny komentarz przy skwitujBlad() w siec_nieblokujaca_LCD.h.
+    statusFetch.skwitujBlad();
+    return;
+  }
+  String odp = NonBlockingHttp::wyodrebnijCialo(statusFetch.pobierzOdpowiedz());
+  JsonDocument doc;
+  if (deserializeJson(doc, odp) != DeserializationError::Ok) { stan.polaczono = false; return; }
+  stan.polaczono   = true;
+  stan.ip          = doc["ip"].as<String>();
+  stan.rssi        = doc["rssi"].as<int>();
+  stan.internet    = doc["internet"].as<bool>(); // [UI-INTERNET, ta sesja]
+  stan.tZewn       = doc["t_zewn"].as<float>();
+  stan.tBojler     = doc["t_bojler"].as<float>();
+  stan.tOgrz       = doc["t_ogrz"].as<float>();
+  stan.tOgrzSr     = doc["t_ogrz_sr"].as<float>();
+  stan.tPanel      = doc["t_panel"].as<float>();
+  stan.tPokoj      = doc["t_pokoj"].as<float>();
+  stan.tTrociny    = doc["t_trociny"].as<float>();
+  stan.tPowrot     = doc["t_powrot"].as<float>();
+  stan.wilgotnosc  = doc["wilgotnosc"].as<float>();
+  stan.cisnienie   = doc["cisnienie"].as<float>();
+  stan.dym         = doc["dym"].as<int>();
+  stan.dymAlarm    = doc["dym_alarm"].as<bool>();
+  stan.klapa       = doc["klapa"].as<int>();
+  stan.syberka     = doc["syberka"].as<int>();
+  stan.pompa       = doc["pompa"].as<bool>();
+  // [LVGL-API] Moze nie istniec w JSON starszej centrali (przed dodaniu
+  // /api/pompa-manual) - isNull() zabezpiecza tak samo jak miesiac/rtc_ok nizej.
+  stan.pompaOverrideMin = doc["pompa_override_min"].isNull() ? 0 : doc["pompa_override_min"].as<int>();
+  stan.alarmOgrzewanie = doc["alarm_ogrzewanie"].as<bool>();
+  stan.alarmPanel      = doc["alarm_panel"].as<bool>();
+  // [DESZCZ-ETAP4, PLAN_DESZCZ_ZEWN.md] Patrz obszerny komentarz przy polu
+  // stan.deszczStan/deszczMinuty (definicja struct wyzej).
+  stan.deszczStan    = doc["deszcz_stan"].isNull() ? 0  : doc["deszcz_stan"].as<int>();
+  stan.deszczMinuty  = doc["deszcz_min"].isNull()  ? -1 : doc["deszcz_min"].as<int>();
+  // [ROZSZERZENIE, ta sesja - BRZECZYK ALARMOWY] Swiezy stan wszystkich 3
+  // alarmow jest juz znany - przelicz, ktory wzorzec (jesli ktorykolwiek)
+  // powinien teraz grac. Tanie/idempotentne, bezpieczne przy kazdym udanym
+  // pobierzStatus() (patrz obszerny komentarz przy brzeczykOdswiezZAlarmow()).
+  brzeczykOdswiezZAlarmow(stan.dymAlarm, stan.alarmOgrzewanie, stan.alarmPanel);
+  // [LCD-SEZON] Pola moga nie istniec w JSON-ie starszej centrali (przed
+  // v1.16.0) — isNull() zabezpiecza przed nadpisaniem sensownych domyslnych
+  // wartosci smieciami z ArduinoJson (0/false to i tak bezpieczne domyslne:
+  // miesiac=0 => "brak RTC", wchodzi wprost w fallback na t_panel nizej).
+  stan.miesiac = doc["miesiac"].isNull() ? 0 : doc["miesiac"].as<int>();
+  // [LVGL-DATA-CZAS, ta sesja] Analogiczne pola dla kafelka DATA I CZAS -
+  // ten sam wzorzec isNull() co miesiac/rtc_ok (centrala starsza niz ten
+  // FIX po prostu nie bedzie mala tych kluczy w JSON, wiec zostana 0, co
+  // dashboard_lvgl_poc.cpp i tak pokazuje jako "--" dopoki stan.rtcOk==false).
+  stan.godzina = doc["godzina"].isNull() ? 0 : doc["godzina"].as<int>();
+  stan.minuta  = doc["minuta"].isNull() ? 0 : doc["minuta"].as<int>();
+  stan.dzien   = doc["dzien"].isNull() ? 0 : doc["dzien"].as<int>();
+  stan.rok     = doc["rok"].isNull() ? 0 : doc["rok"].as<int>();
+  stan.rtcOk   = doc["rtc_ok"].isNull() ? false : doc["rtc_ok"].as<bool>();
+  // [ROZSZERZENIE, ta sesja - PANEL WYSWIETLACZ] Swieza godzina jest juz
+  // znana - zapisz ja do wspolnych zmiennych i przelicz harmonogram
+  // przyciemnienia (patrz obszerny komentarz przy wyswietlaczHarmonogramOdswiez()
+  // wyzej). Tanie/idempotentne, bezpieczne przy kazdym udanym pobierzStatus().
+  wyswietlaczOstatniaGodzina = stan.godzina;
+  wyswietlaczGodzinaZnana    = stan.rtcOk;
+  wyswietlaczHarmonogramOdswiez();
+  // [OTA-PANEL, ta sesja] isNull() zabezpiecza tak samo jak miesiac/rtc_ok
+  // wyzej — starsza centrala (przed tym dodatkiem) po prostu nie bedzie
+  // mial tych pol, panel wtedy nigdy nie sprobuje sciagac OTA.
+  stan.panelOtaDostepna = doc["panel_ota_dostepna"].isNull() ? false : doc["panel_ota_dostepna"].as<bool>();
+  stan.panelOtaWersja   = doc["panel_ota_wersja"].isNull() ? "" : doc["panel_ota_wersja"].as<String>();
+
+  // [SIEC-NIEBLOKUJACA, ta sesja] Ponizszy "ogon" byl dawniej doklejany
+  // OSOBNO przez KAZDEGO wywolujacego pobierzStatus() (petla loop() w obu
+  // galeziach + 4 mosty LVGL: pompaManualWyslij/pompaWyborWyslij/
+  // serwoTrybWyslij/serwoPozycjaWyslij) - scentralizowany tutaj RAZ, bo byl
+  // identyczny wszedzie w danej galezi, a aktualizujSezon()/
+  // lvgl_dashboard_poc_aktualizuj()/rysujDashboard() sa tanie/idempotentne
+  // (bezpieczne przy kazdym udanym odswiezeniu, niezaleznie kto je sprowokowal).
+#if LVGL_POC_TEST
+  aktualizujSezon(); // patrz komentarz [FIX, Partia 2] przy pierwotnym wywolaniu w setup()
+  lvgl_dashboard_poc_aktualizuj(stan.polaczono, stan.tZewn, stan.tBojler,
+                                 stan.tOgrz, stan.tOgrzSr, stan.tPanel,
+                                 stan.pompa, stan.pompaOverrideMin,
+                                 stan.dym, stan.dymAlarm,
+                                 stan.tPokoj, stan.wilgotnosc, stan.cisnienie,
+                                 stan.klapa, stan.syberka, (int)trybWyboru,
+                                 (int)trybSerwaWartosc,
+                                 stan.alarmOgrzewanie, stan.alarmPanel,
+                                 stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
+                                 stan.rtcOk,
+                                 stan.rssi,
+                                 stan.internet,
+                                 stan.deszczStan, stan.deszczMinuty);
+#else
+  // [LCD-SEZON] Zmiana sezonu wymusza PELNE przerysowanie dashboardu (uklad
+  // kafelkow sie zmienia) i naglowka (ikona slonce/sniezynka) — w
+  // przeciwnym razie zostalyby resztki starego ukladu/ikony na ekranie.
+  bool sezonZmieniony = aktualizujSezon();
+  if (aktualnyEkran == EKRAN_DASHBOARD && panelOtwartyId == -1) rysujDashboard(sezonZmieniony);
+  rysujNaglowek(sezonZmieniony);
+#endif
+}
+
+// [SIEC-NIEBLOKUJACA, ta sesja - PRZEPISANE] Tylko STARTUJE zadanie - patrz
+// komentarz przy pobierzStatus() wyzej, ten sam wzorzec.
+void pobierzUstawienia() {
+  if (ustawieniaFetch.wTrakcie()) return;
+  ustawieniaFetch.startGet("/api/ustawienia-get");
+}
+
+// Wywolywana z loop() przy kazdej iteracji - patrz obslugaStatusFetch() wyzej.
+void obslugaUstawieniaFetch() {
+  ustawieniaFetch.poll();
+  if (!ustawieniaFetch.gotowyWynik()) return;
+  bool sukces = ustawieniaFetch.bylSukces();
+  if (sukces) swiezoscUstawien.odnotujSukces(); // patrz komentarz w obslugaStatusFetch() wyzej
+  if (!sukces) {
+    Serial.printf("[USTAWIENIA] GET nieudany: %s\n", ustawieniaFetch.ostatniBlad().c_str());
+    // [FIX-LOG-SPAM, ta sesja] Patrz identyczny komentarz w
+    // obslugaStatusFetch() wyzej / skwitujBlad() w siec_nieblokujaca_LCD.h.
+    ustawieniaFetch.skwitujBlad();
+    return;   // zostaw ostatnie znane wartosci
+  }
+  String odp = NonBlockingHttp::wyodrebnijCialo(ustawieniaFetch.pobierzOdpowiedz());
+  JsonDocument doc;
+  if (deserializeJson(doc, odp) != DeserializationError::Ok) return;
+  for (int i = 0; i < LICZBA_POL; i++) {
+    if (!doc[POLA[i].klucz].isNull()) POLA[i].wartosc = doc[POLA[i].klucz].as<long>();
+  }
+  // [LCD-TRYBY] Poza POLA[] — patrz komentarz przy deklaracji trybWyboru/
+  // trybSerwaWartosc wyzej.
+  if (!doc["wybor"].isNull())     trybWyboru      = doc["wybor"].as<long>();
+  if (!doc["trybSerwa"].isNull()) trybSerwaWartosc = doc["trybSerwa"].as<long>();
+  // [ROZSZERZENIE, ta sesja - ekran LVGL USTAWIENIA POMPY] Ten sam wzorzec
+  // co wybor/trybSerwa powyzej - bool, wiec poza POLA[].
+  if (!doc["antystopWlaczony"].isNull()) antystopWlaczonyWartosc = doc["antystopWlaczony"].as<bool>();
+  ustawieniaWczytane = true;
+  // [ROZSZERZENIE, ta sesja - ekran LVGL USTAWIENIA SERWA] Przekaz swiezo
+  // pobrane wartosci dalej do dashboard_lvgl_poc.cpp - ten sam wzorzec co
+  // lvgl_dashboard_poc_aktualizuj() dla /api/status, tylko osobna funkcja
+  // (patrz obszerny komentarz w dashboard_lvgl_poc.h) bo to inne zrodlo
+  // (/api/ustawienia-get, nie /api/status) i inna czestotliwosc odswiezania.
+  lvgl_dashboard_poc_aktualizuj_ustawienia_serwa(
+      (int)POLA[znajdzIndeksPola("tempZadServo")].wartosc,
+      (int)POLA[znajdzIndeksPola("histerServo")].wartosc,
+      (int)POLA[znajdzIndeksPola("skokKlapy")].wartosc,
+      (int)POLA[znajdzIndeksPola("skokSyberka")].wartosc,
+      (int)POLA[znajdzIndeksPola("odchylTemp")].wartosc,
+      (int)POLA[znajdzIndeksPola("mnoznik")].wartosc);
+  // [ROZSZERZENIE, ta sesja - ekran LVGL USTAWIENIA POMPY] Ten sam wzorzec co
+  // wywolanie serwa powyzej, tylko dla dashboard_lvgl_poc.h ustawien pompy -
+  // dwie osobne funkcje (5 pol numerycznych + osobno bool antystopWlaczony),
+  // patrz uzasadnienie w dashboard_lvgl_poc.h.
+  lvgl_dashboard_poc_aktualizuj_ustawienia_pompy(
+      (int)POLA[znajdzIndeksPola("czasOn")].wartosc,
+      (int)POLA[znajdzIndeksPola("czasOff")].wartosc,
+      (int)POLA[znajdzIndeksPola("tempOn")].wartosc,
+      (int)POLA[znajdzIndeksPola("tempOff")].wartosc,
+      (int)POLA[znajdzIndeksPola("antystopDni")].wartosc);
+  lvgl_dashboard_poc_aktualizuj_ustawienia_pompy_antystop(antystopWlaczonyWartosc);
+  // [ROZSZERZENIE, ta sesja - PANEL DYM] Ten sam wzorzec co wywolania
+  // serwa/pompy powyzej. progAlarmDym juz byl w POLA[] (stary EKRAN_TRYBY go
+  // uzywal), dymCzasOn/Off/Stabilizacji dopisane wyzej w tej sesji.
+  lvgl_dashboard_poc_aktualizuj_ustawienia_dymu(
+      (int)POLA[znajdzIndeksPola("progAlarmDym")].wartosc,
+      (int)POLA[znajdzIndeksPola("dymCzasOn")].wartosc,
+      (int)POLA[znajdzIndeksPola("dymCzasOff")].wartosc,
+      (int)POLA[znajdzIndeksPola("dymCzasStabilizacji")].wartosc);
+  // [ROZSZERZENIE, ta sesja - PANEL PROG PRZEGRZANIA] progAlarmTemp juz byl
+  // w POLA[] od dawna (stary EKRAN_TRYBY go uzywal) - tylko dopisujemy
+  // przekazanie dalej do LVGL, ten sam wzorzec co progAlarmDym powyzej.
+  lvgl_dashboard_poc_aktualizuj_ustawienia_alarmu_temp(
+      (int)POLA[znajdzIndeksPola("progAlarmTemp")].wartosc);
+  // Nie pobieramy tu klapy/syberka recznych procentow celowo — te sa juz
+  // widoczne w /api/status (klapa/syberka), a suwak na ekranie Serwo
+  // zaczyna od tych samych wartosci co status przy pierwszym wejsciu na ekran.
+}
+
+// ----------------------------------------------------------------------------
+// RYSOWANIE — DASHBOARD
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// [LCD-KAFELKI] Zawartosc kafelkow dashboardu — jedno miejsce, ktore wie co
+// pokazac (etykieta/wartosc/kolory) dla kazdego z LICZBA_KAFELKOW id, zeby
+// petla petla rysujaca w rysujDashboard() nie musiala znac szczegolow kazdego
+// czujnika. "Sterowalny" (true dla KLAPA/SYBERKA/DYM) rysuje cienka ramke w
+// kolorze KOL_OGIEN — "da sie w to kliknac", dokladnie jak subtelna obwodka
+// w makiecie HTML; reszta to czyste odczyty z ramka KOL_RAMKA (bez akcji).
+// ----------------------------------------------------------------------------
+bool kafelekWidoczny(int id) {
+  switch (id) {
+    case KAF_OGRZ: case KAF_OGRZ_SR: case KAF_KLAPA: case KAF_SYBERKA: case KAF_DYM:
+      return aktualnySezon == SEZON_ZIMA;
+    case KAF_PANEL:
+      return aktualnySezon == SEZON_LATO;
+    default:
+      return true;
+  }
+}
+
+// [LCD-KAFELKI] Kolor jako stan zyje TERAZ wylacznie w ikonie — dokladnie
+// jak w makiecie referencyjnej: kazdy typ czujnika ma swoj wlasny, stale
+// przypisany kolor ikony (kropla=niebieski, suwak=pomaranczowy,
+// plomien/termometr=czerwono-pomaranczowy, chmura=turkusowy...), a WARTOSC
+// liczbowa jest zawsze biala/jasna (KOL_TEKST) — kolor nie "podwaja sie"
+// na tekscie, dzieki czemu kafelki nie wygladaja jednolicie na jeden akcent.
+void tresciKafelka(int id, String& etykieta, String& wartosc, uint16_t& kolorWartosci,
+                    uint16_t& kolorIkony, uint16_t& kolorRamki, bool& sterowalny) {
+  sterowalny = (id == KAF_KLAPA || id == KAF_SYBERKA || id == KAF_DYM);
+  kolorRamki = sterowalny ? KOL_OGIEN : KOL_RAMKA;
+  kolorWartosci = KOL_TEKST;   // zawsze bialy/jasny — patrz komentarz wyzej
+  kolorIkony = KOL_TEKST_DIM;  // domyslnie (nadpisywane ponizej dla kafelkow, ktore maja ikone)
+  switch (id) {
+    case KAF_ZEWN:        etykieta = "ZEWN";       wartosc = String(stan.tZewn, 1) + " C"; kolorIkony = KOL_CHMURKA; break;
+    case KAF_BOJLER:      etykieta = "BOJLER";     wartosc = String(stan.tBojler, 1) + " C"; kolorIkony = KOL_ZAR; break;
+    case KAF_OGRZ:        etykieta = "OGRZ.";      wartosc = String(stan.tOgrz, 1) + " C"; kolorIkony = KOL_ZAR; break;
+    case KAF_OGRZ_SR:     etykieta = "OGRZ SR";    wartosc = String(stan.tOgrzSr, 1) + " C"; kolorIkony = KOL_ZAR; break;
+    case KAF_PANEL:       etykieta = "PANEL";      wartosc = String(stan.tPanel, 1) + " C"; kolorIkony = KOL_ZAR; break;
+    case KAF_POKOJ:       etykieta = "POKOJ";      wartosc = String(stan.tPokoj, 1) + " C"; break;
+    case KAF_WILGOTNOSC:  etykieta = "WILGOTNOSC"; wartosc = String(stan.wilgotnosc, 0) + " %"; break;
+    case KAF_CISNIENIE:   etykieta = "CISNIENIE";  wartosc = String(stan.cisnienie, 1) + " hPa"; break;
+    case KAF_POMPA:
+      // [LCD-KAFELKI] POMPA to STAN z czujnika (centrala steruje nia sama
+      // automatyka), nie ma odpowiednika /api/servo-manual dla pompy — wiec
+      // w odroznieniu od makiety HTML (gdzie pompa jest przelacznikiem
+      // demo) tutaj to CZYSTY ODCZYT. Kolor jako stan (nie dekoracja) zyje
+      // w ikonie: niebieski gdy pracuje, przygaszony gdy stoi.
+      etykieta = "POMPA";
+      wartosc = stan.pompa ? "ZALACZONA" : "WYLACZONA";
+      kolorIkony = stan.pompa ? KOL_KROPLA : KOL_TEKST_DIM;
+      break;
+    case KAF_KLAPA:   etykieta = "KLAPA";   wartosc = String(stan.klapa) + " %";  kolorIkony = KOL_SUWAK; break;
+    case KAF_SYBERKA: etykieta = "SYBERKA"; wartosc = String(stan.syberka) + " %"; kolorIkony = KOL_SUWAK; break;
+    case KAF_DYM:
+      etykieta = "DYM";
+      wartosc = String(stan.dym);
+      kolorIkony  = stan.dymAlarm ? KOL_ERR : KOL_WARN;
+      kolorRamki  = stan.dymAlarm ? KOL_ERR : KOL_OGIEN;
+      break;
+  }
+}
+
+// Ikona (opcjonalna) dla danego kafelka — brak case = bez ikony (etykieta
+// tekstowa wystarcza, np. WILGOTNOSC/CISNIENIE/POKOJ). Kolor ikony ustalany
+// w tresciKafelka (kolorIkony) — stale przypisany do typu czujnika, nie do
+// wartosci — zeby ikona niosla stan, a nie powielala kolor tekstu.
+void rysujIkoneKafelka(int id, int16_t cx, int16_t cy, uint16_t kolor, TFT_eSPI &gfx) {
+  switch (id) {
+    case KAF_ZEWN:
+      if (aktualnySezon == SEZON_LATO) rysujIkonaSlonce(gfx, cx, cy, 9, kolor);
+      else                             rysujIkonaSnieg(gfx, cx, cy, 9, kolor);
+      break;
+    case KAF_BOJLER: case KAF_OGRZ: case KAF_OGRZ_SR: case KAF_PANEL:
+      rysujIkonaPlomien(gfx, cx, cy, 8, kolor); break;
+    case KAF_POMPA:
+      rysujIkonaKropla(gfx, cx, cy, 8, kolor); break;
+    case KAF_KLAPA: case KAF_SYBERKA:
+      rysujIkonaSuwak(gfx, cx, cy, 8, kolor); break;
+    case KAF_DYM:
+      rysujIkonaAlarm(gfx, cx, cy, 8, kolor); break;
+    default:
+      break; // POKOJ, WILGOTNOSC, CISNIENIE — bez ikony, sama liczba wystarczy
+  }
+}
+
+// Pojedynczy kafelek: etykieta + duza wartosc — DOKLADNIE ten sam uklad co w
+// poprzedniej wersji rysujKafelek (sprawdzona geometria, kh=46 dopasowane do
+// fontu 4), plus mala ikona w prawym-gornym rogu (jesli kafelek ja ma) i
+// ramka w kolorze zaleznym od tego, czy kafelek jest sterowalny.
+void rysujKafelek(int x, int y, int w, int h, int id) {
+  String etykieta, wartosc;
+  uint16_t kolorWartosci, kolorIkony, kolorRamki;
+  bool sterowalny;
+  tresciKafelka(id, etykieta, wartosc, kolorWartosci, kolorIkony, kolorRamki, sterowalny);
+
+  // [KROK 3] Sprite tworzony/skalowany tylko gdy rozmiar faktycznie sie
+  // zmienil wzgledem poprzedniego wywolania — tworzenie sprite'a (alokacja
+  // RAM) jest kosztowne, wiec nie robimy tego przy kazdym kafelku.
+  if (sprKafelekW != w || sprKafelekH != h) {
+    if (sprKafelekW != 0) sprKafelek.deleteSprite();
+    sprKafelek.setColorDepth(16);
+    sprKafelek.createSprite(w, h);
+    sprKafelekW = w;
+    sprKafelekH = h;
+  }
+
+  // Wszystko ponizej rysuje sie DOKLADNIE tak samo jak wczesniej, tylko
+  // (a) na sprKafelek zamiast na tft, (b) wspolrzedne wzgledem (0,0) sprite'a
+  // zamiast bezwzglednych x,y na ekranie.
+  sprKafelek.fillSprite(KOL_TLO); // tlo "za" zaokraglonymi rogami, patrz bg_color nizej
+
+  sprKafelek.fillSmoothRoundRect(0, 0, w, h, 6, KOL_KARTA, KOL_TLO);
+  sprKafelek.drawSmoothRoundRect(0, 0, 6, 4, w, h, kolorRamki, KOL_KARTA);
+
+  rysujIkoneKafelka(id, w - 16, 15, kolorIkony, sprKafelek);
+
+  sprKafelek.setTextDatum(TL_DATUM);
+  sprKafelek.setTextColor(KOL_TEKST_DIM, KOL_KARTA);
+  sprKafelek.setTextFont(1);
+  sprKafelek.drawString(etykieta, 8, 6);
+  sprKafelek.setTextColor(kolorWartosci, KOL_KARTA);
+  sprKafelek.setTextFont(4);
+  sprKafelek.drawString(wartosc, 8, 20);
+
+  // Jeden blokowy transfer na ekran — to jest krok, ktory realnie eliminuje
+  // migotanie/przeblyski przy przerysowaniu kafelka.
+  sprKafelek.pushSprite(x, y);
+}
+
+// ----------------------------------------------------------------------------
+// [LCD-KAFELKI] PANELE NAKLADKI (overlay) — otwierane dotknieciem kafelka
+// sterowalnego. Karta na srodku ekranu, jedno "Zamknij" wraca do dashboardu
+// (ten sam wzorzec "tap outside to dismiss" co w makiecie HTML) zamiast
+// przelaczania na osobny ekran — szybszy powrot do podgladu calosci.
+// ----------------------------------------------------------------------------
+
+// Nakladka DYM — czulosc alarmu (progAlarmDym), +/- jak w Ustawieniach, tylko
+// bez wchodzenia w cala liste. Bez zmian wzgledem poprzedniej wersji poza
+// nazwami zmiennych (panelMinus/panelPlus/panelZamknij, wczesniej z prefiksem
+// "Dym" — teraz wspolne dla wszystkich nakladek, patrz panelOtwartyId wyzej).
+void rysujPanelDym() {
+  const Przycisk& k = PANEL_KARTA;
+  tft.fillRoundRect(k.x, k.y, k.w, k.h, 8, KOL_KARTA);
+  tft.drawRoundRect(k.x, k.y, k.w, k.h, 8, KOL_OGIEN);
+
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextFont(2);
+  tft.setTextColor(KOL_TEKST, KOL_KARTA);
+  tft.drawString("Czulosc alarmu dymu", k.x + k.w / 2, k.y + 10);
+
+  int idx = znajdzIndeksPola("progAlarmDym");
+  long wartosc = (idx >= 0) ? POLA[idx].wartosc : 0;
+  tft.setTextFont(4);
+  tft.setTextColor(KOL_OGIEN, KOL_KARTA);
+  tft.drawString(String(wartosc), k.x + k.w / 2, k.y + 44);
+
+  panelMinus = { (int16_t)(k.x + 16),        (int16_t)(k.y + 84), 50, 40 };
+  panelPlus  = { (int16_t)(k.x + k.w - 66),  (int16_t)(k.y + 84), 50, 40 };
+  tft.fillRoundRect(panelMinus.x, panelMinus.y, panelMinus.w, panelMinus.h, 6, KOL_RAMKA);
+  tft.fillRoundRect(panelPlus.x,  panelPlus.y,  panelPlus.w,  panelPlus.h,  6, KOL_RAMKA);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(KOL_TEKST, KOL_RAMKA);
+  tft.drawString("-", panelMinus.x + panelMinus.w / 2, panelMinus.y + panelMinus.h / 2);
+  tft.drawString("+", panelPlus.x  + panelPlus.w  / 2, panelPlus.y  + panelPlus.h  / 2);
+
+  panelZamknij = { (int16_t)(k.x + k.w / 2 - 40), (int16_t)(k.y + k.h - 34), 80, 24 };
+  tft.fillRoundRect(panelZamknij.x, panelZamknij.y, panelZamknij.w, panelZamknij.h, 6, KOL_KARTA);
+  tft.drawRoundRect(panelZamknij.x, panelZamknij.y, panelZamknij.w, panelZamknij.h, 6, KOL_RAMKA);
+  tft.setTextFont(1);
+  tft.setTextColor(KOL_TEKST_DIM, KOL_KARTA);
+  tft.drawString("Zamknij", panelZamknij.x + panelZamknij.w / 2, panelZamknij.y + panelZamknij.h / 2);
+}
+
+// Nakladka KLAPA/SYBERKA — jeden poziomy suwak 0-100%, przeciaganie obslugiwane
+// w obsluzDotyk() (ten sam wzorzec co suwaki na ekranie Serwo: wysylka
+// wyslijServoManualny() dopiero PO puszczeniu palca, nie na kazda klatke
+// przeciagania). serwoKlapaProcent/serwoSyberekProcent to te same zmienne co
+// na ekranie Serwo — otwarcie nakladki inicjalizuje je z /api/status, wiec
+// oba miejsca zawsze pokazuja te sama, aktualna wartosc.
+void rysujPanelSuwak(int id) {
+  const Przycisk& k = PANEL_SUWAK_KARTA;
+  const char* etykieta = (id == KAF_KLAPA) ? "Klapa" : "Syberko";
+  int procent = (id == KAF_KLAPA) ? serwoKlapaProcent : serwoSyberekProcent;
+
+  tft.fillRoundRect(k.x, k.y, k.w, k.h, 8, KOL_KARTA);
+  tft.drawRoundRect(k.x, k.y, k.w, k.h, 8, KOL_OGIEN);
+
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextFont(2);
+  tft.setTextColor(KOL_TEKST, KOL_KARTA);
+  tft.drawString(String(etykieta) + ": " + String(procent) + " %", k.x + k.w / 2, k.y + 12);
+
+  suwakPanelSuwak = { (int16_t)(k.x + 20), (int16_t)(k.y + 44), (int16_t)(k.w - 40), 30 };
+  tft.fillRoundRect(suwakPanelSuwak.x, suwakPanelSuwak.y, suwakPanelSuwak.w, suwakPanelSuwak.h, 6, KOL_RAMKA);
+  int wypelnienie = map(procent, 0, 100, 0, suwakPanelSuwak.w - 6);
+  tft.fillRoundRect(suwakPanelSuwak.x + 3, suwakPanelSuwak.y + 3, wypelnienie, suwakPanelSuwak.h - 6, 4, KOL_OGIEN);
+
+  panelZamknij = { (int16_t)(k.x + k.w / 2 - 40), (int16_t)(k.y + k.h - 34), 80, 24 };
+  tft.fillRoundRect(panelZamknij.x, panelZamknij.y, panelZamknij.w, panelZamknij.h, 6, KOL_KARTA);
+  tft.drawRoundRect(panelZamknij.x, panelZamknij.y, panelZamknij.w, panelZamknij.h, 6, KOL_RAMKA);
+  tft.setTextFont(1);
+  tft.setTextColor(KOL_TEKST_DIM, KOL_KARTA);
+  tft.drawString("Zamknij", panelZamknij.x + panelZamknij.w / 2, panelZamknij.y + panelZamknij.h / 2);
+}
+
+// Dysponent nakladek — wywolywany z rysujAktualnyEkran() gdy panelOtwartyId != -1.
+void rysujPanelOverlay(int id) {
+  if (id == KAF_DYM) rysujPanelDym();
+  else                rysujPanelSuwak(id);
+}
+
+void rysujPasekZakladek() {
+  int y = 320 - PASEK_WYS;
+  tft.fillRect(0, y, 480, PASEK_WYS, KOL_KARTA);
+  tft.drawFastHLine(0, y, 480, KOL_RAMKA);
+  struct { const char* nazwa; Przycisk* p; Ekran e; } zak[] = {
+    {"Dashboard",  &zakladkaDashboard,  EKRAN_DASHBOARD},
+    {"Ustawienia", &zakladkaUstawienia, EKRAN_USTAWIENIA},
+    {"Serwo",      &zakladkaSerwo,      EKRAN_SERWO},
+    {"Tryby",      &zakladkaTryby,      EKRAN_TRYBY},
+  };
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextFont(2);
+  for (auto& z : zak) {
+    bool aktywna = (aktualnyEkran == z.e);
+    if (aktywna) tft.drawFastHLine(z.p->x + 10, y, z.p->w - 20, KOL_OGIEN);
+    tft.setTextColor(aktywna ? KOL_OGIEN : KOL_TEKST_DIM, KOL_KARTA);
+    tft.drawString(z.nazwa, z.p->x + z.p->w / 2, y + PASEK_WYS / 2);
+  }
+}
+
+// [FIX migotanie #3] Ten sam wzorzec co w rysujDashboard() - pelne
+// tft.fillRect(0,0,480,26) na kazdym wywolaniu z loop() (co 2s) powodowalo
+// widoczne "pulsowanie" paska naglowka, najbardziej zauwazalne w stanie
+// "WiFi OK, centrala nie odpowiada" - bo ten tekst jest STATYCZNY (nie
+// zmienia sie co cykl), a mimo to byl czyszczony i przerysowywany co 2s
+// identycznym tekstem. Poprawka: "Piec CO" (tytul, nigdy sie nie zmienia)
+// rysowany tylko przy pelneCzyszczenie; obszar statusu po prawej czyszczony
+// i przerysowywany TYLKO gdy tekst statusu faktycznie sie zmienil (stan
+// polaczono/wifi_ok/brak_wifi lub odliczanie sekund w stanie brak_wifi).
+void rysujNaglowek(bool pelneCzyszczenie = true) {
+  if (pelneCzyszczenie) {
+    tft.fillRect(0, 0, 480, 26, KOL_TLO);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(KOL_OGIEN, KOL_TLO);
+    tft.drawString("Piec CO", 8, 5);
+    // [LCD-SEZON] Ikona aktualnego sezonu obok tytulu — szybki wizualny
+    // sygnal, w ktorym widoku jestesmy, bez czytania tekstu. Rysowana
+    // TYLKO przy pelnym czyszczeniu (jak tytul) — sezon zmienia sie rzadko
+    // (godziny/dni), a przy kazdej jego zmianie i tak wymuszamy pelne
+    // przerysowanie z loop() (patrz aktualizujSezon()).
+    int16_t ix = 80;
+    if (aktualnySezon == SEZON_LATO) rysujIkonaSlonce(tft, ix, 13, 9, KOL_WARN);
+    else                             rysujIkonaSnieg(tft, ix, 13, 9, KOL_SNIEG);
+  }
+
+  String tekst;
+  uint16_t kolor;
+  if (stan.polaczono) {
+    kolor = KOL_OK;
+    tekst = "polaczono  " + stan.ip + "  " + String(stan.rssi) + "dBm";
+  } else if (WiFi.status() == WL_CONNECTED) {
+    // [ETAP 5] WiFi/AP centrali dziala, ale ostatni GET /api/status sie nie
+    // udal (np. centrala akurat restartuje/robi OTA) — odroznione od braku
+    // samego WiFi, bo to inna przyczyna i inna reakcja uzytkownika.
+    kolor = KOL_ERR;
+    tekst = "WiFi OK, centrala nie odpowiada";
+  } else {
+    // [ETAP 5] Brak WiFi -> odliczanie do kolejnej proby reconnect
+    // (wifiReconnectNonBlocking() w loop()), zeby bylo widac ze urzadzenie
+    // nie utknelo, tylko czeka zgodnie z rosnacym opoznieniem. Ten tekst
+    // CELOWO zmienia sie co sekunde (odliczanie) - to nie jest blad.
+    long pozostaloMs = (long)(wifiOstatniaProbaReconnectMs + wifiOpoznienieReconnectMs) - (long)millis();
+    long pozostaloS = pozostaloMs > 0 ? (pozostaloMs / 1000) + 1 : 0;
+    kolor = KOL_ERR;
+    tekst = "brak WiFi, kolejna proba za " + String(pozostaloS) + "s";
+  }
+
+  static String poprzedniTekstStatus = "";
+  if (pelneCzyszczenie || tekst != poprzedniTekstStatus) {
+    tft.fillRect(170, 0, 310, 26, KOL_TLO); // czyscimy tylko prawa czesc paska, nie caly naglowek
+    tft.setTextDatum(TR_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(kolor, KOL_TLO);
+    tft.drawString(tekst, 472, 5);
+    poprzedniTekstStatus = tekst;
+  }
+}
+
+// [FIX migotanie] pelneCzyszczenie=true tylko przy przelaczeniu na zakladke
+// Dashboard (usuwa pozostalosci po Ustawieniach/Serwie) - przy cyklicznym
+// odswiezaniu danych (co STATUS_INTERWAL_MS) NIE czyscimy calego tla, bo
+// kazdy kafelek/znacznik i tak maluje swoje pelne tlo przez fillRoundRect -
+// zbedny fillRect calego obszaru powodowal widoczny "przeblysk" tla co 2s.
+//
+// [FIX migotanie #2] Nawet bez pelnego czyszczenia tla, kazdy kafelek robi
+// dwuetapowe nadpisanie (fillRoundRect = tlo, potem drawString = tekst) -
+// krotkie okno miedzy tymi krokami samo w sobie miga, NIEZALEZNIE od tego,
+// czy wartosc sie zmienila. Research (Bodmer/TFT_eSPI issue #346, forum
+// M5Stack): standardowa metoda to cache poprzedniej wartosci i rysowanie
+// kafelka/znacznika TYLKO gdy realnie sie zmienil - wiekszosc temperatur nie
+// zmienia sie co 2s, wiec to eliminuje wiekszosc zbednych przerysowan.
+//
+// [LCD-KAFELKI] Siatka 4 kolumny x 3 wiersze (12 slotow), kafelki wypelniane
+// PO KOLEI wg kolejnosci id (KAF_ZEWN..KAF_DYM) pomijajac te niewidoczne w
+// danym sezonie (kafelekWidoczny()) — czyli uklad "sciska sie" bez dziur, tak
+// jak siatka w makiecie HTML. Pod spodem (bo to juz nie kafelki, tylko krotkie
+// wskazniki bool bez wlasnej liczby) zostaja dwa paski alarmow — ten sam,
+// juz sprawdzony wzorzec "kolor jako stan" co poprzednio.
+void rysujDashboard(bool pelneCzyszczenie = true) {
+  if (pelneCzyszczenie) {
+    tft.fillRect(0, 26, 480, 320 - 26 - PASEK_WYS, KOL_TLO);
+  }
+  // [FIX siatka] kw byl 116 -> 4 kolumny + 3 odstepy + lewy margines dawaly
+  // prawa krawedz na x=482, czyli 2px POZA ekranem (480px szerokosci). Efekt:
+  // fillRoundRect/drawRoundRect dla calej 4. kolumny (OGRZ SR w wierszu 0,
+  // POMPA w wierszu 1) nie rysowaly sie w ogole (przycinane poza granica przez
+  // sterownik), zostawala tylko goła wartosc z drawString — dokladnie to bylo
+  // widac na zdjeciu z urzadzenia. kw=114 daje prawa krawedz na x=474,
+  // symetryczny margines 6px po obu stronach.
+  const int x0 = 6, y0 = 32, kw = 114, kh = 46, odstepX = 4, odstepY = 4;
+
+  static float poprzWart[LICZBA_KAFELKOW];
+  static bool poprzBoolA[LICZBA_KAFELKOW]; // pompa/dymAlarm — dowolna druga skladowa stanu kafelka
+  static bool zainicjalizowano = false;
+  if (!zainicjalizowano) {
+    for (int i = 0; i < LICZBA_KAFELKOW; i++) { poprzWart[i] = NAN; poprzBoolA[i] = false; }
+    zainicjalizowano = true;
+  }
+
+  int slot = 0;
+  for (int id = 0; id < LICZBA_KAFELKOW; id++) {
+    if (!kafelekWidoczny(id)) {
+      kafelekRect[id] = { 0, 0, 0, 0 };
+      poprzWart[id] = NAN; // reset cache — gdy kafelek pozniej wroci (zmiana sezonu), ma sie zawsze przerysowac
+      continue;
+    }
+    int kol = slot % 4, wiersz = slot / 4;
+    int x = x0 + kol * (kw + odstepX);
+    int y = y0 + wiersz * (kh + odstepY);
+    kafelekRect[id] = { (int16_t)x, (int16_t)y, (int16_t)kw, (int16_t)kh };
+    slot++;
+
+    // Wartosc porownawcza do cache — float dla odczytow liczbowych, a dla
+    // POMPA/DYM (gdzie liczy sie tez drugi bit stanu: wl/wyl, alarm) dodatkowo
+    // poprzBoolA[]. Upraszczamy: kazda zmiana ktoregokolwiek pola stanu pieca
+    // wymusza przerysowanie WSZYSTKICH widocznych kafelkow (tanie, bo i tak
+    // caly stan przychodzi w jednym GET /api/status co STATUS_INTERWAL_MS) —
+    // ale nadal TYLKO gdy cos sie realnie zmienilo od ostatniego rysowania,
+    // wiec flicker-fix z [FIX migotanie #2] zostaje zachowany.
+    float wartPorownanie;
+    bool boolPorownanie;
+    switch (id) {
+      case KAF_ZEWN: wartPorownanie = stan.tZewn; boolPorownanie = false; break;
+      case KAF_BOJLER: wartPorownanie = stan.tBojler; boolPorownanie = false; break;
+      case KAF_OGRZ: wartPorownanie = stan.tOgrz; boolPorownanie = false; break;
+      case KAF_OGRZ_SR: wartPorownanie = stan.tOgrzSr; boolPorownanie = false; break;
+      case KAF_PANEL: wartPorownanie = stan.tPanel; boolPorownanie = false; break;
+      case KAF_POKOJ: wartPorownanie = stan.tPokoj; boolPorownanie = false; break;
+      case KAF_WILGOTNOSC: wartPorownanie = stan.wilgotnosc; boolPorownanie = false; break;
+      case KAF_CISNIENIE: wartPorownanie = stan.cisnienie; boolPorownanie = false; break;
+      case KAF_POMPA: wartPorownanie = 0; boolPorownanie = stan.pompa; break;
+      case KAF_KLAPA: wartPorownanie = stan.klapa; boolPorownanie = false; break;
+      case KAF_SYBERKA: wartPorownanie = stan.syberka; boolPorownanie = false; break;
+      case KAF_DYM: wartPorownanie = stan.dym; boolPorownanie = stan.dymAlarm; break;
+      default: wartPorownanie = 0; boolPorownanie = false; break;
+    }
+    if (pelneCzyszczenie || wartPorownanie != poprzWart[id] || boolPorownanie != poprzBoolA[id]) {
+      rysujKafelek(x, y, kw, kh, id);
+      poprzWart[id] = wartPorownanie;
+      poprzBoolA[id] = boolPorownanie;
+    }
+  }
+
+  // Dwa kompaktowe paski alarmow pod siatka — czysty odczyt, bez akcji,
+  // "kolor jako stan" (zielony/przygaszony = OK, czerwony = alarm).
+  int yAlarm = y0 + 3 * (kh + odstepY) + 6;
+  auto znacznik = [&](int x, const char* nazwa, bool alarm) {
+    uint16_t kol = alarm ? KOL_ERR : KOL_TEKST_DIM;
+    tft.fillRoundRect(x, yAlarm, 110, 26, 6, KOL_KARTA);
+    tft.drawRoundRect(x, yAlarm, 110, 26, 6, kol);
+    tft.setTextColor(kol, KOL_KARTA);
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextFont(1);
+    tft.drawString(nazwa, x + 8, yAlarm + 9);
+  };
+  static bool poprzAlarmOgrz = false, poprzAlarmPanel = false, pierwszyRaz = true;
+  if (aktualnySezon == SEZON_ZIMA) {
+    if (pelneCzyszczenie || pierwszyRaz || stan.alarmOgrzewanie != poprzAlarmOgrz) {
+      znacznik(x0, "ALARM OGRZ", stan.alarmOgrzewanie);
+      poprzAlarmOgrz = stan.alarmOgrzewanie;
+    }
+  } else {
+    poprzAlarmOgrz = false; // reset cache na powrot do zimy — alarm ogrzewania bez sensu latem, piec nie pracuje
+  }
+  if (pelneCzyszczenie || pierwszyRaz || stan.alarmPanel != poprzAlarmPanel) {
+    znacznik(x0 + 120, "ALARM PANEL", stan.alarmPanel);
+    poprzAlarmPanel = stan.alarmPanel;
+  }
+  pierwszyRaz = false;
+}
+
+// ----------------------------------------------------------------------------
+// RYSOWANIE — USTAWIENIA (lista z +/- na paczke POZYCJI_NA_STRONE naraz)
+// ----------------------------------------------------------------------------
+Przycisk przyciskMinus[POZYCJI_NA_STRONE];
+Przycisk przyciskPlus[POZYCJI_NA_STRONE];
+Przycisk przyciskStronaWstecz{ 8,   320 - PASEK_WYS - 34, 60, 28 };
+Przycisk przyciskStronaDalej { 480-68, 320 - PASEK_WYS - 34, 60, 28 };
+
+void rysujUstawienia() {
+  tft.fillRect(0, 26, 480, 320 - 26 - PASEK_WYS, KOL_TLO);
+  if (!ustawieniaWczytane) {
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(KOL_TEKST_DIM, KOL_TLO);
+    tft.setTextFont(2);
+    tft.drawString("Wczytywanie ustawien z centrali...", 240, 150);
+    return;
+  }
+  int start = ustawieniaStrona * POZYCJI_NA_STRONE;
+  int y = 34;
+  for (int i = 0; i < POZYCJI_NA_STRONE; i++) {
+    int idx = start + i;
+    Przycisk pMin{ 300, y + 4, 40, 34 };
+    Przycisk pPlus{ 350, y + 4, 40, 34 };
+    przyciskMinus[i] = pMin;
+    przyciskPlus[i]  = pPlus;
+    if (idx >= LICZBA_POL) { y += 46; continue; }
+    PoleUstawien& p = POLA[idx];
+    tft.fillRoundRect(6, y, 468, 40, 6, KOL_KARTA);
+    tft.drawRoundRect(6, y, 468, 40, 6, KOL_RAMKA);
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(KOL_TEKST, KOL_KARTA);
+    tft.drawString(p.etykieta, 14, y + 20);
+    tft.setTextDatum(MR_DATUM);
+    tft.setTextColor(KOL_OGIEN, KOL_KARTA);
+    tft.setTextFont(4);
+    tft.drawString(String(p.wartosc), 290, y + 20);
+
+    tft.fillRoundRect(pMin.x, pMin.y, pMin.w, pMin.h, 6, KOL_RAMKA);
+    tft.fillRoundRect(pPlus.x, pPlus.y, pPlus.w, pPlus.h, 6, KOL_RAMKA);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(4);
+    tft.setTextColor(KOL_TEKST, KOL_RAMKA);
+    tft.drawString("-", pMin.x + pMin.w/2, pMin.y + pMin.h/2);
+    tft.drawString("+", pPlus.x + pPlus.w/2, pPlus.y + pPlus.h/2);
+    y += 46;
+  }
+  // pasek stronicowania
+  tft.fillRoundRect(przyciskStronaWstecz.x, przyciskStronaWstecz.y, przyciskStronaWstecz.w, przyciskStronaWstecz.h, 6, KOL_KARTA);
+  tft.fillRoundRect(przyciskStronaDalej.x, przyciskStronaDalej.y, przyciskStronaDalej.w, przyciskStronaDalej.h, 6, KOL_KARTA);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextFont(2);
+  tft.setTextColor(KOL_TEKST, KOL_KARTA);
+  tft.drawString("< Wstecz", przyciskStronaWstecz.x + 30, przyciskStronaWstecz.y + 14);
+  tft.drawString("Dalej >", przyciskStronaDalej.x + 30, przyciskStronaDalej.y + 14);
+}
+
+// ----------------------------------------------------------------------------
+// RYSOWANIE — SERWO (recznie, dwa poziome suwaki 0-100%)
+// ----------------------------------------------------------------------------
+struct Suwak { int16_t x, y, w, h; };
+Suwak suwakKlapa  { 40, 90,  400, 30 };
+Suwak suwakSyberek{ 40, 190, 400, 30 };
+
+void rysujSuwak(const Suwak& s, const char* etykieta, int procent) {
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextFont(2);
+  tft.setTextColor(KOL_TEKST, KOL_TLO);
+  tft.drawString(String(etykieta) + ": " + String(procent) + " %", s.x, s.y - 20);
+  tft.fillRoundRect(s.x, s.y, s.w, s.h, 6, KOL_KARTA);
+  tft.drawRoundRect(s.x, s.y, s.w, s.h, 6, KOL_RAMKA);
+  int wypelnienie = map(procent, 0, 100, 0, s.w - 6);
+  tft.fillRoundRect(s.x + 3, s.y + 3, wypelnienie, s.h - 6, 4, KOL_OGIEN);
+}
+
+void rysujSerwo() {
+  tft.fillRect(0, 26, 480, 320 - 26 - PASEK_WYS, KOL_TLO);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextFont(2);
+  tft.setTextColor(KOL_WARN, KOL_TLO);
+  tft.drawString("Dziala tylko gdy tryb serwa = Reczny (jak w panelu WWW)", 240, 40);
+  rysujSuwak(suwakKlapa,   "Klapa",   serwoKlapaProcent);
+  rysujSuwak(suwakSyberek, "Syberek", serwoSyberekProcent);
+}
+
+// ----------------------------------------------------------------------------
+// [LCD-TRYBY] RYSOWANIE — TRYBY (segmentowane przelaczniki Wybor/TrybSerwa,
+// dokladnie te same pola i ten sam generyczny /api/ustawienia-set co reszta
+// tego pliku — patrz komentarz przy deklaracji trybWyboru/trybSerwaWartosc).
+// ----------------------------------------------------------------------------
+struct SegmentTrybu { const char* etykieta; long wartosc; };
+const SegmentTrybu SEGMENTY_WYBOR[] = { {"Trociniak", 1}, {"Kopciuch", 2}, {"Automatyczny", 3} };
+const SegmentTrybu SEGMENTY_SERWA[] = { {"Auto", 1}, {"Reczny", 2}, {"Bezpieczna", 3} };
+const int LICZBA_SEGMENTOW = 3; // obie grupy maja po 3 opcje
+
+// Prostokaty segmentow — wypelniane w rysujTryby(), odczytywane w obsluzDotyku()
+Przycisk segmentyWybor[LICZBA_SEGMENTOW];
+Przycisk segmentySerwa[LICZBA_SEGMENTOW];
+
+void rysujGrupeSegmentow(int y, const char* tytul, const char* opis, const SegmentTrybu* segmenty,
+                          long aktualnaWartosc, Przycisk* wyjscioweRects) {
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextFont(2);
+  tft.setTextColor(KOL_TEKST, KOL_TLO);
+  tft.drawString(tytul, 14, y);
+  tft.setTextColor(KOL_TEKST_DIM, KOL_TLO);
+  tft.setTextFont(1);
+  tft.drawString(opis, 14, y + 18);
+
+  int segY = y + 34, segH = 40, segX = 14, segW = (480 - 28) / LICZBA_SEGMENTOW;
+  for (int i = 0; i < LICZBA_SEGMENTOW; i++) {
+    int x = segX + i * segW;
+    Przycisk r{ (int16_t)x, (int16_t)segY, (int16_t)(segW - 4), (int16_t)segH };
+    wyjscioweRects[i] = r;
+    bool aktywny = (segmenty[i].wartosc == aktualnaWartosc);
+    tft.fillRoundRect(r.x, r.y, r.w, r.h, 6, aktywny ? KOL_OGIEN : KOL_KARTA);
+    tft.drawRoundRect(r.x, r.y, r.w, r.h, 6, aktywny ? KOL_OGIEN : KOL_RAMKA);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(aktywny ? TFT_BLACK : KOL_TEKST, aktywny ? KOL_OGIEN : KOL_KARTA);
+    tft.drawString(segmenty[i].etykieta, r.x + r.w / 2, r.y + r.h / 2);
+  }
+}
+
+void rysujTryby() {
+  tft.fillRect(0, 26, 480, 320 - 26 - PASEK_WYS, KOL_TLO);
+  if (!ustawieniaWczytane) {
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(KOL_TEKST_DIM, KOL_TLO);
+    tft.setTextFont(2);
+    tft.drawString("Wczytywanie trybow z centrali...", 240, 150);
+    return;
+  }
+  rysujGrupeSegmentow(36,  "Tryb pompy (Wybor)", "Trociniak | Kopciuch | Automatyczny",
+                      SEGMENTY_WYBOR, trybWyboru, segmentyWybor);
+  rysujGrupeSegmentow(140, "Tryb serwa", "Auto | Reczny | Pozycja bezpieczna",
+                      SEGMENTY_SERWA, trybSerwaWartosc, segmentySerwa);
+}
+
+// Wysyla zmiane trybu tym samym generycznym /api/ustawienia-set co POLA[]
+// (wyslijUstawienie()) — patrz siec_nieblokujaca_LCD.h.
+// [SIEC-NIEBLOKUJACA, ta sesja - PRZEPISANE] Woluje ja zarowno stary,
+// nie-LVGL EKRAN_TRYBY (bezposrednio) jak i 8 mostow LVGL (patrz komentarze
+// tam) - WSZYSCY oprocz pompaWyborWyslij()/serwoTrybWyslij() chca po
+// zakonczeniu POST-a dokladnie tego samego: pobierzUstawienia() (u starego
+// EKRAN_TRYBY to "przywroc ostatnia znana wartosc po nieudanym poleceniu",
+// u reszty LVGL-mostow to "pokaz PRAWDZIWA, zwalidowana przez centrale
+// wartosc") - wiec ustawiamy tu USTAWIENIA jako domyslna; te dwa wyjatki
+// same nadpisuja flage na STATUS zaraz PO tym wywolaniu (patrz ich definicje
+// wyzej - to bezpieczne, bo w tym miejscu POST dopiero co wystartowal,
+// wiec obslugaKomendaFetch() jeszcze na pewno nie zdazyl przeczytac flagi).
+void wyslijTrybPracy(const char* pole, long wartosc) {
+  if (komendaFetch.wTrakcie()) {
+    Serial.println("[KOMENDA] wyslijTrybPracy: poprzednia komenda jeszcze w toku, pomijam");
+    return;
+  }
+  pendingPoKomendzie = PoKomendzie::USTAWIENIA;
+  komendaFetch.startPostFormUrlEncoded("/api/ustawienia-set", String("pole=") + pole + "&wartosc=" + String(wartosc));
+  // Dawny czerwony pasek na TFT + delay(1200) na porazke ZNIKA - to byla
+  // druga (obok samego httpPost) blokujaca operacja w tym pliku. Porazka
+  // trafia teraz tylko do logu (Serial, patrz obslugaKomendaFetch()) - ten
+  // sam, juz zaakceptowany wzorzec co mosty LVGL. Ekran i tak zaraz pokaze
+  // prawdziwa wartosc, bo pobierzUstawienia() leci automatycznie w obu
+  // przypadkach (sukces i porazka) - patrz obslugaKomendaFetch().
+}
+
+void rysujAktualnyEkran() {
+  rysujNaglowek();
+  switch (aktualnyEkran) {
+    case EKRAN_DASHBOARD:  rysujDashboard(); if (panelOtwartyId != -1) rysujPanelOverlay(panelOtwartyId); break;
+    case EKRAN_USTAWIENIA: rysujUstawienia(); break;
+    case EKRAN_SERWO:      rysujSerwo();      break;
+    case EKRAN_TRYBY:      rysujTryby();      break;
+  }
+  rysujPasekZakladek();
+}
+
+// ----------------------------------------------------------------------------
+// WYSYLANIE ZMIAN
+// ----------------------------------------------------------------------------
+// [SIEC-NIEBLOKUJACA, ta sesja - PRZEPISANE] Uzywana wylacznie przez stary,
+// nie-LVGL EKRAN_USTAWIENIA (+/- na polu POLA[]) - patrz komentarz przy
+// wyslijTrybPracy() wyzej, dokladnie ten sam wzorzec.
+void wyslijUstawienie(int idxPola) {
+  if (komendaFetch.wTrakcie()) {
+    Serial.println("[KOMENDA] wyslijUstawienie: poprzednia komenda jeszcze w toku, pomijam");
+    return;
+  }
+  PoleUstawien& p = POLA[idxPola];
+  pendingPoKomendzie = PoKomendzie::USTAWIENIA;
+  komendaFetch.startPostFormUrlEncoded("/api/ustawienia-set", String("pole=") + p.klucz + "&wartosc=" + String(p.wartosc));
+  // Jak w wyslijTrybPracy() - bez blokujacego paska+delay(1200); porazka
+  // trafia do logu, a pobierzUstawienia() (automatycznie z obslugaKomendaFetch())
+  // i tak przywroci na ekranie prawdziwa wartosc z centrali.
+}
+
+// [SIEC-NIEBLOKUJACA, ta sesja - PRZEPISANE] Wolana zarowno przez stary,
+// nie-LVGL EKRAN_SERWO (suwak klapy/syberka, bez zadnej flagi - BRAK,
+// zachowuje dawne "cicho ignoruj") jak i serwoPozycjaWyslij() z mostow LVGL
+// (ktora ustawia STATUS PRZED wywolaniem tej funkcji) - dlatego, w
+// odroznieniu od wyslijTrybPracy()/wyslijUstawienie() wyzej, ta funkcja SAMA
+// NIC nie ustawia w pendingPoKomendzie (zostawia to, co ustawil wywolujacy,
+// domyslnie BRAK).
+void wyslijServoManualny(const char* os, int procent) {
+  if (komendaFetch.wTrakcie()) {
+    Serial.println("[KOMENDA] wyslijServoManualny: poprzednia komenda jeszcze w toku, pomijam");
+    return;
+  }
+  komendaFetch.startPostFormUrlEncoded("/api/servo-manual", String("os=") + os + "&procent=" + String(procent));
+  // Blad tutaj czesto oznacza po prostu "tryb serwa != Reczny" — nie
+  // przerywamy uzytkownikowi obslugi suwaka, tylko cicho ignorujemy
+  // (dokladnie tak jak panel WWW, ktory suwak i tak pokazuje tylko w trybie
+  // recznym; tutaj panel jest zawsze widoczny, wiec blad jest oczekiwany) -
+  // obslugaKomendaFetch() i tak tylko zaloguje ta porazke po Serialu.
+}
+
+// [SIEC-NIEBLOKUJACA, ta sesja] Wywolywana z loop() przy kazdej iteracji -
+// patrz obslugaStatusFetch() wyzej. Tu POST i "nastepujacy po nim GET"
+// (dawniej jedno synchroniczne wywolanie) faktycznie spinaja sie z powrotem
+// w jedna calosc - patrz obszerny komentarz przy pendingPoKomendzie na
+// poczatku pliku co do PRZYCZYNY, dla ktorej to nie moze juz byc proste.
+void obslugaKomendaFetch() {
+  komendaFetch.poll();
+  if (!komendaFetch.gotowyWynik()) return;
+  bool centralaOk = false;
+  if (komendaFetch.bylSukces()) {
+    // centrala odpowiada {"ok":true,...} albo {"ok":false,"error":"..."} -
+    // dokladnie ten sam kontrakt, ktory dawny httpPost() sprawdzal.
+    String odp = NonBlockingHttp::wyodrebnijCialo(komendaFetch.pobierzOdpowiedz());
+    JsonDocument doc;
+    if (deserializeJson(doc, odp) == DeserializationError::Ok) {
+      centralaOk = doc["ok"].as<bool>();
+      if (!centralaOk) Serial.printf("[KOMENDA] centrala odrzucila: %s\n", doc["error"].as<String>().c_str());
+    }
+  } else {
+    Serial.printf("[KOMENDA] POST nieudany: %s\n", komendaFetch.ostatniBlad().c_str());
+  }
+
+  PoKomendzie co = pendingPoKomendzie;
+  pendingPoKomendzie = PoKomendzie::BRAK;
+  if (co == PoKomendzie::USTAWIENIA) {
+    // Zawsze, niezaleznie od centralaOk - sukces potwierdza nowa wartosc,
+    // porazka przywraca ostatnia znana (oba dawne zachowania na raz, patrz
+    // komentarze w wyslijTrybPracy()/wyslijUstawienie() wyzej).
+    pobierzUstawienia();
+  } else if (co == PoKomendzie::STATUS && centralaOk) {
+    // STATUS: tylko po sukcesie - przy porazce CELOWO nic (jak dawniej w
+    // pompaManualWyslij() itp.), kolejny okresowy pobierzStatus() i tak
+    // wyrówna w ciagu max STATUS_INTERWAL_MS.
+    pobierzStatus();
+  }
+}
+
+// [SIEC-NIEBLOKUJACA, ta sesja] JEDYNE miejsce w tym pliku, gdzie SWIADOMIE
+// czekamy na siec - wywolywana WYLACZNIE raz, z setup() (w obu galeziach),
+// zaraz po polaczWifi()+pierwszym pobierzStatus()/pobierzUstawienia().
+// Na starcie nie ma jeszcze zadnego dotyku do zamrozenia, wiec krotkie,
+// OGRANICZONE oczekiwanie tutaj jest bezpieczne - w przeciwienstwie do
+// dawnego httpGet()/httpPost(), ktore blokowaly tak samo w KAZDEJ iteracji
+// loop() (czyli tez w trakcie normalnej pracy, z dotykiem czekajacym).
+// Bez tego pierwszy rysujAktualnyEkran()/lvgl_dashboard_poc_aktualizuj()
+// oraz sprawdzIWykonajOtaPanelu() w setup() dostalyby same zera/domyslne
+// wartosci zamiast prawdziwych danych z centrali. Pompuje poll() tak samo
+// jak zrobilaby to petla loop(), tylko w petli while zamiast czekac na
+// kolejna iteracje - do PIERWSZA_PROBKA_TIMEOUT_MS, zeby calkiem
+// nieosiagalna centrala (np. pierwsze uruchomienie bez pary) nie zawiesila
+// setup() na dluzej niz ten jeden, jawny limit.
+static const uint32_t PIERWSZA_PROBKA_TIMEOUT_MS = 2500; // troche wiecej niz SiecCfg::CALKOWITY_TIMEOUT_MS (1500) w siec_nieblokujaca_LCD.h - status i ustawienia leca rownolegle, ale dajemy zapas
+void poczekajNaPierwszeDane() {
+  unsigned long start = millis();
+  while ((statusFetch.wTrakcie() || ustawieniaFetch.wTrakcie()) &&
+         millis() - start < PIERWSZA_PROBKA_TIMEOUT_MS) {
+    obslugaStatusFetch();
+    obslugaUstawieniaFetch();
+    delay(5);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// OBSLUGA DOTYKU
+// ----------------------------------------------------------------------------
+void kalibrujDotykJesliTrzeba() {
+  kalibracja.begin("dotyk", false);
+  bool zapisana = kalibracja.isKey("rawXA");
+  if (zapisana) {
+    kalDotyku.rawXA = kalibracja.getUShort("rawXA", 0);
+    kalDotyku.rawYA = kalibracja.getUShort("rawYA", 0);
+    kalDotyku.rawXB = kalibracja.getUShort("rawXB", 0);
+    kalDotyku.rawYB = kalibracja.getUShort("rawYB", 0);
+  } else {
+    tft.fillScreen(KOL_TLO);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(KOL_TEKST, KOL_TLO);
+    tft.setTextFont(2);
+    tft.drawString("Kalibracja dotyku", 240, 160);
+    tft.drawString("Dotknij i przytrzymaj znacznik", 240, 185);
+    Serial.println("[kalibracja] start - punkt A (gorny-lewy)");
+
+    bool udana = false;
+    while (!udana) {
+      // --- znacznik A: gorny-lewy ---
+      tft.drawCircle(KAL_A_X, KAL_A_Y, 8, TFT_MAGENTA);
+      uint16_t rx, ry, sx, sy;
+      bool zlapano = false;
+      while (!zlapano) {
+        while (!touchOdczytajSurowy(rx, ry)) { delay(10); }
+        zlapano = touchPobierzStabilnaPozycje(sx, sy);
+        if (!zlapano) Serial.println("[kalibracja] falszywy alarm (dotyk znikl w trakcie) - probuj ponownie");
+      }
+      kalDotyku.rawXA = sx;
+      kalDotyku.rawYA = sy;
+      while (touchOdczytajSurowy(rx, ry)) { delay(10); }  // czekaj na puszczenie
+      tft.drawCircle(KAL_A_X, KAL_A_Y, 8, KOL_TLO);
+      Serial.printf("[kalibracja] punkt A zapisany: x=%u y=%u\n", kalDotyku.rawXA, kalDotyku.rawYA);
+      Serial.println("[kalibracja] punkt B (dolny-prawy)");
+
+      delay(300);
+
+      // --- znacznik B: dolny-prawy ---
+      tft.drawCircle(KAL_B_X, KAL_B_Y, 8, TFT_MAGENTA);
+      zlapano = false;
+      while (!zlapano) {
+        while (!touchOdczytajSurowy(rx, ry)) { delay(10); }
+        zlapano = touchPobierzStabilnaPozycje(sx, sy);
+        if (!zlapano) Serial.println("[kalibracja] falszywy alarm (dotyk znikl w trakcie) - probuj ponownie");
+      }
+      kalDotyku.rawXB = sx;
+      kalDotyku.rawYB = sy;
+      while (touchOdczytajSurowy(rx, ry)) { delay(10); }
+      tft.drawCircle(KAL_B_X, KAL_B_Y, 8, KOL_TLO);
+      Serial.printf("[kalibracja] punkt B zapisany: x=%u y=%u\n", kalDotyku.rawXB, kalDotyku.rawYB);
+
+      // --- WALIDACJA: oba punkty musza sie realnie roznic, inaczej map() ---
+      // --- dzieli przez zero i caly dotyk pozniej jest zepsuty           ---
+      const int MIN_ROZNICA = 300;   // minimalna sensowna odleglosc raw miedzy punktami
+      int roznicaX = abs((int)kalDotyku.rawXB - (int)kalDotyku.rawXA);
+      int roznicaY = abs((int)kalDotyku.rawYB - (int)kalDotyku.rawYA);
+      if (roznicaX < MIN_ROZNICA || roznicaY < MIN_ROZNICA) {
+        Serial.printf("[kalibracja] BLAD: punkty za blisko siebie (dX=%d dY=%d, min=%d) - powtarzam\n",
+                      roznicaX, roznicaY, MIN_ROZNICA);
+        tft.fillScreen(KOL_TLO);
+        tft.setTextDatum(MC_DATUM);
+        tft.setTextColor(KOL_ERR, KOL_TLO);
+        tft.drawString("Kalibracja nieudana - powtarzam", 240, 160);
+        tft.setTextColor(KOL_TEKST, KOL_TLO);
+        tft.drawString("Dotknij mocniej i przytrzymaj chwile", 240, 185);
+        delay(1200);
+        tft.fillScreen(KOL_TLO);
+        tft.drawString("Kalibracja dotyku", 240, 160);
+        tft.drawString("Dotknij i przytrzymaj znacznik", 240, 185);
+        udana = false;
+      } else {
+        udana = true;
+      }
+    }
+
+    kalibracja.putUShort("rawXA", kalDotyku.rawXA);
+    kalibracja.putUShort("rawYA", kalDotyku.rawYA);
+    kalibracja.putUShort("rawXB", kalDotyku.rawXB);
+    kalibracja.putUShort("rawYB", kalDotyku.rawYB);
+  }
+  kalibracja.end();
+}
+
+// [ETAP 3b] Forward declaration — definicja nizej (sekcja ZASILANIE), ale
+// wywolywana juz tutaj w obsluzDotyk(); to zwykly main.cpp (nie .ino), wiec
+// PlatformIO NIE generuje automatycznie prototypow jak Arduino IDE.
+void zarejestrujAktywnosc();
+
+void obsluzDotyk() {
+  int16_t px, py;
+  static bool bylWcisniety = false;
+  bool wcisniety = dotykOdczytaj(px, py);
+
+  if (wcisniety) zarejestrujAktywnosc(); // [ETAP 3b] kazdy dotyk (rowniez trzymanie/drag) resetuje timer
+
+  if (wcisniety && !bylWcisniety) {
+    // --- pasek zakladek (dziala na kazdym ekranie) — patrz animujWcisniecie() ---
+    if (zakladkaDashboard.zawiera(px, py)) {
+      animujWcisniecie(zakladkaDashboard.x, zakladkaDashboard.y, zakladkaDashboard.w, zakladkaDashboard.h);
+      aktualnyEkran = EKRAN_DASHBOARD; rysujAktualnyEkran();
+    }
+    else if (zakladkaUstawienia.zawiera(px, py)) {
+      animujWcisniecie(zakladkaUstawienia.x, zakladkaUstawienia.y, zakladkaUstawienia.w, zakladkaUstawienia.h);
+      panelOtwartyId = -1; // [LCD-KAFELKI] nie zostawiaj panelu "otwartego" pod innym ekranem
+      aktualnyEkran = EKRAN_USTAWIENIA; rysujAktualnyEkran();
+    }
+    else if (zakladkaSerwo.zawiera(px, py)) {
+      animujWcisniecie(zakladkaSerwo.x, zakladkaSerwo.y, zakladkaSerwo.w, zakladkaSerwo.h);
+      panelOtwartyId = -1;
+      aktualnyEkran = EKRAN_SERWO;
+      // przy wejsciu na ekran, suwaki startuja od aktualnej pozycji z /api/status
+      serwoKlapaProcent = stan.klapa; serwoSyberekProcent = stan.syberka;
+      rysujAktualnyEkran();
+    }
+    else if (zakladkaTryby.zawiera(px, py)) {
+      animujWcisniecie(zakladkaTryby.x, zakladkaTryby.y, zakladkaTryby.w, zakladkaTryby.h);
+      panelOtwartyId = -1;
+      aktualnyEkran = EKRAN_TRYBY; rysujAktualnyEkran();
+    }
+    else if (aktualnyEkran == EKRAN_USTAWIENIA) {
+      int start = ustawieniaStrona * POZYCJI_NA_STRONE;
+      for (int i = 0; i < POZYCJI_NA_STRONE; i++) {
+        int idx = start + i;
+        if (idx >= LICZBA_POL) continue;
+        if (przyciskMinus[i].zawiera(px, py)) {
+          animujWcisniecie(przyciskMinus[i].x, przyciskMinus[i].y, przyciskMinus[i].w, przyciskMinus[i].h);
+          POLA[idx].wartosc -= POLA[idx].krok;
+          if (POLA[idx].wartosc < POLA[idx].minZakres) POLA[idx].wartosc = POLA[idx].minZakres;
+          wyslijUstawienie(idx);
+          rysujAktualnyEkran();
+        } else if (przyciskPlus[i].zawiera(px, py)) {
+          animujWcisniecie(przyciskPlus[i].x, przyciskPlus[i].y, przyciskPlus[i].w, przyciskPlus[i].h);
+          POLA[idx].wartosc += POLA[idx].krok;
+          if (POLA[idx].wartosc > POLA[idx].maxZakres) POLA[idx].wartosc = POLA[idx].maxZakres;
+          wyslijUstawienie(idx);
+          rysujAktualnyEkran();
+        }
+      }
+      if (przyciskStronaWstecz.zawiera(px, py) && ustawieniaStrona > 0) {
+        animujWcisniecie(przyciskStronaWstecz.x, przyciskStronaWstecz.y, przyciskStronaWstecz.w, przyciskStronaWstecz.h);
+        ustawieniaStrona--; rysujAktualnyEkran();
+      } else if (przyciskStronaDalej.zawiera(px, py) &&
+                 (ustawieniaStrona + 1) * POZYCJI_NA_STRONE < LICZBA_POL) {
+        animujWcisniecie(przyciskStronaDalej.x, przyciskStronaDalej.y, przyciskStronaDalej.w, przyciskStronaDalej.h);
+        ustawieniaStrona++; rysujAktualnyEkran();
+      }
+    }
+    else if (aktualnyEkran == EKRAN_TRYBY) {
+      // [LCD-TRYBY] Klik segmentu -> animacja -> POST -> lokalny stan od razu
+      // (optymistycznie, jak reszta pol) -> przerysowanie calego ekranu.
+      for (int i = 0; i < LICZBA_SEGMENTOW; i++) {
+        if (segmentyWybor[i].zawiera(px, py)) {
+          animujWcisniecie(segmentyWybor[i].x, segmentyWybor[i].y, segmentyWybor[i].w, segmentyWybor[i].h);
+          trybWyboru = SEGMENTY_WYBOR[i].wartosc;
+          wyslijTrybPracy("wybor", trybWyboru);
+          rysujAktualnyEkran();
+        } else if (segmentySerwa[i].zawiera(px, py)) {
+          animujWcisniecie(segmentySerwa[i].x, segmentySerwa[i].y, segmentySerwa[i].w, segmentySerwa[i].h);
+          trybSerwaWartosc = SEGMENTY_SERWA[i].wartosc;
+          wyslijTrybPracy("trybSerwa", trybSerwaWartosc);
+          rysujAktualnyEkran();
+        }
+      }
+    }
+    else if (aktualnyEkran == EKRAN_DASHBOARD && panelOtwartyId == KAF_DYM) {
+      // [LCD-KAFELKI] Panel DYM otwarty -> przechwytujemy dotyk tutaj, zamiast
+      // pozwalac mu "przelecziec" do kafelkow pod spodem. Dotkniecie -/+
+      // dziala jak w Ustawieniach (POLA[]+wyslijUstawienie()); dotkniecie
+      // przycisku Zamknij LUB gdziekolwiek POZA karta zamyka panel (ten sam
+      // wzorzec "tap outside to dismiss" co w makiecie HTML).
+      int idx = znajdzIndeksPola("progAlarmDym");
+      if (panelMinus.zawiera(px, py)) {
+        animujWcisniecie(panelMinus.x, panelMinus.y, panelMinus.w, panelMinus.h);
+        if (idx >= 0) {
+          POLA[idx].wartosc -= POLA[idx].krok;
+          if (POLA[idx].wartosc < POLA[idx].minZakres) POLA[idx].wartosc = POLA[idx].minZakres;
+          wyslijUstawienie(idx);
+        }
+        rysujPanelDym();
+      } else if (panelPlus.zawiera(px, py)) {
+        animujWcisniecie(panelPlus.x, panelPlus.y, panelPlus.w, panelPlus.h);
+        if (idx >= 0) {
+          POLA[idx].wartosc += POLA[idx].krok;
+          if (POLA[idx].wartosc > POLA[idx].maxZakres) POLA[idx].wartosc = POLA[idx].maxZakres;
+          wyslijUstawienie(idx);
+        }
+        rysujPanelDym();
+      } else if (panelZamknij.zawiera(px, py) || !PANEL_KARTA.zawiera(px, py)) {
+        panelOtwartyId = -1;
+        rysujAktualnyEkran(); // pelne przerysowanie dashboardu, usuwa karte z ekranu
+      }
+    }
+    else if (aktualnyEkran == EKRAN_DASHBOARD && (panelOtwartyId == KAF_KLAPA || panelOtwartyId == KAF_SYBERKA)) {
+      // [LCD-KAFELKI] Panel KLAPA/SYBERKA otwarty — sam suwak obslugiwany
+      // ponizej (sekcja "reaguje na caly czas trzymania"), tutaj tylko
+      // zamkniecie: przycisk Zamknij LUB dotyk poza karta.
+      if (panelZamknij.zawiera(px, py) || !PANEL_SUWAK_KARTA.zawiera(px, py)) {
+        panelOtwartyId = -1;
+        rysujAktualnyEkran();
+      }
+    }
+    else if (aktualnyEkran == EKRAN_DASHBOARD && panelOtwartyId == -1) {
+      // [LCD-KAFELKI] Zaden panel nie jest otwarty -> sprawdz, czy dotyk
+      // trafil w ktorys ze STEROWALNYCH kafelkow (cienka ramka KOL_OGIEN —
+      // patrz tresciKafelka()). Kafelki czysto-odczytowe (temperatury,
+      // POMPA, wilgotnosc, cisnienie) celowo NIE reaguja na dotyk.
+      for (int id = 0; id < LICZBA_KAFELKOW; id++) {
+        bool sterowalny = (id == KAF_KLAPA || id == KAF_SYBERKA || id == KAF_DYM);
+        if (!sterowalny || kafelekRect[id].w == 0) continue;
+        if (kafelekRect[id].zawiera(px, py)) {
+          animujWcisniecie(kafelekRect[id].x, kafelekRect[id].y, kafelekRect[id].w, kafelekRect[id].h);
+          panelOtwartyId = id;
+          if (id == KAF_KLAPA || id == KAF_SYBERKA) {
+            // suwaki nakladki startuja od aktualnej pozycji z /api/status,
+            // tak samo jak przy wejsciu na ekran Serwo
+            serwoKlapaProcent = stan.klapa; serwoSyberekProcent = stan.syberka;
+          }
+          rysujPanelOverlay(id);
+          break;
+        }
+      }
+    }
+  }
+
+  // --- suwak w nakladce dashboardu (KLAPA/SYBERKA): drag jak na ekranie Serwo ---
+  if (aktualnyEkran == EKRAN_DASHBOARD && wcisniety &&
+      (panelOtwartyId == KAF_KLAPA || panelOtwartyId == KAF_SYBERKA) &&
+      py >= suwakPanelSuwak.y - 10 && py <= suwakPanelSuwak.y + suwakPanelSuwak.h + 10 &&
+      px >= suwakPanelSuwak.x && px <= suwakPanelSuwak.x + suwakPanelSuwak.w) {
+    int procent = constrain(map(px, suwakPanelSuwak.x, suwakPanelSuwak.x + suwakPanelSuwak.w, 0, 100), 0, 100);
+    if (panelOtwartyId == KAF_KLAPA) { serwoKlapaProcent = procent; serwoPrzeciaganyKlapa = true; }
+    else                             { serwoSyberekProcent = procent; serwoPrzeciaganySyberek = true; }
+    rysujPanelSuwak(panelOtwartyId);
+  }
+
+  // --- suwaki na ekranie Serwo: reaguja na caly czas trzymania (drag) ---
+  if (aktualnyEkran == EKRAN_SERWO && wcisniety) {
+    if (py >= suwakKlapa.y - 10 && py <= suwakKlapa.y + suwakKlapa.h + 10 &&
+        px >= suwakKlapa.x && px <= suwakKlapa.x + suwakKlapa.w) {
+      serwoKlapaProcent = constrain(map(px, suwakKlapa.x, suwakKlapa.x + suwakKlapa.w, 0, 100), 0, 100);
+      rysujSuwak(suwakKlapa, "Klapa", serwoKlapaProcent);
+      serwoPrzeciaganyKlapa = true;
+    }
+    if (py >= suwakSyberek.y - 10 && py <= suwakSyberek.y + suwakSyberek.h + 10 &&
+        px >= suwakSyberek.x && px <= suwakSyberek.x + suwakSyberek.w) {
+      serwoSyberekProcent = constrain(map(px, suwakSyberek.x, suwakSyberek.x + suwakSyberek.w, 0, 100), 0, 100);
+      rysujSuwak(suwakSyberek, "Syberek", serwoSyberekProcent);
+      serwoPrzeciaganySyberek = true;
+    }
+  }
+  // Wyslij dopiero PO puszczeniu (jedno zadanie zamiast serii w trakcie ruchu palca)
+  if (!wcisniety && bylWcisniety) {
+    if (serwoPrzeciaganyKlapa)   { wyslijServoManualny("klapa",   serwoKlapaProcent);   serwoPrzeciaganyKlapa = false; }
+    if (serwoPrzeciaganySyberek) { wyslijServoManualny("syberek", serwoSyberekProcent); serwoPrzeciaganySyberek = false; }
+  }
+  bylWcisniety = wcisniety;
+}
+
+// ----------------------------------------------------------------------------
+// WIFI
+// ----------------------------------------------------------------------------
+void polaczWifi() {
+  WiFi.mode(WIFI_STA);
+
+  // [ETAP 3 KROK 2] Statyczne IP PRZED WiFi.begin() — glowna dzwignia
+  // szybkosci (patrz komentarz przy definicji WIFI_IP_STATYCZNE wyzej).
+  WiFi.config(WIFI_IP_STATYCZNE, WIFI_GATEWAY, WIFI_MASKA);
+
+  if (rtcBssidZnany) {
+    // Drugorzedna optymalizacja (zerowy koszt) — pomija skanowanie kanalu.
+    WiFi.begin(WIFI_SSID, WIFI_PASS, rtcKanalCentrali, rtcBssidCentrali, true);
+  } else {
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+  }
+
+  tft.fillScreen(KOL_TLO);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(KOL_TEKST, KOL_TLO);
+  tft.setTextFont(2);
+  unsigned long startMs = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startMs < 20000) {
+    tft.fillRect(0, 150, 480, 20, KOL_TLO);
+    tft.drawString("Laczenie z WiFi" , 240, 150);
+    delay(400);
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    // Zapamietaj BSSID/kanal na nastepne polaczenie (np. po wybudzeniu z deep sleep).
+    memcpy(rtcBssidCentrali, WiFi.BSSID(), 6);
+    rtcKanalCentrali = WiFi.channel();
+    rtcBssidZnany = true;
+  } else {
+    // Nieudane polaczenie (np. bledny cache po zmianie kanalu AP) — wyczysc cache,
+    // zeby kolejna proba nie utknela na nieaktualnych danych.
+    rtcBssidZnany = false;
+  }
+}
+
+// [ETAP 5, PIEC_ESPNOW_PLAN.md] Wywolywane w KAZDEJ iteracji loop() —
+// nieblokujace (WiFi.begin() na ESP32 wraca od razu, laczenie dzieje sie w
+// tle; sam sprawdzamy WiFi.status() w kolejnych iteracjach). Reconnect z
+// rosnacym opoznieniem miedzy probami zamiast co iteracje — patrz komentarz
+// research przy WIFI_RECONNECT_MAX_MS na gorze pliku.
+void wifiReconnectNonBlocking() {
+  static bool poprzednioPolaczony = true; // setup() juz polaczyl (polaczWifi())
+
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!poprzednioPolaczony) {
+      Serial.println(F("tag=WIFI zdarzenie=reconnect_ok"));
+      // Odswiez cache BSSID/kanalu na wypadek, gdyby centrala zmienila kanal
+      // AP miedzy rozlaczeniem a tym polaczeniem (patrz tez polaczWifi()).
+      memcpy(rtcBssidCentrali, WiFi.BSSID(), 6);
+      rtcKanalCentrali = WiFi.channel();
+      rtcBssidZnany = true;
+    }
+    wifiOpoznienieReconnectMs = 1000; // reset backoff po odzyskaniu polaczenia
+    poprzednioPolaczony = true;
+    return;
+  }
+
+  if (poprzednioPolaczony) {
+    Serial.println(F("tag=WIFI lvl=WARN zdarzenie=utrata_polaczenia"));
+    // Pierwsza proba dopiero po uplywie poczatkowego opoznienia (1s), nie
+    // natychmiast — unikamy "hammering" AP przy bardzo krotkich zanikach.
+    wifiOstatniaProbaReconnectMs = millis();
+  }
+  poprzednioPolaczony = false;
+
+  if (millis() - wifiOstatniaProbaReconnectMs < wifiOpoznienieReconnectMs) return;
+  wifiOstatniaProbaReconnectMs = millis();
+
+  Serial.printf("tag=WIFI zdarzenie=reconnect_probe nastepna_proba_za_ms=%lu\n", wifiOpoznienieReconnectMs);
+
+  // [FIX-WIFI-STATE, ten sam wzorzec co main.cpp centrali] disconnect(false)
+  // PRZED begin() — bez tego powtarzane probe w petli moga trafic na
+  // ESP_ERR_WIFI_STATE ("sta is connecting, cannot set config") i nie
+  // wystartowac wcale. disconnect(false), NIE disconnect(true) — nie
+  // zatrzymuje calego stosu WiFi, wraca w <1ms.
+  WiFi.disconnect(false);
+  WiFi.config(WIFI_IP_STATYCZNE, WIFI_GATEWAY, WIFI_MASKA);
+  if (rtcBssidZnany) {
+    WiFi.begin(WIFI_SSID, WIFI_PASS, rtcKanalCentrali, rtcBssidCentrali, true);
+  } else {
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+  }
+
+  wifiOpoznienieReconnectMs = min(wifiOpoznienieReconnectMs * 2, WIFI_RECONNECT_MAX_MS);
+}
+
+// ----------------------------------------------------------------------------
+// [ETAP 3b] ZASILANIE — deep sleep + wybudzanie przyciskiem
+// ----------------------------------------------------------------------------
+// Przycisk: GPIO14 -> GND (wewnetrzny pull-up, wybudzenie na stanie LOW).
+// GPIO14 wybrany w poprzedniej sesji: wolny (nie koliduje z TFT/dotykiem —
+// patrz platformio.ini + TOUCH_* wyzej), w domenie RTC (wymog ext0), i NIE
+// jest pinem strapping (w odroznieniu od 0/2/12/15) — bezpieczny wybor.
+#define WAKE_BTN_PIN GPIO_NUM_14
+static const uint32_t ACTIVITY_TIMEOUT_MS = 5UL * 60UL * 1000UL; // 5 minut
+unsigned long ostatniaAktywnosc = 0;
+
+// [ETAP 3b, detekcja USB — ZDECYDOWANE: TP4056 CHRG+STDBY, nie dzielnik na
+// VIN] Pierwotny plan (dzielnik napiecia z VIN/5V) zalezal od zalozenia o
+// wewnetrznym okablowaniu plytki (czy bateria tez idzie przez VIN) — po
+// decyzji o uzyciu TP4056 do ladowania baterii, jest prostsze i pewniejsze
+// rozwiazanie niezalezne od tego zalozenia w ogole.
+//
+// TP4056 ma dwa wyjscia open-drain: CHRG (aktywne = ladowanie w toku) i
+// STDBY (aktywne = ladowanie zakonczone) — OBA sa w stanie wysokiej
+// impedancji (pływaja), gdy TP4056 NIE MA zasilania z VCC (czyli gdy USB
+// odlaczone), niezaleznie od tego czy bateria jest podlaczona (research:
+// datasheet TP4056 + kilka niezaleznych zrodel, potwierdzone jednoznacznie:
+// "STDBY high impedance in other states", "floating pins cause false
+// triggering — connect pull-up if open-drain output needed").
+//
+// Rozwiazanie: zewrzyj CHRG i STDBY razem (bezpieczne — oba to open-drain,
+// wired-OR), JEDEN rezystor pull-up 10k z tego wspolnego wezla do 3V3
+// ESP32 (NIE do VCC samego TP4056 — to VCC znika razem z USB, wiec pull-up
+// do VCC nie dawalby zadnego jednoznacznego stanu przy braku USB; 3V3
+// ESP32 jest zasilane z baterii przez caly czas, wiec zawsze dostepne jako
+// stabilna referencja). Wspolny wezel -> GPIO35. Bez dzielnika napiecia —
+// niepotrzebny, sygnal jest juz 3,3V-bezpieczny (open-drain do GND, pull-up
+// do 3V3, nigdy do 5V).
+//
+// Logika (odwrotna wzgledem starej wersji z dzielnikiem): USB podlaczone ->
+// TP4056 zasilany -> CHRG lub STDBY (lub oba) aktywne -> wezel ciagniety w
+// dol -> LOW. USB odlaczone -> TP4056 bez zasilania -> oba piny plywaja ->
+// pull-up wygrywa -> HIGH.
+#define USB_DETECT_PIN 35
+
+// Kilka probek zamiast jednego odczytu — tania ochrona przed pojedynczym
+// zakloceniem/szumem na linii (podobny wzorzec do touchReadChannelStabilnie
+// dla dotyku, ktory juz jest w tym pliku).
+bool zasilanieUSB() {
+  int niskie = 0;
+  for (int i = 0; i < 5; i++) {
+    if (digitalRead(USB_DETECT_PIN) == LOW) niskie++;
+    delayMicroseconds(200);
+  }
+  return niskie >= 3; // wiekszosc probek LOW = TP4056 zasilany z USB (CHRG/STDBY ciagna w dol)
+}
+
+// [BATERIA-POMIAR, ta sesja] Realne napiecie ogniwa (nie tylko "czy sie
+// laduje" jak zasilanieUSB() wyzej) - osobny dzielnik napiecia, osobny pin,
+// bo to inny pomiar (poziom analogowy, nie stan cyfrowy open-drain).
+// Dzielnik: Vbat --[R1 100k]-- BATERIA_ADC_PIN --[R2 100k]-- GND, + ~100nF
+// z pinu do GND (filtr). R1=R2 -> pin ADC widzi dokladnie polowe Vbat, co
+// dla ogniwa 1S (3,0-4,2V) daje 1,5-2,1V na pinie - srodek zakresu ADC
+// ESP32, z dala od najmniej liniowych okolic 0V i 3,3V.
+//
+// Pin: musi byc ADC1 (GPIO 32-39) - ADC2 przestaje dzialac przy aktywnym
+// WiFi (sprzetowe ograniczenie ESP32, WiFi u nas chodzi caly czas w galezi
+// LVGL_POC_SYMULACJA=0, patrz nizej). Z wolnych ADC1 (32/34/36/39 - 33 i 35
+// juz zajete przez TOUCH_MISO/USB_DETECT_PIN) wybrany GPIO34 - najczesciej
+// spotykany wybor w tego typu obwodach, wejsciowy-only, nic z istniejacego
+// okablowania NIE trzeba przelutowywac. Pelne uzasadnienie: PLAN_BATERIA.md.
+#define BATERIA_ADC_PIN 34
+static const float BATERIA_DZIELNIK = 2.0f; // R1=R2 -> odczyt z pinu razy 2 = pelne Vbat
+
+// Usrednienie probek - ten sam motyw co w zasilanieUSB() wyzej, pojedynczy
+// odczyt ADC potrafi "skakac" o kilkanascie mV. analogReadMilliVolts() (NIE
+// surowy analogRead()) uzywa fabrycznej kalibracji ADC (eFuse) - wymaga
+// jednorazowego analogSetAttenuation(ADC_11db) w setup() (patrz tam), bo
+// analogReadMilliVolts() honoruje TYLKO globalne attenuation, ignoruje
+// wersje "per-pin" (research, ta sesja - znana pulapka rdzenia arduino-esp32).
+float bateriaOdczytajNapiecie() {
+  const int PROBEK = 16;
+  uint32_t sumaMv = 0;
+  for (int i = 0; i < PROBEK; i++) {
+    sumaMv += analogReadMilliVolts(BATERIA_ADC_PIN);
+    delayMicroseconds(200);
+  }
+  return (sumaMv / (float)PROBEK) * BATERIA_DZIELNIK / 1000.0f; // mV na pinie -> pelne V baterii
+}
+
+// Napiecie LiPo NIE spada liniowo z % naladowania - 4,20 do ok. 3,80V to
+// plaskie plateau (wiekszosc pojemnosci), ponizej ~3,7V krzywa gwaltownie
+// przyspiesza w dol. Tabela + interpolacja liniowa MIEDZY punktami zamiast
+// prostego mapowania 3,0-4,2V -> 0-100% (to zawyzaloby srodek skali).
+// Orientacyjna krzywa 1S, zgodna z powszechnie publikowanymi wartosciami
+// (research, ta sesja) - to wskaznik "jak w telefonie", nie licznik
+// coulombow.
+struct BPunkt { float v; int proc; };
+static const BPunkt TABELA_BAT[] = {
+  {4.20f,100},{4.15f,95},{4.11f,90},{4.08f,85},{4.02f,80},
+  {3.98f,75},{3.95f,70},{3.91f,65},{3.87f,60},{3.85f,55},
+  {3.84f,50},{3.82f,45},{3.80f,40},{3.79f,35},{3.77f,30},
+  {3.75f,25},{3.73f,20},{3.71f,15},{3.69f,10},{3.61f, 5},
+  {3.27f, 0},
+};
+static const int TABELA_BAT_N = sizeof(TABELA_BAT) / sizeof(TABELA_BAT[0]);
+
+int bateriaNapiecieNaProcent(float v) {
+  if (v >= TABELA_BAT[0].v) return 100;
+  if (v <= TABELA_BAT[TABELA_BAT_N - 1].v) return 0;
+  for (int i = 0; i < TABELA_BAT_N - 1; i++) {
+    if (v <= TABELA_BAT[i].v && v >= TABELA_BAT[i + 1].v) {
+      float zakresV = TABELA_BAT[i].v - TABELA_BAT[i + 1].v;
+      float pozycja = (TABELA_BAT[i].v - v) / zakresV;
+      return round(TABELA_BAT[i].proc - pozycja * (TABELA_BAT[i].proc - TABELA_BAT[i + 1].proc));
+    }
+  }
+  return 0;
+}
+
+// Wywolywane przy KAZDYM wykrytym dotyku (patrz obsluzDotyk()) — resetuje
+// timer nieaktywnosci.
+void zarejestrujAktywnosc() {
+  ostatniaAktywnosc = millis();
+}
+
+// [research, ta sesja] Znany bug/pulapka Espressif: jesli pin wybudzajacy
+// jest WCIAZ wcisniety w momencie wywolania esp_deep_sleep_start(), ESP32
+// natychmiast wybudza sie z powrotem — petla usypiania. Dlatego czekamy na
+// PUSZCZENIE przycisku + krotki debounce TUZ PRZED wlasciwym usnieciem,
+// nie tylko przy samym wybudzeniu.
+void idzSpac() {
+  // [OTA-PANEL, ta sesja, prompt #8] Nigdy nie usypiaj w trakcie pobierania/
+  // flashowania firmware'u — przerwany zapis do flash moze zostawic panel
+  // w zlym stanie (patrz BAGNO 5.1 w OTA_PANEL_CALOSC.md). Flaga jest
+  // czyszczona w KAZDEJ sciezce wyjscia z wykonajAktualizacjeOTAPanelu()
+  // (sukces LUB porazka), wiec to tylko chwilowe opoznienie usniecia, nie
+  // trwala blokada.
+  if (trwaAktualizacjaOtaPanelu) {
+    Serial.println(F("tag=OTA-PANEL zdarzenie=usypianie_zablokowane"));
+    return;
+  }
+
+  Serial.println(F("=== USYPIANIE (timeout nieaktywnosci) ==="));
+
+  // Wygaszenie ekranu przed snem — nie ma sensu trzymac podswietlenia
+  // wlaczonego, skoro i tak zaraz nastapi twardy reset przy wybudzeniu.
+  ustawJasnoscPodswietlenia(0);
+  tft.fillScreen(TFT_BLACK);
+
+  // [FIX-ILI9488-SLEEP, ta sesja] Samo wygaszenie ekranu na czarno NIE usypia
+  // kontrolera ILI9488 — bez tej komendy kontroler zostaje aktywny i ciagnie
+  // normalny prad roboczy przez caly czas snu ESP32, niezaleznie od tego, ze
+  // nic nie widac na ekranie. Potwierdzone pomiarem multimetrem: AKTYWNY
+  // (Sleep OUT) ~62mA vs SPOCZYNEK (Sleep IN) ~0.11mA.
+  // Po stronie wybudzenia NIE trzeba jawnego Sleep OUT — TFT_RST=4 (patrz
+  // platformio.ini) to prawdziwy pin, wiec tft.init() w setup() i tak zawsze
+  // robi twardy reset przez RST, a nastepnie tabela init dla ILI9488 sama
+  // wysyla Sleep OUT + delay(120) (zweryfikowane w zrodlach TFT_eSPI 2.5.43,
+  // plik TFT_Drivers/ILI9488_Init.h) — dublowanie tego w setup() byloby
+  // zbedne (dodatkowe 120ms przy kazdym starcie bez zadnej korzysci).
+  tft.writecommand(0x10);             // ILI9488: Sleep IN
+
+  // [FIX-TFT-BL-HOLD, ta sesja] Pin podswietlenia (TFT_BL=GPIO21) NIE MOZE
+  // "wisiec" (floating) podczas deep sleep — wewnetrzne stany pinow sa
+  // resetowane przy wejsciu w sen, wiec bez jawnego "hold" podswietlenie
+  // moze sie z powrotem czesciowo zaswiecic (przez uplywnosc/podciaganie na
+  // plytce wyswietlacza) i zjadac baterie w tle przez caly sen. GPIO21 NIE
+  // jest pinem RTC (w odroznieniu od poprzedniego GPIO32), wiec wystarczy
+  // uniwersalny mechanizm gpio_hold_en + globalny gpio_deep_sleep_hold_en —
+  // BEZ potrzeby uzywania rtc_gpio_hold_en().
+  gpio_hold_en((gpio_num_t)TFT_BL);   // zamraza biezacy stan pinu (LOW) na czas snu
+  gpio_deep_sleep_hold_en();          // globalny wlacznik "trzymania" cyfrowych pinow w deep sleep
+
+  // Czekaj na puszczenie przycisku, zeby uniknac natychmiastowego wybudzenia.
+  while (digitalRead(WAKE_BTN_PIN) == LOW) {
+    delay(10);
+  }
+  delay(50); // debounce
+
+  // Pin wybudzajacy NIE MOZE "wisiec" (floating) podczas snu — wewnetrzne
+  // pull-upy/pull-downy sa w deep sleep wylaczone, chyba ze wlaczy sie je
+  // jawnie funkcjami rtc_gpio_*. Bez tego przypadkowy szum na pinie moze
+  // wybudzic urzadzenie natychmiast po usnieciu.
+  rtc_gpio_pullup_en(WAKE_BTN_PIN);
+  rtc_gpio_pulldown_dis(WAKE_BTN_PIN);
+
+  esp_sleep_enable_ext0_wakeup(WAKE_BTN_PIN, 0); // 0 = wybudzenie na stanie LOW
+  esp_deep_sleep_start();
+  // (nic dalej sie nie wykona — po wybudzeniu ESP32 startuje od nowa od setup())
+}
+
+// [OTA-ROLLBACK] Potwierdza biezaca partycje jako VALID, jesli zostala
+// wgrana przez OTA i wciaz czeka na weryfikacje (PENDING_VERIFY) — patrz
+// Ustalenie #6 w OTA_PANEL_CALOSC.md, mechanizm zweryfikowany
+// empirycznie w projekcie testowym ota_rollback_test (main_v1.cpp, ta sama
+// logika co tutaj). Wolane z KONCA setup(), PO tym jak ekran juz sie
+// poprawnie narysowal i (w trybach z WiFi) pierwsza probka pobierzStatus()
+// juz sie wykonala — to nasz sygnal "firmware dziala wystarczajaco dobrze,
+// zeby je zatwierdzic". Bezpieczne do wywolania w kazdym trybie: gdy
+// partycja NIE jest PENDING_VERIFY (np. wgranie przez USB), warunek w
+// srodku po prostu nic nie robi.
+void potwierdzPartycjeJesliCzeka() {
+  const esp_partition_t *biezaca = esp_ota_get_running_partition();
+  esp_ota_img_states_t stanOta;
+
+  esp_err_t wynik = esp_ota_get_state_partition(biezaca, &stanOta);
+  if (wynik != ESP_OK) {
+    // Normalne przy wgraniu przez USB — otadata nie sledzi obrazow
+    // wgranych przez USB, to nie blad. Patrz main_v1.cpp / Ustalenie #6.
+    Serial.printf("tag=OTA-ROLLBACK zdarzenie=brak_stanu_partycji blad=%d\n", (int)wynik);
+    return;
+  }
+
+  Serial.printf("tag=OTA-ROLLBACK zdarzenie=stan_partycji partycja=%s stan=%d\n",
+                biezaca->label, (int)stanOta);
+
+  if (stanOta == ESP_OTA_IMG_PENDING_VERIFY) {
+    esp_err_t r = esp_ota_mark_app_valid_cancel_rollback();
+    Serial.printf("tag=OTA-ROLLBACK zdarzenie=potwierdzono_valid wynik=%s\n",
+                  esp_err_to_name(r));
+  }
+}
+
+// [OTA-PANEL, ta sesja, dokonczenie promptu #7] Pobiera /panel-ota.bin z
+// centrali i flashuje. W ODROZNIENIU od wykonajAktualizacjeOTA() w
+// main_centrala.cpp: zwykly WiFiClient, NIE WiFiClientSecure — to ruch
+// lokalny w zamknietej sieci AP centrali (192.168.4.x), nie internet, wiec
+// TLS nic by tu nie chronil, tylko kosztowal RAM/czas na urzadzeniu bez
+// PSRAM (patrz Ustalenie #4 w OTA_PANEL_CALOSC.md — ~246KB wolnego
+// heapu, TLS potrafi zjesc kilkadziesiat KB na same bufory). WDT: pelne
+// wypisanie/zapisanie tasku wokol update() (Wzorzec 1), NIE karmienie w
+// onProgress — patrz uzasadnienie przy wywolaniu esp_task_wdt_delete()
+// ponizej.
+bool wykonajAktualizacjeOTAPanelu(String &bladOut) {
+  if (WiFi.status() != WL_CONNECTED) { bladOut = "brak WiFi"; return false; }
+
+  trwaAktualizacjaOtaPanelu = true; // PRZED update() — patrz idzSpac()
+
+  WiFiClient client;
+  client.setTimeout(OTA_TIMEOUT_MS);
+
+  httpUpdate.rebootOnUpdate(false); // restart robimy sami, PO zgloszeniu wersji centrali (patrz wywolanie ponizej)
+  // [SYNC-OTA/Wzorzec 1, ta sesja] ZAMIANA wzgledem pierwszej wersji z tej
+  // sesji: zamiast karmic WDT w onProgress (ktore odpala sie TYLKO miedzy
+  // udanymi odczytami kolejnych kawalkow — jesli POJEDYNCZY odczyt utknie
+  // w warstwie TCP dluzej niz WDT_TIMEOUT_MS, onProgress w ogole sie nie
+  // wywola i watchdog i tak zapanikuje), CALKOWICIE wypisujemy biezacy
+  // task z Task WDT na czas calego update() i zapisujemy go z powrotem
+  // zaraz po (sukces lub porazka — zawsze). W trakcie swiadomej,
+  // ograniczonej operacji OTA nie potrzebujemy WDT jako siatki
+  // bezpieczenstwa — realny limit czasu i tak juz pilnuje
+  // client.setTimeout(OTA_TIMEOUT_MS) na poziomie samego polaczenia.
+  // Wzorzec z projektu Ryby LED — patrz OTA_PANEL_CALOSC.md, Wzorzec 1.
+  esp_task_wdt_reset();
+  esp_task_wdt_delete(NULL);
+
+  String url = String("http://") + CENTRALA_HOST + ":" + String(CENTRALA_PORT) +
+               "/panel-ota.bin?token=" + String(OTA_HASLO_PANEL);
+
+  t_httpUpdate_return wynik = httpUpdate.update(client, url);
+
+  esp_task_wdt_add(NULL); // z powrotem pod nadzor WDT — sukces lub porazka, zawsze, PRZED jakimkolwiek innym return
+
+  trwaAktualizacjaOtaPanelu = false; // PO update() — sukces lub porazka, zawsze
+
+  switch (wynik) {
+    case HTTP_UPDATE_FAILED:
+      bladOut = "Blad OTA (" + String(httpUpdate.getLastErrorString().c_str()) + ")";
+      return false;
+    case HTTP_UPDATE_NO_UPDATES:
+      bladOut = "Centrala zglosila 'brak aktualizacji' (brak /panel_firmware.bin?)";
+      return false;
+    case HTTP_UPDATE_OK:
+      return true;
+  }
+  bladOut = "Nieznany wynik HTTPUpdate";
+  return false;
+}
+
+// [OTA-PANEL, ta sesja] Wywolywane PO potwierdzPartycjeJesliCzeka() (w obu
+// miejscach setup(), patrz nizej) — kolejnosc ma znaczenie: najpierw
+// potwierdzamy, ze BIEZACY firmware dziala (rollback), DOPIERO POTEM,
+// jesli centrala czeka z nowa wersja, probujemy nastepnej aktualizacji.
+// Nie restartuje sam — restart robi wywolujacy, PO tym jak ekran zdazyl
+// pokazac wynik.
+void sprawdzIWykonajOtaPanelu() {
+  if (!stan.panelOtaDostepna) return;
+  Serial.printf("tag=OTA-PANEL zdarzenie=start wersja_docelowa=%s\n", stan.panelOtaWersja.c_str());
+  String blad;
+  if (wykonajAktualizacjeOTAPanelu(blad)) {
+    Serial.println(F("tag=OTA-PANEL zdarzenie=pobrano_ok restart_za_chwile"));
+    // [OTA-PANEL] Zgloszenie nowej wersji centrali NASTAPI dopiero PO
+    // restarcie, przy pierwszym pobierzStatus() (?panel_fw=...) — to
+    // wlasnie ten request zamyka petle potwierdzenia (patrz main_centrala.cpp,
+    // handler /api/status). Tutaj nic wiecej nie trzeba robic poza restartem.
+    delay(300);
+    ESP.restart();
+  } else {
+    Serial.printf("tag=OTA-PANEL lvl=ERR zdarzenie=nieudana blad=%s\n", blad.c_str());
+    // Celowo NIE probujemy ponownie w tej samej sesji — panel wroci do
+    // normalnej pracy, centrala nadal ma flage panel_ota_dostepna=true,
+    // wiec kolejne wybudzenie sprobuje ponownie samo z siebie.
+  }
+}
+
+unsigned long ostatniStatus = 0, ostatnieUstawienia = 0;
+
+// [RESET-DIAG, ta sesja] Mapowanie esp_reset_reason_t na krotki, czytelny
+// tekst. Odczytywane jako PIERWSZA rzecz w setup() (patrz nizej) — samo
+// odczytanie stanu chipu nie zalezy od niczego innego, wiec robimy to
+// zanim cokolwiek innego (WDT, WiFi, TFT) zdazy cokolwiek popsuc. Cel
+// z TEMATU B (OTA_PANEL_CALOSC.md): dzis ESP_RST_BROWNOUT i
+// ESP_RST_TASK_WDT objawiaja sie identycznie ("panel sie zresetowal"),
+// a to dwie zupelnie rozne diagnozy — brownout to problem zasilania
+// (kondensator/bateria), task_wdt to zawieszony task (np. podczas OTA,
+// patrz Ustalenie #6). Dwa NORMALNE powody dla tego urzadzenia:
+// ESP_RST_DEEPSLEEP (budzenie przyciskiem/timerem) i ESP_RST_SW (JEDYNE
+// wywolanie ESP.restart() w tym pliku jest po udanym OTA panelu, patrz
+// sprawdzIWykonajOtaPanelu() nizej) — logika alarmujaca po stronie
+// centrali (main_centrala.cpp, handler /api/status) traktuje oba jako
+// nie wymagajace alertu.
+const char* powodResetuTekst(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "poweron";     // pelna utrata zasilania (bateria padla / wymieniona)
+    case ESP_RST_EXT:       return "ext";          // reset pinem EN
+    case ESP_RST_SW:        return "sw";           // ESP.restart() z kodu (np. po udanym OTA)
+    case ESP_RST_PANIC:     return "panic";        // wyjatek/crash (nie WDT)
+    case ESP_RST_INT_WDT:   return "int_wdt";      // watchdog przerwan (rozne od task_wdt)
+    case ESP_RST_TASK_WDT:  return "task_wdt";     // TEN watchdog skonfigurowalismy wyzej — zawieszony task
+    case ESP_RST_WDT:       return "wdt";          // inny/ogolny watchdog (RTC WDT itp.)
+    case ESP_RST_DEEPSLEEP: return "deepsleep";    // NORMALNE wybudzenie — jedyny oczekiwany powod
+    case ESP_RST_BROWNOUT:  return "brownout";     // spadek napiecia ponizej progu — TEMAT B
+    case ESP_RST_SDIO:      return "sdio";
+    default:                return "unknown";
+  }
+}
+
+void setup() {
+  // [FIX, ta sesja - PISKNIECIE BRZECZYKA PRZY WLACZENIU ZASILANIA] Dopoki
+  // pin nie zostanie jawnie skonfigurowany, jest floating (Hi-Z) - dziala
+  // jak antena na szum elektryczny (rozruch WiFi/TFT/LVGL/reszty sprzetu),
+  // ktory pasywny piezo potrafi slyszalnie "zlapac" jako trzask/pisk.
+  // Docelowa PELNA inicjalizacja (ledcAttach+ledcWriteTone) jest w
+  // brzeczykZainicjuj(), wolanej pozniej w tej funkcji - ALE dopiero PO
+  // tft.init()/kalibracji dotyku/LVGL init, czyli pin floatowalby przez
+  // caly ten czas (realnie liczony w sekundach, nie mikrosekundach - stad
+  // "piszczy przez pewien moment"). Te 2 linie na samej gorze setup(),
+  // PRZED wszystkim innym (nawet Serial.begin()), zamykaja pin na LOW w
+  // ciagu pojedynczych mikrosekund od startu programu - to maksimum tego,
+  // co da sie zrobic programowo. Fragment SPRZED setup() (bootloader ROM
+  // ESP32, dziala zanim jakikolwiek kod Arduino w ogole ruszy) nie jest pod
+  // kontrola tego kodu - jesli po tej zmianie pisk nadal sie sluchowo
+  // slyszy (bedzie duzo krotszy), jedyny dalszy krok to zewnetrzny
+  // rezystor podciagajacy w dol (10-100k, pin->GND) na linii IO buzzera,
+  // fizycznie trzymajacy ja na LOW nawet zanim jakikolwiek kod wystartuje.
+  pinMode(BRZECZYK_PIN, OUTPUT);
+  digitalWrite(BRZECZYK_PIN, LOW);
+
+  Serial.begin(115200);
+  delay(300);
+  Serial.println("=== WYSWIETLACZ CO - start ===");
+
+  // [RESET-DIAG, ta sesja] Odczyt PRZED wszystkim innym (WDT, WiFi, TFT) —
+  // to czysty odczyt stanu chipu, nic od niczego innego nie zalezy, a
+  // chcemy znac powod restartu nawet gdyby cos ponizej samo padlo.
+  globalnyPowodResetu = powodResetuTekst(esp_reset_reason());
+  Serial.printf("tag=RESET-DIAG zdarzenie=start powod=%s\n", globalnyPowodResetu.c_str());
+  if (globalnyPowodResetu != "deepsleep") {
+    // Jedyny NORMALNY powod dla tego urzadzenia to wybudzenie z deep
+    // sleep — wszystko inne jest warte podniesionego glosu w logu.
+    Serial.printf("tag=RESET-DIAG lvl=WARN zdarzenie=nietypowy_restart powod=%s\n", globalnyPowodResetu.c_str());
+  }
+
+  // [FIX-WDT] Task Watchdog Timer — panel dotad NIE MIAL zadnej jawnej
+  // konfiguracji TWDT (w odroznieniu od main_centrala.cpp). Bez tego
+  // domyslne zachowanie TWDT po timeoutcie to TYLKO log ostrzezenia, BEZ
+  // paniki/restartu (patrz Ustalenie #6 w OTA_PANEL_CALOSC.md,
+  // potwierdzone dokumentacja ESP-IDF: CONFIG_ESP_TASK_WDT_PANIC musi byc
+  // jawnie wlaczone) — czyli realne zawieszenie panelu (np. w trakcie OTA,
+  // patrz prompt #7) mogloby NIE dawac samoistnego restartu. Ten sam
+  // wzorzec co w centrali: reconfigure (bo TWDT jest juz init domyslnie
+  // przez framework) + add(NULL) na tasku setup()/loop() (loopTask).
+  {
+    esp_task_wdt_config_t wdtCfg = {
+      .timeout_ms = 15000,   // ta sama wartosc co WDT_TIMEOUT_MS w centrali
+      .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
+      .trigger_panic = true
+    };
+    esp_err_t wdtErr = esp_task_wdt_reconfigure(&wdtCfg);
+    if (wdtErr != ESP_OK) {
+      Serial.printf("tag=WDT lvl=ERR zdarzenie=reconfigure blad=%s\n", esp_err_to_name(wdtErr));
+    }
+    wdtErr = esp_task_wdt_add(NULL);
+    if (wdtErr != ESP_OK) {
+      Serial.printf("tag=WDT lvl=ERR zdarzenie=add_loopTask blad=%s\n", esp_err_to_name(wdtErr));
+    }
+    Serial.printf("tag=WDT zdarzenie=skonfigurowany timeout=15000ms panic=true obserwowany=loopTask\n");
+  }
+
+  // [ETAP 3b] Log powodu startu — odroznia normalny start (USB/reset) od
+  // wybudzenia przyciskiem po deep sleep, przydatne przy diagnostyce.
+  esp_sleep_wakeup_cause_t powod = esp_sleep_get_wakeup_cause();
+  if (powod == ESP_SLEEP_WAKEUP_EXT0) {
+    Serial.println(F("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk"));
+  } else {
+    Serial.println(F("tag=ZASILANIE zdarzenie=start zrodlo=reset_lub_usb"));
+  }
+
+  pinMode(WAKE_BTN_PIN, INPUT_PULLUP); // ten sam pin uzywany do wykrywania puszczenia w idzSpac()
+  pinMode(USB_DETECT_PIN, INPUT_PULLUP); // dodatkowe zabezpieczenie obok zewnetrznego 10k do 3V3 (patrz komentarz przy USB_DETECT_PIN) — nie przeszkadza, TP4056 i tak wygrywa (LOW) gdy aktywny
+
+  // [BATERIA-POMIAR, ta sesja] Raz, globalnie - analogReadMilliVolts() w
+  // bateriaOdczytajNapiecie() honoruje TYLKO to ustawienie (nie wersje
+  // per-pin), patrz komentarz przy tej funkcji.
+  analogSetAttenuation(ADC_11db);
+
+  touchInicjalizujPiny();
+  tft.init();
+  tft.setRotation(1);   // 1 = landscape 480x320 (podmien na 3 jesli obraz odwrocony)
+  tft.fillScreen(KOL_TLO);
+
+  // [FIX-TFT-BL-HOLD, ta sesja] Odblokuj pin TFT_BL PRZED ledcAttach() -
+  // po kazdym wybudzeniu z deep sleep pin nadal ma wlaczony "hold" z
+  // idzSpac() (patrz gpio_hold_en() tam). Bez tego wywolania PWM nie
+  // ruszyloby wcale, bo pin zostalby "zamrozony" na stale, takze po
+  // kolejnych resetach. Bezpieczne do wywolania rowniez przy zwyklym
+  // starcie (reset/USB), gdy hold nigdy nie byl wlaczony - wtedy to no-op.
+  gpio_hold_dis((gpio_num_t)TFT_BL);
+
+  ledcAttach(TFT_BL, 5000, 8);       // PWM 5kHz, 8-bit na podswietleniu
+  // [ROZSZERZENIE, ta sesja - PANEL WYSWIETLACZ] Wczytaj zapisana jasnosc/
+  // harmonogram PRZED pierwszym ustawJasnoscPodswietlenia() - startujemy od
+  // razu z ostatnia znana jasnoscia DZIENNA usera (nie na sztywno 100%).
+  // Godzina jest nieznana az do 1. pobierzStatus()/symOdswiezDoLvgl() nizej
+  // (ta plytka nie ma wlasnego RTC) - wyswietlaczHarmonogramOdswiez() wolane
+  // stamtad skoryguje na jasnosc NOCNA w te kilkadziesiat ms, jesli akurat
+  // trwa okno przyciemnienia.
+  wyswietlaczWczytajZPamieci();
+  ustawJasnoscPodswietlenia(jasnoscDziennaWartosc);
+  // [ROZSZERZENIE, ta sesja - BRZECZYK ALARMOWY] Czysto sprzetowa
+  // inicjalizacja (PWM na pinie), wiec JEDNO wywolanie tutaj wystarcza dla
+  // obu galezi ponizej (symulacja/prawdziwa centrala) - w odroznieniu od
+  // rejestracji callbackow WYSWIETLACZ, tu nie ma niczego do zarejestrowania
+  // osobno w kazdej galezi.
+  brzeczykZainicjuj();
+
+  // [FIX - dotyk nie dzialal w LVGL_POC_TEST] Kalibracja MUSI byc zrobiona
+  // przed uzyciem dotykOdczytaj() (ktorego uzywa lvgl_touch_read() w
+  // lvgl_port.cpp) - inaczej kalDotyku zostaje z zerami, dotykOdczytaj()
+  // widzi "zdegenerowana" kalibracje (roznica raw < 50) i ZAWSZE zwraca
+  // false, wiec LVGL nigdy nie widzi zadnego dotyku. Wczesniej to wywolanie
+  // bylo PO bloku #if LVGL_POC_TEST (ktory konczy sie "return;"), wiec w
+  // trybie testowym nigdy sie nie wykonywalo. Przeniesione tutaj - dziala
+  // teraz w obu trybach. Jesli kalibracja jest juz zapisana w Preferences
+  // (namespace "dotyk"), to tylko szybki odczyt, bez interakcji.
+  kalibrujDotykJesliTrzeba();
+
+#if LVGL_POC_TEST
+  // [LVGL - KROK 4/5] Sciezka testowa — STARY dashboard (rysujDashboard/
+  // rysujAktualnyEkran, rysowanie recznymi pikselami) jest nadal POMINIETY,
+  // zeby dwa silniki rysujace nie mieszaly sie na tym samym TFT.
+#if LVGL_POC_SYMULACJA
+  // [LVGL-SYMULACJA] Pracujesz sama plytka wyswietlacza, bez centrali obok -
+  // zero WiFi/HTTP, dashboard dostaje dane z symOdswiezDoLvgl() (patrz wyzej).
+  Serial.println(F("=== LVGL_POC_TEST=1, LVGL_POC_SYMULACJA=1: praca offline, bez centrali ==="));
+  lvgl_port_init();
+  lvgl_dashboard_poc_init();
+  lvgl_dashboard_poc_ustaw_callback_pompy(symPompaAkcja);
+  lvgl_dashboard_poc_ustaw_callback_wyboru(symWyboraAkcja);
+  // [POPRAWKA, ta sesja - panel SERWO v2] Brakujaca rejestracja - bez niej
+  // panel SERWO wygladalby na dzialajacy (rysuje sie), ale kliknicia w
+  // AUTO/RECZNY/BEZPIECZNA i slider nic by nie robily (g_serwoTrybCb/
+  // g_serwoPozycjaCb zostalyby nullptr).
+  lvgl_dashboard_poc_ustaw_callback_serwo_tryb(symServoTrybAkcja);
+  lvgl_dashboard_poc_ustaw_callback_serwo_pozycja(symServoPozycjaAkcja);
+  lvgl_dashboard_poc_ustaw_callback_serwo_ustawienia(symServoUstawieniaAkcja);
+  // [ROZSZERZENIE, ta sesja - ekran USTAWIENIA POMPY]
+  lvgl_dashboard_poc_ustaw_callback_pompa_ustawienia(symPompaUstawieniaAkcja);
+  lvgl_dashboard_poc_ustaw_callback_pompa_antystop(symPompaAntystopAkcja);
+  // [ROZSZERZENIE, ta sesja - PANEL DYM]
+  lvgl_dashboard_poc_ustaw_callback_dym_prog(symDymProgAkcja);
+  lvgl_dashboard_poc_ustaw_callback_dym_ustawienia(symDymUstawieniaAkcja);
+  // [ROZSZERZENIE, ta sesja - EKRAN WYKRESY] Bez tej rejestracji ekran
+  // Wykresy w symulacji wygladalby na dzialajacy (nawigacja/chipy/tryb), ale
+  // "POKAZ WYKRES" pokazywalby tylko "Brak polaczenia z fetchem (main.cpp)"
+  // (g_wykresyFetchCb zostalby nullptr) - patrz analogiczny komentarz przy
+  // rejestracji SERWO wyzej.
+  lvgl_dashboard_poc_ustaw_callback_wykresy_fetch(symWykresyFetchAkcja);
+  // [ROZSZERZENIE, ta sesja - PANEL WYSWIETLACZ] W ODROZNIENIU od reszty
+  // rejestracji w tym bloku - TE SAME 3 funkcje co w galezi "prawdziwej
+  // centrali" ponizej (#else), zero osobnych symXxx odpowiednikow. Podswie-
+  // tlenie tej plytki jest CALKOWICIE lokalne (NVS+PWM), wiec symulacja
+  // centrali nie zmienia w nim niczego - patrz obszerny komentarz przy
+  // wyswietlaczJasnoscWyslij() powyzej. Wywolanie _aktualizuj_ustawienia_
+  // wyswietlacza() zasila panel ostatnia wartoscia wczytana z NVS w setup()
+  // (wyswietlaczWczytajZPamieci() powyzej), zeby ekran nie pokazywal samych
+  // domyslnych zer/placeholderow przy pierwszym otwarciu.
+  lvgl_dashboard_poc_ustaw_callback_wyswietlacz_jasnosc(wyswietlaczJasnoscWyslij);
+  lvgl_dashboard_poc_ustaw_callback_wyswietlacz_harmonogram(wyswietlaczHarmonogramWyslij);
+  lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(wyswietlaczUstawieniaWyslij);
+  // [EKRAN ALARMOWY, ta sesja] Ten sam powod co WYSWIETLACZ powyzej - brzeczyk
+  // jest lokalny (GPIO tej plytki), wiec dziala identycznie w obu galeziach.
+  lvgl_dashboard_poc_ustaw_callback_alarm_wycisz(alarmWyciszObsluga);
+  lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(jasnoscDziennaWartosc, jasnoscNocnaWartosc,
+                                                         godzinaStartPrzyciemnienia, godzinaKoniecPrzyciemnienia,
+                                                         harmonogramWlaczonyWartosc);
+  symOdswiezDoLvgl();
+#else
+  // WiFi + pobierzStatus() DZIALAJA - realna integracja z /api/status i
+  // /api/pompa-manual centrali (patrz pompaManualWyslij() wyzej).
+  Serial.println(F("=== LVGL_POC_TEST=1, LVGL_POC_SYMULACJA=0: stary dashboard TFT pominiety, WiFi/API dziala ==="));
+  lvgl_port_init();
+  lvgl_dashboard_poc_init();
+  lvgl_dashboard_poc_ustaw_callback_pompy(pompaManualWyslij);
+  lvgl_dashboard_poc_ustaw_callback_wyboru(pompaWyborWyslij);
+  // [POPRAWKA, ta sesja - panel SERWO v2] Brakujaca rejestracja (ta sama
+  // przyczyna co w galezi symulacji wyzej) - podpina panel SERWO pod
+  // serwoTrybWyslij()/serwoPozycjaWyslij() (patrz definicje przy
+  // pompaWyborWyslij()), ktore wolaja juz istniejace
+  // wyslijTrybPracy()/wyslijServoManualny().
+  lvgl_dashboard_poc_ustaw_callback_serwo_tryb(serwoTrybWyslij);
+  lvgl_dashboard_poc_ustaw_callback_serwo_pozycja(serwoPozycjaWyslij);
+  // [ROZSZERZENIE, ta sesja - ekran USTAWIENIA SERWA]
+  lvgl_dashboard_poc_ustaw_callback_serwo_ustawienia(serwoUstawienieWyslij);
+  // [ROZSZERZENIE, ta sesja - ekran USTAWIENIA POMPY]
+  lvgl_dashboard_poc_ustaw_callback_pompa_ustawienia(pompaUstawienieWyslij);
+  lvgl_dashboard_poc_ustaw_callback_pompa_antystop(pompaAntystopWyslij);
+  // [ROZSZERZENIE, ta sesja - PANEL DYM]
+  lvgl_dashboard_poc_ustaw_callback_dym_prog(dymProgWyslij);
+  lvgl_dashboard_poc_ustaw_callback_dym_ustawienia(dymUstawienieWyslij);
+  // [ROZSZERZENIE, ta sesja - PANEL PROG PRZEGRZANIA]
+  lvgl_dashboard_poc_ustaw_callback_alarm_temp_prog(alarmTempProgWyslij);
+  // [ROZSZERZENIE, ta sesja - EKRAN WYKRESY] Patrz wykresyFetchWykonaj() -
+  // GET /api/history(/long) wolane wprost z ekranu Wykresy przez ten most.
+  lvgl_dashboard_poc_ustaw_callback_wykresy_fetch(wykresyFetchWykonaj);
+  // [ROZSZERZENIE, ta sesja - PANEL WYSWIETLACZ] Ten sam wzorzec co galaz
+  // symulacji wyzej (patrz komentarz tam) - TE SAME 3 funkcje w obu
+  // galeziach, bo podswietlenie tej plytki nie zalezy od tego, czy centrala
+  // jest akurat podlaczona.
+  lvgl_dashboard_poc_ustaw_callback_wyswietlacz_jasnosc(wyswietlaczJasnoscWyslij);
+  lvgl_dashboard_poc_ustaw_callback_wyswietlacz_harmonogram(wyswietlaczHarmonogramWyslij);
+  lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(wyswietlaczUstawieniaWyslij);
+  // [EKRAN ALARMOWY, ta sesja] Ten sam powod co WYSWIETLACZ powyzej - brzeczyk
+  // jest lokalny (GPIO tej plytki), wiec dziala identycznie w obu galeziach.
+  lvgl_dashboard_poc_ustaw_callback_alarm_wycisz(alarmWyciszObsluga);
+  lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(jasnoscDziennaWartosc, jasnoscNocnaWartosc,
+                                                         godzinaStartPrzyciemnienia, godzinaKoniecPrzyciemnienia,
+                                                         harmonogramWlaczonyWartosc);
+
+  polaczWifi();
+  pobierzStatus();
+  // [ROZSZERZENIE, ta sesja - ekran USTAWIENIA SERWA] W trybie LVGL nie ma
+  // juz starego EKRAN_USTAWIENIA, ktory wczesniej wolal pobierzUstawienia()
+  // przy starcie (patrz galaz nie-LVGL nizej) - bez tego wywolania tutaj
+  // ekran USTAWIENIA SERWA pokazywalby same zera az do pierwszej recznej
+  // zmiany. Wola tez lvgl_dashboard_poc_aktualizuj_ustawienia_serwa()
+  // (patrz koniec obslugaUstawieniaFetch()).
+  pobierzUstawienia();
+  // [SIEC-NIEBLOKUJACA, ta sesja] Oba GET-y wystartowaly, ale jeszcze sie
+  // nie skonczyly - patrz obszerny komentarz przy poczekajNaPierwszeDane().
+  poczekajNaPierwszeDane();
+  // aktualizujSezon() zostaje - `aktualnySezon` jest nadal uzywany gdzie
+  // indziej w tym pliku (np. ikona slonca na starym dashboardzie), tylko
+  // przestal byc przekazywany do LVGL (patrz FIX w dashboard_lvgl_poc.h -
+  // podzial sezonowy kafelkow LVGL zostal usuniety).
+  aktualizujSezon();
+  lvgl_dashboard_poc_aktualizuj(stan.polaczono, stan.tZewn, stan.tBojler,
+                                 stan.tOgrz, stan.tOgrzSr, stan.tPanel,
+                                 stan.pompa, stan.pompaOverrideMin,
+                                 stan.dym, stan.dymAlarm,
+                                 stan.tPokoj, stan.wilgotnosc, stan.cisnienie,
+                                 stan.klapa, stan.syberka, (int)trybWyboru,
+                                 (int)trybSerwaWartosc,
+                                 stan.alarmOgrzewanie, stan.alarmPanel,
+                                 stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
+                                 stan.rtcOk,
+                                 stan.rssi,
+                                 stan.internet,
+                                 stan.deszczStan, stan.deszczMinuty);
+#endif
+  ostatniStatus = millis();
+  // [OTA-ROLLBACK] Tutaj, nie wczesniej: ekran juz narysowany (obie galezie
+  // SYMULACJA=0/1 zbiegaja sie w tym miejscu), a w galezi SYMULACJA=0
+  // pierwsza probka pobierzStatus() juz sie wykonala (patrz wyzej).
+  potwierdzPartycjeJesliCzeka();
+  // [OTA-PANEL, ta sesja] PO potwierdzeniu partycji, PRZED return — jesli
+  // centrala zglosila panel_ota_dostepna=true w JSON-ie statusu (mozliwe
+  // tylko w galezi SYMULACJA=0, gdzie WiFi/pobierzStatus() realnie dzialaja;
+  // w SYMULACJA=1 stan.panelOtaDostepna zawsze false, wiec no-op).
+  sprawdzIWykonajOtaPanelu();
+  return; // nie wchodz w reszte setup() (stary dashboard) w trybie testowym - kalibracja dotyku juz zrobiona wyzej
+#endif
+
+  polaczWifi();
+
+  pobierzStatus();
+  pobierzUstawienia();
+  // [SIEC-NIEBLOKUJACA, ta sesja] Patrz obszerny komentarz przy
+  // poczekajNaPierwszeDane() - jedyne swiadome czekanie na siec w tym pliku,
+  // wylacznie tutaj, raz, na starcie.
+  poczekajNaPierwszeDane();
+  aktualizujSezon(); // [LCD-SEZON] przed pierwszym rysujAktualnyEkran(), zeby dashboard od razu wystartowal we wlasciwym sezonie
+  rysujAktualnyEkran();
+  ostatniStatus = ostatnieUstawienia = millis();
+  zarejestrujAktywnosc(); // start timera 5 min od momentu, gdy ekran jest juz gotowy
+  // [OTA-ROLLBACK] Analogicznie do galezi LVGL_POC_TEST=1 wyzej — ekran juz
+  // narysowany, pierwsza probka pobierzStatus() juz sie wykonala.
+  potwierdzPartycjeJesliCzeka();
+  sprawdzIWykonajOtaPanelu(); // [OTA-PANEL, ta sesja] analogicznie do galezi LVGL_POC_TEST=1 wyzej
+}
+
+void loop() {
+  // [FIX-WDT] Karmienie na poczatku KAZDEJ iteracji, przed jakimkolwiek
+  // rozgalezieniem — loopTask jest teraz podpiety pod TWDT (patrz setup()),
+  // wiec bez tego wywolania panel resetowalby sie co 15s w calkowicie
+  // normalnej pracy, nie tylko przy realnym zawieszeniu.
+  esp_task_wdt_reset();
+  // [ROZSZERZENIE, ta sesja - BRZECZYK ALARMOWY] Ten sam wzorzec co
+  // obsluzDotyk() nizej - musi isc co obrot petli (nie tylko co
+  // STATUS_INTERWAL_MS/co 1s symulacji jak reszta w tym bloku), zeby fazy
+  // wzorca (odstepy rzedu setek ms) byly odmierzane dokladnie.
+  obsluzBrzeczyk();
+#if LVGL_POC_TEST
+  // [LVGL - KROK 4/5] W trybie testowym loop() liczy animacje LVGL.
+  lvgl_port_tick();
+
+  // [BATERIA-POMIAR, ta sesja] Wspolne miejsce dla obu podgalezi
+  // (SYMULACJA i realna, patrz #if nizej) - pomiar baterii jest lokalny,
+  // niezalezny od tego czy dane z centrali sa symulowane czy prawdziwe.
+  // Wlasny, wolniejszy interwal (% nie zmienia sie tak szybko jak status
+  // co STATUS_INTERWAL_MS). Kolor "laduje sie" bierze wprost z
+  // zasilanieUSB() - dziala niezaleznie od tego, ze reszta logiki snu
+  // (idzSpac()/ACTIVITY_TIMEOUT) nie jest jeszcze wpieta w ta galaz LVGL
+  // (patrz PLAN_BATERIA.md, sekcja 3 - osobna, juz istniejaca luka, nie
+  // zwiazana z tym pomiarem).
+  static const uint32_t BATERIA_INTERWAL_MS = 30000;
+  static unsigned long ostatniaBateria = 0;
+  unsigned long terazBat = millis();
+  if (terazBat - ostatniaBateria >= BATERIA_INTERWAL_MS) {
+    ostatniaBateria = terazBat;
+    float napiecieBat = bateriaOdczytajNapiecie();
+    int procentBat = bateriaNapiecieNaProcent(napiecieBat);
+    Serial.printf("tag=BATERIA napiecie=%.2fV procent=%d ladowanie=%d\n",
+                  napiecieBat, procentBat, (int)zasilanieUSB());
+    lvgl_dashboard_poc_aktualizuj_bateria(procentBat, zasilanieUSB());
+  }
+
+#if LVGL_POC_SYMULACJA
+  // [LVGL-SYMULACJA] Brak WiFi/centrali - zamiast pobierzStatus() co
+  // STATUS_INTERWAL_MS, odswiezamy z symulacji co 1s (zeby countdown/arc na
+  // kafelku POMPA faktycznie sie ruszaly w trybie recznym, tak jak w realu).
+  static unsigned long symOstatnieOdswiezenie = 0;
+  unsigned long terazSym = millis();
+  if (terazSym - symOstatnieOdswiezenie >= 1000) {
+    symOstatnieOdswiezenie = terazSym;
+    symOdswiezDoLvgl();
+  }
+#else
+  // Realna integracja - pilnuje WiFi + co STATUS_INTERWAL_MS odswieza dane
+  // z centrali (obsluzDotyk()/sen celowo dalej pominiete - to jeszcze nie
+  // docelowy main.cpp, tylko test integracji LVGL<->API na izolowanej sciezce).
+  wifiReconnectNonBlocking();
+
+  // [SIEC-NIEBLOKUJACA, ta sesja] Musza isc CO ITERACJE (nie tylko co
+  // STATUS_INTERWAL_MS/USTAWIENIA_INTERWAL_MS ponizej) - to one sprawdzaja,
+  // czy zadanie wystartowane w ktorejs POPRZEDNIEJ iteracji juz sie
+  // zakonczylo (statusFetch/ustawieniaFetch/komendaFetch.poll() sa tanie,
+  // pojedynczy select() z zerowym czekaniem gdy bezczynne). Patrz komentarze
+  // przy tych funkcjach.
+  obslugaStatusFetch();
+  obslugaUstawieniaFetch();
+  obslugaKomendaFetch();
+
+  unsigned long terazLvgl = millis();
+  if (terazLvgl - ostatniStatus >= STATUS_INTERWAL_MS) {
+    ostatniStatus = terazLvgl;
+    pobierzStatus(); // tylko startuje GET - parsowanie+odswiezenie LVGL teraz w obslugaStatusFetch() wyzej
+  }
+  // [ROZSZERZENIE, ta sesja - ekran USTAWIENIA SERWA] Analogiczny okresowy
+  // odczyt /api/ustawienia-get co USTAWIENIA_INTERWAL_MS - ten sam interwal
+  // co stary, nie-LVGL dashboard uzywa (patrz ponizej w tym pliku), zeby
+  // ekran LVGL nie polegal wylacznie na wartosci z chwili startu, gdyby ktos
+  // zmienil parametr ze starego panelu WWW rownolegle.
+  if (terazLvgl - ostatnieUstawienia >= USTAWIENIA_INTERWAL_MS) {
+    ostatnieUstawienia = terazLvgl;
+    pobierzUstawienia(); // tylko startuje GET - patrz obslugaUstawieniaFetch() wyzej
+  }
+#endif
+  delay(5); // LVGL nie potrzebuje petli szybszej niz ~200Hz, a to odciaza CPU/WDT
+  return;
+#endif
+
+  obsluzDotyk();
+
+  // [ETAP 5] Nieblokujace pilnowanie polaczenia WiFi + reconnect z rosnacym
+  // opoznieniem — patrz wifiReconnectNonBlocking() wyzej.
+  wifiReconnectNonBlocking();
+
+  // [SIEC-NIEBLOKUJACA, ta sesja] Patrz komentarz w galezi LVGL wyzej -
+  // dokladnie ten sam powod, wspolny dla obu galezi (httpGet/httpPost byly
+  // wspoldzielone, wiec te trzy funkcje tez sa).
+  obslugaStatusFetch();
+  obslugaUstawieniaFetch();
+  obslugaKomendaFetch();
+
+  // [ETAP 3b] Brak interakcji przez ACTIVITY_TIMEOUT_MS -> usypiamy, CHYBA
+  // ZE wykryte jest zasilanie USB — wtedy urzadzenie ma dzialac jak
+  // podlaczone na stale (timer stale resetowany, nigdy nie usypia).
+  if (zasilanieUSB()) {
+    zarejestrujAktywnosc();
+  } else if (millis() - ostatniaAktywnosc >= ACTIVITY_TIMEOUT_MS) {
+    idzSpac();
+  }
+
+  unsigned long teraz = millis();
+  if (teraz - ostatniStatus >= STATUS_INTERWAL_MS) {
+    ostatniStatus = teraz;
+    pobierzStatus(); // tylko startuje GET - reszta (sezon/rysowanie) w obsludze wyzej
+  }
+  if (teraz - ostatnieUstawienia >= USTAWIENIA_INTERWAL_MS) {
+    ostatnieUstawienia = teraz;
+    if (aktualnyEkran != EKRAN_USTAWIENIA) pobierzUstawienia();  // nie nadpisuj ekranu w trakcie edycji
+  }
+}

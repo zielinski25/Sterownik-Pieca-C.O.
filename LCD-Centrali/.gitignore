@@ -1,0 +1,4 @@
+# PlatformIO: artefakty kompilacji i pobrane biblioteki
+.pio/
+# Hasla panelu (WiFi AP + OTA) - tylko lokalnie; wzor: src/secrets.h.example
+src/secrets.h
