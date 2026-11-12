@@ -356,11 +356,12 @@ void zapiszWszystko(int fd, const std::string& s) {
 // ---------------------------------------------------------------------------
 // Koniec danych we wszystkich odpowiedziach historii: 2026-11-13 12:00:00 UTC
 // = 13:00 czasu polskiego. Ta sama chwila co T0 w testach centrali
-// (firmware-patch/v3.58.4-panel-wykresy/tests/test_panel_hist.cpp).
+// (firmware-patch/v3.58.5-panel-wykresy-po-restarcie/tests/test_panel_hist.cpp).
 const uint32_t HIST_KONIEC_UNIX = 1794571200U;
 
-// Odpowiedzi centrali 3.58.4 na GET /api/history/panel to PLIKI zapisane
-// kodem tej centrali (katalog wzorce_centrali/, opis w CZYTAJ.txt obok nich).
+// Odpowiedzi centrali na GET /api/history/panel to PLIKI zapisane kodem
+// centrali 3.58.5 (katalog wzorce_centrali/, opis w CZYTAJ.txt obok nich);
+// 9 z 11 jest bajt w bajt takich samych, jakie wypisuje centrala 3.58.4.
 std::string wzorzec(const char* nazwa) {
   const char* katalog = getenv("LCD_WZORCE_CENTRALI");
   const std::string sciezka = std::string(katalog != nullptr ? katalog : "wzorce_centrali") + "/" + nazwa;
@@ -2742,6 +2743,48 @@ void scenariuszWykresyStaryCsv() {
   }
 }
 
+// --- 34 --------------------------------------------------------------------
+// Centrala 3.58.5 tuz po restarcie, z wylaczonym zapisem historii na flash i
+// starymi plikami sprzed 3 dni. Od 3.58.5 centrala konczy okno wykresu na
+// BIEZACYM czasie, wiec panel dostaje odpowiedzi, jakich 3.58.4 nie wysylala:
+// same linie "#przerwa" (ostatnia godzina) i przerwe siegajaca konca osi
+// (tydzien). Firmware panelu jest ten sam (v1.3.0) - scenariusz sprawdza, ze
+// radzi sobie z nimi bez zmian.
+void scenariuszWykresyPoRestarcieCentrali() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  const std::string godz = wzorzec("godz_po_restarcie_pusto.txt"), tydz = wzorzec("tydz_po_restarcie.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["godz"] = godz; c.panelHist["tydz"] = tydz; });
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+
+  printf("  ostatnia godzina: centrala ma tylko historie sprzed 3 dni - odpowiedz to 96 linii \"#przerwa\":\n");
+  const Centrala przed = stanC(0);
+  size_t od = pokazWykres("GODZINNY", 1000);
+  sprawdz(ilePrzerwWeWzorcu(godz) == 96 && ilePunktow(zWzorca(godz, 1)) == 0, "odpowiedz centrali: 96 przerw, zadnego wiersza z danymi");
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minute po starcie)\n\n"
+                                       "Zapis historii na flash jest w centrali wylaczony:\npo jej restarcie historia zaczyna sie od zera"),
+          "zamiast wykresu napis: \"Centrala nie ma jeszcze danych z tego zakresu...\" z dopowiedzeniem o wylaczonym zapisie (fs=0)");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=brak_danych tryb=godz sposob=centrala przyczyna=pusto", "", "", od) && !logMa("zdarzenie=blad", "", "", od),
+          "log: zdarzenie=brak_danych przyczyna=pusto (to nie blad)");
+  sprawdz(stanC(0).nHistKrotka == przed.nHistKrotka && stanC(0).nHistDluga == przed.nHistDluga, "panel nie pobiera wtedy calego CSV po staremu");
+  zrzutEkranu("po_restarcie_godzina");
+
+  printf("  tydzien: 4 dni starej historii, potem 3 dni bez danych az do teraz:\n");
+  dotknijWykresu();
+  od = pokazWykres("TYGODNIOWY", 1000);
+  const std::vector<int> p = punktyWykresu(0);
+  sprawdz(ilePrzerwWeWzorcu(tydz) == 41 && wykresWidoczny() && tesamePunkty(p, zWzorca(tydz, 1), "ZEWN"),
+          "96 pozycji: 55 punktow i 41 przerw, dokladnie w miejscach podanych przez centrale");
+  sprawdz(p.size() == 96 && p[0] == 20 && p[54] == 40 && p[55] == BRAK && p[95] == BRAK,
+          "linia konczy sie po 4 dniach (55. pozycja z 96); ostatnie 3 dni sa puste - nie dociagniete do prawej krawedzi");
+  sprawdz(ekranMa("06.11 13:00  -  13.11 13:00"), "podpis: \"06.11 13:00  -  13.11 13:00\" - os konczy sie TERAZ, nie na ostatnim starym pomiarze");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=55 przerw=41", "", "", od), "log: punktow=55 przerw=41");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal");
+  zrzutEkranu("po_restarcie_tydzien");
+}
+
 #ifdef POMIAR_STERTY
 // --- pomiar pamieci (tylko pomiar_pamieci.sh) -------------------------------
 // 32-bitowy model firmware'u z licznikiem sterty. "Na ESP32" = tyle zajmuja te
@@ -2887,6 +2930,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"wykresy_wyjscie_w_trakcie", "wyjscie z wykresu w trakcie pobierania; pobieranie dluzsze niz limit (v1.3.0)", scenariuszWykresyWyjscieWTrakcie},
     {"wykresy_alarm_w_trakcie", "alarm w trakcie pobierania danych do wykresu (v1.3.0)", scenariuszWykresyAlarmWTrakcie},
     {"wykresy_stary_csv", "stary CSV podany ekranowi wprost: te same punkty co w v1.2.2 (v1.3.0)", scenariuszWykresyStaryCsv},
+    {"wykresy_po_restarcie_centrali", "centrala 3.58.5 tuz po restarcie: same przerwy -> napis; przerwa do konca osi (v1.3.0 bez zmian)", scenariuszWykresyPoRestarcieCentrali},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},
 #endif

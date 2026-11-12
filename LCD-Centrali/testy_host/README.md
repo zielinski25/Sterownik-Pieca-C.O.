@@ -47,7 +47,7 @@ pamięci daje 129 244 B po starcie, 5 448 B na jedno odpytanie i 2 884 B /
 | `test_diagnostyka.cpp` | Testy jednostkowe `src/diagnostyka_panelu.h` (kod HTTP, dławik logu, strażnik świeżości, wybór najsilniejszego AP, znacznik centrali, próg baterii; od v1.2.1: przyczyna braku danych, drabina ratunkowa, pamięć i token samoczynnego restartu; od v1.2.2: brak pamięci jako przyczyna). |
 | `mock/` | Atrapy nagłówków Arduino/ESP-IDF (`Arduino.h`, `WiFi.h`, `TFT_eSPI.h`, `Preferences.h`, `esp_*.h`…). Stan „płytki” opisuje `mock/atrapa.h`. |
 | `symulator_panelu.cpp` | Uruchamia `setup()` i `loop()` firmware'u, podstawia mu „centrale” (lokalny serwer HTTP) i sprawdza log oraz to, co trafiło na ekran. Odpowiedź `/api/status` ma te same pola, kolejność i format liczb co `wifiZbudujJsonStatus()` w firmware centrali 3.58.3 (ok. 1,8 kB). Udawana centrala traktuje parametr `reset_powod` tak jak 3.58.3: „pisze” o powodzie restartu panelu przy każdej zmianie wartości innej niż `sw` i `deepsleep`. Od v1.3.0 odpowiada też na `/api/history`, `/api/history/long` i `/api/history/panel` (jak centrala 3.58.4, jak starsza albo jak bardzo stara) i potrafi odpowiedź urwać, wstrzymać, opóźnić albo wysyłać z zadaną szybkością. |
-| `wzorce_centrali/` | Odpowiedzi centrali 3.58.4 na `/api/history/panel`, wypisane przez jej własny kod (opis: `CZYTAJ.txt` w tym katalogu). Z nich korzystają scenariusze `wykresy_*`. |
+| `wzorce_centrali/` | Odpowiedzi centrali na `/api/history/panel`, wypisane przez jej własny kod — 11 plików; 9 takich samych z 3.58.4 i 3.58.5, 2 tylko z 3.58.5 (opis: `CZYTAJ.txt` w tym katalogu). Z nich korzystają scenariusze `wykresy_*`. |
 | `wzorce_v122/` | Punkty, które z tych samych starych CSV narysował firmware v1.2.2 (opis: `CZYTAJ.txt` w tym katalogu). Z nimi porównywane jest rysowanie po staremu. |
 | `uruchom_testy.sh` | Buduje i uruchamia całość. |
 | `sprawdz_naglowki_esp32.sh` | Sprawdza składnię i typy źródeł panelu prawdziwymi nagłówkami arduino-esp32 / ESP-IDF / TFT_eSPI (bez atrap). |
@@ -97,12 +97,15 @@ LVGL jest budowany z `include/lv_conf.h` tego projektu. Ekran to bufor
 | `wykresy_wyjscie_w_trakcie` | v1.3.0. Starsza centrala i wolne łącze: dotknięcie ekranu w trakcie pobierania działa od razu i zamyka połączenie; pobieranie dłuższe niż 20 s kończy się wykresem z dopiskiem `NIEPELNE`; watchdog (15 s) nie zadziałał. |
 | `wykresy_alarm_w_trakcie` | v1.3.0. Alarm przegrzania w trakcie pobierania: ekran alarmu pojawia się w ciągu 3 s, pobieranie jest porzucane, bufory wykresów zwolnione. |
 | `wykresy_stary_csv` | v1.3.0. Stary CSV podany ekranowi wprost, bez sieci: te same punkty co w v1.2.2. Strona HTML zamiast CSV: napis (kod v1.2.2 rysował z niej wykres — zapisane we wzorcu). Ten scenariusz działa także na źródłach v1.2.2 i tak powstał `wzorce_v122/punkty.txt`. |
+| `wykresy_po_restarcie_centrali` | v1.3.0 bez zmian, centrala 3.58.5 tuż po restarcie, z wyłączonym zapisem historii i starymi plikami sprzed 3 dni. Ostatnia godzina: odpowiedź to 96 linii `#przerwa` — napis `Centrala nie ma jeszcze danych z tego zakresu` z dopiskiem o wyłączonym zapisie, bez sięgania po cały CSV. Tydzień: 55 punktów starej historii, potem 41 pustych pozycji do końca osi; podpis kończy się na bieżącej chwili. |
 
 ### Skąd odpowiedzi centrali w scenariuszach `wykresy_*`
 
 Treść odpowiedzi `/api/history/panel` nie jest pisana ręcznie w symulatorze.
-To pliki z `wzorce_centrali/`, wypisane przez kod centrali 3.58.4 wycięty
-z jej `main_centrala.cpp` (testy w `firmware-patch/v3.58.4-panel-wykresy/tests/`).
+To pliki z `wzorce_centrali/`, wypisane przez kod centrali 3.58.5 wycięty
+z jej `main_centrala.cpp` (testy w
+`firmware-patch/v3.58.5-panel-wykresy-po-restarcie/tests/`). Dziewięć z nich
+centrala 3.58.4 wypisuje co do bajta tak samo.
 Te same testy centrali przy każdym uruchomieniu porównują swoje wyjście z tymi
 plikami, więc panel jest sprawdzany na tym, co centrala naprawdę wysyła,
 a zmiana formatu po jednej stronie wychodzi w testach drugiej.
@@ -276,6 +279,11 @@ inny kompilator (clang zamiast GCC) i biblioteka C++, bez linkowania i bez
 pliku `.bin`; przy `RDZEN=3.3.8` nagłówki rdzenia 3.3.8 stoją na ESP-IDF 5.1,
 więc dwa typy znane tylko nowszemu IDF są podstawione zastępczo (szczegóły
 w nagłówku skryptu).
+
+`OSTRZEZENIA=1 ./sprawdz_naglowki_esp32.sh` dodatkowo liczy ostrzeżenia clang
+(`-Wall -Wextra -Wformat=2 -Wshadow`) w sprawdzanych plikach i pokazuje
+pierwsze z nich. Wynik skryptu zależy nadal tylko od błędów: ostrzeżenia
+clang nie są ostrzeżeniami GCC z PlatformIO.
 
 ## Porównanie ze starszą wersją
 

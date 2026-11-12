@@ -36,10 +36,10 @@ Po dotknięciu `POKAZ WYKRES` panel pyta centralę o gotowe punkty:
 GET /api/history/panel?tryb=godz|dzien|tydz&pkt=96
 ```
 
-Centrala z firmware **3.58.4** (paczka `firmware-patch/v3.58.4-panel-wykresy/`
-w tym repozytorium) sama wybiera zakres — ostatnia godzina, 24 godziny albo
-7 dni — dzieli go na 96 równych odcinków czasu i odsyła najwyżej 96 wierszy
-(18–20 kB). Bierze je ze swojej lokalnej historii: tej, z której rysuje
+Centrala z firmware **3.58.4 lub nowszym** (aktualna paczka:
+`firmware-patch/v3.58.5-panel-wykresy-po-restarcie/` w tym repozytorium) sama
+wybiera zakres — ostatnia godzina, 24 godziny albo 7 dni — dzieli go na 96
+równych odcinków czasu i odsyła najwyżej 96 wierszy (18–20 kB). Bierze je ze swojej lokalnej historii: tej, z której rysuje
 strona WWW centrali i którą centrala dopisuje do plików `/hist_short.csv`
 i `/hist_long.csv` na swoim flashu. **Firebase nie jest używany** — centrala
 ma te dane u siebie, a Firebase wymagałby internetu i pobierania ok. 270 kB
@@ -89,12 +89,38 @@ w którym centrala nie pracowała przez 1,5 doby, `ekran_wykres_brak_danych.png`
 ### Co wgrać
 
 1. **Panel:** te źródła, jak zwykle (`secrets.h` bez zmian).
-2. **Centrala:** `firmware-patch/v3.58.4-panel-wykresy/` — zmienia się jeden
-   plik, `src/main_centrala.cpp`; instrukcja w `CZYTAJ-NAJPIERW.txt` tej
-   paczki. Plik powstał z wersji 3.58.3.
+2. **Centrala:** `firmware-patch/v3.58.5-panel-wykresy-po-restarcie/` —
+   zmienia się jeden plik, `src/main_centrala.cpp`; instrukcja
+   w `CZYTAJ-NAJPIERW.txt` tej paczki. Plik pasuje do projektu z wersją
+   3.58.3 albo 3.58.4. Paczka 3.58.5 zastępuje 3.58.4 (poprawia wykresy po
+   restarcie centrali — niżej); firmware panelu jest ten sam.
 
 Dopóki centrala ma starszy firmware, wykresy działają po staremu (trzecia
 kolumna tabeli).
+
+### Gdy centrala ma wyłączony zapis historii na flash
+
+Przełącznik „Zapisuj historię na flash centrali” (strona WWW centrali →
+Ustawienia) wyłącza tylko zapis do plików. Historia w pamięci centrali zbiera
+się dalej i to z niej centrala liczy punkty dla panelu.
+
+| Sytuacja | Ekran Wykresy |
+|---|---|
+| Centrala pracuje, zapis wyłączony | wykresy takie same jak z włączonym zapisem |
+| Restart centrali, zapis wyłączony, plików historii nie ma | historia od zera: napis `Centrala nie ma jeszcze danych z tego zakresu`, po pierwszym pomiarze `Za malo danych na wykres (jeden pomiar)`, od drugiego pomiaru (ok. 2 minuty po starcie) wykres, który wydłuża się z każdą minutą |
+| Restart centrali, zapis wyłączony, na flashu zostały stare pliki | centrala wczytuje je przy starcie; na wykresie jest to, co z nich mieści się w zakresie, potem przerwa i nowe pomiary |
+
+Pod oboma napisami panel dopisuje wtedy: `Zapis historii na flash jest
+w centrali wylaczony: po jej restarcie historia zaczyna sie od zera`.
+Firebase nie jest używany, więc starszych danych po takim restarcie na LCD
+nie ma.
+
+Trzeci wiersz tabeli działa tak od centrali **3.58.5**. Centrala 3.58.4,
+mając w pamięci tylko starą historię, w pierwszej minucie po restarcie
+odsyłała ją jako bieżący zakres. Potem panel pisał „jeden pomiar”: na
+wykresie dziennym przez 15 minut (gdy stara historia była starsza niż doba),
+na tygodniowym przez 105 minut (gdy była starsza niż tydzień). Opis i tabela
+„przed i po”: `README.md` paczki 3.58.5.
 
 ### Po wgraniu
 
@@ -118,7 +144,7 @@ z pierwszych kilku wykresów (dzień, godzina, tydzień): `ms=` to czas
 pobierania na płytce, a `ram_min=` najmniejszy wolny RAM od startu. Tych dwóch
 liczb testy na PC nie dają.
 
-Centrala 3.58.4 pisze przy każdej takiej prośbie w swoim logu:
+Centrala (3.58.4 i nowsze) pisze przy każdej takiej prośbie w swoim logu:
 `tag=HISTORIA lvl=INFO msg="PANEL_WYKRES tryb=dzien pkt=96 wierszy=1440 punktow=96 przerw=0 bajtow=18207"`.
 
 ## Co zmienia v1.2.2
@@ -337,7 +363,7 @@ Zamiast wykresu może stać jeden z napisów:
 | Napis | Co się stało |
 |---|---|
 | `Ladowanie danych z centrali...` i pod spodem `47 wierszy (9 kB)` | pobieranie trwa. Z centralą 3.58.4 zwykle nie zdąży się pokazać; ze starszą widać, że dane płyną |
-| `Centrala nie ma jeszcze danych z tego zakresu (pierwszy pomiar zapisuje minute po starcie)` | centrala odpowiedziała, ale jej historia jest pusta |
+| `Centrala nie ma jeszcze danych z tego zakresu (pierwszy pomiar zapisuje minute po starcie)` | centrala odpowiedziała, ale jej historia jest pusta albo (centrala 3.58.5) w wybranym zakresie nie ma jeszcze żadnego pomiaru |
 | …z dopiskiem `Zapis historii na flash jest w centrali wylaczony: po jej restarcie historia zaczyna sie od zera` | jak wyżej, a centrala trzyma historię tylko w pamięci (przełącznik na jej stronie WWW) |
 | `Za malo danych na wykres (jeden pomiar)` | centrala ma dopiero jeden pomiar; linia potrzebuje dwóch |
 | `Brak polaczenia z siecia centrali (WiFi)` | panel nie jest połączony z siecią centrali; zapytanie nie wyszło |
@@ -525,20 +551,23 @@ płytce sprawdzona jest v1.2.2 (niżej). v1.3.0 różni się od niej ekranem
 Wykresy i sposobem pobierania jego danych; reszta kodu jest ta sama.
 
 - **Na PC, z atrapami sprzętu:** prawdziwy `main.cpp` i dashboard uruchomione
-  zwykłym `g++` przeciwko udawanym centralom — 34 scenariusze, 377
+  zwykłym `g++` przeciwko udawanym centralom — 35 scenariuszy, 387
   sprawdzeń, plus 262 sprawdzenia jednostkowe; także pod AddressSanitizer
   i UBSan. Udawana centrala wysyła ten sam JSON co firmware 3.58.3. W czterech
   scenariuszach z v1.2.2 panel nie dostaje pamięci na żądanie testu — tak, jak
   na płytce z logu z 2026-11-12.
-- **Ekran Wykresy (v1.3.0), na PC:** osiem scenariuszy `wykresy_*` — wykres
+- **Ekran Wykresy (v1.3.0), na PC:** dziewięć scenariuszy `wykresy_*` — wykres
   z punktów centrali w trzech zakresach, starsza centrala, przerwy w danych,
   brak danych, odpowiedź urwana, cisza w połowie, brak odpowiedzi, odpowiedź,
   która nie jest historią, brak WiFi, wyjście z ekranu i alarm w trakcie
-  pobierania, pobieranie dłuższe niż limit. Lista: `testy_host/README.md`.
+  pobierania, pobieranie dłuższe niż limit, centrala 3.58.5 tuż po restarcie
+  (dodany razem z paczką 3.58.5; firmware panelu bez zmian). Lista:
+  `testy_host/README.md`.
   - Odpowiedzi centrali w tych testach nie są pisane ręcznie: to pliki
-    wypisane przez kod centrali 3.58.4 (`testy_host/wzorce_centrali/`),
-    a testy centrali przy każdym uruchomieniu sprawdzają, że jej kod nadal
-    daje dokładnie te pliki.
+    wypisane przez kod centrali 3.58.5 (`testy_host/wzorce_centrali/`;
+    9 z 11 centrala 3.58.4 wypisuje co do bajta tak samo), a testy centrali
+    przy każdym uruchomieniu sprawdzają, że jej kod nadal daje dokładnie
+    te pliki.
   - Rysowanie ze starego CSV jest porównane z v1.2.2 punkt w punkt
     (`testy_host/wzorce_v122/`: dzień, godzina, tydzień, dzień z przerwą).
   - Czasy z tych testów (np. `ms=25`) nie są pomiarem płytki — tam sieć
@@ -574,8 +603,8 @@ Wykresy i sposobem pobierania jego danych; reszta kodu jest ta sama.
   Wykresy z prawdziwą centralą — ile trwa pobieranie (`ms=`), ile wolnego
   RAM-u zostaje w jego trakcie (`ram_min=`; ekran Wykresy bierze 18,6 kB na
   bufory punktów, a otwarte połączenie swoje), jak wypada przy słabym
-  sygnale; centrala 3.58.4 (jej plik też nie był kompilowany dla ESP32 —
-  opis w paczce centrali).
+  sygnale; centrala 3.58.5 i 3.58.4 (ich pliki też nie były kompilowane
+  dla ESP32 — opis w paczkach centrali).
 - **Nadal nie sprawdzone na płytce, od v1.2.2:** praca przez wiele godzin;
   zachowanie przy prawdziwym braku pamięci i samoczynne restarty (w logu
   z 2026-11-12 nie było do nich powodu); szybkość rysowania (nie była
