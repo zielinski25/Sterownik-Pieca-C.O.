@@ -47,6 +47,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <new>
@@ -98,6 +99,8 @@ extern "C" {
 void pomiar_zrzut(const char* plik, int tryb);
 void pomiar_zeruj_szczyty(void);
 void pomiar_limit(uint32_t esp_bajtow);
+void pomiar_bez_limitu(int o_ile);
+void pomiar_lap_awarie(void);
 uint32_t pomiar_odmow(void);
 uint32_t pomiar_zywe_esp(void);
 uint32_t pomiar_zywe_bloki(void);
@@ -180,7 +183,10 @@ extern "C" void __wrap_free(void* p) {
 // prosto do prawdziwego malloc(), tak jak w zwyklych testach (gdzie
 // biblioteka C++ jest osobna i owijki jej nie dotycza).
 void* operator new(size_t n) {
+  // Bez limitu pamieci (pomiar_limit()): patrz t_bez_limitu w pomiar_sterty.c.
+  pomiar_bez_limitu(1);
   void* p = __real_malloc(n ? n : 1);
+  pomiar_bez_limitu(-1);
   if (p == nullptr) throw std::bad_alloc();
   return p;
 }
@@ -2888,6 +2894,348 @@ void scenariuszPomiarPamieci() {
     migawka("wykres_powtorki");
   }
 }
+
+// --- czy RAM-u starczy: przypadki (pomiar_pamieci.sh --przypadki) -----------
+// Kazdy przypadek zostawia linie
+//   PRZYPADEK nazwa szczyt=B po=B ...
+// szczyt = najwiecej pamieci naraz w trakcie przypadku PONAD stan spoczynku
+//          (pulpit glowny po starcie, miedzy odpytaniami centrali),
+// po     = ile zostaje po przypadku ponad stan spoczynku.
+// Liczone sa bloki, o ktore prosi firmware, LVGL i ArduinoJson ("bajty ESP",
+// patrz pomiar_sterty.c). Pamieci WiFi i lwIP plytki tu nie ma - doliczana
+// jest osobno w pomiar_pamieci.sh (SIEC_*).
+// Calosc biegnie dwa razy: druga runda (linie PRZYPADEK2) pokazuje, czy po
+// powtorzeniu tych samych czynnosci cos przybywa.
+uint32_t g_przypBaza = 0;
+const char* g_przypZnacznik = "PRZYPADEK";
+void przypadekStart() { pomiar_zeruj_szczyty(); }
+void przypadek(const char* nazwa, const char* fmt = nullptr, ...) __attribute__((format(printf, 2, 3)));
+void przypadek(const char* nazwa, const char* fmt, ...) {
+  char uwagi[500] = "";
+  if (fmt != nullptr) {
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(uwagi, sizeof(uwagi), fmt, ap);
+    va_end(ap);
+  }
+  printf("%s %s szczyt=%d po=%d %s\n", g_przypZnacznik, nazwa, (int)(pomiar_szczyt_esp() - g_przypBaza), (int)(pomiar_zywe_esp() - g_przypBaza), uwagi);
+  fflush(stdout);
+  pomiar_zeruj_szczyty();
+}
+// Wraca na pulpit glowny tak, jak robi to sam panel: przez bezczynnosc.
+void wrocNaPulpit(lv_obj_t* pulpit) {
+  for (int i = 0; i < 4 && lv_scr_act() != pulpit; i++) biegnij(16000);
+  if (lv_scr_act() != pulpit) { LiczFirmware licz; lv_scr_load(pulpit); }
+  biegnij(500);
+}
+// Ekran Wykresy otwarty na wyborze serii, z wybranymi 8 seriami (najwiecej,
+// ile pozwala panel: 7 temperatur i cisnienie). Wybor serii zostaje w panelu
+// po zamknieciu ekranu, wiec klikany jest tylko raz.
+const char* const OSIEM_SERII[8] = {"ZEWN", "BOJLER", "Temp. C.O", "Temp. C.O Sr.", "POWROT", "PANEL", "Wewnetrzna", "CISNIENIE"};
+bool g_serieWybrane = false;
+bool wykresyGotowe() {
+  if (znajdzEtykiete(lv_scr_act(), "POKAZ WYKRES") == nullptr) {
+    dotknijWykresu();
+    if (znajdzEtykiete(lv_scr_act(), "POKAZ WYKRES") == nullptr && !otworzWykresy()) return false;
+  }
+  if (!g_serieWybrane) {
+    for (const char* n : OSIEM_SERII) kliknij(n);
+    g_serieWybrane = true;
+    biegnij(300);
+  }
+  return true;
+}
+int ileSeriiZPunktami() {
+  int n = 0;
+  for (int k = 0; k < 8; k++) if (ilePunktow(punktyWykresu(k)) > 0) n++;
+  return n;
+}
+// Linia logu z wynikiem pobierania (nie "zdarzenie=start").
+std::string wynikWykresuZLogu(size_t od) {
+  for (const char* z : {"zdarzenie=pobrano ", "zdarzenie=pobrano_czesc", "zdarzenie=brak_danych", "zdarzenie=blad", "zdarzenie=przerwano"}) {
+    for (const std::string& linia : podzielTekst(g_atrapa.serial.substr(od), '\n'))
+      if (linia.find("tag=WYKRESY") != std::string::npos && linia.find(z) != std::string::npos) {
+        std::string w = linia.substr(linia.find("zdarzenie="));
+        const size_t ram = w.find(" ram=");          // "ram=" w tym modelu to stala atrapy, nie pomiar
+        if (ram != std::string::npos) w.resize(ram);
+        const size_t msg = w.find(" msg=");
+        if (msg != std::string::npos) w.resize(msg);
+        return w;
+      }
+  }
+  return "(brak)";
+}
+// Jeden wykres: klikniecie zakresu i "POKAZ WYKRES", czekanie, pomiar.
+void przypadekWykres(const char* nazwa, const char* zakres, unsigned long czekajMs) {
+  if (!wykresyGotowe()) { printf("PRZYPADEK-BLAD %s: ekran Wykresy sie nie otworzyl\n", nazwa); return; }
+  const int statusPrzed = stanC(0).nStatus;
+  przypadekStart();
+  const size_t od = pokazWykres(zakres, czekajMs);
+  std::string napis;
+  if (!wykresWidoczny()) for (const std::string& x : napisyEkranu()) if (x.size() > 12 && x.find("POKAZ") == std::string::npos && x[0] != '[') { napis = x; break; }
+  if (napis.find('\n') != std::string::npos) napis.resize(napis.find('\n'));
+  przypadek(nazwa, "wykres=%d serii=%d punktow=%d statusow_w_trakcie=%d log=\"%s\" napis=\"%s\"", wykresWidoczny() ? 1 : 0, ileSeriiZPunktami(),
+            ilePunktow(punktyWykresu(0)), stanC(0).nStatus - statusPrzed, wynikWykresuZLogu(od).c_str(), napis.c_str());
+}
+
+void rundaPrzypadkow(lv_obj_t* pulpit) {
+  const std::string dzien = wzorzec("dzien.txt"), godz = wzorzec("godz_ta_sama_doba.txt"), tydz = wzorzec("tydz_pelne_bufory.txt");
+  ustawC(0, [&](Centrala& c) { c.wersjaHistorii = HIST_PANEL; c.panelHist["dzien"] = dzien; c.panelHist["godz"] = godz; c.panelHist["tydz"] = tydz; });
+
+  // --- praca bez dotyku ------------------------------------------------------
+  { const int s0 = stanC(0).nStatus, u0 = stanC(0).nUstawienia;
+    przypadekStart();
+    biegnij(600000);
+    przypadek("praca_10_min", "statusow=%d ustawien=%d", stanC(0).nStatus - s0, stanC(0).nUstawienia - u0); }
+
+  przypadekStart();
+  ustaw(0, [](Centrala& c) { c.tOgrz = 134.0; c.alarmOgrzewanie = true; c.symulacja = SYM_OGRZ; });
+  biegnij(10000);
+  przypadek("alarm_przegrzania", "ekran_alarmu=%d", ekranMa("PRZEGRZANIE") ? 1 : 0);
+  ustaw(0, [](Centrala& c) { c.tOgrz = 55.0; c.alarmOgrzewanie = false; c.symulacja = 0; });
+  biegnij(10000);
+  wrocNaPulpit(pulpit);
+
+  // --- kazdy ekran po kolei --------------------------------------------------
+  // Wszystkie ekrany sa zbudowane przy starcie; tu widac, ile pamieci LVGL
+  // bierze chwilowo na samo ich narysowanie.
+  if (lv_disp_t* d = lv_disp_get_default()) {
+    for (uint32_t i = 0; i < d->screen_cnt; i++) {
+      lv_obj_t* e = d->screens[i];
+      if (e == pulpit || lv_obj_get_child_cnt(e) == 0 || znajdzEtykiete(e, "POKAZ WYKRES") != nullptr) continue;   // Wykresy osobno, nizej
+      std::string tytul;
+      { std::vector<std::string> w; zbierzNapisy(e, w); for (const std::string& x : w) if (!x.empty()) { tytul = x; break; } }
+      { std::string czysty; for (char c : tytul) { if (isalnum((unsigned char)c)) czysty += c; else if (c == ' ' || c == '\n') czysty += '_'; } tytul = czysty; }
+      if (tytul.empty() || znajdzEtykiete(e, "WYSWIETLACZ") != nullptr && znajdzEtykiete(e, "WYKRESY") != nullptr) tytul = "drugi_pulpit";
+      przypadekStart();
+      { LiczFirmware licz; lv_scr_load(e); }
+      biegnij(3000);
+      przypadek(("ekran_" + tytul).c_str());
+      { LiczFirmware licz; lv_scr_load(pulpit); }
+      biegnij(1000);
+    }
+  }
+  // Polecenie z dotyku (POST do centrali): kafelek POMPA -> WLACZ.
+  przypadekStart();
+  { const int postPrzed = stanC(0).nPost;
+    const bool k1 = kliknij("POMPA"); biegnij(500);
+    const bool k2 = kliknij("WLACZ"); biegnij(3000);
+    przypadek("polecenie_z_dotyku", "klik=%d%d postow=%d", k1 ? 1 : 0, k2 ? 1 : 0, stanC(0).nPost - postPrzed); }
+  wrocNaPulpit(pulpit);
+
+  // --- ekran Wykresy ---------------------------------------------------------
+  przypadekStart();
+  const bool otwarty = otworzWykresy();
+  biegnij(2000);
+  przypadek("wykresy_otwarte", "otwarty=%d bufory=%d", otwarty ? 1 : 0, pamiec::zyweBuforyWykresow());
+
+  // Gotowe punkty z centrali 3.58.5, szybkie lacze, 8 serii.
+  przypadekWykres("wykres_dzien", "DZIENNY", 3000);
+  przypadekStart(); biegnij(10000); przypadek("wykres_na_ekranie_10_s", "wykres=%d", wykresWidoczny() ? 1 : 0);
+  przypadekWykres("wykres_godzina", "GODZINNY", 3000);
+  przypadekWykres("wykres_tydzien_pelne_bufory", "TYGODNIOWY", 3000);
+  const std::string przerwa = wzorzec("tydz_przerwa.txt"), pusto = wzorzec("godz_po_restarcie_pusto.txt"), brak = wzorzec("dzien_pusta.txt"), jedna = wzorzec("godz_jedna_probka.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["tydz"] = przerwa; c.panelHist["godz"] = pusto; c.panelHist["dzien"] = brak; });
+  przypadekWykres("wykres_tydzien_z_przerwa", "TYGODNIOWY", 3000);
+  przypadekWykres("napis_same_przerwy", "GODZINNY", 3000);
+  przypadekWykres("napis_centrala_bez_historii", "DZIENNY", 3000);
+  ustawC(0, [&](Centrala& c) { c.panelHist["godz"] = jedna; });
+  przypadekWykres("napis_jeden_pomiar", "GODZINNY", 3000);
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = dzien; c.panelHist["godz"] = godz; c.panelHist["tydz"] = tydz; });
+
+  // Bledy po stronie centrali i sieci.
+  ustawC(0, [](Centrala& c) { c.panelHistKod = 503; });
+  przypadekWykres("blad_centrala_503", "DZIENNY", 3000);
+  ustawC(0, [](Centrala& c) { c.panelHistKod = 200; c.histHtml = true; });
+  przypadekWykres("blad_strona_html", "DZIENNY", 3000);
+  ustawC(0, [](Centrala& c) { c.histHtml = false; c.histUrwijPo = 6000; });
+  przypadekWykres("blad_odpowiedz_urwana", "DZIENNY", 3000);
+  ustawC(0, [](Centrala& c) { c.histUrwijPo = -1; c.histZamilknijPo = 6000; });
+  przypadekWykres("blad_centrala_zamilkla", "DZIENNY", 9000);
+  ustawC(0, [](Centrala& c) { c.histZamilknijPo = -1; });
+
+  // Wolne lacze: wykres idzie kilka-kilkanascie sekund, w tym czasie panel
+  // dalej odpytuje /api/status i /api/ustawienia-get.
+  ustawC(0, [](Centrala& c) { c.histBajtowNaMs = 2.0; });
+  przypadekWykres("wykres_wolne_lacze_2_kB_s", "DZIENNY", 12000);
+  ustawC(0, [](Centrala& c) { c.histBajtowNaMs = 0.8; });
+  przypadekWykres("wykres_wolne_lacze_limit_20_s", "TYGODNIOWY", 22000);
+
+  // Najgorszy zbieg: koniec pobierania i rysowanie wykresu w roznych chwilach
+  // wzgledem odpytan centrali. Szukany jest najwiekszy szczyt.
+  uint32_t najwZbieg = 0; int najwOdstep = 0; double najwTempo = 0; int prob = 0, bezWykresu = 0;
+  const double TEMPA[] = {1.5, 3.0, 6.0, 12.0, 0.0};
+  for (double tempo : TEMPA) {
+    ustawC(0, [tempo](Centrala& c) { c.histBajtowNaMs = tempo; });
+    for (int odstep = 0; odstep < 2000; odstep += 125) {
+      if (!wykresyGotowe()) continue;
+      biegnij(200 + (unsigned long)odstep);
+      przypadekStart();
+      pokazWykres("DZIENNY", tempo > 0 ? (unsigned long)(19000.0 / tempo) + 1500 : 1500);
+      const uint32_t szczyt = pomiar_szczyt_esp() - g_przypBaza;
+      prob++;
+      if (!wykresWidoczny()) bezWykresu++;
+      if (szczyt > najwZbieg) { najwZbieg = szczyt; najwOdstep = odstep; najwTempo = tempo; }
+    }
+  }
+  ustawC(0, [](Centrala& c) { c.histBajtowNaMs = 0; });
+  pomiar_zeruj_szczyty();
+  printf("%s wykres_najgorszy_zbieg szczyt=%u po=%d prob=%d bez_wykresu=%d tempo_kB_s=%.1f odstep_ms=%d\n", g_przypZnacznik, najwZbieg,
+         (int)(pomiar_zywe_esp() - g_przypBaza), prob, bezWykresu, najwTempo, najwOdstep);
+
+  // Alarm w trakcie pobierania: ekran alarmu zastepuje Wykresy.
+  ustawC(0, [](Centrala& c) { c.histBajtowNaMs = 1.0; });
+  if (wykresyGotowe()) {
+    przypadekStart();
+    pokazWykres("DZIENNY", 3000);
+    ustaw(0, [](Centrala& c) { c.tOgrz = 134.0; c.alarmOgrzewanie = true; c.symulacja = SYM_OGRZ; });
+    biegnij(6000);
+    przypadek("alarm_w_trakcie_pobierania", "ekran_alarmu=%d bufory=%d", ekranMa("PRZEGRZANIE") ? 1 : 0, pamiec::zyweBuforyWykresow());
+    ustaw(0, [](Centrala& c) { c.tOgrz = 55.0; c.alarmOgrzewanie = false; c.symulacja = 0; });
+    biegnij(10000);
+  }
+  ustawC(0, [](Centrala& c) { c.histBajtowNaMs = 0; });
+  wrocNaPulpit(pulpit);
+
+  // Centrala starsza niz 3.58.4: caly CSV po staremu. 8000 wierszy to pelny
+  // bufor dlugi centrali, 1440 - pelny bufor krotki.
+  ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; c.wierszyDlugich = 8000; c.wierszyKrotkich = 1440; });
+  przypadekWykres("stara_centrala_tydzien_caly_csv", "TYGODNIOWY", 8000);
+  przypadekWykres("stara_centrala_doba_caly_csv", "DZIENNY", 4000);
+  ustawC(0, [](Centrala& c) { c.histBajtowNaMs = 40.0; });   // 40 kB/s: caly CSV nie zdazy w 20 s
+  przypadekWykres("stara_centrala_tydzien_limit_20_s", "TYGODNIOWY", 22000);
+  ustawC(0, [](Centrala& c) { c.histBajtowNaMs = 0; c.wersjaHistorii = HIST_PANEL; });
+
+  // 30 wykresow z rzedu, na zmiane trzy zakresy: nic nie moze przybywac.
+  const char* const ZAKRESY[3] = {"GODZINNY", "DZIENNY", "TYGODNIOWY"};
+  if (wykresyGotowe()) {
+    pokazWykres("DZIENNY", 1500);
+    const uint32_t przed = pomiar_zywe_esp();
+    przypadekStart();
+    int narysowanych = 0;
+    for (int i = 0; i < 30; i++) {
+      if (!wykresyGotowe()) break;
+      pokazWykres(ZAKRESY[i % 3], 1500);
+      if (wykresWidoczny()) narysowanych++;
+    }
+    przypadek("wykresy_30_z_rzedu", "narysowanych=%d przyrost=%d", narysowanych, (int)(pomiar_zywe_esp() - przed));
+  }
+  wrocNaPulpit(pulpit);
+  biegnij(5000);
+  przypadek("po_wszystkim_na_pulpicie", "bufory=%d restart=%d wdt=%d", pamiec::zyweBuforyWykresow(), g_poRestarcie ? 1 : 0, g_atrapa.wdtZadzialal);
+}
+
+// Stan spoczynku = najmniej zywej pamieci w ciagu 6 s (miedzy odpytaniami centrali).
+uint32_t zyweWSpoczynku() {
+  uint32_t najmniej = pomiar_zywe_esp();
+  for (int i = 0; i < 600; i++) { biegnij(10); if (pomiar_zywe_esp() < najmniej) najmniej = pomiar_zywe_esp(); }
+  return najmniej;
+}
+
+void scenariuszPomiarPrzypadki() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -33, 0));
+  const uint32_t przedSetup = pomiar_zywe_esp();
+  { LiczFirmware licz; setup(); }
+  biegnij(20000);
+  lv_obj_t* pulpit = lv_scr_act();
+  g_przypBaza = zyweWSpoczynku();
+  printf("PRZYPADEK-BAZA po_starcie=%u blokow=%u\n", g_przypBaza - przedSetup, pomiar_zywe_bloki());
+  printf("PRZYPADEK-INFO stary_csv_dlugi_bajtow=%zu stary_csv_krotki_bajtow=%zu\n", csvDlugi(8000).size(), csvKrotki(1440, -1, 0).size());
+  rundaPrzypadkow(pulpit);
+  const uint32_t poPierwszej = zyweWSpoczynku();
+  g_przypZnacznik = "PRZYPADEK2";
+  rundaPrzypadkow(pulpit);
+  const uint32_t poDrugiej = zyweWSpoczynku();
+  printf("PRZYPADEK-PRZYROST po_pierwszej_rundzie=%d druga_runda=%d\n", (int)(poPierwszej - g_przypBaza), (int)(poDrugiej - poPierwszej));
+
+  // Dluga praca: doba bez dotyku, potem 300 wykresow z rzedu.
+  g_przypZnacznik = "PRZYPADEK";
+  { const int s0 = stanC(0).nStatus;
+    przypadekStart();
+    biegnij(24UL * 3600UL * 1000UL);
+    przypadek("praca_24_h", "statusow=%d przyrost=%d", stanC(0).nStatus - s0, (int)(zyweWSpoczynku() - poDrugiej)); }
+  const char* const ZAKRESY[3] = {"GODZINNY", "DZIENNY", "TYGODNIOWY"};
+  if (wykresyGotowe()) {
+    pokazWykres("DZIENNY", 1500);
+    const uint32_t przed = pomiar_zywe_esp();
+    przypadekStart();
+    int narysowanych = 0;
+    for (int i = 0; i < 300; i++) {
+      if (!wykresyGotowe()) break;
+      pokazWykres(ZAKRESY[i % 3], 1200);
+      if (wykresWidoczny()) narysowanych++;
+    }
+    przypadek("wykresy_300_z_rzedu", "narysowanych=%d przyrost=%d", narysowanych, (int)(pomiar_zywe_esp() - przed));
+  }
+  wrocNaPulpit(pulpit);
+  przypadek("koniec_na_pulpicie", "przyrost_od_drugiej_rundy=%d restart=%d wdt=%d", (int)(zyweWSpoczynku() - poDrugiej), g_poRestarcie ? 1 : 0, g_atrapa.wdtZadzialal);
+}
+
+// --- co sie dzieje, gdy wolnego RAM-u jest mniej (pomiar_pamieci.sh --przypadki)
+// Sterta modelu dostaje limit: tyle, ile firmware trzyma w spoczynku, plus
+// LCD_WOLNY_RAM_B bajtow. Przydzial ponad limit dostaje odmowe - jak malloc()
+// na plytce bez wolnej pamieci. Potem zwykle czynnosci: praca, ekran Wykresy,
+// wykres dzienny z 8 seriami, ogladanie go, powrot na pulpit.
+// Odmowa nie dotyczy atrapy String (patrz pomiar_sterty.c) - brak pamieci na
+// odebranie odpowiedzi sprawdza osobno scenariusz brak_pamieci_odbior.
+void scenariuszPomiarMaloRamu() {
+  const char* zm = getenv("LCD_WOLNY_RAM_B");
+  const uint32_t wolne = (zm != nullptr) ? (uint32_t)strtoul(zm, nullptr, 10) : 20000;
+  pomiar_lap_awarie();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -33, 0));
+  const std::string dzien = wzorzec("dzien.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = dzien; });
+  { LiczFirmware licz; setup(); }
+  biegnij(20000);
+  lv_obj_t* pulpit = lv_scr_act();
+  const uint32_t baza = zyweWSpoczynku();
+  pomiar_limit(baza + wolne);
+  const size_t od = g_atrapa.serial.size();
+  auto etap = [&](const char* nazwa, const char* dodatkowo) {
+    printf("MALO-RAMU wolne=%u etap=%s odmow=%u restart=%d %s\n", wolne, nazwa, pomiar_odmow(), g_poRestarcie ? 1 : 0, dodatkowo);
+    fflush(stdout);
+  };
+  char b[200];
+  // ESP.restart() wywolany z obslugi dotyku (poza loop()) - np. LVGL bez
+  // pamieci przy otwieraniu ekranu: scenariusz ma to zapisac i isc dalej.
+  auto dotyk = [&](const std::function<void()>& co) {
+    if (g_poRestarcie) return;
+    try { co(); } catch (const AtrapaRestart&) { g_poRestarcie = true; }
+  };
+  // 1. zwykla praca
+  int s0 = stanC(0).nStatus;
+  biegnij(30000);
+  snprintf(b, sizeof(b), "statusow=%d brak_pamieci_w_logu=%d", stanC(0).nStatus - s0, ileLinii("przyczyna=pam", "", "", od) + ileLinii("NoMemory", "", "", od));
+  etap("praca_30_s", b);
+  // 2. ekran Wykresy
+  bool otwarty = false;
+  dotyk([&] { otwarty = otworzWykresy(); biegnij(2000); });
+  snprintf(b, sizeof(b), "otwarty=%d bufory=%d brak_ram_w_logu=%d", otwarty ? 1 : 0, pamiec::zyweBuforyWykresow(), ileLinii("[WYKRESY] BLAD: brak RAM", "", "", od));
+  etap("wykresy_otwarte", b);
+  // 3. wykres dzienny, 8 serii
+  size_t odW = g_atrapa.serial.size();
+  if (otwarty) dotyk([&] { for (const char* n : OSIEM_SERII) kliknij(n); biegnij(300); odW = pokazWykres("DZIENNY", 3000); });
+  std::string napis;
+  if (!g_poRestarcie && !wykresWidoczny()) for (const std::string& x : napisyEkranu()) if (x.size() > 12 && x.find("POKAZ") == std::string::npos && x[0] != '[') { napis = x; break; }
+  if (napis.find('\n') != std::string::npos) napis.resize(napis.find('\n'));
+  snprintf(b, sizeof(b), "wykres=%d serii=%d log=\"%.60s\" napis=\"%.60s\"", (!g_poRestarcie && wykresWidoczny()) ? 1 : 0, g_poRestarcie ? 0 : ileSeriiZPunktami(),
+           wynikWykresuZLogu(odW).c_str(), napis.c_str());
+  etap("wykres_dzien", b);
+  // 4. ogladanie wykresu 20 s: panel dalej odpytuje centrale
+  s0 = stanC(0).nStatus;
+  const int pamPrzed = ileLinii("przyczyna=pam", "", "", od) + ileLinii("NoMemory", "", "", od);
+  biegnij(20000);
+  snprintf(b, sizeof(b), "statusow=%d brak_pamieci_w_logu=%d", stanC(0).nStatus - s0, ileLinii("przyczyna=pam", "", "", od) + ileLinii("NoMemory", "", "", od) - pamPrzed);
+  etap("wykres_na_ekranie_20_s", b);
+  // 5. powrot na pulpit i dalsza praca
+  dotyk([&] { wrocNaPulpit(pulpit); biegnij(20000); });
+  snprintf(b, sizeof(b), "na_pulpicie=%d bufory=%d wdt=%d", (!g_poRestarcie && lv_scr_act() == pulpit) ? 1 : 0, pamiec::zyweBuforyWykresow(), g_atrapa.wdtZadzialal);
+  etap("po_powrocie", b);
+  pomiar_limit(0);
+  std::string restart = liniaLogu("zdarzenie=restart", od);
+  if (restart == "(brak)" || restart.empty()) restart = liniaLogu("LVGL", od);
+  printf("MALO-RAMU wolne=%u koniec odmow=%u restart=%d log_restartu=\"%.160s\"\n", wolne, pomiar_odmow(), g_poRestarcie ? 1 : 0, restart.c_str());
+}
 #endif
 
 struct Scenariusz {
@@ -2933,6 +3281,8 @@ const Scenariusz SCENARIUSZE[] = {
     {"wykresy_po_restarcie_centrali", "centrala 3.58.5 tuz po restarcie: same przerwy -> napis; przerwa do konca osi (v1.3.0 bez zmian)", scenariuszWykresyPoRestarcieCentrali},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},
+    {"pomiar_przypadki", "ile RAM-u potrzeba w kazdym przypadku pracy (tylko pomiar_pamieci.sh --przypadki)", scenariuszPomiarPrzypadki},
+    {"pomiar_malo_ramu", "co robi panel, gdy wolnego RAM-u jest LCD_WOLNY_RAM_B bajtow (tylko pomiar_pamieci.sh --przypadki)", scenariuszPomiarMaloRamu},
 #endif
 };
 
@@ -2941,7 +3291,8 @@ const Scenariusz SCENARIUSZE[] = {
 bool restartOczekiwany(const char* nazwa) {
   const std::string n = nazwa;
   return n == "autorestart_centrala_milczy" || n == "autorestart_brak_wifi" || n == "autorestart_kolejny" || n == "zla_odpowiedz_dlugo" ||
-         n == "autorestart_przy_alarmie" || n == "zla_odpowiedz_bez_konca" || n == "brak_pamieci_json" || n == "brak_pamieci_lvgl";
+         n == "autorestart_przy_alarmie" || n == "zla_odpowiedz_bez_konca" || n == "brak_pamieci_json" || n == "brak_pamieci_lvgl" ||
+         n == "pomiar_malo_ramu";
 }
 
 }  // namespace

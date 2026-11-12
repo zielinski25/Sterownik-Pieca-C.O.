@@ -11,6 +11,7 @@ ESP32. PlatformIO go nie widzi i nie kompiluje — nie wpływa na firmware.
 SANITIZER=1 ./uruchom_testy.sh     # to samo z AddressSanitizer + UBSan (wolniej)
 ./sprawdz_naglowki_esp32.sh        # składnia i typy prawdziwymi nagłówkami ESP32 (patrz niżej)
 ./pomiar_pamieci.sh                # ile RAM-u trzyma firmware + limity (patrz niżej; wymaga: pip install ziglang)
+./pomiar_pamieci.sh --przypadki    # czy RAM-u starczy w każdym przypadku pracy (ok. 2 minut)
 ```
 
 Wymaga: `g++` (C++17), `gcc`, `ar`, `git`, Linux albo WSL. Przy pierwszym
@@ -37,8 +38,9 @@ LCD_TESTY_CACHE=/tmp/lcd_nowe ./pomiar_pamieci.sh --wszystko
 
 Stan na 2026-11-12, v1.3.0: z LVGL 8.4.0 i ArduinoJson 7.4.3 przechodzą
 wszystkie scenariusze (także z `SANITIZER=1` i w modelu 32-bitowym), a pomiar
-pamięci daje 129 244 B po starcie, 5 448 B na jedno odpytanie i 2 884 B /
-5 476 B chwilowo na wykres (punkty z centrali / cały CSV).
+pamięci daje 129 244 B po starcie, 5 244 B na jedno odpytanie i 2 452 B /
+5 272 B chwilowo na wykres (punkty z centrali / cały CSV); z opcją
+`--przypadki`: najwięcej naraz 25 276 B, próg 24 700 B.
 
 ## Co jest w środku
 
@@ -51,8 +53,8 @@ pamięci daje 129 244 B po starcie, 5 448 B na jedno odpytanie i 2 884 B /
 | `wzorce_v122/` | Punkty, które z tych samych starych CSV narysował firmware v1.2.2 (opis: `CZYTAJ.txt` w tym katalogu). Z nimi porównywane jest rysowanie po staremu. |
 | `uruchom_testy.sh` | Buduje i uruchamia całość. |
 | `sprawdz_naglowki_esp32.sh` | Sprawdza składnię i typy źródeł panelu prawdziwymi nagłówkami arduino-esp32 / ESP-IDF / TFT_eSPI (bez atrap). |
-| `pomiar_pamieci.sh` | Mierzy, ile pamięci RAM trzyma firmware, i pilnuje limitów. Buduje ten sam program jako 32-bitowy, z `pomiar_sterty.c` zamiast zwykłego `malloc()`. |
-| `pomiar_sterty.c` | `malloc()` z licznikiem: dla każdego bloku pamięta rozmiar i stos wywołań; liczy go tak, jak zajmuje miejsce na stercie ESP32. |
+| `pomiar_pamieci.sh` | Mierzy, ile pamięci RAM trzyma firmware, i pilnuje limitów. Buduje ten sam program jako 32-bitowy, z `pomiar_sterty.c` zamiast zwykłego `malloc()`. Z `--przypadki`: ile pamięci trzeba w każdym przypadku pracy i co się dzieje, gdy jest jej mniej. |
+| `pomiar_sterty.c` | `malloc()` z licznikiem: dla każdego bloku pamięta rozmiar i stos wywołań; liczy go tak, jak zajmuje miejsce na stercie ESP32. Potrafi też odmawiać ponad zadany limit (jak płytka bez wolnego RAM-u) i wypisać stos wywołań, gdy program modelu sięgnie pod zły adres. |
 | `pomiar_rozbicie.py` | Dla `pomiar_pamieci.sh --kto`: zamienia zapisane stosy wywołań na nazwy funkcji firmware'u i sumuje pamięć według nich. |
 
 LVGL i ArduinoJson są **prawdziwe** (te same wersje co w `platformio.ini`),
@@ -190,6 +192,7 @@ firmware kompiluje się dla ESP32 ani że działa na płytce.
 ./pomiar_pamieci.sh              # pomiar + limity (kod wyjścia 1, gdy przekroczone)
 ./pomiar_pamieci.sh --kto        # dodatkowo: która funkcja firmware'u trzyma ile pamięci
 ./pomiar_pamieci.sh --wszystko   # dodatkowo: wszystkie scenariusze w modelu 32-bitowym
+./pomiar_pamieci.sh --przypadki  # dodatkowo: czy RAM-u starczy w każdym przypadku pracy (patrz niżej)
 SRC=/tmp/stary/src LIMITY=0 ./pomiar_pamieci.sh   # inna wersja źródeł, same liczby
 ```
 
@@ -208,13 +211,13 @@ Wynik dla v1.3.0:
 
 ```
 po starcie firmware trzyma          129 244 B w 2470 blokach
-jedno odpytanie centrali, chwilowo    5 588 B wiecej
+jedno odpytanie centrali, chwilowo    5 384 B wiecej
 przyrost po 10 minutach pracy             0 B
 ekran alarmu                            188 B wiecej
 ekran Wykresy otwarty                18 632 B wiecej
 ...i po jego zamknieciu                  24 B wiecej
-wykres z centrali 3.58.4 (pobranie i rysowanie), chwilowo 2 884 B wiecej
-wykres po staremu (caly CSV, 352 kB), chwilowo        5 616 B wiecej
+wykres z centrali 3.58.4 (pobranie i rysowanie), chwilowo 2 452 B wiecej
+wykres po staremu (caly CSV, 352 kB), chwilowo        5 412 B wiecej
 po pierwszym wykresie zostaje           424 B (opisy osi i legenda, tworzone raz)
 przyrost po 5 kolejnych wykresach       -28 B
 zmienne statyczne firmware'u          4 468 B (v1.2.0: 3 092 B)
@@ -222,7 +225,14 @@ zmienne statyczne firmware'u          4 468 B (v1.2.0: 3 092 B)
 
 Pierwsze sześć liczb jest takich samych jak w v1.2.2. v1.1.0 i v1.2.0
 trzymały po starcie 171 kB (170 324 B i 170 572 B), a jedno odpytanie brało
-7 284 B i 7 412 B.
+7 080 B i 7 208 B.
+
+Liczby „chwilowo” są od 2026-11-12 o ok. 0,2 kB niższe niż przy wydaniu
+v1.3.0 (wtedy: 5 588, 2 884 i 5 616 B; v1.1.0 i v1.2.0: 7 284 i 7 412 B).
+Model liczył każde zmniejszenie bloku przez `realloc()` jak nowy przydział —
+przez chwilę stary i nowy blok naraz. Sterta ESP-IDF zmniejsza blok
+w miejscu i `pomiar_sterty.c` robi teraz tak samo. Liczby „trzyma” się nie
+zmieniły.
 
 Linie o wykresie (od v1.3.0): „chwilowo” to najwięcej pamięci naraz
 w sekundach, w których panel pobiera dane i rysuje wykres — razem z odpytaniem
@@ -262,6 +272,101 @@ Atrapa `String` rośnie tak jak `String` z arduino-esp32 (dokładnie do
 potrzeb, w górę do 16 bajtów; przypisanie krótszego tekstu nie zwalnia
 bufora), ale pod spodem jest `std::string` — drobne teksty mogą zajmować
 o kilkanaście bajtów więcej albo mniej niż na płytce.
+
+### Czy RAM-u starczy: `--przypadki`
+
+Krok [6] uruchamia w modelu 32-bitowym scenariusz `pomiar_przypadki`: po
+kolei 27 przypadków pracy, a dla każdego, ile pamięci firmware trzyma po nim
+i ile bierze **naraz** w najgorszej chwili — ponad stan po starcie:
+
+- praca bez dotyku (10 minut i doba), ekran alarmu, każdy z pozostałych
+  ekranów, polecenie z dotyku;
+- ekran Wykresy: wykres godzinny, dzienny i tygodniowy z 8 seriami (więcej
+  panel nie pozwala wybrać), pełna historia centrali, wykres z przerwą,
+  napisy zamiast wykresu, kod 503, strona HTML, odpowiedź urwana, centrala,
+  która zamilkła, wolne łącze, limit 20 s;
+- wykres w 80 różnych chwilach względem odpytań `/api/status` (5 szybkości
+  łącza × 16 przesunięć) — szukany jest najgorszy zbieg;
+- alarm w trakcie pobierania; starsza centrala z całym CSV (8000 wierszy);
+  30 i 300 wykresów z rzędu.
+
+Całość biegnie dwa razy: druga runda pokazuje, czy powtórzenie tych samych
+czynności coś zostawia. Na koniec doba pracy bez dotyku i 300 wykresów
+z rzędu. Wynik dla v1.3.0 (2026-11-12):
+
+```
+najwiecej naraz: 25 416 B (centrala po restarcie: napis zamiast wykresu)
+na plytce zostaje wtedy ok. 12 748 B wolnego RAM-u; bez otwartych Wykresow najmniej ok. 39 032 B
+po pierwszym przejsciu wszystkich przypadkow zostaje 1 248 B (tworzone raz), po drugim przybywa 0 B
+```
+
+Pojedyncze liczby różnią się między przebiegami o kilkadziesiąt bajtów.
+Udawana centrala działa w osobnym wątku i raz na kilka przebiegów któreś
+odpytanie nie zdąży; panel pokazuje wtedy w nagłówku powód, a ten napis
+zostaje w pamięci (40 B, jednorazowo).
+
+Kolumna „na plytce” to **szacunek**: wolny RAM płytki po starcie minus
+„naraz” minus pamięć sieci, której model nie liczy. Stałe są w nagłówku
+skryptu, z opisem, skąd pochodzą:
+
+- `RAM_PO_STARCIE_V122_B=49676` — z logu płytki z v1.2.2; dla innych źródeł
+  skrypt odejmuje to, o ile więcej trzymają po starcie i w zmiennych
+  statycznych (v1.3.0: 512 B);
+- `SIEC_ODPYTANIA_B=3500` — z tego samego logu: w spoczynku 50,1–50,5 kB,
+  najmniej 41,6 kB, a model daje na odpytanie 5,4 kB;
+- `SIEC_WYKRES_B=7500` — nie zmierzone; górna granica z ustawień lwIP
+  (okno odbioru TCP 5 760 B, czyli najwyżej 4 ramki czekające na odczyt).
+
+Krok [7] powtarza zwykły ciąg czynności (praca, wejście na Wykresy, wykres
+dzienny z 8 seriami, 20 s oglądania, powrót) ze stertą modelu ograniczoną
+limitem: tyle, ile firmware trzyma w spoczynku, plus zadana liczba bajtów.
+Przydział ponad limit dostaje odmowę, jak `malloc()` na płytce bez wolnego
+RAM-u. Wynik:
+
+```
+40 000 B   wszystko dziala, zadnej odmowy pamieci
+26 000 B   wszystko dziala, zadnej odmowy pamieci
+24 000 B   wykres jest; w trakcie 3 odpytan centrali bez pamieci (naglowek: BRAK PAMIECI), po wyjsciu z Wykresow wraca do normy
+20 000 B   wejscie na Wykresy (8 z 8 buforow) -> LVGL bez pamieci -> restart panelu z wpisem w logu
+18 000 B   napis "Brak pamieci na wykres" (7 z 8 buforow); panel pracuje dalej
+12 000 B   wejscie na Wykresy (5 z 8 buforow) -> LVGL bez pamieci -> restart panelu z wpisem w logu
+ 4 000 B   juz na pulpicie czesc odpytan centrali bez pamieci; napis "Brak pamieci na wykres" (1 z 8 buforow); potem restart (45 s bez danych z centrali)
+przedzialy (129 prob, co 250 B od 0 do 32 000 B):
+  od 24 900 B          wszystko dziala, zadnej odmowy pamieci
+  21 000 - 24 750 B    wykres jest; czesc odpytan centrali bez pamieci, po wyjsciu z Wykresow wraca do normy
+  ponizej 21 000 B     wejscie na Wykresy konczy sie restartem panelu z wpisem w logu (61 z 84 prob) albo napisem (23 z 84)
+  awarii modelu (siegniecie pod zly adres): 0 z 162 prob
+prog: od 24 900 B wolnego RAM-u w gore nie ma ani jednej odmowy pamieci
+plytka: 49 164 B po starcie - 11 000 B sieci = 38 164 B dla firmware'u, czyli 13 264 B ponad prog
+```
+
+Poniżej 21 kB to, czy będzie napis, czy restart, zależy od tego, ile buforów
+punktów (po 2 304 B) zmieści się przed wyczerpaniem pamięci: bufory są
+przydzielane po kolei, a następny w kolejce jest przydział LVGL — jego brak
+kończy się restartem (`panel_lvgl_assert()`).
+
+Skrypt kończy się kodem 1, gdy: „najwięcej naraz” przekracza 27 000 B,
+szacunek dla płytki spada poniżej 8 000 B, w drugiej rundzie, w ciągu doby
+albo po 300 wykresach przybywa ponad 256 B, wykres albo napis nie pojawia
+się tam, gdzie powinien, albo program modelu kończy się awarią (sięgnięcie
+pod zły adres — na płytce byłby to wyjątek procesora i restart; skrypt
+wypisuje wtedy stos wywołań). Wypróbowane na celowo zepsutej kopii źródeł
+(48 B gubione przy każdym wykresie): przyrost 8 128 B w drugiej rundzie
+i 19 188 B po 300 wykresach, kod wyjścia 1.
+
+Ograniczenia kroku [7]:
+
+- Limit jest jedną liczbą dla całej sterty. Sterta płytki bywa pofragmentowana
+  — tego model nie odtwarza. Największy pojedynczy przydział firmware'u
+  w czasie pracy to bufor punktów wykresu, 2 304 B.
+- Odmowa nie dotyczy atrapy `String` (`std::string` skończyłby program
+  wyjątkiem; prawdziwy `String` zostaje pusty). Brak pamięci na odebranie
+  odpowiedzi sprawdza osobny scenariusz, `brak_pamieci_odbior`.
+- Zmniejszenie bloku przez `realloc()` zawsze się udaje, jak na płytce.
+  Wcześniejsza wersja modelu potrafiła go odmówić — a ArduinoJson 7.2.1
+  kończy każdy odczytany tekst takim zmniejszeniem i nie sprawdza wyniku,
+  więc model kończył się awarią w `StringPool::add()`. Na płytce ta droga
+  nie istnieje.
 
 ## Sprawdzenie prawdziwymi nagłówkami ESP32
 

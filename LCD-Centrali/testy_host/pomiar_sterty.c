@@ -138,6 +138,10 @@ static uint32_t g_zywe_bloki, g_zywe_bajty, g_zywe_esp, g_szczyt_esp;
 // limit, zwraca NULL - tak jak malloc na plytce, ktorej skonczyla sie pamiec.
 static uint32_t g_limit_esp;
 static uint32_t g_odmow;
+// >0: przydzial jest liczony, ale limit go nie dotyczy. Tak przydziela atrapa
+// String (std::string przez operator new): odmowa konczylaby program wyjatkiem
+// std::bad_alloc, a prawdziwy String z Arduino przy braku pamieci zostaje pusty.
+static __thread int t_bez_limitu;
 
 static uint32_t esp_bajty(size_t r) {
   return (uint32_t)((r + 12 + 3) & ~(size_t)3) + 4;
@@ -186,7 +190,7 @@ static void* przydziel(size_t rozmiar) {
     n = zlap_stos(ramki);
   }
   zamknij();
-  if (licz && g_limit_esp > 0 && g_zywe_esp + esp_bajty(rozmiar) > g_limit_esp) {
+  if (licz && g_limit_esp > 0 && !t_bez_limitu && g_zywe_esp + esp_bajty(rozmiar) > g_limit_esp) {
     g_odmow++;
     otworz();
     errno = ENOMEM;
@@ -263,6 +267,25 @@ void* realloc(void* p, size_t n) {
   if (p == NULL) return przydziel(n ? n : 1);
   if (n == 0) { zwolnij(p); return NULL; }
   Naglowek* h = (Naglowek*)p - 1;
+  // Zmniejszenie bloku: w miejscu i zawsze z powodzeniem - tak robi sterta
+  // ESP-IDF (TLSF). Ma to znaczenie przy limicie pamieci (pomiar_limit()):
+  // ArduinoJson 7 konczy kazdy tekst realloc() w dol i nie sprawdza wyniku,
+  // wiec "odmowa" zmniejszenia - na plytce niemozliwa - wywracala model.
+  if (n <= h->rozmiar && h->klasa != 0xFFFFFFFFu && h->magia == MAGIA) {
+    zamknij();
+    if (h->stos) {
+      const uint32_t e_stare = esp_bajty(h->rozmiar), e_nowe = esp_bajty(n);
+      const uint32_t roznica = h->rozmiar - (uint32_t)n;
+      g_zywe_bajty -= roznica;
+      g_zywe_esp -= e_stare - e_nowe;
+      Stos* st = &g_stosy[h->stos - 1];
+      st->zywe_bajty -= roznica;
+      st->zywe_esp -= e_stare - e_nowe;
+    }
+    h->rozmiar = (uint32_t)n;
+    otworz();
+    return p;
+  }
   void* q = przydziel(n);
   if (q == NULL) return NULL;          // stary blok zostaje, jak w prawdziwym realloc
   memcpy(q, p, h->rozmiar < n ? h->rozmiar : n);
@@ -282,6 +305,7 @@ size_t malloc_usable_size(void* p) { return p ? ((Naglowek*)p - 1)->rozmiar : 0;
 void pomiar_start(void) { }
 void pomiar_wstrzymaj(int o_ile) { t_wstrzymany += o_ile; }
 void pomiar_limit(uint32_t esp_bajtow) { zamknij(); g_limit_esp = esp_bajtow; otworz(); }
+void pomiar_bez_limitu(int o_ile) { t_bez_limitu += o_ile; }
 uint32_t pomiar_odmow(void) { return g_odmow; }
 uint32_t pomiar_zywe_esp(void) { return g_zywe_esp; }
 uint32_t pomiar_zywe_bajty(void) { return g_zywe_bajty; }
@@ -312,4 +336,55 @@ void pomiar_zrzut(const char* plik, int tryb) {
   }
   fclose(f);
   t_wstrzymany--;
+}
+
+// --- awaria modelu (SIGSEGV itp.) ---------------------------------------------
+// Gdy program modelu siega pod zly adres (na plytce: wyjatek procesora i
+// restart), wypisuje adresy stosu wywolan - pomiar_pamieci.sh zamienia je na
+// nazwy funkcji (addr2line). Bez malloc i bez stdio.
+#include <signal.h>
+#include <ucontext.h>
+static void pisz_hex(uintptr_t v) {
+  char b[2 + 2 * sizeof(v) + 1];
+  int n = 0;
+  b[n++] = ' '; b[n++] = '0'; b[n++] = 'x';
+  for (int i = (int)(2 * sizeof(v)) - 1; i >= 0; i--) b[n++] = "0123456789abcdef"[(v >> (4 * i)) & 0xf];
+  (void)!write(1, b, (size_t)n);
+}
+static void awaria(int sygnal, siginfo_t* info, void* kontekst) {
+  static const char pocz[] = "\nMODEL-AWARIA sygnal=";
+  (void)!write(1, pocz, sizeof(pocz) - 1);
+  char c = (char)('0' + (sygnal / 10) % 10); (void)!write(1, &c, 1);
+  c = (char)('0' + sygnal % 10); (void)!write(1, &c, 1);
+  static const char adr[] = " adres="; (void)!write(1, adr, sizeof(adr) - 1);
+  pisz_hex((uintptr_t)info->si_addr);
+  static const char st[] = " stos="; (void)!write(1, st, sizeof(st) - 1);
+#if defined(__i386__)
+  const ucontext_t* u = (const ucontext_t*)kontekst;
+  pisz_hex((uintptr_t)u->uc_mcontext.gregs[REG_EIP]);
+  void** r = (void**)(uintptr_t)u->uc_mcontext.gregs[REG_EBP];
+  for (int i = 0; i < 40; i++) {
+    if ((uintptr_t)r < g_stos_dol || (uintptr_t)r + 8 > g_stos_gora || ((uintptr_t)r & 3)) break;
+    if (r[1] == NULL) break;
+    pisz_hex((uintptr_t)r[1]);
+    void** nast = (void**)r[0];
+    if (nast <= r) break;
+    r = nast;
+  }
+#else
+  (void)kontekst;
+#endif
+  (void)!write(1, "\n", 1);
+  _exit(139);
+}
+void pomiar_lap_awarie(void) {
+  if (!g_granice_znane) ustal_granice_stosu();
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_sigaction = awaria;
+  sa.sa_flags = SA_SIGINFO;
+  sigaction(SIGSEGV, &sa, NULL);
+  sigaction(SIGBUS, &sa, NULL);
+  sigaction(SIGFPE, &sa, NULL);
+  sigaction(SIGILL, &sa, NULL);
 }

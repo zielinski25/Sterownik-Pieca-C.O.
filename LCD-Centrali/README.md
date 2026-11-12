@@ -122,6 +122,33 @@ wykresie dziennym przez 15 minut (gdy stara historia była starsza niż doba),
 na tygodniowym przez 105 minut (gdy była starsza niż tydzień). Opis i tabela
 „przed i po”: `README.md` paczki 3.58.5.
 
+### Czy RAM-u starczy
+
+Sprawdzone 2026-11-12 na PC, przeliczone na płytkę z logu v1.2.2. Pełny
+opis, także dla centrali: `RAPORT_PAMIEC_RAM_LCD_I_CENTRALA.md` w katalogu
+głównym repozytorium.
+
+| | Firmware bierze naraz | Wolny RAM na płytce |
+|---|---|---|
+| Po starcie | — | 49,2 kB (v1.2.2 zmierzone: 49,7 kB) |
+| Zwykła praca, alarm, pozostałe ekrany, polecenie z dotyku | ok. 6,6 kB | najmniej ok. 39 kB (v1.2.2 zmierzone: 41,6 kB) |
+| Ekran Wykresy otwarty, bez wykresu | 24,5 kB | najmniej ok. 21 kB |
+| Wykres na ekranie — każdy zakres, 8 serii, także napis zamiast wykresu, błąd, starsza centrala | do 25,4 kB | najmniej ok. 13 kB |
+
+„Firmware bierze naraz” to pomiar w modelu 32-bitowym: pamięć ponad stan po
+starcie, razem z odpytaniem centrali, które wypadło w tej samej chwili.
+„Wolny RAM na płytce” to **szacunek**: 49,2 kB minus to, minus pamięć sieci
+płytki (odpytania do 3,5 kB — z logu v1.2.2; pobieranie wykresu do 7,5 kB —
+z ustawień lwIP, nie zmierzone). Prawdziwą liczbę poda `ram_min=` w linii
+`tag=WYKRESY zdarzenie=pobrano`.
+
+Wszystko działa bez jednej odmowy pamięci, dopóki firmware ma po starcie co
+najmniej 24,9 kB wolnego RAM-u. Płytka ma 49,2 kB minus do 11 kB sieci, czyli
+ok. 13 kB ponad ten próg. Poniżej progu panel w modelu się nie zawiesza:
+zależnie od tego, ile pamięci zostało, część odpytań centrali kończy się
+napisem `BRAK PAMIECI`, wykres zastępuje napis `Brak pamieci na wykres` albo
+panel restartuje się z wpisem `zdarzenie=lvgl_assert` w logu.
+
 ### Po wgraniu
 
 Otwórz WYKRESY, wybierz serie, dotknij `POKAZ WYKRES`. W logu panelu pojawi
@@ -178,7 +205,7 @@ i z pomiaru, nie obserwacja.
 | Wolny RAM na płytce po starcie | ok. 8 kB (z logu) | 49,7 kB (z logu; szacunek z PC: 48,6 kB) |
 | Bufor rysowania ekranu | 38,4 kB | 15,4 kB |
 | Bufory ekranu Wykresy (18,5 kB) | trzymane zawsze | tylko gdy ekran jest otwarty |
-| Pamięć potrzebna chwilowo na jedno odpytanie centrali | 7,4 kB | 5,6 kB (odpowiedź nie jest już kopiowana) |
+| Pamięć potrzebna chwilowo na jedno odpytanie centrali | 7,2 kB | 5,4 kB (odpowiedź nie jest już kopiowana) |
 | Wolna pamięć w logu | `heap=` — zawyżone o ok. 39 kB | `ram=` — prawdziwa |
 | Brak pamięci na odczytanie odpowiedzi | kafelki `--`, w logu `przyczyna=json` (wygląda na winę centrali), bez restartu | nagłówek `BRAK PAMIECI`, `przyczyna=pam`, restart po 45 s |
 | Brak pamięci na odebranie odpowiedzi | odpowiedź po cichu ucięta, w logu wygląda jak błąd centrali | `GET nieudany: brak pamieci na odpowiedz`, `przyczyna=pam` |
@@ -576,15 +603,27 @@ Wykresy i sposobem pobierania jego danych; reszta kodu jest ta sama.
   zbudowany jako program 32-bitowy, z licznikiem każdego przydziału pamięci
   i z narzutem sterty ESP32. Po starcie trzyma 129 244 B — tyle samo co
   v1.2.2 (v1.1.0: 170 324 B, v1.2.0: 170 572 B); jedno odpytanie centrali
-  bierze chwilowo 5 588 B (v1.2.0: 7 412 B); przez 10 minut pracy nie
-  przybywa nic. Pobranie i narysowanie wykresu bierze chwilowo 2 884 B
-  (punkty z centrali) albo 5 616 B (cały CSV), razem z odpytaniem statusu,
+  bierze chwilowo 5 384 B (v1.2.0: 7 208 B); przez 10 minut pracy nie
+  przybywa nic. Pobranie i narysowanie wykresu bierze chwilowo 2 452 B
+  (punkty z centrali) albo 5 412 B (cały CSV), razem z odpytaniem statusu,
   które wypada w tym samym czasie; sam kod pobierania nie prosi o pamięć ze
   sterty, a pięć wykresów z rzędu nie zostawia nic. Zmiennych statycznych
   jest o 512 B więcej niż w v1.2.2 (bufor jednej linii odpowiedzi i stan
   pobierania). Skrypt pilnuje tych liczb limitami. Wszystkie scenariusze
   przechodzą także w tym modelu. Pamięci, którą na czas pobierania bierze
-  stos sieciowy płytki, ten pomiar nie widzi.
+  stos sieciowy płytki, ten pomiar nie widzi. (Przy wydaniu v1.3.0 te
+  liczby były o ok. 0,2 kB wyższe — 5 588, 2 884 i 5 616 B, tak też są
+  w komentarzu w `src/main.cpp`. Model liczył wtedy każde zmniejszenie
+  bloku pamięci jak nowy przydział; sterta ESP32 zmniejsza blok w miejscu.)
+- **Czy RAM-u starczy, na PC** (`testy_host/pomiar_pamieci.sh --przypadki`,
+  2026-11-12): 27 przypadków pracy — każdy ekran, wykresy na wszystkie
+  sposoby z 8 seriami, błędy centrali i sieci, alarm w trakcie pobierania,
+  starsza centrala z całym CSV, doba pracy, 300 wykresów z rzędu. Najwięcej
+  pamięci naraz ponad stan po starcie: 25 416 B. Druga runda tych samych
+  czynności nie zostawia nic. Osobno: sterta modelu z limitem — od 24 900 B
+  wolnego RAM-u w górę nie ma ani jednej odmowy pamięci. Przeliczenie na
+  płytkę i opis: rozdział „Czy RAM-u starczy” wyżej
+  i `RAPORT_PAMIEC_RAM_LCD_I_CENTRALA.md` w katalogu głównym repozytorium.
 - **Składnia i typy, prawdziwymi nagłówkami ESP32:** wszystkie trzy pliki
   `.cpp` bez błędów z arduino-esp32 3.0.7 i 3.3.8, ESP-IDF 5.1, TFT_eSPI,
   LVGL i ArduinoJson (`testy_host/sprawdz_naglowki_esp32.sh`; kompilator clang,
@@ -593,8 +632,8 @@ Wykresy i sposobem pobierania jego danych; reszta kodu jest ta sama.
   i każdy ArduinoJson 7.x od 7.2.0 — którą wersję ma dany komputer, zależy od
   tego, kiedy PlatformIO je pobrał. Wszystko powyższe przechodzi z LVGL 8.3.11
   i ArduinoJson 7.2.1 oraz z najnowszymi wydaniami (LVGL 8.4.0, ArduinoJson
-  7.4.3) — także v1.3.0. Pamięć po starcie wychodzi identyczna, odpytanie
-  centrali o 140 B mniejsze.
+  7.4.3) — także v1.3.0 i `pomiar_pamieci.sh --przypadki`. Pamięć po
+  starcie wychodzi identyczna, odpytanie centrali o 140 B mniejsze.
 - **Na płytce** (2026-11-12, **v1.2.2**): firmware zbudowany w PlatformIO
   i wgrany przez użytkownika. Panel startuje, zgłasza centrali `v1.2.2`, ma
   49,7 kB wolnego RAM-u po starcie i w ok. 40 s logu odczytał wszystkie
