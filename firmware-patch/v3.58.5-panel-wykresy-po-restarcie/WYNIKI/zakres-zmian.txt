@@ -1,0 +1,85 @@
+ZAKRES ZMIAN v3.58.5 (main_centrala.cpp)
+=======================================
+Wynik: v3.58.5, SHA-256 f7dc097e016e2ef2b89c36ec2a34d0ce16768115c34d697751462472c40f166c
+
+A. WZGLEDEM 3.58.4   (main_centrala-v3.58.4-do-v3.58.5.patch)
+-------------------------------------------------------------
+Baza: v3.58.4, SHA-256 7c92ed2d62c00b958fe24a731db65df97eadb8db9157eb1da63c520226246bcc
+      (firmware-patch/v3.58.4-panel-wykresy/src/main_centrala.cpp)
+Diff: 14 blokow (hunkow), 215 linii dodanych, 43 usuniete.
+
+  1. Wpis changeloga na gorze pliku                      +50 linii (komentarz)
+  2. FIRMWARE_VERSION "v3.58.4" -> "v3.58.5"             1 linia zmieniona
+  3. 12 blokow diffu WEWNATRZ [v3.58.4 PANEL-WYKRESY-BEGIN] ... [-END]
+                                                         +164 / -42 linii
+       - komentarz bloku: opis poczatku i konca okna, pol od= / do= naglowka,
+       - stala PANEL_HIST_CZAS_PEWNY,
+       - nowe funkcje (wszystkie "static"):
+           panelHistDlugiLiczySie()   regula "ktory wpis bufora dlugiego wchodzi do wykresu"
+           panelHistCzasKrotkiej()    czas probki krotkiej (takze bez zegara)
+             -> obie reguly byly dotad wpisane w panelHistWiersz(); teraz
+                panelHistWiersz() je wola (dzialanie bez zmian)
+           panelHistCzasWiersza()     sam czas wiersza, bez kopiowania wiersza
+           panelHistDoKiedy()         do kiedy obowiazuje wiersz (prog przerwy)
+             -> wyniesione z przebiegu 2 w historiaPanelZbudujCsv() (bez zmian)
+           panelHistNajwczesniejsza() pierwsza sekunda zakresu z pomiarem
+           panelHistTerazUtc()        biezacy czas z pol zegara centrali
+       - historiaPanelZbudujCsv():
+           przebieg 1 czyta same czasy (dotad: pelne wiersze),
+           wybor konca okna (najnowsza probka albo biezacy czas),
+           przebieg 1b: pierwsza sekunda zakresu z pomiarem = poczatek okna
+           (dotad: najstarsza probka w buforach),
+           naglowek: do= i do_etyk= podaja koniec okna.
+
+Poza blokiem PANEL-WYKRESY zmienia sie tylko komentarz na gorze pliku i numer
+wersji. Trasa HTTP /api/history/panel jest bez zmian.
+
+Kod bloku nadal tylko CZYTA: historiaBufor, historiaDlugaBufor, ich liczniki
+(pod historiaMux, jak w historiaZbudujCsv()), historiaZapisNaFsWlaczony() oraz -
+nowe w 3.58.5 - piec zmiennych zegara: aktualnaDataRok, aktualnaDataMiesiac,
+aktualnaDataDzien, aktualnyCzasGodzina, aktualnyCzasMinuta (ustawia je RTC()
+w petli glownej). Nowe wywolanie biblioteczne: mktime() - poza spinlockiem;
+tak samo liczy czas dataLokalnaNaUnixUtc() przy zapisie probek.
+
+B. WZGLEDEM 3.58.3   (main_centrala-v3.58.3-do-v3.58.5.patch)
+-------------------------------------------------------------
+Baza: v3.58.3, SHA-256 65e37b14349dd37771863d702cec4d90f289aa9d8ca98a811458d8c8bcb82147
+      (plik v3.58.0-LAN-PANEL/src/main_centrala.cpp z galezi arena/fa9f8bd9-sterownik-pieca-c-o)
+Diff: 4 bloki (hunki), 623 linie dodane, 1 usunieta. Zadna istniejaca linia
+      kodu nie zostala zmieniona poza numerem wersji.
+
+  1. Wpisy changeloga (3.58.5 i 3.58.4) na gorze pliku   +83 linie (komentarz)
+  2. FIRMWARE_VERSION "v3.58.3" -> "v3.58.5"             1 linia zmieniona
+  3. Blok [v3.58.4 PANEL-WYKRESY-BEGIN] ... [-END]       +526 linii
+     wstawiony zaraz po historiaDlugaZbudujCsv()
+  4. Trasa GET /api/history/panel w rejestracji tras     +13 linii
+     zaraz po trasie /api/history/long (bez zmian wzgledem 3.58.4):
+       wifiWebServer.on(AsyncURIMatcher::exact("/api/history/panel"), HTTP_GET, [](AsyncWebServerRequest *request) {
+         String tryb = "dzien";
+         int pkt = PANEL_HIST_PKT_DOMYSLNIE;
+         if (request->hasParam("tryb")) tryb = request->getParam("tryb")->value();
+         if (request->hasParam("pkt")) pkt = request->getParam("pkt")->value().toInt();
+         String csv;
+         const int kod = historiaPanelZbudujCsv(tryb.c_str(), pkt, csv);
+         request->send(kod, "text/plain", csv);
+       });
+
+CZEGO NIE MA W DIFFACH
+----------------------
+Zadnej zmiany w: /api/history, /api/history/long, /history*, zapisie historii,
+przelaczniku zapisu, plikach /hist_short.csv i /hist_long.csv, NVS, Firebase,
+Telegramie, sterowaniu piecem, czujnikach, stronie WWW, /api/status,
+/api/lan/*, OTA. Kod niczego nie zapisuje (ani do pamieci historii, ani na
+flash).
+
+JAK TO SPRAWDZIC SAMEMU
+-----------------------
+W repozytorium:
+  diff -u firmware-patch/v3.58.4-panel-wykresy/src/main_centrala.cpp \
+          firmware-patch/v3.58.5-panel-wykresy-po-restarcie/src/main_centrala.cpp | less
+Obie latki z tej paczki, nalozone programem "patch" na swoja baze, daja plik
+o SHA-256 podanym na gorze:
+  patch -p1 kopia_3.58.4.cpp < main_centrala-v3.58.4-do-v3.58.5.patch
+  patch -p1 kopia_3.58.3.cpp < main_centrala-v3.58.3-do-v3.58.5.patch
+Na Windows, w folderze projektu PlatformIO (po zrobieniu kopii .bak):
+  fc.exe src\main_centrala.cpp.bak-przed-3.58.5 src\main_centrala.cpp

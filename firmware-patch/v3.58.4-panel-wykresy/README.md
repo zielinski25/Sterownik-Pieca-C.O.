@@ -1,5 +1,14 @@
 # Firmware centrali 3.58.4 — gotowe punkty wykresów dla panelu LCD
 
+> **Zastąpiona przez 3.58.5** (`../v3.58.5-panel-wykresy-po-restarcie/`).
+> Wgraj tamtą paczkę zamiast tej; pasuje do projektu z wersją 3.58.3 albo
+> 3.58.4. 3.58.4 po restarcie centrali, mając w pamięci tylko starą historię
+> (na przykład z wyłączonym zapisem historii na flash), przez pierwszą minutę
+> odsyłała panelowi stare dane jako bieżący zakres, a potem panel pisał
+> „Za malo danych na wykres (jeden pomiar)” — na wykresie dziennym do
+> 15 minut, na tygodniowym do 105. Ten katalog zostaje jako zapis tego, co
+> było wydane, i jako punkt odniesienia dla testów 3.58.5.
+
 Data: 2026-11-12 · baza: **3.58.3** (SHA-256 `src/main_centrala.cpp`:
 `65e37b14349dd37771863d702cec4d90f289aa9d8ca98a811458d8c8bcb82147`, plik
 `v3.58.0-LAN-PANEL/src/main_centrala.cpp` z gałęzi

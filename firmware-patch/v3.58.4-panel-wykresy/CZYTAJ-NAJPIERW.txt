@@ -1,3 +1,12 @@
+UWAGA: TA PACZKA JEST ZASTAPIONA PRZEZ 3.58.5
+(katalog ../v3.58.5-panel-wykresy-po-restarcie/ w repozytorium).
+Wgraj tamta zamiast tej - pasuje do projektu z wersja 3.58.3 albo 3.58.4.
+Powod: 3.58.4 po restarcie centrali, majac w pamieci tylko stara historie
+(np. z wylaczonym zapisem historii na flash), przez pierwsza minute odsylala
+panelowi stare dane jako biezacy zakres, a potem panel pisal "Za malo danych
+na wykres (jeden pomiar)" - na wykresie dziennym do 15 minut, na tygodniowym
+do 105 minut. Reszta tej instrukcji jest bez zmian.
+
 FIRMWARE CENTRALI 3.58.4 - co zrobic w 3 krokach
 ================================================
 Zmienia sie JEDEN plik: src/main_centrala.cpp

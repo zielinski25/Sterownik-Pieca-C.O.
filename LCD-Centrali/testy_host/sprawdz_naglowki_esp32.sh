@@ -29,7 +29,10 @@
 #   SRC=/sciezka/do/src ./sprawdz_naglowki_esp32.sh   inne zrodla (np. starsza wersja)
 #   SRC=/katalog PLIKI="a.cpp b.cpp" ./sprawdz_naglowki_esp32.sh   inne pliki z katalogu SRC
 #       (tak sprawdzany jest fragment firmware'u centrali - patrz
-#        firmware-patch/v3.58.4-panel-wykresy/tests/sprawdz_naglowki_esp32.sh)
+#        firmware-patch/v3.58.5-panel-wykresy-po-restarcie/tests/sprawdz_naglowki_esp32.sh)
+#   OSTRZEZENIA=1 ./sprawdz_naglowki_esp32.sh    dodatkowo liczy ostrzezenia clang
+#       (-Wall -Wextra -Wformat=2 -Wshadow) w plikach z katalogu SRC i pokazuje pierwsze z nich.
+#       Wynik skryptu zalezy nadal tylko od bledow: ostrzezenia clang to nie ostrzezenia GCC.
 # ============================================================================
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -103,16 +106,21 @@ PIO="$(sed 's/;.*//' "$TU/../platformio.ini" | sed -n '/^build_flags/,/^[a-z_.]*
 ZASTEPCZE=""
 if [ "$RDZEN" != "3.0.7" ]; then ZASTEPCZE="-Dtouch_value_t=uint32_t -Dwifi_band_t=int -Dwifi_band_mode_t=int"; fi
 
+# Ostrzezenia: domyslnie wylaczone (-Wno-everything). clang traktuje jak blad m.in. zawezanie
+# w {} (GCC tylko ostrzega) - z OSTRZEZENIA=1 jest ono ostrzezeniem, jak w GCC.
+OSTRZ="-Wno-everything"
+if [ "${OSTRZEZENIA:-0}" = "1" ]; then OSTRZ="-Wall -Wextra -Wformat=2 -Wshadow -Wno-error=c++11-narrowing"; fi
+
 echo "[3] sprawdzanie zrodel: $SRC"
 echo "    flagi z platformio.ini: $PIO"
 BLEDY=0
 for plik in ${PLIKI:-main.cpp dashboard_lvgl_poc.cpp lvgl_port.cpp}; do
   WYNIK="$K/wynik_${RDZEN}_$plik.txt"
-  # -Wno-everything: ostrzezenia sa sprawa prawdziwego kompilatora (GCC); tu
+  # $OSTRZ (domyslnie -Wno-everything): ostrzezenia sa sprawa prawdziwego kompilatora (GCC); tu
   # liczą sie bledy. (clang traktuje jak blad m.in. zawezanie w {} - GCC nie.)
   # shellcheck disable=SC2046,SC2086
   if python3 -m ziglang clang --target=xtensa-esp32-elf -x c++ -std=gnu++2b -fno-rtti -fexceptions -fsyntax-only \
-      -nostdinc -nostdinc++ -ferror-limit=50 -Wno-everything $LIBCXX \
+      -nostdinc -nostdinc++ -ferror-limit=50 $OSTRZ $LIBCXX \
       -isystem "$ZD/lib/libcxx/include" -isystem "$ZD/lib/libcxxabi/include" -isystem "$SYS" -isystem "$ZD/lib/include" \
       $(sed 's/\\"/"/g' "$L/flags/defines") \
       -DARDUINO=10812 -DARDUINO_ESP32_DEV -DARDUINO_ARCH_ESP32 '-DARDUINO_BOARD="ESP32_DEV"' '-DARDUINO_VARIANT="esp32"' \
@@ -123,6 +131,12 @@ for plik in ${PLIKI:-main.cpp dashboard_lvgl_poc.cpp lvgl_port.cpp}; do
       -I"$INCLUDE" -I"$SRC" -I"$K/atrapa_hasel" -I"$K/TFT_eSPI" -I"$K/ArduinoJson/src" -I"$K/lvgl" -I"$K/lvgl/src" \
       "$SRC/$plik" > "$WYNIK" 2>&1; then
     echo "    $plik: bez bledow"
+    if [ "${OSTRZEZENIA:-0}" = "1" ]; then
+      # Tylko ostrzezenia wskazujace pliki z katalogu SRC (nie naglowki bibliotek).
+      ILE="$(grep -c "^$SRC/[^:]*:[0-9]*:[0-9]*: warning" "$WYNIK" || true)"
+      echo "    $plik: ostrzezen clang w plikach z $SRC: $ILE"
+      grep "^$SRC/[^:]*:[0-9]*:[0-9]*: warning" "$WYNIK" | sed "s|^$SRC/||" | head -10 | sed 's/^/      /' || true
+    fi
   else
     BLEDY=1
     echo "    $plik: BLEDY ($(grep -c 'error:' "$WYNIK" || true)) - pelny wynik: $WYNIK"

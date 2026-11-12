@@ -1,20 +1,24 @@
-WZORCE ODPOWIEDZI CENTRALI 3.58.4 NA  GET /api/history/panel?tryb=...&pkt=96
-===========================================================================
+WZORCE ODPOWIEDZI CENTRALI NA  GET /api/history/panel?tryb=...&pkt=96
+====================================================================
 
 Co to jest
 ----------
-Pliki .txt w tym katalogu to TRESC odpowiedzi, ktora centrala z firmware
-3.58.4 wysyla panelowi LCD, gdy ten prosi o punkty do wykresu. Nie sa pisane
-recznie: wypisal je kod centrali, wyciety z jej pliku main_centrala.cpp
-(blok [v3.58.4 PANEL-WYKRESY]) i uruchomiony na PC z przygotowana historia.
+Pliki .txt w tym katalogu to TRESC odpowiedzi, ktora centrala wysyla panelowi
+LCD, gdy ten prosi o punkty do wykresu. Nie sa pisane recznie: wypisal je kod
+centrali 3.58.5, wyciety z jej pliku main_centrala.cpp (blok
+[v3.58.4 PANEL-WYKRESY]) i uruchomiony na PC z przygotowana historia.
+
+Pierwsze 9 plikow jest co do bajta takich samych, jakie wypisuje centrala
+3.58.4 (z nimi powstal firmware panelu v1.3.0). Dwa ostatnie to odpowiedzi,
+jakie wysyla dopiero 3.58.5: tuz po restarcie centrali.
 
 Kto z nich korzysta
 -------------------
 - Testy panelu (../symulator_panelu.cpp, scenariusze wykresy_*): udawana
   centrala odsyla panelowi dokladnie te pliki.
-- Testy centrali (firmware-patch/v3.58.4-panel-wykresy/tests/): przy kazdym
-  uruchomieniu wypisuja te same odpowiedzi od nowa i porownuja je z tymi
-  plikami bajt po bajcie.
+- Testy centrali (firmware-patch/v3.58.5-panel-wykresy-po-restarcie/tests/):
+  przy kazdym uruchomieniu wypisuja te same odpowiedzi od nowa i porownuja je
+  z tymi plikami bajt po bajcie.
 Dzieki temu panel jest testowany na tym, co centrala naprawde wysyla. Gdy
 ktos zmieni format po jednej stronie, testy drugiej strony to pokaza.
 
@@ -33,6 +37,15 @@ Pliki
   tydz_pelne_bufory.txt   oba bufory centrali pelne (8000 + 1440 wierszy),
                           najdluzsze mozliwe liczby - najwieksza odpowiedz
 
+Centrala 3.58.5 tuz po restarcie, zapis historii wylaczony 3 dni temu (fs=0),
+w pamieci tylko historia wczytana ze starych plikow, nowego pomiaru jeszcze
+nie ma:
+  godz_po_restarcie_pusto.txt  ostatnia godzina: zadnego pomiaru - naglowek
+                          i 96 linii "#przerwa"
+  tydz_po_restarcie.txt   ostatnie 7 dni do biezacej chwili: 55 punktow ze
+                          starej historii (ZEWN 2,0, potem 4,0) i 41 linii
+                          "#przerwa" az do konca osi
+
 Format (pelny opis: komentarz przy historiaPanelZbudujCsv() w centrali)
 -----------------------------------------------------------------------
   #panel-hist 1 tryb=.. pkt=.. wierszy=.. od=.. do=.. krok_s=.. zrodlo=lokalne fs=.. od_etyk=.. do_etyk=..
@@ -42,7 +55,7 @@ Format (pelny opis: komentarz przy historiaPanelZbudujCsv() w centrali)
 
 Jak odswiezyc (tylko po SWIADOMEJ zmianie formatu odpowiedzi w centrali)
 ------------------------------------------------------------------------
-  cd firmware-patch/v3.58.4-panel-wykresy/tests
+  cd firmware-patch/v3.58.5-panel-wykresy-po-restarcie/tests
   AKTUALIZUJ_WZORCE=1 ./uruchom_testy.sh
   cd ../../../LCD-Centrali/testy_host && ./uruchom_testy.sh
 Nie poprawiaj tych plikow recznie - testy centrali zglosza wtedy roznice.
