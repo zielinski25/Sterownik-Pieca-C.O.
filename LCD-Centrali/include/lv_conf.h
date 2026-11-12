@@ -57,6 +57,26 @@
 #define LV_USE_ASSERT_NULL  1
 #define LV_USE_ASSERT_MALLOC 1
 
+/* [v1.2.2 PAMIEC] Co LVGL robi, gdy wykryje blad wewnetrzny (assert) - w
+   praktyce: gdy malloc() odmowi mu pamieci w trakcie rysowania. Domyslnie
+   LVGL 8 staje wtedy w pustej petli "while(1);": ekran zamiera, a po 15 s
+   panel restartuje watchdog, bez sladu przyczyny. Tak wygladal restart w
+   logu z 2026-11-12 ("task_wdt ... loopTask (CPU 1)", slad wywolan w
+   rysowaniu LVGL). Zamiast tego wolana jest panel_lvgl_assert() z
+   src/main.cpp: napis na ekranie, wpis w logu, powod zapisany dla centrali
+   i restart od razu. */
+#ifndef __ASSEMBLER__
+#ifdef __cplusplus
+extern "C" {
+#endif
+void panel_lvgl_assert(void);
+#ifdef __cplusplus
+}
+#endif
+#endif
+#define LV_ASSERT_HANDLER_INCLUDE <stdint.h>
+#define LV_ASSERT_HANDLER panel_lvgl_assert();
+
 #define LV_USE_ARC          1   // przyda sie np. do wskaznika suwaka KLAPA/SYBERKA
 #define LV_USE_BAR          1
 #define LV_USE_BTN          1

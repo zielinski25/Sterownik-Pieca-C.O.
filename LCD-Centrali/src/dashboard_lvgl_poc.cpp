@@ -4833,25 +4833,53 @@ static bool wykresy_tryb_jest_dlugi() {
 // zmiennymi globalnymi projektu (WiFi/HTTPClient/ArduinoJson/reszta
 // main.cpp), a juz dzisiejsze 2x24x96=4608 B to i tak niemalo. Zamiast tego
 // - tablica 8 WSKAZNIKOW (32 B, pomijalne) + malloc() per slot w runtime,
-// tak samo jak `buf1` w lvgl_port.cpp. Alokowane RAZ, jednorazowo, przez
-// wykresy_bufory_8_zaalokuj() ponizej - wolane raz z wykresy_panel_zbuduj()
-// (patrz koniec tej partii). Uzycie samych wskaznikow - w Partii 8d.
+// tak samo jak `buf1` w lvgl_port.cpp. Uzycie samych wskaznikow - w Partii 8d.
+//
+// [v1.2.2 PAMIEC] Bufory (8 x 96 punktow x 24 B = 18,4 kB) istnieja TYLKO
+// wtedy, gdy ekran Wykresy jest otwarty. Do v1.2.1 byly przydzielane raz, przy
+// starcie, i trzymane do konca - takze wtedy, gdy nikt na wykresy nie
+// patrzyl. Byl to drugi co do wielkosci przydzial w programie (po buforze
+// rysowania), a panel pracowal z ok. 8 kB wolnego RAM-u (log z 2026-11-12,
+// patrz HISTORIA ZMIAN w main.cpp). Dane wykresu i tak sa pobierane z
+// centrali od nowa przy kazdym wejsciu na podstrone Wykres, wiec nic nie
+// ginie. Przydzial i zwolnienie sa przypiete do zdarzen ekranu
+// (wykresy_panel_ekran_event_cb() nizej), wiec dzialaja przy KAZDYM wejsciu
+// i wyjsciu: przycisk X, gest, limit bezczynnosci, ekran alarmu.
+// Zasada dla calego kodu wykresow: wskaznik pusty => liczba punktow 0;
+// kazde uzycie sprawdza jedno albo drugie.
 static WykresyPunkt *g_wykresyPunkty[WYKRESY_MAX_SLOTOW] = { nullptr };
 static int g_wykresyLiczbaPunktow[WYKRESY_MAX_SLOTOW] = { 0 };
 
 static void wykresy_bufory_8_zaalokuj() {
-  static bool jujZaalokowane = false; // bezpiecznik - funkcja moze byc wolana tylko raz
-  if (jujZaalokowane) return;
   for (int i = 0; i < WYKRESY_MAX_SLOTOW; i++) {
+    if (g_wykresyPunkty[i] != nullptr) continue;   // juz jest (np. dwa zdarzenia wejscia z rzedu)
+    g_wykresyLiczbaPunktow[i] = 0;
     g_wykresyPunkty[i] = (WykresyPunkt *)malloc(sizeof(WykresyPunkt) * WYKRESY_MAX_PUNKTOW);
     if (g_wykresyPunkty[i] == nullptr) {
-      // Ten sam wzorzec co malloc bufora rysowania w lvgl_port.cpp - jesli
-      // to sie nie uda, lepiej wykryc to od razu przez Serial niz miec
-      // tajemniczy crash pozniej przy pierwszym uzyciu w Partii 8d.
-      Serial.printf("[WYKRESY] BLAD: brak RAM na bufor punktow slotu %d (malloc zwrocil NULL)\n", i);
+      // Brak pamieci na ten slot: seria po prostu nie pojawi sie na wykresie
+      // (kazde uzycie g_wykresyPunkty[] sprawdza wskaznik).
+      Serial.printf("[WYKRESY] BLAD: brak RAM na bufor punktow slotu %d\n", i);
     }
   }
-  jujZaalokowane = true;
+}
+
+static void wykresy_bufory_8_zwolnij() {
+  // Gdyby jakies pobieranie danych bylo jeszcze w toku, jego reszta ma
+  // przepasc (strumien_linia() i strumien_koniec() sprawdzaja .aktywny).
+  g_wykresyStrumien.aktywny = false;
+  for (int i = 0; i < WYKRESY_MAX_SLOTOW; i++) {
+    g_wykresyLiczbaPunktow[i] = 0;
+    free(g_wykresyPunkty[i]);   // free(nullptr) jest dozwolone
+    g_wykresyPunkty[i] = nullptr;
+  }
+}
+
+// Zdarzenia ekranu Wykresy: LVGL wysyla LOAD_START, zanim ekran sie pokaze,
+// i UNLOADED, gdy zastapil go inny - niezaleznie od tego, co to spowodowalo.
+static void wykresy_panel_ekran_event_cb(lv_event_t *e) {
+  const lv_event_code_t kod = lv_event_get_code(e);
+  if (kod == LV_EVENT_SCREEN_LOAD_START) wykresy_bufory_8_zaalokuj();
+  else if (kod == LV_EVENT_SCREEN_UNLOADED) wykresy_bufory_8_zwolnij();
 }
 
 // [FIX-WYKRESY-RAM, ta sesja] Parowe scalenie 96 zamknietych kubelkow w 48
@@ -5623,12 +5651,11 @@ static lv_obj_t *wykresy_podstrone_utworz(lv_obj_t *parent) {
 static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   dashboardScr = scr; // moze juz byc ustawione przez inny *_zbuduj() - bezpieczne do powtorzenia
 
-  // [PARTIA 8a, ta sesja] Alokacja bufora 8 slotow - raz, na starcie tego
-  // ekranu (ten sam moment cyklu zycia co jednorazowe utworzenie
-  // wykresyChartSer[] nizej).
-  wykresy_bufory_8_zaalokuj();
-
   wykresyPanel = lv_obj_create(nullptr);
+  // [v1.2.2 PAMIEC] Bufory punktow (18,4 kB) tylko na czas, gdy ten ekran
+  // jest otwarty - patrz komentarz przy g_wykresyPunkty[].
+  lv_obj_add_event_cb(wykresyPanel, wykresy_panel_ekran_event_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
+  lv_obj_add_event_cb(wykresyPanel, wykresy_panel_ekran_event_cb, LV_EVENT_SCREEN_UNLOADED, nullptr);
   lv_obj_set_style_bg_color(wykresyPanel, rgb565(KOL_TLO), 0);
   lv_obj_set_style_bg_opa(wykresyPanel, LV_OPA_COVER, 0);
   lv_obj_clear_flag(wykresyPanel, LV_OBJ_FLAG_SCROLLABLE);

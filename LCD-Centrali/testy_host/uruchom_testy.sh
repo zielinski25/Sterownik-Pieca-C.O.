@@ -86,7 +86,7 @@ for zadanie in $(jobs -p); do wait "$zadanie" || BLEDY=1; done
 if [ "$BLEDY" != 0 ]; then echo "    BLAD KOMPILACJI (patrz komunikaty wyzej)"; exit 1; fi
 # --wrap: polaczenia panelu do 192.168.4.1:80 ida do serwera w symulator_panelu.cpp
 g++ -o "$BUD/symulator_panelu" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/atrapa.o "$BUD"/sym.o \
-    "$LIB" $SAN -Wl,--wrap=connect,--wrap=send -lpthread
+    "$LIB" $SAN -Wl,--wrap=connect,--wrap=send,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -lpthread
 echo "    OK"
 
 echo "[4] scenariusze (log Seriala i zrzuty ekranu: $WYNIKI)"

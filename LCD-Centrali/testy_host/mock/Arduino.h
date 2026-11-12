@@ -75,6 +75,14 @@ class String {
   String(float v, unsigned int miejsc = 2) : s_(ulamek(v, miejsc)) {}
   String(double v, unsigned int miejsc = 2) : s_(ulamek(v, miejsc)) {}
 
+  // Jak String z arduino-esp32: przypisanie krotszego tekstu (np. "") NIE
+  // zwalnia bufora - zostaje do ponownego uzycia.
+  String& operator=(const char* c) { s_.assign(c ? c : ""); return *this; }
+  String(const String&) = default;
+  String(String&&) = default;
+  String& operator=(const String&) = default;
+  String& operator=(String&&) = default;
+
   const char* c_str() const { return s_.c_str(); }
   unsigned int length() const { return (unsigned int)s_.size(); }
   bool isEmpty() const { return s_.empty(); }
@@ -83,14 +91,28 @@ class String {
   char operator[](unsigned int i) const { return charAt(i); }
   char& operator[](unsigned int i) { return s_[i]; }
 
-  bool concat(const String& o) { s_ += o.s_; return true; }
-  bool concat(const char* c) { if (c) s_ += c; return true; }
-  bool concat(const char* c, unsigned int n) { if (c) s_.append(c, n); return true; }
-  bool concat(char c) { s_ += c; return true; }
-  template <typename T> String& operator+=(const T& v) { s_ += String(v).s_; return *this; }
-  String& operator+=(const String& o) { s_ += o.s_; return *this; }
-  String& operator+=(const char* c) { if (c) s_ += c; return *this; }
-  String& operator+=(char c) { s_ += c; return *this; }
+  // String z Arduino przy braku pamieci NIE zglasza bledu: concat() zwraca
+  // false, a "+=" po prostu nic nie dopisuje. Test moze to wlaczyc: tekst nie
+  // urosnie do `odmowaOdDlugosci` znakow ani wyzej (0 = bez ograniczenia).
+  static inline unsigned int odmowaOdDlugosci = 0;
+  bool concat(const char* c, unsigned int n) {
+    if (!c) return false;
+    if (odmowaOdDlugosci != 0 && s_.size() + n >= odmowaOdDlugosci) return false;
+    // Jak String z arduino-esp32: bufor rosnie dokladnie do potrzeb (w gore do
+    // 16 bajtow), a nie "na zapas" jak std::string - to ma znaczenie dla
+    // pomiar_pamieci.sh (najwiekszy String firmware'u to odpowiedz centrali).
+    const size_t trzeba = s_.size() + n;
+    if (trzeba > s_.capacity()) s_.reserve(((trzeba + 16) & ~(size_t)0xf) - 1);
+    s_.append(c, n);
+    return true;
+  }
+  bool concat(const String& o) { return concat(o.s_.data(), (unsigned int)o.s_.size()); }
+  bool concat(const char* c) { return c ? concat(c, (unsigned int)strlen(c)) : false; }
+  bool concat(char c) { return concat(&c, 1); }
+  template <typename T> String& operator+=(const T& v) { concat(String(v)); return *this; }
+  String& operator+=(const String& o) { concat(o); return *this; }
+  String& operator+=(const char* c) { concat(c); return *this; }
+  String& operator+=(char c) { concat(c); return *this; }
 
   bool equals(const String& o) const { return s_ == o.s_; }
   bool equals(const char* c) const { return s_ == (c ? c : ""); }

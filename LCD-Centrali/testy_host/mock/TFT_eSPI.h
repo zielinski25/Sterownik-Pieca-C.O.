@@ -71,7 +71,7 @@ class TFT_eSPI {
   int16_t textWidth(const char* s, uint8_t = 1) { return (int16_t)(8 * strlen(s)); }
   int16_t textWidth(const String& s, uint8_t = 1) { return (int16_t)(8 * s.length()); }
   int16_t fontHeight(int16_t = 1) { return 16; }
-  int16_t drawString(const char* s, int32_t, int32_t, uint8_t = 1) { g_atrapa.napisyTft.push_back(s ? s : ""); return 0; }
+  int16_t drawString(const char* s, int32_t, int32_t, uint8_t = 1) { AtrapaBezPomiaru bezPomiaru; g_atrapa.napisyTft.push_back(s ? s : ""); return 0; }
   int16_t drawString(const String& s, int32_t x, int32_t y, uint8_t f = 1) { return drawString(s.c_str(), x, y, f); }
   int16_t drawNumber(long, int32_t, int32_t, uint8_t = 1) { return 0; }
   int16_t drawCentreString(const char*, int32_t, int32_t, uint8_t) { return 0; }

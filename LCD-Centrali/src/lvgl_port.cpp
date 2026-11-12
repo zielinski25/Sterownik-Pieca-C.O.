@@ -1,19 +1,29 @@
 // [LVGL - KROK 4] Implementacja mostu LVGL <-> Twoj sprzet.
 #include <lvgl.h>
 #include <TFT_eSPI.h>
+#include <esp_heap_caps.h>   // [v1.2.2 PAMIEC] wolny RAM liczony tak, jak widzi go malloc()
 #include "lvgl_port.h"
 
 // Zdefiniowane w main.cpp - uzywamy tych samych obiektow/funkcji, zero duplikacji.
 extern TFT_eSPI tft;
 bool dotykOdczytaj(int16_t &px, int16_t &py);
 
-// [PAMIEC] Brak PSRAM -> bufor rysowania MUSI byc maly. 480px szerokosci x 40
-// wierszy x 2 bajty (RGB565) = 38400B (~37.5KB) na JEDEN bufor. LVGL odswieza
-// ekran "paskami" tej wysokosci zamiast calym ekranem naraz - troche wolniej
-// niz pelny framebuffer, ale 480x320x2 = 307KB w ogole by sie nie zmiescilo w
-// SRAM zwyklego ESP32 (dzielonym jeszcze z WiFi/HTTPClient/JSON). To jest
-// STANDARDOWA rekomendacja LVGL dla ESP32 bez PSRAM - 1/8 do 1/10 wysokosci
-// ekranu na bufor.
+// [PAMIEC] Brak PSRAM -> bufor rysowania MUSI byc maly. LVGL odswieza ekran
+// "paskami" tej wysokosci zamiast calym ekranem naraz - 480x320x2 = 307KB
+// w ogole by sie nie zmiescilo w SRAM zwyklego ESP32 (dzielonym jeszcze z
+// WiFi/HTTPClient/JSON).
+//
+// [v1.2.2 PAMIEC] Bylo 40 wierszy = 38400 B, teraz 16 wierszy = 15360 B
+// (480 px x 16 wierszy x 2 bajty RGB565). Powod: log panelu z 2026-11-12 -
+// po starcie zostawalo ok. 8 kB wolnego RAM-u, a w najgorszej chwili 0,7 kB;
+// panel nie mial gdzie rozpakowac odpowiedzi centrali ("json=NoMemory"), a
+// LVGL przy rysowaniu stawal na braku pamieci (restart przez watchdog).
+// Ten bufor byl najwiekszym pojedynczym przydzialem w calym programie
+// (pomiar: testy_host/pomiar_pamieci.sh). Mniejszy bufor oznacza wiecej,
+// nizszych paskow przy przerysowaniu calego ekranu (20 zamiast 8): pikseli
+// do narysowania i wyslania po SPI jest tyle samo, dochodzi niewielki narzut
+// na kazdy pasek (NIE zmierzone na plytce). LVGL 8 dopuszcza kazdy bufor
+// nie mniejszy niz jeden wiersz ekranu.
 //
 // [FIX RAM - linker "dram0_0_seg overflowed"] Bufor NIE moze byc "static"
 // tablica - static/global tablice ladowane sa do .bss/.dram0.bss, ktora ma
@@ -24,10 +34,10 @@ bool dotykOdczytaj(int16_t &px, int16_t &py);
 // sam fizyczny RAM, ale liczony/przydzielany dynamicznie, wiec linker nie
 // blokuje sie na etapie kompilacji. To jest zalecany sposob dla LVGL na
 // ESP32 bez PSRAM.
-#define LVGL_BUF_WIERSZE 40
+#define LVGL_BUF_WIERSZE 16
 static lv_disp_draw_buf_t drawBuf;
 static lv_color_t *buf1 = nullptr;
-// Tylko JEDEN bufor (nie podwojny) - oszczedza kolejne ~37.5KB RAM kosztem
+// Tylko JEDEN bufor (nie podwojny) - oszczedza kolejne ~15 kB RAM kosztem
 // tego, ze CPU czeka na zakonczenie wysylki SPI przed rozpoczeciem rysowania
 // kolejnego paska (brak nakladania sie rysowania z transferem). Jesli po
 // testach na sprzecie odczujesz, ze UI "przycina" przy przewijaniu/animacjach,
@@ -118,7 +128,10 @@ void lvgl_port_init() {
   // konczy (podejrzany numer 1: assert LVGL - domyslny handler w LVGL 8 to
   // "while(1);" bez zadnego printa, wiec awaria wewnatrz lv_init() albo
   // rejestracji sterownikow zawiesza sie calkowicie po cichu).
-  Serial.printf("[LVGL] start lvgl_port_init(), wolny heap=%u B\n", ESP.getFreeHeap());
+  // [v1.2.2 PAMIEC] "wolny RAM" = pamiec, z ktorej korzysta malloc(). Do
+  // v1.2.1 stalo tu "wolny heap" z ESP.getFreeHeap(), zawyzone o ok. 39 kB
+  // (patrz opis przy ramWolny() w main.cpp).
+  Serial.printf("[LVGL] start lvgl_port_init(), wolny RAM=%u B\n", (unsigned)heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
 
   lv_init();
   Serial.println("[LVGL] lv_init() OK");
@@ -134,7 +147,7 @@ void lvgl_port_init() {
     Serial.println("[LVGL] BLAD: brak RAM na bufor rysowania LVGL (malloc zwrocil NULL)");
     while (true) { delay(1000); }
   }
-  Serial.printf("[LVGL] bufor rysowania zaalokowany (%u B), wolny heap=%u B\n", (unsigned)bufBajtow, ESP.getFreeHeap());
+  Serial.printf("[LVGL] bufor rysowania zaalokowany (%u B), wolny RAM=%u B\n", (unsigned)bufBajtow, (unsigned)heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
 
   lv_disp_draw_buf_init(&drawBuf, buf1, NULL, 480 * LVGL_BUF_WIERSZE);
 

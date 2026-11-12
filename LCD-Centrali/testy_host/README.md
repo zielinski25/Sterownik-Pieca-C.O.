@@ -10,6 +10,7 @@ ESP32. PlatformIO go nie widzi i nie kompiluje — nie wpływa na firmware.
 ./uruchom_testy.sh dwie_centrale   # jeden scenariusz, z pełnym logiem Seriala na ekranie
 SANITIZER=1 ./uruchom_testy.sh     # to samo z AddressSanitizer + UBSan (wolniej)
 ./sprawdz_naglowki_esp32.sh        # składnia i typy prawdziwymi nagłówkami ESP32 (patrz niżej)
+./pomiar_pamieci.sh                # ile RAM-u trzyma firmware + limity (patrz niżej; wymaga: pip install ziglang)
 ```
 
 Wymaga: `g++` (C++17), `gcc`, `ar`, `git`, Linux albo WSL. Przy pierwszym
@@ -21,15 +22,35 @@ Logi Seriala i zrzuty ekranu (`.bmp`) z każdego scenariusza trafiają do
 `src/secrets.h` nie jest potrzebny — gdy go nie ma, testy dostają atrapę z
 wymyślonymi hasłami (atrapa WiFi haseł nie sprawdza).
 
+**Inne wersje bibliotek.** `platformio.ini` dopuszcza każde LVGL 8.x od 8.3.11
+i każdy ArduinoJson 7.x od 7.2.0. Skrypty pobierają biblioteki tylko wtedy,
+gdy nie ma ich w katalogu podręcznym, więc inną wersję wystarczy włożyć tam
+wcześniej:
+
+```
+mkdir -p /tmp/lcd_nowe
+git clone --depth 1 --branch v8.4.0 https://github.com/lvgl/lvgl.git /tmp/lcd_nowe/lvgl
+git clone --depth 1 --branch v7.4.3 https://github.com/bblanchon/ArduinoJson.git /tmp/lcd_nowe/ArduinoJson
+LCD_TESTY_CACHE=/tmp/lcd_nowe ./uruchom_testy.sh
+LCD_TESTY_CACHE=/tmp/lcd_nowe ./pomiar_pamieci.sh --wszystko
+```
+
+Stan na 2026-11-12, v1.2.2: z LVGL 8.4.0 i ArduinoJson 7.4.3 przechodzą
+wszystkie scenariusze (także z `SANITIZER=1` i w modelu 32-bitowym), a pomiar
+pamięci daje 129 244 B po starcie i 5 448 B na jedno odpytanie.
+
 ## Co jest w środku
 
 | Plik | Co robi |
 |---|---|
-| `test_diagnostyka.cpp` | Testy jednostkowe `src/diagnostyka_panelu.h` (kod HTTP, dławik logu, strażnik świeżości, wybór najsilniejszego AP, znacznik centrali, próg baterii; od v1.2.1: przyczyna braku danych, drabina ratunkowa, pamięć i token samoczynnego restartu). |
+| `test_diagnostyka.cpp` | Testy jednostkowe `src/diagnostyka_panelu.h` (kod HTTP, dławik logu, strażnik świeżości, wybór najsilniejszego AP, znacznik centrali, próg baterii; od v1.2.1: przyczyna braku danych, drabina ratunkowa, pamięć i token samoczynnego restartu; od v1.2.2: brak pamięci jako przyczyna). |
 | `mock/` | Atrapy nagłówków Arduino/ESP-IDF (`Arduino.h`, `WiFi.h`, `TFT_eSPI.h`, `Preferences.h`, `esp_*.h`…). Stan „płytki” opisuje `mock/atrapa.h`. |
 | `symulator_panelu.cpp` | Uruchamia `setup()` i `loop()` firmware'u, podstawia mu „centrale” (lokalny serwer HTTP) i sprawdza log oraz to, co trafiło na ekran. Odpowiedź `/api/status` ma te same pola, kolejność i format liczb co `wifiZbudujJsonStatus()` w firmware centrali 3.58.3 (ok. 1,8 kB). Udawana centrala traktuje parametr `reset_powod` tak jak 3.58.3: „pisze” o powodzie restartu panelu przy każdej zmianie wartości innej niż `sw` i `deepsleep`. |
 | `uruchom_testy.sh` | Buduje i uruchamia całość. |
 | `sprawdz_naglowki_esp32.sh` | Sprawdza składnię i typy źródeł panelu prawdziwymi nagłówkami arduino-esp32 / ESP-IDF / TFT_eSPI (bez atrap). |
+| `pomiar_pamieci.sh` | Mierzy, ile pamięci RAM trzyma firmware, i pilnuje limitów. Buduje ten sam program jako 32-bitowy, z `pomiar_sterty.c` zamiast zwykłego `malloc()`. |
+| `pomiar_sterty.c` | `malloc()` z licznikiem: dla każdego bloku pamięta rozmiar i stos wywołań; liczy go tak, jak zajmuje miejsce na stercie ESP32. |
+| `pomiar_rozbicie.py` | Dla `pomiar_pamieci.sh --kto`: zamienia zapisane stosy wywołań na nazwy funkcji firmware'u i sumuje pamięć według nich. |
 
 LVGL i ArduinoJson są **prawdziwe** (te same wersje co w `platformio.ini`),
 LVGL jest budowany z `include/lv_conf.h` tego projektu. Ekran to bufor
@@ -61,6 +82,28 @@ LVGL jest budowany z `include/lv_conf.h` tego projektu. Ekran to bufor
 | `wycisz_alarm` | v1.2.1. Przycisk WYCISZ: cisza od razu; wyciszenie kończy się razem z alarmem. |
 | `autorestart_przy_alarmie` | v1.2.1. Alarm przy symulowanej temperaturze pieca: ekran alarmu pokazuje `SYMULACJA: … piec`. Potem centrala znika: stan alarmu (z WYCISZ i ZAMKNIJ) jest zapisany przed restartem. |
 | `start_po_autorestarcie_z_alarmem` | v1.2.1. Start po restarcie w trakcie alarmu, bez danych: brzęczyk i ekran alarmu wracają, na ekranie alarmu stoi `BRAK WIFI … s`, WYCISZ działa. |
+| `brak_pamieci_json` | v1.2.2. Sytuacja z logu panelu z 2026-11-12: `malloc()` odmawia pamięci na rozpakowanie odpowiedzi (`json=NoMemory`), a `Serial.printf()` — na długie linie. Nagłówek `BRAK PAMIECI`, `przyczyna=pam`, prawdziwy wolny RAM w logu, restart po 45 s; potrzebne linie logu wypisują się mimo to. |
+| `brak_pamieci_odbior` | v1.2.2. Pamięci nie starcza już na odebranie odpowiedzi (`String` przestaje rosnąć): `GET nieudany: brak pamieci na odpowiedz`, `przyczyna=pam` — a nie „zła odpowiedź centrali”, jak w v1.2.0. |
+| `brak_pamieci_lvgl` | v1.2.2. `malloc()` odmawia wszystkiego: LVGL zgłasza błąd przy rysowaniu, panel pokazuje `BRAK PAMIECI - RESTART` i restartuje się od razu, z powodem `auto_lvgl_…` dla centrali. Watchdog nie zadziałał. |
+| `wykresy_pamiec` | v1.2.2. Bufory punktów ekranu Wykresy istnieją tylko przy otwartym ekranie: znikają po wyjściu przez bezczynność i po zastąpieniu ekranu alarmem; brak pamięci na bufory nie wywraca panelu. |
+
+### Brak pamięci na żądanie
+
+Program testowy jest linkowany z `--wrap=malloc,calloc,realloc,free`, więc
+każdy przydział pamięci z firmware'u, LVGL i ArduinoJson przechodzi przez
+funkcje w `symulator_panelu.cpp` (`namespace pamiec`). Scenariusz może kazać
+im odmawiać bloków o wybranym rozmiarze — tak jak `malloc()` na płytce, której
+skończył się RAM. Odmowa działa tylko wtedy, gdy wykonuje się kod firmware'u.
+
+Dwie rzeczy mają osobne przełączniki, bo atrapy nie biorą pamięci tak jak
+płytka:
+
+- `String` (atrapa na `std::string`): `String::odmowaOdDlugosci = N` — tekst
+  nie urośnie do N znaków; `concat()` zwraca wtedy `false`, a `+=` nic nie
+  dopisuje. Tak zachowuje się `String` z Arduino, gdy `realloc()` odmówi.
+- `Serial.printf()`: na płytce tekst od 64 znaków powstaje w pamięci
+  z `malloc()` i bez niej linia przepada. Atrapa robi to samo (jej `malloc()`
+  podlega odmowie); `g_atrapa.serialBezPamieci = true` wymusza to wprost.
 
 ## Czego to NIE sprawdza
 
@@ -90,16 +133,77 @@ firmware kompiluje się dla ESP32 ani że działa na płytce.
 - **Czasy sieci.** Zegar płytki jest sztuczny (`delay()` przesuwa `millis()`),
   a HTTP idzie po lokalnym gnieździe. Opóźnienia lwIP, zakłócenia kanału AP
   i czasy z prawdziwego logu nie są odtwarzane.
-- **Sprzęt.** TFT_eSPI, dotyk, deep sleep, OTA, ekran Wykresy — atrapy
-  przyjmują wywołania, ale ich nie modelują. Z brzęczyka zapisywana jest
+- **Sprzęt.** TFT_eSPI, dotyk, deep sleep, OTA, pobieranie danych na ekran
+  Wykresy — atrapy przyjmują wywołania, ale ich nie modelują. Z brzęczyka zapisywana jest
   tylko ostatnio ustawiona częstotliwość (0 = cisza).
 - **Watchdog.** Atrapa tylko odnotowuje, że przy takim przebiegu watchdog
   zadania (15 s) by zadziałał; nie restartuje „płytki”.
+- **Pamięć płytki.** W zwykłych testach „wolny RAM”, który odczytuje
+  firmware, to liczby wpisane przez test (`g_atrapa.ramWolny` itd.), a brak
+  pamięci to odmowa `malloc()` na żądanie scenariusza — nie prawdziwe
+  wyczerpanie sterty. Ile pamięci firmware naprawdę zajmuje, mierzy
+  `pomiar_pamieci.sh`.
 - **Restart.** `ESP.restart()` kończy w teście „życie” firmware'u (wyjątek
   `AtrapaRestart`); program nie startuje od nowa w tym samym procesie. Start
   po restarcie sprawdzają osobne scenariusze, które przed `setup()` wypełniają
   pamięć RTC tak, jak zostawia ją firmware. Tego, że pamięć `RTC_NOINIT`
   naprawdę przetrwa restart na płytce, test nie sprawdza.
+
+## Pomiar pamięci
+
+```
+./pomiar_pamieci.sh              # pomiar + limity (kod wyjścia 1, gdy przekroczone)
+./pomiar_pamieci.sh --kto        # dodatkowo: która funkcja firmware'u trzyma ile pamięci
+./pomiar_pamieci.sh --wszystko   # dodatkowo: wszystkie scenariusze w modelu 32-bitowym
+SRC=/tmp/stary/src LIMITY=0 ./pomiar_pamieci.sh   # inna wersja źródeł, same liczby
+```
+
+Po co: zwykłe testy nie widzą, że firmware zajmuje za dużo pamięci — na PC
+jest jej dość. A to właśnie był powód zgłoszeń (log panelu z 2026-11-12:
+`json=NoMemory`, ok. 8 kB wolnego RAM-u).
+
+Jak: firmware jest budowany jako program **32-bitowy** (wskaźniki po 4 bajty,
+jak na ESP32) kompilatorem z pakietu Pythona `ziglang`. Zwykły `malloc()`
+zastępuje `pomiar_sterty.c`, który liczy każdy blok, o jaki prosi firmware
+(nie atrapy i nie sam test), z narzutem sterty płytki: rozmiar zaokrąglony do
+4 bajtów + 16 bajtów (arduino-esp32 3.x ma włączone lekkie „zatruwanie”
+sterty, `CONFIG_HEAP_POISONING_LIGHT`).
+
+Wynik dla v1.2.2:
+
+```
+po starcie firmware trzyma          129 244 B w 2470 blokach
+jedno odpytanie centrali, chwilowo    5 588 B wiecej
+przyrost po 10 minutach pracy             0 B
+ekran alarmu                            188 B wiecej
+ekran Wykresy otwarty                18 632 B wiecej
+...i po jego zamknieciu                  24 B wiecej
+zmienne statyczne firmware'u          3 956 B (v1.2.0: 3 092 B)
+```
+
+v1.1.0 i v1.2.0 trzymały po starcie 171 kB (170 324 B i 170 572 B),
+a jedno odpytanie brało 7 284 B i 7 412 B.
+
+Ostatnia linia to zmienne globalne i `static` z trzech plików `.cpp`
+firmware'u (sekcje `.bss`/`.data` w plikach `.o` modelu). Licznik `malloc()`
+ich nie widzi, a na płytce zabierają ten sam RAM. Sama liczba jest
+przybliżona (atrapy bibliotek mają inne rozmiary obiektów niż prawdziwe);
+wiarygodna jest różnica między wersjami: v1.2.2 ma ich o 864 B więcej niż
+v1.2.0, głównie przez bufor `logBezPamieci()` (640 B). Skrypt odejmuje tę
+różnicę w szacunku i pilnuje limitem, żeby nie pojawiła się duża tablica
+statyczna.
+
+Czego ten pomiar **nie** obejmuje: pamięci, którą na płytce biorą WiFi, lwIP
+i zadania systemu. Z logu z 2026-11-12 wychodzi na nie ok. 56 kB (płytka
+miała 234,6 kB przed budową ekranów i ok. 8 kB po starcie, a v1.2.0 trzyma
+171 kB). Dlatego „po starcie zostaje ok. 48 572 B” w wyniku skryptu to
+**szacunek z jednego logu**. Prawdziwą liczbę podaje panel:
+`tag=PAMIEC zdarzenie=po_starcie ram=…`.
+
+Atrapa `String` rośnie tak jak `String` z arduino-esp32 (dokładnie do
+potrzeb, w górę do 16 bajtów; przypisanie krótszego tekstu nie zwalnia
+bufora), ale pod spodem jest `std::string` — drobne teksty mogą zajmować
+o kilkanaście bajtów więcej albo mniej niż na płytce.
 
 ## Sprawdzenie prawdziwymi nagłówkami ESP32
 

@@ -32,6 +32,18 @@ struct AtrapaAp {              // jeden punkt dostepowy "w eterze"
 
 struct AtrapaRestart {};       // rzucany przez ESP.restart() - patrz Arduino.h
 
+// Pomiar pamieci (pomiar_pamieci.sh, pomiar_sterty.c): to, co atrapy same
+// odkladaja na sterycie (zapis Seriala, tablice NVS, wyniki skanu), nie jest
+// pamiecia firmware'u i nie moze byc do niej liczone. W zwyklych testach tej
+// funkcji nie ma (slaby symbol = nullptr) i straznik nic nie robi.
+extern "C" void pomiar_wstrzymaj(int o_ile) __attribute__((weak));
+struct AtrapaBezPomiaru {
+  AtrapaBezPomiaru() { if (pomiar_wstrzymaj != nullptr) pomiar_wstrzymaj(1); }
+  ~AtrapaBezPomiaru() { if (pomiar_wstrzymaj != nullptr) pomiar_wstrzymaj(-1); }
+  AtrapaBezPomiaru(const AtrapaBezPomiaru&) = delete;
+  AtrapaBezPomiaru& operator=(const AtrapaBezPomiaru&) = delete;
+};
+
 struct Atrapa {
   // --- czas: millis() zwraca terazMs; delay(ms) przesuwa zegar o ms ---
   unsigned long terazMs = 0;
@@ -91,6 +103,18 @@ struct Atrapa {
   // --- brzeczyk (ledcWriteTone) ---
   uint32_t tonHz = 0;          // ostatnio ustawiona czestotliwosc; 0 = cisza
   int zmianTonu = 0;           // ile razy czestotliwosc sie zmienila (wzorzec alarmu "gra")
+
+  // --- pamiec (esp_heap_caps.h): to, co firmware odczytuje jako wolny RAM ---
+  // Zwykle testy ustawiaja te liczby recznie; pomiar_pamieci.sh podstawia
+  // tu wynik licznika sterty (patrz pomiar_sterty.c).
+  size_t ramWolny = 52000;     // heap_caps_get_free_size()
+  size_t ramBlok = 40000;      // heap_caps_get_largest_free_block()
+  size_t ramMin = 45000;       // heap_caps_get_minimum_free_size()
+  // Serial.printf() na plytce prosi o pamiec dla tekstu od 64 znakow; true =
+  // tej pamieci nie dostaje i taka linia przepada (patrz AtrapaSerial::printf).
+  bool serialBezPamieci = false;
+  int serialLiniiUtraconych = 0;
+  std::string serialOstatniaUtracona;   // poczatek ostatniej takiej linii (do raportu testu)
 
   // --- inne ---
   int restarty = 0;            // ESP.restart()

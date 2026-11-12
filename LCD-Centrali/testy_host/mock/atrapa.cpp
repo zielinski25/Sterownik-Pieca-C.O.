@@ -10,6 +10,7 @@
 #include "WiFi.h"
 
 Atrapa& atrapa_stan() {
+  AtrapaBezPomiaru bezPomiaru;
   static Atrapa* stan = new Atrapa();   // celowo nigdy nie zwalniany: watek serwera testowego moze go czytac do konca procesu
   return *stan;
 }
@@ -52,6 +53,7 @@ void atrapa_uplyw_czasu(unsigned long ms) {
 // Serial
 // ---------------------------------------------------------------------------
 void AtrapaSerial::dopisz(const char* s) {
+  AtrapaBezPomiaru bezPomiaru;
   g_atrapa.serial += s;
   if (g_atrapa.echoSerial) {
     static bool poczatekLinii = true;
@@ -66,14 +68,31 @@ void AtrapaSerial::dopisz(const char* s) {
   }
 }
 
+// Jak Print::printf() w arduino-esp32: tekst do 63 znakow powstaje w buforze
+// na stosie, dluzszy - w pamieci z malloc(dlugosc + 1). Gdy malloc() odmowi,
+// linia PRZEPADA bez sladu. Odmowic moze scenariusz (owijka malloc() w
+// symulator_panelu.cpp) albo wprost g_atrapa.serialBezPamieci.
 size_t AtrapaSerial::printf(const char* fmt, ...) {
   char bufor[1024];
   va_list ap;
   va_start(ap, fmt);
   int n = vsnprintf(bufor, sizeof(bufor), fmt, ap);
   va_end(ap);
+  if (n < 0) return 0;
+  if (n >= 64) {
+    void* p = g_atrapa.serialBezPamieci ? nullptr : malloc((size_t)n + 1);
+    if (p == nullptr) {
+      g_atrapa.serialLiniiUtraconych++;
+      {
+        AtrapaBezPomiaru bezPomiaru;
+        g_atrapa.serialOstatniaUtracona.assign(bufor, 60);
+      }
+      return 0;
+    }
+    free(p);
+  }
   dopisz(bufor);
-  return n < 0 ? 0 : (size_t)n;
+  return (size_t)n;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +176,7 @@ int16_t AtrapaWiFi::scanNetworks(bool async, bool, bool, uint32_t, uint8_t, cons
 }
 
 int16_t AtrapaWiFi::scanComplete() {
+  AtrapaBezPomiaru bezPomiaru;
   if (g_atrapa.skanTrwa) {
     if (g_atrapa.skanZawieszony || g_atrapa.terazMs < g_atrapa.skanKoniecMs) return WIFI_SCAN_RUNNING;
     g_atrapa.skanTrwa = false;
@@ -168,7 +188,7 @@ int16_t AtrapaWiFi::scanComplete() {
   return (int16_t)g_atrapa.wynikSkanu.size();
 }
 
-void AtrapaWiFi::scanDelete() { g_atrapa.wynikSkanu.clear(); }
+void AtrapaWiFi::scanDelete() { AtrapaBezPomiaru bezPomiaru; g_atrapa.wynikSkanu.clear(); }
 
 // Jak STAClass::BSSID() w arduino-esp32 3.x: bez polaczenia zwraca NULL
 // (chyba ze wolajacy podal wlasny bufor - wtedy same zera).

@@ -1,6 +1,6 @@
 // diagnostyka_panelu.h
 // ============================================================================
-// PANEL LCD - male, CZYSTE funkcje pomocnicze diagnostyki (v1.2.0, v1.2.1)
+// PANEL LCD - male, CZYSTE funkcje pomocnicze diagnostyki (v1.2.0 - v1.2.2)
 // ============================================================================
 // PO CO TEN PLIK:
 //   Log z 2026-11-10 (serial-20261110_200814.log) pokazal 3 minuty samych
@@ -364,9 +364,10 @@ inline void znacznikCentrali(char* wyjscie, size_t n, bool symulator, int liczba
 // [v1.2.1 RATUNEK] Panel nie ma danych z centrali: dlaczego i co z tym zrobic
 // ---------------------------------------------------------------------------
 // Zgloszenie z 2026-11-12 (v1.2.0 na plytce): "podczas pracy zresetowalem LCD
-// i dopiero wtedy odebral swieze dane". Co dokladnie przestaje dzialac, NIE
-// jest ustalone (brak logu panelu z tej chwili) - ustalone jest tylko, ze
-// pomaga restart panelu. Dlatego:
+// i dopiero wtedy odebral swieze dane". W chwili pisania v1.2.1 przyczyna nie
+// byla znana (byl tylko log centrali) - pewne bylo tylko to, ze pomaga
+// restart panelu. [v1.2.2: log panelu pokazal brak pamieci RAM - patrz
+// PRZYCZYNA_PAMIEC nizej i HISTORIA ZMIAN w main.cpp.] Dlatego:
 //   1) panel pokazuje na ekranie i pisze w logu, CZEGO mu brakuje (Przyczyna),
 //   2) sam probuje sie ratowac (Ratunek): najpierw ponowne polaczenie z siecia
 //      centrali, a gdy to nie pomaga - restart, czyli to samo, co dotad robil
@@ -377,18 +378,47 @@ inline void znacznikCentrali(char* wyjscie, size_t n, bool symulator, int liczba
 // Makro dla testow na PC: ta wersja naglowka ma ponizsze typy.
 #define DIAG_MA_RATUNEK 1
 
+// Wartosci liczbowe sa zapisywane w pamieci RTC (PamiecAutorestartu) - nowe
+// przyczyny dopisuj NA KONCU.
 enum Przyczyna : uint8_t {
   PRZYCZYNA_BRAK = 0,    // dane sa - nic nie brakuje
   PRZYCZYNA_WIFI,        // panel nie jest polaczony z siecia centrali
   PRZYCZYNA_MILCZY,      // WiFi polaczone, ale centrala nie odpowiada (timeout, blad polaczenia)
-  PRZYCZYNA_ODPOWIEDZ    // centrala odpowiada, ale tresci nie da sie odczytac (kod HTTP, JSON)
+  PRZYCZYNA_ODPOWIEDZ,   // centrala odpowiada, ale tresci nie da sie odczytac (kod HTTP, JSON)
+  // [v1.2.2] Panelowi zabraklo pamieci RAM: odpowiedz centrali przyszla, ale
+  // nie bylo jej gdzie rozpakowac (ArduinoJson: NoMemory), albo nie dalo sie
+  // nawet otworzyc gniazda / wyslac zapytania (ENOMEM, ENOBUFS, ENFILE). To
+  // jest przyczyna z logu z 2026-11-12 - wina lezy w panelu, nie w centrali.
+  PRZYCZYNA_PAMIEC,
+  // [v1.2.2] Biblioteka ekranu (LVGL) zglosila blad wewnetrzny (assert) -
+  // w praktyce: nieudany przydzial pamieci w trakcie rysowania. Panel nie
+  // moze wtedy rysowac dalej i restartuje sie od razu (bez czekania 45 s).
+  PRZYCZYNA_LVGL
 };
 
 // `ostatniBladToTresc`: ostatnia nieudana proba /api/status skonczyla sie
 // odpowiedzia, ktorej nie dalo sie odczytac (a nie brakiem odpowiedzi).
-inline Przyczyna ustalPrzyczyne(bool wifiPolaczone, bool ostatniBladToTresc) {
+// `ostatniBladToPamiec`: ...brakiem pamieci w panelu (patrz PRZYCZYNA_PAMIEC).
+inline Przyczyna ustalPrzyczyne(bool wifiPolaczone, bool ostatniBladToTresc, bool ostatniBladToPamiec = false) {
   if (!wifiPolaczone) return PRZYCZYNA_WIFI;
+  if (ostatniBladToPamiec) return PRZYCZYNA_PAMIEC;
   return ostatniBladToTresc ? PRZYCZYNA_ODPOWIEDZ : PRZYCZYNA_MILCZY;
+}
+
+// Ponizej tylu bajtow wolnego RAM-u panel pisze w logu ostrzezenie
+// "tag=PAMIEC ... zdarzenie=malo_pamieci". Jedno odpytanie centrali o status
+// potrzebuje chwilowo ok. 6,5 kB na sama odpowiedz i jej rozpakowanie
+// (pomiar: testy_host/pomiar_pamieci.sh), do tego bufory WiFi i rysowanie
+// ekranu - 16 kB to granica, ponizej ktorej zaczyna brakowac.
+static const uint32_t RAM_PROG_OSTRZEZENIA_B = 16000UL;
+#define DIAG_MA_PAMIEC 1
+
+// Czy numer bledu gniazda (errno z socket()/connect()/send()/recv()) oznacza,
+// ze PANELOWI zabraklo zasobow - pamieci albo wolnych gniazd. Numery jak w
+// newlib na ESP32 (takie same na Linuksie, na ktorym biegna testy):
+//   12 ENOMEM, 23 ENFILE, 24 EMFILE, 105 ENOBUFS.
+inline bool bladGniazdaToBrakPamieci(int numer) {
+  return numer == 12 || numer == 23 || numer == 24 || numer == 105;
 }
 
 // Napis na ekran (naglowek dashboardu) - tylko wielkie litery ASCII.
@@ -398,6 +428,8 @@ inline const char* przyczynaNapis(Przyczyna p) {
     case PRZYCZYNA_WIFI:      return "BRAK WIFI";
     case PRZYCZYNA_MILCZY:    return "CENTRALA MILCZY";
     case PRZYCZYNA_ODPOWIEDZ: return "ZLA ODPOWIEDZ";
+    case PRZYCZYNA_PAMIEC:    return "BRAK PAMIECI";
+    case PRZYCZYNA_LVGL:      return "BLAD EKRANU";
   }
   return "?";
 }
@@ -409,6 +441,8 @@ inline const char* przyczynaSkrot(Przyczyna p) {
     case PRZYCZYNA_WIFI:      return "wifi";
     case PRZYCZYNA_MILCZY:    return "milczy";
     case PRZYCZYNA_ODPOWIEDZ: return "odp";
+    case PRZYCZYNA_PAMIEC:    return "pam";
+    case PRZYCZYNA_LVGL:      return "lvgl";
   }
   return "x";
 }
@@ -606,11 +640,13 @@ struct PamiecAutorestartu {
   uint8_t  przyczyna;        // Przyczyna w chwili restartu
   uint8_t  kodRozlaczenia;   // ostatni kod rozlaczenia WiFi (0 = nie bylo zadnego)
   uint16_t bezDanychS;       // ile sekund panel byl bez danych
-  uint16_t heapKb;           // wolna pamiec w chwili restartu [kB]
-  uint16_t blokKb;           // najwiekszy ciagly wolny blok [kB]
+  uint16_t heapKb;           // wolny RAM w chwili restartu [kB] - od v1.2.2 tylko ten, z ktorego korzysta malloc()
+  uint16_t blokKb;           // najwiekszy ciagly wolny blok tego RAM-u [kB]
   uint16_t lacznie;          // wszystkie takie restarty od wlaczenia zasilania
   uint16_t bladNumer;        // ostatnia nieudana proba statusu: numer bledu gniazda albo kod HTTP (0 = limit czasu)
-  uint8_t  bladEtap;         // ...i etap, na ktorym padla: litera jak w NonBlockingHttp::etapBledu(), 'o' = odpowiedz nieczytelna
+  uint8_t  bladEtap;         // ...i etap, na ktorym padla: litera jak w NonBlockingHttp::etapBledu(), 'o' = odpowiedz nieczytelna,
+                             // 'm' = zabraklo pamieci na odpowiedz (numer 200: przyszla cala, nie bylo jak jej rozpakowac;
+                             // numer 12: nie bylo juz gdzie jej odebrac), 'v' = blad wewnetrzny LVGL
   uint8_t  alarmy;           // ostatni znany stan alarmow - patrz spakujAlarmy()
   uint8_t  seria;            // takie restarty w biezacej serii (konczy ja godzina poprawnych danych) - numer "n" w zgloszeniu
   uint8_t  zgloszonyNr;      // numer w serii ostatniego restartu, o ktorym centrala na pewno sie dowiedziala (0 = o zadnym)
@@ -705,19 +741,28 @@ inline char etapDoTokenu(uint8_t etap) {
 // Powod restartu zglaszany centrali po samoczynnym restarcie, np.
 // "auto_milczy_r0_n1_t45_h61_b31_el0":
 //   auto    - panel zrestartowal sie sam, bo nie mial danych,
-//   milczy  - czego brakowalo (przyczynaSkrot()): wifi | milczy | odp,
+//   milczy  - czego brakowalo (przyczynaSkrot()): wifi | milczy | odp | pam
+//             (panelowi zabraklo pamieci) | lvgl (blad wewnetrzny biblioteki
+//             ekranu - restart od razu, bez czekania),
 //   r0      - ostatni kod rozlaczenia WiFi (0 = nie bylo; nazwaKoduRozlaczenia()),
 //   n1      - ktory to taki restart w serii (serie konczy godzina poprawnych
 //             danych; przeskok numeru = restarty, ktorych panel nie zglaszal
 //             - patrz zglosicRestart()),
 //   t45     - ile sekund panel byl bez danych,
-//   h61,b31 - wolna pamiec i najwiekszy wolny blok w kB,
+//   h61,b31 - wolny RAM i najwiekszy wolny blok w kB. Od v1.2.2 to pamiec, z
+//             ktorej naprawde korzysta malloc(); v1.2.1 doliczala ok. 39 kB
+//             obszaru, ktorego zwykly malloc() na ESP32 nie uzywa (patrz
+//             opis przy ramWolny() w main.cpp), wiec jej "h40_b38" znaczylo
+//             w rzeczywistosci ok. 1 kB,
 //   el0     - ostatnia nieudana proba statusu: litera "e", etap, numer bledu:
 //             el0   limit czasu laczenia (centrala nie odpowiada na probe polaczenia),
 //             ec0   polaczono, ale odpowiedz nie przyszla w czasie,
 //             en118 connect() odrzucony od razu, blad 118 (na ESP32: EHOSTUNREACH
 //                   - brak drogi do centrali; en12 - ENOMEM, brak pamieci),
 //             eo500 odpowiedz nieczytelna, kod HTTP 500 (eo200 = zly JSON),
+//             em200 odpowiedz przyszla (HTTP 200), ale panelowi zabraklo
+//                   pamieci na jej odczytanie (em12: juz na jej odebranie),
+//             ev0   blad wewnetrzny LVGL (przy przyczynie "lvgl"),
 //             ex0   zadnej nieudanej proby nie bylo.
 // Tylko znaki [a-z0-9_] - token idzie do adresu zapytania bez kodowania.
 // Centrala wpisuje go do swojego logu (tag=RESET-DIAG ... powod=...).

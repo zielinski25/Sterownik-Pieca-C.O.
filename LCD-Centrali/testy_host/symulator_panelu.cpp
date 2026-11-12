@@ -45,6 +45,7 @@
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <new>
 #include <string>
 #include <thread>
 #include <vector>
@@ -72,7 +73,124 @@ extern diag::PamiecAutorestartu rtcAutorestart __attribute__((weak));
 void lvgl_dashboard_poc_aktualizuj_centrale(const char* znacznik) __attribute__((weak));
 void pompaManualWyslij(const char* stanTekst);
 
+// LVGL jest tu budowany z include/lv_conf.h TEGO projektu, a ten od v1.2.2
+// kieruje bledy wewnetrzne LVGL do panel_lvgl_assert() z main.cpp. Starsze
+// zrodla (SRC=... przy porownywaniu wersji) tej funkcji nie maja - dla nich
+// ponizsza, slaba wersja robi to, co LVGL robil wtedy na plytce: staje.
+extern "C" __attribute__((weak)) void panel_lvgl_assert(void) {
+  fprintf(stderr, "LVGL: blad wewnetrzny (assert) - te zrodla firmware'u nie maja panel_lvgl_assert(); na plytce: while(1) i restart przez watchdog\n");
+  abort();
+}
+
+// Pomiar pamieci (pomiar_pamieci.sh): funkcje z pomiar_sterty.c. W zwyklych
+// testach ich nie ma - pomiar_wstrzymaj jest slabym symbolem (mock/atrapa.h).
+#ifdef POMIAR_STERTY
+extern "C" {
+void pomiar_zrzut(const char* plik, int tryb);
+void pomiar_zeruj_szczyty(void);
+void pomiar_limit(uint32_t esp_bajtow);
+uint32_t pomiar_odmow(void);
+uint32_t pomiar_zywe_esp(void);
+uint32_t pomiar_zywe_bloki(void);
+uint32_t pomiar_szczyt_esp(void);
+}
+#endif
+
+// ---------------------------------------------------------------------------
+// Brak pamieci na zadanie
+// ---------------------------------------------------------------------------
+// Program jest linkowany z --wrap=malloc,calloc,realloc,free: kazde wywolanie
+// tych funkcji z firmware'u, LVGL i ArduinoJson (czyli ze wszystkiego, co na
+// plytce korzysta z malloc()) przechodzi przez ponizsze owijki. Scenariusz
+// moze kazac im odmawiac - tak jak malloc() na plytce, ktorej skonczyl sie
+// RAM (log panelu z 2026-11-12: "json=NoMemory", potem zawieszenie w LVGL).
+// Odmowa dotyczy tylko watku firmware'u i tylko czasu, gdy dziala firmware
+// (LiczFirmware), nie samego testu. Atrapa String (std::string) przydziela
+// przez operator new biblioteki standardowej - jej odmowa nie dotyczy.
+extern "C" {
+void* __real_malloc(size_t n);
+void* __real_calloc(size_t ile, size_t rozmiar);
+void* __real_realloc(void* p, size_t n);
+void __real_free(void* p);
+}
+
+namespace pamiec {
+size_t odmawiajOd = 0;          // 0 = nie odmawiaj; inaczej odmow przydzialom o rozmiarze odmawiajOd..odmawiajDo
+size_t odmawiajDo = (size_t)-1;
+int odmow = 0;                  // ile przydzialow dostalo odmowe
+thread_local int wFirmware = 0; // >0: wlasnie dziala kod firmware'u
+// Bufory punktow ekranu Wykresy: 8 x malloc(96 punktow x 24 B). Sledzone,
+// zeby scenariusz mogl sprawdzic, ze istnieja tylko przy otwartym ekranie.
+const size_t BUFOR_WYKRESU_B = 96 * 24;
+void* buforyWykresow[32];
+int zyweBuforyWykresow() {
+  int n = 0;
+  for (void* p : buforyWykresow) if (p != nullptr) n++;
+  return n;
+}
+bool odmowic(size_t n) {
+  if (odmawiajOd == 0 || wFirmware <= 0 || n < odmawiajOd || n > odmawiajDo) return false;
+  odmow++;
+  return true;
+}
+void zapamietaj(void* p, size_t n) {
+  if (p == nullptr || n != BUFOR_WYKRESU_B || wFirmware <= 0) return;
+  for (void*& q : buforyWykresow) if (q == nullptr) { q = p; return; }
+}
+void zapomnij(void* p) {
+  if (p == nullptr) return;
+  for (void*& q : buforyWykresow) if (q == p) { q = nullptr; return; }
+}
+}  // namespace pamiec
+
+extern "C" void* __wrap_malloc(size_t n) {
+  if (pamiec::odmowic(n)) return nullptr;
+  void* p = __real_malloc(n);
+  pamiec::zapamietaj(p, n);
+  return p;
+}
+extern "C" void* __wrap_calloc(size_t ile, size_t rozmiar) {
+  if (pamiec::odmowic(ile * rozmiar)) return nullptr;
+  return __real_calloc(ile, rozmiar);
+}
+extern "C" void* __wrap_realloc(void* p, size_t n) {
+  if (n != 0 && pamiec::odmowic(n)) return nullptr;   // stary blok zostaje, jak w prawdziwym realloc()
+  return __real_realloc(p, n);
+}
+extern "C" void __wrap_free(void* p) {
+  pamiec::zapomnij(p);
+  __real_free(p);
+}
+
+#ifdef POMIAR_STERTY
+// W 32-bitowym modelu (pomiar_pamieci.sh) biblioteka C++ jest wlinkowana
+// statycznie, wiec --wrap=malloc objalby takze jej operator new - a wtedy
+// odmowa trafialaby w atrape String (std::string) i konczyla program
+// wyjatkiem std::bad_alloc. Prawdziwy String z Arduino przy braku pamieci
+// zwraca pusty tekst, nie rzuca wyjatku. Dlatego tu operator new idzie
+// prosto do prawdziwego malloc(), tak jak w zwyklych testach (gdzie
+// biblioteka C++ jest osobna i owijki jej nie dotycza).
+void* operator new(size_t n) {
+  void* p = __real_malloc(n ? n : 1);
+  if (p == nullptr) throw std::bad_alloc();
+  return p;
+}
+void* operator new[](size_t n) { return operator new(n); }
+void operator delete(void* p) noexcept { __real_free(p); }
+void operator delete[](void* p) noexcept { __real_free(p); }
+void operator delete(void* p, size_t) noexcept { __real_free(p); }
+void operator delete[](void* p, size_t) noexcept { __real_free(p); }
+#endif
+
 namespace {
+
+// Zakres, w ktorym dziala kod firmware'u (setup(), loop() i funkcje
+// dashboardu wolane z testu): tylko wtedy owijki malloc() moga odmawiac i
+// tylko to jest liczone przez pomiar pamieci (pomiar_pamieci.sh).
+struct LiczFirmware {
+  LiczFirmware() { pamiec::wFirmware++; if (pomiar_wstrzymaj != nullptr) pomiar_wstrzymaj(-1); }
+  ~LiczFirmware() { pamiec::wFirmware--; if (pomiar_wstrzymaj != nullptr) pomiar_wstrzymaj(1); }
+};
 
 // ===========================================================================
 // Udawane centrale
@@ -293,6 +411,7 @@ void obsluzMartwe(int k) {
 }
 
 void watekSerwera() {
+  if (pomiar_wstrzymaj != nullptr) pomiar_wstrzymaj(1 << 20);   // ten watek to "centrala", nie firmware panelu
   while (!g_koniec.load()) {
     int k = accept(g_gniazdoSerwera, nullptr, nullptr);
     if (k < 0) continue;   // limit czasu accept() - sprawdz g_koniec
@@ -360,6 +479,7 @@ void biegnij(unsigned long ms) {
   while (millis() < koniec) {
     if (g_poRestarcie) { atrapa_uplyw_czasu(5); continue; }
     try {
+      LiczFirmware licz;
       loop();
     } catch (const AtrapaRestart&) {
       g_poRestarcie = true;
@@ -790,10 +910,10 @@ void scenariuszBateriaILog() {
   info("%s", liniaLogu("tag=BATERIA", od).c_str());
   sprawdz(ileLinii("[NET-DIAG]", "", "", od) == 0, "brak linii [NET-DIAG] przy poprawnej pracy");
   sprawdz(ileLinii("tag=PANEL fw=", "", "", od) == 3, "linia tag=PANEL: 5 s po wlaczeniu i potem co 30 s (3 w ciagu 66 s)");
-  sprawdz(logMa("tag=PANEL fw=v1.2.1", "bssid=24:6F:28:11:22:33", "centrala=sterownik", od), "linia tag=PANEL podaje wersje, BSSID i rodzaj centrali");
+  sprawdz(logMa("tag=PANEL fw=v1.2.2", "bssid=24:6F:28:11:22:33", "centrala=sterownik", od), "linia tag=PANEL podaje wersje, BSSID i rodzaj centrali");
   sprawdz(logMa("tag=PANEL fw=", "bez_danych_s=", "przyczyna=- wymuszen=0 rozl_kod=0 rozl_n=0 autorestartow=0", od),
           "linia tag=PANEL: przy poprawnej pracy nic nie brakuje, zero rozlaczen i restartow");
-  sprawdz(kopia(0).ostatniStatusSciezka.find("panel_fw=v1.2.1&reset_powod=poweron") != std::string::npos,
+  sprawdz(kopia(0).ostatniStatusSciezka.find("panel_fw=v1.2.2&reset_powod=poweron") != std::string::npos,
           "centrala dostaje w zapytaniu wersje panelu i zwykly powod startu (poweron)");
   sprawdz(logMa("tag=PANEL fw=", "status_ok=15", "status_blad=0", od), "linia tag=PANEL liczy poprawne odczyty (15 na 30 s)");
   sprawdz(logMa("tag=PANEL fw=", "t_ogrz=55.0", "klapa=40", od), "linia tag=PANEL pokazuje wartosci, ktore panel ma w pamieci");
@@ -959,7 +1079,7 @@ void centralaJakWLogu1112(Centrala& c) {
 // Tekst znacznika na srodku naglowka (pierwsza widoczna etykieta zaczynajaca
 // sie od jednego z podanych poczatkow) albo "".
 std::string znacznikNaglowka() {
-  static const char* const POCZATKI[] = {"BRAK WIFI", "CENTRALA MILCZY", "ZLA ODPOWIEDZ", "RESTART ZA", "SYMULA", "2 CENTRALE"};
+  static const char* const POCZATKI[] = {"BRAK WIFI", "CENTRALA MILCZY", "ZLA ODPOWIEDZ", "BRAK PAMIECI", "RESTART ZA", "SYMULA", "2 CENTRALE"};
   for (const char* p : POCZATKI) {
     lv_obj_t* e = znajdzEtykiete(lv_scr_act(), p);
     if (e != nullptr) return lv_label_get_text(e);
@@ -971,6 +1091,7 @@ std::string znacznikNaglowka() {
 bool kliknij(const char* napis) {
   lv_obj_t* e = znajdzEtykiete(lv_scr_act(), napis);
   if (e == nullptr) return false;
+  LiczFirmware licz;
   lv_event_send(lv_obj_get_parent(e), LV_EVENT_CLICKED, nullptr);
   return true;
 }
@@ -1149,7 +1270,7 @@ void scenariuszStartPoAutorestarcie() {
     sprawdz(c.resetDiag.size() == 1 && c.resetDiag[0] == "auto_wifi_r201_n1_t45_h61_b31_en118",
             "centrala dostaje reset_powod=auto_wifi_r201_n1_t45_h61_b31_en118 i pisze o nim jedna linie tag=RESET-DIAG");
     info("pozniejsze zapytania: %s", c.ostatniStatusSciezka.c_str());
-    sprawdz(c.ostatniStatusSciezka == "/api/status?panel_fw=v1.2.1&reset_powod=sw" && logMa("tag=PANEL", "zdarzenie=autorestart_zgloszony"),
+    sprawdz(c.ostatniStatusSciezka == "/api/status?panel_fw=v1.2.2&reset_powod=sw" && logMa("tag=PANEL", "zdarzenie=autorestart_zgloszony"),
             "po pierwszej odpowiedzi centrali panel zglasza dalej zwykle reset_powod=sw");
   }
   sprawdz(ekranMa("55°C"), "kafelki pokazuja dane");
@@ -1193,7 +1314,7 @@ void scenariuszSeriaRestartow() {
   {
     const Centrala c = kopia(0);
     info("zapytanie, ktore dostala centrala: %s", c.ostatniStatusSciezka.c_str());
-    sprawdz(c.nStatus >= 2 && c.resetDiag.empty() && c.ostatniStatusSciezka == "/api/status?panel_fw=v1.2.1&reset_powod=sw",
+    sprawdz(c.nStatus >= 2 && c.resetDiag.empty() && c.ostatniStatusSciezka == "/api/status?panel_fw=v1.2.2&reset_powod=sw",
             "centrala nie pisze o tym restarcie i nie wysyla wiadomosci");
   }
   sprawdz(ekranMa("55°C"), "kafelki pokazuja dane");
@@ -1245,7 +1366,7 @@ void scenariuszRestartPoOta() {
   setup();
   biegnij(3000);
   info("zapytanie, ktore dostala centrala: %s", kopia(0).ostatniStatusSciezka.c_str());
-  sprawdz(kopia(0).ostatniStatusSciezka == "/api/status?panel_fw=v1.2.1&reset_powod=sw", "restart programowy bez znacznika autorestartu: reset_powod=sw, jak dotad");
+  sprawdz(kopia(0).ostatniStatusSciezka == "/api/status?panel_fw=v1.2.2&reset_powod=sw", "restart programowy bez znacznika autorestartu: reset_powod=sw, jak dotad");
   sprawdz(!logMa("zdarzenie=start_po_autorestarcie"), "log: brak wpisu start_po_autorestarcie");
   sprawdz(rtcAutorestart.wazna() && rtcAutorestart.oczekuje == 0 && rtcAutorestart.kolejnych == 0 && rtcAutorestart.lacznie == 0,
           "przypadkowe wartosci w pamieci RTC zostaly rozpoznane i wyczyszczone");
@@ -1281,7 +1402,7 @@ void scenariuszZlaOdpowiedzDlugo() {
   char token[diag::TOKEN_AUTORESTARTU_MAKS] = "";
   if (MA_RATUNEK) diag::tokenAutorestartu(token, sizeof(token), rtcAutorestart);
   info("token, ktory panel zglosi centrali po starcie: %s", token);
-  sprawdz(std::string(token) == "auto_odp_r0_n1_t45_h175_b107_eo500", "token dla centrali: przyczyna odp, ostatni blad o500 (kod HTTP 500)");
+  sprawdz(std::string(token) == "auto_odp_r0_n1_t45_h50_b39_eo500", "token dla centrali: przyczyna odp, ostatni blad o500 (kod HTTP 500)");
 #else
   sprawdz(false, "token dla centrali: przyczyna odp, ostatni blad o500 (kod HTTP 500)");
 #endif
@@ -1447,6 +1568,252 @@ void scenariuszStartPoAutorestarcieZAlarmem() {
 #endif
 }
 
+// --- 23 --------------------------------------------------------------------
+// Log panelu z 2026-11-12 (v1.2.0): po starcie kazda odpowiedz centrali
+// konczyla sie "json=NoMemory" - panel mial ok. 8 kB wolnego RAM-u i nie mial
+// gdzie jej rozpakowac. Na ekranie "--", w logu przyczyna=odp (czyli wina
+// centrali), a wina lezala w panelu.
+void scenariuszBrakPamieciJson() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -33, 0));
+  setup();
+  biegnij(6000);
+  sprawdz(ekranMa("55°C"), "na poczatku kafelki pokazuja dane centrali");
+  const size_t od = g_atrapa.serial.size();
+  const unsigned long start = millis();
+  // malloc() odmawia blokow od 1000 B: tyle potrzebuje ArduinoJson na pierwsza
+  // pule pol odpowiedzi. Male przydzialy (teksty etykiet LVGL) dzialaja dalej.
+  pamiec::odmawiajOd = 1000;
+  g_atrapa.ramWolny = 2000;
+  g_atrapa.ramBlok = 900;
+  g_atrapa.ramMin = 700;
+  // ...i Serial.printf() tez jej nie dostaje: linie od 64 znakow przepadaja.
+  // Wszystko, co sprawdzamy nizej, musi wiec isc przez logBezPamieci().
+  g_atrapa.serialBezPamieci = true;
+  biegnij(20000);
+  info("%s", liniaLogu("zdarzenie=odpowiedz_nieczytelna", od).c_str());
+  info("naglowek po 20 s: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(logMa("tag=STATUS lvl=ERR", "zdarzenie=odpowiedz_nieczytelna", "json=NoMemory", od) &&
+              logMa("zdarzenie=odpowiedz_nieczytelna", "ram=2000 ram_blok=900", "", od),
+          "log: odpowiedz_nieczytelna json=NoMemory z prawdziwa iloscia wolnego RAM-u (ram=2000 ram_blok=900)");
+  sprawdz(logMa("tag=PAMIEC lvl=WARN zdarzenie=malo_pamieci ram=2000 ram_blok=900 ram_min=700 prog=16000", "", "", od), "log: ostrzezenie tag=PAMIEC zdarzenie=malo_pamieci");
+  sprawdz(ileLinii("zdarzenie=malo_pamieci", "", "", od) == 1, "ostrzezenie o pamieci najwyzej raz na minute");
+  sprawdz(ekranMa("--") && !ekranMa("55°C"), "po 10 s kafelki pokazuja \"--\"");
+  sprawdz(znacznikNaglowka().rfind("BRAK PAMIECI", 0) == 0, "naglowek: \"BRAK PAMIECI <sekundy> s\" (a nie \"ZLA ODPOWIEDZ\")");
+  sprawdz(logMa("zdarzenie=dane_nieaktualne", "przyczyna=pam", "", od), "log: dane_nieaktualne przyczyna=pam");
+  unsigned long restartPo = 0;
+  for (int i = 0; i < 300 && restartPo == 0; i++) {
+    biegnij(100);
+    if (g_atrapa.restarty > 0) restartPo = millis() - start;
+  }
+  info("ESP.restart() po %lu ms bez pamieci na odczytanie odpowiedzi", restartPo);
+  info("linii logu utraconych w Serial.printf() z braku pamieci: %d (ostatnia: \"%s...\")", g_atrapa.serialLiniiUtraconych, g_atrapa.serialOstatniaUtracona.c_str());
+  sprawdz(logMa("tag=PANEL fw=", "ram=2000 ram_min=700 ram_blok=900", "przyczyna=pam", od), "linia tag=PANEL: ram=2000 ram_min=700 ram_blok=900 przyczyna=pam");
+  sprawdz(!logMa("zdarzenie=wymuszam_polaczenie", "", "", od) && g_atrapa.liczbaDisconnect == 0, "WiFi nie jest rozlaczane - siec dziala");
+  sprawdz(restartPo >= 42000 && restartPo <= 46500 && logMa("zdarzenie=autorestart", "przyczyna=pam", "", od), "restart po ok. 45 s, przyczyna=pam");
+#ifdef DIAG_MA_PAMIEC
+  char token[diag::TOKEN_AUTORESTARTU_MAKS] = "";
+  diag::tokenAutorestartu(token, sizeof(token), rtcAutorestart);
+  info("token, ktory panel zglosi centrali po starcie: %s", token);
+  sprawdz(std::string(token) == "auto_pam_r0_n1_t45_h1_b0_em200", "token dla centrali: przyczyna pam, wolny RAM 1 kB, ostatni blad m200");
+#else
+  sprawdz(false, "token dla centrali: przyczyna pam");
+#endif
+}
+
+// --- 23b -------------------------------------------------------------------
+// To samo o krok wczesniej: pamieci nie starcza juz na ODEBRANIE odpowiedzi
+// (bufor String w NonBlockingHttp rosnie w miare odbioru). String z Arduino
+// nie zglasza tego - przestaje dopisywac. Przed v1.2.2 odpowiedz byla wtedy
+// po cichu ucieta i wygladala jak blad centrali ("zly JSON").
+void scenariuszBrakPamieciOdbior() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -33, 0));
+  setup();
+  biegnij(6000);
+  sprawdz(ekranMa("55°C"), "na poczatku kafelki pokazuja dane centrali");
+  const size_t od = g_atrapa.serial.size();
+  String::odmowaOdDlugosci = 1000;   // odpowiedz /api/status ma ok. 1,8 kB
+  g_atrapa.ramWolny = 1500;
+  g_atrapa.ramBlok = 800;
+  g_atrapa.ramMin = 800;
+  biegnij(20000);
+  String::odmowaOdDlugosci = 0;
+  info("%s", liniaLogu("[STATUS] GET nieudany", od).c_str());
+  info("%s", liniaLogu("zdarzenie=odpowiedz_nieczytelna", od).c_str());
+  info("naglowek po 20 s: \"%s\"", znacznikNaglowka().c_str());
+  sprawdz(logMa("[STATUS] GET nieudany: brak pamieci na odpowiedz errno=12 ENOMEM", "", "", od), "log: \"GET nieudany: brak pamieci na odpowiedz errno=12 ENOMEM\"");
+  sprawdz(!logMa("zdarzenie=odpowiedz_nieczytelna", "", "", od), "ucieta odpowiedz nie jest brana za blad centrali (brak linii odpowiedz_nieczytelna)");
+  sprawdz(ekranMa("--") && znacznikNaglowka().rfind("BRAK PAMIECI", 0) == 0, "kafelki \"--\", naglowek \"BRAK PAMIECI <sekundy> s\"");
+  sprawdz(logMa("zdarzenie=dane_nieaktualne", "przyczyna=pam", "", od), "log: dane_nieaktualne przyczyna=pam");
+  sprawdz(!logMa("zdarzenie=wymuszam_polaczenie", "", "", od) && g_atrapa.liczbaDisconnect == 0, "WiFi nie jest rozlaczane - siec dziala");
+  const size_t od2 = g_atrapa.serial.size();
+  g_atrapa.ramWolny = 52000;
+  g_atrapa.ramBlok = 40000;
+  biegnij(5000);
+  sprawdz(ekranMa("55°C") && znacznikNaglowka().empty() && logMa("zdarzenie=dane_wrocily", "", "", od2), "pamiec wraca: kafelki znow pokazuja dane, naglowek pusty");
+}
+
+// --- 24 --------------------------------------------------------------------
+// Ten sam log: "task_wdt ... loopTask (CPU 1)", slad wywolan w rysowaniu
+// LVGL. LVGL 8 po nieudanym przydziale pamieci staje w petli "while(1);" -
+// ekran zamiera na 15 s, potem restart przez watchdog, bez sladu przyczyny.
+void scenariuszBrakPamieciLvgl() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -33, 0));
+  setup();
+  biegnij(6000);
+  const size_t od = g_atrapa.serial.size();
+  const unsigned long start = millis();
+  pamiec::odmawiajOd = 1;   // malloc() odmawia wszystkiego
+  g_atrapa.ramWolny = 600;
+  g_atrapa.ramBlok = 300;
+  g_atrapa.ramMin = 300;
+  g_atrapa.napisyTft.clear();
+  unsigned long restartPo = 0;
+  for (int i = 0; i < 300 && restartPo == 0; i++) {
+    biegnij(100);
+    if (g_atrapa.restarty > 0) restartPo = millis() - start;
+  }
+  pamiec::odmawiajOd = 0;
+  info("ESP.restart() po %lu ms od chwili, gdy malloc() zaczal odmawiac", restartPo);
+  sprawdz(restartPo > 0 && restartPo < 15000 && logMa("tag=PANEL lvl=ERR zdarzenie=lvgl_assert", "", "", od),
+          "LVGL nie dostaje pamieci: wpis zdarzenie=lvgl_assert i restart od razu (bez 15 s zamrozenia)");
+  sprawdz(logMa("zdarzenie=lvgl_assert ram=600 ram_blok=300 ram_min=300", "", "", od), "log: ile bylo wolnego RAM-u (ram=600 ram_blok=300) - linia wypisana mimo braku pamieci");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog zadania nie zadzialal");
+  bool napis = false;
+  for (const std::string& t : g_atrapa.napisyTft) if (t == "BRAK PAMIECI - RESTART") napis = true;
+  sprawdz(napis, "na ekranie napis \"BRAK PAMIECI - RESTART\"");
+#ifdef DIAG_MA_PAMIEC
+  char token[diag::TOKEN_AUTORESTARTU_MAKS] = "";
+  diag::tokenAutorestartu(token, sizeof(token), rtcAutorestart);
+  info("token, ktory panel zglosi centrali po starcie: %s", token);
+  const std::string tk = token;
+  sprawdz(rtcAutorestart.wazna() && rtcAutorestart.oczekuje == 1 && rtcAutorestart.przyczyna == diag::PRZYCZYNA_LVGL &&
+              tk.rfind("auto_lvgl_r0_n1_t", 0) == 0 && tk.size() > 10 && tk.compare(tk.size() - 10, 10, "_h0_b0_ev0") == 0,
+          "pamiec RTC: powod dla centrali auto_lvgl_..._h0_b0_ev0");
+#else
+  sprawdz(false, "pamiec RTC: powod dla centrali auto_lvgl_...");
+#endif
+}
+
+// --- 25 --------------------------------------------------------------------
+// Bufory punktow ekranu Wykresy (18,4 kB) istnieja tylko wtedy, gdy ten ekran
+// jest otwarty - niezaleznie od tego, jak zostal zamkniety.
+void scenariuszWykresyPamiec() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -33, 0));
+  setup();
+  biegnij(3000);
+  sprawdz(pamiec::zyweBuforyWykresow() == 0, "po starcie buforow wykresow nie ma");
+  lv_obj_t* pulpit = lv_scr_act();
+  lv_obj_t* drugi = nullptr;
+  if (lv_disp_t* d = lv_disp_get_default()) {
+    for (uint32_t i = 0; i < d->screen_cnt; i++)
+      if (znajdzEtykiete(d->screens[i], "WYKRESY") != nullptr && znajdzEtykiete(d->screens[i], "WYSWIETLACZ") != nullptr) drugi = d->screens[i];
+  }
+  sprawdz(drugi != nullptr, "drugi pulpit (kafelki WYKRESY i WYSWIETLACZ) istnieje");
+  if (drugi == nullptr) return;
+
+  printf("  wejscie na Wykresy i wyjscie przez bezczynnosc:\n");
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  sprawdz(kliknij("WYKRESY"), "klikniecie kafelka WYKRESY");
+  biegnij(500);
+  sprawdz(lv_scr_act() != drugi && lv_scr_act() != pulpit && pamiec::zyweBuforyWykresow() == 8, "ekran Wykresy otwarty: 8 buforow punktow");
+  biegnij(14500);
+  sprawdz(lv_scr_act() == drugi && pamiec::zyweBuforyWykresow() == 0, "po 13,5 s bezczynnosci powrot na drugi pulpit, bufory zwolnione");
+  biegnij(14500);
+  sprawdz(lv_scr_act() == pulpit, "po kolejnych 13,5 s powrot na pulpit glowny");
+
+  printf("  alarm w trakcie ogladania wykresow:\n");
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  kliknij("WYKRESY");
+  biegnij(500);
+  sprawdz(pamiec::zyweBuforyWykresow() == 8, "ekran Wykresy otwarty ponownie: 8 buforow");
+  ustaw(0, [](Centrala& c) { c.tOgrz = 134.0; c.alarmOgrzewanie = true; });
+  biegnij(3000);
+  sprawdz(ekranMa("PRZEGRZANIE") && pamiec::zyweBuforyWykresow() == 0, "ekran alarmu zastapil Wykresy: bufory zwolnione");
+  ustaw(0, [](Centrala& c) { c.tOgrz = 55.0; c.alarmOgrzewanie = false; });
+  biegnij(3000);
+
+  printf("  wejscie na Wykresy, gdy pamieci na bufory nie ma:\n");
+  const size_t od = g_atrapa.serial.size();
+  pamiec::odmawiajOd = pamiec::BUFOR_WYKRESU_B;
+  pamiec::odmawiajDo = pamiec::BUFOR_WYKRESU_B;
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  kliknij("WYKRESY");
+  biegnij(2000);
+  pamiec::odmawiajOd = 0;
+  pamiec::odmawiajDo = (size_t)-1;
+  sprawdz(lv_scr_act() != drugi && pamiec::zyweBuforyWykresow() == 0 && ileLinii("[WYKRESY] BLAD: brak RAM", "", "", od) == 8,
+          "ekran sie otwiera, w logu 8 linii \"[WYKRESY] BLAD: brak RAM\", nic sie nie wywala");
+  biegnij(14500);
+  sprawdz(lv_scr_act() == drugi && pamiec::zyweBuforyWykresow() == 0, "zamkniecie ekranu bez buforow tez dziala");
+  sprawdz(ekranMa("WYKRESY"), "drugi pulpit pokazuje kafelki");
+}
+
+#ifdef POMIAR_STERTY
+// --- pomiar pamieci (tylko pomiar_pamieci.sh) -------------------------------
+// 32-bitowy model firmware'u z licznikiem sterty. "Na ESP32" = tyle zajmuja te
+// same bloki na sterycie ESP-IDF 5 (rozmiar do 4 bajtow w gore + 4 bajty
+// naglowka). Nie ma tu WiFi ani lwIP plytki - one biora swoje osobno.
+uint32_t g_pomiarBazaEsp = 0, g_pomiarBazaBloki = 0;
+// Linia "POMIAR nazwa zywe=... blokow=... szczyt=..." - czyta ja pomiar_pamieci.sh.
+// zywe   = ile pamieci firmware trzyma w tej chwili,
+// szczyt = najwiecej naraz od poprzedniej migawki.
+void migawka(const char* nazwa) {
+  const uint32_t esp = pomiar_zywe_esp() - g_pomiarBazaEsp;
+  const uint32_t szczyt = pomiar_szczyt_esp() - g_pomiarBazaEsp;
+  printf("POMIAR %s zywe=%u blokow=%u szczyt=%u\n", nazwa, esp, pomiar_zywe_bloki() - g_pomiarBazaBloki, szczyt);
+  if (!g_katalogWyjscia.empty()) {
+    pomiar_zrzut((g_katalogWyjscia + "/pamiec_" + nazwa + ".txt").c_str(), 0);
+    pomiar_zrzut((g_katalogWyjscia + "/pamiec_" + nazwa + "_szczyt.txt").c_str(), 1);
+  }
+  pomiar_zeruj_szczyty();
+}
+
+void scenariuszPomiarPamieci() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -33, 0));
+  g_pomiarBazaEsp = pomiar_zywe_esp();
+  g_pomiarBazaBloki = pomiar_zywe_bloki();
+  pomiar_zeruj_szczyty();
+  {
+    LiczFirmware licz;
+    setup();
+  }
+  migawka("po_setup");
+  biegnij(20000);
+  migawka("po_20s");
+  biegnij(10000);
+  migawka("cykl_10s");
+  biegnij(600000);
+  migawka("po_10min");
+  ustaw(0, [](Centrala& c) { c.tOgrz = 134.0; c.alarmOgrzewanie = true; c.symulacja = SYM_OGRZ; });
+  biegnij(10000);
+  migawka("alarm_przegrzania");
+  ustaw(0, [](Centrala& c) { c.tOgrz = 55.0; c.alarmOgrzewanie = false; c.symulacja = 0; });
+  biegnij(10000);
+  migawka("po_alarmie");
+  // Ekran Wykresy: bufory punktow istnieja tylko, gdy jest otwarty.
+  lv_obj_t* drugi = nullptr;
+  if (lv_disp_t* d = lv_disp_get_default()) {
+    for (uint32_t i = 0; i < d->screen_cnt; i++)
+      if (znajdzEtykiete(d->screens[i], "WYKRESY") != nullptr && znajdzEtykiete(d->screens[i], "WYSWIETLACZ") != nullptr) drugi = d->screens[i];
+  }
+  if (drugi != nullptr) {
+    { LiczFirmware licz; lv_scr_load(drugi); }
+    kliknij("WYKRESY");
+    biegnij(2000);
+    migawka("wykresy_otwarte");
+    biegnij(30000);   // bezczynnosc zamyka Wykresy, potem drugi pulpit
+    migawka("wykresy_zamkniete");
+    // Jeszcze dwa razy: wielokrotne otwieranie nie moze zostawiac pamieci.
+    for (int i = 0; i < 2; i++) {
+      { LiczFirmware licz; lv_scr_load(drugi); }
+      kliknij("WYKRESY");
+      biegnij(32000);
+    }
+    migawka("wykresy_3_razy");
+  }
+}
+#endif
+
 struct Scenariusz {
   const char* nazwa;
   const char* opis;
@@ -1475,6 +1842,13 @@ const Scenariusz SCENARIUSZE[] = {
     {"wycisz_alarm", "przycisk WYCISZ: cisza od razu, wyciszenie tylko do konca tego alarmu (v1.2.1)", scenariuszWyciszAlarm},
     {"autorestart_przy_alarmie", "centrala znika w trakcie alarmu: stan alarmu zapisany przed restartem (v1.2.1)", scenariuszAutorestartPrzyAlarmie},
     {"start_po_autorestarcie_z_alarmem", "start po restarcie w trakcie alarmu: dzwiek i ekran alarmu wracaja (v1.2.1)", scenariuszStartPoAutorestarcieZAlarmem},
+    {"brak_pamieci_json", "panel nie ma pamieci na odczytanie odpowiedzi centrali - log z 2026-11-12 (v1.2.2)", scenariuszBrakPamieciJson},
+    {"brak_pamieci_odbior", "panel nie ma pamieci nawet na odebranie odpowiedzi: to nie jest \"zla odpowiedz\" (v1.2.2)", scenariuszBrakPamieciOdbior},
+    {"brak_pamieci_lvgl", "LVGL nie dostaje pamieci w trakcie rysowania: restart od razu, z powodem (v1.2.2)", scenariuszBrakPamieciLvgl},
+    {"wykresy_pamiec", "bufory ekranu Wykresy istnieja tylko wtedy, gdy ekran jest otwarty (v1.2.2)", scenariuszWykresyPamiec},
+#ifdef POMIAR_STERTY
+    {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},
+#endif
 };
 
 // Scenariusze, w ktorych ESP.restart() JEST oczekiwany; w pozostalych kazdy
@@ -1482,7 +1856,7 @@ const Scenariusz SCENARIUSZE[] = {
 bool restartOczekiwany(const char* nazwa) {
   const std::string n = nazwa;
   return n == "autorestart_centrala_milczy" || n == "autorestart_brak_wifi" || n == "autorestart_kolejny" || n == "zla_odpowiedz_dlugo" ||
-         n == "autorestart_przy_alarmie" || n == "zla_odpowiedz_bez_konca";
+         n == "autorestart_przy_alarmie" || n == "zla_odpowiedz_bez_konca" || n == "brak_pamieci_json" || n == "brak_pamieci_lvgl";
 }
 
 }  // namespace
@@ -1498,6 +1872,14 @@ extern "C" ssize_t __real_send(int fd, const void* bufor, size_t n, int flagi);
 // trasy); w przeciwnym razie polaczenie idzie do serwera testowego, ktory
 // odpowie jako centrala stojaca za tym AP.
 extern "C" int __wrap_connect(int fd, const struct sockaddr*, socklen_t) {
+  // Kolejka ponizej to pamiec testu, nie firmware'u - nie wolno jej liczyc w
+  // pomiarze pamieci (pomiar_pamieci.sh) ani odmawiac jej w scenariuszach.
+  AtrapaBezPomiaru bezPomiaru;
+  struct BezOdmowy {
+    int bylo = pamiec::wFirmware;
+    BezOdmowy() { pamiec::wFirmware = 0; }
+    ~BezOdmowy() { pamiec::wFirmware = bylo; }
+  } bezOdmowy;
   const AtrapaAp* apTeraz = g_atrapa.polaczonyAp();
   if (apTeraz == nullptr) {
     errno = EHOSTUNREACH;
@@ -1542,6 +1924,7 @@ extern "C" ssize_t __wrap_send(int fd, const void* bufor, size_t n, int flagi) {
 }
 
 int main(int argc, char** argv) {
+  if (pomiar_wstrzymaj != nullptr) pomiar_wstrzymaj(1);   // od tej chwili liczy sie tylko firmware (LiczFirmware)
   const Scenariusz* wybrany = nullptr;
   for (int i = 1; i < argc; i++) {
     const std::string a = argv[i];

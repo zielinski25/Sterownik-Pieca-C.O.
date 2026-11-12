@@ -38,10 +38,107 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-12] v1.2.2 - PRZYCZYNA: PANELOWI BRAKUJE PAMIECI RAM.
+//   Uzytkownik doslal log PANELU (v1.2.0) z tego samego zdarzenia co log
+//   centrali opisany przy v1.2.1. Co w nim jest:
+//   - Po starcie prawie kazda odpowiedz centrali konczy sie linia
+//       tag=STATUS lvl=ERR zdarzenie=odpowiedz_nieczytelna przyczyna=json
+//       http=200 json=NoMemory bajtow=1811 cialo_bajtow=1683 ...
+//     Odpowiedz przyszla cala (HTTP 200, poczatek i koniec poprawne), a
+//     ArduinoJson nie dostal od malloc() pamieci na jej rozpakowanie. Tak
+//     bylo przez ok. 18 minut; kafelki pokazywaly "--".
+//   - Linie "tag=PANEL" podaja heap=47032 heap_min=39624 blok_max=38900 i
+//     blok_max jest IDENTYCZNY we wszystkich liniach przez godzine. To nie
+//     jest pamiec, z ktorej korzysta malloc(): ESP.getFreeHeap() i
+//     getMaxAllocHeap() w arduino-esp32 3.x doliczaja niezajety kawalek
+//     obszaru na kod w RAM-ie (IRAM), a z niego zwykly malloc() nie
+//     przydziela (sprawdzone w zrodlach arduino-esp32 3.0.7/3.3.8 i ESP-IDF
+//     5.1.4/5.5 - opis przy ramWolny()). Naprawde wolne bylo: ok. 8 kB w
+//     spoczynku, ok. 2 kB w chwili bledu, 0,6-0,9 kB w najgorszej chwili.
+//   - Wczesniejszy restart w tym logu to "task_wdt ... loopTask (CPU 1)":
+//     petla glowna krecila sie w miejscu przez 15 s. Slad wywolan jest
+//     gleboki i ma powtarzajace sie adresy, jak rysowanie drzewa obiektow
+//     LVGL; LVGL 8 po nieudanym przydziale pamieci staje w "while(1);".
+//     Adresow nie da sie tu zamienic na nazwy funkcji (brak pliku .elf z
+//     tej kompilacji), wiec to NAJPRAWDOPODOBNIEJ ta sama przyczyna, nie
+//     pewnik.
+//   - Od ok. 19. minuty do konca logu (ponad 40 minut) kazda proba konczy sie
+//     limitem czasu, przy wifi=1 i zmieniajacym sie rssi. Z tego logu NIE da
+//     sie rozstrzygnac, czy to panel gubil ramki z braku pamieci, czy
+//     centrala przestala mu odpowiadac. W obu przypadkach pomogl dopiero
+//     reczny reset - tym zajmuje sie drabina z v1.2.1 (ponowne polaczenie po
+//     12 s, restart po 45 s).
+//   Skad brak pamieci (pomiar: testy_host/pomiar_pamieci.sh - ten firmware
+//   jako program 32-bitowy z licznikiem malloc(), z narzutem sterty ESP32):
+//     v1.1.0 i v1.2.0 trzymaly po starcie 171 kB: ekrany LVGL (wszystkie
+//     budowane przy starcie, ok. 2400 blokow) 110 kB, bufor rysowania LVGL
+//     38,4 kB, bufory punktow ekranu Wykresy 18,5 kB, bufory odpowiedzi
+//     HTTP 2,5 kB, reszta 1,6 kB.
+//     Plytka miala wedlug logu 234,6 kB przed budowa ekranow i ok. 8 kB po
+//     starcie - na WiFi, lwIP i zadania systemu przypada wiec ok. 56 kB.
+//     Jedno odpytanie o status potrzebowalo chwilowo ok. 7,4 kB (bez buforow
+//     samego WiFi), czyli prawie wszystko, co bylo wolne.
+//     v1.1.0 miala ten sam problem (trzymala o 250 B mniej), tylko o nim nie
+//     pisala: nieudane rozpakowanie konczylo sie cichym `return` - stad
+//     pierwsze zgloszenie "kafelki sie nie aktualizuja" przy samych liniach
+//     "etap=sukces" w logu.
+//   Zmieniono:
+//   - Bufor rysowania LVGL: 16 wierszy zamiast 40 (15 360 B zamiast
+//     38 400 B) - lvgl_port.cpp. Obraz jest identyczny (20 zrzutow ekranu
+//     z testow na PC, piksel w piksel); szybkosci rysowania na plytce nie
+//     dalo sie tu zmierzyc.
+//   - Bufory punktow ekranu Wykresy (18 464 B) istnieja tylko wtedy, gdy ten
+//     ekran jest otwarty - dashboard_lvgl_poc.cpp, wykresy_bufory_8_*().
+//     Razem firmware trzyma po starcie 129 kB zamiast 171 kB. Zmiennych
+//     statycznych przybylo ok. 0,9 kB (glownie bufor logBezPamieci()).
+//     Szacunek dla plytki z logu: ok. 48 kB wolnego RAM-u zamiast ok. 8 kB.
+//   - Odpowiedz centrali nie jest juz kopiowana przed rozpakowaniem
+//     (NonBlockingHttp::odpowiedz() zamiast pobierzOdpowiedz()): jedno
+//     odpytanie o status potrzebuje chwilowo 5,6 kB zamiast 7,4 kB.
+//   - Brak pamieci na ODEBRANIE odpowiedzi jest wykrywany
+//     (siec_nieblokujaca_LCD.h, String::concat() zwraca false). Dotad
+//     String po cichu nie dopisywal kawalka i odpowiedz z dziura wygladala
+//     jak blad centrali ("json=InvalidInput").
+//   - Log podaje prawdziwy RAM: ram=, ram_min=, ram_blok= (zamiast heap=,
+//     heap_min=, blok_max=) w liniach "tag=PANEL", "odpowiedz_nieczytelna" i
+//     "autorestart"; nowe linie "tag=PAMIEC zdarzenie=po_ekranach|po_starcie"
+//     (raz, przy starcie) i "tag=PAMIEC lvl=WARN zdarzenie=malo_pamieci"
+//     (ponizej 16 kB, najwyzej raz na minute). Te same liczby ida w
+//     zgloszeniu restartu do centrali (pola h i b).
+//   - Brak pamieci jest osobna przyczyna braku danych: na ekranie
+//     "BRAK PAMIECI 14 s" (bylo "ZLA ODPOWIEDZ", czyli wina centrali), w logu
+//     przyczyna=pam, w zgloszeniu do centrali auto_pam_..._em200. Dotyczy
+//     json=NoMemory, braku pamieci na odebranie odpowiedzi oraz
+//     socket()/connect()/send() odrzuconych z ENOMEM, ENOBUFS, ENFILE.
+//     Restart po 45 s jak przy innych przyczynach, bez ograniczenia do
+//     dwoch.
+//   - Linie logu potrzebne wlasnie przy braku pamieci ("tag=PANEL fw=",
+//     odpowiedz_nieczytelna, dane_nieaktualne, malo_pamieci, autorestart,
+//     lvgl_assert) ida przez logBezPamieci(): Serial.printf() dla tekstu od
+//     64 znakow sam prosi o pamiec i bez niej linia przepada.
+//   - Blad wewnetrzny LVGL (w praktyce: brak pamieci w trakcie rysowania)
+//     nie zawiesza juz panelu na 15 s: include/lv_conf.h kieruje go do
+//     panel_lvgl_assert() - napis "BRAK PAMIECI - RESTART" na ekranie, wpis
+//     "tag=PANEL lvl=ERR zdarzenie=lvgl_assert ram=...", restart po 2,5 s i
+//     zgloszenie centrali auto_lvgl_...
+//   Sprawdzone: na PC (testy_host/: 262 sprawdzenia jednostkowe, 26
+//   scenariuszy / 252 sprawdzenia, takze z AddressSanitizer/UBSan; nowe
+//   scenariusze brak_pamieci_json, brak_pamieci_odbior, brak_pamieci_lvgl,
+//   wykresy_pamiec, w ktorych malloc() odmawia pamieci na zadanie; te same
+//   scenariusze w modelu 32-bitowym) i skladniowo prawdziwymi naglowkami
+//   arduino-esp32 3.0.7 / 3.3.8. NIE budowane przez PlatformIO i NIE
+//   uruchamiane na plytce.
+//   "48 kB" to szacunek z jednego logu - prawdziwa liczbe pokaze linia
+//   "tag=PAMIEC zdarzenie=po_starcie ram=..." po wgraniu.
+//
 // [2026-11-12] v1.2.1 - po zgloszeniu "nadal jest problem: podczas pracy
 //   zresetowalem LCD i dopiero wtedy odebral swieze dane" (wg uzytkownika na
 //   plytce byla v1.2.0). Przyslany zostal tylko log CENTRALI; logu panelu z
 //   tej chwili nie ma, wiec PRZYCZYNA NADAL NIE JEST POTWIERDZONA.
+//   [dopisek z v1.2.2: przyczyna zostala potem znaleziona w logu panelu -
+//   patrz wpis wyzej. Ponizszy opis zostaje, bo mechanizmy z v1.2.1 dalej
+//   dzialaja; pola heap=/blok_max= wymienione nizej nazywaja sie od v1.2.2
+//   ram=/ram_blok= i licza inna, mniejsza pamiec.]
 //   Co wiadomo:
 //   - centrala miala aktualne wartosci (piec=134.0C zewn=49.0C
 //     alarmCO=AKTYWNY pompa=ON) i buduje /api/status od nowa przy kazdym
@@ -308,6 +405,7 @@
 #include "esp_sleep.h"
 #include "driver/rtc_io.h"
 #include "driver/gpio.h"    // [FIX-TFT-BL-HOLD, ta sesja] gpio_hold_en/gpio_hold_dis/gpio_deep_sleep_hold_en dla GPIO21 (TFT_BL)
+#include <stdarg.h> // [v1.2.2] va_list w logBezPamieci()
 #include <math.h>   // cosf/sinf — uzywane w prostych ikonach wektorowych (rysujIkonaSlonce/Snieg), patrz sekcja [UI]
 #include "ikony.h"  // [LCD-IKONY] bitmapy 24x24 (plomien/kropla/suwak/alarm) - patrz komentarz w pliku
 
@@ -334,6 +432,7 @@
 #include <esp_ota_ops.h>
 #include <esp_task_wdt.h>
 #include <esp_wifi.h>    // [v1.2.0 WIFI-WYBOR] esp_wifi_scan_stop() - patrz wifiSkanujCentrale()
+#include <esp_heap_caps.h>   // [v1.2.2 PAMIEC] heap_caps_get_*() - patrz ramWolny()
 #include "esp_system.h"  // [RESET-DIAG, ta sesja] esp_reset_reason() / esp_reset_reason_t
 
 // [OTA-ROLLBACK] Bez tego override arduino-esp32 SAM potwierdzi biezaca
@@ -455,8 +554,57 @@ diag::Dlawik dlawikBleduUstawien;             // to samo dla /api/ustawienia-get
 diag::Ratunek panelRatunek;                   // drabina: ponowne polaczenie z siecia -> restart panelu
 bool ostatniBladStatusuToTresc = false;       // ostatnia nieudana proba /api/status: true = odpowiedz nieczytelna, false = brak odpowiedzi
 char ostatniBladStatusuTekst[72] = "";        // ...jej opis do logu (np. "timeout calkowity", "connect() natychmiastowy blad errno=118 EHOSTUNREACH")
-char ostatniBladStatusuEtap = '-';            // ...etap, na ktorym padla (NonBlockingHttp::etapBledu(); 'o' = odpowiedz nieczytelna)
+char ostatniBladStatusuEtap = '-';            // ...etap, na ktorym padla (NonBlockingHttp::etapBledu(); 'o' = odpowiedz nieczytelna, 'm' = brak pamieci na jej odczytanie)
 int  ostatniBladStatusuNumer = 0;             // ...i numer bledu gniazda albo kod HTTP
+bool ostatniBladStatusuToPamiec = false;      // [v1.2.2] ...true = panelowi zabraklo pamieci (patrz diag::PRZYCZYNA_PAMIEC)
+
+// ----------------------------------------------------------------------------
+// [v1.2.2 PAMIEC] Ile RAM-u panel NAPRAWDE ma
+// ----------------------------------------------------------------------------
+// ESP.getFreeHeap() / getMinFreeHeap() / getMaxAllocHeap() w arduino-esp32 3.x
+// licza pamiec MALLOC_CAP_INTERNAL. Na ESP32 wchodzi w to takze niezajety
+// kawalek obszaru na kod w RAM-ie (IRAM, 0x40080000-0x4009FFFF) - a z niego
+// zwykly malloc() NIE przydziela (ESP-IDF, components/heap/port/esp32/
+// memory_layout.c: typ "IRAM" ma MALLOC_CAP_EXEC|32BIT, bez
+// MALLOC_CAP_DEFAULT). W logu panelu z 2026-11-12 stalo przez godzine
+// "heap=47032 heap_min=39624 blok_max=38900" - z czego 38900 B to wlasnie ten
+// obszar. malloc() mial do dyspozycji ok. 8 kB, a w najgorszej chwili ok.
+// 0,7 kB, i stad "json=NoMemory" przy "wolnych" 40 kB. Ponizsze funkcje pytaja
+// o MALLOC_CAP_DEFAULT, czyli dokladnie o to, z czego korzysta malloc() (a
+// wiec ArduinoJson, String, LVGL i lwIP).
+static inline uint32_t ramWolny() { return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_DEFAULT); }
+static inline uint32_t ramBlok()  { return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT); }
+static inline uint32_t ramMin()   { return (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT); }
+diag::Dlawik dlawikMaloPamieci;               // ostrzezenie "malo_pamieci" - najwyzej raz na minute
+
+// Linia logu, ktora wypisze sie TAKZE przy braku pamieci. Serial.printf()
+// dla tekstu od 64 znakow sam prosi o pamiec (Print::vprintf w arduino-esp32
+// 3.0.7 i 3.3.8: bufor 64 B na stosie, dla dluzszego tekstu
+// malloc(dlugosc + 1)) i gdy jej nie dostanie, linia przepada bez sladu - a
+// wlasnie wtedy linie o braku pamieci sa potrzebne. Tutaj tekst powstaje w
+// stalym buforze: ani sterta, ani stos (wazne w panel_lvgl_assert(), wolanym
+// z glebi rysowania LVGL). Wolac TYLKO z zadania loop() - bufor jest jeden.
+// Liczby zmiennoprzecinkowe (%f) dzialaja tu tak samo jak w Serial.printf():
+// biblioteka C (newlib, mprec.c) bierze na nie kilka malych blokow pamieci
+// przy pierwszym uzyciu w danym zadaniu i potem uzywa ich ponownie. Gdyby
+// juz wtedy pamieci nie bylo, newlib przerywa program (assert "Balloc
+// succeeded", restart z powodem "panic") - w obu funkcjach jednakowo.
+static void logBezPamieci(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+static void logBezPamieci(const char *fmt, ...) {
+  static char linia[640];   // najdluzsza linia ("tag=PANEL fw=...") ma w najgorszym razie ok. 560 znakow
+  va_list ap;
+  va_start(ap, fmt);
+  const int n = vsnprintf(linia, sizeof(linia), fmt, ap);
+  va_end(ap);
+  if (n >= (int)sizeof(linia)) linia[sizeof(linia) - 2] = '\n';   // obcieta - niech przynajmniej konczy sie nowa linia
+  Serial.print(linia);
+}
+
+// Czego panelowi brakuje, gdy nie ma danych z centrali - jedna funkcja dla
+// naglowka ekranu, logu i drabiny ratunkowej (diag::Przyczyna).
+static diag::Przyczyna panelPrzyczynaTeraz() {
+  return diag::ustalPrzyczyne(WiFi.status() == WL_CONNECTED, ostatniBladStatusuToTresc, ostatniBladStatusuToPamiec);
+}
 // Przetrwa ESP.restart() (pamiec RTC, ktorej program przy starcie nie
 // zeruje). Po wlaczeniu zasilania zawiera przypadkowe wartosci - sprawdzane
 // i czyszczone w autorestartOdczytajPrzyStarcie(), zanim cokolwiek ich uzyje.
@@ -509,7 +657,7 @@ PoKomendzie pendingPoKomendzie = PoKomendzie::BRAK;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.2.1"; // [2026-11-12] v1.2.1: panel sam sie ratuje, gdy nie ma danych (ponowne polaczenie -> restart) i pokazuje, czego brakuje. v1.2.0 [2026-11-11]: wybor najsilniejszej centrali, dane nieaktualne -> "--", diagnostyka. v1.1.0 [2026-09-12]: nieblokujaca warstwa sieciowa. Patrz HISTORIA ZMIAN.
+static const char* FIRMWARE_VERSION_PANEL = "v1.2.2"; // [2026-11-12] v1.2.2: o ok. 40 kB mniej zajetego RAM-u (przyczyna "json=NoMemory" z logu panelu), prawdziwy wolny RAM w logu, brak pamieci jako osobna przyczyna. v1.2.1 [2026-11-12]: panel sam sie ratuje, gdy nie ma danych (ponowne polaczenie -> restart) i pokazuje, czego brakuje. v1.2.0 [2026-11-11]: wybor najsilniejszej centrali, dane nieaktualne -> "--", diagnostyka. v1.1.0 [2026-09-12]: nieblokujaca warstwa sieciowa. Patrz HISTORIA ZMIAN.
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1959,13 +2107,16 @@ static void zglosZlaOdpowiedz(const char *co, diag::Dlawik &dlawik, diag::Wynik 
   diag::skrotDoLogu(tresc, poczatek, sizeof(poczatek));
   diag::skrotDoLogu(diag::ogon(tresc, sizeof(koniec) - 1), koniec, sizeof(koniec));
   diag::skrotDoLogu((wynik == diag::WYNIK_JSON) ? diag::znajdzZlaWartosc(tresc) : nullptr, podejrzane, sizeof(podejrzane));
-  // heap/blok_max: json=NoMemory albo ucieta odpowiedz (IncompleteInput) przy
-  // malym blok_max wskazuje na brak pamieci w panelu, nie na blad centrali.
-  Serial.printf("tag=%s lvl=ERR zdarzenie=odpowiedz_nieczytelna przyczyna=%s http=%d json=%s bajtow=%u cialo_bajtow=%u pominieto=%lu heap=%lu blok_max=%lu poczatek=\"%s\" koniec=\"%s\" podejrzane=\"%s\"\n",
+  // ram/ram_blok: json=NoMemory albo ucieta odpowiedz (IncompleteInput) przy
+  // malym ram_blok to brak pamieci w panelu, nie blad centrali. [v1.2.2] Te
+  // dwie liczby to pamiec, z ktorej korzysta malloc() - patrz ramWolny();
+  // v1.2.0/v1.2.1 pisaly tu "heap=/blok_max=" zawyzone o ok. 39 kB.
+  // logBezPamieci(): ta linia musi sie wypisac wlasnie wtedy, gdy pamieci nie ma.
+  logBezPamieci("tag=%s lvl=ERR zdarzenie=odpowiedz_nieczytelna przyczyna=%s http=%d json=%s bajtow=%u cialo_bajtow=%u pominieto=%lu ram=%lu ram_blok=%lu poczatek=\"%s\" koniec=\"%s\" podejrzane=\"%s\"\n",
                 co, diag::wynikTekst(wynik), kodHttp, bladJson,
                 (unsigned)surowa.length(), (unsigned)(cialo != nullptr ? strlen(cialo) : 0),
                 (unsigned long)dlawik.zabierzPominiete(),
-                (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMaxAllocHeap(),
+                (unsigned long)ramWolny(), (unsigned long)ramBlok(),
                 poczatek, koniec, podejrzane);
 }
 
@@ -2005,7 +2156,7 @@ static void lvglPokazStan() {
 static void lvglPokazZnacznikCentrali() {
   char znacznik[48];
   if (straznikSwiezosci.oznaczoneJakoStare) {
-    const diag::Przyczyna przyczyna = diag::ustalPrzyczyne(WiFi.status() == WL_CONNECTED, ostatniBladStatusuToTresc);
+    const diag::Przyczyna przyczyna = panelPrzyczynaTeraz();
     const uint32_t progRestartu = diag::progRestartuMs(rtcAutorestart.kolejnych);
     diag::znacznikBrakuDanych(znacznik, sizeof(znacznik), przyczyna,
                               panelRatunek.bezDanychMs / 1000UL,
@@ -2037,13 +2188,13 @@ void panelOznaczDaneJakoNieaktualne() {
   // wiek_s=-1: od wlaczenia panelu nie bylo jeszcze ANI JEDNEGO poprawnego
   // statusu. wifi=1 przy braku danych znaczy: siec jest, ale centrala nie
   // odpowiada albo jej odpowiedzi sa nieczytelne (patrz tag=STATUS lvl=ERR).
-  // [v1.2.1] przyczyna=wifi|milczy|odp - to samo, co panel pokazuje w naglowku
-  // (BRAK WIFI / CENTRALA MILCZY / ZLA ODPOWIEDZ), patrz diag::Przyczyna.
+  // [v1.2.1] przyczyna=wifi|milczy|odp|pam - to samo, co panel pokazuje w naglowku
+  // (BRAK WIFI / CENTRALA MILCZY / ZLA ODPOWIEDZ / BRAK PAMIECI), patrz diag::Przyczyna.
   // restart_za_s=-1: przy tej przyczynie restartu juz nie bedzie (diag::restartMaSens()).
   const bool wifiOk = (WiFi.status() == WL_CONNECTED);
-  const diag::Przyczyna przyczyna = diag::ustalPrzyczyne(wifiOk, ostatniBladStatusuToTresc);
+  const diag::Przyczyna przyczyna = panelPrzyczynaTeraz();
   daneDobreSeria = false;   // koniec nieprzerwanie poprawnych danych
-  Serial.printf("tag=PANEL lvl=WARN zdarzenie=dane_nieaktualne wiek_s=%ld prog_s=%lu wifi=%d przyczyna=%s restart_za_s=%ld\n",
+  logBezPamieci("tag=PANEL lvl=WARN zdarzenie=dane_nieaktualne wiek_s=%ld prog_s=%lu wifi=%d przyczyna=%s restart_za_s=%ld\n",
                 swiezoscStatusu.byloKiedykolwiek ? (long)swiezoscStatusu.wiekSekund() : -1L,
                 (unsigned long)(PROG_NIEAKTUALNYCH_DANYCH_MS / 1000UL),
                 (int)wifiOk,
@@ -2088,21 +2239,19 @@ void panelOznaczDaneJakoNieaktualne() {
 // restarcie z serii - patrz autorestartOdczytajPrzyStarcie().
 void wifiWymusPolaczenie(bool bezBssid, uint8_t nr);   // definicja w sekcji WIFI
 
-void panelAutorestart(diag::Przyczyna przyczyna) {
+// Zapisuje w pamieci RTC to, co ma przetrwac samoczynny restart (powod dla
+// centrali, liczniki, stan alarmow). Bez przydzialow pamieci i bez dlugich
+// linii logu - wolane takze wtedy, gdy pamieci juz nie ma.
+static void autorestartZapiszPamiec(diag::Przyczyna przyczyna, uint8_t etap, int numer, uint32_t ram, uint32_t blok) {
   const uint32_t bezDanychS = panelRatunek.bezDanychMs / 1000UL;
-  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
-  const uint8_t kodRozlaczenia = wifiOstatniKodRozlaczenia;
-  const uint32_t heap = ESP.getFreeHeap();
-  const uint32_t blokMax = ESP.getMaxAllocHeap();
-
   rtcAutorestart.przyczyna = (uint8_t)przyczyna;
-  rtcAutorestart.kodRozlaczenia = kodRozlaczenia;
+  rtcAutorestart.kodRozlaczenia = wifiOstatniKodRozlaczenia;
   rtcAutorestart.odnotujRestart();   // liczniki: z rzedu, w serii, lacznie
   rtcAutorestart.bezDanychS = (bezDanychS > 65535UL) ? 65535 : (uint16_t)bezDanychS;
-  rtcAutorestart.heapKb = (uint16_t)(heap / 1024UL);
-  rtcAutorestart.blokKb = (uint16_t)(blokMax / 1024UL);
-  rtcAutorestart.bladEtap = (uint8_t)ostatniBladStatusuEtap;
-  rtcAutorestart.bladNumer = (ostatniBladStatusuNumer < 0 || ostatniBladStatusuNumer > 65535) ? 65535 : (uint16_t)ostatniBladStatusuNumer;
+  rtcAutorestart.heapKb = (uint16_t)(ram / 1024UL);
+  rtcAutorestart.blokKb = (uint16_t)(blok / 1024UL);
+  rtcAutorestart.bladEtap = etap;
+  rtcAutorestart.bladNumer = (numer < 0 || numer > 65535) ? 65535 : (uint16_t)numer;
   // Ostatni znany stan alarmow jedzie przez restart - patrz diag::spakujAlarmy()
   // i alarmPrzywrocPoAutorestarcie(). `stan` trzyma ostatnie wartosci z
   // centrali takze wtedy, gdy danych juz nie ma.
@@ -2114,17 +2263,56 @@ void panelAutorestart(diag::Przyczyna przyczyna) {
   rtcAutorestart.alarmy = diag::spakujAlarmy(stan.dymAlarm, stan.alarmOgrzewanie, stan.alarmPanel,
                                              g_brzeczykWyciszony, (int)g_brzeczykWyciszonyTyp, alarmOdrzuconyPoziom);
   rtcAutorestart.zapieczetuj();
+}
 
-  Serial.printf("tag=PANEL lvl=ERR zdarzenie=autorestart przyczyna=%s bez_danych_s=%lu nr_z_rzedu=%u w_serii=%u lacznie=%u wifi=%d rssi=%d "
-                "rozl_kod=%u rozl_nazwa=%s rozl_n=%lu ostatni_blad=\"%s\" heap=%lu blok_max=%lu alarmy=0x%02X "
+void panelAutorestart(diag::Przyczyna przyczyna) {
+  const uint32_t bezDanychS = panelRatunek.bezDanychMs / 1000UL;
+  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
+  const uint8_t kodRozlaczenia = wifiOstatniKodRozlaczenia;
+  const uint32_t ram = ramWolny();
+  const uint32_t blok = ramBlok();
+  autorestartZapiszPamiec(przyczyna, (uint8_t)ostatniBladStatusuEtap, ostatniBladStatusuNumer, ram, blok);
+
+  logBezPamieci("tag=PANEL lvl=ERR zdarzenie=autorestart przyczyna=%s bez_danych_s=%lu nr_z_rzedu=%u w_serii=%u lacznie=%u wifi=%d rssi=%d "
+                "rozl_kod=%u rozl_nazwa=%s rozl_n=%lu ostatni_blad=\"%s\" ram=%lu ram_blok=%lu ram_min=%lu alarmy=0x%02X "
                 "msg=\"brak danych z centrali - restart panelu\"\n",
                 diag::przyczynaSkrot(przyczyna), (unsigned long)bezDanychS,
                 (unsigned)rtcAutorestart.kolejnych, (unsigned)rtcAutorestart.seria, (unsigned)rtcAutorestart.lacznie,
                 (int)wifiOk, wifiOk ? (int)WiFi.RSSI() : 0,
                 (unsigned)kodRozlaczenia, diag::nazwaKoduRozlaczenia(kodRozlaczenia), (unsigned long)wifiLiczbaRozlaczen,
-                ostatniBladStatusuTekst, (unsigned long)heap, (unsigned long)blokMax, (unsigned)rtcAutorestart.alarmy);
+                ostatniBladStatusuTekst, (unsigned long)ram, (unsigned long)blok, (unsigned long)ramMin(),
+                (unsigned)rtcAutorestart.alarmy);
   Serial.flush();
   delay(100);
+  ESP.restart();
+}
+
+// [v1.2.2 PAMIEC] Blad wewnetrzny LVGL (LV_ASSERT_HANDLER w include/lv_conf.h).
+// W praktyce: LVGL poprosil o pamiec w trakcie rysowania i jej nie dostal.
+// Domyslnie LVGL 8 staje wtedy w pustej petli "while(1);" - ekran zamiera, a
+// po 15 s panel restartuje watchdog (log z 2026-11-12: "task_wdt ... loopTask",
+// slad wywolan konczy sie w rysowaniu LVGL), bez sladu, co sie stalo. Tutaj:
+// napis na ekranie, wpis w logu, powod zapisany dla centrali
+// ("auto_lvgl_...", z iloscia wolnej pamieci) i restart od razu.
+// Funkcja nie moze wrocic (LVGL uzylby pustego wskaznika) i nie moze prosic
+// o pamiec (stad logBezPamieci()).
+extern "C" void panel_lvgl_assert(void) {
+  static bool wTrakcie = false;
+  if (wTrakcie) ESP.restart();   // blad w trakcie obslugi bledu - nie probuj drugi raz
+  wTrakcie = true;
+  const uint32_t ram = ramWolny();
+  const uint32_t blok = ramBlok();
+  logBezPamieci("tag=PANEL lvl=ERR zdarzenie=lvgl_assert ram=%lu ram_blok=%lu ram_min=%lu msg=\"blad wewnetrzny LVGL (zwykle brak pamieci) - restart panelu\"\n",
+                (unsigned long)ram, (unsigned long)blok, (unsigned long)ramMin());
+  autorestartZapiszPamiec(diag::PRZYCZYNA_LVGL, 'v', 0, ram, blok);
+  // Napis wprost przez sterownik ekranu (LVGL juz nic nie narysuje). LVGL
+  // wola nas spoza funkcji wysylajacej piksele, wiec magistrala jest wolna.
+  tft.fillRect(0, 0, 480, 44, TFT_RED);
+  tft.setTextColor(TFT_WHITE, TFT_RED);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString(blok < 4096 ? "BRAK PAMIECI - RESTART" : "BLAD EKRANU - RESTART", 240, 22, 4);
+  Serial.flush();
+  delay(2500);   // zeby napis dalo sie przeczytac (watchdog zadania ma 15 s)
   ESP.restart();
 }
 
@@ -2132,7 +2320,7 @@ void panelAutorestart(diag::Przyczyna przyczyna) {
 void panelRatunekKrok() {
   // W trakcie pobierania nowego firmware'u panel celowo nie pyta o status.
   if (trwaAktualizacjaOtaPanelu) return;
-  const diag::Przyczyna przyczyna = diag::ustalPrzyczyne(WiFi.status() == WL_CONNECTED, ostatniBladStatusuToTresc);
+  const diag::Przyczyna przyczyna = panelPrzyczynaTeraz();
   const uint32_t progRestartu = diag::progRestartuMs(rtcAutorestart.kolejnych);
   switch (panelRatunek.krok(millis(), przyczyna == diag::PRZYCZYNA_MILCZY, progRestartu)) {
     case diag::Ratunek::POLACZ_PONOWNIE:           wifiWymusPolaczenie(false, panelRatunek.wymuszen); break;
@@ -2184,6 +2372,22 @@ void panelRatunekKrok() {
 #endif
 }
 
+// [v1.2.2 PAMIEC] Raz na sekunde: gdy wolnego RAM-u robi sie malo, wpis w
+// logu (najwyzej raz na minute) - zanim zabraknie go na odczytanie
+// odpowiedzi centrali.
+void panelPamiecKrok() {
+  static unsigned long ostatnio = 0;
+  const unsigned long teraz = millis();
+  if (teraz - ostatnio < 1000UL) return;
+  ostatnio = teraz;
+  const uint32_t ram = ramWolny();
+  if (ram >= diag::RAM_PROG_OSTRZEZENIA_B) return;
+  if (!dlawikMaloPamieci.pozwol(teraz, 60000UL)) return;
+  dlawikMaloPamieci.zabierzPominiete();
+  logBezPamieci("tag=PAMIEC lvl=WARN zdarzenie=malo_pamieci ram=%lu ram_blok=%lu ram_min=%lu prog=%lu\n",
+                (unsigned long)ram, (unsigned long)ramBlok(), (unsigned long)ramMin(), (unsigned long)diag::RAM_PROG_OSTRZEZENIA_B);
+}
+
 // Jedna linia co PANEL_DIAG_INTERWAL_MS z odpowiedzia na trzy pytania, na
 // ktore log v1.1.0 nie odpowiadal: (1) z KTORYM punktem dostepowym panel jest
 // polaczony, (2) ile odpowiedzi udalo sie odczytac i ile razy dane poszly na
@@ -2204,13 +2408,18 @@ void panelDiagOkresowo() {
   diag::listaSymulowanych(centralaSymulacjaMaska, sym, sizeof(sym));
   // Wartosci t_*/wilg/cisn/dym/klapa/syberka/pompa to DOKLADNIE to, co panel
   // ma w pamieci i podaje kafelkom - do porownania z linia "tag=STATUS" w
-  // logu centrali. blok_max: najwiekszy ciagly wolny blok sterty (przy
-  // pofragmentowanej stercie odpowiedz moze sie nie zmiescic mimo duzego heap).
-  Serial.printf("tag=PANEL fw=%s wifi=%d bssid=%s kanal=%d rssi=%d ap_przy_starcie=%d centrala=%s sym=%s "
+  // logu centrali.
+  // [v1.2.2 PAMIEC] ram= wolny RAM, ram_min= najmniej wolnego od startu,
+  // ram_blok= najwiekszy ciagly wolny blok - wszystko dla pamieci, z ktorej
+  // korzysta malloc() (patrz ramWolny()). Zastepuja heap=/heap_min=/blok_max=
+  // z v1.2.0 i v1.2.1, ktore byly zawyzone o ok. 39 kB. Zdrowy panel ma tu
+  // kilkadziesiat kB; ponizej ok. 16 kB zaczynaja sie klopoty.
+  // logBezPamieci(): ta linia ma sie wypisac takze wtedy, gdy pamieci brakuje.
+  logBezPamieci("tag=PANEL fw=%s wifi=%d bssid=%s kanal=%d rssi=%d ap_przy_starcie=%d centrala=%s sym=%s "
                 "status_ok=%lu status_blad=%lu ust_ok=%lu ust_blad=%lu ekran=%lu wiek_danych_s=%ld "
                 "t_zewn=%.1f t_pokoj=%.1f t_ogrz=%.1f t_ogrz_sr=%.1f t_bojler=%.1f t_panel=%.1f "
                 "wilg=%.0f cisn=%.0f dym=%d klapa=%d syberka=%d pompa=%d czas=%02d:%02d "
-                "heap=%lu heap_min=%lu blok_max=%lu "
+                "ram=%lu ram_min=%lu ram_blok=%lu "
                 "bez_danych_s=%lu przyczyna=%s wymuszen=%u rozl_kod=%u rozl_n=%lu autorestartow=%u\n",
                 FIRMWARE_VERSION_PANEL, (int)wifiOk, bssid,
                 wifiOk ? (int)WiFi.channel() : 0, wifiOk ? (int)WiFi.RSSI() : 0,
@@ -2225,14 +2434,12 @@ void panelDiagOkresowo() {
                 stan.wilgotnosc, stan.cisnienie, (int)stan.dym,
                 stan.klapa, stan.syberka, (int)stan.pompa,
                 stan.godzina, stan.minuta,
-                (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
-                (unsigned long)ESP.getMaxAllocHeap(),
+                (unsigned long)ramWolny(), (unsigned long)ramMin(), (unsigned long)ramBlok(),
                 // [v1.2.1 RATUNEK] od ilu sekund bez poprawnego statusu; czego brakuje ("-" = nic,
-                // wifi | milczy | odp); ile razy wymuszono ponowne polaczenie; kod i liczba rozlaczen
+                // wifi | milczy | odp | pam); ile razy wymuszono ponowne polaczenie; kod i liczba rozlaczen
                 // WiFi od startu; ile samoczynnych restartow od wlaczenia zasilania.
                 (unsigned long)(panelRatunek.bezDanychMs / 1000UL),
-                straznikSwiezosci.oznaczoneJakoStare
-                    ? diag::przyczynaSkrot(diag::ustalPrzyczyne(wifiOk, ostatniBladStatusuToTresc)) : "-",
+                straznikSwiezosci.oznaczoneJakoStare ? diag::przyczynaSkrot(panelPrzyczynaTeraz()) : "-",
                 (unsigned)panelRatunek.wymuszen,
                 (unsigned)wifiOstatniKodRozlaczenia, (unsigned long)wifiLiczbaRozlaczen,
                 (unsigned)rtcAutorestart.lacznie);
@@ -2277,6 +2484,10 @@ void obslugaStatusFetch() {
     snprintf(ostatniBladStatusuTekst, sizeof(ostatniBladStatusuTekst), "%s", statusFetch.ostatniBlad().c_str());
     ostatniBladStatusuEtap = statusFetch.etapBledu();
     ostatniBladStatusuNumer = statusFetch.numerBledu();
+    // [v1.2.2 PAMIEC] socket()/connect()/send() odrzucone z ENOMEM, ENOBUFS
+    // albo ENFILE: to panelowi zabraklo pamieci (albo gniazd), a nie
+    // centrala milczy. Przy limitach czasu numer bledu to 0.
+    ostatniBladStatusuToPamiec = diag::bladGniazdaToBrakPamieci(ostatniBladStatusuNumer);
     Serial.printf("[STATUS] GET nieudany: %s\n", ostatniBladStatusuTekst);
     // [FIX-LOG-SPAM, ta sesja] Bez tego stan_ zostawal w ERROR_ na stale -
     // gotowyWynik() (a wiec i ten log) powtarzalby sie na KAZDEJ iteracji
@@ -2293,7 +2504,11 @@ void obslugaStatusFetch() {
   // cialo w `surowa` (bez dodatkowej kopii substring() jak dotad) - `surowa`
   // zyje do konca tej funkcji, a wszystkie pola sa przepisywane do `stan`
   // ponizej, wiec nic nie wskazuje na nia po wyjsciu.
-  String surowa = statusFetch.pobierzOdpowiedz();
+  // [v1.2.2 PAMIEC] Bez kopii odpowiedzi (bylo: pobierzOdpowiedz(), czyli
+  // drugie 1,8 kB na kazde odpytanie): `surowa` to odwolanie do bufora w
+  // statusFetch; zadanie wraca do stanu IDLE przy wyjsciu z tej funkcji.
+  OdpowiedzDoKonca odpowiedzStatusu(statusFetch);
+  const String &surowa = odpowiedzStatusu.tekst();
   int kodHttp = 0;
   const char *cialo = nullptr;
   diag::Wynik wynik = diag::sprawdzOdpowiedz(surowa.c_str(), &kodHttp, &cialo);
@@ -2309,9 +2524,14 @@ void obslugaStatusFetch() {
     stan.polaczono = false;
     panelLiczniki.statusBlad++;
     ostatniBladStatusuToTresc = true;    // [v1.2.1 RATUNEK] odpowiedz przyszla, ale jest nieczytelna
-    snprintf(ostatniBladStatusuTekst, sizeof(ostatniBladStatusuTekst), "odpowiedz nieczytelna: %s http=%d json=%s",
+    // [v1.2.2 PAMIEC] ArduinoJson 7 zwraca NoMemory tylko wtedy, gdy malloc()
+    // odmowil pamieci na rozpakowanie odpowiedzi - czyli odpowiedz centrali
+    // jest w porzadku, a zabraklo RAM-u w panelu (log z 2026-11-12).
+    ostatniBladStatusuToPamiec = (bladJson == DeserializationError::NoMemory);
+    snprintf(ostatniBladStatusuTekst, sizeof(ostatniBladStatusuTekst), "%s: %s http=%d json=%s",
+             ostatniBladStatusuToPamiec ? "brak pamieci" : "odpowiedz nieczytelna",
              diag::wynikTekst(wynik), kodHttp, bladJson.c_str());
-    ostatniBladStatusuEtap = 'o';
+    ostatniBladStatusuEtap = ostatniBladStatusuToPamiec ? 'm' : 'o';
     ostatniBladStatusuNumer = kodHttp;
     zglosZlaOdpowiedz("STATUS", dlawikBleduStatusu, wynik, kodHttp, bladJson.c_str(), surowa, cialo);
     return;
@@ -2492,7 +2712,9 @@ void obslugaUstawieniaFetch() {
   }
   // [v1.2.0 DIAG] Ten sam wzorzec co w obslugaStatusFetch() wyzej: kod HTTP
   // + cialo + JSON, kazda porazka z przyczyna w logu (bylo: ciche `return`).
-  String surowa = ustawieniaFetch.pobierzOdpowiedz();
+  // [v1.2.2 PAMIEC] Bez kopii odpowiedzi - jak w obslugaStatusFetch().
+  OdpowiedzDoKonca odpowiedzUstawien(ustawieniaFetch);
+  const String &surowa = odpowiedzUstawien.tekst();
   int kodHttp = 0;
   const char *cialo = nullptr;
   diag::Wynik wynik = diag::sprawdzOdpowiedz(surowa.c_str(), &kodHttp, &cialo);
@@ -4405,6 +4627,9 @@ void setup() {
   Serial.println(F("=== LVGL_POC_TEST=1, LVGL_POC_SYMULACJA=0: stary dashboard TFT pominiety, WiFi/API dziala ==="));
   lvgl_port_init();
   lvgl_dashboard_poc_init();
+  // [v1.2.2 PAMIEC] Ile RAM-u zostaje po zbudowaniu ekranow, zanim wystartuje
+  // WiFi (ktore bierze kolejne kilkadziesiat kB).
+  Serial.printf("tag=PAMIEC zdarzenie=po_ekranach ram=%lu ram_blok=%lu\n", (unsigned long)ramWolny(), (unsigned long)ramBlok());
   lvgl_dashboard_poc_ustaw_callback_pompy(pompaManualWyslij);
   lvgl_dashboard_poc_ustaw_callback_wyboru(pompaWyborWyslij);
   // [POPRAWKA, ta sesja - panel SERWO v2] Brakujaca rejestracja (ta sama
@@ -4478,6 +4703,11 @@ void setup() {
                                  stan.rssi,
                                  stan.internet,
                                  stan.deszczStan, stan.deszczMinuty);
+  // [v1.2.2 PAMIEC] Stan po starcie: WiFi dziala, pierwsze dane odebrane.
+  // To jest liczba, ktora mowi, czy panel ma zapas (kilkadziesiat kB), czy
+  // pracuje na styk (log z 2026-11-12: ok. 8 kB).
+  logBezPamieci("tag=PAMIEC zdarzenie=po_starcie ram=%lu ram_blok=%lu ram_min=%lu\n",
+                (unsigned long)ramWolny(), (unsigned long)ramBlok(), (unsigned long)ramMin());
 #endif
   ostatniStatus = millis();
   // [OTA-ROLLBACK] Tutaj, nie wczesniej: ekran juz narysowany (obie galezie
@@ -4598,6 +4828,7 @@ void loop() {
   panelRatunekKrok();
   // [v1.2.0 DIAG] Jedna linia "tag=PANEL" co 30 s - patrz panelDiagOkresowo().
   panelDiagOkresowo();
+  panelPamiecKrok();   // [v1.2.2 PAMIEC] ostrzezenie w logu, gdy wolnego RAM-u jest malo
 
   unsigned long terazLvgl = millis();
   if (terazLvgl - ostatniStatus >= STATUS_INTERWAL_MS) {
@@ -4638,6 +4869,7 @@ void loop() {
   }
   panelRatunekKrok();   // [v1.2.1 RATUNEK] jak w galezi LVGL wyzej
   panelDiagOkresowo();
+  panelPamiecKrok();    // [v1.2.2 PAMIEC] jak w galezi LVGL wyzej
 
   // [ETAP 3b] Brak interakcji przez ACTIVITY_TIMEOUT_MS -> usypiamy, CHYBA
   // ZE wykryte jest zasilanie USB — wtedy urzadzenie ma dzialac jak

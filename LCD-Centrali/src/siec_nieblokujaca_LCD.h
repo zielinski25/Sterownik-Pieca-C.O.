@@ -43,6 +43,7 @@
 #include <lwip/netdb.h>
 #include <errno.h>
 #include <fcntl.h>  // F_GETFL/F_SETFL/O_NONBLOCK (uzywane w startWewn() nizej) - NIE zawsze dociagniete transytywnie przez lwip/sockets.h, jawny include jest bezpieczniejszy
+#include <utility>  // std::move (zwolnienie bufora odpowiedzi przy braku pamieci, v1.2.2)
 
 // =======================================================================
 // KONFIGURACJA - podmien pod swoje wartosci (te same co dzis w main.cpp)
@@ -254,7 +255,18 @@ public:
             int n = recv(sock_, bufor, sizeof(bufor) - 1, 0);
             if (n > 0) {
                 bufor[n] = 0;
-                odpowiedz_ += bufor;
+                // [v1.2.2 PAMIEC] String z Arduino przy braku pamieci nie
+                // zglasza bledu - po prostu NIE dopisuje tekstu. Odpowiedz
+                // bylaby wtedy ucieta i wygladala na blad centrali ("zly
+                // JSON"). concat() zwraca false, gdy pamieci zabraklo.
+                if (!odpowiedz_.concat(bufor)) {
+                    // Oddaj to, co juz odebrano: String sam bufora nie
+                    // zwalnia (przypisanie "" zostawia go na pozniej), a tu
+                    // kazdy bajt jest potrzebny reszcie programu.
+                    { String wyrzuc(std::move(odpowiedz_)); }
+                    zamknijZBledem("brak pamieci na odpowiedz", 'm', ENOMEM);
+                    return;
+                }
                 krokStartMs_ = teraz; // reset timeoutu przy kazdym odebranym kawalku
             } else if (n == 0) {
                 zakonczSukcesem();
@@ -288,6 +300,21 @@ public:
         return wynik;
     }
 
+    // [v1.2.2 PAMIEC] Odpowiedz BEZ kopiowania. pobierzOdpowiedz() zwraca
+    // kopie - przy /api/status to dodatkowe ok. 1,8 kB w jednym kawalku na
+    // kazde odpytanie. odpowiedz() daje odwolanie do wewnetrznego bufora,
+    // wazne do wywolania zwolnijOdpowiedz() albo do startu nastepnego
+    // zadania. Tylko gdy bylSukces() == true.
+    const String& odpowiedz() const { return odpowiedz_; }
+    // Koniec pracy z odpowiedzia: stan wraca do IDLE (to samo robilo
+    // pobierzOdpowiedz()). Gdy w miedzyczasie ruszylo juz nastepne zadanie,
+    // nic nie robi - nie wolno mu zabrac stanu ani bufora.
+    void zwolnijOdpowiedz() {
+        if (stan_ != SiecState::DONE) return;
+        odpowiedz_ = "";
+        stan_ = SiecState::IDLE;
+    }
+
     String ostatniBlad() const { return blad_; }
 
     // [v1.2.1] Ostatni blad w postaci do krotkiego zapisu: NA KTORYM ETAPIE
@@ -296,6 +323,7 @@ public:
     //   'l' limit czasu laczenia (centrala nie odpowiada na probe polaczenia)
     //   'a' connect() - blad po chwili           's' send()
     //   'c' limit czasu calosci (polaczono, brak odpowiedzi)   'r' recv()
+    //   'm' zabraklo pamieci na odebrana odpowiedz (numer bledu: ENOMEM)
     // '-' = od ostatniego startu zadania bledu nie bylo.
     char etapBledu() const { return etapBledu_; }
     int numerBledu() const { return numerBledu_; }
@@ -426,6 +454,23 @@ private:
     int numerBledu_ = 0;
     unsigned long krokStartMs_ = 0;
     unsigned long calkowityStartMs_ = 0;
+};
+
+// [v1.2.2 PAMIEC] Odpowiedz zadania na czas jednej funkcji, bez kopiowania:
+//     OdpowiedzDoKonca odp(statusFetch);
+//     const String& surowa = odp.tekst();
+// Przy wyjsciu z zakresu (kazdym - takze przez `return` w srodku) zadanie
+// wraca do stanu IDLE. Uzywac tylko, gdy zadanie.bylSukces() == true.
+class OdpowiedzDoKonca {
+public:
+    explicit OdpowiedzDoKonca(NonBlockingHttp& zadanie) : zadanie_(zadanie) {}
+    ~OdpowiedzDoKonca() { zadanie_.zwolnijOdpowiedz(); }
+    OdpowiedzDoKonca(const OdpowiedzDoKonca&) = delete;
+    OdpowiedzDoKonca& operator=(const OdpowiedzDoKonca&) = delete;
+    const String& tekst() const { return zadanie_.odpowiedz(); }
+
+private:
+    NonBlockingHttp& zadanie_;
 };
 
 // =======================================================================

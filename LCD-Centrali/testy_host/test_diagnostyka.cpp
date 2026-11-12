@@ -289,6 +289,25 @@ static void testPrzyczyna() {
   SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_MILCZY), "milczy") == 0);
   SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_ODPOWIEDZ), "odp") == 0);
 
+  // [v1.2.2 PAMIEC] Panelowi zabraklo pamieci - osobna przyczyna (log z
+  // 2026-11-12: "json=NoMemory" bylo zgloszone jako wina centrali, "odp").
+  SPRAWDZ(ustalPrzyczyne(true, true, true) == PRZYCZYNA_PAMIEC);    // odpowiedz przyszla, zabraklo pamieci na jej odczytanie
+  SPRAWDZ(ustalPrzyczyne(true, false, true) == PRZYCZYNA_PAMIEC);   // socket()/connect() odrzucone z braku pamieci
+  SPRAWDZ(ustalPrzyczyne(false, true, true) == PRZYCZYNA_WIFI);     // bez WiFi nadal "brak WiFi"
+  SPRAWDZ(ustalPrzyczyne(true, true, false) == PRZYCZYNA_ODPOWIEDZ);
+  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_PAMIEC), "BRAK PAMIECI") == 0);
+  SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_PAMIEC), "pam") == 0);
+  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_LVGL), "BLAD EKRANU") == 0);
+  SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_LVGL), "lvgl") == 0);
+  // Wartosci liczbowe sa zapisywane w pamieci RTC - nie moga sie przesunac.
+  SPRAWDZ(PRZYCZYNA_BRAK == 0 && PRZYCZYNA_WIFI == 1 && PRZYCZYNA_MILCZY == 2 && PRZYCZYNA_ODPOWIEDZ == 3 &&
+          PRZYCZYNA_PAMIEC == 4 && PRZYCZYNA_LVGL == 5);
+  SPRAWDZ(bladGniazdaToBrakPamieci(12) && bladGniazdaToBrakPamieci(105) && bladGniazdaToBrakPamieci(23) && bladGniazdaToBrakPamieci(24));
+  SPRAWDZ(!bladGniazdaToBrakPamieci(0));     // limit czasu
+  SPRAWDZ(!bladGniazdaToBrakPamieci(118));   // EHOSTUNREACH - brak drogi do centrali
+  SPRAWDZ(!bladGniazdaToBrakPamieci(104) && !bladGniazdaToBrakPamieci(113) && !bladGniazdaToBrakPamieci(-1));
+  SPRAWDZ(RAM_PROG_OSTRZEZENIA_B == 16000UL);
+
   SPRAWDZ(std::strcmp(nazwaKoduRozlaczenia(201), "NO_AP_FOUND") == 0);
   SPRAWDZ(std::strcmp(nazwaKoduRozlaczenia(200), "BEACON_TIMEOUT") == 0);
   SPRAWDZ(std::strcmp(nazwaKoduRozlaczenia(8), "ASSOC_LEAVE") == 0);
@@ -305,6 +324,10 @@ static void testPrzyczyna() {
   SPRAWDZ(std::strcmp(z, "RESTART ZA 10 s: BRAK WIFI") == 0);      // od 10 s: odliczanie
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_ODPOWIEDZ, 45, 0);
   SPRAWDZ(std::strcmp(z, "RESTART ZA 0 s: ZLA ODPOWIEDZ") == 0);
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_PAMIEC, 14, 31);
+  SPRAWDZ(std::strcmp(z, "BRAK PAMIECI 14 s") == 0);
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_PAMIEC, 38, 7);
+  SPRAWDZ(std::strcmp(z, "RESTART ZA 7 s: BRAK PAMIECI") == 0);
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_BRAK, 3, 42);
   SPRAWDZ(std::strcmp(z, "") == 0);                                // dane sa - nic do pokazania
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_MILCZY, 299, 300);
@@ -423,6 +446,9 @@ static void testRatunek() {
   SPRAWDZ(restartMaSens(PRZYCZYNA_MILCZY, 0) && restartMaSens(PRZYCZYNA_MILCZY, 200));
   SPRAWDZ(restartMaSens(PRZYCZYNA_ODPOWIEDZ, 0) && restartMaSens(PRZYCZYNA_ODPOWIEDZ, 1));
   SPRAWDZ(!restartMaSens(PRZYCZYNA_ODPOWIEDZ, 2) && !restartMaSens(PRZYCZYNA_ODPOWIEDZ, 9));
+  // Brak pamieci to wina panelu - restart pomaga zawsze, bez ograniczenia.
+  SPRAWDZ(restartMaSens(PRZYCZYNA_PAMIEC, 0) && restartMaSens(PRZYCZYNA_PAMIEC, 200));
+  SPRAWDZ(restartMaSens(PRZYCZYNA_LVGL, 0) && restartMaSens(PRZYCZYNA_LVGL, 200));
   SPRAWDZ(CZAS_STABILNYCH_DANYCH_MS == 120000UL);
   // 8) Przewiniecie zegara millis() (po ok. 49 dniach) nie robi skoku.
   {
@@ -472,6 +498,16 @@ static void testPamiecAutorestartu() {
   m.bladEtap = '-';
   tokenAutorestartu(t, sizeof(t), m);
   SPRAWDZ(std::strcmp(t, "auto_wifi_r201_n1_t45_h61_b31_ex118") == 0);   // '-' nie moze trafic do adresu zapytania
+  // [v1.2.2] brak pamieci na odczytanie odpowiedzi; blad wewnetrzny LVGL
+  m.przyczyna = PRZYCZYNA_PAMIEC; m.kodRozlaczenia = 0; m.heapKb = 1; m.blokKb = 0; m.bladEtap = 'm'; m.bladNumer = 200;
+  tokenAutorestartu(t, sizeof(t), m);
+  SPRAWDZ(std::strcmp(t, "auto_pam_r0_n1_t45_h1_b0_em200") == 0);
+  m.bladNumer = 12;   // ...i juz na jej odebranie (NonBlockingHttp: etap 'm', ENOMEM)
+  tokenAutorestartu(t, sizeof(t), m);
+  SPRAWDZ(std::strcmp(t, "auto_pam_r0_n1_t45_h1_b0_em12") == 0);
+  m.przyczyna = PRZYCZYNA_LVGL; m.bezDanychS = 0; m.heapKb = 0; m.bladEtap = 'v'; m.bladNumer = 0;
+  tokenAutorestartu(t, sizeof(t), m);
+  SPRAWDZ(std::strcmp(t, "auto_lvgl_r0_n1_t0_h0_b0_ev0") == 0);
   // Najgorszy przypadek: wszystkie pola maksymalne - miesci sie i ma tylko dozwolone znaki.
   m.przyczyna = PRZYCZYNA_MILCZY; m.kodRozlaczenia = 255; m.kolejnych = 250; m.seria = 250; m.bezDanychS = 65535; m.heapKb = 65535; m.blokKb = 65535;
   m.bladEtap = 'c'; m.bladNumer = 65535;
