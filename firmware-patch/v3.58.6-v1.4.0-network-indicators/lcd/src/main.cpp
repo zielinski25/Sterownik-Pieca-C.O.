@@ -38,6 +38,15 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-13] v1.4.1 - IKONY LACZNOSCI PANELU I INTERNETU CENTRALI.
+//   Kreski pokazuja RSSI mierzone lokalnie przez panel dla AP centrali, a nie
+//   RSSI centrali wobec routera. X = rozlaczone WiFi, ? = brak pomiaru.
+//   Globus pokazuje nowe pole internet_wan z centrali niezalezne od Firebase;
+//   ? oznacza brak aktualnego wyniku lub kontaktu, X = nieudana proba WAN.
+//   Starsza centrala bez internet_wan daje ?. OTA i swiezosc danych bez zmian.
+//   Proba DNS nie gwarantuje dostepnosci wszystkich serwisow. Testy hostowe;
+//   kompilacja ESP32 i dzialanie na plytce nie zostaly sprawdzone.
+//
 // [2026-11-12] v1.4.0 - AKTUALIZACJA PRZEZ CENTRALE (OTA): W TRAKCIE PRACY, Z
 //   POSTEPEM NA EKRANIE, BEZ WGRYWANIA W KOLKO.
 //   Decyzja uzytkownika: "Dzialaj" po raporcie
@@ -810,7 +819,7 @@ PoKomendzie pendingPoKomendzie = PoKomendzie::BRAK;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.4.0"; // [2026-11-12] v1.4.0: aktualizacja przez centrale zaczyna sie w trakcie pracy, z postepem na ekranie i bez wgrywania tego samego pliku w kolko (pelna obsluga: centrala 3.58.6); opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.4.1"; // [2026-11-13] ikony lacznosci; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez

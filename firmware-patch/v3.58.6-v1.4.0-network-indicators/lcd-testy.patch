@@ -1,0 +1,11 @@
+--- a/testy_host/symulator_panelu.cpp
++++ b/testy_host/symulator_panelu.cpp
+@@ -946,7 +946,7 @@
+ // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
+ // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
+ // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
+-#define WERSJA_FW "v1.4.0"
++#define WERSJA_FW "v1.4.1"
+ // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
+ // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
+ #define OBRAZ_FW "a1a2a3a4a5a6a7a8"

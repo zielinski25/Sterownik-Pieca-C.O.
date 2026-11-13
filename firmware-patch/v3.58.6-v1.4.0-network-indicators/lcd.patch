@@ -1,6 +1,22 @@
 --- a/src/main.cpp
 +++ b/src/main.cpp
-@@ -548,6 +548,7 @@
+@@ -38,6 +38,15 @@
+ // ============================================================================
+ // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
+ // ============================================================================
++// [2026-11-13] v1.4.1 - IKONY LACZNOSCI PANELU I INTERNETU CENTRALI.
++//   Kreski pokazuja RSSI mierzone lokalnie przez panel dla AP centrali, a nie
++//   RSSI centrali wobec routera. X = rozlaczone WiFi, ? = brak pomiaru.
++//   Globus pokazuje nowe pole internet_wan z centrali niezalezne od Firebase;
++//   ? oznacza brak aktualnego wyniku lub kontaktu, X = nieudana proba WAN.
++//   Starsza centrala bez internet_wan daje ?. OTA i swiezosc danych bez zmian.
++//   Proba DNS nie gwarantuje dostepnosci wszystkich serwisow. Testy hostowe;
++//   kompilacja ESP32 i dzialanie na plytce nie zostaly sprawdzone.
++//
+ // [2026-11-12] v1.4.0 - AKTUALIZACJA PRZEZ CENTRALE (OTA): W TRAKCIE PRACY, Z
+ //   POSTEPEM NA EKRANIE, BEZ WGRYWANIA W KOLKO.
+ //   Decyzja uzytkownika: "Dzialaj" po raporcie
+@@ -548,6 +557,7 @@
  #include <SPI.h>
  #include <TFT_eSPI.h>
  #include <ArduinoJson.h>
@@ -8,7 +24,16 @@
  #include "esp_sleep.h"
  #include "driver/rtc_io.h"
  #include "driver/gpio.h"    // [FIX-TFT-BL-HOLD, ta sesja] gpio_hold_en/gpio_hold_dis/gpio_deep_sleep_hold_en dla GPIO21 (TFT_BL)
-@@ -1435,12 +1436,8 @@
+@@ -809,7 +819,7 @@
+ // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
+ // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
+ // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
+-static const char* FIRMWARE_VERSION_PANEL = "v1.4.0"; // [2026-11-12] v1.4.0: aktualizacja przez centrale zaczyna sie w trakcie pracy, z postepem na ekranie i bez wgrywania tego samego pliku w kolko (pelna obsluga: centrala 3.58.6); opis w HISTORII ZMIAN
++static const char* FIRMWARE_VERSION_PANEL = "v1.4.1"; // [2026-11-13] ikony lacznosci; opis w HISTORII ZMIAN
+ // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
+ // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
+ // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
+@@ -1435,12 +1445,8 @@
    // [LVGL-DATA-CZAS, ta sesja] Kafelek DATA I CZAS - godzina/minuta/dzien/rok,
    // ten sam zrodlo (RTC centrali) i ten sam fallback (0 gdy !rtcOk) co miesiac.
    int   godzina = 0, minuta = 0, dzien = 0, rok = 0;
@@ -23,7 +48,7 @@
    // [OTA-PANEL, ta sesja] Oferta aktualizacji z centrali (/api/status) — patrz
    // otaKrok() nizej i TG_UPDATE_PANEL w main_centrala.cpp.
    // [v1.4.0 OTA] Stale tablice zamiast String (bez przydzialu pamieci co 2 s)
-@@ -2430,6 +2427,11 @@
+@@ -2430,6 +2436,11 @@
                  poczatek, koniec, podejrzane);
  }
  
@@ -35,7 +60,7 @@
  #if LVGL_POC_TEST
  // Biezacy `stan` -> dashboard LVGL. Ta sama lista argumentow co w
  // obslugaStatusFetch() i setup() (tamte dwa wywolania zostaly bez zmian).
-@@ -2444,7 +2446,7 @@
+@@ -2444,7 +2455,7 @@
                                   stan.alarmOgrzewanie, stan.alarmPanel,
                                   stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
                                   stan.rtcOk,
@@ -44,7 +69,7 @@
                                   stan.internet,
                                   stan.deszczStan, stan.deszczMinuty);
  }
-@@ -2862,7 +2864,7 @@
+@@ -2862,7 +2873,7 @@
    stan.polaczono   = true;
    stan.ip          = doc["ip"].as<String>();
    stan.rssi        = doc["rssi"].as<int>();
@@ -53,7 +78,7 @@
    stan.tZewn       = doc["t_zewn"].as<float>();
    stan.tBojler     = doc["t_bojler"].as<float>();
    stan.tOgrz       = doc["t_ogrz"].as<float>();
-@@ -3006,7 +3008,7 @@
+@@ -3006,7 +3017,7 @@
                                   stan.alarmOgrzewanie, stan.alarmPanel,
                                   stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
                                   stan.rtcOk,
@@ -62,7 +87,7 @@
                                   stan.internet,
                                   stan.deszczStan, stan.deszczMinuty);
    panelLiczniki.ekranOdswiezen++;
-@@ -5359,7 +5361,7 @@
+@@ -5359,7 +5370,7 @@
                                   stan.alarmOgrzewanie, stan.alarmPanel,
                                   stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
                                   stan.rtcOk,
@@ -71,7 +96,7 @@
                                   stan.internet,
                                   stan.deszczStan, stan.deszczMinuty);
    // [v1.2.2 PAMIEC] Stan po starcie: WiFi dziala, pierwsze dane odebrane.
-@@ -5490,6 +5492,13 @@
+@@ -5490,6 +5501,13 @@
    panelPamiecKrok();   // [v1.2.2 PAMIEC] ostrzezenie w logu, gdy wolnego RAM-u jest malo
  
    unsigned long terazLvgl = millis();

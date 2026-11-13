@@ -28,12 +28,16 @@ with tempfile.TemporaryDirectory(prefix='ikony-test-') as temp:
     end = dashboard.index('static void dym_ikona_odswiez(', start)
     (lcd / 'render_fragment.inc').write_text(dashboard[start:end])
     main = (lcd / 'src' / 'main.cpp').read_text()
+    assert 'FIRMWARE_VERSION_PANEL = "v1.4.1"' in main
+    assert '[2026-11-13] v1.4.1 - IKONY LACZNOSCI' in main
     assert 'SiecIkony::odczytaj(doc)' in main
     assert 'WiFi.status() == WL_CONNECTED ? WiFi.RSSI()' in main
     assert main.count('lcdSygnalCentrali(),\n                                 stan.internet,') == 3
     assert 'lvgl_dashboard_poc_aktualizuj_siec(stan.polaczono, lcdSygnalCentrali(), stan.internet)' in main
     assert 'g_polaczono = polaczono;' not in dashboard[start:end]
     cm = (central / 'src' / 'main_centrala.cpp').read_text()
+    assert 'FIRMWARE_VERSION = "v3.58.7"' in cm
+    assert '[v3.58.7 INTERNET-WAN]' in cm
     assert '#include "InternetProbe.h"' in cm and 'internet_wan' in cm
     assert 'wanProbeTick();' in cm[cm.index('void loop() {'):]
     for source, includes, exe in [
