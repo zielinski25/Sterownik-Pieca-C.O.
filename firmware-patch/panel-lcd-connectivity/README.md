@@ -1,3 +1,5 @@
+> **UWAGA — NIE UŻYWAJ TEJ STAREJ PACZKI.** Bazuje na LCD v1.1.0 i centrali v3.54.0, a nie na Twoich wersjach LCD v1.4.0 / centrala v3.58.6. Aktualna poprawka jest w `firmware-patch/v3.58.6-v1.4.0-network-indicators`.
+
 # LCD: zasięg do centrali i niezależny wskaźnik internetu
 
 Ta poprawka zastępuje wcześniejszy wariant, który pokazywał na LCD zasięg centrali do routera i flagę Firebase. Składa się z **dwóch patchy**: dla panelu z `LCD Centrali.zip` i dla centrali na bazie `firmware-patch/v3.54.0-offline-buffer-toggle/main_centrala.cpp`. Oba urządzenia muszą zostać zbudowane i zaktualizowane. Archiwa nie zostały zmodyfikowane.

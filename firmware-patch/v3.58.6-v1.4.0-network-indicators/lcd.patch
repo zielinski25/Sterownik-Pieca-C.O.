@@ -1,0 +1,261 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -548,6 +548,7 @@
+ #include <SPI.h>
+ #include <TFT_eSPI.h>
+ #include <ArduinoJson.h>
++#include "SiecIkony.h"
+ #include "esp_sleep.h"
+ #include "driver/rtc_io.h"
+ #include "driver/gpio.h"    // [FIX-TFT-BL-HOLD, ta sesja] gpio_hold_en/gpio_hold_dis/gpio_deep_sleep_hold_en dla GPIO21 (TFT_BL)
+@@ -1435,12 +1436,8 @@
+   // [LVGL-DATA-CZAS, ta sesja] Kafelek DATA I CZAS - godzina/minuta/dzien/rok,
+   // ten sam zrodlo (RTC centrali) i ten sam fallback (0 gdy !rtcOk) co miesiac.
+   int   godzina = 0, minuta = 0, dzien = 0, rok = 0;
+-  // [UI-INTERNET, ta sesja] Dostepnosc internetu (fbAppReady na centrali) -
+-  // odrozniona od `polaczono` (to ostatnie oznacza tylko "LCD ma kontakt z
+-  // centrala przez lokalny WiFi", nie mowi nic o tym, czy sama centrala ma
+-  // internet). Ten sam wzorzec co rssi: centrala liczy/mierzy, LCD tylko
+-  // odczytuje z /api/status.
+-  bool  internet = false;
++  // -1 = brak aktualnego wyniku WAN, 0/1 = wynik proby centrali.
++  int internet = SiecIkony::INTERNET_NIEZNANY;
+   // [OTA-PANEL, ta sesja] Oferta aktualizacji z centrali (/api/status) — patrz
+   // otaKrok() nizej i TG_UPDATE_PANEL w main_centrala.cpp.
+   // [v1.4.0 OTA] Stale tablice zamiast String (bez przydzialu pamieci co 2 s)
+@@ -2430,6 +2427,11 @@
+                 poczatek, koniec, podejrzane);
+ }
+ 
++// Wlasny pomiar LCD wzgledem AP centrali, niezalezny od HTTP.
++static int lcdSygnalCentrali() {
++  return WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : SiecIkony::ROZLACZONE;
++}
++
+ #if LVGL_POC_TEST
+ // Biezacy `stan` -> dashboard LVGL. Ta sama lista argumentow co w
+ // obslugaStatusFetch() i setup() (tamte dwa wywolania zostaly bez zmian).
+@@ -2444,7 +2446,7 @@
+                                  stan.alarmOgrzewanie, stan.alarmPanel,
+                                  stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
+                                  stan.rtcOk,
+-                                 stan.rssi,
++                                 lcdSygnalCentrali(),
+                                  stan.internet,
+                                  stan.deszczStan, stan.deszczMinuty);
+ }
+@@ -2862,7 +2864,7 @@
+   stan.polaczono   = true;
+   stan.ip          = doc["ip"].as<String>();
+   stan.rssi        = doc["rssi"].as<int>();
+-  stan.internet    = doc["internet"].as<bool>(); // [UI-INTERNET, ta sesja]
++  stan.internet    = SiecIkony::odczytaj(doc).internet; // nowe pole internet_wan
+   stan.tZewn       = doc["t_zewn"].as<float>();
+   stan.tBojler     = doc["t_bojler"].as<float>();
+   stan.tOgrz       = doc["t_ogrz"].as<float>();
+@@ -3006,7 +3008,7 @@
+                                  stan.alarmOgrzewanie, stan.alarmPanel,
+                                  stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
+                                  stan.rtcOk,
+-                                 stan.rssi,
++                                 lcdSygnalCentrali(),
+                                  stan.internet,
+                                  stan.deszczStan, stan.deszczMinuty);
+   panelLiczniki.ekranOdswiezen++;
+@@ -5359,7 +5361,7 @@
+                                  stan.alarmOgrzewanie, stan.alarmPanel,
+                                  stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
+                                  stan.rtcOk,
+-                                 stan.rssi,
++                                 lcdSygnalCentrali(),
+                                  stan.internet,
+                                  stan.deszczStan, stan.deszczMinuty);
+   // [v1.2.2 PAMIEC] Stan po starcie: WiFi dziala, pierwsze dane odebrane.
+@@ -5490,6 +5492,13 @@
+   panelPamiecKrok();   // [v1.2.2 PAMIEC] ostrzezenie w logu, gdy wolnego RAM-u jest malo
+ 
+   unsigned long terazLvgl = millis();
++  // Tylko ikony; nie zmieniaj g_polaczono ani mechanizmu ochrony swiezosci
++  // danych z v1.2.x. RSSI jest lokalne, nie zalezy od sukcesu HTTP.
++  static unsigned long ostatniPomiarSygnalu = 0;
++  if (terazLvgl - ostatniPomiarSygnalu >= 1000) {
++    ostatniPomiarSygnalu = terazLvgl;
++    lvgl_dashboard_poc_aktualizuj_siec(stan.polaczono, lcdSygnalCentrali(), stan.internet);
++  }
+   if (terazLvgl - ostatniStatus >= STATUS_INTERWAL_MS) {
+     ostatniStatus = terazLvgl;
+     pobierzStatus(); // tylko startuje GET - parsowanie+odswiezenie LVGL teraz w obslugaStatusFetch() wyzej
+--- a/src/dashboard_lvgl_poc.cpp
++++ b/src/dashboard_lvgl_poc.cpp
+@@ -106,6 +106,7 @@
+ #include <string.h>  // strchr/memcpy/strlen/strtof - parser CSV w sekcji [PARTIA 5b, ta sesja - DANE WYKRESOW]
+ #include <math.h>    // lroundf() - skalowanie float->lv_coord_t w lv_chart, patrz PARTIA 7 (wykresy_chart_skaluj)
+ #include "dashboard_lvgl_poc.h"
++#include "SiecIkony.h"
+ #include "ikony_lvgl.h"
+ 
+ // Te same wartosci hex co #define KOL_* w main.cpp centrali (skopiowane celowo,
+@@ -6736,7 +6737,7 @@
+   lv_obj_align_to(wifiX, wifiKontener, LV_ALIGN_TOP_MID, 0, -2);
+   lv_obj_add_flag(wifiX, LV_OBJ_FLAG_HIDDEN);
+ 
+-  // [UI-INTERNET, ta sesja] Globus (dostepnosc internetu, fbAppReady) - tuz
++  // Globus (wynik proby WAN centrali) - tuz
+   // na lewo od wskaznika sygnalu WiFi, ten sam pasek naglowka. Dwie
+   // rozlaczne warstwy 16x16 (siatka+lad) w tym samym miejscu na ekranie -
+   // dokladnie ten sam trik co BOJLER (kontur+woda)/PANEL (slonce+kolektor),
+@@ -6765,6 +6766,8 @@
+   lv_obj_set_style_text_color(netX, rgb565(KOL_ERR), 0);
+   lv_obj_align_to(netX, netGlobusSiatka, LV_ALIGN_TOP_MID, 0, -2);
+   lv_obj_add_flag(netX, LV_OBJ_FLAG_HIDDEN);
++  // Przed pierwszym statusem z centrali nie pokazuj kolorowego globusu.
++  lvgl_dashboard_poc_aktualizuj_siec(false, SiecIkony::NIEZNANE, SiecIkony::INTERNET_NIEZNANY);
+ 
+   // [UI-BATERIA, ta sesja] Ikonka baterii - lustrzane odbicie wskaznika WiFi
+   // (ten sam naglowek, przeciwny rog). Obrys (border, bg_opa=TRANSP) +
+@@ -7404,65 +7407,38 @@
+   }
+ }
+ 
+-// [UI-WIFI-SYGNAL, ta sesja] Progi dBm -> liczba aktywnych kresek (1-7).
+-// Zakres oparty o typowe wartosci RSSI zglaszane przez modul WiFi ESP32
+-// (praktycznie -30 dBm tuz przy routerze do ok. -90/-95 dBm na granicy
+-// zasiegu) - 7 progow rozlozonych co ~6 dBm miedzy -95 (1 kreska) a -55
+-// (wszystkie 7 kresek, "pelny" sygnal). Wartosc rssi ma sens tylko przy
+-// polaczono==true (patrz komentarz przy parametrze w dashboard_lvgl_poc.h) -
+-// ta funkcja jest wolana z fallbackiem 0 kresek gdy polaczono==false, wiec
+-// nie musi sama sprawdzac tego przypadku.
+-static int wifi_liczba_kresek(int rssi) {
+-  static const int PROGI[7] = { -95, -89, -83, -77, -71, -65, -55 };
+-  int n = 0;
+-  for (int i = 0; i < 7; i++) {
+-    if (rssi >= PROGI[i]) n = i + 1;
+-  }
+-  return n;
+-}
+-
+-static void wifi_ikona_odswiez(bool polaczono, int rssi) {
+-  if (wifiX == nullptr) return; // widget jeszcze nie zbudowany (nie powinno sie zdarzyc po init())
+-
+-  if (!polaczono) {
+-    // Decyzja: wyszarzone wszystkie kreski + symbol X widoczny.
+-    for (int i = 0; i < 7; i++) {
+-      if (wifiPasek[i] != nullptr) {
+-        lv_obj_set_style_bg_color(wifiPasek[i], rgb565(KOL_TEKST_DIM), 0);
+-      }
++// Widok nie myli utraty danych z potwierdzona awaria centrali/Firebase.
++// "?" = nieznane, "X" = rozlaczenie lub nieudana proba WAN.
++void lvgl_dashboard_poc_aktualizuj_siec(bool polaczono, int rssi, int internet) {
++  const SiecIkony::Widok widok = SiecIkony::oblicz(polaczono, rssi, internet);
++  for (int i = 0; i < 7; ++i) {
++    if (wifiPasek[i] != nullptr)
++      lv_obj_set_style_bg_color(wifiPasek[i], rgb565(i < widok.kreski ? KOL_TEKST : KOL_TEKST_DIM), 0);
++  }
++  if (wifiX != nullptr) {
++    if (widok.wifi == SiecIkony::Stan::Dostepny) {
++      lv_obj_add_flag(wifiX, LV_OBJ_FLAG_HIDDEN);
++    } else {
++      const bool nieznany = widok.wifi == SiecIkony::Stan::Nieznany;
++      lv_label_set_text(wifiX, nieznany ? "?" : "X");
++      lv_obj_set_style_text_color(wifiX, rgb565(nieznany ? KOL_WARN : KOL_ERR), 0);
++      lv_obj_clear_flag(wifiX, LV_OBJ_FLAG_HIDDEN);
+     }
+-    lv_obj_clear_flag(wifiX, LV_OBJ_FLAG_HIDDEN);
+-    return;
+-  }
+-
+-  lv_obj_add_flag(wifiX, LV_OBJ_FLAG_HIDDEN);
+-  int aktywne = wifi_liczba_kresek(rssi);
+-  for (int i = 0; i < 7; i++) {
+-    if (wifiPasek[i] == nullptr) continue;
+-    bool aktywna = (i < aktywne);
+-    lv_obj_set_style_bg_color(wifiPasek[i], rgb565(aktywna ? KOL_TEKST : KOL_TEKST_DIM), 0);
+-  }
+-}
+-
+-// [UI-INTERNET, ta sesja] Analogiczne do wifi_ikona_odswiez(), ale bez
+-// stopniowania (fbAppReady jest bool, nie ma "sily sygnalu") - albo obie
+-// warstwy globusu w swoich stalych kolorach (KOL_GLOBUS_SIATKA/LADY) i X
+-// ukryte, albo obie wyszarzone na KOL_TEKST_DIM i X widoczne.
+-static void internet_ikona_odswiez(bool internet) {
+-  if (netX == nullptr) return; // widget jeszcze nie zbudowany
+-
+-  uint16_t kolorSiatka = internet ? KOL_GLOBUS_SIATKA : KOL_TEKST_DIM;
+-  uint16_t kolorLady = internet ? KOL_GLOBUS_LADY : KOL_TEKST_DIM;
+-  if (netGlobusSiatka != nullptr) {
+-    lv_obj_set_style_img_recolor(netGlobusSiatka, rgb565(kolorSiatka), 0);
+   }
+-  if (netGlobusLady != nullptr) {
+-    lv_obj_set_style_img_recolor(netGlobusLady, rgb565(kolorLady), 0);
+-  }
+-  if (internet) {
+-    lv_obj_add_flag(netX, LV_OBJ_FLAG_HIDDEN);
+-  } else {
+-    lv_obj_clear_flag(netX, LV_OBJ_FLAG_HIDDEN);
++  const bool internetDostepny = widok.internet == SiecIkony::Stan::Dostepny;
++  if (netGlobusSiatka != nullptr)
++    lv_obj_set_style_img_recolor(netGlobusSiatka, rgb565(internetDostepny ? KOL_GLOBUS_SIATKA : KOL_TEKST_DIM), 0);
++  if (netGlobusLady != nullptr)
++    lv_obj_set_style_img_recolor(netGlobusLady, rgb565(internetDostepny ? KOL_GLOBUS_LADY : KOL_TEKST_DIM), 0);
++  if (netX != nullptr) {
++    if (internetDostepny) {
++      lv_obj_add_flag(netX, LV_OBJ_FLAG_HIDDEN);
++    } else {
++      const bool nieznany = widok.internet == SiecIkony::Stan::Nieznany;
++      lv_label_set_text(netX, nieznany ? "?" : "X");
++      lv_obj_set_style_text_color(netX, rgb565(nieznany ? KOL_WARN : KOL_ERR), 0);
++      lv_obj_clear_flag(netX, LV_OBJ_FLAG_HIDDEN);
++    }
+   }
+ }
+ 
+@@ -7524,11 +7500,10 @@
+                                     int godzina, int minuta, int dzien, int miesiac, int rok,
+                                     bool rtcOk,
+                                     int rssi,
+-                                    bool internet,
++                                    int internet,
+                                     int deszczStan, int deszczMinuty) {
+   g_polaczono = polaczono;
+-  wifi_ikona_odswiez(polaczono, rssi); // [UI-WIFI-SYGNAL, ta sesja]
+-  internet_ikona_odswiez(internet); // [UI-INTERNET, ta sesja]
++  lvgl_dashboard_poc_aktualizuj_siec(polaczono, rssi, internet);
+   // [POPRAWKA, ta sesja - panel SERWO v2] Cache pozycji zawsze aktualizowany
+   // (nawet gdy panel akurat zamkniety) - potrzebny, zeby serwo_panel_otworz()
+   // mogl zainicjowac slider PRAWDZIWA wartoscia przy nastepnym otwarciu, nie
+--- a/src/dashboard_lvgl_poc.h
++++ b/src/dashboard_lvgl_poc.h
+@@ -119,20 +119,10 @@
+ // main.cpp tylko przekazuje dalej, formatowanie napisu robi
+ // dashboard_lvgl_poc.cpp. rtcOk=false (brak/awaria RTC na centrali) ->
+ // kafelek pokazuje "--:--"/"--.--.----" zamiast mylacego "00:00".
+-// [UI-WIFI-SYGNAL, ta sesja] Dolaczono `rssi` (main.cpp: stan.rssi, juz
+-// parsowane z /api/status - patrz main.cpp linia ~1139, do tej pory
+-// nieuzywane w LVGL). Zasila nowy graficzny wskaznik sygnalu (7 kresek, jak
+-// w telefonie) w naglowku ekranu - zastepuje statyczny napis
+-// "PIEC CO - LVGL proof of concept". Wartosc RSSI ma sens tylko gdy
+-// `polaczono == true` - main.cpp przekazuje stan.rssi bez wlasnej logiki,
+-// caly przelicznik dBm -> liczba aktywnych kresek jest w
+-// dashboard_lvgl_poc.cpp (funkcja wifi_ikona_odswiez()).
+-// [UI-INTERNET, ta sesja] Dolaczono `internet` (main_centrala.cpp: fbAppReady
+-// - Firebase realnie odpowiada, wiec to prawdziwy internet, nie tylko
+-// polaczenie z lokalnym routerem/WiFi). Zasila osobny wskaznik "globus" w
+-// naglowku, obok wskaznika sygnalu WiFi - globus kolorowy gdy internet==true,
+-// wyszarzony + przekreslony "X" gdy internet==false. Cala logika w
+-// dashboard_lvgl_poc.cpp (funkcja internet_ikona_odswiez()).
++// WiFi: RSSI zmierzone przez LCD dla AP centrali; -129 rozlaczenie,
++// 0/-128 brak wiarygodnego pomiaru. Globus: internet_wan z centrali,
++// -1 nieznany, 0 proba WAN nieudana, 1 proba udana.
++void lvgl_dashboard_poc_aktualizuj_siec(bool polaczono, int rssi, int internet);
+ // [DESZCZ-ETAP4, PLAN_DESZCZ_ZEWN.md] Dolaczono deszczStan/deszczMinuty
+ // (main.cpp: stan.deszczStan/stan.deszczMinuty, parsowane z /api/status pol
+ // deszcz_stan/deszcz_min wystawionych przez centrale - v2.13.2). 0=brak opadu
+@@ -152,7 +142,7 @@
+                                     int godzina, int minuta, int dzien, int miesiac, int rok,
+                                     bool rtcOk,
+                                     int rssi,
+-                                    bool internet,
++                                    int internet,
+                                     int deszczStan, int deszczMinuty);
+ 
+ // stan przekazany do callbacku: "auto" / "wl" / "wyl" - dokladnie takie

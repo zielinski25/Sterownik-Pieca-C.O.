@@ -1,0 +1,74 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -5854,6 +5854,7 @@
+ // (webserwer statusu) — jeden spojny stos sieciowy zamiast dwoch
+ // konkurujacych bibliotek webservera.
+ #include <WiFi.h>
++#include "InternetProbe.h"
+ #include <DNSServer.h>
+ #include <ESPAsyncWebServer.h>
+ #include "HistoriaPobranie.h"   // [v3.56.0 HISTORIA-POBRANIE] trasa pobrania historii
+@@ -30618,6 +30619,45 @@
+ static bool temperaturaPiecZnanaDlaRozpalania();
+ static bool uruchomRozpalanieSerwa(String& blad);
+ 
++// Dwa publiczne DNS, jeden nieblokujacy UDP, odswiezanie co 15 s.
++// Publikacja pod spinlockiem: /api/status moze byc obslugiwane na innym rdzeniu.
++static portMUX_TYPE wanProbeMux = portMUX_INITIALIZER_UNLOCKED;
++static int wanProbeWynik = -1;
++static uint32_t wanProbeCzas = 0;
++static void wanProbePublikuj(int stan, uint32_t czas) {
++  portENTER_CRITICAL(&wanProbeMux);
++  wanProbeWynik = stan; wanProbeCzas = czas;
++  portEXIT_CRITICAL(&wanProbeMux);
++}
++static InternetProbe::Udp wanProbeUdp;
++static InternetProbe::Monitor<InternetProbe::Udp, void (*)(int, uint32_t)>
++  wanProbe(wanProbeUdp, wanProbePublikuj);
++static void wanProbeTick() {
++  static uint32_t lastTick = 0;
++  const uint32_t now = millis();
++  if (uint32_t(now - lastTick) < 100) return;
++  lastTick = now;
++  const bool connected = WiFi.status() == WL_CONNECTED;
++  uint32_t ip = 0;
++  if (connected) {
++    IPAddress a = WiFi.localIP();
++    ip = htonl((uint32_t(a[0]) << 24) | (uint32_t(a[1]) << 16) |
++               (uint32_t(a[2]) << 8) | uint32_t(a[3]));
++  }
++  wanProbe.tick(now, connected, ip, uint16_t(esp_random()));
++}
++static int wanProbeOdczytaj() {
++  // Brak STA to pewny brak lacznosci z Internetem centrali, niezaleznie od
++  // starego wyniku. Przy starcie/po bledzie lokalnym/wygasnieciu zwroc null.
++  if (WiFi.status() != WL_CONNECTED) return 0;
++  const uint32_t now = millis();
++  int stan; uint32_t czas;
++  portENTER_CRITICAL(&wanProbeMux);
++  stan = wanProbeWynik; czas = wanProbeCzas;
++  portEXIT_CRITICAL(&wanProbeMux);
++  return InternetProbe::widok(true, now, stan, czas);
++}
++
+ // Buduje JSON ze stanem sterownika dla zakladki Dashboard (odpytywane co
+ // 2s przez JS z /api/status). Reczne skladanie String zamiast ArduinoJson
+ // — jedna, plaska struktura, nie warto dodawac kolejnej zaleznosci.
+@@ -30751,6 +30791,10 @@
+   // fbAppReady juz istnieje (Firebase realnie odpowiada), nic nowego nie
+   // trzeba mierzyc, tylko wystawic istniejaca flage na LCD tak samo jak rssi.
+   j += F("\"internet\":"); j += (fbAppReady ? "true" : "false"); j += F(",");
++  // Nowe pole dla LCD. Stare "internet" pozostaje zgodne z klientami Firebase.
++  const int wanStan = wanProbeOdczytaj();
++  j += F("\"internet_wan\":");
++  j += (wanStan < 0 ? "null" : wanStan ? "true" : "false"); j += F(",");
+   // [OTA-PANEL, ta sesja] Panel odpytuje ten sam JSON co reszte danych przy
+   // kazdym wybudzeniu — najprostsze miejsce, zeby zglosic "czeka na Ciebie
+   // aktualizacja", bez osobnego endpointu. Ustawiane tylko PO potwierdzonym,
+@@ -50061,4 +50105,5 @@
+   }
+   wykonajZaplanowaneZadania();
+   wifiLoop();
++  wanProbeTick();
+ }
+\ No newline at end of file
