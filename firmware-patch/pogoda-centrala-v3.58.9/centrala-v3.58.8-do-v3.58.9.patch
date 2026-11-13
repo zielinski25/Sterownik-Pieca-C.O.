@@ -1,0 +1,128 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,6 @@
++// FIRMWARE_VERSION v3.58.8 -> v3.58.9 (2026-11-13) — poprawka odbioru prognozy.
++// HTTPClient sklada chunked do ograniczonego bufora PSRAM przed parsowaniem;
++// bledy transferu i naglowki sa logowane, bez wyswietlania tresci odpowiedzi.
+ // FIRMWARE_VERSION v3.58.7 -> v3.58.8 (2026-11-13) — kod pogody i dzien/noc dla LCD.
+ //     Aktualna prognoza Open-Meteo w /api/status; brak lub przedawnienie = null.
+ // FIRMWARE_VERSION v3.58.6 -> v3.58.7 (2026-11-13) — IKONA INTERNETU PANELU.
+@@ -6226,7 +6229,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.8";
++static const char* FIRMWARE_VERSION = "v3.58.9";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -46681,6 +46684,38 @@
+   return 0;
+ }
+ 
++// Ograniczony odbiornik danych do HTTPClient::writeToStream. PSRAM jest
++// wymagana przez istniejacy JsonDocument, wiec nie zajmujemy wewnetrznego RAM.
++class PrognozaOdbiornik : public Stream {
++ public:
++  explicit PrognozaOdbiornik(size_t maxBytes) : max_(maxBytes) {
++    buf_ = static_cast<uint8_t*>(heap_caps_malloc(maxBytes + 1, MALLOC_CAP_SPIRAM));
++    if (buf_) buf_[0] = 0;
++  }
++  ~PrognozaOdbiornik() override { if (buf_) heap_caps_free(buf_); }
++  PrognozaOdbiornik(const PrognozaOdbiornik&) = delete;
++  PrognozaOdbiornik& operator=(const PrognozaOdbiornik&) = delete;
++  size_t write(uint8_t b) override { return write(&b, 1); }
++  size_t write(const uint8_t* data, size_t n) override {
++    if (!buf_ || n > max_ - used_) { overflow_ = true; return 0; }
++    memcpy(buf_ + used_, data, n);
++    used_ += n; buf_[used_] = 0; return n;
++  }
++  int available() override { return 0; }
++  int read() override { return -1; }
++  int peek() override { return -1; }
++  void flush() override {}
++  bool gotowy() const { return buf_ != nullptr; }
++  bool przepelniony() const { return overflow_; }
++  size_t size() const { return used_; }
++  const char* data() const { return reinterpret_cast<const char*>(buf_); }
++ private:
++  uint8_t* buf_ = nullptr;
++  size_t max_, used_ = 0;
++  bool overflow_ = false;
++};
++static constexpr size_t PROGNOZA_MAX_BAJTOW = 64U * 1024U;
++
+ // [PROGNOZA-ETAP1->2] Krok 1/5 (fetch+parse+cache) + Krok 2/5 (wyliczenia
+ // pochodne: mroz_za_h/trend_temp, patrz funkcje pomocnicze wyzej) wg
+ // PLAN_PROGNOZA.md.
+@@ -46699,6 +46734,11 @@
+     return;
+   }
+ 
++  // HTTPClient dekoduje chunked podczas writeToStream; nie parsujemy
++  // surowego http.getStream(). Nie akceptujemy kompresji JSON.
++  const char* naglowki[] = {"Transfer-Encoding", "Content-Encoding"};
++  http.collectHeaders(naglowki, 2);
++  http.setAcceptEncoding("identity");
+   serwisujTWDTJesliZarejestrowany();
+   diagCheckpoint(DIAG_TASK_TG, DIAG_OP_PROGNOZA, DIAG_STAGE_BEFORE);
+   int kodHttp = http.GET();
+@@ -46711,16 +46751,38 @@
+     return;
+   }
+ 
+-  // JsonDocument (ArduinoJson v7) na alokatorze PSRAM - rosnie dynamicznie
+-  // wg potrzeb, zero recznego liczenia pojemnosci (inaczej niz ArduinoJson
+-  // v6 + Assistant).
+-  JsonDocument wejscie(&prognozaAlokatorPsram);
+-  DeserializationError blad = deserializeJson(wejscie, http.getStream());
++  const int dlugosc = http.getSize();
++  String transfer = http.header("Transfer-Encoding"); transfer.trim();
++  String encoding = http.header("Content-Encoding"); encoding.trim();
++  if (encoding.length() && !encoding.equalsIgnoreCase("identity")) {
++    DLOGF(DC_WEATHER, DL_ERR, "PROGNOZA zdarzenie=encoding_nieobslugiwany kodowanie=%.40s", encoding.c_str());
++    http.end(); return;
++  }
++  // Nie czytamy nieograniczonego body bez znanej dlugosci ani chunkow:
++  // w HTTPClient taka odpowiedz moze czekac bez konca na zamkniecie serwera.
++  if ((dlugosc < 0 && !transfer.equalsIgnoreCase("chunked")) ||
++      dlugosc == 0 || dlugosc > (int)PROGNOZA_MAX_BAJTOW) {
++    DLOGF(DC_WEATHER, DL_ERR, "PROGNOZA zdarzenie=rozmiar_nieobslugiwany bajtow=%d transfer=%.40s", dlugosc, transfer.c_str());
++    http.end(); return;
++  }
++  PrognozaOdbiornik payload(PROGNOZA_MAX_BAJTOW);
++  if (!payload.gotowy()) {
++    DLOG(DC_WEATHER, DL_ERR, F("PROGNOZA zdarzenie=brak_pamieci_psram"));
++    http.end(); return;
++  }
++  const int odebrano = http.writeToStream(&payload);
+   http.end();
+   serwisujTWDTJesliZarejestrowany();
+-
++  if (odebrano <= 0 || payload.przepelniony() || (size_t)odebrano != payload.size()) {
++    DLOGF(DC_WEATHER, DL_ERR, "PROGNOZA zdarzenie=transfer_blad kod=%d bajtow=%u limit=%u transfer=%.40s",
++          odebrano, (unsigned)payload.size(), (unsigned)PROGNOZA_MAX_BAJTOW, transfer.c_str());
++    return;
++  }
++  JsonDocument wejscie(&prognozaAlokatorPsram);
++  DeserializationError blad = deserializeJson(wejscie, payload.data(), payload.size());
+   if (blad) {
+-    DLOGF(DC_WEATHER, DL_ERR, "PROGNOZA zdarzenie=json_parse_blad opis=%s", blad.c_str());
++    DLOGF(DC_WEATHER, DL_ERR, "PROGNOZA zdarzenie=json_parse_blad opis=%s bajtow=%u transfer=%.40s",
++          blad.c_str(), (unsigned)payload.size(), transfer.c_str());
+     return;
+   }
+ 
+@@ -46736,8 +46798,12 @@
+       kodMeteo.as<int>() >= 0 && kodMeteo.as<int>() <= 99 &&
+       (dzienMeteo.as<int>() == 0 || dzienMeteo.as<int>() == 1)) {
+     pogodaZapisz(kodMeteo.as<int>(), dzienMeteo.as<int>());
++    DLOGF(DC_WEATHER, DL_INFO, "PROGNOZA zdarzenie=kod_pogody kod=%d dzien=%d bajtow=%u transfer=%.40s",
++          kodMeteo.as<int>(), dzienMeteo.as<int>(), (unsigned)payload.size(), transfer.c_str());
+   } else {
+     pogodaZapisz(-1, -1);
++    DLOGF(DC_WEATHER, DL_WARN, "PROGNOZA zdarzenie=brak_kodu_pogody bajtow=%u transfer=%.40s",
++          (unsigned)payload.size(), transfer.c_str());
+   }
+   wyjscie["temp_teraz"] = wejscie["current"]["temperature_2m"];
+   wyjscie["temp_odczuwalna"] = wejscie["current"]["apparent_temperature"];
