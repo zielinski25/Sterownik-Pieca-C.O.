@@ -5,6 +5,12 @@ v1.3.0) i centrali 3.58.5. Kod aktualizacji panelu jest identyczny we
 wszystkich wersjach panelu od v1.1.0 do v1.3.0, a w centrali nie zmienił się
 między 3.58.3 a 3.58.5. Firmware'u nie zmieniałem — to jest sprawdzenie.
 
+> **Dopisane 2026-11-12, po odpowiedzi „Działaj”.** Ten raport opisuje stan
+> sprzed zmian: panel do v1.3.0 i centralę do 3.58.5. Zmiany są zrobione
+> w panelu **v1.4.0** i centrali **3.58.6**. Co z czego wynikło: rozdział
+> „Co zostało zrobione” na końcu. Rozdział „Jak zrobić, żeby zadziałało”
+> dotyczy starego kodu.
+
 ## Wynik
 
 **Dziś nie zadziała, ale też niczego nie zepsuje.** Komenda `/update_panel`
@@ -204,29 +210,24 @@ limit 2 MiB, a panel odrzuciłby go przy sprawdzaniu obrazu.
 
 ## Jak powtórzyć
 
+Sześć scenariuszy, na których opiera się ten raport (`ota_start`,
+`ota_po_restarcie_zgodna`, `ota_po_restarcie_inna_wersja`,
+`ota_flaga_w_trakcie_pracy`, `ota_nieudane`, `ota_przy_alarmie`), opisywało
+stary kod. Po zmianach zastąpiło je dwanaście nowych. Stary stan da się
+odtworzyć z commita `1c5818d` tego repozytorium:
+
 ```
-# panel: kiedy zaczyna aktualizację i co robi potem (6 scenariuszy, kilka sekund)
+git checkout 1c5818d
 cd LCD-Centrali/testy_host
-./uruchom_testy.sh ota_start
-./uruchom_testy.sh ota_po_restarcie_zgodna
-./uruchom_testy.sh ota_po_restarcie_inna_wersja
-./uruchom_testy.sh ota_flaga_w_trakcie_pracy
-./uruchom_testy.sh ota_nieudane
-./uruchom_testy.sh ota_przy_alarmie
-
-# co się stanie po /update_panel dla najnowszego wydania na GitHubie
-python3 narzedzia/ota_panelu_sprawdz.py
+./uruchom_testy.sh ota_po_restarcie_inna_wersja     # i pozostałe pięć
+python3 ../../narzedzia/ota_panelu_sprawdz.py
 ```
 
-Scenariusze z dopiskiem „STAN OBECNY” opisują to, co firmware robi dziś,
-a nie to, co powinien. Po zmianie firmware'u trzeba je będzie poprawić.
-W symulatorze samo pobieranie jest udawane: sprawdzane jest, kiedy panel
-zaczyna, o co pyta i co robi potem. Cały zestaw: 41 scenariuszy,
-420 sprawdzeń, także z AddressSanitizer i w modelu 32-bitowym.
+Tam cały zestaw to 41 scenariuszy i 420 sprawdzeń, także z AddressSanitizer
+i w modelu 32-bitowym. W symulatorze z tamtego commita samo pobieranie jest
+udawane: sprawdzane jest, kiedy panel zaczyna, o co pyta i co robi potem.
 
-## Co proponuję zmienić
-
-Nie zrobione — to zmiany w firmware obu urządzeń, do Twojej decyzji.
+## Co proponowałem zmienić
 
 1. **Panel zaczyna aktualizację sam**, w trakcie pracy, bez wyłączania
    zasilania. Tylko gdy nie ma alarmu, i z napisem „Aktualizacja…” na
@@ -241,3 +242,47 @@ Nie zrobione — to zmiany w firmware obu urządzeń, do Twojej decyzji.
 5. **Centrala nie czeka bez końca.** Oczekiwanie na panel ma limit czasu
    i komendę odwołania, nie wyłącza nadzoru i nie blokuje `/update`.
    Komunikat mówi „zrestartuj panel”, a nie „przycisk”.
+
+## Co zostało zrobione
+
+Po odpowiedzi „Działaj” (2026-11-12): firmware panelu **v1.4.0**
+(`LCD-Centrali/`) i centrali **3.58.6** (`firmware-patch/v3.58.6-panel-ota/`).
+Wszystkie pięć punktów powyżej jest zrobionych.
+
+| Pułapka z tego raportu | Po zmianach |
+|---|---|
+| 1. Wersja inna niż tag: panel wgrywa plik bez końca | Centrala potwierdza po **pliku**: z sumy SHA-256 na jego końcu bierze identyfikator, a panel zgłasza identyfikator programu, z którego pracuje. Tag wydania i numer wersji nie muszą być równe. Panel pamięta, co wgrał, i tego samego pliku nie wgrywa drugi raz — także ze starszą centralą. |
+| 2. Panel nie zaczyna sam | Panel v1.4.0 zaczyna w trakcie pracy, zwykle w ciągu minuty. Czekająca oferta nie blokuje `/update` i nie wyłącza nadzoru. Kończy się sama: potwierdzenie, odmowa panelu, 24 h albo nowa komenda `/update_panel_anuluj`. O każdym zakończeniu przychodzi wiadomość. |
+| 3. Miejsce na dysku centrali | Bez zmian. Limit został; komunikat centrali i narzędzie podają liczby. |
+| 4. Ciemny ekran przez cały czas pobierania | Napis `AKTUALIZACJA PANELU`, pasek postępu, procenty. |
+| 5. Zerwane pobieranie może zatrzymać panel na długo | Panel pobiera plik własnym kodem, po kawałku na obrót pętli. 15 s ciszy kończy próbę, cała próba trwa najwyżej 5 minut, po trzech nieudanych panel zgłasza odmowę z przyczyną. Watchdog pilnuje pętli przez cały czas. |
+| 6. Aktualizacja zaczyna się także w czasie alarmu | W czasie alarmu centrala nie podaje ani oferty, ani pliku, a panel nie zaczyna. Alarm w trakcie przerywa pobieranie. |
+| 7. Centrala sprawdza w pliku tylko pierwszy bajt | Centrala odrzuca plik, który nie jest programem dla ESP32 z sumą na końcu (firmware centrali nie przejdzie). Panel sprawdza nagłówek, rozmiar i to, czy plik jest tym z oferty; cały obraz sprawdza przed uruchomieniem ESP-IDF. |
+
+Co się nie zmieniło:
+
+- **Dziś `/update_panel` nadal kończy się brakiem pliku** — żadne wydanie na
+  GitHubie nie ma `firmware_panel.bin`. Centrala 3.58.6 pisze to wprost.
+- **Panel trzeba raz wgrać kablem.** Na płytce jest v1.2.2 ze starym kodem
+  aktualizacji; nowy zaczyna działać dopiero od v1.4.0.
+- **Nic z tego nie było budowane w PlatformIO ani uruchamiane na płytkach.**
+  Sprawdzenia są na PC: prawdziwy firmware panelu uruchomiony przeciwko
+  kodowi decyzji wyciętemu z firmware'u centrali. Pobranie pliku z GitHuba,
+  zapis do pamięci programu, bootloader i powrót do poprzedniego programu
+  sprawdzi dopiero pierwsza próba.
+
+Jak teraz zrobić aktualizację: `LCD-Centrali/README.md`, rozdział
+„Aktualizacja przez centralę i Telegram (OTA)”. Wgranie centrali:
+`firmware-patch/v3.58.6-panel-ota/CZYTAJ-NAJPIERW.txt`. Sprawdzenie pliku
+przed publikacją wydania:
+
+```
+python3 narzedzia/ota_panelu_sprawdz.py --tag <tag wydania> --bin LCD-Centrali/.pio/build/esp32dev/firmware.bin
+```
+
+Testy nowego kodu:
+
+```
+cd LCD-Centrali/testy_host && TYLKO='^ota_' ./uruchom_testy.sh      # panel: 12 scenariuszy
+cd firmware-patch/v3.58.6-panel-ota/tests && ./uruchom_testy.sh     # centrala
+```

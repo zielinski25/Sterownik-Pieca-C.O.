@@ -7,6 +7,13 @@ Firmware obu urządzeń się nie zmienia — to jest sprawdzenie.
 Pytanie: „posprawdzaj, czy pamięci i RAM-u starczy w różnych przypadkach
 w centrali i na LCD”.
 
+> **Dopisane 2026-11-12: panel v1.4.0 i centrala 3.58.6** (aktualizacja
+> panelu przez centralę). Raport niżej dotyczy v1.3.0 i 3.58.5; liczby dla
+> nowych wersji są w rozdziale „Po zmianach: v1.4.0 i 3.58.6” na końcu.
+> W skrócie: RAM-u nadal starcza w każdym sprawdzonym przypadku; panel ma po
+> starcie o ok. 1 kB mniej wolnego RAM-u, a centrala bierze 0,8 kB na chwilę
+> i 0,3 kB na stałe.
+
 ## Wynik
 
 RAM-u starcza w każdym sprawdzonym przypadku, na obu urządzeniach. Miejsca
@@ -229,9 +236,11 @@ W NORMIE: najwiecej naraz <= 27 000 B, na plytce w najgorszej chwili >= 8 000 B,
   granica z ustawień, nie pomiar.
 - **Ponowne łączenie z WiFi przy otwartym ekranie Wykresy** — skan sieci
   i logowanie biorą na płytce kilka kB, których model nie liczy.
-- **Aktualizacja panelu przez centralę (OTA)** — dzieje się tylko zaraz po
-  starcie, gdy ekran Wykresy jest zamknięty. Potrzebuje ok. 13 kB (bufor
-  zapisu 4 kB, klient HTTP, okno TCP); policzone, nie zmierzone.
+- **Aktualizacja panelu przez centralę (OTA)** — w v1.3.0 dzieje się tylko
+  zaraz po starcie, gdy ekran Wykresy jest zamknięty. Potrzebuje ok. 13 kB
+  (bufor zapisu 4 kB, klient HTTP, okno TCP); policzone, nie zmierzone.
+  Od v1.4.0 aktualizacja idzie w trakcie pracy i jest w pomiarze — rozdział
+  „Po zmianach” na końcu.
 - **Rozdrobnienie sterty po wielu dniach** — model liczy bajty, nie układ
   bloków. Największy przydział w czasie pracy ma 2 304 B.
 
@@ -478,15 +487,81 @@ zmiany przed wgraniem. Niczego z tej listy nie zmieniałem.
 
 ---
 
+## Po zmianach: v1.4.0 i 3.58.6
+
+Dopisane 2026-11-12. Panel v1.4.0 i centrala 3.58.6 dodają aktualizację
+panelu przez centralę w trakcie pracy. Tak samo jak reszta raportu: pomiar na
+PC, szacunek dla płytki, nic nie było uruchamiane na sprzęcie.
+
+### Panel v1.4.0
+
+Ten sam pomiar co wyżej (`pomiar_pamieci.sh --kto --wszystko --przypadki`),
+29 przypadków zamiast 27 — doszły dwa z aktualizacją.
+
+| | v1.3.0 | v1.4.0 |
+|---|---|---|
+| Firmware trzyma po starcie | 129 244 B | 129 324 B |
+| Zmienne statyczne | 4 468 B | 5 366 B |
+| Wolny RAM na płytce po starcie (szacunek od zmierzonej v1.2.2) | 49,2 kB | 48,2 kB |
+| Jedno odpytanie centrali, naraz | 5 384 B | 5 464 B |
+| Najwięcej naraz (wykres na ekranie w chwili odpytania) | 25 416 B | 25 496 B |
+| Zapas na płytce w tej chwili (szacunek) | ok. 12,7 kB | ok. 11,7 kB |
+| **Aktualizacja panelu, cały plik 1,2 MB, naraz** | — | 11 484 B |
+| Zapas na płytce w trakcie aktualizacji (szacunek) | — | ok. 25,7 kB |
+| Aktualizacja przerwana w połowie: zostaje | — | 16 B |
+| Próg „ani jednej odmowy pamięci” | 24 900 B | 24 900 B |
+| Płytka ponad tym progiem (szacunek) | 13,3 kB | 12,3 kB |
+
+- Statycznych zmiennych przybyło 898 B: drugi obiekt pobierania (osobny od
+  wykresów, żeby jedno nie mogło przerwać drugiego) i stan aktualizacji.
+  Limit w skrypcie podniesiony z 5 000 do 6 000 B.
+- W trakcie aktualizacji najwięcej biorą: bufor zapisu biblioteki `Update`
+  (4 kB), odpytanie centrali, które idzie w tym samym czasie, i nakładka
+  z paskiem postępu. Kod pobierania czyta do stałego bufora.
+- Panel nie zaczyna aktualizacji, gdy ma mniej niż 30 kB wolnego RAM-u albo
+  największy wolny blok jest mniejszy niż 12 kB. Z otwartym ekranem Wykresy
+  wolnego RAM-u jest mniej, więc aktualizacja czeka na wyjście z niego.
+- Z najnowszymi bibliotekami (LVGL 8.4.0, ArduinoJson 7.4.3) pomiar też
+  przechodzi: po starcie 129 324 B, odpytanie 5 324 B, aktualizacja
+  11 344 B, najwięcej naraz 25 356 B, próg 24 800 B.
+
+Czego ten pomiar nie widzi: pamięci, którą na czas pobierania bierze stos
+sieciowy płytki (przyjęte do 7,5 kB, jak dla wykresu), i **stosu zadania
+pętli** (8 kB). Największe ramki stosu w v1.4.0 są takie same jak w v1.3.0
+(`StrumienHttpGet::poll()` 700 B, policzone dla 32-bitowego x86); nowa
+`otaZacznij()` ma 220 B. Zapasu stosu panel nie loguje.
+
+Na płytce pokaże to linia `tag=OTA-PANEL zdarzenie=start … ram=… ram_blok=…`
+i `ram_min=` w linii `tag=PANEL`.
+
+### Centrala 3.58.6
+
+Kod historii i wykresów jest identyczny z 3.58.5 — `pamiec_centrali.py` na
+pliku 3.58.6 daje te same liczby co wyżej. Nowy kod aktualizacji panelu:
+
+| Co | Ile | Skąd liczba |
+|---|---|---|
+| Zmienne stałe (stan oferty, to, co wiadomo o panelu, decyzja do wykonania) | 328 B | rozmiary struktur od kompilatora z nagłówkami arduino-esp32 (xtensa) |
+| Pamięć robocza zadania Telegrama, tylko gdy oferta czeka albo jest wynik do wysłania | 800 B na chwilę | jw. |
+| Plik panelu na dysku centrali | do 2 MiB, jak dotąd | limit w kodzie, bez zmian |
+| Ramki stosu funkcji, z których idą wysyłki | 60–156 B | kompilacja dla 32-bitowego x86 — przybliżenie |
+
+Zadanie Telegrama ma 8 kB stosu, a według logów tej centrali (opis v3.56.7
+w jej pliku) w najgorszej chwili zostaje na nim 2 256–2 708 B. Dlatego
+teksty i kopie stanu nowego kodu leżą na stercie, a nie na stosie.
+**Zapasu stosu po zmianie nie znam** — pokaże go `hwm_tg` w linii
+`tag=HEALTH-A` logu centrali; warto porównać wartość sprzed wgrania i po.
+
 ## Jak powtórzyć
 
 ```
-# panel (ok. 2 minut; wymaga: python3, pip install ziglang, git, binutils)
+# panel (ok. 4 minut od v1.4.0; wymaga: python3, pip install ziglang, git, binutils)
 cd LCD-Centrali/testy_host
 ./pomiar_pamieci.sh --przypadki
 
 # centrala (kilka sekund po pierwszym pobraniu nagłówków ESP32)
-python3 narzedzia/pamiec_centrali.py
+python3 narzedzia/pamiec_centrali.py                                                        # plik 3.58.5
+python3 narzedzia/pamiec_centrali.py firmware-patch/v3.58.6-panel-ota/src/main_centrala.cpp # plik 3.58.6
 ```
 
 `pomiar_pamieci.sh --przypadki` kończy się kodem 1, gdy któraś liczba wyjdzie
