@@ -1,0 +1,140 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -0,0 +1,2 @@
++// [v3.58.10 WYBOR-STRONY] Wspolny wybor starszej/nowej strony w NVS.
++// Zapis tylko po otwarciu/wybraniu widoku i zmianie wartosci; bledy jawne.
+@@ -5810,0 +5813 @@
++#include "WyborStrony.h"
+@@ -6232 +6235 @@
+-static const char* FIRMWARE_VERSION = "v3.58.9";
++static const char* FIRMWARE_VERSION = "v3.58.10";
+@@ -10796,0 +10800,30 @@
++<script>
++// Wybor otwartego widoku jest wspolny dla calej centrali, nie localStorage.
++// Kolejka zapobiega wyscigowi miedzy automatycznym zgloszeniem a kliknieciem.
++(function(){
++  let kolejka = Promise.resolve();
++  async function zapisz(widok) {
++    const r = await fetch('/api/wybor-strony-token', {cache:'no-store'});
++    if (!r.ok) throw new Error('Nie mozna pobrac tokenu');
++    const j = await r.json();
++    const post = await fetch('/api/wybor-strony', {
++      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
++      body:'widok='+encodeURIComponent(widok)+'&token='+encodeURIComponent(j.token)
++    });
++    if (!post.ok) throw new Error('Nie mozna zapisac wyboru ('+post.status+')');
++  }
++  function ustaw(widok) {
++    const praca = kolejka.catch(()=>{}).then(()=>zapisz(widok));
++    kolejka = praca; return praca;
++  }
++  window.zmienWyborStrony = function(widok, url) {
++    ustaw(widok).then(()=>{window.location.href=url;}).catch(()=>{
++      alert('Nie udalo sie zapisac wyboru strony w centrali. Sprobuj ponownie.');
++    });
++  };
++  window.addEventListener('pageshow', function(){
++    if (location.pathname === '/stara') ustaw('stara').catch(()=>{});
++    else if (location.pathname === '/nowa' || location.pathname === '/') ustaw('nowa').catch(()=>{});
++  });
++})();
++</script>
+@@ -14192 +14225 @@
+-      if (served) { window.location.href = '/stara'; return; }
++      if (served) { window.zmienWyborStrony('stara', '/stara'); return; }
+@@ -19778 +19811,31 @@
+-</style></head><body>
++</style><script>
++// Wybor otwartego widoku jest wspolny dla calej centrali, nie localStorage.
++// Kolejka zapobiega wyscigowi miedzy automatycznym zgloszeniem a kliknieciem.
++(function(){
++  let kolejka = Promise.resolve();
++  async function zapisz(widok) {
++    const r = await fetch('/api/wybor-strony-token', {cache:'no-store'});
++    if (!r.ok) throw new Error('Nie mozna pobrac tokenu');
++    const j = await r.json();
++    const post = await fetch('/api/wybor-strony', {
++      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
++      body:'widok='+encodeURIComponent(widok)+'&token='+encodeURIComponent(j.token)
++    });
++    if (!post.ok) throw new Error('Nie mozna zapisac wyboru ('+post.status+')');
++  }
++  function ustaw(widok) {
++    const praca = kolejka.catch(()=>{}).then(()=>zapisz(widok));
++    kolejka = praca; return praca;
++  }
++  window.zmienWyborStrony = function(widok, url) {
++    ustaw(widok).then(()=>{window.location.href=url;}).catch(()=>{
++      alert('Nie udalo sie zapisac wyboru strony w centrali. Sprobuj ponownie.');
++    });
++  };
++  window.addEventListener('pageshow', function(){
++    if (location.pathname === '/stara') ustaw('stara').catch(()=>{});
++    else if (location.pathname === '/nowa' || location.pathname === '/') ustaw('nowa').catch(()=>{});
++  });
++})();
++</script>
++</head><body>
+@@ -19828 +19891 @@
+-    <a href="/" title="Przełącz na nowy panel lokalny" style="display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:.68rem;font-weight:600;letter-spacing:.04em;border:1px solid rgba(0,212,245,.3);background:rgba(0,212,245,.1);color:var(--flame);text-decoration:none;cursor:pointer">✦ NOWY PANEL</a>
++    <a href="/nowa" onclick="event.preventDefault(); zmienWyborStrony('nowa', '/nowa')" title="Przełącz na nowy panel lokalny" style="display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:.68rem;font-weight:600;letter-spacing:.04em;border:1px solid rgba(0,212,245,.3);background:rgba(0,212,245,.1);color:var(--flame);text-decoration:none;cursor:pointer">✦ NOWY PANEL</a>
+@@ -29499,0 +29563,13 @@
++static WyborStrony g_wyborStrony;
++static SemaphoreHandle_t g_wyborStronyMutex = nullptr;
++// Uruchamiane raz przed startem serwera. Namespace i klucze ponizej 15 znakow.
++static void wyborStronyInit() {
++  g_wyborStronyMutex = xSemaphoreCreateMutex();
++  Preferences p;
++  if (p.begin("wyborwww", false)) {
++    g_wyborStrony.przywroc(p.getUChar("strona", 0));
++    p.end();
++  } else {
++    DLOG(DC_WEB, DL_ERR, F("WYBOR-STRONY zdarzenie=nvs_odczyt_blad"));
++  }
++}
+@@ -31077,0 +31154,16 @@
++  wyborStronyInit();
++
++  wifiWebServer.on(AsyncURIMatcher::exact("/"), HTTP_GET, [](AsyncWebServerRequest *request) {
++    if (g_wyborStrony.odczytaj() == 1) {
++      AsyncWebServerResponse *r = request->beginResponse(302);
++      r->addHeader("Location", "/stara");
++      r->addHeader("Cache-Control", "no-store, max-age=0");
++      request->send(r); return;
++    }
++    AsyncWebServerResponse *response = request->beginResponse_P(
++      200, "text/html; charset=utf-8",
++      reinterpret_cast<const uint8_t *>(WIFI_LOCAL_PANEL_HTML),
++      sizeof(WIFI_LOCAL_PANEL_HTML) - 1);
++    response->addHeader("Cache-Control", "no-store, max-age=0");
++    request->send(response);
++  });
+@@ -31079 +31171,2 @@
+-  wifiWebServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
++  // Jawny adres nowego widoku jest zawsze osiagalny (rowniez gdy / -> /stara).
++  wifiWebServer.on(AsyncURIMatcher::exact("/nowa"), HTTP_GET, [](AsyncWebServerRequest *request) {
+@@ -31085,0 +31179,24 @@
++  });
++  // Token tylko same-origin, bez CORS. GET nic nie zapisuje do NVS.
++  wifiWebServer.on(AsyncURIMatcher::exact("/api/wybor-strony-token"), HTTP_GET, [](AsyncWebServerRequest *request) {
++    AsyncWebServerResponse *r = request->beginResponse(200, "application/json", String("{\"token\":\"") + g_wifiLocalActionToken + "\"}");
++    r->addHeader("Cache-Control", "no-store"); request->send(r);
++  });
++  wifiWebServer.on(AsyncURIMatcher::exact("/api/wybor-strony"), HTTP_POST, [](AsyncWebServerRequest *request) {
++    if (!request->hasParam("token", true) || request->getParam("token", true)->value() != g_wifiLocalActionToken) {
++      request->send(403, "application/json", "{\"ok\":false}"); return;
++    }
++    if (!request->hasParam("widok", true)) { request->send(400, "application/json", "{\"ok\":false}"); return; }
++    const String v = request->getParam("widok", true)->value();
++    if (v != "stara" && v != "nowa") { request->send(400, "application/json", "{\"ok\":false}"); return; }
++    if (!g_wyborStronyMutex || xSemaphoreTake(g_wyborStronyMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
++      request->send(503, "application/json", "{\"ok\":false}"); return;
++    }
++    const bool ok = g_wyborStrony.ustaw(v == "stara" ? 1 : 0, [](uint8_t wybor) {
++      Preferences p;
++      if (!p.begin("wyborwww", false)) return false;
++      const bool zapisano = p.putUChar("strona", wybor) == sizeof(uint8_t);
++      p.end(); return zapisano;
++    });
++    xSemaphoreGive(g_wyborStronyMutex);
++    request->send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
