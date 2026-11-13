@@ -1,0 +1,96 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,5 @@
++// FIRMWARE_VERSION v3.58.7 -> v3.58.8 (2026-11-13) — kod pogody i dzien/noc dla LCD.
++//     Aktualna prognoza Open-Meteo w /api/status; brak lub przedawnienie = null.
+ // FIRMWARE_VERSION v3.58.6 -> v3.58.7 (2026-11-13) — IKONA INTERNETU PANELU.
+ // [v3.58.7 INTERNET-WAN] Niezalezny od Firebase, nieblokujacy test DNS A
+ //     example.com do 1.1.1.1 i 8.8.8.8, wynik w /api/status jako internet_wan
+@@ -6224,7 +6226,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.7";
++static const char* FIRMWARE_VERSION = "v3.58.8";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -6957,6 +6959,22 @@
+ // uzywane w handlerze /api/prognoza (blisko /api/status), definiowane
+ // dopiero w sekcji PROGNOZA (definicja nizej, przy pobierzPelnaPrognoze()).
+ extern String prognozaJsonCache;
++// Wspolny snapshot: pobieranie w tgTask, odczyt w zadaniu HTTP.
++static portMUX_TYPE g_pogodaMux = portMUX_INITIALIZER_UNLOCKED;
++static int g_pogodaKod = -1, g_pogodaDzien = -1;
++static uint32_t g_pogodaCzas = 0;
++static void pogodaZapisz(int kod, int dzien) {
++  portENTER_CRITICAL(&g_pogodaMux);
++  g_pogodaKod = kod; g_pogodaDzien = dzien; g_pogodaCzas = millis();
++  portEXIT_CRITICAL(&g_pogodaMux);
++}
++static void pogodaOdczytaj(int &kod, int &dzien) {
++  portENTER_CRITICAL(&g_pogodaMux);
++  if (g_pogodaKod >= 0 && (uint32_t)(millis() - g_pogodaCzas) > 60UL*60UL*1000UL)
++    g_pogodaKod = g_pogodaDzien = -1;
++  kod = g_pogodaKod; dzien = g_pogodaDzien;
++  portEXIT_CRITICAL(&g_pogodaMux);
++}
+ unsigned long otaRestartOMillis = 0;
+ unsigned long terminalRestartOMillis = 0;  // [TERMINAL] patrz terminalRestartZaplanowany wyzej
+ unsigned long fsUploadRestartOMillis = 0;  // [LOGI-FS-UPLOAD] patrz fsUploadRestartZaplanowany wyzej
+@@ -30804,6 +30822,10 @@
+   const int wanStan = wanProbeOdczytaj();
+   j += F("\"internet_wan\":");
+   j += (wanStan < 0 ? "null" : wanStan ? "true" : "false"); j += F(",");
++  int pogodaKod, pogodaDzien;
++  pogodaOdczytaj(pogodaKod, pogodaDzien);
++  j += F("\"pogoda_kod\":"); j += (pogodaKod < 0 ? String("null") : String(pogodaKod)); j += F(",");
++  j += F("\"pogoda_dzien\":"); j += (pogodaDzien < 0 ? "null" : pogodaDzien ? "true" : "false"); j += F(",");
+   // [OTA-PANEL, ta sesja] Panel odpytuje ten sam JSON co reszte danych przy
+   // kazdym wybudzeniu — najprostsze miejsce, zeby zglosic "czeka na Ciebie
+   // aktualizacja", bez osobnego endpointu. Ustawiane tylko PO potwierdzonym,
+@@ -46600,7 +46622,7 @@
+ static const char* PROGNOZA_URL =
+   "https://api.open-meteo.com/v1/forecast?latitude=51.066389"
+   "&longitude=21.509167"
+-  "&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,"
++  "&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,weather_code,is_day,"
+   "wind_speed_10m,wind_gusts_10m,wind_direction_10m,uv_index"
+   "&hourly=temperature_2m,precipitation_probability,precipitation,"
+   "cloud_cover,wind_speed_10m,wind_gusts_10m,"
+@@ -46613,6 +46635,7 @@
+   "&forecast_days=2&timezone=Europe%2FWarsaw";
+ 
+ unsigned long owPrognozaLastFetchMillis = 0;
++static bool owPrognozaPodjeto = false;
+ // Ten sam interwal co DESZCZ (15 min) - hourly/daily i tak nie zmieniaja
+ // sie czesciej, a to niezalezny model aktualizowany przez Open-Meteo co
+ // kilka godzin, nie co minute.
+@@ -46706,6 +46729,16 @@
+   // potrzebuja LCD/WWW, patrz PLAN_PROGNOZA.md). Tez na PSRAM.
+   JsonDocument wyjscie(&prognozaAlokatorPsram);
+ 
++  // Nie zamieniaj brakujacych/null danych na 0 (slonce/noc).
++  JsonVariant kodMeteo = wejscie["current"]["weather_code"];
++  JsonVariant dzienMeteo = wejscie["current"]["is_day"];
++  if (kodMeteo.is<int>() && dzienMeteo.is<int>() &&
++      kodMeteo.as<int>() >= 0 && kodMeteo.as<int>() <= 99 &&
++      (dzienMeteo.as<int>() == 0 || dzienMeteo.as<int>() == 1)) {
++    pogodaZapisz(kodMeteo.as<int>(), dzienMeteo.as<int>());
++  } else {
++    pogodaZapisz(-1, -1);
++  }
+   wyjscie["temp_teraz"] = wejscie["current"]["temperature_2m"];
+   wyjscie["temp_odczuwalna"] = wejscie["current"]["apparent_temperature"];
+   wyjscie["wiatr_predkosc"] = wejscie["current"]["wind_speed_10m"];
+@@ -47872,8 +47905,9 @@
+     // samym koncu lancucha priorytetow razem z DESZCZ, bo to rowniez nie
+     // dotyczy bezpieczenstwa/sterowania.
+     if (WiFi.status() == WL_CONNECTED &&
+-        millis() - owPrognozaLastFetchMillis >= OW_PROGNOZA_FETCH_INTERVAL_MS &&
++        (!owPrognozaPodjeto || millis() - owPrognozaLastFetchMillis >= OW_PROGNOZA_FETCH_INTERVAL_MS) &&
+         TG_ITER_HAS_BUDGET(tgIterStartMs)) {
++      owPrognozaPodjeto = true;
+       pobierzPelnaPrognoze();
+       owPrognozaLastFetchMillis = millis();
+     }

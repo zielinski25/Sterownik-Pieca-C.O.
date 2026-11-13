@@ -1,0 +1,114 @@
+--- a/testy_host/symulator_panelu.cpp
++++ b/testy_host/symulator_panelu.cpp
+@@ -1,3 +1,4 @@
++#include "PogodaIkony.h"
+ // ============================================================================
+ // symulator_panelu.cpp - PRAWDZIWY firmware panelu (src/main.cpp + dashboard
+ // LVGL) uruchomiony na PC przeciwko udawanym centralom
+@@ -245,6 +246,7 @@
+ };
+ 
+ struct Centrala {
++  std::string pogodaExtra;
+   bool symulator = false;   // true = dodaje "symulator":true, jak centrala-testowa-c3
+   int trybStatus = TRYB_OK;
+   int trybUstawienia = TRYB_OK;
+@@ -378,6 +380,7 @@
+     j += std::string(",\"symulacja_") + NAZWY_SYM[i] + "_min\":" + (aktywna ? "60" : "0");
+   }
+   j += ",\"serwo_override_min\":0,\"mieszadlo_override_min\":0,\"deszcz_stan\":0,\"deszcz_min\":-1";
++  j += c.pogodaExtra;
+   if (c.symulator) {
+     j += ",\"symulator\":true,\"symulator_panel_fw\":\"?\",\"symulator_stacje\":1,";
+     j += "\"symulator_heap\":200000,\"symulator_uptime_s\":1234";
+@@ -946,7 +949,7 @@
+ // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
+ // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
+ // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
+-#define WERSJA_FW "v1.4.0"
++#define WERSJA_FW "v1.4.3"
+ // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
+ // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
+ #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
+@@ -1191,6 +1194,52 @@
+ // SCENARIUSZE
+ // ===========================================================================
+ 
++void scenariuszWersjaStart() {
++  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
++  setup();
++  bool wersja = false, naglowek = false;
++  for (const std::string& napis : g_atrapa.napisyTft) {
++    if (napis == WERSJA_FW) wersja = true;
++    if (napis == "Panel LCD") naglowek = true;
++  }
++  sprawdz(wersja && naglowek, "ekran startowy wypisal numer dzialajacego firmware panelu");
++  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal podczas wyswietlania wersji");
++  biegnij(3000);
++  sprawdz(kopia(0).nStatus > 0, "po ekranie startowym panel laczy sie z centrala");
++}
++
++
++const lv_img_dsc_t* zewnObraz() {
++  lv_obj_t* label = znajdzEtykiete(lv_scr_act(), "ZEWN");
++  if (!label) return nullptr;
++  lv_obj_t* card = lv_obj_get_parent(label);
++  for (uint32_t i = 0; i < lv_obj_get_child_cnt(card); ++i) {
++    lv_obj_t* o = lv_obj_get_child(card, i);
++    if (lv_obj_check_type(o, &lv_img_class)) return (const lv_img_dsc_t*) lv_img_get_src(o);
++  }
++  return nullptr;
++}
++bool zewnJest(const lv_img_dsc_t& oczekiwany) {
++  const auto* r = zewnObraz();
++  return r && r->data_size == oczekiwany.data_size && memcmp(r->data, oczekiwany.data, r->data_size) == 0;
++}
++void scenariuszPogoda() {
++  using namespace PogodaIkony;
++  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
++  setup(); biegnij(4000);
++  sprawdz(zewnJest(ikona_nieznana), "starsza centrala: brak pogody = pytajnik");
++  ustaw(0, [](Centrala& c) { c.pogodaExtra = ",\"pogoda_kod\":0,\"pogoda_dzien\":true"; });
++  biegnij(3000); sprawdz(zewnJest(ikona_slonce), "status 0 dzien: slonce");
++  ustaw(0, [](Centrala& c) { c.pogodaExtra = ",\"pogoda_kod\":0,\"pogoda_dzien\":false"; });
++  biegnij(3000); sprawdz(zewnJest(ikona_ksiezyc), "status 0 noc: ksiezyc");
++  ustaw(0, [](Centrala& c) { c.pogodaExtra = ",\"pogoda_kod\":95,\"pogoda_dzien\":true"; });
++  biegnij(3000); sprawdz(zewnJest(ikona_burza), "status 95: burza");
++  ustaw(0, [](Centrala& c) { c.pogodaExtra = ",\"pogoda_kod\":null,\"pogoda_dzien\":null"; });
++  biegnij(3000); sprawdz(zewnJest(ikona_nieznana), "status null: pytajnik");
++  ustaw(0, [](Centrala& c) { c.pogodaExtra = ",\"pogoda_kod\":0,\"pogoda_dzien\":1"; });
++  biegnij(3000); sprawdz(zewnJest(ikona_nieznana), "bledny typ dnia: pytajnik");
++}
++
+ // --- 1 ---------------------------------------------------------------------
+ // Hipoteza nr 1 dla zgloszenia "kafelki sie nie aktualizuja" (niepotwierdzona
+ // na sprzecie). Dwie centrale nadaja te sama siec: prawdziwa przy piecu
+@@ -1295,6 +1344,9 @@
+ // Panel wlaczony, gdy centrali nie ma (wylaczona / poza zasiegiem).
+ void scenariuszBrakCentraliNaStarcie() {
+   setup();
++  bool jestWersja = false;
++  for (const std::string& napis : g_atrapa.napisyTft) if (napis == WERSJA_FW) jestWersja = true;
++  sprawdz(jestWersja, "wersja na starcie widoczna takze bez centrali");
+   info("setup() trwal %lu ms czasu plytki", millis());
+   info("watchdog zadania zadzialalby %d raz(y)%s", g_atrapa.wdtZadzialal,
+        g_atrapa.wdtZadzialal ? (std::string(", pierwszy raz po ") + std::to_string(g_atrapa.wdtPierwszyRazMs) + " ms").c_str() : "");
+@@ -2028,6 +2080,9 @@
+   pamiecPoAutorestarcie(1, diag::PRZYCZYNA_WIFI, 201, diag::spakujAlarmy(false, true, false, false, 0, 0));
+   const int zmianPrzed = g_atrapa.zmianTonu;
+   setup();
++  bool wyswietlonoWersje = false;
++  for (const std::string& napis : g_atrapa.napisyTft) if (napis == WERSJA_FW) wyswietlonoWersje = true;
++  sprawdz(!wyswietlonoWersje, "ekran wersji pominiety po autorestarcie z alarmem");
+   info("setup() trwal %lu ms; brzeczyk w tym czasie zmienil ton %d razy, teraz %u Hz", millis(), g_atrapa.zmianTonu - zmianPrzed, (unsigned)g_atrapa.tonHz);
+   sprawdz(g_atrapa.zmianTonu - zmianPrzed >= 20, "brzeczyk gra wzorzec alarmu juz podczas startu (czekanie na WiFi)");
+   sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=alarm_sprzed_restartu", "ogrzewanie=1"), "log: alarm_sprzed_restartu");
+@@ -4202,6 +4257,8 @@
+   void (*funkcja)();
+ };
+ const Scenariusz SCENARIUSZE[] = {
++    {"pogoda", "pogoda w statusie centrali", scenariuszPogoda},
++    {"wersja_start", "wersja panelu na ekranie startowym", scenariuszWersjaStart},
+     {"dwie_centrale", "dwie centrale o tej samej nazwie sieci (hipoteza 1 dla zgloszenia)", scenariuszDwieCentrale},
+     {"dwie_centrale_piec_blizej", "dwie centrale, panel blizej tej przy piecu", scenariuszDwieCentralePiecBlizej},
+     {"zla_odpowiedz", "centrala odpowiada, ale tresci nie da sie odczytac", scenariuszZlaOdpowiedz},
