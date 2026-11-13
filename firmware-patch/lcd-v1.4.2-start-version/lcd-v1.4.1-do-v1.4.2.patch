@@ -1,0 +1,50 @@
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -38,6 +38,12 @@
+ // ============================================================================
+ // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
+ // ============================================================================
++// [2026-11-13] v1.4.2 - WERSJA LCD PRZY STARCIE.
++//   Ekran startowy przez 2,5 s pokazuje FIRMWARE_VERSION_PANEL, bez
++//   potrzeby polaczenia z centrala. W razie przywracanego alarmu ekran jest
++//   pomijany, aby nie opozniac obslugi alarmu. Watchdog jest karmiony.
++//   Testy hostowe nie zastepuja kompilacji i sprawdzenia na ESP32.
++//
+ // [2026-11-13] v1.4.1 - IKONY LACZNOSCI PANELU I INTERNETU CENTRALI.
+ //   Kreski pokazuja RSSI mierzone lokalnie przez panel dla AP centrali, a nie
+ //   RSSI centrali wobec routera. X = rozlaczone WiFi, ? = brak pomiaru.
+@@ -819,7 +825,7 @@
+ // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
+ // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
+ // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
+-static const char* FIRMWARE_VERSION_PANEL = "v1.4.1"; // [2026-11-13] ikony lacznosci; opis w HISTORII ZMIAN
++static const char* FIRMWARE_VERSION_PANEL = "v1.4.2"; // [2026-11-13] wersja na starcie; opis w HISTORII ZMIAN
+ // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
+ // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
+ // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
+@@ -5229,6 +5235,25 @@
+   brzeczykZainicjuj();
+   alarmPrzywrocPoAutorestarcie();   // [v1.2.1 RATUNEK] alarm trwajacy przed samoczynnym restartem gra dalej
+ 
++  // [v1.4.2] Wersja samego panelu, niezaleznie od polaczenia z centrala.
++  // Nie opozniamy przywracania alarmu po samoczynnym restarcie.
++  if (!(startPoAutorestarcie && diag::alarmyJakikolwiek(rtcAutorestart.alarmy))) {
++    tft.fillScreen(KOL_TLO);
++    tft.setTextDatum(MC_DATUM);
++    tft.setTextColor(KOL_TEKST, KOL_TLO);
++    tft.setTextFont(2);
++    tft.setTextSize(2);
++    tft.drawString("Panel LCD", 240, 130);
++    tft.drawString(FIRMWARE_VERSION_PANEL, 240, 180);
++    for (int i = 0; i < 25; ++i) {
++      esp_task_wdt_reset();
++      obsluzBrzeczyk();
++      delay(100);
++    }
++    tft.setTextSize(1);
++    tft.fillScreen(KOL_TLO);
++  }
++
+   // [FIX - dotyk nie dzialal w LVGL_POC_TEST] Kalibracja MUSI byc zrobiona
+   // przed uzyciem dotykOdczytaj() (ktorego uzywa lvgl_touch_read() w
+   // lvgl_port.cpp) - inaczej kalDotyku zostaje z zerami, dotykOdczytaj()

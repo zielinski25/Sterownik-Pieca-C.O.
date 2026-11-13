@@ -1,0 +1,60 @@
+--- a/testy_host/symulator_panelu.cpp
++++ b/testy_host/symulator_panelu.cpp
+@@ -946,7 +946,7 @@
+ // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
+ // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
+ // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
+-#define WERSJA_FW "v1.4.0"
++#define WERSJA_FW "v1.4.2"
+ // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
+ // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
+ #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
+@@ -1191,6 +1191,20 @@
+ // SCENARIUSZE
+ // ===========================================================================
+ 
++void scenariuszWersjaStart() {
++  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
++  setup();
++  bool wersja = false, naglowek = false;
++  for (const std::string& napis : g_atrapa.napisyTft) {
++    if (napis == WERSJA_FW) wersja = true;
++    if (napis == "Panel LCD") naglowek = true;
++  }
++  sprawdz(wersja && naglowek, "ekran startowy wypisal numer dzialajacego firmware panelu");
++  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal podczas wyswietlania wersji");
++  biegnij(3000);
++  sprawdz(kopia(0).nStatus > 0, "po ekranie startowym panel laczy sie z centrala");
++}
++
+ // --- 1 ---------------------------------------------------------------------
+ // Hipoteza nr 1 dla zgloszenia "kafelki sie nie aktualizuja" (niepotwierdzona
+ // na sprzecie). Dwie centrale nadaja te sama siec: prawdziwa przy piecu
+@@ -1295,6 +1309,9 @@
+ // Panel wlaczony, gdy centrali nie ma (wylaczona / poza zasiegiem).
+ void scenariuszBrakCentraliNaStarcie() {
+   setup();
++  bool jestWersja = false;
++  for (const std::string& napis : g_atrapa.napisyTft) if (napis == WERSJA_FW) jestWersja = true;
++  sprawdz(jestWersja, "wersja na starcie widoczna takze bez centrali");
+   info("setup() trwal %lu ms czasu plytki", millis());
+   info("watchdog zadania zadzialalby %d raz(y)%s", g_atrapa.wdtZadzialal,
+        g_atrapa.wdtZadzialal ? (std::string(", pierwszy raz po ") + std::to_string(g_atrapa.wdtPierwszyRazMs) + " ms").c_str() : "");
+@@ -2028,6 +2045,9 @@
+   pamiecPoAutorestarcie(1, diag::PRZYCZYNA_WIFI, 201, diag::spakujAlarmy(false, true, false, false, 0, 0));
+   const int zmianPrzed = g_atrapa.zmianTonu;
+   setup();
++  bool wyswietlonoWersje = false;
++  for (const std::string& napis : g_atrapa.napisyTft) if (napis == WERSJA_FW) wyswietlonoWersje = true;
++  sprawdz(!wyswietlonoWersje, "ekran wersji pominiety po autorestarcie z alarmem");
+   info("setup() trwal %lu ms; brzeczyk w tym czasie zmienil ton %d razy, teraz %u Hz", millis(), g_atrapa.zmianTonu - zmianPrzed, (unsigned)g_atrapa.tonHz);
+   sprawdz(g_atrapa.zmianTonu - zmianPrzed >= 20, "brzeczyk gra wzorzec alarmu juz podczas startu (czekanie na WiFi)");
+   sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=alarm_sprzed_restartu", "ogrzewanie=1"), "log: alarm_sprzed_restartu");
+@@ -4202,6 +4222,7 @@
+   void (*funkcja)();
+ };
+ const Scenariusz SCENARIUSZE[] = {
++    {"wersja_start", "wersja panelu na ekranie startowym", scenariuszWersjaStart},
+     {"dwie_centrale", "dwie centrale o tej samej nazwie sieci (hipoteza 1 dla zgloszenia)", scenariuszDwieCentrale},
+     {"dwie_centrale_piec_blizej", "dwie centrale, panel blizej tej przy piecu", scenariuszDwieCentralePiecBlizej},
+     {"zla_odpowiedz", "centrala odpowiada, ale tresci nie da sie odczytac", scenariuszZlaOdpowiedz},
