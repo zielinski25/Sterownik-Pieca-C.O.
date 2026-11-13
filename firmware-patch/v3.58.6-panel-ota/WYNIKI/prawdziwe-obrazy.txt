@@ -1,0 +1,23 @@
+Wynik: ./sprawdz_prawdziwe_obrazy.sh   (g++ 12, 2026-11-12)
+Plik: src/main_centrala.cpp  SHA-256 c13f81e370ee2d099795b7b35cb31cbb31c1b40bb7bc54eb37c6a8c1a26ed90c
+Obrazy: repozytorium espressif/esptool, katalog test/images (pobrane z api.github.com po identyfikatorze obiektu git).
+
+[1] pobieram obrazy z repozytorium espressif/esptool (test/images)
+    bootloader_esp32_v5_2.bin  26768 B
+    bootloader_esp32.bin  7888 B
+    esp_idf_blink_esp32s2.bin  182368 B
+[2] wycinam blok decyzji z ../src/main_centrala.cpp i kompiluje
+    zapisano /tmp/centrala_panel_hist_test/obrazy/panel_ota_blok.inc (472 linii)
+    kod panelu: ../../../LCD-Centrali/src/diagnostyka_panelu.h
+[3] ocena
+    bootloader_esp32_v5_2.bin: uklad 0x0000, bajt 23 = 1, SHA-256 pliku bez 32 ostatnich bajtow: rowne tym 32 bajtom
+        centrala: PRZYJETY, identyfikator 10cec8cf739f34fb
+        panel:    naglowek przyjety, identyfikator 10cec8cf739f34fb
+    bootloader_esp32.bin: uklad 0x0000, bajt 23 = 0, SHA-256 pliku bez 32 ostatnich bajtow: inne niz te 32 bajty
+        centrala: plik nie ma sumy SHA-256 na koncu - nie da sie potwierdzic, co panel wgral
+        panel:    naglowek przyjety, pliku bez sumy nie umie nazwac
+    esp_idf_blink_esp32s2.bin: uklad 0x0002, bajt 23 = 1, SHA-256 pliku bez 32 ostatnich bajtow: rowne tym 32 bajtom
+        centrala: to program dla innego ukladu niz ESP32 - zly plik w wydaniu
+        panel:    naglowek odrzucony (inny uklad)
+BEZ BLEDOW: format prawdziwych obrazow zgadza sie z tym, co zaklada kod
+kod wyjscia: 0

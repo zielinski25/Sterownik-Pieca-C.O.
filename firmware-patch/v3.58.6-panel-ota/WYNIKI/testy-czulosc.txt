@@ -1,0 +1,130 @@
+Wynik: python3 sprawdz_czulosc_ota.py   oraz   python3 sprawdz_czulosc.py   (g++ 12, 2026-11-12)
+Plik: src/main_centrala.cpp  SHA-256 c13f81e370ee2d099795b7b35cb31cbb31c1b40bb7bc54eb37c6a8c1a26ed90c
+
+A. KOD [v3.58.6 PANEL-OTA] - python3 sprawdz_czulosc_ota.py
+-----------------------------------------------------------
+Czulosc testow kodu [v3.58.6 PANEL-OTA]: ../src/main_centrala.cpp
+  kod bez zmian: WSZYSTKO OK: 166 sprawdzen, 0 bledow
+   1. alarm nie ukrywa oferty przed panelem
+        WYKRYTY (5 bledow), np.: flaga w /api/status: jest; w czasie alarmu - nie ma
+   2. plik wydawany takze w czasie alarmu
+        WYKRYTY (9 bledow), np.: pobieranie w czasie alarmu: 503, oferta zostaje, proba sie nie liczy
+   3. limit pobran o jedno za wysoki
+        WYKRYTY (2 bledow), np.: piate pobranie: 409 i koniec oferty
+   4. pierwszy start z nowego pliku (jeszcze nie zatwierdzony) uznany za potwierdzenie
+        WYKRYTY (6 bledow), np.: pierwszy start z nowego pliku (panel_obraz_proba): jeszcze NIE potwierdzenie, oferta czeka
+   5. odmowa panelu konczy oferte bez sprawdzenia numeru oferty
+        WYKRYTY (6 bledow), np.: odmowa z numerem INNEJ oferty: pominieta
+   6. panel v1.4.0+ na innym pliku traktowany jak starszy panel (regula wersji i powrotu po pobraniu)
+        WYKRYTY (9 bledow), np.: panel v1.4.0+ z wersja rowna tagowi, ale na innym pliku: to NIE potwierdzenie (liczy sie plik)
+   7. starszy panel po pobraniu nadal dostaje oferte (petla z 3.58.5)
+        WYKRYTY (5 bledow), np.: starszy panel pobral plik i zglasza sie ponownie: koniec oferty (3.58.5: oferta zostawala i panel wgrywal plik
+   8. limit 24 h konczy oferte w trakcie wysylania pliku
+        WYKRYTY (2 bledow), np.: limit 24 h mija W TRAKCIE wysylania pliku: oferta zostaje do konca wysylania
+   9. limit 24 h liczony bez uwzglednienia przekrecenia licznika czasu
+        WYKRYTY (2 bledow), np.: oferta wystawiona tuz przed przekreceniem licznika czasu: sekunde pozniej nadal czeka
+  10. firmware centrali (ESP32-S3) nie jest rozpoznawany
+        WYKRYTY (2 bledow), np.: program dla ESP32-S3 (firmware centrali): odrzucony z nazwa ukladu
+  11. plik bez sumy SHA-256 na koncu jest przyjmowany
+        WYKRYTY (1 bledow), np.: program bez sumy SHA-256 na koncu: odrzucony
+  12. koniec oferty zeruje licznik polaczen (plik mozna podmienic w trakcie wysylania)
+        WYKRYTY (1 bledow), np.: anulowanie w trakcie wysylania: oferta znika, ale plik jest jeszcze w drodze (nie wolno go podmienic)
+  13. zamkniecie polaczenia starej oferty zmniejsza licznik nowej
+        WYKRYTY (3 bledow), np.: koniec polaczenia z numerem innej oferty: licznik bez zmian
+  14. polaczenie nigdy nie jest uznawane za zerwane (brak limitu 5 minut)
+        WYKRYTY (1 bledow), np.: polaczenie starsze niz 5 minut: uznane za zerwane
+  15. przypomnienie wysylane w kazdym obiegu
+        WYKRYTY (2 bledow), np.: przypomnienie tylko raz; oferta czeka dalej
+  16. przypomnienie takze wtedy, gdy panel juz pobiera
+        WYKRYTY (1 bledow), np.: panel zaczal pobierac: przypomnienia nie ma (wynik przyjdzie osobno)
+  17. panel "w kontakcie" bez limitu czasu
+        WYKRYTY (2 bledow), np.: panel bez kontaktu od 2 minut: oferta powstaje (potwierdzi sie przy pierwszym zgloszeniu)
+  18. numer odmowy dluzszy niz 9 cyfr jest przyjmowany
+        WYKRYTY (1 bledow), np.: numer 10-cyfrowy: odrzucony (nie zmiescilby sie pewnie w uint32_t)
+  19. znaki specjalne w tagu wydania nie sa zamieniane
+        WYKRYTY (2 bledow), np.: kopia tekstu: < > & " \ znak sterujacy i znaki spoza ASCII zamienione na ?
+  20. otaOperacjaWTrakcie zostaje ustawiona po pobraniu z GitHuba (jak w 3.58.5)
+        WYKRYTY (15 bledow), np.: otaOperacjaWTrakcie: ustawiona w trakcie pobierania z GitHuba, zdjeta zaraz po (3.58.5: zostawala do potwierdz
+  21. zakonczona oferta zostaje w NVS (wraca po restarcie centrali)
+        WYKRYTY (9 bledow), np.: NVS wyczyszczony, log: potwierdzono_obraz
+  22. String uzyty w sekcji krytycznej
+        WYKRYTY (1 bledow), np.: w sekcji krytycznej ani razu nie uzyto String, sterty, logu, NVS, Telegrama ani odpowiedzi HTTP
+  23. sekcja krytyczna bez zamkniecia
+        WYKRYTY (2 bledow), np.: w sekcji krytycznej ani razu nie uzyto String, sterty, logu, NVS, Telegrama ani odpowiedzi HTTP
+  24. oferta przywracana po restarcie bez sprawdzenia, czy plik jest na dysku
+        WYKRYTY (2 bledow), np.: po restarcie pliku nie ma na dysku: oferta nie wraca, wiadomosc z prosba o ponowne /update_panel
+  25. oferta zapisana przez 3.58.5 (bez identyfikatora pliku) przywracana po restarcie
+        WYKRYTY (4 bledow), np.: zapis bez poprawnego identyfikatora pliku nie jest wznawiany
+  26. oferta wystawiana, choc panel pracuje juz na tym pliku
+        WYKRYTY (1 bledow), np.: panel pracuje juz na pliku z wydania: bez oferty (inaczej przyszlaby wiadomosc "zaktualizowany", choc nic sie 
+  27. poprzednia oferta nie jest wycofywana przed podmiana pliku
+        WYKRYTY (1 bledow), np.: w trakcie pobierania nowego pliku z GitHuba poprzednia oferta jest juz wycofana (panel nie zacznie pobierac pl
+  28. /update_panel nie sprawdza, czy plik jest wlasnie wysylany
+        WYKRYTY (3 bledow), np.: /update_panel w trakcie wysylania pliku: odmowa, plik na dysku nie jest podmieniany
+  29. numer oferty rosnie ponad 9 cyfr
+        WYKRYTY (1 bledow), np.: numer oferty po 999999999: 1
+  30. plik wydawany bez sprawdzenia hasla
+        WYKRYTY (3 bledow), np.: plik ze zlym haslem: 401, nic sie nie liczy
+  31. identyfikator pliku widoczny w /api/status takze w czasie alarmu
+        WYKRYTY (5 bledow), np.: panel_obraz rowny identyfikatorowi pliku: flaga znika w tej samej odpowiedzi
+  32. decyzja z obslugi HTTP nie trafia do zadania Telegrama (brak wiadomosci o wyniku)
+        WYKRYTY (16 bledow), np.: wiadomosc: Panel zaktualizowany, z wersja teraz i przedtem
+  33. anulowanie nie wykonuje najpierw zaleglej decyzji
+        WYKRYTY (2 bledow), np.: anulowanie tuz po potwierdzeniu: najpierw wiadomosc o potwierdzeniu, potem "nie ma czego anulowac"
+  34. brak pliku na dysku zostawia licznik polaczen podniesiony
+        WYKRYTY (1 bledow), np.: oferta jest, pliku nie ma: 404, wpis w logu, licznik polaczen wraca do zera
+  35. obieg zadania Telegrama nie zwalnia pamieci roboczej (wyciek 800 B co kilka sekund)
+        WYKRYTY (2 bledow), np.: oferta czeka: obieg bierze jeden blok pamieci i od razu go zwalnia
+  36. anulowanie bez oferty nie zwalnia pamieci roboczej
+        WYKRYTY (2 bledow), np.: oferta czeka: obieg bierze jeden blok pamieci i od razu go zwalnia
+  37. gdy sterta odmowi, czekajacy wynik aktualizacji przepada bez wiadomosci
+        WYKRYTY (4 bledow), np.: wynik poprzedniej oferty czeka (sterta odmowila), nowa oferta juz wystawiona
+  38. obieg bierze pamiec robocza takze wtedy, gdy nie ma oferty
+        WYKRYTY (1 bledow), np.: bez oferty: 100 obiegow zadania Telegrama nie bierze pamieci, nic nie wysyla i nic nie zapisuje
+  39. anulowanie przy odmowie sterty konczy oferte, choc mowi, ze nic nie anulowalo
+        WYKRYTY (2 bledow), np.: /update_panel_anuluj, sterta odmawia: oferta zostaje, uzytkownik dostaje informacje
+  40. tekst bledu pobierania zbierany w zmiennej, w ktorej jest juz wiadomosc dla uzytkownika
+        WYKRYTY (1 bledow), np.: pobierzFirmwarePanelaZGithub() zawsze dostaje pusty tekst bledu (w centrali poznaje po nim, czy blad juz opisa
+  41. zalegly wynik poprzedniej oferty kasuje w NVS znacznik nastepnej
+        WYKRYTY (2 bledow), np.: ...i NIE kasuje znacznika NVS oferty nr 2 (po restarcie centrali wroci)
+  42. wynik poprzedniej oferty wysylany dopiero po wiadomosci o nowym pliku
+        WYKRYTY (3 bledow), np.: wynik poprzedniej oferty przychodzi w trakcie pytania GitHuba: najpierw wiadomosc o nim, potem o nowym pliku
+  43. pamiec robocza zwalniana w sekcji krytycznej
+        WYKRYTY (1 bledow), np.: w sekcji krytycznej ani razu nie uzyto String, sterty, logu, NVS, Telegrama ani odpowiedzi HTTP
+Wykryte: 43 z 43 celowo wprowadzonych bledow
+kod wyjscia: 0
+
+B. KOD [v3.58.4 PANEL-WYKRESY] (bez zmian wzgledem 3.58.5) - python3 sprawdz_czulosc.py
+---------------------------------------------------------------------------------------
+Czulosc testow kodu [v3.58.4 PANEL-WYKRESY] (stan z v3.58.5): ../src/main_centrala.cpp
+  kod bez zmian: WSZYSTKO OK: 2697 sprawdzen, 0 bledow
+   1. okno zawsze od poczatku zakresu (jak gdyby nie bylo zmiany [1])
+        WYKRYTY (1293 bledow), np.: wynik zgodny z liczeniem sekunda po sekundzie
+   2. odcinek konczacy sie dokladnie na poczatku zakresu liczony jako pomiar w zakresie
+        WYKRYTY (1 bledow), np.: pierwszy wpis sekunde przed zakresem: zostaje jeden punkt (najnowszy wpis)
+   3. koniec okna: odstep rowny progowi juz przestawia okno na biezacy czas
+        WYKRYTY (5 bledow), np.: zegar 0-6 minut po ostatniej probce: odpowiedz bajt w bajt taka jak bez zegara (okno konczy sie na probce)
+   4. koniec okna: progi 6 min i 90 min zamienione miejscami
+        WYKRYTY (238 bledow), np.: okno konczy sie na biezacym czasie: 12:07 - 13:07
+   5. lekki odczyt czasu czyta sasiednia probke bufora krotkiego
+        WYKRYTY (1016 bledow), np.: naglowek: okno = 3600 s do najnowszej probki wlacznie, krok 37 s
+   6. odstep miedzy probkami rowny progowi liczony jako przerwa
+        WYKRYTY (35 bledow), np.: seria 43 tryb dzien pkt 83 odstep 300 nowych 122 zegar 1794572700
+   7. zegar: czas letni liczony jak zimowy
+        WYKRYTY (1 bledow), np.: czas letni (3.07.2026 12:00 CEST): przeliczenie z godzina letnia
+   8. zegar stosowany takze do probek z umownym czasem (rok 2000)
+        WYKRYTY (1 bledow), np.: probki z roku 2000 + zegar ustawiony: odpowiedz bez zmian (to nie sa prawdziwe daty)
+   9. zegar wczesniejszy niz najnowsza probka uznany za pozniejszy
+        WYKRYTY (91 bledow), np.: zegar WCZESNIEJSZY niz ostatnia probka (cofniety): bez wplywu
+  10. koniec okna zawsze na najnowszej probce (jak gdyby nie bylo zmiany [2])
+        WYKRYTY (425 bledow), np.: okno konczy sie na biezacym czasie: 12:07 - 13:07
+  11. naglowek: do= podaje czas probki zamiast konca okna
+        WYKRYTY (424 bledow), np.: okno konczy sie na biezacym czasie: 12:07 - 13:07
+  12. lekki odczyt czasu pomija regule granicy miedzy buforem dlugim i krotkim
+        WYKRYTY (217 bledow), np.: wynik zgodny z liczeniem sekunda po sekundzie
+  13. odczyt zegara bez sprawdzenia roku (zegar nieustawiony brany za prawdziwy czas)
+        WYKRYTY (1 bledow), np.: rok 2023 (zegar nieustawiony): 0
+  14. ostatni wiersz historii nie liczy sie przy szukaniu poczatku okna
+        WYKRYTY (32 bledow), np.: jedna probka: jeden punkt z jej wartoscia i czasem
+Wykryte: 14 z 14 celowo wprowadzonych bledow
+kod wyjscia: 0

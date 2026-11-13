@@ -1,0 +1,43 @@
+kod_centrali/ - kod CENTRALI uzywany w testach panelu
+=====================================================
+
+panel_ota_blok.inc
+    Blok decyzji o aktualizacji panelu, wyciety z firmware'u centrali 3.58.6
+    (firmware-patch/v3.58.6-panel-ota/src/main_centrala.cpp, fragment miedzy
+    znacznikami [v3.58.6 PANEL-OTA-BEGIN] i [v3.58.6 PANEL-OTA-END]).
+
+    Symulator panelu (../symulator_panelu.cpp) wlacza ten plik przez #include.
+    W scenariuszach ota_* "centrala 3.58.6" decyduje wiec tym samym kodem,
+    ktory jest w firmware centrali, a nie jego opisem przepisanym do testu:
+    kiedy wystawic oferte, kiedy wydac plik, kiedy uznac aktualizacje za
+    wykonana, kiedy oferte zakonczyc.
+
+    Blok jest czystym C++ (stdint, string, stdio) - nie uzywa Arduino, wiec
+    kompiluje sie na PC bez zmian.
+
+NIE EDYTOWAC RECZNIE
+    Plik jest kopia. Zmiany robi sie w main_centrala.cpp, a kopie odswieza:
+
+        cd firmware-patch/v3.58.6-panel-ota/tests
+        AKTUALIZUJ_WZORCE=1 ./uruchom_testy.sh
+
+    Zwykle ./uruchom_testy.sh w tym katalogu (bez AKTUALIZUJ_WZORCE) sprawdza
+    przy kazdym uruchomieniu, ze kopia jest identyczna z blokiem w pliku
+    centrali, i konczy sie bledem, gdy sie rozjechaly.
+
+CZEGO TU NIE MA
+    Reszty centrali: pobierania pliku z GitHuba, zapisu na jej dysk, NVS,
+    Telegrama i serwera HTTP. W symulatorze panelu zastepuje je udawana
+    centrala (struktura Centrala w symulator_panelu.cpp), ktora wola funkcje
+    z tego bloku w tych samych miejscach co firmware:
+        zapytanie /api/status    -> panelOtaPanelZglosil(), panelOtaPoZgloszeniu(),
+                                    panelOtaFlagaDlaPanelu()
+        zapytanie /panel-ota.bin -> panelOtaStartPobierania(), panelOtaKoniecPobierania()
+        nowy plik z GitHuba      -> panelOtaSkan*(), panelOtaWystaw()
+        /update_panel_anuluj     -> panelOtaAnuluj()
+    Limit czasu oferty (24 h), przypomnienie po 5 minutach i tresc wiadomosci
+    sprawdzaja testy centrali (firmware-patch/v3.58.6-panel-ota/tests/
+    test_panel_ota.cpp), nie symulator panelu.
+    "Centrala do 3.58.5" w scenariuszach ota_stara_centrala* to model jej
+    reguly (oferta znika tylko wtedy, gdy panel zglosi wersje rowna tagowi
+    wydania), nie jej kod.

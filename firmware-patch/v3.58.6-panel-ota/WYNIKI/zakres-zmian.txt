@@ -1,0 +1,133 @@
+ZAKRES ZMIAN v3.58.6 (main_centrala.cpp)
+=======================================
+Wynik: v3.58.6, SHA-256 c13f81e370ee2d099795b7b35cb31cbb31c1b40bb7bc54eb37c6a8c1a26ed90c
+       (50 063 linie)
+
+A. WZGLEDEM 3.58.5   (main_centrala-v3.58.5-do-v3.58.6.patch)
+-------------------------------------------------------------
+Baza: v3.58.5, SHA-256 f7dc097e016e2ef2b89c36ec2a34d0ce16768115c34d697751462472c40f166c
+      (firmware-patch/v3.58.5-panel-wykresy-po-restarcie/src/main_centrala.cpp)
+Diff: 22 bloki (hunki), 1 128 linii dodanych, 113 usunietych.
+Numery linii ponizej dotycza pliku 3.58.6.
+
+Skad 1 128 i 113:
+  trzy nowe bloki                         +941
+  linie puste i komentarz przy blokach    +8     -2 (dwie zmienne zastapione blokiem STAN)
+  18 miejsc w starszym kodzie             +103   -110
+  wpis changeloga                         +75
+  numer wersji                            +1     -1
+
+NOWY KOD - trzy bloki miedzy znacznikami
+  [v3.58.6 PANEL-OTA-BEGIN] ... [-END]            linie 7025-7491    467 linii
+      Decyzje. Czysty kod: bez klasy String, bez przydzialow pamieci, bez
+      Arduino. Identyfikator pliku z sumy SHA-256, sprawdzenie naglowka
+      pliku, stan oferty (struct PanelOtaStan), reguly konczenia oferty, kody
+      odpowiedzi dla /panel-ota.bin, tresc wiadomosci.
+      Ten blok - co do bajta - wlaczaja testy panelu LCD jako "centrale".
+  [v3.58.6 PANEL-OTA-STAN-BEGIN] ... [-END]       linie 7493-7516     24 linie
+      Zmienne: g_panelOta, g_panelOtaMux (sekcja krytyczna), g_panelOtaPanel,
+      g_panelOtaDoWykonania. Zastepuja g_panelOtaDostepna i g_panelOtaWersja.
+  [v3.58.6 PANEL-OTA-KLEJ-BEGIN] ... [-END]       linie 30163-30612  450 linii
+      Skutki decyzji: log, NVS, Telegram, odpowiedzi HTTP. Funkcje
+      panelOtaKlej...(): Json, Zgloszenie, Plik, TransferTrwa (obsluga HTTP)
+      oraz Okresowo, KomendaAktualizuj, KomendaAnuluj, PoStarcie i ich
+      funkcje pomocnicze (zadanie Telegrama, setup()).
+      Czesc dla zadania Telegrama trzyma teksty i kopie stanu w pamieci ze
+      sterty (800 B na czas obslugi), nie na stosie - opis w komentarzu
+      "STOS ZADANIA TELEGRAMA" w tym bloku.
+
+ZMIANY W STARSZYM KODZIE - 18 miejsc (+103 / -110 linii)
+   1. linia 6429   enum komend Telegrama: + TG_UPDATE_PANEL_ANULUJ      +2 / -1
+   2. linia 7532   komentarz przy otaOperacjaWTrakcie (flaga tylko na
+                   czas pobierania z GitHuba)                           +9 / -6
+   3. linia 30758  JSON statusu: dwa pola skladane recznie zastapione
+                   wywolaniem panelOtaKlejJson(j) (cztery pola)         +3 / -2
+   4. linia 31049  trasa GET /api/status: warunek "wersja == tag"
+                   zastapiony wywolaniem panelOtaKlejZgloszenie()       +9 / -8
+   5. linia 31303  trasa GET /panel-ota.bin: tresc zastapiona
+                   wywolaniem panelOtaKlejPlik(request)                 +4 / -11
+   6. linia 41336  menu aktualizacji w Telegramie: przycisk
+                   "Anuluj aktualizacje panelu"                         +1
+   7-11. pobierzFirmwarePanelaZGithub() (od linii 41625), piec miejsc:
+        41625  dwa nowe parametry wyjsciowe (skanOut, rozmiarOut)       +9 / -1
+        41651  osobny tekst bledu dla kodu 404 (brak pliku w wydaniu),
+               skladany przez += (bez obiektow tymczasowych na stosie)  +12 / -1
+        41751  panelOtaSkanDodaj() w petli pobierania                   +1
+        41778  odrzucenie pliku, ktory nie jest programem dla panelu,
+               ZANIM zastapi poprzedni plik                             +15
+        41810  rozmiarOut = zapisano                                    +1
+  12. linia 42006  przycisk menu -> komenda TG_UPDATE_PANEL_ANULUJ      +1
+  13. linia 42319  komenda tekstowa /update_panel_anuluj                +2
+  14. linia 45884  komenda Firebase update_panel_anuluj                 +4
+  15. linia 46891  tgTaskFn(): wywolanie panelOtaKlejOkresowo()         +3
+  16. linia 47564  case TG_UPDATE: odmowa, gdy plik jest wlasnie
+                   wysylany panelowi; krotszy tekst odmowy              +8 / -1
+  17. linia 47633  case TG_UPDATE_PANEL: tresc przeniesiona do
+                   panelOtaKlejKomendaAktualizuj(); nowy
+                   case TG_UPDATE_PANEL_ANULUJ                          +14 / -48
+  18. linia 49797  setup(): tresc przeniesiona do
+                   panelOtaKlejPoStarcie()                              +5 / -31
+
+POZOSTALE
+  wpis changeloga na gorze pliku (linie 1-75)                           +75 (komentarz)
+  FIRMWARE_VERSION "v3.58.5" -> "v3.58.6" (linia 6217)                  1 linia zmieniona
+
+Wiekszosc ze 113 usunietych linii to kod PRZENIESIONY do bloku KLEJ (obsluga
+/panel-ota.bin, case TG_UPDATE_PANEL, fragment setup()), a nie usuniety.
+
+Klucze NVS (przestrzen nazw bez zmian): panOtaTrwa, panOtaTag, panOtaGotowa -
+jak w 3.58.5; nowe: panOtaObraz, panOtaNr, panOtaRozm, panOtaPrzed.
+Nowe pola w odpowiedzi /api/status: panel_ota_obraz, panel_ota_nr (obok
+dotychczasowych panel_ota_dostepna, panel_ota_wersja).
+Nowe parametry przyjmowane w GET /api/status: panel_obraz, panel_obraz_proba,
+panel_ota_odmowa, panel_ota_czeka (obok panel_fw, reset_powod).
+
+B. WZGLEDEM 3.58.3   (main_centrala-v3.58.3-do-v3.58.6.patch)
+-------------------------------------------------------------
+Baza: v3.58.3, SHA-256 65e37b14349dd37771863d702cec4d90f289aa9d8ca98a811458d8c8bcb82147
+      (plik v3.58.0-LAN-PANEL/src/main_centrala.cpp z galezi arena/fa9f8bd9-sterownik-pieca-c-o)
+Diff: 24 bloki (hunki), 1 750 linii dodanych, 113 usunietych.
+
+To samo co w czesci A plus zmiany 3.58.4 i 3.58.5 (wykresy dla panelu LCD):
+  - wpisy changeloga 3.58.6, 3.58.5 i 3.58.4 na gorze pliku            +158 linii (komentarz)
+  - blok [v3.58.4 PANEL-WYKRESY-BEGIN] ... [-END] (stan z 3.58.5)      +526 linii
+  - trasa GET /api/history/panel                                       +13 linii
+Kod wykresow jest identyczny z 3.58.5 (testy sprawdzaja to przy kazdym
+uruchomieniu: tests/uruchom_testy.sh, czesc B, krok [1]).
+
+CZEGO NIE MA W DIFFACH
+----------------------
+Zadnej zmiany w: sterowaniu piecem, automatyce, czujnikach, alarmach, zapisie
+historii, /api/history*, stronie WWW, /api/lan/*, wlasnej aktualizacji
+centrali (wykonajAktualizacjeOTA(), sprawdzNajnowszaWersjeGithub()), nadzorze
+zadan. Warunek alarmu w case TG_UPDATE i case TG_UPDATE_PANEL jest bez zmian.
+
+CO Z TEGO JEST SPRAWDZONE NA PC
+-------------------------------
+Trzy bloki miedzy znacznikami: wyciete z pliku, uruchomione z atrapami
+(166 sprawdzen) i sprawdzone prawdziwymi naglowkami arduino-esp32 oraz
+ESPAsyncWebServer.
+Z 18 miejsc w starszym kodzie:
+  - nowe linie w pobierzFirmwarePanelaZGithub() (miejsca 7-11) sa wycinane z
+    pliku i sprawdzane tymi samymi naglowkami, w funkcji o tych samych
+    parametrach i typach zmiennych lokalnych (tests/sprawdz_naglowki_esp32.sh).
+    Sama funkcja - pobieranie przez HTTPS i zapis na dysk - nie jest
+    kompilowana ani uruchamiana;
+  - pozostale 13 miejsc to pojedyncze wywolania i wpisy (enum, przycisk,
+    komendy). NIE sa kompilowane w swoim miejscu; wywolania nowych funkcji sa
+    powtorzone na koncu sprawdzanego wycinka.
+Calego pliku nie kompilowano - pierwsza kompilacja w PlatformIO bedzie Twoja.
+Stosu zadania Telegrama PC nie mierzy: po wgraniu pokaze go hwm_tg w logu
+HEALTH-A (README.md, "Po wgraniu").
+
+JAK TO SPRAWDZIC SAMEMU
+-----------------------
+W repozytorium:
+  diff -u firmware-patch/v3.58.5-panel-wykresy-po-restarcie/src/main_centrala.cpp \
+          firmware-patch/v3.58.6-panel-ota/src/main_centrala.cpp | less
+Obie latki z tej paczki, nalozone programem "patch" na swoja baze, daja plik
+o SHA-256 podanym na gorze:
+  patch -p1 kopia_3.58.5.cpp < main_centrala-v3.58.5-do-v3.58.6.patch
+  patch -p1 kopia_3.58.3.cpp < main_centrala-v3.58.3-do-v3.58.6.patch
+Na Windows, w folderze projektu PlatformIO (po zrobieniu kopii .bak):
+  fc.exe src\main_centrala.cpp.bak-przed-3.58.6 src\main_centrala.cpp

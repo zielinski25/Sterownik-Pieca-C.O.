@@ -1,0 +1,2034 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,161 @@
++// FIRMWARE_VERSION v3.58.5 -> v3.58.6 (2026-11-12) — AKTUALIZACJA PANELU LCD PRZEZ CENTRALĘ: BEZ PĘTLI, Z KOŃCEM I Z WYNIKIEM.
++//
++// [v3.58.6 PANEL-OTA] — 2026-11-12
++// Decyzja użytkownika: "Działaj" po raporcie RAPORT_OTA_PANELU_PRZEZ_CENTRALE.md
++//     (w repozytorium), który opisuje, jak /update_panel działało do 3.58.5.
++// Jak było (3.58.3–3.58.5; z czytania kodu i z uruchomienia firmware'u panelu
++//     na PC):
++//     (a) Centrala kończyła aktualizację tylko wtedy, gdy tekst panel_fw
++//         zgłoszony przez panel był identyczny z tagiem wydania. Panel
++//         zgłasza np. "v1.3.0", wydania mają tagi w rodzaju "3.57.9". Po
++//         udanym wgraniu oferta zostawała, a panel wgrywał ten sam plik przy
++//         każdym starcie.
++//     (b) Przez cały ten czas otaOperacjaWTrakcie = true: /update i
++//         /update_panel odmawiały, a nadzór zadań (nadzorKrok) nie pracował.
++//         Stan wracał po restarcie centrali (NVS).
++//     (c) Nie było limitu czasu ani komendy, która to kończy.
++//     (d) /panel-ota.bin oddawał ostatnio pobrany plik każdemu z dobrym
++//         hasłem, także w czasie alarmu i długo po aktualizacji. Pobrany plik
++//         był sprawdzany tylko po pierwszym bajcie.
++// Co (bloki [v3.58.6 PANEL-OTA-BEGIN/END] — decyzje, czysty kod testowany na
++//     PC; [v3.58.6 PANEL-OTA-STAN-...] i [v3.58.6 PANEL-OTA-KLEJ-...] — stan
++//     i skutki):
++//     [1] Potwierdzenie po PLIKU, nie po numerze wersji. Każdy program ESP32
++//         ma na końcu sumę SHA-256 (dopisuje ją esptool przy budowaniu).
++//         Centrala bierze z niej identyfikator pliku (16 znaków) i podaje go
++//         panelowi w /api/status: "panel_ota_obraz", razem z numerem oferty
++//         "panel_ota_nr". Panel v1.4.0+ zgłasza identyfikator programu, z
++//         którego pracuje (panel_obraz=...; przy pierwszym starcie po wgraniu
++//         panel_obraz_proba=...). Równe = aktualizacja wykonana.
++//     [2] Oferta ma koniec. Kończy ją: potwierdzenie, odmowa panelu
++//         (panel_ota_odmowa=<nr>-<powód>), powrót starszego panelu po
++//         pobraniu pliku, 4 rozpoczęte pobrania bez wyniku, 24 h, komenda
++//         /update_panel_anuluj (także przycisk w menu i komenda Firebase
++//         "update_panel_anuluj"). O każdym zakończeniu idzie wiadomość.
++//     [3] otaOperacjaWTrakcie tylko na czas pobierania pliku z GitHuba.
++//         Czekająca oferta nie blokuje /update i nie wyłącza nadzoru zadań.
++//         Gdy plik jest właśnie wysyłany panelowi, /update i /update_panel
++//         odmawiają (licznik połączeń w g_panelOta).
++//     [4] Alarm: oferta jest ukryta przed panelem, a /panel-ota.bin
++//         odpowiada 503.
++//     [5] Plik z wydania jest sprawdzany przed przyjęciem: nagłówek programu
++//         ESP32, układ ESP32 (nie ESP32-S3 centrali), suma na końcu.
++//     [6] Po 5 minutach bez rozpoczęcia pobierania jedna wiadomość z
++//         przyczyną: panel się nie zgłasza / panel ma starszy firmware i
++//         zacznie po wyłączeniu i włączeniu / trwa alarm / powód podany
++//         przez panel (panel_ota_czeka=...).
++//     [7] Wiadomości i zapis do NVS po zakończeniu oferty wykonuje zadanie
++//         Telegrama (panelOtaKlejOkresowo()), a nie obsługa zapytania HTTP —
++//         do 3.58.5 obsługa /api/status czekała na wysłanie wiadomości.
++//     [8] Komunikat po /update_panel nie obiecuje już instalacji "przy
++//         najbliższym wybudzeniu panelu (przycisk)".
++//     [9] Stos zadania Telegrama (8 kB; według logów tej centrali w najgorszej
++//         chwili zostaje na nim 2256–2708 B — opis v3.56.7 niżej): teksty
++//         i kopie stanu nowego kodu leżą w pamięci ze sterty (800 B na czas
++//         obsługi), a każda wysyłka i każde pobieranie wychodzi z funkcji,
++//         która trzyma na stosie najwyżej kilka obiektów String. Po wgraniu
++//         warto porównać hwm_tg w logu HEALTH-A z wartością sprzed zmiany.
++// Zgodność:
++//     - panel v1.4.0: pełna obsługa (zaczyna sam w trakcie pracy, pokazuje
++//       postęp, zgłasza wynik);
++//     - panel do v1.3.0: działa jak dotąd (pobiera przy starcie), ale tylko
++//       raz — gdy po pobraniu zgłosi się ponownie, oferta znika. Zmiana
++//       zgłaszanej wersji jest wtedy jedynym dowodem aktualizacji i tak jest
++//       opisana w wiadomości;
++//     - oferta zapisana w NVS przez 3.58.5 (bez identyfikatora pliku) nie jest
++//       wznawiana po wgraniu 3.58.6 — centrala prosi o ponowne /update_panel.
++// Czego NIE zmieniono: /update centrali (poza odmową w trakcie wysyłania
++//     pliku panelowi), pobieranie z GitHuba (poza sprawdzeniem pliku i
++//     czytelniejszym błędem 404), limity miejsca na dysku, strona WWW.
++// Sprawdzone na PC (tests/ w paczce): decyzje i kod klejący wycięte z tego
++//     pliku, z atrapami Arduino; prawdziwy firmware panelu v1.4.0 uruchomiony
++//     na PC przeciwko temu samemu blokowi decyzji; typy i nazwy sprawdzone
++//     nagłówkami arduino-esp32 i ESPAsyncWebServer. NIE kompilowane w
++//     PlatformIO i NIE uruchamiane na płytce.
++//
++// FIRMWARE_VERSION v3.58.4 -> v3.58.5 (2026-11-12) — WYKRESY DLA PANELU LCD: OKNO CZASU PO RESTARCIE CENTRALI.
++//
++// [v3.58.5 PANEL-WYKRESY-OKNO] — 2026-11-12
++// Pytanie użytkownika: "a jak centrala ma wyłączone zapisywanie wykresów
++//     lokalnie?" (przełącznik "Zapisuj historię na flash centrali", v3.57.4).
++// Odpowiedź (tak było już w 3.58.4): wykresy dla panelu są liczone z buforów
++//     historii w pamięci (PSRAM), więc działają także z wyłączonym zapisem —
++//     dopóki centrala się nie zrestartuje. Po restarcie w pamięci jest tylko
++//     to, co centrala wczytała z plików (z wyłączonym zapisem: nic albo stare
++//     pliki z dnia wyłączenia), a nowe pomiary dochodzą co 60 s.
++// Problem znaleziony przy sprawdzaniu tej sytuacji (kod 3.58.4 uruchomiony
++//     na PC; tabela przed/po: WYNIKI/po-restarcie-przed-i-po.txt):
++//     (a) gdy w buforach leżała stara historia SPRZED zakresu wykresu, oś
++//         czasu zostawała pełna (godzina / doba / 7 dni), a nowe pomiary
++//         mieściły się w jednym z 96 punktów. Panel pisał wtedy "Za mało
++//         danych na wykres (jeden pomiar) — spróbuj za kilka minut": w
++//         trybie dziennym przez pierwsze 15 minut po restarcie, w
++//         tygodniowym przez 105 minut — choć pomiarów było wtedy już
++//         odpowiednio do 15 i do 105;
++//     (b) w pierwszej minucie po restarcie (przed pierwszym nowym pomiarem)
++//         okno kończyło się na ostatniej STAREJ próbce: panel rysował np.
++//         "ostatnią godzinę" sprzed wielu dni, a w trybie godzinnym podpis
++//         osi to same godziny, więc nie było widać, że to stare dane.
++//     Oba zachowania nie zależą od przełącznika zapisu (to samo dzieje się
++//     po długim wyłączeniu centrali), ale z wyłączonym zapisem i starymi
++//     plikami na flashu powtarzały się po KAŻDYM restarcie.
++// Co (wyłącznie w kodzie [v3.58.4 PANEL-WYKRESY], GET /api/history/panel):
++//     [1] Okno zaczyna się od pierwszej sekundy zakresu, z której JEST
++//         pomiar. Dotąd: od najstarszej próbki w buforach, nawet gdy leżała
++//         daleko przed zakresem. Po restarcie panel ma wykres od drugiego
++//         pomiaru (druga minuta) w każdym trybie.
++//     [2] Gdy zegar centrali pokazuje, że od najnowszej próbki minęło więcej
++//         niż próg przerwy (6 min; 90 min, gdy najnowszy wpis pochodzi z
++//         bufora długiego), okno kończy się na bieżącym czasie, a czas bez
++//         pomiarów wychodzi jako przerwa. Bieżący czas to pola
++//         aktualnaData*/aktualnyCzas* odświeżane co 2 s przez RTC(): bez
++//         I2C w handlerze HTTP i w tej samej skali co czas próbek.
++//     [3] Przebiegi ustalające okno czytają tylko czas wiersza; pełne
++//         przeliczenie wartości jest jedno (w 3.58.4 były dwa).
++// Czego NIE zmieniono: format odpowiedzi, trasa HTTP i wszystko poza blokiem
++//     PANEL-WYKRESY. Gdy na początku zakresu jest pomiar albo cała historia
++//     jest od zakresu krótsza, a historia nie kończy się w przeszłości,
++//     odpowiedź jest bajt w bajt taka jak w 3.58.4 (9 wzorców i 892 losowe
++//     zestawy danych: tests/porownaj_z_3.58.4.sh). Firebase nadal NIE jest
++//     używany: po restarcie z wyłączonym zapisem starszych danych na LCD
++//     nie ma.
++// Zgodność: panel LCD v1.3.0 bez zmian (nie wymaga nowego firmware'u).
++// Sprawdzone na PC (tests/ w paczce). NIE kompilowane w PlatformIO i NIE
++//     uruchamiane na płytce.
++//
++// FIRMWARE_VERSION v3.58.3 -> v3.58.4 (2026-11-12) — WYKRESY DLA PANELU LCD LICZONE PRZEZ CENTRALĘ.
++//
++// [v3.58.4 PANEL-WYKRESY] — 2026-11-12
++// Prośba użytkownika: "jak wybiorę wykresy [na LCD], to centrala ma pobrać
++//     dane z Firebase albo lokalnie z pliku centrali i wysłać do panelu LCD".
++// Stan dotychczasowy: panel LCD sam pobierał CAŁY CSV historii
++//     (/api/history do ok. 100 kB, /api/history/long do ok. 1,8 MB) i sam
++//     ściskał go do 96 punktów. Panel miał na to 8 s; czego nie zdążył
++//     pobrać, tego na wykresie nie było (bez żadnej informacji). Oś czasu
++//     wykresu tygodniowego nie była liniowa: bufor długi jest zdarzeniowy,
++//     a panel dzielił go na punkty wg numeru wiersza, nie wg czasu.
++// Co: NOWY endpoint GET /api/history/panel?tryb=godz|dzien|tydz&pkt=96.
++//     Centrala sama wybiera zakres (ostatnia godzina / 24 h / 7 dni), dzieli
++//     go na `pkt` równych odcinków czasu i wysyła gotowe punkty (ok. 20 kB)
++//     w formacie wiersza /api/history/long. Przerwy w pracy centrali to
++//     linie "#przerwa". Opis: komentarz [v3.58.4 PANEL-WYKRESY] przy
++//     historiaPanelZbudujCsv().
++// Źródło danych: bufory historii w PSRAM — te same, z których rysuje strona
++//     WWW; przy starcie odtwarzane z plików /hist_short.csv i /hist_long.csv.
++//     Czyli "lokalnie z pliku centrali". Firebase NIE jest używany: wymagałby
++//     internetu i pobrania ok. 270 kB na każdą dobę, a nie ma w nim nic,
++//     czego centrala nie miałaby u siebie dla tych trzech zakresów.
++// Czego NIE zmieniono: /api/history, /api/history/long, /history*, zapis
++//     historii, pliki CSV, NVS, Firebase, Telegram, sterowanie, strona WWW,
++//     aplikacja Android. Nowy kod tylko CZYTA bufory historii.
++// Zgodność: panel LCD v1.3.0 pyta o nowy adres, a gdy centrala go nie zna
++//     (starszy firmware odpowiada przekierowaniem 302), pobiera dane po
++//     staremu. Starszy panel nowego adresu nie używa. Kolejność wgrywania
++//     panelu i centrali jest dowolna.
++// Sprawdzone na PC (tests/ w paczce): ten sam kod, wycięty z tego pliku,
++//     skompilowany g++ i porównany z niezależnym liczeniem sekunda po
++//     sekundzie. NIE kompilowane w PlatformIO i NIE uruchamiane na płytce.
++//
+ // FIRMWARE_VERSION v3.58.2 -> v3.58.3 (2026-11-10) — TOKEN KOMEND AUTOMATYCZNIE W TRYBIE LOKALNYM.
+ //
+ // [v3.58.3 LAN-TOKEN-AUTO] — 2026-11-10
+@@ -6056,7 +6214,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.3";
++static const char* FIRMWARE_VERSION = "v3.58.6";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -6268,7 +6426,8 @@
+   TG_RESTART_DO,
+   TG_NOTIF_TOGGLE,
+   TG_UPDATE,               // sprawdz/zainstaluj nowa wersje (istnialo juz jako /update)
+-  TG_UPDATE_PANEL           // [OTA-PANEL, ta sesja] jw., ale dla panelu — pobiera na centrale, panel ściaga sam przy wybudzeniu
++  TG_UPDATE_PANEL,          // [OTA-PANEL, ta sesja] jw., ale dla panelu — pobiera na centrale, panel ściaga sam przy wybudzeniu
++  TG_UPDATE_PANEL_ANULUJ    // [v3.58.6 PANEL-OTA] wycofanie czekajacej aktualizacji panelu (/update_panel_anuluj)
+ };
+ 
+ 
+@@ -6856,9 +7015,505 @@
+ // OTA_PANEL_CALOSC.md, decyzja "centrala jako posrednik" (odrzucone:
+ // NAT/ip_napt na panelu — niewspierane oficjalnie w arduino-esp32 i zbyt
+ // energochlonne dla urzadzenia bateryjnego).
++// [v3.58.6 PANEL-OTA] g_panelWersjaZgloszona czyta i zmienia juz TYLKO obsluga
++// trasy /api/status (wpis w logu przy zmianie wersji). Zadanie Telegrama
++// korzysta z kopii w g_panelOtaPanel.wersja, pod g_panelOtaMux - do 3.58.5
++// czytalo ten String wprost, w trakcie gdy serwer WWW mogl go wlasnie zmieniac.
++// Zmienne g_panelOtaDostepna i g_panelOtaWersja zastapil stan g_panelOta nizej.
+ String g_panelWersjaZgloszona = "";   // ostatnia wersja, ktora PANEL zglosil przy /api/status (?panel_fw=...)
+-bool   g_panelOtaDostepna     = false; // true = panel powinien pobrac /panel-ota.bin przy najblizszym wybudzeniu
+-String g_panelOtaWersja       = "";    // docelowy tag_name, na ktory czekamy od panelu w g_panelWersjaZgloszona
++
++// [v3.58.6 PANEL-OTA-BEGIN]
++// ============================================================================
++// Posrednictwo aktualizacji panelu LCD - DECYZJE (bez skutkow ubocznych).
++//
++// Czysty kod: bez klasy String, bez przydzialow pamieci, bez czekania i bez
++// wywolan Arduino. Dzieki temu mozna go wolac w krotkiej sekcji krytycznej
++// (g_panelOtaMux) i uruchomic na PC - testy: tests/test_panel_ota.cpp w paczce
++// 3.58.6, a symulator panelu LCD (LCD-Centrali/testy_host) wlacza DOKLADNIE
++// ten tekst jako "centrale". Skutki decyzji (NVS, log, Telegram) wykonuje kod
++// klejacy [v3.58.6 PANEL-OTA-KLEJ] nizej w tym pliku.
++//
++// Co sie zmienia wzgledem 3.58.5:
++//   1. Potwierdzenie nie zalezy od numeru wersji. Plik panelu ma na koncu
++//      sume SHA-256 (dopisuje ja esptool przy budowaniu). Centrala bierze z
++//      niej identyfikator pliku ("obraz", 16 znakow) i podaje go panelowi.
++//      Panel v1.4.0+ zglasza identyfikator obrazu, z ktorego pracuje
++//      (panel_obraz=...). Rowne = panel dziala na tym pliku.
++//   2. Oferta nie czeka bez konca: konczy ja potwierdzenie, odmowa panelu,
++//      powrot starszego panelu po pobraniu, limit pobran, limit czasu albo
++//      komenda /update_panel_anuluj.
++//   3. W czasie alarmu panel nie widzi oferty i nie dostanie pliku.
++// Starszy panel (do v1.3.0) nie zglasza identyfikatora - dla niego zostaje
++// stara regula (wersja rowna tagowi wydania) i nowa: gdy po pobraniu pliku
++// zglosi sie ponownie, oferta znika (inaczej wgrywalby plik przy kazdym starcie).
++// ============================================================================
++static const uint32_t PANEL_OTA_WAZNOSC_MS      = 24UL * 60UL * 60UL * 1000UL;  // tyle oferta czeka na panel
++static const uint32_t PANEL_OTA_TRANSFER_MAX_MS = 5UL * 60UL * 1000UL;          // dluzej "trwajace" pobieranie uznajemy za zerwane
++static const uint8_t  PANEL_OTA_MAX_POBRAN      = 4;                            // tyle razy panel moze ZACZAC pobierac jedna oferte
++static const size_t   PANEL_OTA_NAGLOWEK_B      = 24;                           // naglowek obrazu programu ESP32
++static const size_t   PANEL_OTA_SUMA_B          = 32;                           // suma SHA-256 na koncu obrazu
++static const uint32_t PANEL_OTA_PRZYPOMNIENIE_MS = 5UL * 60UL * 1000UL;         // po tylu minutach bez ruchu: jedna wiadomosc "dlaczego nic sie nie dzieje"
++static const uint32_t PANEL_OTA_KONTAKT_MS      = 60UL * 1000UL;                // panel "jest w kontakcie", gdy pytal o status nie dawniej niz tyle temu
++
++enum PanelOtaWynik : uint8_t {
++  PANEL_OTA_BEZ_ZMIAN = 0,          // oferta (jesli jest) czeka dalej
++  PANEL_OTA_POTWIERDZONO_OBRAZ,     // panel pracuje z oferowanego pliku
++  PANEL_OTA_POTWIERDZONO_WERSJA,    // starszy panel zglosil wersje rowna tagowi wydania
++  PANEL_OTA_ODMOWA_PANELU,          // panel zglosil, ze tego pliku nie wgra
++  PANEL_OTA_STARY_PANEL_WROCIL,     // starszy panel pobieral plik i zglosil sie ponownie
++  PANEL_OTA_ZA_DUZO_POBRAN,         // panel zaczynal pobierac PANEL_OTA_MAX_POBRAN razy
++  PANEL_OTA_MINAL_CZAS,             // PANEL_OTA_WAZNOSC_MS bez wyniku
++  PANEL_OTA_ANULOWANO               // komenda /update_panel_anuluj
++};
++
++struct PanelOtaStan {
++  bool     aktywna;            // oferta czeka na panel
++  uint32_t nr;                 // numer oferty: rosnie przy kazdym /update_panel (trwaly, NVS)
++  char     tag[32];            // tag wydania na GitHubie, z ktorego jest plik
++  char     obraz[17];          // identyfikator pliku: 8 pierwszych bajtow jego sumy SHA-256, szesnastkowo
++  uint32_t rozmiar;            // rozmiar pliku w bajtach
++  uint32_t odMs;               // millis() z chwili wystawienia oferty (po restarcie centrali: od nowa)
++  uint8_t  pobranZaczetych;    // ile razy panel zaczal pobierac ten plik
++  uint8_t  transferow;         // ile polaczen wlasnie wysyla plik panelowi (zwykle 0 albo 1)
++  uint32_t transferOdMs;       // millis() poczatku ostatniego z nich
++  bool     probaZgloszona;     // panel zglosil, ze startuje z tego pliku, ale jeszcze go nie zatwierdzil
++  bool     przypomniano;       // wiadomosc "panel jeszcze nie zaczal" juz poszla (jedna na oferte)
++  char     wersjaPrzed[24];    // wersja, ktora panel zglaszal, gdy oferta powstala
++};
++
++// To, co panel podal w zapytaniu /api/status. Puste pola = "" (nigdy nullptr).
++struct PanelOtaZgloszenie {
++  const char *wersja;          // panel_fw
++  const char *obraz;           // panel_obraz: obraz zatwierdzony (panel v1.4.0+)
++  const char *obrazProba;      // panel_obraz_proba: pierwszy start nowego obrazu, jeszcze nie zatwierdzony
++  bool        jestOdmowa;      // panel_ota_odmowa=<nr>-<powod> odczytane poprawnie
++  uint32_t    odmowaNr;
++  const char *czeka;           // panel_ota_czeka: dlaczego panel jeszcze nie zaczal pobierac (krotkie slowo)
++};
++
++// To, co centrala wie o samym panelu - niezaleznie od ofert. Sluzy do
++// wiadomosci "dlaczego nic sie nie dzieje" i do tego, zeby nie oferowac pliku,
++// z ktorego panel juz pracuje.
++struct PanelOtaPanel {
++  bool     bylKontakt;         // panel pytal o status przynajmniej raz od startu centrali
++  uint32_t kontaktMs;          // millis() ostatniego zapytania
++  bool     podajeObraz;        // ostatnie zapytanie mialo panel_obraz albo panel_obraz_proba (firmware v1.4.0+)
++  char     obraz[17];          // ostatnio zgloszony obraz ZATWIERDZONY ("" = brak)
++  char     czeka[16];          // ostatnio zgloszony powod czekania ("" = brak)
++  char     wersja[24];         // ostatnio zgloszona wersja (panel_fw), po oczyszczeniu ze znakow specjalnych
++};
++
++// Pierwsze 24 i ostatnie 32 bajty pliku, zbierane w trakcie pobierania z GitHuba.
++struct PanelOtaSkan {
++  uint8_t  naglowek[PANEL_OTA_NAGLOWEK_B];
++  uint8_t  ogon[PANEL_OTA_SUMA_B];
++  uint32_t lacznie;
++};
++
++// Kopia tekstu z obcieciem i zawsze z zerem na koncu. Znaki spoza zwyklego
++// ASCII oraz < > & " (psuja wiadomosc Telegrama w trybie HTML i JSON statusu)
++// sa zamieniane na '?'.
++static void panelOtaKopiujTekst(char *cel, size_t rozmiarCelu, const char *zrodlo) {
++  if (cel == nullptr || rozmiarCelu == 0) return;
++  size_t i = 0;
++  if (zrodlo != nullptr) {
++    for (; zrodlo[i] != '\0' && i + 1 < rozmiarCelu; i++) {
++      const char c = zrodlo[i];
++      const bool zwykly = (c >= 0x20 && c < 0x7F && c != '<' && c != '>' && c != '&' && c != '"' && c != '\\');
++      cel[i] = zwykly ? c : '?';
++    }
++  }
++  cel[i] = '\0';
++}
++
++// Identyfikator pliku: 8 pierwszych bajtow sumy jako 16 malych znakow szesnastkowych.
++static void panelOtaObrazZSumy(const uint8_t *suma, char *wyjscie17) {
++  static const char ZNAKI[] = "0123456789abcdef";
++  for (int i = 0; i < 8; i++) {
++    wyjscie17[2 * i]     = ZNAKI[(suma[i] >> 4) & 0x0F];
++    wyjscie17[2 * i + 1] = ZNAKI[suma[i] & 0x0F];
++  }
++  wyjscie17[16] = '\0';
++}
++
++// true = dokladnie 16 znakow 0-9 a-f (tylko taki tekst przyjmujemy od panelu).
++static bool panelOtaObrazPoprawny(const char *tekst) {
++  if (tekst == nullptr) return false;
++  for (int i = 0; i < 16; i++) {
++    const char c = tekst[i];
++    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
++  }
++  return tekst[16] == '\0';
++}
++
++static void panelOtaSkanStart(PanelOtaSkan &s) {
++  memset(&s, 0, sizeof(s));
++}
++
++// Kolejny kawalek pobieranego pliku (dowolnej dlugosci, takze 1 bajt).
++static void panelOtaSkanDodaj(PanelOtaSkan &s, const uint8_t *dane, size_t n) {
++  if (dane == nullptr || n == 0) return;
++  for (size_t i = 0; i < n && (size_t)s.lacznie + i < PANEL_OTA_NAGLOWEK_B; i++) {
++    s.naglowek[(size_t)s.lacznie + i] = dane[i];
++  }
++  if (n >= PANEL_OTA_SUMA_B) {
++    memcpy(s.ogon, dane + (n - PANEL_OTA_SUMA_B), PANEL_OTA_SUMA_B);
++  } else {
++    memmove(s.ogon, s.ogon + n, PANEL_OTA_SUMA_B - n);
++    memcpy(s.ogon + (PANEL_OTA_SUMA_B - n), dane, n);
++  }
++  s.lacznie += (uint32_t)n;
++}
++
++// nullptr = plik wyglada na obraz programu dla ESP32 (panel) z suma na koncu;
++// inaczej powod odrzucenia - tekst dla uzytkownika.
++static const char *panelOtaSkanOcen(const PanelOtaSkan &s) {
++  if (s.lacznie < PANEL_OTA_NAGLOWEK_B + PANEL_OTA_SUMA_B + 1) return "plik jest za krotki na program ESP32";
++  if (s.naglowek[0] != 0xE9) return "to nie jest program ESP32 (zly pierwszy bajt) - zly plik w wydaniu";
++  const unsigned uklad = (unsigned)s.naglowek[12] | ((unsigned)s.naglowek[13] << 8);
++  if (uklad == 0x0009) return "to program dla ESP32-S3 (centrala), a panel to ESP32 - zly plik w wydaniu";
++  if (uklad != 0x0000) return "to program dla innego ukladu niz ESP32 - zly plik w wydaniu";
++  if (s.naglowek[23] != 1) return "plik nie ma sumy SHA-256 na koncu - nie da sie potwierdzic, co panel wgral";
++  return nullptr;
++}
++
++static void panelOtaSkanObraz(const PanelOtaSkan &s, char *wyjscie17) {
++  panelOtaObrazZSumy(s.ogon, wyjscie17);
++}
++
++// "12-pobieranie" -> nr = 12, powod = "pobieranie". false = tekst ma inna postac.
++// Powod: 1..15 znakow a-z 0-9 _ (nic innego nie trafia potem do wiadomosci).
++static bool panelOtaCzytajOdmowe(const char *tekst, uint32_t *nr, char *powod, size_t rozmiarPowodu) {
++  if (tekst == nullptr || nr == nullptr || powod == nullptr || rozmiarPowodu < 2) return false;
++  uint32_t liczba = 0;
++  size_t i = 0;
++  for (; tekst[i] >= '0' && tekst[i] <= '9'; i++) {
++    if (i >= 9) return false;                       // najwyzej 9 cyfr - miesci sie w uint32_t
++    liczba = liczba * 10U + (uint32_t)(tekst[i] - '0');
++  }
++  if (i == 0 || tekst[i] != '-') return false;
++  i++;
++  size_t dl = 0;
++  for (; tekst[i] != '\0'; i++, dl++) {
++    const char c = tekst[i];
++    const bool dozwolony = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
++    if (!dozwolony || dl + 1 >= rozmiarPowodu || dl >= 15) return false;
++    powod[dl] = c;
++  }
++  if (dl == 0) return false;
++  powod[dl] = '\0';
++  *nr = liczba;
++  return true;
++}
++
++// Krotkie slowo od panelu (powod czekania): 1..15 znakow a-z 0-9 _. Inne -> "".
++static void panelOtaCzytajSlowo(const char *tekst, char *wyjscie, size_t rozmiar) {
++  if (wyjscie == nullptr || rozmiar == 0) return;
++  wyjscie[0] = '\0';
++  if (tekst == nullptr) return;
++  size_t dl = 0;
++  for (; tekst[dl] != '\0'; dl++) {
++    const char c = tekst[dl];
++    const bool dozwolony = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
++    if (!dozwolony || dl + 1 >= rozmiar || dl >= 15) return;
++  }
++  memcpy(wyjscie, tekst, dl);
++  wyjscie[dl] = '\0';
++}
++
++// Kazde zapytanie panelu o status (takze gdy nie ma oferty).
++static void panelOtaPanelZglosil(PanelOtaPanel &p, const PanelOtaZgloszenie &z, uint32_t nowMs) {
++  p.bylKontakt = true;
++  p.kontaktMs = nowMs;
++  p.podajeObraz = (z.obraz[0] != '\0' || z.obrazProba[0] != '\0');
++  size_t i = 0;
++  for (; z.obraz[i] != '\0' && i + 1 < sizeof(p.obraz); i++) p.obraz[i] = z.obraz[i];
++  p.obraz[i] = '\0';
++  panelOtaCzytajSlowo(z.czeka, p.czeka, sizeof(p.czeka));
++  panelOtaKopiujTekst(p.wersja, sizeof(p.wersja), z.wersja);
++}
++
++static bool panelOtaPanelWKontakcie(const PanelOtaPanel &p, uint32_t nowMs) {
++  return p.bylKontakt && (uint32_t)(nowMs - p.kontaktMs) < PANEL_OTA_KONTAKT_MS;
++}
++
++// true = panel (w kontakcie) pracuje juz z pliku o tym identyfikatorze - nie ma czego oferowac.
++static bool panelOtaPanelMaObraz(const PanelOtaPanel &p, const char *obraz, uint32_t nowMs) {
++  return panelOtaPanelWKontakcie(p, nowMs) && obraz != nullptr && obraz[0] != '\0' && strcmp(p.obraz, obraz) == 0;
++}
++
++// Koniec oferty. Licznik polaczen zostaje: polaczenie, ktorym wlasnie idzie
++// plik, moze jeszcze chwile trwac, a dopoki trwa, pliku nie wolno podmienic.
++static void panelOtaWycofaj(PanelOtaStan &s) {
++  s.aktywna = false;
++  s.probaZgloszona = false;
++}
++
++// Nowa oferta (takze w miejsce poprzedniej).
++static void panelOtaWystaw(PanelOtaStan &s, uint32_t nr, const char *tag, const char *obraz, uint32_t rozmiar,
++                           const char *wersjaPanelu, uint32_t nowMs) {
++  memset(&s, 0, sizeof(s));
++  s.aktywna = true;
++  s.nr = nr;
++  panelOtaKopiujTekst(s.tag, sizeof(s.tag), tag);
++  panelOtaKopiujTekst(s.obraz, sizeof(s.obraz), obraz);
++  s.rozmiar = rozmiar;
++  s.odMs = nowMs;
++  panelOtaKopiujTekst(s.wersjaPrzed, sizeof(s.wersjaPrzed), wersjaPanelu);
++}
++
++// Czy panel ma zobaczyc oferte w /api/status. W czasie alarmu - nie.
++static bool panelOtaFlagaDlaPanelu(const PanelOtaStan &s, bool alarm) {
++  return s.aktywna && !alarm;
++}
++
++// true = plik jest wlasnie wysylany panelowi (takze tuz po wycofaniu oferty).
++// Polaczenie starsze niz PANEL_OTA_TRANSFER_MAX_MS uznajemy za zerwane.
++static bool panelOtaTransferTrwa(const PanelOtaStan &s, uint32_t nowMs) {
++  return s.transferow > 0 && (uint32_t)(nowMs - s.transferOdMs) < PANEL_OTA_TRANSFER_MAX_MS;
++}
++
++// GET /panel-ota.bin (haslo juz sprawdzone). Zwraca kod HTTP: 200 = wyslij plik.
++static int panelOtaStartPobierania(PanelOtaStan &s, uint32_t nowMs, bool alarm, PanelOtaWynik *wynik) {
++  *wynik = PANEL_OTA_BEZ_ZMIAN;
++  if (!s.aktywna) return 404;        // nie ma oferty (wycofana albo nigdy jej nie bylo)
++  if (alarm) return 503;             // alarm: panel ma pokazywac alarm, a nie wgrywac firmware
++  if (s.pobranZaczetych >= PANEL_OTA_MAX_POBRAN) {
++    panelOtaWycofaj(s);
++    *wynik = PANEL_OTA_ZA_DUZO_POBRAN;
++    return 409;
++  }
++  s.pobranZaczetych++;
++  if (s.transferow < 255) s.transferow++;
++  s.transferOdMs = nowMs;
++  return 200;
++}
++
++// Polaczenie, ktorym szedl plik oferty `nr`, zostalo zamkniete (albo plik nie
++// dal sie otworzyc). Numer chroni przed pomylka, gdy w miedzyczasie powstala
++// nowa oferta.
++static void panelOtaKoniecPobierania(PanelOtaStan &s, uint32_t nr) {
++  if (s.nr == nr && s.transferow > 0) s.transferow--;
++}
++
++// Panel zglosil sie z /api/status?panel_fw=...
++static PanelOtaWynik panelOtaPoZgloszeniu(PanelOtaStan &s, const PanelOtaZgloszenie &z) {
++  if (!s.aktywna) return PANEL_OTA_BEZ_ZMIAN;
++  const bool maObraz = (z.obraz[0] != '\0');
++  const bool maProbe = (z.obrazProba[0] != '\0');
++  if (maObraz && strcmp(z.obraz, s.obraz) == 0) {
++    panelOtaWycofaj(s);
++    return PANEL_OTA_POTWIERDZONO_OBRAZ;
++  }
++  if (z.jestOdmowa && z.odmowaNr == s.nr) {
++    panelOtaWycofaj(s);
++    return PANEL_OTA_ODMOWA_PANELU;
++  }
++  if (maProbe) {
++    // Pierwszy start nowego obrazu. Panel zatwierdza go dopiero po narysowaniu
++    // ekranu i odebraniu danych; gdyby sie przedtem zawiesil, wroci poprzedni
++    // firmware. Dlatego to jeszcze nie jest potwierdzenie.
++    if (strcmp(z.obrazProba, s.obraz) == 0) s.probaZgloszona = true;
++    return PANEL_OTA_BEZ_ZMIAN;
++  }
++  if (maObraz) return PANEL_OTA_BEZ_ZMIAN;   // panel v1.4.0+ na innym pliku: sam zacznie, gdy bedzie mogl
++  // Dalej: panel, ktory nie podaje identyfikatora obrazu (firmware do v1.3.0).
++  if (strcmp(z.wersja, s.tag) == 0) {
++    panelOtaWycofaj(s);
++    return PANEL_OTA_POTWIERDZONO_WERSJA;
++  }
++  if (s.pobranZaczetych > 0) {
++    // Taki panel pobiera plik tylko przy starcie i w tym czasie o nic nie pyta.
++    // Skoro pyta znowu, proba sie skonczyla - udana albo nie. Dalsze
++    // oferowanie kazaloby mu wgrywac ten sam plik przy kazdym starcie.
++    panelOtaWycofaj(s);
++    return PANEL_OTA_STARY_PANEL_WROCIL;
++  }
++  return PANEL_OTA_BEZ_ZMIAN;
++}
++
++// Wolane okresowo (zadanie Telegrama).
++static PanelOtaWynik panelOtaPoCzasie(PanelOtaStan &s, uint32_t nowMs) {
++  if (!s.aktywna) return PANEL_OTA_BEZ_ZMIAN;
++  if (panelOtaTransferTrwa(s, nowMs)) return PANEL_OTA_BEZ_ZMIAN;
++  if ((uint32_t)(nowMs - s.odMs) < PANEL_OTA_WAZNOSC_MS) return PANEL_OTA_BEZ_ZMIAN;
++  panelOtaWycofaj(s);
++  return PANEL_OTA_MINAL_CZAS;
++}
++
++static PanelOtaWynik panelOtaAnuluj(PanelOtaStan &s) {
++  if (!s.aktywna) return PANEL_OTA_BEZ_ZMIAN;
++  panelOtaWycofaj(s);
++  return PANEL_OTA_ANULOWANO;
++}
++
++// true = pora na wiadomosc "panel jeszcze nie zaczal" (jedna na oferte). Nie
++// przypominamy, gdy panel juz pobieral albo zglosil start z nowego pliku -
++// wtedy wynik przyjdzie osobno.
++static bool panelOtaCzasNaPrzypomnienie(PanelOtaStan &s, uint32_t nowMs) {
++  if (!s.aktywna || s.przypomniano) return false;
++  if (s.pobranZaczetych > 0 || s.probaZgloszona) return false;
++  if ((uint32_t)(nowMs - s.odMs) < PANEL_OTA_PRZYPOMNIENIE_MS) return false;
++  s.przypomniano = true;
++  return true;
++}
++
++// Co znaczy powod czekania podany przez panel (panel_ota_czeka=...).
++static const char *panelOtaOpisCzekania(const char *powod) {
++  if (powod == nullptr || powod[0] == '\0') return "panel nie podal powodu";
++  if (strcmp(powod, "alarm") == 0)       return "trwa alarm";
++  if (strcmp(powod, "brak_danych") == 0) return "panel nie ma swiezych danych z centrali";
++  if (strcmp(powod, "po_starcie") == 0)  return "panel dopiero wystartowal";
++  if (strcmp(powod, "odstep") == 0)      return "przerwa po nieudanej probie pobrania";
++  if (strcmp(powod, "siec_zajeta") == 0) return "panel pobiera dane do wykresu albo wysyla polecenie";
++  if (strcmp(powod, "dotyk") == 0)       return "ktos uzywa ekranu panelu";
++  if (strcmp(powod, "bateria") == 0)     return "bateria panelu jest slaba, a panel nie jest podlaczony do zasilania USB";
++  if (strcmp(powod, "pamiec") == 0)      return "panel ma za malo wolnej pamieci RAM (pomaga wyjscie z ekranu Wykresy albo wylaczenie i wlaczenie panelu)";
++  return "powod podany przez panel jest w logu centrali";
++}
++
++// Tresc wiadomosci "panel jeszcze nie zaczal". `s` i `p` to KOPIE stanu
++// zrobione w chwili, gdy panelOtaCzasNaPrzypomnienie() zwrocilo true.
++static void panelOtaTekstPrzypomnienia(const PanelOtaStan &s, const PanelOtaPanel &p, uint32_t nowMs, bool alarm,
++                                       const char *wersjaPanelu, char *wyjscie, size_t rozmiar) {
++  if (wyjscie == nullptr || rozmiar == 0) return;
++  char wersja[24];
++  panelOtaKopiujTekst(wersja, sizeof(wersja), (wersjaPanelu != nullptr && wersjaPanelu[0] != '\0') ? wersjaPanelu : "nieznana");
++  const unsigned minut = (unsigned)(PANEL_OTA_PRZYPOMNIENIE_MS / 60000UL);
++  const unsigned godzin = (unsigned)(PANEL_OTA_WAZNOSC_MS / 3600000UL);
++  if (!panelOtaPanelWKontakcie(p, nowMs)) {
++    snprintf(wyjscie, rozmiar,
++             "Minelo %u minut, a panel nie zaczal pobierac pliku z wydania %s: panel nie zglasza sie do centrali "
++             "(wylaczony albo poza zasiegiem). Plik czeka na niego do %u h od wystawienia. Anulowanie: /update_panel_anuluj",
++             minut, s.tag, godzin);
++  } else if (!p.podajeObraz) {
++    snprintf(wyjscie, rozmiar,
++             "Minelo %u minut, a panel nie zaczal pobierac pliku z wydania %s. Panel ma starszy firmware (%s), "
++             "ktory sprawdza aktualizacje tylko przy starcie: wylacz i wlacz panel, a pobierze plik sam "
++             "(ekran bedzie wtedy pusty przez okolo minute). Plik czeka do %u h od wystawienia. Anulowanie: /update_panel_anuluj",
++             minut, s.tag, wersja, godzin);
++  } else if (alarm) {
++    snprintf(wyjscie, rozmiar,
++             "Minelo %u minut, a panel nie zaczal pobierac pliku z wydania %s: trwa alarm, a w czasie alarmu centrala "
++             "nie podaje panelowi aktualizacji. Panel zacznie sam po ustaniu alarmu. Plik czeka do %u h od wystawienia. "
++             "Anulowanie: /update_panel_anuluj",
++             minut, s.tag, godzin);
++  } else {
++    snprintf(wyjscie, rozmiar,
++             "Minelo %u minut, a panel nie zaczal pobierac pliku z wydania %s. Powod podany przez panel: %s. "
++             "Panel zacznie sam, gdy przeszkoda zniknie. Plik czeka do %u h od wystawienia. Anulowanie: /update_panel_anuluj",
++             minut, s.tag, panelOtaOpisCzekania(p.czeka), godzin);
++  }
++}
++
++// Nazwa zdarzenia do logu (tag=OTA-PANEL zdarzenie=...).
++static const char *panelOtaWynikNazwa(PanelOtaWynik w) {
++  switch (w) {
++    case PANEL_OTA_POTWIERDZONO_OBRAZ:  return "potwierdzono_obraz";
++    case PANEL_OTA_POTWIERDZONO_WERSJA: return "potwierdzono_aktualizacje";
++    case PANEL_OTA_ODMOWA_PANELU:       return "odmowa_panelu";
++    case PANEL_OTA_STARY_PANEL_WROCIL:  return "starszy_panel_wrocil";
++    case PANEL_OTA_ZA_DUZO_POBRAN:      return "za_duzo_pobran";
++    case PANEL_OTA_MINAL_CZAS:          return "minal_czas";
++    case PANEL_OTA_ANULOWANO:           return "anulowano";
++    default:                            return "bez_zmian";
++  }
++}
++
++// Co znaczy powod odmowy podany przez panel.
++static const char *panelOtaOpisOdmowy(const char *powod) {
++  if (powod == nullptr) return "panel nie podal powodu";
++  if (strcmp(powod, "pobieranie") == 0) return "trzy proby pobrania pliku z centrali sie nie udaly";
++  if (strcmp(powod, "obraz") == 0)      return "plik nie przeszedl sprawdzenia w panelu";
++  if (strcmp(powod, "cofnieta") == 0)   return "nowy firmware nie wystartowal i panel wrocil do poprzedniego";
++  if (strcmp(powod, "za_duzy") == 0)    return "plik nie miesci sie w pamieci panelu";
++  if (strcmp(powod, "haslo") == 0)      return "centrala odrzucila haslo OTA panelu (rozne hasla w secrets.h obu urzadzen)";
++  if (strcmp(powod, "zapis") == 0)      return "panel nie zdolal zapisac pliku w swojej pamieci";
++  return "powod podany przez panel jest w logu centrali";
++}
++
++// Wiadomosc dla uzytkownika (Telegram) po zakonczeniu oferty. `przed` to stan
++// SPRZED decyzji; `wersjaTeraz` to wersja, ktora panel zglasza teraz ("" gdy
++// nieznana); `powodOdmowy` tylko dla PANEL_OTA_ODMOWA_PANELU.
++static void panelOtaKomunikat(PanelOtaWynik w, const PanelOtaStan &przed, const char *wersjaTeraz,
++                              const char *powodOdmowy, char *wyjscie, size_t rozmiar) {
++  if (wyjscie == nullptr || rozmiar == 0) return;
++  char wersja[24];
++  panelOtaKopiujTekst(wersja, sizeof(wersja), (wersjaTeraz != nullptr && wersjaTeraz[0] != '\0') ? wersjaTeraz : "nieznana");
++  const char *przedtem = (przed.wersjaPrzed[0] != '\0') ? przed.wersjaPrzed : "nieznana";
++  switch (w) {
++    case PANEL_OTA_POTWIERDZONO_OBRAZ:
++      snprintf(wyjscie, rozmiar, "Panel zaktualizowany: pracuje na pliku z wydania %s (zglasza wersje %s, przedtem %s).",
++               przed.tag, wersja, przedtem);
++      break;
++    case PANEL_OTA_POTWIERDZONO_WERSJA:
++      snprintf(wyjscie, rozmiar, "Panel zaktualizowany do %s.", wersja);
++      break;
++    case PANEL_OTA_ODMOWA_PANELU:
++      snprintf(wyjscie, rozmiar,
++               "Panel nie wgral pliku z wydania %s: %s. Aktualizacja wycofana, panel pracuje na dotychczasowym firmware (%s).",
++               przed.tag, panelOtaOpisOdmowy(powodOdmowy), wersja);
++      break;
++    case PANEL_OTA_STARY_PANEL_WROCIL:
++      if (strcmp(wersja, przedtem) != 0) {
++        snprintf(wyjscie, rozmiar,
++                 "Panel pobral plik z wydania %s i zglasza teraz wersje %s (przedtem %s) - aktualizacja wykonana. "
++                 "Ten firmware panelu nie podaje, ktory plik wgral, dlatego potwierdzam po zmianie wersji.",
++                 przed.tag, wersja, przedtem);
++      } else {
++        snprintf(wyjscie, rozmiar,
++                 "Panel pobieral plik z wydania %s, ale nadal zglasza wersje %s. Albo plik zawiera te sama wersje, "
++                 "albo pobieranie sie nie udalo, albo nowy firmware nie wystartowal i panel wrocil do poprzedniego. "
++                 "Aktualizacja wycofana, zeby panel nie wgrywal pliku przy kazdym starcie.",
++                 przed.tag, wersja);
++      }
++      break;
++    case PANEL_OTA_ZA_DUZO_POBRAN:
++      snprintf(wyjscie, rozmiar,
++               "Panel zaczynal pobierac plik z wydania %s %u razy i ani razu nie potwierdzil. Aktualizacja wycofana.",
++               przed.tag, (unsigned)PANEL_OTA_MAX_POBRAN);
++      break;
++    case PANEL_OTA_MINAL_CZAS:
++      snprintf(wyjscie, rozmiar,
++               "Panel nie wgral pliku z wydania %s w ciagu %u h (wylaczony, poza zasiegiem albo ma starszy firmware, "
++               "ktory zaczyna aktualizacje dopiero po wylaczeniu i wlaczeniu). Aktualizacja wycofana - "
++               "wyslij /update_panel ponownie, gdy panel bedzie gotowy.",
++               przed.tag, (unsigned)(PANEL_OTA_WAZNOSC_MS / 3600000UL));
++      break;
++    case PANEL_OTA_ANULOWANO:
++      snprintf(wyjscie, rozmiar, "Aktualizacja panelu (plik z wydania %s) anulowana.", przed.tag);
++      break;
++    default:
++      wyjscie[0] = '\0';
++      break;
++  }
++}
++// [v3.58.6 PANEL-OTA-END]
++
++// [v3.58.6 PANEL-OTA-STAN-BEGIN]
++// Stan posrednictwa OTA panelu. Zmieniaja go trzy zadania (serwer WWW:
++// zapytania panelu; zadanie Telegrama: komendy i limit czasu; setup()),
++// dlatego kazdy dostep jest w krotkiej sekcji krytycznej g_panelOtaMux. W
++// sekcji wolno wolac tylko te funkcje z bloku PANEL-OTA powyzej, ktore nie
++// skladaja tekstu (bez snprintf) - czyli wszystkie oprocz panelOtaKomunikat()
++// i panelOtaTekstPrzypomnienia().
++static PanelOtaStan  g_panelOta = {};
++static PanelOtaPanel g_panelOtaPanel = {};
++static portMUX_TYPE  g_panelOtaMux = portMUX_INITIALIZER_UNLOCKED;
++
++// Decyzja podjeta w obsludze zapytania HTTP, do wykonania przez zadanie
++// Telegrama (log, NVS, wiadomosc) - obsluga HTTP nie moze czekac na Telegram.
++// Jedno miejsce wystarcza: kazda taka decyzja konczy oferte, a nowa oferta
++// powstaje dopiero w zadaniu Telegrama, ktore najpierw wykonuje zalegla.
++struct PanelOtaDoWykonania {
++  bool          jest;
++  PanelOtaWynik wynik;
++  PanelOtaStan  przed;        // oferta sprzed decyzji
++  char          wersja[24];   // wersja, ktora panel wtedy zglaszal
++  char          powod[16];    // powod odmowy podany przez panel
++};
++static PanelOtaDoWykonania g_panelOtaDoWykonania = {};
++// [v3.58.6 PANEL-OTA-STAN-END]
+ 
+ // [RESET-DIAG, ta sesja] Ostatni ZGLOSZONY przez panel powod restartu
+ // (patrz esp_reset_reason() w main.cpp panelu, TEMAT B w
+@@ -6874,12 +7529,15 @@
+ // centrali) i /update_panel (OTA-proxy dla panelu). Ustawiany PRZED
+ // kazda z dwoch operacji, sprawdzany na starcie OBU handlerow — zero
+ // nakladania sie self-OTA centrali (ktore zabija jej WiFi AP w trakcie
+-// restartu) z pobieraniem/serwowaniem firmware'u panelu. Dla
+-// /update_panel trzymany celowo DLUZEJ niz samo pobranie z GitHub — az
+-// do potwierdzenia nowej wersji przez panel w handlerze /api/status —
+-// bo to jednoczesnie zamyka wyscig na GET /panel-ota.bin (drugi
+-// /update_panel nie moze zaczac nowej rotacji pliku, dopoki panel nie
+-// skonczyl czytac poprzedniej).
++// restartu) z pobieraniem/serwowaniem firmware'u panelu.
++// [v3.58.6 PANEL-OTA] Dla /update_panel flaga jest ustawiona juz TYLKO na
++// czas pobierania pliku z GitHuba. Do 3.58.5 zostawala ustawiona az do
++// potwierdzenia przez panel; gdy panel nie potwierdzil (a z wersja inna niz
++// tag wydania nie mogl), blokowala /update i /update_panel bez ograniczenia
++// czasu i wylaczala nadzor zadan (nadzorKrok(): blokada). Wyscigu na
++// GET /panel-ota.bin pilnuje teraz licznik polaczen w g_panelOta
++// (panelOtaTransferTrwa()): dopoki plik jest wysylany panelowi, /update_panel
++// go nie podmieni, a /update nie zrestartuje centrali.
+ bool otaOperacjaWTrakcie = false;
+ unsigned long wifiOstatniaProbaSTA = 0;
+ bool wifiApAktywny = false; // czy hotspot AP aktualnie stoi (niezaleznie od tego, czy STA tez dziala)
+@@ -25782,6 +26440,532 @@
+   return csv;
+ }
+ 
++// [v3.58.4 PANEL-WYKRESY-BEGIN]
++// ============================================================================
++// [v3.58.4 PANEL-WYKRESY] Gotowe punkty wykresu dla panelu LCD
++// (GET /api/history/panel?tryb=godz|dzien|tydz&pkt=96).
++//
++// Po co: panel LCD nie ma internetu ani dysku - dane do wykresow bierze od
++// centrali. Do v3.58.3 pobieral CALY CSV historii (/api/history: do ok. 100 kB,
++// /api/history/long: do ok. 1,8 MB) i sam sciskal go do 96 punktow. Teraz
++// centrala robi to u siebie i wysyla najwyzej `pkt` wierszy (ok. 20 kB).
++//
++// Zrodlo danych: te same dwa bufory w PSRAM, z ktorych korzysta strona WWW
++// (historiaBufor - probka co 60 s, do 24 h; historiaDlugaBufor - do 8000
++// zdarzen). Oba sa przy starcie odtwarzane z plikow /hist_short.csv i
++// /hist_long.csv, a kazda nowa probka jest do tych plikow dopisywana - to sa
++// wiec dane "z pliku centrali", tylko czytane z pamieci, bez dotykania flasha
++// w handlerze HTTP. Firebase NIE jest tu uzywany.
++//
++// Zakresy:
++//   godz  - ostatnia godzina, bufor krotki
++//   dzien - ostatnie 24 h, bufor krotki
++//   tydz  - ostatnie 7 dni: bufor dlugi dla czasu sprzed bufora krotkiego,
++//           a dla ostatnich 24 h bufor krotki (dokladniejszy)
++// Koniec okna = czas najnowszej probki. [v3.58.5] Wyjatek: gdy wedlug zegara
++// centrali od najnowszej probki minelo wiecej niz prog przerwy (historia
++// konczy sie w przeszlosci - np. centrala wlasnie wstala i ma w buforach tylko
++// to, co wczytala z plikow), okno konczy sie na biezacym czasie.
++// [v3.58.5] Poczatek okna = pierwsza sekunda zakresu, z ktorej jest pomiar.
++// Gdy historii jest mniej niz zakres - takze wtedy, gdy w buforach leza jeszcze
++// stare probki sprzed zakresu - os czasu obejmuje tylko to, co jest.
++// (W 3.58.4 okno zaczynalo sie od najstarszej probki w buforach: stara probka
++// sprzed zakresu rozciagala os na caly zakres, a swieze pomiary po restarcie
++// centrali miescily sie w jednym punkcie - panel pisal "za malo danych".)
++//
++// Os czasu jest liniowa: okno dzielone jest na `pkt` rownych odcinkow. Wartosc
++// probki obowiazuje do nastepnej probki (bufor dlugi jest zdarzeniowy - brak
++// wpisu znaczy "bez zmian"), chyba ze odstep przekracza prog przerwy (te same
++// progi co PROG_DZIURY_KROTKI_S / PROG_DZIURY_DLUGI_S w JS strony WWW) - wtedy
++// odcinki bez danych wychodza jako linia "#przerwa".
++//
++// Odpowiedz (text/plain):
++//   #panel-hist 1 tryb=dzien pkt=96 wierszy=1440 od=<unix> do=<unix> krok_s=900 zrodlo=lokalne fs=1 od_etyk=12.11_13:01 do_etyk=13.11_13:00
++//       wierszy  - ile wierszy historii wzieto pod uwage (cale bufory, nie tylko okno)
++//       od, do   - poczatek i koniec okna (Unix UTC; 0 = centrala nie zna czasu). Koniec to czas
++//                  najnowszej probki albo - gdy historia konczy sie w przeszlosci - biezacy czas.
++//       od_etyk, do_etyk - to samo jako czas lokalny centrali: "HH:MM" w trybie godz,
++//                  "DD.MM_HH:MM" w trybach dzien i tydz, "--:--" bez zegara. Panel nie
++//                  ma strefy czasowej, a podpisuje tym os czasu.
++//       fs       - 1 = historia jest tez zapisywana do plikow na flashu centrali
++//   <wiersz w formacie /api/history/long: etykieta, 11 x (sr,min,max), czas_unix, pompa>
++//   #przerwa                    <- odcinek bez danych (centrala nie pracowala)
++//   ...
++//   #koniec <liczba wierszy i przerw powyzej>
++// Liczby maja jedno miejsce po przecinku; pole bez wartosci to "nan".
++//
++// Rachunki sa calkowitoliczbowe (dziesiate czesci jednostki x sekundy), wiec
++// wynik nie zalezy od zaokraglen float i jest taki sam w tescie na PC
++// (tests/ w paczce) i na ESP32.
++// Funkcja tylko CZYTA bufory historii - niczego w centrali nie zmienia.
++// ============================================================================
++#define PANEL_HIST_POLA             11
++#define PANEL_HIST_PKT_DOMYSLNIE    96
++#define PANEL_HIST_PKT_MIN          8
++#define PANEL_HIST_PKT_MAX          240
++#define PANEL_HIST_OKNO_GODZ_S      3600U
++#define PANEL_HIST_OKNO_DZIEN_S     86400U
++#define PANEL_HIST_OKNO_TYDZ_S      604800U
++#define PANEL_HIST_PRZERWA_KROTKI_S 360U     // = PROG_DZIURY_KROTKI_S w JS strony WWW
++#define PANEL_HIST_PRZERWA_DLUGI_S  5400U    // = PROG_DZIURY_DLUGI_S w JS strony WWW
++#define PANEL_HIST_ODSTEP_PROBEK_S  60U      // = HISTORIA_PROBKA_MS / 1000
++#define PANEL_HIST_BRAK             INT32_MIN  // pole bez wartosci (NaN, nieskonczonosc, wartosc absurdalna)
++#define PANEL_HIST_CZAS_MAX         4102444800U   // 2100-01-01 UTC; pozniejszy czas w probce to blad zegara
++#define PANEL_HIST_CZAS_PEWNY       1700000000U   // [v3.58.5] 2023-11-14 UTC; wczesniejszy czas probki albo zegara to nie jest prawdziwa data
++
++// Jeden wiersz zrodlowy we wspolnej postaci: wartosci w dziesiatych czesciach.
++struct PanelHistWiersz {
++  uint32_t czas;                  // Unix UTC; 0 = probka bez wiarygodnego czasu
++  int32_t  sr[PANEL_HIST_POLA];
++  int32_t  mn[PANEL_HIST_POLA];
++  int32_t  mx[PANEL_HIST_POLA];
++  int8_t   pompa;                 // 0/1, -1 = brak danych
++  bool     dlugi;                 // wiersz z bufora dlugiego (inny prog przerwy)
++};
++
++// Jeden punkt wyjsciowy (odcinek osi czasu).
++struct PanelHistKubelek {
++  int64_t  suma[PANEL_HIST_POLA];   // suma (wartosc x sekundy)
++  uint32_t waga[PANEL_HIST_POLA];   // sekundy z wazna wartoscia danego pola
++  int32_t  mn[PANEL_HIST_POLA];
++  int32_t  mx[PANEL_HIST_POLA];
++  uint32_t wagaRazem;               // sekundy pokryte jakimkolwiek wierszem; 0 = przerwa
++  int8_t   pompa;
++};
++
++// Skad brac wiersze - migawka licznikow obu buforow kolowych.
++struct PanelHistZrodlo {
++  int      startK, ileK;        // bufor krotki: indeks najstarszej probki i liczba probek
++  int      startD, ileD;        // bufor dlugi (ileD == 0, gdy tryb go nie uzywa)
++  uint32_t granicaD;            // z bufora dlugiego brane sa wiersze o czasie < granicaD (0 = wszystkie)
++  int      pierwszyZCzasemK;    // indeks (0..ileK-1) pierwszej probki krotkiej z czasem; -1 = zadna
++  uint32_t czasPierwszegoK;     // jej czas
++};
++
++static int32_t panelHistDziesiate(float v) {
++  if (!(v == v)) return PANEL_HIST_BRAK;                   // NaN
++  if (v > 9999.9f || v < -9999.9f) return PANEL_HIST_BRAK; // nieskonczonosc albo wartosc bez sensu
++  return (int32_t)lroundf(v * 10.0f);
++}
++
++static void panelHistZKrotkiej(const HistoriaProbka &p, PanelHistWiersz &w) {
++  const float v[PANEL_HIST_POLA] = {
++    p.t_zewn, p.t_bojler, p.t_ogrz, p.t_ogrz_sr, p.t_powrot, p.t_panel, p.t_pokoj,
++    p.cisnienie, p.wilgotnosc, (float)p.klapa_proc, (float)p.syberko_proc
++  };
++  w.czas = p.czas_unix;
++  w.pompa = p.pompa ? 1 : 0;
++  w.dlugi = false;
++  for (int i = 0; i < PANEL_HIST_POLA; i++) w.sr[i] = w.mn[i] = w.mx[i] = panelHistDziesiate(v[i]);
++}
++
++static void panelHistZDlugiej(const HistoriaProbkaDluga &p, PanelHistWiersz &w) {
++  const float sr[PANEL_HIST_POLA] = {
++    p.t_zewn_sr, p.t_bojler_sr, p.t_ogrz_sr, p.t_ogrz_sr_sr, p.t_powrot_sr, p.t_panel_sr, p.t_pokoj_sr,
++    p.cisnienie_sr, p.wilgotnosc_sr, (float)p.klapa_proc_sr, (float)p.syberko_proc_sr
++  };
++  const float mn[PANEL_HIST_POLA] = {
++    p.t_zewn_min, p.t_bojler_min, p.t_ogrz_min, p.t_ogrz_sr_min, p.t_powrot_min, p.t_panel_min, p.t_pokoj_min,
++    p.cisnienie_min, p.wilgotnosc_min, (float)p.klapa_proc_min, (float)p.syberko_proc_min
++  };
++  const float mx[PANEL_HIST_POLA] = {
++    p.t_zewn_max, p.t_bojler_max, p.t_ogrz_max, p.t_ogrz_sr_max, p.t_powrot_max, p.t_panel_max, p.t_pokoj_max,
++    p.cisnienie_max, p.wilgotnosc_max, (float)p.klapa_proc_max, (float)p.syberko_proc_max
++  };
++  w.czas = p.czas_unix;
++  w.pompa = (p.pompa == 0 || p.pompa == 1) ? p.pompa : (int8_t)-1;
++  w.dlugi = true;
++  for (int i = 0; i < PANEL_HIST_POLA; i++) {
++    w.sr[i] = panelHistDziesiate(sr[i]);
++    w.mn[i] = panelHistDziesiate(mn[i]);
++    w.mx[i] = panelHistDziesiate(mx[i]);
++    // Wiersz ze srednia, ale bez min/max (albo odwrotnie) traktujemy jak punkt.
++    if (w.sr[i] == PANEL_HIST_BRAK) { w.mn[i] = w.mx[i] = PANEL_HIST_BRAK; continue; }
++    if (w.mn[i] == PANEL_HIST_BRAK || w.mn[i] > w.sr[i]) w.mn[i] = w.sr[i];
++    if (w.mx[i] == PANEL_HIST_BRAK || w.mx[i] < w.sr[i]) w.mx[i] = w.sr[i];
++  }
++}
++
++// Czy wpis bufora dlugiego o czasie `czas` wchodzi do wykresu: musi miec czas
++// i lezec przed granica, od ktorej dane bierze sie z bufora krotkiego.
++static bool panelHistDlugiLiczySie(const PanelHistZrodlo &z, uint32_t czas) {
++  if (czas == 0 || czas > PANEL_HIST_CZAS_MAX) return false;
++  if (z.granicaD != 0 && czas >= z.granicaD) return false;
++  return true;
++}
++
++// Czas probki krotkiej nr `k` (0 = najstarsza), ktora w buforze ma czas `czas`.
++// Probka bez czasu dostaje czas wyliczony z sasiadow (probki sa co 60 s):
++// `poprzedniCzasK` to czas poprzedniej probki krotkiej (0 = jeszcze zadnej nie
++// bylo). Gdy zadna probka nie ma czasu, czasem jest numer probki.
++static uint32_t panelHistCzasKrotkiej(const PanelHistZrodlo &z, int k, uint32_t czas, uint32_t poprzedniCzasK) {
++  if (czas != 0 && czas <= PANEL_HIST_CZAS_MAX) return czas;
++  if (poprzedniCzasK != 0) return poprzedniCzasK + PANEL_HIST_ODSTEP_PROBEK_S;
++  if (z.pierwszyZCzasemK > k) {
++    const uint32_t wstecz = (uint32_t)(z.pierwszyZCzasemK - k) * PANEL_HIST_ODSTEP_PROBEK_S;
++    return (z.czasPierwszegoK > wstecz) ? (z.czasPierwszegoK - wstecz) : 1U;
++  }
++  return 1U + (uint32_t)k * PANEL_HIST_ODSTEP_PROBEK_S;   // brak zegara w calym buforze
++}
++
++// Wiersz nr `i` z ciagu "najpierw bufor dlugi, potem krotki" (kolejnosc
++// chronologiczna). Zwraca false, gdy wiersz ma byc pominiety.
++static bool panelHistWiersz(const PanelHistZrodlo &z, int i, uint32_t poprzedniCzasK, PanelHistWiersz &w) {
++  if (i < z.ileD) {
++    const int idx = (z.startD + i) % HISTORIA_DLUGA_MAX_PROBEK;
++    const HistoriaProbkaDluga p = historiaDlugaBufor[idx];   // kopia: bufor moze dostac nowy wpis w trakcie
++    if (!panelHistDlugiLiczySie(z, p.czas_unix)) return false;
++    panelHistZDlugiej(p, w);
++    return true;
++  }
++  const int k = i - z.ileD;
++  if (k >= z.ileK) return false;
++  const int idx = (z.startK + k) % HISTORIA_MAX_PROBEK;
++  const HistoriaProbka p = historiaBufor[idx];
++  panelHistZKrotkiej(p, w);
++  w.czas = panelHistCzasKrotkiej(z, k, w.czas, poprzedniCzasK);
++  return true;
++}
++
++// [v3.58.5] To samo co panelHistWiersz(), ale tylko CZAS wiersza i rodzaj
++// bufora - bez kopiowania wiersza i przeliczania jego 33 wartosci. Dla
++// przebiegow, ktore ustalaja okno czasu. Te same reguly (dwie funkcje wyzej),
++// wiec oba odczyty wybieraja te same wiersze i daja im ten sam czas.
++static bool panelHistCzasWiersza(const PanelHistZrodlo &z, int i, uint32_t poprzedniCzasK, uint32_t &czas, bool &dlugi) {
++  if (i < z.ileD) {
++    const uint32_t c = historiaDlugaBufor[(z.startD + i) % HISTORIA_DLUGA_MAX_PROBEK].czas_unix;
++    if (!panelHistDlugiLiczySie(z, c)) return false;
++    czas = c;
++    dlugi = true;
++    return true;
++  }
++  const int k = i - z.ileD;
++  if (k >= z.ileK) return false;
++  czas = panelHistCzasKrotkiej(z, k, historiaBufor[(z.startK + k) % HISTORIA_MAX_PROBEK].czas_unix, poprzedniCzasK);
++  dlugi = false;
++  return true;
++}
++
++// Do ktorej sekundy (wylacznie) obowiazuje wiersz A, gdy po nim przychodzi
++// wiersz B: do czasu B, a gdy odstep przekracza prog przerwy albo czas sie
++// cofnal - tylko przez sekunde. Prog zalezy od tego, z ktorych buforow sa wiersze.
++static uint32_t panelHistDoKiedy(uint32_t czasA, bool dlugiA, uint32_t czasB, bool dlugiB) {
++  const uint32_t prog = (dlugiA || dlugiB) ? PANEL_HIST_PRZERWA_DLUGI_S : PANEL_HIST_PRZERWA_KROTKI_S;
++  if (czasB > czasA && (czasB - czasA) <= prog) return czasB;
++  return czasA + 1U;
++}
++
++// [v3.58.5] Odcinek [a, b) z pomiarem: jesli zachodzi na zakres
++// [poczatekZakresu, koniecZakresu), zapamietuje najwczesniejsza jego sekunde
++// w tym zakresie (`jest` = czy jakakolwiek juz byla).
++static void panelHistNajwczesniejsza(uint32_t a, uint32_t b, uint32_t poczatekZakresu, uint32_t koniecZakresu,
++                                     bool &jest, uint32_t &sekunda) {
++  if (b <= poczatekZakresu || a >= koniecZakresu) return;
++  const uint32_t s = (a > poczatekZakresu) ? a : poczatekZakresu;
++  if (!jest || s < sekunda) { sekunda = s; jest = true; }
++}
++
++// [v3.58.5] Biezacy czas wedlug zegara centrali (Unix UTC), z dokladnoscia do
++// minuty: poczatek biezacej minuty. 0 = centrala nie zna czasu.
++// Pola aktualnaData*/aktualnyCzas* odswieza RTC() w petli glownej co 2 s z
++// tego samego zrodla (pobierzCzas()), z ktorego czas dostaja probki historii,
++// wiec obie wartosci sa w tej samej skali. Handler HTTP pracuje w innym
++// zadaniu i NIE wola pobierzCzas(): magistrala I2C nalezy do petli glownej.
++// Piec pol czytanych jest dwa razy; gdy RTC() zmienil je w trakcie (inny
++// rdzen), proba jest powtarzana - nie wyjdzie godzina z jednej chwili z
++// minuta z drugiej. Przeliczenie pol lokalnych na UTC jak w dataLokalnaNaUnixUtc().
++static uint32_t panelHistTerazUtc() {
++  const volatile int *const pola[5] = { &aktualnaDataRok, &aktualnaDataMiesiac, &aktualnaDataDzien,
++                                        &aktualnyCzasGodzina, &aktualnyCzasMinuta };
++  for (int proba = 0; proba < 3; proba++) {
++    int a[5], b[5];
++    for (int i = 0; i < 5; i++) a[i] = *pola[i];
++    for (int i = 0; i < 5; i++) b[i] = *pola[i];
++    if (memcmp(a, b, sizeof(a)) != 0) continue;
++    if (a[0] < 2024 || a[0] > 2099 || a[1] < 1 || a[1] > 12 || a[2] < 1 || a[2] > 31 ||
++        a[3] < 0 || a[3] > 23 || a[4] < 0 || a[4] > 59) return 0;
++    struct tm lok;
++    memset(&lok, 0, sizeof(lok));
++    lok.tm_year = a[0] - 1900;
++    lok.tm_mon = a[1] - 1;
++    lok.tm_mday = a[2];
++    lok.tm_hour = a[3];
++    lok.tm_min = a[4];
++    lok.tm_isdst = -1;   // CET/CEST dobiera mktime() wedlug strefy TZ centrali
++    const time_t t = mktime(&lok);
++    if (t <= 0 || (uint64_t)t > UINT32_MAX) return 0;
++    return (uint32_t)t;
++  }
++  return 0;
++}
++
++// Dopisuje odcinek czasu [a, b) o wartosciach wiersza `w` do kubelkow.
++// Okno to [poczatek, poczatek + rozpietosc), podzielone na `n` kubelkow;
++// granica kubelka k = poczatek + k * rozpietosc / n. Czasy spoza okna sa
++// przycinane, wiec zaden indeks nie wychodzi poza tablice.
++static void panelHistDodajOdcinek(PanelHistKubelek *kub, int n, uint32_t poczatek, uint32_t rozpietosc,
++                                  uint32_t a, uint32_t b, const PanelHistWiersz &w) {
++  const uint32_t koniec = poczatek + rozpietosc;
++  if (a < poczatek) a = poczatek;
++  if (b > koniec) b = koniec;
++  if (a >= b) return;
++  int k = (int)(((uint64_t)(a - poczatek) * (uint64_t)n) / rozpietosc);
++  if (k < 0) k = 0;
++  if (k >= n) k = n - 1;
++  while (k < n) {
++    const uint32_t gK = poczatek + (uint32_t)(((uint64_t)k * rozpietosc) / (uint64_t)n);
++    const uint32_t gK1 = (k + 1 >= n) ? koniec : poczatek + (uint32_t)(((uint64_t)(k + 1) * rozpietosc) / (uint64_t)n);
++    if (gK >= b) break;
++    const uint32_t od = (a > gK) ? a : gK;
++    const uint32_t doo = (b < gK1) ? b : gK1;
++    if (doo > od) {
++      const uint32_t sek = doo - od;
++      PanelHistKubelek &q = kub[k];
++      for (int f = 0; f < PANEL_HIST_POLA; f++) {
++        if (w.sr[f] == PANEL_HIST_BRAK) continue;
++        q.suma[f] += (int64_t)w.sr[f] * (int64_t)sek;
++        if (q.waga[f] == 0 || w.mn[f] < q.mn[f]) q.mn[f] = w.mn[f];
++        if (q.waga[f] == 0 || w.mx[f] > q.mx[f]) q.mx[f] = w.mx[f];
++        q.waga[f] += sek;
++      }
++      q.wagaRazem += sek;
++      q.pompa = w.pompa;
++    }
++    k++;
++  }
++}
++
++// Dopisuje do `buf` liczbe w dziesiatych jako "X.Y" i przecinek. Zwraca nowa dlugosc.
++static size_t panelHistLiczba(char *buf, size_t rozmiar, size_t dl, int32_t dziesiate) {
++  if (dl >= rozmiar) return rozmiar;
++  int n;
++  if (dziesiate == PANEL_HIST_BRAK) {
++    n = snprintf(buf + dl, rozmiar - dl, "nan,");
++  } else {
++    const long v = (long)dziesiate;
++    const long bezwzgl = (v < 0) ? -v : v;
++    n = snprintf(buf + dl, rozmiar - dl, "%s%ld.%ld,", (v < 0) ? "-" : "", bezwzgl / 10, bezwzgl % 10);
++  }
++  if (n < 0 || (size_t)n >= rozmiar - dl) return rozmiar;
++  return dl + (size_t)n;
++}
++
++// Czas `czas` (Unix UTC) jako czas lokalny centrali: "HH:MM" albo, z data,
++// "DD.MM<odstep>HH:MM". Zwraca liczbe wpisanych znakow.
++static size_t panelHistEtykieta(char *buf, size_t rozmiar, uint32_t czas, bool zData, char odstep) {
++  const time_t t = (time_t)czas;
++  struct tm lok;
++  memset(&lok, 0, sizeof(lok));
++  localtime_r(&t, &lok);
++  int n;
++  if (zData) n = snprintf(buf, rozmiar, "%02d.%02d%c%02d:%02d", lok.tm_mday, lok.tm_mon + 1, odstep, lok.tm_hour, lok.tm_min);
++  else       n = snprintf(buf, rozmiar, "%02d:%02d", lok.tm_hour, lok.tm_min);
++  if (n < 0 || (size_t)n >= rozmiar) { if (rozmiar > 0) buf[0] = '\0'; return 0; }
++  return (size_t)n;
++}
++
++// Buduje odpowiedz dla panelu. Zwraca kod HTTP: 200 (out = dane), 400 (zly
++// tryb), 503 (brak pamieci); przy 400/503 `out` to krotki opis.
++static int historiaPanelZbudujCsv(const char *tryb, int pkt, String &out) {
++  uint32_t okno = 0;
++  bool zDlugiej = false;
++  bool etykietaZData = false;
++  if (tryb && strcmp(tryb, "godz") == 0) okno = PANEL_HIST_OKNO_GODZ_S;
++  else if (tryb && strcmp(tryb, "dzien") == 0) okno = PANEL_HIST_OKNO_DZIEN_S;
++  else if (tryb && strcmp(tryb, "tydz") == 0) { okno = PANEL_HIST_OKNO_TYDZ_S; zDlugiej = true; etykietaZData = true; }
++  else { out = "tryb=godz|dzien|tydz\n"; return 400; }
++  if (pkt <= 0) pkt = PANEL_HIST_PKT_DOMYSLNIE;
++  if (pkt < PANEL_HIST_PKT_MIN) pkt = PANEL_HIST_PKT_MIN;
++  if (pkt > PANEL_HIST_PKT_MAX) pkt = PANEL_HIST_PKT_MAX;
++
++  // Migawka licznikow pod tym samym spinlockiem, ktorego uzywa zapis probek -
++  // wzorzec z historiaZbudujCsv(). Same wiersze sa potem kopiowane bez blokady
++  // (bufory nie sa realokowane); zapis nowej probki w trakcie moze zmienic
++  // najwyzej jeden, najstarszy wiersz - dlatego kazdy czas jest nizej
++  // przycinany do okna.
++  PanelHistZrodlo z;
++  memset(&z, 0, sizeof(z));
++  z.pierwszyZCzasemK = -1;
++  portENTER_CRITICAL(&historiaMux);
++  if (historiaBufor) {
++    z.ileK = historiaLiczbaProbek;
++    z.startK = historiaPelna ? historiaGlowa : 0;
++  }
++  if (zDlugiej && historiaDlugaBufor) {
++    z.ileD = historiaDlugaLiczbaProbek;
++    z.startD = historiaDlugaPelna ? historiaDlugaGlowa : 0;
++  }
++  portEXIT_CRITICAL(&historiaMux);
++  if (z.ileK < 0) z.ileK = 0;
++  if (z.ileK > HISTORIA_MAX_PROBEK) z.ileK = HISTORIA_MAX_PROBEK;
++  if (z.ileD < 0) z.ileD = 0;
++  if (z.ileD > HISTORIA_DLUGA_MAX_PROBEK) z.ileD = HISTORIA_DLUGA_MAX_PROBEK;
++
++  // Pierwsza probka krotka z czasem: punkt odniesienia dla probek bez czasu
++  // i granica, od ktorej bufor krotki zastepuje dlugi.
++  for (int k = 0; k < z.ileK; k++) {
++    const uint32_t c = historiaBufor[(z.startK + k) % HISTORIA_MAX_PROBEK].czas_unix;
++    if (c != 0 && c <= PANEL_HIST_CZAS_MAX) { z.pierwszyZCzasemK = k; z.czasPierwszegoK = c; break; }
++  }
++  if (z.pierwszyZCzasemK >= 0) {
++    const uint32_t wstecz = (uint32_t)z.pierwszyZCzasemK * PANEL_HIST_ODSTEP_PROBEK_S;
++    z.granicaD = (z.czasPierwszegoK > wstecz) ? (z.czasPierwszegoK - wstecz) : 1U;
++  }
++  const int razem = z.ileD + z.ileK;
++
++  // Przebieg 1 (tylko czasy wierszy): liczba uzytych wierszy i najnowszy z nich.
++  uint32_t tMax = 0, poprzedniK = 0, czasW = 0;
++  bool dlugiW = false, najnowszyDlugi = false;
++  int wierszy = 0;
++  bool jestCzas = (z.pierwszyZCzasemK >= 0);
++  for (int i = 0; i < razem; i++) {
++    if (!panelHistCzasWiersza(z, i, poprzedniK, czasW, dlugiW)) continue;
++    if (!dlugiW) poprzedniK = czasW; else jestCzas = true;
++    if (wierszy == 0 || czasW >= tMax) { tMax = czasW; najnowszyDlugi = dlugiW; }
++    wierszy++;
++  }
++
++  const int fs = historiaZapisNaFsWlaczony() ? 1 : 0;
++  char linia[400];
++  if (wierszy == 0) {
++    snprintf(linia, sizeof(linia), "#panel-hist 1 tryb=%s pkt=%d wierszy=0 od=0 do=0 krok_s=0 zrodlo=lokalne fs=%d od_etyk=--:-- do_etyk=--:--\n#koniec 0\n",
++             tryb, pkt, fs);
++    out = linia;
++    return 200;
++  }
++
++  // [v3.58.5] Koniec okna. Zwykle to czas najnowszej probki. Gdy jednak zegar
++  // centrali pokazuje, ze od tej probki minelo wiecej niz prog przerwy,
++  // historia konczy sie w przeszlosci (centrala wlasnie wstala i ma w buforach
++  // tylko to, co wczytala z plikow) - wtedy okno konczy sie TERAZ, a czas bez
++  // pomiarow wychodzi jako przerwa, zamiast udawac "ostatnia godzine".
++  // Tylko dla prawdziwych dat: probki bez zegara maja czasy umowne.
++  uint32_t koniecCzas = tMax;
++  if (jestCzas && tMax >= PANEL_HIST_CZAS_PEWNY) {
++    const uint32_t teraz = panelHistTerazUtc();
++    const uint32_t prog = najnowszyDlugi ? PANEL_HIST_PRZERWA_DLUGI_S : PANEL_HIST_PRZERWA_KROTKI_S;
++    if (teraz >= PANEL_HIST_CZAS_PEWNY && teraz <= PANEL_HIST_CZAS_MAX && teraz > tMax && (teraz - tMax) > prog) koniecCzas = teraz;
++  }
++  // Zakres trybu [poczatekZakresu, koniecOkna) konczy sie sekunde po `koniecCzas`.
++  const uint32_t koniecOkna = koniecCzas + 1U;
++  const uint32_t poczatekZakresu = (koniecOkna > okno) ? (koniecOkna - okno) : 0U;
++
++  // Przebieg 1b (tylko czasy wierszy): pierwsza sekunda zakresu, z ktorej jest
++  // pomiar. Odcinki liczone tak samo jak w przebiegu 2 (panelHistDoKiedy()).
++  // [v3.58.5] W 3.58.4 okno zaczynalo sie od najstarszej probki w buforach.
++  uint32_t pierwszaZPomiarem = 0, czasP = 0;
++  bool jestZPomiarem = false, dlugiP = false, jestP = false;
++  poprzedniK = 0;
++  for (int i = 0; i < razem; i++) {
++    if (!panelHistCzasWiersza(z, i, poprzedniK, czasW, dlugiW)) continue;
++    if (!dlugiW) poprzedniK = czasW;
++    if (jestP) {
++      panelHistNajwczesniejsza(czasP, panelHistDoKiedy(czasP, dlugiP, czasW, dlugiW), poczatekZakresu, koniecOkna,
++                               jestZPomiarem, pierwszaZPomiarem);
++    }
++    czasP = czasW;
++    dlugiP = dlugiW;
++    jestP = true;
++  }
++  if (jestP) panelHistNajwczesniejsza(czasP, czasP + 1U, poczatekZakresu, koniecOkna, jestZPomiarem, pierwszaZPomiarem);
++
++  // Okno [poczatek, poczatek + rozpietosc). Gdy w zakresie nie ma zadnego
++  // pomiaru, oknem jest caly zakres i wszystkie odcinki wyjda jako przerwy.
++  const uint32_t poczatek = jestZPomiarem ? pierwszaZPomiarem : poczatekZakresu;
++  const uint32_t rozpietosc = koniecOkna - poczatek;           // >= 1
++  const int n = (rozpietosc < (uint32_t)pkt) ? (int)rozpietosc : pkt;
++
++  const size_t bajtowKub = sizeof(PanelHistKubelek) * (size_t)n;
++  PanelHistKubelek *kub = (PanelHistKubelek *)ps_malloc(bajtowKub);
++  if (!kub) kub = (PanelHistKubelek *)malloc(bajtowKub);
++  if (!kub) { out = "brak pamieci\n"; return 503; }
++  memset(kub, 0, bajtowKub);
++  for (int k = 0; k < n; k++) kub[k].pompa = -1;
++
++  // Przebieg 2 (pelne wiersze): kazdy wiersz obowiazuje do nastepnego wiersza,
++  // a gdy odstep przekracza prog przerwy (albo czas sie cofnal) - tylko przez
++  // sekunde (panelHistDoKiedy()).
++  PanelHistWiersz w, poprz;
++  memset(&w, 0, sizeof(w));
++  memset(&poprz, 0, sizeof(poprz));
++  bool jestPoprz = false;
++  poprzedniK = 0;
++  for (int i = 0; i < razem; i++) {
++    if (!panelHistWiersz(z, i, poprzedniK, w)) continue;
++    if (!w.dlugi) poprzedniK = w.czas;
++    if (jestPoprz) {
++      panelHistDodajOdcinek(kub, n, poczatek, rozpietosc, poprz.czas, panelHistDoKiedy(poprz.czas, poprz.dlugi, w.czas, w.dlugi), poprz);
++    }
++    poprz = w;
++    jestPoprz = true;
++  }
++  if (jestPoprz) panelHistDodajOdcinek(kub, n, poczatek, rozpietosc, poprz.czas, poprz.czas + 1U, poprz);
++
++  out = "";
++  if (!out.reserve((unsigned int)n * 230U + 160U)) { free(kub); out = "brak pamieci\n"; return 503; }
++  // Poczatek i koniec okna jako tekst - bez spacji w srodku,
++  // bo pola naglowka sa oddzielone spacjami. Z data, gdy okno moze siegac
++  // poprzedniego dnia (dzien, tydz): sama godzina "13:01 - 13:00" nic by nie mowila.
++  const bool naglowekZData = (okno > PANEL_HIST_OKNO_GODZ_S);
++  char etykOd[16] = "--:--", etykDo[16] = "--:--";
++  if (jestCzas) {
++    if (panelHistEtykieta(etykOd, sizeof(etykOd), poczatek, naglowekZData, '_') == 0) snprintf(etykOd, sizeof(etykOd), "--:--");
++    if (panelHistEtykieta(etykDo, sizeof(etykDo), koniecCzas, naglowekZData, '_') == 0) snprintf(etykDo, sizeof(etykDo), "--:--");
++  }
++  snprintf(linia, sizeof(linia), "#panel-hist 1 tryb=%s pkt=%d wierszy=%d od=%lu do=%lu krok_s=%lu zrodlo=lokalne fs=%d od_etyk=%s do_etyk=%s\n",
++           tryb, pkt, wierszy, jestCzas ? (unsigned long)poczatek : 0UL, jestCzas ? (unsigned long)koniecCzas : 0UL,
++           (unsigned long)(rozpietosc / (uint32_t)n), fs, etykOd, etykDo);
++  bool ok = out.concat(linia);
++
++  int przerw = 0;
++  for (int k = 0; k < n && ok; k++) {
++    const PanelHistKubelek &q = kub[k];
++    if (q.wagaRazem == 0) {
++      ok = out.concat("#przerwa\n");
++      przerw++;
++      continue;
++    }
++    // Czas punktu = ostatnia sekunda jego odcinka (dla ostatniego punktu: koniec okna).
++    const uint32_t gK1 = (k + 1 >= n) ? koniecOkna : poczatek + (uint32_t)(((uint64_t)(k + 1) * rozpietosc) / (uint64_t)n);
++    const uint32_t czasPunktu = gK1 - 1U;
++    size_t dl = 0;
++    if (jestCzas) dl = panelHistEtykieta(linia, sizeof(linia), czasPunktu, etykietaZData, ' ');
++    if (dl == 0) dl = (size_t)snprintf(linia, sizeof(linia), "--:--");
++    linia[dl++] = ',';
++    linia[dl] = '\0';
++    for (int f = 0; f < PANEL_HIST_POLA; f++) {
++      if (q.waga[f] == 0) {
++        dl = panelHistLiczba(linia, sizeof(linia), dl, PANEL_HIST_BRAK);
++        dl = panelHistLiczba(linia, sizeof(linia), dl, PANEL_HIST_BRAK);
++        dl = panelHistLiczba(linia, sizeof(linia), dl, PANEL_HIST_BRAK);
++        continue;
++      }
++      const int64_t polowa = (int64_t)(q.waga[f] / 2U);
++      const int64_t srednia = (q.suma[f] >= 0) ? (q.suma[f] + polowa) / (int64_t)q.waga[f]
++                                               : -((-q.suma[f] + polowa) / (int64_t)q.waga[f]);
++      dl = panelHistLiczba(linia, sizeof(linia), dl, (int32_t)srednia);
++      dl = panelHistLiczba(linia, sizeof(linia), dl, q.mn[f]);
++      dl = panelHistLiczba(linia, sizeof(linia), dl, q.mx[f]);
++    }
++    if (dl < sizeof(linia)) {
++      const int m = snprintf(linia + dl, sizeof(linia) - dl, "%lu,%d\n", jestCzas ? (unsigned long)czasPunktu : 0UL, (int)q.pompa);
++      if (m < 0 || (size_t)m >= sizeof(linia) - dl) dl = sizeof(linia); else dl += (size_t)m;
++    }
++    if (dl >= sizeof(linia)) { ok = false; break; }   // nie powinno sie zdarzyc: 400 B to z zapasem najdluzszy wiersz
++    ok = out.concat(linia);
++  }
++  free(kub);
++  if (ok) {
++    snprintf(linia, sizeof(linia), "#koniec %d\n", n);
++    ok = out.concat(linia);
++  }
++  if (!ok) { out = "brak pamieci\n"; return 503; }
++  DLOGF(DC_HISTORIA, DL_INFO, "PANEL_WYKRES tryb=%s pkt=%d wierszy=%d punktow=%d przerw=%d bajtow=%u",
++        tryb, pkt, wierszy, n - przerw, przerw, (unsigned)out.length());
++  return 200;
++}
++// [v3.58.4 PANEL-WYKRESY-END]
++
+ // ============================================================================
+ // [LOGI] Bufor logow systemowych — kolowy bufor TEKSTU w PSRAM, ten sam
+ // wzorzec co log.txt/log_a.txt+log_b.txt z Rybach. Jeden ciagly bufor
+@@ -28976,6 +30160,457 @@
+   return html;
+ }
+ 
++// [v3.58.6 PANEL-OTA-KLEJ-BEGIN]
++// ============================================================================
++// Posrednictwo aktualizacji panelu LCD - SKUTKI decyzji z bloku PANEL-OTA
++// (log, NVS, Telegram, odpowiedzi HTTP). Kazda funkcja ponizej ma jedno
++// miejsce wywolania w starszym kodzie:
++//   panelOtaKlejJson()               wifiZbudujJsonStatus()        pola dla panelu
++//   panelOtaKlejZgloszenie()         trasa GET /api/status         to, co panel zglosil
++//   panelOtaKlejPlik()               trasa GET /panel-ota.bin      wyslanie pliku
++//   panelOtaKlejOkresowo()           tgTaskFn(), kazdy obieg       wynik, limit czasu, przypomnienie
++//   panelOtaKlejKomendaAktualizuj()  case TG_UPDATE_PANEL          /update_panel
++//   panelOtaKlejKomendaAnuluj()      case TG_UPDATE_PANEL_ANULUJ   /update_panel_anuluj
++//   panelOtaKlejPoStarcie()          koniec setup()                oferta sprzed restartu centrali
++//   panelOtaKlejTransferTrwa()       case TG_UPDATE                /update nie zaczyna w trakcie wysylania pliku
++// Testy na PC: tests/test_panel_ota.cpp (ten tekst, wyciety z pliku, z atrapami
++// Arduino); typy i nazwy sprawdzone prawdziwymi naglowkami arduino-esp32 i
++// ESPAsyncWebServer: tests/sprawdz_naglowki_esp32.sh.
++// ============================================================================
++bool sprawdzNajnowszaWersjeGithub(String &tagOut, String &bladOut);
++bool pobierzFirmwarePanelaZGithub(const String &tag, String &bladOut, PanelOtaSkan &skanOut, size_t &rozmiarOut);
++
++// Alarm: przegrzanie, alarm ogrzewania, alarm panelu albo dym - ten sam
++// warunek co alarmBezpieczenstwaSerwaAktywny() nizej w pliku. O jeden skladnik
++// szerszy (alarmOgrzewanieWlaczone) niz ten, ktorym centrala wstrzymuje
++// komendy /update i /update_panel.
++static bool panelOtaAlarmTeraz() {
++  return czyTemperaturaAlarmowa || alarmOgrzewanieWlaczone || alarmPanelWlaczone || czyAlarmAktywny == 1;
++}
++
++// Wolac TYLKO w sekcji krytycznej g_panelOtaMux.
++static void panelOtaZapamietajDoWykonania(PanelOtaWynik w, const PanelOtaStan &przed, const char *powod) {
++  g_panelOtaDoWykonania.jest = true;
++  g_panelOtaDoWykonania.wynik = w;
++  g_panelOtaDoWykonania.przed = przed;
++  memcpy(g_panelOtaDoWykonania.wersja, g_panelOtaPanel.wersja, sizeof(g_panelOtaDoWykonania.wersja));
++  size_t i = 0;
++  if (powod != nullptr) {
++    for (; powod[i] != '\0' && i + 1 < sizeof(g_panelOtaDoWykonania.powod); i++) g_panelOtaDoWykonania.powod[i] = powod[i];
++  }
++  g_panelOtaDoWykonania.powod[i] = '\0';
++}
++
++// Pola /api/status dla panelu. W czasie alarmu oferta jest ukryta (flaga
++// false, pola puste): panel ma wtedy pokazywac alarm, a nie wgrywac firmware.
++//   panel_ota_dostepna  jest plik dla panelu
++//   panel_ota_wersja    tag wydania, z ktorego jest plik
++//   panel_ota_obraz     identyfikator pliku (16 znakow) - panel v1.4.0+
++//                       porownuje go z identyfikatorem wlasnego programu
++//   panel_ota_nr        numer oferty - panel podaje go przy odmowie
++static void panelOtaKlejJson(String &j) {
++  const bool alarm = panelOtaAlarmTeraz();
++  bool flaga = false;
++  uint32_t nr = 0;
++  char tag[sizeof(g_panelOta.tag)];
++  char obraz[sizeof(g_panelOta.obraz)];
++  portENTER_CRITICAL(&g_panelOtaMux);
++  flaga = panelOtaFlagaDlaPanelu(g_panelOta, alarm);
++  nr = g_panelOta.nr;
++  memcpy(tag, g_panelOta.tag, sizeof(tag));
++  memcpy(obraz, g_panelOta.obraz, sizeof(obraz));
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  j += F("\"panel_ota_dostepna\":"); j += (flaga ? "true" : "false"); j += F(",");
++  j += F("\"panel_ota_wersja\":\""); if (flaga) j += tag; j += F("\",");
++  j += F("\"panel_ota_obraz\":\""); if (flaga) j += obraz; j += F("\",");
++  j += F("\"panel_ota_nr\":"); j += String((unsigned long)(flaga ? nr : 0U));
++}
++
++// Panel zapytal o status z parametrem panel_fw (kazde jego zapytanie, co 2 s).
++// Tu tylko decyzja i jej zapamietanie - bez NVS i bez Telegrama.
++static void panelOtaKlejZgloszenie(AsyncWebServerRequest *request, const String &wersja) {
++  char obraz[17] = "";
++  char proba[17] = "";
++  char powod[16] = "";
++  char czeka[16] = "";
++  uint32_t odmowaNr = 0;
++  bool jestOdmowa = false;
++  if (request->hasParam("panel_obraz")) {
++    const String v = request->getParam("panel_obraz")->value();
++    if (panelOtaObrazPoprawny(v.c_str())) memcpy(obraz, v.c_str(), sizeof(obraz));
++  }
++  if (request->hasParam("panel_obraz_proba")) {
++    const String v = request->getParam("panel_obraz_proba")->value();
++    if (panelOtaObrazPoprawny(v.c_str())) memcpy(proba, v.c_str(), sizeof(proba));
++  }
++  if (request->hasParam("panel_ota_odmowa")) {
++    const String v = request->getParam("panel_ota_odmowa")->value();
++    jestOdmowa = panelOtaCzytajOdmowe(v.c_str(), &odmowaNr, powod, sizeof(powod));
++  }
++  if (request->hasParam("panel_ota_czeka")) {
++    const String v = request->getParam("panel_ota_czeka")->value();
++    panelOtaCzytajSlowo(v.c_str(), czeka, sizeof(czeka));
++  }
++  const PanelOtaZgloszenie z = {wersja.c_str(), obraz, proba, jestOdmowa, odmowaNr, czeka};
++  const uint32_t teraz = millis();
++  bool probaNowa = false;
++  portENTER_CRITICAL(&g_panelOtaMux);
++  panelOtaPanelZglosil(g_panelOtaPanel, z, teraz);
++  const bool probaPrzed = g_panelOta.probaZgloszona;
++  const PanelOtaStan przed = g_panelOta;
++  const PanelOtaWynik w = panelOtaPoZgloszeniu(g_panelOta, z);
++  probaNowa = (!probaPrzed && g_panelOta.probaZgloszona);
++  if (w != PANEL_OTA_BEZ_ZMIAN) panelOtaZapamietajDoWykonania(w, przed, powod);
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  if (probaNowa) {
++    zapiszLog(String(F("tag=OTA-PANEL lvl=INFO zdarzenie=panel_startuje_z_nowego_pliku obraz=")) + proba);
++  }
++}
++
++// GET /panel-ota.bin?token=<haslo OTA> - plik dla panelu. Kody odpowiedzi:
++//   200 plik, 401 zle haslo, 404 nie ma oferty (albo pliku), 503 trwa alarm,
++//   409 panel zaczynal pobierac za duzo razy (oferta zostaje wycofana).
++static void panelOtaKlejPlik(AsyncWebServerRequest *request) {
++  String token;
++  if (request->hasParam("token")) token = request->getParam("token")->value();
++  if (token != String(OTA_HASLO)) {
++    request->send(401, "text/plain", "Bledne haslo OTA");
++    return;
++  }
++  const bool alarm = panelOtaAlarmTeraz();
++  const uint32_t teraz = millis();
++  PanelOtaWynik w = PANEL_OTA_BEZ_ZMIAN;
++  uint32_t nr = 0;
++  portENTER_CRITICAL(&g_panelOtaMux);
++  const PanelOtaStan przed = g_panelOta;
++  const int kod = panelOtaStartPobierania(g_panelOta, teraz, alarm, &w);
++  nr = g_panelOta.nr;
++  if (w != PANEL_OTA_BEZ_ZMIAN) panelOtaZapamietajDoWykonania(w, przed, "");
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  if (kod != 200) {
++    request->send(kod, "text/plain",
++                  kod == 404 ? "Brak oferty aktualizacji panelu"
++                  : kod == 503 ? "Alarm - aktualizacja panelu wstrzymana"
++                  : "Za duzo pobran - oferta wycofana");
++    return;
++  }
++  if (!systemFS196.exists("/panel_firmware.bin")) {
++    // Oferta jest, a pliku nie ma (np. skasowany w menedzerze plikow). Panel
++    // policzy to jako nieudana probe; po trzech zglosi odmowe i oferta zniknie.
++    portENTER_CRITICAL(&g_panelOtaMux);
++    panelOtaKoniecPobierania(g_panelOta, nr);
++    portEXIT_CRITICAL(&g_panelOtaMux);
++    zapiszLog(F("tag=OTA-PANEL lvl=ERR zdarzenie=brak_pliku_dla_panelu plik=/panel_firmware.bin"));
++    request->send(404, "text/plain", "Brak pobranego firmware panelu");
++    return;
++  }
++  // Koniec wysylania (calosc poszla albo panel sie rozlaczyl).
++  request->onDisconnect([nr]() {
++    portENTER_CRITICAL(&g_panelOtaMux);
++    panelOtaKoniecPobierania(g_panelOta, nr);
++    portEXIT_CRITICAL(&g_panelOtaMux);
++  });
++  request->send(systemFS196, "/panel_firmware.bin", "application/octet-stream");
++}
++
++// true = plik jest wlasnie wysylany panelowi. W tym czasie nie wolno go
++// podmienic (/update_panel) ani restartowac centrali (/update).
++static bool panelOtaKlejTransferTrwa() {
++  const uint32_t teraz = millis();
++  portENTER_CRITICAL(&g_panelOtaMux);
++  const bool trwa = panelOtaTransferTrwa(g_panelOta, teraz);
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  return trwa;
++}
++
++// ---------------------------------------------------------------------------
++// STOS ZADANIA TELEGRAMA. Funkcje ponizej dzialaja w tgTaskFn(): 8 kB stosu, a
++// pod kazda wysylka jest jeszcze polaczenie TLS. Wedlug logow tej centrali
++// (hwm_tg w HEALTH-A, opis v3.56.7 na gorze pliku) w najgorszej chwili zostaje
++// tam 2256-2708 B, a v3.31.23 naprawiala awarie po buforze 3,6 kB na tym samym
++// stosie. Dlatego:
++//   - teksty (480 B) i kopie stanu (320 B) leza w pamieci ze sterty
++//     (PanelOtaKlejRobocze), nie na stosie;
++//   - kazde wywolanie, ktore laczy sie z siecia (sendTelegramMessage(),
++//     sprawdzNajnowszaWersjeGithub(), pobierzFirmwarePanelaZGithub()), wychodzi
++//     z funkcji, ktora trzyma na stosie najwyzej kilka obiektow String;
++//     skladanie dluzszych tekstow jest w osobnych funkcjach (noinline), ktore
++//     wracaja PRZED wysylka.
++// Do 3.58.5 wysylki komendy /update_panel szly wprost z tgTaskFn().
++// ---------------------------------------------------------------------------
++struct PanelOtaKlejRobocze {
++  PanelOtaDoWykonania d;            // decyzja do wykonania
++  PanelOtaStan        oferta;       // kopia stanu oferty
++  PanelOtaPanel       panel;        // kopia tego, co wiadomo o panelu
++  char                tekst[480];   // linia logu, a po niej wiadomosc dla uzytkownika ("" = brak)
++};
++
++// Wyzerowana pamiec robocza albo nullptr, gdy sterta odmowi. Zwalnia wolajacy: free().
++static PanelOtaKlejRobocze *panelOtaKlejRoboczeWez() {
++  return (PanelOtaKlejRobocze *)calloc(1, sizeof(PanelOtaKlejRobocze));
++}
++
++// Koniec oferty (r.d): sprzatniecie NVS, wpis w logu i wiadomosc w r.tekst.
++// Wysyla ja wolajacy.
++static void panelOtaKlejWykonaj(PanelOtaKlejRobocze &r) {
++  const PanelOtaDoWykonania &d = r.d;
++  // Po restarcie centrali ta oferta ma juz nie wracac. Znacznik w NVS zostaje
++  // tylko wtedy, gdy nalezy juz do NASTEPNEJ oferty (wynik poprzedniej
++  // przyszedl z obslugi HTTP w chwili, gdy /update_panel wystawialo nowa).
++  portENTER_CRITICAL(&g_panelOtaMux);
++  const bool jestNastepna = g_panelOta.aktywna && g_panelOta.nr != d.przed.nr;
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  if (!jestNastepna) config.putBool("panOtaGotowa", false);
++  const bool pomyslnie = (d.wynik == PANEL_OTA_POTWIERDZONO_OBRAZ || d.wynik == PANEL_OTA_POTWIERDZONO_WERSJA ||
++                          d.wynik == PANEL_OTA_ANULOWANO);
++  snprintf(r.tekst, sizeof(r.tekst),
++           "tag=OTA-PANEL lvl=%s zdarzenie=%s nr=%lu wydanie=%s obraz=%s wersja_panelu=%s pobran=%u powod_panelu=%s",
++           pomyslnie ? "INFO" : "WARN", panelOtaWynikNazwa(d.wynik), (unsigned long)d.przed.nr, d.przed.tag, d.przed.obraz,
++           d.wersja[0] != '\0' ? d.wersja : "-", (unsigned)d.przed.pobranZaczetych, d.powod[0] != '\0' ? d.powod : "-");
++  zapiszLog(String(r.tekst));
++  panelOtaKomunikat(d.wynik, d.przed, d.wersja, d.powod, r.tekst, sizeof(r.tekst));
++}
++
++// Przypomnienie "panel jeszcze nie zaczal" (r.oferta, r.panel): wpis w logu
++// i wiadomosc w r.tekst. Wysyla ja wolajacy.
++static void panelOtaKlejPrzypomnij(PanelOtaKlejRobocze &r, uint32_t teraz, bool alarm) {
++  snprintf(r.tekst, sizeof(r.tekst),
++           "tag=OTA-PANEL lvl=WARN zdarzenie=panel_nie_zaczal nr=%lu kontakt=%d podaje_obraz=%d czeka=%s alarm=%d",
++           (unsigned long)r.oferta.nr, panelOtaPanelWKontakcie(r.panel, teraz) ? 1 : 0, r.panel.podajeObraz ? 1 : 0,
++           r.panel.czeka[0] != '\0' ? r.panel.czeka : "-", alarm ? 1 : 0);
++  zapiszLog(String(r.tekst));
++  panelOtaTekstPrzypomnienia(r.oferta, r.panel, teraz, alarm, r.panel.wersja, r.tekst, sizeof(r.tekst));
++}
++
++// Kazdy obieg zadania Telegrama (co kilka sekund): zalegla decyzja z obslugi
++// HTTP, limit czasu oferty, jedno przypomnienie.
++static void panelOtaKlejOkresowo() {
++  // Zwykly stan - nie ma oferty i nic nie czeka na wykonanie - konczy sie tutaj.
++  portENTER_CRITICAL(&g_panelOtaMux);
++  const bool jestCoRobic = g_panelOtaDoWykonania.jest || g_panelOta.aktywna;
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  if (!jestCoRobic) return;
++  PanelOtaKlejRobocze *r = panelOtaKlejRoboczeWez();
++  if (r == nullptr) return;   // brak pamieci: nic nie zostalo zmienione, nastepny obieg sprobuje znowu
++  const uint32_t teraz = millis();
++  const bool alarm = panelOtaAlarmTeraz();
++  bool przypomnij = false;
++  portENTER_CRITICAL(&g_panelOtaMux);
++  if (!g_panelOtaDoWykonania.jest) {
++    r->oferta = g_panelOta;   // stan sprzed decyzji
++    const PanelOtaWynik w = panelOtaPoCzasie(g_panelOta, teraz);
++    if (w != PANEL_OTA_BEZ_ZMIAN) panelOtaZapamietajDoWykonania(w, r->oferta, "");
++  }
++  r->d = g_panelOtaDoWykonania;
++  g_panelOtaDoWykonania.jest = false;
++  if (!r->d.jest) przypomnij = panelOtaCzasNaPrzypomnienie(g_panelOta, teraz);
++  r->oferta = g_panelOta;
++  r->panel = g_panelOtaPanel;
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  if (r->d.jest) panelOtaKlejWykonaj(*r);
++  else if (przypomnij) panelOtaKlejPrzypomnij(*r, teraz, alarm);
++  if (r->tekst[0] != '\0') sendTelegramMessage(String(r->tekst));
++  free(r);
++}
++
++// /update_panel_anuluj (Telegram: komenda i przycisk; Firebase: "update_panel_anuluj").
++static void panelOtaKlejKomendaAnuluj() {
++  panelOtaKlejOkresowo();   // najpierw to, co juz sie rozstrzygnelo
++  PanelOtaKlejRobocze *r = panelOtaKlejRoboczeWez();
++  if (r == nullptr) {
++    sendTelegramMessage(F("Centrali zabraklo pamieci - nic nie zostalo anulowane. Wyslij /update_panel_anuluj jeszcze raz."));
++    return;
++  }
++  portENTER_CRITICAL(&g_panelOtaMux);
++  r->d.przed = g_panelOta;
++  r->d.wynik = panelOtaAnuluj(g_panelOta);
++  memcpy(r->d.wersja, g_panelOtaPanel.wersja, sizeof(r->d.wersja));
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  if (r->d.wynik == PANEL_OTA_BEZ_ZMIAN) {
++    free(r);
++    sendTelegramMessage(F("Nie ma czego anulowac - zadna aktualizacja panelu nie czeka."));
++    return;
++  }
++  r->d.jest = true;
++  panelOtaKlejWykonaj(*r);
++  if (r->tekst[0] != '\0') sendTelegramMessage(String(r->tekst));
++  free(r);
++}
++
++// /update_panel, czesc przed pobieraniem: czy panel juz ma te wersje i
++// wycofanie poprzedniej oferty. W `tekst` zostawia wiadomosc dla uzytkownika
++// (wysyla ja wolajacy); true = pobierac plik z GitHuba.
++static __attribute__((noinline)) bool panelOtaKlejAktualizujPrzed(const String &tag, String &tekst) {
++  char wersjaPanelu[sizeof(g_panelOtaPanel.wersja)];
++  portENTER_CRITICAL(&g_panelOtaMux);
++  memcpy(wersjaPanelu, g_panelOtaPanel.wersja, sizeof(wersjaPanelu));
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  if (wersjaPanelu[0] != '\0' && tag == wersjaPanelu) {
++    tekst = "Panel juz ma najnowsza wersje (" + tag + "). Nic do zrobienia.";
++    return false;
++  }
++  // Poprzednia oferta znika PRZED podmiana pliku na dysku: od tej chwili
++  // /panel-ota.bin odpowiada 404, wiec panel nie zacznie pobierac pliku, ktory
++  // za moment zostanie usuniety. Jesli panel zdazyl zaczac - czekamy.
++  bool transfer = false;
++  bool bylaOferta = false;
++  uint32_t poprzedniNr = 0;
++  char poprzedniTag[sizeof(g_panelOta.tag)] = "";
++  const uint32_t teraz = millis();
++  portENTER_CRITICAL(&g_panelOtaMux);
++  transfer = panelOtaTransferTrwa(g_panelOta, teraz);
++  if (!transfer) {
++    poprzedniNr = g_panelOta.nr;
++    memcpy(poprzedniTag, g_panelOta.tag, sizeof(poprzedniTag));
++    bylaOferta = (panelOtaAnuluj(g_panelOta) == PANEL_OTA_ANULOWANO);
++  }
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  if (transfer) {
++    tekst = F("Panel wlasnie zaczal pobierac plik z centrali. Poczekaj na wynik (do kilku minut) i dopiero wtedy wyslij /update_panel ponownie.");
++    return false;
++  }
++  tekst = "Wydanie " + tag + ": pobieram plik panelu na centrale...";
++  if (bylaOferta) {
++    config.putBool("panOtaGotowa", false);
++    zapiszLog(String(F("tag=OTA-PANEL lvl=INFO zdarzenie=oferta_zastapiona nr=")) + String((unsigned long)poprzedniNr) +
++              " wydanie=" + poprzedniTag);
++    tekst += " Poprzednia, niewgrana oferta (wydanie " + String(poprzedniTag) + ") zostaje zastapiona.";
++  }
++  return true;
++}
++
++// /update_panel, czesc po pobraniu pliku: oferta dla panelu. W `tekst`
++// zostawia wiadomosc dla uzytkownika (wysyla ja wolajacy).
++static __attribute__((noinline)) void panelOtaKlejAktualizujPo(const String &tag, const PanelOtaSkan &skan, size_t rozmiar,
++                                                               String &tekst) {
++  char obraz[17];
++  panelOtaSkanObraz(skan, obraz);
++  uint32_t nr = config.getUInt("panOtaNr", 0U) + 1U;
++  if (nr == 0U || nr > 999999999UL) nr = 1U;   // panel odsyla numer jako najwyzej 9 cyfr
++  char wersjaPanelu[sizeof(g_panelOtaPanel.wersja)];
++  const uint32_t teraz = millis();
++  bool juzMa = false;
++  portENTER_CRITICAL(&g_panelOtaMux);
++  memcpy(wersjaPanelu, g_panelOtaPanel.wersja, sizeof(wersjaPanelu));
++  juzMa = panelOtaPanelMaObraz(g_panelOtaPanel, obraz, teraz);
++  if (!juzMa) panelOtaWystaw(g_panelOta, nr, tag.c_str(), obraz, (uint32_t)rozmiar, wersjaPanelu, teraz);
++  portEXIT_CRITICAL(&g_panelOtaMux);
++  if (juzMa) {
++    zapiszLog(String(F("tag=OTA-PANEL lvl=INFO zdarzenie=panel_juz_ma_ten_plik wydanie=")) + tag + " obraz=" + obraz);
++    tekst = "Panel juz pracuje na pliku z wydania " + tag + " (zglasza wersje " + String(wersjaPanelu) +
++            "). Nie ma czego aktualizowac.";
++    return;
++  }
++  config.putUInt("panOtaNr", nr);
++  config.putString("panOtaObraz", String(obraz));
++  config.putUInt("panOtaRozm", (uint32_t)rozmiar);
++  config.putString("panOtaPrzed", String(wersjaPanelu));
++  config.putBool("panOtaGotowa", true);   // na koncu: od tej chwili oferta wraca po restarcie centrali
++  zapiszLog(String(F("tag=OTA-PANEL lvl=INFO zdarzenie=oferta_wystawiona nr=")) + String((unsigned long)nr) + " wydanie=" + tag +
++            " obraz=" + obraz + " rozmiar=" + String((unsigned long)rozmiar));
++  tekst = "Plik panelu z wydania " + tag + " jest na centrali (" + String((unsigned long)rozmiar) + " B). "
++          "Panel z firmware v1.4.0 lub nowszym pobierze go sam, zwykle w ciagu minuty - gdy nie ma alarmu "
++          "i nikt nie dotyka ekranu; na ekranie pojawi sie napis AKTUALIZACJA PANELU. "
++          "Starszy panel zacznie dopiero po wylaczeniu i wlaczeniu. "
++          "Wynik przyjdzie osobna wiadomoscia. Oferta czeka 24 h; anulowanie: /update_panel_anuluj";
++}
++
++// /update_panel - po sprawdzeniu alarmu i otaOperacjaWTrakcie (case TG_UPDATE_PANEL).
++static void panelOtaKlejKomendaAktualizuj() {
++  panelOtaKlejOkresowo();   // najpierw to, co juz sie rozstrzygnelo (np. potwierdzenie sprzed sekundy)
++  if (panelOtaKlejTransferTrwa()) {
++    sendTelegramMessage(F("Panel wlasnie pobiera plik z centrali. Poczekaj na wynik (do kilku minut) i dopiero wtedy wyslij /update_panel ponownie."));
++    return;
++  }
++  sendTelegramMessage(F("Sprawdzam najnowsza wersje panelu na GitHub..."));
++  String tag, blad, tekst;
++  if (!sprawdzNajnowszaWersjeGithub(tag, blad)) {
++    sendTelegramMessage("Nie udalo sie sprawdzic wersji: " + blad);
++    return;
++  }
++  const bool pobierac = panelOtaKlejAktualizujPrzed(tag, tekst);
++  // Wynik poprzedniej oferty mogl przyjsc od panelu w trakcie pytania GitHuba:
++  // jego wiadomosc idzie przed wiadomoscia o nowym pliku. (Po wycofaniu
++  // poprzedniej oferty nowa decyzja juz nie powstanie.)
++  panelOtaKlejOkresowo();
++  sendTelegramMessage(tekst);
++  if (!pobierac) return;
++
++  // otaOperacjaWTrakcie tylko na czas pobierania z GitHuba (blokuje /update i
++  // drugie /update_panel). Do 3.58.5 flaga zostawala ustawiona az do
++  // potwierdzenia przez panel - czyli bez ograniczenia czasu, a razem z nia
++  // stal nadzor zadan. Znaczniki w NVS jak dotad: gdyby centrala zrestartowala
++  // sie w trakcie pobierania, setup() powie o tym uzytkownikowi.
++  otaOperacjaWTrakcie = true;
++  config.putBool("panOtaTrwa", true);
++  config.putString("panOtaTag", tag);
++  PanelOtaSkan skan;
++  size_t rozmiar = 0;
++  blad = "";
++  const bool pobrano = pobierzFirmwarePanelaZGithub(tag, blad, skan, rozmiar);
++  otaOperacjaWTrakcie = false;
++  config.putBool("panOtaTrwa", false);
++  if (!pobrano) {
++    sendTelegramMessage("Pobieranie firmware panelu nieudane: " + blad);
++    return;
++  }
++  panelOtaKlejAktualizujPo(tag, skan, rozmiar, tekst);
++  sendTelegramMessage(tekst);
++}
++
++// Koniec setup(), czesc bez sieci: oferta, ktora czekala, gdy centrala sie
++// zrestartowala. true = w `tekst` jest wiadomosc dla uzytkownika.
++static __attribute__((noinline)) bool panelOtaKlejPoStarcieStan(String &tekst) {
++  const bool nvsGotowa = config.getBool("panOtaGotowa", false);
++  const bool nvsTrwa = config.getBool("panOtaTrwa", false);
++  const String nvsTag = config.getString("panOtaTag", "");
++  if (nvsGotowa) {
++    const String nvsObraz = config.getString("panOtaObraz", "");
++    const String nvsPrzed = config.getString("panOtaPrzed", "");
++    const uint32_t nvsRozmiar = config.getUInt("panOtaRozm", 0U);
++    const uint32_t nvsNr = config.getUInt("panOtaNr", 0U);
++    // Plik musi byc tym samym, ktory byl oferowany: zgodny rozmiar, a
++    // identyfikator obrazu panel i tak porowna z koncem pobranego pliku.
++    const bool plikJest = (nvsRozmiar > 0U && (uint32_t)g_panelFirmwareSize == nvsRozmiar);
++    if (nvsNr > 0U && plikJest && panelOtaObrazPoprawny(nvsObraz.c_str())) {
++      const uint32_t teraz = millis();
++      portENTER_CRITICAL(&g_panelOtaMux);
++      panelOtaWystaw(g_panelOta, nvsNr, nvsTag.c_str(), nvsObraz.c_str(), nvsRozmiar, nvsPrzed.c_str(), teraz);
++      portEXIT_CRITICAL(&g_panelOtaMux);
++      zapiszLog(String(F("tag=OTA-PANEL lvl=INFO zdarzenie=przywrocono_oferte_po_restarcie nr=")) + String((unsigned long)nvsNr) +
++                " wydanie=" + nvsTag + " obraz=" + nvsObraz);
++      tekst = "Centrala zrestartowala sie, a aktualizacja panelu (plik z wydania " + nvsTag +
++              ") jeszcze nie zostala wgrana - oferta wraca na kolejne 24 h. Anulowanie: /update_panel_anuluj";
++    } else {
++      // Zapis sprzed 3.58.6 (bez identyfikatora pliku) albo plik zniknal.
++      config.putBool("panOtaGotowa", false);
++      zapiszLog(String(F("tag=OTA-PANEL lvl=WARN zdarzenie=oferta_nie_do_przywrocenia wydanie=")) + nvsTag +
++                " plik_b=" + String((unsigned long)g_panelFirmwareSize) + " zapisany_rozmiar=" + String((unsigned long)nvsRozmiar));
++      tekst = "Aktualizacja panelu (wydanie " + nvsTag + ") czekala przed restartem centrali, ale nie da sie jej "
++              "wznowic (zapis sprzed tej wersji firmware albo brak pliku). Wyslij /update_panel ponownie.";
++    }
++    return true;
++  }
++  if (nvsTrwa) {
++    // Centrala padla W TRAKCIE pobierania z GitHuba. Telegram tej komendy nie
++    // powtorzy - trzeba powiedziec o tym wprost.
++    config.putBool("panOtaTrwa", false);
++    zapiszLog(String(F("tag=OTA-PANEL lvl=WARN zdarzenie=przerwane_pobieranie_po_restarcie wersja=")) + nvsTag);
++    tekst = "Poprzednia aktualizacja panelu (wersja " + nvsTag +
++            ") nie dokonczyla sie — centrala zrestartowala sie w trakcie pobierania. "
++            "Sprobuj ponownie: /update_panel";
++    return true;
++  }
++  return false;
++}
++
++// Koniec setup(): oferta sprzed restartu centrali i wiadomosc o niej.
++static void panelOtaKlejPoStarcie() {
++  String tekst;
++  if (panelOtaKlejPoStarcieStan(tekst)) sendTelegramMessage(tekst);
++}
++// [v3.58.6 PANEL-OTA-KLEJ-END]
++
+ // [ESP-LOCAL-HTML-PARITY] Te same backendowe warunki bezpieczenstwa co
+ // komenda Firebase Rozpalanie; lokalny panel wystawia je tylko do odczytu,
+ // a POST ponownie sprawdza warunki przed zmiana stanu.
+@@ -29120,8 +30755,9 @@
+   // kazdym wybudzeniu — najprostsze miejsce, zeby zglosic "czeka na Ciebie
+   // aktualizacja", bez osobnego endpointu. Ustawiane tylko PO potwierdzonym,
+   // kompletnym zapisie pliku (BAGNO 2.3) — patrz TG_UPDATE_PANEL.
+-  j += F("\"panel_ota_dostepna\":"); j += (g_panelOtaDostepna ? "true" : "false"); j += F(",");
+-  j += F("\"panel_ota_wersja\":\""); j += g_panelOtaWersja; j += F("\"");
++  // [v3.58.6 PANEL-OTA] Cztery pola zamiast dwoch (doszly panel_ota_obraz i
++  // panel_ota_nr); w czasie alarmu oferta jest ukryta. Opis: panelOtaKlejJson().
++  panelOtaKlejJson(j);
+   // [SYMULACJA-PER-CZUJNIK, PLAN_SYMULACJA_CZUJNIKOW.md 6.6] Stan symulacji
+   // per czujnik/element dla dashboardu WWW (odznaka na kafelku, panel dp,
+   // sekcja Ustawienia) — dokladnie ten sam wzorzec liczenia minut, co juz
+@@ -29410,14 +31046,15 @@
+         g_panelWersjaZgloszona = zgloszona;
+         zapiszLog(String(F("tag=OTA-PANEL lvl=INFO zdarzenie=wersja_zgloszona wersja=")) + zgloszona);
+       }
+-      if (g_panelOtaDostepna && zgloszona == g_panelOtaWersja) {
+-        g_panelOtaDostepna = false;
+-        otaOperacjaWTrakcie = false; // [SYNC-OTA] dopiero TERAZ odblokowujemy /update i kolejne /update_panel
+-        config.putBool("panOtaTrwa", false);   // [SYNC-OTA/11.3] cykl zakonczony sukcesem - sprzataj oba znaczniki NVS
+-        config.putBool("panOtaGotowa", false);
+-        zapiszLog(String(F("tag=OTA-PANEL lvl=INFO zdarzenie=potwierdzono_aktualizacje wersja=")) + zgloszona);
+-        sendTelegramMessage("Panel zaktualizowany do " + zgloszona + ".");
+-      }
++      // [v3.58.6 PANEL-OTA] Do 3.58.5 oferte konczylo tylko jedno: tekst
++      // panel_fw rowny tagowi wydania. Panel zglasza "v1.3.0", wydania maja
++      // tagi "3.57.9" - po udanej aktualizacji oferta zostawala, a panel
++      // wgrywal ten sam plik przy kazdym starcie. Teraz decyduje
++      // panelOtaPoZgloszeniu() (identyfikator pliku, odmowa panelu, powrot
++      // starszego panelu po pobraniu). Tutaj sama decyzja; log, NVS i
++      // wiadomosc wykonuje zadanie Telegrama (panelOtaKlejOkresowo()) - ta
++      // obsluga nie czeka juz na wyslanie wiadomosci.
++      panelOtaKlejZgloszenie(request, zgloszona);
+     }
+     // [RESET-DIAG, ta sesja] Patrz TEMAT B w OTA_PANEL_CALOSC.md — panel
+     // zglasza powod OSTATNIEGO restartu (esp_reset_reason(), zmapowany na
+@@ -29663,18 +31300,11 @@
+   // bo kazde urzadzenie w AP moglo teoretycznie poznac haslo WiFi kiedys w
+   // innym celu. request->send(LittleFS, ...) strumieniuje plik bez
+   // ladowania calosci do RAM (AsyncWebServer robi to natywnie).
++  // [v3.58.6 PANEL-OTA] Plik dostaje tylko panel, dla ktorego czeka oferta, i
++  // nie w czasie alarmu. Do 3.58.5 kazde zapytanie z dobrym haslem dostawalo
++  // ostatnio pobrany plik - takze dlugo po zakonczonej aktualizacji.
+   wifiWebServer.on("/panel-ota.bin", HTTP_GET, [](AsyncWebServerRequest *request) {
+-    String token;
+-    if (request->hasParam("token")) token = request->getParam("token")->value();
+-    if (token != String(OTA_HASLO)) {
+-      request->send(401, "text/plain", "Bledne haslo OTA");
+-      return;
+-    }
+-    if (!systemFS196.exists("/panel_firmware.bin")) {
+-      request->send(404, "text/plain", "Brak pobranego firmware panelu");
+-      return;
+-    }
+-    request->send(systemFS196, "/panel_firmware.bin", "application/octet-stream");
++    panelOtaKlejPlik(request);
+   });
+ 
+   // [WYKRESY] CSV z bufora historii (PSRAM) dla zakladki "Wykresy" —
+@@ -29711,6 +31341,19 @@
+   wifiWebServer.on(AsyncURIMatcher::exact("/api/history/long"), HTTP_GET, [](AsyncWebServerRequest *request) {
+     request->send(200, "text/plain", historiaDlugaZbudujCsv());
+   });
++  // [v3.58.4 PANEL-WYKRESY] Gotowe punkty wykresu dla panelu LCD - opis przy
++  // historiaPanelZbudujCsv(). exact(), jak trzy trasy wyzej: adres nie moze
++  // zostac przechwycony przez "/api/history" ani sam niczego przechwycic.
++  // Parametry: tryb=godz|dzien|tydz (domyslnie dzien), pkt=8..240 (domyslnie 96).
++  wifiWebServer.on(AsyncURIMatcher::exact("/api/history/panel"), HTTP_GET, [](AsyncWebServerRequest *request) {
++    String tryb = "dzien";
++    int pkt = PANEL_HIST_PKT_DOMYSLNIE;
++    if (request->hasParam("tryb")) tryb = request->getParam("tryb")->value();
++    if (request->hasParam("pkt")) pkt = request->getParam("pkt")->value().toInt();
++    String csv;
++    const int kod = historiaPanelZbudujCsv(tryb.c_str(), pkt, csv);
++    request->send(kod, "text/plain", csv);
++  });
+ 
+   // [LOGI] Bufor logow PSRAM dla zakladki "Logi" — patrz logZapisz()/
+   // logPobierzTekst()/logRozmiarUzyty() zdefiniowane wyzej. Stylistyka
+@@ -39690,6 +41333,7 @@
+   kb += F("{\"inline_keyboard\":[");
+   kb += F("[{\"text\":\"📦 Aktualizuj Centralę ESP32\",\"callback_data\":\"update\"}],");
+   kb += F("[{\"text\":\"🖥️ Aktualizuj Panel LCD\",\"callback_data\":\"update_panel\"}],");
++  kb += F("[{\"text\":\"✖️ Anuluj aktualizację panelu\",\"callback_data\":\"update_panel_anuluj\"}],");   // [v3.58.6 PANEL-OTA]
+   kb += F("[{\"text\":\"« Menu Główne\",\"callback_data\":\"menu\"}]");
+   kb += F("]}");
+ 
+@@ -39978,7 +41622,15 @@
+ // i rozmiaru wzgledem Content-Length — BAGNO 1.3.
+ // [SYNC-OTA/11.4, ta sesja] Parametr tag: DODANY, patrz uzasadnienie przy
+ // otaGithubDownloadUrlPanel() wyzej.
+-bool pobierzFirmwarePanelaZGithub(const String &tag, String &bladOut) {
++// [v3.58.6 PANEL-OTA] Dwa nowe wyjscia: `skanOut` (pierwsze 24 i ostatnie 32
++// bajty pliku - z nich identyfikator pliku dla panelu) i `rozmiarOut`. Plik,
++// ktory nie jest programem dla ESP32 albo nie ma sumy SHA-256 na koncu, jest
++// odrzucany tutaj, zanim zastapi poprzedni (do 3.58.5 sprawdzany byl tylko
++// pierwszy bajt - firmware centrali wgrany omylkowo jako firmware_panel.bin
++// przechodzil i trafial do panelu).
++bool pobierzFirmwarePanelaZGithub(const String &tag, String &bladOut, PanelOtaSkan &skanOut, size_t &rozmiarOut) {
++  panelOtaSkanStart(skanOut);
++  rozmiarOut = 0;
+   WiFiClientSecure client;
+   client.setInsecure();
+   client.setTimeout(15);
+@@ -39996,7 +41648,18 @@
+   serwisujTWDTJesliZarejestrowany();
+   int kodHttp = http.GET();
+   if (kodHttp != 200) {
+-    bladOut = "Pobieranie firmware panelu zwrocilo kod " + String(kodHttp);
++    if (kodHttp == 404) {
++      // [v3.58.6 PANEL-OTA] Najczestszy przypadek: wydanie nie ma tego pliku.
++      // Tekst skladany przez += (bez obiektow tymczasowych): ramka stosu tej
++      // funkcji ma zostac taka jak w 3.58.5 - pod nia jest polaczenie TLS.
++      bladOut = "w wydaniu ";
++      bladOut += tag;
++      bladOut += " nie ma pliku ";
++      bladOut += GITHUB_ASSET_PANEL;
++      bladOut += " (kod 404). Dodaj go do wydania na GitHubie i wyslij /update_panel ponownie.";
++    } else {
++      bladOut = "Pobieranie firmware panelu zwrocilo kod " + String(kodHttp);
++    }
+     http.end();
+     return false;
+   }
+@@ -40085,6 +41748,7 @@
+       bladOut = "Blad zapisu firmware panelu na LittleFS";
+       break;
+     }
++    panelOtaSkanDodaj(skanOut, bufor, (size_t)n);   // [v3.58.6 PANEL-OTA] poczatek i koniec pliku
+     zapisano += (size_t)n;
+     ostatniByte = millis();
+   }
+@@ -40111,6 +41775,21 @@
+     if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) { systemFS196.remove(sciezkaTmp); xSemaphoreGive(logMutex); }
+     return false;
+   }
++  // [v3.58.6 PANEL-OTA] Caly plik jest juz w .tmp: czy to program dla panelu
++  // (ESP32, z suma SHA-256 na koncu)? Jesli nie - poprzedni plik zostaje.
++  {
++    const char *powodOdrzucenia = panelOtaSkanOcen(skanOut);
++    if (powodOdrzucenia != nullptr) {
++      bladOut = "plik ";   // += jak przy kodzie 404 wyzej
++      bladOut += GITHUB_ASSET_PANEL;
++      bladOut += " z wydania ";
++      bladOut += tag;
++      bladOut += " odrzucony: ";
++      bladOut += powodOdrzucenia;
++      if (logMutex && xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) == pdTRUE) { systemFS196.remove(sciezkaTmp); xSemaphoreGive(logMutex); }
++      return false;
++    }
++  }
+ 
+   // [FIX-WSPOLBIEZNOSC] Rotacja (remove starego + rename) pod logMutex —
+   // ten sam wzorzec co logFsSizeGuard(). g_panelFirmwareSize aktualizowany
+@@ -40128,6 +41807,7 @@
+     return false;
+   }
+ 
++  rozmiarOut = zapisano;   // [v3.58.6 PANEL-OTA]
+   DLOGF(DC_OTA, DL_INFO, "OTA-PANEL zdarzenie=pobrano_firmware rozmiar=%u", (unsigned)zapisano);
+   return true;
+ }
+@@ -40323,6 +42003,7 @@
+         else if (cbData == "notif_toggle")     doKolejki = TG_NOTIF_TOGGLE;
+         else if (cbData == "update")           doKolejki = TG_UPDATE;
+         else if (cbData == "update_panel")     doKolejki = TG_UPDATE_PANEL;
++        else if (cbData == "update_panel_anuluj") doKolejki = TG_UPDATE_PANEL_ANULUJ;   // [v3.58.6 PANEL-OTA]
+         // nieznane cbData -> doKolejki zostaje TG_NONE, nic sie nie dzieje
+         // (juz odpowiedzielismy answerTelegramCallback() wyzej)
+ 
+@@ -40635,6 +42316,8 @@
+           tgKolejkujAlboOdpowiedzBledem(TG_UPDATE);
+         } else if (cmd == "/update_panel") {
+           tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL);
++        } else if (cmd == "/update_panel_anuluj") {   // [v3.58.6 PANEL-OTA]
++          tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL_ANULUJ);
+         } else if (cmd.startsWith("/")) {
+           // [v3.53.1] Do tej wersji literowka konczyla sie CISZA i wygladala
+           // jak zawieszony bot (/archiwum30 zamiast /archiwum 30 — 2026-10-21).
+@@ -44198,6 +45881,10 @@
+     tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL);
+     zapiszLog(F("tag=FB-OTA lvl=INFO zdarzenie=kolejkuje_ota_panel"));
+   }
++  else if (cmd == "update_panel_anuluj") {   // [v3.58.6 PANEL-OTA]
++    tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL_ANULUJ);
++    zapiszLog(F("tag=FB-OTA lvl=INFO zdarzenie=kolejkuje_anulowanie_ota_panelu"));
++  }
+   // [v3.33.0 FB-REMOTE-COMMANDS] Zdalna obsluga Telegramu i synchronizacji RTC
+   // przez Firebase /piec/cmd (dla aplikacji mobilnej i panelu WWW poza LAN).
+   else if (cmd == "tg_test") {
+@@ -45201,6 +46888,9 @@
+     wyslijZalegleRaportyCrash();
+     wyslijZaleglePowiadomieniePowerOn();
+     wyslijRaportNadzoru();   // [v3.55.2] jednorazowo po restarcie z nadzoru
++    // [v3.58.6 PANEL-OTA] Wynik aktualizacji panelu rozstrzygniety w obsludze
++    // HTTP (log, NVS, wiadomosc), limit czasu oferty, jedno przypomnienie.
++    panelOtaKlejOkresowo();
+     // [AUDYT-PKT3] Znacznik startu tej iteracji — punkt odniesienia dla
+     // TG_ITER_HAS_BUDGET() ponizej (patrz uzasadnienie przy deklaracji
+     // TG_ITER_BUDGET_MS wyzej).
+@@ -45871,7 +47561,14 @@
+             // OTA (wlasna centrali LUB panelu) — self-OTA zabije WiFi AP na
+             // czas restartu, co przerwie ewentualne pobieranie panelu.
+             if (otaOperacjaWTrakcie) {
+-              sendTelegramMessage(F("Inna aktualizacja (centrali lub panelu) jest w trakcie / czeka na potwierdzenie. Sprobuj ponownie za chwile."));
++              sendTelegramMessage(F("Inna aktualizacja (centrali lub panelu) jest w trakcie. Sprobuj ponownie za chwile."));
++              break;
++            }
++            // [v3.58.6 PANEL-OTA] Restart centrali urwalby pobieranie w panelu.
++            // Sama CZEKAJACA oferta dla panelu juz /update nie blokuje: po
++            // restarcie centrali wraca (panelOtaKlejPoStarcie()).
++            if (panelOtaKlejTransferTrwa()) {
++              sendTelegramMessage(F("Panel wlasnie pobiera swoj plik z centrali. Sprobuj ponownie za minute."));
+               break;
+             }
+             // [PUNKT 7 — OTA GitHub] Przeniesione z pollTelegramCommands()
+@@ -45933,56 +47630,22 @@
+             // aktualizacja panelu jeszcze nie zostala potwierdzona przez
+             // panel, odmawiamy zamiast startowac nowe pobieranie/rotacje.
+             if (otaOperacjaWTrakcie) {
+-              sendTelegramMessage(F("Inna aktualizacja (centrali lub panelu) jest w trakcie / czeka na potwierdzenie. Sprobuj ponownie za chwile."));
++              sendTelegramMessage(F("Inna aktualizacja (centrali lub panelu) jest w trakcie. Sprobuj ponownie za chwile."));
+               break;
+             }
+-            // [OTA-PANEL, ta sesja] Ten sam tag_name co centrala (jeden
+-            // Release, dwa assety) — reuzywamy sprawdzNajnowszaWersjeGithub()
+-            // zamiast osobnego zapytania do api.github.com (BAGNO 1.1).
+-            // Porownanie NIE z FIRMWARE_VERSION (to centrali), tylko z
+-            // g_panelWersjaZgloszona — ostatnia wersja, jaka panel realnie
+-            // zglosil przy odpytaniu /api/status.
+-            sendTelegramMessage(F("Sprawdzam najnowsza wersje panelu na GitHub..."));
+-            {
+-              String tag, blad;
+-              if (!sprawdzNajnowszaWersjeGithub(tag, blad)) {
+-                sendTelegramMessage("Nie udalo sie sprawdzic wersji: " + blad);
+-              } else if (g_panelWersjaZgloszona.length() > 0 && tag == g_panelWersjaZgloszona) {
+-                sendTelegramMessage("Panel juz ma najnowsza wersje (" + tag + "). Nic do zrobienia.");
+-              } else {
+-                sendTelegramMessage("Nowa wersja panelu: " + tag +
+-                                     " (ostatnio zgloszona przez panel: " +
+-                                     (g_panelWersjaZgloszona.length() ? g_panelWersjaZgloszona : "nieznana") +
+-                                     "). Pobieram na centrale...");
+-                otaOperacjaWTrakcie = true; // [SYNC-OTA] patrz uzasadnienie przy deklaracji - trzymana DLUZEJ niz samo pobranie
+-                // [SYNC-OTA/11.3, ta sesja — OTA_PANEL_CALOSC.md] Znacznik w
+-                // NVS, NIE tylko w RAM. Telegram uznaje ta komende za
+-                // "obsluzona" w momencie przesuniecia offsetu (juz sie
+-                // stalo, zanim tu dotarlismy) — jesli centrala zrestartuje
+-                // sie gdziekolwiek w trakcie ponizszego bloku, Telegram
+-                // NIGDY nie dostarczy tej komendy drugi raz. Bez wpisu w
+-                // NVS, po restarcie RAM po prostu wraca do (false, false,
+-                // "") i cala proba znika bez sladu i bez wiadomosci — to
+-                // dokladnie objaw z 11.3. Odczyt i reakcja: patrz koniec
+-                // setup() nizej.
+-                config.putBool("panOtaTrwa", true);
+-                config.putString("panOtaTag", tag);
+-                String bladPobierania;
+-                if (pobierzFirmwarePanelaZGithub(tag, bladPobierania)) {
+-                  g_panelOtaWersja = tag;
+-                  g_panelOtaDostepna = true; // BAGNO 2.3: dopiero TERAZ, po potwierdzonym zapisie na LittleFS
+-                  config.putBool("panOtaGotowa", true); // [SYNC-OTA/11.3] plik NA LITTLEFS jest juz potwierdzony - to przetrwa restart
+-                  sendTelegramMessage("Firmware panelu (" + tag + ") gotowy. Zainstaluje sie automatycznie "
+-                                       "przy najblizszym wybudzeniu panelu (przycisk).");
+-                  // [SYNC-OTA] otaOperacjaWTrakcie CELOWO zostaje true — czyszczone
+-                  // dopiero w handlerze /api/status, przy potwierdzonej wersji od panelu.
+-                } else {
+-                  otaOperacjaWTrakcie = false; // [SYNC-OTA] pobieranie z GitHub nieudane - odblokuj od razu, nic nie czeka
+-                  config.putBool("panOtaTrwa", false); // [SYNC-OTA/11.3] nic nie zostalo obiecane panelowi - sprzataj od razu
+-                  sendTelegramMessage("Pobieranie firmware panelu nieudane: " + bladPobierania);
+-                }
+-              }
+-            }
++            // [v3.58.6 PANEL-OTA] Dalszy ciag (sprawdzenie wydania, pobranie
++            // pliku na centrale, wystawienie oferty panelowi) jest w
++            // panelOtaKlejKomendaAktualizuj(). Co sie zmienilo wzgledem 3.58.5:
++            //   - otaOperacjaWTrakcie tylko na czas pobierania z GitHuba,
++            //   - oferta ma numer i identyfikator pliku, konczy sie sama
++            //     (potwierdzenie, odmowa, limit pobran, 24 h, anulowanie),
++            //   - komunikat nie obiecuje juz instalacji "przy wybudzeniu
++            //     przyciskiem" (panel w obecnej postaci nie zasypia).
++            panelOtaKlejKomendaAktualizuj();
++            break;
++
++          case TG_UPDATE_PANEL_ANULUJ:   // [v3.58.6 PANEL-OTA]
++            panelOtaKlejKomendaAnuluj();
+             break;
+ 
+           default:
+@@ -48131,37 +49794,11 @@
+   // (brak polaczenia = po prostu zwraca false, nie zawiesza), wiec nawet
+   // gdyby WiFi jeszcze nie zdazylo wstac, przywrocenie stanu ponizej i
+   // tak wykona sie poprawnie niezaleznie od tego.
+-  {
+-    bool nvsGotowa = config.getBool("panOtaGotowa", false);
+-    bool nvsTrwa    = config.getBool("panOtaTrwa", false);
+-    String nvsTag   = config.getString("panOtaTag", "");
+-
+-    if (nvsGotowa) {
+-      // Pobieranie ZDAZYLO sie zakonczyc przed restartem — plik na
+-      // LittleFS powinien byc wciaz wazny (BAGNO 2.1: zapis .tmp+rename
+-      // jest atomowy, wiec albo mamy caly plik, albo wcale). Przywroc
+-      // stan zamiast go po cichu tracic — bez tego panel nigdy nie
+-      // dowiedzialby sie o gotowej aktualizacji, mimo ze plik na nia czeka.
+-      g_panelOtaDostepna = true;
+-      g_panelOtaWersja = nvsTag;
+-      otaOperacjaWTrakcie = true; // nadal czeka na potwierdzenie przez panel
+-      DLOGF(DC_OTA, DL_INFO, "OTA-PANEL zdarzenie=przywrocono_stan_po_restarcie wersja=%s", nvsTag.c_str());
+-      sendTelegramMessage("Centrala zrestartowala sie w trakcie oczekiwania na wybudzenie panelu — "
+-                           "wznawiam oczekiwanie (wersja " + nvsTag + ", plik na centrali juz gotowy).");
+-    } else if (nvsTrwa) {
+-      // Rozpoczelismy pobieranie z GitHub, ale nigdy sie nie zakonczylo
+-      // (ani sukcesem — bylby nvsGotowa, ani jawna porazka — bylby
+-      // wyczyszczony) — centrala padla W TRAKCIE. Dokladnie scenariusz z
+-      // 11.3: Telegram juz przesunal offset, wiec komenda nigdy nie
+-      // wroci sama. Sprzataj znacznik i powiedz o tym wprost, zamiast
+-      // ciszy.
+-      config.putBool("panOtaTrwa", false);
+-      DLOGF(DC_OTA, DL_WARN, "OTA-PANEL zdarzenie=przerwane_pobieranie_po_restarcie wersja=%s", nvsTag.c_str());
+-      sendTelegramMessage("Poprzednia aktualizacja panelu (wersja " + nvsTag +
+-                           ") nie dokonczyla sie — centrala zrestartowala sie w trakcie pobierania. "
+-                           "Sprobuj ponownie: /update_panel");
+-    }
+-  }
++  // [v3.58.6 PANEL-OTA] Tresc przeniesiona do panelOtaKlejPoStarcie(). Oferta
++  // wraca po restarcie centrali razem z numerem i identyfikatorem pliku, ale
++  // NIE ustawia juz otaOperacjaWTrakcie (do 3.58.5 po kazdym restarcie z
++  // czekajaca oferta /update bylo zablokowane, a nadzor zadan wylaczony).
++  panelOtaKlejPoStarcie();
+ 
+   diagCheckpoint(DIAG_TASK_LOOP, DIAG_OP_SETUP, DIAG_STAGE_AFTER);
+   DLOG(DC_SYSTEM, DL_INFO, F("SYSTEM zdarzenie=gotowy msg=\"bez LCD/menu\""));
