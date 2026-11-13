@@ -1,0 +1,204 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -0,0 +1 @@
++// [v3.58.11 ETAP] Wykresy: zakresy czasowe, pompa, serwa, cisnienie, wilgotnosc; bez zmiany historii.
+@@ -6235 +6236 @@
+-static const char* FIRMWARE_VERSION = "v3.58.10";
++static const char* FIRMWARE_VERSION = "v3.58.11";
+@@ -21044,0 +21046,10 @@
++function wykrPobierz(url, nazwa){
++  fetch(url, {cache:'no-store'}).then(function(r){
++    if (!r.ok) throw new Error('HTTP ' + r.status);
++    return r.blob();
++  }).then(function(b){
++    var urlBlob = URL.createObjectURL(b), a = document.createElement('a');
++    a.href = urlBlob; a.download = nazwa; document.body.appendChild(a); a.click(); a.remove();
++    setTimeout(function(){ URL.revokeObjectURL(urlBlob); }, 1000);
++  }).catch(function(){ alert('Nie udalo sie pobrac historii.'); });
++}
+@@ -21054 +21065 @@
+-  if (_wykrTryb === 'tydz') { _wykrDaneDlugie = null; }
++  if ((_wykrTryb === 'tydz' || _wykrTryb === '30d')) { _wykrDaneDlugie = null; }
+@@ -21061 +21072 @@
+-  if (_wykrTryb === 'tydz'){
++  if ((_wykrTryb === 'tydz' || _wykrTryb === '30d')){
+@@ -21063 +21074 @@
+-    fetch('/api/history/long').then(function(r){ return r.text(); }).then(function(csv){
++    fetch('/api/history/long').then(function(r){ if (!r.ok) throw Error('HTTP'); return r.text(); }).then(function(csv){
+@@ -21066 +21077 @@
+-        ['chart-piec','chart-inne'].forEach(function(id){
++        ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc'].forEach(function(id){
+@@ -21079 +21090 @@
+-  fetch('/api/history').then(function(r){ return r.text(); }).then(function(csv){
++  fetch('/api/history').then(function(r){ if (!r.ok) throw Error('HTTP'); return r.text(); }).then(function(csv){
+@@ -21081 +21092 @@
+-      ['chart-piec','chart-inne'].forEach(function(id){
++      ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc'].forEach(function(id){
+@@ -21095,0 +21107,6 @@
++// Puste, brakujace i nieprawidlowe wartości nie sa zerem.
++function wykrLiczba(v){
++  if (v == null || String(v).trim() === '') return NaN;
++  var x = Number(v); return Number.isFinite(x) ? x : NaN;
++}
++function wykrStanPompy(v){ var x = wykrLiczba(v); return x === 0 || x === 1 ? x : NaN; }
+@@ -21099 +21116 @@
+-           cisnienie:[], wilgotnosc:[], klapa_proc:[], syberko_proc:[], czas_unix:[]};
++           cisnienie:[], wilgotnosc:[], klapa_proc:[], syberko_proc:[], pompa:[], czas_unix:[]};
+@@ -21103,13 +21120,12 @@
+-    d.t_zewn.push(parseFloat(c[1])||0);
+-    d.t_bojler.push(parseFloat(c[2])||0);
+-    d.t_ogrz.push(parseFloat(c[3])||0);
+-    d.t_ogrz_sr.push(parseFloat(c[4])||0);
+-    d.t_powrot.push(parseFloat(c[5])||0);
+-    d.t_panel.push(parseFloat(c[6])||0);
+-    d.t_pokoj.push(parseFloat(c[7])||0);
+-    // c[8] = pompa (bool 0/1) - nieuzywane na wykresach, pomijane celowo,
+-    // tak jak w dotychczasowym parserze.
+-    d.cisnienie.push(parseFloat(c[9])||0);
+-    d.wilgotnosc.push(parseFloat(c[10])||0);
+-    d.klapa_proc.push(parseFloat(c[11])||0);
+-    d.syberko_proc.push(parseFloat(c[12])||0);
++    d.t_zewn.push(wykrLiczba(c[1]));
++    d.t_bojler.push(wykrLiczba(c[2]));
++    d.t_ogrz.push(wykrLiczba(c[3]));
++    d.t_ogrz_sr.push(wykrLiczba(c[4]));
++    d.t_powrot.push(wykrLiczba(c[5]));
++    d.t_panel.push(wykrLiczba(c[6]));
++    d.t_pokoj.push(wykrLiczba(c[7]));
++    d.pompa.push(wykrStanPompy(c[8]));
++    d.cisnienie.push(wykrLiczba(c[9]));
++    d.wilgotnosc.push(wykrLiczba(c[10]));
++    d.klapa_proc.push(wykrLiczba(c[11]));
++    d.syberko_proc.push(wykrLiczba(c[12]));
+@@ -21131 +21147 @@
+-  var d = {etyk:[], czas_unix:[]};
++  var d = {etyk:[], czas_unix:[], pompa:[]};
+@@ -21140,3 +21156,3 @@
+-      d[pola[i]].push(parseFloat(c[base]) || 0);
+-      d[pola[i] + '_min'].push(parseFloat(c[base + 1]) || 0);
+-      d[pola[i] + '_max'].push(parseFloat(c[base + 2]) || 0);
++      d[pola[i]].push(wykrLiczba(c[base]));
++      d[pola[i] + '_min'].push(wykrLiczba(c[base + 1]));
++      d[pola[i] + '_max'].push(wykrLiczba(c[base + 2]));
+@@ -21143,0 +21160 @@
++    d.pompa.push(wykrStanPompy(c[35]));
+@@ -21158,0 +21176,18 @@
++// Filtr po zegarze przegladarki, a nie po liczbie punktow: dluga historia
++// jest zdarzeniowa. Nie zgadujemy daty dla probek bez prawidlowego czasu.
++function wykrIndeksyOkresu(czasy, odS, doS){
++  var out = [];
++  czasy.forEach(function(t, i){ if (Number.isFinite(t) && t > 0 && t >= odS && t <= doS) out.push(i); });
++  return out;
++}
++function wykrStatPompy(stany, czasy, prog){
++  var on=0, off=0, zmiany=0, prev=NaN;
++  stany.forEach(function(v, i){
++    if (i > 0 && (!Number.isFinite(czasy[i]) || !Number.isFinite(czasy[i-1]) || czasy[i] - czasy[i-1] > prog || czasy[i] < czasy[i-1])) prev=NaN;
++    if (v !== 0 && v !== 1) { prev=NaN; return; }
++    if (v === 1) on++; else off++;
++    if (Number.isFinite(prev) && prev !== v) zmiany++;
++    prev=v;
++  });
++  return {on:on, off:off, zmiany:zmiany};
++}
+@@ -21160,13 +21195,2 @@
+-  var d, n;
+-  if (_wykrTryb === 'tydz'){
+-    // Caly bufor dlugi naraz - bez slice. UWAGA: od [HISTORIA-DLUGA-ZDARZENIOWA]
+-    // ten bufor to do HISTORIA_DLUGA_MAX_PROBEK (8000) probek zdarzeniowych, a
+-    // nie dawne 168 godzinowych - przy pelnym buforze to duzo punktow na jeden SVG.
+-    d = _wykrDaneDlugie;
+-    n = d ? d.etyk.length : 0;
+-  } else {
+-    d = _wykrDaneKrotkie;
+-    // Godziny = ostatnia godzina (60 probek co 60s), Dzien = caly bufor
+-    // krotki (1440 probek = 24h, tyle ile bufor server-side w ogole ma).
+-    n = (_wykrTryb === 'godz') ? 60 : 1440;
+-  }
++  var dlugi = _wykrTryb === 'tydz' || _wykrTryb === '30d';
++  var d = dlugi ? _wykrDaneDlugie : _wykrDaneKrotkie;
+@@ -21174,7 +21198,8 @@
+-  var L = wykrSliceOstatnie(d.etyk, n);
+-  // [DZIURY-CZAS, v3.0.0.2/3.0.0.3] Czas kazdej probki + prog dziury
+-  // odpowiedni dla biezacego bufora (krotki dla godz/dzien, dlugi dla tydz).
+-  var T = wykrSliceOstatnie(d.czas_unix, n);
+-  var progDziuryS = (_wykrTryb === 'tydz') ? PROG_DZIURY_DLUGI_S : PROG_DZIURY_KROTKI_S;
+-  // Kolory identyczne z paleta Ryby (terminal_html.cpp, chart-temp/chart-lux/chart-adapt):
+-  // #ff9f43, #ffd32a, #00d4f5, #4ade80, #ffb347, #a855f7, #ff4d6d.
++  var godziny = ({godz:1, '6h':6, dzien:24, tydz:168, '30d':720})[_wykrTryb] || 24;
++  var koniec = Math.floor(Date.now()/1000);
++  var ix = wykrIndeksyOkresu(d.czas_unix, koniec - godziny*3600, koniec);
++  function wybierz(a){ return ix.map(function(i){ return a && i < a.length ? a[i] : NaN; }); }
++  var L = wybierz(d.etyk), T = wybierz(d.czas_unix);
++  var prog = dlugi ? PROG_DZIURY_DLUGI_S : PROG_DZIURY_KROTKI_S;
++  var info = document.getElementById('wykrInfo');
++  if (info) info.textContent = ix.length + ' probek w ostatnich ' + godziny + ' h; brakujace okresy nie sa uzupelniane. Czas wedlug przegladarki.';
+@@ -21182,4 +21207,2 @@
+-    {data: wykrSliceOstatnie(d.t_ogrz, n),    color: '#ff9f43'},
+-    {data: wykrSliceOstatnie(d.t_ogrz_sr, n), color: '#ffd32a'},
+-    {data: wykrSliceOstatnie(d.t_powrot, n),  color: '#ff4d6d'}
+-  ], 150, progDziuryS);
++    {data:wybierz(d.t_ogrz),color:'#ff9f43'}, {data:wybierz(d.t_ogrz_sr),color:'#ffd32a'}, {data:wybierz(d.t_powrot),color:'#ff4d6d'}
++  ],150,prog);
+@@ -21187,5 +21210,10 @@
+-    {data: wykrSliceOstatnie(d.t_zewn, n),   color: '#00d4f5'},
+-    {data: wykrSliceOstatnie(d.t_bojler, n), color: '#4ade80'},
+-    {data: wykrSliceOstatnie(d.t_panel, n),  color: '#ffb347'},
+-    {data: wykrSliceOstatnie(d.t_pokoj, n),  color: '#a855f7'}
+-  ], 150, progDziuryS);
++    {data:wybierz(d.t_zewn),color:'#00d4f5'}, {data:wybierz(d.t_bojler),color:'#4ade80'},
++    {data:wybierz(d.t_panel),color:'#ffb347'}, {data:wybierz(d.t_pokoj),color:'#a855f7'}
++  ],150,prog);
++  drawChart('chart-serwa', L, T, [{data:wybierz(d.klapa_proc),color:'#ff9f43'}, {data:wybierz(d.syberko_proc),color:'#4ade80'}],150,prog);
++  var pompa = wybierz(d.pompa);
++  drawChart('chart-pompa', L, T, [{data:pompa,color:'#4ade80',schodki:true}],150,prog);
++  drawChart('chart-cisnienie', L, T, [{data:wybierz(d.cisnienie),color:'#a855f7'}],150,prog);
++  drawChart('chart-wilgotnosc', L, T, [{data:wybierz(d.wilgotnosc),color:'#00d4f5'}],150,prog);
++  var ps = wykrStatPompy(pompa, T, prog), pi = document.getElementById('wykrPompaInfo');
++  if (pi) pi.textContent = 'Probki PRACA: ' + ps.on + ', STOP: ' + ps.off + ', obserwowane zmiany: ' + ps.zmiany + '.';
+@@ -21202,0 +21231,4 @@
++  'chart-serwa':['Klapa (°)','Szyberek (°)'],
++  'chart-pompa':['Pompa: 0 STOP / 1 PRACA'],
++  'chart-cisnienie':['Ciśnienie (hPa)'],
++  'chart-wilgotnosc':['Wilgotność (%)'],
+@@ -21271 +21303 @@
+-    var raw = Number(st.series[si].data[ix]);
++    var raw = wykrLiczba(st.series[si].data[ix]);
+@@ -21462 +21494 @@
+-  st.series = (series || []).map(function(a){ return {data:Array.isArray(a.data) ? a.data.slice() : [], color:a.color || '#00d4f5'}; });
++  st.series = (series || []).map(function(a){ return {data:Array.isArray(a.data) ? a.data.slice() : [], color:a.color || '#00d4f5', schodki:!!a.schodki}; });
+@@ -21492 +21524 @@
+-  var series = st.series.map(function(a){ return {data:a.data.slice(start, end), color:a.color}; });
++  var series = st.series.map(function(a){ return {data:a.data.slice(start, end), color:a.color, schodki:a.schodki}; });
+@@ -21499 +21531 @@
+-    series = series.map(function(a){ return {data:a.data.concat(a.data), color:a.color}; });
++    series = series.map(function(a){ return {data:a.data.concat(a.data), color:a.color, schodki:a.schodki}; });
+@@ -21505 +21537 @@
+-    a.data.forEach(function(v){ var num = Number(v); if (isFinite(num)) allVals.push(num); });
++    a.data.forEach(function(v){ var num = wykrLiczba(v); if (isFinite(num)) allVals.push(num); });
+@@ -21550 +21582 @@
+-      var val = Number(series[si].data[pi]);
++      var val = wykrLiczba(series[si].data[pi]);
+@@ -21566 +21598 @@
+-        var pts = part.map(function(p){ return p.x.toFixed(1)+','+p.y.toFixed(1); }).join(' ');
++        var pts = part.map(function(p, i){ return (series[si].schodki && i ? p.x.toFixed(1)+','+part[i-1].y.toFixed(1)+' ' : '') + p.x.toFixed(1)+','+p.y.toFixed(1); }).join(' ');
+@@ -29679,0 +29712 @@
++        "<button type='button' class='rb' id='rb-6h' onclick=\"wykrZakres('6h',this)\">6 h</button>"
+@@ -29681 +29714,2 @@
+-        "<button type='button' class='rb' id='rb-tydz'  onclick=\"wykrZakres('tydz',this)\">Tydzien</button>"
++        "<button type='button' class='rb' id='rb-tydz'  onclick=\"wykrZakres('tydz',this)\">7 dni</button>"
++        "<button type='button' class='rb' id='rb-30d' onclick=\"wykrZakres('30d',this)\">30 dni</button>"
+@@ -29705,0 +29740,13 @@
++    "<div class='karta'><h2>Serwa &#8211; klapa i szyberek (stopnie)</h2>"
++    "<div><svg id='chart-serwa' width='100%' height='150' style='display:block'></svg></div>"
++    "<div class='row-desc'>Klapa: pomaranczowy, szyberek: zielony; w historii dlugiej wartosci usrednione.</div></div>"
++    "<div class='karta'><h2>Pompa C.O. &#8211; stan probek</h2>"
++    "<div><svg id='chart-pompa' width='100%' height='150' style='display:block'></svg></div>"
++    "<div id='wykrPompaInfo' class='row-desc'>Brak danych</div>"
++    "<div class='row-desc'>Zmiany widoczne miedzy probkami sa przyblizeniem, nie dokladnym czasem przelaczenia.</div></div>"
++    "<div class='karta'><h2>Cisnienie atmosferyczne (hPa)</h2><div><svg id='chart-cisnienie' width='100%' height='150'></svg></div></div>"
++    "<div class='karta'><h2>Wilgotnosc powietrza (%)</h2><div><svg id='chart-wilgotnosc' width='100%' height='150'></svg></div></div>"
++    "<div class='karta'><h2>Pobierz historie CSV</h2>"
++    "<button type='button' class='ust-btn' onclick=\"wykrPobierz('/api/history','historia-krotka.csv')\">Krotka</button> "
++    "<button type='button' class='ust-btn' onclick=\"wykrPobierz('/api/history/long','historia-dluga.csv')\">Dluga</button>"
++    "<div class='row-desc'>Pobieranie nie usuwa zapisow z centrali.</div></div>"
