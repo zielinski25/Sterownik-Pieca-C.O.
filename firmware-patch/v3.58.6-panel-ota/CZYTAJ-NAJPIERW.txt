@@ -1,0 +1,175 @@
+FIRMWARE CENTRALI 3.58.6 - co zrobic w 3 krokach
+================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN (identyczne jak przy 3.58.3).
+
+Ta paczka zawiera wszystko z 3.58.4 i 3.58.5 (wykresy dla panelu LCD).
+Jesli tamte nie sa jeszcze wgrane, wgraj od razu te.
+
+Do kompletu: firmware panelu LCD v1.4.0 (katalog LCD-Centrali w repozytorium,
+osobny ZIP). Panel trzeba nim wgrac RAZ KABLEM - na plytce jest v1.2.2 ze
+starym kodem aktualizacji.
+
+WAZNE - ZANIM ZACZNIESZ
+-----------------------
+1) Ten plik pasuje do projektu, w ktorym jest wersja 3.58.3, 3.58.4 albo
+   3.58.5. Sprawdz wersje na plytce (strona WWW centrali -> Ustawienia ->
+   "Sesja operatora" -> "Wersja centrali"). Jesli jest tam INNA wersja - nie
+   podmieniaj pliku, tylko napisz, jaka.
+2) Ten plik NIE BYL kompilowany w PlatformIO ani uruchamiany na plytce.
+   Pierwsza kompilacja bedzie Twoja. Jesli sie nie uda - przyslij komunikat
+   bledu i wroc do kopii zapasowej (na dole tej instrukcji).
+3) Zanim podmienisz plik, zapisz z logu OBECNEJ centrali wartosc hwm_tg.
+   Jest w linii, ktora centrala pisze co 5 minut:
+       tag=HEALTH-A lvl=INFO zdarzenie=memory_snapshot ... hwm_tg=....B ...
+   To najmniejszy zapas stosu zadania Telegrama od startu. Przyda sie do
+   porownania w kroku 3 (dotad bylo to 2256-2708 B).
+
+
+CO DAJE TA WERSJA
+-----------------
+Aktualizacja panelu LCD przez Telegram (/update_panel), ktora:
+  - nie wpada w petle: centrala rozpoznaje WGRANY PLIK (po jego sumie
+    kontrolnej), a nie numer wersji. Do 3.58.5 czekala, az panel zglosi
+    wersje identyczna z tagiem wydania - panel zglasza "v1.3.0", wydania maja
+    tagi "3.57.9", wiec panel wgrywalby ten sam plik przy kazdym starcie;
+  - zawsze sie konczy i zawsze pisze, czym: panel zaktualizowany / panel
+    odmowil i dlaczego / minely 24 h / anulowano;
+  - ma komende /update_panel_anuluj (i przycisk w menu aktualizacji);
+  - nie blokuje /update centrali, dopoki panel czeka;
+  - nie dziala w czasie alarmu: centrala nie podaje wtedy panelowi ani
+    oferty, ani pliku;
+  - odrzuca plik, ktory nie jest programem dla panelu (np. firmware centrali
+    wgrany omylkowo jako firmware_panel.bin);
+  - po 5 minutach pisze, dlaczego panel jeszcze nie zaczal.
+
+Reszta centrali bez zmian: sterowanie, czujniki, strona WWW, wykresy,
+zapis historii, /update centrali.
+Szczegoly: README.md.
+
+PANEL I CENTRALA - CO Z CZYM DZIALA
+  - panel 1.4.0 + centrala 3.58.6   -> panel aktualizuje sie sam w trakcie
+                                        pracy, z paskiem postepu; wynik
+                                        przychodzi w Telegramie
+  - starszy panel + centrala 3.58.6 -> panel pobiera plik dopiero po
+                                        wylaczeniu i wlaczeniu, z pustym
+                                        ekranem; jedna proba, potem oferta
+                                        znika (bez petli)
+  - panel 1.4.0 + centrala do 3.58.5 -> panel wgrywa plik raz, ale stara
+                                        centrala nie umie tego potwierdzic i
+                                        blokuje swoje /update; nie polecam
+Kolejnosc wgrywania jest dowolna. Najprosciej: najpierw centrala 3.58.6,
+potem panel v1.4.0 kablem.
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.6"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (powinna wyjsc wartosc z pierwszej linii SHA256SUMS.txt):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+(Jesli Twoj projekt lezy gdzie indziej - podstaw swoja sciezke.)
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+PlatformIO -> Build, potem Upload   (w terminalu: pio run   i   pio run -t upload)
+
+Jesli kompilacja zatrzyma sie na bledzie:
+  - skopiuj caly komunikat (linie z "error:") i przyslij,
+  - przywroc kopie zapasowa (na dole).
+Wszystkie zmienione miejsca sa wypisane w WYNIKI\zakres-zmian.txt, wiec blad
+bedzie wskazywal jedno z nich.
+
+
+KROK 3 - SPRAWDZENIE (najpierw na golej plytce, potem przy piecu)
+-----------------------------------------------------------------
+1. Strona WWW centrali -> Ustawienia -> "Sesja operatora":
+   "Wersja centrali: v3.58.6".
+2. Telegram: /update_panel_anuluj
+   Odpowiedz: "Nie ma czego anulowac - zadna aktualizacja panelu nie czeka."
+3. Telegram: /update_panel
+   Dzis zadne wydanie na GitHubie nie ma pliku dla panelu, wiec odpowiedz to:
+       "Pobieranie firmware panelu nieudane: w wydaniu 3.57.9 nie ma pliku
+        firmware_panel.bin (kod 404). Dodaj go do wydania na GitHubie i
+        wyslij /update_panel ponownie."
+   Nic sie przy tym nie zmienia - to bezpieczna proba.
+4. Panel LCD pracuje jak dotad; wykresy na panelu dzialaja (ta czesc kodu
+   jest taka sama jak w 3.58.5).
+5. Zapas stosu: po punktach 2 i 3 poczekaj na kolejna linie tag=HEALTH-A
+   (do 5 minut) i porownaj hwm_tg z wartoscia zapisana przed wgraniem.
+   Spodziewane: podobna. Jesli jest nizsza o ponad 500 B albo spadla ponizej
+   1000 B - przyslij obie linie i na razie nie uzywaj /update_panel.
+   (Nowy kod trzyma swoje teksty poza stosem wlasnie po to, zeby tej liczby
+   nie ruszyc - ale na plytce nie bylo to mierzone.)
+
+PELNA PROBA AKTUALIZACJI PANELU (gdy bedziesz gotow)
+  a) Panel ma juz v1.4.0 (wgrany kablem).
+     Jednorazowe sprawdzenie, zaraz po wgraniu kablem i PRZED zmiana
+     czegokolwiek w zrodlach panelu:
+       - log panelu przy starcie (serial 115200):
+             tag=OTA-PANEL zdarzenie=stan_przy_starcie obraz=<16 znakow> ...
+       - narzedzie, na pliku z tej samej kompilacji:
+             python3 narzedzia/ota_panelu_sprawdz.py --tag 3.58.6 --bin LCD-Centrali/.pio/build/esp32dev/firmware.bin
+         wypisuje "Identyfikator pliku: <16 znakow>".
+         Bez Pythona, w PowerShell (podaj pelna sciezke do pliku; ta linia
+         nie byla tu uruchamiana - nie mam PowerShella):
+             $b=[IO.File]::ReadAllBytes("C:\pelna\sciezka\firmware.bin"); -join ($b[($b.Length-32)..($b.Length-25)] | % { $_.ToString("x2") })
+     Te dwie wartosci maja byc ROWNE. Jesli nie sa (albo w logu jest
+     obraz=nieznany) - nie wysylaj /update_panel, przyslij obie.
+  b) Zbuduj firmware panelu w PlatformIO. Plik:
+         LCD-Centrali\.pio\build\esp32dev\firmware.bin
+     Zeby bylo widac zmiane, mozesz przedtem zmienic w LCD-Centrali\src\main.cpp
+     FIRMWARE_VERSION_PANEL na "v1.4.1".
+  c) Sprawdz plik (Linux/WSL albo Python na Windows, z katalogu repozytorium):
+         python3 narzedzia/ota_panelu_sprawdz.py --tag <tag wydania> --bin <plik>
+  d) Dolacz go do NAJNOWSZEGO wydania na GitHubie pod nazwa firmware_panel.bin
+     (centrala zawsze bierze najnowsze wydanie - to samo, z ktorego /update
+     bierze firmware.bin dla siebie).
+  e) Telegram: /update_panel. Kolejno przychodza wiadomosci:
+         "Sprawdzam najnowsza wersje panelu na GitHub..."
+         "Wydanie ...: pobieram plik panelu na centrale..."
+         "Plik panelu z wydania ... jest na centrali (... B). Panel ... pobierze go sam ..."
+     Na panelu, zwykle w ciagu minuty (nie dotykaj ekranu przez 15 s):
+     napis AKTUALIZACJA PANELU i pasek postepu, potem restart panelu.
+     Na koniec:
+         "Panel zaktualizowany: pracuje na pliku z wydania ... (zglasza wersje ..., przedtem ...)."
+  f) Gdyby panel nie zaczal: po 5 minutach centrala napisze dlaczego.
+     Wycofanie w kazdej chwili: /update_panel_anuluj
+
+Co warto przyslac po probie: linie "tag=OTA-PANEL" z logu centrali i z logu
+panelu (serial 115200) - jest w nich kazdy krok, czasy i przyczyny - oraz
+hwm_tg z linii tag=HEALTH-A po zakonczonej probie.
+
+
+POWROT DO POPRZEDNIEJ WERSJI
+----------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.6" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+i Upload. Panel v1.4.0 moze zostac - ze starsza centrala pracuje normalnie
+(tylko /update_panel lepiej wtedy nie uzywac, patrz tabela wyzej).
+
+
+TESTY W PACZCE (opcjonalnie; Linux albo WSL, g++ i python3)
+-----------------------------------------------------------
+cd tests
+./uruchom_testy.sh                 (166 sprawdzen kodu aktualizacji panelu
+                                    + 2697 sprawdzen kodu wykresow)
+python3 sprawdz_czulosc_ota.py     (czy testy wykrywaja 43 celowe bledy)
+./sprawdz_prawdziwe_obrazy.sh      (prawdziwe pliki .bin z repozytorium esptool
+                                    przez kod, ktory ocenia plik z wydania)
+Opis: tests/README.txt; wyniki z dnia wydania sa w katalogu WYNIKI.
+
+
+CZEGO TA WERSJA NIE ROBI
+------------------------
+- Nie byla kompilowana dla ESP32 ani testowana na sprzecie. Pobranie pliku
+  z GitHuba, wyslanie go panelowi, zapis w pamieci panelu i start nowego
+  programu sprawdzi dopiero Twoja proba. Zapas stosu centrali pokaze hwm_tg.
+- Nie zmienia hasla OTA (secrets.h) ani sposobu, w jaki centrala aktualizuje
+  sama siebie (/update).
+- Nie zmienia logiki pieca, automatyki, czujnikow, zapisu historii, strony
+  WWW, aplikacji Android.
