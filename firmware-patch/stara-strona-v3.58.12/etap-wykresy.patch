@@ -1,0 +1,199 @@
+--- a/centrala/src/main_centrala.cpp
++++ b/centrala/src/main_centrala.cpp
+@@ -0,0 +1 @@
++// [v3.58.12 ETAP] Wybierane serie temperatur, skala osi, porownanie czujnikow i pelny ekran.
+@@ -6236 +6237 @@
+-static const char* FIRMWARE_VERSION = "v3.58.11";
++static const char* FIRMWARE_VERSION = "v3.58.12";
+@@ -20808,0 +20810 @@
++  wykrPokazDelta();
+@@ -20812,0 +20815 @@
++  wykrPokazDelta();
+@@ -21012,0 +21016 @@
++setInterval(wykrPokazDelta, 2000);
+@@ -21027,0 +21032,106 @@
++// Preferencje sa lokalne dla przegladarki, nie zmieniaja danych centrali.
++var WYKR_KATALOG = [
++  ['t_ogrz','Piec'], ['t_ogrz_sr','Piec srednia'], ['t_powrot','Powrot'],
++  ['t_zewn','Zewnatrz'], ['t_bojler','Bojler'], ['t_panel','Panel sloneczny'], ['t_pokoj','Pomieszczenie']
++];
++// Trociny sa dostepne w biezacym statusie, lecz historia jeszcze ich nie zapisuje.
++var WYKR_CZUJNIKI = WYKR_KATALOG.filter(function(p){return p[0] !== 't_ogrz_sr';}).concat([['t_trociny','Trociny']]);
++var _wykrOpcje = {wylaczone:[], skala:'wspolna', a:'t_panel', b:'t_zewn', filtr:false, wypelnienie:false, linia:'liniowa'};
++function wykrZaladujOpcje(){
++  try {
++    var o=JSON.parse(localStorage.getItem('piec_stare_wykresy_v1') || '{}');
++    if (o && Array.isArray(o.wylaczone)) _wykrOpcje.wylaczone=o.wylaczone.filter(function(k){return WYKR_KATALOG.some(function(p){return p[0]===k;});});
++    if (o && o.skala === 'normalna') _wykrOpcje.skala='normalna';
++    if (o && o.filtr === true) _wykrOpcje.filtr=true;
++    if (o && o.wypelnienie === true) _wykrOpcje.wypelnienie=true;
++    if (o && (o.linia==='gladka' || o.linia==='schodki')) _wykrOpcje.linia=o.linia;
++    if (o && WYKR_CZUJNIKI.some(function(p){return p[0]===o.a;})) _wykrOpcje.a=o.a;
++    if (o && WYKR_CZUJNIKI.some(function(p){return p[0]===o.b;})) _wykrOpcje.b=o.b;
++  } catch(e) {} // niedostepny localStorage nie blokuje wykresow
++}
++function wykrZapiszOpcje(){ try { localStorage.setItem('piec_stare_wykresy_v1', JSON.stringify(_wykrOpcje)); } catch(e) {} }
++function wykrJestWlaczona(k){return _wykrOpcje.wylaczone.indexOf(k)<0;}
++function wykrPokazOpcje(){
++  var host=document.getElementById('wykrOpcje'); if (!host) return;
++  host.textContent='';
++  WYKR_KATALOG.forEach(function(p){
++    var lab=document.createElement('label'), chk=document.createElement('input');
++    lab.style.cssText='display:inline-flex;align-items:center;gap:4px;margin:4px 10px 4px 0;font-size:.8rem';
++    chk.type='checkbox'; chk.checked=wykrJestWlaczona(p[0]); chk.style.cssText='width:auto;margin:0';
++    chk.onchange=function(){
++      _wykrOpcje.wylaczone=_wykrOpcje.wylaczone.filter(function(k){return k!==p[0];});
++      if (!chk.checked) _wykrOpcje.wylaczone.push(p[0]);
++      wykrZapiszOpcje(); wykrRenderuj();
++    };
++    lab.appendChild(chk); lab.appendChild(document.createTextNode(p[1])); host.appendChild(lab);
++  });
++  var skala=document.getElementById('wykrSkala'); if(skala) skala.value=_wykrOpcje.skala;
++  var styl=document.getElementById('wykrLinia'); if(styl) styl.value=_wykrOpcje.linia;
++  var f=document.getElementById('wykrFiltr'); if(f) f.checked=_wykrOpcje.filtr;
++  var w=document.getElementById('wykrWypelnienie'); if(w) w.checked=_wykrOpcje.wypelnienie;
++  ['a','b'].forEach(function(k){
++    var sel=document.getElementById('deltaCzujnik'+k.toUpperCase()); if(!sel) return;
++    sel.textContent=''; WYKR_CZUJNIKI.forEach(function(p){var o=document.createElement('option');o.value=p[0];o.textContent=p[1];sel.appendChild(o);});
++    sel.value=_wykrOpcje[k];
++  });
++  wykrPokazDelta();
++}
++function wykrUstawSkale(v){if(v!=='wspolna' && v!=='normalna') return; _wykrOpcje.skala=v; wykrZapiszOpcje(); wykrRenderuj();}
++function wykrUstawPrezentacje(k,v){
++  if(k==='linia' && ['liniowa','gladka','schodki'].indexOf(v)>=0) _wykrOpcje.linia=v;
++  else if((k==='filtr' || k==='wypelnienie') && typeof v==='boolean') _wykrOpcje[k]=v;
++  else return;
++  wykrZapiszOpcje(); wykrRenderuj();
++}
++function wykrUstawDelta(k,v){
++  if ((k!=='a' && k!=='b') || !WYKR_CZUJNIKI.some(function(p){return p[0]===v;})) return;
++  _wykrOpcje[k]=v; wykrZapiszOpcje(); wykrPokazDelta();
++}
++// Jest to ostatni status /api/status, a nie potwierdzenie sprawnosci czujnika.
++function wykrPokazDelta(){
++  var el=document.getElementById('wykrDelta'); if(!el) return;
++  var d=_espStatusSnapshot, swiezy=!!d && _espStatusSnapshotAt>0 && Date.now()-_espStatusSnapshotAt<=ESP_STATUS_MAX_AGE_MS;
++  var a=swiezy ? wykrLiczba(d[_wykrOpcje.a]) : NaN, b=swiezy ? wykrLiczba(d[_wykrOpcje.b]) : NaN;
++  if (!Number.isFinite(a) || !Number.isFinite(b)) {el.textContent='Brak swiezego statusu lub jednej z wartosci.';return;}
++  el.textContent='A − B: '+(a-b).toFixed(1)+' °C (A: '+a.toFixed(1)+' °C, B: '+b.toFixed(1)+' °C).';
++}
++// Prosty, opcjonalny filtr Hampela: okno 7 probek, 3 MAD, min. 2°C.
++// Odrzuca szpilke tylko w prezentacji, nie modyfikuje danych ani CSV.
++// Przy duzych przerwach oraz zbyt malo sasiadow nie zmienia wyniku.
++function wykrMediana(a){
++  var v=a.slice().sort(function(x,y){return x-y;}), m=Math.floor(v.length/2);
++  return v.length%2 ? v[m] : (v[m-1]+v[m])/2;
++}
++function wykrFiltrSzpilek(dane, czasy, prog){
++  return dane.map(function(raw,i){
++    var x=wykrLiczba(raw); if(!Number.isFinite(x)) return NaN;
++    var lo=Math.max(0,i-3), hi=Math.min(dane.length-1,i+3), j;
++    for(j=i; j>lo; j--) { if(!Number.isFinite(czasy[j]) || !Number.isFinite(czasy[j-1]) || czasy[j]<=czasy[j-1] || czasy[j]-czasy[j-1]>prog){lo=j;break;} }
++    for(j=i; j<hi; j++) { if(!Number.isFinite(czasy[j]) || !Number.isFinite(czasy[j+1]) || czasy[j+1]<=czasy[j] || czasy[j+1]-czasy[j]>prog){hi=j;break;} }
++    var vals=[]; for(j=lo;j<=hi;j++){var v=wykrLiczba(dane[j]); if(Number.isFinite(v)) vals.push(v);}
++    if(vals.length<5) return x;
++    var med=wykrMediana(vals), mad=wykrMediana(vals.map(function(v){return Math.abs(v-med);}));
++    return Math.abs(x-med)>Math.max(2,3*1.4826*mad) ? med : x;
++  });
++}
++function wykrNormalizujDane(dane){
++  var liczby=dane.map(wykrLiczba).filter(Number.isFinite);
++  if (!liczby.length) return dane.map(function(){return NaN;});
++  var mn=Math.min.apply(null,liczby), mx=Math.max.apply(null,liczby);
++  return dane.map(function(v){var n=wykrLiczba(v); return !Number.isFinite(n) ? NaN : (mx===mn ? 50 : 100*(n-mn)/(mx-mn));});
++}
++function wykrPelnyEkran(id){
++  var svg=document.getElementById(id), karta=svg && svg.closest('.karta');
++  if(!karta || !karta.requestFullscreen) {alert('Pelny ekran nie jest obslugiwany w tej przegladarce.');return;}
++  if (document.fullscreenElement===karta && document.exitFullscreen) { document.exitFullscreen(); return; }
++  var p=karta.requestFullscreen(); if(p && p.catch) p.catch(function(){alert('Nie mozna wlaczyc pelnego ekranu.');});
++}
++// Po zmianie wielkosci karty przerysuj; zachowaj zoom i inspektor.
++document.addEventListener('fullscreenchange', function(){
++  ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc'].forEach(function(id){
++    var el=document.getElementById(id), btn=document.getElementById('full-'+id);
++    if(btn && el) btn.textContent=(document.fullscreenElement===el.closest('.karta')) ? 'Zamknij pelny ekran' : 'Pelny ekran';
++    if(el && el.__localChartState) lokalnyWykresRysuj(el.__localChartState);
++  });
++});
++wykrZaladujOpcje(); wykrPokazOpcje();
+@@ -21207,2 +21317,2 @@
+-    {data:wybierz(d.t_ogrz),color:'#ff9f43'}, {data:wybierz(d.t_ogrz_sr),color:'#ffd32a'}, {data:wybierz(d.t_powrot),color:'#ff4d6d'}
+-  ],150,prog);
++    {key:'t_ogrz',name:'Piec',data:wybierz(d.t_ogrz),color:'#ff9f43'}, {key:'t_ogrz_sr',name:'Średnia',data:wybierz(d.t_ogrz_sr),color:'#ffd32a'}, {key:'t_powrot',name:'Powrót',data:wybierz(d.t_powrot),color:'#ff4d6d'}
++  ].filter(function(x){return wykrJestWlaczona(x.key);}),150,prog);
+@@ -21210,3 +21320,3 @@
+-    {data:wybierz(d.t_zewn),color:'#00d4f5'}, {data:wybierz(d.t_bojler),color:'#4ade80'},
+-    {data:wybierz(d.t_panel),color:'#ffb347'}, {data:wybierz(d.t_pokoj),color:'#a855f7'}
+-  ],150,prog);
++    {key:'t_zewn',name:'Zewnętrzna',data:wybierz(d.t_zewn),color:'#00d4f5'}, {key:'t_bojler',name:'Bojler',data:wybierz(d.t_bojler),color:'#4ade80'},
++    {key:'t_panel',name:'Panel',data:wybierz(d.t_panel),color:'#ffb347'}, {key:'t_pokoj',name:'Pokój',data:wybierz(d.t_pokoj),color:'#a855f7'}
++  ].filter(function(x){return wykrJestWlaczona(x.key);}),150,prog);
+@@ -21306 +21416 @@
+-    chip.textContent = lokalnyWykresOpisSerii(st.id, si) + ' ' + raw.toFixed(1);
++    chip.textContent = (st.series[si].name || lokalnyWykresOpisSerii(st.id, si)) + ' ' + raw.toFixed(1);
+@@ -21494 +21604 @@
+-  st.series = (series || []).map(function(a){ return {data:Array.isArray(a.data) ? a.data.slice() : [], color:a.color || '#00d4f5', schodki:!!a.schodki}; });
++  st.series = (series || []).map(function(a){ return {data:Array.isArray(a.data) ? a.data.slice() : [], color:a.color || '#00d4f5', schodki:!!a.schodki, name:a.name || ''}; });
+@@ -21504 +21614,3 @@
+-  var H = st.height || 150;
++  var karta=el.closest('.karta');
++  var pelny=karta && document.fullscreenElement===karta;
++  var H = pelny ? Math.max(150, window.innerHeight - 220) : (st.height || 150);
+@@ -21524 +21636,8 @@
+-  var series = st.series.map(function(a){ return {data:a.data.slice(start, end), color:a.color, schodki:a.schodki}; });
++  var tempWykres = (st.id==='chart-piec' || st.id==='chart-inne');
++  var normalna = tempWykres && _wykrOpcje.skala==='normalna';
++  var series = st.series.map(function(a){
++    var data=a.data.slice(start, end);
++    if (tempWykres && _wykrOpcje.filtr && times) data=wykrFiltrSzpilek(data,times,st.progDziuryS);
++    if (normalna) data=wykrNormalizujDane(data);
++    return {data:data, color:a.color, schodki:a.schodki || (tempWykres && _wykrOpcje.linia==='schodki')};
++  });
+@@ -21547 +21666,2 @@
+-  if (mx === mn){ mn -= 1; mx += 1; }
++  if (normalna) { mn=0; mx=100; }
++  else if (mx === mn){ mn -= 1; mx += 1; }
+@@ -21599 +21719,8 @@
+-        svg += '<polyline points="'+pts+'" fill="none" stroke="'+series[si].color+'" stroke-width="1.5" stroke-linejoin="round"/>';
++        // Wypelnienie pokazuje obszar do dolu skali, nie energie cieplna.
++        if (tempWykres && _wykrOpcje.wypelnienie) svg += '<polygon points="'+pts+' '+part[part.length-1].x.toFixed(1)+','+(H-PAD.b)+' '+part[0].x.toFixed(1)+','+(H-PAD.b)+'" fill="'+series[si].color+'" fill-opacity="0.10" stroke="none"/>';
++        if (tempWykres && _wykrOpcje.linia==='gladka') {
++          var path='M '+part[0].x.toFixed(1)+' '+part[0].y.toFixed(1);
++          for(var z=1; z<part.length; z++) path+=' Q '+part[z-1].x.toFixed(1)+' '+part[z-1].y.toFixed(1)+' '+((part[z-1].x+part[z].x)/2).toFixed(1)+' '+((part[z-1].y+part[z].y)/2).toFixed(1);
++          path+=' L '+part[part.length-1].x.toFixed(1)+' '+part[part.length-1].y.toFixed(1);
++          svg += '<path d="'+path+'" fill="none" stroke="'+series[si].color+'" stroke-width="1.5"/>';
++        } else svg += '<polyline points="'+pts+'" fill="none" stroke="'+series[si].color+'" stroke-width="1.5" stroke-linejoin="round"/>';
+@@ -29718,0 +29846,14 @@
++    "<div class='row-desc'>Wybierz serie temperatur:</div><div id='wykrOpcje'></div>"
++    "<div class='row-desc'>Skala temperatur: "
++    "<select id='wykrSkala' onchange='wykrUstawSkale(this.value)' style='width:auto;margin:4px'>"
++    "<option value='wspolna'>Wspolna (°C)</option><option value='normalna'>Normalizowana (0&#8211;100%)</option></select></div>"
++    "<div class='row-desc'>Normalizacja dotyczy osobno kazdej serii na widocznym fragmencie; inspektor pokazuje oryginalne °C.</div>"
++    "<div class='row-desc'>Linie: <select id='wykrLinia' onchange=\"wykrUstawPrezentacje('linia',this.value)\" style='width:auto;margin:4px'><option value='liniowa'>Proste</option><option value='gladka'>Gladkie</option><option value='schodki'>Schodkowe</option></select></div>"
++    "<label class='row-desc'><input type='checkbox' id='wykrFiltr' onchange=\"wykrUstawPrezentacje('filtr',this.checked)\" style='width:auto;margin:4px'>Filtr anomalii (opcjonalny)</label> "
++    "<label class='row-desc'><input type='checkbox' id='wykrWypelnienie' onchange=\"wykrUstawPrezentacje('wypelnienie',this.checked)\" style='width:auto;margin:4px'>Wypelnienie</label>"
++    "<div class='row-desc'>Filtr moze ukryc rzeczywisty skok; dziala tylko na obrazie wykresu. Inspektor i CSV pokazuja surowe dane.</div>"
++    "<div class='row-desc'>Porownanie dwoch odczytow (wspolny wybor dla analizy i przyszlego podsumowania solarnego):</div>"
++    "<div><label>A <select id='deltaCzujnikA' onchange=\"wykrUstawDelta('a',this.value)\" style='width:auto;margin:4px'></select></label>"
++    "<label>B <select id='deltaCzujnikB' onchange=\"wykrUstawDelta('b',this.value)\" style='width:auto;margin:4px'></select></label>"
++    "<div id='wykrDelta' class='row-desc'>Oczekiwanie na status</div>"
++    "<div class='row-desc'>Odczyt ze statusu centrali; swiezy status nie potwierdza sprawnosci czujnika.</div></div>"
+@@ -29723 +29864 @@
+-    "<div id='chart-piec-wrap'><svg id='chart-piec' width='100%' height='150' style='display:block'></svg></div>"
++    "<div id='chart-piec-wrap'><button type='button' class='ust-btn' id='full-chart-piec' onclick=\"wykrPelnyEkran('chart-piec')\">Pelny ekran</button><svg id='chart-piec' width='100%' height='150' style='display:block'></svg></div>"
+@@ -29732 +29873 @@
+-    "<div id='chart-inne-wrap'><svg id='chart-inne' width='100%' height='150' style='display:block'></svg></div>"
++    "<div id='chart-inne-wrap'><button type='button' class='ust-btn' id='full-chart-inne' onclick=\"wykrPelnyEkran('chart-inne')\">Pelny ekran</button><svg id='chart-inne' width='100%' height='150' style='display:block'></svg></div>"
+@@ -29741 +29882 @@
+-    "<div><svg id='chart-serwa' width='100%' height='150' style='display:block'></svg></div>"
++    "<div><button type='button' class='ust-btn' id='full-chart-serwa' onclick=\"wykrPelnyEkran('chart-serwa')\">Pelny ekran</button><svg id='chart-serwa' width='100%' height='150' style='display:block'></svg></div>"
+@@ -29744 +29885 @@
+-    "<div><svg id='chart-pompa' width='100%' height='150' style='display:block'></svg></div>"
++    "<div><button type='button' class='ust-btn' id='full-chart-pompa' onclick=\"wykrPelnyEkran('chart-pompa')\">Pelny ekran</button><svg id='chart-pompa' width='100%' height='150' style='display:block'></svg></div>"
+@@ -29747,2 +29888,2 @@
+-    "<div class='karta'><h2>Cisnienie atmosferyczne (hPa)</h2><div><svg id='chart-cisnienie' width='100%' height='150'></svg></div></div>"
+-    "<div class='karta'><h2>Wilgotnosc powietrza (%)</h2><div><svg id='chart-wilgotnosc' width='100%' height='150'></svg></div></div>"
++    "<div class='karta'><h2>Cisnienie atmosferyczne (hPa)</h2><div><button type='button' class='ust-btn' id='full-chart-cisnienie' onclick=\"wykrPelnyEkran('chart-cisnienie')\">Pelny ekran</button><svg id='chart-cisnienie' width='100%' height='150'></svg></div></div>"
++    "<div class='karta'><h2>Wilgotnosc powietrza (%)</h2><div><button type='button' class='ust-btn' id='full-chart-wilgotnosc' onclick=\"wykrPelnyEkran('chart-wilgotnosc')\">Pelny ekran</button><svg id='chart-wilgotnosc' width='100%' height='150'></svg></div></div>"
