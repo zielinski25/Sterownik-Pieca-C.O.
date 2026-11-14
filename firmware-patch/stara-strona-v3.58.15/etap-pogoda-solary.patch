@@ -1,0 +1,210 @@
+--- a/centrala/src/main_centrala.cpp
++++ b/centrala/src/main_centrala.cpp
+@@ -0,0 +1 @@
++// [v3.58.15 ETAP] Pogoda w przegladarce i prognoza solarna z Open-Meteo.
+@@ -6239 +6240 @@
+-static const char* FIRMWARE_VERSION = "v3.58.14";
++static const char* FIRMWARE_VERSION = "v3.58.15";
+@@ -19916,2 +19917,2 @@
+-  if (nazwa === 'pogoda') loadPogoda();
+-  if (nazwa === 'solary') solarPobierz();
++  if (nazwa === 'pogoda') { loadPogoda(); pogExtPobierz(false); }
++  if (nazwa === 'solary') { solarPobierz(); pogExtPobierz(false); }
+@@ -21212,0 +21214,174 @@
++// [v3.58.15] Pogoda Open-Meteo pobierana przez przegladarke, NIE przez centrale.
++// Brak danych nie jest zerem. Czasy godzin sa UTC; opisy w Europe/Warsaw.
++var POG_LAT=51.066389, POG_LON=21.509167;
++var _pogExt=null, _pogExtAt=0, _pogExtNr=0, _pogExtBusy=false, _pogExtOkres='24h';
++var _pogFmtDate=null, _pogFmtTime=null;
++try {
++  _pogFmtDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Warsaw',year:'numeric',month:'2-digit',day:'2-digit'});
++  _pogFmtTime=new Intl.DateTimeFormat('pl-PL',{timeZone:'Europe/Warsaw',hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZoneName:'short'});
++} catch(e) {} // brak strefy w przegladarce nie blokuje pozostalych funkcji strony
++function pogExtKey(sec){
++  var p=_pogFmtDate.formatToParts(new Date(sec*1000)), m={}; p.forEach(function(x){m[x.type]=x.value;});
++  return m.year+'-'+m.month+'-'+m.day;
++}
++function pogExtTime(sec){return Number.isFinite(sec) && sec>0 ? _pogFmtTime.format(new Date(sec*1000)) : 'brak';}
++function pogExtNum(x){return typeof x==='number' && Number.isFinite(x) ? x : NaN;}
++function pogExtFormat(x,u,d){var v=pogExtNum(x);return Number.isFinite(v) ? v.toFixed(d)+' '+u : 'brak';}
++function pogExtSet(id,v){var e=document.getElementById(id); if(e) e.textContent=v;}
++function pogExtDodaj(host,tekst){if(!host) return;var el=document.createElement('div');el.className='row-desc';el.textContent=tekst;host.appendChild(el);}
++function pogExtWartosc(tab,key,i){return tab && Array.isArray(tab[key]) ? pogExtNum(tab[key][i]) : NaN;}
++function pogExtPozycja(sec){
++  // NOAA: przyblizona geometryczna pozycja slonca, bez refrakcji.
++  var jd=sec/86400+2440587.5, T=(jd-2451545)/36525, rad=Math.PI/180;
++  var L=(280.46646+T*(36000.76983+T*0.0003032))%360;
++  var M=(357.52911+T*(35999.05029-0.0001537*T))*rad;
++  var ecc=0.016708634-T*(0.000042037+0.0000001267*T);
++  var C=(1.914602-T*(0.004817+0.000014*T))*Math.sin(M)+(0.019993-0.000101*T)*Math.sin(2*M)+0.000289*Math.sin(3*M);
++  var omega=125.04-1934.136*T, lambda=(L+C-0.00569-0.00478*Math.sin(omega*rad))*rad;
++  var eps=(23+(26+(21.448-T*(46.815+T*(0.00059-T*0.001813)))/60)/60+0.00256*Math.cos(omega*rad))*rad;
++  var decl=Math.asin(Math.sin(eps)*Math.sin(lambda)), y=Math.pow(Math.tan(eps/2),2), l=L*rad;
++  var eq=4/rad*(y*Math.sin(2*l)-2*ecc*Math.sin(M)+4*ecc*y*Math.sin(M)*Math.cos(2*l)-0.5*y*y*Math.sin(4*l)-1.25*ecc*ecc*Math.sin(2*M));
++  var utc=((sec%86400)+86400)%86400/60, ha=(((utc+eq+4*POG_LON)%1440+1440)%1440/4-180)*rad;
++  var lat=POG_LAT*rad, sinAlt=Math.sin(lat)*Math.sin(decl)+Math.cos(lat)*Math.cos(decl)*Math.cos(ha);
++  var alt=Math.asin(Math.max(-1,Math.min(1,sinAlt)))/rad;
++  var azi=(Math.atan2(Math.sin(ha),Math.cos(ha)*Math.sin(lat)-Math.tan(decl)*Math.cos(lat))/rad+180+360)%360;
++  return {wysokosc:alt,azymut:azi};
++}
++function pogExtGodziny(raw){
++  var h=raw && raw.hourly; if(!h || !Array.isArray(h.time) || !h.time.length || h.time.length>400) throw Error('godziny');
++  var last=0; return h.time.map(function(t,i){
++    if(!Number.isInteger(t) || t<=0 || (i && t<=last)) throw Error('czas'); last=t;
++    return {t:t,idx:i};
++  });
++}
++function pogExtMidnight(hours,key){
++  // Lokalna polnoc wyznaczana z rzeczywistych znacznikow, takze przy zmianie czasu.
++  for(var i=0;i<hours.length;i++){
++    var t=hours[i].t;
++    if(pogExtKey(t)===key && pogExtKey(t-1)!==key) return t;
++  }
++  return NaN;
++}
++function pogExtGhiDzis(raw,hours,now){
++  var key=pogExtKey(now), start=pogExtMidnight(hours,key);
++  if(!Number.isFinite(start) || now<start) return {sum:NaN,good:0,expected:0,complete:false};
++  var expected=Math.floor((now-start)/3600), good=0, sum=0, map={};
++  hours.forEach(function(h){map[h.t]=h.idx;});
++  for(var i=1;i<=expected;i++){
++    var idx=map[start+i*3600], v=idx===undefined ? NaN : pogExtWartosc(raw.hourly,'shortwave_radiation',idx);
++    if(Number.isFinite(v) && v>=0){sum+=v/1000;good++;}
++  }
++  return {sum:good ? sum : NaN, good:good, expected:expected, complete:good===expected};
++}
++function pogExtDni(raw){
++  var d=raw.daily, out=[];
++  if(!d || !Array.isArray(d.time) || d.time.length>16) return out;
++  for(var i=0;i<d.time.length;i++){
++    var sunrise=pogExtWartosc(d,'sunrise',i), sunset=pogExtWartosc(d,'sunset',i);
++    // Dzien ustalamy ze wschodu w Warszawie, nie ze stalego UTC offsetu (DST).
++    if(!Number.isFinite(sunrise) || sunrise<=0) continue;
++    out.push({key:pogExtKey(sunrise), i:i, rise:sunrise,set:sunset});
++  }
++  return out;
++}
++function pogExtUstawOkres(x){if(['24h','3d','7d','14d'].indexOf(x)<0)return;_pogExtOkres=x;pogExtPokaz();}
++function pogExtPokaz(){
++  if(!_pogExt) return;
++  var raw=_pogExt.raw, hours=_pogExt.hours, now=Date.now()/1000, cur=raw.current||{};
++  var age=Math.max(0,Math.floor((Date.now()-_pogExtAt)/60000));
++  var meta='Open-Meteo przez przegladarke, 51.066389 / 21.509167, Europe/Warsaw. Pobrano '+age+' min temu'+(age>=60?' — dane moga byc nieaktualne':'')+'.';
++  pogExtSet('pogExtStatus',meta);pogExtSet('solarPrognozaStatus',meta);
++  pogExtSet('pogExtTeraz','Model: '+pogExtFormat(cur.temperature_2m,'°C',1)+'; wilgotnosc '+pogExtFormat(cur.relative_humidity_2m,'%',0)+
++    '; wiatr '+pogExtFormat(cur.wind_speed_10m,'km/h',1)+'; porywy '+pogExtFormat(cur.wind_gusts_10m,'km/h',1)+
++    '; cisnienie '+pogExtFormat(cur.surface_pressure,'hPa',0)+'; chmury '+pogExtFormat(cur.cloud_cover,'%',0)+
++    '; opad '+pogExtFormat(cur.precipitation,'mm',1)+'; UV '+pogExtFormat(cur.uv_index,'',1)+'. Czas modelu: '+pogExtTime(pogExtNum(cur.time))+'.');
++  var here=hours.filter(function(h){return h.t<=now;}).pop();
++  pogExtSet('pogExtOpadPrawd',here ? 'Prognoza godziny '+pogExtTime(here.t)+': prawdopodobienstwo opadu '+pogExtFormat(pogExtWartosc(raw.hourly,'precipitation_probability',here.idx),'%',0)+'; GHI '+pogExtFormat(pogExtWartosc(raw.hourly,'shortwave_radiation',here.idx),'W/m²',0)+' (srednia poprzedniej godziny).' : 'Prawdopodobienstwo opadu: brak godziny.');
++  var pos=pogExtPozycja(now); pogExtSet('pogExtSlonce','Pozycja slonca teraz (przyblizenie geometryczne): wysokosc '+pos.wysokosc.toFixed(1)+'°, azymut '+pos.azymut.toFixed(1)+'° od polnocy zgodnie z ruchem wskazowek zegara.');
++  var ghi=pogExtGhiDzis(raw,hours,now);
++  pogExtSet('solarGhiDzis','GHI dzis od polnocy do ostatniej pelnej godziny: '+(Number.isFinite(ghi.sum)?ghi.sum.toFixed(2)+' kWh/m²':'brak')+
++    ' | godziny '+ghi.good+'/'+ghi.expected+' | '+(ghi.expected===0?'brak zakonczonych godzin':ghi.complete?'komplet dotychczasowych godzin':'niepelne dane')+
++    '. Dane modelowe Open-Meteo, nie pomiar; dzien trwa.');
++  pogExtSet('pogExtOkresInfo','Wybrany okres: '+({'24h':'24 godziny','3d':'3 dni','7d':'7 dni','14d':'14 dni'})[_pogExtOkres]+'.');
++  var dni=pogExtDni(raw), limit=({'24h':2,'3d':3,'7d':7,'14d':14})[_pogExtOkres], list=document.getElementById('pogExtDni');
++  if(list){list.textContent='';dni.slice(0,limit).forEach(function(d){
++    var x=raw.daily, i=d.i, dur=Number.isFinite(d.set) && d.set>d.rise ? Math.round((d.set-d.rise)/60) : NaN;
++    pogExtDodaj(list,d.key+' | min/max '+pogExtFormat(pogExtWartosc(x,'temperature_2m_min',i),'°C',1)+' / '+pogExtFormat(pogExtWartosc(x,'temperature_2m_max',i),'°C',1)+
++      ' | wschod '+pogExtTime(d.rise)+' | zachod '+pogExtTime(d.set)+' | dzien '+(Number.isFinite(dur)?Math.floor(dur/60)+' h '+(dur%60)+' min':'brak')+'.');
++  }); if(!dni.length) pogExtDodaj(list,'Brak danych dziennych.');}
++  var sel=document.getElementById('pogExtGodzina');
++  if(sel){
++    var prev=sel.value;sel.textContent='';
++    var end=now+(_pogExtOkres==='24h'?24:parseInt(_pogExtOkres,10)*24)*3600;
++    var wybor=hours.filter(function(h){return h.t>=now-3600 && h.t<end;});
++    wybor.forEach(function(h){var o=document.createElement('option');o.value=String(h.t);o.textContent=pogExtKey(h.t)+' '+pogExtTime(h.t);sel.appendChild(o);});
++    if(wybor.some(function(h){return String(h.t)===prev;}))sel.value=prev;
++    else if(wybor.length)sel.value=String(wybor[0].t);
++    pogExtSzczegoly();
++  }
++  var days=document.getElementById('solarPrognozaDzien');
++  if(days){
++    var old=days.value, keys=dni.slice(0,7).map(function(d){return d.key;}); days.textContent='';
++    keys.forEach(function(k){var o=document.createElement('option');o.value=k;o.textContent=k;days.appendChild(o);});
++    if(keys.indexOf(old)>=0) days.value=old; else if(keys.length) days.value=keys[0];
++    pogExtSolarGodziny();
++  }
++}
++function pogExtSzczegoly(){
++  var sel=document.getElementById('pogExtGodzina'); if(!_pogExt || !sel)return;
++  var t=Number(sel.value), h=_pogExt.hours.find(function(x){return x.t===t;});
++  if(!h){pogExtSet('pogExtSzczegoly','Brak wybranej godziny.');return;}
++  var a=_pogExt.raw.hourly,i=h.idx, p=pogExtPozycja(t);
++  pogExtSet('pogExtSzczegoly',pogExtKey(t)+' '+pogExtTime(t)+': temperatura '+pogExtFormat(pogExtWartosc(a,'temperature_2m',i),'°C',1)+
++    ', wilgotnosc '+pogExtFormat(pogExtWartosc(a,'relative_humidity_2m',i),'%',0)+', wiatr '+pogExtFormat(pogExtWartosc(a,'wind_speed_10m',i),'km/h',1)+
++    ', porywy '+pogExtFormat(pogExtWartosc(a,'wind_gusts_10m',i),'km/h',1)+', cisnienie '+pogExtFormat(pogExtWartosc(a,'surface_pressure',i),'hPa',0)+
++    ', chmury '+pogExtFormat(pogExtWartosc(a,'cloud_cover',i),'%',0)+', opad '+pogExtFormat(pogExtWartosc(a,'precipitation',i),'mm',1)+
++    ', prawdopodobienstwo '+pogExtFormat(pogExtWartosc(a,'precipitation_probability',i),'%',0)+', UV '+pogExtFormat(pogExtWartosc(a,'uv_index',i),'',1)+
++    ', promieniowanie GHI '+pogExtFormat(pogExtWartosc(a,'shortwave_radiation',i),'W/m²',0)+' (srednia poprzedniej godziny). Slonce: wysokosc '+p.wysokosc.toFixed(1)+'°, azymut '+p.azymut.toFixed(1)+'°.');
++}
++function pogExtSolarGodziny(){
++  var host=document.getElementById('solarPrognozaGodziny'), sel=document.getElementById('solarPrognozaDzien');if(!host || !sel || !_pogExt)return;
++  host.textContent='';var key=sel.value, h=_pogExt.raw.hourly, count=0, missing=0, index={};
++  _pogExt.hours.forEach(function(v){index[v.t]=v.idx;});
++  var start=pogExtMidnight(_pogExt.hours,key), end=NaN;
++  if(Number.isFinite(start)){
++    for(var j=0;j<_pogExt.hours.length;j++){
++      var t=_pogExt.hours[j].t;
++      if(t>start && pogExtKey(t)!==key && pogExtKey(t-1)===key){end=t;break;}
++    }
++  }
++  // Znacznik T to srednia z (T-1h,T]; lacznie 23, 24 lub 25 godzin.
++  if(Number.isFinite(start) && Number.isFinite(end)) for(var t=start+3600;t<=end;t+=3600){
++    var idx=index[t], x=idx===undefined ? NaN : pogExtWartosc(h,'shortwave_radiation',idx);
++    if(!Number.isFinite(x)||x<0)missing++;
++    pogExtDodaj(host,pogExtTime(t-3600)+' – '+pogExtTime(t)+': '+(Number.isFinite(x)&&x>=0 ? x.toFixed(0)+' W/m²' : 'brak'));count++;
++  }
++  if(!count) pogExtDodaj(host,'Brak pelnych granic doby; prognoza godzinowa niedostepna.');
++  pogExtSet('solarPrognozaInfo',count+' przedzialow; brak wartosci: '+missing+'. Wartosc jest srednia z poprzedniej godziny.');
++}
++function pogExtPobierz(force){
++  if(!_pogFmtDate || !_pogFmtTime){pogExtSet('pogExtStatus','Przegladarka nie obsluguje strefy Europe/Warsaw.');pogExtSet('solarPrognozaStatus','Przegladarka nie obsluguje strefy Europe/Warsaw.');return;}
++  if(!force && _pogExt && Date.now()-_pogExtAt<30*60*1000){pogExtPokaz();return;}
++  if(!force && _pogExtBusy)return;
++  var nr=++_pogExtNr;_pogExtBusy=true;_pogExt=null;
++  ['pogExtTeraz','pogExtOpadPrawd','pogExtSlonce','pogExtSzczegoly','solarGhiDzis','solarPrognozaInfo'].forEach(function(id){pogExtSet(id,'Oczekiwanie na dane...');});
++  ['pogExtDni','solarPrognozaGodziny','pogExtGodzina','solarPrognozaDzien'].forEach(function(id){var e=document.getElementById(id);if(e)e.textContent='';});
++  pogExtSet('pogExtStatus','Pobieranie Open-Meteo w przegladarce...');pogExtSet('solarPrognozaStatus','Pobieranie Open-Meteo w przegladarce...');
++  var q=new URLSearchParams({latitude:String(POG_LAT),longitude:String(POG_LON),timezone:'Europe/Warsaw',timeformat:'unixtime',forecast_days:'14',
++    current:'temperature_2m,relative_humidity_2m,precipitation,cloud_cover,surface_pressure,wind_speed_10m,wind_gusts_10m,uv_index',
++    hourly:'temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,surface_pressure,cloud_cover,wind_speed_10m,wind_gusts_10m,uv_index,shortwave_radiation',
++    daily:'temperature_2m_max,temperature_2m_min,sunrise,sunset'});
++  fetch('https://api.open-meteo.com/v1/forecast?'+q.toString(),{cache:'no-store'})
++    .then(function(r){if(!r.ok)throw Error('http');return r.json();})
++    .then(function(raw){if(nr!==_pogExtNr)return;if(!raw||raw.timezone!=='Europe/Warsaw')throw Error('strefa');
++      _pogExt={raw:raw,hours:pogExtGodziny(raw)};_pogExtAt=Date.now();_pogExtBusy=false;pogExtPokaz();})
++    .catch(function(){if(nr!==_pogExtNr)return;_pogExtBusy=false;_pogExt=null;
++      ['pogExtDni','solarPrognozaGodziny','pogExtGodzina','solarPrognozaDzien'].forEach(function(id){var e=document.getElementById(id);if(e)e.textContent='';});
++      ['pogExtStatus','solarPrognozaStatus'].forEach(function(id){pogExtSet(id,'Brak danych Open-Meteo. Sprawdz internet przegladarki i sprobuj ponownie.');});
++      ['pogExtTeraz','pogExtOpadPrawd','pogExtSlonce','pogExtSzczegoly','solarGhiDzis','solarPrognozaInfo'].forEach(function(id){pogExtSet(id,'Brak danych.');});
++    });
++}
++
++setInterval(function(){if(_pogExt) pogExtPokaz();},60000);
++// [v3.58.15 KONIEC POGODA EXT]
++
+@@ -30014,0 +30190,7 @@
++    "<div class='karta'><h2>Promieniowanie &#8211; Open-Meteo</h2>"
++    "<button type='button' class='ust-btn' onclick='pogExtPobierz(true)'>Odswiez z internetu</button>"
++    "<div id='solarPrognozaStatus' class='row-desc'>Oczekiwanie na dane</div>"
++    "<div id='solarGhiDzis' class='row-desc'>Brak danych</div>"
++    "<div class='row-desc'>Prognoza godzinowa GHI na 7 dni (srednia z poprzedniej godziny, nie pomiar):</div>"
++    "<select id='solarPrognozaDzien' onchange='pogExtSolarGodziny()' style='width:auto;margin:4px'></select>"
++    "<div id='solarPrognozaInfo' class='row-desc'></div><div id='solarPrognozaGodziny'></div></div>"
+@@ -30025,0 +30208,14 @@
++    "<div class='karta'><h2>Rozszerzona prognoza &#8211; Open-Meteo</h2>"
++    "<div class='row-desc'>Osobno od prognozy centrali ponizej. Wymaga internetu telefonu lub komputera; dane modelowe, nie lokalny pomiar.</div>"
++    "<button type='button' class='ust-btn' onclick='pogExtPobierz(true)'>Odswiez z internetu</button>"
++    "<div id='pogExtStatus' class='row-desc'>Oczekiwanie na dane</div>"
++    "<div id='pogExtTeraz' class='row-desc'>Brak danych</div><div id='pogExtOpadPrawd' class='row-desc'></div><div id='pogExtSlonce' class='row-desc'></div>"
++    "<div class='row-desc'>Wybierz okres:</div>"
++    "<button type='button' class='ust-btn' onclick=\"pogExtUstawOkres('24h')\">24 h</button> "
++    "<button type='button' class='ust-btn' onclick=\"pogExtUstawOkres('3d')\">3 dni</button> "
++    "<button type='button' class='ust-btn' onclick=\"pogExtUstawOkres('7d')\">7 dni</button> "
++    "<button type='button' class='ust-btn' onclick=\"pogExtUstawOkres('14d')\">14 dni</button>"
++    "<div id='pogExtOkresInfo' class='row-desc'></div><div id='pogExtDni'></div><div class='row-desc'>Wybierz godzine:</div>"
++    "<select id='pogExtGodzina' onchange='pogExtSzczegoly()' style='width:auto;max-width:100%;margin:4px'></select>"
++    "<div id='pogExtSzczegoly' class='row-desc'>Brak danych</div></div>"
++    "<div class='karta'><h2>Prognoza z centrali &#8211; dotychczasowa</h2><div class='row-desc'>Dane i wykresy ponizej pochodza z centrali.</div></div>"
