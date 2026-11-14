@@ -1,0 +1,121 @@
+--- a/centrala/src/main_centrala.cpp
++++ b/centrala/src/main_centrala.cpp
+@@ -0,0 +1 @@
++// [v3.58.14 ETAP] Stara strona: odczyt archiwum solarnego i wspolny wybor A/B.
+@@ -6238 +6239 @@
+-static const char* FIRMWARE_VERSION = "v3.58.13";
++static const char* FIRMWARE_VERSION = "v3.58.14";
+@@ -19864,0 +19866 @@
++    <div class="tab" data-tab="solary" onclick="wybierzZakladke('solary')">Solary</div>
+@@ -19908,0 +19911 @@
++  document.getElementById('tab-solary').classList.toggle('hidden', nazwa!=='solary');
+@@ -19913,0 +19917 @@
++  if (nazwa === 'solary') solarPobierz();
+@@ -21074,3 +21078,5 @@
+-    var sel=document.getElementById('deltaCzujnik'+k.toUpperCase()); if(!sel) return;
+-    sel.textContent=''; WYKR_CZUJNIKI.forEach(function(p){var o=document.createElement('option');o.value=p[0];o.textContent=p[1];sel.appendChild(o);});
+-    sel.value=_wykrOpcje[k];
++    ['deltaCzujnik','solarCzujnik'].forEach(function(prefix){
++      var sel=document.getElementById(prefix+k.toUpperCase()); if(!sel) return;
++      sel.textContent=''; WYKR_CZUJNIKI.forEach(function(p){var o=document.createElement('option');o.value=p[0];o.textContent=p[1];sel.appendChild(o);});
++      sel.value=_wykrOpcje[k];
++    });
+@@ -21089 +21095,3 @@
+-  _wykrOpcje[k]=v; wykrZapiszOpcje(); wykrPokazDelta(); wykrRenderuj();
++  _wykrOpcje[k]=v; wykrZapiszOpcje();
++  ['deltaCzujnik','solarCzujnik'].forEach(function(prefix){var el=document.getElementById(prefix+k.toUpperCase());if(el) el.value=v;});
++  wykrPokazDelta(); wykrRenderuj();
+@@ -21093 +21100,0 @@
+-  var el=document.getElementById('wykrDelta'); if(!el) return;
+@@ -21096,2 +21103,3 @@
+-  if (!Number.isFinite(a) || !Number.isFinite(b)) {el.textContent='Brak swiezego statusu lub jednej z wartosci.';return;}
+-  el.textContent='A − B: '+(a-b).toFixed(1)+' °C (A: '+a.toFixed(1)+' °C, B: '+b.toFixed(1)+' °C).';
++  var tekst=(!Number.isFinite(a) || !Number.isFinite(b)) ? 'Brak swiezego statusu lub jednej z wartosci.' :
++    'A − B: '+(a-b).toFixed(1)+' °C (A: '+a.toFixed(1)+' °C, B: '+b.toFixed(1)+' °C).';
++  ['wykrDelta','solarDeltaBiezaca'].forEach(function(id){var el=document.getElementById(id);if(el) el.textContent=tekst;});
+@@ -21139,0 +21148,65 @@
++// Odczyt gotowych zapisow LittleFS. Bez zapisu i bez pobierania Firebase.
++var _solarNumerPobrania=0;
++function solarDataPoprawna(s){
++  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
++  var dt=new Date(s+'T00:00:00Z'); return Number.isFinite(dt.getTime()) && dt.toISOString().slice(0,10)===s;
++}
++function solarWartosc(x,jednostka, digits){
++  var n=wykrLiczba(x); return Number.isFinite(n) ? n.toFixed(digits)+' '+jednostka : 'brak';
++}
++function solarLinia(host, text){
++  var el=document.createElement('div'); el.className='row-desc'; el.textContent=text; host.appendChild(el);
++}
++function solarPokazRekord(host, r){
++  var karta=document.createElement('div'); karta.className='karta'; host.appendChild(karta);
++  var t=document.createElement('h2'); t.textContent='Dzien '+(typeof r.localDate==='string' && solarDataPoprawna(r.localDate) ? r.localDate : 'nieznany'); karta.appendChild(t);
++  var f=r.forecast && typeof r.forecast==='object' ? r.forecast : {};
++  var a=r.actual && typeof r.actual==='object' ? r.actual : {};
++  if(f.available===true){
++    var godz=wykrLiczba(f.hourCount);
++    var ghi=Number.isFinite(godz) && godz>0 ? solarWartosc(f.sumGhiKwhM2,'kWh/m²',2) : 'brak';
++    solarLinia(karta,'Prognoza GHI centrali: '+ghi+
++      ' | godziny: '+solarWartosc(f.hourCount,'',0)+' / '+solarWartosc(f.expectedHours,'',0)+
++      ' | '+(f.complete===true?'pelna':f.complete===false?'niepelna':'kompletnosc nieznana')+
++      (f.capturedLate===true?' | pobrana po czasie':'')+'.');
++    if(typeof f.capturedAtUtc==='string' && f.capturedAtUtc) solarLinia(karta,'Prognoza zapisana: '+f.capturedAtUtc+' (UTC).');
++  } else solarLinia(karta,'Prognoza GHI: brak zapisanej prognozy w centrali.');
++  var wersja=wykrLiczba(r.schemaVersion);
++  // Schema v1 w bazie centrali dotyczyla bojlera pieca, NIE zbiornika solarnego.
++  if(!Number.isFinite(wersja) || wersja<2 || a.channel!=='t_panel'){
++    solarLinia(karta,'Stary lub nieznany kanal rekordu: danych zbiornika nie prezentujemy jako solarnych.');
++  } else if(a.available!==true){
++    solarLinia(karta,'Zbiornik solarny: brak zapisanego pomiaru.');
++  } else {
++    var wystarczajaco=wykrLiczba(a.validSamples)>=2;
++    solarLinia(karta,'Zbiornik solarny (t_panel), zmiana w dniu: '+(wystarczajaco ? solarWartosc(a.deltaC,'°C',1) : 'brak (mniej niz 2 probki)')+
++      ' | pierwszy: '+solarWartosc(a.firstC,'°C',1)+' | ostatni: '+solarWartosc(a.lastC,'°C',1)+'.');
++    var ratio=wykrLiczba(a.coverageRatio);
++    var pokrycie=Number.isFinite(ratio) && ratio>=0 && ratio<=1 ? (ratio*100).toFixed(1)+'%' : 'brak';
++    solarLinia(karta,'Probki poprawne: '+solarWartosc(a.validSamples,'',0)+' | oczekiwane minuty: '+solarWartosc(a.expectedSampleCount,'',0)+
++      ' | symulowane: '+solarWartosc(a.simulatedSamples,'',0)+' | niepoprawne: '+solarWartosc(a.invalidSamples,'',0)+
++      ' | pokrycie minut: '+pokrycie+' | '+(a.complete===true?'pokrycie pelne':a.complete===false?'pokrycie niepelne':'kompletnosc nieznana')+
++      ' | '+(a.finalized===true?'dzien zamkniety':'dzien niezamkniety lub stan nieznany')+'.');
++    solarLinia(karta,'Ekwiwalent 100 l: '+(wystarczajaco ? solarWartosc(a.equivalent100lKwh,'kWh',2) : 'brak (mniej niz 2 probki)')+
++      ' — szacunek zmiany energii wody, NIE pomiar uzysku ani oddanej energii.');
++  }
++  if(typeof r.updatedAtUtc==='string' && r.updatedAtUtc) solarLinia(karta,'Ostatni zapis rekordu: '+r.updatedAtUtc+' (UTC).');
++}
++function solarPobierz(){
++  var nr=++_solarNumerPobrania, host=document.getElementById('solarDni'), msg=document.getElementById('solarStatus');
++  var input=document.getElementById('solarData'), data=input ? input.value : '';
++  if(!host || !msg) return;
++  host.textContent='';
++  if(data && !solarDataPoprawna(data)){msg.textContent='Nieprawidlowa data.';return;}
++  msg.textContent='Odczyt z centrali...';
++  fetch('/api/solar-archive'+(data?'?date='+encodeURIComponent(data):''),{cache:'no-store'})
++    .then(function(r){if(!r.ok) throw Error('HTTP');return r.json();})
++    .then(function(j){
++      if(nr!==_solarNumerPobrania) return;
++      if(!j || j.ok!==true || !Array.isArray(j.days)) throw Error('odpowiedz');
++      var days=j.days.filter(function(r){return r && typeof r==='object' && (!data || r.localDate===data);});
++      if(!days.length){msg.textContent='Brak zapisanego rekordu dla wybranego okresu lub brak czasu centrali.';return;}
++      msg.textContent='Zapis lokalny centrali; dane aktualne na czas podany w rekordzie. Domyslnie dzis i wczoraj wedlug centrali.';
++      days.forEach(function(r){solarPokazRekord(host,r);});
++    }).catch(function(){if(nr===_solarNumerPobrania){host.textContent='';msg.textContent='Nie udalo sie odczytac archiwum solarnego z centrali.';}});
++}
+@@ -29884 +29957 @@
+-    "<div class='row-desc'>Porownanie dwoch odczytow (wspolny wybor dla analizy i przyszlego podsumowania solarnego):</div>"
++    "<div class='row-desc'>Porownanie dwoch odczytow (wspolny wybor dla wykresu i panelu solarnego):</div>"
+@@ -29927,0 +30001,16 @@
++
++  // Czytanie gotowych rekordow z centrali; bez ingerencji w zapis i sterowanie.
++  html += F("<div id='tab-solary' class='hidden'>"
++    "<div class='karta'><h2>Porownanie czujnikow A &#8722; B</h2>"
++    "<label>A <select id='solarCzujnikA' onchange=\"wykrUstawDelta('a',this.value)\" style='width:auto;margin:4px'></select></label>"
++    "<label>B <select id='solarCzujnikB' onchange=\"wykrUstawDelta('b',this.value)\" style='width:auto;margin:4px'></select></label>"
++    "<div id='solarDeltaBiezaca' class='row-desc'>Oczekiwanie na status</div>"
++    "<div class='row-desc'>Wspolny wybor z wykresem &#916;T. Status nie potwierdza sprawnosci czujnika; wynik nie sluzy do sterowania.</div></div>"
++    "<div class='karta'><h2>Archiwum solarne centrali</h2>"
++    "<label>Wybrany dzien <input type='date' id='solarData' style='width:auto;margin:4px'></label> "
++    "<button type='button' class='ust-btn' onclick='solarPobierz()'>Odczytaj</button>"
++    "<div class='row-desc'>Pusta data: dzis i wczoraj wedlug zegara centrali. Dane sa zapisywane przez centrale, nie przez przegladarke.</div>"
++    "<div class='row-desc'>Zmiana dzienna dotyczy czujnika zbiornika t_panel; jest czyms innym niz biezace A &#8722; B. Prognoza GHI nie jest pomiarem.</div>"
++    "<div id='solarStatus' class='row-desc' aria-live='polite'>Oczekiwanie na odczyt</div></div>"
++    "<div id='solarDni'></div>"
++  "</div>");
