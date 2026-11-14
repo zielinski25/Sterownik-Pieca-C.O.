@@ -1,0 +1,69 @@
+--- a/centrala/src/main_centrala.cpp
++++ b/centrala/src/main_centrala.cpp
+@@ -0,0 +1 @@
++// [v3.58.13 ETAP] Historyczna roznica dwoch wybranych czujnikow A-B.
+@@ -6237 +6238 @@
+-static const char* FIRMWARE_VERSION = "v3.58.12";
++static const char* FIRMWARE_VERSION = "v3.58.13";
+@@ -21088 +21089 @@
+-  _wykrOpcje[k]=v; wykrZapiszOpcje(); wykrPokazDelta();
++  _wykrOpcje[k]=v; wykrZapiszOpcje(); wykrPokazDelta(); wykrRenderuj();
+@@ -21131 +21132 @@
+-  ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc'].forEach(function(id){
++  ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc','chart-delta'].forEach(function(id){
+@@ -21179,0 +21181,7 @@
++// Token uniemozliwia starym odpowiedziom nadpisanie nowszego widoku.
++var _wykrNumerPobrania = 0;
++function wykrPustyWidok(){
++  ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc','chart-delta'].forEach(function(id){drawChart(id, [], [], [], 150, 0);});
++  var pi=document.getElementById('wykrPompaInfo'); if(pi) pi.textContent='Brak danych';
++  var di=document.getElementById('wykrDeltaInfo'); if(di) di.textContent='Brak danych historycznych';
++}
+@@ -21180,0 +21189 @@
++  var numer = ++_wykrNumerPobrania;
+@@ -21183,0 +21193 @@
++    wykrPustyWidok(); if (info) info.textContent='Pobieranie historii...';
+@@ -21184,0 +21195 @@
++      if (numer !== _wykrNumerPobrania) return;
+@@ -21187 +21198 @@
+-        ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc'].forEach(function(id){
++        ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc','chart-delta'].forEach(function(id){
+@@ -21196 +21207 @@
+-    }).catch(function(){ if (info) info.innerHTML = '<small style="color:#ff4d6d">Blad ladowania historii</small>'; });
++    }).catch(function(){ if (numer === _wykrNumerPobrania && info) info.innerHTML = '<small style="color:#ff4d6d">Blad ladowania historii</small>'; });
+@@ -21199,0 +21211 @@
++  wykrPustyWidok(); if (info) info.textContent='Pobieranie historii...';
+@@ -21200,0 +21213 @@
++    if (numer !== _wykrNumerPobrania) return;
+@@ -21202 +21215 @@
+-      ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc'].forEach(function(id){
++      ['chart-piec','chart-inne','chart-serwa','chart-pompa','chart-cisnienie','chart-wilgotnosc','chart-delta'].forEach(function(id){
+@@ -21212 +21225 @@
+-  }).catch(function(){ if (info) info.innerHTML = '<small style="color:#ff4d6d">Blad ladowania historii</small>'; });
++  }).catch(function(){ if (numer === _wykrNumerPobrania && info) info.innerHTML = '<small style="color:#ff4d6d">Blad ladowania historii</small>'; });
+@@ -21303,0 +21317,9 @@
++// Obydwa odczyty pochodza z tego samego wiersza; brak nie jest zerem.
++// Stare CSV nie zapisuja trocin; nie tworzymy ani nie dopowiadamy wartosci.
++function wykrDeltaZProbek(d, indices, a, b){
++  var aa=Array.isArray(d[a]) ? d[a] : [], bb=Array.isArray(d[b]) ? d[b] : [];
++  return indices.map(function(i){
++    var x=wykrLiczba(aa[i]), y=wykrLiczba(bb[i]);
++    return Number.isFinite(x) && Number.isFinite(y) ? x-y : NaN;
++  });
++}
+@@ -21322,0 +21345,7 @@
++  var delta = wykrDeltaZProbek(d, ix, _wykrOpcje.a, _wykrOpcje.b);
++  var di = document.getElementById('wykrDeltaInfo');
++  var nazwa = function(k){ var p=WYKR_CZUJNIKI.find(function(p){return p[0]===k;}); return p ? p[1] : k; };
++  var ile=delta.filter(Number.isFinite).length;
++  if (di) di.textContent='A: '+nazwa(_wykrOpcje.a)+' − B: '+nazwa(_wykrOpcje.b)+'. Dostepne pary: '+ile+'/'+ix.length+'. '+
++    ((_wykrOpcje.a==='t_trociny' || _wykrOpcje.b==='t_trociny') ? 'W obecnym formacie historia nie zapisuje trocin.' : '');
++  drawChart('chart-delta', L, T, [{name:'ΔT A − B (°C)',data:delta,color:'#00d4f5'}],150,prog);
+@@ -21636 +21665 @@
+-  var tempWykres = (st.id==='chart-piec' || st.id==='chart-inne');
++  var tempWykres = (st.id==='chart-piec' || st.id==='chart-inne' || st.id==='chart-delta');
+@@ -29880,0 +29910,4 @@
++    "<div class='karta'><h2>Roznica temperatur A &#8722; B (°C)</h2>"
++    "<div><button type='button' class='ust-btn' id='full-chart-delta' onclick=\"wykrPelnyEkran('chart-delta')\">Pelny ekran</button><svg id='chart-delta' width='100%' height='150' style='display:block'></svg></div>"
++    "<div id='wykrDeltaInfo' class='row-desc'>Oczekiwanie na historie</div>"
++    "<div class='row-desc'>Te same czujniki A i B co w biezacym porownaniu powyzej. Brak wartosci daje przerwe, nie zero. W dlugiej historii starsze rekordy moga byc srednimi. Pochodzenie symulacji i sprawnosc czujnikow w starych probkach sa nieznane.</div></div>"
