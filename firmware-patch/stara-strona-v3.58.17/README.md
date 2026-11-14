@@ -1,0 +1,24 @@
+# Centrala v3.58.17 — historia trocin, dymu i symulacji
+
+Etap na podstawie v3.58.16. Stara strona zachowuje swój styl; nowa nadal jest dostępna. To **nie koniec całego uzgodnionego zakresu** ([plan](../stara-strona-v3.58.11/ZAKRES.md)).
+
+## Changelog
+
+- Krótka i długa historia zapisują temperaturę trocin, wartość dymu ADC i metadane pochodzenia poszczególnych kanałów. Dane pochodzą z istniejącego snapshotu telemetrii. Nowe wartości trocin i dymu są zapisywane tylko przy odpowiedniej jakości i zaakceptowanym ostatnim odczycie; dym dodatkowo wymaga włączonego czujnika i flagi świeżości. W innych przypadkach pole jest puste. Pochodzenie pozostałych kanałów nie jest podawane jako znane, jeśli telemetria nie daje dostatecznej podstawy. Istniejące starsze wartości zachowują się jak poprzednio, ale ich pochodzenie jest nieznane.
+- Stara strona: seria **Trociny** na wykresie temperatur i w obliczeniu A−B, osobny wykres **Dym ADC**. Inspektor pokazuje pochodzenie próbki: symulacja, fizyczne wg telemetrii albo nieznane. Białe kółka pokazują próbkowane punkty symulowane (maks. 250 na serię dla ograniczenia rozmiaru SVG); inspektor opisuje każdą wskazaną próbkę. Przy ΔT oznaczenie symulacji oznacza, że co najmniej jeden ze składników jest symulowany. Opcjonalny filtr może zmieniać wygląd linii, nie zapisane próbki.
+- Rozszerzenie na końcu CSV: `trociny_C,dym_ADC,known_mask,simulated_mask`. Maski odpowiadają kolejności 11 kanałów `TelemetryChannel` z pliku źródłowego; `known=0` oznacza brak informacji o pochodzeniu, nie rzeczywisty pomiar. Krótki wiersz ma 18 zamiast 14 pól; długi ma 40 zamiast 36. Czytniki startowe zachowują starsze 14-polowe krótkie i 35/36-polowe długie rekordy. Dla uszkodzonego rozszerzenia zachowują podstawowy rekord, lecz odrzucają metadane i nowe wartości. Dane przed aktualizacją nie są uzupełniane wstecz.
+- Długa historia pozostaje **zdarzeniowa**, nie minutowa: zapisuje także zmiany jakości/pochodzenia, trocin ≥0,5°C i dymu ≥50 ADC, z dotychczasowym limitem odstępu i heartbeat. Wahania mogą zwiększyć liczbę zdarzeń i zapisów flash oraz skrócić faktyczny zasięg 8000 próbek; nie gwarantujemy 30 dni. Krótka historia nadal zbiera próbki co minutę, ale zapis na dysk może być wyłączony, opóźniony lub pominięty przy błędzie/pełnej kolejce.
+- Kafelek panelu solarnego pokazuje skrót zapisanego w centrali rekordu dla daty z zegara centrali: dzienną zmianę zbiornika i **prognozę** GHI oraz znacznik ostatniego zapisu, jeśli jest znany. Stary rekord niewłaściwego kanału nie jest podawany jako wynik zbiornika. Brak czasu, rekordu lub połączenia jest jawny; rekord nie jest koniecznie bieżący. Kliknięcie kafelka nadal otwiera dotychczasowy panel.
+- Per-wierszowa migawka obu buforów do CSV jest kopiowana pod dotychczasowym krótkim spinlockiem, a formatowanie poza nim. Nie jest to atomowa migawka całego wykresu: w trakcie odczytu bufor może się przesuwać.
+
+## Pamięć, zgodność i instalacja
+
+Nowe pola to 8 bajtów na próbkę: nominalnie ok. **75 520 B dodatkowego PSRAM** dla pełnych buforów 1440 + 8000, plus kolejka, zaokrąglenia struktury i większe CSV. Długa odpowiedź CSV rezerwuje do ok. 2 MB; dostępność pamięci i wpływ na inne zadania wymagają pomiaru na ESP32. Dotychczasowe limity czasu i liczby bajtów przy wczytywaniu zostają — przy dużym pliku lub wolnym flashu historia po restarcie może być częściowa.
+
+**Przed testem zrób kopię projektu i obu plików historii.** Starsze firmware nie zna rozszerzenia i przy odczycie/przebudowie może je pominąć lub utracić; nie wracaj do starszej wersji na jedynej kopii danych. Pobierz kopie CSV i nie wykonuj `uploadfs` ani formatowania NVS/LittleFS. Nie używaj produkcyjnej instalacji do pierwszych prób. Prywatny ZIP zawiera pełny `main_centrala.cpp` oraz `HistoriaExtra.h`, `InternetProbe.h` i `WyborStrony.h` w `centrala/src`: podmień **wszystkie cztery** w kopii własnego projektu; ZIP nie zawiera całego PlatformIO ani `secrets.h`.
+
+## Testy i ograniczenia
+
+Testy hostowe: rzeczywiste funkcje czytników i serializatorów z atrapą FS, mieszane stare/nowe/niekompletne wiersze i round-trip, progi zdarzeń, maski i jakość, zera i wartości ujemne, wykresy i oznaczenia, cache/wyścigi skrótu solarnego, a także wybrane regresje wcześniejszych wersji. Sprawdzono składnię JS, fragmentu C++ HTML i nałożenie patcha. To nie jest test prawdziwego LittleFS, ESP32, przeglądarki ani całości firmware: **kompilacji dla ESP32 i testów na sprzęcie nie wykonano**. Przetestuj na drugiej odłączonej płytce, w tym restart po zapisaniu mieszanych danych, brak pamięci, symulacje, wyłączenie czujnika dymu i odzyskanie starych plików.
+
+Czyszczenie historii w trakcie pracy nadal jest zablokowane z powodu wyścigów; bezpieczne osobne czyszczenie, pozostałe funkcje OTA/Release i końcowa weryfikacja sterowania nadal pozostają do wykonania.
