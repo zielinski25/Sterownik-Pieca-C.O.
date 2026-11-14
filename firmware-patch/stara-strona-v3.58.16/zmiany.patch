@@ -1,0 +1,157 @@
+--- a/centrala/src/main_centrala.cpp
++++ b/centrala/src/main_centrala.cpp
+@@ -6240 +6240 @@
+-static const char* FIRMWARE_VERSION = "v3.58.15";
++static const char* FIRMWARE_VERSION = "v3.58.16";
+@@ -20433 +20433 @@
+-      if (d.ok) toast('Pompa: ' + (d.tryb || stan), 'ok');
++      if (d.ok) { toast('Polecenie pompy przyjete; sprawdz stan', 'ok'); odswiezDashboard(); }
+@@ -20720 +20720 @@
+-      if (d.ok) toast('Mieszadło: ' + (d.tryb || stan), 'ok');
++      if (d.ok) { toast('Polecenie mieszadla przyjete; sprawdz stan', 'ok'); odswiezDashboard(); }
+@@ -20807,0 +20808,80 @@
++// [v3.58.16 DIAG] Widok tylko odczytu. Stan oprogramowania to nie pomiar polozenia/obrotow.
++function diagBool(v){return v===true?'TAK':v===false?'NIE':'brak';}
++function diagMin(v){return typeof v==='number' && Number.isFinite(v) && v>=0 ? v+' min' : 'brak';}
++function diagOdczyt(d,at,now){
++  var fresh=!!d && at>0 && now>=at && now-at<=ESP_STATUS_MAX_AGE_MS;
++  if(!fresh) return {fresh:false, polaczenie:'Brak swiezego statusu centrali — ostatnie dane nie sa potwierdzone.', pompa:'Brak swiezego statusu.', serwa:'Brak swiezego statusu.', alarm:'Brak swiezego statusu alarmow.', czujniki:'Brak swiezego statusu czujnikow.', sym:'Brak swiezego statusu symulacji.', hist:'Stan zapisu na flash nieznany.'};
++  var fs=d.hist_fs===1?'WLACZONY':d.hist_fs===0?'WYLACZONY':'nieznany';
++  var wan=d.internet_wan===true?'dostepny':d.internet_wan===false?'sonda niedostepna':'nieznany';
++  var fw=typeof d.fw==='string' && d.fw ? d.fw : 'brak';
++  var ip=typeof d.ip==='string' && d.ip ? d.ip : 'brak';
++  var wifi=d.wifi_mode==='STA'?'STA':d.wifi_mode==='AP'?'AP':'nieznany';
++  var wybor=d.wybor===1?'Trociniak — cykl czasowy':d.wybor===2?'Kopciuch — prog temperatury i histereza':d.wybor===3?'Automatyczny': 'nieznana';
++  var pv=d.pompa===true?'WL':d.pompa===false?'WYL':'brak';
++  var angle=function(v){return typeof v==='number' && Number.isFinite(v) && v>=0 && v<=180 ? v.toFixed(0)+'°' : 'brak';};
++  var mode=d.tryb_serwa===1?'AUTO':d.tryb_serwa===2?'RECZNY':d.tryb_serwa===3?'BEZPIECZNY':'nieznany';
++  var roz=d.rozpalanie===true?'aktywne':d.rozpalanie===false?'nieaktywne':'nieznane';
++  var czas=typeof d.rozpalanie_pozostalo_s==='number' && Number.isFinite(d.rozpalanie_pozostalo_s) && d.rozpalanie_pozostalo_s>=0 ? Math.floor(d.rozpalanie_pozostalo_s)+' s' : 'brak';
++  var states=[['Dym','symulacja_dym'],['Piec','symulacja_ogrz'],['Bojler','symulacja_bojler'],['Panel','symulacja_panel'],['Pokoj','symulacja_pokoj'],['Zewnatrz','symulacja_zewn'],['Powrot','symulacja_ogrz_powrot'],['Trociny','symulacja_ogrz_trociny'],['Cisnienie','symulacja_cisnienie'],['Wilgotnosc','symulacja_wilgotnosc']];
++  var active=[], unknown=[];
++  states.forEach(function(p){ if(d[p[1]]===true) active.push(p[0]+' ('+diagMin(d[p[1]+'_min'])+')'); else if(d[p[1]]!==false)unknown.push(p[0]); });
++  return {fresh:true,
++    polaczenie:'Zrodlo: lokalny /api/status | firmware: '+fw+' | tryb WiFi: '+wifi+' | IP: '+ip+' | internet WAN: '+wan+' | Firebase gotowy: '+diagBool(d.internet)+' | wiek odpowiedzi: '+Math.floor((now-at)/1000)+' s.',
++    pompa:'Strategia: '+wybor+' | stan z centrali: '+pv+' | wymuszenie: '+diagMin(d.pompa_override_min)+'. Stan nie potwierdza fizycznego przeplywu.',
++    serwa:'Tryb: '+mode+' | klapa: '+angle(d.klapa)+' | szyberek: '+angle(d.syberka)+' | wymuszenie: '+diagMin(d.serwo_override_min)+' | mieszadlo: '+diagMin(d.mieszadlo_override_min)+'. Sa to wartosci sterownika, nie niezalezny pomiar polozenia.',
++    alarm:'Alarm dymu: '+diagBool(d.dym_alarm)+' | przegrzanie pieca: '+diagBool(d.alarm_ogrzewanie)+' | przegrzanie panelu: '+diagBool(d.alarm_panel)+' | rozpalanie: '+roz+' | pozostalo: '+czas+'.',
++    czujniki:'Piec do rozpalania wiarygodny wg centrali: '+diagBool(d.rozpalanie_serwa_temp_ok)+' | dym wlaczony: '+diagBool(d.dym_wlaczony)+' | dym swiezy: '+diagBool(d.dym_swiezy)+'. Pozostale temperatury: sama odpowiedz statusu nie potwierdza sprawnosci czujnika.',
++    sym:'Aktywne symulacje: '+(active.length?active.join(', '):'brak zgloszonych')+(unknown.length?' | nieznane: '+unknown.join(', '):'')+'.',
++    hist:'Zapis historii na flash: '+fs+'. Wylaczenie zachowuje dotychczasowe pliki; zapis biezacy jest wylaczony, kolejka RAM moze zostac zapisana po ponownym wlaczeniu. Stan dotyczy biezacej pracy, nie dowodzi zapisu do NVS.'};
++}
++function diagOdswiez(){
++  var q=diagOdczyt(_espStatusSnapshot,_espStatusSnapshotAt,Date.now());
++  ['polaczenie','pompa','serwa','alarm','czujniki','sym','hist'].forEach(function(k){var el=document.getElementById('diag-'+k);if(el)el.textContent=q[k];});
++  var h=document.getElementById('histFsStan');if(h)h.textContent=q.hist;
++}
++function diagSprawdzSwiezosc(){
++  if(_espStatusSnapshotAt>0 && Date.now()-_espStatusSnapshotAt>ESP_STATUS_MAX_AGE_MS){
++    espStatusUtracony(); var h=document.getElementById('dashKafelki'); if(h)h.classList.add('offline-dim');
++    dpBaner('Brak świeżego statusu centrali — dane mogą być nieaktualne','offline');
++  }
++  diagOdswiez();
++}
++// Historyczne komendy wykonuja sie w kolejce LAN. ACK nie dowodzi stanu na flashu.
++var _histFsBusy=false;
++function histFsKomunikat(s){var e=document.getElementById('histFsWynik');if(e)e.textContent=s;}
++function histFsTimeout(p,ms){
++  return new Promise(function(resolve,reject){var timer=setTimeout(function(){reject(Error('czas'));},ms);p.then(function(v){clearTimeout(timer);resolve(v);},function(e){clearTimeout(timer);reject(e);});});
++}
++function histFsJson(r){return r.json().then(function(j){if(!r.ok)throw Error(j && j.error ? j.error : 'HTTP '+r.status);return j;});}
++function histFsUstaw(wl){
++  if(_histFsBusy || (wl!==true && wl!==false))return;
++  _histFsBusy=true;var buttons=['histFsOn','histFsOff'];buttons.forEach(function(id){var e=document.getElementById(id);if(e)e.disabled=true;});
++  var id='histfs-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12), deadline=Date.now()+12000;
++  histFsKomunikat('Wysylanie polecenia...');
++  function poll(){
++    if(Date.now()>=deadline) return Promise.reject(Error('czas'));
++    return histFsTimeout(fetch('/api/lan/ack?id='+encodeURIComponent(id),{cache:'no-store'}).then(histFsJson),Math.max(1,deadline-Date.now())).then(function(j){
++      if(!j || j.cmdId!==id) throw Error('brak wyniku');
++      if(j.done===true){if(j.ok!==true)throw Error(j.error||'odrzucono'); return j;}
++      if(j.done!==false) throw Error('nieprawidlowa odpowiedz');
++      return new Promise(function(resolve){setTimeout(resolve,400);}).then(poll);
++    });
++  }
++  histFsTimeout(fetch('/api/lan/token',{cache:'no-store'}).then(histFsJson),4000).then(function(t){
++    if(!t || typeof t.token!=='string' || !t.token)throw Error('brak tokena');
++    return histFsTimeout(fetch('/api/lan/cmd',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Piec-Token':t.token},body:'id='+encodeURIComponent(id)+'&cmd='+(wl?'histfs_wl':'histfs_wyl')}).then(histFsJson),Math.max(1,deadline-Date.now()));
++  }).then(function(j){
++    if(!j || j.accepted!==true || j.cmdId!==id)throw Error('nie przyjeto');
++    if(j.done===true){if(j.ok!==true)throw Error(j.error||'odrzucono');return j;}
++    if(j.done!==false) throw Error('nieprawidlowa odpowiedz');
++    histFsKomunikat('Komenda przyjeta, oczekiwanie na wynik...');return poll();
++  }).then(function(){
++    histFsKomunikat('Centrala potwierdzila zmiane i zapis ustawienia; sprawdz biezacy stan ponizej.');
++  }).catch(function(e){
++    histFsKomunikat('Nie potwierdzono zmiany: '+(e && e.message ? e.message : 'blad')+'. Stan RAM mogl sie zmienic; po restarcie moze byc inny. Sprawdz status.');
++  }).then(function(){
++    _histFsBusy=false;buttons.forEach(function(id){var e=document.getElementById(id);if(e)e.disabled=false;});odswiezDashboard();
++  });
++}
++// [v3.58.16 KONIEC DIAG]
++
+@@ -20816,0 +20897 @@
++  diagOdswiez();
+@@ -20829,4 +20910,4 @@
+-  var angleK = d ? Number(d.klapa) : NaN;
+-  var angleS = d ? Number(d.syberka) : NaN;
+-  if (pK) pK.textContent = fresh && isFinite(angleK) ? Math.round(angleK) + '°' : '—';
+-  if (pS) pS.textContent = fresh && isFinite(angleS) ? Math.round(angleS) + '°' : '—';
++  var angleK = d && typeof d.klapa === 'number' ? d.klapa : NaN;
++  var angleS = d && typeof d.syberka === 'number' ? d.syberka : NaN;
++  if (pK) pK.textContent = fresh && isFinite(angleK) && angleK >= 0 && angleK <= 180 ? Math.round(angleK) + '°' : '—';
++  if (pS) pS.textContent = fresh && isFinite(angleS) && angleS >= 0 && angleS <= 180 ? Math.round(angleS) + '°' : '—';
+@@ -20841 +20922 @@
+-  var tempKnown = fresh && d.rozpalanie_serwa_temp_ok === true && isFinite(Number(d.t_ogrz));
++  var tempKnown = fresh && d.rozpalanie_serwa_temp_ok === true && typeof d.t_ogrz === 'number' && isFinite(d.t_ogrz);
+@@ -20895 +20976 @@
+-    toast(active ? 'Tryb rozpalania zakończony' : 'Wspólny tryb rozpalania przyjęty', 'ok');
++    toast('Polecenie rozpalania przyjete; sprawdz status', 'ok');
+@@ -20904,0 +20986 @@
++var _dashSeq=0, _dashApplied=0;
+@@ -20906 +20988,6 @@
+-  fetch('/api/status', {cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
++  var seq=++_dashSeq, started=Date.now();
++  fetch('/api/status', {cache:'no-store'}).then(function(r){if(!r.ok)throw Error('HTTP');return r.json();}).then(function(d){
++    if(seq<_dashApplied) return;
++    if(Date.now()-started>ESP_STATUS_MAX_AGE_MS) throw Error('stary status');
++    if(!d || typeof d!=='object' || Array.isArray(d)) throw Error('status');
++    _dashApplied=seq;
+@@ -20930,5 +21017,5 @@
+-      // "internet" w /api/status = fbAppReady (Firebase realnie odpowiada),
+-      // NIE to samo co polaczenie z lokalnym WiFi -- mozna byc w STA i nie
+-      // miec internetu (np. router bez WAN), stad osobny wskaznik.
+-      shInternet.className = 'sys-badge ' + (d.internet ? 'ok' : 'warn');
+-      shInternet.innerHTML = '<div class="sbdot" style="background:' + (d.internet ? 'var(--ok)' : 'var(--warn)') + '"></div><span class="sbtxt">Internet</span>';
++      // WAN i gotowosc Firebase to rozne informacje; brak wyniku nie oznacza braku internetu.
++      var wanKnown = typeof d.internet_wan === 'boolean';
++      shInternet.className = 'sys-badge ' + (wanKnown && d.internet_wan ? 'ok' : 'warn');
++      shInternet.textContent = !wanKnown ? 'Internet: ?' : d.internet_wan ? 'Internet' : 'Internet: sonda nie odpowiada';
++      shInternet.title = 'Internet WAN; Firebase: ' + diagBool(d.internet);
+@@ -20984,0 +21072,2 @@
++    if(seq<_dashApplied) return;
++    _dashApplied=seq;
+@@ -20985,0 +21075 @@
++    diagOdswiez();
+@@ -21021,0 +21112 @@
++setInterval(diagSprawdzSwiezosc, 1000);
+@@ -30112,0 +30204 @@
++      "<span class='row-desc'>Czyszczenie obecnie zablokowane dla bezpieczenstwa danych.</span>"
+@@ -30174,0 +30267,10 @@
++    "<div class='karta'><h2>Diagnostyka centrali</h2>"
++    "<div id='diag-polaczenie' class='row-desc'>Oczekiwanie na status</div>"
++    "<div id='diag-pompa' class='row-desc'></div><div id='diag-serwa' class='row-desc'></div>"
++    "<div id='diag-alarm' class='row-desc'></div><div id='diag-czujniki' class='row-desc'></div>"
++    "<div id='diag-sym' class='row-desc'></div><div id='diag-hist' class='row-desc'></div></div>"
++    "<div class='karta'><h2>Zapis historii na flash</h2>"
++    "<div class='row-desc' id='histFsStan'>Oczekiwanie na status</div>"
++    "<button type='button' id='histFsOn' class='ust-btn' onclick='histFsUstaw(true)'>Wlacz zapis</button> "
++    "<button type='button' id='histFsOff' class='ust-btn' onclick='histFsUstaw(false)'>Wylacz zapis</button>"
++    "<div class='row-desc' id='histFsWynik' aria-live='polite'></div></div>"
+@@ -31279,0 +31382 @@
++  j += F("\"fw\":\""); j += FIRMWARE_VERSION; j += F("\",");
+@@ -46656,2 +46759,2 @@
+-    wynikOk = true;
+-    wynikBlad = "";
++    wynikOk = nvs;
++    wynikBlad = nvs ? "" : "zmieniono RAM, blad zapisu NVS";
