@@ -1,0 +1,213 @@
+--- a/main_centrala.cpp
++++ b/main_centrala.cpp
+@@ -6241 +6241 @@
+-static const char* FIRMWARE_VERSION = "v3.58.17";
++static const char* FIRMWARE_VERSION = "v3.58.18";
+@@ -20424,4 +20424 @@
+-  ustSegAktywny('dp-seg-trybserwa', wartosc);
+-  ustWyslij('trybSerwa', wartosc);
+-  var panel = document.getElementById('dp-manualServoPanel');
+-  if (panel) panel.style.display = (Number(wartosc) === 2) ? 'block' : 'none';
++  ustSeg('trybSerwa', wartosc, el, 'dp-seg-trybserwa');
+@@ -20644 +20641,2 @@
+-  }).then(function(r){ return r.json(); }).then(function(){
++  }).then(function(r){ return r.json(); }).then(function(d){
++    if (!d.ok) { toast('Odrzucono: ' + (d.error || pole), 'err'); return; }
+@@ -20658 +20656,6 @@
+-    var aktywna = !!d['symulacja_' + pole];
++    if (typeof d['symulacja_' + pole] !== 'boolean') {
++      var brak = document.getElementById('sym-' + pole + '-info');
++      if (brak) brak.textContent = 'Brak potwierdzonego stanu symulacji';
++      return;
++    }
++    var aktywna = d['symulacja_' + pole];
+@@ -20671 +20674 @@
+-    if (aktualna !== undefined && !isNaN(aktualna)) {
++    if (typeof aktualna === 'number' && Number.isFinite(aktualna)) {
+@@ -20678 +20681 @@
+-  }).catch(function(){});
++  }).catch(function(){ var info=document.getElementById('sym-' + pole + '-info'); if(info) info.textContent='Brak potwierdzonego stanu symulacji'; });
+@@ -20858,5 +20861,6 @@
+-function histFsUstaw(wl){
+-  if(_histFsBusy || (wl!==true && wl!==false))return;
+-  _histFsBusy=true;var buttons=['histFsOn','histFsOff'];buttons.forEach(function(id){var e=document.getElementById(id);if(e)e.disabled=true;});
+-  var id='histfs-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12), deadline=Date.now()+12000;
+-  histFsKomunikat('Wysylanie polecenia...');
++// Jeden slot LAN: wynik wykonawcy rozni sie od 202 (przyjecia).
++var _serwisBusy=false;
++function serwisWyslij(cmd, komunikat){
++  if(_serwisBusy) return Promise.reject(Error('inna komenda serwisowa w toku'));
++  _serwisBusy=true;
++  var id='srv-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,12), deadline=Date.now()+12000;
+@@ -20867,2 +20871,2 @@
+-      if(j.done===true){if(j.ok!==true)throw Error(j.error||'odrzucono'); return j;}
+-      if(j.done!==false) throw Error('nieprawidlowa odpowiedz');
++      if(j.done===true){if(j.ok!==true)throw Error(j.error||'odrzucono');return j;}
++      if(j.done!==false)throw Error('nieprawidlowa odpowiedz');
+@@ -20872 +20876 @@
+-  histFsTimeout(fetch('/api/lan/token',{cache:'no-store'}).then(histFsJson),4000).then(function(t){
++  return histFsTimeout(fetch('/api/lan/token',{cache:'no-store'}).then(histFsJson),4000).then(function(t){
+@@ -20874 +20878 @@
+-    return histFsTimeout(fetch('/api/lan/cmd',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Piec-Token':t.token},body:'id='+encodeURIComponent(id)+'&cmd='+(wl?'histfs_wl':'histfs_wyl')}).then(histFsJson),Math.max(1,deadline-Date.now()));
++    return histFsTimeout(fetch('/api/lan/cmd',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Piec-Token':t.token},body:'id='+encodeURIComponent(id)+'&cmd='+encodeURIComponent(cmd)}).then(histFsJson),Math.max(1,deadline-Date.now()));
+@@ -20878,3 +20882,9 @@
+-    if(j.done!==false) throw Error('nieprawidlowa odpowiedz');
+-    histFsKomunikat('Komenda przyjeta, oczekiwanie na wynik...');return poll();
+-  }).then(function(){
++    if(j.done!==false)throw Error('nieprawidlowa odpowiedz');
++    komunikat('Komenda przyjeta, oczekiwanie na wynik...');return poll();
++  }).then(function(j){_serwisBusy=false;return j;},function(e){_serwisBusy=false;throw e;});
++}
++function histFsUstaw(wl){
++  if(_histFsBusy || (wl!==true && wl!==false))return;
++  _histFsBusy=true;var buttons=['histFsOn','histFsOff','histFsClear'];buttons.forEach(function(id){var e=document.getElementById(id);if(e)e.disabled=true;});
++  histFsKomunikat('Wysylanie polecenia...');
++  serwisWyslij(wl?'histfs_wl':'histfs_wyl',histFsKomunikat).then(function(){
+@@ -20882,5 +20892,36 @@
+-  }).catch(function(e){
+-    histFsKomunikat('Nie potwierdzono zmiany: '+(e && e.message ? e.message : 'blad')+'. Stan RAM mogl sie zmienic; po restarcie moze byc inny. Sprawdz status.');
+-  }).then(function(){
+-    _histFsBusy=false;buttons.forEach(function(id){var e=document.getElementById(id);if(e)e.disabled=false;});odswiezDashboard();
+-  });
++  }).catch(function(e){histFsKomunikat('Nie potwierdzono zmiany: '+(e.message||'blad')+'. Stan RAM mogl sie zmienic; po restarcie moze byc inny. Sprawdz status.');
++  }).then(function(){_histFsBusy=false;buttons.forEach(function(id){var e=document.getElementById(id);if(e)e.disabled=false;});odswiezDashboard();});
++}
++function histFsSprawdz(){
++  histFsKomunikat('Sprawdzanie znacznikow...');
++  histFsTimeout(fetch('/api/history/reset-status',{cache:'no-store'}).then(histFsJson),4000).then(function(j){
++    if(!j.ok || typeof j.pending!=='boolean' || typeof j.done_marker!=='boolean')throw Error('brak danych');
++    histFsKomunikat('Znacznik zadania: '+(j.pending?'JEST':'BRAK')+'; znacznik ukonczenia: '+(j.done_marker?'JEST':'BRAK')+'. Same znaczniki nie dowodza kompletnego czyszczenia; sprawdz log startu i pliki po restarcie.');
++  }).catch(function(){histFsKomunikat('Nie mozna odczytac znacznikow; stan nieznany.');});
++}
++function histFsCzysc(){
++  if(_histFsBusy || _serwisBusy)return;
++  if(!confirm('Czy na pewno usunac OBIE historie (krotka i dluga) przy nastepnym restarcie? Operacja nieodwracalna. Przed kontynuacja pobierz kopie CSV. Restart nie nastapi automatycznie.'))return;
++  _histFsBusy=true; ['histFsOn','histFsOff','histFsClear'].forEach(function(id){var e=document.getElementById(id);if(e)e.disabled=true;});
++  histFsKomunikat('Wysylanie zadania...');
++  serwisWyslij('histfs_czysc',histFsKomunikat).then(function(){
++    histFsKomunikat('Zadanie zapisane. OBA pliki maja zostac usuniete przy nastepnym restarcie; do tego czasu historia pozostaje widoczna. To nie jest potwierdzenie wykonania.');
++  }).catch(function(e){histFsKomunikat('Nie potwierdzono zlozenia zadania: '+(e.message||'blad')+'. Przy utracie odpowiedzi zadanie moze juz czekac na restart; sprawdz diagnostyke przed ponowieniem.');
++  }).then(function(){_histFsBusy=false;['histFsOn','histFsOff','histFsClear'].forEach(function(id){var e=document.getElementById(id);if(e)e.disabled=false;});});
++}
++function otaSerwisTekst(t){var e=document.getElementById('otaGithubWynik');if(e)e.textContent=t;}
++function otaGithubSprawdz(){
++  otaSerwisTekst('Sprawdzanie GitHub w przegladarce...');
++  histFsTimeout(fetch('https://api.github.com/repos/zielinski25/Sterownik-Pieca-C.O./releases?per_page=1',{cache:'no-store'}),10000).then(function(r){if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(function(a){
++    if(!Array.isArray(a)||!a[0]||typeof a[0].tag_name!=='string')throw Error('brak wydania');
++    var v=a[0], files=Array.isArray(v.assets)?v.assets.map(function(x){return x.name;}).filter(function(x){return x==='firmware.bin'||x==='firmware_panel.bin';}):[];
++    otaSerwisTekst('Ostatnie wydanie: '+v.tag_name+(v.prerelease?' (prerelease)':'')+'. Pliki: '+(files.join(', ')||'brak wymaganych plikow')+'. To nie potwierdza zgodnosci ani autentycznosci.');
++  }).catch(function(e){otaSerwisTekst('Nie sprawdzono wydan: '+(e.message||'blad')+'. Potrzebny internet w przegladarce; sprawdz takze limit GitHub API.');});
++}
++function otaGithubZlec(panel){
++  if(_serwisBusy)return;
++  if(!confirm('Zlecic aktualizacje '+(panel?'panelu':'centrali')+'? Centrala sprawdzi alarmy i wydanie. Wynik moze byc inny niz przyjecie komendy.'))return;
++  otaSerwisTekst('Wysylanie komendy...');
++  serwisWyslij(panel?'update_panel':'update',otaSerwisTekst).then(function(){
++    otaSerwisTekst('Polecenie przekazano do kolejki OTA. To NIE jest potwierdzenie instalacji. Sprawdz wynik w Telegramie i logach oraz wersje po restarcie.');
++  }).catch(function(e){otaSerwisTekst('Nie potwierdzono przekazania: '+(e.message||'blad')+'. Po utracie odpowiedzi stan jest nieznany; sprawdz logi zanim ponowisz.');});
+@@ -21526,9 +21567 @@
+-function wykrWyczysc(){
+-  return fetch('/api/history/clear', {method:'POST'})
+-    .then(function(r){ return r.json().then(function(j){
+-      if (!r.ok || !j.ok) throw new Error(j.error || 'Nie wyczyszczono historii');
+-      return j;
+-    }); })
+-    .then(function(){ _wykrDaneKrotkie = null; loadCharts(); })
+-    .catch(function(e){ alert(e.message || 'Blad czyszczenia historii'); });
+-}
++function wykrWyczysc(){ histFsCzysc(); }
+@@ -22533,3 +22566,17 @@
+-  ustSegAktywny(grupaId, wartosc);
+-  ustWyslij(pole, wartosc);
+-  if (pole === 'trybSerwa') manualServoPokaz(wartosc); // [SERWO-RECZNY]
++  var box=document.getElementById(grupaId);
++  if (box && box.dataset.busy === '1') return;
++  if (box) { box.dataset.busy='1'; box.querySelectorAll('button').forEach(function(b){b.disabled=true;}); }
++  ustWyslij(pole, wartosc).then(function(d){
++    if (d && d.ok) {
++      ustSegAktywny(grupaId, d.wartosc);
++      if (pole === 'trybSerwa') {
++        manualServoPokaz(d.wartosc);
++        var panel=document.getElementById('dp-manualServoPanel');
++        if(panel) panel.style.display=Number(d.wartosc)===2?'block':'none';
++      }
++    } else {
++      ustSegAktywny(grupaId, NaN);
++      if (pole === 'trybSerwa') { manualServoPokaz(-1); var panel=document.getElementById('dp-manualServoPanel'); if(panel)panel.style.display='none'; }
++    }
++    if (box) { box.dataset.busy='0'; box.querySelectorAll('button').forEach(function(b){b.disabled=false;}); }
++  });
+@@ -22561 +22608,9 @@
+-  ustWyslij(pole, el.checked ? 1 : 0);
++  el.disabled=true;
++  ustWyslij(pole, el.checked ? 1 : 0).then(function(d){
++    if(d && d.ok) { el.checked=Number(d.wartosc)===1; el.indeterminate=false; return; }
++    // Po braku odpowiedzi nie zgadujemy, czy zapis dotarl do centrali.
++    return fetch('/api/ustawienia-get',{cache:'no-store'}).then(function(r){if(!r.ok)throw Error('HTTP');return r.json();}).then(function(st){
++      if(typeof st[pole]!=='boolean' && st[pole]!==0 && st[pole]!==1)throw Error('brak pola');
++      el.checked=!!st[pole]; el.indeterminate=false;
++    }).catch(function(){el.indeterminate=true; ustMsg('Stan nieznany; odswiez ustawienia',false);});
++  }).then(function(){el.disabled=false;});
+@@ -22572 +22627 @@
+-  fetch('/api/ustawienia-set', {
++  return fetch('/api/ustawienia-set', {
+@@ -22578,0 +22634 @@
++    return d;
+@@ -22580,2 +22636,3 @@
+-    ustMsg('Blad polaczenia przy zapisie', false);
+-    toast('Blad polaczenia przy zapisie', 'err');
++    ustMsg('Brak potwierdzenia; sprawdz ponownie ustawienia', false);
++    toast('Brak potwierdzenia; sprawdz ponownie ustawienia', 'err');
++    return null;
+@@ -22587 +22644 @@
+-  el.innerHTML = '<small style="color:' + (ok ? 'var(--ok)' : 'var(--err)') + '">' + txt + '</small>';
++  el.textContent = txt; el.style.color = ok ? 'var(--ok)' : 'var(--err)';
+@@ -25073 +25130 @@
+-         p == "/history_reset_a1.req" || p == "/history_reset_a1.done" ||
++         p == "/history_reset_a1.req" || p == "/history_reset_a1.req.tmp" || p == "/history_reset_a1.done" ||
+@@ -30285,0 +30343,6 @@
++    "<div class='karta'><h2>GitHub Releases</h2>"
++    "<p><small>Sprawdzanie wymaga internetu w przegladarce. OTA z GitHub w centrali nie weryfikuje certyfikatu TLS; uzywaj tylko w zaufanej sieci. Przyjecie komendy nie oznacza instalacji. Wynik: Telegram, logi i wersja po restarcie.</small></p>"
++    "<button type='button' class='ust-btn' onclick='otaGithubSprawdz()'>Sprawdz wydanie</button> "
++    "<button type='button' class='ust-btn' onclick='otaGithubZlec(false)'>Aktualizuj centrale</button> "
++    "<button type='button' class='ust-btn' onclick='otaGithubZlec(true)'>Aktualizuj panel</button>"
++    "<div class='row-desc' id='otaGithubWynik' aria-live='polite'></div></div>"
+@@ -30326 +30389 @@
+-      "<span class='row-desc'>Czyszczenie obecnie zablokowane dla bezpieczenstwa danych.</span>"
++      "<span class='row-desc'>Obie historie zostana usuniete przy nastepnym restarcie po potwierdzeniu; pobierz kopie przed operacja.</span>"
+@@ -30399 +30462,3 @@
+-    "<button type='button' id='histFsOff' class='ust-btn' onclick='histFsUstaw(false)'>Wylacz zapis</button>"
++    "<button type='button' id='histFsOff' class='ust-btn' onclick='histFsUstaw(false)'>Wylacz zapis</button> "
++    "<button type='button' id='histFsClear' class='ust-btn' onclick='histFsCzysc()'>Zadaj czyszczenia obu historii</button> "
++    "<button type='button' class='ust-btn' onclick='histFsSprawdz()'>Sprawdz znaczniki</button>"
+@@ -32254,0 +32320,11 @@
++  // Tylko obserwacja znacznikow: nie jest dowodem, ze kasowanie sie udalo.
++  wifiWebServer.on(AsyncURIMatcher::exact("/api/history/reset-status"), HTTP_GET, [](AsyncWebServerRequest *request) {
++    if (!littlefsReady || !logMutex || xSemaphoreTake(logMutex, pdMS_TO_TICKS(200)) != pdTRUE) {
++      request->send(503, "application/json", "{\"ok\":false}"); return;
++    }
++    const bool pending = systemFS196.exists("/history_reset_a1.req");
++    const bool done = systemFS196.exists("/history_reset_a1.done");
++    xSemaphoreGive(logMutex);
++    AsyncWebServerResponse *r = request->beginResponse(200, "application/json", String("{\"ok\":true,\"pending\":") + (pending ? "true" : "false") + ",\"done_marker\":" + (done ? "true" : "false") + "}");
++    r->addHeader("Cache-Control", "no-store"); request->send(r);
++  });
+@@ -42766 +42842 @@
+-void tgKolejkujAlboOdpowiedzBledem(TgDeferCmd cmd, uint32_t arg = 0) {
++bool tgKolejkujAlboOdpowiedzBledem(TgDeferCmd cmd, uint32_t arg = 0) {
+@@ -42770,0 +42847 @@
++    return false;
+@@ -42771,0 +42849 @@
++  return true;
+@@ -46805 +46883 @@
+-    tgKolejkujAlboOdpowiedzBledem(TG_UPDATE);
++    if (!tgKolejkujAlboOdpowiedzBledem(TG_UPDATE)) { wynikOk = false; wynikBlad = "kolejka OTA pelna lub niedostepna"; }
+@@ -46809 +46887 @@
+-    tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL);
++    if (!tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL)) { wynikOk = false; wynikBlad = "kolejka OTA pelna lub niedostepna"; }
+@@ -46813 +46891 @@
+-    tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL_ANULUJ);
++    if (!tgKolejkujAlboOdpowiedzBledem(TG_UPDATE_PANEL_ANULUJ)) { wynikOk = false; wynikBlad = "kolejka OTA pelna lub niedostepna"; }
+@@ -49985,0 +50064,2 @@
++  // Nie modyfikuj protokolu, jesli poprzednie zadanie nadal oczekuje.
++  if (systemFS196.exists("/history_reset_a1.req")) return false;
