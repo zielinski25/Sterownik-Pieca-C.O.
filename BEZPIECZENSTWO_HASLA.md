@@ -47,6 +47,25 @@ plików nie usuwa ich z przeszłości — ktoś może przejrzeć historię.
 
 **Dlatego trzeba zmienić same hasła.** Kolejność ma znaczenie.
 
+### Dopisane 2026-11-18
+
+Po porządkach z 23.10 w repozytorium zostało jeszcze **pięć archiwów zip**
+ze starymi kopiami kodu, a w nich te same hasła: `Cenatrala Pieca.zip`,
+`LCD Centrali.zip`, `core.zip`,
+`firmware-patch/v3.54.0-offline-buffer-toggle/SterownikCO-v3.54.0-OFFLINE-BUFFER.zip`
+i `android-sync/v0.31.22-offline-buffer/SterownikCO-Android-v0.31.22-PELNE-ZRODLA.zip`.
+Tego dnia zostały **przeniesione na prywatny Dysk Google** (folder
+„Sterownik Pieca - PRYWATNE”) i usunięte z repozytorium. W historii gita
+nadal są — to niczego nie zmienia w punkcie wyżej: hasła trzeba zmienić.
+
+Hasła (obecne i przyszłe) są trzymane **tylko w pliku na tym Dysku**
+(`HASLA_STEROWNIK_PIECA_PRYWATNE_v3.md`): tabela wartości, gotowy
+`secrets.h`, kolejność zmiany. Nowe hasła najpierw wpisać tam, potem
+do `secrets.h`.
+
+Poza gitem nadal publiczne: wydanie `3.57.9` (plik `firmware_panel.bin`)
+oraz `v3.35.2` i `v3.36.0` (pliki `.elf`) — w nich siedzą te same hasła.
+
 ---
 
 ## 3. Procedura zmiany — krok po kroku
@@ -191,4 +210,7 @@ wyczyścić NVS.
 - [ ] hasło WiFi zmienione
 - [ ] hasło OTA zmienione
 - [ ] `secrets.h` skopiowany na pendrive
+- [x] stare archiwa zip z hasłami przeniesione na Dysk Google i usunięte z repo (2026-11-18)
+- [x] hasła spisane w prywatnym pliku na Dysku Google (2026-11-18)
+- [ ] usunięte pliki `firmware_panel.bin` (wyd. 3.57.9) i `.elf` (v3.35.2, v3.36.0) z wydań na GitHubie
 - [ ] hasła z raportu `PORZADKI_2026-10-23.md` usunięte

@@ -31,7 +31,8 @@ których nie ma gdzie rozwiązać.
 
 ## Rozwiązanie
 
-`SterownikCO-Android-v0.31.22-PELNE-ZRODLA.zip` — cały projekt:
+`SterownikCO-Android-v0.31.22-PELNE-ZRODLA.zip` (od 2026-11-18 poza
+repozytorium, na prywatnym Dysku Google) — cały projekt:
 140 wpisów, 92 pliki `.kt`, `res/`, `gradlew.bat` + `gradle-wrapper.jar`,
 `settings.gradle.kts`, `gradle.properties`. **1 119 837 B**,
 sha256 `28749f6b07a06baceac9b106585c686bdf2c5fcaef284bddab3c6b41a28c1748`.

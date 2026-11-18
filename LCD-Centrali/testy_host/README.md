@@ -555,7 +555,7 @@ Ten sam zestaw scenariuszy można puścić na innym katalogu źródeł w trybie
 obserwacji (bez oceniania, każde sprawdzenie pokazuje `tak`/`NIE`):
 
 ```
-mkdir -p /tmp/stary && unzip -q "../../LCD Centrali.zip" -d /tmp/stary     # v1.1.0
+mkdir -p /tmp/stary && unzip -q ~/Pobrane/"LCD Centrali.zip" -d /tmp/stary  # v1.1.0, archiwum z Dysku Google
 SRC=/tmp/stary/src OBSERWACJE=1 ./uruchom_testy.sh
 ```
 

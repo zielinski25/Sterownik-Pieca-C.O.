@@ -64,7 +64,9 @@ których nakładka nie zawiera.
 
 Wtedy: **`SterownikCO-Android-v0.31.22-PELNE-ZRODLA.zip`** (1 119 837 B,
 140 wpisów, cały projekt) — rozpakować do nowego folderu i zbudować.
-Szczegóły: `README-PELNE-ZRODLA.md`.
+Szczegóły: `README-PELNE-ZRODLA.md`. **Od 2026-11-18 archiwum nie leży
+w repozytorium** (w `Prefs.kt` były dane logowania) — jest na prywatnym
+Dysku Google; aktualne źródła aplikacji są w katalogu `android/`.
 
 ## Build potwierdzony (2026-10-22)
 

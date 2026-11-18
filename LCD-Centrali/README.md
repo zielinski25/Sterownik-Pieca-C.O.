@@ -1,7 +1,7 @@
 # Panel LCD (wyświetlacz CO) — firmware v1.4.0
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
-centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip`.
+centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
 
 ## Budowanie
 
