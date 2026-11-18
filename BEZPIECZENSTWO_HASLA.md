@@ -63,8 +63,11 @@ Hasła (obecne i przyszłe) są trzymane **tylko w pliku na tym Dysku**
 `secrets.h`, kolejność zmiany. Nowe hasła najpierw wpisać tam, potem
 do `secrets.h`.
 
-Poza gitem nadal publiczne: wydanie `3.57.9` (plik `firmware_panel.bin`)
-oraz `v3.35.2` i `v3.36.0` (pliki `.elf`) — w nich siedzą te same hasła.
+Z wydań na GitHubie usunięte tego samego dnia: `firmware_panel.bin`
+(wyd. 3.57.9) oraz `firmware.elf` (v3.35.2, v3.36.0). Zostały pliki
+`firmware.bin` centrali — z nich piec pobiera aktualizacje, a hasła są
+w nich wkompilowane; to się zmieni dopiero przy nowym sposobie wgrywania
+(opis w prywatnym pliku na Dysku).
 
 ---
 
@@ -212,5 +215,5 @@ wyczyścić NVS.
 - [ ] `secrets.h` skopiowany na pendrive
 - [x] stare archiwa zip z hasłami przeniesione na Dysk Google i usunięte z repo (2026-11-18)
 - [x] hasła spisane w prywatnym pliku na Dysku Google (2026-11-18)
-- [ ] usunięte pliki `firmware_panel.bin` (wyd. 3.57.9) i `.elf` (v3.35.2, v3.36.0) z wydań na GitHubie
+- [x] usunięte pliki `firmware_panel.bin` (wyd. 3.57.9) i `.elf` (v3.35.2, v3.36.0) z wydań na GitHubie (2026-11-18)
 - [ ] hasła z raportu `PORZADKI_2026-10-23.md` usunięte
