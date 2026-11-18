@@ -35,7 +35,8 @@ Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 **Małe i pewne poprawki po audycie z 2026-11-18** (krok 1 z
 `WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`, rozdział 4; numery znalezisk z
 `AUDYT_PANELU_LCD_2026-11-18_WYCIEKI_DRENAZ_KOD.md`). Panel pracuje tak samo
-jak v1.4.0 — zmienia się to, co się buduje, co trafia do logu i kilka zabezpieczeń.
+jak v1.4.0 — zmienia się to, co się buduje, co trafia do logu, kilka
+zabezpieczeń i (krok 2, niżej) ile pulpit rysuje, gdy nic się nie zmienia.
 
 | Co | Było (v1.4.0) | Jest (v1.4.1) |
 |---|---|---|
@@ -49,10 +50,23 @@ jak v1.4.0 — zmienia się to, co się buduje, co trafia do logu i kilka zabezp
 | **B8** `WiFi.persistent(false)` | biblioteka zapisywała sieć do NVS przy każdym połączeniu | wyłączone przed `WiFi.mode()` — panel i tak sam wybiera BSSID |
 | **C9** jasność | suwaki pozwalały na 0 % (czarny ekran, trudno odkręcić) | dolna granica **5 %** na suwakach i przy odczycie z NVS (0 % zapisane przez starszy program daje 5 %) |
 
-Czego v1.4.1 **nie** zmienia (kolejne kroki, osobno): rysowanie tylko przy
-zmianie danych (krok 2), sen na baterii i próg niskiej baterii (krok 3),
-komendy gubione w czasie pobierania (krok 4), rzadsze odpytywanie (krok 5),
-80 MHz (krok 6), martwy kod (krok 7).
+**Krok 2 (też w v1.4.1): pulpit rysuje tylko to, co się zmieniło (B2).**
+LVGL 8 przy każdym ustawieniu napisu, koloru, ikony czy widoczności oznacza
+obiekt do przerysowania — także wtedy, gdy wartość jest ta sama co przed
+chwilą. Pulpit odświeżany co 2 s z niezmienionymi danymi był przez to
+przerysowywany w 61 % (ok. 94 tys. pikseli po SPI przy każdym odczycie
+statusu). Teraz funkcje odświeżające pulpit (`dashboard_lvgl_poc.cpp`,
+sekcja `[v1.4.1 RYSOWANIE]`) najpierw porównują nową wartość z tą, którą
+obiekt już ma. Wygląd ekranu bez zmian. Pomiar na PC
+(`testy_host/pomiar_obciazenia.sh`), ekranów na minutę przed → po:
+pulpit bez zmian 18,30 → **0,01**; z pracującą pompą 24,30 → 6,00 (sam wirnik);
+jedna wartość co 10 s 18,30 → 0,19; ekran POMPA 24,39 → 8,86 (animacje ikon).
+Przy centrali, która milczy, zostaje 2,45 (licznik sekund w nagłówku).
+
+Czego v1.4.1 **nie** zmienia (kolejne kroki, osobno): sen na baterii i próg
+niskiej baterii (krok 3), komendy gubione w czasie pobierania (krok 4),
+rzadsze odpytywanie i mniej próśb o pamięć (krok 5), 80 MHz (krok 6),
+martwy kod (krok 7).
 
 **Jak czytać `tag=ZRZUT`.** Adresy z `pc=` i `slad=` zamienia się na nazwy
 funkcji poleceniem `xtensa-esp32-elf-addr2line -pfiaC -e .pio/build/esp32dev/firmware.elf 0x400d1234 ...`

@@ -488,8 +488,27 @@ ogniwo 3,90 V), nie dotyka ekranu i przez ok. 11 minut liczy:
 - **zmiany jasności podświetlenia** i to, czy panel usnął
   (`esp_deep_sleep_start()` w atrapie kończy program kodem 42).
 
-Wynik z 2026-11-18, firmware v1.4.0 (LVGL 8.3.11, ArduinoJson 7.2.1; v1.4.1
-z LVGL 8.4.0 i ArduinoJson 7.4.3 daje te same liczby):
+Wynik z 2026-11-18, firmware **v1.4.1** (LVGL 8.4.0, ArduinoJson 7.4.3;
+pulpit ustawia napis, kolor, ikonę i widoczność tylko przy zmianie —
+„krok 2” po audycie):
+
+| Stan | Ekranów na minutę | Pikseli na jeden odczyt statusu | Połączeń na minutę | Próśb o pamięć na minutę |
+|---|---|---|---|---|
+| A pulpit, dane bez zmian, pompa stoi | 0,01 | 30 (0 %) | 42 | 5 506 |
+| B pulpit, dane bez zmian, pompa pracuje | 6,00 (sam wirnik pompy) | 30 720 (20 %) | 42 | 7 902 |
+| C pulpit, jedna wartość zmienia się co 10 s | 0,19 | 974 (1 %) | 42 | 5 557 |
+| D centrala milczy, kafelki pokazują „--” | 2,45 (licznik sekund w nagłówku) | 14 266 (9 %) | 36 | 331 |
+| E otwarty ekran POMPA | 8,86 (animacje ikon) | 45 359 (30 %) | 42 | 7 972 |
+| F pulpit po powrocie, dane bez zmian | 0,00 | 0 | 42 | 5 502 |
+
+To, co zostało, to animacje (wirnik pompy w B, ikony na ekranie POMPA w E),
+licznik sekund „BRAK DANYCH … s” w nagłówku (D) i prawdziwe zmiany wartości
+(C). Liczby zgadzają się z szacunkiem `--prototyp` dla v1.4.0 (niżej).
+Prośby o pamięć (ok. 5 500 na minutę; to ArduinoJson przy każdym odczycie
+statusu i ustawień) zostają na krok 5.
+
+Ten sam pomiar dla **v1.4.0** (LVGL 8.3.11, ArduinoJson 7.2.1; v1.4.0 z LVGL
+8.4.0 i ArduinoJson 7.4.3 dawała te same liczby) — tak było przed krokiem 2:
 
 | Stan | Ekranów na minutę | Pikseli na jeden odczyt statusu | Połączeń na minutę | Próśb o pamięć na minutę |
 |---|---|---|---|---|
@@ -502,8 +521,9 @@ z LVGL 8.4.0 i ArduinoJson 7.4.3 daje te same liczby):
 Na baterii, 673 s bez dotyku: panel nie usnął, podświetlenie 255/255, zero
 zmian jasności.
 
-To samo z `--prototyp` (firmware bez zmian, cztery funkcje LVGL porównują
-przed ustawieniem):
+To samo dla v1.4.0 z `--prototyp` (firmware v1.4.0 bez zmian, cztery funkcje
+LVGL podmienione przy linkowaniu na wersje, które porównują przed
+ustawieniem) — szacunek, który krok 2 w v1.4.1 potwierdził co do setnych:
 
 | Stan | Ekranów na minutę | Próśb o pamięć na minutę |
 |---|---|---|

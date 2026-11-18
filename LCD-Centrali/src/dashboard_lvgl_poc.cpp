@@ -3,6 +3,19 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-18] v1.4.1 Zmieniono: rysowanie tylko przy zmianie ([v1.4.1 RYSOWANIE],
+//   pod rgb565()). Funkcje odswiezajace pulpit co 2 s (lvgl_dashboard_poc_aktualizuj()
+//   i wolane z niej *_odswiez(), bateria, znacznik centrali, ustawienia na
+//   otwartych ekranach) ustawiaja napis, kolor, ikone, widocznosc i
+//   wyrownanie przez ustawNapis()/ustawKolorStylu()/ustawIkone()/
+//   ustawUkrycie()/ustawWyrownanie(), ktore najpierw porownuja z tym, co
+//   juz jest w obiekcie. LVGL 8 przy kazdym lv_label_set_text()/
+//   lv_obj_set_style_*()/lv_img_set_src()/lv_obj_add|clear_flag(HIDDEN)
+//   oznacza obiekt do przerysowania takze wtedy, gdy wartosc jest ta sama -
+//   pulpit z niezmienionymi danymi byl przerysowywany w 61 % co 2 s (audyt
+//   2026-11-18, B2; pomiar: testy_host/pomiar_obciazenia.sh). Wyglad ekranu
+//   bez zmian. Przyciski i ekrany ustawien (zdarzenia dotyku) uzywaja
+//   dalej funkcji LVGL wprost - tam wywolanie jest raz na dotkniecie.
 // [2026-11-12] v1.4.0 Dodano: nakladka "AKTUALIZACJA PANELU" z paskiem postepu
 //   (lvgl_dashboard_poc_ota(), ..._ota_widoczna()) i odczyt czasu od
 //   ostatniego dotyku (lvgl_dashboard_poc_bez_dotyku_ms()) - [v1.4.0 OTA],
@@ -207,6 +220,67 @@ static inline lv_color_t rgb565(uint16_t v) {
   lv_color_t c;
   c.full = v;
   return c;
+}
+
+// ============================================================================
+// [v1.4.1 RYSOWANIE] Ustaw tylko wtedy, gdy sie zmienilo.
+// ============================================================================
+// LVGL 8 nie porownuje: lv_label_set_text(), lv_obj_set_style_*() (wszystkie
+// ida przez lv_obj_set_local_style_prop()), lv_img_set_src() i
+// lv_obj_add_flag()/lv_obj_clear_flag() z LV_OBJ_FLAG_HIDDEN oznaczaja obiekt
+// do przerysowania przy KAZDYM wywolaniu - takze z ta sama wartoscia.
+// Pulpit odswiezany co 2 s (STATUS_INTERWAL_MS w main.cpp) z niezmienionymi
+// danymi byl przez to przerysowywany w 61 % (ok. 94 tys. pikseli przez SPI
+// przy kazdym odczycie statusu; audyt 2026-11-18, B2). Ponizsze funkcje
+// najpierw czytaja, co obiekt juz ma, i wolaja LVGL tylko przy roznicy.
+// (lv_obj_set_x/y/width/height, lv_arc_set_value, lv_bar_set_value i
+// lv_slider_set_value porownuja same - te zostaja bez zmian.)
+// Wszystkie przyjmuja nullptr (nic nie robia) - wywolania ponizej moga
+// wiec pominac wlasne sprawdzenie uchwytu.
+static void ustawNapis(lv_obj_t *obj, const char *tekst) {
+  if (obj == nullptr || tekst == nullptr) return;
+  const char *teraz = lv_label_get_text(obj);
+  if (teraz != nullptr && strcmp(teraz, tekst) == 0) return;
+  lv_label_set_text(obj, tekst);
+}
+// Porownanie po wlasciwym polu unii lv_style_value_t (nie memcmp): przy
+// LV_COLOR_DEPTH=16 kolor ma 2 bajty, a unia 4 - reszta moze byc smieciem.
+static void ustawKolorStylu(lv_obj_t *obj, lv_style_prop_t prop, lv_color_t kolor, lv_style_selector_t selektor = 0) {
+  if (obj == nullptr) return;
+  lv_style_value_t teraz;
+  memset(&teraz, 0, sizeof(teraz));
+  if (lv_obj_get_local_style_prop(obj, prop, &teraz, selektor) == LV_RES_OK && teraz.color.full == kolor.full) return;
+  lv_style_value_t v;
+  memset(&v, 0, sizeof(v));
+  v.color = kolor;
+  lv_obj_set_local_style_prop(obj, prop, v, selektor);
+}
+static void ustawLiczbeStylu(lv_obj_t *obj, lv_style_prop_t prop, int32_t liczba, lv_style_selector_t selektor = 0) {
+  if (obj == nullptr) return;
+  lv_style_value_t teraz;
+  memset(&teraz, 0, sizeof(teraz));
+  if (lv_obj_get_local_style_prop(obj, prop, &teraz, selektor) == LV_RES_OK && teraz.num == liczba) return;
+  lv_style_value_t v;
+  memset(&v, 0, sizeof(v));
+  v.num = liczba;
+  lv_obj_set_local_style_prop(obj, prop, v, selektor);
+}
+static void ustawIkone(lv_obj_t *obj, const void *src) {
+  if (obj == nullptr || src == nullptr) return;
+  if (lv_img_get_src(obj) == src) return;
+  lv_img_set_src(obj, src);
+}
+static void ustawUkrycie(lv_obj_t *obj, bool ukryty) {
+  if (obj == nullptr) return;
+  if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) == ukryty) return;
+  if (ukryty) lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+  else lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+}
+// lv_obj_align() = lv_obj_set_align() (bez porownania) + lv_obj_set_pos() (porownuje).
+static void ustawWyrownanie(lv_obj_t *obj, lv_align_t wyrownanie, lv_coord_t x, lv_coord_t y) {
+  if (obj == nullptr) return;
+  ustawLiczbeStylu(obj, LV_STYLE_ALIGN, (int32_t)wyrownanie);
+  lv_obj_set_pos(obj, x, y);
 }
 
 // ============================================================================
@@ -1025,9 +1099,9 @@ static void pompa_panel_idle_timeout_cb(lv_timer_t *t) {
 // kodowania kolorow.
 static void pompa_tryb_odswiez() {
   if (pompaTrybCzasowyBtn == nullptr || pompaTrybTempBtn == nullptr || pompaTrybAutoBtn == nullptr) return;
-  lv_obj_set_style_bg_color(pompaTrybCzasowyBtn, rgb565(g_pompaWybor == 1 ? KOL_ZAR : KOL_KARTA), 0);
-  lv_obj_set_style_bg_color(pompaTrybTempBtn,    rgb565(g_pompaWybor == 2 ? KOL_KROPLA : KOL_KARTA), 0);
-  lv_obj_set_style_bg_color(pompaTrybAutoBtn,    rgb565(g_pompaWybor == 3 ? KOL_OGIEN : KOL_KARTA), 0);
+  ustawKolorStylu(pompaTrybCzasowyBtn, LV_STYLE_BG_COLOR, rgb565(g_pompaWybor == 1 ? KOL_ZAR : KOL_KARTA), 0);
+  ustawKolorStylu(pompaTrybTempBtn, LV_STYLE_BG_COLOR, rgb565(g_pompaWybor == 2 ? KOL_KROPLA : KOL_KARTA), 0);
+  ustawKolorStylu(pompaTrybAutoBtn, LV_STYLE_BG_COLOR, rgb565(g_pompaWybor == 3 ? KOL_OGIEN : KOL_KARTA), 0);
 }
 
 // [FIX UX, ta sesja - "nie wiem co jest aktywne"] Podswietla TLO aktywnego
@@ -1045,9 +1119,9 @@ static void pompa_panel_glowna_odswiez() {
   bool autoAktywne = (g_pompaOverrideMin <= 0);
   bool wlAktywne = (!autoAktywne && g_pompaWlaczona);
   bool wylAktywne = (!autoAktywne && !g_pompaWlaczona);
-  lv_obj_set_style_bg_color(pompaAutoBtn, rgb565(autoAktywne ? KOL_OGIEN : KOL_KARTA), 0);
-  lv_obj_set_style_bg_color(pompaWlBtn,   rgb565(wlAktywne   ? KOL_KROPLA : KOL_KARTA), 0);
-  lv_obj_set_style_bg_color(pompaWylBtn,  rgb565(wylAktywne  ? KOL_TEKST_DIM : KOL_KARTA), 0);
+  ustawKolorStylu(pompaAutoBtn, LV_STYLE_BG_COLOR, rgb565(autoAktywne ? KOL_OGIEN : KOL_KARTA), 0);
+  ustawKolorStylu(pompaWlBtn, LV_STYLE_BG_COLOR, rgb565(wlAktywne   ? KOL_KROPLA : KOL_KARTA), 0);
+  ustawKolorStylu(pompaWylBtn, LV_STYLE_BG_COLOR, rgb565(wylAktywne  ? KOL_TEKST_DIM : KOL_KARTA), 0);
 }
 
 // Odswieza WYGLAD kafelka POMPA (tekst wartosci, kolor ikony, luk odliczania)
@@ -1057,7 +1131,7 @@ static void pompa_tile_odswiez() {
   if (pompaValLabel == nullptr) return; // kafelek jeszcze nie istnieje
 
   uint16_t kolorAktywny = g_pompaWlaczona ? KOL_KROPLA : KOL_TEKST_DIM;
-  lv_obj_set_style_img_recolor(pompaIcon, rgb565(kolorAktywny), 0);
+  ustawKolorStylu(pompaIcon, LV_STYLE_IMG_RECOLOR, rgb565(kolorAktywny), 0);
 
   // [UI-POMPA-GLOWNY-KAFELEK, ta sesja] Znaczek strategii - niezalezny od
   // override'u nizej, wiec aktualizowany zawsze, bez wzgledu na
@@ -1079,8 +1153,8 @@ static void pompa_tile_odswiez() {
       strategiaSrc = &lv_ikona_automatyczny_mala;
       strategiaKolor = KOL_OGIEN;
     }
-    lv_img_set_src(pompaStrategiaIcon, strategiaSrc);
-    lv_obj_set_style_img_recolor(pompaStrategiaIcon, rgb565(strategiaKolor), 0);
+    ustawIkone(pompaStrategiaIcon, strategiaSrc);
+    ustawKolorStylu(pompaStrategiaIcon, LV_STYLE_IMG_RECOLOR, rgb565(strategiaKolor), 0);
   }
 
   // [UI-POMPA-OVERRIDE, ta sesja] Dlon: KOLOR + OPACITY razem (nie sama
@@ -1091,11 +1165,11 @@ static void pompa_tile_odswiez() {
   // subtelnej roznicy przezroczystosci tego samego koloru.
   bool nadpisane = (g_pompaOverrideMin > 0);
   if (nadpisane) {
-    lv_obj_set_style_img_opa(pompaRecznieIcon, LV_OPA_COVER, 0);
-    lv_obj_set_style_img_recolor(pompaRecznieIcon, rgb565(KOL_KROPLA), 0);
+    ustawLiczbeStylu(pompaRecznieIcon, LV_STYLE_IMG_OPA, LV_OPA_COVER, 0);
+    ustawKolorStylu(pompaRecznieIcon, LV_STYLE_IMG_RECOLOR, rgb565(KOL_KROPLA), 0);
   } else {
-    lv_obj_set_style_img_opa(pompaRecznieIcon, LV_OPA_40, 0);
-    lv_obj_set_style_img_recolor(pompaRecznieIcon, rgb565(KOL_TEKST_DIM), 0);
+    ustawLiczbeStylu(pompaRecznieIcon, LV_STYLE_IMG_OPA, LV_OPA_40, 0);
+    ustawKolorStylu(pompaRecznieIcon, LV_STYLE_IMG_RECOLOR, rgb565(KOL_TEKST_DIM), 0);
   }
 
   // [UI-POMPA-OVERRIDE, ta sesja] Przekreslenie pompy - widoczne WYLACZNIE
@@ -1107,17 +1181,17 @@ static void pompa_tile_odswiez() {
   // automatyki (animacja/jej brak juz to pokazuje).
   if (pompaPrzekreslenie != nullptr) {
     if (nadpisane && !g_pompaWlaczona) {
-      lv_obj_clear_flag(pompaPrzekreslenie, LV_OBJ_FLAG_HIDDEN);
+      ustawUkrycie(pompaPrzekreslenie, false);
     } else {
-      lv_obj_add_flag(pompaPrzekreslenie, LV_OBJ_FLAG_HIDDEN);
+      ustawUkrycie(pompaPrzekreslenie, true);
     }
   }
 
   if (g_pompaOverrideMin <= 0) {
     // [UI-RECZNIE] AUTO = pusta etykieta (dlon/przekreslenie obsluzone
     // wyzej, wspolnie dla obu galezi).
-    lv_label_set_text(pompaValLabel, "");
-    lv_obj_add_flag(pompaArc, LV_OBJ_FLAG_HIDDEN);
+    ustawNapis(pompaValLabel, "");
+    ustawUkrycie(pompaArc, true);
     return;
   }
 
@@ -1132,9 +1206,9 @@ static void pompa_tile_odswiez() {
   // zrodla zamiast kolejny raz kombinowac z rozmiarem fontu.
   char bufor[16];
   snprintf(bufor, sizeof(bufor), "%dm", g_pompaOverrideMin);
-  lv_label_set_text(pompaValLabel, bufor);
+  ustawNapis(pompaValLabel, bufor);
 
-  lv_obj_clear_flag(pompaArc, LV_OBJ_FLAG_HIDDEN);
+  ustawUkrycie(pompaArc, false);
   int procentZostalo = (g_pompaOverrideMin * 100) / POMPA_OVERRIDE_CALKOWITE_MIN;
   if (procentZostalo > 100) procentZostalo = 100;
   lv_arc_set_value(pompaArc, procentZostalo);
@@ -2838,18 +2912,18 @@ static uint16_t pompa_tryb_kolor(int wybor) {
 static void pompa_ust_aktywnosc_odswiez() {
   if (pompaUstTrybPlomka != nullptr) {
     uint16_t kolorTrybu = pompa_tryb_kolor(g_pompaWybor);
-    lv_obj_set_style_bg_color(pompaUstTrybPlomka, rgb565(kolorTrybu), 0);
-    lv_label_set_text(pompaUstTrybPlomkaLbl, pompa_tryb_nazwa(g_pompaWybor));
+    ustawKolorStylu(pompaUstTrybPlomka, LV_STYLE_BG_COLOR, rgb565(kolorTrybu), 0);
+    ustawNapis(pompaUstTrybPlomkaLbl, pompa_tryb_nazwa(g_pompaWybor));
   }
   for (int i = 0; i < 5; i++) {
     if (pompaUstPasek[i] == nullptr) continue; // ekran jeszcze nie zbudowany
     int grupa = POMPA_UST_GRUPA[i];
     bool aktywne = (grupa == 0) || (g_pompaWybor == 3) || (grupa == g_pompaWybor);
-    lv_obj_set_style_bg_color(pompaUstPasek[i], rgb565(aktywne ? pompaUstAkcent[i] : KOL_TEKST_DIM), 0);
-    lv_obj_set_style_bg_opa(pompaUstPasek[i], aktywne ? LV_OPA_COVER : LV_OPA_40, 0);
-    lv_obj_set_style_text_opa(pompaUstEtykieta[i], aktywne ? LV_OPA_COVER : LV_OPA_50, 0);
+    ustawKolorStylu(pompaUstPasek[i], LV_STYLE_BG_COLOR, rgb565(aktywne ? pompaUstAkcent[i] : KOL_TEKST_DIM), 0);
+    ustawLiczbeStylu(pompaUstPasek[i], LV_STYLE_BG_OPA, aktywne ? LV_OPA_COVER : LV_OPA_40, 0);
+    ustawLiczbeStylu(pompaUstEtykieta[i], LV_STYLE_TEXT_OPA, aktywne ? LV_OPA_COVER : LV_OPA_50, 0);
     if (pompaUstWartoscLabel[i] != nullptr) {
-      lv_obj_set_style_text_color(pompaUstWartoscLabel[i], rgb565(aktywne ? KOL_TEKST : KOL_TEKST_DIM), 0);
+      ustawKolorStylu(pompaUstWartoscLabel[i], LV_STYLE_TEXT_COLOR, rgb565(aktywne ? KOL_TEKST : KOL_TEKST_DIM), 0);
     }
   }
 }
@@ -3344,19 +3418,19 @@ static void alarm_ekran_animacja_stop() {
 // podtytulu jest jedynym miejscem, gdzie user widzi KTORE dokladnie.
 static void alarm_ekran_tresc_ustaw(AlarmPoziom poziom, bool alarmOgrzewanie, bool alarmPanel) {
   uint16_t kolor = (poziom == AlarmPoziom::POZAR) ? KOL_ERR : KOL_WARN;
-  lv_obj_set_style_img_recolor(alarmEkranIkona, rgb565(kolor), 0);
-  lv_obj_set_style_text_color(alarmEkranTytul, rgb565(kolor), 0);
+  ustawKolorStylu(alarmEkranIkona, LV_STYLE_IMG_RECOLOR, rgb565(kolor), 0);
+  ustawKolorStylu(alarmEkranTytul, LV_STYLE_TEXT_COLOR, rgb565(kolor), 0);
   if (poziom == AlarmPoziom::POZAR) {
-    lv_label_set_text(alarmEkranTytul, "POZAR / DYM");
-    lv_label_set_text(alarmEkranPodtytul, "Sprawdz palenisko natychmiast");
+    ustawNapis(alarmEkranTytul, "POZAR / DYM");
+    ustawNapis(alarmEkranPodtytul, "Sprawdz palenisko natychmiast");
   } else {
-    lv_label_set_text(alarmEkranTytul, "PRZEGRZANIE");
+    ustawNapis(alarmEkranTytul, "PRZEGRZANIE");
     if (alarmOgrzewanie && alarmPanel) {
-      lv_label_set_text(alarmEkranPodtytul, "Piec CO + Panel powyzej progu");
+      ustawNapis(alarmEkranPodtytul, "Piec CO + Panel powyzej progu");
     } else if (alarmOgrzewanie) {
-      lv_label_set_text(alarmEkranPodtytul, "Piec CO powyzej progu");
+      ustawNapis(alarmEkranPodtytul, "Piec CO powyzej progu");
     } else {
-      lv_label_set_text(alarmEkranPodtytul, "Panel powyzej progu");
+      ustawNapis(alarmEkranPodtytul, "Panel powyzej progu");
     }
   }
 }
@@ -3449,11 +3523,11 @@ static void alarm_ekran_odswiez(bool dymAlarm, bool alarmOgrzewanie, bool alarmP
   // nieaktywnych ekranow, wiec nie trzeba tego dodatkowo sprawdzac tutaj.
   if (alarmWskaznikDash != nullptr) {
     if (poziom == AlarmPoziom::BRAK) {
-      lv_obj_add_flag(alarmWskaznikDash, LV_OBJ_FLAG_HIDDEN);
+      ustawUkrycie(alarmWskaznikDash, true);
     } else {
       uint16_t kolor = (poziom == AlarmPoziom::POZAR) ? KOL_ERR : KOL_WARN;
-      lv_obj_set_style_text_color(alarmWskaznikDash, rgb565(kolor), 0);
-      lv_obj_clear_flag(alarmWskaznikDash, LV_OBJ_FLAG_HIDDEN);
+      ustawKolorStylu(alarmWskaznikDash, LV_STYLE_TEXT_COLOR, rgb565(kolor), 0);
+      ustawUkrycie(alarmWskaznikDash, false);
     }
   }
 
@@ -6428,19 +6502,19 @@ static void serwo_tile_odswiez() {
   if (g_trybSerwa == 2) { kolorRamki = KOL_SUWAK; ikonaTrybu = &lv_ikona_recznie; ikonaTrybuMala = &lv_ikona_recznie_mala; }
   else if (g_trybSerwa == 3) { kolorRamki = KOL_OGIEN; ikonaTrybu = &lv_ikona_bezpieczna; ikonaTrybuMala = &lv_ikona_bezpieczna_mala; }
 
-  if (klapaCard != nullptr) lv_obj_set_style_border_color(klapaCard, rgb565(kolorRamki), 0);
-  if (syberkaCard != nullptr) lv_obj_set_style_border_color(syberkaCard, rgb565(kolorRamki), 0);
+  if (klapaCard != nullptr) ustawKolorStylu(klapaCard, LV_STYLE_BORDER_COLOR, rgb565(kolorRamki), 0);
+  if (syberkaCard != nullptr) ustawKolorStylu(syberkaCard, LV_STYLE_BORDER_COLOR, rgb565(kolorRamki), 0);
 
   if (klapaRecznieIcon != nullptr) {
-    lv_img_set_src(klapaRecznieIcon, ikonaTrybu);
-    lv_obj_set_style_img_recolor(klapaRecznieIcon, rgb565(kolorRamki), 0);
-    lv_obj_align(klapaRecznieIcon, LV_ALIGN_BOTTOM_RIGHT, -6, -6); // realign - rozmiar bitmapy rozny per tryb (30/40px)
+    ustawIkone(klapaRecznieIcon, ikonaTrybu);
+    ustawKolorStylu(klapaRecznieIcon, LV_STYLE_IMG_RECOLOR, rgb565(kolorRamki), 0);
+    ustawWyrownanie(klapaRecznieIcon, LV_ALIGN_BOTTOM_RIGHT, -6, -6); // realign - rozmiar bitmapy rozny per tryb (30/40px)
   }
 
   if (syberkaRecznieIcon != nullptr) {
-    lv_img_set_src(syberkaRecznieIcon, ikonaTrybu);
-    lv_obj_set_style_img_recolor(syberkaRecznieIcon, rgb565(kolorRamki), 0);
-    lv_obj_align(syberkaRecznieIcon, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
+    ustawIkone(syberkaRecznieIcon, ikonaTrybu);
+    ustawKolorStylu(syberkaRecznieIcon, LV_STYLE_IMG_RECOLOR, rgb565(kolorRamki), 0);
+    ustawWyrownanie(syberkaRecznieIcon, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
   }
 
   // [POPRAWKA, ta sesja] Ten sam znaczek trybu takze na GLOWNYM kafelku
@@ -6450,9 +6524,9 @@ static void serwo_tile_odswiez() {
   // zagladal. serwoWejscieTrybIcon moze byc jeszcze nullptr, jesli ten
   // kafelek nie zostal zbudowany w danej konfiguracji ekranu - zabezpieczone.
   if (serwoWejscieTrybIcon != nullptr) {
-    lv_img_set_src(serwoWejscieTrybIcon, ikonaTrybuMala);
-    lv_obj_set_style_img_recolor(serwoWejscieTrybIcon, rgb565(kolorRamki), 0);
-    lv_obj_align(serwoWejscieTrybIcon, LV_ALIGN_TOP_RIGHT, -48, 6); // -48: obok oryginalnej ikony suwak (patrz komentarz w kafelek_serwo_wejscie())
+    ustawIkone(serwoWejscieTrybIcon, ikonaTrybuMala);
+    ustawKolorStylu(serwoWejscieTrybIcon, LV_STYLE_IMG_RECOLOR, rgb565(kolorRamki), 0);
+    ustawWyrownanie(serwoWejscieTrybIcon, LV_ALIGN_TOP_RIGHT, -48, 6); // -48: obok oryginalnej ikony suwak (patrz komentarz w kafelek_serwo_wejscie())
   }
 }
 
@@ -7103,7 +7177,7 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_serwa(int tempZadServo, int hister
     for (int i = 0; i < 6; i++) {
       char bufor[8];
       snprintf(bufor, sizeof(bufor), "%d", g_serwoUstWartosc[i]);
-      lv_label_set_text(serwoUstWartoscLabel[i], bufor);
+      ustawNapis(serwoUstWartoscLabel[i], bufor);
     }
   }
 }
@@ -7131,7 +7205,7 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_pompy(int czasOn, int czasOff,
     for (int i = 0; i < 5; i++) {
       char bufor[8];
       snprintf(bufor, sizeof(bufor), "%d", g_pompaUstWartosc[i]);
-      lv_label_set_text(pompaUstWartoscLabel[i], bufor);
+      ustawNapis(pompaUstWartoscLabel[i], bufor);
     }
   }
 }
@@ -7159,8 +7233,8 @@ void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie) {
   // a sam pin detekcji (GPIO35) bez zewnetrznego rezystora plywa.
   if (procent < 0) {
     lv_obj_set_width(bateriaWypelnienie, 0);
-    lv_label_set_text(bateriaEtykieta, "USB");
-    lv_obj_set_style_text_color(bateriaEtykieta, rgb565(KOL_TEKST_DIM), 0);
+    ustawNapis(bateriaEtykieta, "USB");
+    ustawKolorStylu(bateriaEtykieta, LV_STYLE_TEXT_COLOR, rgb565(KOL_TEKST_DIM), 0);
     return;
   }
   procent = constrain(procent, 0, 100);
@@ -7174,11 +7248,11 @@ void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie) {
   else if (procent <= 20) kolor = rgb565(KOL_WARN);
   else                    kolor = rgb565(KOL_TEKST);
 
-  lv_obj_set_style_bg_color(bateriaWypelnienie, kolor, 0);
+  ustawKolorStylu(bateriaWypelnienie, LV_STYLE_BG_COLOR, kolor, 0);
   char buf[8];
   snprintf(buf, sizeof(buf), "%d%%", procent);
-  lv_label_set_text(bateriaEtykieta, buf);
-  lv_obj_set_style_text_color(bateriaEtykieta, kolor, 0);
+  ustawNapis(bateriaEtykieta, buf);
+  ustawKolorStylu(bateriaEtykieta, LV_STYLE_TEXT_COLOR, kolor, 0);
 }
 
 // [v1.2.0 CENTRALA-ID] Patrz opis w dashboard_lvgl_poc.h.
@@ -7187,23 +7261,23 @@ void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik) {
   // [v1.2.1] Ten sam tekst na ekranie alarmu (patrz alarm_ekran_zbuduj()).
   if (alarmEkranZnacznik != nullptr) {
     if (pusty) {
-      lv_obj_add_flag(alarmEkranZnacznik, LV_OBJ_FLAG_HIDDEN);
+      ustawUkrycie(alarmEkranZnacznik, true);
     } else {
-      lv_label_set_text(alarmEkranZnacznik, znacznik);
-      lv_obj_align(alarmEkranZnacznik, LV_ALIGN_TOP_MID, 0, 210);
-      lv_obj_clear_flag(alarmEkranZnacznik, LV_OBJ_FLAG_HIDDEN);
+      ustawNapis(alarmEkranZnacznik, znacznik);
+      ustawWyrownanie(alarmEkranZnacznik, LV_ALIGN_TOP_MID, 0, 210);
+      ustawUkrycie(alarmEkranZnacznik, false);
     }
   }
   if (centralaZnacznikLabel == nullptr) return;
   if (pusty) {
-    lv_obj_add_flag(centralaZnacznikLabel, LV_OBJ_FLAG_HIDDEN);
+    ustawUkrycie(centralaZnacznikLabel, true);
     return;
   }
-  lv_label_set_text(centralaZnacznikLabel, znacznik);
+  ustawNapis(centralaZnacznikLabel, znacznik);
   // Ponowne wyrownanie: etykieta ma szerokosc zalezna od tekstu, a
-  // LV_ALIGN_TOP_MID liczy pozycje raz, w chwili wywolania lv_obj_align().
-  lv_obj_align(centralaZnacznikLabel, LV_ALIGN_TOP_MID, 0, 5);
-  lv_obj_clear_flag(centralaZnacznikLabel, LV_OBJ_FLAG_HIDDEN);
+  // LV_ALIGN_TOP_MID liczy pozycje raz, w chwili wywolania ustawWyrownanie().
+  ustawWyrownanie(centralaZnacznikLabel, LV_ALIGN_TOP_MID, 0, 5);
+  ustawUkrycie(centralaZnacznikLabel, false);
 }
 
 // [ROZSZERZENIE, ta sesja - PANEL DYM] Settery + updater, dokladnie ten sam
@@ -7227,12 +7301,12 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_dymu(int progAlarmDym, int dymCzas
   if (lv_scr_act() == dymPanel) {
     char bufor[16];
     snprintf(bufor, sizeof(bufor), "PROG: %d", g_dymProg);
-    lv_label_set_text(dymProgLabel, bufor);
+    ustawNapis(dymProgLabel, bufor);
     lv_slider_set_value(dymSlider, g_dymProg, LV_ANIM_OFF);
     for (int i = 0; i < 3; i++) {
       char b2[8];
       snprintf(b2, sizeof(b2), "%d", g_dymUstWartosc[i]);
-      lv_label_set_text(dymUstWartoscLabel[i], b2);
+      ustawNapis(dymUstWartoscLabel[i], b2);
     }
   }
 }
@@ -7253,7 +7327,7 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_alarmu_temp(int progAlarmTemp) {
   if (lv_scr_act() == alarmTempPanel) {
     char bufor[16];
     snprintf(bufor, sizeof(bufor), "PROG: %d C", g_alarmTempProg);
-    lv_label_set_text(alarmTempProgLabel, bufor);
+    ustawNapis(alarmTempProgLabel, bufor);
     lv_slider_set_value(alarmTempSlider, g_alarmTempProg, LV_ANIM_OFF);
   }
 }
@@ -7288,15 +7362,15 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int
   if (lv_scr_act() == wyswietlaczPanel) {
     char bufor[8];
     snprintf(bufor, sizeof(bufor), "%d%%", g_wyswietlaczJasnoscDzien);
-    lv_label_set_text(wyswietlaczLabelDzien, bufor);
+    ustawNapis(wyswietlaczLabelDzien, bufor);
     lv_slider_set_value(wyswietlaczSliderDzien, g_wyswietlaczJasnoscDzien, LV_ANIM_OFF);
     snprintf(bufor, sizeof(bufor), "%d%%", g_wyswietlaczJasnoscNoc);
-    lv_label_set_text(wyswietlaczLabelNoc, bufor);
+    ustawNapis(wyswietlaczLabelNoc, bufor);
     lv_slider_set_value(wyswietlaczSliderNoc, g_wyswietlaczJasnoscNoc, LV_ANIM_OFF);
     for (int i = 0; i < 2; i++) {
       char b2[8];
       snprintf(b2, sizeof(b2), "%d:00", g_wyswietlaczGodz[i]);
-      lv_label_set_text(wyswietlaczGodzLabel[i], b2);
+      ustawNapis(wyswietlaczGodzLabel[i], b2);
     }
     wyswietlacz_harmonogram_wyglad_odswiez();
   }
@@ -7358,8 +7432,8 @@ static void zewn_ikona_odswiez(float tZewn, int deszczStan) {
     src = &lv_ikona_zewn_cieplo;
     kolor = KOL_ZAR;
   }
-  lv_img_set_src(zewnIcon, src);
-  lv_obj_set_style_img_recolor(zewnIcon, rgb565(kolor), 0);
+  ustawIkone(zewnIcon, src);
+  ustawKolorStylu(zewnIcon, LV_STYLE_IMG_RECOLOR, rgb565(kolor), 0);
 }
 
 // [ROZSZERZENIE, ta sesja] User: "ikonka DYM na glownym panelu powinna byc
@@ -7395,19 +7469,19 @@ static void zewn_ikona_odswiez(float tZewn, int deszczStan) {
 // wartosci z wywolania kafelek() w init()).
 static void piec_alarm_odswiez(bool alarmOgrzewanie) {
   if (ogrzCard != nullptr) {
-    lv_obj_set_style_border_color(ogrzCard, rgb565(alarmOgrzewanie ? KOL_ERR : KOL_ZAR), 0);
+    ustawKolorStylu(ogrzCard, LV_STYLE_BORDER_COLOR, rgb565(alarmOgrzewanie ? KOL_ERR : KOL_ZAR), 0);
   }
   if (ogrzIcon != nullptr) {
-    lv_obj_set_style_img_recolor(ogrzIcon, rgb565(alarmOgrzewanie ? KOL_ERR : KOL_ZAR), 0);
+    ustawKolorStylu(ogrzIcon, LV_STYLE_IMG_RECOLOR, rgb565(alarmOgrzewanie ? KOL_ERR : KOL_ZAR), 0);
   }
 }
 
 static void panel_alarm_odswiez(bool alarmPanel) {
   if (panelCard != nullptr) {
-    lv_obj_set_style_border_color(panelCard, rgb565(alarmPanel ? KOL_ERR : KOL_RAMKA), 0);
+    ustawKolorStylu(panelCard, LV_STYLE_BORDER_COLOR, rgb565(alarmPanel ? KOL_ERR : KOL_RAMKA), 0);
   }
   if (panelIcon != nullptr) {
-    lv_obj_set_style_img_recolor(panelIcon, rgb565(alarmPanel ? KOL_ERR : KOL_ZAR), 0);
+    ustawKolorStylu(panelIcon, LV_STYLE_IMG_RECOLOR, rgb565(alarmPanel ? KOL_ERR : KOL_ZAR), 0);
   }
 }
 
@@ -7435,19 +7509,19 @@ static void wifi_ikona_odswiez(bool polaczono, int rssi) {
     // Decyzja: wyszarzone wszystkie kreski + symbol X widoczny.
     for (int i = 0; i < 7; i++) {
       if (wifiPasek[i] != nullptr) {
-        lv_obj_set_style_bg_color(wifiPasek[i], rgb565(KOL_TEKST_DIM), 0);
+        ustawKolorStylu(wifiPasek[i], LV_STYLE_BG_COLOR, rgb565(KOL_TEKST_DIM), 0);
       }
     }
-    lv_obj_clear_flag(wifiX, LV_OBJ_FLAG_HIDDEN);
+    ustawUkrycie(wifiX, false);
     return;
   }
 
-  lv_obj_add_flag(wifiX, LV_OBJ_FLAG_HIDDEN);
+  ustawUkrycie(wifiX, true);
   int aktywne = wifi_liczba_kresek(rssi);
   for (int i = 0; i < 7; i++) {
     if (wifiPasek[i] == nullptr) continue;
     bool aktywna = (i < aktywne);
-    lv_obj_set_style_bg_color(wifiPasek[i], rgb565(aktywna ? KOL_TEKST : KOL_TEKST_DIM), 0);
+    ustawKolorStylu(wifiPasek[i], LV_STYLE_BG_COLOR, rgb565(aktywna ? KOL_TEKST : KOL_TEKST_DIM), 0);
   }
 }
 
@@ -7461,15 +7535,15 @@ static void internet_ikona_odswiez(bool internet) {
   uint16_t kolorSiatka = internet ? KOL_GLOBUS_SIATKA : KOL_TEKST_DIM;
   uint16_t kolorLady = internet ? KOL_GLOBUS_LADY : KOL_TEKST_DIM;
   if (netGlobusSiatka != nullptr) {
-    lv_obj_set_style_img_recolor(netGlobusSiatka, rgb565(kolorSiatka), 0);
+    ustawKolorStylu(netGlobusSiatka, LV_STYLE_IMG_RECOLOR, rgb565(kolorSiatka), 0);
   }
   if (netGlobusLady != nullptr) {
-    lv_obj_set_style_img_recolor(netGlobusLady, rgb565(kolorLady), 0);
+    ustawKolorStylu(netGlobusLady, LV_STYLE_IMG_RECOLOR, rgb565(kolorLady), 0);
   }
   if (internet) {
-    lv_obj_add_flag(netX, LV_OBJ_FLAG_HIDDEN);
+    ustawUkrycie(netX, true);
   } else {
-    lv_obj_clear_flag(netX, LV_OBJ_FLAG_HIDDEN);
+    ustawUkrycie(netX, false);
   }
 }
 
@@ -7488,15 +7562,15 @@ static void dym_ikona_odswiez(int dym, bool dymAlarm) {
     src = &lv_ikona_bezpieczna;
     kolor = KOL_BEZPIECZNA;
   }
-  lv_img_set_src(dymIcon, src);
-  lv_obj_set_style_img_recolor(dymIcon, rgb565(kolor), 0);
+  ustawIkone(dymIcon, src);
+  ustawKolorStylu(dymIcon, LV_STYLE_IMG_RECOLOR, rgb565(kolor), 0);
   // Ramka karty - ten sam 3-stanowy jezyk kolorow co ikona (poprzednio tylko
   // 2 stany: KOL_ERR/KOL_OGIEN). W stanie OK ramka wraca do neutralnej
   // KOL_RAMKA (ten sam "spokojny" kolor co karty SERWO w trybie Auto) zamiast
   // KOL_OGIEN (turkus zarezerwowany na kafelek POMPA - patrz komentarz przy
   // KOL_BEZPIECZNA na poczatku pliku co do "pozyczonych" kolorow).
   uint16_t kolorRamki = dymAlarm ? KOL_ERR : (uwaga ? KOL_WARN : KOL_RAMKA);
-  lv_obj_set_style_border_color(dymCard, rgb565(kolorRamki), 0);
+  ustawKolorStylu(dymCard, LV_STYLE_BORDER_COLOR, rgb565(kolorRamki), 0);
 
   // [FIX tej sesji] Wskaznik pozycji zamiast wypelnienia lv_bar - patrz
   // obszerny komentarz w kafelek_dym() co do tego, dlaczego (przy niskich
@@ -7516,7 +7590,7 @@ static void dym_ikona_odswiez(int dym, bool dymAlarm) {
     int wskaznikSzer = 3;
     int x = (int)(((long)procent * (dymBarSzer - wskaznikSzer)) / 100);
     lv_obj_set_x(dymBar, x);
-    lv_obj_set_style_bg_color(dymBar, rgb565(kolor), 0);
+    ustawKolorStylu(dymBar, LV_STYLE_BG_COLOR, rgb565(kolor), 0);
   }
 }
 
@@ -7575,47 +7649,47 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // powyzszej logiki pokaz/ukryj.
 
   if (!polaczono) {
-    lv_label_set_text(zewnValLabel, "--");
-    lv_label_set_text(bojlerValLabel, "--");
-    lv_label_set_text(dymValLabel, "--");
-    if (ogrzGlownaLabel != nullptr) lv_label_set_text(ogrzGlownaLabel, "--");
-    if (ogrzSredniaLabel != nullptr) lv_label_set_text(ogrzSredniaLabel, "SR --");
-    if (panelValLabel != nullptr) lv_label_set_text(panelValLabel, "--");
-    if (pokojValLabel != nullptr) lv_label_set_text(pokojValLabel, "--");
-    if (wilgotnoscValLabel != nullptr) lv_label_set_text(wilgotnoscValLabel, "--");
-    if (cisnienieValLabel != nullptr) lv_label_set_text(cisnienieValLabel, "--");
-    if (klapaValLabel != nullptr) lv_label_set_text(klapaValLabel, "--");
-    if (syberkaValLabel != nullptr) lv_label_set_text(syberkaValLabel, "--");
-    if (serwoWejsciePodpis != nullptr) lv_label_set_text(serwoWejsciePodpis, "Klapa --%\nSyberka --%");
+    ustawNapis(zewnValLabel, "--");
+    ustawNapis(bojlerValLabel, "--");
+    ustawNapis(dymValLabel, "--");
+    if (ogrzGlownaLabel != nullptr) ustawNapis(ogrzGlownaLabel, "--");
+    if (ogrzSredniaLabel != nullptr) ustawNapis(ogrzSredniaLabel, "SR --");
+    if (panelValLabel != nullptr) ustawNapis(panelValLabel, "--");
+    if (pokojValLabel != nullptr) ustawNapis(pokojValLabel, "--");
+    if (wilgotnoscValLabel != nullptr) ustawNapis(wilgotnoscValLabel, "--");
+    if (cisnienieValLabel != nullptr) ustawNapis(cisnienieValLabel, "--");
+    if (klapaValLabel != nullptr) ustawNapis(klapaValLabel, "--");
+    if (syberkaValLabel != nullptr) ustawNapis(syberkaValLabel, "--");
+    if (serwoWejsciePodpis != nullptr) ustawNapis(serwoWejsciePodpis, "Klapa --%\nSyberka --%");
     // Kafelek POMPA tez nie moze pokazywac ostatniego znanego AUTO/WL/WYL
     // jakby to wciaz byla aktualna prawda - to samo "UI nie klamie", co przy
     // nieudanym POST z panelu (patrz komentarz przy przyciskach wyzej).
     if (pompaValLabel != nullptr) {
-      lv_label_set_text(pompaValLabel, "--");
-      lv_obj_add_flag(pompaArc, LV_OBJ_FLAG_HIDDEN);
+      ustawNapis(pompaValLabel, "--");
+      ustawUkrycie(pompaArc, true);
       // [v1.2.0 DANE-NIEAKTUALNE] Od v1.2.0 ta galaz jest osiagana takze w
       // trakcie pracy (dane starsze niz prog w main.cpp), wiec ikona moze
       // tu trafic w stanie "pompa pracuje": wygas ja i schowaj przekreslenie
       // - oba znaki mowilyby o stanie, ktorego panel juz nie zna. Wirnik
       // zatrzymuje pompa_wirnik_timer_cb() (patrz !g_polaczono tam). Po
       // powrocie danych kolor i przekreslenie ustawia pompa_tile_odswiez().
-      lv_obj_set_style_img_recolor(pompaIcon, rgb565(KOL_TEKST_DIM), 0);
-      if (pompaPrzekreslenie != nullptr) lv_obj_add_flag(pompaPrzekreslenie, LV_OBJ_FLAG_HIDDEN);
+      ustawKolorStylu(pompaIcon, LV_STYLE_IMG_RECOLOR, rgb565(KOL_TEKST_DIM), 0);
+      if (pompaPrzekreslenie != nullptr) ustawUkrycie(pompaPrzekreslenie, true);
     }
     // Ta sama zasada dla SERWO - brak polaczenia nie moze pokazywac ostatnio
     // znanego trybu recznego jakby to wciaz byla aktualna prawda.
     if (klapaCard != nullptr) {
-      lv_obj_set_style_border_color(klapaCard, rgb565(KOL_RAMKA), 0);
-      lv_obj_add_flag(klapaRecznieIcon, LV_OBJ_FLAG_HIDDEN);
+      ustawKolorStylu(klapaCard, LV_STYLE_BORDER_COLOR, rgb565(KOL_RAMKA), 0);
+      ustawUkrycie(klapaRecznieIcon, true);
     }
     if (syberkaCard != nullptr) {
-      lv_obj_set_style_border_color(syberkaCard, rgb565(KOL_RAMKA), 0);
-      lv_obj_add_flag(syberkaRecznieIcon, LV_OBJ_FLAG_HIDDEN);
+      ustawKolorStylu(syberkaCard, LV_STYLE_BORDER_COLOR, rgb565(KOL_RAMKA), 0);
+      ustawUkrycie(syberkaRecznieIcon, true);
     }
     // [LVGL-DATA-CZAS, ta sesja] Brak polaczenia -> ostatnia znana godzina
     // moglaby juz byc nieaktualna, tak samo jak reszta kafelkow wyzej.
-    if (dataCzasCzasLabel != nullptr) lv_label_set_text(dataCzasCzasLabel, "--:--");
-    if (dataCzasDataLabel != nullptr) lv_label_set_text(dataCzasDataLabel, "--.--.----");
+    if (dataCzasCzasLabel != nullptr) ustawNapis(dataCzasCzasLabel, "--:--");
+    if (dataCzasDataLabel != nullptr) ustawNapis(dataCzasDataLabel, "--.--.----");
     return;
   }
 
@@ -7646,7 +7720,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
     // jednak potwierdzic na prawdziwym sprzecie przy pierwszej okazji.
     snprintf(bufor, sizeof(bufor), "%.1f°C", tZewn);
   }
-  lv_label_set_text(zewnValLabel, bufor);
+  ustawNapis(zewnValLabel, bufor);
   zewn_ikona_odswiez(tZewn, deszczStan);
 
   // [Partia 4, ta sesja] User na zywym sprzecie: "temp boilera i pieca ma
@@ -7655,37 +7729,37 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // miejsca ma - te dwa kafelki nie maja obok siebie drugiej wartosci jak
   // PIEC CO/SR).
   snprintf(bufor, sizeof(bufor), "%.0f°C", tBojler);
-  lv_label_set_text(bojlerValLabel, bufor);
+  ustawNapis(bojlerValLabel, bufor);
 
   snprintf(bufor, sizeof(bufor), "%d", dym);
-  lv_label_set_text(dymValLabel, bufor);
+  ustawNapis(dymValLabel, bufor);
 
   if (ogrzGlownaLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%.0f°C", tOgrz);
-    lv_label_set_text(ogrzGlownaLabel, bufor);
+    ustawNapis(ogrzGlownaLabel, bufor);
   }
   // [Partia 5, ta sesja] PANEL - sam format co BOJLER (%.0f, "dziesietna bez
   // przecinka", patrz komentarz nad BOJLEREM wyzej - ta sama prosba usera
   // dotyczy tez tego kafelka bo uzywa tego samego wzorca kafelek()).
   if (panelValLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%.0f°C", tPanel);
-    lv_label_set_text(panelValLabel, bufor);
+    ustawNapis(panelValLabel, bufor);
   }
 
   if (ogrzSredniaLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "SR %.0f°C", tOgrzSr);
-    lv_label_set_text(ogrzSredniaLabel, bufor);
+    ustawNapis(ogrzSredniaLabel, bufor);
   }
 
   // [Partia 2, ta sesja] 5 nowych kafelkow - te same formaty co w
   // tresciKafelka() starego dashboardu (String(x,1)/(x,0) + jednostka).
   if (pokojValLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%.1f°C", tPokoj);
-    lv_label_set_text(pokojValLabel, bufor);
+    ustawNapis(pokojValLabel, bufor);
   }
   if (wilgotnoscValLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%.0f %%", wilgotnosc);
-    lv_label_set_text(wilgotnoscValLabel, bufor);
+    ustawNapis(wilgotnoscValLabel, bufor);
   }
   if (cisnienieValLabel != nullptr) {
     // [Partia 4, ta sesja] User na zywym sprzecie: "cisnienie jest aby h a
@@ -7698,22 +7772,22 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
     // font (20 zamiast 28) dla TEJ jednej etykiety - "1013 hPa" mieści się
     // w calosci.
     snprintf(bufor, sizeof(bufor), "%.0f hPa", cisnienie);
-    lv_label_set_text(cisnienieValLabel, bufor);
+    ustawNapis(cisnienieValLabel, bufor);
   }
   if (klapaValLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%d %%", klapa);
-    lv_label_set_text(klapaValLabel, bufor);
+    ustawNapis(klapaValLabel, bufor);
   }
   if (syberkaValLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%d %%", syberka);
-    lv_label_set_text(syberkaValLabel, bufor);
+    ustawNapis(syberkaValLabel, bufor);
   }
   if (serwoWejsciePodpis != nullptr) {
     // Osobny, wiekszy bufor niz `bufor[16]` uzywany wyzej - "Klapa 100%\n
     // Syberka 100%" to az 23 znaki + terminator, `bufor[16]` by sie ucielo.
     char boforSerwo[28];
     snprintf(boforSerwo, sizeof(boforSerwo), "Klapa %d%%\nSyberka %d%%", klapa, syberka);
-    lv_label_set_text(serwoWejsciePodpis, boforSerwo);
+    ustawNapis(serwoWejsciePodpis, boforSerwo);
   }
 
   // [ROZSZERZENIE, ta sesja] 3-stanowa ikona/ramka (OK zielony znaczek /
@@ -7747,17 +7821,17 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   if (dataCzasCzasLabel != nullptr) {
     if (rtcOk) {
       snprintf(bufor, sizeof(bufor), "%02d:%02d", godzina, minuta);
-      lv_label_set_text(dataCzasCzasLabel, bufor);
+      ustawNapis(dataCzasCzasLabel, bufor);
     } else {
-      lv_label_set_text(dataCzasCzasLabel, "--:--");
+      ustawNapis(dataCzasCzasLabel, "--:--");
     }
   }
   if (dataCzasDataLabel != nullptr) {
     if (rtcOk) {
       snprintf(bufor, sizeof(bufor), "%02d.%02d.%04d", dzien, miesiac, rok);
-      lv_label_set_text(dataCzasDataLabel, bufor);
+      ustawNapis(dataCzasDataLabel, bufor);
     } else {
-      lv_label_set_text(dataCzasDataLabel, "--.--.----");
+      ustawNapis(dataCzasDataLabel, "--.--.----");
     }
   }
 }

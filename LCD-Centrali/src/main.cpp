@@ -75,8 +75,16 @@
 //     (suwaki, wartosc z NVS, zapis). Przedtem 0 % gasilo ekran na stale,
 //     takze po restarcie. Rozjasnianie na czas alarmu - razem z usypianiem
 //     (krok 3), bo to ten sam fragment kodu.
-//   Nie zmienione w tym kroku (celowo): rysowanie (krok 2), usypianie na
-//   baterii (krok 3), polecenia (krok 4), odpytywanie centrali (krok 5).
+//   - Krok 2 (B2, tez v1.4.1, tylko dashboard_lvgl_poc.cpp): pulpit ustawia
+//     napis, kolor, ikone, widocznosc i wyrownanie TYLKO wtedy, gdy nowa
+//     wartosc rozni sie od tej w obiekcie (sekcja [v1.4.1 RYSOWANIE]). LVGL 8
+//     przy kazdym ustawieniu oznacza obiekt do przerysowania, wiec pulpit z
+//     niezmienionymi danymi byl przerysowywany w 61 % co 2 s. Po zmianie:
+//     0,01 ekranu/min zamiast 18,30 (testy_host/pomiar_obciazenia.sh); to,
+//     co zostalo, to animacje (wirnik pompy, ekran POMPA) i licznik sekund w
+//     naglowku, gdy centrala milczy. Wyglad ekranu bez zmian.
+//   Nie zmienione w tym kroku (celowo): usypianie na baterii (krok 3),
+//   polecenia (krok 4), odpytywanie centrali (krok 5).
 // [2026-11-12] v1.4.0 - AKTUALIZACJA PRZEZ CENTRALE (OTA): W TRAKCIE PRACY, Z
 //   POSTEPEM NA EKRANIE, BEZ WGRYWANIA W KOLKO.
 //   Decyzja uzytkownika: "Dzialaj" po raporcie
