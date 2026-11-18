@@ -44,7 +44,9 @@ rozdział 13.
    (rozdział 9).
 8. **Hasła** — osobny, prywatny plik (rozdział 5).
 
-Kolejność prac, którą proponuję: rozdział 11.
+Kolejność prac, którą proponuję: rozdział 11. **Dopisane po szukaniu:**
+wyniki szukania w internecie i nowsza kolejność są w pliku
+`WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`.
 
 ---
 
@@ -82,9 +84,11 @@ Kolejność prac, którą proponuję: rozdział 11.
 - **Nie mierzyłem prądu ani czasu.** Model liczy, ile pracy panel sobie
   zadaje (piksele, połączenia, prośby o pamięć) — nie ile to kosztuje baterii.
 - Nie sprawdzałem centrali ani aplikacji na telefon.
-- **Nie szukałem jeszcze w internecie** — poza jednym sprawdzeniem karty
-  katalogowej ESP32 (tabela prądów w rozdziale 7). Tematy do wyszukania są
-  w rozdziale 10.
+- Szukanie w internecie (tematy z rozdziału 10) jest zrobione — wyniki
+  i zmieniona kolejność prac są w osobnym pliku
+  `WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`. Ten plik zostawiam w stanie
+  sprzed szukania, z wyjątkiem dopisków oznaczonych „dopisane po
+  szukaniu”.
 
 ### Skala pewności przy ustaleniach
 
@@ -404,6 +408,13 @@ bez dotyku): panel nie usnął; podświetlenie 255/255; zmian jasności: 0.
 **Zanim to się poprawi — decyzja, której nie podejmę za Ciebie.**
 Panel ma brzęczyk alarmu dymu i przegrzania. **Śpiący panel nie pyta
 centrali i nie zapiszczy.** Możliwe ustawienia, od najbezpieczniejszego:
+
+> **Dopisane po szukaniu.** Odpowiedziałeś, że alarm gra z głośnika
+> centrali. Kod centrali to potwierdza (brzęczyk na wyjściu 12,
+> `buzzerAlarmuCentrali()`, bez udziału panelu). Śpiący panel alarmu więc
+> nie wycisza i wariant 4 — głęboki sen jak w starym kodzie — jest
+> do przyjęcia. Szczegóły: `WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`,
+> rozdział 2.
 
 | Wariant | Oszczędność | Alarm |
 |---|---|---|
