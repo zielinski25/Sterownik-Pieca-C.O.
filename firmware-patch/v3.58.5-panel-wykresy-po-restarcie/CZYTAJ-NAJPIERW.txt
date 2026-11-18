@@ -1,0 +1,144 @@
+FIRMWARE CENTRALI 3.58.5 - co zrobic w 3 krokach
+================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN (identyczne jak przy 3.58.3).
+Panel LCD: BEZ ZMIAN (zostaje v1.3.0).
+
+Ta paczka ZASTEPUJE paczke 3.58.4. Jesli 3.58.4 nie jest jeszcze wgrana,
+wgraj od razu te - wersji 3.58.4 nie trzeba wgrywac po drodze.
+
+WAZNE - ZANIM ZACZNIESZ
+-----------------------
+1) Ten plik pasuje do projektu, w ktorym jest wersja 3.58.3 albo 3.58.4.
+   Sprawdz wersje na plytce (strona WWW centrali -> Ustawienia -> "Sesja
+   operatora" -> "Wersja centrali"). Jesli jest tam INNA wersja - nie
+   podmieniaj pliku, tylko napisz, jaka.
+2) Ten plik NIE BYL kompilowany w PlatformIO ani uruchamiany na plytce.
+   Pierwsza kompilacja bedzie Twoja. Jesli sie nie uda - przyslij komunikat
+   bledu i wroc do kopii zapasowej (na dole tej instrukcji).
+
+
+CO DAJE TA WERSJA
+-----------------
+To samo co 3.58.4 - adres dla panelu LCD:
+    GET /api/history/panel?tryb=godz|dzien|tydz&pkt=96
+(centrala sama liczy punkty wykresu ze swojej lokalnej historii i wysyla
+panelowi gotowe, najwyzej 96 wierszy, 18-20 kB) - oraz poprawke wykresow
+po restarcie centrali:
+
+  3.58.4: gdy po restarcie centrala miala w pamieci tylko stara historie
+          (wczytana z plikow), panel w pierwszej minucie rysowal stare dane
+          jako "ostatnia godzine / dobe / tydzien", a potem pisal "Za malo
+          danych na wykres (jeden pomiar)": na wykresie dziennym przez
+          15 minut (stara historia starsza niz doba), na tygodniowym przez
+          105 minut (starsza niz tydzien).
+  3.58.5: wykres jest od drugiego pomiaru po restarcie (ok. 2 minuty), a os
+          czasu konczy sie na biezacej chwili.
+
+Tak bylo po kazdym restarcie centrali z WYLACZONYM zapisem historii na flash
+i starymi plikami historii, a takze po dluzszym wylaczeniu centrali.
+
+WYLACZONY ZAPIS HISTORII ("Zapisuj historie na flash centrali")
+---------------------------------------------------------------
+- Dopoki centrala pracuje, wykresy na LCD dzialaja normalnie: historia jest
+  w pamieci centrali, wylaczony jest tylko zapis do plikow.
+- Po restarcie centrali historia zaczyna sie od nowa (albo od starych plikow,
+  jesli zostaly na flashu). Wykres na LCD jest po ok. 2 minutach i wydluza
+  sie z kazda minuta.
+- Firebase nie jest uzywany: centrala tam tylko wysyla dane, nie czyta ich.
+  Zeby historia przetrwala restart, wlacz zapis na flash.
+
+Reszta centrali bez zmian: sterowanie, czujniki, strona WWW, /api/history,
+/api/history/long, zapis historii, Firebase, Telegram, OTA.
+Szczegoly: README.md.
+
+KOLEJNOSC WGRYWANIA PANELU I CENTRALI JEST DOWOLNA:
+  - panel 1.3.0 + centrala do 3.58.3 -> wykresy dzialaja po staremu,
+  - starszy panel + centrala 3.58.5  -> wykresy dzialaja po staremu,
+  - panel 1.3.0 + centrala 3.58.5    -> gotowe punkty z centrali.
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.5"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (powinna wyjsc wartosc z pierwszej linii SHA256SUMS.txt):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+(Jesli Twoj projekt lezy gdzie indziej - podstaw swoja sciezke.)
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+PlatformIO -> Build, potem Upload   (w terminalu: pio run   i   pio run -t upload)
+
+Jesli kompilacja zatrzyma sie na bledzie:
+  - skopiuj caly komunikat (linie z "error:") i przyslij,
+  - przywroc kopie zapasowa (na dole).
+Zmiany wzgledem 3.58.3 sa tylko w 4 miejscach pliku (WYNIKI\zakres-zmian.txt),
+wiec blad bedzie wskazywal jedno z nich.
+
+
+KROK 3 - SPRAWDZENIE (najpierw na golej plytce, potem przy piecu)
+-----------------------------------------------------------------
+1. Strona WWW centrali -> Ustawienia -> "Sesja operatora":
+   "Wersja centrali: v3.58.5".
+2. W przegladarce (telefon albo komputer w sieci centrali):
+       http://<IP>/api/history/panel?tryb=dzien
+   (w sieci PiecCO_AP adres centrali to 192.168.4.1)
+   Ma sie pokazac tekst:
+       #panel-hist 1 tryb=dzien pkt=96 wierszy=... od=... do=...
+       13:15,-4.9,-5.0,-4.9,45.0,...
+       ...
+       #koniec 96
+   To samo z tryb=godz i tryb=tydz.
+   W pierwszej minucie po starcie odpowiedz moze nie miec wierszy z danymi:
+     - sam naglowek z "wierszy=0" i linia "#koniec 0" (centrala nie ma
+       zadnej historii), albo
+     - naglowek i same linie "#przerwa" (centrala ma tylko stara historie,
+       a w wybranym zakresie nie ma jeszcze pomiaru).
+   Obie sa poprawne. Pierwsza probke centrala zapisuje minute po starcie.
+3. Panel LCD z firmware v1.3.0: WYKRESY -> wybierz serie -> POKAZ WYKRES.
+   W logu panelu (serial 115200):
+       tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=centrala punktow=...
+   "sposob=centrala" = punkty policzyla centrala.
+   W logu centrali:
+       tag=HISTORIA lvl=INFO msg="PANEL_WYKRES tryb=dzien pkt=96 wierszy=... punktow=... przerw=... bajtow=..."
+4. To, co poprawia ta wersja: zrestartuj centrale, odczekaj 2-3 minuty
+   i otworz na panelu wykres DZIENNY, potem TYGODNIOWY. Ma byc wykres, a nie
+   napis "Za malo danych na wykres (jeden pomiar)".
+5. Strona WWW centrali -> wykresy: maja dzialac jak dotad (korzystaja ze
+   starych adresow, ktorych ta wersja nie rusza).
+
+Co warto przyslac po tescie: linie "tag=WYKRESY" z logu panelu (jest w nich
+czas pobierania "ms=" i wolna pamiec panelu "ram_min=") oraz linie
+"PANEL_WYKRES" z logu centrali - najlepiej takze te z pierwszych minut po
+restarcie centrali.
+
+
+POWROT DO POPRZEDNIEJ WERSJI
+----------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.5" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+i Upload. Panel LCD v1.3.0 moze zostac - ze starsza centrala pobiera wykresy
+po staremu.
+
+
+TESTY W PACZCE (opcjonalnie; Linux albo WSL, g++ i python3)
+-----------------------------------------------------------
+cd tests
+./uruchom_testy.sh          (2697 sprawdzen kodu liczacego punkty)
+./porownaj_z_3.58.4.sh      (tabela: 3.58.4 i 3.58.5 po restarcie centrali)
+Opis: tests/README.txt; wyniki z dnia wydania sa w katalogu WYNIKI.
+
+
+CZEGO TA WERSJA NIE ROBI
+------------------------
+- Nie byla kompilowana dla ESP32 ani testowana na sprzecie - testy na zywo
+  robisz Ty (scenariusz wyzej).
+- Nie pobiera niczego z Firebase. Po restarcie z wylaczonym zapisem historii
+  starszych danych na LCD nie ma.
+- Nie zmienia logiki pieca, automatyki, zapisu historii, strony WWW,
+  aplikacji Android, Telegrama.

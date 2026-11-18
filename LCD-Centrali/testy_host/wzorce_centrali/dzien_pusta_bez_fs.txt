@@ -1,0 +1,2 @@
+#panel-hist 1 tryb=dzien pkt=96 wierszy=0 od=0 do=0 krok_s=0 zrodlo=lokalne fs=0 od_etyk=--:-- do_etyk=--:--
+#koniec 0

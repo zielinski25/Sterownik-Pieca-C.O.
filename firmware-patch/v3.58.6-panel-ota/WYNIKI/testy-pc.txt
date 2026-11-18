@@ -1,0 +1,408 @@
+Wynik: ./uruchom_testy.sh   (g++ 12, 2026-11-12)
+Plik: src/main_centrala.cpp  SHA-256 c13f81e370ee2d099795b7b35cb31cbb31c1b40bb7bc54eb37c6a8c1a26ed90c
+
+=== A. [v3.58.6 PANEL-OTA] posrednictwo aktualizacji panelu LCD ===
+[A1] wycinam kod z ../src/main_centrala.cpp
+    zapisano /tmp/centrala_panel_hist_test/panel_ota_wycinek.inc (947 linii)
+    zapisano /tmp/centrala_panel_hist_test/panel_ota_blok.inc (472 linii)
+[A2] kompilacja (g++ -Wall -Wextra -Wshadow -Wconversion)
+[A3] testy
+Testy kodu [v3.58.6 PANEL-OTA] centrali (posrednictwo aktualizacji panelu LCD)
+[1] identyfikator pliku, sprawdzenie naglowka, czytanie odmowy
+    [ OK ] identyfikator = 8 pierwszych bajtow sumy, male litery szesnastkowe
+    [ OK ] 16 znakow 0-9 a-f: poprawny
+    [ OK ] wielkie litery, 15 i 17 znakow, pusty, nullptr, znak spoza zakresu: niepoprawny
+    [ OK ] skan pliku: naglowek, koniec i dlugosc takie same przy kawalkach 1, 7, 24, 31, 32, 33, 512 B i w calosci
+    [ OK ] program ESP32 z suma na koncu: przyjety
+    [ OK ] program dla ESP32-S3 (firmware centrali): odrzucony z nazwa ukladu
+    [ OK ] program dla innego ukladu: odrzucony
+    [ OK ] plik, ktory nie zaczyna sie od 0xE9 (np. strona HTML): odrzucony
+    [ OK ] program bez sumy SHA-256 na koncu: odrzucony
+    [ OK ] plik 56 B (naglowek + suma, bez tresci): odrzucony
+    [ OK ] plik 57 B: najkrotszy przyjmowany
+    [ OK ] odmowa "12-pobieranie": nr 12, powod pobieranie
+    [ OK ] odmowa z numerem 9-cyfrowym
+    [ OK ] numer 10-cyfrowy: odrzucony (nie zmiescilby sie pewnie w uint32_t)
+    [ OK ] odmowa bez numeru, bez powodu, z wielka litera, ze znakami < >, z powodem 16-znakowym, pusta: odrzucona
+    [ OK ] powod czekania "bateria": przyjety
+    [ OK ] powod czekania ze spacja, 16-znakowy, ze znakami < >: pusty
+    [ OK ] kopia tekstu: obciecie do rozmiaru bufora, zero na koncu
+    [ OK ] kopia tekstu: < > & " \ znak sterujacy i znaki spoza ASCII zamienione na ?
+    [ OK ] kopia tekstu: nullptr daje pusty tekst
+[2] decyzje: potwierdzenie, odmowa, starszy panel, limity
+    [ OK ] wystawienie oferty: numer, tag, identyfikator, rozmiar, wersja panelu sprzed
+    [ OK ] panel na innym pliku: oferta czeka
+    [ OK ] pierwszy start z nowego pliku (panel_obraz_proba): jeszcze NIE potwierdzenie, oferta czeka
+    [ OK ] panel_obraz rowny identyfikatorowi pliku: potwierdzenie, koniec oferty
+    [ OK ] kolejne zgloszenia po koncu oferty: nic
+    [ OK ] odmowa z numerem INNEJ oferty: pominieta
+    [ OK ] odmowa z numerem tej oferty: koniec oferty
+    [ OK ] panel v1.4.0+ z wersja rowna tagowi, ale na innym pliku: to NIE potwierdzenie (liczy sie plik)
+    [ OK ] start pobierania: 200, licznik pobran 1
+    [ OK ] panel v1.4.0+ pyta o status W TRAKCIE pobierania (podaje swoj obraz): oferta zostaje
+    [ OK ] starszy panel, jeszcze nie pobieral: oferta czeka
+    [ OK ] starszy panel, wersja rowna tagowi wydania: potwierdzenie (regula sprzed 3.58.6)
+    [ OK ] starszy panel pobral plik i zglasza sie ponownie: koniec oferty (3.58.5: oferta zostawala i panel wgrywal plik przy kazdym starcie)
+    [ OK ] pobieranie bez oferty: 404
+    [ OK ] pobieranie w czasie alarmu: 503, oferta zostaje, proba sie nie liczy
+    [ OK ] po czterech pobraniach oferta jeszcze jest
+    [ OK ] piate pobranie: 409 i koniec oferty
+    [ OK ] plik w drodze: transfer trwa
+    [ OK ] polaczenie starsze niz 5 minut: uznane za zerwane
+    [ OK ] koniec polaczenia z numerem innej oferty: licznik bez zmian
+    [ OK ] drugie polaczenie w tym samym czasie (ponowiona proba): licznik 2
+    [ OK ] jedno z dwoch polaczen zamkniete: transfer nadal trwa
+    [ OK ] oba zamkniete (i jedno zamkniecie za duzo): licznik 0, nie ujemny
+    [ OK ] anulowanie w trakcie wysylania: oferta znika, ale plik jest jeszcze w drodze (nie wolno go podmienic)
+    [ OK ] anulowanie bez oferty: nic
+    [ OK ] 24 h bez 1 ms: oferta czeka
+    [ OK ] po 24 h: koniec oferty
+    [ OK ] limit 24 h mija W TRAKCIE wysylania pliku: oferta zostaje do konca wysylania
+    [ OK ] ...a po zamknieciu polaczenia konczy sie
+    [ OK ] oferta wystawiona tuz przed przekreceniem licznika czasu: sekunde pozniej nadal czeka
+    [ OK ] ...po przekreceniu licznika tez, a konczy sie dokladnie po 24 h
+    [ OK ] flaga w /api/status: jest; w czasie alarmu - nie ma
+    [ OK ] po koncu oferty flagi nie ma
+[3] tresc wiadomosci
+    [ OK ] potwierdzenie: wydanie, wersja teraz i przedtem
+    [ OK ] potwierdzenie starszego panelu: tekst jak w 3.58.5
+    [ OK ] odmowa: szesc znanych powodow opisanych
+    [ OK ] odmowa z nieznanym powodem: odeslanie do logu
+    [ OK ] odmowa "cofnieta": nowy firmware nie wystartowal
+    [ OK ] starszy panel wrocil z INNA wersja: wykonana, z zastrzezeniem skad to wiadomo
+    [ OK ] starszy panel wrocil z TA SAMA wersja: trzy mozliwe przyczyny, oferta wycofana
+    [ OK ] za duzo pobran: liczba prob
+    [ OK ] limit czasu: 24 h i co zrobic dalej
+    [ OK ] anulowanie
+    [ OK ] brak decyzji: pusty tekst
+    [ OK ] za maly bufor: tekst obciety, nic poza buforem
+    najdluzsza wiadomosc: 350 znakow (bufor w kodzie klejacym: 480)
+    [ OK ] najdluzsza mozliwa wiadomosc miesci sie w buforze 480 znakow
+[4] panel v1.4.0: /update_panel -> pobranie -> start z nowego pliku -> potwierdzenie
+    [ OK ] bez oferty: flaga false, pola puste, nr 0
+    [ OK ] pola JSON w ustalonej kolejnosci, bez przecinka na koncu (nastepne pole centrala zaczyna od przecinka)
+    [ OK ] otaOperacjaWTrakcie: ustawiona w trakcie pobierania z GitHuba, zdjeta zaraz po (3.58.5: zostawala do potwierdzenia przez panel)
+    [ OK ] wiadomosc po pobraniu: rozmiar, co bedzie dalej, jak anulowac; bez obietnicy "przy wybudzeniu (przycisk)"
+    [ OK ] NVS: oferta zapisana (znacznik, tag, identyfikator, numer, rozmiar, wersja panelu)
+    [ OK ] log: oferta_wystawiona
+    [ OK ] panel widzi oferte: flaga, tag, identyfikator pliku, numer 1
+    [ OK ] plik ze zlym haslem: 401, nic sie nie liczy
+    [ OK ] plik bez hasla: 401
+    [ OK ] plik z dobrym haslem: 200, wysylany /panel_firmware.bin
+    [ OK ] w trakcie wysylania: transfer trwa (/update centrali odmowi)
+    [ OK ] /update_panel w trakcie wysylania pliku: odmowa, plik na dysku nie jest podmieniany
+    [ OK ] status w trakcie pobierania: oferta nadal widoczna
+    [ OK ] po rozlaczeniu: transfer skonczony
+    [ OK ] pierwszy start z nowego pliku: wpis w logu, oferta jeszcze widoczna
+    [ OK ] do tej chwili zadnej wiadomosci o wyniku
+    [ OK ] panel_obraz rowny identyfikatorowi pliku: flaga znika w tej samej odpowiedzi
+    [ OK ] obsluga HTTP niczego nie wysyla i nie pisze do NVS (robi to zadanie Telegrama)
+    [ OK ] wiadomosc: Panel zaktualizowany, z wersja teraz i przedtem
+    [ OK ] NVS wyczyszczony, log: potwierdzono_obraz
+    [ OK ] kolejne zapytania panelu: zadnej nowej wiadomosci
+    [ OK ] plik po zakonczonej aktualizacji: 404 (3.58.5: oddawal plik kazdemu z haslem)
+[5] panel do v1.3.0: jedna proba, potem koniec oferty
+    [ OK ] pracujacy starszy panel pyta co 2 s: oferta czeka (zacznie po wylaczeniu i wlaczeniu)
+    [ OK ] starszy panel przy starcie pobiera plik
+    [ OK ] nowy firmware przy pierwszym starcie: oferta jeszcze jest
+    [ OK ] starszy panel -> v1.4.0: potwierdzenie po identyfikatorze pliku
+    [ OK ] starszy firmware po pobraniu zglasza sie ponownie: flaga znika od razu (nie wgra pliku drugi raz)
+    [ OK ] wersja sie zmienila: wiadomosc o wykonanej aktualizacji
+    [ OK ] kolejny start starszego panelu: pliku juz nie dostanie (koniec petli z 3.58.5)
+    [ OK ] ta sama wersja po pobraniu: wiadomosc z mozliwymi przyczynami, oferta wycofana
+    [ OK ] starszy panel zglasza wersje rowna tagowi: potwierdzenie jak w 3.58.5
+[6] odmowa panelu, alarm, limit czasu, anulowanie, przypomnienie
+    [ OK ] odmowa z numerem innej oferty: bez skutku
+    [ OK ] odmowa z niedozwolonymi znakami: bez skutku
+    [ OK ] odmowa z numerem tej oferty: koniec oferty, wiadomosc z przyczyna, log, NVS wyczyszczony
+    [ OK ] alarm (ogrzewanie / temperatura / panel / dym): oferta ukryta, plik 503, oferta i licznik prob bez zmian
+    [ OK ] /update_panel w czasie alarmu: odmowa (warunek sprzed 3.58.6)
+    [ OK ] po alarmie oferta wraca
+    [ OK ] 24 h bez 5 s: oferta czeka
+    [ OK ] po 24 h: koniec oferty, wiadomosc, log, NVS wyczyszczony (3.58.5: oferta bez konca)
+    [ OK ] /update_panel_anuluj bez oferty: informacja
+    [ OK ] /update_panel_anuluj: koniec oferty, NVS wyczyszczony
+    [ OK ] anulowanie tuz po potwierdzeniu: najpierw wiadomosc o potwierdzeniu, potem "nie ma czego anulowac"
+    [ OK ] 5 minut bez sekundy: bez przypomnienia
+    [ OK ] po 5 minutach, panel nigdy sie nie zglosil: przypomnienie "panel nie zglasza sie"
+    [ OK ] przypomnienie tylko raz; oferta czeka dalej
+    [ OK ] starszy panel w kontakcie: przypomnienie "wylacz i wlacz panel"
+    [ OK ] panel v1.4.0 czeka z powodu baterii: przypomnienie z tym powodem
+    [ OK ] alarm przez 5 minut: przypomnienie "trwa alarm", oferta czeka
+    [ OK ] panel zaczal pobierac: przypomnienia nie ma (wynik przyjdzie osobno)
+    [ OK ] piate rozpoczete pobranie: 409, koniec oferty, wiadomosc
+    [ OK ] oferta jest, pliku nie ma: 404, wpis w logu, licznik polaczen wraca do zera
+[7] /update_panel: bledy GitHuba, ten sam plik, zastapienie oferty
+    [ OK ] GitHub nie odpowiada: komunikat, bez oferty
+    [ OK ] pobieranie nieudane: komunikat, flaga i znaczniki NVS zdjete, bez oferty
+    [ OK ] w wydaniu jako firmware_panel.bin lezy firmware centrali: odrzucony, bez oferty
+    [ OK ] panel zglasza wersje rowna tagowi: nic do pobrania
+    [ OK ] panel pracuje juz na pliku z wydania: bez oferty (inaczej przyszlaby wiadomosc "zaktualizowany", choc nic sie nie stalo)
+    [ OK ] panel bez kontaktu od 2 minut: oferta powstaje (potwierdzi sie przy pierwszym zgloszeniu)
+    [ OK ] ...i konczy sie przy pierwszym zgloszeniu panelu
+    [ OK ] druga komenda przy czekajacej ofercie: nowa oferta nr 2 z nowym plikiem
+    [ OK ] log: oferta_zastapiona
+    [ OK ] w trakcie pobierania nowego pliku z GitHuba poprzednia oferta jest juz wycofana (panel nie zacznie pobierac pliku, ktory zaraz zniknie)
+    [ OK ] wiadomosc mowi, ze poprzednia oferta zostaje zastapiona
+    [ OK ] spozniona odmowa oferty nr 1 nie konczy oferty nr 2
+    [ OK ] numer oferty po 999999999: 1
+    [ OK ] tag ze znakami " < > \: w JSON-ie zamienione na ?
+    [ OK ] wynik poprzedniej oferty przychodzi w trakcie pytania GitHuba: najpierw wiadomosc o nim, potem o nowym pliku
+    [ OK ] ...a nowa oferta (nr 2) stoi i jest zapisana w NVS
+    [ OK ] wynik poprzedniej oferty czeka (sterta odmowila), nowa oferta juz wystawiona
+    [ OK ] zalegly wynik oferty nr 1 wykonany pozniej: wiadomosc i wpis w logu
+    [ OK ] ...i NIE kasuje znacznika NVS oferty nr 2 (po restarcie centrali wroci)
+    [ OK ] restart centrali: oferta nr 2 wraca
+[8] restart centrali z czekajaca oferta
+    [ OK ] po restarcie oferta wraca: ten sam numer, tag, identyfikator, rozmiar
+    [ OK ] po restarcie otaOperacjaWTrakcie = false (3.58.5: true, czyli /update zablokowane i nadzor zadan wylaczony)
+    [ OK ] wiadomosc i log o przywroconej ofercie
+    [ OK ] potwierdzenie po restarcie centrali dziala
+    [ OK ] kolejny restart: zakonczona oferta juz nie wraca, bez wiadomosci
+    [ OK ] po restarcie pliku nie ma na dysku: oferta nie wraca, wiadomosc z prosba o ponowne /update_panel
+    [ OK ] oferta zapisana przez 3.58.5 (bez identyfikatora): nie jest wznawiana, centrala prosi o ponowne /update_panel
+    [ OK ] zapis z rozmiarem i numerem, ale bez poprawnego identyfikatora pliku (brak, za krotki, wielkie litery): nie jest wznawiany
+    [ OK ] zapis bez numeru oferty: nie jest wznawiany
+    [ OK ] plik na dysku ma inny rozmiar niz oferowany: oferta nie wraca
+    [ OK ] restart w trakcie pobierania z GitHuba: znacznik sprzatniety, wiadomosc jak w 3.58.5
+    [ OK ] restart bez oferty: zadnej wiadomosci, logu ani zapisu do NVS
+[9] pamiec robocza zadania Telegrama: ze sterty, zwalniana, odmowa sterty niczego nie gubi
+    [ OK ] bez oferty: 100 obiegow zadania Telegrama nie bierze pamieci, nic nie wysyla i nic nie zapisuje
+    [ OK ] oferta czeka: obieg bierze jeden blok pamieci i od razu go zwalnia
+    [ OK ] blok ma rozmiar PanelOtaKlejRobocze, nie wiecej niz 1 kB
+    [ OK ] potwierdzenie czeka, sterta odmawia: wynik nie ginie - bez wiadomosci, bez wpisu, NVS nietkniety
+    [ OK ] nastepny obieg, pamiec jest: wiadomosc o wyniku (jedna) i wyczyszczony NVS
+    [ OK ] 24 h minely, sterta odmawia: oferta jeszcze stoi, nic nie wyslane
+    [ OK ] nastepny obieg: koniec oferty po 24 h, wiadomosc, NVS wyczyszczony
+    [ OK ] pora na przypomnienie, sterta odmawia: przypomnienie nie przepada
+    [ OK ] nastepne obiegi: przypomnienie wyslane raz
+    [ OK ] /update_panel_anuluj, sterta odmawia: oferta zostaje, uzytkownik dostaje informacje
+    [ OK ] /update_panel_anuluj ponownie, pamiec jest: oferta anulowana
+    [ OK ] /update_panel przy odmowie sterty na poczatku komendy: nowa oferta wystawiona jak zwykle
+    [ OK ] restart centrali z oferta: oferta wraca, wiadomosc, bez pamieci roboczej
+[10] zasady z calego przebiegu: sekcja krytyczna, pamiec robocza, tekst bledu pobierania
+    [ OK ] w sekcji krytycznej ani razu nie uzyto String, sterty, logu, NVS, Telegrama ani odpowiedzi HTTP
+    [ OK ] kazda sekcja krytyczna zostala zamknieta
+    [ OK ] kazdy blok pamieci roboczej zostal zwolniony
+    [ OK ] pobierzFirmwarePanelaZGithub() zawsze dostaje pusty tekst bledu (w centrali poznaje po nim, czy blad juz opisano)
+WSZYSTKO OK: 166 sprawdzen, 0 bledow
+[A4] kopia bloku decyzji dla testow panelu LCD
+    zgodna z ../../../LCD-Centrali/testy_host/kod_centrali/panel_ota_blok.inc (testy panelu uzywaja TEGO kodu jako centrali)
+=== B. [v3.58.4 PANEL-WYKRESY] wykresy dla panelu LCD (kod bez zmian wzgledem 3.58.5) ===
+[1] wycinam kod z ../src/main_centrala.cpp
+    zapisano /tmp/centrala_panel_hist_test/panel_hist_wycinek.inc (613 linii)
+    kod wykresow identyczny z 3.58.5 (wycinek bajt w bajt, poza linia z numerem wersji)
+[2] kompilacja (g++ -Wall -Wextra)
+[3] testy
+Testy kodu [v3.58.4 PANEL-WYKRESY] (GET /api/history/panel), stan z v3.58.5
+  1. godzina pracy, probka co 60 s, stale 21,5 C:
+    [ OK ] kod 200, naglowek na poczatku, "#koniec" na koncu z wlasciwa liczba
+    [ OK ] naglowek: tryb=godz pkt=96 wierszy=61 zrodlo=lokalne fs=1
+    [ OK ] naglowek: okno = 3600 s do najnowszej probki wlacznie, krok 37 s
+    [ OK ] naglowek: od_etyk=13:00 do_etyk=14:00 (czas polski) - podpis osi czasu dla panelu
+    [ OK ] 96 punktow, zadnej przerwy (wykres na cala szerokosc)
+    [ OK ] kazdy punkt: zewn 21.5 (sr, min, max), bojler 22.5, pokoj 27.5
+    [ OK ] kazdy wiersz ma 36 kolumn, jak /api/history/long
+    [ OK ] ostatni punkt: etykieta 14:00 (czas polski), czas = czas najnowszej probki
+    [ OK ] pierwszy punkt: etykieta 13:00
+    [ OK ] cisnienie 1.5, wilgotnosc 45.0, klapa 40.0, syberek 60.0, pompa 0
+    [ OK ] linia w logu centrali
+    [ OK ] pamiec zwolniona, spinlock oddany, zadnego przydzialu pod spinlockiem
+  2. skok temperatury w polowie godziny (20 C -> 30 C):
+    [ OK ] 60 punktow
+    [ OK ] polowa punktow ma 20.0, polowa 30.0, najwyzej jeden punkt przejsciowy
+    [ OK ] pierwszy punkt 20.0, ostatni 30.0
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  3. centrala wylaczona na 30 minut w srodku godziny:
+    [ OK ] 96 pozycji razem z przerwami
+    [ OK ] ok. polowa pozycji (30 z 60 minut) to "#przerwa"
+    [ OK ] przerwa jest jednym ciaglym odcinkiem w srodku wykresu
+    [ OK ] przed przerwa 20.0, po przerwie 25.0
+    [ OK ] liczba przerw w logu centrali
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  3b. odstep 5 minut (jedna zgubiona probka to nie przerwa - prog 6 minut):
+    [ OK ] zadnej przerwy
+  3c. odstep 7 minut to juz przerwa:
+    [ OK ] jest przerwa
+  4. pelny bufor krotki (1440 probek, zaczyna sie w srodku tablicy):
+    [ OK ] 96 punktow bez przerw
+    [ OK ] naglowek: wierszy=1440, krok ok. 15 minut
+    [ OK ] naglowek: od_etyk=13.11_13:00 do_etyk=14.11_12:59 (doba siega poprzedniego dnia - z data)
+    [ OK ] pierwszy punkt 0.0, ostatni 23.0
+    [ OK ] piaty punkt (druga godzina): srednia 1.0, min 0.0, max 1.0
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb godz z tego samego bufora: tylko ostatnia godzina (22.0 -> 23.0)
+  5. tydzien: bufor dlugi (zdarzenia) + ostatnia doba z bufora krotkiego:
+    [ OK ] 96 punktow bez przerw
+    [ OK ] okno: dokladnie 7 dni do najnowszej probki, krok 105 minut
+    [ OK ] naglowek: od_etyk=06.11_12:59 do_etyk=13.11_12:59 (z data, bez spacji w srodku)
+    [ OK ] 6 dni po 10.0 (dlugi), ostatnia doba 50.0 (krotki), najwyzej 1 punkt przejsciowy
+    [ OK ] etykiety z data: "DD.MM HH:MM"
+    [ OK ] ostatnia etykieta 13.11 12:59
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  5b. bufor dlugi zdarzeniowy: wartosc obowiazuje do nastepnego wpisu (srednia wazona czasem):
+    [ OK ] 8 punktow bez przerw
+    [ OK ] punkt z 10-minutowym szczytem: srednia 18.9 (a nie ok. 80 ze zwyklej sredniej wpisow), min 10.0, max 90.0
+    [ OK ] sasiednie punkty: 10.0
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  5c. przerwa w buforze dlugim (ponad 90 minut bez wpisu):
+    [ OK ] ok. 1/3 pozycji to przerwa (10 z 30 godzin)
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  6. brak danych i dane szczatkowe:
+    [ OK ] pusta historia, tryb godz: kod 200, wierszy=0, "#koniec 0"
+    [ OK ] pusta historia, tryb dzien: kod 200, wierszy=0, "#koniec 0"
+    [ OK ] pusta historia, tryb tydz: kod 200, wierszy=0, "#koniec 0"
+    [ OK ] bufory nieprzydzielone (centrala bez PSRAM): wierszy=0, bez wywrotki
+    [ OK ] jedna probka: jeden punkt z jej wartoscia i czasem
+    [ OK ] dwie probki co 60 s: 61 punktow (po sekundzie), od 10.0 do 20.0
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  7. centrala bez zegara (probki z czasem 0):
+    [ OK ] 96 punktow bez przerw (probki liczone co 60 s)
+    [ OK ] naglowek: od=0 do=0 (czas nieznany)
+    [ OK ] naglowek: od_etyk i do_etyk to "--:--"
+    [ OK ] kazda etykieta "--:--", kolumna czasu 0
+    [ OK ] wartosci rosna od 0.0; ostatni punkt: srednia 28.1, maksimum 29.0 (najnowsza probka)
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb tydz bez zegara: te same probki, etykiety "--:--"
+  7b. zegar zlapany po 10 minutach (pierwsze probki bez czasu):
+    [ OK ] probki bez czasu dostaja czas z sasiadow: okno od T0, 5.0 na poczatku, 7.0 na koncu, bez przerw
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  7c. zegar zgubiony w trakcie (ostatnie probki bez czasu):
+    [ OK ] probki bez czasu sa dopisane co 60 s po ostatniej z czasem
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  8. wartosci nietypowe:
+    [ OK ] 96 punktow
+    [ OK ] wartosc ujemna: -12.3
+    [ OK ] NaN w czujniku -> "nan,nan,nan" tylko w jego kolumnach
+    [ OK ] czujnik, ktory wrocil: najpierw nan, potem 55.5
+    [ OK ] nieskonczonosc i wartosc bez sensu -> nan
+    [ OK ] -0,04 zaokragla sie do "0.0" (bez "-0.0")
+    [ OK ] pompa wlaczona: 1
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] wartosci skrajne przechodza, pompa -1
+    - najdluzsza linia odpowiedzi: 289 znakow
+    [ OK ] najdluzsza mozliwa linia ma mniej niz 300 znakow (bufor linii panelu LCD)
+    [ OK ] wiersz z min > sr i max = NaN: min i max rowne sredniej
+  9. parametry zapytania:
+    [ OK ] pkt=0 albo ujemne: domyslne 96
+    [ OK ] pkt=1: najmniej 8
+    [ OK ] pkt=100000: najwyzej 240
+    [ OK ] pkt=37: 37 punktow; pkt=240: poprawna odpowiedz
+    [ OK ] tryb "": kod 400 z podpowiedzia
+    [ OK ] tryb "tydzien": kod 400 z podpowiedzia
+    [ OK ] tryb "GODZ": kod 400 z podpowiedzia
+    [ OK ] tryb "godz ": kod 400 z podpowiedzia
+    [ OK ] tryb "x": kod 400 z podpowiedzia
+    [ OK ] tryb = nullptr: kod 400, bez wywrotki
+    [ OK ] zapis historii na flash wylaczony: fs=0 w naglowku
+  10. brak pamieci w centrali:
+    [ OK ] bez PSRAM: kubelki ze zwyklego malloc(), wynik ten sam
+    [ OK ] brak pamieci na kubelki: kod 503, nic nie wycieka
+    [ OK ] brak pamieci na tekst odpowiedzi: kod 503, kubelki zwolnione
+    [ OK ] odmowa dopisania w dowolnym z 98 miejsc: zawsze kod 503, nigdy ucieta odpowiedz z kodem 200
+    [ OK ] po przywroceniu pamieci odpowiedz znow poprawna
+  11. zegar centrali skacze:
+    [ OK ] czas cofniety w trakcie: poprawna odpowiedz, 96 pozycji
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] probka z czasem po roku 2100 nie przesuwa okna w przyszlosc
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] wpis dlugi z czasem po roku 2100 jest pomijany
+    [ OK ] probka z roku 2000 nie psuje wykresu: okno zaczyna sie od pierwszej probki z prawdziwym czasem, bez przerw
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  12. dane losowe, porownanie z liczeniem sekunda po sekundzie:
+    [ OK ] 934 z 934 losowych zestawow daje dokladnie ten sam tekst odpowiedzi
+  13. oba bufory pelne (8000 zdarzen + 1440 probek) - rozmiar i czas:
+    [ OK ] 96 punktow bez przerw
+    - odpowiedz dla panelu: 18107 B; ten sam zakres po staremu (/api/history/long): 1352000 B, czyli 75 razy wiecej
+    - czas liczenia na tym komputerze: 3.54 ms (9440 wierszy zrodlowych)
+    [ OK ] odpowiedz ma mniej niz 24 kB
+    [ OK ] wierszy: 6848 zdarzen sprzed ostatniej doby + 1440 probek
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  14. po restarcie centrali: stara historia z plikow + nowe pomiary (v3.58.5):
+  14a. stara historia sprzed 40 dni (przed kazdym zakresem), 30 pomiarow po restarcie:
+    [ OK ] tryb godz: okno = 29 minut od pierwszego nowego pomiaru, 96 punktow bez przerw, od 8.0 do 10.9
+    [ OK ] tryb godz: podpis osi 12:31 - 13:00 (to, co naprawde jest na wykresie)
+    [ OK ] tryb godz: wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb dzien: okno = 29 minut od pierwszego nowego pomiaru, 96 punktow bez przerw, od 8.0 do 10.9
+    [ OK ] tryb dzien: podpis osi 12:31 - 13:00 (to, co naprawde jest na wykresie)
+    [ OK ] tryb dzien: wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb tydz: okno = 29 minut od pierwszego nowego pomiaru, 96 punktow bez przerw, od 8.0 do 10.9
+    [ OK ] tryb tydz: podpis osi 12:31 - 13:00 (to, co naprawde jest na wykresie)
+    [ OK ] tryb tydz: wynik zgodny z liczeniem sekunda po sekundzie
+  14b. to samo, 1 i 2 pomiary po restarcie:
+    [ OK ] tryb godz, 1 pomiar: jeden punkt (panel pisze wtedy "jeden pomiar" - i to jest prawda)
+    [ OK ] tryb dzien, 1 pomiar: jeden punkt (panel pisze wtedy "jeden pomiar" - i to jest prawda)
+    [ OK ] tryb tydz, 1 pomiar: jeden punkt (panel pisze wtedy "jeden pomiar" - i to jest prawda)
+    [ OK ] tryb godz, 2 pomiary: 61 punktow bez przerw - panel rysuje wykres juz po 2 minutach
+    [ OK ] tryb dzien, 2 pomiary: 61 punktow bez przerw - panel rysuje wykres juz po 2 minutach
+    [ OK ] tryb tydz, 2 pomiary: 61 punktow bez przerw - panel rysuje wykres juz po 2 minutach
+  14c. stara historia sprzed 3 dni (miesci sie w tygodniu, nie miesci w dobie), 30 pomiarow po restarcie:
+    [ OK ] tryb tydz: pelne 7 dni - stara historia (2.0), 3 dni przerwy (ok. 41 pozycji), na koncu nowe pomiary
+    [ OK ] tryb tydz: wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb dzien: stara historia jest przed doba - okno = 29 minut nowych pomiarow, bez przerw
+    [ OK ] tryb dzien: wynik zgodny z liczeniem sekunda po sekundzie
+  14d. stara historia sprzed 5 godzin (miesci sie w dobie, nie miesci w godzinie):
+    [ OK ] tryb dzien: pelna doba - stara historia, 5 godzin przerwy (ok. 20 pozycji), nowe pomiary
+    [ OK ] tryb dzien: wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb godz: okno = 29 minut nowych pomiarow, bez przerw
+    [ OK ] tryb godz: wynik zgodny z liczeniem sekunda po sekundzie
+  14e. granica zakresu: wpis sprzed zakresu, ktory jeszcze obowiazuje na jego poczatku:
+    [ OK ] wpis 1000 s przed zakresem, nastepny 2000 s po jego poczatku: okno od poczatku zakresu, pierwszy punkt ma wartosc tego wpisu
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] nastepny wpis dopiero 5000 s po poczatku zakresu (odstep ponad 90 min): okno zaczyna sie od niego
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] dwa odlegle wpisy, pierwszy w pierwszej sekundzie zakresu: pelne 7 dni, 2 punkty i 94 przerwy
+    [ OK ] pierwszy wpis sekunde przed zakresem: zostaje jeden punkt (najnowszy wpis)
+    [ OK ] pamiec zwolniona, spinlock oddany
+  15. zegar centrali: historia konczy sie w przeszlosci (v3.58.5):
+  15a. odczyt biezacego czasu z pol aktualnaData*/aktualnyCzas*:
+    [ OK ] 13.11.2026 13:00:37 czasu polskiego -> poczatek tej minuty jako Unix UTC
+    [ OK ] czas letni (3.07.2026 12:00 CEST): przeliczenie z godzina letnia
+    [ OK ] pola wyzerowane (RTC() jeszcze nie odczytal zegara): 0 = czas nieznany
+    [ OK ] rok 2023 (zegar nieustawiony): 0
+    [ OK ] rok 2100: 0
+    [ OK ] miesiac 13: 0
+    [ OK ] godzina 24: 0
+    [ OK ] minuta -1: 0
+  15b. godzina pracy (61 probek do 13:00), zegar centrali tuz po ostatniej probce:
+    [ OK ] zegar 0-6 minut po ostatniej probce: odpowiedz bajt w bajt taka jak bez zegara (okno konczy sie na probce)
+    [ OK ] zegar WCZESNIEJSZY niz ostatnia probka (cofniety): bez wplywu
+  15c. zegar 7 minut po ostatniej probce (ponad prog 6 minut):
+    [ OK ] okno konczy sie na biezacym czasie: 12:07 - 13:07
+    [ OK ] ostatnie 7 minut bez pomiarow to przerwa na koncu wykresu (11-12 pozycji z 96), reszta to dane
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  15d. centrala tuz po restarcie: w buforach tylko stara historia (sprzed 3 dni), zegar pokazuje teraz:
+    [ OK ] tryb godz: 96 przerw, zadnego punktu (panel: "Centrala nie ma jeszcze danych z tego zakresu"), do = teraz
+    [ OK ] tryb godz: wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb dzien: 96 przerw, zadnego punktu (panel: "Centrala nie ma jeszcze danych z tego zakresu"), do = teraz
+    [ OK ] tryb dzien: wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] tryb tydz: 7 dni do TERAZ - 4 dni starej historii, potem 3 dni przerwy do konca (a nie stary tydzien podpisany jak biezacy)
+    [ OK ] tryb tydz: wynik zgodny z liczeniem sekunda po sekundzie
+    [ OK ] linia w logu centrali podaje liczbe przerw
+    [ OK ] ta sama historia, gdy centrala nie zna jeszcze czasu: okno konczy sie na ostatniej probce (jak w 3.58.4)
+  15e. najnowszy wpis z bufora dlugiego (bufor krotki pusty): prog 90 minut:
+    [ OK ] zegar 90 minut po ostatnim wpisie: bez wplywu (wpisy dlugie sa co godzine)
+    [ OK ] zegar 91 minut po ostatnim wpisie: okno konczy sie teraz, na koncu przerwa
+    [ OK ] wynik zgodny z liczeniem sekunda po sekundzie
+  15f. zegar nie dotyczy czasow umownych:
+    [ OK ] probki bez czasu + zegar ustawiony: odpowiedz bez zmian ("--:--")
+    [ OK ] probki z roku 2000 + zegar ustawiony: odpowiedz bez zmian (to nie sa prawdziwe daty)
+    [ OK ] pamiec zwolniona, spinlock oddany
+  16. dane losowe: stara historia + nowe pomiary + zegar centrali, porownanie z liczeniem sekunda po sekundzie (v3.58.5):
+    [ OK ] 900 z 900 losowych zestawow daje dokladnie ten sam tekst odpowiedzi (z ustawionym zegarem: 225 serii, w tym 138 z historia konczaca sie w przeszlosci)
+WSZYSTKO OK: 2697 sprawdzen, 0 bledow
+[4] wzorce odpowiedzi dla testow panelu LCD
+    Wzorce odpowiedzi GET /api/history/panel?tryb=...&pkt=96 -> /tmp/centrala_panel_hist_test/wzorce
+        dzien.txt                     18207 B  pelna doba, ZEWN rosnie od -5,0 do 9,4
+        godz_ta_sama_doba.txt         18093 B  ostatnia godzina tej samej doby
+        tydz_przerwa.txt              15061 B  tydzien, centrala wylaczona przez 1,5 doby
+        godz_bez_czujnika.txt         17950 B  czujnik pokojowy bez odczytu przez pierwsze pol godziny
+        dzien_pusta.txt                 119 B  centrala bez historii
+        dzien_pusta_bez_fs.txt          119 B  centrala bez historii, zapis na flash wylaczony
+        godz_jedna_probka.txt           323 B  jeden pomiar
+        dzien_bez_zegara.txt          17397 B  centrala bez zegara
+        tydz_pelne_bufory.txt         19594 B  oba bufory pelne, najdluzsze liczby
+        godz_po_restarcie_pusto.txt    1005 B  tuz po restarcie, zapis wylaczony: w ostatniej godzinie nic
+        tydz_po_restarcie.txt         11015 B  tuz po restarcie: 4 dni starej historii, 3 dni przerwy do teraz
+    zgodne z ../../../LCD-Centrali/testy_host/wzorce_centrali (testy panelu uzywaja tych samych odpowiedzi)
+kod wyjscia: 0

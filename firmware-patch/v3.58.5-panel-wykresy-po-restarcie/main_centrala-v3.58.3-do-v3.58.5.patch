@@ -1,0 +1,651 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,86 @@
++// FIRMWARE_VERSION v3.58.4 -> v3.58.5 (2026-11-12) — WYKRESY DLA PANELU LCD: OKNO CZASU PO RESTARCIE CENTRALI.
++//
++// [v3.58.5 PANEL-WYKRESY-OKNO] — 2026-11-12
++// Pytanie użytkownika: "a jak centrala ma wyłączone zapisywanie wykresów
++//     lokalnie?" (przełącznik "Zapisuj historię na flash centrali", v3.57.4).
++// Odpowiedź (tak było już w 3.58.4): wykresy dla panelu są liczone z buforów
++//     historii w pamięci (PSRAM), więc działają także z wyłączonym zapisem —
++//     dopóki centrala się nie zrestartuje. Po restarcie w pamięci jest tylko
++//     to, co centrala wczytała z plików (z wyłączonym zapisem: nic albo stare
++//     pliki z dnia wyłączenia), a nowe pomiary dochodzą co 60 s.
++// Problem znaleziony przy sprawdzaniu tej sytuacji (kod 3.58.4 uruchomiony
++//     na PC; tabela przed/po: WYNIKI/po-restarcie-przed-i-po.txt):
++//     (a) gdy w buforach leżała stara historia SPRZED zakresu wykresu, oś
++//         czasu zostawała pełna (godzina / doba / 7 dni), a nowe pomiary
++//         mieściły się w jednym z 96 punktów. Panel pisał wtedy "Za mało
++//         danych na wykres (jeden pomiar) — spróbuj za kilka minut": w
++//         trybie dziennym przez pierwsze 15 minut po restarcie, w
++//         tygodniowym przez 105 minut — choć pomiarów było wtedy już
++//         odpowiednio do 15 i do 105;
++//     (b) w pierwszej minucie po restarcie (przed pierwszym nowym pomiarem)
++//         okno kończyło się na ostatniej STAREJ próbce: panel rysował np.
++//         "ostatnią godzinę" sprzed wielu dni, a w trybie godzinnym podpis
++//         osi to same godziny, więc nie było widać, że to stare dane.
++//     Oba zachowania nie zależą od przełącznika zapisu (to samo dzieje się
++//     po długim wyłączeniu centrali), ale z wyłączonym zapisem i starymi
++//     plikami na flashu powtarzały się po KAŻDYM restarcie.
++// Co (wyłącznie w kodzie [v3.58.4 PANEL-WYKRESY], GET /api/history/panel):
++//     [1] Okno zaczyna się od pierwszej sekundy zakresu, z której JEST
++//         pomiar. Dotąd: od najstarszej próbki w buforach, nawet gdy leżała
++//         daleko przed zakresem. Po restarcie panel ma wykres od drugiego
++//         pomiaru (druga minuta) w każdym trybie.
++//     [2] Gdy zegar centrali pokazuje, że od najnowszej próbki minęło więcej
++//         niż próg przerwy (6 min; 90 min, gdy najnowszy wpis pochodzi z
++//         bufora długiego), okno kończy się na bieżącym czasie, a czas bez
++//         pomiarów wychodzi jako przerwa. Bieżący czas to pola
++//         aktualnaData*/aktualnyCzas* odświeżane co 2 s przez RTC(): bez
++//         I2C w handlerze HTTP i w tej samej skali co czas próbek.
++//     [3] Przebiegi ustalające okno czytają tylko czas wiersza; pełne
++//         przeliczenie wartości jest jedno (w 3.58.4 były dwa).
++// Czego NIE zmieniono: format odpowiedzi, trasa HTTP i wszystko poza blokiem
++//     PANEL-WYKRESY. Gdy na początku zakresu jest pomiar albo cała historia
++//     jest od zakresu krótsza, a historia nie kończy się w przeszłości,
++//     odpowiedź jest bajt w bajt taka jak w 3.58.4 (9 wzorców i 892 losowe
++//     zestawy danych: tests/porownaj_z_3.58.4.sh). Firebase nadal NIE jest
++//     używany: po restarcie z wyłączonym zapisem starszych danych na LCD
++//     nie ma.
++// Zgodność: panel LCD v1.3.0 bez zmian (nie wymaga nowego firmware'u).
++// Sprawdzone na PC (tests/ w paczce). NIE kompilowane w PlatformIO i NIE
++//     uruchamiane na płytce.
++//
++// FIRMWARE_VERSION v3.58.3 -> v3.58.4 (2026-11-12) — WYKRESY DLA PANELU LCD LICZONE PRZEZ CENTRALĘ.
++//
++// [v3.58.4 PANEL-WYKRESY] — 2026-11-12
++// Prośba użytkownika: "jak wybiorę wykresy [na LCD], to centrala ma pobrać
++//     dane z Firebase albo lokalnie z pliku centrali i wysłać do panelu LCD".
++// Stan dotychczasowy: panel LCD sam pobierał CAŁY CSV historii
++//     (/api/history do ok. 100 kB, /api/history/long do ok. 1,8 MB) i sam
++//     ściskał go do 96 punktów. Panel miał na to 8 s; czego nie zdążył
++//     pobrać, tego na wykresie nie było (bez żadnej informacji). Oś czasu
++//     wykresu tygodniowego nie była liniowa: bufor długi jest zdarzeniowy,
++//     a panel dzielił go na punkty wg numeru wiersza, nie wg czasu.
++// Co: NOWY endpoint GET /api/history/panel?tryb=godz|dzien|tydz&pkt=96.
++//     Centrala sama wybiera zakres (ostatnia godzina / 24 h / 7 dni), dzieli
++//     go na `pkt` równych odcinków czasu i wysyła gotowe punkty (ok. 20 kB)
++//     w formacie wiersza /api/history/long. Przerwy w pracy centrali to
++//     linie "#przerwa". Opis: komentarz [v3.58.4 PANEL-WYKRESY] przy
++//     historiaPanelZbudujCsv().
++// Źródło danych: bufory historii w PSRAM — te same, z których rysuje strona
++//     WWW; przy starcie odtwarzane z plików /hist_short.csv i /hist_long.csv.
++//     Czyli "lokalnie z pliku centrali". Firebase NIE jest używany: wymagałby
++//     internetu i pobrania ok. 270 kB na każdą dobę, a nie ma w nim nic,
++//     czego centrala nie miałaby u siebie dla tych trzech zakresów.
++// Czego NIE zmieniono: /api/history, /api/history/long, /history*, zapis
++//     historii, pliki CSV, NVS, Firebase, Telegram, sterowanie, strona WWW,
++//     aplikacja Android. Nowy kod tylko CZYTA bufory historii.
++// Zgodność: panel LCD v1.3.0 pyta o nowy adres, a gdy centrala go nie zna
++//     (starszy firmware odpowiada przekierowaniem 302), pobiera dane po
++//     staremu. Starszy panel nowego adresu nie używa. Kolejność wgrywania
++//     panelu i centrali jest dowolna.
++// Sprawdzone na PC (tests/ w paczce): ten sam kod, wycięty z tego pliku,
++//     skompilowany g++ i porównany z niezależnym liczeniem sekunda po
++//     sekundzie. NIE kompilowane w PlatformIO i NIE uruchamiane na płytce.
++//
+ // FIRMWARE_VERSION v3.58.2 -> v3.58.3 (2026-11-10) — TOKEN KOMEND AUTOMATYCZNIE W TRYBIE LOKALNYM.
+ //
+ // [v3.58.3 LAN-TOKEN-AUTO] — 2026-11-10
+@@ -6056,7 +6139,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.3";
++static const char* FIRMWARE_VERSION = "v3.58.5";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -25782,6 +25865,532 @@
+   return csv;
+ }
+ 
++// [v3.58.4 PANEL-WYKRESY-BEGIN]
++// ============================================================================
++// [v3.58.4 PANEL-WYKRESY] Gotowe punkty wykresu dla panelu LCD
++// (GET /api/history/panel?tryb=godz|dzien|tydz&pkt=96).
++//
++// Po co: panel LCD nie ma internetu ani dysku - dane do wykresow bierze od
++// centrali. Do v3.58.3 pobieral CALY CSV historii (/api/history: do ok. 100 kB,
++// /api/history/long: do ok. 1,8 MB) i sam sciskal go do 96 punktow. Teraz
++// centrala robi to u siebie i wysyla najwyzej `pkt` wierszy (ok. 20 kB).
++//
++// Zrodlo danych: te same dwa bufory w PSRAM, z ktorych korzysta strona WWW
++// (historiaBufor - probka co 60 s, do 24 h; historiaDlugaBufor - do 8000
++// zdarzen). Oba sa przy starcie odtwarzane z plikow /hist_short.csv i
++// /hist_long.csv, a kazda nowa probka jest do tych plikow dopisywana - to sa
++// wiec dane "z pliku centrali", tylko czytane z pamieci, bez dotykania flasha
++// w handlerze HTTP. Firebase NIE jest tu uzywany.
++//
++// Zakresy:
++//   godz  - ostatnia godzina, bufor krotki
++//   dzien - ostatnie 24 h, bufor krotki
++//   tydz  - ostatnie 7 dni: bufor dlugi dla czasu sprzed bufora krotkiego,
++//           a dla ostatnich 24 h bufor krotki (dokladniejszy)
++// Koniec okna = czas najnowszej probki. [v3.58.5] Wyjatek: gdy wedlug zegara
++// centrali od najnowszej probki minelo wiecej niz prog przerwy (historia
++// konczy sie w przeszlosci - np. centrala wlasnie wstala i ma w buforach tylko
++// to, co wczytala z plikow), okno konczy sie na biezacym czasie.
++// [v3.58.5] Poczatek okna = pierwsza sekunda zakresu, z ktorej jest pomiar.
++// Gdy historii jest mniej niz zakres - takze wtedy, gdy w buforach leza jeszcze
++// stare probki sprzed zakresu - os czasu obejmuje tylko to, co jest.
++// (W 3.58.4 okno zaczynalo sie od najstarszej probki w buforach: stara probka
++// sprzed zakresu rozciagala os na caly zakres, a swieze pomiary po restarcie
++// centrali miescily sie w jednym punkcie - panel pisal "za malo danych".)
++//
++// Os czasu jest liniowa: okno dzielone jest na `pkt` rownych odcinkow. Wartosc
++// probki obowiazuje do nastepnej probki (bufor dlugi jest zdarzeniowy - brak
++// wpisu znaczy "bez zmian"), chyba ze odstep przekracza prog przerwy (te same
++// progi co PROG_DZIURY_KROTKI_S / PROG_DZIURY_DLUGI_S w JS strony WWW) - wtedy
++// odcinki bez danych wychodza jako linia "#przerwa".
++//
++// Odpowiedz (text/plain):
++//   #panel-hist 1 tryb=dzien pkt=96 wierszy=1440 od=<unix> do=<unix> krok_s=900 zrodlo=lokalne fs=1 od_etyk=12.11_13:01 do_etyk=13.11_13:00
++//       wierszy  - ile wierszy historii wzieto pod uwage (cale bufory, nie tylko okno)
++//       od, do   - poczatek i koniec okna (Unix UTC; 0 = centrala nie zna czasu). Koniec to czas
++//                  najnowszej probki albo - gdy historia konczy sie w przeszlosci - biezacy czas.
++//       od_etyk, do_etyk - to samo jako czas lokalny centrali: "HH:MM" w trybie godz,
++//                  "DD.MM_HH:MM" w trybach dzien i tydz, "--:--" bez zegara. Panel nie
++//                  ma strefy czasowej, a podpisuje tym os czasu.
++//       fs       - 1 = historia jest tez zapisywana do plikow na flashu centrali
++//   <wiersz w formacie /api/history/long: etykieta, 11 x (sr,min,max), czas_unix, pompa>
++//   #przerwa                    <- odcinek bez danych (centrala nie pracowala)
++//   ...
++//   #koniec <liczba wierszy i przerw powyzej>
++// Liczby maja jedno miejsce po przecinku; pole bez wartosci to "nan".
++//
++// Rachunki sa calkowitoliczbowe (dziesiate czesci jednostki x sekundy), wiec
++// wynik nie zalezy od zaokraglen float i jest taki sam w tescie na PC
++// (tests/ w paczce) i na ESP32.
++// Funkcja tylko CZYTA bufory historii - niczego w centrali nie zmienia.
++// ============================================================================
++#define PANEL_HIST_POLA             11
++#define PANEL_HIST_PKT_DOMYSLNIE    96
++#define PANEL_HIST_PKT_MIN          8
++#define PANEL_HIST_PKT_MAX          240
++#define PANEL_HIST_OKNO_GODZ_S      3600U
++#define PANEL_HIST_OKNO_DZIEN_S     86400U
++#define PANEL_HIST_OKNO_TYDZ_S      604800U
++#define PANEL_HIST_PRZERWA_KROTKI_S 360U     // = PROG_DZIURY_KROTKI_S w JS strony WWW
++#define PANEL_HIST_PRZERWA_DLUGI_S  5400U    // = PROG_DZIURY_DLUGI_S w JS strony WWW
++#define PANEL_HIST_ODSTEP_PROBEK_S  60U      // = HISTORIA_PROBKA_MS / 1000
++#define PANEL_HIST_BRAK             INT32_MIN  // pole bez wartosci (NaN, nieskonczonosc, wartosc absurdalna)
++#define PANEL_HIST_CZAS_MAX         4102444800U   // 2100-01-01 UTC; pozniejszy czas w probce to blad zegara
++#define PANEL_HIST_CZAS_PEWNY       1700000000U   // [v3.58.5] 2023-11-14 UTC; wczesniejszy czas probki albo zegara to nie jest prawdziwa data
++
++// Jeden wiersz zrodlowy we wspolnej postaci: wartosci w dziesiatych czesciach.
++struct PanelHistWiersz {
++  uint32_t czas;                  // Unix UTC; 0 = probka bez wiarygodnego czasu
++  int32_t  sr[PANEL_HIST_POLA];
++  int32_t  mn[PANEL_HIST_POLA];
++  int32_t  mx[PANEL_HIST_POLA];
++  int8_t   pompa;                 // 0/1, -1 = brak danych
++  bool     dlugi;                 // wiersz z bufora dlugiego (inny prog przerwy)
++};
++
++// Jeden punkt wyjsciowy (odcinek osi czasu).
++struct PanelHistKubelek {
++  int64_t  suma[PANEL_HIST_POLA];   // suma (wartosc x sekundy)
++  uint32_t waga[PANEL_HIST_POLA];   // sekundy z wazna wartoscia danego pola
++  int32_t  mn[PANEL_HIST_POLA];
++  int32_t  mx[PANEL_HIST_POLA];
++  uint32_t wagaRazem;               // sekundy pokryte jakimkolwiek wierszem; 0 = przerwa
++  int8_t   pompa;
++};
++
++// Skad brac wiersze - migawka licznikow obu buforow kolowych.
++struct PanelHistZrodlo {
++  int      startK, ileK;        // bufor krotki: indeks najstarszej probki i liczba probek
++  int      startD, ileD;        // bufor dlugi (ileD == 0, gdy tryb go nie uzywa)
++  uint32_t granicaD;            // z bufora dlugiego brane sa wiersze o czasie < granicaD (0 = wszystkie)
++  int      pierwszyZCzasemK;    // indeks (0..ileK-1) pierwszej probki krotkiej z czasem; -1 = zadna
++  uint32_t czasPierwszegoK;     // jej czas
++};
++
++static int32_t panelHistDziesiate(float v) {
++  if (!(v == v)) return PANEL_HIST_BRAK;                   // NaN
++  if (v > 9999.9f || v < -9999.9f) return PANEL_HIST_BRAK; // nieskonczonosc albo wartosc bez sensu
++  return (int32_t)lroundf(v * 10.0f);
++}
++
++static void panelHistZKrotkiej(const HistoriaProbka &p, PanelHistWiersz &w) {
++  const float v[PANEL_HIST_POLA] = {
++    p.t_zewn, p.t_bojler, p.t_ogrz, p.t_ogrz_sr, p.t_powrot, p.t_panel, p.t_pokoj,
++    p.cisnienie, p.wilgotnosc, (float)p.klapa_proc, (float)p.syberko_proc
++  };
++  w.czas = p.czas_unix;
++  w.pompa = p.pompa ? 1 : 0;
++  w.dlugi = false;
++  for (int i = 0; i < PANEL_HIST_POLA; i++) w.sr[i] = w.mn[i] = w.mx[i] = panelHistDziesiate(v[i]);
++}
++
++static void panelHistZDlugiej(const HistoriaProbkaDluga &p, PanelHistWiersz &w) {
++  const float sr[PANEL_HIST_POLA] = {
++    p.t_zewn_sr, p.t_bojler_sr, p.t_ogrz_sr, p.t_ogrz_sr_sr, p.t_powrot_sr, p.t_panel_sr, p.t_pokoj_sr,
++    p.cisnienie_sr, p.wilgotnosc_sr, (float)p.klapa_proc_sr, (float)p.syberko_proc_sr
++  };
++  const float mn[PANEL_HIST_POLA] = {
++    p.t_zewn_min, p.t_bojler_min, p.t_ogrz_min, p.t_ogrz_sr_min, p.t_powrot_min, p.t_panel_min, p.t_pokoj_min,
++    p.cisnienie_min, p.wilgotnosc_min, (float)p.klapa_proc_min, (float)p.syberko_proc_min
++  };
++  const float mx[PANEL_HIST_POLA] = {
++    p.t_zewn_max, p.t_bojler_max, p.t_ogrz_max, p.t_ogrz_sr_max, p.t_powrot_max, p.t_panel_max, p.t_pokoj_max,
++    p.cisnienie_max, p.wilgotnosc_max, (float)p.klapa_proc_max, (float)p.syberko_proc_max
++  };
++  w.czas = p.czas_unix;
++  w.pompa = (p.pompa == 0 || p.pompa == 1) ? p.pompa : (int8_t)-1;
++  w.dlugi = true;
++  for (int i = 0; i < PANEL_HIST_POLA; i++) {
++    w.sr[i] = panelHistDziesiate(sr[i]);
++    w.mn[i] = panelHistDziesiate(mn[i]);
++    w.mx[i] = panelHistDziesiate(mx[i]);
++    // Wiersz ze srednia, ale bez min/max (albo odwrotnie) traktujemy jak punkt.
++    if (w.sr[i] == PANEL_HIST_BRAK) { w.mn[i] = w.mx[i] = PANEL_HIST_BRAK; continue; }
++    if (w.mn[i] == PANEL_HIST_BRAK || w.mn[i] > w.sr[i]) w.mn[i] = w.sr[i];
++    if (w.mx[i] == PANEL_HIST_BRAK || w.mx[i] < w.sr[i]) w.mx[i] = w.sr[i];
++  }
++}
++
++// Czy wpis bufora dlugiego o czasie `czas` wchodzi do wykresu: musi miec czas
++// i lezec przed granica, od ktorej dane bierze sie z bufora krotkiego.
++static bool panelHistDlugiLiczySie(const PanelHistZrodlo &z, uint32_t czas) {
++  if (czas == 0 || czas > PANEL_HIST_CZAS_MAX) return false;
++  if (z.granicaD != 0 && czas >= z.granicaD) return false;
++  return true;
++}
++
++// Czas probki krotkiej nr `k` (0 = najstarsza), ktora w buforze ma czas `czas`.
++// Probka bez czasu dostaje czas wyliczony z sasiadow (probki sa co 60 s):
++// `poprzedniCzasK` to czas poprzedniej probki krotkiej (0 = jeszcze zadnej nie
++// bylo). Gdy zadna probka nie ma czasu, czasem jest numer probki.
++static uint32_t panelHistCzasKrotkiej(const PanelHistZrodlo &z, int k, uint32_t czas, uint32_t poprzedniCzasK) {
++  if (czas != 0 && czas <= PANEL_HIST_CZAS_MAX) return czas;
++  if (poprzedniCzasK != 0) return poprzedniCzasK + PANEL_HIST_ODSTEP_PROBEK_S;
++  if (z.pierwszyZCzasemK > k) {
++    const uint32_t wstecz = (uint32_t)(z.pierwszyZCzasemK - k) * PANEL_HIST_ODSTEP_PROBEK_S;
++    return (z.czasPierwszegoK > wstecz) ? (z.czasPierwszegoK - wstecz) : 1U;
++  }
++  return 1U + (uint32_t)k * PANEL_HIST_ODSTEP_PROBEK_S;   // brak zegara w calym buforze
++}
++
++// Wiersz nr `i` z ciagu "najpierw bufor dlugi, potem krotki" (kolejnosc
++// chronologiczna). Zwraca false, gdy wiersz ma byc pominiety.
++static bool panelHistWiersz(const PanelHistZrodlo &z, int i, uint32_t poprzedniCzasK, PanelHistWiersz &w) {
++  if (i < z.ileD) {
++    const int idx = (z.startD + i) % HISTORIA_DLUGA_MAX_PROBEK;
++    const HistoriaProbkaDluga p = historiaDlugaBufor[idx];   // kopia: bufor moze dostac nowy wpis w trakcie
++    if (!panelHistDlugiLiczySie(z, p.czas_unix)) return false;
++    panelHistZDlugiej(p, w);
++    return true;
++  }
++  const int k = i - z.ileD;
++  if (k >= z.ileK) return false;
++  const int idx = (z.startK + k) % HISTORIA_MAX_PROBEK;
++  const HistoriaProbka p = historiaBufor[idx];
++  panelHistZKrotkiej(p, w);
++  w.czas = panelHistCzasKrotkiej(z, k, w.czas, poprzedniCzasK);
++  return true;
++}
++
++// [v3.58.5] To samo co panelHistWiersz(), ale tylko CZAS wiersza i rodzaj
++// bufora - bez kopiowania wiersza i przeliczania jego 33 wartosci. Dla
++// przebiegow, ktore ustalaja okno czasu. Te same reguly (dwie funkcje wyzej),
++// wiec oba odczyty wybieraja te same wiersze i daja im ten sam czas.
++static bool panelHistCzasWiersza(const PanelHistZrodlo &z, int i, uint32_t poprzedniCzasK, uint32_t &czas, bool &dlugi) {
++  if (i < z.ileD) {
++    const uint32_t c = historiaDlugaBufor[(z.startD + i) % HISTORIA_DLUGA_MAX_PROBEK].czas_unix;
++    if (!panelHistDlugiLiczySie(z, c)) return false;
++    czas = c;
++    dlugi = true;
++    return true;
++  }
++  const int k = i - z.ileD;
++  if (k >= z.ileK) return false;
++  czas = panelHistCzasKrotkiej(z, k, historiaBufor[(z.startK + k) % HISTORIA_MAX_PROBEK].czas_unix, poprzedniCzasK);
++  dlugi = false;
++  return true;
++}
++
++// Do ktorej sekundy (wylacznie) obowiazuje wiersz A, gdy po nim przychodzi
++// wiersz B: do czasu B, a gdy odstep przekracza prog przerwy albo czas sie
++// cofnal - tylko przez sekunde. Prog zalezy od tego, z ktorych buforow sa wiersze.
++static uint32_t panelHistDoKiedy(uint32_t czasA, bool dlugiA, uint32_t czasB, bool dlugiB) {
++  const uint32_t prog = (dlugiA || dlugiB) ? PANEL_HIST_PRZERWA_DLUGI_S : PANEL_HIST_PRZERWA_KROTKI_S;
++  if (czasB > czasA && (czasB - czasA) <= prog) return czasB;
++  return czasA + 1U;
++}
++
++// [v3.58.5] Odcinek [a, b) z pomiarem: jesli zachodzi na zakres
++// [poczatekZakresu, koniecZakresu), zapamietuje najwczesniejsza jego sekunde
++// w tym zakresie (`jest` = czy jakakolwiek juz byla).
++static void panelHistNajwczesniejsza(uint32_t a, uint32_t b, uint32_t poczatekZakresu, uint32_t koniecZakresu,
++                                     bool &jest, uint32_t &sekunda) {
++  if (b <= poczatekZakresu || a >= koniecZakresu) return;
++  const uint32_t s = (a > poczatekZakresu) ? a : poczatekZakresu;
++  if (!jest || s < sekunda) { sekunda = s; jest = true; }
++}
++
++// [v3.58.5] Biezacy czas wedlug zegara centrali (Unix UTC), z dokladnoscia do
++// minuty: poczatek biezacej minuty. 0 = centrala nie zna czasu.
++// Pola aktualnaData*/aktualnyCzas* odswieza RTC() w petli glownej co 2 s z
++// tego samego zrodla (pobierzCzas()), z ktorego czas dostaja probki historii,
++// wiec obie wartosci sa w tej samej skali. Handler HTTP pracuje w innym
++// zadaniu i NIE wola pobierzCzas(): magistrala I2C nalezy do petli glownej.
++// Piec pol czytanych jest dwa razy; gdy RTC() zmienil je w trakcie (inny
++// rdzen), proba jest powtarzana - nie wyjdzie godzina z jednej chwili z
++// minuta z drugiej. Przeliczenie pol lokalnych na UTC jak w dataLokalnaNaUnixUtc().
++static uint32_t panelHistTerazUtc() {
++  const volatile int *const pola[5] = { &aktualnaDataRok, &aktualnaDataMiesiac, &aktualnaDataDzien,
++                                        &aktualnyCzasGodzina, &aktualnyCzasMinuta };
++  for (int proba = 0; proba < 3; proba++) {
++    int a[5], b[5];
++    for (int i = 0; i < 5; i++) a[i] = *pola[i];
++    for (int i = 0; i < 5; i++) b[i] = *pola[i];
++    if (memcmp(a, b, sizeof(a)) != 0) continue;
++    if (a[0] < 2024 || a[0] > 2099 || a[1] < 1 || a[1] > 12 || a[2] < 1 || a[2] > 31 ||
++        a[3] < 0 || a[3] > 23 || a[4] < 0 || a[4] > 59) return 0;
++    struct tm lok;
++    memset(&lok, 0, sizeof(lok));
++    lok.tm_year = a[0] - 1900;
++    lok.tm_mon = a[1] - 1;
++    lok.tm_mday = a[2];
++    lok.tm_hour = a[3];
++    lok.tm_min = a[4];
++    lok.tm_isdst = -1;   // CET/CEST dobiera mktime() wedlug strefy TZ centrali
++    const time_t t = mktime(&lok);
++    if (t <= 0 || (uint64_t)t > UINT32_MAX) return 0;
++    return (uint32_t)t;
++  }
++  return 0;
++}
++
++// Dopisuje odcinek czasu [a, b) o wartosciach wiersza `w` do kubelkow.
++// Okno to [poczatek, poczatek + rozpietosc), podzielone na `n` kubelkow;
++// granica kubelka k = poczatek + k * rozpietosc / n. Czasy spoza okna sa
++// przycinane, wiec zaden indeks nie wychodzi poza tablice.
++static void panelHistDodajOdcinek(PanelHistKubelek *kub, int n, uint32_t poczatek, uint32_t rozpietosc,
++                                  uint32_t a, uint32_t b, const PanelHistWiersz &w) {
++  const uint32_t koniec = poczatek + rozpietosc;
++  if (a < poczatek) a = poczatek;
++  if (b > koniec) b = koniec;
++  if (a >= b) return;
++  int k = (int)(((uint64_t)(a - poczatek) * (uint64_t)n) / rozpietosc);
++  if (k < 0) k = 0;
++  if (k >= n) k = n - 1;
++  while (k < n) {
++    const uint32_t gK = poczatek + (uint32_t)(((uint64_t)k * rozpietosc) / (uint64_t)n);
++    const uint32_t gK1 = (k + 1 >= n) ? koniec : poczatek + (uint32_t)(((uint64_t)(k + 1) * rozpietosc) / (uint64_t)n);
++    if (gK >= b) break;
++    const uint32_t od = (a > gK) ? a : gK;
++    const uint32_t doo = (b < gK1) ? b : gK1;
++    if (doo > od) {
++      const uint32_t sek = doo - od;
++      PanelHistKubelek &q = kub[k];
++      for (int f = 0; f < PANEL_HIST_POLA; f++) {
++        if (w.sr[f] == PANEL_HIST_BRAK) continue;
++        q.suma[f] += (int64_t)w.sr[f] * (int64_t)sek;
++        if (q.waga[f] == 0 || w.mn[f] < q.mn[f]) q.mn[f] = w.mn[f];
++        if (q.waga[f] == 0 || w.mx[f] > q.mx[f]) q.mx[f] = w.mx[f];
++        q.waga[f] += sek;
++      }
++      q.wagaRazem += sek;
++      q.pompa = w.pompa;
++    }
++    k++;
++  }
++}
++
++// Dopisuje do `buf` liczbe w dziesiatych jako "X.Y" i przecinek. Zwraca nowa dlugosc.
++static size_t panelHistLiczba(char *buf, size_t rozmiar, size_t dl, int32_t dziesiate) {
++  if (dl >= rozmiar) return rozmiar;
++  int n;
++  if (dziesiate == PANEL_HIST_BRAK) {
++    n = snprintf(buf + dl, rozmiar - dl, "nan,");
++  } else {
++    const long v = (long)dziesiate;
++    const long bezwzgl = (v < 0) ? -v : v;
++    n = snprintf(buf + dl, rozmiar - dl, "%s%ld.%ld,", (v < 0) ? "-" : "", bezwzgl / 10, bezwzgl % 10);
++  }
++  if (n < 0 || (size_t)n >= rozmiar - dl) return rozmiar;
++  return dl + (size_t)n;
++}
++
++// Czas `czas` (Unix UTC) jako czas lokalny centrali: "HH:MM" albo, z data,
++// "DD.MM<odstep>HH:MM". Zwraca liczbe wpisanych znakow.
++static size_t panelHistEtykieta(char *buf, size_t rozmiar, uint32_t czas, bool zData, char odstep) {
++  const time_t t = (time_t)czas;
++  struct tm lok;
++  memset(&lok, 0, sizeof(lok));
++  localtime_r(&t, &lok);
++  int n;
++  if (zData) n = snprintf(buf, rozmiar, "%02d.%02d%c%02d:%02d", lok.tm_mday, lok.tm_mon + 1, odstep, lok.tm_hour, lok.tm_min);
++  else       n = snprintf(buf, rozmiar, "%02d:%02d", lok.tm_hour, lok.tm_min);
++  if (n < 0 || (size_t)n >= rozmiar) { if (rozmiar > 0) buf[0] = '\0'; return 0; }
++  return (size_t)n;
++}
++
++// Buduje odpowiedz dla panelu. Zwraca kod HTTP: 200 (out = dane), 400 (zly
++// tryb), 503 (brak pamieci); przy 400/503 `out` to krotki opis.
++static int historiaPanelZbudujCsv(const char *tryb, int pkt, String &out) {
++  uint32_t okno = 0;
++  bool zDlugiej = false;
++  bool etykietaZData = false;
++  if (tryb && strcmp(tryb, "godz") == 0) okno = PANEL_HIST_OKNO_GODZ_S;
++  else if (tryb && strcmp(tryb, "dzien") == 0) okno = PANEL_HIST_OKNO_DZIEN_S;
++  else if (tryb && strcmp(tryb, "tydz") == 0) { okno = PANEL_HIST_OKNO_TYDZ_S; zDlugiej = true; etykietaZData = true; }
++  else { out = "tryb=godz|dzien|tydz\n"; return 400; }
++  if (pkt <= 0) pkt = PANEL_HIST_PKT_DOMYSLNIE;
++  if (pkt < PANEL_HIST_PKT_MIN) pkt = PANEL_HIST_PKT_MIN;
++  if (pkt > PANEL_HIST_PKT_MAX) pkt = PANEL_HIST_PKT_MAX;
++
++  // Migawka licznikow pod tym samym spinlockiem, ktorego uzywa zapis probek -
++  // wzorzec z historiaZbudujCsv(). Same wiersze sa potem kopiowane bez blokady
++  // (bufory nie sa realokowane); zapis nowej probki w trakcie moze zmienic
++  // najwyzej jeden, najstarszy wiersz - dlatego kazdy czas jest nizej
++  // przycinany do okna.
++  PanelHistZrodlo z;
++  memset(&z, 0, sizeof(z));
++  z.pierwszyZCzasemK = -1;
++  portENTER_CRITICAL(&historiaMux);
++  if (historiaBufor) {
++    z.ileK = historiaLiczbaProbek;
++    z.startK = historiaPelna ? historiaGlowa : 0;
++  }
++  if (zDlugiej && historiaDlugaBufor) {
++    z.ileD = historiaDlugaLiczbaProbek;
++    z.startD = historiaDlugaPelna ? historiaDlugaGlowa : 0;
++  }
++  portEXIT_CRITICAL(&historiaMux);
++  if (z.ileK < 0) z.ileK = 0;
++  if (z.ileK > HISTORIA_MAX_PROBEK) z.ileK = HISTORIA_MAX_PROBEK;
++  if (z.ileD < 0) z.ileD = 0;
++  if (z.ileD > HISTORIA_DLUGA_MAX_PROBEK) z.ileD = HISTORIA_DLUGA_MAX_PROBEK;
++
++  // Pierwsza probka krotka z czasem: punkt odniesienia dla probek bez czasu
++  // i granica, od ktorej bufor krotki zastepuje dlugi.
++  for (int k = 0; k < z.ileK; k++) {
++    const uint32_t c = historiaBufor[(z.startK + k) % HISTORIA_MAX_PROBEK].czas_unix;
++    if (c != 0 && c <= PANEL_HIST_CZAS_MAX) { z.pierwszyZCzasemK = k; z.czasPierwszegoK = c; break; }
++  }
++  if (z.pierwszyZCzasemK >= 0) {
++    const uint32_t wstecz = (uint32_t)z.pierwszyZCzasemK * PANEL_HIST_ODSTEP_PROBEK_S;
++    z.granicaD = (z.czasPierwszegoK > wstecz) ? (z.czasPierwszegoK - wstecz) : 1U;
++  }
++  const int razem = z.ileD + z.ileK;
++
++  // Przebieg 1 (tylko czasy wierszy): liczba uzytych wierszy i najnowszy z nich.
++  uint32_t tMax = 0, poprzedniK = 0, czasW = 0;
++  bool dlugiW = false, najnowszyDlugi = false;
++  int wierszy = 0;
++  bool jestCzas = (z.pierwszyZCzasemK >= 0);
++  for (int i = 0; i < razem; i++) {
++    if (!panelHistCzasWiersza(z, i, poprzedniK, czasW, dlugiW)) continue;
++    if (!dlugiW) poprzedniK = czasW; else jestCzas = true;
++    if (wierszy == 0 || czasW >= tMax) { tMax = czasW; najnowszyDlugi = dlugiW; }
++    wierszy++;
++  }
++
++  const int fs = historiaZapisNaFsWlaczony() ? 1 : 0;
++  char linia[400];
++  if (wierszy == 0) {
++    snprintf(linia, sizeof(linia), "#panel-hist 1 tryb=%s pkt=%d wierszy=0 od=0 do=0 krok_s=0 zrodlo=lokalne fs=%d od_etyk=--:-- do_etyk=--:--\n#koniec 0\n",
++             tryb, pkt, fs);
++    out = linia;
++    return 200;
++  }
++
++  // [v3.58.5] Koniec okna. Zwykle to czas najnowszej probki. Gdy jednak zegar
++  // centrali pokazuje, ze od tej probki minelo wiecej niz prog przerwy,
++  // historia konczy sie w przeszlosci (centrala wlasnie wstala i ma w buforach
++  // tylko to, co wczytala z plikow) - wtedy okno konczy sie TERAZ, a czas bez
++  // pomiarow wychodzi jako przerwa, zamiast udawac "ostatnia godzine".
++  // Tylko dla prawdziwych dat: probki bez zegara maja czasy umowne.
++  uint32_t koniecCzas = tMax;
++  if (jestCzas && tMax >= PANEL_HIST_CZAS_PEWNY) {
++    const uint32_t teraz = panelHistTerazUtc();
++    const uint32_t prog = najnowszyDlugi ? PANEL_HIST_PRZERWA_DLUGI_S : PANEL_HIST_PRZERWA_KROTKI_S;
++    if (teraz >= PANEL_HIST_CZAS_PEWNY && teraz <= PANEL_HIST_CZAS_MAX && teraz > tMax && (teraz - tMax) > prog) koniecCzas = teraz;
++  }
++  // Zakres trybu [poczatekZakresu, koniecOkna) konczy sie sekunde po `koniecCzas`.
++  const uint32_t koniecOkna = koniecCzas + 1U;
++  const uint32_t poczatekZakresu = (koniecOkna > okno) ? (koniecOkna - okno) : 0U;
++
++  // Przebieg 1b (tylko czasy wierszy): pierwsza sekunda zakresu, z ktorej jest
++  // pomiar. Odcinki liczone tak samo jak w przebiegu 2 (panelHistDoKiedy()).
++  // [v3.58.5] W 3.58.4 okno zaczynalo sie od najstarszej probki w buforach.
++  uint32_t pierwszaZPomiarem = 0, czasP = 0;
++  bool jestZPomiarem = false, dlugiP = false, jestP = false;
++  poprzedniK = 0;
++  for (int i = 0; i < razem; i++) {
++    if (!panelHistCzasWiersza(z, i, poprzedniK, czasW, dlugiW)) continue;
++    if (!dlugiW) poprzedniK = czasW;
++    if (jestP) {
++      panelHistNajwczesniejsza(czasP, panelHistDoKiedy(czasP, dlugiP, czasW, dlugiW), poczatekZakresu, koniecOkna,
++                               jestZPomiarem, pierwszaZPomiarem);
++    }
++    czasP = czasW;
++    dlugiP = dlugiW;
++    jestP = true;
++  }
++  if (jestP) panelHistNajwczesniejsza(czasP, czasP + 1U, poczatekZakresu, koniecOkna, jestZPomiarem, pierwszaZPomiarem);
++
++  // Okno [poczatek, poczatek + rozpietosc). Gdy w zakresie nie ma zadnego
++  // pomiaru, oknem jest caly zakres i wszystkie odcinki wyjda jako przerwy.
++  const uint32_t poczatek = jestZPomiarem ? pierwszaZPomiarem : poczatekZakresu;
++  const uint32_t rozpietosc = koniecOkna - poczatek;           // >= 1
++  const int n = (rozpietosc < (uint32_t)pkt) ? (int)rozpietosc : pkt;
++
++  const size_t bajtowKub = sizeof(PanelHistKubelek) * (size_t)n;
++  PanelHistKubelek *kub = (PanelHistKubelek *)ps_malloc(bajtowKub);
++  if (!kub) kub = (PanelHistKubelek *)malloc(bajtowKub);
++  if (!kub) { out = "brak pamieci\n"; return 503; }
++  memset(kub, 0, bajtowKub);
++  for (int k = 0; k < n; k++) kub[k].pompa = -1;
++
++  // Przebieg 2 (pelne wiersze): kazdy wiersz obowiazuje do nastepnego wiersza,
++  // a gdy odstep przekracza prog przerwy (albo czas sie cofnal) - tylko przez
++  // sekunde (panelHistDoKiedy()).
++  PanelHistWiersz w, poprz;
++  memset(&w, 0, sizeof(w));
++  memset(&poprz, 0, sizeof(poprz));
++  bool jestPoprz = false;
++  poprzedniK = 0;
++  for (int i = 0; i < razem; i++) {
++    if (!panelHistWiersz(z, i, poprzedniK, w)) continue;
++    if (!w.dlugi) poprzedniK = w.czas;
++    if (jestPoprz) {
++      panelHistDodajOdcinek(kub, n, poczatek, rozpietosc, poprz.czas, panelHistDoKiedy(poprz.czas, poprz.dlugi, w.czas, w.dlugi), poprz);
++    }
++    poprz = w;
++    jestPoprz = true;
++  }
++  if (jestPoprz) panelHistDodajOdcinek(kub, n, poczatek, rozpietosc, poprz.czas, poprz.czas + 1U, poprz);
++
++  out = "";
++  if (!out.reserve((unsigned int)n * 230U + 160U)) { free(kub); out = "brak pamieci\n"; return 503; }
++  // Poczatek i koniec okna jako tekst - bez spacji w srodku,
++  // bo pola naglowka sa oddzielone spacjami. Z data, gdy okno moze siegac
++  // poprzedniego dnia (dzien, tydz): sama godzina "13:01 - 13:00" nic by nie mowila.
++  const bool naglowekZData = (okno > PANEL_HIST_OKNO_GODZ_S);
++  char etykOd[16] = "--:--", etykDo[16] = "--:--";
++  if (jestCzas) {
++    if (panelHistEtykieta(etykOd, sizeof(etykOd), poczatek, naglowekZData, '_') == 0) snprintf(etykOd, sizeof(etykOd), "--:--");
++    if (panelHistEtykieta(etykDo, sizeof(etykDo), koniecCzas, naglowekZData, '_') == 0) snprintf(etykDo, sizeof(etykDo), "--:--");
++  }
++  snprintf(linia, sizeof(linia), "#panel-hist 1 tryb=%s pkt=%d wierszy=%d od=%lu do=%lu krok_s=%lu zrodlo=lokalne fs=%d od_etyk=%s do_etyk=%s\n",
++           tryb, pkt, wierszy, jestCzas ? (unsigned long)poczatek : 0UL, jestCzas ? (unsigned long)koniecCzas : 0UL,
++           (unsigned long)(rozpietosc / (uint32_t)n), fs, etykOd, etykDo);
++  bool ok = out.concat(linia);
++
++  int przerw = 0;
++  for (int k = 0; k < n && ok; k++) {
++    const PanelHistKubelek &q = kub[k];
++    if (q.wagaRazem == 0) {
++      ok = out.concat("#przerwa\n");
++      przerw++;
++      continue;
++    }
++    // Czas punktu = ostatnia sekunda jego odcinka (dla ostatniego punktu: koniec okna).
++    const uint32_t gK1 = (k + 1 >= n) ? koniecOkna : poczatek + (uint32_t)(((uint64_t)(k + 1) * rozpietosc) / (uint64_t)n);
++    const uint32_t czasPunktu = gK1 - 1U;
++    size_t dl = 0;
++    if (jestCzas) dl = panelHistEtykieta(linia, sizeof(linia), czasPunktu, etykietaZData, ' ');
++    if (dl == 0) dl = (size_t)snprintf(linia, sizeof(linia), "--:--");
++    linia[dl++] = ',';
++    linia[dl] = '\0';
++    for (int f = 0; f < PANEL_HIST_POLA; f++) {
++      if (q.waga[f] == 0) {
++        dl = panelHistLiczba(linia, sizeof(linia), dl, PANEL_HIST_BRAK);
++        dl = panelHistLiczba(linia, sizeof(linia), dl, PANEL_HIST_BRAK);
++        dl = panelHistLiczba(linia, sizeof(linia), dl, PANEL_HIST_BRAK);
++        continue;
++      }
++      const int64_t polowa = (int64_t)(q.waga[f] / 2U);
++      const int64_t srednia = (q.suma[f] >= 0) ? (q.suma[f] + polowa) / (int64_t)q.waga[f]
++                                               : -((-q.suma[f] + polowa) / (int64_t)q.waga[f]);
++      dl = panelHistLiczba(linia, sizeof(linia), dl, (int32_t)srednia);
++      dl = panelHistLiczba(linia, sizeof(linia), dl, q.mn[f]);
++      dl = panelHistLiczba(linia, sizeof(linia), dl, q.mx[f]);
++    }
++    if (dl < sizeof(linia)) {
++      const int m = snprintf(linia + dl, sizeof(linia) - dl, "%lu,%d\n", jestCzas ? (unsigned long)czasPunktu : 0UL, (int)q.pompa);
++      if (m < 0 || (size_t)m >= sizeof(linia) - dl) dl = sizeof(linia); else dl += (size_t)m;
++    }
++    if (dl >= sizeof(linia)) { ok = false; break; }   // nie powinno sie zdarzyc: 400 B to z zapasem najdluzszy wiersz
++    ok = out.concat(linia);
++  }
++  free(kub);
++  if (ok) {
++    snprintf(linia, sizeof(linia), "#koniec %d\n", n);
++    ok = out.concat(linia);
++  }
++  if (!ok) { out = "brak pamieci\n"; return 503; }
++  DLOGF(DC_HISTORIA, DL_INFO, "PANEL_WYKRES tryb=%s pkt=%d wierszy=%d punktow=%d przerw=%d bajtow=%u",
++        tryb, pkt, wierszy, n - przerw, przerw, (unsigned)out.length());
++  return 200;
++}
++// [v3.58.4 PANEL-WYKRESY-END]
++
+ // ============================================================================
+ // [LOGI] Bufor logow systemowych — kolowy bufor TEKSTU w PSRAM, ten sam
+ // wzorzec co log.txt/log_a.txt+log_b.txt z Rybach. Jeden ciagly bufor
+@@ -29711,6 +30320,19 @@
+   wifiWebServer.on(AsyncURIMatcher::exact("/api/history/long"), HTTP_GET, [](AsyncWebServerRequest *request) {
+     request->send(200, "text/plain", historiaDlugaZbudujCsv());
+   });
++  // [v3.58.4 PANEL-WYKRESY] Gotowe punkty wykresu dla panelu LCD - opis przy
++  // historiaPanelZbudujCsv(). exact(), jak trzy trasy wyzej: adres nie moze
++  // zostac przechwycony przez "/api/history" ani sam niczego przechwycic.
++  // Parametry: tryb=godz|dzien|tydz (domyslnie dzien), pkt=8..240 (domyslnie 96).
++  wifiWebServer.on(AsyncURIMatcher::exact("/api/history/panel"), HTTP_GET, [](AsyncWebServerRequest *request) {
++    String tryb = "dzien";
++    int pkt = PANEL_HIST_PKT_DOMYSLNIE;
++    if (request->hasParam("tryb")) tryb = request->getParam("tryb")->value();
++    if (request->hasParam("pkt")) pkt = request->getParam("pkt")->value().toInt();
++    String csv;
++    const int kod = historiaPanelZbudujCsv(tryb.c_str(), pkt, csv);
++    request->send(kod, "text/plain", csv);
++  });
+ 
+   // [LOGI] Bufor logow PSRAM dla zakladki "Logi" — patrz logZapisz()/
+   // logPobierzTekst()/logRozmiarUzyty() zdefiniowane wyzej. Stylistyka

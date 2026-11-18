@@ -1,0 +1,48 @@
+ZAKRES ZMIAN v3.58.3 -> v3.58.4 (main_centrala.cpp)
+===================================================
+Baza:  v3.58.3, SHA-256 65e37b14349dd37771863d702cec4d90f289aa9d8ca98a811458d8c8bcb82147
+       (plik v3.58.0-LAN-PANEL/src/main_centrala.cpp z galezi arena/fa9f8bd9-sterownik-pieca-c-o)
+Wynik: v3.58.4, SHA-256 7c92ed2d62c00b958fe24a731db65df97eadb8db9157eb1da63c520226246bcc
+Diff:  main_centrala-v3.58.3-do-v3.58.4.patch - 4 bloki (hunki),
+       451 linii dodanych, 1 usunieta. Zadna istniejaca linia kodu nie zostala
+       zmieniona poza numerem wersji.
+
+  1. Wpis changeloga na gorze pliku                         +33 linie (komentarz)
+  2. FIRMWARE_VERSION "v3.58.3" -> "v3.58.4"                1 linia zmieniona
+  3. Blok [v3.58.4 PANEL-WYKRESY-BEGIN] ... [-END]          +404 linie
+     wstawiony zaraz po historiaDlugaZbudujCsv():
+       - stale PANEL_HIST_*, struktury PanelHistWiersz / PanelHistKubelek /
+         PanelHistZrodlo,
+       - panelHistDziesiate(), panelHistZKrotkiej(), panelHistZDlugiej(),
+         panelHistWiersz(), panelHistDodajOdcinek(), panelHistLiczba(),
+         panelHistEtykieta(),
+       - historiaPanelZbudujCsv(tryb, pkt, out) -> kod HTTP 200 / 400 / 503.
+     Wszystkie funkcje sa "static" i tylko CZYTAJA: historiaBufor,
+     historiaDlugaBufor, ich liczniki (pod historiaMux, jak w
+     historiaZbudujCsv()) i historiaZapisNaFsWlaczony().
+  4. Trasa GET /api/history/panel w rejestracji tras          +13 linii
+     zaraz po trasie /api/history/long, przez AsyncURIMatcher::exact() jak
+     trzy sasiednie trasy /api/history*:
+       wifiWebServer.on(AsyncURIMatcher::exact("/api/history/panel"), HTTP_GET, [](AsyncWebServerRequest *request) {
+         String tryb = "dzien";
+         int pkt = PANEL_HIST_PKT_DOMYSLNIE;
+         if (request->hasParam("tryb")) tryb = request->getParam("tryb")->value();
+         if (request->hasParam("pkt")) pkt = request->getParam("pkt")->value().toInt();
+         String csv;
+         const int kod = historiaPanelZbudujCsv(tryb.c_str(), pkt, csv);
+         request->send(kod, "text/plain", csv);
+       });
+
+CZEGO NIE MA W DIFFIE
+---------------------
+Zadnej zmiany w: /api/history, /api/history/long, /history*, zapisie historii,
+plikach /hist_short.csv i /hist_long.csv, NVS, Firebase, Telegramie, sterowaniu
+piecem, czujnikach, stronie WWW, /api/status, /api/lan/*, OTA.
+Nowy kod niczego nie zapisuje (ani do pamieci historii, ani na flash).
+
+JAK TO SPRAWDZIC SAMEMU
+-----------------------
+  git show origin/arena/fa9f8bd9-sterownik-pieca-c-o:v3.58.0-LAN-PANEL/src/main_centrala.cpp > /tmp/stary.cpp
+  diff -u /tmp/stary.cpp src/main_centrala.cpp | less
+albo na Windows, w folderze projektu PlatformIO (po zrobieniu kopii .bak):
+  fc.exe src\main_centrala.cpp.bak src\main_centrala.cpp

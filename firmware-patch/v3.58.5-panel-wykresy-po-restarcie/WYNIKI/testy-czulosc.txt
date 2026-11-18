@@ -1,0 +1,35 @@
+Wynik: python3 sprawdz_czulosc.py   (g++ 12, 2026-11-12)
+Plik: src/main_centrala.cpp  SHA-256 f7dc097e016e2ef2b89c36ec2a34d0ce16768115c34d697751462472c40f166c
+
+Czulosc testow kodu [v3.58.4 PANEL-WYKRESY] (stan z v3.58.5): ../src/main_centrala.cpp
+  kod bez zmian: WSZYSTKO OK: 2697 sprawdzen, 0 bledow
+   1. okno zawsze od poczatku zakresu (jak gdyby nie bylo zmiany [1])
+        WYKRYTY (1293 bledow), np.: wynik zgodny z liczeniem sekunda po sekundzie
+   2. odcinek konczacy sie dokladnie na poczatku zakresu liczony jako pomiar w zakresie
+        WYKRYTY (1 bledow), np.: pierwszy wpis sekunde przed zakresem: zostaje jeden punkt (najnowszy wpis)
+   3. koniec okna: odstep rowny progowi juz przestawia okno na biezacy czas
+        WYKRYTY (5 bledow), np.: zegar 0-6 minut po ostatniej probce: odpowiedz bajt w bajt taka jak bez zegara (okno konczy sie na probce)
+   4. koniec okna: progi 6 min i 90 min zamienione miejscami
+        WYKRYTY (238 bledow), np.: okno konczy sie na biezacym czasie: 12:07 - 13:07
+   5. lekki odczyt czasu czyta sasiednia probke bufora krotkiego
+        WYKRYTY (1016 bledow), np.: naglowek: okno = 3600 s do najnowszej probki wlacznie, krok 37 s
+   6. odstep miedzy probkami rowny progowi liczony jako przerwa
+        WYKRYTY (35 bledow), np.: seria 43 tryb dzien pkt 83 odstep 300 nowych 122 zegar 1794572700
+   7. zegar: czas letni liczony jak zimowy
+        WYKRYTY (1 bledow), np.: czas letni (3.07.2026 12:00 CEST): przeliczenie z godzina letnia
+   8. zegar stosowany takze do probek z umownym czasem (rok 2000)
+        WYKRYTY (1 bledow), np.: probki z roku 2000 + zegar ustawiony: odpowiedz bez zmian (to nie sa prawdziwe daty)
+   9. zegar wczesniejszy niz najnowsza probka uznany za pozniejszy
+        WYKRYTY (91 bledow), np.: zegar WCZESNIEJSZY niz ostatnia probka (cofniety): bez wplywu
+  10. koniec okna zawsze na najnowszej probce (jak gdyby nie bylo zmiany [2])
+        WYKRYTY (425 bledow), np.: okno konczy sie na biezacym czasie: 12:07 - 13:07
+  11. naglowek: do= podaje czas probki zamiast konca okna
+        WYKRYTY (424 bledow), np.: okno konczy sie na biezacym czasie: 12:07 - 13:07
+  12. lekki odczyt czasu pomija regule granicy miedzy buforem dlugim i krotkim
+        WYKRYTY (217 bledow), np.: wynik zgodny z liczeniem sekunda po sekundzie
+  13. odczyt zegara bez sprawdzenia roku (zegar nieustawiony brany za prawdziwy czas)
+        WYKRYTY (1 bledow), np.: rok 2023 (zegar nieustawiony): 0
+  14. ostatni wiersz historii nie liczy sie przy szukaniu poczatku okna
+        WYKRYTY (32 bledow), np.: jedna probka: jeden punkt z jej wartoscia i czasem
+Wykryte: 14 z 14 celowo wprowadzonych bledow
+kod wyjscia: 0

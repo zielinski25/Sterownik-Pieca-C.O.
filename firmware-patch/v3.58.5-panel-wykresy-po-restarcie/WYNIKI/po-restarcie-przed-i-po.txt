@@ -1,0 +1,208 @@
+CENTRALA 3.58.4 I 3.58.5: CO DOSTAJE PANEL LCD PO RESTARCIE CENTRALI
+=====================================================================
+Wynik skryptu tests/porownaj_z_3.58.4.sh. Kod obu wersji wyciety z plikow centrali
+i uruchomiony na PC (nie na plytce):
+  3.58.4  main_centrala.cpp SHA-256 7c92ed2d62c00b958fe24a731db65df97eadb8db9157eb1da63c520226246bcc
+  3.58.5  main_centrala.cpp SHA-256 f7dc097e016e2ef2b89c36ec2a34d0ce16768115c34d697751462472c40f166c
+W kazdej sytuacji jest 13.11.2026 13:00, panel pyta o 96 punktow. "minut" = ile
+pomiarow (po jednym na minute) centrala zrobila od restartu; pierwszy pomiar jest
+ok. minuty po starcie, wiec "0 minut" to pierwsza minuta pracy.
+
+Co robi panel LCD v1.3.0 z odpowiedzia centrali:
+  0 punktow z danymi  -> napis "Centrala nie ma jeszcze danych z tego zakresu..."
+  1 punkt             -> napis "Za malo danych na wykres (jeden pomiar)..."
+  2 i wiecej          -> wykres; "przerwy" to puste miejsca w linii wykresu
+Dopisek "DANE SPRZED ... jako biezace": okno wykresu konczy sie ponad 6 minut przed biezacym
+czasem centrali (6 minut to prog, od ktorego centrala liczy brak pomiarow jako przerwe).
+
+
+SYTUACJA A: zapis historii WYLACZONY, plikow historii nie ma (wyczyszczone) - po restarcie bufory sa puste
+----------------------------------------------------------------------------------------------------
+  minut tryb   centrala  co pokazuje panel
+  0     godz   obie      NAPIS: brak danych z tego zakresu
+  0     dzien  obie      NAPIS: brak danych z tego zakresu
+  0     tydz   obie      NAPIS: brak danych z tego zakresu
+  1     godz   obie      NAPIS: za malo danych (jeden pomiar)
+  1     dzien  obie      NAPIS: za malo danych (jeden pomiar)
+  1     tydz   obie      NAPIS: za malo danych (jeden pomiar)
+  2     godz   obie      wykres: 61 pkt +  0 przerw, 12:59 - 13:00
+  2     dzien  obie      wykres: 61 pkt +  0 przerw, 13.11 12:59 - 13.11 13:00
+  2     tydz   obie      wykres: 61 pkt +  0 przerw, 13.11 12:59 - 13.11 13:00
+  10    godz   obie      wykres: 96 pkt +  0 przerw, 12:51 - 13:00
+  10    dzien  obie      wykres: 96 pkt +  0 przerw, 13.11 12:51 - 13.11 13:00
+  10    tydz   obie      wykres: 96 pkt +  0 przerw, 13.11 12:51 - 13.11 13:00
+  30    godz   obie      wykres: 96 pkt +  0 przerw, 12:31 - 13:00
+  30    dzien  obie      wykres: 96 pkt +  0 przerw, 13.11 12:31 - 13.11 13:00
+  30    tydz   obie      wykres: 96 pkt +  0 przerw, 13.11 12:31 - 13.11 13:00
+  120   godz   obie      wykres: 96 pkt +  0 przerw, 12:00 - 13:00
+  120   dzien  obie      wykres: 96 pkt +  0 przerw, 13.11 11:01 - 13.11 13:00
+  120   tydz   obie      wykres: 96 pkt +  0 przerw, 13.11 11:01 - 13.11 13:00
+  Jak dlugo po restarcie panel pokazuje napis zamiast wykresu (sprawdzone minuta po minucie, do 240):
+    tryb godz   obie wersje: napis do drugiego pomiaru, potem wykres
+    tryb dzien  obie wersje: napis do drugiego pomiaru, potem wykres
+    tryb tydz   obie wersje: napis do drugiego pomiaru, potem wykres
+
+SYTUACJA B: zapis historii WYLACZONY od 40 dni, stare pliki zostaly na flashu
+----------------------------------------------------------------------------------------------------
+  minut tryb   centrala  co pokazuje panel
+  0     godz   3.58.4    wykres: 96 pkt +  0 przerw, 13:00 - 14:00  <- DANE SPRZED 40 DNI jako biezace
+               3.58.5    NAPIS: brak danych z tego zakresu
+  0     dzien  3.58.4    wykres: 96 pkt +  0 przerw, 03.10 14:01 - 04.10 14:00  <- DANE SPRZED 40 DNI jako biezace
+               3.58.5    NAPIS: brak danych z tego zakresu
+  0     tydz   3.58.4    wykres: 96 pkt +  0 przerw, 27.09 14:00 - 04.10 14:00  <- DANE SPRZED 40 DNI jako biezace
+               3.58.5    NAPIS: brak danych z tego zakresu
+  1     godz   3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    NAPIS: za malo danych (jeden pomiar)
+  1     dzien  3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    NAPIS: za malo danych (jeden pomiar)
+  1     tydz   3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    NAPIS: za malo danych (jeden pomiar)
+  2     godz   3.58.4    wykres:  2 pkt + 94 przerw, 12:00 - 13:00
+               3.58.5    wykres: 61 pkt +  0 przerw, 12:59 - 13:00
+  2     dzien  3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    wykres: 61 pkt +  0 przerw, 13.11 12:59 - 13.11 13:00
+  2     tydz   3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    wykres: 61 pkt +  0 przerw, 13.11 12:59 - 13.11 13:00
+  10    godz   3.58.4    wykres: 15 pkt + 81 przerw, 12:00 - 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 12:51 - 13:00
+  10    dzien  3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 12:51 - 13.11 13:00
+  10    tydz   3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 12:51 - 13.11 13:00
+  30    godz   3.58.4    wykres: 47 pkt + 49 przerw, 12:00 - 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 12:31 - 13:00
+  30    dzien  3.58.4    wykres:  2 pkt + 94 przerw, 12.11 13:00 - 13.11 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 12:31 - 13.11 13:00
+  30    tydz   3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 12:31 - 13.11 13:00
+  120   godz   obie      wykres: 96 pkt +  0 przerw, 12:00 - 13:00
+  120   dzien  3.58.4    wykres:  8 pkt + 88 przerw, 12.11 13:00 - 13.11 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 11:01 - 13.11 13:00
+  120   tydz   3.58.4    wykres:  2 pkt + 94 przerw, 06.11 13:00 - 13.11 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 11:01 - 13.11 13:00
+  Jak dlugo po restarcie panel pokazuje napis zamiast wykresu (sprawdzone minuta po minucie, do 240):
+    tryb godz   obie wersje: napis do drugiego pomiaru, potem wykres
+    tryb dzien  3.58.4: napis przez pierwsze 15 minut;  3.58.5: napis do drugiego pomiaru, potem wykres
+    tryb tydz   3.58.4: napis przez pierwsze 105 minut;  3.58.5: napis do drugiego pomiaru, potem wykres
+
+SYTUACJA C: zapis historii WYLACZONY od 3 dni, stare pliki zostaly na flashu
+----------------------------------------------------------------------------------------------------
+  minut tryb   centrala  co pokazuje panel
+  0     godz   3.58.4    wykres: 96 pkt +  0 przerw, 12:00 - 13:00  <- DANE SPRZED 3 DNI jako biezace
+               3.58.5    NAPIS: brak danych z tego zakresu
+  0     dzien  3.58.4    wykres: 96 pkt +  0 przerw, 09.11 13:01 - 10.11 13:00  <- DANE SPRZED 3 DNI jako biezace
+               3.58.5    NAPIS: brak danych z tego zakresu
+  0     tydz   3.58.4    wykres: 96 pkt +  0 przerw, 03.11 13:00 - 10.11 13:00  <- DANE SPRZED 3 DNI jako biezace
+               3.58.5    wykres: 55 pkt + 41 przerw, 06.11 13:00 - 13.11 13:00
+  1     godz   3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    NAPIS: za malo danych (jeden pomiar)
+  1     dzien  3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    NAPIS: za malo danych (jeden pomiar)
+  1     tydz   obie      wykres: 56 pkt + 40 przerw, 06.11 13:00 - 13.11 13:00
+  2     godz   3.58.4    wykres:  2 pkt + 94 przerw, 12:00 - 13:00
+               3.58.5    wykres: 61 pkt +  0 przerw, 12:59 - 13:00
+  2     dzien  3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    wykres: 61 pkt +  0 przerw, 13.11 12:59 - 13.11 13:00
+  2     tydz   obie      wykres: 56 pkt + 40 przerw, 06.11 13:00 - 13.11 13:00
+  10    godz   3.58.4    wykres: 15 pkt + 81 przerw, 12:00 - 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 12:51 - 13:00
+  10    dzien  3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 12:51 - 13.11 13:00
+  10    tydz   obie      wykres: 56 pkt + 40 przerw, 06.11 13:00 - 13.11 13:00
+  30    godz   3.58.4    wykres: 47 pkt + 49 przerw, 12:00 - 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 12:31 - 13:00
+  30    dzien  3.58.4    wykres:  2 pkt + 94 przerw, 12.11 13:00 - 13.11 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 12:31 - 13.11 13:00
+  30    tydz   obie      wykres: 56 pkt + 40 przerw, 06.11 13:00 - 13.11 13:00
+  120   godz   obie      wykres: 96 pkt +  0 przerw, 12:00 - 13:00
+  120   dzien  3.58.4    wykres:  8 pkt + 88 przerw, 12.11 13:00 - 13.11 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 11:01 - 13.11 13:00
+  120   tydz   obie      wykres: 56 pkt + 40 przerw, 06.11 13:00 - 13.11 13:00
+  Jak dlugo po restarcie panel pokazuje napis zamiast wykresu (sprawdzone minuta po minucie, do 240):
+    tryb godz   obie wersje: napis do drugiego pomiaru, potem wykres
+    tryb dzien  3.58.4: napis przez pierwsze 15 minut;  3.58.5: napis do drugiego pomiaru, potem wykres
+    tryb tydz   obie wersje: wykres od razu
+
+SYTUACJA D: zapis historii WLACZONY, zwykly restart (ostatni wpis w pliku 4 minuty przed pierwszym pomiarem po restarcie)
+----------------------------------------------------------------------------------------------------
+  minut tryb   centrala  co pokazuje panel
+  0     godz   obie      wykres: 96 pkt +  0 przerw, 11:56 - 12:56
+  0     dzien  obie      wykres: 96 pkt +  0 przerw, 12.11 12:57 - 13.11 12:56
+  0     tydz   obie      wykres: 96 pkt +  0 przerw, 06.11 12:56 - 13.11 12:56
+  1     godz   obie      wykres: 96 pkt +  0 przerw, 12:00 - 13:00
+  1     dzien  obie      wykres: 96 pkt +  0 przerw, 12.11 13:00 - 13.11 13:00
+  1     tydz   obie      wykres: 96 pkt +  0 przerw, 06.11 13:00 - 13.11 13:00
+  2     godz   obie      wykres: 96 pkt +  0 przerw, 12:00 - 13:00
+  2     dzien  obie      wykres: 96 pkt +  0 przerw, 12.11 13:00 - 13.11 13:00
+  2     tydz   obie      wykres: 96 pkt +  0 przerw, 06.11 13:00 - 13.11 13:00
+  10    godz   obie      wykres: 96 pkt +  0 przerw, 12:00 - 13:00
+  10    dzien  obie      wykres: 96 pkt +  0 przerw, 12.11 13:00 - 13.11 13:00
+  10    tydz   obie      wykres: 96 pkt +  0 przerw, 06.11 13:00 - 13.11 13:00
+  30    godz   obie      wykres: 96 pkt +  0 przerw, 12:00 - 13:00
+  30    dzien  obie      wykres: 96 pkt +  0 przerw, 12.11 13:00 - 13.11 13:00
+  30    tydz   obie      wykres: 96 pkt +  0 przerw, 06.11 13:00 - 13.11 13:00
+  120   godz   obie      wykres: 96 pkt +  0 przerw, 12:00 - 13:00
+  120   dzien  obie      wykres: 96 pkt +  0 przerw, 12.11 13:00 - 13.11 13:00
+  120   tydz   obie      wykres: 96 pkt +  0 przerw, 06.11 13:00 - 13.11 13:00
+  Jak dlugo po restarcie panel pokazuje napis zamiast wykresu (sprawdzone minuta po minucie, do 240):
+    tryb godz   obie wersje: wykres od razu
+    tryb dzien  obie wersje: wykres od razu
+    tryb tydz   obie wersje: wykres od razu
+
+SYTUACJA E: zapis historii WLACZONY, centrala byla wylaczona przez 2 dni
+----------------------------------------------------------------------------------------------------
+  minut tryb   centrala  co pokazuje panel
+  0     godz   3.58.4    wykres: 96 pkt +  0 przerw, 12:00 - 13:00  <- DANE SPRZED 2 DNI jako biezace
+               3.58.5    NAPIS: brak danych z tego zakresu
+  0     dzien  3.58.4    wykres: 96 pkt +  0 przerw, 10.11 13:01 - 11.11 13:00  <- DANE SPRZED 2 DNI jako biezace
+               3.58.5    NAPIS: brak danych z tego zakresu
+  0     tydz   3.58.4    wykres: 96 pkt +  0 przerw, 04.11 13:00 - 11.11 13:00  <- DANE SPRZED 2 DNI jako biezace
+               3.58.5    wykres: 69 pkt + 27 przerw, 06.11 13:00 - 13.11 13:00
+  1     godz   3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    NAPIS: za malo danych (jeden pomiar)
+  1     dzien  3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    NAPIS: za malo danych (jeden pomiar)
+  1     tydz   obie      wykres: 70 pkt + 26 przerw, 06.11 13:00 - 13.11 13:00
+  2     godz   3.58.4    wykres:  2 pkt + 94 przerw, 12:00 - 13:00
+               3.58.5    wykres: 61 pkt +  0 przerw, 12:59 - 13:00
+  2     dzien  3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    wykres: 61 pkt +  0 przerw, 13.11 12:59 - 13.11 13:00
+  2     tydz   obie      wykres: 70 pkt + 26 przerw, 06.11 13:00 - 13.11 13:00
+  10    godz   3.58.4    wykres: 15 pkt + 81 przerw, 12:00 - 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 12:51 - 13:00
+  10    dzien  3.58.4    NAPIS: za malo danych (jeden pomiar)
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 12:51 - 13.11 13:00
+  10    tydz   obie      wykres: 70 pkt + 26 przerw, 06.11 13:00 - 13.11 13:00
+  30    godz   3.58.4    wykres: 47 pkt + 49 przerw, 12:00 - 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 12:31 - 13:00
+  30    dzien  3.58.4    wykres:  2 pkt + 94 przerw, 12.11 13:00 - 13.11 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 12:31 - 13.11 13:00
+  30    tydz   obie      wykres: 70 pkt + 26 przerw, 06.11 13:00 - 13.11 13:00
+  120   godz   obie      wykres: 96 pkt +  0 przerw, 12:00 - 13:00
+  120   dzien  3.58.4    wykres:  8 pkt + 88 przerw, 12.11 13:00 - 13.11 13:00
+               3.58.5    wykres: 96 pkt +  0 przerw, 13.11 11:01 - 13.11 13:00
+  120   tydz   obie      wykres: 70 pkt + 26 przerw, 06.11 13:00 - 13.11 13:00
+  Jak dlugo po restarcie panel pokazuje napis zamiast wykresu (sprawdzone minuta po minucie, do 240):
+    tryb godz   obie wersje: napis do drugiego pomiaru, potem wykres
+    tryb dzien  3.58.4: napis przez pierwsze 15 minut;  3.58.5: napis do drugiego pomiaru, potem wykres
+    tryb tydz   obie wersje: wykres od razu
+
+
+LOSOWE ZESTAWY DANYCH: CZY 3.58.5 ZMIENIA TYLKO TO, CO MIALA ZMIENIC
+----------------------------------------------------------------------------------------------------
+1834 losowych zestawow (te same, na ktorych biegna scenariusze 12 i 16 testow), odpowiedz kazdej
+wersji porownana co do bajta. O tym, czy odpowiedz MA byc taka sama, decyduje osobny rachunek
+w tescie (refBezZmianWzgledem3584), nie kod centrali:
+  - historia w calosci miesci sie w zakresie wykresu albo na poczatku zakresu jest pomiar,
+    i zegar centrali nie pokazuje, ze historia konczy sie w przeszlosci   -> BEZ ZMIAN
+  - pozostale (zakres zaczyna sie w przerwie albo przed pierwszym pomiarem z zakresu;
+    historia konczy sie w przeszlosci)                                     -> wolno sie roznic
+
+  mialy byc bez zmian i sa identyczne:        892
+  mialy byc bez zmian, a sie roznia:            0   (kazdy taki zestaw to blad)
+  wolno im sie roznic i sie roznia:           942
+  wolno im sie roznic, a sa identyczne:         0
+
+WYNIK: OK - w 3.58.5 po restarcie napis zamiast wykresu jest najwyzej do drugiego pomiaru,
+zadne okno wykresu nie konczy sie ponad 6 minut przed biezacym czasem centrali, a poza
+opisanymi zmianami odpowiedzi sa identyczne z 3.58.4.

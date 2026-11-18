@@ -1,0 +1,29 @@
+Wynik: OSTRZEZENIA=1 ./sprawdz_naglowki_esp32.sh   oraz   RDZEN=3.3.8 OSTRZEZENIA=1 ./sprawdz_naglowki_esp32.sh   (2026-11-12)
+Plik: src/main_centrala.cpp  SHA-256 f7dc097e016e2ef2b89c36ec2a34d0ce16768115c34d697751462472c40f166c
+Sprawdzany jest TYLKO blok [v3.58.4 PANEL-WYKRESY] (stan z v3.58.5), nie caly plik centrali (opis: naglowek skryptu).
+
+[A] wycinam kod z ../src/main_centrala.cpp
+    zapisano /tmp/centrala_panel_hist_test/naglowki/panel_hist_esp32.cpp (646 linii)
+[B] sprawdzanie prawdziwymi naglowkami arduino-esp32 (skrypt panelu LCD)
+[1] kompilator (clang z pakietu ziglang)
+    clang version 22.1.8
+[2] naglowki (arduino-esp32 3.0.7, ESP-IDF 5.1, newlib, TFT_eSPI, LVGL, ArduinoJson)
+[3] sprawdzanie zrodel: /tmp/centrala_panel_hist_test/naglowki
+    flagi z platformio.ini: -DUSER_SETUP_LOADED=1 -DILI9488_DRIVER -DTFT_WIDTH=320 -DTFT_HEIGHT=480 -DTFT_MISO=19 -DTFT_MOSI=23 -DTFT_SCLK=18 -DTFT_CS=15 -DTFT_DC=2 -DTFT_RST=4 -DTFT_BL=21 -DTFT_BACKLIGHT_ON=HIGH -DSPI_FREQUENCY=27000000 -DSPI_READ_FREQUENCY=20000000 -DLOAD_GLCD=1 -DLOAD_FONT2=1 -DLOAD_FONT4=1 -DLOAD_FONT6=1 -DLOAD_FONT7=1 -DLOAD_FONT8=1 -DLOAD_GFXFF=1 -DSMOOTH_FONT=1 -DLV_CONF_INCLUDE_SIMPLE 
+    panel_hist_esp32.cpp: bez bledow
+    panel_hist_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_panel_hist_test/naglowki: 0
+BEZ BLEDOW (naglowki arduino-esp32 3.0.7)
+kod wyjscia: 0
+
+[A] wycinam kod z ../src/main_centrala.cpp
+    zapisano /tmp/centrala_panel_hist_test/naglowki/panel_hist_esp32.cpp (646 linii)
+[B] sprawdzanie prawdziwymi naglowkami arduino-esp32 (skrypt panelu LCD)
+[1] kompilator (clang z pakietu ziglang)
+    clang version 22.1.8
+[2] naglowki (arduino-esp32 3.3.8, ESP-IDF 5.1, newlib, TFT_eSPI, LVGL, ArduinoJson)
+[3] sprawdzanie zrodel: /tmp/centrala_panel_hist_test/naglowki
+    flagi z platformio.ini: -DUSER_SETUP_LOADED=1 -DILI9488_DRIVER -DTFT_WIDTH=320 -DTFT_HEIGHT=480 -DTFT_MISO=19 -DTFT_MOSI=23 -DTFT_SCLK=18 -DTFT_CS=15 -DTFT_DC=2 -DTFT_RST=4 -DTFT_BL=21 -DTFT_BACKLIGHT_ON=HIGH -DSPI_FREQUENCY=27000000 -DSPI_READ_FREQUENCY=20000000 -DLOAD_GLCD=1 -DLOAD_FONT2=1 -DLOAD_FONT4=1 -DLOAD_FONT6=1 -DLOAD_FONT7=1 -DLOAD_FONT8=1 -DLOAD_GFXFF=1 -DSMOOTH_FONT=1 -DLV_CONF_INCLUDE_SIMPLE 
+    panel_hist_esp32.cpp: bez bledow
+    panel_hist_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_panel_hist_test/naglowki: 0
+BEZ BLEDOW (naglowki arduino-esp32 3.3.8)
+kod wyjscia: 0

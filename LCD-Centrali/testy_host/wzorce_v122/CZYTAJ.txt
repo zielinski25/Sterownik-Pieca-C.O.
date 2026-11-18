@@ -1,0 +1,46 @@
+PUNKTY, KTORE NARYSOWAL FIRMWARE PANELU v1.2.2
+==============================================
+
+Co to jest
+----------
+punkty.txt zawiera punkty serii ZEWN, ktore ekran Wykresy firmware'u v1.2.2
+(commit fbe19b8 w tym repozytorium) narysowal ze starego CSV historii
+(/api/history i /api/history/long - calego, sciskanego przez panel).
+Wartosci sa w dziesiatych czesciach stopnia, "-" to pozycja bez punktu,
+zawsze 96 pozycji.
+
+  dzien_zewn          zakres Dzienny,    1440 wierszy /api/history
+  godz_zewn           zakres Godzinny,   ten sam CSV
+  tydz_zewn           zakres Tygodniowy, 2000 wierszy /api/history/long
+  dzien_przerwa_zewn  zakres Dzienny, w CSV brakuje 30 minut
+  dzien_html_zewn     zamiast CSV strona HTML (to nie jest historia):
+                      v1.2.2 narysowal z niej 8 punktow - kazda linia tekstu
+                      strony stala sie punktem
+
+Po co
+-----
+Panel v1.3.0 pobiera caly CSV tylko wtedy, gdy centrala ma firmware starszy
+niz 3.58.4. Ma wtedy rysowac to samo co v1.2.2. Scenariusze
+wykresy_stara_centrala i wykresy_stary_csv (../symulator_panelu.cpp)
+porownuja punkty biezacego firmware'u z tym plikiem, pozycja po pozycji.
+Wyjatek: dzien_html_zewn. Tu biezacy firmware ma pokazac napis "Centrala
+odpowiedziala czyms innym niz dane wykresu", a wpis sluzy tylko za zapis
+tego, co robil v1.2.2.
+
+CSV, z ktorego powstaly punkty, buduje symulator (csvKrotki(), csvDlugi(),
+stronaHtml() w ../symulator_panelu.cpp) - ten sam dla obu wersji.
+
+Jak powstal ten plik (i jak go odtworzyc)
+-----------------------------------------
+Scenariusz wykresy_stary_csv podaje CSV ekranowi wprost, bez sieci, wiec
+dziala takze na zrodlach v1.2.2. W trybie obserwacji zapisuje punkty do pliku:
+
+  mkdir -p /tmp/v122 /tmp/v122_wyniki
+  git archive fbe19b8 LCD-Centrali/src | tar -x -C /tmp/v122
+  cd LCD-Centrali/testy_host
+  SRC=/tmp/v122/LCD-Centrali/src OBSERWACJE=1 WYNIKI=/tmp/v122_wyniki ./uruchom_testy.sh wykresy_stary_csv
+  cp /tmp/v122_wyniki/punkty.txt wzorce_v122/punkty.txt
+
+Odtwarzac trzeba tylko po zmianie csvKrotki(), csvDlugi() albo stronaHtml()
+w symulatorze. Zmiana firmware'u NIE jest powodem do odswiezenia: ten plik
+ma pozostac zapisem zachowania v1.2.2.
