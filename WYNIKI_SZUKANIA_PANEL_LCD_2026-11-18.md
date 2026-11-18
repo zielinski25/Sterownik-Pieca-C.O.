@@ -529,8 +529,8 @@ testy na PC i próba na płytce.
 | 0 | Hasła | prywatny plik |
 | 1 | **Małe i pewne:** przypięcie wersji; zrzut awarii, nieudane prośby o pamięć i zapas stosu w logu; watchdog w kalibracji; limit odpowiedzi; sprawdzenie `malloc`; zabezpieczenie tabeli ustawień; `WiFi.persistent(false)`; dolna granica jasności | C2, A5, C3, A4, A6, C5, B8, C9 |
 | 2 | **Rysuj tylko zmiany.** Sprawdzian: `pomiar_obciazenia.sh`, stan A blisko zera | B2 |
-| 3 | **Usypianie na baterii jak dawniej** + próg słabej baterii + przerwanie pętli restartów | B1, B5, B6 |
-| 4 | **Polecenia nie giną** | C4 |
+| 3 | **Usypianie na baterii jak dawniej** + próg słabej baterii | B1, B5 (czeka na podłączenie baterii i przycisku) |
+| 4 | **Polecenia nie giną** + przerwanie pętli restartów bez centrali — **zrobione w v1.4.2** (B6 przeniesione tu z kroku 3, bo nie wymaga sprzętu) | C4, B6 |
 | 5 | Ustawienia pobierane wtedy, gdy potrzebne; filtr JSON | B4, A2 |
 | 6 | 80 MHz i moc nadajnika — z miernikiem | B3, B7 |
 | 7 | Usunięcie starego programu z `main.cpp`; ostrzeżenia kompilatora włączone | C1, C7, C8 |

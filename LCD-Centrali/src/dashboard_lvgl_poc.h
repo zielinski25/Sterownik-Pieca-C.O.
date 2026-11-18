@@ -296,6 +296,20 @@ void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie);
 // WYCISZ / ZAMKNIJ) - ekran alarmu zaslania naglowek dashboardu.
 void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik);
 
+// [v1.4.2 C4] Pasek bledu polecenia: czerwony pasek na dole ekranu (warstwa
+// nad wszystkimi ekranami - lv_layer_top(), wiec widac go na pulpicie, na
+// stronach POMPA/SERWO/DYM i na ekranach ustawien) z tekstem w rodzaju
+// "POLECENIE NIE DOSZLO DO CENTRALI" / "ODRZUCONE: tryb serwa nie jest
+// reczny". Znika sam po BLAD_POLECENIA_CZAS_MS (3 s) albo po dotknieciu.
+// main.cpp wola to po kazdym poleceniu, ktorego centrala nie potwierdzila -
+// do v1.4.1 porazka szla tylko do logu, a ekran bez slowa "cofal" wartosc
+// przy nastepnym odczycie ustawien. Tekst tylko ASCII (czcionka bez polskich
+// liter); dluzszy niz 48 znakow jest obcinany.
+#define BLAD_POLECENIA_CZAS_MS 3000
+void lvgl_dashboard_poc_pokaz_blad_polecenia(const char *tekst);
+// Aktualnie pokazywany tekst paska ("" = ukryty) - do testow na PC.
+const char *lvgl_dashboard_poc_blad_polecenia_tekst();
+
 // [v1.2.1 RATUNEK] Alarm ma przetrwac samoczynny restart panelu (main.cpp,
 // panelAutorestart()): panel restartuje sie, gdy NIE MA danych z centrali, a
 // wtedy obowiazuje zasada z alarm_ekran_odswiez() - ostatni znany stan

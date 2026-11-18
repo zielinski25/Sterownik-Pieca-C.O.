@@ -3,6 +3,10 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-19] v1.4.2 Dodano: pasek bledu polecenia
+//   (lvgl_dashboard_poc_pokaz_blad_polecenia(), warstwa lv_layer_top(), 3 s,
+//   znika tez po dotknieciu) - main.cpp pokazuje nim polecenie, ktorego
+//   centrala nie potwierdzila (kolejka polecen, [v1.4.2 C4] w main.cpp).
 // [2026-11-18] v1.4.1 Zmieniono: rysowanie tylko przy zmianie ([v1.4.1 RYSOWANIE],
 //   pod rgb565()). Funkcje odswiezajace pulpit co 2 s (lvgl_dashboard_poc_aktualizuj()
 //   i wolane z niej *_odswiez(), bateria, znacznik centrali, ustawienia na
@@ -7254,6 +7258,56 @@ void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie) {
   ustawNapis(bateriaEtykieta, buf);
   ustawKolorStylu(bateriaEtykieta, LV_STYLE_TEXT_COLOR, kolor, 0);
 }
+
+// [v1.4.2 C4] Pasek bledu polecenia - patrz opis w dashboard_lvgl_poc.h.
+// Tworzony przy pierwszym uzyciu (zwykle nigdy - polecenia sie udaja), na
+// lv_layer_top(), zeby nie zalezal od tego, ktory ekran jest zaladowany.
+static lv_obj_t *g_bladPoleceniaPasek = nullptr;
+static lv_obj_t *g_bladPoleceniaLabel = nullptr;
+static lv_timer_t *g_bladPoleceniaTimer = nullptr;
+static char g_bladPoleceniaTekst[49] = "";
+
+static void blad_polecenia_ukryj() {
+  if (g_bladPoleceniaTimer != nullptr) { lv_timer_del(g_bladPoleceniaTimer); g_bladPoleceniaTimer = nullptr; }
+  g_bladPoleceniaTekst[0] = '\0';
+  if (g_bladPoleceniaPasek != nullptr) ustawUkrycie(g_bladPoleceniaPasek, true);
+}
+static void blad_polecenia_timer_cb(lv_timer_t *t) {
+  (void)t;
+  g_bladPoleceniaTimer = nullptr;   // timer z repeat_count=1 kasuje sie sam
+  blad_polecenia_ukryj();
+}
+static void blad_polecenia_dotyk_cb(lv_event_t *e) {
+  (void)e;
+  blad_polecenia_ukryj();
+}
+
+void lvgl_dashboard_poc_pokaz_blad_polecenia(const char *tekst) {
+  if (tekst == nullptr || tekst[0] == '\0') { blad_polecenia_ukryj(); return; }
+  if (g_bladPoleceniaPasek == nullptr) {
+    g_bladPoleceniaPasek = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(g_bladPoleceniaPasek);
+    lv_obj_set_size(g_bladPoleceniaPasek, 480, 30);
+    lv_obj_align(g_bladPoleceniaPasek, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(g_bladPoleceniaPasek, rgb565(KOL_ERR), 0);
+    lv_obj_set_style_bg_opa(g_bladPoleceniaPasek, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(g_bladPoleceniaPasek, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(g_bladPoleceniaPasek, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(g_bladPoleceniaPasek, blad_polecenia_dotyk_cb, LV_EVENT_CLICKED, nullptr);
+    g_bladPoleceniaLabel = lv_label_create(g_bladPoleceniaPasek);
+    lv_obj_set_style_text_font(g_bladPoleceniaLabel, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(g_bladPoleceniaLabel, lv_color_white(), 0);
+    lv_obj_center(g_bladPoleceniaLabel);
+  }
+  snprintf(g_bladPoleceniaTekst, sizeof(g_bladPoleceniaTekst), "%s", tekst);
+  ustawNapis(g_bladPoleceniaLabel, g_bladPoleceniaTekst);
+  ustawUkrycie(g_bladPoleceniaPasek, false);
+  if (g_bladPoleceniaTimer != nullptr) lv_timer_del(g_bladPoleceniaTimer);
+  g_bladPoleceniaTimer = lv_timer_create(blad_polecenia_timer_cb, BLAD_POLECENIA_CZAS_MS, nullptr);
+  lv_timer_set_repeat_count(g_bladPoleceniaTimer, 1);
+}
+
+const char *lvgl_dashboard_poc_blad_polecenia_tekst() { return g_bladPoleceniaTekst; }
 
 // [v1.2.0 CENTRALA-ID] Patrz opis w dashboard_lvgl_poc.h.
 void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik) {

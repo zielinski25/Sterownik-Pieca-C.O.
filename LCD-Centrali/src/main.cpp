@@ -38,6 +38,41 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-19] v1.4.2 - POLECENIA NIE GINA I KONIEC RESTARTOW BEZ CENTRALI
+//   (krok 4 z WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md, rozdzial 4 = C4 z
+//   audytu, oraz B6). Krok 3 (sen na baterii) celowo pozniej - czeka na
+//   podlaczenie baterii i przycisku do plytki.
+//   - C4 (kolejka polecen, diag::KolejkaPolecen w diagnostyka_panelu.h +
+//     poleceniePlanuj()/poleceniaKrok() tutaj): do v1.4.1 kazdy most
+//     (pompaManualWyslij, wyslijTrybPracy, wyslijServoManualny, ...) przy
+//     zajetym kanale HTTP pisal "poprzednia komenda jeszcze w toku, pomijam"
+//     i dotkniecie PRZEPADALO - przy szybkim klikaniu co drugie, przy
+//     przytrzymanym "+" wiekszosc. Teraz polecenie czeka w kolejce i idzie,
+//     gdy kanal sie zwolni; dla tego samego pola liczy sie ostatnia wartosc,
+//     a pole zmieniane w kolejce czeka 200 ms ciszy (przytrzymanie = jeden
+//     POST z koncowa wartoscia zamiast dwudziestu). Flaga "co odswiezyc po
+//     poleceniu" (PoKomendzie) wedruje z poleceniem, nie przez globalna
+//     zmienna; GET-y ida po OSTATNIM poleceniu serii.
+//   - C4 (stara wartosc nie nadpisuje ekranu): odpowiedz GET
+//     /api/ustawienia-get, ktora wystartowala przed koncem polecenia dla
+//     pola, pomija to pole (kolejkaPolecen.poleZmieniane(); log
+//     zdarzenie=stara_wartosc_pominieta). pobierzUstawienia() zawolane w
+//     trakcie GET-a nie przepada (ustawieniaGetPonow) - do v1.4.1 ekran
+//     zostawal wtedy ze stara wartoscia nawet 5 s.
+//   - C4 (porazka widoczna): polecenie bez potwierdzenia centrali = czerwony
+//     pasek na dole ekranu przez 3 s ("POLECENIE NIE DOSZLO DO CENTRALI" /
+//     "ODRZUCONE: tryb serwa nie jest reczny") + log
+//     zdarzenie=polecenie_nieudane. Do v1.4.1 tylko log.
+//   - B6 (diag::progRestartuMs()): czwarty i kazdy nastepny samoczynny
+//     restart bez danych dopiero po 6 h, nie co 5 min - przy centrali
+//     wylaczonej na noc panel restartowal sie ~100 razy bez zadnego skutku.
+//     W zamian przy milczacej centrali ponowne laczenie co 30 s
+//     (Ratunek::PROG_PONOWIENIA_MS), a naglowek liczy czas czytelnie:
+//     "BRAK WIFI 2 h 05 min" zamiast "BRAK WIFI 7384 s"
+//     (diag::czasBrakuDanych()).
+//   Testy: testy_host/test_diagnostyka.cpp (kolejka, Ratunek, naglowek) i
+//   scenariusze "polecenia_nie_gina", "bez_centrali_dlugo",
+//   "centrala_milczy_dlugo" w symulator_panelu.cpp.
 // [2026-11-18] v1.4.1 - MALE I PEWNE POPRAWKI PO AUDYCIE (krok 1 z
 //   WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md, rozdzial 4; ustalenia z
 //   AUDYT_PANELU_LCD_2026-11-18_WYCIEKI_DRENAZ_KOD.md). Zadna z nich nie
@@ -871,13 +906,33 @@ uint16_t centralaSymulacjaMaska = 0;
 enum class PoKomendzie : uint8_t { BRAK, STATUS, USTAWIENIA };
 PoKomendzie pendingPoKomendzie = PoKomendzie::BRAK;
 
+// [v1.4.2 C4] Kolejka polecen - zamiast "poprzednia komenda jeszcze w toku,
+// pomijam" (co przy szybkim klikaniu gubilo co drugie dotkniecie, a przy
+// przytrzymanym przycisku wiekszosc wartosci). Logika w
+// diag::KolejkaPolecen (diagnostyka_panelu.h, testowana na PC); tu tylko
+// spiecie z komendaFetch: poleceniePlanuj() dodaje, poleceniaKrok() (z
+// loop() i po kazdym zakonczonym POST) wysyla, gdy kanal wolny.
+// `partiaStatus`/`partiaUstawienia`: co odswiezyc po OSTATNIM poleceniu z
+// serii - w trakcie serii GET-y nie sa potrzebne (i tak pominelyby pola w
+// kolejce), a po niej jeden GET pokazuje wartosci zatwierdzone przez centrale.
+diag::KolejkaPolecen kolejkaPolecen;
+bool partiaStatus = false, partiaUstawienia = false;
+// [v1.4.2 C4] Kiedy wystartowal biezacy GET /api/ustawienia-get - pola, ktorych
+// polecenie skonczylo sie PO tej chwili, sa w odpowiedzi nieaktualne
+// (kolejkaPolecen.poleZmieniane()). `ustawieniaGetPonow`: pobierzUstawienia()
+// zawolane, gdy GET juz trwal - do v1.4.1 takie wywolanie przepadalo bez
+// sladu (ekran zostawal ze stara wartoscia do nastepnego okresowego GET-a,
+// nawet 5 s), teraz GET rusza ponownie zaraz po biezacym.
+unsigned long ustawieniaGetStartMs = 0;
+bool ustawieniaGetPonow = false;
+
 // [OTA-PANEL, ta sesja] Wersja wkompilowana w ten firmware — zglaszana
 // centrali przy KAZDYM /api/status (patrz pobierzStatus() nizej), zeby centrala
 // wiedziala co panel realnie ma wgrane (panel nie ma internetu, wiec nie
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.4.1"; // [2026-11-18] v1.4.1: male poprawki po audycie (przypiete wersje, zapas stosu i zrzut po awarii w logu, watchdog w kalibracji, limit odpowiedzi, dolna granica jasnosci); opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.4.2"; // [2026-11-19] v1.4.2: kolejka polecen (dotkniecia nie gina, porazka na ekranie), restart bez centrali co 6 h zamiast co 5 min; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -2001,11 +2056,16 @@ void obslugaWykresyFetch() {
 
 void pobierzStatus(); // forward declaration - pompaManualWyslij() wola ja przed jej definicja nizej
 void pobierzUstawienia(); // forward declaration - serwoUstawienieWyslij() (ponizej) wola ja przed jej definicja (linia ~959)
-void wyslijTrybPracy(const char* pole, long wartosc); // forward declaration - pompaWyborWyslij() (ponizej) wola ja przed jej definicja (linia ~1394); BLAD KOMPILACJI bez tego: "'wyslijTrybPracy' was not declared in this scope"
+// [v1.4.2 C4] Trzeci parametr: co odswiezyc po zakonczeniu polecenia (domyslnie
+// USTAWIENIA - patrz komentarz przy definicji wyslijTrybPracy()).
+void wyslijTrybPracy(const char* pole, long wartosc, PoKomendzie po = PoKomendzie::USTAWIENIA); // forward declaration - pompaWyborWyslij() (ponizej) wola ja przed jej definicja; BLAD KOMPILACJI bez tego: "'wyslijTrybPracy' was not declared in this scope"
 // [POPRAWKA, ta sesja - panel SERWO v2] Ten sam powod co wyzej -
 // serwoTrybWyslij()/serwoPozycjaWyslij() (ponizej) wolaja wyslijServoManualny()
-// przed jej definicja (linia ~1487).
-void wyslijServoManualny(const char* os, int procent);
+// przed jej definicja.
+void wyslijServoManualny(const char* os, int procent, PoKomendzie po = PoKomendzie::BRAK);
+// [v1.4.2 C4] Kolejka polecen - definicje przy wyslijTrybPracy() nizej.
+void poleceniePlanuj(const char* sciezka, const char* klucz, const char* cialo, PoKomendzie po);
+void poleceniaKrok();
 
 // [LVGL-API] Lokalny odpowiednik ustawSerwo()/ustawTryb() dla pompy - jedna
 // funkcja ktora dashboard_lvgl_poc.cpp woła przez callback (patrz
@@ -2022,51 +2082,31 @@ void wyslijServoManualny(const char* os, int procent);
 // obsluzy obslugaKomendaFetch() nizej, gdy komendaFetch faktycznie sie
 // zakonczy (jedna-dwie iteracje loop() pozniej, nie w tym samym wywolaniu).
 void pompaManualWyslij(const char* stanTekst) {
-  if (komendaFetch.wTrakcie()) {
-    Serial.println("[LVGL] pompaManualWyslij: poprzednia komenda jeszcze w toku, pomijam");
-    return; // user i tak zaraz zobaczy prawdziwy stan przy nastepnym apistatus
-  }
-  pendingPoKomendzie = PoKomendzie::STATUS; // ten kafelek czerpie z /api/status
-  komendaFetch.startPostFormUrlEncoded("/api/pompa-manual", String("stan=") + stanTekst);
-  // Celowo NIC nie zmieniamy tu lokalnie w UI - obslugaKomendaFetch() (przy
-  // sukcesie) doprowadzi do tego samego pobierzStatus()+aktualizacja LVGL co
-  // dawniej, a przy porazce kafelek po prostu nie "klamie" (jak dawniej,
-  // patrz TODO #1 w STATUS_PROJEKTU_LVGL.md).
+  // [v1.4.2 C4] Do kolejki - patrz poleceniePlanuj(). Celowo NIC nie
+  // zmieniamy tu lokalnie w UI - po zakonczeniu polecenia pobierzStatus()
+  // pokaze prawdziwy stan, a przy porazce kafelek nie "klamie".
+  String cialo = String("stan=") + stanTekst;
+  poleceniePlanuj("/api/pompa-manual", "stan", cialo.c_str(), PoKomendzie::STATUS); // ten kafelek czerpie z /api/status
 }
 
 // [ROZBUDOWA, ta sesja - strona POMPA / wybor strategii] Analogiczny
-// "lokalny most" dla wyboru Trociniak/Kopciuch/Automatyczny - dokladnie ten
-// sam ksztalt co pompaManualWyslij() wyzej, tylko woła JUZ ISTNIEJACA
-// wyslijTrybPracy() (do tej pory uzywana tylko przez stary, nie-LVGL
-// EKRAN_TRYBY - patrz komentarz [LCD-TRYBY] przy trybWyboru) zamiast
-// wlasnego httpPost(). Aktualizuje `trybWyboru` PRZED wyslaniem (ten sam
-// wzorzec co stary rysujTryby()/segmentyWybor callback), zeby stary,
-// nie-LVGL EKRAN_TRYBY (jesli ktos do niego wroci) tez od razu widzial
-// spojna wartosc, a nie musial czekac na kolejny pobierzStatus().
+// "lokalny most" dla wyboru Trociniak/Kopciuch/Automatyczny. Aktualizuje
+// `trybWyboru` PRZED wyslaniem (ten sam wzorzec co stary
+// rysujTryby()/segmentyWybor callback), zeby stary, nie-LVGL EKRAN_TRYBY
+// (jesli ktos do niego wroci) tez od razu widzial spojna wartosc.
+// [v1.4.2 C4] pendingPoKomendzie=STATUS, bo ten ekran czerpie trybWyboru z
+// /api/status, nie z POLA[] - flaga wedruje teraz razem z poleceniem w kolejce.
 void pompaWyborWyslij(int wartosc) {
   trybWyboru = wartosc;
-  if (komendaFetch.wTrakcie()) {
-    Serial.println("[LVGL] pompaWyborWyslij: poprzednia komenda jeszcze w toku, pomijam");
-    return;
-  }
-  wyslijTrybPracy("wybor", wartosc); // ustawia domyslnie pendingPoKomendzie=USTAWIENIA (patrz komentarz przy wyslijTrybPracy)
-  pendingPoKomendzie = PoKomendzie::STATUS; // nadpisujemy - ten ekran czerpie trybWyboru z /api/status, nie z POLA[]
+  wyslijTrybPracy("wybor", wartosc, PoKomendzie::STATUS);
 }
 
 // [POPRAWKA, ta sesja - panel SERWO v2] Dwa nowe "lokalne mosty", dokladnie
-// ten sam ksztalt co pompaWyborWyslij() wyzej - wywoluja JUZ ISTNIEJACE
-// funkcje HTTP (wyslijTrybPracy/wyslijServoManualny, patrz linie ~1401 i
-// ~1448), zeby dashboard_lvgl_poc.cpp nie musial nic wiedziec o
-// HTTPClient/WiFi. Rejestrowane w setup() przez
+// ten sam ksztalt co pompaWyborWyslij() wyzej. Rejestrowane w setup() przez
 // lvgl_dashboard_poc_ustaw_callback_serwo_tryb()/..._pozycja().
 void serwoTrybWyslij(int wartosc) {
   trybSerwaWartosc = wartosc;
-  if (komendaFetch.wTrakcie()) {
-    Serial.println("[LVGL] serwoTrybWyslij: poprzednia komenda jeszcze w toku, pomijam");
-    return;
-  }
-  wyslijTrybPracy("trybSerwa", wartosc); // ustawia domyslnie pendingPoKomendzie=USTAWIENIA
-  pendingPoKomendzie = PoKomendzie::STATUS; // nadpisujemy - trybSerwaWartosc tez czerpiemy z /api/status
+  wyslijTrybPracy("trybSerwa", wartosc, PoKomendzie::STATUS); // trybSerwaWartosc tez czerpiemy z /api/status
 }
 
 // `id`: 0=klapa, 1=syberka (tak jak dashboard_lvgl_poc.cpp go uzywa) ->
@@ -2075,12 +2115,7 @@ void serwoTrybWyslij(int wartosc) {
 // ta literowka byla przyczyna bledu z poprzedniej sesji.
 void serwoPozycjaWyslij(int id, int pozycja) {
   const char *os = (id == 0) ? "klapa" : "syberek";
-  if (komendaFetch.wTrakcie()) {
-    Serial.println("[LVGL] serwoPozycjaWyslij: poprzednia komenda jeszcze w toku, pomijam");
-    return;
-  }
-  pendingPoKomendzie = PoKomendzie::STATUS; // klapa/syberka wracaja przez /api/status
-  wyslijServoManualny(os, pozycja); // sam nie ustawia flagi (patrz komentarz przy jego definicji) - potrzebne bo suwak na starym, nie-LVGL EKRAN_SERWO woła go bez zadnego odswiezenia
+  wyslijServoManualny(os, pozycja, PoKomendzie::STATUS); // klapa/syberka wracaja przez /api/status
 }
 
 // [ROZSZERZENIE, ta sesja - ekran USTAWIENIA SERWA] Jeden generyczny "most",
@@ -3119,14 +3154,30 @@ void obslugaStatusFetch() {
 // [SIEC-NIEBLOKUJACA, ta sesja - PRZEPISANE] Tylko STARTUJE zadanie - patrz
 // komentarz przy pobierzStatus() wyzej, ten sam wzorzec.
 void pobierzUstawienia() {
-  if (ustawieniaFetch.wTrakcie()) return;
+  if (ustawieniaFetch.wTrakcie()) {
+    ustawieniaGetPonow = true;   // [v1.4.2 C4] nie gub prosby - GET ruszy zaraz po biezacym
+    return;
+  }
+  ustawieniaGetStartMs = millis();
   ustawieniaFetch.startGet("/api/ustawienia-get");
 }
 
 // Wywolywana z loop() przy kazdej iteracji - patrz obslugaStatusFetch() wyzej.
+// [v1.4.2 C4] Cienka otoczka: po KAZDYM zakonczonym GET (udanym czy nie),
+// jesli w miedzyczasie ktos prosil o kolejny (pobierzUstawienia() w trakcie
+// GET-a), startuje go od razu.
+static void obslugaUstawieniaFetchWlasciwa();
 void obslugaUstawieniaFetch() {
   ustawieniaFetch.poll();
   if (!ustawieniaFetch.gotowyWynik()) return;
+  obslugaUstawieniaFetchWlasciwa();
+  if (ustawieniaGetPonow && !ustawieniaFetch.wTrakcie()) {
+    ustawieniaGetPonow = false;
+    pobierzUstawienia();
+  }
+}
+
+static void obslugaUstawieniaFetchWlasciwa() {
   bool sukces = ustawieniaFetch.bylSukces();
   if (!sukces) {
     panelLiczniki.ustawieniaBlad++;
@@ -3157,16 +3208,32 @@ void obslugaUstawieniaFetch() {
   }
   swiezoscUstawien.odnotujSukces();
   panelLiczniki.ustawieniaOk++;
+  // [v1.4.2 C4] Pole, ktore uzytkownik wlasnie zmienia (polecenie w kolejce,
+  // w locie albo zakonczone juz po starcie tego GET-a), zostaje z wartoscia
+  // z ekranu - odpowiedz niesie dla niego stara wartosc. Po ostatnim
+  // poleceniu serii rusza nowy GET i wtedy wartosc centrali jest przyjmowana.
+  char pominiete[64] = "";
+  int pominietych = 0;
   for (int i = 0; i < LICZBA_POL; i++) {
-    if (!doc[POLA[i].klucz].isNull()) POLA[i].wartosc = doc[POLA[i].klucz].as<long>();
+    if (doc[POLA[i].klucz].isNull()) continue;
+    if (kolejkaPolecen.poleZmieniane(POLA[i].klucz, (uint32_t)ustawieniaGetStartMs)) {
+      if (pominietych++ < 3) snprintf(pominiete + strlen(pominiete), sizeof(pominiete) - strlen(pominiete), "%s%s", pominietych > 1 ? "," : "", POLA[i].klucz);
+      continue;
+    }
+    POLA[i].wartosc = doc[POLA[i].klucz].as<long>();
   }
   // [LCD-TRYBY] Poza POLA[] — patrz komentarz przy deklaracji trybWyboru/
   // trybSerwaWartosc wyzej.
-  if (!doc["wybor"].isNull())     trybWyboru      = doc["wybor"].as<long>();
-  if (!doc["trybSerwa"].isNull()) trybSerwaWartosc = doc["trybSerwa"].as<long>();
+  if (!doc["wybor"].isNull()     && !kolejkaPolecen.poleZmieniane("wybor", (uint32_t)ustawieniaGetStartMs))     trybWyboru      = doc["wybor"].as<long>();
+  if (!doc["trybSerwa"].isNull() && !kolejkaPolecen.poleZmieniane("trybSerwa", (uint32_t)ustawieniaGetStartMs)) trybSerwaWartosc = doc["trybSerwa"].as<long>();
   // [ROZSZERZENIE, ta sesja - ekran LVGL USTAWIENIA POMPY] Ten sam wzorzec
   // co wybor/trybSerwa powyzej - bool, wiec poza POLA[].
-  if (!doc["antystopWlaczony"].isNull()) antystopWlaczonyWartosc = doc["antystopWlaczony"].as<bool>();
+  if (!doc["antystopWlaczony"].isNull() && !kolejkaPolecen.poleZmieniane("antystopWlaczony", (uint32_t)ustawieniaGetStartMs))
+    antystopWlaczonyWartosc = doc["antystopWlaczony"].as<bool>();
+  if (pominietych > 0) {
+    Serial.printf("tag=KOMENDA zdarzenie=stara_wartosc_pominieta pol=%d pola=%s msg=\"GET ustawien wystartowal przed koncem polecenia - pola zmieniane zostaja z ekranu\"\n",
+                  pominietych, pominiete);
+  }
   ustawieniaWczytane = true;
   // [ROZSZERZENIE, ta sesja - ekran LVGL USTAWIENIA SERWA] Przekaz swiezo
   // pobrane wartosci dalej do dashboard_lvgl_poc.cpp - ten sam wzorzec co
@@ -3761,23 +3828,56 @@ void rysujTryby() {
 // zakonczeniu POST-a dokladnie tego samego: pobierzUstawienia() (u starego
 // EKRAN_TRYBY to "przywroc ostatnia znana wartosc po nieudanym poleceniu",
 // u reszty LVGL-mostow to "pokaz PRAWDZIWA, zwalidowana przez centrale
-// wartosc") - wiec ustawiamy tu USTAWIENIA jako domyslna; te dwa wyjatki
-// same nadpisuja flage na STATUS zaraz PO tym wywolaniu (patrz ich definicje
-// wyzej - to bezpieczne, bo w tym miejscu POST dopiero co wystartowal,
-// wiec obslugaKomendaFetch() jeszcze na pewno nie zdazyl przeczytac flagi).
-void wyslijTrybPracy(const char* pole, long wartosc) {
-  if (komendaFetch.wTrakcie()) {
-    Serial.println("[KOMENDA] wyslijTrybPracy: poprzednia komenda jeszcze w toku, pomijam");
+// wartosc") - wiec USTAWIENIA jest domyslna wartoscia `po`; te dwa wyjatki
+// podaja STATUS jawnie. [v1.4.2 C4] Do v1.4.1 nadpisywaly globalna flage
+// pendingPoKomendzie zaraz po wywolaniu - z kolejka flaga wedruje razem z
+// poleceniem (diag::Polecenie::po), wiec musi byc parametrem.
+void wyslijTrybPracy(const char* pole, long wartosc, PoKomendzie po) {
+  // [v1.4.2 C4] Do kolejki zamiast "pomijam" - patrz poleceniePlanuj().
+  // Dawny czerwony pasek na TFT + delay(1200) na porazke ZNIKNAL juz
+  // wczesniej (blokowal petle); od v1.4.2 porazka jest pokazywana paskiem
+  // LVGL przez 3 s (lvgl_dashboard_poc_pokaz_blad_polecenia()), a ekran i
+  // tak zaraz pokaze prawdziwa wartosc, bo pobierzUstawienia() leci po
+  // ostatnim poleceniu serii w obu przypadkach - patrz obslugaKomendaFetch().
+  // [v1.4.2 C4] Kopia ustawien w panelu (POLA[]) idzie za palcem od razu.
+  // Bez tego odczyt ustawien, ktory pominie to pole jako "zmieniane"
+  // (obslugaUstawieniaFetch()), przekazalby ekranom STARA wartosc z POLA[]
+  // i cofnal liczbe pod palcem - dokladnie to, co ta poprawka ma usunac.
+  // Po ostatnim poleceniu serii swiezy odczyt i tak nadpisze POLA[] tym, co
+  // centrala naprawde zapisala.
+  const int idx = znajdzIndeksPola(pole);
+  if (idx >= 0) POLA[idx].wartosc = wartosc;
+  String cialo = String("pole=") + pole + "&wartosc=" + String(wartosc);
+  poleceniePlanuj("/api/ustawienia-set", pole, cialo.c_str(), po);
+}
+
+// [v1.4.2 C4] Jedyne miejsce, ktore dodaje polecenia do kolejki. Gdy kanal
+// jest wolny, a dla tego pola nic nie czeka, POST rusza od razu (jak do
+// v1.4.1) - opoznienie dotyczy tylko sytuacji, w ktorych do v1.4.1
+// polecenie by PRZEPADLO. Pelna kolejka (6 roznych pol naraz, w praktyce
+// nieosiagalne) = polecenie odrzucone z komunikatem na ekranie.
+void poleceniePlanuj(const char* sciezka, const char* klucz, const char* cialo, PoKomendzie po) {
+  if (!kolejkaPolecen.dodaj(sciezka, klucz, cialo, (uint8_t)po, millis())) {
+    Serial.printf("tag=KOMENDA lvl=WARN zdarzenie=kolejka_pelna pole=%s cialo=\"%s\" odrzuconych=%lu\n",
+                  klucz, cialo, (unsigned long)kolejkaPolecen.odrzuconych);
+#if LVGL_POC_TEST
+    lvgl_dashboard_poc_pokaz_blad_polecenia("ZA DUZO POLECEN NARAZ - POWTORZ");
+#endif
     return;
   }
-  pendingPoKomendzie = PoKomendzie::USTAWIENIA;
-  komendaFetch.startPostFormUrlEncoded("/api/ustawienia-set", String("pole=") + pole + "&wartosc=" + String(wartosc));
-  // Dawny czerwony pasek na TFT + delay(1200) na porazke ZNIKA - to byla
-  // druga (obok samego httpPost) blokujaca operacja w tym pliku. Porazka
-  // trafia teraz tylko do logu (Serial, patrz obslugaKomendaFetch()) - ten
-  // sam, juz zaakceptowany wzorzec co mosty LVGL. Ekran i tak zaraz pokaze
-  // prawdziwa wartosc, bo pobierzUstawienia() leci automatycznie w obu
-  // przypadkach (sukces i porazka) - patrz obslugaKomendaFetch().
+  poleceniaKrok();
+}
+
+// [v1.4.2 C4] Wysyla pierwsze polecenie z kolejki, gdy kanal HTTP jest wolny
+// i polecenie jest "gotowe" (diag::KolejkaPolecen::gotowa(): wartosc
+// zmieniana w kolejce czeka 200 ms ciszy - przytrzymany przycisk konczy sie
+// jednym POST-em). Wolane z loop() co obrot i z poleceniePlanuj().
+void poleceniaKrok() {
+  if (komendaFetch.wTrakcie()) return;
+  if (!kolejkaPolecen.gotowa(millis())) return;
+  const diag::Polecenie& p = kolejkaPolecen.wystartuj();
+  pendingPoKomendzie = (PoKomendzie)p.po;
+  komendaFetch.startPostFormUrlEncoded(p.sciezka, String(p.cialo));
 }
 
 void rysujAktualnyEkran() {
@@ -3798,36 +3898,24 @@ void rysujAktualnyEkran() {
 // nie-LVGL EKRAN_USTAWIENIA (+/- na polu POLA[]) - patrz komentarz przy
 // wyslijTrybPracy() wyzej, dokladnie ten sam wzorzec.
 void wyslijUstawienie(int idxPola) {
-  if (komendaFetch.wTrakcie()) {
-    Serial.println("[KOMENDA] wyslijUstawienie: poprzednia komenda jeszcze w toku, pomijam");
-    return;
-  }
   PoleUstawien& p = POLA[idxPola];
-  pendingPoKomendzie = PoKomendzie::USTAWIENIA;
-  komendaFetch.startPostFormUrlEncoded("/api/ustawienia-set", String("pole=") + p.klucz + "&wartosc=" + String(p.wartosc));
-  // Jak w wyslijTrybPracy() - bez blokujacego paska+delay(1200); porazka
-  // trafia do logu, a pobierzUstawienia() (automatycznie z obslugaKomendaFetch())
-  // i tak przywroci na ekranie prawdziwa wartosc z centrali.
+  wyslijTrybPracy(p.klucz, p.wartosc, PoKomendzie::USTAWIENIA);   // [v1.4.2 C4] przez kolejke, jak wszystkie mosty
 }
 
 // [SIEC-NIEBLOKUJACA, ta sesja - PRZEPISANE] Wolana zarowno przez stary,
 // nie-LVGL EKRAN_SERWO (suwak klapy/syberka, bez zadnej flagi - BRAK,
 // zachowuje dawne "cicho ignoruj") jak i serwoPozycjaWyslij() z mostow LVGL
-// (ktora ustawia STATUS PRZED wywolaniem tej funkcji) - dlatego, w
-// odroznieniu od wyslijTrybPracy()/wyslijUstawienie() wyzej, ta funkcja SAMA
-// NIC nie ustawia w pendingPoKomendzie (zostawia to, co ustawil wywolujacy,
-// domyslnie BRAK).
-void wyslijServoManualny(const char* os, int procent) {
-  if (komendaFetch.wTrakcie()) {
-    Serial.println("[KOMENDA] wyslijServoManualny: poprzednia komenda jeszcze w toku, pomijam");
-    return;
-  }
-  komendaFetch.startPostFormUrlEncoded("/api/servo-manual", String("os=") + os + "&procent=" + String(procent));
+// (ktora podaje STATUS) - dlatego, w odroznieniu od wyslijTrybPracy(), ta
+// funkcja domyslnie NIC nie odswieza po zakonczeniu (po = BRAK).
+void wyslijServoManualny(const char* os, int procent, PoKomendzie po) {
   // Blad tutaj czesto oznacza po prostu "tryb serwa != Reczny" — nie
-  // przerywamy uzytkownikowi obslugi suwaka, tylko cicho ignorujemy
-  // (dokladnie tak jak panel WWW, ktory suwak i tak pokazuje tylko w trybie
-  // recznym; tutaj panel jest zawsze widoczny, wiec blad jest oczekiwany) -
-  // obslugaKomendaFetch() i tak tylko zaloguje ta porazke po Serialu.
+  // przerywamy uzytkownikowi obslugi suwaka (dokladnie tak jak panel WWW,
+  // ktory suwak i tak pokazuje tylko w trybie recznym; tutaj panel jest
+  // zawsze widoczny, wiec blad jest oczekiwany). [v1.4.2 C4] Kolejka scala
+  // kolejne pozycje tego samego suwaka - przeciagniecie konczy sie jednym
+  // POST-em z pozycja koncowa.
+  String cialo = String("os=") + os + "&procent=" + String(procent);
+  poleceniePlanuj("/api/servo-manual", os, cialo.c_str(), po);
 }
 
 // [SIEC-NIEBLOKUJACA, ta sesja] Wywolywana z loop() przy kazdej iteracji -
@@ -3839,14 +3927,23 @@ void obslugaKomendaFetch() {
   komendaFetch.poll();
   if (!komendaFetch.gotowyWynik()) return;
   bool centralaOk = false;
-  if (komendaFetch.bylSukces()) {
+  const bool odpowiedziala = komendaFetch.bylSukces();   // [v1.4.2 C4] zanim pobierzOdpowiedz()/skwitujBlad() wyzeruja stan
+  char powodOdrzucenia[40] = "";
+  if (odpowiedziala) {
     // centrala odpowiada {"ok":true,...} albo {"ok":false,"error":"..."} -
     // dokladnie ten sam kontrakt, ktory dawny httpPost() sprawdzal.
     String odp = NonBlockingHttp::wyodrebnijCialo(komendaFetch.pobierzOdpowiedz());
     JsonDocument doc;
     if (deserializeJson(doc, odp) == DeserializationError::Ok) {
       centralaOk = doc["ok"].as<bool>();
-      if (!centralaOk) Serial.printf("[KOMENDA] centrala odrzucila: %s\n", doc["error"].as<String>().c_str());
+      if (!centralaOk) {
+        const char* blad = doc["error"].as<const char*>();
+        Serial.printf("[KOMENDA] centrala odrzucila: %s\n", blad != nullptr ? blad : "");
+        // [v1.4.2 C4] Powod z centrali na ekran, jesli krotki i bez polskich
+        // liter (czcionka LVGL ich nie ma): np. "tryb serwa nie jest reczny".
+        snprintf(powodOdrzucenia, sizeof(powodOdrzucenia), "%s", blad != nullptr ? blad : "");
+        for (const char* c = powodOdrzucenia; *c != '\0'; c++) if ((unsigned char)*c >= 0x80) { powodOdrzucenia[0] = '\0'; break; }
+      }
     }
   } else {
     Serial.printf("[KOMENDA] POST nieudany: %s\n", komendaFetch.ostatniBlad().c_str());
@@ -3861,17 +3958,48 @@ void obslugaKomendaFetch() {
     komendaFetch.skwitujBlad();
   }
 
+  // [v1.4.2 C4] Zakonczone polecenie (udane czy nie) zapamietane z czasem -
+  // GET ustawien, ktory wystartowal wczesniej, nie nadpisze tego pola stara
+  // wartoscia (kolejkaPolecen.poleZmieniane() w obslugaUstawieniaFetch()).
+  const diag::Polecenie zakonczone = kolejkaPolecen.wLocie;
+  kolejkaPolecen.zakoncz(millis());
+  if (!centralaOk) {
+    // Uzytkownik musi to zobaczyc: ekran pokazuje wartosc, ktorej centrala
+    // nie ma. Do v1.4.1 porazka szla tylko do logu, a ekran "cofal" liczbe
+    // przy nastepnym GET bez slowa wyjasnienia.
+    Serial.printf("tag=KOMENDA lvl=WARN zdarzenie=polecenie_nieudane pole=%s cialo=\"%s\" powod=%s\n",
+                  zakonczone.klucz, zakonczone.cialo, odpowiedziala ? "odrzucone" : "brak_odpowiedzi");
+#if LVGL_POC_TEST
+    char komunikat[56];
+    if (!odpowiedziala)                 snprintf(komunikat, sizeof(komunikat), "POLECENIE NIE DOSZLO DO CENTRALI");
+    else if (powodOdrzucenia[0] != '\0') snprintf(komunikat, sizeof(komunikat), "ODRZUCONE: %s", powodOdrzucenia);
+    else                                snprintf(komunikat, sizeof(komunikat), "CENTRALA ODRZUCILA POLECENIE");
+    lvgl_dashboard_poc_pokaz_blad_polecenia(komunikat);
+#endif
+  }
+
   PoKomendzie co = pendingPoKomendzie;
   pendingPoKomendzie = PoKomendzie::BRAK;
-  if (co == PoKomendzie::USTAWIENIA) {
+  if (co == PoKomendzie::USTAWIENIA) partiaUstawienia = true;
+  if (co == PoKomendzie::STATUS) partiaStatus = true;
+  // [v1.4.2 C4] Nastepne polecenie z kolejki od razu (jesli gotowe) - GET-y
+  // dopiero po ostatnim poleceniu serii. Kolejka moze byc niepusta, a
+  // polecenie niegotowe (czeka na cisze po przytrzymanym przycisku) - wtedy
+  // odswiezenie tez czeka: pole i tak byloby pominiete jako "zmieniane".
+  poleceniaKrok();
+  if (!kolejkaPolecen.pusta() || komendaFetch.wTrakcie()) return;
+  if (partiaUstawienia) {
     // Zawsze, niezaleznie od centralaOk - sukces potwierdza nowa wartosc,
     // porazka przywraca ostatnia znana (oba dawne zachowania na raz, patrz
     // komentarze w wyslijTrybPracy()/wyslijUstawienie() wyzej).
+    partiaUstawienia = false;
     pobierzUstawienia();
-  } else if (co == PoKomendzie::STATUS && centralaOk) {
-    // STATUS: tylko po sukcesie - przy porazce CELOWO nic (jak dawniej w
-    // pompaManualWyslij() itp.), kolejny okresowy pobierzStatus() i tak
-    // wyrówna w ciagu max STATUS_INTERWAL_MS.
+  }
+  if (partiaStatus) {
+    // STATUS: do v1.4.1 tylko po sukcesie; od v1.4.2 tez po porazce - ekran
+    // ma wtedy tym bardziej pokazac prawdziwy stan, a GET statusu jest tani
+    // (i tak leci co STATUS_INTERWAL_MS).
+    partiaStatus = false;
     pobierzStatus();
   }
 }
@@ -5651,6 +5779,7 @@ void loop() {
   obslugaStatusFetch();
   obslugaUstawieniaFetch();
   obslugaKomendaFetch();
+  poleceniaKrok();         // [v1.4.2 C4] polecenie czekajace na cisze po przytrzymanym przycisku
   obslugaWykresyFetch();   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy - po kawalku na obrot, bez blokowania
   otaKrok();               // [v1.4.0 OTA] aktualizacja przez centrale: decyzja raz na sekunde, pobieranie po kawalku na obrot
 
@@ -5697,6 +5826,7 @@ void loop() {
   obslugaStatusFetch();
   obslugaUstawieniaFetch();
   obslugaKomendaFetch();
+  poleceniaKrok();         // [v1.4.2 C4] polecenie czekajace na cisze po przytrzymanym przycisku
   // [v1.2.0 DIAG] Ta galaz (stary dashboard TFT, LVGL_POC_TEST=0) nie jest
   // obecnie budowana; dla spojnosci dostaje ten sam log co galaz LVGL wyzej.
   // Samego przelaczania kafelkow na "--" tutaj nie ma.

@@ -93,6 +93,7 @@ extern diag::PamiecAutorestartu rtcAutorestart __attribute__((weak));
 // w v1.1.0 tej funkcji nie ma:
 void lvgl_dashboard_poc_aktualizuj_centrale(const char* znacznik) __attribute__((weak));
 void pompaManualWyslij(const char* stanTekst);
+void pobierzUstawienia();   // [v1.4.2] scenariusz polecenia_nie_gina: GET ustawien w trakcie polecenia
 
 // LVGL jest tu budowany z include/lv_conf.h TEGO projektu, a ten od v1.2.2
 // kieruje bledy wewnetrzne LVGL do panel_lvgl_assert() z main.cpp. Starsze
@@ -271,6 +272,12 @@ struct Centrala {
   int trybStatus = TRYB_OK;
   int trybUstawienia = TRYB_OK;
   int trybPost = TRYB_OK;
+  // [v1.4.2 C4] Polecenia (POST): tresci po kolei, zapisane ustawienia (nadpisuja
+  // jsonUstawienia()), opoznienie odpowiedzi w czasie plytki i odmowa z powodem.
+  std::vector<std::string> posty;               // ciala kolejnych POST-ow, np. "pole=czasOn&wartosc=7"
+  std::map<std::string, long> ustawieniaZapisane;   // pole -> wartosc z /api/ustawienia-set
+  unsigned long postOpoznienieMs = 0;           // tyle czasu plytki centrala "mysli" nad kazdym POST-em
+  std::string postBlad;                         // niepuste: kazdy POST konczy sie {"ok":false,"error":...} (HTTP 400)
   // wartosci pokazywane na kafelkach
   double tZewn = 8.0, tBojler = 42.0, tOgrz = 55.0, tOgrzSr = 54.0, tPanel = 12.0, tPokoj = 21.5;
   double tTrociny = 48.6, tPowrot = 20.1;
@@ -409,13 +416,28 @@ std::string jsonStatus(const Centrala& c, bool zNan) {
 }
 
 // /api/ustawienia-get: te same pola co handler w main_centrala.cpp 3.58.3.
-std::string jsonUstawienia() {
-  return "{\"wybor\":1,\"trybSerwa\":1,\"czasOn\":5,\"czasOff\":10,\"tempOn\":45,\"tempOff\":40,"
-         "\"antystopWlaczony\":true,\"antystopDni\":7,\"mieszadloWlaczony\":false,\"mieszadloCzasOn\":10,"
-         "\"mieszadloCzasOff\":60,\"rozpalanie\":false,\"rozpalanie_potwierdzone\":false,\"rozpalanie_pozostalo_s\":0,"
-         "\"tempZadServo\":60,\"histerServo\":3,\"skokKlapy\":5,"
-         "\"skokSyberka\":5,\"odchylTemp\":2,\"mnoznik\":3,\"progAlarmTemp\":90,\"progAlarmDym\":500,"
-         "\"dymCzasOn\":30,\"dymCzasOff\":300,\"dymCzasStabilizacji\":20,\"dymProgTemp\":35,\"dymTrybPracy\":0}";
+std::string jsonUstawienia(const Centrala* c = nullptr) {
+  std::string j = "{\"wybor\":1,\"trybSerwa\":1,\"czasOn\":5,\"czasOff\":10,\"tempOn\":45,\"tempOff\":40,"
+                  "\"antystopWlaczony\":true,\"antystopDni\":7,\"mieszadloWlaczony\":false,\"mieszadloCzasOn\":10,"
+                  "\"mieszadloCzasOff\":60,\"rozpalanie\":false,\"rozpalanie_potwierdzone\":false,\"rozpalanie_pozostalo_s\":0,"
+                  "\"tempZadServo\":60,\"histerServo\":3,\"skokKlapy\":5,"
+                  "\"skokSyberka\":5,\"odchylTemp\":2,\"mnoznik\":3,\"progAlarmTemp\":90,\"progAlarmDym\":500,"
+                  "\"dymCzasOn\":30,\"dymCzasOff\":300,\"dymCzasStabilizacji\":20,\"dymProgTemp\":35,\"dymTrybPracy\":0}";
+  // [v1.4.2 C4] Wartosci zapisane przez /api/ustawienia-set zastepuja domyslne
+  // (jak w centrali: GET oddaje to, co ostatnio ustawiono).
+  if (c != nullptr) {
+    for (const auto& para : c->ustawieniaZapisane) {
+      const std::string klucz = "\"" + para.first + "\":";
+      const size_t p = j.find(klucz);
+      if (p == std::string::npos) continue;
+      const size_t od = p + klucz.size();
+      size_t doP = od;
+      while (doP < j.size() && j[doP] != ',' && j[doP] != '}') doP++;
+      const bool logiczne = (j.compare(od, 4, "true") == 0 || j.compare(od, 5, "false") == 0);
+      j.replace(od, doP - od, logiczne ? (para.second != 0 ? "true" : "false") : std::to_string(para.second));
+    }
+  }
+  return j;
 }
 
 void zapiszWszystko(int fd, const std::string& s) {
@@ -519,6 +541,7 @@ struct Strumien {
   double bajtowNaMs = 0;
   double kredyt = 0;
   bool plikOta = false;            // to odpowiedz na GET /panel-ota.bin (liczniki nPlik...), nie historia
+  bool polecenie = false;          // [v1.4.2] opozniona odpowiedz na POST (bez licznikow historii/pliku)
   bool otaTransfer = false;        // centrala 3.58.6 liczy to polaczenie jako trwajace wysylanie pliku...
   uint32_t otaNr = 0;              // ...oferty o tym numerze
 };
@@ -659,7 +682,7 @@ void pompujStrumienie(unsigned long ms) {
         }
       }
       if (!koniec && s.poszlo >= s.dane.size()) {
-        (s.plikOta ? c.nPlikWyslanych : c.nHistWyslanych)++;
+        if (!s.polecenie) (s.plikOta ? c.nPlikWyslanych : c.nHistWyslanych)++;
         koniec = true;
       } else if (!koniec && s.poszlo >= s.granica && s.zamknijNaGranicy) {
         koniec = true;   // urwana: zamkniecie przed koncem zapowiedzianej tresci
@@ -815,6 +838,38 @@ void obsluzPolaczenie(int k, int idx) {
       c.nPost++;
       tryb = c.trybPost;
       cialo = "{\"ok\":true}";
+      // [v1.4.2 C4] Tresc POST-a (za pusta linia) - zapamietaj i, dla
+      // /api/ustawienia-set, zapisz pole jak centrala.
+      const size_t pocz = zad.find("\r\n\r\n");
+      const std::string tresc = (pocz == std::string::npos) ? "" : zad.substr(pocz + 4);
+      c.posty.push_back(tresc);
+      if (!c.postBlad.empty()) {
+        kod = 400;
+        cialo = "{\"ok\":false,\"error\":\"" + c.postBlad + "\"}";
+      } else if (sciezka.rfind("/api/ustawienia-set", 0) == 0) {
+        const std::string pole = parametrAdresu("?" + tresc, "pole");
+        const std::string wartosc = parametrAdresu("?" + tresc, "wartosc");
+        if (!pole.empty() && !wartosc.empty()) c.ustawieniaZapisane[pole] = std::strtol(wartosc.c_str(), nullptr, 10);
+      }
+      if (tryb == TRYB_OK && c.postOpoznienieMs > 0) {
+        // Odpowiedz dopiero po postOpoznienieMs czasu plytki - przez Strumien,
+        // jak historia (patrz pompujStrumienie()).
+        char naglowkiOp[256];
+        snprintf(naglowkiOp, sizeof(naglowkiOp),
+                 "HTTP/1.0 %d %s\r\nCache-Control: no-store, max-age=0\r\nConnection: close\r\nContent-Length: %zu\r\nContent-Type: application/json\r\n\r\n",
+                 kod, kod == 200 ? "OK" : "Bad Request", cialo.size());
+        const int flagi = fcntl(k, F_GETFL, 0);
+        fcntl(k, F_SETFL, flagi | O_NONBLOCK);
+        Strumien st;
+        st.fd = k;
+        st.centrala = idx;
+        st.dane = std::string(naglowkiOp) + cialo;
+        st.zwlokaMs = c.postOpoznienieMs;
+        st.polecenie = true;
+        g_strumienie.push_back(std::move(st));
+        g_wLocie--;
+        return;
+      }
     } else if (sciezka.rfind("/api/status", 0) == 0) {
       c.nStatus++;
       c.ostatniStatusSciezka = sciezka;
@@ -858,7 +913,7 @@ void obsluzPolaczenie(int k, int idx) {
     } else if (sciezka.rfind("/api/ustawienia-get", 0) == 0) {
       c.nUstawienia++;
       tryb = c.trybUstawienia;
-      cialo = jsonUstawienia();
+      cialo = jsonUstawienia(&c);
     } else {
       c.nInne++;
       kod = 404;
@@ -886,8 +941,8 @@ void obsluzPolaczenie(int k, int idx) {
   char naglowki[256];
   snprintf(naglowki, sizeof(naglowki),
            "HTTP/1.0 %d %s\r\nCache-Control: no-store, max-age=0\r\nConnection: close\r\nContent-Length: %zu\r\nContent-Type: %s\r\n\r\n",
-           kod, kod == 200 ? "OK" : (kod == 404 ? "Not Found" : "Internal Server Error"),
-           cialo.size(), kod == 200 ? "application/json" : "text/plain");
+           kod, kod == 200 ? "OK" : (kod == 404 ? "Not Found" : (kod == 400 ? "Bad Request" : "Internal Server Error")),
+           cialo.size(), (kod == 200 || kod == 400) ? "application/json" : "text/plain");
   if (tryb == TRYB_UCIETA) cialo.resize(cialo.size() / 2);
   zapiszWszystko(k, std::string(naglowki) + cialo);
   close(k);
@@ -974,7 +1029,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.4.1"
+#define WERSJA_FW "v1.4.2"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1937,6 +1992,203 @@ void scenariuszAutorestartKolejny() {
   sprawdz(rtcAutorestart.wazna() && rtcAutorestart.oczekuje == 1 && rtcAutorestart.kolejnych == 2 && rtcAutorestart.lacznie == 2,
           "pamiec RTC: to juz drugi restart z rzedu (nastepny prog: 3 min)");
   sprawdz(logMa("zdarzenie=autorestart", "nr_z_rzedu=2", "przyczyna=wifi"), "log: autorestart nr_z_rzedu=2");
+#else
+  sprawdz(false, "firmware ma pamiec autorestartu");
+#endif
+}
+
+// --- 15b -------------------------------------------------------------------
+// [v1.4.2 C4] Polecenia z dotyku nie gina. Centrala odpowiada na POST po
+// 300 ms czasu plytki (prawdziwa: 100-400 ms); uzytkownik klika "+" co 100 ms
+// albo trzyma przycisk. Do v1.4.1 kazde dotkniecie w trakcie POST-a szlo
+// do kosza ("poprzednia komenda jeszcze w toku, pomijam").
+static lv_obj_t* ekranZTytulem(const char* tytul) {
+  lv_disp_t* d = lv_disp_get_default();
+  if (d == nullptr) return nullptr;
+  for (uint32_t i = 0; i < d->screen_cnt; i++)
+    if (znajdzEtykiete(d->screens[i], tytul) != nullptr) return d->screens[i];
+  return nullptr;
+}
+// Przycisk (-/+) w wierszu ekranu ustawien: wiersz = rodzic etykiety `etykieta`,
+// przycisk = dziecko wiersza, ktorego etykieta to `symbol` (LV_SYMBOL_PLUS/MINUS).
+static lv_obj_t* przyciskWiersza(lv_obj_t* ekran, const char* etykieta, const char* symbol) {
+  lv_obj_t* e = znajdzEtykiete(ekran, etykieta);
+  if (e == nullptr) return nullptr;
+  lv_obj_t* wiersz = lv_obj_get_parent(e);
+  for (uint32_t i = 0; i < lv_obj_get_child_cnt(wiersz); i++) {
+    lv_obj_t* d = lv_obj_get_child(wiersz, (int32_t)i);
+    for (uint32_t j = 0; j < lv_obj_get_child_cnt(d); j++) {
+      lv_obj_t* l = lv_obj_get_child(d, (int32_t)j);
+      if (lv_obj_check_type(l, &lv_label_class) && strcmp(lv_label_get_text(l), symbol) == 0) return d;
+    }
+  }
+  return nullptr;
+}
+// Wartosc w wierszu: etykieta w tym samym wierszu, ktora nie jest nazwa pola ani symbolem przycisku.
+static std::string wartoscWiersza(lv_obj_t* ekran, const char* etykieta) {
+  lv_obj_t* e = znajdzEtykiete(ekran, etykieta);
+  if (e == nullptr) return "(brak)";
+  lv_obj_t* wiersz = lv_obj_get_parent(e);
+  for (uint32_t i = 0; i < lv_obj_get_child_cnt(wiersz); i++) {
+    lv_obj_t* d = lv_obj_get_child(wiersz, (int32_t)i);
+    if (d != e && lv_obj_check_type(d, &lv_label_class)) return lv_label_get_text(d);
+  }
+  return "(brak)";
+}
+static int postowZPolem(const Centrala& c, const char* pole) {
+  int n = 0;
+  const std::string klucz = std::string("pole=") + pole + "&";
+  for (const std::string& t : c.posty) if (t.rfind(klucz, 0) == 0) n++;
+  return n;
+}
+void scenariuszPoleceniaNieGina() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  ustaw(0, [](Centrala& c) { c.postOpoznienieMs = 300; });
+  setup();
+  biegnij(6000);
+  lv_obj_t* pulpit = lv_scr_act();
+  lv_obj_t* ekran = ekranZTytulem("USTAWIENIA POMPY");
+  sprawdz(ekran != nullptr, "jest ekran USTAWIENIA POMPY");
+  if (ekran == nullptr) return;
+  { LiczFirmware licz; lv_scr_load(ekran); }
+  biegnij(6000);   // okresowy GET ustawien wypelnia wiersze
+  info("Czas ON przed: %s, Czas OFF przed: %s", wartoscWiersza(ekran, "Czas ON").c_str(), wartoscWiersza(ekran, "Czas OFF").c_str());
+  sprawdz(wartoscWiersza(ekran, "Czas ON") == "5" && wartoscWiersza(ekran, "Czas OFF") == "10", "ekran pokazuje wartosci centrali (5 / 10)");
+  lv_obj_t* plusOn = przyciskWiersza(ekran, "Czas ON", LV_SYMBOL_PLUS);
+  lv_obj_t* plusOff = przyciskWiersza(ekran, "Czas OFF", LV_SYMBOL_PLUS);
+  sprawdz(plusOn != nullptr && plusOff != nullptr, "wiersze maja przyciski +");
+  if (plusOn == nullptr || plusOff == nullptr) return;
+
+  // 1) Piec szybkich klikniec "+" (co 100 ms) przy POST-cie trwajacym 300 ms.
+  size_t od = g_atrapa.serial.size();
+  int postowPrzed = kopia(0).nPost;
+  for (int i = 0; i < 5; i++) {
+    { LiczFirmware licz; lv_event_send(plusOn, LV_EVENT_CLICKED, nullptr); }
+    biegnij(100);
+  }
+  sprawdz(wartoscWiersza(ekran, "Czas ON") == "10", "od razu po kliknieciach ekran pokazuje 10");
+  biegnij(3000);
+  {
+    const Centrala c = kopia(0);
+    info("POST-ow po 5 kliknieciach: %d; ostatni: \"%s\"; centrala ma czasOn=%ld", c.nPost - postowPrzed,
+         c.posty.empty() ? "" : c.posty.back().c_str(), c.ustawieniaZapisane.count("czasOn") ? c.ustawieniaZapisane.at("czasOn") : -1L);
+    sprawdz(c.ustawieniaZapisane.count("czasOn") == 1 && c.ustawieniaZapisane.at("czasOn") == 10, "centrala dostala koncowa wartosc 10 (do v1.4.1: 7 - co drugie klikniecie ginelo)");
+    sprawdz(c.nPost - postowPrzed == 2 && postowZPolem(c, "czasOn") == 2, "dwa POST-y: pierwsze klikniecie od razu, reszta scalona w jedno");
+    sprawdz(wartoscWiersza(ekran, "Czas ON") == "10", "po odswiezeniu z centrali ekran nadal pokazuje 10");
+    sprawdz(!logMa("jeszcze w toku, pomijam", "", "", od), "zadne polecenie nie zostalo pominiete");
+  }
+
+  // 2) Przytrzymany "+" na Czas OFF: 20 powtorzen co 100 ms (10 -> 30).
+  od = g_atrapa.serial.size();
+  postowPrzed = kopia(0).nPost;
+  for (int i = 0; i < 20; i++) {
+    { LiczFirmware licz; lv_event_send(plusOff, LV_EVENT_LONG_PRESSED_REPEAT, nullptr); }
+    biegnij(100);
+  }
+  sprawdz(wartoscWiersza(ekran, "Czas OFF") == "30", "w trakcie przytrzymania ekran idzie za palcem (30)");
+  biegnij(3000);
+  {
+    const Centrala c = kopia(0);
+    info("POST-ow po przytrzymaniu (20 krokow): %d; centrala ma czasOff=%ld", c.nPost - postowPrzed,
+         c.ustawieniaZapisane.count("czasOff") ? c.ustawieniaZapisane.at("czasOff") : -1L);
+    sprawdz(c.ustawieniaZapisane.count("czasOff") == 1 && c.ustawieniaZapisane.at("czasOff") == 30, "centrala ma koncowa wartosc 30");
+    sprawdz(c.nPost - postowPrzed >= 1 && c.nPost - postowPrzed <= 3, "przytrzymanie = najwyzej 3 POST-y, nie 20");
+    sprawdz(wartoscWiersza(ekran, "Czas OFF") == "30", "ekran po odswiezeniu: 30");
+  }
+
+  // 3) GET ustawien wystartowany w trakcie polecenia niesie stara wartosc -
+  //    pole w locie zostaje z ekranu, reszta pol jest przyjmowana.
+  od = g_atrapa.serial.size();
+  { LiczFirmware licz; lv_event_send(plusOn, LV_EVENT_CLICKED, nullptr); }   // czasOn 10 -> 11, POST trwa 300 ms
+  pobierzUstawienia();                                                         // GET startuje zaraz po nim
+  biegnij(150);
+  sprawdz(wartoscWiersza(ekran, "Czas ON") == "11", "odpowiedz GET-a sprzed konca polecenia nie cofa ekranu do 10");
+  sprawdz(logMa("tag=KOMENDA zdarzenie=stara_wartosc_pominieta", "pola=czasOn", "", od), "log: stara_wartosc_pominieta pola=czasOn");
+  biegnij(3000);
+  sprawdz(wartoscWiersza(ekran, "Czas ON") == "11" && kopia(0).ustawieniaZapisane.at("czasOn") == 11, "po poleceniu obie strony maja 11");
+
+  // 4) Centrala odrzuca polecenie: pasek bledu z powodem, ekran wraca do
+  //    wartosci centrali.
+  od = g_atrapa.serial.size();
+  ustaw(0, [](Centrala& c) { c.postBlad = "tryb serwa nie jest reczny"; c.postOpoznienieMs = 0; });
+  { LiczFirmware licz; lv_event_send(plusOn, LV_EVENT_CLICKED, nullptr); }   // 11 -> 12 na ekranie
+  biegnij(1000);
+  info("pasek bledu: \"%s\"", lvgl_dashboard_poc_blad_polecenia_tekst());
+  sprawdz(std::string(lvgl_dashboard_poc_blad_polecenia_tekst()) == "ODRZUCONE: tryb serwa nie jest reczny", "ekran: pasek \"ODRZUCONE: tryb serwa nie jest reczny\"");
+  sprawdz(logMa("tag=KOMENDA lvl=WARN zdarzenie=polecenie_nieudane", "pole=czasOn", "powod=odrzucone", od), "log: polecenie_nieudane powod=odrzucone");
+  sprawdz(wartoscWiersza(ekran, "Czas ON") == "11", "ekran wraca do wartosci centrali (11)");
+  biegnij(3000);
+  sprawdz(std::string(lvgl_dashboard_poc_blad_polecenia_tekst()).empty(), "pasek znika po 3 s");
+
+  // 5) Centrala nie odpowiada na POST: pasek "POLECENIE NIE DOSZLO DO CENTRALI".
+  od = g_atrapa.serial.size();
+  ustaw(0, [](Centrala& c) { c.postBlad.clear(); c.trybPost = TRYB_MILCZY; });
+  { LiczFirmware licz; lv_event_send(plusOff, LV_EVENT_CLICKED, nullptr); }
+  biegnij(3000);
+  info("pasek bledu: \"%s\"", lvgl_dashboard_poc_blad_polecenia_tekst());
+  sprawdz(std::string(lvgl_dashboard_poc_blad_polecenia_tekst()) == "POLECENIE NIE DOSZLO DO CENTRALI", "ekran: pasek \"POLECENIE NIE DOSZLO DO CENTRALI\"");
+  sprawdz(logMa("zdarzenie=polecenie_nieudane", "pole=czasOff", "powod=brak_odpowiedzi", od) && ileLinii("[KOMENDA] POST nieudany", "", "", od) == 1,
+          "log: polecenie_nieudane powod=brak_odpowiedzi (jedna linia)");
+  zrzutEkranu("1_pasek_bledu");
+  ustaw(0, [](Centrala& c) { c.trybPost = TRYB_OK; });
+  biegnij(4000);
+  { LiczFirmware licz; lv_scr_load(pulpit); }
+  biegnij(3000);
+  sprawdz(ekranMa("55°C"), "pulpit dziala dalej");
+}
+
+// --- 15c -------------------------------------------------------------------
+// [v1.4.2 B6] Centrala wylaczona na dlugo (np. na noc). Do v1.4.1 panel po
+// trzech szybkich restartach restartowal sie dalej co 5 min - przez noc ok.
+// 100 razy. Teraz: czwarty restart dopiero po 6 h, a w miedzyczasie zwykle
+// ponawianie polaczenia (i, przy milczacej centrali, wymuszanie co 30 s).
+void scenariuszBezCentraliDlugo() {
+#ifdef DIAG_MA_RATUNEK
+  if (!MA_RATUNEK) { sprawdz(false, "firmware ma pamiec autorestartu"); return; }
+  // Po trzech samoczynnych restartach (45 s, 90 s, 3 min) - sieci centrali nie ma.
+  pamiecPoAutorestarcie(3, diag::PRZYCZYNA_WIFI, 201);
+  setup();
+  size_t od = g_atrapa.serial.size();
+  biegnij(20UL * 60UL * 1000UL);   // 20 minut
+  info("naglowek po 20 min bez centrali: \"%s\"", znacznikNaglowka().c_str());
+  info("prob polaczenia WiFi w 20 min: %d", ileLinii("zdarzenie=reconnect_probe", "", "", od));
+  sprawdz(g_atrapa.restarty == 0, "po trzech restartach z rzedu panel NIE restartuje sie czwarty raz po 5 min (ani w 20 min)");
+  sprawdz(znacznikNaglowka().rfind("BRAK WIFI ", 0) == 0 && znacznikNaglowka().find(" min") != std::string::npos && znacznikNaglowka().find(" s") == std::string::npos,
+          "naglowek liczy minuty: \"BRAK WIFI 20 min\", nie \"1200 s\"");
+  sprawdz(ileLinii("zdarzenie=reconnect_probe", "", "", od) >= 30, "panel probuje polaczyc sie z siecia centrali dalej (co <= 30 s)");
+  // Centrala wraca.
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  od = g_atrapa.serial.size();
+  biegnij(60000);
+  sprawdz(ekranMa("55°C") && logMa("zdarzenie=dane_wrocily", "", "", od), "najdalej minute po powrocie centrali kafelki pokazuja dane - bez restartu");
+  sprawdz(g_atrapa.restarty == 0, "nadal bez restartu");
+#else
+  sprawdz(false, "firmware ma pamiec autorestartu");
+#endif
+}
+
+// --- 15d -------------------------------------------------------------------
+// [v1.4.2 B6] To samo, gdy WiFi jest, a centrala milczy (np. zawieszony
+// serwer WWW centrali): bez czwartego restartu, za to wymuszone ponowne
+// laczenie co 30 s (Ratunek::PROG_PONOWIENIA_MS).
+void scenariuszCentralaMilczyDlugo() {
+#ifdef DIAG_MA_RATUNEK
+  if (!MA_RATUNEK) { sprawdz(false, "firmware ma pamiec autorestartu"); return; }
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; c.trybUstawienia = TRYB_MILCZY; });
+  pamiecPoAutorestarcie(3, diag::PRZYCZYNA_MILCZY, 0);
+  setup();
+  size_t od = g_atrapa.serial.size();
+  biegnij(5UL * 60UL * 1000UL);   // 5 minut
+  const int wymuszen = ileLinii("zdarzenie=wymuszam_polaczenie", "", "", od);
+  info("naglowek po 5 min milczenia: \"%s\"; wymuszen polaczenia: %d", znacznikNaglowka().c_str(), wymuszen);
+  sprawdz(g_atrapa.restarty == 0, "milczaca centrala: tez bez czwartego restartu");
+  sprawdz(wymuszen >= 9 && wymuszen <= 12, "po dwoch szybkich wymuszeniach (12 s, 24 s) kolejne co 30 s (w 5 min: 11)");
+  sprawdz(znacznikNaglowka().rfind("CENTRALA MILCZY ", 0) == 0 && znacznikNaglowka().find(" min") != std::string::npos, "naglowek: \"CENTRALA MILCZY <n> min\"");
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_OK; c.trybUstawienia = TRYB_OK; });
+  od = g_atrapa.serial.size();
+  biegnij(45000);
+  sprawdz(ekranMa("55°C") && logMa("zdarzenie=dane_wrocily", "", "", od), "gdy centrala znow odpowiada: dane wracaja bez restartu");
 #else
   sprawdz(false, "firmware ma pamiec autorestartu");
 #endif
@@ -4424,6 +4676,9 @@ const Scenariusz SCENARIUSZE[] = {
     {"nieudany_post", "jedno nieudane polecenie z dotyku", scenariuszNieudanyPost},
     {"bateria_i_log", "minuta zwyklej pracy: objetosc logu, wskaznik baterii", scenariuszBateriaILog},
     {"poprawki_v141", "male poprawki po audycie: limit odpowiedzi 8 kB, zapas stosu i odmowy pamieci w logu, zrzut po awarii, jasnosc min. 5 % (v1.4.1)", scenariuszPoprawkiV141},
+    {"polecenia_nie_gina", "kolejka polecen: szybkie klikanie i przytrzymany przycisk, stara wartosc z GET-a, pasek bledu (v1.4.2)", scenariuszPoleceniaNieGina},
+    {"bez_centrali_dlugo", "centrala wylaczona na dlugo: bez restartu co 5 min, ponawianie polaczenia, naglowek w minutach (v1.4.2)", scenariuszBezCentraliDlugo},
+    {"centrala_milczy_dlugo", "WiFi jest, centrala milczy dlugo: bez restartu co 5 min, wymuszone laczenie co 30 s (v1.4.2)", scenariuszCentralaMilczyDlugo},
     {"skan_zawieszony", "skan WiFi, ktory sie nie konczy", scenariuszSkanZawieszony},
     {"ustawienia_milcza", "status dziala, /api/ustawienia-get bez odpowiedzi", scenariuszUstawieniaMilcza},
     {"gola_plytka", "centrala bez czujnikow + symulacja czujnika (stanowisko z 2026-11-11)", scenariuszGolaPlytka},

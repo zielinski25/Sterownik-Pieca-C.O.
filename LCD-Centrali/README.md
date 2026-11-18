@@ -30,6 +30,33 @@ aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 
+## Co zmienia v1.4.2
+
+**Polecenia z dotyku nie giną i koniec restartów bez centrali** (krok 4 z
+`WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`, rozdział 4 = znalezisko **C4**
+z audytu, oraz **B6**). Krok 3 (sen na baterii) celowo później — czeka na
+podłączenie baterii i przycisku do płytki.
+
+| Co | Było (v1.4.1) | Jest (v1.4.2) |
+|---|---|---|
+| **C4** drugie dotknięcie w czasie, gdy poprzednie polecenie jeszcze idzie do centrali (100–400 ms) | szło do kosza (`poprzednia komenda jeszcze w toku, pomijam`): przy szybkim klikaniu `+` ginęło co drugie, przy przytrzymanym przycisku większość; ekran pokazywał liczbę, której centrala nie dostała, a następny odczyt ustawień „cofał” ją bez słowa | **kolejka poleceń** (`diag::KolejkaPolecen`): polecenie czeka, aż kanał się zwolni; dla tego samego pola liczy się ostatnia wartość; pole zmieniane w kolejce czeka 200 ms ciszy — przytrzymany przycisk to **jeden–dwa POST-y** z końcową wartością zamiast dwudziestu; pojedyncze dotknięcie przy wolnym kanale idzie od razu, jak dotąd |
+| **C4** odczyt ustawień, który wystartował przed końcem polecenia | nadpisywał pole starą wartością | pole zmieniane (w kolejce, w locie, zakończone po starcie odczytu) **zostaje z ekranu**; log `tag=KOMENDA zdarzenie=stara_wartosc_pominieta pola=`; po ostatnim poleceniu serii nowy odczyt — wtedy wartość centrali jest wiążąca (np. gdy przytnie zakres) |
+| **C4** `pobierzUstawienia()` w czasie trwającego odczytu | prośba przepadała (ekran ze starą wartością nawet 5 s) | odczyt rusza ponownie zaraz po bieżącym |
+| **C4** polecenie bez potwierdzenia centrali | tylko log | **czerwony pasek na dole ekranu przez 3 s** (znika też po dotknięciu): `POLECENIE NIE DOSZLO DO CENTRALI` albo `ODRZUCONE: tryb serwa nie jest reczny` (powód z centrali, gdy jest bez polskich liter); log `tag=KOMENDA lvl=WARN zdarzenie=polecenie_nieudane pole= powod=odrzucone|brak_odpowiedzi` |
+| **B6** samoczynny restart bez danych | 45 s, 90 s, 3 min, potem **co 5 min bez końca** — centrala wyłączona na noc = ok. 100 restartów panelu (czarny ekran, skan WiFi, wpis w logu) bez żadnego skutku | 45 s, 90 s, 3 min, potem **raz na 6 h** (`diag::PROG_RESTARTU_DLUGI_MS`, zabezpieczenie na wypadek zawieszonego radia); do powrotu centrali wystarcza zwykłe ponawianie połączenia (co ≤ 30 s), a gdy WiFi jest, a centrala milczy — wymuszone łączenie od nowa **co 30 s** (`Ratunek::PROG_PONOWIENIA_MS`; do v1.4.1 tylko dwa razy, potem czekanie na restart) |
+| **B6** nagłówek bez danych | `BRAK WIFI 7384 s` | `BRAK WIFI 2 h 03 min` (do minuty sekundy, do godziny minuty); odliczanie `RESTART ZA 10 s: …` bez zmian |
+
+Nie zmienia się nic w rozmowie z centralą (te same adresy, te same ciała
+POST) ani w wyglądzie ekranów poza paskiem błędu. Testy na PC: 51
+scenariuszy (`testy_host/uruchom_testy.sh`, nowe: `polecenia_nie_gina`,
+`bez_centrali_dlugo`, `centrala_milczy_dlugo`) + 499 sprawdzeń
+jednostkowych (`test_diagnostyka.cpp`: kolejka, drabina ratunkowa, nagłówek)
++ ASan/UBSan + nagłówki rdzenia 3.3.8.
+
+**Z v1.4.1 na v1.4.2** zmieniają się cztery pliki w `src/`: `main.cpp`,
+`diagnostyka_panelu.h`, `dashboard_lvgl_poc.cpp`, `dashboard_lvgl_poc.h`.
+Można wgrać kablem albo przez centralę (`/update_panel`).
+
 ## Co zmienia v1.4.1
 
 **Małe i pewne poprawki po audycie z 2026-11-18** (krok 1 z
@@ -64,9 +91,9 @@ jedna wartość co 10 s 18,30 → 0,19; ekran POMPA 24,39 → 8,86 (animacje iko
 Przy centrali, która milczy, zostaje 2,45 (licznik sekund w nagłówku).
 
 Czego v1.4.1 **nie** zmienia (kolejne kroki, osobno): sen na baterii i próg
-niskiej baterii (krok 3), komendy gubione w czasie pobierania (krok 4),
-rzadsze odpytywanie i mniej próśb o pamięć (krok 5), 80 MHz (krok 6),
-martwy kod (krok 7).
+niskiej baterii (krok 3), komendy gubione w czasie pobierania (krok 4 —
+zrobiony w v1.4.2, wyżej), rzadsze odpytywanie i mniej próśb o pamięć
+(krok 5), 80 MHz (krok 6), martwy kod (krok 7).
 
 **Jak czytać `tag=ZRZUT`.** Adresy z `pc=` i `slad=` zamienia się na nazwy
 funkcji poleceniem `xtensa-esp32-elf-addr2line -pfiaC -e .pio/build/esp32dev/firmware.elf 0x400d1234 ...`
@@ -459,7 +486,7 @@ Gdy panel nie ma danych z centrali, sam robi to, co dotąd pomagało:
 | 10 s | kafelki `--` (jak w v1.2.0) i **powód w nagłówku**: `BRAK WIFI`, `CENTRALA MILCZY` albo `ZLA ODPOWIEDZ`, z licznikiem sekund |
 | 12 s, gdy WiFi jest „połączone”, a centrala milczy | rozłącza się i łączy od nowa; po kolejnych 12 s jeszcze raz, szukając sieci centrali od zera. v1.1.0 i v1.2.0 w tym stanie nie robiły nic |
 | 45 s | **restartuje się sam**; ostatnie 10 s nagłówek odlicza `RESTART ZA 7 s: …` |
-| nadal bez danych | kolejne restarty po 90 s, 3 min, potem co 5 min (centrala wyłączona na dłużej nie powoduje restartów w kółko); licznik wraca do 45 s po 2 minutach poprawnych danych |
+| nadal bez danych | kolejne restarty po 90 s, 3 min, potem co 5 min (**od v1.4.2: potem raz na 6 h**, a przy milczącej centrali wymuszone łączenie co 30 s — patrz „Co zmienia v1.4.2”); licznik wraca do 45 s po 2 minutach poprawnych danych |
 
 Gdy centrala odpowiada, ale nieczytelnie (`ZLA ODPOWIEDZ`), restarty są
 najwyżej dwa z rzędu — trzeci nic by nie dał.
@@ -685,6 +712,13 @@ tag=PANEL zdarzenie=autorestart_zgloszony powod=auto_wifi_r201_n1_t45_h61_b31_en
   `restart_za_s=-1` — przy tej przyczynie restartu już nie będzie.
 - `tag=PANEL lvl=WARN zdarzenie=autorestart_pominiety` — odpowiedzi centrali
   są nieczytelne mimo dwóch restartów z rzędu; panel czeka bez restartu.
+- `tag=KOMENDA lvl=WARN zdarzenie=polecenie_nieudane pole=czasOn cialo="pole=czasOn&wartosc=7" powod=odrzucone|brak_odpowiedzi`
+  (od v1.4.2) — centrala nie potwierdziła polecenia z dotyku; to samo
+  pokazuje czerwony pasek na dole ekranu. `zdarzenie=stara_wartosc_pominieta
+  pola=…` — odczyt ustawień wystartował przed końcem polecenia, wymienione
+  pola zostały z ekranu. `zdarzenie=kolejka_pelna` — więcej niż 6 różnych pól
+  czekających naraz (w praktyce nieosiągalne), polecenie odrzucone z paskiem
+  `ZA DUZO POLECEN NARAZ - POWTORZ`.
 - `tag=PANEL zdarzenie=autorestart_licznik_wyzerowany z_rzedu=1->0 w_serii=1->1`
   — dane poprawne od 2 minut: następny samoczynny restart znów po 45 s.
   Po godzinie taka sama linia z `w_serii=…->0`: koniec serii.

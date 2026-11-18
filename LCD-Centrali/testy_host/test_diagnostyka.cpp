@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 static int g_ok = 0, g_zle = 0;
 
@@ -328,12 +329,26 @@ static void testPrzyczyna() {
   SPRAWDZ(std::strcmp(z, "BRAK PAMIECI 14 s") == 0);
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_PAMIEC, 38, 7);
   SPRAWDZ(std::strcmp(z, "RESTART ZA 7 s: BRAK PAMIECI") == 0);
+  // [v1.4.2 B6] dluzszy czas bez danych: minuty i godziny zamiast tysiecy sekund
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_WIFI, 59, BEZ_RESTARTU);
+  SPRAWDZ(std::strcmp(z, "BRAK WIFI 59 s") == 0);
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_WIFI, 60, BEZ_RESTARTU);
+  SPRAWDZ(std::strcmp(z, "BRAK WIFI 1 min") == 0);
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_MILCZY, 754, 21000);
+  SPRAWDZ(std::strcmp(z, "CENTRALA MILCZY 12 min") == 0);
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_WIFI, 7384, 100);
+  SPRAWDZ(std::strcmp(z, "BRAK WIFI 2 h 03 min") == 0);
+  znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_WIFI, 7384, 10);
+  SPRAWDZ(std::strcmp(z, "RESTART ZA 10 s: BRAK WIFI") == 0);     // odliczanie bez zmian
+  czasBrakuDanych(z, sizeof(z), 36000);
+  SPRAWDZ(std::strcmp(z, "10 h 00 min") == 0);
+  czasBrakuDanych(nullptr, 0, 5);                                   // nie moze sie wywrocic
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_BRAK, 3, 42);
   SPRAWDZ(std::strcmp(z, "") == 0);                                // dane sa - nic do pokazania
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_MILCZY, 299, 300);
   SPRAWDZ(std::strlen(z) <= 31);                                   // najdluzszy zwykly napis
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_ODPOWIEDZ, 200, BEZ_RESTARTU);
-  SPRAWDZ(std::strcmp(z, "ZLA ODPOWIEDZ 200 s") == 0);             // restartu nie bedzie - bez odliczania
+  SPRAWDZ(std::strcmp(z, "ZLA ODPOWIEDZ 3 min") == 0);             // restartu nie bedzie - bez odliczania; [v1.4.2] 200 s = "3 min"
   char ciasny[10];
   znacznikBrakuDanych(ciasny, sizeof(ciasny), PRZYCZYNA_MILCZY, 14, 3);
   SPRAWDZ(std::strlen(ciasny) == 9);                               // obciecie bez wyjscia poza bufor
@@ -345,8 +360,9 @@ static void testRatunek() {
   SPRAWDZ(progRestartuMs(0) == 45000UL);
   SPRAWDZ(progRestartuMs(1) == 90000UL);
   SPRAWDZ(progRestartuMs(2) == 180000UL);
-  SPRAWDZ(progRestartuMs(3) == 300000UL);
-  SPRAWDZ(progRestartuMs(250) == 300000UL);                        // dalej juz zawsze co 5 min
+  SPRAWDZ(progRestartuMs(3) == 21600000UL);                       // [v1.4.2 B6] czwarty i dalsze: co 6 h (do v1.4.1 co 5 min)
+  SPRAWDZ(progRestartuMs(250) == 21600000UL);
+  SPRAWDZ(PROG_RESTARTU_DLUGI_MS == 6UL * 3600UL * 1000UL);
 
   // 1) Zwykla praca: status co 2 s -> nigdy zadnej akcji.
   {
@@ -424,6 +440,32 @@ static void testRatunek() {
     Ratunek::Akcja a = Ratunek::NIC;
     for (uint32_t t = 30005; t <= 42005 && a == Ratunek::NIC; t += 5) a = r.krok(t, true, 45000);
     SPRAWDZ(a == Ratunek::POLACZ_PONOWNIE);                         // znow najpierw lagodniejszy krok
+  }
+  // 2b) [v1.4.2 B6] Centrala milczy dlugo, a restart jest daleko (prog 6 h):
+  //     po dwoch szybkich wymuszeniach kolejne co 30 s, zawsze bez BSSID.
+  {
+    Ratunek r;
+    std::vector<uint32_t> kiedy;
+    int zBssid = 0, restartow = 0;
+    for (uint32_t t = 0; t <= 200000; t += 5) {
+      const Ratunek::Akcja a = r.krok(t, true, progRestartuMs(3));
+      if (a == Ratunek::POLACZ_PONOWNIE) { zBssid++; kiedy.push_back(t); }
+      if (a == Ratunek::POLACZ_PONOWNIE_BEZ_BSSID) kiedy.push_back(t);
+      if (a == Ratunek::RESTART) restartow++;
+    }
+    SPRAWDZ(restartow == 0);
+    SPRAWDZ(zBssid == 1);                                           // tylko pierwsze wymuszenie z BSSID
+    SPRAWDZ(kiedy.size() == 2 + (200000 - 24000) / 30000);          // 12 s, 24 s, potem 54 s, 84 s, ... (7 kolejnych)
+    SPRAWDZ(kiedy[0] == 12000 && kiedy[1] == 24000 && kiedy[2] == 54000 && kiedy[3] == 84000);
+    SPRAWDZ(r.wymuszen == (uint8_t)kiedy.size());
+  }
+  // 2c) [v1.4.2 B6] ...a bez WiFi (zwykle ponawianie polaczenia) nadal nic.
+  {
+    Ratunek r;
+    int wymuszen = 0;
+    for (uint32_t t = 0; t <= 200000; t += 5)
+      if (r.krok(t, false, progRestartuMs(3)) != Ratunek::NIC) wymuszen++;
+    SPRAWDZ(wymuszen == 0);
   }
   // 7) Dluzszy prog (po wczesniejszym samoczynnym restarcie).
   {
@@ -884,7 +926,124 @@ static void testOtaZapisIDecyzja() {
   SPRAWDZ(otaDecyzja(nowaTenSamTag, OBRAZ_B, z, dobre).akcja == OTA_AKCJA_START);
 }
 
+// [v1.4.2 C4] Kolejka polecen - patrz naglowek KolejkaPolecen w diagnostyka_panelu.h.
+static void testKolejkaPolecen() {
+  using namespace diag;
+  // 1) Jedno dotkniecie przy wolnym kanale: idzie od razu, bez czekania na cisze.
+  {
+    KolejkaPolecen k;
+    SPRAWDZ(k.pusta() && !k.gotowa(0));
+    SPRAWDZ(k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=6", 2, 1000));
+    SPRAWDZ(!k.pusta() && k.gotowa(1000));
+    const Polecenie& w = k.wystartuj();
+    SPRAWDZ(std::strcmp(w.sciezka, "/api/ustawienia-set") == 0 && std::strcmp(w.cialo, "pole=czasOn&wartosc=6") == 0 && w.po == 2);
+    SPRAWDZ(k.pusta() && k.lotTrwa);
+    SPRAWDZ(k.poleZmieniane("czasOn", 900));                        // w locie - GET sprzed chwili ma stara wartosc
+    SPRAWDZ(!k.poleZmieniane("czasOff", 900));
+    k.zakoncz(1300);
+    SPRAWDZ(!k.lotTrwa);
+    SPRAWDZ(k.poleZmieniane("czasOn", 1200));                       // GET wystartowal przed koncem polecenia -> stara
+    SPRAWDZ(k.poleZmieniane("czasOn", 1299));
+    SPRAWDZ(!k.poleZmieniane("czasOn", 1300));                      // ta sama milisekunda = odczyt po ostatnim poleceniu serii (ten sam obrot petli)
+    SPRAWDZ(!k.poleZmieniane("czasOn", 1301));                      // GET po zakonczeniu -> wartosc z centrali jest wiazaca
+  }
+  // 2) Szybkie klikanie "+" w trakcie POST-a: trzy klikniecia = jedno
+  //    polecenie z OSTATNIA wartoscia, wyslane po ciszy 200 ms.
+  {
+    KolejkaPolecen k;
+    k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=6", 2, 0);
+    k.wystartuj();                                                  // POST(6) w locie
+    k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=7", 2, 150);
+    k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=8", 2, 300);
+    k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=9", 2, 450);
+    SPRAWDZ(k.n == 1 && k.dodanych == 2 && k.scalonych == 2);
+    k.zakoncz(500);
+    SPRAWDZ(!k.gotowa(500) && !k.gotowa(649));                      // 200 ms ciszy od ostatniej zmiany (450)
+    SPRAWDZ(k.gotowa(650));
+    SPRAWDZ(std::strcmp(k.wystartuj().cialo, "pole=czasOn&wartosc=9") == 0);
+    SPRAWDZ(k.pusta());
+  }
+  // 3) Przytrzymany przycisk (zmiana co 100 ms przez 2 s): pierwsza wartosc
+  //    idzie od razu, reszta czeka na puszczenie - lacznie 2 POST-y, nie 20.
+  {
+    KolejkaPolecen k;
+    int postow = 0;
+    bool kanalZajety = false;
+    uint32_t koniecLotu = 0;
+    char cialo[48];
+    for (uint32_t t = 0; t <= 3000; t += 5) {
+      if (kanalZajety && t >= koniecLotu) { k.zakoncz(t); kanalZajety = false; }
+      if (t >= 400 && t <= 2300 && t % 100 == 0) {                  // repeat co 100 ms od 0,4 s do 2,3 s
+        std::snprintf(cialo, sizeof(cialo), "pole=tempOn&wartosc=%lu", (unsigned long)(40 + (t - 400) / 100));
+        k.dodaj("/api/ustawienia-set", "tempOn", cialo, 2, t);
+      }
+      if (!kanalZajety && k.gotowa(t)) { k.wystartuj(); kanalZajety = true; koniecLotu = t + 250; postow++; }
+    }
+    SPRAWDZ(postow == 2);
+    SPRAWDZ(std::strcmp(k.wLocie.cialo, "pole=tempOn&wartosc=59") == 0);   // ostatni POST = koncowa wartosc
+  }
+  // 4) Rozne pola zachowuja kolejnosc; to samo pole na innym adresie to inne polecenie.
+  {
+    KolejkaPolecen k;
+    k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=6", 2, 0);
+    k.wystartuj();
+    k.dodaj("/api/ustawienia-set", "czasOff", "pole=czasOff&wartosc=10", 2, 10);
+    k.dodaj("/api/pompa-manual", "stan", "stan=wl", 1, 20);
+    k.dodaj("/api/servo-manual", "klapa", "os=klapa&procent=40", 1, 30);
+    k.dodaj("/api/ustawienia-set", "czasOff", "pole=czasOff&wartosc=11", 2, 40);
+    SPRAWDZ(k.n == 3);
+    SPRAWDZ(k.poleZmieniane("czasOff", 100000) && k.poleZmieniane("stan", 100000) && k.poleZmieniane("klapa", 100000));
+    k.zakoncz(100);
+    SPRAWDZ(!k.gotowa(200) && k.gotowa(240));                       // czasOff scalone -> cisza 200 ms od t=40
+    SPRAWDZ(std::strcmp(k.wystartuj().cialo, "pole=czasOff&wartosc=11") == 0);
+    k.zakoncz(400);
+    SPRAWDZ(k.gotowa(400));                                         // "stan" nie bylo scalane - od razu
+    SPRAWDZ(std::strcmp(k.wystartuj().cialo, "stan=wl") == 0);
+    k.zakoncz(500);
+    SPRAWDZ(std::strcmp(k.wystartuj().sciezka, "/api/servo-manual") == 0);
+    k.zakoncz(600);
+    SPRAWDZ(k.pusta() && !k.lotTrwa);
+    SPRAWDZ(k.poleZmieniane("klapa", 599) && !k.poleZmieniane("klapa", 600));
+  }
+  // 5) Pelna kolejka: siodme ROZNE pole przepada (i jest policzone), ale
+  //    zmiana czekajacego pola nadal przechodzi.
+  {
+    KolejkaPolecen k;
+    k.dodaj("/api/ustawienia-set", "a", "pole=a&wartosc=1", 2, 0);
+    k.wystartuj();
+    const char* pola[] = {"b", "c", "d", "e", "f", "g"};
+    for (const char* pole : pola) SPRAWDZ(k.dodaj("/api/ustawienia-set", pole, "x", 2, 1));
+    SPRAWDZ(k.n == KolejkaPolecen::MAKS);
+    SPRAWDZ(!k.dodaj("/api/ustawienia-set", "h", "x", 2, 2));
+    SPRAWDZ(k.odrzuconych == 1 && k.n == KolejkaPolecen::MAKS);
+    SPRAWDZ(k.dodaj("/api/ustawienia-set", "d", "pole=d&wartosc=2", 2, 3));
+    SPRAWDZ(k.n == KolejkaPolecen::MAKS && k.scalonych == 1);
+  }
+  // 6) Pamiec zakonczen jest pierscieniem: po 8 innych poleceniach stare
+  //    zakonczenie znika, ale to nie szkodzi - GET sprzed niego i tak nie
+  //    moze juz byc w locie.
+  {
+    KolejkaPolecen k;
+    k.dodaj("/api/ustawienia-set", "pierwsze", "x", 2, 0); k.wystartuj(); k.zakoncz(100);
+    SPRAWDZ(k.poleZmieniane("pierwsze", 50));
+    char nazwa[20];
+    for (int i = 0; i < KolejkaPolecen::ZAKONCZEN; i++) {
+      std::snprintf(nazwa, sizeof(nazwa), "p%d", i);
+      k.dodaj("/api/ustawienia-set", nazwa, "x", 2, 200 + i); k.wystartuj(); k.zakoncz(300 + i);
+    }
+    SPRAWDZ(!k.poleZmieniane("pierwsze", 50));
+    SPRAWDZ(k.poleZmieniane("p7", 300));                            // p7 skonczylo sie w 307 > 300
+  }
+  // 7) Za dlugie teksty sa obcinane, nie przepelniaja buforow.
+  {
+    KolejkaPolecen k;
+    SPRAWDZ(k.dodaj("/api/ustawienia-set", "bardzo_dluga_nazwa_pola_ponad_limit", "pole=bardzo_dluga_nazwa_pola_ponad_limit&wartosc=123456789", 2, 0));
+    SPRAWDZ(std::strlen(k.p[0].klucz) == 19 && std::strlen(k.p[0].cialo) == 47);
+  }
+}
+
 int main() {
+  testKolejkaPolecen();
   testOtaNarzedzia();
   testOtaZapisIDecyzja();
   testPrzyczyna();

@@ -484,14 +484,22 @@ inline const char* nazwaKoduRozlaczenia(uint8_t kod) {
 // Po ilu milisekundach BEZ poprawnie odczytanego statusu panel sam sie
 // restartuje. `kolejnych` = ile takich restartow juz bylo z rzedu (bez ani
 // jednego poprawnego statusu pomiedzy nimi): 45 s, potem 90 s, 3 min i dalej
-// co 5 min - zeby przy centrali wylaczonej na dlugo panel nie restartowal sie
-// w kolko, a mimo to wrocil do pracy najdalej 5 min po jej powrocie.
+// co 6 GODZIN.
+// [v1.4.2 B6] Do v1.4.1 "dalej" znaczylo "co 5 min": przy centrali wylaczonej
+// na noc panel restartowal sie ~100 razy (kazdy restart = czarny ekran, pelny
+// start, skan WiFi, wpis w logu), a nic z tego nie wynikalo - do powrotu
+// centrali nie trzeba restartu, wystarczy zwykle ponawianie polaczenia
+// (wifiReconnectNonBlocking() co <= 30 s, a przy milczacej centrali
+// Ratunek::PROG_PONOWIENIA_MS). Trzy szybkie restarty zostaja (to one
+// pomagaly w zgloszeniu z 2026-11-12), restart co 6 h to tylko zabezpieczenie
+// na wypadek, gdyby radio panelu po wielu godzinach utknelo.
+static const uint32_t PROG_RESTARTU_DLUGI_MS = 6UL * 3600UL * 1000UL;
 inline uint32_t progRestartuMs(uint8_t kolejnych) {
   switch (kolejnych) {
     case 0:  return 45000UL;
     case 1:  return 90000UL;
     case 2:  return 180000UL;
-    default: return 300000UL;
+    default: return PROG_RESTARTU_DLUGI_MS;
   }
 }
 
@@ -502,7 +510,7 @@ inline uint32_t progRestartuMs(uint8_t kolejnych) {
 // dadza - a kazdy konczylby sie wpisem w logu centrali i wiadomoscia, bo w
 // tym stanie zapytania panelu do centrali DOCIERAJA. Przy braku WiFi i przy
 // milczacej centrali ograniczenia nie ma (progRestartuMs() i tak rozrzedza
-// restarty do jednego na 5 min).
+// restarty: od czwartego jeden na 6 h).
 static const uint8_t MAKS_RESTARTOW_PRZY_ZLEJ_ODPOWIEDZI = 2;
 inline bool restartMaSens(Przyczyna p, uint8_t kolejnych) {
   return !(p == PRZYCZYNA_ODPOWIEDZ && kolejnych >= MAKS_RESTARTOW_PRZY_ZLEJ_ODPOWIEDZI);
@@ -557,6 +565,12 @@ struct Ratunek {
   // routerem - patrz wpis z 2026-09-12 w HISTORII ZMIAN main.cpp).
   static const uint32_t PROG_MILCZENIA_MS = 12000;
   static const uint8_t  MAKS_WYMUSZEN = 2;
+  // [v1.4.2 B6] Po dwoch szybkich wymuszeniach (12 s i 24 s) - dalej co 30 s,
+  // dopoki WiFi jest polaczone, a centrala milczy. Do v1.4.1 po drugim
+  // wymuszeniu panel juz tylko czekal na samoczynny restart; teraz restart
+  // przychodzi dopiero po 6 h (progRestartuMs()), wiec bez tego panel przez
+  // 6 h nie probowalby polaczyc sie z centrala od nowa.
+  static const uint32_t PROG_PONOWIENIA_MS = 30000;
 
   uint32_t bezDanychMs;     // ile petla "przezyla" od ostatniego poprawnego statusu
   uint32_t milczyMs;        // ...z tego nieprzerwanie z WiFi polaczonym i centrala milczaca
@@ -599,6 +613,12 @@ struct Ratunek {
       milczyMs = 0;
       return (wymuszen == 1) ? POLACZ_PONOWNIE : POLACZ_PONOWNIE_BEZ_BSSID;
     }
+    if (polaczoneAleMilczy && milczyMs >= PROG_PONOWIENIA_MS && wymuszen >= MAKS_WYMUSZEN) {
+      // [v1.4.2 B6] co 30 s od nowa (bez BSSID: centrala mogla wrocic na innym kanale)
+      if (wymuszen < 250) wymuszen++;
+      milczyMs = 0;
+      return POLACZ_PONOWNIE_BEZ_BSSID;
+    }
     return NIC;
   }
 
@@ -613,9 +633,21 @@ struct Ratunek {
   }
 };
 
+// [v1.4.2 B6] Czas w naglowku: do minuty w sekundach ("34 s"), do godziny w
+// minutach ("12 min"), dalej "2 h 05 min" - od v1.4.2 panel bez centrali
+// pracuje godzinami bez restartu, a "BRAK WIFI 7384 s" nic nie mowi.
+// Wynik zawsze zakonczony zerem.
+inline void czasBrakuDanych(char* wyjscie, size_t n, uint32_t sekund) {
+  if (wyjscie == nullptr || n == 0) return;
+  if (sekund < 60)        snprintf(wyjscie, n, "%lu s", (unsigned long)sekund);
+  else if (sekund < 3600) snprintf(wyjscie, n, "%lu min", (unsigned long)(sekund / 60));
+  else                    snprintf(wyjscie, n, "%lu h %02lu min", (unsigned long)(sekund / 3600), (unsigned long)((sekund % 3600) / 60));
+}
+
 // Tekst na srodku naglowka dashboardu, gdy panel NIE MA danych - zamiast
 // znacznika centrali (patrz znacznikCentrali() nizej w tym pliku):
 //   "CENTRALA MILCZY 14 s"          - czego brakuje i od ilu sekund,
+//   "BRAK WIFI 2 h 05 min"          - to samo po dluzszym czasie (czasBrakuDanych()),
 //   "RESTART ZA 7 s: BRAK WIFI"     - ostatnie 10 s przed samoczynnym restartem.
 // `doRestartuS` = BEZ_RESTARTU, gdy restartu nie bedzie (restartMaSens()).
 // Wynik zawsze zakonczony zerem i nigdy dluzszy niz n-1 znakow.
@@ -624,8 +656,13 @@ inline void znacznikBrakuDanych(char* wyjscie, size_t n, Przyczyna p, uint32_t b
   if (wyjscie == nullptr || n == 0) return;
   wyjscie[0] = '\0';
   if (p == PRZYCZYNA_BRAK) return;
-  if (doRestartuS <= 10) snprintf(wyjscie, n, "RESTART ZA %lu s: %s", (unsigned long)doRestartuS, przyczynaNapis(p));
-  else                   snprintf(wyjscie, n, "%s %lu s", przyczynaNapis(p), (unsigned long)bezDanychS);
+  if (doRestartuS <= 10) {
+    snprintf(wyjscie, n, "RESTART ZA %lu s: %s", (unsigned long)doRestartuS, przyczynaNapis(p));
+  } else {
+    char czas[24];
+    czasBrakuDanych(czas, sizeof(czas), bezDanychS);
+    snprintf(wyjscie, n, "%s %s", przyczynaNapis(p), czas);
+  }
 }
 
 // To, co ma przetrwac samoczynny restart (ESP.restart()). W main.cpp lezy w
@@ -1107,5 +1144,134 @@ inline bool otaSciezkaStatusu(char* wyjscie, size_t n, const char* wersja, const
   }
   return true;
 }
+
+// ============================================================================
+// [v1.4.2 C4] KOLEJKA POLECEN - zeby dotkniecie nie przepadalo
+// ============================================================================
+// Do v1.4.1 kazdy "most" (pompaManualWyslij(), wyslijTrybPracy(), ...) robil:
+// "if (komendaFetch.wTrakcie()) { log 'pomijam'; return; }". POST do centrali
+// trwa 100-400 ms, a drugie dotkniecie "+" przychodzi po ~150 ms - wiec przy
+// szybkim klikaniu co DRUGIE dotkniecie szlo do kosza, a przytrzymany
+// przycisk (LV_EVENT_LONG_PRESSED_REPEAT co 100 ms) wysylal co trzecia-
+// czwarta wartosc. Ekran pokazywal liczbe, ktorej centrala nigdy nie dostala,
+// a nastepny GET /api/ustawienia-get "cofal" ja na oczach uzytkownika.
+//
+// Teraz: polecenie trafia do tej kolejki, a petla glowna wysyla je, gdy kanal
+// sie zwolni. Dla tego samego pola liczy sie OSTATNIA wartosc (wczesniejsze
+// sa scalane - centrala i tak zapisalaby je po kolei, a liczy sie koncowa).
+// Pole, ktorego wartosc zmieniono juz po dodaniu do kolejki (ktos trzyma
+// przycisk), czeka CISZA_MS od ostatniej zmiany - przytrzymanie konczy sie
+// jednym POST-em z koncowa wartoscia, nie dwudziestoma.
+//
+// Druga polowa poprawki: odpowiedz GET /api/ustawienia-get, ktora
+// wystartowala ZANIM polecenie dla pola doszlo do centrali, niesie stara
+// wartosc tego pola. poleZmieniane() mowi wolajacemu, ktore pola z takiej
+// odpowiedzi pominac (pole w kolejce / w locie / zakonczone juz po starcie
+// GET-a). Po ostatnim poleceniu partii petla i tak pyta o ustawienia od
+// nowa - wtedy GET startuje po zakonczeniu polecenia i jego wartosc jest
+// przyjmowana (to centrala ma ostatnie slowo, np. gdy przytnie zakres).
+//
+// Czysta logika (bez HTTP) - testowana w testy_host/test_diagnostyka.cpp.
+// ============================================================================
+struct Polecenie {
+  char     sciezka[24];   // "/api/ustawienia-set", "/api/pompa-manual", "/api/servo-manual"
+  char     klucz[20];     // nazwa pola ("czasOn"), "stan" (pompa), "klapa"/"syberek" (serwo) - po tym scalamy
+  char     cialo[48];     // gotowe cialo POST, np. "pole=czasOn&wartosc=12"
+  uint8_t  po;            // co odswiezyc po zakonczeniu (PoKomendzie z main.cpp - tu tylko przenoszone)
+  uint32_t zmienionoMs;   // ostatnia zmiana wartosci (do liczenia ciszy)
+  bool     scalone;       // wartosc nadpisana zanim polecenie poszlo -> czekaj na cisze
+};
+
+struct KolejkaPolecen {
+  static const uint8_t  MAKS = 6;          // rozne pola czekajace naraz - wiecej niz palcow na jednym ekranie
+  static const uint32_t CISZA_MS = 200;    // dluzej niz odstep LV_EVENT_LONG_PRESSED_REPEAT (100 ms)
+  static const uint8_t  ZAKONCZEN = 8;     // ile ostatnich zakonczonych polecen pamietamy (do poleZmieniane())
+
+  Polecenie p[MAKS];
+  uint8_t   n = 0;
+  Polecenie wLocie;
+  bool      lotTrwa = false;
+  struct Zakonczenie { char klucz[20]; uint32_t ms; bool bylo; };
+  Zakonczenie zak[ZAKONCZEN];
+  uint8_t   zakNastepne = 0;
+  uint32_t  dodanych = 0, scalonych = 0, odrzuconych = 0;   // liczniki do logu
+
+  KolejkaPolecen() { memset(&wLocie, 0, sizeof(wLocie)); memset(zak, 0, sizeof(zak)); memset(p, 0, sizeof(p)); }
+
+  // Dodaje polecenie (albo podmienia wartosc czekajacego juz polecenia dla
+  // tego samego pola). false = kolejka pelna, polecenie PRZEPADLO (wolajacy
+  // pokazuje to uzytkownikowi).
+  bool dodaj(const char* sciezka, const char* klucz, const char* cialo, uint8_t po, uint32_t terazMs) {
+    for (uint8_t i = 0; i < n; i++) {
+      if (strcmp(p[i].klucz, klucz) == 0 && strcmp(p[i].sciezka, sciezka) == 0) {
+        snprintf(p[i].cialo, sizeof(p[i].cialo), "%s", cialo);
+        p[i].po = po;
+        p[i].zmienionoMs = terazMs;
+        p[i].scalone = true;
+        scalonych++;
+        return true;
+      }
+    }
+    if (n >= MAKS) { odrzuconych++; return false; }
+    Polecenie& q = p[n++];
+    snprintf(q.sciezka, sizeof(q.sciezka), "%s", sciezka);
+    snprintf(q.klucz, sizeof(q.klucz), "%s", klucz);
+    snprintf(q.cialo, sizeof(q.cialo), "%s", cialo);
+    q.po = po;
+    q.zmienionoMs = terazMs;
+    q.scalone = false;
+    dodanych++;
+    return true;
+  }
+
+  bool pusta() const { return n == 0; }
+
+  // Czy pierwsze polecenie w kolejce moze juz isc (wolajacy sprawdza osobno,
+  // czy kanal HTTP jest wolny). Polecenie, ktorego wartosc zmieniano juz w
+  // kolejce, czeka na CISZA_MS od ostatniej zmiany - patrz naglowek.
+  bool gotowa(uint32_t terazMs) const {
+    if (n == 0) return false;
+    if (!p[0].scalone) return true;
+    return (uint32_t)(terazMs - p[0].zmienionoMs) >= CISZA_MS;
+  }
+
+  // Zdejmuje pierwsze polecenie do `wLocie` - wolajacy startuje HTTP z
+  // wLocie.sciezka / wLocie.cialo. Wolac tylko po gotowa() == true.
+  const Polecenie& wystartuj() {
+    wLocie = p[0];
+    for (uint8_t i = 1; i < n; i++) p[i - 1] = p[i];
+    n--;
+    lotTrwa = true;
+    return wLocie;
+  }
+
+  // Polecenie w locie sie skonczylo (udane czy nie - centrala mogla je
+  // przyjac nawet wtedy, gdy odpowiedz nie doszla).
+  void zakoncz(uint32_t terazMs) {
+    if (!lotTrwa) return;
+    lotTrwa = false;
+    Zakonczenie& z = zak[zakNastepne];
+    zakNastepne = (uint8_t)((zakNastepne + 1) % ZAKONCZEN);
+    snprintf(z.klucz, sizeof(z.klucz), "%s", wLocie.klucz);
+    z.ms = terazMs;
+    z.bylo = true;
+  }
+
+  // Czy wartosc pola `klucz` z odpowiedzi GET-a wystartowanego w `getStartMs`
+  // moze byc nieaktualna: pole czeka w kolejce, jest w locie, albo jego
+  // polecenie skonczylo sie juz PO starcie tego GET-a. GET wystartowany w tej
+  // samej milisekundzie, w ktorej polecenie sie skonczylo, liczy sie jako
+  // pozniejszy - tak startuje odczyt po ostatnim poleceniu serii (ten sam
+  // obrot petli), a jego wartosc ma byc przyjeta.
+  bool poleZmieniane(const char* klucz, uint32_t getStartMs) const {
+    if (lotTrwa && strcmp(wLocie.klucz, klucz) == 0) return true;
+    for (uint8_t i = 0; i < n; i++) if (strcmp(p[i].klucz, klucz) == 0) return true;
+    for (uint8_t i = 0; i < ZAKONCZEN; i++) {
+      if (!zak[i].bylo || strcmp(zak[i].klucz, klucz) != 0) continue;
+      if ((int32_t)(zak[i].ms - getStartMs) > 0) return true;
+    }
+    return false;
+  }
+};
 
 }  // namespace diag
