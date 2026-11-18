@@ -100,6 +100,13 @@ struct Atrapa {
   uint16_t ekran[480 * 320];
   std::vector<std::string> napisyTft;    // teksty rysowane tft.drawString()
 
+  // --- obciazenie (pomiar_obciazenia.sh): ile poszlo do ekranu i ile razy zmieniono jasnosc ---
+  // Tylko liczniki - zaden zwykly scenariusz od nich nie zalezy.
+  unsigned long long spiPikseli = 0;       // suma pikseli oddanych do pushColors() (kazdy to 3 bajty po SPI przy ILI9488)
+  unsigned long spiOkien = 0;              // ile razy LVGL otworzyl okno rysowania (setAddrWindow) = liczba paskow/fragmentow
+  unsigned long podswietlenieZapisow = 0;  // ile razy firmware ustawil jasnosc podswietlenia (ledcWrite na pinie TFT_BL)
+  long podswietlenieWypelnienie = -1;      // ostatnio ustawione wypelnienie PWM (0..255); -1 = jeszcze nie ustawiono
+
   // --- brzeczyk (ledcWriteTone) ---
   uint32_t tonHz = 0;          // ostatnio ustawiona czestotliwosc; 0 = cisza
   int zmianTonu = 0;           // ile razy czestotliwosc sie zmienila (wzorzec alarmu "gra")

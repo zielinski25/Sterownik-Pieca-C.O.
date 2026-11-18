@@ -88,6 +88,17 @@ if [ "$BLEDY" != 0 ]; then echo "    BLAD KOMPILACJI (patrz komunikaty wyzej)"; 
 # --wrap: polaczenia panelu do 192.168.4.1:80 ida do serwera w symulator_panelu.cpp
 g++ -o "$BUD/symulator_panelu" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/atrapa.o "$BUD"/sym.o \
     "$LIB" $SAN -Wl,--wrap=connect,--wrap=send,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -lpthread
+PROGRAM="$BUD/symulator_panelu"
+# PROTOTYP=1 (tylko pomiar_obciazenia.sh --prototyp): ten sam firmware, ale cztery
+# funkcje LVGL sa podmienione przy linkowaniu na wersje z prototypy/ustaw_tylko_zmiany.c.
+# Zwykle testy tego nie uzywaja.
+if [ "${PROTOTYP:-0}" = "1" ]; then
+  gcc -c -O1 -Wall -Wextra -DLV_CONF_INCLUDE_SIMPLE -I "$INCLUDE" -I "$PODRECZNY/lvgl" -o "$BUD/prototyp.o" prototypy/ustaw_tylko_zmiany.c
+  PROGRAM="$BUD/symulator_panelu_prototyp"
+  g++ -o "$PROGRAM" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/atrapa.o "$BUD"/sym.o "$BUD"/prototyp.o \
+      "$LIB" $SAN -Wl,--wrap=connect,--wrap=send,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free \
+      -Wl,--wrap=lv_label_set_text,--wrap=lv_obj_set_local_style_prop,--wrap=lv_img_set_src,--wrap=lv_obj_clear_flag -lpthread
+fi
 echo "    OK"
 
 echo "[4] scenariusze (log Seriala i zrzuty ekranu: $WYNIKI)"
@@ -98,12 +109,18 @@ export LCD_WZORCE_V122="$TU/wzorce_v122"
 OPCJE=(--wyjscie "$WYNIKI")
 if [ "$OBSERWACJE" = "1" ]; then OPCJE+=(--obserwacje); fi
 if [ -n "${1:-}" ]; then
-  "$BUD/symulator_panelu" "$1" --log "${OPCJE[@]}"
+  # BEZ_LOGU=1: bez wypisywania calego logu Seriala (uzywa tego pomiar_obciazenia.sh).
+  if [ "${BEZ_LOGU:-0}" = "1" ]; then
+    "$PROGRAM" "$1" "${OPCJE[@]}"
+  else
+    "$PROGRAM" "$1" --log "${OPCJE[@]}"
+  fi
   exit $?
 fi
 NIEZALICZONE=0
-for scenariusz in $("$BUD/symulator_panelu" --lista | { grep -E -- "${TYLKO:-.}" || true; }); do
-  "$BUD/symulator_panelu" "$scenariusz" "${OPCJE[@]}" || NIEZALICZONE=$((NIEZALICZONE + 1))
+for scenariusz in $("$PROGRAM" --lista | { grep -E -- "${TYLKO:-.}" || true; }); do
+  case "$scenariusz" in pomiar_*) continue ;; esac   # pomiary to nie testy: maja wlasne skrypty (pomiar_*.sh)
+  "$PROGRAM" "$scenariusz" "${OPCJE[@]}" || NIEZALICZONE=$((NIEZALICZONE + 1))
 done
 if [ "$OBSERWACJE" = "1" ]; then
   echo "KONIEC (tryb obserwacji - bez oceny)"

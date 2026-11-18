@@ -77,8 +77,9 @@ class TFT_eSPI {
   int16_t drawCentreString(const char*, int32_t, int32_t, uint8_t) { return 0; }
 
   // Sciezka uzywana przez LVGL (lvgl_port.cpp -> lvgl_disp_flush()).
-  void setAddrWindow(int32_t x, int32_t y, int32_t w, int32_t h) { ox_ = x; oy_ = y; ow_ = w; oh_ = h; pozycja_ = 0; }
+  void setAddrWindow(int32_t x, int32_t y, int32_t w, int32_t h) { ox_ = x; oy_ = y; ow_ = w; oh_ = h; pozycja_ = 0; g_atrapa.spiOkien++; }
   void pushColors(uint16_t* dane, uint32_t ile, bool = true) {
+    g_atrapa.spiPikseli += ile;   // licznik dla pomiar_obciazenia.sh
     for (uint32_t i = 0; i < ile; i++, pozycja_++) {
       if (ow_ <= 0) break;
       int32_t xx = ox_ + (int32_t)(pozycja_ % (uint32_t)ow_);

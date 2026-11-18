@@ -102,6 +102,14 @@ extern "C" __attribute__((weak)) void panel_lvgl_assert(void) {
   abort();
 }
 
+// Prototyp do pomiar_obciazenia.sh --prototyp (prototypy/ustaw_tylko_zmiany.c):
+// liczniki wywolan pominietych i wykonanych. W zwyklych testach tego pliku nie
+// ma w programie - slabe symbole maja wtedy adres zerowy.
+extern "C" {
+extern unsigned long obciazenie_prototyp_pominiete[4] __attribute__((weak));
+extern unsigned long obciazenie_prototyp_wykonane[4] __attribute__((weak));
+}
+
 // Pomiar pamieci (pomiar_pamieci.sh): funkcje z pomiar_sterty.c. W zwyklych
 // testach ich nie ma - pomiar_wstrzymaj jest slabym symbolem (mock/atrapa.h).
 #ifdef POMIAR_STERTY
@@ -140,6 +148,10 @@ namespace pamiec {
 size_t odmawiajOd = 0;          // 0 = nie odmawiaj; inaczej odmow przydzialom o rozmiarze odmawiajOd..odmawiajDo
 size_t odmawiajDo = (size_t)-1;
 int odmow = 0;                  // ile przydzialow dostalo odmowe
+// Liczniki dla pomiar_obciazenia.sh: ile razy firmware (z LVGL i ArduinoJson)
+// prosil o pamiec i ile bajtow lacznie. Liczone tylko w czasie pracy
+// firmware'u (wFirmware > 0). Atrapy String to nie obejmuje (std::string).
+unsigned long long prosb = 0, prosbBajtow = 0, zwolnien = 0;
 thread_local int wFirmware = 0; // >0: wlasnie dziala kod firmware'u
 // Bufory punktow ekranu Wykresy: 8 x malloc(96 punktow x 24 B). Sledzone,
 // zeby scenariusz mogl sprawdzic, ze istnieja tylko przy otwartym ekranie.
@@ -167,20 +179,24 @@ void zapomnij(void* p) {
 
 extern "C" void* __wrap_malloc(size_t n) {
   if (pamiec::odmowic(n)) return nullptr;
+  if (pamiec::wFirmware > 0) { pamiec::prosb++; pamiec::prosbBajtow += n; }
   void* p = __real_malloc(n);
   pamiec::zapamietaj(p, n);
   return p;
 }
 extern "C" void* __wrap_calloc(size_t ile, size_t rozmiar) {
   if (pamiec::odmowic(ile * rozmiar)) return nullptr;
+  if (pamiec::wFirmware > 0) { pamiec::prosb++; pamiec::prosbBajtow += ile * rozmiar; }
   return __real_calloc(ile, rozmiar);
 }
 extern "C" void* __wrap_realloc(void* p, size_t n) {
   if (n != 0 && pamiec::odmowic(n)) return nullptr;   // stary blok zostaje, jak w prawdziwym realloc()
+  if (pamiec::wFirmware > 0 && n != 0) { pamiec::prosb++; pamiec::prosbBajtow += n; }
   return __real_realloc(p, n);
 }
 extern "C" void __wrap_free(void* p) {
   pamiec::zapomnij(p);
+  if (pamiec::wFirmware > 0 && p != nullptr) pamiec::zwolnien++;
   __real_free(p);
 }
 
@@ -962,6 +978,7 @@ bool g_poRestarcie = false;
 // czytaja). Obrot zakonczony restartem sie nie liczy: po udanym pobraniu panel
 // celowo czeka w nim ok. 0,5 s, zeby napis o restarcie zdazyl sie narysowac.
 unsigned long g_najdluzszyObrotMs = 0;
+unsigned long long g_obrotowPetli = 0;   // ile razy test wywolal loop() (pomiar_obciazenia.sh)
 
 void biegnij(unsigned long ms) {
   const unsigned long koniec = millis() + ms;
@@ -971,6 +988,7 @@ void biegnij(unsigned long ms) {
     try {
       LiczFirmware licz;
       loop();
+      g_obrotowPetli++;
       if (millis() - przedObrotem > g_najdluzszyObrotMs) g_najdluzszyObrotMs = millis() - przedObrotem;
     } catch (const AtrapaRestart&) {
       g_poRestarcie = true;
@@ -4196,6 +4214,122 @@ void scenariuszPomiarOta() { printf("PRZYPADEK-INFO ota=brak (zrodla firmware'u 
 #endif
 #endif
 
+
+// ===========================================================================
+// POMIAR OBCIAZENIA W SPOCZYNKU (pomiar_obciazenia.sh) - same liczby, bez oceny
+// ===========================================================================
+// Ile panel rysuje, ile razy pyta centrale i ile razy prosi o pamiec, gdy na
+// ekranie NIC sie nie zmienia - oraz czy po dluzszym czasie bez dotyku, na
+// samej baterii, cokolwiek wylacza albo przygasza.
+//
+// Co te liczby znacza na plytce:
+//  - piksele i liczba okien rysowania: LVGL i lv_conf.h sa prawdziwe, zegar
+//    jest sztuczny, a rysowanie zalezy tylko od danych i od zegara - liczba
+//    pikseli oddanych do ekranu jest wiec taka sama jak na plytce. Kazdy
+//    piksel to 3 bajty po SPI (ILI9488 w TFT_eSPI: kolor 18-bitowy).
+//  - zapytania HTTP: takie same (wynikaja z odstepow w main.cpp).
+//  - prosby o pamiec: LVGL i ArduinoJson licza sie w calosci; napisy String
+//    nie (atrapa String to std::string) - na plytce jest ich wiec troche wiecej.
+//  - obroty petli: GORNA granica. Tutaj rysowanie i SPI nie zajmuja czasu;
+//    na plytce zajmuja, wiec obrotow jest mniej.
+// Czego tu nie ma: pradu, czasu rysowania, pracy radia. To trzeba zmierzyc
+// na plytce.
+struct ObciazenieStan {
+  unsigned long long piksele, prosb, prosbBajtow, obroty;
+  unsigned long okna, podswietlenie;
+  int nStatus, nUstawienia, nPost;
+  unsigned long ms;
+};
+ObciazenieStan obciazenieTeraz() {
+  ObciazenieStan o;
+  o.piksele = g_atrapa.spiPikseli;
+  o.okna = g_atrapa.spiOkien;
+  o.podswietlenie = g_atrapa.podswietlenieZapisow;
+  o.prosb = pamiec::prosb;
+  o.prosbBajtow = pamiec::prosbBajtow;
+  o.obroty = g_obrotowPetli;
+  const Centrala c = kopia(0);
+  o.nStatus = c.nStatus;
+  o.nUstawienia = c.nUstawienia;
+  o.nPost = c.nPost;
+  o.ms = millis();
+  return o;
+}
+void obciazenieWiersz(const char* stan, const ObciazenieStan& a, const ObciazenieStan& b) {
+  const double minut = (double)(b.ms - a.ms) / 60000.0;
+  const double pikseli = (double)(b.piksele - a.piksele);
+  const int statusow = b.nStatus - a.nStatus;
+  const double naStatus = statusow > 0 ? pikseli / statusow : 0.0;
+  printf("OBCIAZENIE | %-52s | %4.0f s | %6.2f ekranu/min | %9.0f px/min | %5.2f MB SPI/min | %6.0f px na odczyt statusu = %3.0f %% ekranu | "
+         "%4.1f zapytan HTTP/min | %5.0f prosb o pamiec/min (%4.0f kB) | do %3.0f obrotow petli/s\n",
+         stan, (double)(b.ms - a.ms) / 1000.0, pikseli / minut / (480.0 * 320.0), pikseli / minut, pikseli * 3.0 / minut / 1e6,
+         naStatus, naStatus * 100.0 / (480.0 * 320.0),
+         (double)(statusow + (b.nUstawienia - a.nUstawienia) + (b.nPost - a.nPost)) / minut,
+         (double)(b.prosb - a.prosb) / minut, (double)(b.prosbBajtow - a.prosbBajtow) / minut / 1000.0,
+         (double)(b.obroty - a.obroty) / ((double)(b.ms - a.ms) / 1000.0));
+  fflush(stdout);
+}
+void obciazenieOkres(const char* stan, unsigned long ms) {
+  const ObciazenieStan a = obciazenieTeraz();
+  biegnij(ms);
+  obciazenieWiersz(stan, a, obciazenieTeraz());
+}
+void scenariuszPomiarObciazenia() {
+  // Plytka na samej baterii: USB odlaczone (GPIO35 wysoko), ogniwo 3,90 V.
+  g_atrapa.gpio[35] = HIGH;
+  g_atrapa.adcMv[34] = 1950;
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  const unsigned long startMs = millis();
+  const unsigned long podswietleniePoStarcie = g_atrapa.podswietlenieZapisow;
+  biegnij(15000);
+
+  obciazenieOkres("A pulpit, dane bez zmian, pompa stoi", 120000);
+  ustaw(0, [](Centrala& c) { c.pompa = true; });
+  biegnij(6000);
+  obciazenieOkres("B pulpit, dane bez zmian, pompa pracuje (wirnik)", 120000);
+  ustaw(0, [](Centrala& c) { c.pompa = false; });
+  biegnij(6000);
+  {
+    const ObciazenieStan a = obciazenieTeraz();
+    for (int i = 0; i < 12; i++) {
+      ustaw(0, [](Centrala& c) { c.tOgrz += 1.0; });
+      biegnij(10000);
+    }
+    obciazenieWiersz("C pulpit, jedna wartosc zmienia sie co 10 s", a, obciazenieTeraz());
+  }
+  // Centrala milczy 37 s - krocej niz prog samoczynnego restartu (45 s).
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; c.trybUstawienia = TRYB_MILCZY; });
+  biegnij(12000);
+  obciazenieOkres("D centrala milczy, kafelki pokazuja \"--\"", 25000);
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_OK; c.trybUstawienia = TRYB_OK; });
+  biegnij(8000);
+  if (kliknij("POMPA")) {
+    biegnij(1000);
+    obciazenieOkres("E otwarty ekran POMPA (animacje ikon)", 50000);
+  } else {
+    printf("OBCIAZENIE-INFO stan E pominiety: na ekranie nie ma kafelka POMPA\n");
+  }
+  biegnij(70000);   // ekran POMPA sam wraca na pulpit po minucie bez dotyku
+  obciazenieOkres("F pulpit po powrocie, dane bez zmian", 120000);
+
+  // Do tej chwili plytka pracowala na baterii bez jednego dotkniecia ekranu.
+  // Uspienie (esp_deep_sleep_start()) zakonczyloby ten program kodem 42 -
+  // skoro doszedl tutaj, panel nie usnal.
+  printf("OBCIAZENIE-INFO na baterii, bez dotyku przez %lu s: panel nie usnal; podswietlenie %ld/255, zmian jasnosci od konca startu: %lu; "
+         "ostatni dotyk wg LVGL: %lu s temu\n",
+         (millis() - startMs) / 1000UL, g_atrapa.podswietlenieWypelnienie, g_atrapa.podswietlenieZapisow - podswietleniePoStarcie,
+         (unsigned long)(lv_disp_get_inactive_time(nullptr) / 1000UL));
+  printf("OBCIAZENIE-INFO ekran = 153600 px; 1 px = 3 bajty po SPI (ILI9488, kolor 18-bitowy); status co 2 s, ustawienia co 5 s\n");
+  // Prototyp \"ustaw tylko wtedy, gdy wartosc sie zmienila\" (pomiar_obciazenia.sh --prototyp): ile wywolan pominal.
+  if (obciazenie_prototyp_pominiete != nullptr && obciazenie_prototyp_wykonane != nullptr) {
+    static const char* const NAZWY[4] = {"lv_label_set_text", "lv_obj_set_local_style_prop", "lv_img_set_src", "lv_obj_clear_flag"};
+    for (int i = 0; i < 4; i++)
+      printf("OBCIAZENIE-INFO prototyp: %-28s wywolan z ta sama wartoscia (pominiete) %6lu, ze zmiana (wykonane) %6lu\n", NAZWY[i],
+             obciazenie_prototyp_pominiete[i], obciazenie_prototyp_wykonane[i]);
+  }
+}
+
 struct Scenariusz {
   const char* nazwa;
   const char* opis;
@@ -4249,6 +4383,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"ota_ten_sam_plik", "OTA: centrala oferuje plik, z ktorego panel juz pracuje - nic nie jest wgrywane (v1.4.0)", scenariuszOtaTenSamPlik},
     {"ota_status_milczy", "OTA: centrala nie odpowiada na status, ale plik idzie - pobieranie nie jest przerywane (v1.4.0)", scenariuszOtaStatusMilczy},
     {"ota_bez_identyfikatora", "OTA: panel nie zna sumy wlasnego programu - aktualizacja przez centrale wylaczona (v1.4.0)", scenariuszOtaBezIdentyfikatora},
+    {"pomiar_obciazenia", "ile panel rysuje, pyta centrale i prosi o pamiec, gdy nic sie nie zmienia (tylko pomiar_obciazenia.sh)", scenariuszPomiarObciazenia},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},
     {"pomiar_przypadki", "ile RAM-u potrzeba w kazdym przypadku pracy (tylko pomiar_pamieci.sh --przypadki)", scenariuszPomiarPrzypadki},

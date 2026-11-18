@@ -237,7 +237,20 @@ inline void analogSetAttenuation(adc_attenuation_t) {}
 inline void analogSetPinAttenuation(uint8_t, adc_attenuation_t) {}
 inline bool ledcAttach(uint8_t, uint32_t, uint8_t) { return true; }
 inline bool ledcDetach(uint8_t) { return true; }
-inline bool ledcWrite(uint8_t, uint32_t) { return true; }
+// Podswietlenie: firmware wola ledcWrite(TFT_BL, 0..255). Atrapa odnotowuje
+// tylko zapisy na tym pinie (TFT_BL z flag kompilacji, jak w platformio.ini).
+#ifndef TFT_BL
+#define ATRAPA_PIN_PODSWIETLENIA 21
+#else
+#define ATRAPA_PIN_PODSWIETLENIA TFT_BL
+#endif
+inline bool ledcWrite(uint8_t pin, uint32_t wypelnienie) {
+  if (pin == ATRAPA_PIN_PODSWIETLENIA) {
+    g_atrapa.podswietlenieZapisow++;
+    g_atrapa.podswietlenieWypelnienie = (long)wypelnienie;
+  }
+  return true;
+}
 // Brzeczyk: ostatnia czestotliwosc i liczba jej zmian (0 Hz = cisza).
 inline uint32_t ledcWriteTone(uint8_t, uint32_t f) {
   if (f != g_atrapa.tonHz) g_atrapa.zmianTonu++;

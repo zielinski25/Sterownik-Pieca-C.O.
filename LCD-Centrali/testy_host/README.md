@@ -14,6 +14,7 @@ python3 sprawdz_czulosc_ota.py     # czy scenariusze ota_* wykrywają celowo wpr
 ./sprawdz_naglowki_esp32.sh        # składnia i typy prawdziwymi nagłówkami ESP32 (patrz niżej)
 ./pomiar_pamieci.sh                # ile RAM-u trzyma firmware + limity (patrz niżej; wymaga: pip install ziglang)
 ./pomiar_pamieci.sh --przypadki    # czy RAM-u starczy w każdym przypadku pracy (ok. 4 minut)
+./pomiar_obciazenia.sh            # ile panel rysuje, pyta centralę i prosi o pamięć, gdy nic się nie zmienia (patrz niżej)
 ```
 
 Wymaga: `g++` (C++17), `gcc`, `ar`, `git`, Linux albo WSL. Przy pierwszym
@@ -62,6 +63,8 @@ z `platformio.ini` (8.3.11 i 7.2.1) te same liczby to 129 324, 5 464, 2 452 /
 | `pomiar_pamieci.sh` | Mierzy, ile pamięci RAM trzyma firmware, i pilnuje limitów. Buduje ten sam program jako 32-bitowy, z `pomiar_sterty.c` zamiast zwykłego `malloc()`. Z `--przypadki`: ile pamięci trzeba w każdym przypadku pracy i co się dzieje, gdy jest jej mniej. |
 | `pomiar_sterty.c` | `malloc()` z licznikiem: dla każdego bloku pamięta rozmiar i stos wywołań; liczy go tak, jak zajmuje miejsce na stercie ESP32. Potrafi też odmawiać ponad zadany limit (jak płytka bez wolnego RAM-u) i wypisać stos wywołań, gdy program modelu sięgnie pod zły adres. |
 | `pomiar_rozbicie.py` | Dla `pomiar_pamieci.sh --kto`: zamienia zapisane stosy wywołań na nazwy funkcji firmware'u i sumuje pamięć według nich. |
+| `pomiar_obciazenia.sh` | Mierzy obciążenie w spoczynku: ile pikseli idzie do ekranu, ile połączeń z centralą i ile próśb o pamięć na minutę; czy panel na baterii usypia albo przygasza ekran. Same liczby, bez oceny. Z `--prototyp` dodatkowo szacunek po zmianie „ustawiaj tylko to, co się zmieniło”. |
+| `prototypy/` | `ustaw_tylko_zmiany.c` — cztery funkcje LVGL podmienione przy linkowaniu na wersje, które najpierw porównują nową wartość ze starą. Tylko dla `pomiar_obciazenia.sh --prototyp`. To nie jest poprawka firmware'u i nie trafia na płytkę. |
 
 LVGL i ArduinoJson są **prawdziwe** (te same wersje co w `platformio.ini`),
 LVGL jest budowany z `include/lv_conf.h` tego projektu. Ekran to bufor
@@ -459,6 +462,70 @@ Ograniczenia kroku [7]:
   kończy każdy odczytany tekst takim zmniejszeniem i nie sprawdza wyniku,
   więc model kończył się awarią w `StringPool::add()`. Na płytce ta droga
   nie istnieje.
+
+## Pomiar obciążenia w spoczynku
+
+```
+./pomiar_obciazenia.sh              # stan firmware'u z ../src
+./pomiar_obciazenia.sh --prototyp   # + szacunek po zmianie „ustawiaj tylko to, co się zmieniło”
+SRC=/ścieżka/do/src ./pomiar_obciazenia.sh   # inne źródła, np. starsza wersja (do porównania przed/po)
+```
+
+Scenariusz `pomiar_obciazenia` (w zwykłym `./uruchom_testy.sh` pomijany, jak
+wszystkie `pomiar_*`) uruchamia panel **na samej baterii** (USB odłączone,
+ogniwo 3,90 V), nie dotyka ekranu i przez ok. 11 minut liczy:
+
+- **piksele oddane do ekranu** — atrapa `TFT_eSPI.h` liczy to, co LVGL
+  przekazuje do `pushColors()`. Ekran ma 153 600 pikseli; jeden piksel to
+  3 bajty po SPI (ILI9488 w TFT_eSPI 2.5.43 pracuje w kolorze 18-bitowym);
+- **połączenia z centralą** — zapytania, które dotarły do udawanej centrali;
+- **prośby o pamięć** — wywołania `malloc()`, `calloc()` i `realloc()`
+  z firmware'u, LVGL i ArduinoJson (bez napisów `String`: atrapa `String`
+  to `std::string`);
+- **obroty pętli** `loop()`;
+- **zmiany jasności podświetlenia** i to, czy panel usnął
+  (`esp_deep_sleep_start()` w atrapie kończy program kodem 42).
+
+Wynik z 2026-11-18, firmware v1.4.0 (LVGL 8.3.11, ArduinoJson 7.2.1):
+
+| Stan | Ekranów na minutę | Pikseli na jeden odczyt statusu | Połączeń na minutę | Próśb o pamięć na minutę |
+|---|---|---|---|---|
+| A pulpit, dane bez zmian, pompa stoi | 18,30 | 93 692 (61 % ekranu) | 42 | 6 806 |
+| B pulpit, dane bez zmian, pompa pracuje | 24,30 | 124 412 (81 %) | 42 | 9 206 |
+| C pulpit, jedna wartość zmienia się co 10 s | 18,30 | 93 692 (61 %) | 42 | 6 806 |
+| D centrala milczy, kafelki pokazują „--” | 2,48 | — | 36 | 348 |
+| E otwarty ekran POMPA | 24,39 | 124 858 (81 %) | 42 | 9 139 |
+
+Na baterii, 673 s bez dotyku: panel nie usnął, podświetlenie 255/255, zero
+zmian jasności.
+
+To samo z `--prototyp` (firmware bez zmian, cztery funkcje LVGL porównują
+przed ustawieniem):
+
+| Stan | Ekranów na minutę | Próśb o pamięć na minutę |
+|---|---|---|
+| A pulpit, dane bez zmian, pompa stoi | 0,01 | 5 806 |
+| B pulpit, dane bez zmian, pompa pracuje | 6,00 (sam wirnik pompy) | 8 202 |
+| C pulpit, jedna wartość zmienia się co 10 s | 0,19 | 5 857 |
+| D centrala milczy | 2,45 | 331 |
+| E otwarty ekran POMPA | 8,86 | 8 272 |
+
+Od włączenia panelu do końca pomiaru `lv_label_set_text()` zostało wywołane
+4 439 razy, z czego 4 145 razy z napisem, który już był na ekranie; dla
+`lv_obj_set_local_style_prop()` (kolory, ramki) to 8 449 z 11 723. Liczby
+obejmują też jednorazowe budowanie ekranów przy starcie.
+
+**Co te liczby znaczą na płytce.** LVGL i `lv_conf.h` są prawdziwe, a to, co
+LVGL przerysowuje, zależy tylko od danych i od zegara. W stanach bez
+animacji (A, C, D) liczba pikseli jest więc taka sama jak na płytce;
+w stanach z animacją (B, E) to górna granica — płytka, która nie nadąża,
+narysuje mniej klatek. Liczba połączeń jest taka sama, dopóki centrala
+odpowiada na czas. Liczba obrotów pętli to górna granica: tutaj rysowanie
+i wysyłka po SPI nie zajmują czasu, na płytce zajmują.
+
+**Czego tu nie ma:** prądu, czasu rysowania, pracy radia i procesora. Pomiar
+mówi, ile pracy panel sobie zadaje, a nie ile to kosztuje baterii — to trzeba
+zmierzyć na płytce.
 
 ## Sprawdzenie prawdziwymi nagłówkami ESP32
 
