@@ -38,6 +38,45 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-18] v1.4.1 - MALE I PEWNE POPRAWKI PO AUDYCIE (krok 1 z
+//   WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md, rozdzial 4; ustalenia z
+//   AUDYT_PANELU_LCD_2026-11-18_WYCIEKI_DRENAZ_KOD.md). Zadna z nich nie
+//   zmienia tego, co panel pokazuje ani jak rozmawia z centrala.
+//   - C2: platformio.ini przypina platforme (ta sama co centrala, pioarduino
+//     55.03.38-1, rdzen 3.3.8) i dokladne wersje bibliotek (TFT_eSPI 2.5.43,
+//     ArduinoJson 7.4.3, LVGL 8.4.0). Testy na PC uzywaja tych samych.
+//   - A5/temat 7: linia "tag=PANEL" ma trzy nowe pola: stos_min= (najmniejszy
+//     zapas stosu petli od startu, w bajtach), alok_nieudane= (ile razy od
+//     startu system odmowil pamieci) i alok_nieudana_b= (rozmiar ostatniej
+//     odmowionej prosby). Odmowy liczy funkcja zarejestrowana w systemie
+//     (heap_caps_register_failed_alloc_callback) - sama tylko zapisuje liczby.
+//   - temat 8: po starcie panel sprawdza, czy w partycji coredump lezy zrzut
+//     po awarii. Jesli tak: jedna linia "tag=ZRZUT" (zadanie, adres bledu,
+//     powod paniki, slad wywolan) i kasowanie zrzutu, zeby nastepna awaria
+//     miala miejsce. Adresy ze sladu tlumaczy sie na funkcje poleceniem
+//     xtensa-esp32-elf-addr2line -pfiaC -e .pio/build/esp32dev/firmware.elf
+//     <adresy> (plik .elf z TEGO SAMEGO budowania, ktore jest na plytce).
+//   - C3: kalibracja dotyku (tylko na plytce bez zapisanej kalibracji) karmi
+//     watchdoga w petlach czekania na palec; przedtem musiala sie zmiescic
+//     w 15 s, inaczej panel restartowal sie w kolko (powod task_wdt).
+//   - A4: odpowiedz centrali na GET/POST (siec_nieblokujaca_LCD.h) ma limit
+//     SiecCfg::ODPOWIEDZ_MAX_B = 8 kB; dluzsza konczy zadanie bledem
+//     "odpowiedz za dluga" (etap 'd'). Prawdziwy /api/status ma ok. 2 kB.
+//   - A6: malloc() w press_flash_zainstaluj() (dashboard_lvgl_poc.cpp) ze
+//     sprawdzeniem wyniku; bez pamieci przycisk nie ma efektu wcisniecia,
+//     ale dziala.
+//   - C5: odczyty POLA[] po nazwie ida przez polaWartosc("nazwa"), ktore przy
+//     nieznanej nazwie zwraca 0 i wypisuje "tag=USTAWIENIA lvl=ERR
+//     zdarzenie=nieznane_pole" zamiast czytac pamiec sprzed tabeli.
+//   - B8: WiFi.persistent(false) przed WiFi.mode() - biblioteka nie zapisuje
+//     juz nazwy sieci i hasla do NVS przy kazdym WiFi.begin(); panel ma je
+//     w programie.
+//   - C9: jasnosc dzienna i nocna maja dolna granice JASNOSC_MIN_PROCENT = 5 %
+//     (suwaki, wartosc z NVS, zapis). Przedtem 0 % gasilo ekran na stale,
+//     takze po restarcie. Rozjasnianie na czas alarmu - razem z usypianiem
+//     (krok 3), bo to ten sam fragment kodu.
+//   Nie zmienione w tym kroku (celowo): rysowanie (krok 2), usypianie na
+//   baterii (krok 3), polecenia (krok 4), odpytywanie centrali (krok 5).
 // [2026-11-12] v1.4.0 - AKTUALIZACJA PRZEZ CENTRALE (OTA): W TRAKCIE PRACY, Z
 //   POSTEPEM NA EKRANIE, BEZ WGRYWANIA W KOLKO.
 //   Decyzja uzytkownika: "Dzialaj" po raporcie
@@ -582,7 +621,8 @@
 #include <esp_partition.h>   // [v1.4.0 OTA] esp_partition_get_sha256() - identyfikator wlasnego programu
 #include <esp_task_wdt.h>
 #include <esp_wifi.h>    // [v1.2.0 WIFI-WYBOR] esp_wifi_scan_stop() - patrz wifiSkanujCentrale()
-#include <esp_heap_caps.h>   // [v1.2.2 PAMIEC] heap_caps_get_*() - patrz ramWolny()
+#include <esp_heap_caps.h>   // [v1.2.2 PAMIEC] heap_caps_get_*() - patrz ramWolny(); [v1.4.1] heap_caps_register_failed_alloc_callback()
+#include <esp_core_dump.h>   // [v1.4.1 ZRZUT] skrot zrzutu po awarii z partycji coredump - patrz zrzutPoAwariiWypisz()
 #include "esp_system.h"  // [RESET-DIAG, ta sesja] esp_reset_reason() / esp_reset_reason_t
 
 // [OTA-ROLLBACK] Bez tego override arduino-esp32 SAM potwierdzi biezaca
@@ -727,6 +767,26 @@ bool ostatniBladStatusuToPamiec = false;      // [v1.2.2] ...true = panelowi zab
 static inline uint32_t ramWolny() { return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_DEFAULT); }
 static inline uint32_t ramBlok()  { return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_DEFAULT); }
 static inline uint32_t ramMin()   { return (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT); }
+
+// [v1.4.1 PAMIEC] Odmowy pamieci. System wola alokNieudanaHak() przy KAZDEJ
+// nieudanej prosbie o pamiec (malloc/calloc/realloc i wszystko, co z nich
+// korzysta: String, ArduinoJson, LVGL, WiFi). Funkcja moze byc wolana z
+// dowolnego zadania i z wylaczonymi przerwaniami, wiec TYLKO zapisuje liczby -
+// zadnego Serial, zadnej pamieci. Liczby wypisuje panelDiagOkresowo()
+// (alok_nieudane=, alok_nieudana_b=). Zdrowy panel ma tu 0; kazda liczba
+// wieksza od zera to prosba, ktorej nie dalo sie spelnic, i powod, zeby
+// przeczytac log z tej minuty.
+static volatile uint32_t alokNieudanych = 0;
+static volatile uint32_t alokNieudanaOstatniaB = 0;
+static void alokNieudanaHak(size_t rozmiar, uint32_t /*caps*/, const char* /*funkcja*/) {
+  alokNieudanych = alokNieudanych + 1;
+  alokNieudanaOstatniaB = (uint32_t)rozmiar;
+}
+// Najmniejszy zapas stosu petli (loopTask) od startu, w bajtach. Stos ma
+// 8192 B (arduino-esp32 3.x); na nim pracuje LVGL, ArduinoJson i aktualizacja.
+// Gdy ta liczba spada ponizej ok. 1 kB, nastepny glebszy fragment moze
+// przepelnic stos - a to wyglada w logu jak losowy restart.
+static inline uint32_t stosZapasMin() { return (uint32_t)uxTaskGetStackHighWaterMark(NULL); }
 diag::Dlawik dlawikMaloPamieci;               // ostrzezenie "malo_pamieci" - najwyzej raz na minute
 
 // Linia logu, ktora wypisze sie TAKZE przy braku pamieci. Serial.printf()
@@ -743,7 +803,7 @@ diag::Dlawik dlawikMaloPamieci;               // ostrzezenie "malo_pamieci" - na
 // succeeded", restart z powodem "panic") - w obu funkcjach jednakowo.
 static void logBezPamieci(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void logBezPamieci(const char *fmt, ...) {
-  static char linia[640];   // najdluzsza linia ("tag=PANEL fw=...") ma w najgorszym razie ok. 560 znakow
+  static char linia[768];   // najdluzsza linia ("tag=PANEL fw=...") ma w najgorszym razie ok. 620 znakow (v1.4.1: +3 pola)
   va_list ap;
   va_start(ap, fmt);
   const int n = vsnprintf(linia, sizeof(linia), fmt, ap);
@@ -809,7 +869,7 @@ PoKomendzie pendingPoKomendzie = PoKomendzie::BRAK;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.4.0"; // [2026-11-12] v1.4.0: aktualizacja przez centrale zaczyna sie w trakcie pracy, z postepem na ekranie i bez wgrywania tego samego pliku w kolko (pelna obsluga: centrala 3.58.6); opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.4.1"; // [2026-11-18] v1.4.1: male poprawki po audycie (przypiete wersje, zapas stosu i zrzut po awarii w logu, watchdog w kalibracji, limit odpowiedzi, dolna granica jasnosci); opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1035,8 +1095,13 @@ void ustawJasnoscPodswietlenia(uint8_t procent) {
 // (wyswietlaczOstatniaGodzina/wyswietlaczGodzinaZnana) - patrz wywolania
 // wyswietlaczHarmonogramOdswiez() w pobierzStatus() i symOdswiezDoLvgl().
 Preferences ustawieniaWyswietlacza;   // NVS namespace "wyswietlacz"
-uint8_t jasnoscDziennaWartosc = 100;  // %, 0-100 - jasnosc POZA oknem przyciemnienia
-uint8_t jasnoscNocnaWartosc   = 30;   // %, 0-100 - jasnosc WEWNATRZ okna przyciemnienia
+// [v1.4.1 C9] Dolna granica obu jasnosci. 0 % gasilo podswietlenie calkiem -
+// takze po restarcie (wartosc jest w NVS) - i wtedy ekranu alarmu nie widac,
+// a suwak trzeba przesuwac na slepo. Ta sama liczba jest w
+// dashboard_lvgl_poc.h (JASNOSC_MIN_PROCENT_LVGL) jako dolny kraniec suwakow.
+static const uint8_t JASNOSC_MIN_PROCENT = 5;
+uint8_t jasnoscDziennaWartosc = 100;  // %, JASNOSC_MIN_PROCENT-100 - jasnosc POZA oknem przyciemnienia
+uint8_t jasnoscNocnaWartosc   = 30;   // %, JASNOSC_MIN_PROCENT-100 - jasnosc WEWNATRZ okna przyciemnienia
 uint8_t godzinaStartPrzyciemnienia  = 22; // 0-23 - godzina rozpoczecia okna
 uint8_t godzinaKoniecPrzyciemnienia = 6;  // 0-23 - godzina zakonczenia okna
 bool    harmonogramWlaczonyWartosc  = true; // false = zawsze jasnoscDzienna, godziny ignorowane
@@ -1061,8 +1126,10 @@ void wyswietlaczWczytajZPamieci() {
   harmonogramWlaczonyWartosc  = ustawieniaWyswietlacza.getBool("harmonWlacz", true);
   // Bezpieczne klipsy na wypadek uszkodzonych/przedawnionych danych w NVS -
   // te same zakresy co suwaki/spinboxy w dashboard_lvgl_poc.cpp.
-  jasnoscDziennaWartosc = constrain(jasnoscDziennaWartosc, (uint8_t)0, (uint8_t)100);
-  jasnoscNocnaWartosc   = constrain(jasnoscNocnaWartosc,   (uint8_t)0, (uint8_t)100);
+  // [v1.4.1 C9] Dolna granica JASNOSC_MIN_PROCENT: wartosc 0 % zapisana przez
+  // starszy program (do v1.4.0 suwak pozwalal na 0) po tej zmianie daje 5 %.
+  jasnoscDziennaWartosc = constrain(jasnoscDziennaWartosc, JASNOSC_MIN_PROCENT, (uint8_t)100);
+  jasnoscNocnaWartosc   = constrain(jasnoscNocnaWartosc,   JASNOSC_MIN_PROCENT, (uint8_t)100);
   godzinaStartPrzyciemnienia  = constrain(godzinaStartPrzyciemnienia,  (uint8_t)0, (uint8_t)23);
   godzinaKoniecPrzyciemnienia = constrain(godzinaKoniecPrzyciemnienia, (uint8_t)0, (uint8_t)23);
 }
@@ -1116,7 +1183,7 @@ void wyswietlaczHarmonogramOdswiez() {
 // `id`: 0=jasnoscDzien, 1=jasnoscNoc (ten sam ksztalt co serwoPozycjaWyslij
 // dla klapa/syberek).
 void wyswietlaczJasnoscWyslij(int id, int procent, bool koncowa) {
-  procent = constrain(procent, 0, 100);
+  procent = constrain(procent, (int)JASNOSC_MIN_PROCENT, 100);   // [v1.4.1 C9] dolna granica, patrz JASNOSC_MIN_PROCENT
   if (id == 0) jasnoscDziennaWartosc = (uint8_t)procent;
   else         jasnoscNocnaWartosc   = (uint8_t)procent;
   // [FIX, ta sesja - "jasnosc widoczna dopiero po puszczeniu"] PWM ponizej
@@ -1550,6 +1617,22 @@ bool ustawieniaWczytane = false;
 int znajdzIndeksPola(const char* klucz) {
   for (int i = 0; i < LICZBA_POL; i++) if (strcmp(POLA[i].klucz, klucz) == 0) return i;
   return -1;
+}
+
+// [v1.4.1 C5] Wartosc pola po nazwie - do przekazywania ustawien ekranom LVGL.
+// Dawniej: POLA[znajdzIndeksPola("nazwa")].wartosc, czyli przy literowce w
+// nazwie (indeks -1) czytanie pamieci sprzed tabeli, bez zadnego sladu w logu.
+// Teraz nieznana nazwa daje 0 i linie bledu (najwyzej raz na 60 s, zeby nie
+// zalac logu przy odswiezaniu ustawien co kilka sekund).
+long polaWartosc(const char* klucz) {
+  const int i = znajdzIndeksPola(klucz);
+  if (i >= 0) return POLA[i].wartosc;
+  static unsigned long ostatnioMs = 0;
+  if (ostatnioMs == 0 || millis() - ostatnioMs >= 60000UL) {
+    ostatnioMs = millis() ? millis() : 1;
+    Serial.printf("tag=USTAWIENIA lvl=ERR zdarzenie=nieznane_pole pole=%s\n", klucz);
+  }
+  return 0;
 }
 
 // [LCD-TRYBY] "wybor" i "trybSerwa" to enumy (nie liczby +/-), wiec zyja
@@ -2733,7 +2816,7 @@ void panelDiagOkresowo() {
                 "status_ok=%lu status_blad=%lu ust_ok=%lu ust_blad=%lu ekran=%lu wiek_danych_s=%ld "
                 "t_zewn=%.1f t_pokoj=%.1f t_ogrz=%.1f t_ogrz_sr=%.1f t_bojler=%.1f t_panel=%.1f "
                 "wilg=%.0f cisn=%.0f dym=%d klapa=%d syberka=%d pompa=%d czas=%02d:%02d "
-                "ram=%lu ram_min=%lu ram_blok=%lu "
+                "ram=%lu ram_min=%lu ram_blok=%lu stos_min=%lu alok_nieudane=%lu alok_nieudana_b=%lu "
                 "bez_danych_s=%lu przyczyna=%s wymuszen=%u rozl_kod=%u rozl_n=%lu autorestartow=%u\n",
                 FIRMWARE_VERSION_PANEL, (int)wifiOk, bssid,
                 wifiOk ? (int)WiFi.channel() : 0, wifiOk ? (int)WiFi.RSSI() : 0,
@@ -2749,6 +2832,8 @@ void panelDiagOkresowo() {
                 stan.klapa, stan.syberka, (int)stan.pompa,
                 stan.godzina, stan.minuta,
                 (unsigned long)ramWolny(), (unsigned long)ramMin(), (unsigned long)ramBlok(),
+                // [v1.4.1] zapas stosu petli i odmowy pamieci - opis przy alokNieudanaHak()
+                (unsigned long)stosZapasMin(), (unsigned long)alokNieudanych, (unsigned long)alokNieudanaOstatniaB,
                 // [v1.2.1 RATUNEK] od ilu sekund bez poprawnego statusu; czego brakuje ("-" = nic,
                 // wifi | milczy | odp | pam); ile razy wymuszono ponowne polaczenie; kod i liczba rozlaczen
                 // WiFi od startu; ile samoczynnych restartow od wlaczenia zasilania.
@@ -3081,36 +3166,36 @@ void obslugaUstawieniaFetch() {
   // (patrz obszerny komentarz w dashboard_lvgl_poc.h) bo to inne zrodlo
   // (/api/ustawienia-get, nie /api/status) i inna czestotliwosc odswiezania.
   lvgl_dashboard_poc_aktualizuj_ustawienia_serwa(
-      (int)POLA[znajdzIndeksPola("tempZadServo")].wartosc,
-      (int)POLA[znajdzIndeksPola("histerServo")].wartosc,
-      (int)POLA[znajdzIndeksPola("skokKlapy")].wartosc,
-      (int)POLA[znajdzIndeksPola("skokSyberka")].wartosc,
-      (int)POLA[znajdzIndeksPola("odchylTemp")].wartosc,
-      (int)POLA[znajdzIndeksPola("mnoznik")].wartosc);
+      (int)polaWartosc("tempZadServo"),
+      (int)polaWartosc("histerServo"),
+      (int)polaWartosc("skokKlapy"),
+      (int)polaWartosc("skokSyberka"),
+      (int)polaWartosc("odchylTemp"),
+      (int)polaWartosc("mnoznik"));
   // [ROZSZERZENIE, ta sesja - ekran LVGL USTAWIENIA POMPY] Ten sam wzorzec co
   // wywolanie serwa powyzej, tylko dla dashboard_lvgl_poc.h ustawien pompy -
   // dwie osobne funkcje (5 pol numerycznych + osobno bool antystopWlaczony),
   // patrz uzasadnienie w dashboard_lvgl_poc.h.
   lvgl_dashboard_poc_aktualizuj_ustawienia_pompy(
-      (int)POLA[znajdzIndeksPola("czasOn")].wartosc,
-      (int)POLA[znajdzIndeksPola("czasOff")].wartosc,
-      (int)POLA[znajdzIndeksPola("tempOn")].wartosc,
-      (int)POLA[znajdzIndeksPola("tempOff")].wartosc,
-      (int)POLA[znajdzIndeksPola("antystopDni")].wartosc);
+      (int)polaWartosc("czasOn"),
+      (int)polaWartosc("czasOff"),
+      (int)polaWartosc("tempOn"),
+      (int)polaWartosc("tempOff"),
+      (int)polaWartosc("antystopDni"));
   lvgl_dashboard_poc_aktualizuj_ustawienia_pompy_antystop(antystopWlaczonyWartosc);
   // [ROZSZERZENIE, ta sesja - PANEL DYM] Ten sam wzorzec co wywolania
   // serwa/pompy powyzej. progAlarmDym juz byl w POLA[] (stary EKRAN_TRYBY go
   // uzywal), dymCzasOn/Off/Stabilizacji dopisane wyzej w tej sesji.
   lvgl_dashboard_poc_aktualizuj_ustawienia_dymu(
-      (int)POLA[znajdzIndeksPola("progAlarmDym")].wartosc,
-      (int)POLA[znajdzIndeksPola("dymCzasOn")].wartosc,
-      (int)POLA[znajdzIndeksPola("dymCzasOff")].wartosc,
-      (int)POLA[znajdzIndeksPola("dymCzasStabilizacji")].wartosc);
+      (int)polaWartosc("progAlarmDym"),
+      (int)polaWartosc("dymCzasOn"),
+      (int)polaWartosc("dymCzasOff"),
+      (int)polaWartosc("dymCzasStabilizacji"));
   // [ROZSZERZENIE, ta sesja - PANEL PROG PRZEGRZANIA] progAlarmTemp juz byl
   // w POLA[] od dawna (stary EKRAN_TRYBY go uzywal) - tylko dopisujemy
   // przekazanie dalej do LVGL, ten sam wzorzec co progAlarmDym powyzej.
   lvgl_dashboard_poc_aktualizuj_ustawienia_alarmu_temp(
-      (int)POLA[znajdzIndeksPola("progAlarmTemp")].wartosc);
+      (int)polaWartosc("progAlarmTemp"));
   // Nie pobieramy tu klapy/syberka recznych procentow celowo — te sa juz
   // widoczne w /api/status (klapa/syberka), a suwak na ekranie Serwo
   // zaczyna od tych samych wartosci co status przy pierwszym wejsciu na ekran.
@@ -3829,6 +3914,12 @@ void kalibrujDotykJesliTrzeba() {
     tft.drawString("Dotknij i przytrzymaj znacznik", 240, 185);
     Serial.println("[kalibracja] start - punkt A (gorny-lewy)");
 
+    // [v1.4.1 C3] Watchdog petli (15 s, patrz setup()) jest juz wlaczony, a
+    // czlowiek czytajacy napisy na ekranie potrzebuje wiecej czasu. Kazda
+    // petla czekania na palec / na puszczenie karmi watchdoga, inaczej panel
+    // bez zapisanej kalibracji restartowalby sie w kolko (powod task_wdt).
+    auto czekajChwile = []() { delay(10); esp_task_wdt_reset(); };
+
     bool udana = false;
     while (!udana) {
       // --- znacznik A: gorny-lewy ---
@@ -3836,13 +3927,13 @@ void kalibrujDotykJesliTrzeba() {
       uint16_t rx, ry, sx, sy;
       bool zlapano = false;
       while (!zlapano) {
-        while (!touchOdczytajSurowy(rx, ry)) { delay(10); }
+        while (!touchOdczytajSurowy(rx, ry)) { czekajChwile(); }
         zlapano = touchPobierzStabilnaPozycje(sx, sy);
         if (!zlapano) Serial.println("[kalibracja] falszywy alarm (dotyk znikl w trakcie) - probuj ponownie");
       }
       kalDotyku.rawXA = sx;
       kalDotyku.rawYA = sy;
-      while (touchOdczytajSurowy(rx, ry)) { delay(10); }  // czekaj na puszczenie
+      while (touchOdczytajSurowy(rx, ry)) { czekajChwile(); }  // czekaj na puszczenie
       tft.drawCircle(KAL_A_X, KAL_A_Y, 8, KOL_TLO);
       Serial.printf("[kalibracja] punkt A zapisany: x=%u y=%u\n", kalDotyku.rawXA, kalDotyku.rawYA);
       Serial.println("[kalibracja] punkt B (dolny-prawy)");
@@ -3853,13 +3944,13 @@ void kalibrujDotykJesliTrzeba() {
       tft.drawCircle(KAL_B_X, KAL_B_Y, 8, TFT_MAGENTA);
       zlapano = false;
       while (!zlapano) {
-        while (!touchOdczytajSurowy(rx, ry)) { delay(10); }
+        while (!touchOdczytajSurowy(rx, ry)) { czekajChwile(); }
         zlapano = touchPobierzStabilnaPozycje(sx, sy);
         if (!zlapano) Serial.println("[kalibracja] falszywy alarm (dotyk znikl w trakcie) - probuj ponownie");
       }
       kalDotyku.rawXB = sx;
       kalDotyku.rawYB = sy;
-      while (touchOdczytajSurowy(rx, ry)) { delay(10); }
+      while (touchOdczytajSurowy(rx, ry)) { czekajChwile(); }
       tft.drawCircle(KAL_B_X, KAL_B_Y, 8, KOL_TLO);
       Serial.printf("[kalibracja] punkt B zapisany: x=%u y=%u\n", kalDotyku.rawXB, kalDotyku.rawYB);
 
@@ -3878,6 +3969,7 @@ void kalibrujDotykJesliTrzeba() {
         tft.setTextColor(KOL_TEKST, KOL_TLO);
         tft.drawString("Dotknij mocniej i przytrzymaj chwile", 240, 185);
         delay(1200);
+        esp_task_wdt_reset();
         tft.fillScreen(KOL_TLO);
         tft.drawString("Kalibracja dotyku", 240, 160);
         tft.drawString("Dotknij i przytrzymaj znacznik", 240, 185);
@@ -4245,6 +4337,11 @@ void wifiWymusPolaczenie(bool bezBssid, uint8_t nr) {
 }
 
 void polaczWifi() {
+  // [v1.4.1 B8] Bez tego biblioteka WiFi zapisuje nazwe sieci i haslo do NVS
+  // i podaje je sterownikowi przy kazdym WiFi.begin() (arduino-esp32 3.3.8,
+  // WiFiGeneric.cpp: _persistent = true). Panel ma je w programie, kopia w
+  // NVS jest zbedna. Musi byc PRZED WiFi.mode().
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.onEvent(wifiZdarzenie);   // [v1.2.1 RATUNEK] kody rozlaczen do logu - polaczWifi() jest wolane raz, z setup()
 
@@ -5014,6 +5111,71 @@ void otaKrok() {
 
 unsigned long ostatniStatus = 0, ostatnieUstawienia = 0;
 
+// [v1.4.1 ZRZUT] Skrot zrzutu po awarii. Biblioteki Arduino dla ESP32 maja
+// wlaczony zapis zrzutu (core dump) do flash w formacie ELF
+// (CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH, CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF),
+// a partitions.csv panelu ma na to partycje "coredump" (64 kB). Po panice
+// (powod restartu "panic", takze czesc "int_wdt"/"task_wdt") system zapisuje
+// tam stan zadan; dotad nikt tego nie czytal. Ta funkcja, wolana raz po
+// starcie: sprawdza, czy zrzut jest i jest poprawny; wypisuje jedna linie
+// z tym, co najwazniejsze (nazwa zadania, adres bledu, powod paniki, do
+// 12 adresow ze sladu wywolan); kasuje zrzut, zeby kolejna awaria miala
+// miejsce. Adresy tlumaczy sie na funkcje i linie kodu poleceniem:
+//   xtensa-esp32-elf-addr2line -pfiaC -e .pio/build/esp32dev/firmware.elf <adresy>
+// z plikiem .elf z TEGO SAMEGO budowania, ktore jest na plytce (po kazdym
+// wgraniu warto skopiowac .elf obok pliku .bin). Zrzut nie jest wysylany do
+// centrali - tylko log przez USB.
+// Bez wlaczonego zrzutu w bibliotekach (inna platforma) funkcja wypisuje
+// "niedostepny" i nic wiecej nie robi.
+void zrzutPoAwariiWypisz() {
+#if defined(CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH) && defined(CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF)
+  const esp_err_t jest = esp_core_dump_image_check();
+  if (jest == ESP_ERR_NOT_FOUND || jest == ESP_ERR_INVALID_SIZE) {
+    return;   // partycja pusta (najczesciej) - cisza, zeby nie zasmiecac logu przy kazdym starcie
+  }
+  if (jest != ESP_OK) {
+    // Zrzut jest, ale nie przeszedl sprawdzenia (np. przerwany zapis, inna
+    // wersja). Skasuj, zeby nie wracac do tego przy kazdym starcie.
+    Serial.printf("tag=ZRZUT lvl=WARN zdarzenie=uszkodzony kod=%s\n", esp_err_to_name(jest));
+    esp_core_dump_image_erase();
+    return;
+  }
+  // Struktura ma kilkaset bajtow - na stosie setup() jest na to miejsce (8 kB),
+  // ale malloc() jest bezpieczniejszy, bo przy starcie pamieci jest najwiecej.
+  esp_core_dump_summary_t* skrot = (esp_core_dump_summary_t*)malloc(sizeof(esp_core_dump_summary_t));
+  if (skrot == nullptr) {
+    Serial.println("tag=ZRZUT lvl=WARN zdarzenie=brak_pamieci_na_skrot");
+    return;   // zrzut zostaje - moze sie uda przy nastepnym starcie
+  }
+  memset(skrot, 0, sizeof(*skrot));
+  const esp_err_t odczyt = esp_core_dump_get_summary(skrot);
+  char powod[120];
+  powod[0] = '\0';
+  if (esp_core_dump_get_panic_reason(powod, sizeof(powod)) != ESP_OK) powod[0] = '\0';
+  if (odczyt == ESP_OK) {
+    skrot->exc_task[sizeof(skrot->exc_task) - 1] = '\0';
+    // Slad: do 12 adresow oddzielonych przecinkami, bez spacji (jedno pole logu).
+    char slad[12 * 11 + 1];
+    size_t poz = 0;
+    const uint32_t glebokosc = skrot->exc_bt_info.depth;
+    for (uint32_t i = 0; i < glebokosc && i < 12 && poz + 11 < sizeof(slad); i++) {
+      poz += (size_t)snprintf(slad + poz, sizeof(slad) - poz, "%s0x%08lx", i ? "," : "", (unsigned long)skrot->exc_bt_info.bt[i]);
+    }
+    if (poz == 0) strcpy(slad, "-");
+    logBezPamieci("tag=ZRZUT lvl=ERR zdarzenie=po_awarii zadanie=%s pc=0x%08lx powod=\"%s\" slad_n=%lu slad_uszkodzony=%d slad=%s\n",
+                  skrot->exc_task, (unsigned long)skrot->exc_pc, powod,
+                  (unsigned long)glebokosc, (int)skrot->exc_bt_info.corrupted, slad);
+  } else {
+    Serial.printf("tag=ZRZUT lvl=WARN zdarzenie=skrot_nieczytelny kod=%s powod=\"%s\"\n", esp_err_to_name(odczyt), powod);
+  }
+  free(skrot);
+  const esp_err_t skas = esp_core_dump_image_erase();
+  Serial.printf("tag=ZRZUT zdarzenie=skasowany wynik=%s\n", esp_err_to_name(skas));
+#else
+  Serial.println("tag=ZRZUT zdarzenie=niedostepny powod=brak_obslugi_w_bibliotekach");
+#endif
+}
+
 // [RESET-DIAG, ta sesja] Mapowanie esp_reset_reason_t na krotki, czytelny
 // tekst. Odczytywane jako PIERWSZA rzecz w setup() (patrz nizej) — samo
 // odczytanie stanu chipu nie zalezy od niczego innego, wiec robimy to
@@ -5143,6 +5305,13 @@ void setup() {
     // sleep — wszystko inne jest warte podniesionego glosu w logu.
     Serial.printf("tag=RESET-DIAG lvl=WARN zdarzenie=nietypowy_restart powod=%s\n", globalnyPowodResetu.c_str());
   }
+  // [v1.4.1 ZRZUT] Jesli poprzedni program padl z panika, w partycji coredump
+  // lezy zrzut - jedna linia "tag=ZRZUT" ze skrotem i kasowanie. Tutaj, zaraz
+  // po powodzie restartu: czysty odczyt flash, przed WiFi/TFT/LVGL.
+  zrzutPoAwariiWypisz();
+  // [v1.4.1 PAMIEC] Od tej chwili kazda odmowa pamieci jest liczona
+  // (alok_nieudane= w linii "tag=PANEL") - opis przy alokNieudanaHak().
+  heap_caps_register_failed_alloc_callback(alokNieudanaHak);
 
   // [FIX-WDT] Task Watchdog Timer — panel dotad NIE MIAL zadnej jawnej
   // konfiguracji TWDT (w odroznieniu od main_centrala.cpp). Bez tego

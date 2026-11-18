@@ -9,7 +9,7 @@
 # naglowkami:
 #   - rdzen i biblioteki arduino-esp32 (domyslnie 3.0.7; RDZEN=3.3.8 - patrz nizej),
 #   - ESP-IDF 5.1.4 z sdkconfig plytki esp32 (repozytorium esp32-arduino-libs),
-#   - newlib 4.1.0 (wersja Espressif), TFT_eSPI 2.5.43, LVGL 8.3.11,
+#   - newlib 4.1.0 (wersja Espressif), TFT_eSPI 2.5.43, LVGL 8.4.0,
 #     ArduinoJson 7.4.3, flagi -D z platformio.ini, include/lv_conf.h projektu.
 # Kompilator: clang z pakietu Pythona "ziglang" (ma cel xtensa). Wszystko
 # pobiera sie z PyPI i GitHuba do katalogu podrecznego (ok. 250 MB).
@@ -69,7 +69,7 @@ klon "rdzen_$RDZEN" "$RDZEN" https://github.com/espressif/arduino-esp32.git core
 klon idf_libs idf-release/v5.1 https://github.com/espressif/esp32-arduino-libs.git esp32/flags esp32/dio_qspi/include esp32/include
 klon newlib esp-4.1.0_20230208 https://github.com/espressif/newlib-esp32.git newlib/libc/include newlib/libc/sys/xtensa
 klon TFT_eSPI V2.5.43 https://github.com/Bodmer/TFT_eSPI.git
-klon lvgl v8.3.11 https://github.com/lvgl/lvgl.git
+klon lvgl v8.4.0 https://github.com/lvgl/lvgl.git
 klon ArduinoJson v7.4.3 https://github.com/bblanchon/ArduinoJson.git
 
 # Naglowki biblioteki C tak, jak wygladaja w toolchainie: newlib + dwa pliki,

@@ -10,7 +10,7 @@
 // Jak to dziala:
 //   - src/main.cpp, dashboard_lvgl_poc.cpp i lvgl_port.cpp sa kompilowane BEZ
 //     zmian, z atrapami sprzetu z katalogu mock/ (opis: mock/atrapa.h),
-//     prawdziwym LVGL 8.3.11 i prawdziwym ArduinoJson 7;
+//     prawdziwym LVGL 8.4.0 i prawdziwym ArduinoJson 7;
 //   - warstwa sieciowa panelu (siec_nieblokujaca_LCD.h) uzywa prawdziwych
 //     gniazd; polaczenia do 192.168.4.1:80 sa przekierowane (linker:
 //     --wrap=connect) do serwera HTTP w tym pliku, ktory odpowiada jako ta
@@ -59,6 +59,7 @@
 
 #include "Arduino.h"
 #include "WiFi.h"
+#include "esp_core_dump.h"   // atrapa partycji zrzutu po awarii (scenariusz poprawki_v141)
 #include "atrapa_sha256.h"   // suma SHA-256 na koncu testowego "pliku firmware" (scenariusze ota_*)
 #include "secrets.h"         // SECRET_OTA_HASLO - to samo haslo, ktore dostaje firmware (atrapa hasel albo src/secrets.h)
 
@@ -165,6 +166,10 @@ int zyweBuforyWykresow() {
 bool odmowic(size_t n) {
   if (odmawiajOd == 0 || wFirmware <= 0 || n < odmawiajOd || n > odmawiajDo) return false;
   odmow++;
+  // Jak sterta ESP-IDF: przy kazdej odmowie wolany jest hak zarejestrowany
+  // przez heap_caps_register_failed_alloc_callback() (firmware v1.4.1 liczy
+  // nim odmowy - pole alok_nieudane= w linii "tag=PANEL").
+  if (g_atrapa.hakNieudanejAlokacji != nullptr) g_atrapa.hakNieudanejAlokacji(n, 0, "malloc");
   return true;
 }
 void zapamietaj(void* p, size_t n) {
@@ -243,7 +248,8 @@ enum Tryb {
   TRYB_PUSTA,    // serwer przyjmuje polaczenie i zamyka je, nie wysylajac nic
   TRYB_UCIETA,   // naglowki + polowa tresci, potem zamkniecie
   TRYB_MILCZY,   // serwer przyjmuje zapytanie i nie odpowiada (timeout po stronie panelu)
-  TRYB_ODMAWIA   // nikt nie slucha na porcie (connection refused)
+  TRYB_ODMAWIA,  // nikt nie slucha na porcie (connection refused)
+  TRYB_ZA_DLUGA  // HTTP 200, poprawny JSON, ale z dodatkowym polem o dlugosci 20 kB (v1.4.1: limit 8 kB)
 };
 
 // Bity Centrala::symulacja - w kolejnosci pol "symulacja_*" w /api/status
@@ -842,6 +848,12 @@ void obsluzPolaczenie(int k, int idx) {
       }
       tryb = c.trybStatus;
       cialo = jsonStatus(c, tryb == TRYB_NAN);
+      if (tryb == TRYB_ZA_DLUGA) {
+        // Poprawny JSON, tylko o wiele dluzszy niz prawdziwy /api/status (ok. 2 kB):
+        // zanim panel v1.4.1 dostal limit, taka odpowiedz rosla w String az do
+        // wyczerpania pamieci (audyt 2026-11-18, A4).
+        cialo.insert(1, "\"wypelnienie\":\"" + std::string(20000, 'x') + "\",");
+      }
       if (tryb == TRYB_OK && cialo.find("\"panel_ota_dostepna\":true") != std::string::npos) c.nStatusZFlagaOta++;
     } else if (sciezka.rfind("/api/ustawienia-get", 0) == 0) {
       c.nUstawienia++;
@@ -962,7 +974,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.4.0"
+#define WERSJA_FW "v1.4.1"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1438,6 +1450,74 @@ void scenariuszBateriaILog() {
   info("%s", liniaLogu("tag=BATERIA napiecie=3.90V").c_str());
   sprawdz(logMa("tag=BATERIA napiecie=3.90V", "procent="), "z ogniwem: zwykla linia z napieciem i procentami");
   sprawdz(!ekranMa("USB"), "z ogniwem: wskaznik pokazuje procenty");
+}
+
+// --- 6b (v1.4.1) ------------------------------------------------------------
+// Male poprawki po audycie z 2026-11-18 (AUDYT_PANELU_LCD_2026-11-18, krok 1):
+//  A4 - odpowiedz dluzsza niz 8 kB konczy zapytanie bledem, panel pracuje dalej;
+//  A5 - linia tag=PANEL podaje zapas stosu i liczbe odmowionych przydzialow;
+//  A6/C5 - brak pamieci przy budowie ekranu / nieznane pole nie wywracaja panelu
+//          (sprawdzane w brak_pamieci_lvgl i przez kompilacje);
+//  B8 - WiFi.persistent(false) przed WiFi.mode(): biblioteka nie zapisuje sieci do NVS;
+//  C9 - jasnosc zapisana jako 0 % przez starszy program jest podnoszona do 5 %;
+//  zrzut po awarii: przy starcie panel wypisuje skrot zrzutu (zadanie, adres, slad)
+//  i kasuje go, zeby nie wracac do niego przy kazdym kolejnym starcie.
+void scenariuszPoprawkiV141() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  // Poprzedni program zostawil jasnosc 0 % (do v1.4.0 suwak na to pozwalal)...
+  g_atrapa.nvs["wyswietlacz"]["jasnDzien"] = 0;
+  g_atrapa.nvs["wyswietlacz"]["jasnNoc"] = 0;
+  // ...i zrzut po awarii w partycji coredump.
+  g_atrapa.zrzutJest = true;
+  setup();
+  info("%s", liniaLogu("tag=ZRZUT lvl=ERR").c_str());
+  info("%s", liniaLogu("tag=ZRZUT zdarzenie=skasowany").c_str());
+  sprawdz(logMa("tag=ZRZUT lvl=ERR zdarzenie=po_awarii zadanie=loopTask pc=0x400d1234", "powod=\"LoadProhibited\"", "slad_n=3 slad_uszkodzony=0 slad=0x400d1234,0x400d5678,0x400e0001"),
+          "start: skrot zrzutu po awarii w logu (zadanie, adres, powod, slad wywolan)");
+  sprawdz(logMa("tag=ZRZUT zdarzenie=skasowany wynik=ESP_OK") && !g_atrapa.zrzutJest && g_atrapa.zrzutSkasowan == 1,
+          "start: zrzut skasowany po wypisaniu - przy nastepnym starcie juz go nie bedzie");
+  sprawdz(!g_atrapa.wifiPersistent, "WiFi.persistent(false): biblioteka WiFi nie zapisuje sieci do NVS przy kazdym polaczeniu");
+  sprawdz(g_atrapa.hakNieudanejAlokacji != nullptr, "zarejestrowany hak odmowionych przydzialow pamieci (heap_caps_register_failed_alloc_callback)");
+  biegnij(6000);
+  sprawdz(ekranMa("55°C"), "kafelki pokazuja dane centrali");
+  info("podswietlenie: wypelnienie %ld/255 (jasnosc 0 %% z NVS podniesiona do 5 %%)", g_atrapa.podswietlenieWypelnienie);
+  sprawdz(g_atrapa.podswietlenieWypelnienie >= 10 && g_atrapa.podswietlenieWypelnienie <= 15, "jasnosc 0 % z NVS -> 5 % (wypelnienie 12/255), ekran nie jest czarny");
+  sprawdz(logMa("tag=PANEL fw=" WERSJA_FW, "stos_min=5000", "alok_nieudane=0 alok_nieudana_b=0"), "linia tag=PANEL: zapas stosu i licznik odmowionych przydzialow (zero)");
+
+  // Drugi start bez zrzutu: zadnej linii tag=ZRZUT (partycja pusta = cisza).
+  // (Nie restartujemy tu atrapy - sprawdzamy tylko, ze esp_core_dump_image_check()
+  // po skasowaniu zwraca ESP_ERR_NOT_FOUND, czyli to, na co firmware milczy.)
+  sprawdz(esp_core_dump_image_check() == ESP_ERR_NOT_FOUND, "po skasowaniu partycja zrzutu jest pusta");
+
+  // Odmowiony przydzial: hak liczy, linia tag=PANEL to pokazuje.
+  g_atrapa.hakNieudanejAlokacji(1234, 0, "test");
+  g_atrapa.hakNieudanejAlokacji(777, 0, "test");
+  size_t od = g_atrapa.serial.size();
+  biegnij(30000);
+  info("%s", liniaLogu("tag=PANEL fw=", od).c_str());
+  sprawdz(logMa("tag=PANEL fw=", "alok_nieudane=2 alok_nieudana_b=777", "", od), "linia tag=PANEL: alok_nieudane=2, ostatnia odmowa 777 B");
+
+  // Centrala odpowiada poprawnym JSON-em, ale 20 kB dluzszym niz zwykle.
+  od = g_atrapa.serial.size();
+  const int statusowPrzed = kopia(0).nStatus;
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_ZA_DLUGA; });
+  biegnij(13000);
+  info("%s", liniaLogu("GET nieudany", od).c_str());
+  info("zapytan o status w tym czasie: %d", kopia(0).nStatus - statusowPrzed);
+  sprawdz(logMa("[STATUS] GET nieudany: odpowiedz za dluga errno=", "EMSGSIZE", "", od), "odpowiedz dluzsza niz 8 kB: zapytanie konczy sie bledem \"odpowiedz za dluga\" (EMSGSIZE)");
+  sprawdz(kopia(0).nStatus - statusowPrzed >= 4, "panel pyta dalej co 2 s (nie zawiesza sie na dlugiej odpowiedzi)");
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=dane_nieaktualne", "", od), "po 10 s bez poprawnych danych: dane_nieaktualne");
+  sprawdz(ileNapisow("--") >= 8 && !ekranMa("55°C"), "ekran: kafelki pokazuja \"--\"");
+  // Dla panelu to blad warstwy sieciowej (jak brak odpowiedzi), wiec po 12 s
+  // bez danych idzie zwykla droga: ponowne polaczenie WiFi, a po 45 s restart.
+  // Taka odpowiedz z prawdziwej centrali nie przychodzi (/api/status ma ok. 2 kB).
+  info("rozlaczen WiFi w tym czasie (zwykla droga przy braku danych): %d", g_atrapa.liczbaDisconnect);
+  sprawdz(g_atrapa.restarty == 0, "bez restartu w ciagu 13 s");
+  od = g_atrapa.serial.size();
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_OK; });
+  biegnij(4000);
+  sprawdz(ekranMa("55°C") && logMa("zdarzenie=dane_wrocily", "", "", od), "po powrocie zwyklej odpowiedzi: dane wracaja na kafelki");
+  zrzutEkranu("1_po_powrocie");
 }
 
 // --- 7 ---------------------------------------------------------------------
@@ -4343,6 +4423,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"zanik_i_powrot", "centrala znika w trakcie pracy i wraca", scenariuszZanikIPowrot},
     {"nieudany_post", "jedno nieudane polecenie z dotyku", scenariuszNieudanyPost},
     {"bateria_i_log", "minuta zwyklej pracy: objetosc logu, wskaznik baterii", scenariuszBateriaILog},
+    {"poprawki_v141", "male poprawki po audycie: limit odpowiedzi 8 kB, zapas stosu i odmowy pamieci w logu, zrzut po awarii, jasnosc min. 5 % (v1.4.1)", scenariuszPoprawkiV141},
     {"skan_zawieszony", "skan WiFi, ktory sie nie konczy", scenariuszSkanZawieszony},
     {"ustawienia_milcza", "status dziala, /api/ustawienia-get bez odpowiedzi", scenariuszUstawieniaMilcza},
     {"gola_plytka", "centrala bez czujnikow + symulacja czujnika (stanowisko z 2026-11-11)", scenariuszGolaPlytka},

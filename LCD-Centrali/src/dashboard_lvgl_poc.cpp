@@ -1276,6 +1276,13 @@ static void press_flash_event_cb(lv_event_t *e) {
 // obj - uzywane zarowno dla przyciskow panelu, jak i calego kafelka POMPA.
 static void press_flash_zainstaluj(lv_obj_t *obj, uint16_t kolorNormalny, uint8_t cienSzerokoscSpoczynek) {
   PressFlashCtx *ctx = (PressFlashCtx *)malloc(sizeof(PressFlashCtx));
+  // [v1.4.1 A6] Bez pamieci (zdarza sie tylko przy starcie, gdy jest jej
+  // najwiecej - czyli praktycznie nigdy): przycisk dziala, tylko bez efektu
+  // wcisniecia. Dotad zapis pod nullptr = natychmiastowy restart.
+  if (ctx == nullptr) {
+    Serial.println("tag=LVGL lvl=WARN zdarzenie=brak_pamieci_press_flash");
+    return;
+  }
   ctx->kolorNormalny = kolorNormalny;
   ctx->cienSzerokoscSpoczynek = cienSzerokoscSpoczynek;
   ctx->pressStartMs = 0;
@@ -3674,7 +3681,7 @@ static void wyswietlacz_jasnosc_wiersz_zbuduj(lv_obj_t *parent, int y, const cha
   lv_obj_t *slider = lv_slider_create(wiersz);
   lv_obj_set_size(slider, 308, 16);
   lv_obj_align(slider, LV_ALIGN_BOTTOM_MID, 0, 0);
-  lv_slider_set_range(slider, 0, 100);
+  lv_slider_set_range(slider, JASNOSC_MIN_PROCENT_LVGL, 100);   // [v1.4.1 C9] bylo 0-100; 0 % gasilo ekran na stale
   lv_obj_set_style_bg_color(slider, rgb565(KOL_RAMKA), LV_PART_MAIN);
   lv_obj_set_style_bg_color(slider, rgb565(id == 0 ? KOL_WYSWIETLACZ_DZIEN : KOL_WYSWIETLACZ_NOC), LV_PART_INDICATOR);
   lv_obj_set_style_bg_color(slider, rgb565(KOL_TEKST), LV_PART_KNOB);

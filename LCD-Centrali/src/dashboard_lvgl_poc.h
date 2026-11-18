@@ -440,9 +440,14 @@ void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(WyswietlaczUstawie
 // Zasila caly panel jednym wywolaniem - wolane raz w setup() main.cpp zaraz
 // po wczytaniu wartosci z NVS (wyswietlaczWczytajZPamieci()), zeby ekran
 // przy pierwszym otwarciu pokazywal PRAWDZIWE zapisane wartosci, nie
-// domyslne zera/placeholdery. `jasnoscDzien`/`jasnoscNoc` 0-100 (%),
-// `godzinaStart`/`godzinaKoniec` 0-23, `harmonogramWlaczony` bool -
-// dokladnie w tej kolejnosci main.cpp je przekazuje.
+// domyslne zera/placeholdery. `jasnoscDzien`/`jasnoscNoc`
+// JASNOSC_MIN_PROCENT_LVGL-100 (%), `godzinaStart`/`godzinaKoniec` 0-23,
+// `harmonogramWlaczony` bool - dokladnie w tej kolejnosci main.cpp je
+// przekazuje.
+// [v1.4.1 C9] Dolny kraniec obu suwakow jasnosci. Ta sama liczba co
+// JASNOSC_MIN_PROCENT w main.cpp (tam: klips wartosci z NVS i z suwaka).
+// 0 % gasilo ekran na stale.
+#define JASNOSC_MIN_PROCENT_LVGL 5
 void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int jasnoscNoc,
                                                             int godzinaStart, int godzinaKoniec,
                                                             bool harmonogramWlaczony);

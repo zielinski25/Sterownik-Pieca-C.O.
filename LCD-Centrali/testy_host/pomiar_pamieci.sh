@@ -151,9 +151,9 @@ pobierz() {
     git clone --quiet --depth 1 --branch "$2" "$3" "$PODRECZNY/$1" 2>/dev/null
   fi
 }
-echo "[1] biblioteki (LVGL 8.3.11, ArduinoJson 7.2.1)"
-pobierz lvgl v8.3.11 https://github.com/lvgl/lvgl.git
-pobierz ArduinoJson v7.2.1 https://github.com/bblanchon/ArduinoJson.git
+echo "[1] biblioteki (LVGL 8.4.0, ArduinoJson 7.4.3)"
+pobierz lvgl v8.4.0 https://github.com/lvgl/lvgl.git
+pobierz ArduinoJson v7.4.3 https://github.com/bblanchon/ArduinoJson.git
 
 # -fno-omit-frame-pointer: licznik odczytuje stos wywolan po wskaznikach ramek.
 # -fno-inline: kazda funkcja firmware'u ma wlasna ramke, wiec w rozbiciu

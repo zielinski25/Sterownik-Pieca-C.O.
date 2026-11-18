@@ -18,7 +18,8 @@ python3 sprawdz_czulosc_ota.py     # czy scenariusze ota_* wykrywają celowo wpr
 ```
 
 Wymaga: `g++` (C++17), `gcc`, `ar`, `git`, Linux albo WSL. Przy pierwszym
-uruchomieniu skrypt pobiera z GitHuba LVGL 8.3.11 i ArduinoJson 7.2.1 do
+uruchomieniu skrypt pobiera z GitHuba LVGL 8.4.0 i ArduinoJson 7.4.3 (te
+same wersje, które od v1.4.1 przypina `platformio.ini`) do
 katalogu podręcznego (`$LCD_TESTY_CACHE`, domyślnie `/tmp/lcd_testy_host`).
 Logi Seriala i zrzuty ekranu (`.bmp`) z każdego scenariusza trafiają do
 `<katalog podręczny>/wyniki/`.
@@ -26,25 +27,26 @@ Logi Seriala i zrzuty ekranu (`.bmp`) z każdego scenariusza trafiają do
 `src/secrets.h` nie jest potrzebny — gdy go nie ma, testy dostają atrapę z
 wymyślonymi hasłami (atrapa WiFi haseł nie sprawdza).
 
-**Inne wersje bibliotek.** `platformio.ini` dopuszcza każde LVGL 8.x od 8.3.11
-i każdy ArduinoJson 7.x od 7.2.0. Skrypty pobierają biblioteki tylko wtedy,
-gdy nie ma ich w katalogu podręcznym, więc inną wersję wystarczy włożyć tam
-wcześniej:
+**Inne wersje bibliotek.** Do v1.4.0 `platformio.ini` dopuszczał każde LVGL
+8.x od 8.3.11 i każdy ArduinoJson 7.x od 7.2.0, a skrypty budowały na
+8.3.11 i 7.2.1; od v1.4.1 jedno i drugie to 8.4.0 i 7.4.3. Skrypty pobierają
+biblioteki tylko wtedy, gdy nie ma ich w katalogu podręcznym, więc inną
+wersję (np. do porównania ze starą) wystarczy włożyć tam wcześniej:
 
 ```
-mkdir -p /tmp/lcd_nowe
-git clone --depth 1 --branch v8.4.0 https://github.com/lvgl/lvgl.git /tmp/lcd_nowe/lvgl
-git clone --depth 1 --branch v7.4.3 https://github.com/bblanchon/ArduinoJson.git /tmp/lcd_nowe/ArduinoJson
-LCD_TESTY_CACHE=/tmp/lcd_nowe ./uruchom_testy.sh
-LCD_TESTY_CACHE=/tmp/lcd_nowe ./pomiar_pamieci.sh --wszystko
+mkdir -p /tmp/lcd_stare
+git clone --depth 1 --branch v8.3.11 https://github.com/lvgl/lvgl.git /tmp/lcd_stare/lvgl
+git clone --depth 1 --branch v7.2.1 https://github.com/bblanchon/ArduinoJson.git /tmp/lcd_stare/ArduinoJson
+LCD_TESTY_CACHE=/tmp/lcd_stare ./uruchom_testy.sh
+LCD_TESTY_CACHE=/tmp/lcd_stare ./pomiar_pamieci.sh --wszystko
 ```
 
 Stan na 2026-11-12, v1.4.0: z LVGL 8.4.0 i ArduinoJson 7.4.3 przechodzą
 wszystkie scenariusze (także w modelu 32-bitowym), a pomiar pamięci daje
 129 324 B po starcie, 5 324 B na jedno odpytanie i 2 452 B / 5 352 B chwilowo
 na wykres (punkty z centrali / cały CSV); z opcją `--przypadki`: najwięcej
-naraz 25 356 B, aktualizacja panelu 11 344 B, próg 24 800 B. Z wersjami
-z `platformio.ini` (8.3.11 i 7.2.1) te same liczby to 129 324, 5 464, 2 452 /
+naraz 25 356 B, aktualizacja panelu 11 344 B, próg 24 800 B. Ze starymi
+wersjami (8.3.11 i 7.2.1) te same liczby to 129 324, 5 464, 2 452 /
 5 492, 25 496, 11 484 i 24 900 B.
 
 ## Co jest w środku
@@ -486,7 +488,8 @@ ogniwo 3,90 V), nie dotyka ekranu i przez ok. 11 minut liczy:
 - **zmiany jasności podświetlenia** i to, czy panel usnął
   (`esp_deep_sleep_start()` w atrapie kończy program kodem 42).
 
-Wynik z 2026-11-18, firmware v1.4.0 (LVGL 8.3.11, ArduinoJson 7.2.1):
+Wynik z 2026-11-18, firmware v1.4.0 (LVGL 8.3.11, ArduinoJson 7.2.1; v1.4.1
+z LVGL 8.4.0 i ArduinoJson 7.4.3 daje te same liczby):
 
 | Stan | Ekranów na minutę | Pikseli na jeden odczyt statusu | Połączeń na minutę | Próśb o pamięć na minutę |
 |---|---|---|---|---|
@@ -533,7 +536,7 @@ zmierzyć na płytce.
 i `lvgl_port.cpp` w trybie „tylko sprawdź” (`-fsyntax-only`) z prawdziwymi
 nagłówkami: rdzeń i biblioteki arduino-esp32 (3.0.7; `RDZEN=3.3.8` dla
 nowszego), ESP-IDF 5.1.4 z konfiguracją płytki `esp32`, newlib, TFT_eSPI
-2.5.43, LVGL 8.3.11, ArduinoJson 7.4.3, flagi `-D` z `platformio.ini`.
+2.5.43, LVGL 8.4.0, ArduinoJson 7.4.3, flagi `-D` z `platformio.ini`.
 Kompilatorem jest clang z pakietu Pythona `ziglang` (ma cel xtensa); wszystko
 pobiera się z PyPI i GitHuba do katalogu podręcznego (ok. 250 MB).
 

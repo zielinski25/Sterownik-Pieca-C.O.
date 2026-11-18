@@ -50,6 +50,8 @@ typedef bool boolean;
 #define RTC_NOINIT_ATTR   // na PC zwykla zmienna globalna; test moze ja wypelnic przed setup() ("stan po restarcie")
 #define IRAM_ATTR
 #define portNUM_PROCESSORS 2
+typedef void* TaskHandle_t;
+typedef unsigned UBaseType_t;
 #define constrain(amt, low, high) ((amt) < (low) ? (low) : ((amt) > (high) ? (high) : (amt)))
 #define radians(deg) ((deg) * DEG_TO_RAD)
 #define sq(x) ((x) * (x))
@@ -223,6 +225,7 @@ class AtrapaEsp {
 extern AtrapaEsp ESP;
 
 inline unsigned long millis() { return g_atrapa.terazMs; }
+inline UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t) { return g_atrapa.stosZapasB; }
 inline unsigned long micros() { return g_atrapa.terazMs * 1000UL; }
 inline void delay(unsigned long ms) { atrapa_uplyw_czasu(ms); }
 inline void delayMicroseconds(unsigned int) {}

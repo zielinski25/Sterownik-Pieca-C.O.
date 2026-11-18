@@ -45,6 +45,7 @@ typedef arduino_event_info_t WiFiEventInfo_t;
 class AtrapaWiFi {
  public:
   bool mode(wifi_mode_t) { return true; }
+  bool persistent(bool p) { g_atrapa.wifiPersistent = p; return true; }
   bool config(IPAddress, IPAddress, IPAddress) { return true; }
   void setScanMethod(wifi_scan_method_t m) { g_atrapa.metodaSkanu = (int)m; }
   void setSortMethod(wifi_sort_method_t m) { g_atrapa.metodaSortowania = (int)m; }

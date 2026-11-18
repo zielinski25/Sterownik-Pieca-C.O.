@@ -72,6 +72,11 @@ namespace SiecCfg {
     static const uint32_t CONNECT_TIMEOUT_MS   = 400;   // limit fazy laczenia
     static const uint32_t CALKOWITY_TIMEOUT_MS = 1500;  // = HTTP_TIMEOUT_MS
     static const size_t   BUFOR_ROZMIAR        = 512;   // kawalek na jeden recv()
+    // [v1.4.1 A4] Najwieksza odpowiedz (naglowki + tresc), jaka panel zbiera
+    // w pamieci. Prawdziwy /api/status ma ok. 2 kB, /api/ustawienia-get mniej.
+    // Gdy pod adresem centrali odpowie cos innego (strona WWW, inny program),
+    // bez limitu napis rosl, az zabraklo pamieci - takze dla WiFi.
+    static const size_t   ODPOWIEDZ_MAX_B      = 8192;
     // [v1.2.0 LOG-POZIOM] Poziom logu warstwy sieciowej (bylo: bool
     // LOG_DIAGNOSTYCZNY = true, czyli odpowiednik poziomu 2):
     //   0 = tylko bledy ("blad", "odrzucono-zajete", "blad-socket"...),
@@ -153,6 +158,7 @@ inline const char* siecNazwaBledu(int numer) {
         case ETIMEDOUT:    return "ETIMEDOUT";
         case ENOTCONN:     return "ENOTCONN";
         case EADDRINUSE:   return "EADDRINUSE";
+        case EMSGSIZE:     return "EMSGSIZE";   // [v1.4.1] odpowiedz dluzsza niz ODPOWIEDZ_MAX_B
         default:           return "?";
     }
 }
@@ -292,6 +298,12 @@ public:
             int n = recv(sock_, bufor, sizeof(bufor) - 1, 0);
             if (n > 0) {
                 bufor[n] = 0;
+                // [v1.4.1 A4] Limit calej odpowiedzi - patrz ODPOWIEDZ_MAX_B.
+                if (odpowiedz_.length() + (size_t)n > SiecCfg::ODPOWIEDZ_MAX_B) {
+                    { String wyrzuc(std::move(odpowiedz_)); }
+                    zamknijZBledem("odpowiedz za dluga", 'd', EMSGSIZE);
+                    return;
+                }
                 // [v1.2.2 PAMIEC] String z Arduino przy braku pamieci nie
                 // zglasza bledu - po prostu NIE dopisuje tekstu. Odpowiedz
                 // bylaby wtedy ucieta i wygladala na blad centrali ("zly
@@ -361,6 +373,7 @@ public:
     //   'a' connect() - blad po chwili           's' send()
     //   'c' limit czasu calosci (polaczono, brak odpowiedzi)   'r' recv()
     //   'm' zabraklo pamieci na odebrana odpowiedz (numer bledu: ENOMEM)
+    //   'd' odpowiedz dluzsza niz SiecCfg::ODPOWIEDZ_MAX_B (numer bledu: EMSGSIZE) [v1.4.1]
     // '-' = od ostatniego startu zadania bledu nie bylo.
     char etapBledu() const { return etapBledu_; }
     int numerBledu() const { return numerBledu_; }

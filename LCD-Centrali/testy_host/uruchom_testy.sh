@@ -13,7 +13,7 @@
 #   SRC=/tmp/stary/src OBSERWACJE=1 ./uruchom_testy.sh
 #
 # Wymaga: g++ (C++17), gcc, ar, git (Linux albo WSL). Za pierwszym razem
-# pobiera z GitHuba LVGL 8.3.11 i ArduinoJson 7.2.1 do katalogu podrecznego
+# pobiera z GitHuba LVGL 8.4.0 i ArduinoJson 7.4.3 do katalogu podrecznego
 # i buduje LVGL; kolejne uruchomienia trwaja kilka sekund.
 # ============================================================================
 set -euo pipefail
@@ -34,15 +34,15 @@ g++ -std=c++17 -O1 -Wall -Wextra -Wno-format-truncation -o "$PODRECZNY/test_diag
 "$PODRECZNY/test_diagnostyka" | sed 's/^/    /'
 if [ "${1:-}" = "--szybko" ]; then exit 0; fi
 
-echo "[2] biblioteki (LVGL 8.3.11, ArduinoJson 7.2.1)"
+echo "[2] biblioteki (LVGL 8.4.0, ArduinoJson 7.4.3)"
 pobierz() {   # pobierz <katalog> <tag> <adres>
   if [ ! -d "$PODRECZNY/$1/.git" ]; then
     echo "    pobieram $3 ($2)"
     git clone --quiet --depth 1 --branch "$2" "$3" "$PODRECZNY/$1" 2>/dev/null
   fi
 }
-pobierz lvgl v8.3.11 https://github.com/lvgl/lvgl.git
-pobierz ArduinoJson v7.2.1 https://github.com/bblanchon/ArduinoJson.git
+pobierz lvgl v8.4.0 https://github.com/lvgl/lvgl.git
+pobierz ArduinoJson v7.4.3 https://github.com/bblanchon/ArduinoJson.git
 
 # LVGL jest budowany z lv_conf.h TEGO projektu; zmiana lv_conf.h = nowa biblioteka.
 ODCISK="$(cksum < "$INCLUDE/lv_conf.h" | tr -d ' ')"

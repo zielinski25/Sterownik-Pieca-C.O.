@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.4.0
+# Panel LCD (wyświetlacz CO) — firmware v1.4.1
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -13,8 +13,12 @@ centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 po
    Bez tego pliku kompilacja zatrzymuje się z komunikatem, co zrobić.
    `secrets.h` jest w `.gitignore`.
 2. Reszta bez zmian: PlatformIO → Upload (`pio run -e esp32dev -t upload`).
-   `platformio.ini` i `partitions.csv` są takie same jak w v1.1.0;
-   `include/lv_conf.h` zmienił się w v1.2.2 (obsługa błędu biblioteki ekranu).
+   `partitions.csv` jest taki sam jak w v1.1.0; `include/lv_conf.h` zmienił
+   się w v1.2.2 (obsługa błędu biblioteki ekranu); **`platformio.ini` zmienił
+   się w v1.4.1** (przypięte wersje — niżej). Przy pierwszym budowaniu
+   PlatformIO pobierze platformę pioarduino (ok. 1 GB, kilka minut) — tę samą,
+   którą ma projekt centrali, więc jeśli centrala była budowana na tym
+   komputerze, nic nowego nie ściąga.
 
 **Z v1.3.0 na v1.4.0** zmienia się pięć plików w `src/`: `main.cpp`,
 `diagnostyka_panelu.h`, `siec_nieblokujaca_LCD.h`, `dashboard_lvgl_poc.cpp`,
@@ -25,6 +29,41 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.4.1
+
+**Małe i pewne poprawki po audycie z 2026-11-18** (krok 1 z
+`WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`, rozdział 4; numery znalezisk z
+`AUDYT_PANELU_LCD_2026-11-18_WYCIEKI_DRENAZ_KOD.md`). Panel pracuje tak samo
+jak v1.4.0 — zmienia się to, co się buduje, co trafia do logu i kilka zabezpieczeń.
+
+| Co | Było (v1.4.0) | Jest (v1.4.1) |
+|---|---|---|
+| **C2** platforma i biblioteki w `platformio.ini` | `platform = espressif32` bez wersji, biblioteki z `^` (co komputer, to inna wersja; na rdzeniu 3.0.7–3.2.0 po pierwszym alarmie podświetlenie spadało do ok. 1/4) | **pioarduino 55.03.38-1** (ta sama linia co centrala), `TFT_eSPI 2.5.43`, `ArduinoJson 7.4.3`, `LVGL 8.4.0` — dokładnie te wersje, na których idą testy na PC |
+| **A5** zapas stosu i odmowy pamięci | nic w logu | linia `tag=PANEL` ma `stos_min=` (ile bajtów stosu pętli nigdy nie zostało użytych) oraz `alok_nieudane=` i `alok_nieudana_b=` (ile razy `malloc()` odmówił i o ile bajtów ostatnio) |
+| **zrzut po awarii** | zrzut leżał w partycji `coredump`, nikt go nie czytał | przy starcie panel wypisuje `tag=ZRZUT lvl=ERR zdarzenie=po_awarii zadanie= pc= powod= slad=` (zadanie, adres, powód, do 12 adresów śladu) i kasuje zrzut; bez zrzutu — cisza |
+| **C3** kalibracja dotyku | pętle czekania na palec nie karmiły watchdoga (limit 15 s) | karmią co 10 ms — kalibracja może trwać dowolnie długo |
+| **A4** długość odpowiedzi centrali | bez limitu (`String` rósł do wyczerpania RAM-u) | limit **8 kB** (`SiecCfg::ODPOWIEDZ_MAX_B`); dłuższa kończy zapytanie błędem `odpowiedz za dluga` (etap `d`, `EMSGSIZE`), panel pyta dalej |
+| **A6** `malloc()` przy budowie ekranu | wynik nieużywany bez sprawdzenia | przy braku pamięci podświetlenie dotknięcia jest pomijane, log `tag=LVGL lvl=WARN zdarzenie=brak_pamieci_press_flash` |
+| **C5** `POLA[znajdzIndeksPola("...")]` | 17 miejsc bez sprawdzenia, czy pole istnieje (`-1` = zapis poza tablicą) | jedna funkcja `polaWartosc()` zwracająca pusty tekst, gdy pola nie ma |
+| **B8** `WiFi.persistent(false)` | biblioteka zapisywała sieć do NVS przy każdym połączeniu | wyłączone przed `WiFi.mode()` — panel i tak sam wybiera BSSID |
+| **C9** jasność | suwaki pozwalały na 0 % (czarny ekran, trudno odkręcić) | dolna granica **5 %** na suwakach i przy odczycie z NVS (0 % zapisane przez starszy program daje 5 %) |
+
+Czego v1.4.1 **nie** zmienia (kolejne kroki, osobno): rysowanie tylko przy
+zmianie danych (krok 2), sen na baterii i próg niskiej baterii (krok 3),
+komendy gubione w czasie pobierania (krok 4), rzadsze odpytywanie (krok 5),
+80 MHz (krok 6), martwy kod (krok 7).
+
+**Jak czytać `tag=ZRZUT`.** Adresy z `pc=` i `slad=` zamienia się na nazwy
+funkcji poleceniem `xtensa-esp32-elf-addr2line -pfiaC -e .pio/build/esp32dev/firmware.elf 0x400d1234 ...`
+— **z tym samym `firmware.elf`, z którego powstał wgrany program**. Plik
+`.elf` z każdego wgrania warto zachować (np. obok kopii `firmware.bin`), bo
+po kolejnym budowaniu adresy się zmieniają.
+
+**Z v1.4.0 na v1.4.1** zmienia się `platformio.ini` i cztery pliki w `src/`:
+`main.cpp`, `dashboard_lvgl_poc.cpp`, `dashboard_lvgl_poc.h`,
+`siec_nieblokujaca_LCD.h`. Można wgrać kablem albo przez centralę
+(`/update_panel`, panel v1.4.0 już to umie).
 
 ## Co zmienia v1.4.0
 
@@ -835,14 +874,15 @@ jego wersji (opis w raporcie).
 
 ## Co zostało sprawdzone, a co nie
 
-**v1.4.0 i v1.3.0 nie były budowane w PlatformIO ani uruchamiane na
+**v1.4.1, v1.4.0 i v1.3.0 nie były budowane w PlatformIO ani uruchamiane na
 płytce.** Na płytce sprawdzona jest v1.2.2 (niżej). v1.3.0 różni się od niej
 ekranem Wykresy i sposobem pobierania jego danych; v1.4.0 dokłada
 aktualizację przez centralę. Reszta kodu jest ta sama.
 
 - **Na PC, z atrapami sprzętu:** prawdziwy `main.cpp` i dashboard uruchomione
-  zwykłym `g++` przeciwko udawanym centralom — 47 scenariuszy, 486
-  sprawdzeń, plus 442 sprawdzenia jednostkowe; także pod AddressSanitizer
+  zwykłym `g++` przeciwko udawanym centralom — 48 scenariuszy (v1.4.1 dokłada
+  `poprawki_v141`: limit odpowiedzi, licznik odmów pamięci, zrzut po awarii,
+  jasność 0 % → 5 %), plus 442 sprawdzenia jednostkowe; także pod AddressSanitizer
   i UBSan. Udawana centrala wysyła ten sam JSON co firmware 3.58.3. W czterech
   scenariuszach z v1.2.2 panel nie dostaje pamięci na żądanie testu — tak, jak
   na płytce z logu z 2026-11-12.
@@ -926,12 +966,12 @@ aktualizację przez centralę. Reszta kodu jest ta sama.
   `.cpp` bez błędów z arduino-esp32 3.0.7 i 3.3.8, ESP-IDF 5.1, TFT_eSPI,
   LVGL i ArduinoJson (`testy_host/sprawdz_naglowki_esp32.sh`; kompilator clang,
   bez linkowania).
-- **Wersje bibliotek:** `platformio.ini` dopuszcza każde LVGL 8.x od 8.3.11
-  i każdy ArduinoJson 7.x od 7.2.0 — którą wersję ma dany komputer, zależy od
-  tego, kiedy PlatformIO je pobrał. Testy i pomiar pamięci v1.4.0 przechodzą
-  z LVGL 8.3.11 i ArduinoJson 7.2.1 oraz z najnowszymi wydaniami (LVGL 8.4.0,
-  ArduinoJson 7.4.3): 442 sprawdzenia jednostkowe, 47 scenariuszy,
-  `pomiar_pamieci.sh --przypadki`. Z nowszymi bibliotekami pamięć po starcie
+- **Wersje bibliotek:** od v1.4.1 `platformio.ini` przypina LVGL 8.4.0 i
+  ArduinoJson 7.4.3 (do v1.4.0 dopuszczał każde LVGL 8.x od 8.3.11 i każdy
+  ArduinoJson 7.x od 7.2.0 — którą wersję miał dany komputer, zależało od
+  tego, kiedy PlatformIO je pobrał). Testy na PC i pomiar pamięci idą na tych
+  samych wersjach; v1.4.0 przechodziła też z LVGL 8.3.11 i ArduinoJson 7.2.1:
+  442 sprawdzenia jednostkowe, 47 scenariuszy, `pomiar_pamieci.sh --przypadki`. Z nowszymi bibliotekami pamięć po starcie
   wychodzi identyczna, a odpytanie centrali o 140 B mniejsze (5 324 B);
   aktualizacja panelu bierze 11 344 B zamiast 11 484 B.
 - **Na płytce** (2026-11-12, **v1.2.2**): firmware zbudowany w PlatformIO

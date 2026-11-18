@@ -126,6 +126,20 @@ struct Atrapa {
   // --- inne ---
   int restarty = 0;            // ESP.restart()
   int powodResetu = 1;         // esp_reset_reason(): 1 = ESP_RST_POWERON
+  bool wifiPersistent = true;  // WiFi.persistent(): true = biblioteka zapisuje siec do NVS (domyslne w rdzeniu 3.x)
+  unsigned stosZapasB = 5000;  // uxTaskGetStackHighWaterMark(NULL) [B]
+  void (*hakNieudanejAlokacji)(size_t, uint32_t, const char*) = nullptr;   // heap_caps_register_failed_alloc_callback()
+  // --- zrzut po awarii (esp_core_dump.h) ---
+  // zrzutJest=true: esp_core_dump_image_check() zwraca ESP_OK, a skrot ma
+  // ponizsze wartosci; po esp_core_dump_image_erase() zrzutJest = false.
+  bool zrzutJest = false;
+  bool zrzutUszkodzony = false;          // true: image_check() zwraca ESP_ERR_INVALID_CRC
+  int zrzutSkasowan = 0;
+  const char* zrzutZadanie = "loopTask";
+  uint32_t zrzutPc = 0x400d1234u;
+  const char* zrzutPowod = "LoadProhibited";
+  uint32_t zrzutSlad[16] = {0x400d1234u, 0x400d5678u, 0x400e0001u};
+  uint32_t zrzutSladN = 3;
 
   // --- aktualizacja OTA panelu (HTTPUpdate.h, esp_ota_ops.h) ---
   // httpUpdate.update() atrapy niczego nie pobiera i niczego nie zapisuje:
