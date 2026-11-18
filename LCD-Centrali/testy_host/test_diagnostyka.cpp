@@ -284,7 +284,7 @@ static void testPrzyczyna() {
   SPRAWDZ(ustalPrzyczyne(true, true) == PRZYCZYNA_ODPOWIEDZ);
   SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_WIFI), "BRAK WIFI") == 0);
   SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_MILCZY), "CENTRALA MILCZY") == 0);
-  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_ODPOWIEDZ), "ZLA ODPOWIEDZ") == 0);
+  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_ODPOWIEDZ), "ZŁA ODPOWIEDŹ") == 0);
   SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_BRAK), "") == 0);
   SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_WIFI), "wifi") == 0);
   SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_MILCZY), "milczy") == 0);
@@ -296,9 +296,9 @@ static void testPrzyczyna() {
   SPRAWDZ(ustalPrzyczyne(true, false, true) == PRZYCZYNA_PAMIEC);   // socket()/connect() odrzucone z braku pamieci
   SPRAWDZ(ustalPrzyczyne(false, true, true) == PRZYCZYNA_WIFI);     // bez WiFi nadal "brak WiFi"
   SPRAWDZ(ustalPrzyczyne(true, true, false) == PRZYCZYNA_ODPOWIEDZ);
-  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_PAMIEC), "BRAK PAMIECI") == 0);
+  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_PAMIEC), "BRAK PAMIĘCI") == 0);
   SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_PAMIEC), "pam") == 0);
-  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_LVGL), "BLAD EKRANU") == 0);
+  SPRAWDZ(std::strcmp(przyczynaNapis(PRZYCZYNA_LVGL), "BŁĄD EKRANU") == 0);
   SPRAWDZ(std::strcmp(przyczynaSkrot(PRZYCZYNA_LVGL), "lvgl") == 0);
   // Wartosci liczbowe sa zapisywane w pamieci RTC - nie moga sie przesunac.
   SPRAWDZ(PRZYCZYNA_BRAK == 0 && PRZYCZYNA_WIFI == 1 && PRZYCZYNA_MILCZY == 2 && PRZYCZYNA_ODPOWIEDZ == 3 &&
@@ -324,11 +324,11 @@ static void testPrzyczyna() {
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_WIFI, 35, 10);
   SPRAWDZ(std::strcmp(z, "RESTART ZA 10 s: BRAK WIFI") == 0);      // od 10 s: odliczanie
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_ODPOWIEDZ, 45, 0);
-  SPRAWDZ(std::strcmp(z, "RESTART ZA 0 s: ZLA ODPOWIEDZ") == 0);
+  SPRAWDZ(std::strcmp(z, "RESTART ZA 0 s: ZŁA ODPOWIEDŹ") == 0);
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_PAMIEC, 14, 31);
-  SPRAWDZ(std::strcmp(z, "BRAK PAMIECI 14 s") == 0);
+  SPRAWDZ(std::strcmp(z, "BRAK PAMIĘCI 14 s") == 0);
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_PAMIEC, 38, 7);
-  SPRAWDZ(std::strcmp(z, "RESTART ZA 7 s: BRAK PAMIECI") == 0);
+  SPRAWDZ(std::strcmp(z, "RESTART ZA 7 s: BRAK PAMIĘCI") == 0);
   // [v1.4.2 B6] dluzszy czas bez danych: minuty i godziny zamiast tysiecy sekund
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_WIFI, 59, BEZ_RESTARTU);
   SPRAWDZ(std::strcmp(z, "BRAK WIFI 59 s") == 0);
@@ -348,7 +348,7 @@ static void testPrzyczyna() {
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_MILCZY, 299, 300);
   SPRAWDZ(std::strlen(z) <= 31);                                   // najdluzszy zwykly napis
   znacznikBrakuDanych(z, sizeof(z), PRZYCZYNA_ODPOWIEDZ, 200, BEZ_RESTARTU);
-  SPRAWDZ(std::strcmp(z, "ZLA ODPOWIEDZ 3 min") == 0);             // restartu nie bedzie - bez odliczania; [v1.4.2] 200 s = "3 min"
+  SPRAWDZ(std::strcmp(z, "ZŁA ODPOWIEDŹ 3 min") == 0);             // restartu nie bedzie - bez odliczania; [v1.4.2] 200 s = "3 min"
   char ciasny[10];
   znacznikBrakuDanych(ciasny, sizeof(ciasny), PRZYCZYNA_MILCZY, 14, 3);
   SPRAWDZ(std::strlen(ciasny) == 9);                               // obciecie bez wyjscia poza bufor

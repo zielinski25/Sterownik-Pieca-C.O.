@@ -88,13 +88,15 @@ if [ "$SANITIZER" = "1" ]; then OSTRZ="$OSTRZ -Wno-maybe-uninitialized"; fi
 g++ $WSPOLNE $OSTRZ -c -o "$BUD/main.o" "$SRC/main.cpp" &
 g++ $WSPOLNE $OSTRZ -c -o "$BUD/dash.o" "$SRC/dashboard_lvgl_poc.cpp" &
 g++ $WSPOLNE $OSTRZ -c -o "$BUD/port.o" "$SRC/lvgl_port.cpp" &
+# [v1.4.5 D] czcionki z polskimi literami (C, wygenerowane - patrz src/czcionki/CZYTAJ.txt)
+for n in 14 20 28; do gcc -O1 -g $SAN -w -DLV_CONF_INCLUDE_SIMPLE -I "$INCLUDE" -isystem "$PODRECZNY/lvgl" -c -o "$BUD/czc$n.o" "$SRC/czcionki/lv_font_pl_$n.c" & done
 g++ $WSPOLNE -Wall -Wextra -c -o "$BUD/atrapa.o" mock/atrapa.cpp &
 g++ $WSPOLNE -Wall -Wextra -c -o "$BUD/sym.o" symulator_panelu.cpp &
 BLEDY=0
 for zadanie in $(jobs -p); do wait "$zadanie" || BLEDY=1; done
 if [ "$BLEDY" != 0 ]; then echo "    BLAD KOMPILACJI (patrz komunikaty wyzej)"; exit 1; fi
 # --wrap: polaczenia panelu do 192.168.4.1:80 ida do serwera w symulator_panelu.cpp
-g++ -o "$BUD/symulator_panelu" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/atrapa.o "$BUD"/sym.o \
+g++ -o "$BUD/symulator_panelu" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/czc14.o "$BUD"/czc20.o "$BUD"/czc28.o "$BUD"/atrapa.o "$BUD"/sym.o \
     "$LIB" $SAN -Wl,--wrap=connect,--wrap=send,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -lpthread
 PROGRAM="$BUD/symulator_panelu"
 # PROTOTYP=1 (tylko pomiar_obciazenia.sh --prototyp): ten sam firmware, ale cztery
@@ -103,7 +105,7 @@ PROGRAM="$BUD/symulator_panelu"
 if [ "${PROTOTYP:-0}" = "1" ]; then
   gcc -c -O1 -Wall -Wextra -DLV_CONF_INCLUDE_SIMPLE -I "$INCLUDE" -I "$PODRECZNY/lvgl" -o "$BUD/prototyp.o" prototypy/ustaw_tylko_zmiany.c
   PROGRAM="$BUD/symulator_panelu_prototyp"
-  g++ -o "$PROGRAM" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/atrapa.o "$BUD"/sym.o "$BUD"/prototyp.o \
+  g++ -o "$PROGRAM" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/czc14.o "$BUD"/czc20.o "$BUD"/czc28.o "$BUD"/atrapa.o "$BUD"/sym.o "$BUD"/prototyp.o \
       "$LIB" $SAN -Wl,--wrap=connect,--wrap=send,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free \
       -Wl,--wrap=lv_label_set_text,--wrap=lv_obj_set_local_style_prop,--wrap=lv_img_set_src,--wrap=lv_obj_clear_flag -lpthread
 fi

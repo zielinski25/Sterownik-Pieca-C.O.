@@ -424,15 +424,16 @@ inline bool bladGniazdaToBrakPamieci(int numer) {
   return numer == 12 || numer == 23 || numer == 24 || numer == 105;
 }
 
-// Napis na ekran (naglowek dashboardu) - tylko wielkie litery ASCII.
+// Napis na ekran (naglowek dashboardu) - wielkie litery, UTF-8 ([v1.4.5 D]
+// czcionki lv_font_pl_* maja polskie litery; do v1.4.4 tylko ASCII).
 inline const char* przyczynaNapis(Przyczyna p) {
   switch (p) {
     case PRZYCZYNA_BRAK:      return "";
     case PRZYCZYNA_WIFI:      return "BRAK WIFI";
     case PRZYCZYNA_MILCZY:    return "CENTRALA MILCZY";
-    case PRZYCZYNA_ODPOWIEDZ: return "ZLA ODPOWIEDZ";
-    case PRZYCZYNA_PAMIEC:    return "BRAK PAMIECI";
-    case PRZYCZYNA_LVGL:      return "BLAD EKRANU";
+    case PRZYCZYNA_ODPOWIEDZ: return "ZŁA ODPOWIEDŹ";
+    case PRZYCZYNA_PAMIEC:    return "BRAK PAMIĘCI";
+    case PRZYCZYNA_LVGL:      return "BŁĄD EKRANU";
   }
   return "?";
 }

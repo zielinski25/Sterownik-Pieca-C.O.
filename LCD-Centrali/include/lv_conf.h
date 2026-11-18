@@ -136,13 +136,16 @@ void panel_lvgl_assert(void);
 
 /*==================
    FONTY
-   Montserrat 14 (etykiety) i 28 (duze wartosci liczbowe) - odpowiedniki
-   fontu 1 i fontu 4 z Twojego obecnego main.cpp.
+   [v1.4.5 D] Wbudowane Montserrat 14/20/28 WYLACZONE - zamiast nich wlasne
+   lv_font_pl_14/20/28 (src/czcionki/): ten sam Montserrat Medium, te same
+   symbole, plus polskie litery. Wlaczenie ktorejs wbudowanej z powrotem
+   zdublowaloby ja we flashu (13-37 kB kazda).
  *==================*/
-#define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_20  1
-#define LV_FONT_MONTSERRAT_28 1
-#define LV_FONT_DEFAULT       &lv_font_montserrat_14
+#define LV_FONT_MONTSERRAT_14 0
+#define LV_FONT_MONTSERRAT_20 0
+#define LV_FONT_MONTSERRAT_28 0
+#define LV_FONT_CUSTOM_DECLARE LV_FONT_DECLARE(lv_font_pl_14) LV_FONT_DECLARE(lv_font_pl_20) LV_FONT_DECLARE(lv_font_pl_28)
+#define LV_FONT_DEFAULT       &lv_font_pl_14
 
 /*==================
    INNE

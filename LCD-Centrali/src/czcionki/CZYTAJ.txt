@@ -1,0 +1,31 @@
+Czcionki panelu z polskimi literami (v1.4.5, punkt D po audycie)
+================================================================
+
+lv_font_pl_14.c / lv_font_pl_20.c / lv_font_pl_28.c = Montserrat Medium
+14 / 20 / 28 px, 4 bity na piksel, bez kompresji - DOKLADNIE tak, jak LVGL
+8.4.0 generuje swoje wbudowane lv_font_montserrat_*, tylko z 18 polskimi
+literami wiecej (ąćęłńóśźż ĄĆĘŁŃÓŚŹŻ). Zawieraja tez te same symbole
+(stopien, kropka, ikony FontAwesome za LV_SYMBOL_*), wiec zastepuja
+wbudowane czcionki 1:1 - te sa wylaczone w include/lv_conf.h.
+
+Rozmiar (plik .o, -Os, wskazniki 32-bitowe jak na ESP32):
+  lv_font_pl_14  14 904 B   (wbudowana montserrat_14: 13 633 B,  +1 271 B)
+  lv_font_pl_20  23 928 B   (wbudowana montserrat_20: 21 789 B,  +2 139 B)
+  lv_font_pl_28  40 956 B   (wbudowana montserrat_28: 37 285 B,  +3 671 B)
+Razem +7 081 B flashu (ok. 0,5 % partycji programu 1,3 MB). RAM: zero
+(tablice const we flashu; LVGL czyta je na miejscu).
+
+Jak odtworzyc (np. zeby dodac znak albo rozmiar):
+
+  1. npm install lv_font_conv@1.5.3          (Node.js)
+  2. git clone --depth 1 --branch v8.4.0 https://github.com/lvgl/lvgl.git
+  3. cd lvgl/scripts/built_in_font
+     python3 built_in_font_gen.py --size 14 --bpp 4 -o lv_font_pl_14.c \
+         --symbols "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ"
+     (tak samo --size 20 i --size 28)
+  4. W wygenerowanym pliku zamien blok "#ifdef LV_LVGL_H_INCLUDE_SIMPLE ..."
+     na "#include <lvgl.h>" i skopiuj tutaj.
+
+Test na PC (testy_host/uruchom_testy.sh, scenariusz polskie_litery) pilnuje,
+ze kazdy znak uzyty w napisach ekranu ma glif w czcionce - brak glifu to
+pusty prostokat na wyswietlaczu, ktorego inaczej nikt by nie zauwazyl.

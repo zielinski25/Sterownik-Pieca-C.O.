@@ -30,6 +30,50 @@ aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 
+## Co zmienia v1.4.5
+
+**Polskie litery na ekranie** (punkt **D** / temat 23 z
+`WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`). Centrala bez zmian; ruch do
+centrali, zużycie RAM i logika panelu bez zmian — zmienia się tylko to, co
+widać na wyświetlaczu.
+
+| Co | Było (v1.4.4) | Jest (v1.4.5) |
+|---|---|---|
+| czcionki | wbudowane w LVGL `lv_font_montserrat_14/20/28` — 158 glifów (ASCII, °, •, ikony `LV_SYMBOL_*`), **bez** polskich liter; stąd „CISNIENIE”, „WILGOTNOSC”, „POKOJ”, „RECZNY”, „WLACZ” na ekranie | własne `src/czcionki/lv_font_pl_14/20/28.c` — ten sam Montserrat Medium, wygenerowany skryptem LVGL `built_in_font_gen.py` (4 bpp, bez kompresji, jak wbudowane) z **18 polskimi literami** ąćęłńóśźż ĄĆĘŁŃÓŚŹŻ więcej (176 glifów). Wbudowane wyłączone w `include/lv_conf.h` (`LV_FONT_MONTSERRAT_* 0`, `LV_FONT_DEFAULT = &lv_font_pl_14`) — nic się nie dubluje. Instrukcja odtworzenia w `src/czcionki/CZYTAJ.txt` |
+| flash | 13 633 + 21 789 + 37 285 B = 72 707 B na czcionki | 14 904 + 23 928 + 40 956 B = 79 788 B → **+7 081 B** (+1 271 / +2 139 / +3 671 B; pliki `.o` z `-Os`, wskaźniki 32-bitowe). RAM: **0 B** (tablice `const` we flashu) |
+| wysokość linii | 16 / 22 / 30 px | 17 / 24 / 31 px — kreski nad Ź/Ż/Ś/Ć/Ń/Ó sięgają o 1 px wyżej niż `\\`, a ogonki Ą/Ę o 1 px niżej niż `(`, więc generator podnosi wysokość linii; etykiety są o 1–2 px wyższe, układ ekranów ten sam (zrzuty w `testy_host/` wyglądają jak dotąd). Jedyna poprawka układu: znacznik centrali w nagłówku pulpitu („SYMULACJA: zewn”, „CENTRALA MILCZY 14 s”) stoi na y=4 zamiast 5 — litery leżą dokładnie tam, gdzie dotąd, a etykieta nie styka się z obszarem cienia kafelków (inaczej każda zmiana napisu rysowałaby też brzeg kafelków: w stanie D `pomiar_obciazenia.sh` 511 zamiast 319 próśb o pamięć na minutę) |
+| napisy LVGL | bez ogonków | po polsku: POKÓJ, CIŚNIENIE, WILGOTNOŚĆ, ŚR, WŁĄCZ/WYŁĄCZ, WŁ./WYŁ., RĘCZNY, PRÓG (przegrzania, dymu, odchylenia), POŻAR / DYM, „Piec CO powyżej progu”, WYŚWIETLACZ, „Jasność w dzień/nocy”, „Aż do godz.”, POWRÓT, Wewnętrzna, POKAŻ WYKRES, NIEPEŁNE, wszystkie napisy błędów ekranu Wykresy („Spróbuj ponownie”, „zabrakło pamięci”…), nakładka OTA („Łączenie z centralą…”, „Nie wyłączaj zasilania…”), pasek błędu polecenia („POLECENIE NIE DOSZŁO DO CENTRALI”, „CENTRALA ODRZUCIŁA POLECENIE”), nagłówek pulpitu („BRAK PAMIĘCI”, „ZŁA ODPOWIEDŹ”, „BŁĄD EKRANU”) |
+| **celowo bez zmian** | — | log Seriala i tokeny wysyłane centrali (ASCII, jak dotąd); napisy rysowane **TFT_eSPI** przed startem LVGL („Szukam centrali”, „Laczenie z WiFi”, kalibracja dotyku, „BRAK PAMIECI - RESTART”) — czcionki TFT_eSPI nie mają polskich liter, a to ekrany na kilka sekund |
+
+Testy na PC: nowy scenariusz **`polskie_litery`** — trzy czcionki mają
+wszystkie 18 liter oraz ° i •; **każdy znak każdej etykiety na każdym ekranie**
+(także ukrytym) ma glif w czcionce, która ją rysuje (brak glifu to pusty
+prostokąt na wyświetlaczu, którego inaczej nikt by nie zauważył); to samo dla
+napisów składanych w trakcie pracy (nagłówek, pasek błędu, OTA, progi); na
+żadnym ekranie nie został napis „odogonkowiony”. Zrzuty:
+`polskie_litery_{1_pulpit,2_pasek_bledu,3_pompa,4_serwo,5_drugi_pulpit,6_wyswietlacz}.bmp`.
+53 scenariusze / 582 sprawdzenia, 527 jednostkowych, ASan/UBSan, nagłówki
+rdzenia 3.3.8 — zielone. `pomiar_obciazenia.sh`: połączenia i prośby o pamięć
+jak w v1.4.4 (31,0 / 31,0 / 31,0 / 28,8 / 31,2 / 31,0 na minutę; 2 760 / 5 156 /
+2 811 / 319 / 5 238 / 2 756 — w E o 1 więcej: dłuższy napis „WŁĄCZ”),
+rysowanych pikseli o 2–3 % więcej w stanach A i C (etykiety o 1–2 px
+wyższe). `pomiar_pamieci.sh`: sterta po starcie **131 736 B** (v1.4.4:
+131 680 B — +56 B na dłuższe napisy UTF-8 w etykietach: „ą” to 2 bajty),
+reszta bez zmian. **Nie budowane w PlatformIO i nie sprawdzane na
+płytce** — na płytce warto obejrzeć pulpit (POKÓJ, CIŚNIENIE, WILGOTNOŚĆ, ŚR),
+ekran POMPA (WŁĄCZ/WYŁĄCZ) i SERWO (RĘCZNY) i porównać rozmiar programu w
+logu PlatformIO (`Flash: [...] used ...`) z v1.4.4: oczekiwane ok. +7 kB.
+
+Uwaga z zrzutów (było tak samo w v1.4.4, nie ruszane): na drugim pulpicie
+napis kafelka „WYŚWIETLACZ” jest przycięty na ostatniej literze (kafelek
+114 px); „WYSWIETLACZ” miał tę samą szerokość. Do poprawienia osobno, jeśli
+przeszkadza.
+
+**Z v1.4.4 na v1.4.5** zmieniają się: `src/czcionki/` (nowy katalog),
+`include/lv_conf.h`, `src/dashboard_lvgl_poc.cpp`, `src/main.cpp`,
+`src/diagnostyka_panelu.h`, `src/ikony.h` (komentarz), `testy_host/`.
+Można wgrać kablem albo przez centralę (`/update_panel`).
+
 ## Co zmienia v1.4.4
 
 **Porządki w kodzie — zachowanie bez zmian** (krok 7 z
