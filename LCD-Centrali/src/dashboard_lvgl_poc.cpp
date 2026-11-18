@@ -3,6 +3,9 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-19] v1.4.3 Dodano: lvgl_dashboard_poc_ekran_ustawien_otwarty()
+//   ([v1.4.3 B4] w main.cpp - ustawienia pobierane co 5 s tylko przy
+//   otwartym ekranie ustawien).
 // [2026-11-19] v1.4.2 Dodano: pasek bledu polecenia
 //   (lvgl_dashboard_poc_pokaz_blad_polecenia(), warstwa lv_layer_top(), 3 s,
 //   znika tez po dotknieciu) - main.cpp pokazuje nim polecenie, ktorego
@@ -7975,6 +7978,17 @@ bool lvgl_dashboard_poc_ota_widoczna() {
 
 uint32_t lvgl_dashboard_poc_bez_dotyku_ms() {
   return lv_disp_get_inactive_time(NULL);
+}
+
+// [v1.4.3 B4] Te same cztery ekrany, ktore lvgl_dashboard_poc_aktualizuj_
+// ustawienia_*() odswiezaja "na zywo" (porownania lv_scr_act() w nich).
+bool lvgl_dashboard_poc_ekran_ustawien_otwarty() {
+  lv_obj_t *scr = lv_scr_act();
+  if (scr == nullptr) return false;
+  return (serwoUstawieniaScr != nullptr && scr == serwoUstawieniaScr) ||
+         (pompaUstawieniaScr != nullptr && scr == pompaUstawieniaScr) ||
+         (dymPanel != nullptr && scr == dymPanel) ||
+         (alarmTempPanel != nullptr && scr == alarmTempPanel);
 }
 
 void lvgl_dashboard_poc_przywroc_alarm(bool dymAlarm, bool alarmOgrzewanie, bool alarmPanel, int odrzuconyPoziom) {

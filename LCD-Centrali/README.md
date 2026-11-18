@@ -30,6 +30,38 @@ aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 
+## Co zmienia v1.4.3
+
+**Mniej gadania z centralą** (krok 5 z
+`WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`, rozdział 4 = znaleziska **B4**
+i **A2** z audytu). Ekran pokazuje to samo co v1.4.2; centrala bez zmian
+(te same adresy, te same ciała POST).
+
+| Co | Było (v1.4.2) | Jest (v1.4.3) |
+|---|---|---|
+| **B4** odczyt `/api/ustawienia-get` | co 5 s, zawsze — 12 z 42 połączeń na minutę (17 280 na dobę) po liczby, które ogląda tylko ekran ustawień | **co 5 s tylko przy otwartym ekranie ustawień** (serwo, pompa, dym, próg przegrzania) i **od razu przy jego otwarciu**; w tle **co 60 s**; po własnym poleceniu od razu, jak dotąd (`diag::RytmUstawien`) |
+| **B4** tryb pompy i tryb serwa na pulpicie | tylko z `/api/ustawienia-get` — zmiana z telefonu / strony WWW doszłaby do pulpitu dopiero przy następnym odczycie ustawień | także z `/api/status` (pola `wybor`, `tryb_serwa`, co 2 s) — pulpit widzi zmianę w 2–3 s; ta sama ochrona przed starą wartością po własnym poleceniu co w v1.4.2 |
+| **A2** rozpakowywanie odpowiedzi `/api/status` (ArduinoJson) | wszystkie ~80 pól kopiowane do pamięci panelu, osobna prośba o pamięć na każde, 30 razy na minutę | **filtr**: tylko 46 pól, które panel czyta (`diag::POLA_STATUSU_CZYTANE[]`); filtr budowany raz; test na PC pilnuje, że każde `doc["…"]` z kodu jest na liście. Odpowiedź ustawień celowo bez filtra — przychodzi raz na minutę |
+
+Pomiar `testy_host/pomiar_obciazenia.sh`, pulpit w spoczynku (stan A):
+**połączeń na minutę 42 → 31**, **próśb o pamięć na minutę 5 506 → 2 760**
+(463 kB → 312 kB); z pracującą pompą 7 902 → 5 156; gdy centrala milczy,
+36 → 28,8 połączeń. Pamięć (`pomiar_pamieci.sh`, model 32-bit): filtr
+trzyma na stałe ok. **2,4 kB** sterty (po starcie 129 324 → 131 680 B), za to
+szczyt przy jednym odczycie statusu spada z **5 324 do 2 664 B** — najgorsza
+chwila (wykres na ekranie + odczyt) wychodzi na to samo, a sterta jest
+dwa razy rzadziej dzielona. Zmienne statyczne 6 566 → 6 646 B. Pełne tabele:
+`testy_host/README.md`.
+
+Testy na PC: 52 scenariusze (nowy: `ustawienia_na_zadanie`;
+`ustawienia_milcza` trzyma teraz otwarty ekran ustawień, bo tylko wtedy panel
+pyta co 5 s) + 527 sprawdzeń jednostkowych (rytm odczytu, kompletność
+filtra) + ASan/UBSan + nagłówki rdzenia 3.3.8.
+
+**Z v1.4.2 na v1.4.3** zmieniają się cztery pliki w `src/`: `main.cpp`,
+`diagnostyka_panelu.h`, `dashboard_lvgl_poc.cpp`, `dashboard_lvgl_poc.h`.
+Można wgrać kablem albo przez centralę (`/update_panel`).
+
 ## Co zmienia v1.4.2
 
 **Polecenia z dotyku nie giną i koniec restartów bez centrali** (krok 4 z
@@ -93,7 +125,7 @@ Przy centrali, która milczy, zostaje 2,45 (licznik sekund w nagłówku).
 Czego v1.4.1 **nie** zmienia (kolejne kroki, osobno): sen na baterii i próg
 niskiej baterii (krok 3), komendy gubione w czasie pobierania (krok 4 —
 zrobiony w v1.4.2, wyżej), rzadsze odpytywanie i mniej próśb o pamięć
-(krok 5), 80 MHz (krok 6), martwy kod (krok 7).
+(krok 5 — zrobiony w v1.4.3, wyżej), 80 MHz (krok 6), martwy kod (krok 7).
 
 **Jak czytać `tag=ZRZUT`.** Adresy z `pc=` i `slad=` zamienia się na nazwy
 funkcji poleceniem `xtensa-esp32-elf-addr2line -pfiaC -e .pio/build/esp32dev/firmware.elf 0x400d1234 ...`

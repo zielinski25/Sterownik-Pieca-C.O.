@@ -1042,7 +1042,100 @@ static void testKolejkaPolecen() {
   }
 }
 
+// [v1.4.3 B4] Rytm odczytu ustawien: 5 s przy otwartym ekranie ustawien
+// (i od razu przy otwarciu), 60 s w tle.
+static void testRytmUstawien() {
+  using diag::RytmUstawien;
+  {
+    RytmUstawien r;
+    SPRAWDZ(r.czasNaGet(1000, false));                 // pierwszy raz zawsze
+    SPRAWDZ(!r.czasNaGet(1001, false));
+    SPRAWDZ(!r.czasNaGet(1000 + 59999, false));        // tlo: nie przed 60 s
+    SPRAWDZ(r.czasNaGet(1000 + 60000, false));         // tlo: rowno 60 s
+    SPRAWDZ(!r.czasNaGet(1000 + 60000 + 5000, false)); // dalej w tle 5 s to za malo
+    // Przez minute w tle: dokladnie 1 GET.
+    int getow = 0;
+    for (uint32_t t = 200000; t < 260000; t += 100) if (r.czasNaGet(t, false)) getow++;
+    SPRAWDZ(getow == 1);
+  }
+  {
+    RytmUstawien r;
+    r.czasNaGet(0, false);
+    SPRAWDZ(r.czasNaGet(10000, true));                 // otwarcie ekranu = natychmiast, choc do 60 s daleko
+    SPRAWDZ(!r.czasNaGet(10001, true));                // nie w kolko, dopoki ekran otwarty
+    SPRAWDZ(!r.czasNaGet(14999, true));
+    SPRAWDZ(r.czasNaGet(15000, true));                 // na ekranie: co 5 s
+    int getow = 0;
+    for (uint32_t t = 20000; t < 80000; t += 100) if (r.czasNaGet(t, true)) getow++;
+    SPRAWDZ(getow == 12);                              // minuta na ekranie = 12 GET-ow (jak do v1.4.2)
+    SPRAWDZ(!r.czasNaGet(80000, false));               // zamkniecie ekranu nie wymusza GET-a
+    getow = 0;
+    for (uint32_t t = 80100; t < 140100; t += 100) if (r.czasNaGet(t, false)) getow++;
+    SPRAWDZ(getow == 1);                               // i znow 1 na minute
+    SPRAWDZ(r.czasNaGet(140200, true));                // ponowne otwarcie = znow natychmiast
+  }
+  {
+    RytmUstawien r;
+    r.czasNaGet(0, false);
+    r.odnotujGet(30000);                               // GET po wlasnym poleceniu
+    SPRAWDZ(!r.czasNaGet(60000, false));               // okres liczony od niego, nie od 0
+    SPRAWDZ(r.czasNaGet(90000, false));
+  }
+  {
+    RytmUstawien r;
+    SPRAWDZ(r.czasNaGet(0xFFFFFFF0u, false));          // przejscie millis() przez zero
+    SPRAWDZ(!r.czasNaGet(0x0000000Fu, false));
+    SPRAWDZ(r.czasNaGet(0xFFFFFFF0u + 60000u, false));
+  }
+}
+
+// [v1.4.3 A2] Filtr statusu: kazde pole, ktore obslugaStatusFetch() w
+// main.cpp czyta przez doc["..."], musi byc na liscie POLA_STATUSU_CZYTANE[]
+// - inaczej filtr by je wycial i pole cicho dawaloby 0/false. Test czyta
+// zrodlo main.cpp (fragment od "void obslugaStatusFetch()" do
+// "void pobierzUstawienia()").
+static void testFiltrStatusu() {
+  SPRAWDZ(diag::poleStatusuCzytane("t_zewn"));
+  SPRAWDZ(diag::poleStatusuCzytane("symulacja_dym"));      // z CZUJNIKI_SYMULOWANE[]
+  SPRAWDZ(diag::poleStatusuCzytane("wybor") && diag::poleStatusuCzytane("tryb_serwa"));
+  SPRAWDZ(!diag::poleStatusuCzytane("rozpalanie"));        // centrala to wysyla, panel nie czyta
+  SPRAWDZ(!diag::poleStatusuCzytane(""));
+  // Bez duplikatow na liscie.
+  bool duplikat = false;
+  for (int i = 0; i < diag::LICZBA_POL_STATUSU_CZYTANYCH; i++)
+    for (int j = i + 1; j < diag::LICZBA_POL_STATUSU_CZYTANYCH; j++)
+      if (std::strcmp(diag::POLA_STATUSU_CZYTANE[i], diag::POLA_STATUSU_CZYTANE[j]) == 0) duplikat = true;
+  SPRAWDZ(!duplikat);
+
+  const char* sciezki[] = {"../src/main.cpp", "src/main.cpp", "LCD-Centrali/src/main.cpp"};
+  FILE* f = nullptr;
+  for (const char* sc : sciezki) { f = std::fopen(sc, "rb"); if (f) break; }
+  if (!f) { std::printf("  (pominieto porownanie z main.cpp - nie znaleziono pliku)\n"); return; }
+  std::string zrodlo;
+  char buf[4096];
+  size_t n;
+  while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) zrodlo.append(buf, n);
+  std::fclose(f);
+  size_t od = zrodlo.find("void obslugaStatusFetch()");
+  size_t doKonca = zrodlo.find("void pobierzUstawienia()", od == std::string::npos ? 0 : od);
+  SPRAWDZ(od != std::string::npos && doKonca != std::string::npos && doKonca > od);
+  if (od == std::string::npos || doKonca == std::string::npos) return;
+  std::string fragment = zrodlo.substr(od, doKonca - od);
+  int pol = 0, brakujacych = 0;
+  for (size_t poz = fragment.find("doc[\""); poz != std::string::npos; poz = fragment.find("doc[\"", poz + 5)) {
+    size_t koniec = fragment.find('"', poz + 5);
+    if (koniec == std::string::npos) break;
+    std::string pole = fragment.substr(poz + 5, koniec - poz - 5);
+    pol++;
+    if (!diag::poleStatusuCzytane(pole.c_str())) { brakujacych++; std::printf("  BRAK W FILTRZE: %s\n", pole.c_str()); }
+  }
+  SPRAWDZ(pol >= 30);              // sanity: fragment naprawde zawiera odczyty pol
+  SPRAWDZ(brakujacych == 0);
+}
+
 int main() {
+  testRytmUstawien();
+  testFiltrStatusu();
   testKolejkaPolecen();
   testOtaNarzedzia();
   testOtaZapisIDecyzja();

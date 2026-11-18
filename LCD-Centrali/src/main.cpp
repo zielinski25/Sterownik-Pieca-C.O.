@@ -7,7 +7,9 @@
 //
 //   GET  /api/status           -> co STATUS_INTERWAL_MS, dane live (temp., klapa,
 //                                  syberka, pompa, alarmy) — patrz StanPieca nizej
-//   GET  /api/ustawienia-get   -> co USTAWIENIA_INTERWAL_MS, wartosci parametrow
+//   GET  /api/ustawienia-get   -> wartosci parametrow: co 5 s przy otwartym
+//                                  ekranie ustawien, co 60 s w tle, od razu po
+//                                  wlasnym poleceniu (diag::RytmUstawien, v1.4.3)
 //   POST /api/ustawienia-set   -> gdy user dotknie +/- na ekranie Ustawienia
 //                                  (pole=<nazwa>&wartosc=<int>) — DOKLADNIE ten
 //                                  sam endpoint co panel WWW w przegladarce
@@ -38,6 +40,27 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-19] v1.4.3 - MNIEJ GADANIA Z CENTRALA (krok 5 z
+//   WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md, rozdzial 4 = B4 i A2 z audytu).
+//   Ekran pokazuje to samo co v1.4.2; centrala bez zmian.
+//   - B4 (diag::RytmUstawien): /api/ustawienia-get co 5 s TYLKO gdy ktorys
+//     ekran ustawien jest otwarty (serwo, pompa, dym, prog przegrzania;
+//     lvgl_dashboard_poc_ekran_ustawien_otwarty()) i od razu przy jego
+//     otwarciu; w tle co 60 s. Bylo: co 5 s zawsze = 12 z 42 polaczen na
+//     minute po dane, ktorych nikt nie ogladal. Teraz w spoczynku 31/min.
+//   - B4: tryb pompy ("wybor") i tryb serwa ("tryb_serwa") panel bierze
+//     takze z /api/status (co 2 s) - pulpit widzi zmiane z telefonu/WWW
+//     w 2 s, nie dopiero przy nastepnym odczycie ustawien. Ta sama ochrona
+//     przed stara wartoscia co w v1.4.2 (kolejkaPolecen.poleZmieniane()).
+//   - A2 (filtr ArduinoJson, diag::POLA_STATUSU_CZYTANE[]): z ok. 80 pol
+//     /api/status rozpakowywane jest 46, ktore panel czyta. Prosb o pamiec
+//     o polowe mniej (5 506 -> 2 760 na minute), szczyt przy odczycie
+//     5,3 -> 2,7 kB, za to filtr trzyma ok. 2,4 kB sterty na stale (liczby:
+//     README "Co zmienia v1.4.3"). Ustawienia bez filtra (przychodza raz na
+//     minute). Test na PC pilnuje, ze kazde doc["..."] z
+//     obslugaStatusFetch() jest na liscie filtra.
+//   Testy: testy_host/test_diagnostyka.cpp (rytm, filtr) i scenariusz
+//   "ustawienia_na_zadanie" w symulator_panelu.cpp; pomiar_obciazenia.sh.
 // [2026-11-19] v1.4.2 - POLECENIA NIE GINA I KONIEC RESTARTOW BEZ CENTRALI
 //   (krok 4 z WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md, rozdzial 4 = C4 z
 //   audytu, oraz B6). Krok 3 (sen na baterii) celowo pozniej - czeka na
@@ -755,7 +778,9 @@ RTC_DATA_ATTR int32_t rtcKanalCentrali = 0;
 RTC_DATA_ATTR bool    rtcBssidZnany = false;
 
 static const uint32_t STATUS_INTERWAL_MS     = 2000;   // jak czesto GET /api/status
-static const uint32_t USTAWIENIA_INTERWAL_MS = 5000;   // jak czesto GET /api/ustawienia-get
+// [v1.4.3 B4] Rytm GET /api/ustawienia-get: diag::USTAWIENIA_EKRAN_MS (5 s przy
+// otwartym ekranie ustawien) / diag::USTAWIENIA_TLO_MS (60 s w tle) -
+// decyduje rytmUstawien.czasNaGet() w loop(). Do v1.4.2: stale 5 s.
 static const uint32_t HTTP_TIMEOUT_MS        = 1500;   // timeout pojedynczego zapytania - patrz tez SiecCfg::CALKOWITY_TIMEOUT_MS w siec_nieblokujaca_LCD.h (ta sama wartosc, zdublowana celowo - ten sam wzorzec co OTA_HASLO_PANEL nizej; siec_nieblokujaca_LCD.h jest samodzielnym naglowkiem wlaczanym PRZED tym blokiem, wiec nie moze odwolac sie tu wprost)
 
 // [SIEC-NIEBLOKUJACA, ta sesja] Trzy stale instancje - jedna na kazdy rodzaj
@@ -924,6 +949,10 @@ bool partiaStatus = false, partiaUstawienia = false;
 // sladu (ekran zostawal ze stara wartoscia do nastepnego okresowego GET-a,
 // nawet 5 s), teraz GET rusza ponownie zaraz po biezacym.
 unsigned long ustawieniaGetStartMs = 0;
+// [v1.4.3 B4] To samo dla /api/status - od v1.4.3 status niesie tez tryb
+// pompy i serwa, wiec i on podlega ochronie przed stara wartoscia.
+unsigned long statusGetStartMs = 0;
+diag::RytmUstawien rytmUstawien;
 bool ustawieniaGetPonow = false;
 
 // [OTA-PANEL, ta sesja] Wersja wkompilowana w ten firmware — zglaszana
@@ -932,7 +961,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.4.2"; // [2026-11-19] v1.4.2: kolejka polecen (dotkniecia nie gina, porazka na ekranie), restart bez centrali co 6 h zamiast co 5 min; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.4.3"; // [2026-11-19] v1.4.3: ustawienia pobierane gdy potrzebne (42 -> 31 polaczen/min), filtr JSON statusu (o polowe mniej prosb o pamiec); opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -2916,7 +2945,32 @@ void pobierzStatus() {
     // Nie zmiescilo sie (nie powinno): adres w postaci sprzed v1.4.0.
     snprintf(sciezka, sizeof(sciezka), "/api/status?panel_fw=%s&reset_powod=%.60s", FIRMWARE_VERSION_PANEL, globalnyPowodResetu.c_str());
   }
+  statusGetStartMs = millis();     // [v1.4.3 B4] patrz poleZmieniane() przy "wybor"/"tryb_serwa" w obslugaStatusFetch()
   statusFetch.startGet(sciezka);   // startGet() od razu kopiuje adres do wlasnego pola
+}
+
+// [v1.4.3 A2] Filtr rozpakowywania /api/status - budowany raz, przy pierwszym
+// uzyciu, potem tylko czytany. ArduinoJson 7 kopiuje do wlasnej pamieci nazwe
+// kazdego pola i kazdy napis (osobna prosba o pamiec na kazde); z filtrem
+// (DeserializationOption::Filter) pola spoza listy sa pomijane juz w trakcie
+// czytania, bez alokacji. Lista pol jest w diagnostyka_panelu.h (test na PC
+// pilnuje, ze kazde doc["..."] z obslugaStatusFetch() na niej jest).
+// Koszt i zysk (testy_host/pomiar_pamieci.sh, model 32-bit): filtr trzyma na
+// stale ok. 2,4 kB sterty (56 nazw pol), a szczyt pamieci przy jednym
+// odczycie statusu spada z 5,3 kB do 2,7 kB - najgorsza chwila (wykres na
+// ekranie + odczyt) wychodzi wiec na to samo (+0,3 kB), a prosb o pamiec
+// jest o polowe mniej (5 506 -> 2 760 na minute). Odpowiedz /api/ustawienia-get celowo BEZ
+// filtra: od v1.4.3 przychodzi raz na minute (co 5 s tylko na ekranie
+// ustawien), wiec drugi filtr (ok. 1 kB na stale) by sie nie zwrocil.
+static JsonDocument& filtrStatusu() {
+  static JsonDocument filtr;
+  static bool gotowy = false;
+  if (!gotowy) {
+    for (int i = 0; i < diag::LICZBA_POL_STATUSU_CZYTANYCH; i++) filtr[diag::POLA_STATUSU_CZYTANE[i]] = true;
+    for (int i = 0; i < diag::LICZBA_CZUJNIKOW_SYMULOWANYCH; i++) filtr[diag::CZUJNIKI_SYMULOWANE[i].pole] = true;
+    gotowy = true;
+  }
+  return filtr;
 }
 
 // [SIEC-NIEBLOKUJACA, ta sesja] Wywolywana z loop() PRZY KAZDEJ iteracji
@@ -2966,7 +3020,7 @@ void obslugaStatusFetch() {
   JsonDocument doc;
   DeserializationError bladJson = DeserializationError::Ok;
   if (wynik == diag::WYNIK_OK) {
-    bladJson = deserializeJson(doc, cialo);
+    bladJson = deserializeJson(doc, cialo, DeserializationOption::Filter(filtrStatusu()));   // [v1.4.3 A2]
     // is<JsonObject>(): poprawny JSON, ktory nie jest obiektem (np. sama
     // liczba), dalby same zera we wszystkich polach - to tez blad.
     if (bladJson != DeserializationError::Ok || !doc.is<JsonObject>()) wynik = diag::WYNIK_JSON;
@@ -3006,6 +3060,15 @@ void obslugaStatusFetch() {
   stan.klapa       = doc["klapa"].as<int>();
   stan.syberka     = doc["syberka"].as<int>();
   stan.pompa       = doc["pompa"].as<bool>();
+  // [v1.4.3 B4] Tryb pompy i tryb serwa sa w /api/status od dawna ("wybor",
+  // "tryb_serwa") - do v1.4.2 panel bral je wylacznie z /api/ustawienia-get.
+  // Teraz, gdy ustawienia w tle ida co 60 s, to status (co 2 s) daje pulpitowi
+  // szybka reakcje na zmiane z telefonu / strony WWW. isNull(): starsza
+  // centrala bez tych pol zostawia wartosc z ustawien. poleZmieniane(): to
+  // samo co dla ustawien - odpowiedz sprzed konca wlasnego polecenia nie cofa
+  // ekranu (klucze polecen: "wybor" i "trybSerwa", jak w /api/ustawienia-set).
+  if (!doc["wybor"].isNull()      && !kolejkaPolecen.poleZmieniane("wybor", (uint32_t)statusGetStartMs))     trybWyboru       = doc["wybor"].as<long>();
+  if (!doc["tryb_serwa"].isNull() && !kolejkaPolecen.poleZmieniane("trybSerwa", (uint32_t)statusGetStartMs)) trybSerwaWartosc = doc["tryb_serwa"].as<long>();
   // [LVGL-API] Moze nie istniec w JSON starszej centrali (przed dodaniu
   // /api/pompa-manual) - isNull() zabezpiecza tak samo jak miesiac/rtc_ok nizej.
   stan.pompaOverrideMin = doc["pompa_override_min"].isNull() ? 0 : doc["pompa_override_min"].as<int>();
@@ -3159,6 +3222,7 @@ void pobierzUstawienia() {
     return;
   }
   ustawieniaGetStartMs = millis();
+  rytmUstawien.odnotujGet((uint32_t)ustawieniaGetStartMs);   // [v1.4.3 B4] okres w tle liczony od tego GET-a
   ustawieniaFetch.startGet("/api/ustawienia-get");
 }
 
@@ -3198,7 +3262,7 @@ static void obslugaUstawieniaFetchWlasciwa() {
   JsonDocument doc;
   DeserializationError bladJson = DeserializationError::Ok;
   if (wynik == diag::WYNIK_OK) {
-    bladJson = deserializeJson(doc, cialo);
+    bladJson = deserializeJson(doc, cialo);   // bez filtra - celowo, patrz komentarz przy filtrStatusu()
     if (bladJson != DeserializationError::Ok || !doc.is<JsonObject>()) wynik = diag::WYNIK_JSON;
   }
   if (wynik != diag::WYNIK_OK) {
@@ -5245,7 +5309,7 @@ void otaKrok() {
   otaKrokDecyzji(teraz);
 }
 
-unsigned long ostatniStatus = 0, ostatnieUstawienia = 0;
+unsigned long ostatniStatus = 0;
 
 // [v1.4.1 ZRZUT] Skrot zrzutu po awarii. Biblioteki Arduino dla ESP32 maja
 // wlaczony zapis zrzutu (core dump) do flash w formacie ELF
@@ -5695,7 +5759,7 @@ void setup() {
   poczekajNaPierwszeDane();
   aktualizujSezon(); // [LCD-SEZON] przed pierwszym rysujAktualnyEkran(), zeby dashboard od razu wystartowal we wlasciwym sezonie
   rysujAktualnyEkran();
-  ostatniStatus = ostatnieUstawienia = millis();
+  ostatniStatus = millis();
   zarejestrujAktywnosc(); // start timera 5 min od momentu, gdy ekran jest juz gotowy
   // [OTA-ROLLBACK] Analogicznie do galezi LVGL_POC_TEST=1 wyzej — ekran juz
   // narysowany, pierwsza probka pobierzStatus() juz sie wykonala.
@@ -5771,7 +5835,7 @@ void loop() {
   wifiReconnectNonBlocking();
 
   // [SIEC-NIEBLOKUJACA, ta sesja] Musza isc CO ITERACJE (nie tylko co
-  // STATUS_INTERWAL_MS/USTAWIENIA_INTERWAL_MS ponizej) - to one sprawdzaja,
+  // STATUS_INTERWAL_MS / rytm ustawien ponizej) - to one sprawdzaja,
   // czy zadanie wystartowane w ktorejs POPRZEDNIEJ iteracji juz sie
   // zakonczylo (statusFetch/ustawieniaFetch/komendaFetch.poll() sa tanie,
   // pojedynczy select() z zerowym czekaniem gdy bezczynne). Patrz komentarze
@@ -5800,13 +5864,11 @@ void loop() {
     ostatniStatus = terazLvgl;
     pobierzStatus(); // tylko startuje GET - parsowanie+odswiezenie LVGL teraz w obslugaStatusFetch() wyzej
   }
-  // [ROZSZERZENIE, ta sesja - ekran USTAWIENIA SERWA] Analogiczny okresowy
-  // odczyt /api/ustawienia-get co USTAWIENIA_INTERWAL_MS - ten sam interwal
-  // co stary, nie-LVGL dashboard uzywa (patrz ponizej w tym pliku), zeby
-  // ekran LVGL nie polegal wylacznie na wartosci z chwili startu, gdyby ktos
-  // zmienil parametr ze starego panelu WWW rownolegle.
-  if (terazLvgl - ostatnieUstawienia >= USTAWIENIA_INTERWAL_MS) {
-    ostatnieUstawienia = terazLvgl;
+  // [v1.4.3 B4] Odczyt /api/ustawienia-get wtedy, gdy jest potrzebny: co 5 s
+  // przy otwartym ekranie ustawien (i od razu przy jego otwarciu, gdyby ktos
+  // rownolegle zmienial to samo z telefonu / strony WWW), w tle co 60 s.
+  // Do v1.4.2: co 5 s zawsze. Patrz diag::RytmUstawien.
+  if (rytmUstawien.czasNaGet((uint32_t)terazLvgl, lvgl_dashboard_poc_ekran_ustawien_otwarty())) {
     pobierzUstawienia(); // tylko startuje GET - patrz obslugaUstawieniaFetch() wyzej
   }
 #endif
@@ -5851,8 +5913,10 @@ void loop() {
     ostatniStatus = teraz;
     pobierzStatus(); // tylko startuje GET - reszta (sezon/rysowanie) w obsludze wyzej
   }
-  if (teraz - ostatnieUstawienia >= USTAWIENIA_INTERWAL_MS) {
-    ostatnieUstawienia = teraz;
+  // [v1.4.3 B4] Jak w galezi LVGL: stary ekran TRYBY pokazuje ustawienia
+  // (co 5 s), poza nim co 60 s; EKRAN_USTAWIENIA edytuje POLA[] - bez odczytu
+  // w trakcie (jak do v1.4.2).
+  if (rytmUstawien.czasNaGet((uint32_t)teraz, aktualnyEkran == EKRAN_TRYBY)) {
     if (aktualnyEkran != EKRAN_USTAWIENIA) pobierzUstawienia();  // nie nadpisuj ekranu w trakcie edycji
   }
 }

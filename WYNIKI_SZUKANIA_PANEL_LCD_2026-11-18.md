@@ -531,7 +531,7 @@ testy na PC i próba na płytce.
 | 2 | **Rysuj tylko zmiany.** Sprawdzian: `pomiar_obciazenia.sh`, stan A blisko zera | B2 |
 | 3 | **Usypianie na baterii jak dawniej** + próg słabej baterii | B1, B5 (czeka na podłączenie baterii i przycisku) |
 | 4 | **Polecenia nie giną** + przerwanie pętli restartów bez centrali — **zrobione w v1.4.2** (B6 przeniesione tu z kroku 3, bo nie wymaga sprzętu) | C4, B6 |
-| 5 | Ustawienia pobierane wtedy, gdy potrzebne; filtr JSON | B4, A2 |
+| 5 | Ustawienia pobierane wtedy, gdy potrzebne; filtr JSON — **zrobione w v1.4.3** (42 → 31 połączeń/min, 5 506 → 2 760 próśb o pamięć/min) | B4, A2 |
 | 6 | 80 MHz i moc nadajnika — z miernikiem | B3, B7 |
 | 7 | Usunięcie starego programu z `main.cpp`; ostrzeżenia kompilatora włączone | C1, C7, C8 |
 | — | Polskie litery — jeśli chcesz | D |

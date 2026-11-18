@@ -1,4 +1,6 @@
 // diagnostyka_panelu.h
+// [v1.4.3] Dodano: RytmUstawien (B4, odczyt ustawien gdy potrzebny) i
+//   POLA_STATUSU_CZYTANE[] / poleStatusuCzytane() (A2, filtr JSON statusu).
 // ============================================================================
 // PANEL LCD - male, CZYSTE funkcje pomocnicze diagnostyki (v1.2.0 - v1.2.2)
 // i decyzje aktualizacji przez centrale (v1.4.0, sekcja "[v1.4.0 OTA]" na koncu)
@@ -1273,5 +1275,76 @@ struct KolejkaPolecen {
     return false;
   }
 };
+
+// ===========================================================================
+// [v1.4.3 B4] RYTM ODCZYTU USTAWIEN - kiedy pytac centrale o /api/ustawienia-get
+// ===========================================================================
+// Do v1.4.2 panel pobieral ustawienia co 5 s bez przerwy: 12 z 42 polaczen
+// na minute (17 280 na dobe) po to, zeby ekran ustawien - zwykle zamkniety -
+// mial swieze liczby. Teraz:
+//   - ekran ustawien OTWARTY: co USTAWIENIA_EKRAN_MS (5 s, jak dotad) i od
+//     razu w chwili otwarcia - ktos moglby w tym czasie zmieniac to samo
+//     z telefonu / strony WWW;
+//   - ekran ustawien ZAMKNIETY: co USTAWIENIA_TLO_MS (60 s). Pulpit i tak
+//     bierze tryb pompy i tryb serwa z /api/status (pola "wybor" /
+//     "tryb_serwa", co 2 s), a wartosci liczbowe ustawien nie sa widoczne
+//     poza ekranami ustawien;
+//   - po wlasnym poleceniu GET idzie natychmiast (PoKomendzie::USTAWIENIA w
+//     main.cpp) - to nie przechodzi przez ten rytm.
+// Czysta logika, zeby test na PC mogl przejsc po osi czasu bez LVGL.
+static const uint32_t USTAWIENIA_EKRAN_MS = 5000;
+static const uint32_t USTAWIENIA_TLO_MS   = 60000;
+
+struct RytmUstawien {
+  uint32_t ostatniMs = 0;
+  bool bylEkran = false;
+  bool start = true;
+
+  // true = teraz nalezy wystartowac GET /api/ustawienia-get.
+  bool czasNaGet(uint32_t terazMs, bool ekranUstawienOtwarty) {
+    const bool wlasnieOtwarty = ekranUstawienOtwarty && !bylEkran;
+    bylEkran = ekranUstawienOtwarty;
+    const uint32_t okres = ekranUstawienOtwarty ? USTAWIENIA_EKRAN_MS : USTAWIENIA_TLO_MS;
+    if (start || wlasnieOtwarty || (uint32_t)(terazMs - ostatniMs) >= okres) {
+      start = false;
+      ostatniMs = terazMs;
+      return true;
+    }
+    return false;
+  }
+  // GET wystartowany poza rytmem (po wlasnym poleceniu): liczymy okres od
+  // niego, zeby nie pytac drugi raz chwile pozniej.
+  void odnotujGet(uint32_t terazMs) { ostatniMs = terazMs; start = false; }
+};
+
+// ===========================================================================
+// [v1.4.3 A2] FILTR ODPOWIEDZI /api/status - tylko pola, ktore panel czyta
+// ===========================================================================
+// Centrala odsyla w /api/status ok. 80 pol; panel uzywa 46 z nich. ArduinoJson
+// 7 przy rozpakowywaniu kopiuje KAZDA nazwe pola i kazdy napis do wlasnej
+// pamieci - osobna prosba o pamiec na kazde - takze dla pol, ktorych nikt
+// potem nie czyta. Z filtrem (DeserializationOption::Filter) pola spoza listy
+// sa pomijane juz w trakcie czytania. Lista jest tu, a nie w main.cpp, zeby
+// test na PC mogl sprawdzic, ze kazde pole czytane w obslugaStatusFetch() na
+// niej jest (testy_host/test_diagnostyka.cpp porownuje ja z doc["..."] w
+// zrodle). Pola "symulacja_*" dochodza z CZUJNIKI_SYMULOWANE[] (wyzej).
+static const char* const POLA_STATUSU_CZYTANE[] = {
+  "ip", "rssi", "internet",
+  "t_zewn", "t_bojler", "t_ogrz", "t_ogrz_sr", "t_panel", "t_pokoj", "t_trociny", "t_powrot",
+  "wilgotnosc", "cisnienie", "dym", "dym_alarm", "klapa", "syberka", "pompa", "pompa_override_min",
+  "alarm_ogrzewanie", "alarm_panel", "deszcz_stan", "deszcz_min",
+  "miesiac", "godzina", "minuta", "dzien", "rok", "rtc_ok",
+  "panel_ota_dostepna", "panel_ota_wersja", "panel_ota_obraz", "panel_ota_nr",
+  "symulator",
+  "wybor", "tryb_serwa",            // [v1.4.3 B4] tryb pompy i serwa takze ze statusu
+};
+static const int LICZBA_POL_STATUSU_CZYTANYCH = (int)(sizeof(POLA_STATUSU_CZYTANE) / sizeof(POLA_STATUSU_CZYTANE[0]));
+
+// Czy `pole` jest na liscie czytanych (razem z "symulacja_*").
+inline bool poleStatusuCzytane(const char* pole) {
+  for (int i = 0; i < LICZBA_POL_STATUSU_CZYTANYCH; i++) if (strcmp(POLA_STATUSU_CZYTANE[i], pole) == 0) return true;
+  for (int i = 0; i < LICZBA_CZUJNIKOW_SYMULOWANYCH; i++) if (strcmp(CZUJNIKI_SYMULOWANE[i].pole, pole) == 0) return true;
+  return false;
+}
 
 }  // namespace diag

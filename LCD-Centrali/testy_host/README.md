@@ -60,7 +60,7 @@ wersjami (8.3.11 i 7.2.1) te same liczby to 129 324, 5 464, 2 452 /
 | `sprawdz_czulosc_ota.py` | 23 razy psuje jedną rzecz w kopii źródeł (pominięte sprawdzenie, brak przerwania przy alarmie, brak zapisu stanu…) i sprawdza, że scenariusze `ota_*` albo testy jednostkowe to wykrywają. To sprawdzenie testów, nie kodu. |
 | `wzorce_centrali/` | Odpowiedzi centrali na `/api/history/panel`, wypisane przez jej własny kod — 11 plików; 9 takich samych z 3.58.4 i 3.58.5, 2 tylko z 3.58.5 (opis: `CZYTAJ.txt` w tym katalogu). Z nich korzystają scenariusze `wykresy_*`. |
 | `wzorce_v122/` | Punkty, które z tych samych starych CSV narysował firmware v1.2.2 (opis: `CZYTAJ.txt` w tym katalogu). Z nimi porównywane jest rysowanie po staremu. |
-| `uruchom_testy.sh` | Buduje i uruchamia całość: 499 sprawdzeń jednostkowych i 51 scenariuszy (536 sprawdzeń). |
+| `uruchom_testy.sh` | Buduje i uruchamia całość: 527 sprawdzeń jednostkowych i 52 scenariusze (549 sprawdzeń). |
 | `sprawdz_naglowki_esp32.sh` | Sprawdza składnię i typy źródeł panelu prawdziwymi nagłówkami arduino-esp32 / ESP-IDF / TFT_eSPI (bez atrap). |
 | `pomiar_pamieci.sh` | Mierzy, ile pamięci RAM trzyma firmware, i pilnuje limitów. Buduje ten sam program jako 32-bitowy, z `pomiar_sterty.c` zamiast zwykłego `malloc()`. Z `--przypadki`: ile pamięci trzeba w każdym przypadku pracy i co się dzieje, gdy jest jej mniej. |
 | `pomiar_sterty.c` | `malloc()` z licznikiem: dla każdego bloku pamięta rozmiar i stos wywołań; liczy go tak, jak zajmuje miejsce na stercie ESP32. Potrafi też odmawiać ponad zadany limit (jak płytka bez wolnego RAM-u) i wypisać stos wywołań, gdy program modelu sięgnie pod zły adres. |
@@ -127,6 +127,7 @@ LVGL jest budowany z `include/lv_conf.h` tego projektu. Ekran to bufor
 | `polecenia_nie_gina` | v1.4.2. Centrala odpowiada na POST po 300 ms. Pięć kliknięć `+` co 100 ms: centrala dostaje końcową wartość (10), dwa POST-y zamiast pięciu, nic nie jest pominięte. Przytrzymany `+` (20 kroków co 100 ms): najwyżej 3 POST-y, końcowa wartość po obu stronach. Odczyt ustawień wystartowany w trakcie polecenia nie cofa ekranu (`stara_wartosc_pominieta`). Polecenie odrzucone przez centralę: pasek `ODRZUCONE: tryb serwa nie jest reczny`, ekran wraca do wartości centrali, pasek znika po 3 s. Centrala milczy na POST: pasek `POLECENIE NIE DOSZLO DO CENTRALI`, jedna linia błędu. |
 | `bez_centrali_dlugo` | v1.4.2. Po trzech samoczynnych restartach sieci centrali nadal nie ma: przez 20 min żadnego restartu (do v1.4.1 co 5 min), próby połączenia dalej co ≤ 30 s, nagłówek `BRAK WIFI 20 min`. Gdy centrala wraca — dane w ciągu minuty, bez restartu. |
 | `centrala_milczy_dlugo` | v1.4.2. To samo, gdy WiFi jest, a centrala milczy: bez restartu, wymuszone łączenie od nowa co 30 s (11 w 5 min), nagłówek `CENTRALA MILCZY 5 min`; gdy centrala znów odpowiada — dane bez restartu. |
+| `ustawienia_na_zadanie` | v1.4.3 (B4). 2 min na pulpicie: 60 odczytów statusu i **2** odczyty ustawień (do v1.4.2: 24); zmiana trybu pompy i serwa „z telefonu” znana panelowi w 3 s (ze statusu); otwarcie ekranu USTAWIENIA POMPY = odczyt w 300 ms, potem co 5 s (12 na minutę), zmiana liczby z telefonu widoczna w 5 s; po własnym poleceniu odczyt od razu; po powrocie na pulpit znów 2 na 2 min. |
 
 W scenariuszach `ota_*` firmware idzie tą samą drogą co na płytce: własnym
 gniazdem pobiera plik od udawanej centrali (lokalny serwer HTTP) i oddaje go
@@ -492,6 +493,28 @@ ogniwo 3,90 V), nie dotyka ekranu i przez ok. 11 minut liczy:
 - **zmiany jasności podświetlenia** i to, czy panel usnął
   (`esp_deep_sleep_start()` w atrapie kończy program kodem 42).
 
+Wynik z 2026-11-19, firmware **v1.4.3** (LVGL 8.4.0, ArduinoJson 7.4.3;
+ustawienia w tle co 60 s, filtr pól JSON — „krok 5” po audycie):
+
+| Stan | Ekranów na minutę | Pikseli na jeden odczyt statusu | Połączeń na minutę | Próśb o pamięć na minutę |
+|---|---|---|---|---|
+| A pulpit, dane bez zmian, pompa stoi | 0,01 | 30 (0 %) | **31** | **2 760** (312 kB) |
+| B pulpit, dane bez zmian, pompa pracuje | 6,00 | 30 720 (20 %) | 31 | 5 156 |
+| C pulpit, jedna wartość zmienia się co 10 s | 0,19 | 974 (1 %) | 31 | 2 811 |
+| D centrala milczy, kafelki pokazują „--” | 2,45 | 14 266 (9 %) | 28,8 | 319 |
+| E otwarty ekran POMPA | 8,86 | 45 359 (30 %) | 31,2 | 5 237 |
+| F pulpit po powrocie, dane bez zmian | 0,00 | 0 | 31 | 2 756 |
+
+Połączenia: 30 odczytów statusu + 1 odczyt ustawień na minutę (ekran POMPA
+to nie ekran ustawień, więc E też ma 31). Próśb o pamięć o połowę mniej niż
+w v1.4.1 — to filtr ArduinoJson (pomijane pola nie są kopiowane) i 11
+odczytów ustawień mniej na minutę. Reszta (ok. 2 700 na minutę w A) to
+rozpakowywanie 46 pól statusu 30 razy na minutę plus LVGL.
+`pomiar_pamieci.sh` dla tej wersji: po starcie 131 680 B (v1.4.2: 129 324 B —
+filtr statusu, ok. 2,4 kB, budowany raz), jedno odpytanie chwilowo
+2 664 B (v1.4.2: 5 324 B), zmienne statyczne 6 646 B (v1.4.2: 6 566 B;
+v1.4.0: 5 366 B — kolejka poleceń z v1.4.2), przyrost po 10 min 0 B.
+
 Wynik z 2026-11-18, firmware **v1.4.1** (LVGL 8.4.0, ArduinoJson 7.4.3;
 pulpit ustawia napis, kolor, ikonę i widoczność tylko przy zmianie —
 „krok 2” po audycie):
@@ -509,7 +532,7 @@ To, co zostało, to animacje (wirnik pompy w B, ikony na ekranie POMPA w E),
 licznik sekund „BRAK DANYCH … s” w nagłówku (D) i prawdziwe zmiany wartości
 (C). Liczby zgadzają się z szacunkiem `--prototyp` dla v1.4.0 (niżej).
 Prośby o pamięć (ok. 5 500 na minutę; to ArduinoJson przy każdym odczycie
-statusu i ustawień) zostają na krok 5.
+statusu i ustawień) zostały na krok 5 — wynik wyżej (v1.4.3).
 
 Ten sam pomiar dla **v1.4.0** (LVGL 8.3.11, ArduinoJson 7.2.1; v1.4.0 z LVGL
 8.4.0 i ArduinoJson 7.4.3 dawała te same liczby) — tak było przed krokiem 2:

@@ -2,6 +2,9 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-19] v1.4.3 Dodano: lvgl_dashboard_poc_ekran_ustawien_otwarty() -
+//   main.cpp pobiera ustawienia co 5 s tylko, gdy ktorys ekran ustawien jest
+//   otwarty ([v1.4.3 B4] w main.cpp).
 // [2026-11-12] v1.4.0 Dodano: lvgl_dashboard_poc_ota(), ..._ota_widoczna() i
 //   ..._bez_dotyku_ms() - nakladka "AKTUALIZACJA PANELU" i czas od ostatniego
 //   dotyku ([v1.4.0 OTA]). Pelny opis: HISTORIA ZMIAN w main.cpp.
@@ -339,6 +342,12 @@ bool lvgl_dashboard_poc_ota_widoczna();
 // [v1.4.0 OTA] Ile milisekund temu ktos ostatnio dotknal ekranu (panel nie
 // zaczyna aktualizacji, gdy ktos wlasnie go uzywa).
 uint32_t lvgl_dashboard_poc_bez_dotyku_ms();
+// [v1.4.3 B4] true = na ekranie jest ktorys z ekranow pokazujacych wartosci z
+// /api/ustawienia-get (ustawienia serwa, pompy, dymu, prog przegrzania).
+// main.cpp pyta wtedy centrale o ustawienia co 5 s, poza tym co 60 s
+// (diag::RytmUstawien). Ekran wyboru trybu serwa i pulpit biora tryby ze
+// statusu, wiec sie tu nie licza.
+bool lvgl_dashboard_poc_ekran_ustawien_otwarty();
 
 // Generyczny callback dla 5 pol numerycznych - dokladnie ten sam ksztalt co
 // ServoUstawieniaCb powyzej (main.cpp rejestruje funkcje ktora PO PROSTU

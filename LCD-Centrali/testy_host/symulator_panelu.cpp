@@ -94,6 +94,8 @@ extern diag::PamiecAutorestartu rtcAutorestart __attribute__((weak));
 void lvgl_dashboard_poc_aktualizuj_centrale(const char* znacznik) __attribute__((weak));
 void pompaManualWyslij(const char* stanTekst);
 void pobierzUstawienia();   // [v1.4.2] scenariusz polecenia_nie_gina: GET ustawien w trakcie polecenia
+extern long trybWyboru __attribute__((weak));        // [v1.4.3] scenariusz ustawienia_na_zadanie: tryb pompy, ktory panel zna
+extern long trybSerwaWartosc __attribute__((weak));
 
 // LVGL jest tu budowany z include/lv_conf.h TEGO projektu, a ten od v1.2.2
 // kieruje bledy wewnetrzne LVGL do panel_lvgl_assert() z main.cpp. Starsze
@@ -383,9 +385,13 @@ std::string jsonStatus(const Centrala& c, bool zNan) {
   j += "\"dym\":" + std::to_string(c.dym) + ",\"dym_swiezy\":" + tn(c.dymWlaczony) + ",\"dym_wlaczony\":" + tn(c.dymWlaczony) + ",\"dym_alarm\":" + tn(c.dymAlarm) + ",";
   j += "\"alarm_dym_wyciszony\":false,\"alarm_dym_wyciszenie_ms\":0,\"alarm_ogrz_wyciszony\":false,\"alarm_ogrz_wyciszenie_ms\":0,";
   j += "\"alarm_sound_dym\":\"syrena\",\"alarm_sound_ogrz\":\"pulsujacy\",\"alarm_sound_both\":\"syrena\",";
-  j += "\"klapa\":" + std::to_string(c.klapa) + ",\"syberka\":" + std::to_string(c.syberka) + ",\"tryb_serwa\":1,";
+  // [v1.4.3 B4] "tryb_serwa" i "wybor" jak w centrali: biezace wartosci (te
+  // same, ktore oddaje /api/ustawienia-get - po /api/ustawienia-set zmienione).
+  const long trybSerwaTeraz = c.ustawieniaZapisane.count("trybSerwa") ? c.ustawieniaZapisane.at("trybSerwa") : 1;
+  const long wyborTeraz     = c.ustawieniaZapisane.count("wybor")     ? c.ustawieniaZapisane.at("wybor")     : 1;
+  j += "\"klapa\":" + std::to_string(c.klapa) + ",\"syberka\":" + std::to_string(c.syberka) + ",\"tryb_serwa\":" + std::to_string(trybSerwaTeraz) + ",";
   j += std::string("\"pompa\":") + tn(c.pompa) + ",\"pompa_ms_od_zmiany\":1049000,\"pompa_override_min\":0,";
-  j += "\"wybor\":1,\"mieszadlo\":false,\"rozpalanie\":false,\"rozpalanie_potwierdzone\":false,\"rozpalanie_pozostalo_s\":0,";
+  j += "\"wybor\":" + std::to_string(wyborTeraz) + ",\"mieszadlo\":false,\"rozpalanie\":false,\"rozpalanie_potwierdzone\":false,\"rozpalanie_pozostalo_s\":0,";
   j += std::string("\"alarm_ogrzewanie\":") + tn(c.alarmOgrzewanie) + ",\"alarm_panel\":" + tn(c.alarmPanel) + ",";
   j += "\"rozpalanie_serwa_dostepne\":true,\"rozpalanie_serwa_aktywne\":false,\"rozpalanie_serwa_blokada_dymu\":false,";
   j += "\"rozpalanie_serwa_temp_ok\":true,\"rozpalanie_serwa_alarm_bezpieczenstwa\":false,";
@@ -1029,7 +1035,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.4.2"
+#define WERSJA_FW "v1.4.3"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1597,24 +1603,33 @@ void scenariuszSkanZawieszony() {
 // pkt 5d): /api/status dziala, a /api/ustawienia-get konczy sie "timeout
 // calkowity". Tamten panel po serii takich bledow sie wywrocil (Guru
 // Meditation, StoreProhibited). Tu: trzy minuty takiej pracy.
+static lv_obj_t* ekranZTytulem(const char* tytul);   // definicja nizej (przy scenariuszach v1.4.2)
 void scenariuszUstawieniaMilcza() {
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
   ustaw(0, [](Centrala& c) { c.trybUstawienia = TRYB_MILCZY; });
   setup();
   const size_t od = g_atrapa.serial.size();
+  // [v1.4.3 B4] W tle panel pyta o ustawienia co 60 s; co 5 s - gdy ekran
+  // ustawien jest otwarty. Tu chodzi o serie nieudanych odczytow, wiec ekran
+  // ustawien pompy zostaje otwarty na cale 3 minuty (pulpit w tle i tak
+  // dostaje status).
+  lv_obj_t* pulpitMilcza = lv_scr_act();
+  { lv_obj_t* ekranUst = ekranZTytulem("USTAWIENIA POMPY"); if (ekranUst != nullptr) { LiczFirmware licz; lv_scr_load(ekranUst); } }
   biegnij(180000);
   const int zapytan = kopia(0).nUstawienia;
   const int linii = ileLinii("[USTAWIENIA] GET nieudany", "", "", od);
   info("przez 3 min: %d zapytan /api/ustawienia-get bez odpowiedzi, %d linii \"[USTAWIENIA] GET nieudany\"", zapytan, linii);
   info("%s", liniaLogu("[USTAWIENIA] GET nieudany", od).c_str());
-  sprawdz(zapytan >= 30, "panel ponawia /api/ustawienia-get co 5 s (co najmniej 30 prob w 3 min)");
+  sprawdz(zapytan >= 30, "panel ponawia /api/ustawienia-get co 5 s przy otwartym ekranie ustawien (co najmniej 30 prob w 3 min)");
   sprawdz(linii >= 1 && linii <= zapytan + 1, "najwyzej jedna linia bledu na jedno nieudane zapytanie");
   sprawdz(logMa("tag=PANEL fw=", "ust_ok=0", "ust_blad=", od) && !logMa("tag=PANEL fw=", "ust_blad=0", "", od),
           "linia tag=PANEL liczy nieudane odczyty ustawien (ust_ok=0, ust_blad>0)");
   ustaw(0, [](Centrala& c) { c.tOgrz = 64.0; });
+  { LiczFirmware licz; lv_scr_load(pulpitMilcza); }   // kafelki sa na pulpicie
   biegnij(3000);
   sprawdz(ekranMa("64°C"), "kafelki statusu dzialaja dalej i pokazuja aktualna wartosc (64°C)");
   sprawdz(g_atrapa.wdtZadzialal == 0 && g_atrapa.restarty == 0, "bez restartu i bez zadzialania watchdoga");
+  { lv_obj_t* ekranUst = ekranZTytulem("USTAWIENIA POMPY"); if (ekranUst != nullptr) { LiczFirmware licz; lv_scr_load(ekranUst); } }
 
   const size_t odPowrotu = g_atrapa.serial.size();
   ustaw(0, [](Centrala& c) { c.trybUstawienia = TRYB_OK; });
@@ -1624,6 +1639,7 @@ void scenariuszUstawieniaMilcza() {
   info("%s", liniaLogu("ust_ok=6", odPowrotu).substr(0, 200).c_str());
   sprawdz(logMa("tag=PANEL fw=", "ust_ok=6", "ust_blad=0", odPowrotu),
           "gdy centrala znow odpowiada: ustawienia sa odczytywane (ust_ok=6, ust_blad=0 na 30 s)");
+  { LiczFirmware licz; lv_scr_load(pulpitMilcza); }
 }
 
 // --- 9 ---------------------------------------------------------------------
@@ -2192,6 +2208,72 @@ void scenariuszCentralaMilczyDlugo() {
 #else
   sprawdz(false, "firmware ma pamiec autorestartu");
 #endif
+}
+
+// --- 15e -------------------------------------------------------------------
+// [v1.4.3 B4] Ustawienia pobierane wtedy, gdy sa potrzebne. Do v1.4.2 panel
+// pytal o /api/ustawienia-get co 5 s bez przerwy (12 z 42 polaczen na
+// minute), choc wartosci ogladal tylko ekran ustawien. Teraz: w tle co 60 s,
+// na ekranie ustawien co 5 s i od razu przy otwarciu; tryb pompy i serwa
+// pulpit bierze ze statusu (co 2 s), wiec zmiana z telefonu jest widoczna
+// od razu.
+void scenariuszUstawieniaNaZadanie() {
+  if (&trybWyboru == nullptr) { sprawdz(false, "firmware ma zmienna trybWyboru"); return; }
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  biegnij(5000);
+  // 1) Dwie minuty na pulpicie.
+  int u0 = kopia(0).nUstawienia, s0 = kopia(0).nStatus;
+  biegnij(120000);
+  int ustawien = kopia(0).nUstawienia - u0, statusow = kopia(0).nStatus - s0;
+  info("2 min na pulpicie: %d odczytow statusu, %d odczytow ustawien (do v1.4.2: 24)", statusow, ustawien);
+  sprawdz(statusow >= 58 && statusow <= 62, "status dalej co 2 s");
+  sprawdz(ustawien == 2, "ustawienia w tle co 60 s: 2 odczyty na 2 minuty");
+  // 2) Zmiana trybu pompy i serwa "z telefonu": widoczna w panelu w 2-3 s,
+  //    bez czekania na odczyt ustawien.
+  sprawdz(trybWyboru == 1 && trybSerwaWartosc == 1, "przed zmiana: tryb pompy 1, tryb serwa 1");
+  ustaw(0, [](Centrala& c) { c.ustawieniaZapisane["wybor"] = 3; c.ustawieniaZapisane["trybSerwa"] = 2; });
+  biegnij(3000);
+  info("3 s po zmianie w centrali: panel zna tryb pompy %ld, tryb serwa %ld", trybWyboru, trybSerwaWartosc);
+  sprawdz(trybWyboru == 3 && trybSerwaWartosc == 2, "tryb pompy i serwa docieraja ze statusu w 3 s (nie dopiero z ustawien po 60 s)");
+  // 3) Otwarcie ekranu ustawien pompy: odczyt od razu, potem co 5 s, zmiana
+  //    liczby "z telefonu" widoczna w 5 s.
+  lv_obj_t* pulpit = lv_scr_act();
+  lv_obj_t* ekran = ekranZTytulem("USTAWIENIA POMPY");
+  sprawdz(ekran != nullptr, "jest ekran USTAWIENIA POMPY");
+  if (ekran == nullptr) return;
+  u0 = kopia(0).nUstawienia;
+  { LiczFirmware licz; lv_scr_load(ekran); }
+  biegnij(300);
+  sprawdz(kopia(0).nUstawienia - u0 == 1, "otwarcie ekranu ustawien = odczyt ustawien od razu (w 300 ms)");
+  biegnij(2000);
+  sprawdz(wartoscWiersza(ekran, "Czas ON") == "5", "ekran pokazuje wartosc centrali (5)");
+  ustaw(0, [](Centrala& c) { c.ustawieniaZapisane["czasOn"] = 8; });
+  biegnij(5500);
+  sprawdz(wartoscWiersza(ekran, "Czas ON") == "8", "zmiana z telefonu widoczna na otwartym ekranie w 5 s (8)");
+  u0 = kopia(0).nUstawienia;
+  biegnij(60000);
+  ustawien = kopia(0).nUstawienia - u0;
+  info("minuta na ekranie ustawien: %d odczytow ustawien", ustawien);
+  sprawdz(ustawien == 12, "na ekranie ustawien: co 5 s (12 na minute, jak do v1.4.2)");
+  // 4) Wlasne polecenie na ekranie: odczyt po poleceniu bez zmian.
+  lv_obj_t* plusOn = przyciskWiersza(ekran, "Czas ON", LV_SYMBOL_PLUS);
+  sprawdz(plusOn != nullptr, "wiersz Czas ON ma przycisk +");
+  if (plusOn != nullptr) {
+    u0 = kopia(0).nUstawienia;
+    { LiczFirmware licz; lv_event_send(plusOn, LV_EVENT_CLICKED, nullptr); }
+    biegnij(1500);
+    sprawdz(kopia(0).ustawieniaZapisane.at("czasOn") == 9 && kopia(0).nUstawienia - u0 >= 1, "po wlasnym poleceniu (9): odczyt ustawien od razu");
+  }
+  // 5) Powrot na pulpit: znow co 60 s.
+  { LiczFirmware licz; lv_scr_load(pulpit); }
+  biegnij(1000);
+  u0 = kopia(0).nUstawienia;
+  biegnij(120000);
+  ustawien = kopia(0).nUstawienia - u0;
+  info("2 min po powrocie na pulpit: %d odczytow ustawien", ustawien);
+  sprawdz(ustawien == 2, "po powrocie na pulpit: znow 2 na 2 minuty");
+  sprawdz(g_atrapa.restarty == 0 && g_atrapa.wdtZadzialal == 0, "bez restartu i watchdoga");
 }
 
 // --- 16 --------------------------------------------------------------------
@@ -4652,7 +4734,7 @@ void scenariuszPomiarObciazenia() {
          "ostatni dotyk wg LVGL: %lu s temu\n",
          (millis() - startMs) / 1000UL, g_atrapa.podswietlenieWypelnienie, g_atrapa.podswietlenieZapisow - podswietleniePoStarcie,
          (unsigned long)(lv_disp_get_inactive_time(nullptr) / 1000UL));
-  printf("OBCIAZENIE-INFO ekran = 153600 px; 1 px = 3 bajty po SPI (ILI9488, kolor 18-bitowy); status co 2 s, ustawienia co 5 s\n");
+  printf("OBCIAZENIE-INFO ekran = 153600 px; 1 px = 3 bajty po SPI (ILI9488, kolor 18-bitowy); status co 2 s, ustawienia co 60 s w tle (co 5 s przy otwartym ekranie ustawien, od v1.4.3)\n");
   // Prototyp \"ustaw tylko wtedy, gdy wartosc sie zmienila\" (pomiar_obciazenia.sh --prototyp): ile wywolan pominal.
   if (obciazenie_prototyp_pominiete != nullptr && obciazenie_prototyp_wykonane != nullptr) {
     static const char* const NAZWY[4] = {"lv_label_set_text", "lv_obj_set_local_style_prop", "lv_img_set_src", "lv_obj_clear_flag"};
@@ -4679,6 +4761,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"polecenia_nie_gina", "kolejka polecen: szybkie klikanie i przytrzymany przycisk, stara wartosc z GET-a, pasek bledu (v1.4.2)", scenariuszPoleceniaNieGina},
     {"bez_centrali_dlugo", "centrala wylaczona na dlugo: bez restartu co 5 min, ponawianie polaczenia, naglowek w minutach (v1.4.2)", scenariuszBezCentraliDlugo},
     {"centrala_milczy_dlugo", "WiFi jest, centrala milczy dlugo: bez restartu co 5 min, wymuszone laczenie co 30 s (v1.4.2)", scenariuszCentralaMilczyDlugo},
+    {"ustawienia_na_zadanie", "ustawienia w tle co 60 s, na ekranie ustawien co 5 s i od razu; tryb pompy/serwa ze statusu (v1.4.3)", scenariuszUstawieniaNaZadanie},
     {"skan_zawieszony", "skan WiFi, ktory sie nie konczy", scenariuszSkanZawieszony},
     {"ustawienia_milcza", "status dziala, /api/ustawienia-get bez odpowiedzi", scenariuszUstawieniaMilcza},
     {"gola_plytka", "centrala bez czujnikow + symulacja czujnika (stanowisko z 2026-11-11)", scenariuszGolaPlytka},

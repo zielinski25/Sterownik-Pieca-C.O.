@@ -96,8 +96,16 @@ LIMIT_PRZYROST_B=256
 # wykresach: dzieki nim samo pobieranie nie bierze nic ze sterty (bufor
 # sektora, 4 096 B, bierze biblioteka Update na czas zapisu - patrz przypadki
 # "aktualizacja panelu" w [6]). Limit podniesiony z 5 000 na 6 000 B.
+# v1.4.2: 6 566 B. Doszlo 1 200 B: kolejka polecen (diag::KolejkaPolecen -
+# 7 polecen po 104 B: adres, nazwa pola i gotowe cialo POST, plus 8 wpisow o
+# zakonczonych poleceniach) - dzieki niej dotkniecia nie gina i nic z tego
+# nie idzie ze sterty w trakcie klikania; reszta to pasek bledu polecenia.
+# (Ten skrypt nie byl uruchamiany przy v1.4.2 - przekroczenie 6 000 B
+# wyszlo dopiero przy v1.4.3.) v1.4.3: 6 722 B (+156 B: rytm odczytu
+# ustawien, obiekt filtra JSON - sam filtr lezy na stercie, ok. 2 kB, patrz
+# "po starcie"). Limit podniesiony z 6 000 na 7 000 B.
 STATYCZNE_V120_B=3092
-LIMIT_STATYCZNE_B=6000
+LIMIT_STATYCZNE_B=7000
 # Plytka z logu 2026-11-12 (v1.2.0): 234 580 B wolnego RAM-u przed budowa
 # ekranow (273 480 B z logu minus 38 900 B obszaru, z ktorego malloc() nie
 # korzysta) i ok. 8 100 B po starcie. Ten model dla v1.2.0 daje 170 572 B,
