@@ -30,6 +30,39 @@ aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 
+## Co zmienia v1.4.4
+
+**Porządki w kodzie — zachowanie bez zmian** (krok 7 z
+`WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`, rozdział 4 = znaleziska **C1**,
+**C7**, **C8** z audytu). Ekran, dotyk, ruch do centrali i zużycie pamięci
+sterty są **takie same jak w v1.4.3**; centrala bez zmian. To wydanie można
+pominąć bez straty — służy temu, żeby kolejne kroki (3 i 6) robić w
+czytelnym pliku.
+
+| Co | Było (v1.4.3) | Jest (v1.4.4) |
+|---|---|---|
+| **C1** `src/main.cpp` | 5 922 linii, w tym **dwa niebudowane programy** przełączane makrami: stary pulpit rysowany wprost na TFT (`LVGL_POC_TEST=0`, ok. 1 400 linii: `rysuj*()`, `obsluzDotyk()`, ekrany, kafelki, ikony) i lokalna symulacja danych bez centrali (`LVGL_POC_SYMULACJA=1`, ok. 350 linii); martwe ogony `setup()`/`loop()` za `return;` | **4 500 linii**, jeden program (LVGL + WiFi/API), bez makr. Celowo **zostają** `zarejestrujAktywnosc()`/`idzSpac()` i pomiar baterii — to gotowy kod pod krok 3 (sekcja ZASILANIE ma o tym notatkę) |
+| **C1** `src/dashboard_lvgl_poc.cpp` | martwy pośredni ekran „SERWO – WYBIERZ OŚ” (`serwo_wybor_*`, `kafelek_serwo()`), usunięty z nawigacji dawno temu | usunięty także z kodu |
+| **C7** drobiazgi | nieużywane `CENTRALA_HOST`/`CENTRALA_PORT`/`HTTP_TIMEOUT_MS` (prawdziwe wartości są w `SiecCfg` w `siec_nieblokujaca_LCD.h`); dwie identyczne gałęzie w `aktualizujSezon()`; literówki | usunięte / scalone / poprawione |
+| **C8** ostrzeżenia kompilatora | testy na PC kompilowały pliki firmware'u z `-w` (wszystkie ostrzeżenia wyłączone); PlatformIO z domyślnymi | `-Wall -Wextra` dla `src/` w `platformio.ini` (`build_src_flags`, nie dotyka bibliotek) i w `testy_host/uruchom_testy.sh`; poprawione 1 `%lu` na `uint32_t` i 4 nieużywane parametry; **zero ostrzeżeń** na PC (gcc). Wyjątek: `-Wno-format-truncation` (ucinanie `snprintf()` do bufora o znanej długości jest zamierzone) |
+
+Liczby z PC (`testy_host/`): `pomiar_obciazenia.sh` **identyczne** z v1.4.3
+(31,0 / 31,0 / 31,0 / 28,8 / 31,2 / 31,0 połączeń na minutę w stanach A–F;
+2 760 / 5 156 / 2 811 / 319 / 5 237 / 2 756 próśb o pamięć); `pomiar_pamieci.sh`:
+sterta po starcie **131 680 B** i szczyt odczytu **2 664 B** bez zmian,
+zmienne statyczne **6 646 → 6 198 B** (znikły tablice przycisków i sprite
+starego pulpitu). 52 scenariusze / 550 sprawdzeń, 527 jednostkowych,
+ASan/UBSan, nagłówki rdzenia 3.3.8 — wszystko zielone. Nie budowane w
+PlatformIO i nie sprawdzane na płytce: na płytce warto obejrzeć, czy pierwsza
+linia Seriala po starcie to `=== LVGL + WiFi/API centrali ===` i czy
+kompilator Espressif (xtensa) nie zgłasza ostrzeżeń, których gcc na PC nie
+widzi — każde takie jest do poprawienia, nie do ukrycia.
+
+**Z v1.4.3 na v1.4.4** zmieniają się: `src/main.cpp`, `src/dashboard_lvgl_poc.cpp`,
+`src/lvgl_port.cpp`, `src/lvgl_port.h`, `src/siec_nieblokujaca_LCD.h`,
+`platformio.ini`, `testy_host/`. Można wgrać kablem albo przez centralę
+(`/update_panel`) — albo nie wgrywać wcale.
+
 ## Co zmienia v1.4.3
 
 **Mniej gadania z centralą** (krok 5 z
@@ -125,7 +158,8 @@ Przy centrali, która milczy, zostaje 2,45 (licznik sekund w nagłówku).
 Czego v1.4.1 **nie** zmienia (kolejne kroki, osobno): sen na baterii i próg
 niskiej baterii (krok 3), komendy gubione w czasie pobierania (krok 4 —
 zrobiony w v1.4.2, wyżej), rzadsze odpytywanie i mniej próśb o pamięć
-(krok 5 — zrobiony w v1.4.3, wyżej), 80 MHz (krok 6), martwy kod (krok 7).
+(krok 5 — zrobiony w v1.4.3, wyżej), 80 MHz (krok 6), martwy kod (krok 7 —
+zrobiony w v1.4.4, wyżej).
 
 **Jak czytać `tag=ZRZUT`.** Adresy z `pc=` i `slad=` zamienia się na nazwy
 funkcji poleceniem `xtensa-esp32-elf-addr2line -pfiaC -e .pio/build/esp32dev/firmware.elf 0x400d1234 ...`
@@ -935,8 +969,9 @@ urządzeniach.** Pierwszą warto zrobić przy panelu podłączonym do komputera
   program zostaje nietknięty, nowy trafia do drugiej połowy pamięci programu
   i jest ustawiany jako startowy dopiero po sprawdzeniu całości. Tak działa
   mechanizm ESP32; na płytce nie było to próbowane.
-- Usypianie panelu jest na czas pobierania wyłączone; dotyk nie przerywa
-  pobierania, a ekrany są zasłonięte nakładką.
+- Usypianie po bezczynności (gdy zostanie włączone — krok 3; dziś panel nie
+  usypia) jest na czas pobierania zablokowane w `idzSpac()`; dotyk nie
+  przerywa pobierania, a ekrany są zasłonięte nakładką.
 - W czasie alarmu centrala nie podaje ani oferty, ani pliku, a panel nie
   zaczyna. Alarm ma pierwszeństwo także w trakcie: pobieranie jest
   przerywane, ekran alarmu i brzęczyk działają jak zawsze.

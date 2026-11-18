@@ -95,7 +95,8 @@ class TFT_eSPI {
   uint32_t pozycja_ = 0;
 };
 
-// Sprite - uzywany tylko przez stary dashboard TFT (LVGL_POC_TEST=0).
+// Sprite - od v1.4.4 nieuzywany przez firmware (stary dashboard TFT usuniety);
+// atrapa zostaje, bo naglowek TFT_eSPI.h biblioteki tez go ma.
 class TFT_eSprite : public TFT_eSPI {
  public:
   explicit TFT_eSprite(TFT_eSPI*) {}

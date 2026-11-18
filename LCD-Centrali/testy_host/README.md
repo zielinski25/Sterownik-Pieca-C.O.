@@ -60,7 +60,7 @@ wersjami (8.3.11 i 7.2.1) te same liczby to 129 324, 5 464, 2 452 /
 | `sprawdz_czulosc_ota.py` | 23 razy psuje jedną rzecz w kopii źródeł (pominięte sprawdzenie, brak przerwania przy alarmie, brak zapisu stanu…) i sprawdza, że scenariusze `ota_*` albo testy jednostkowe to wykrywają. To sprawdzenie testów, nie kodu. |
 | `wzorce_centrali/` | Odpowiedzi centrali na `/api/history/panel`, wypisane przez jej własny kod — 11 plików; 9 takich samych z 3.58.4 i 3.58.5, 2 tylko z 3.58.5 (opis: `CZYTAJ.txt` w tym katalogu). Z nich korzystają scenariusze `wykresy_*`. |
 | `wzorce_v122/` | Punkty, które z tych samych starych CSV narysował firmware v1.2.2 (opis: `CZYTAJ.txt` w tym katalogu). Z nimi porównywane jest rysowanie po staremu. |
-| `uruchom_testy.sh` | Buduje i uruchamia całość: 527 sprawdzeń jednostkowych i 52 scenariusze (549 sprawdzeń). |
+| `uruchom_testy.sh` | Buduje i uruchamia całość: 527 sprawdzeń jednostkowych i 52 scenariusze (550 sprawdzeń). Pliki firmware'u kompiluje z `-Wall -Wextra` — nowe ostrzeżenie to coś do poprawienia. |
 | `sprawdz_naglowki_esp32.sh` | Sprawdza składnię i typy źródeł panelu prawdziwymi nagłówkami arduino-esp32 / ESP-IDF / TFT_eSPI (bez atrap). |
 | `pomiar_pamieci.sh` | Mierzy, ile pamięci RAM trzyma firmware, i pilnuje limitów. Buduje ten sam program jako 32-bitowy, z `pomiar_sterty.c` zamiast zwykłego `malloc()`. Z `--przypadki`: ile pamięci trzeba w każdym przypadku pracy i co się dzieje, gdy jest jej mniej. |
 | `pomiar_sterty.c` | `malloc()` z licznikiem: dla każdego bloku pamięta rozmiar i stos wywołań; liczy go tak, jak zajmuje miejsce na stercie ESP32. Potrafi też odmawiać ponad zadany limit (jak płytka bez wolnego RAM-u) i wypisać stos wywołań, gdy program modelu sięgnie pod zły adres. |
@@ -514,6 +514,16 @@ rozpakowywanie 46 pól statusu 30 razy na minutę plus LVGL.
 filtr statusu, ok. 2,4 kB, budowany raz), jedno odpytanie chwilowo
 2 664 B (v1.4.2: 5 324 B), zmienne statyczne 6 646 B (v1.4.2: 6 566 B;
 v1.4.0: 5 366 B — kolejka poleceń z v1.4.2), przyrost po 10 min 0 B.
+
+**v1.4.4** (2026-11-20, porządki w kodzie — „krok 7”): `pomiar_obciazenia.sh`
+daje **te same liczby co v1.4.3** we wszystkich sześciu stanach (31,0 / 31,0 /
+31,0 / 28,8 / 31,2 / 31,0 połączeń; 2 760 / 5 156 / 2 811 / 319 / 5 237 / 2 756
+próśb o pamięć); `pomiar_pamieci.sh`: po starcie 131 680 B i odpytanie
+2 664 B bez zmian, zmienne statyczne **6 198 B** (v1.4.3: 6 646 B — znikły
+tablice przycisków i sprite kafelka starego pulpitu TFT). Od tej wersji
+`uruchom_testy.sh` kompiluje pliki firmware'u z `-Wall -Wextra` (do v1.4.3:
+`-w`) — oczekiwany wynik to zero ostrzeżeń; biblioteki (LVGL, ArduinoJson)
+są włączane przez `-isystem`, więc ich ostrzeżenia nie są liczone.
 
 Wynik z 2026-11-18, firmware **v1.4.1** (LVGL 8.4.0, ArduinoJson 7.4.3;
 pulpit ustawia napis, kolor, ikonę i widoczność tylko przy zmianie —

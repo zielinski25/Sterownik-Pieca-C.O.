@@ -7,7 +7,7 @@
 // Wymaga, zeby main.cpp:
 //   1) deklarowal `extern TFT_eSPI tft;`            (juz masz - to Twoj obiekt)
 //   2) udostepnial `bool touchPobierzStabilnaPozycje(uint16_t&, uint16_t&);`
-//      (juz masz t   ą funkcje - patrz linia ~237 main.cpp)
+//      (juz masz te funkcje - patrz linia ~237 main.cpp)
 //   3) w setup() wolal lvgl_port_init() PO tft.init() i PO touchInicjalizujPiny()
 //   4) w loop() wolal lvgl_port_tick() na kazdym obrocie petli
 

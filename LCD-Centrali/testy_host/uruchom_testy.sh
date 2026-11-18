@@ -74,12 +74,20 @@ printf '#pragma once\n#define SECRET_WIFI_AP_PASSWORD "haslo-testowe"\n#define S
 WSPOLNE="-std=gnu++17 -O1 -g $SAN -DTFT_BL=21 -DLV_CONF_INCLUDE_SIMPLE \
   -DARDUINOJSON_ENABLE_ARDUINO_STRING=1 -DARDUINOJSON_ENABLE_ARDUINO_STREAM=0 \
   -DARDUINOJSON_ENABLE_ARDUINO_PRINT=0 -DARDUINOJSON_ENABLE_PROGMEM=0 \
-  -I $TU/mock -I $INCLUDE -I $PODRECZNY/ArduinoJson/src -I $PODRECZNY/lvgl -I $SRC -I $ATRAPA_HASEL"
-# Firmware: -w (jego ostrzezenia to sprawa prawdziwego kompilatora ESP32);
-# atrapy i symulator: z ostrzezeniami.
-g++ $WSPOLNE -w -c -o "$BUD/main.o" "$SRC/main.cpp" &
-g++ $WSPOLNE -w -c -o "$BUD/dash.o" "$SRC/dashboard_lvgl_poc.cpp" &
-g++ $WSPOLNE -w -c -o "$BUD/port.o" "$SRC/lvgl_port.cpp" &
+  -I $TU/mock -I $INCLUDE -isystem $PODRECZNY/ArduinoJson/src -isystem $PODRECZNY/lvgl -I $SRC -I $ATRAPA_HASEL"
+# -isystem dla bibliotek: -Wall ma pilnowac NASZEGO kodu, nie naglowkow ArduinoJson/LVGL.
+# [v1.4.4 C8] Firmware tez z -Wall -Wextra (do v1.4.3: -w). Oczekiwany wynik:
+# ZERO ostrzezen - nowe ostrzezenie = cos do poprawienia, nie do ukrycia.
+# -Wno-format-truncation: jedyny wyjatek, jak przy test_diagnostyka wyzej
+# (snprintf do bufora o znanej dlugosci - obciecie jest zamierzone).
+OSTRZ="-Wall -Wextra -Wno-format-truncation"
+# Z sanitizerem GCC zglasza -Wmaybe-uninitialized WEWNATRZ ArduinoJson 7.4.3
+# (ObjectImpl.hpp, iterator()) - biblioteka, nie nasz kod; -isystem tego nie
+# wycisza, bo funkcja jest wlaczana (inline) do naszych wywolan doc["..."].
+if [ "$SANITIZER" = "1" ]; then OSTRZ="$OSTRZ -Wno-maybe-uninitialized"; fi
+g++ $WSPOLNE $OSTRZ -c -o "$BUD/main.o" "$SRC/main.cpp" &
+g++ $WSPOLNE $OSTRZ -c -o "$BUD/dash.o" "$SRC/dashboard_lvgl_poc.cpp" &
+g++ $WSPOLNE $OSTRZ -c -o "$BUD/port.o" "$SRC/lvgl_port.cpp" &
 g++ $WSPOLNE -Wall -Wextra -c -o "$BUD/atrapa.o" mock/atrapa.cpp &
 g++ $WSPOLNE -Wall -Wextra -c -o "$BUD/sym.o" symulator_panelu.cpp &
 BLEDY=0

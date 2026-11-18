@@ -90,6 +90,7 @@ static void lvgl_disp_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_
 // puszczenie palca wciaz jest wykrywane bardzo szybko (bez zauwazalnego
 // opoznienia w zwyklych tapnieciach w kafelki/przyciski).
 static void lvgl_touch_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
+  (void)drv; // jeden sterownik dotyku - nie rozrozniamy po drv
   static int16_t ostX = 0, ostY = 0;
   static bool bylWczesniejWcisniety = false;
   static uint8_t licznikNieudanychZRzedu = 0;

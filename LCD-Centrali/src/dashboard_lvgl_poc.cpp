@@ -594,21 +594,10 @@ static lv_obj_t *syberkaCard = nullptr;
 static lv_obj_t *klapaRecznieIcon = nullptr;
 static lv_obj_t *syberkaRecznieIcon = nullptr;
 
-// --- Ekran WYBOR SERWA (miedzyekran) ---
-// [ROZSZERZENIE, ta sesja - jedna ikona SERWO na glownym menu] User: "na
-// glownym menu jedna ikona do serwa, dopiero w podmenu po kliknieciu
-// pojawiaja sie opcje dla danego". Research (HMI/touchscreen menu best
-// practice - Toptal/ISA-101): trzymac hierarchie DWUPOZIOMOWA (nie glebiej),
-// rodzic ma jasny wizualny sygnal ze prowadzi do podmenu (ikona/strzalka), a
-// "wstecz" wraca tam, skad user przyszedl - nie zawsze na sam dashboard.
-// Dlatego ten ekran jest ROWNORZEDNY z serwoPanel/dashboardScr (wlasny
-// lv_obj_t), NIE modyfikuje kafelek_serwo()/serwo_tile_odswiez() ponizej -
-// obie karty KLAPA/SYBERKA (klapaCard/syberkaCard itd. wyzej) po prostu
-// zmieniaja RODZICA (budowane w serwo_wybor_zbuduj() zamiast bezposrednio
-// na dashboardScr) - CALA reszta logiki (aktualizacja wartosci,
-// podswietlenie trybu recznego) zostaje identyczna, zero duplikacji.
-static lv_obj_t *serwoWyborScr = nullptr;
-static lv_timer_t *g_serwoWyborIdleTimer = nullptr;
+// [v1.4.4 C1] Posredni ekran "SERWO - WYBIERZ OS" (serwoWyborScr) zostal
+// usuniety z nawigacji juz wczesniej (user: "usun posredni ekran"); teraz
+// usunieto tez jego martwy kod (serwo_wybor_zbuduj/_otworz_cb/_zamknij_cb,
+// idle-timer). Kafelek SERWO otwiera serwoPanel bezposrednio.
 
 // --- Panel SERWO (jeden wspoldzielony ekran dla KLAPY i SYBERKI) ---
 // [POPRAWKA, ta sesja - panel SERWO v3] User na zywym sprzecie: klikanie
@@ -2109,10 +2098,12 @@ static void serwo_panel_otworz() {
   serwo_idle_timer_resetuj();
 }
 
-// Oba kafelki otwieraja TEN SAM widok (obie osie naraz) - patrz komentarz
-// przy serwo_panel_otworz() wyzej co do tego, dlaczego nie ma juz parametru id.
+// Kafelek SERWO na pulpicie otwiera widok obu osi naraz - patrz komentarz
+// przy serwo_panel_otworz() wyzej co do tego, dlaczego nie ma parametru id.
+// [v1.4.4 C1] Razem z ekranem wyboru osi usunieto kafelek_serwo() i
+// syberka_kafelek_klikniety_cb(); uchwyty klapaValLabel/klapaCard/... (wyzej)
+// zostaja na nullptr - kazde uzycie jest sprawdzane.
 static void klapa_kafelek_klikniety_cb(lv_event_t *e) { (void)e; serwo_panel_otworz(); }
-static void syberka_kafelek_klikniety_cb(lv_event_t *e) { (void)e; serwo_panel_otworz(); }
 
 // [POPRAWKA, ta sesja - panel SERWO v2] Trzy callbacki trybu (nie dwa) -
 // kazdy wysyla WSPOLNY trybSerwa (1/2/3), nie dotyka pozycji. Optymistyczne
@@ -2187,33 +2178,6 @@ static void serwo_btn_zamknij_panel_cb(lv_event_t *e) { (void)e; serwo_panel_zam
 
 static void serwo_ustawienia_otworz(); // forward - definicja ponizej, potrzebna juz w callbacku przycisku zebatki w serwo_panel_zbuduj()
 static void serwo_btn_ustawienia_cb(lv_event_t *e) { (void)e; serwo_ustawienia_otworz(); }
-
-// ----------------------------------------------------------------------------
-// Ekran WYBOR SERWA - miedzyekran otwierany z jednego kafelka "SERWO" na
-// dashboardzie, prowadzi do klapaCard/syberkaCard (dokladnie te same karty
-// co poprzednio zylys wprost na dashboardzie - patrz komentarz przy
-// deklaracji serwoWyborScr wyzej).
-// ----------------------------------------------------------------------------
-static void serwo_wybor_idle_timeout_cb(lv_timer_t *t) {
-  (void)t;
-  g_serwoWyborIdleTimer = nullptr;
-  if (dashboardScr != nullptr) lv_scr_load_anim(dashboardScr, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
-}
-static void serwo_wybor_idle_resetuj() {
-  if (g_serwoWyborIdleTimer != nullptr) { lv_timer_del(g_serwoWyborIdleTimer); g_serwoWyborIdleTimer = nullptr; }
-  g_serwoWyborIdleTimer = lv_timer_create(serwo_wybor_idle_timeout_cb, POMPA_STRONA_IDLE_MS, nullptr);
-  lv_timer_set_repeat_count(g_serwoWyborIdleTimer, 1);
-}
-static void serwo_wybor_zamknij_cb(lv_event_t *e) {
-  (void)e;
-  if (g_serwoWyborIdleTimer != nullptr) { lv_timer_del(g_serwoWyborIdleTimer); g_serwoWyborIdleTimer = nullptr; }
-  if (dashboardScr != nullptr) lv_scr_load_anim(dashboardScr, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
-}
-static void serwo_wybor_otworz_cb(lv_event_t *e) {
-  (void)e;
-  lv_scr_load_anim(serwoWyborScr, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
-  serwo_wybor_idle_resetuj();
-}
 
 // Kafelek WEJSCIOWY na dashboardzie - zajmuje DWA sloty siatki w poziomie
 // (miejsce bylo wolne - rzad 2 mial tylko SERWO+DYM na 4 slotach, patrz
@@ -2300,47 +2264,6 @@ static void kafelek_serwo_wejscie(lv_obj_t *parent, int x, int y, int w, int h) 
   lv_label_set_text(strzalka, LV_SYMBOL_RIGHT);
   lv_obj_set_style_text_color(strzalka, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align(strzalka, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
-}
-
-// Ekran WYBOR SERWA - tytul + dwie duze karty KLAPA/SYBERKA (kafelek_serwo(),
-// dokladnie ta sama funkcja/logika co poprzednio na dashboardzie - patrz
-// definicja wyzej w pliku), tylko wieksze (wiecej miejsca, bo tylko 2 karty
-// zamiast calej siatki 4x3) i wysrodkowane. Przycisk X wraca na dashboard.
-// Forward declaration - kafelek_serwo() jest zdefiniowana dalej w pliku
-// (przy pozostalych funkcjach kafelek_*), ale serwo_wybor_zbuduj() (ponizej)
-// potrzebuje jej juz teraz.
-static lv_obj_t *kafelek_serwo(lv_obj_t *parent, int x, int y, int w, int h,
-                                const char *etykieta, lv_event_cb_t klikCb,
-                                lv_obj_t **cardWyjscie, lv_obj_t **recznieIkonaWyjscie);
-
-static void serwo_wybor_zbuduj(lv_obj_t *scr) {
-  (void)scr;
-  serwoWyborScr = lv_obj_create(nullptr);
-  lv_obj_set_style_bg_color(serwoWyborScr, rgb565(KOL_TLO), 0);
-  lv_obj_set_style_bg_opa(serwoWyborScr, LV_OPA_COVER, 0);
-  lv_obj_clear_flag(serwoWyborScr, LV_OBJ_FLAG_SCROLLABLE);
-
-  lv_obj_t *tytul = lv_label_create(serwoWyborScr);
-  lv_label_set_text(tytul, "SERWO - WYBIERZ OS");
-  lv_obj_set_style_text_font(tytul, &lv_font_montserrat_20, 0);
-  lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
-  lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 14);
-
-  // Dwie karty 200x180, wysrodkowane w poziomie z 20px odstepem (razem
-  // 420px < 480px ekranu -> 30px marginesu po kazdej stronie), zaczynajace
-  // sie ponizej tytulu (y=64).
-  const int kw = 200, kh = 180, gap = 20;
-  const int totalW = kw * 2 + gap;
-  const int x0 = (480 - totalW) / 2;
-  const int y0 = 64;
-
-  klapaValLabel = kafelek_serwo(serwoWyborScr, x0, y0, kw, kh, "SERWO\nKLAPA",
-                                 klapa_kafelek_klikniety_cb, &klapaCard, &klapaRecznieIcon);
-  syberkaValLabel = kafelek_serwo(serwoWyborScr, x0 + kw + gap, y0, kw, kh, "SERWO\nSYBERKA",
-                                   syberka_kafelek_klikniety_cb, &syberkaCard, &syberkaRecznieIcon);
-
-  // [FIX WYGLAD, ta sesja - Partia 2] Patrz krzyzyk_zamkniecia_utworz().
-  krzyzyk_zamkniecia_utworz(serwoWyborScr, serwo_wybor_zamknij_cb, -10, 14);
 }
 
 // [POPRAWKA, ta sesja - panel SERWO v3] Jeden wiersz = nazwa osi (lewo) +
@@ -3379,12 +3302,12 @@ static void alarm_temp_panel_zbuduj(lv_obj_t *scr) {
 // tamtego panelu odpaliby sie pozniej w tle i wykonal
 // lv_scr_load_anim(dashboardScr,...) PRZEZ NASZ alarm - realny alarm
 // znikalby uzytkownikowi z ekranu bez jego udzialu. Kasuje KAZDY idle-timer
-// w pliku (nie tylko "prawdopodobne") - tania operacja (10 sprawdzen
+// w pliku (nie tylko "prawdopodobne") - tania operacja (9 sprawdzen
 // wskaznika), wolana tylko przy faktycznym pokazaniu ekranu (nie na kazdym
 // cyklu aktualizuj()).
 static void alarm_ekran_wszystkie_idle_timery_anuluj() {
   lv_timer_t **wszystkie[] = {
-    &g_pompaPanelIdleTimer, &g_serwoWyborIdleTimer, &g_serwoPanelIdleTimer,
+    &g_pompaPanelIdleTimer, &g_serwoPanelIdleTimer,
     &g_serwoUstIdleTimer, &g_pompaUstIdleTimer, &g_alarmTempPanelIdleTimer,
     &g_wykresyPanelIdleTimer, &g_drugiPulpitIdleTimer,
     &g_wyswietlaczPanelIdleTimer, &g_dymPanelIdleTimer,
@@ -3682,6 +3605,7 @@ static void drugi_pulpit_otworz() {
 // Gest na drugim pulpicie: w KTORAKOLWIEK strone wraca na dashboard - ta sama
 // symetria co ustalona wczesniej dla dashboard_gesture_cb()/wykresy_panel_gesture_cb().
 static void drugi_pulpit_gesture_cb(lv_event_t *e) {
+  (void)e; // gest czytamy z aktywnego indev, nie ze zdarzenia
   lv_indev_t *indev = lv_indev_get_act();
   if (indev == nullptr) return;
   lv_dir_t kierunek = lv_indev_get_gesture_dir(indev);
@@ -4425,6 +4349,7 @@ static void wykresy_kafelek_klikniety_cb(lv_event_t *e) {
 // klikniecie w kafelek POMPA nadal otwiera panel POMPA jak dotad, a gest na
 // tym samym kafelku RUWNOLEGLE otworzy Wykresy, bez konfliktu.
 static void dashboard_gesture_cb(lv_event_t *e) {
+  (void)e; // gest czytamy z aktywnego indev, nie ze zdarzenia
   lv_indev_t *indev = lv_indev_get_act();
   if (indev == nullptr) return;
   lv_dir_t kierunek = lv_indev_get_gesture_dir(indev);
@@ -4453,6 +4378,7 @@ static void dashboard_gesture_cb(lv_event_t *e) {
 // dashboard. X w rogu (dodawany w wykresy_panel_zbuduj() nizej) zostaje
 // jako fallback, tak jak zapisano w decyzji w STATUS_PROJEKTU_LVGL.md.
 static void wykresy_panel_gesture_cb(lv_event_t *e) {
+  (void)e; // gest czytamy z aktywnego indev, nie ze zdarzenia
   lv_indev_t *indev = lv_indev_get_act();
   if (indev == nullptr) return;
   lv_dir_t kierunek = lv_indev_get_gesture_dir(indev);
@@ -6404,72 +6330,6 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
 
   // [FIX WYGLAD, ta sesja - Partia 2] Patrz krzyzyk_zamkniecia_utworz().
   krzyzyk_zamkniecia_utworz(wykresyWykresCont, wykresy_panel_zamknij_cb);
-}
-
-// Kafelek KLAPA/SYBERKA - interaktywny wariant kafelek(), na wzor
-// kafelek_pompa(): cala karta klikalna + 3D press-efekt + ramka podswietlana
-// w trybie recznym (dokladnie jak isManualLike() w piec_co_ui_koncept.html).
-// Zwraca uchwyt do labelki WARTOSCI (jak kafelek()); `cardWyjscie`/
-// `recznieIkonaWyjscie` dodatkowo zwracaja uchwyty potrzebne do
-// serwo_tile_odswiez() (ramka, znaczek dloni).
-static lv_obj_t *kafelek_serwo(lv_obj_t *parent, int x, int y, int w, int h,
-                                const char *etykieta, lv_event_cb_t klikCb,
-                                lv_obj_t **cardWyjscie, lv_obj_t **recznieIkonaWyjscie) {
-  lv_obj_t *card = lv_obj_create(parent);
-  lv_obj_remove_style_all(card);
-  lv_obj_set_size(card, w, h);
-  lv_obj_set_pos(card, x, y);
-  lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
-  lv_obj_set_style_radius(card, 6, 0);
-  lv_obj_set_style_border_width(card, 1, 0);
-  lv_obj_set_style_border_opa(card, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_color(card, rgb565(KOL_RAMKA), 0); // startowo AUTO - kolor ustawia serwo_tile_odswiez() nizej
-
-  press_flash_zainstaluj(card, KOL_KARTA, 3);
-  lv_obj_add_event_cb(card, klikCb, LV_EVENT_CLICKED, nullptr);
-
-  lv_obj_t *lbl = lv_label_create(card);
-  lv_label_set_text(lbl, etykieta);
-  lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-  lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 6);
-
-  lv_obj_t *img = lv_img_create(card);
-  lv_img_set_src(img, &lv_ikona_suwak);
-  lv_obj_set_style_img_recolor_opa(img, LV_OPA_COVER, 0);
-  lv_obj_set_style_img_recolor(img, rgb565(KOL_SUWAK), 0);
-  lv_obj_align(img, LV_ALIGN_TOP_RIGHT, -4, 6);
-
-  lv_obj_t *val = lv_label_create(card);
-  lv_label_set_text(val, "--");
-  lv_obj_set_style_text_color(val, rgb565(KOL_TEKST), 0);
-  lv_obj_set_style_text_font(val, &lv_font_montserrat_28, 0);
-  lv_obj_align(val, LV_ALIGN_TOP_LEFT, 8, 52);
-
-  // [POPRAWKA, ta sesja] Ikona trybu - byla wczesniej TYLKO znaczkiem dloni,
-  // widocznym jedynie w trybach Reczny/Bezpieczna (oba ta sama ikona, tryb
-  // rozrozniany wylacznie kolorem ramki karty) - user na glownym panelu nie
-  // widzial od razu, w jakim trybie jest SERWO, bez otwierania panelu.
-  // Teraz ikona jest ZAWSZE widoczna i ZMIENIA KSZTALT wg aktualnego
-  // g_trybSerwa (Auto/Reczny/Bezpieczna maja rozne bitmapy, patrz
-  // serwo_tile_odswiez() nizej) - dwa niezalezne sygnaly (ksztalt + kolor
-  // ramki karty) zamiast jednego (sam kolor), czytelne nawet dla kogos kto
-  // nie pamieta konwencji kolorow. Nazwa uchwytu zostaje "recznieIcon" (bez
-  // zmiany sygnatury funkcji/wywolan), ale semantyka to teraz "ikona trybu".
-  // lv_obj_align dziala poprawnie mimo roznych rozmiarow bitmap (30/40px) -
-  // przelicza pozycje od aktualnego rozmiaru obiektu przy kazdym wywolaniu
-  // w serwo_tile_odswiez().
-  lv_obj_t *recznieIcon = lv_img_create(card);
-  lv_img_set_src(recznieIcon, &lv_ikona_auto_0); // startowy stan = Auto (domyslny tryb)
-  lv_obj_set_style_img_recolor_opa(recznieIcon, LV_OPA_COVER, 0);
-  lv_obj_set_style_img_recolor(recznieIcon, rgb565(KOL_RAMKA), 0);
-  lv_obj_align(recznieIcon, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
-
-  if (cardWyjscie != nullptr) *cardWyjscie = card;
-  if (recznieIkonaWyjscie != nullptr) *recznieIkonaWyjscie = recznieIcon;
-  return val;
 }
 
 // Odswieza WYGLAD obu kafelkow SERWO (ramka, znaczek dloni) pod aktualne

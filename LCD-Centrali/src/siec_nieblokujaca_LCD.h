@@ -62,15 +62,13 @@
 // KONFIGURACJA - podmien pod swoje wartosci (te same co dzis w main.cpp)
 // =======================================================================
 namespace SiecCfg {
-    // MUSZA byc identyczne z CENTRALA_HOST/CENTRALA_PORT/HTTP_TIMEOUT_MS w
-    // main.cpp - zdublowane celowo jako stale zamiast wspolnego naglowka,
-    // bo main.cpp include'uje TEN plik PRZED wlasnymi deklaracjami tych
-    // stalych (kolejnosc w pliku) - ten sam wzorzec co OTA_HASLO_PANEL w
-    // main.cpp (patrz komentarz tam). Zmieniajac jedno, zmien i drugie.
-    static const char*    HOST                 = "192.168.4.1"; // = CENTRALA_HOST
-    static const uint16_t PORT                 = 80;             // = CENTRALA_PORT
+    // [v1.4.4 C7] JEDYNE miejsce z adresem centrali i timeoutem HTTP (do
+    // v1.4.3 main.cpp mial nieuzywane duplikaty CENTRALA_HOST/CENTRALA_PORT/
+    // HTTP_TIMEOUT_MS). 192.168.4.1 = domyslna brama Soft-AP ESP32 centrali.
+    static const char*    HOST                 = "192.168.4.1";
+    static const uint16_t PORT                 = 80;
     static const uint32_t CONNECT_TIMEOUT_MS   = 400;   // limit fazy laczenia
-    static const uint32_t CALKOWITY_TIMEOUT_MS = 1500;  // = HTTP_TIMEOUT_MS
+    static const uint32_t CALKOWITY_TIMEOUT_MS = 1500;  // caly GET/POST (connect+odpowiedz)
     static const size_t   BUFOR_ROZMIAR        = 512;   // kawalek na jeden recv()
     // [v1.4.1 A4] Najwieksza odpowiedz (naglowki + tresc), jaka panel zbiera
     // w pamieci. Prawdziwy /api/status ma ok. 2 kB, /api/ustawienia-get mniej.
