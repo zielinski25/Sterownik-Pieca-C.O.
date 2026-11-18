@@ -36,10 +36,13 @@ rozdział 13.
 5. **Wersja platformy nie jest przypięta** w `platformio.ini` panelu. Dziś
    budujesz tym, co akurat jest zainstalowane. Na innej wersji ten sam kod
    albo się nie skompiluje, albo ekran przygaśnie po pierwszym alarmie (C2).
-6. **Kodowanie znaków jest w porządku** — wszystkie pliki to czysty UTF-8,
+6. **Jasność da się ustawić na 0 %** i ekran zostaje czarny, także po
+   restarcie. Alarm ekranu nie rozjaśnia — przy jasności nocnej 0 % ekranu
+   alarmu w nocy nie widać (C9).
+7. **Kodowanie znaków jest w porządku** — wszystkie pliki to czysty UTF-8,
    jedyny znak spoza ASCII w napisach programu to `°`, który jest w czcionce
    (rozdział 9).
-7. **Hasła** — osobny, prywatny plik (rozdział 5).
+8. **Hasła** — osobny, prywatny plik (rozdział 5).
 
 Kolejność prac, którą proponuję: rozdział 11.
 
@@ -144,6 +147,7 @@ porządki.
 | C6 | Dwie klasy sieciowe robią to samo na dwa sposoby; jedna nie sprawdza wyniku wysyłki | drobne | kod |
 | C7 | Nieużywane stałe i funkcje, zdublowany fragment, opis niezgodny z kodem | drobne | kod |
 | C8 | Ostrzeżenia kompilatorów — co z nich jest szumem | wynik | narzędzia |
+| C9 | Jasność można ustawić na 0 % (czarny ekran, zapamiętany); alarm nie rozjaśnia ekranu | średnie | kod |
 | D | Kodowanie znaków — bez problemów | wynik | pomiar |
 
 ---
@@ -359,10 +363,11 @@ jednym wyszukiwaniem 2026-11-18). Dotyczą samego układu, nie całej płytki.
 | ESP32 w lekkim śnie | 0,8 mA |
 | ESP32 w głębokim śnie | 0,01 mA |
 | Panel w głębokim śnie ze sterownikiem ekranu aktywnym / uśpionym (pomiar multimetrem zapisany w komentarzu, `main.cpp:4539–4540`) | ok. 62 mA / ok. 0,11 mA |
-| Podświetlenie ekranu 3,5″ na 100 % (**z pamięci**) | zwykle kilkadziesiąt do ponad 100 mA |
+| Podświetlenie ekranu 3,5″ na 100 % (**z pamięci**; u Ciebie może być dużo mniej — patrz B5) | zwykle kilkadziesiąt do ponad 100 mA |
 
-Z przedostatniego wiersza wynika, że sam aktywny sterownik ekranu to ok.
-62 mA — bez podświetlenia.
+Z przedostatniego wiersza wynika, że aktywny sterownik ekranu to ok. 62 mA.
+Zakładam, że podświetlenie było przy tym pomiarze zgaszone (kod gasi je
+przed uśpieniem, `main.cpp:4533`).
 
 Wniosek z tabeli: **najwięcej biorą ekran z podświetleniem i sam fakt, że
 panel nigdy nie śpi.** Radio przy obecnym odpytywaniu to według mojego
@@ -546,6 +551,14 @@ odpowiedź, zamknięcie (`siec_nieblokujaca_LCD.h:250–252`, `HTTP/1.0`,
   swoją jasność: `platformio.ini:55` (`TFT_BACKLIGHT_ON=HIGH`) każe
   bibliotece TFT_eSPI włączyć podświetlenie w `tft.init()` (**źródła**:
   `TFT_eSPI.cpp:786–789`). Kosmetyka, widoczna w nocy.
+
+- Według uwag w kodzie podświetlenie jest podłączone do pinu procesora
+  przez rezystor 100–220 Ω (`main.cpp:1009–1011`, `platformio.ini:47–48`).
+  **Wniosek:** jeśli moduł ekranu nie ma własnego tranzystora, cały prąd
+  podświetlenia płynie z pinu i jest mały — wtedy samo przygaszanie da
+  niewiele, a oszczędność z wygaszania ekranu to głównie uśpienie jego
+  sterownika (ok. 62 mA). Rozstrzygnie pomiar z rozdziału 12.
+- Jasność 0 % i zachowanie przy alarmie — osobno, C9.
 
 **Co zrobić.** Razem z B1 (wariant 1). Błysk przy starcie: usunąć
 `-DTFT_BACKLIGHT_ON=HIGH` i sterować pinem samemu — do sprawdzenia, czy
@@ -825,6 +838,33 @@ clang-tidy: 73 razy „pominięty wynik funkcji” (to `snprintf` — celowo);
 jedno zgłoszenie wyjścia poza tabelę w `main.cpp:3550` — w martwym kodzie
 starego interfejsu (ten sam wzorzec co C5).
 
+### C9. Jasność można ustawić na 0 %; alarm nie rozjaśnia ekranu
+
+**Co widzę.**
+
+- Suwaki jasności dziennej i nocnej mają zakres 0–100
+  (`dashboard_lvgl_poc.cpp:3677`), a kod nie pilnuje dolnej granicy
+  (`main.cpp:1118–1136`). Przy 0 % podświetlenie gaśnie całkiem
+  (`main.cpp:1012–1015`).
+- Wartość jest zapisywana w pamięci panelu po puszczeniu suwaka
+  (`main.cpp:1133–1135`) i wraca po restarcie (`main.cpp:5212`).
+- Jasność zmieniają tylko: suwak, harmonogram dzień/noc i start
+  (`main.cpp:1094`, `1101`, `1132`, `5212`). **Alarm jej nie zmienia.**
+
+**Skutek.**
+
+- Jasność dzienna na 0 %: czarny ekran, także po restarcie. Wrócić można
+  tylko przesuwając suwak na ślepo.
+- Jasność nocna na 0 % (ktoś chce mieć w nocy ciemno): w nocy ekranu alarmu
+  dymu albo przegrzania nie widać. Brzęczyk działa.
+
+**Co zrobić.** Dolna granica suwaków (np. 5 %) i pełna jasność na czas
+alarmu. Robić razem z B1 — to ten sam fragment kodu, a wygaszanie ekranu
+z B1 i tak musi umieć obudzić ekran przy alarmie.
+
+**Pewność:** kod. Nie uruchamiałem. Zakładam, że podświetleniem steruje
+tylko ten jeden pin — tak mówią uwagi w kodzie.
+
 ---
 
 ## 9. D — kodowanie znaków
@@ -935,6 +975,7 @@ błędów. Przy każdym temacie: **od czego zależy decyzja**.
 13. **Głęboki sen z ekranem i dotykiem.**
     `ESP32 deep sleep gpio_hold_en gpio_deep_sleep_hold_en`,
     `ILI9488 sleep in 0x10 current`,
+    `ILI9488 3.5 inch SPI module LED pin backlight current transistor`,
     `XPT2046 power down mode PD0 PD1`,
     `ESP32 devkit deep sleep current AMS1117 CP2102`,
     `ESP32 deep sleep timer wakeup wifi reconnect time static ip bssid`.
@@ -997,7 +1038,7 @@ i próba na płytce.
 | 0 | Hasła | W | — | — |
 | 1 | **Rzeczy pewne i małe, bez zmiany zachowania:** przypięcie platformy i bibliotek; zapas stosu w logu; watchdog w kalibracji; limit odpowiedzi; sprawdzenie `malloc`; zabezpieczenie tabeli ustawień; `WiFi.persistent(false)` | C2, A5, C3, A4, A6, C5, B8 | mała | małe |
 | 2 | **Rysuj tylko zmiany.** Sprawdzian: `pomiar_obciazenia.sh`, stan A blisko zera | B2 (i część A2) | średnia | małe — jest pomiar przed i po |
-| 3 | **Ekran gaśnie po czasie bez dotyku** (wariant 1 z B1, jeśli go wybierzesz) + rzadsze ustawienia | B1, B5, B4 | średnia | średnie — wymaga prób na płytce |
+| 3 | **Ekran gaśnie po czasie bez dotyku** (wariant 1 z B1, jeśli go wybierzesz); alarm zawsze rozjaśnia ekran, jasność ma dolną granicę; rzadsze ustawienia | B1, B5, C9, B4 | średnia | średnie — wymaga prób na płytce |
 | 4 | **Polecenia nie giną** | C4 | średnia | średnie |
 | 5 | **Decyzja o śnie na baterii** i próg słabej baterii; zachowanie bez centrali | B1, B6 | zależy od wariantu | wymaga Twojej decyzji i pomiarów prądu |
 | 6 | Wolniejszy procesor, moc nadajnika — z miernikiem w ręku | B3, B7 | mała | trzeba mierzyć |
@@ -1022,9 +1063,13 @@ Wpisz wyniki — to rozstrzygnie, co naprawdę warto robić w krokach 3, 5 i 6.
 |---|---|---|
 | Pulpit, jasność 100 % | zwykła praca | |
 | Pulpit, jasność 30 % | suwak na ekranie Wyświetlacz | |
-| Pulpit, jasność 0 % | suwak na 0 | |
+| Pulpit, jasność 0 % | w dzień: przesuń suwak jasności dziennej do zera i **nie puszczaj palca**; odczytaj miernik; wróć palcem w prawo i dopiero puść | |
 | Centrala wyłączona, panel szuka | wyłącz centralę, odczekaj minutę | |
 | Odłączone USB i bateria prawie pusta | — | tylko obserwacja: czy panel się restartuje w kółko |
+
+Przy trzecim wierszu nie puszczaj palca na zerze: panel zapamiętałby 0 %
+i ekran zostałby czarny (C9). Jasność zmienia się już w trakcie przesuwania,
+a zapis następuje dopiero po puszczeniu.
 
 Różnica między pierwszym a trzecim wierszem to podświetlenie. Trzeci wiersz
 pomniejszony o prąd sterownika ekranu (ok. 62 mA według pomiaru zapisanego
