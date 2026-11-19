@@ -1,0 +1,54 @@
+ZAKRES ZMIAN v3.58.7 (main_centrala.cpp)
+=======================================
+Wynik: v3.58.7, SHA-256 09032571050c0b78d5101d8625b0a189805d11e68db83f3c06adca2ab043920a
+       (50 272 linie)
+Baza:  v3.58.6, SHA-256 c13f81e370ee2d099795b7b35cb31cbb31c1b40bb7bc54eb37c6a8c1a26ed90c
+       (firmware-patch/v3.58.6-panel-ota/src/main_centrala.cpp, 50 063 linie)
+Diff:  main_centrala-v3.58.6-do-v3.58.7.patch - 8 blokow (hunkow),
+       212 linii dodanych, 11 usunietych. Numery linii dotycza pliku 3.58.7.
+
+Skad 212 i 11:
+  wpis changeloga (poczatek pliku)                     +47
+  numer wersji                                          +1   -1
+  nowy blok START-TG + kod klejacy + prototyp bylCrash +147
+  beginResponse_P -> beginResponse (+3 linie komentarza) +4   -1
+  wyslijRaportNadzoru(): flaga                          +1
+  tgTaskFn: wywolanie                                   +1
+  TAGCHECK: rozroznienie dwoch przypadkow              +19   -9
+  static_assert przy OTA_CONFIRM_UPTIME_MS              +1
+  wycinek konca komentarza powerOnNotice (bez zmian tresci) 0
+
+8 MIEJSC
+   1. linie 1-47      wpis changeloga [v3.58.7 START-TG]                +47
+   2. linia 6264      static const char* FIRMWARE_VERSION = "v3.58.7"   +1 / -1
+   3. linie 23069-23214                                                 +147
+        23069          bool bylCrash(esp_reset_reason_t);  prototyp (definicja 23850)
+        23071-23152    [v3.58.7 START-TG-BEGIN] ... [-END]  82 linie, czyste funkcje:
+                         enum StartTgDecyzja, startTgDecyzja(), startTgPowodOpis(),
+                         START_TG_POTW_MIN, startTgTresc(), startTgDopisek(),
+                         enum TagcheckRodzaj, tagcheckRodzaj(), tagcheckTresc()
+        23154-23214    kod klejacy: g_startTgNadzor, g_startTgRozstrzygnieta,
+                         g_startTgDoWyslania, g_startTgOstatniaProbaMs,
+                         g_startTgProbaByla; static void wyslijWiadomoscStartowa()
+                         (config.getBool/getString tylko odczyt; esp_ota_get_state_partition;
+                          calloc 400 B / free; sendTelegramMessage; zapiszLog tag=START-TG)
+   4. linie 31196-31199  handler WIFI_LOCAL_PANEL_HTML:
+                         request->beginResponse_P(  ->  request->beginResponse(   +4 / -1
+   5. linia 47025     wyslijRaportNadzoru(): g_startTgNadzor = true;
+                         (po sprawdzeniu config.getBool("nadzorRestart"))    +1
+   6. linia 47089     tgTaskFn(): wyslijWiadomoscStartowa();
+                         (zaraz po wyslijRaportNadzoru())                     +1
+   7. linie 48246-48266  potwierdzPartycjeJesliCzeka(), galaz r == ESP_OK:
+                         TagcheckRodzaj rodzaj = tagcheckRodzaj(porownajWersje(FIRMWARE_VERSION, selfTag));
+                         log tag=OTA-TAGCHECK ... rodzaj=binarka_starsza|binarka_nowsza;
+                         tresc z tagcheckTresc() (calloc 560 B / free; przy odmowie
+                         sterty krotki tekst); ZGODNA = dotychczasowy tekst sukcesu   +19 / -9
+   8. linia 48308     static_assert(OTA_CONFIRM_UPTIME_MS == START_TG_POTW_MIN*60*1000)  +1
+
+CO SIE NIE ZMIENIA
+  - zadne .h, secrets.h, platformio.ini, biblioteki
+  - bloki [v3.58.6 PANEL-OTA*] i [v3.58.4 PANEL-WYKRESY] - bajt w bajt
+    (testy 3.58.6 i porownanie z kopia w testach panelu: WYNIKI/testy-pc.txt)
+  - NVS: zadnych nowych kluczy; otaSelfTrwa/otaSelfTag tylko czytane
+  - powerOnNotice, raport crashu, raport nadzoru: bez zmian; nowa wiadomosc
+    nie jest wysylana, gdy ktorys z nich opisuje ten start

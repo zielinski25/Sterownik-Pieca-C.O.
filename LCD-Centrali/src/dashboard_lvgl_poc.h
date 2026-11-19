@@ -475,6 +475,14 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int
                                                             int godzinaStart, int godzinaKoniec,
                                                             bool harmonogramWlaczony);
 
+// [v1.4.6 WERSJE] Wersja programu panelu i centrali, pokazywane na stale w
+// lewym gornym rogu ekranu WYSWIETLACZ ("Panel v1.4.6" / "Centrala v3.58.6").
+// `panel` to FIRMWARE_VERSION_PANEL z main.cpp; `centrala` to pole "fw" z
+// /api/status (pusty napis = centrala jeszcze nie odpowiedziala albo jest
+// starsza i tego pola nie ma -> ekran pokazuje "Centrala -"). Tanie przy
+// wywolywaniu co kazdy status: tekst jest podmieniany tylko, gdy sie zmienil.
+void lvgl_dashboard_poc_ustaw_wersje(const char *panel, const char *centrala);
+
 // [PARTIA 5e - MOST DANYCH DLA EKRANU WYKRESY; przebudowany w v1.3.0]
 // dashboard_lvgl_poc.cpp nie wie, JAK dane trafiaja z centrali - prosi o nie
 // przez ponizszy callback, a main.cpp podaje mu odpowiedz linia po linii.

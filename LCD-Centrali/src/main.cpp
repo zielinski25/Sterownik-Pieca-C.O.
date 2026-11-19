@@ -40,6 +40,40 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-21] v1.4.6 - WERSJE NA EKRANIE + PORZADKI PO LOGACH Z PLYTKI.
+//   Zgloszenie uzytkownika: "przy starcie LCD nie pokazuje wersji - jest
+//   tylko Szukam centrali / Laczenie z WiFi; chce wersje panelu i centrali".
+//   Centrala bez zmian (pole "fw" w /api/status istnieje od dawna, panel
+//   go dotad nie czytal). Ruch do centrali i logika panelu bez zmian.
+//   - Ekran startowy (TFT_eSPI, przed LVGL): u gory "WYSWIETLACZ CO" i
+//     "Panel v1.4.6" przez caly czas szukania centrali i laczenia z WiFi;
+//     po pierwszej odpowiedzi centrali dochodzi "Centrala v3.58.6" (albo
+//     "Centrala: brak odpowiedzi") i ekran stoi jeszcze EKRAN_START_POKAZ_MS
+//     (1,5 s), zeby dalo sie to przeczytac - tylko przy zimnym starcie, po
+//     wybudzeniu z deep sleep bez pauzy (ekranStartowyWersje()).
+//   - Ekran WYSWIETLACZ (drugi pulpit): w lewym gornym rogu na stale
+//     "Panel v1.4.6 / Centrala v3.58.6" (lvgl_dashboard_poc_ustaw_wersje();
+//     "Centrala -" dopoki centrala nie odpowie albo gdy jest starsza i pola
+//     "fw" nie ma). Dzieki temu po /update_panel widac na ekranie, co
+//     faktycznie dziala, bez kabla.
+//   - Nowe pole StanPieca::centralaFw (16 B) z pola "fw" statusu; linia logu
+//     "tag=PANEL" ma teraz centrala_fw=... obok centrala=sterownik.
+//   - Napis "WYŚWIETLACZ" na kafelku drugiego pulpitu nie jest juz obciety
+//     (109 px napisu na 114 px karty): dashboard_lvgl_poc.cpp,
+//     kafelek_launcher() scisniecie liter o 1 px, gdy napis sie nie miesci.
+//   - GPIO35 (USB_DETECT_PIN) ustawiany jako INPUT, nie INPUT_PULLUP: to
+//     pin tylko-wejsciowy bez wewnetrznego pull-upu; INPUT_PULLUP dawal w
+//     logu "E gpio: gpio_pullup_en(85): GPIO number error (input-only pad has
+//     no internal PU)" przy kazdym starcie i nic nie robil. Zewnetrzne 10 k
+//     do 3V3 (patrz komentarz przy USB_DETECT_PIN) jest OBOWIAZKOWE.
+//   - otaZapisWczytaj(): przestrzen NVS "ota_panel" otwierana do zapisu
+//     (zakladana, gdy jej nie ma) zamiast tylko do odczytu - Preferences
+//     logowalo "[E] nvs_open failed: NOT_FOUND" przy kazdym starcie panelu,
+//     ktory nigdy jeszcze nie zaczynal aktualizacji. Jednorazowy zapis
+//     kilkunastu bajtow w NVS, zachowanie bez zmian.
+//   - testy_host: scenariusz wersje_na_ekranie (napisy na ekranie startowym,
+//     etykieta na WYSWIETLACZ, centrala bez pola "fw", kafelek bez obciecia);
+//     atrapa centrali podaje "fw".
 // [2026-11-20] v1.4.5 - POLSKIE LITERY NA EKRANIE (punkt D / temat 23 z
 //   WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md). Centrala bez zmian; ruch do
 //   centrali, pamiec RAM i logika panelu bez zmian - zmienia sie tylko to,
@@ -907,7 +941,7 @@ diag::Dlawik dlawikMaloPamieci;               // ostrzezenie "malo_pamieci" - na
 // succeeded", restart z powodem "panic") - w obu funkcjach jednakowo.
 static void logBezPamieci(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void logBezPamieci(const char *fmt, ...) {
-  static char linia[768];   // najdluzsza linia ("tag=PANEL fw=...") ma w najgorszym razie ok. 620 znakow (v1.4.1: +3 pola)
+  static char linia[768];   // najdluzsza linia ("tag=PANEL fw=...") ma w najgorszym razie ok. 640 znakow (v1.4.1: +3 pola; v1.4.6: centrala_fw=)
   va_list ap;
   va_start(ap, fmt);
   const int n = vsnprintf(linia, sizeof(linia), fmt, ap);
@@ -997,7 +1031,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.4.5"; // [2026-11-20] v1.4.5: polskie litery na ekranie (punkt D) - wlasne czcionki lv_font_pl_14/20/28; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.4.6"; // [2026-11-21] v1.4.6: wersje panelu i centrali na ekranie startowym i na WYSWIETLACZ + porzadki po logach; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1540,6 +1574,11 @@ struct StanPieca {
   char     panelOtaWersja[32] = "";   // "panel_ota_wersja": tag wydania, z ktorego jest plik
   char     panelOtaObraz[17] = "";    // "panel_ota_obraz": identyfikator pliku; "" = centrala do 3.58.5 (nie podaje)
   uint32_t panelOtaNr = 0;            // "panel_ota_nr": numer oferty (centrala 3.58.6+)
+  // [v1.4.6 WERSJE] Wersja programu centrali z pola "fw" statusu
+  // ("v3.58.6"); "" = centrala jeszcze nie odpowiedziala albo pola nie ma.
+  // Pokazywana na ekranie startowym i na ekranie WYSWIETLACZ, w logu
+  // "tag=PANEL" jako centrala_fw=.
+  char     centralaFw[16] = "";
 };
 StanPieca stan;
 
@@ -2393,7 +2432,7 @@ void panelDiagOkresowo() {
   // z v1.2.0 i v1.2.1, ktore byly zawyzone o ok. 39 kB. Zdrowy panel ma tu
   // kilkadziesiat kB; ponizej ok. 16 kB zaczynaja sie klopoty.
   // logBezPamieci(): ta linia ma sie wypisac takze wtedy, gdy pamieci brakuje.
-  logBezPamieci("tag=PANEL fw=%s wifi=%d bssid=%s kanal=%d rssi=%d ap_przy_starcie=%d centrala=%s sym=%s "
+  logBezPamieci("tag=PANEL fw=%s wifi=%d bssid=%s kanal=%d rssi=%d ap_przy_starcie=%d centrala=%s centrala_fw=%s sym=%s "
                 "status_ok=%lu status_blad=%lu ust_ok=%lu ust_blad=%lu ekran=%lu wiek_danych_s=%ld "
                 "t_zewn=%.1f t_pokoj=%.1f t_ogrz=%.1f t_ogrz_sr=%.1f t_bojler=%.1f t_panel=%.1f "
                 "wilg=%.0f cisn=%.0f dym=%d klapa=%d syberka=%d pompa=%d czas=%02d:%02d "
@@ -2403,6 +2442,7 @@ void panelDiagOkresowo() {
                 wifiOk ? (int)WiFi.channel() : 0, wifiOk ? (int)WiFi.RSSI() : 0,
                 wifiCentralPrzyStarcie,
                 !centralaRozpoznana ? "nieznana" : (centralaToSymulator ? "symulator" : "sterownik"),
+                stan.centralaFw[0] != '\0' ? stan.centralaFw : "-",   // [v1.4.6] pole "fw" statusu
                 sym[0] != '\0' ? sym : "brak",
                 (unsigned long)panelLiczniki.statusOk, (unsigned long)panelLiczniki.statusBlad,
                 (unsigned long)panelLiczniki.ustawieniaOk, (unsigned long)panelLiczniki.ustawieniaBlad,
@@ -2633,6 +2673,14 @@ void obslugaStatusFetch() {
   // testowa (centrala-testowa-c3); prawdziwa centrala go nie ma. Patrz
   // komentarz przy centralaToSymulator na gorze pliku.
   const bool symulatorTeraz = doc["symulator"].isNull() ? false : doc["symulator"].as<bool>();
+  // [v1.4.6 WERSJE] Wersja programu centrali - pole "fw" (np. "v3.58.6");
+  // centrala bez tego pola daje "" (ekran: "Centrala -"). Podmiana etykiety
+  // na ekranie WYSWIETLACZ tylko przy zmianie tekstu (ustawNapis()).
+  {
+    const char *fwCentrali = doc["fw"] | "";
+    snprintf(stan.centralaFw, sizeof(stan.centralaFw), "%s", fwCentrali);
+    lvgl_dashboard_poc_ustaw_wersje(FIRMWARE_VERSION_PANEL, stan.centralaFw);
+  }
   bool centralaZmieniona = !centralaRozpoznana || (symulatorTeraz != centralaToSymulator);
   centralaRozpoznana = true;
   centralaToSymulator = symulatorTeraz;
@@ -3291,6 +3339,61 @@ void wifiWymusPolaczenie(bool bezBssid, uint8_t nr) {
   wifiWymuszenieMs = millis();
 }
 
+// [v1.4.6 WERSJE] Ekran startowy (TFT_eSPI, zanim LVGL przejmie wyswietlacz).
+// Uklad (480x320, MC_DATUM = wspolrzedne to srodek napisu):
+//   y= 96  "WYSWIETLACZ CO"           font 4 (26 px)
+//   y=124  "Panel v1.4.6"             font 2 (16 px)
+//   y=150  "Szukam centrali" / "Laczenie z WiFi"   (jak dotad; polaczWifi())
+//   y=182  "Centrala v3.58.6"         po pierwszej odpowiedzi (ekranStartowyWersje())
+// Napisy ASCII - czcionki TFT_eSPI nie maja polskich liter (jak "Szukam
+// centrali"); to ekran na kilka sekund. Zgloszenie: "przy starcie LCD nie
+// pokazuje wersji, jest tylko Szukam centrali / Laczenie z WiFi".
+static const int EKRAN_START_Y_TYTUL    = 96;
+static const int EKRAN_START_Y_PANEL    = 124;
+static const int EKRAN_START_Y_CENTRALA = 182;
+// Ile ekran startowy stoi po dopisaniu wersji centrali, zeby dalo sie ja
+// przeczytac. Tylko przy zimnym starcie - po wybudzeniu z deep sleep
+// (przycisk) liczy sie czas do pulpitu, nie napis.
+static const uint32_t EKRAN_START_POKAZ_MS = 1500;
+
+static void ekranStartowyNaglowek() {
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(KOL_TEKST, KOL_TLO);
+  tft.setTextFont(4);
+  tft.drawString("WYSWIETLACZ CO", 240, EKRAN_START_Y_TYTUL);
+  tft.setTextFont(2);
+  char linia[32];
+  snprintf(linia, sizeof(linia), "Panel %s", FIRMWARE_VERSION_PANEL);
+  tft.drawString(linia, 240, EKRAN_START_Y_PANEL);
+}
+
+// Wolane raz z setup(), po poczekajNaPierwszeDane(): ekran startowy wciaz
+// jest na wyswietlaczu (LVGL rysuje dopiero od pierwszego lv_timer_handler()
+// w loop()), wiec dopisanie linii jest tanie. Gdy centrala nie odpowiedziala
+// w PIERWSZA_PROBKA_TIMEOUT_MS, napis mowi to wprost i nie ma dodatkowej
+// pauzy - panel juz czekal 2,5 s, a pulpit i tak pokaze "--".
+static void ekranStartowyWersje() {
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(KOL_TEKST, KOL_TLO);
+  tft.setTextFont(2);
+  tft.fillRect(0, EKRAN_START_Y_CENTRALA - 12, 480, 24, KOL_TLO);
+  char linia[40];
+  if (stan.centralaFw[0] != '\0') snprintf(linia, sizeof(linia), "Centrala %s", stan.centralaFw);
+  else if (swiezoscStatusu.byloKiedykolwiek) snprintf(linia, sizeof(linia), "Centrala: wersja nieznana");
+  else snprintf(linia, sizeof(linia), "Centrala: brak odpowiedzi");
+  tft.drawString(linia, 240, EKRAN_START_Y_CENTRALA);
+  Serial.printf("tag=PANEL zdarzenie=ekran_startowy panel=%s centrala=%s\n",
+                FIRMWARE_VERSION_PANEL, stan.centralaFw[0] != '\0' ? stan.centralaFw : "-");
+  if (!swiezoscStatusu.byloKiedykolwiek) return;
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) return;
+  const unsigned long start = millis();
+  while (millis() - start < EKRAN_START_POKAZ_MS) {
+    esp_task_wdt_reset();   // watchdog petli (15 s) juz dziala - jak w polaczWifi()
+    obsluzBrzeczyk();       // alarm sprzed samoczynnego restartu gra dalej
+    delay(50);
+  }
+}
+
 void polaczWifi() {
   // [v1.4.1 B8] Bez tego biblioteka WiFi zapisuje nazwe sieci i haslo do NVS
   // i podaje je sterownikowi przy kazdym WiFi.begin() (arduino-esp32 3.3.8,
@@ -3307,6 +3410,7 @@ void polaczWifi() {
   tft.fillScreen(KOL_TLO);
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(KOL_TEKST, KOL_TLO);
+  ekranStartowyNaglowek();   // [v1.4.6] "WYSWIETLACZ CO" + "Panel v1.4.6" nad napisami o laczeniu
   tft.setTextFont(2);
 
   if (!rtcBssidZnany) {
@@ -3698,7 +3802,13 @@ static const uint8_t OTA_NVS_WERSJA = 1;   // pierwszy bajt zapisu; inna wartosc
 static void otaZapisWczytaj() {
   memset(&otaZapis, 0, sizeof(otaZapis));
   Preferences p;
-  if (!p.begin(OTA_NVS_PRZESTRZEN, true)) return;   // przestrzeni jeszcze nie ma: panel nigdy nie zaczynal aktualizacji
+  // [v1.4.6] Do zapisu (false), nie tylko do odczytu: Preferences::begin() w
+  // trybie odczytu loguje "[E][Preferences.cpp] nvs_open failed: NOT_FOUND"
+  // przy kazdym starcie panelu, ktory nigdy jeszcze nie zaczynal
+  // aktualizacji (przestrzeni w NVS nie ma; log z plytki 2026-11-19).
+  // Otwarcie do zapisu zaklada pusta przestrzen po cichu (jednorazowo
+  // kilkanascie bajtow NVS) - dalej ten sam odczyt co dotad.
+  if (!p.begin(OTA_NVS_PRZESTRZEN, false)) return;
   uint8_t bufor[1 + sizeof(diag::OtaZapis)];
   if (p.isKey(OTA_NVS_KLUCZ) && p.getBytesLength(OTA_NVS_KLUCZ) == sizeof(bufor) &&
       p.getBytes(OTA_NVS_KLUCZ, bufor, sizeof(bufor)) == sizeof(bufor) && bufor[0] == OTA_NVS_WERSJA) {
@@ -4307,7 +4417,14 @@ void setup() {
   }
 
   pinMode(WAKE_BTN_PIN, INPUT_PULLUP); // ten sam pin uzywany do wykrywania puszczenia w idzSpac()
-  pinMode(USB_DETECT_PIN, INPUT_PULLUP); // dodatkowe zabezpieczenie obok zewnetrznego 10k do 3V3 (patrz komentarz przy USB_DETECT_PIN) — nie przeszkadza, TP4056 i tak wygrywa (LOW) gdy aktywny
+  // [v1.4.6] INPUT, nie INPUT_PULLUP: GPIO35 jest pinem tylko-wejsciowym
+  // bez wewnetrznego pull-upu (ESP32, pady 34-39). INPUT_PULLUP dawal tylko
+  // "E gpio: gpio_pullup_en(85): GPIO number error (input-only pad has no
+  // internal PU)" w logu przy kazdym starcie (log z plytki 2026-11-19) i nie
+  // podciagal niczego. Jedyny pull-up to ZEWNETRZNE 10k do 3V3 - patrz
+  // komentarz przy USB_DETECT_PIN; bez niego pin plywa i zasilanieUSB()
+  // klamie. TP4056 (open-drain) i tak wygrywa (LOW), gdy jest aktywny.
+  pinMode(USB_DETECT_PIN, INPUT);
 
   // [BATERIA-POMIAR, ta sesja] Raz, globalnie - analogReadMilliVolts() w
   // bateriaOdczytajNapiecie() honoruje TYLKO to ustawienie (nie wersje
@@ -4416,6 +4533,7 @@ void setup() {
   // [SIEC-NIEBLOKUJACA, ta sesja] Oba GET-y wystartowaly, ale jeszcze sie
   // nie skonczyly - patrz obszerny komentarz przy poczekajNaPierwszeDane().
   poczekajNaPierwszeDane();
+  ekranStartowyWersje();   // [v1.4.6] "Centrala v3.58.6" pod napisami o laczeniu, chwila na przeczytanie
   // aktualizujSezon() zostaje - `aktualnySezon` jest nadal uzywany gdzie
   // indziej w tym pliku (np. ikona slonca na starym dashboardzie), tylko
   // przestal byc przekazywany do LVGL (patrz FIX w dashboard_lvgl_poc.h -

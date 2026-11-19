@@ -1,0 +1,288 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,50 @@
++// FIRMWARE_VERSION v3.58.6 -> v3.58.7 (2026-11-19) — TELEGRAM: WIADOMOŚĆ STARTOWA Z WERSJĄ; TAGCHECK MÓWI, CO NAPRAWDĘ POSZŁO NIE TAK.
++//
++// [v3.58.7 START-TG] — 2026-11-19
++// Zgłoszenie użytkownika (log Telegrama z 19.11, 08:48–09:00): po /update
++//     centrala napisała "Aktualizacja pobrana OK. Restart za chwile..." i
++//     potem przez 11 minut NIC. Dopiero po 10 min stabilnej pracy (OTA-SAFE-
++//     CONFIRM) przyszła wiadomość — i to ostrzeżenie TAGCHECK. "Nie pokazuje
++//     na starcie wersji".
++// Jak było: po restarcie centrala odzywa się na Telegramie tylko w trzech
++//     przypadkach: POWERON (powerOnNotice, z wersją), crash (raport crashu),
++//     restart z nadzoru (wyslijRaportNadzoru). Po ESP_RST_SW (restart po
++//     własnym OTA, /restart, ArduinoOTA, aktualizacja z przeglądarki), po
++//     przycisku RESET (EXT) i po UNKNOWN — cisza; wersję można było sprawdzić
++//     tylko ręcznie (/wersja, WWW).
++// Jak jest:
++//     (a) wyslijWiadomoscStartowa() (obok wyslijZaleglePowiadomieniePowerOn(),
++//         wołana z tgTaskFn po wyslijRaportNadzoru()): RAZ po każdym starcie,
++//         którego nie opisuje inny raport (nie POWERON, nie crash, nie
++//         nadzór), gdy WiFi i Telegram już działają:
++//           "Centrala wystartowala: v3.58.7 (boot=123). Powod restartu:
++//            programowy (SW) - po aktualizacji OTA (tag 3.58.7). Nowy
++//            program czeka na potwierdzenie: 10 min stabilnej pracy."
++//         Nieudana wysyłka (sieć jeszcze nie wstała) = ponowienie co 60 s,
++//         jak powerOnNotice. Nie pisze do NVS; pętla restartów SW jest
++//         ograniczona tym, że każda wiadomość wymaga działającego WiFi +
++//         Telegrama (kilkanaście sekund po starcie), a crash-loop i tak idzie
++//         inną ścieżką (bylCrash → raport crashu, streak).
++//     (b) TAGCHECK (potwierdzPartycjeJesliCzeka) rozróżnia dwa przypadki
++//         niezgodności tagu z FIRMWARE_VERSION, dotąd zlewane w jeden tekst:
++//           - binarka STARSZA niż tag ("Release 3.58.7, dziala 3.58.6"):
++//             ktoś nie podbił FIRMWARE_VERSION przed kompilacją — stary tekst,
++//             /update będzie w kółko próbował to samo;
++//           - binarka NOWSZA niż tag ("Release 3.58.5, dziala 3.58.6" —
++//             dokładnie przypadek z 19.11): Release dostał za mały numer,
++//             kod jest dobry; trzeba zmienić tag/nazwę Release na wersję,
++//             która działa; /update nic nie zrobi (odmowa downgrade), pętli
++//             NIE będzie. Dotychczasowy tekst wysyłał użytkownika szukać błędu
++//             w kodzie, którego tam nie było.
++//     (c) beginResponse_P() → beginResponse() w handlerze lokalnego panelu
++//         WWW (WIFI_LOCAL_PANEL_HTML): jedyne ostrzeżenie kompilacji
++//         (deprecated w ESPAsyncWebServer 3.12.1). Ta sama funkcja, ta sama
++//         treść; -Wdeprecated-declarations znika.
++//     Czyste funkcje decyzji i treści są w bloku [v3.58.7 START-TG-BEGIN]…
++//     [-END] (bez String/Arduino) i są testowane na PC: tests/
++//     test_start_telegram.cpp. Pozostałe zachowania (OTA, nadzór, panel LCD,
++//     algorytmy pieca) bez zmian.
++//
+ // FIRMWARE_VERSION v3.58.5 -> v3.58.6 (2026-11-12) — AKTUALIZACJA PANELU LCD PRZEZ CENTRALĘ: BEZ PĘTLI, Z KOŃCEM I Z WYNIKIEM.
+ //
+ // [v3.58.6 PANEL-OTA] — 2026-11-12
+@@ -6214,7 +6261,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.6";
++static const char* FIRMWARE_VERSION = "v3.58.7";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -23019,6 +23066,153 @@
+             String((unsigned long)boot) + " reset=POWERON");
+ }
+ 
++bool bylCrash(esp_reset_reason_t powod);   // definicja nizej (sekcja raportow crashu)
++
++// [v3.58.7 START-TG-BEGIN]
++// Wiadomosc startowa na Telegram i rodzaj niezgodnosci TAGCHECK - czyste
++// funkcje (bez String, Arduino, NVS), zeby dalo sie je sprawdzic na PC
++// (tests/test_start_telegram.cpp). Kod klejacy (NVS, Telegram, stan OTA)
++// jest nizej, w wyslijWiadomoscStartowa() i potwierdzPartycjeJesliCzeka().
++enum StartTgDecyzja : uint8_t {
++  START_TG_WYSLIJ = 0,       // zwykly start bez innego raportu: SW, EXT, UNKNOWN, DEEPSLEEP, SDIO
++  START_TG_POWERON_OSOBNO,   // POWERON ma wlasne powiadomienie (powerOnNotice, z wersja)
++  START_TG_CRASH_OSOBNO,     // PANIC/WDT/BROWNOUT: raport crashu (z wersja i boot)
++  START_TG_NADZOR_OSOBNO,    // restart z nadzoru zadan: wyslijRaportNadzoru()
++};
++static StartTgDecyzja startTgDecyzja(esp_reset_reason_t powod, bool crash, bool restartZNadzoru) {
++  if (powod == ESP_RST_POWERON) return START_TG_POWERON_OSOBNO;
++  if (crash) return START_TG_CRASH_OSOBNO;
++  if (restartZNadzoru) return START_TG_NADZOR_OSOBNO;
++  return START_TG_WYSLIJ;
++}
++// Opis powodu po polsku (kod ESP w nawiasie, zeby dalo sie go znalezc w logu).
++static const char* startTgPowodOpis(esp_reset_reason_t powod) {
++  switch (powod) {
++    case ESP_RST_SW:        return "programowy (SW)";
++    case ESP_RST_EXT:       return "przycisk RESET / pin EN (EXT)";
++    case ESP_RST_DEEPSLEEP: return "wybudzenie z uspienia (DEEPSLEEP)";
++    case ESP_RST_SDIO:      return "SDIO";
++    case ESP_RST_POWERON:   return "wlaczenie zasilania (POWERON)";
++    default:                return "nieznany (UNKNOWN)";
++  }
++}
++// Ile minut stabilnej pracy potwierdza nowy program - ta sama liczba co
++// OTA_CONFIRM_UPTIME_MS (10 min; static_assert przy jego definicji pilnuje
++// zgodnosci, bo tamto #define jest dalej w pliku).
++#define START_TG_POTW_MIN 10U
++// Tresc wiadomosci startowej. Zwraca liczbe znakow, ktore snprintf() chcial
++// zapisac (jak snprintf) - test pilnuje, ze miesci sie w buforze.
++//   poOta/otaTag - w NVS jest otaSelfTrwa=true z tagiem (restart po /update)
++static int startTgTresc(char* buf, size_t n, const char* wersja, uint32_t boot, esp_reset_reason_t powod,
++                        bool poOta, const char* otaTag) {
++  const bool tagJest = poOta && otaTag != nullptr && otaTag[0] != '\0';
++  return snprintf(buf, n, "Centrala wystartowala: %s (boot=%lu). Powod restartu: %s%s%s%s%s.",
++                  wersja, (unsigned long)boot, startTgPowodOpis(powod),
++                  poOta ? " - po aktualizacji OTA" : "",
++                  tagJest ? " (tag " : "", tagJest ? otaTag : "", tagJest ? ")" : "");
++}
++// Dopisek o potwierdzeniu nowego programu (partycja PENDING_VERIFY) - osobno,
++// zeby tresc glowna byla krotka i stala (latwiej czytac w powiadomieniu).
++static int startTgDopisek(char* buf, size_t n, bool czekaNaPotw, unsigned potwMin) {
++  if (!czekaNaPotw) { if (n) buf[0] = '\0'; return 0; }
++  return snprintf(buf, n, " Nowy program czeka na potwierdzenie: %u min stabilnej pracy z WiFi; "
++                          "potem przyjdzie \"Aktualizacja zakonczona pomyslnie\" albo ostrzezenie.", potwMin);
++}
++
++enum TagcheckRodzaj : uint8_t {
++  TAGCHECK_ZGODNA = 0,        // dziala dokladnie to, co mialo byc
++  TAGCHECK_BINARKA_STARSZA,   // Release X, dziala < X: nie podbito FIRMWARE_VERSION przed kompilacja
++  TAGCHECK_BINARKA_NOWSZA,    // Release X, dziala > X: Release ma za maly numer (19.11: tag 3.58.5, dziala 3.58.6)
++};
++// porownanie = porownajWersje(FIRMWARE_VERSION, tagZRelease): <0, 0, >0.
++static TagcheckRodzaj tagcheckRodzaj(int porownanie) {
++  if (porownanie == 0) return TAGCHECK_ZGODNA;
++  return porownanie < 0 ? TAGCHECK_BINARKA_STARSZA : TAGCHECK_BINARKA_NOWSZA;
++}
++static int tagcheckTresc(char* buf, size_t n, TagcheckRodzaj rodzaj, const char* tag, const char* dziala) {
++  switch (rodzaj) {
++    case TAGCHECK_BINARKA_STARSZA:
++      return snprintf(buf, n,
++        "UWAGA: aktualizacja \"powiodla sie\" (flash + restart bez bledu), ale dziala wersja %s, "
++        "a mial byc zainstalowany %s. Binarka w Release %s jest STARSZA niz jego tag: zostala skompilowana "
++        "PRZED podniesieniem FIRMWARE_VERSION w kodzie. Popraw kod (FIRMWARE_VERSION = v%s), skompiluj od nowa "
++        "i podmien firmware.bin w Release %s. Do tego czasu /update bedzie w kolko probowal to samo.",
++        dziala, tag, tag, tag, tag);
++    case TAGCHECK_BINARKA_NOWSZA:
++      return snprintf(buf, n,
++        "Aktualizacja wgrana i dziala wersja %s - NOWSZA niz tag Release (%s), z ktorego ja pobrano. "
++        "Kod jest dobry; za maly numer ma Release na GitHub (binarka %s opublikowana pod tagiem %s). "
++        "Popraw tag i nazwe Release na numer dzialajacej wersji (%s, bez \"v\" - jak dotychczasowe tagi; ten sam firmware.bin). Petli nie bedzie: /update odmowi "
++        "(tag starszy niz dzialajaca wersja), ale do poprawki nie zobaczy tez zadnej nowszej wersji.",
++        dziala, tag, dziala, tag, dziala);
++    default:
++      return snprintf(buf, n, "Aktualizacja zakonczona pomyslnie. Dziala wersja: %s", dziala);
++  }
++}
++// [v3.58.7 START-TG-END]
++
++// [v3.58.7 START-TG] Kod klejacy wiadomosci startowej. Decyzja zapada raz
++// (g_startTgRozstrzygnieta); nieudana wysylka = ponowienie co 60 s, jak
++// powerOnNotice. g_startTgNadzor ustawia wyslijRaportNadzoru() (wolana
++// bezposrednio przed ta funkcja w tgTaskFn), gdy w NVS byl znacznik restartu
++// z nadzoru - wtedy raport nadzoru jest JEDYNA wiadomoscia o tym starcie.
++static bool g_startTgNadzor = false;
++static bool g_startTgRozstrzygnieta = false;
++static bool g_startTgDoWyslania = false;
++static unsigned long g_startTgOstatniaProbaMs = 0;
++static bool g_startTgProbaByla = false;
++
++static void wyslijWiadomoscStartowa() {
++  if (!tgEnabled) return;
++  const esp_reset_reason_t powod = esp_reset_reason();
++  if (!g_startTgRozstrzygnieta) {
++    g_startTgRozstrzygnieta = true;
++    const StartTgDecyzja d = startTgDecyzja(powod, bylCrash(powod), g_startTgNadzor);
++    g_startTgDoWyslania = (d == START_TG_WYSLIJ);
++    zapiszLog(String(F("tag=START-TG lvl=INFO zdarzenie=decyzja powod=")) + resetReasonNaTekst(powod) +
++              " boot=" + String((unsigned long)logBootCounter) +
++              " wynik=" + (d == START_TG_WYSLIJ ? "wyslij" : d == START_TG_POWERON_OSOBNO ? "poweron_osobno" :
++                           d == START_TG_CRASH_OSOBNO ? "crash_osobno" : "nadzor_osobno"));
++  }
++  if (!g_startTgDoWyslania) return;
++
++  const unsigned long teraz = millis();
++  if (g_startTgProbaByla && (teraz - g_startTgOstatniaProbaMs) < 60000UL) return;
++  g_startTgProbaByla = true;
++  g_startTgOstatniaProbaMs = teraz;
++
++  // Czy to restart po wlasnym /update (znacznik zapisany przed flashowaniem w
++  // case TG_UPDATE; TYLKO odczyt - sprzata go potwierdzPartycjeJesliCzeka()).
++  const bool poOta = config.getBool("otaSelfTrwa", false);
++  const String otaTag = poOta ? config.getString("otaSelfTag", "") : String("");
++  esp_ota_img_states_t stanOta = ESP_OTA_IMG_UNDEFINED;
++  const bool czekaNaPotw = esp_ota_get_state_partition(esp_ota_get_running_partition(), &stanOta) == ESP_OK &&
++                           stanOta == ESP_OTA_IMG_PENDING_VERIFY;
++
++  // Bufory na stercie, nie na stosie zadania Telegrama (hwm_tg ok. 2,2 kB -
++  // ten sam powod co calloc() w kodzie klejacym OTA panelu).
++  const size_t N_TRESC = 200, N_DOPISEK = 200;
++  char *tresc = (char *)calloc(1, N_TRESC + N_DOPISEK);
++  if (tresc == nullptr) {
++    zapiszLog(F("tag=START-TG lvl=WARN zdarzenie=brak_pamieci retry_za_ge_60s"));
++    return;
++  }
++  char *dopisek = tresc + N_TRESC;
++  startTgTresc(tresc, N_TRESC, FIRMWARE_VERSION, logBootCounter, powod, poOta, otaTag.c_str());
++  startTgDopisek(dopisek, N_DOPISEK, czekaNaPotw, START_TG_POTW_MIN);
++  const bool wyslano = sendTelegramMessage(String(tresc) + dopisek);
++  free(tresc);
++  if (!wyslano) {
++    zapiszLog(String(F("tag=START-TG lvl=WARN zdarzenie=odroczona boot=")) + String((unsigned long)logBootCounter) +
++              " retry_za_ge_60s");
++    return;
++  }
++  g_startTgDoWyslania = false;
++  zapiszLog(String(F("tag=START-TG lvl=INFO zdarzenie=wyslana boot=")) + String((unsigned long)logBootCounter) +
++            " powod=" + resetReasonNaTekst(powod) + " po_ota=" + (poOta ? "1" : "0") +
++            " czeka_na_potwierdzenie=" + (czekaNaPotw ? "1" : "0"));
++}
++
+ // ── SCHEDULER — prosty zamiennik leOS2 oparty o millis() ────────────────
+ struct ZadanieCykliczne {
+   void (*funkcja)();
+@@ -30999,7 +31193,10 @@
+   wifiLocalActionTokenEnsure();
+ 
+   wifiWebServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+-    AsyncWebServerResponse *response = request->beginResponse_P(
++    // [v3.58.7] beginResponse() zamiast beginResponse_P(): ta sama funkcja
++    // (PROGMEM na ESP32 to zwykly flash), stara nazwa jest oznaczona jako
++    // przestarzala w ESPAsyncWebServer 3.12.1 - jedyne ostrzezenie kompilacji.
++    AsyncWebServerResponse *response = request->beginResponse(
+       200, "text/html; charset=utf-8",
+       reinterpret_cast<const uint8_t *>(WIFI_LOCAL_PANEL_HTML),
+       sizeof(WIFI_LOCAL_PANEL_HTML) - 1);
+@@ -46825,6 +47022,7 @@
+   if (g_nadzorRaportWyslany) return;
+   g_nadzorRaportWyslany = true;
+   if (!config.getBool("nadzorRestart", false)) return;
++  g_startTgNadzor = true;   // [v3.58.7 START-TG] ten start opisuje raport nadzoru - bez osobnej wiadomosci startowej
+   const String kto = config.getString("nadzorKto", "?");
+   const uint32_t ms = (uint32_t)config.getUInt("nadzorMs", 0U);
+   const uint32_t nr = (uint32_t)config.getUInt("nadzorCnt", 0U);
+@@ -46888,6 +47086,7 @@
+     wyslijZalegleRaportyCrash();
+     wyslijZaleglePowiadomieniePowerOn();
+     wyslijRaportNadzoru();   // [v3.55.2] jednorazowo po restarcie z nadzoru
++    wyslijWiadomoscStartowa();   // [v3.58.7 START-TG] raz po starcie bez innego raportu: wersja + powod (po wyslijRaportNadzoru(), bo ona ustawia g_startTgNadzor)
+     // [v3.58.6 PANEL-OTA] Wynik aktualizacji panelu rozstrzygniety w obsludze
+     // HTTP (log, NVS, wiadomosc), limit czasu oferty, jedno przypomnienie.
+     panelOtaKlejOkresowo();
+@@ -48044,17 +48243,26 @@
+     if (selfTrwa) config.putBool("otaSelfTrwa", false);
+ 
+     if (r == ESP_OK) {
+-      if (selfTag.length() > 0 && porownajWersje(selfTag, FIRMWARE_VERSION) != 0) {
++      // [v3.58.7 START-TG] Dwa rozne bledy, dotad jeden tekst: binarka
++      // STARSZA niz tag (nie podbito wersji w kodzie -> /update zapetli sie)
++      // i binarka NOWSZA niz tag (Release ma za maly numer, kod dobry ->
++      // /update odmowi; 19.11: tag 3.58.5, dziala v3.58.6). Tresci w
++      // tagcheckTresc() (blok [v3.58.7 START-TG]).
++      const TagcheckRodzaj rodzaj = (selfTag.length() > 0)
++          ? tagcheckRodzaj(porownajWersje(FIRMWARE_VERSION, selfTag)) : TAGCHECK_ZGODNA;
++      if (rodzaj != TAGCHECK_ZGODNA) {
+         zapiszLog(String(F("tag=OTA-TAGCHECK lvl=ERR zdarzenie=niezgodnosc oczekiwano=")) + selfTag +
+-                  F(" otrzymano=") + String(FIRMWARE_VERSION));
+-        sendTelegramMessage("UWAGA: aktualizacja \"powiodla sie\" (flash + restart bez bledu), ale "
+-                             "dziala wersja " + String(FIRMWARE_VERSION) + ", a mial byc zainstalowany " +
+-                             selfTag + ". To zwykle znaczy, ze Release " + selfTag + " na GitHub zostal "
+-                             "opublikowany z binarka skompilowana PRZED podniesieniem FIRMWARE_VERSION "
+-                             "w kodzie zrodlowym — sprawdz proces budowania/publikowania Release. Bez "
+-                             "poprawy tego po stronie repo /update bedzie w kolko probowal to samo.");
++                  F(" otrzymano=") + String(FIRMWARE_VERSION) +
++                  F(" rodzaj=") + (rodzaj == TAGCHECK_BINARKA_STARSZA ? "binarka_starsza" : "binarka_nowsza"));
++      }
++      const size_t N_TRESC = 560;   // najdluzsza tresc (binarka starsza, tagi po 10 znakow) ma ok. 470 znakow
++      char *tresc = (char *)calloc(1, N_TRESC);
++      if (tresc != nullptr) {
++        tagcheckTresc(tresc, N_TRESC, rodzaj, selfTag.c_str(), FIRMWARE_VERSION);
++        sendTelegramMessage(String(tresc));
++        free(tresc);
+       } else {
+-        sendTelegramMessage("Aktualizacja zakonczona pomyslnie. Dziala wersja: " + String(FIRMWARE_VERSION));
++        sendTelegramMessage("Aktualizacja: dziala wersja " + String(FIRMWARE_VERSION) + " (oczekiwano " + selfTag + ")");
+       }
+     } else {
+       // Firmware wystartowal (setup() dobiegl tutaj), ale nie udalo sie
+@@ -48097,6 +48305,7 @@
+ 
+ #define OTA_PENDING_FILE        "/ota_pending.txt"
+ #define OTA_CONFIRM_UPTIME_MS   (10UL * 60UL * 1000UL)   // 10 min stabilnej pracy
++static_assert(OTA_CONFIRM_UPTIME_MS == START_TG_POTW_MIN * 60UL * 1000UL, "[v3.58.7] START_TG_POTW_MIN (wiadomosc startowa) musi byc rowne OTA_CONFIRM_UPTIME_MS");
+ #define OTA_CONFIRM_MAX_MS      (60UL * 60UL * 1000UL)   // 60 min — awaryjnie, bez WiFi
+ 
+ static bool     g_otaCzekaNaPotwierdzenie = false;

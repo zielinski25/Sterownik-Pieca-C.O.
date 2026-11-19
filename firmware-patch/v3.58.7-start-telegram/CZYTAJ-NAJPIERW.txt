@@ -1,0 +1,151 @@
+FIRMWARE CENTRALI 3.58.7 - co zrobic w 3 krokach
+================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN (identyczne jak przy 3.58.3-3.58.6).
+
+Ta paczka zawiera wszystko z 3.58.6 (aktualizacja panelu LCD przez centrale)
+i wczesniejszych. Jesli na plytce jest 3.58.6 - to mala zmiana (212 linii,
+8 miejsc), tylko Telegram i jedno ostrzezenie kompilacji.
+
+Do kompletu: firmware panelu LCD v1.4.6 (katalog LCD-Centrali, osobny ZIP) -
+pokazuje przy starcie wersje panelu i wersje centrali. Jedno od drugiego
+nie zalezy: 3.58.7 pracuje z kazdym panelem, v1.4.6 z kazda centrala.
+
+
+WAZNE - ZANIM ZACZNIESZ
+-----------------------
+1) Ten plik pasuje do projektu, w ktorym jest wersja 3.58.6 (patch jest
+   wzgledem 3.58.6; plik src/main_centrala.cpp jest kompletny, wiec mozna
+   go tez polozyc na 3.58.3-3.58.5 - wtedy wchodza takze zmiany z 3.58.4-6).
+   Sprawdz wersje na plytce: strona WWW -> Ustawienia -> "Sesja operatora"
+   -> "Wersja centrali", albo Telegram /wersja. Jesli jest INNA niz
+   3.58.3-3.58.6 - nie podmieniaj, tylko napisz, jaka.
+2) Ten plik NIE BYL kompilowany w PlatformIO ani uruchamiany na plytce.
+   Pierwsza kompilacja bedzie Twoja. Nowy kod byl za to sprawdzony
+   prawdziwymi naglowkami ESP32 (arduino-esp32 3.0.7 i 3.3.8) - bez bledow
+   i bez ostrzezen - i przetestowany na PC (WYNIKI\).
+3) KOLEJNOSC PRZY PUBLIKACJI RELEASE NA GITHUB (to jest wlasnie to, co
+   poszlo nie tak 19.11):
+     a) w kodzie jest juz FIRMWARE_VERSION = "v3.58.7" (ta paczka),
+     b) Build -> plik .pio\build\esp32-s3-n16r8\firmware.bin,
+     c) Release na GitHub z tagiem 3.58.7 i TYM plikiem.
+   Przedtem warto poprawic tag Release 3.58.5 -> 3.58.6 (patrz "PORZADEK
+   NA GITHUB" nizej). /update i tak zobaczy 3.58.7 jako nowsza (3.58.7 >
+   3.58.6), ale stary tag 3.58.5 z binarka 3.58.6 wprowadza w blad kazdego,
+   kto czyta liste wydan.
+
+
+CO DAJE TA WERSJA
+-----------------
+(a) Po KAZDYM starcie, o ktorym centrala dotad milczala (restart po /update,
+    po /restart, po aktualizacji z przegladarki, po przycisku RESET), przyjdzie
+    na Telegram JEDNA wiadomosc, gdy tylko wstanie WiFi:
+        Centrala wystartowala: v3.58.7 (boot=124). Powod restartu:
+        programowy (SW) - po aktualizacji OTA (tag 3.58.7). Nowy program
+        czeka na potwierdzenie: 10 min stabilnej pracy z WiFi; potem
+        przyjdzie "Aktualizacja zakonczona pomyslnie" albo ostrzezenie.
+    Starty, o ktorych centrala pisze juz dzis (wlaczenie zasilania, crash,
+    restart z nadzoru), NIE dostaja drugiej wiadomosci - zadnych dubli.
+    Nie zapisuje nic do NVS. Jesli siec jeszcze nie stoi, ponawia co 60 s.
+(b) Ostrzezenie po aktualizacji (TAGCHECK) rozroznia teraz dwa przypadki:
+      - dziala STARSZA wersja niz tag Release -> ktos nie podbil
+        FIRMWARE_VERSION przed kompilacja; /update zapetli sie (stary tekst);
+      - dziala NOWSZA wersja niz tag Release (Twoj przypadek z 19.11:
+        tag 3.58.5, dziala v3.58.6) -> kod jest dobry, za maly numer ma
+        Release; trzeba poprawic tag; petli nie bedzie.
+    Do 3.58.6 oba przypadki dostawaly ten sam tekst, ktory wysylal szukac
+    bledu w kodzie.
+(c) Znika jedyne ostrzezenie kompilacji ('beginResponse_P' is deprecated,
+    linia ok. 31000): ta sama funkcja pod nowa nazwa.
+
+Reszta centrali bez zmian: sterowanie, czujniki, strona WWW, wykresy,
+zapis historii, /update, /update_panel. Szczegoly: README.md.
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.7"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (powinna wyjsc wartosc z pierwszej linii SHA256SUMS.txt):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+(Jesli Twoj projekt lezy gdzie indziej - podstaw swoja sciezke.)
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+PlatformIO -> Build, potem Upload   (w terminalu: pio run   i   pio run -t upload)
+Spodziewane: 0 ostrzezen (dotad bylo 1: beginResponse_P). RAM/Flash
+praktycznie jak w 3.58.6 (85 176 B / 2 733 874 B) - nowego kodu jest ok. 1 kB.
+
+Jesli kompilacja zatrzyma sie na bledzie:
+  - skopiuj caly komunikat (linie z "error:") i przyslij,
+  - przywroc kopie zapasowa (na dole).
+Wszystkie zmienione miejsca sa wypisane w WYNIKI\zakres-zmian.txt (8 miejsc).
+
+
+KROK 3 - SPRAWDZENIE
+--------------------
+1. Zaraz po Upload (restart z kabla = powod "programowy (SW)" albo
+   "przycisk RESET / pin EN (EXT)" - zalezy od sposobu resetu przez esptool)
+   w ciagu minuty od polaczenia z WiFi przyjdzie na Telegram:
+       Centrala wystartowala: v3.58.7 (boot=...). Powod restartu: ...
+   Po wgraniu kablem nie ma dopisku o potwierdzeniu (kablem nie wgrywa sie
+   do partycji "do potwierdzenia").
+2. Telegram /wersja -> v3.58.7. Strona WWW -> "Wersja centrali: v3.58.7".
+3. Log (serial albo /log): linia
+       tag=START-TG lvl=INFO zdarzenie=decyzja powod=... wynik=wyslij
+   i po wyslaniu
+       tag=START-TG lvl=INFO zdarzenie=wyslana boot=... po_ota=0 czeka_na_potwierdzenie=0
+4. Wylacz i wlacz zasilanie: przychodzi TYLKO dotychczasowe powiadomienie
+   "Centrala wlaczona po zaniku zasilania..." (powerOnNotice), a w logu
+   tag=START-TG ... wynik=poweron_osobno. Zadnej drugiej wiadomosci.
+5. Nastepna aktualizacja przez /update (gdy bedzie Release 3.58.8 albo
+   wyzszy): po "Restart za chwile..." w ciagu minuty przyjdzie wiadomosc
+   startowa z "po aktualizacji OTA (tag ...)" i dopiskiem o 10 min; po
+   10 min "Aktualizacja zakonczona pomyslnie. Dziala wersja: ...".
+
+
+PORZADEK NA GITHUB (do zrobienia recznie, niezaleznie od tej paczki)
+--------------------------------------------------------------------
+Release z tagiem 3.58.5 zawiera firmware.bin skompilowany jako v3.58.6
+(stad ostrzezenie TAGCHECK z 19.11 - kod byl dobry). Zeby lista wydan
+mowila prawde:
+  1) Releases -> wydanie "3.58.5" -> Edit -> zmien tag na 3.58.6 (gdy GitHub
+     nie pozwala zmienic tagu istniejacego wydania: usun wydanie i tag,
+     utworz nowe z tagiem 3.58.6 i TYM SAMYM firmware.bin),
+  2) po kompilacji tej paczki: nowe wydanie z tagiem 3.58.7 i nowym
+     firmware.bin (+ firmware_panel.bin v1.4.6, jesli chcesz aktualizowac
+     panel przez /update_panel).
+Na plytce zostaje w NVS otaSelfTag=3.58.5 tylko do konca juz zakonczonego
+potwierdzenia - nic z tym nie trzeba robic.
+
+
+POWROT DO POPRZEDNIEJ WERSJI
+----------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.7" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+i Upload.
+
+
+TESTY W PACZCE (opcjonalnie; Linux albo WSL, g++ i python3)
+-----------------------------------------------------------
+cd tests
+./uruchom_testy.sh              40 sprawdzen nowego kodu (decyzja, tresci,
+                                TAGCHECK) + testy z 3.58.6 (166 + 2697) na
+                                tym pliku - kod OTA panelu i wykresow jest
+                                ten sam, co pilnuje tez porownanie bloku
+./sprawdz_naglowki_esp32.sh     nowy kod z prawdziwymi naglowkami ESP32
+                                (tylko w pelnym repozytorium)
+Opis: tests/README.txt; wyniki z dnia wydania sa w katalogu WYNIKI.
+
+
+CZEGO TA WERSJA NIE ROBI
+------------------------
+- Nie byla kompilowana dla ESP32 ani testowana na sprzecie.
+- Nie zmienia logiki pieca, automatyki, czujnikow, zapisu historii, strony
+  WWW, aplikacji Android, /update ani /update_panel.
+- Nie zmienia hasla OTA (secrets.h).
+- Nie zapisuje nic nowego w NVS.

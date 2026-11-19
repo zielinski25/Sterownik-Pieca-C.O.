@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.4.1
+# Panel LCD (wyświetlacz CO) — firmware v1.4.6
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,52 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.4.6
+
+**Wersje panelu i centrali na ekranie + porządki po logach z płytki.**
+Zgłoszenie: „przy starcie LCD nie pokazuje wersji — jest tylko *Szukam
+centrali* / *Łączenie z WiFi*; chcę wersję panelu i wersję centrali”. Centrala
+bez zmian (pole `"fw"` w `/api/status` wystawia od dawna; panel go dotąd nie
+czytał). Ruch do centrali i logika panelu bez zmian.
+
+| Co | Było (v1.4.5) | Jest (v1.4.6) |
+|---|---|---|
+| ekran startowy (TFT_eSPI, zanim LVGL przejmie wyświetlacz) | tylko „Szukam centrali” → „Laczenie z WiFi” | u góry **„WYSWIETLACZ CO”** (font 4) i **„Panel v1.4.6”** przez cały czas łączenia; po pierwszej odpowiedzi centrali **„Centrala v3.58.6”** (albo „Centrala: brak odpowiedzi” / „Centrala: wersja nieznana” przy centrali bez pola `fw`) i ekran stoi jeszcze **1,5 s**, żeby dało się to przeczytać (`EKRAN_START_POKAZ_MS`). Tylko przy zimnym starcie — po wybudzeniu z deep sleep bez pauzy. Napisy ASCII (czcionki TFT_eSPI nie mają polskich liter, jak dotąd) |
+| ekran WYŚWIETLACZ (drugi pulpit → zębatka) | — | w lewym górnym rogu na stałe `Panel v1.4.6` / `Centrala v3.58.6` (`lvgl_dashboard_poc_ustaw_wersje()`); „Centrala -” dopóki centrala nie odpowie albo gdy jest starsza i nie podaje `fw`; po aktualizacji centrali napis zmienia się sam przy następnym statusie. Po `/update_panel` widać na ekranie, co faktycznie działa — bez kabla |
+| log `tag=PANEL` | `centrala=sterownik sym=…` | `centrala=sterownik centrala_fw=v3.58.6 sym=…`; przy starcie dodatkowa linia `tag=PANEL zdarzenie=ekran_startowy panel=v1.4.6 centrala=v3.58.6` |
+| filtr pól statusu | 46 pól | 47 (`diag::POLA_STATUSU_CZYTANE[]` + `"fw"`; bez tego wpisu ArduinoJson pominąłby pole — test jednostkowy to pilnuje) |
+| kafelek „WYŚWIETLACZ” na drugim pulpicie | ostatnia litera obcięta (napis 109 px na karcie 114 px od x=8) | cały: gdy napis nie mieści się z marginesem, `kafelek_launcher()` ściska litery o 1 px (→ 97 px); „WYKRESY” bez zmian |
+| GPIO35 (`USB_DETECT_PIN`) | `pinMode(35, INPUT_PULLUP)` → w logu przy każdym starcie `E gpio: gpio_pullup_en(85): GPIO number error (input-only pad has no internal PU)` | `INPUT` — GPIO35 nie ma wewnętrznego pull-upu, komunikat znika. **Zewnętrzne 10 kΩ do 3V3 jest obowiązkowe** (komentarz przy `USB_DETECT_PIN`); bez niego pin pływa |
+| NVS `ota_panel` | `Preferences::begin(…, true)` → `[E][Preferences.cpp:47] nvs_open failed: NOT_FOUND` przy każdym starcie panelu, który nigdy nie zaczynał aktualizacji | otwierana do zapisu (zakłada pustą przestrzeń po cichu, jednorazowo kilkanaście bajtów NVS); odczyt bez zmian |
+
+Testy na PC: nowy scenariusz **`wersje_na_ekranie`** (17 sprawdzeń: napisy
+ekranu startowego, 1,5 s pauzy przy zimnym starcie, linia logu, etykieta na
+WYŚWIETLACZ i jej odstęp od tytułu, zmiana wersji centrali bez restartu
+panelu, centrala bez pola `fw`, kafelek bez obcięcia); atrapa centrali podaje
+`"fw"`. Zrzuty: `wersje_na_ekranie_{1_drugi_pulpit,2_wyswietlacz_wersje}.bmp`.
+Koszt: +16 B RAM (`StanPieca::centralaFw`), jedna etykieta LVGL więcej.
+Cała paczka testów (55 scenariuszy, 527 sprawdzeń jednostkowych) zielona,
+także z AddressSanitizer/UBSan. `pomiar_pamieci.sh`: sterta po starcie
+**132 056 B** (v1.4.5: 131 736 B — +320 B: etykieta wersji na ekranie
+WYŚWIETLACZ i 16 B w `StanPieca`), przyrost po 10 min pracy 0 B, limity w
+normie. `pomiar_obciazenia.sh`: połączenia HTTP i prośby o pamięć jak w
+v1.4.5 (31,0 / 31,0 / 31,0 / 28,8 / 31,2 / 31,0 na minutę; 2 820 / 5 216 /
+2 871 / 319 / 5 298 / 2 816 — o ok. 60 więcej na minutę: `centrala_fw=` w
+logu `tag=PANEL` i odczyt pola `fw`), rysowane piksele bez zmian. **Nie
+budowane w PlatformIO** — na płytce warto obejrzeć ekran startowy (napisy
+„Panel v1.4.6” / „Centrala v3.58.x”) i sprawdzić w logu, że zniknęły
+`gpio_pullup_en(85)` i `nvs_open failed: NOT_FOUND`.
+
+Równolegle wyszła centrala **3.58.7** (`firmware-patch/v3.58.7-start-telegram/`):
+wiadomość startowa na Telegram z wersją i powodem restartu, czytelniejsze
+ostrzeżenie TAGCHECK, bez ostrzeżenia kompilacji. Panel v1.4.6 i centrala
+3.58.7 nie zależą od siebie — każde działa ze starszym partnerem.
+
+**Z v1.4.5 na v1.4.6** zmieniają się: `src/main.cpp`,
+`src/dashboard_lvgl_poc.cpp`, `src/dashboard_lvgl_poc.h`,
+`src/diagnostyka_panelu.h`, `testy_host/`. Można wgrać kablem albo przez
+centralę (`/update_panel`).
 
 ## Co zmienia v1.4.5
 
@@ -64,10 +110,9 @@ płytce** — na płytce warto obejrzeć pulpit (POKÓJ, CIŚNIENIE, WILGOTNOŚ�
 ekran POMPA (WŁĄCZ/WYŁĄCZ) i SERWO (RĘCZNY) i porównać rozmiar programu w
 logu PlatformIO (`Flash: [...] used ...`) z v1.4.4: oczekiwane ok. +7 kB.
 
-Uwaga z zrzutów (było tak samo w v1.4.4, nie ruszane): na drugim pulpicie
-napis kafelka „WYŚWIETLACZ” jest przycięty na ostatniej literze (kafelek
-114 px); „WYSWIETLACZ” miał tę samą szerokość. Do poprawienia osobno, jeśli
-przeszkadza.
+Uwaga z zrzutów (było tak samo w v1.4.4): na drugim pulpicie napis kafelka
+„WYŚWIETLACZ” jest przycięty na ostatniej literze (kafelek 114 px);
+„WYSWIETLACZ” miał tę samą szerokość. Poprawione w v1.4.6.
 
 **Z v1.4.4 na v1.4.5** zmieniają się: `src/czcionki/` (nowy katalog),
 `include/lv_conf.h`, `src/dashboard_lvgl_poc.cpp`, `src/main.cpp`,
