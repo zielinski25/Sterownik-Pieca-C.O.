@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Panel LCD – zasilanie z ogniwa: schemat + symulacja (firmware 1.4.7)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#0f141a; --panel:#171e26; --line:#2a3542; --txt:#e6edf3; --mut:#8b98a5;
+    --v5:#ff5252; --vbat:#ffa726; --v33:#42a5f5; --gnd:#9aa4ad; --sig:#66bb6a; --adc:#ab47bc; --off:#4a5560;
+    --ok:#4caf50; --warn:#ffb300; --bad:#ef5350;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0}
+  header .sub{color:var(--mut)}
+  main{display:grid;grid-template-columns:300px 1fr 330px;gap:12px;padding:12px}
+  @media (max-width:1300px){main{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card h2{font-size:14px;margin:0 0 10px;color:#cdd9e5;text-transform:uppercase;letter-spacing:.05em}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:7px 0}
+  .row label{flex:1}
+  input[type=range]{width:100%}
+  .val{font-variant-numeric:tabular-nums;min-width:62px;text-align:right;color:#fff}
+  .sw{position:relative;width:42px;height:22px;background:#3a4653;border-radius:11px;cursor:pointer;flex:none;transition:.15s}
+  .sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
+  .sw.on{background:var(--ok)} .sw.on::after{left:23px}
+  button.b{background:#263241;color:#fff;border:1px solid #3b4b5e;border-radius:7px;padding:7px 10px;cursor:pointer;font-size:13px}
+  button.b:active{background:#3b4b5e}
+  button.hold{background:#5a3b14;border-color:#a56d1e}
+  select{background:#263241;color:#fff;border:1px solid #3b4b5e;border-radius:6px;padding:4px 6px}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-variant-numeric:tabular-nums}
+  .kv div:nth-child(odd){color:var(--mut)}
+  .st{display:inline-block;padding:1px 7px;border-radius:5px;font-weight:600;font-size:12px}
+  .st.ok{background:#1f4d2a;color:#9ae6a8} .st.warn{background:#5a4300;color:#ffd666} .st.bad{background:#5a1d1d;color:#ff9a9a} .st.off{background:#2b3440;color:#a9b4bf}
+  pre.log{background:#0b0f13;border:1px solid var(--line);border-radius:7px;padding:8px;font-size:12px;white-space:pre-wrap;word-break:break-all;color:#b7e3b7;margin:6px 0}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;color:var(--mut);font-size:12px;margin-top:8px}
+  .legend i{display:inline-block;width:22px;height:4px;vertical-align:middle;margin-right:4px;border-radius:2px}
+  svg{width:100%;height:auto;display:block;background:#0b0f13;border-radius:8px}
+  .wire{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+  .wire.v5{stroke:var(--v5)} .wire.vbat{stroke:var(--vbat)} .wire.v33{stroke:var(--v33)} .wire.gnd{stroke:var(--gnd)} .wire.sig{stroke:var(--sig)} .wire.adc{stroke:var(--adc)}
+  .wire.off{stroke:var(--off)!important}
+  .wire.flow{stroke-dasharray:8 7;animation:flow 1s linear infinite}
+  .wire.flow.slow{animation-duration:3s}
+  .wire.flow.fast{animation-duration:.4s}
+  @keyframes flow{to{stroke-dashoffset:-15}}
+  .box{fill:#161d26;stroke:#4a5a6c;stroke-width:1.5;rx:6}
+  .box.chip{fill:#1d2a1d;stroke:#5c8a5c}
+  .box.mod{fill:#141c26;stroke:#3f5f85}
+  .box.esp{fill:#101820;stroke:#5577aa}
+  .pad{fill:#d4a24c;stroke:#8a6420;stroke-width:1}
+  .pad.gnd{fill:#9aa4ad;stroke:#666}
+  text{fill:var(--txt);font-family:ui-monospace,Consolas,monospace;font-size:11px}
+  text.t{font-size:12px;font-weight:700;fill:#dfe8f1}
+  text.s{font-size:10px;fill:var(--mut)}
+  text.v{font-size:11px;font-weight:700;fill:#fff}
+  .badge{fill:#000;stroke:#444;rx:4;opacity:.85}
+  .res{fill:#2a2f36;stroke:#c7d0d9;stroke-width:1.5}
+  .cap{stroke:#c7d0d9;stroke-width:2}
+  .led-x{stroke:var(--bad);stroke-width:2}
+  .dot{fill:#fff}
+  .pin{fill:#0e1217;stroke:#6b7c90;stroke-width:1}
+  .pin.hi{fill:#2b6cb0} .pin.lo{fill:#333} .pin.an{fill:#6a1b9a}
+  .danger{fill:none;stroke:var(--bad);stroke-width:2;stroke-dasharray:4 3}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border:1px solid var(--line);padding:5px 7px;text-align:left;vertical-align:top}
+  th{background:#1d2731;color:#cdd9e5}
+  td code,li code{background:#0b0f13;padding:1px 5px;border-radius:4px;font-size:12px;color:#ffd27a}
+  .wide{grid-column:1 / -1}
+  details summary{cursor:pointer;color:#cdd9e5;font-weight:600;margin:4px 0}
+  ol li,ul li{margin:4px 0}
+  .note{color:var(--mut);font-size:12px}
+  .esp-dead{animation:blink .6s steps(2) infinite}
+  @keyframes blink{50%{opacity:.25}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Panel LCD – zasilanie z ogniwa Li‑ion: schemat połączeń + symulacja</h1>
+  <a href="montaz.html" style="color:#64b5f6;font-weight:700">→ widok montażowy (prawdziwe moduły)</a>
+  <span class="sub">TP4056 (DW01A + FS8205) → MT3608 (5 V) → ESP32 DevKit · piny z firmware <b>LCD‑Centrali 1.4.7</b> · krok 3 (usypianie) = plan</span>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Symulacja – sterowanie</h2>
+
+    <div class="row"><label>USB 5 V wpięte do TP4056</label><div class="sw on" id="swUsb"></div></div>
+    <div class="row"><label>Ogniwo podłączone (B+/B−)</label><div class="sw on" id="swCell"></div></div>
+    <div class="row"><label>Napięcie ogniwa</label><span class="val" id="vCellTxt">3.85 V</span></div>
+    <input type="range" id="vCell" min="2.20" max="4.25" step="0.01" value="3.85">
+    <div class="row"><label>Pojemność ogniwa</label><span class="val"><input type="number" id="mah" value="2000" min="100" max="20000" step="50" style="width:70px;background:#263241;color:#fff;border:1px solid #3b4b5e;border-radius:5px;padding:2px 4px"> mAh</span></div>
+    <div class="row"><label>R_PROG TP4056</label>
+      <select id="rprog"><option value="1.2">1,2 kΩ → 1,0 A</option><option value="2">2 kΩ → 0,58 A</option><option value="3">3 kΩ → 0,4 A</option><option value="5">5 kΩ → 0,25 A</option></select></div>
+
+    <hr style="border:0;border-top:1px solid var(--line)">
+    <div class="row"><label>Nastawa MT3608 (potencjometr)</label><span class="val" id="vBoostTxt">5.05 V</span></div>
+    <input type="range" id="vBoost" min="3.0" max="15.0" step="0.05" value="5.05">
+    <div class="note">Fabrycznie bywa 15–25 V! Najpierw ustaw 5,0–5,1 V <b>bez</b> ESP32.</div>
+
+    <hr style="border:0;border-top:1px solid var(--line)">
+    <div class="row"><label>Pobór ESP32+TFT w pracy (3,3 V)</label><span class="val" id="iLoadTxt">150 mA</span></div>
+    <input type="range" id="iLoad" min="40" max="320" step="5" value="150">
+    <div class="note">Do zmierzenia testerem USB (240/160/80 MHz). 150 mA = szacunek.</div>
+
+    <hr style="border:0;border-top:1px solid var(--line)">
+    <div class="row"><label>Czas od ostatniego dotyku</label><span class="val" id="tIdleTxt">0:00</span></div>
+    <input type="range" id="tIdle" min="0" max="420" step="5" value="0">
+    <div class="row" style="gap:6px">
+      <button class="b" id="btnTouch">👆 Dotyk ekranu</button>
+      <button class="b" id="btnWake">🔘 Trzymaj: przycisk GPIO14</button>
+    </div>
+    <div class="row"><label>Alarm aktywny (dym / ogrzewanie)</label><div class="sw" id="swAlarm"></div></div>
+    <div class="row"><label>Aktualizacja OTA panelu w toku</label><div class="sw" id="swOta"></div></div>
+    <div class="row"><label>Przebieg czasu (symuluj)</label><div class="sw" id="swClock"></div></div>
+    <div class="legend">
+      <span><i style="background:var(--v5)"></i>5 V</span><span><i style="background:var(--vbat)"></i>ogniwo 3–4,2 V</span>
+      <span><i style="background:var(--v33)"></i>3,3 V</span><span><i style="background:var(--gnd)"></i>GND</span>
+      <span><i style="background:var(--sig)"></i>sygnał cyfrowy</span><span><i style="background:var(--adc)"></i>pomiar ADC</span>
+      <span><i style="background:var(--off)"></i>bez napięcia</span>
+    </div>
+    <div class="note">Przerywana, „płynąca” linia = płynie prąd (szybciej = więcej).</div>
+  </section>
+
+  <section class="card">
+    <h2>Schemat połączeń (wartości aktualizują się na żywo)</h2>
+    <svg viewBox="0 0 1180 700" id="svg" xmlns="http://www.w3.org/2000/svg">
+      <path id="w_gndbus" class="wire gnd" d="M 60 660 H 1120"/>
+      <text x="1095" y="652" class="s">GND (wspólna masa = OUT− TP4056)</text>
+
+      <rect x="20" y="70" width="80" height="70" class="box"/>
+      <text x="60" y="92" text-anchor="middle" class="t">USB</text>
+      <text x="60" y="108" text-anchor="middle" class="s">ładowarka</text>
+      <text x="60" y="122" text-anchor="middle" class="s">5 V</text>
+      <circle cx="100" cy="85" r="4" class="pad"/><text x="88" y="81" class="s">+</text>
+      <circle cx="100" cy="125" r="4" class="pad gnd"/><text x="88" y="140" class="s">−</text>
+      <path id="w_usb_p" class="wire v5" d="M 100 85 H 160"/>
+      <path id="w_usb_n" class="wire gnd" d="M 100 125 H 130 V 660"/>
+
+      <rect x="160" y="40" width="300" height="270" class="box mod"/>
+      <text x="310" y="58" text-anchor="middle" class="t">Moduł TP4056 + DW01A + FS8205A</text>
+      <circle cx="160" cy="85" r="5" class="pad"/><text x="168" y="80" class="s">IN+</text>
+      <circle cx="160" cy="125" r="5" class="pad gnd"/><text x="168" y="138" class="s">IN−</text>
+      <circle cx="230" cy="310" r="5" class="pad"/><text x="222" y="328" class="s">B+</text>
+      <circle cx="290" cy="310" r="5" class="pad gnd"/><text x="282" y="328" class="s">B−</text>
+      <circle cx="460" cy="85" r="5" class="pad"/><text x="428" y="80" class="s">OUT+</text>
+      <circle cx="460" cy="290" r="5" class="pad gnd"/><text x="424" y="285" class="s">OUT−</text>
+      <rect x="185" y="95" width="90" height="120" class="box chip"/>
+      <text x="230" y="112" text-anchor="middle" class="t">TP4056</text>
+      <text x="230" y="126" text-anchor="middle" class="s">SOP‑8</text>
+      <text x="190" y="150" class="s">4 VCC</text>
+      <text x="190" y="166" class="s">8 CE</text>
+      <text x="190" y="182" class="s">2 PROG</text>
+      <text x="190" y="198" class="s">3 GND</text>
+      <text x="242" y="150" class="s">5 BAT</text>
+      <text x="236" y="166" class="s">7 CHRG</text>
+      <text x="236" y="182" class="s">6 STDBY</text>
+      <rect x="196" y="235" width="30" height="10" class="res"/><text x="188" y="262" class="s" id="rprogLbl">R3 1,2k</text>
+      <path class="wire gnd off" d="M 211 215 V 235 M 211 245 V 290 H 460" style="stroke-width:1.5"/>
+      <g>
+        <text x="296" y="118" class="s">LED R/B</text>
+        <text x="296" y="130" class="s">+R1/R2 1k</text>
+        <rect x="294" y="134" width="46" height="26" fill="none" stroke="#555" stroke-dasharray="3 2"/>
+        <line x1="294" y1="134" x2="340" y2="160" class="led-x"/><line x1="340" y1="134" x2="294" y2="160" class="led-x"/>
+        <text x="296" y="174" class="s" fill="#ff9a9a">WYLUTOWANE</text>
+      </g>
+      <path id="w_chrg" class="wire sig" d="M 275 162 H 360 V 172 H 275 M 360 167 H 430 V 60 H 700" />
+      <circle cx="360" cy="167" r="3" class="dot"/>
+      <text x="366" y="190" class="s">pin7 CHRG + pin6 STDBY</text>
+      <text x="366" y="202" class="s">zwarte (open‑drain)</text>
+      <rect x="360" y="215" width="90" height="42" class="box chip"/>
+      <text x="405" y="232" text-anchor="middle" class="t">DW01A</text>
+      <text x="405" y="247" text-anchor="middle" class="s" id="dw01Txt">OK</text>
+      <rect x="300" y="262" width="60" height="30" class="box chip"/>
+      <text x="330" y="281" text-anchor="middle" class="s">FS8205A</text>
+      <path class="wire gnd" id="w_bminus_fet" d="M 290 310 V 292 H 300" style="stroke-width:2"/>
+      <path class="wire gnd" id="w_fet_out" d="M 360 277 H 460 V 290" style="stroke-width:2"/>
+      <path id="w_in_vcc" class="wire v5" d="M 160 85 H 185 V 146" style="stroke-width:2"/>
+      <path id="w_bat_int" class="wire vbat" d="M 275 146 H 290 V 230 H 230 V 310 M 290 230 H 460 V 85" style="stroke-width:2"/>
+      <circle cx="290" cy="230" r="3" class="dot"/>
+      <path class="wire gnd" d="M 160 125 H 185 V 194 H 160 V 290 H 300" style="stroke-width:1.5" id="w_in_gnd"/>
+      <path class="wire gnd" id="w_outm_gnd" d="M 460 290 H 480 V 660"/>
+
+      <rect x="190" y="360" width="140" height="70" class="box"/>
+      <text x="260" y="383" text-anchor="middle" class="t">Ogniwo Li‑ion 1S</text>
+      <text x="260" y="400" text-anchor="middle" class="s" id="cellLbl">3,85 V · 2000 mAh</text>
+      <text x="260" y="416" text-anchor="middle" class="s" id="cellPct">55 %</text>
+      <path id="w_cell_p" class="wire vbat" d="M 230 310 V 360"/>
+      <path id="w_cell_n" class="wire gnd" d="M 290 310 V 360"/>
+      <text x="236" y="345" class="s">+</text><text x="296" y="345" class="s">−</text>
+      <rect x="248" y="330" width="52" height="16" class="badge"/><text x="274" y="342" text-anchor="middle" class="v" id="bCell">3.85 V</text>
+
+      <path id="w_out_boost" class="wire vbat" d="M 460 85 H 560"/>
+      <circle cx="520" cy="85" r="3" class="dot"/>
+      <rect x="560" y="50" width="150" height="80" class="box mod"/>
+      <text x="635" y="70" text-anchor="middle" class="t">MT3608 step‑up</text>
+      <text x="635" y="86" text-anchor="middle" class="s">boost 2–24 V, 2 A</text>
+      <circle cx="560" cy="85" r="5" class="pad"/><text x="567" y="97" class="s">IN+</text>
+      <circle cx="560" cy="120" r="5" class="pad gnd"/><text x="567" y="124" class="s">IN−</text>
+      <circle cx="710" cy="85" r="5" class="pad"/><text x="672" y="97" class="s">OUT+</text>
+      <circle cx="710" cy="120" r="5" class="pad gnd"/><text x="666" y="124" class="s">OUT−</text>
+      <rect x="620" y="100" width="30" height="22" fill="#2a3340" stroke="#888"/><text x="635" y="115" text-anchor="middle" class="s">POT</text>
+      <path id="w_boost_gnd" class="wire gnd" d="M 560 120 H 540 V 660 M 710 120 H 730 V 660"/>
+      <rect x="590" y="24" width="90" height="16" class="badge"/><text x="635" y="36" text-anchor="middle" class="v" id="bBoost">5.05 V</text>
+      <path id="w_5v" class="wire v5" d="M 710 85 H 830"/>
+      <rect x="750" y="66" width="60" height="16" class="badge"/><text x="780" y="78" text-anchor="middle" class="v" id="bVin">5.05 V</text>
+
+      <path id="w_div_top" class="wire adc" d="M 520 85 V 230"/>
+      <rect x="512" y="230" width="16" height="40" class="res"/><text x="534" y="254" class="s">R1 100k 1%</text>
+      <path id="w_div_mid" class="wire adc" d="M 520 270 V 330 H 830"/>
+      <circle cx="520" cy="330" r="3" class="dot"/>
+      <rect x="512" y="360" width="16" height="40" class="res"/><text x="534" y="384" class="s">R2 100k 1%</text>
+      <path class="wire adc" d="M 520 330 V 360" id="w_div_r2a"/>
+      <path class="wire gnd" d="M 520 400 V 660" id="w_div_r2b"/>
+      <path class="wire adc" d="M 600 330 V 375" id="w_cap_a"/>
+      <line x1="588" y1="375" x2="612" y2="375" class="cap"/><line x1="588" y1="383" x2="612" y2="383" class="cap"/>
+      <path class="wire gnd" d="M 600 383 V 660" id="w_cap_b"/>
+      <text x="616" y="384" class="s">C 1 µF (100 nF)</text>
+      <circle cx="600" cy="330" r="3" class="dot"/>
+      <rect x="640" y="312" width="70" height="16" class="badge"/><text x="675" y="324" text-anchor="middle" class="v" id="bAdc">1.925 V</text>
+      <text x="536" y="310" class="s">Vbat/2 → GPIO34 (ADC1_CH6)</text>
+
+      <path id="w_pu_a" class="wire v33" d="M 760 200 V 150 H 830"/>
+      <rect x="752" y="200" width="16" height="36" class="res"/><text x="772" y="222" class="s">10k pull‑up</text>
+      <path id="w_pu_b" class="wire sig" d="M 760 236 V 260 H 830 M 700 60 V 260 H 760"/>
+      <circle cx="760" cy="260" r="3" class="dot"/>
+      <rect x="700" y="268" width="60" height="16" class="badge"/><text x="730" y="280" text-anchor="middle" class="v" id="bG35">0.0 V</text>
+
+      <path id="w_btn_a" class="wire sig" d="M 830 420 H 720"/>
+      <g id="btnG">
+        <circle cx="708" cy="420" r="3" class="dot"/><circle cx="680" cy="420" r="3" class="dot"/>
+        <line id="btnArm" x1="680" y1="420" x2="710" y2="408" stroke="#fff" stroke-width="2"/>
+      </g>
+      <path id="w_btn_b" class="wire gnd" d="M 680 420 H 660 V 660"/>
+      <text x="640" y="408" class="s">Przycisk budzenia (ext0, stan LOW)</text>
+      <text x="640" y="440" class="s">wewn. pull‑up ESP32 (INPUT_PULLUP)</text>
+
+      <path id="w_bz_a" class="wire sig" d="M 830 480 H 760"/>
+      <circle cx="745" cy="480" r="15" fill="#1b232d" stroke="#c7d0d9" stroke-width="1.5"/>
+      <text x="745" y="484" text-anchor="middle" class="s">♪</text>
+      <path id="w_bz_b" class="wire gnd" d="M 730 480 H 700 V 660"/>
+      <text x="640" y="508" class="s">Piezo pasywny (PWM ledcWriteTone)</text>
+      <text x="640" y="522" class="s">opcja: 10–100k do GND (brak piknięcia przy starcie)</text>
+
+      <rect x="830" y="30" width="250" height="580" class="box esp"/>
+      <text x="955" y="50" text-anchor="middle" class="t">ESP32 DevKit (WROOM‑32)</text>
+      <text x="955" y="64" text-anchor="middle" class="s" id="espState">PRACA · 3,30 V</text>
+      <rect x="860" y="96" width="90" height="34" class="box chip"/>
+      <text x="905" y="110" text-anchor="middle" class="s">AMS1117‑3.3</text>
+      <text x="905" y="124" text-anchor="middle" class="s" id="amsTxt">spadek 1,1 V</text>
+      <path id="w_vin_ams" class="wire v5" d="M 830 85 H 850 V 100 H 860" style="stroke-width:2"/>
+      <path id="w_ams_33" class="wire v33" d="M 950 113 H 1000 V 150 H 830" style="stroke-width:2"/>
+      <text x="1006" y="140" class="s">3V3</text>
+      <rect x="958" y="154" width="60" height="16" class="badge"/><text x="988" y="166" text-anchor="middle" class="v" id="b33">3.30 V</text>
+      <g font-size="11">
+        <rect x="822" y="77" width="16" height="16" class="pin"/><text x="846" y="89" class="s">VIN / 5V</text>
+        <rect x="822" y="142" width="16" height="16" class="pin"/><text x="846" y="154" class="s">3V3</text>
+        <rect x="822" y="252" width="16" height="16" class="pin" id="p35"/><text x="846" y="264" class="s">GPIO35 – USB_DETECT_PIN (INPUT, bez pull‑up)</text>
+        <rect x="822" y="322" width="16" height="16" class="pin an"/><text x="846" y="334" class="s">GPIO34 – BATERIA_ADC_PIN (ADC1, 11 dB)</text>
+        <rect x="822" y="412" width="16" height="16" class="pin" id="p14"/><text x="846" y="424" class="s">GPIO14 – WAKE_BTN_PIN (RTC, ext0)</text>
+        <rect x="822" y="472" width="16" height="16" class="pin" id="p13"/><text x="846" y="484" class="s">GPIO13 – BRZECZYK_PIN (LEDC PWM)</text>
+        <rect x="822" y="552" width="16" height="16" class="pin gnd"/><text x="846" y="564" class="s">GND</text>
+      </g>
+      <path id="w_esp_gnd" class="wire gnd" d="M 830 560 H 800 V 660"/>
+      <text x="846" y="290" class="s" id="t35">digitalRead = HIGH → zasilanieUSB()=0</text>
+      <text x="846" y="350" class="s" id="t34a">analogReadMilliVolts ≈ 1925 mV ×2</text>
+      <text x="846" y="364" class="s" id="t34b">bateriaOdczytajNapiecie() = 3.85 V → 55 %</text>
+      <text x="846" y="446" class="s" id="t14">HIGH (nie wciśnięty)</text>
+      <text x="846" y="506" class="s" id="t13">cisza</text>
+      <text x="846" y="600" class="s">Zajęte: TFT 18/19/23/15/2/4, BL 21, dotyk 25/26/27/33</text>
+      <text x="846" y="590" class="s" fill="#ffd666">GPIO21 TFT_BL przez 100–220 Ω (gpio_hold w śnie)</text>
+    </svg>
+  </section>
+
+  <section class="card">
+    <h2>Co widzi firmware / co płynie</h2>
+    <div class="kv" id="kv"></div>
+    <h2 style="margin-top:12px">Log Serial (co 30 s)</h2>
+    <pre class="log" id="log"></pre>
+    <h2 style="margin-top:12px">Krok 3 – usypianie (plan)</h2>
+    <div id="sleep"></div>
+    <h2 style="margin-top:12px">Bilans prądu i czas pracy</h2>
+    <div class="kv" id="kvI"></div>
+    <p class="note">Spoczynek: ESP32 deep sleep 0,11 mA + AMS1117 ~5 mA + MT3608 jałowo ~1,5 mA. Sprawność boost 85 %. Wartości orientacyjne – do potwierdzenia pomiarami.</p>
+  </section>
+
+  <section class="card wide">
+    <h2>Lista połączeń – punkt po punkcie</h2>
+    <table>
+      <tr><th>#</th><th>Skąd</th><th>Dokąd</th><th>Element po drodze</th><th>Uwagi</th></tr>
+      <tr><td>1</td><td>Gniazdo USB ładowarki +5 V / GND</td><td>TP4056 <code>IN+</code> / <code>IN−</code></td><td>–</td><td>Tylko ładowanie. USB płytki ESP32 <b>nie</b> wpinać przy wpiętym ogniwie (dwa źródła 3,3 V) – wgrywaj przez <code>/update_panel</code>.</td></tr>
+      <tr><td>2</td><td>Ogniwo + / −</td><td>TP4056 <code>B+</code> / <code>B−</code></td><td>–</td><td>DW01A odcina przy 2,4 V (za nisko – stąd próg 3,3 V w programie). Biegunowość sprawdź 2×.</td></tr>
+      <tr><td>3</td><td>TP4056 <code>OUT+</code></td><td>MT3608 <code>IN+</code></td><td>–</td><td>OUT+ = napięcie ogniwa przez FS8205. Przewód ≥ 0,5 mm² (do 1 A przy 3,3 V).</td></tr>
+      <tr><td>4</td><td>TP4056 <code>OUT−</code></td><td>MT3608 <code>IN−</code> i wspólny GND</td><td>–</td><td><b>Cała masa z OUT−, nigdy z B−</b> (ominęłoby zabezpieczenie).</td></tr>
+      <tr><td>5</td><td>MT3608 <code>OUT+</code></td><td>ESP32 <code>VIN</code> (5V)</td><td>potencjometr nastawiony na <b>5,0–5,1 V</b></td><td>Ustaw napięcie BEZ obciążenia, dopiero potem przewód do VIN. Nigdy do 3V3.</td></tr>
+      <tr><td>6</td><td>MT3608 <code>OUT−</code></td><td>ESP32 <code>GND</code></td><td>–</td><td>Krótko, gruby przewód – wspólny punkt masy dla ADC.</td></tr>
+      <tr><td>7</td><td>TP4056 <code>OUT+</code></td><td>ESP32 <code>GPIO34</code></td><td><code>R1 100 kΩ</code> (1 %)</td><td>Dzielnik bierze <b>ogniwo</b>, nie 5 V za przetwornicą.</td></tr>
+      <tr><td>8</td><td>ESP32 <code>GPIO34</code></td><td>GND</td><td><code>R2 100 kΩ</code> (1 %) ∥ <code>C 1 µF</code> (min. 100 nF)</td><td>Rezystory i kondensator jak najbliżej pinu GPIO34. 1 µF lepiej tłumi szum boosta.</td></tr>
+      <tr><td>9</td><td>TP4056 pin 7 <code>CHRG</code> + pin 6 <code>STDBY</code> (pady po wylutowanych LED, strona układu)</td><td>ESP32 <code>GPIO35</code></td><td>–</td><td>Sprawdź miernikiem ciągłość do nóżek 6 i 7 TP4056. Pad od strony R1/R2 to NIE ten.</td></tr>
+      <tr><td>10</td><td>ESP32 <code>GPIO35</code></td><td>ESP32 <code>3V3</code></td><td><code>10 kΩ</code></td><td><b>Obowiązkowy</b> – GPIO35 nie ma wewnętrznego pull‑upu; bez niego pin pływa.</td></tr>
+      <tr><td>11</td><td>ESP32 <code>GPIO14</code></td><td>GND</td><td>przycisk monostabilny</td><td>Wewnętrzny pull‑up; ext0 budzi na LOW. Opcjonalnie 100 nF równolegle (drgania).</td></tr>
+      <tr><td>12</td><td>ESP32 <code>GPIO13</code></td><td>GND</td><td>piezo <b>pasywny</b></td><td>Nie aktywny (z generatorem) – firmware gra tony PWM. Opcja: 10–100 kΩ do GND.</td></tr>
+      <tr><td>13</td><td>ESP32 <code>GPIO21</code></td><td>TFT LED/BL</td><td><code>100–220 Ω</code></td><td>Już podłączone (TFT_BL). W śnie pin trzymany LOW przez gpio_hold.</td></tr>
+    </table>
+    <p class="note">Nie używać: GPIO0/2/12/15 (strapping – 2 i 15 już zajęte przez TFT), GPIO33 (TOUCH_MISO), pinów ADC2 (nie działają przy WiFi), GPIO6–11 (flash).</p>
+  </section>
+
+  <section class="card wide">
+    <details open>
+      <summary>Kolejność lutowania i kontrola miernikiem (bez ESP32 aż do pkt 7)</summary>
+      <ol>
+        <li>Wylutuj LED R, LED B (R1/R2 mogą zostać). Ustal pady katod: ciągłość do nóżek <b>7 (CHRG)</b> i <b>6 (STDBY)</b> TP4056.</li>
+        <li>Jeśli ogniwo &lt; 1000 mAh – wymień R3 (PROG) wg tabeli po lewej (≈ 0,3–0,5 C).</li>
+        <li>Przylutuj ogniwo do B+/B−. Zmierz OUT+ względem OUT−: ma być = napięcie ogniwa (3,0–4,2 V). Jeżeli 0 V – DW01A w odcięciu (ogniwo &lt; 2,4 V) → wepnij USB na chwilę, zabezpieczenie się zwolni.</li>
+        <li>Wepnij USB: na padach CHRG/STDBY (względem OUT−) ma być ~0 V. Wyjmij USB: pad wisi (miernik pokaże ~0–0,5 V, bo nie ma jeszcze pull‑upu – to normalne).</li>
+        <li>MT3608: OUT+ TP4056 → IN+, OUT− → IN−. Bez obciążenia ustaw <b>5,0–5,1 V</b> na wyjściu (wiele obrotów potencjometru). Sprawdź jeszcze raz po 1 min – nastawa nie może dryfować.</li>
+        <li>Dzielnik: 100k od OUT+ do węzła, 100k + 1 µF od węzła do GND. Zmierz węzeł: ma być dokładnie ½ napięcia ogniwa (np. 3,85 → 1,92 V).</li>
+        <li>Dopiero teraz ESP32: GND, potem VIN z MT3608. Panel ma wystartować normalnie (bez USB w płytce!).</li>
+        <li>GPIO34 ← węzeł dzielnika; GPIO35 ← pady CHRG/STDBY; 10 kΩ między GPIO35 a 3V3; przycisk GPIO14–GND; piezo GPIO13–GND.</li>
+        <li>W logu Serial / WWW: <code>tag=BATERIA napiecie=3.8xV procent=.. ladowanie=1</code> przy USB, <code>ladowanie=0</code> bez USB. Napięcie w logu ± 0,05 V względem miernika na ogniwie. Jeśli &lt; 2,5 V → <code>zdarzenie=brak_ogniwa</code> = dzielnik źle podpięty.</li>
+        <li>Ekran alarmu → WYCISZ sprawdza brzęczyk. Przycisk GPIO14: do czasu kroku 3 nic nie robi (pin tylko skonfigurowany jako INPUT_PULLUP).</li>
+      </ol>
+    </details>
+  </section>
+</main>
+
+<script>
+(() => {
+  const S = { usb:true, cell:true, vCell:3.85, mah:2000, rprog:1.2, vBoost:5.05, iLoad:150, tIdle:0,
+              btn:false, alarm:false, ota:false, clock:false, dw01Latched:false, chargeDone:false };
+  const $ = id => document.getElementById(id);
+  const sw = (id,key,cb)=>{ const e=$(id); e.classList.toggle('on',S[key]); e.onclick=()=>{S[key]=!S[key]; e.classList.toggle('on',S[key]); cb&&cb(); render();}; };
+  sw('swUsb','usb'); sw('swCell','cell'); sw('swAlarm','alarm'); sw('swOta','ota'); sw('swClock','clock');
+  $('vCell').oninput=e=>{S.vCell=+e.target.value;render();};
+  $('vBoost').oninput=e=>{S.vBoost=+e.target.value;render();};
+  $('iLoad').oninput=e=>{S.iLoad=+e.target.value;render();};
+  $('tIdle').oninput=e=>{S.tIdle=+e.target.value;render();};
+  $('mah').oninput=e=>{S.mah=+e.target.value||2000;render();};
+  $('rprog').onchange=e=>{S.rprog=+e.target.value;render();};
+  $('btnTouch').onclick=()=>{S.tIdle=0;$('tIdle').value=0;render();};
+  const bw=$('btnWake');
+  const down=()=>{S.btn=true;bw.classList.add('hold');render();}, up=()=>{S.btn=false;bw.classList.remove('hold');render();};
+  bw.onmousedown=down; bw.onmouseup=up; bw.onmouseleave=up; bw.ontouchstart=e=>{e.preventDefault();down();}; bw.ontouchend=up;
+  setInterval(()=>{ if(S.clock){ S.tIdle=Math.min(420,S.tIdle+5); $('tIdle').value=S.tIdle; render(); } },500);
+
+  // tabela % z main.cpp (bateriaNapiecieNaProcent)
+  const T=[[4.20,100],[4.15,95],[4.11,90],[4.08,85],[4.02,80],[3.98,75],[3.95,70],[3.91,65],[3.87,60],[3.85,55],
+           [3.84,50],[3.82,45],[3.80,40],[3.79,35],[3.77,30],[3.75,25],[3.73,20],[3.71,15],[3.69,10],[3.61,5],[3.27,0]];
+  function pct(v){ if(v>=T[0][0])return 100; if(v<=T[T.length-1][0])return 0;
+    for(let i=0;i<T.length-1;i++){ if(v<=T[i][0]&&v>=T[i+1][0]){ const z=T[i][0]-T[i+1][0]; const p=(T[i][0]-v)/z; return Math.round(T[i][1]-p*(T[i][1]-T[i+1][1])); } } return 0; }
+
+  const f=(x,d=2)=>x.toFixed(d).replace('.',',');
+  const mmss=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  const cls=(id,on,speed)=>{ const e=$(id); if(!e)return; e.classList.toggle('off',!on.v); e.classList.toggle('flow',!!on.flow); e.classList.toggle('slow',speed==='slow'); e.classList.toggle('fast',speed==='fast'); };
+  const txt=(id,t)=>{$(id).textContent=t;};
+  const st=(k,t)=>`<span class="st ${k}">${t}</span>`;
+
+  function render(){
+    txt('vCellTxt',f(S.vCell)+' V'); txt('vBoostTxt',f(S.vBoost)+' V'); txt('iLoadTxt',S.iLoad+' mA'); txt('tIdleTxt',mmss(S.tIdle));
+    txt('rprogLbl','R3 '+String(S.rprog).replace('.',',')+'k');
+    const iChgMax = 1200/S.rprog/1000;
+
+    const vCell = S.cell ? S.vCell : 0;
+    let dw='OK', dwK='ok';
+    if(S.cell && vCell<2.40) S.dw01Latched=true;
+    if(S.dw01Latched && (S.usb || vCell>=3.0)) S.dw01Latched=false;
+    const overV = S.cell && vCell>4.25;
+    if(!S.cell){dw='brak ogniwa';dwK='off';}
+    else if(S.dw01Latched){dw='ODCIĘTE <2,4 V';dwK='bad';}
+    else if(overV){dw='blokada ładow. >4,25 V';dwK='warn';}
+    $('dw01Txt').textContent=dw; $('dw01Txt').setAttribute('fill',dwK==='ok'?'#9ae6a8':dwK==='bad'?'#ff9a9a':'#ffd666');
+
+    let vOut=0;
+    if(S.cell && !S.dw01Latched) vOut=vCell;
+    else if(S.usb) vOut=4.2;
+    let chg='–', chgLow=false, stdLow=false, iChg=0;
+    if(S.usb){
+      if(!S.cell){ chg='brak ogniwa: CHRG/STDBY migoczą'; chgLow=true; }
+      else if(vCell>=4.19 || S.chargeDone){ chg='naładowane (STDBY=LOW)'; stdLow=true; S.chargeDone = vCell>=4.1; }
+      else { chg = vCell<2.9 ? 'ładowanie wstępne 0,1 C (CHRG=LOW)' : 'ładowanie CC/CV (CHRG=LOW)'; chgLow=true; iChg = vCell<2.9 ? iChgMax*0.1 : (vCell<4.1? iChgMax : iChgMax*(4.2-vCell)/0.1+0.05); }
+    } else S.chargeDone=false;
+
+    let vBoostOut=0, boostOn=false;
+    if(vOut>=2.0){ boostOn=true; vBoostOut = Math.max(S.vBoost, vOut-0.3); }
+    else if(vOut>0) vBoostOut=vOut-0.3;
+    let v33=0, ams='bez zasilania', amsK='off';
+    if(vBoostOut>0){ v33=Math.min(3.3, Math.max(0,vBoostOut-1.1)); }
+    if(vBoostOut>=4.4){ams=`spadek ${f(vBoostOut-3.3,1)} V · ${(vBoostOut-3.3)*(S.iLoad/1000)>0.8?'GORĄCY':'OK'}`;amsK=vBoostOut>6?'warn':'ok';}
+    else if(vBoostOut>0){ams='ZA MAŁO NA WEJŚCIU';amsK='bad';}
+    if(vBoostOut>12){ams='>12 V – USZKODZENIE';amsK='bad';}
+    const espRun = v33>=2.43 && vBoostOut<=12;
+    const brownout = v33>0 && v33<2.43;
+    $('amsTxt').textContent=ams;
+    $('amsTxt').setAttribute('fill',amsK==='ok'?'#9ae6a8':amsK==='bad'?'#ff9a9a':amsK==='warn'?'#ffd666':'#8b98a5');
+
+    let sleepReason='', sleep=false;
+    if(espRun){
+      if(S.ota) sleepReason='OTA w toku → usypianie zablokowane (tag=OTA-PANEL usypianie_zablokowane)';
+      else if(S.alarm) sleepReason='alarm aktywny → panel nie śpi';
+      else if(S.usb) sleepReason='USB wpięte → zawsze aktywny';
+      else if(!S.cell) sleepReason='brak ogniwa → zasilanie tylko z USB';
+      else if(vCell<3.30){sleep=true;sleepReason='ogniwo < 3,30 V → NATYCHMIAST deep sleep (ochrona przed brownoutem 2,43 V i odcięciem DW01A 2,4 V)';}
+      else if(S.tIdle>=300){sleep=true;sleepReason='5 min bez dotyku na baterii → deep sleep (ACTIVITY_TIMEOUT_MS)';}
+      else sleepReason=`na baterii, do uśpienia ${mmss(300-S.tIdle)}`;
+      if(sleep && S.btn){sleep=false;sleepReason='przycisk GPIO14 trzymany → czeka na puszczenie (pętla usypiania) / po puszczeniu: sen; wciśnięcie w śnie = wybudzenie';}
+    }
+    const mode = !espRun ? (brownout?'BROWNOUT':'WYŁĄCZONY') : sleep ? 'DEEP SLEEP' : 'PRACA';
+
+    const i33 = espRun ? (sleep?0.11:S.iLoad) : 0;
+    const iPull = (espRun && (chgLow||stdLow)) ? 3.3/10 : 0;
+    const iAms = espRun?5:0;
+    const iVin = i33+iPull+iAms;
+    const pVin = vBoostOut*iVin/1000;
+    const iDiv = vOut/200;
+    let iBatOut = 0;
+    if(boostOn) iBatOut = (pVin/(0.85*Math.max(vOut,0.1)))*1000 + 1.5 + iDiv;
+    const hours = iBatOut>0 ? S.mah/iBatOut : Infinity;
+    const hoursFmt = h=>!isFinite(h)?'∞':h<48?`${f(h,1)} h`:`${f(h/24,1)} dni`;
+    const iActive = boostOn ? ((vBoostOut*(S.iLoad+5+iPull)/1000)/(0.85*Math.max(vOut,0.1)))*1000+1.5+iDiv : 0;
+    const iSleep  = boostOn ? ((vBoostOut*(0.11+5)/1000)/(0.85*Math.max(vOut,0.1)))*1000+1.5+iDiv : 0;
+
+    const g35Low = espRun && S.usb && (chgLow||stdLow);
+    const v35 = espRun ? (g35Low?0.05:3.3) : 0;
+    const usbFn = g35Low?1:0;
+    const vAdcPin = vOut/2;
+    const mv = Math.round(vAdcPin*1000);
+    const vFw = (mv*2)/1000;
+    const batJest = vFw>=2.5;
+    const p = batJest?pct(vFw):0;
+
+    txt('bCell', S.cell?f(vCell)+' V':'brak'); txt('cellLbl', S.cell?`${f(vCell)} V · ${S.mah} mAh`:'ODŁĄCZONE'); txt('cellPct', S.cell?pct(vCell)+' %':'');
+    txt('bBoost', f(vBoostOut)+' V'); txt('bVin', f(vBoostOut)+' V'); txt('b33', f(v33)+' V'); txt('bAdc', f(vAdcPin,3)+' V'); txt('bG35', f(v35,1)+' V');
+    $('bVin').setAttribute('fill', vBoostOut>5.5?'#ff9a9a':'#fff'); $('bBoost').setAttribute('fill', vBoostOut>5.5?'#ff9a9a':'#fff');
+    $('espState').textContent = `${mode} · 3V3 = ${f(v33)} V`; $('espState').setAttribute('fill', espRun?(sleep?'#ffd666':'#9ae6a8'):'#ff9a9a');
+    $('espState').classList.toggle('esp-dead',!espRun);
+    txt('t35', espRun?`digitalRead = ${g35Low?'LOW':'HIGH'} → zasilanieUSB() = ${usbFn}`:'—');
+    txt('t34a', espRun?`analogReadMilliVolts ≈ ${mv} mV (16 próbek) × 2,0`:'—');
+    txt('t34b', espRun?(batJest?`bateriaOdczytajNapiecie() = ${f(vFw)} V → ${p} %`:`${f(vFw)} V < 2,5 V → brak_ogniwa (wskaźnik "USB")`):'—');
+    txt('t14', espRun?(S.btn?'LOW (wciśnięty)'+(sleep?' → WYBUDZENIE':''):'HIGH (pull‑up)'):'—');
+    txt('t13', espRun&&S.alarm&&!sleep?'PWM 2–3 kHz – alarm!':'cisza');
+    $('p35').setAttribute('class','pin '+(espRun?(g35Low?'lo':'hi'):'')); $('p14').setAttribute('class','pin '+(espRun?(S.btn?'lo':'hi'):'')); $('p13').setAttribute('class','pin '+(espRun&&S.alarm&&!sleep?'hi':'lo'));
+    $('btnArm').setAttribute('y2', S.btn?420:408);
+
+    const chgFlow = S.usb && S.cell && iChg>0;
+    const outFlow = boostOn && espRun;
+    const sp = i=> i>100?'fast':i>2?'':'slow';
+    cls('w_usb_p',{v:S.usb,flow:S.usb}, sp(iChg*1000+iVin)); cls('w_usb_n',{v:true,flow:S.usb}, sp(iChg*1000+iVin));
+    cls('w_in_vcc',{v:S.usb,flow:S.usb},sp(iChg*1000)); cls('w_in_gnd',{v:true,flow:S.usb},sp(iChg*1000));
+    cls('w_bat_int',{v:vOut>0,flow:chgFlow||outFlow},sp(Math.max(iChg*1000,iBatOut)));
+    cls('w_cell_p',{v:S.cell,flow:chgFlow||(outFlow&&!S.usb)},sp(Math.max(iChg*1000,iBatOut))); cls('w_cell_n',{v:true,flow:chgFlow||(outFlow&&!S.usb)},sp(Math.max(iChg*1000,iBatOut)));
+    cls('w_bminus_fet',{v:true,flow:chgFlow||(outFlow&&!S.usb)},sp(iBatOut)); cls('w_fet_out',{v:true,flow:chgFlow||(outFlow&&!S.usb)},sp(iBatOut));
+    cls('w_out_boost',{v:vOut>0,flow:outFlow},sp(iBatOut)); cls('w_outm_gnd',{v:true,flow:outFlow},sp(iBatOut)); cls('w_boost_gnd',{v:true,flow:outFlow},sp(iBatOut));
+    cls('w_5v',{v:vBoostOut>0,flow:outFlow},sp(iVin)); cls('w_vin_ams',{v:vBoostOut>0,flow:outFlow},sp(iVin)); cls('w_ams_33',{v:v33>0,flow:espRun},sp(i33)); cls('w_esp_gnd',{v:true,flow:espRun},sp(iVin));
+    cls('w_div_top',{v:vOut>0,flow:vOut>0},'slow'); cls('w_div_mid',{v:vOut>0,flow:false}); cls('w_div_r2a',{v:vOut>0,flow:vOut>0},'slow'); cls('w_div_r2b',{v:true,flow:vOut>0},'slow');
+    cls('w_cap_a',{v:vOut>0,flow:false}); cls('w_cap_b',{v:true,flow:false});
+    cls('w_pu_a',{v:espRun,flow:g35Low},'slow'); cls('w_pu_b',{v:espRun,flow:g35Low},'slow'); cls('w_chrg',{v:espRun||S.usb,flow:g35Low},'slow');
+    cls('w_btn_a',{v:espRun,flow:espRun&&S.btn},'slow'); cls('w_btn_b',{v:true,flow:espRun&&S.btn},'slow');
+    cls('w_bz_a',{v:espRun&&S.alarm&&!sleep,flow:espRun&&S.alarm&&!sleep},'fast'); cls('w_bz_b',{v:true,flow:espRun&&S.alarm&&!sleep},'fast');
+    cls('w_gndbus',{v:true,flow:false});
+    $('w_5v').classList.toggle('danger',vBoostOut>5.5);
+
+    $('kv').innerHTML = `
+      <div>Stan ESP32</div><div>${st(espRun?(sleep?'warn':'ok'):'bad',mode)}</div>
+      <div>TP4056 OUT+</div><div>${f(vOut)} V</div>
+      <div>TP4056 ładowanie</div><div>${chg}${iChg>0?` · ${Math.round(iChg*1000)} mA`:''}</div>
+      <div>DW01A</div><div>${st(dwK,dw)}</div>
+      <div>MT3608 wyjście</div><div>${f(vBoostOut)} V ${vBoostOut>5.5?st('bad','ZA WYSOKO'):vBoostOut>0&&vBoostOut<4.4?st('bad','ZA NISKO'):''}</div>
+      <div>AMS1117 → 3V3</div><div>${f(v33)} V ${brownout?st('bad','brownout <2,43 V'):''}</div>
+      <div>GPIO35 (USB_DETECT)</div><div>${espRun?(g35Low?st('ok','LOW'):st('off','HIGH')):'—'} ${f(v35,1)} V</div>
+      <div>zasilanieUSB()</div><div>${espRun?usbFn:'—'}</div>
+      <div>GPIO34 (ADC)</div><div>${f(vAdcPin,3)} V = ${mv} mV</div>
+      <div>bateriaOdczytajNapiecie()</div><div>${espRun?f(vFw)+' V':'—'}</div>
+      <div>diag::bateriaObecna (≥2,5 V)</div><div>${espRun?(batJest?st('ok','tak'):st('warn','nie → "USB"')):'—'}</div>
+      <div>bateriaNapiecieNaProcent()</div><div>${espRun?(batJest?p+' %':'—'):'—'}</div>
+      <div>GPIO14 (WAKE_BTN)</div><div>${espRun?(S.btn?'LOW':'HIGH'):'—'}</div>
+      <div>GPIO13 (brzęczyk)</div><div>${espRun&&S.alarm&&!sleep?st('bad','gra'):'cisza'}</div>`;
+
+    let log='';
+    if(!espRun) log='(ESP32 nie pracuje – brak logu)';
+    else if(sleep) log='tag=ZASILANIE zdarzenie=deep_sleep powod=... (krok 3)\n(w śnie brak logu; wybudzenie: ESP_SLEEP_WAKEUP_EXT0)';
+    else if(batJest) log=`tag=BATERIA napiecie=${vFw.toFixed(2)}V procent=${p} ladowanie=${usbFn}`;
+    else log=`tag=BATERIA zdarzenie=brak_ogniwa napiecie=${vFw.toFixed(2)}V prog=2.5V msg="zasilanie z USB, wskaznik pokazuje USB"`;
+    if(espRun && S.ota) log+='\ntag=OTA-PANEL zdarzenie=usypianie_zablokowane';
+    $('log').textContent=log;
+
+    $('sleep').innerHTML = `<div style="margin:4px 0">${st(sleep?'warn':espRun?'ok':'off', sleep?'ŚPI':espRun?'AKTYWNY':'—')} <span class="note">${sleepReason||'—'}</span></div>
+      <div class="note">Warunki snu: bez USB ∧ ogniwo obecne ∧ (5 min bez dotyku ∨ V&lt;3,30 V) ∧ ¬alarm ∧ ¬OTA. Po resecie ESP_RST_BROWNOUT na baterii: natychmiast sen. Budzenie: GPIO14 → LOW (ext0).</div>`;
+
+    $('kvI').innerHTML = `
+      <div>Pobór z 3,3 V (ESP32+TFT)</div><div>${f(i33,2)} mA</div>
+      <div>+ pull‑up 10k (gdy USB)</div><div>${f(iPull,2)} mA</div>
+      <div>+ AMS1117 spoczynkowy</div><div>${iAms} mA</div>
+      <div>= na VIN (${f(vBoostOut,1)} V)</div><div><b>${f(iVin,1)} mA</b> · ${f(pVin,2)} W</div>
+      <div>Dzielnik 200 kΩ</div><div>${(iDiv*1000).toFixed(0)} µA</div>
+      <div>Pobór z ogniwa (η 85 % + 1,5 mA)</div><div><b>${f(iBatOut,1)} mA</b></div>
+      <div>${S.usb?'Netto do ogniwa (ładowanie)':'Czas na ogniwie w tym trybie'}</div><div>${S.usb?(iChg>0?`+${Math.round(iChg*1000)} mA`:'0 mA'):hoursFmt(hours)}</div>
+      <div>Czas: ciągła praca ${S.iLoad} mA</div><div>${hoursFmt(boostOn?S.mah/iActive:Infinity)}</div>
+      <div>Czas: ciągły deep sleep</div><div>${hoursFmt(boostOn?S.mah/iSleep:Infinity)}</div>
+      <div>Dla porównania z LDO (0,12 mA)</div><div>${hoursFmt(S.mah/0.14)}</div>`;
+  }
+  render();
+})();
+</script>
+</body>
+</html>
