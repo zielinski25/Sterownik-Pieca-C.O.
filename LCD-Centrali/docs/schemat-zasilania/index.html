@@ -172,6 +172,12 @@
       <rect x="20" y="0" width="6" height="20" fill="#5d4037"/><rect x="30" y="0" width="6" height="20" fill="#000"/><rect x="40" y="0" width="6" height="20" fill="#fb8c00"/><rect x="64" y="0" width="6" height="20" fill="#d4af37"/>
       <text x="45" y="36" text-anchor="middle" style="font-size:9px;fill:#fff">R3 10 kΩ pull‑up (brąz‑czarny‑pomarańcz‑złoty)</text>
     </g>
+    <g transform="translate(40,140)">
+      <line x1="-14" y1="10" x2="104" y2="10" stroke="#aaa" stroke-width="2"/>
+      <rect x="10" y="0" width="70" height="20" rx="10" fill="#d7c4a3" stroke="#8a7a5a"/>
+      <rect x="20" y="0" width="6" height="20" fill="#5d4037"/><rect x="30" y="0" width="6" height="20" fill="#000"/><rect x="40" y="0" width="6" height="20" fill="#e53935"/><rect x="64" y="0" width="6" height="20" fill="#d4af37"/>
+      <text x="45" y="36" text-anchor="middle" style="font-size:9px;fill:#fff">R4 1 kΩ szeregowo z przyciskiem (brąz‑czarny‑czerwony‑złoty)</text>
+    </g>
     <g transform="translate(60,180)">
       <rect x="0" y="0" width="60" height="60" rx="4" fill="#111" stroke="#444"/><circle cx="30" cy="30" r="16" fill="#333" stroke="#666"/><circle cx="30" cy="30" r="10" fill="#555"/>
       <rect x="-8" y="8" width="8" height="6" fill="#bbb"/><rect x="-8" y="46" width="8" height="6" fill="#bbb"/><rect x="60" y="8" width="8" height="6" fill="#bbb"/><rect x="60" y="46" width="8" height="6" fill="#bbb"/>
@@ -228,12 +234,15 @@
     <tr><td>Moduł MT3608</td><td>1</td><td>masz; ustaw 5,0–5,1 V przed podłączeniem</td></tr>
     <tr><td>Rezystor 100 kΩ 1 %</td><td>2</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#000"></i><i style="left:29px;background:#fb8c00"></i><i style="left:38px;background:#5d4037"></i></span>brąz‑czarny‑czarny‑pomarańcz‑brąz (5 pasków) albo brąz‑czarny‑żółty‑złoty (5 %, też ok – firmware mnoży ×2, tolerancja = błąd ok. ±0,1 V)</td></tr>
     <tr><td>Rezystor 10 kΩ</td><td>1</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#fb8c00"></i><i style="left:36px;background:#d4af37"></i></span>brąz‑czarny‑pomarańcz‑złoty</td></tr>
+    <tr><td>Rezystor 1 kΩ</td><td>1</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#e53935"></i><i style="left:36px;background:#d4af37"></i></span>brąz‑czarny‑czerwony‑złoty – szeregowo z przyciskiem GPIO14</td></tr>
     <tr><td>Kondensator ceramiczny</td><td>1</td><td>1 µF „105” (lub 100 nF „104”)</td></tr>
     <tr><td>Przycisk tact</td><td>1</td><td>6×6 lub 12×12 mm, monostabilny</td></tr>
     <tr><td>Piezo pasywny</td><td>1</td><td>np. 12 mm, bez generatora</td></tr>
     <tr><td>Koszyk 18650 / ogniwo</td><td>1</td><td>albo LiPo 1S z wtyczką JST‑PH do B+/B−</td></tr>
     <tr><td>Przewody</td><td>–</td><td>zasilanie 0,5 mm² (czerwony/czarny), sygnały 0,2 mm² lub drut 30 AWG</td></tr>
   </table>
+  <p class="note"><b>Dobór pinów (sprawdzony w dokumentacji Espressif, 2026‑11):</b> GPIO34/35 = ADC1 (działa przy WiFi), wejściowe, bez funkcji startowej – optymalne; GPIO36/39 pominięte (errata GPIO‑3.11: fałszywe impulsy przy ADC/WiFi); GPIO14 = RTC, dozwolony dla ext0, ale „PWM burst” przy starcie → stąd R4 1 kΩ; GPIO13 bez funkcji startowej – OK pod PWM brzęczyka; GPIO12 omijamy (strapping napięcia flasha). Rezerwa na przyszłość: GPIO32 (RTC, bez impulsu startowego).</p>
+  <p class="note"><b>Test, czy GPIO35 jest wolny na Twojej płytce</b> (Lolin D32/FireBeetle mają tam fabryczny dzielnik baterii): przed lutowaniem zmierz omomierzem GPIO35↔3V3 i GPIO35↔GND – na DOIT DevKit V1 oba „nieskończoność”; jeśli widzisz ~100–200 kΩ, napisz – przeniesiemy detekcję USB na inny pin.</p>
   <p class="note">Piny ESP32 zajęte przez wyświetlacz (nie dotykać): D18 SCK, D19 MISO, D23 MOSI, D15 CS, D2 DC, D4 RST, D21 BL, D25/D26/D27/D33 dotyk. Na rysunku oznaczone na szaro.</p>
 </section>
 </main>
@@ -263,7 +272,7 @@
     cellP:[381,504], cellM:[103,504],
     VINp:[538,132], VINm:[538,238], VOUTp:[802,132], VOUTm:[802,238],
     R1a:[546,380], R1b:[664,380], R2a:[546,430], R2b:[664,430], Ca:[710,390], Cb:[724,390], R3a:[756,380], R3b:[874,380],
-    BTNa:[576,522], BTNb:[644,522], BZa:[774,520], BZb:[806,520],
+    BTNa:[576,522], BTNb:[644,522], R4a:[546,480], R4b:[664,480], BZa:[774,520], BZb:[806,520],
     gndRail:[700,613],
     VIN:PX.L_VIN, GNDL:PX.L_GND, D34:PX.L_D34, D35:PX.L_D35, D14:PX.L_D14, D13:PX.L_D13, V33:PX.R_3V3, GNDR:PX.R_GND
   };
@@ -283,8 +292,9 @@
     {id:'chrg',c:C.grn,t:'pady katod LED R + LED B (CHRG+STDBY) → ESP32 D35',s:'cienki drut 30 AWG; oba pady zwarte; miernik: ciągłość do nóżek 6 i 7.',d:`M ${P.ledRk} L ${P.ledBk} C 300 60 420 40 460 40 C 700 40 900 ${P.D35[1]} ${P.D35}`},
     {id:'pu1',c:C.grn,t:'ESP32 D35 → R3 10k (prawa nóżka)',s:'rezystor najlepiej tuż przy płytce ESP32.',d:`M ${P.D35} C 950 300 900 380 ${P.R3b}`},
     {id:'pu2',c:C.blu,t:'R3 10k (lewa) → ESP32 3V3 (prawa listwa, dół)',s:'pull‑up OBOWIĄZKOWY – GPIO35 nie ma wewnętrznego.',d:`M ${P.R3a} C 740 330 760 330 780 330 C 1240 330 1260 ${P.V33[1]} ${P.V33}`},
-    {id:'btn1',c:C.wht,t:'ESP32 D14 → przycisk (nóżka A)',s:'',d:`M ${P.D14} C 900 530 760 540 ${P.BTNb}`},
-    {id:'btn2',c:C.blk,t:'przycisk (nóżka B, przeciwległy bok) → szyna GND',s:'',d:`M ${P.BTNa} C 560 560 620 600 ${P.gndRail}`},
+    {id:'btn1',c:C.wht,t:'ESP32 D14 → R4 1 kΩ (prawa nóżka)',s:'1 kΩ chroni pin: GPIO14 daje krótki impuls wyjściowy przy starcie, a przy budzeniu przycisk jest wtedy wciśnięty.',d:`M ${P.D14} C 900 500 760 480 ${P.R4b}`},
+    {id:'btn1b',c:C.wht,t:'R4 1 kΩ (lewa) → przycisk (nóżka A)',s:'',d:`M ${P.R4a} C 520 480 520 522 ${P.BTNa}`},
+    {id:'btn2',c:C.blk,t:'przycisk (nóżka B, przeciwległy bok) → szyna GND',s:'',d:`M ${P.BTNb} C 680 560 690 600 ${P.gndRail}`},
     {id:'bz1',c:C.gry,t:'ESP32 D13 → piezo',s:'',d:`M ${P.D13} C 900 600 850 560 ${P.BZb}`},
     {id:'bz2',c:C.blk,t:'piezo → szyna GND',s:'',d:`M ${P.BZa} C 760 580 720 600 ${P.gndRail}`},
     {id:'gpl',c:C.blk,t:'szyna GND płytki → ESP32 GND (prawa listwa)',s:'jeden przewód masy dla całej płytki uniwersalnej.',d:`M ${P.gndRail} C 800 700 1250 700 ${P.GNDR}`},

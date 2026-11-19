@@ -299,7 +299,7 @@
       <tr><td>8</td><td>ESP32 <code>GPIO34</code></td><td>GND</td><td><code>R2 100 kΩ</code> (1 %) ∥ <code>C 1 µF</code> (min. 100 nF)</td><td>Rezystory i kondensator jak najbliżej pinu GPIO34. 1 µF lepiej tłumi szum boosta.</td></tr>
       <tr><td>9</td><td>TP4056 pin 7 <code>CHRG</code> + pin 6 <code>STDBY</code> (pady po wylutowanych LED, strona układu)</td><td>ESP32 <code>GPIO35</code></td><td>–</td><td>Sprawdź miernikiem ciągłość do nóżek 6 i 7 TP4056. Pad od strony R1/R2 to NIE ten.</td></tr>
       <tr><td>10</td><td>ESP32 <code>GPIO35</code></td><td>ESP32 <code>3V3</code></td><td><code>10 kΩ</code></td><td><b>Obowiązkowy</b> – GPIO35 nie ma wewnętrznego pull‑upu; bez niego pin pływa.</td></tr>
-      <tr><td>11</td><td>ESP32 <code>GPIO14</code></td><td>GND</td><td>przycisk monostabilny</td><td>Wewnętrzny pull‑up; ext0 budzi na LOW. Opcjonalnie 100 nF równolegle (drgania).</td></tr>
+      <tr><td>11</td><td>ESP32 <code>GPIO14</code></td><td>GND</td><td><code>1 kΩ</code> szeregowo + przycisk monostabilny</td><td>Wewnętrzny pull‑up; ext0 budzi na LOW. 1 kΩ chroni pin przed impulsem wyjściowym GPIO14 przy starcie (budzenie = przycisk wciśnięty w trakcie startu). Opcjonalnie 100 nF równolegle do przycisku.</td></tr>
       <tr><td>12</td><td>ESP32 <code>GPIO13</code></td><td>GND</td><td>piezo <b>pasywny</b></td><td>Nie aktywny (z generatorem) – firmware gra tony PWM. Opcja: 10–100 kΩ do GND.</td></tr>
       <tr><td>13</td><td>ESP32 <code>GPIO21</code></td><td>TFT LED/BL</td><td><code>100–220 Ω</code></td><td>Już podłączone (TFT_BL). W śnie pin trzymany LOW przez gpio_hold.</td></tr>
     </table>
@@ -317,7 +317,7 @@
         <li>MT3608: OUT+ TP4056 → IN+, OUT− → IN−. Bez obciążenia ustaw <b>5,0–5,1 V</b> na wyjściu (wiele obrotów potencjometru). Sprawdź jeszcze raz po 1 min – nastawa nie może dryfować.</li>
         <li>Dzielnik: 100k od OUT+ do węzła, 100k + 1 µF od węzła do GND. Zmierz węzeł: ma być dokładnie ½ napięcia ogniwa (np. 3,85 → 1,92 V).</li>
         <li>Dopiero teraz ESP32: GND, potem VIN z MT3608. Panel ma wystartować normalnie (bez USB w płytce!).</li>
-        <li>GPIO34 ← węzeł dzielnika; GPIO35 ← pady CHRG/STDBY; 10 kΩ między GPIO35 a 3V3; przycisk GPIO14–GND; piezo GPIO13–GND.</li>
+        <li>GPIO34 ← węzeł dzielnika; GPIO35 ← pady CHRG/STDBY; 10 kΩ między GPIO35 a 3V3; GPIO14 → 1 kΩ → przycisk → GND; piezo GPIO13–GND.</li>
         <li>W logu Serial / WWW: <code>tag=BATERIA napiecie=3.8xV procent=.. ladowanie=1</code> przy USB, <code>ladowanie=0</code> bez USB. Napięcie w logu ± 0,05 V względem miernika na ogniwie. Jeśli &lt; 2,5 V → <code>zdarzenie=brak_ogniwa</code> = dzielnik źle podpięty.</li>
         <li>Ekran alarmu → WYCISZ sprawdza brzęczyk. Przycisk GPIO14: do czasu kroku 3 nic nie robi (pin tylko skonfigurowany jako INPUT_PULLUP).</li>
       </ol>

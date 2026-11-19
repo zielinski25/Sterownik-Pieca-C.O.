@@ -13,4 +13,4 @@ Podgląd online (bez pobierania):
 
 Założenia sprzętowe (ustalone 2026-11): ogniwo → TP4056 z DW01A → MT3608 nastawiony na 5,0–5,1 V → `VIN` DevKita;
 dzielnik 100k/100k + 1 µF z `OUT+` na GPIO34; CHRG+STDBY (pady po wylutowanych LED) + 10k do 3V3 na GPIO35;
-przycisk GPIO14→GND; piezo pasywny GPIO13→GND. Wspólna masa z `OUT−`, nigdy z `B−`.
+przycisk GPIO14→1 kΩ→GND (1 kΩ z powodu impulsu wyjściowego GPIO14 przy starcie); piezo pasywny GPIO13→GND. Wspólna masa z `OUT−`, nigdy z `B−`.
