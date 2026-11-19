@@ -5,7 +5,7 @@ Dwie strony HTML, bez zależności – otwórz w przeglądarce (dwuklik) albo:
 | Plik | Co zawiera |
 |---|---|
 | `symulacja.html` | Schemat ideowy + **symulacja**: USB/ogniwo/napięcie/MT3608/czas bez dotyku → stany GPIO34/35/14/13, linia logu `tag=BATERIA`, decyzja kroku 3 (usypianie), bilans prądów i czas pracy. Obliczenia przepisane z `src/main.cpp` 1.4.7 (`zasilanieUSB()`, `bateriaOdczytajNapiecie()`, tabela `TABELA_BAT`). |
-| `index.html` | **Widok montażowy** (strona startowa): rysunki modułów TP4056 (03962A), MT3608, DevKit V1 30-pin, 18650, elementy dyskretne z kolorami pasków, 19 przewodów z podświetlaniem i opisem; lista zakupów. |
+| `index.html` | **Widok montażowy** (strona startowa): układ pionowy, rysunki modułów TP4056 (03962A), MT3608, DevKit V1 30-pin, 18650, płytka uniwersalna (R1/R2 100k, R3 10k, R4 1k, C, przycisk, moduł brzęczyka 3-pin), 21 numerowanych przewodów z podświetlaniem; lista zakupów i uwagi o typie modułu brzęczyka. |
 
 Podgląd online (bez pobierania):
 - https://htmlpreview.github.io/?https://raw.githubusercontent.com/zielinski25/Sterownik-Pieca-C.O./main/LCD-Centrali/docs/schemat-zasilania/symulacja.html
