@@ -145,6 +145,15 @@ ostrzeżenie TAGCHECK, bez ostrzeżenia kompilacji; zaraz po niej **3.58.8**
 wyżej). Panel v1.4.6 działa z każdą centralą; wersję centrali na ekranie
 pokazuje od 3.58.8.
 
+> **Uwaga (19.11, po wgraniu 3.58.8 na płytkę): 3.58.7 i 3.58.8 były robione na
+> 3.58.6 z repozytorium, a na płytce chodziła 3.57.13 z Dysku Google** (linia
+> 3.57.10–3.57.13 z „Zew 2” = temperaturą DHT22 nigdy nie trafiła do repo).
+> Wgranie 3.58.8 zdjęło z płytki `t_zewn_2` — seria „Zew 2” zniknęła z wykresu
+> w aplikacji. Naprawa: **3.58.9** (`firmware-patch/v3.58.9-zew2-scalenie/`) =
+> 3.57.13 + wszystkie zmiany 3.58.0–3.58.8 + filtr przekłamanych ramek DHT22.
+> Panel LCD bez zmian (`/api/status` 3.58.9 ma wszystkie pola, które panel czyta —
+> `sprawdz_pola_statusu.py` przechodzi).
+
 **Z v1.4.5 na v1.4.6** zmieniają się: `src/main.cpp`,
 `src/dashboard_lvgl_poc.cpp`, `src/dashboard_lvgl_poc.h`,
 `src/diagnostyka_panelu.h`, `testy_host/`. Można wgrać kablem albo przez

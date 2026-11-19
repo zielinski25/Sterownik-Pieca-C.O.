@@ -1,0 +1,735 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,65 @@
++// FIRMWARE_VERSION v3.58.8 -> v3.58.9 (2026-11-19) — POŁĄCZENIE LINII 3.57.13 (ZEW 2) I 3.58.8 + FILTR ZEW 2.
++//
++// [v3.58.9 ZEW2-SCALENIE] — 2026-11-19
++// Zgłoszenie użytkownika (19.11, wykres „Temperatury” w aplikacji): po wgraniu
++// 3.58.8 ok. 10:40 seria „Zew 2” (temperatura z DHT22) zniknęła („Zew 2: —”),
++// „Zew 1” (DS18B20) działa dalej. Na płytce do tej pory chodziła v3.57.13.
++//
++// PRZYCZYNA: dwie rozjechane linie firmware z jednego pnia v3.57.9 (1.11):
++//   * 3.58.0 → 3.58.8 (10–19.11, repozytorium): panel LAN, OTA panelu,
++//     wykresy, START-TG, pole "fw" w /api/status;
++//   * 3.57.10 → 3.57.13 (15–17.11, paczki KANDYDAT na Dysku Google, poza
++//     repozytorium): Zew 2 = temperatura DHT22 w statusie i próbkach
++//     Firebase ("t_zewn_2"), nowy harmonogram DS18B20, 12 bitów na GPIO4,
++//     DHT co 120 s, progi świeżości, FB_JSON_CAP 4096.
++//   Paczki 3.58.7 i 3.58.8 były robione na 3.58.6 z repozytorium, nie na
++//   3.57.13 z płytki — nie zawierały więc niczego z 3.57.10–3.57.13.
++//   Wgranie 3.58.8 zdjęło z płytki całą linię 3.57.1x, w tym "t_zewn_2".
++//
++// CO ROBI 3.58.9:
++// [1] SCALENIE. Plik = 3.57.13 (podstawa wskazana przez użytkownika) + wszystkie
++//     zmiany 3.58.0–3.58.8 (3-way merge względem wspólnej podstawy 3.57.9;
++//     2 konflikty: nagłówek pliku i FIRMWARE_VERSION — oba rozwiązane ręcznie).
++//     Numer 3.58.9, a nie 3.57.14, bo porownajWersje() w OTA odmawia
++//     downgrade'u — Release 3.57.14 nie wgrałby się po OTA na płytkę
++//     z 3.58.8. Funkcjonalnie: płytka zachowuje się jak na 3.57.13 i ma
++//     wszystko z 3.58.x.
++// [2] FILTR ZEW 2 (nowe). Na 3.57.13 wykres Zew 2 miał co ~godzinę pojedyncze
++//     piki do ok. −2 °C przy rzeczywistych ok. +2 °C. To obraz przekłamanego
++//     bitu znaku (bit 15 słowa temperatury; DHT22 koduje znak osobnym bitem,
++//     nie U2) przy POPRAWNEJ sumie kontrolnej — suma kontrolna to zwykła suma
++//     8-bitowa czterech bajtów, która nie wykrywa dwóch jednakowych błędów
++//     o tej samej wadze w różnych bajtach (128+128 = 256 ≡ 0). Ten sam obraz
++//     (pojedyncze −9,9 °C / −12 °C z dobrą sumą) opisują inni użytkownicy
++//     DHT22 i leczą go filtrem odstających wartości.
++//     Zasada (zew2Filtruj(), wilgotnosc()):
++//       a) kontrola CAŁEJ ramki: temperatura −40…80 °C i wilgotność 1…100 %
++//          — oba pola przychodzą w jednej ramce, więc nieprawdopodobne jedno
++//          dyskwalifikuje też drugie (dotąd wilgotność > 100 % przechodziła);
++//       b) odczyt „podejrzany” = różni się od ostatniej przyjętej wartości
++//          o > 3 °C albo ma przeciwny znak przy |t| ≥ 0,5 °C (lustrzana
++//          wartość = przekłamany bit znaku) → NIE jest przyjmowany; zadanie
++//          wilgotnosc() powtarza odczyt po ~3 s (zamiast po 120 s) i przyjmuje
++//          wartość tylko, gdy oba odczyty zgadzają się w granicach 0,5 °C;
++//          gdy powtórka zgadza się z ostatnią przyjętą wartością — przyjmuje
++//          powtórkę; gdy nie zgadza się z niczym — odrzuca obie i czeka na
++//          następny cykl;
++//       c) pierwszy odczyt po starcie jest przyjmowany bez weryfikacji; jeśli
++//          był przekłamany, następny odczyt będzie „podejrzany”, zostanie
++//          powtórzony po 3 s i potwierdzony — filtr sam się naprawia (znana
++//          wada filtra outlier w Home Assistant, która blokuje się na złym
++//          pierwszym odczycie, tu nie występuje);
++//       d) odrzucona lub zła ramka NIE kasuje Zew 2 (dotąd zapiszTempDiag(NAN)
++//          — seria znikała do następnego odczytu); zostaje poprzednia wartość,
++//          którą czytajTempDiag() wygasza po 135 s jak dotąd.
++//     Koszt: jeden dodatkowy odczyt DHT22 przy każdym podejrzanym odczycie
++//     (≥ 2 s odstępu zachowane), opóźnienie prawdziwej zmiany o > 3 °C: 3 s.
++//     Wilgotność: bez zmian poza (a); sterowanie piecem: bez zmian.
++//     Logi: DHT22 Zew2 zdarzenie=podejrzany|potwierdzony|odrzucony|zla_ramka,
++//     liczniki zew2_* w linii „DHT22 diagnostyka”.
++// Bez zmian: automatyka, alarmy, Telegram, OTA, format telemetrii (t_zewn_2
++//     jak w 3.57.10–3.57.13, aplikacja 0.31.94 czyta go bez zmian).
++//
+ // FIRMWARE_VERSION v3.58.7 -> v3.58.8 (2026-11-19) — POLE "fw" W /api/status: PANEL LCD WIDZI WERSJĘ CENTRALI.
+ //
+ // [v3.58.8 FW-W-STATUSIE] — 2026-11-19
+@@ -326,6 +388,20 @@
+ //     (piec_cmd_token); bez niego odczyt działa, ale komenda dostaje 403.
+ // FIRMWARE_VERSION v3.57.9 -> v3.58.0 (MINOR: lokalny panel bez Firebase + przełącznik stron).
+ //
++// FIRMWARE_VERSION v3.57.12 -> v3.57.13 — Zew 1 i pokoj: 12 bitow na magistrali 1.
++// Pozostale magistrale, interwaly i format telemetrii bez zmian.
++// FIRMWARE_VERSION v3.57.11 -> v3.57.12 — KANDYDAT DO TESTOW, NIE OTA.
++// DS18B20: osobne interwaly, CO/powrot zalezne od temperatur i pompy;
++// pozostale temperatury 60/120 s, odczyt DS po poprawnej konwersji;
++// DHT/Zew 2 i wilgotnosc 120 s, proby startowe >=2 s; BMP280 180 s;
++// ujemne temperatury DS i limity swiezosci dopasowane do interwalow.
++// UWAGA: wspolna konwersja BUS_2 dotyczy takze rzadziej czytanych czujnikow.
++// Zmiana wplywa na automatyke i alarmy; bez testow ESP i instalacji.
++// FIRMWARE_VERSION v3.57.10 -> v3.57.11 — usuwa diagnostyczny Zew 3; zachowuje Zew 2 i cisnienie.
++// FIRMWARE_VERSION v3.57.9 -> v3.57.10 (2026-11-15) — KANDYDAT: temperatury Zew 2 i Zew 3.
++// Wylacznie diagnostyka; sterowanie i korekta wilgotnosci nadal uzywaja DS18B20.
++// Nowa probka zajmuje dotychczasowe 4 bajty paddingu struktury; znacznik
++// odroznia ja od starych 80-bajtowych rekordow spool. Format lokalnego CSV bez zmian.
+ // FIRMWARE_VERSION v3.57.8 -> v3.57.9 (2026-11-01) — LIMITY SIECI W SEKUNDACH.
+ //
+ // Zgloszenie uzytkownika (1.11): raport nadzoru po restarcie pokazal
+@@ -1698,6 +1774,25 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.9] — 2026-11-19 — SCALENIE 3.57.13 + 3.58.8, FILTR ZEW 2
++// Co: Jeden plik z obu linii (Zew 2 "t_zewn_2", harmonogram DS18B20, 12 bitow
++//     z 3.57.1x; panel LAN, OTA panelu, START-TG, "fw" w /api/status z 3.58.x)
++//     + filtr blednych ramek DHT22 dla Zew 2 (powtorka po 3 s, kontrola ramki).
++// Problem: po wgraniu 3.58.8 na plytke z 3.57.13 zniknela seria Zew 2.
++// Przyczyna: 3.58.x rozwijane od 3.57.9, bez zmian 3.57.10-3.57.13.
++// Naprawa: 3-way merge; szczegoly w naglowku pliku [v3.58.9 ZEW2-SCALENIE].
++//
++// [v3.57.10] — 2026-11-15 — KANDYDAT DO TESTOW, podstawa v3.57.9
++// Co: Diagnostyczne temperatury Zew 2 (DHT22) i Zew 3 (BME/BMP).
++// Problem: Wykresy nie mialy historii temperatur z tych dwoch czujnikow.
++// Przyczyna: Status i probki minutowe Firebase ich nie przechowywaly.
++// Naprawa: zapiszTempDiag/czytajTempDiag zbieraja i wygaszaja pomiary,
++//     TelemetrySample uzywa dawnego paddingu i znacznika w qualityBits;
++//     telemetryJsonAppend i status wysylaja opcjonalne t_zewn_2/t_zewn_3.
++//     Nie zmienia sterowania. Lokalny CSV bez nowych pol, stare dane bez zmian.
++//     Kandydat nie zostal skompilowany dla ESP32 ani przetestowany na sprzecie.
++//     Opiera sie na v3.57.9; NIE zawiera poprawek z galezi v3.58.x.
++//
+ // [v3.22.0] — 2026-09-27
+ // [R253-R262 LOCAL] Zbiorczy battery test Persistent Spool V2.
+ // Co: Dodano jedną komendę /spoolbatch, która uruchamia 10 lokalnych testów
+@@ -6082,6 +6177,107 @@
+ // ── [FIX-WDT] Task Watchdog Timer — konfiguracja ─────────────────────────
+ static const uint32_t WDT_TIMEOUT_MS = 15000UL;
+ 
++// Dodatkowe odczyty tylko diagnostyczne; atomowy snapshot między taskami.
++static portMUX_TYPE g_tempDiagMux = portMUX_INITIALIZER_UNLOCKED;
++static float g_tempDhtDiag = NAN;
++static uint64_t g_tempDhtAtUs = 0;
++static void zapiszTempDiag(float v) {
++  const uint64_t at = (uint64_t)esp_timer_get_time();
++  portENTER_CRITICAL(&g_tempDiagMux);
++  g_tempDhtDiag = v; g_tempDhtAtUs = at;
++  portEXIT_CRITICAL(&g_tempDiagMux);
++}
++static float czytajTempDiag() {
++  float v; uint64_t at;
++  portENTER_CRITICAL(&g_tempDiagMux);
++  v = g_tempDhtDiag; at = g_tempDhtAtUs;
++  portEXIT_CRITICAL(&g_tempDiagMux);
++  const uint64_t now = (uint64_t)esp_timer_get_time();
++  return isfinite(v) && now >= at && now - at <= 135000000ULL ? v : NAN;
++}
++static String jsonTempDiag() {
++  const float v = czytajTempDiag();
++  return isfinite(v) ? String(v, 1) : String("null");
++}
++
++// [v3.58.9 ZEW2-FILTR] Filtr blednych ramek DHT22 dla Zew 2 — opis w naglowku
++// pliku. Czysta logika (bez sprzetu), zeby dalo sie ja testowac na PC:
++// tests/test_zew2_filtr.cpp w paczce 3.58.9 wycina ten blok i uruchamia go.
++// --- ZEW2-FILTR-POCZATEK ---
++struct Zew2Filtr {
++  float ostatniaDobra;          // ostatnia PRZYJETA temperatura DHT22 (NAN = brak)
++  float kandydat;               // odczyt podejrzany, czeka na powtorke
++  unsigned long kandydatOdMs;   // kiedy kandydat powstal (limit oczekiwania)
++  bool weryfikacja;             // true = wilgotnosc() ma czytac DHT za ~3 s, nie za 120 s
++  uint32_t przyjete, odrzucone, potwierdzone, zleRamki;
++};
++static const float ZEW2_PROG_SKOKU_C            = 3.0f;   // wiekszy skok -> powtorka
++static const float ZEW2_PROG_ZNAKU_C            = 0.5f;   // zmiana znaku przy |t| >= 0,5 -> powtorka
++static const float ZEW2_TOLERANCJA_POWTORKI_C   = 0.5f;   // tyle moga sie roznic dwa odczyty
++static const unsigned long ZEW2_WERYFIKACJA_MAX_MS = 15000UL; // po tylu ms bez powtorki kandydat przepada
++
++enum Zew2Decyzja : uint8_t {
++  ZEW2_PRZYJETY = 0,       // zwykly odczyt, zapisany
++  ZEW2_DO_WERYFIKACJI = 1, // podejrzany: nic nie zapisano, powtorka za ~3 s
++  ZEW2_POTWIERDZONY = 2,   // powtorka zgodna z kandydatem, zapisany
++  ZEW2_ODRZUCONY = 3,      // powtorka niezgodna z kandydatem i z ostatnia wartoscia
++  ZEW2_ZLA_RAMKA = 4       // blad odczytu albo wartosci poza zakresem (t lub RH)
++};
++
++// Ramka DHT22 niesie temperature i wilgotnosc razem; nieprawdopodobna jedna
++// wartosc dyskwalifikuje cala ramke (suma kontrolna przepuszcza podwojne bledy).
++static bool zew2RamkaPoprawna(uint8_t dhtErr, float t, float rh) {
++  return dhtErr == DHT_OK && isfinite(t) && isfinite(rh) &&
++         t >= -40.0f && t <= 80.0f && rh >= 1.0f && rh <= 100.0f;
++}
++
++static bool zew2Podejrzany(float t, float ostatnia) {
++  if (!isfinite(ostatnia)) return false;                  // brak historii: przyjmij
++  if (fabsf(t - ostatnia) > ZEW2_PROG_SKOKU_C) return true; // skok > 3 C w 120 s
++  // Lustrzana wartosc (+2,1 -> -2,1): przeklamany bit znaku. Wokol 0 C
++  // (|t| < 0,5) prawdziwe przejscia przez zero przechodza bez powtorki.
++  return ((t < 0.0f) != (ostatnia < 0.0f)) &&
++         fabsf(t) >= ZEW2_PROG_ZNAKU_C && fabsf(ostatnia) >= ZEW2_PROG_ZNAKU_C;
++}
++
++// Zwraca decyzje; *wynik = temperatura do zapisania (NAN = nic nie zapisuj,
++// zostaje poprzednia wartosc - czytajTempDiag() wygasza ja po 135 s).
++static Zew2Decyzja zew2Filtruj(Zew2Filtr &f, bool ramkaOk, float t, unsigned long nowMs, float *wynik) {
++  *wynik = NAN;
++  if (f.weryfikacja && (unsigned long)(nowMs - f.kandydatOdMs) > ZEW2_WERYFIKACJA_MAX_MS) {
++    f.weryfikacja = false; f.kandydat = NAN; ++f.odrzucone;  // powtorka nie doszla do skutku
++  }
++  if (!ramkaOk) {
++    ++f.zleRamki;
++    if (f.weryfikacja) { f.weryfikacja = false; f.kandydat = NAN; ++f.odrzucone; }
++    return ZEW2_ZLA_RAMKA;
++  }
++  const bool podejrzany = zew2Podejrzany(t, f.ostatniaDobra);
++  if (f.weryfikacja) {
++    f.weryfikacja = false;
++    const float kand = f.kandydat;
++    f.kandydat = NAN;
++    if (fabsf(t - kand) <= ZEW2_TOLERANCJA_POWTORKI_C) {
++      f.ostatniaDobra = t; ++f.potwierdzone; ++f.przyjete; *wynik = t;
++      return ZEW2_POTWIERDZONY;                       // dwa zgodne odczyty = prawda
++    }
++    ++f.odrzucone;                                    // kandydat byl przeklamany
++    if (!podejrzany) {
++      f.ostatniaDobra = t; ++f.przyjete; *wynik = t;  // powtorka pasuje do historii
++      return ZEW2_PRZYJETY;
++    }
++    return ZEW2_ODRZUCONY;                            // nic do niczego nie pasuje
++  }
++  if (podejrzany) {
++    f.kandydat = t; f.kandydatOdMs = nowMs; f.weryfikacja = true;
++    return ZEW2_DO_WERYFIKACJI;
++  }
++  f.ostatniaDobra = t; ++f.przyjete; *wynik = t;
++  return ZEW2_PRZYJETY;
++}
++// --- ZEW2-FILTR-KONIEC ---
++static Zew2Filtr g_zew2Filtr = {NAN, NAN, 0, false, 0, 0, 0, 0};
++
+ float cisnienieOdczytane = 0.0;
+ float zmianaCisnienia = 0;
+ bool alarmOgrzewanieWlaczone = false;
+@@ -6282,7 +6478,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.8";
++static const char* FIRMWARE_VERSION = "v3.58.9";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -22475,8 +22671,23 @@
+   uint32_t qualityBits;
+   uint16_t simulatedBits;
+   uint16_t ageS[TELEMETRY_CH_COUNT];
++  // Wypelnienie bajtow 76..79, dotychczas tylko padding. Nie zmienia ABI.
++  int16_t tDhtDiagX10;
++  int16_t tempDiagReserved; // zachowanie ukladu 80 B (poprzednio Zew 3)
+ };
+ 
++// W kanalach 0..10 zajete sa bity 0..21. Stara produkcyjna probka ma
++// pozostale bity zerowe. Sygnatura chroni przed interpretacja starego paddingu.
++static constexpr uint32_t TEMP_DIAG_MARK_MASK = 0xFFC00000UL;
++static constexpr uint32_t TEMP_DIAG_MARK = 0xD5C00000UL;
++static constexpr int16_t TEMP_DIAG_MISSING = -32768;
++static bool telemetryHasTempDiag(const TelemetrySample &s) {
++  return (s.qualityBits & TEMP_DIAG_MARK_MASK) == TEMP_DIAG_MARK;
++}
++static int16_t encodeTempDiag(float t, float lo, float hi) {
++  return isfinite(t) && t >= lo && t <= hi ? (int16_t)lroundf(t * 10.0f) : TEMP_DIAG_MISSING;
++}
++
+ static_assert(TELEMETRY_CH_COUNT == 11, "Telemetry schema V1 requires exactly 11 channels");
+ static_assert(sizeof(TelemetrySample) == 80, "TelemetrySample ABI changed: expected 80 B");
+ static_assert(offsetof(TelemetrySample, sessionNonce) == 0, "TelemetrySample.sessionNonce offset changed");
+@@ -22493,6 +22704,8 @@
+ static_assert(offsetof(TelemetrySample, qualityBits) == 48, "TelemetrySample.qualityBits offset changed");
+ static_assert(offsetof(TelemetrySample, simulatedBits) == 52, "TelemetrySample.simulatedBits offset changed");
+ static_assert(offsetof(TelemetrySample, ageS) == 54, "TelemetrySample.ageS offset changed");
++static_assert(offsetof(TelemetrySample, tDhtDiagX10) == 76, "TelemetrySample DHT offset changed");
++static_assert(offsetof(TelemetrySample, tempDiagReserved) == 78, "TelemetrySample reserved offset changed");
+ static void telemetryFormatRecordId(const TelemetrySample &s, char *out, size_t outCap);
+ 
+ // [COMMIT-B] SPSC TelemetryRing: producer = historiaZapiszProbke() / Core 1,
+@@ -23324,6 +23537,9 @@
+ // read_dht() samo zaklada kanal RMT, czyta i zwalnia go (patrz wilgotnosc()
+ // nizej oraz blok "DHT22: retry+backoff" w setup()).
+ #define DHT_PIN 6
++// Ostatnia PROBA dotyczy rowniez odczytow testowych z setup().
++static unsigned long dhtOstatniaProbaMs = 0;
++static bool dhtBylaProba = false;
+ 
+ #define ONEWIRE_PIN1 4
+ OneWire onewire1(ONEWIRE_PIN1);
+@@ -24704,8 +24920,8 @@
+ // w miejscach rzeczywistego odczytu/akceptacji, a nie przy samym odczycie
+ // globalnej zmiennej, ktora moze zawierac fallback z poprzedniego cyklu.
+ static const uint16_t TELEMETRY_STALE_DS18B20_S = 10;
+-static const uint16_t TELEMETRY_STALE_DHT22_S  = 15;
+-static const uint16_t TELEMETRY_STALE_BMP280_S = 15;
++static const uint16_t TELEMETRY_STALE_DHT22_S  = 135;
++static const uint16_t TELEMETRY_STALE_BMP280_S = 195;
+ static const uint16_t TELEMETRY_STALE_DYM_S    = 180;
+ 
+ static uint16_t telemetryStaleThresholdS(TelemetryChannel ch) {
+@@ -24713,6 +24929,9 @@
+     case TELEMETRY_CH_RH:       return TELEMETRY_STALE_DHT22_S;
+     case TELEMETRY_CH_PRESSURE: return TELEMETRY_STALE_BMP280_S;
+     case TELEMETRY_CH_DYM:      return TELEMETRY_STALE_DYM_S;
++    case TELEMETRY_CH_ZEWN: case TELEMETRY_CH_POKOJ: return 135;
++    case TELEMETRY_CH_OGZ: case TELEMETRY_CH_OGZ_SR: case TELEMETRY_CH_POWROT:
++    case TELEMETRY_CH_TROCINY: case TELEMETRY_CH_PANEL: case TELEMETRY_CH_BOJLER: return 75;
+     default:                    return TELEMETRY_STALE_DS18B20_S;
+   }
+ }
+@@ -24786,6 +25005,10 @@
+     return (m.lastStatus == TELEMETRY_STATUS_INVALID ||
+             m.lastStatus == TELEMETRY_STATUS_REJECTED) ? 3 : 2; // INVALID/UNKNOWN
+   }
++  // Blednej ostatniej proby nie wolno traktowac jako nowego dobrego odczytu.
++  // To wplywa rowniez na logike rozpalania i automatyke mieszadla.
++  if (m.lastStatus == TELEMETRY_STATUS_INVALID || m.lastStatus == TELEMETRY_STATUS_REJECTED ||
++      m.lastStatus == TELEMETRY_STATUS_NO_ATTEMPT) return 3;
+   // Po zakonczeniu symulacji poprzednia wartosc symulowana nie odzyskuje
+   // automatycznie statusu swiezego pomiaru fizycznego.
+   if (m.lastGoodSimulated && !telemetrySimulationActive(ch, (uint32_t)nowMs)) return 1; // STALE
+@@ -24891,6 +25114,9 @@
+       out.simulatedBits |= (uint16_t)(1U << i);
+     }
+   }
++  out.tDhtDiagX10 = encodeTempDiag(czytajTempDiag(), -40.0f, 80.0f);
++  out.tempDiagReserved = 0;
++  out.qualityBits |= TEMP_DIAG_MARK;
+   return true;
+ }
+ 
+@@ -30850,6 +31076,7 @@
+   // /api/lan/status) - panel czyta /api/status i tej wersji nie widzial.
+   j += F("\"fw\":\""); j += FIRMWARE_VERSION; j += F("\",");
+   j += F("\"t_zewn\":"); j += String(temperaturaNaZewnatrz, 1); j += F(",");
++  j += F("\"t_zewn_2\":"); j += jsonTempDiag(); j += F(",");
+   j += F("\"t_bojler\":"); j += String(temperaturaBojlera, 1); j += F(",");
+   j += F("\"t_ogrz\":"); j += String(temperaturaOgrzewania, 1); j += F(",");
+   j += F("\"t_ogrz_sr\":"); j += String(temperaturaOgrzewaniaSrednia, 1); j += F(",");
+@@ -33337,9 +33564,9 @@
+ // potwierdzenia w nastepnym cyklu), albo -1 jesli nie ma jeszcze zadnej
+ // dobrej wartosci do przytrzymania (np. pierwszy odczyt po starcie od
+ // razu sie nie udal).
+-float zastosujFiltrWiarygodnosci(FiltrWiarygodnosci &f, float surowyOdczyt) {
++float zastosujFiltrWiarygodnosci(FiltrWiarygodnosci &f, float surowyOdczyt, bool odczytPoprawny) {
+   f.telemetryAcceptedThisCall = false;
+-  if (surowyOdczyt <= -1.0f) {
++  if (!odczytPoprawny || !isfinite(surowyOdczyt)) {
+     // Brak odczytu w tym cyklu (bus/czujnik nie odpowiedzial) — nie
+     // dotykamy stanu potwierdzenia, po prostu trzymamy ostatnia dobra
+     // jesli jest, inaczej -1 jak dotychczas.
+@@ -33526,7 +33753,7 @@
+ 
+   // [AUDYT 13.2, ta sesja] Dodatkowa warstwa: filtr wiarygodnosci
+   // (rate-of-change) — patrz komentarz przy FiltrWiarygodnosci wyzej.
+-  float wynikTelemetryczny = zastosujFiltrWiarygodnosci(filtr, surowyOdczyt);
++  float wynikTelemetryczny = zastosujFiltrWiarygodnosci(filtr, surowyOdczyt, odczytPoprawny);
+   if (!telemetryReadAttempted) {
+     g_telemetrySourceMeta[telemetryChannel].lastStatus = TELEMETRY_STATUS_NO_ATTEMPT;
+   } else if (filtr.telemetryAcceptedThisCall) {
+@@ -33539,53 +33766,164 @@
+   return wynikTelemetryczny;
+ }
+ 
++// v3.57.12: osobny harmonogram odczytu kazdego DS. Magistrale 1-Wire
++// wykonują konwersje wspolnie: na BUS_2 bojler/trociny sa fizycznie
++// konwertowane takze wtedy, gdy wymagany jest pomiar CO lub powrotu.
++// Znacznik ostatniej proby aktualizujemy tylko po faktycznej probie odczytu.
++enum DsPlanId : uint8_t { DS_CO, DS_POWROT, DS_TROCINY, DS_PANEL, DS_BOJLER, DS_ZEWN, DS_POKOJ, DS_PLAN_COUNT };
++struct DsPlanState { uint32_t lastMs; bool tried; bool simulated; };
++struct DsBusState { uint32_t startMs; uint8_t mask; bool pending; };
++static DsPlanState dsPlan[DS_PLAN_COUNT] = {};
++static DsBusState dsBus[3] = {};
++static const uint32_t DS_PLAN_TICK_MS = 500;
++static const uint32_t DS_PLAN_CONVERSION_MS = 750;  // 12 bit worst case; takze 9/10 bit
++static const uint32_t DS_PLAN_LEAD_MS = 1000;      // 750ms plus tick
++
++static TelemetryChannel dsPlanChannel(DsPlanId id) {
++  switch (id) {
++    case DS_CO: return TELEMETRY_CH_OGZ;
++    case DS_POWROT: return TELEMETRY_CH_POWROT;
++    case DS_TROCINY: return TELEMETRY_CH_TROCINY;
++    case DS_PANEL: return TELEMETRY_CH_PANEL;
++    case DS_BOJLER: return TELEMETRY_CH_BOJLER;
++    case DS_ZEWN: return TELEMETRY_CH_ZEWN;
++    case DS_POKOJ: return TELEMETRY_CH_POKOJ;
++    default: return TELEMETRY_CH_COUNT;
++  }
++}
++static uint8_t dsPlanBus(DsPlanId id) {
++  switch (id) {
++    case DS_CO: case DS_POWROT: case DS_TROCINY: case DS_BOJLER: return 1;
++    case DS_PANEL: return 2;
++    default: return 0;
++  }
++}
++static float* dsPlanTarget(DsPlanId id) {
++  switch (id) {
++    case DS_CO: return &temperaturaOgrzewania;
++    case DS_POWROT: return &temperaturaOgrzewania_Powrot;
++    case DS_TROCINY: return &temperaturaOgrzewania_Trociny;
++    case DS_PANEL: return &temperaturaPaneluSlonecznego;
++    case DS_BOJLER: return &temperaturaBojlera;
++    case DS_ZEWN: return &temperaturaNaZewnatrz;
++    case DS_POKOJ: return &temperaturaPomieszczenia;
++    default: return nullptr;
++  }
++}
++static bool dsPlanSimulation(DsPlanId id) {
++  if (trybSymulacji) return true;
++  switch (id) {
++    case DS_CO: return symulacjaTrwa(symulacjaOgrzAktywna, symulacjaOgrzDo, "ogrz");
++    case DS_POWROT: return symulacjaTrwa(symulacjaPowrotuAktywna, symulacjaPowrotuDo, "ogrz_powrot");
++    case DS_TROCINY: return symulacjaTrwa(symulacjaTrocinAktywna, symulacjaTrocinDo, "ogrz_trociny");
++    case DS_PANEL: return symulacjaTrwa(symulacjaPaneluAktywna, symulacjaPaneluDo, "panel");
++    case DS_BOJLER: return symulacjaTrwa(symulacjaBojleraAktywna, symulacjaBojleraDo, "bojler");
++    case DS_ZEWN: return symulacjaTrwa(symulacjaZewnAktywna, symulacjaZewnDo, "zewn");
++    case DS_POKOJ: return symulacjaTrwa(symulacjaPokojuAktywna, symulacjaPokojuDo, "pokoj");
++    default: return false;
++  }
++}
++static bool dsPlanColdSource(TelemetryChannel ch, float value, uint64_t now) {
++  const TelemetrySourceMeta &m = g_telemetrySourceMeta[ch];
++  return (m.lastStatus == TELEMETRY_STATUS_ACCEPTED || m.lastStatus == TELEMETRY_STATUS_SIMULATED) &&
++         telemetryQuality(ch, now) == 0 && isfinite(value) && value < 30.0f;
++}
++static uint32_t dsPlanInterval(DsPlanId id, uint64_t now) {
++  if (id == DS_ZEWN || id == DS_POKOJ) return 120000UL;
++  if (id != DS_CO && id != DS_POWROT) return 60000UL;
++  if (dsPlanColdSource(TELEMETRY_CH_OGZ, temperaturaOgrzewania, now) &&
++      dsPlanColdSource(TELEMETRY_CH_POWROT, temperaturaOgrzewania_Powrot, now) &&
++      dsPlanColdSource(TELEMETRY_CH_TROCINY, temperaturaOgrzewania_Trociny, now)) return 60000UL;
++  return pompaJestWlaczona() ? 2816UL : 15000UL;
++}
++static bool dsPlanDue(DsPlanId id, uint32_t now, uint32_t interval, uint32_t lead) {
++  const DsPlanState &state = dsPlan[id];
++  return !state.tried || uint32_t(now - state.lastMs) >= (interval > lead ? interval - lead : 0);
++}
++static void dsPlanRead(DsPlanId id, uint32_t now) {
++  switch (id) {
++    case DS_CO: temperaturaOgrzewania = odczytajTemperature(czujnik_temp_C_O, 0, 160, symulowanaTemperaturaOgrzewania, filtrCO, BUS_2, symulacjaOgrzAktywna, symulacjaOgrzDo, "ogrz", TELEMETRY_CH_OGZ); break;
++    case DS_POWROT: temperaturaOgrzewania_Powrot = odczytajTemperature(czujnik_temp_C_O_powrot, -30, 120, symulowanaTemperaturaPowrot, filtrPowrot, BUS_2, symulacjaPowrotuAktywna, symulacjaPowrotuDo, "ogrz_powrot", TELEMETRY_CH_POWROT); break;
++    case DS_TROCINY: temperaturaOgrzewania_Trociny = odczytajTemperature(czujnik_temp_C_O_trociny, -30, 120, symulowanaTemperaturaTrociny, filtrTrociny, BUS_2, symulacjaTrocinAktywna, symulacjaTrocinDo, "ogrz_trociny", TELEMETRY_CH_TROCINY); break;
++    case DS_PANEL: temperaturaPaneluSlonecznego = odczytajTemperature(czujnik_temp_Panel_Plus, -30, 160, symulowanaTemperaturaPanelu, filtrPanel, BUS_3, symulacjaPaneluAktywna, symulacjaPaneluDo, "panel", TELEMETRY_CH_PANEL); break;
++    case DS_BOJLER: temperaturaBojlera = odczytajTemperature(czujnik_temp_Bojlera, 0, 160, symulowanaTemperaturaBojlera, filtrBojler, BUS_2, symulacjaBojleraAktywna, symulacjaBojleraDo, "bojler", TELEMETRY_CH_BOJLER); break;
++    case DS_ZEWN: temperaturaNaZewnatrz = odczytajTemperature(czujnik_temp_zewnetrznej, -30, 50, symulowanaTemperaturaNaZewnatrz, filtrZewnetrzna, BUS_1, symulacjaZewnAktywna, symulacjaZewnDo, "zewn", TELEMETRY_CH_ZEWN); break;
++    case DS_POKOJ: temperaturaPomieszczenia = odczytajTemperature(czujnik_temp_Wewnatrz, -50, 50, symulowanaTemperaturaPomieszczenia, filtrWewnatrz, BUS_1, symulacjaPokojuAktywna, symulacjaPokojuDo, "pokoj", TELEMETRY_CH_POKOJ); break;
++    default: return;
++  }
++  dsPlan[id].tried = true;
++  dsPlan[id].lastMs = now;
++}
++static void dsPlanFailed(uint8_t mask, uint32_t now) {
++  for (uint8_t i=0; i<DS_PLAN_COUNT; ++i) if (mask & (1U << i)) {
++    DsPlanId id = (DsPlanId)i;
++    TelemetryChannel ch = dsPlanChannel(id);
++    telemetryMarkAttempt(ch, telemetryMonotonicMs());
++    telemetryMarkInvalid(ch);
++    if (!g_telemetrySourceMeta[ch].hasGoodValue) *dsPlanTarget(id) = -1.0f;
++    dsPlan[i].lastMs = now;
++    dsPlan[i].tried = true;
++  }
++  dsZglosBladOdczytu();
++}
+ void Czujnik_DS() {
+-  if ((sensors1.available() || sensors2.available() || sensors3.available()) || trybSymulacji) {
+-    // [AUDYT 13.2, ta sesja] Kazde wywolanie dostaje teraz wlasny,
+-    // dedykowany FiltrWiarygodnosci (rate-of-change), patrz definicja
+-    // struktur przy odczytajTemperature() wyzej.
+-    // [FIX — DS18B20 3 magistrale, diagnostyka-czujnikow-DS18B20.md] Kazdy
+-    // czujnik dostaje jawnie SWOJA fizyczna magistrale (potwierdzone realnym
+-    // skanem OneWire::search() w test.cpp) — patrz tabela przy enum
+-    // MagistralaCzujnika.
+-    temperaturaOgrzewania = odczytajTemperature(czujnik_temp_C_O, 0, 160, symulowanaTemperaturaOgrzewania, filtrCO, BUS_2, symulacjaOgrzAktywna, symulacjaOgrzDo, "ogrz", TELEMETRY_CH_OGZ);
+-    temperaturaPaneluSlonecznego = odczytajTemperature(czujnik_temp_Panel_Plus, -30, 160, symulowanaTemperaturaPanelu, filtrPanel, BUS_3, symulacjaPaneluAktywna, symulacjaPaneluDo, "panel", TELEMETRY_CH_PANEL);
+-    temperaturaPomieszczenia = odczytajTemperature(czujnik_temp_Wewnatrz, -50, 50, symulowanaTemperaturaPomieszczenia, filtrWewnatrz, BUS_1, symulacjaPokojuAktywna, symulacjaPokojuDo, "pokoj", TELEMETRY_CH_POKOJ);
+-    temperaturaBojlera = odczytajTemperature(czujnik_temp_Bojlera, 0, 160, symulowanaTemperaturaBojlera, filtrBojler, BUS_2, symulacjaBojleraAktywna, symulacjaBojleraDo, "bojler", TELEMETRY_CH_BOJLER);
+-    temperaturaNaZewnatrz = odczytajTemperature(czujnik_temp_zewnetrznej, -30, 50, symulowanaTemperaturaNaZewnatrz, filtrZewnetrzna, BUS_1, symulacjaZewnAktywna, symulacjaZewnDo, "zewn", TELEMETRY_CH_ZEWN);
+-    // [SYMULACJA-PER-CZUJNIK] Trociny/Powrot dostaly wlasne zmienne symulowane
+-    // (symulowanaTemperaturaTrociny/Powrot) zamiast dzielonej dotad
+-    // symulowanaTemperaturaNaZewnatrz - patrz uwaga w tabeli 3.1 planu:
+-    // przeoczenie przy kopiowaniu linii, ktore samo znika przy okazji
+-    // wprowadzania per-czujnikowej symulacji.
+-    temperaturaOgrzewania_Trociny = odczytajTemperature(czujnik_temp_C_O_trociny, -30, 120, symulowanaTemperaturaTrociny, filtrTrociny, BUS_2, symulacjaTrocinAktywna, symulacjaTrocinDo, "ogrz_trociny", TELEMETRY_CH_TROCINY);
+-    temperaturaOgrzewania_Powrot = odczytajTemperature(czujnik_temp_C_O_powrot, -30, 120, symulowanaTemperaturaPowrot, filtrPowrot, BUS_2, symulacjaPowrotuAktywna, symulacjaPowrotuDo, "ogrz_powrot", TELEMETRY_CH_POWROT);
+-
+-    if (!trybSymulacji) {
+-      // [ULEPSZENIE v2.0] Diagnostyka magistrali PRZED requestTemperatures()
+-      // OneWire::reset() sprawdza presence pulse — jeśli brak, magistrala zawieszona
+-      if (sensors1.available() && !onewire1.reset()) {
+-        DLOGF(DC_SENSOR, DL_WARN, "DS18B20 zdarzenie=bus_check_fail bus=1 msg=\"brak presence pulse, reset\"");
+-      }
+-      if (sensors2.available() && !onewire2.reset()) {
+-        DLOGF(DC_SENSOR, DL_WARN, "DS18B20 zdarzenie=bus_check_fail bus=2 msg=\"brak presence pulse, reset\"");
+-      }
+-      if (sensors3.available() && !onewire3.reset()) {
+-        DLOGF(DC_SENSOR, DL_WARN, "DS18B20 zdarzenie=bus_check_fail bus=3 msg=\"brak presence pulse, reset\"");
+-      }
+-      
+-      if (sensors1.available()) sensors1.request();
+-      if (sensors2.available()) sensors2.request();
+-      if (sensors3.available()) sensors3.request();
++  const uint32_t now = (uint32_t)millis();
++  if (dsPowerCycleStan != DS_PC_IDLE) {
++    for (uint8_t b=0; b<3; ++b) dsBus[b].pending = false;
++    for (uint8_t i=0; i<DS_PLAN_COUNT; ++i) dsPlan[i].tried = false;
++    return;
++  }
++  DS18B20* buses[3] = {&sensors1, &sensors2, &sensors3};
++  bool simulated[DS_PLAN_COUNT];
++  for (uint8_t i=0; i<DS_PLAN_COUNT; ++i) {
++    DsPlanId id = (DsPlanId)i;
++    simulated[i] = dsPlanSimulation(id);
++    if (simulated[i] != dsPlan[i].simulated) {
++      dsPlan[i].simulated = simulated[i];
++      dsPlan[i].tried = false; // natychmiast po zmianie trybu
++      dsBus[dsPlanBus(id)].mask &= ~(1U << i);
++    }
++    if (simulated[i] && dsPlanDue(id, now, dsPlanInterval(id, telemetryMonotonicMs()), 0)) dsPlanRead(id, now);
++  }
++  for (uint8_t b=0; b<3; ++b) {
++    DsBusState &bus = dsBus[b];
++    if (bus.pending && uint32_t(now - bus.startMs) >= DS_PLAN_CONVERSION_MS) {
++      if (buses[b]->available()) {
++        uint8_t mask = bus.mask;
++        bus.pending = false;
++        bus.mask = 0;
++        for (uint8_t i=0; i<DS_PLAN_COUNT; ++i) {
++          if ((mask & (1U << i)) && !simulated[i]) dsPlanRead((DsPlanId)i, now);
++        }
++      } else if (uint32_t(now - bus.startMs) >= 3000UL) {
++        uint8_t mask = bus.mask;
++        bus.pending = false;
++        bus.mask = 0;
++        if (mask) {
++          DLOGF(DC_SENSOR, DL_WARN, "DS18B20 zdarzenie=konwersja_timeout bus=%u mask=%u", (unsigned)(b + 1), (unsigned)mask);
++          dsPlanFailed(mask, now);
++        }
++        if (dsPowerCycleStan != DS_PC_IDLE) break;
++      }
++    }
++    if (dsPowerCycleStan != DS_PC_IDLE) break;
++    if (bus.pending) continue;
++    uint8_t mask = 0;
++    for (uint8_t i=0; i<DS_PLAN_COUNT; ++i) {
++      DsPlanId id = (DsPlanId)i;
++      if (dsPlanBus(id) == b && !simulated[i] && dsPlanDue(id, now, dsPlanInterval(id, telemetryMonotonicMs()), DS_PLAN_LEAD_MS)) mask |= (1U << i);
++    }
++    if (!mask) continue;
++    if (buses[b]->request()) {
++      bus.startMs = now;
++      bus.mask = mask;
++      bus.pending = true;
++    } else {
++      // Brak konwersji: nie wolno odczytac starego scratchpada jako nowego.
++      DLOGF(DC_SENSOR, DL_WARN, "DS18B20 zdarzenie=request_blad bus=%u mask=%u", (unsigned)(b + 1), (unsigned)mask);
++      dsPlanFailed(mask, now);
++      if (dsPowerCycleStan != DS_PC_IDLE) break;
+     }
+-  } else {
+-    temperaturaOgrzewania = -1;
+-    temperaturaPaneluSlonecznego = -1;
+-    temperaturaPomieszczenia = -1;
+-    temperaturaBojlera = -1;
+-    temperaturaNaZewnatrz = -1;
+-    temperaturaOgrzewania_Trociny = -1;
+-    temperaturaOgrzewania_Powrot = -1;
+   }
+ }
+ 
+@@ -33601,6 +33939,12 @@
+ // CIŚNIENIE / WILGOTNOŚĆ
+ // ════════════════════════════════════════════════════════
+ void cisnienie() {
++  static bool bylaProba = false;
++  static unsigned long ostatniaProbaMs = 0;
++  const unsigned long teraz = millis();
++  if (bylaProba && (unsigned long)(teraz - ostatniaProbaMs) < 180000UL) return;
++  bylaProba = true;
++  ostatniaProbaMs = teraz;
+   // [NAPRAWA - znalezione przy tescie na golym ESP, 2026-08-23] Bylo: wynik
+   // bmp.readPressure() szedl PROSTO do cisnienieOdczytane bez zadnego
+   // sprawdzenia. Gdy BMP280 nie zainicjalizowal sie w setup() (bmpOk==false)
+@@ -33656,7 +34000,19 @@
+ }
+ 
+ void wilgotnosc() {
++  static bool bylaProbaCykliczna = false;
++  static unsigned long ostatniaProbaCyklicznaMs = 0;
+   unsigned long czasBiezacy = millis();
++  // [v3.58.9 ZEW2-FILTR] Powtorka podejrzanego odczytu omija bramke 120 s
++  // (zadanie chodzi co 3 s; ponizsza bramka 2 s pilnuje odstepu DHT22).
++  const bool powtorkaZew2 = g_zew2Filtr.weryfikacja;
++  if (!powtorkaZew2 && bylaProbaCykliczna && (unsigned long)(czasBiezacy - ostatniaProbaCyklicznaMs) < 120000UL) return;
++  // Nie czytaj DHT wczesniej niz 2 s po PROBIE setup(), nawet przy dlugim rozruchu.
++  if (dhtBylaProba && (unsigned long)(czasBiezacy - dhtOstatniaProbaMs) < 2000UL) return;
++  if (!powtorkaZew2) {                 // powtorka nie przesuwa cyklu 120 s
++    bylaProbaCykliczna = true;
++    ostatniaProbaCyklicznaMs = czasBiezacy;
++  }
+   if (czasBiezacy - czasOstatniegoPomiaru >= interwalPomiaru) {
+     czasOstatniegoPomiaru = czasBiezacy;
+     ustawInterwalPomiaru();
+@@ -33672,21 +34028,61 @@
+   // [FIX DHT-IWDT] dht.readHumidity() (Adafruit, blokujace przerwania)
+   // zastapione read_dht() z dhtESP32-rmt (odczyt sprzetowy przez RMT, bez
+   // noInterrupts()) — patrz uzasadnienie przy #include "dhtESP32-rmt.h"
+-  // wyzej w pliku. Temperatura z DHT22 jest tu celowo ignorowana (pomijana)
+-  // — temperaturaNaZewnatrz pochodzi wylacznie z DS18B20 (Czujnik_DS(),
+-  // patrz komentarz FIX nizej), wiec liczy sie tylko wilgotnosc.
+-  float dhtTempPomijana;
++  // wyzej w pliku. Temperatura DHT jest tylko diagnostyczna; sterowanie
++  // i obliczenia wilgotnosci nadal korzystaja z DS18B20.
++  float dhtTempPomijana = NAN;
+   float wilgotnoscOdczytanaLok;
+   const uint64_t telemetryRhNowMs = telemetryMonotonicMs();
+   if (symulacjaTrwa(symulacjaWilgotnosciAktywna, symulacjaWilgotnosciDo, "wilgotnosc")) {
++    zapiszTempDiag(NAN); // symulowana wilgotnosc nie jest temperatura
++    g_zew2Filtr.weryfikacja = false; g_zew2Filtr.kandydat = NAN; // [v3.58.9]
+     wilgotnoscOdczytanaLok = symulowanaWilgotnosc;
+     telemetryMarkAccepted(TELEMETRY_CH_RH, telemetryRhNowMs, true);
+   } else {
+     telemetryMarkAttempt(TELEMETRY_CH_RH, telemetryRhNowMs);
++    dhtOstatniaProbaMs = millis();
++    dhtBylaProba = true;
+     uint8_t dhtErr = read_dht(dhtTempPomijana, wilgotnoscOdczytanaLok, DHT_PIN, DHT22);
++    // [v3.58.9 ZEW2-FILTR] Bylo: zapiszTempDiag(t w zakresie ? t : NAN) - kazda
++    // ramka z dobra suma kontrolna szla prosto na wykres (piki do -2 C), a zla
++    // kasowala Zew 2. Teraz: kontrola calej ramki + powtorka podejrzanego
++    // odczytu po ~3 s; odrzucenie zostawia poprzednia wartosc.
++    const bool ramkaOk = zew2RamkaPoprawna(dhtErr, dhtTempPomijana, wilgotnoscOdczytanaLok);
++    float tZew2 = NAN;
++    const Zew2Decyzja zew2Dec = zew2Filtruj(g_zew2Filtr, ramkaOk, dhtTempPomijana, czasBiezacy, &tZew2);
++    if (isfinite(tZew2)) zapiszTempDiag(tZew2);
++    switch (zew2Dec) {
++      case ZEW2_DO_WERYFIKACJI:
++        DLOGF(DC_SENSOR, DL_WARN, "DHT22 Zew2 zdarzenie=podejrzany t=%.1f ostatnia=%.1f msg=\"powtorka za 3 s\"",
++              (double)dhtTempPomijana, (double)g_zew2Filtr.ostatniaDobra);
++        break;
++      case ZEW2_POTWIERDZONY:
++        DLOGF(DC_SENSOR, DL_INFO, "DHT22 Zew2 zdarzenie=potwierdzony t=%.1f", (double)dhtTempPomijana);
++        break;
++      case ZEW2_ODRZUCONY:
++        DLOGF(DC_SENSOR, DL_WARN, "DHT22 Zew2 zdarzenie=odrzucony powtorka=%.1f ostatnia=%.1f msg=\"dwa niezgodne odczyty\"",
++              (double)dhtTempPomijana, (double)g_zew2Filtr.ostatniaDobra);
++        break;
++      case ZEW2_ZLA_RAMKA:
++        if (dhtErr == DHT_OK) {   // suma kontrolna dobra, wartosci nie - warte logu
++          DLOGF(DC_SENSOR, DL_WARN, "DHT22 Zew2 zdarzenie=zla_ramka t=%.1f rh=%.1f",
++                (double)dhtTempPomijana, (double)wilgotnoscOdczytanaLok);
++        }
++        break;
++      default: break;
++    }
++    // Diagnostyka bez odrzucania prawidlowych 0 C. Kody pochodza z biblioteki.
++    static uint32_t dhtProby = 0, dhtBledy = 0, dhtZeraC = 0;
++    ++dhtProby;
++    if (!ramkaOk) ++dhtBledy;
++    if (dhtErr == DHT_OK && isfinite(dhtTempPomijana) && dhtTempPomijana == 0.0f) ++dhtZeraC;
++    DLOGF(DC_SENSOR, DL_INFO, "DHT22 diagnostyka proby=%lu bledy_rh=%lu zera_temp=%lu kod=%u zew2_przyjete=%lu zew2_potwierdzone=%lu zew2_odrzucone=%lu",
++          (unsigned long)dhtProby, (unsigned long)dhtBledy, (unsigned long)dhtZeraC, (unsigned)dhtErr,
++          (unsigned long)g_zew2Filtr.przyjete, (unsigned long)g_zew2Filtr.potwierdzone, (unsigned long)g_zew2Filtr.odrzucone);
+     // [v3.57.4] 0,0 % z DHT22 to odczyt smieciowy, nie pomiar - traktujemy go
+     // jak blad (zostaje poprzednia dobra wartosc). W kotlowni nie ma 0 %.
+-    if (dhtErr != DHT_OK || !isfinite(wilgotnoscOdczytanaLok) || wilgotnoscOdczytanaLok <= 0.1f) {
++    // [v3.58.9] To samo dla RH > 100 % i temperatury poza -40..80 C (cala ramka).
++    if (!ramkaOk) {
+       wilgotnoscOdczytanaLok = NAN;
+       telemetryMarkInvalid(TELEMETRY_CH_RH);
+     } else {
+@@ -42701,8 +43097,20 @@
+   telemetryJsonAppend(buf, cap, used, "\"k\":%u,\"s\":%u,",
+                       (unsigned)s.klapaDeg, (unsigned)s.syberkoDeg);
+   telemetryJsonAppend(buf, cap, used, "\"state\":%u,\"q\":%lu,\"sim\":%u,",
+-                      (unsigned)s.stateBits, (unsigned long)s.qualityBits,
++                      (unsigned)s.stateBits,
++                      (unsigned long)(telemetryHasTempDiag(s) ? (s.qualityBits & ~TEMP_DIAG_MARK_MASK) : s.qualityBits),
+                       (unsigned)s.simulatedBits);
++  if (telemetryHasTempDiag(s)) {
++    // Liczby w stopniach C, bez uzycia float printf i z zachowaniem -0.1.
++    auto dodajTemp = [&](const char *key, int16_t value, int16_t lo, int16_t hi) {
++      if (value < lo || value > hi) return; // w tym TEMP_DIAG_MISSING
++      const int v = value;
++      const unsigned mag = (unsigned)(v < 0 ? -v : v);
++      telemetryJsonAppend(buf, cap, used, "\"%s\":%s%u.%u,", key,
++                          v < 0 ? "-" : "", mag / 10U, mag % 10U);
++    };
++    dodajTemp("t_zewn_2", s.tDhtDiagX10, -400, 800);
++  }
+   telemetryJsonAppend(buf, cap, used, "\"age\":[");
+   for (uint8_t i = 0; i < TELEMETRY_CH_COUNT; ++i) {
+     if (i) telemetryJsonAppend(buf, cap, used, ",");
+@@ -45229,6 +45637,7 @@
+   ja("\"wifi_ssid\":\""); ja(WiFi.status() == WL_CONNECTED ? WiFi.SSID() : ""); ja("\",");
+   ja("\"wifi_rssi\":" + String(WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0) + ",");
+   ja("\"t_zewn\":" + String(temperaturaNaZewnatrz, 1) + ",");
++  ja("\"t_zewn_2\":" + jsonTempDiag() + ",");
+   ja("\"t_bojler\":" + String(temperaturaBojlera, 1) + ",");
+   ja("\"t_ogrz\":" + String(temperaturaOgrzewania, 1) + ",");
+   ja("\"t_ogrz_sr\":" + String(temperaturaOgrzewaniaSrednia, 1) + ",");
+@@ -45455,7 +45864,7 @@
+   // [v3.31.26 FB-SYMULACJA] 1536 -> 2048: dolozone 25 pol (symulacja_*/_min
+   // x10 czujnikow + 3x *_override_min + mieszadlo + dym_... juz byly) to
+   // ~+600B w najgorszym razie; 2048 zostawia ten sam zapas co dotad.
+-  const size_t FB_JSON_CAP = 3072;   // [v3.47.0 LAN-API] bylo 2048 przy JSON ~1.9 KB — zapas na nowe pola
++  const size_t FB_JSON_CAP = 4096;   // [v3.47.0 LAN-API] bylo 2048 przy JSON ~1.9 KB — zapas na nowe pola
+   char* jb = (char*)psramAllocSafe(FB_JSON_CAP);
+   size_t jLen = 0;
+   bool jPsram = (jb != nullptr);
+@@ -49825,7 +50234,7 @@
+   bool ds18b20_3_ok = false;   // [FIX — DS18B20 3 magistrale, diagnostyka-czujnikow-DS18B20.md] GPIO7, Panel_Plus
+   for (uint8_t proba = 1; proba <= HARDENING_MAX_PROB && !(ds18b20_1_ok || ds18b20_2_ok || ds18b20_3_ok); proba++) {
+     serwisujTWDTJesliZarejestrowany();  // [FIX WDT-HARDENING] kazde begin() ma wlasny reset z 1s timeoutem — bez tego 3 magistrale x 3 proby to do ~9s bez karmienia WDT
+-    ds18b20_1_ok = sensors1.begin(9);
++    ds18b20_1_ok = sensors1.begin(12);  // Zew 1 i pokoj: 12 bitow (magistrala 1)
+     serwisujTWDTJesliZarejestrowany();
+     ds18b20_2_ok = sensors2.begin(10);
+     serwisujTWDTJesliZarejestrowany();
+@@ -49855,12 +50264,14 @@
+   for (uint8_t proba = 1; proba <= HARDENING_MAX_PROB && !dhtOk; proba++) {
+     serwisujTWDTJesliZarejestrowany();  // [FIX WDT-HARDENING] swieze okno WDT przed kazda proba odczytu
+     float dht_temp_test, dht_hum_test;
++    dhtOstatniaProbaMs = millis();
++    dhtBylaProba = true;
+     uint8_t dhtTestErr = read_dht(dht_temp_test, dht_hum_test, DHT_PIN, DHT22);
+     if (dhtTestErr == DHT_OK) {
+       dhtOk = true;
+     } else if (proba < HARDENING_MAX_PROB) {
+-      DLOGF(DC_SENSOR, DL_WARN, "DHT22: proba %u nieudana, ponawiam...", (unsigned)proba);
+-      delay(HARDENING_OPOZNIENIE_MS * proba);
++      DLOGF(DC_SENSOR, DL_WARN, "DHT22: proba %u nieudana, ponawiam po 2 s...", (unsigned)proba);
++      delay(2000);
+     }
+   }
+   if (dhtOk) {
+@@ -49880,11 +50291,12 @@
+ #endif
+ 
+   DLOG(DC_SCHEDULER, DL_INFO, F("konfiguracja"));
++  DLOG(DC_SENSOR, DL_INFO, F("v3.58.9 odczyty: DS osobno; CO/powrot 3/15/60s; trociny/panel/bojler 60s; pokoj/zew1 120s (+powtorka Zew2 po 3 s); DHT 120s; BMP 180s"));
+   dodajZadanie(zadanieObslugaPompy,    112);
+   dodajZadanie(servo_manual,           500);   // RECZNY(2)/BEZPIECZNA(3), z alarmem i Rozpalaniem jako wyzszym priorytetem
+   dodajZadanie(obslugaRozpalaniaSerwa, 500);   // przygotowanie <25C, auto-start po 60 min, koniec serw >30C
+   dodajZadanie(serwoTick,              20);    // nieblokujace kroki ruchow zadanych przez automat i alarmy
+-  dodajZadanie(Czujnik_DS,             2816);
++  dodajZadanie(Czujnik_DS,             DS_PLAN_TICK_MS);
+   dodajZadanie(dsObslugaPowerCycle,    200);   // [FIX v1.11.0 — AUDYT 14.4] state machine power-cycle magistrali OneWire
+   dodajZadanie(pozar,                  4992);
+   // [ALARM-SOUND-SYNC] Jeden task nieblokujaco obsluguje wszystkie rodzaje

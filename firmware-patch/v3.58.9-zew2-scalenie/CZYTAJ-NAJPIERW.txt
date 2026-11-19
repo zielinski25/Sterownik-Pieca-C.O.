@@ -1,0 +1,110 @@
+FIRMWARE CENTRALI 3.58.9 - co zrobic w 3 krokach
+================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN.
+
+Ta paczka = 3.57.13 (ostatnia wersja, na ktorej Zew 2 dzialala) + wszystkie
+zmiany 3.58.0-3.58.8 (panel LAN, OTA panelu, wykresy, Telegram startowy,
+"fw" w /api/status) + NOWY filtr przeklamanych odczytow DHT22 (Zew 2).
+Plik jest kompletny. Pasuje na plytke z 3.58.8 (ta, ktora jest teraz)
+i na projekt z 3.57.13 - dwa patche w paczce.
+
+
+PO CO (zgloszenie z 19.11: "Zew 2 zniknela z wykresu ok. 10:40")
+----------------------------------------------------------------------------
+TAK - to moje paczki 3.58.7 i 3.58.8 zdjely Zew 2 z plytki. Nie przez blad
+w kodzie, tylko przez ZLA PODSTAWE: robilem je na 3.58.6 z repozytorium,
+a na plytce chodzila 3.57.13 z Dysku Google (paczki KANDYDAT 3.57.10-3.57.13
+z 15-17.11 nigdy nie trafily do repozytorium; w repozytorium nie ma ich ani
+w git, ani na dysku - znalazlem je tylko na Dysku Google). Obie linie
+wyrastaja z 3.57.9 (1.11). Zew 2 ("t_zewn_2" = temperatura z DHT22) doszla
+w 3.57.10 - zadna wersja 3.58.0-3.58.8 jej nie miala. Wgranie 3.58.8
+o 10:40 przywrocilo wiec plytke do stanu sprzed 3.57.10: aplikacja
+(0.31.94) nie dostaje juz klucza t_zewn_2 i rysuje "Zew 2: -".
+
+Twoja wskazowka byla trafna: podstawa 3.58.7/3.58.8 byla inna niz to,
+co dzialalo. 3.58.9 to 3.57.13 + 3.58.x, scalone narzedziem (git
+merge-file wzgledem wspolnego przodka 3.57.9), 2 konflikty rozwiazane
+recznie (naglowek pliku, numer wersji). Numer 3.58.9 a nie 3.57.14, bo OTA
+centrali odmawia downgrade'u (porownajWersje) - 3.57.14 nie wgralaby sie
+na plytke z 3.58.8.
+
+DODATKOWO (ten sam wykres): na 3.57.13 Zew 2 miala co ~godzine pojedyncze
+piki do ok. -2 C przy +2 C. To przeklamany bit znaku w ramce DHT22, ktory
+przechodzi przez jego slaba sume kontrolna (suma 8-bitowa). 3.58.9 ma na
+to filtr: odczyt rozniacy sie o > 3 C albo o przeciwnym znaku jest
+powtarzany po 3 s; na wykres trafia tylko wartosc potwierdzona dwoma
+zgodnymi odczytami. Reszta (piec, alarmy, Telegram, OTA, Firebase) bez
+zmian.
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.9"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (powinna wyjsc wartosc z pierwszej linii SHA256SUMS.txt,
+zaczyna sie od 2b02197f):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Jesli wolisz patch: main_centrala-v3.58.8-do-v3.58.9.patch (na plik 3.58.8,
+SHA e6034d4e...) albo main_centrala-v3.57.13-do-v3.58.9.patch (na plik
+3.57.13, SHA a5f77e49...), oba -p1 z katalogu projektu. Wynik ma miec SHA
+2b02197f... - inaczej cos poszlo nie tak, wgraj caly plik z src\.
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+PlatformIO -> Build, potem Upload   (pio run   i   pio run -t upload)
+Spodziewane: 0 ostrzezen. Flash ok. +15-20 kB wzgledem 3.58.8 (wraca kod
+harmonogramu DS i Zew 2 z 3.57.1x) - jak na 3.57.13 plus panel/OTA z 3.58.x.
+RAM: FB_JSON_CAP wraca na 4096 (jak w 3.57.13).
+Jesli blad: skopiuj linie z "error:" i przyslij; przywroc kopie zapasowa.
+Zmienione miejsca: WYNIKI\zakres-zmian.txt (z numerami linii).
+
+Release na GitHub: w kodzie jest FIRMWARE_VERSION = "v3.58.9" -> Build ->
+Release z tagiem 3.58.9 i tym firmware.bin (OTA z plytki 3.58.8 przejdzie,
+bo numer rosnie).
+
+
+KROK 3 - SPRAWDZENIE
+--------------------
+1. Po Upload w ciagu minuty na Telegram: "Centrala wystartowala: v3.58.9".
+   W logu szeregowym: "v3.58.9 odczyty: DS osobno; CO/powrot 3/15/60s; ...
+   pokoj/zew1 120s (+powtorka Zew2 po 3 s); DHT 120s; BMP 180s".
+2. W aplikacji po 1-2 min seria Zew 2 wraca na wykres (pierwszy odczyt DHT
+   jest od razu po starcie, kolejne co 120 s; probki Firebase co minute).
+   Przegladarka: http://<ip centrali>/api/status -> jest "t_zewn_2":2.1
+   (albo null, gdy DHT nie odpowiada) i "fw":"v3.58.9".
+3. Panel LCD: nadal pokazuje "Centrala v3.58.9" (pole fw zostalo).
+4. Po kilku godzinach: na wykresie Zew 2 nie powinno byc pikow do -2 C.
+   W logu przy kazdym zlapanym piku: "DHT22 Zew2 zdarzenie=podejrzany ..."
+   i po 3 s "... zdarzenie=odrzucony" (pik) albo "potwierdzony" (prawdziwa
+   zmiana). Linia "DHT22 diagnostyka proby=... zew2_przyjete=N
+   zew2_potwierdzone=K zew2_odrzucone=M" przy kazdym odczycie (co 120 s,
+   poziom INFO). Jesli odrzuconych przybywa duzo szybciej niz ok. 1/h -
+   przyslij te linie; progi sa w jednym miejscu (ZEW2_PROG_SKOKU_C itd.,
+   linie 6214-6217).
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa (3.58.8) - wtedy znow bez
+Zew 2 - albo 3.57.13 z paczki obok (firmware-patch\v3.57.13-zew2-kandydat-
+z-dysku\src\main_centrala.cpp; wtedy bez panelu LCD i OTA panelu; przez
+kabel, bo OTA nie cofa wersji).
+
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\)
+----------------------------------
+- testy-pc.txt: filtr Zew 2 (57 sprawdzen, 12 scenariuszy, tez ASan/UBSan),
+  prawdziwa funkcja wilgotnosc() z tego pliku z atrapami (33 sprawdzenia,
+  8 scenariuszy: powtorka po 3 s, cykl 120 s nieprzesuniety, zla ramka,
+  zanik po 135 s, symulacja, przepelnienie millis), znaczniki obu linii
+  w pliku, oba patche daja ten sam plik, pola /api/status a panel LCD
+  (81 pol, panel czyta 47 - zgodne), testy paczek 3.58.6/3.58.7 na tym
+  pliku (START-TG 40, OTA panelu 166, wykresy 2697 sprawdzen).
+- naglowki-esp32.txt: wycinki (Zew 2 + wilgotnosc(), START-TG, OTA panelu,
+  wykresy) skompilowane clangiem z PRAWDZIWYMI naglowkami arduino-esp32
+  3.3.8 - bez bledow, 0 ostrzezen.
+- NIE bylo: pelnego buildu PlatformIO, uruchomienia na plytce, testu na
+  prawdziwym DHT22. Dlatego kopia zapasowa w kroku 1.
