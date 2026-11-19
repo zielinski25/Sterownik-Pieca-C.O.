@@ -240,7 +240,7 @@
       <circle cx="745" cy="480" r="15" fill="#1b232d" stroke="#c7d0d9" stroke-width="1.5"/>
       <text x="745" y="484" text-anchor="middle" class="s">♪</text>
       <path id="w_bz_b" class="wire gnd" d="M 730 480 H 700 V 660"/>
-      <text x="640" y="508" class="s">Moduł brzęczyka GND·IO·VCC (NPN, IO=HIGH → dźwięk)</text>
+      <text x="640" y="508" class="s">Moduł BEEP V2.0 przez Q1 NPN (D13=HIGH → dźwięk)</text>
       <text x="640" y="522" class="s">opcja: 10–100k do GND (brak piknięcia przy starcie)</text>
 
       <rect x="830" y="30" width="250" height="580" class="box esp"/>
@@ -300,7 +300,7 @@
       <tr><td>9</td><td>TP4056 pin 7 <code>CHRG</code> + pin 6 <code>STDBY</code> (pady po wylutowanych LED, strona układu)</td><td>ESP32 <code>GPIO35</code></td><td>–</td><td>Sprawdź miernikiem ciągłość do nóżek 6 i 7 TP4056. Pad od strony R1/R2 to NIE ten.</td></tr>
       <tr><td>10</td><td>ESP32 <code>GPIO35</code></td><td>ESP32 <code>3V3</code></td><td><code>10 kΩ</code></td><td><b>Obowiązkowy</b> – GPIO35 nie ma wewnętrznego pull‑upu; bez niego pin pływa.</td></tr>
       <tr><td>11</td><td>ESP32 <code>GPIO14</code></td><td>GND</td><td><code>1 kΩ</code> szeregowo + przycisk monostabilny</td><td>Wewnętrzny pull‑up; ext0 budzi na LOW. 1 kΩ chroni pin przed impulsem wyjściowym GPIO14 przy starcie (budzenie = przycisk wciśnięty w trakcie startu). Opcjonalnie 100 nF równolegle do przycisku.</td></tr>
-      <tr><td>12</td><td>ESP32 <code>GPIO13</code></td><td>moduł brzęczyka <code>IO</code></td><td>przez <b>1 kΩ</b> (R5)</td><td>Moduł GND·IO·VCC z NPN J3Y + 100 Ω: IO wysokie = dźwięk, zgodne z firmware. <code>VCC</code> → VIN 5 V, <code>GND</code> → GND.</td></tr>
+      <tr><td>12</td><td>ESP32 <code>GPIO13</code></td><td>baza Q1 (NPN)</td><td>przez <b>1 kΩ</b> (R5)</td><td>Q1: emiter → GND, kolektor → <code>GND</code> modułu BEEP V2.0; <code>IO</code>+<code>VCC</code> modułu zwarte → VIN 5 V. Moduł milczy przy 3,3 V na IO, stąd tranzystor.</td></tr>
       <tr><td>13</td><td>ESP32 <code>GPIO21</code></td><td>TFT LED/BL</td><td><code>100–220 Ω</code></td><td>Już podłączone (TFT_BL). W śnie pin trzymany LOW przez gpio_hold.</td></tr>
     </table>
     <p class="note">Nie używać: GPIO0/2/12/15 (strapping – 2 i 15 już zajęte przez TFT), GPIO33 (TOUCH_MISO), pinów ADC2 (nie działają przy WiFi), GPIO6–11 (flash).</p>
@@ -317,7 +317,7 @@
         <li>MT3608: OUT+ TP4056 → IN+, OUT− → IN−. Bez obciążenia ustaw <b>5,0–5,1 V</b> na wyjściu (wiele obrotów potencjometru). Sprawdź jeszcze raz po 1 min – nastawa nie może dryfować.</li>
         <li>Dzielnik: 100k od OUT+ do węzła, 100k + 1 µF od węzła do GND. Zmierz węzeł: ma być dokładnie ½ napięcia ogniwa (np. 3,85 → 1,92 V).</li>
         <li>Dopiero teraz ESP32: GND, potem VIN z MT3608. Panel ma wystartować normalnie (bez USB w płytce!).</li>
-        <li>GPIO34 ← węzeł dzielnika; GPIO35 ← pady CHRG/STDBY; 10 kΩ między GPIO35 a 3V3; GPIO14 → 1 kΩ → przycisk → GND; GPIO13 → 1 kΩ → IO modułu brzęczyka; VCC modułu → VIN, GND → GND.</li>
+        <li>GPIO34 ← węzeł dzielnika; GPIO35 ← pady CHRG/STDBY; 10 kΩ między GPIO35 a 3V3; GPIO14 → 1 kΩ → przycisk → GND; GPIO13 → 1 kΩ → baza Q1; Q1 przełącza masę modułu brzęczyka; IO+VCC modułu → VIN.</li>
         <li>W logu Serial / WWW: <code>tag=BATERIA napiecie=3.8xV procent=.. ladowanie=1</code> przy USB, <code>ladowanie=0</code> bez USB. Napięcie w logu ± 0,05 V względem miernika na ogniwie. Jeśli &lt; 2,5 V → <code>zdarzenie=brak_ogniwa</code> = dzielnik źle podpięty.</li>
         <li>Ekran alarmu → WYCISZ sprawdza brzęczyk. Przycisk GPIO14: do czasu kroku 3 nic nie robi (pin tylko skonfigurowany jako INPUT_PULLUP).</li>
       </ol>
