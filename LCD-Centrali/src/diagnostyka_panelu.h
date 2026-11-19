@@ -1321,7 +1321,7 @@ struct RytmUstawien {
 // ===========================================================================
 // [v1.4.3 A2] FILTR ODPOWIEDZI /api/status - tylko pola, ktore panel czyta
 // ===========================================================================
-// Centrala odsyla w /api/status ok. 80 pol; panel uzywa 46 z nich. ArduinoJson
+// Centrala odsyla w /api/status ok. 80 pol; panel uzywa 47 z nich (v1.4.6: +"fw"). ArduinoJson
 // 7 przy rozpakowywaniu kopiuje KAZDA nazwe pola i kazdy napis do wlasnej
 // pamieci - osobna prosba o pamiec na kazde - takze dla pol, ktorych nikt
 // potem nie czyta. Z filtrem (DeserializationOption::Filter) pola spoza listy
@@ -1338,6 +1338,7 @@ static const char* const POLA_STATUSU_CZYTANE[] = {
   "panel_ota_dostepna", "panel_ota_wersja", "panel_ota_obraz", "panel_ota_nr",
   "symulator",
   "wybor", "tryb_serwa",            // [v1.4.3 B4] tryb pompy i serwa takze ze statusu
+  "fw",                             // [v1.4.6] wersja programu centrali (ekran startowy, ekran WYSWIETLACZ)
 };
 static const int LICZBA_POL_STATUSU_CZYTANYCH = (int)(sizeof(POLA_STATUSU_CZYTANE) / sizeof(POLA_STATUSU_CZYTANE[0]));
 

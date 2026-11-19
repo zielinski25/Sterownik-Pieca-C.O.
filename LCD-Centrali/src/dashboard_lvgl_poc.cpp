@@ -879,6 +879,9 @@ static lv_obj_t *wyswietlaczLabelNoc    = nullptr;
 static lv_obj_t *wyswietlaczHarmonogramBtn      = nullptr;
 static lv_obj_t *wyswietlaczHarmonogramBtnLabel = nullptr;
 static lv_timer_t *g_wyswietlaczPanelIdleTimer  = nullptr;
+// [v1.4.6 WERSJE] Etykieta "Panel vX / Centrala vY" w lewym gornym rogu ekranu
+// WYSWIETLACZ - patrz lvgl_dashboard_poc_ustaw_wersje().
+static lv_obj_t *wyswietlaczWersjeLabel = nullptr;
 
 struct PoleDym {
   const char *klucz;
@@ -3850,6 +3853,18 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
   lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
   lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 10);
 
+  // [v1.4.6 WERSJE] Dwie linie czcionka 14 (2 x 17 px = 34 px, y=8..42) w
+  // lewym gornym rogu, obok tytulu: tytul "WYŚWIETLACZ" (28 px, 216 px
+  // szerokosci) zajmuje x=132..348, a najdluzsza z linii ("Centrala
+  // v3.58.6", 113 px) od x=8 konczy sie na x=121 - 11 px odstepu (test
+  // wersje_na_ekranie pilnuje, zeby sie nie zetknely). Tresc wpisuje
+  // lvgl_dashboard_poc_ustaw_wersje(); do tego czasu "Panel - / Centrala -".
+  wyswietlaczWersjeLabel = lv_label_create(wyswietlaczPanel);
+  lv_label_set_text(wyswietlaczWersjeLabel, "Panel -\nCentrala -");
+  lv_obj_set_style_text_font(wyswietlaczWersjeLabel, &lv_font_pl_14, 0);
+  lv_obj_set_style_text_color(wyswietlaczWersjeLabel, rgb565(KOL_TEKST_DIM), 0);
+  lv_obj_align(wyswietlaczWersjeLabel, LV_ALIGN_TOP_LEFT, 8, 8);
+
   // [NIEPOTWIERDZONE NA SPRZECIE - jak wszystkie nowe wspolrzedne w tym
   // pliku, patrz PLAN_WYKRESY_LVGL.md "Tryb pracy nad kodem"] Uklad policzony
   // tak: tytul (y10, font 28, ~38px) -> 2x wiersz jasnosci (50px kazdy, y=56
@@ -3927,7 +3942,23 @@ static void kafelek_launcher(lv_obj_t *parent, int x, int y, int w, int h,
   lv_label_set_text(lbl, etykieta);
   lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
-  lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 6);
+  // [v1.4.6] "WYŚWIETLACZ" ma w lv_font_pl_14 109 px, a kafelek 114 px: od
+  // x=8 ostatnia litera wychodzila poza karte i byla obcieta (widoczne na
+  // plytce). Gdy napis nie miesci sie z marginesem 8 px z lewej i 4 px z
+  // prawej, litery sa scisniete o 1 px (11 liter -> ok. 99 px) - slowo
+  // zostaje cale, ramka karty nietknieta. Krotsze napisy ("WYKRESY", 72 px)
+  // bez zmian.
+  {
+    const uint32_t liter = _lv_txt_get_encoded_length(etykieta);   // liczba znakow UTF-8, nie bajtow
+    const lv_coord_t szer = lv_txt_get_width(etykieta, (uint32_t)strlen(etykieta), &lv_font_pl_14, 0, LV_TEXT_FLAG_NONE);
+    int x = 8;
+    if (x + szer > w - 4) {
+      lv_obj_set_style_text_letter_space(lbl, -1, 0);
+      const lv_coord_t szer2 = szer - (lv_coord_t)(liter > 0 ? liter - 1 : 0);
+      if (x + szer2 > w - 4) x = 4;
+    }
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, x, 6);
+  }
 
   if (ikona != nullptr) {
     lv_obj_t *img = lv_img_create(card);
@@ -7300,6 +7331,17 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int
     }
     wyswietlacz_harmonogram_wyglad_odswiez();
   }
+}
+
+// [v1.4.6 WERSJE] Patrz naglowek. Bufor 48 B: "Panel " + 15 + "\nCentrala " +
+// 15 + '\0' = 46; dluzsze wersje snprintf() obcina, nie przepelnia.
+void lvgl_dashboard_poc_ustaw_wersje(const char *panel, const char *centrala) {
+  if (wyswietlaczWersjeLabel == nullptr) return;
+  char bufor[48];
+  snprintf(bufor, sizeof(bufor), "Panel %.15s\nCentrala %.15s",
+           (panel != nullptr && panel[0] != '\0') ? panel : "-",
+           (centrala != nullptr && centrala[0] != '\0') ? centrala : "-");
+  ustawNapis(wyswietlaczWersjeLabel, bufor);   // bez zmiany tekstu LVGL nic nie przerysowuje
 }
 
 // [UI-ZEWN] Przelacza bitmape+kolor ikony ZEWN wg. progow z ikony.h (mroz<0
