@@ -127,6 +127,7 @@
 #include <math.h>    // lroundf() - skalowanie float->lv_coord_t w lv_chart, patrz PARTIA 7 (wykresy_chart_skaluj)
 #include "dashboard_lvgl_poc.h"
 #include "ikony_lvgl.h"
+#include "czcionki/czcionki_pl.h"   // [v1.4.5 D] lv_font_pl_14/20/28 - Montserrat z polskimi literami
 
 // Te same wartosci hex co #define KOL_* w main.cpp centrali (skopiowane celowo,
 // zeby ten plik POC dzialal niezaleznie od main.cpp - przy docelowym porcie
@@ -538,6 +539,7 @@ static lv_obj_t *bateriaEtykieta = nullptr;
 // [v1.2.0 CENTRALA-ID] Znacznik "z ktora centrala rozmawiam" na srodku
 // naglowka - patrz lvgl_dashboard_poc_aktualizuj_centrale().
 static lv_obj_t *centralaZnacznikLabel = nullptr;
+static const int CENTRALA_ZNACZNIK_Y = 4; // [v1.4.5 D] patrz komentarz przy lv_label_create() w lvgl_dashboard_poc_init()
 // [PIEC CO/SR - byl OGRZ_TILE_PREVIEW] Teraz staly kafelek w siatce, patrz
 // kafelek_ogrz_polaczony() i wywolanie w lvgl_dashboard_poc_init().
 static lv_obj_t *ogrzGlownaLabel = nullptr;
@@ -562,7 +564,7 @@ static lv_obj_t *syberkaValLabel = nullptr;
 // (rzad 2, obok SERWO/DYM). Dwa uchwyty: godzina:minuta jako GLOWNA wartosc
 // (font 28, ten sam wzorzec co reszta kafelkow - najbardziej "rzucajaca sie
 // w oczy" liczba), dzien.miesiac.rok jako maly wiersz na dole (font 14,
-// dokladnie ten sam uklad co "SR --" w kafelek_ogrz_polaczony()).
+// dokladnie ten sam uklad co "ŚR --" w kafelek_ogrz_polaczony()).
 static lv_obj_t *dataCzasCzasLabel = nullptr;
 static lv_obj_t *dataCzasDataLabel = nullptr;
 // [ROZSZERZENIE, ta sesja - kafelek wejsciowy SERWO x2] Uchwyt do podpisu
@@ -670,7 +672,7 @@ static const char *SERWO_NAZWA[2] = { "KLAPA", "SYBERKA" };
 // osie zawsze sa w tym samym trybie naraz.
 static const char *SERWO_TRYB_OPIS[3] = {
   "Automatyka centrali steruje obiema osiami (klapa i syberek).",
-  "Ustaw pozycje klapy i syberka nizej - kazda niezaleznie.",
+  "Ustaw pozycję klapy i syberka niżej - każda niezależnie.",
   "Wymuszona pozycja bezpieczna: syberek 90%, klapa 0%.",
 };
 // [Partia 3, ta sesja] Uchwyty do ikon KROPLA/CISNIENIE - potrzebne PO
@@ -709,8 +711,8 @@ static const PoleServo SERWO_USTAWIENIA_POLA[6] = {
   { "histerServo",  "Histereza",        1, 0,  50 },
   { "skokKlapy",    "Skok klapy %",     1, 1, 100 },
   { "skokSyberka",  "Skok syberka %",   1, 1, 100 },
-  { "odchylTemp",   "Prog odchylenia",  1, 1,  50 },
-  { "mnoznik",      "Mnoznik korekty",  1, 1,  10 },
+  { "odchylTemp",   "Próg odchylenia",  1, 1,  50 },
+  { "mnoznik",      "Mnożnik korekty",  1, 1,  10 },
 };
 // Ostatnie znane wartosci - wypelniane przez
 // lvgl_dashboard_poc_aktualizuj_ustawienia_serwa() (patrz main.cpp,
@@ -743,8 +745,8 @@ struct PolePompa {
 static const PolePompa POMPA_USTAWIENIA_POLA[5] = {
   { "czasOn",      "Czas ON [min]",   1, 1, 180 },
   { "czasOff",     "Czas OFF [min]",  1, 1, 180 },
-  { "tempOn",      "Zal. pow. [C]",   1, 0, 100 },
-  { "tempOff",     "Wyl. pon. [C]",   1, 0, 100 },
+  { "tempOn",      "Zał. pow. [C]",   1, 0, 100 },
+  { "tempOff",     "Wył. pon. [C]",   1, 0, 100 },
   { "antystopDni", "Antystop co [dni]", 1, 1, 45 },
 };
 static int g_pompaUstWartosc[5] = { 0, 0, 0, 0, 0 };
@@ -864,7 +866,7 @@ struct PoleWyswietlacz {
 // na 23 albo 0, nie mogac dojsc do drugiej strony przyciskiem +/-.
 static const PoleWyswietlacz WYSWIETLACZ_USTAWIENIA_POLA[2] = {
   { "godzStart",  "Przyciemnij od godz." },
-  { "godzKoniec", "Az do godz." },
+  { "godzKoniec", "Aż do godz." },
 };
 static int g_wyswietlaczGodz[2] = { 22, 6 }; // [0]=godzStart, [1]=godzKoniec
 static lv_obj_t *wyswietlaczGodzLabel[2] = { nullptr, nullptr };
@@ -886,8 +888,8 @@ struct PoleDym {
 // Zakresy/krok 1:1 z main_centrala.cpp ustawParametrPieca() - krok 5 (nie 1)
 // bo zakresy siegaja 600s, klikanie po 1 byloby meczace.
 static const PoleDym DYM_USTAWIENIA_POLA[3] = {
-  { "dymCzasOn",           "Czas WL. [s]",     5, 20, 600 },
-  { "dymCzasOff",          "Czas WYL. [s]",    5, 10, 600 },
+  { "dymCzasOn",           "Czas WŁ. [s]",     5, 20, 600 },
+  { "dymCzasOff",          "Czas WYŁ. [s]",    5, 10, 600 },
   { "dymCzasStabilizacji", "Stabilizacja [s]", 5,  5, 590 },
 };
 static lv_obj_t *dymUstWartoscLabel[3] = { nullptr, nullptr, nullptr };
@@ -1422,7 +1424,7 @@ static lv_obj_t *panel_przycisk_ikona(lv_obj_t *parent, const lv_img_dsc_t *ikon
   if (podpis != nullptr) {
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, podpis);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
     lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST), 0);
     lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
     // [FIX] Odrobine ciasniejszy tracking - dla "AUTOMATYCZNY"/"BEZPIECZNA"
@@ -1481,7 +1483,7 @@ static lv_obj_t *krzyzyk_zamkniecia_utworz(lv_obj_t *parent, lv_event_cb_t cb,
 
   lv_obj_t *x = lv_label_create(kolko);
   lv_label_set_text(x, LV_SYMBOL_CLOSE);
-  lv_obj_set_style_text_font(x, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(x, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(x, rgb565(KOL_TEKST), 0);
   lv_obj_center(x);
 
@@ -1561,7 +1563,7 @@ static lv_obj_t *kafelek(lv_obj_t *parent, int x, int y, int w, int h,
   lv_obj_t *lbl = lv_label_create(card);
   lv_label_set_text(lbl, etykieta);
   lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
   lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 6);
 
   // [FIX tej sesji, PRZELICZONE - nie "na oko"] Poprzednia wersja (wartosc
@@ -1570,7 +1572,7 @@ static lv_obj_t *kafelek(lv_obj_t *parent, int x, int y, int w, int h,
   // przestrzeni kolo niej, a wartosc "przyklejona" do etykiety bez oddechu -
   // user: "ikona ma spora przestrzen, sformatuj inaczej". Zamiast zgadywac
   // kolejny offset, policzone z realnych danych:
-  //  - lv_font_montserrat_28.c (zrodlo LVGL, sekcja FONT DESCRIPTOR):
+  //  - lv_font_pl_28.c (zrodlo LVGL, sekcja FONT DESCRIPTOR):
   //    .line_height = 30, .base_line = 5 -> etykieta wartosci zajmuje
   //    PELNE 30px wiersza niezaleznie od tresci (cyfry siegaja od y+5 do
   //    y+25 w tym wierszu, .base_line=5 to zapas pod spodem na "ogonki" jak
@@ -1585,12 +1587,12 @@ static lv_obj_t *kafelek(lv_obj_t *parent, int x, int y, int w, int h,
   //  Efekt: ikona i wartosc siedza w oddzielnych pionach (dol ikony 38 <
   //  gora wartosci 52), wiec NIE MOGA nachodzic na siebie bez wzgledu na
   //  szerokosc tekstu wartosci - sprawdzone na najgorszym przypadku BOJLERA
-  //  "100.0 C" (policzone z realnych adv_w glifow w lv_font_montserrat_28.c:
+  //  "100.0 C" (policzone z realnych adv_w glifow w lv_font_pl_28.c:
   //  ~101px, mieisci sie w kw=114 z 8px marginesem lewym).
   lv_obj_t *val = lv_label_create(card);
   lv_label_set_text(val, wartosc);
   lv_obj_set_style_text_color(val, rgb565(KOL_TEKST), 0);
-  lv_obj_set_style_text_font(val, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(val, &lv_font_pl_28, 0);
   lv_obj_align(val, LV_ALIGN_TOP_LEFT, 8, 52);
 
   if (ikona != nullptr) {
@@ -1644,7 +1646,7 @@ static void kafelek_pompa(lv_obj_t *parent, int x, int y, int w, int h) {
   lv_obj_t *lbl = lv_label_create(card);
   lv_label_set_text(lbl, "POMPA");
   lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
   lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 4);
 
   // [FIX-NACHODZENIE, ta sesja] Wartosc kafelka POMPA to TEKST ("30m"), nie
@@ -1657,7 +1659,7 @@ static void kafelek_pompa(lv_obj_t *parent, int x, int y, int w, int h) {
   // przy poprzednim rozmiarze.
   pompaValLabel = lv_label_create(card);
   lv_obj_set_style_text_color(pompaValLabel, rgb565(KOL_TEKST), 0);
-  lv_obj_set_style_text_font(pompaValLabel, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(pompaValLabel, &lv_font_pl_14, 0);
   // [Partia 4, ta sesja] User na zywym sprzecie: "reka i napis minut lekko
   // w prawo" - x=36 -> 40 (ten sam +4px zapas przeniesiony w prawo razem z
   // dlonia ponizej, zeby odstep miedzy nimi zostal identyczny).
@@ -1839,9 +1841,9 @@ static void pompa_panel_zbuduj(lv_obj_t *scr) {
   // identycznych podpisow "AUTO" obok siebie na jednym ekranie.
   pompaAutoBtn = panel_przycisk_ikona(rzad, &lv_ikona_auto_0, KOL_OGIEN, pompa_btn_auto_cb, &pompaPanelAutoIcon, "AUTOMATYKA");
   lv_obj_set_size(pompaAutoBtn, 130, 78);
-  pompaWlBtn = panel_przycisk_ikona(rzad, &lv_ikona_recznie, KOL_KROPLA, pompa_btn_wl_cb, &pompaPanelWlIcon, "WLACZ");
+  pompaWlBtn = panel_przycisk_ikona(rzad, &lv_ikona_recznie, KOL_KROPLA, pompa_btn_wl_cb, &pompaPanelWlIcon, "WŁĄCZ");
   lv_obj_set_size(pompaWlBtn, 104, 78);
-  pompaWylBtn = panel_przycisk_ikona(rzad, &lv_ikona_recznie_przekreslona, KOL_TEKST_DIM, pompa_btn_wyl_cb, &pompaPanelWylIcon, "WYLACZ");
+  pompaWylBtn = panel_przycisk_ikona(rzad, &lv_ikona_recznie_przekreslona, KOL_TEKST_DIM, pompa_btn_wyl_cb, &pompaPanelWylIcon, "WYŁĄCZ");
   lv_obj_set_size(pompaWylBtn, 104, 78);
 
   // Cienka pozioma linia-separator - czysto wizualny podzial "reczny
@@ -2216,7 +2218,7 @@ static void kafelek_serwo_wejscie(lv_obj_t *parent, int x, int y, int w, int h) 
   lv_obj_t *lbl = lv_label_create(card);
   lv_label_set_text(lbl, "SERWO");
   lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
   lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 6);
 
   // [POPRAWKA, ta sesja] Oryginalna, stala ikona "suwak" WRACA bez zmian
@@ -2253,7 +2255,7 @@ static void kafelek_serwo_wejscie(lv_obj_t *parent, int x, int y, int w, int h) 
   lv_obj_t *podpis = lv_label_create(card);
   lv_label_set_text(podpis, "Klapa --%\nSyberka --%");
   lv_obj_set_style_text_color(podpis, rgb565(KOL_TEKST), 0);
-  lv_obj_set_style_text_font(podpis, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(podpis, &lv_font_pl_20, 0);
   lv_obj_align(podpis, LV_ALIGN_BOTTOM_LEFT, 8, -8);
   serwoWejsciePodpis = podpis;
 
@@ -2285,7 +2287,7 @@ static void serwo_wiersz_osi_zbuduj(lv_obj_t *parent, int y, const char *nazwa, 
 
   lv_obj_t *nazwaLabel = lv_label_create(wiersz);
   lv_label_set_text(nazwaLabel, nazwa);
-  lv_obj_set_style_text_font(nazwaLabel, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(nazwaLabel, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(nazwaLabel, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align(nazwaLabel, LV_ALIGN_TOP_LEFT, 0, 4);
 
@@ -2316,7 +2318,7 @@ static void serwo_wiersz_osi_zbuduj(lv_obj_t *parent, int y, const char *nazwa, 
 
   lv_obj_t *wartoscLabel = lv_label_create(wiersz);
   lv_label_set_text(wartoscLabel, "0%");
-  lv_obj_set_style_text_font(wartoscLabel, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(wartoscLabel, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(wartoscLabel, rgb565(KOL_TEKST), 0);
   lv_obj_align(wartoscLabel, LV_ALIGN_TOP_RIGHT, -34, 4);
 
@@ -2374,7 +2376,7 @@ static void serwo_panel_zbuduj(lv_obj_t *scr) {
   // raz, wiec nie ma "id" do przelozenia na tytul. Ustawiany raz, tutaj.
   serwoTytulLabel = lv_label_create(serwoPanel);
   lv_label_set_text(serwoTytulLabel, "STEROWANIE SERWAMI");
-  lv_obj_set_style_text_font(serwoTytulLabel, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(serwoTytulLabel, &lv_font_pl_28, 0);
   lv_obj_set_style_text_color(serwoTytulLabel, rgb565(KOL_TEKST), 0);
   lv_obj_align(serwoTytulLabel, LV_ALIGN_TOP_MID, 0, 14);
 
@@ -2387,7 +2389,7 @@ static void serwo_panel_zbuduj(lv_obj_t *scr) {
   // teraz wylacznie per-tryb, patrz SERWO_TRYB_OPIS[] wyzej, krotszym niz
   // dawna sklejka baza+sufiks) miesci sie w 2 liniach z zapasem.
   serwoOpisLabel = lv_label_create(serwoPanel);
-  lv_obj_set_style_text_font(serwoOpisLabel, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(serwoOpisLabel, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(serwoOpisLabel, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_set_style_text_align(serwoOpisLabel, LV_TEXT_ALIGN_CENTER, 0);
   lv_label_set_long_mode(serwoOpisLabel, LV_LABEL_LONG_WRAP);
@@ -2436,7 +2438,7 @@ static void serwo_panel_zbuduj(lv_obj_t *scr) {
   // "pozyczonym" z kafelka POMPA - nic wspolnego z domena SERWO.
   serwoAutoBtn = panel_przycisk_ikona(rzadTryb, &lv_ikona_auto_0, KOL_RAMKA, serwo_btn_auto_cb, &serwoAutoIcon, "AUTO");
   lv_obj_set_size(serwoAutoBtn, 138, 74);
-  serwoRecznyBtn = panel_przycisk_ikona(rzadTryb, &lv_ikona_recznie, KOL_SUWAK, serwo_btn_reczny_cb, &serwoRecznyIcon, "RECZNY");
+  serwoRecznyBtn = panel_przycisk_ikona(rzadTryb, &lv_ikona_recznie, KOL_SUWAK, serwo_btn_reczny_cb, &serwoRecznyIcon, "RĘCZNY");
   lv_obj_set_size(serwoRecznyBtn, 138, 74);
   // [Kolorystyka - ta sesja] Wlasny zielony KOL_BEZPIECZNA zamiast
   // pozyczonego KOL_OGIEN - patrz komentarz przy definicji KOL_BEZPIECZNA.
@@ -2593,7 +2595,7 @@ static void pompa_antystop_wyglad_odswiez() {
   lv_obj_set_style_bg_color(pompaAntystopBtn,
                              rgb565(g_pompaAntystopWlaczony ? KOL_BEZPIECZNA : KOL_KARTA),
                              LV_PART_MAIN);
-  lv_label_set_text(pompaAntystopBtnLabel, g_pompaAntystopWlaczony ? "WL." : "WYL.");
+  lv_label_set_text(pompaAntystopBtnLabel, g_pompaAntystopWlaczony ? "WŁ." : "WYŁ.");
 }
 
 // Przelacznik antystop - wysyla natychmiast po kazdym klikniecu, ten sam
@@ -2639,7 +2641,7 @@ static void serwo_ustawienia_zbuduj(lv_obj_t *scr) {
 
   lv_obj_t *tytul = lv_label_create(serwoUstawieniaScr);
   lv_label_set_text(tytul, "USTAWIENIA SERWA");
-  lv_obj_set_style_text_font(tytul, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(tytul, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
   lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 10);
 
@@ -2657,7 +2659,7 @@ static void serwo_ustawienia_zbuduj(lv_obj_t *scr) {
 
     lv_obj_t *etykieta = lv_label_create(wiersz);
     lv_label_set_text(etykieta, p.etykieta);
-    lv_obj_set_style_text_font(etykieta, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(etykieta, &lv_font_pl_14, 0);
     lv_obj_set_style_text_color(etykieta, rgb565(KOL_TEKST_DIM), 0);
     lv_obj_align(etykieta, LV_ALIGN_LEFT_MID, 4, 0);
 
@@ -2675,7 +2677,7 @@ static void serwo_ustawienia_zbuduj(lv_obj_t *scr) {
 
     serwoUstWartoscLabel[i] = lv_label_create(wiersz);
     lv_label_set_text(serwoUstWartoscLabel[i], "0");
-    lv_obj_set_style_text_font(serwoUstWartoscLabel[i], &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(serwoUstWartoscLabel[i], &lv_font_pl_20, 0);
     lv_obj_set_style_text_color(serwoUstWartoscLabel[i], rgb565(KOL_TEKST), 0);
     lv_obj_align(serwoUstWartoscLabel[i], LV_ALIGN_RIGHT_MID, -80, 0);
 
@@ -2757,7 +2759,7 @@ static void pompa_ust_wiersz_zbuduj(lv_obj_t *rodzic, int y, uint16_t akcent,
 
   lv_obj_t *etykietaLbl = lv_label_create(wiersz);
   lv_label_set_text(etykietaLbl, etykieta);
-  lv_obj_set_style_text_font(etykietaLbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(etykietaLbl, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(etykietaLbl, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align(etykietaLbl, LV_ALIGN_LEFT_MID, 14, 0);
 
@@ -2775,7 +2777,7 @@ static void pompa_ust_wiersz_zbuduj(lv_obj_t *rodzic, int y, uint16_t akcent,
 
   *wartoscLabelOut = lv_label_create(wiersz);
   lv_label_set_text(*wartoscLabelOut, "0");
-  lv_obj_set_style_text_font(*wartoscLabelOut, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(*wartoscLabelOut, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(*wartoscLabelOut, rgb565(KOL_TEKST), 0);
   lv_obj_align(*wartoscLabelOut, LV_ALIGN_RIGHT_MID, -80, 0);
 
@@ -2867,7 +2869,7 @@ static void pompa_ustawienia_zbuduj(lv_obj_t *scr) {
 
   lv_obj_t *tytul = lv_label_create(pompaUstawieniaScr);
   lv_label_set_text(tytul, "USTAWIENIA POMPY");
-  lv_obj_set_style_text_font(tytul, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(tytul, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
   lv_obj_align(tytul, LV_ALIGN_TOP_LEFT, 10, 10);
 
@@ -2883,7 +2885,7 @@ static void pompa_ustawienia_zbuduj(lv_obj_t *scr) {
   lv_obj_set_style_radius(pompaUstTrybPlomka, 12, 0);
   lv_obj_set_style_bg_opa(pompaUstTrybPlomka, LV_OPA_COVER, 0);
   pompaUstTrybPlomkaLbl = lv_label_create(pompaUstTrybPlomka);
-  lv_obj_set_style_text_font(pompaUstTrybPlomkaLbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(pompaUstTrybPlomkaLbl, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(pompaUstTrybPlomkaLbl, rgb565(KOL_TLO), 0);
   lv_label_set_text(pompaUstTrybPlomkaLbl, "");
   lv_obj_center(pompaUstTrybPlomkaLbl);
@@ -2929,7 +2931,7 @@ static void pompa_ustawienia_zbuduj(lv_obj_t *scr) {
 
     lv_obj_t *etykietaLbl = lv_label_create(wiersz);
     lv_label_set_text(etykietaLbl, "Antystop wirnika");
-    lv_obj_set_style_text_font(etykietaLbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(etykietaLbl, &lv_font_pl_14, 0);
     lv_obj_set_style_text_color(etykietaLbl, rgb565(KOL_TEKST_DIM), 0);
     lv_obj_align(etykietaLbl, LV_ALIGN_LEFT_MID, 14, 0);
 
@@ -2943,8 +2945,8 @@ static void pompa_ustawienia_zbuduj(lv_obj_t *scr) {
     lv_obj_add_event_cb(pompaAntystopBtn, pompa_antystop_btn_cb, LV_EVENT_CLICKED, nullptr);
 
     pompaAntystopBtnLabel = lv_label_create(pompaAntystopBtn);
-    lv_label_set_text(pompaAntystopBtnLabel, "WL.");
-    lv_obj_set_style_text_font(pompaAntystopBtnLabel, &lv_font_montserrat_14, 0);
+    lv_label_set_text(pompaAntystopBtnLabel, "WŁ.");
+    lv_obj_set_style_text_font(pompaAntystopBtnLabel, &lv_font_pl_14, 0);
     lv_obj_set_style_text_color(pompaAntystopBtnLabel, rgb565(KOL_TEKST), 0);
     lv_obj_center(pompaAntystopBtnLabel);
   }
@@ -3041,7 +3043,7 @@ static void dym_ust_wiersz_zbuduj(lv_obj_t *rodzic, int y, const char *etykieta,
 
   lv_obj_t *etykietaLbl = lv_label_create(wiersz);
   lv_label_set_text(etykietaLbl, etykieta);
-  lv_obj_set_style_text_font(etykietaLbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(etykietaLbl, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(etykietaLbl, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align(etykietaLbl, LV_ALIGN_LEFT_MID, 4, 0);
 
@@ -3059,7 +3061,7 @@ static void dym_ust_wiersz_zbuduj(lv_obj_t *rodzic, int y, const char *etykieta,
 
   *wartoscLabelOut = lv_label_create(wiersz);
   lv_label_set_text(*wartoscLabelOut, "0");
-  lv_obj_set_style_text_font(*wartoscLabelOut, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(*wartoscLabelOut, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(*wartoscLabelOut, rgb565(KOL_TEKST), 0);
   lv_obj_align(*wartoscLabelOut, LV_ALIGN_RIGHT_MID, -80, 0);
 
@@ -3081,7 +3083,7 @@ static void dym_slider_event_cb(lv_event_t *e) {
   lv_event_code_t code = lv_event_get_code(e);
   int wartosc = lv_slider_get_value(dymSlider);
   char bufor[16];
-  snprintf(bufor, sizeof(bufor), "PROG: %d", wartosc);
+  snprintf(bufor, sizeof(bufor), "PRÓG: %d", wartosc);
   lv_label_set_text(dymProgLabel, bufor); // zywa etykieta PODCZAS przeciagania
   if (code == LV_EVENT_RELEASED) {
     g_dymProg = wartosc;
@@ -3108,7 +3110,7 @@ static void dym_panel_zamknij_cb(lv_event_t *e) {
 
 static void dym_panel_otworz() {
   char bufor[16];
-  snprintf(bufor, sizeof(bufor), "PROG: %d", g_dymProg);
+  snprintf(bufor, sizeof(bufor), "PRÓG: %d", g_dymProg);
   lv_label_set_text(dymProgLabel, bufor);
   lv_slider_set_value(dymSlider, g_dymProg, LV_ANIM_OFF); // start od PRAWDZIWEJ ostatniej wartosci
   for (int i = 0; i < 3; i++) {
@@ -3131,13 +3133,13 @@ static void dym_panel_zbuduj(lv_obj_t *scr) {
 
   lv_obj_t *tytul = lv_label_create(dymPanel);
   lv_label_set_text(tytul, "DYM");
-  lv_obj_set_style_text_font(tytul, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(tytul, &lv_font_pl_28, 0);
   lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
   lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 10);
 
   dymProgLabel = lv_label_create(dymPanel);
-  lv_label_set_text(dymProgLabel, "PROG: 500");
-  lv_obj_set_style_text_font(dymProgLabel, &lv_font_montserrat_20, 0);
+  lv_label_set_text(dymProgLabel, "PRÓG: 500");
+  lv_obj_set_style_text_font(dymProgLabel, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(dymProgLabel, rgb565(KOL_TEKST), 0);
   lv_obj_align(dymProgLabel, LV_ALIGN_TOP_MID, 0, 48);
 
@@ -3198,7 +3200,7 @@ static void alarm_temp_slider_event_cb(lv_event_t *e) {
   lv_event_code_t code = lv_event_get_code(e);
   int wartosc = lv_slider_get_value(alarmTempSlider);
   char bufor[16];
-  snprintf(bufor, sizeof(bufor), "PROG: %d C", wartosc);
+  snprintf(bufor, sizeof(bufor), "PRÓG: %d C", wartosc);
   lv_label_set_text(alarmTempProgLabel, bufor); // zywa etykieta PODCZAS przeciagania
   if (code == LV_EVENT_RELEASED) {
     g_alarmTempProg = wartosc;
@@ -3225,7 +3227,7 @@ static void alarm_temp_panel_zamknij_cb(lv_event_t *e) {
 
 static void alarm_temp_panel_otworz() {
   char bufor[16];
-  snprintf(bufor, sizeof(bufor), "PROG: %d C", g_alarmTempProg);
+  snprintf(bufor, sizeof(bufor), "PRÓG: %d C", g_alarmTempProg);
   lv_label_set_text(alarmTempProgLabel, bufor);
   lv_slider_set_value(alarmTempSlider, g_alarmTempProg, LV_ANIM_OFF); // start od PRAWDZIWEJ ostatniej wartosci
   lv_scr_load_anim(alarmTempPanel, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
@@ -3244,20 +3246,20 @@ static void alarm_temp_panel_zbuduj(lv_obj_t *scr) {
   lv_obj_clear_flag(alarmTempPanel, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t *tytul = lv_label_create(alarmTempPanel);
-  lv_label_set_text(tytul, "PROG PRZEGRZANIA");
-  lv_obj_set_style_text_font(tytul, &lv_font_montserrat_28, 0);
+  lv_label_set_text(tytul, "PRÓG PRZEGRZANIA");
+  lv_obj_set_style_text_font(tytul, &lv_font_pl_28, 0);
   lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
   lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 10);
 
   lv_obj_t *podtytul = lv_label_create(alarmTempPanel);
-  lv_label_set_text(podtytul, "Wspolny dla PIEC CO i PANEL");
-  lv_obj_set_style_text_font(podtytul, &lv_font_montserrat_14, 0);
+  lv_label_set_text(podtytul, "Wspólny dla PIEC CO i PANEL");
+  lv_obj_set_style_text_font(podtytul, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(podtytul, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align(podtytul, LV_ALIGN_TOP_MID, 0, 44);
 
   alarmTempProgLabel = lv_label_create(alarmTempPanel);
-  lv_label_set_text(alarmTempProgLabel, "PROG: 80 C");
-  lv_obj_set_style_text_font(alarmTempProgLabel, &lv_font_montserrat_20, 0);
+  lv_label_set_text(alarmTempProgLabel, "PRÓG: 80 C");
+  lv_obj_set_style_text_font(alarmTempProgLabel, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(alarmTempProgLabel, rgb565(KOL_TEKST), 0);
   lv_obj_align(alarmTempProgLabel, LV_ALIGN_TOP_MID, 0, 78);
 
@@ -3351,16 +3353,16 @@ static void alarm_ekran_tresc_ustaw(AlarmPoziom poziom, bool alarmOgrzewanie, bo
   ustawKolorStylu(alarmEkranIkona, LV_STYLE_IMG_RECOLOR, rgb565(kolor), 0);
   ustawKolorStylu(alarmEkranTytul, LV_STYLE_TEXT_COLOR, rgb565(kolor), 0);
   if (poziom == AlarmPoziom::POZAR) {
-    ustawNapis(alarmEkranTytul, "POZAR / DYM");
-    ustawNapis(alarmEkranPodtytul, "Sprawdz palenisko natychmiast");
+    ustawNapis(alarmEkranTytul, "POŻAR / DYM");
+    ustawNapis(alarmEkranPodtytul, "Sprawdź palenisko natychmiast");
   } else {
     ustawNapis(alarmEkranTytul, "PRZEGRZANIE");
     if (alarmOgrzewanie && alarmPanel) {
-      ustawNapis(alarmEkranPodtytul, "Piec CO + Panel powyzej progu");
+      ustawNapis(alarmEkranPodtytul, "Piec CO + Panel powyżej progu");
     } else if (alarmOgrzewanie) {
-      ustawNapis(alarmEkranPodtytul, "Piec CO powyzej progu");
+      ustawNapis(alarmEkranPodtytul, "Piec CO powyżej progu");
     } else {
-      ustawNapis(alarmEkranPodtytul, "Panel powyzej progu");
+      ustawNapis(alarmEkranPodtytul, "Panel powyżej progu");
     }
   }
 }
@@ -3486,12 +3488,12 @@ static void alarm_ekran_zbuduj(lv_obj_t *scr) {
 
   alarmEkranTytul = lv_label_create(alarmEkran);
   lv_label_set_text(alarmEkranTytul, "ALARM");
-  lv_obj_set_style_text_font(alarmEkranTytul, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(alarmEkranTytul, &lv_font_pl_28, 0);
   lv_obj_align(alarmEkranTytul, LV_ALIGN_TOP_MID, 0, 14);
 
   alarmEkranPodtytul = lv_label_create(alarmEkran);
   lv_label_set_text(alarmEkranPodtytul, "");
-  lv_obj_set_style_text_font(alarmEkranPodtytul, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(alarmEkranPodtytul, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(alarmEkranPodtytul, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align(alarmEkranPodtytul, LV_ALIGN_TOP_MID, 0, 50);
 
@@ -3538,7 +3540,7 @@ static void alarm_ekran_zbuduj(lv_obj_t *scr) {
   lv_obj_add_event_cb(wyciszBtn, alarm_ekran_wycisz_cb, LV_EVENT_CLICKED, nullptr);
   alarmEkranWyciszLabel = lv_label_create(wyciszBtn);
   lv_label_set_text(alarmEkranWyciszLabel, "WYCISZ");
-  lv_obj_set_style_text_font(alarmEkranWyciszLabel, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(alarmEkranWyciszLabel, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(alarmEkranWyciszLabel, rgb565(KOL_TLO), 0);
   lv_obj_center(alarmEkranWyciszLabel);
 
@@ -3552,7 +3554,7 @@ static void alarm_ekran_zbuduj(lv_obj_t *scr) {
   lv_obj_add_event_cb(zamknijBtn, alarm_ekran_zamknij_cb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *zamknijLabel = lv_label_create(zamknijBtn);
   lv_label_set_text(zamknijLabel, "ZAMKNIJ");
-  lv_obj_set_style_text_font(zamknijLabel, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(zamknijLabel, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(zamknijLabel, rgb565(KOL_TEKST), 0);
   lv_obj_center(zamknijLabel);
 
@@ -3665,13 +3667,13 @@ static void wyswietlacz_jasnosc_wiersz_zbuduj(lv_obj_t *parent, int y, const cha
 
   lv_obj_t *nazwaLabel = lv_label_create(wiersz);
   lv_label_set_text(nazwaLabel, nazwa);
-  lv_obj_set_style_text_font(nazwaLabel, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(nazwaLabel, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(nazwaLabel, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align(nazwaLabel, LV_ALIGN_TOP_LEFT, 0, 2);
 
   lv_obj_t *wartoscLabel = lv_label_create(wiersz);
   lv_label_set_text(wartoscLabel, "0%");
-  lv_obj_set_style_text_font(wartoscLabel, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(wartoscLabel, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(wartoscLabel, rgb565(KOL_TEKST), 0);
   lv_obj_align(wartoscLabel, LV_ALIGN_TOP_RIGHT, 0, -2);
 
@@ -3733,7 +3735,7 @@ static void wyswietlacz_ust_wiersz_zbuduj(lv_obj_t *rodzic, int y, const char *e
 
   lv_obj_t *etykietaLbl = lv_label_create(wiersz);
   lv_label_set_text(etykietaLbl, etykieta);
-  lv_obj_set_style_text_font(etykietaLbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(etykietaLbl, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(etykietaLbl, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align(etykietaLbl, LV_ALIGN_LEFT_MID, 4, 0);
 
@@ -3751,7 +3753,7 @@ static void wyswietlacz_ust_wiersz_zbuduj(lv_obj_t *rodzic, int y, const char *e
 
   *wartoscLabelOut = lv_label_create(wiersz);
   lv_label_set_text(*wartoscLabelOut, "0:00");
-  lv_obj_set_style_text_font(*wartoscLabelOut, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(*wartoscLabelOut, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(*wartoscLabelOut, rgb565(KOL_TEKST), 0);
   lv_obj_align(*wartoscLabelOut, LV_ALIGN_RIGHT_MID, -80, 0);
 
@@ -3777,7 +3779,7 @@ static void wyswietlacz_harmonogram_wyglad_odswiez() {
   lv_obj_set_style_bg_color(wyswietlaczHarmonogramBtn,
                              rgb565(g_wyswietlaczHarmonogramWlaczony ? KOL_BEZPIECZNA : KOL_KARTA),
                              LV_PART_MAIN);
-  lv_label_set_text(wyswietlaczHarmonogramBtnLabel, g_wyswietlaczHarmonogramWlaczony ? "WL." : "WYL.");
+  lv_label_set_text(wyswietlaczHarmonogramBtnLabel, g_wyswietlaczHarmonogramWlaczony ? "WŁ." : "WYŁ.");
 }
 static void wyswietlacz_harmonogram_btn_cb(lv_event_t *e) {
   (void)e;
@@ -3843,8 +3845,8 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
   lv_obj_clear_flag(wyswietlaczPanel, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t *tytul = lv_label_create(wyswietlaczPanel);
-  lv_label_set_text(tytul, "WYSWIETLACZ");
-  lv_obj_set_style_text_font(tytul, &lv_font_montserrat_28, 0);
+  lv_label_set_text(tytul, "WYŚWIETLACZ");
+  lv_obj_set_style_text_font(tytul, &lv_font_pl_28, 0);
   lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
   lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 10);
 
@@ -3854,9 +3856,9 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
   // i y=118, 12px odstepu) -> 2x wiersz godzin (40px kazdy, y=186 i y=226) ->
   // wiersz harmonogramu (40px, y=266) -> koniec 306, 14px marginesu od dolu
   // (320 wys. ekranu) - wymaga zdjecia z ekranu do potwierdzenia.
-  wyswietlacz_jasnosc_wiersz_zbuduj(wyswietlaczPanel, 56, "Jasnosc w dzien", 0,
+  wyswietlacz_jasnosc_wiersz_zbuduj(wyswietlaczPanel, 56, "Jasność w dzień", 0,
                                      &wyswietlaczSliderDzien, &wyswietlaczLabelDzien);
-  wyswietlacz_jasnosc_wiersz_zbuduj(wyswietlaczPanel, 118, "Jasnosc w nocy", 1,
+  wyswietlacz_jasnosc_wiersz_zbuduj(wyswietlaczPanel, 118, "Jasność w nocy", 1,
                                      &wyswietlaczSliderNoc, &wyswietlaczLabelNoc);
 
   const int startY = 186;
@@ -3876,7 +3878,7 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
 
     lv_obj_t *etykietaLbl = lv_label_create(wiersz);
     lv_label_set_text(etykietaLbl, "Automatyczny harmonogram");
-    lv_obj_set_style_text_font(etykietaLbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(etykietaLbl, &lv_font_pl_14, 0);
     lv_obj_set_style_text_color(etykietaLbl, rgb565(KOL_TEKST_DIM), 0);
     lv_obj_align(etykietaLbl, LV_ALIGN_LEFT_MID, 4, 0);
 
@@ -3890,8 +3892,8 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
     lv_obj_add_event_cb(wyswietlaczHarmonogramBtn, wyswietlacz_harmonogram_btn_cb, LV_EVENT_CLICKED, nullptr);
 
     wyswietlaczHarmonogramBtnLabel = lv_label_create(wyswietlaczHarmonogramBtn);
-    lv_label_set_text(wyswietlaczHarmonogramBtnLabel, "WL.");
-    lv_obj_set_style_text_font(wyswietlaczHarmonogramBtnLabel, &lv_font_montserrat_14, 0);
+    lv_label_set_text(wyswietlaczHarmonogramBtnLabel, "WŁ.");
+    lv_obj_set_style_text_font(wyswietlaczHarmonogramBtnLabel, &lv_font_pl_14, 0);
     lv_obj_set_style_text_color(wyswietlaczHarmonogramBtnLabel, rgb565(KOL_TEKST), 0);
     lv_obj_center(wyswietlaczHarmonogramBtnLabel);
   }
@@ -3924,7 +3926,7 @@ static void kafelek_launcher(lv_obj_t *parent, int x, int y, int w, int h,
   lv_obj_t *lbl = lv_label_create(card);
   lv_label_set_text(lbl, etykieta);
   lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
   lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 6);
 
   if (ikona != nullptr) {
@@ -3965,7 +3967,7 @@ static void drugi_pulpit_zbuduj(lv_obj_t *scr) {
   kafelek_launcher(drugiPulpitScr, x0 + 0 * (kw + odstepX), y0, kw, kh,
                     "WYKRESY", &lv_ikona_wykresy, KOL_TEKST, wykresy_kafelek_klikniety_cb);
   kafelek_launcher(drugiPulpitScr, x0 + 1 * (kw + odstepX), y0, kw, kh,
-                    "WYSWIETLACZ", &lv_ikona_zebatka, KOL_TEKST, wyswietlacz_kafelek_klikniety_cb);
+                    "WYŚWIETLACZ", &lv_ikona_zebatka, KOL_TEKST, wyswietlacz_kafelek_klikniety_cb);
   // Kolejne kafelki w przyszlosci: x0 + 2*(kw+odstepX), y0 (dalej w tym samym
   // rzedzie), a po zapelnieniu 4 kolumn - kolejny rzad na y0+kh+odstepY, itd.
   // - identyczny wzorzec jak rzady 0/1/2 w lvgl_dashboard_poc_init().
@@ -4062,12 +4064,12 @@ static const WykresySeriaDef WYKRESY_SERIE[] = {
   { "ZEWN",       "C",   1,  1, 0x06BE },
   { "BOJLER",     "C",   2,  4, 0x4EF0 },
   { "Temp. C.O",     "C",   3,  7, 0xFCE8 },
-  { "Temp. C.O Sr.", "C",   4, 10, 0xFE85 },
-  { "POWROT",        "C",   5, 13, 0xFA6D },
+  { "Temp. C.O Śr.", "C",   4, 10, 0xFE85 },
+  { "POWRÓT",        "C",   5, 13, 0xFA6D },
   { "PANEL",         "C",   6, 16, 0xFD88 },
-  { "Wewnetrzna",    "C",   7, 19, 0xAABE },
-  { "CISNIENIE",     "hPa", 9, 22, 0x653F },
-  { "WILGOTNOSC",    "%",  10, 25, 0x2EB7 },
+  { "Wewnętrzna",    "C",   7, 19, 0xAABE },
+  { "CIŚNIENIE",     "hPa", 9, 22, 0x653F },
+  { "WILGOTNOŚĆ",    "%",  10, 25, 0x2EB7 },
   { "KLAPA",         "%",  11, 28, 0xC43F },
   { "Syberek",       "%",  12, 31, 0x8662 },
 };
@@ -4546,17 +4548,17 @@ static void wykresy_odswiez_wykres_fetch() {
   g_wykresyFetchWToku = false;
   g_wykresyStrumien.aktywny = false;
   wykresy_chart_ukryj(); // [PARTIA 7] poprzedni wykres (jesli byl) znika, dopoki nowe dane nie doplyna
-  lv_label_set_text(wykresyWykresPlaceholder, "Ladowanie danych z centrali...");
+  lv_label_set_text(wykresyWykresPlaceholder, "Ładowanie danych z centrali...");
   lv_obj_set_style_text_color(wykresyWykresPlaceholder, rgb565(KOL_TEKST_DIM), 0);
   if (!g_wykresyFetchCb) {
-    lv_label_set_text(wykresyWykresPlaceholder, "Brak polaczenia z fetchem (main.cpp)");
+    lv_label_set_text(wykresyWykresPlaceholder, "Brak połączenia z fetchem (main.cpp)");
     return;
   }
   // [v1.3.0 WYKRESY] Bez buforow punktow (zabraklo na nie pamieci przy
   // wejsciu na ekran, patrz wykresy_bufory_8_zaalokuj()) nie ma gdzie
   // odlozyc danych - nie zawracamy centrali glowy.
   if (!wykresy_bufory_wybranych_sa()) {
-    lv_label_set_text(wykresyWykresPlaceholder, "Brak pamieci na wykres\n(zamknij ekran Wykresy i otworz ponownie)");
+    lv_label_set_text(wykresyWykresPlaceholder, "Brak pamięci na wykres\n(zamknij ekran Wykresy i otwórz ponownie)");
     lv_obj_set_style_text_color(wykresyWykresPlaceholder, rgb565(KOL_OGIEN), 0);
     Serial.println("tag=WYKRESY lvl=WARN zdarzenie=blad przyczyna=brak_pamieci msg=\"brak buforow punktow\"");
     return;
@@ -4887,7 +4889,7 @@ static void wykresy_chipy_zbuduj(lv_obj_t *parent) {
     // wlaczony w lv_conf.h). Szerokosc etykiety ograniczona do wnetrza
     // chipa (109px - zapas na padding) + LONG_DOT, zeby najdluzsze nazwy
     // ("Temp. C.O Sr.") dostaly wielokropek zamiast wystawac poza chip.
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
     lv_obj_set_width(lbl, 96);
     lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
@@ -5307,7 +5309,7 @@ static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float
   } else {
     lv_snprintf(najgorszy, sizeof(najgorszy), "%s%d %s", ujemne ? "-" : "", calkowitaMax, jednostka);
   }
-  const lv_font_t *font = &lv_font_montserrat_14;
+  const lv_font_t *font = &lv_font_pl_14;
   lv_coord_t szerTekstu = lv_txt_get_width(najgorszy, strlen(najgorszy), font, 0, LV_TEXT_FLAG_NONE);
 
   // Wykres ma teraz STALA szerokosc niezalezna od dlugosci etykiet - caly
@@ -5563,7 +5565,7 @@ static void wykresy_chart_odswiez() {
         snprintf(zakresBuf, sizeof(zakresBuf), "%s  -  %s", g_wykresyStrumien.etykOd, g_wykresyStrumien.etykDo);
       } else {
         snprintf(zakresBuf, sizeof(zakresBuf), "%s  -  %s%s",
-                 punkty[0].etykieta, punkty[liczbaPunktow - 1].etykieta, g_wykresyNiepelne ? "   NIEPELNE" : "");
+                 punkty[0].etykieta, punkty[liczbaPunktow - 1].etykieta, g_wykresyNiepelne ? "   NIEPEŁNE" : "");
       }
       lv_label_set_text(wykresyChartZakresLabel, zakresBuf);
       // Dopisek NIEPELNE ma byc widac: kolor ostrzezenia zamiast szarego.
@@ -5785,7 +5787,7 @@ void lvgl_dashboard_poc_wykresy_postep(uint32_t linii, uint32_t bajtow) {
   if (!g_wykresyFetchWToku || !wykresyWykresPlaceholder) return;
   if (lv_obj_has_flag(wykresyWykresPlaceholder, LV_OBJ_FLAG_HIDDEN)) return;
   if (linii == 0) return;   // jeszcze nic nie przyszlo - zostaje "Ladowanie danych z centrali..."
-  lv_label_set_text_fmt(wykresyWykresPlaceholder, "Ladowanie danych z centrali...\n%lu wierszy (%lu kB)",
+  lv_label_set_text_fmt(wykresyWykresPlaceholder, "Ładowanie danych z centrali...\n%lu wierszy (%lu kB)",
                         (unsigned long)linii, (unsigned long)((bajtow + 512U) / 1024U));
 }
 
@@ -5806,36 +5808,36 @@ static void wykresy_pokaz_komunikat(int wynik, int szczegol) {
   // po kazdym jej restarcie wykresy zaczynaja sie od zera. Gdy danych brak,
   // to najczestszy powod - mowimy o nim wprost (centrala podaje "fs=0").
   const char *bezFs = (g_wykresyStrumien.fsCentrali == 0)
-                          ? "\n\nZapis historii na flash jest w centrali wylaczony:\npo jej restarcie historia zaczyna sie od zera"
+                          ? "\n\nZapis historii na flash jest w centrali wyłączony:\npo jej restarcie historia zaczyna się od zera"
                           : "";
   switch (wynik) {
     case LVGL_WYKRESY_PUSTO:
-      lv_label_set_text_fmt(wykresyWykresPlaceholder, "Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minute po starcie)%s", bezFs);
+      lv_label_set_text_fmt(wykresyWykresPlaceholder, "Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minutę po starcie)%s", bezFs);
       break;
     case LVGL_WYKRESY_ZA_MALO:
-      lv_label_set_text_fmt(wykresyWykresPlaceholder, "Za malo danych na wykres (jeden pomiar)\nSprobuj za kilka minut%s", bezFs);
+      lv_label_set_text_fmt(wykresyWykresPlaceholder, "Za mało danych na wykres (jeden pomiar)\nSpróbuj za kilka minut%s", bezFs);
       break;
     case LVGL_WYKRESY_BRAK_WIFI:
-      lv_label_set_text(wykresyWykresPlaceholder, "Brak polaczenia z siecia centrali (WiFi)");
+      lv_label_set_text(wykresyWykresPlaceholder, "Brak połączenia z siecią centrali (WiFi)");
       break;
     case LVGL_WYKRESY_BRAK_POLACZENIA:
-      lv_label_set_text(wykresyWykresPlaceholder, "Centrala nie przyjela polaczenia\nSprobuj ponownie");
+      lv_label_set_text(wykresyWykresPlaceholder, "Centrala nie przyjęła połączenia\nSpróbuj ponownie");
       break;
     case LVGL_WYKRESY_LIMIT_CZASU:
-      lv_label_set_text(wykresyWykresPlaceholder, "Centrala nie odpowiedziala w czasie\nSprobuj ponownie");
+      lv_label_set_text(wykresyWykresPlaceholder, "Centrala nie odpowiedziała w czasie\nSpróbuj ponownie");
       break;
     case LVGL_WYKRESY_HTTP:
-      if (szczegol == 503) lv_label_set_text(wykresyWykresPlaceholder, "Centrali zabraklo pamieci na wykres (HTTP 503)\nSprobuj ponownie");
-      else lv_label_set_text_fmt(wykresyWykresPlaceholder, "Centrala odpowiedziala bledem HTTP %d", szczegol);
+      if (szczegol == 503) lv_label_set_text(wykresyWykresPlaceholder, "Centrali zabrakło pamięci na wykres (HTTP 503)\nSpróbuj ponownie");
+      else lv_label_set_text_fmt(wykresyWykresPlaceholder, "Centrala odpowiedziała błędem HTTP %d", szczegol);
       break;
     case LVGL_WYKRESY_URWANA:
-      lv_label_set_text(wykresyWykresPlaceholder, "Odpowiedz centrali urwala sie w polowie\nSprobuj ponownie");
+      lv_label_set_text(wykresyWykresPlaceholder, "Odpowiedź centrali urwała się w połowie\nSpróbuj ponownie");
       break;
     case LVGL_WYKRESY_ZLA_ODPOWIEDZ:
-      lv_label_set_text(wykresyWykresPlaceholder, "Centrala odpowiedziala czyms innym niz dane wykresu");
+      lv_label_set_text(wykresyWykresPlaceholder, "Centrala odpowiedziała czymś innym niż dane wykresu");
       break;
     case LVGL_WYKRESY_BRAK_PAMIECI:
-      lv_label_set_text(wykresyWykresPlaceholder, "Panelowi zabraklo pamieci na wykres");
+      lv_label_set_text(wykresyWykresPlaceholder, "Panelowi zabrakło pamięci na wykres");
       break;
     default:
       lv_label_set_text(wykresyWykresPlaceholder, "Brak danych do wykresu");
@@ -6004,7 +6006,7 @@ static void wykresy_tryb_zbuduj(lv_obj_t *parent) {
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, NAZWY[i]);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
     lv_obj_center(lbl);
 
     lv_obj_add_event_cb(btn, wykresy_tryb_klikniety_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
@@ -6056,7 +6058,7 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
 
   lv_obj_t *tytul = lv_label_create(wykresySelekcjaCont);
   lv_label_set_text(tytul, "WYKRESY");
-  lv_obj_set_style_text_font(tytul, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(tytul, &lv_font_pl_28, 0);
   lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
   lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 10);
 
@@ -6092,8 +6094,8 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   // z zapasem do dolu ekranu (228+42=270 < 320).
   lv_obj_align(wykresyPokazBtn, LV_ALIGN_TOP_MID, 0, 228);
   lv_obj_t *pokazLbl = lv_label_create(wykresyPokazBtn);
-  lv_label_set_text(pokazLbl, "POKAZ WYKRES");
-  lv_obj_set_style_text_font(pokazLbl, &lv_font_montserrat_14, 0); // [FIX kompilacji] _16 nie jest wlaczony w lv_conf.h (tylko 14/20/28 sa builtowane w tym projekcie) - patrz identyczny FIX nizej przy wykresyWykresTytul
+  lv_label_set_text(pokazLbl, "POKAŻ WYKRES");
+  lv_obj_set_style_text_font(pokazLbl, &lv_font_pl_14, 0); // [FIX kompilacji] _16 nie jest wlaczony w lv_conf.h (tylko 14/20/28 sa builtowane w tym projekcie) - patrz identyczny FIX nizej przy wykresyWykresTytul
   lv_obj_center(pokazLbl);
   lv_obj_add_event_cb(wykresyPokazBtn, wykresy_pokaz_wykres_cb, LV_EVENT_CLICKED, nullptr);
   wykresy_pokaz_btn_odswiez(); // stan startowy - przygaszony (0 wybranych)
@@ -6127,7 +6129,7 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   lv_obj_add_event_cb(wstecz, wykresy_wstecz_cb, LV_EVENT_CLICKED, nullptr);
 
   wykresyWykresTytul = lv_label_create(wykresyWykresCont);
-  lv_obj_set_style_text_font(wykresyWykresTytul, &lv_font_montserrat_20, 0); // [FIX kompilacji] _18 nie jest wlaczony w lv_conf.h - patrz identyczny FIX wyzej przy pokazLbl; _20 juz uzywany gdzie indziej w tym pliku (11x), wiec na pewno wbudowany
+  lv_obj_set_style_text_font(wykresyWykresTytul, &lv_font_pl_20, 0); // [FIX kompilacji] _18 nie jest wlaczony w lv_conf.h - patrz identyczny FIX wyzej przy pokazLbl; _20 juz uzywany gdzie indziej w tym pliku (11x), wiec na pewno wbudowany
   lv_obj_set_style_text_color(wykresyWykresTytul, rgb565(KOL_TEKST), 0);
   lv_obj_align(wykresyWykresTytul, LV_ALIGN_TOP_MID, 0, 14);
 
@@ -6167,7 +6169,7 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
     wykresyLegendaKropka[p] = kropka;
 
     lv_obj_t *tekst = lv_label_create(item);
-    lv_obj_set_style_text_font(tekst, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(tekst, &lv_font_pl_14, 0);
     lv_obj_set_style_pad_left(tekst, 4, 0);
     lv_label_set_text(tekst, "");
     wykresyLegendaTekst[p] = tekst;
@@ -6179,8 +6181,8 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   // Docelowo (6./7. partia) ten label zniknie na rzecz prawdziwego lv_chart
   // w tym samym miejscu.
   wykresyWykresPlaceholder = lv_label_create(wykresyWykresCont);
-  lv_label_set_text(wykresyWykresPlaceholder, "Ladowanie danych...");
-  lv_obj_set_style_text_font(wykresyWykresPlaceholder, &lv_font_montserrat_14, 0);
+  lv_label_set_text(wykresyWykresPlaceholder, "Ładowanie danych...");
+  lv_obj_set_style_text_font(wykresyWykresPlaceholder, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(wykresyWykresPlaceholder, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_set_width(wykresyWykresPlaceholder, 400);
   lv_obj_set_style_text_align(wykresyWykresPlaceholder, LV_TEXT_ALIGN_CENTER, 0);
@@ -6243,13 +6245,13 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   for (int i = 0; i < WYKRESY_OS_LICZBA_ETYKIET; i++) {
     wykresyEtykietyA[i] = lv_label_create(wykresyWykresCont);
     lv_label_set_text(wykresyEtykietyA[i], "");
-    lv_obj_set_style_text_font(wykresyEtykietyA[i], &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(wykresyEtykietyA[i], &lv_font_pl_14, 0);
     lv_label_set_long_mode(wykresyEtykietyA[i], LV_LABEL_LONG_CLIP);
     lv_obj_add_flag(wykresyEtykietyA[i], LV_OBJ_FLAG_HIDDEN);
 
     wykresyEtykietyB[i] = lv_label_create(wykresyWykresCont);
     lv_label_set_text(wykresyEtykietyB[i], "");
-    lv_obj_set_style_text_font(wykresyEtykietyB[i], &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(wykresyEtykietyB[i], &lv_font_pl_14, 0);
     lv_label_set_long_mode(wykresyEtykietyB[i], LV_LABEL_LONG_CLIP);
     lv_obj_add_flag(wykresyEtykietyB[i], LV_OBJ_FLAG_HIDDEN);
   }
@@ -6317,7 +6319,7 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
 
   wykresyChartZakresLabel = lv_label_create(wykresyWykresCont);
   lv_label_set_text(wykresyChartZakresLabel, "");
-  lv_obj_set_style_text_font(wykresyChartZakresLabel, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(wykresyChartZakresLabel, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(wykresyChartZakresLabel, rgb565(KOL_TEKST_DIM), 0);
   // [FIX - zmarnowane miejsce u dolu wykresu, ta sesja] Nakladamy etykiete
   // na sam dol wykresu (ktory teraz siega do y=310, patrz lv_obj_set_size
@@ -6438,7 +6440,7 @@ static lv_obj_t *kafelek_ogrz_polaczony(lv_obj_t *parent, int x, int y, int w, i
   lv_obj_t *lbl = lv_label_create(card);
   lv_label_set_text(lbl, "PIEC CO");
   lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
   lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 6);
 
   lv_obj_t *img = lv_img_create(card);
@@ -6456,14 +6458,14 @@ static lv_obj_t *kafelek_ogrz_polaczony(lv_obj_t *parent, int x, int y, int w, i
   lv_obj_t *glowna = lv_label_create(card);
   lv_label_set_text(glowna, "--");
   lv_obj_set_style_text_color(glowna, rgb565(KOL_TEKST), 0);
-  lv_obj_set_style_text_font(glowna, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(glowna, &lv_font_pl_28, 0);
   lv_obj_align(glowna, LV_ALIGN_TOP_LEFT, 8, 30);
 
   // Wiersz 3: SR jako pelny, czytelny wiersz na dole karty (nie ciasny rog).
   lv_obj_t *srWiersz = lv_label_create(card);
-  lv_label_set_text(srWiersz, "SR --");
+  lv_label_set_text(srWiersz, "ŚR --");
   lv_obj_set_style_text_color(srWiersz, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(srWiersz, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(srWiersz, &lv_font_pl_14, 0);
   lv_obj_align(srWiersz, LV_ALIGN_BOTTOM_LEFT, 8, -6);
 
   if (sredniaWyjscie != nullptr) *sredniaWyjscie = srWiersz;
@@ -6482,7 +6484,7 @@ static lv_obj_t *kafelek_ogrz_polaczony(lv_obj_t *parent, int x, int y, int w, i
 // Godzina:minuta (font 28, najbardziej rzucajaca sie w oczy wartosc - to,
 // co user najczesciej chce wiedziec jednym rzutem oka) jako GLOWNA wartosc,
 // data (font 14, dim) jako maly wiersz na dole - dokladnie ten sam wzorzec co
-// "SR --" w kafelek_ogrz_polaczony() powyzej.
+// "ŚR --" w kafelek_ogrz_polaczony() powyzej.
 static void kafelek_data_czas(lv_obj_t *parent, int x, int y, int w, int h) {
   lv_obj_t *card = lv_obj_create(parent);
   lv_obj_remove_style_all(card);
@@ -6499,20 +6501,20 @@ static void kafelek_data_czas(lv_obj_t *parent, int x, int y, int w, int h) {
   lv_obj_t *lbl = lv_label_create(card);
   lv_label_set_text(lbl, "DATA I CZAS");
   lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
   lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 6);
 
   lv_obj_t *czas = lv_label_create(card);
   lv_label_set_text(czas, "--:--");
   lv_obj_set_style_text_color(czas, rgb565(KOL_TEKST), 0);
-  lv_obj_set_style_text_font(czas, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(czas, &lv_font_pl_28, 0);
   lv_obj_align(czas, LV_ALIGN_TOP_LEFT, 8, 30);
   dataCzasCzasLabel = czas;
 
   lv_obj_t *data = lv_label_create(card);
   lv_label_set_text(data, "--.--.----");
   lv_obj_set_style_text_color(data, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(data, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(data, &lv_font_pl_14, 0);
   lv_obj_align(data, LV_ALIGN_BOTTOM_LEFT, 8, -6);
   dataCzasDataLabel = data;
 }
@@ -6552,7 +6554,7 @@ static void kafelek_dym(lv_obj_t *parent, int x, int y, int w, int h) {
   lv_obj_t *lbl = lv_label_create(card);
   lv_label_set_text(lbl, "DYM");
   lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
   lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 6);
 
   lv_obj_t *img = lv_img_create(card);
@@ -6565,7 +6567,7 @@ static void kafelek_dym(lv_obj_t *parent, int x, int y, int w, int h) {
   lv_obj_t *val = lv_label_create(card);
   lv_label_set_text(val, "--");
   lv_obj_set_style_text_color(val, rgb565(KOL_TEKST), 0);
-  lv_obj_set_style_text_font(val, &lv_font_montserrat_28, 0);
+  lv_obj_set_style_text_font(val, &lv_font_pl_28, 0);
   lv_obj_align(val, LV_ALIGN_TOP_LEFT, 8, 48);
   dymValLabel = val;
 
@@ -6758,10 +6760,17 @@ void lvgl_dashboard_poc_init() {
   // zajmuje fontem 14 x=87..393 (zmierzone w testy_host, scenariusz
   // gola_plytka) - miesci sie, ale bez zapasu: nie wydluzac tego tekstu.
   // Ukryty, dopoki main.cpp nie poda niepustego tekstu.
+  // [v1.4.5 D] y=4, nie 5: lv_font_pl_14 ma linie 17 px (montserrat_14: 16 px,
+  // ogonki i kreski nad wielkimi literami potrzebuja piksela wiecej), a linia
+  // bazowa zostaje 3 px od dolu - przy y=4 litery leza DOKLADNIE tam, gdzie
+  // do v1.4.4. Przy y=5 etykieta siegalaby y=21 i stykala sie z obszarem
+  // rysowania kafelkow (cien, od y=21): kazda zmiana napisu (co sekunde przy
+  // "CENTRALA MILCZY 14 s") rysowalaby tez brzeg kafelkow - 3 prosby o pamiec
+  // wiecej na odswiezenie (pomiar_obciazenia.sh, stan D: 511 zamiast 319/min).
   centralaZnacznikLabel = lv_label_create(scr);
   lv_label_set_text(centralaZnacznikLabel, "");
   lv_obj_set_style_text_color(centralaZnacznikLabel, rgb565(KOL_WARN), 0);
-  lv_obj_align(centralaZnacznikLabel, LV_ALIGN_TOP_MID, 0, 5);
+  lv_obj_align(centralaZnacznikLabel, LV_ALIGN_TOP_MID, 0, CENTRALA_ZNACZNIK_Y);
   lv_obj_add_flag(centralaZnacznikLabel, LV_OBJ_FLAG_HIDDEN);
 
   // [UI-SIATKA, PELNY EKRAN] User: "wywnioskuj wielkosc kafelkow, zeby objac
@@ -6818,7 +6827,7 @@ void lvgl_dashboard_poc_init() {
   // jednej jednokolorowej ikony - dach w KOL_POKOJ_DACH (braz/terakota),
   // termometr w KOL_POKOJ (koralowy, jak dotad) - ten sam wzorzec co BOJLER
   // (kontur+woda) i PANEL (slonce+kolektor) wyzej w tym pliku.
-  pokojValLabel = kafelek(scr, x0 + 1 * (kw + odstepX), y0, kw, kh, "POKOJ", "--", KOL_RAMKA,
+  pokojValLabel = kafelek(scr, x0 + 1 * (kw + odstepX), y0, kw, kh, "POKÓJ", "--", KOL_RAMKA,
                            &lv_ikona_pokoj_dach, KOL_POKOJ_DACH, nullptr,
                            &lv_ikona_pokoj_termometr, KOL_POKOJ);
 
@@ -6838,7 +6847,7 @@ void lvgl_dashboard_poc_init() {
   // uchwyt, bo mniejsza ikona przesuwa sie nieco w kafelku (realign po
   // stworzeniu - kafelek() wyrownuje wg. rozmiaru zrodlowego bitmapy, tu
   // juz 32px, wiec pojedynczy align wystarcza, bez dodatkowego kroku).
-  wilgotnoscValLabel = kafelek(scr, x0 + 2 * (kw + odstepX), y0, kw, kh, "WILGOTNOSC", "--", KOL_RAMKA, &lv_ikona_kropla_mala, KOL_KROPLA, &wilgotnoscIkonaUchwyt);
+  wilgotnoscValLabel = kafelek(scr, x0 + 2 * (kw + odstepX), y0, kw, kh, "WILGOTNOŚĆ", "--", KOL_RAMKA, &lv_ikona_kropla_mala, KOL_KROPLA, &wilgotnoscIkonaUchwyt);
   // [Partia 4, ta sesja] User na zywym sprzecie: "w wilgotnosci kropelka
   // nizej bo wchodzi na napis" - etykieta "WILGOTNOSC" (10 znakow, font 14)
   // jest dosc szeroka, zeby jej prawy koniec siegal pod domyslne
@@ -6853,7 +6862,7 @@ void lvgl_dashboard_poc_init() {
   // dostaje teraz wlasny kolor domeny (KOL_CISNIENIE/KOL_POKOJ, patrz wyzej).
   // CISNIENIE dodatkowo przesuniete kilka px w dol (user: "odrobine w dul") -
   // manometr wizualnie "unosil sie" za blisko gornej krawedzi karty.
-  cisnienieValLabel = kafelek(scr, x0 + 3 * (kw + odstepX), y0, kw, kh, "CISNIENIE", "--", KOL_RAMKA, &lv_ikona_cisnienie, KOL_CISNIENIE, &cisnienieIkonaUchwyt);
+  cisnienieValLabel = kafelek(scr, x0 + 3 * (kw + odstepX), y0, kw, kh, "CIŚNIENIE", "--", KOL_RAMKA, &lv_ikona_cisnienie, KOL_CISNIENIE, &cisnienieIkonaUchwyt);
   if (cisnienieIkonaUchwyt != nullptr) {
     lv_obj_align(cisnienieIkonaUchwyt, LV_ALIGN_TOP_RIGHT, -4, 12);
   }
@@ -6863,7 +6872,7 @@ void lvgl_dashboard_poc_init() {
   // lvgl_dashboard_poc_aktualizuj()). cisnienieValLabel to wskaznik
   // zwrocony przez kafelek() (val label), wiec zwykly override stylu po
   // stworzeniu - bez zmian w samej funkcji kafelek().
-  lv_obj_set_style_text_font(cisnienieValLabel, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_font(cisnienieValLabel, &lv_font_pl_20, 0);
 
   // --- rzad 1: BOJLER, PANEL, PIEC CO/SR, POMPA ---
   // [24] BOJLER: v1 (jeden kolor, cienka fala) byla nieczytelna na LCD.
@@ -7158,7 +7167,7 @@ void lvgl_dashboard_poc_pokaz_blad_polecenia(const char *tekst) {
     lv_obj_add_flag(g_bladPoleceniaPasek, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(g_bladPoleceniaPasek, blad_polecenia_dotyk_cb, LV_EVENT_CLICKED, nullptr);
     g_bladPoleceniaLabel = lv_label_create(g_bladPoleceniaPasek);
-    lv_obj_set_style_text_font(g_bladPoleceniaLabel, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(g_bladPoleceniaLabel, &lv_font_pl_14, 0);
     lv_obj_set_style_text_color(g_bladPoleceniaLabel, lv_color_white(), 0);
     lv_obj_center(g_bladPoleceniaLabel);
   }
@@ -7193,7 +7202,7 @@ void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik) {
   ustawNapis(centralaZnacznikLabel, znacznik);
   // Ponowne wyrownanie: etykieta ma szerokosc zalezna od tekstu, a
   // LV_ALIGN_TOP_MID liczy pozycje raz, w chwili wywolania ustawWyrownanie().
-  ustawWyrownanie(centralaZnacznikLabel, LV_ALIGN_TOP_MID, 0, 5);
+  ustawWyrownanie(centralaZnacznikLabel, LV_ALIGN_TOP_MID, 0, CENTRALA_ZNACZNIK_Y);
   ustawUkrycie(centralaZnacznikLabel, false);
 }
 
@@ -7217,7 +7226,7 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_dymu(int progAlarmDym, int dymCzas
   g_dymUstWartosc[2] = dymCzasStabilizacji;
   if (lv_scr_act() == dymPanel) {
     char bufor[16];
-    snprintf(bufor, sizeof(bufor), "PROG: %d", g_dymProg);
+    snprintf(bufor, sizeof(bufor), "PRÓG: %d", g_dymProg);
     ustawNapis(dymProgLabel, bufor);
     lv_slider_set_value(dymSlider, g_dymProg, LV_ANIM_OFF);
     for (int i = 0; i < 3; i++) {
@@ -7243,7 +7252,7 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_alarmu_temp(int progAlarmTemp) {
   g_alarmTempProg = progAlarmTemp;
   if (lv_scr_act() == alarmTempPanel) {
     char bufor[16];
-    snprintf(bufor, sizeof(bufor), "PROG: %d C", g_alarmTempProg);
+    snprintf(bufor, sizeof(bufor), "PRÓG: %d C", g_alarmTempProg);
     ustawNapis(alarmTempProgLabel, bufor);
     lv_slider_set_value(alarmTempSlider, g_alarmTempProg, LV_ANIM_OFF);
   }
@@ -7570,7 +7579,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
     ustawNapis(bojlerValLabel, "--");
     ustawNapis(dymValLabel, "--");
     if (ogrzGlownaLabel != nullptr) ustawNapis(ogrzGlownaLabel, "--");
-    if (ogrzSredniaLabel != nullptr) ustawNapis(ogrzSredniaLabel, "SR --");
+    if (ogrzSredniaLabel != nullptr) ustawNapis(ogrzSredniaLabel, "ŚR --");
     if (panelValLabel != nullptr) ustawNapis(panelValLabel, "--");
     if (pokojValLabel != nullptr) ustawNapis(pokojValLabel, "--");
     if (wilgotnoscValLabel != nullptr) ustawNapis(wilgotnoscValLabel, "--");
@@ -7628,13 +7637,13 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   } else {
     // [FIX tej sesji] User: "dodaj do wszystkich wartosci temp znaczek stopni,
     // bo jest np. 35 C". Dodany znak stopnia (°, U+00B0) przed "C" w KAZDEJ
-    // etykiecie temperatury nizej. W przeciwienstwie do polskich znakow
-    // diakrytycznych (celowo pominietych w calym UI - "WILGOTNOSC" bez "SC",
-    // "CISNIENIE" bez "S" - bo domyslne wbudowane fonty LVGL montserrat_14/20/
-    // 28 NIE zawieraja Latin Extended-A), znak stopnia jest w standardowym
-    // zakresie glifow tych fontow (LVGL dolacza go domyslnie obok ASCII i
-    // bullet) - powinien wyswietlic sie poprawnie bez zmiany fontu. Warto to
-    // jednak potwierdzic na prawdziwym sprzecie przy pierwszej okazji.
+    // etykiecie temperatury nizej. Znak stopnia jest w standardowym zakresie
+    // glifow czcionek LVGL (obok ASCII i bullet). [v1.4.5 D] Polskie litery
+    // tez juz sa: wbudowane montserrat_14/20/28 (bez Latin Extended-A)
+    // zastapily lv_font_pl_14/20/28 z src/czcionki/ - stad "WILGOTNOŚĆ",
+    // "CIŚNIENIE", "POKÓJ" itd. w calym UI zamiast dawnych "WILGOTNOSC",
+    // "CISNIENIE", "POKOJ". Scenariusz polskie_litery (testy_host) pilnuje,
+    // ze kazdy znak kazdej etykiety ma glif.
     snprintf(bufor, sizeof(bufor), "%.1f°C", tZewn);
   }
   ustawNapis(zewnValLabel, bufor);
@@ -7664,7 +7673,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   }
 
   if (ogrzSredniaLabel != nullptr) {
-    snprintf(bufor, sizeof(bufor), "SR %.0f°C", tOgrzSr);
+    snprintf(bufor, sizeof(bufor), "ŚR %.0f°C", tOgrzSr);
     ustawNapis(ogrzSredniaLabel, bufor);
   }
 
@@ -7792,13 +7801,13 @@ void lvgl_dashboard_poc_ota(int procent, const char *opis) {
 
     lv_obj_t *tytul = lv_label_create(otaNakladka);
     lv_label_set_text(tytul, "AKTUALIZACJA PANELU");
-    lv_obj_set_style_text_font(tytul, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(tytul, &lv_font_pl_28, 0);
     lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
     lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 56);
 
     otaNakladkaOpis = lv_label_create(otaNakladka);
     lv_label_set_text(otaNakladkaOpis, "");
-    lv_obj_set_style_text_font(otaNakladkaOpis, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(otaNakladkaOpis, &lv_font_pl_20, 0);
     lv_obj_set_style_text_color(otaNakladkaOpis, rgb565(KOL_TEKST), 0);
     lv_obj_align(otaNakladkaOpis, LV_ALIGN_TOP_MID, 0, 112);
 
@@ -7817,12 +7826,12 @@ void lvgl_dashboard_poc_ota(int procent, const char *opis) {
 
     otaNakladkaProcent = lv_label_create(otaNakladka);
     lv_label_set_text(otaNakladkaProcent, "0%");
-    lv_obj_set_style_text_font(otaNakladkaProcent, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(otaNakladkaProcent, &lv_font_pl_20, 0);
     lv_obj_set_style_text_color(otaNakladkaProcent, rgb565(KOL_TEKST), 0);
     lv_obj_align(otaNakladkaProcent, LV_ALIGN_TOP_MID, 0, 196);
 
     lv_obj_t *stopka = lv_label_create(otaNakladka);
-    lv_label_set_text(stopka, "Nie wylaczaj zasilania. Panel zrestartuje sie sam.\nAlarm z centrali przerywa aktualizacje.");
+    lv_label_set_text(stopka, "Nie wyłączaj zasilania. Panel zrestartuje się sam.\nAlarm z centrali przerywa aktualizację.");
     lv_obj_set_style_text_align(stopka, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(stopka, rgb565(KOL_TEKST_DIM), 0);
     lv_obj_align(stopka, LV_ALIGN_TOP_MID, 0, 246);

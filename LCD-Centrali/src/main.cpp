@@ -40,6 +40,33 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-20] v1.4.5 - POLSKIE LITERY NA EKRANIE (punkt D / temat 23 z
+//   WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md). Centrala bez zmian; ruch do
+//   centrali, pamiec RAM i logika panelu bez zmian - zmienia sie tylko to,
+//   co widac na wyswietlaczu LVGL.
+//   - Nowe czcionki src/czcionki/lv_font_pl_14/20/28.c: Montserrat Medium
+//     wygenerowany skryptem LVGL (built_in_font_gen.py, 4 bpp) z 18 polskimi
+//     literami ąćęłńóśźż ĄĆĘŁŃÓŚŹŻ obok dotychczasowych 158 glifow (ASCII,
+//     stopien, kropka, ikony LV_SYMBOL_*). Wbudowane montserrat_14/20/28
+//     WYLACZONE w include/lv_conf.h (zero duplikatu); LV_FONT_DEFAULT =
+//     lv_font_pl_14. Koszt: +1 271 / +2 139 / +3 671 B = +7 081 B flashu,
+//     0 B RAM. Wysokosc linii 17/24/31 px (bylo 16/22/30 - ogonki Ą/Ę
+//     schodza nizej), stad etykiety o 1-2 px wyzsze; uklad ekranow ten sam.
+//   - Napisy na ekranach LVGL po polsku: POKÓJ, CIŚNIENIE, WILGOTNOŚĆ, ŚR,
+//     WŁĄCZ/WYŁĄCZ, WŁ./WYŁ., RĘCZNY, PRÓG, POŻAR / DYM, WYŚWIETLACZ, Jasność
+//     w dzień/nocy, POWRÓT, Wewnętrzna, POKAŻ WYKRES, napisy bledow ekranu
+//     Wykresy, nakladka OTA ("Łączenie z centralą..."), pasek bledu polecenia
+//     ("POLECENIE NIE DOSZŁO DO CENTRALI"), naglowek pulpitu ("BRAK PAMIĘCI",
+//     "ZŁA ODPOWIEDŹ", "BŁĄD EKRANU"; diag::przyczynaNapis()). BEZ ZMIAN
+//     (celowo): log Seriala i tokeny do centrali (ASCII), napisy rysowane
+//     TFT_eSPI przed startem LVGL ("Szukam centrali", "Laczenie z WiFi",
+//     kalibracja dotyku, "BRAK PAMIECI - RESTART") - czcionki TFT_eSPI nie
+//     maja polskich liter, a to ekrany na kilka sekund.
+//   - testy_host: scenariusz polskie_litery (czcionki maja wszystkie 18
+//     liter; kazdy znak kazdej etykiety na kazdym ekranie ma glif w swojej
+//     czcionce; napisy skladane w trakcie pracy tez; zadnego napisu
+//     "odogonkowionego"); uruchom_testy.sh i pomiar_pamieci.sh kompiluja
+//     src/czcionki/*.c.
 // [2026-11-20] v1.4.4 - PORZADKI (krok 7 z WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md
 //   = C1, C7, C8 z audytu). Firmware robi DOKLADNIE to samo co v1.4.3 - zero
 //   zmian w zachowaniu, ekranie i ruchu do centrali; centrala bez zmian.
@@ -970,7 +997,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.4.4"; // [2026-11-20] v1.4.4: porzadki w kodzie (C1/C7/C8) - zachowanie identyczne jak v1.4.3; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.4.5"; // [2026-11-20] v1.4.5: polskie litery na ekranie (punkt D) - wlasne czcionki lv_font_pl_14/20/28; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -2939,9 +2966,9 @@ void obslugaKomendaFetch() {
     Serial.printf("tag=KOMENDA lvl=WARN zdarzenie=polecenie_nieudane pole=%s cialo=\"%s\" powod=%s\n",
                   zakonczone.klucz, zakonczone.cialo, odpowiedziala ? "odrzucone" : "brak_odpowiedzi");
     char komunikat[56];
-    if (!odpowiedziala)                 snprintf(komunikat, sizeof(komunikat), "POLECENIE NIE DOSZLO DO CENTRALI");
+    if (!odpowiedziala)                 snprintf(komunikat, sizeof(komunikat), "POLECENIE NIE DOSZŁO DO CENTRALI");
     else if (powodOdrzucenia[0] != '\0') snprintf(komunikat, sizeof(komunikat), "ODRZUCONE: %s", powodOdrzucenia);
-    else                                snprintf(komunikat, sizeof(komunikat), "CENTRALA ODRZUCILA POLECENIE");
+    else                                snprintf(komunikat, sizeof(komunikat), "CENTRALA ODRZUCIŁA POLECENIE");
     lvgl_dashboard_poc_pokaz_blad_polecenia(komunikat);
   }
 
@@ -3958,7 +3985,7 @@ static void otaZacznij(const diag::OtaOferta &o) {
     return;
   }
   snprintf(sciezka, sizeof(sciezka), "/panel-ota.bin?token=%s", haslo);
-  lvgl_dashboard_poc_ota(0, "Laczenie z centrala...");
+  lvgl_dashboard_poc_ota(0, "Łączenie z centralą...");
   if (!otaFetch.startBinarnie(sciezka, otaOdbiorcaBajtow, diag::OTA_CISZA_MS, diag::OTA_CALOSC_MS)) {
     otaProbaNieudana(diag::OTA_POWOD_POBIERANIE, false, otaFetch.ostatniBlad());
   }

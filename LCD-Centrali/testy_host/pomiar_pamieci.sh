@@ -201,12 +201,13 @@ $ZCXX $WSPOLNE -w -c -o "$BUD/dash.o" "$SRC/dashboard_lvgl_poc.cpp" &
 BLEDY=0
 for zadanie in $(jobs -p); do wait "$zadanie" || BLEDY=1; done
 $ZCXX $WSPOLNE -w -c -o "$BUD/port.o" "$SRC/lvgl_port.cpp" &
+for n in 14 20 28; do $ZCC $OPT -w -DLV_CONF_INCLUDE_SIMPLE -I "$INCLUDE" -I "$PODRECZNY/lvgl" -c -o "$BUD/czc$n.o" "$SRC/czcionki/lv_font_pl_$n.c" & done   # [v1.4.5 D] czcionki PL
 $ZCXX $WSPOLNE -w -c -o "$BUD/atrapa.o" mock/atrapa.cpp &
 $ZCXX $WSPOLNE -w -c -o "$BUD/sym.o" symulator_panelu.cpp &
 $ZCC $OPT -c -o "$BUD/pomiar.o" pomiar_sterty.c &
 for zadanie in $(jobs -p); do wait "$zadanie" || BLEDY=1; done
 if [ "$BLEDY" != 0 ]; then echo "    BLAD KOMPILACJI (patrz komunikaty wyzej)"; exit 1; fi
-$ZCXX $OPT -o "$BUD/symulator32" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/atrapa.o "$BUD"/sym.o "$BUD"/pomiar.o \
+$ZCXX $OPT -o "$BUD/symulator32" "$BUD"/main.o "$BUD"/dash.o "$BUD"/port.o "$BUD"/czc14.o "$BUD"/czc20.o "$BUD"/czc28.o "$BUD"/atrapa.o "$BUD"/sym.o "$BUD"/pomiar.o \
   "$LIB" -Wl,--wrap=connect,--wrap=send,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -lpthread
 echo "    OK"
 

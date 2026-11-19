@@ -24,7 +24,8 @@
 // 32x32 - user: "ikona ma spora przestrzen wolna, zwieksz moze ikony". Realna
 // przyczyna byla dwojaka: (1) ikona 24px w karcie 114x90 zostawiala duzo
 // nieuzytej przestrzeni po prawej-gornej stronie, (2) wartosc (font 28,
-// line_height=30 wg realnych metryk lv_font_montserrat_28.c z repo LVGL -
+// line_height=30 wg realnych metryk lv_font_montserrat_28.c z repo LVGL; od
+// v1.4.5 lv_font_pl_28 z src/czcionki/ ma te same metryki -
 // .line_height=30, .base_line=5) siedziala tuz pod etykieta (y=30) z 26-27px
 // martwej przestrzeni miedzy nia a dolem karty. 32x32 to JUZ UZYWANY w tym
 // projekcie rozmiar (BOJLER, POMPA) - powiekszenie DYM/ZEWN/PLOMIEN/KROPLA/

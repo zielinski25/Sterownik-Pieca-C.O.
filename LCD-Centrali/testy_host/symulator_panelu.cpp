@@ -90,6 +90,7 @@ extern diag::PamiecAutorestartu rtcAutorestart __attribute__((weak));
 // LVGL_WYKRESY_PUNKTOW i ma inna postac funkcji mostu ekranu Wykresy
 // (WykresyFetchCb, ..._strumien_koniec()) - patrz scenariuszWykresyStaryCsv().
 #include "dashboard_lvgl_poc.h"
+#include "czcionki/czcionki_pl.h"   // lv_font_pl_14/20/28 - scenariusz polskie_litery (v1.4.5)
 // w v1.1.0 tej funkcji nie ma:
 void lvgl_dashboard_poc_aktualizuj_centrale(const char* znacznik) __attribute__((weak));
 void pompaManualWyslij(const char* stanTekst);
@@ -1035,7 +1036,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.4.4"
+#define WERSJA_FW "v1.4.5"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1315,7 +1316,7 @@ void scenariuszDwieCentrale() {
   ustaw(1, [](Centrala& c) { c.tOgrz = 73.0; c.tOgrzSr = 70.0; c.tBojler = 66.0; });
   biegnij(3000);
   zrzutEkranu("2_po_zmianie_w_testowej");
-  sprawdz(ekranMa("73°C") && ekranMa("SR 70°C") && ekranMa("66°C"), "po zmianie w centrali testowej kafelki pokazuja nowe wartosci (73 / SR 70 / 66)");
+  sprawdz(ekranMa("73°C") && ekranMa("ŚR 70°C") && ekranMa("66°C"), "po zmianie w centrali testowej kafelki pokazuja nowe wartosci (73 / SR 70 / 66)");
   sprawdz(kopia(0).nStatus == 0, "prawdziwa centrala nie dostala ani jednego zapytania");
 }
 
@@ -1667,7 +1668,7 @@ void scenariuszGolaPlytka() {
   info("napisy na ekranie: %s", napisy.c_str());
   info("%s", liniaLogu("tag=PANEL fw=").c_str());
   sprawdz(ekranMa("18.5°C"), "kafelek ZEWN pokazuje wartosc z symulacji centrali (18.5°C)");
-  sprawdz(ileNapisow("-1°C") == 3 && ekranMa("-1.0°C") && ekranMa("SR 0°C"), "kafelki bez czujnika pokazuja to, co podaje centrala: -1 (BOJLER, PANEL, PIEC), -1.0 (POKOJ), SR 0");
+  sprawdz(ileNapisow("-1°C") == 3 && ekranMa("-1.0°C") && ekranMa("ŚR 0°C"), "kafelki bez czujnika pokazuja to, co podaje centrala: -1 (BOJLER, PANEL, PIEC), -1.0 (POKOJ), SR 0");
   sprawdz(ekranMa("2413") && ekranMa("20:41") && ekranMa("11.11.2026"), "DYM 2413, godzina 20:41, data 11.11.2026 - jak w centrali");
   sprawdz(logMa("tag=PANEL", "zdarzenie=symulacja_centrali", "czujniki=zewn"), "log: centrala zglasza symulacje czujnika zewn");
   sprawdz(ekranMa("SYMULACJA: zewn"), "naglowek: \"SYMULACJA: zewn\"");
@@ -1739,7 +1740,7 @@ void centralaJakWLogu1112(Centrala& c) {
 // Tekst znacznika na srodku naglowka (pierwsza widoczna etykieta zaczynajaca
 // sie od jednego z podanych poczatkow) albo "".
 std::string znacznikNaglowka() {
-  static const char* const POCZATKI[] = {"BRAK WIFI", "CENTRALA MILCZY", "ZLA ODPOWIEDZ", "BRAK PAMIECI", "RESTART ZA", "SYMULA", "2 CENTRALE"};
+  static const char* const POCZATKI[] = {"BRAK WIFI", "CENTRALA MILCZY", "ZŁA ODPOWIEDŹ", "BRAK PAMIĘCI", "RESTART ZA", "SYMULA", "2 CENTRALE"};
   for (const char* p : POCZATKI) {
     lv_obj_t* e = znajdzEtykiete(lv_scr_act(), p);
     if (e != nullptr) return lv_label_get_text(e);
@@ -1790,7 +1791,7 @@ void scenariuszMartwePolaczenie() {
   ustaw(0, centralaJakWLogu1112);
   setup();
   biegnij(5000);
-  sprawdz(ekranMa("PRZEGRZANIE") && ekranMa("Piec CO powyzej progu"), "alarm przegrzania z centrali: panel pokazuje ekran alarmu");
+  sprawdz(ekranMa("PRZEGRZANIE") && ekranMa("Piec CO powyżej progu"), "alarm przegrzania z centrali: panel pokazuje ekran alarmu");
   zrzutEkranu("1_alarm");
   sprawdz(kliknij("ZAMKNIJ"), "ekran alarmu ma przycisk ZAMKNIJ");
   biegnij(3000);
@@ -2142,7 +2143,7 @@ void scenariuszPoleceniaNieGina() {
   { LiczFirmware licz; lv_event_send(plusOff, LV_EVENT_CLICKED, nullptr); }
   biegnij(3000);
   info("pasek bledu: \"%s\"", lvgl_dashboard_poc_blad_polecenia_tekst());
-  sprawdz(std::string(lvgl_dashboard_poc_blad_polecenia_tekst()) == "POLECENIE NIE DOSZLO DO CENTRALI", "ekran: pasek \"POLECENIE NIE DOSZLO DO CENTRALI\"");
+  sprawdz(std::string(lvgl_dashboard_poc_blad_polecenia_tekst()) == "POLECENIE NIE DOSZŁO DO CENTRALI", "ekran: pasek \"POLECENIE NIE DOSZLO DO CENTRALI\"");
   sprawdz(logMa("zdarzenie=polecenie_nieudane", "pole=czasOff", "powod=brak_odpowiedzi", od) && ileLinii("[KOMENDA] POST nieudany", "", "", od) == 1,
           "log: polecenie_nieudane powod=brak_odpowiedzi (jedna linia)");
   zrzutEkranu("1_pasek_bledu");
@@ -2311,7 +2312,7 @@ void scenariuszZlaOdpowiedzDlugo() {
   ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_HTTP500; });
   biegnij(20000);
   info("naglowek po 20 s: \"%s\"", znacznikNaglowka().c_str());
-  sprawdz(znacznikNaglowka().rfind("ZLA ODPOWIEDZ", 0) == 0, "naglowek: \"ZLA ODPOWIEDZ <sekundy> s\"");
+  sprawdz(znacznikNaglowka().rfind("ZŁA ODPOWIEDŹ", 0) == 0, "naglowek: \"ZLA ODPOWIEDZ <sekundy> s\"");
   sprawdz(logMa("zdarzenie=dane_nieaktualne", "przyczyna=odp", "", od), "log: dane_nieaktualne przyczyna=odp");
   unsigned long restartPo = 0;
   for (int i = 0; i < 300 && restartPo == 0; i++) {
@@ -2360,7 +2361,7 @@ void scenariuszZlaOdpowiedzBezKonca() {
   sprawdz(g_atrapa.restarty == 0, "trzeciego restartu z rzedu przy nieczytelnych odpowiedziach nie ma");
   sprawdz(ileLinii("zdarzenie=autorestart_pominiety") == 1 && logMa("zdarzenie=autorestart_pominiety", "przyczyna=odp", "nr_z_rzedu=2"),
           "log: autorestart_pominiety - raz");
-  sprawdz(znacznikNaglowka().rfind("ZLA ODPOWIEDZ ", 0) == 0, "naglowek: \"ZLA ODPOWIEDZ <sekundy> s\", bez odliczania do restartu");
+  sprawdz(znacznikNaglowka().rfind("ZŁA ODPOWIEDŹ ", 0) == 0, "naglowek: \"ZLA ODPOWIEDZ <sekundy> s\", bez odliczania do restartu");
   sprawdz(g_atrapa.liczbaDisconnect == 0, "WiFi nie jest rozlaczane");
 
   printf("  centrala przestaje odpowiadac w ogole:\n");
@@ -2464,7 +2465,7 @@ void scenariuszStartPoAutorestarcieZAlarmem() {
   sprawdz(g_atrapa.zmianTonu - zmianPrzed >= 20, "brzeczyk gra wzorzec alarmu juz podczas startu (czekanie na WiFi)");
   sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=alarm_sprzed_restartu", "ogrzewanie=1"), "log: alarm_sprzed_restartu");
   biegnij(1000);
-  sprawdz(ekranMa("PRZEGRZANIE") && ekranMa("Piec CO powyzej progu") && ekranMa("WYCISZ"), "ekran alarmu wraca po restarcie, mimo braku danych");
+  sprawdz(ekranMa("PRZEGRZANIE") && ekranMa("Piec CO powyżej progu") && ekranMa("WYCISZ"), "ekran alarmu wraca po restarcie, mimo braku danych");
   sprawdz(brzeczykGraPrzegrzanie(), "brzeczyk gra dalej w petli glownej");
   info("ekran alarmu, linia nad przyciskami: \"%s\"", znacznikNaglowka().c_str());
   sprawdz(znacznikNaglowka().rfind("BRAK WIFI ", 0) == 0, "ekran alarmu tez mowi, ze panel nie ma danych (\"BRAK WIFI <sekundy> s\")");
@@ -2521,7 +2522,7 @@ void scenariuszBrakPamieciJson() {
   sprawdz(logMa("tag=PAMIEC lvl=WARN zdarzenie=malo_pamieci ram=2000 ram_blok=900 ram_min=700 prog=16000", "", "", od), "log: ostrzezenie tag=PAMIEC zdarzenie=malo_pamieci");
   sprawdz(ileLinii("zdarzenie=malo_pamieci", "", "", od) == 1, "ostrzezenie o pamieci najwyzej raz na minute");
   sprawdz(ekranMa("--") && !ekranMa("55°C"), "po 10 s kafelki pokazuja \"--\"");
-  sprawdz(znacznikNaglowka().rfind("BRAK PAMIECI", 0) == 0, "naglowek: \"BRAK PAMIECI <sekundy> s\" (a nie \"ZLA ODPOWIEDZ\")");
+  sprawdz(znacznikNaglowka().rfind("BRAK PAMIĘCI", 0) == 0, "naglowek: \"BRAK PAMIECI <sekundy> s\" (a nie \"ZLA ODPOWIEDZ\")");
   sprawdz(logMa("zdarzenie=dane_nieaktualne", "przyczyna=pam", "", od), "log: dane_nieaktualne przyczyna=pam");
   unsigned long restartPo = 0;
   for (int i = 0; i < 300 && restartPo == 0; i++) {
@@ -2565,7 +2566,7 @@ void scenariuszBrakPamieciOdbior() {
   info("naglowek po 20 s: \"%s\"", znacznikNaglowka().c_str());
   sprawdz(logMa("[STATUS] GET nieudany: brak pamieci na odpowiedz errno=12 ENOMEM", "", "", od), "log: \"GET nieudany: brak pamieci na odpowiedz errno=12 ENOMEM\"");
   sprawdz(!logMa("zdarzenie=odpowiedz_nieczytelna", "", "", od), "ucieta odpowiedz nie jest brana za blad centrali (brak linii odpowiedz_nieczytelna)");
-  sprawdz(ekranMa("--") && znacznikNaglowka().rfind("BRAK PAMIECI", 0) == 0, "kafelki \"--\", naglowek \"BRAK PAMIECI <sekundy> s\"");
+  sprawdz(ekranMa("--") && znacznikNaglowka().rfind("BRAK PAMIĘCI", 0) == 0, "kafelki \"--\", naglowek \"BRAK PAMIECI <sekundy> s\"");
   sprawdz(logMa("zdarzenie=dane_nieaktualne", "przyczyna=pam", "", od), "log: dane_nieaktualne przyczyna=pam");
   sprawdz(!logMa("zdarzenie=wymuszam_polaczenie", "", "", od) && g_atrapa.liczbaDisconnect == 0, "WiFi nie jest rozlaczane - siec dziala");
   const size_t od2 = g_atrapa.serial.size();
@@ -2629,7 +2630,7 @@ void scenariuszWykresyPamiec() {
   lv_obj_t* drugi = nullptr;
   if (lv_disp_t* d = lv_disp_get_default()) {
     for (uint32_t i = 0; i < d->screen_cnt; i++)
-      if (znajdzEtykiete(d->screens[i], "WYKRESY") != nullptr && znajdzEtykiete(d->screens[i], "WYSWIETLACZ") != nullptr) drugi = d->screens[i];
+      if (znajdzEtykiete(d->screens[i], "WYKRESY") != nullptr && znajdzEtykiete(d->screens[i], "WYŚWIETLACZ") != nullptr) drugi = d->screens[i];
   }
   sprawdz(drugi != nullptr, "drugi pulpit (kafelki WYKRESY i WYSWIETLACZ) istnieje");
   if (drugi == nullptr) return;
@@ -2686,7 +2687,7 @@ Centrala stanC(int idx) {
 lv_obj_t* drugiPulpit() {
   if (lv_disp_t* d = lv_disp_get_default()) {
     for (uint32_t i = 0; i < d->screen_cnt; i++)
-      if (znajdzEtykiete(d->screens[i], "WYKRESY") != nullptr && znajdzEtykiete(d->screens[i], "WYSWIETLACZ") != nullptr) return d->screens[i];
+      if (znajdzEtykiete(d->screens[i], "WYKRESY") != nullptr && znajdzEtykiete(d->screens[i], "WYŚWIETLACZ") != nullptr) return d->screens[i];
   }
   return nullptr;
 }
@@ -2698,13 +2699,13 @@ bool otworzWykresy() {
   { LiczFirmware licz; lv_scr_load(drugi); }
   if (!kliknij("WYKRESY")) return false;
   biegnij(300);
-  return lv_scr_act() != drugi && znajdzEtykiete(lv_scr_act(), "POKAZ WYKRES") != nullptr;
+  return lv_scr_act() != drugi && znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") != nullptr;
 }
 
 // Dotkniecie podstrony z wykresem (gdziekolwiek) - firmware wraca wtedy do wyboru serii.
 bool dotknijWykresu() {
   lv_obj_t* tytul = znajdzEtykiete(lv_scr_act(), "[");
-  if (tytul == nullptr || znajdzEtykiete(lv_scr_act(), "POKAZ WYKRES") != nullptr) return false;
+  if (tytul == nullptr || znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") != nullptr) return false;
   LiczFirmware licz;
   lv_event_send(lv_obj_get_parent(tytul), LV_EVENT_PRESSED, nullptr);
   return true;
@@ -2847,7 +2848,7 @@ std::vector<int> zWzorcaV122(const char* nazwa) {
 size_t pokazWykres(const char* zakres, unsigned long czekajMs) {
   if (zakres != nullptr) kliknij(zakres);
   const size_t od = g_atrapa.serial.size();
-  kliknij("POKAZ WYKRES");
+  kliknij("POKAŻ WYKRES");
   biegnij(czekajMs);
   return od;
 }
@@ -2870,15 +2871,15 @@ void scenariuszWykresyCentralaLiczy() {
   const int statusPrzed = stanC(0).nStatus;
   size_t od = g_atrapa.serial.size();
   const unsigned long t0 = millis();
-  sprawdz(kliknij("POKAZ WYKRES"), "dotkniecie POKAZ WYKRES");
-  sprawdz(millis() == t0 && ekranMa("Ladowanie danych z centrali...") && !wykresWidoczny(),
+  sprawdz(kliknij("POKAŻ WYKRES"), "dotkniecie POKAZ WYKRES");
+  sprawdz(millis() == t0 && ekranMa("Ładowanie danych z centrali...") && !wykresWidoczny(),
           "dotkniecie wraca od razu (zegar plytki nie drgnal), na ekranie \"Ladowanie danych z centrali...\"");
   biegnij(1000);
   Centrala c = stanC(0);
   sprawdz(c.nPanelHist == 1 && c.ostatniaPanelHistSciezka == "/api/history/panel?tryb=dzien&pkt=96",
           "centrala dostala jedno zapytanie: GET /api/history/panel?tryb=dzien&pkt=96");
   sprawdz(c.nHistKrotka == 0 && c.nHistDluga == 0, "calego CSV historii (/api/history, /api/history/long) panel NIE pobieral");
-  sprawdz(wykresWidoczny() && !ekranMa("Ladowanie danych z centrali..."), "wykres jest na ekranie");
+  sprawdz(wykresWidoczny() && !ekranMa("Ładowanie danych z centrali..."), "wykres jest na ekranie");
   sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "ZEWN: wszystkie 96 punktow takie, jak policzyla centrala (od -4,9 do 9,3)");
   sprawdz(tesamePunkty(punktyWykresu(1), zWzorca(dzien, 4), "BOJLER"), "BOJLER: wszystkie 96 punktow (45,0)");
   sprawdz(ilePunktow(punktyWykresu(2)) == 0 && ilePunktow(punktyWykresu(7)) == 0, "pozostale serie puste");
@@ -2893,7 +2894,7 @@ void scenariuszWykresyCentralaLiczy() {
   zrzutEkranu("dzien");
 
   printf("  powrot do wyboru i zakres GODZINNY:\n");
-  sprawdz(dotknijWykresu() && ekranMa("POKAZ WYKRES"), "dotkniecie wykresu wraca do wyboru serii");
+  sprawdz(dotknijWykresu() && ekranMa("POKAŻ WYKRES"), "dotkniecie wykresu wraca do wyboru serii");
   od = pokazWykres("GODZINNY", 1000);
   c = stanC(0);
   sprawdz(c.nPanelHist == 2 && c.ostatniaPanelHistSciezka == "/api/history/panel?tryb=godz&pkt=96", "zapytanie: /api/history/panel?tryb=godz&pkt=96");
@@ -2904,20 +2905,20 @@ void scenariuszWykresyCentralaLiczy() {
 
   printf("  zakres TYGODNIOWY, pelne bufory centrali, najdluzsze liczby; do tego CISNIENIE na prawej osi:\n");
   dotknijWykresu();
-  sprawdz(kliknij("CISNIENIE"), "dobrana seria CISNIENIE (inna jednostka -> prawa os)");
+  sprawdz(kliknij("CIŚNIENIE"), "dobrana seria CISNIENIE (inna jednostka -> prawa os)");
   od = pokazWykres("TYGODNIOWY", 1000);
   c = stanC(0);
   sprawdz(c.nPanelHist == 3 && c.ostatniaPanelHistSciezka == "/api/history/panel?tryb=tydz&pkt=96", "zapytanie: /api/history/panel?tryb=tydz&pkt=96");
   sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(tydz, 1), "ZEWN") && tesamePunkty(punktyWykresu(1), zWzorca(tydz, 4), "BOJLER"),
           "ZEWN (wartosci ujemne) i BOJLER: 96 punktow jak w odpowiedzi centrali");
-  sprawdz(tesamePunkty(punktyWykresu(7), zWzorca(tydz, 22), "CISNIENIE"), "CISNIENIE (1013,2 hPa) na prawej osi: 96 punktow");
+  sprawdz(tesamePunkty(punktyWykresu(7), zWzorca(tydz, 22), "CIŚNIENIE"), "CISNIENIE (1013,2 hPa) na prawej osi: 96 punktow");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=96 przerw=0 wierszy_centrali=9440", "ucietych_linii=0", "", od),
           "log: wierszy_centrali=9440 (8000 zdarzen + 1440 probek), ucietych_linii=0");
   info("odpowiedz centrali: %ld B (caly /api/history/long przy pelnym buforze to ponad 1 MB)", poleLogu("tag=WYKRESY zdarzenie=pobrano", "bajtow", od));
 
   printf("  ostatnia kolumna wiersza (Syberek) - czy dlugie linie dochodza cale:\n");
   dotknijWykresu();
-  kliknij("CISNIENIE");   // odznacz
+  kliknij("CIŚNIENIE");   // odznacz
   sprawdz(kliknij("Syberek"), "CISNIENIE odznaczone, wybrany Syberek");
   od = pokazWykres(nullptr, 1000);
   sprawdz(tesamePunkty(punktyWykresu(7), zWzorca(tydz, 31), "Syberek"), "Syberek: 96 punktow (60,0, na koncu 100,0)");
@@ -2995,7 +2996,7 @@ void scenariuszWykresyStaraCentrala() {
     od = pokazWykres("DZIENNY", 3000);
     sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), maByc, "ZEWN"), "wykres z 50 calych wierszy; urwany 51. wiersz nie jest danymi");
     bool dopisek = false;
-    for (const std::string& t : napisyEkranu()) if (t.find("   NIEPELNE") != std::string::npos) dopisek = true;
+    for (const std::string& t : napisyEkranu()) if (t.find("   NIEPEŁNE") != std::string::npos) dopisek = true;
     sprawdz(dopisek, "podpis pod wykresem z dopiskiem NIEPELNE");
     sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=pobrano_czesc tryb=dzien sposob=panel powod=urwana", "punktow=50 linii=50 ", "", od),
             "log: zdarzenie=pobrano_czesc powod=urwana ... punktow=50 linii=50");
@@ -3041,11 +3042,11 @@ void scenariuszWykresyPrzerwy() {
 
   printf("  godzina, w ktorej czujnik pokojowy przez pierwsze pol godziny nie dawal odczytu:\n");
   dotknijWykresu();
-  sprawdz(kliknij("Wewnetrzna"), "dobrana seria Wewnetrzna (pokoj)");
+  sprawdz(kliknij("Wewnętrzna"), "dobrana seria Wewnetrzna (pokoj)");
   od = pokazWykres("GODZINNY", 1000);
   const std::vector<int> zewn = punktyWykresu(0), pokoj = punktyWykresu(1);
   sprawdz(tesamePunkty(zewn, zWzorca(godz, 1), "ZEWN") && ilePunktow(zewn) == 96, "ZEWN: pelne 96 punktow (3,0)");
-  sprawdz(tesamePunkty(pokoj, zWzorca(godz, 19), "Wewnetrzna"), "Wewnetrzna: brak punktow tam, gdzie centrala podala \"nan\", potem 21,5");
+  sprawdz(tesamePunkty(pokoj, zWzorca(godz, 19), "Wewnętrzna"), "Wewnetrzna: brak punktow tam, gdzie centrala podala \"nan\", potem 21,5");
   sprawdz(pokoj.size() == 96 && pokoj[0] == BRAK && pokoj[40] == BRAK && pokoj[95] == 215 && ilePunktow(pokoj) > 40 && ilePunktow(pokoj) < 56,
           "linia czujnika zaczyna sie w polowie wykresu - nie jest dociagnieta do zera ani do poprzedniej wartosci");
   lv_obj_t* wykres = znajdzWykres(lv_scr_act());
@@ -3072,7 +3073,7 @@ void scenariuszWykresyBrakDanych() {
 
   printf("  centrala swiezo po pierwszym uruchomieniu (historia pusta):\n");
   size_t od = pokazWykres("DZIENNY", 1000);
-  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minute po starcie)"),
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minutę po starcie)"),
           "zamiast wykresu: \"Centrala nie ma jeszcze danych z tego zakresu (pierwszy pomiar zapisuje minute po starcie)\"");
   sprawdz(logMa("tag=WYKRESY zdarzenie=brak_danych tryb=dzien sposob=centrala przyczyna=pusto", "", "", od) && !logMa("zdarzenie=blad", "", "", od),
           "log: zdarzenie=brak_danych przyczyna=pusto (to nie blad)");
@@ -3083,8 +3084,8 @@ void scenariuszWykresyBrakDanych() {
   ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = pustaBezFs; });
   dotknijWykresu();
   od = pokazWykres(nullptr, 1000);
-  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minute po starcie)\n\n"
-                                       "Zapis historii na flash jest w centrali wylaczony:\npo jej restarcie historia zaczyna sie od zera"),
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minutę po starcie)\n\n"
+                                       "Zapis historii na flash jest w centrali wyłączony:\npo jej restarcie historia zaczyna się od zera"),
           "napis dopowiada: \"Zapis historii na flash jest w centrali wylaczony: po jej restarcie historia zaczyna sie od zera\"");
   zrzutEkranu("zapis_wylaczony");   // najdluzszy napis tego ekranu - widac, czy sie miesci
   ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = pusta; });
@@ -3092,7 +3093,7 @@ void scenariuszWykresyBrakDanych() {
   printf("  jeden pomiar:\n");
   dotknijWykresu();
   od = pokazWykres("GODZINNY", 1000);
-  sprawdz(!wykresWidoczny() && ekranMa("Za malo danych na wykres (jeden pomiar)\nSprobuj za kilka minut"), "napis: \"Za malo danych na wykres (jeden pomiar) / Sprobuj za kilka minut\"");
+  sprawdz(!wykresWidoczny() && ekranMa("Za mało danych na wykres (jeden pomiar)\nSpróbuj za kilka minut"), "napis: \"Za malo danych na wykres (jeden pomiar) / Sprobuj za kilka minut\"");
   sprawdz(logMa("tag=WYKRESY zdarzenie=brak_danych tryb=godz sposob=centrala przyczyna=za_malo", "", "", od), "log: zdarzenie=brak_danych przyczyna=za_malo");
 
   printf("  centrala bez ustawionego zegara (30 pomiarow z czasem 0):\n");
@@ -3107,7 +3108,7 @@ void scenariuszWykresyBrakDanych() {
   ustawC(0, [](Centrala& c) { c.panelHistKod = 503; });
   dotknijWykresu();
   od = pokazWykres(nullptr, 1000);
-  sprawdz(!wykresWidoczny() && ekranMa("Centrali zabraklo pamieci na wykres (HTTP 503)\nSprobuj ponownie"), "napis: \"Centrali zabraklo pamieci na wykres (HTTP 503) / Sprobuj ponownie\"");
+  sprawdz(!wykresWidoczny() && ekranMa("Centrali zabrakło pamięci na wykres (HTTP 503)\nSpróbuj ponownie"), "napis: \"Centrali zabraklo pamieci na wykres (HTTP 503) / Sprobuj ponownie\"");
   sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=http kod=503", "", "", od), "log: zdarzenie=blad przyczyna=http kod=503");
   sprawdz(stanC(0).nHistKrotka == 0 && stanC(0).nHistDluga == 0, "panel NIE siega wtedy po caly CSV (centrala zna adres, tylko nie ma pamieci)");
   ustawC(0, [](Centrala& c) { c.panelHistKod = 200; });
@@ -3133,7 +3134,7 @@ void scenariuszWykresyBledySieci() {
   printf("  polaczenie zerwane w polowie odpowiedzi (przyszlo 9000 z 18207 B):\n");
   ustawC(0, [](Centrala& c) { c.histUrwijPo = 9000; });
   size_t od = pokazWykres(nullptr, 1000);
-  sprawdz(!wykresWidoczny() && ekranMa("Odpowiedz centrali urwala sie w polowie\nSprobuj ponownie"), "napis: \"Odpowiedz centrali urwala sie w polowie / Sprobuj ponownie\" - wykresu z kawalka nie ma");
+  sprawdz(!wykresWidoczny() && ekranMa("Odpowiedź centrali urwała się w połowie\nSpróbuj ponownie"), "napis: \"Odpowiedz centrali urwala sie w polowie / Sprobuj ponownie\" - wykresu z kawalka nie ma");
   sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=urwana kod=200", "", "", od), "log: zdarzenie=blad przyczyna=urwana kod=200");
   info("%s", liniaLogu("tag=WYKRESY lvl=WARN zdarzenie=blad", od).c_str());
 
@@ -3141,7 +3142,7 @@ void scenariuszWykresyBledySieci() {
   ustawC(0, [](Centrala& c) { c.histBezDlugosci = true; });
   dotknijWykresu();
   od = pokazWykres(nullptr, 1000);
-  sprawdz(!wykresWidoczny() && ekranMa("Odpowiedz centrali urwala sie w polowie\nSprobuj ponownie"), "tez rozpoznane (brakuje linii \"#koniec\")");
+  sprawdz(!wykresWidoczny() && ekranMa("Odpowiedź centrali urwała się w połowie\nSpróbuj ponownie"), "tez rozpoznane (brakuje linii \"#koniec\")");
   ustawC(0, [](Centrala& c) { c.histUrwijPo = -1; });
   dotknijWykresu();
   od = pokazWykres(nullptr, 1000);
@@ -3157,13 +3158,13 @@ void scenariuszWykresyBledySieci() {
   dotknijWykresu();
   int statusPrzed = stanC(0).nStatus;
   od = pokazWykres(nullptr, 3000);
-  const lv_obj_t* postep = znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n");
+  const lv_obj_t* postep = znajdzEtykiete(lv_scr_act(), "Ładowanie danych z centrali...\n");
   const std::string postepTekst = postep ? std::string(lv_label_get_text(postep)).substr(31) : "(brak napisu)";
   info("druga linia napisu: \"%s\"", postepTekst.c_str());
   sprawdz(!wykresWidoczny() && postepTekst.find("wierszy (9 kB)") != std::string::npos, "po 3 s pod \"Ladowanie danych z centrali...\" widac, ile doszlo (9 kB)");
   zrzutEkranu("w_trakcie_pobierania");
   biegnij(4000);
-  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie odpowiedziala w czasie\nSprobuj ponownie"), "po 6 s ciszy: \"Centrala nie odpowiedziala w czasie / Sprobuj ponownie\"");
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie odpowiedziała w czasie\nSpróbuj ponownie"), "po 6 s ciszy: \"Centrala nie odpowiedziala w czasie / Sprobuj ponownie\"");
   sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=limit_czasu kod=200 etap=p", "", "", od), "log: przyczyna=limit_czasu etap=p");
   sprawdz(stanC(0).nStatus >= statusPrzed + 3, "przez te 7 s panel dalej odpytywal /api/status (w v1.2.2 petla stala)");
   ustawC(0, [](Centrala& c) { c.histZamilknijPo = -1; });
@@ -3173,7 +3174,7 @@ void scenariuszWykresyBledySieci() {
   dotknijWykresu();
   statusPrzed = stanC(0).nStatus;
   od = pokazWykres(nullptr, 7000);
-  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie odpowiedziala w czasie\nSprobuj ponownie"), "po 6 s: \"Centrala nie odpowiedziala w czasie / Sprobuj ponownie\"");
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie odpowiedziała w czasie\nSpróbuj ponownie"), "po 6 s: \"Centrala nie odpowiedziala w czasie / Sprobuj ponownie\"");
   sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=limit_czasu kod=0 etap=h", "", "", od), "log: przyczyna=limit_czasu kod=0 etap=h");
   sprawdz(stanC(0).nStatus >= statusPrzed + 3, "/api/status odpytywany przez caly ten czas");
   ustawC(0, [](Centrala& c) { c.histZwlokaMs = 0; });
@@ -3182,7 +3183,7 @@ void scenariuszWykresyBledySieci() {
   ustawC(0, [](Centrala& c) { c.histHtml = true; });
   dotknijWykresu();
   od = pokazWykres(nullptr, 2000);
-  sprawdz(!wykresWidoczny() && ekranMa("Centrala odpowiedziala czyms innym niz dane wykresu"), "napis: \"Centrala odpowiedziala czyms innym niz dane wykresu\" (v1.2.2 rysowal z takiej strony wykres - patrz wykresy_stary_csv)");
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala odpowiedziała czymś innym niż dane wykresu"), "napis: \"Centrala odpowiedziala czyms innym niz dane wykresu\" (v1.2.2 rysowal z takiej strony wykres - patrz wykresy_stary_csv)");
   zrzutEkranu("zla_odpowiedz");
   sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=panel przyczyna=zla_odpowiedz", "", "", od), "log: przyczyna=zla_odpowiedz");
   ustawC(0, [](Centrala& c) { c.histHtml = false; });
@@ -3199,7 +3200,7 @@ void scenariuszWykresyBledySieci() {
   sprawdz(WiFi.status() != WL_CONNECTED, "panel wie, ze nie ma polaczenia WiFi");
   const int zapytanPrzed = stanC(0).nPanelHist;
   od = pokazWykres(nullptr, 300);
-  sprawdz(!wykresWidoczny() && ekranMa("Brak polaczenia z siecia centrali (WiFi)"), "napis od razu: \"Brak polaczenia z siecia centrali (WiFi)\"");
+  sprawdz(!wykresWidoczny() && ekranMa("Brak połączenia z siecią centrali (WiFi)"), "napis od razu: \"Brak polaczenia z siecia centrali (WiFi)\"");
   sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=brak_wifi", "", "", od) && stanC(0).nPanelHist == zapytanPrzed,
           "log: przyczyna=brak_wifi; zadne zapytanie nie wyszlo");
   sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal w calym scenariuszu");
@@ -3218,14 +3219,14 @@ void scenariuszWykresyWyjscieWTrakcie() {
 
   printf("  dotkniecie ekranu w trakcie pobierania:\n");
   size_t od = pokazWykres("TYGODNIOWY", 2000);
-  const lv_obj_t* napis = znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n");
+  const lv_obj_t* napis = znajdzEtykiete(lv_scr_act(), "Ładowanie danych z centrali...\n");
   const std::string postep1 = napis ? lv_label_get_text(napis) : "";
   biegnij(2000);
-  napis = znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n");
+  napis = znajdzEtykiete(lv_scr_act(), "Ładowanie danych z centrali...\n");
   const std::string postep2 = napis ? lv_label_get_text(napis) : "";
   info("po 2 s: \"%s\", po 4 s: \"%s\"", postep1.substr(postep1.find('\n') + 1).c_str(), postep2.substr(postep2.find('\n') + 1).c_str());
   sprawdz(!postep1.empty() && !postep2.empty() && postep1 != postep2, "napis \"Ladowanie...\" pokazuje rosnaca liczbe wierszy i kB");
-  sprawdz(dotknijWykresu() && ekranMa("POKAZ WYKRES"), "dotkniecie dziala od razu: powrot do wyboru serii");
+  sprawdz(dotknijWykresu() && ekranMa("POKAŻ WYKRES"), "dotkniecie dziala od razu: powrot do wyboru serii");
   biegnij(200);
   Centrala c = stanC(0);
   sprawdz(logMa("tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu tryb=tydz", "", "", od), "log: zdarzenie=przerwano powod=wyjscie_z_ekranu");
@@ -3242,11 +3243,11 @@ void scenariuszWykresyWyjscieWTrakcie() {
   dotknijWykresu();
   const int statusPrzed = stanC(0).nStatus;
   od = pokazWykres("TYGODNIOWY", 19000);
-  sprawdz(!wykresWidoczny() && znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n") != nullptr, "po 19 s jeszcze trwa");
+  sprawdz(!wykresWidoczny() && znajdzEtykiete(lv_scr_act(), "Ładowanie danych z centrali...\n") != nullptr, "po 19 s jeszcze trwa");
   biegnij(2000);
   sprawdz(wykresWidoczny(), "po 21 s jest wykres z tego, co doszlo");
   bool dopisek = false;
-  for (const std::string& s : napisyEkranu()) if (s.find("   NIEPELNE") != std::string::npos) { dopisek = true; info("podpis: \"%s\"", s.c_str()); }
+  for (const std::string& s : napisyEkranu()) if (s.find("   NIEPEŁNE") != std::string::npos) { dopisek = true; info("podpis: \"%s\"", s.c_str()); }
   sprawdz(dopisek, "podpis pod wykresem konczy sie slowem NIEPELNE (v1.2.2 rysowal kawalek bez slowa)");
   sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=pobrano_czesc tryb=tydz sposob=panel powod=limit_czasu etap=c", "", "", od), "log: zdarzenie=pobrano_czesc powod=limit_czasu etap=c");
   info("%s", liniaLogu("tag=WYKRESY lvl=WARN zdarzenie=pobrano_czesc", od).c_str());
@@ -3268,7 +3269,7 @@ void scenariuszWykresyAlarmWTrakcie() {
   otworzWykresy();
   kliknij("ZEWN");
   const size_t od = pokazWykres("TYGODNIOWY", 2000);
-  sprawdz(znajdzEtykiete(lv_scr_act(), "Ladowanie danych z centrali...\n") != nullptr && pamiec::zyweBuforyWykresow() == 8, "pobieranie trwa (8 buforow punktow)");
+  sprawdz(znajdzEtykiete(lv_scr_act(), "Ładowanie danych z centrali...\n") != nullptr && pamiec::zyweBuforyWykresow() == 8, "pobieranie trwa (8 buforow punktow)");
   ustaw(0, [](Centrala& c) { c.tOgrz = 134.0; c.alarmOgrzewanie = true; });
   biegnij(3000);
   sprawdz(ekranMa("PRZEGRZANIE"), "ekran alarmu pojawia sie w ciagu 3 s, mimo trwajacego pobierania");
@@ -3333,7 +3334,7 @@ void scenariuszWykresyStaryCsv() {
     pierwszy = false;
     g_csvDoPodania = p.csv;
     kliknij(p.zakres);
-    kliknij("POKAZ WYKRES");
+    kliknij("POKAŻ WYKRES");
     biegnij(200);
     const std::vector<int> punkty = punktyWykresu(0);
     zapis += std::string(p.nazwa) + ": " + punktyTekst(punkty) + "\n";
@@ -3348,7 +3349,7 @@ void scenariuszWykresyStaryCsv() {
     const std::vector<int> stare = zWzorcaV122(p.nazwa);
     info("%s: v1.2.2 narysowal z tej strony %d punktow: %s", p.nazwa, ilePunktow(stare), punktyTekst(std::vector<int>(stare.begin(), stare.begin() + std::min<size_t>(stare.size(), 10))).c_str());
     sprawdz(ilePunktow(stare) > 0, (std::string(p.nazwa) + ": (wzorzec) v1.2.2 rysowal ze strony HTML wykres").c_str());
-    sprawdz(!wykresWidoczny() && ekranMa("Centrala odpowiedziala czyms innym niz dane wykresu"),
+    sprawdz(!wykresWidoczny() && ekranMa("Centrala odpowiedziała czymś innym niż dane wykresu"),
             (std::string(p.nazwa) + ": teraz napis \"Centrala odpowiedziala czyms innym niz dane wykresu\", wykresu nie ma").c_str());
   }
   if (!g_katalogWyjscia.empty()) {
@@ -3377,8 +3378,8 @@ void scenariuszWykresyPoRestarcieCentrali() {
   const Centrala przed = stanC(0);
   size_t od = pokazWykres("GODZINNY", 1000);
   sprawdz(ilePrzerwWeWzorcu(godz) == 96 && ilePunktow(zWzorca(godz, 1)) == 0, "odpowiedz centrali: 96 przerw, zadnego wiersza z danymi");
-  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minute po starcie)\n\n"
-                                       "Zapis historii na flash jest w centrali wylaczony:\npo jej restarcie historia zaczyna sie od zera"),
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie ma jeszcze danych z tego zakresu\n(pierwszy pomiar zapisuje minutę po starcie)\n\n"
+                                       "Zapis historii na flash jest w centrali wyłączony:\npo jej restarcie historia zaczyna się od zera"),
           "zamiast wykresu napis: \"Centrala nie ma jeszcze danych z tego zakresu...\" z dopowiedzeniem o wylaczonym zapisie (fs=0)");
   sprawdz(logMa("tag=WYKRESY zdarzenie=brak_danych tryb=godz sposob=centrala przyczyna=pusto", "", "", od) && !logMa("zdarzenie=blad", "", "", od),
           "log: zdarzenie=brak_danych przyczyna=pusto (to nie blad)");
@@ -3445,7 +3446,7 @@ void scenariuszPomiarPamieci() {
   lv_obj_t* drugi = nullptr;
   if (lv_disp_t* d = lv_disp_get_default()) {
     for (uint32_t i = 0; i < d->screen_cnt; i++)
-      if (znajdzEtykiete(d->screens[i], "WYKRESY") != nullptr && znajdzEtykiete(d->screens[i], "WYSWIETLACZ") != nullptr) drugi = d->screens[i];
+      if (znajdzEtykiete(d->screens[i], "WYKRESY") != nullptr && znajdzEtykiete(d->screens[i], "WYŚWIETLACZ") != nullptr) drugi = d->screens[i];
   }
   if (drugi != nullptr) {
     { LiczFirmware licz; lv_scr_load(drugi); }
@@ -3473,7 +3474,7 @@ void scenariuszPomiarPamieci() {
     kliknij("ZEWN");
     kliknij("BOJLER");
     migawka("wykres_przed");
-    kliknij("POKAZ WYKRES");
+    kliknij("POKAŻ WYKRES");
     biegnij(1000);
     printf("POMIAR-INFO wykres_nowy widoczny=%d punktow=%d\n", wykresWidoczny() ? 1 : 0, ilePunktow(punktyWykresu(0)));
     migawka("wykres_nowy");
@@ -3481,7 +3482,7 @@ void scenariuszPomiarPamieci() {
     ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; });
     kliknij("TYGODNIOWY");
     migawka("wykres_stary_przed");
-    kliknij("POKAZ WYKRES");
+    kliknij("POKAŻ WYKRES");
     biegnij(3000);
     printf("POMIAR-INFO wykres_stary widoczny=%d punktow=%d\n", wykresWidoczny() ? 1 : 0, ilePunktow(punktyWykresu(0)));
     migawka("wykres_stary");
@@ -3494,7 +3495,7 @@ void scenariuszPomiarPamieci() {
       kliknij("WYKRESY");
       biegnij(300);
       kliknij(i % 2 == 0 ? "DZIENNY" : "TYGODNIOWY");
-      kliknij("POKAZ WYKRES");
+      kliknij("POKAŻ WYKRES");
       biegnij(3000);
       printf("POMIAR-INFO wykres_powtorka_%d widoczny=%d punktow=%d\n", i, wykresWidoczny() ? 1 : 0, ilePunktow(punktyWykresu(0)));
       biegnij(60000);
@@ -3539,12 +3540,12 @@ void wrocNaPulpit(lv_obj_t* pulpit) {
 // Ekran Wykresy otwarty na wyborze serii, z wybranymi 8 seriami (najwiecej,
 // ile pozwala panel: 7 temperatur i cisnienie). Wybor serii zostaje w panelu
 // po zamknieciu ekranu, wiec klikany jest tylko raz.
-const char* const OSIEM_SERII[8] = {"ZEWN", "BOJLER", "Temp. C.O", "Temp. C.O Sr.", "POWROT", "PANEL", "Wewnetrzna", "CISNIENIE"};
+const char* const OSIEM_SERII[8] = {"ZEWN", "BOJLER", "Temp. C.O", "Temp. C.O Śr.", "POWRÓT", "PANEL", "Wewnętrzna", "CIŚNIENIE"};
 bool g_serieWybrane = false;
 bool wykresyGotowe() {
-  if (znajdzEtykiete(lv_scr_act(), "POKAZ WYKRES") == nullptr) {
+  if (znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") == nullptr) {
     dotknijWykresu();
-    if (znajdzEtykiete(lv_scr_act(), "POKAZ WYKRES") == nullptr && !otworzWykresy()) return false;
+    if (znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") == nullptr && !otworzWykresy()) return false;
   }
   if (!g_serieWybrane) {
     for (const char* n : OSIEM_SERII) kliknij(n);
@@ -3610,11 +3611,11 @@ void rundaPrzypadkow(lv_obj_t* pulpit) {
   if (lv_disp_t* d = lv_disp_get_default()) {
     for (uint32_t i = 0; i < d->screen_cnt; i++) {
       lv_obj_t* e = d->screens[i];
-      if (e == pulpit || lv_obj_get_child_cnt(e) == 0 || znajdzEtykiete(e, "POKAZ WYKRES") != nullptr) continue;   // Wykresy osobno, nizej
+      if (e == pulpit || lv_obj_get_child_cnt(e) == 0 || znajdzEtykiete(e, "POKAŻ WYKRES") != nullptr) continue;   // Wykresy osobno, nizej
       std::string tytul;
       { std::vector<std::string> w; zbierzNapisy(e, w); for (const std::string& x : w) if (!x.empty()) { tytul = x; break; } }
       { std::string czysty; for (char c : tytul) { if (isalnum((unsigned char)c)) czysty += c; else if (c == ' ' || c == '\n') czysty += '_'; } tytul = czysty; }
-      if (tytul.empty() || znajdzEtykiete(e, "WYSWIETLACZ") != nullptr && znajdzEtykiete(e, "WYKRESY") != nullptr) tytul = "drugi_pulpit";
+      if (tytul.empty() || znajdzEtykiete(e, "WYŚWIETLACZ") != nullptr && znajdzEtykiete(e, "WYKRESY") != nullptr) tytul = "drugi_pulpit";
       przypadekStart();
       { LiczFirmware licz; lv_scr_load(e); }
       biegnij(3000);
@@ -3627,7 +3628,7 @@ void rundaPrzypadkow(lv_obj_t* pulpit) {
   przypadekStart();
   { const int postPrzed = stanC(0).nPost;
     const bool k1 = kliknij("POMPA"); biegnij(500);
-    const bool k2 = kliknij("WLACZ"); biegnij(3000);
+    const bool k2 = kliknij("WŁĄCZ"); biegnij(3000);
     przypadek("polecenie_z_dotyku", "klik=%d%d postow=%d", k1 ? 1 : 0, k2 ? 1 : 0, stanC(0).nPost - postPrzed); }
   wrocNaPulpit(pulpit);
 
@@ -4744,6 +4745,167 @@ void scenariuszPomiarObciazenia() {
   }
 }
 
+// --- polskie litery (v1.4.5) ------------------------------------------------
+// Czcionki lv_font_pl_14/20/28 (src/czcionki/) zastapily wbudowane Montserrat
+// o tych samych rozmiarach i maja 18 polskich liter wiecej. Test pilnuje:
+//  1) kazdy znak kazdej etykiety na KAZDYM ekranie (takze ukrytej) ma glif w
+//     czcionce, ktora ja rysuje - inaczej LVGL rysowalby pusty prostokat;
+//  2) to samo dla napisow skladanych w trakcie pracy (naglowek pulpitu, pasek
+//     bledu polecenia, nakladka OTA, napisy ekranu Wykresy);
+//  3) na ekranie sa prawdziwe polskie slowa, a nie ich "odogonkowione" wersje.
+namespace {
+// Jeden punkt kodowy UTF-8 z `t` od pozycji `i` (0 = koniec/smieci); przesuwa i.
+uint32_t nastepnyZnakUtf8(const std::string& t, size_t& i) {
+  if (i >= t.size()) return 0;
+  const unsigned char b = (unsigned char)t[i];
+  int dl = b < 0x80 ? 1 : (b >> 5) == 6 ? 2 : (b >> 4) == 14 ? 3 : (b >> 3) == 30 ? 4 : 1;
+  if (i + dl > t.size()) dl = 1;
+  uint32_t cp = dl == 1 ? b : dl == 2 ? (b & 0x1F) : dl == 3 ? (b & 0x0F) : (b & 0x07);
+  for (int k = 1; k < dl; k++) cp = (cp << 6) | ((unsigned char)t[i + k] & 0x3F);
+  i += dl;
+  return cp;
+}
+// Pierwszy znak `t` bez glifu w czcionce `f` (0 = wszystkie sa). Pyta czcionke
+// wprost (bez czcionki zastepczej LVGL), bo o to chodzi: czy TA czcionka ma glif.
+uint32_t znakBezGlifu(const std::string& t, const lv_font_t* f) {
+  size_t i = 0;
+  while (i < t.size()) {
+    const uint32_t cp = nastepnyZnakUtf8(t, i);
+    if (cp == '\n' || cp == '\r' || cp == 0) continue;
+    lv_font_glyph_dsc_t g;
+    if (!f->get_glyph_dsc(f, &g, cp, 0)) return cp;
+  }
+  return 0;
+}
+struct BrakGlifu { std::string tekst; uint32_t znak; const lv_font_t* czcionka; };
+void zbierzBrakiGlifow(lv_obj_t* o, std::vector<BrakGlifu>& braki, int& etykiet) {
+  if (o == nullptr) return;
+  if (lv_obj_check_type(o, &lv_label_class)) {
+    const char* t = lv_label_get_text(o);
+    if (t != nullptr && t[0] != '\0') {
+      etykiet++;
+      const lv_font_t* f = lv_obj_get_style_text_font(o, LV_PART_MAIN);
+      const uint32_t cp = znakBezGlifu(t, f);
+      if (cp != 0) braki.push_back({t, cp, f});
+    }
+  }
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) zbierzBrakiGlifow(lv_obj_get_child(o, (int32_t)i), braki, etykiet);
+}
+const char* nazwaCzcionki(const lv_font_t* f) {
+  return f == &lv_font_pl_14 ? "lv_font_pl_14" : f == &lv_font_pl_20 ? "lv_font_pl_20" : f == &lv_font_pl_28 ? "lv_font_pl_28" : "inna";
+}
+}  // namespace
+
+void scenariuszPolskieLitery() {
+  const lv_font_t* const CZCIONKI[3] = {&lv_font_pl_14, &lv_font_pl_20, &lv_font_pl_28};
+  static const char* const POLSKIE = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ";
+  // 1) same czcionki: 18 polskich liter + znaki, ktorych panel uzywa poza ASCII.
+  for (const lv_font_t* f : CZCIONKI) {
+    const uint32_t brak = znakBezGlifu(std::string(POLSKIE) + "°•", f);
+    char opis[96];
+    snprintf(opis, sizeof(opis), "%s: 18 polskich liter oraz ° i • maja glify%s", nazwaCzcionki(f), brak ? " (BRAK U+%04X)" : "");
+    if (brak) { char o2[96]; snprintf(o2, sizeof(o2), opis, (unsigned)brak); sprawdz(false, o2); } else sprawdz(true, opis);
+  }
+  sprawdz(LV_FONT_DEFAULT == &lv_font_pl_14, "czcionka domyslna LVGL (LV_FONT_DEFAULT) to lv_font_pl_14");
+
+  // 2) firmware z centrala jak na stanowisku: wszystkie ekrany sa zbudowane przy starcie.
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustaw(0, centralaJakWLogu1112);
+  setup();
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  sprawdz(ekranMa("POKÓJ") && ekranMa("CIŚNIENIE") && ekranMa("WILGOTNOŚĆ"), "pulpit: kafelki POKÓJ, CIŚNIENIE, WILGOTNOŚĆ (z ogonkami)");
+  sprawdz(znajdzEtykiete(lv_scr_act(), "ŚR ") != nullptr, "kafelek PIEC CO: srednia podpisana \"ŚR\"");
+  zrzutEkranu("1_pulpit");
+
+  std::vector<BrakGlifu> braki; int etykiet = 0;
+  if (lv_disp_t* d = lv_disp_get_default())
+    for (uint32_t i = 0; i < d->screen_cnt; i++) zbierzBrakiGlifow(d->screens[i], braki, etykiet);
+  zbierzBrakiGlifow(lv_layer_top(), braki, etykiet);
+  zbierzBrakiGlifow(lv_layer_sys(), braki, etykiet);
+  for (const BrakGlifu& b : braki) info("BRAK GLIFU U+%04X w %s: \"%s\"", (unsigned)b.znak, nazwaCzcionki(b.czcionka), b.tekst.c_str());
+  info("etykiet na wszystkich ekranach (takze ukrytych): %d", etykiet);
+  sprawdz(etykiet > 150 && braki.empty(), "kazdy znak kazdej etykiety na kazdym ekranie ma glif w swojej czcionce");
+
+  // Polskie slowa na ekranach zbudowanych przy starcie (ukryte tez sie licza):
+  // napis szukany jako poczatek tekstu etykiety na dowolnym ekranie.
+  auto gdziekolwiek = [](const char* poczatek) {
+    if (lv_disp_t* d = lv_disp_get_default())
+      for (uint32_t i = 0; i < d->screen_cnt; i++) {
+        std::vector<std::string> w; zbierzNapisy(d->screens[i], w);
+        for (const std::string& x : w) if (x.rfind(poczatek, 0) == 0) return true;
+      }
+    return false;
+  };
+  static const char* const SLOWA[] = {"WŁĄCZ", "WYŁĄCZ", "RĘCZNY", "PRÓG PRZEGRZANIA", "PRÓG: ", "WYŚWIETLACZ", "Jasność w dzień", "Jasność w nocy",
+                                      "Próg odchylenia", "Mnożnik korekty", "Aż do godz.", "Czas WŁ. [s]", "Czas WYŁ. [s]", "Zał. pow. [C]", "Wył. pon. [C]",
+                                      "Wspólny dla PIEC CO i PANEL"};
+  for (const char* slowo : SLOWA) {
+    char opis[96]; snprintf(opis, sizeof(opis), "na ktoryms ekranie jest \"%s\"", slowo);
+    sprawdz(gdziekolwiek(slowo), opis);
+  }
+  static const char* const ZAKAZANE[] = {"CISNIENIE", "WILGOTNOSC", "POKOJ", "RECZNY", "WLACZ", "WYLACZ", "PROG", "Jasnosc", "POWROT", "WYSWIETLACZ",
+                                         "Wewnetrzna", "POZAR", "powyzej", "Sprawdz ", "POKAZ WYKRES"};
+  std::string znalezione;
+  if (lv_disp_t* d = lv_disp_get_default())
+    for (uint32_t i = 0; i < d->screen_cnt; i++) {
+      std::vector<std::string> w; zbierzNapisy(d->screens[i], w);
+      for (const std::string& x : w) for (const char* z : ZAKAZANE) if (x.find(z) != std::string::npos) znalezione += " \"" + x + "\"";
+    }
+  if (!znalezione.empty()) info("napisy bez polskich liter:%s", znalezione.c_str());
+  sprawdz(znalezione.empty(), "na zadnym ekranie nie zostal napis \"odogonkowiony\" (CISNIENIE, RECZNY, WLACZ, PROG, ...)");
+
+  // 3) napisy skladane w trakcie pracy - nie ma ich na ekranie przy starcie.
+  {
+    std::vector<std::string> dynamiczne;
+    for (int p = 0; p <= (int)diag::PRZYCZYNA_LVGL; p++) {
+      char z[48];
+      diag::znacznikBrakuDanych(z, sizeof(z), (diag::Przyczyna)p, 14, 31); if (z[0]) dynamiczne.push_back(z);
+      diag::znacznikBrakuDanych(z, sizeof(z), (diag::Przyczyna)p, 38, 7);  if (z[0]) dynamiczne.push_back(z);
+    }
+    dynamiczne.push_back("POLECENIE NIE DOSZŁO DO CENTRALI");
+    dynamiczne.push_back("CENTRALA ODRZUCIŁA POLECENIE");
+    dynamiczne.push_back("Łączenie z centralą...");
+    dynamiczne.push_back("Pobieranie z centrali");
+    dynamiczne.push_back("ŚR -12°C");
+    dynamiczne.push_back("PRÓG: 4095");
+    dynamiczne.push_back("PRÓG: 100 C");
+    dynamiczne.push_back("   NIEPEŁNE");
+    int zle = 0;
+    for (const std::string& t : dynamiczne)
+      for (const lv_font_t* f : CZCIONKI) {
+        const uint32_t cp = znakBezGlifu(t, f);
+        if (cp) { zle++; info("BRAK GLIFU U+%04X w %s: \"%s\"", (unsigned)cp, nazwaCzcionki(f), t.c_str()); }
+      }
+    char opis[128]; snprintf(opis, sizeof(opis), "%zu napisow skladanych w trakcie pracy (naglowek, pasek bledu, OTA, progi) - kazdy znak ma glif w 3 czcionkach", dynamiczne.size());
+    sprawdz(zle == 0, opis);
+  }
+
+  // Pasek bledu polecenia i ekran POMPA - zeby zobaczyc je na zrzutach.
+  lvgl_dashboard_poc_pokaz_blad_polecenia("POLECENIE NIE DOSZŁO DO CENTRALI");
+  biegnij(300);
+  sprawdz(ekranMa("POLECENIE NIE DOSZŁO DO CENTRALI"), "pasek bledu polecenia z \"Ł\"");
+  zrzutEkranu("2_pasek_bledu");
+  biegnij(4000);
+  sprawdz(kliknij("POMPA"), "dotkniecie kafelka POMPA");
+  biegnij(500);
+  sprawdz(ekranMa("WŁĄCZ") && ekranMa("WYŁĄCZ"), "ekran POMPA: przyciski WŁĄCZ i WYŁĄCZ");
+  zrzutEkranu("3_pompa");
+  { LiczFirmware licz; lv_scr_load(lv_disp_get_default()->screens[0]); }
+  biegnij(500);
+  lv_obj_t* pulpit = lv_scr_act();
+  sprawdz(kliknij("SERWO"), "dotkniecie kafelka SERWO");
+  biegnij(500);
+  sprawdz(ekranMa("RĘCZNY") && ekranMa("BEZPIECZNA"), "ekran SERWO: przyciski RĘCZNY i BEZPIECZNA");
+  if (kliknij("RĘCZNY")) biegnij(500);
+  sprawdz(ekranMa("Ustaw pozycję klapy i syberka niżej - każda niezależnie."), "po RĘCZNY opis trybu z ogonkami (ę, ż, ż, ż)");
+  zrzutEkranu("4_serwo");
+  { LiczFirmware licz; lv_scr_load(pulpit); }
+  biegnij(500);
+  if (lv_obj_t* drugi = drugiPulpit()) { { LiczFirmware licz; lv_scr_load(drugi); } biegnij(500); zrzutEkranu("5_drugi_pulpit"); kliknij("WYŚWIETLACZ"); biegnij(500); zrzutEkranu("6_wyswietlacz"); }
+}
+
 struct Scenariusz {
   const char* nazwa;
   const char* opis;
@@ -4802,6 +4964,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"ota_ten_sam_plik", "OTA: centrala oferuje plik, z ktorego panel juz pracuje - nic nie jest wgrywane (v1.4.0)", scenariuszOtaTenSamPlik},
     {"ota_status_milczy", "OTA: centrala nie odpowiada na status, ale plik idzie - pobieranie nie jest przerywane (v1.4.0)", scenariuszOtaStatusMilczy},
     {"ota_bez_identyfikatora", "OTA: panel nie zna sumy wlasnego programu - aktualizacja przez centrale wylaczona (v1.4.0)", scenariuszOtaBezIdentyfikatora},
+    {"polskie_litery", "polskie litery na ekranie: czcionki lv_font_pl_14/20/28, glif dla kazdego znaku, napisy z ogonkami (v1.4.5)", scenariuszPolskieLitery},
     {"pomiar_obciazenia", "ile panel rysuje, pyta centrale i prosi o pamiec, gdy nic sie nie zmienia (tylko pomiar_obciazenia.sh)", scenariuszPomiarObciazenia},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},
