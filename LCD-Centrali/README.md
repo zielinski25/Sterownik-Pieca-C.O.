@@ -153,6 +153,9 @@ pokazuje od 3.58.8.
 > 3.57.13 + wszystkie zmiany 3.58.0–3.58.8 + filtr przekłamanych ramek DHT22.
 > Panel LCD bez zmian (`/api/status` 3.58.9 ma wszystkie pola, które panel czyta —
 > `sprawdz_pola_statusu.py` przechodzi).
+> Zaraz po niej **3.58.10** (`firmware-patch/v3.58.10-zew2-ponowienie/`): ponowienie
+> odczytu DHT22 po błędzie po 5 s i wygaszanie Zew 2 255 s zamiast 135 s — bez tego
+> każdy nieudany odczyt robił 2–4 min przerwy w Zew 2. Panel LCD bez zmian.
 
 **Z v1.4.5 na v1.4.6** zmieniają się: `src/main.cpp`,
 `src/dashboard_lvgl_poc.cpp`, `src/dashboard_lvgl_poc.h`,
