@@ -10,6 +10,7 @@ ESP32. PlatformIO go nie widzi i nie kompiluje — nie wpływa na firmware.
 ./uruchom_testy.sh dwie_centrale   # jeden scenariusz, z pełnym logiem Seriala na ekranie
 TYLKO='^ota_' ./uruchom_testy.sh   # tylko scenariusze o nazwach pasujących do wyrażenia (tu: aktualizacja OTA)
 SANITIZER=1 ./uruchom_testy.sh     # to samo z AddressSanitizer + UBSan (wolniej)
+python3 sprawdz_pola_statusu.py    # czy prawdziwa centrala wysyła w /api/status każde pole, które panel czyta (krok [1b]; v1.4.6 erratum)
 python3 sprawdz_czulosc_ota.py     # czy scenariusze ota_* wykrywają celowo wprowadzone błędy (ok. 10 minut)
 ./sprawdz_naglowki_esp32.sh        # składnia i typy prawdziwymi nagłówkami ESP32 (patrz niżej)
 ./pomiar_pamieci.sh                # ile RAM-u trzyma firmware + limity (patrz niżej; wymaga: pip install ziglang)
@@ -62,6 +63,7 @@ wersjami (8.3.11 i 7.2.1) te same liczby to 129 324, 5 464, 2 452 /
 | `wzorce_v122/` | Punkty, które z tych samych starych CSV narysował firmware v1.2.2 (opis: `CZYTAJ.txt` w tym katalogu). Z nimi porównywane jest rysowanie po staremu. |
 | `uruchom_testy.sh` | Buduje i uruchamia całość: 527 sprawdzeń jednostkowych i 53 scenariusze (582 sprawdzenia). Pliki firmware'u kompiluje z `-Wall -Wextra` — nowe ostrzeżenie to coś do poprawienia. |
 | `sprawdz_naglowki_esp32.sh` | Sprawdza składnię i typy źródeł panelu prawdziwymi nagłówkami arduino-esp32 / ESP-IDF / TFT_eSPI (bez atrap). |
+| `sprawdz_pola_statusu.py` | Krok `[1b]` `uruchom_testy.sh`: czy każde pole, które panel czyta z `/api/status` (`diag::POLA_STATUSU_CZYTANE[]` + `symulacja_*`), **prawdziwa centrala** wystawia w `wifiZbudujJsonStatus()` (najnowszy `firmware-patch/v3.*/src/main_centrala.cpp`; inny plik: `CENTRALA_CPP=…`). Atrapa centrali podaje to, co jej każemy — v1.4.6 dostał pole `fw`, którego centrala do 3.58.7 w `/api/status` nie miała, i testy były zielone, a na płytce „Centrala -”. Na 3.58.6/3.58.7 skrypt zgłasza brak `fw`, na 3.58.8 przechodzi. Wyjątek: `symulator` (wysyła tylko centrala testowa). |
 | `pomiar_pamieci.sh` | Mierzy, ile pamięci RAM trzyma firmware, i pilnuje limitów. Buduje ten sam program jako 32-bitowy, z `pomiar_sterty.c` zamiast zwykłego `malloc()`. Z `--przypadki`: ile pamięci trzeba w każdym przypadku pracy i co się dzieje, gdy jest jej mniej. |
 | `pomiar_sterty.c` | `malloc()` z licznikiem: dla każdego bloku pamięta rozmiar i stos wywołań; liczy go tak, jak zajmuje miejsce na stercie ESP32. Potrafi też odmawiać ponad zadany limit (jak płytka bez wolnego RAM-u) i wypisać stos wywołań, gdy program modelu sięgnie pod zły adres. |
 | `pomiar_rozbicie.py` | Dla `pomiar_pamieci.sh --kto`: zamienia zapisane stosy wywołań na nazwy funkcji firmware'u i sumuje pamięć według nich. |

@@ -40,11 +40,24 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-19] v1.4.6 ERRATUM (tylko komentarze i testy, binarka v1.4.6 bez
+//   zmian): zdanie "pole fw w /api/status istnieje od dawna" ponizej bylo
+//   NIEPRAWDZIWE. Centrala do 3.58.7 wysylala "fw" tylko w JSON-ie do
+//   Firebase (/piec/status) i w /api/lan/status - a panel czyta /api/status
+//   (wifiZbudujJsonStatus()), gdzie tego pola nie bylo. Na plytce: "Centrala -"
+//   mimo polaczenia. Testy na PC tego nie wykryly, bo atrapa centrali
+//   podawala "fw". Naprawa: CENTRALA 3.58.8 (jedna linia w
+//   wifiZbudujJsonStatus()); panel v1.4.6 pokazuje wersje bez zadnej zmiany.
+//   Zeby to sie nie powtorzylo: testy_host/sprawdz_pola_statusu.py (krok [1b]
+//   uruchom_testy.sh) porownuje liste pol czytanych przez panel z polami,
+//   ktore NAPRAWDE wystawia wifiZbudujJsonStatus() w najnowszym pliku
+//   centrali w repozytorium.
 // [2026-11-21] v1.4.6 - WERSJE NA EKRANIE + PORZADKI PO LOGACH Z PLYTKI.
 //   Zgloszenie uzytkownika: "przy starcie LCD nie pokazuje wersji - jest
 //   tylko Szukam centrali / Laczenie z WiFi; chce wersje panelu i centrali".
-//   Centrala bez zmian (pole "fw" w /api/status istnieje od dawna, panel
-//   go dotad nie czytal). Ruch do centrali i logika panelu bez zmian.
+//   Centrala: pole "fw" w /api/status wysyla dopiero 3.58.8 (patrz erratum
+//   wyzej); ze starsza centrala panel pokazuje "Centrala -". Ruch do
+//   centrali i logika panelu bez zmian.
 //   - Ekran startowy (TFT_eSPI, przed LVGL): u gory "WYSWIETLACZ CO" i
 //     "Panel v1.4.6" przez caly czas szukania centrali i laczenia z WiFi;
 //     po pierwszej odpowiedzi centrali dochodzi "Centrala v3.58.6" (albo
@@ -73,7 +86,7 @@
 //     kilkunastu bajtow w NVS, zachowanie bez zmian.
 //   - testy_host: scenariusz wersje_na_ekranie (napisy na ekranie startowym,
 //     etykieta na WYSWIETLACZ, centrala bez pola "fw", kafelek bez obciecia);
-//     atrapa centrali podaje "fw".
+//     atrapa centrali podaje "fw" (jak centrala 3.58.8+).
 // [2026-11-20] v1.4.5 - POLSKIE LITERY NA EKRANIE (punkt D / temat 23 z
 //   WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md). Centrala bez zmian; ruch do
 //   centrali, pamiec RAM i logika panelu bez zmian - zmienia sie tylko to,

@@ -1,0 +1,48 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,24 @@
++// FIRMWARE_VERSION v3.58.7 -> v3.58.8 (2026-11-19) — POLE "fw" W /api/status: PANEL LCD WIDZI WERSJĘ CENTRALI.
++//
++// [v3.58.8 FW-W-STATUSIE] — 2026-11-19
++// Zgłoszenie użytkownika (panel v1.4.6 na płytce): "łączy się z centralą,
++//     ale nie pokazuje wersji centrali, tylko wersję LCD".
++// Przyczyna: panel odpytuje /api/status, a ten endpoint odpowiada funkcją
++//     wifiZbudujJsonStatus() — w niej pola "fw" nigdy nie było. "fw" było
++//     tylko w zbudujJsonStatusPelny() (JSON do Firebase /piec/status i
++//     /api/lan/status). Opis w changelogu panelu v1.4.6 ("pole fw w
++//     /api/status istnieje od dawna") był błędny; testy panelu na PC tego
++//     nie wykryły, bo atrapa centrali podawała "fw" — od v1.4.6-erratum
++//     testy panelu porównują listę pól czytanych przez panel z polami
++//     naprawdę wystawianymi przez wifiZbudujJsonStatus() w tym pliku
++//     (LCD-Centrali/testy_host/sprawdz_pola_statusu.py).
++// Jak jest: jedna linia w wifiZbudujJsonStatus(), zaraz po "rssi":
++//     "fw":"v3.58.8" (+14 B w odpowiedzi ~2 kB). Panel v1.4.6 bez zmian:
++//     przy najbliższym statusie (do 2 s) pokaże wersję na ekranie
++//     WYSWIETLACZ i w logu tag=PANEL centrala_fw=, przy następnym zimnym
++//     starcie także na ekranie startowym.
++// Pozostałe zachowania (START-TG z 3.58.7, OTA, nadzór, algorytmy) bez zmian.
++//
+ // FIRMWARE_VERSION v3.58.6 -> v3.58.7 (2026-11-19) — TELEGRAM: WIADOMOŚĆ STARTOWA Z WERSJĄ; TAGCHECK MÓWI, CO NAPRAWDĘ POSZŁO NIE TAK.
+ //
+ // [v3.58.7 START-TG] — 2026-11-19
+@@ -6261,7 +6282,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.7";
++static const char* FIRMWARE_VERSION = "v3.58.8";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -30823,6 +30844,11 @@
+   j += F("\"ip\":\""); j += (wifiStan == WIFI_STAN_PORTAL_AP ? WiFi.softAPIP().toString() : WiFi.localIP().toString()); j += F("\",");
+   j += F("\"wifi_ssid\":\""); j += (WiFi.status() == WL_CONNECTED ? WiFi.SSID() : ""); j += F("\",");
+   j += F("\"rssi\":"); j += String(WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0); j += F(",");
++  // [v3.58.8 FW-W-STATUSIE] Wersja programu centrali dla panelu LCD (v1.4.6+
++  // pokazuje ja na ekranie startowym i na ekranie WYSWIETLACZ). Dotad "fw"
++  // bylo tylko w zbudujJsonStatusPelny() (Firebase /piec/status,
++  // /api/lan/status) - panel czyta /api/status i tej wersji nie widzial.
++  j += F("\"fw\":\""); j += FIRMWARE_VERSION; j += F("\",");
+   j += F("\"t_zewn\":"); j += String(temperaturaNaZewnatrz, 1); j += F(",");
+   j += F("\"t_bojler\":"); j += String(temperaturaBojlera, 1); j += F(",");
+   j += F("\"t_ogrz\":"); j += String(temperaturaOgrzewania, 1); j += F(",");

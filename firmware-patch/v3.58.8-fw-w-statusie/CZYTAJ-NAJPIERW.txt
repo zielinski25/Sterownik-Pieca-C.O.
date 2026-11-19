@@ -1,0 +1,92 @@
+FIRMWARE CENTRALI 3.58.8 - co zrobic w 3 krokach
+================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN.
+
+Ta paczka = 3.58.7 (wiadomosc startowa na Telegram, TAGCHECK, beginResponse)
++ JEDNA LINIA: pole "fw" w /api/status. Jesli 3.58.7 jeszcze nie
+skompilowales - pomin ja i wgraj od razu te. Plik jest kompletny i pasuje
+do projektu z wersja 3.58.3-3.58.7 (dwa patche w paczce: wzgledem 3.58.7
+i wzgledem 3.58.6).
+
+
+PO CO (zgloszenie z 19.11: "laczy sie z centrala, ale nie pokazuje wersji
+centrali, tylko wersje LCD")
+----------------------------------------------------------------------------
+Panel v1.4.6 czyta wersje centrali z pola "fw" w /api/status. W centrali
+ten endpoint obsluguje funkcja wifiZbudujJsonStatus() - i w niej pola "fw"
+NIGDY nie bylo. "fw" centrala wysylala tylko do Firebase (/piec/status)
+i w /api/lan/status. Opis przy panelu v1.4.6 ("pole fw istnieje od dawna")
+byl bledny - moj blad w czytaniu kodu, nie Twojej plytki. Testy panelu na
+PC tego nie wykryly, bo atrapa centrali podawala "fw"; od teraz testy
+panelu porownuja jego liste pol z PRAWDZIWYM kodem centrali
+(LCD-Centrali/testy_host/sprawdz_pola_statusu.py).
+
+Naprawa: linia 30851 w wifiZbudujJsonStatus(), zaraz po "rssi":
+    j += F("\"fw\":\""); j += FIRMWARE_VERSION; j += F("\",");
+Odpowiedz /api/status rosnie o 14 bajtow (z ok. 2 kB).
+Panel v1.4.6 NIE wymaga zmiany: w ciagu 2 s od wgrania centrali pokaze
+wersje na ekranie WYSWIETLACZ (drugi pulpit -> zebatka) i w logu
+tag=PANEL centrala_fw=..., a przy nastepnym zimnym starcie panelu takze
+na ekranie startowym ("Centrala v3.58.8").
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.8"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (powinna wyjsc wartosc z pierwszej linii SHA256SUMS.txt):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+PlatformIO -> Build, potem Upload   (pio run   i   pio run -t upload)
+Spodziewane: 0 ostrzezen (od 3.58.7). RAM/Flash jak w 3.58.6/3.58.7.
+Jesli blad: skopiuj linie z "error:" i przyslij; przywroc kopie zapasowa.
+Zmienione miejsca (wzgledem 3.58.7): 3 - WYNIKI\zakres-zmian.txt.
+
+Kolejnosc przy Release na GitHub: w kodzie jest juz FIRMWARE_VERSION =
+"v3.58.8" -> Build -> Release z tagiem 3.58.8 i tym firmware.bin.
+(Porzadek z tagiem 3.58.5 -> 3.58.6: patrz CZYTAJ-NAJPIERW paczki 3.58.7.)
+
+
+KROK 3 - SPRAWDZENIE
+--------------------
+1. Po Upload w ciagu minuty na Telegram: "Centrala wystartowala: v3.58.8
+   (boot=...). Powod restartu: ..." (nowosc z 3.58.7).
+2. Panel LCD, bez dotykania: drugi pulpit -> kafelek WYSWIETLACZ -> w lewym
+   gornym rogu "Panel v1.4.6 / Centrala v3.58.8" (do 2 s po starcie
+   centrali; przedtem "Centrala -").
+3. Log panelu (serial 115200), linia co 30 s:
+       tag=PANEL fw=v1.4.6 ... centrala=sterownik centrala_fw=v3.58.8 ...
+4. Wylacz i wlacz panel: ekran startowy pokazuje "Panel v1.4.6", a po
+   pierwszej odpowiedzi "Centrala v3.58.8" przez 1,5 s.
+5. W przegladarce: http://<ip-centrali>/api/status - w odpowiedzi jest
+   "fw":"v3.58.8" zaraz po "rssi".
+
+
+POWROT DO POPRZEDNIEJ WERSJI
+----------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.8" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+i Upload.
+
+
+TESTY W PACZCE (opcjonalnie; Linux albo WSL, g++ i python3, pelne repozytorium)
+--------------------------------------------------------------------------------
+cd tests
+./uruchom_testy.sh              D: pola /api/status a pola czytane przez panel
+                                (ten sam skrypt na 3.58.7 musi zglosic brak "fw")
+                                + testy 3.58.7 i 3.58.6 na tym pliku (40+166+2697)
+./sprawdz_naglowki_esp32.sh     nowa linia i blok START-TG z prawdziwymi
+                                naglowkami ESP32
+Wyniki z dnia wydania: katalog WYNIKI.
+
+
+CZEGO TA WERSJA NIE ROBI
+------------------------
+- Nie byla kompilowana dla ESP32 ani testowana na sprzecie.
+- Nie zmienia nic poza jedna linia w /api/status (i numerem wersji).

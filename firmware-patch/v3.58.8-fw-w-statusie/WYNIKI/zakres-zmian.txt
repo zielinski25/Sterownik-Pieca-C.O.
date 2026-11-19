@@ -1,0 +1,22 @@
+ZAKRES ZMIAN v3.58.8 (main_centrala.cpp)
+=======================================
+Wynik: v3.58.8, SHA-256 e6034d4ec793def3dd2dd17052f7de5a650779adb48beafc563e77cb966a157a
+       (50 298 linii)
+Baza:  v3.58.7, SHA-256 09032571050c0b78d5101d8625b0a189805d11e68db83f3c06adca2ab043920a
+       (firmware-patch/v3.58.7-start-telegram/src/main_centrala.cpp, 50 272 linie)
+Diff:  main_centrala-v3.58.7-do-v3.58.8.patch - 3 hunki, +27 / -1
+       main_centrala-v3.58.6-do-v3.58.8.patch - 9 hunkow, +238 / -11 (3.58.7 + 3.58.8)
+Numery linii dotycza pliku 3.58.8.
+
+3 MIEJSCA (wzgledem 3.58.7)
+   1. linie 1-21      wpis changeloga [v3.58.8 FW-W-STATUSIE]              +21
+   2. linia 6285      static const char* FIRMWARE_VERSION = "v3.58.8"      +1 / -1
+   3. linie 30847-30851  wifiZbudujJsonStatus(), zaraz po "rssi":
+                        4 linie komentarza +
+                        j += F("\"fw\":\""); j += FIRMWARE_VERSION; j += F("\",");   +5
+
+CO SIE NIE ZMIENIA
+  - zadne .h, secrets.h, platformio.ini, biblioteki
+  - zbudujJsonStatusPelny() (Firebase, /api/lan/status) - tam "fw" bylo i jest
+  - bloki START-TG (3.58.7), PANEL-OTA (3.58.6), PANEL-WYKRESY (3.58.4) - bajt w bajt
+  - NVS, Telegram, OTA, algorytmy

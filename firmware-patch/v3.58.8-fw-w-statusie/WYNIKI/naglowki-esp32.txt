@@ -1,0 +1,65 @@
+# OSTRZEZENIA=1 ./sprawdz_naglowki_esp32.sh  (2026-11-19; rdzen arduino-esp32 3.0.7)
+[A] wycinam kod [v3.58.8 FW-W-STATUSIE] i [v3.58.7 START-TG] z ../src/main_centrala.cpp
+    zapisano /tmp/centrala_fw_status_test/naglowki/fw_status_esp32.cpp (linia z wifiZbudujJsonStatus(): j += F("\"fw\":\""); j += FIRMWARE_VERSION; j += F("\",");)
+    zapisano /tmp/centrala_fw_status_test/naglowki/start_tg_esp32.cpp (199 linii)
+[B] sprawdzanie prawdziwymi naglowkami (skrypt panelu LCD)
+[1] kompilator (clang z pakietu ziglang)
+    clang version 22.1.8
+[2] naglowki (arduino-esp32 3.0.7, ESP-IDF 5.1, newlib, TFT_eSPI, LVGL, ArduinoJson)
+[3] sprawdzanie zrodel: /tmp/centrala_fw_status_test/naglowki
+    flagi z platformio.ini: -DUSER_SETUP_LOADED=1 -DILI9488_DRIVER -DTFT_WIDTH=320 -DTFT_HEIGHT=480 -DTFT_MISO=19 -DTFT_MOSI=23 -DTFT_SCLK=18 -DTFT_CS=15 -DTFT_DC=2 -DTFT_RST=4 -DTFT_BL=21 -DTFT_BACKLIGHT_ON=HIGH -DSPI_FREQUENCY=27000000 -DSPI_READ_FREQUENCY=20000000 -DLOAD_GLCD=1 -DLOAD_FONT2=1 -DLOAD_FONT4=1 -DLOAD_FONT6=1 -DLOAD_FONT7=1 -DLOAD_FONT8=1 -DLOAD_GFXFF=1 -DSMOOTH_FONT=1 -DLV_CONF_INCLUDE_SIMPLE 
+    fw_status_esp32.cpp: bez bledow
+    fw_status_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_fw_status_test/naglowki: 0
+    start_tg_esp32.cpp: bez bledow
+    start_tg_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_fw_status_test/naglowki: 0
+BEZ BLEDOW (naglowki arduino-esp32 3.0.7)
+[C] bloki PANEL-OTA i PANEL-WYKRESY (skrypt z paczki 3.58.6) na pliku 3.58.8
+[A] wycinam kod z /home/user/Sterownik-Pieca-C.O./firmware-patch/v3.58.8-fw-w-statusie/src/main_centrala.cpp
+    zapisano /tmp/centrala_panel_hist_test/naglowki/panel_ota_esp32.cpp (1055 linii)
+    zapisano /tmp/centrala_panel_hist_test/naglowki/panel_hist_esp32.cpp (646 linii)
+[B] biblioteki serwera WWW centrali (ESPAsyncWebServer 3.10.3, AsyncTCP 3.4.10)
+[C] sprawdzanie prawdziwymi naglowkami (skrypt panelu LCD)
+[1] kompilator (clang z pakietu ziglang)
+    clang version 22.1.8
+[2] naglowki (arduino-esp32 3.0.7, ESP-IDF 5.1, newlib, TFT_eSPI, LVGL, ArduinoJson)
+[3] sprawdzanie zrodel: /tmp/centrala_panel_hist_test/naglowki
+    flagi z platformio.ini: -DUSER_SETUP_LOADED=1 -DILI9488_DRIVER -DTFT_WIDTH=320 -DTFT_HEIGHT=480 -DTFT_MISO=19 -DTFT_MOSI=23 -DTFT_SCLK=18 -DTFT_CS=15 -DTFT_DC=2 -DTFT_RST=4 -DTFT_BL=21 -DTFT_BACKLIGHT_ON=HIGH -DSPI_FREQUENCY=27000000 -DSPI_READ_FREQUENCY=20000000 -DLOAD_GLCD=1 -DLOAD_FONT2=1 -DLOAD_FONT4=1 -DLOAD_FONT6=1 -DLOAD_FONT7=1 -DLOAD_FONT8=1 -DLOAD_GFXFF=1 -DSMOOTH_FONT=1 -DLV_CONF_INCLUDE_SIMPLE 
+    panel_ota_esp32.cpp: bez bledow
+    panel_ota_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_panel_hist_test/naglowki: 0
+    panel_hist_esp32.cpp: bez bledow
+    panel_hist_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_panel_hist_test/naglowki: 0
+BEZ BLEDOW (naglowki arduino-esp32 3.0.7)
+# kod wyjscia: 0
+
+# RDZEN=3.3.8 OSTRZEZENIA=1 ./sprawdz_naglowki_esp32.sh  (rdzen 3.3.8 - ten ma centrala)
+[A] wycinam kod [v3.58.8 FW-W-STATUSIE] i [v3.58.7 START-TG] z ../src/main_centrala.cpp
+    zapisano /tmp/centrala_fw_status_test/naglowki/fw_status_esp32.cpp (linia z wifiZbudujJsonStatus(): j += F("\"fw\":\""); j += FIRMWARE_VERSION; j += F("\",");)
+    zapisano /tmp/centrala_fw_status_test/naglowki/start_tg_esp32.cpp (199 linii)
+[B] sprawdzanie prawdziwymi naglowkami (skrypt panelu LCD)
+[1] kompilator (clang z pakietu ziglang)
+    clang version 22.1.8
+[2] naglowki (arduino-esp32 3.3.8, ESP-IDF 5.1, newlib, TFT_eSPI, LVGL, ArduinoJson)
+[3] sprawdzanie zrodel: /tmp/centrala_fw_status_test/naglowki
+    flagi z platformio.ini: -DUSER_SETUP_LOADED=1 -DILI9488_DRIVER -DTFT_WIDTH=320 -DTFT_HEIGHT=480 -DTFT_MISO=19 -DTFT_MOSI=23 -DTFT_SCLK=18 -DTFT_CS=15 -DTFT_DC=2 -DTFT_RST=4 -DTFT_BL=21 -DTFT_BACKLIGHT_ON=HIGH -DSPI_FREQUENCY=27000000 -DSPI_READ_FREQUENCY=20000000 -DLOAD_GLCD=1 -DLOAD_FONT2=1 -DLOAD_FONT4=1 -DLOAD_FONT6=1 -DLOAD_FONT7=1 -DLOAD_FONT8=1 -DLOAD_GFXFF=1 -DSMOOTH_FONT=1 -DLV_CONF_INCLUDE_SIMPLE 
+    fw_status_esp32.cpp: bez bledow
+    fw_status_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_fw_status_test/naglowki: 0
+    start_tg_esp32.cpp: bez bledow
+    start_tg_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_fw_status_test/naglowki: 0
+BEZ BLEDOW (naglowki arduino-esp32 3.3.8)
+[C] bloki PANEL-OTA i PANEL-WYKRESY (skrypt z paczki 3.58.6) na pliku 3.58.8
+[A] wycinam kod z /home/user/Sterownik-Pieca-C.O./firmware-patch/v3.58.8-fw-w-statusie/src/main_centrala.cpp
+    zapisano /tmp/centrala_panel_hist_test/naglowki/panel_ota_esp32.cpp (1055 linii)
+    zapisano /tmp/centrala_panel_hist_test/naglowki/panel_hist_esp32.cpp (646 linii)
+[B] biblioteki serwera WWW centrali (ESPAsyncWebServer 3.10.3, AsyncTCP 3.4.10)
+[C] sprawdzanie prawdziwymi naglowkami (skrypt panelu LCD)
+[1] kompilator (clang z pakietu ziglang)
+    clang version 22.1.8
+[2] naglowki (arduino-esp32 3.3.8, ESP-IDF 5.1, newlib, TFT_eSPI, LVGL, ArduinoJson)
+[3] sprawdzanie zrodel: /tmp/centrala_panel_hist_test/naglowki
+    flagi z platformio.ini: -DUSER_SETUP_LOADED=1 -DILI9488_DRIVER -DTFT_WIDTH=320 -DTFT_HEIGHT=480 -DTFT_MISO=19 -DTFT_MOSI=23 -DTFT_SCLK=18 -DTFT_CS=15 -DTFT_DC=2 -DTFT_RST=4 -DTFT_BL=21 -DTFT_BACKLIGHT_ON=HIGH -DSPI_FREQUENCY=27000000 -DSPI_READ_FREQUENCY=20000000 -DLOAD_GLCD=1 -DLOAD_FONT2=1 -DLOAD_FONT4=1 -DLOAD_FONT6=1 -DLOAD_FONT7=1 -DLOAD_FONT8=1 -DLOAD_GFXFF=1 -DSMOOTH_FONT=1 -DLV_CONF_INCLUDE_SIMPLE 
+    panel_ota_esp32.cpp: bez bledow
+    panel_ota_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_panel_hist_test/naglowki: 0
+    panel_hist_esp32.cpp: bez bledow
+    panel_hist_esp32.cpp: ostrzezen clang w plikach z /tmp/centrala_panel_hist_test/naglowki: 0
+BEZ BLEDOW (naglowki arduino-esp32 3.3.8)
+# kod wyjscia: 0
