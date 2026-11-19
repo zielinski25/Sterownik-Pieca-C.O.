@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Brzęczyk BEEP V2.0 – jak podłączyć do ESP32</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body{margin:0;background:#0f141a;color:#e6edf3;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;font-size:16px}
+  header{padding:12px 20px;border-bottom:1px solid #2a3542;display:flex;gap:16px;flex-wrap:wrap;align-items:baseline}
+  header h1{font-size:18px;margin:0} header a{color:#64b5f6;font-weight:700}
+  main{padding:12px;display:grid;gap:12px}
+  .card{background:#171e26;border:1px solid #2a3542;border-radius:10px;padding:12px}
+  .card h2{font-size:14px;margin:0 0 10px;color:#cdd9e5;text-transform:uppercase;letter-spacing:.05em}
+  svg{width:100%;height:auto;display:block;background:#4b545c;border-radius:8px}
+  text{font-family:ui-monospace,Consolas,monospace;fill:#fff}
+  .w{fill:none;stroke-width:8;stroke-linecap:round;stroke-linejoin:round}
+  .o{fill:none;stroke:#111;stroke-width:12;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+  .nb circle{fill:#fff;stroke:#111;stroke-width:2} .nb text{fill:#111;font-size:20px;font-weight:700}
+  table{border-collapse:collapse;width:100%} th,td{border:1px solid #2a3542;padding:8px;text-align:left;vertical-align:top} th{background:#1d2731}
+  .n{display:inline-flex;width:28px;height:28px;border-radius:50%;background:#fff;color:#111;font-weight:700;align-items:center;justify-content:center;border:3px solid #000;margin-right:6px}
+  ol li{margin:6px 0} code{background:#0b0f13;padding:1px 5px;border-radius:4px;color:#ffd27a}
+  .warn{color:#ffcc80}
+</style>
+</head>
+<body>
+<header><h1>Brzęczyk BEEP V2.0 – podłączenie przez tranzystor Q1</h1><a href="index.html">← pełny widok montażowy</a></header>
+<main>
+<section class="card">
+<svg viewBox="0 0 1200 760" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="blk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#23282c"/><stop offset="1" stop-color="#0c0e10"/></linearGradient>
+    <linearGradient id="blu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1976d2"/><stop offset="1" stop-color="#0d3d7a"/></linearGradient>
+  </defs>
+
+  <!-- ESP32 fragment -->
+  <g transform="translate(40,60)">
+    <text x="130" y="-18" text-anchor="middle" font-size="22" font-weight="700">ESP32 DevKit (fragment)</text>
+    <rect width="260" height="640" rx="10" fill="url(#blk)" stroke="#000" stroke-width="2"/>
+    <text x="130" y="40" text-anchor="middle" font-size="16" fill="#9aa7b4">lewa listwa, dół</text>
+    <g font-size="22" font-weight="700">
+      <rect x="-14" y="106" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="121" r="8" fill="#e2c069"/><text x="30" y="129" fill="#ffe082">D13</text>
+      <rect x="-14" y="186" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="201" r="8" fill="#e2c069"/><text x="30" y="209" fill="#8a8a8a">D12  (nie)</text>
+      <rect x="-14" y="266" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="281" r="8" fill="#e2c069"/><text x="30" y="289" fill="#8a8a8a">D14  (przycisk)</text>
+      <rect x="-14" y="346" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="361" r="8" fill="#e2c069"/><text x="30" y="369" fill="#ffe082">GND</text>
+      <rect x="-14" y="426" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="441" r="8" fill="#e2c069"/><text x="30" y="449" fill="#ffe082">VIN  (5 V)</text>
+    </g>
+    <rect x="95" y="560" width="70" height="30" rx="4" fill="#cfd8dc" stroke="#555"/><text x="130" y="620" text-anchor="middle" font-size="16" fill="#9aa7b4">micro‑USB</text>
+  </g>
+
+  <!-- R5 -->
+  <g transform="translate(430,150)">
+    <line x1="0" y1="30" x2="160" y2="30" stroke="#ccc" stroke-width="5"/>
+    <rect x="30" y="14" width="100" height="32" rx="16" fill="#d7c4a3" stroke="#8a7a5a" stroke-width="2"/>
+    <rect x="44" y="14" width="9" height="32" fill="#5d4037"/><rect x="58" y="14" width="9" height="32" fill="#000"/><rect x="72" y="14" width="9" height="32" fill="#e53935"/><rect x="104" y="14" width="9" height="32" fill="#d4af37"/>
+    <text x="80" y="-2" text-anchor="middle" font-size="22" font-weight="700">R5 1 kΩ</text>
+    <text x="80" y="76" text-anchor="middle" font-size="15" fill="#ddd">brąz‑czarny‑czerwony‑złoty</text>
+  </g>
+
+  <!-- Q1 -->
+  <g transform="translate(640,300)">
+    <text x="60" y="-30" text-anchor="middle" font-size="22" font-weight="700">Q1 – tranzystor NPN</text>
+    <text x="60" y="-8" text-anchor="middle" font-size="15" fill="#ddd">BC547 / 2N2222 / S8050 …</text>
+    <path d="M 0 90 V 50 A 60 60 0 0 1 120 50 V 90 Z" fill="#111" stroke="#777" stroke-width="2"/>
+    <text x="60" y="70" text-anchor="middle" font-size="14" fill="#aaa">płaska strona</text>
+    <line x1="25" y1="90" x2="25" y2="150" stroke="#ccc" stroke-width="5"/><line x1="60" y1="90" x2="60" y2="150" stroke="#ccc" stroke-width="5"/><line x1="95" y1="90" x2="95" y2="150" stroke="#ccc" stroke-width="5"/>
+    <text x="25" y="180" text-anchor="middle" font-size="22" font-weight="700">E</text><text x="60" y="180" text-anchor="middle" font-size="22" font-weight="700">B</text><text x="95" y="180" text-anchor="middle" font-size="22" font-weight="700">C</text>
+    <text x="25" y="202" text-anchor="middle" font-size="13" fill="#ddd">emiter</text><text x="60" y="202" text-anchor="middle" font-size="13" fill="#ddd">baza</text><text x="95" y="202" text-anchor="middle" font-size="13" fill="#ddd">kolektor</text>
+    <text x="60" y="240" text-anchor="middle" font-size="14" fill="#ffcc80">kolejność nóżek sprawdź w nocie swojego tranzystora!</text>
+    <text x="60" y="260" text-anchor="middle" font-size="14" fill="#ffcc80">BC547/BC337: C‑B‑E   ·   2N2222/2N3904/S8050: E‑B‑C</text>
+  </g>
+
+  <!-- moduł BEEP -->
+  <g transform="translate(900,80)">
+    <text x="130" y="-18" text-anchor="middle" font-size="22" font-weight="700">Moduł BEEP V2.0</text>
+    <rect width="260" height="300" rx="10" fill="url(#blu)" stroke="#06284d" stroke-width="2"/>
+    <circle cx="130" cy="120" r="70" fill="#111" stroke="#444" stroke-width="4"/><circle cx="130" cy="120" r="9" fill="#000"/>
+    <rect x="30" y="230" width="34" height="16" fill="#111" stroke="#666"/><text x="47" y="226" text-anchor="middle" font-size="13">R2 510</text>
+    <rect x="196" y="230" width="34" height="16" fill="#111" stroke="#666"/><text x="213" y="226" text-anchor="middle" font-size="13">R1 101</text>
+    <g fill="#ddd"><rect x="66" y="300" width="12" height="40"/><rect x="124" y="300" width="12" height="40"/><rect x="182" y="300" width="12" height="40"/></g>
+    <g font-size="22" font-weight="700"><text x="72" y="292" text-anchor="middle">GND</text><text x="130" y="292" text-anchor="middle">IO</text><text x="188" y="292" text-anchor="middle">VCC</text></g>
+  </g>
+
+  <!-- przewody -->
+  <g id="ols"></g><g id="ws"></g><g id="nbs"></g>
+</svg>
+</section>
+
+<section class="card">
+<h2>Pięć połączeń</h2>
+<table>
+<tr><th style="width:60px">Nr</th><th>Skąd</th><th>Dokąd</th><th>Uwagi</th></tr>
+<tr><td><span class="n">1</span></td><td>ESP32 <code>D13</code></td><td>R5 1 kΩ</td><td>sygnał z firmware</td></tr>
+<tr><td><span class="n">2</span></td><td>R5 1 kΩ</td><td>Q1 <b>BAZA</b> (B)</td><td>~2,6 mA do bazy, pin ESP32 bezpieczny</td></tr>
+<tr><td><span class="n">3</span></td><td>Q1 <b>EMITER</b> (E)</td><td>ESP32 <code>GND</code></td><td>masa</td></tr>
+<tr><td><span class="n">4</span></td><td>Q1 <b>KOLEKTOR</b> (C)</td><td>moduł <code>GND</code></td><td>tranzystor „daje masę” modułowi = włącza dźwięk</td></tr>
+<tr><td><span class="n">5</span></td><td>ESP32 <code>VIN</code> (5 V)</td><td>moduł <code>VCC</code> <b>i</b> <code>IO</code> (zmostkowane)</td><td>moduł na stałe „włączony”, 5 V – bo przy 3,3 V milczy</td></tr>
+</table>
+</section>
+
+<section class="card">
+<h2>Jak to przetestować (DevKit na USB od komputera)</h2>
+<ol>
+<li>Zrób połączenia <b>2, 3, 4, 5</b>. Przewód nr 1 jeszcze <b>nie</b> do D13 – wolny koniec R5 trzymasz w ręce.</li>
+<li>Wolny koniec R5 dotknij do pinu <code>3V3</code> → <b>ciągły pisk</b>. Puść → <b>cisza</b>.</li>
+<li>Jeśli zamiast tego: <span class="warn">cisza cały czas</span> → sprawdź kolejność nóżek Q1 (E/B/C) i czy IO jest zwarte z VCC; <span class="warn">pisk cały czas</span> → zamienione E z C albo R5 nie trafia w bazę.</li>
+<li>Działa → wolny koniec R5 lutujesz do <code>D13</code>. Gotowe – dźwięk pojawi się przy alarmie z centrali (test: ekran alarmu → WYCISZ).</li>
+</ol>
+<p class="warn">Konwertera poziomów nie używamy. VCC modułu z VIN (5 V), nie z 3V3.</p>
+</section>
+</main>
+<script>
+(()=>{
+  const NS='http://www.w3.org/2000/svg', svg=document.querySelector('svg');
+  const el=(n,a,p)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e;};
+  const P={D13:[41,181],GND:[41,421],VIN:[41,501],R5a:[430,180],R5b:[590,180],E:[665,450],B:[700,450],C:[735,450],mGND:[972,420],mIO:[1030,420],mVCC:[1088,420]};
+  const W=[
+    ['#bdbdbd',`M ${P.D13} C 200 181 300 180 ${P.R5a}`],
+    ['#bdbdbd',`M ${P.R5b} C 640 180 700 300 ${P.B}`],
+    ['#1c1c1c',`M ${P.E} C 665 600 300 620 120 560 C 60 540 41 500 ${P.GND}`],
+    ['#1c1c1c',`M ${P.C} C 735 560 972 560 ${P.mGND}`],
+    ['#ffeb3b',`M ${P.VIN} C 200 501 300 700 600 700 C 1000 700 1088 650 ${P.mVCC} M ${P.mVCC} L ${P.mIO}`],
+  ];
+  const gO=document.getElementById('ols'),gW=document.getElementById('ws'),gN=document.getElementById('nbs');
+  W.forEach(([c,d],i)=>{ el('path',{d,class:'o'},gO); const p=el('path',{d,class:'w',stroke:c},gW);
+    const pt=p.getPointAtLength(p.getTotalLength()*0.45); const g=el('g',{class:'nb',transform:`translate(${pt.x},${pt.y})`},gN); el('circle',{r:18},g); const t=el('text',{y:7,'text-anchor':'middle'},g); t.textContent=i+1; });
+  Object.values(P).forEach(v=>el('circle',{cx:v[0],cy:v[1],r:10,fill:'none',stroke:'#fff','stroke-width':3},gN));
+})();
+</script>
+</body>
+</html>
