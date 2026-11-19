@@ -127,6 +127,14 @@ struct Atrapa {
   int restarty = 0;            // ESP.restart()
   int powodResetu = 1;         // esp_reset_reason(): 1 = ESP_RST_POWERON
   bool wifiPersistent = true;  // WiFi.persistent(): true = biblioteka zapisuje siec do NVS (domyslne w rdzeniu 3.x)
+  // [v1.4.7] taktowanie CPU (esp32-hal-cpu.h) i moc nadajnika (WiFi.setTxPower()).
+  uint32_t cpuMhz = 240;       // getCpuFrequencyMhz(); plytka startuje z 240 MHz (platformio: esp32dev, bez board_build.f_cpu)
+  int cpuZmian = 0;            // ile razy firmware wolal setCpuFrequencyMhz()
+  int cpuZleWartosci = 0;      // ...w tym z wartoscia spoza 240/160/80 (radio by padlo)
+  int wifiTryb = 0;            // WiFi.mode(): 0 = WIFI_OFF (sterownik radia nie wystartowal), 1 = WIFI_STA
+  int txMoc = 78;              // esp_wifi_set_max_tx_power(): cwiartki dBm, domyslnie 78 = 19,5 dBm
+  int txUstawien = 0;          // udane WiFi.setTxPower()
+  int txPrzedStartem = 0;      // WiFi.setTxPower() PRZED WiFi.mode() - na plytce zwraca blad i nic nie ustawia
   unsigned stosZapasB = 5000;  // uxTaskGetStackHighWaterMark(NULL) [B]
   void (*hakNieudanejAlokacji)(size_t, uint32_t, const char*) = nullptr;   // heap_caps_register_failed_alloc_callback()
   // --- zrzut po awarii (esp_core_dump.h) ---

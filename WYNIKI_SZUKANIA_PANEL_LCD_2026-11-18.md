@@ -532,7 +532,7 @@ testy na PC i próba na płytce.
 | 3 | **Usypianie na baterii jak dawniej** + próg słabej baterii | B1, B5 (czeka na podłączenie baterii i przycisku) |
 | 4 | **Polecenia nie giną** + przerwanie pętli restartów bez centrali — **zrobione w v1.4.2** (B6 przeniesione tu z kroku 3, bo nie wymaga sprzętu) | C4, B6 |
 | 5 | Ustawienia pobierane wtedy, gdy potrzebne; filtr JSON — **zrobione w v1.4.3** (42 → 31 połączeń/min, 5 506 → 2 760 próśb o pamięć/min) | B4, A2 |
-| 6 | 80 MHz i moc nadajnika — z miernikiem | B3, B7 |
+| 6 | 80 MHz i moc nadajnika — **przełączniki w v1.4.7** (ekran ZASILANIE: 240/160/80 MHz, 19,5/15/11/8,5 dBm, odczyt RSSI/MHz/dBm, zapis w NVS; domyślnie bez zmian). **Czeka: pomiar testerem USB/multimetrem na płytce** i decyzja, co zostawić na stałe — wyniki wpisać tu | B3, B7 |
 | 7 | Usunięcie starego programu z `main.cpp`; ostrzeżenia kompilatora włączone | C1, C7, C8 |
 | — | Polskie litery — jeśli chcesz | D |
 

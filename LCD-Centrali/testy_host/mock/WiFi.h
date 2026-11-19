@@ -14,6 +14,12 @@ typedef enum {
 } wl_status_t;
 
 typedef enum { WIFI_OFF = 0, WIFI_STA = 1, WIFI_AP = 2, WIFI_AP_STA = 3 } wifi_mode_t;
+// [v1.4.7] wifi_power_t jak w WiFiGeneric.h rdzenia 3.x - wartosci to cwiartki dBm.
+typedef enum {
+  WIFI_POWER_19_5dBm = 78, WIFI_POWER_19dBm = 76, WIFI_POWER_18_5dBm = 74, WIFI_POWER_17dBm = 68,
+  WIFI_POWER_15dBm = 60, WIFI_POWER_13dBm = 52, WIFI_POWER_11dBm = 44, WIFI_POWER_8_5dBm = 34,
+  WIFI_POWER_7dBm = 28, WIFI_POWER_5dBm = 20, WIFI_POWER_2dBm = 8, WIFI_POWER_MINUS_1dBm = -4
+} wifi_power_t;
 typedef enum { WIFI_FAST_SCAN = 0, WIFI_ALL_CHANNEL_SCAN } wifi_scan_method_t;
 typedef enum { WIFI_CONNECT_AP_BY_SIGNAL = 0, WIFI_CONNECT_AP_BY_SECURITY } wifi_sort_method_t;
 
@@ -44,7 +50,14 @@ typedef arduino_event_info_t WiFiEventInfo_t;
 
 class AtrapaWiFi {
  public:
-  bool mode(wifi_mode_t) { return true; }
+  bool mode(wifi_mode_t m) { g_atrapa.wifiTryb = (int)m; return true; }
+  // [v1.4.7] Jak WiFiGenericClass::setTxPower(): esp_wifi_set_max_tx_power()
+  // zwraca ESP_ERR_WIFI_NOT_INIT, dopoki WiFi.mode() nie wystartowalo radia.
+  bool setTxPower(wifi_power_t moc) {
+    if (g_atrapa.wifiTryb == 0) { g_atrapa.txPrzedStartem++; return false; }
+    g_atrapa.txMoc = (int)moc; g_atrapa.txUstawien++; return true;
+  }
+  wifi_power_t getTxPower() { return (wifi_power_t)g_atrapa.txMoc; }
   bool persistent(bool p) { g_atrapa.wifiPersistent = p; return true; }
   bool config(IPAddress, IPAddress, IPAddress) { return true; }
   void setScanMethod(wifi_scan_method_t m) { g_atrapa.metodaSkanu = (int)m; }

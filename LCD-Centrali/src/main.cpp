@@ -40,6 +40,35 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-22] v1.4.7 - EKRAN ZASILANIE: TAKTOWANIE PROCESORA I MOC NADAJNIKA
+//   WIFI (audyt 2026-11-18, tematy 11 i 18 / plan krok 6, B3 i B7). Nikt nie
+//   zmierzyl jeszcze poboru pradu tego panelu ani nie znal RSSI przy centrali,
+//   wiec zamiast stalych - przelaczniki + zywy odczyt, a pomiar testerem USB
+//   robi uzytkownik. Ruch do centrali i reszta panelu bez zmian.
+//   - Drugi pulpit: trzeci kafelek ZASILANIE (IKONA_BLYSKAWICA). Ekran:
+//     przycisk "Taktowanie procesora" 240 -> 160 -> 80 MHz
+//     (setCpuFrequencyMhz(); ponizej 80 MHz radio nie dziala) i "Moc
+//     nadajnika WiFi" 19,5 -> 15 -> 11 -> 8,5 dBm (WiFi.setTxPower()); pod
+//     nimi odczyt: RSSI PANELU, getCpuFrequencyMhz(), WiFi.getTxPower() - to,
+//     co uklad naprawde robi; ostrzezenie przy sygnale ponizej -77 dBm.
+//   - Zapis w NVS "wyswietlacz": "cpuIdx"/"txIdx" (indeksy w ZASILANIE_CPU_MHZ[]/
+//     ZASILANIE_TX[]; nieznany indeks -> 0). Domyslnie 0/0 = DOKLADNIE jak do
+//     v1.4.6 - nowa wersja niczego nie zmienia, dopoki ktos nie dotknie ekranu.
+//   - Taktowanie stosowane na koncu setup() (kalibracja, laczenie i pierwsze
+//     rysowanie zawsze na 240 MHz) i od razu po zmianie z ekranu. APB zostaje
+//     80 MHz - SPI ekranu, PWM, UART, millis() bez zmian; wolniejsze tylko
+//     liczenie (LVGL ~3x, JSON, OTA).
+//   - Moc nadajnika dopiero PO WiFi.mode(WIFI_STA) w polaczWifi() (wczesniej
+//     esp_wifi_set_max_tx_power() zwraca blad - temat 18) i cicho po kazdym
+//     WiFi.begin() (wifiRozpocznijLaczenie()).
+//   - Log: tag=ZASILANIE zdarzenie=cpu|nadajnik kiedy=start|ekran cel_... i
+//     odczyt po zmianie, wynik=; linia tag=PANEL co 30 s ma cpu_mhz= tx_dbm=
+//     tx_ok= - para linii przed/po przelaczeniu + odczyt z testera USB daje
+//     porownanie poboru bez amperomierza w obwodzie.
+//   - Testy (testy_host): scenariusze zasilanie, zasilanie_po_restarcie,
+//     zasilanie_zly_indeks; atrapy setCpuFrequencyMhz()/getCpuFrequencyMhz()
+//     (tylko 240/160/80), WiFi.mode()/setTxPower()/getTxPower() (blad przed
+//     startem radia). 57 scenariuszy, 655 sprawdzen.
 // [2026-11-19] v1.4.6 ERRATUM (tylko komentarze i testy, binarka v1.4.6 bez
 //   zmian): zdanie "pole fw w /api/status istnieje od dawna" ponizej bylo
 //   NIEPRAWDZIWE. Centrala do 3.58.7 wysylala "fw" tylko w JSON-ie do
@@ -954,7 +983,7 @@ diag::Dlawik dlawikMaloPamieci;               // ostrzezenie "malo_pamieci" - na
 // succeeded", restart z powodem "panic") - w obu funkcjach jednakowo.
 static void logBezPamieci(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 static void logBezPamieci(const char *fmt, ...) {
-  static char linia[768];   // najdluzsza linia ("tag=PANEL fw=...") ma w najgorszym razie ok. 640 znakow (v1.4.1: +3 pola; v1.4.6: centrala_fw=)
+  static char linia[768];   // najdluzsza linia ("tag=PANEL fw=...") ma w najgorszym razie ok. 670 znakow (v1.4.1: +3 pola; v1.4.6: centrala_fw=; v1.4.7: cpu_mhz= tx_dbm= tx_ok=)
   va_list ap;
   va_start(ap, fmt);
   const int n = vsnprintf(linia, sizeof(linia), fmt, ap);
@@ -1044,7 +1073,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.4.6"; // [2026-11-21] v1.4.6: wersje panelu i centrali na ekranie startowym i na WYSWIETLACZ + porzadki po logach; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.4.7"; // [2026-11-22] v1.4.7: ekran ZASILANIE - taktowanie procesora i moc nadajnika WiFi do wyboru, pamietane w NVS; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1261,6 +1290,92 @@ int  wyswietlaczOstatniaGodzina = 0;     // ostatnia znana godzina (real. lub sy
 bool wyswietlaczGodzinaZnana    = false; // false dopoki 1. pobierzStatus() nie ustawi
 bool wyswietlaczPrzyciemnionyTeraz = false; // cache "co jest aktualnie zastosowane", zeby nie spamowac ledcWrite()
 
+// ----------------------------------------------------------------------------
+// [v1.4.7 ZASILANIE] Taktowanie procesora i moc nadajnika WiFi - do wyboru z
+// ekranu ZASILANIE (drugi pulpit), pamietane w NVS. Audyt z 2026-11-18, tematy
+// 11 (B3: "240 MHz na stale, a panel tylko rysuje i pyta co 2 s") i 18 (B7:
+// pelna moc nadajnika do centrali stojacej czesto w tym samym pomieszczeniu).
+//
+// DLACZEGO PRZELACZNIK, A NIE STALA: nikt nie zmierzyl jeszcze tego panelu
+// amperomierzem (szacunek z audytu: 120-160 mA przy pracy, 0,11 mA w deep
+// sleep). Zamiast zgadywac, panel dostaje przelaczniki + zywy odczyt tego,
+// co uklad naprawde robi (ekran ZASILANIE i pola cpu_mhz=/tx_dbm= w linii
+// tag=PANEL co 30 s), a uzytkownik z testerem USB w przelotce porownuje
+// pobor miedzy ustawieniami sam. Domyslnie indeks 0 = DOKLADNIE jak do
+// v1.4.6 (240 MHz, 19,5 dBm) - nowa wersja niczego nie zmienia, dopoki ktos
+// nie dotknie ekranu.
+//
+// CO WOLNO (esp32-hal-cpu.h, arduino-esp32 3.x): przy wlaczonym WiFi tylko
+// 240/160/80 MHz - ponizej 80 MHz radio przestaje dzialac, wiec 40/20/10 MHz
+// celowo nie ma na liscie. APB (80 MHz) nie zalezy od taktowania CPU w tym
+// zakresie, wiec SPI ekranu (27 MHz), PWM podswietlenia/brzeczyka, UART i
+// millis() dzialaja bez zmian; wolniejsze jest TYLKO liczenie - rysowanie
+// LVGL (przy 80 MHz ok. 3x dluzej, dalej duzo ponizej 15 s watchdoga),
+// parsowanie JSON i pobieranie OTA.
+//
+// MOC NADAJNIKA: WiFi.setTxPower() to esp_wifi_set_max_tx_power(), ktore
+// ZWRACA BLAD przed esp_wifi_start() - dlatego wolane dopiero PO
+// WiFi.mode(WIFI_STA) w polaczWifi() (temat 18 audytu), a potem ponownie po
+// kazdym WiFi.begin() (tanie; na wypadek, gdyby sterownik kiedys wrocil do
+// wartosci domyslnej przy ponownym starcie radia). Wartosci wifi_power_t to
+// cwiartki dBm (78 = 19,5 dBm); 8,5 dBm to ok. 12x mniej mocy niz 19,5 dBm,
+// przy dobrym sygnale (>= -65 dBm) wciaz z duzym zapasem. Przy slabym
+// sygnale ekran ZASILANIE ostrzega, zeby mocy nie obnizac.
+// ----------------------------------------------------------------------------
+static const uint32_t ZASILANIE_CPU_MHZ[] = { 240, 160, 80 };
+static const uint8_t  ZASILANIE_CPU_N = sizeof(ZASILANIE_CPU_MHZ) / sizeof(ZASILANIE_CPU_MHZ[0]);
+static const wifi_power_t ZASILANIE_TX[] = { WIFI_POWER_19_5dBm, WIFI_POWER_15dBm, WIFI_POWER_11dBm, WIFI_POWER_8_5dBm };
+static const uint8_t  ZASILANIE_TX_N = sizeof(ZASILANIE_TX) / sizeof(ZASILANIE_TX[0]);
+static_assert(sizeof(ZASILANIE_CPU_MHZ) / sizeof(ZASILANIE_CPU_MHZ[0]) == LVGL_ZASILANIE_CPU_N, "napisy na przyciskach CPU (dashboard_lvgl_poc.cpp) musza odpowiadac ZASILANIE_CPU_MHZ[]");
+static_assert(sizeof(ZASILANIE_TX) / sizeof(ZASILANIE_TX[0]) == LVGL_ZASILANIE_TX_N, "napisy na przyciskach nadajnika (dashboard_lvgl_poc.cpp) musza odpowiadac ZASILANIE_TX[]");
+uint8_t zasilanieCpuIdx = 0;   // indeks w ZASILANIE_CPU_MHZ[]; NVS "cpuIdx"
+uint8_t zasilanieTxIdx  = 0;   // indeks w ZASILANIE_TX[];      NVS "txIdx"
+static bool zasilanieTxOstatniWynik = false;   // czy ostatnie WiFi.setTxPower() sie powiodlo (do linii tag=PANEL)
+
+void zasilaniePomiarNaEkran();   // nizej
+static float zasilanieTxDbm() { return (float)(int)WiFi.getTxPower() * 0.25f; }   // wifi_power_t -> dBm
+
+// Taktowanie: przy starcie (koniec setup(), gdy ekran juz stoi - kalibracja
+// dotyku, laczenie i pierwsze rysowanie ida zawsze na 240 MHz) i po kazdej
+// zmianie z ekranu. Jedna linia logu z wynikiem - "cpu_mhz=" to odczyt
+// getCpuFrequencyMhz() PO zmianie, czyli prawda, nie zyczenie.
+static void zasilanieZastosujCpu(const char *kiedy) {
+  const uint32_t cel = ZASILANIE_CPU_MHZ[zasilanieCpuIdx];
+  bool ok = true;
+  if (getCpuFrequencyMhz() != cel) ok = setCpuFrequencyMhz(cel);
+  Serial.printf("tag=ZASILANIE zdarzenie=cpu kiedy=%s cel_mhz=%lu cpu_mhz=%lu wynik=%d\n",
+                kiedy, (unsigned long)cel, (unsigned long)getCpuFrequencyMhz(), (int)ok);
+}
+// Moc nadajnika: `kiedy` == nullptr to ciche powtorzenie po WiFi.begin()
+// (bez logu - laczenie potrafi byc ponawiane co kilka sekund).
+static void zasilanieZastosujTx(const char *kiedy) {
+  zasilanieTxOstatniWynik = WiFi.setTxPower(ZASILANIE_TX[zasilanieTxIdx]);
+  if (kiedy == nullptr) return;
+  Serial.printf("tag=ZASILANIE zdarzenie=nadajnik kiedy=%s cel_dbm=%.1f tx_dbm=%.1f wynik=%d\n",
+                kiedy, (double)((int)ZASILANIE_TX[zasilanieTxIdx] * 0.25f), (double)zasilanieTxDbm(), (int)zasilanieTxOstatniWynik);
+}
+// Callback z ekranu ZASILANIE (lvgl_dashboard_poc_ustaw_callback_zasilanie()).
+void zasilanieWyslij(const char *pole, int indeks) {
+  if (strcmp(pole, "cpu") == 0) {
+    if (indeks < 0 || indeks >= ZASILANIE_CPU_N) return;
+    zasilanieCpuIdx = (uint8_t)indeks;
+    ustawieniaWyswietlacza.putUChar("cpuIdx", zasilanieCpuIdx);
+    zasilanieZastosujCpu("ekran");
+  } else if (strcmp(pole, "nadajnik") == 0) {
+    if (indeks < 0 || indeks >= ZASILANIE_TX_N) return;
+    zasilanieTxIdx = (uint8_t)indeks;
+    ustawieniaWyswietlacza.putUChar("txIdx", zasilanieTxIdx);
+    zasilanieZastosujTx("ekran");
+  }
+  zasilaniePomiarNaEkran();
+}
+// Zywy odczyt dla ekranu ZASILANIE - co status (2 s) i po kazdej zmianie.
+void zasilaniePomiarNaEkran() {
+  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
+  lvgl_dashboard_poc_aktualizuj_zasilanie_pomiar(wifiOk, wifiOk ? (int)WiFi.RSSI() : 0,
+                                                  (int)getCpuFrequencyMhz(), zasilanieTxDbm());
+}
+
 void wyswietlaczWczytajZPamieci() {
   // [ROZNICA wzgledem kalibracji] `kalibracja` (wyzej) robi .end() zaraz po
   // jednorazowym uzyciu w setup() - my celowo NIE wolamy .end() tutaj, bo w
@@ -1275,6 +1390,14 @@ void wyswietlaczWczytajZPamieci() {
   godzinaStartPrzyciemnienia  = ustawieniaWyswietlacza.getUChar("godzStart", 22);
   godzinaKoniecPrzyciemnienia = ustawieniaWyswietlacza.getUChar("godzKoniec", 6);
   harmonogramWlaczonyWartosc  = ustawieniaWyswietlacza.getBool("harmonWlacz", true);
+  // [v1.4.7 ZASILANIE] Ta sama przestrzen NVS - klucze "cpuIdx"/"txIdx" to
+  // INDEKSY w ZASILANIE_CPU_MHZ[]/ZASILANIE_TX[] (nizej), nie wartosci: gdyby
+  // tabela sie kiedys zmienila, nieznany indeks spada na 0 (= jak do v1.4.6),
+  // a nie na jakas przypadkowa czestotliwosc.
+  zasilanieCpuIdx = ustawieniaWyswietlacza.getUChar("cpuIdx", 0);
+  zasilanieTxIdx  = ustawieniaWyswietlacza.getUChar("txIdx", 0);
+  if (zasilanieCpuIdx >= ZASILANIE_CPU_N) zasilanieCpuIdx = 0;
+  if (zasilanieTxIdx  >= ZASILANIE_TX_N)  zasilanieTxIdx  = 0;
   // Bezpieczne klipsy na wypadek uszkodzonych/przedawnionych danych w NVS -
   // te same zakresy co suwaki/spinboxy w dashboard_lvgl_poc.cpp.
   // [v1.4.1 C9] Dolna granica JASNOSC_MIN_PROCENT: wartosc 0 % zapisana przez
@@ -2445,7 +2568,11 @@ void panelDiagOkresowo() {
   // z v1.2.0 i v1.2.1, ktore byly zawyzone o ok. 39 kB. Zdrowy panel ma tu
   // kilkadziesiat kB; ponizej ok. 16 kB zaczynaja sie klopoty.
   // logBezPamieci(): ta linia ma sie wypisac takze wtedy, gdy pamieci brakuje.
-  logBezPamieci("tag=PANEL fw=%s wifi=%d bssid=%s kanal=%d rssi=%d ap_przy_starcie=%d centrala=%s centrala_fw=%s sym=%s "
+  // [v1.4.7 ZASILANIE] cpu_mhz= i tx_dbm= to ODCZYT (getCpuFrequencyMhz(),
+  // WiFi.getTxPower()), tx_ok= wynik ostatniego WiFi.setTxPower() - para
+  // linii tag=PANEL przed i po przelaczeniu na ekranie ZASILANIE + odczyt z
+  // testera USB daje porownanie poboru pradu bez amperomierza w obwodzie.
+  logBezPamieci("tag=PANEL fw=%s wifi=%d bssid=%s kanal=%d rssi=%d cpu_mhz=%lu tx_dbm=%.1f tx_ok=%d ap_przy_starcie=%d centrala=%s centrala_fw=%s sym=%s "
                 "status_ok=%lu status_blad=%lu ust_ok=%lu ust_blad=%lu ekran=%lu wiek_danych_s=%ld "
                 "t_zewn=%.1f t_pokoj=%.1f t_ogrz=%.1f t_ogrz_sr=%.1f t_bojler=%.1f t_panel=%.1f "
                 "wilg=%.0f cisn=%.0f dym=%d klapa=%d syberka=%d pompa=%d czas=%02d:%02d "
@@ -2453,6 +2580,7 @@ void panelDiagOkresowo() {
                 "bez_danych_s=%lu przyczyna=%s wymuszen=%u rozl_kod=%u rozl_n=%lu autorestartow=%u\n",
                 FIRMWARE_VERSION_PANEL, (int)wifiOk, bssid,
                 wifiOk ? (int)WiFi.channel() : 0, wifiOk ? (int)WiFi.RSSI() : 0,
+                (unsigned long)getCpuFrequencyMhz(), (double)zasilanieTxDbm(), (int)zasilanieTxOstatniWynik,
                 wifiCentralPrzyStarcie,
                 !centralaRozpoznana ? "nieznana" : (centralaToSymulator ? "symulator" : "sterownik"),
                 stan.centralaFw[0] != '\0' ? stan.centralaFw : "-",   // [v1.4.6] pole "fw" statusu
@@ -3293,6 +3421,7 @@ static void wifiRozpocznijLaczenie() {
     WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
   }
+  zasilanieZastosujTx(nullptr);   // [v1.4.7 ZASILANIE] ciche powtorzenie po kazdym begin() - patrz komentarz przy funkcji
 }
 
 // [v1.2.1 RATUNEK] Kod przyczyny kazdego rozlaczenia WiFi. Wolane przez
@@ -3415,6 +3544,10 @@ void polaczWifi() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.onEvent(wifiZdarzenie);   // [v1.2.1 RATUNEK] kody rozlaczen do logu - polaczWifi() jest wolane raz, z setup()
+  // [v1.4.7 ZASILANIE] Dopiero TERAZ, po WiFi.mode() (sterownik radia juz
+  // wystartowal) - wczesniej esp_wifi_set_max_tx_power() zwraca blad
+  // (audyt 2026-11-18, temat 18). Przy indeksie 0 ustawia 19,5 dBm = domyslne.
+  zasilanieZastosujTx("start");
 
   // [ETAP 3 KROK 2] Statyczne IP PRZED WiFi.begin() — glowna dzwignia
   // szybkosci (patrz komentarz przy definicji WIFI_IP_STATYCZNE wyzej).
@@ -4526,6 +4659,9 @@ void setup() {
   lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(jasnoscDziennaWartosc, jasnoscNocnaWartosc,
                                                          godzinaStartPrzyciemnienia, godzinaKoniecPrzyciemnienia,
                                                          harmonogramWlaczonyWartosc);
+  // [v1.4.7 ZASILANIE] Lokalne jak podswietlenie (NVS + sprzet tej plytki) - callback i zapisane indeksy.
+  lvgl_dashboard_poc_ustaw_callback_zasilanie(zasilanieWyslij);
+  lvgl_dashboard_poc_aktualizuj_zasilanie(zasilanieCpuIdx, zasilanieTxIdx);
   // [v1.2.1 RATUNEK] Po samoczynnym restarcie w trakcie alarmu: ekran alarmu
   // (albo dzwonek w naglowku, jesli byl zamkniety) i czerwone ramki kafelkow
   // wracaja, zanim przyjda pierwsze dane.
@@ -4570,6 +4706,12 @@ void setup() {
   // pracuje na styk (log z 2026-11-12: ok. 8 kB).
   logBezPamieci("tag=PAMIEC zdarzenie=po_starcie ram=%lu ram_blok=%lu ram_min=%lu\n",
                 (unsigned long)ramWolny(), (unsigned long)ramBlok(), (unsigned long)ramMin());
+  // [v1.4.7 ZASILANIE] Dopiero tutaj (ekran narysowany, WiFi polaczone,
+  // pierwsze dane sa): zapisane taktowanie procesora. Do tego miejsca setup()
+  // idzie zawsze na 240 MHz - kalibracja dotyku i pierwsze rysowanie nie
+  // zwalniaja. Odczyt na ekran ZASILANIE od razu, nie dopiero za 2 s.
+  zasilanieZastosujCpu("start");
+  zasilaniePomiarNaEkran();
   ostatniStatus = millis();
   // [OTA-ROLLBACK] Tutaj, nie wczesniej: ekran juz narysowany (obie galezie
   // SYMULACJA=0/1 zbiegaja sie w tym miejscu), a w galezi SYMULACJA=0
@@ -4664,6 +4806,7 @@ void loop() {
   if (terazLvgl - ostatniStatus >= STATUS_INTERWAL_MS) {
     ostatniStatus = terazLvgl;
     pobierzStatus(); // tylko startuje GET - parsowanie+odswiezenie LVGL teraz w obslugaStatusFetch() wyzej
+    zasilaniePomiarNaEkran();   // [v1.4.7 ZASILANIE] zywy odczyt (RSSI panelu, MHz, dBm) - tani, gdy ekran zamkniety
   }
   // [v1.4.3 B4] Odczyt /api/ustawienia-get wtedy, gdy jest potrzebny: co 5 s
   // przy otwartym ekranie ustawien (i od razu przy jego otwarciu, gdyby ktos

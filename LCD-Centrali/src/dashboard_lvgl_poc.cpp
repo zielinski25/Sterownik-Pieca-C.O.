@@ -3,6 +3,11 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-22] v1.4.7 Dodano: ekran ZASILANIE (trzeci kafelek drugiego
+//   pulpitu, ikona blyskawicy): przyciski taktowania procesora (240/160/80 MHz)
+//   i mocy nadajnika WiFi (19,5/15/11/8,5 dBm) + zywy odczyt sygnalu, taktowania
+//   i mocy; ostrzezenie przy slabym sygnale. Wartosci stosuje main.cpp
+//   ([v1.4.7 ZASILANIE]).
 // [2026-11-19] v1.4.3 Dodano: lvgl_dashboard_poc_ekran_ustawien_otwarty()
 //   ([v1.4.3 B4] w main.cpp - ustawienia pobierane co 5 s tylko przy
 //   otwartym ekranie ustawien).
@@ -342,6 +347,8 @@ static AlarmWyciszCb    g_alarmWyciszCb    = nullptr;
 static WyswietlaczJasnoscCb     g_wyswietlaczJasnoscCb     = nullptr;
 static WyswietlaczUstawieniaCb  g_wyswietlaczUstawieniaCb  = nullptr;
 static WyswietlaczHarmonogramCb g_wyswietlaczHarmonogramCb = nullptr;
+// [v1.4.7 ZASILANIE] Ekran ZASILANIE - patrz zasilanie_* nizej i dashboard_lvgl_poc.h.
+static ZasilanieCb g_zasilanieCb = nullptr;
 
 static bool  g_polaczono        = false;
 static bool  g_pompaWlaczona    = false;
@@ -882,6 +889,26 @@ static lv_timer_t *g_wyswietlaczPanelIdleTimer  = nullptr;
 // [v1.4.6 WERSJE] Etykieta "Panel vX / Centrala vY" w lewym gornym rogu ekranu
 // WYSWIETLACZ - patrz lvgl_dashboard_poc_ustaw_wersje().
 static lv_obj_t *wyswietlaczWersjeLabel = nullptr;
+
+// [v1.4.7 ZASILANIE] Ekran ZASILANIE (trzeci kafelek drugiego pulpitu).
+// Indeksy w g_zasilanie*Idx to pozycje w ZASILANIE_CPU_NAZWY/ZASILANIE_TX_NAZWY
+// (napisy na przyciskach) i jednoczesnie w ZASILANIE_CPU_MHZ[]/ZASILANIE_TX[]
+// w main.cpp (prawdziwe wartosci) - te same N, pilnowane static_assert tam.
+static const char *const ZASILANIE_CPU_NAZWY[LVGL_ZASILANIE_CPU_N] = { "240 MHz", "160 MHz", "80 MHz" };
+static const char *const ZASILANIE_TX_NAZWY[LVGL_ZASILANIE_TX_N]   = { "19,5 dBm", "15 dBm", "11 dBm", "8,5 dBm" };
+static int g_zasilanieCpuIdx = 0;
+static int g_zasilanieTxIdx  = 0;
+// Zywy odczyt (lvgl_dashboard_poc_aktualizuj_zasilanie_pomiar()).
+static bool  g_zasilanieWifiOk = false;
+static int   g_zasilanieRssi   = 0;
+static int   g_zasilanieCpuMhz = 0;
+static float g_zasilanieTxDbm  = 0.0f;
+static lv_obj_t *zasilaniePanel = nullptr;
+static lv_obj_t *zasilanieCpuBtnLabel = nullptr;
+static lv_obj_t *zasilanieTxBtnLabel  = nullptr;
+static lv_obj_t *zasilaniePomiarLabel = nullptr;   // 3 linie: sygnal / procesor / nadajnik
+static lv_obj_t *zasilanieOstrzezenieLabel = nullptr; // "slaby sygnal - nie obnizaj mocy"
+static lv_timer_t *g_zasilaniePanelIdleTimer = nullptr;
 
 struct PoleDym {
   const char *klucz;
@@ -3316,6 +3343,7 @@ static void alarm_ekran_wszystkie_idle_timery_anuluj() {
     &g_serwoUstIdleTimer, &g_pompaUstIdleTimer, &g_alarmTempPanelIdleTimer,
     &g_wykresyPanelIdleTimer, &g_drugiPulpitIdleTimer,
     &g_wyswietlaczPanelIdleTimer, &g_dymPanelIdleTimer,
+    &g_zasilaniePanelIdleTimer,   // [v1.4.7 ZASILANIE]
   };
   for (lv_timer_t **t : wszystkie) {
     if (*t != nullptr) { lv_timer_del(*t); *t = nullptr; }
@@ -3916,6 +3944,167 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
   // [FIX WYGLAD, ta sesja - Partia 2] Patrz krzyzyk_zamkniecia_utworz().
   krzyzyk_zamkniecia_utworz(wyswietlaczPanel, wyswietlacz_panel_zamknij_cb);
 }
+
+// ============================================================================
+// [v1.4.7 ZASILANIE] Ekran ZASILANIE - taktowanie procesora i moc nadajnika
+// WiFi (audyt 2026-11-18, tematy 11 i 18 / plan krok 6). Dwa przyciski, kazdy
+// przelacza NASTEPNA wartosc ze swojej listy (jak WL./WYL. harmonogramu, ale
+// z 3-4 stanami zamiast 2), pod nimi zywy odczyt tego, co uklad NAPRAWDE robi
+// (sygnal WiFi panelu, getCpuFrequencyMhz(), WiFi.getTxPower()) - zeby
+// uzytkownik z testerem USB w przelotce mogl porownac pobor pradu miedzy
+// ustawieniami bez komputera i bez zgadywania, czy zmiana sie przyjela.
+// Decyzja (uzytkownik nie znal ani poboru pradu, ani RSSI): domyslnie 240 MHz
+// i pelna moc = dokladnie jak do v1.4.6; oszczedzanie wlacza sie swiadomie,
+// z tego ekranu, i jest pamietane w NVS (main.cpp). Przy slabym sygnale
+// (ponizej LVGL_ZASILANIE_RSSI_SLABY) ekran ostrzega, zeby mocy nie obnizac.
+// ============================================================================
+static void zasilanie_panel_zamknij_cb(lv_event_t *e); // forward - potrzebny w idle-timeout
+static void zasilanie_panel_idle_timeout_cb(lv_timer_t *t) {
+  (void)t;
+  g_zasilaniePanelIdleTimer = nullptr;
+  zasilanie_panel_zamknij_cb(nullptr);
+}
+static void zasilanie_panel_idle_resetuj() {
+  if (g_zasilaniePanelIdleTimer != nullptr) { lv_timer_del(g_zasilaniePanelIdleTimer); g_zasilaniePanelIdleTimer = nullptr; }
+  g_zasilaniePanelIdleTimer = lv_timer_create(zasilanie_panel_idle_timeout_cb, POMPA_STRONA_IDLE_MS, nullptr);
+  lv_timer_set_repeat_count(g_zasilaniePanelIdleTimer, 1);
+}
+static void zasilanie_panel_zamknij_cb(lv_event_t *e) {
+  (void)e;
+  if (drugiPulpitScr != nullptr) lv_scr_load_anim(drugiPulpitScr, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
+  if (g_zasilaniePanelIdleTimer != nullptr) { lv_timer_del(g_zasilaniePanelIdleTimer); g_zasilaniePanelIdleTimer = nullptr; }
+  drugi_pulpit_idle_resetuj();   // ten sam powod co w wyswietlacz_panel_zamknij_cb()
+}
+
+// Slowny opis sygnalu wg tych samych progow co kreski ikony WiFi w naglowku
+// (wifi_liczba_kresek(): -55 = 7 kresek ... -95 = 1 kreska).
+static const char *zasilanie_sygnal_opis(bool wifiOk, int rssi) {
+  if (!wifiOk) return "brak";
+  if (rssi >= -65) return "dobry";
+  if (rssi >= LVGL_ZASILANIE_RSSI_SLABY) return "średni";
+  return "słaby";
+}
+static void zasilanie_wyglad_odswiez() {
+  if (zasilaniePanel == nullptr) return;
+  ustawNapis(zasilanieCpuBtnLabel, ZASILANIE_CPU_NAZWY[g_zasilanieCpuIdx]);
+  ustawNapis(zasilanieTxBtnLabel, ZASILANIE_TX_NAZWY[g_zasilanieTxIdx]);
+  // Przycisk "inny niz domyslny" podswietlony jak WL. harmonogramu - widac od
+  // progu drzwi, ze panel pracuje w trybie oszczedzania.
+  ustawKolorStylu(lv_obj_get_parent(zasilanieCpuBtnLabel), LV_STYLE_BG_COLOR,
+                  rgb565(g_zasilanieCpuIdx != 0 ? KOL_BEZPIECZNA : KOL_KARTA), LV_PART_MAIN);
+  ustawKolorStylu(lv_obj_get_parent(zasilanieTxBtnLabel), LV_STYLE_BG_COLOR,
+                  rgb565(g_zasilanieTxIdx != 0 ? KOL_BEZPIECZNA : KOL_KARTA), LV_PART_MAIN);
+  // Moc jak na przycisku: "19,5 dBm" z przecinkiem (polski zapis), "15 dBm"
+  // bez zbednego ",0" - wifi_power_t to cwiartki dBm, tu zaokraglone do 0,5.
+  char tx[16];
+  const int txPol = (int)(g_zasilanieTxDbm * 2.0f + (g_zasilanieTxDbm >= 0 ? 0.5f : -0.5f));   // polowki dBm
+  if (txPol % 2 == 0) snprintf(tx, sizeof(tx), "%d dBm", txPol / 2);
+  else snprintf(tx, sizeof(tx), "%d,5 dBm", txPol / 2);
+  char bufor[112];
+  if (g_zasilanieWifiOk) {
+    snprintf(bufor, sizeof(bufor), "Sygnał WiFi: %d dBm (%s)\nProcesor: %d MHz\nNadajnik: %s",
+             g_zasilanieRssi, zasilanie_sygnal_opis(true, g_zasilanieRssi), g_zasilanieCpuMhz, tx);
+  } else {
+    snprintf(bufor, sizeof(bufor), "Sygnał WiFi: brak połączenia\nProcesor: %d MHz\nNadajnik: %s",
+             g_zasilanieCpuMhz, tx);
+  }
+  ustawNapis(zasilaniePomiarLabel, bufor);
+  ustawUkrycie(zasilanieOstrzezenieLabel, !(g_zasilanieWifiOk && g_zasilanieRssi < LVGL_ZASILANIE_RSSI_SLABY));
+}
+static void zasilanie_cpu_btn_cb(lv_event_t *e) {
+  (void)e;
+  g_zasilanieCpuIdx = (g_zasilanieCpuIdx + 1) % LVGL_ZASILANIE_CPU_N;
+  zasilanie_wyglad_odswiez();
+  if (g_zasilanieCb) g_zasilanieCb("cpu", g_zasilanieCpuIdx);
+  zasilanie_panel_idle_resetuj();
+}
+static void zasilanie_tx_btn_cb(lv_event_t *e) {
+  (void)e;
+  g_zasilanieTxIdx = (g_zasilanieTxIdx + 1) % LVGL_ZASILANIE_TX_N;
+  zasilanie_wyglad_odswiez();
+  if (g_zasilanieCb) g_zasilanieCb("nadajnik", g_zasilanieTxIdx);
+  zasilanie_panel_idle_resetuj();
+}
+static void zasilanie_panel_otworz() {
+  if (g_drugiPulpitIdleTimer != nullptr) { lv_timer_del(g_drugiPulpitIdleTimer); g_drugiPulpitIdleTimer = nullptr; }
+  zasilanie_wyglad_odswiez();
+  lv_scr_load_anim(zasilaniePanel, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
+  zasilanie_panel_idle_resetuj();
+}
+static void zasilanie_kafelek_klikniety_cb(lv_event_t *e) { (void)e; zasilanie_panel_otworz(); }
+
+// Wiersz "etykieta po lewej + przycisk 100x34 po prawej" - ten sam wzorzec co
+// wiersz harmonogramu w wyswietlacz_panel_zbuduj(), szerszy przycisk, bo
+// "19,5 dBm" czcionka 20 nie miesci sie w 74 px.
+static lv_obj_t *zasilanie_wiersz_zbuduj(lv_obj_t *rodzic, int y, const char *etykieta, lv_event_cb_t cb) {
+  lv_obj_t *wiersz = lv_obj_create(rodzic);
+  lv_obj_remove_style_all(wiersz);
+  lv_obj_set_size(wiersz, 440, 44);
+  lv_obj_align(wiersz, LV_ALIGN_TOP_MID, 0, y);
+  lv_obj_clear_flag(wiersz, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *etykietaLbl = lv_label_create(wiersz);
+  lv_label_set_text(etykietaLbl, etykieta);
+  lv_obj_set_style_text_font(etykietaLbl, &lv_font_pl_20, 0);
+  lv_obj_set_style_text_color(etykietaLbl, rgb565(KOL_TEKST), 0);
+  lv_obj_align(etykietaLbl, LV_ALIGN_LEFT_MID, 4, 0);
+
+  lv_obj_t *btn = lv_btn_create(wiersz);
+  lv_obj_set_size(btn, 110, 38);
+  lv_obj_align(btn, LV_ALIGN_RIGHT_MID, -10, 0);
+  lv_obj_set_style_radius(btn, 8, 0);
+  lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_color(btn, rgb565(KOL_KARTA), LV_PART_MAIN);
+  press_flash_zainstaluj(btn, KOL_BEZPIECZNA, 5);
+  lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, nullptr);
+
+  lv_obj_t *btnLbl = lv_label_create(btn);
+  lv_label_set_text(btnLbl, "-");
+  lv_obj_set_style_text_font(btnLbl, &lv_font_pl_20, 0);
+  lv_obj_set_style_text_color(btnLbl, rgb565(KOL_TEKST), 0);
+  lv_obj_center(btnLbl);
+  return btnLbl;
+}
+
+static void zasilanie_panel_zbuduj(lv_obj_t *scr) {
+  dashboardScr = scr;
+  zasilaniePanel = lv_obj_create(nullptr);
+  lv_obj_set_style_bg_color(zasilaniePanel, rgb565(KOL_TLO), 0);
+  lv_obj_set_style_bg_opa(zasilaniePanel, LV_OPA_COVER, 0);
+  lv_obj_clear_flag(zasilaniePanel, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *tytul = lv_label_create(zasilaniePanel);
+  lv_label_set_text(tytul, "ZASILANIE");
+  lv_obj_set_style_text_font(tytul, &lv_font_pl_28, 0);
+  lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
+  lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 10);
+
+  // [NIEPOTWIERDZONE NA SPRZECIE - jak wszystkie nowe wspolrzedne w tym
+  // pliku] Uklad: tytul (y10, ~38 px) -> 2 wiersze po 44 px (y=58, y=106) ->
+  // odczyt 3 linie czcionka 20 (3 x 24 = 72 px, y=162..234) -> ostrzezenie
+  // 2 linie czcionka 14 (y=244..278) -> koniec 278, 42 px od dolu ekranu.
+  zasilanieCpuBtnLabel = zasilanie_wiersz_zbuduj(zasilaniePanel, 58, "Taktowanie procesora", zasilanie_cpu_btn_cb);
+  zasilanieTxBtnLabel  = zasilanie_wiersz_zbuduj(zasilaniePanel, 106, "Moc nadajnika WiFi", zasilanie_tx_btn_cb);
+
+  zasilaniePomiarLabel = lv_label_create(zasilaniePanel);
+  lv_label_set_text(zasilaniePomiarLabel, "Sygnał WiFi: -\nProcesor: -\nNadajnik: -");
+  lv_obj_set_style_text_font(zasilaniePomiarLabel, &lv_font_pl_20, 0);
+  lv_obj_set_style_text_color(zasilaniePomiarLabel, rgb565(KOL_TEKST_DIM), 0);
+  lv_obj_set_width(zasilaniePomiarLabel, 440);
+  lv_obj_align(zasilaniePomiarLabel, LV_ALIGN_TOP_MID, 4, 162);
+
+  zasilanieOstrzezenieLabel = lv_label_create(zasilaniePanel);
+  lv_label_set_text(zasilanieOstrzezenieLabel,
+                    "Słaby sygnał - nie obniżaj mocy nadajnika,\npanel może tracić łączność z centralą.");
+  lv_obj_set_style_text_font(zasilanieOstrzezenieLabel, &lv_font_pl_14, 0);
+  lv_obj_set_style_text_color(zasilanieOstrzezenieLabel, rgb565(KOL_WARN), 0);
+  lv_obj_set_width(zasilanieOstrzezenieLabel, 440);
+  lv_obj_align(zasilanieOstrzezenieLabel, LV_ALIGN_TOP_MID, 4, 244);
+  lv_obj_add_flag(zasilanieOstrzezenieLabel, LV_OBJ_FLAG_HIDDEN);
+
+  zasilanie_wyglad_odswiez();
+  krzyzyk_zamkniecia_utworz(zasilaniePanel, zasilanie_panel_zamknij_cb);
+}
 // Generyczny klikalny kafelek-launcher (etykieta + ikona, BEZ wartosci
 // liczbowej jak w kafelek()) - do siatki drugiego pulpitu. Ten sam wzorzec
 // 3D press-efektu co kafelek_pompa() (press_flash_zainstaluj), zeby siatka
@@ -3999,6 +4188,9 @@ static void drugi_pulpit_zbuduj(lv_obj_t *scr) {
                     "WYKRESY", &lv_ikona_wykresy, KOL_TEKST, wykresy_kafelek_klikniety_cb);
   kafelek_launcher(drugiPulpitScr, x0 + 1 * (kw + odstepX), y0, kw, kh,
                     "WYŚWIETLACZ", &lv_ikona_zebatka, KOL_TEKST, wyswietlacz_kafelek_klikniety_cb);
+  // [v1.4.7 ZASILANIE] Trzeci kafelek w tym samym rzedzie.
+  kafelek_launcher(drugiPulpitScr, x0 + 2 * (kw + odstepX), y0, kw, kh,
+                    "ZASILANIE", &lv_ikona_blyskawica, KOL_TEKST, zasilanie_kafelek_klikniety_cb);
   // Kolejne kafelki w przyszlosci: x0 + 2*(kw+odstepX), y0 (dalej w tym samym
   // rzedzie), a po zapelnieniu 4 kolumn - kolejny rzad na y0+kh+odstepY, itd.
   // - identyczny wzorzec jak rzady 0/1/2 w lvgl_dashboard_poc_init().
@@ -7035,6 +7227,7 @@ void lvgl_dashboard_poc_init() {
   // powyzej - kolejnosc tych dwoch linii tez mozna by odwrocic bez zmiany
   // zachowania).
   wyswietlacz_panel_zbuduj(scr);
+  zasilanie_panel_zbuduj(scr);   // [v1.4.7 ZASILANIE] jak wyzej - po drugi_pulpit_zbuduj()
 }
 
 void lvgl_dashboard_poc_ustaw_callback_pompy(PompaAkcjaCb cb) {
@@ -7331,6 +7524,25 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int
     }
     wyswietlacz_harmonogram_wyglad_odswiez();
   }
+}
+
+// [v1.4.7 ZASILANIE] Patrz naglowek i komentarz przy zasilanie_panel_zbuduj().
+void lvgl_dashboard_poc_ustaw_callback_zasilanie(ZasilanieCb cb) {
+  g_zasilanieCb = cb;
+}
+void lvgl_dashboard_poc_aktualizuj_zasilanie(int cpuIndeks, int nadajnikIndeks) {
+  if (cpuIndeks < 0 || cpuIndeks >= LVGL_ZASILANIE_CPU_N) cpuIndeks = 0;
+  if (nadajnikIndeks < 0 || nadajnikIndeks >= LVGL_ZASILANIE_TX_N) nadajnikIndeks = 0;
+  g_zasilanieCpuIdx = cpuIndeks;
+  g_zasilanieTxIdx  = nadajnikIndeks;
+  if (lv_scr_act() == zasilaniePanel) zasilanie_wyglad_odswiez();
+}
+void lvgl_dashboard_poc_aktualizuj_zasilanie_pomiar(bool wifiOk, int rssi, int cpuMhz, float txDbm) {
+  g_zasilanieWifiOk = wifiOk;
+  g_zasilanieRssi   = rssi;
+  g_zasilanieCpuMhz = cpuMhz;
+  g_zasilanieTxDbm  = txDbm;
+  if (lv_scr_act() == zasilaniePanel) zasilanie_wyglad_odswiez();
 }
 
 // [v1.4.6 WERSJE] Patrz naglowek. Bufor 48 B: "Panel " + 15 + "\nCentrala " +
