@@ -272,7 +272,11 @@ enum WersjaHistorii {
 
 struct Centrala {
   bool symulator = false;   // true = dodaje "symulator":true, jak centrala-testowa-c3
-  std::string fw = "v3.58.6";   // [v1.4.6] pole "fw" statusu (FIRMWARE_VERSION centrali); "" = centrala bez tego pola
+  std::string fw = "v3.58.8";   // [v1.4.6] pole "fw" statusu (FIRMWARE_VERSION centrali); "" = centrala bez tego pola.
+                                // UWAGA: w /api/status wysyla je dopiero centrala 3.58.8 (do 3.58.7 "fw" bylo
+                                // tylko w JSON-ie do Firebase i /api/lan/status - stad "Centrala -" na plytce
+                                // z panelem v1.4.6 i centrala 3.58.6). Czy prawdziwa centrala wysyla kazde
+                                // pole czytane przez panel, sprawdza sprawdz_pola_statusu.py (krok [1b]).
   int trybStatus = TRYB_OK;
   int trybUstawienia = TRYB_OK;
   int trybPost = TRYB_OK;
@@ -379,7 +383,7 @@ const char* tn(bool v) { return v ? "true" : "false"; }
 std::string jsonStatus(const Centrala& c, bool zNan) {
   std::string j = "{";
   j += "\"wifi_mode\":\"AP\",\"ip\":\"192.168.4.1\",\"wifi_ssid\":\"\",\"rssi\":0,";
-  if (!c.fw.empty()) j += "\"fw\":\"" + c.fw + "\",";   // [v1.4.6] jak ja("\"fw\":\""); ja(FIRMWARE_VERSION); w main_centrala.cpp
+  if (!c.fw.empty()) j += "\"fw\":\"" + c.fw + "\",";   // [v1.4.6] jak w wifiZbudujJsonStatus() centrali 3.58.8+ (zaraz po "rssi")
   j += "\"t_zewn\":" + fN(c.tZewn, 1) + ",\"t_bojler\":" + fN(c.tBojler, 1) + ",\"t_ogrz\":" + fN(c.tOgrz, 1) + ",";
   j += "\"t_ogrz_sr\":" + fN(c.tOgrzSr, 1) + ",\"t_panel\":" + fN(c.tPanel, 1) + ",\"t_pokoj\":" + fN(c.tPokoj, 1) + ",";
   j += "\"t_trociny\":" + fN(c.tTrociny, 1) + ",\"t_powrot\":" + fN(c.tPowrot, 1) + ",";
@@ -4916,7 +4920,7 @@ void scenariuszPolskieLitery() {
 // na kafelku drugiego pulpitu miesci sie w karcie (do v1.4.5 obciety).
 void scenariuszWersjeNaEkranie() {
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
-  ustaw(0, [](Centrala& c) { c.fw = "v3.58.6"; });
+  ustaw(0, [](Centrala& c) { c.fw = "v3.58.8"; });
   const unsigned long przed = millis();
   setup();
   const unsigned long czasSetupMs = millis() - przed;
@@ -4924,10 +4928,10 @@ void scenariuszWersjeNaEkranie() {
   sprawdz(tft("WYSWIETLACZ CO"), "ekran startowy: tytul \"WYSWIETLACZ CO\"");
   sprawdz(tft("Panel v1.4.6"), "ekran startowy: \"Panel v1.4.6\" (FIRMWARE_VERSION_PANEL)");
   sprawdz(tft("Szukam centrali") && tft("Laczenie z WiFi"), "ekran startowy: dotychczasowe \"Szukam centrali\" i \"Laczenie z WiFi\" zostaly");
-  sprawdz(tft("Centrala v3.58.6"), "ekran startowy: \"Centrala v3.58.6\" po pierwszej odpowiedzi centrali");
+  sprawdz(tft("Centrala v3.58.8"), "ekran startowy: \"Centrala v3.58.8\" po pierwszej odpowiedzi centrali");
   info("setup() trwal %lu ms czasu plytki (w tym 1500 ms na przeczytanie wersji)", czasSetupMs);
   sprawdz(czasSetupMs >= 1500 && czasSetupMs < 6000, "ekran startowy stoi co najmniej 1,5 s po dopisaniu wersji centrali (zimny start)");
-  sprawdz(logMa("tag=PANEL zdarzenie=ekran_startowy", "panel=v1.4.6", "centrala=v3.58.6"), "log: tag=PANEL zdarzenie=ekran_startowy panel=v1.4.6 centrala=v3.58.6");
+  sprawdz(logMa("tag=PANEL zdarzenie=ekran_startowy", "panel=v1.4.6", "centrala=v3.58.8"), "log: tag=PANEL zdarzenie=ekran_startowy panel=v1.4.6 centrala=v3.58.8");
 
   biegnij(4000);
   if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
@@ -4950,8 +4954,8 @@ void scenariuszWersjeNaEkranie() {
   sprawdz(kliknij("WYŚWIETLACZ"), "dotkniecie kafelka WYŚWIETLACZ");
   biegnij(300);
   lv_obj_t* wersje = znajdzEtykiete(lv_scr_act(), "Panel v1.4.6");
-  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel v1.4.6\nCentrala v3.58.6",
-          "ekran WYSWIETLACZ: etykieta \"Panel v1.4.6 / Centrala v3.58.6\"");
+  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel v1.4.6\nCentrala v3.58.8",
+          "ekran WYSWIETLACZ: etykieta \"Panel v1.4.6 / Centrala v3.58.8\"");
   if (wersje != nullptr) {
     lv_obj_update_layout(lv_scr_act());
     lv_obj_t* tytul = znajdzEtykiete(lv_scr_act(), "WYŚWIETLACZ");
@@ -4960,13 +4964,13 @@ void scenariuszWersjeNaEkranie() {
     sprawdz(tytul != nullptr && prawyWersji + 4 <= lv_obj_get_x(tytul), "etykieta wersji konczy sie co najmniej 4 px przed tytulem WYŚWIETLACZ");
   }
   zrzutEkranu("2_wyswietlacz_wersje");
-  sprawdz(logMa("tag=PANEL fw=v1.4.6", "centrala=sterownik centrala_fw=v3.58.6"), "log: linia tag=PANEL ma centrala_fw=v3.58.6");
+  sprawdz(logMa("tag=PANEL fw=v1.4.6", "centrala=sterownik centrala_fw=v3.58.8"), "log: linia tag=PANEL ma centrala_fw=v3.58.8");
 
   // Centrala po aktualizacji zglasza nowa wersje - etykieta nadaza bez restartu panelu.
-  ustaw(0, [](Centrala& c) { c.fw = "v3.58.7"; });
+  ustaw(0, [](Centrala& c) { c.fw = "v3.58.9"; });
   biegnij(5000);
-  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel v1.4.6\nCentrala v3.58.7",
-          "po zmianie wersji centrali (v3.58.7) etykieta odswiezona bez restartu panelu");
+  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel v1.4.6\nCentrala v3.58.9",
+          "po zmianie wersji centrali (v3.58.9) etykieta odswiezona bez restartu panelu");
   // Centrala starsza, bez pola "fw" - kreska zamiast wersji, panel pracuje dalej.
   ustaw(0, [](Centrala& c) { c.fw = ""; });
   biegnij(5000);

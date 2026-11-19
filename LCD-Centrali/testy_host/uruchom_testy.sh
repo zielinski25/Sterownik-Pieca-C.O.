@@ -7,6 +7,7 @@
 #   ./uruchom_testy.sh dwie_centrale   jeden scenariusz symulatora, z logiem
 #   SANITIZER=1 ./uruchom_testy.sh     to samo z AddressSanitizer + UBSan (wolniej)
 #   TYLKO='^ota_' ./uruchom_testy.sh   tylko scenariusze, ktorych nazwa pasuje do wzorca (grep -E)
+#   CENTRALA_CPP=sciezka/main_centrala.cpp ./uruchom_testy.sh   krok [1b] z innym plikiem centrali
 #
 # Porownanie ze STARSZA wersja firmware'u (bez oceniania, same obserwacje):
 #   mkdir -p /tmp/stary && unzip -q "../../LCD Centrali.zip" -d /tmp/stary   # v1.1.0
@@ -32,6 +33,10 @@ echo "[1] testy jednostkowe src/diagnostyka_panelu.h"
 # -Wno-format-truncation: test celowo podaje za male bufory (sprawdza obcinanie).
 g++ -std=c++17 -O1 -Wall -Wextra -Wno-format-truncation -o "$PODRECZNY/test_diagnostyka" test_diagnostyka.cpp
 "$PODRECZNY/test_diagnostyka" | sed 's/^/    /'
+echo "[1b] pola czytane przez panel a /api/status PRAWDZIWEJ centrali (najnowsza paczka firmware-patch/)"
+# [v1.4.6 erratum] Atrapa centrali w symulatorze podaje to, co jej kazemy - to
+# porownanie jest z kodem centrali (wifiZbudujJsonStatus() w main_centrala.cpp).
+python3 sprawdz_pola_statusu.py ${CENTRALA_CPP:+"$CENTRALA_CPP"}
 if [ "${1:-}" = "--szybko" ]; then exit 0; fi
 
 echo "[2] biblioteki (LVGL 8.4.0, ArduinoJson 7.4.3)"

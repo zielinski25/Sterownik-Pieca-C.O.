@@ -34,14 +34,28 @@ Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 
 **Wersje panelu i centrali na ekranie + porządki po logach z płytki.**
 Zgłoszenie: „przy starcie LCD nie pokazuje wersji — jest tylko *Szukam
-centrali* / *Łączenie z WiFi*; chcę wersję panelu i wersję centrali”. Centrala
-bez zmian (pole `"fw"` w `/api/status` wystawia od dawna; panel go dotąd nie
-czytał). Ruch do centrali i logika panelu bez zmian.
+centrali* / *Łączenie z WiFi*; chcę wersję panelu i wersję centrali”. Ruch do
+centrali i logika panelu bez zmian.
+
+> **Erratum (19.11, po próbie na płytce): wersję centrali panel pokaże dopiero
+> z centralą 3.58.8.** Pierwotny opis („pole `fw` w `/api/status` istnieje od
+> dawna”) był błędny: centrala do 3.58.7 wysyłała `"fw"` tylko w JSON-ie do
+> Firebase i w `/api/lan/status`, a panel czyta `/api/status`
+> (`wifiZbudujJsonStatus()`), gdzie tego pola nie było — stąd „Centrala -” mimo
+> połączenia. Testy na PC tego nie wykryły, bo atrapa centrali podawała `fw`.
+> Naprawa po stronie centrali: **3.58.8**
+> (`firmware-patch/v3.58.8-fw-w-statusie/`, jedna linia) — panel v1.4.6 bez
+> zmian, po wgraniu centrali wersja pojawia się przy najbliższym statusie.
+> Żeby to się nie powtórzyło: `testy_host/sprawdz_pola_statusu.py` (krok
+> `[1b]` w `uruchom_testy.sh`) porównuje listę pól czytanych przez panel z
+> polami, które naprawdę wystawia `wifiZbudujJsonStatus()` w najnowszym pliku
+> centrali w repozytorium — na 3.58.6/3.58.7 zgłasza brak `fw`, na 3.58.8
+> przechodzi.
 
 | Co | Było (v1.4.5) | Jest (v1.4.6) |
 |---|---|---|
-| ekran startowy (TFT_eSPI, zanim LVGL przejmie wyświetlacz) | tylko „Szukam centrali” → „Laczenie z WiFi” | u góry **„WYSWIETLACZ CO”** (font 4) i **„Panel v1.4.6”** przez cały czas łączenia; po pierwszej odpowiedzi centrali **„Centrala v3.58.6”** (albo „Centrala: brak odpowiedzi” / „Centrala: wersja nieznana” przy centrali bez pola `fw`) i ekran stoi jeszcze **1,5 s**, żeby dało się to przeczytać (`EKRAN_START_POKAZ_MS`). Tylko przy zimnym starcie — po wybudzeniu z deep sleep bez pauzy. Napisy ASCII (czcionki TFT_eSPI nie mają polskich liter, jak dotąd) |
-| ekran WYŚWIETLACZ (drugi pulpit → zębatka) | — | w lewym górnym rogu na stałe `Panel v1.4.6` / `Centrala v3.58.6` (`lvgl_dashboard_poc_ustaw_wersje()`); „Centrala -” dopóki centrala nie odpowie albo gdy jest starsza i nie podaje `fw`; po aktualizacji centrali napis zmienia się sam przy następnym statusie. Po `/update_panel` widać na ekranie, co faktycznie działa — bez kabla |
+| ekran startowy (TFT_eSPI, zanim LVGL przejmie wyświetlacz) | tylko „Szukam centrali” → „Laczenie z WiFi” | u góry **„WYSWIETLACZ CO”** (font 4) i **„Panel v1.4.6”** przez cały czas łączenia; po pierwszej odpowiedzi centrali **„Centrala v3.58.8”** (albo „Centrala: brak odpowiedzi” / „Centrala: wersja nieznana” przy centrali bez pola `fw` — czyli do 3.58.7, patrz erratum) i ekran stoi jeszcze **1,5 s**, żeby dało się to przeczytać (`EKRAN_START_POKAZ_MS`). Tylko przy zimnym starcie — po wybudzeniu z deep sleep bez pauzy. Napisy ASCII (czcionki TFT_eSPI nie mają polskich liter, jak dotąd) |
+| ekran WYŚWIETLACZ (drugi pulpit → zębatka) | — | w lewym górnym rogu na stałe `Panel v1.4.6` / `Centrala v3.58.8` (`lvgl_dashboard_poc_ustaw_wersje()`); „Centrala -” dopóki centrala nie odpowie albo gdy jest starsza niż 3.58.8 i nie podaje `fw`; po aktualizacji centrali napis zmienia się sam przy następnym statusie. Po `/update_panel` widać na ekranie, co faktycznie działa — bez kabla |
 | log `tag=PANEL` | `centrala=sterownik sym=…` | `centrala=sterownik centrala_fw=v3.58.6 sym=…`; przy starcie dodatkowa linia `tag=PANEL zdarzenie=ekran_startowy panel=v1.4.6 centrala=v3.58.6` |
 | filtr pól statusu | 46 pól | 47 (`diag::POLA_STATUSU_CZYTANE[]` + `"fw"`; bez tego wpisu ArduinoJson pominąłby pole — test jednostkowy to pilnuje) |
 | kafelek „WYŚWIETLACZ” na drugim pulpicie | ostatnia litera obcięta (napis 109 px na karcie 114 px od x=8) | cały: gdy napis nie mieści się z marginesem, `kafelek_launcher()` ściska litery o 1 px (→ 97 px); „WYKRESY” bez zmian |
@@ -68,8 +82,10 @@ budowane w PlatformIO** — na płytce warto obejrzeć ekran startowy (napisy
 
 Równolegle wyszła centrala **3.58.7** (`firmware-patch/v3.58.7-start-telegram/`):
 wiadomość startowa na Telegram z wersją i powodem restartu, czytelniejsze
-ostrzeżenie TAGCHECK, bez ostrzeżenia kompilacji. Panel v1.4.6 i centrala
-3.58.7 nie zależą od siebie — każde działa ze starszym partnerem.
+ostrzeżenie TAGCHECK, bez ostrzeżenia kompilacji; zaraz po niej **3.58.8**
+(`firmware-patch/v3.58.8-fw-w-statusie/`) z polem `fw` w `/api/status` (erratum
+wyżej). Panel v1.4.6 działa z każdą centralą; wersję centrali na ekranie
+pokazuje od 3.58.8.
 
 **Z v1.4.5 na v1.4.6** zmieniają się: `src/main.cpp`,
 `src/dashboard_lvgl_poc.cpp`, `src/dashboard_lvgl_poc.h`,
