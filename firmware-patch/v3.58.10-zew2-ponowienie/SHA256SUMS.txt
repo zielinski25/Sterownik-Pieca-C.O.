@@ -1,0 +1,3 @@
+0f5b70201688fc02ec16913cdcd23108872305addc8b11311acc4fd38f622d4f  src/main_centrala.cpp
+d11e4e2959e042a99a401430134505a26e892cd61ab26bf5d6242a9eb6c4cdba  main_centrala-v3.58.9-do-v3.58.10.patch
+2b02197ff42400e2d614ad44295f87a5fbb124fe13e747e99ccbd0c67ea514e7  v3.58.9-zew2-scalenie/src/main_centrala.cpp

@@ -1,0 +1,91 @@
+FIRMWARE CENTRALI 3.58.10 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN.
+
+Ta paczka = 3.58.9 (to, co masz teraz na plytce: Zew 2 wrocila) + poprawka
+PRZERW w Zew 2 na wykresie. Patch wzgledem 3.58.9: 11 hunkow, +88/-9, tylko
+blok Zew 2 i funkcja wilgotnosc(). Jesli 3.58.9 jeszcze nie wgrales - pomin
+ja i wgraj od razu te (plik jest kompletny, zawiera wszystko z 3.58.9).
+
+
+PO CO (zgloszenie z 19.11 16:24: Zew 2 wrocila, ale ma przerwy po 2-4 min)
+----------------------------------------------------------------------------
+Na wykresie po wgraniu 3.58.9 Zew 2 miala 4 przerwy (ok. 14:45, 14:55,
+15:05, 15:20). To NIE filtr z 3.58.9 - to arytmetyka czasow, ktora byla juz
+w 3.57.13: DHT22 czytany co 120 s, a Zew 2 wygaszana po 135 s od ostatniej
+przyjetej wartosci. Jeden nieudany odczyt (timeout czujnika, zla ramka,
+odrzucony po powtorce) -> nastepna proba dopiero za 120 s -> 240 s miedzy
+dobrymi wartosciami -> przez ostatnie ~105 s aplikacja dostaje null.
+Dwa nieudane cykle z rzedu = 4-5 min dziury. Margines 15 s byl za maly.
+
+3.58.10 robi dwie rzeczy:
+ 1. Po nieudanym odczycie czyta DHT22 ponownie po 5 s (zadanie chodzi co
+    3 s, wiec praktycznie po 6 s), najwyzej 2 razy w cyklu. Zwykle juz
+    pierwsze ponowienie sie udaje - przerwy nie ma wcale. Cykl 120 s sie
+    nie przesuwa, odstep >= 2 s miedzy odczytami zachowany.
+ 2. Zew 2 trzyma ostatnia dobra wartosc 255 s zamiast 135 s - dziura
+    dopiero, gdy zawioda dwa kolejne cykle (6 prob z rzedu).
+Reszta (filtr pikow z 3.58.9, piec, alarmy, Telegram, OTA, Firebase) bez
+zmian.
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.10"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od 0f5b7020):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.9-do-v3.58.10.patch, -p1 z katalogu projektu,
+na plik 3.58.9 (SHA 2b02197f...). Wynik musi miec SHA 0f5b7020... - inaczej
+wgraj caly plik z src\.
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+PlatformIO -> Build, potem Upload   (pio run   i   pio run -t upload)
+Spodziewane: 0 ostrzezen, Flash/RAM jak w 3.58.9 (+ ok. 300 B kodu, 12 B RAM).
+Jesli blad: skopiuj linie z "error:" i przyslij; przywroc kopie zapasowa.
+Zmienione miejsca z numerami linii: WYNIKI\zakres-zmian.txt.
+
+Release na GitHub: w kodzie jest FIRMWARE_VERSION = "v3.58.10" -> Build ->
+Release z tagiem 3.58.10 (OTA z 3.58.9 przejdzie, numer rosnie; uwaga:
+porownajWersje liczy czlony liczbowo, 3.58.10 > 3.58.9).
+
+
+KROK 3 - SPRAWDZENIE
+--------------------
+1. Po Upload na Telegram: "Centrala wystartowala: v3.58.10". W logu:
+   "v3.58.10 odczyty: ... DHT 120s (+powtorka Zew2 po 3 s, ponowienie po
+   bledzie 5 s x2, wygaszanie 255 s) ...".
+2. /api/status: "fw":"v3.58.10", "t_zewn_2":<liczba>.
+3. Po kilku godzinach: wykres Zew 2 bez przerw. W logu po kazdym nieudanym
+   odczycie: "DHT22 Zew2 ponowienie=1/2 za 5 s kod=N" (N = kod bledu
+   biblioteki: 0 = suma dobra, ale wartosci poza zakresem / odrzucony;
+   2 = timeout; 6 = suma kontrolna), a 6 s pozniej zwykla linia
+   "DHT22 diagnostyka ..." z kod=0. Licznik zew2_ponowienia w tej linii
+   mowi, ile razy to bylo potrzebne. Jesli rosnie szybciej niz ok. 1/h
+   albo czesto dochodzi do "ponowienie=2/2" - przyslij te linie: to juz
+   bedzie czujnik/kabel, nie oprogramowanie.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa (3.58.9).
+
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\)
+----------------------------------
+- testy-pc.txt: filtr + ponowienie (66 sprawdzen, 13 scenariuszy, tez
+  ASan/UBSan), prawdziwa funkcja wilgotnosc() z tego pliku z atrapami
+  (47 sprawdzen, 9 scenariuszy: ponowienie po 6 s po zlej ramce i po
+  odrzuceniu, limit 2, cykl 120 s nieprzesuniety, wygaszanie 255 s,
+  symulacja kasuje ponowienie, przepelnienie millis), znaczniki w pliku,
+  patch i skrypt zrob_35810.py daja ten sam plik, pola /api/status a panel
+  LCD (zgodne), testy paczek 3.58.6/3.58.7 na tym pliku.
+  Test mutacyjny: wylaczenie ponowienia -> 9 bledow, powrot do 135 s -> 1 blad
+  (test naprawde to widzi).
+- naglowki-esp32.txt: wycinki skompilowane clangiem z PRAWDZIWYMI
+  naglowkami arduino-esp32 3.3.8 - bez bledow, 0 ostrzezen.
+- NIE bylo: pelnego buildu PlatformIO, uruchomienia na plytce.

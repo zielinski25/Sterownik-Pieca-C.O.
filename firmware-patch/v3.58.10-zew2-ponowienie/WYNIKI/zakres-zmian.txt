@@ -1,0 +1,34 @@
+ZAKRES ZMIAN 3.58.10 wzgledem 3.58.9 (plik src/main_centrala.cpp, 50 789 linii, SHA-256 0f5b7020...)
+=======================================================================================================
+Patch main_centrala-v3.58.9-do-v3.58.10.patch: 11 hunkow, +88 / -9 (z tego 2 hunki to
+komentarze: naglowek pliku i historia wersji). Zmiany TYLKO w bloku Zew 2 i w wilgotnosc().
+
+   3-35        naglowek pliku [v3.58.10 ZEW2-PONOWIENIE] (przyczyna przerw, zasada)
+   1808-1816   HISTORIA WERSJI: wpis [v3.58.10]
+   6230-6232   TEMP_DIAG_WYGASZANIE_S = 255 (bylo literalne 135000000ULL w czytajTempDiag)
+   6239        czytajTempDiag(): wygaszanie po TEMP_DIAG_WYGASZANIE_S
+   6256-6260   struct Zew2Filtr: + ponowienie, ponowienieOdMs, ponowieniaWCyklu, ponowienia
+   6266-6267   ZEW2_PONOWIENIE_MS = 5000, ZEW2_PONOWIENIA_MAX = 2
+   6329-6344   zew2PlanujPonowienie() (po ZLA_RAMKA / ODRZUCONY, max 2 w cyklu; nowy cykl
+               zeruje limit; DO_WERYFIKACJI nie planuje - ma powtorke po 3 s),
+               zew2PonowienieGotowe() (odliczanie 5 s odporne na przepelnienie millis)
+   6346        g_zew2Filtr: inicjalizacja nowych pol
+   6548        FIRMWARE_VERSION = "v3.58.10"
+   34074-34082 wilgotnosc(): ponowienieZew2 / dodatkowaZew2 - ponowienie omija bramke
+               120 s tak jak powtorka i tak samo NIE przesuwa cyklu; bramka 2 s bez zmian
+   34109       wilgotnosc(): symulacja kasuje tez oczekujace ponowienie
+   34145-34151 wilgotnosc(): po decyzji filtra zew2PlanujPonowienie(); log
+               "DHT22 Zew2 ponowienie=1/2 za 5 s kod=<kod biblioteki>"
+   34157-34160 linia "DHT22 diagnostyka ...": + zew2_ponowienia=<licznik>
+   50373       log startowy "v3.58.10 odczyty: ..."
+
+Zachowanie (tylko Zew 2 / wilgotnosc):
+   * nieudany odczyt DHT22 (timeout/zly kod biblioteki, zla ramka, odrzucony po
+     powtorce) -> nastepna proba po 5 s (zadanie co 3 s: praktycznie 6 s), potem
+     ewentualnie jeszcze jedna; po 2 nieudanych ponowieniach cisza do zwyklego
+     cyklu 120 s. Ponowienie nie przesuwa cyklu 120 s;
+   * Zew 2 trzyma ostatnia dobra wartosc 255 s (bylo 135 s) - dziura na wykresie
+     dopiero, gdy zawioda 2 kolejne cykle (6 prob);
+   * wilgotnosc (RH) korzysta z tych samych ponowien (ta sama ramka).
+Bez zmian: filtr pikow 3.58.9, sterowanie piecem, alarmy, Telegram, OTA, Firebase,
+format telemetrii, progi swiezosci telemetrii (TELEMETRY_STALE_*), Zew 1 i reszta DS.
