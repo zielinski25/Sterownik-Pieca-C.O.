@@ -1,0 +1,5 @@
+2b02197ff42400e2d614ad44295f87a5fbb124fe13e747e99ccbd0c67ea514e7  src/main_centrala.cpp
+723af90a6f83cc5526e4806bbb87e30c3731f633d821e5d9ce93409a5b61c5ef  main_centrala-v3.58.8-do-v3.58.9.patch
+84d9dc6b09d231351d5363aa5327a73e3c66912eac91684c388c85397d06d584  main_centrala-v3.57.13-do-v3.58.9.patch
+e6034d4ec793def3dd2dd17052f7de5a650779adb48beafc563e77cb966a157a  v3.58.8-fw-w-statusie/src/main_centrala.cpp
+a5f77e491cfb5ece66801ee8bbff91b73649c2c307a644323ad707b9370c590e  v3.57.13-zew2-kandydat-z-dysku/src/main_centrala.cpp

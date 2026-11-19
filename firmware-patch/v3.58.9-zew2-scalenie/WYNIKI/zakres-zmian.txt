@@ -1,0 +1,60 @@
+ZAKRES ZMIAN 3.58.9 (plik src/main_centrala.cpp, 50 711 linii, SHA-256 2b02197f...)
+===================================================================================
+
+Plik = 3-way merge: podstawa 3.57.9 (wspolny przodek), "nasze" 3.57.13 (plytka),
+"ich" 3.58.8 (repozytorium) + zmiany wlasne 3.58.9 (filtr Zew 2).
+  git merge-file -L 3.57.13 -L 3.57.9 -L 3.58.8 <3.57.13> <3.57.9> <3.58.8>
+  -> 2 konflikty (naglowek pliku, FIRMWARE_VERSION), oba rozwiazane recznie;
+  reszta (24 hunki z 3.57.1x, 54 hunki z 3.58.x) nalozyla sie bez konfliktu.
+
+Wzgledem 3.58.8 (to, co bylo wgrane 19.11 ok. 10:40):  25 hunkow, +474 / -62
+Wzgledem 3.57.13 (ostatnia dzialajaca z Zew 2):          60 hunkow, +2699 / -144
+
+A. Z LINII 3.57.10-3.57.13 (brakowalo w 3.58.8) - linie w 3.58.9:
+   1777        HISTORIA WERSJI: wpis [v3.58.9] + (nizej) [v3.57.10]
+   6184-6204   zapiszTempDiag / czytajTempDiag (wygaszanie 135 s) / jsonTempDiag
+   22675-22689 TelemetrySample: tDhtDiagX10 + tempDiagReserved (dawny padding 76..79),
+               TEMP_DIAG_MARK w qualityBits, encodeTempDiag(); static_assert offsetow
+   23541-23542 dhtOstatniaProbaMs / dhtBylaProba (odstep >= 2 s miedzy odczytami DHT)
+   24923-24924 TELEMETRY_STALE_DHT22_S 15 -> 135, BMP280 15 -> 195
+   24929-24931 telemetryStaleThresholdS: ZEWN/POKOJ 135 s, reszta DS 75 s
+   25008-25011 telemetryQuality: INVALID/REJECTED/NO_ATTEMPT -> jakosc 3 (nie "swiezy")
+   25117-25119 telemetryBuildSnapshot: tDhtDiagX10 + znacznik
+   31079       /api/status (wifiZbudujJsonStatus): "t_zewn_2"
+   33567-...   zastosujFiltrWiarygodnosci(f, odczyt, odczytPoprawny) - ujemne temperatury DS
+   33770-33928 harmonogram DS18B20 (dsPlan*): CO/powrot 2,8/15/60 s wg pompy i temperatur,
+               trociny/panel/bojler 60 s, pokoj/zew1 120 s, odczyt po potwierdzonej konwersji
+   43112       probki minutowe Firebase (telemetryAppendPathForSample): "t_zewn_2"
+   45640       /piec/status (zbudujJsonStatusPelny): "t_zewn_2"
+   45867       FB_JSON_CAP 3072 -> 4096
+   50237       sensors1.begin(12) - Zew 1 i pokoj 12 bitow (GPIO4)
+   50273-50274 DHT22 w setup(): proby co 2 s (bylo HARDENING_OPOZNIENIE_MS * proba)
+   50299       dodajZadanie(Czujnik_DS, DS_PLAN_TICK_MS) (bylo 2816)
+
+B. Z LINII 3.58.0-3.58.8 (brakowalo w 3.57.13) - bez zmian wzgledem 3.58.8:
+   panel LAN (/panel, /api/*), token komend, wykresy dla panelu (/api/history/panel),
+   OTA panelu przez centrale (/update_panel, panelOtaKlej*), START-TG (wiadomosc
+   startowa na Telegram, TAGCHECK, beginResponse), "fw" w /api/status (31077).
+
+C. NOWE W 3.58.9 (filtr Zew 2) - linie w 3.58.9:
+   3-63        naglowek pliku [v3.58.9 ZEW2-SCALENIE] (przyczyna, zasada filtra)
+   6206-6279   blok ZEW2-FILTR: struct Zew2Filtr, progi (3 C / 0,5 C / 0,5 C / 15 s),
+               enum Zew2Decyzja, zew2RamkaPoprawna(), zew2Podejrzany(), zew2Filtruj(),
+               g_zew2Filtr
+   6481        FIRMWARE_VERSION = "v3.58.9"
+   34002-34015 wilgotnosc(): bramka 120 s z wyjatkiem dla powtorki (powtorkaZew2);
+               powtorka nie przesuwa cyklu 120 s; bramka 2 s bez zmian
+   34036-34037 wilgotnosc(): symulacja kasuje oczekujaca powtorke
+   34046-34084 wilgotnosc(): zew2RamkaPoprawna + zew2Filtruj zamiast zapiszTempDiag(t|NAN);
+               logi DHT22 Zew2 zdarzenie=podejrzany|potwierdzony|odrzucony|zla_ramka;
+               liczniki zew2_* w linii "DHT22 diagnostyka"; wilgotnosc odrzucana przy
+               zlej ramce (RH > 100 % lub t poza -40..80 C) - dotad tylko RH <= 0,1 %
+   50294       log startowy "v3.58.9 odczyty: ..."
+
+Zachowanie, ktore sie ZMIENIA wzgledem 3.57.13 (tylko Zew 2 / wilgotnosc):
+   * pik DHT22 (skok > 3 C albo zmiana znaku przy |t| >= 0,5 C) nie trafia na wykres
+     od razu - po ~3 s drugi odczyt; dwa zgodne (0,5 C) = prawda;
+   * zla ramka / odrzucony odczyt NIE kasuje Zew 2 (bylo: zapiszTempDiag(NAN) ->
+     "Zew 2: -" do nastepnego odczytu); poprzednia wartosc gasnie po 135 s jak dotad;
+   * wilgotnosc > 100 % albo z ramki z temperatura poza -40..80 C = blad (zostaje poprzednia).
+Bez zmian: sterowanie piecem, alarmy, Telegram, OTA, format telemetrii i Firebase.
