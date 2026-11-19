@@ -1042,7 +1042,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.4.6"
+#define WERSJA_FW "v1.4.7"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -4926,12 +4926,12 @@ void scenariuszWersjeNaEkranie() {
   const unsigned long czasSetupMs = millis() - przed;
   auto tft = [](const char* napis) { for (const std::string& t : g_atrapa.napisyTft) if (t == napis) return true; return false; };
   sprawdz(tft("WYSWIETLACZ CO"), "ekran startowy: tytul \"WYSWIETLACZ CO\"");
-  sprawdz(tft("Panel v1.4.6"), "ekran startowy: \"Panel v1.4.6\" (FIRMWARE_VERSION_PANEL)");
+  sprawdz(tft("Panel " WERSJA_FW), "ekran startowy: \"Panel " WERSJA_FW "\" (FIRMWARE_VERSION_PANEL)");
   sprawdz(tft("Szukam centrali") && tft("Laczenie z WiFi"), "ekran startowy: dotychczasowe \"Szukam centrali\" i \"Laczenie z WiFi\" zostaly");
   sprawdz(tft("Centrala v3.58.8"), "ekran startowy: \"Centrala v3.58.8\" po pierwszej odpowiedzi centrali");
   info("setup() trwal %lu ms czasu plytki (w tym 1500 ms na przeczytanie wersji)", czasSetupMs);
   sprawdz(czasSetupMs >= 1500 && czasSetupMs < 6000, "ekran startowy stoi co najmniej 1,5 s po dopisaniu wersji centrali (zimny start)");
-  sprawdz(logMa("tag=PANEL zdarzenie=ekran_startowy", "panel=v1.4.6", "centrala=v3.58.8"), "log: tag=PANEL zdarzenie=ekran_startowy panel=v1.4.6 centrala=v3.58.8");
+  sprawdz(logMa("tag=PANEL zdarzenie=ekran_startowy", "panel=" WERSJA_FW, "centrala=v3.58.8"), "log: tag=PANEL zdarzenie=ekran_startowy panel=" WERSJA_FW " centrala=v3.58.8");
 
   biegnij(4000);
   if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
@@ -4953,9 +4953,9 @@ void scenariuszWersjeNaEkranie() {
   zrzutEkranu("1_drugi_pulpit");
   sprawdz(kliknij("WYŚWIETLACZ"), "dotkniecie kafelka WYŚWIETLACZ");
   biegnij(300);
-  lv_obj_t* wersje = znajdzEtykiete(lv_scr_act(), "Panel v1.4.6");
-  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel v1.4.6\nCentrala v3.58.8",
-          "ekran WYSWIETLACZ: etykieta \"Panel v1.4.6 / Centrala v3.58.8\"");
+  lv_obj_t* wersje = znajdzEtykiete(lv_scr_act(), "Panel " WERSJA_FW);
+  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel " WERSJA_FW "\nCentrala v3.58.8",
+          "ekran WYSWIETLACZ: etykieta \"Panel " WERSJA_FW " / Centrala v3.58.8\"");
   if (wersje != nullptr) {
     lv_obj_update_layout(lv_scr_act());
     lv_obj_t* tytul = znajdzEtykiete(lv_scr_act(), "WYŚWIETLACZ");
@@ -4964,20 +4964,206 @@ void scenariuszWersjeNaEkranie() {
     sprawdz(tytul != nullptr && prawyWersji + 4 <= lv_obj_get_x(tytul), "etykieta wersji konczy sie co najmniej 4 px przed tytulem WYŚWIETLACZ");
   }
   zrzutEkranu("2_wyswietlacz_wersje");
-  sprawdz(logMa("tag=PANEL fw=v1.4.6", "centrala=sterownik centrala_fw=v3.58.8"), "log: linia tag=PANEL ma centrala_fw=v3.58.8");
+  sprawdz(logMa("tag=PANEL fw=" WERSJA_FW, "centrala=sterownik centrala_fw=v3.58.8"), "log: linia tag=PANEL ma centrala_fw=v3.58.8");
 
   // Centrala po aktualizacji zglasza nowa wersje - etykieta nadaza bez restartu panelu.
   ustaw(0, [](Centrala& c) { c.fw = "v3.58.9"; });
   biegnij(5000);
-  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel v1.4.6\nCentrala v3.58.9",
+  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel " WERSJA_FW "\nCentrala v3.58.9",
           "po zmianie wersji centrali (v3.58.9) etykieta odswiezona bez restartu panelu");
   // Centrala starsza, bez pola "fw" - kreska zamiast wersji, panel pracuje dalej.
   ustaw(0, [](Centrala& c) { c.fw = ""; });
   biegnij(5000);
-  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel v1.4.6\nCentrala -",
+  sprawdz(wersje != nullptr && std::string(lv_label_get_text(wersje)) == "Panel " WERSJA_FW "\nCentrala -",
           "centrala bez pola \"fw\": etykieta \"Centrala -\"");
   biegnij(30000);   // linia tag=PANEL idzie co 30 s w ustalonej pracy
-  sprawdz(logMa("tag=PANEL fw=v1.4.6", "centrala_fw=-"), "log: centrala_fw=- gdy centrala nie podaje wersji");
+  sprawdz(logMa("tag=PANEL fw=" WERSJA_FW, "centrala_fw=-"), "log: centrala_fw=- gdy centrala nie podaje wersji");
+  kliknij(LV_SYMBOL_CLOSE);
+  biegnij(300);
+}
+
+// [v1.4.7] Ekran ZASILANIE: taktowanie procesora i moc nadajnika WiFi (audyt
+// 2026-11-18, tematy 11 i 18 / plan krok 6). Sprawdza: domyslnie nic sie nie
+// zmienia (240 MHz, 19,5 dBm - jak do v1.4.6); setTxPower() dopiero po
+// WiFi.mode(); przyciski przelaczaja kolejne wartosci, zapis do NVS, zmiana
+// od razu w ukladzie; zywy odczyt i ostrzezenie przy slabym sygnale; linia
+// tag=PANEL z cpu_mhz=/tx_dbm=; moc ustawiana ponownie po kazdym WiFi.begin()
+// bez dodatkowych linii logu; napis ZASILANIE na kafelku nie jest obciety.
+void scenariuszZasilanie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  // --- domyslnie: dokladnie jak do v1.4.6 ---
+  sprawdz(g_atrapa.cpuMhz == 240 && g_atrapa.txMoc == 78, "po starcie bez ustawien w NVS: 240 MHz i 19,5 dBm (jak do v1.4.6)");
+  sprawdz(g_atrapa.txPrzedStartem == 0 && g_atrapa.txUstawien >= 1, "WiFi.setTxPower() ani razu przed WiFi.mode() (przed startem radia zwraca blad)");
+  sprawdz(g_atrapa.cpuZleWartosci == 0, "setCpuFrequencyMhz() tylko z 240/160/80 (nizej radio nie dziala)");
+  info("%s", liniaLogu("tag=ZASILANIE zdarzenie=nadajnik").c_str());
+  info("%s", liniaLogu("tag=ZASILANIE zdarzenie=cpu").c_str());
+  sprawdz(logMa("tag=ZASILANIE zdarzenie=nadajnik kiedy=start cel_dbm=19.5 tx_dbm=19.5 wynik=1"), "log: nadajnik przy starcie 19,5 dBm, wynik=1");
+  sprawdz(logMa("tag=ZASILANIE zdarzenie=cpu kiedy=start cel_mhz=240 cpu_mhz=240 wynik=1"), "log: procesor przy starcie 240 MHz, wynik=1");
+  {
+    // Taktowanie dopiero na koncu setup() - po linii tag=PAMIEC po_starcie
+    // (kalibracja, laczenie i pierwsze rysowanie zawsze na 240 MHz).
+    const size_t pamiec = g_atrapa.serial.find("tag=PAMIEC zdarzenie=po_starcie");
+    const size_t cpu = g_atrapa.serial.find("tag=ZASILANIE zdarzenie=cpu kiedy=start");
+    sprawdz(pamiec != std::string::npos && cpu != std::string::npos && cpu > pamiec, "taktowanie ustawiane na koncu setup(), po tag=PAMIEC po_starcie");
+  }
+  const int nadajnikLinii = ileLinii("tag=ZASILANIE zdarzenie=nadajnik");
+
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  lv_obj_t* drugi = drugiPulpit();
+  sprawdz(drugi != nullptr, "drugi pulpit istnieje");
+  if (drugi == nullptr) return;
+  {
+    lv_obj_t* lbl = znajdzEtykiete(drugi, "ZASILANIE");
+    sprawdz(lbl != nullptr, "drugi pulpit: kafelek ZASILANIE");
+    if (lbl != nullptr) {
+      lv_obj_update_layout(drugi);
+      const int prawy = lv_obj_get_x(lbl) + lv_obj_get_width(lbl);
+      const int karta = lv_obj_get_width(lv_obj_get_parent(lbl));
+      info("kafelek ZASILANIE: napis x=%d..%d, karta %d px", (int)lv_obj_get_x(lbl), prawy, karta);
+      sprawdz(prawy <= karta - 2, "kafelek ZASILANIE: napis miesci sie w karcie");
+    }
+  }
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  biegnij(300);
+  zrzutEkranu("1_drugi_pulpit");
+  sprawdz(kliknij("ZASILANIE"), "dotkniecie kafelka ZASILANIE");
+  biegnij(300);
+  lv_obj_t* ekran = lv_scr_act();
+  sprawdz(ekranMa("Taktowanie procesora") && ekranMa("Moc nadajnika WiFi"), "ekran ZASILANIE: wiersze \"Taktowanie procesora\" i \"Moc nadajnika WiFi\"");
+  sprawdz(ekranMa("240 MHz") && ekranMa("19,5 dBm"), "przyciski pokazuja 240 MHz i 19,5 dBm");
+  lv_obj_t* pomiar = znajdzEtykiete(ekran, "Sygnał WiFi");
+  sprawdz(pomiar != nullptr && std::string(lv_label_get_text(pomiar)) == "Sygnał WiFi: -45 dBm (dobry)\nProcesor: 240 MHz\nNadajnik: 19,5 dBm",
+          "odczyt: \"Sygnał WiFi: -45 dBm (dobry) / Procesor: 240 MHz / Nadajnik: 19,5 dBm\"");
+  if (pomiar != nullptr) info("odczyt na ekranie: %s", lv_label_get_text(pomiar));
+  sprawdz(znajdzEtykiete(ekran, "Słaby sygnał") == nullptr, "przy -45 dBm bez ostrzezenia o slabym sygnale");
+  zrzutEkranu("2_zasilanie_domyslne");
+
+  // --- procesor: 240 -> 160 -> 80 -> 240 (zawija) ---
+  size_t od = g_atrapa.serial.size();
+  sprawdz(kliknij("240 MHz"), "dotkniecie przycisku 240 MHz");
+  biegnij(200);
+  sprawdz(ekranMa("160 MHz") && g_atrapa.cpuMhz == 160, "-> 160 MHz: przycisk i uklad (setCpuFrequencyMhz) od razu");
+  sprawdz(g_atrapa.nvs["wyswietlacz"]["cpuIdx"] == 1, "NVS wyswietlacz/cpuIdx=1");
+  sprawdz(logMa("tag=ZASILANIE zdarzenie=cpu kiedy=ekran cel_mhz=160 cpu_mhz=160 wynik=1", "", "", od), "log: cpu kiedy=ekran 160 MHz");
+  sprawdz(kliknij("160 MHz"), "dotkniecie przycisku 160 MHz");
+  biegnij(200);
+  sprawdz(ekranMa("80 MHz") && g_atrapa.cpuMhz == 80 && g_atrapa.nvs["wyswietlacz"]["cpuIdx"] == 2, "-> 80 MHz: przycisk, uklad, NVS cpuIdx=2");
+  sprawdz(pomiar != nullptr && std::string(lv_label_get_text(pomiar)).find("Procesor: 80 MHz") != std::string::npos, "odczyt pod przyciskami: Procesor: 80 MHz");
+  zrzutEkranu("3_zasilanie_80mhz");
+  sprawdz(kliknij("80 MHz"), "dotkniecie przycisku 80 MHz");
+  biegnij(200);
+  sprawdz(ekranMa("240 MHz") && g_atrapa.cpuMhz == 240 && g_atrapa.nvs["wyswietlacz"]["cpuIdx"] == 0, "-> 240 MHz (lista zawija sie do poczatku)");
+  kliknij("240 MHz"); biegnij(200); kliknij("160 MHz"); biegnij(200);
+  sprawdz(g_atrapa.cpuMhz == 80, "ustawione z powrotem 80 MHz na dalsza czesc testu");
+
+  // --- nadajnik: 19,5 -> 15 dBm ---
+  od = g_atrapa.serial.size();
+  sprawdz(kliknij("19,5 dBm"), "dotkniecie przycisku 19,5 dBm");
+  biegnij(200);
+  sprawdz(ekranMa("15 dBm") && g_atrapa.txMoc == 60, "-> 15 dBm: przycisk i uklad (WiFi.setTxPower) od razu");
+  sprawdz(g_atrapa.nvs["wyswietlacz"]["txIdx"] == 1, "NVS wyswietlacz/txIdx=1");
+  sprawdz(logMa("tag=ZASILANIE zdarzenie=nadajnik kiedy=ekran cel_dbm=15.0 tx_dbm=15.0 wynik=1", "", "", od), "log: nadajnik kiedy=ekran 15 dBm");
+  sprawdz(pomiar != nullptr && std::string(lv_label_get_text(pomiar)).find("Nadajnik: 15 dBm") != std::string::npos, "odczyt pod przyciskami: Nadajnik: 15 dBm (bez \",0\")");
+  sprawdz(g_atrapa.cpuZleWartosci == 0 && g_atrapa.txPrzedStartem == 0, "dalej zadnych zlych wartosci taktowania ani setTxPower() przed startem radia");
+
+  // --- slaby sygnal: ostrzezenie ---
+  g_atrapa.eter[0].rssi = -80;
+  biegnij(2500);
+  sprawdz(pomiar != nullptr && std::string(lv_label_get_text(pomiar)).find("Sygnał WiFi: -80 dBm (słaby)") != std::string::npos, "sygnal -80 dBm: odczyt \"(słaby)\" w 2,5 s");
+  sprawdz(znajdzEtykiete(ekran, "Słaby sygnał") != nullptr, "sygnal -80 dBm: ostrzezenie \"Słaby sygnał - nie obniżaj mocy nadajnika\"");
+  zrzutEkranu("4_zasilanie_slaby_sygnal");
+  g_atrapa.eter[0].rssi = -70;
+  biegnij(2500);
+  sprawdz(pomiar != nullptr && std::string(lv_label_get_text(pomiar)).find("(średni)") != std::string::npos && znajdzEtykiete(ekran, "Słaby sygnał") == nullptr,
+          "sygnal -70 dBm: \"(średni)\", ostrzezenie znika");
+
+  // --- X wraca na drugi pulpit; bez dotyku ekran sam sie zamyka po 13,5 s ---
+  kliknij(LV_SYMBOL_CLOSE);
+  biegnij(300);
+  sprawdz(lv_scr_act() == drugi, "X zamyka ekran ZASILANIE i wraca na drugi pulpit");
+  sprawdz(kliknij("ZASILANIE"), "ponowne otwarcie ekranu ZASILANIE");
+  biegnij(14000);
+  sprawdz(lv_scr_act() != ekran, "bez dotyku ekran ZASILANIE zamyka sie sam (idle 13,5 s, jak WYSWIETLACZ)");
+  // --- linia tag=PANEL co 30 s podaje odczyt ---
+  od = g_atrapa.serial.size();
+  biegnij(30000);
+  info("%s", liniaLogu("tag=PANEL fw=", od).substr(0, 160).c_str());
+  sprawdz(logMa("tag=PANEL fw=" WERSJA_FW, "cpu_mhz=80 tx_dbm=15.0 tx_ok=1", "", od), "log tag=PANEL: cpu_mhz=80 tx_dbm=15.0 tx_ok=1");
+
+  // --- ponowne laczenie: moc ustawiana od nowa po WiFi.begin(), bez logu ---
+  const int ustawienPrzed = g_atrapa.txUstawien;
+  const int beginPrzed = g_atrapa.liczbaBegin;
+  g_atrapa.txMoc = 78;   // udajemy, ze sterownik radia wrocil do domyslnej mocy
+  g_atrapa.zglosRozlaczenie(8);
+  g_atrapa.eter.clear();
+  biegnij(3000);
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  g_atrapa.eter[0].rssi = -45;
+  biegnij(20000);
+  info("WiFi.begin() od rozlaczenia: %d, setTxPower(): %d", g_atrapa.liczbaBegin - beginPrzed, g_atrapa.txUstawien - ustawienPrzed);
+  sprawdz(g_atrapa.liczbaBegin > beginPrzed && g_atrapa.txUstawien > ustawienPrzed && g_atrapa.txMoc == 60,
+          "po ponownym WiFi.begin() moc 15 dBm ustawiona od nowa");
+  sprawdz(ileLinii("tag=ZASILANIE zdarzenie=nadajnik") == nadajnikLinii + 1, "ponowne laczenie nie dopisuje linii tag=ZASILANIE (tylko start i zmiana z ekranu)");
+  sprawdz(g_atrapa.restarty == 0, "bez restartu panelu w calym scenariuszu");
+}
+
+// [v1.4.7] Start z zapisanymi ustawieniami (po restarcie / wylaczeniu
+// zasilania): 80 MHz i 8,5 dBm wracaja same, przyciski pokazuja zapisane
+// wartosci; nieznany indeks z NVS (np. po zmianie listy) spada na domyslne.
+void scenariuszZasilaniePoRestarcie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  g_atrapa.nvs["wyswietlacz"]["cpuIdx"] = 2;   // 80 MHz
+  g_atrapa.nvs["wyswietlacz"]["txIdx"] = 3;    // 8,5 dBm
+  setup();
+  sprawdz(g_atrapa.cpuMhz == 80 && g_atrapa.txMoc == 34, "po starcie z NVS: 80 MHz i 8,5 dBm");
+  sprawdz(g_atrapa.txPrzedStartem == 0, "setTxPower() dopiero po WiFi.mode()");
+  sprawdz(logMa("tag=ZASILANIE zdarzenie=nadajnik kiedy=start cel_dbm=8.5 tx_dbm=8.5 wynik=1") &&
+          logMa("tag=ZASILANIE zdarzenie=cpu kiedy=start cel_mhz=80 cpu_mhz=80 wynik=1"), "log: obie linie tag=ZASILANIE kiedy=start z zapisanymi wartosciami");
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  sprawdz(ekranMa("55°C"), "panel pracuje normalnie na 80 MHz (kafelki z danymi)");
+  lv_obj_t* drugi = drugiPulpit();
+  if (drugi == nullptr) { sprawdz(false, "drugi pulpit istnieje"); return; }
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  biegnij(300);
+  sprawdz(kliknij("ZASILANIE"), "dotkniecie kafelka ZASILANIE");
+  biegnij(300);
+  sprawdz(ekranMa("80 MHz") && ekranMa("8,5 dBm"), "przyciski pokazuja zapisane 80 MHz i 8,5 dBm");
+  lv_obj_t* pomiar = znajdzEtykiete(lv_scr_act(), "Sygnał WiFi");
+  sprawdz(pomiar != nullptr && std::string(lv_label_get_text(pomiar)) == "Sygnał WiFi: -45 dBm (dobry)\nProcesor: 80 MHz\nNadajnik: 8,5 dBm",
+          "odczyt: 80 MHz i 8,5 dBm z ukladu");
+  zrzutEkranu("1_zasilanie_po_restarcie");
+  // 8,5 -> 19,5 dBm (lista zawija sie), zapis idzie do NVS.
+  sprawdz(kliknij("8,5 dBm"), "dotkniecie przycisku 8,5 dBm");
+  biegnij(200);
+  sprawdz(ekranMa("19,5 dBm") && g_atrapa.txMoc == 78 && g_atrapa.nvs["wyswietlacz"]["txIdx"] == 0, "-> 19,5 dBm (zawiniecie), uklad i NVS txIdx=0");
+  kliknij(LV_SYMBOL_CLOSE);
+  biegnij(300);
+  {
+    const size_t od = g_atrapa.serial.size();
+    biegnij(30000);
+    sprawdz(logMa("tag=PANEL fw=" WERSJA_FW, "cpu_mhz=80 tx_dbm=19.5 tx_ok=1", "", od), "log tag=PANEL: cpu_mhz=80 tx_dbm=19.5 tx_ok=1");
+  }
+  sprawdz(g_atrapa.restarty == 0, "bez restartu panelu");
+}
+
+void scenariuszZasilanieZlyIndeks() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  g_atrapa.nvs["wyswietlacz"]["cpuIdx"] = 200;   // spoza listy (np. starsza/nowsza lista)
+  g_atrapa.nvs["wyswietlacz"]["txIdx"] = 7;
+  setup();
+  sprawdz(g_atrapa.cpuMhz == 240 && g_atrapa.txMoc == 78 && g_atrapa.cpuZleWartosci == 0, "nieznane indeksy w NVS: domyslne 240 MHz i 19,5 dBm, bez zlych wartosci do ukladu");
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  lv_obj_t* drugi = drugiPulpit();
+  if (drugi == nullptr) { sprawdz(false, "drugi pulpit istnieje"); return; }
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  biegnij(300);
+  kliknij("ZASILANIE");
+  biegnij(300);
+  sprawdz(ekranMa("240 MHz") && ekranMa("19,5 dBm"), "przyciski pokazuja domyslne wartosci");
   kliknij(LV_SYMBOL_CLOSE);
   biegnij(300);
 }
@@ -5042,6 +5228,9 @@ const Scenariusz SCENARIUSZE[] = {
     {"ota_bez_identyfikatora", "OTA: panel nie zna sumy wlasnego programu - aktualizacja przez centrale wylaczona (v1.4.0)", scenariuszOtaBezIdentyfikatora},
     {"polskie_litery", "polskie litery na ekranie: czcionki lv_font_pl_14/20/28, glif dla kazdego znaku, napisy z ogonkami (v1.4.5)", scenariuszPolskieLitery},
     {"wersje_na_ekranie", "wersje panelu i centrali: ekran startowy, ekran WYSWIETLACZ, log tag=PANEL, kafelek WYSWIETLACZ bez obciecia (v1.4.6)", scenariuszWersjeNaEkranie},
+    {"zasilanie", "ekran ZASILANIE: taktowanie 240/160/80 MHz i moc nadajnika 19,5/15/11/8,5 dBm - domyslnie bez zmian, zapis w NVS, odczyt, ostrzezenie przy slabym sygnale (v1.4.7)", scenariuszZasilanie},
+    {"zasilanie_po_restarcie", "ekran ZASILANIE: zapisane 80 MHz i 8,5 dBm wracaja po restarcie (v1.4.7)", scenariuszZasilaniePoRestarcie},
+    {"zasilanie_zly_indeks", "ekran ZASILANIE: nieznany indeks w NVS spada na domyslne (v1.4.7)", scenariuszZasilanieZlyIndeks},
     {"pomiar_obciazenia", "ile panel rysuje, pyta centrale i prosi o pamiec, gdy nic sie nie zmienia (tylko pomiar_obciazenia.sh)", scenariuszPomiarObciazenia},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},

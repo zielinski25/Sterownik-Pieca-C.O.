@@ -2,6 +2,7 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-22] v1.4.7 Dodano: lv_ikona_blyskawica (kafelek ZASILANIE).
 // [2026-09-05] Dodano: lv_ikona_alarm_duza (opakowanie IKONA_ALARM_DUZA z
 //   ikony.h w lv_img_dsc_t) dla nowego EKRANU ALARMOWEGO - patrz
 //   PLAN_EKRAN_ALARMOWY.md oraz CHANGELOG.md [Unreleased].
@@ -153,6 +154,10 @@ LVGL_IKONA_DSC(lv_ikona_bezpieczna, IKONA_BEZPIECZNA, IKONA_ROZMIAR)
 // SERWA (6 parametrow automatyki klapy/syberka) - patrz obszerny komentarz
 // przy danych w ikony.h.
 LVGL_IKONA_DSC(lv_ikona_zebatka, IKONA_ZEBATKA, IKONA_ROZMIAR)
+
+// [v1.4.7 ZASILANIE] Blyskawica - kafelek ZASILANIE na drugim pulpicie
+// (patrz IKONA_BLYSKAWICA w ikony.h).
+LVGL_IKONA_DSC(lv_ikona_blyskawica, IKONA_BLYSKAWICA, IKONA_ROZMIAR)
 
 // [UI-INTERNET, ta sesja] Dwie rozlaczne warstwy globusu (siatka+ladu) -
 // patrz obszerny komentarz przy danych IKONA_GLOBUS_SIATKA/IKONA_GLOBUS_LADY

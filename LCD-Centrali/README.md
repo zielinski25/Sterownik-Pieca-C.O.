@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.4.6
+# Panel LCD (wyświetlacz CO) — firmware v1.4.7
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,64 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.4.7
+
+**Ekran ZASILANIE: taktowanie procesora i moc nadajnika WiFi do wyboru**
+(audyt z 18.11, tematy 11 i 18 — krok 6 planu). Ruch do centrali i reszta
+panelu bez zmian.
+
+Nikt nie zmierzył jeszcze tego panelu miernikiem (audyt szacował 120–160 mA
+przy pracy i 0,11 mA w deep sleep), a RSSI przy centrali też nie był znany,
+więc zamiast wpisać wartości na sztywno, v1.4.7 daje **przełączniki i żywy
+odczyt** — porównanie poboru prądu robi się testerem USB w przelotce
+(albo multimetrem szeregowo), bez komputera:
+
+| Co | Było (v1.4.6) | Jest (v1.4.7) |
+|---|---|---|
+| drugi pulpit (gest w bok) | kafelki WYKRESY, WYŚWIETLACZ | trzeci kafelek **ZASILANIE** (ikona błyskawicy) |
+| taktowanie procesora | 240 MHz na stałe | przycisk **240 → 160 → 80 MHz** (kolejne dotknięcia); zmiana od razu (`setCpuFrequencyMhz()`), zapis w NVS (`wyswietlacz/cpuIdx`), po restarcie wraca. Poniżej 80 MHz radio nie działa, więc niższych wartości nie ma |
+| moc nadajnika WiFi | domyślna 19,5 dBm | przycisk **19,5 → 15 → 11 → 8,5 dBm**; `WiFi.setTxPower()` **dopiero po `WiFi.mode(WIFI_STA)`** (wcześniej zwraca błąd — temat 18) i cicho ponownie po każdym `WiFi.begin()`; zapis w NVS (`wyswietlacz/txIdx`) |
+| odczyt pod przyciskami | — | „Sygnał WiFi: −58 dBm (dobry)” — **RSSI panelu** (nie centrali), „Procesor: 80 MHz” (`getCpuFrequencyMhz()`), „Nadajnik: 15 dBm” (`WiFi.getTxPower()`) — to, co układ **naprawdę** robi; odświeżane co 2 s |
+| słaby sygnał | — | poniżej −77 dBm (≤ 3 kreski ikony WiFi) pomarańczowe ostrzeżenie „Słaby sygnał — nie obniżaj mocy nadajnika” |
+| log `tag=PANEL` (co 30 s) | `… rssi=-45 ap_przy_starcie=…` | `… rssi=-45 cpu_mhz=80 tx_dbm=15.0 tx_ok=1 ap_przy_starcie=…` |
+| log przy starcie i zmianie | — | `tag=ZASILANIE zdarzenie=cpu kiedy=start\|ekran cel_mhz=80 cpu_mhz=80 wynik=1` i `tag=ZASILANIE zdarzenie=nadajnik kiedy=… cel_dbm=15.0 tx_dbm=15.0 wynik=1` |
+
+**Domyślnie nic się nie zmienia:** po wgraniu panel pracuje jak v1.4.6
+(240 MHz, 19,5 dBm), dopóki ktoś nie dotknie przycisków. Taktowanie
+przełącza się na końcu `setup()` — kalibracja dotyku, łączenie i pierwsze
+rysowanie idą zawsze na 240 MHz. Przy 80 MHz APB (80 MHz) się nie zmienia,
+więc SPI ekranu (27 MHz), PWM podświetlenia i brzęczyka, UART i `millis()`
+działają jak dotąd; wolniej jest **tylko** liczenie: rysowanie LVGL (~3×
+dłużej, wciąż daleko od 15 s watchdoga), parsowanie JSON, pobieranie OTA.
+Podświetlony na zielono przycisk = ustawienie inne niż domyślne.
+
+**Jak zmierzyć.** Tester USB w przelotce zasilania (albo multimetr szeregowo),
+pulpit bez zmian, pompa stoi (stan A z `pomiar_obciazenia.sh` — najczęstszy).
+Odczyt mA przy 240 MHz / 19,5 dBm, potem przełącz na ekranie ZASILANIE i
+odczekaj kilkanaście sekund na każde z ustawień: 160 MHz, 80 MHz, potem
+nadajnik 15 / 11 / 8,5 dBm. Linie `tag=PANEL` z `cpu_mhz=`/`tx_dbm=` co 30 s
+pozwalają potem dopasować odczyty do ustawień. Co obserwować przy obniżonej
+mocy nadajnika: `rozl_n=` w `tag=PANEL` (liczba rozłączeń WiFi) i
+`status_blad=` — jeśli rosną, wróć do wyższej mocy. Spodziewany rząd
+wielkości (z kart katalogowych ESP32, nie z pomiaru tego panelu): 240 → 80 MHz
+oszczędza ok. 20–30 mA; nadajnik 19,5 → 11 dBm zauważalnie mniej, bo panel
+nadaje krótko (zapytanie co 2 s). Wynik wpisz do
+`WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`, krok 6.
+
+**Testy na PC** (`testy_host/uruchom_testy.sh`): 3 nowe scenariusze
+`zasilanie`, `zasilanie_po_restarcie`, `zasilanie_zly_indeks` (56 sprawdzeń):
+domyślne wartości, `setTxPower()` nigdy przed `WiFi.mode()`, przyciski i NVS,
+odczyt i ostrzeżenie, ponowne ustawienie mocy po `WiFi.begin()` bez
+dodatkowych linii logu, nieznany indeks z NVS → domyślne. Atrapy:
+`setCpuFrequencyMhz()`/`getCpuFrequencyMhz()` (przyjmuje tylko 240/160/80),
+`WiFi.mode()`/`setTxPower()`/`getTxPower()` (błąd przed startem radia).
+Razem 57 scenariuszy, 655 sprawdzeń.
+
+**Z v1.4.6 na v1.4.7** zmieniają się: `src/main.cpp`,
+`src/dashboard_lvgl_poc.cpp`, `src/dashboard_lvgl_poc.h`, `src/ikony.h`,
+`src/ikony_lvgl.h`, `testy_host/`. Można wgrać kablem albo przez centralę
+(`/update_panel`). Centrala bez zmian (3.58.8 zostaje).
 
 ## Co zmienia v1.4.6
 
@@ -263,8 +321,8 @@ Przy centrali, która milczy, zostaje 2,45 (licznik sekund w nagłówku).
 Czego v1.4.1 **nie** zmienia (kolejne kroki, osobno): sen na baterii i próg
 niskiej baterii (krok 3), komendy gubione w czasie pobierania (krok 4 —
 zrobiony w v1.4.2, wyżej), rzadsze odpytywanie i mniej próśb o pamięć
-(krok 5 — zrobiony w v1.4.3, wyżej), 80 MHz (krok 6), martwy kod (krok 7 —
-zrobiony w v1.4.4, wyżej).
+(krok 5 — zrobiony w v1.4.3, wyżej), 80 MHz (krok 6 — przełączniki w v1.4.7,
+wyżej; pomiar na płytce czeka), martwy kod (krok 7 — zrobiony w v1.4.4, wyżej).
 
 **Jak czytać `tag=ZRZUT`.** Adresy z `pc=` i `slad=` zamienia się na nazwy
 funkcji poleceniem `xtensa-esp32-elf-addr2line -pfiaC -e .pio/build/esp32dev/firmware.elf 0x400d1234 ...`

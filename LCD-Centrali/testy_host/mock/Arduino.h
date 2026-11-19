@@ -225,6 +225,16 @@ class AtrapaEsp {
 extern AtrapaEsp ESP;
 
 inline unsigned long millis() { return g_atrapa.terazMs; }
+// [v1.4.7] esp32-hal-cpu.h: przy wlaczonym WiFi rdzen przyjmuje 240/160/80 MHz
+// (nizej radio nie dziala - setCpuFrequencyMhz() zwraca false i nic nie
+// zmienia). Atrapa trzyma to samo ograniczenie, zeby test wylapal np. 40 MHz.
+inline uint32_t getCpuFrequencyMhz() { return g_atrapa.cpuMhz; }
+inline bool setCpuFrequencyMhz(uint32_t mhz) {
+  g_atrapa.cpuZmian++;
+  if (mhz != 240 && mhz != 160 && mhz != 80) { g_atrapa.cpuZleWartosci++; return false; }
+  g_atrapa.cpuMhz = mhz;
+  return true;
+}
 inline UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t) { return g_atrapa.stosZapasB; }
 inline unsigned long micros() { return g_atrapa.terazMs * 1000UL; }
 inline void delay(unsigned long ms) { atrapa_uplyw_czasu(ms); }

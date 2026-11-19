@@ -2,6 +2,9 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-22] v1.4.7 Dodano: ekran ZASILANIE - ZasilanieCb,
+//   lvgl_dashboard_poc_ustaw_callback_zasilanie(), ..._aktualizuj_zasilanie(),
+//   ..._aktualizuj_zasilanie_pomiar() ([v1.4.7 ZASILANIE] w main.cpp).
 // [2026-11-19] v1.4.3 Dodano: lvgl_dashboard_poc_ekran_ustawien_otwarty() -
 //   main.cpp pobiera ustawienia co 5 s tylko, gdy ktorys ekran ustawien jest
 //   otwarty ([v1.4.3 B4] w main.cpp).
@@ -482,6 +485,32 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int
 // starsza i tego pola nie ma -> ekran pokazuje "Centrala -"). Tanie przy
 // wywolywaniu co kazdy status: tekst jest podmieniany tylko, gdy sie zmienil.
 void lvgl_dashboard_poc_ustaw_wersje(const char *panel, const char *centrala);
+
+// [v1.4.7 ZASILANIE] Ekran ZASILANIE (trzeci kafelek drugiego pulpitu):
+// taktowanie procesora i moc nadajnika WiFi - dwa przyciski, ktore
+// przelaczaja kolejne wartosci z list ponizej (indeks, nie wartosc - sama
+// tabela MHz/dBm jest w main.cpp: ZASILANIE_CPU_MHZ[]/ZASILANIE_TX[], tam, gdzie
+// setCpuFrequencyMhz()/WiFi.setTxPower(); tutaj tylko napisy na przyciskach,
+// w tej samej kolejnosci). Domyslnie indeks 0 = tak, jak panel pracowal do
+// v1.4.6 (240 MHz, 19,5 dBm) - zmiana jest zawsze swiadoma, z ekranu.
+// `pole` w callbacku: "cpu" albo "nadajnik"; `indeks` 0..N-1.
+#define LVGL_ZASILANIE_CPU_N 3
+#define LVGL_ZASILANIE_TX_N  4
+typedef void (*ZasilanieCb)(const char *pole, int indeks);
+void lvgl_dashboard_poc_ustaw_callback_zasilanie(ZasilanieCb cb);
+// Zasila przyciski zapisanymi indeksami - raz w setup() po odczycie z NVS
+// (ten sam wzorzec co ..._aktualizuj_ustawienia_wyswietlacza()).
+void lvgl_dashboard_poc_aktualizuj_zasilanie(int cpuIndeks, int nadajnikIndeks);
+// Zywy odczyt pod przyciskami ("Sygnal WiFi -58 dBm (dobry) / Procesor 240 MHz
+// / Nadajnik 19,5 dBm"), zeby dalo sie ocenic skutek przelaczenia bez
+// komputera: `rssi` to WiFi.RSSI() PANELU (nie pole rssi centrali), `cpuMhz`
+// to getCpuFrequencyMhz(), `txDbm` to WiFi.getTxPower()/4 - czyli to, co
+// uklad NAPRAWDE robi, nie to, o co prosil przycisk. Wolane co status (2 s);
+// tanie, gdy ekran ZASILANIE jest zamkniety (tylko zapis trzech liczb).
+void lvgl_dashboard_poc_aktualizuj_zasilanie_pomiar(bool wifiOk, int rssi, int cpuMhz, float txDbm);
+// Prog "slaby sygnal": ponizej ekran ZASILANIE ostrzega przed obnizaniem mocy
+// nadajnika (ta sama granica, od ktorej ikona WiFi w naglowku ma <= 3 kreski).
+#define LVGL_ZASILANIE_RSSI_SLABY (-77)
 
 // [PARTIA 5e - MOST DANYCH DLA EKRANU WYKRESY; przebudowany w v1.3.0]
 // dashboard_lvgl_poc.cpp nie wie, JAK dane trafiaja z centrali - prosi o nie
