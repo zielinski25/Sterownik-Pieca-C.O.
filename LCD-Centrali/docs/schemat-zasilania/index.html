@@ -204,9 +204,16 @@
       <rect x="20" y="130" width="22" height="16" fill="#111" stroke="#666"/><text x="31" y="128" text-anchor="middle" class="small">Q1</text>
       <rect x="60" y="135" width="18" height="8" fill="#222" stroke="#777"/>
       <g fill="#ddd"><rect x="106" y="160" width="8" height="26"/><rect x="136" y="160" width="8" height="26"/><rect x="166" y="160" width="8" height="26"/></g>
-      <text x="110" y="156" text-anchor="middle" class="small">VCC</text><text x="140" y="156" text-anchor="middle" class="small">GND</text><text x="170" y="156" text-anchor="middle" class="small">I/O</text>
+      <text x="110" y="156" text-anchor="middle" class="small">GND</text><text x="140" y="156" text-anchor="middle" class="small">IO</text><text x="170" y="156" text-anchor="middle" class="small">VCC</text>
       <text x="100" y="215" text-anchor="middle" class="silk">moduł brzęczyka</text>
-      <text x="100" y="236" text-anchor="middle" class="small">(VCC/GND/I/O lub S/−)</text>
+      <text x="100" y="236" text-anchor="middle" class="small">GND · IO · VCC  (J3Y + 101)</text>
+    </g>
+    <!-- R5 1k do IO brzęczyka -->
+    <g transform="translate(330,500)">
+      <line x1="0" y1="10" x2="120" y2="10" stroke="#ccc" stroke-width="3"/>
+      <rect x="20" y="0" width="80" height="20" rx="10" fill="#d7c4a3" stroke="#8a7a5a"/>
+      <rect x="30" y="0" width="7" height="20" fill="#5d4037"/><rect x="41" y="0" width="7" height="20" fill="#000"/><rect x="52" y="0" width="7" height="20" fill="#e53935"/><rect x="78" y="0" width="7" height="20" fill="#d4af37"/>
+      <text x="60" y="42" text-anchor="middle" class="silk">R5 1k</text>
     </g>
     <!-- szyna GND -->
     <rect x="40" y="700" width="520" height="8" fill="#333" stroke="#000"/><text x="300" y="692" text-anchor="middle" class="silk">szyna GND płytki</text>
@@ -251,11 +258,12 @@
     <tr><td>Rezystor 1 kΩ</td><td>1</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#e53935"></i><i style="left:36px;background:#d4af37"></i></span>brąz‑czarny‑czerwony‑złoty – szeregowo z przyciskiem GPIO14</td></tr>
     <tr><td>Kondensator ceramiczny</td><td>1</td><td>1 µF „105” (lub 100 nF „104”)</td></tr>
     <tr><td>Przycisk tact</td><td>1</td><td>6×6 lub 12×12 mm, monostabilny</td></tr>
-    <tr><td>Moduł brzęczyka</td><td>1</td><td>masz; piny <code>VCC GND I/O</code> (3) albo <code>S − </code> (2 używane). Patrz uwaga niżej – typ modułu!</td></tr>
+    <tr><td>Moduł brzęczyka</td><td>1</td><td>masz: piny <code>GND IO VCC</code>, tranzystor NPN „J3Y” (S8050), R1 = 101 (100 Ω). Aktywny, wyzwalany stanem WYSOKIM – zgodny z firmware bez zmian.</td></tr>
+    <tr><td>Rezystor 1 kΩ (R5)</td><td>1</td><td>szeregowo w linii D13 → IO (ogranicza prąd z pinu ESP32 do bazy tranzystora)</td></tr>
     <tr><td>Koszyk 18650 / ogniwo</td><td>1</td><td>albo LiPo 1S z wtyczką JST‑PH do B+/B−</td></tr>
     <tr><td>Przewody</td><td>–</td><td>zasilanie 0,5 mm² (czerwony/czarny), sygnały 0,2 mm² lub drut 30 AWG</td></tr>
   </table>
-  <p class="note"><b>Moduł brzęczyka – sprawdź typ przed podłączeniem.</b> Podaj 3,3 V na VCC/GND bez niczego na I/O: (1) piszczy od razu = aktywny wyzwalany stanem niskim → <b>nie podłączaj</b>, potrzebna zmiana w firmware (napisz); (2) cisza, piszczy gdy I/O do 3,3 V = aktywny wyzwalany wysokim → działa, jeden ton; (3) cisza, przy I/O do 3,3 V tylko „klik” = pasywny ze sterownikiem → działa, pełne tony; moduł 2‑pinowy S/− (KY‑006) = pasywny → działa, VCC nie ma. VCC zawsze z <b>3V3</b>, nie z 5 V. Jeśli moduł nie ma własnego rezystora na I/O do GND – dołóż 10 kΩ (pin pływa w czasie snu).</p>
+  <p class="note"><b>Moduł brzęczyka (GND·IO·VCC, J3Y + 101):</b> buzzer siedzi między VCC a kolektorem NPN, emiter na GND, IO → 100 Ω → baza. IO wysokie = dźwięk, IO niskie / w powietrzu = cisza (krótki pisk przy włączeniu zasilania to normalne ładowanie bazy – nieszkodliwe). Dlatego: VCC może iść z <b>VIN 5 V</b> (głośniej) – pin ESP32 nigdy nie widzi 5 V; R5 1 kΩ w linii IO, bo samo 100 Ω na module obciążyłoby pin ESP32 ~25 mA. W kroku 3 firmware trzyma D13 nisko także w uśpieniu (gpio_hold). Opcjonalnie 10 kΩ IO → GND, żeby baza nie pływała przy restarcie.</p>
   <p class="note"><b>Dobór pinów (dokumentacja Espressif):</b> GPIO34/35 = ADC1 (działa przy WiFi), wejściowe, bez funkcji startowej – optymalne; GPIO36/39 pominięte (errata GPIO‑3.11); GPIO14 = RTC, dozwolony dla ext0, ale „PWM burst” przy starcie → R4 1 kΩ; GPIO13 bez funkcji startowej – OK pod PWM; GPIO12 omijamy (strapping). Rezerwa: GPIO32.</p>
   <p class="note"><b>Test, czy GPIO35 jest wolny na Twojej płytce</b> (Lolin D32/FireBeetle mają tam dzielnik baterii): omomierz GPIO35↔3V3 i GPIO35↔GND – na DOIT DevKit V1 oba „nieskończoność”; jeśli ~100–200 kΩ, napisz.</p>
   <p class="note"><b>Bilans prądu w uśpieniu – czy rezystory ciekną?</b> Dzielnik R1+R2 = 200 kΩ pobiera 16–21 µA (≈13 mAh/mies., mniej niż samorozładowanie ogniwa). Pull‑up 10k na GPIO35: 0 µA bez USB (wyjścia TP4056 otwarte). Przycisk, R4, brzęczyk: 0 µA. <b>Zostaw 100k/100k</b> – przy 1M+1M zysk 17 µA, a błąd pomiaru rośnie do ~100 mV na ogniwie (upływ wejścia ADC × 500 kΩ). Prawdziwi „zjadacze” z ogniwa w uśpieniu (~12–18 mA razem): AMS1117 na DevKicie ~5 mA, <b>czerwona dioda POWER na DevKicie ~1,5–2 mA (wylutuj!)</b>, wyświetlacz bez komendy SLEEP ~2–5 mA (załatwi firmware krok 3), MT3608 mnoży to ×1,6–1,8. Dzielnik to 0,1 % całości. Kontrola: bez USB napięcie na GPIO35 ma być 3,3 V – jeśli wyraźnie mniej, 10k „podkarmia” niezasilony TP4056; wymień na 47–100k.</p>
@@ -291,7 +299,7 @@
     R1a:[140,1190], R1b:[260,1190], R2a:[140,1270], R2b:[260,1270], Ca:[410,1180], Cb:[430,1180],
     R3a:[480,1270], R3b:[600,1270], R4a:[140,1350], R4b:[260,1350],
     BTNa:[400,1455], BTNb:[500,1455],
-    BZvcc:[170,1700], BZgnd:[200,1700], BZio:[230,1700],
+    BZgnd:[170,1700], BZio:[200,1700], BZvcc:[230,1700], R5a:[410,1630], R5b:[530,1630],
     rail:[380,1824],
     VIN:PX.L_VIN, GNDL:PX.L_GND, D34:PX.L_D34, D35:PX.L_D35, D14:PX.L_D14, D13:PX.L_D13, V33:PX.R_3V3, GNDR:PX.R_GND
   };
@@ -314,9 +322,10 @@
     {c:C.wht,t:'ESP32 D14 → R4 1k (prawa nóżka)',s:'1 kΩ chroni pin: GPIO14 daje krótki impuls wyjściowy przy starcie, a przy budzeniu przycisk jest wtedy wciśnięty.',d:`M ${P.D14} C 760 760 720 1350 ${P.R4b}`},
     {c:C.wht,t:'R4 1k (lewa) → przycisk (nóżka A)',s:'',d:`M ${P.R4a} C 100 1350 100 1455 ${P.BTNa}`},
     {c:C.blk,t:'przycisk (nóżka B, przeciwległy bok) → szyna GND',s:'',d:`M ${P.BTNb} C 580 1455 580 1800 ${P.rail}`},
-    {c:C.gry,t:'ESP32 D13 → moduł brzęczyka I/O (lub S)',s:'sygnał PWM z firmware (ledcWriteTone).',d:`M ${P.D13} C 760 880 760 1760 500 1760 C 300 1760 250 1740 ${P.BZio}`},
-    {c:C.blk,t:'moduł brzęczyka GND (lub −) → szyna GND',s:'',d:`M ${P.BZgnd} C 200 1790 300 1824 ${P.rail}`},
-    {c:C.blu,dash:1,t:'moduł brzęczyka VCC → ESP32 3V3  (TYLKO jeśli moduł ma pin VCC)',s:'z 3V3, nie z 5 V. Moduł 2‑pinowy S/− – pomiń.',d:`M ${P.BZvcc} C 120 1700 120 1920 700 1920 C 1240 1920 1240 1000 ${P.V33}`},
+    {c:C.gry,t:'ESP32 D13 → R5 1k (prawa nóżka)',s:'moduł ma na wejściu tylko 100 Ω do bazy tranzystora – bez R5 pin ESP32 oddawałby ~25 mA; z R5 ~2,5 mA i tranzystor i tak w pełni przewodzi.',d:`M ${P.D13} C 760 880 760 1630 ${P.R5b}`},
+    {c:C.gry,t:'R5 1k (lewa) → moduł brzęczyka IO (środkowy pin)',s:'stan wysoki = dźwięk (tranzystor NPN J3Y/S8050). Firmware trzyma D13 nisko w spoczynku – pasuje.',d:`M ${P.R5a} C 330 1630 230 1640 ${P.BZio}`},
+    {c:C.blk,t:'moduł brzęczyka GND (pin skrajny przy krawędzi) → szyna GND',s:'',d:`M ${P.BZgnd} C 170 1790 300 1824 ${P.rail}`},
+    {c:C.yel,t:'moduł brzęczyka VCC → ESP32 VIN (5 V)',s:'może być 5 V, bo pin ESP32 steruje tylko bazą tranzystora (nigdy nie widzi VCC). Z 3V3 też zadziała, ciszej.',d:`M ${P.BZvcc} C 120 1700 120 1920 700 1920 C 1240 1920 1240 1000 1180 1000 C 1140 1000 1110 980 ${P.VIN}`},
     {c:C.blk,t:'szyna GND płytki → ESP32 GND (prawa listwa)',s:'jeden przewód masy dla całej płytki uniwersalnej.',d:`M ${P.rail} C 380 1870 1180 1870 1180 1500 C 1180 1100 1180 940 ${P.GNDR}`},
   ];
   const gO=document.getElementById('ols'), gW=document.getElementById('wires'), gN=document.getElementById('nbs');
