@@ -8103,6 +8103,11 @@ uint32_t lvgl_dashboard_poc_bez_dotyku_ms() {
   return lv_disp_get_inactive_time(NULL);
 }
 
+// [v1.5.0 SEN] Przycisk budzenia trzymany w czasie pracy liczy sie jak dotyk.
+void lvgl_dashboard_poc_zglos_aktywnosc() {
+  lv_disp_trig_activity(NULL);
+}
+
 // [v1.4.3 B4] Te same cztery ekrany, ktore lvgl_dashboard_poc_aktualizuj_
 // ustawienia_*() odswiezaja "na zywo" (porownania lv_scr_act() w nich).
 bool lvgl_dashboard_poc_ekran_ustawien_otwarty() {

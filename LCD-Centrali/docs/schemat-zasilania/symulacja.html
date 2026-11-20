@@ -79,7 +79,7 @@
 <header>
   <h1>Panel LCD – zasilanie z ogniwa Li‑ion: schemat połączeń + symulacja</h1>
   <a href="index.html" style="color:#64b5f6;font-weight:700">→ widok montażowy (prawdziwe moduły) – strona główna</a>
-  <span class="sub">TP4056 (DW01A + FS8205) → MT3608 (5 V) → ESP32 DevKit · piny z firmware <b>LCD‑Centrali 1.4.7</b> · krok 3 (usypianie) = plan</span>
+  <span class="sub">TP4056 (DW01A + FS8205) → MT3608 (5 V) → ESP32 DevKit · piny z firmware <b>LCD‑Centrali 1.5.0</b> · usypianie na baterii = od v1.5.0 w firmware</span>
 </header>
 
 <main>
@@ -216,7 +216,7 @@
       <path class="wire adc" d="M 600 330 V 375" id="w_cap_a"/>
       <line x1="588" y1="375" x2="612" y2="375" class="cap"/><line x1="588" y1="383" x2="612" y2="383" class="cap"/>
       <path class="wire gnd" d="M 600 383 V 660" id="w_cap_b"/>
-      <text x="616" y="384" class="s">C 1 µF (100 nF)</text>
+      <text x="616" y="384" class="s">C1 470 nF (100 nF–1 µF)</text>
       <circle cx="600" cy="330" r="3" class="dot"/>
       <rect x="640" y="312" width="70" height="16" class="badge"/><text x="675" y="324" text-anchor="middle" class="v" id="bAdc">1.925 V</text>
       <text x="536" y="310" class="s">Vbat/2 → GPIO34 (ADC1_CH6)</text>
@@ -296,7 +296,7 @@
       <tr><td>5</td><td>MT3608 <code>OUT+</code></td><td>ESP32 <code>VIN</code> (5V)</td><td>potencjometr nastawiony na <b>5,0–5,1 V</b></td><td>Ustaw napięcie BEZ obciążenia, dopiero potem przewód do VIN. Nigdy do 3V3.</td></tr>
       <tr><td>6</td><td>MT3608 <code>OUT−</code></td><td>ESP32 <code>GND</code></td><td>–</td><td>Krótko, gruby przewód – wspólny punkt masy dla ADC.</td></tr>
       <tr><td>7</td><td>TP4056 <code>OUT+</code></td><td>ESP32 <code>GPIO34</code></td><td><code>R1 100 kΩ</code> (1 %)</td><td>Dzielnik bierze <b>ogniwo</b>, nie 5 V za przetwornicą.</td></tr>
-      <tr><td>8</td><td>ESP32 <code>GPIO34</code></td><td>GND</td><td><code>R2 100 kΩ</code> (1 %) ∥ <code>C 1 µF</code> (min. 100 nF)</td><td>Rezystory i kondensator jak najbliżej pinu GPIO34. 1 µF lepiej tłumi szum boosta.</td></tr>
+      <tr><td>8</td><td>ESP32 <code>GPIO34</code></td><td>GND</td><td><code>R2 100 kΩ</code> (1 %) ∥ <code>C1 470 nF</code> (użyty „474”; 100 nF–1 µF)</td><td>Rezystory i kondensator jak najbliżej pinu GPIO34. Większa pojemność lepiej tłumi szum boosta. Sprawdzone 20.11: 3,32 V na OUT+ → log <code>BATERIA</code> 3,32 V/1 %, ogniwo Cubot 3,97 V → 76 %.</td></tr>
       <tr><td>9</td><td>TP4056 pin 7 <code>CHRG</code> + pin 6 <code>STDBY</code> (pady po wylutowanych LED, strona układu)</td><td>ESP32 <code>GPIO35</code></td><td>–</td><td>Sprawdź miernikiem ciągłość do nóżek 6 i 7 TP4056. Pad od strony R1/R2 to NIE ten.</td></tr>
       <tr><td>10</td><td>ESP32 <code>GPIO35</code></td><td>ESP32 <code>3V3</code></td><td><code>10 kΩ</code></td><td><b>Obowiązkowy</b> – GPIO35 nie ma wewnętrznego pull‑upu; bez niego pin pływa.</td></tr>
       <tr><td>11</td><td>ESP32 <code>GPIO14</code></td><td>GND</td><td><code>1 kΩ</code> szeregowo + przycisk monostabilny</td><td>Wewnętrzny pull‑up; ext0 budzi na LOW. 1 kΩ chroni pin przed impulsem wyjściowym GPIO14 przy starcie (budzenie = przycisk wciśnięty w trakcie startu). Opcjonalnie 100 nF równolegle do przycisku.</td></tr>
@@ -315,7 +315,7 @@
         <li>Przylutuj ogniwo do B+/B−. Zmierz OUT+ względem OUT−: ma być = napięcie ogniwa (3,0–4,2 V). Jeżeli 0 V – DW01A w odcięciu (ogniwo &lt; 2,4 V) → wepnij USB na chwilę, zabezpieczenie się zwolni.</li>
         <li>Wepnij USB: na padach CHRG/STDBY (względem OUT−) ma być ~0 V. Wyjmij USB: pad wisi (miernik pokaże ~0–0,5 V, bo nie ma jeszcze pull‑upu – to normalne).</li>
         <li>MT3608: OUT+ TP4056 → IN+, OUT− → IN−. Bez obciążenia ustaw <b>5,0–5,1 V</b> na wyjściu (wiele obrotów potencjometru). Sprawdź jeszcze raz po 1 min – nastawa nie może dryfować.</li>
-        <li>Dzielnik: 100k od OUT+ do węzła, 100k + 1 µF od węzła do GND. Zmierz węzeł: ma być dokładnie ½ napięcia ogniwa (np. 3,85 → 1,92 V).</li>
+        <li>Dzielnik: 100k od OUT+ do węzła, 100k + 470 nF od węzła do GND. Zmierz węzeł: ma być dokładnie ½ napięcia ogniwa (np. 3,85 → 1,92 V).</li>
         <li>Dopiero teraz ESP32: GND, potem VIN z MT3608. Panel ma wystartować normalnie (bez USB w płytce!).</li>
         <li>GPIO34 ← węzeł dzielnika; GPIO35 ← pady CHRG/STDBY; 10 kΩ między GPIO35 a 3V3; GPIO14 → 1 kΩ → przycisk → GND; GPIO13 → 1 kΩ → baza Q1; Q1 przełącza masę modułu brzęczyka; IO+VCC modułu → VIN.</li>
         <li>W logu Serial / WWW: <code>tag=BATERIA napiecie=3.8xV procent=.. ladowanie=1</code> przy USB, <code>ladowanie=0</code> bez USB. Napięcie w logu ± 0,05 V względem miernika na ogniwie. Jeśli &lt; 2,5 V → <code>zdarzenie=brak_ogniwa</code> = dzielnik źle podpięty.</li>
@@ -478,7 +478,7 @@
 
     let log='';
     if(!espRun) log='(ESP32 nie pracuje – brak logu)';
-    else if(sleep) log='tag=ZASILANIE zdarzenie=deep_sleep powod=... (krok 3)\n(w śnie brak logu; wybudzenie: ESP_SLEEP_WAKEUP_EXT0)';
+    else if(sleep) log='tag=SEN zdarzenie=usypianie powod=bez_dotyku|bateria_rozladowana napiecie=… bez_dotyku_s=… (v1.5.0)\n(w śnie brak logu; po wybudzeniu: tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk|usb)';
     else if(batJest) log=`tag=BATERIA napiecie=${vFw.toFixed(2)}V procent=${p} ladowanie=${usbFn}`;
     else log=`tag=BATERIA zdarzenie=brak_ogniwa napiecie=${vFw.toFixed(2)}V prog=2.5V msg="zasilanie z USB, wskaznik pokazuje USB"`;
     if(espRun && S.ota) log+='\ntag=OTA-PANEL zdarzenie=usypianie_zablokowane';

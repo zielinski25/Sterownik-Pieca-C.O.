@@ -1,4 +1,6 @@
 // diagnostyka_panelu.h
+// [v1.5.0] Dodano: sekcja "[v1.5.0 SEN]" na koncu - progi i decyzja
+//   przyciemnienia / glebokiego snu na baterii (senDecyzja()).
 // [v1.4.3] Dodano: RytmUstawien (B4, odczyt ustawien gdy potrzebny) i
 //   POLA_STATUSU_CZYTANE[] / poleStatusuCzytane() (A2, filtr JSON statusu).
 // ============================================================================
@@ -1347,6 +1349,67 @@ inline bool poleStatusuCzytane(const char* pole) {
   for (int i = 0; i < LICZBA_POL_STATUSU_CZYTANYCH; i++) if (strcmp(POLA_STATUSU_CZYTANE[i], pole) == 0) return true;
   for (int i = 0; i < LICZBA_CZUJNIKOW_SYMULOWANYCH; i++) if (strcmp(CZUJNIKI_SYMULOWANE[i].pole, pole) == 0) return true;
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// [v1.5.0 SEN] Praca na baterii: przyciemnienie i gleboki sen (krok 3 planu z
+// WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18, rozdzial 2 i 4; tematy B1/B5, 14)
+// ---------------------------------------------------------------------------
+// Pomiary z plytki (2026-11-20, tester USB przed TP4056, 5 V, WiFi wlaczone):
+// ekran 100 % = 238 mA, ekran 5 % = 157 mA, gleboki sen wg starego pomiaru
+// 0,11 mA (bez przetwornicy). Na jednym ogniwie 2500 mAh to ok. 8 h pracy z
+// jasnym ekranem, ok. 12 h z przyciemnionym i kilka dni we snie - stad dwa
+// progi: najpierw przyciemnienie (tanie, odwracalne jednym dotknieciem),
+// potem sen (wybudzenie przyciskiem = pelny start panelu, kilka sekund).
+//
+// Na zasilaniu z USB panel NIGDY nie przyciemnia ani nie usypia - zachowanie
+// do v1.4.7 bez zmian. Decyzja jest czysta funkcja warunkow (jak otaDecyzja()
+// wyzej), zeby dalo sie ja sprawdzic na PC bez plytki.
+static const uint32_t SEN_PRZYCIEMNIJ_PO_MS = 60UL * 1000UL;        // 1 min bez dotyku: podswietlenie na SEN_JASNOSC_PROC
+static const uint32_t SEN_USPIJ_PO_MS       = 5UL * 60UL * 1000UL;  // 5 min bez dotyku: gleboki sen
+static const uint8_t  SEN_JASNOSC_PROC      = 5;                    // jasnosc po przyciemnieniu (= JASNOSC_MIN_PROCENT w main.cpp)
+static const float    SEN_NAPIECIE_MIN_V    = 3.30f;                // ponizej: sen od razu (poza alarmem), z napisem na ekranie
+static const float    SEN_NAPIECIE_KRYT_V   = 3.10f;                // ponizej: sen od razu TAKZE w alarmie (ogniwo i tak zaraz sie odetnie)
+static const uint32_t SEN_SPRAWDZAJ_CO_MS   = 1000;                 // jak czesto main.cpp liczy decyzje
+static const uint32_t SEN_NAPIS_MS          = 2500;                 // ile stoi napis "Bateria rozladowana" przed snem
+
+enum SenAkcja : uint8_t {
+  SEN_AKCJA_NIC = 0,     // pelna jasnosc, panel pracuje
+  SEN_AKCJA_PRZYCIEMNIJ, // podswietlenie na SEN_JASNOSC_PROC, reszta pracuje
+  SEN_AKCJA_USPIJ        // gleboki sen (`powod` mowi dlaczego)
+};
+
+struct SenWarunki {
+  bool     bateriaJest;    // dzielnik widzi ogniwo (bateriaObecna())
+  bool     zasilanieUsb;   // TP4056 zasilany z USB (zasilanieUSB())
+  float    napiecieV;      // ostatni pomiar ogniwa
+  uint32_t bezDotykuMs;    // ile czasu nikt nie dotykal ekranu ani przycisku
+  bool     alarm;          // centrala zglasza alarm albo brzeczyk gra
+  bool     ota;            // trwa pobieranie / wgrywanie nowego programu panelu
+};
+
+struct SenDecyzja {
+  SenAkcja    akcja;
+  const char* powod;   // krotki tekst do logu
+};
+
+inline SenDecyzja senDecyzja(const SenWarunki& w) {
+  if (!w.bateriaJest)  return {SEN_AKCJA_NIC, "brak_ogniwa"};
+  if (w.zasilanieUsb)  return {SEN_AKCJA_NIC, "usb"};
+  if (w.ota)           return {SEN_AKCJA_NIC, "ota"};
+  // Ogniwo na granicy odciecia: alarm juz nie pomoze, a gleboko rozladowany
+  // LiPo traci pojemnosc - spac, zanim zrobi to uklad zabezpieczenia ogniwa.
+  if (w.napiecieV < SEN_NAPIECIE_KRYT_V) return {SEN_AKCJA_USPIJ, "bateria_krytyczna"};
+  if (w.alarm)         return {SEN_AKCJA_NIC, "alarm"};
+  if (w.napiecieV < SEN_NAPIECIE_MIN_V)  return {SEN_AKCJA_USPIJ, "bateria_rozladowana"};
+  if (w.bezDotykuMs >= SEN_USPIJ_PO_MS)       return {SEN_AKCJA_USPIJ, "bez_dotyku"};
+  if (w.bezDotykuMs >= SEN_PRZYCIEMNIJ_PO_MS) return {SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku"};
+  return {SEN_AKCJA_NIC, "aktywny"};
+}
+
+// Czy przed snem pokazac napis o rozladowanej baterii (powod z senDecyzja()).
+inline bool senZNapisem(const char* powod) {
+  return powod != nullptr && strncmp(powod, "bateria_", 8) == 0;
 }
 
 }  // namespace diag

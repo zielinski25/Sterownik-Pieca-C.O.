@@ -1042,7 +1042,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.4.7"
+#define WERSJA_FW "v1.5.0"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1071,6 +1071,11 @@ void biegnij(unsigned long ms) {
       g_obrotowPetli++;
       if (millis() - przedObrotem > g_najdluzszyObrotMs) g_najdluzszyObrotMs = millis() - przedObrotem;
     } catch (const AtrapaRestart&) {
+      g_poRestarcie = true;
+    } catch (const AtrapaSen&) {
+      // [v1.5.0] esp_deep_sleep_start(): na plytce program konczy sie tutaj, a
+      // po wybudzeniu rusza od setup(). Dalej jak po restarcie: loop() nie jest
+      // wolane, zegar plynie.
       g_poRestarcie = true;
     }
   }
@@ -4696,8 +4701,11 @@ void obciazenieOkres(const char* stan, unsigned long ms) {
   obciazenieWiersz(stan, a, obciazenieTeraz());
 }
 void scenariuszPomiarObciazenia() {
-  // Plytka na samej baterii: USB odlaczone (GPIO35 wysoko), ogniwo 3,90 V.
-  g_atrapa.gpio[35] = HIGH;
+  // [v1.5.0] Stany A-F na ladowarce (GPIO35 nisko), ogniwo 3,90 V: od v1.5.0
+  // panel na samej baterii po minucie bez dotyku przygasza ekran, a po pieciu
+  // usypia - pomiar obciazenia "w spoczynku z jasnym ekranem" musi wiec isc na
+  // USB. Co panel robi na baterii bez dotyku, pokazuje osobny blok na koncu.
+  g_atrapa.gpio[35] = LOW;
   g_atrapa.adcMv[34] = 1950;
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
   setup();
@@ -4734,13 +4742,27 @@ void scenariuszPomiarObciazenia() {
   biegnij(70000);   // ekran POMPA sam wraca na pulpit po minucie bez dotyku
   obciazenieOkres("F pulpit po powrocie, dane bez zmian", 120000);
 
-  // Do tej chwili plytka pracowala na baterii bez jednego dotkniecia ekranu.
-  // Uspienie (esp_deep_sleep_start()) zakonczyloby ten program kodem 42 -
-  // skoro doszedl tutaj, panel nie usnal.
-  printf("OBCIAZENIE-INFO na baterii, bez dotyku przez %lu s: panel nie usnal; podswietlenie %ld/255, zmian jasnosci od konca startu: %lu; "
-         "ostatni dotyk wg LVGL: %lu s temu\n",
+  // Do tej chwili plytka pracowala na ladowarce bez jednego dotkniecia ekranu.
+  printf("OBCIAZENIE-INFO na USB, bez dotyku przez %lu s: podswietlenie %ld/255, zmian jasnosci od konca startu: %lu; "
+         "ostatni dotyk wg LVGL: %lu s temu; usniec: %d\n",
          (millis() - startMs) / 1000UL, g_atrapa.podswietlenieWypelnienie, g_atrapa.podswietlenieZapisow - podswietleniePoStarcie,
-         (unsigned long)(lv_disp_get_inactive_time(nullptr) / 1000UL));
+         (unsigned long)(lv_disp_get_inactive_time(nullptr) / 1000UL), g_atrapa.usnal);
+  // [v1.5.0] Ladowarka wyjeta, ktos dotyka raz i odchodzi: kiedy ekran
+  // przygasa, ile wtedy rysuje, kiedy panel usypia.
+  g_atrapa.gpio[35] = HIGH;
+  lv_disp_trig_activity(nullptr);
+  const unsigned long odDotyku = millis();
+  long przygaslPoS = -1, usnalPoS = -1;
+  {
+    const ObciazenieStan a = obciazenieTeraz();
+    while (millis() - odDotyku < 70000) { biegnij(1000); if (przygaslPoS < 0 && g_atrapa.podswietlenieWypelnienie <= 15) przygaslPoS = (long)((millis() - odDotyku) / 1000UL); }
+    obciazenieWiersz("G bateria, pierwsza minuta po dotyku (jasno, potem 5 %)", a, obciazenieTeraz());
+  }
+  obciazenieOkres("H bateria, ekran przyciemniony do 5 %, dane bez zmian", 120000);
+  while (millis() - odDotyku < 400000 && g_atrapa.usnal == 0) biegnij(1000);
+  if (g_atrapa.usnal > 0) usnalPoS = (long)((g_atrapa.usnalMs - odDotyku) / 1000UL);
+  printf("OBCIAZENIE-INFO na baterii po dotyku: ekran przygasl po %ld s, gleboki sen po %ld s (-1 = nie); podswietlenie na koncu %ld/255\n",
+         przygaslPoS, usnalPoS, g_atrapa.podswietlenieWypelnienie);
   printf("OBCIAZENIE-INFO ekran = 153600 px; 1 px = 3 bajty po SPI (ILI9488, kolor 18-bitowy); status co 2 s, ustawienia co 60 s w tle (co 5 s przy otwartym ekranie ustawien, od v1.4.3)\n");
   // Prototyp \"ustaw tylko wtedy, gdy wartosc sie zmienila\" (pomiar_obciazenia.sh --prototyp): ile wywolan pominal.
   if (obciazenie_prototyp_pominiete != nullptr && obciazenie_prototyp_wykonane != nullptr) {
@@ -4749,6 +4771,196 @@ void scenariuszPomiarObciazenia() {
       printf("OBCIAZENIE-INFO prototyp: %-28s wywolan z ta sama wartoscia (pominiete) %6lu, ze zmiana (wykonane) %6lu\n", NAZWY[i],
              obciazenie_prototyp_pominiete[i], obciazenie_prototyp_wykonane[i]);
   }
+}
+
+// --- sen (v1.5.0) ------------------------------------------------------------
+// Krok 3 planu: na baterii po minucie bez dotyku ekran przygasa do 5 %, po
+// pieciu minutach panel usypia; dotyk albo przycisk budzenia przywraca
+// jasnosc; na USB nic z tego sie nie dzieje; alarm i aktualizacja wstrzymuja
+// sen; rozladowane ogniwo usypia od razu z napisem.
+bool senOgniwoNaBaterii(int mvNaDzielniku = 1950) {   // 1950 mV x 2 = 3,90 V
+  g_atrapa.gpio[35] = HIGH;      // USB odlaczone (pull-up 10k wygrywa)
+  g_atrapa.adcMv[34] = mvNaDzielniku;
+  return true;
+}
+bool tftMa(const char* napis) { for (const std::string& t : g_atrapa.napisyTft) if (t == napis) return true; return false; }
+long senWypelnienie() { return g_atrapa.podswietlenieWypelnienie; }
+bool senJasno() { return senWypelnienie() >= 250; }               // 100 % = 255
+bool senPrzyciemnione() { return senWypelnienie() >= 10 && senWypelnienie() <= 15; }   // 5 % = 12
+
+void scenariuszSenNaBaterii() {
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  const unsigned long start = millis();
+  biegnij(3000);
+  info("%s", liniaLogu("tag=BATERIA").c_str());
+  sprawdz(logMa("tag=BATERIA napiecie=3.90V", "procent=", "ladowanie=0"), "pierwszy pomiar ogniwa od razu po starcie (nie po 30 s): 3,90 V, bez ladowania");
+  sprawdz(senJasno() && !logMa("tag=SEN"), "tuz po starcie: pelna jasnosc, zadnej linii tag=SEN");
+
+  // 59 s od startu nikt nie dotknal - jeszcze jasno; po minucie przyciemnienie.
+  biegnij(59000 - (millis() - start));
+  info("59 s po setup(): wypelnienie %ld/255, bez dotyku wg LVGL %lu ms", senWypelnienie(), (unsigned long)lv_disp_get_inactive_time(NULL));
+  sprawdz(senJasno(), "59 s bez dotyku: nadal pelna jasnosc");
+  biegnij(3000);
+  info("po 62 s: wypelnienie %ld/255; %s", senWypelnienie(), liniaLogu("tag=SEN zdarzenie=przyciemnienie").c_str());
+  sprawdz(senPrzyciemnione(), "62 s bez dotyku na baterii: podswietlenie 5 % (wypelnienie 12/255)");
+  sprawdz(logMa("tag=SEN zdarzenie=przyciemnienie powod=bez_dotyku", "napiecie=3.90V", "jasnosc=5%"), "log: tag=SEN zdarzenie=przyciemnienie powod=bez_dotyku napiecie=3.90V jasnosc=5%");
+  sprawdz(ekranMa("ZEWN") && kopia(0).nStatus > 20, "przyciemniony panel dalej pracuje: pulpit na ekranie, centrala odpytywana");
+
+  // Suwak harmonogramu / zmiana okna dzien-noc nie moze rozjasnic przyciemnionego ekranu.
+  const unsigned long zapisowPrzed = g_atrapa.podswietlenieZapisow;
+  biegnij(20000);
+  sprawdz(senPrzyciemnione(), "20 s pozniej wciaz 5 % (nic nie rozjasnilo po cichu)");
+  info("zapisow jasnosci w czasie przyciemnienia: %lu", g_atrapa.podswietlenieZapisow - zapisowPrzed);
+
+  // Dotkniecie szyby: jasnosc wraca natychmiast, licznik od nowa.
+  size_t od = g_atrapa.serial.size();
+  lv_disp_trig_activity(NULL);
+  biegnij(100);
+  sprawdz(senJasno(), "dotyk: pelna jasnosc wraca w ciagu 100 ms");
+  sprawdz(logMa("tag=SEN zdarzenie=jasnosc powod=dotyk", "", "", od), "log: tag=SEN zdarzenie=jasnosc powod=dotyk");
+  biegnij(55000);
+  sprawdz(senJasno(), "55 s po dotyku: nadal jasno (licznik liczony od dotyku)");
+  biegnij(7000);
+  sprawdz(senPrzyciemnione(), "62 s po dotyku: znow 5 %");
+
+  // Przycisk budzenia trzymany w czasie pracy = aktywnosc.
+  od = g_atrapa.serial.size();
+  g_atrapa.gpio[14] = LOW;
+  biegnij(200);
+  g_atrapa.gpio[14] = HIGH;
+  sprawdz(senJasno() && logMa("tag=SEN zdarzenie=jasnosc powod=dotyk", "", "", od), "przycisk GPIO14 wcisniety: jasnosc wraca jak po dotyku");
+
+  // 5 minut bez niczego: przyciemnienie po 1 min, sen po 5 min.
+  const unsigned long odPrzycisku = millis();
+  od = g_atrapa.serial.size();
+  biegnij(299000);
+  sprawdz(g_atrapa.usnal == 0 && senPrzyciemnione(), "4 min 59 s po przycisku: przyciemniony, ale jeszcze nie spi");
+  biegnij(3000);
+  info("usniecie %lu s po ostatniej aktywnosci; %s", (g_atrapa.usnalMs - odPrzycisku) / 1000UL, liniaLogu("tag=SEN zdarzenie=usypianie", od).c_str());
+  sprawdz(g_atrapa.usnal == 1, "5 min bez dotyku na baterii: esp_deep_sleep_start()");
+  sprawdz(g_atrapa.usnalMs - odPrzycisku >= 300000 && g_atrapa.usnalMs - odPrzycisku <= 302000, "sen dokladnie po 5 min (+-2 s) od ostatniej aktywnosci");
+  sprawdz(logMa("tag=SEN zdarzenie=usypianie powod=bez_dotyku", "napiecie=3.90V", "bez_dotyku_s=30", od), "log: tag=SEN zdarzenie=usypianie powod=bez_dotyku napiecie=3.90V bez_dotyku_s=300");
+  sprawdz(senWypelnienie() == 0, "przed snem podswietlenie 0");
+  sprawdz(g_atrapa.pinTrzymany[21] && g_atrapa.pinTrzymany[13], "przed snem gpio_hold_en na podswietleniu (GPIO21) i brzeczyku (GPIO13)");
+  sprawdz(g_atrapa.gpio[13] == LOW && g_atrapa.tonHz == 0, "brzeczyk przed snem: cisza, pin w stanie niskim");
+  sprawdz(g_atrapa.snuExt0Pin == 14 && g_atrapa.snuExt0Poziom == 0, "budzenie ext0: GPIO14, stan niski (przycisk)");
+  sprawdz(g_atrapa.snuExt1Maska == (1ULL << 35) && g_atrapa.snuExt1Tryb == 0, "budzenie ext1: GPIO35 ALL_LOW (wlozona ladowarka)");
+  sprawdz(!logMa("BATERIA ROZLADOWANA") && !tftMa("BATERIA ROZLADOWANA"), "zwykly sen z bezczynnosci: bez napisu o rozladowanej baterii");
+  sprawdz(g_atrapa.restarty == 0, "bez restartu");
+}
+
+void scenariuszSenUsbNieUsypia() {
+  // Ogniwo podlaczone I ladowarka w TP4056 (GPIO35 nisko) - zachowanie jak do v1.4.7.
+  g_atrapa.gpio[35] = LOW;
+  g_atrapa.adcMv[34] = 1950;
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  biegnij(400000);
+  sprawdz(g_atrapa.usnal == 0 && senJasno(), "na USB przez 6,5 min bez dotyku: pelna jasnosc, bez snu");
+  sprawdz(!logMa("tag=SEN"), "na USB: zadnej linii tag=SEN");
+  sprawdz(logMa("tag=BATERIA napiecie=3.90V", "ladowanie=1"), "wskaznik: ogniwo 3,90 V, laduje sie");
+
+  // Ladowarka wyjeta w trakcie: od tej chwili liczy sie bezczynnosc wg LVGL
+  // (ostatni dotyk byl dawno) - przyciemnienie przy najblizszym sprawdzeniu, sen
+  // nie od razu? Nie: bez dotyku od startu minelo > 5 min, wiec decyzja to sen.
+  // Zeby nie zaskoczyc uzytkownika, ktory wlasnie wyjal wtyczke, dotyk zeruje licznik.
+  lv_disp_trig_activity(NULL);
+  g_atrapa.gpio[35] = HIGH;
+  biegnij(2000);
+  sprawdz(g_atrapa.usnal == 0 && senJasno(), "ladowarka wyjeta tuz po dotyku: pracuje jasno");
+  biegnij(61000);
+  sprawdz(senPrzyciemnione(), "minute pozniej: przyciemnienie (panel juz na baterii)");
+
+  // Ladowarka z powrotem: jasnosc wraca sama (powod=usb).
+  size_t od = g_atrapa.serial.size();
+  g_atrapa.gpio[35] = LOW;
+  biegnij(1500);
+  sprawdz(senJasno() && logMa("tag=SEN zdarzenie=jasnosc powod=usb", "", "", od), "ladowarka wlozona: pelna jasnosc bez dotyku, log powod=usb");
+  biegnij(400000);
+  sprawdz(g_atrapa.usnal == 0, "dalej na USB: bez snu");
+
+  // Sam USB, bez ogniwa (jak na biurku): tez nigdy.
+  g_atrapa.adcMv[34] = 142;
+  biegnij(400000);
+  sprawdz(g_atrapa.usnal == 0 && senJasno() && ekranMa("USB"), "bez ogniwa (wskaznik USB): bez snu i przyciemniania");
+}
+
+void scenariuszSenAlarmIOta() {
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  // Alarm przegrzania od 10. sekundy, trwa 7 minut bez dotyku.
+  biegnij(10000);
+  ustaw(0, [](Centrala& c) { c.tOgrz = 135.0; c.alarmOgrzewanie = true; });
+  biegnij(5000);
+  sprawdz(ekranMa("PRZEGRZANIE"), "ekran alarmu");
+  sprawdz(logMa("tag=SEN zdarzenie=sen_wstrzymany powod=alarm"), "log: tag=SEN zdarzenie=sen_wstrzymany powod=alarm (raz)");
+  biegnij(420000);
+  sprawdz(g_atrapa.usnal == 0 && senJasno(), "7 min alarmu bez dotyku na baterii: jasno, bez snu");
+  sprawdz(ileLinii("tag=SEN zdarzenie=sen_wstrzymany") == 1, "linia sen_wstrzymany tylko raz, nie co sekunde");
+  // Alarm ustaje: licznik bezczynnosci jest stary (> 5 min) - panel przyciemnia i
+  // usypia dopiero po normalnych progach liczonych od... ostatniego dotyku. Nikt
+  // nie dotykal od startu, wiec sen przychodzi w ciagu sekundy. To zamierzone:
+  // alarm sie skonczyl, nikogo nie bylo przy panelu.
+  ustaw(0, [](Centrala& c) { c.tOgrz = 70.0; c.alarmOgrzewanie = false; });
+  biegnij(8000);
+  sprawdz(g_atrapa.usnal == 1 && logMa("tag=SEN zdarzenie=usypianie powod=bez_dotyku"), "alarm ustal, nikt nie dotykal od 7 min: sen");
+}
+
+#ifdef DIAG_MA_OTA
+void scenariuszSenOta() {
+  senOgniwoNaBaterii(2050);   // 4,10 V - duzo powyzej progu OTA_BATERIA_MIN_PROC (30 %)
+  ustaw(0, [](Centrala& c) { c.otaBajtowNaMs = 6; });   // wolne lacze: 1,2 MB idzie ok. 200 s
+  otaWlaczPanel(25000);       // po OTA_PO_STARCIE_MS, bez dotyku od startu
+  const std::string plik = programPanelu(OTA_ROZMIAR_PLIKU, 0x31);
+  otaCentralaWystawia(OTA_TAG_WYDANIA, plik);
+  const size_t od = g_atrapa.serial.size();
+  const long doStartu = otaCzekajNaLog("tag=OTA-PANEL zdarzenie=start ", "", od, 10000);
+  sprawdz(doStartu >= 0, "aktualizacja panelu ruszyla (na baterii 4,10 V)");
+  biegnij(5000);
+  sprawdz(ekranMa("AKTUALIZACJA PANELU"), "nakladka aktualizacji na ekranie");
+  // Od startu minelo > 1 min bez dotyku, trwa pobieranie: zadnego przyciemnienia ani snu.
+  biegnij(60000);
+  info("%s", liniaLogu("tag=SEN", od).c_str());
+  sprawdz(senJasno() && g_atrapa.usnal == 0, "w trakcie pobierania na baterii: jasno, bez snu (ponad 1,5 min bez dotyku)");
+  sprawdz(logMa("tag=SEN zdarzenie=sen_wstrzymany powod=ota", "", "", od), "log: tag=SEN zdarzenie=sen_wstrzymany powod=ota");
+  sprawdz(!logMa("tag=SEN zdarzenie=przyciemnienie", "", "", od), "bez przyciemnienia w trakcie pobierania");
+}
+#else
+void scenariuszSenOta() { sprawdz(false, "firmware ma aktualizacje OTA w postaci z v1.4.0 (diagnostyka_panelu.h: DIAG_MA_OTA)"); }
+#endif
+
+void scenariuszSenRozladowana() {
+  // Ogniwo 3,25 V (1625 mV na dzielniku): ponizej SEN_NAPIECIE_MIN_V.
+  senOgniwoNaBaterii(1625);
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  const unsigned long poSetup = millis();
+  lv_disp_trig_activity(NULL);   // ktos wlasnie dotknal - nie ma znaczenia
+  biegnij(6000);
+  info("%s", liniaLogu("tag=SEN zdarzenie=usypianie").c_str());
+  sprawdz(g_atrapa.usnal == 1, "ogniwo 3,25 V bez ladowarki: sen od razu po starcie, mimo dotyku");
+  sprawdz(logMa("tag=SEN zdarzenie=usypianie powod=bateria_rozladowana", "napiecie=3.25V"), "log: powod=bateria_rozladowana napiecie=3.25V");
+  sprawdz(tftMa("BATERIA ROZLADOWANA") && tftMa("Podlacz ladowarke. Panel usypia."), "napis \"BATERIA ROZLADOWANA / Podlacz ladowarke. Panel usypia.\" przed snem");
+  info("od konca setup() do snu: %lu ms (w tym napis %u ms)", g_atrapa.usnalMs - poSetup, (unsigned)diag::SEN_NAPIS_MS);
+  sprawdz(g_atrapa.usnalMs - poSetup >= diag::SEN_NAPIS_MS && g_atrapa.usnalMs - poSetup <= diag::SEN_NAPIS_MS + 1500, "napis stoi 2,5 s, potem sen");
+  sprawdz(g_atrapa.pinTrzymany[21] && g_atrapa.pinTrzymany[13] && senWypelnienie() == 0, "podswietlenie 0 i hold na GPIO21/GPIO13 jak przy zwyklym snie");
+}
+
+void scenariuszSenRozladowanaAlarm() {
+  // 3,25 V + alarm: alarm wazniejszy (ekran i brzeczyk zostaja). 3,05 V: sen mimo alarmu.
+  senOgniwoNaBaterii(1625);
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  ustaw(0, [](Centrala& c) { c.tOgrz = 135.0; c.alarmOgrzewanie = true; });
+  setup();
+  biegnij(30000);
+  sprawdz(g_atrapa.usnal == 0 && ekranMa("PRZEGRZANIE"), "3,25 V w alarmie: panel nie spi, ekran alarmu stoi");
+  g_atrapa.adcMv[34] = 1525;   // 3,05 V
+  biegnij(35000);              // nastepny pomiar baterii (co 30 s) + decyzja
+  sprawdz(g_atrapa.usnal == 1 && logMa("tag=SEN zdarzenie=usypianie powod=bateria_krytyczna", "napiecie=3.05V"), "3,05 V w alarmie: sen (powod=bateria_krytyczna), brzeczyk wyciszony");
+  sprawdz(g_atrapa.tonHz == 0 && g_atrapa.gpio[13] == LOW, "brzeczyk przed snem: cisza");
 }
 
 // --- polskie litery (v1.4.5) ------------------------------------------------
@@ -5231,6 +5443,12 @@ const Scenariusz SCENARIUSZE[] = {
     {"zasilanie", "ekran ZASILANIE: taktowanie 240/160/80 MHz i moc nadajnika 19,5/15/11/8,5 dBm - domyslnie bez zmian, zapis w NVS, odczyt, ostrzezenie przy slabym sygnale (v1.4.7)", scenariuszZasilanie},
     {"zasilanie_po_restarcie", "ekran ZASILANIE: zapisane 80 MHz i 8,5 dBm wracaja po restarcie (v1.4.7)", scenariuszZasilaniePoRestarcie},
     {"zasilanie_zly_indeks", "ekran ZASILANIE: nieznany indeks w NVS spada na domyslne (v1.4.7)", scenariuszZasilanieZlyIndeks},
+    {"sen_na_baterii", "sen (v1.5.0): na baterii 1 min bez dotyku -> 5 % jasnosci, dotyk/przycisk przywraca, 5 min -> gleboki sen z hold na GPIO21/13 i budzeniem ext0/ext1", scenariuszSenNaBaterii},
+    {"sen_usb_nie_usypia", "sen (v1.5.0): na USB (z ogniwem i bez) nigdy nie przyciemnia ani nie usypia; wyjecie/wlozenie ladowarki", scenariuszSenUsbNieUsypia},
+    {"sen_alarm", "sen (v1.5.0): alarm wstrzymuje przyciemnienie i sen; po ustaniu alarmu sen wg licznika", scenariuszSenAlarmIOta},
+    {"sen_ota", "sen (v1.5.0): aktualizacja panelu na baterii wstrzymuje przyciemnienie i sen", scenariuszSenOta},
+    {"sen_rozladowana", "sen (v1.5.0): ogniwo 3,25 V bez ladowarki - napis i sen od razu", scenariuszSenRozladowana},
+    {"sen_rozladowana_alarm", "sen (v1.5.0): 3,25 V w alarmie panel nie spi; 3,05 V - sen mimo alarmu", scenariuszSenRozladowanaAlarm},
     {"pomiar_obciazenia", "ile panel rysuje, pyta centrale i prosi o pamiec, gdy nic sie nie zmienia (tylko pomiar_obciazenia.sh)", scenariuszPomiarObciazenia},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},
@@ -5347,6 +5565,8 @@ int main(int argc, char** argv) {
   } catch (const AtrapaRestart&) {
     // ESP.restart() wywolany poza loop() (np. z setup()) - scenariusz konczy sie tutaj.
     g_poRestarcie = true;
+  } catch (const AtrapaSen&) {
+    g_poRestarcie = true;   // [v1.5.0] usniecie poza biegnij() - jak wyzej
   }
   if (!restartOczekiwany(wybrany->nazwa)) sprawdz(g_atrapa.restarty == 0, "panel nie zrestartowal sie sam w tym scenariuszu");
   zapiszLog();

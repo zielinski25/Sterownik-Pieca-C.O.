@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.4.7
+# Panel LCD (wyświetlacz CO) — firmware v1.5.0
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,68 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.0
+
+**Praca na baterii: przyciemnienie po minucie, głęboki sen po pięciu,
+budzenie przyciskiem albo ładowarką** (krok 3 planu z
+`WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`; tematy B1/B5 i 14). Sprzęt
+zasilania panelu jest zlutowany i sprawdzony (20.11: TP4056 + MT3608,
+dzielnik 100k/100k na GPIO34 — odczyt 3,32 V/1 % i 3,97 V/76 % zgodny z
+multimetrem, GPIO35 z 10k do 3V3, brzęczyk przez C945 na GPIO13, przycisk
+GPIO14 → 1 kΩ → GND; rysunki: `docs/schemat-zasilania/`). Kod snu
+(`idzSpac()`), który od v1.4.4 nikt nie wołał, jest wreszcie podpięty — pod
+LVGL.
+
+| Sytuacja | Było (v1.4.7) | Jest (v1.5.0) |
+|---|---|---|
+| **na baterii** (ogniwo na dzielniku, TP4056 bez USB), 1 min bez dotyku | nic | podświetlenie **5 %** (`tag=SEN zdarzenie=przyciemnienie`); panel pracuje dalej, dane i alarmy jak dotąd |
+| dotknięcie szyby albo **przycisk GPIO14** w czasie pracy | — | jasność wraca od razu (dzienna albo nocna wg harmonogramu), licznik od nowa (`tag=SEN zdarzenie=jasnosc powod=dotyk`) |
+| na baterii, 5 min bez dotyku | nic | **głęboki sen** (`tag=SEN zdarzenie=usypianie powod=bez_dotyku napiecie=3.90V bez_dotyku_s=300`): podświetlenie 0, ILI9488 Sleep IN, `gpio_hold_en` na GPIO21 (podświetlenie) **i GPIO13 (brzęczyk)** |
+| budzenie | przycisk GPIO14 (ext0) — kod był, nie działał | **przycisk GPIO14** (ext0, stan niski) **albo włożenie ładowarki** (ext1 na GPIO35: TP4056 ściąga CHRG/STDBY do masy). Log: `tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk\|usb`. Po wybudzeniu pełny start panelu (kilka sekund), bez pauzy ekranu startowego |
+| **na USB** (ładowarka w TP4056, z ogniwem albo bez) | nic | **nic** — dokładnie jak dotąd, żadnego przyciemniania ani snu |
+| alarm (centrala zgłasza albo brzęczyk gra) | — | sen i przyciemnienie wstrzymane, ekran alarmu jasny (`tag=SEN zdarzenie=sen_wstrzymany powod=alarm`, raz) |
+| aktualizacja panelu przez centralę | — | wstrzymane tak samo (`powod=ota`) |
+| ogniwo **poniżej 3,30 V** bez ładowarki | nic (ogniwo rozładowałoby się do odcięcia) | napis **„BATERIA ROZLADOWANA / Podlacz ladowarke. Panel usypia.”** przez 2,5 s i sen od razu, także zaraz po dotknięciu (`powod=bateria_rozladowana`). W alarmie panel czeka do **3,10 V** (`powod=bateria_krytyczna`) |
+| pierwszy pomiar baterii | 30 s po starcie (wskaźnik przez pół minuty „USB”) | **od razu po starcie**, potem co 30 s |
+
+Progi są w `src/diagnostyka_panelu.h`, sekcja `[v1.5.0 SEN]`
+(`SEN_PRZYCIEMNIJ_PO_MS`, `SEN_USPIJ_PO_MS`, `SEN_JASNOSC_PROC`,
+`SEN_NAPIECIE_MIN_V`, `SEN_NAPIECIE_KRYT_V`); decyzja to czysta funkcja
+`diag::senDecyzja()`, liczona co sekundę w `senKrok()` (`main.cpp`).
+Licznik bezczynności prowadzi LVGL (`lv_disp_get_inactive_time()`, ten sam,
+którego od v1.4.0 używa aktualizacja); liczy się od końca `setup()`.
+
+**Czego się spodziewać na płytce** (pomiary z 20.11, tester USB przed
+TP4056, 5 V, WiFi włączone): ekran 100 % **238 mA**, ekran 5 % **157 mA**,
+brzęczyk ciągły **+7 mA**, szczyt przy starcie < 260 mA. We śnie: wg starego
+pomiaru 0,11 mA sam ESP32 + ekran; do tego AMS1117 DevKita (~5 mA), dioda
+zasilania DevKita (1,5–2 mA) i MT3608 bez obciążenia — realnie **kilka mA
+z ogniwa**, do zmierzenia multimetrem (200 mA) szeregowo w OUT+ TP4056 →
+VIN+ MT3608, cel < 10 mA. Na jednym ogniwie Cubot (~4150 mAh): ok. 12 h z
+jasnym ekranem, ok. 18 h przyciemniony, we śnie — tygodnie. Taktowanie
+**160 MHz** (−11 mA) ustawia się na ekranie ZASILANIE i zostaje w NVS;
+domyślne 240 MHz bez zmian.
+
+**Testy na PC** (`testy_host/uruchom_testy.sh`): 24 nowe sprawdzenia
+jednostkowe `senDecyzja()` i 6 scenariuszy `sen_*` (55 sprawdzeń): minuta →
+5 %, dotyk i przycisk przywracają, 5 min → `esp_deep_sleep_start()` z hold na
+GPIO21/13 i budzeniem ext0 (GPIO14) + ext1 (GPIO35); na USB (z ogniwem i
+bez) nigdy; wyjęcie i włożenie ładowarki; alarm i aktualizacja wstrzymują;
+3,25 V → napis i sen od razu; 3,25 V w alarmie — nie, 3,05 V — tak. Atrapy:
+`esp_deep_sleep_start()` (jak `ESP.restart()`: kończy pętlę), `ext1`,
+`gpio_hold_en/dis`. `pomiar_obciazenia.sh` mierzy stany A–F na USB (na
+baterii panel by usnął), a na końcu podaje, po ilu sekundach na baterii
+ekran przygasł i panel usnął. Razem 63 scenariusze, 710 sprawdzeń.
+
+**Z v1.4.7 na v1.5.0** zmieniają się: `src/main.cpp`,
+`src/diagnostyka_panelu.h`, `src/dashboard_lvgl_poc.cpp`,
+`src/dashboard_lvgl_poc.h`, `testy_host/`, `docs/schemat-zasilania/`. Można
+wgrać kablem albo przez centralę (`/update_panel`). Centrala bez zmian
+(3.58.10 zostaje). **Po wgraniu sprawdź** (szczegóły: `docs/schemat-zasilania/README.md`,
+„Sprawdzenie v1.5.0”): na baterii bez ładowarki po minucie ekran przygasa,
+po pięciu gaśnie; przycisk budzi; ładowarka budzi; na ładowarce nic z tego
+się nie dzieje.
 
 ## Co zmienia v1.4.7
 
