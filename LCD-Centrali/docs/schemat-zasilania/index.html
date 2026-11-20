@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Panel LCD – widok montażowy: moduły i przewody</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#0f141a;--panel:#171e26;--line:#2a3542;--txt:#e6edf3;--mut:#9aa7b4}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:15px}
+  header{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0}
+  header a{color:#64b5f6;font-weight:700}
+  main{display:grid;grid-template-columns:1fr;gap:12px;padding:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card h2{font-size:14px;margin:0 0 10px;color:#cdd9e5;text-transform:uppercase;letter-spacing:.05em}
+  .tb{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  .tb button{background:#263241;color:#fff;border:1px solid #3b4b5e;border-radius:7px;padding:6px 12px;cursor:pointer;font-size:14px}
+  .tb input[type=range]{width:200px}
+  .svgwrap{overflow:auto;max-height:84vh;border-radius:8px;background:#4b545c;border:1px solid #333}
+  svg{display:block;background:#4b545c}
+  text{font-family:ui-monospace,Consolas,monospace;fill:#fff;pointer-events:none}
+  .ttl{font-size:24px;font-weight:700}
+  .silk{font-size:15px}
+  .small{font-size:13px;fill:#eee}
+  .dark{fill:#111}
+  .pad{fill:#e2c069;stroke:#7a5a1a;stroke-width:1.5}
+  .hole{fill:#1b1b1b}
+  .pinbox{fill:#1a1a1a;stroke:#888;stroke-width:1}
+  .wire{fill:none;stroke-width:7;stroke-linecap:round;stroke-linejoin:round;cursor:pointer;transition:opacity .15s}
+  .wire.dash{stroke-dasharray:14 10}
+  .ol{fill:none;stroke:#111;stroke-width:11;stroke-linecap:round;stroke-linejoin:round;opacity:.9;pointer-events:none}
+  svg.dim .wire:not(.hl){opacity:.12} svg.dim .ol:not(.hl){opacity:.08} svg.dim .nb:not(.hl){opacity:.12}
+  .wire.hl{stroke-width:10} .ol.hl{stroke:#ffeb3b;stroke-width:16;opacity:1}
+  .nb circle{fill:#fff;stroke:#111;stroke-width:2} .nb text{fill:#111;font-size:16px;font-weight:700}
+  .nb.hl circle{fill:#ffeb3b}
+  .list{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:6px}
+  .it{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:7px;cursor:pointer;background:#131a21}
+  .it:hover,.it.on{background:#223042;border-color:#4a6a8f}
+  .it .n{flex:none;width:28px;height:28px;border-radius:50%;background:#fff;color:#111;font-weight:700;display:flex;align-items:center;justify-content:center;border:3px solid #000}
+  .it b{color:#fff} .it small{color:var(--mut);display:block;margin-top:2px}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+  th{background:#1d2731}
+  code{background:#0b0f13;padding:1px 5px;border-radius:4px;font-size:13px;color:#ffd27a}
+  .note{color:var(--mut);font-size:13px}
+  .band{display:inline-block;width:46px;height:14px;border-radius:7px;background:#d7c4a3;position:relative;vertical-align:middle;margin-right:6px;border:1px solid #8a7a5a}
+  .band i{position:absolute;top:0;bottom:0;width:5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Widok montażowy – moduły i przewody (numer na przewodzie = numer na liście)</h1>
+  <a href="brzeczyk.html">→ brzęczyk: osobny rysunek</a>
+  <a href="symulacja.html">→ schemat ideowy + symulacja</a>
+</header>
+<main>
+<section class="card">
+<div class="tb">
+  <span>Powiększenie:</span>
+  <button id="zm">−</button><input type="range" id="zoom" min="50" max="300" value="100"><button id="zp">+</button>
+  <span id="zv">100 %</span>
+  <button id="zfit">Dopasuj do szerokości</button>
+  <button id="zall">Pokaż wszystkie przewody</button>
+  <span class="note">Ctrl + kółko = zoom. Najedź/kliknij przewód albo pozycję na liście pod rysunkiem.</span>
+</div>
+<div class="svgwrap" id="wrap">
+<svg id="svg" viewBox="0 0 1300 1980" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pcbRed" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d32f2f"/><stop offset="1" stop-color="#8e1b1b"/></linearGradient>
+    <linearGradient id="pcbBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1976d2"/><stop offset="1" stop-color="#0d3d7a"/></linearGradient>
+    <linearGradient id="pcbBlk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#23282c"/><stop offset="1" stop-color="#0c0e10"/></linearGradient>
+    <linearGradient id="pcbGrn" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e7d32"/><stop offset="1" stop-color="#1b4d1e"/></linearGradient>
+    <linearGradient id="cell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7cc4f5"/><stop offset=".5" stop-color="#2f8fd6"/><stop offset="1" stop-color="#17589a"/></linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eee"/><stop offset="1" stop-color="#999"/></linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cfd8dc"/><stop offset="1" stop-color="#78909c"/></linearGradient>
+    <pattern id="perf" width="24" height="24" patternUnits="userSpaceOnUse"><rect width="24" height="24" fill="#b58a4a"/><circle cx="12" cy="12" r="4" fill="#e2c069" stroke="#7a5a25" stroke-width="1"/><circle cx="12" cy="12" r="1.8" fill="#222"/></pattern>
+  </defs>
+
+  <!-- ================= TP4056 ================= -->
+  <g transform="translate(80,100)">
+    <text x="300" y="-16" text-anchor="middle" class="ttl">1. Moduł TP4056 (03962A)</text>
+    <rect width="600" height="340" rx="12" fill="url(#pcbRed)" stroke="#4a0c0c" stroke-width="2"/>
+    <rect x="-40" y="110" width="100" height="120" rx="8" fill="url(#shield)" stroke="#555"/>
+    <text x="10" y="165" text-anchor="middle" class="silk dark">micro</text><text x="10" y="186" text-anchor="middle" class="silk dark">USB</text>
+    <!-- pady -->
+    <g transform="translate(20,30)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="42" y="22" class="silk">IN+</text>
+    <g transform="translate(20,310)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="42" y="326" class="silk">IN−</text>
+    <g transform="translate(580,30)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="558" y="22" text-anchor="end" class="silk">OUT+</text>
+    <g transform="translate(580,120)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="558" y="126" text-anchor="end" class="silk">B+</text>
+    <g transform="translate(580,220)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="558" y="226" text-anchor="end" class="silk">B−</text>
+    <g transform="translate(580,310)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="558" y="326" text-anchor="end" class="silk">OUT−</text>
+    <!-- TP4056 -->
+    <rect x="250" y="110" width="110" height="110" rx="3" fill="#111" stroke="#555"/>
+    <circle cx="262" cy="122" r="4" fill="#777"/>
+    <text x="305" y="158" text-anchor="middle" class="silk">TP4056</text>
+    <g fill="#bbb">
+      <rect x="236" y="124" width="14" height="6"/><rect x="236" y="149" width="14" height="6"/><rect x="236" y="174" width="14" height="6"/><rect x="236" y="199" width="14" height="6"/>
+      <rect x="360" y="124" width="14" height="6"/><rect x="360" y="149" width="14" height="6"/><rect x="360" y="174" width="14" height="6"/><rect x="360" y="199" width="14" height="6"/>
+    </g>
+    <text x="226" y="132" text-anchor="end" class="small">1</text><text x="226" y="207" text-anchor="end" class="small">4</text>
+    <text x="382" y="132" class="small">8 CE</text><text x="382" y="157" class="small" fill="#ffe082">7 CHRG</text><text x="382" y="182" class="small" fill="#ffe082">6 STDBY</text><text x="382" y="207" class="small">5 BAT</text>
+    <!-- LED footprints -->
+    <rect x="130" y="60" width="50" height="22" fill="none" stroke="#ffcc80" stroke-dasharray="4 3" stroke-width="1.5"/>
+    <rect x="126" y="63" width="8" height="16" class="pad"/><rect x="176" y="63" width="8" height="16" class="pad"/>
+    <text x="120" y="78" text-anchor="end" class="small">LED R</text>
+    <rect x="130" y="100" width="50" height="22" fill="none" stroke="#90caf9" stroke-dasharray="4 3" stroke-width="1.5"/>
+    <rect x="126" y="103" width="8" height="16" class="pad"/><rect x="176" y="103" width="8" height="16" class="pad"/>
+    <text x="120" y="118" text-anchor="end" class="small">LED B</text>
+    <text x="130" y="48" class="small" fill="#ffe082">wylutowane – lutuj do padów KATOD (prawe)</text>
+    <path d="M 184 71 H 210 V 152 H 236 M 184 111 H 204 V 177 H 236" fill="none" stroke="#f5b0a0" stroke-width="2" opacity=".9"/>
+    <!-- R1/R2 1k -->
+    <rect x="60" y="64" width="22" height="12" fill="#222" stroke="#777"/><rect x="60" y="104" width="22" height="12" fill="#222" stroke="#777"/>
+    <text x="50" y="90" text-anchor="end" class="small">1k</text><text x="50" y="135" text-anchor="end" class="small">1k</text>
+    <!-- R_PROG -->
+    <rect x="286" y="240" width="34" height="14" fill="#222" stroke="#777"/><text x="303" y="251" text-anchor="middle" class="small">122</text>
+    <text x="330" y="252" class="small">R3 PROG 1,2k (1 A)</text>
+    <!-- DW01A / FS8205 -->
+    <rect x="420" y="150" width="60" height="34" fill="#111" stroke="#555"/><text x="450" y="172" text-anchor="middle" class="small">DW01A</text>
+    <rect x="410" y="200" width="90" height="36" fill="#111" stroke="#555"/><text x="455" y="223" text-anchor="middle" class="small">FS8205A</text>
+    <text x="300" y="322" text-anchor="middle" class="small">kieruj się napisami na laminacie – układ padów bywa inny</text>
+  </g>
+
+  <!-- ================= OGNIWO ================= -->
+  <g transform="translate(80,520)">
+    <text x="300" y="-16" text-anchor="middle" class="ttl">2. Ogniwo 18650 w koszyku (lub LiPo 1S)</text>
+    <rect width="600" height="180" rx="10" fill="#1c1c1c" stroke="#000" stroke-width="2"/>
+    <rect x="40" y="30" width="520" height="110" rx="55" fill="url(#cell)" stroke="#0b3b66"/>
+    <rect x="548" y="65" width="16" height="40" rx="4" fill="url(#metal)"/>
+    <text x="300" y="94" text-anchor="middle" style="font-size:22px;font-weight:700">Li‑ion 3,7 V  18650</text>
+    <text x="75" y="96" style="font-size:30px;font-weight:700">−</text><text x="510" y="96" style="font-size:30px;font-weight:700">+</text>
+    <g transform="translate(20,160)"><circle r="12" class="pad"/></g><text x="40" y="166" class="silk">− czarny</text>
+    <g transform="translate(580,160)"><circle r="12" class="pad"/></g><text x="560" y="166" text-anchor="end" class="silk">+ czerwony</text>
+  </g>
+
+  <!-- ================= MT3608 ================= -->
+  <g transform="translate(80,780)">
+    <text x="300" y="-16" text-anchor="middle" class="ttl">3. Moduł MT3608 step‑up (ustaw 5,0–5,1 V!)</text>
+    <rect width="600" height="260" rx="12" fill="url(#pcbBlue)" stroke="#06284d" stroke-width="2"/>
+    <g transform="translate(20,30)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="42" y="22" class="silk">VIN+</text>
+    <g transform="translate(20,230)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="42" y="246" class="silk">VIN−</text>
+    <g transform="translate(580,30)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="558" y="22" text-anchor="end" class="silk">VOUT+</text>
+    <g transform="translate(580,230)"><circle r="14" class="pad"/><circle r="6" class="hole"/></g><text x="558" y="246" text-anchor="end" class="silk">VOUT−</text>
+    <circle cx="210" cy="130" r="55" fill="#3a3a3a" stroke="#111" stroke-width="3"/><circle cx="210" cy="130" r="32" fill="#5a5a5a"/>
+    <text x="210" y="136" text-anchor="middle" class="small">cewka 220</text>
+    <rect x="300" y="100" width="56" height="42" fill="#111" stroke="#555"/><text x="328" y="127" text-anchor="middle" class="small">B628</text>
+    <text x="328" y="162" text-anchor="middle" class="small">MT3608</text>
+    <rect x="290" y="185" width="70" height="30" fill="#1a1a1a" stroke="#666"/><rect x="348" y="185" width="8" height="30" fill="#ddd"/><text x="320" y="206" text-anchor="middle" class="small">SS34</text>
+    <rect x="400" y="60" width="120" height="130" rx="6" fill="#1e88e5" stroke="#0a3a70"/>
+    <circle cx="460" cy="95" r="18" fill="#ddd" stroke="#555"/><line x1="447" y1="95" x2="473" y2="95" stroke="#333" stroke-width="3"/>
+    <text x="460" y="150" text-anchor="middle" class="small">3296W</text><text x="460" y="172" text-anchor="middle" class="small">25 obrotów</text>
+    <text x="460" y="215" text-anchor="middle" class="silk" fill="#ffe082">kręć → 5,0–5,1 V</text>
+    <text x="300" y="248" text-anchor="middle" class="small">napięcie ustaw BEZ obciążenia, dopiero potem przewód do ESP32</text>
+  </g>
+
+  <!-- ================= PŁYTKA UNIWERSALNA ================= -->
+  <g transform="translate(80,1120)">
+    <text x="300" y="-16" text-anchor="middle" class="ttl">4. Płytka uniwersalna – elementy</text>
+    <rect width="600" height="760" rx="10" fill="url(#perf)" stroke="#5a3f14" stroke-width="2"/>
+    <!-- R1 -->
+    <g transform="translate(60,60)">
+      <line x1="0" y1="10" x2="120" y2="10" stroke="#ccc" stroke-width="3"/>
+      <rect x="20" y="0" width="80" height="20" rx="10" fill="#d7c4a3" stroke="#8a7a5a"/>
+      <rect x="30" y="0" width="7" height="20" fill="#5d4037"/><rect x="41" y="0" width="7" height="20" fill="#000"/><rect x="52" y="0" width="7" height="20" fill="#000"/><rect x="63" y="0" width="7" height="20" fill="#fb8c00"/><rect x="82" y="0" width="7" height="20" fill="#5d4037"/>
+      <text x="60" y="42" text-anchor="middle" class="silk">R1 100k</text>
+    </g>
+    <!-- R2 -->
+    <g transform="translate(60,140)">
+      <line x1="0" y1="10" x2="120" y2="10" stroke="#ccc" stroke-width="3"/>
+      <rect x="20" y="0" width="80" height="20" rx="10" fill="#d7c4a3" stroke="#8a7a5a"/>
+      <rect x="30" y="0" width="7" height="20" fill="#5d4037"/><rect x="41" y="0" width="7" height="20" fill="#000"/><rect x="52" y="0" width="7" height="20" fill="#000"/><rect x="63" y="0" width="7" height="20" fill="#fb8c00"/><rect x="82" y="0" width="7" height="20" fill="#5d4037"/>
+      <text x="60" y="42" text-anchor="middle" class="silk">R2 100k</text>
+    </g>
+    <!-- C -->
+    <g transform="translate(330,60)">
+      <line x1="0" y1="0" x2="0" y2="50" stroke="#ccc" stroke-width="3"/><line x1="20" y1="0" x2="20" y2="50" stroke="#ccc" stroke-width="3"/>
+      <ellipse cx="10" cy="14" rx="22" ry="16" fill="#f9a825" stroke="#b7791f"/><text x="10" y="19" text-anchor="middle" class="small dark">105</text>
+      <text x="10" y="72" text-anchor="middle" class="silk">C 1 µF</text>
+    </g>
+    <!-- R3 10k -->
+    <g transform="translate(400,140)">
+      <line x1="0" y1="10" x2="120" y2="10" stroke="#ccc" stroke-width="3"/>
+      <rect x="20" y="0" width="80" height="20" rx="10" fill="#d7c4a3" stroke="#8a7a5a"/>
+      <rect x="30" y="0" width="7" height="20" fill="#5d4037"/><rect x="41" y="0" width="7" height="20" fill="#000"/><rect x="52" y="0" width="7" height="20" fill="#fb8c00"/><rect x="78" y="0" width="7" height="20" fill="#d4af37"/>
+      <text x="60" y="42" text-anchor="middle" class="silk">R3 10k</text>
+    </g>
+    <!-- R4 1k -->
+    <g transform="translate(60,220)">
+      <line x1="0" y1="10" x2="120" y2="10" stroke="#ccc" stroke-width="3"/>
+      <rect x="20" y="0" width="80" height="20" rx="10" fill="#d7c4a3" stroke="#8a7a5a"/>
+      <rect x="30" y="0" width="7" height="20" fill="#5d4037"/><rect x="41" y="0" width="7" height="20" fill="#000"/><rect x="52" y="0" width="7" height="20" fill="#e53935"/><rect x="78" y="0" width="7" height="20" fill="#d4af37"/>
+      <text x="60" y="42" text-anchor="middle" class="silk">R4 1k</text>
+    </g>
+    <!-- przycisk -->
+    <g transform="translate(330,300)">
+      <rect x="0" y="0" width="80" height="70" rx="6" fill="#111" stroke="#555"/><circle cx="40" cy="35" r="20" fill="#333" stroke="#777"/><circle cx="40" cy="35" r="12" fill="#555"/>
+      <rect x="-10" y="10" width="10" height="8" fill="#ccc"/><rect x="-10" y="52" width="10" height="8" fill="#ccc"/><rect x="80" y="10" width="10" height="8" fill="#ccc"/><rect x="80" y="52" width="10" height="8" fill="#ccc"/>
+      <text x="40" y="96" text-anchor="middle" class="silk">przycisk tact</text>
+      <text x="40" y="116" text-anchor="middle" class="small">nóżki z przeciwnych boków</text>
+    </g>
+    <!-- moduł brzęczyka 3-pin -->
+    <g transform="translate(60,420)">
+      <rect width="200" height="160" rx="8" fill="url(#pcbGrn)" stroke="#0f3312" stroke-width="2"/>
+      <circle cx="100" cy="70" r="48" fill="#111" stroke="#444" stroke-width="3"/><circle cx="100" cy="70" r="7" fill="#000" stroke="#333"/>
+      <rect x="20" y="130" width="22" height="16" fill="#111" stroke="#666"/><text x="31" y="128" text-anchor="middle" class="small">Q1</text>
+      <rect x="60" y="135" width="18" height="8" fill="#222" stroke="#777"/>
+      <g fill="#ddd"><rect x="106" y="160" width="8" height="26"/><rect x="136" y="160" width="8" height="26"/><rect x="166" y="160" width="8" height="26"/></g>
+      <text x="110" y="156" text-anchor="middle" class="small">GND</text><text x="140" y="156" text-anchor="middle" class="small">IO</text><text x="170" y="156" text-anchor="middle" class="small">VCC</text>
+      <text x="100" y="215" text-anchor="middle" class="silk">moduł brzęczyka</text>
+      <text x="100" y="236" text-anchor="middle" class="small">GND · IO · VCC  (J3Y + 101)</text>
+    </g>
+    <!-- R5 1k do IO brzęczyka -->
+    <g transform="translate(330,500)">
+      <line x1="0" y1="10" x2="120" y2="10" stroke="#ccc" stroke-width="3"/>
+      <rect x="20" y="0" width="80" height="20" rx="10" fill="#d7c4a3" stroke="#8a7a5a"/>
+      <rect x="30" y="0" width="7" height="20" fill="#5d4037"/><rect x="41" y="0" width="7" height="20" fill="#000"/><rect x="52" y="0" width="7" height="20" fill="#e53935"/><rect x="78" y="0" width="7" height="20" fill="#d4af37"/>
+      <text x="60" y="42" text-anchor="middle" class="silk">R5 1k</text>
+    </g>
+    <!-- Q1 NPN -->
+    <g transform="translate(300,560)">
+      <path d="M 0 40 V 20 A 25 25 0 0 1 50 20 V 40 Z" fill="#111" stroke="#666" stroke-width="1.5"/>
+      <line x1="10" y1="40" x2="10" y2="60" stroke="#ccc" stroke-width="3"/><line x1="25" y1="40" x2="25" y2="60" stroke="#ccc" stroke-width="3"/><line x1="40" y1="40" x2="40" y2="60" stroke="#ccc" stroke-width="3"/>
+      <text x="10" y="76" text-anchor="middle" class="small">E</text><text x="25" y="76" text-anchor="middle" class="small">B</text><text x="40" y="76" text-anchor="middle" class="small">C</text>
+      <text x="25" y="12" text-anchor="middle" class="silk">Q1 NPN</text>
+    </g>
+    <!-- szyna GND -->
+    <rect x="40" y="700" width="520" height="8" fill="#333" stroke="#000"/><text x="300" y="692" text-anchor="middle" class="silk">szyna GND płytki</text>
+  </g>
+
+  <!-- ================= ESP32 DevKit ================= -->
+  <g transform="translate(860,100)">
+    <text x="140" y="-16" text-anchor="middle" class="ttl">5. ESP32 DevKit V1</text>
+    <rect width="280" height="1000" rx="10" fill="url(#pcbBlk)" stroke="#000" stroke-width="2"/>
+    <rect x="70" y="20" width="140" height="150" fill="url(#shield)" stroke="#555"/><text x="140" y="100" text-anchor="middle" class="small dark" style="font-weight:700">WROOM‑32</text>
+    <rect x="100" y="760" width="56" height="34" fill="#111" stroke="#555"/><text x="128" y="782" text-anchor="middle" class="small">AMS1117</text>
+    <rect x="60" y="930" width="36" height="26" fill="#333" stroke="#777"/><text x="78" y="976" text-anchor="middle" class="small">EN</text>
+    <rect x="184" y="930" width="36" height="26" fill="#333" stroke="#777"/><text x="202" y="976" text-anchor="middle" class="small">BOOT</text>
+    <rect x="105" y="975" width="70" height="30" rx="4" fill="url(#shield)" stroke="#555"/>
+    <text x="140" y="1035" text-anchor="middle" class="small" fill="#ff8a80">USB płytki tylko bez ogniwa</text>
+    <g id="pinsL"></g><g id="pinsR"></g>
+  </g>
+
+  <!-- USB wtyk -->
+  <g transform="translate(-10,230)">
+    <rect x="0" y="0" width="60" height="50" rx="8" fill="#111" stroke="#555"/><text x="30" y="30" text-anchor="middle" class="small">USB 5V</text>
+  </g>
+
+  <g id="ols"></g><g id="wires"></g><g id="nbs"></g>
+</svg>
+</div>
+</section>
+
+<section class="card">
+  <h2>Połączenia – numer jak na rysunku (najedź / kliknij)</h2>
+  <div class="list" id="list"></div>
+</section>
+
+<section class="card">
+  <h2>Lista zakupów</h2>
+  <table>
+    <tr><th>Element</th><th>Ile</th><th>Oznaczenie / uwagi</th></tr>
+    <tr><td>Moduł TP4056 z zabezpieczeniem</td><td>1</td><td>03962A (6 padów: IN±, B±, OUT±), <b>nie</b> wersja 4‑padowa bez DW01A</td></tr>
+    <tr><td>Moduł MT3608</td><td>1</td><td>masz; ustaw 5,0–5,1 V przed podłączeniem</td></tr>
+    <tr><td>Rezystor 100 kΩ 1 %</td><td>2</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#000"></i><i style="left:29px;background:#fb8c00"></i><i style="left:38px;background:#5d4037"></i></span>brąz‑czarny‑czarny‑pomarańcz‑brąz (albo 5 %: brąz‑czarny‑żółty‑złoty – też ok)</td></tr>
+    <tr><td>Rezystor 10 kΩ</td><td>1</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#fb8c00"></i><i style="left:36px;background:#d4af37"></i></span>brąz‑czarny‑pomarańcz‑złoty – pull‑up GPIO35</td></tr>
+    <tr><td>Rezystor 1 kΩ</td><td>1</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#e53935"></i><i style="left:36px;background:#d4af37"></i></span>brąz‑czarny‑czerwony‑złoty – szeregowo z przyciskiem GPIO14</td></tr>
+    <tr><td>Kondensator ceramiczny</td><td>1</td><td>1 µF „105” (lub 100 nF „104”)</td></tr>
+    <tr><td>Przycisk tact</td><td>1</td><td>6×6 lub 12×12 mm, monostabilny</td></tr>
+    <tr><td>Moduł brzęczyka</td><td>1</td><td>masz: BEEP V2.0, piny <code>GND IO VCC</code>, R1 = 101, R2 = 510. Wtórnik – gra dopiero przy ~5 V na IO (test: 3,3 V cisza, 5 V gra).</td></tr>
+    <tr><td>Tranzystor NPN (Q1)</td><td>1</td><td>BC547 / BC337 / 2N2222 / 2N3904 / S8050 – dowolny mały NPN. Nóżki płaską stroną do siebie: BC547/BC337 = C‑B‑E, 2N2222/2N3904/S8050 = E‑B‑C.</td></tr>
+    <tr><td>Rezystor 1 kΩ (R5)</td><td>1</td><td>szeregowo D13 → baza Q1 (~2,6 mA do bazy)</td></tr>
+    <tr><td>Koszyk 18650 / ogniwo</td><td>1</td><td>albo LiPo 1S z wtyczką JST‑PH do B+/B−</td></tr>
+    <tr><td>Przewody</td><td>–</td><td>zasilanie 0,5 mm² (czerwony/czarny), sygnały 0,2 mm² lub drut 30 AWG</td></tr>
+  </table>
+  <p class="note"><b>Moduł brzęczyka BEEP V2.0 (GND·IO·VCC):</b> wyszło w teście, że z 3,3 V na IO milczy, a z 5 V gra (układ wtórnika – buzzer dostaje V<sub>IO</sub> − 0,7 V). Konwerter poziomów BSS138 nie nadaje się (10 kΩ pull‑up daje za mało prądu). Rozwiązanie: IO zwarte z VCC na 5 V (moduł „zawsze włączony”), a masę modułu przełącza Q1 NPN sterowany z D13 przez R5 1 kΩ. Wysoki stan D13 = dźwięk → firmware bez zmian; w kroku 3 D13 trzymane nisko w uśpieniu (gpio_hold). Test: D13 (lub drut z 3V3 przez R5 na bazę) → ciągły pisk.</p>
+  <p class="note"><b>Dobór pinów (dokumentacja Espressif):</b> GPIO34/35 = ADC1 (działa przy WiFi), wejściowe, bez funkcji startowej – optymalne; GPIO36/39 pominięte (errata GPIO‑3.11); GPIO14 = RTC, dozwolony dla ext0, ale „PWM burst” przy starcie → R4 1 kΩ; GPIO13 bez funkcji startowej – OK pod PWM; GPIO12 omijamy (strapping). Rezerwa: GPIO32.</p>
+  <p class="note"><b>Test, czy GPIO35 jest wolny na Twojej płytce</b> (Lolin D32/FireBeetle mają tam dzielnik baterii): omomierz GPIO35↔3V3 i GPIO35↔GND – na DOIT DevKit V1 oba „nieskończoność”; jeśli ~100–200 kΩ, napisz.</p>
+  <p class="note"><b>Bilans prądu w uśpieniu – czy rezystory ciekną?</b> Dzielnik R1+R2 = 200 kΩ pobiera 16–21 µA (≈13 mAh/mies., mniej niż samorozładowanie ogniwa). Pull‑up 10k na GPIO35: 0 µA bez USB (wyjścia TP4056 otwarte). Przycisk, R4, brzęczyk: 0 µA. <b>Zostaw 100k/100k</b> – przy 1M+1M zysk 17 µA, a błąd pomiaru rośnie do ~100 mV na ogniwie (upływ wejścia ADC × 500 kΩ). Prawdziwi „zjadacze” z ogniwa w uśpieniu (~12–18 mA razem): AMS1117 na DevKicie ~5 mA, <b>czerwona dioda POWER na DevKicie ~1,5–2 mA (wylutuj!)</b>, wyświetlacz bez komendy SLEEP ~2–5 mA (załatwi firmware krok 3), MT3608 mnoży to ×1,6–1,8. Dzielnik to 0,1 % całości. Kontrola: bez USB napięcie na GPIO35 ma być 3,3 V – jeśli wyraźnie mniej, 10k „podkarmia” niezasilony TP4056; wymień na 47–100k.</p>
+  <p class="note">Piny zajęte przez wyświetlacz (nie dotykać): D18 SCK, D19 MISO, D23 MOSI, D15 CS, D2 DC, D4 RST, D21 BL, D25/D26/D27/D33 dotyk – na rysunku szare.</p>
+</section>
+</main>
+
+<script>
+(() => {
+  const NS='http://www.w3.org/2000/svg';
+  const svg=document.getElementById('svg');
+  const el=(n,a,p)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e;};
+  // DevKit V1 30-pin, USB na dole; pitch 60 px
+  const L=['EN','VP','VN','D34','D35','D32','D33','D25','D26','D27','D14','D12','D13','GND','VIN'];
+  const R=['D23','D22','TX0','RX0','D21','D19','D18','D5','TX2','RX2','D4','D2','D15','GND','3V3'];
+  const used={D18:'TFT SCK',D19:'TFT MISO',D23:'TFT MOSI',D15:'TFT CS',D2:'TFT DC',D4:'TFT RST',D21:'TFT BL',D25:'T_CLK',D26:'T_MOSI',D27:'T_CS',D33:'T_MISO'};
+  const mine={D34:'ADC baterii',D35:'USB detect',D14:'przycisk',D13:'brzęczyk',VIN:'5 V z MT3608',GND:'GND','3V3':'3V3'};
+  const PX={};
+  const gL=document.getElementById('pinsL'), gR=document.getElementById('pinsR');
+  L.forEach((n,i)=>{const y=60+i*60; el('rect',{x:-12,y:y-14,width:28,height:28,rx:4,class:'pinbox'},gL); el('circle',{cx:2,cy:y,r:7,fill:'#e2c069'},gL);
+    const t=el('text',{x:24,y:y+6,class:'silk'},gL); t.textContent=n+(used[n]?' · '+used[n]:mine[n]?' ◄ '+mine[n]:''); if(used[n])t.setAttribute('fill','#8a8a8a'); if(mine[n]){t.setAttribute('fill','#ffe082');t.setAttribute('font-weight','700');}
+    PX['L_'+n]=[860,100+y];});
+  R.forEach((n,i)=>{const y=60+i*60; el('rect',{x:264,y:y-14,width:28,height:28,rx:4,class:'pinbox'},gR); el('circle',{cx:278,cy:y,r:7,fill:'#e2c069'},gR);
+    const t=el('text',{x:256,y:y+6,class:'silk','text-anchor':'end'},gR); t.textContent=(used[n]?used[n]+' · ':mine[n]?mine[n]+' ► ':'')+n; if(used[n])t.setAttribute('fill','#8a8a8a'); if(mine[n]){t.setAttribute('fill','#ffe082');t.setAttribute('font-weight','700');}
+    PX['R_'+n]=[1140,100+y];});
+
+  // punkty absolutne
+  const P={
+    INp:[100,130], INm:[100,410], OUTp:[660,130], Bp:[660,220], Bm:[660,320], OUTm:[660,410],
+    ledRk:[260,171], ledBk:[260,211],
+    cellM:[100,680], cellP:[660,680],
+    VINp:[100,810], VINm:[100,1010], VOUTp:[660,810], VOUTm:[660,1010],
+    R1a:[140,1190], R1b:[260,1190], R2a:[140,1270], R2b:[260,1270], Ca:[410,1180], Cb:[430,1180],
+    R3a:[480,1270], R3b:[600,1270], R4a:[140,1350], R4b:[260,1350],
+    BTNa:[400,1455], BTNb:[500,1455],
+    BZgnd:[170,1700], BZio:[200,1700], BZvcc:[230,1700], R5a:[410,1630], R5b:[530,1630], Q1e:[390,1740], Q1b:[405,1740], Q1c:[420,1740],
+    rail:[380,1824],
+    VIN:PX.L_VIN, GNDL:PX.L_GND, D34:PX.L_D34, D35:PX.L_D35, D14:PX.L_D14, D13:PX.L_D13, V33:PX.R_3V3, GNDR:PX.R_GND
+  };
+  const C={red:'#ff3d3d',blk:'#1c1c1c',org:'#ff9800',yel:'#ffeb3b',pur:'#ce4de0',grn:'#4caf50',blu:'#2196f3',wht:'#f5f5f5',gry:'#bdbdbd'};
+  const W=[
+    {c:C.red,t:'USB 5 V → gniazdo micro‑USB TP4056',s:'Ładowarka 5 V/1 A. Tylko do TP4056, nie do USB płytki ESP32.',d:'M 50 255 H 40'},
+    {c:C.red,t:'TP4056 B+ → ogniwo +',s:'czerwony, 0,5 mm². Biegunowość sprawdź 2×.',d:`M ${P.Bp} C 740 220 740 680 ${P.cellP}`},
+    {c:C.blk,t:'TP4056 B− → ogniwo −',s:'czarny. Na B− TYLKO ogniwo – nic więcej.',d:`M ${P.Bm} C 710 320 710 480 380 480 C 60 480 60 680 ${P.cellM}`},
+    {c:C.org,t:'TP4056 OUT+ → MT3608 VIN+',s:'napięcie ogniwa za zabezpieczeniem (3,0–4,2 V), 0,5 mm².',d:`M ${P.OUTp} C 790 130 790 740 400 740 C 50 740 50 810 ${P.VINp}`},
+    {c:C.blk,t:'TP4056 OUT− → MT3608 VIN−',s:'tu zaczyna się wspólna masa całego układu.',d:`M ${P.OUTm} C 740 410 740 1070 400 1070 C 50 1070 50 1010 ${P.VINm}`},
+    {c:C.yel,t:'MT3608 VOUT+ → ESP32 VIN',s:'5,0–5,1 V – ustaw ZANIM podłączysz.',d:`M ${P.VOUTp} C 770 810 770 1000 ${P.VIN}`},
+    {c:C.blk,t:'MT3608 VOUT− → ESP32 GND (lewa listwa)',s:'krótko, gruby przewód.',d:`M ${P.VOUTm} C 770 1010 770 940 ${P.GNDL}`},
+    {c:C.org,t:'TP4056 OUT+ → R1 100k (lewa nóżka)',s:'dzielnik bierze OGNIWO, nie 5 V za przetwornicą.',d:`M ${P.OUTp} C 830 130 830 1110 400 1110 C 100 1110 100 1190 ${P.R1a}`},
+    {c:C.pur,t:'R1 (prawa) = węzeł → ESP32 D34',s:'węzeł = R1 + R2 + C. Na pinie Vbat/2.',d:`M ${P.R1b} C 560 1190 790 1160 800 900 C 810 650 790 340 ${P.D34}`},
+    {c:C.pur,t:'węzeł → R2 100k (prawa) i C 1 µF',s:'R2 i C z węzła do GND; C jak najbliżej GPIO34.',d:`M ${P.R1b} L ${P.R2b} M ${P.R1b} C 330 1190 340 1180 ${P.Ca}`},
+    {c:C.blk,t:'R2 (lewa) i C → szyna GND płytki',s:'',d:`M ${P.R2a} C 100 1270 100 1824 ${P.rail} M ${P.Cb} C 640 1180 640 1800 ${P.rail}`},
+    {c:C.grn,t:'pady katod LED R + LED B (= pin 7 CHRG + pin 6 STDBY) → ESP32 D35',s:'oba pady zwarte; cienki drut. Alternatywa: mostek cyny na nóżkach 6+7 i drut z mostka. Miernik: ciągłość do nóżek 6/7, BRAK ciągłości do IN+.',d:`M ${P.ledRk} L ${P.ledBk} M ${P.ledRk} C 260 60 400 40 700 40 C 840 40 840 400 ${P.D35}`},
+    {c:C.grn,t:'ESP32 D35 → R3 10k (prawa nóżka)',s:'rezystor najlepiej tuż przy ESP32.',d:`M ${P.D35} C 790 520 790 1230 ${P.R3b}`},
+    {c:C.blu,t:'R3 10k (lewa) → ESP32 3V3 (prawa listwa, dół)',s:'pull‑up OBOWIĄZKOWY – GPIO35 nie ma wewnętrznego.',d:`M ${P.R3a} C 480 1235 1000 1235 1100 1235 C 1210 1235 1210 1000 ${P.V33}`},
+    {c:C.wht,t:'ESP32 D14 → R4 1k (prawa nóżka)',s:'1 kΩ chroni pin: GPIO14 daje krótki impuls wyjściowy przy starcie, a przy budzeniu przycisk jest wtedy wciśnięty.',d:`M ${P.D14} C 760 760 720 1350 ${P.R4b}`},
+    {c:C.wht,t:'R4 1k (lewa) → przycisk (nóżka A)',s:'',d:`M ${P.R4a} C 100 1350 100 1455 ${P.BTNa}`},
+    {c:C.blk,t:'przycisk (nóżka B, przeciwległy bok) → szyna GND',s:'',d:`M ${P.BTNb} C 580 1455 580 1800 ${P.rail}`},
+    {c:C.gry,t:'ESP32 D13 → R5 1k (prawa nóżka)',s:'moduł ma na wejściu tylko 100 Ω do bazy tranzystora – bez R5 pin ESP32 oddawałby ~25 mA; z R5 ~2,5 mA i tranzystor i tak w pełni przewodzi.',d:`M ${P.D13} C 760 880 760 1630 ${P.R5b}`},
+    {c:C.gry,t:'R5 1k (lewa) → Q1 BAZA (środkowa nóżka)',s:'D13 wysoko → Q1 przewodzi → moduł dostaje masę → gra. Dokładnie polaryzacja z firmware.',d:`M ${P.R5a} C 380 1630 405 1680 ${P.Q1b}`},
+    {c:C.blk,t:'Q1 EMITER → szyna GND',s:'',d:`M ${P.Q1e} C 385 1790 380 1810 ${P.rail}`},
+    {c:C.blk,t:'Q1 KOLEKTOR → moduł brzęczyka GND',s:'masa modułu przechodzi przez tranzystor – to on włącza dźwięk.',d:`M ${P.Q1c} C 420 1780 300 1780 ${P.BZgnd}`},
+    {c:C.yel,t:'moduł: IO zwarte z VCC (mostek) → ESP32 VIN (5 V)',s:'moduł BEEP V2.0 to wtórnik: buzzer dostaje tyle, ile jest na IO – z 3,3 V milczy, więc IO na stałe na 5 V, a włączaniem steruje Q1.',d:`M ${P.BZio} L ${P.BZvcc} M ${P.BZvcc} C 120 1700 120 1920 700 1920 C 1240 1920 1240 1000 1180 1000 C 1140 1000 1110 980 ${P.VIN}`},
+    {c:C.blk,t:'szyna GND płytki → ESP32 GND (prawa listwa)',s:'jeden przewód masy dla całej płytki uniwersalnej.',d:`M ${P.rail} C 380 1870 1180 1870 1180 1500 C 1180 1100 1180 940 ${P.GNDR}`},
+  ];
+  const gO=document.getElementById('ols'), gW=document.getElementById('wires'), gN=document.getElementById('nbs');
+  const items=[]; let locked=null;
+  W.forEach((w,i)=>{
+    const n=i+1;
+    const ol=el('path',{d:w.d,class:'ol'},gO);
+    const p=el('path',{d:w.d,class:'wire'+(w.dash?' dash':''),stroke:w.c},gW);
+    // numer na środku
+    const len=p.getTotalLength(); const pt=p.getPointAtLength(len*(w.dash?0.35:0.5));
+    const nb=el('g',{class:'nb',transform:`translate(${pt.x},${pt.y})`},gN); el('circle',{r:15},nb); const tt=el('text',{y:6,'text-anchor':'middle'},nb); tt.textContent=n;
+    const it=document.createElement('div'); it.className='it'; it.innerHTML=`<div class="n" style="border-color:${w.c}">${n}</div><div><b>${w.t}</b><small>${w.s||''}</small></div>`;
+    document.getElementById('list').appendChild(it); items.push({p,ol,nb,it});
+    const on=()=>hl(i), off=()=>hl(null);
+    p.onmouseenter=on; p.onmouseleave=off; it.onmouseenter=on; it.onmouseleave=off;
+    p.onclick=it.onclick=()=>{locked = locked===i?null:i; hl(locked);};
+  });
+  function hl(i){ if(i===null) i=locked; svg.classList.toggle('dim',i!==null);
+    items.forEach((o,k)=>{const on=k===i; o.p.classList.toggle('hl',on); o.ol.classList.toggle('hl',on); o.nb.classList.toggle('hl',on); o.it.classList.toggle('on',on);}); }
+  // znaczniki końców
+  Object.entries(P).forEach(([k,v])=>{ if(k==='rail')return; el('circle',{cx:v[0],cy:v[1],r:9,fill:'none',stroke:'#fff',opacity:.95,'stroke-width':2.5},gN); });
+  // zoom
+  const Z=document.getElementById('zoom'), ZV=document.getElementById('zv'), WR=document.getElementById('wrap');
+  const setZ=v=>{v=Math.max(50,Math.min(300,v)); Z.value=v; ZV.textContent=v+' %'; svg.style.width=(1300*v/100)+'px'; svg.style.height=(1980*v/100)+'px';};
+  Z.oninput=()=>setZ(+Z.value);
+  document.getElementById('zm').onclick=()=>setZ(+Z.value-10);
+  document.getElementById('zp').onclick=()=>setZ(+Z.value+10);
+  const fit=()=>setZ(Math.floor((WR.clientWidth-6)/1300*100));
+  document.getElementById('zfit').onclick=fit;
+  document.getElementById('zall').onclick=()=>{locked=null;hl(null);};
+  WR.addEventListener('wheel',e=>{ if(e.ctrlKey){e.preventDefault(); setZ(+Z.value+(e.deltaY<0?10:-10));} },{passive:false});
+  fit();
+})();
+</script>
+</body>
+</html>
