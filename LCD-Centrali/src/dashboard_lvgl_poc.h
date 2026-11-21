@@ -345,6 +345,10 @@ bool lvgl_dashboard_poc_ota_widoczna();
 // [v1.4.0 OTA] Ile milisekund temu ktos ostatnio dotknal ekranu (panel nie
 // zaczyna aktualizacji, gdy ktos wlasnie go uzywa).
 uint32_t lvgl_dashboard_poc_bez_dotyku_ms();
+// [v1.5.0 SEN] Zglos aktywnosc spoza ekranu (przycisk budzenia na GPIO14
+// wcisniety w czasie pracy) - zeruje licznik lvgl_dashboard_poc_bez_dotyku_ms(),
+// tak jakby ktos dotknal szyby. Tani (jedno przypisanie w LVGL).
+void lvgl_dashboard_poc_zglos_aktywnosc();
 // [v1.4.3 B4] true = na ekranie jest ktorys z ekranow pokazujacych wartosci z
 // /api/ustawienia-get (ustawienia serwa, pompy, dymu, prog przegrzania).
 // main.cpp pyta wtedy centrale o ustawienia co 5 s, poza tym co 60 s
@@ -477,6 +481,17 @@ void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(WyswietlaczUstawie
 void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int jasnoscNoc,
                                                             int godzinaStart, int godzinaKoniec,
                                                             bool harmonogramWlaczony);
+
+// [v1.5.1 SEN] Wiersz "Na baterii" na dole ekranu WYSWIETLACZ: dwa przyciski,
+// "Przyciemnij po: 1 min" i "Uśpij po: 5 min", kazde dotkniecie przelacza
+// NASTEPNA wartosc z listy (jak przyciski ekranu ZASILANIE). Tabela czasow jest
+// w diagnostyka_panelu.h (diag::SEN_PRZYCIEMNIJ_OPCJE_MS[] / SEN_USPIJ_OPCJE_MS[],
+// ostatnia pozycja = nigdy); tutaj tylko napisy w tej samej kolejnosci.
+// Callback: ten sam WyswietlaczUstawieniaCb, `pole` = "senPrzyciemnij" albo
+// "senUspij", `wartosc` = indeks 0..LVGL_SEN_OPCJI-1. main.cpp zasila
+// zapisane indeksy raz w setup() (..._aktualizuj_sen()).
+#define LVGL_SEN_OPCJI 6
+void lvgl_dashboard_poc_aktualizuj_sen(int przyciemnijIndeks, int uspijIndeks);
 
 // [v1.4.6 WERSJE] Wersja programu panelu i centrali, pokazywane na stale w
 // lewym gornym rogu ekranu WYSWIETLACZ ("Panel v1.4.6" / "Centrala v3.58.6").

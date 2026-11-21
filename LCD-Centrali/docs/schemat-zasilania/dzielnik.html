@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Dzielnik pomiaru baterii – jak podłączyć do ESP32 (GPIO34)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body{margin:0;background:#0f141a;color:#e6edf3;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;font-size:16px}
+  header{padding:12px 20px;border-bottom:1px solid #2a3542} header h1{font-size:18px;margin:0}
+  main{padding:12px;display:grid;gap:12px}
+  .card{background:#171e26;border:1px solid #2a3542;border-radius:10px;padding:12px}
+  .card h2{font-size:14px;margin:0 0 10px;color:#cdd9e5;text-transform:uppercase;letter-spacing:.05em}
+  svg{width:100%;height:auto;display:block;background:#4b545c;border-radius:8px}
+  text{font-family:ui-monospace,Consolas,monospace;fill:#fff}
+  .w{fill:none;stroke-width:8;stroke-linecap:round;stroke-linejoin:round}
+  .o{fill:none;stroke:#111;stroke-width:12;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+  .nb circle{fill:#fff;stroke:#111;stroke-width:2} .nb text{fill:#111;font-size:20px;font-weight:700}
+  table{border-collapse:collapse;width:100%} th,td{border:1px solid #2a3542;padding:8px;text-align:left;vertical-align:top} th{background:#1d2731}
+  .n{display:inline-flex;width:28px;height:28px;border-radius:50%;background:#fff;color:#111;font-weight:700;align-items:center;justify-content:center;border:3px solid #000;margin-right:6px}
+  ol li{margin:6px 0} code{background:#0b0f13;padding:1px 5px;border-radius:4px;color:#ffd27a} .warn{color:#ffcc80}
+</style>
+</head>
+<body>
+<header><h1>Dzielnik pomiaru napięcia baterii → ESP32 GPIO34 (D34)</h1><a href="index.html">← pełny widok montażowy</a></header>
+<main>
+<section class="card">
+<svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="blk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#23282c"/><stop offset="1" stop-color="#0c0e10"/></linearGradient>
+    <linearGradient id="red" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d32f2f"/><stop offset="1" stop-color="#8e1b1b"/></linearGradient>
+    <pattern id="perf" width="24" height="24" patternUnits="userSpaceOnUse"><rect width="24" height="24" fill="#b58a4a"/><circle cx="12" cy="12" r="4" fill="#e2c069" stroke="#7a5a25"/><circle cx="12" cy="12" r="1.8" fill="#222"/></pattern>
+  </defs>
+
+  <!-- TP4056 fragment -->
+  <g transform="translate(40,60)">
+    <text x="110" y="-18" text-anchor="middle" font-size="22" font-weight="700">TP4056 (fragment)</text>
+    <rect width="220" height="200" rx="10" fill="url(#red)" stroke="#4a0c0c" stroke-width="2"/>
+    <circle cx="190" cy="40" r="14" fill="#e2c069" stroke="#7a5a1a"/><circle cx="190" cy="40" r="6" fill="#1b1b1b"/>
+    <text x="168" y="46" text-anchor="end" font-size="22" font-weight="700">OUT+</text>
+    <circle cx="190" cy="160" r="14" fill="#e2c069" stroke="#7a5a1a"/><circle cx="190" cy="160" r="6" fill="#1b1b1b"/>
+    <text x="168" y="166" text-anchor="end" font-size="22" font-weight="700">OUT−</text>
+    <text x="110" y="100" text-anchor="middle" font-size="14" fill="#ffe082">tu bierzemy napięcie</text>
+    <text x="110" y="118" text-anchor="middle" font-size="14" fill="#ffe082">OGNIWA (nie 5 V!)</text>
+  </g>
+  <!-- do testu: 3V3 -->
+  <g transform="translate(40,330)">
+    <rect width="220" height="70" rx="10" fill="#263241" stroke="#3b4b5e" stroke-dasharray="8 6" stroke-width="2"/>
+    <text x="110" y="30" text-anchor="middle" font-size="16" fill="#ffe082">TEST bez ogniwa:</text>
+    <text x="110" y="54" text-anchor="middle" font-size="16" fill="#ffe082">przewód 1 na pin 3V3</text>
+  </g>
+
+  <!-- płytka uniwersalna -->
+  <g transform="translate(360,60)">
+    <text x="240" y="-18" text-anchor="middle" font-size="22" font-weight="700">Płytka uniwersalna</text>
+    <rect width="480" height="420" rx="10" fill="url(#perf)" stroke="#5a3f14" stroke-width="2"/>
+    <!-- R1 -->
+    <g transform="translate(40,80)">
+      <line x1="0" y1="12" x2="160" y2="12" stroke="#ccc" stroke-width="5"/>
+      <rect x="30" y="0" width="100" height="24" rx="12" fill="#d7c4a3" stroke="#8a7a5a" stroke-width="2"/>
+      <rect x="44" y="0" width="8" height="24" fill="#5d4037"/><rect x="57" y="0" width="8" height="24" fill="#000"/><rect x="70" y="0" width="8" height="24" fill="#fdd835"/><rect x="104" y="0" width="8" height="24" fill="#d4af37"/>
+      <text x="80" y="-10" text-anchor="middle" font-size="20" font-weight="700">R1 100 kΩ</text>
+    </g>
+    <!-- R2 -->
+    <g transform="translate(280,80)">
+      <line x1="0" y1="12" x2="160" y2="12" stroke="#ccc" stroke-width="5"/>
+      <rect x="30" y="0" width="100" height="24" rx="12" fill="#d7c4a3" stroke="#8a7a5a" stroke-width="2"/>
+      <rect x="44" y="0" width="8" height="24" fill="#5d4037"/><rect x="57" y="0" width="8" height="24" fill="#000"/><rect x="70" y="0" width="8" height="24" fill="#fdd835"/><rect x="104" y="0" width="8" height="24" fill="#d4af37"/>
+      <text x="80" y="-10" text-anchor="middle" font-size="20" font-weight="700">R2 100 kΩ</text>
+    </g>
+    <!-- węzeł -->
+    <circle cx="240" cy="92" r="12" fill="#ffeb3b" stroke="#111" stroke-width="2"/>
+    <text x="240" y="60" text-anchor="middle" font-size="16" fill="#ffeb3b">WĘZEŁ (środek)</text>
+    <!-- C -->
+    <g transform="translate(200,200)">
+      <line x1="30" y1="0" x2="30" y2="60" stroke="#ccc" stroke-width="5"/><line x1="50" y1="0" x2="50" y2="60" stroke="#ccc" stroke-width="5"/>
+      <ellipse cx="40" cy="14" rx="30" ry="20" fill="#f9a825" stroke="#b7791f" stroke-width="2"/><text x="40" y="20" text-anchor="middle" font-size="15" fill="#111" font-weight="700">474</text>
+      <text x="40" y="90" text-anchor="middle" font-size="18" font-weight="700">C 470 nF</text>
+      <text x="40" y="110" text-anchor="middle" font-size="13">(lub 104 / 105)</text>
+    </g>
+    <!-- szyna GND -->
+    <rect x="30" y="370" width="420" height="10" fill="#333" stroke="#000"/><text x="240" y="362" text-anchor="middle" font-size="18">szyna GND płytki</text>
+  </g>
+
+  <!-- ESP32 fragment -->
+  <g transform="translate(920,60)">
+    <text x="120" y="-18" text-anchor="middle" font-size="22" font-weight="700">ESP32 DevKit</text>
+    <rect width="240" height="560" rx="10" fill="url(#blk)" stroke="#000" stroke-width="2"/>
+    <text x="120" y="40" text-anchor="middle" font-size="14" fill="#9aa7b4">lewa listwa, od góry</text>
+    <g font-size="20" font-weight="700">
+      <rect x="-14" y="66" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="81" r="8" fill="#e2c069"/><text x="30" y="88" fill="#8a8a8a">EN</text>
+      <rect x="-14" y="126" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="141" r="8" fill="#e2c069"/><text x="30" y="148" fill="#8a8a8a">VP</text>
+      <rect x="-14" y="186" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="201" r="8" fill="#e2c069"/><text x="30" y="208" fill="#8a8a8a">VN</text>
+      <rect x="-14" y="246" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="261" r="8" fill="#e2c069"/><text x="30" y="268" fill="#ffe082">D34  ◄ tu</text>
+      <rect x="-14" y="306" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="321" r="8" fill="#e2c069"/><text x="30" y="328" fill="#8a8a8a">D35 (USB det.)</text>
+      <rect x="-14" y="446" width="30" height="30" rx="4" fill="#1a1a1a" stroke="#888"/><circle cx="1" cy="461" r="8" fill="#e2c069"/><text x="30" y="468" fill="#ffe082">GND</text>
+    </g>
+    <text x="120" y="540" text-anchor="middle" font-size="14" fill="#9aa7b4">3V3 – prawa listwa, dół</text>
+  </g>
+
+  <g id="ols"></g><g id="ws"></g><g id="nbs"></g>
+</svg>
+</section>
+
+<section class="card">
+<h2>Pięć połączeń</h2>
+<table>
+<tr><th style="width:60px">Nr</th><th>Skąd</th><th>Dokąd</th><th>Uwagi</th></tr>
+<tr><td><span class="n">1</span></td><td>TP4056 <code>OUT+</code></td><td>R1 (lewa nóżka)</td><td>napięcie ogniwa; <b>do testu bez ogniwa</b> ten koniec na pin <code>3V3</code></td></tr>
+<tr><td><span class="n">2</span></td><td>R1 (prawa) = <b>węzeł</b></td><td>R2 (lewa)</td><td>R1 i R2 szeregowo, środek = węzeł</td></tr>
+<tr><td><span class="n">3</span></td><td>R2 (prawa)</td><td>szyna GND płytki</td><td>masa wspólna z GND DevKita</td></tr>
+<tr><td><span class="n">4</span></td><td><b>węzeł</b></td><td>C 474 → szyna GND</td><td>filtr; może być też bezpośrednio przy pinie D34</td></tr>
+<tr><td><span class="n">5</span></td><td><b>węzeł</b></td><td>ESP32 <code>D34</code></td><td>4. pin od góry na lewej listwie (EN, VP, VN, <b>D34</b>) – nie D35!</td></tr>
+</table>
+<p class="warn">R1 i R2 muszą być <b>jednakowe</b> (zmierz oba). Docelowo 100 kΩ; prowizorycznie dowolne 2 równe z zakresu 10–220 kΩ.</p>
+</section>
+
+<section class="card">
+<h2>Test bez ogniwa (DevKit na USB)</h2>
+<ol>
+<li>Przewód 1 (wolny koniec R1) dotknij do pinu <code>3V3</code>.</li>
+<li>Miernik GND ↔ <code>D34</code>: <b>~1,65 V</b> (połowa z 3,3 V).</li>
+<li>Log Serial po ≤ 30 s, linia <code>BATERIA</code>: napięcie <b>≈ 3,3 V</b> (3,2–3,4 OK); procent niski – normalne.</li>
+<li>Odłącz od 3V3, zaizoluj – czeka na OUT+ TP4056.</li>
+</ol>
+<table>
+<tr><th>Objaw</th><th>Przyczyna</th></tr>
+<tr><td>D34 = 3,3 V</td><td>R2 nie idzie do masy</td></tr>
+<tr><td>D34 = 0 V</td><td>R1 nie dotyka 3V3 albo węzeł nie trafia w D34</td></tr>
+<tr><td>D34 ≈ 1,65 V, a log pokazuje co innego</td><td>przewód 5 na złym pinie (D35 zamiast D34)</td></tr>
+</table>
+<p class="warn">Z ogniwem: D34 = połowa napięcia B+–B− (np. 1,85 V przy 3,7 V), log <code>BATERIA</code> = napięcie ogniwa ±0,05 V.</p>
+</section>
+</main>
+<script type="5c7aba192453cf2049c9a089-text/javascript">
+(()=>{
+  const NS='http://www.w3.org/2000/svg', svg=document.querySelector('svg');
+  const el=(n,a,p)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e;};
+  const P={OUTp:[230,100],T33:[260,365],R1a:[400,152],R1b:[560,152],R2a:[640,152],R2b:[800,152],Ca:[590,260],Cb:[610,260],rail:[600,435],D34:[921,321],node:[600,152]};
+  const W=[
+    ['#ff9800',`M ${P.OUTp} C 300 100 330 152 ${P.R1a}`],
+    ['#ce4de0',`M ${P.R1b} L ${P.R2a}`],
+    ['#1c1c1c',`M ${P.R2b} C 840 152 840 435 ${P.rail}`],
+    ['#1c1c1c',`M ${P.node} C 600 200 590 230 ${P.Ca} M ${P.Cb} C 620 330 600 400 ${P.rail}`],
+    ['#ce4de0',`M ${P.node} C 600 40 880 40 900 200 C 910 280 915 320 ${P.D34}`],
+  ];
+  const gO=document.getElementById('ols'),gW=document.getElementById('ws'),gN=document.getElementById('nbs');
+  W.forEach(([c,d],i)=>{ el('path',{d,class:'o'},gO); const p=el('path',{d,class:'w',stroke:c},gW);
+    const pt=p.getPointAtLength(p.getTotalLength()*(i===1?0.5:0.4)); const g=el('g',{class:'nb',transform:`translate(${pt.x},${pt.y})`},gN); el('circle',{r:18},g); const t=el('text',{y:7,'text-anchor':'middle'},g); t.textContent=i+1; });
+  // test: 3V3 dashed
+  el('path',{d:`M ${P.T33} C 300 365 330 200 ${P.R1a}`,class:'w',stroke:'#ffe082','stroke-dasharray':'14 10'},gW);
+  Object.values(P).forEach(v=>el('circle',{cx:v[0],cy:v[1],r:10,fill:'none',stroke:'#fff','stroke-width':3},gN));
+})();
+</script>
+<foreignObject><script src="/cdn-cgi/scripts/7d0fa10a/cloudflare-static/rocket-loader.min.js" data-cf-settings="5c7aba192453cf2049c9a089-|49" defer></script></foreignObject></body>
+</html>

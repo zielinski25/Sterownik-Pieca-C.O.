@@ -886,6 +886,14 @@ static lv_obj_t *wyswietlaczLabelNoc    = nullptr;
 static lv_obj_t *wyswietlaczHarmonogramBtn      = nullptr;
 static lv_obj_t *wyswietlaczHarmonogramBtnLabel = nullptr;
 static lv_timer_t *g_wyswietlaczPanelIdleTimer  = nullptr;
+// [v1.5.1 SEN] Wiersz "Na baterii": indeksy w diag::SEN_*_OPCJE_MS[] (main.cpp
+// trzyma je w NVS) i napisy na przyciskach w TEJ SAMEJ kolejnosci.
+static const char *const SEN_PRZYCIEMNIJ_NAZWY[LVGL_SEN_OPCJI] = { "30 s", "1 min", "2 min", "5 min", "10 min", "nigdy" };
+static const char *const SEN_USPIJ_NAZWY[LVGL_SEN_OPCJI]       = { "2 min", "5 min", "10 min", "30 min", "1 godz.", "nigdy" };
+static int g_senPrzyciemnijIdx = 1;
+static int g_senUspijIdx       = 1;
+static lv_obj_t *wyswietlaczSenBtn[2]      = { nullptr, nullptr };   // [0] przyciemnij, [1] uspij
+static lv_obj_t *wyswietlaczSenBtnLabel[2] = { nullptr, nullptr };
 // [v1.4.6 WERSJE] Etykieta "Panel vX / Centrala vY" w lewym gornym rogu ekranu
 // WYSWIETLACZ - patrz lvgl_dashboard_poc_ustaw_wersje().
 static lv_obj_t *wyswietlaczWersjeLabel = nullptr;
@@ -3757,7 +3765,7 @@ static void wyswietlacz_ust_plus_cb(lv_event_t *e) {
 }
 static void wyswietlacz_ust_wiersz_zbuduj(lv_obj_t *rodzic, int y, const char *etykieta,
                                            lv_obj_t **wartoscLabelOut, int idx) {
-  const int wierszWys = 40;
+  const int wierszWys = 36;   // [v1.5.1] bylo 40 - miejsce na wiersz "Na baterii"
   lv_obj_t *wiersz = lv_obj_create(rodzic);
   lv_obj_remove_style_all(wiersz);
   lv_obj_set_size(wiersz, 440, wierszWys);
@@ -3799,6 +3807,65 @@ static void wyswietlacz_ust_wiersz_zbuduj(lv_obj_t *rodzic, int y, const char *e
   lv_label_set_text(plusLbl, LV_SYMBOL_PLUS);
   lv_obj_set_style_text_color(plusLbl, rgb565(KOL_TEKST), 0);
   lv_obj_center(plusLbl);
+}
+
+// [v1.5.1 SEN] Przyciski wiersza "Na baterii" - kazde dotkniecie to nastepna
+// pozycja listy (zawija sie), zielone tlo = ustawienie inne niz domyslne
+// (jak na ekranie ZASILANIE). Indeks idzie do main.cpp przez
+// g_wyswietlaczUstawieniaCb("senPrzyciemnij"/"senUspij", indeks).
+static void wyswietlacz_sen_wyglad_odswiez() {
+  for (int i = 0; i < 2; i++) {
+    if (wyswietlaczSenBtn[i] == nullptr) continue;
+    const int idx = (i == 0) ? g_senPrzyciemnijIdx : g_senUspijIdx;
+    char bufor[40];
+    snprintf(bufor, sizeof(bufor), "%s: %s", i == 0 ? "Przyciemnij po" : "Uśpij po",
+             i == 0 ? SEN_PRZYCIEMNIJ_NAZWY[idx] : SEN_USPIJ_NAZWY[idx]);
+    ustawNapis(wyswietlaczSenBtnLabel[i], bufor);
+    lv_obj_set_style_bg_color(wyswietlaczSenBtn[i], rgb565(idx != 1 ? KOL_BEZPIECZNA : KOL_KARTA), LV_PART_MAIN);
+  }
+}
+static void wyswietlacz_sen_btn_cb(lv_event_t *e) {
+  const int i = (int)(intptr_t)lv_event_get_user_data(e);
+  int &idx = (i == 0) ? g_senPrzyciemnijIdx : g_senUspijIdx;
+  idx = (idx + 1) % LVGL_SEN_OPCJI;
+  wyswietlacz_sen_wyglad_odswiez();
+  if (g_wyswietlaczUstawieniaCb) g_wyswietlaczUstawieniaCb(i == 0 ? "senPrzyciemnij" : "senUspij", idx);
+  wyswietlacz_panel_idle_resetuj();
+}
+static void wyswietlacz_sen_wiersz_zbuduj(lv_obj_t *rodzic, int y) {
+  lv_obj_t *wiersz = lv_obj_create(rodzic);
+  lv_obj_remove_style_all(wiersz);
+  lv_obj_set_size(wiersz, 440, 36);
+  lv_obj_align(wiersz, LV_ALIGN_TOP_MID, 0, y);
+  lv_obj_clear_flag(wiersz, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *etykietaLbl = lv_label_create(wiersz);
+  lv_label_set_text(etykietaLbl, "Na baterii");
+  lv_obj_set_style_text_font(etykietaLbl, &lv_font_pl_14, 0);
+  lv_obj_set_style_text_color(etykietaLbl, rgb565(KOL_TEKST_DIM), 0);
+  lv_obj_align(etykietaLbl, LV_ALIGN_LEFT_MID, 4, 0);
+
+  // Dwa przyciski po 168 px: "Przyciemnij po: 10 min" (najdluzszy napis,
+  // czcionka 14, ok. 150 px) miesci sie z zapasem; etykieta "Na baterii"
+  // (ok. 70 px) konczy sie na x=74, pierwszy przycisk zaczyna na x=86.
+  for (int i = 0; i < 2; i++) {
+    lv_obj_t *btn = lv_btn_create(wiersz);
+    lv_obj_set_size(btn, 168, 34);
+    lv_obj_align(btn, LV_ALIGN_RIGHT_MID, i == 0 ? -186 : -10, 0);
+    lv_obj_set_style_radius(btn, 8, 0);
+    lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(btn, rgb565(KOL_KARTA), LV_PART_MAIN);
+    press_flash_zainstaluj(btn, KOL_BEZPIECZNA, 5);
+    lv_obj_add_event_cb(btn, wyswietlacz_sen_btn_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, "");
+    lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
+    lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST), 0);
+    lv_obj_center(lbl);
+    wyswietlaczSenBtn[i] = btn;
+    wyswietlaczSenBtnLabel[i] = lbl;
+  }
+  wyswietlacz_sen_wyglad_odswiez();
 }
 
 // Wlacznik/wylacznik calego harmonogramu - ten sam wzorzec co
@@ -3862,6 +3929,7 @@ static void wyswietlacz_panel_otworz() {
     lv_label_set_text(wyswietlaczGodzLabel[i], b2);
   }
   wyswietlacz_harmonogram_wyglad_odswiez();
+  wyswietlacz_sen_wyglad_odswiez();   // [v1.5.1]
 
   lv_scr_load_anim(wyswietlaczPanel, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
   wyswietlacz_panel_idle_resetuj();
@@ -3893,21 +3961,22 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
   lv_obj_set_style_text_color(wyswietlaczWersjeLabel, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_align(wyswietlaczWersjeLabel, LV_ALIGN_TOP_LEFT, 8, 8);
 
-  // [NIEPOTWIERDZONE NA SPRZECIE - jak wszystkie nowe wspolrzedne w tym
-  // pliku, patrz PLAN_WYKRESY_LVGL.md "Tryb pracy nad kodem"] Uklad policzony
-  // tak: tytul (y10, font 28, ~38px) -> 2x wiersz jasnosci (50px kazdy, y=56
-  // i y=118, 12px odstepu) -> 2x wiersz godzin (40px kazdy, y=186 i y=226) ->
-  // wiersz harmonogramu (40px, y=266) -> koniec 306, 14px marginesu od dolu
-  // (320 wys. ekranu) - wymaga zdjecia z ekranu do potwierdzenia.
-  wyswietlacz_jasnosc_wiersz_zbuduj(wyswietlaczPanel, 56, "Jasność w dzień", 0,
+  // Uklad (320 px wysokosci): tytul (y10, font 28, ~34px) -> 2x wiersz
+  // jasnosci (50px kazdy, y=48 i y=102) -> 2x wiersz godzin (36px, y=156 i
+  // y=192) -> wiersz harmonogramu (36px, y=228) -> [v1.5.1] wiersz "Na
+  // baterii" (36px, y=266) -> koniec 302, 18 px marginesu od dolu. Do v1.5.0
+  // wiersze godzin/harmonogramu mialy 40 px i zaczynaly sie nizej (y=56/118/
+  // 186/226/266); 4 px mniej na wiersz zrobilo miejsce na szosty wiersz bez
+  // przewijania (przyciski w wierszach dalej 34 px).
+  wyswietlacz_jasnosc_wiersz_zbuduj(wyswietlaczPanel, 48, "Jasność w dzień", 0,
                                      &wyswietlaczSliderDzien, &wyswietlaczLabelDzien);
-  wyswietlacz_jasnosc_wiersz_zbuduj(wyswietlaczPanel, 118, "Jasność w nocy", 1,
+  wyswietlacz_jasnosc_wiersz_zbuduj(wyswietlaczPanel, 102, "Jasność w nocy", 1,
                                      &wyswietlaczSliderNoc, &wyswietlaczLabelNoc);
 
-  const int startY = 186;
-  wyswietlacz_ust_wiersz_zbuduj(wyswietlaczPanel, startY + 0 * 40,
+  const int startY = 156;
+  wyswietlacz_ust_wiersz_zbuduj(wyswietlaczPanel, startY + 0 * 36,
                                  WYSWIETLACZ_USTAWIENIA_POLA[0].etykieta, &wyswietlaczGodzLabel[0], 0);
-  wyswietlacz_ust_wiersz_zbuduj(wyswietlaczPanel, startY + 1 * 40,
+  wyswietlacz_ust_wiersz_zbuduj(wyswietlaczPanel, startY + 1 * 36,
                                  WYSWIETLACZ_USTAWIENIA_POLA[1].etykieta, &wyswietlaczGodzLabel[1], 1);
 
   // Wiersz WL./WYL. harmonogramu - ten sam wzorzec co wiersz antystopu w
@@ -3915,8 +3984,8 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
   {
     lv_obj_t *wiersz = lv_obj_create(wyswietlaczPanel);
     lv_obj_remove_style_all(wiersz);
-    lv_obj_set_size(wiersz, 440, 40);
-    lv_obj_align(wiersz, LV_ALIGN_TOP_MID, 0, startY + 2 * 40);
+    lv_obj_set_size(wiersz, 440, 36);
+    lv_obj_align(wiersz, LV_ALIGN_TOP_MID, 0, startY + 2 * 36);
     lv_obj_clear_flag(wiersz, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *etykietaLbl = lv_label_create(wiersz);
@@ -3940,6 +4009,8 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
     lv_obj_set_style_text_color(wyswietlaczHarmonogramBtnLabel, rgb565(KOL_TEKST), 0);
     lv_obj_center(wyswietlaczHarmonogramBtnLabel);
   }
+
+  wyswietlacz_sen_wiersz_zbuduj(wyswietlaczPanel, startY + 3 * 36 + 2);   // [v1.5.1] y=266
 
   // [FIX WYGLAD, ta sesja - Partia 2] Patrz krzyzyk_zamkniecia_utworz().
   krzyzyk_zamkniecia_utworz(wyswietlaczPanel, wyswietlacz_panel_zamknij_cb);
@@ -7537,6 +7608,14 @@ void lvgl_dashboard_poc_aktualizuj_zasilanie(int cpuIndeks, int nadajnikIndeks) 
   g_zasilanieTxIdx  = nadajnikIndeks;
   if (lv_scr_act() == zasilaniePanel) zasilanie_wyglad_odswiez();
 }
+// [v1.5.1 SEN] Patrz naglowek. Nieznany indeks (z przyszlej wersji) -> 1 = domyslne 1 min / 5 min.
+void lvgl_dashboard_poc_aktualizuj_sen(int przyciemnijIndeks, int uspijIndeks) {
+  if (przyciemnijIndeks < 0 || przyciemnijIndeks >= LVGL_SEN_OPCJI) przyciemnijIndeks = 1;
+  if (uspijIndeks < 0 || uspijIndeks >= LVGL_SEN_OPCJI) uspijIndeks = 1;
+  g_senPrzyciemnijIdx = przyciemnijIndeks;
+  g_senUspijIdx       = uspijIndeks;
+  if (lv_scr_act() == wyswietlaczPanel) wyswietlacz_sen_wyglad_odswiez();
+}
 void lvgl_dashboard_poc_aktualizuj_zasilanie_pomiar(bool wifiOk, int rssi, int cpuMhz, float txDbm) {
   g_zasilanieWifiOk = wifiOk;
   g_zasilanieRssi   = rssi;
@@ -8101,6 +8180,11 @@ bool lvgl_dashboard_poc_ota_widoczna() {
 
 uint32_t lvgl_dashboard_poc_bez_dotyku_ms() {
   return lv_disp_get_inactive_time(NULL);
+}
+
+// [v1.5.0 SEN] Przycisk budzenia trzymany w czasie pracy liczy sie jak dotyk.
+void lvgl_dashboard_poc_zglos_aktywnosc() {
+  lv_disp_trig_activity(NULL);
 }
 
 // [v1.4.3 B4] Te same cztery ekrany, ktore lvgl_dashboard_poc_aktualizuj_

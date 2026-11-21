@@ -40,6 +40,58 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.1 - SEN: TRZY UWAGI Z PLYTKI (uzytkownik, po wgraniu v1.5.0)
+//   - PO WYBUDZENIU PRZYCISKIEM OD RAZU KAFELKI: ekran startowy ("WYSWIETLACZ
+//     CO / Panel vX / Laczenie z WiFi / Centrala vY") tylko przy starcie
+//     zasilania i po resecie. Po wybudzeniu z glebokiego snu (ext0/ext1)
+//     pulpit LVGL jest rysowany PRZED laczeniem z WiFi (startPoSnie w
+//     polaczWifi(): jeden lvgl_port_tick() zamiast napisow TFT_eSPI), dane
+//     dochodza do kafelkow w tle; ekranStartowyWersje() tylko loguje.
+//     Log: tag=SEN zdarzenie=pulpit_po_wybudzeniu ms=<od startu>.
+//   - PIERWSZE DOTKNIECIE PRZYCIEMNIONEGO EKRANU TYLKO ROZJASNIA, nie otwiera
+//     kafelka: filtr diag::dotykPrzepusc() w lvgl_touch_read() (lvgl_port.cpp)
+//     pochlania caly dotyk, ktory zaczal sie przy przyciemnionym ekranie
+//     (senEkranPrzyciemniony() nizej), i zeruje licznik bezczynnosci LVGL.
+//   - CZASY DO WYBORU NA EKRANIE WYSWIETLACZ, wiersz "Na baterii": przyciemnij
+//     po 30 s / 1 / 2 / 5 / 10 min / nigdy, uspij po 2 / 5 / 10 / 30 min /
+//     1 godz. / nigdy (diag::SEN_*_OPCJE_MS). W NVS indeksy wyswietlacz/
+//     senPrzyIdx i senSpijIdx (domyslnie 1 min / 5 min = jak v1.5.0);
+//     wyswietlaczUstawieniaWyslij("senPrzyciemnij"/"senUspij", indeks).
+//     Log przy zmianie: tag=SEN zdarzenie=ustawienie przyciemnij_ms=.. uspij_ms=..
+// [2026-11-24] v1.5.0 - PRACA NA BATERII: PRZYCIEMNIENIE I GLEBOKI SEN (krok 3
+//   planu z WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18; tematy B1/B5 i 14). Sprzet
+//   panelu jest juz zlutowany i sprawdzony (2026-11-20: TP4056 + MT3608, dzielnik
+//   100k/100k na GPIO34 - odczyt 3,32 V/1 % i 3,97 V/76 % zgadza sie z
+//   multimetrem; GPIO35 z 10k do 3V3; brzeczyk przez C945 na GPIO13; przycisk
+//   GPIO14 -> 1k -> GND). Kod snu z [ETAP 3b] (idzSpac(), nigdy nie wolany od
+//   v1.4.4) jest wreszcie podpiety - pod LVGL, nie pod stary dashboard.
+//   - NA BATERII (ogniwo na dzielniku, TP4056 bez USB): 1 min bez dotyku ->
+//     podswietlenie 5 % (diag::SEN_PRZYCIEMNIJ_PO_MS); 5 min bez dotyku ->
+//     gleboki sen (diag::SEN_USPIJ_PO_MS). Dotkniecie szyby albo przycisku
+//     budzenia przywraca jasnosc i zeruje licznik. Decyzja: diag::senDecyzja()
+//     (diagnostyka_panelu.h, sekcja [v1.5.0 SEN]), liczona co sekunde w senKrok().
+//   - NA USB: nic sie nie zmienia wzgledem v1.4.7 (zadnego przyciemniania ani snu).
+//   - NIE USYPIA i nie przyciemnia: w czasie alarmu (centrala zglasza alarm albo
+//     brzeczyk gra), w czasie aktualizacji panelu (otaKrok()/nakladka).
+//   - ROZLADOWANA BATERIA: ponizej 3,30 V (poza alarmem) - napis "Bateria
+//     rozladowana / Podlacz ladowarke" na 2,5 s i sen od razu; ponizej 3,10 V
+//     sen takze w alarmie (ogniwo i tak zaraz odetnie uklad zabezpieczenia).
+//   - BUDZENIE: przycisk GPIO14 (ext0, stan niski) jak dotad ORAZ wlozenie
+//     ladowarki (ext1 na GPIO35: TP4056 sciaga CHRG/STDBY do masy). Log przy
+//     starcie: tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk|usb.
+//   - PRZED SNEM dodatkowo: brzeczyk (GPIO13) na stale w stanie niskim przez
+//     gpio_hold_en() - tak jak podswietlenie; inaczej tranzystor C945 moglby
+//     dostac szum na bazie i modul by cicho pobieral prad. Po wybudzeniu
+//     gpio_hold_dis() na obu pinach przed pierwszym pinMode()/ledcAttach().
+//   - POMIAR BATERII: pierwszy odczyt od razu po starcie (do v1.4.7 dopiero po
+//     30 s - wskaznik przez pol minuty pokazywal "USB"), potem co 30 s jak
+//     dotad. Ostatni odczyt jest pamietany (bateriaOstatnieV) dla senKrok().
+//   - LOG: tag=SEN zdarzenie=przyciemnienie|jasnosc|usypianie powod=... - tylko
+//     przy ZMIANIE stanu, nie co sekunde.
+//   Usunieto: ACTIVITY_TIMEOUT_MS, ostatniaAktywnosc, zarejestrujAktywnosc()
+//   (licznik bezczynnosci prowadzi LVGL: lvgl_dashboard_poc_bez_dotyku_ms()).
+//   Testy: testy_host (test_diagnostyka.cpp: senDecyzja(); symulator: scenariusze
+//   sen_*). Centrala bez zmian.
 // [2026-11-22] v1.4.7 - EKRAN ZASILANIE: TAKTOWANIE PROCESORA I MOC NADAJNIKA
 //   WIFI (audyt 2026-11-18, tematy 11 i 18 / plan krok 6, B3 i B7). Nikt nie
 //   zmierzyl jeszcze poboru pradu tego panelu ani nie znal RSSI przy centrali,
@@ -1073,7 +1125,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.4.7"; // [2026-11-22] v1.4.7: ekran ZASILANIE - taktowanie procesora i moc nadajnika WiFi do wyboru, pamietane w NVS; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.1"; // [2026-11-24] v1.5.1: po wybudzeniu od razu pulpit; pierwsze dotkniecie przyciemnionego ekranu tylko rozjasnia; czasy przyciemnienia/snu na ekranie WYSWIETLACZ; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1251,8 +1303,24 @@ bool dotykOdczytaj(int16_t &px, int16_t &py) {
 // Podswietlenie (LED) na pinie TFT_BL (GPIO21, patrz platformio.ini) — PRZEZ
 // REZYSTOR ~100-220R w szeregu miedzy GPIO a pinem LED na module, nie na styk.
 // Sterowane PWM zamiast na sztywno do 3.3V, wiec mozna przygasic jesli za jasno.
+// [v1.5.0 SEN] true = panel na baterii przyciemnil ekran po minucie bez dotyku
+// (senKrok() nizej). Dopoki trwa, KAZDE ustawienie jasnosci z innych miejsc
+// (harmonogram dzien/noc, suwak) jest przycinane do diag::SEN_JASNOSC_PROC -
+// inaczej zmiana okna dzien/noc w srodku nocy rozjasnialaby uspiony ekran.
+static bool senPrzyciemnione = false;
+bool senEkranPrzyciemniony() { return senPrzyciemnione; }   // [v1.5.1] dla filtru dotyku w lvgl_port.cpp
+// [v1.5.1] Indeksy w diag::SEN_PRZYCIEMNIJ_OPCJE_MS[] / SEN_USPIJ_OPCJE_MS[]
+// (ekran WYSWIETLACZ, wiersz "Na baterii"); NVS wyswietlacz/senPrzyIdx, senSpijIdx.
+static uint8_t senPrzyciemnijIdx = diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX;
+static uint8_t senUspijIdx       = diag::SEN_USPIJ_DOMYSLNY_IDX;
+static_assert(diag::SEN_OPCJI == LVGL_SEN_OPCJI, "napisy na przyciskach \"Na baterii\" (dashboard_lvgl_poc.cpp) musza odpowiadac diag::SEN_*_OPCJE_MS[]");
+// [v1.5.1] true = ten start to wybudzenie z glebokiego snu (ext0 przycisk /
+// ext1 ladowarka): bez ekranu startowego, pulpit od razu (patrz polaczWifi()).
+static bool startPoSnie = false;
+
 void ustawJasnoscPodswietlenia(uint8_t procent) {
   procent = constrain(procent, (uint8_t)0, (uint8_t)100);
+  if (senPrzyciemnione && procent > diag::SEN_JASNOSC_PROC) procent = diag::SEN_JASNOSC_PROC;
   ledcWrite(TFT_BL, map(procent, 0, 100, 0, 255));
 }
 
@@ -1398,6 +1466,9 @@ void wyswietlaczWczytajZPamieci() {
   zasilanieTxIdx  = ustawieniaWyswietlacza.getUChar("txIdx", 0);
   if (zasilanieCpuIdx >= ZASILANIE_CPU_N) zasilanieCpuIdx = 0;
   if (zasilanieTxIdx  >= ZASILANIE_TX_N)  zasilanieTxIdx  = 0;
+  // [v1.5.1 SEN] Tak samo indeksy, nie czasy; nieznany indeks = domyslny (1 min / 5 min).
+  senPrzyciemnijIdx = diag::senIndeksPoprawny(ustawieniaWyswietlacza.getUChar("senPrzyIdx", diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX), diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX);
+  senUspijIdx       = diag::senIndeksPoprawny(ustawieniaWyswietlacza.getUChar("senSpijIdx", diag::SEN_USPIJ_DOMYSLNY_IDX), diag::SEN_USPIJ_DOMYSLNY_IDX);
   // Bezpieczne klipsy na wypadek uszkodzonych/przedawnionych danych w NVS -
   // te same zakresy co suwaki/spinboxy w dashboard_lvgl_poc.cpp.
   // [v1.4.1 C9] Dolna granica JASNOSC_MIN_PROCENT: wartosc 0 % zapisana przez
@@ -1490,6 +1561,18 @@ void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
   } else if (strcmp(pole, "godzKoniec") == 0) {
     godzinaKoniecPrzyciemnienia = godz;
     ustawieniaWyswietlacza.putUChar("godzKoniec", godz);
+  } else if (strcmp(pole, "senPrzyciemnij") == 0 || strcmp(pole, "senUspij") == 0) {
+    // [v1.5.1 SEN] Wiersz "Na baterii" - indeks w diag::SEN_*_OPCJE_MS[].
+    if (pole[3] == 'P') {
+      senPrzyciemnijIdx = diag::senIndeksPoprawny(wartosc, diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX);
+      ustawieniaWyswietlacza.putUChar("senPrzyIdx", senPrzyciemnijIdx);
+    } else {
+      senUspijIdx = diag::senIndeksPoprawny(wartosc, diag::SEN_USPIJ_DOMYSLNY_IDX);
+      ustawieniaWyswietlacza.putUChar("senSpijIdx", senUspijIdx);
+    }
+    Serial.printf("tag=SEN zdarzenie=ustawienie przyciemnij_ms=%lu uspij_ms=%lu\n",
+                  (unsigned long)diag::senPrzyciemnijMs(senPrzyciemnijIdx), (unsigned long)diag::senUspijMs(senUspijIdx));
+    return;   // harmonogramu dzien/noc to nie dotyczy
   }
   wyswietlaczHarmonogramOdswiez(); // granice okna sie zmienily - przelicz i zastosuj od razu
 }
@@ -3495,7 +3578,8 @@ static const int EKRAN_START_Y_PANEL    = 124;
 static const int EKRAN_START_Y_CENTRALA = 182;
 // Ile ekran startowy stoi po dopisaniu wersji centrali, zeby dalo sie ja
 // przeczytac. Tylko przy zimnym starcie - po wybudzeniu z deep sleep
-// (przycisk) liczy sie czas do pulpitu, nie napis.
+// (przycisk / ladowarka) ekranu startowego w ogole nie ma (v1.5.1,
+// startPoSnie): pulpit LVGL idzie na wyswietlacz jeszcze przed WiFi.
 static const uint32_t EKRAN_START_POKAZ_MS = 1500;
 
 static void ekranStartowyNaglowek() {
@@ -3515,6 +3599,9 @@ static void ekranStartowyNaglowek() {
 // w PIERWSZA_PROBKA_TIMEOUT_MS, napis mowi to wprost i nie ma dodatkowej
 // pauzy - panel juz czekal 2,5 s, a pulpit i tak pokaze "--".
 static void ekranStartowyWersje() {
+  Serial.printf("tag=PANEL zdarzenie=ekran_startowy panel=%s centrala=%s\n",
+                FIRMWARE_VERSION_PANEL, stan.centralaFw[0] != '\0' ? stan.centralaFw : "-");
+  if (startPoSnie) return;   // [v1.5.1] po wybudzeniu na ekranie jest pulpit LVGL, nie ekran startowy - tylko log
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(KOL_TEKST, KOL_TLO);
   tft.setTextFont(2);
@@ -3524,10 +3611,7 @@ static void ekranStartowyWersje() {
   else if (swiezoscStatusu.byloKiedykolwiek) snprintf(linia, sizeof(linia), "Centrala: wersja nieznana");
   else snprintf(linia, sizeof(linia), "Centrala: brak odpowiedzi");
   tft.drawString(linia, 240, EKRAN_START_Y_CENTRALA);
-  Serial.printf("tag=PANEL zdarzenie=ekran_startowy panel=%s centrala=%s\n",
-                FIRMWARE_VERSION_PANEL, stan.centralaFw[0] != '\0' ? stan.centralaFw : "-");
   if (!swiezoscStatusu.byloKiedykolwiek) return;
-  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) return;
   const unsigned long start = millis();
   while (millis() - start < EKRAN_START_POKAZ_MS) {
     esp_task_wdt_reset();   // watchdog petli (15 s) juz dziala - jak w polaczWifi()
@@ -3553,16 +3637,30 @@ void polaczWifi() {
   // szybkosci (patrz komentarz przy definicji WIFI_IP_STATYCZNE wyzej).
   WiFi.config(WIFI_IP_STATYCZNE, WIFI_GATEWAY, WIFI_MASKA);
 
-  tft.fillScreen(KOL_TLO);
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(KOL_TEKST, KOL_TLO);
-  ekranStartowyNaglowek();   // [v1.4.6] "WYSWIETLACZ CO" + "Panel v1.4.6" nad napisami o laczeniu
-  tft.setTextFont(2);
+  if (startPoSnie) {
+    // [v1.5.1] Po wybudzeniu z glebokiego snu (przycisk / ladowarka) nikt nie
+    // chce czytac wersji - ma byc pulpit. LVGL ma juz zbudowane ekrany
+    // (lvgl_dashboard_poc_init() w setup() przed ta funkcja), ale rysuje
+    // dopiero przy pierwszym lv_timer_handler() - zwykle w loop(), czyli po
+    // WiFi (do 20 s) i po pierwszych danych (do 2,5 s). Jeden obrot tutaj
+    // wysyla caly pulpit (kafelki z "--", naglowek bez WiFi) do wyswietlacza
+    // OD RAZU; dane i ikona WiFi dochodza w tle, jak przy kazdej utracie
+    // polaczenia. Zegar LVGL stal przez caly setup() - pierwszy tick nadrabia
+    // go skokiem, to nieszkodliwe (animacji jeszcze nie ma).
+    lvgl_port_tick();
+    Serial.printf("tag=SEN zdarzenie=pulpit_po_wybudzeniu ms=%lu\n", (unsigned long)millis());
+  } else {
+    tft.fillScreen(KOL_TLO);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(KOL_TEKST, KOL_TLO);
+    ekranStartowyNaglowek();   // [v1.4.6] "WYSWIETLACZ CO" + "Panel v1.4.6" nad napisami o laczeniu
+    tft.setTextFont(2);
+  }
 
   if (!rtcBssidZnany) {
     // [v1.2.0 WIFI-WYBOR] Zimny start (pamiec RTC pusta): wlasny skan, wybor
     // najsilniejszej centrali i polaczenie z NIA po BSSID.
-    tft.drawString("Szukam centrali", 240, 150);
+    if (!startPoSnie) tft.drawString("Szukam centrali", 240, 150);   // [v1.5.1] po snie pulpit juz jest na ekranie
     diag::KandydatAp ap;
     wifiCentralPrzyStarcie = wifiSkanujCentrale(ap);
     if (wifiCentralPrzyStarcie > 0) {
@@ -3573,7 +3671,7 @@ void polaczWifi() {
     // Napis jest wysrodkowany na y=150 (MC_DATUM, font 16 px -> zajmuje
     // y=142..158), a petla ponizej czysci tylko y=150..170 - bez tego spod
     // "Laczenie z WiFi" wystawalyby resztki "Szukam centrali".
-    tft.fillRect(0, 138, 480, 24, KOL_TLO);
+    if (!startPoSnie) tft.fillRect(0, 138, 480, 24, KOL_TLO);
   }
 
   wifiRozpocznijLaczenie();
@@ -3586,8 +3684,10 @@ void polaczWifi() {
     // restartowalby sie co ok. 15 s w kolko, nie dochodzac do ekranu
     // (wniosek z kodu i z testu na PC - nie zaobserwowane na plytce).
     esp_task_wdt_reset();
-    tft.fillRect(0, 150, 480, 20, KOL_TLO);
-    tft.drawString("Laczenie z WiFi" , 240, 150);
+    if (!startPoSnie) {   // [v1.5.1] po wybudzeniu na ekranie jest juz pulpit LVGL - nie mazac po nim
+      tft.fillRect(0, 150, 480, 20, KOL_TLO);
+      tft.drawString("Laczenie z WiFi" , 240, 150);
+    }
     // [v1.2.1] Jak w petli skanu wyzej: alarm sprzed samoczynnego restartu
     // gra dalej. 8 x 50 ms zamiast jednego delay(400), bo fazy wzorca trwaja
     // po 500 ms; bez alarmu obsluzBrzeczyk() wraca od razu.
@@ -3691,18 +3791,23 @@ void wifiReconnectNonBlocking() {
 // ----------------------------------------------------------------------------
 // [ETAP 3b] ZASILANIE — deep sleep + wybudzanie przyciskiem
 // ----------------------------------------------------------------------------
-// [v1.4.4 C1] UWAGA: zarejestrujAktywnosc() i idzSpac() nie sa obecnie przez
-// nikogo wolane (usypianie po nieaktywnosci bylo podpiete tylko pod stary
-// dashboard TFT, usuniety w v1.4.4). Zostawione CELOWO - to gotowy, sprawdzony
-// na plytce kod pod krok 3 (B1/B5 z audytu: usypianie + bateria), ktory
-// czeka na podlaczenie przycisku/baterii. Nie usuwac jako "martwy".
-// Przycisk: GPIO14 -> GND (wewnetrzny pull-up, wybudzenie na stanie LOW).
+// [v1.5.0 SEN] Od tej wersji idzSpac() jest NAPRAWDE wolane - z senKrok()
+// (nizej), ktore co sekunde liczy diag::senDecyzja() z warunkow plytki.
+// Do v1.4.7 ten kod czekal (od v1.4.4 nikt go nie wolal - usypianie bylo
+// podpiete tylko pod stary dashboard TFT). Sprzet jest juz zlutowany
+// (2026-11-20): przycisk GPIO14 -> 1 kOhm -> tact -> GND (R4 chroni pin, pull-up
+// wewnetrzny), ladowarka TP4056 na GPIO35 (patrz USB_DETECT_PIN), ogniwo na
+// dzielniku GPIO34 (patrz BATERIA_ADC_PIN).
 // GPIO14 wybrany w poprzedniej sesji: wolny (nie koliduje z TFT/dotykiem —
 // patrz platformio.ini + TOUCH_* wyzej), w domenie RTC (wymog ext0), i NIE
 // jest pinem strapping (w odroznieniu od 0/2/12/15) — bezpieczny wybor.
 #define WAKE_BTN_PIN GPIO_NUM_14
-static const uint32_t ACTIVITY_TIMEOUT_MS = 5UL * 60UL * 1000UL; // 5 minut
-unsigned long ostatniaAktywnosc = 0;
+// [v1.5.0 SEN] Drugie zrodlo wybudzenia: wlozenie ladowarki. TP4056 sciaga
+// wtedy CHRG/STDBY (GPIO35, zewnetrzne 10k do 3V3) do masy - ext1 w trybie
+// ALL_LOW na jednym pinie to dokladnie "obudz, gdy pin spadnie do 0". GPIO35
+// jest w domenie RTC (RTC_GPIO5), wiec ext1 na nim dziala; ext0 i ext1 moga
+// byc wlaczone rownoczesnie (ESP32 classic).
+#define WAKE_USB_PIN_MASK (1ULL << 35)
 
 // [ETAP 3b, detekcja USB — ZDECYDOWANE: TP4056 CHRG+STDBY, nie dzielnik na
 // VIN] Pierwotny plan (dzielnik napiecia z VIN/5V) zalezal od zalozenia o
@@ -3808,33 +3913,72 @@ int bateriaNapiecieNaProcent(float v) {
   return 0;
 }
 
-// Do wywolania przy KAZDYM wykrytym dotyku (do v1.4.3: stary obsluzDotyk();
-// docelowo lvgl_touch_read() w kroku 3) — resetuje timer nieaktywnosci.
-void zarejestrujAktywnosc() {
-  ostatniaAktywnosc = millis();
-}
+// [v1.5.0 SEN] Ostatni pomiar ogniwa - wspolny dla wskaznika (bateriaKrok())
+// i decyzji o snie (senKrok()); senKrok() nie mierzy sam, zeby ADC nie byl
+// odpytywany co sekunde bez potrzeby.
+static float bateriaOstatnieV   = 0.0f;
+static bool  bateriaOstatnioJest = false;   // diag::bateriaObecna(bateriaOstatnieV)
+static bool  bateriaZmierzona   = false;    // false do pierwszego pomiaru (od v1.5.0: od razu po starcie)
 
 // [research, ta sesja] Znany bug/pulapka Espressif: jesli pin wybudzajacy
 // jest WCIAZ wcisniety w momencie wywolania esp_deep_sleep_start(), ESP32
 // natychmiast wybudza sie z powrotem — petla usypiania. Dlatego czekamy na
 // PUSZCZENIE przycisku + krotki debounce TUZ PRZED wlasciwym usnieciem,
 // nie tylko przy samym wybudzeniu.
-void idzSpac() {
+//
+// [v1.5.0 SEN] `powod` to tekst z diag::senDecyzja() (do logu); gdy zaczyna
+// sie od "bateria_", przed snem stoi przez diag::SEN_NAPIS_MS napis dla
+// uzytkownika - inaczej panel "sam zgasl" bez slowa i wygladaloby to na awarie.
+// Napis idzie prosto przez TFT_eSPI (ASCII, bez polskich liter - jak ekran
+// startowy): LVGL nie jest juz potrzebne, za chwile twardy reset.
+void idzSpac(const char* powod) {
   // [OTA-PANEL, ta sesja, prompt #8] Nigdy nie usypiaj w trakcie pobierania/
   // flashowania firmware'u — przerwany zapis do flash moze zostawic panel
   // w zlym stanie (patrz BAGNO 5.1 w OTA_PANEL_CALOSC.md). Flaga jest
   // czyszczona po KAZDEJ probie pobierania (otaSprzatnijPoProbie(), [v1.4.0
   // OTA]) - udanej konczy sie restartem - wiec to tylko chwilowe opoznienie
-  // usniecia, nie trwala blokada.
+  // usniecia, nie trwala blokada. (senDecyzja() tez to sprawdza - to drugi
+  // bezpiecznik, na wypadek wolania idzSpac() z innego miejsca.)
   if (trwaAktualizacjaOtaPanelu) {
     Serial.println(F("tag=OTA-PANEL zdarzenie=usypianie_zablokowane"));
     return;
   }
 
-  Serial.println(F("=== USYPIANIE (timeout nieaktywnosci) ==="));
+  Serial.printf("tag=SEN zdarzenie=usypianie powod=%s napiecie=%.2fV bez_dotyku_s=%lu\n",
+                powod != nullptr ? powod : "-", (double)bateriaOstatnieV,
+                (unsigned long)(lvgl_dashboard_poc_bez_dotyku_ms() / 1000UL));
+
+  // Brzeczyk: cisza i koniec PWM PRZED snem - ewentualny alarm sprzed chwili
+  // nie ma juz do kogo grac, a pin musi byc zwyklym wyjsciem (nie LEDC),
+  // zeby gpio_hold_en() nizej zamrozil stan niski.
+  ledcWriteTone(BRZECZYK_PIN, 0);
+  ledcDetach(BRZECZYK_PIN);
+  pinMode(BRZECZYK_PIN, OUTPUT);
+  digitalWrite(BRZECZYK_PIN, LOW);
+
+  if (diag::senZNapisem(powod)) {
+    // Napis na pelnej jasnosci (ekran mogl byc przyciemniony) - ma byc widoczny.
+    senPrzyciemnione = false;
+    ustawJasnoscPodswietlenia(jasnoscDziennaWartosc);
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setTextFont(4);
+    tft.drawString("BATERIA ROZLADOWANA", 240, 120);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextFont(2);
+    tft.drawString("Podlacz ladowarke. Panel usypia.", 240, 170);
+    tft.drawString("Przycisk albo ladowarka budzi panel.", 240, 195);
+    const unsigned long start = millis();
+    while (millis() - start < diag::SEN_NAPIS_MS) {
+      esp_task_wdt_reset();
+      delay(50);
+    }
+  }
 
   // Wygaszenie ekranu przed snem — nie ma sensu trzymac podswietlenia
   // wlaczonego, skoro i tak zaraz nastapi twardy reset przy wybudzeniu.
+  senPrzyciemnione = false;
   ustawJasnoscPodswietlenia(0);
   tft.fillScreen(TFT_BLACK);
 
@@ -3860,6 +4004,10 @@ void idzSpac() {
   // uniwersalny mechanizm gpio_hold_en + globalny gpio_deep_sleep_hold_en —
   // BEZ potrzeby uzywania rtc_gpio_hold_en().
   gpio_hold_en((gpio_num_t)TFT_BL);   // zamraza biezacy stan pinu (LOW) na czas snu
+  // [v1.5.0 SEN] To samo dla brzeczyka: GPIO13 nie jest pinem RTC, wiec bez
+  // "hold" plywalby przez caly sen; przez R5 (1k) idzie na baze C945 -
+  // szum moglby cicho zalaczac modul i zjadac baterie. Stan niski = cisza.
+  gpio_hold_en((gpio_num_t)BRZECZYK_PIN);
   gpio_deep_sleep_hold_en();          // globalny wlacznik "trzymania" cyfrowych pinow w deep sleep
 
   // Czekaj na puszczenie przycisku, zeby uniknac natychmiastowego wybudzenia.
@@ -3876,8 +4024,112 @@ void idzSpac() {
   rtc_gpio_pulldown_dis(WAKE_BTN_PIN);
 
   esp_sleep_enable_ext0_wakeup(WAKE_BTN_PIN, 0); // 0 = wybudzenie na stanie LOW
+  // [v1.5.0 SEN] Drugie zrodlo: ladowarka (GPIO35 spada do 0, gdy TP4056
+  // dostaje USB). Pin ma zewnetrzne 10k do 3V3, wiec we snie nie plywa.
+  esp_sleep_enable_ext1_wakeup(WAKE_USB_PIN_MASK, ESP_EXT1_WAKEUP_ALL_LOW);
   esp_deep_sleep_start();
   // (nic dalej sie nie wykona — po wybudzeniu ESP32 startuje od nowa od setup())
+}
+
+// [v1.5.0 SEN] Pomiar ogniwa + wskaznik baterii. Do v1.4.7 ten kod byl w
+// loop(); wyniesiony tutaj, bo odczyt jest teraz pamietany dla senKrok().
+// Pierwszy pomiar od razu po starcie (wskaznik nie pokazuje przez 30 s "USB"
+// przy ogniwie, a panel wybudzony z rozladowana bateria nie czeka pol minuty
+// na decyzje o powrocie do snu), potem co BATERIA_INTERWAL_MS.
+static const uint32_t BATERIA_INTERWAL_MS = 30000;
+void bateriaKrok() {
+  static unsigned long ostatniaBateria = 0;
+  const unsigned long teraz = millis();
+  if (bateriaZmierzona && teraz - ostatniaBateria < BATERIA_INTERWAL_MS) return;
+  ostatniaBateria = teraz;
+  bateriaZmierzona = true;
+  const float napiecieBat = bateriaOdczytajNapiecie();
+  // [v1.2.0 BATERIA-BRAK] Ponizej diag::BATERIA_PROG_OBECNOSCI_V (2,5 V) na
+  // dzielniku nie ma ogniwa - panel pracuje z samego USB. v1.1.0 pokazywal
+  // wtedy "0%" w kolorze "laduje sie" (log z 2026-11-10:
+  // "napiecie=0.28V procent=0 ladowanie=1" co 30 s). Teraz: napis "USB" na
+  // wskazniku, a w logu jedna linia przy zmianie stanu zamiast co 30 s.
+  static int8_t poprzednioBateriaJest = -1;   // -1 = jeszcze nie mierzono
+  const bool bateriaJest = diag::bateriaObecna(napiecieBat);
+  bateriaOstatnieV = napiecieBat;
+  bateriaOstatnioJest = bateriaJest;
+  if (bateriaJest) {
+    const int procentBat = bateriaNapiecieNaProcent(napiecieBat);
+    const bool usb = zasilanieUSB();
+    Serial.printf("tag=BATERIA napiecie=%.2fV procent=%d ladowanie=%d\n", napiecieBat, procentBat, (int)usb);
+    lvgl_dashboard_poc_aktualizuj_bateria(procentBat, usb);
+  } else {
+    if (poprzednioBateriaJest != 0) {
+      Serial.printf("tag=BATERIA zdarzenie=brak_ogniwa napiecie=%.2fV prog=%.1fV msg=\"zasilanie z USB, wskaznik pokazuje USB\"\n",
+                    napiecieBat, diag::BATERIA_PROG_OBECNOSCI_V);
+    }
+    lvgl_dashboard_poc_aktualizuj_bateria(-1, false);
+  }
+  poprzednioBateriaJest = bateriaJest ? 1 : 0;
+}
+
+// [v1.5.0 SEN] Przyciemnienie i sen na baterii - wolane co obrot loop().
+//  - co obrot (tanio): przycisk budzenia wcisniety w czasie pracy = aktywnosc;
+//    jesli ekran jest przyciemniony, a ktos wlasnie dotknal - jasnosc wraca
+//    NATYCHMIAST (nie dopiero przy nastepnym liczeniu decyzji za sekunde);
+//  - co diag::SEN_SPRAWDZAJ_CO_MS: pelna decyzja diag::senDecyzja().
+// Jasnosc po powrocie z przyciemnienia = ta, ktora wynika z harmonogramu
+// dzien/noc (wyswietlaczPrzyciemnionyTeraz), nie zawsze dzienna.
+static void senPrzywrocJasnosc(const char* powod) {
+  if (!senPrzyciemnione) return;
+  senPrzyciemnione = false;
+  ustawJasnoscPodswietlenia(wyswietlaczPrzyciemnionyTeraz ? jasnoscNocnaWartosc : jasnoscDziennaWartosc);
+  Serial.printf("tag=SEN zdarzenie=jasnosc powod=%s\n", powod);
+}
+
+void senKrok() {
+  if (digitalRead(WAKE_BTN_PIN) == LOW) lvgl_dashboard_poc_zglos_aktywnosc();
+  if (senPrzyciemnione && lvgl_dashboard_poc_bez_dotyku_ms() < diag::senPrzyciemnijMs(senPrzyciemnijIdx)) senPrzywrocJasnosc("dotyk");
+
+  static unsigned long ostatnieSprawdzenie = 0;
+  static const char* poprzedniPowod = "";
+  const unsigned long teraz = millis();
+  if (teraz - ostatnieSprawdzenie < diag::SEN_SPRAWDZAJ_CO_MS) return;
+  ostatnieSprawdzenie = teraz;
+  if (!bateriaZmierzona) return;   // jeszcze przed pierwszym pomiarem (tylko pierwsze ms po starcie)
+
+  diag::SenWarunki w;
+  w.bateriaJest  = bateriaOstatnioJest;
+  w.zasilanieUsb = zasilanieUSB();
+  w.napiecieV    = bateriaOstatnieV;
+  w.bezDotykuMs  = lvgl_dashboard_poc_bez_dotyku_ms();
+  w.alarm        = stan.dymAlarm || stan.alarmOgrzewanie || stan.alarmPanel || brzeczykAktywnyTyp != BRZECZYK_BRAK;
+  w.ota          = trwaAktualizacjaOtaPanelu || lvgl_dashboard_poc_ota_widoczna();
+  w.przyciemnijPoMs = diag::senPrzyciemnijMs(senPrzyciemnijIdx);   // [v1.5.1] z ekranu WYSWIETLACZ (0 = nigdy)
+  w.uspijPoMs       = diag::senUspijMs(senUspijIdx);
+  const diag::SenDecyzja d = diag::senDecyzja(w);
+
+  switch (d.akcja) {
+    case diag::SEN_AKCJA_USPIJ:
+      idzSpac(d.powod);   // nie wraca (poza blokada OTA - wtedy za sekunde jeszcze raz)
+      break;
+    case diag::SEN_AKCJA_PRZYCIEMNIJ:
+      if (!senPrzyciemnione) {
+        senPrzyciemnione = true;
+        ustawJasnoscPodswietlenia(diag::SEN_JASNOSC_PROC);
+        Serial.printf("tag=SEN zdarzenie=przyciemnienie powod=%s napiecie=%.2fV jasnosc=%u%%\n",
+                      d.powod, (double)bateriaOstatnieV, (unsigned)diag::SEN_JASNOSC_PROC);
+      }
+      break;
+    default:
+      // Powod inny niz "aktywny"/"dotyk" (usb podlaczone, alarm, ota) tez
+      // konczy przyciemnienie - np. alarm w nocy ma byc widoczny.
+      senPrzywrocJasnosc(d.powod);
+      break;
+  }
+  // Jedna linia logu przy zmianie powodu "dlaczego panel nie spi" - tylko
+  // dla powodow blokujacych (alarm/ota), zeby log nie pisal "aktywny"/"usb" w kolko.
+  if (strcmp(d.powod, poprzedniPowod) != 0) {
+    if (strcmp(d.powod, "alarm") == 0 || strcmp(d.powod, "ota") == 0) {
+      Serial.printf("tag=SEN zdarzenie=sen_wstrzymany powod=%s\n", d.powod);
+    }
+    poprzedniPowod = d.powod;
+  }
 }
 
 // [OTA-ROLLBACK] Potwierdza biezaca partycje jako VALID, jesli zostala
@@ -4500,6 +4752,12 @@ void setup() {
   // slyszy (bedzie duzo krotszy), jedyny dalszy krok to zewnetrzny
   // rezystor podciagajacy w dol (10-100k, pin->GND) na linii IO buzzera,
   // fizycznie trzymajacy ja na LOW nawet zanim jakikolwiek kod wystartuje.
+  // [v1.5.0 SEN] Po wybudzeniu z glebokiego snu pin brzeczyka ma wlaczony
+  // "hold" z idzSpac() (gpio_hold_en) - bez zdjecia go pinMode()/ledcAttach()
+  // nizej nic by nie zmienily i alarm bylby niemy az do odlaczenia zasilania.
+  // Przy zwyklym starcie (hold nigdy nie byl wlaczony) to no-op. Dla TFT_BL to
+  // samo robi gpio_hold_dis() przed ledcAttach() dalej w setup().
+  gpio_hold_dis((gpio_num_t)BRZECZYK_PIN);
   pinMode(BRZECZYK_PIN, OUTPUT);
   digitalWrite(BRZECZYK_PIN, LOW);
 
@@ -4556,8 +4814,11 @@ void setup() {
   // [ETAP 3b] Log powodu startu — odroznia normalny start (USB/reset) od
   // wybudzenia przyciskiem po deep sleep, przydatne przy diagnostyce.
   esp_sleep_wakeup_cause_t powod = esp_sleep_get_wakeup_cause();
+  startPoSnie = (powod == ESP_SLEEP_WAKEUP_EXT0 || powod == ESP_SLEEP_WAKEUP_EXT1);   // [v1.5.1] pulpit zamiast ekranu startowego
   if (powod == ESP_SLEEP_WAKEUP_EXT0) {
     Serial.println(F("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk"));
+  } else if (powod == ESP_SLEEP_WAKEUP_EXT1) {
+    Serial.println(F("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=usb"));   // [v1.5.0 SEN] wlozona ladowarka (GPIO35)
   } else {
     Serial.println(F("tag=ZASILANIE zdarzenie=start zrodlo=reset_lub_usb"));
   }
@@ -4662,6 +4923,7 @@ void setup() {
   // [v1.4.7 ZASILANIE] Lokalne jak podswietlenie (NVS + sprzet tej plytki) - callback i zapisane indeksy.
   lvgl_dashboard_poc_ustaw_callback_zasilanie(zasilanieWyslij);
   lvgl_dashboard_poc_aktualizuj_zasilanie(zasilanieCpuIdx, zasilanieTxIdx);
+  lvgl_dashboard_poc_aktualizuj_sen(senPrzyciemnijIdx, senUspijIdx);   // [v1.5.1] wiersz "Na baterii" na ekranie WYSWIETLACZ
   // [v1.2.1 RATUNEK] Po samoczynnym restarcie w trakcie alarmu: ekran alarmu
   // (albo dzwonek w naglowku, jesli byl zamkniety) i czerwone ramki kafelkow
   // wracaja, zanim przyjda pierwsze dane.
@@ -4712,6 +4974,14 @@ void setup() {
   // zwalniaja. Odczyt na ekran ZASILANIE od razu, nie dopiero za 2 s.
   zasilanieZastosujCpu("start");
   zasilaniePomiarNaEkran();
+  // [v1.5.0 SEN] Licznik bezczynnosci liczy sie od TEJ chwili (panel gotowy,
+  // ekran narysowany), nie od lv_init() kilka sekund wczesniej - inaczej
+  // pierwsze przyciemnienie na baterii przyszloby o te kilka sekund za wczesnie.
+  // Najpierw lvgl_port_tick(): zegar LVGL (lv_tick_inc w lvgl_port_tick()) stoi
+  // przez caly setup() i nadrabia caly ten czas jednym skokiem przy pierwszym
+  // wywolaniu - bez tego "dotyk" zglaszany tutaj bylby od razu kilka sekund stary.
+  lvgl_port_tick();
+  lvgl_dashboard_poc_zglos_aktywnosc();
   ostatniStatus = millis();
   // [OTA-ROLLBACK] Tutaj, nie wczesniej: ekran juz narysowany (obie galezie
   // SYMULACJA=0/1 zbiegaja sie w tym miejscu), a w galezi SYMULACJA=0
@@ -4736,45 +5006,15 @@ void loop() {
   // loop() liczy animacje LVGL.
   lvgl_port_tick();
 
-  // [BATERIA-POMIAR, ta sesja] Wspolne miejsce dla obu podgalezi
-  // (SYMULACJA i realna, patrz #if nizej) - pomiar baterii jest lokalny,
-  // niezalezny od tego czy dane z centrali sa symulowane czy prawdziwe.
-  // Wlasny, wolniejszy interwal (% nie zmienia sie tak szybko jak status
-  // co STATUS_INTERWAL_MS). Kolor "laduje sie" bierze wprost z
-  // zasilanieUSB() - dziala niezaleznie od tego, ze reszta logiki snu
-  // (idzSpac()/ACTIVITY_TIMEOUT) nie jest jeszcze wpieta w ta galaz LVGL
-  // (patrz PLAN_BATERIA.md, sekcja 3 - osobna, juz istniejaca luka, nie
-  // zwiazana z tym pomiarem).
-  static const uint32_t BATERIA_INTERWAL_MS = 30000;
-  static unsigned long ostatniaBateria = 0;
-  unsigned long terazBat = millis();
-  if (terazBat - ostatniaBateria >= BATERIA_INTERWAL_MS) {
-    ostatniaBateria = terazBat;
-    float napiecieBat = bateriaOdczytajNapiecie();
-    // [v1.2.0 BATERIA-BRAK] Ponizej diag::BATERIA_PROG_OBECNOSCI_V (2,5 V) na
-    // dzielniku nie ma ogniwa - panel pracuje z samego USB. v1.1.0 pokazywal
-    // wtedy "0%" w kolorze "laduje sie" (log z 2026-11-10:
-    // "napiecie=0.28V procent=0 ladowanie=1" co 30 s). Teraz: napis "USB" na
-    // wskazniku, a w logu jedna linia przy zmianie stanu zamiast co 30 s.
-    static int8_t poprzednioBateriaJest = -1;   // -1 = jeszcze nie mierzono
-    const bool bateriaJest = diag::bateriaObecna(napiecieBat);
-    if (bateriaJest) {
-      int procentBat = bateriaNapiecieNaProcent(napiecieBat);
-      Serial.printf("tag=BATERIA napiecie=%.2fV procent=%d ladowanie=%d\n",
-                    napiecieBat, procentBat, (int)zasilanieUSB());
-      lvgl_dashboard_poc_aktualizuj_bateria(procentBat, zasilanieUSB());
-    } else {
-      if (poprzednioBateriaJest != 0) {
-        Serial.printf("tag=BATERIA zdarzenie=brak_ogniwa napiecie=%.2fV prog=%.1fV msg=\"zasilanie z USB, wskaznik pokazuje USB\"\n",
-                      napiecieBat, diag::BATERIA_PROG_OBECNOSCI_V);
-      }
-      lvgl_dashboard_poc_aktualizuj_bateria(-1, false);
-    }
-    poprzednioBateriaJest = bateriaJest ? 1 : 0;
-  }
+  // [BATERIA-POMIAR] Pomiar ogniwa i wskaznik baterii - wspolne dla obu
+  // podgalezi (SYMULACJA i realna), lokalne, niezalezne od centrali. Od
+  // v1.5.0 w bateriaKrok() (pierwszy pomiar od razu, potem co 30 s).
+  bateriaKrok();
+  // [v1.5.0 SEN] Na baterii: przyciemnienie po 1 min, sen po 5 min bez dotyku,
+  // sen od razu przy rozladowanym ogniwie. Na USB nic nie robi.
+  senKrok();
 
   // Pilnuje WiFi + co STATUS_INTERWAL_MS odswieza dane z centrali.
-  // (Usypianie po nieaktywnosci - idzSpac() - celowo niepodpiete: krok 3.)
   wifiReconnectNonBlocking();
 
   // [SIEC-NIEBLOKUJACA, ta sesja] Musza isc CO ITERACJE (nie tylko co

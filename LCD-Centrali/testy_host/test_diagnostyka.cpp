@@ -1133,7 +1133,118 @@ static void testFiltrStatusu() {
   SPRAWDZ(brakujacych == 0);
 }
 
+// ---------------------------------------------------------------------------
+// [v1.5.0 SEN] przyciemnienie i gleboki sen na baterii
+// ---------------------------------------------------------------------------
+static diag::SenWarunki senBateria(uint32_t bezDotykuMs, float napiecieV = 3.90f) {
+  diag::SenWarunki w;
+  w.bateriaJest = true;
+  w.zasilanieUsb = false;
+  w.napiecieV = napiecieV;
+  w.bezDotykuMs = bezDotykuMs;
+  w.alarm = false;
+  w.ota = false;
+  return w;
+}
+static bool senJest(const diag::SenDecyzja& d, diag::SenAkcja akcja, const char* powod) {
+  return d.akcja == akcja && std::strcmp(d.powod, powod) == 0;
+}
+
+static void testSen() {
+  using namespace diag;
+  // Progi takie, jak w opisie dla uzytkownika (README, plan krok 3).
+  SPRAWDZ(SEN_PRZYCIEMNIJ_PO_MS == 60000UL);
+  SPRAWDZ(SEN_USPIJ_PO_MS == 300000UL);
+  SPRAWDZ(SEN_JASNOSC_PROC == 5);
+  SPRAWDZ(SEN_NAPIECIE_KRYT_V < SEN_NAPIECIE_MIN_V);
+
+  // Na baterii, swiezo dotkniety: nic.
+  SPRAWDZ(senJest(senDecyzja(senBateria(0)), SEN_AKCJA_NIC, "aktywny"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(59999)), SEN_AKCJA_NIC, "aktywny"));
+  // Minuta bez dotyku: przyciemnij; 5 minut: spij.
+  SPRAWDZ(senJest(senDecyzja(senBateria(60000)), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(299999)), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(300000)), SEN_AKCJA_USPIJ, "bez_dotyku"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(3600000UL)), SEN_AKCJA_USPIJ, "bez_dotyku"));
+
+  // Na USB: nigdy, niezaleznie od czasu i napiecia (zachowanie do v1.4.7).
+  { SenWarunki w = senBateria(3600000UL, 3.0f); w.zasilanieUsb = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "usb")); }
+  // Bez ogniwa (sam USB przez TP4056, dzielnik widzi 0,28 V): nigdy.
+  { SenWarunki w = senBateria(3600000UL, 0.28f); w.bateriaJest = false; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "brak_ogniwa")); }
+  // Aktualizacja panelu: nie przyciemniaj i nie spij (takze przy slabej baterii).
+  { SenWarunki w = senBateria(3600000UL, 3.2f); w.ota = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "ota")); }
+  // Alarm: ekran alarmu zostaje jasny, zadnego snu...
+  { SenWarunki w = senBateria(3600000UL); w.alarm = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "alarm")); }
+  { SenWarunki w = senBateria(90000, 3.25f); w.alarm = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "alarm")); }
+  // ...chyba ze ogniwo jest na granicy odciecia.
+  { SenWarunki w = senBateria(0, 3.05f); w.alarm = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bateria_krytyczna")); }
+
+  // Rozladowana bateria: sen od razu, nawet gdy ktos wlasnie dotknal.
+  SPRAWDZ(senJest(senDecyzja(senBateria(0, 3.29f)), SEN_AKCJA_USPIJ, "bateria_rozladowana"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(0, 3.30f)), SEN_AKCJA_NIC, "aktywny"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(0, 3.09f)), SEN_AKCJA_USPIJ, "bateria_krytyczna"));
+  // Napis przed snem tylko przy powodach "bateria_*".
+  SPRAWDZ(senZNapisem("bateria_rozladowana"));
+  SPRAWDZ(senZNapisem("bateria_krytyczna"));
+  SPRAWDZ(!senZNapisem("bez_dotyku"));
+  SPRAWDZ(!senZNapisem(nullptr));
+
+  // Kolejnosc: ota przed alarmem (wgrywanie nie moze byc przerwane), alarm
+  // przed zwykla rozladowana bateria, bateria krytyczna przed alarmem.
+  { SenWarunki w = senBateria(0, 3.0f); w.ota = true; w.alarm = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "ota")); }
+
+  // [v1.5.1] Czasy do wyboru na ekranie WYSWIETLACZ: domyslny indeks = czasy z v1.5.0.
+  SPRAWDZ(SEN_OPCJI == 6);
+  SPRAWDZ(senPrzyciemnijMs(SEN_PRZYCIEMNIJ_DOMYSLNY_IDX) == SEN_PRZYCIEMNIJ_PO_MS);
+  SPRAWDZ(senUspijMs(SEN_USPIJ_DOMYSLNY_IDX) == SEN_USPIJ_PO_MS);
+  SPRAWDZ(senPrzyciemnijMs(0) == 30000UL && senPrzyciemnijMs(4) == 600000UL && senPrzyciemnijMs(5) == 0);
+  SPRAWDZ(senUspijMs(0) == 120000UL && senUspijMs(4) == 3600000UL && senUspijMs(5) == 0);
+  // Nieznany indeks (z przyszlej wersji / uszkodzony NVS) = domyslny, nie smieci spoza tablicy.
+  SPRAWDZ(senPrzyciemnijMs(6) == SEN_PRZYCIEMNIJ_PO_MS && senPrzyciemnijMs(-1) == SEN_PRZYCIEMNIJ_PO_MS && senPrzyciemnijMs(255) == SEN_PRZYCIEMNIJ_PO_MS);
+  SPRAWDZ(senUspijMs(200) == SEN_USPIJ_PO_MS);
+  // SenWarunki bez ustawionych czasow = zachowanie v1.5.0 (sprawdzone wyzej); z czasami:
+  { SenWarunki w = senBateria(31000); w.przyciemnijPoMs = 30000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku")); }
+  { SenWarunki w = senBateria(599000); w.przyciemnijPoMs = 600000; w.uspijPoMs = 3600000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "aktywny")); }
+  { SenWarunki w = senBateria(3600000); w.przyciemnijPoMs = 600000; w.uspijPoMs = 3600000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bez_dotyku")); }
+  // "nigdy": 0 ms wylacza dany krok, drugi dziala dalej.
+  { SenWarunki w = senBateria(7200000); w.przyciemnijPoMs = 0; w.uspijPoMs = 0; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "aktywny")); }
+  { SenWarunki w = senBateria(7200000); w.przyciemnijPoMs = 60000; w.uspijPoMs = 0; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku")); }
+  { SenWarunki w = senBateria(7200000); w.przyciemnijPoMs = 0; w.uspijPoMs = 300000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bez_dotyku")); }
+  // Sen krotszy niz przyciemnienie (2 min / 10 min): po 2 min od razu sen, bez przyciemnienia.
+  { SenWarunki w = senBateria(120000); w.przyciemnijPoMs = 600000; w.uspijPoMs = 120000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bez_dotyku")); }
+  // "nigdy" nie wylacza snu z powodu rozladowanej baterii.
+  { SenWarunki w = senBateria(0, 3.25f); w.przyciemnijPoMs = 0; w.uspijPoMs = 0; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bateria_rozladowana")); }
+
+  // [v1.5.1] Filtr dotyku: pierwsze dotkniecie przyciemnionego ekranu tylko rozjasnia.
+  {
+    DotykFiltr f;
+    // Ekran jasny: kazdy odczyt idzie do LVGL (wcisniety, trzymany, puszczony).
+    SPRAWDZ(dotykPrzepusc(f, true, true, false, 2) && !f.pochlania);
+    SPRAWDZ(dotykPrzepusc(f, true, false, false, 2));
+    SPRAWDZ(dotykPrzepusc(f, false, false, false, 2));
+    // Ekran przyciemniony, palec dotyka: pochloniety od pierwszego odczytu...
+    SPRAWDZ(!dotykPrzepusc(f, true, true, true, 2) && f.pochlania);
+    // ...i dalej, takze gdy senKrok() zdazyl juz rozjasnic ekran (przyciemniony=false) -
+    // ten sam dotyk nie moze "wejsc w ikonke" w polowie trzymania.
+    SPRAWDZ(!dotykPrzepusc(f, true, false, false, 2) && f.pochlania);
+    SPRAWDZ(!dotykPrzepusc(f, true, false, false, 2));
+    // Jeden nieudany odczyt w srodku (szum panelu rezystancyjnego) nie konczy pochlaniania.
+    SPRAWDZ(!dotykPrzepusc(f, false, true, false, 2) && f.pochlania);
+    SPRAWDZ(!dotykPrzepusc(f, true, true, false, 2) && f.pochlania && f.nieudane == 0);
+    // Puszczenie: 2 kolejne odczyty bez palca (PROG_PUSZCZENIA) koncza pochlanianie.
+    SPRAWDZ(!dotykPrzepusc(f, false, true, false, 2) && f.pochlania);
+    SPRAWDZ(!dotykPrzepusc(f, false, true, false, 2) && !f.pochlania);
+    // Nastepne dotkniecie (ekran jasny) idzie normalnie.
+    SPRAWDZ(dotykPrzepusc(f, true, true, false, 2) && !f.pochlania);
+    // Dotyk trwajacy, gdy ekran sie przyciemnia (palec lezal na szybie, nowy=false): nie pochlaniamy w srodku.
+    SPRAWDZ(dotykPrzepusc(f, true, false, true, 2) && !f.pochlania);
+    // Brak dotyku na przyciemnionym ekranie: nic sie nie dzieje.
+    SPRAWDZ(dotykPrzepusc(f, false, true, true, 2) && !f.pochlania);
+  }
+}
+
 int main() {
+  testSen();
   testRytmUstawien();
   testFiltrStatusu();
   testKolejkaPolecen();

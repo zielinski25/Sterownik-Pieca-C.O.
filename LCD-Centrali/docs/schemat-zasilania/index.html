@@ -53,6 +53,7 @@
   <h1>Widok montażowy – moduły i przewody (numer na przewodzie = numer na liście)</h1>
   <a href="brzeczyk.html">→ brzęczyk: osobny rysunek</a>
   <a href="symulacja.html">→ schemat ideowy + symulacja</a>
+  <a href="dzielnik.html">→ dzielnik baterii (GPIO34): osobny rysunek i test bez ogniwa</a>
 </header>
 <main>
 <section class="card">
@@ -220,8 +221,8 @@
     <g transform="translate(300,560)">
       <path d="M 0 40 V 20 A 25 25 0 0 1 50 20 V 40 Z" fill="#111" stroke="#666" stroke-width="1.5"/>
       <line x1="10" y1="40" x2="10" y2="60" stroke="#ccc" stroke-width="3"/><line x1="25" y1="40" x2="25" y2="60" stroke="#ccc" stroke-width="3"/><line x1="40" y1="40" x2="40" y2="60" stroke="#ccc" stroke-width="3"/>
-      <text x="10" y="76" text-anchor="middle" class="small">E</text><text x="25" y="76" text-anchor="middle" class="small">B</text><text x="40" y="76" text-anchor="middle" class="small">C</text>
-      <text x="25" y="12" text-anchor="middle" class="silk">Q1 NPN</text>
+      <text x="10" y="76" text-anchor="middle" class="small">E</text><text x="25" y="76" text-anchor="middle" class="small">C</text><text x="40" y="76" text-anchor="middle" class="small">B</text>
+      <text x="25" y="12" text-anchor="middle" class="silk">Q1 C945</text>
     </g>
     <!-- szyna GND -->
     <rect x="40" y="700" width="520" height="8" fill="#333" stroke="#000"/><text x="300" y="692" text-anchor="middle" class="silk">szyna GND płytki</text>
@@ -264,18 +265,18 @@
     <tr><td>Rezystor 100 kΩ 1 %</td><td>2</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#000"></i><i style="left:29px;background:#fb8c00"></i><i style="left:38px;background:#5d4037"></i></span>brąz‑czarny‑czarny‑pomarańcz‑brąz (albo 5 %: brąz‑czarny‑żółty‑złoty – też ok)</td></tr>
     <tr><td>Rezystor 10 kΩ</td><td>1</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#fb8c00"></i><i style="left:36px;background:#d4af37"></i></span>brąz‑czarny‑pomarańcz‑złoty – pull‑up GPIO35</td></tr>
     <tr><td>Rezystor 1 kΩ</td><td>1</td><td><span class="band"><i style="left:8px;background:#5d4037"></i><i style="left:15px;background:#000"></i><i style="left:22px;background:#e53935"></i><i style="left:36px;background:#d4af37"></i></span>brąz‑czarny‑czerwony‑złoty – szeregowo z przyciskiem GPIO14</td></tr>
-    <tr><td>Kondensator ceramiczny</td><td>1</td><td>1 µF „105” (lub 100 nF „104”)</td></tr>
+    <tr><td>Kondensator ceramiczny (C1)</td><td>1</td><td>użyty: <b>470 nF „474”</b> (może być 100 nF „104” – 1 µF „105”)</td></tr>
     <tr><td>Przycisk tact</td><td>1</td><td>6×6 lub 12×12 mm, monostabilny</td></tr>
     <tr><td>Moduł brzęczyka</td><td>1</td><td>masz: BEEP V2.0, piny <code>GND IO VCC</code>, R1 = 101, R2 = 510. Wtórnik – gra dopiero przy ~5 V na IO (test: 3,3 V cisza, 5 V gra).</td></tr>
-    <tr><td>Tranzystor NPN (Q1)</td><td>1</td><td>BC547 / BC337 / 2N2222 / 2N3904 / S8050 – dowolny mały NPN. Nóżki płaską stroną do siebie: BC547/BC337 = C‑B‑E, 2N2222/2N3904/S8050 = E‑B‑C.</td></tr>
+    <tr><td>Tranzystor NPN (Q1)</td><td>1</td><td>użyty: <b>C945</b> (2SC945), nóżki płaską stroną do siebie: <b>E‑C‑B</b> (baza z prawej). Inny mały NPN też zadziała: BC547/BC337 = C‑B‑E, 2N2222/2N3904/S8050 = E‑B‑C – sprawdź notę. BC547 ze złomu (20.11) nie przełączał – wymieniony.</td></tr>
     <tr><td>Rezystor 1 kΩ (R5)</td><td>1</td><td>szeregowo D13 → baza Q1 (~2,6 mA do bazy)</td></tr>
     <tr><td>Koszyk 18650 / ogniwo</td><td>1</td><td>albo LiPo 1S z wtyczką JST‑PH do B+/B−</td></tr>
     <tr><td>Przewody</td><td>–</td><td>zasilanie 0,5 mm² (czerwony/czarny), sygnały 0,2 mm² lub drut 30 AWG</td></tr>
   </table>
-  <p class="note"><b>Moduł brzęczyka BEEP V2.0 (GND·IO·VCC):</b> wyszło w teście, że z 3,3 V na IO milczy, a z 5 V gra (układ wtórnika – buzzer dostaje V<sub>IO</sub> − 0,7 V). Konwerter poziomów BSS138 nie nadaje się (10 kΩ pull‑up daje za mało prądu). Rozwiązanie: IO zwarte z VCC na 5 V (moduł „zawsze włączony”), a masę modułu przełącza Q1 NPN sterowany z D13 przez R5 1 kΩ. Wysoki stan D13 = dźwięk → firmware bez zmian; w kroku 3 D13 trzymane nisko w uśpieniu (gpio_hold). Test: D13 (lub drut z 3V3 przez R5 na bazę) → ciągły pisk.</p>
+  <p class="note"><b>Moduł brzęczyka BEEP V2.0 (GND·IO·VCC):</b> wyszło w teście, że z 3,3 V na IO milczy, a z 5 V gra (układ wtórnika – buzzer dostaje V<sub>IO</sub> − 0,7 V). Konwerter poziomów BSS138 nie nadaje się (10 kΩ pull‑up daje za mało prądu). Rozwiązanie: IO zwarte z VCC na 5 V (moduł „zawsze włączony”), a masę modułu przełącza Q1 NPN sterowany z D13 przez R5 1 kΩ. Wysoki stan D13 = dźwięk → firmware bez zmian; od v1.5.0 D13 trzymane nisko w uśpieniu (gpio_hold). Test: D13 (lub drut z 3V3 przez R5 na bazę) → ciągły pisk.</p>
   <p class="note"><b>Dobór pinów (dokumentacja Espressif):</b> GPIO34/35 = ADC1 (działa przy WiFi), wejściowe, bez funkcji startowej – optymalne; GPIO36/39 pominięte (errata GPIO‑3.11); GPIO14 = RTC, dozwolony dla ext0, ale „PWM burst” przy starcie → R4 1 kΩ; GPIO13 bez funkcji startowej – OK pod PWM; GPIO12 omijamy (strapping). Rezerwa: GPIO32.</p>
   <p class="note"><b>Test, czy GPIO35 jest wolny na Twojej płytce</b> (Lolin D32/FireBeetle mają tam dzielnik baterii): omomierz GPIO35↔3V3 i GPIO35↔GND – na DOIT DevKit V1 oba „nieskończoność”; jeśli ~100–200 kΩ, napisz.</p>
-  <p class="note"><b>Bilans prądu w uśpieniu – czy rezystory ciekną?</b> Dzielnik R1+R2 = 200 kΩ pobiera 16–21 µA (≈13 mAh/mies., mniej niż samorozładowanie ogniwa). Pull‑up 10k na GPIO35: 0 µA bez USB (wyjścia TP4056 otwarte). Przycisk, R4, brzęczyk: 0 µA. <b>Zostaw 100k/100k</b> – przy 1M+1M zysk 17 µA, a błąd pomiaru rośnie do ~100 mV na ogniwie (upływ wejścia ADC × 500 kΩ). Prawdziwi „zjadacze” z ogniwa w uśpieniu (~12–18 mA razem): AMS1117 na DevKicie ~5 mA, <b>czerwona dioda POWER na DevKicie ~1,5–2 mA (wylutuj!)</b>, wyświetlacz bez komendy SLEEP ~2–5 mA (załatwi firmware krok 3), MT3608 mnoży to ×1,6–1,8. Dzielnik to 0,1 % całości. Kontrola: bez USB napięcie na GPIO35 ma być 3,3 V – jeśli wyraźnie mniej, 10k „podkarmia” niezasilony TP4056; wymień na 47–100k.</p>
+  <p class="note"><b>Bilans prądu w uśpieniu – czy rezystory ciekną?</b> Dzielnik R1+R2 = 200 kΩ pobiera 16–21 µA (≈13 mAh/mies., mniej niż samorozładowanie ogniwa). Pull‑up 10k na GPIO35: 0 µA bez USB (wyjścia TP4056 otwarte). Przycisk, R4, brzęczyk: 0 µA. <b>Zostaw 100k/100k</b> – przy 1M+1M zysk 17 µA, a błąd pomiaru rośnie do ~100 mV na ogniwie (upływ wejścia ADC × 500 kΩ). Prawdziwi „zjadacze” z ogniwa w uśpieniu (~12–18 mA razem): AMS1117 na DevKicie ~5 mA, <b>czerwona dioda POWER na DevKicie ~1,5–2 mA (wylutuj!)</b>, wyświetlacz bez komendy SLEEP ~2–5 mA (od v1.5.0 firmware wysyła SLPIN przed snem), MT3608 mnoży to ×1,6–1,8. Dzielnik to 0,1 % całości. Kontrola: bez USB napięcie na GPIO35 ma być 3,3 V – jeśli wyraźnie mniej, 10k „podkarmia” niezasilony TP4056; wymień na 47–100k.</p>
   <p class="note">Piny zajęte przez wyświetlacz (nie dotykać): D18 SCK, D19 MISO, D23 MOSI, D15 CS, D2 DC, D4 RST, D21 BL, D25/D26/D27/D33 dotyk – na rysunku szare.</p>
 </section>
 </main>
@@ -308,7 +309,7 @@
     R1a:[140,1190], R1b:[260,1190], R2a:[140,1270], R2b:[260,1270], Ca:[410,1180], Cb:[430,1180],
     R3a:[480,1270], R3b:[600,1270], R4a:[140,1350], R4b:[260,1350],
     BTNa:[400,1455], BTNb:[500,1455],
-    BZgnd:[170,1700], BZio:[200,1700], BZvcc:[230,1700], R5a:[410,1630], R5b:[530,1630], Q1e:[390,1740], Q1b:[405,1740], Q1c:[420,1740],
+    BZgnd:[170,1700], BZio:[200,1700], BZvcc:[230,1700], R5a:[410,1630], R5b:[530,1630], Q1e:[390,1740], Q1c:[405,1740], Q1b:[420,1740],
     rail:[380,1824],
     VIN:PX.L_VIN, GNDL:PX.L_GND, D34:PX.L_D34, D35:PX.L_D35, D14:PX.L_D14, D13:PX.L_D13, V33:PX.R_3V3, GNDR:PX.R_GND
   };
@@ -332,9 +333,9 @@
     {c:C.wht,t:'R4 1k (lewa) → przycisk (nóżka A)',s:'',d:`M ${P.R4a} C 100 1350 100 1455 ${P.BTNa}`},
     {c:C.blk,t:'przycisk (nóżka B, przeciwległy bok) → szyna GND',s:'',d:`M ${P.BTNb} C 580 1455 580 1800 ${P.rail}`},
     {c:C.gry,t:'ESP32 D13 → R5 1k (prawa nóżka)',s:'moduł ma na wejściu tylko 100 Ω do bazy tranzystora – bez R5 pin ESP32 oddawałby ~25 mA; z R5 ~2,5 mA i tranzystor i tak w pełni przewodzi.',d:`M ${P.D13} C 760 880 760 1630 ${P.R5b}`},
-    {c:C.gry,t:'R5 1k (lewa) → Q1 BAZA (środkowa nóżka)',s:'D13 wysoko → Q1 przewodzi → moduł dostaje masę → gra. Dokładnie polaryzacja z firmware.',d:`M ${P.R5a} C 380 1630 405 1680 ${P.Q1b}`},
+    {c:C.gry,t:'R5 1k (lewa) → Q1 BAZA (C945: prawa nóżka)',s:'D13 wysoko → Q1 przewodzi → moduł dostaje masę → gra. Dokładnie polaryzacja z firmware.',d:`M ${P.R5a} C 380 1630 405 1680 ${P.Q1b}`},
     {c:C.blk,t:'Q1 EMITER → szyna GND',s:'',d:`M ${P.Q1e} C 385 1790 380 1810 ${P.rail}`},
-    {c:C.blk,t:'Q1 KOLEKTOR → moduł brzęczyka GND',s:'masa modułu przechodzi przez tranzystor – to on włącza dźwięk.',d:`M ${P.Q1c} C 420 1780 300 1780 ${P.BZgnd}`},
+    {c:C.blk,t:'Q1 KOLEKTOR (C945: środkowa nóżka) → moduł brzęczyka GND',s:'masa modułu przechodzi przez tranzystor – to on włącza dźwięk.',d:`M ${P.Q1c} C 420 1780 300 1780 ${P.BZgnd}`},
     {c:C.yel,t:'moduł: IO zwarte z VCC (mostek) → ESP32 VIN (5 V)',s:'moduł BEEP V2.0 to wtórnik: buzzer dostaje tyle, ile jest na IO – z 3,3 V milczy, więc IO na stałe na 5 V, a włączaniem steruje Q1.',d:`M ${P.BZio} L ${P.BZvcc} M ${P.BZvcc} C 120 1700 120 1920 700 1920 C 1240 1920 1240 1000 1180 1000 C 1140 1000 1110 980 ${P.VIN}`},
     {c:C.blk,t:'szyna GND płytki → ESP32 GND (prawa listwa)',s:'jeden przewód masy dla całej płytki uniwersalnej.',d:`M ${P.rail} C 380 1870 1180 1870 1180 1500 C 1180 1100 1180 940 ${P.GNDR}`},
   ];

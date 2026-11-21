@@ -78,7 +78,25 @@ Trzy rzeczy bym dodał:
 - nie zasypiać w trakcie aktualizacji panelu,
 - przy baterii poniżej progu zasnąć od razu (temat 14).
 
-Tego jeszcze nie zrobiłem. To krok 3 w rozdziale 4.
+**Zrobione w v1.5.0 (20.11)** — sprzęt (TP4056, MT3608, dzielnik na GPIO34,
+GPIO35 z 10k, przycisk GPIO14, brzęczyk przez C945) zlutowany i sprawdzony
+miernikiem (`LCD-Centrali/docs/schemat-zasilania/`), więc kod snu podpięty
+pod LVGL:
+
+| Co | Jak jest w v1.5.0 |
+|---|---|
+| Kiedy przygasa | na baterii, po **1 min** bez dotyku — podświetlenie 5 %, panel pracuje dalej |
+| Kiedy zasypia | na baterii, po **5 min** bez dotyku (`tag=SEN zdarzenie=usypianie powod=bez_dotyku`) |
+| Kiedy nie zasypia | na ładowarce (GPIO35 nisko); w czasie alarmu; w czasie aktualizacji panelu |
+| Jak się budzi | przycisk GPIO14 (ext0) **albo włożenie ładowarki** (ext1 na GPIO35) |
+| Co robi przed snem | podświetlenie 0 + `gpio_hold` na GPIO21, **GPIO13 (brzęczyk) nisko + hold**, ILI9488 Sleep IN |
+| Słaba bateria (temat 14) | < 3,30 V bez ładowarki: napis „BATERIA ROZLADOWANA / Podlacz ladowarke. Panel usypia.” i sen od razu; w alarmie dopiero < 3,10 V |
+| Pierwszy pomiar baterii | od razu po starcie (było: po 30 s) |
+
+Testy na PC: 6 scenariuszy `sen_*` i 24 sprawdzenia `senDecyzja()`.
+**Czeka na płytce:** pobór we śnie z ogniwa (cel < 10 mA; sam ESP32 0,11 mA,
+reszta to AMS1117 i dioda POWER DevKita) — lista kontrolna w
+`docs/schemat-zasilania/README.md`, „Sprawdzenie v1.5.0”.
 
 ---
 
@@ -529,10 +547,10 @@ testy na PC i próba na płytce.
 | 0 | Hasła | prywatny plik |
 | 1 | **Małe i pewne:** przypięcie wersji; zrzut awarii, nieudane prośby o pamięć i zapas stosu w logu; watchdog w kalibracji; limit odpowiedzi; sprawdzenie `malloc`; zabezpieczenie tabeli ustawień; `WiFi.persistent(false)`; dolna granica jasności | C2, A5, C3, A4, A6, C5, B8, C9 |
 | 2 | **Rysuj tylko zmiany.** Sprawdzian: `pomiar_obciazenia.sh`, stan A blisko zera | B2 |
-| 3 | **Usypianie na baterii jak dawniej** + próg słabej baterii | B1, B5 (czeka na podłączenie baterii i przycisku) |
+| 3 | **Usypianie na baterii jak dawniej** + próg słabej baterii — **zrobione w v1.5.0** (1 min → 5 %, 5 min → sen, budzenie przyciskiem/ładowarką, < 3,30 V sen z napisem, nigdy w alarmie/OTA/na USB). Czeka: pomiar poboru we śnie na płytce | B1, B5, 14 |
 | 4 | **Polecenia nie giną** + przerwanie pętli restartów bez centrali — **zrobione w v1.4.2** (B6 przeniesione tu z kroku 3, bo nie wymaga sprzętu) | C4, B6 |
 | 5 | Ustawienia pobierane wtedy, gdy potrzebne; filtr JSON — **zrobione w v1.4.3** (42 → 31 połączeń/min, 5 506 → 2 760 próśb o pamięć/min) | B4, A2 |
-| 6 | 80 MHz i moc nadajnika — **przełączniki w v1.4.7** (ekran ZASILANIE: 240/160/80 MHz, 19,5/15/11/8,5 dBm, odczyt RSSI/MHz/dBm, zapis w NVS; domyślnie bez zmian). **Czeka: pomiar testerem USB/multimetrem na płytce** i decyzja, co zostawić na stałe — wyniki wpisać tu | B3, B7 |
+| 6 | 80 MHz i moc nadajnika — **przełączniki w v1.4.7** (ekran ZASILANIE: 240/160/80 MHz, 19,5/15/11/8,5 dBm, odczyt RSSI/MHz/dBm, zapis w NVS; domyślnie bez zmian). **Pomiar 20.11** (tester USB przed TP4056, 5 V, bez ogniwa, WiFi, pulpit bez zmian): ekran 100 % — **254 / 243 / 234 mA** przy 240 / 160 / 80 MHz; ekran 5 % — **157 mA**; brzęczyk ciągły +7 mA; szczyt przy starcie < 260 mA (bez ogniwa pomiar sprawności MT3608 nie ma sensu). Wniosek: taktowanie daje 11–20 mA, **ekran daje 80–100 mA** — stąd przyciemnianie w v1.5.0. Domyślne zostaje 240 MHz; 160 MHz można ustawić na ekranie ZASILANIE i zostaje w NVS. Czeka: pomiar z ogniwa (A start, B 100 %, C 5 %, D VIN, E koniec ładowania, F ładowanie) i pobór we śnie | B3, B7 |
 | 7 | Usunięcie starego programu z `main.cpp`; ostrzeżenia kompilatora włączone | C1, C7, C8 |
 | — | Polskie litery — jeśli chcesz | D |
 

@@ -3,10 +3,12 @@
 #include <TFT_eSPI.h>
 #include <esp_heap_caps.h>   // [v1.2.2 PAMIEC] wolny RAM liczony tak, jak widzi go malloc()
 #include "lvgl_port.h"
+#include "diagnostyka_panelu.h"   // [v1.5.1] diag::DotykFiltr / dotykPrzepusc()
 
 // Zdefiniowane w main.cpp - uzywamy tych samych obiektow/funkcji, zero duplikacji.
 extern TFT_eSPI tft;
 bool dotykOdczytaj(int16_t &px, int16_t &py);
+bool senEkranPrzyciemniony();   // [v1.5.1] true = senKrok() przyciemnil ekran (bateria, brak dotyku)
 
 // [PAMIEC] Brak PSRAM -> bufor rysowania MUSI byc maly. LVGL odswieza ekran
 // "paskami" tej wysokosci zamiast calym ekranem naraz - 480x320x2 = 307KB
@@ -97,7 +99,23 @@ static void lvgl_touch_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
   const uint8_t PROG_PUSZCZENIA = 2;
 
   int16_t px, py;
-  if (dotykOdczytaj(px, py)) {
+  const bool jest = dotykOdczytaj(px, py);
+
+  // [v1.5.1] Dotyk, ktory zaczal sie na przyciemnionym ekranie, tylko
+  // rozjasnia (licznik bezczynnosci LVGL zerowany recznie - senKrok() w
+  // main.cpp zobaczy "dotyk" i przywroci jasnosc), a do LVGL nie trafia -
+  // zaden kafelek sie nie otwiera. Logika w diag::dotykPrzepusc()
+  // (testowana na PC), tutaj tylko podpiecie.
+  static diag::DotykFiltr filtr;
+  if (!diag::dotykPrzepusc(filtr, jest, !bylWczesniejWcisniety, senEkranPrzyciemniony(), PROG_PUSZCZENIA)) {
+    if (jest) lv_disp_trig_activity(NULL);
+    bylWczesniejWcisniety = false;
+    licznikNieudanychZRzedu = 0;
+    data->state = LV_INDEV_STATE_RELEASED;
+    return;
+  }
+
+  if (jest) {
     ostX = px;
     ostY = py;
     bylWczesniejWcisniety = true;

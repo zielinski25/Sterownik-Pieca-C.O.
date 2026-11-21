@@ -31,6 +31,7 @@ struct AtrapaAp {              // jeden punkt dostepowy "w eterze"
 };
 
 struct AtrapaRestart {};       // rzucany przez ESP.restart() - patrz Arduino.h
+struct AtrapaSen {};           // [v1.5.0] rzucany przez esp_deep_sleep_start() - patrz esp_sleep.h
 
 // Pomiar pamieci (pomiar_pamieci.sh, pomiar_sterty.c): to, co atrapy same
 // odkladaja na sterycie (zapis Seriala, tablice NVS, wyniki skanu), nie jest
@@ -133,6 +134,15 @@ struct Atrapa {
   int cpuZleWartosci = 0;      // ...w tym z wartoscia spoza 240/160/80 (radio by padlo)
   int wifiTryb = 0;            // WiFi.mode(): 0 = WIFI_OFF (sterownik radia nie wystartowal), 1 = WIFI_STA
   int txMoc = 78;              // esp_wifi_set_max_tx_power(): cwiartki dBm, domyslnie 78 = 19,5 dBm
+  // [v1.5.0] gleboki sen (esp_sleep.h) i "hold" pinow (driver/gpio.h).
+  int usnal = 0;                       // ile razy firmware wolal esp_deep_sleep_start()
+  unsigned long usnalMs = 0;           // chwila ostatniego usniecia
+  int snuExt0Pin = -1;                 // esp_sleep_enable_ext0_wakeup(): pin (albo -1 = nie ustawiono)
+  int snuExt0Poziom = -1;              // ...i poziom budzacy
+  unsigned long long snuExt1Maska = 0; // esp_sleep_enable_ext1_wakeup(): maska pinow (0 = nie ustawiono)
+  int snuExt1Tryb = -1;                // ...i tryb (0 = ALL_LOW, 1 = ANY_HIGH)
+  bool pinTrzymany[64] = {false};      // gpio_hold_en()/gpio_hold_dis(): czy stan pinu jest "zamrozony"
+  int wybudzenie = 0;                  // esp_sleep_get_wakeup_cause(): 0 = zwykly start, 2 = EXT0 (przycisk), 3 = EXT1 (ladowarka)
   int txUstawien = 0;          // udane WiFi.setTxPower()
   int txPrzedStartem = 0;      // WiFi.setTxPower() PRZED WiFi.mode() - na plytce zwraca blad i nic nie ustawia
   unsigned stosZapasB = 5000;  // uxTaskGetStackHighWaterMark(NULL) [B]
