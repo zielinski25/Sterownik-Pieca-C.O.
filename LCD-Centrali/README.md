@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.0
+# Panel LCD (wyświetlacz CO) — firmware v1.5.1
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,36 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.1
+
+**Trzy poprawki snu na baterii po wgraniu v1.5.0 na płytkę** (uwagi z
+24.11). Centrala bez zmian.
+
+| Uwaga | Było (v1.5.0) | Jest (v1.5.1) |
+|---|---|---|
+| po wybudzeniu przyciskiem panel pokazywał ekran startowy z wersjami, „Laczenie z WiFi” i dopiero potem pulpit | ekran startowy jak przy zimnym starcie (bez pauzy 1,5 s) | **od razu pulpit LVGL** — kafelki z „--” pojawiają się na wyświetlaczu ok. 0,3 s po wybudzeniu (`tag=SEN zdarzenie=pulpit_po_wybudzeniu ms=…`), WiFi łączy się w tle tego widoku (BSSID i kanał centrali z pamięci RTC, bez skanu), dane wypełniają kafelki po 1–2 s. Ekran startowy z wersjami tylko przy starcie z zasilania/restarcie; linia `tag=PANEL zdarzenie=ekran_startowy` zostaje w logu zawsze |
+| dotknięcie przyciemnionego ekranu od razu „klikało” kafelek pod palcem (otwierał się wykres, ustawienie…) | dotyk rozjaśniał i działał jak zwykły dotyk | **pierwsze dotknięcie przyciemnionego ekranu tylko rozjaśnia** — filtr w `lvgl_touch_read()` (`diag::DotykFiltr`): jeśli ekran jest przyciemniony, pierwsze naciśnięcie (do puszczenia palca) nie trafia do LVGL; następne dotknięcia normalnie |
+| czasy 1 min / 5 min na sztywno | `SEN_PRZYCIEMNIJ_PO_MS`, `SEN_USPIJ_PO_MS` w `diagnostyka_panelu.h` | **ekran WYŚWIETLACZ, nowy wiersz „Na baterii”**: przycisk **„Przyciemnij po: 30 s / 1 min / 2 min / 5 min / 10 min / nigdy”** i **„Uśpij po: 2 min / 5 min / 10 min / 30 min / 1 godz. / nigdy”** — każde dotknięcie to następna wartość (lista zawija się), zielony przycisk = inaczej niż domyślnie. Zapis w NVS (`wyswietlacz/senPrzyIdx`, `senSpijIdx`), działa od razu (`tag=SEN zdarzenie=ustawienie przyciemnij_ms=… uspij_ms=…`). „Nigdy” dla snu nie wyłącza snu z powodu rozładowanego ogniwa (< 3,30 V) |
+
+Układ ekranu WYŚWIETLACZ jest ściśnięty, żeby zmieścić szósty wiersz na
+320 px (suwaki jasności i wiersze godzin ciaśniej; nic nie ubyło). Nieznany
+indeks w NVS (np. z przyszłej wersji) → wartość domyślna.
+
+**Testy na PC**: 28 nowych sprawdzeń jednostkowych (tabele opcji, „nigdy”,
+filtr dotyku `dotykPrzepusc()`) i 5 scenariuszy (`sen_po_wybudzeniu`,
+`sen_po_wybudzeniu_ladowarka`, `sen_ustawienia`, `sen_ustawienia_nigdy`,
+`sen_ustawienia_nigdy_sen`). Filtr pierwszego dotknięcia sprawdzany jest
+tylko jednostkowo — symulator „klika” kafelki zdarzeniem LVGL, z pominięciem
+sterownika dotyku. Razem 68 scenariuszy, 749 sprawdzeń, 579 jednostkowych.
+
+**Z v1.5.0 na v1.5.1** zmieniają się: `src/main.cpp`,
+`src/diagnostyka_panelu.h`, `src/lvgl_port.cpp`, `src/dashboard_lvgl_poc.cpp`,
+`src/dashboard_lvgl_poc.h`, `testy_host/`. Kablem albo przez centralę
+(`/update_panel`). **Po wgraniu sprawdź**: przycisk budzi panel prosto na
+pulpit (bez „WYSWIETLACZ CO”); dotknięcie przyciemnionego ekranu tylko
+rozjaśnia; na ekranie WYŚWIETLACZ wiersz „Na baterii” mieści się nad dolną
+krawędzią, a wybrany czas zostaje po restarcie.
 
 ## Co zmienia v1.5.0
 
@@ -88,7 +118,7 @@ ekran przygasł i panel usnął. Razem 63 scenariusze, 710 sprawdzeń.
 `src/dashboard_lvgl_poc.h`, `testy_host/`, `docs/schemat-zasilania/`. Można
 wgrać kablem albo przez centralę (`/update_panel`). Centrala bez zmian
 (3.58.10 zostaje). **Po wgraniu sprawdź** (szczegóły: `docs/schemat-zasilania/README.md`,
-„Sprawdzenie v1.5.0”): na baterii bez ładowarki po minucie ekran przygasa,
+„Sprawdzenie v1.5.0 / v1.5.1”): na baterii bez ładowarki po minucie ekran przygasa,
 po pięciu gaśnie; przycisk budzi; ładowarka budzi; na ładowarce nic z tego
 się nie dzieje.
 

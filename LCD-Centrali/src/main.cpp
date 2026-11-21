@@ -40,6 +40,24 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.1 - SEN: TRZY UWAGI Z PLYTKI (uzytkownik, po wgraniu v1.5.0)
+//   - PO WYBUDZENIU PRZYCISKIEM OD RAZU KAFELKI: ekran startowy ("WYSWIETLACZ
+//     CO / Panel vX / Laczenie z WiFi / Centrala vY") tylko przy starcie
+//     zasilania i po resecie. Po wybudzeniu z glebokiego snu (ext0/ext1)
+//     pulpit LVGL jest rysowany PRZED laczeniem z WiFi (startPoSnie w
+//     polaczWifi(): jeden lvgl_port_tick() zamiast napisow TFT_eSPI), dane
+//     dochodza do kafelkow w tle; ekranStartowyWersje() tylko loguje.
+//     Log: tag=SEN zdarzenie=pulpit_po_wybudzeniu ms=<od startu>.
+//   - PIERWSZE DOTKNIECIE PRZYCIEMNIONEGO EKRANU TYLKO ROZJASNIA, nie otwiera
+//     kafelka: filtr diag::dotykPrzepusc() w lvgl_touch_read() (lvgl_port.cpp)
+//     pochlania caly dotyk, ktory zaczal sie przy przyciemnionym ekranie
+//     (senEkranPrzyciemniony() nizej), i zeruje licznik bezczynnosci LVGL.
+//   - CZASY DO WYBORU NA EKRANIE WYSWIETLACZ, wiersz "Na baterii": przyciemnij
+//     po 30 s / 1 / 2 / 5 / 10 min / nigdy, uspij po 2 / 5 / 10 / 30 min /
+//     1 godz. / nigdy (diag::SEN_*_OPCJE_MS). W NVS indeksy wyswietlacz/
+//     senPrzyIdx i senSpijIdx (domyslnie 1 min / 5 min = jak v1.5.0);
+//     wyswietlaczUstawieniaWyslij("senPrzyciemnij"/"senUspij", indeks).
+//     Log przy zmianie: tag=SEN zdarzenie=ustawienie przyciemnij_ms=.. uspij_ms=..
 // [2026-11-24] v1.5.0 - PRACA NA BATERII: PRZYCIEMNIENIE I GLEBOKI SEN (krok 3
 //   planu z WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18; tematy B1/B5 i 14). Sprzet
 //   panelu jest juz zlutowany i sprawdzony (2026-11-20: TP4056 + MT3608, dzielnik
@@ -1107,7 +1125,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.0"; // [2026-11-24] v1.5.0: praca na baterii - przyciemnienie po 1 min, gleboki sen po 5 min, budzenie przyciskiem (GPIO14) i ladowarka; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.1"; // [2026-11-24] v1.5.1: po wybudzeniu od razu pulpit; pierwsze dotkniecie przyciemnionego ekranu tylko rozjasnia; czasy przyciemnienia/snu na ekranie WYSWIETLACZ; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1290,6 +1308,15 @@ bool dotykOdczytaj(int16_t &px, int16_t &py) {
 // (harmonogram dzien/noc, suwak) jest przycinane do diag::SEN_JASNOSC_PROC -
 // inaczej zmiana okna dzien/noc w srodku nocy rozjasnialaby uspiony ekran.
 static bool senPrzyciemnione = false;
+bool senEkranPrzyciemniony() { return senPrzyciemnione; }   // [v1.5.1] dla filtru dotyku w lvgl_port.cpp
+// [v1.5.1] Indeksy w diag::SEN_PRZYCIEMNIJ_OPCJE_MS[] / SEN_USPIJ_OPCJE_MS[]
+// (ekran WYSWIETLACZ, wiersz "Na baterii"); NVS wyswietlacz/senPrzyIdx, senSpijIdx.
+static uint8_t senPrzyciemnijIdx = diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX;
+static uint8_t senUspijIdx       = diag::SEN_USPIJ_DOMYSLNY_IDX;
+static_assert(diag::SEN_OPCJI == LVGL_SEN_OPCJI, "napisy na przyciskach \"Na baterii\" (dashboard_lvgl_poc.cpp) musza odpowiadac diag::SEN_*_OPCJE_MS[]");
+// [v1.5.1] true = ten start to wybudzenie z glebokiego snu (ext0 przycisk /
+// ext1 ladowarka): bez ekranu startowego, pulpit od razu (patrz polaczWifi()).
+static bool startPoSnie = false;
 
 void ustawJasnoscPodswietlenia(uint8_t procent) {
   procent = constrain(procent, (uint8_t)0, (uint8_t)100);
@@ -1439,6 +1466,9 @@ void wyswietlaczWczytajZPamieci() {
   zasilanieTxIdx  = ustawieniaWyswietlacza.getUChar("txIdx", 0);
   if (zasilanieCpuIdx >= ZASILANIE_CPU_N) zasilanieCpuIdx = 0;
   if (zasilanieTxIdx  >= ZASILANIE_TX_N)  zasilanieTxIdx  = 0;
+  // [v1.5.1 SEN] Tak samo indeksy, nie czasy; nieznany indeks = domyslny (1 min / 5 min).
+  senPrzyciemnijIdx = diag::senIndeksPoprawny(ustawieniaWyswietlacza.getUChar("senPrzyIdx", diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX), diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX);
+  senUspijIdx       = diag::senIndeksPoprawny(ustawieniaWyswietlacza.getUChar("senSpijIdx", diag::SEN_USPIJ_DOMYSLNY_IDX), diag::SEN_USPIJ_DOMYSLNY_IDX);
   // Bezpieczne klipsy na wypadek uszkodzonych/przedawnionych danych w NVS -
   // te same zakresy co suwaki/spinboxy w dashboard_lvgl_poc.cpp.
   // [v1.4.1 C9] Dolna granica JASNOSC_MIN_PROCENT: wartosc 0 % zapisana przez
@@ -1531,6 +1561,18 @@ void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
   } else if (strcmp(pole, "godzKoniec") == 0) {
     godzinaKoniecPrzyciemnienia = godz;
     ustawieniaWyswietlacza.putUChar("godzKoniec", godz);
+  } else if (strcmp(pole, "senPrzyciemnij") == 0 || strcmp(pole, "senUspij") == 0) {
+    // [v1.5.1 SEN] Wiersz "Na baterii" - indeks w diag::SEN_*_OPCJE_MS[].
+    if (pole[3] == 'P') {
+      senPrzyciemnijIdx = diag::senIndeksPoprawny(wartosc, diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX);
+      ustawieniaWyswietlacza.putUChar("senPrzyIdx", senPrzyciemnijIdx);
+    } else {
+      senUspijIdx = diag::senIndeksPoprawny(wartosc, diag::SEN_USPIJ_DOMYSLNY_IDX);
+      ustawieniaWyswietlacza.putUChar("senSpijIdx", senUspijIdx);
+    }
+    Serial.printf("tag=SEN zdarzenie=ustawienie przyciemnij_ms=%lu uspij_ms=%lu\n",
+                  (unsigned long)diag::senPrzyciemnijMs(senPrzyciemnijIdx), (unsigned long)diag::senUspijMs(senUspijIdx));
+    return;   // harmonogramu dzien/noc to nie dotyczy
   }
   wyswietlaczHarmonogramOdswiez(); // granice okna sie zmienily - przelicz i zastosuj od razu
 }
@@ -3536,7 +3578,8 @@ static const int EKRAN_START_Y_PANEL    = 124;
 static const int EKRAN_START_Y_CENTRALA = 182;
 // Ile ekran startowy stoi po dopisaniu wersji centrali, zeby dalo sie ja
 // przeczytac. Tylko przy zimnym starcie - po wybudzeniu z deep sleep
-// (przycisk) liczy sie czas do pulpitu, nie napis.
+// (przycisk / ladowarka) ekranu startowego w ogole nie ma (v1.5.1,
+// startPoSnie): pulpit LVGL idzie na wyswietlacz jeszcze przed WiFi.
 static const uint32_t EKRAN_START_POKAZ_MS = 1500;
 
 static void ekranStartowyNaglowek() {
@@ -3556,6 +3599,9 @@ static void ekranStartowyNaglowek() {
 // w PIERWSZA_PROBKA_TIMEOUT_MS, napis mowi to wprost i nie ma dodatkowej
 // pauzy - panel juz czekal 2,5 s, a pulpit i tak pokaze "--".
 static void ekranStartowyWersje() {
+  Serial.printf("tag=PANEL zdarzenie=ekran_startowy panel=%s centrala=%s\n",
+                FIRMWARE_VERSION_PANEL, stan.centralaFw[0] != '\0' ? stan.centralaFw : "-");
+  if (startPoSnie) return;   // [v1.5.1] po wybudzeniu na ekranie jest pulpit LVGL, nie ekran startowy - tylko log
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(KOL_TEKST, KOL_TLO);
   tft.setTextFont(2);
@@ -3565,11 +3611,7 @@ static void ekranStartowyWersje() {
   else if (swiezoscStatusu.byloKiedykolwiek) snprintf(linia, sizeof(linia), "Centrala: wersja nieznana");
   else snprintf(linia, sizeof(linia), "Centrala: brak odpowiedzi");
   tft.drawString(linia, 240, EKRAN_START_Y_CENTRALA);
-  Serial.printf("tag=PANEL zdarzenie=ekran_startowy panel=%s centrala=%s\n",
-                FIRMWARE_VERSION_PANEL, stan.centralaFw[0] != '\0' ? stan.centralaFw : "-");
   if (!swiezoscStatusu.byloKiedykolwiek) return;
-  const esp_sleep_wakeup_cause_t wybudzenie = esp_sleep_get_wakeup_cause();
-  if (wybudzenie == ESP_SLEEP_WAKEUP_EXT0 || wybudzenie == ESP_SLEEP_WAKEUP_EXT1) return;   // [v1.5.0] po snie bez pauzy
   const unsigned long start = millis();
   while (millis() - start < EKRAN_START_POKAZ_MS) {
     esp_task_wdt_reset();   // watchdog petli (15 s) juz dziala - jak w polaczWifi()
@@ -3595,16 +3637,30 @@ void polaczWifi() {
   // szybkosci (patrz komentarz przy definicji WIFI_IP_STATYCZNE wyzej).
   WiFi.config(WIFI_IP_STATYCZNE, WIFI_GATEWAY, WIFI_MASKA);
 
-  tft.fillScreen(KOL_TLO);
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(KOL_TEKST, KOL_TLO);
-  ekranStartowyNaglowek();   // [v1.4.6] "WYSWIETLACZ CO" + "Panel v1.4.6" nad napisami o laczeniu
-  tft.setTextFont(2);
+  if (startPoSnie) {
+    // [v1.5.1] Po wybudzeniu z glebokiego snu (przycisk / ladowarka) nikt nie
+    // chce czytac wersji - ma byc pulpit. LVGL ma juz zbudowane ekrany
+    // (lvgl_dashboard_poc_init() w setup() przed ta funkcja), ale rysuje
+    // dopiero przy pierwszym lv_timer_handler() - zwykle w loop(), czyli po
+    // WiFi (do 20 s) i po pierwszych danych (do 2,5 s). Jeden obrot tutaj
+    // wysyla caly pulpit (kafelki z "--", naglowek bez WiFi) do wyswietlacza
+    // OD RAZU; dane i ikona WiFi dochodza w tle, jak przy kazdej utracie
+    // polaczenia. Zegar LVGL stal przez caly setup() - pierwszy tick nadrabia
+    // go skokiem, to nieszkodliwe (animacji jeszcze nie ma).
+    lvgl_port_tick();
+    Serial.printf("tag=SEN zdarzenie=pulpit_po_wybudzeniu ms=%lu\n", (unsigned long)millis());
+  } else {
+    tft.fillScreen(KOL_TLO);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(KOL_TEKST, KOL_TLO);
+    ekranStartowyNaglowek();   // [v1.4.6] "WYSWIETLACZ CO" + "Panel v1.4.6" nad napisami o laczeniu
+    tft.setTextFont(2);
+  }
 
   if (!rtcBssidZnany) {
     // [v1.2.0 WIFI-WYBOR] Zimny start (pamiec RTC pusta): wlasny skan, wybor
     // najsilniejszej centrali i polaczenie z NIA po BSSID.
-    tft.drawString("Szukam centrali", 240, 150);
+    if (!startPoSnie) tft.drawString("Szukam centrali", 240, 150);   // [v1.5.1] po snie pulpit juz jest na ekranie
     diag::KandydatAp ap;
     wifiCentralPrzyStarcie = wifiSkanujCentrale(ap);
     if (wifiCentralPrzyStarcie > 0) {
@@ -3615,7 +3671,7 @@ void polaczWifi() {
     // Napis jest wysrodkowany na y=150 (MC_DATUM, font 16 px -> zajmuje
     // y=142..158), a petla ponizej czysci tylko y=150..170 - bez tego spod
     // "Laczenie z WiFi" wystawalyby resztki "Szukam centrali".
-    tft.fillRect(0, 138, 480, 24, KOL_TLO);
+    if (!startPoSnie) tft.fillRect(0, 138, 480, 24, KOL_TLO);
   }
 
   wifiRozpocznijLaczenie();
@@ -3628,8 +3684,10 @@ void polaczWifi() {
     // restartowalby sie co ok. 15 s w kolko, nie dochodzac do ekranu
     // (wniosek z kodu i z testu na PC - nie zaobserwowane na plytce).
     esp_task_wdt_reset();
-    tft.fillRect(0, 150, 480, 20, KOL_TLO);
-    tft.drawString("Laczenie z WiFi" , 240, 150);
+    if (!startPoSnie) {   // [v1.5.1] po wybudzeniu na ekranie jest juz pulpit LVGL - nie mazac po nim
+      tft.fillRect(0, 150, 480, 20, KOL_TLO);
+      tft.drawString("Laczenie z WiFi" , 240, 150);
+    }
     // [v1.2.1] Jak w petli skanu wyzej: alarm sprzed samoczynnego restartu
     // gra dalej. 8 x 50 ms zamiast jednego delay(400), bo fazy wzorca trwaja
     // po 500 ms; bez alarmu obsluzBrzeczyk() wraca od razu.
@@ -4026,7 +4084,7 @@ static void senPrzywrocJasnosc(const char* powod) {
 
 void senKrok() {
   if (digitalRead(WAKE_BTN_PIN) == LOW) lvgl_dashboard_poc_zglos_aktywnosc();
-  if (senPrzyciemnione && lvgl_dashboard_poc_bez_dotyku_ms() < diag::SEN_PRZYCIEMNIJ_PO_MS) senPrzywrocJasnosc("dotyk");
+  if (senPrzyciemnione && lvgl_dashboard_poc_bez_dotyku_ms() < diag::senPrzyciemnijMs(senPrzyciemnijIdx)) senPrzywrocJasnosc("dotyk");
 
   static unsigned long ostatnieSprawdzenie = 0;
   static const char* poprzedniPowod = "";
@@ -4042,6 +4100,8 @@ void senKrok() {
   w.bezDotykuMs  = lvgl_dashboard_poc_bez_dotyku_ms();
   w.alarm        = stan.dymAlarm || stan.alarmOgrzewanie || stan.alarmPanel || brzeczykAktywnyTyp != BRZECZYK_BRAK;
   w.ota          = trwaAktualizacjaOtaPanelu || lvgl_dashboard_poc_ota_widoczna();
+  w.przyciemnijPoMs = diag::senPrzyciemnijMs(senPrzyciemnijIdx);   // [v1.5.1] z ekranu WYSWIETLACZ (0 = nigdy)
+  w.uspijPoMs       = diag::senUspijMs(senUspijIdx);
   const diag::SenDecyzja d = diag::senDecyzja(w);
 
   switch (d.akcja) {
@@ -4754,6 +4814,7 @@ void setup() {
   // [ETAP 3b] Log powodu startu — odroznia normalny start (USB/reset) od
   // wybudzenia przyciskiem po deep sleep, przydatne przy diagnostyce.
   esp_sleep_wakeup_cause_t powod = esp_sleep_get_wakeup_cause();
+  startPoSnie = (powod == ESP_SLEEP_WAKEUP_EXT0 || powod == ESP_SLEEP_WAKEUP_EXT1);   // [v1.5.1] pulpit zamiast ekranu startowego
   if (powod == ESP_SLEEP_WAKEUP_EXT0) {
     Serial.println(F("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk"));
   } else if (powod == ESP_SLEEP_WAKEUP_EXT1) {
@@ -4862,6 +4923,7 @@ void setup() {
   // [v1.4.7 ZASILANIE] Lokalne jak podswietlenie (NVS + sprzet tej plytki) - callback i zapisane indeksy.
   lvgl_dashboard_poc_ustaw_callback_zasilanie(zasilanieWyslij);
   lvgl_dashboard_poc_aktualizuj_zasilanie(zasilanieCpuIdx, zasilanieTxIdx);
+  lvgl_dashboard_poc_aktualizuj_sen(senPrzyciemnijIdx, senUspijIdx);   // [v1.5.1] wiersz "Na baterii" na ekranie WYSWIETLACZ
   // [v1.2.1 RATUNEK] Po samoczynnym restarcie w trakcie alarmu: ekran alarmu
   // (albo dzwonek w naglowku, jesli byl zamkniety) i czerwone ramki kafelkow
   // wracaja, zanim przyjda pierwsze dane.

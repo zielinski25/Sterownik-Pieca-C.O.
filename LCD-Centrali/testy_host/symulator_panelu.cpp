@@ -232,6 +232,11 @@ void operator delete(void* p, size_t) noexcept { __real_free(p); }
 void operator delete[](void* p, size_t) noexcept { __real_free(p); }
 #endif
 
+// main.cpp, pamiec RTC (RTC_DATA_ATTR) - przetrwala gleboki sen; scenariusz
+// sen_po_wybudzeniu ustawia ja tak, jak zostawil ja panel przed snem.
+extern uint8_t rtcBssidCentrali[6];
+extern int32_t rtcKanalCentrali;
+extern bool    rtcBssidZnany;
 namespace {
 
 // Zakres, w ktorym dziala kod firmware'u (setup(), loop() i funkcje
@@ -1042,7 +1047,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.0"
+#define WERSJA_FW "v1.5.1"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -4963,6 +4968,203 @@ void scenariuszSenRozladowanaAlarm() {
   sprawdz(g_atrapa.tonHz == 0 && g_atrapa.gpio[13] == LOW, "brzeczyk przed snem: cisza");
 }
 
+// --- sen (v1.5.1): trzy uwagi uzytkownika po wgraniu v1.5.0 ----------------
+// 1. Po wybudzeniu przyciskiem od razu pulpit (ekran startowy z wersja tylko
+//    przy starcie zasilania). 2. Pierwsze dotkniecie przyciemnionego ekranu
+//    tylko rozjasnia (filtr diag::dotykPrzepusc(), sprawdzany jednostkowo w
+//    test_diagnostyka.cpp - atrapa dotyku jest "skalibrowana na zero", wiec
+//    tutaj nie da sie dotknac prawdziwym palcem). 3. Czasy przyciemnienia i snu
+//    do wyboru na ekranie WYSWIETLACZ.
+void scenariuszSenPoWybudzeniu() {
+  senOgniwoNaBaterii();
+  g_atrapa.wybudzenie = 2;   // ESP_SLEEP_WAKEUP_EXT0 = przycisk GPIO14
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  // Pamiec RTC jak po prawdziwym snie: BSSID i kanal centrali znane, bez skanu.
+  memcpy(rtcBssidCentrali, BSSID_PIEC, 6);
+  rtcKanalCentrali = 6;
+  rtcBssidZnany = true;
+  ustaw(0, [](Centrala& c) { c.fw = "v3.58.10"; });
+  const unsigned long przed = millis();
+  const unsigned long long pikseliPrzed = g_atrapa.spiPikseli;
+  setup();
+  const unsigned long czasSetupMs = millis() - przed;
+  sprawdz(logMa("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk"), "log: wybudzenie zrodlo=przycisk");
+  sprawdz(!tftMa("WYSWIETLACZ CO") && !tftMa("Panel " WERSJA_FW) && !tftMa("Szukam centrali") && !tftMa("Laczenie z WiFi") && !tftMa("Centrala v3.58.10"),
+          "po wybudzeniu: ZADNEGO napisu ekranu startowego (ani tytulu, ani wersji, ani \"Laczenie z WiFi\")");
+  const size_t pulpit = g_atrapa.serial.find("tag=SEN zdarzenie=pulpit_po_wybudzeniu");
+  const size_t polaczono = g_atrapa.serial.find("zdarzenie=polaczono");
+  info("%s", liniaLogu("tag=SEN zdarzenie=pulpit_po_wybudzeniu").c_str());
+  sprawdz(pulpit != std::string::npos && polaczono != std::string::npos && pulpit < polaczono,
+          "pulpit LVGL wyslany do wyswietlacza PRZED polaczeniem z WiFi (log pulpit_po_wybudzeniu przed polaczono)");
+  sprawdz(g_atrapa.spiPikseli - pikseliPrzed >= 153600ULL, "w setup() poszedl do wyswietlacza co najmniej caly ekran pikseli (pulpit)");
+  info("setup() po wybudzeniu trwal %lu ms czasu plytki, pulpit na wyswietlaczu po %s (zimny start: >= 1500 ms samej pauzy na wersje)",
+       czasSetupMs, liniaLogu("tag=SEN zdarzenie=pulpit_po_wybudzeniu").c_str() + strlen("tag=SEN zdarzenie=pulpit_po_wybudzeniu "));
+  // Zimny start: 300 ms rozruchu + 400 ms laczenia + pierwsze dane + 1500 ms pauzy na wersje = ok. 3 s; po wybudzeniu bez tej pauzy.
+  sprawdz(czasSetupMs < 2000 && !tftMa("Szukam centrali") && !logMa("zdarzenie=skan_centrala"), "bez 1,5 s pauzy ekranu startowego (setup < 2 s) i bez skanu (BSSID z pamieci RTC)");
+  sprawdz(logMa("tag=PANEL zdarzenie=ekran_startowy", "panel=" WERSJA_FW, "centrala=v3.58.10"), "linia tag=PANEL zdarzenie=ekran_startowy zostaje w logu (wersje do diagnostyki)");
+  biegnij(3000);
+  sprawdz(ekranMa("BOJLER") && ekranMa("ZEWN") && drugiPulpit() != lv_scr_act(), "po 3 s: pulpit z kafelkami, dane z centrali");
+  sprawdz(senJasno(), "po wybudzeniu pelna jasnosc");
+  zrzutEkranu("1_po_wybudzeniu");
+
+  // Licznik bezczynnosci liczy sie od wybudzenia: 1 min -> 5 %, jak zwykle.
+  biegnij(60000);
+  sprawdz(senPrzyciemnione(), "minuta po wybudzeniu bez dotyku: znow 5 %");
+}
+
+void scenariuszSenPoWybudzeniuLadowarka() {
+  // Wlozona ladowarka (ext1): to samo, tylko zrodlo=usb i bez przyciemniania.
+  g_atrapa.gpio[35] = LOW;
+  g_atrapa.adcMv[34] = 1950;
+  g_atrapa.wybudzenie = 3;   // ESP_SLEEP_WAKEUP_EXT1
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  sprawdz(logMa("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=usb"), "log: wybudzenie zrodlo=usb");
+  sprawdz(!tftMa("WYSWIETLACZ CO") && !tftMa("Laczenie z WiFi") && logMa("tag=SEN zdarzenie=pulpit_po_wybudzeniu"), "po wlozeniu ladowarki: pulpit od razu, bez ekranu startowego");
+  biegnij(90000);
+  sprawdz(senJasno() && !logMa("tag=SEN zdarzenie=przyciemnienie"), "na ladowarce po 90 s nadal jasno");
+}
+
+// Ekran WYSWIETLACZ, wiersz "Na baterii": dwa przyciski, kazde dotkniecie to
+// nastepna wartosc, zapis indeksu w NVS, czasy od razu w uzyciu.
+static lv_obj_t* senPrzyciskZPrefiksem(const char* prefiks) {
+  // Etykieta na przycisku zaczyna sie od "Przyciemnij po:" / "Uśpij po:".
+  std::function<lv_obj_t*(lv_obj_t*)> szukaj = [&](lv_obj_t* o) -> lv_obj_t* {
+    if (lv_obj_check_type(o, &lv_label_class)) {
+      const char* t = lv_label_get_text(o);
+      if (t != nullptr && strncmp(t, prefiks, strlen(prefiks)) == 0) return o;
+    }
+    for (uint32_t i = 0; i < lv_obj_get_child_cnt(o); i++) if (lv_obj_t* z = szukaj(lv_obj_get_child(o, i))) return z;
+    return nullptr;
+  };
+  return szukaj(lv_scr_act());
+}
+static std::string senNapisPrzycisku(const char* prefiks) {
+  lv_obj_t* l = senPrzyciskZPrefiksem(prefiks);
+  return l != nullptr ? lv_label_get_text(l) : "";
+}
+static bool senKliknijPrzycisk(const char* prefiks) {
+  lv_obj_t* l = senPrzyciskZPrefiksem(prefiks);
+  if (l == nullptr) return false;
+  LiczFirmware licz;
+  lv_event_send(lv_obj_get_parent(l), LV_EVENT_CLICKED, nullptr);
+  return true;
+}
+
+void scenariuszSenUstawienia() {
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  lv_obj_t* drugi = drugiPulpit();
+  sprawdz(drugi != nullptr, "drugi pulpit istnieje");
+  if (drugi == nullptr) return;
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  biegnij(300);
+  sprawdz(kliknij("WYŚWIETLACZ"), "dotkniecie kafelka WYŚWIETLACZ");
+  biegnij(300);
+  lv_obj_t* ekran = lv_scr_act();
+  sprawdz(ekranMa("Na baterii") && ekranMa("Jasność w dzień") && ekranMa("Automatyczny harmonogram"), "ekran WYSWIETLACZ: dotychczasowe wiersze + nowy wiersz \"Na baterii\"");
+  info("przyciski: \"%s\" / \"%s\"", senNapisPrzycisku("Przyciemnij po").c_str(), senNapisPrzycisku("Uśpij po").c_str());
+  sprawdz(senNapisPrzycisku("Przyciemnij po") == "Przyciemnij po: 1 min" && senNapisPrzycisku("Uśpij po") == "Uśpij po: 5 min",
+          "bez ustawien w NVS: \"Przyciemnij po: 1 min\" i \"Uśpij po: 5 min\" (= v1.5.0)");
+  {
+    // Caly uklad miesci sie na ekranie 320 px: ostatni wiersz konczy sie nad dolna krawedzia, a krzyzyk X nie nachodzi.
+    lv_obj_update_layout(ekran);
+    lv_obj_t* l = senPrzyciskZPrefiksem("Uśpij po");
+    lv_obj_t* btn = lv_obj_get_parent(l);
+    lv_area_t a; lv_obj_get_coords(btn, &a);
+    info("przycisk \"Uśpij po\": x=%d..%d y=%d..%d", (int)a.x1, (int)a.x2, (int)a.y1, (int)a.y2);
+    sprawdz(a.y2 <= 319 - 10 && a.x2 <= 479 - 10, "wiersz \"Na baterii\" miesci sie na ekranie (dol i prawa krawedz z marginesem)");
+    lv_obj_t* h = znajdzEtykiete(ekran, "Automatyczny harmonogram");
+    lv_area_t ha; lv_obj_get_coords(lv_obj_get_parent(h), &ha);
+    sprawdz(ha.y2 < a.y1, "wiersz harmonogramu konczy sie nad wierszem \"Na baterii\" (nie nachodza)");
+  }
+  zrzutEkranu("1_wyswietlacz_domyslnie");
+
+  // --- przyciemnienie: 1 min -> 2 min ---
+  size_t od = g_atrapa.serial.size();
+  sprawdz(senKliknijPrzycisk("Przyciemnij po"), "dotkniecie przycisku \"Przyciemnij po\"");
+  biegnij(200);
+  sprawdz(senNapisPrzycisku("Przyciemnij po") == "Przyciemnij po: 2 min", "-> \"Przyciemnij po: 2 min\"");
+  sprawdz(g_atrapa.nvs["wyswietlacz"]["senPrzyIdx"] == 2, "NVS wyswietlacz/senPrzyIdx=2");
+  sprawdz(logMa("tag=SEN zdarzenie=ustawienie przyciemnij_ms=120000 uspij_ms=300000", "", "", od), "log: tag=SEN zdarzenie=ustawienie przyciemnij_ms=120000 uspij_ms=300000");
+  // --- sen: 5 -> 10 -> 30 min -> 1 godz. -> nigdy -> 2 min (zawija) ---
+  const char* kolejne[] = { "Uśpij po: 10 min", "Uśpij po: 30 min", "Uśpij po: 1 godz.", "Uśpij po: nigdy", "Uśpij po: 2 min", "Uśpij po: 5 min" };
+  bool ok = true;
+  for (const char* oczekiwany : kolejne) {
+    senKliknijPrzycisk("Uśpij po");
+    biegnij(100);
+    if (senNapisPrzycisku("Uśpij po") != oczekiwany) { info("po dotknieciu: \"%s\", oczekiwano \"%s\"", senNapisPrzycisku("Uśpij po").c_str(), oczekiwany); ok = false; }
+  }
+  sprawdz(ok, "\"Uśpij po\": 10 min -> 30 min -> 1 godz. -> nigdy -> 2 min -> 5 min (lista zawija sie)");
+  sprawdz(g_atrapa.nvs["wyswietlacz"]["senSpijIdx"] == 1, "NVS wyswietlacz/senSpijIdx=1 po pelnym okrazeniu");
+  zrzutEkranu("2_wyswietlacz_po_zmianie");
+  kliknij(LV_SYMBOL_CLOSE);
+  biegnij(300);
+
+  // --- czasy dzialaja od razu: 2 min do przyciemnienia ---
+  lv_disp_trig_activity(NULL);
+  const unsigned long dotyk = millis();
+  biegnij(65000);
+  sprawdz(senJasno(), "65 s po ostatnim dotyku: nadal jasno (ustawione 2 min, nie 1 min)");
+  biegnij(60000);
+  sprawdz(senPrzyciemnione(), "125 s po ostatnim dotyku: 5 %");
+  sprawdz(logMa("tag=SEN zdarzenie=przyciemnienie powod=bez_dotyku", "", "", od), "log: przyciemnienie");
+  while (millis() - dotyk < 330000 && g_atrapa.usnal == 0) biegnij(1000);
+  sprawdz(g_atrapa.usnal == 1, "5 min po ostatnim dotyku: sen (ustawienie snu wrocilo do 5 min)");
+}
+
+void scenariuszSenUstawieniaNigdy() {
+  // NVS z poprzedniego uzycia: przyciemnianie "nigdy" (5), sen po 2 min (0).
+  g_atrapa.nvs["wyswietlacz"]["senPrzyIdx"] = 5;
+  g_atrapa.nvs["wyswietlacz"]["senSpijIdx"] = 0;
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  lv_obj_t* drugi = drugiPulpit();
+  if (drugi != nullptr) {
+    { LiczFirmware licz; lv_scr_load(drugi); }
+    biegnij(300);
+    kliknij("WYŚWIETLACZ");
+    biegnij(300);
+    sprawdz(senNapisPrzycisku("Przyciemnij po") == "Przyciemnij po: nigdy" && senNapisPrzycisku("Uśpij po") == "Uśpij po: 2 min",
+            "po restarcie przyciski pokazuja zapisane: \"Przyciemnij po: nigdy\", \"Uśpij po: 2 min\"");
+    zrzutEkranu("1_wyswietlacz_z_nvs");
+    kliknij(LV_SYMBOL_CLOSE);
+    biegnij(300);
+  }
+  lv_disp_trig_activity(NULL);
+  const unsigned long dotyk = millis();
+  biegnij(100000);
+  sprawdz(senJasno() && !logMa("tag=SEN zdarzenie=przyciemnienie"), "100 s bez dotyku: jasno (przyciemnianie \"nigdy\")");
+  while (millis() - dotyk < 150000 && g_atrapa.usnal == 0) biegnij(1000);
+  info("sen %ld s po ostatnim dotyku", g_atrapa.usnal ? (long)((g_atrapa.usnalMs - dotyk) / 1000UL) : -1L);
+  sprawdz(g_atrapa.usnal == 1 && g_atrapa.usnalMs - dotyk >= 119000 && g_atrapa.usnalMs - dotyk <= 123000, "sen 2 min po ostatnim dotyku, bez wczesniejszego przyciemnienia");
+}
+
+void scenariuszSenUstawieniaNigdySen() {
+  // Nieznany indeks z NVS (np. z przyszlej wersji) -> domyslne; sen "nigdy" -> panel nie usypia, ale przyciemnia.
+  g_atrapa.nvs["wyswietlacz"]["senPrzyIdx"] = 77;
+  g_atrapa.nvs["wyswietlacz"]["senSpijIdx"] = 5;
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(2000);
+  lv_disp_trig_activity(NULL);
+  biegnij(65000);
+  sprawdz(senPrzyciemnione(), "nieznany indeks przyciemnienia (77) -> domyslna minuta: po 65 s 5 %");
+  biegnij(15UL * 60UL * 1000UL);
+  sprawdz(g_atrapa.usnal == 0 && senPrzyciemnione(), "sen \"nigdy\": 16 min bez dotyku na baterii - przyciemniony, ale nie spi");
+  // Rozladowana bateria usypia mimo "nigdy".
+  g_atrapa.adcMv[34] = 1625;   // 3,25 V
+  biegnij(40000);
+  sprawdz(g_atrapa.usnal == 1 && logMa("tag=SEN zdarzenie=usypianie powod=bateria_rozladowana"), "3,25 V: sen mimo ustawienia \"nigdy\" (ochrona ogniwa)");
+}
+
 // --- polskie litery (v1.4.5) ------------------------------------------------
 // Czcionki lv_font_pl_14/20/28 (src/czcionki/) zastapily wbudowane Montserrat
 // o tych samych rozmiarach i maja 18 polskich liter wiecej. Test pilnuje:
@@ -5449,6 +5651,11 @@ const Scenariusz SCENARIUSZE[] = {
     {"sen_ota", "sen (v1.5.0): aktualizacja panelu na baterii wstrzymuje przyciemnienie i sen", scenariuszSenOta},
     {"sen_rozladowana", "sen (v1.5.0): ogniwo 3,25 V bez ladowarki - napis i sen od razu", scenariuszSenRozladowana},
     {"sen_rozladowana_alarm", "sen (v1.5.0): 3,25 V w alarmie panel nie spi; 3,05 V - sen mimo alarmu", scenariuszSenRozladowanaAlarm},
+    {"sen_po_wybudzeniu", "sen (v1.5.1): po wybudzeniu przyciskiem od razu pulpit - bez ekranu startowego, pulpit na wyswietlaczu przed WiFi", scenariuszSenPoWybudzeniu},
+    {"sen_po_wybudzeniu_ladowarka", "sen (v1.5.1): wlozona ladowarka budzi tak samo - pulpit od razu, na ladowarce bez przyciemniania", scenariuszSenPoWybudzeniuLadowarka},
+    {"sen_ustawienia", "sen (v1.5.1): ekran WYSWIETLACZ, wiersz Na baterii - przyciski Przyciemnij po / Uspij po, NVS, czasy od razu w uzyciu", scenariuszSenUstawienia},
+    {"sen_ustawienia_nigdy", "sen (v1.5.1): z NVS przyciemnianie nigdy + sen po 2 min: bez przyciemnienia, sen po 2 min", scenariuszSenUstawieniaNigdy},
+    {"sen_ustawienia_nigdy_sen", "sen (v1.5.1): nieznany indeks -> domyslne; sen nigdy -> tylko przyciemnienie; rozladowana bateria usypia mimo to", scenariuszSenUstawieniaNigdySen},
     {"pomiar_obciazenia", "ile panel rysuje, pyta centrale i prosi o pamiec, gdy nic sie nie zmienia (tylko pomiar_obciazenia.sh)", scenariuszPomiarObciazenia},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},

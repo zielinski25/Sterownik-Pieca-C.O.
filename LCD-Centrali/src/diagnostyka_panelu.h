@@ -1,4 +1,6 @@
 // diagnostyka_panelu.h
+// [v1.5.1] SEN: czasy przyciemnienia/snu do wyboru (SEN_*_OPCJE_MS, indeks w
+//   NVS), filtr "pierwsze dotkniecie przyciemnionego ekranu" (dotykPrzepusc()).
 // [v1.5.0] Dodano: sekcja "[v1.5.0 SEN]" na koncu - progi i decyzja
 //   przyciemnienia / glebokiego snu na baterii (senDecyzja()).
 // [v1.4.3] Dodano: RytmUstawien (B4, odczyt ustawien gdy potrzebny) i
@@ -1365,8 +1367,29 @@ inline bool poleStatusuCzytane(const char* pole) {
 // Na zasilaniu z USB panel NIGDY nie przyciemnia ani nie usypia - zachowanie
 // do v1.4.7 bez zmian. Decyzja jest czysta funkcja warunkow (jak otaDecyzja()
 // wyzej), zeby dalo sie ja sprawdzic na PC bez plytki.
-static const uint32_t SEN_PRZYCIEMNIJ_PO_MS = 60UL * 1000UL;        // 1 min bez dotyku: podswietlenie na SEN_JASNOSC_PROC
-static const uint32_t SEN_USPIJ_PO_MS       = 5UL * 60UL * 1000UL;  // 5 min bez dotyku: gleboki sen
+static const uint32_t SEN_PRZYCIEMNIJ_PO_MS = 60UL * 1000UL;        // domyslnie: 1 min bez dotyku -> podswietlenie na SEN_JASNOSC_PROC
+static const uint32_t SEN_USPIJ_PO_MS       = 5UL * 60UL * 1000UL;  // domyslnie: 5 min bez dotyku -> gleboki sen
+// [v1.5.1] Oba czasy do wyboru na ekranie WYSWIETLACZ (wiersz "Na baterii");
+// w NVS zapisywany jest INDEKS (wyswietlacz/senPrzyIdx, senSpijIdx), nie czas.
+// 0 ms = "nigdy". Napisy na przyciskach w tej samej kolejnosci:
+// dashboard_lvgl_poc.cpp, SEN_PRZYCIEMNIJ_NAZWY[] / SEN_USPIJ_NAZWY[].
+static constexpr uint32_t SEN_PRZYCIEMNIJ_OPCJE_MS[] = { 30000UL, 60000UL, 120000UL, 300000UL, 600000UL, 0UL };
+static constexpr uint32_t SEN_USPIJ_OPCJE_MS[]       = { 120000UL, 300000UL, 600000UL, 1800000UL, 3600000UL, 0UL };
+static const int      SEN_OPCJI = 6;
+static const uint8_t  SEN_PRZYCIEMNIJ_DOMYSLNY_IDX = 1;   // 1 min  (= SEN_PRZYCIEMNIJ_PO_MS)
+static const uint8_t  SEN_USPIJ_DOMYSLNY_IDX       = 1;   // 5 min  (= SEN_USPIJ_PO_MS)
+static_assert(sizeof(SEN_PRZYCIEMNIJ_OPCJE_MS) / sizeof(SEN_PRZYCIEMNIJ_OPCJE_MS[0]) == SEN_OPCJI, "SEN_PRZYCIEMNIJ_OPCJE_MS");
+static_assert(sizeof(SEN_USPIJ_OPCJE_MS) / sizeof(SEN_USPIJ_OPCJE_MS[0]) == SEN_OPCJI, "SEN_USPIJ_OPCJE_MS");
+static_assert(SEN_PRZYCIEMNIJ_OPCJE_MS[SEN_PRZYCIEMNIJ_DOMYSLNY_IDX] == SEN_PRZYCIEMNIJ_PO_MS, "domyslny indeks przyciemnienia");
+static_assert(SEN_USPIJ_OPCJE_MS[SEN_USPIJ_DOMYSLNY_IDX] == SEN_USPIJ_PO_MS, "domyslny indeks snu");
+
+// Indeks z NVS / z ekranu -> czas. Nieznany indeks (np. z przyszlej wersji
+// programu) = wartosc domyslna, jak zasilanieIdx w main.cpp.
+inline uint8_t senIndeksPoprawny(long idx, uint8_t domyslny) {
+  return (idx >= 0 && idx < SEN_OPCJI) ? (uint8_t)idx : domyslny;
+}
+inline uint32_t senPrzyciemnijMs(long idx) { return SEN_PRZYCIEMNIJ_OPCJE_MS[senIndeksPoprawny(idx, SEN_PRZYCIEMNIJ_DOMYSLNY_IDX)]; }
+inline uint32_t senUspijMs(long idx)       { return SEN_USPIJ_OPCJE_MS[senIndeksPoprawny(idx, SEN_USPIJ_DOMYSLNY_IDX)]; }
 static const uint8_t  SEN_JASNOSC_PROC      = 5;                    // jasnosc po przyciemnieniu (= JASNOSC_MIN_PROCENT w main.cpp)
 static const float    SEN_NAPIECIE_MIN_V    = 3.30f;                // ponizej: sen od razu (poza alarmem), z napisem na ekranie
 static const float    SEN_NAPIECIE_KRYT_V   = 3.10f;                // ponizej: sen od razu TAKZE w alarmie (ogniwo i tak zaraz sie odetnie)
@@ -1386,6 +1409,9 @@ struct SenWarunki {
   uint32_t bezDotykuMs;    // ile czasu nikt nie dotykal ekranu ani przycisku
   bool     alarm;          // centrala zglasza alarm albo brzeczyk gra
   bool     ota;            // trwa pobieranie / wgrywanie nowego programu panelu
+  // [v1.5.1] Czasy z ekranu WYSWIETLACZ (0 = nigdy). Domyslne = jak v1.5.0.
+  uint32_t przyciemnijPoMs = SEN_PRZYCIEMNIJ_PO_MS;
+  uint32_t uspijPoMs       = SEN_USPIJ_PO_MS;
 };
 
 struct SenDecyzja {
@@ -1402,9 +1428,40 @@ inline SenDecyzja senDecyzja(const SenWarunki& w) {
   if (w.napiecieV < SEN_NAPIECIE_KRYT_V) return {SEN_AKCJA_USPIJ, "bateria_krytyczna"};
   if (w.alarm)         return {SEN_AKCJA_NIC, "alarm"};
   if (w.napiecieV < SEN_NAPIECIE_MIN_V)  return {SEN_AKCJA_USPIJ, "bateria_rozladowana"};
-  if (w.bezDotykuMs >= SEN_USPIJ_PO_MS)       return {SEN_AKCJA_USPIJ, "bez_dotyku"};
-  if (w.bezDotykuMs >= SEN_PRZYCIEMNIJ_PO_MS) return {SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku"};
+  if (w.uspijPoMs != 0 && w.bezDotykuMs >= w.uspijPoMs)             return {SEN_AKCJA_USPIJ, "bez_dotyku"};
+  if (w.przyciemnijPoMs != 0 && w.bezDotykuMs >= w.przyciemnijPoMs) return {SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku"};
   return {SEN_AKCJA_NIC, "aktywny"};
+}
+
+// [v1.5.1] Pierwsze dotkniecie przyciemnionego ekranu ma TYLKO przywrocic
+// jasnosc - nie otwierac kafelka, w ktory akurat trafil palec (uzytkownik,
+// 20.11: "jak sie przyciemni, to pierwsze dotkniecie ma tylko przywrocic
+// rozjasnienie, a nie wchodzic w ikonke"). Filtr siedzi miedzy odczytem
+// dotyku a LVGL (lvgl_port.cpp, lvgl_touch_read()): dotyk, ktory ZACZAL sie
+// na przyciemnionym ekranie, jest pochlaniany w calosci, az do puszczenia
+// palca - LVGL widzi przez caly czas "brak dotyku", a licznik bezczynnosci
+// LVGL jest zerowany recznie (lv_disp_trig_activity), zeby senKrok() w
+// main.cpp rozjasnil ekran tak jak dotad. Nastepne dotkniecie (ekran juz
+// jasny) idzie normalnie.
+struct DotykFiltr {
+  bool    pochlania = false;   // trwa pochlanianie biezacego dotyku
+  uint8_t nieudane  = 0;       // kolejne odczyty "brak dotyku" w trakcie pochlaniania (histereza jak w lvgl_touch_read)
+};
+
+// Zwraca true = ten odczyt wolno przekazac LVGL; false = pochloniety (zglos
+// LVGL "brak dotyku"). `jest` = czujnik widzi palec, `nowy` = w poprzednim
+// odczycie LVGL nie widzialo dotyku (poczatek dotkniecia), `przyciemniony` =
+// ekran jest teraz przyciemniony przez senKrok(). `progPuszczenia` = ile
+// kolejnych odczytow bez palca konczy pochlanianie (ta sama liczba, co
+// PROG_PUSZCZENIA w lvgl_touch_read()).
+inline bool dotykPrzepusc(DotykFiltr& f, bool jest, bool nowy, bool przyciemniony, uint8_t progPuszczenia) {
+  if (!f.pochlania) {
+    if (jest && nowy && przyciemniony) { f.pochlania = true; f.nieudane = 0; return false; }
+    return true;
+  }
+  if (jest) { f.nieudane = 0; return false; }
+  if (++f.nieudane >= progPuszczenia) { f.pochlania = false; f.nieudane = 0; }
+  return false;
 }
 
 // Czy przed snem pokazac napis o rozladowanej baterii (powod z senDecyzja()).

@@ -1192,6 +1192,55 @@ static void testSen() {
   // Kolejnosc: ota przed alarmem (wgrywanie nie moze byc przerwane), alarm
   // przed zwykla rozladowana bateria, bateria krytyczna przed alarmem.
   { SenWarunki w = senBateria(0, 3.0f); w.ota = true; w.alarm = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "ota")); }
+
+  // [v1.5.1] Czasy do wyboru na ekranie WYSWIETLACZ: domyslny indeks = czasy z v1.5.0.
+  SPRAWDZ(SEN_OPCJI == 6);
+  SPRAWDZ(senPrzyciemnijMs(SEN_PRZYCIEMNIJ_DOMYSLNY_IDX) == SEN_PRZYCIEMNIJ_PO_MS);
+  SPRAWDZ(senUspijMs(SEN_USPIJ_DOMYSLNY_IDX) == SEN_USPIJ_PO_MS);
+  SPRAWDZ(senPrzyciemnijMs(0) == 30000UL && senPrzyciemnijMs(4) == 600000UL && senPrzyciemnijMs(5) == 0);
+  SPRAWDZ(senUspijMs(0) == 120000UL && senUspijMs(4) == 3600000UL && senUspijMs(5) == 0);
+  // Nieznany indeks (z przyszlej wersji / uszkodzony NVS) = domyslny, nie smieci spoza tablicy.
+  SPRAWDZ(senPrzyciemnijMs(6) == SEN_PRZYCIEMNIJ_PO_MS && senPrzyciemnijMs(-1) == SEN_PRZYCIEMNIJ_PO_MS && senPrzyciemnijMs(255) == SEN_PRZYCIEMNIJ_PO_MS);
+  SPRAWDZ(senUspijMs(200) == SEN_USPIJ_PO_MS);
+  // SenWarunki bez ustawionych czasow = zachowanie v1.5.0 (sprawdzone wyzej); z czasami:
+  { SenWarunki w = senBateria(31000); w.przyciemnijPoMs = 30000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku")); }
+  { SenWarunki w = senBateria(599000); w.przyciemnijPoMs = 600000; w.uspijPoMs = 3600000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "aktywny")); }
+  { SenWarunki w = senBateria(3600000); w.przyciemnijPoMs = 600000; w.uspijPoMs = 3600000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bez_dotyku")); }
+  // "nigdy": 0 ms wylacza dany krok, drugi dziala dalej.
+  { SenWarunki w = senBateria(7200000); w.przyciemnijPoMs = 0; w.uspijPoMs = 0; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "aktywny")); }
+  { SenWarunki w = senBateria(7200000); w.przyciemnijPoMs = 60000; w.uspijPoMs = 0; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku")); }
+  { SenWarunki w = senBateria(7200000); w.przyciemnijPoMs = 0; w.uspijPoMs = 300000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bez_dotyku")); }
+  // Sen krotszy niz przyciemnienie (2 min / 10 min): po 2 min od razu sen, bez przyciemnienia.
+  { SenWarunki w = senBateria(120000); w.przyciemnijPoMs = 600000; w.uspijPoMs = 120000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bez_dotyku")); }
+  // "nigdy" nie wylacza snu z powodu rozladowanej baterii.
+  { SenWarunki w = senBateria(0, 3.25f); w.przyciemnijPoMs = 0; w.uspijPoMs = 0; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bateria_rozladowana")); }
+
+  // [v1.5.1] Filtr dotyku: pierwsze dotkniecie przyciemnionego ekranu tylko rozjasnia.
+  {
+    DotykFiltr f;
+    // Ekran jasny: kazdy odczyt idzie do LVGL (wcisniety, trzymany, puszczony).
+    SPRAWDZ(dotykPrzepusc(f, true, true, false, 2) && !f.pochlania);
+    SPRAWDZ(dotykPrzepusc(f, true, false, false, 2));
+    SPRAWDZ(dotykPrzepusc(f, false, false, false, 2));
+    // Ekran przyciemniony, palec dotyka: pochloniety od pierwszego odczytu...
+    SPRAWDZ(!dotykPrzepusc(f, true, true, true, 2) && f.pochlania);
+    // ...i dalej, takze gdy senKrok() zdazyl juz rozjasnic ekran (przyciemniony=false) -
+    // ten sam dotyk nie moze "wejsc w ikonke" w polowie trzymania.
+    SPRAWDZ(!dotykPrzepusc(f, true, false, false, 2) && f.pochlania);
+    SPRAWDZ(!dotykPrzepusc(f, true, false, false, 2));
+    // Jeden nieudany odczyt w srodku (szum panelu rezystancyjnego) nie konczy pochlaniania.
+    SPRAWDZ(!dotykPrzepusc(f, false, true, false, 2) && f.pochlania);
+    SPRAWDZ(!dotykPrzepusc(f, true, true, false, 2) && f.pochlania && f.nieudane == 0);
+    // Puszczenie: 2 kolejne odczyty bez palca (PROG_PUSZCZENIA) koncza pochlanianie.
+    SPRAWDZ(!dotykPrzepusc(f, false, true, false, 2) && f.pochlania);
+    SPRAWDZ(!dotykPrzepusc(f, false, true, false, 2) && !f.pochlania);
+    // Nastepne dotkniecie (ekran jasny) idzie normalnie.
+    SPRAWDZ(dotykPrzepusc(f, true, true, false, 2) && !f.pochlania);
+    // Dotyk trwajacy, gdy ekran sie przyciemnia (palec lezal na szybie, nowy=false): nie pochlaniamy w srodku.
+    SPRAWDZ(dotykPrzepusc(f, true, false, true, 2) && !f.pochlania);
+    // Brak dotyku na przyciemnionym ekranie: nic sie nie dzieje.
+    SPRAWDZ(dotykPrzepusc(f, false, true, true, 2) && !f.pochlania);
+  }
 }
 
 int main() {

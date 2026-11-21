@@ -482,6 +482,17 @@ void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int
                                                             int godzinaStart, int godzinaKoniec,
                                                             bool harmonogramWlaczony);
 
+// [v1.5.1 SEN] Wiersz "Na baterii" na dole ekranu WYSWIETLACZ: dwa przyciski,
+// "Przyciemnij po: 1 min" i "Uśpij po: 5 min", kazde dotkniecie przelacza
+// NASTEPNA wartosc z listy (jak przyciski ekranu ZASILANIE). Tabela czasow jest
+// w diagnostyka_panelu.h (diag::SEN_PRZYCIEMNIJ_OPCJE_MS[] / SEN_USPIJ_OPCJE_MS[],
+// ostatnia pozycja = nigdy); tutaj tylko napisy w tej samej kolejnosci.
+// Callback: ten sam WyswietlaczUstawieniaCb, `pole` = "senPrzyciemnij" albo
+// "senUspij", `wartosc` = indeks 0..LVGL_SEN_OPCJI-1. main.cpp zasila
+// zapisane indeksy raz w setup() (..._aktualizuj_sen()).
+#define LVGL_SEN_OPCJI 6
+void lvgl_dashboard_poc_aktualizuj_sen(int przyciemnijIndeks, int uspijIndeks);
+
 // [v1.4.6 WERSJE] Wersja programu panelu i centrali, pokazywane na stale w
 // lewym gornym rogu ekranu WYSWIETLACZ ("Panel v1.4.6" / "Centrala v3.58.6").
 // `panel` to FIRMWARE_VERSION_PANEL z main.cpp; `centrala` to pole "fw" z

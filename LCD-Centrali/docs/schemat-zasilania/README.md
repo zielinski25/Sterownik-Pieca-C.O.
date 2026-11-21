@@ -36,7 +36,7 @@ Sprawdzone miernikiem i logiem:
 | pobór z USB 5 V (bez ogniwa, WiFi) | ekran 100 %: 254/243/234 mA przy 240/160/80 MHz; ekran 5 %: 157 mA; szczyt startu < 260 mA |
 | BC547 wylutowany ze złomu | nie przełączał (E/C odwrotnie, być może uszkodzony) → wymieniony na C945 |
 
-## Sprawdzenie v1.5.0 (sen na baterii) po wgraniu
+## Sprawdzenie v1.5.0 / v1.5.1 (sen na baterii) po wgraniu
 
 Firmware panelu od v1.5.0 używa tego sprzętu: na baterii po minucie bez
 dotyku przygasza ekran do 5 %, po pięciu usypia, budzi go przycisk GPIO14
@@ -54,15 +54,22 @@ albo włożenie ładowarki (GPIO35). Krok po kroku, log z Seriala obok:
    Multimetr (200 mA) szeregowo w OUT+ TP4056 → VIN+ MT3608: oczekiwane
    kilka mA (AMS1117 i dioda POWER DevKita; cel < 10 mA – wynik wpisać do
    `WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`, krok 6).
-4. **Przycisk GPIO14** → panel startuje od nowa (kilka sekund), w logu
-   `tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk`, ekran startowy
-   bez pauzy.
+4. **Przycisk GPIO14** → panel startuje od nowa, w logu
+   `tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk`. Od v1.5.1 bez
+   ekranu startowego: pulpit z „--” po ~0,3 s (`tag=SEN
+   zdarzenie=pulpit_po_wybudzeniu`), dane po 1–2 s (v1.5.0 pokazywało tu
+   „WYSWIETLACZ CO” i „Laczenie z WiFi”).
 5. Znów uśpij (albo poczekaj 5 min) i **włóż ładowarkę** → start,
    `zrodlo=usb`.
 6. **Alarm** (np. ekran alarmu z centrali) na baterii: ekran nie przygasa i
    panel nie śpi, dopóki alarm trwa (`sen_wstrzymany powod=alarm` raz w logu).
 7. Ogniwo rozładowane do < 3,30 V bez ładowarki: napis „BATERIA ROZLADOWANA /
    Podlacz ladowarke. Panel usypia.” i sen po 2,5 s; ładowarka budzi.
+8. (v1.5.1) **Dotknij przyciemnionego ekranu w kafelek** – ma się tylko
+   rozjaśnić, nic nie otwierać; drugie dotknięcie działa normalnie.
+9. (v1.5.1) **Ekran WYŚWIETLACZ, wiersz „Na baterii”**: ustaw „Przyciemnij
+   po: 30 s” – po pół minuty bez dotyku 5 %; „Uśpij po: nigdy” – panel nie
+   zasypia; po restarcie wybór zostaje.
 
 Jeśli po wybudzeniu przyciskiem panel od razu zasypia z powrotem albo
 budzi się sam: sprawdź, czy GPIO14 bez wciśniętego przycisku ma 3,3 V (pull‑up
