@@ -467,6 +467,23 @@ static void testRatunek() {
       if (r.krok(t, false, progRestartuMs(3)) != Ratunek::NIC) wymuszen++;
     SPRAWDZ(wymuszen == 0);
   }
+  // 2d) [v1.5.7] Status milczy, ale centrala odzywa sie inaczej (bajty
+  //     historii do wykresu co sekunde przez 20 s): zadnego wymuszenia w tym
+  //     czasie; licznik milczenia rusza od ostatniego znaku zycia, a czas bez
+  //     danych (do restartu) biegnie caly czas.
+  {
+    Ratunek r;
+    uint32_t tWymuszenia = 0;
+    int wymuszen = 0;
+    for (uint32_t t = 0; t <= 44000; t += 5) {
+      const Ratunek::Akcja a = r.krok(t, true, 45000);
+      if (a != Ratunek::NIC) { wymuszen++; if (tWymuszenia == 0) tWymuszenia = t; }
+      if (t <= 20000 && t % 1000 == 0) r.centralaOdezwalaSie();
+    }
+    SPRAWDZ(wymuszen == 2);                                         // 32 s (z BSSID) i 44 s (bez) - nic w pierwszych 20 s
+    SPRAWDZ(tWymuszenia == 32000);                                  // 12 s po ostatnim znaku zycia (20 s)
+    SPRAWDZ(r.bezDanychMs == 44000);                                // status nadal stary - restart (45 s) liczy sie od 0 s
+  }
   // 7) Dluzszy prog (po wczesniejszym samoczynnym restarcie).
   {
     Ratunek r;

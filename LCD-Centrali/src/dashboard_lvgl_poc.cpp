@@ -4353,8 +4353,8 @@ struct WykresySeriaDef {
   int kolDlugiSr;   // indeks kolumny SREDNIEJ w CSV bufora dlugiego
   uint16_t kolor;   // RGB565 - patrz komentarz przy tablicy WYKRESY_SERIE nizej (Partia 5c)
 };
-static inline int WYKRESY_KOL_DLUGI_MIN(int kolDlugiSr) { return kolDlugiSr + 1; }
-static inline int WYKRESY_KOL_DLUGI_MAX(int kolDlugiSr) { return kolDlugiSr + 2; }
+// [v1.5.7 PAMIEC] Kolumny min/max (kolDlugiSr+1, +2) nie sa juz czytane -
+// wykres rysuje tylko srednia; uklad kolumn CSV centrali bez zmian.
 
 // [DZIURY-CZAS, ta sesja - PORT Z PANELU WWW, wersja RAM-oszczedna] Patrz
 // obszerny komentarz przy wykresy_strumien_wstaw_znacznik_dziury() nizej co
@@ -4425,15 +4425,22 @@ static const int WYKRESY_MAX_SECONDARY = 1;
 static const int WYKRESY_MAX_NA_OSI[2] = { WYKRESY_MAX_PRIMARY, WYKRESY_MAX_SECONDARY };
 static const int WYKRESY_MAX_SLOTOW = 8;
 
-// Jeden zredukowany punkt wykresu - albo pojedyncza wartosc (bufor krotki),
-// albo srednia+min+max (bufor dlugi, min/max wypelnione tylko gdy
-// wykresy_redukuj_kolumne() wywolana z dodatkowymi kolumnami - patrz nizej).
+// Jeden zredukowany punkt wykresu: sama wartosc (srednia kubelka albo punkt
+// policzony przez centrale), NaN = przerwa.
+// [v1.5.7 PAMIEC] Do v1.5.6 punkt mial 24 B: etykieta[12] + wartosc + minimum
+// + maksimum. Minimum i maksimum byly liczone i zapisywane, ale NIGDZIE nie
+// rysowane (wykres to jedna linia na serie), a etykieta byla ta sama dla
+// wszystkich 8 serii (kopiowana z g_wykresyStrumien.etykieta) i czytana
+// tylko dla pierwszego i ostatniego punktu (podpis zakresu przy starszej
+// centrali). Log z plytki 22.11 (v1.5.6): ram_min=1932 B przy otwartych
+// Wykresach, alok_nieudane=42 - 8 buforow po 96 x 24 B = 18,4 kB bralo
+// wiekszosc wolnego RAM-u. Teraz: 4 B na punkt (8 x 96 x 4 B = 3 kB) plus
+// JEDNA wspolna tablica etykiet (96 x 12 B = 1,2 kB, g_wykresyEtykiety) -
+// razem 4,2 kB, o 14,2 kB mniej przy kazdym otwarciu Wykresow.
 struct WykresyPunkt {
-  char  etykieta[12];  // starczy na dluzszy format dlugiego bufora "DD.MM HH:00"
   float wartosc;
-  float minimum;   // uzyte tylko przy redukcji bufora dlugiego, inaczej ==wartosc
-  float maksimum;  // jw.
 };
+static const int WYKRESY_ETYKIETA_B = 12;   // starczy na dluzszy format dlugiego bufora "DD.MM HH:00"
 
 // Wyciaga wartosc float z pojedynczej, JUZ WYCIETEJ linii CSV (bez '\n' na
 // koncu) spod danego indeksu kolumny - bez alokacji, samym przesuwaniem
@@ -4564,10 +4571,10 @@ struct WykresyStrumienStan {
   int   wierszWKubelku;    // ile surowych wierszy juz w BIEZACYM otwartym kubelku
   int   liczbaKubelkow;    // ile kubelkow ZAMKNIETYCH (wspolne dla wszystkich serii)
   float suma[WYKRESY_MAX_SLOTOW];
-  float minW[WYKRESY_MAX_SLOTOW];
-  float maxW[WYKRESY_MAX_SLOTOW];
+  // [v1.5.7 PAMIEC] minW/maxW (min i max kubelka per seria) usuniete razem
+  // z polami minimum/maksimum punktu - nic ich nie rysowalo.
   int   licznik[WYKRESY_MAX_SLOTOW]; // ile PRAWIDLOWYCH wartosci danej serii w biezacym otwartym kubelku
-  char  etykieta[12];      // etykieta ostatniego wiersza w biezacym otwartym kubelku
+  char  etykieta[WYKRESY_ETYKIETA_B];      // etykieta ostatniego wiersza w biezacym otwartym kubelku
   // [DZIURY-CZAS, ta sesja] Czas (Unix epoch) OSTATNIEGO widzianego
   // surowego wiersza CSV, NIEZALEZNIE od granic kubelka - jedno pole na
   // caly strumien (nie per-punkt!), wiec koszt to 4B raz, nie 4B x liczba
@@ -5293,7 +5300,8 @@ static int wykresy_tryb_numer() { return (int)g_wykresyTryb; }
 // - tablica 8 WSKAZNIKOW (32 B, pomijalne) + malloc() per slot w runtime,
 // tak samo jak `buf1` w lvgl_port.cpp. Uzycie samych wskaznikow - w Partii 8d.
 //
-// [v1.2.2 PAMIEC] Bufory (8 x 96 punktow x 24 B = 18,4 kB) istnieja TYLKO
+// [v1.2.2 PAMIEC] Bufory (do v1.5.6: 8 x 96 punktow x 24 B = 18,4 kB; od
+// v1.5.7: 8 x 96 x 4 B + wspolne etykiety 96 x 12 B = 4,2 kB) istnieja TYLKO
 // wtedy, gdy ekran Wykresy jest otwarty. Do v1.2.1 byly przydzielane raz, przy
 // starcie, i trzymane do konca - takze wtedy, gdy nikt na wykresy nie
 // patrzyl. Byl to drugi co do wielkosci przydzial w programie (po buforze
@@ -5307,6 +5315,11 @@ static int wykresy_tryb_numer() { return (int)g_wykresyTryb; }
 // kazde uzycie sprawdza jedno albo drugie.
 static WykresyPunkt *g_wykresyPunkty[WYKRESY_MAX_SLOTOW] = { nullptr };
 static int g_wykresyLiczbaPunktow[WYKRESY_MAX_SLOTOW] = { 0 };
+// [v1.5.7 PAMIEC] Etykieta (czas) kazdego kubelka - jedna na kubelek, wspolna
+// dla wszystkich serii (do v1.5.6 kopiowana 8 razy, raz w kazdym punkcie).
+// Przydzielana i zwalniana razem z buforami punktow; pusty wskaznik =>
+// podpis zakresu bez etykiet (tylko przy starszej centrali, bez "#panel-hist").
+static char (*g_wykresyEtykiety)[WYKRESY_ETYKIETA_B] = nullptr;
 // [v1.3.0 WYKRESY] Wynik ostatniego pobrania: ile punktow z danymi trafilo na
 // wykres (do logu) i czy wykres powstal tylko z czesci danych (dopisek pod
 // wykresem) - patrz lvgl_dashboard_poc_wykresy_strumien_koniec().
@@ -5323,6 +5336,10 @@ static void wykresy_bufory_8_zaalokuj() {
       // (kazde uzycie g_wykresyPunkty[] sprawdza wskaznik).
       Serial.printf("[WYKRESY] BLAD: brak RAM na bufor punktow slotu %d\n", i);
     }
+  }
+  if (g_wykresyEtykiety == nullptr) {
+    g_wykresyEtykiety = (char (*)[WYKRESY_ETYKIETA_B])malloc(sizeof(*g_wykresyEtykiety) * WYKRESY_MAX_PUNKTOW);
+    if (g_wykresyEtykiety == nullptr) Serial.println("[WYKRESY] BLAD: brak RAM na etykiety punktow");
   }
 }
 
@@ -5345,6 +5362,8 @@ static void wykresy_bufory_8_zwolnij() {
     free(g_wykresyPunkty[i]);   // free(nullptr) jest dozwolone
     g_wykresyPunkty[i] = nullptr;
   }
+  free(g_wykresyEtykiety);
+  g_wykresyEtykiety = nullptr;
 }
 
 // Zdarzenia ekranu Wykresy: LVGL wysyla LOAD_START, zanim ekran sie pokaze,
@@ -5375,10 +5394,13 @@ static void wykresy_strumien_scal_kubelki() {
       // rozmiarKubelka (podwajany zawsze RAZEM dla wszystkich kubelkow),
       // wiec zwykla srednia dwoch srednich odpowiada wazonej.
       scalony.wartosc = (a.wartosc + b.wartosc) * 0.5f;
-      scalony.minimum = (a.minimum < b.minimum) ? a.minimum : b.minimum;
-      scalony.maksimum = (a.maksimum > b.maksimum) ? a.maksimum : b.maksimum;
-      memcpy(scalony.etykieta, b.etykieta, sizeof(scalony.etykieta)); // nowszy (b) wygrywa, jak w starym kodzie
       g_wykresyPunkty[s][i] = scalony;
+    }
+  }
+  if (g_wykresyEtykiety) {
+    // [v1.5.7 PAMIEC] Etykiety raz, nie per seria: nowszy kubelek (b) wygrywa, jak dotad.
+    for (int i = 0; i < polowa; i++) {
+      memcpy(g_wykresyEtykiety[i], g_wykresyEtykiety[2 * i + 1], WYKRESY_ETYKIETA_B);
     }
   }
   g_wykresyStrumien.liczbaKubelkow = polowa;
@@ -5421,6 +5443,9 @@ static void wykresy_strumien_zamknij_kubelek(bool znacznikDziury = false) {
       memmove(&g_wykresyPunkty[s][0], &g_wykresyPunkty[s][1],
               sizeof(WykresyPunkt) * (WYKRESY_GODZINY_OKNO - 1));
     }
+    if (g_wykresyEtykiety) {
+      memmove(g_wykresyEtykiety[0], g_wykresyEtykiety[1], WYKRESY_ETYKIETA_B * (WYKRESY_GODZINY_OKNO - 1));
+    }
     g_wykresyStrumien.liczbaKubelkow = WYKRESY_GODZINY_OKNO - 1; // nowy wpis dopisze sie na zwolnionym miejscu na koncu, ponizej
   } else if (g_wykresyStrumien.liczbaKubelkow >= WYKRESY_MAX_PUNKTOW) {
     wykresy_strumien_scal_kubelki();
@@ -5431,33 +5456,23 @@ static void wykresy_strumien_zamknij_kubelek(bool znacznikDziury = false) {
     WykresyPunkt &pkt = g_wykresyPunkty[s][idx];
     if (znacznikDziury) {
       pkt.wartosc = NAN;
-      pkt.minimum = NAN;
-      pkt.maksimum = NAN;
     } else if (g_wykresyStrumien.licznik[s] > 0) {
       pkt.wartosc = g_wykresyStrumien.suma[s] / g_wykresyStrumien.licznik[s];
-      pkt.minimum = g_wykresyStrumien.minW[s];
-      pkt.maksimum = g_wykresyStrumien.maxW[s];
     } else if (g_wykresyStrumien.zredukowany) {
       // [v1.3.0 WYKRESY] Punkt policzony przez centrale, a ta seria ma w nim
       // "nan": czujnik nie dal w tym odcinku zadnego odczytu. Linia tej serii
       // ma tu przerwe - nie wymyslamy wartosci (inne serie rysuja sie dalej).
       pkt.wartosc = NAN;
-      pkt.minimum = NAN;
-      pkt.maksimum = NAN;
     } else {
       // Brak sparsowanych wartosci tej serii w tym kubelku (np. urwana
       // linia) - powiel poprzedni punkt zamiast wstawiac zero, ktore
       // wygladaloby jak prawdziwy dolek na wykresie.
       pkt.wartosc = (idx > 0) ? g_wykresyPunkty[s][idx - 1].wartosc : 0.0f;
-      pkt.minimum = pkt.wartosc;
-      pkt.maksimum = pkt.wartosc;
     }
-    memcpy(pkt.etykieta, g_wykresyStrumien.etykieta, sizeof(pkt.etykieta));
     g_wykresyStrumien.suma[s] = 0.0f;
-    g_wykresyStrumien.minW[s] = 0.0f;
-    g_wykresyStrumien.maxW[s] = 0.0f;
     g_wykresyStrumien.licznik[s] = 0;
   }
+  if (g_wykresyEtykiety) memcpy(g_wykresyEtykiety[idx], g_wykresyStrumien.etykieta, WYKRESY_ETYKIETA_B);
   g_wykresyStrumien.liczbaKubelkow++;
   g_wykresyStrumien.wierszWKubelku = 0;
 }
@@ -5884,8 +5899,7 @@ static void wykresy_chart_odswiez() {
       if (g_wykresyLiczbaPunktow[p] > 0) { pierwszaZDanymi = p; break; }
     }
     if (pierwszaZDanymi >= 0) {
-      const WykresyPunkt *punkty = g_wykresyPunkty[pierwszaZDanymi];
-      int liczbaPunktow = g_wykresyLiczbaPunktow[pierwszaZDanymi];
+      int liczbaPunktow = g_wykresyLiczbaPunktow[pierwszaZDanymi];   // etykiety sa wspolne (g_wykresyEtykiety), liczba punktow per seria
       char zakresBuf[48];
       if (g_wykresyStrumien.zredukowany && strcmp(g_wykresyStrumien.etykOd, "--:--") == 0 && strcmp(g_wykresyStrumien.etykDo, "--:--") == 0) {
         // Centrala nie zna godziny (zegar nieustawiony, brak NTP): punkty sa
@@ -5899,7 +5913,9 @@ static void wykresy_chart_odswiez() {
         snprintf(zakresBuf, sizeof(zakresBuf), "%s  -  %s", g_wykresyStrumien.etykOd, g_wykresyStrumien.etykDo);
       } else {
         snprintf(zakresBuf, sizeof(zakresBuf), "%s  -  %s%s",
-                 punkty[0].etykieta, punkty[liczbaPunktow - 1].etykieta, g_wykresyNiepelne ? "   NIEPEŁNE" : "");
+                 g_wykresyEtykiety ? g_wykresyEtykiety[0] : "",
+                 g_wykresyEtykiety ? g_wykresyEtykiety[liczbaPunktow - 1] : "",
+                 g_wykresyNiepelne ? "   NIEPEŁNE" : "");
       }
       lv_label_set_text(wykresyChartZakresLabel, zakresBuf);
       // Dopisek NIEPELNE ma byc widac: kolor ostrzezenia zamiast szarego.
@@ -6055,30 +6071,16 @@ void lvgl_dashboard_poc_wykresy_strumien_linia(const char *linia) {
     const WykresySeriaDef &seria = WYKRESY_SERIE[idxSerii];
     const int kolSr = dlugi ? seria.kolDlugiSr : seria.kolKrotki;
     float wSr;
-    float wMin, wMaks;
     if (g_wykresyStrumien.zredukowany) {
       // Punkt policzony przez centrale: "nan" = ta seria nie ma tu wartosci.
       if (!wykresy_csv_kolumna_liczba(linia, kolSr, wSr)) continue;
-      wMin = wMaks = wSr;
-      wykresy_csv_kolumna_liczba(linia, WYKRESY_KOL_DLUGI_MIN(seria.kolDlugiSr), wMin);
-      wykresy_csv_kolumna_liczba(linia, WYKRESY_KOL_DLUGI_MAX(seria.kolDlugiSr), wMaks);
       wierszMaWartosc = true;
     } else {
       if (!wykresy_csv_kolumna_float(linia, kolSr, wSr)) continue;
       if (wykresy_csv_kolumna_czytelna(linia, kolSr)) wierszMaWartosc = true;
-      wMin = wMaks = wSr;
-      if (dlugi) {
-        wykresy_csv_kolumna_float(linia, WYKRESY_KOL_DLUGI_MIN(seria.kolDlugiSr), wMin);
-        wykresy_csv_kolumna_float(linia, WYKRESY_KOL_DLUGI_MAX(seria.kolDlugiSr), wMaks);
-      }
     }
-    if (g_wykresyStrumien.licznik[s] == 0) {
-      g_wykresyStrumien.minW[s] = wMin;
-      g_wykresyStrumien.maxW[s] = wMaks;
-    } else {
-      if (wMin < g_wykresyStrumien.minW[s]) g_wykresyStrumien.minW[s] = wMin;
-      if (wMaks > g_wykresyStrumien.maxW[s]) g_wykresyStrumien.maxW[s] = wMaks;
-    }
+    // [v1.5.7 PAMIEC] Kolumny min/max formatu dlugiego nie sa juz czytane -
+    // wykres rysuje tylko srednia (patrz WykresyPunkt).
     g_wykresyStrumien.suma[s] += wSr;
     g_wykresyStrumien.licznik[s]++;
   }
@@ -6372,7 +6374,7 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   dashboardScr = scr; // moze juz byc ustawione przez inny *_zbuduj() - bezpieczne do powtorzenia
 
   wykresyPanel = lv_obj_create(nullptr);
-  // [v1.2.2 PAMIEC] Bufory punktow (18,4 kB) tylko na czas, gdy ten ekran
+  // [v1.2.2 PAMIEC] Bufory punktow (4,2 kB; do v1.5.6 18,4 kB) tylko na czas, gdy ten ekran
   // jest otwarty - patrz komentarz przy g_wykresyPunkty[].
   lv_obj_add_event_cb(wykresyPanel, wykresy_panel_ekran_event_cb, LV_EVENT_SCREEN_LOAD_START, nullptr);
   lv_obj_add_event_cb(wykresyPanel, wykresy_panel_ekran_event_cb, LV_EVENT_SCREEN_UNLOADED, nullptr);

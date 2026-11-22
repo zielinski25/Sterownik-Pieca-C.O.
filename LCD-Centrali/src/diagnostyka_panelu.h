@@ -595,6 +595,19 @@ struct Ratunek {
     restartZlecony = false;
   }
 
+  // [v1.5.7 RATUNEK] Centrala wlasnie sie odezwala INNYM kanalem niz
+  // /api/status: przyszly bajty historii do wykresu albo odpowiedz na
+  // polecenie. Polaczenie z nia dziala, wiec "WiFi polaczone, a centrala
+  // milczy" nie zachodzi - licznik milczenia od nowa. Status moze byc
+  // nadal stary (bezDanychMs biegnie, kafelki "--"), bo to on tylko sie
+  // spoznia; centrala obsluguje wtedy pobieranie historii i na status
+  // odpowiada wolniej. Log z plytki 22.11 (v1.5.6): panel w srodku
+  // pobierania wykresu (8 z 16 linii juz odebranych) wymusil ponowne
+  // polaczenie WiFi, bo status nie przyszedl od 12 s - pobieranie padlo
+  // ("urwana ... errno=113"), WiFi zerwane na kilka sekund, a potem 3 proby
+  // wykresu z rzedu bez WiFi.
+  void centralaOdezwalaSie() { milczyMs = 0; }
+
   // `polaczoneAleMilczy`: WiFi zglasza polaczenie, a ostatnia proba statusu
   // skonczyla sie brakiem odpowiedzi (nie: nieczytelna odpowiedzia - na to
   // ponowne polaczenie z siecia nic nie poradzi).

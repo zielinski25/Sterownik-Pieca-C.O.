@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.6
+# Panel LCD (wyświetlacz CO) — firmware v1.5.7
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,46 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.7
+
+**Wykresy biorą 4× mniej RAM-u.** Log z płytki na v1.5.6 (22.11, 16:44–16:47):
+po starcie `ram=34752`, przy otwartych Wykresach `ram=7120 ram_min=1932
+alok_nieudane=42`, `malo_pamieci`. Model pamięci (`pomiar_pamieci.sh
+--przypadki`) pokazywał to samo: ekran Wykresy +18,6 kB, szczyt przy wykresie
++22,7 kB, na płytce zostawało ok. 3,8 kB. Punkt wykresu miał 24 B
+(etykieta 12 B + wartość + minimum + maksimum) — minimum i maksimum nikt nie
+rysował, a etykieta była ta sama dla wszystkich 8 serii. Teraz punkt to 4 B
+(sama wartość, NaN = przerwa) plus jedna wspólna tablica etykiet (96 × 12 B).
+
+| | Było (≤ v1.5.6) | Jest (v1.5.7) |
+|---|---|---|
+| bufory ekranu Wykresy | 8 × 96 × 24 B = 18 432 B | 8 × 96 × 4 B + 96 × 12 B = **4 224 B** |
+| model: ekran Wykresy otwarty | +18 632 B | **+4 440 B** |
+| model: szczyt przy wykresie | +22 744 B | **+8 552 B** |
+| model: próg bez odmów pamięci | 22 250 B wolnego | **8 000 B** |
+| model: na płytce w najgorszej chwili | ok. 3,8 kB | **ok. 18 kB** |
+
+Wygląd wykresów bez zmian — testy wzorcowe porównują te same punkty.
+
+**Panel nie zrywa WiFi, gdy centrala właśnie przysyła wykres.** W tym samym
+logu w środku pobierania wykresu (8 z 16 linii odebranych) panel wymusił
+ponowne połączenie WiFi (`wymuszam_polaczenie`), bo `/api/status` nie
+odpowiadał od 12 s — centrala była zajęta wysyłaniem historii. Pobieranie
+padło (`urwana … errno=113`), WiFi było zerwane na kilka sekund, a kolejne
+próby wykresu kończyły się `brak_wifi`. Teraz każdy nowy bajt historii i każda
+odpowiedź na polecenie zeruje licznik milczenia
+(`diag::Ratunek::centralaOdezwalaSie()`): dopóki centrala cokolwiek przysyła,
+panel nie zrywa z nią połączenia. Status nadal stary → kafelki `--` i
+`dane_nieaktualne` jak dotąd; drabina ratunkowa rusza 12 s po **ostatnim**
+znaku życia centrali, samoczynny restart po 45 s bez statusu bez zmian.
+
+Testy: nowy scenariusz `wykresy_centrala_zajeta` (status milczy, historia
+płynie 20 s → bez `wymuszam_polaczenie`, wykres jest; po końcu historii
+wymuszenie po 12 s; status wraca), przypadek 2d w `testRatunek()`. Razem
+74 scenariusze, 834 sprawdzenia, 816 jednostkowych. Zmienione pliki:
+`src/main.cpp`, `src/dashboard_lvgl_poc.cpp`, `src/diagnostyka_panelu.h`,
+`testy_host/`.
 
 ## Co zmienia v1.5.6
 

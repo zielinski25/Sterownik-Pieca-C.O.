@@ -159,9 +159,11 @@ int odmow = 0;                  // ile przydzialow dostalo odmowe
 // firmware'u (wFirmware > 0). Atrapy String to nie obejmuje (std::string).
 unsigned long long prosb = 0, prosbBajtow = 0, zwolnien = 0;
 thread_local int wFirmware = 0; // >0: wlasnie dziala kod firmware'u
-// Bufory punktow ekranu Wykresy: 8 x malloc(96 punktow x 24 B). Sledzone,
-// zeby scenariusz mogl sprawdzic, ze istnieja tylko przy otwartym ekranie.
-const size_t BUFOR_WYKRESU_B = 96 * 24;
+// Bufory punktow ekranu Wykresy: 8 x malloc(96 punktow x 4 B) (do v1.5.6:
+// x 24 B; v1.5.7 zostawila w punkcie sama wartosc, etykiety sa w jednej
+// wspolnej tablicy 96 x 12 B). Sledzone, zeby scenariusz mogl sprawdzic, ze
+// istnieja tylko przy otwartym ekranie.
+const size_t BUFOR_WYKRESU_B = 96 * 4;
 void* buforyWykresow[32];
 int zyweBuforyWykresow() {
   int n = 0;
@@ -2793,7 +2795,7 @@ void scenariuszBrakPamieciLvgl() {
 }
 
 // --- 25 --------------------------------------------------------------------
-// Bufory punktow ekranu Wykresy (18,4 kB) istnieja tylko wtedy, gdy ten ekran
+// Bufory punktow ekranu Wykresy (do v1.5.6: 18,4 kB; od v1.5.7: 4,2 kB) istnieja tylko wtedy, gdy ten ekran
 // jest otwarty - niezaleznie od tego, jak zostal zamkniety.
 void scenariuszWykresyPamiec() {
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -33, 0));
@@ -3453,6 +3455,55 @@ void scenariuszWykresyPonowienie() {
   sprawdz(logMa("tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu", "", "", od), "log: przerwano powod=wyjscie_z_ekranu");
   sprawdz(stanC(0).nHistOdrzuconych == przed + 1, "po wyjsciu z ekranu zadne kolejne zapytanie nie poszlo");
   ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 0; });
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal w calym scenariuszu");
+}
+
+// --- 30b -------------------------------------------------------------------
+// [v1.5.7] Centrala zajeta wysylaniem historii nie odpowiada na /api/status.
+// Log z plytki 22.11 (v1.5.6): w srodku pobierania wykresu (8 z 16 linii)
+// panel wymusil ponowne polaczenie WiFi, bo status milczal 12 s - pobieranie
+// padlo ("urwana ... errno=113"), WiFi na kilka sekund zerwane, kolejne proby
+// wykresu "brak_wifi". Teraz kazdy bajt historii (i kazda odpowiedz na
+// polecenie) zeruje licznik milczenia: dopoki centrala cokolwiek przysyla,
+// panel nie zrywa z nia polaczenia. Starsza centrala i wolne lacze, zeby
+// pobieranie trwalo dluzej niz prog 12 s.
+void scenariuszWykresyCentralaZajeta() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; c.histBajtowNaMs = 15.0; });   // 352 kB przy 15 kB/s: ok. 23 s (limit calosci 20 s)
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+
+  printf("  status milczy, a historia plynie (centrala zajeta wysylaniem wykresu):\n");
+  ustawC(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+  const int rozlaczenPrzed = g_atrapa.liczbaDisconnect;
+  size_t od = pokazWykres("TYGODNIOWY", 15000);
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=dane_nieaktualne", "przyczyna=milczy", od),
+          "po 10 s bez statusu kafelki \"--\" i log dane_nieaktualne (status NAPRAWDE jest stary)");
+  sprawdz(!logMa("zdarzenie=wymuszam_polaczenie", "", "", od) && g_atrapa.liczbaDisconnect == rozlaczenPrzed,
+          "po 15 s BEZ wymuszam_polaczenie: bajty historii dowodza, ze centrala zyje (v1.5.6 zrywalo WiFi w 12. sekundzie)");
+  sprawdz(!wykresWidoczny() && znajdzEtykiete(lv_scr_act(), "Ładowanie danych z centrali...\n") != nullptr,
+          "pobieranie nadal trwa - nie zostalo zerwane");
+  biegnij(6000);
+  sprawdz(wykresWidoczny(), "po 21 s jest wykres z tego, co doszlo (limit calosci 20 s)");
+  sprawdz(!logMa("tag=WYKRESY lvl=WARN zdarzenie=blad", "przyczyna=urwana", "", od) &&
+              !logMa("tag=WYKRESY lvl=WARN zdarzenie=blad", "przyczyna=brak_wifi", "", od) &&
+              !logMa("zdarzenie=wymuszam_polaczenie", "", "", od),
+          "bez bledow urwana/brak_wifi i nadal bez wymuszania polaczenia");
+  zrzutEkranu("1_wykres_mimo_ciszy_statusu");
+
+  printf("  historia skonczona, status dalej milczy - drabina ratunkowa liczy od OSTATNIEGO znaku zycia:\n");
+  od = g_atrapa.serial.size();
+  biegnij(14000);
+  info("%s", liniaLogu("zdarzenie=wymuszam_polaczenie", od).c_str());
+  sprawdz(logMa("tag=WIFI lvl=WARN", "zdarzenie=wymuszam_polaczenie", "nr=1 szukam=ten_sam_bssid", od),
+          "12 s po ostatnim bajcie historii: wymuszam_polaczenie nr=1 (teraz centrala naprawde milczy)");
+
+  printf("  status wraca:\n");
+  ustawC(0, [](Centrala& c) { c.trybStatus = TRYB_OK; });
+  biegnij(8000);
+  sprawdz(logMa("tag=PANEL zdarzenie=dane_wrocily", "", "", od), "log: dane_wrocily");
   sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal w calym scenariuszu");
 }
 
@@ -6018,6 +6069,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"wykresy_brak_danych", "centrala bez historii, jeden pomiar, bez zegara, brak pamieci centrali (v1.3.0)", scenariuszWykresyBrakDanych},
     {"wykresy_bledy_sieci", "odpowiedz urwana, cisza, brak odpowiedzi, nie-centrala, brak WiFi: napis z przyczyna (v1.3.0)", scenariuszWykresyBledySieci},
     {"wykresy_ponowienie", "centrala nie przyjmuje zapytania o historie: do 3 prob, zanim pokaze sie napis (v1.5.6)", scenariuszWykresyPonowienie},
+    {"wykresy_centrala_zajeta", "status milczy, a historia plynie: panel nie zrywa WiFi w trakcie pobierania wykresu (v1.5.7)", scenariuszWykresyCentralaZajeta},
     {"wykresy_wyjscie_w_trakcie", "wyjscie z wykresu w trakcie pobierania; pobieranie dluzsze niz limit (v1.3.0)", scenariuszWykresyWyjscieWTrakcie},
     {"wykresy_alarm_w_trakcie", "alarm w trakcie pobierania danych do wykresu (v1.3.0)", scenariuszWykresyAlarmWTrakcie},
     {"wykresy_stary_csv", "stary CSV podany ekranowi wprost: te same punkty co w v1.2.2 (v1.3.0)", scenariuszWykresyStaryCsv},

@@ -40,6 +40,38 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.7 - WYKRESY 4x MNIEJ RAM-U; PANEL NIE ZRYWA WIFI, GDY CENTRALA PRZYSYLA WYKRES
+//   - Log z plytki na v1.5.6 (22.11 16:44-16:47): po starcie ram=34752, przy
+//     otwartych Wykresach ram=7120, ram_min=1932, alok_nieudane=42,
+//     malo_pamieci. Model pamieci (pomiar_pamieci.sh --przypadki) dawal to
+//     samo: ekran Wykresy +18,6 kB, szczyt przy wykresie +22,7 kB, na plytce
+//     zostawalo ok. 3,8 kB.
+//   - Punkt wykresu (WykresyPunkt, dashboard_lvgl_poc.cpp) mial 24 B:
+//     etykieta[12] + wartosc + minimum + maksimum. Minimum i maksimum nikt
+//     nie rysowal (jedna linia na serie), a etykieta byla ta sama dla
+//     wszystkich 8 serii i czytana tylko dla pierwszego i ostatniego punktu
+//     (podpis zakresu przy centrali < 3.58.4). Teraz punkt to 4 B (sama
+//     wartosc, NaN = przerwa) + jedna wspolna tablica etykiet 96 x 12 B
+//     (g_wykresyEtykiety). Bufory ekranu Wykresy: 18 432 B -> 4 224 B.
+//     Model: ekran Wykresy +4,4 kB (bylo +18,6), szczyt +8,6 kB (bylo
+//     +22,7); prog bez odmow pamieci 8 000 B wolnego RAM-u (bylo 22 250);
+//     na plytce w najgorszej chwili ok. 18 kB (bylo 3,8 kB). Wyglad wykresow
+//     bez zmian (te same punkty w testach wzorcowych).
+//   - W tym samym logu: w srodku pobierania wykresu (8 z 16 linii odebranych)
+//     panel wymusil ponowne polaczenie WiFi (wymuszam_polaczenie), bo
+//     /api/status nie odpowiadal od 12 s - centrala byla zajeta wysylaniem
+//     historii. Pobieranie padlo ("urwana ... errno=113"), WiFi zerwane na
+//     kilka sekund, kolejne proby wykresu "brak_wifi". Teraz kazdy nowy bajt
+//     historii i kazda odpowiedz na polecenie zeruje licznik milczenia
+//     (diag::Ratunek::centralaOdezwalaSie()): dopoki centrala cokolwiek
+//     przysyla, panel nie zrywa z nia polaczenia. Status nadal stary ->
+//     kafelki "--" i dane_nieaktualne jak dotad; drabina ratunkowa rusza
+//     12 s po OSTATNIM znaku zycia centrali, restart po 45 s bez statusu
+//     bez zmian.
+//   - Testy: wykresy_centrala_zajeta (status milczy, historia plynie 20 s:
+//     bez wymuszam_polaczenie, wykres jest; po koncu historii wymuszenie po
+//     12 s; status wraca), przypadek 2d w testRatunek(). Scenariusz
+//     wykresy_pamiec liczy bufory po 384 B.
 // [2026-11-24] v1.5.6 - IKONA WIFI NIE MRUGA PRZY CISZY CENTRALI; SERWA 0-100 %
 //   - Zgloszenie z plytki na v1.5.5: "szukanie wifi mruga". Log: WiFi
 //     polaczone caly czas (wifi=1, rssi -68..-81), ale /api/status co jakis
@@ -1235,7 +1267,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.6"; // [2026-11-24] v1.5.6: ikona WiFi nie mruga przy ciszy centrali, pozycje serw 0-100 % (stopnie -> procenty), wykresy ponawiane po czkawce AP; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.7"; // [2026-11-24] v1.5.7: bufory wykresow 18,4 kB -> 4,2 kB (punkt 24 B -> 4 B), panel nie zrywa WiFi, gdy centrala przysyla historie; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -2350,7 +2382,12 @@ void obslugaWykresyFetch() {
     return;
   }
 
+  const uint32_t bajtowPrzed = wykresyFetch.bajtowCiala();
   wykresyFetch.poll();
+  // [v1.5.7 RATUNEK] Przyszly nowe bajty historii: centrala zyje, nie
+  // wymuszaj ponownego polaczenia WiFi tylko dlatego, ze status sie spoznia
+  // (patrz diag::Ratunek::centralaOdezwalaSie()).
+  if (wykresyFetch.bajtowCiala() != bajtowPrzed) panelRatunek.centralaOdezwalaSie();
 
   if (wykresyFetch.wTrakcie()) {
     if (wykresyPob.nowySposob) {
@@ -3390,6 +3427,8 @@ void obslugaKomendaFetch() {
   const bool odpowiedziala = komendaFetch.bylSukces();   // [v1.4.2 C4] zanim pobierzOdpowiedz()/skwitujBlad() wyzeruja stan
   char powodOdrzucenia[40] = "";
   if (odpowiedziala) {
+    panelRatunek.centralaOdezwalaSie();   // [v1.5.7 RATUNEK] odpowiedz na polecenie = centrala zyje
+
     // centrala odpowiada {"ok":true,...} albo {"ok":false,"error":"..."} -
     // dokladnie ten sam kontrakt, ktory dawny httpPost() sprawdzal.
     String odp = NonBlockingHttp::wyodrebnijCialo(komendaFetch.pobierzOdpowiedz());
