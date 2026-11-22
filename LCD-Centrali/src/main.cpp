@@ -40,6 +40,37 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.8 - OS CZASU WYKRESOW PODPISANA PRZY KAZDEJ KRESCE; SAMOTNE PUNKTY WIDAC; SUWAKI SERW
+//   - Zdjecia z plytki na v1.5.7 (22.11): pod wykresem jeden podpis na
+//     srodku ("16:25 - 17:25", "22.11 14:01 - 22.11 17:25", "19.11 08:55 -
+//     22.11 16:51"), a 3 pionowe kreski siatki co 1/4 szerokosci bez zadnej
+//     wartosci. Teraz kreski stoja w ROWNYCH godzinach i kazda ma podpis
+//     w pasie pod wykresem: godzina -> co 15 min ("16:30 ... 17:15"), doba
+//     -> co 4 h (o polnocy data "23.11" zamiast "00:00"), tydzien -> kazda
+//     polnoc z data ("19.11 ... 25.11"). Krok dobierany do dlugosci okna
+//     (najmniejszy, ktory daje <= 7 podpisow), wiec krotsza historia (np.
+//     3,5 h po restarcie centrali) dostaje co 30 min. Pierwszy podpis ma
+//     date, gdy centrala ja podaje (dzien/tydz). Panel liczy to z naglowka
+//     #panel-hist (od=, do=, od_etyk=) - zadnej zmiany w centrali 3.58.10;
+//     stara centrala / brak zegara: dawny podpis "od - do" / "czas
+//     nieznany" zostaje. Dol wykresu 310 -> 296 px, zeby pas podpisow
+//     (303..320) nie wchodzil w dolne etykiety osi Y.
+//   - Wykres tygodniowy na zdjeciu: 9 punktow + 87 przerw = same "kropki" i
+//     pionowa kreska przy prawej krawedzi. To prawdziwe dane (dlugi bufor
+//     centrali ma wpisy tylko z chwil, gdy pracowala; kreska = dwa sasiednie
+//     punkty, 50 min obok siebie, o bardzo roznych wartosciach), ale LVGL
+//     nie rysuje punktu bez sasiada - pojedyncze pomiary miedzy przerwami
+//     byly niewidoczne. Gdy ktoras seria ma samotny punkt, panel wlacza
+//     znaczniki punktow (4 px); przy ciaglych danych nadal sama linia.
+//   - Ekran STEROWANIE SERWAMI: przy 100 % galka suwaka wystawala 12 px za
+//     koniec paska, pod luk - wygladala na obcieta. Pasek 16..344 z torem
+//     galki zawezonym z prawej (pad_right 12): przy 100 % galka konczy sie
+//     rowno z paskiem, 6 px przed lukiem. "113%" ze starszego zdjecia to
+//     stopnie sprzed v1.5.6 - od v1.5.6 etykieta nie przekracza 100 %.
+//   - Testy: podpisy osi czasu w wykresy_centrala_liczy (doba co 4 h, godzina
+//     co 15 min), wykresy_przerwy (tydzien: 7 dat; tydzien jak na zdjeciu:
+//     9 punktow/87 przerw -> znaczniki wlaczone), wykresy_po_restarcie_
+//     centrali; serwo_stopnie otwiera ekran SERWA przy 100 % (zrzut).
 // [2026-11-24] v1.5.7 - WYKRESY 4x MNIEJ RAM-U; PANEL NIE ZRYWA WIFI, GDY CENTRALA PRZYSYLA WYKRES
 //   - Log z plytki na v1.5.6 (22.11 16:44-16:47): po starcie ram=34752, przy
 //     otwartych Wykresach ram=7120, ram_min=1932, alok_nieudane=42,
@@ -1267,7 +1298,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.7"; // [2026-11-24] v1.5.7: bufory wykresow 18,4 kB -> 4,2 kB (punkt 24 B -> 4 B), panel nie zrywa WiFi, gdy centrala przysyla historie; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.8"; // [2026-11-24] v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez

@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.7
+# Panel LCD (wyświetlacz CO) — firmware v1.5.8
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,49 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.8
+
+**Oś czasu wykresów ma wartość przy każdej kresce.** Zdjęcia z płytki na v1.5.7
+(22.11): pod wykresem był jeden podpis na środku (`16:25 - 17:25`,
+`22.11 14:01 - 22.11 17:25`, `19.11 08:55 - 22.11 16:51`), a trzy pionowe
+kreski siatki stały co ¼ szerokości bez żadnej wartości. Teraz kreski stoją
+w **równych godzinach** i każda ma podpis w pasie pod wykresem:
+
+| zakres | krok siatki | przykład podpisów |
+|---|---|---|
+| godzinny | 15 min | `16:30  16:45  17:00  17:15` |
+| dzienny | 4 h (o północy data) | `22.11 20:00  23.11  04:00  08:00  12:00  16:00` |
+| tygodniowy | 1 dzień (każda północ) | `19.11  20.11 … 25.11` |
+
+Krok dobiera się do długości okna (najmniejszy, który daje ≤ 7 podpisów), więc
+krótsza historia — np. 3,5 h po restarcie centrali, jak na zdjęciu — dostaje
+podpisy co 30 min. Pierwszy podpis ma datę, gdy centrala ją podaje (dzień,
+tydzień). Panel liczy to wyłącznie z nagłówka `#panel-hist` (`od=`, `do=`,
+`od_etyk=`), który centrala 3.58.4+ i tak wysyła — **żadnej zmiany w centrali
+3.58.10**. Starsza centrala albo centrala bez zegara: zostaje dawny podpis
+„od – do” / „czas nieznany”. Dół wykresu 310 → 296 px, żeby pas podpisów nie
+wchodził w dolne etykiety osi Y.
+
+**Wykres tygodniowy przy rzadkich danych.** Na zdjęciu: 9 punktów + 87 przerw,
+na ekranie same „kropki” i pionowa zielona kreska przy prawej krawędzi. To
+prawdziwe dane: długi bufor centrali ma wpisy tylko z chwil, gdy pracowała
+(19–22.11 pracowała krótko), a „kreska” to dwa sąsiednie punkty (50 min obok
+siebie) o bardzo różnych wartościach — syberek 0 % → 90 % ok. 16:30. Problem
+był inny: LVGL nie rysuje punktu bez sąsiada, więc pojedyncze pomiary między
+przerwami były **niewidoczne**. Gdy któraś seria ma samotny punkt, panel
+włącza znaczniki punktów (4 px); przy ciągłych danych nadal sama linia.
+
+**Suwaki serw.** Przy 100 % gałka wystawała 12 px za koniec paska, pod łuk —
+wyglądała na obciętą. Pasek 16..344 z torem gałki zawężonym z prawej: przy
+100 % gałka kończy się równo z paskiem, 6 px przed łukiem. „113%” ze starszego
+zdjęcia to stopnie sprzed v1.5.6 — od v1.5.6 etykieta nie przekracza 100 %.
+
+Testy: podpisy osi czasu sprawdzane w `wykresy_centrala_liczy`,
+`wykresy_przerwy` (plus tydzień 9/87 → znaczniki) i
+`wykresy_po_restarcie_centrali`; `serwo_stopnie` otwiera ekran SERWA przy
+100 %. Razem 74 scenariusze, 842 sprawdzenia, 816 jednostkowych. Zmienione pliki: `src/main.cpp`, `src/dashboard_lvgl_poc.cpp`,
+`testy_host/`.
 
 ## Co zmienia v1.5.7
 

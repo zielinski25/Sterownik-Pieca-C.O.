@@ -40,6 +40,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <climits>
 #include <cmath>
@@ -50,6 +51,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <new>
 #include <string>
 #include <thread>
@@ -1064,7 +1066,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.6"
+#define WERSJA_FW "v1.5.8"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1143,6 +1145,42 @@ int ileNapisow(const std::string& tekst) {
   return n;
 }
 bool ekranMa(const std::string& tekst) { return ileNapisow(tekst) > 0; }
+
+// [v1.5.8] Podpisy osi czasu pod wykresem: widoczne etykiety, ktorych gorna
+// krawedz lezy w pasie pod wykresem (y >= 300 na ekranie 320px), od lewej
+// do prawej, jako "tekst@x" (x = srodek etykiety). Pusty wektor = brak osi
+// czasu (stary podpis "od - do" tez tu wpada - jest w tym samym pasie).
+static void zbierzPodpisyOsi(lv_obj_t* o, std::vector<std::pair<int, std::string>>& w) {
+  if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return;
+  if (lv_obj_check_type(o, &lv_label_class)) {
+    lv_obj_update_layout(o);
+    if (lv_obj_get_y(o) >= 300 && lv_obj_get_y(o) < 320) {
+      const char* t = lv_label_get_text(o);
+      if (t && t[0]) w.push_back({lv_obj_get_x(o) + lv_obj_get_width(o) / 2, t});
+    }
+  }
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) zbierzPodpisyOsi(lv_obj_get_child(o, (int32_t)i), w);
+}
+std::vector<std::string> podpisyOsiCzasu() {
+  std::vector<std::pair<int, std::string>> w;
+  zbierzPodpisyOsi(lv_scr_act(), w);
+  std::sort(w.begin(), w.end());
+  std::vector<std::string> wynik;
+  for (auto& p : w) wynik.push_back(p.second + "@" + std::to_string(p.first));
+  return wynik;
+}
+std::string podpisyOsiTekst() {
+  std::string s;
+  for (const std::string& p : podpisyOsiCzasu()) s += (s.empty() ? "" : " | ") + p;
+  return s;
+}
+// Czy podpisy osi czasu (bez pozycji) sa dokladnie takie, jak oczekiwane.
+bool osCzasuTo(const std::vector<std::string>& oczekiwane) {
+  std::vector<std::string> sa;
+  for (const std::string& p : podpisyOsiCzasu()) sa.push_back(p.substr(0, p.rfind('@')));
+  return sa == oczekiwane;
+}
 
 // Liczba linii logu Seriala zawierajacych wszystkie podane fragmenty,
 // liczona od pozycji `od` (w znakach) do konca.
@@ -1511,6 +1549,7 @@ void scenariuszIkonaWifiPrzyCiszy() {
 // /api/status centrali podaje pozycje w STOPNIACH (klapa 0..180, syberek
 // 0..90), a panel pokazywal je jako procenty. 113 stopni klapy = 63 %,
 // 86 stopni syberka = 96 %.
+bool kliknij(const char* napis);   // definicja nizej
 void scenariuszSerwoStopnie() {
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -60, 0));
   ustaw(0, [](Centrala& c) { c.klapa = 113; c.syberka = 86; });
@@ -1531,6 +1570,15 @@ void scenariuszSerwoStopnie() {
   biegnij(4500);
   sprawdz(ekranMa("Klapa 0%\nSyberka 50%"), "0 i 45 stopni = 0% / 50%");
   zrzutEkranu("1_serwo_procenty");
+
+  printf("  ekran SERWA przy 100%% / 100%% (suwaki na prawym koncu):\n");
+  ustaw(0, [](Centrala& c) { c.klapa = 180; c.syberka = 90; });
+  biegnij(4500);
+  sprawdz(kliknij("SERWO"), "dotkniecie kafelka SERWO");
+  biegnij(500);
+  if (kliknij("RĘCZNY")) biegnij(500);
+  sprawdz(ekranMa("STEROWANIE SERWAMI") && ileNapisow("100%") == 2, "ekran SERWA: oba suwaki 100%");
+  zrzutEkranu("2_serwa_100_procent");
 }
 
 // --- 3 ---------------------------------------------------------------------
@@ -3059,7 +3107,13 @@ void scenariuszWykresyCentralaLiczy() {
   sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "ZEWN: wszystkie 96 punktow takie, jak policzyla centrala (od -4,9 do 9,3)");
   sprawdz(tesamePunkty(punktyWykresu(1), zWzorca(dzien, 4), "BOJLER"), "BOJLER: wszystkie 96 punktow (45,0)");
   sprawdz(ilePunktow(punktyWykresu(2)) == 0 && ilePunktow(punktyWykresu(7)) == 0, "pozostale serie puste");
-  sprawdz(ekranMa("12.11 13:01  -  13.11 13:00"), "podpis pod wykresem: \"12.11 13:01  -  13.11 13:00\" (zakres podany przez centrale, z data)");
+  // [v1.5.8] Zamiast jednego podpisu "12.11 13:01 - 13.11 13:00" na srodku:
+  // kreska siatki co 4 h w ROWNYCH godzinach, kazda podpisana; o polnocy
+  // data zamiast "00:00", pierwszy podpis z data.
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"12.11 16:00", "20:00", "13.11", "04:00", "08:00", "12:00"}),
+          "os czasu: 6 podpisow co 4 h pod kreskami siatki: 12.11 16:00, 20:00, 13.11, 04:00, 08:00, 12:00");
+  sprawdz(!ekranMa("12.11 13:01  -  13.11 13:00"), "dawnego podpisu \"od - do\" na srodku juz nie ma");
   sprawdz(ekranMa("[Dzienny] ZEWN + BOJLER"), "tytul: \"[Dzienny] ZEWN + BOJLER\"");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440", "ucietych_linii=0", "", od),
           "log: zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440 ... ucietych_linii=0");
@@ -3076,7 +3130,10 @@ void scenariuszWykresyCentralaLiczy() {
   sprawdz(c.nPanelHist == 2 && c.ostatniaPanelHistSciezka == "/api/history/panel?tryb=godz&pkt=96", "zapytanie: /api/history/panel?tryb=godz&pkt=96");
   sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(godz, 1), "ZEWN") && tesamePunkty(punktyWykresu(1), zWzorca(godz, 4), "BOJLER"),
           "ZEWN i BOJLER: 96 punktow z ostatniej godziny (stary sposob dawal 60 punktow na 62% szerokosci)");
-  sprawdz(ekranMa("12:00  -  13:00") && ekranMa("[Godzinny] ZEWN + BOJLER"), "podpis \"12:00  -  13:00\", tytul \"[Godzinny] ZEWN + BOJLER\"");
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"12:15", "12:30", "12:45", "13:00"}) && ekranMa("[Godzinny] ZEWN + BOJLER"),
+          "os czasu co 15 min: 12:15, 12:30, 12:45, 13:00; tytul \"[Godzinny] ZEWN + BOJLER\"");
+  zrzutEkranu("godzina");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=godz sposob=centrala punktow=96", "", "", od), "log: zdarzenie=pobrano tryb=godz sposob=centrala punktow=96");
 
   printf("  zakres TYGODNIOWY, pelne bufory centrali, najdluzsze liczby; do tego CISNIENIE na prawej osi:\n");
@@ -3212,7 +3269,8 @@ void scenariuszWykresyPrzerwy() {
           "96 pozycji: 77 punktow i 19 przerw, dokladnie w miejscach podanych przez centrale");
   sprawdz(p.size() == 96 && p[41] != BRAK && p[42] == BRAK && p[60] == BRAK && p[61] != BRAK,
           "przerwa to 19 kolejnych pozycji (43. do 61. z 96) - os czasu jest rowna, 1,5 doby ma na niej swoja szerokosc");
-  sprawdz(ekranMa("06.11 13:00  -  13.11 13:00"), "podpis: \"06.11 13:00  -  13.11 13:00\" (pelne 7 dni)");
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"07.11", "08.11", "09.11", "10.11", "11.11", "12.11", "13.11"}), "os czasu: kreska o kazdej polnocy, podpisana data (07.11 ... 13.11)");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=77 przerw=19", "", "", od), "log: punktow=77 przerw=19");
   zrzutEkranu("tydzien_z_przerwa");
 
@@ -3231,7 +3289,41 @@ void scenariuszWykresyPrzerwy() {
   sprawdz(wykres != nullptr && dane->ymin[0] >= 10 && dane->ymin[0] <= 13 && dane->ymax[0] >= 232 && dane->ymax[0] <= 235,
           "zakres osi policzony z prawdziwych wartosci (3,0..21,5 + margines), brak odczytu go nie psuje");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=godz sposob=centrala punktow=96 przerw=0", "", "", od), "log: punktow=96 przerw=0");
+  sprawdz(wykres != nullptr && lv_obj_get_style_width(wykres, LV_PART_INDICATOR) == 0, "ciagle dane: bez znacznikow punktow (sama linia)");
   zrzutEkranu("czujnik_bez_odczytu");
+
+  // [v1.5.8] Zdjecie z 22.11 (centrala 3.58.10, dlugi bufor zapelniony
+  // dopiero od 3 dni, z przerwami): 9 punktow + 87 przerw. LVGL nie rysuje
+  // punktu bez sasiada - na ekranie byly tylko "kropki" (pary punktow) i
+  // pionowa kreska przy prawej krawedzi (dwa sasiednie punkty o bardzo
+  // roznych wartosciach). Samotne punkty maja byc widoczne jako znaczniki.
+  printf("  tydzien jak na zdjeciu z 22.11: 9 punktow z danymi, 87 przerw, pojedyncze punkty miedzy przerwami:\n");
+  {
+    std::string rzadki;
+    size_t poz = 0; int nr = -1;   // nr = numer pozycji (0..95), -1 = naglowek
+    const std::set<int> zostaw = {20, 21, 38, 65, 66, 80, 93, 94, 95};   // pozycje 42..60 to i tak przerwa we wzorcu
+    while (poz < tydz.size()) {
+      size_t k = tydz.find('\n', poz);
+      if (k == std::string::npos) k = tydz.size();
+      std::string linia = tydz.substr(poz, k - poz);
+      poz = k + 1;
+      if (nr < 0 || linia.rfind("#koniec", 0) == 0) { rzadki += linia + "\n"; nr++; continue; }
+      if (zostaw.count(nr) && linia.rfind("#przerwa", 0) != 0) rzadki += linia + "\n"; else rzadki += "#przerwa\n";
+      nr++;
+    }
+    ustawC(0, [&](Centrala& c) { c.panelHist["tydz"] = rzadki; });
+  }
+  dotknijWykresu();
+  od = pokazWykres("TYGODNIOWY", 1000);
+  const std::vector<int> rz = punktyWykresu(0);
+  sprawdz(wykresWidoczny() && rz.size() == 96 && ilePunktow(rz) == 9 && rz[38] != BRAK && rz[37] == BRAK && rz[39] == BRAK,
+          "96 pozycji, 9 z danymi, m.in. samotny punkt nr 39 (sasiedzi to przerwy)");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=9 przerw=87", "", "", od), "log: punktow=9 przerw=87");
+  wykres = znajdzWykres(lv_scr_act());
+  sprawdz(wykres != nullptr && lv_obj_get_style_width(wykres, LV_PART_INDICATOR) == 4, "sa samotne punkty -> znaczniki punktow 4px wlaczone (kazdy punkt widac)");
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"07.11", "08.11", "09.11", "10.11", "11.11", "12.11", "13.11"}), "os czasu bez zmian: daty o polnocy (przerwy maja swoje miejsce na osi)");
+  zrzutEkranu("tydzien_rzadkie_dane");
 }
 
 // --- 29 --------------------------------------------------------------------
@@ -3695,7 +3787,8 @@ void scenariuszWykresyPoRestarcieCentrali() {
           "96 pozycji: 55 punktow i 41 przerw, dokladnie w miejscach podanych przez centrale");
   sprawdz(p.size() == 96 && p[0] == 20 && p[54] == 40 && p[55] == BRAK && p[95] == BRAK,
           "linia konczy sie po 4 dniach (55. pozycja z 96); ostatnie 3 dni sa puste - nie dociagniete do prawej krawedzi");
-  sprawdz(ekranMa("06.11 13:00  -  13.11 13:00"), "podpis: \"06.11 13:00  -  13.11 13:00\" - os konczy sie TERAZ, nie na ostatnim starym pomiarze");
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"07.11", "08.11", "09.11", "10.11", "11.11", "12.11", "13.11"}), "os czasu do 13.11 - konczy sie TERAZ, nie na ostatnim starym pomiarze");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=55 przerw=41", "", "", od), "log: punktow=55 przerw=41");
   sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal");
   zrzutEkranu("po_restarcie_tydzien");

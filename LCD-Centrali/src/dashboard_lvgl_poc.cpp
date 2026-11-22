@@ -130,6 +130,7 @@
 #include <stdlib.h>  // malloc() dla PressFlashCtx (patrz press_flash_zainstaluj) - Serial/millis() ponizej dzialaly juz wczesniej bez jawnego #include Arduino.h (PlatformIO framework=arduino dola go automatycznie do kazdego .cpp), ale malloc wolimy miec z jawnego include zamiast liczyc na to samo dla stdlib.
 #include <string.h>  // strchr/memcpy/strlen/strtof - parser CSV w sekcji [PARTIA 5b, ta sesja - DANE WYKRESOW]
 #include <math.h>    // lroundf() - skalowanie float->lv_coord_t w lv_chart, patrz PARTIA 7 (wykresy_chart_skaluj)
+#include <ctype.h>   // isdigit() - [v1.5.8] rozbior etykiety czasu centrali, patrz wykresy_etykieta_czasu_rozbierz()
 #include "dashboard_lvgl_poc.h"
 #include "ikony_lvgl.h"
 #include "czcionki/czcionki_pl.h"   // [v1.4.5 D] lv_font_pl_14/20/28 - Montserrat z polskimi literami
@@ -2415,9 +2416,18 @@ static void serwo_wiersz_osi_zbuduj(lv_obj_t *parent, int y, const char *nazwa, 
   // Identyczny jawny pad + margines w wyswietlacz_jasnosc_wiersz_zbuduj()
   // (patrz tamten komentarz) - obie galki (SERWO, jasnosc LCD) maja teraz
   // ten sam, przewidywalny rozmiar niezaleznie od motywu.
+  // [v1.5.8 - zdjecie 22.11] Przy 100% galka (promien 12) wystawala 12px
+  // za prawy koniec paska i wchodzila pod luk (x 350..378) - wygladalo jak
+  // obcieta. Teraz pasek 16..344 (TOP_LEFT), a pad_right=12 na LV_PART_MAIN
+  // zawezja tor galki z prawej: przy 100% galka (320..344) konczy sie
+  // DOKLADNIE na koncu paska, 6px przed lukiem. Lewy koniec bez zmian
+  // (galka przy 0% wystaje 12px w lewo za pasek, w obrebie wiersza - jak
+  // dotad; symetryczny pad z lewej zostawialby przy 100% ciemny 12px
+  // odcinek paska niezalany kolorem).
   lv_obj_t *slider = lv_slider_create(wiersz);
-  lv_obj_set_size(slider, 348, 16);
-  lv_obj_align(slider, LV_ALIGN_TOP_MID, 0, 30);
+  lv_obj_set_size(slider, 328, 16);
+  lv_obj_align(slider, LV_ALIGN_TOP_LEFT, 16, 30);
+  lv_obj_set_style_pad_right(slider, 12, LV_PART_MAIN);
   lv_slider_set_range(slider, 0, 100);
   lv_obj_set_style_bg_color(slider, rgb565(KOL_RAMKA), LV_PART_MAIN);
   lv_obj_set_style_bg_color(slider, rgb565(KOL_SUWAK), LV_PART_INDICATOR);
@@ -4601,6 +4611,12 @@ struct WykresyStrumienStan {
   long wierszyZrodla;      // "wierszy=" z naglowka: ile wierszy historii centrala wziela pod uwage; -1 = nieznane
   char etykOd[12];         // poczatek i koniec zakresu jako tekst centrali ("od_etyk=", "do_etyk=")
   char etykDo[12];
+  // [v1.5.8 OS CZASU] "od=" i "do=" z naglowka (Unix, 0 = centrala nie zna
+  // czasu). Panel nie ma strefy czasowej, ale do podpisania osi czasu
+  // wystarczy mu DLUGOSC okna (do - od) plus godzina lokalna jego poczatku
+  // z etykOd - patrz wykresy_os_x_odswiez().
+  uint32_t oknoOd;
+  uint32_t oknoDo;
   // Ktore serie (indeksy WYKRESY_SERIE) byly wybrane w chwili startu
   // pobierania. Od v1.3.0 pobieranie nie blokuje ekranu, wiec uzytkownik moze
   // w trakcie wrocic do Selekcji; wtedy pobieranie jest porzucane
@@ -4843,6 +4859,17 @@ static bool g_wykresyOsBDziesietne = true;
 #define WYKRESY_OS_LICZBA_ETYKIET 5
 static lv_obj_t *wykresyEtykietyA[WYKRESY_OS_LICZBA_ETYKIET] = {nullptr};
 static lv_obj_t *wykresyEtykietyB[WYKRESY_OS_LICZBA_ETYKIET] = {nullptr};
+// [v1.5.8 OS CZASU] Wlasna os X: pionowe linie siatki w ROWNYCH godzinach
+// (co 15 min / 4 h / dobe - zaleznie od dlugosci okna) i podpis czasu pod
+// KAZDA z nich, w pasie pod wykresem. Zastepuje 5 anonimowych linii lv_chart
+// (rozstawionych co 1/4 szerokosci, bez wartosci) i jeden podpis
+// "od - do" na srodku. Pula tworzona raz w wykresy_panel_zbuduj(), potem
+// tylko przestawiana/chowana - ten sam wzorzec co etykiety osi Y wyzej.
+// Zdjecie z 22.11 (v1.5.7): "16:25 - 17:25" pod srodkiem i 3 kreski bez
+// podpisu - uzytkownik: "tam gdzie kreska idzie powinna byc wartosc".
+#define WYKRESY_OS_X_MAX 8
+static lv_obj_t *wykresyOsXLinia[WYKRESY_OS_X_MAX] = {nullptr};
+static lv_obj_t *wykresyOsXEtyk[WYKRESY_OS_X_MAX] = {nullptr};
 
 // [PARTIA 8e, ta sesja - LEGENDA] Rzad kropka+nazwa nad wykresem, do
 // WYKRESY_MAX_SLOTOW (8) pozycji, zawijany do (docelowo) 2 wierszy - ten
@@ -5511,9 +5538,16 @@ static lv_coord_t wykresy_chart_skaluj(float wartosc) {
 // "pula, nie remove/create" gdzie indziej w tym module.
 static const lv_coord_t WYKRESY_LEGENDA_Y = 36;
 static const lv_coord_t WYKRESY_LEGENDA_H = 46;
-static const lv_coord_t WYKRESY_CHART_DOL = 310;
+// [v1.5.8 OS CZASU] Dol wykresu podniesiony z 310 na 296: pod wykresem
+// jest teraz pas 303..320 na podpisy osi czasu (font 14 = 17px wiersza), a
+// dolne etykiety osi Y (288..304) juz w niego nie wchodza - podpisy czasu
+// moga stac dokladnie pod swoimi kreskami, takze przy samych krawedziach.
+static const lv_coord_t WYKRESY_CHART_DOL = 296;
 static const lv_coord_t WYKRESY_CHART_Y = WYKRESY_LEGENDA_Y + WYKRESY_LEGENDA_H + 2;
 static const lv_coord_t WYKRESY_CHART_H = WYKRESY_CHART_DOL - WYKRESY_CHART_Y;
+static const lv_coord_t WYKRESY_CHART_X1 = 4;     // lewa/prawa krawedz wykresu w wykresyWykresCont (480px)
+static const lv_coord_t WYKRESY_CHART_X2 = 476;
+static const lv_coord_t WYKRESY_OS_X_Y = WYKRESY_CHART_DOL + 7;   // gorna krawedz pasa podpisow osi czasu
 
 // Chowa wykres i pokazuje etykiete statusu (blad/ladowanie) - albo
 // odwrotnie. Te dwa obiekty nigdy nie sa widoczne jednoczesnie.
@@ -5531,6 +5565,10 @@ static void wykresy_chart_ukryj() {
   for (int i = 0; i < WYKRESY_OS_LICZBA_ETYKIET; i++) {
     if (wykresyEtykietyA[i]) lv_obj_add_flag(wykresyEtykietyA[i], LV_OBJ_FLAG_HIDDEN);
     if (wykresyEtykietyB[i]) lv_obj_add_flag(wykresyEtykietyB[i], LV_OBJ_FLAG_HIDDEN);
+  }
+  for (int i = 0; i < WYKRESY_OS_X_MAX; i++) {   // [v1.5.8] os czasu - tak samo osobne widzety
+    if (wykresyOsXLinia[i]) lv_obj_add_flag(wykresyOsXLinia[i], LV_OBJ_FLAG_HIDDEN);
+    if (wykresyOsXEtyk[i]) lv_obj_add_flag(wykresyOsXEtyk[i], LV_OBJ_FLAG_HIDDEN);
   }
   if (wykresyWykresPlaceholder) lv_obj_clear_flag(wykresyWykresPlaceholder, LV_OBJ_FLAG_HIDDEN);
 }
@@ -5667,8 +5705,8 @@ static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float
   // ucieciety przy samej krawedzi). To samo ustawiamy przy KAZDYM wywolaniu
   // (raz dla osi A, raz dla osi B) - tanie, wiec brak potrzeby pamietania
   // stanu miedzy wywolaniami jak poprzednio (gutterA/gutterB).
-  const lv_coord_t chartX1 = 4;
-  const lv_coord_t chartX2 = 476;
+  const lv_coord_t chartX1 = WYKRESY_CHART_X1;
+  const lv_coord_t chartX2 = WYKRESY_CHART_X2;
   lv_obj_set_x(wykresyChart, chartX1);
   lv_obj_set_width(wykresyChart, chartX2 - chartX1);
 
@@ -5739,6 +5777,135 @@ static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float
     // nie zawsze ma sens (patrz komentarz przy tej funkcji).
     lv_obj_set_style_text_color(etykiety[i], kolorEtykiet, 0);
   }
+}
+
+// [v1.5.8 OS CZASU] Etykieta czasu centrali "HH:MM" albo "DD.MM HH:MM"
+// (etykOd po zamianie '_' na spacje) -> minuta doby (0..1439) i, jesli
+// podana, data (dzien/miesiac; 0 = brak). false dla "--:--" i smieci.
+static bool wykresy_etykieta_czasu_rozbierz(const char *t, int *minutaDoby, int *dzien, int *miesiac) {
+  *dzien = 0; *miesiac = 0;
+  if (!t || !t[0]) return false;
+  if (strlen(t) >= 11 && t[2] == '.' && t[5] == ' ') {
+    int d = atoi(t), m = atoi(t + 3);
+    if (d < 1 || d > 31 || m < 1 || m > 12) return false;
+    *dzien = d; *miesiac = m;
+    t += 6;
+  }
+  if (strlen(t) < 5 || t[2] != ':' || !isdigit((unsigned char)t[0]) || !isdigit((unsigned char)t[1]) ||
+      !isdigit((unsigned char)t[3]) || !isdigit((unsigned char)t[4])) return false;
+  int h = atoi(t), mi = atoi(t + 3);
+  if (h > 23 || mi > 59) return false;
+  *minutaDoby = h * 60 + mi;
+  return true;
+}
+
+// [v1.5.8 OS CZASU] Data + N dni (N >= 0), bez roku: luty liczony jako 28
+// dni (okno to najwyzej tydzien, a rok centrala i tak nie podaje - w roku
+// przestepnym 29.02 podpisze sie jako 01.03; swiadome uproszczenie).
+static void wykresy_data_dodaj(int *dzien, int *miesiac, int dni) {
+  static const uint8_t DLUGOSC[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  while (dni-- > 0) {
+    if (++*dzien > DLUGOSC[*miesiac - 1]) { *dzien = 1; if (++*miesiac > 12) *miesiac = 1; }
+  }
+}
+
+// [v1.5.8 OS CZASU] Rozstawia linie siatki i podpisy osi czasu w ROWNYCH
+// godzinach. Dziala tylko dla odpowiedzi, w ktorej punkty policzyla
+// centrala (#panel-hist: znane od/do okna + godzina lokalna poczatku
+// z od_etyk) - wtedy os czasu jest liniowa na calej szerokosci, punkt k
+// (z n) konczy sie w chwili od + (k+1)*okno/n, a LVGL rysuje go w
+// x = k/(n-1) szerokosci. Dla starej centrali (panel sam usrednia wiersze)
+// i dla centrali bez zegara zwraca false i zostaje dawny podpis "od - do".
+// Krok siatki: najmniejszy z listy, ktory daje <= 7 podpisow (godzina ->
+// 15 min, doba -> 4 h, tydzien -> 1 dzien). Podpis o polnocy to data
+// ("23.11") zamiast "00:00"; pierwszy podpis dostaje date, jesli centrala
+// ja podala (tryb dzien/tydz) - zeby bylo wiadomo, ktory to dzien, nawet
+// gdy okno nie przechodzi przez polnoc (zdjecie 22.11: "22.11 14:01 -
+// 22.11 17:25", bo centrala miala historie tylko od 14:01).
+static bool wykresy_os_x_odswiez(int liczbaPunktow) {
+  for (int i = 0; i < WYKRESY_OS_X_MAX; i++) {
+    if (wykresyOsXLinia[i]) lv_obj_add_flag(wykresyOsXLinia[i], LV_OBJ_FLAG_HIDDEN);
+    if (wykresyOsXEtyk[i]) lv_obj_add_flag(wykresyOsXEtyk[i], LV_OBJ_FLAG_HIDDEN);
+  }
+  if (!wykresyChart || !wykresyOsXLinia[0] || !wykresyOsXEtyk[0]) return false;
+  // Wbudowane pionowe linie lv_chart tylko gdy nie uda sie podpisac
+  // wlasnych (siatka "co 1/4 szerokosci" nic nie mowi o czasie, ale lepsza
+  // niz pusty prostokat) - przywracane tu, wylaczane na koncu funkcji.
+  lv_chart_set_div_line_count(wykresyChart, 3, 5);
+  if (!g_wykresyStrumien.zredukowany || liczbaPunktow < 2) return false;
+  if (g_wykresyStrumien.oknoDo <= g_wykresyStrumien.oknoOd) return false;
+  int startMin = 0, dzien = 0, miesiac = 0;
+  if (!wykresy_etykieta_czasu_rozbierz(g_wykresyStrumien.etykOd, &startMin, &dzien, &miesiac)) return false;
+  const uint32_t oknoS = g_wykresyStrumien.oknoDo - g_wykresyStrumien.oknoOd;
+  const uint32_t oknoMin = oknoS / 60U;
+  if (oknoMin < 10U) return false;   // np. jedna probka: od == do (+kilka s) - nie ma czego podpisywac
+
+  static const uint16_t KROKI_MIN[] = {5, 15, 30, 60, 120, 240, 360, 720, 1440, 2880};
+  int krok = 0;
+  for (size_t i = 0; i < sizeof(KROKI_MIN) / sizeof(KROKI_MIN[0]); i++) {
+    if (oknoMin / KROKI_MIN[i] <= 7U) { krok = KROKI_MIN[i]; break; }
+  }
+  if (krok == 0) return false;
+
+  // Geometria: ta sama co w LVGL (lv_chart: x_ofs = pad_left, szerokosc =
+  // content width, punkt i w x_ofs + w*i/(cnt-1)).
+  const lv_coord_t padL = lv_obj_get_style_pad_left(wykresyChart, LV_PART_MAIN);
+  const lv_coord_t padR = lv_obj_get_style_pad_right(wykresyChart, LV_PART_MAIN);
+  const lv_coord_t padT = lv_obj_get_style_pad_top(wykresyChart, LV_PART_MAIN);
+  const lv_coord_t padB = lv_obj_get_style_pad_bottom(wykresyChart, LV_PART_MAIN);
+  const lv_coord_t x0 = WYKRESY_CHART_X1 + padL;
+  const lv_coord_t szer = (WYKRESY_CHART_X2 - WYKRESY_CHART_X1) - padL - padR;
+  const lv_coord_t liniaY = WYKRESY_CHART_Y + padT;
+  const lv_coord_t liniaH = WYKRESY_CHART_H - padT - padB;
+  const lv_font_t *font = &lv_font_pl_14;
+  const int n = liczbaPunktow;
+
+  int ile = 0;
+  lv_coord_t poprzPrawy = -1000;   // prawa krawedz poprzedniego podpisu (zeby sie nie nakladaly)
+  bool pierwszy = true;
+  // Granica petli z zapasem pol punktu: okno "12:00:01 - 13:00" (3599 s)
+  // ma dostac tez kreske 13:00 (prawa krawedz) - o dokladnym docieciu
+  // decyduje warunek k <= n-1+0.5 nizej.
+  for (uint32_t ofs = (uint32_t)((krok - startMin % krok) % krok); ofs * 60U <= oknoS + oknoS / (uint32_t)(2 * n) && ile < WYKRESY_OS_X_MAX; ofs += (uint32_t)krok) {
+    float k = ((float)ofs * 60.0f * (float)n) / (float)oknoS - 1.0f;
+    if (k < -0.5f) continue;
+    if (k > (float)(n - 1) + 0.5f) break;
+    if (k < 0.0f) k = 0.0f;
+    if (k > (float)(n - 1)) k = (float)(n - 1);
+    const lv_coord_t x = x0 + (lv_coord_t)lroundf((float)szer * k / (float)(n - 1));
+
+    lv_obj_t *linia = wykresyOsXLinia[ile];
+    lv_obj_set_pos(linia, x, liniaY);
+    lv_obj_set_size(linia, 1, liniaH);
+    lv_obj_clear_flag(linia, LV_OBJ_FLAG_HIDDEN);
+
+    const int minutaAbs = startMin + (int)ofs;
+    const int minutaDoby = minutaAbs % 1440;
+    char tekst[16];
+    if (dzien > 0 && (minutaDoby == 0 || pierwszy)) {
+      int d = dzien, m = miesiac;
+      wykresy_data_dodaj(&d, &m, minutaAbs / 1440);
+      if (minutaDoby == 0 && krok >= 60) lv_snprintf(tekst, sizeof(tekst), "%02d.%02d", d, m);
+      else lv_snprintf(tekst, sizeof(tekst), "%02d.%02d %02d:%02d", d, m, minutaDoby / 60, minutaDoby % 60);
+    } else {
+      lv_snprintf(tekst, sizeof(tekst), "%02d:%02d", minutaDoby / 60, minutaDoby % 60);
+    }
+    pierwszy = false;
+    const lv_coord_t szerTekstu = lv_txt_get_width(tekst, strlen(tekst), font, 0, LV_TEXT_FLAG_NONE) + 2;
+    lv_coord_t ex = x - szerTekstu / 2;   // podpis wysrodkowany pod kreska...
+    if (ex < 1) ex = 1;                   // ...chyba ze wystaje poza ekran
+    if (ex + szerTekstu > 479) ex = 479 - szerTekstu;
+    ile++;
+    if (ex < poprzPrawy + 6) continue;    // nakladalby sie na poprzedni - sama kreska, bez podpisu
+    lv_obj_t *etyk = wykresyOsXEtyk[ile - 1];
+    lv_label_set_text(etyk, tekst);
+    lv_obj_set_pos(etyk, ex, WYKRESY_OS_X_Y);
+    lv_obj_set_width(etyk, szerTekstu);
+    lv_obj_clear_flag(etyk, LV_OBJ_FLAG_HIDDEN);
+    poprzPrawy = ex + szerTekstu;
+  }
+  if (ile > 0) lv_chart_set_div_line_count(wykresyChart, 3, 0);
+  return ile > 0;
 }
 
 // Odswieza serie na lv_chart z aktualnej zawartosci g_wykresyPunkty[].
@@ -5893,6 +6060,7 @@ static void wykresy_chart_odswiez() {
   // aktywna pozycje z jakimikolwiek danymi (kolejnosc wyboru, nie kolejnosc
   // na osiach) - jak dotad, to tylko orientacyjny podpis czasu, wspolny
   // dla wszystkich serii (te sama redukcja/okno czasu).
+  bool osXPodpisana = false;
   if (wykresyChartZakresLabel) {
     int pierwszaZDanymi = -1;
     for (int p = 0; p < g_wykresyLiczbaWybranych; p++) {
@@ -5920,12 +6088,41 @@ static void wykresy_chart_odswiez() {
       lv_label_set_text(wykresyChartZakresLabel, zakresBuf);
       // Dopisek NIEPELNE ma byc widac: kolor ostrzezenia zamiast szarego.
       lv_obj_set_style_text_color(wykresyChartZakresLabel, rgb565(g_wykresyNiepelne ? KOL_OGIEN : KOL_TEKST_DIM), 0);
+      // [v1.5.8 OS CZASU] Gdy da sie podpisac kreski siatki rownymi
+      // godzinami, podpis "od - do" jest zbedny (i zajmowalby ten sam pas).
+      osXPodpisana = wykresy_os_x_odswiez(liczbaPunktow);
     }
+  }
+
+  // [v1.5.8 WYKRES TYGODNIOWY] Zdjecie z 22.11: 9 punktow + 87 przerw -
+  // pojedynczego punktu miedzy przerwami LVGL w ogole nie rysuje (odcinek
+  // potrzebuje dwoch sasiadow z wartoscia), a pary punktow wygladaja jak
+  // kropki. Jesli ktoras seria ma taki SAMOTNY punkt, wlaczamy znaczniki
+  // punktow (4px) dla calego wykresu - wtedy kazdy punkt z danymi widac.
+  // Przy ciaglych danych (zwykly dzien/godzina) znaczniki zostaja
+  // wylaczone: 96 markerow tylko zaszumialoby linie.
+  {
+    bool samotny = false;
+    for (int p = 0; p < g_wykresyLiczbaWybranych && !samotny; p++) {
+      const WykresyPunkt *pk = g_wykresyPunkty[p];
+      const int np = g_wykresyLiczbaPunktow[p];
+      if (!pk) continue;
+      for (int i = 0; i < np; i++) {
+        if (isnan(pk[i].wartosc)) continue;
+        const bool lewy = (i > 0) && !isnan(pk[i - 1].wartosc);
+        const bool prawy = (i + 1 < np) && !isnan(pk[i + 1].wartosc);
+        if (!lewy && !prawy) { samotny = true; break; }
+      }
+    }
+    lv_obj_set_style_size(wykresyChart, samotny ? 4 : 0, LV_PART_INDICATOR);
   }
 
   if (wykresyWykresPlaceholder) lv_obj_add_flag(wykresyWykresPlaceholder, LV_OBJ_FLAG_HIDDEN);
   lv_obj_clear_flag(wykresyChart, LV_OBJ_FLAG_HIDDEN);
-  if (wykresyChartZakresLabel) lv_obj_clear_flag(wykresyChartZakresLabel, LV_OBJ_FLAG_HIDDEN);
+  if (wykresyChartZakresLabel) {
+    if (osXPodpisana) lv_obj_add_flag(wykresyChartZakresLabel, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(wykresyChartZakresLabel, LV_OBJ_FLAG_HIDDEN);
+  }
   // [PARTIA 8e, ta sesja] Legenda odslaniana razem z wykresem - jej wlasna
   // widocznosc per-pozycja (item ukryty/odslonity) juz zalatwiona przez
   // wykresy_legenda_odswiez() na poczatku tej funkcji; ten kontener
@@ -6005,6 +6202,10 @@ static void wykresy_strumien_linia_sterujaca(const char *linia) {
     if (wykresy_naglowek_pole(linia, "do_etyk", g_wykresyStrumien.etykDo, sizeof(g_wykresyStrumien.etykDo))) {
       for (char *c = g_wykresyStrumien.etykDo; *c; c++) if (*c == '_') *c = ' ';
     }
+    // [v1.5.8 OS CZASU] Granice okna w sekundach - do rozstawienia podpisow
+    // osi czasu co rowna godzine/dzien (wykresy_os_x_odswiez()).
+    if (wykresy_naglowek_pole(linia, "od", pole, sizeof(pole))) g_wykresyStrumien.oknoOd = (uint32_t)strtoul(pole, nullptr, 10);
+    if (wykresy_naglowek_pole(linia, "do", pole, sizeof(pole))) g_wykresyStrumien.oknoDo = (uint32_t)strtoul(pole, nullptr, 10);
     return;
   }
   if (!g_wykresyStrumien.zredukowany) return;
@@ -6669,8 +6870,37 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   // w osobnym pasie pod nim - ten sam wzorzec co etykiety osi Y po bokach.
   // Wyrownana do srodka w poziomie, wiec nie koliduje z etykietami osi
   // (te siedza przy samych krawedziach lewej/prawej).
-  lv_obj_align(wykresyChartZakresLabel, LV_ALIGN_TOP_MID, 0, 292);
+  // [v1.5.8 OS CZASU] Podpis "od - do" (dzis tylko zapasowy: stara centrala
+  // / brak zegara / NIEPELNE) przeniesiony do pasa pod wykresem, tego
+  // samego, w ktorym stoja podpisy osi czasu - nigdy nie sa widoczne naraz.
+  lv_obj_align(wykresyChartZakresLabel, LV_ALIGN_TOP_MID, 0, WYKRESY_OS_X_Y);
   lv_obj_add_flag(wykresyChartZakresLabel, LV_OBJ_FLAG_HIDDEN);
+
+  // [v1.5.8 OS CZASU] Pula linii siatki + podpisow osi czasu (patrz
+  // wykresy_os_x_odswiez()). Linie w kolorze wbudowanej siatki lv_chart
+  // (ta sama rola, tylko w rownych godzinach), tworzone PO wykresie - leza
+  // nad nim, jak etykiety osi Y.
+  {
+    const lv_color_t kolorSiatki = lv_obj_get_style_line_color(wykresyChart, LV_PART_MAIN);
+    for (int i = 0; i < WYKRESY_OS_X_MAX; i++) {
+      lv_obj_t *l = lv_obj_create(wykresyWykresCont);
+      lv_obj_remove_style_all(l);
+      lv_obj_set_size(l, 1, WYKRESY_CHART_H);
+      lv_obj_set_style_bg_color(l, kolorSiatki, 0);
+      lv_obj_set_style_bg_opa(l, LV_OPA_COVER, 0);
+      lv_obj_clear_flag(l, LV_OBJ_FLAG_CLICKABLE);
+      lv_obj_add_flag(l, LV_OBJ_FLAG_HIDDEN);
+      wykresyOsXLinia[i] = l;
+      lv_obj_t *e = lv_label_create(wykresyWykresCont);
+      lv_label_set_text(e, "");
+      lv_obj_set_style_text_font(e, &lv_font_pl_14, 0);
+      lv_obj_set_style_text_color(e, rgb565(KOL_TEKST_DIM), 0);
+      lv_obj_set_style_text_align(e, LV_TEXT_ALIGN_CENTER, 0);
+      lv_label_set_long_mode(e, LV_LABEL_LONG_CLIP);
+      lv_obj_add_flag(e, LV_OBJ_FLAG_HIDDEN);
+      wykresyOsXEtyk[i] = e;
+    }
+  }
 
   // [FIX WYGLAD, ta sesja - Partia 2] Patrz krzyzyk_zamkniecia_utworz().
   krzyzyk_zamkniecia_utworz(wykresyWykresCont, wykresy_panel_zamknij_cb);
