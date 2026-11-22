@@ -40,6 +40,28 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.4 - WSKAZNIK "47% USB" + WGRYWANIE Z VSCODE PRZEZ WIFI
+//   - Wskaznik z ogniwem i ladowarka: "47% USB" zamiast "USB 47%" (najpierw
+//     procenty, potem zrodlo - uwaga uzytkownika po v1.5.3).
+//   - Do v1.5.3 panel dalo sie zaktualizowac tylko kablem albo przez centrale
+//     (/update_panel, plik w wydaniu na GitHubie). Teraz tak jak centrala:
+//     ArduinoOTA na porcie 3232, haslo OTA_HASLO_PANEL (to samo co centrali),
+//     nazwa "panelco". W platformio.ini srodowisko [env:esp32dev_wifi]
+//     (upload_protocol = espota, upload_port = 192.168.4.50; haslo dopisuje
+//     skrypt narzedzia_pio/ota_haslo.py z src/secrets.h - nie lezy w ini).
+//   - Komputer musi byc w sieci centrali (PiecCO_AP), panel obudzony (na
+//     baterii po 5 min bez dotyku spi - wtedy nie odpowie) i polaczony z WiFi.
+//     ArduinoOTA.begin() dopiero po pierwszym polaczeniu (otaVscodeKrok()),
+//     mDNS wylaczony (wgrywanie po IP, bez dodatkowego zadania i RAM-u).
+//   - W trakcie wgrywania: ekran AKTUALIZACJA PANELU z paskiem (ten sam co
+//     przy aktualizacji z centrali), watchdog karmiony w onStart/onProgress
+//     (jak w centrali, [WDT-OTA-ESPOTA]). Po udanym wgraniu biblioteka sama
+//     restartuje panel; nowy program czeka na zatwierdzenie jak kazdy OTA
+//     (potwierdzPartycjeJesliCzeka() na koncu setup(), inaczej bootloader
+//     wraca do poprzedniego). Log: tag=OTA-VSCODE zdarzenie=gotowe|start|
+//     postep|koniec|blad.
+//   - Jesli w tym samym czasie panel pobiera plik z centrali, Update.begin()
+//     w ArduinoOTA sie nie uda (blad begin_failed) - nic sie nie psuje.
 // [2026-11-24] v1.5.3 - WSKAZNIK ZASILANIA: "USB 47%" I OD RAZU
 //   - Uzytkownik: "lcd jest na baterii mimo podlaczenia usb, nie pokazuje
 //     napisu usb". Z ogniwem wskaznik nigdy nie pisal "USB" - ladowanie
@@ -886,6 +908,7 @@
 // bez zatrzymywania petli) i oddaje go do Update.write(). HTTPClient.h i
 // HTTPUpdate.h nie sa juz uzywane nigdzie w tym pliku.
 #include <Update.h>
+#include <ArduinoOTA.h>   // [v1.5.4 OTA-VSCODE] wgrywanie z PlatformIO przez WiFi (espota, port 3232) - patrz otaVscodeKrok()
 #include <esp_ota_ops.h>
 #include <esp_partition.h>   // [v1.4.0 OTA] esp_partition_get_sha256() - identyfikator wlasnego programu
 #include <esp_task_wdt.h>
@@ -1153,7 +1176,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.3"; // [2026-11-24] v1.5.3: wskaznik "USB 47%" z ogniwem i ladowarka, odswiezany od razu po wlozeniu/wyjeciu; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.4"; // [2026-11-24] v1.5.4: wskaznik "47% USB"; wgrywanie z PlatformIO przez WiFi (env esp32dev_wifi, espota 192.168.4.50:3232); opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -4618,6 +4641,65 @@ static void otaKrokDecyzji(unsigned long teraz) {
 }
 
 // Wolane w kazdym obrocie loop() (galaz LVGL z centrala).
+// ============================================================================
+// [v1.5.4 OTA-VSCODE] WGRYWANIE Z PLATFORMIO PRZEZ WIFI (ArduinoOTA, port 3232)
+// ============================================================================
+// Komputer w sieci centrali (PiecCO_AP): `pio run -e esp32dev_wifi -t upload`
+// (VSCode: PlatformIO -> esp32dev_wifi -> Upload). Panel musi byc obudzony i
+// polaczony. Biblioteka blokuje petle na czas odbioru (kilkanascie sekund) -
+// LVGL stoi, wiec pasek rysujemy sami z onProgress() przez lvgl_port_tick().
+static bool otaVscodeGotowe = false;
+static int  otaVscodeProcentNaEkranie = -1;
+
+static void otaVscodeKrok() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (!otaVscodeGotowe) {
+    ArduinoOTA.setHostname("panelco");
+    ArduinoOTA.setPassword(OTA_HASLO_PANEL);
+    ArduinoOTA.setMdnsEnabled(false);   // wgrywanie po IP (192.168.4.50); mDNS to osobne zadanie i ~10 kB RAM
+    ArduinoOTA.onStart([]() {
+      esp_task_wdt_reset();
+      trwaAktualizacjaOtaPanelu = true;   // jak przy aktualizacji z centrali: bez snu, bez ratunkowego restartu
+      otaVscodeProcentNaEkranie = -1;
+      if (senPrzyciemnione) senPrzywrocJasnosc("ota_vscode");   // na baterii po przyciemnieniu: pasek ma byc widoczny
+      Serial.printf("tag=OTA-VSCODE zdarzenie=start typ=%s napiecie=%.2fV\n",
+                    ArduinoOTA.getCommand() == U_FLASH ? "firmware" : "filesystem", (double)bateriaOstatnieV);
+      lvgl_dashboard_poc_ota(0, "Wgrywanie z komputera");
+      lvgl_port_tick();
+    });
+    ArduinoOTA.onProgress([](unsigned int postep, unsigned int razem) {
+      esp_task_wdt_reset();
+      const int procent = razem > 0 ? (int)((uint64_t)postep * 100 / razem) : 0;
+      if (procent == otaVscodeProcentNaEkranie) return;
+      otaVscodeProcentNaEkranie = procent;
+      if (procent % 10 == 0) Serial.printf("tag=OTA-VSCODE zdarzenie=postep procent=%d bajtow=%u\n", procent, postep);
+      lvgl_dashboard_poc_ota(procent, "Wgrywanie z komputera");
+      lvgl_port_tick();
+    });
+    ArduinoOTA.onEnd([]() {
+      esp_task_wdt_reset();
+      Serial.println(F("tag=OTA-VSCODE zdarzenie=koniec msg=\"restart, nowy program czeka na zatwierdzenie\""));
+      lvgl_dashboard_poc_ota(100, "Gotowe - restart panelu");
+      lvgl_port_tick();
+    });
+    ArduinoOTA.onError([](ota_error_t blad) {
+      const char* opis = "nieznany";
+      if (blad == OTA_AUTH_ERROR) opis = "zle_haslo";
+      else if (blad == OTA_BEGIN_ERROR) opis = "begin_failed";
+      else if (blad == OTA_CONNECT_ERROR) opis = "connect_failed";
+      else if (blad == OTA_RECEIVE_ERROR) opis = "receive_failed";
+      else if (blad == OTA_END_ERROR) opis = "end_failed";
+      Serial.printf("tag=OTA-VSCODE lvl=ERR zdarzenie=blad kod=%d opis=%s\n", (int)blad, opis);
+      trwaAktualizacjaOtaPanelu = false;
+      lvgl_dashboard_poc_ota(-1, nullptr);   // z powrotem pulpit, panel pracuje dalej
+    });
+    ArduinoOTA.begin();
+    otaVscodeGotowe = true;
+    Serial.printf("tag=OTA-VSCODE zdarzenie=gotowe ip=%s port=3232 msg=\"pio run -e esp32dev_wifi -t upload\"\n", WiFi.localIP().toString().c_str());
+  }
+  ArduinoOTA.handle();
+}
+
 void otaKrok() {
   if (otaP.trwa) {
     otaKrokPobierania();
@@ -5085,6 +5167,7 @@ void loop() {
   poleceniaKrok();         // [v1.4.2 C4] polecenie czekajace na cisze po przytrzymanym przycisku
   obslugaWykresyFetch();   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy - po kawalku na obrot, bez blokowania
   otaKrok();               // [v1.4.0 OTA] aktualizacja przez centrale: decyzja raz na sekunde, pobieranie po kawalku na obrot
+  otaVscodeKrok();         // [v1.5.4 OTA-VSCODE] wgrywanie z PlatformIO przez WiFi (ArduinoOTA.handle())
 
   // [v1.2.0 DANE-NIEAKTUALNE] Brak poprawnie odczytanego /api/status przez
   // PROG_NIEAKTUALNYCH_DANYCH_MS -> kafelki na "--" (raz na kazdy zanik).

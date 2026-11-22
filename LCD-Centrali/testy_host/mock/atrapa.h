@@ -185,6 +185,9 @@ struct Atrapa {
   int otaBeginWywolan = 0;            // ile razy firmware zaczynal zapis (Update.begin())
   int otaUruchomiono = 0;             // ile razy Update.end() ustawil nowy program jako startowy
   int otaPorzucono = 0;               // ile razy rozpoczety zapis zostal porzucony (abort albo blad)
+  int otaVscodeBegin = 0;             // [v1.5.4] ArduinoOTA.begin() - wgrywanie z PlatformIO przez WiFi
+  long otaVscodeHandle = 0;           // [v1.5.4] ArduinoOTA.handle() (kazdy obrot petli po begin())
+  unsigned long otaVscodeMsNaKawalek = 10;   // [v1.5.4] czas plytki na kazdy kawalek 1460 B (odbior + zapis do flash)
   bool nvsZapisOdmawia = false;       // Preferences::putBytes() zwraca 0 (NVS pelne albo uszkodzone)
   int nvsZapisowBinarnych = 0;        // udane putBytes()
 

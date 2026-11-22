@@ -59,6 +59,7 @@
 
 #include "Arduino.h"
 #include "WiFi.h"
+#include "ArduinoOTA.h"   // [v1.5.4] atrapa: ArduinoOTA.symulujWgranie() w scenariuszu ota_vscode
 #include "esp_core_dump.h"   // atrapa partycji zrzutu po awarii (scenariusz poprawki_v141)
 #include "atrapa_sha256.h"   // suma SHA-256 na koncu testowego "pliku firmware" (scenariusze ota_*)
 #include "secrets.h"         // SECRET_OTA_HASLO - to samo haslo, ktore dostaje firmware (atrapa hasel albo src/secrets.h)
@@ -1048,7 +1049,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.3"
+#define WERSJA_FW "v1.5.4"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -4867,7 +4868,7 @@ void scenariuszSenUsbNieUsypia() {
   sprawdz(g_atrapa.usnal == 0 && senJasno(), "na USB przez 6,5 min bez dotyku: pelna jasnosc, bez snu");
   sprawdz(!logMa("tag=SEN"), "na USB: zadnej linii tag=SEN");
   sprawdz(logMa("tag=BATERIA napiecie=3.90V", "ladowanie=1"), "wskaznik: ogniwo 3,90 V, laduje sie");
-  sprawdz(ekranMa("USB 64%"), "[v1.5.3] wskaznik z ogniwem i ladowarka: \"USB 64%\" (nie sam kolor)");
+  sprawdz(ekranMa("64% USB"), "[v1.5.3] wskaznik z ogniwem i ladowarka: \"64% USB\" (nie sam kolor)");
   zrzutEkranu("1_usb_z_ogniwem");
 
   // Ladowarka wyjeta w trakcie: od tej chwili liczy sie bezczynnosc wg LVGL
@@ -4879,7 +4880,7 @@ void scenariuszSenUsbNieUsypia() {
   g_atrapa.gpio[35] = HIGH;
   biegnij(2000);
   sprawdz(g_atrapa.usnal == 0 && senJasno(), "ladowarka wyjeta tuz po dotyku: pracuje jasno");
-  sprawdz(ekranMa("64%") && !ekranMa("USB 64%") && logMa("tag=ZASILANIE zdarzenie=usb_odlaczone napiecie=3.90V", "", "", odWyjecia),
+  sprawdz(ekranMa("64%") && !ekranMa("64% USB") && logMa("tag=ZASILANIE zdarzenie=usb_odlaczone napiecie=3.90V", "", "", odWyjecia),
           "[v1.5.3] 2 s po wyjeciu ladowarki wskaznik juz bez \"USB\" (nie czeka na pomiar co 30 s), log usb_odlaczone");
   biegnij(61000);
   sprawdz(senPrzyciemnione(), "minute pozniej: przyciemnienie (panel juz na baterii)");
@@ -4889,7 +4890,7 @@ void scenariuszSenUsbNieUsypia() {
   g_atrapa.gpio[35] = LOW;
   biegnij(1500);
   sprawdz(senJasno() && logMa("tag=SEN zdarzenie=jasnosc powod=usb", "", "", od), "ladowarka wlozona: pelna jasnosc bez dotyku, log powod=usb");
-  sprawdz(ekranMa("USB 64%") && logMa("tag=ZASILANIE zdarzenie=usb_podlaczone", "", "", od), "[v1.5.3] 1,5 s po wlozeniu: \"USB 64%\", log usb_podlaczone");
+  sprawdz(ekranMa("64% USB") && logMa("tag=ZASILANIE zdarzenie=usb_podlaczone", "", "", od), "[v1.5.3] 1,5 s po wlozeniu: \"64% USB\", log usb_podlaczone");
   biegnij(400000);
   sprawdz(g_atrapa.usnal == 0, "dalej na USB: bez snu");
 
@@ -5017,6 +5018,51 @@ void scenariuszSenPoWybudzeniu() {
   // Licznik bezczynnosci liczy sie od wybudzenia: 1 min -> 5 %, jak zwykle.
   biegnij(60000);
   sprawdz(senPrzyciemnione(), "minuta po wybudzeniu bez dotyku: znow 5 %");
+}
+
+// [v1.5.4] Wgrywanie z PlatformIO przez WiFi (ArduinoOTA): gotowe po polaczeniu,
+// ekran z paskiem w trakcie, blad -> pulpit i dalsza praca, sukces -> restart.
+void scenariuszOtaVscode() {
+  g_atrapa.gpio[35] = HIGH;      // na baterii - zeby sprawdzic tez przyciemnienie
+  g_atrapa.adcMv[34] = 1950;
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  sprawdz(g_atrapa.otaVscodeBegin == 0, "przed polaczeniem z WiFi ArduinoOTA.begin() jeszcze nie bylo");
+  biegnij(15000);
+  sprawdz(g_atrapa.otaVscodeBegin == 1 && g_atrapa.otaVscodeHandle > 100,
+          "po polaczeniu: ArduinoOTA.begin() raz, handle() w kazdym obrocie petli");
+  info("%s", liniaLogu("tag=OTA-VSCODE zdarzenie=gotowe").c_str());
+  sprawdz(logMa("tag=OTA-VSCODE zdarzenie=gotowe", "port=3232"), "log: tag=OTA-VSCODE zdarzenie=gotowe ... port=3232");
+  sprawdz(ArduinoOTA.hostname == "panelco" && ArduinoOTA.haslo == SECRET_OTA_HASLO && !ArduinoOTA.mdns,
+          "nazwa panelco, haslo OTA takie jak centrali, mDNS wylaczony");
+
+  // Panel przyciemniony na baterii (1 min bez dotyku) - wgrywanie ma przywrocic jasnosc.
+  biegnij(62000);
+  sprawdz(senPrzyciemnione(), "na baterii po minucie: przyciemniony");
+
+  // Blad w polowie (zle haslo z komputera): pasek znika, panel pracuje dalej.
+  size_t od = g_atrapa.serial.size();
+  const int statusowPrzed = stanC(0).nStatus;
+  ArduinoOTA.naStart();
+  sprawdz(senJasno() && logMa("tag=SEN zdarzenie=jasnosc powod=ota_vscode", "", "", od), "start wgrywania: pelna jasnosc, log powod=ota_vscode");
+  atrapa_uplyw_czasu(50);   // jak na plytce: miedzy kawalkami plynie czas, LVGL ma co odswiezyc
+  ArduinoOTA.naPostep(600000, 1200000);
+  sprawdz(ekranMa("AKTUALIZACJA PANELU") && ekranMa("Wgrywanie z komputera") && ekranMa("50%"), "w trakcie: ekran AKTUALIZACJA PANELU, \"Wgrywanie z komputera\", 50%");
+  zrzutEkranu("1_wgrywanie_50");
+  ArduinoOTA.naBlad(OTA_AUTH_ERROR);
+  sprawdz(!lvgl_dashboard_poc_ota_widoczna() && logMa("tag=OTA-VSCODE lvl=ERR zdarzenie=blad kod=0 opis=zle_haslo", "", "", od),
+          "blad (zle haslo): pulpit z powrotem, log opis=zle_haslo");
+  biegnij(5000);
+  sprawdz(g_atrapa.usnal == 0 && g_atrapa.restarty == 0 && stanC(0).nStatus > statusowPrzed, "po bledzie panel pracuje dalej: pyta centrale, bez restartu");
+
+  // Udane wgranie 1,2 MB: start, postep co 10 %, koniec, restart z biblioteki.
+  od = g_atrapa.serial.size();
+  ArduinoOTA.symulujWgranie(1200000);
+  sprawdz(logMa("tag=OTA-VSCODE zdarzenie=start typ=firmware", "", "", od) &&
+          logMa("tag=OTA-VSCODE zdarzenie=postep procent=50", "", "", od) &&
+          logMa("tag=OTA-VSCODE zdarzenie=koniec", "", "", od),
+          "udane wgranie: log start, postep procent=50, koniec");
+  sprawdz(g_atrapa.restarty == 1 && g_atrapa.wdtZadzialal == 0, "po wgraniu restart z biblioteki, watchdog nie zadzialal (karmiony w onProgress)");
 }
 
 void scenariuszSenPoWybudzeniuLadowarka() {
@@ -5760,6 +5806,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"zasilanie_po_restarcie", "ekran ZASILANIE: zapisane 80 MHz i 8,5 dBm wracaja po restarcie (v1.4.7)", scenariuszZasilaniePoRestarcie},
     {"zasilanie_zly_indeks", "ekran ZASILANIE: nieznany indeks w NVS spada na domyslne (v1.4.7)", scenariuszZasilanieZlyIndeks},
     {"sen_na_baterii", "sen (v1.5.0): na baterii 1 min bez dotyku -> 5 % jasnosci, dotyk/przycisk przywraca, 5 min -> gleboki sen z hold na GPIO21/13 i budzeniem ext0/ext1", scenariuszSenNaBaterii},
+    {"ota_vscode", "OTA z VSCode (v1.5.4): ArduinoOTA gotowe po polaczeniu, pasek w trakcie, blad -> pulpit, sukces -> restart", scenariuszOtaVscode},
     {"sen_usb_nie_usypia", "sen (v1.5.0): na USB (z ogniwem i bez) nigdy nie przyciemnia ani nie usypia; wyjecie/wlozenie ladowarki", scenariuszSenUsbNieUsypia},
     {"sen_alarm", "sen (v1.5.0): alarm wstrzymuje przyciemnienie i sen; po ustaniu alarmu sen wg licznika", scenariuszSenAlarmIOta},
     {"sen_ota", "sen (v1.5.0): aktualizacja panelu na baterii wstrzymuje przyciemnienie i sen", scenariuszSenOta},
@@ -5786,7 +5833,7 @@ bool restartOczekiwany(const char* nazwa) {
   return n == "autorestart_centrala_milczy" || n == "autorestart_brak_wifi" || n == "autorestart_kolejny" || n == "zla_odpowiedz_dlugo" ||
          n == "autorestart_przy_alarmie" || n == "zla_odpowiedz_bez_konca" || n == "brak_pamieci_json" || n == "brak_pamieci_lvgl" ||
          n == "pomiar_malo_ramu" || n == "pomiar_ota" || n == "ota_w_trakcie_pracy" || n == "ota_stara_centrala" || n == "ota_alarm" ||
-         n == "ota_status_milczy";
+         n == "ota_status_milczy" || n == "ota_vscode";
 }
 
 }  // namespace

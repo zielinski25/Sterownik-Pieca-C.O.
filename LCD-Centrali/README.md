@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.3
+# Panel LCD (wyświetlacz CO) — firmware v1.5.4
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -30,6 +30,52 @@ aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 
+## Co zmienia v1.5.4
+
+**1. Wskaźnik „47% USB”** — najpierw procenty, potem źródło (uwaga po v1.5.3,
+gdzie było „USB 47%”). Reszta bez zmian: zielony z ładowarką, „47%” bez niej,
+„USB” bez ogniwa.
+
+**2. Wgrywanie z VSCode przez WiFi** (ArduinoOTA, jak w centrali). Do v1.5.3
+panel aktualizowało się tylko kablem albo przez centralę (`/update_panel`).
+
+| | |
+|---|---|
+| VSCode | pasek PlatformIO → środowisko **`esp32dev_wifi`** → **Upload** |
+| terminal | `pio run -e esp32dev_wifi -t upload` |
+| adres / port | `192.168.4.50` : `3232` (stałe IP panelu w sieci centrali) |
+| hasło | `SECRET_OTA_HASLO` z `src/secrets.h` — dopisuje je skrypt `narzedzia_pio/ota_haslo.py`, w `platformio.ini` hasła nie ma |
+| nazwa | `panelco` (mDNS wyłączony — wgrywanie po IP) |
+
+Warunki — wszystkie naraz:
+1. **komputer połączony z siecią centrali `PiecCO_AP`** (panel nie jest w sieci
+   domowej, tylko w sieci, którą nadaje centrala; z Internetu w tym czasie nie
+   skorzystasz);
+2. **panel obudzony i połączony** — na baterii po 5 min bez dotyku śpi i nie
+   odpowie: dotknij ekran albo włóż ładowarkę; w logu USB
+   `tag=OTA-VSCODE zdarzenie=gotowe ip=192.168.4.50 port=3232`;
+3. **pierwsze wgranie v1.5.4 kablem** (starszy program nie ma ArduinoOTA);
+4. zapora na komputerze: `espota.py` każe panelowi połączyć się **zwrotnie** z
+   komputerem na losowym porcie — Windows pyta o zgodę dla Pythona; gdy
+   wgrywanie kończy się „No response from the ESP”, zezwól Pythonowi w sieciach
+   prywatnych/publicznych albo dodaj w `upload_flags` stały
+   `--host_port=3233` i otwórz ten port.
+
+W trakcie: ekran `AKTUALIZACJA PANELU` / „Wgrywanie z komputera” z paskiem
+(na baterii przyciemniony panel rozjaśnia się sam), log
+`tag=OTA-VSCODE zdarzenie=start|postep|koniec|blad`. Po udanym wgraniu panel
+restartuje się sam; nowy program czeka na zatwierdzenie jak przy każdym OTA
+(jeśli nie wstanie, bootloader wraca do poprzedniego). Błąd (np. złe hasło:
+`opis=zle_haslo`) → pulpit wraca, panel pracuje dalej. Gdy panel akurat
+pobiera plik z centrali, wgranie z komputera kończy się `begin_failed` — nic
+się nie psuje, spróbuj po chwili.
+
+Testy: nowy scenariusz `ota_vscode` (9 sprawdzeń), `sen_usb_nie_usypia`
+dostosowany do „64% USB”. Razem 70 scenariuszy, 781 sprawdzeń, 588
+jednostkowych. Zmienione pliki: `src/main.cpp`, `src/dashboard_lvgl_poc.cpp`,
+`platformio.ini` (nowe `[env:esp32dev_wifi]`), nowy
+`narzedzia_pio/ota_haslo.py`, `testy_host/` (atrapa `mock/ArduinoOTA.h`).
+
 ## Co zmienia v1.5.3
 
 **Wskaźnik zasilania mówi wprost „USB”** (zgłoszenie z 24.11: „LCD jest na
@@ -39,7 +85,7 @@ procentów, a stan GPIO35 trafiał na ekran dopiero z pomiarem baterii co 30 s.
 
 | | Było | Jest (v1.5.3) |
 |---|---|---|
-| ogniwo + ładowarka w TP4056 | „47%” na zielono | **„USB 47%”** na zielono |
+| ogniwo + ładowarka w TP4056 | „47%” na zielono | **„USB 47%”** na zielono (od v1.5.4: „47% USB”) |
 | ogniwo, bez ładowarki | „47%” | „47%” (bez zmian) |
 | bez ogniwa | „USB” | „USB” (bez zmian) |
 | włożenie / wyjęcie ładowarki | widać po ≤ 30 s | **po ≤ 1 s** (`tag=ZASILANIE zdarzenie=usb_podlaczone\|usb_odlaczone napiecie=…`) |
