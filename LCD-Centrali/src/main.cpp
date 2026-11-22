@@ -63,8 +63,20 @@
 //     samej, przeliczonej wartosci; POST /api/servo-manual dalej w
 //     procentach (centrala sama przelicza na stopnie). Log tag=PANEL dalej
 //     podaje surowe stopnie. Opis trybu BEZPIECZNY: "syberek 100% (otwarty)".
-//   - Testy: ikona_wifi_cisza, serwo_stopnie; testSerwoStopnie() w
-//     test_diagnostyka.cpp.
+//   - Wykresy: "klikam, pisze 'Centrala nie przyjela polaczenia', dopiero za
+//     ktoryms razem sa wykresy" - te same czkawki AP. Zapytanie o historie,
+//     ktorego centrala NIE PRZYJELA (limit laczenia, connect() odrzucony,
+//     gniazdo zamkniete bez bajtu odpowiedzi), idzie samo jeszcze raz po
+//     500 ms, do 3 prob (WYKRESY_PROB_MAKS, wykresyMoznaPonowic()); ekran w
+//     tym czasie: "Ladowanie danych z centrali... / Centrala nie
+//     odpowiedziala, proba 2 z 3". Nie ponawiamy: zapytanie przyjete bez
+//     odpowiedzi przez 6 s, odpowiedz urwana, limit calosci, brak pamieci,
+//     kod HTTP. Wyjscie z ekranu w odstepie przerywa. Log: tag=WYKRESY
+//     zdarzenie=ponowienie proba=2/3 powod=brak_polaczenia etap=..;
+//     zdarzenie=blad ma prob=N. Etap z (zamkniete przed naglowkami) to
+//     teraz "nie przyjela polaczenia", nie "zla odpowiedz".
+//   - Testy: ikona_wifi_cisza, serwo_stopnie, wykresy_ponowienie;
+//     testSerwoStopnie() w test_diagnostyka.cpp.
 // [2026-11-24] v1.5.5 - POLECENIA Z DOTYKU PONAWIANE (3 PROBY), NIE 1 x 400 MS
 //   - Log z 24.11 15:40: trzy dotkniecia WL pompy i WYL skonczyly sie
 //     "POLECENIE NIE DOSZLO DO CENTRALI", choc statusy co 2 s przechodzily
@@ -1223,7 +1235,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.6"; // [2026-11-24] v1.5.6: ikona WiFi nie mruga przy ciszy centrali, pozycje serw 0-100 % (stopnie -> procenty); opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.6"; // [2026-11-24] v1.5.6: ikona WiFi nie mruga przy ciszy centrali, pozycje serw 0-100 % (stopnie -> procenty), wykresy ponawiane po czkawce AP; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -2147,8 +2159,22 @@ struct WykresyPobieranie {
   int kodNowego = 0;             // kod HTTP odpowiedzi na /api/history/panel (do logu)
   unsigned long startMs = 0;
   unsigned long postepMs = 0;
+  // [v1.5.6] Ponawianie, gdy centrala w ogole nie przyjela zapytania (patrz
+  // wykresyMoznaPonowic()). Zgloszenie z plytki: "klikam wykres, pisze
+  // 'Centrala nie przyjela polaczenia', dopiero za ktoryms razem sie
+  // pojawia" - to te same czkawki AP co przy poleceniach (v1.5.5).
+  uint8_t proba = 1;             // numer biezacej proby 1..WYKRESY_PROB_MAKS
+  unsigned long ponowOdMs = 0;   // != 0: czekamy z kolejna proba do tej chwili millis()
+  int ostatniWynik = 0;          // przyczyna poprzedniej proby (do logu ponowienia)
 };
 static WykresyPobieranie wykresyPob;
+static const uint8_t  WYKRESY_PROB_MAKS = 3;
+static const uint32_t WYKRESY_ODSTEP_PONOWIENIA_MS = 500;
+static const char* wykresySciezka(bool nowySposob, bool dlugi, char* bufor, size_t n) {
+  if (nowySposob) snprintf(bufor, n, "/api/history/panel?tryb=%s&pkt=%d", WYKRESY_TRYB_ADRES[wykresyPob.tryb], LVGL_WYKRESY_PUNKTOW);
+  else            snprintf(bufor, n, "%s", dlugi ? "/api/history/long" : "/api/history");
+  return bufor;
+}
 
 static void wykresyLinia(const char* linia) { lvgl_dashboard_poc_wykresy_strumien_linia(linia); }
 
@@ -2156,8 +2182,26 @@ static void wykresyLinia(const char* linia) { lvgl_dashboard_poc_wykresy_strumie
 // logu, zwalnia gniazdo. `wynik` to to, co wie warstwa sieci; ekran moze go
 // jeszcze zmienic (np. odpowiedz poprawna, ale bez danych) - do logu idzie
 // to, co faktycznie widac na ekranie.
+static bool wykresyMoznaPonowic(int wynik);   // nizej
 static void wykresyZakoncz(int wynik, int szczegol) {
   const bool dlugi = (wykresyPob.tryb == LVGL_WYKRESY_TRYB_TYDZIEN);
+  if (wykresyMoznaPonowic(wynik)) {
+    // [v1.5.6] Centrala nic nie odpowiedziala - jeszcze raz za chwile, ekran
+    // dalej czeka ("Ladowanie..."), log jedna linia. Faktyczny start w
+    // obslugaWykresyFetch(), gdy minie odstep.
+    logBezPamieci("tag=WYKRESY zdarzenie=ponowienie tryb=%s sposob=%s proba=%u/%u powod=%s etap=%c po_ms=%lu blad=\"%s\"\n",
+                  WYKRESY_TRYB_ADRES[wykresyPob.tryb], wykresyPob.nowySposob ? "centrala" : "panel",
+                  (unsigned)(wykresyPob.proba + 1), (unsigned)WYKRESY_PROB_MAKS,
+                  lvgl_dashboard_poc_wykresy_wynik_nazwa(wynik), wykresyFetch.etapBledu(),
+                  (unsigned long)(millis() - wykresyPob.startMs), wykresyFetch.ostatniBlad());
+    wykresyFetch.skwituj();
+    wykresyPob.proba++;
+    wykresyPob.ostatniWynik = wynik;
+    wykresyPob.ponowOdMs = millis() + WYKRESY_ODSTEP_PONOWIENIA_MS;
+    if (wykresyPob.ponowOdMs == 0) wykresyPob.ponowOdMs = 1;
+    lvgl_dashboard_poc_wykresy_ponowienie(wykresyPob.proba, WYKRESY_PROB_MAKS);
+    return;
+  }
   const int naEkranie = lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, wykresyFetch.liniiCiala(), wynik, szczegol);
   LvglWykresyStatystyka st;
   lvgl_dashboard_poc_wykresy_statystyka(&st);
@@ -2185,14 +2229,29 @@ static void wykresyZakoncz(int wynik, int szczegol) {
                   WYKRESY_TRYB_ADRES[wykresyPob.tryb], sposob, lvgl_dashboard_poc_wykresy_wynik_nazwa(naEkranie), st.punktow,
                   st.wierszyZrodla, (unsigned long)wykresyFetch.liniiCiala(), (unsigned long)wykresyFetch.bajtowCiala(), ms);
   } else {
-    logBezPamieci("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=%s sposob=%s przyczyna=%s kod=%d etap=%c errno=%d punktow=%d linii=%lu bajtow=%lu ms=%lu ram=%lu ram_blok=%lu msg=\"%s\"\n",
+    logBezPamieci("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=%s sposob=%s przyczyna=%s kod=%d etap=%c errno=%d prob=%u punktow=%d linii=%lu bajtow=%lu ms=%lu ram=%lu ram_blok=%lu msg=\"%s\"\n",
                   WYKRESY_TRYB_ADRES[wykresyPob.tryb], sposob, lvgl_dashboard_poc_wykresy_wynik_nazwa(naEkranie),
-                  wykresyFetch.kodHttp(), wykresyFetch.etapBledu(), wykresyFetch.numerBledu(), st.punktow,
+                  wykresyFetch.kodHttp(), wykresyFetch.etapBledu(), wykresyFetch.numerBledu(), (unsigned)wykresyPob.proba, st.punktow,
                   (unsigned long)wykresyFetch.liniiCiala(), (unsigned long)wykresyFetch.bajtowCiala(), ms,
                   (unsigned long)ramWolny(), (unsigned long)ramBlok(), wykresyFetch.ostatniBlad());
   }
   wykresyFetch.skwituj();
   wykresyPob.aktywne = false;
+  wykresyPob.ponowOdMs = 0;
+}
+
+// [v1.5.6] Czy po tym bledzie warto zapytac jeszcze raz: tak, gdy centrala
+// NIE PRZYJELA polaczenia (limit laczenia 1,5 s, connect() odrzucony,
+// gniazdo zamkniete bez bajtu odpowiedzi) - to czkawka AP, nie stan
+// centrali; na plytce konczy sie najczesciej w 1,5 s. Nie ponawiamy:
+// zapytanie przyjete, ale bez odpowiedzi przez 6 s (etap h - centrala
+// pracuje, tylko wolno; kolejne 6 s x2 nic nie da), odpowiedz urwana w
+// trakcie, limit calosci, brak pamieci panelu (nie pomoze), kod HTTP (to
+// jest odpowiedz).
+static bool wykresyMoznaPonowic(int wynik) {
+  if (wykresyPob.proba >= WYKRESY_PROB_MAKS) return false;
+  if (wynik != LVGL_WYKRESY_BRAK_POLACZENIA) return false;
+  return wykresyFetch.kodHttp() == 0 && wykresyFetch.bajtowCiala() == 0;
 }
 
 // Blad warstwy sieci -> przyczyna dla ekranu i logu.
@@ -2200,7 +2259,8 @@ static int wykresyWynikZBledu() {
   if (diag::bladGniazdaToBrakPamieci(wykresyFetch.numerBledu())) return LVGL_WYKRESY_BRAK_PAMIECI;
   switch (wykresyFetch.etapBledu()) {
     case 'c': case 'h': case 'p': return LVGL_WYKRESY_LIMIT_CZASU;       // centrala nie zdazyla
-    case 'z': case 'k':           return LVGL_WYKRESY_ZLA_ODPOWIEDZ;     // to nie byla odpowiedz HTTP
+    case 'z':                     return LVGL_WYKRESY_BRAK_POLACZENIA;   // [v1.5.6] zamkniete bez bajtu odpowiedzi = centrala nie przyjela (dotad "zla odpowiedz")
+    case 'k':                     return LVGL_WYKRESY_ZLA_ODPOWIEDZ;     // to nie byla odpowiedz HTTP
     case 'r':                     return (wykresyFetch.bajtowCiala() > 0) ? LVGL_WYKRESY_URWANA : LVGL_WYKRESY_BRAK_POLACZENIA;
     default:                      return LVGL_WYKRESY_BRAK_POLACZENIA;   // g n l a s: nie udalo sie polaczyc / wyslac
   }
@@ -2235,6 +2295,9 @@ void wykresyFetchStart(int tryb) {
   wykresyPob.kodNowego = 0;
   wykresyPob.startMs = millis();
   wykresyPob.postepMs = wykresyPob.startMs;
+  wykresyPob.proba = 1;          // [v1.5.6]
+  wykresyPob.ponowOdMs = 0;
+  wykresyPob.ostatniWynik = 0;
   const bool dlugi = (tryb == LVGL_WYKRESY_TRYB_TYDZIEN);
   // Przed kazda mozliwoscia wczesnego wyjscia: ekran czeka na _koniec().
   lvgl_dashboard_poc_wykresy_strumien_start(dlugi);
@@ -2264,6 +2327,26 @@ void obslugaWykresyFetch() {
                   (unsigned long)wykresyFetch.liniiCiala());
     wykresyFetch.przerwij();
     wykresyPob.aktywne = false;
+    wykresyPob.ponowOdMs = 0;
+    return;
+  }
+
+  // [v1.5.6] Czekamy z kolejna proba (po czkawce AP); gdy minie odstep -
+  // to samo zapytanie, tym samym sposobem. WiFi mogl w miedzyczasie pasc.
+  if (wykresyPob.ponowOdMs != 0) {
+    if ((long)(millis() - wykresyPob.ponowOdMs) < 0) return;
+    wykresyPob.ponowOdMs = 0;
+    if (WiFi.status() != WL_CONNECTED) {
+      wykresyZakoncz(LVGL_WYKRESY_BRAK_WIFI, 0);
+      return;
+    }
+    const bool dlugi = (wykresyPob.tryb == LVGL_WYKRESY_TRYB_TYDZIEN);
+    char sciezka[56];
+    wykresySciezka(wykresyPob.nowySposob, dlugi, sciezka, sizeof(sciezka));
+    lvgl_dashboard_poc_wykresy_strumien_start(dlugi);   // od nowa - z poprzedniej proby nic nie przyszlo
+    if (!wykresyFetch.start(sciezka, wykresyLinia)) {
+      wykresyZakoncz(wykresyWynikZBledu(), 0);
+    }
     return;
   }
 

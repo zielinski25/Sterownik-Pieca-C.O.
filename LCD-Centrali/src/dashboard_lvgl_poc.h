@@ -593,6 +593,9 @@ bool lvgl_dashboard_poc_wykresy_strumien_zredukowany();
 bool lvgl_dashboard_poc_wykresy_czeka_na_dane();
 // Postep pobierania do pokazania pod napisem "Ladowanie danych...".
 void lvgl_dashboard_poc_wykresy_postep(uint32_t linii, uint32_t bajtow);
+// [v1.5.6] Centrala nie przyjela zapytania, main.cpp zaraz sprobuje znowu:
+// pod "Ladowanie danych z centrali..." dopisek "próba N z M". Ekran dalej czeka.
+void lvgl_dashboard_poc_wykresy_ponowienie(int proba, int prob);
 
 // Liczby z ostatniego pobrania - do linii "tag=WYKRESY" w logu.
 struct LvglWykresyStatystyka {

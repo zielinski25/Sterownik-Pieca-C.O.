@@ -360,6 +360,8 @@ struct Centrala {
   int nHistKrotka = 0, nHistDluga = 0;
   int nHistWyslanych = 0;            // odpowiedzi historii wyslane do konca
   int nHistPorzuconych = 0;          // polaczenia historii zamkniete przez PANEL, zanim centrala skonczyla
+  int histOdrzucRazy = 0;            // [v1.5.6] > 0: tyle kolejnych polaczen historii centrala zamyka bez bajtu odpowiedzi (czkawka AP)
+  int nHistOdrzuconych = 0;          // ile takich zamkniec bylo
   std::string ostatniaPanelHistSciezka;
 };
 
@@ -834,6 +836,17 @@ void obsluzPolaczenie(int k, int idx) {
     return;
   }
   if (!post && sciezka.rfind("/api/history", 0) == 0) {
+    {
+      std::lock_guard<std::mutex> blokada(g_mutex);
+      Centrala& c = g_centrale[idx];
+      if (c.histOdrzucRazy > 0) {   // [v1.5.6] centrala "nie przyjela polaczenia"
+        c.histOdrzucRazy--;
+        c.nHistOdrzuconych++;
+        close(k);
+        g_wLocie--;
+        return;
+      }
+    }
     // Historia: odpowiedz bywa duza i idzie po kawalku - patrz Strumien.
     const int flagi = fcntl(k, F_GETFL, 0);
     fcntl(k, F_SETFL, flagi | O_NONBLOCK);
@@ -3364,6 +3377,82 @@ void scenariuszWykresyBledySieci() {
   sprawdz(!wykresWidoczny() && ekranMa("Brak połączenia z siecią centrali (WiFi)"), "napis od razu: \"Brak polaczenia z siecia centrali (WiFi)\"");
   sprawdz(logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=brak_wifi", "", "", od) && stanC(0).nPanelHist == zapytanPrzed,
           "log: przyczyna=brak_wifi; zadne zapytanie nie wyszlo");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal w calym scenariuszu");
+}
+
+// --- [v1.5.6] wykres ponawiany po czkawce AP ---------------------------------
+// Zgloszenie z plytki (v1.5.5): "klikam wykres, pisze 'Centrala nie przyjela
+// polaczenia' i dopiero za ktoryms razem pojawiaja sie wykresy". Te same
+// czkawki AP co przy poleceniach (v1.5.5): zapytanie o historie nie dochodzi
+// do centrali. Panel ma sprobowac sam, do 3 razy, zanim pokaze napis.
+void scenariuszWykresyPonowienie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  const std::string dzien = wzorzec("dzien.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = dzien; });
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+
+  printf("  dwa pierwsze zapytania centrala zamyka bez odpowiedzi, trzecie przechodzi:\n");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 2; });
+  size_t od = pokazWykres(nullptr, 250);   // 1. proba pada od razu, 2. rusza po 500 ms
+  const lv_obj_t* nap = znajdzEtykiete(lv_scr_act(), "Ładowanie danych z centrali...\n");
+  info("napis po 0,25 s: \"%s\"", nap ? lv_label_get_text(nap) : "(brak)");
+  sprawdz(!wykresWidoczny() && nap != nullptr && std::string(lv_label_get_text(nap)).find("próba 2 z 3") != std::string::npos,
+          "w trakcie: \"Ladowanie danych z centrali... / Centrala nie odpowiedziala, proba 2 z 3\" - nie napis o bledzie");
+  biegnij(3000);
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "wykres jest, 96 punktow - bez dotykania ekranu drugi raz");
+  sprawdz(stanC(0).nHistOdrzuconych == 2 && stanC(0).nPanelHist == 1, "centrala: 2 zamkniete polaczenia + 1 obsluzone zapytanie");
+  sprawdz(ileLinii("tag=WYKRESY zdarzenie=ponowienie", "proba=2/3", "powod=brak_polaczenia", od) == 1 &&
+              ileLinii("tag=WYKRESY zdarzenie=ponowienie", "proba=3/3", "", od) == 1,
+          "log: ponowienie proba=2/3 i 3/3 (powod=brak_polaczenia)");
+  info("%s", liniaLogu("tag=WYKRESY zdarzenie=ponowienie", od).c_str());
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96", "", "", od), "log: pobrano punktow=96");
+  sprawdz(!logMa("tag=WYKRESY lvl=WARN zdarzenie=blad", "", "", od), "bez wpisu zdarzenie=blad");
+  zrzutEkranu("1_po_ponowieniu");
+
+  printf("  centrala nie przyjmuje zadnego z trzech zapytan:\n");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 10; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 3000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie przyjęła połączenia\nSpróbuj ponownie"), "po 3 probach napis \"Centrala nie przyjela polaczenia / Sprobuj ponownie\"");
+  sprawdz(ileLinii("tag=WYKRESY zdarzenie=ponowienie", "", "", od) == 2 &&
+              logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=brak_polaczenia", "prob=3", "", od),
+          "log: dwa ponowienia, potem zdarzenie=blad przyczyna=brak_polaczenia prob=3");
+  info("%s", liniaLogu("tag=WYKRESY lvl=WARN zdarzenie=blad", od).c_str());
+  sprawdz(stanC(0).histOdrzucRazy == 7, "centrala dostala dokladnie 3 polaczenia - nie wiecej");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 0; });
+
+  printf("  odpowiedz urwana w polowie NIE jest ponawiana (centrala pracuje, to nie czkawka):\n");
+  ustawC(0, [](Centrala& c) { c.histUrwijPo = 9000; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 1500);
+  sprawdz(!wykresWidoczny() && ekranMa("Odpowiedź centrali urwała się w połowie\nSpróbuj ponownie") &&
+              ileLinii("tag=WYKRESY zdarzenie=ponowienie", "", "", od) == 0,
+          "napis o urwanej odpowiedzi od razu, bez ponowien");
+  ustawC(0, [](Centrala& c) { c.histUrwijPo = -1; });
+
+  printf("  zapytanie przyjete, ale bez odpowiedzi przez 6 s - tez bez ponowien (centrala pracuje, tylko wolno):\n");
+  ustawC(0, [](Centrala& c) { c.histZwlokaMs = 60000; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 7000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie odpowiedziała w czasie\nSpróbuj ponownie") &&
+              ileLinii("tag=WYKRESY zdarzenie=ponowienie", "", "", od) == 0,
+          "po 6 s napis \"Centrala nie odpowiedziala w czasie\", zero ponowien");
+  ustawC(0, [](Centrala& c) { c.histZwlokaMs = 0; });
+
+  printf("  wyjscie z ekranu w czasie odstepu przed ponowieniem:\n");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 10; });
+  dotknijWykresu();
+  const int przed = stanC(0).nHistOdrzuconych;
+  od = pokazWykres(nullptr, 200);
+  sprawdz(logMa("tag=WYKRESY zdarzenie=ponowienie", "proba=2/3", "", od), "pierwsza proba padla, panel czeka z druga");
+  dotknijWykresu();   // uzytkownik wraca do wyboru serii
+  biegnij(2000);
+  sprawdz(logMa("tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu", "", "", od), "log: przerwano powod=wyjscie_z_ekranu");
+  sprawdz(stanC(0).nHistOdrzuconych == przed + 1, "po wyjsciu z ekranu zadne kolejne zapytanie nie poszlo");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 0; });
   sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal w calym scenariuszu");
 }
 
@@ -5928,6 +6017,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"wykresy_przerwy", "przerwa w pracy centrali i czujnik bez odczytu: linia przerwana, nie dociagnieta (v1.3.0)", scenariuszWykresyPrzerwy},
     {"wykresy_brak_danych", "centrala bez historii, jeden pomiar, bez zegara, brak pamieci centrali (v1.3.0)", scenariuszWykresyBrakDanych},
     {"wykresy_bledy_sieci", "odpowiedz urwana, cisza, brak odpowiedzi, nie-centrala, brak WiFi: napis z przyczyna (v1.3.0)", scenariuszWykresyBledySieci},
+    {"wykresy_ponowienie", "centrala nie przyjmuje zapytania o historie: do 3 prob, zanim pokaze sie napis (v1.5.6)", scenariuszWykresyPonowienie},
     {"wykresy_wyjscie_w_trakcie", "wyjscie z wykresu w trakcie pobierania; pobieranie dluzsze niz limit (v1.3.0)", scenariuszWykresyWyjscieWTrakcie},
     {"wykresy_alarm_w_trakcie", "alarm w trakcie pobierania danych do wykresu (v1.3.0)", scenariuszWykresyAlarmWTrakcie},
     {"wykresy_stary_csv", "stary CSV podany ekranowi wprost: te same punkty co w v1.2.2 (v1.3.0)", scenariuszWykresyStaryCsv},

@@ -6125,6 +6125,12 @@ void lvgl_dashboard_poc_wykresy_postep(uint32_t linii, uint32_t bajtow) {
                         (unsigned long)linii, (unsigned long)((bajtow + 512U) / 1024U));
 }
 
+void lvgl_dashboard_poc_wykresy_ponowienie(int proba, int prob) {
+  if (!g_wykresyFetchWToku || !wykresyWykresPlaceholder) return;
+  if (lv_obj_has_flag(wykresyWykresPlaceholder, LV_OBJ_FLAG_HIDDEN)) return;
+  lv_label_set_text_fmt(wykresyWykresPlaceholder, "Ładowanie danych z centrali...\nCentrala nie odpowiedziała, próba %d z %d", proba, prob);
+}
+
 void lvgl_dashboard_poc_wykresy_statystyka(LvglWykresyStatystyka *wyjscie) {
   if (!wyjscie) return;
   wyjscie->punktow = g_wykresyOstatnioPunktow;

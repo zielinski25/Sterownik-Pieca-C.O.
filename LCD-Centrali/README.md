@@ -43,6 +43,7 @@ Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 |---|---|---|
 | WiFi jest, centrala milczy > 10 s | X „brak WiFi” | **kreski pomarańczowe** wg RSSI panelu, bez X (kafelki `--` i nagłówek CENTRALA MILCZY bez zmian) |
 | naprawdę brak WiFi | X | X (bez zmian) |
+| wykres: centrala nie przyjęła zapytania | napis od razu | **3 próby** co 500 ms, napis dopiero po ostatniej |
 | limity `/api/status` i ustawień (`SiecCfg`) | 400 / 1500 ms | **1000 / 3000 ms** — w tym samym logu POST z limitem 1000 ms przechodził w 716 ms między „timeout laczenia” statusów; centrala odpowiadała, tylko wolniej |
 
 **Pozycje serw 0–100 %, nie „113 %”.** `/api/status` centrali podaje `klapa`
@@ -53,11 +54,24 @@ nic powyżej 100 %. Suwaki na ekranie SERWA startują od tej samej przeliczonej
 wartości; POST `/api/servo-manual` dalej idzie w procentach (centrala sama
 przelicza na stopnie). Log `tag=PANEL` dalej podaje surowe stopnie.
 
+**Wykresy same ponawiają zapytanie po czkawce AP.** Zgłoszenie: „klikam
+wykres, pisze »Centrala nie przyjęła połączenia« i dopiero za którymś razem
+pojawiają się wykresy”. Zapytanie o historię, którego centrala **nie przyjęła**
+(limit łączenia 1,5 s, `connect()` odrzucony, gniazdo zamknięte bez bajtu
+odpowiedzi), idzie samo jeszcze raz po 500 ms, do 3 prób; na ekranie w tym
+czasie „Ładowanie danych z centrali… / Centrala nie odpowiedziała, próba 2 z 3”.
+Nie ponawiamy, gdy centrala zapytanie przyjęła (brak odpowiedzi przez 6 s,
+odpowiedź urwana, kod HTTP) ani przy braku pamięci. Wyjście z ekranu w
+odstępie przerywa. Log: `tag=WYKRESY zdarzenie=ponowienie proba=2/3
+powod=brak_polaczenia etap=…`, `zdarzenie=blad … prob=N`.
+
 Testy: nowe scenariusze `ikona_wifi_cisza` (cisza centrali → kreski
-pomarańczowe; dwie krótkie przerwy z rzędu → ani razu X; zanik AP → X) i
-`serwo_stopnie` (113/86 → 63 %/96 %, 180/90 → 100 %, śmieci 255 → 100 %),
-`testSerwoStopnie()` w `test_diagnostyka.cpp`. Razem 72 scenariusze,
-809 sprawdzeń, 813 jednostkowych. Zmienione pliki: `src/main.cpp`,
+pomarańczowe; dwie krótkie przerwy z rzędu → ani razu X; zanik AP → X),
+`serwo_stopnie` (113/86 → 63 %/96 %, 180/90 → 100 %, śmieci 255 → 100 %) i
+`wykresy_ponowienie` (2 odrzucone + 1 udane → wykres bez dotykania; 3 odrzucone
+→ napis; urwana / cisza po przyjęciu → bez ponowień; wyjście w odstępie),
+`testSerwoStopnie()` w `test_diagnostyka.cpp`. Razem 73 scenariusze,
+825 sprawdzeń, 813 jednostkowych. Zmienione pliki: `src/main.cpp`,
 `src/dashboard_lvgl_poc.cpp/.h`, `src/diagnostyka_panelu.h`,
 `src/siec_nieblokujaca_LCD.h`, `testy_host/`.
 
