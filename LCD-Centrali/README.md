@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.9
+# Panel LCD (wyświetlacz CO) — firmware v1.5.10
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,22 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.10
+
+Poprawki po zdjęciu ekranu WYŚWIETLACZ z płytki na v1.5.9. Centrala bez zmian.
+
+- **Suwaki jasności – gałki w całości.** Gałka (promień 12) wystaje 4 px nad
+  i pod 16‑px pasek, a pasek stał na samym dole wiersza, więc wiersz przycinał
+  dolne 4 px gałki („kółko” miało płaski spód). Pasek przesunięty 4 px wyżej;
+  test `sen_ustawienia` mierzy gałkę także w pionie.
+- **Zielone przyciski „włączone” czytelne.** `WŁ.` harmonogramu, „Przyciemnij
+  po: …”, „Uśpij po: …”, Antystop `WŁ.` i przyciski na ZASILANIE miały jasną
+  miętę z szarym napisem (kontrast ok. 1,5:1). Teraz ciemna zieleń
+  (`KOL_WLACZONE`) i biały napis (ok. 6,5:1). Mięta `KOL_BEZPIECZNA` zostaje
+  dla ikony BEZPIECZNA na SERWA, paska Antystop i wskaźnika ładowania.
+- Napis `Panel v…/Centrala v…` w lewym górnym rogu odsunięty od obudowy
+  (14 px zamiast 8 – na zdjęciu było `anel v1.5.9`).
 
 ## Co zmienia v1.5.9
 

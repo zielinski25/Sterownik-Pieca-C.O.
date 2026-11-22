@@ -40,6 +40,19 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.10 - GALKI SUWAKOW JASNOSCI W CALOSCI WIDOCZNE; CZYTELNE ZIELONE PRZYCISKI
+//   - Zdjecie z plytki na v1.5.9 (ekran WYSWIETLACZ): galka suwaka jasnosci
+//     (promien 12) wystaje 4 px pod 16-px pasek, a pasek stal na samym dole
+//     wiersza - dolne 4 px galki przycinal wiersz ("kolka przyciete").
+//     Pasek 4 px wyzej (y 30..46 w wierszu 0..50), galka 26..50 w calosci.
+//     Test sen_ustawienia mierzy teraz galke tez w pionie.
+//   - Zielone przyciski "wlaczone" (WL. harmonogramu, "Przyciemnij po: 30 s",
+//     "Uspij po: 2 min", Antystop WL., taktowanie/moc na ZASILANIE): jasna
+//     mieta KOL_BEZPIECZNA z szarym napisem miala kontrast ok. 1,5:1 - na LCD
+//     nieczytelne. Nowe KOL_WLACZONE (ciemna zielen) + bialy napis: ok. 6,5:1.
+//     KOL_BEZPIECZNA zostaje dla ikony BEZPIECZNA na SERWA, paska Antystop i
+//     wskaznika ladowania.
+//   - Centrala: bez zmian.
 // [2026-11-24] v1.5.9 - MARGINES OD OBUDOWY NA WYKRESACH; LUKI SERW I SUWAKI JASNOSCI BEZ PRZYCIECIA
 //   - Zdjecia z plytki na v1.5.8 (22.11, 18:03): wydrukowana obudowa zaslania
 //     skrajne piksele ekranu, wiec ostatni podpis osi czasu ("18:00") przy
@@ -1317,7 +1330,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.9"; // [2026-11-24] v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.10"; // [2026-11-24] v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez

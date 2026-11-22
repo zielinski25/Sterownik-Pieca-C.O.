@@ -186,6 +186,14 @@
 // KOL_CISNIENIE/KOL_POKOJ wyzej) - uniwersalna konwencja "stan bezpieczny/
 // OK", nieuzywana nigdzie indziej w UI.
 #define KOL_BEZPIECZNA 0x3E4F
+// [v1.5.10 - zdjecie 22.11 ekranu WYSWIETLACZ] Tlo przyciskow-przelacznikow w
+// stanie "wlaczone" (WL., "Przyciemnij po: 30 s", "Uspij po: 2 min",
+// Antystop WL.). Dotad KOL_BEZPIECZNA (jasna mieta ~(57,203,123)) z szarym
+// napisem KOL_TEKST - kontrast ok. 1,5:1, na LCD nieczytelne. Teraz ciemna
+// zielen ~(16,108,48) i BIALY napis: kontrast ok. 6,5:1. KOL_BEZPIECZNA
+// zostaje dla ikony/przycisku BEZPIECZNA na ekranie SERWA i paska Antystop.
+#define KOL_WLACZONE 0x1366
+#define KOL_NAPIS_NA_WLACZONYM 0xFFFF
 // [Partia 4, ta sesja] User na zywym sprzecie: "chmurka ma byc
 // niebiesko-biala" - neutralny stan ZEWN (0-15 st.C) mial KOL_TEKST_DIM,
 // czyli zwykly szary tekst-placeholder (patrz zewn_ikona_odswiez()), NIE
@@ -2685,7 +2693,7 @@ static void pompa_ust_plus_cb(lv_event_t *e) {
 static void pompa_antystop_wyglad_odswiez() {
   if (pompaAntystopBtn == nullptr) return;
   lv_obj_set_style_bg_color(pompaAntystopBtn,
-                             rgb565(g_pompaAntystopWlaczony ? KOL_BEZPIECZNA : KOL_KARTA),
+                             rgb565(g_pompaAntystopWlaczony ? KOL_WLACZONE : KOL_KARTA),   // [v1.5.10] jak WL. na ekranie WYSWIETLACZ
                              LV_PART_MAIN);
   lv_label_set_text(pompaAntystopBtnLabel, g_pompaAntystopWlaczony ? "WŁ." : "WYŁ.");
 }
@@ -3039,7 +3047,7 @@ static void pompa_ustawienia_zbuduj(lv_obj_t *scr) {
     pompaAntystopBtnLabel = lv_label_create(pompaAntystopBtn);
     lv_label_set_text(pompaAntystopBtnLabel, "WŁ.");
     lv_obj_set_style_text_font(pompaAntystopBtnLabel, &lv_font_pl_14, 0);
-    lv_obj_set_style_text_color(pompaAntystopBtnLabel, rgb565(KOL_TEKST), 0);
+    lv_obj_set_style_text_color(pompaAntystopBtnLabel, rgb565(KOL_NAPIS_NA_WLACZONYM), 0);   // [v1.5.10]
     lv_obj_center(pompaAntystopBtnLabel);
   }
 
@@ -3783,9 +3791,13 @@ static void wyswietlacz_jasnosc_wiersz_zbuduj(lv_obj_t *parent, int y, const cha
   // (v1.5.8): przy 100 % galka wystawala 12 px za koniec paska. Pasek 16..340
   // (do prawej krawedzi wiersza, pod etykieta "100%"), tor galki zawezony z
   // prawej (pad_right 12) - przy 100 % galka konczy sie rowno z paskiem.
+  // [v1.5.10 - zdjecie 22.11] Galka (promien 12) wystaje 4 px nad i pod
+  // 16-px pasek; pasek stal na samym dole wiersza (y 34..50), wiec dolne
+  // 4 px galki przycinal wiersz - "kolko" mialo plaski spod. Teraz pasek
+  // 4 px wyzej (y 30..46), galka 26..50 w calosci w wierszu (0..50).
   lv_obj_t *slider = lv_slider_create(wiersz);
   lv_obj_set_size(slider, 324, 16);
-  lv_obj_align(slider, LV_ALIGN_BOTTOM_LEFT, 16, 0);
+  lv_obj_align(slider, LV_ALIGN_BOTTOM_LEFT, 16, -4);
   lv_obj_set_style_pad_right(slider, 12, LV_PART_MAIN);
   lv_slider_set_range(slider, JASNOSC_MIN_PROCENT_LVGL, 100);   // [v1.4.1 C9] bylo 0-100; 0 % gasilo ekran na stale
   lv_obj_set_style_bg_color(slider, rgb565(KOL_RAMKA), LV_PART_MAIN);
@@ -3881,7 +3893,7 @@ static void wyswietlacz_sen_wyglad_odswiez() {
     snprintf(bufor, sizeof(bufor), "%s: %s", i == 0 ? "Przyciemnij po" : "Uśpij po",
              i == 0 ? SEN_PRZYCIEMNIJ_NAZWY[idx] : SEN_USPIJ_NAZWY[idx]);
     ustawNapis(wyswietlaczSenBtnLabel[i], bufor);
-    lv_obj_set_style_bg_color(wyswietlaczSenBtn[i], rgb565(idx != 1 ? KOL_BEZPIECZNA : KOL_KARTA), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(wyswietlaczSenBtn[i], rgb565(idx != 1 ? KOL_WLACZONE : KOL_KARTA), LV_PART_MAIN);   // [v1.5.10] ciemna zielen
   }
 }
 static void wyswietlacz_sen_btn_cb(lv_event_t *e) {
@@ -3920,7 +3932,7 @@ static void wyswietlacz_sen_wiersz_zbuduj(lv_obj_t *rodzic, int y) {
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, "");
     lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
-    lv_obj_set_style_text_color(lbl, rgb565(KOL_TEKST), 0);
+    lv_obj_set_style_text_color(lbl, rgb565(KOL_NAPIS_NA_WLACZONYM), 0);   // [v1.5.10] bialy - czytelny na obu tlach
     lv_obj_center(lbl);
     wyswietlaczSenBtn[i] = btn;
     wyswietlaczSenBtnLabel[i] = lbl;
@@ -3935,7 +3947,7 @@ static void wyswietlacz_sen_wiersz_zbuduj(lv_obj_t *rodzic, int y) {
 static void wyswietlacz_harmonogram_wyglad_odswiez() {
   if (wyswietlaczHarmonogramBtn == nullptr) return;
   lv_obj_set_style_bg_color(wyswietlaczHarmonogramBtn,
-                             rgb565(g_wyswietlaczHarmonogramWlaczony ? KOL_BEZPIECZNA : KOL_KARTA),
+                             rgb565(g_wyswietlaczHarmonogramWlaczony ? KOL_WLACZONE : KOL_KARTA),   // [v1.5.10]
                              LV_PART_MAIN);
   lv_label_set_text(wyswietlaczHarmonogramBtnLabel, g_wyswietlaczHarmonogramWlaczony ? "WŁ." : "WYŁ.");
 }
@@ -4019,7 +4031,8 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
   lv_label_set_text(wyswietlaczWersjeLabel, "Panel -\nCentrala -");
   lv_obj_set_style_text_font(wyswietlaczWersjeLabel, &lv_font_pl_14, 0);
   lv_obj_set_style_text_color(wyswietlaczWersjeLabel, rgb565(KOL_TEKST_DIM), 0);
-  lv_obj_align(wyswietlaczWersjeLabel, LV_ALIGN_TOP_LEFT, 8, 8);
+  // [v1.5.10] 8 -> 14 px od lewej: obudowa zaslania ~10 px ("anel v1.5.9" na zdjeciu 22.11).
+  lv_obj_align(wyswietlaczWersjeLabel, LV_ALIGN_TOP_LEFT, 14, 8);
 
   // Uklad (320 px wysokosci): tytul (y10, font 28, ~34px) -> 2x wiersz
   // jasnosci (50px kazdy, y=48 i y=102) -> 2x wiersz godzin (36px, y=156 i
@@ -4066,7 +4079,7 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
     wyswietlaczHarmonogramBtnLabel = lv_label_create(wyswietlaczHarmonogramBtn);
     lv_label_set_text(wyswietlaczHarmonogramBtnLabel, "WŁ.");
     lv_obj_set_style_text_font(wyswietlaczHarmonogramBtnLabel, &lv_font_pl_14, 0);
-    lv_obj_set_style_text_color(wyswietlaczHarmonogramBtnLabel, rgb565(KOL_TEKST), 0);
+    lv_obj_set_style_text_color(wyswietlaczHarmonogramBtnLabel, rgb565(KOL_NAPIS_NA_WLACZONYM), 0);   // [v1.5.10]
     lv_obj_center(wyswietlaczHarmonogramBtnLabel);
   }
 
@@ -4122,9 +4135,9 @@ static void zasilanie_wyglad_odswiez() {
   // Przycisk "inny niz domyslny" podswietlony jak WL. harmonogramu - widac od
   // progu drzwi, ze panel pracuje w trybie oszczedzania.
   ustawKolorStylu(lv_obj_get_parent(zasilanieCpuBtnLabel), LV_STYLE_BG_COLOR,
-                  rgb565(g_zasilanieCpuIdx != 0 ? KOL_BEZPIECZNA : KOL_KARTA), LV_PART_MAIN);
+                  rgb565(g_zasilanieCpuIdx != 0 ? KOL_WLACZONE : KOL_KARTA), LV_PART_MAIN);   // [v1.5.10] ciemna zielen
   ustawKolorStylu(lv_obj_get_parent(zasilanieTxBtnLabel), LV_STYLE_BG_COLOR,
-                  rgb565(g_zasilanieTxIdx != 0 ? KOL_BEZPIECZNA : KOL_KARTA), LV_PART_MAIN);
+                  rgb565(g_zasilanieTxIdx != 0 ? KOL_WLACZONE : KOL_KARTA), LV_PART_MAIN);
   // Moc jak na przycisku: "19,5 dBm" z przecinkiem (polski zapis), "15 dBm"
   // bez zbednego ",0" - wifi_power_t to cwiartki dBm, tu zaokraglone do 0,5.
   char tx[16];
@@ -4192,7 +4205,7 @@ static lv_obj_t *zasilanie_wiersz_zbuduj(lv_obj_t *rodzic, int y, const char *et
   lv_obj_t *btnLbl = lv_label_create(btn);
   lv_label_set_text(btnLbl, "-");
   lv_obj_set_style_text_font(btnLbl, &lv_font_pl_20, 0);
-  lv_obj_set_style_text_color(btnLbl, rgb565(KOL_TEKST), 0);
+  lv_obj_set_style_text_color(btnLbl, rgb565(KOL_NAPIS_NA_WLACZONYM), 0);   // [v1.5.10]
   lv_obj_center(btnLbl);
   return btnLbl;
 }

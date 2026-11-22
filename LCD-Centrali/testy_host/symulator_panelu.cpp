@@ -1066,7 +1066,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.9"
+#define WERSJA_FW "v1.5.10"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1582,6 +1582,9 @@ static bool wierszSuwakaWGranicach(const char* etykieta, bool zLukiem) {
   const int galkaX2 = torX2 + galkaPromien;
   info("wiersz \"%s\": x=%d..%d, pasek x=%d..%d, galka przy 100%% do x=%d", etykieta, (int)w.x1, (int)w.x2, (int)sa.x1, (int)sa.x2, galkaX2);
   bool ok = galkaX2 <= w.x2 + 1 && sa.x1 >= w.x1;
+  // [v1.5.10] galka wystaje 4 px nad i pod pasek - tez musi zmiescic sie w wierszu (zdjecie: plaski spod kolka)
+  info("galka pionowo y=%d..%d (wiersz y=%d..%d)", (int)sa.y1 - 4, (int)sa.y2 + 4, (int)w.y1, (int)w.y2);
+  ok = ok && sa.y1 - 4 >= w.y1 && sa.y2 + 4 <= w.y2;
   if (zLukiem) {
     lv_obj_t* arc = potomekKlasy(wiersz, &lv_arc_class);
     if (arc == nullptr) { info("brak luku w wierszu \"%s\"", etykieta); return false; }
@@ -5557,7 +5560,7 @@ void scenariuszSenUstawienia() {
   }
   sprawdz(ekranMa("100%"), "domyslna jasnosc w dzien = 100%");
   sprawdz(wierszSuwakaWGranicach("Jasność w dzień", false) && wierszSuwakaWGranicach("Jasność w nocy", false),
-          "suwaki jasnosci: galka przy 100% nie wystaje za pasek ani za wiersz (v1.5.9)");
+          "suwaki jasnosci: galka przy 100% nie wystaje za pasek ani za wiersz, takze w pionie (v1.5.9/v1.5.10)");
   zrzutEkranu("1_wyswietlacz_domyslnie");
 
   // --- przyciemnienie: 1 min -> 2 min ---
