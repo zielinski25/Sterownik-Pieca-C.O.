@@ -95,9 +95,10 @@ którego od v1.4.0 używa aktualizacja); liczy się od końca `setup()`.
 WiFi, pulpit):** ekran 100 % — **110 mA** przy 80 MHz (skoki do 150),
 **117–126 mA** przy 160 MHz (do 140), **130 mA** przy 240 MHz (do 160);
 ekran 5 % — **45–55 mA**; **głęboki sen — 2 mA** (cel był < 10 mA). Skoki to
-nadajnik WiFi. Na jednym ogniwie Cubot (~4150 mAh, licząc ~3500 mAh do progu
-3,30 V): jasny ekran **ok. 30 h** przy 80 MHz (ok. 26 h przy 240 MHz),
-przyciemniony **ok. 3 dni**, we śnie **ok. 2 miesiące**. Taktowanie z ogniwa
+nadajnik WiFi. Docelowe ogniwo (24.11): jedno **5000–5500 mAh** (zamiast
+dwóch z Cubota), licząc ~4300 mAh do progu 3,30 V: jasny ekran **ok. 39 h**
+przy 80 MHz (ok. 33 h przy 240 MHz), przyciemniony **ok. 4 dni**, we śnie
+**ok. 3 miesiące**; ładowanie 1 A (R_PROG 1,2 kΩ = 0,2 C) ok. 6 h. Taktowanie z ogniwa
 robi większą różnicę niż na USB (−20 mA z ogniwa między 240 a 80 MHz);
 ustawia się je na ekranie ZASILANIE i zostaje w NVS; domyślne nadal 240 MHz.
 Dla porównania pomiar z 20.11 testerem USB przed TP4056 (5 V, bez ogniwa):
