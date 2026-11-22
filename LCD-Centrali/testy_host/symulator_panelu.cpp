@@ -1048,7 +1048,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.2"
+#define WERSJA_FW "v1.5.3"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -4867,15 +4867,20 @@ void scenariuszSenUsbNieUsypia() {
   sprawdz(g_atrapa.usnal == 0 && senJasno(), "na USB przez 6,5 min bez dotyku: pelna jasnosc, bez snu");
   sprawdz(!logMa("tag=SEN"), "na USB: zadnej linii tag=SEN");
   sprawdz(logMa("tag=BATERIA napiecie=3.90V", "ladowanie=1"), "wskaznik: ogniwo 3,90 V, laduje sie");
+  sprawdz(ekranMa("USB 64%"), "[v1.5.3] wskaznik z ogniwem i ladowarka: \"USB 64%\" (nie sam kolor)");
+  zrzutEkranu("1_usb_z_ogniwem");
 
   // Ladowarka wyjeta w trakcie: od tej chwili liczy sie bezczynnosc wg LVGL
   // (ostatni dotyk byl dawno) - przyciemnienie przy najblizszym sprawdzeniu, sen
   // nie od razu? Nie: bez dotyku od startu minelo > 5 min, wiec decyzja to sen.
   // Zeby nie zaskoczyc uzytkownika, ktory wlasnie wyjal wtyczke, dotyk zeruje licznik.
   lv_disp_trig_activity(NULL);
+  size_t odWyjecia = g_atrapa.serial.size();
   g_atrapa.gpio[35] = HIGH;
   biegnij(2000);
   sprawdz(g_atrapa.usnal == 0 && senJasno(), "ladowarka wyjeta tuz po dotyku: pracuje jasno");
+  sprawdz(ekranMa("64%") && !ekranMa("USB 64%") && logMa("tag=ZASILANIE zdarzenie=usb_odlaczone napiecie=3.90V", "", "", odWyjecia),
+          "[v1.5.3] 2 s po wyjeciu ladowarki wskaznik juz bez \"USB\" (nie czeka na pomiar co 30 s), log usb_odlaczone");
   biegnij(61000);
   sprawdz(senPrzyciemnione(), "minute pozniej: przyciemnienie (panel juz na baterii)");
 
@@ -4884,6 +4889,7 @@ void scenariuszSenUsbNieUsypia() {
   g_atrapa.gpio[35] = LOW;
   biegnij(1500);
   sprawdz(senJasno() && logMa("tag=SEN zdarzenie=jasnosc powod=usb", "", "", od), "ladowarka wlozona: pelna jasnosc bez dotyku, log powod=usb");
+  sprawdz(ekranMa("USB 64%") && logMa("tag=ZASILANIE zdarzenie=usb_podlaczone", "", "", od), "[v1.5.3] 1,5 s po wlozeniu: \"USB 64%\", log usb_podlaczone");
   biegnij(400000);
   sprawdz(g_atrapa.usnal == 0, "dalej na USB: bez snu");
 

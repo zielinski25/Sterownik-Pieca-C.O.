@@ -7457,8 +7457,10 @@ void lvgl_dashboard_poc_aktualizuj_bateria(int procent, bool ladowanie) {
   else                    kolor = rgb565(KOL_TEKST);
 
   ustawKolorStylu(bateriaWypelnienie, LV_STYLE_BG_COLOR, kolor, 0);
-  char buf[8];
-  snprintf(buf, sizeof(buf), "%d%%", procent);
+  // [v1.5.3] Z ladowarka napis mowi to wprost: "USB 47%" (zielony), nie sam
+  // kolor - user z ogniwem i wpieta ladowarka nie widzial, ze panel ja widzi.
+  char buf[12];
+  snprintf(buf, sizeof(buf), ladowanie ? "USB %d%%" : "%d%%", procent);
   ustawNapis(bateriaEtykieta, buf);
   ustawKolorStylu(bateriaEtykieta, LV_STYLE_TEXT_COLOR, kolor, 0);
 }

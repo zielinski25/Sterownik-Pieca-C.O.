@@ -40,6 +40,17 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.3 - WSKAZNIK ZASILANIA: "USB 47%" I OD RAZU
+//   - Uzytkownik: "lcd jest na baterii mimo podlaczenia usb, nie pokazuje
+//     napisu usb". Z ogniwem wskaznik nigdy nie pisal "USB" - ladowanie
+//     bylo widac tylko po zielonym kolorze procentow. Teraz z ladowarka napis
+//     to "USB 47%" (zielony), bez ladowarki "47%"; bez ogniwa dalej "USB".
+//   - Stan GPIO35 trafia na wskaznik od razu po zmianie (senKrok(), co
+//     sekunde; log tag=ZASILANIE zdarzenie=usb_podlaczone|usb_odlaczone),
+//     a nie dopiero z pomiarem baterii co 30 s.
+//   - Jesli mimo to po wpieciu ladowarki do TP4056 nie ma "USB": GPIO35 nie
+//     jest sciagany do masy - sprawdzic przewod z padow CHRG/STDBY (oba!)
+//     i czy ladowarka jest w TP4056, a nie w gniezdzie USB DevKita.
 // [2026-11-24] v1.5.2 - EKRAN OBROCONY O 180 STOPNI + NAPISY W KAFELKACH
 //   - EKRAN_OBROT 3 (bylo setRotation(1)): panel w obudowie z ogniwem jest
 //     zamontowany zlaczem w lewo - obraz byl do gory nogami (zdjecie z 22.11).
@@ -1142,7 +1153,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.2"; // [2026-11-24] v1.5.2: ekran obrocony o 180 stopni (EKRAN_OBROT 3), napisy w kafelkach dopasowane do szerokosci; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.3"; // [2026-11-24] v1.5.3: wskaznik "USB 47%" z ogniwem i ladowarka, odswiezany od razu po wlozeniu/wyjeciu; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -3954,6 +3965,7 @@ int bateriaNapiecieNaProcent(float v) {
 // odpytywany co sekunde bez potrzeby.
 static float bateriaOstatnieV   = 0.0f;
 static bool  bateriaOstatnioJest = false;   // diag::bateriaObecna(bateriaOstatnieV)
+static int8_t bateriaUsbPokazane = -1;      // [v1.5.3] stan USB na wskazniku (-1 = jeszcze nic); senKrok() odswieza wskaznik od razu po zmianie
 static bool  bateriaZmierzona   = false;    // false do pierwszego pomiaru (od v1.5.0: od razu po starcie)
 
 // [research, ta sesja] Znany bug/pulapka Espressif: jesli pin wybudzajacy
@@ -4094,6 +4106,7 @@ void bateriaKrok() {
     const bool usb = zasilanieUSB();
     Serial.printf("tag=BATERIA napiecie=%.2fV procent=%d ladowanie=%d\n", napiecieBat, procentBat, (int)usb);
     lvgl_dashboard_poc_aktualizuj_bateria(procentBat, usb);
+    bateriaUsbPokazane = usb ? 1 : 0;
   } else {
     if (poprzednioBateriaJest != 0) {
       Serial.printf("tag=BATERIA zdarzenie=brak_ogniwa napiecie=%.2fV prog=%.1fV msg=\"zasilanie z USB, wskaznik pokazuje USB\"\n",
@@ -4133,6 +4146,13 @@ void senKrok() {
   w.bateriaJest  = bateriaOstatnioJest;
   w.zasilanieUsb = zasilanieUSB();
   w.napiecieV    = bateriaOstatnieV;
+  // [v1.5.3] Wlozenie/wyjecie ladowarki widac na wskazniku od razu (co
+  // sekunde), nie dopiero przy nastepnym pomiarze baterii za <= 30 s.
+  if (w.bateriaJest && bateriaUsbPokazane >= 0 && (bateriaUsbPokazane != 0) != w.zasilanieUsb) {
+    bateriaUsbPokazane = w.zasilanieUsb ? 1 : 0;
+    Serial.printf("tag=ZASILANIE zdarzenie=%s napiecie=%.2fV\n", w.zasilanieUsb ? "usb_podlaczone" : "usb_odlaczone", (double)bateriaOstatnieV);
+    lvgl_dashboard_poc_aktualizuj_bateria(bateriaNapiecieNaProcent(bateriaOstatnieV), w.zasilanieUsb);
+  }
   w.bezDotykuMs  = lvgl_dashboard_poc_bez_dotyku_ms();
   w.alarm        = stan.dymAlarm || stan.alarmOgrzewanie || stan.alarmPanel || brzeczykAktywnyTyp != BRZECZYK_BRAK;
   w.ota          = trwaAktualizacjaOtaPanelu || lvgl_dashboard_poc_ota_widoczna();

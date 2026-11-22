@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.2
+# Panel LCD (wyświetlacz CO) — firmware v1.5.3
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,33 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.3
+
+**Wskaźnik zasilania mówi wprost „USB”** (zgłoszenie z 24.11: „LCD jest na
+baterii mimo podłączenia USB, nie pokazuje napisu USB”). Z ogniwem wskaźnik
+nigdy nie pisał „USB” — ładowarkę było widać tylko po zielonym kolorze
+procentów, a stan GPIO35 trafiał na ekran dopiero z pomiarem baterii co 30 s.
+
+| | Było | Jest (v1.5.3) |
+|---|---|---|
+| ogniwo + ładowarka w TP4056 | „47%” na zielono | **„USB 47%”** na zielono |
+| ogniwo, bez ładowarki | „47%” | „47%” (bez zmian) |
+| bez ogniwa | „USB” | „USB” (bez zmian) |
+| włożenie / wyjęcie ładowarki | widać po ≤ 30 s | **po ≤ 1 s** (`tag=ZASILANIE zdarzenie=usb_podlaczone\|usb_odlaczone napiecie=…`) |
+
+**Jeśli po wgraniu nadal nie ma „USB” z ładowarką w TP4056**, to GPIO35 nie
+jest ściągany do masy — sprawdź po kolei: (1) ładowarka jest w gnieździe
+**TP4056**, nie w gnieździe USB DevKita (z DevKita panel działa, ale TP4056
+nic nie widzi → „na baterii”); (2) multimetr na GPIO35: z ładowarką ok.
+0,3 V, bez — 3,3 V; (3) przewód z **obu** padów CHRG i STDBY (ładowanie →
+CHRG nisko; ogniwo pełne → tylko STDBY nisko — jeśli podłączony jest sam
+CHRG, pełne ogniwo da „na baterii”); (4) w logu co 30 s `tag=BATERIA …
+ladowanie=1`.
+
+Testy: scenariusz `sen_usb_nie_usypia` +3 sprawdzenia. Razem 69 scenariuszy,
+772 sprawdzenia, 588 jednostkowych. Zmienione pliki: `src/main.cpp`,
+`src/dashboard_lvgl_poc.cpp`, `testy_host/`.
 
 ## Co zmienia v1.5.2
 
