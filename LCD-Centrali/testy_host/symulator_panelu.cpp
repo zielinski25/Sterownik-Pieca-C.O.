@@ -298,6 +298,7 @@ struct Centrala {
   int dym = 120, klapa = 40, syberka = 60, godzina = 20, minuta = 5, dzien = 10, miesiac = 11, rok = 2026;
   bool pompa = false, dymWlaczony = true, rtcOk = true;
   bool alarmOgrzewanie = false, alarmPanel = false, dymAlarm = false;
+  int deszczStan = 0, deszczMinuty = -1;   // deszcz_stan / deszcz_min (0 = brak, 1 = nadciaga za N min, 2 = pada, koniec za N min / -1)
   unsigned symulacja = 0;   // suma SYM_*: czujniki, ktore centrala podaje jako symulowane
   // liczniki zapytan, ktore do tej centrali dotarly
   int nStatus = 0, nUstawienia = 0, nPost = 0, nInne = 0;
@@ -424,7 +425,7 @@ std::string jsonStatus(const Centrala& c, bool zNan) {
     j += std::string(",\"symulacja_") + NAZWY_SYM[i] + "\":" + tn(aktywna);
     j += std::string(",\"symulacja_") + NAZWY_SYM[i] + "_min\":" + (aktywna ? "60" : "0");
   }
-  j += ",\"serwo_override_min\":0,\"mieszadlo_override_min\":0,\"deszcz_stan\":0,\"deszcz_min\":-1";
+  j += ",\"serwo_override_min\":0,\"mieszadlo_override_min\":0,\"deszcz_stan\":" + std::to_string(c.deszczStan) + ",\"deszcz_min\":" + std::to_string(c.deszczMinuty);
   if (c.symulator) {
     j += ",\"symulator\":true,\"symulator_panel_fw\":\"?\",\"symulator_stacje\":1,";
     j += "\"symulator_heap\":200000,\"symulator_uptime_s\":1234";
@@ -1047,7 +1048,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.1"
+#define WERSJA_FW "v1.5.2"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -5217,6 +5218,112 @@ const char* nazwaCzcionki(const lv_font_t* f) {
 }
 }  // namespace
 
+// --- kafelki: kazdy napis miesci sie w kafelku (v1.5.2) ----------------------
+// Zdjecie z 22.11: ZEWN pokazywal "za 105n" - "za 105m" (deszcz za 105 min)
+// czcionka 28 nie miescil sie w kafelku 114 px. Od v1.5.2 ustawNapisDopasuj()
+// dobiera czcionke 28/20/14 do szerokosci, a napisy o deszczu to pelne
+// slowa. Tu: najgorsze wartosci kazdego kafelka i sprawdzenie, ze kazda
+// etykieta wartosci konczy sie wewnatrz swojego kafelka.
+namespace {
+struct KafelekPomiar { std::string tekst; const lv_font_t* czcionka; int x1, x2, y1, y2, kartaX2, kartaY2; bool miesci; };
+bool kafelekPomiar(const char* prefiks, KafelekPomiar& w) {
+  lv_obj_t* l = znajdzEtykiete(lv_scr_act(), prefiks);
+  if (l == nullptr) return false;
+  lv_obj_update_layout(lv_scr_act());
+  lv_area_t a, k;
+  lv_obj_get_coords(l, &a);
+  lv_obj_get_coords(lv_obj_get_parent(l), &k);
+  w.tekst = lv_label_get_text(l);
+  w.czcionka = lv_obj_get_style_text_font(l, LV_PART_MAIN);
+  w.x1 = a.x1; w.x2 = a.x2; w.y1 = a.y1; w.y2 = a.y2; w.kartaX2 = k.x2; w.kartaY2 = k.y2;
+  // Prawy margines >= 4 px (jak lewy 8 px minus ramka), dol nad krawedzia karty.
+  w.miesci = (a.x2 <= k.x2 - 4) && (a.y2 <= k.y2 - 2) && (a.x1 >= k.x1 + 4);
+  return true;
+}
+bool kafelekSprawdz(const char* prefiks, const char* dokladnie, const lv_font_t* oczekiwana, const char* opis) {
+  KafelekPomiar w;
+  if (!kafelekPomiar(prefiks, w)) { info("brak etykiety \"%s\"", prefiks); sprawdz(false, opis); return false; }
+  info("\"%s\" %s x=%d..%d (karta do %d) y=%d..%d (karta do %d)", w.tekst.c_str(), nazwaCzcionki(w.czcionka), w.x1, w.x2, w.kartaX2, w.y1, w.y2, w.kartaY2);
+  const bool ok = w.miesci && (dokladnie == nullptr || w.tekst == dokladnie) && (oczekiwana == nullptr || w.czcionka == oczekiwana);
+  sprawdz(ok, opis);
+  return ok;
+}
+}  // namespace
+
+void scenariuszKafelkiSzerokosc() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  // Najszersze realne wartosci: ujemne z czescia dziesietna, trzycyfrowe, 100 %, 1013 hPa.
+  ustaw(0, [](Centrala& c) {
+    c.tZewn = -25.5; c.tPokoj = -10.5; c.wilgotnosc = 100; c.cisnienie = 1013.2;
+    c.tBojler = 100; c.tPanel = 100; c.tOgrz = 100; c.tOgrzSr = 100; c.klapa = 100; c.syberka = 100; c.dym = 9999;
+  });
+  setup();
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  zrzutEkranu("1_najszersze_wartosci");
+  kafelekSprawdz("-25.5°C", "-25.5°C", nullptr, "ZEWN -25.5°C miesci sie w kafelku");
+  kafelekSprawdz("-10.5°C", "-10.5°C", nullptr, "POKÓJ -10.5°C miesci sie");
+  kafelekSprawdz("100 %", "100 %", &lv_font_pl_28, "WILGOTNOŚĆ 100 % - czcionka 28");
+  kafelekSprawdz("1013 hPa", "1013 hPa", &lv_font_pl_20, "CIŚNIENIE 1013 hPa - czcionka 20 (jak dotad), miesci sie");
+  kafelekSprawdz("100°C", "100°C", &lv_font_pl_28, "BOJLER 100°C - czcionka 28");
+  // Dolna krawedz tekstu w jednej linii: CISNIENIE (20) dosuniete do dolu wiersza wartosci, jak sasiedzi (28).
+  {
+    KafelekPomiar w28, w20;
+    if (kafelekPomiar("100 %", w28) && kafelekPomiar("1013 hPa", w20)) {
+      info("dol napisu: WILGOTNOŚĆ y2=%d, CIŚNIENIE y2=%d", w28.y2, w20.y2);
+      sprawdz(w20.y2 == w28.y2, "mniejsza czcionka dosunieta do dolu wiersza - ten sam dol co w sasiednim kafelku");
+    }
+  }
+
+  // Deszcz nadciaga za 105 min (to ze zdjecia): od 100 min w godzinach, do pol godziny.
+  ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 105; });
+  biegnij(3000);
+  zrzutEkranu("2_deszcz_za_105_min");
+  sprawdz(!ekranMa("za 105m") && !ekranMa("za 105n"), "nie ma juz skrotu \"za 105m\"");
+  kafelekSprawdz("za 2 h", "za 2 h", &lv_font_pl_28, "ZEWN 105 min -> \"za 2 h\" - czcionka 28, miesci sie");
+  ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 100; });
+  biegnij(3000);
+  kafelekSprawdz("za 1,5 h", "za 1,5 h", nullptr, "100 min -> \"za 1,5 h\" miesci sie");
+  ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 99; });
+  biegnij(3000);
+  kafelekSprawdz("za 99 min", "za 99 min", nullptr, "99 min -> \"za 99 min\" miesci sie");
+  ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 5; });
+  biegnij(3000);
+  kafelekSprawdz("za 5 min", "za 5 min", &lv_font_pl_20, "\"za 5 min\" - czcionka 20, miesci sie");
+  // Pada, koniec za 30 min / za 2 h / nie wiadomo.
+  ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = 30; });
+  biegnij(3000);
+  zrzutEkranu("3_pada_jeszcze_30_min");
+  kafelekSprawdz("jeszcze\n30 min", "jeszcze\n30 min", &lv_font_pl_14, "ZEWN \"jeszcze 30 min\" - w dwoch liniach czcionka 14, miesci sie (tez od dolu)");
+  ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = 120; });
+  biegnij(3000);
+  kafelekSprawdz("jeszcze 2 h", "jeszcze 2 h", nullptr, "ZEWN \"jeszcze 2 h\" w jednej linii, miesci sie");
+  ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = -1; });
+  biegnij(3000);
+  kafelekSprawdz("pada", "pada", &lv_font_pl_28, "ZEWN \"pada\" - czcionka 28");
+  // Po deszczu wraca temperatura w duzej czcionce, na swoim miejscu.
+  ustaw(0, [](Centrala& c) { c.deszczStan = 0; c.deszczMinuty = -1; c.tZewn = 3.5; });
+  biegnij(3000);
+  {
+    KafelekPomiar wZewn, wPokoj;
+    kafelekSprawdz("3.5°C", "3.5°C", &lv_font_pl_28, "po deszczu ZEWN 3.5°C - znow czcionka 28");
+    if (kafelekPomiar("3.5°C", wZewn) && kafelekPomiar("-10.5°C", wPokoj))
+      sprawdz(wZewn.y1 == wPokoj.y1 && wZewn.y2 == wPokoj.y2, "wartosc ZEWN wrocila na te sama wysokosc co POKÓJ");
+  }
+  zrzutEkranu("4_po_deszczu");
+
+  // DYM 9999 i SERWO "Klapa 100%" na tym samym pulpicie.
+  {
+    KafelekPomiar w;
+    if (kafelekPomiar("9999", w)) { info("DYM \"%s\" %s x=%d..%d (karta do %d)", w.tekst.c_str(), nazwaCzcionki(w.czcionka), w.x1, w.x2, w.kartaX2); sprawdz(w.miesci, "DYM 9999 miesci sie"); }
+    else sprawdz(false, "DYM 9999 na pulpicie");
+    sprawdz(ekranMa("Klapa 100%\nSyberka 100%"), "SERWO: Klapa 100% / Syberka 100%");
+  }
+  // Log kalibracji dotyku z pamieci: panel sprzed v1.5.2 (bez klucza obrot) na ekranie obroconym o 180 stopni.
+  sprawdz(logMa("tag=DOTYK zdarzenie=kalibracja_z_pamieci obrot_kalibracji=1 obrot_ekranu=3 odwrocony=1"),
+          "log: kalibracja z pamieci z obrotu 1, ekran w obrocie 3 -> dotyk odwrocony");
+}
+
 void scenariuszPolskieLitery() {
   const lv_font_t* const CZCIONKI[3] = {&lv_font_pl_14, &lv_font_pl_20, &lv_font_pl_28};
   static const char* const POLSKIE = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ";
@@ -5640,6 +5747,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"ota_ten_sam_plik", "OTA: centrala oferuje plik, z ktorego panel juz pracuje - nic nie jest wgrywane (v1.4.0)", scenariuszOtaTenSamPlik},
     {"ota_status_milczy", "OTA: centrala nie odpowiada na status, ale plik idzie - pobieranie nie jest przerywane (v1.4.0)", scenariuszOtaStatusMilczy},
     {"ota_bez_identyfikatora", "OTA: panel nie zna sumy wlasnego programu - aktualizacja przez centrale wylaczona (v1.4.0)", scenariuszOtaBezIdentyfikatora},
+    {"kafelki_szerokosc", "kafelki (v1.5.2): najszersze wartosci i napisy o deszczu mieszcza sie w kafelkach, czcionka 28/20/14 dobierana sama", scenariuszKafelkiSzerokosc},
     {"polskie_litery", "polskie litery na ekranie: czcionki lv_font_pl_14/20/28, glif dla kazdego znaku, napisy z ogonkami (v1.4.5)", scenariuszPolskieLitery},
     {"wersje_na_ekranie", "wersje panelu i centrali: ekran startowy, ekran WYSWIETLACZ, log tag=PANEL, kafelek WYSWIETLACZ bez obciecia (v1.4.6)", scenariuszWersjeNaEkranie},
     {"zasilanie", "ekran ZASILANIE: taktowanie 240/160/80 MHz i moc nadajnika 19,5/15/11/8,5 dBm - domyslnie bez zmian, zapis w NVS, odczyt, ostrzezenie przy slabym sygnale (v1.4.7)", scenariuszZasilanie},

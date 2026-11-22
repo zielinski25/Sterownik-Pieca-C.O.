@@ -1469,4 +1469,15 @@ inline bool senZNapisem(const char* powod) {
   return powod != nullptr && strncmp(powod, "bateria_", 8) == 0;
 }
 
+// --- [v1.5.2] Obrot ekranu a kalibracja dotyku -------------------------------
+// Ekran jest poziomy (480x320) w obrocie TFT_eSPI 1 albo 3 (ten sam uklad
+// obrocony o 180 stopni; EKRAN_OBROT w main.cpp). Kalibracja dotyku w NVS
+// pochodzi z orientacji, w ktorej rysowano znaczniki (klucz dotyk/obrot;
+// panele sprzed v1.5.2 nie maja klucza = obrot 1). Gdy obrot ekranu jest
+// inny niz obrot kalibracji, piksel z kalibracji trzeba obrocic o 180 stopni
+// - obie osie - zamiast kazac kalibrowac od nowa.
+static constexpr int EKRAN_SZER = 480, EKRAN_WYS = 320;
+inline bool dotykTrzebaOdwrocic(int obrotKalibracji, int obrotEkranu) { return obrotKalibracji != obrotEkranu; }
+inline void dotykObroc180(long& x, long& y) { x = EKRAN_SZER - 1 - x; y = EKRAN_WYS - 1 - y; }
+
 }  // namespace diag

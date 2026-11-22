@@ -256,6 +256,46 @@ static void ustawNapis(lv_obj_t *obj, const char *tekst) {
   if (teraz != nullptr && strcmp(teraz, tekst) == 0) return;
   lv_label_set_text(obj, tekst);
 }
+// [v1.5.2] Wartosc kafelka z automatycznym doborem czcionki. Kafelki
+// kafelek() maja kw=114 px, wartosc zaczyna sie 8 px od lewej - zostaje
+// KAFELEK_WARTOSC_MAX_SZER px. Do tej pory kazdy format dobierano recznie
+// ("1013 hPa" -> font 20, patrz CISNIENIE) i mimo to "za 105m" (deszcz za
+// 105 min) wychodzilo poza kafelek (zdjecie z 22.11: "za 105n"). Teraz:
+// probujemy 28, potem 20, potem 14 - pierwsza czcionka, w ktorej napis sie
+// miesci, wygrywa; mniejsza czcionka jest dosuwana do DOLU tego samego
+// 30-pikselowego wiersza (y=52..82, patrz kafelek()), zeby linia bazowa
+// zostala w jednej linii z sasiednimi kafelkami. Scenariusz
+// kafelki_szerokosc (testy_host) sprawdza najgorsze przypadki kazdego
+// kafelka.
+static const int KAFELEK_WARTOSC_X = 8, KAFELEK_WARTOSC_Y = 52;
+static const int KAFELEK_WARTOSC_MAX_SZER = 114 - KAFELEK_WARTOSC_X - 6;
+static const lv_font_t* kafelekWartoscCzcionka(const char *tekst, int maxSzer) {
+  static const lv_font_t* const FONTY[] = { &lv_font_pl_28, &lv_font_pl_20, &lv_font_pl_14 };
+  for (const lv_font_t* f : FONTY)
+    if (lv_txt_get_width(tekst, (uint32_t)strlen(tekst), f, 0, LV_TEXT_FLAG_NONE) <= maxSzer) return f;
+  return nullptr;   // nie miesci sie w jednej linii nawet czcionka 14
+}
+static void ustawNapisDopasuj(lv_obj_t *obj, const char *tekst, int maxSzer = KAFELEK_WARTOSC_MAX_SZER) {
+  if (obj == nullptr || tekst == nullptr) return;
+  const lv_font_t* f = kafelekWartoscCzcionka(tekst, maxSzer);
+  char dwieLinie[32];
+  bool dwie = false;
+  if (f == nullptr) {
+    // Ostatnia deska ratunku: dwie linie czcionka 14 (2 x 17 px = 34 px,
+    // wiersz wartosci + 3 px zapasu nad dolem karty), lamane na pierwszej
+    // spacji ("jeszcze 30 min" -> "jeszcze" / "30 min").
+    f = &lv_font_pl_14;
+    snprintf(dwieLinie, sizeof(dwieLinie), "%s", tekst);
+    char* spacja = strchr(dwieLinie, ' ');
+    if (spacja != nullptr) { *spacja = '\n'; tekst = dwieLinie; dwie = true; }
+  }
+  if (lv_obj_get_style_text_font(obj, LV_PART_MAIN) != f) lv_obj_set_style_text_font(obj, f, 0);
+  // Wiersz wartosci ma wysokosc czcionki 28; mniejsza czcionka w jednej
+  // linii schodzi na jego dol, dwie linie zaczynaja sie od gory wiersza.
+  const int y = KAFELEK_WARTOSC_Y + (dwie ? 0 : (int)lv_font_get_line_height(&lv_font_pl_28) - (int)lv_font_get_line_height(f));
+  if (lv_obj_get_style_y(obj, LV_PART_MAIN) != y) lv_obj_align(obj, LV_ALIGN_TOP_LEFT, KAFELEK_WARTOSC_X, y);
+  ustawNapis(obj, tekst);
+}
 // Porownanie po wlasciwym polu unii lv_style_value_t (nie memcmp): przy
 // LV_COLOR_DEPTH=16 kolor ma 2 bajty, a unia 4 - reszta moze byc smieciem.
 static void ustawKolorStylu(lv_obj_t *obj, lv_style_prop_t prop, lv_color_t kolor, lv_style_selector_t selektor = 0) {
@@ -1631,7 +1671,7 @@ static lv_obj_t *kafelek(lv_obj_t *parent, int x, int y, int w, int h,
   lv_label_set_text(val, wartosc);
   lv_obj_set_style_text_color(val, rgb565(KOL_TEKST), 0);
   lv_obj_set_style_text_font(val, &lv_font_pl_28, 0);
-  lv_obj_align(val, LV_ALIGN_TOP_LEFT, 8, 52);
+  lv_obj_align(val, LV_ALIGN_TOP_LEFT, KAFELEK_WARTOSC_X, KAFELEK_WARTOSC_Y);   // [v1.5.2] ustawNapisDopasuj() moze zmniejszyc czcionke
 
   if (ikona != nullptr) {
     lv_obj_t *img = lv_img_create(card);
@@ -7160,13 +7200,10 @@ void lvgl_dashboard_poc_init() {
   if (cisnienieIkonaUchwyt != nullptr) {
     lv_obj_align(cisnienieIkonaUchwyt, LV_ALIGN_TOP_RIGHT, -4, 12);
   }
-  // [Partia 4, ta sesja] Mniejszy font (20 zamiast domyslnych 28 z
-  // kafelek()) TYLKO dla wartosci CISNIENIE - "1013 hPa" przy foncie 28 nie
-  // miescilo sie w karcie (patrz komentarz przy formatowaniu w
-  // lvgl_dashboard_poc_aktualizuj()). cisnienieValLabel to wskaznik
-  // zwrocony przez kafelek() (val label), wiec zwykly override stylu po
-  // stworzeniu - bez zmian w samej funkcji kafelek().
-  lv_obj_set_style_text_font(cisnienieValLabel, &lv_font_pl_20, 0);
+  // [Partia 4, ta sesja] "1013 hPa" przy foncie 28 nie miescilo sie w karcie
+  // - byl tu reczny override na font 20. [v1.5.2] Usuniety: ustawNapisDopasuj()
+  // w lvgl_dashboard_poc_aktualizuj() dobiera czcionke sam, dla KAZDEGO
+  // kafelka, i dosuwa mniejszy napis do dolu wiersza wartosci.
 
   // --- rzad 1: BOJLER, PANEL, PIEC CO/SR, POMPA ---
   // [24] BOJLER: v1 (jeden kolor, cienka fala) byla nieczytelna na LCD.
@@ -7853,6 +7890,19 @@ static void dym_ikona_odswiez(int dym, bool dymAlarm) {
   }
 }
 
+// [v1.5.2] Czas do deszczu / do konca deszczu jako krotki napis: ponizej 100
+// min w minutach ("45 min"), od 100 min w godzinach zaokraglonych do pol
+// godziny ("1,5 h", "2 h", "2,5 h").
+static const char* deszczCzasNapis(int minuty, char* bufor, size_t n) {
+  if (minuty < 100) snprintf(bufor, n, "%d min", minuty);
+  else {
+    const int polgodzin = (minuty + 15) / 30;
+    if (polgodzin % 2 == 0) snprintf(bufor, n, "%d h", polgodzin / 2);
+    else snprintf(bufor, n, "%d,5 h", polgodzin / 2);
+  }
+  return bufor;
+}
+
 void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
                                     float tOgrz, float tOgrzSr, float tPanel,
                                     bool pompaWlaczona, int pompaOverrideMin,
@@ -7962,10 +8012,19 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // pompaOverrideMin (kafelek POMPA) - krotszy niz "100.0°C", wiec komfortowo
   // miesci sie bez zmiany czcionki. deszczStan==0 -> zero zmiany zachowania
   // (dokladnie ten sam kod co przed ta funkcjonalnoscia).
+  // [v1.5.2] Pelne slowa zamiast "za 105m"/"kon 30m" (user, zdjecie z
+  // 22.11: "za 105m" nie miescilo sie w kafelku): "za 45 min", "za 2 h",
+  // "jeszcze 30 min", "jeszcze 1,5 h", "pada". Od 100 min w godzinach
+  // zaokraglonych do pol godziny (deszczCzasNapis()) - "za 105 min" nie
+  // miesci sie nawet czcionka 20, a prognoza i tak nie jest dokladniejsza.
+  // ustawNapisDopasuj() dobiera czcionke do szerokosci ("jeszcze 30 min"
+  // nie miesci sie w jednej linii - idzie w dwoch, czcionka 14).
   if (deszczStan == 1) {
-    snprintf(bufor, sizeof(bufor), "za %dm", deszczMinuty);
+    char czas[12];
+    snprintf(bufor, sizeof(bufor), "za %s", deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
   } else if (deszczStan == 2) {
-    if (deszczMinuty >= 0) snprintf(bufor, sizeof(bufor), "kon %dm", deszczMinuty);
+    char czas[12];
+    if (deszczMinuty >= 0) snprintf(bufor, sizeof(bufor), "jeszcze %s", deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
     else snprintf(bufor, sizeof(bufor), "pada");
   } else {
     // [FIX tej sesji] User: "dodaj do wszystkich wartosci temp znaczek stopni,
@@ -7979,7 +8038,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
     // ze kazdy znak kazdej etykiety ma glif.
     snprintf(bufor, sizeof(bufor), "%.1f°C", tZewn);
   }
-  ustawNapis(zewnValLabel, bufor);
+  ustawNapisDopasuj(zewnValLabel, bufor);
   zewn_ikona_odswiez(tZewn, deszczStan);
 
   // [Partia 4, ta sesja] User na zywym sprzecie: "temp boilera i pieca ma
@@ -7988,7 +8047,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // miejsca ma - te dwa kafelki nie maja obok siebie drugiej wartosci jak
   // PIEC CO/SR).
   snprintf(bufor, sizeof(bufor), "%.0f°C", tBojler);
-  ustawNapis(bojlerValLabel, bufor);
+  ustawNapisDopasuj(bojlerValLabel, bufor);
 
   snprintf(bufor, sizeof(bufor), "%d", dym);
   ustawNapis(dymValLabel, bufor);
@@ -8002,7 +8061,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // dotyczy tez tego kafelka bo uzywa tego samego wzorca kafelek()).
   if (panelValLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%.0f°C", tPanel);
-    ustawNapis(panelValLabel, bufor);
+    ustawNapisDopasuj(panelValLabel, bufor);
   }
 
   if (ogrzSredniaLabel != nullptr) {
@@ -8014,11 +8073,11 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // tresciKafelka() starego dashboardu (String(x,1)/(x,0) + jednostka).
   if (pokojValLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%.1f°C", tPokoj);
-    ustawNapis(pokojValLabel, bufor);
+    ustawNapisDopasuj(pokojValLabel, bufor);
   }
   if (wilgotnoscValLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%.0f %%", wilgotnosc);
-    ustawNapis(wilgotnoscValLabel, bufor);
+    ustawNapisDopasuj(wilgotnoscValLabel, bufor);
   }
   if (cisnienieValLabel != nullptr) {
     // [Partia 4, ta sesja] User na zywym sprzecie: "cisnienie jest aby h a
@@ -8031,7 +8090,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
     // font (20 zamiast 28) dla TEJ jednej etykiety - "1013 hPa" mieści się
     // w calosci.
     snprintf(bufor, sizeof(bufor), "%.0f hPa", cisnienie);
-    ustawNapis(cisnienieValLabel, bufor);
+    ustawNapisDopasuj(cisnienieValLabel, bufor);   // [v1.5.2] sam wybierze 20 (jak dotad recznie)
   }
   if (klapaValLabel != nullptr) {
     snprintf(bufor, sizeof(bufor), "%d %%", klapa);

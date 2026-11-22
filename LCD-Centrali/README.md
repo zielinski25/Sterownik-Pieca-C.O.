@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.1
+# Panel LCD (wyświetlacz CO) — firmware v1.5.2
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,31 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.2
+
+**Ekran obrócony o 180° i napisy, które mieszczą się w kafelkach** (dwie
+uwagi z 22.11, zdjęcie panelu w obudowie z ogniwem). Centrala bez zmian.
+
+| Uwaga | Jest (v1.5.2) |
+|---|---|
+| obraz do góry nogami (panel w obudowie zamontowany złączem w lewo) | `EKRAN_OBROT 3` w `main.cpp` (było `setRotation(1)`). **Kalibracja dotyku z pamięci zostaje** — panel pamięta, w jakiej orientacji ją zrobiono (klucz NVS `dotyk/obrot`, brak = 1), i przy innym obrocie ekranu obraca dotknięcie o 180° (`tag=DOTYK zdarzenie=kalibracja_z_pamieci obrot_kalibracji=1 obrot_ekranu=3 odwrocony=1`). Nowa kalibracja zapisuje bieżący obrót. Gdyby inny egzemplarz stał „normalnie”, wystarczy `EKRAN_OBROT 1` |
+| „za 105m” w kafelku ZEWN ucięte („za 105n”) | **każda wartość kafelka dobiera sobie czcionkę** 28 → 20 → 14 do szerokości (a w ostateczności łamie na dwie linie); mniejsza czcionka siedzi na dole wiersza wartości, w jednej linii z sąsiadami. Napisy o deszczu pełnymi słowami: **„za 45 min”, „za 2 h”** (od 100 min w godzinach, do pół godziny), **„jeszcze 30 min”** (dwie linie), **„jeszcze 1,5 h”, „pada”**. Dotychczasowy ręczny wyjątek dla „1013 hPa” (czcionka 20) wychodzi z tej samej reguły |
+
+Sprawdzone najszersze wartości każdego kafelka: `-25.5°C`, `-10.5°C`,
+`100 %`, `1013 hPa`, `100°C`, `ŚR 100°C`, `9999`, `Klapa 100% / Syberka 100%`.
+
+**Testy na PC**: 9 sprawdzeń jednostkowych obrotu dotyku (`dotykTrzebaOdwrocic`,
+`dotykObroc180`) i scenariusz `kafelki_szerokosc` (18 sprawdzeń, zrzuty
+ekranu z każdym napisem o deszczu). Razem 69 scenariuszy, 769 sprawdzeń,
+588 jednostkowych.
+
+**Z v1.5.1 na v1.5.2** zmieniają się: `src/main.cpp`,
+`src/diagnostyka_panelu.h`, `src/dashboard_lvgl_poc.cpp`, `testy_host/`.
+**Po wgraniu sprawdź**: obraz prosto; dotknięcie kafelka POMPA otwiera POMPA
+(nie kafelek po przekątnej) — jeśli trafia w zły róg, w logu przy starcie
+jest linia `tag=DOTYK …`; gdyby jej nie było albo dotyk dalej był odbity,
+skasuj kalibrację (NVS `dotyk`) i zrób ją od nowa — zapisze się już z obrotem.
 
 ## Co zmienia v1.5.1
 

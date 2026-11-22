@@ -1243,7 +1243,28 @@ static void testSen() {
   }
 }
 
+// [v1.5.2] Obrot ekranu (EKRAN_OBROT 3) a kalibracja dotyku z obrotu 1.
+static void testDotykObrot() {
+  using namespace diag;
+  SPRAWDZ(!dotykTrzebaOdwrocic(1, 1));
+  SPRAWDZ(dotykTrzebaOdwrocic(1, 3));
+  SPRAWDZ(!dotykTrzebaOdwrocic(3, 3));
+  SPRAWDZ(dotykTrzebaOdwrocic(3, 1));
+  long x = 0, y = 0;
+  dotykObroc180(x, y);
+  SPRAWDZ(x == 479 && y == 319);
+  x = 479; y = 319; dotykObroc180(x, y);
+  SPRAWDZ(x == 0 && y == 0);
+  x = 30; y = 30; dotykObroc180(x, y);
+  SPRAWDZ(x == 449 && y == 289);
+  x = 240; y = 160; dotykObroc180(x, y);
+  SPRAWDZ(x == 239 && y == 159);
+  x = 100; y = 200; dotykObroc180(x, y); dotykObroc180(x, y);
+  SPRAWDZ(x == 100 && y == 200);
+}
+
 int main() {
+  testDotykObrot();
   testSen();
   testRytmUstawien();
   testFiltrStatusu();

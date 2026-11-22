@@ -40,6 +40,23 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.2 - EKRAN OBROCONY O 180 STOPNI + NAPISY W KAFELKACH
+//   - EKRAN_OBROT 3 (bylo setRotation(1)): panel w obudowie z ogniwem jest
+//     zamontowany zlaczem w lewo - obraz byl do gory nogami (zdjecie z 22.11).
+//     Kalibracja dotyku z NVS zostaje: klucz dotyk/obrot mowi, w jakiej
+//     orientacji ja robiono (brak klucza = 1, panele sprzed v1.5.2);
+//     przy innym obrocie ekranu dotykOdczytaj() obraca piksel o 180 stopni
+//     (diag::dotykObroc180). Nowa kalibracja zapisuje obrot=EKRAN_OBROT.
+//     Log: tag=DOTYK zdarzenie=kalibracja_z_pamieci obrot_kalibracji=1
+//     obrot_ekranu=3 odwrocony=1.
+//   - KAFELKI (dashboard_lvgl_poc.cpp): "za 105m" (deszcz za 105 min) nie
+//     miescil sie w kafelku ZEWN. ustawNapisDopasuj() dobiera czcionke
+//     28/20/14 do szerokosci kazdej wartosci kafelka (a w ostatecznosci
+//     lamie na dwie linie), mniejsza czcionka siedzi na dole wiersza
+//     wartosci. Napisy o deszczu pelnymi slowami: "za 45 min", "za 2 h"
+//     (od 100 min do pol godziny), "jeszcze 30 min", "jeszcze 1,5 h", "pada".
+//     Scenariusz kafelki_szerokosc sprawdza najszersze wartosci kazdego
+//     kafelka (-25.5°C, 1013 hPa, 100 %, 9999, Klapa 100%).
 // [2026-11-24] v1.5.1 - SEN: TRZY UWAGI Z PLYTKI (uzytkownik, po wgraniu v1.5.0)
 //   - PO WYBUDZENIU PRZYCISKIEM OD RAZU KAFELKI: ekran startowy ("WYSWIETLACZ
 //     CO / Panel vX / Laczenie z WiFi / Centrala vY") tylko przy starcie
@@ -1125,7 +1142,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.1"; // [2026-11-24] v1.5.1: po wybudzeniu od razu pulpit; pierwsze dotkniecie przyciemnionego ekranu tylko rozjasnia; czasy przyciemnienia/snu na ekranie WYSWIETLACZ; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.2"; // [2026-11-24] v1.5.2: ekran obrocony o 180 stopni (EKRAN_OBROT 3), napisy w kafelkach dopasowane do szerokosci; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1174,6 +1191,16 @@ Preferences kalibracja;   // NVS namespace "dotyk" — kalibracja XPT2046
 #define TOUCH_SWAP_XY   0
 #define TOUCH_INVERT_X  0
 #define TOUCH_INVERT_Y  0
+
+// [v1.5.2] Orientacja ekranu (TFT_eSPI setRotation): 1 = pozioma 480x320 ze
+// zlaczem po prawej (tak byl kalibrowany kazdy dotychczasowy panel), 3 = ta
+// sama pozioma obrocona o 180 stopni. Panel w obudowie z ogniwem (24.11) ma
+// zlacze po lewej, wiec 3. Kalibracja dotyku z NVS jest z orientacji, w
+// ktorej ja zrobiono (klucz dotyk/obrot; brak klucza = 1) - przy innej
+// orientacji ekranu dotykOdczytaj() odwraca obie osie, zeby nie trzeba
+// bylo kalibrowac od nowa po samej zmianie tej stalej.
+#define EKRAN_OBROT 3
+static bool dotykOdwrocony = false;   // kalibracja z obrotu 1, ekran w obrocie 3 (albo odwrotnie)
 
 struct KalibracjaDotyku {
   uint16_t rawXA, rawYA;  // surowy odczyt w punkcie A (gorny-lewy znacznik)
@@ -1294,6 +1321,7 @@ bool dotykOdczytaj(int16_t &px, int16_t &py) {
 
   if (TOUCH_INVERT_X) x = 480 - x;
   if (TOUCH_INVERT_Y) y = 320 - y;
+  if (dotykOdwrocony) diag::dotykObroc180(x, y);   // [v1.5.2] ekran obrocony o 180 stopni wzgledem kalibracji
 
   px = constrain(x, 0, 479);
   py = constrain(y, 0, 319);
@@ -3307,6 +3335,12 @@ void kalibrujDotykJesliTrzeba() {
     kalDotyku.rawYA = kalibracja.getUShort("rawYA", 0);
     kalDotyku.rawXB = kalibracja.getUShort("rawXB", 0);
     kalDotyku.rawYB = kalibracja.getUShort("rawYB", 0);
+    // [v1.5.2] Orientacja, w ktorej zrobiono te kalibracje (panele sprzed
+    // v1.5.2 nie maja klucza - byly kalibrowane w obrocie 1).
+    const uint8_t obrotKalibracji = kalibracja.getUChar("obrot", 1);
+    dotykOdwrocony = diag::dotykTrzebaOdwrocic(obrotKalibracji, EKRAN_OBROT);
+    Serial.printf("tag=DOTYK zdarzenie=kalibracja_z_pamieci obrot_kalibracji=%u obrot_ekranu=%d odwrocony=%d\n",
+                  obrotKalibracji, EKRAN_OBROT, dotykOdwrocony ? 1 : 0);
   } else {
     tft.fillScreen(KOL_TLO);
     tft.setTextDatum(MC_DATUM);
@@ -3385,6 +3419,8 @@ void kalibrujDotykJesliTrzeba() {
     kalibracja.putUShort("rawYA", kalDotyku.rawYA);
     kalibracja.putUShort("rawXB", kalDotyku.rawXB);
     kalibracja.putUShort("rawYB", kalDotyku.rawYB);
+    kalibracja.putUChar("obrot", EKRAN_OBROT);   // [v1.5.2] znaczniki byly rysowane w tej orientacji
+    dotykOdwrocony = false;
   }
   kalibracja.end();
 }
@@ -4840,7 +4876,7 @@ void setup() {
 
   touchInicjalizujPiny();
   tft.init();
-  tft.setRotation(1);   // 1 = landscape 480x320 (podmien na 3 jesli obraz odwrocony)
+  tft.setRotation(EKRAN_OBROT);   // [v1.5.2] 3 = pozioma 480x320 obrocona o 180 stopni (zlacze po lewej); bylo 1
   tft.fillScreen(KOL_TLO);
 
   // [FIX-TFT-BL-HOLD, ta sesja] Odblokuj pin TFT_BL PRZED ledcAttach() -
