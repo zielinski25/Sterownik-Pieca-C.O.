@@ -91,16 +91,20 @@ Progi są w `src/diagnostyka_panelu.h`, sekcja `[v1.5.0 SEN]`
 Licznik bezczynności prowadzi LVGL (`lv_disp_get_inactive_time()`, ten sam,
 którego od v1.4.0 używa aktualizacja); liczy się od końca `setup()`.
 
-**Czego się spodziewać na płytce** (pomiary z 20.11, tester USB przed
-TP4056, 5 V, WiFi włączone): ekran 100 % **238 mA**, ekran 5 % **157 mA**,
-brzęczyk ciągły **+7 mA**, szczyt przy starcie < 260 mA. We śnie: wg starego
-pomiaru 0,11 mA sam ESP32 + ekran; do tego AMS1117 DevKita (~5 mA), dioda
-zasilania DevKita (1,5–2 mA) i MT3608 bez obciążenia — realnie **kilka mA
-z ogniwa**, do zmierzenia multimetrem (200 mA) szeregowo w OUT+ TP4056 →
-VIN+ MT3608, cel < 10 mA. Na jednym ogniwie Cubot (~4150 mAh): ok. 12 h z
-jasnym ekranem, ok. 18 h przyciemniony, we śnie — tygodnie. Taktowanie
-**160 MHz** (−11 mA) ustawia się na ekranie ZASILANIE i zostaje w NVS;
-domyślne 240 MHz bez zmian.
+**Pomiary z ogniwa (24.11, multimetr szeregowo w OUT+ TP4056 → VIN+ MT3608,
+WiFi, pulpit):** ekran 100 % — **110 mA** przy 80 MHz (skoki do 150),
+**117–126 mA** przy 160 MHz (do 140), **130 mA** przy 240 MHz (do 160);
+ekran 5 % — **45–55 mA**; **głęboki sen — 2 mA** (cel był < 10 mA). Skoki to
+nadajnik WiFi. Na jednym ogniwie Cubot (~4150 mAh, licząc ~3500 mAh do progu
+3,30 V): jasny ekran **ok. 30 h** przy 80 MHz (ok. 26 h przy 240 MHz),
+przyciemniony **ok. 3 dni**, we śnie **ok. 2 miesiące**. Taktowanie z ogniwa
+robi większą różnicę niż na USB (−20 mA z ogniwa między 240 a 80 MHz);
+ustawia się je na ekranie ZASILANIE i zostaje w NVS; domyślne nadal 240 MHz.
+Dla porównania pomiar z 20.11 testerem USB przed TP4056 (5 V, bez ogniwa):
+ekran 100 % 254/243/234 mA przy 240/160/80 MHz, ekran 5 % 157 mA, brzęczyk
++7 mA — te liczby są 2–3× wyższe, niż wynika z pomiaru z ogniwa po
+przeliczeniu mocy, więc jeden z przyrządów zawyża albo zaniża; do
+rozstrzygnięcia jednym miernikiem po obu stronach.
 
 **Testy na PC** (`testy_host/uruchom_testy.sh`): 24 nowe sprawdzenia
 jednostkowe `senDecyzja()` i 6 scenariuszy `sen_*` (55 sprawdzeń): minuta →

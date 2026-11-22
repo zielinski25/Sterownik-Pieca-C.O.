@@ -70,7 +70,7 @@ ekran — ten kod jest w pliku, tylko nikt go nie woła (`main.cpp:4392–4576`,
 | Kiedy nie zasypia | gdy podłączone jest ładowanie USB |
 | Jak się budzi | przyciskiem na wyjściu 14 |
 | Co robi przed snem | gasi podświetlenie, usypia sterownik ekranu, trzyma pin podświetlenia w stanie niskim |
-| Ile bierze we śnie | ok. 0,11 mA — pomiar zapisany w kodzie (`main.cpp:4539–4540`) |
+| Ile bierze we śnie | ok. 0,11 mA sam ESP32 — pomiar zapisany w kodzie (`main.cpp:4539–4540`); **z ogniwa, cały zestaw (24.11): 2 mA** |
 
 Trzy rzeczy bym dodał:
 
@@ -94,9 +94,10 @@ pod LVGL:
 | Pierwszy pomiar baterii | od razu po starcie (było: po 30 s) |
 
 Testy na PC: 6 scenariuszy `sen_*` i 24 sprawdzenia `senDecyzja()`.
-**Czeka na płytce:** pobór we śnie z ogniwa (cel < 10 mA; sam ESP32 0,11 mA,
-reszta to AMS1117 i dioda POWER DevKita) — lista kontrolna w
-`docs/schemat-zasilania/README.md`, „Sprawdzenie v1.5.0”.
+**Zmierzone na płytce 24.11** (multimetr szeregowo OUT+ TP4056 → VIN+
+MT3608): we śnie **2 mA** (cel < 10 mA), ekran 5 % 45–55 mA, ekran 100 %
+110 mA przy 80 MHz / 130 mA przy 240 MHz — lista kontrolna w
+`docs/schemat-zasilania/README.md`, „Sprawdzenie v1.5.0 / v1.5.1”.
 
 ---
 
@@ -547,10 +548,10 @@ testy na PC i próba na płytce.
 | 0 | Hasła | prywatny plik |
 | 1 | **Małe i pewne:** przypięcie wersji; zrzut awarii, nieudane prośby o pamięć i zapas stosu w logu; watchdog w kalibracji; limit odpowiedzi; sprawdzenie `malloc`; zabezpieczenie tabeli ustawień; `WiFi.persistent(false)`; dolna granica jasności | C2, A5, C3, A4, A6, C5, B8, C9 |
 | 2 | **Rysuj tylko zmiany.** Sprawdzian: `pomiar_obciazenia.sh`, stan A blisko zera | B2 |
-| 3 | **Usypianie na baterii jak dawniej** + próg słabej baterii — **zrobione w v1.5.0** (1 min → 5 %, 5 min → sen, budzenie przyciskiem/ładowarką, < 3,30 V sen z napisem, nigdy w alarmie/OTA/na USB). Czeka: pomiar poboru we śnie na płytce | B1, B5, 14 |
+| 3 | **Usypianie na baterii jak dawniej** + próg słabej baterii — **zrobione w v1.5.0** (1 min → 5 %, 5 min → sen, budzenie przyciskiem/ładowarką, < 3,30 V sen z napisem, nigdy w alarmie/OTA/na USB). **Pomiar 24.11: we śnie 2 mA z ogniwa**, ekran 5 % 45–55 mA. v1.5.1: pulpit od razu po wybudzeniu, pierwsze dotknięcie tylko rozjaśnia, czasy na ekranie WYŚWIETLACZ | B1, B5, 14 |
 | 4 | **Polecenia nie giną** + przerwanie pętli restartów bez centrali — **zrobione w v1.4.2** (B6 przeniesione tu z kroku 3, bo nie wymaga sprzętu) | C4, B6 |
 | 5 | Ustawienia pobierane wtedy, gdy potrzebne; filtr JSON — **zrobione w v1.4.3** (42 → 31 połączeń/min, 5 506 → 2 760 próśb o pamięć/min) | B4, A2 |
-| 6 | 80 MHz i moc nadajnika — **przełączniki w v1.4.7** (ekran ZASILANIE: 240/160/80 MHz, 19,5/15/11/8,5 dBm, odczyt RSSI/MHz/dBm, zapis w NVS; domyślnie bez zmian). **Pomiar 20.11** (tester USB przed TP4056, 5 V, bez ogniwa, WiFi, pulpit bez zmian): ekran 100 % — **254 / 243 / 234 mA** przy 240 / 160 / 80 MHz; ekran 5 % — **157 mA**; brzęczyk ciągły +7 mA; szczyt przy starcie < 260 mA (bez ogniwa pomiar sprawności MT3608 nie ma sensu). Wniosek: taktowanie daje 11–20 mA, **ekran daje 80–100 mA** — stąd przyciemnianie w v1.5.0. Domyślne zostaje 240 MHz; 160 MHz można ustawić na ekranie ZASILANIE i zostaje w NVS. Czeka: pomiar z ogniwa (A start, B 100 %, C 5 %, D VIN, E koniec ładowania, F ładowanie) i pobór we śnie | B3, B7 |
+| 6 | 80 MHz i moc nadajnika — **przełączniki w v1.4.7** (ekran ZASILANIE: 240/160/80 MHz, 19,5/15/11/8,5 dBm, odczyt RSSI/MHz/dBm, zapis w NVS; domyślnie bez zmian). **Pomiar 20.11** (tester USB przed TP4056, 5 V, bez ogniwa, WiFi, pulpit bez zmian): ekran 100 % — **254 / 243 / 234 mA** przy 240 / 160 / 80 MHz; ekran 5 % — **157 mA**; brzęczyk ciągły +7 mA; szczyt przy starcie < 260 mA (bez ogniwa pomiar sprawności MT3608 nie ma sensu). Wniosek: taktowanie daje 11–20 mA, **ekran daje 80–100 mA** — stąd przyciemnianie w v1.5.0. Domyślne zostaje 240 MHz; 160 MHz można ustawić na ekranie ZASILANIE i zostaje w NVS. **Pomiar z ogniwa 24.11** (multimetr szeregowo OUT+ TP4056 → VIN+ MT3608, WiFi, pulpit): ekran 100 % — **110 mA @ 80 MHz** (skoki do 150), 117–126 mA @ 160 MHz (do 140), **130 mA @ 240 MHz** (do 160); ekran 5 % — **45–55 mA**; sen — **2 mA**. Z ogniwa taktowanie daje 20 mA (15 %), więcej niż na USB; dalsze pomiary przy 80 MHz. Rozbieżność z pomiarem testerem USB (po przeliczeniu mocy 2–3×) do wyjaśnienia jednym miernikiem po obu stronach. Czeka: E koniec ładowania, F ładowanie | B3, B7 |
 | 7 | Usunięcie starego programu z `main.cpp`; ostrzeżenia kompilatora włączone | C1, C7, C8 |
 | — | Polskie litery — jeśli chcesz | D |
 

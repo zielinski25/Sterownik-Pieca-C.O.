@@ -34,6 +34,7 @@ Sprawdzone miernikiem i logiem:
 | GPIO35 z ładowarką / bez | 0,317 V / 3,3 V |
 | brzęczyk przez C945 | ekran alarmu → gra; WYCISZ → cisza; +7 mA przy ciągłym dźwięku |
 | pobór z USB 5 V (bez ogniwa, WiFi) | ekran 100 %: 254/243/234 mA przy 240/160/80 MHz; ekran 5 %: 157 mA; szczyt startu < 260 mA |
+| **pobór z ogniwa** (24.11, multimetr szeregowo OUT+ TP4056 → VIN+ MT3608, WiFi, pulpit) | ekran 100 %: **110 mA** @ 80 MHz (skoki do 150), 117–126 mA @ 160 MHz (do 140), 130 mA @ 240 MHz (do 160); ekran 5 %: **45–55 mA**; **głęboki sen: 2 mA** (cel < 10 mA – spełniony). Skoki = nadajnik WiFi. Dalsze pomiary przy 80 MHz |
 | BC547 wylutowany ze złomu | nie przełączał (E/C odwrotnie, być może uszkodzony) → wymieniony na C945 |
 
 ## Sprawdzenie v1.5.0 / v1.5.1 (sen na baterii) po wgraniu
@@ -51,9 +52,8 @@ albo włożenie ładowarki (GPIO35). Krok po kroku, log z Seriala obok:
    – to samo.
 3. **Nie dotykaj 5 min.** Ekran gaśnie, brzęczyk milczy, w logu ostatnia
    linia `tag=SEN zdarzenie=usypianie powod=bez_dotyku napiecie=… bez_dotyku_s=300`.
-   Multimetr (200 mA) szeregowo w OUT+ TP4056 → VIN+ MT3608: oczekiwane
-   kilka mA (AMS1117 i dioda POWER DevKita; cel < 10 mA – wynik wpisać do
-   `WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`, krok 6).
+   Multimetr (200 mA) szeregowo w OUT+ TP4056 → VIN+ MT3608: **zmierzone
+   24.11: 2 mA** (cel < 10 mA – spełniony).
 4. **Przycisk GPIO14** → panel startuje od nowa, w logu
    `tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk`. Od v1.5.1 bez
    ekranu startowego: pulpit z „--” po ~0,3 s (`tag=SEN
