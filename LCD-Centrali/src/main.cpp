@@ -40,6 +40,26 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.5 - POLECENIA Z DOTYKU PONAWIANE (3 PROBY), NIE 1 x 400 MS
+//   - Log z 24.11 15:40: trzy dotkniecia WL pompy i WYL skonczyly sie
+//     "POLECENIE NIE DOSZLO DO CENTRALI", choc statusy co 2 s przechodzily
+//     (status_blad=0) - padaly na pojedynczych czkawkach AP: POST mial 400 ms
+//     na polaczenie i JEDNA probe. Na baterii (oszczedzanie radia) i przy
+//     centrali probujacej STA (zaklocenia wlasnego AP, patrz main_centrala
+//     2.12.1.x) to za malo.
+//   - Kanal polecen (komendaFetch) ma wlasne limity: 1000 ms laczenie,
+//     2000 ms calosc (NonBlockingHttp::ustawLimity(); statusy zostaja przy
+//     400/1500 ms z SiecCfg - maja padac szybko, ida co 2 s).
+//   - Polecenie bez odpowiedzi centrali wraca na poczatek kolejki i idzie
+//     jeszcze raz po 700 ms, do 3 prob (diag::KolejkaPolecen::ponow(),
+//     PROB_MAKS, ODSTEP_PONOWIENIA_MS). Pasek "NIE DOSZLO" dopiero po
+//     ostatniej (najpozniej po ok. 7,4 s). Odrzucenie przez centrale
+//     ({"ok":false}) nie jest ponawiane. Nowsza wartosc tego samego pola
+//     uniewaznia ponowienie starej. Log: tag=KOMENDA zdarzenie=ponowienie
+//     pole=... proba=2/3 powod=...; polecenie_nieudane ma teraz prob=N.
+//   - Wszystkie polecenia panelu sa idempotentne (ustaw wartosc / stan), wiec
+//     powtorzenie POST-a, ktory centrala przyjela, a odpowiedz zginela, nic
+//     nie zmienia.
 // [2026-11-24] v1.5.4 - WSKAZNIK "47% USB" + WGRYWANIE Z VSCODE PRZEZ WIFI
 //   - Wskaznik z ogniwem i ladowarka: "47% USB" zamiast "USB 47%" (najpierw
 //     procenty, potem zrodlo - uwaga uzytkownika po v1.5.3).
@@ -1006,6 +1026,8 @@ static const uint32_t STATUS_INTERWAL_MS     = 2000;   // jak czesto GET /api/st
 NonBlockingHttp statusFetch;
 NonBlockingHttp ustawieniaFetch;
 NonBlockingHttp komendaFetch;
+static const uint32_t KOMENDA_LACZENIE_MS = 1000;   // [v1.5.5] limit laczenia POST-a polecenia (statusy: SiecCfg 400 ms)
+static const uint32_t KOMENDA_CALOSC_MS   = 2000;   // [v1.5.5] limit calego POST-a (statusy: 1500 ms)
 StrumienHttpGet wykresyFetch;   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy, linia po linii (patrz obslugaWykresyFetch())
 StrumienHttpGet otaFetch;       // [v1.4.0 OTA] nowy firmware panelu z centrali (/panel-ota.bin), tresc binarna (patrz otaKrok())
 WskaznikSwiezosci swiezoscStatusu;
@@ -1176,7 +1198,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.4"; // [2026-11-24] v1.5.4: wskaznik "47% USB"; wgrywanie z PlatformIO przez WiFi (env esp32dev_wifi, espota 192.168.4.50:3232); opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.5"; // [2026-11-24] v1.5.5: polecenia z dotyku ponawiane do 3 razy (1000/2000 ms), nie jedna proba 400 ms; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -3292,13 +3314,21 @@ void obslugaKomendaFetch() {
   // GET ustawien, ktory wystartowal wczesniej, nie nadpisze tego pola stara
   // wartoscia (kolejkaPolecen.poleZmieniane() w obslugaUstawieniaFetch()).
   const diag::Polecenie zakonczone = kolejkaPolecen.wLocie;
+  // [v1.5.5] Bez odpowiedzi centrali (nie: odrzucone) - jeszcze raz, do
+  // PROB_MAKS prob; porazke pokazujemy dopiero po ostatniej.
+  if (!odpowiedziala && kolejkaPolecen.ponow(millis())) {
+    Serial.printf("tag=KOMENDA zdarzenie=ponowienie pole=%s cialo=\"%s\" proba=%u/%u powod=%s\n",
+                  zakonczone.klucz, zakonczone.cialo, (unsigned)(zakonczone.proba + 2), (unsigned)diag::KolejkaPolecen::PROB_MAKS,
+                  komendaFetch.ostatniBlad().c_str());
+    return;   // pendingPoKomendzie zostaje - GET-y pojda po ostatniej probie
+  }
   kolejkaPolecen.zakoncz(millis());
   if (!centralaOk) {
     // Uzytkownik musi to zobaczyc: ekran pokazuje wartosc, ktorej centrala
     // nie ma. Do v1.4.1 porazka szla tylko do logu, a ekran "cofal" liczbe
     // przy nastepnym GET bez slowa wyjasnienia.
-    Serial.printf("tag=KOMENDA lvl=WARN zdarzenie=polecenie_nieudane pole=%s cialo=\"%s\" powod=%s\n",
-                  zakonczone.klucz, zakonczone.cialo, odpowiedziala ? "odrzucone" : "brak_odpowiedzi");
+    Serial.printf("tag=KOMENDA lvl=WARN zdarzenie=polecenie_nieudane pole=%s cialo=\"%s\" powod=%s prob=%u\n",
+                  zakonczone.klucz, zakonczone.cialo, odpowiedziala ? "odrzucone" : "brak_odpowiedzi", (unsigned)(zakonczone.proba + 1));
     char komunikat[56];
     if (!odpowiedziala)                 snprintf(komunikat, sizeof(komunikat), "POLECENIE NIE DOSZŁO DO CENTRALI");
     else if (powodOdrzucenia[0] != '\0') snprintf(komunikat, sizeof(komunikat), "ODRZUCONE: %s", powodOdrzucenia);
@@ -4873,6 +4903,10 @@ void alarmPrzywrocPoAutorestarcie() {
 }
 
 void setup() {
+  // [v1.5.5] Kanal polecen: 1000 ms na polaczenie i 2000 ms na calosc (statusy
+  // zostaja przy 400/1500 ms z SiecCfg) + do 3 prob w poleceniaKrok(). Patrz
+  // diag::KolejkaPolecen::PROB_MAKS i HISTORIA ZMIAN v1.5.5.
+  komendaFetch.ustawLimity(KOMENDA_LACZENIE_MS, KOMENDA_CALOSC_MS);
   // [FIX, ta sesja - PISKNIECIE BRZECZYKA PRZY WLACZENIU ZASILANIA] Dopoki
   // pin nie zostanie jawnie skonfigurowany, jest floating (Hi-Z) - dziala
   // jak antena na szum elektryczny (rozruch WiFi/TFT/LVGL/reszty sprzetu),

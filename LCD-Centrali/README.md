@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.4
+# Panel LCD (wyświetlacz CO) — firmware v1.5.5
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,35 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.5
+
+**Polecenia z dotyku ponawiane — do 3 prób zamiast jednej 400-ms.** Log z
+24.11 15:40: trzy dotknięcia WŁ pompy i WYŁ skończyły się paskiem „POLECENIE
+NIE DOSZŁO DO CENTRALI”, choć statusy co 2 s przechodziły bez błędu — padały
+na pojedynczych czkawkach AP (panel na baterii oszczędza radio; centrala bez
+routera co jakiś czas próbuje STA i zakłóca własny AP — opis w
+`main_centrala.cpp` 2.12.1.x). POST miał 400 ms na połączenie i **jedną** próbę.
+
+| | Było (≤ v1.5.4) | Jest (v1.5.5) |
+|---|---|---|
+| limit łączenia POST-a | 400 ms | **1000 ms** (statusy zostają przy 400 ms — mają padać szybko) |
+| limit całego POST-a | 1500 ms | **2000 ms** |
+| prób bez odpowiedzi centrali | 1 | **3**, odstęp 700 ms; pasek „NIE DOSZŁO” dopiero po ostatniej (najpóźniej po ~7,4 s) |
+| odrzucenie przez centralę (`{"ok":false}`) | pasek od razu | bez zmian — to jest odpowiedź, nie ponawiamy |
+| nowsza wartość tego samego pola w kolejce | — | unieważnia ponowienie starej |
+| log | `polecenie_nieudane` | `tag=KOMENDA zdarzenie=ponowienie pole=… proba=2/3 powod=timeout laczenia`, `polecenie_nieudane … prob=3` |
+
+Wszystkie polecenia panelu są idempotentne (ustaw wartość / stan), więc
+powtórzenie POST-a, który centrala już przyjęła, a odpowiedź zginęła, niczego
+nie zmienia.
+
+Testy: `test_diagnostyka.cpp` +15 (`KolejkaPolecen::ponow()`), scenariusze
+`nieudany_post` (3 próby przy milczącej centrali; czkawka — pierwsza pada,
+druga dochodzi, bez paska) i `polecenia_nie_gina` dostosowane. Razem 70
+scenariuszy, 786 sprawdzeń, 603 jednostkowe. Zmienione pliki: `src/main.cpp`,
+`src/diagnostyka_panelu.h`, `src/siec_nieblokujaca_LCD.h` (`ustawLimity()`),
+`testy_host/`.
 
 ## Co zmienia v1.5.4
 

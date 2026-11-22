@@ -1049,7 +1049,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.4"
+#define WERSJA_FW "v1.5.5"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1487,12 +1487,35 @@ void scenariuszNieudanyPost() {
   ustaw(0, [](Centrala& c) { c.trybPost = TRYB_MILCZY; });
   const size_t od = g_atrapa.serial.size();
   pompaManualWyslij("wl");
-  biegnij(4000);
+  biegnij(10000);
   const int linii = ileLinii("[KOMENDA] POST nieudany", "", "", od);
-  info("linii \"[KOMENDA] POST nieudany\" w ciagu 4 s po jednym nieudanym POST: %d", linii);
-  sprawdz(kopia(0).nPost == 1, "centrala dostala dokladnie jedno polecenie");
-  sprawdz(linii == 1, "jeden nieudany POST = jedna linia w logu");
+  info("linii \"[KOMENDA] POST nieudany\" w ciagu 10 s po jednym dotknieciu przy milczacej centrali: %d; POST-ow: %d", linii, kopia(0).nPost);
+  // [v1.5.5] Bez odpowiedzi centrali polecenie idzie 3 razy (2 s + 0,7 s odstepu
+  // kazda proba), dopiero potem porazka - do v1.5.4 jedna proba i koniec.
+  sprawdz(kopia(0).nPost == 3, "centrala dostala polecenie 3 razy (3 proby)");
+  sprawdz(linii == 3, "kazda nieudana proba = jedna linia w logu (bez powtorzen w petli)");
+  sprawdz(logMa("tag=KOMENDA zdarzenie=ponowienie pole=stan", "proba=2/3", "powod=timeout calkowity", od) &&
+          logMa("tag=KOMENDA zdarzenie=ponowienie pole=stan", "proba=3/3", "", od) &&
+          ileLinii("zdarzenie=ponowienie", "", "", od) == 2,
+          "log: ponowienie proba=2/3 i 3/3 powod=timeout calkowity");
+  sprawdz(logMa("zdarzenie=polecenie_nieudane pole=stan", "powod=brak_odpowiedzi prob=3", "", od) && ileLinii("zdarzenie=polecenie_nieudane", "", "", od) == 1,
+          "log: jedna linia polecenie_nieudane prob=3 (po ostatniej probie)");
   sprawdz(ekranMa("55°C"), "odczyt statusu dziala dalej");
+
+  // [v1.5.5] Czkawka: pierwsza proba pada, druga przechodzi - uzytkownik nic
+  // nie widzi poza chwila zwloki, centrala ma polecenie, pasek bledu sie nie pokazuje.
+  biegnij(4000);
+  const size_t od2 = g_atrapa.serial.size();
+  const int postowPrzed = kopia(0).nPost;
+  pompaManualWyslij("wyl");
+  biegnij(2200);   // pierwsza proba (2 s) juz padla, druga jeszcze nie poszla (odstep 0,7 s)
+  ustaw(0, [](Centrala& c) { c.trybPost = TRYB_OK; });
+  biegnij(3000);
+  info("po czkawce: POST-ow %d, pasek bledu: \"%s\"", kopia(0).nPost - postowPrzed, lvgl_dashboard_poc_blad_polecenia_tekst());
+  sprawdz(kopia(0).nPost - postowPrzed == 2 && kopia(0).posty.back() == "stan=wyl", "czkawka: druga proba doszla z ta sama trescia (stan=wyl)");
+  sprawdz(logMa("zdarzenie=ponowienie pole=stan", "proba=2/3", "", od2) && !logMa("zdarzenie=polecenie_nieudane", "", "", od2) &&
+          std::string(lvgl_dashboard_poc_blad_polecenia_tekst()).empty(),
+          "czkawka: jedno ponowienie, bez polecenie_nieudane i bez paska bledu");
 }
 
 // --- 6 ---------------------------------------------------------------------
@@ -2160,13 +2183,16 @@ void scenariuszPoleceniaNieGina() {
   ustaw(0, [](Centrala& c) { c.postBlad.clear(); c.trybPost = TRYB_MILCZY; });
   { LiczFirmware licz; lv_event_send(plusOff, LV_EVENT_CLICKED, nullptr); }
   biegnij(3000);
+  sprawdz(std::string(lvgl_dashboard_poc_blad_polecenia_tekst()).empty() && logMa("zdarzenie=ponowienie", "pole=czasOff", "", od),
+          "[v1.5.5] po 3 s jeszcze bez paska - polecenie jest ponawiane");
+  biegnij(4600);   // 3 proby po 2 s + 2 odstepy 0,7 s = 7,4 s (ekran ustawien sam zamyka sie po 13,5 s bez dotyku - nie przeciagac)
   info("pasek bledu: \"%s\"", lvgl_dashboard_poc_blad_polecenia_tekst());
   sprawdz(std::string(lvgl_dashboard_poc_blad_polecenia_tekst()) == "POLECENIE NIE DOSZŁO DO CENTRALI", "ekran: pasek \"POLECENIE NIE DOSZLO DO CENTRALI\"");
-  sprawdz(logMa("zdarzenie=polecenie_nieudane", "pole=czasOff", "powod=brak_odpowiedzi", od) && ileLinii("[KOMENDA] POST nieudany", "", "", od) == 1,
-          "log: polecenie_nieudane powod=brak_odpowiedzi (jedna linia)");
+  sprawdz(logMa("zdarzenie=polecenie_nieudane", "pole=czasOff", "powod=brak_odpowiedzi prob=3", od) && ileLinii("[KOMENDA] POST nieudany", "", "", od) == 3,
+          "log: polecenie_nieudane powod=brak_odpowiedzi prob=3 (trzy linie POST nieudany)");
   zrzutEkranu("1_pasek_bledu");
   ustaw(0, [](Centrala& c) { c.trybPost = TRYB_OK; });
-  biegnij(4000);
+  biegnij(1000);
   { LiczFirmware licz; lv_scr_load(pulpit); }
   biegnij(3000);
   sprawdz(ekranMa("55°C"), "pulpit dziala dalej");

@@ -1187,12 +1187,21 @@ struct Polecenie {
   uint8_t  po;            // co odswiezyc po zakonczeniu (PoKomendzie z main.cpp - tu tylko przenoszone)
   uint32_t zmienionoMs;   // ostatnia zmiana wartosci (do liczenia ciszy)
   bool     scalone;       // wartosc nadpisana zanim polecenie poszlo -> czekaj na cisze
+  uint8_t  proba;         // [v1.5.5] ktora to proba wyslania (0 = pierwsza); ponowienie czeka ODSTEP_PONOWIENIA_MS
 };
 
 struct KolejkaPolecen {
   static const uint8_t  MAKS = 6;          // rozne pola czekajace naraz - wiecej niz palcow na jednym ekranie
   static const uint32_t CISZA_MS = 200;    // dluzej niz odstep LV_EVENT_LONG_PRESSED_REPEAT (100 ms)
   static const uint8_t  ZAKONCZEN = 8;     // ile ostatnich zakonczonych polecen pamietamy (do poleZmieniane())
+  // [v1.5.5] Polecenie bez odpowiedzi centrali (SYN bez odpowiedzi, zerwane
+  // polaczenie) idzie jeszcze raz - do PROB_MAKS prob lacznie, z odstepem
+  // ODSTEP_PONOWIENIA_MS. Log z 24.11: trzy dotkniecia WL pompy padly na
+  // pojedynczych 400-ms czkawkach AP, gdy statusy co 2 s przechodzily - jedna
+  // proba to za malo, zwlaszcza na baterii (oszczedzanie radia). Odrzucenie
+  // przez centrale ({"ok":false}) NIE jest ponawiane - to odpowiedz.
+  static const uint8_t  PROB_MAKS = 3;
+  static const uint32_t ODSTEP_PONOWIENIA_MS = 700;
 
   Polecenie p[MAKS];
   uint8_t   n = 0;
@@ -1202,6 +1211,7 @@ struct KolejkaPolecen {
   Zakonczenie zak[ZAKONCZEN];
   uint8_t   zakNastepne = 0;
   uint32_t  dodanych = 0, scalonych = 0, odrzuconych = 0;   // liczniki do logu
+  uint32_t  ponowien = 0;                                     // [v1.5.5] ile razy polecenie poszlo jeszcze raz
 
   KolejkaPolecen() { memset(&wLocie, 0, sizeof(wLocie)); memset(zak, 0, sizeof(zak)); memset(p, 0, sizeof(p)); }
 
@@ -1227,7 +1237,33 @@ struct KolejkaPolecen {
     q.po = po;
     q.zmienionoMs = terazMs;
     q.scalone = false;
+    q.proba = 0;
     dodanych++;
+    return true;
+  }
+
+  // [v1.5.5] Polecenie w locie skonczylo sie bez odpowiedzi centrali. true =
+  // wraca na poczatek kolejki jako kolejna proba (pojdzie po
+  // ODSTEP_PONOWIENIA_MS); false = koniec prob, wolajacy pokazuje porazke:
+  // wyczerpane PROB_MAKS, kolejka pelna, albo uzytkownik zdazyl juz zadac
+  // nowej wartosci tego samego pola (ta nowsza i tak zaraz pojdzie).
+  // Zawsze zamyka lot jak zakoncz().
+  bool ponow(uint32_t terazMs) {
+    if (!lotTrwa) return false;
+    Polecenie znow = wLocie;
+    zakoncz(terazMs);
+    if (znow.proba + 1 >= PROB_MAKS) return false;
+    for (uint8_t i = 0; i < n; i++) {
+      if (strcmp(p[i].klucz, znow.klucz) == 0 && strcmp(p[i].sciezka, znow.sciezka) == 0) return false;
+    }
+    if (n >= MAKS) return false;
+    for (uint8_t i = n; i > 0; i--) p[i] = p[i - 1];
+    n++;
+    p[0] = znow;
+    p[0].proba++;
+    p[0].zmienionoMs = terazMs;
+    p[0].scalone = false;
+    ponowien++;
     return true;
   }
 
@@ -1238,6 +1274,7 @@ struct KolejkaPolecen {
   // kolejce, czeka na CISZA_MS od ostatniej zmiany - patrz naglowek.
   bool gotowa(uint32_t terazMs) const {
     if (n == 0) return false;
+    if (p[0].proba > 0 && (uint32_t)(terazMs - p[0].zmienionoMs) < ODSTEP_PONOWIENIA_MS) return false;   // [v1.5.5]
     if (!p[0].scalone) return true;
     return (uint32_t)(terazMs - p[0].zmienionoMs) >= CISZA_MS;
   }

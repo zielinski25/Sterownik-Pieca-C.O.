@@ -216,6 +216,14 @@ public:
         return startWewn(sciezka, "POST", body, "application/x-www-form-urlencoded");
     }
 
+    // [v1.5.5] Wlasne limity czasu tego kanalu (domyslnie SiecCfg). Kanal
+    // polecen dostaje dluzsze: dotkniecie przycisku nie ma przepasc na
+    // 400-ms czkawce AP, a statusy co 2 s moga dalej padac szybko.
+    void ustawLimity(uint32_t laczenieMs, uint32_t caloscMs) {
+        limitLaczeniaMs_ = laczenieMs;
+        limitCaloscMs_ = caloscMs;
+    }
+
     // Wywolywane w KAZDEJ iteracji loop(). Nigdy nie blokuje dluzej niz
     // pojedyncze mikrosekundy (select() z timeoutem {0,0}).
     void poll() {
@@ -224,13 +232,13 @@ public:
         }
 
         unsigned long teraz = millis();
-        if (teraz - calkowityStartMs_ > SiecCfg::CALKOWITY_TIMEOUT_MS) {
+        if (teraz - calkowityStartMs_ > limitCaloscMs_) {
             zamknijZBledem("timeout calkowity", 'c');
             return;
         }
 
         if (stan_ == SiecState::CONNECTING) {
-            if (teraz - krokStartMs_ > SiecCfg::CONNECT_TIMEOUT_MS) {
+            if (teraz - krokStartMs_ > limitLaczeniaMs_) {
                 zamknijZBledem("timeout laczenia", 'l');
                 return;
             }
@@ -502,6 +510,8 @@ private:
     int numerBledu_ = 0;
     unsigned long krokStartMs_ = 0;
     unsigned long calkowityStartMs_ = 0;
+    uint32_t limitLaczeniaMs_ = SiecCfg::CONNECT_TIMEOUT_MS;      // [v1.5.5] patrz ustawLimity()
+    uint32_t limitCaloscMs_   = SiecCfg::CALKOWITY_TIMEOUT_MS;
 };
 
 // [v1.2.2 PAMIEC] Odpowiedz zadania na czas jednej funkcji, bez kopiowania:

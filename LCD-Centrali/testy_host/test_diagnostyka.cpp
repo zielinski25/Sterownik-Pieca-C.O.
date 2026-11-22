@@ -1019,6 +1019,49 @@ static void testKolejkaPolecen() {
     SPRAWDZ(k.dodaj("/api/ustawienia-set", "d", "pole=d&wartosc=2", 2, 3));
     SPRAWDZ(k.n == KolejkaPolecen::MAKS && k.scalonych == 1);
   }
+  // 5b) [v1.5.5] Ponawianie bez odpowiedzi centrali: do 3 prob, odstep 700 ms,
+  //     nowsza wartosc tego samego pola wygrywa, odrzucenie nie jest ponawiane
+  //     (to decyzja wolajacego - ponow() wola tylko dla braku odpowiedzi).
+  {
+    KolejkaPolecen k;
+    k.dodaj("/api/pompa-manual", "stan", "stan=wl", 1, 0);
+    k.wystartuj();
+    SPRAWDZ(k.wLocie.proba == 0);
+    SPRAWDZ(k.ponow(2000));                       // 1. proba padla -> wraca na poczatek
+    SPRAWDZ(!k.lotTrwa && k.n == 1 && k.p[0].proba == 1 && k.ponowien == 1);
+    SPRAWDZ(!k.gotowa(2000) && !k.gotowa(2699) && k.gotowa(2700));   // ODSTEP_PONOWIENIA_MS
+    SPRAWDZ(k.poleZmieniane("stan", 1000));       // pole dalej "zmieniane" - GET sprzed niego ma stara wartosc
+    k.wystartuj();
+    SPRAWDZ(k.wLocie.proba == 1 && std::strcmp(k.wLocie.cialo, "stan=wl") == 0);
+    SPRAWDZ(k.ponow(5000) && k.p[0].proba == 2);  // 2. proba padla
+    k.wystartuj();
+    SPRAWDZ(!k.ponow(8000));                      // 3. proba padla -> koniec prob (PROB_MAKS = 3)
+    SPRAWDZ(!k.lotTrwa && k.pusta() && k.ponowien == 2);
+    SPRAWDZ(k.poleZmieniane("stan", 7000) && !k.poleZmieniane("stan", 8000));   // zakonczenie zapisane jak w zakoncz()
+  }
+  {
+    // Ponowienie ustawia sie PRZED innymi czekajacymi poleceniami, ale ustepuje
+    // nowszej wartosci tego samego pola.
+    KolejkaPolecen k;
+    k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=6", 2, 0);
+    k.wystartuj();
+    k.dodaj("/api/ustawienia-set", "czasOff", "pole=czasOff&wartosc=9", 2, 100);
+    SPRAWDZ(k.ponow(2000) && k.n == 2 && std::strcmp(k.p[0].klucz, "czasOn") == 0 && std::strcmp(k.p[1].klucz, "czasOff") == 0);
+    k.wystartuj();                                 // czasOn, 2. proba
+    k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=7", 2, 2800);   // uzytkownik kliknal jeszcze raz
+    SPRAWDZ(!k.ponow(4800));                       // stara wartosc nie wraca - nowa juz czeka
+    SPRAWDZ(k.n == 2 && std::strcmp(k.p[1].cialo, "pole=czasOn&wartosc=7") == 0 && k.p[1].proba == 0);
+    SPRAWDZ(!k.ponow(4900));                       // bez lotu - nic
+  }
+  {
+    // Pelna kolejka: ponowienie przepada (porazka pokazana od razu).
+    KolejkaPolecen k;
+    k.dodaj("/api/ustawienia-set", "a", "x", 2, 0);
+    k.wystartuj();
+    const char* pola[] = {"b", "c", "d", "e", "f", "g"};
+    for (const char* pole : pola) k.dodaj("/api/ustawienia-set", pole, "x", 2, 1);
+    SPRAWDZ(!k.ponow(2000) && k.n == KolejkaPolecen::MAKS && !k.lotTrwa);
+  }
   // 6) Pamiec zakonczen jest pierscieniem: po 8 innych poleceniach stare
   //    zakonczenie znika, ale to nie szkodzi - GET sprzed niego i tak nie
   //    moze juz byc w locie.
