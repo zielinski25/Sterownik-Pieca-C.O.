@@ -2381,9 +2381,13 @@ static void serwo_wiersz_osi_zbuduj(lv_obj_t *parent, int y, const char *nazwa, 
   // wszystkie nowe wspolrzedne w tym pliku, patrz PLAN_WYKRESY_LVGL.md
   // "Tryb pracy nad kodem" - wymaga zdjecia z ekranu do potwierdzenia ze
   // 28px luk nie nachodzi na etykiete/nazwe przy najszerszym podpisie "100%".]
+  // [v1.5.9 - zdjecie 22.11] y=-2 wystawalo 2 px nad wiersz, a wiersz
+  // przycina dzieci - luk mial sciety wierzcholek ("kolka przyciete").
+  // Teraz y=0 (luk 0..28, srodek 14), etykieta wartosci obok wysrodkowana
+  // na tej samej wysokosci (y=2, font 20 -> srodek ~14).
   lv_obj_t *arc = lv_arc_create(wiersz);
   lv_obj_set_size(arc, 28, 28);
-  lv_obj_align(arc, LV_ALIGN_TOP_RIGHT, -2, -2);
+  lv_obj_align(arc, LV_ALIGN_TOP_RIGHT, -2, 0);
   lv_arc_set_bg_angles(arc, 0, 360);
   lv_arc_set_rotation(arc, 270);
   lv_arc_set_range(arc, 0, 100);
@@ -2399,7 +2403,7 @@ static void serwo_wiersz_osi_zbuduj(lv_obj_t *parent, int y, const char *nazwa, 
   lv_label_set_text(wartoscLabel, "0%");
   lv_obj_set_style_text_font(wartoscLabel, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(wartoscLabel, rgb565(KOL_TEKST), 0);
-  lv_obj_align(wartoscLabel, LV_ALIGN_TOP_RIGHT, -34, 4);
+  lv_obj_align(wartoscLabel, LV_ALIGN_TOP_RIGHT, -34, 2);
 
   // [FIX v2, ta sesja - potwierdzone na sprzecie] Poprzedni margines (24px),
   // zalozony na "promien galki ~8px", byl zgadywaniem - i jak podejrzewano w
@@ -3764,7 +3768,8 @@ static void wyswietlacz_jasnosc_wiersz_zbuduj(lv_obj_t *parent, int y, const cha
   lv_label_set_text(wartoscLabel, "0%");
   lv_obj_set_style_text_font(wartoscLabel, &lv_font_pl_20, 0);
   lv_obj_set_style_text_color(wartoscLabel, rgb565(KOL_TEKST), 0);
-  lv_obj_align(wartoscLabel, LV_ALIGN_TOP_RIGHT, 0, -2);
+  // [v1.5.9] y=-2 -> 0: wiersz przycina dzieci, gorne 2 px "100%" byly uciete.
+  lv_obj_align(wartoscLabel, LV_ALIGN_TOP_RIGHT, 0, 0);
 
   // [FIX v2, ta sesja - potwierdzone na sprzecie] Zgadywanie z poprzedniego
   // komentarza (NIEPOTWIERDZONE NA SPRZECIE) okazalo sie trafne - motyw
@@ -3774,9 +3779,14 @@ static void wyswietlacz_jasnosc_wiersz_zbuduj(lv_obj_t *parent, int y, const cha
   // podniesiony do 32px (16px/strone). Pelne uzasadnienie i te same wartosci
   // co w serwo_wiersz_osi_zbuduj() (patrz tamten komentarz) - identyczny
   // 16px suwak, ten sam motyw.
+  // [v1.5.9 - zdjecie 22.11 ekranu WYSWIETLACZ] Jak w serwo_wiersz_osi_zbuduj()
+  // (v1.5.8): przy 100 % galka wystawala 12 px za koniec paska. Pasek 16..340
+  // (do prawej krawedzi wiersza, pod etykieta "100%"), tor galki zawezony z
+  // prawej (pad_right 12) - przy 100 % galka konczy sie rowno z paskiem.
   lv_obj_t *slider = lv_slider_create(wiersz);
-  lv_obj_set_size(slider, 308, 16);
-  lv_obj_align(slider, LV_ALIGN_BOTTOM_MID, 0, 0);
+  lv_obj_set_size(slider, 324, 16);
+  lv_obj_align(slider, LV_ALIGN_BOTTOM_LEFT, 16, 0);
+  lv_obj_set_style_pad_right(slider, 12, LV_PART_MAIN);
   lv_slider_set_range(slider, JASNOSC_MIN_PROCENT_LVGL, 100);   // [v1.4.1 C9] bylo 0-100; 0 % gasilo ekran na stale
   lv_obj_set_style_bg_color(slider, rgb565(KOL_RAMKA), LV_PART_MAIN);
   lv_obj_set_style_bg_color(slider, rgb565(id == 0 ? KOL_WYSWIETLACZ_DZIEN : KOL_WYSWIETLACZ_NOC), LV_PART_INDICATOR);
@@ -5548,6 +5558,10 @@ static const lv_coord_t WYKRESY_CHART_H = WYKRESY_CHART_DOL - WYKRESY_CHART_Y;
 static const lv_coord_t WYKRESY_CHART_X1 = 4;     // lewa/prawa krawedz wykresu w wykresyWykresCont (480px)
 static const lv_coord_t WYKRESY_CHART_X2 = 476;
 static const lv_coord_t WYKRESY_OS_X_Y = WYKRESY_CHART_DOL + 7;   // gorna krawedz pasa podpisow osi czasu
+// [v1.5.9] Ile pikseli od lewej/prawej krawedzi ekranu zostawic pustych na
+// etykiety osi: wydrukowana obudowa zaslania skrajne ~6-8 px (zdjecia 22.11:
+// "198 °C" widoczne jako "'98 °C", "18:00" jako "18:0").
+static const lv_coord_t WYKRESY_MARGINES_OBUDOWY = 10;
 
 // Chowa wykres i pokazuje etykiete statusu (blad/ladowanie) - albo
 // odwrotnie. Te dwa obiekty nigdy nie sa widoczne jednoczesnie.
@@ -5738,7 +5752,9 @@ static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float
   // prawej krawedzi - dokladnie tak jak bylo widac na zdjeciu z testu, tylko
   // teraz bez dodatkowego, pustego pasa miedzy liczbami a wykresem.
   lv_obj_t **etykiety = (os == LV_CHART_AXIS_PRIMARY_Y) ? wykresyEtykietyA : wykresyEtykietyB;
-  lv_coord_t etykietaX = (os == LV_CHART_AXIS_PRIMARY_Y) ? (chartX1 + 2) : (chartX2 - 2 - szerTekstu - 3);
+  // [v1.5.9] +MARGINES_OBUDOWY zamiast 2 px od krawedzi - patrz WYKRESY_MARGINES_OBUDOWY.
+  lv_coord_t etykietaX = (os == LV_CHART_AXIS_PRIMARY_Y) ? (chartX1 + WYKRESY_MARGINES_OBUDOWY - 4)
+                                                         : (chartX2 - (WYKRESY_MARGINES_OBUDOWY - 4) - szerTekstu - 3);
   lv_coord_t etykietaSzer = szerTekstu + 3; // maly zapas, LONG_CLIP wiec bezpiecznie nie zawinie
   lv_text_align_t wyrownanie = LV_TEXT_ALIGN_LEFT;
 
@@ -5893,8 +5909,11 @@ static bool wykresy_os_x_odswiez(int liczbaPunktow) {
     pierwszy = false;
     const lv_coord_t szerTekstu = lv_txt_get_width(tekst, strlen(tekst), font, 0, LV_TEXT_FLAG_NONE) + 2;
     lv_coord_t ex = x - szerTekstu / 2;   // podpis wysrodkowany pod kreska...
-    if (ex < 1) ex = 1;                   // ...chyba ze wystaje poza ekran
-    if (ex + szerTekstu > 479) ex = 479 - szerTekstu;
+    // ...chyba ze wystaje poza ekran. [v1.5.9 - zdjecie 22.11 18:03] Zapas
+    // WYKRESY_MARGINES_OBUDOWY od obu krawedzi: obudowa zaslania skrajne
+    // piksele i "18:00" przy prawej krawedzi bylo uciete do "18:0".
+    if (ex < WYKRESY_MARGINES_OBUDOWY) ex = WYKRESY_MARGINES_OBUDOWY;
+    if (ex + szerTekstu > 480 - WYKRESY_MARGINES_OBUDOWY) ex = 480 - WYKRESY_MARGINES_OBUDOWY - szerTekstu;
     ile++;
     if (ex < poprzPrawy + 6) continue;    // nakladalby sie na poprzedni - sama kreska, bez podpisu
     lv_obj_t *etyk = wykresyOsXEtyk[ile - 1];

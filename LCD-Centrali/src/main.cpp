@@ -40,6 +40,25 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.9 - MARGINES OD OBUDOWY NA WYKRESACH; LUKI SERW I SUWAKI JASNOSCI BEZ PRZYCIECIA
+//   - Zdjecia z plytki na v1.5.8 (22.11, 18:03): wydrukowana obudowa zaslania
+//     skrajne piksele ekranu, wiec ostatni podpis osi czasu ("18:00") przy
+//     prawej krawedzi byl uciety do "18:0", a lewa etykieta osi Y "198 °C"
+//     widoczna jako "'98 °C". Podpisy osi X trzymaja teraz 10 px od obu
+//     krawedzi ekranu (WYKRESY_MARGINES_OBUDOWY), etykiety osi Y odsuniete
+//     od krawedzi o 6 px (bylo 2). Srodek podpisu dalej pod kreska - jak
+//     w v1.5.8 (na zdjeciu z ukosu wyglada na przesuniety, pomiar na
+//     zrzutach z hosta: srodek podpisu = x kreski +-1 px).
+//   - Ekran SERWA: luk pozycji ("kolko" obok 100%) byl ustawiony 2 px nad
+//     gornym brzegiem wiersza, a wiersz przycina dzieci - kolko mialo sciety
+//     wierzcholek. Teraz luk 0..28 px wewnatrz wiersza, etykieta procentow
+//     wysrodkowana do niego.
+//   - Ekran WYSWIETLACZ: suwaki jasnosci jak suwaki serw w v1.5.8 - przy 100%
+//     galka konczyla sie 12 px za koncem paska. Pasek 16..340 px wiersza,
+//     tor galki zawezony z prawej (pad_right 12): przy 100% galka rowno z
+//     koncem paska. Etykieta "100%" nie wystaje juz 2 px nad wiersz.
+//   - Centrala: bez zmian (3.58.10). Testy hosta: serwo_stopnie i
+//     sen_ustawienia mierza geometrie (galka, luk w granicach wiersza).
 // [2026-11-24] v1.5.8 - OS CZASU WYKRESOW PODPISANA PRZY KAZDEJ KRESCE; SAMOTNE PUNKTY WIDAC; SUWAKI SERW
 //   - Zdjecia z plytki na v1.5.7 (22.11): pod wykresem jeden podpis na
 //     srodku ("16:25 - 17:25", "22.11 14:01 - 22.11 17:25", "19.11 08:55 -
@@ -1298,7 +1317,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.8"; // [2026-11-24] v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.9"; // [2026-11-24] v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez

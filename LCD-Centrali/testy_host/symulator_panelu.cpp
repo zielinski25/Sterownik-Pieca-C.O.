@@ -1066,7 +1066,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.8"
+#define WERSJA_FW "v1.5.9"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1550,6 +1550,49 @@ void scenariuszIkonaWifiPrzyCiszy() {
 // 0..90), a panel pokazywal je jako procenty. 113 stopni klapy = 63 %,
 // 86 stopni syberka = 96 %.
 bool kliknij(const char* napis);   // definicja nizej
+
+// [v1.5.9] Pierwszy potomek (w glab) danej klasy LVGL - do sprawdzania
+// geometrii suwakow/lukow na ekranach SERWA i WYSWIETLACZ.
+static lv_obj_t* potomekKlasy(lv_obj_t* obj, const lv_obj_class_t* klasa) {
+  if (obj == nullptr) return nullptr;
+  if (lv_obj_get_class(obj) == klasa) return obj;
+  for (uint32_t i = 0; i < lv_obj_get_child_cnt(obj); ++i) {
+    lv_obj_t* z = potomekKlasy(lv_obj_get_child(obj, i), klasa);
+    if (z != nullptr) return z;
+  }
+  return nullptr;
+}
+// Wiersz (rodzic etykiety) o podanym tekscie: czy suwak w nim nie wystaje
+// poza wiersz (prawa krawedz galki przy 100 % = prawa krawedz paska), a luk
+// (jesli jest) miesci sie w pionie. Zwraca true, gdy wszystko w granicach.
+static bool wierszSuwakaWGranicach(const char* etykieta, bool zLukiem) {
+  lv_obj_t* l = znajdzEtykiete(lv_scr_act(), etykieta);
+  if (l == nullptr) { info("brak etykiety \"%s\"", etykieta); return false; }
+  lv_obj_t* wiersz = lv_obj_get_parent(l);
+  lv_obj_update_layout(wiersz);
+  lv_area_t w; lv_obj_get_coords(wiersz, &w);
+  lv_obj_t* slider = potomekKlasy(wiersz, &lv_slider_class);
+  if (slider == nullptr) { info("brak suwaka w wierszu \"%s\"", etykieta); return false; }
+  lv_area_t sa; lv_obj_get_coords(slider, &sa);
+  lv_area_t ind; lv_obj_get_coords(slider, &ind);
+  // Galka: srodek na koncu wskaznika, promien = polowa wysokosci paska + pad 4.
+  const int padP = lv_obj_get_style_pad_right(slider, LV_PART_MAIN);
+  const int galkaPromien = (sa.y2 - sa.y1 + 1) / 2 + 4;
+  const int torX2 = sa.x2 - padP;
+  const int galkaX2 = torX2 + galkaPromien;
+  info("wiersz \"%s\": x=%d..%d, pasek x=%d..%d, galka przy 100%% do x=%d", etykieta, (int)w.x1, (int)w.x2, (int)sa.x1, (int)sa.x2, galkaX2);
+  bool ok = galkaX2 <= w.x2 + 1 && sa.x1 >= w.x1;
+  if (zLukiem) {
+    lv_obj_t* arc = potomekKlasy(wiersz, &lv_arc_class);
+    if (arc == nullptr) { info("brak luku w wierszu \"%s\"", etykieta); return false; }
+    lv_area_t aa; lv_obj_get_coords(arc, &aa);
+    info("luk: x=%d..%d y=%d..%d (wiersz y=%d..%d)", (int)aa.x1, (int)aa.x2, (int)aa.y1, (int)aa.y2, (int)w.y1, (int)w.y2);
+    ok = ok && aa.y1 >= w.y1 && aa.y2 <= w.y2 && aa.x2 <= w.x2 && aa.x2 <= 479 - 4;
+  }
+  (void)ind;
+  return ok;
+}
+
 void scenariuszSerwoStopnie() {
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -60, 0));
   ustaw(0, [](Centrala& c) { c.klapa = 113; c.syberka = 86; });
@@ -1578,6 +1621,8 @@ void scenariuszSerwoStopnie() {
   biegnij(500);
   if (kliknij("RĘCZNY")) biegnij(500);
   sprawdz(ekranMa("STEROWANIE SERWAMI") && ileNapisow("100%") == 2, "ekran SERWA: oba suwaki 100%");
+  sprawdz(wierszSuwakaWGranicach("KLAPA", true) && wierszSuwakaWGranicach("SYBERKA", true),
+          "galka przy 100% nie wystaje za pasek, luki (kolka) w calosci w wierszu - nie przyciete (v1.5.9)");
   zrzutEkranu("2_serwa_100_procent");
 }
 
@@ -5510,6 +5555,9 @@ void scenariuszSenUstawienia() {
     lv_area_t ha; lv_obj_get_coords(lv_obj_get_parent(h), &ha);
     sprawdz(ha.y2 < a.y1, "wiersz harmonogramu konczy sie nad wierszem \"Na baterii\" (nie nachodza)");
   }
+  sprawdz(ekranMa("100%"), "domyslna jasnosc w dzien = 100%");
+  sprawdz(wierszSuwakaWGranicach("Jasność w dzień", false) && wierszSuwakaWGranicach("Jasność w nocy", false),
+          "suwaki jasnosci: galka przy 100% nie wystaje za pasek ani za wiersz (v1.5.9)");
   zrzutEkranu("1_wyswietlacz_domyslnie");
 
   // --- przyciemnienie: 1 min -> 2 min ---
