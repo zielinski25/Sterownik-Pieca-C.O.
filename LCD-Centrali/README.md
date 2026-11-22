@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.5
+# Panel LCD (wyświetlacz CO) — firmware v1.5.6
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,37 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.6
+
+**Ikona WiFi nie „mruga” przy ciszy centrali.** Zgłoszenie z płytki na v1.5.5:
+„szukanie wifi mruga”. W logu WiFi było połączone cały czas (`wifi=1`, RSSI
+−68…−81 dBm), ale `/api/status` co jakiś czas nie mieścił się w limicie — po
+10 s `dane_nieaktualne`, po chwili `dane_wrocily`, i tak w kółko. Każde
+`dane_nieaktualne` zamieniało ikonę WiFi w nagłówku na X („brak WiFi”), a
+`dane_wrocily` z powrotem na kreski.
+
+| | Było (≤ v1.5.5) | Jest (v1.5.6) |
+|---|---|---|
+| WiFi jest, centrala milczy > 10 s | X „brak WiFi” | **kreski pomarańczowe** wg RSSI panelu, bez X (kafelki `--` i nagłówek CENTRALA MILCZY bez zmian) |
+| naprawdę brak WiFi | X | X (bez zmian) |
+| limity `/api/status` i ustawień (`SiecCfg`) | 400 / 1500 ms | **1000 / 3000 ms** — w tym samym logu POST z limitem 1000 ms przechodził w 716 ms między „timeout laczenia” statusów; centrala odpowiadała, tylko wolniej |
+
+**Pozycje serw 0–100 %, nie „113 %”.** `/api/status` centrali podaje `klapa`
+i `syberka` w **stopniach** (klapa 0…180, syberek 0…90 — „Wspólny kontrakt
+jednostek” w `main_centrala.cpp`), a panel pokazywał te liczby jako procenty.
+Teraz `diag::serwoStopnieNaProcent()`: 113° klapy = 63 %, 86° syberka = 96 %,
+nic powyżej 100 %. Suwaki na ekranie SERWA startują od tej samej przeliczonej
+wartości; POST `/api/servo-manual` dalej idzie w procentach (centrala sama
+przelicza na stopnie). Log `tag=PANEL` dalej podaje surowe stopnie.
+
+Testy: nowe scenariusze `ikona_wifi_cisza` (cisza centrali → kreski
+pomarańczowe; dwie krótkie przerwy z rzędu → ani razu X; zanik AP → X) i
+`serwo_stopnie` (113/86 → 63 %/96 %, 180/90 → 100 %, śmieci 255 → 100 %),
+`testSerwoStopnie()` w `test_diagnostyka.cpp`. Razem 72 scenariusze,
+809 sprawdzeń, 813 jednostkowych. Zmienione pliki: `src/main.cpp`,
+`src/dashboard_lvgl_poc.cpp/.h`, `src/diagnostyka_panelu.h`,
+`src/siec_nieblokujaca_LCD.h`, `testy_host/`.
 
 ## Co zmienia v1.5.5
 

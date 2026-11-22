@@ -720,7 +720,7 @@ static const char *SERWO_NAZWA[2] = { "KLAPA", "SYBERKA" };
 static const char *SERWO_TRYB_OPIS[3] = {
   "Automatyka centrali steruje obiema osiami (klapa i syberek).",
   "Ustaw pozycję klapy i syberka niżej - każda niezależnie.",
-  "Wymuszona pozycja bezpieczna: syberek 90%, klapa 0%.",
+  "Wymuszona pozycja bezpieczna: syberek 100% (otwarty), klapa 0%.",   // [v1.5.6] 90 stopni syberka = 100 %
 };
 // [Partia 3, ta sesja] Uchwyty do ikon KROPLA/CISNIENIE - potrzebne PO
 // stworzeniu kafelka, zeby doregulowac zoom (kropla mniejsza) wzgledem
@@ -7656,12 +7656,18 @@ void lvgl_dashboard_poc_aktualizuj_sen(int przyciemnijIndeks, int uspijIndeks) {
   g_senUspijIdx       = uspijIndeks;
   if (lv_scr_act() == wyswietlaczPanel) wyswietlacz_sen_wyglad_odswiez();
 }
+static void wifi_ikona_odswiez(bool polaczono, int rssi);   // nizej
+static bool g_wifiIkonaPolaczono = false;   // [v1.5.6] ostatni stan z aktualizuj() - zeby pomiar radia mogl odswiezyc ikone przy ciszy centrali
 void lvgl_dashboard_poc_aktualizuj_zasilanie_pomiar(bool wifiOk, int rssi, int cpuMhz, float txDbm) {
   g_zasilanieWifiOk = wifiOk;
   g_zasilanieRssi   = rssi;
   g_zasilanieCpuMhz = cpuMhz;
   g_zasilanieTxDbm  = txDbm;
   if (lv_scr_act() == zasilaniePanel) zasilanie_wyglad_odswiez();
+  // [v1.5.6] Przy ciszy centrali ikona WiFi zyje z pomiaru radia (co 2 s):
+  // spadek WiFi -> X, powrot -> pomaranczowe kreski. Przy swiezych danych
+  // rysuje ja aktualizuj() i tu nic nie ruszamy.
+  if (!g_wifiIkonaPolaczono) wifi_ikona_odswiez(false, 0);
 }
 
 // [v1.4.6 WERSJE] Patrz naglowek. Bufor 48 B: "Panel " + 15 + "\nCentrala " +
@@ -7801,8 +7807,29 @@ static int wifi_liczba_kresek(int rssi) {
   return n;
 }
 
+static int g_wifiIkonaKresek = 0;          // [v1.5.6] do lvgl_dashboard_poc_wifi_ikona_stan()
+static bool g_wifiIkonaOstrzezenie = false;
 static void wifi_ikona_odswiez(bool polaczono, int rssi) {
   if (wifiX == nullptr) return; // widget jeszcze nie zbudowany (nie powinno sie zdarzyc po init())
+  g_wifiIkonaPolaczono = polaczono;
+
+  // [v1.5.6] polaczono=false znaczy "brak swiezych danych z centrali", nie
+  // "brak WiFi". Gdy radio jest polaczone (g_zasilanieWifiOk z main.cpp, co
+  // 2 s), a centrala tylko milczy, kreski zostaja wg RSSI panelu - na
+  // pomaranczowo, bez X. Dotad kazda 10-sekundowa cisza centrali zamieniala
+  // ikone w "brak WiFi" i z powrotem - uzytkownik: "szukanie wifi mruga".
+  if (!polaczono && g_zasilanieWifiOk) {
+    ustawUkrycie(wifiX, true);
+    const int aktywne = wifi_liczba_kresek(g_zasilanieRssi);
+    for (int i = 0; i < 7; i++) {
+      if (wifiPasek[i] == nullptr) continue;
+      ustawKolorStylu(wifiPasek[i], LV_STYLE_BG_COLOR, rgb565(i < aktywne ? KOL_WARN : KOL_TEKST_DIM), 0);
+    }
+    g_wifiIkonaKresek = aktywne;
+    g_wifiIkonaOstrzezenie = true;
+    return;
+  }
+  g_wifiIkonaOstrzezenie = false;
 
   if (!polaczono) {
     // Decyzja: wyszarzone wszystkie kreski + symbol X widoczny.
@@ -7812,16 +7839,24 @@ static void wifi_ikona_odswiez(bool polaczono, int rssi) {
       }
     }
     ustawUkrycie(wifiX, false);
+    g_wifiIkonaKresek = 0;
     return;
   }
 
   ustawUkrycie(wifiX, true);
   int aktywne = wifi_liczba_kresek(rssi);
+  g_wifiIkonaKresek = aktywne;
   for (int i = 0; i < 7; i++) {
     if (wifiPasek[i] == nullptr) continue;
     bool aktywna = (i < aktywne);
     ustawKolorStylu(wifiPasek[i], LV_STYLE_BG_COLOR, rgb565(aktywna ? KOL_TEKST : KOL_TEKST_DIM), 0);
   }
+}
+
+int lvgl_dashboard_poc_wifi_ikona_stan(bool *ostrzezenie) {
+  if (ostrzezenie) *ostrzezenie = g_wifiIkonaOstrzezenie;
+  if (wifiX != nullptr && !lv_obj_has_flag(wifiX, LV_OBJ_FLAG_HIDDEN)) return -1;
+  return g_wifiIkonaKresek;
 }
 
 // [UI-INTERNET, ta sesja] Analogiczne do wifi_ikona_odswiez(), ale bez

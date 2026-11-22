@@ -1391,6 +1391,25 @@ inline bool poleStatusuCzytane(const char* pole) {
 }
 
 // ---------------------------------------------------------------------------
+// ============================================================================
+// [v1.5.6 SERWA] Pozycje serw: centrala podaje STOPNIE, panel pokazuje PROCENTY
+// ============================================================================
+// /api/status: "klapa" = pozycjaKlapa w stopniach 0..180, "syberka" =
+// pozycjaSyberek w stopniach 0..90 (main_centrala.cpp: "Wspolny kontrakt
+// jednostek dla pozycji serw", telemetryServoDegrees()). Panel do v1.5.5
+// pokazywal te liczby jako procenty ("113%" przy klapie 113 stopni). W druga
+// strone /api/servo-manual przyjmuje procent 0..100, ktory centrala
+// przelicza procentNaKat(procent, 0, maks) - stad przelicznik odwrotny tutaj,
+// z zaokragleniem do najblizszej calosci i obcieciem do 0..100.
+static const int KLAPA_KAT_MAKS   = 180;
+static const int SYBERKA_KAT_MAKS = 90;
+inline int serwoStopnieNaProcent(int stopnie, int katMaks) {
+  if (katMaks <= 0) return 0;
+  if (stopnie <= 0) return 0;
+  if (stopnie >= katMaks) return 100;
+  return (stopnie * 100 + katMaks / 2) / katMaks;
+}
+
 // [v1.5.0 SEN] Praca na baterii: przyciemnienie i gleboki sen (krok 3 planu z
 // WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18, rozdzial 2 i 4; tematy B1/B5, 14)
 // ---------------------------------------------------------------------------

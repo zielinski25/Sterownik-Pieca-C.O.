@@ -1049,7 +1049,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.5"
+#define WERSJA_FW "v1.5.6"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1399,6 +1399,123 @@ void scenariuszZlaOdpowiedz() {
     sprawdz(logMa("tag=PANEL", "zdarzenie=dane_wrocily", "", odPowrotu), "po naprawie: wpis dane_wrocily");
   }
   zrzutEkranu("2_po_powrocie");
+}
+
+// --- [v1.5.6] ikona WiFi przy ciszy centrali ------------------------------
+// Zgloszenie z 24.11 (plytka na v1.5.5): "szukanie wifi mruga". W logu WiFi
+// jest polaczone przez caly czas (wifi=1, rssi -68..-81), ale /api/status co
+// jakis czas nie odpowiada w limicie - po 10 s dane_nieaktualne, po chwili
+// dane_wrocily, i tak w kolko. Kazde dane_nieaktualne zamienialo ikone WiFi
+// w naglowku na X ("brak WiFi"), a dane_wrocily z powrotem na kreski.
+// Teraz: X tylko gdy radio naprawde nie jest polaczone; przy ciszy centrali
+// kreski zostaja (pomaranczowe, wg RSSI panelu).
+static std::string opisIkonyWifi() {
+  bool ostrz = false;
+  const int st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  if (st < 0) return "X (brak WiFi)";
+  return std::to_string(st) + " kresek " + (ostrz ? "pomaranczowych (centrala milczy)" : "bialych");
+}
+void scenariuszIkonaWifiPrzyCiszy() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -60, 0));
+  setup();
+  biegnij(6000);
+  sprawdz(ekranMa("55°C"), "na starcie kafelki pokazuja dane");
+  bool ostrz = true;
+  int st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  info("ikona WiFi: %s", opisIkonyWifi().c_str());
+  sprawdz(st >= 4 && !ostrz, "ikona WiFi: biale kreski wg RSSI -60, bez X");
+  const int kresekNormalnie = st;
+
+  printf("  centrala przestaje odpowiadac (WiFi dalej polaczone):\n");
+  size_t od = g_atrapa.serial.size();
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+  // do wpisu dane_nieaktualne (10 s bez danych), ale przed wymuszonym
+  // polaczeniem (12 s) - wtedy WiFi jest wciaz polaczone i ikona ma to pokazac
+  int czekalMs = 0;
+  while (!logMa("zdarzenie=dane_nieaktualne", "", "", od) && czekalMs < 14000) { biegnij(250); czekalMs += 250; }
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=dane_nieaktualne", "wifi=1", od), "log: dane_nieaktualne z wifi=1");
+  sprawdz(ileNapisow("--") >= 8, "ekran: kafelki pokazuja \"--\" (to sie nie zmienia)");
+  st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  info("ikona WiFi po %d ms ciszy: %s", czekalMs, opisIkonyWifi().c_str());
+  sprawdz(st >= 1 && ostrz, "ikona WiFi: NIE ma X - kreski pomaranczowe (WiFi jest, centrala milczy)");
+  sprawdz(WiFi.status() == WL_CONNECTED, "radio jest w tym momencie polaczone");
+  zrzutEkranu("1_cisza_centrali_kreski_pomaranczowe");
+
+  printf("  centrala znow odpowiada:\n");
+  od = g_atrapa.serial.size();
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_OK; });
+  biegnij(12000);   // z zapasem na wymuszone polaczenie (12 s ciszy), gdyby wypadlo w miedzyczasie
+  sprawdz(logMa("tag=PANEL", "zdarzenie=dane_wrocily", "", od), "log: dane_wrocily");
+  st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  info("ikona WiFi: %s", opisIkonyWifi().c_str());
+  sprawdz(st == kresekNormalnie && !ostrz, "ikona WiFi: znow biale kreski, tyle co na starcie");
+
+  printf("  kilka krotkich przerw z rzedu (jak w logu z 24.11):\n");
+  // Cisza 11 s -> dane_nieaktualne -> powrot na 6 s -> znow cisza. Ikona przez
+  // caly czas bez X: to wlasnie bylo "mruganie".
+  od = g_atrapa.serial.size();
+  int razyX = 0, razyPomar = 0, probek = 0;
+  for (int cykl = 0; cykl < 2; cykl++) {
+    ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+    for (int i = 0; i < 44; i++) {   // 11 s po 250 ms
+      biegnij(250);
+      st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+      probek++;
+      if (st < 0) razyX++;
+      if (ostrz) razyPomar++;
+    }
+    ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_OK; });
+    for (int i = 0; i < 24; i++) {   // 6 s
+      biegnij(250);
+      st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+      probek++;
+      if (st < 0) razyX++;
+    }
+  }
+  info("probek %d, z X: %d, pomaranczowych: %d; dane_nieaktualne x%d, dane_wrocily x%d", probek, razyX, razyPomar,
+       ileLinii("zdarzenie=dane_nieaktualne", "", "", od), ileLinii("zdarzenie=dane_wrocily", "", "", od));
+  sprawdz(ileLinii("zdarzenie=dane_nieaktualne", "", "", od) == 2, "dwa razy dane_nieaktualne (kazda przerwa przekroczyla 10 s)");
+  sprawdz(razyX == 0, "ikona WiFi ANI RAZU nie pokazala X - WiFi bylo caly czas");
+  sprawdz(razyPomar > 0, "w trakcie przerw kreski byly pomaranczowe");
+  st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  sprawdz(st == kresekNormalnie && !ostrz, "po ostatnim powrocie: biale kreski");
+
+  printf("  centrala znika naprawde (AP gasnie):\n");
+  od = g_atrapa.serial.size();
+  g_atrapa.eter.clear();
+  biegnij(14000);
+  sprawdz(logMa("tag=WIFI lvl=WARN", "zdarzenie=utrata_polaczenia", "", od), "log: utrata_polaczenia");
+  st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  info("ikona WiFi: %s", opisIkonyWifi().c_str());
+  sprawdz(st < 0, "ikona WiFi: X - teraz naprawde nie ma WiFi");
+  zrzutEkranu("2_brak_wifi_x");
+}
+
+// --- [v1.5.6] serwa: stopnie z centrali, procenty na ekranie ----------------
+// Zdjecie z 24.11: ekran SERWA "KLAPA 113%", w logu klapa=113 syberka=86.
+// /api/status centrali podaje pozycje w STOPNIACH (klapa 0..180, syberek
+// 0..90), a panel pokazywal je jako procenty. 113 stopni klapy = 63 %,
+// 86 stopni syberka = 96 %.
+void scenariuszSerwoStopnie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -60, 0));
+  ustaw(0, [](Centrala& c) { c.klapa = 113; c.syberka = 86; });
+  setup();
+  biegnij(6000);
+  sprawdz(ekranMa("55°C"), "na starcie kafelki pokazuja dane");
+  sprawdz(ekranMa("Klapa 63%\nSyberka 96%"), "kafelek SERWO: Klapa 63% / Syberka 96% (113 i 86 stopni)");
+  sprawdz(!ekranMa("Klapa 113%\nSyberka 86%") && ileNapisow("113%") == 0, "nigdzie nie ma 113%");
+  sprawdz(logMa("tag=PANEL fw=", "klapa=113", "syberka=86"), "log tag=PANEL pokazuje surowe stopnie z centrali (bez zmian)");
+
+  ustaw(0, [](Centrala& c) { c.klapa = 180; c.syberka = 90; });
+  biegnij(4500);
+  sprawdz(ekranMa("Klapa 100%\nSyberka 100%"), "skrajne 180 i 90 stopni = 100% / 100%");
+  ustaw(0, [](Centrala& c) { c.klapa = 255; c.syberka = 200; });   // smieci (NVS centrali: 255 = brak zapisu)
+  biegnij(4500);
+  sprawdz(ekranMa("Klapa 100%\nSyberka 100%"), "wartosci poza zakresem: najwyzej 100%");
+  ustaw(0, [](Centrala& c) { c.klapa = 0; c.syberka = 45; });
+  biegnij(4500);
+  sprawdz(ekranMa("Klapa 0%\nSyberka 50%"), "0 i 45 stopni = 0% / 50%");
+  zrzutEkranu("1_serwo_procenty");
 }
 
 // --- 3 ---------------------------------------------------------------------
@@ -5333,7 +5450,7 @@ void scenariuszKafelkiSzerokosc() {
   // Najszersze realne wartosci: ujemne z czescia dziesietna, trzycyfrowe, 100 %, 1013 hPa.
   ustaw(0, [](Centrala& c) {
     c.tZewn = -25.5; c.tPokoj = -10.5; c.wilgotnosc = 100; c.cisnienie = 1013.2;
-    c.tBojler = 100; c.tPanel = 100; c.tOgrz = 100; c.tOgrzSr = 100; c.klapa = 100; c.syberka = 100; c.dym = 9999;
+    c.tBojler = 100; c.tPanel = 100; c.tOgrz = 100; c.tOgrzSr = 100; c.klapa = 180; c.syberka = 90; c.dym = 9999;   // [v1.5.6] stopnie: 180 i 90 = 100 %
   });
   setup();
   biegnij(4000);
@@ -5782,6 +5899,8 @@ const Scenariusz SCENARIUSZE[] = {
     {"bateria_i_log", "minuta zwyklej pracy: objetosc logu, wskaznik baterii", scenariuszBateriaILog},
     {"poprawki_v141", "male poprawki po audycie: limit odpowiedzi 8 kB, zapas stosu i odmowy pamieci w logu, zrzut po awarii, jasnosc min. 5 % (v1.4.1)", scenariuszPoprawkiV141},
     {"polecenia_nie_gina", "kolejka polecen: szybkie klikanie i przytrzymany przycisk, stara wartosc z GET-a, pasek bledu (v1.4.2)", scenariuszPoleceniaNieGina},
+    {"ikona_wifi_cisza", "ikona WiFi bez X, gdy WiFi jest, a centrala milczy - koniec mrugania (v1.5.6)", scenariuszIkonaWifiPrzyCiszy},
+    {"serwo_stopnie", "pozycje serw: stopnie z centrali -> procenty 0-100 na ekranie, nie 113% (v1.5.6)", scenariuszSerwoStopnie},
     {"bez_centrali_dlugo", "centrala wylaczona na dlugo: bez restartu co 5 min, ponawianie polaczenia, naglowek w minutach (v1.4.2)", scenariuszBezCentraliDlugo},
     {"centrala_milczy_dlugo", "WiFi jest, centrala milczy dlugo: bez restartu co 5 min, wymuszone laczenie co 30 s (v1.4.2)", scenariuszCentralaMilczyDlugo},
     {"ustawienia_na_zadanie", "ustawienia w tle co 60 s, na ekranie ustawien co 5 s i od razu; tryb pompy/serwa ze statusu (v1.4.3)", scenariuszUstawieniaNaZadanie},

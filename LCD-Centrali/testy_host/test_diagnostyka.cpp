@@ -927,6 +927,25 @@ static void testOtaZapisIDecyzja() {
 }
 
 // [v1.4.2 C4] Kolejka polecen - patrz naglowek KolejkaPolecen w diagnostyka_panelu.h.
+// [v1.5.6] Pozycje serw: stopnie z centrali -> procenty na ekranie.
+static void testSerwoStopnie() {
+  using namespace diag;
+  SPRAWDZ(KLAPA_KAT_MAKS == 180 && SYBERKA_KAT_MAKS == 90);
+  SPRAWDZ(serwoStopnieNaProcent(0, 180) == 0 && serwoStopnieNaProcent(180, 180) == 100);
+  SPRAWDZ(serwoStopnieNaProcent(113, 180) == 63);     // log z 24.11: "113%" na ekranie = 113 stopni = 63 %
+  SPRAWDZ(serwoStopnieNaProcent(90, 180) == 50 && serwoStopnieNaProcent(1, 180) == 1 && serwoStopnieNaProcent(179, 180) == 99);
+  SPRAWDZ(serwoStopnieNaProcent(86, 90) == 96 && serwoStopnieNaProcent(16, 90) == 18 && serwoStopnieNaProcent(45, 90) == 50);
+  SPRAWDZ(serwoStopnieNaProcent(90, 90) == 100 && serwoStopnieNaProcent(0, 90) == 0);
+  SPRAWDZ(serwoStopnieNaProcent(-5, 180) == 0 && serwoStopnieNaProcent(200, 180) == 100 && serwoStopnieNaProcent(255, 90) == 100);   // smieci z NVS centrali
+  SPRAWDZ(serwoStopnieNaProcent(50, 0) == 0);
+  // tam i z powrotem jak centrala: procentNaKat(p, 0, maks) = map(p, 0, 100, 0, maks)
+  for (int p = 0; p <= 100; p++) {
+    const int katK = (int)((long)p * 180 / 100), katS = (int)((long)p * 90 / 100);
+    SPRAWDZ(serwoStopnieNaProcent(katK, 180) == p || serwoStopnieNaProcent(katK, 180) == p - 1);
+    SPRAWDZ(serwoStopnieNaProcent(katS, 90) == p || serwoStopnieNaProcent(katS, 90) == p - 1);
+  }
+}
+
 static void testKolejkaPolecen() {
   using namespace diag;
   // 1) Jedno dotkniecie przy wolnym kanale: idzie od razu, bez czekania na cisze.
@@ -1311,6 +1330,7 @@ int main() {
   testSen();
   testRytmUstawien();
   testFiltrStatusu();
+  testSerwoStopnie();
   testKolejkaPolecen();
   testOtaNarzedzia();
   testOtaZapisIDecyzja();

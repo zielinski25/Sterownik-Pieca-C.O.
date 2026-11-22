@@ -40,6 +40,31 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.6 - IKONA WIFI NIE MRUGA PRZY CISZY CENTRALI; SERWA 0-100 %
+//   - Zgloszenie z plytki na v1.5.5: "szukanie wifi mruga". Log: WiFi
+//     polaczone caly czas (wifi=1, rssi -68..-81), ale /api/status co jakis
+//     czas nie odpowiada w limicie -> po 10 s dane_nieaktualne, po chwili
+//     dane_wrocily. Kazde dane_nieaktualne zamienialo ikone WiFi w naglowku
+//     na X ("brak WiFi"), dane_wrocily z powrotem na kreski = mruganie.
+//   - wifi_ikona_odswiez(): polaczono=false to "brak danych z centrali", nie
+//     "brak WiFi". Gdy radio jest polaczone (pomiar co 2 s, ten sam co dla
+//     ekranu ZASILANIE), a centrala milczy: kreski wg RSSI panelu na
+//     POMARANCZOWO, bez X. X tylko gdy WiFi.status() != WL_CONNECTED.
+//     Kafelki "--" i naglowek CENTRALA MILCZY bez zmian.
+//   - Limity statusu (SiecCfg) 400/1500 -> 1000/3000 ms: w tym samym logu
+//     POST z limitem 1000 ms przechodzil w 716 ms miedzy "timeout laczenia"
+//     statusow z limitem 400 ms - centrala odpowiadala, tylko wolniej.
+//     Mniej falszywych cisz; prog dane_nieaktualne (10 s) bez zmian.
+//   - Zdjecie ekranu SERWA: "KLAPA 113%". /api/status podaje pozycje serw w
+//     STOPNIACH (klapa 0..180, syberek 0..90 - main_centrala.cpp "Wspolny
+//     kontrakt jednostek"), panel pokazywal je jako procenty. Teraz
+//     diag::serwoStopnieNaProcent(): 113 st. klapy = 63 %, 86 st. syberka =
+//     96 %, nic powyzej 100 %. Suwaki na ekranie SERWA startuja od tej
+//     samej, przeliczonej wartosci; POST /api/servo-manual dalej w
+//     procentach (centrala sama przelicza na stopnie). Log tag=PANEL dalej
+//     podaje surowe stopnie. Opis trybu BEZPIECZNY: "syberek 100% (otwarty)".
+//   - Testy: ikona_wifi_cisza, serwo_stopnie; testSerwoStopnie() w
+//     test_diagnostyka.cpp.
 // [2026-11-24] v1.5.5 - POLECENIA Z DOTYKU PONAWIANE (3 PROBY), NIE 1 x 400 MS
 //   - Log z 24.11 15:40: trzy dotkniecia WL pompy i WYL skonczyly sie
 //     "POLECENIE NIE DOSZLO DO CENTRALI", choc statusy co 2 s przechodzily
@@ -1026,8 +1051,8 @@ static const uint32_t STATUS_INTERWAL_MS     = 2000;   // jak czesto GET /api/st
 NonBlockingHttp statusFetch;
 NonBlockingHttp ustawieniaFetch;
 NonBlockingHttp komendaFetch;
-static const uint32_t KOMENDA_LACZENIE_MS = 1000;   // [v1.5.5] limit laczenia POST-a polecenia (statusy: SiecCfg 400 ms)
-static const uint32_t KOMENDA_CALOSC_MS   = 2000;   // [v1.5.5] limit calego POST-a (statusy: 1500 ms)
+static const uint32_t KOMENDA_LACZENIE_MS = 1000;   // [v1.5.5] limit laczenia POST-a polecenia (statusy: SiecCfg, od v1.5.6 tez 1000 ms)
+static const uint32_t KOMENDA_CALOSC_MS   = 2000;   // [v1.5.5] limit calego POST-a (statusy: 1500 ms, od v1.5.6 3000 ms)
 StrumienHttpGet wykresyFetch;   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy, linia po linii (patrz obslugaWykresyFetch())
 StrumienHttpGet otaFetch;       // [v1.4.0 OTA] nowy firmware panelu z centrali (/panel-ota.bin), tresc binarna (patrz otaKrok())
 WskaznikSwiezosci swiezoscStatusu;
@@ -1198,7 +1223,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.5"; // [2026-11-24] v1.5.5: polecenia z dotyku ponawiane do 3 razy (1000/2000 ms), nie jedna proba 400 ms; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.6"; // [2026-11-24] v1.5.6: ikona WiFi nie mruga przy ciszy centrali, pozycje serw 0-100 % (stopnie -> procenty); opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -2454,7 +2479,7 @@ static void lvglPokazStan() {
                                  stan.pompa, stan.pompaOverrideMin,
                                  stan.dym, stan.dymAlarm,
                                  stan.tPokoj, stan.wilgotnosc, stan.cisnienie,
-                                 stan.klapa, stan.syberka, (int)trybWyboru,
+                                 diag::serwoStopnieNaProcent(stan.klapa, diag::KLAPA_KAT_MAKS), diag::serwoStopnieNaProcent(stan.syberka, diag::SYBERKA_KAT_MAKS), (int)trybWyboru,   // [v1.5.6] centrala podaje stopnie
                                  (int)trybSerwaWartosc,
                                  stan.alarmOgrzewanie, stan.alarmPanel,
                                  stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
@@ -3056,7 +3081,7 @@ void obslugaStatusFetch() {
                                  stan.pompa, stan.pompaOverrideMin,
                                  stan.dym, stan.dymAlarm,
                                  stan.tPokoj, stan.wilgotnosc, stan.cisnienie,
-                                 stan.klapa, stan.syberka, (int)trybWyboru,
+                                 diag::serwoStopnieNaProcent(stan.klapa, diag::KLAPA_KAT_MAKS), diag::serwoStopnieNaProcent(stan.syberka, diag::SYBERKA_KAT_MAKS), (int)trybWyboru,   // [v1.5.6] centrala podaje stopnie
                                  (int)trybSerwaWartosc,
                                  stan.alarmOgrzewanie, stan.alarmPanel,
                                  stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
@@ -5127,7 +5152,7 @@ void setup() {
                                  stan.pompa, stan.pompaOverrideMin,
                                  stan.dym, stan.dymAlarm,
                                  stan.tPokoj, stan.wilgotnosc, stan.cisnienie,
-                                 stan.klapa, stan.syberka, (int)trybWyboru,
+                                 diag::serwoStopnieNaProcent(stan.klapa, diag::KLAPA_KAT_MAKS), diag::serwoStopnieNaProcent(stan.syberka, diag::SYBERKA_KAT_MAKS), (int)trybWyboru,   // [v1.5.6] centrala podaje stopnie
                                  (int)trybSerwaWartosc,
                                  stan.alarmOgrzewanie, stan.alarmPanel,
                                  stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,

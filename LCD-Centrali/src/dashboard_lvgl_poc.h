@@ -315,6 +315,10 @@ void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik);
 void lvgl_dashboard_poc_pokaz_blad_polecenia(const char *tekst);
 // Aktualnie pokazywany tekst paska ("" = ukryty) - do testow na PC.
 const char *lvgl_dashboard_poc_blad_polecenia_tekst();
+// [v1.5.6] Stan ikony WiFi w naglowku - do testow na PC. Zwraca -1, gdy
+// widac X (brak WiFi), inaczej liczbe zapalonych kresek (0..7);
+// *ostrzezenie = kreski pomaranczowe (WiFi jest, centrala milczy).
+int lvgl_dashboard_poc_wifi_ikona_stan(bool *ostrzezenie);
 
 // [v1.2.1 RATUNEK] Alarm ma przetrwac samoczynny restart panelu (main.cpp,
 // panelAutorestart()): panel restartuje sie, gdy NIE MA danych z centrali, a
