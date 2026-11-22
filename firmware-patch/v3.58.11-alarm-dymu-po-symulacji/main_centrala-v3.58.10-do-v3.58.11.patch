@@ -1,0 +1,170 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,36 @@
++// FIRMWARE_VERSION v3.58.10 -> v3.58.11 (2026-11-24) — ALARM DYMU Z SYMULACJI GASNIE RAZEM Z SYMULACJĄ.
++//
++// [v3.58.11 DYM-SYM] — 2026-11-24
++// Zgłoszenie użytkownika (22.11, 18:25, panel WWW „Czujnik dymu i spalin”):
++// po włączeniu symulacji dymu z wartością nad progiem jest alarm — i słusznie —
++// ale po „Wyłącz teraz” alarm dalej świeci („Symulacja wyłączona; alarm
++// sterownika nadal aktywny — sprawdź kotłownię”), kafelek pokazuje 1 ADC
++// i „próg alarmu przekroczony”.
++//
++// PRZYCZYNA (zachowanie zamierzone od początku, ale niewygodne przy testach):
++// alarm POŻAR jest zatrzaskowy — gaśnie wyłącznie na ŚWIEŻYM, prawdziwym
++// odczycie czujnika poniżej progu minus histereza (500 − 30). Czujnik MQ w
++// trybie impulsowym daje świeży odczyt tylko w ostatnich sekundach okna WŁ
++// (po rozgrzewaniu), więc po wyłączeniu symulacji alarm potrafił trwać
++// jeszcze 2,5–3 min (≤10 s + WYŁ 60 s + stabilizacja 90 s).
++//
++// CO ROBI 3.58.11 (tylko blok DYM-SYM i pozar()):
++// [1] Przy aktywacji alarmu POŻAR zapamiętywane jest, czy odczyt, który go
++//     wywołał, był SYMULOWANY (alarmDymuZSymulacji). Gdy w trakcie takiego
++//     alarmu przyjdzie prawdziwy świeży odczyt nad progiem — alarm staje się
++//     prawdziwy (flaga gaśnie) i dalej obowiązują stare zasady.
++// [2] Gdy symulacja dymu się kończy (Wyłącz teraz w WWW, „symuluj_stop” z
++//     Firebase/Telegrama albo upływ czasu), a alarm pochodzi WYŁĄCZNIE z
++//     symulacji — pozar() kasuje go w najbliższym ticku (≤ 5 s), tym samym
++//     sprzątaniem co zwykła dezaktywacja (buzzer, wyciszenie, nadzór po
++//     skasowaniu). Log: tag=ALARM lvl=INFO zdarzenie=dezaktywacja typ=POZAR
++//     powod=koniec_symulacji.
++// [3] /api/status: nowe pole "dym_alarm_sym" (true = bieżący alarm powstał
++//     na odczycie symulowanym). Panel LCD i aplikacja go nie wymagają.
++// Bez zmian: alarm z PRAWDZIWEGO pomiaru gaśnie tylko prawdziwym pomiarem;
++//     próg, histereza, ruch serw, Telegram, OTA, telemetria, Zew 2.
++// Koszt: 2 bajty RAM, zero dodatkowych odczytów.
++//
+ // FIRMWARE_VERSION v3.58.9 -> v3.58.10 (2026-11-19) — ZEW 2 BEZ PRZERW: PONOWIENIE PO BŁĘDZIE DHT22 PO 5 s.
+ //
+ // [v3.58.10 ZEW2-PONOWIENIE] — 2026-11-19
+@@ -1805,6 +1838,16 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.11] — 2026-11-24 — ALARM DYMU Z SYMULACJI GASNIE RAZEM Z SYMULACJA
++// Co: Alarm POZAR wywolany wylacznie symulacja dymu jest kasowany w <= 5 s
++//     po zakonczeniu symulacji (WWW/Firebase/uplyw czasu); alarm z prawdziwego
++//     pomiaru gasnie jak dotad - tylko prawdziwym pomiarem. /api/status: dym_alarm_sym.
++// Problem: po "Wylacz teraz" alarm swiecil jeszcze 2,5-3 min (do swiezego odczytu MQ).
++// Przyczyna: dezaktywacja wymaga swiezego odczytu < prog-histereza; czujnik impulsowy
++//     daje go dopiero po WYL 60 s + stabilizacji 90 s.
++// Naprawa: blok DYM-SYM przed pozar() (alarmDymuZSymulacji, dymAlarmSkasuj(),
++//     dymAlarmPoKoncuSymulacji()); szczegoly w naglowku [v3.58.11 DYM-SYM].
++//
+ // [v3.58.10] — 2026-11-19 — ZEW 2 BEZ PRZERW: PONOWIENIE PO BLEDZIE DHT22
+ // Co: Po nieudanym odczycie DHT22 (zla ramka, blad biblioteki, odrzucony)
+ //     ponowienie po 5 s (max 2 w cyklu 120 s, bez przesuwania cyklu);
+@@ -6145,6 +6188,7 @@
+ struct AlarmMuteTimer;
+ int32_t alarmMuteRemainingMs(AlarmMuteTimer& mute, bool alarmActive);
+ bool dymNadzorAktywny();
++extern bool alarmDymuZSymulacji;   // [v3.58.11 DYM-SYM] definicja przed pozar(), czytane w /api/status
+ void odnowDymNadzorPoRuchu();
+ void obslugaRozpalaniaSerwa();
+ static bool uruchomRozpalanieSerwa(String& blad);
+@@ -6545,7 +6589,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.10";
++static const char* FIRMWARE_VERSION = "v3.58.11";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -31164,6 +31208,9 @@
+   // fizycznie wylaczony -- dashboard pokazuje ikonke OFF zamiast wartosci.
+   j += F("\"dym_wlaczony\":"); j += (czujnikDymuWlaczonyTemperaturowo ? "true" : "false"); j += F(",");
+   j += F("\"dym_alarm\":"); j += (czyAlarmAktywny ? "true" : "false"); j += F(",");
++  // [v3.58.11 DYM-SYM] true = biezacy alarm powstal na odczycie symulowanym
++  // (zgasnie sam z koncem symulacji). Dodatkowe pole - panel LCD i aplikacja go nie wymagaja.
++  j += F("\"dym_alarm_sym\":"); j += ((czyAlarmAktywny == 1 && alarmDymuZSymulacji) ? "true" : "false"); j += F(",");
+   {
+     int32_t dymMuteMs = alarmMuteRemainingMs(alarmMuteDym, czyAlarmAktywny == 1);
+     int32_t ogrzMuteMs = alarmMuteRemainingMs(alarmMuteOgrz, alarmOgrzewanieWlaczone || alarmPanelWlaczone);
+@@ -35097,6 +35144,45 @@
+   return true;
+ }
+ 
++// --- DYM-SYM-POCZATEK --- [v3.58.11]
++// Alarm POZAR wywolany WYLACZNIE symulacja dymu (od wlaczenia symulacji zaden
++// prawdziwy swiezy odczyt nie przekroczyl progu) jest kasowany od razu po jej
++// zakonczeniu - "Wylacz teraz" w WWW, "symuluj_stop" z Firebase/Telegrama,
++// uplyw czasu. Alarm z prawdziwego pomiaru gasnie tylko prawdziwym pomiarem
++// (odczyt < prog - HISTEREZA_DYMU), dokladnie jak dotad.
++bool alarmDymuZSymulacji = false;          // true = biezacy alarm POZAR powstal na odczycie symulowanym
++static bool dymSymulacjaBylaAktywna = false;   // wynik symulacjaTrwa() z poprzedniego ticku pozar()
++
++// Wspolne sprzatanie po skasowaniu alarmu POZAR (dotad wpisane wprost w
++// pozar()). powod == nullptr -> dotychczasowa linia logu bez zmian.
++static void dymAlarmSkasuj(const char* powod) {
++  if (powod == nullptr) {
++    zapiszLogKrytyczny(F("tag=ALARM lvl=INFO zdarzenie=dezaktywacja typ=POZAR"));
++  } else {
++    zapiszLogKrytyczny(String(F("tag=ALARM lvl=INFO zdarzenie=dezaktywacja typ=POZAR powod=")) + powod);
++  }
++  czyAlarmAktywny = 0;
++  alarmDymuZSymulacji = false;
++  dymSkasowanieAlarmuMs = millis();
++  dymNadzorPoSkasowaniuAktywny = true;
++  dymKrokSyberkaUstawiony = false;
++  alarmMuteRemainingMs(alarmMuteDym, false); // kasuje tylko mute "do skasowania"
++  noTone(pinBuzer);
++  digitalWrite(pinZasilanieBuzera, LOW);
++  fazaAlarmuDzwiekowego = 0;
++}
++
++// Wolane raz na tick pozar() z wynikiem symulacjaTrwa(). Zwraca true, gdy
++// w tym ticku skasowano alarm pochodzacy z symulacji.
++static bool dymAlarmPoKoncuSymulacji(bool symDymTeraz) {
++  const bool koniec = dymSymulacjaBylaAktywna && !symDymTeraz;
++  dymSymulacjaBylaAktywna = symDymTeraz;
++  if (!koniec || czyAlarmAktywny != 1 || !alarmDymuZSymulacji) return false;
++  dymAlarmSkasuj("koniec_symulacji");
++  return true;
++}
++// --- DYM-SYM-KONIEC ---
++
+ void pozar() {
+   // [SYMULACJA-PER-CZUJNIK, PLAN_SYMULACJA_CZUJNIKOW.md 6.3] Sprawdzone raz
+   // na poczatku calego wywolania - wynik uzywany zarowno przy bramce
+@@ -35105,6 +35191,8 @@
+   // przekroczeniu czasu), wiec wolane dokladnie raz na tick, nie osobno w
+   // kazdym miejscu, gdzie wynik jest potrzebny.
+   bool symDymTeraz = symulacjaTrwa(symulacjaDymAktywna, symulacjaDymDo, "dym");
++  // [v3.58.11 DYM-SYM] koniec symulacji kasuje alarm, ktory z niej powstal.
++  dymAlarmPoKoncuSymulacji(symDymTeraz);
+   bool nadzorPoRuchuSerwa = dymNadzorAktywny();
+ 
+   // [DYM-OD-TEMPERATURY] Bramka temperaturowa -- czujnik w ogole nie jest
+@@ -35284,6 +35372,9 @@
+   // dowodem, ze dym opadl ponizej progu kasowania.
+   if (czujnikDymuSwiezyOdczyt && czujnikDymuOdczyt > progAlarmowyDymu) {
+     czasNastepnejAkcjiDymu = millis() + 10000UL;
++    // [v3.58.11 DYM-SYM] prawdziwy odczyt nad progiem w trakcie alarmu z
++    // symulacji -> od tej chwili to zwykly alarm (koniec symulacji go nie skasuje).
++    if (czyAlarmAktywny == 1 && !symDymTeraz) alarmDymuZSymulacji = false;
+ 
+     if (czyAlarmAktywny == 0) {
+       bool rozpalanieByloAktywne = rozpalanieTrybAktywny || rozpalanieSerwaAktywne;
+@@ -35315,19 +35406,12 @@
+       dymOstatniKrokSyberkaMs = millis();
+       dymKrokSyberkaUstawiony = true;
+       czyAlarmAktywny = 1;
++      alarmDymuZSymulacji = symDymTeraz;   // [v3.58.11 DYM-SYM] skad wzial sie ten alarm
+     }
+   } else if (czujnikDymuSwiezyOdczyt &&
+              czujnikDymuOdczyt < progAlarmowyDymu - HISTEREZA_DYMU) {
+     if (czyAlarmAktywny == 1) {
+-      zapiszLogKrytyczny(F("tag=ALARM lvl=INFO zdarzenie=dezaktywacja typ=POZAR"));
+-      czyAlarmAktywny = 0;
+-      dymSkasowanieAlarmuMs = millis();
+-      dymNadzorPoSkasowaniuAktywny = true;
+-      dymKrokSyberkaUstawiony = false;
+-      alarmMuteRemainingMs(alarmMuteDym, false); // kasuje tylko mute "do skasowania"
+-      noTone(pinBuzer);
+-      digitalWrite(pinZasilanieBuzera, LOW);
+-      fazaAlarmuDzwiekowego = 0;
++      dymAlarmSkasuj(nullptr);   // [v3.58.11 DYM-SYM] wspolne sprzatanie; log bez zmian
+     }
+   }
+ 

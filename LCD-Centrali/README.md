@@ -526,6 +526,10 @@ pokazuje od 3.58.8.
 > Zaraz po niej **3.58.10** (`firmware-patch/v3.58.10-zew2-ponowienie/`): ponowienie
 > odczytu DHT22 po błędzie po 5 s i wygaszanie Zew 2 255 s zamiast 135 s — bez tego
 > każdy nieudany odczyt robił 2–4 min przerwy w Zew 2. Panel LCD bez zmian.
+> **3.58.11** (`firmware-patch/v3.58.11-alarm-dymu-po-symulacji/`): alarm dymu wywołany
+> wyłącznie symulacją gaśnie w ≤ 5 s po jej wyłączeniu (dotąd czekał 2,5–3 min na świeży
+> odczyt MQ); alarm z prawdziwego pomiaru bez zmian. Nowe pole `/api/status`
+> `dym_alarm_sym` — panel LCD go nie czyta, bez zmian w panelu.
 
 **Z v1.4.5 na v1.4.6** zmieniają się: `src/main.cpp`,
 `src/dashboard_lvgl_poc.cpp`, `src/dashboard_lvgl_poc.h`,
