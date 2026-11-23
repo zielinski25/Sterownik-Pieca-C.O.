@@ -1,180 +1,268 @@
 <!doctype html>
 <html lang="pl"><head><meta charset="utf-8">
-<title>Kafelek ZEWN – konfigurator</title>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafelek ZEWN – projektant</title>
 <style>
- body{background:#1b1f27;color:#cfd3dc;font-family:Montserrat,Arial,sans-serif;margin:0;padding:20px 24px}
- h1{font-size:20px;margin:0 0 6px} h2{font-size:15px;margin:22px 0 8px;color:#fff}
- p{max-width:1000px;line-height:1.45;margin:6px 0 12px;font-size:13px}
- .panel{background:#11141a;border:1px solid #2a2f3a;border-radius:10px;padding:14px 16px;margin-bottom:14px;max-width:1100px}
- .opcje{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px 24px}
- .opcje label{display:block;font-size:13px;margin:3px 0;cursor:pointer} .opcje small{color:#8d93a0;display:block;margin-left:22px}
- .opcje b{display:block;margin-bottom:4px;color:#fff}
- .siatka{display:flex;flex-wrap:wrap;gap:26px 34px}
- .stan{display:flex;flex-direction:column;align-items:flex-start}
- .stan .n{font-size:11px;color:#9aa3b2;margin-bottom:6px;height:28px}
- .lcd{background:#000;padding:8px;border-radius:6px;display:inline-flex;gap:6px;transform:scale(1.5);transform-origin:top left;margin-bottom:50px;margin-right:60px}
- .k{position:relative;width:114px;height:90px;background:#0d2238;border:1px solid #1e4a73;border-radius:6px;box-sizing:border-box;overflow:hidden}
- .k .t{position:absolute;left:8px;top:6px;font-size:11px;color:#8d93a0}
+ :root{--bg:#1b1f27;--pan:#11141a;--ram:#2a2f3a;--tx:#cfd3dc;--dim:#8d93a0;--ak:#2b6cb0;--ok:#4fd18b}
+ *{box-sizing:border-box}
+ body{background:var(--bg);color:var(--tx);font-family:Montserrat,"Segoe UI",Arial,sans-serif;margin:0;padding:16px}
+ h1{font-size:19px;margin:0 0 4px} h3{font-size:12px;margin:0 0 6px;color:#fff;text-transform:uppercase;letter-spacing:.5px}
+ .top{display:grid;grid-template-columns:300px 1fr 300px;gap:14px;align-items:start}
+ @media (max-width:1100px){.top{grid-template-columns:1fr}}
+ .panel{background:var(--pan);border:1px solid var(--ram);border-radius:10px;padding:12px}
+ .grp{margin-bottom:12px}
+ .btns{display:flex;flex-wrap:wrap;gap:5px}
+ .btns button{background:#232833;color:#fff;border:1px solid #30363f;border-radius:6px;padding:6px 9px;font-size:12px;cursor:pointer;text-align:left}
+ .btns button:hover{border-color:#4fa3ff} .btns button.on{background:var(--ak);border-color:var(--ak)}
+ .btns button small{display:block;color:#b8c0cc;font-size:10px}
+ .btns.col button{width:100%}
+ .suwak{display:flex;align-items:center;gap:8px;font-size:12px;margin:4px 0} .suwak input{flex:1}
+ .suwak b{min-width:64px;text-align:right;color:#fff}
+ /* scena */
+ .scena{display:flex;flex-direction:column;align-items:center;gap:8px}
+ .lcd{background:#000;padding:8px;border-radius:8px;display:inline-flex;gap:6px;transform-origin:top center}
+ .k{position:relative;width:114px;height:90px;background:#0d2238;border:1px solid #1e4a73;border-radius:6px;overflow:hidden}
+ .k .t{position:absolute;left:8px;top:6px;font-size:11px;color:var(--dim);white-space:nowrap}
  .k .ico{position:absolute;right:4px;top:6px;width:40px;height:40px}
  .k .v28{position:absolute;left:8px;top:52px;font-size:22px;line-height:30px;color:#e8ebf0;white-space:nowrap}
  .k .v20{position:absolute;left:8px;top:46px;font-size:16px;line-height:22px;color:#e8ebf0;white-space:nowrap}
  .k .d14{position:absolute;left:8px;font-size:11px;line-height:17px;color:#4fa3ff;white-space:nowrap}
  .k .d14.pod{top:68px} .k .d14.rog{right:4px;left:auto;top:48px;text-align:right} .k .d14.dol{top:70px}
- .k .v28.przes{top:40px} .k .v28.male{font-size:17px}
- .k .d14.szary{color:#9aa3b2}
- .k .d14.biala{color:#e8ebf0}
+ .k .v28.przes{top:40px} .k .v28.male{font-size:17px} .k .v28.wyzej{top:36px}
+ .k .d14.szary{color:var(--dim)} .k .d14.biala{color:#e8ebf0} .k .d14.zolty{color:#f6b73c}
  .k .pasek{position:absolute;left:0;right:0;bottom:0;height:16px;background:#153a5e;color:#8fc7ff;font-size:10px;line-height:16px;padding-left:8px;white-space:nowrap}
- .k .v28.wyzej{top:36px}
  .k .d20{position:absolute;left:8px;top:52px;font-size:16px;line-height:30px;color:#4fa3ff;white-space:nowrap}
- .stany{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
- .stany button{background:#2a2f3a;color:#fff;border:0;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer} .stany button.on{background:#2b6cb0}
- button.glowny{background:#2b6cb0;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer}
- #wynik{margin-top:10px;font-size:13px;color:#4fd18b;white-space:pre-wrap;font-family:Consolas,monospace}
- input[type=text]{width:70%;background:#1b1f27;color:#fff;border:1px solid #2a2f3a;border-radius:4px;padding:5px}
- .uwaga{color:#f0b35a}
+ .k .ico.duza{width:52px;height:52px;right:2px;top:2px}
+ .pod-napis{font-size:12px;color:var(--dim);text-align:center;max-width:460px;min-height:34px}
+ .ikony-pas{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:4px}
+ .ikony-pas div{width:40px;height:40px;background:#0d2238;border:1px solid #1e4a73;border-radius:5px;padding:3px}
+ .wszystkie{margin-top:14px}
+ .siatka{display:flex;flex-wrap:wrap;gap:8px 10px}
+ .mini{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:4px;border-radius:6px;border:1px solid transparent}
+ .mini:hover{border-color:#4fa3ff} .mini.on{border-color:var(--ak)}
+ .mini .n{font-size:10px;color:var(--dim);max-width:124px;text-align:center;height:24px}
+ .wynik{margin-top:10px}
+ .wynik textarea{width:100%;height:52px;background:#0b0e13;color:var(--ok);border:1px solid var(--ram);border-radius:6px;font-family:Consolas,monospace;font-size:12px;padding:6px}
+ input[type=text]{width:100%;background:#1b1f27;color:#fff;border:1px solid var(--ram);border-radius:4px;padding:5px;font-size:12px}
+ .uw{color:#f6b73c;font-size:11px}
+ .legenda{font-size:11px;color:var(--dim);margin-top:4px}
 </style></head><body>
-<h1>Kafelek ZEWN na LCD – konfigurator</h1>
-<p>Ustaw po lewej, <b>co</b> kafelek ma pokazywać i <b>jak</b> ma to być ułożone. Niżej od razu widać ten kafelek we wszystkich sytuacjach pogodowych
-(skala 1,5×; prawdziwy kafelek ma 114×90 px, obok stoi POKÓJ do porównania wysokości temperatury). Na koniec kliknij <b>„Pokaż wybór”</b> i wklej mi tekst.
-Temperatura na podglądzie to zawsze odczyt z czujnika (3.5°C); prognoza i zjawiska pochodzą z Open-Meteo przez centralę.</p>
+<h1>Kafelek ZEWN – projektant</h1>
+<div class="legenda">Każde kliknięcie od razu zmienia duży kafelek na środku. Obok stoi POKÓJ dla porównania. Na dole ten sam kafelek we wszystkich sytuacjach (kliknij małą – przełączysz dużą). Na koniec skopiuj linijkę z pola „Wybór”.</div>
 
-<div class="panel"><div class="opcje">
- <div><b>1. CO pokazuje drugi napis</b>
-  <label><input type="radio" name="co" value="opad"> tylko opad: „za 6 h”, „pada 30 min”, „pada”<small>jak dziś (v1.5.13) – rodzaj opadu nieznany</small></label>
-  <label><input type="radio" name="co" value="rodzaj" checked> opad z rodzajem: „deszcz za 6 h”, „śnieg za 2 h”, „burza za 1 h”, „pada 30 min”, „sypie”<small>centrala musi pobierać kod pogody (3.58.16)</small></label>
-  <label><input type="radio" name="co" value="zawsze"> jak wyżej, a bez opadu aktualne zjawisko: „słonecznie”, „pochmurno”, „mgła”, „silny wiatr”<small>napis widoczny zawsze, gdy centrala ma prognozę</small></label>
-  <label><input type="radio" name="co" value="nic"> nic – kafelek jak przed deszczem w ogóle (sama temperatura, zjawiska tylko ikoną)</label>
+<div class="top" style="margin-top:12px">
+ <!-- LEWA: sytuacja pogodowa -->
+ <div class="panel">
+  <div class="grp"><h3>Sytuacja pogodowa</h3><div class="btns col" id="sytuacje"></div></div>
+  <div class="grp"><h3>Parametry</h3>
+   <div class="suwak">temp. z czujnika <input type="range" id="temp" min="-25" max="35" step="0.5" value="3.5"><b id="tempV">3.5°C</b></div>
+   <div class="suwak">za ile / do końca <input type="range" id="min" min="0" max="1440" step="15" value="360"><b id="minV">6 h</b></div>
+   <label style="font-size:12px"><input type="checkbox" id="brakCz"> czujnik nie działa (-1.0)</label>
+   <label style="font-size:12px;display:block"><input type="checkbox" id="noc"> noc (ikona księżyca zamiast słońca)</label>
+  </div>
  </div>
- <div><b>2. Za ile czasu patrzeć w przód</b>
-  <label><input type="radio" name="okno" value="6" checked> 6 h (jak dziś)</label>
-  <label><input type="radio" name="okno" value="12"> 12 h</label>
-  <label><input type="radio" name="okno" value="24"> 24 h („deszcz za 18 h”)</label>
-  <b style="margin-top:10px">3. Format czasu</b>
-  <label><input type="radio" name="czas" value="pelny" checked> „za 45 min”, „za 1,5 h”, „za 6 h”</label>
-  <label><input type="radio" name="czas" value="godzina"> godzina zegarowa: „od 14:30”, „do 15:00”</label>
-  <label><input type="radio" name="czas" value="krotki"> krótko: „45m”, „1,5h”, „6h”</label>
- </div>
- <div><b>4. Ikona kafelka</b>
-  <label><input type="radio" name="ikona" value="temp" checked> wg temperatury (płatek/chmura/słońce), przy opadzie chmura z kroplami / kropla<small>jak dziś</small></label>
-  <label><input type="radio" name="ikona" value="pogoda"> wg pogody: słońce, chmura, chmura+deszcz, płatek śniegu, mgła, piorun, wiatr</label>
- </div>
- <div><b>5. Układ (gdzie napis o zjawisku)</b>
-  <label><input type="radio" name="uklad" value="B" checked> B – temperatura mniejsza (20), zjawisko pod nią (14) <small>v1.5.13</small></label>
-  <label><input type="radio" name="uklad" value="C"> C – temperatura duża (28) przesunięta w górę, zjawisko pod nią</label>
-  <label><input type="radio" name="uklad" value="D"> D – temperatura duża, nieruszona; zjawisko małym napisem pod ikoną (prawy róg)</label>
-  <label><input type="radio" name="uklad" value="E"> E – temperatura duża, nieruszona; zjawisko w wierszu tytułu zamiast „ZEWN”</label>
-  <label><input type="radio" name="uklad" value="F"> F – temperatura duża; zjawisko na niebieskim pasku na samym dole kafelka</label>
-  <label><input type="radio" name="uklad" value="G"> G – na przemian: 6 s temperatura (duża), 2 s zjawisko (duże) – w jednym wierszu</label>
-  <label><input type="radio" name="uklad" value="A"> A – jak do v1.5.12: zjawisko ZAMIAST temperatury</label>
- </div>
- <div><b>6. Kolor napisu o zjawisku</b>
-  <label><input type="radio" name="kolor" value="nieb" checked> niebieski (jak kropla)</label>
-  <label><input type="radio" name="kolor" value="szary"> szary (jak tytuł „ZEWN”)</label>
-  <label><input type="radio" name="kolor" value="bialy"> biały (jak temperatura)</label>
-  <b style="margin-top:10px">7. Gdy czujnik nie działa (-1.0)</b>
-  <label><input type="radio" name="brak" value="kreski" checked> „--” zamiast temperatury, zjawisko normalnie</label>
-  <label><input type="radio" name="brak" value="prognoza"> temperatura z prognozy Open-Meteo, oznaczona „~3°C”</label>
- </div>
-</div></div>
 
-<h2>Podgląd we wszystkich sytuacjach</h2>
-<div class="siatka" id="siatka"></div>
+ <!-- SRODEK: scena -->
+ <div class="panel scena">
+  <div class="lcd" id="scena" style="transform:scale(3.2);margin:20px 0 300px"></div>
+  <div class="pod-napis" id="opis"></div>
+  <div class="suwak" style="width:260px">powiększenie <input type="range" id="zoom" min="1.5" max="4" step="0.1" value="3.2"></div>
+  <h3 style="margin-top:6px">Cały zestaw ikon w tym stylu</h3>
+  <div class="ikony-pas" id="pasIkon"></div>
+ </div>
 
-<div class="panel">
- <label>Uwagi (co zmienić / czego brakuje): <input type="text" id="uw"></label>
- <div style="margin-top:8px"><button class="glowny" onclick="pokaz()">Pokaż wybór</button></div>
- <div id="wynik"></div>
+ <!-- PRAWA: wyglad -->
+ <div class="panel">
+  <div class="grp"><h3>Zestaw ikon</h3><div class="btns col" id="zestawy"></div></div>
+  <div class="grp"><h3>Rozmiar ikony</h3><div class="btns" data-opt="rozm">
+   <button data-v="40" class="on">40 px (jak dziś)</button><button data-v="52">52 px (większa)</button></div></div>
+  <div class="grp"><h3>Napis o pogodzie</h3><div class="btns col" data-opt="co">
+   <button data-v="rodzaj" class="on">zjawisko + czas<small>„deszcz za 6 h”, „śnieg za 2 h”, „pada 30 min”, „sypie”</small></button>
+   <button data-v="opad">sam czas<small>„za 6 h”, „pada 30 min” (jak v1.5.13)</small></button>
+   <button data-v="zawsze">zawsze coś<small>bez opadu: „słonecznie”, „pochmurno”, „mgła”</small></button>
+   <button data-v="nic">bez napisu<small>pogoda tylko ikoną</small></button></div></div>
+  <div class="grp"><h3>Format czasu</h3><div class="btns" data-opt="czas">
+   <button data-v="pelny" class="on">za 45 min / za 6 h</button><button data-v="godzina">od 14:30</button><button data-v="krotki">45m / 6h</button></div></div>
+  <div class="grp"><h3>Układ</h3><div class="btns col" data-opt="uklad">
+   <button data-v="B" class="on">B – temp. mniejsza, napis pod nią <small>v1.5.13</small></button>
+   <button data-v="C">C – temp. duża wyżej, napis pod nią</button>
+   <button data-v="D">D – temp. duża; napis w prawym rogu pod ikoną</button>
+   <button data-v="E">E – temp. duża; napis zamiast tytułu „ZEWN”</button>
+   <button data-v="F">F – temp. duża; napis na pasku na dole</button>
+   <button data-v="G">G – na przemian: 6 s temp., 2 s napis</button>
+   <button data-v="A">A – napis ZAMIAST temp. (do v1.5.12)</button></div></div>
+  <div class="grp"><h3>Kolor napisu</h3><div class="btns" data-opt="kolor">
+   <button data-v="nieb" class="on">niebieski</button><button data-v="szary">szary</button><button data-v="bialy">biały</button><button data-v="zolty">żółty</button></div></div>
+  <div class="grp"><h3>Brak czujnika</h3><div class="btns" data-opt="brak">
+   <button data-v="kreski" class="on">„--”</button><button data-v="prognoza">„~3°C” z prognozy</button></div></div>
+ </div>
+</div>
+
+<div class="panel wszystkie">
+ <h3>Ten sam kafelek we wszystkich sytuacjach (z aktualnymi ustawieniami)</h3>
+ <div class="siatka" id="siatka"></div>
+</div>
+
+<div class="panel wynik">
+ <h3>Wybór – skopiuj mi tę linijkę</h3>
+ <textarea id="wynik" readonly></textarea>
+ <div style="margin-top:6px"><input type="text" id="uwagi" placeholder="Uwagi: co zmienić, czego brakuje (dopisze się do linijki wyżej)"></div>
 </div>
 
 <script>
-const ICO = {
- slonce:'<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="9" fill="#f6b73c"/><g stroke="#f6b73c" stroke-width="3" stroke-linecap="round"><path d="M20 3v5M20 32v5M3 20h5M32 20h5M8 8l3.5 3.5M28.5 28.5 32 32M8 32l3.5-3.5M28.5 11.5 32 8"/></g></svg>',
- chmura:'<svg viewBox="0 0 40 40"><path d="M11 30h19a7 7 0 0 0 1-13.9A9 9 0 0 0 13.6 14 7 7 0 0 0 11 30z" fill="#8fc7ff"/></svg>',
- deszcz:'<svg viewBox="0 0 40 40"><path d="M11 26h19a7 7 0 0 0 1-13.9A9 9 0 0 0 13.6 10 7 7 0 0 0 11 26z" fill="#8fc7ff"/><g fill="#8fc7ff"><rect x="13" y="29" width="3" height="6" rx="1"/><rect x="19" y="29" width="3" height="6" rx="1"/><rect x="25" y="29" width="3" height="6" rx="1"/></g></svg>',
- kropla:'<svg viewBox="0 0 40 40"><path d="M20 5c6 9 11 14 11 21a11 11 0 0 1-22 0c0-7 5-12 11-21z" fill="#4c9fff"/></svg>',
- snieg:'<svg viewBox="0 0 40 40"><g stroke="#bfe3ff" stroke-width="3" stroke-linecap="round"><path d="M20 4v32M6 12l28 16M6 28l28-16"/><path d="M16 7l4 4 4-4M16 33l4-4 4 4M5 16l5 2-2 5M35 16l-5 2 2 5M5 24l5-2-2-5M35 24l-5-2 2-5"/></g></svg>',
- mgla:'<svg viewBox="0 0 40 40"><g stroke="#9aa3b2" stroke-width="3" stroke-linecap="round"><path d="M6 14h28M4 21h32M8 28h24M12 35h16"/></g></svg>',
- burza:'<svg viewBox="0 0 40 40"><path d="M11 24h19a7 7 0 0 0 1-13.9A9 9 0 0 0 13.6 8 7 7 0 0 0 11 24z" fill="#8fc7ff"/><path d="M22 22l-7 10h6l-3 7 9-11h-6l3-6z" fill="#f6b73c"/></svg>',
- wiatr:'<svg viewBox="0 0 40 40"><g fill="none" stroke="#8fc7ff" stroke-width="3" stroke-linecap="round"><path d="M4 16h20a4 4 0 1 0-4-4"/><path d="M4 23h28a4 4 0 1 1-4 4"/><path d="M4 30h14"/></g></svg>',
- mroz:'<svg viewBox="0 0 40 40"><g stroke="#4c9fff" stroke-width="3" stroke-linecap="round"><path d="M20 4v32M6 12l28 16M6 28l28-16"/></g></svg>',
- pokoj:'<svg viewBox="0 0 28 36"><path d="M2 14 14 3l12 11" fill="none" stroke="#c97b5a" stroke-width="3"/><rect x="11" y="16" width="6" height="14" rx="3" fill="#ff8a7a"/></svg>'
+// ───────── ikony: 4 style × 13 stanów, składane z prostych kształtów ─────────
+const S = {
+ slonce:'#f6b73c', chmura:'#8fc7ff', chmuraC:'#9aa3b2', kropla:'#4c9fff', snieg:'#dff3ff', piorun:'#ffd34d', mgla:'#9aa3b2', ksiezyc:'#ffe9a8', wiatr:'#8fc7ff', grad:'#cfe8ff'
 };
-// sytuacje: rodzaj zjawiska, stan (0 nic / 1 nadciaga / 2 trwa), minuty, aktualne niebo
-const SYT = [
- {n:'słonecznie, bez opadu', zj:null, st:0, min:-1, niebo:'slonce', teraz:'słonecznie', temp:3.5},
- {n:'pochmurno, bez opadu', zj:null, st:0, min:-1, niebo:'chmura', teraz:'pochmurno', temp:3.5},
- {n:'deszcz nadciąga za 45 min', zj:'deszcz', st:1, min:45, niebo:'chmura', temp:3.5},
- {n:'deszcz nadciąga za 6 h', zj:'deszcz', st:1, min:360, niebo:'chmura', temp:3.5},
- {n:'deszcz za 18 h (tylko okno 24 h)', zj:'deszcz', st:1, min:1080, niebo:'slonce', teraz:'słonecznie', temp:3.5},
- {n:'pada, koniec za 30 min', zj:'deszcz', st:2, min:30, niebo:'deszcz', temp:3.5},
- {n:'pada, koniec nieznany', zj:'deszcz', st:2, min:-1, niebo:'deszcz', temp:3.5},
- {n:'śnieg nadciąga za 2 h', zj:'snieg', st:1, min:120, niebo:'chmura', temp:-2.0},
- {n:'sypie śnieg, koniec za 1,5 h', zj:'snieg', st:2, min:90, niebo:'snieg', temp:-2.0},
- {n:'burza za 1 h', zj:'burza', st:1, min:60, niebo:'chmura', temp:18.5},
- {n:'mgła teraz', zj:'mgla', st:2, min:-1, niebo:'mgla', teraz:'mgła', temp:1.0},
- {n:'silny wiatr (porywy 70 km/h)', zj:'wiatr', st:2, min:-1, niebo:'wiatr', teraz:'silny wiatr', temp:8.0},
- {n:'czujnik nie działa (-1.0), deszcz za 6 h', zj:'deszcz', st:1, min:360, niebo:'chmura', temp:null, prog:3},
- {n:'najszersze: -25.5°C i „deszcz za 45 min”', zj:'deszcz', st:1, min:45, niebo:'chmura', temp:-25.5},
+function svg(inner){ return `<svg viewBox="0 0 40 40" width="100%" height="100%">${inner}</svg>`; }
+// prymitywy (styl: mono = jeden kolor niebieski jak dziś, kolor = płaskie kolory, kontur = obrys, wypelniony = pogrubiony kolorowy z ciemniejszym cieniem)
+function sun(st, cx=20, cy=20, r=8){
+ const c = st==='mono' ? S.chmura : S.slonce;
+ const rays = [0,45,90,135,180,225,270,315].map(a => { const ra=a*Math.PI/180; return `<line x1="${cx+Math.cos(ra)*(r+3)}" y1="${cy+Math.sin(ra)*(r+3)}" x2="${cx+Math.cos(ra)*(r+7)}" y2="${cy+Math.sin(ra)*(r+7)}" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/>`; }).join('');
+ if (st==='kontur') return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c}" stroke-width="2.6"/>${rays}`;
+ return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c}"/>${rays}`;
+}
+function moon(st, cx=20, cy=20){ const c = st==='mono' ? S.chmura : S.ksiezyc; return `<path d="M${cx+6} ${cy-10}a11 11 0 1 0 6 18 9 9 0 0 1-6-18z" fill="${st==='kontur'?'none':c}" stroke="${c}" stroke-width="${st==='kontur'?2.6:0}"/>`; }
+function cloud(st, dy=0, col){
+ const c = col || (st==='mono' ? S.chmura : st==='kolor' ? '#dfe9f5' : S.chmura);
+ const d = `M11 ${28+dy}h19a7 7 0 0 0 1-13.9A9 9 0 0 0 13.6 ${12+dy} 7 7 0 0 0 11 ${28+dy}z`;
+ if (st==='kontur') return `<path d="${d}" fill="none" stroke="${c}" stroke-width="2.6" stroke-linejoin="round"/>`;
+ if (st==='wypelniony') return `<path d="${d}" fill="${c}"/><path d="M13 ${26+dy}h16a5 5 0 0 0 0-10" fill="none" stroke="#ffffff55" stroke-width="2"/>`;
+ return `<path d="${d}" fill="${c}"/>`;
+}
+function drops(st, n=3, y=30, col){ const c = col || (st==='mono' ? S.chmura : S.kropla); const xs = n===3?[14,20,26]:[16,24]; return xs.map(x => `<line x1="${x+1}" y1="${y}" x2="${x-1}" y2="${y+6}" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/>`).join(''); }
+function flakes(st, y=32){ const c = st==='mono' ? S.chmura : S.snieg; return [14,20,26].map(x => `<g stroke="${c}" stroke-width="1.8" stroke-linecap="round"><line x1="${x}" y1="${y-3}" x2="${x}" y2="${y+3}"/><line x1="${x-2.6}" y1="${y-1.5}" x2="${x+2.6}" y2="${y+1.5}"/><line x1="${x-2.6}" y1="${y+1.5}" x2="${x+2.6}" y2="${y-1.5}"/></g>`).join(''); }
+function bigFlake(st){ const c = st==='mono' ? S.chmura : S.snieg; return `<g stroke="${c}" stroke-width="2.6" stroke-linecap="round"><path d="M20 5v30M7 12.5l26 15M7 27.5l26-15"/><path d="M16.5 8l3.5 3.5L23.5 8M16.5 32l3.5-3.5 3.5 3.5M6 17l4.5 1.5L9 23M34 17l-4.5 1.5 1.5 4.5M6 23l4.5-1.5L9 17M34 23l-4.5-1.5 1.5-4.5"/></g>`; }
+function bolt(st, x=20, y=24){ const c = st==='mono' ? S.chmura : S.piorun; return `<path d="M${x+2} ${y}l-6 8h5l-3 7 8-10h-5l3-5z" fill="${st==='kontur'?'none':c}" stroke="${c}" stroke-width="${st==='kontur'?2:0}" stroke-linejoin="round"/>`; }
+function fog(st){ const c = st==='mono' ? S.chmura : S.mgla; return `<g stroke="${c}" stroke-width="2.8" stroke-linecap="round"><line x1="7" y1="14" x2="33" y2="14"/><line x1="5" y1="21" x2="35" y2="21"/><line x1="9" y1="28" x2="31" y2="28"/><line x1="13" y1="35" x2="27" y2="35"/></g>`; }
+function wind(st){ const c = st==='mono' ? S.chmura : S.wiatr; return `<g fill="none" stroke="${c}" stroke-width="2.8" stroke-linecap="round"><path d="M4 15h20a4 4 0 1 0-4-4"/><path d="M4 22h28a4 4 0 1 1-4 4"/><path d="M4 29h14a3 3 0 1 1-3 3"/></g>`; }
+function hail(st){ const c = st==='mono' ? S.chmura : S.grad; return [14,20,26].map((x,i) => `<circle cx="${x}" cy="${33+(i%2)*2}" r="2.2" fill="${c}"/>`).join(''); }
+function bigDrop(st){ const c = st==='mono' ? S.chmura : S.kropla; return `<path d="M20 5c6 9 11 14 11 21a11 11 0 0 1-22 0c0-7 5-12 11-21z" fill="${st==='kontur'?'none':c}" stroke="${c}" stroke-width="${st==='kontur'?2.6:0}"/>`; }
+function thermo(st){ const c = st==='mono' ? S.chmura : '#ff8a7a'; return `<rect x="16" y="5" width="8" height="22" rx="4" fill="none" stroke="${c}" stroke-width="2.6"/><circle cx="20" cy="31" r="5.5" fill="${c}"/><rect x="18.5" y="14" width="3" height="14" fill="${c}"/>`; }
+const STANY_IKON = ['slonce','noc','czesciowo','pochmurno','deszcz_nad','pada','mzawka','snieg_nad','sypie','burza','mgla','wiatr','grad','mroz','brak'];
+const NAZWY_IKON = {slonce:'słonecznie',noc:'noc pogodna',czesciowo:'częściowe zachmurzenie',pochmurno:'pochmurno',deszcz_nad:'deszcz nadciąga',pada:'pada',mzawka:'mżawka',snieg_nad:'śnieg nadciąga',sypie:'sypie śnieg',burza:'burza',mgla:'mgła',wiatr:'silny wiatr',grad:'grad',mroz:'mróz (bez prognozy)',brak:'brak prognozy'};
+function ikonaSvg(stan, st){
+ // st: mono | kolor | kontur | wypelniony | dzis
+ if (st==='dzis'){ // dokładnie to, co panel ma dziś: 5 bitmap
+  const m = {slonce:sun('kolor'),noc:sun('kolor'),czesciowo:cloud('mono'),pochmurno:cloud('mono'),deszcz_nad:cloud('mono',-4)+drops('mono'),snieg_nad:cloud('mono',-4)+drops('mono'),pada:bigDrop('kolor'),mzawka:bigDrop('kolor'),sypie:bigDrop('kolor'),burza:cloud('mono',-4)+drops('mono'),mgla:cloud('mono'),wiatr:cloud('mono'),grad:cloud('mono',-4)+drops('mono'),mroz:bigFlake('mono'),brak:cloud('mono')};
+  return svg(m[stan]);
+ }
+ const k = st;
+ switch(stan){
+  case 'slonce': return svg(sun(k));
+  case 'noc': return svg(moon(k));
+  case 'czesciowo': return svg(sun(k,14,14,6)+cloud(k,4));
+  case 'pochmurno': return svg(cloud(k));
+  case 'deszcz_nad': return svg(cloud(k,-4)+drops(k,3,30));
+  case 'pada': return svg(cloud(k,-6)+drops(k,3,28)+drops(k,2,34));
+  case 'mzawka': return svg(cloud(k,-4)+[14,20,26].map(x=>`<circle cx="${x}" cy="32" r="1.8" fill="${k==='mono'?S.chmura:S.kropla}"/>`).join(''));
+  case 'snieg_nad': return svg(cloud(k,-4)+flakes(k,32));
+  case 'sypie': return svg(bigFlake(k));
+  case 'burza': return svg(cloud(k,-6)+bolt(k));
+  case 'mgla': return svg(fog(k));
+  case 'wiatr': return svg(wind(k));
+  case 'grad': return svg(cloud(k,-4)+hail(k));
+  case 'mroz': return svg(thermo(k)+`<text x="4" y="14" font-size="10" fill="${k==='mono'?S.chmura:S.snieg}">*</text>`);
+  default: return svg(cloud(k));
+ }
+}
+const ZESTAWY = [
+ {id:'dzis', n:'Jak dziś (5 bitmap)', o:'płatek / chmura / słońce / chmura z kroplami / kropla – wszystko inne wygląda jak chmura'},
+ {id:'mono', n:'Jednokolorowe (niebieskie)', o:'15 ikon w jednym kolorze – jak obecne, tylko więcej; najłatwiejsze do dodania (recolor LVGL)'},
+ {id:'kolor', n:'Kolorowe płaskie', o:'słońce żółte, chmura jasna, krople niebieskie, piorun żółty, śnieg biały – jak w aplikacji Android'},
+ {id:'kontur', n:'Konturowe', o:'tylko obrys, cienka kreska – lżejszy wygląd'},
+ {id:'wypelniony', n:'Wypełnione z połyskiem', o:'jak kolorowe, chmury z jasnym połyskiem'}
 ];
-const NAZWA = {deszcz:['deszcz','pada'], snieg:['śnieg','sypie'], burza:['burza','burza'], mgla:['mgła','mgła'], wiatr:['silny wiatr','silny wiatr']};
-function v(n){ return document.querySelector(`input[name=${n}]:checked`).value; }
+// ───────── sytuacje ─────────
+const SYT = [
+ {id:'slon', n:'słonecznie, bez opadu', zj:null, st:0, niebo:'slonce', teraz:'słonecznie', temp:3.5, min:0},
+ {id:'czes', n:'częściowe zachmurzenie', zj:null, st:0, niebo:'czesciowo', teraz:'przejaśnienia', temp:6, min:0},
+ {id:'poch', n:'pochmurno, bez opadu', zj:null, st:0, niebo:'pochmurno', teraz:'pochmurno', temp:3.5, min:0},
+ {id:'d45', n:'deszcz nadciąga', zj:'deszcz', st:1, niebo:'deszcz_nad', temp:3.5, min:45},
+ {id:'pada', n:'pada, koniec za…', zj:'deszcz', st:2, niebo:'pada', temp:3.5, min:30},
+ {id:'padax', n:'pada, koniec nieznany', zj:'deszcz', st:2, niebo:'pada', temp:3.5, min:-1},
+ {id:'mz', n:'mżawka teraz', zj:'mzawka', st:2, niebo:'mzawka', temp:5, min:-1},
+ {id:'sn', n:'śnieg nadciąga', zj:'snieg', st:1, niebo:'snieg_nad', temp:-2, min:120},
+ {id:'syp', n:'sypie śnieg, koniec za…', zj:'snieg', st:2, niebo:'sypie', temp:-2, min:90},
+ {id:'bu', n:'burza nadciąga', zj:'burza', st:1, niebo:'burza', temp:18.5, min:60},
+ {id:'gr', n:'grad teraz', zj:'grad', st:2, niebo:'grad', temp:12, min:15},
+ {id:'mg', n:'mgła teraz', zj:'mgla', st:2, niebo:'mgla', temp:1, min:-1},
+ {id:'wi', n:'silny wiatr (porywy 70 km/h)', zj:'wiatr', st:2, niebo:'wiatr', temp:8, min:-1},
+ {id:'mroz', n:'mróz, bez prognozy (brak internetu)', zj:null, st:0, niebo:'mroz', teraz:null, temp:-7, min:0, bezProg:true},
+];
+const NAZWA = {deszcz:['deszcz','pada'], snieg:['śnieg','sypie'], burza:['burza','burza'], mgla:['mgła','mgła'], wiatr:['silny wiatr','silny wiatr'], mzawka:['mżawka','mży'], grad:['grad','grad']};
+// ───────── stan UI ─────────
+const opt = {rozm:'40', co:'rodzaj', czas:'pelny', uklad:'B', kolor:'nieb', brak:'kreski', zestaw:'kolor', syt:'d45'};
+const $ = s => document.querySelector(s);
+function sytAkt(){ const s = {...SYT.find(x => x.id===opt.syt)}; s.temp = +$('#temp').value; if (s.st!==0) s.min = (s.min===-1 && !$('#min').dataset.touched) ? -1 : +$('#min').value; if ($('#brakCz').checked) s.temp = null; s.noc = $('#noc').checked; return s; }
 function czasTxt(min){
- const f = v('czas');
- if (f==='godzina'){ const base = 13*60+45; const t = base+min; return `${String(Math.floor(t/60)%24).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`; }
+ const f = opt.czas;
+ if (f==='godzina'){ const t = 13*60+45+min; return `${String(Math.floor(t/60)%24).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`; }
  if (min < 100) return f==='krotki' ? `${min}m` : `${min} min`;
  const pol = Math.round(min/30); const h = pol%2===0 ? `${pol/2}` : `${Math.floor(pol/2)},5`;
  return f==='krotki' ? `${h}h` : `${h} h`;
 }
 function napis(s){
- const co = v('co'), okno = +v('okno');
- if (co==='nic') return null;
- if (s.st===1 && s.min > okno*60) { return co==='zawsze' ? (s.teraz||'pochmurno') : null; }
- if (s.st===0) return co==='zawsze' ? s.teraz : null;
- const f = v('czas');
- const zaOd = f==='godzina' ? 'od ' : 'za ';
- const doTxt = f==='godzina' ? 'do ' : '';
- if (co==='opad'){
-  if (s.zj==='mgla' || s.zj==='wiatr') return null;
+ if (opt.co==='nic' || s.bezProg) return null;
+ if (s.st===0) return opt.co==='zawsze' ? s.teraz : null;
+ const zaOd = opt.czas==='godzina' ? 'od ' : 'za ', doTxt = opt.czas==='godzina' ? 'do ' : '';
+ const trwaleBezCzasu = ['mgla','wiatr'].includes(s.zj);
+ if (opt.co==='opad'){
+  if (trwaleBezCzasu) return opt.co==='zawsze' ? NAZWA[s.zj][1] : null;
   if (s.st===1) return zaOd + czasTxt(s.min);
   return s.min>=0 ? 'pada ' + doTxt + czasTxt(s.min) : 'pada';
  }
  const [nad, trwa] = NAZWA[s.zj];
  if (s.st===1) return `${nad} ${zaOd}${czasTxt(s.min)}`;
- if (s.zj==='mgla' || s.zj==='wiatr') return trwa;
+ if (trwaleBezCzasu) return trwa;
  return s.min>=0 ? `${trwa} ${doTxt}${czasTxt(s.min)}` : trwa;
 }
-function ikona(s){
- if (v('ikona')==='pogoda') return s.st===1 && s.zj ? (s.zj==='snieg'?'snieg':s.zj==='burza'?'burza':'deszcz') : s.niebo;
- if (s.st===1) return 'deszcz'; if (s.st===2 && s.zj!=='mgla' && s.zj!=='wiatr') return 'kropla';
- const t = s.temp===null ? 5 : s.temp; return t<0?'mroz':t<15?'chmura':'slonce';
+function stanIkony(s){
+ if (opt.zestaw==='dzis'){ if (s.st===1) return 'deszcz_nad'; if (s.st===2 && !['mgla','wiatr'].includes(s.zj)) return 'pada'; const t = s.temp===null?5:s.temp; return t<0?'mroz':t<15?'pochmurno':'slonce'; }
+ if (s.bezProg){ const t = s.temp===null?5:s.temp; return t<0?'mroz':t<15?'pochmurno':'slonce'; }
+ if (s.niebo==='slonce' && s.noc) return 'noc';
+ return s.niebo;
 }
-function tempTxt(s){ if (s.temp!==null) return s.temp.toFixed(1)+'°C'; return v('brak')==='kreski' ? '--' : `~${s.prog}°C`; }
-function kolorKl(){ const k=v('kolor'); return k==='szary'?'szary':k==='bialy'?'biala':''; }
+function tempTxt(s){ if (s.temp!==null) return s.temp.toFixed(1)+'°C'; return opt.brak==='kreski' ? '--' : `~3°C`; }
+function kolorKl(){ return {nieb:'',szary:'szary',bialy:'biala',zolty:'zolty'}[opt.kolor]; }
 function kaf(s){
- const t = napis(s), temp = tempTxt(s), ic = `<div class="ico">${ICO[ikona(s)]}</div>`, u = v('uklad'), kk = kolorKl();
- const dlugi = t && t.length > 11;
+ const t = napis(s), temp = tempTxt(s), u = opt.uklad, kk = kolorKl();
+ const ic = `<div class="ico ${opt.rozm==='52'?'duza':''}">${ikonaSvg(stanIkony(s), opt.zestaw)}</div>`;
  let h = '<div class="k">';
- if (u==='A'){ h += `<div class="t">ZEWN</div>${ic}` + (t ? `<div class="v28 ${t.length>7?'male':''}">${t}</div>` : `<div class="v28">${temp}</div>`); }
- if (u==='B'){ h += `<div class="t">ZEWN</div>${ic}` + (t ? `<div class="v20">${temp}</div><div class="d14 pod ${kk}">${t}</div>` : `<div class="v28">${temp}</div>`); }
- if (u==='C'){ h += `<div class="t">ZEWN</div>${ic}` + (t ? `<div class="v28 przes">${temp}</div><div class="d14 dol ${kk}">${t}</div>` : `<div class="v28">${temp}</div>`); }
- if (u==='D'){ h += `<div class="t">ZEWN</div>${ic}<div class="v28">${temp}</div>` + (t ? `<div class="d14 rog ${kk}">${t}</div>` : ''); }
- if (u==='E'){ h += `<div class="t ${t?'d14 '+kk:''}" style="top:6px;left:8px">${t||'ZEWN'}</div>${ic}<div class="v28">${temp}</div>`; }
- if (u==='F'){ h += `<div class="t">ZEWN</div>${ic}<div class="v28 ${t?'wyzej':''}">${temp}</div>` + (t ? `<div class="pasek">${t}</div>` : ''); }
- if (u==='G'){ h += `<div class="t">ZEWN</div>${ic}<div class="v28 g-temp">${temp}</div>` + (t ? `<div class="d20 g-zj" style="display:none">${t}</div>` : ''); }
- h += '</div>';
- if (dlugi && (u==='D'||u==='E')) h += `<div class="uwaga" style="position:absolute;font-size:8px;margin-top:92px">⚠ napis za długi na ten układ</div>`;
- return h;
+ if (u==='A') h += `<div class="t">ZEWN</div>${ic}` + (t ? `<div class="v28 ${t.length>7?'male':''}">${t}</div>` : `<div class="v28">${temp}</div>`);
+ if (u==='B') h += `<div class="t">ZEWN</div>${ic}` + (t ? `<div class="v20">${temp}</div><div class="d14 pod ${kk}">${t}</div>` : `<div class="v28">${temp}</div>`);
+ if (u==='C') h += `<div class="t">ZEWN</div>${ic}` + (t ? `<div class="v28 przes">${temp}</div><div class="d14 dol ${kk}">${t}</div>` : `<div class="v28">${temp}</div>`);
+ if (u==='D') h += `<div class="t">ZEWN</div>${ic}<div class="v28">${temp}</div>` + (t ? `<div class="d14 rog ${kk}">${t}</div>` : '');
+ if (u==='E') h += `<div class="t ${t?'d14 '+kk:''}" style="top:6px;left:8px">${t||'ZEWN'}</div>${ic}<div class="v28">${temp}</div>`;
+ if (u==='F') h += `<div class="t">ZEWN</div>${ic}<div class="v28 ${t?'wyzej':''}">${temp}</div>` + (t ? `<div class="pasek">${t}</div>` : '');
+ if (u==='G') h += `<div class="t">ZEWN</div>${ic}<div class="v28 g-temp">${temp}</div>` + (t ? `<div class="d20 g-zj ${kk}" style="display:none">${t}</div>` : '');
+ return h + '</div>';
 }
+const POKOJ = `<div class="k"><div class="t">POKÓJ</div><div class="ico" style="width:28px;height:36px;right:10px"><svg viewBox="0 0 28 36"><path d="M2 14 14 3l12 11" fill="none" stroke="#c97b5a" stroke-width="3"/><rect x="11" y="16" width="6" height="14" rx="3" fill="#ff8a7a"/></svg></div><div class="v28">21.5°C</div></div>`;
 function render(){
- document.getElementById('siatka').innerHTML = SYT.map(s => `<div class="stan"><div class="n">${s.n}</div><div class="lcd">${kaf(s)}<div class="k"><div class="t">POKÓJ</div><div class="ico" style="width:28px;height:36px;right:10px">${ICO.pokoj}</div><div class="v28">21.5°C</div></div></div></div>`).join('');
+ const s = sytAkt();
+ $('#scena').innerHTML = kaf(s) + POKOJ;
+ const t = napis(s);
+ const ostrz = t && t.length > 11 && ['D','E'].includes(opt.uklad) ? ' <span class="uw">⚠ napis za długi na ten układ (114 px)</span>' : '';
+ $('#opis').innerHTML = `<b>${s.n}</b> · ikona: ${NAZWY_IKON[stanIkony(s)]} · napis: ${t ? '„'+t+'”' : 'brak'}${ostrz}`;
+ $('#pasIkon').innerHTML = STANY_IKON.map(i => `<div title="${NAZWY_IKON[i]}">${ikonaSvg(i, opt.zestaw)}</div>`).join('');
+ $('#siatka').innerHTML = SYT.map(x => { const y = {...x}; if (x.id===opt.syt) { y.temp = s.temp; y.min = s.min; } y.noc = s.noc; return `<div class="mini ${x.id===opt.syt?'on':''}" data-syt="${x.id}"><div class="n">${x.n}</div><div class="lcd" style="transform:none;padding:4px">${kaf(y)}</div></div>`; }).join('');
+ document.querySelectorAll('.mini').forEach(m => m.onclick = () => { wybierzSyt(m.dataset.syt); });
+ $('#tempV').textContent = (+$('#temp').value).toFixed(1)+'°C'; $('#minV').textContent = czasTxt(+$('#min').value);
+ const u = $('#uwagi').value.trim();
+ $('#wynik').value = `WYBÓR ZEWN: ikony=${opt.zestaw} rozmiar=${opt.rozm} napis=${opt.co} czas=${opt.czas} uklad=${opt.uklad} kolor=${opt.kolor} brak_czujnika=${opt.brak}` + (u ? `\nUWAGI: ${u}` : '');
 }
-setInterval(() => { const faza = (Date.now()/1000)%8 < 6; document.querySelectorAll('.g-temp').forEach(e => { const zj = e.parentElement.querySelector('.g-zj'); if (!zj) return; e.style.display = faza?'':'none'; zj.style.display = faza?'none':''; }); }, 250);
-document.querySelectorAll('input[type=radio]').forEach(r => r.onchange = render);
-function pokaz(){
- const o = ['co','okno','czas','ikona','uklad','kolor','brak'].map(n => `${n}=${v(n)}`).join(' ');
- document.getElementById('wynik').textContent = `WYBÓR ZEWN: ${o}` + (document.getElementById('uw').value ? `\nUWAGI: ${document.getElementById('uw').value}` : '');
-}
-render();
+function wybierzSyt(id){ opt.syt = id; const s = SYT.find(x => x.id===id); $('#temp').value = s.temp; $('#min').value = Math.max(0, s.min); delete $('#min').dataset.touched; document.querySelectorAll('#sytuacje button').forEach(b => b.classList.toggle('on', b.dataset.v===id)); render(); }
+// budowa przyciskow
+$('#sytuacje').innerHTML = SYT.map(s => `<button data-v="${s.id}" class="${s.id===opt.syt?'on':''}">${s.n}</button>`).join('');
+document.querySelectorAll('#sytuacje button').forEach(b => b.onclick = () => wybierzSyt(b.dataset.v));
+$('#zestawy').innerHTML = ZESTAWY.map(z => `<button data-v="${z.id}" class="${z.id===opt.zestaw?'on':''}">${z.n}<small>${z.o}</small></button>`).join('');
+document.querySelectorAll('#zestawy button').forEach(b => b.onclick = () => { opt.zestaw = b.dataset.v; document.querySelectorAll('#zestawy button').forEach(x => x.classList.toggle('on', x===b)); render(); });
+document.querySelectorAll('[data-opt]').forEach(g => g.querySelectorAll('button').forEach(b => b.onclick = () => { opt[g.dataset.opt] = b.dataset.v; g.querySelectorAll('button').forEach(x => x.classList.toggle('on', x===b)); render(); }));
+['temp','brakCz','noc','uwagi'].forEach(id => $('#'+id).oninput = render);
+$('#min').oninput = () => { $('#min').dataset.touched = '1'; render(); };
+$('#zoom').oninput = () => { $('#scena').style.transform = `scale(${$('#zoom').value})`; $('#scena').style.marginBottom = (90*$('#zoom').value - 60) + 'px'; };
+setInterval(() => { const faza = (Date.now()/1000)%8 < 6; document.querySelectorAll('.g-temp').forEach(e => { const zj = e.parentElement.querySelector('.g-zj'); if (!zj) return; e.style.display = faza?'':'none'; zj.style.display = faza?'none':''; }); }, 200);
+wybierzSyt('d45');
 </script>
 </body></html>
