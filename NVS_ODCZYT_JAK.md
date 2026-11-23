@@ -16,10 +16,16 @@ od „odczytu z pamięci”.
    bez PlatformIO, bez podłączania się do firmware'u:
 
    ```
-   pip install esptool
-   esptool.py --port COM5 read_flash 0x9000 0x5000 nvs_centrala.bin
-   python3 narzedzia/nvs_odczyt.py nvs_centrala.bin
+   python -m esptool --port COM16 read-flash 0x8000 0xC00 tablica.bin
+   python narzedzia/nvs_odczyt.py --tablica-partycji tablica.bin
+   python -m esptool --port COM16 read-flash 0x9000 0x5000 nvs_centrala.bin
+   python narzedzia/nvs_odczyt.py nvs_centrala.bin
    ```
+
+   (Te dwie linie z `0x9000 0x5000` są dla **panelu**, bo tylko jego plik
+   partycji jest w repozytorium. Dla centrali offset i rozmiar bierze się
+   z pliku `tablica.bin` — pierwsze dwa polecenia. Windows: `python`, nie
+   `python3`; `esptool`, nie `esptool.py` — szczegóły w 2.1.)
 
    Dostajesz wszystkie przestrzenie, wszystkie klucze, wartości, typy, stan
    stron, wpisy usunięte i ostrzeżenia o złych CRC. `--json`, `--csv`,
@@ -32,8 +38,11 @@ od „odczytu z pamięci”.
    patrz `RAPORT_PAMIEC_RAM_LCD_I_CENTRALA.md`), **ale tego pliku nie ma
    w tym repozytorium** — więc wartości dla centrali nie da się tu potwierdzić.
    Weź wiersz `nvs` z pliku partycji centrali; jeśli to nie 0x9000/0x5000,
-   popraw polecenie. Gdy nie wiesz: `--wykryj` znajduje partycję NVS w zrzucie
-   całego flashu po nagłówkach stron i podaje jej offset.
+   popraw polecenie. Gdy nie wiesz, gdzie NVS leży: zrzuć tablicę partycji
+   (`read-flash 0x8000 0xC00 tablica.bin`) i podaj ją narzędziu
+   (`--tablica-partycji`) — wypisze cały układ pamięci i gotowe polecenie
+   zrzutu. Awaryjnie działa też `--wykryj` (szuka po nagłówkach stron NVS),
+   a jeśli podasz narzędziu cały zrzut flashu, samo znajdzie w nim partycję.
 
 3. **Nie każda rzecz „z NVS” jest w NVS tego projektu.** Część ustawień
    w ogóle nie jest zapisywana (np. `tryb_reczny`/`tryb_auto` z Telegrama
@@ -48,6 +57,7 @@ od „odczytu z pamięci”.
    (WiFi `pass0..passN`, token bota Telegram, hasło konta Firebase do
    sterowania piecem). Traktuj plik jak hasła — nie wrzucaj do repo
    (`.gitignore` już blokuje `secrets.h`), a raporty rób z `--maskuj`.
+   Sam zrzut (`*.bin` z flasha) też trzymaj poza repo.
    `BEZPIECZENSTWO_HASLA.md` §5 mówi, dlaczego zmiana `secrets.h` nie zmienia
    hasła w piecu, który ma je już w NVS — dokładnie dlatego warto umieć to
    odczytać.
@@ -58,26 +68,135 @@ od „odczytu z pamięci”.
 
 ### 2.1 Kablem USB — najprościej, czyta wszystko
 
+**Najpierw: gdzie jest esptool.** W tym projekcie nie trzeba nic instalować.
+PlatformIO ma własne środowisko Pythona z esptool w środku:
+
 ```
-pip install esptool
-esptool.py --port COM5 read_flash 0x9000 0x5000 nvs_centrala.bin     # Windows
-esptool.py --port /dev/ttyUSB0 read_flash 0x9000 0x5000 nvs_centrala.bin   # Linux
+C:\Users\<Ty>\.platformio\penv\Scripts\esptool.exe        # Windows
+~/.platformio/penv/bin/esptool                              # Linux
 ```
 
-- `0x9000` = początek partycji `nvs`, `0x5000` = jej długość (20 480 B = 5 stron).
-- Dla panelu LCD: `LCD-Centrali/partitions.csv` ma dokładnie te wartości.
-  Dla centrali sprawdź jej plik partycji (patrz punkt 2 wyżej).
-- Gdy nie wiesz, gdzie NVS leży w danej płytce: zrzuć cały flash
-  (`esptool.py read_flash 0 0x1000000 caly.bin` — 16 MB na N16R8, chwilę trwa)
-  i uruchom `python3 narzedzia/nvs_odczyt.py caly.bin --wykryj`.
-- Port: w Menadżerze urządzeń (Windows) albo `ls /dev/ttyUSB* /dev/ttyACM*`
-  (Linux). Na płytkach z USB-CDC bywa `COM` inny niż przy CH340.
+Jeśli `esptool` nie jest w `PATH` (typowe na Windows — `Scripts` nie jest
+dopisywany), wywołaj Pythona z tego samego `penv` i użyj `-m esptool`:
 
-### 2.2 Z Linuxa bez esptool (awaryjnie)
+```powershell
+C:\Users\Rafcio\.platformio\penv\Scripts\python.exe -m esptool --version
+```
 
-`pip` bywa niedostępny na maszynie produkcyjnej, a `esptool` jest w każdym
-PlatformIO: `~/.platformio/packages/tool-esptoolpy/esptool.py`. To ten sam
-program — wystarczy wywołać go ścieżką.
+**Trzy zasady, na których ludzie się wywracają (esptool 5.x, a taki jest
+w PlatformIO — 5.2.0):**
+
+1. **Nie ma `esptool.py`.** W wersji 5 polecenie nazywa się `esptool`;
+   plik `esptool.py` jest instalowany tylko poza Windows, i to jako
+   przestarzały alias. Na Windows `esptool.py` po prostu nie istnieje —
+   „nie jest rozpoznawane jako nazwa polecenia” to nie brak instalacji.
+2. **Nie ma `python3`.** Na Windows to `python` (albo `py`). `python3`
+   to nazwa z Linuksa i macOS.
+3. **Opcje globalne PRZED podkomendą.** `--port`, `--baud`, `--chip` muszą
+   stać **przed** `read-flash`. Po podkomendzie `-p` znaczy
+   `--no-progress`, nie „port” — stąd mylący komunikat
+   `Got unexpected extra argument (COM16)`.
+
+**Zrzut — krok 1: tablica partycji** (0x8000, 0xC00 B; jest na każdej płytce):
+
+```powershell
+python -m esptool --port COM16 --baud 921600 read-flash 0x8000 0xC00 tablica.bin
+python narzedzia/nvs_odczyt.py --tablica-partycji tablica.bin
+```
+
+Drugie polecenie wypisze cały układ pamięci (co jest aplikacją, gdzie NVS,
+gdzie system plików) i **gotowe polecenie zrzutu NVS** z prawdziwym offsetem:
+
+```
+Tablica partycji z tablica.bin:
+  etykieta   typ/podtyp           offset     rozmiar    koniec
+  nvs        dane / NVS           0x009000   0x005000   0x00e000
+  phy_init   dane / phy           0x00e000   0x002000   0x010000
+  ota_0      app / ota_0          0x010000   0x1f0000   0x200000
+  ...
+Partycja NVS: "nvs", offset 0x9000, rozmiar 0x5000 (20480 B, 5 stron po 4096 B).
+Zrzut i odczyt:
+  python -m esptool --port COM16 read_flash 0x9000 0x5000 nvs.bin
+  python narzedzia/nvs_odczyt.py nvs.bin
+```
+
+(Uwaga na podtypy: NVS to `0x02`. `0x01` to `phy_init`, a `0x04` to
+`nvs_keys` — partycja z **kluczami szyfrowania** NVS, nie z danymi.
+Także etykieta bywa myląca, więc narzędzie patrzy na typ/podtyp, nie na nazwę.)
+To jest właściwa droga dla centrali: jej pliku partycji nie ma w repozytorium,
+więc offsetu nie da się tu podejrzeć — trzeba go odczytać z urządzenia.
+
+**Zrzut — krok 2: sama partycja NVS.** Panel LCD ma
+`nvs, data, nvs, 0x9000, 0x5000` (`LCD-Centrali/partitions.csv`), czyli:
+
+```powershell
+python -m esptool --port COM16 --baud 921600 read-flash 0x9000 0x5000 nvs_panel.bin
+python narzedzia/nvs_odczyt.py nvs_panel.bin
+```
+
+Dla centrali wstaw offset i rozmiar z kroku 1, np.
+`read-flash 0x9000 0x6000 nvs_centrala.bin`.
+
+**Gdy nie wiesz, gdzie NVS leży, i nie chcesz czytać tablicy partycji:**
+zrzuć cały flash i daj go narzędziu — ono samo znajdzie partycję NVS
+(najpierw z tablicy partycji spod 0x8000, potem po nagłówkach stron):
+
+```powershell
+python -m esptool --port COM16 --baud 921600 read-flash 0 0x1000000 caly.bin
+python narzedzia/nvs_odczyt.py caly.bin
+```
+
+16 MB na N16R8 idzie kilka minut, a plik jest duży — do codziennego użytku
+lepsze są kroki 1–2. Narzędzie powie wprost, co znalazło:
+
+```
+To nie jest sama partycja NVS - to wiekszy obraz.
+Znalazlem NVS na 0x9000, 20480 B (tablica partycji z 0x8000, etykieta "nvs"). Czytam ta czesc.
+(na przyszlosc: python nvs_odczyt.py caly.bin --offset 0x9000 --rozmiar 0x5000)
+```
+
+**Port.** Windows: Menedżer urządzeń → „Porty (COM i LPT)”; na płytkach
+z mostkiem CH340 to `COM` inny niż przy USB-CDC, więc przy dwóch płytkach
+na raz łatwo pomylić. Linux: `ls /dev/ttyUSB* /dev/ttyACM*`.
+
+**Gdy `python` też nie działa:** sprawdź, czy w ogóle jest Python
+(`py --version`, `where python`). PlatformIO instaluje własny interpreter
+tylko dla siebie — `python` z `PATH` może go nie widzieć. Wtedy pełna
+ścieżka: `C:\Users\Rafcio\.platformio\penv\Scripts\python.exe -m esptool ...`.
+Z tego samego `penv` działa też `pip`, więc `pip show esptool` powie,
+którą wersję masz (`5.2.0` = ta opisywana wyżej).
+
+**Co się dzieje po drodze:** `read-flash` łączy się z bootloaderem ROM
+(reset + `Connecting...`), potem `Writing at 0x00009000... (100 %)`.
+Jeśli widzisz `Failed to connect`: zły port, kabel bez linii danych albo
+płytka nie w trybie pobierania (przytrzymaj BOOT przy resecie).
+Zrzut jest **tylko do odczytu** — nic nie zmienia w pamięci pieca.
+
+### 2.2 Gdy esptool nie da się uruchomić (ścieżki, `pip`, brak internetu)
+
+Kolejność, która zawsze działa na Windows z PlatformIO:
+
+```powershell
+& "C:\Users\Rafcio\.platformio\penv\Scripts\python.exe" -m esptool --version
+```
+
+(`&` jest potrzebne, gdy ścieżka ma spacje — tutaj nie ma, ale w
+`C:\Users\Jan Kowalski\...` już ma.)
+
+- **`esptool: command not found` / „nie jest rozpoznawane...”** — `Scripts`
+  nie jest w `PATH`. Albo pełna ścieżka jak wyżej, albo `python -m esptool`.
+- **`No module named esptool`** — wywołujesz `python` z innego Pythona niż
+  PlatformIO. Sprawdź `where python` i `pip show esptool` w tej samej konsoli.
+- **`pip install esptool`** — niepotrzebne (penv już go ma) i na Windows
+  częściej szkodzi, bo instaluje drugą, czasem starszą wersję gdzie indziej.
+  Jeśli już musisz: `C:\Users\Rafcio\.platformio\penv\Scripts\python.exe -m pip install -U esptool`.
+- **Version 5 vs 4** — jeśli `esptool --version` pokaże `4.x`, wtedy działa
+  jeszcze `esptool.py` i `-p` po podkomendzie też, ale polecenia z tego
+  dokumentu (opcje przed podkomendą, `read-flash` z myślnikiem) działają
+  w **obu** wersjach. Nie trzeba się cofać do 4.x.
+
+Na Linuksie/macOS: `python3 -m esptool ...` albo
+`~/.platformio/penv/bin/python -m esptool ...`.
 
 ### 2.3 Z firmware'u, bez kabla — tylko to, co firmware sam pokaże
 
@@ -219,30 +338,45 @@ nie `config.putX`.
 ## 4. `narzedzia/nvs_odczyt.py` — co potrafi
 
 ```
-python3 narzedzia/nvs_odczyt.py nvs_centrala.bin
-python3 narzedzia/nvs_odczyt.py nvs_centrala.bin --maskuj --pokaz-usuniete
-python3 narzedzia/nvs_odczyt.py nvs_centrala.bin --json > nvs.json
-python3 narzedzia/nvs_odczyt.py nvs_centrala.bin --csv nvs.csv
-python3 narzedzia/nvs_odczyt.py caly_flash.bin --offset 0x9000 --rozmiar 0x5000
-python3 narzedzia/nvs_odczyt.py caly_flash.bin --wykryj
-python3 narzedzia/nvs_odczyt.py --autotest
+python narzedzia/nvs_odczyt.py nvs_centrala.bin                    # cala zawartosc
+python narzedzia/nvs_odczyt.py nvs_centrala.bin --maskuj --pokaz-usuniete
+python narzedzia/nvs_odczyt.py nvs_centrala.bin --json > nvs.json
+python narzedzia/nvs_odczyt.py nvs_centrala.bin --csv nvs.csv
+python narzedzia/nvs_odczyt.py --tablica-partycji tablica.bin     # gdzie jest NVS
+python narzedzia/nvs_odczyt.py caly_flash.bin                     # sam znajdzie NVS
+python narzedzia/nvs_odczyt.py caly_flash.bin --offset 0x9000 --rozmiar 0x5000
+python narzedzia/nvs_odczyt.py caly_flash.bin --wykryj             # tylko szuka
+python narzedzia/nvs_odczyt.py --autotest
 ```
+
+(Na Windows `python`, na Linuksie `python3` — reszta poleceń identyczna.)
 
 - czyta **całą** partycję niezależnie od firmware'u — także klucze, których
   dana wersja programu już nie używa, i wpisy **usunięte** (zostają w pamięci
   do przepisania strony),
 - sprawdza CRC nagłówków stron, CRC wpisów, CRC tekstów i blobów — mówi,
   które wpisy NVS sam by odrzucił,
-- `--wykryj` znajduje partycję w zrzucie całego flashu (po nagłówkach stron),
+- **`--tablica-partycji plik.bin`** czyta tablicę partycji ESP-IDF (zrzut
+  0x8000, 0xC00 B) i wypisuje cały układ pamięci: etykietę, typ, podtyp,
+  offset, rozmiar i koniec każdej partycji — plus gotowe polecenie zrzutu
+  NVS. To jedyny pewny sposób na offset centrali,
+- **cały zrzut flashu zamiast partycji** — narzędzie samo znajduje NVS:
+  najpierw z tablicy partycji (dokładnie, z etykietą), a gdy jej nie ma,
+  po nagłówkach stron NVS; w obu przypadkach mówi, co znalazło i gdzie,
+- `--wykryj` tylko szuka partycji w zrzucie całego flashu (po nagłówkach
+  stron) i nic nie parsuje,
 - `--csv` daje plik w formacie wejściowym narzędzia Espressif
   (`esp-idf-nvs-partition-gen`), więc z odczytu da się **odtworzyć** partycję
   na drugą płytkę (`python -m esp_idf_nvs_partition_gen generate nvs.csv
   nvs.bin 0x5000`); bloby idą jako `hex2bin`, więc wiersz np. `otapanel:zapis`
   ma kilkaset bajtów szesnastkowych w jednej komórce — to normalne,
 - `--autotest` sprawdza samo narzędzie na obrazach budowanych w pamięci
-  (29 przypadków: liczby, teksty krótsze i dłuższe niż wpis, blob
+  (44 przypadki: liczby, teksty krótsze i dłuższe niż wpis, blob
   wielostronicowy, wpis usunięty, chunk bloba bez indeksu, zepsute CRC,
-  zły offset, wykrywanie w obrazie flashu, CSV).
+  zły offset, tablica partycji — poprawna, zakończona 0xFF, zakończona MD5,
+  bez partycji NVS, śmieci, wykrywanie w obrazie flashu, CSV).
+  Jeśli masz zainstalowane `esp-idf-nvs-partition-gen`, dochodzi 6 przypadków
+  pełnego koła: CSV z odczytu → generator Espressif → nasz czytnik (50/50).
 
 Format, który czyta, jest opisany w nagłówku pliku wraz ze źródłami
 (ESP-IDF `nvs_flash`: `nvs_page.hpp/cpp`, `nvs_types.hpp/cpp`,
@@ -280,22 +414,30 @@ Kolejność ważności w kodzie (`loadFirebaseConfig()`, `BEZPIECZENSTWO_HASLA.m
    zapisuje je do NVS.
 
 Dlatego po zmianie hasła trzeba albo wysłać `/fbprov|API_KEY|EMAIL|PASSWORD`
-na Telegramie, albo wyczyścić przestrzeń `firebase` (np. `esptool.py
-erase_region 0x9000 0x5000` — **kasuje całe NVS**, więc razem z WiFi,
-Telegramem i ustawieniami pieca; piec wstanie na wartościach domyślnych
-z kodu). Zrzut z rozdziału 2 pozwala najpierw zobaczyć, co jest, i po próbie
+na Telegramie, albo wyczyścić całą partycję NVS:
+
+```powershell
+python -m esptool --port COM16 erase-region 0x9000 0x5000
+```
+
+To **kasuje całe NVS** — razem z WiFi, Telegramem i ustawieniami pieca
+(piec wstanie na wartościach domyślnych z kodu). Offset i rozmiar bierz
+z tablicy partycji (2.1, krok 1), nie zgaduj. Zrzut z rozdziału 2 pozwala najpierw zobaczyć, co jest, i po próbie
 sprawdzić, czy nowe hasło faktycznie weszło.
 
 ---
 
 ## 6. Lista kontrolna
 
-- [ ] wiem, którą płytkę czytam (centrala czy panel) i z którego `partitions.csv`
-      biorę offset i rozmiar `nvs`
-- [ ] `esptool.py read_flash …` zakończone bez błędu, plik ma rozmiar
-      równy wielokrotności 4096 B
-- [ ] `python3 narzedzia/nvs_odczyt.py plik.bin` — bez „BLAD”, bez ostrzeżeń
+- [ ] wiem, którą płytkę czytam (centrala czy panel), i offset/rozmiar `nvs`
+      mam albo z `partitions.csv`, albo z `--tablica-partycji` (centrala)
+- [ ] `read-flash` zakończone bez błędu, plik ma rozmiar równy wielokrotności
+      4096 B (0x5000 = 20 480 B = 5 stron)
+- [ ] `python narzedzia/nvs_odczyt.py plik.bin` — bez „BLAD”, bez ostrzeżeń
       o złych CRC
 - [ ] raport robiony z `--maskuj`, jeśli ma iść dalej niż na mój komputer
 - [ ] zrzut **nie** trafia do repo i nie leży w katalogu synchronizowanym
       publicznie (zawiera hasła WiFi, token Telegram, hasło Firebase)
+- [ ] jeśli zmieniałem cokolwiek na partycji (`erase-region`,
+      `esp_idf_nvs_partition_gen generate`), mam zapisany **wcześniejszy
+      zrzut** — bez niego nie ma do czego wrócić

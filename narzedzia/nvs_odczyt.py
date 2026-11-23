@@ -4,19 +4,32 @@
 # Odczyt CAŁEJ zawartości partycji NVS z pliku (zrzut z ESP przez esptool) -
 # bez plytki, na PC, bez ESP-IDF i bez PlatformIO.
 # ============================================================================
-#   python3 narzedzia/nvs_odczyt.py zrzut_nvs.bin
-#   python3 narzedzia/nvs_odczyt.py zrzut_nvs.bin --json
-#   python3 narzedzia/nvs_odczyt.py zrzut_nvs.bin --csv odczyt.csv
-#   python3 narzedzia/nvs_odczyt.py zrzut_calego_flashu.bin --offset 0x9000 --rozmiar 0x5000
-#   python3 narzedzia/nvs_odczyt.py zrzut_calego_flashu.bin --wykryj
-#   python3 narzedzia/nvs_odczyt.py --autotest
+#   python narzedzia/nvs_odczyt.py zrzut.bin                 # partycja NVS albo caly flash
+#            (jesli dasz caly zrzut flashu, sam znajdzie partycje NVS:
+#             najpierw z tablicy partycji spod 0x8000, potem po naglowkach stron)
+#   python narzedzia/nvs_odczyt.py zrzut.bin --pokaz-usuniete --maskuj
+#   python narzedzia/nvs_odczyt.py zrzut.bin --json
+#   python narzedzia/nvs_odczyt.py zrzut.bin --csv odczyt.csv
+#   python narzedzia/nvs_odczyt.py caly_flash.bin --wykryj
+#   python narzedzia/nvs_odczyt.py caly_flash.bin --offset 0x9000 --rozmiar 0x5000
+#   python narzedzia/nvs_odczyt.py --tablica-partycji plik_z_0x8000.bin
+#   python narzedzia/nvs_odczyt.py --autotest
 #
 # Skad wziac plik (skrot, pelna instrukcja: NVS_ODCZYT_JAK.md):
-#   pip install esptool
-#   esptool.py --port COM5 read_flash 0x9000 0x5000 nvs_centrala.bin
-#   (0x9000/0x5000 to pierwszy wiersz partitions.csv: "nvs, data, nvs, 0x9000, 0x5000";
-#    w tym repozytorium jest tylko partitions.csv panelu LCD - dla centrali
-#    wez wlasny plik partycji z projektu centrali, wiersz zaczynajacy sie od "nvs")
+#   python -m esptool --port COM16 read-flash 0x8000 0xC00 tablica.bin
+#   python narzedzia/nvs_odczyt.py --tablica-partycji tablica.bin
+#   python -m esptool --port COM16 read-flash <offset> <rozmiar> nvs.bin
+#
+# UWAGA (esptool 5.x, a taki jest w PlatformIO: 5.2.0):
+#   - polecenia nie maja juz koncowki .py: "esptool", nie "esptool.py"
+#     (jesli "esptool" nie jest w PATH: python -m esptool ...),
+#   - "--port", "--baud", "--chip" MUSZA byc PRZED podkomenda (read_flash),
+#     inaczej "No such option '--port'",
+#   - podkomenda nazywa sie teraz "read-flash"; stara "read_flash" jeszcze
+#     dziala, ale wypisuje ostrzezenie o wycofaniu,
+#   - "0x9000/0x5000" to partycja NVS PANELU LCD (LCD-Centrali/partitions.csv);
+#     Centrala ma wlasny plik partycji - zeby nie zgadywac, odczytaj tablice
+#     partycji z urzadzenia (0x8000, 0xC00) i podaj ten plik z --tablica-partycji.
 #
 # Co czyta: WSZYSTKO, co jest w partycji NVS - wszystkie przestrzenie (namespace),
 # wszystkie klucze, wartosci, typy, oraz to, co zostalo po nadpisanych i usunietych
@@ -408,6 +421,16 @@ def sekret(klucz):
     return any(w in k for w in WZORCE_SEKRETOW)
 
 
+def odmiana(ile, jeden, kilka, wiele):
+    """Polska odmiana: 1 strona / 2-4 strony / 5 stron (z wyjatkiem 12-14)."""
+    if ile == 1:
+        return '%d %s' % (ile, jeden)
+    reszta = ile % 10
+    if 2 <= reszta <= 4 and not 12 <= ile % 100 <= 14:
+        return '%d %s' % (ile, kilka)
+    return '%d %s' % (ile, wiele)
+
+
 def tekst_wartosci(w, maskuj):
     v = w['wartosc']
     if maskuj and sekret(str(w.get('klucz', ''))):
@@ -428,8 +451,9 @@ def tekst_wartosci(w, maskuj):
 def wypisz_tekst(p, maskuj, pokaz_usuniete):
     print('NVS: %s' % (p.opis or '(plik)'))
     zapisane, usuniete = p.ile_wpisow()
-    print('%d B = %d stron po %d B; wpisy: %d zapisanych, %d usunietych'
-          % (len(p.raw), len(p.strony), PAGE_SIZE, zapisane, usuniete))
+    print('%d B = %s po %d B; wpisy: %d zapisanych, %d usunietych'
+          % (len(p.raw), odmiana(len(p.strony), 'strona', 'strony', 'stron'),
+             PAGE_SIZE, zapisane, usuniete))
     if p.ile_blobowych():
         print('(w tym %d wpisow blobow: naglowki danych i indeksy - zlozone w klucze nizej)'
               % p.ile_blobowych())
@@ -529,6 +553,109 @@ def wypisz_csv(p, sciezka):
                     w.writerow([k, 'data', d['typ'], v])
     print('zapisano CSV: %s (%d przestrzeni, %d kluczy)'
           % (sciezka, len(p.przestrzenie), len(p.dane)))
+
+
+
+# ---------------------------------------------------------------------------
+# Tablica partycji ESP-IDF (offset 0x8000, zwykle 0xC00 bajtow)
+# ---------------------------------------------------------------------------
+# Format wpisu (esp_partition_info_t, components/bootloader_support/include/
+# esp_flash_partitions.h, sprawdzone w ESP-IDF v5.3):
+#   0..1   magic 0xAA 0x50 (u16 LE 0x50AA)
+#   2      type:  0x00 = aplikacja, 0x01 = dane
+#   3      subtype - patrz enum esp_partition_subtype_t W TYM SAMYM naglowku:
+#            dane: 0x00 ota (wybor partycji), 0x01 phy, 0x02 NVS !!!,
+#                  0x03 coredump, 0x04 nvs_keys, 0x05 efuse, 0x06 undefined,
+#                  0x80 esphttpd, 0x81 fat, 0x82 spiffs, 0x83 littlefs
+#            app:  0x00 fabryczna, 0x10..0x1F ota_0..ota_15, 0x20 test
+#          (uwaga: NVS to 0x02 - 0x01 to PHY; latwo sie pomylic)
+#   4..7   offset (u32 LE), 8..11 rozmiar (u32 LE)
+#   12..27 etykieta (16 B, konczona zerem), 28..31 flagi
+#   Koniec tablicy: wpis 0xFF..FF albo wpis MD5 (pierwsze dwa bajty 0xEB 0xEB).
+TABLICA_PARTYCJI_OFFSET = 0x8000
+TABLICA_PARTYCJI_BAJTOW = 0xC00
+MAGIC_PARTYCJI = (0xAA, 0x50)
+TYP_APP = 0x00
+TYP_DANYCH = 0x01
+PODTYP_DATA_NVS = 0x02
+PODTYP_DATA_NVS_KEYS = 0x04
+
+PODTYPY_DANYCH = {
+    0x00: 'ota (wybor partycji)', 0x01: 'phy', 0x02: 'NVS', 0x03: 'coredump',
+    0x04: 'nvs_keys', 0x05: 'efuse', 0x06: 'undefined',
+    0x80: 'esphttpd', 0x81: 'fat', 0x82: 'spiffs', 0x83: 'littlefs',
+}
+PODTYPY_APP = {0x00: 'fabryczna', 0x20: 'test'}
+
+
+def czytaj_tablice_partycji(raw):
+    """Zwraca liste dictow z partycjami albo None, gdy to nie tablica."""
+    if len(raw) < 32:
+        return None
+    partycje = []
+    for i in range(0, len(raw) - 31, 32):
+        wpis = raw[i:i + 32]
+        if wpis == b'\xff' * 32:
+            break
+        if wpis[0] != MAGIC_PARTYCJI[0] or wpis[1] != MAGIC_PARTYCJI[1]:
+            if wpis[0] == 0xEB and wpis[1] == 0xEB:
+                break          # wpis z MD5 calej tablicy
+            if not partycje:
+                return None
+            break
+        typ, podtyp = wpis[2], wpis[3]
+        off = struct.unpack_from('<I', wpis, 4)[0]
+        rozmiar = struct.unpack_from('<I', wpis, 8)[0]
+        etykieta = wpis[12:28].split(b'\x00')[0].decode('utf-8', 'replace')
+        partycje.append({'typ': typ, 'podtyp': podtyp, 'offset': off,
+                         'rozmiar': rozmiar, 'etykieta': etykieta})
+    return partycje or None
+
+
+def nazwa_podtypu(typ, podtyp):
+    if typ == TYP_APP:
+        if 0x10 <= podtyp <= 0x1F:
+            return 'ota_%d' % (podtyp - 0x10)
+        return PODTYPY_APP.get(podtyp, 'app 0x%02x' % podtyp)
+    return PODTYPY_DANYCH.get(podtyp, 'dane 0x%02x' % podtyp)
+
+
+def znajdz_partycje_nvs(partycje):
+    """Partycja NVS to typ dane + podtyp 0x02 (nie 0x01 - to PHY)."""
+    for p in partycje or []:
+        if p['typ'] == TYP_DANYCH and p['podtyp'] == PODTYP_DATA_NVS:
+            return p
+    return None
+
+
+def wypisz_tablice(partycje, opis=''):
+    if not partycje:
+        print('to nie wyglada na tablice partycji ESP-IDF (brak wpisu 0xAA 0x50)')
+        print('tablica jest na 0x8000; zrzut:')
+        print('  python -m esptool --port COM16 read_flash 0x8000 0xC00 tablica.bin')
+        return 1
+    print('Tablica partycji%s:' % ((' z ' + opis) if opis else ''))
+    print('  %-10s %-20s %-10s %-10s %s'
+          % ('etykieta', 'typ/podtyp', 'offset', 'rozmiar', 'koniec'))
+    for p in partycje:
+        print('  %-10s %-20s 0x%06x   0x%06x   0x%06x'
+              % (p['etykieta'], '%s / %s' % ('app' if p['typ'] == TYP_APP else 'dane',
+                                             nazwa_podtypu(p['typ'], p['podtyp'])),
+                 p['offset'], p['rozmiar'], p['offset'] + p['rozmiar']))
+    nvs = znajdz_partycje_nvs(partycje)
+    if nvs is None:
+        print('')
+        print('UWAGA: w tej tablicy nie ma partycji "dane / NVS" (podtyp 0x02).')
+        return 1
+    print('')
+    print('Partycja NVS: "%s", offset 0x%x, rozmiar 0x%x (%d B, %s po 4096 B).'
+          % (nvs['etykieta'], nvs['offset'], nvs['rozmiar'], nvs['rozmiar'],
+             odmiana(nvs['rozmiar'] // PAGE_SIZE, 'strona', 'strony', 'stron')))
+    print('Zrzut i odczyt:')
+    print('  python -m esptool --port COM16 read_flash 0x%x 0x%x nvs.bin'
+          % (nvs['offset'], nvs['rozmiar']))
+    print('  python narzedzia/nvs_odczyt.py nvs.bin')
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -704,6 +831,12 @@ def autotest():
     zle = 0
     nie = 0
 
+    def cicho(f, *a, **kw):
+        """Wywolaj funkcje, ktora cos wypisuje, i schowaj jej wyjscie."""
+        import contextlib
+        with contextlib.redirect_stdout(io.StringIO()):
+            return f(*a, **kw)
+
     def sprawdz(opis, warunek, szczegol=''):
         nonlocal zle, nie
         nie += 1
@@ -825,7 +958,7 @@ def autotest():
     import tempfile
     with tempfile.NamedTemporaryFile('r', suffix='.csv', delete=False, encoding='utf-8') as f:
         nazwa = f.name
-    wypisz_csv(p, nazwa)
+    cicho(wypisz_csv, p, nazwa)
     with io.open(nazwa, encoding='utf-8') as f:
         linie = f.read().splitlines()
     os.unlink(nazwa)
@@ -834,6 +967,124 @@ def autotest():
     sprawdz('CSV: tekst', 'dlugi,data,string,%s' % dlugi in linie)
     sprawdz('CSV: liczba', any(l.startswith('wybor,data,i32,7') for l in linie), linie)
 
+    # 7) Tablica partycji ESP-IDF.
+    def wpis_part(typ, podtyp, off, rozmiar, etykieta):
+        e = bytearray(32)
+        e[0], e[1] = 0xAA, 0x50
+        e[2], e[3] = typ, podtyp
+        struct.pack_into('<I', e, 4, off)
+        struct.pack_into('<I', e, 8, rozmiar)
+        lab = etykieta.encode()
+        e[12:12 + len(lab)] = lab
+        return bytes(e)
+
+    def tablica(wpisy, zakonczenie='md5'):
+        t = bytearray(b'\xff' * TABLICA_PARTYCJI_BAJTOW)
+        o = 0
+        for w in wpisy:
+            t[o:o + 32] = w
+            o += 32
+        if zakonczenie == 'md5':
+            m = bytearray(32)
+            m[0], m[1] = 0xEB, 0xEB
+            t[o:o + 32] = m
+        return bytes(t)
+
+    # 7a) typowa tablica: NVS to podtyp 0x02 (0x01 to PHY - najlatwiejsza pomylka)
+    t1 = czytaj_tablice_partycji(tablica([
+        wpis_part(TYP_DANYCH, 0x02, 0x9000, 0x5000, 'nvs'),
+        wpis_part(TYP_DANYCH, 0x01, 0xE000, 0x2000, 'phy_init'),
+        wpis_part(TYP_APP, 0x10, 0x10000, 0x1F0000, 'ota_0'),
+    ]))
+    sprawdz('tablica: 3 partycje', t1 is not None and len(t1) == 3, t1)
+    nvs1 = znajdz_partycje_nvs(t1)
+    sprawdz('tablica: NVS znalezione po podtypie 0x02',
+            nvs1 and nvs1['offset'] == 0x9000 and nvs1['rozmiar'] == 0x5000, nvs1)
+    sprawdz('tablica: podtyp 0x01 to phy, nie NVS',
+            nazwa_podtypu(TYP_DANYCH, 0x01) == 'phy', nazwa_podtypu(TYP_DANYCH, 0x01))
+    sprawdz('tablica: nazwa ota_1', nazwa_podtypu(TYP_APP, 0x11) == 'ota_1')
+    sprawdz('tablica: etykieta odczytana', t1[2]['etykieta'] == 'ota_0')
+
+    # 7b) koniec tablicy samymi 0xFF - czytanie musi sie zatrzymac
+    t2 = czytaj_tablice_partycji(tablica([
+        wpis_part(TYP_DANYCH, 0x02, 0x9000, 0x5000, 'nvs')], zakonczenie='ff'))
+    sprawdz('tablica: koniec 0xFF konczy czytanie', t2 is not None and len(t2) == 1, t2)
+
+    # 7c) bez partycji NVS -> szukanie zwraca None, wypisanie zwraca 1
+    t3 = czytaj_tablice_partycji(tablica([
+        wpis_part(TYP_DANYCH, 0x03, 0x3F0000, 0x10000, 'coredump')]))
+    sprawdz('tablica bez NVS', znajdz_partycje_nvs(t3) is None)
+    sprawdz('wypisz_tablice bez NVS -> 1', cicho(wypisz_tablice, t3) == 1)
+
+    # 7d) nie-tablica (same zera) -> None, a nie wyjatek
+    sprawdz('same zera to nie tablica',
+            czytaj_tablice_partycji(b'\x00' * 0xC00) is None)
+    sprawdz('wypisz_tablice na smieciach -> 1',
+            cicho(wypisz_tablice, czytaj_tablice_partycji(b'\x00' * 0xC00)) == 1)
+
+    # 8) Caly zrzut flashu podany zamiast partycji: automat znajduje NVS
+    #    po tablicy partycji (offset 0x8000).
+    caly = bytearray(b'\xff' * 0x40000)
+    caly[TABLICA_PARTYCJI_OFFSET:TABLICA_PARTYCJI_OFFSET + TABLICA_PARTYCJI_BAJTOW] = \
+        tablica([wpis_part(TYP_DANYCH, 0x02, 0x9000, len(obraz), 'nvs')])
+    caly[0x9000:0x9000 + len(obraz)] = obraz
+    traf = znajdz_partycje_w_pliku(bytes(caly))
+    sprawdz('automat: NVS z tablicy partycji',
+            traf and traf[0] == 0x9000 and traf[1] == len(obraz), traf)
+    sprawdz('automat: zrodlo opisane jako tablica partycji',
+            traf and 'tablica partycji' in traf[2], traf)
+
+    # 8b) bez tablicy partycji - zostaje heurystyka po naglowkach stron
+    caly2 = bytearray(b'\xff' * 0x40000)
+    caly2[0x9000:0x9000 + len(obraz)] = obraz
+    traf2 = znajdz_partycje_w_pliku(bytes(caly2))
+    sprawdz('automat: heurystyka bez tablicy',
+            traf2 and traf2[0] == 0x9000 and 'naglowki stron' in traf2[2], traf2)
+
+    # 8c) "wyglada na partycje" nie moze uznac pustej strony 0xFF za NVS
+    sprawdz('puste 0xFF to nie partycja NVS', not wyglada_na_partycje(b'\xff' * 0x2000))
+    sprawdz('wlasny obraz to partycja NVS', wyglada_na_partycje(obraz))
+
+    # 9) CSV -> generator Espressif -> nasz czytnik: pelne kolko.
+    #    CSV to format wejsciowy esp-idf-nvs-partition-gen, wiec jesli generator
+    #    jest zainstalowany, sprawdzamy prawdziwy round-trip (a nie tylko CSV).
+    try:
+        import importlib.util
+        generator = importlib.util.find_spec('esp_idf_nvs_partition_gen') is not None
+    except (ImportError, ValueError):
+        generator = False
+    if not generator:
+        print('  (pomijam test CSV->generator->czytnik: brak esp-idf-nvs-partition-gen)')
+    else:
+        import tempfile
+        import subprocess
+        katalog = tempfile.mkdtemp(prefix='nvs_csv_')
+        csv_in = os.path.join(katalog, 'in.csv')
+        bin_out = os.path.join(katalog, 'out.bin')
+        cicho(wypisz_csv, p, csv_in)
+        wynik = subprocess.run(
+            [sys.executable, '-m', 'esp_idf_nvs_partition_gen', 'generate',
+             csv_in, bin_out, hex(len(obraz))],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        sprawdz('CSV->generator: wygenerowal plik', os.path.exists(bin_out), wynik.stdout[-200:])
+        if os.path.exists(bin_out):
+            with open(bin_out, 'rb') as f:
+                p_gen = Partycja(f.read(), 'z-generatora')
+            sprawdz('CSV->generator->czytnik: te same przestrzenie',
+                    set(p_gen.przestrzenie.values()) == set(p.przestrzenie.values()),
+                    p_gen.przestrzenie)
+            sprawdz('CSV->generator->czytnik: wybor == 7',
+                    p_gen.dane.get((ns, 'wybor'), {}).get('wartosc') == 7)
+            sprawdz('CSV->generator->czytnik: tekst 100 B',
+                    p_gen.dane.get((ns, 'dlugi'), {}).get('wartosc') == dlugi)
+            sprawdz('CSV->generator->czytnik: blob 10240 B',
+                    p_gen.dane.get((wifi, 'duzy'), {}).get('wartosc') == blob,
+                    p_gen.dane.get((wifi, 'duzy'), {}).get('rozmiar'))
+            sprawdz('CSV->generator->czytnik: bez ostrzezen',
+                    not p_gen.ostrzezenia, p_gen.ostrzezenia)
+        import shutil
+        shutil.rmtree(katalog, ignore_errors=True)
+
     print('autotest: %d z %d przypadkow OK' % (nie - zle, nie))
     return 0 if zle == 0 else 1
 
@@ -841,6 +1092,39 @@ def autotest():
 # ---------------------------------------------------------------------------
 # Wczytanie pliku, offset, rozmiar
 # ---------------------------------------------------------------------------
+def znajdz_partycje_w_pliku(raw):
+    """Gdy ktos da caly zrzut flashu bez --offset/--rozmiar: znajdz NVS.
+    Zwraca (offset, rozmiar, sposob) albo None. Najpierw tablica partycji
+    (dokladna), potem heurystyka po naglowkach stron."""
+    # 1) tablica partycji na 0x8000
+    if len(raw) >= TABLICA_PARTYCJI_OFFSET + 32:
+        tab = czytaj_tablice_partycji(
+            raw[TABLICA_PARTYCJI_OFFSET:TABLICA_PARTYCJI_OFFSET + TABLICA_PARTYCJI_BAJTOW])
+        p_nvs = znajdz_partycje_nvs(tab)
+        if p_nvs and p_nvs['offset'] + p_nvs['rozmiar'] <= len(raw):
+            return (p_nvs['offset'], p_nvs['rozmiar'],
+                    'tablica partycji z 0x8000, etykieta "%s"' % p_nvs['etykieta'])
+    # 2) heurystyka
+    znalezione = wykryj(raw)
+    if len(znalezione) == 1:
+        off, dl, _, _ = znalezione[0]
+        return (off, dl, 'naglowki stron NVS')
+    if znalezione:
+        off = max(znalezione, key=lambda z: z[1])[0]
+        dl = max(znalezione, key=lambda z: z[1])[1]
+        return (off, dl, 'naglowki stron NVS (najdluzszy ciag)')
+    return None
+
+
+def wyglada_na_partycje(raw):
+    """Czy plik zaczyna sie od ZAINICJOWANEJ strony NVS (stan != 0xFF)?
+    Sam poprawny naglowek to za malo: strona NVS wypelniona samymi 0xFF tez
+    ma poprawny naglowek, wiec caly obraz flashu zaczynalby sie "poprawnie"."""
+    if len(raw) < PAGE_SIZE or not wyglada_na_strone_nvs(raw[:PAGE_SIZE]):
+        return False
+    return struct.unpack_from('<I', raw, 0)[0] != STAN_PUSTA
+
+
 def wczytaj(sciezka, offset, rozmiar):
     if not os.path.exists(sciezka):
         sys.exit('nie ma pliku: %s' % sciezka)
@@ -882,6 +1166,9 @@ def main():
                     help='dlugosc partycji NVS w bajtach (np. 0x5000); domyslnie do konca pliku')
     ap.add_argument('--wykryj', action='store_true',
                     help='szukaj partycji NVS w zrzucie calego flashu (nic nie parsuje)')
+    ap.add_argument('--tablica-partycji', metavar='PLIK', dest='tablica',
+                    help='plik z tablica partycji (zrzut 0x8000, 0xC00) - pokaze, '
+                         'gdzie jest NVS, i poda gotowe polecenie zrzutu')
     ap.add_argument('--json', action='store_true', help='wyjscie JSON')
     ap.add_argument('--csv', metavar='PLIK', help='zapisz CSV w formacie narzedzia Espressif')
     ap.add_argument('--maskuj', action='store_true',
@@ -893,10 +1180,20 @@ def main():
 
     if a.autotest:
         return autotest()
+
+    if a.tablica:
+        if not os.path.exists(a.tablica):
+            sys.exit('nie ma pliku: %s' % a.tablica)
+        with open(a.tablica, 'rb') as f:
+            raw = f.read()
+        return wypisz_tablice(czytaj_tablice_partycji(raw), a.tablica)
+
     if not a.plik:
-        ap.error('podaj plik ze zrzutem (albo --autotest)')
+        ap.error('podaj plik ze zrzutem (albo --autotest, albo --tablica-partycji PLIK)')
 
     if a.wykryj:
+        if not os.path.exists(a.plik):
+            sys.exit('nie ma pliku: %s' % a.plik)
         with open(a.plik, 'rb') as f:
             raw = f.read()
         znalezione = wykryj(raw)
@@ -920,11 +1217,45 @@ def main():
 
     raw, opis = wczytaj(a.plik, a.offset, a.rozmiar)
     try:
+        if not a.offset and not a.rozmiar and not wyglada_na_partycje(raw):
+            raise NvsBlad('pod tym adresem nie ma naglowka strony NVS')
         p = Partycja(raw, opis)
     except NvsBlad as e:
-        print('BLAD: %s' % e)
-        print('sprobuj: python3 %s %s --wykryj' % (sys.argv[0], a.plik))
-        return 1
+        # Najczestszy przypadek: ktos dał CALY zrzut flashu zamiast partycji NVS.
+        # Zamiast kazac mu zgadywac offset, szukamy partycji sami.
+        if not a.offset and not a.rozmiar:
+            with open(a.plik, 'rb') as f:
+                caly = f.read()
+            trafienie = znajdz_partycje_w_pliku(caly)
+            if trafienie:
+                off, dl, sposob = trafienie
+                # W trybie --json wszystko, co nie jest JSON-em, idzie na stderr,
+                # inaczej nie da sie wyjscia podac do json.load / jq.
+                wyj = sys.stderr if a.json else sys.stdout
+                print('To nie jest sama partycja NVS - to wiekszy obraz.', file=wyj)
+                print('Znalazlem NVS na 0x%x, %d B (%s). Czytam ta czesc.' % (off, dl, sposob),
+                      file=wyj)
+                if not a.json:
+                    print('', file=wyj)
+                    print('(na przyszlosc: python %s %s --offset 0x%x --rozmiar 0x%x)'
+                          % (os.path.basename(sys.argv[0]), os.path.basename(a.plik), off, dl),
+                          file=wyj)
+                    print('', file=wyj)
+                else:
+                    print('', file=wyj)
+                try:
+                    p = Partycja(caly[off:off + dl], '%s od 0x%x' % (a.plik, off))
+                except NvsBlad as e2:
+                    print('BLAD: %s' % e2)
+                    return 1
+            else:
+                print('BLAD: %s' % e)
+                print('sprobuj: python %s %s --wykryj' % (sys.argv[0], a.plik))
+                return 1
+        else:
+            print('BLAD: %s' % e)
+            print('sprobuj: python %s %s --wykryj' % (sys.argv[0], a.plik))
+            return 1
 
     if a.json:
         wypisz_json(p, a.maskuj, a.pokaz_usuniete)
