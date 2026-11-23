@@ -1066,7 +1066,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.10"
+#define WERSJA_FW "v1.5.11"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1594,6 +1594,51 @@ static bool wierszSuwakaWGranicach(const char* etykieta, bool zLukiem) {
   }
   (void)ind;
   return ok;
+}
+
+// [v1.5.11] Ikony BOJLER i PANEL jak w aplikacji: poziom i kolor wody w
+// bojlerze wg temperatury (Ilu.kt: pct=(t-15)/55 obciete do 5..95 %, kolory
+// <=35 niebieski / <=55 bursztyn / >55 pomarancz), ikona PANEL z czterech
+// warstw, alarm przegrzania barwi rury i zbiornik na czerwono.
+void scenariuszBojlerPoziomIkony() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -60, 0));
+  ustaw(0, [](Centrala& c) { c.tBojler = 20.0; });
+  setup();
+  biegnij(6000);
+  uint16_t kolor = 0; int px = lvgl_dashboard_poc_bojler_woda(&kolor);
+  info("20 C: woda %d px, kolor 0x%04X", px, kolor);
+  sprawdz(px >= 1 && px <= 4 && kolor == 0x0438, "20 C: niski poziom (<=4 px z 26), woda niebieska");
+  zrzutEkranu("1_bojler_20C");
+
+  ustaw(0, [](Centrala& c) { c.tBojler = 45.0; });
+  biegnij(4500);
+  const int px45 = lvgl_dashboard_poc_bojler_woda(&kolor);
+  info("45 C: woda %d px, kolor 0x%04X", px45, kolor);
+  sprawdz(px45 >= 13 && px45 <= 15 && kolor == 0xF4E1, "45 C: okolo polowy (13-15 px), woda bursztynowa");
+  sprawdz(px45 > px, "45 C: wiecej wody niz przy 20 C");
+  zrzutEkranu("2_bojler_45C");
+
+  ustaw(0, [](Centrala& c) { c.tBojler = 70.0; c.alarmPanel = true; });
+  biegnij(4500);
+  const int px70 = lvgl_dashboard_poc_bojler_woda(&kolor);
+  info("70 C: woda %d px, kolor 0x%04X", px70, kolor);
+  sprawdz(px70 == 25 && kolor == 0xEAC1, "70 C: pelny (25 px = 95 % z 26), woda pomaranczowa");
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  zrzutEkranu("3_bojler_70C_alarm_panel");
+
+  ustaw(0, [](Centrala& c) { c.tBojler = 200.0; c.alarmPanel = false; });
+  biegnij(4500);
+  sprawdz(lvgl_dashboard_poc_bojler_woda(nullptr) == 25, "200 C: poziom obciety do 95 % (25 px)");
+  ustaw(0, [](Centrala& c) { c.tBojler = -1.0; });
+  biegnij(4500);
+  sprawdz(lvgl_dashboard_poc_bojler_woda(&kolor) == 1 && kolor == 0x0438, "-1 C (brak czujnika): minimum 5 % (1 px), niebieska");
+
+  // Centrala milczy: po 10 s kafelki pokazuja "--", woda znika razem z wartoscia.
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+  int czekalMs = 0;
+  while (lvgl_dashboard_poc_bojler_woda(nullptr) != -1 && czekalMs < 20000) { biegnij(250); czekalMs += 250; }
+  sprawdz(lvgl_dashboard_poc_bojler_woda(nullptr) == -1 && ileNapisow("--") >= 8, "centrala milczy: kafelki \"--\", woda w ikonie ukryta");
+  zrzutEkranu("4_bojler_bez_danych");
 }
 
 void scenariuszSerwoStopnie() {
@@ -6184,6 +6229,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"poprawki_v141", "male poprawki po audycie: limit odpowiedzi 8 kB, zapas stosu i odmowy pamieci w logu, zrzut po awarii, jasnosc min. 5 % (v1.4.1)", scenariuszPoprawkiV141},
     {"polecenia_nie_gina", "kolejka polecen: szybkie klikanie i przytrzymany przycisk, stara wartosc z GET-a, pasek bledu (v1.4.2)", scenariuszPoleceniaNieGina},
     {"ikona_wifi_cisza", "ikona WiFi bez X, gdy WiFi jest, a centrala milczy - koniec mrugania (v1.5.6)", scenariuszIkonaWifiPrzyCiszy},
+    {"bojler_poziom_ikony", "ikony jak w aplikacji: poziom i kolor wody w BOJLER wg temperatury (5..95 %, progi 35/55 C), PANEL z 4 warstw, alarm barwi rury (v1.5.11)", scenariuszBojlerPoziomIkony},
     {"serwo_stopnie", "pozycje serw: stopnie z centrali -> procenty 0-100 na ekranie, nie 113% (v1.5.6)", scenariuszSerwoStopnie},
     {"bez_centrali_dlugo", "centrala wylaczona na dlugo: bez restartu co 5 min, ponawianie polaczenia, naglowek w minutach (v1.4.2)", scenariuszBezCentraliDlugo},
     {"centrala_milczy_dlugo", "WiFi jest, centrala milczy dlugo: bez restartu co 5 min, wymuszone laczenie co 30 s (v1.4.2)", scenariuszCentralaMilczyDlugo},

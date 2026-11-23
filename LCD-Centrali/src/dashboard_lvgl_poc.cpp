@@ -216,6 +216,26 @@
 // ikony (kolektor) zostaje przy dotychczasowym KOL_ZAR/KOL_ERR - patrz
 // wywolanie kafelek() dla PANEL nizej i panel_alarm_odswiez().
 #define KOL_SLONCE 0xFFE0
+// [v1.5.11 - ikony BOJLER i PANEL jak w aplikacji] Kolory przeniesione z
+// aplikacji Android (ui/art/Ilu.kt), przeliczone na RGB565:
+//  - BOJLER: obrys zbiornika szary (#64748b), woda w trzech kolorach wg
+//    temperatury: do 35 C niebieska (#0284c7), 35-55 C bursztynowa (#f59e0b),
+//    powyzej 55 C pomaranczowa (#ea580c); poziom wody = (t-15)/55, 5..95 %.
+//  - PANEL: zbiornik kolektora turkusowy (#00d4f5); rury KOL_KROPLA (czerwone
+//    przy alarmie), stojak KOL_TEKST_DIM, slonce KOL_SLONCE.
+#define KOL_BOJLER_KONTUR   0x63B1
+#define KOL_BOJLER_ZIMNA    0x0438
+#define KOL_BOJLER_LETNIA   0xF4E1
+#define KOL_BOJLER_GORACA   0xEAC1
+#define KOL_PANEL_ZBIORNIK  0x06BE
+// Geometria wnetrza zbiornika w bitmapie IKONA_BOJLER_KONTUR (40x40):
+// kolumny 11..28 (18 px), wiersze 8..34 (27 px); fala w IKONA_BOJLER_WODA ma
+// grzbiety w wierszach 17-19, lita woda od wiersza 20 w dol.
+#define BOJLER_WNETRZE_X     11
+#define BOJLER_WNETRZE_Y      8
+#define BOJLER_WNETRZE_SZER  18
+#define BOJLER_WNETRZE_WYS   27
+#define BOJLER_FALA_LITA_OD  20
 // [UI-INTERNET, ta sesja] Kolory stalych warstw globusu (fbAppReady) - ten
 // sam dwubarwny wzorzec co PANEL (slonce+kolektor)/BOJLER (kontur+woda).
 // Niebieski dla "szkieletu" kuli (siatka poludnikow/rownoleznika) + zielony
@@ -555,6 +575,15 @@ static lv_obj_t *pompaTrybAutoBtn = nullptr;
 static lv_obj_t *zewnValLabel = nullptr;
 static lv_obj_t *zewnIcon = nullptr;   // przelaczana bitmapa (mroz/neutralnie/cieplo) - patrz aktualizuj()
 static lv_obj_t *bojlerValLabel = nullptr;
+// [v1.5.11] Woda w ikonie BOJLER z poziomem wg temperatury (jak w aplikacji):
+// wnetrze = przycinajacy prostokat o rozmiarze wnetrza zbiornika, w nim lite
+// "cialo" wody (lv_obj z tlem) i obrazek fali przesuwany pionowo.
+static lv_obj_t *bojlerKonturIcon  = nullptr;
+static lv_obj_t *bojlerWodaWnetrze = nullptr;
+static lv_obj_t *bojlerWodaCialo   = nullptr;
+static lv_obj_t *bojlerWodaFala    = nullptr;
+static int       g_bojlerPoziomPx  = -1;   // wysokosc wody w px (do testow na PC), -1 = ukryta
+static uint16_t  g_bojlerWodaKolor = 0;
 static lv_obj_t *dymValLabel = nullptr;
 static lv_obj_t *dymIcon = nullptr;
 static lv_obj_t *dymCard = nullptr;  // rodzic dymValLabel - do zmiany koloru ramki przy alarmie (patrz aktualizuj())
@@ -607,7 +636,8 @@ static lv_obj_t *ogrzSredniaLabel = nullptr;
 static lv_obj_t *ogrzCard = nullptr;
 static lv_obj_t *ogrzIcon = nullptr;
 static lv_obj_t *panelCard = nullptr;
-static lv_obj_t *panelIcon = nullptr;
+static lv_obj_t *panelIcon = nullptr;          // [v1.5.11] warstwa RURY (alarm -> KOL_ERR)
+static lv_obj_t *panelZbiornikIcon = nullptr;  // [v1.5.11] warstwa ZBIORNIK (alarm -> KOL_ERR)
 
 // [Partia 2, ta sesja] KLAPA/SYBERKA/WILGOTNOSC/CISNIENIE/POKOJ - patrz
 // STATUS_PROJEKTU_LVGL.md pkt 30.
@@ -1703,6 +1733,93 @@ static lv_obj_t *kafelek(lv_obj_t *parent, int x, int y, int w, int h,
   }
 
   return val;
+}
+
+// [v1.5.11] Dodatkowa warstwa ikony kafelka - to samo wyrownanie co warstwy
+// w kafelek() (TOP_RIGHT -4, 6), wiec naklada sie idealnie na pierwsza.
+static lv_obj_t *ikona_warstwa_dodaj(lv_obj_t *card, const lv_img_dsc_t *dsc, uint16_t kolor) {
+  lv_obj_t *img = lv_img_create(card);
+  lv_img_set_src(img, dsc);
+  lv_obj_set_style_img_recolor_opa(img, LV_OPA_COVER, 0);
+  lv_obj_set_style_img_recolor(img, rgb565(kolor), 0);
+  lv_obj_align(img, LV_ALIGN_TOP_RIGHT, -4, 6);
+  return img;
+}
+
+// [v1.5.11] PANEL: warstwy STOJAK (pod rurami), ZBIORNIK i SLONCE (nad nimi).
+// panelIcon (RURY) juz istnieje - stworzona przez kafelek().
+static void kafelek_panel_ikona_zbuduj(lv_obj_t *card) {
+  if (card == nullptr || panelIcon == nullptr) return;
+  lv_obj_t *stojak = ikona_warstwa_dodaj(card, &lv_ikona_panel_stojak, KOL_TEKST_DIM);
+  lv_obj_move_to_index(stojak, lv_obj_get_index(panelIcon));   // pod rury
+  panelZbiornikIcon = ikona_warstwa_dodaj(card, &lv_ikona_panel_zbiornik, KOL_PANEL_ZBIORNIK);
+  ikona_warstwa_dodaj(card, &lv_ikona_panel_slonce, KOL_SLONCE);
+}
+
+// [v1.5.11] BOJLER: woda o zmiennym poziomie. Wnetrze zbiornika to
+// przycinajacy prostokat (dzieci lv_obj sa przycinane do rodzica) dokladnie w
+// miejscu wnetrza konturu; w nim lite cialo wody dosuniete do dna i obrazek
+// fali, ktorego lita czesc zaczyna sie w wierszu poziomu. Calosc wsuwana POD
+// kontur (move_to_index), zeby zaokraglone rogi dna rysowal kontur.
+static void bojler_woda_zbuduj(lv_obj_t *card) {
+  if (card == nullptr || bojlerKonturIcon == nullptr) return;
+  bojlerWodaWnetrze = lv_obj_create(card);
+  lv_obj_remove_style_all(bojlerWodaWnetrze);
+  lv_obj_clear_flag(bojlerWodaWnetrze, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_size(bojlerWodaWnetrze, BOJLER_WNETRZE_SZER, BOJLER_WNETRZE_WYS);
+  // Ikona stoi w TOP_RIGHT (-4, 6); wnetrze zaczyna sie BOJLER_WNETRZE_X px od
+  // lewej krawedzi ikony, czyli konczy 40 - X - SZER px przed jej prawa krawedzia.
+  lv_obj_align(bojlerWodaWnetrze, LV_ALIGN_TOP_RIGHT,
+               -4 - (IKONA_BOJLER_ROZMIAR - BOJLER_WNETRZE_X - BOJLER_WNETRZE_SZER),
+               6 + BOJLER_WNETRZE_Y);
+  lv_obj_move_to_index(bojlerWodaWnetrze, lv_obj_get_index(bojlerKonturIcon));
+
+  bojlerWodaCialo = lv_obj_create(bojlerWodaWnetrze);
+  lv_obj_remove_style_all(bojlerWodaCialo);
+  lv_obj_clear_flag(bojlerWodaCialo, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_bg_opa(bojlerWodaCialo, LV_OPA_COVER, 0);
+  lv_obj_set_size(bojlerWodaCialo, BOJLER_WNETRZE_SZER, 1);
+  lv_obj_align(bojlerWodaCialo, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+  bojlerWodaFala = lv_img_create(bojlerWodaWnetrze);
+  lv_img_set_src(bojlerWodaFala, &lv_ikona_bojler_woda);
+  lv_obj_set_style_img_recolor_opa(bojlerWodaFala, LV_OPA_COVER, 0);
+  lv_obj_set_pos(bojlerWodaFala, -BOJLER_WNETRZE_X, 0);
+
+  lv_obj_add_flag(bojlerWodaWnetrze, LV_OBJ_FLAG_HIDDEN);   // do pierwszych danych
+}
+
+// [v1.5.11] Poziom i kolor wody jak w aplikacji (Ilu.kt, fun bojler()):
+// pct = (t - 15) / 55 obciete do 5..95 %; kolor wg progow 35/55 C.
+static void bojler_woda_odswiez(bool znana, float tBojler) {
+  if (bojlerWodaWnetrze == nullptr) return;
+  if (!znana) {
+    lv_obj_add_flag(bojlerWodaWnetrze, LV_OBJ_FLAG_HIDDEN);
+    g_bojlerPoziomPx = -1;
+    return;
+  }
+  float pct = (tBojler - 15.0f) / 55.0f;
+  if (pct < 0.05f) pct = 0.05f;
+  if (pct > 0.95f) pct = 0.95f;
+  const int wys = (int)(pct * (BOJLER_WNETRZE_WYS - 1) + 0.5f);   // 1..26 px wody
+  const int poziomY = BOJLER_WNETRZE_WYS - wys;                    // wiersz poziomu wzgledem wnetrza
+  const uint16_t kolor = tBojler > 55.0f ? KOL_BOJLER_GORACA
+                       : tBojler > 35.0f ? KOL_BOJLER_LETNIA : KOL_BOJLER_ZIMNA;
+  lv_obj_set_height(bojlerWodaCialo, wys);
+  lv_obj_align(bojlerWodaCialo, LV_ALIGN_BOTTOM_MID, 0, 0);
+  // Lita czesc fali (wiersz BOJLER_FALA_LITA_OD bitmapy) ma zaczac sie w
+  // wierszu poziomu; bitmapa liczona od gory ikony, wnetrze od wiersza Y.
+  lv_obj_set_pos(bojlerWodaFala, -BOJLER_WNETRZE_X, poziomY - (BOJLER_FALA_LITA_OD - BOJLER_WNETRZE_Y));
+  ustawKolorStylu(bojlerWodaCialo, LV_STYLE_BG_COLOR, rgb565(kolor), 0);
+  ustawKolorStylu(bojlerWodaFala, LV_STYLE_IMG_RECOLOR, rgb565(kolor), 0);
+  lv_obj_clear_flag(bojlerWodaWnetrze, LV_OBJ_FLAG_HIDDEN);
+  g_bojlerPoziomPx = wys;
+  g_bojlerWodaKolor = kolor;
+}
+
+int lvgl_dashboard_poc_bojler_woda(uint16_t *kolor) {
+  if (kolor != nullptr) *kolor = g_bojlerWodaKolor;
+  return g_bojlerPoziomPx;
 }
 
 // Kafelek POMPA - interaktywny: dotkniecie otwiera panel AUTO/RECZNIE.
@@ -7479,9 +7596,14 @@ void lvgl_dashboard_poc_init() {
   // [24] BOJLER: v1 (jeden kolor, cienka fala) byla nieczytelna na LCD.
   // v2 - dwuwarstwowa ikona 32x32: kontur (pomaranczowy) + lite wypelnienie
   // wody (niebieskie, KOL_KROPLA) - patrz STATUS_PROJEKTU_LVGL.md pkt 24.
+  // [v1.5.11] User: "ikona bojlera jak w aplikacji - poziom na ikonce zalezny
+  // od temperatury". Kontur zostaje warstwa kafelka (teraz szary, jak obrys w
+  // aplikacji), a woda NIE jest juz druga warstwa o stalej wysokosci, tylko
+  // osobnym zestawem obiektow budowanym przez bojler_woda_zbuduj() i
+  // ustawianym w bojler_woda_odswiez() (poziom + kolor wg temperatury).
   bojlerValLabel = kafelek(scr, x0 + 0 * (kw + odstepX), y1, kw, kh, "BOJLER", "--", KOL_RAMKA,
-                            &lv_ikona_bojler_kontur, KOL_ZAR, nullptr,
-                            &lv_ikona_bojler_woda, KOL_KROPLA);
+                            &lv_ikona_bojler_kontur, KOL_BOJLER_KONTUR, &bojlerKonturIcon);
+  bojler_woda_zbuduj(lv_obj_get_parent(bojlerValLabel));
 
   // [Partia 5, ta sesja] PANEL (t_panel) - nowy kafelek, patrz deklaracja
   // panelValLabel wyzej. [FIX tej sesji] User: "panel to jest panel grzewczy
@@ -7503,7 +7625,12 @@ void lvgl_dashboard_poc_init() {
   // na stale KOL_SLONCE (zolty) - nie ma wlasnego uchwytu, wiec alarm jej
   // nie dotyka, zgodnie z prosba "reszta jak jest" (reszta = kolektor nadal
   // reaguje na alarm jak dotychczas, samo slonce zawsze zolte).
-  panelValLabel = kafelek(scr, x0 + 1 * (kw + odstepX), y1, kw, kh, "PANEL", "--", KOL_RAMKA, &lv_ikona_panel_kolektor, KOL_ZAR, &panelIcon, &lv_ikona_panel_slonce, KOL_SLONCE, &panelCard);
+  // [v1.5.11] User: "ikona panelu taka sama/podobna do kolektora slonecznego w
+  // aplikacji". Cztery warstwy (patrz ikony.h): pierwsza (ikona/panelIcon) to
+  // RURY - ten sam uchwyt co dotad, wiec panel_alarm_odswiez() dalej
+  // przebarwia ja na KOL_ERR; pozostale dokladane przez kafelek_panel_ikona_zbuduj().
+  panelValLabel = kafelek(scr, x0 + 1 * (kw + odstepX), y1, kw, kh, "PANEL", "--", KOL_RAMKA, &lv_ikona_panel_rury, KOL_KROPLA, &panelIcon, nullptr, 0, &panelCard);
+  kafelek_panel_ikona_zbuduj(panelCard);
 
   // [UI-PIEC CO/SR] Byl OGRZ_TILE_PREVIEW - Wariant A wygral porownanie na
   // zywo (patrz obszerny komentarz przy kafelek_ogrz_polaczony() powyzej),
@@ -8055,8 +8182,13 @@ static void panel_alarm_odswiez(bool alarmPanel) {
   if (panelCard != nullptr) {
     ustawKolorStylu(panelCard, LV_STYLE_BORDER_COLOR, rgb565(alarmPanel ? KOL_ERR : KOL_RAMKA), 0);
   }
+  // [v1.5.11] Jak w aplikacji: przy alarmie rury i zbiornik czerwone, slonce
+  // i stojak bez zmian.
   if (panelIcon != nullptr) {
-    ustawKolorStylu(panelIcon, LV_STYLE_IMG_RECOLOR, rgb565(alarmPanel ? KOL_ERR : KOL_ZAR), 0);
+    ustawKolorStylu(panelIcon, LV_STYLE_IMG_RECOLOR, rgb565(alarmPanel ? KOL_ERR : KOL_KROPLA), 0);
+  }
+  if (panelZbiornikIcon != nullptr) {
+    ustawKolorStylu(panelZbiornikIcon, LV_STYLE_IMG_RECOLOR, rgb565(alarmPanel ? KOL_ERR : KOL_PANEL_ZBIORNIK), 0);
   }
 }
 
@@ -8268,6 +8400,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   if (!polaczono) {
     ustawNapis(zewnValLabel, "--");
     ustawNapis(bojlerValLabel, "--");
+    bojler_woda_odswiez(false, 0.0f);   // [v1.5.11] bez danych - pusty zbiornik
     ustawNapis(dymValLabel, "--");
     if (ogrzGlownaLabel != nullptr) ustawNapis(ogrzGlownaLabel, "--");
     if (ogrzSredniaLabel != nullptr) ustawNapis(ogrzSredniaLabel, "ŚR --");
@@ -8356,6 +8489,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // PIEC CO/SR).
   snprintf(bufor, sizeof(bufor), "%.0f°C", tBojler);
   ustawNapisDopasuj(bojlerValLabel, bufor);
+  bojler_woda_odswiez(true, tBojler);   // [v1.5.11] poziom i kolor wody wg temperatury
 
   snprintf(bufor, sizeof(bufor), "%d", dym);
   ustawNapis(dymValLabel, bufor);

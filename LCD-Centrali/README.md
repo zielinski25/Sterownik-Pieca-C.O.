@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.10
+# Panel LCD (wyświetlacz CO) — firmware v1.5.11
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,28 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.11
+
+Ikony kafelków BOJLER i PANEL na pulpicie wyglądają jak w aplikacji Android
+(`Ilu.kt`). Centrala bez zmian.
+
+- **BOJLER – poziom i kolor wody wg temperatury.** Szary kontur zbiornika,
+  w środku woda: wysokość = `(t − 15) / 55` obcięte do 5…95 % (20 °C → prawie
+  pusty, 45 °C → połowa, ≥ 67 °C → pełny), kolor niebieski do 35 °C,
+  bursztynowy do 55 °C, pomarańczowy powyżej. Linia wody ma falę (wycinek
+  dotychczasowej bitmapy przycięty do okienka 18×27 px). Gdy kafelek pokazuje
+  `--`, woda znika – zostaje sam kontur.
+- **PANEL – kolektor słoneczny.** Nowa ikona z czterech warstw 40×40 px
+  (stojak, rury, zbiornik, słońce), każda w swoim kolorze. Alarm przegrzania
+  panelu barwi rury i zbiornik na czerwono (dotąd cała ikona), słońce i stojak
+  zostają. Generator warstw: `testy_host/prototypy/ikony_jak_w_aplikacji.py`.
+- **Pamięć.** Flash: +2 tablice 1‑bitowe 40×40 = +400 B (ok. 0,02 %
+  partycji OTA); RAM: 5 dodatkowych obiektów LVGL (ok. 0,5 kB) – przy ~49 kB
+  wolnego nie ma znaczenia. Wariant nocny (księżyc zamiast słońca) na razie
+  nie – panel nie czyta pola `night` z centrali.
+- Nowy test hosta `bojler_poziom_ikony` (zrzuty `1_bojler_20C` …
+  `4_bojler_bez_danych`).
 
 ## Co zmienia v1.5.10
 

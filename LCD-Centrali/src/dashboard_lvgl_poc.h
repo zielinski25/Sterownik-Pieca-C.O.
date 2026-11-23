@@ -319,6 +319,9 @@ const char *lvgl_dashboard_poc_blad_polecenia_tekst();
 // widac X (brak WiFi), inaczej liczbe zapalonych kresek (0..7);
 // *ostrzezenie = kreski pomaranczowe (WiFi jest, centrala milczy).
 int lvgl_dashboard_poc_wifi_ikona_stan(bool *ostrzezenie);
+// [v1.5.11] Woda w ikonie BOJLER - do testow na PC: wysokosc wody w px
+// (1..25; -1 = ukryta, brak danych); *kolor = RGB565 wody.
+int lvgl_dashboard_poc_bojler_woda(uint16_t *kolor);
 
 // [v1.2.1 RATUNEK] Alarm ma przetrwac samoczynny restart panelu (main.cpp,
 // panelAutorestart()): panel restartuje sie, gdy NIE MA danych z centrali, a

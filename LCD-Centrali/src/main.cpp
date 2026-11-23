@@ -40,6 +40,20 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-25] v1.5.11 - IKONY BOJLER I PANEL JAK W APLIKACJI ANDROID
+//   - BOJLER: szary kontur (IKONA_BOJLER_KONTUR), w srodku woda rysowana
+//     prostokatem + bitmapa fali (IKONA_BOJLER_WODA przycieta do okienka
+//     18x27 px). Poziom = (t-15)/55 obciete do 5..95 % jak w Ilu.kt
+//     aplikacji; kolor: <=35 C niebieski, <=55 C bursztyn, >55 C pomarancz.
+//     Bez danych z centrali ("--") woda znika. Zero nowych bitmap - pelna
+//     ikona z v1.4.x zostaje tylko jako zrodlo fali.
+//   - PANEL: ikona z czterech warstw 40x40 (stojak, rury, zbiornik, slonce)
+//     - kolektor sloneczny jak w aplikacji; alarm przegrzania barwi rury
+//     i zbiornik na czerwono (KOL_ERR), slonce i stojak bez zmian. Stare
+//     IKONA_PANEL_SLONCE/KOLEKTOR (2 tablice) -> 4 tablice: +400 B flash.
+//   - Nowy test hosta bojler_poziom_ikony (poziom/kolor dla 20/45/70/200/-1 C,
+//     ukrycie przy "--", alarm panelu); dostep testowy
+//     lvgl_dashboard_poc_bojler_woda(). Centrala bez zmian.
 // [2026-11-24] v1.5.10 - GALKI SUWAKOW JASNOSCI W CALOSCI WIDOCZNE; CZYTELNE ZIELONE PRZYCISKI
 //   - Zdjecie z plytki na v1.5.9 (ekran WYSWIETLACZ): galka suwaka jasnosci
 //     (promien 12) wystaje 4 px pod 16-px pasek, a pasek stal na samym dole
@@ -1330,7 +1344,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.10"; // [2026-11-24] v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.11"; // [2026-11-25] v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
