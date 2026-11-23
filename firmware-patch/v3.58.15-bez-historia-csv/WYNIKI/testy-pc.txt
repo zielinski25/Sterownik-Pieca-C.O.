@@ -1,0 +1,37 @@
+Wyniki tests/uruchom_testy.sh (PC, bez plytki; node v22.22.3, g++ 12, jsdom 24). Jedyny BLAD w czesci C to porownanie SHA 3.58.13+patch z paczki 3.58.14 - nie dotyczy tego pliku (patrz skrypt).
+
+=== A. BEZ-HISTORIA-CSV: przycisk usuniety z HTML, trasy w C++ zostaly ===
+    [OK] HTML bez "id="histBtn""
+    [OK] HTML bez "id="histPanel""
+    [OK] HTML bez "id="histShort""
+    [OK] HTML bez "id="histLong""
+    [OK] HTML bez "id="histInfo""
+    [OK] HTML bez "Pobierz histori"
+    [OK] HTML bez "Krótka (24 h)"
+    [OK] HTML bez "Długa (archiwum)"
+    [OK] HTML bez "HISTORIA CSV"
+    [OK] HTML bez "fetch('/history/link"
+    [OK] FIRMWARE_VERSION = "v3.58.15"
+    [OK] trasa "/history/link" w C++ nadal zarejestrowana
+    [OK] trasa "/history/long" w C++ nadal zarejestrowana
+    [OK] trasa "/api/history" w C++ nadal zarejestrowana
+    [OK] trasa "/api/history/long" w C++ nadal zarejestrowana
+    [OK] blokow <script>: 1 (w 3.58.14: 2) - ubyl dokladnie 1
+    [OK] HTML krotszy o 2883 znakow (tylko przycisk + skrypt)
+    [OK] C++ za HTML-em identyczne jak w 3.58.14
+    [OK] blok <script> 0: node --check (410064 znakow)
+=== B. plik 3.58.15 = 3.58.14 + patch ===
+    [OK] 3.58.14 + patch = ten plik (SHA 8bfab4e5471370b4b11b0930eec3405cca79957e3c6df118dfba9226cdf8f0d7)
+=== C. testy paczki 3.58.14 (A-D) na tym pliku ===
+        ZALICZONY: wszystkie sprawdzenia OK (18)
+        ZALICZONY: wszystkie sprawdzenia OK (18)
+        ZALICZONY: 12 sprawdzen OK
+        BLAD: SHA po patchu eb763b1bb86404ed3d67eee0f82601622d9cbc51cbb868769f6de2738b0376e9, plik b77fa50e83b2b558c6a3c9a2ee763e572d268f58e39d9959a5053dc3f4bdae8a
+    === D. testy paczek 3.58.13 (A-B) i 3.58.11 (DYM-SYM) na tym pliku ===
+        [OK] SUWAK-PO-ACK 18/18
+        [OK] SYM-OD-RAZU 11/11
+        [OK] DYM-SYM 21/21
+    BLEDOW: 1
+    [OK] testy 3.58.14 zaliczone (pominieto tylko porownanie SHA z 3.58.13 + patch - nie dotyczy tego pliku)
+
+WSZYSTKO OK
