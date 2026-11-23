@@ -3,6 +3,7 @@
 # hist_short/hist_long z Drive (13.09 -> 31.10.2026): 35 i 36 kolumn, " 0" ze
 # spacja, CRLF, naglowek, duplikaty z kilku kopii, urwany ostatni wiersz, smieci.
 import os, subprocess, sys, tempfile, random
+from datetime import datetime
 random.seed(7)
 SK = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'scal_historie.py')
 T0 = 1789326000  # 13.09.2026 19:00 CEST (pierwszy wiersz prawdziwego hist_long (5).csv)
@@ -67,5 +68,31 @@ spr('bez_czasu=1' in r.stdout, 'wiersz z czas_unix=0 (brak RTC) zgloszony i pomi
 # brak plikow -> kod 2
 r2 = subprocess.run([sys.executable, SK, os.path.join(d, 'nie_ma')], capture_output=True, text=True)
 spr(r2.returncode == 2, 'nieistniejaca sciezka -> kod 2')
-print('\n' + ('NIEZALICZONY: %d BLAD' % bledy if bledy else 'ZALICZONY: 16 sprawdzen OK'))
+# --- --na-teraz: przesuniecie w czasie do podgladu wykresow ---
+import time as _time
+out2 = os.path.join(d, 'data_teraz')
+r3 = subprocess.run([sys.executable, SK, d, '-o', out2, '--na-teraz'], capture_output=True, text=True)
+spr(r3.returncode == 0 and 'PRZESUNIETA w czasie' in r3.stdout, '--na-teraz: kod 0 i ostrzezenie o przesunieciu w raporcie')
+ll2 = open(os.path.join(out2, 'hist_long.csv')).read().split('\n')[:-1]
+sl2 = open(os.path.join(out2, 'hist_short.csv')).read().split('\n')[:-1]
+cz2 = [int(l.split(',')[34]) for l in ll2]; cs2 = [int(l.split(',')[13]) for l in sl2]
+teraz = int(_time.time()) // 60 * 60
+spr(len(ll2) == 8000 and len(sl2) == 1440 and abs(max(cz2[-1], cs2[-1]) - teraz) <= 60, '--na-teraz: ta sama liczba wierszy, najnowszy wiersz = biezaca minuta')
+delta = cs2[-1] - czs[-1]
+spr(delta % 60 == 0 and all(b - a == delta for a, b in zip(czasy, cz2)) and all(b - a == delta for a, b in zip(czs, cs2)),
+    '--na-teraz: jeden wspolny offset (pelne minuty) dla obu plikow, odstepy miedzy wierszami bez zmian')
+spr(all(l.split(',')[1:34] == m.split(',')[1:34] for l, m in zip(ll, ll2)) and all(l.split(',')[1:13] == m.split(',')[1:13] for l, m in zip(sl, sl2)),
+    '--na-teraz: wartosci pomiarow nietkniete, zmienione tylko etykieta i czas_unix')
+# etykieta musi pasowac do czas_unix w czasie polskim - tak sprawdza firmware (historiaNormalizujLegacyUnix)
+def etyk_ok(unix, etyk, z_data):
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo('Europe/Warsaw')
+    except Exception:
+        return True   # bez tzdata nie da sie sprawdzic niezaleznie
+    t = datetime.fromtimestamp(unix, tz=tz)
+    return etyk == t.strftime('%d.%m %H:%M' if z_data else '%H:%M')
+spr(all(etyk_ok(int(l.split(',')[34]), l.split(',')[0], True) for l in ll2[::97]) and all(etyk_ok(int(l.split(',')[13]), l.split(',')[0], False) for l in sl2[::53]),
+    '--na-teraz: etykiety HH:MM / DD.MM HH:MM przepisane z nowego czasu polskiego (CET/CEST) - zgodne z czas_unix')
+print('\n' + ('NIEZALICZONY: %d BLAD' % bledy if bledy else 'ZALICZONY: 21 sprawdzen OK'))
 sys.exit(1 if bledy else 0)

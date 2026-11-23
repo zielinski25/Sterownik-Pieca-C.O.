@@ -298,6 +298,9 @@ static void ustawNapis(lv_obj_t *obj, const char *tekst) {
 // kafelka.
 static const int KAFELEK_WARTOSC_X = 8, KAFELEK_WARTOSC_Y = 52;
 static const int KAFELEK_WARTOSC_MAX_SZER = 114 - KAFELEK_WARTOSC_X - 6;
+// [v1.5.13 DESZCZ+TEMP] Kafelek ZEWN przy deszczu - opis przy zewn_deszcz_odswiez().
+static const int ZEWN_DESZCZ_TEMP_Y = 46;
+static const int ZEWN_DESZCZ_WIERSZ_Y = ZEWN_DESZCZ_TEMP_Y + 22;
 static const lv_font_t* kafelekWartoscCzcionka(const char *tekst, int maxSzer) {
   static const lv_font_t* const FONTY[] = { &lv_font_pl_28, &lv_font_pl_20, &lv_font_pl_14 };
   for (const lv_font_t* f : FONTY)
@@ -574,6 +577,11 @@ static lv_obj_t *pompaTrybAutoBtn = nullptr;
 // Uchwyty do kafelkow ktore dostaja realne dane z lvgl_dashboard_poc_aktualizuj().
 static lv_obj_t *zewnValLabel = nullptr;
 static lv_obj_t *zewnIcon = nullptr;   // przelaczana bitmapa (mroz/neutralnie/cieplo) - patrz aktualizuj()
+// [v1.5.13 DESZCZ+TEMP] Drugi wiersz kafelka ZEWN: "za 2 h" / "jeszcze 30 min" /
+// "pada" pod temperatura (czcionka 14, kolor kropli). Do v1.5.12 napis o
+// deszczu ZASTEPOWAL temperature (user, zdjecie z 23.11: "niepotrzebnie ona
+// znika"). Ukryty, gdy deszczStan == 0. Patrz zewn_deszcz_odswiez().
+static lv_obj_t *zewnDeszczLabel = nullptr;
 static lv_obj_t *bojlerValLabel = nullptr;
 // [v1.5.11] Woda w ikonie BOJLER z poziomem wg temperatury (jak w aplikacji):
 // wnetrze = przycinajacy prostokat o rozmiarze wnetrza zbiornika, w nim lite
@@ -7748,7 +7756,17 @@ void lvgl_dashboard_poc_init() {
   const int y2 = y1 + kh + odstepY;
 
   // --- rzad 0: ZEWN, POKOJ, WILGOTNOSC, CISNIENIE ---
-  zewnValLabel = kafelek(scr, x0 + 0 * (kw + odstepX), y0, kw, kh, "ZEWN", "--", KOL_RAMKA, &lv_ikona_zewn_neutralny, KOL_ZEWN_NEUTRALNY, &zewnIcon);
+  lv_obj_t *zewnCard = nullptr;
+  zewnValLabel = kafelek(scr, x0 + 0 * (kw + odstepX), y0, kw, kh, "ZEWN", "--", KOL_RAMKA, &lv_ikona_zewn_neutralny, KOL_ZEWN_NEUTRALNY, &zewnIcon,
+                         nullptr, 0, &zewnCard);
+  // [v1.5.13 DESZCZ+TEMP] Wiersz o deszczu pod temperatura - tworzony raz,
+  // domyslnie ukryty; polozenie i tresc ustawia zewn_deszcz_odswiez().
+  zewnDeszczLabel = lv_label_create(zewnCard);
+  lv_label_set_text(zewnDeszczLabel, "");
+  lv_obj_set_style_text_color(zewnDeszczLabel, rgb565(KOL_KROPLA), 0);
+  lv_obj_set_style_text_font(zewnDeszczLabel, &lv_font_pl_14, 0);
+  lv_obj_align(zewnDeszczLabel, LV_ALIGN_TOP_LEFT, KAFELEK_WARTOSC_X, ZEWN_DESZCZ_WIERSZ_Y);
+  lv_obj_add_flag(zewnDeszczLabel, LV_OBJ_FLAG_HIDDEN);
 
   // [FIX, ta sesja - "chce miec logo pokoju kolorowe"] Dwie warstwy zamiast
   // jednej jednokolorowej ikony - dach w KOL_POKOJ_DACH (braz/terakota),
@@ -8305,6 +8323,36 @@ void lvgl_dashboard_poc_ustaw_wersje(const char *panel, const char *centrala) {
 // ten sentinel PRZED progami temperatury - realny odczyt DS18B20 (krok
 // 0.0625 st.C) praktycznie nigdy nie trafi w rowne -1.0000, wiec exact
 // (z mala tolerancja na zaokraglenia float) match jest bezpieczny.
+// [v1.5.13 DESZCZ+TEMP] Uklad kafelka ZEWN przy deszczu: ikona konczy sie na
+// y=46 (6+40, IKONA_ZEWN_ROZMIAR), pod nia temperatura czcionka 20
+// (wiersz 22 px: y=46..68) i napis o deszczu czcionka 14 (y=68..85) - do
+// dolu karty (kh=90) zostaje 5 px. Bez deszczu temperatura wraca do wiersza
+// wartosci (czcionka 28, y=52) przez ustawNapisDopasuj(), jak w kazdym
+// innym kafelku. Szerokosc: najdluzszy napis "pada 45 min" czcionka 14
+// (~85 px) miesci sie w KAFELEK_WARTOSC_MAX_SZER=100 px, wiec bez lamania.
+static const char* deszczCzasNapis(int minuty, char* bufor, size_t n);   // forward (definicja nizej)
+static void zewn_deszcz_odswiez(const char *temperatura, int deszczStan, int deszczMinuty) {
+  if (zewnValLabel == nullptr) return;
+  if (deszczStan != 1 && deszczStan != 2) {
+    ustawNapisDopasuj(zewnValLabel, temperatura);
+    ustawUkrycie(zewnDeszczLabel, true);
+    return;
+  }
+  // Temperatura mniejsza czcionka, wyzej - robi miejsce na drugi wiersz.
+  if (lv_obj_get_style_text_font(zewnValLabel, LV_PART_MAIN) != &lv_font_pl_20) lv_obj_set_style_text_font(zewnValLabel, &lv_font_pl_20, 0);
+  if (lv_obj_get_style_y(zewnValLabel, LV_PART_MAIN) != ZEWN_DESZCZ_TEMP_Y) lv_obj_align(zewnValLabel, LV_ALIGN_TOP_LEFT, KAFELEK_WARTOSC_X, ZEWN_DESZCZ_TEMP_Y);
+  ustawNapis(zewnValLabel, temperatura);
+  char czas[12], napis[24];
+  if (deszczStan == 1) snprintf(napis, sizeof(napis), "za %s", deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
+  // Pada: "pada 30 min" = pada, do konca ok. 30 min. "jeszcze 30 min" ma w
+  // czcionce 14 ok. 105 px i nie miesci sie w kafelku (114 px z marginesami)
+  // - sprawdzone w kafelki_szerokosc; "pada" + czas miesci sie z zapasem.
+  else if (deszczMinuty >= 0) snprintf(napis, sizeof(napis), "pada %s", deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
+  else snprintf(napis, sizeof(napis), "pada");
+  ustawNapis(zewnDeszczLabel, napis);
+  ustawUkrycie(zewnDeszczLabel, false);
+}
+
 static void zewn_ikona_odswiez(float tZewn, int deszczStan) {
   if (zewnIcon == nullptr) return;
   const lv_img_dsc_t *src;
@@ -8605,6 +8653,7 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
 
   if (!polaczono) {
     ustawNapis(zewnValLabel, "--");
+    ustawUkrycie(zewnDeszczLabel, true);   // [v1.5.13] bez danych nie ma tez prognozy deszczu
     ustawNapis(bojlerValLabel, "--");
     bojler_woda_odswiez(false, 0.0f);   // [v1.5.11] bez danych - pusty zbiornik
     ustawNapis(dymValLabel, "--");
@@ -8666,26 +8715,22 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // miesci sie nawet czcionka 20, a prognoza i tak nie jest dokladniejsza.
   // ustawNapisDopasuj() dobiera czcionke do szerokosci ("jeszcze 30 min"
   // nie miesci sie w jednej linii - idzie w dwoch, czcionka 14).
-  if (deszczStan == 1) {
-    char czas[12];
-    snprintf(bufor, sizeof(bufor), "za %s", deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
-  } else if (deszczStan == 2) {
-    char czas[12];
-    if (deszczMinuty >= 0) snprintf(bufor, sizeof(bufor), "jeszcze %s", deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
-    else snprintf(bufor, sizeof(bufor), "pada");
-  } else {
-    // [FIX tej sesji] User: "dodaj do wszystkich wartosci temp znaczek stopni,
-    // bo jest np. 35 C". Dodany znak stopnia (°, U+00B0) przed "C" w KAZDEJ
-    // etykiecie temperatury nizej. Znak stopnia jest w standardowym zakresie
-    // glifow czcionek LVGL (obok ASCII i bullet). [v1.4.5 D] Polskie litery
-    // tez juz sa: wbudowane montserrat_14/20/28 (bez Latin Extended-A)
-    // zastapily lv_font_pl_14/20/28 z src/czcionki/ - stad "WILGOTNOŚĆ",
-    // "CIŚNIENIE", "POKÓJ" itd. w calym UI zamiast dawnych "WILGOTNOSC",
-    // "CISNIENIE", "POKOJ". Scenariusz polskie_litery (testy_host) pilnuje,
-    // ze kazdy znak kazdej etykiety ma glif.
-    snprintf(bufor, sizeof(bufor), "%.1f°C", tZewn);
-  }
-  ustawNapisDopasuj(zewnValLabel, bufor);
+  // [v1.5.13 DESZCZ+TEMP] Temperatura jest ZAWSZE (user, zdjecie z 23.11:
+  // "oprocz informacji o deszczu trzeba tez wstawic temperature,
+  // niepotrzebnie ona znika"). Przy deszczu schodzi do czcionki 20, a pod
+  // nia pojawia sie drugi wiersz "za 2 h" / "pada 30 min" / "pada"
+  // (zewn_deszcz_odswiez()). deszczStan==0 -> dokladnie to, co dotad.
+  // [FIX tej sesji] User: "dodaj do wszystkich wartosci temp znaczek stopni,
+  // bo jest np. 35 C". Dodany znak stopnia (°, U+00B0) przed "C" w KAZDEJ
+  // etykiecie temperatury nizej. Znak stopnia jest w standardowym zakresie
+  // glifow czcionek LVGL (obok ASCII i bullet). [v1.4.5 D] Polskie litery
+  // tez juz sa: wbudowane montserrat_14/20/28 (bez Latin Extended-A)
+  // zastapily lv_font_pl_14/20/28 z src/czcionki/ - stad "WILGOTNOŚĆ",
+  // "CIŚNIENIE", "POKÓJ" itd. w calym UI zamiast dawnych "WILGOTNOSC",
+  // "CISNIENIE", "POKOJ". Scenariusz polskie_litery (testy_host) pilnuje,
+  // ze kazdy znak kazdej etykiety ma glif.
+  snprintf(bufor, sizeof(bufor), "%.1f°C", tZewn);
+  zewn_deszcz_odswiez(bufor, deszczStan, deszczMinuty);
   zewn_ikona_odswiez(tZewn, deszczStan);
 
   // [Partia 4, ta sesja] User na zywym sprzecie: "temp boilera i pieca ma

@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.12
+# Panel LCD (wyświetlacz CO) — firmware v1.5.13
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,15 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.13
+
+Kafelek ZEWN przy nadciągającym lub padającym deszczu pokazywał „za 6 h” /
+„jeszcze 30 min” / „pada” **zamiast** temperatury (zdjęcie z płytki, 23.11).
+Teraz temperatura zostaje (czcionka 20, tuż pod ikoną), a napis o deszczu to
+drugi, niebieski wiersz czcionką 14 pod nią: „za 2 h”, „pada 30 min” (pada,
+koniec za ok. 30 min — „jeszcze 30 min” nie mieści się w 114 px), „pada”.
+Bez deszczu kafelek wygląda jak dotąd. Centrala bez zmian. Test hosta `kafelki_szerokosc` sprawdza oba wiersze.
 
 ## Co zmienia v1.5.12
 

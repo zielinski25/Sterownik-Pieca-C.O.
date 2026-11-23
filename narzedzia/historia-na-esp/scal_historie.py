@@ -24,7 +24,7 @@ Tresc wierszy NIE jest zmieniana (firmware ma wlasna normalizacje starych
 znacznikow czasu - historiaNormalizujLegacyUnix()).
 
 Uzycie:
-    python scal_historie.py <katalog_lub_pliki...> [-o data] [--krotki N] [--dlugi N]
+    python scal_historie.py <katalog_lub_pliki...> [-o data] [--krotki N] [--dlugi N] [--na-teraz]
     python scal_historie.py "C:\\Users\\Rafcio\\Downloads"
 Wynik: katalog data/ z dwoma plikami + raport na ekranie. Kod wyjscia 0 = OK.
 """
@@ -45,8 +45,8 @@ CZAS_MIN = 1600000000          # 2020-09 - wczesniejsze czasy = brak RTC / smiec
 CZAS_MAX = 1900000000          # 2030-03
 
 
-def czas_pl(unix):
-    # etykiety w plikach sa lokalne (CET/CEST); do raportu wystarczy przyblizenie UTC+1/+2
+def czas_lokalny(unix):
+    """datetime w czasie polskim (CET/CEST) bez tzdata - regula UE: ostatnia niedziela marca/pazdziernika 01:00 UTC."""
     t = datetime.fromtimestamp(unix, tz=timezone.utc)
     # prosty DST: ostatnia niedziela marca .. ostatnia niedziela pazdziernika
     rok = t.year
@@ -56,7 +56,26 @@ def czas_pl(unix):
             d -= timedelta(days=1)
         return d
     lato = ost_niedziela(3) <= t < ost_niedziela(10)
-    return (t + timedelta(hours=2 if lato else 1)).strftime('%d.%m.%Y %H:%M')
+    return t + timedelta(hours=2 if lato else 1)
+
+
+def czas_pl(unix):
+    return czas_lokalny(unix).strftime('%d.%m.%Y %H:%M')
+
+
+def przesun_wiersze(wiersze, rodzaj, delta_s):
+    """[--na-teraz] Przesuwa czas_unix o delta_s i przepisuje etykiete (kol. 0) z nowego czasu lokalnego,
+    tak jak zapisalaby ja centrala (HH:MM w krotkim, DD.MM HH:MM w dlugim) - firmware przy wczytywaniu
+    porownuje etykiete z czas_unix (historiaNormalizujLegacyUnix), wiec musza do siebie pasowac."""
+    idx = 13 if rodzaj == 'krotki' else 34
+    wynik = []
+    for l in wiersze:
+        kol = l.split(',')
+        nowy = int(kol[idx].strip()) + delta_s
+        kol[idx] = str(nowy)
+        kol[0] = czas_lokalny(nowy).strftime('%H:%M' if rodzaj == 'krotki' else '%d.%m %H:%M')
+        wynik.append(','.join(kol))
+    return wynik
 
 
 def wczytaj_plik(sciezka, raport):
@@ -148,6 +167,9 @@ def main():
     ap.add_argument('-o', '--wyjscie', default='data', help='katalog wyjsciowy (domyslnie data)')
     ap.add_argument('--krotki', type=int, default=KROTKI_MAX, help='ile ostatnich wierszy bufora krotkiego (domyslnie 1440)')
     ap.add_argument('--dlugi', type=int, default=DLUGI_MAX, help='ile ostatnich wierszy bufora dlugiego (domyslnie 8000)')
+    ap.add_argument('--na-teraz', action='store_true',
+                    help='TYLKO DO PODGLADU: przesun cala historie w czasie tak, by najnowszy wiersz wypadal teraz '
+                         '(wykresy 24 h / 7 dni / 30 dni od razu pelne; daty na wykresach beda NIEPRAWDZIWE)')
     a = ap.parse_args()
 
     pliki = []
@@ -180,9 +202,29 @@ def main():
 
     os.makedirs(a.wyjscie, exist_ok=True)
     kod = 0
+    zestawy = []
     for rodzaj, nazwa, maks, limit_b in (('krotki', 'hist_short.csv', a.krotki, KROTKI_LIMIT_B),
                                         ('dlugi', 'hist_long.csv', a.dlugi, DLUGI_LIMIT_B)):
-        wiersze, zebrane, dubli, konflikty, uciete = scal(wszystkie, rodzaj, maks, limit_b)
+        zestawy.append([rodzaj, nazwa, maks, limit_b] + list(scal(wszystkie, rodzaj, maks, limit_b)))
+
+    delta_s = 0
+    if a.na_teraz:
+        # jeden wspolny offset dla obu plikow (zeby bufor krotki i dlugi dalej do siebie pasowaly),
+        # wielokrotnosc minuty; najnowszy wiersz z obu plikow laduje w biezacej minucie
+        najnowszy = 0
+        for z in zestawy:
+            if z[4]:
+                najnowszy = max(najnowszy, int(z[4][-1].split(',')[13 if z[0] == 'krotki' else 34]))
+        if najnowszy:
+            teraz = int(datetime.now(timezone.utc).timestamp()) // 60 * 60
+            delta_s = (teraz - najnowszy) // 60 * 60
+            for z in zestawy:
+                z[4] = przesun_wiersze(z[4], z[0], delta_s)
+            print('\nUWAGA --na-teraz: historia PRZESUNIETA w czasie o %+d dni %02d:%02d (najnowszy wiersz = teraz).'
+                  % (delta_s // 86400, delta_s % 86400 // 3600, delta_s % 3600 // 60))
+            print('  Daty i godziny na wykresach sa NIEPRAWDZIWE - tylko do obejrzenia wykresow na LCD/WWW.')
+
+    for rodzaj, nazwa, maks, limit_b, wiersze, zebrane, dubli, konflikty, uciete in zestawy:
         sciezka = os.path.join(a.wyjscie, nazwa)
         with open(sciezka, 'wb') as f:
             for l in wiersze:

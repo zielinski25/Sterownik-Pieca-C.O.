@@ -40,6 +40,18 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-23] v1.5.13 - ZEWN: TEMPERATURA NIE ZNIKA PRZY DESZCZU
+//   - Kafelek ZEWN przy nadciagajacym/padajacym deszczu pokazywal "za 6 h" /
+//     "jeszcze 30 min" / "pada" ZAMIAST temperatury (zdjecie z 23.11:
+//     "niepotrzebnie ona znika"). Teraz temperatura zostaje (czcionka 20,
+//     tuz pod ikona), a napis o deszczu to drugi, niebieski wiersz czcionka
+//     14 pod nia: "za 2 h", "pada 30 min" (= pada, koniec za ok. 30 min;
+//     "jeszcze 30 min" nie miesci sie w 114 px), "pada"
+//     (zewn_deszcz_odswiez() w dashboard_lvgl_poc.cpp). Bez
+//     deszczu kafelek wyglada dokladnie jak dotad (czcionka 28).
+//   - Test hosta: kafelki_szerokosc sprawdza oba wiersze (tresc, czcionki,
+//     ze napis o deszczu jest pod temperatura i nad dolem karty, i ze znika
+//     po deszczu). RAM: +1 etykieta LVGL (~100 B).
 // [2026-11-26] v1.5.12 - WYKRESY: PRACA POMPY I CZYTELNIEJSZY EKRAN
 //   - Nowa seria POMPA (kolumna 35 odpowiedzi /api/history/panel, kolumna
 //     8 starego CSV): nie linia, lecz 12-pikselowy PAS u dolu pola wykresu
@@ -1363,7 +1375,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.12"; // [2026-11-26] v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.13"; // [2026-11-23] v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez

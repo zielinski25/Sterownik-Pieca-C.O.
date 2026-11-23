@@ -37,6 +37,21 @@ zakres dat i przerwy > 6 h w archiwum, i zapisze:
     data\hist_long.csv    (8000 ostatnich wierszy, ok. 1,2-1,4 MB)
 Na koncu ma byc "GOTOWE". Jesli "ZAKONCZONE Z BLEDAMI" - przyslij wydruk.
 
+KROK 2b - TYLKO DO PODGLADU WYKRESOW: --na-teraz
+------------------------------------------------
+Wykresy (WWW i LCD) pokazuja okno liczone WSTECZ OD TERAZ (24 h / 7 dni /
+30 dni). Kopie historii koncza sie 31.10, wiec w oknie "7 dni" nie ma ani
+jednej starej probki ("za malo probek"), a w "30 dni" tylko kawalek. Zeby
+OBEJRZEC, jak pelne wykresy wygladaja na LCD, dodaj przelacznik:
+    python .\scal_historie.py "C:\Users\Rafcio\Downloads\historia" -o data --na-teraz
+Skrypt przesuwa CALA historie w czasie tak, by najnowszy wiersz wypadal w
+biezacej minucie (jeden wspolny offset dla obu plikow, etykiety godzin i dat
+przepisane z nowego czasu polskiego - firmware porownuje je z czas_unix).
+Wartosci pomiarow sa prawdziwe, ale DATY NA WYKRESACH NIEPRAWDZIWE (pazdziernik
+udaje listopad). Potem KROK 3 jak nizej. Gdy sie napatrzysz - uruchom KROK 2
+bez --na-teraz i powtorz uploadfs, albo zostaw: nowe probki dopisuja sie
+normalnie, a stare i tak wypadna z pierscienia (8000 wierszy) po kilku dniach.
+
 KROK 3 - WGRAJ NA GOLA PLYTKE
 -----------------------------
 1. Skopiuj katalog data\ do katalogu projektu centrali (obok platformio.ini):
@@ -77,6 +92,6 @@ CO SKRYPT ROBI, A CZEGO NIE
   (dokladnie tyle trzyma firmware - reszta i tak by przepadla w pierscieniu)
 - NIE zmienia tresci wierszy (stare znaczniki czasu firmware sam normalizuje)
 - NIE wymaga zadnej zmiany w firmware
-Test: tests\test_scal_historie.py (16 sprawdzen na syntetycznych plikach
+Test: tests\test_scal_historie.py (21 sprawdzen na syntetycznych plikach
 odwzorowujacych prawdziwe: 35 i 36 kolumn, " 0" ze spacja, CRLF, naglowek,
 duplikaty z kilku kopii, urwany ostatni wiersz, smieci).

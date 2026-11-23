@@ -6,5 +6,8 @@ wierszy) i `data/hist_long.csv` (8000 ostatnich wierszy) w formacie i limitach f
 (`historiaWczytajZFS()` / `historiaDlugaWczytajZFS()`), do wgrania przez
 `pio run -e esp32-s3-n16r8 -t uploadfs` (wymaga `board_build.filesystem = littlefs`).
 
+`--na-teraz` (tylko do podglądu) przesuwa całą historię tak, by kończyła się teraz — okna
+24 h / 7 dni / 30 dni na WWW i LCD są od razu pełne, ale daty są nieprawdziwe.
+
 Instrukcja krok po kroku: `CZYTAJ-NAJPIERW.txt`. Test: `python3 tests/test_scal_historie.py`
-(16 sprawdzeń). Zmian w firmware nie ma.
+(21 sprawdzeń). Zmian w firmware nie ma.

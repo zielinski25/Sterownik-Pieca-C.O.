@@ -1066,7 +1066,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.12"
+#define WERSJA_FW "v1.5.13"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -5941,32 +5941,44 @@ void scenariuszKafelkiSzerokosc() {
   }
 
   // Deszcz nadciaga za 105 min (to ze zdjecia): od 100 min w godzinach, do pol godziny.
+  // [v1.5.13] Temperatura ZOSTAJE (czcionka 20, wyzej), napis o deszczu to
+  // osobny wiersz czcionka 14 pod nia (zdjecie z 23.11: "niepotrzebnie znika").
   ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 105; });
   biegnij(3000);
   zrzutEkranu("2_deszcz_za_105_min");
   sprawdz(!ekranMa("za 105m") && !ekranMa("za 105n"), "nie ma juz skrotu \"za 105m\"");
-  kafelekSprawdz("za 2 h", "za 2 h", &lv_font_pl_28, "ZEWN 105 min -> \"za 2 h\" - czcionka 28, miesci sie");
+  kafelekSprawdz("-25.5°C", "-25.5°C", &lv_font_pl_20, "ZEWN przy deszczu: temperatura -25.5°C nadal na kafelku, czcionka 20");
+  kafelekSprawdz("za 2 h", "za 2 h", &lv_font_pl_14, "ZEWN 105 min -> \"za 2 h\" - drugi wiersz czcionka 14, miesci sie");
+  {
+    KafelekPomiar wT, wD;
+    if (kafelekPomiar("-25.5°C", wT) && kafelekPomiar("za 2 h", wD)) {
+      info("ZEWN: temperatura y=%d..%d, deszcz y=%d..%d (karta do %d)", wT.y1, wT.y2, wD.y1, wD.y2, wD.kartaY2);
+      sprawdz(wD.y1 >= wT.y2 - 1 && wD.y2 <= wD.kartaY2 - 2, "napis o deszczu POD temperatura (nie na niej) i nad dolem karty");
+    }
+  }
   ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 100; });
   biegnij(3000);
-  kafelekSprawdz("za 1,5 h", "za 1,5 h", nullptr, "100 min -> \"za 1,5 h\" miesci sie");
+  kafelekSprawdz("za 1,5 h", "za 1,5 h", &lv_font_pl_14, "100 min -> \"za 1,5 h\" miesci sie");
   ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 99; });
   biegnij(3000);
-  kafelekSprawdz("za 99 min", "za 99 min", nullptr, "99 min -> \"za 99 min\" miesci sie");
+  kafelekSprawdz("za 99 min", "za 99 min", &lv_font_pl_14, "99 min -> \"za 99 min\" miesci sie");
   ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 5; });
   biegnij(3000);
-  kafelekSprawdz("za 5 min", "za 5 min", &lv_font_pl_20, "\"za 5 min\" - czcionka 20, miesci sie");
+  kafelekSprawdz("za 5 min", "za 5 min", &lv_font_pl_14, "\"za 5 min\" miesci sie");
   // Pada, koniec za 30 min / za 2 h / nie wiadomo.
   ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = 30; });
   biegnij(3000);
   zrzutEkranu("3_pada_jeszcze_30_min");
-  kafelekSprawdz("jeszcze\n30 min", "jeszcze\n30 min", &lv_font_pl_14, "ZEWN \"jeszcze 30 min\" - w dwoch liniach czcionka 14, miesci sie (tez od dolu)");
+  kafelekSprawdz("pada 30 min", "pada 30 min", &lv_font_pl_14, "ZEWN pada, koniec za 30 min -> \"pada 30 min\" w jednej linii czcionka 14 pod temperatura, miesci sie");
+  sprawdz(!ekranMa("jeszcze 30 min"), "nie ma \"jeszcze 30 min\" (105 px - nie miesci sie w kafelku)");
+  kafelekSprawdz("-25.5°C", "-25.5°C", &lv_font_pl_20, "ZEWN gdy pada: temperatura nadal widoczna");
   ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = 120; });
   biegnij(3000);
-  kafelekSprawdz("jeszcze 2 h", "jeszcze 2 h", nullptr, "ZEWN \"jeszcze 2 h\" w jednej linii, miesci sie");
+  kafelekSprawdz("pada 2 h", "pada 2 h", &lv_font_pl_14, "ZEWN \"pada 2 h\" w jednej linii, miesci sie");
   ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = -1; });
   biegnij(3000);
-  kafelekSprawdz("pada", "pada", &lv_font_pl_28, "ZEWN \"pada\" - czcionka 28");
-  // Po deszczu wraca temperatura w duzej czcionce, na swoim miejscu.
+  kafelekSprawdz("pada", "pada", &lv_font_pl_14, "ZEWN \"pada\" - drugi wiersz czcionka 14");
+  // Po deszczu wraca temperatura w duzej czcionce, na swoim miejscu, a wiersz o deszczu znika.
   ustaw(0, [](Centrala& c) { c.deszczStan = 0; c.deszczMinuty = -1; c.tZewn = 3.5; });
   biegnij(3000);
   {
@@ -5974,6 +5986,7 @@ void scenariuszKafelkiSzerokosc() {
     kafelekSprawdz("3.5°C", "3.5°C", &lv_font_pl_28, "po deszczu ZEWN 3.5°C - znow czcionka 28");
     if (kafelekPomiar("3.5°C", wZewn) && kafelekPomiar("-10.5°C", wPokoj))
       sprawdz(wZewn.y1 == wPokoj.y1 && wZewn.y2 == wPokoj.y2, "wartosc ZEWN wrocila na te sama wysokosc co POKÓJ");
+    sprawdz(!ekranMa("pada") && !ekranMa("pada 30 min"), "po deszczu wiersz o deszczu zniknal");
   }
   zrzutEkranu("4_po_deszczu");
 
@@ -6418,7 +6431,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"ota_ten_sam_plik", "OTA: centrala oferuje plik, z ktorego panel juz pracuje - nic nie jest wgrywane (v1.4.0)", scenariuszOtaTenSamPlik},
     {"ota_status_milczy", "OTA: centrala nie odpowiada na status, ale plik idzie - pobieranie nie jest przerywane (v1.4.0)", scenariuszOtaStatusMilczy},
     {"ota_bez_identyfikatora", "OTA: panel nie zna sumy wlasnego programu - aktualizacja przez centrale wylaczona (v1.4.0)", scenariuszOtaBezIdentyfikatora},
-    {"kafelki_szerokosc", "kafelki (v1.5.2): najszersze wartosci i napisy o deszczu mieszcza sie w kafelkach, czcionka 28/20/14 dobierana sama", scenariuszKafelkiSzerokosc},
+    {"kafelki_szerokosc", "kafelki (v1.5.2/v1.5.13): najszersze wartosci mieszcza sie w kafelkach, czcionka 28/20/14 dobierana sama; przy deszczu ZEWN pokazuje temperature I napis o deszczu", scenariuszKafelkiSzerokosc},
     {"polskie_litery", "polskie litery na ekranie: czcionki lv_font_pl_14/20/28, glif dla kazdego znaku, napisy z ogonkami (v1.4.5)", scenariuszPolskieLitery},
     {"wersje_na_ekranie", "wersje panelu i centrali: ekran startowy, ekran WYSWIETLACZ, log tag=PANEL, kafelek WYSWIETLACZ bez obciecia (v1.4.6)", scenariuszWersjeNaEkranie},
     {"zasilanie", "ekran ZASILANIE: taktowanie 240/160/80 MHz i moc nadajnika 19,5/15/11/8,5 dBm - domyslnie bez zmian, zapis w NVS, odczyt, ostrzezenie przy slabym sygnale (v1.4.7)", scenariuszZasilanie},
