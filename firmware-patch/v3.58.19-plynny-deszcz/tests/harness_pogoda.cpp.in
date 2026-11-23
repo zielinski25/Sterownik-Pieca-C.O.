@@ -1,0 +1,184 @@
+
+#include <string>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
+struct String {
+  std::string v;
+  String(){} String(const char*c):v(c){} String(const std::string&x):v(x){}
+  int indexOf(const char*n,int from=0)const{ if(from<0||from>(int)v.size())return -1; size_t p=v.find(n,from); return p==std::string::npos?-1:(int)p;}
+  int indexOf(const String&n,int from=0)const{return indexOf(n.v.c_str(),from);}
+  int indexOf(char c,int from=0)const{ size_t p=v.find(c,from); return p==std::string::npos?-1:(int)p;}
+  String substring(int a,int b)const{ if(a<0)a=0; if(b>(int)v.size())b=v.size(); if(b<a)return String(""); return String(v.substr(a,b-a));}
+  unsigned length()const{return v.size();}
+  char operator[](int i)const{ return (i<0||i>=(int)v.size())?0:v[i]; }
+  float toFloat()const{return (float)atof(v.c_str());}
+  int toInt()const{return atoi(v.c_str());}
+  String& operator+=(const char*c){v+=c;return *this;} String& operator+=(const String&c){v+=c.v;return *this;} String& operator+=(char c){v+=c;return *this;}
+};
+static bool isDigit(char c){return c>='0'&&c<='9';}
+#define DLOG(a,b,c) do{}while(0)
+#define DLOGF(a,b,...) do{}while(0)
+#define F(x) x
+#define DC_WEATHER 0
+#define DL_ERR 0
+#define DL_DEBUG 0
+#ifndef SIZEOF_UL
+#define SIZEOF_UL "8"
+#endif
+// [3.58.19] atrapy zegara: millis() sterowane z testu, zegar centrali (RTC/NTP) ustawiany per przypadek
+static unsigned long g_ms = 1000000UL;
+static unsigned long millis() { return g_ms; }
+int aktualnyCzasGodzina = 0, aktualnyCzasMinuta = 0;
+bool g_rtcGotowy = false, g_rtcNtpZsynchronizowany = false;
+static void zegar(bool ok, int h, int m) { g_rtcGotowy = ok; g_rtcNtpZsynchronizowany = false; aktualnyCzasGodzina = h; aktualnyCzasMinuta = m; }
+//@@POM@@
+// stan /api/status po uplywie `poMin` minut (+ `poSek` s) od pobrania
+static void poCzasie(unsigned long start, long poMin, long poSek, int &st, int &mn) { g_ms = start + (unsigned long)(poMin * 60000L + poSek * 1000L); deszczStanTeraz(st, mn); }
+static void parsuj(const String& body) {
+//@@CIALO@@
+}
+static int bledy=0;
+static void spr(bool ok,const char*co){ printf("    %s %s\n", ok?"[OK]":"BLAD:", co); if(!ok)bledy++; }
+// [3.58.17] temp: temperatura w bloku current (NAN = pole nieobecne); current_units ma "temperature_2m":"°C" jak prawdziwe API
+static std::string odp(const char*curTime,float curOpad,int kod,int dzien,float porywy,const char*opady,const char*kody,float temp=NAN){
+  char b[260]; char t[40]=""; if(!std::isnan(temp)) snprintf(t,sizeof t,",\"temperature_2m\":%.1f",temp);
+  snprintf(b,sizeof b,"\"current\":{\"time\":\"%s\",\"interval\":900,\"precipitation\":%.2f,\"weather_code\":%d,\"is_day\":%d,\"wind_gusts_10m\":%.1f%s}",curTime,curOpad,kod,dzien,porywy,t);
+  std::string s="{\"latitude\":51.06,\"longitude\":21.5,\"timezone\":\"Europe/Warsaw\",\"current_units\":{\"time\":\"iso8601\",\"precipitation\":\"mm\",\"weather_code\":\"wmo code\",\"is_day\":\"\",\"wind_gusts_10m\":\"km/h\",\"temperature_2m\":\"°C\"},";
+  s+=b; s+=",\"minutely_15_units\":{\"time\":\"iso8601\",\"precipitation\":\"mm\",\"weather_code\":\"wmo code\"},\"minutely_15\":{\"time\":[\"2026-11-23T00:00\",\"2026-11-23T00:15\"],\"precipitation\":[";
+  s+=opady; s+="],\"weather_code\":["; s+=kody; s+="]}}"; return s;
+}
+// 192 slotow: opady[] i kody[] budowane z funkcji
+static std::string tab(float(*f)(int),int n=192,bool calk=false){ std::string s; char b[32]; for(int i=0;i<n;i++){ if(i)s+=","; if(calk)snprintf(b,sizeof b,"%d",(int)f(i)); else snprintf(b,sizeof b,"%.2f",f(i)); s+=b;} return s; }
+int main(){
+  zegar(false, 0, 0);   // przypadki 1-6 z 3.58.16/17: bez zegara -> przesuniecie 0, wyniki jak dotad
+  // 1. 13:45 (indeks 55), sucho teraz, kod 3 (pochmurno); opad 0.3 od slotu 55+8 (2 h), tam kod 71 (snieg)
+  { auto op=[](int i)->float{ return (i>=63&&i<70)?0.3f:0.0f; }; auto kd=[](int i)->float{ return (i>=63&&i<70)?71.0f:3.0f; };
+    parsuj(String(odp("2026-11-23T13:45",0.0f,3,1,25.2f,tab(op).c_str(),tab(kd,192,true).c_str(),-3.5f)));
+    spr(deszczStan==1 && deszczMinuty==120, "nadciaga za 120 min (jak dotad)");
+    spr(fabsf(pogodaTemp-(-3.5f))<0.01f, "[3.58.17] pogoda_temp=-3.5 (ujemna, z bloku current, nie current_units)");
+    spr(pogodaKod==3, "pogoda_kod=3 (teraz pochmurno)");
+    spr(pogodaKodOpad==71, "pogoda_kod_opad=71 (w slocie opadu snieg)");
+    spr(pogodaDzien==1 && fabsf(wiatrPorywy-25.2f)<0.01f, "dzien=1, porywy=25.2");
+  }
+  // 2. pada teraz (0.5 mm), kod 63, noc, porywy 61.7; koniec po 3 slotach
+  { auto op=[](int i)->float{ return (i>=0&&i<58)?0.5f:0.0f; }; auto kd=[](int i)->float{ return 63.0f; };
+    parsuj(String(odp("2026-11-23T13:45",0.5f,63,0,61.7f,tab(op).c_str(),tab(kd,192,true).c_str(),7.2f)));
+    spr(deszczStan==2 && deszczMinuty==45, "pada, koniec za 45 min (jak dotad)");
+    spr(fabsf(pogodaTemp-7.2f)<0.01f, "[3.58.17] pogoda_temp=7.2");
+    spr(pogodaKod==63 && pogodaKodOpad==63, "pada -> pogoda_kod_opad = kod biezacy 63");
+    spr(pogodaDzien==0 && fabsf(wiatrPorywy-61.7f)<0.01f, "noc, porywy 61.7");
+  }
+  // 3. bez opadu w oknie, kod 0 (bezchmurnie)
+  { auto op=[](int i)->float{ return 0.0f; }; auto kd=[](int i)->float{ return 0.0f; };
+    parsuj(String(odp("2026-11-23T06:00",0.0f,0,1,10.0f,tab(op).c_str(),tab(kd,192,true).c_str())));
+    spr(deszczStan==0 && deszczMinuty==-1, "brak opadu (jak dotad)");
+    spr(pogodaTemp<=POGODA_TEMP_BRAK, "[3.58.17] odpowiedz bez temperature_2m -> pogoda_temp = brak (-99), nie zostaje stara wartosc");
+    spr(pogodaKod==0 && pogodaKodOpad==-1, "pogoda_kod=0, pogoda_kod_opad=-1");
+  }
+  // 4. odpowiedz BEZ nowych pol (stara centrala / API bez weather_code) - deszcz dziala, nowe = -1
+  { std::string s="{\"current_units\":{\"time\":\"iso8601\",\"precipitation\":\"mm\"},\"current\":{\"time\":\"2026-11-23T13:45\",\"interval\":900,\"precipitation\":0.00},\"minutely_15_units\":{\"time\":\"iso8601\",\"precipitation\":\"mm\"},\"minutely_15\":{\"time\":[],\"precipitation\":[";
+    auto op=[](int i)->float{ return (i==57)?1.0f:0.0f; }; s+=tab(op); s+="]}}";
+    parsuj(String(s));
+    spr(deszczStan==1 && deszczMinuty==30, "bez weather_code: nadciaga za 30 min (jak dotad)");
+    spr(pogodaKod==-1 && pogodaKodOpad==-1 && pogodaDzien==-1 && wiatrPorywy<0, "bez nowych pol: wszystkie -1");
+    spr(pogodaTemp<=POGODA_TEMP_BRAK, "[3.58.17] bez nowych pol: pogoda_temp = brak");
+  }
+  // 5. null w weather_code (Open-Meteo zwraca null poza zasiegiem modelu)
+  { std::string s=odp("2026-11-23T13:45",0.0f,2,1,30.0f,tab([](int i)->float{return (i==60)?0.2f:0.0f;}).c_str(),"");
+    std::string kody; for(int i=0;i<192;i++){ if(i)kody+=","; kody+= (i==60)?"null":"2"; }
+    s=odp("2026-11-23T13:45",0.0f,2,1,30.0f,tab([](int i)->float{return (i==60)?0.2f:0.0f;}).c_str(),kody.c_str());
+    parsuj(String(s));
+    spr(deszczStan==1 && deszczMinuty==75 && pogodaKodOpad==-1 && pogodaKod==2, "null w slocie opadu -> pogoda_kod_opad=-1, reszta OK");
+  }
+  // 6. [3.58.17] temperatura 0.0 i "null" w current (poza zasiegiem) - 0.0 to prawidlowa wartosc, null = brak
+  { auto op=[](int i)->float{ return 0.0f; }; auto kd=[](int i)->float{ return 1.0f; };
+    parsuj(String(odp("2026-11-23T13:45",0.0f,1,1,12.0f,tab(op).c_str(),tab(kd,192,true).c_str(),0.0f)));
+    spr(fabsf(pogodaTemp)<0.01f, "[3.58.17] pogoda_temp=0.0 (zero to nie brak)");
+    std::string s=odp("2026-11-23T13:45",0.0f,1,1,12.0f,tab(op).c_str(),tab(kd,192,true).c_str());
+    size_t q=s.find("\"wind_gusts_10m\":12.0}"); s.insert(q+strlen("\"wind_gusts_10m\":12.0"),",\"temperature_2m\":null");
+    parsuj(String(s));
+    spr(pogodaTemp<=POGODA_TEMP_BRAK, "[3.58.17] \"temperature_2m\":null -> brak");
+  }
+
+  // ===== [3.58.19] plynne odliczanie =====
+  // 7. zegar 13:52 (7 min w slocie 55), opad od slotu 63 (15:45) do 69 wlacznie, sucho od 70 (17:30)
+  { auto op=[](int i)->float{ return (i>=63&&i<70)?0.3f:0.0f; }; auto kd=[](int i)->float{ return (i>=63&&i<70)?61.0f:3.0f; };
+    zegar(true, 13, 52); g_ms = 5000000UL; const unsigned long t0 = g_ms;
+    parsuj(String(odp("2026-11-23T13:45",0.0f,3,1,20.0f,tab(op).c_str(),tab(kd,192,true).c_str(),4.0f)));
+    spr(deszczStan==1 && deszczMinuty==113, "[3.58.19] zegar 13:52, opad od 15:45 -> za 113 min (nie 120: 7 min slotu juz minelo)");
+    spr(deszczKoniecZnany && deszczKoniecMinuty==218, "[3.58.19] koniec zapowiadanego opadu: 17:30 -> 218 min od teraz (zapamietany juz przy stanie 1)");
+    int st, mn;
+    poCzasie(t0, 0, 0, st, mn);   spr(st==1 && mn==113, "[3.58.19] /api/status zaraz po pobraniu: stan 1, 113 min");
+    poCzasie(t0, 0, 59, st, mn);  spr(st==1 && mn==113, "[3.58.19] po 59 s: nadal 113 (ceil do pelnej minuty)");
+    poCzasie(t0, 1, 0, st, mn);   spr(st==1 && mn==112, "[3.58.19] po 60 s: 112 - minuty schodza po jednej");
+    poCzasie(t0, 1, 1, st, mn);   spr(st==1 && mn==112, "[3.58.19] po 61 s: 112");
+    poCzasie(t0, 112, 0, st, mn); spr(st==1 && mn==1, "[3.58.19] po 112 min: \"za 1 min\"");
+    poCzasie(t0, 113, 0, st, mn); spr(st==2 && mn==105, "[3.58.19] po 113 min (15:45): samo przechodzi w \"pada\", koniec za 105 min - bez czekania na pobranie");
+    poCzasie(t0, 217, 30, st, mn); spr(st==2 && mn==1, "[3.58.19] po 217,5 min: \"pada 1 min\"");
+    poCzasie(t0, 218, 0, st, mn); spr(st==0 && mn==-1, "[3.58.19] po 218 min (17:30): wg prognozy koniec -> stan 0");
+    poCzasie(t0, 300, 0, st, mn); spr(st==0, "[3.58.19] pozniej nadal 0 (do nastepnego pobrania)");
+    // pobranie 15 min pozniej (14:07, slot 14:00=56): ten sam opad -> 15:45-14:07 = 98 min, zadnego skoku
+    zegar(true, 14, 7); g_ms = t0 + 15UL*60000UL;
+    parsuj(String(odp("2026-11-23T14:00",0.0f,3,1,20.0f,tab(op).c_str(),tab(kd,192,true).c_str(),4.0f)));
+    poCzasie(g_ms, 0, 0, st, mn); spr(st==1 && mn==98 && deszczKoniecMinuty==203, "[3.58.19] pobranie 15 min pozniej (14:07): 98 min = dokladnie 113-15 -> odliczanie ciagle, bez skoku; koniec 203");
+  }
+  // 8. zegar niezgodny ze slotem (inna strefa / rozjazd): przesuniecie 0 jak do v3.58.18
+  { auto op=[](int i)->float{ return (i==60)?0.2f:0.0f; }; auto kd=[](int i)->float{ return 2.0f; };
+    zegar(true, 15, 30); g_ms = 6000000UL;
+    parsuj(String(odp("2026-11-23T13:45",0.0f,2,1,30.0f,tab(op).c_str(),tab(kd,192,true).c_str(),4.0f)));
+    spr(deszczStan==1 && deszczMinuty==75, "[3.58.19] zegar 15:30 przy slocie 13:45 (niezgodny) -> przesuniecie 0, za 75 min jak dotad");
+    zegar(true, 14, 0);   // dokladnie poczatek NASTEPNEGO slotu - tez niezgodny (r=15)
+    parsuj(String(odp("2026-11-23T13:45",0.0f,2,1,30.0f,tab(op).c_str(),tab(kd,192,true).c_str(),4.0f)));
+    spr(deszczMinuty==75, "[3.58.19] zegar 14:00 przy slocie 13:45 (r=15, poza slotem) -> przesuniecie 0");
+    zegar(true, 13, 59);
+    parsuj(String(odp("2026-11-23T13:45",0.0f,2,1,30.0f,tab(op).c_str(),tab(kd,192,true).c_str(),4.0f)));
+    spr(deszczMinuty==61, "[3.58.19] zegar 13:59 (r=14, ostatnia minuta slotu) -> za 61 min");
+  }
+  // 9. pada teraz, zegar 13:50 (5 min w slocie): opad do slotu 57 wlacznie, sucho 58 i 59 -> koniec 14:30 = za 40 min
+  { auto op=[](int i)->float{ return (i<=57)?0.5f:0.0f; }; auto kd=[](int i)->float{ return 63.0f; };
+    zegar(true, 13, 50); g_ms = 7000000UL; const unsigned long t0 = g_ms;
+    parsuj(String(odp("2026-11-23T13:45",0.5f,63,1,20.0f,tab(op).c_str(),tab(kd,192,true).c_str(),6.0f)));
+    spr(deszczStan==2 && deszczMinuty==40 && deszczKoniecZnany && deszczKoniecMinuty==40, "[3.58.19] pada, sucho od 14:30, zegar 13:50 -> koniec za 40 min (bylo 45)");
+    int st, mn;
+    poCzasie(t0, 0, 0, st, mn);  spr(st==2 && mn==40, "[3.58.19] status: pada 40 min");
+    poCzasie(t0, 39, 0, st, mn); spr(st==2 && mn==1, "[3.58.19] po 39 min: pada 1 min");
+    poCzasie(t0, 40, 0, st, mn); spr(st==0, "[3.58.19] po 40 min: wg prognozy przestalo -> stan 0");
+  }
+  // 10. pada teraz, ale wg tablicy sucho juz w biezacym i nastepnym slocie (koniec "teraz" lub w przeszlosci) -> "pada" bez czasu
+  { auto op=[](int i)->float{ return (i<55)?0.5f:0.0f; }; auto kd=[](int i)->float{ return 61.0f; };
+    zegar(true, 13, 50); g_ms = 8000000UL;
+    parsuj(String(odp("2026-11-23T13:45",0.4f,61,1,20.0f,tab(op).c_str(),tab(kd,192,true).c_str(),6.0f)));
+    spr(deszczStan==2 && deszczMinuty==-1 && !deszczKoniecZnany, "[3.58.19] koniec <= 0 min -> \"pada\" bez czasu (nie \"pada 0 min\")");
+    int st, mn; poCzasie(g_ms, 30, 0, st, mn); spr(st==2 && mn==-1, "[3.58.19] i tak zostaje \"pada\" do nastepnego pobrania");
+  }
+  // 11. pada, koniec poza oknem 6 h -> jak dotad -1, status \"pada\" bez konca
+  { auto op=[](int i)->float{ return 0.5f; }; auto kd=[](int i)->float{ return 61.0f; };
+    zegar(true, 13, 50); g_ms = 9000000UL;
+    parsuj(String(odp("2026-11-23T13:45",0.5f,61,1,20.0f,tab(op).c_str(),tab(kd,192,true).c_str(),6.0f)));
+    int st, mn; poCzasie(g_ms, 120, 0, st, mn);
+    spr(deszczStan==2 && deszczMinuty==-1 && !deszczKoniecZnany && st==2 && mn==-1, "[3.58.19] koniec poza oknem: \"pada\" bez czasu, takze po 2 h");
+  }
+  // 12. opad w biezacym slocie (i=0), zegar 13:50 -> za 0 min -> status od razu \"pada\" z koncem
+  { auto op=[](int i)->float{ return (i>=55&&i<=56)?0.3f:0.0f; }; auto kd=[](int i)->float{ return 61.0f; };
+    zegar(true, 13, 50); g_ms = 10000000UL;
+    parsuj(String(odp("2026-11-23T13:45",0.0f,3,1,20.0f,tab(op).c_str(),tab(kd,192,true).c_str(),6.0f)));
+    int st, mn; poCzasie(g_ms, 0, 0, st, mn);
+    spr(deszczStan==1 && deszczMinuty==0 && st==2 && mn==25, "[3.58.19] opad juz w biezacym slocie: stan 1/0 min przy pobraniu, status od razu \"pada 25 min\" (sucho od 14:15)");
+  }
+  // 13. przepelnienie millis(): pobranie 3 min przed zawinieciem 32-bit, poczatek za 10 min (po zawinieciu).
+  //     Prawdziwe zawiniecie tylko w budowie 32-bit (TRYB_32BIT: unsigned long -> uint32_t jak na ESP32);
+  //     w budowie 64-bit ten przypadek sprawdza tylko zwykle odliczanie.
+  { auto op=[](int i)->float{ return (i==56)?0.3f:0.0f; }; auto kd=[](int i)->float{ return 61.0f; };
+    zegar(true, 13, 50); g_ms = (unsigned long)4294967295UL - 3UL*60000UL;
+    parsuj(String(odp("2026-11-23T13:45",0.0f,3,1,20.0f,tab(op).c_str(),tab(kd,192,true).c_str(),6.0f)));
+    int st, mn; const unsigned long t0 = g_ms;
+    poCzasie(t0, 2, 0, st, mn);  const bool a = (st==1 && mn==8);
+    poCzasie(t0, 5, 0, st, mn);  const bool b = (st==1 && mn==5);    // 2 min po zawinieciu (w 32-bit)
+    poCzasie(t0, 10, 0, st, mn); const bool c = (st==2 && mn==15);   // poczatek minal (7 min po zawinieciu), sucho od 14:15 = za 15
+    poCzasie(t0, 25, 0, st, mn); const bool d = (st==0);
+    spr(a && b && c && d, "[3.58.19] odliczanie przez przepelnienie millis(): 8 -> 5 -> pada 15 -> koniec, bez skoku (sizeof(unsigned long)=" SIZEOF_UL ")");
+  }
+  printf(bledy?"NIEZALICZONY: %d\n":"ZALICZONY: parsowanie Open-Meteo OK (%d bledow)\n",bledy); return bledy?1:0;
+}

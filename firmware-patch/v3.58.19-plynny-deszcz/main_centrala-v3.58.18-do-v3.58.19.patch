@@ -1,0 +1,200 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,23 @@
++// FIRMWARE_VERSION v3.58.18 -> v3.58.19 (2026-11-23) — deszcz_min LICZONE NA BIEŻĄCO (PŁYNNE ODLICZANIE NA LCD).
++//
++// [v3.58.19 PLYNNY-DESZCZ] — 2026-11-23
++// Pytanie użytkownika (23.11): „czy na LCD »za 45 min« będzie płynnie schodzić,
++// czy będzie przeskok?”. Do v3.58.18 — przeskok: deszcz_min było liczbą slotów
++// 15-minutowych × 15, liczoną względem POCZĄTKU bieżącego slotu i zamrożoną do
++// następnego pobrania (co 15 min). Napis stał kwadrans i skakał o 15, a o 14:07
++// i 14:14 deszcz z 15:00 był tak samo „za 60 min”.
++// Teraz pobierzPrognozeDeszczu() zapamiętuje CHWILĘ (millis()) początku i końca
++// opadu — z dokładnością do minuty, bo przesunięcie „teraz” wewnątrz slotu bierze
++// z zegara centrali (aktualnyCzasGodzina/Minuta, gdy RTC/NTP wiarygodne i zgodne
++// ze slotem z current.time; inaczej 0 jak dotąd) — a /api/status przy KAŻDYM
++// zapytaniu liczy deszczStanTeraz(): deszcz_min = ceil((chwila − millis())/60 s).
++// Panel odświeża status co kilka sekund, więc minuty schodzą po jednej: „za 53 min”,
++// „za 52 min”… Gdy chwila początku minie, status sam przechodzi w stan 2 („pada”,
++// z czasem do końca, jeśli prognoza go widzi), a gdy minie koniec — w stan 0; kolejne
++// pobranie (co 15 min) tylko koryguje chwile, gdy prognoza się zmieni.
++// Pola /api/status te same (deszcz_stan, deszcz_min) — panel LCD bez zmian.
++// Zapytanie do Open-Meteo, parsowanie, interwał, pola pogoda_* bez zmian.
++//
+ // FIRMWARE_VERSION v3.58.17 -> v3.58.18 (2026-11-23) — PIERWSZA PROGNOZA ~1 MIN PO STARCIE, NIE PO 15 MIN.
+ //
+ // [v3.58.18 PIERWSZA-PROGNOZA] — 2026-11-23
+@@ -2002,6 +2022,14 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.19] — 2026-11-23 — deszcz_min LICZONE NA BIEZACO (PLYNNE ODLICZANIE NA LCD)
++// Co: pobierzPrognozeDeszczu() zapamietuje chwile (millis()) poczatku i konca
++//     opadu z dokladnoscia do minuty (przesuniecie w slocie z zegara centrali),
++//     a /api/status liczy deszcz_stan/deszcz_min na biezaco (deszczStanTeraz()):
++//     minuty schodza po jednej, po poczatku samo "pada", po koncu samo nic.
++//     Do v3.58.18: liczba slotow x 15 zamrozona do nastepnego pobrania (skok co 15).
++// Bez zmian: pola /api/status, panel LCD, zapytanie i parsowanie Open-Meteo.
++//
+ // [v3.58.18] — 2026-11-23 — PIERWSZA PROGNOZA ~1 MIN PO STARCIE (BYLO: 15 MIN)
+ // Co: owDeszczLastFetchMillis / owPrognozaLastFetchMillis startuja "cofniete"
+ //     o interwal, wiec pierwsze pobranie z Open-Meteo idzie ~60 s (DESZCZ) i
+@@ -6812,7 +6840,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.18";
++static const char* FIRMWARE_VERSION = "v3.58.19";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -7541,6 +7569,7 @@
+ bool ustawParametrPieca(const String& pole, long w, String& err); // [USTAWIENIA] wspolna walidacja/zapis jednego parametru — uzywana przez /api/ustawienia-set ORAZ komende Firebase "ustaw" — definicja nizej
+ extern int deszczStan;    // [DESZCZ-ETAP2] 0/1/2 - definicja nizej, przy pobierzPrognozeDeszczu()
+ extern int deszczMinuty;  // [DESZCZ-ETAP2] - definicja nizej, przy pobierzPrognozeDeszczu()
++void deszczStanTeraz(int &stan, int &minuty);   // [v3.58.19] deszcz_stan/deszcz_min NA TERAZ (definicja przy pobierzPrognozeDeszczu())
+ extern int pogodaKod;       // [v3.58.16 POGODA-ZEWN] kod WMO teraz (-1 = brak), definicja przy pobierzPrognozeDeszczu()
+ extern int pogodaKodOpad;   // [v3.58.16] kod WMO dla deszcz_stan/deszcz_min (-1 = brak)
+ extern int pogodaDzien;     // [v3.58.16] 1 dzien / 0 noc / -1 brak
+@@ -31678,13 +31707,16 @@
+     j += F(",\"symulacja_wilgotnosc_min\":"); j += String(minutyDo(symulacjaWilgotnosciDo));
+     j += F(",\"serwo_override_min\":"); j += String(minutyDo(serwoManualOverrideUntil));
+     j += F(",\"mieszadlo_override_min\":"); j += String(minutyDo(mieszadloManualOverrideUntil));
++    // [v3.58.19 PLYNNY-DESZCZ] Stan opadu NA TERAZ (deszczStanTeraz()), nie
++    // zamrozony z ostatniego pobrania - minuty schodza co minute.
+     // [DESZCZ-ETAP3, PLAN_DESZCZ_ZEWN.md] "Za ile minut deszcz" na kafelku
+     // ZEWN - wartosci wyliczone przez pobierzPrognozeDeszczu() (v2.13.0/
+     // v2.13.1), tu tylko wystawione dla LCD/dashboardu WWW. deszcz_stan:
+     // 0=brak w widocznym oknie, 1=nadciaga (deszcz_min=za ile zacznie),
+     // 2=pada teraz (deszcz_min=za ile skonczy, -1=nieznane w oknie 6h).
+-    j += F(",\"deszcz_stan\":"); j += String(deszczStan);
+-    j += F(",\"deszcz_min\":"); j += String(deszczMinuty);
++    int dStan = 0, dMin = -1; deszczStanTeraz(dStan, dMin);
++    j += F(",\"deszcz_stan\":"); j += String(dStan);
++    j += F(",\"deszcz_min\":"); j += String(dMin);
+     // [v3.58.16 POGODA-ZEWN] Kod pogody WMO (teraz i dla zapowiadanego/
+     // trwajacego opadu), dzien/noc i porywy wiatru - z tego samego zapytania
+     // Open-Meteo co deszcz_stan. -1 = jeszcze nie pobrano / brak w odpowiedzi.
+@@ -47451,6 +47483,35 @@
+ // skonczy, albo -1 gdy koniec nie miesci sie w widocznym oknie).
+ int deszczStan = 0;
+ int deszczMinuty = -1;
++// [v3.58.19 PLYNNY-DESZCZ] Z czego /api/status liczy deszcz_min NA BIEZACO:
++// chwila (millis()) poczatku i konca opadu wg ostatniej prognozy. deszczStan/
++// deszczMinuty wyzej to nadal wynik Z CHWILI POBRANIA (log, testy); do panelu
++// idzie deszczStanTeraz(). Ustawiane TYLKO po udanym pobraniu - po bledzie HTTP
++// odliczanie biegnie dalej od poprzedniej prognozy.
++unsigned long deszczStartMillis = 0;    // stan 1: kiedy wg prognozy sie zacznie
++unsigned long deszczKoniecMillis = 0;   // kiedy sie skonczy (wazne, gdy deszczKoniecZnany)
++bool deszczKoniecZnany = false;         // false = koniec poza oknem 6 h ("pada" bez czasu)
++int deszczKoniecMinuty = -1;            // j.w. w minutach od pobrania (log, testy)
++
++// [v3.58.19] deszcz_stan / deszcz_min na TERAZ. Odliczanie od chwil zapisanych
++// przy pobraniu: ceil do pelnej minuty (45:00..44:01 -> 45, 44:00 -> 44), wiec
++// "za 1 min" trwa minute i przechodzi prosto w "pada", nigdy "za 0 min".
++// Roznice millis() liczone jako (long)(a - b) - poprawne przy przepelnieniu.
++void deszczStanTeraz(int &stan, int &minuty) {
++  stan = deszczStan;
++  minuty = -1;
++  if (deszczStan == 0) return;
++  const unsigned long teraz = millis();
++  if (deszczStan == 1) {
++    const long doStartu = (long)(deszczStartMillis - teraz);
++    if (doStartu > 0) { minuty = (int)(((unsigned long)doStartu + 59999UL) / 60000UL); return; }
++    stan = 2;   // slot poczatku juz nadszedl - wg prognozy pada (nastepne pobranie to potwierdzi lub cofnie)
++  }
++  if (!deszczKoniecZnany) return;   // "pada", koniec poza oknem
++  const long doKonca = (long)(deszczKoniecMillis - teraz);
++  if (doKonca > 0) { minuty = (int)(((unsigned long)doKonca + 59999UL) / 60000UL); return; }
++  stan = 0;   // wg prognozy juz nie pada
++}
+ // [v3.58.16 POGODA-ZEWN] Kod WMO pogody teraz, kod WMO w chwili opadu
+ // (nadciaga: slot 15-min, w ktorym opad sie zaczyna; pada: teraz), dzien/noc,
+ // porywy wiatru km/h. -1 = brak danych (przed pierwszym pobraniem, blad HTTP,
+@@ -47627,6 +47688,16 @@
+   int hh = curTime.substring(pTChar + 1, pTChar + 3).toInt();
+   int mm = curTime.substring(pTChar + 4, pTChar + 6).toInt();
+   int indeksTeraz = (hh * 60 + mm) / 15;
++  // [v3.58.19 PLYNNY-DESZCZ] current.time z Open-Meteo to POCZATEK biezacego
++  // slotu 15-min (interval=900), nie "teraz". Ile minut slotu juz minelo,
++  // mowi zegar centrali - jesli jest wiarygodny (RTC/NTP) i zgodny ze slotem
++  // (0..14 min po jego poczatku; inna strefa / rozjazd zegara -> 0, czyli
++  // dokladnie to, co liczylo sie do v3.58.18).
++  int przesMin = 0;
++  if (g_rtcGotowy || g_rtcNtpZsynchronizowany) {
++    const int r = (aktualnyCzasGodzina * 60 + aktualnyCzasMinuta) - indeksTeraz * 15;
++    if (r >= 0 && r < 15) przesMin = r;
++  }
+ 
+   int startTablicy = pPrecArr + strlen("\"precipitation\":[");
+   int pos = deszcz_json_pozycja_k(body, startTablicy, indeksTeraz);
+@@ -47638,6 +47709,7 @@
+   bool terazPada = (curOpad >= DESZCZ_PROG_MM);
+   int nowyStan = 0;
+   int nowyMinuty = -1;
++  int nowyKoniecMinuty = -1;   // [v3.58.19] koniec opadu (stan 1: zapowiadanego, stan 2: trwajacego), -1 = poza oknem
+   // [v3.58.16] Tablica minutely_15 weather_code - do odczytu kodu w slocie,
+   // w ktorym zaczyna sie zapowiadany opad. "weather_code":[ jest jednoznaczne
+   // (w "current" ten klucz ma po sobie liczbe, w "*_units" tekst).
+@@ -47654,7 +47726,21 @@
+       float v = deszcz_json_liczba(body, p, &nastepny);
+       if (v >= DESZCZ_PROG_MM) {
+         nowyStan = 1;
+-        nowyMinuty = i * 15;
++        nowyMinuty = i * 15 - przesMin;   // [v3.58.19] do poczatku slotu opadu, od TERAZ
++        if (nowyMinuty < 0) nowyMinuty = 0;
++        // [v3.58.19] Koniec tego opadu (2 suche sloty z rzedu za jego
++        // poczatkiem, ta sama histereza co ponizej przy "pada") - zeby po
++        // minieciu poczatku /api/status mogl od razu podawac "pada, koniec za X".
++        {
++          int pk2 = nastepny, suchych = 0;
++          for (int k = i + 1; k < DESZCZ_OKNO_SLOTOW && pk2 >= 0; k++) {
++            int nast2;
++            float v2 = deszcz_json_liczba(body, pk2, &nast2);
++            if (v2 < DESZCZ_PROG_MM) { if (++suchych >= 2) { nowyKoniecMinuty = (k - 1) * 15 - przesMin; break; } }
++            else suchych = 0;
++            pk2 = nast2;
++          }
++        }
+         // [v3.58.16] Kod WMO w tym slocie - mowi panelowi, czy to deszcz,
+         // snieg, mzawka czy burza. Brak tablicy/indeksu -> -1 (panel pokaze
+         // sam czas, jak dotad).
+@@ -47685,7 +47771,12 @@
+       if (v < DESZCZ_PROG_MM) {
+         suchychZRzedu++;
+         if (suchychZRzedu >= 2) {
+-          nowyMinuty = (i - 1) * 15;  // poczatek tej 2-slotowej suchej passy
++          nowyMinuty = (i - 1) * 15 - przesMin;  // poczatek tej 2-slotowej suchej passy, od TERAZ [v3.58.19]
++          // Koniec juz "teraz" lub w przeszlosci (sucho w biezacym slocie, a
++          // current.precipitation mowi, ze pada) - traktuj jak nieznany: "pada"
++          // bez czasu zamiast "pada 0 min" (do v3.58.18 bylo 0).
++          if (nowyMinuty <= 0) nowyMinuty = -1;
++          nowyKoniecMinuty = nowyMinuty;
+           break;
+         }
+       } else {
+@@ -47701,14 +47792,22 @@
+ 
+   deszczStan = nowyStan;
+   deszczMinuty = nowyMinuty;
++  // [v3.58.19] Chwile dla deszczStanTeraz() - od TERAZ (millis() pobrania).
++  {
++    const unsigned long terazMs = millis();
++    deszczKoniecMinuty = nowyKoniecMinuty;
++    deszczStartMillis = (nowyStan == 1) ? terazMs + (unsigned long)nowyMinuty * 60000UL : terazMs;
++    deszczKoniecZnany = (nowyStan != 0) && (nowyKoniecMinuty > 0);
++    deszczKoniecMillis = deszczKoniecZnany ? terazMs + (unsigned long)nowyKoniecMinuty * 60000UL : terazMs;
++  }
+   pogodaKod = nowyPogodaKod;          // [v3.58.16]
+   pogodaKodOpad = nowyPogodaKodOpad;
+   pogodaDzien = nowyPogodaDzien;
+   wiatrPorywy = nowePorywy;
+   pogodaTemp = nowaTemp;              // [v3.58.17]
+ 
+-  DLOGF(DC_WEATHER, DL_DEBUG, "DESZCZ zdarzenie=stan indeks_teraz=%d opad_teraz_mm=%.2f stan=%d za_min=%d pogoda_kod=%d pogoda_kod_opad=%d dzien=%d porywy_kmh=%.1f pogoda_temp=%.1f",
+-                indeksTeraz, curOpad, deszczStan, deszczMinuty, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy, pogodaTemp);
++  DLOGF(DC_WEATHER, DL_DEBUG, "DESZCZ zdarzenie=stan indeks_teraz=%d w_slocie_min=%d opad_teraz_mm=%.2f stan=%d za_min=%d koniec_za_min=%d pogoda_kod=%d pogoda_kod_opad=%d dzien=%d porywy_kmh=%.1f pogoda_temp=%.1f",
++                indeksTeraz, przesMin, curOpad, deszczStan, deszczMinuty, deszczKoniecMinuty, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy, pogodaTemp);
+ }
+ 
+ // ── [PROGNOZA-ETAP1, PLAN_PROGNOZA.md] Pelny ekran prognozy (LCD: 8 kart

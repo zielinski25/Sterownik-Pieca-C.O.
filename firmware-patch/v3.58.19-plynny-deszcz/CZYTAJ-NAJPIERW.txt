@@ -1,0 +1,69 @@
+FIRMWARE CENTRALI 3.58.19 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
+(platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.18 (pierwsza prognoza ~1 min po starcie) + PLYNNE ODLICZANIE DESZCZU.
+Patch wzgledem 3.58.18: 11 hunkow, ok. 59 linii kodu. Strona WWW bajt w bajt jak w 3.58.18.
+Panel LCD: BEZ ZMIAN (v1.5.17 zostaje). Jesli 3.58.18 nie bylo wgrane - wgraj od razu te.
+
+PO CO (pytanie z 23.11: "czy deszcz za N min odlicza co minute, czy bedzie przeskok?")
+------------------------------------------------------------------------------------
+Do 3.58.18 deszcz_min w /api/status bylo liczba slotow 15-min * 15 z ostatniego pobrania i
+stalo w miejscu przez kwadrans, po czym skakalo o 15 (albo o 30, gdy pobranie trafilo tuz
+przed granica slotu). Teraz centrala przy pobraniu zapamietuje CHWILE poczatku i konca opadu
+(millis()), uwzgledniajac ile minut biezacego slotu juz minelo wg swojego zegara, a /api/status
+przy kazdym zapytaniu liczy minuty do tej chwili. Panel widzi: za 113 -> 112 -> ... -> 1 ->
+"pada 105 min" -> ... -> koniec. Pobranie co 15 min tylko koryguje wg nowej prognozy.
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.19"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od fb5bca78):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.18-do-v3.58.19.patch, -p1 z katalogu projektu, na plik 3.58.18
+(SHA 27555cb0...). Wynik musi miec SHA z SHA256SUMS.txt - inaczej wgraj caly plik z src\.
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+Select-String '^\[env:' platformio.ini      -> esp32-s3-n16r8 (NIE esp32dev)
+PlatformIO -> Build, potem Upload   (pio run -e esp32-s3-n16r8   i   -t upload)
+Spodziewane: 0 ostrzezen, Flash wiekszy o kilkaset bajtow, RAM +~16 B. Release na GitHub:
+tag 3.58.19.
+
+KROK 3 - SPRAWDZENIE (http://192.168.100.151, Ctrl+F5)
+------------------------------------------------------
+0. /api/lan/status: "fw":"v3.58.19". Telegram: "Centrala wystartowala: v3.58.19".
+1. Gdy prognoza zapowiada opad: http://192.168.100.151/api/status -> "deszcz_min" - odswiez
+   po minucie: wartosc mniejsza o 1 (nie ta sama przez 15 minut). Kafelek ZEWN na LCD:
+   "deszcz za N min" schodzi po jednej minucie.
+2. Gdy pada z koncem w oknie 6 h: "pada N min" tak samo schodzi; po zejsciu do 0 kafelek
+   przestaje pokazywac deszcz (nastepne pobranie co 15 min to potwierdzi lub poprawi).
+3. Zaraz po pobraniu (log DC_WEATHER: "DESZCZ zdarzenie=stan ... w_slocie_min=7 ... za_min=113
+   koniec_za_min=218") deszcz_min nie jest wielokrotnoscia 15, tylko np. 113 - to znaczy, ze
+   zegar centrali (RTC/NTP) zostal uwzgledniony. w_slocie_min=0 zawsze -> zegar niezgodny ze
+   slotem Open-Meteo (strefa?) albo brak RTC/NTP; wtedy zachowanie jak w 3.58.18 przy pobraniu,
+   ale miedzy pobraniami i tak odlicza co minute.
+4. Strona WWW i reszta - jak w 3.58.18.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa.
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\testy-pc.txt)
+----------------------------------------------
+Prawdziwy kod (globalne, deszczStanTeraz(), cale cialo pobierzPrognozeDeszczu()) wyciety z tego
+pliku, skompilowany g++ natywnie 64-bit i z 32-bitowym unsigned long jak na ESP32, nakarmiony
+13 odpowiedziami Open-Meteo (6 dotychczasowych z 3.58.16/17 + 7 nowych): przesuniecie w slocie
+z zegara (13:52 -> za 113, nie 120), schodzenie po minucie (ceil: 59 s -> 113, 60 s -> 112),
+przejscie w "pada" po minieciu poczatku i w stan 0 po koncu bez czekania na pobranie, pobranie
+15 min pozniej = dokladnie o 15 mniej (bez skoku), zegar niezgodny ze slotem -> jak dotad,
+koniec <= 0 -> "pada" bez czasu, koniec poza oknem -> "pada" bez czasu takze po 2 h, opad juz w
+biezacym slocie -> od razu "pada", przepelnienie millis() w trakcie odliczania. /api/status
+uzywa deszczStanTeraz(); HTML identyczny z 3.58.18, node --check, plik = 3.58.18 + patch (SHA),
+pelne testy 3.58.18/3.58.17/3.58.16/3.58.15/3.58.14 (stare harnessy parsowania z 3.58.16/17 nie
+znaja millis()/zegara - ich przypadki sa powtorzone w nowym harnessie).
+Caly plik NIE byl kompilowany w PlatformIO.
