@@ -38,9 +38,12 @@ dwuwierszowy pas legendy zabierały ¼ wysokości, a wnętrze wykresu miało
 jeszcze ~10 px paddingu z każdej strony. Teraz u góry jest jeden pasek:
 strzałka wstecz, legenda („[Dzienny]” + kropki z nazwami serii) i mniejszy
 krzyżyk; legenda ma wysokość po zawartości (1 wiersz do 4–5 serii). Wykres
-zaczyna się 4 px pod legendą i kończy na y=299, padding wnętrza 4 px, etykiety
-osi Y 2 px od wykresu (nadal obok niego, nie na nim), bez prawej osi wykres
-sięga do krawędzi ekranu. Pole danych urosło z ok. 346×192 px do ok. 354×263 px.
+zaczyna się 4 px pod legendą i kończy na y=299, padding góra/dół 4 px.
+Wykres jest **zawsze na całą szerokość ekranu** – etykiety osi Y leżą na polu
+wykresu przy jego krawędziach (lewa oś od x=10, prawa do x=470), na
+półprzezroczystym tle w kolorze wykresu, więc linia przechodząca pod liczbą
+jest przygaszona, a liczba czytelna. Pole danych urosło z ok. 346×192 px do
+ok. 460×263 px (×1,8).
 
 ## Co zmienia v1.5.14
 

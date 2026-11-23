@@ -4994,7 +4994,6 @@ static int  g_wykresyOstatniaOsDodania = 0;
 //
 // Forward - obie zdefiniowane nizej w pliku, ale potrzebne juz w
 // wykresy_pokaz_wykres() ponizej (naglowek podstrony Wykres).
-static const WykresySeriaDef *wykresy_wybrana_seria(int pozycja);
 static const char *wykresy_tryb_nazwa();
 static bool wykresy_tryb_jest_dlugi(); // forward - zdefiniowana nizej razem z wykresy_tryb_nazwa(); potrzebna juz w wykresy_pokaz_wykres() ponizej (PARTIA 5e - fetch)
 static int wykresy_tryb_numer();       // forward - [v1.3.0] numer trybu dla main.cpp (LVGL_WYKRESY_TRYB_*)
@@ -5221,13 +5220,8 @@ static void wykresy_pokaz_btn_odswiez() {
   }
 }
 
-// [Do wykorzystania w Partii 5d] Zwraca wskaznik na definicje serii
-// wybranej jako pierwsza (pozycja=0) lub druga (pozycja=1), albo nullptr
-// gdy na tej pozycji nic nie jest jeszcze wybrane.
-static const WykresySeriaDef *wykresy_wybrana_seria(int pozycja) {
-  if (pozycja < 0 || pozycja >= g_wykresyLiczbaWybranych) return nullptr;
-  return &WYKRESY_SERIE[g_wykresyKolejnoscWyboru[pozycja]];
-}
+// [v1.5.15] wykresy_wybrana_seria() usunieta - uzywal jej tylko tytul
+// "[Dzienny] ZEWN / POMPA", ktory zastapila legenda.
 
 // (wykresy_tryb_nazwa() juz forward-zadeklarowana wyzej, przy sekcji "DWIE
 // PODSTRONY" - zdefiniowana nizej w sekcji "PARTIA 5d - PRZELACZNIK ZAKRESU".)
@@ -5779,7 +5773,8 @@ static lv_coord_t g_wykresyChartH = WYKRESY_CHART_DOL - WYKRESY_LEGENDA_H_MIN;
 #define WYKRESY_CHART_H g_wykresyChartH
 static const lv_coord_t WYKRESY_CHART_X1 = 0;     // lewa/prawa krawedz wykresu w wykresyWykresCont (480px) bez osi po tej stronie
 static const lv_coord_t WYKRESY_CHART_X2 = 480;
-static const lv_coord_t WYKRESY_CHART_PAD = 4;    // padding wnetrza wykresu (motyw dawal ~10 px z kazdej strony)
+static const lv_coord_t WYKRESY_CHART_PAD = 4;    // padding wnetrza wykresu gora/dol (motyw dawal ~10 px z kazdej strony)
+static const lv_coord_t WYKRESY_OS_ETYKIETA_PAD = 2; // [v1.5.15] padding tla etykiety osi Y lezacej na wykresie
 static const lv_coord_t WYKRESY_OS_X_Y = WYKRESY_CHART_DOL + 3;   // gorna krawedz pasa podpisow osi czasu (302..319)
 // [v1.5.9] Ile pikseli od lewej/prawej krawedzi ekranu zostawic pustych na
 // etykiety osi: wydrukowana obudowa zaslania skrajne ~6-8 px (zdjecia 22.11:
@@ -5933,6 +5928,17 @@ static lv_coord_t wykresy_os_szerokosc_etykiet(float minWartosc, float maxWartos
 // przecinala napis "3.5", a WILGOTNOSC 0 % napis "0.0" po prawej. Pole
 // wykresu (g_wykresyChartX1..X2) ustawia wykresy_chart_odswiez() zanim tu
 // wejdzie; ta funkcja tylko rozstawia i wypelnia etykiety.
+// [v1.5.15] Etykieta osi Y lezy NA polu wykresu - dostaje polprzezroczyste
+// tlo w kolorze wykresu (linia przechodzaca pod liczba jest przygaszona,
+// liczba zostaje czytelna), 2 px paddingu po bokach i lekkie zaokraglenie.
+static void wykresy_os_etykieta_tlo(lv_obj_t *etykieta) {
+  lv_obj_set_style_bg_color(etykieta, rgb565(KOL_KARTA), 0);
+  lv_obj_set_style_bg_opa(etykieta, LV_OPA_80, 0);
+  lv_obj_set_style_radius(etykieta, 3, 0);
+  lv_obj_set_style_pad_hor(etykieta, WYKRESY_OS_ETYKIETA_PAD, 0);
+  lv_obj_set_style_pad_ver(etykieta, 0, 0);
+}
+
 static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float maxWartosc, lv_color_t kolorEtykiet, const char *jednostkaSurowa, lv_coord_t szerTekstu) {
   float maxAbs = fabsf(minWartosc);
   if (fabsf(maxWartosc) > maxAbs) maxAbs = fabsf(maxWartosc);
@@ -5990,13 +5996,21 @@ static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float
   // [v1.5.12 OSIE] Lewa os: pole etykiety od marginesu obudowy do 4 px przed
   // wykresem, tekst dosuniety w PRAWO (liczby koncza sie rowno przy
   // wykresie). Prawa os: od 4 px za wykresem, tekst w lewo.
-  lv_coord_t etykietaSzer = szerTekstu + 2; // maly zapas, LONG_CLIP wiec bezpiecznie nie zawinie
-  lv_coord_t etykietaX = (os == LV_CHART_AXIS_PRIMARY_Y) ? (chartX1 - 2 - etykietaSzer) : (chartX2 + 2);
-  lv_text_align_t wyrownanie = (os == LV_CHART_AXIS_PRIMARY_Y) ? LV_TEXT_ALIGN_RIGHT : LV_TEXT_ALIGN_LEFT;
+  // [v1.5.15] Etykiety NA polu wykresu: lewa os od marginesu obudowy w
+  // prawo, prawa os do marginesu obudowy w lewo (chartX1/X2 to 0/480 - caly
+  // ekran). Szerokosc pola = tekst + 2 px zapasu + 2x2 px paddingu tla.
+  (void)chartX1; (void)chartX2;
+  lv_coord_t etykietaSzer = szerTekstu + 2 + 2 * WYKRESY_OS_ETYKIETA_PAD; // maly zapas, LONG_CLIP wiec bezpiecznie nie zawinie
+  lv_coord_t etykietaX = (os == LV_CHART_AXIS_PRIMARY_Y) ? WYKRESY_MARGINES_OBUDOWY : (lv_coord_t)(480 - WYKRESY_MARGINES_OBUDOWY - etykietaSzer);
+  lv_text_align_t wyrownanie = (os == LV_CHART_AXIS_PRIMARY_Y) ? LV_TEXT_ALIGN_LEFT : LV_TEXT_ALIGN_RIGHT;
 
   for (int i = 0; i < WYKRESY_OS_LICZBA_ETYKIET; i++) {
     if (!etykiety[i]) continue;
     lv_coord_t y = chartY + (int32_t)((int32_t)chartH * i) / (WYKRESY_OS_LICZBA_ETYKIET - 1) - etykietaWys / 2;
+    // [v1.5.15] Skrajne etykiety trzymane WEWNATRZ pola wykresu (gorna nie
+    // wchodzi na legende, dolna na podpisy osi czasu).
+    if (y < chartY) y = chartY;
+    if (y > chartY + chartH - etykietaWys) y = chartY + chartH - etykietaWys;
     lv_obj_set_pos(etykiety[i], etykietaX, y);
     lv_obj_set_width(etykiety[i], etykietaSzer);
     lv_obj_set_style_text_align(etykiety[i], wyrownanie, 0);
@@ -6267,11 +6281,15 @@ static void wykresy_chart_odswiez() {
     osAktywna[os] = wykresy_chart_zakres_osi(os, minOs[os], maxOs[os]);
     if (osAktywna[os]) szerOs[os] = wykresy_os_szerokosc_etykiet(minOs[os], maxOs[os], g_wykresyJednostkaOsi[os]);
   }
-  // [v1.5.15] 2 px zapasu etykiety + 2 px do wykresu (bylo 3+4); bez osi po
-  // danej stronie wykres siega do krawedzi ekranu (obudowa zaslania ~8 px,
-  // ale pole danych i tak zaczyna sie za paddingiem 4 px).
-  g_wykresyChartX1 = osAktywna[0] ? (lv_coord_t)(WYKRESY_MARGINES_OBUDOWY + szerOs[0] + 2 + 2) : WYKRESY_CHART_X1;
-  g_wykresyChartX2 = osAktywna[1] ? (lv_coord_t)(480 - WYKRESY_MARGINES_OBUDOWY - szerOs[1] - 2 - 2) : WYKRESY_CHART_X2;
+  // [v1.5.15] Wykres ZAWSZE na cala szerokosc ekranu (zdjecie 23.11 z
+  // zaznaczonymi pustymi pasami po bokach: "do samego maksa rozciagniety").
+  // Etykiety osi Y leza NA polu wykresu przy jego krawedziach, na
+  // polprzezroczystym tle (patrz wykresy_chart_dopasuj_os()) - v1.5.12
+  // wystawila je obok wykresu, zeby plaska linia nie przecinala napisu, ale
+  // kosztowalo to 50-70 px szerokosci z kazdej strony. szerOs[] sluzy teraz
+  // tylko do szerokosci pola tekstu etykiet.
+  g_wykresyChartX1 = WYKRESY_CHART_X1;
+  g_wykresyChartX2 = WYKRESY_CHART_X2;
   lv_obj_set_x(wykresyChart, g_wykresyChartX1);
   lv_obj_set_width(wykresyChart, g_wykresyChartX2 - g_wykresyChartX1);
   for (int os = 0; os < 2; os++) {
@@ -7139,6 +7157,10 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   lv_obj_set_style_border_width(wykresyChart, 0, 0);
   lv_obj_set_style_radius(wykresyChart, 6, 0);
   lv_obj_set_style_pad_all(wykresyChart, WYKRESY_CHART_PAD, LV_PART_MAIN);   // [v1.5.15] motyw dawal ~10 px
+  // [v1.5.15] Wykres na cala szerokosc ekranu (0..480): pole danych zaczyna
+  // sie za marginesem obudowy (skrajne ~8 px ekranu sa pod ramka), zeby
+  // ostatni punkt (najnowszy pomiar, prawa krawedz) byl widoczny.
+  lv_obj_set_style_pad_hor(wykresyChart, WYKRESY_MARGINES_OBUDOWY, LV_PART_MAIN);
   lv_chart_set_type(wykresyChart, LV_CHART_TYPE_LINE);
   lv_chart_set_div_line_count(wykresyChart, 3, 5);
   lv_chart_set_update_mode(wykresyChart, LV_CHART_UPDATE_MODE_CIRCULAR);
@@ -7183,12 +7205,14 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
     lv_obj_set_style_text_font(wykresyEtykietyA[i], &lv_font_pl_14, 0);
     lv_label_set_long_mode(wykresyEtykietyA[i], LV_LABEL_LONG_CLIP);
     lv_obj_add_flag(wykresyEtykietyA[i], LV_OBJ_FLAG_HIDDEN);
+    wykresy_os_etykieta_tlo(wykresyEtykietyA[i]);
 
     wykresyEtykietyB[i] = lv_label_create(wykresyWykresCont);
     lv_label_set_text(wykresyEtykietyB[i], "");
     lv_obj_set_style_text_font(wykresyEtykietyB[i], &lv_font_pl_14, 0);
     lv_label_set_long_mode(wykresyEtykietyB[i], LV_LABEL_LONG_CLIP);
     lv_obj_add_flag(wykresyEtykietyB[i], LV_OBJ_FLAG_HIDDEN);
+    wykresy_os_etykieta_tlo(wykresyEtykietyB[i]);
   }
   // [FIX, ta sesja] Osobne podpiecie na samym wykresie - to najbardziej
   // oczywiste miejsce, w ktore user dotknie podczas ogladania (np. probujac

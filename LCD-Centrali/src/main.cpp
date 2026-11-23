@@ -49,9 +49,16 @@
 //     z nazwami serii, czcionka 14) i mniejszy krzyzyk (26 px). Legenda ma
 //     wysokosc po zawartosci - 1 wiersz do 4-5 serii, wiecej tylko gdy trzeba.
 //     Wykres zaczyna sie 4 px pod legenda i konczy na y=299, podpisy osi
-//     czasu 302..319, padding wnetrza 4 px, etykiety osi Y 2 px od wykresu
-//     (nadal OBOK niego - v1.5.12), bez prawej osi wykres do krawedzi ekranu.
-//     Pole danych: z ok. 346x192 px na ok. 354x263 px (+88 %).
+//     czasu 302..319, padding gora/dol 4 px.
+//   - Wykres ZAWSZE na cala szerokosc ekranu (0..480; drugie zdjecie z
+//     zaznaczonymi pustymi pasami po bokach). Etykiety osi Y leza NA polu
+//     wykresu przy krawedziach (lewa os od x=10, prawa do x=470), na
+//     polprzezroczystym tle w kolorze wykresu (linia pod liczba jest
+//     przygaszona, liczba czytelna); skrajne etykiety trzymane wewnatrz
+//     pola. v1.5.12 wystawiala je obok wykresu, co kosztowalo 50-70 px z
+//     kazdej strony. Pole danych od marginesu obudowy (10 px) do 470 px,
+//     zeby najnowszy pomiar (prawa krawedz) nie chowal sie pod ramka.
+//     Pole danych: z ok. 346x192 px na ok. 460x263 px (x1,8).
 //   - Symulator: dotkniecie wykresu i sprawdzenia tytulu dostosowane
 //     (legenda zamiast tytulu); wszystkie scenariusze wykresy_* przechodza.
 // [2026-11-23] v1.5.14 - ZEWN: POGODA (NIE TYLKO DESZCZ) - UKLAD WYBRANY W PROJEKTANCIE

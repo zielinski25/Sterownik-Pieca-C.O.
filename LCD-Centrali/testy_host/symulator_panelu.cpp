@@ -3298,6 +3298,28 @@ std::vector<int> punktyPasaPompy() {
 // Etykiety liczbowe osi Y (tekst zaczyna sie cyfra albo minusem, bez ':') -
 // czy wszystkie leza POZA polem glownego wykresu (lewa os konczy sie przed
 // jego lewa krawedzia, prawa zaczyna za prawa).
+// [v1.5.15] Odwrotnie: czy wszystkie etykiety osi Y leza WEWNATRZ pola
+// wykresu (wykres na cala szerokosc, liczby na nim przy krawedziach) i nie
+// wchodza pod obudowe (x >= 10 i x <= 469).
+bool etykietyOsiNaWykresie(lv_obj_t* o, const lv_area_t& wykres, int* ile) {
+  if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return true;
+  if (lv_obj_check_type(o, &lv_label_class)) {
+    const char* t = lv_label_get_text(o);
+    if (t != nullptr && t[0] != '\0' && (isdigit((unsigned char)t[0]) || t[0] == '-') && strchr(t, ':') == nullptr && strchr(t, '.') != nullptr) {
+      lv_area_t a; lv_obj_get_coords(o, &a);
+      if (a.y2 < wykres.y1 || a.y1 > wykres.y2) return true;
+      (*ile)++;
+      const bool ok = a.x1 >= wykres.x1 + 10 && a.x2 <= wykres.x2 - 10 && a.y1 >= wykres.y1 && a.y2 <= wykres.y2;
+      if (!ok) info("etykieta \"%s\" x=%d..%d y=%d..%d poza polem wykresu x=%d..%d y=%d..%d (lub pod obudowa)", t, a.x1, a.x2, a.y1, a.y2, wykres.x1, wykres.x2, wykres.y1, wykres.y2);
+      return ok;
+    }
+    return true;
+  }
+  bool ok = true;
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) ok = etykietyOsiNaWykresie(lv_obj_get_child(o, (int32_t)i), wykres, ile) && ok;
+  return ok;
+}
 bool etykietyOsiPozaWykresem(lv_obj_t* o, const lv_area_t& wykres, int* ile) {
   if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return true;
   if (lv_obj_check_type(o, &lv_label_class)) {
@@ -3363,23 +3385,23 @@ void scenariuszWykresyPompaIOsie() {
     sprawdz(w.size() == 2 && pas.y1 > g.y1 && pas.y2 <= g.y2 && pas.x1 >= g.x1 && pas.x2 <= g.x2 && (pas.y2 - pas.y1 + 1) == 12,
             "pas pompy: 12 px wysokosci, wewnatrz pola wykresu przy jego dolnej krawedzi");
     int ile = 0;
-    const bool poza = etykietyOsiPozaWykresem(lv_scr_act(), g, &ile);
+    const bool na = etykietyOsiNaWykresie(lv_scr_act(), g, &ile);
     info("etykiet osi Y: %d", ile);
-    sprawdz(ile == 5 && poza && g.x1 >= 50, "5 etykiet lewej osi stoi OBOK wykresu (zadna nie lezy na polu wykresu), wykres zaczyna sie za nimi");
-    sprawdz(g.x2 == 479, "bez prawej osi wykres siega do prawej krawedzi ekranu (x=..479, v1.5.15)");
+    sprawdz(ile == 5 && na && g.x1 == 0, "5 etykiet lewej osi lezy NA polu wykresu przy lewej krawedzi, wykres od x=0 (v1.5.15)");
+    sprawdz(g.x2 == 479, "wykres siega do prawej krawedzi ekranu (x=..479, v1.5.15)");
   }
   zrzutEkranu("2_zewn_i_pompa");
 
-  printf("  dwie osie: etykiety po obu stronach poza wykresem:\n");
+  printf("  dwie osie: etykiety po obu stronach na wykresie:\n");
   sprawdz(dotknijWykresu() && kliknij("WILGOTNOŚĆ") && kliknij("POKAŻ WYKRES"), "dobrana WILGOTNOSC (prawa os)");
   biegnij(1000);
   {
     std::vector<lv_obj_t*> w; znajdzWykresy(lv_scr_act(), w);
     lv_area_t g{}; if (!w.empty()) lv_obj_get_coords(w[0], &g);
     int ile = 0;
-    const bool poza = etykietyOsiPozaWykresem(lv_scr_act(), g, &ile);
+    const bool na = etykietyOsiNaWykresie(lv_scr_act(), g, &ile);
     info("wykres x=%d..%d, etykiet osi: %d", g.x1, g.x2, ile);
-    sprawdz(ile == 10 && poza && g.x1 >= 50 && g.x2 <= 430, "10 etykiet (5+5) poza polem wykresu, wykres zwezony z obu stron");
+    sprawdz(ile == 10 && na && g.x1 == 0 && g.x2 == 479, "10 etykiet (5+5) na polu wykresu przy obu krawedziach, wykres na cala szerokosc 0..479 (v1.5.15)");
     sprawdz(ekranMa("Wybrano 3 z 8") == false && ekranMa("[Dzienny]") && !ekranMa("3 serii"), "legenda \"[Dzienny]\" (bez licznika \"3 serii\" - v1.5.15)");
   }
   zrzutEkranu("3_dwie_osie_i_pompa");
