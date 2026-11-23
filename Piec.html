@@ -5589,6 +5589,10 @@ body.mode-phone-frame #phone {
 
     // [v3.58.12 SUWAKI-SYM] Czy operator rusza suwakiem (patrz live$(wrap) niżej).
     const symEdycja = { wartosc: false, czas: false };
+    // [v3.58.13 SUWAK-PO-ACK] Co wysłano ostatnim „Zastosuj” i jaki odczyt sterownik
+    // pokazywał w chwili ACK. Dopóki odczyt się nie zmieni (albo przez 3 min),
+    // suwaki trzymają zadane parametry — status może jeszcze nieść stary odczyt.
+    const symZadana = { wartosc: NaN, przedtem: NaN, doMs: 0 };
     ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(ev => {
       inpVal.addEventListener(ev, () => { symEdycja.wartosc = true; }, { passive: true });
       inpTime.addEventListener(ev, () => { symEdycja.czas = true; }, { passive: true });
@@ -5617,6 +5621,13 @@ body.mode-phone-frame #phone {
       const m = parseInt(inpTime.value) || 60;
       const confirmed = await sendCommand('symuluj ' + pole + ' ' + v + ' ' + m);
       symEdycja.wartosc = false; symEdycja.czas = false;   // [v3.58.12] od teraz suwaki znów pokazują stan sterownika
+      // [v3.58.13 SUWAK-PO-ACK] Sterownik potwierdził, ale jego status mógł jeszcze
+      // nieść STARY odczyt (starsze firmware przepisuje wartość symulacji do odczytu
+      // dopiero przy kolejnym odczycie czujnika: bojler/panel co 60 s, zewn/pokój
+      // co 120 s). Suwaki trzymają zadane parametry, aż odczyt się zmieni.
+      symZadana.wartosc = confirmed ? +v : NaN;
+      symZadana.przedtem = confirmed ? val(pole, key) : NaN;
+      symZadana.doMs = confirmed ? Date.now() + 180000 : 0;
       if (confirmed) {
         symPokaz(true);
         info.textContent = symAktywna(pole)
@@ -5633,6 +5644,7 @@ body.mode-phone-frame #phone {
     btnStop.onclick = async () => {
       const confirmed = await sendCommand('symuluj_stop ' + pole);
       symEdycja.wartosc = false; symEdycja.czas = false;   // [v3.58.12]
+      symZadana.doMs = 0;                                  // [v3.58.13]
       if (confirmed) {
         const stillActive = symAktywna(pole);
         symPokaz(true);
@@ -5683,14 +5695,20 @@ body.mode-phone-frame #phone {
       // Sam document.activeElement nie wystarczał: na telefonie <input type=range>
       // nie dostaje fokusu po dotknięciu, więc refreshSheet() co 1 s cofał suwak
       // do bieżącej wartości symulacji, zanim dało się nacisnąć Zastosuj.
-      if (!symAktywna(pole)) { symEdycja.wartosc = false; symEdycja.czas = false; return; }
+      if (!symAktywna(pole)) { symEdycja.wartosc = false; symEdycja.czas = false; symZadana.doMs = 0; return; }
       const current = val(pole, key);
-      if (Number.isFinite(current) && !symEdycja.wartosc && document.activeElement !== inpVal) {
+      // [v3.58.13 SUWAK-PO-ACK] Sterownik pokazuje już zadaną wartość, odczyt zmienił
+      // się od chwili ACK (ktoś ustawił inną, np. z Telegrama) albo minęły 3 min
+      // → suwaki znów podążają za sterownikiem.
+      if (symZadana.doMs && (Date.now() > symZadana.doMs || (Number.isFinite(current) &&
+          (Math.abs(current - symZadana.wartosc) < 0.06 || current !== symZadana.przedtem)))) symZadana.doMs = 0;
+      const poAckTrzymaj = symZadana.doMs > 0;
+      if (Number.isFinite(current) && !symEdycja.wartosc && !poAckTrzymaj && document.activeElement !== inpVal) {
         inpVal.value = Math.max(simMin, Math.min(simMax, current));
         txtVal.textContent = f(+inpVal.value) + ' ' + jednostka;
       }
       const remaining = Number(S.sym[pole]?.min);
-      if (Number.isFinite(remaining) && !symEdycja.czas && document.activeElement !== inpTime) {
+      if (Number.isFinite(remaining) && !symEdycja.czas && !poAckTrzymaj && document.activeElement !== inpTime) {
         inpTime.value = Math.max(5, Math.min(180, remaining));
         txtTime.textContent = inpTime.value + ' min';
       }

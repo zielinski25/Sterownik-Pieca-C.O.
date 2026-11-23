@@ -1,0 +1,91 @@
+FIRMWARE CENTRALI 3.58.13 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN (platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.12 + "symulacja widoczna od razu". Patch wzgledem 3.58.12:
+10 hunkow, +88/-4: jedna nowa funkcja C++ (9 linii) + 2 wywolania po jednej
+linii + JavaScript strony (symulacjaSekcjaHtml()) + naglowek, historia, wersja.
+
+
+PO CO (zgloszenie z 23.11, po 3.58.12: "zdaze przesunac i nacisnac, ale
+wartosc wraca suwakiem po nacisnieciu do tego, co bylo")
+----------------------------------------------------------------------
+Komenda "symuluj" ustawiala tylko WARTOSC SYMULOWANA i flage. Do zmiennej
+ODCZYTU (ta, ktora widac w statusie, na kafelku, LCD, w Telegramie) wartosc
+trafiala dopiero przy kolejnym odczycie czujnika z harmonogramu:
+bojler/panel co 60 s, zewn/pokoj co 120 s. Po potwierdzeniu (ACK) panel
+czytal status: "symulacja aktywna" + STARA temperatura -> 3.58.12 zwalnialo
+blokade suwaka i ustawialo go na stara wartosc; po 1-2 min suwak i kafelek
+skakaly na zadana.
+
+3.58.13:
+ 1. C++: start symulacji (komenda "symuluj" z panelu/aplikacji/Firebase/LAN
+    oraz stara strona /api/symulacja-czujnik) od razu przepisuje wartosc do
+    zmiennej odczytu. Status, kafelki, LCD, Telegram i telemetria widza
+    symulacje natychmiast. Kolejny odczyt czujnika zwroci te sama wartosc
+    (przy aktywnej symulacji odczytajTemperature() zwraca wartosc symulowana
+    bez dotykania filtra) - zadna logika regulacji/alarmow sie nie zmienia.
+ 2. JS: po potwierdzonym "Zastosuj" suwaki trzymaja zadane parametry, dopoki
+    sterownik nie pokaze zadanej wartosci albo odczyt sie nie zmieni (np.
+    z Telegrama) - najwyzej 3 min. To zabezpieczenie dla Piec.html otwartego
+    przez Firebase do starszego firmware. "Wylacz teraz" zdejmuje blokade.
+ 3. "Czas trwania" odlicza bez przerwy (blokada zwalnia sie od razu, gdy
+    status pokazuje zadana wartosc - czyli na 3.58.13 natychmiast po ACK).
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.13"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od 9118629e):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.12-do-v3.58.13.patch, -p1 z katalogu projektu (plik src\main_centrala.cpp),
+na plik 3.58.12 (SHA fe6f0b20...). Wynik musi miec SHA 9118629e... - inaczej
+wgraj caly plik z src\.
+Jesli na plytce jest 3.57.12 / 3.58.10 / 3.58.11: wgraj caly plik z src\
+(zawiera wszystko od 3.58.0 do 3.58.12).
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+Sprawdz, ze platformio.ini jest od CENTRALI:
+    Select-String '^\[env:' platformio.ini      -> esp32-s3-n16r8 (NIE esp32dev)
+PlatformIO -> Build, potem Upload   (pio run -e esp32-s3-n16r8   i   -t upload)
+Spodziewane: 0 ostrzezen, Flash +ok. 1,2 kB, RAM bez zmian.
+Jesli blad: skopiuj linie z "error:" i przyslij; przywroc kopie zapasowa.
+Zmienione miejsca z numerami linii: WYNIKI\zakres-zmian.txt.
+
+Release na GitHub: FIRMWARE_VERSION = "v3.58.13" -> Build -> Release z tagiem
+3.58.13 (OTA z 3.58.12 przejdzie, 3.58.13 > 3.58.12).
+
+
+KROK 3 - SPRAWDZENIE (telefon/PC -> http://192.168.100.151 -> Bojler C.W.U.)
+----------------------------------------------------------------------------
+0. http://192.168.100.151/api/lan/status - na koncu "fw":"v3.58.13".
+   Odswiez strone panelu (Ctrl+F5 / przytrzymaj odswiezanie na telefonie).
+1. Po Upload na Telegram: "Centrala wystartowala: v3.58.13".
+2. Symulacja -> Wartosc 80,0 / 60 min -> Zastosuj.
+   Suwak ma ZOSTAC na 80,0 (dotad wracal do starej wartosci), kafelek BOJLER
+   od razu 80,0 C (dotad po ok. minucie), "Czas trwania" odlicza od 60.
+3. Przesun suwak na 45,0 -> Zastosuj -> suwak 45,0, kafelek 45,0 od razu.
+4. Z Telegrama / aplikacji ustaw inna wartosc -> suwak (nieruszany) ja pokaze.
+5. "Wylacz teraz" -> symulacja znika; prawdziwy odczyt wroci przy nastepnym
+   odczycie czujnika (bojler do 60 s) - to bez zmian.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa (3.58.12).
+
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\)
+----------------------------------
+- testy-pc.txt: funkcja symulacjaSekcjaHtml() z HTML w tym pliku w jsdom
+  (18 sprawdzen, w tym "status niesie stary odczyt po ACK -> suwak zostaje");
+  kontrolnie 3.58.12 - 1 BLAD (wada odtworzona); to samo na Piec.html;
+  symulacjaUstawOdczytOdRazu() wycieta z pliku i skompilowana g++ -Werror
+  (11 sprawdzen: kazde pole -> tylko swoja zmienna); plik = 3.58.12 + patch
+  (ta sama suma SHA); node --check obu blokow <script>; DYM-SYM 21/21.
+- Caly plik NIE byl kompilowany w PlatformIO (brak toolchainu ESP32 tutaj).
