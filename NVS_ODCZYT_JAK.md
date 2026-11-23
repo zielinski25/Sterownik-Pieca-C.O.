@@ -378,6 +378,38 @@ python narzedzia/nvs_odczyt.py --autotest
   Jeśli masz zainstalowane `esp-idf-nvs-partition-gen`, dochodzi 6 przypadków
   pełnego koła: CSV z odczytu → generator Espressif → nasz czytnik (50/50).
 
+### 4.1 Podglądarka graficzna — `narzedzia/nvs_podglad.html`
+
+Jeśli wolisz klikać niż czytać tekst: **jeden plik HTML, bez instalowania
+i bez internetu.** Otwórz go w przeglądarce (dwuklik) i przeciągnij zrzut
+`nvs.bin` na okno. Nic nie jest nigdzie wysyłane — plik jest czytany lokalnie
+w przeglądarce.
+
+Co pokazuje:
+
+| Zakładka | Co tam jest |
+| --- | --- |
+| **Ustawienia** | przestrzenie i klucze, z **opisem po polsku** dla kluczy tego projektu („Strategia pompy: 1 = cykl czasowy, 2 = cykl temperaturowy”), wyszukiwarka, przycisk „maskuj sekrety” (domyślnie włączony) |
+| **Strony** | każda strona 4096 B jako siatka 126 wpisów: zielony = zapisany, czerwony = usunięty, żółty = błąd zapisu, niebieska ramka = wpis zajęty przez dłuższą wartość; do tego numer sekwencyjny, wersja formatu i stan CRC |
+| **Ostrzeżenia** | te same ostrzeżenia co w wersji tekstowej (złe CRC, chunki bez indeksu, klucze bez przestrzeni, klucze > 15 znaków) |
+| **Tablica partycji** | gdy wczytasz zrzut całego flashu albo plik z 0x8000 — układ pamięci i gotowe polecenie zrzutu NVS |
+
+Detale, które oszczędzają czas:
+
+- **przyjmuje wszystko**: zrzut partycji NVS, cały zrzut flashu (samo znajdzie
+  partycję NVS) i sam plik tablicy partycji (0x8000, 0xC00) — wtedy od razu
+  powie, pod jakim offsetem jest NVS na tej płytce,
+- **„Pokaż na przykładzie”** — wbudowany, sztuczny zrzut
+  (`narzedzia/nvs_demo.bin`, dane zmyślone), żeby zobaczyć interfejs bez
+  podłączania pieca,
+- **„Zapisz JSON”** — eksport do pliku (działa też z `file://`, gdzie
+  schowek bywa zablokowany).
+
+Ta sama logika parsowania co w `nvs_odczyt.py` (CRC, wpisy, bloby, strony) —
+sprawdzone: na pięciu obrazach (w tym wygenerowanych przez Espressif)
+**124 klucze zgodne co do wartości**, a obrazy z błędami dają te same
+ostrzeżenia. Wersja tekstowa zostaje do skryptów i do `--csv`.
+
 Format, który czyta, jest opisany w nagłówku pliku wraz ze źródłami
 (ESP-IDF `nvs_flash`: `nvs_page.hpp/cpp`, `nvs_types.hpp/cpp`,
 `nvs_storage.cpp`, `compressed_enum_table.hpp`). Zgodność sprawdzona na

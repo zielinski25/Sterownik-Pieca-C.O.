@@ -421,8 +421,14 @@ def sekret(klucz):
     return any(w in k for w in WZORCE_SEKRETOW)
 
 
-def odmiana(ile, jeden, kilka, wiele):
+def odmiana(ile, jeden, kilka, wiele, forma_skrocona=False):
     """Polska odmiana: 1 strona / 2-4 strony / 5 stron (z wyjatkiem 12-14)."""
+    if forma_skrocona:
+        # w podsumowaniu "wpisy: 41 zapisanych" - samo slowo, bez liczby
+        if ile == 1:
+            return jeden
+        reszta = ile % 10
+        return kilka if (2 <= reszta <= 4 and not 12 <= ile % 100 <= 14) else wiele
     if ile == 1:
         return '%d %s' % (ile, jeden)
     reszta = ile % 10
@@ -451,9 +457,10 @@ def tekst_wartosci(w, maskuj):
 def wypisz_tekst(p, maskuj, pokaz_usuniete):
     print('NVS: %s' % (p.opis or '(plik)'))
     zapisane, usuniete = p.ile_wpisow()
-    print('%d B = %s po %d B; wpisy: %d zapisanych, %d usunietych'
-          % (len(p.raw), odmiana(len(p.strony), 'strona', 'strony', 'stron'),
-             PAGE_SIZE, zapisane, usuniete))
+    print('%d B = %s po %d B; wpisy: %d %s, %d %s'
+          % (len(p.raw), odmiana(len(p.strony), 'strona', 'strony', 'stron'), PAGE_SIZE,
+             zapisane, odmiana(zapisane, 'zapisany', 'zapisane', 'zapisanych', True),
+             usuniete, odmiana(usuniete, 'usuniety', 'usuniete', 'usunietych', True)))
     if p.ile_blobowych():
         print('(w tym %d wpisow blobow: naglowki danych i indeksy - zlozone w klucze nizej)'
               % p.ile_blobowych())

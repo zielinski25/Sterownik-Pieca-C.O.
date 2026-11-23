@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NVS – podglądarka zrzutu (Sterownik Pieca C.O.)</title>
+<!--
+  ============================================================================
+  Podgladarka partycji NVS - jeden plik, bez instalowania, bez internetu.
+  Otworz ten plik w przegladarce i przeciagnij na niego zrzut z esptool:
+      python -m esptool --port COM16 read-flash 0x9000 0x5000 nvs.bin
+  Wersja tekstowa (ta sama logika): narzedzia/nvs_odczyt.py
+  Opis: NVS_ODCZYT_JAK.md
+  ============================================================================
+  Plik czyta zrzut LOKALNIE, w przegladarce - nic nie jest nigdzie wysylane.
+  ============================================================================
+-->
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a21; --panel2:#1c2230; --line:#252c3a;
+    --txt:#e6e9ef; --dim:#9aa4b2; --dim2:#6b7684;
+    --acc:#5aa9ff; --ok:#3ecf8e; --warn:#f5a623; --err:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 var(--sans)}
+  header{display:flex;align-items:center;gap:14px;padding:14px 20px;
+    border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
+  header .sub{color:var(--dim);font-size:12px}
+  .spacer{flex:1}
+  button{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);
+    border-radius:8px;padding:7px 12px;cursor:pointer}
+  button:hover{border-color:#3a465c;background:#222a39}
+  button.primary{background:#1d4ed8;border-color:#1d4ed8}
+  button.primary:hover{background:#2559e8}
+  input[type=search]{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);
+    border-radius:8px;padding:7px 11px;min-width:230px}
+  label.toggle{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:13px;cursor:pointer;user-select:none}
+  main{padding:20px;max-width:1280px;margin:0 auto}
+
+  /* ekran startowy */
+  #start{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+    min-height:62vh;text-align:center}
+  #drop{border:2px dashed #2c3648;border-radius:16px;padding:44px 52px;background:#121620;
+    transition:.15s;cursor:pointer;max-width:640px}
+  #drop.hover{border-color:var(--acc);background:#141b29;transform:scale(1.01)}
+  #drop .big{font-size:17px;font-weight:600;margin-bottom:6px}
+  #drop .hint{color:var(--dim);font-size:13px}
+  #drop code{font-family:var(--mono);font-size:12px;color:#c7d2e2;background:#0d1117;
+    padding:2px 6px;border-radius:5px;display:inline-block;margin-top:8px}
+  .przyklad{color:var(--dim2);font-size:12px;margin-top:10px}
+
+  /* podsumowanie */
+  .karty{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .karta{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .karta .lbl{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+  .karta .val{font-size:20px;font-weight:600;margin-top:3px}
+  .karta .val small{font-size:12px;color:var(--dim);font-weight:400}
+  .karta.uwaga .val{color:var(--warn)}
+  .karta.blad .val{color:var(--err)}
+
+  /* zakladki */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap}
+  .tabs button{background:none;border:none;border-bottom:2px solid transparent;border-radius:0;
+    color:var(--dim);padding:9px 13px}
+  .tabs button.on{color:var(--txt);border-bottom-color:var(--acc)}
+  .tabs button:hover{color:var(--txt);background:none}
+  .tabs .badge{display:inline-block;margin-left:6px;background:#2a3242;border-radius:9px;
+    padding:0 6px;font-size:11px;color:var(--dim)}
+
+  /* przestrzenie */
+  .ns{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
+  .ns > .head{display:flex;align-items:baseline;gap:10px;padding:12px 16px;background:#141922;
+    border-bottom:1px solid var(--line);cursor:pointer}
+  .ns > .head .nazwa{font-family:var(--mono);font-size:15px;font-weight:600;color:#cfe3ff}
+  .ns > .head .opis{color:var(--dim);font-size:12.5px}
+  .ns > .head .ile{margin-left:auto;color:var(--dim2);font-size:12px}
+  table{width:100%;border-collapse:collapse}
+  td{padding:8px 16px;border-bottom:1px solid #1d232e;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#12171f}
+  td.k{font-family:var(--mono);width:190px;color:#e8eefc;white-space:nowrap}
+  td.t{width:86px}
+  td.v{font-family:var(--mono);word-break:break-word}
+  td.d{color:var(--dim);font-size:12.5px;width:40%}
+  .tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;
+    background:#20283a;color:#9fb3d1;border:1px solid #2b3547}
+  .tag.num{color:#a9d5a0;border-color:#2e4030;background:#1a2419}
+  .tag.txt{color:#e2c795;border-color:#43382a;background:#241f18}
+  .tag.blob{color:#c9a7f0;border-color:#3a2f4d;background:#221a2c}
+  .uw{color:var(--warn)}
+  .ok{color:var(--ok)}
+  .pusty{color:var(--dim2);font-style:italic}
+  .zmask{color:var(--warn);font-family:var(--mono)}
+
+  /* strony */
+  .strona{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:12px}
+  .strona .h{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px}
+  .strona .nr{font-family:var(--mono);font-weight:600;color:#cfe3ff}
+  .grid{display:grid;grid-template-columns:repeat(18,1fr);gap:3px;max-width:560px}
+  .cell{aspect-ratio:1;border-radius:3px;background:#1a2028;border:1px solid #232a36}
+  .cell.w{background:#2f6f4f;border-color:#3b8a63}      /* zapisany */
+  .cell.d{background:#4a2b2b;border-color:#61383a}      /* usuniety */
+  .cell.b{background:#5a4a18;border-color:#7a6420}      /* blad zapisu */
+  .cell.s{outline:2px solid #5aa9ff;outline-offset:-2px} /* czesc dluzszego wpisu */
+  .legenda{display:flex;gap:16px;color:var(--dim);font-size:12px;margin:8px 0 14px;flex-wrap:wrap}
+  .legenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+  /* ostrzezenia */
+  .ostrzezenie{background:#241d12;border:1px solid #4a3a1a;border-radius:10px;padding:11px 14px;
+    margin-bottom:9px;color:#f0d9ae;font-size:13.5px}
+  .ostrzezenie.blad{background:#261416;border-color:#5a2226;color:#ffc9c9}
+
+  footer{color:var(--dim2);font-size:12px;text-align:center;padding:26px 20px 40px}
+  footer a{color:var(--dim)}
+  .ukryj{display:none !important}
+  @media print{body{background:#fff;color:#000} header,.tabs,#start,footer{display:none}}
+</style>
+
+<header>
+  <h1>NVS – podglądarka zrzutu</h1>
+  <span class="sub">Sterownik Pieca C.O. · centrala v3.58.10 / panel LCD</span>
+  <span class="spacer"></span>
+  <input type="search" id="szukaj" placeholder="szukaj klucza, wartości, przestrzeni…" class="ukryj">
+  <label class="toggle ukryj" id="lab-maskuj" title="Ukrywa hasła, tokeny i klucze API">
+    <input type="checkbox" id="maskuj" checked> maskuj sekrety
+  </label>
+  <button id="wybierz" class="primary">Wczytaj plik…</button>
+  <button id="json" class="ukryj">Zapisz JSON</button>
+  <input type="file" id="plik" accept=".bin,application/octet-stream" class="ukryj">
+</header>
+
+<main>
+  <section id="start">
+    <div id="drop">
+      <div class="big">Przeciągnij tu plik <code>nvs.bin</code></div>
+      <div class="hint">albo kliknij, żeby wybrać. Można też wrzucić cały zrzut flashu –<br>
+        podglądarka sama znajdzie w nim partycję NVS.</div>
+      <div class="przyklad">Skąd plik: <code>python -m esptool --port COM16 read-flash 0x9000 0x5000 nvs.bin</code></div>
+    </div>
+    <button id="przyklad">Pokaż na przykładzie</button>
+    <div class="hint" style="color:var(--dim2);font-size:12.5px;max-width:620px">
+      Wszystko dzieje się w Twojej przeglądarce – plik nigdzie nie jest wysyłany.
+      Jeśli nie wiesz, pod jakim adresem leży NVS: wrzuć zrzut całego flashu
+      albo plik z tablicą partycji (<code style="font-family:var(--mono)">read-flash 0x8000 0xC00 tablica.bin</code>).
+    </div>
+  </section>
+
+  <section id="widok" class="ukryj">
+    <div class="karty" id="karty"></div>
+    <div class="tabs" id="tabs">
+      <button data-tab="dane" class="on">Ustawienia</button>
+      <button data-tab="strony">Strony <span class="badge" id="b-strony">0</span></button>
+      <button data-tab="ostrzezenia">Ostrzeżenia <span class="badge" id="b-ostrzezenia">0</span></button>
+      <button data-tab="tablica" class="ukryj" id="t-tablica">Tablica partycji</button>
+    </div>
+    <div id="tab-dane"></div>
+    <div id="tab-strony" class="ukryj"></div>
+    <div id="tab-ostrzezenia" class="ukryj"></div>
+    <div id="tab-tablica" class="ukryj"></div>
+  </section>
+</main>
+
+<footer>
+  Format NVS: ESP-IDF <span style="font-family:var(--mono)">nvs_flash</span> (strona 4096 B, wpis 32 B, CRC
+  <span style="font-family:var(--mono)">esp_rom_crc32_le</span>).
+  Wersja tekstowa: <span style="font-family:var(--mono)">narzedzia/nvs_odczyt.py</span> ·
+  opis: <span style="font-family:var(--mono)">NVS_ODCZYT_JAK.md</span>
+</footer>
+
+<script>
+// ===================== CORE START (logika parsowania; testowana w node) =====================
+"use strict";
+
+var PAGE_SIZE = 4096, ENTRY_SIZE = 32, ENTRY_COUNT = 126;
+var HEADER_SIZE = 32, ENTRY_TABLE_OFF = 32, ENTRY_DATA_OFF = 64;
+var STAN_PUSTA = 0xFFFFFFFF;
+var STANY_STRONY = {0xFFFFFFFE:'aktywna', 0xFFFFFFFC:'pełna', 0xFFFFFFF8:'przepisywanie', 0xFFFFFFFF:'pusta'};
+var TYPY = {0x01:'u8',0x11:'i8',0x02:'u16',0x12:'i16',0x04:'u32',0x14:'i32',
+            0x08:'u64',0x18:'i64',0x21:'string',0x41:'blob',0x42:'blob_data',0x48:'blob_index'};
+var LICZBY = {0x01:['u8',1,false],0x11:['i8',1,true],0x02:['u16',2,false],0x12:['i16',2,true],
+              0x04:['u32',4,false],0x14:['i32',4,true],0x08:['u64',8,false],0x18:['i64',8,true]};
+var T_U8=0x01, T_STR=0x21, T_BLOB=0x41, T_BLOB_DATA=0x42, T_BLOB_IDX=0x48;
+var MAX_KLUCZ=15, MAX_PRZESTRZEN=15;
+var WZORCE_SEKRETOW=['pass','pswd','token','api_key','auth_pass','secret','haslo','chatid'];
+
+// --- CRC32 dokladnie jak esp_rom_crc32_le(0xFFFFFFFF, ...) -----------------
+var _tab = (function(){
+  var t = new Int32Array(256);
+  for (var n=0;n<256;n++){
+    var c=n;
+    for (var k=0;k<8;k++) c = (c & 1) ? (0xEDB88320 ^ (c>>>1)) : (c>>>1);
+    t[n]=c;
+  }
+  return t;
+})();
+function crc32Nvs(b, pocz, kon){
+  // Odpowiednik zlib.crc32(dane, 0xFFFFFFFF) z nvs_odczyt.py, czyli
+  // esp_rom_crc32_le(0xFFFFFFFF, dane): ROM neguje wejscie I wyjscie, wiec
+  // rejestr startuje od ~0xFFFFFFFF = 0, a wynik jest na koncu negowany.
+  if (pocz === undefined) pocz = 0;
+  if (kon === undefined) kon = b.length;
+  var crc = 0;
+  for (var i=pocz;i<kon;i++) crc = _tab[(crc ^ b[i]) & 0xFF] ^ (crc>>>8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// --- pomocnicze ------------------------------------------------------------
+function dv(bytes){ return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength); }
+function u32(bytes, off){ return dv(bytes).getUint32(off, true); }
+function u16(bytes, off){ return dv(bytes).getUint16(off, true); }
+
+function decodeUtf8(b){
+  try { return new TextDecoder('utf-8', {fatal:false}).decode(b); }
+  catch(e){ return Array.prototype.map.call(b, function(x){return String.fromCharCode(x);}).join(''); }
+}
+function hex(b, max){
+  var s = Array.prototype.map.call(b.slice(0, max||b.length), function(x){
+    return ('0'+x.toString(16)).slice(-2);
+  }).join('');
+  return (max && b.length>max) ? s+'…' : s;
+}
+function czyDrukowalne(b){
+  if (!b.length) return true;
+  var ok=0;
+  for (var i=0;i<b.length;i++){
+    var c=b[i];
+    if ((c>=32 && c<127) || c===9 || c===10 || c===13) ok++;
+  }
+  return ok/b.length > 0.92;
+}
+function odmiana(ile, jeden, kilka, wiele){
+  if (ile===1) return ile+' '+jeden;
+  var r = ile % 10;
+  if (r>=2 && r<=4 && !(ile%100>=12 && ile%100<=14)) return ile+' '+kilka;
+  return ile+' '+wiele;
+}
+
+// --- tablica partycji ESP-IDF ---------------------------------------------
+var TYP_APP=0, TYP_DANYCH=1, PODTYP_DATA_NVS=0x02;
+var PODTYPY_DANYCH={0x00:'ota (wybór partycji)',0x01:'phy',0x02:'NVS',0x03:'coredump',
+  0x04:'nvs_keys',0x05:'efuse',0x06:'undefined',0x80:'esphttpd',0x81:'fat',0x82:'spiffs',0x83:'littlefs'};
+function nazwaPodtypu(typ, podtyp){
+  if (typ===TYP_APP){
+    if (podtyp>=0x10 && podtyp<=0x1F) return 'ota_'+(podtyp-0x10);
+    return podtyp===0 ? 'fabryczna' : (podtyp===0x20 ? 'test' : 'app 0x'+podtyp.toString(16));
+  }
+  return PODTYPY_DANYCH[podtyp] || ('dane 0x'+podtyp.toString(16));
+}
+function parsujTablice(bytes, offset){
+  offset = offset === undefined ? 0x8000 : offset;
+  if (bytes.length < offset + 32) return null;
+  var out = [];
+  for (var i=offset; i+31 < bytes.length; i+=32){
+    var typ=bytes[i+2], podtyp=bytes[i+3];
+    if (bytes[i]===0xFF && bytes[i+1]===0xFF) break;
+    if (bytes[i]!==0xAA || bytes[i+1]!==0x50){
+      if (bytes[i]===0xEB && bytes[i+1]===0xEB) break;
+      if (!out.length) return null;
+      break;
+    }
+    var lab = bytes.subarray(i+12, i+28);
+    var kon = 0; while (kon<lab.length && lab[kon]!==0) kon++;
+    out.push({typ:typ, podtyp:podtyp, offset:u32(bytes,i+4), rozmiar:u32(bytes,i+8),
+              etykieta:decodeUtf8(lab.subarray(0,kon)), flagi:u32(bytes,i+28),
+              nazwaPodtypu:nazwaPodtypu(typ,podtyp)});
+  }
+  return out.length ? out : null;
+}
+function znajdzNvsWTablicy(tab){
+  if (!tab) return null;
+  for (var i=0;i<tab.length;i++) if (tab[i].typ===TYP_DANYCH && tab[i].podtyp===PODTYP_DATA_NVS) return tab[i];
+  return null;
+}
+
+// --- parsowanie partycji --------------------------------------------------
+function parsujPartycje(bytes, opis, toleruj){
+  if (bytes.length % PAGE_SIZE !== 0)
+    throw new Error('rozmiar '+bytes.length+' B nie jest wielokrotnością strony 4096 B – '+
+                    'to nie jest sama partycja NVS (podaj cały zrzut flashu)');
+  var stron = bytes.length / PAGE_SIZE;
+  var p = {opis:opis||'', rozmiar:bytes.length, strony:[], wpisy:[], usuniete:[],
+           przestrzenie:{}, przestrzenieOdwrotnie:{}, dane:{}, ostrzezenia:[]};
+
+  for (var n=0;n<stron;++n){
+    var off = n*PAGE_SIZE;
+    var s = {numer:n, off:off, stan:u32(bytes,off), sekwencja:u32(bytes,off+4),
+             wersja:bytes[off+8], stany:[], crcOk:false, crcZapisane:u32(bytes,off+28)};
+    s.crcOk = crc32Nvs(bytes, off+4, off+28) === s.crcZapisane;
+    s.nazwaStanu = STANY_STRONY[s.stan] || ('uszkodzona (0x'+s.stan.toString(16)+')');
+    s.doOdczytu = (s.stan===0xFFFFFFFE || s.stan===0xFFFFFFFC || s.stan===0xFFFFFFF8) && s.crcOk;
+    for (var i=0;i<ENTRY_COUNT;i++){
+      var slowo = u32(bytes, off+ENTRY_TABLE_OFF+4*Math.floor(i/16));
+      s.stany.push((slowo >>> ((i%16)*2)) & 3);
+    }
+    p.strony.push(s);
+  }
+  if (!p.strony.some(function(s){ return s.doOdczytu; })){
+    if (!toleruj)
+      throw new Error('w tym miejscu nie ma żadnej poprawnej strony NVS – zły offset '+
+                      'albo to nie jest partycja NVS');
+    // tryb "z oporem": pokazujemy strony i ich stan, zeby bylo widac, co jest zle
+    p.ostrzezenia.push('ŻADNA strona tej partycji nie jest czytelna – poniżej widać stan ' +
+                       'każdej strony i wpisów, ale NVS nie odczytałby z tego nic. ' +
+                       'Najczęściej to zrzut zrobiony w trakcie pracy urządzenia albo zły offset.');
+  }
+
+  function wpis(s, indeks){
+    var stan = s.stany[indeks];
+    if (stan === 3) return null;
+    var start = s.off + ENTRY_DATA_OFF + indeks*ENTRY_SIZE;
+    if (start + ENTRY_SIZE > bytes.length) return null;
+    var raw = bytes.subarray(start, start+ENTRY_SIZE);
+    var crcZap = u32(raw,4);
+    // CRC wpisu liczone z [0:4] + [8:32]
+    var tmp = new Uint8Array(28);
+    tmp.set(raw.subarray(0,4),0); tmp.set(raw.subarray(8,32),4);
+    var crcOk = crc32Nvs(tmp,0,28) === crcZap;
+    var kl = raw.subarray(8,24), kkon=0;
+    while (kkon<kl.length && kl[kkon]!==0) kkon++;
+    var kb = kl.subarray(0,kkon);
+    var klucz='';
+    if (kb.length){
+      var ascii = true;
+      for (var j=0;j<kb.length;j++) if (kb[j]<32 || kb[j]>=127){ ascii=false; break; }
+      klucz = ascii ? decodeUtf8(kb) : '(hex: '+hex(kb)+')';
+    }
+    return {strona:s.numer, indeks:indeks, stan:stan,
+            zapisany:stan===2, ns:raw[0], typ:raw[1], typNazwa:TYPY[raw[1]]||('0x'+raw[1].toString(16)),
+            span:raw[2], chunk:raw[3], crcOk:crcOk, klucz:klucz,
+            dane:raw.subarray(24,32), raw:raw, payload:new Uint8Array(0)};
+  }
+
+  for (var si=0; si<p.strony.length; si++){
+    var st = p.strony[si];
+    if (st.stan === STAN_PUSTA){
+      var reszta = bytes.subarray(st.off+HEADER_SIZE, st.off+PAGE_SIZE);
+      var same = true;
+      for (var q=0;q<reszta.length;q++) if (reszta[q]!==0xFF){ same=false; break; }
+      if (!same) p.ostrzezenia.push('strona '+st.numer+': nagłówek pusty, a dane nie – NVS pominie tę stronę');
+      continue;
+    }
+    if (!st.crcOk){
+      p.ostrzezenia.push('strona '+st.numer+': złe CRC nagłówka – NVS pominie całą stronę');
+      continue;
+    }
+    if (st.wersja!==0xFE && st.wersja!==0xFF)
+      p.ostrzezenia.push('strona '+st.numer+': nieznana wersja formatu 0x'+st.wersja.toString(16));
+    if (!st.doOdczytu) continue;
+    var i2=0;
+    while (i2 < ENTRY_COUNT){
+      var w = wpis(st, i2);
+      if (w === null){ i2++; continue; }
+      var span = (w.span===0 || w.span===0xFF) ? 1 : w.span;
+      if (!w.crcOk){
+        if (w.zapisany) p.ostrzezenia.push('strona '+st.numer+' wpis '+i2+': złe CRC wpisu (klucz "'+
+                                           w.klucz+'") – NVS go pomija');
+        i2 += span; continue;
+      }
+      var pocz = st.off + ENTRY_DATA_OFF + (i2+1)*ENTRY_SIZE;
+      var ile = Math.max(0, span-1)*ENTRY_SIZE;
+      w.payload = bytes.subarray(pocz, Math.min(pocz+ile, bytes.length));
+      if (w.zapisany) p.wpisy.push(w); else p.usuniete.push(w);
+      i2 += span;
+    }
+  }
+
+  // przestrzenie nazw: wpis w ns 0, typ u8, wartosc = indeks przestrzeni
+  p.wpisy.forEach(function(w){
+    if (w.ns===0 && w.typ===T_U8){ p.przestrzenie[w.dane[0]] = w.klucz; p.przestrzenieOdwrotnie[w.klucz]=w.dane[0]; }
+  });
+  p.usuniete.forEach(function(w){
+    if (w.ns===0 && w.typ===T_U8 && w.klucz) p.ostrzezenia.push('usunięta przestrzeń "'+w.klucz+'" (wpis usunięty, ale w pamięci)');
+  });
+
+  function wartosc(w){
+    var d = w.dane, out = {typ:w.typNazwa, strona:w.strona, indeks:w.indeks, span:w.span};
+    if (LICZBY[w.typ]){
+      var info = LICZBY[w.typ], rozmiar = info[1], znak = info[2], val;
+      if (rozmiar === 8){
+        var lo = dv(d).getUint32(0,true), hi = dv(d).getUint32(4,true);
+        var big = (BigInt(hi)<<32n) | BigInt(lo);
+        if (znak && (hi & 0x80000000)) big -= (1n<<64n);
+        val = (big <= BigInt(Number.MAX_SAFE_INTEGER) && big >= -BigInt(Number.MAX_SAFE_INTEGER))
+              ? Number(big) : big.toString();
+      } else if (rozmiar===4) val = znak ? dv(d).getInt32(0,true) : dv(d).getUint32(0,true);
+      else if (rozmiar===2) val = znak ? dv(d).getInt16(0,true) : dv(d).getUint16(0,true);
+      else val = znak ? dv(d).getInt8(0) : dv(d).getUint8(0);
+      out.wartosc = val; out.typ = info[0]; out.rozmiar = rozmiar;
+      return out;
+    }
+    if (w.typ===T_STR || w.typ===T_BLOB){
+      // varLength: dataSize u16@0, reserved u16@2, dataCrc32 u32@4
+      var size = u16(d,0), crcDanych = u32(d,4);
+      var payload = new Uint8Array(size);
+      var ileKopiuj = Math.min(size, w.payload.length);
+      payload.set(w.payload.subarray(0, ileKopiuj), 0);
+      if (ileKopiuj < size) payload.fill(0xFF, ileKopiuj);
+      out.rozmiar = size;
+      out.crcDanychOk = (crc32Nvs(payload,0,size) === crcDanych);
+      if (w.typ===T_STR){
+        var b = payload;
+        if (b.length && b[b.length-1]===0) b = b.subarray(0,b.length-1);
+        out.wartosc = decodeUtf8(b);
+        out.surowy = payload;
+        if (!out.crcDanychOk) p.ostrzezenia.push('strona '+w.strona+' wpis '+w.indeks+
+          ': złe CRC tekstu "'+w.klucz+'" – NVS zwróci błąd odczytu');
+      } else {
+        out.wartosc = payload;
+      }
+      return out;
+    }
+    out.wartosc = d.slice(); out.typ = 'nieznany(0x'+w.typ.toString(16)+')';
+    return out;
+  }
+
+  var indeksy = [];
+  p.wpisy.forEach(function(w){
+    if (w.ns===0) return;
+    if (w.typ===T_BLOB_IDX){ indeksy.push(w); return; }
+    if (w.typ===T_BLOB_DATA) return;
+    p.dane[w.ns+'/'+w.klucz] = wartosc(w);
+  });
+
+  indeksy.forEach(function(idx){
+    var d = idx.dane;
+    var rozmiar = u32(d,0), ileChunk = d[4], startCh = d[5];
+    var czesci = p.wpisy.filter(function(w){
+      return w.typ===T_BLOB_DATA && w.ns===idx.ns && w.klucz===idx.klucz &&
+             w.chunk>=startCh && w.chunk<startCh+Math.max(1,ileChunk);
+    }).sort(function(a,b){ return a.chunk-b.chunk; });
+    var buf = [];
+    czesci.forEach(function(c){
+      var n = u16(c.dane,0), crcC = u32(c.dane,4);
+      var pl = c.payload.subarray(0, n);
+      if (crc32Nvs(pl,0,pl.length) !== crcC)
+        p.ostrzezenia.push('blob "'+idx.klucz+'": chunk '+c.chunk+' ma złe CRC danych – NVS zwróci błąd odczytu');
+      buf.push(pl);
+    });
+    var suma = 0; buf.forEach(function(b){ suma += b.length; });
+    var all = new Uint8Array(suma), o=0;
+    buf.forEach(function(b){ all.set(b,o); o+=b.length; });
+    if (czesci.length !== Math.max(1,ileChunk))
+      p.ostrzezenia.push('blob "'+idx.klucz+'": indeks mówi o '+ileChunk+' chunkach, znaleziono '+czesci.length);
+    if (!czesci.length)
+      p.ostrzezenia.push('blob "'+idx.klucz+'": jest indeks, nie ma żadnego chunku – NVS zwróci błąd odczytu');
+    p.dane[idx.ns+'/'+idx.klucz] = {typ:'blob ('+czesci.length+' chunk.)', wartosc:all.subarray(0,rozmiar),
+      rozmiar:rozmiar, strona:idx.strona, indeks:idx.indeks, span:idx.span, chunki:czesci.length};
+  });
+
+  // chunki bez indeksu
+  var zakresy = {};
+  indeksy.forEach(function(idx){
+    var k = idx.ns+'/'+idx.klucz, startCh = idx.dane[5], ileChunk = Math.max(1, idx.dane[4]);
+    (zakresy[k] = zakresy[k] || []).push([startCh, startCh+ileChunk]);
+  });
+  var osierocone = 0;
+  p.wpisy.forEach(function(w){
+    if (w.typ!==T_BLOB_DATA) return;
+    var z = zakresy[w.ns+'/'+w.klucz] || [];
+    if (!z.some(function(r){ return r[0]<=w.chunk && w.chunk<r[1]; })) osierocone++;
+  });
+  if (osierocone) p.ostrzezenia.push(osierocone+' chunków bloba bez indeksu (resztka po usuniętym blobie) – '+
+                                      'NVS ich nie zwraca, ale zajmują miejsce');
+
+  // klucze bez nazwy przestrzeni
+  var sieroce = {};
+  Object.keys(p.dane).forEach(function(k){
+    var ns = parseInt(k.split('/')[0],10);
+    if (!(ns in p.przestrzenie)) sieroce[ns]=1;
+  });
+  if (Object.keys(sieroce).length)
+    p.ostrzezenia.push('klucze w przestrzeniach bez nazwy ('+Object.keys(sieroce).join(', ')+') – '+
+                       'przestrzeń usunięta albo jej wpis leży poza tym zrzutem');
+  Object.keys(p.przestrzenie).forEach(function(ns){
+    if (p.przestrzenie[ns].length > MAX_PRZESTRZEN)
+      p.ostrzezenia.push('przestrzeń "'+p.przestrzenie[ns]+'" ma '+p.przestrzenie[ns].length+
+                         ' znaków – NVS przyjmuje najwyżej '+MAX_PRZESTRZEN);
+  });
+  Object.keys(p.dane).forEach(function(k){
+    var kl = k.split('/')[1];
+    if (kl.length > MAX_KLUCZ) p.ostrzezenia.push('klucz "'+kl+'" ma '+kl.length+
+      ' znaków – NVS przyjmuje najwyżej '+MAX_KLUCZ);
+  });
+  return p;
+}
+
+// --- czy plik zaczyna sie od ZAINICJOWANEJ strony NVS? --------------------
+// Sam poprawny naglowek to za malo: strona sama 0xFF tez go ma, a wtedy CALY
+// zrzut flashu "wygladalby" jak partycja NVS (i pokazywal 256 stron smieci).
+function wygladaNaPartycje(bytes){
+  if (bytes.length < PAGE_SIZE) return false;
+  var stan = u32(bytes, 0);
+  if (stan !== 0xFFFFFFFE && stan !== 0xFFFFFFFC && stan !== 0xFFFFFFF8) return false;
+  // CRC naglowka NIE jest tu sprawdzane: przy uszkodzonym zrzucie lepiej
+  // pokazac dane z ostrzezeniem niz odmowic odczytu. Zla strone reader i tak
+  // pominie i zglosi to w zakladce „Ostrzeżenia”.
+  return bytes[8] === 0xFE || bytes[8] === 0xFF;
+}
+
+// --- automatyczne znalezienie partycji NVS w wiekszym obrazie -------------
+function znajdzNvs(bytes){
+  var tab = parsujTablice(bytes, 0x8000);
+  var nvsP = znajdzNvsWTablicy(tab);
+  if (nvsP && nvsP.offset + nvsP.rozmiar <= bytes.length)
+    return {offset:nvsP.offset, rozmiar:nvsP.rozmiar, tablica:tab,
+            zrodlo:'tablica partycji z 0x8000 (etykieta "'+nvsP.etykieta+'")'};
+  if (tab) return {offset:null, rozmiar:null, tablica:tab, zrodlo:'tablica partycji bez partycji NVS'};
+  // heurystyka: ciag stron z poprawnym naglowkiem
+  var najlepszy = null, biezacy = null;
+  for (var off=0; off+PAGE_SIZE<=bytes.length; off+=PAGE_SIZE){
+    var stan = u32(bytes,off), ok = false;
+    if (stan===0xFFFFFFFE || stan===0xFFFFFFFC || stan===0xFFFFFFF8){
+      ok = bytes[off+8]===0xFE || bytes[off+8]===0xFF;
+      if (ok) ok = crc32Nvs(bytes, off+4, off+28) === u32(bytes,off+28);
+    }
+    if (ok){
+      if (biezacy && biezacy.koniec===off){ biezacy.koniec += PAGE_SIZE; biezacy.ile++; }
+      else { biezacy = {start:off, koniec:off+PAGE_SIZE, ile:1}; if(!najlepszy||biezacy.ile>najlepszy.ile) najlepszy=biezacy; }
+      if (!najlepszy || biezacy.ile > najlepszy.ile) najlepszy = biezacy;
+    } else if (stan !== STAN_PUSTA) {
+      biezacy = null;
+    }
+  }
+  if (najlepszy)
+    return {offset:najlepszy.start, rozmiar:najlepszy.koniec-najlepszy.start,
+            tablica:null, zrodlo:'nagłówki stron NVS'};
+  return null;
+}
+
+// --- wbudowany przyklad (male, sztuczne dane - do obejrzenia interfejsu) ---
+// To NIE sa dane z zadnego pieca: hasla i tokeny sa wymyslone. Plik zrodlowy:
+// narzedzia/nvs_demo.csv, wygenerowany przez esp-idf-nvs-partition-gen.
+var DEMO_B64 =
+`/v///wAAAAD+/////////////////////////4Qturmqqqqqqqqqqqqq/v///////////////////////////wABAf9lg2fu
+cGllYwAAAAAAAAAAAAAAAAH/////////ARQB/1ssSWV3eWJvcgAAAAAAAAAAAAAAAQAAAP////8BAQH/NWAXEnRyeWJTZXJ3
+YQAAAAAAAAAB/////////wEBAf+83+aFY3phc09uAAAAAAAAAAAAAAz/////////AQEB/yTULFBjemFzT2ZmAAAAAAAAAAAA
+Lf////////8BAQH/+rK8+nRlbXBPbgAAAAAAAAAAAAA3/////////wEBAf+z0m8QdGVtcE9mZgAAAAAAAAAAADD/////////
+AQEB/4u9GIlhbnR5c3RvcFdsYWN6AAAAAf////////8BAQH/wk4DZmFudHlzdG9wRG5pAAAAAAAH/////////wEBAf/y1Ruv
+bWllc3pDemFzT2ZmAAAAAB7/////////ARQB/3uncDRwcm9nQWxhcm1EeW0AAAAACAcAAP////8BFAH/V4RapmR5bUN6YXNT
+dGFiAAAAAAA8AAAA/////wEhAv89IrnMdGVtcFNyZWRuaWEAAAAAAAQA//9HWkHiMC4wAP//////////////////////////
+//////////8BAQH/JJJeNHNvbGFyT2ZmU2Vhc29uAAAA/////////wABAf+6Fr6pd2lmaQAAAAAAAAAAAAAAAAL/////////
+AhQB/4FTGsRjb3VudAAAAAAAAAAAAAAAAgAAAP////8CIQL/BZOHonNzaWQwAAAAAAAAAAAAAAAPAP//HTp/dk1vamFTaWVj
+RG9tb3dhAP//////////////////////AiEC//K/Wu1wYXNzMAAAAAAAAAAAAAAAEgD//799KsFwcnp5a2xhZG93ZS1oYXNs
+bwD//////////////////wIhAv9TxaHJc3NpZDEAAAAAAAAAAAAAAAkA//9IH7VWV2Fyc3p0YXQA////////////////////
+//////////8CIQL/FG4Rh3Bhc3MxAAAAAAAAAAAAAAANAP//DOn8GWRydWdpZS1oYXNsbwD/////////////////////////
+AAEB/xDEDzZ0ZWxlZ3JhbQAAAAAAAAAAA/////////8DAQH/EU1ki2VuYWJsZWQAAAAAAAAAAAAB/////////wMhAv/jvqeu
+Y2hhdElkAAAAAAAAAAAAAAoA///ACbEcMTIzNDU2Nzg5AP////////////////////////////8DIQP/eIWZF3Rva2VuAAAA
+AAAAAAAAAAAqAP//WgmtUjAwMDAwMDAwMDpQUlpZS0xBRE9XWV9UT0tFTl9OSUVfUFJBV0RaSVdZAP//////////////////
+//////////8AAQH/9r/DrmZpcmViYXNlAAAAAAAAAAAE/////////wQhAv96aME6YXBpX2tleQAAAAAAAAAAABYA//9JbVDs
+UFJaWUtMQURPV1lfS0xVQ1pfQVBJAP////////////8EIQL/5k3SJWF1dGhfZW1haWwAAAAAAAAVAP//JFRndnByenlrbGFk
+QGV4YW1wbGUuY29tAP//////////////BCEC/4/yAvxhdXRoX3Bhc3MAAAAAAAAAGwD///VdHaBwcnp5a2xhZG93ZS1oYXNs
+by1maXJlYmFzZQD//////wABAf9pSk4+aGlzdAAAAAAAAAAAAAAAAAX/////////BQEB/1cwgn1mc19vbgAAAAAAAAAAAAAA
+Af//////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////`;
+function bajtyDemo(){
+  var bin = atob(DEMO_B64.replace(/\s+/g,''));
+  var out = new Uint8Array(bin.length);
+  for (var i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// --- slownik kluczy tego projektu (z kodu, nie z dokumentacji) -------------
+var KAT = {
+  'piec': {opis:'Ustawienia pieca – najważniejsza przestrzeń (Preferences „config”)',
+    klucze:{
+      'wybor':['Strategia pompy','1 = cykl czasowy (trociny), 2 = cykl temperaturowy'],
+      'trybSerwa':['Tryb serw','1 = auto, 2 = ręczny, 3 = bezpieczny'],
+      'czasOn':['Czas pracy – podawanie','sekundy, 1..180'],
+      'czasOff':['Czas pauzy – podawanie','sekundy, 1..180'],
+      'tempOn':['Temperatura załączania','°C, 0..100'],
+      'tempOff':['Temperatura wyłączania','°C, 0..100'],
+      'antystopWlacz':['Antystop włączony','okresowe rozruszanie pompy'],
+      'antystopWlaczony':['Antystop włączony','okresowe rozruszanie pompy'],
+      'antystopDni':['Co ile dni antystop','1..45'],
+      'mieszWlaczony':['Mieszadło włączone','automatyczne mieszanie'],
+      'mTrocinyOff':['Mieszadło: ręczny OFF','blokada mieszania do świeżego odczytu ≤30 °C'],
+      'mieszadloCzasOn':['Mieszadło – czas pracy','sekundy, 1..255'],
+      'mieszCzasOff':['Mieszadło – czas pauzy','sekundy, 1..180 (klucz skrócony, limit 15 znaków)'],
+      'tempZadServo':['Zadana temperatura serwa','°C, 0..100'],
+      'histerServo':['Histereza serwa','°C, 0..50'],
+      'skokKlapy':['Skok klapy','% , 1..100'],
+      'skokSyberka':['Skok syberka','%, 1..100'],
+      'odchylTemp':['Odchylenie temperatury','1..50'],
+      'mnoznik':['Mnożnik','1..10'],
+      'progAlarmTemp':['Próg alarmu temperatury','°C, 0..100'],
+      'progAlarmDym':['Próg alarmu dymu','ADC 0..4095, musi być > histerezy dymu'],
+      'dymCzasOn':['Czujnik dymu – czas grzania','s, 20..600'],
+      'dymCzasOff':['Czujnik dymu – czas pauzy','s, 10..600'],
+      'dymCzasStab':['Czujnik dymu – stabilizacja','s, 5..590 (klucz skrócony)'],
+      'dymProgTemp':['Dym: próg temperatury','°C, 0..200'],
+      'dymTrybPracy':['Dym: tryb pracy','0 / 1 – patrz kod'],
+      'pozKlapa':['Pozycja klapy','pozycja spoczynkowa'],
+      'pozSyberek':['Pozycja syberka','pozycja spoczynkowa'],
+      'rSerwoAct':['Serwo – aktywne',''],
+      'rSerwoWin':['Serwo – okno',''],
+      'rSerwoBlk':['Serwo – blokada',''],
+      'resetCount':['Licznik restartów',''],
+      'debugMode':['Tryb debug',''],
+      'tempSrednia':['Średnia temperatura ogrzewania','float – zapisany jako blob (tak działa putFloat)'],
+      'solarOffSeason':['Solar: poza sezonem','pompa solarna wyłączona do wiosny'],
+      'srOstPompa':['Solar: ostatnia praca pompy','znacznik czasu unix'],
+      'aSndDym':['Dźwięk: alarm dymu',''],
+      'aSndOgrz':['Dźwięk: ogrzewanie',''],
+      'aSndBoth':['Dźwięk: oba',''],
+      'dSerMask':['Diagnostyka – maska SER',''],
+      'dSerLvl':['Diagnostyka – poziom SER',''],
+      'dArcMask':['Diagnostyka – maska ARC',''],
+      'dArcLvl':['Diagnostyka – poziom ARC',''],
+      'dRemMask':['Diagnostyka – maska REM',''],
+      'dRemLvl':['Diagnostyka – poziom REM',''],
+      'dRemOn':['Diagnostyka zdalna włączona',''],
+      'otaSelfTag':['OTA centrali – tag wydania',''],
+      'otaSelfTrwa':['OTA centrali w toku','flaga – po restarcie w trakcie'],
+      'panOtaGotowa':['OTA panelu – gotowa',''],
+      'panOtaTrwa':['OTA panelu w toku',''],
+      'panOtaTag':['OTA panelu – tag',''],
+      'panOtaObraz':['OTA panelu – obraz',''],
+      'panOtaPrzed':['OTA panelu – wersja przed',''],
+      'panOtaRozm':['OTA panelu – rozmiar','bajty'],
+      'panOtaNr':['OTA panelu – numer',''],
+      'nadzorRestart':['Nadzór – restart',''],
+      'nadzorKto':['Nadzór – kto',''],
+      'nadzorMs':['Nadzór – czas','ms'],
+      'nadzorCnt':['Nadzór – licznik',''],
+      'nadzorKrokZnany':['Nadzór – krok znany',''],
+      'nadzorOp':['Nadzór – operacja',''],
+      'nadzorStage':['Nadzór – etap',''],
+      'nadzorKrokS':['Nadzór – krok (s)',''],
+      'nadzorWiekS':['Nadzór – wiek (s)',''],
+      'nadzorHeap':['Nadzór – wolny heap','bajty']
+    }},
+  'wifi': {opis:'Zapisane sieci WiFi – HASŁA CZYSTYM TEKSTEM', klucze:{
+      'count':['Liczba zapisanych sieci','maks. 8'],
+      'ssid0':['Nazwa sieci (SSID)',''], 'pass0':['Hasło sieci','sekret'],
+      'ssid1':['Nazwa sieci (SSID)',''], 'pass1':['Hasło sieci','sekret'],
+      'ssid2':['Nazwa sieci (SSID)',''], 'pass2':['Hasło sieci','sekret'],
+      'ssid3':['Nazwa sieci (SSID)',''], 'pass3':['Hasło sieci','sekret'],
+      'ssid4':['Nazwa sieci (SSID)',''], 'pass4':['Hasło sieci','sekret'],
+      'ssid5':['Nazwa sieci (SSID)',''], 'pass5':['Hasło sieci','sekret'],
+      'ssid6':['Nazwa sieci (SSID)',''], 'pass6':['Hasło sieci','sekret'],
+      'ssid7':['Nazwa sieci (SSID)',''], 'pass7':['Hasło sieci','sekret']
+    }},
+  'telegram': {opis:'Bot Telegram – token i odbiorca', klucze:{
+      'token':['Token bota','sekret – pozwala pisać jako bot'],
+      'chatId':['ID czatu','odbiorca powiadomień'],
+      'enabled':['Powiadomienia włączone','']
+    }},
+  'firebase': {opis:'Konto Firebase – sterowanie piecem z chmury', klucze:{
+      'api_key':['Klucz API','sekret'],
+      'auth_email':['E-mail konta',''],
+      'auth_pass':['Hasło konta','sekret – ma pierwszeństwo przed secrets.h']
+    }},
+  'hist': {opis:'Historia na flashu (LittleFS)', klucze:{
+      'fs_on':['Zapis historii na flash','brak klucza = włączone']
+    }},
+  'spoolrt': {opis:'Bufor telemetrii do Firebase', klucze:{
+      'lastseq':['Ostatnia strona',''], 'oldest':['Najstarsza strona','']
+    }},
+  'spoolg': {opis:'Bufor „G” (licznik strony)', klucze:{
+      'lastseq':['Ostatnia strona',''], 'rt_on':['Bufor włączony','']
+    }},
+  'coredump': {opis:'Zrzuty awarii – numeracja', klucze:{
+      'seq':['Numer kolejnego zrzutu','wpis w NVS; same zrzuty leżą w LittleFS']
+    }},
+  'stb_mega': {opis:'Test stabilności – ostatni update_id', klucze:{
+      'last':['Ostatni update_id','']}},
+  'tc_test': {opis:'Test /testcrash – ostatni update_id', klucze:{
+      'last':['Ostatni update_id','']}},
+  'wyswietlacz': {opis:'Panel LCD – ekran', klucze:{
+      'jasnDzien':['Jasność dzienna','%'], 'jasnNoc':['Jasność nocna','%'],
+      'godzStart':['Początek nocy','godzina'], 'godzKoniec':['Koniec nocy','godzina'],
+      'harmonWlacz':['Harmonogram jasności',''], 'cpuIdx':['Taktowanie CPU','indeks tabeli'],
+      'txIdx':['Moc nadajnika WiFi','indeks tabeli']}},
+  'dotyk': {opis:'Panel LCD – kalibracja dotyku', klucze:{
+      'rawXA':['Kalibracja X – A','surowy ADC'], 'rawYA':['Kalibracja Y – A','surowy ADC'],
+      'rawXB':['Kalibracja X – B','surowy ADC'], 'rawYB':['Kalibracja Y – B','surowy ADC']}},
+  'otapanel': {opis:'Panel LCD – stan aktualizacji (jeden blob)', klucze:{
+      'zapis':['Stan OTA panelu','cały zapis jednym wpisem: albo stary, albo nowy – nigdy połowa']}},
+  'nvs.net80211': {opis:'RDZEŃ ESP32 – kopia sieci WiFi (nie nasz kod)', klucze:{
+      'sta.ssid':['SSID zapisane przez rdzeń',''], 'sta.pswd':['Hasło – sekret',''],
+      'sta.bssid':['BSSID',''], 'sta.apinfo':['Informacje o AP','blob']}}
+};
+function opisKlucza(ns, klucz){
+  var n = KAT[ns];
+  if (!n) return null;
+  var k = n.klucze[klucz];
+  return k ? {tytul:k[0], uwaga:k[1]} : null;
+}
+function opisPrzestrzeni(ns){ return KAT[ns] ? KAT[ns].opis : null; }
+function czySekret(klucz, opis){
+  var k = (klucz||'').toLowerCase();
+  if (WZORCE_SEKRETOW.some(function(w){ return k.indexOf(w) >= 0; })) return true;
+  return !!(opis && opis.uwaga && opis.uwaga.indexOf('sekret') >= 0);
+}
+// ===================== CORE END =====================
+
+// ===================== INTERFEJS =====================
+if (typeof document !== 'undefined') (function(){
+  var plikWe = document.getElementById('plik');
+  var drop = document.getElementById('drop');
+  var start = document.getElementById('start');
+  var widok = document.getElementById('widok');
+  var stan = {p:null, tablica:null, zrodlo:'', plik:'', maskuj:true, fraza:'', zakladka:'dane', json:''};
+
+  function el(tag, cls, txt){
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt !== undefined && txt !== null) e.textContent = txt;
+    return e;
+  }
+  function pokaz(b){ b.classList.remove('ukryj'); }
+  function schowaj(b){ b.classList.add('ukryj'); }
+
+  document.getElementById('wybierz').addEventListener('click', function(){ plikWe.click(); });
+  document.getElementById('przyklad').addEventListener('click', function(e){
+    e.stopPropagation();
+    stan.plik = 'nvs_demo.bin (przykład)';
+    try { przetworz(bajtyDemo()); }
+    catch(err){ alert('Błąd przykładu: '+err.message); }
+  });
+  drop.addEventListener('click', function(){ plikWe.click(); });
+  plikWe.addEventListener('change', function(e){ if (e.target.files[0]) wczytaj(e.target.files[0]); });
+
+  ['dragenter','dragover'].forEach(function(ev){
+    document.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('hover'); });
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    document.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('hover'); });
+  });
+  document.addEventListener('drop', function(e){
+    if (e.dataTransfer.files[0]) wczytaj(e.dataTransfer.files[0]);
+  });
+
+  document.getElementById('maskuj').addEventListener('change', function(e){
+    stan.maskuj = e.target.checked; rysuj();
+  });
+  document.getElementById('szukaj').addEventListener('input', function(e){
+    stan.fraza = e.target.value.trim().toLowerCase(); rysujDane();
+  });
+  document.getElementById('json').addEventListener('click', function(){
+    var nazwa = (stan.plik || 'nvs').replace(/\.bin$/i, '') + '.json';
+    var blob = new Blob([stan.json], {type:'application/json'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = nazwa;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#tabs button[data-tab]'), function(b){
+    b.addEventListener('click', function(){
+      stan.zakladka = b.dataset.tab;
+      Array.prototype.forEach.call(document.querySelectorAll('#tabs button[data-tab]'),
+        function(x){ x.classList.toggle('on', x === b); });
+      ['dane','strony','ostrzezenia','tablica'].forEach(function(t){
+        document.getElementById('tab-'+t).classList.toggle('ukryj', t !== stan.zakladka);
+      });
+    });
+  });
+
+  function wczytaj(plik){
+    var fr = new FileReader();
+    fr.onload = function(){
+      var bytes = new Uint8Array(fr.result);
+      stan.plik = plik.name;
+      try { przetworz(bytes); }
+      catch(err){
+        alert('Nie udało się odczytać pliku „'+plik.name+'”:\n\n'+err.message+
+              '\n\nSprawdź, czy to zrzut partycji NVS (offset 0x9000, rozmiar 0x5000) '+
+              'albo cały zrzut flashu.');
+      }
+    };
+    fr.readAsArrayBuffer(plik);
+  }
+
+  function przetworz(bytes){
+    var p = null, tablica = null, zrodlo = '', proba = '';
+    if (!bytes.length) throw new Error('plik jest pusty (0 B)');
+    if (wygladaNaPartycje(bytes)){
+      try { p = parsujPartycje(bytes, stan.plik); zrodlo = 'cały plik'; }
+      catch(e){
+        proba = e.message;
+        if (bytes.length % PAGE_SIZE === 0 && bytes.length >= PAGE_SIZE){
+          // Wygląda na partycję, ale zadna strona nie jest czytelna (np. zrzut
+          // z samymi 0x00 poza nagłówkiem). Przy takim samym rozmiarze czytamy
+          // go mimo to - z ostrzeżeniami - żeby było widać, co jest nie tak.
+          try { p = parsujPartycje(bytes, stan.plik, true); zrodlo = 'cały plik'; }
+          catch(e2){ p = null; }
+        }
+      }
+    } else {
+      proba = 'plik nie zaczyna się od strony NVS';
+    }
+
+    if (!p){
+      var traf = znajdzNvs(bytes);
+      if (traf && traf.tablica) tablica = traf.tablica;
+      if (traf && traf.offset !== null){
+        p = parsujPartycje(bytes.subarray(traf.offset, traf.offset+traf.rozmiar),
+                           stan.plik+' od 0x'+traf.offset.toString(16));
+        zrodlo = traf.zrodlo;
+      } else if (traf && traf.tablica && !znajdzNvsWTablicy(traf.tablica)){
+        // plik to sama tablica partycji - pokaz uklad i gotowe polecenie zrzutu
+        tablica = traf.tablica;
+        pokazTylkoTablice(tablica);
+        return;
+      } else if (parsujTablice(bytes, 0)){
+        tablica = parsujTablice(bytes, 0);
+        pokazTylkoTablice(tablica);
+        return;
+      } else {
+        throw new Error(proba + '. Nie znalazłem też partycji NVS w tym pliku.');
+      }
+    } else if (bytes.length > 0x8000 + 32){
+      tablica = parsujTablice(bytes, 0x8000);
+    }
+
+    stan.p = p; stan.tablica = tablica; stan.zrodlo = zrodlo;
+    stan.json = JSON.stringify(eksport(p, tablica, zrodlo), null, 2);
+    schowaj(start); schowaj(drop); pokaz(widok);
+    ['szukaj','json'].forEach(function(id){ pokaz(document.getElementById(id)); });
+    pokaz(document.getElementById('lab-maskuj'));
+    document.getElementById('t-tablica').classList.toggle('ukryj', !tablica);
+    rysuj();
+  }
+
+  function pokazTylkoTablice(tablica){
+    stan.p = null; stan.tablica = tablica; stan.zrodlo = 'tylko tablica partycji';
+    stan.json = JSON.stringify({plik:stan.plik, tablica_partycji:tablica}, null, 2);
+    schowaj(start); schowaj(drop); pokaz(widok);
+    ['szukaj','json','lab-maskuj'].forEach(function(id){ pokaz(document.getElementById(id)); });
+    pokaz(document.getElementById('t-tablica'));
+    document.getElementById('karty').innerHTML = '';
+    var k = el('div','karta');
+    k.appendChild(el('div','lbl','Plik'));
+    k.appendChild(el('div','val', stan.plik));
+    document.getElementById('karty').appendChild(k);
+    var nvs = znajdzNvsWTablicy(tablica);
+    var k2 = el('div','karta' + (nvs ? '' : ' uwaga'));
+    k2.appendChild(el('div','lbl', nvs ? 'Partycja NVS' : 'Partycja NVS'));
+    k2.appendChild(el('div','val', nvs ? '0x'+nvs.offset.toString(16) : 'brak'));
+    if (nvs) k2.querySelector('.val').appendChild(el('small', null, ' 0x'+nvs.rozmiar.toString(16)));
+    document.getElementById('karty').appendChild(k2);
+    var k3 = el('div','karta');
+    k3.appendChild(el('div','lbl','Co dalej'));
+    k3.appendChild(el('div','val', 'wczytaj zrzut NVS'));
+    k3.querySelector('.val').style.fontSize = '14px';
+    document.getElementById('karty').appendChild(k3);
+
+    document.getElementById('tab-dane').innerHTML = '';
+    var info = el('div','ostrzezenie','To jest tylko tablica partycji (0x8000/0xC00), a nie zrzut NVS – ' +
+      'tu nie ma żadnych ustawień. Przejdź do zakładki „Tablica partycji”: jest tam gotowe polecenie ' +
+      'zrzutu właściwej partycji, a potem wczytaj ten plik.');
+    info.style.background = '#12241b'; info.style.borderColor = '#1f4a35'; info.style.color = '#a8e8c8';
+    document.getElementById('tab-dane').appendChild(info);
+    document.getElementById('tab-strony').innerHTML = '';
+    document.getElementById('tab-ostrzezenia').innerHTML = '';
+    rysujTablice();
+    document.getElementById('b-strony').textContent = '0';
+    document.getElementById('b-ostrzezenia').textContent = '0';
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs button[data-tab]'), function(b){
+      b.classList.toggle('on', b.dataset.tab === 'tablica');
+    });
+    ['dane','strony','ostrzezenia'].forEach(function(t){
+      document.getElementById('tab-'+t).classList.toggle('ukryj', true);
+    });
+    document.getElementById('tab-tablica').classList.remove('ukryj');
+    stan.zakladka = 'tablica';
+  }
+
+  function eksport(p, tablica, zrodlo){
+    var out = {plik:stan.plik, zrodlo:zrodlo, rozmiar_b:p.rozmiar, strony:[], przestrzenie:{}, ostrzezenia:p.ostrzezenia};
+    p.strony.forEach(function(s){
+      out.strony.push({numer:s.numer, stan:s.nazwaStanu, sekwencja:s.sekwencja,
+                       wersja:s.wersja, crc_ok:s.crcOk});
+    });
+    Object.keys(p.dane).forEach(function(k){
+      var ns = k.split('/')[0], kl = k.split('/')[1], w = p.dane[k];
+      var nsn = p.przestrzenie[ns] || ('?'+ns);
+      out.przestrzenie[nsn] = out.przestrzenie[nsn] || {};
+      var v = w.wartosc;
+      if (v instanceof Uint8Array) v = {typ_bajty:'bin', rozmiar:v.length,
+        hex:hex(v, 64), tekst: czyDrukowalne(v) ? decodeUtf8(v) : null};
+      out.przestrzenie[nsn][kl] = {typ:w.typ, wartosc:v};
+    });
+    if (tablica) out.tablica_partycji = tablica;
+    return out;
+  }
+
+  function rysuj(){
+    if (!stan.p) return;   // widok "tylko tablica partycji" rysuje sie osobno
+    rysujKarty(); rysujDane(); rysujStrony(); rysujOstrzezenia(); rysujTablice();
+    document.getElementById('b-strony').textContent = stan.p.strony.length;
+    document.getElementById('b-ostrzezenia').textContent = stan.p.ostrzezenia.length;
+  }
+
+  function rysujKarty(){
+    var p = stan.p, zap=0, us=0;
+    p.strony.forEach(function(s){
+      if (!s.doOdczytu) return;
+      s.stany.forEach(function(st){ if (st===2) zap++; else if (st===0) us++; });
+    });
+    var kluczy = Object.keys(p.dane).length;
+    var kont = document.getElementById('karty');
+    kont.innerHTML = '';
+    function karta(lbl, val, klasa, dopisek){
+      var k = el('div','karta'+(klasa?' '+klasa:''));
+      k.appendChild(el('div','lbl',lbl));
+      var v = el('div','val', val);
+      if (dopisek) v.appendChild(el('small', null, ' '+dopisek));
+      k.appendChild(v); kont.appendChild(k);
+    }
+    karta('Plik', stan.plik.length > 26 ? stan.plik.slice(0,24)+'…' : stan.plik);
+    karta('Partycja', p.rozmiar+' B', null, '('+odmiana(p.rozmiar/PAGE_SIZE,'strona','strony','stron')+')');
+    karta('Przestrzenie', Object.keys(p.przestrzenie).length);
+    karta('Klucze', kluczy);
+    karta('Wpisy usunięte', us, us ? 'uwaga' : null);
+    karta('Ostrzeżenia', p.ostrzezenia.length, p.ostrzezenia.length ? 'uwaga' : null);
+    if (stan.zrodlo && stan.zrodlo !== 'cały plik'){
+      var info = el('div', 'karta');
+      info.appendChild(el('div','lbl','Gdzie znalazłem NVS'));
+      info.appendChild(el('div', null, stan.zrodlo));
+      info.style.gridColumn = 'span 2';
+      kont.appendChild(info);
+    }
+  }
+
+  function nazwaTypu(w){
+    if (LICZBY[w.typ]) return LICZBY[w.typ][0];
+    if (w.typ === T_STR) return 'string';
+    if (w.typ === T_BLOB || w.typ === T_BLOB_DATA || w.typ === T_BLOB_IDX) return 'blob';
+    return '0x'+(w.typ).toString(16);
+  }
+  function klasaTypu(w){
+    if (LICZBY[w.typ]) return 'tag num';
+    if (w.typ === T_STR) return 'tag txt';
+    return 'tag blob';
+  }
+  function wartoscTekst(w){
+    var v = w.wartosc;
+    if (v instanceof Uint8Array){
+      if (w.typ === 'blob' || w.typ.indexOf('blob') === 0){
+        var opis = w.rozmiar + ' B';
+        if (czyDrukowalne(v) && w.rozmiar > 0) return opis+' · tekst: „'+decodeUtf8(v)+'”';
+        return opis+' · '+hex(v, 48)+' ('+w.chunki+' chunk.)';
+      }
+      return hex(v, 64);
+    }
+    if (typeof v === 'number' && Number.isInteger(v) === false) return String(v);
+    return String(v);
+  }
+
+  function rysujDane(){
+    var p = stan.p, kont = document.getElementById('tab-dane');
+    kont.innerHTML = '';
+    var fraza = stan.fraza;
+    var nsKeys = Object.keys(p.przestrzenie).sort(function(a,b){ return +a - +b; });
+    // przestrzenie bez nazwy
+    var bez = {};
+    Object.keys(p.dane).forEach(function(k){
+      var ns = k.split('/')[0];
+      if (!(ns in p.przestrzenie)) bez[ns] = 1;
+    });
+    Object.keys(bez).forEach(function(ns){ nsKeys.push(ns); });
+
+    var cokolwiek = false;
+    nsKeys.forEach(function(nsNr){
+      var nazwa = p.przestrzenie[nsNr] || ('przestrzeń '+nsNr+' (bez nazwy)');
+      var klucze = Object.keys(p.dane).filter(function(k){ return k.split('/')[0] === nsNr; })
+        .map(function(k){ return k.split('/')[1]; })
+        .sort(function(a,b){ return a.toLowerCase() < b.toLowerCase() ? -1 : 1; });
+      var opisNs = opisPrzestrzeni(nazwa);
+      var widoczne = klucze.filter(function(kl){
+        if (!fraza) return true;
+        var w = p.dane[nsNr+'/'+kl], o = opisKlucza(nazwa, kl);
+        return (nazwa+' '+kl+' '+wartoscTekst(w)+' '+(o?o.tytul+' '+o.uwaga:'')).toLowerCase().indexOf(fraza) >= 0;
+      });
+      if (!widoczne.length) return;
+      cokolwiek = true;
+
+      var box = el('div','ns');
+      var head = el('div','head');
+      head.appendChild(el('span','nazwa', nazwa));
+      if (opisNs) head.appendChild(el('span','opis', opisNs));
+      head.appendChild(el('span','ile', widoczne.length + ' z ' + klucze.length + ' kluczy'));
+      box.appendChild(head);
+      head.addEventListener('click', function(){ box.classList.toggle('zwin'); tabela.classList.toggle('ukryj'); });
+
+      var tabela = el('table');
+      widoczne.forEach(function(kl){
+        var w = p.dane[nsNr+'/'+kl];
+        var o = opisKlucza(nazwa, kl);
+        var tr = el('tr');
+        tr.appendChild(el('td','k', kl));
+        var tdT = el('td','t');
+        tdT.appendChild(el('span', klasaTypu(w), nazwaTypu(w)));
+        tr.appendChild(tdT);
+        var tdV = el('td','v');
+        var sek = czySekret(kl, o);
+        var tekst = wartoscTekst(w);
+        if (sek && stan.maskuj){
+          tdV.innerHTML = '';
+          tdV.appendChild(el('span','zmask','•••••• (ukryte – '+ (w.rozmiar || tekst.length) +' B)'));
+        } else {
+          tdV.textContent = tekst;
+          if (sek) tdV.classList.add('uw');
+        }
+        tr.appendChild(tdV);
+        var tdD = el('td','d');
+        if (o){
+          tdD.appendChild(el('div', null, o.tytul));
+          if (o.uwaga && o.uwaga !== 'sekret') tdD.appendChild(el('div','pusty', o.uwaga));
+          if (o.uwaga === 'sekret') tdD.appendChild(el('div','uw','to jest sekret'));
+        } else {
+          tdD.appendChild(el('span','pusty','(klucz spoza tego projektu – pokazuję surowo)'));
+        }
+        tr.appendChild(tdD);
+        tabela.appendChild(tr);
+      });
+      box.appendChild(tabela);
+      kont.appendChild(box);
+    });
+
+    if (!cokolwiek){
+      kont.appendChild(el('div','ostrzezenie', fraza ? 'Nic nie pasuje do „'+fraza+'”.'
+        : 'Brak zapisanych kluczy – partycja jest pusta albo same wpisy usunięte.'));
+    }
+  }
+
+  function rysujStrony(){
+    var p = stan.p, kont = document.getElementById('tab-strony');
+    kont.innerHTML = '';
+    var leg = el('div','legenda');
+    [['#2f6f4f','zapisany'],['#4a2b2b','usunięty'],['#5a4a18','błąd zapisu'],['#1a2028','pusty']]
+      .forEach(function(x){
+        var s = el('span'); var i = el('i'); i.style.background = x[0];
+        s.appendChild(i); s.appendChild(document.createTextNode(x[1])); leg.appendChild(s);
+      });
+    kont.appendChild(leg);
+
+    p.strony.forEach(function(s){
+      var box = el('div','strona');
+      var h = el('div','h');
+      h.appendChild(el('span','nr','strona '+s.numer));
+      h.appendChild(el('span','tag', s.nazwaStanu));
+      h.appendChild(el('span','tag','seq '+s.sekwencja));
+      h.appendChild(el('span','tag','format '+(s.wersja===0xFE ? 'v2 (blob wielostronicowy)' : s.wersja===0xFF ? 'v1' : '0x'+s.wersja.toString(16))));
+      h.appendChild(el('span', s.crcOk ? 'ok' : 'uw', s.crcOk ? 'CRC ok' : 'CRC ZŁE'));
+      box.appendChild(h);
+
+      var zap=0, us=0, bl=0;
+      s.stany.forEach(function(st){ if (st===2) zap++; else if (st===0) us++; else if (st===1) bl++; });
+      box.appendChild(el('div','pusty', zap+' zapisanych, '+us+' usuniętych, '+bl+' z błędem'));
+
+      var g = el('div','grid');
+      g.style.marginTop = '9px';
+      var wg = {};
+      p.wpisy.forEach(function(w){ if (w.strona === s.numer) { wg[w.indeks] = w; } });
+      var pokryte = {};
+      Object.keys(wg).forEach(function(i){
+        var w = wg[i], span = (w.span===0||w.span===0xFF)?1:w.span;
+        for (var k=1;k<span;k++) pokryte[+i+k] = true;
+      });
+      s.stany.forEach(function(st, i){
+        var c = el('div','cell');
+        if (st===2) c.classList.add('w');
+        else if (st===0) c.classList.add('d');
+        else if (st===1) c.classList.add('b');
+        if (pokryte[i]) c.classList.add('s');
+        var w = wg[i];
+        c.title = 'wpis '+i+' – '+(st===2?'zapisany':st===0?'usunięty':st===1?'błąd zapisu':'pusty')+
+                  (w ? '\nklucz: '+w.klucz+'\ntyp: '+nazwaTypu(w)+(w.span>1?'\nzajmuje wpisy: '+w.span:'') : '');
+        g.appendChild(c);
+      });
+      box.appendChild(g);
+      kont.appendChild(box);
+    });
+  }
+
+  function rysujOstrzezenia(){
+    var kont = document.getElementById('tab-ostrzezenia');
+    kont.innerHTML = '';
+    if (!stan.p.ostrzezenia.length){
+      var ok = el('div','ostrzezenie');
+      ok.style.background = '#12241b'; ok.style.borderColor = '#1f4a35'; ok.style.color = '#a8e8c8';
+      ok.textContent = 'Brak ostrzeżeń – wszystkie CRC się zgadzają, każdy wpis wygląda poprawnie.';
+      kont.appendChild(ok);
+      return;
+    }
+    stan.p.ostrzezenia.forEach(function(o){
+      var d = el('div','ostrzezenie' + (/złe CRC|nie ma żadnego chunku/.test(o) ? ' blad' : ''), o);
+      kont.appendChild(d);
+    });
+    var stopka = el('div','pusty');
+    stopka.style.marginTop = '12px';
+    stopka.textContent = 'Ostrzeżenie ≠ błąd odczytu: NVS część z tych wpisów po prostu pomija. ' +
+      'Błąd (czerwony) znaczy, że firmware dostanie przy tym kluczu błąd, a nie wartość.';
+    kont.appendChild(stopka);
+  }
+
+  function rysujTablice(){
+    var kont = document.getElementById('tab-tablica');
+    kont.innerHTML = '';
+    if (!stan.tablica){
+      kont.appendChild(el('div','ostrzezenie','W tym pliku nie ma tablicy partycji (jest pod 0x8000, ' +
+        'czyli tylko w zrzucie całego flashu albo w pliku z 0x8000/0xC00).'));
+      return;
+    }
+    var box = el('div','ns');
+    var head = el('div','head');
+    head.appendChild(el('span','nazwa','tablica partycji'));
+    head.appendChild(el('span','opis','układ pamięci odczytany z urządzenia'));
+    box.appendChild(head);
+    var t = el('table');
+    var hr = el('tr');
+    ['etykieta','typ / podtyp','offset','rozmiar','koniec'].forEach(function(x){
+      var th = el('th', null, x); th.style.textAlign='left'; th.style.padding='8px 16px';
+      th.style.color='var(--dim)'; th.style.fontSize='11px'; th.style.textTransform='uppercase';
+      hr.appendChild(th);
+    });
+    t.appendChild(hr);
+    stan.tablica.forEach(function(p){
+      var tr = el('tr');
+      tr.appendChild(el('td','k', p.etykieta));
+      tr.appendChild(el('td', null, (p.typ===0?'app':'dane')+' / '+p.nazwaPodtypu));
+      tr.appendChild(el('td', null, '0x'+p.offset.toString(16)));
+      tr.appendChild(el('td', null, '0x'+p.rozmiar.toString(16)+' ('+p.rozmiar+' B)'));
+      tr.appendChild(el('td', null, '0x'+(p.offset+p.rozmiar).toString(16)));
+      if (p.typ===TYP_DANYCH && p.podtyp===PODTYP_DATA_NVS){
+        tr.style.outline = '1px solid #2f6f4f';
+        tr.style.outlineOffset = '-1px';
+      }
+      t.appendChild(tr);
+    });
+    box.appendChild(t);
+    kont.appendChild(box);
+
+    var nvs = znajdzNvsWTablicy(stan.tablica);
+    if (nvs){
+      var info = el('div','ostrzezenie');
+      info.style.background = '#12241b'; info.style.borderColor = '#1f4a35'; info.style.color = '#a8e8c8';
+      info.textContent = 'Partycja NVS: „'+nvs.etykieta+'”, offset 0x'+nvs.offset.toString(16)+
+        ', rozmiar 0x'+nvs.rozmiar.toString(16)+' ('+nvs.rozmiar+' B).';
+      kont.appendChild(info);
+      var kod = el('div','karta');
+      kod.appendChild(el('div','lbl','Zrzut tej partycji'));
+      var pre = el('code');
+      pre.style.fontFamily = 'var(--mono)'; pre.style.fontSize = '12.5px';
+      pre.style.whiteSpace = 'pre-wrap'; pre.style.display='block'; pre.style.marginTop='6px';
+      pre.textContent = 'python -m esptool --port COM16 read-flash 0x'+nvs.offset.toString(16)+
+                        ' 0x'+nvs.rozmiar.toString(16)+' nvs.bin';
+      kod.appendChild(pre);
+      kont.appendChild(kod);
+    } else {
+      kont.appendChild(el('div','ostrzezenie','W tej tablicy nie ma partycji NVS (typ „dane”, podtyp 0x02).'));
+    }
+  }
+
+})();
+</script>
