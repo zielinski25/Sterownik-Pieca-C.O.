@@ -1,0 +1,119 @@
+FIRMWARE CENTRALI 3.58.14 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN (platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.13 + "wybor zrodla temperatury zewnetrznej". Patch wzgledem
+3.58.13: 21 hunkow, +134/-4: C++ 1 zmienna + 1 galaz ustawien + 1 linia NVS
++ 3 linie JSON + 1 linia logu; reszta to JavaScript/CSS strony WWW wbudowanej
+w plik oraz naglowek, historia, numer wersji.
+
+
+PO CO (zyczenie z 23.11: w arkuszu "Temperatura zewnetrzna" wybor Zew 1 / Zew 2,
+WSPOLZALEZNY z aplikacja - wybor w aplikacji zmienia kafelek na stronie i odwrotnie)
+---------------------------------------------------------------------------------
+Zew 1 = DS18B20 na magistrali 1-Wire (pole t_zewn).
+Zew 2 = temperatura z czujnika wilgotnosci DHT22 (pole t_zewn_2, od 3.58.9).
+
+Zeby wybor byl wspolny dla strony, aplikacji, Telegrama i wyswietlacza, jest
+trzymany W CENTRALI, nie w przegladarce ani w telefonie:
+ 1. Nowe ustawienie zewnZrodlo (1 = DS18B20, 2 = DHT22), zapisywane w NVS
+    (klucz "zewnZrodlo"), domyslnie 1 - czyli dokladnie to, co bylo do tej pory.
+ 2. Zmiana ta sama droga co kazde inne ustawienie: komenda
+        ustaw zewnZrodlo 1      albo      ustaw zewnZrodlo 2
+    z Firebase (/piec/cmd - strona, aplikacja), z LAN (/api/lan/cmd) i ze
+    starej strony (/api/ustawienia-set). Zadnych nowych tras.
+ 3. Pole "zewnZrodlo" jest w kazdym statusie: /piec/status i /api/lan/status
+    (strona, aplikacja), /api/status (LCD, stara strona), /api/ustawienia-get.
+    Kto zmieni - wszyscy widza przy nastepnym statusie (strona co 1-2 s).
+ 4. Strona WWW (w pliku i Piec.html): w arkuszu "Temperatura zewnetrzna" (po
+    dotknieciu kafelka ZEWNETRZNA) jest sekcja "Zrodlo temperatury zewnetrznej"
+    z dwoma przyciskami - kazdy pokazuje biezacy odczyt swojego czujnika.
+    Dotkniecie wysyla komende; podswietlenie i kafelek zmieniaja sie dopiero,
+    gdy centrala potwierdzi statusem (tak samo jak reszta ustawien - bez
+    "zgadywania"). Kafelek ZEWNETRZNA, delta panel-zewn, podglad Telegram
+    pokazuja WYBRANE zrodlo; naglowek arkusza pokazuje jego magistrale.
+    Wykresy maja dalej OBIE serie (Zew 1 i Zew 2 - bez zmian).
+    Gdy wybrane jest Zew 2, a DHT22 nie ma swiezego odczytu: kafelek BRAK
+    DANYCH (bez cichego podstawiania DS18B20 - operator ma to widziec).
+    Aktywna symulacja "zewn" ma pierwszenstwo nad wyborem.
+
+CZEGO CENTRALA CELOWO NIE ROBI: nie podmienia zmiennej temperaturaNaZewnatrz.
+t_zewn w telemetrii i historii to nadal DS18B20, t_zewn_2 nadal DHT22 - dzieki
+temu wykresy "Zew 1 / Zew 2" w aplikacji dalej pozwalaja porownac oba czujniki,
+a korekta wilgotnosci i automatyka nie zmieniaja sie ani o linie.
+
+APLIKACJA ANDROID I LCD: juz dzis czytaja t_zewn_2 i nic sie u nich nie psuje
+(nieznane pole statusu jest pomijane). Zeby ich kafelek tez podazal za
+ustawieniem i zeby mialy przelacznik, musza uwzglednic pole zewnZrodlo:
+ - aplikacja: potrzebne zrodla biezacej wersji (katalog
+   sterownik-co-app\app\src spakowany ZIP) - wtedy dostaniesz gotowa poprawke;
+ - LCD: osobna wersja panelu (1.5.13), do zrobienia po wgraniu 3.58.14.
+Do tego czasu aplikacja pokazuje jak dotad t_zewn (= Zew 1), a zmiana
+dokonana w aplikacji komenda "ustaw zewnZrodlo N" (np. z Telegrama lub ze
+strony) bedzie i tak widoczna na stronie.
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.14"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od eb763b1b):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.13-do-v3.58.14.patch, -p1 z katalogu projektu (plik src\main_centrala.cpp),
+na plik 3.58.13 (SHA 9118629e...). Wynik musi miec SHA eb763b1b... - inaczej
+wgraj caly plik z src\.
+Jesli na plytce jest 3.57.12 / 3.58.10 ... 3.58.12: wgraj caly plik z src\
+(zawiera wszystko od 3.58.0 do 3.58.13).
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+Sprawdz, ze platformio.ini jest od CENTRALI:
+    Select-String '^\[env:' platformio.ini      -> esp32-s3-n16r8 (NIE esp32dev)
+PlatformIO -> Build, potem Upload   (pio run -e esp32-s3-n16r8   i   -t upload)
+Spodziewane: 0 ostrzezen, Flash +ok. 3 kB (z tego ~2,6 kB to HTML strony w
+PROGMEM), RAM +1 B.
+Jesli blad: skopiuj linie z "error:" i przyslij; przywroc kopie zapasowa.
+Zmienione miejsca z numerami linii: WYNIKI\zakres-zmian.txt.
+
+Release na GitHub: FIRMWARE_VERSION = "v3.58.14" -> Build -> Release z tagiem
+3.58.14 (OTA z 3.58.13 przejdzie, 3.58.14 > 3.58.13).
+
+
+KROK 3 - SPRAWDZENIE (telefon/PC -> http://192.168.100.151 -> kafelek ZEWNETRZNA)
+--------------------------------------------------------------------------------
+0. http://192.168.100.151/api/lan/status - na koncu "fw":"v3.58.14", a w srodku
+   "zewnZrodlo":1. Odswiez strone panelu (Ctrl+F5 / przytrzymaj odswiezanie).
+1. Po Upload na Telegram: "Centrala wystartowala: v3.58.14".
+2. Dotknij kafelka ZEWNETRZNA -> pod karta czujnika sekcja "Zrodlo temperatury
+   zewnetrznej": [Zew 1 · DS18B20  x,x °C] [Zew 2 · DHT22  y,y °C], podswietlony
+   Zew 1, pod spodem "Aktywne: DS18B20 · Magistrala 1-Wire".
+3. Dotknij Zew 2 -> toast "ustaw zewnZrodlo 2" potwierdzony; po 1-2 s Zew 2
+   podswietlony, naglowek arkusza "DHT22 · czujnik wilgotnosci", kafelek
+   ZEWNETRZNA pokazuje y,y (wartosc DHT22). /api/lan/status: "zewnZrodlo":2.
+4. Odwrotnie z innego miejsca - np. z Telegrama / aplikacji / drugiej karty
+   przegladarki wyslij "ustaw zewnZrodlo 1": strona (nieruszana) po 1-2 s
+   sama przelacza sie na Zew 1 i kafelek wraca do DS18B20. To jest ta
+   wspolzaleznosc: jedno ustawienie w centrali, wszyscy je czytaja.
+5. Restart centrali (reboot) -> ustawienie zostaje (NVS).
+6. Wykresy: serie Zew 1 i Zew 2 jak dotad, niezaleznie od wyboru.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa (3.58.13). Ustawienie zewnZrodlo
+w NVS nikomu nie przeszkadza (starsze firmware go nie czyta).
+
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\)
+----------------------------------
+- testy-pc.txt: applyIncomingData() i sekcja wyboru z HTML w tym pliku w jsdom
+  (18 sprawdzen: status -> kafelek/przyciski, klikniecie -> komenda bez stanu
+  optymistycznego, zmiana z aplikacji -> strona podaza, Zew 2 bez odczytu,
+  symulacja, stare firmware, smieci); to samo na Piec.html; galaz C++
+  ustawParametrPieca + NVS + JSON wyciete z pliku i skompilowane g++ -Werror
+  (12 sprawdzen); plik = 3.58.13 + patch (SHA); node --check obu blokow
+  <script>; testy 3.58.13 (18+11) i DYM-SYM 3.58.11 (21) na tym pliku.
+- Caly plik NIE byl kompilowany w PlatformIO (brak toolchainu ESP32 tutaj).

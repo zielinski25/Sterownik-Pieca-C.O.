@@ -1,0 +1,79 @@
+Wyniki tests/uruchom_testy.sh (PC, 2026-11-23, bez plytki; node v22.22.3, g++ 12, jsdom 24)
+
+=== A. ZEWN-ZRODLO (JS): applyIncomingData() + zewnZrodloSekcjaHtml() z ../src/main_centrala.cpp ===
+      [ OK ] status zewnZrodlo=1: kafelek t_zewn = DS18B20 3.5, oba surowe odczyty dostepne (3.5 / 4.2)
+      [ OK ] pola t_zewn, t_zewn_ds, t_zewn_2, zewnZrodlo oznaczone jako odebrane
+      [ OK ] naglowek arkusza: magistrala DS18B20
+      [ OK ] dwa przyciski, podswietlony Zew 1
+      [ OK ] przyciski pokazuja biezace odczyty obu czujnikow (3.5 / 4.2)
+      [ OK ] opis: "Aktywne: DS18B20 ..."
+      [ OK ] klikniecie Zew 2 wysyla "ustaw zewnZrodlo 2"
+      [ OK ] po ACK, ale przed nowym statusem: kafelek i podswietlenie bez zmian (zadnego stanu optymistycznego)
+      [ OK ] status zewnZrodlo=2: kafelek t_zewn = DHT22 4.2, DS18B20 nadal w t_zewn_ds
+      [ OK ] podswietlenie przeszlo na Zew 2 ze statusu
+      [ OK ] magistrala i opis: DHT22
+      [ OK ] zmiana z aplikacji (status zewnZrodlo=1): kafelek 3.5 i przycisk Zew 1 - bez zadnej komendy ze strony
+      [ OK ] zewnZrodlo=2 + t_zewn_2=null: kafelek BRAK DANYCH (t_zewn NaN), DS18B20 widoczny tylko jako Zew 1
+      [ OK ] opis i przycisk Zew 2: brak odczytu
+      [ OK ] symulacja zewn aktywna: t_zewn = wartosc wymuszona -12.0 mimo zewnZrodlo=2
+      [ OK ] firmware bez pola zewnZrodlo: t_zewn = DS18B20, opis "wybor niedostepny"
+      [ OK ] zewnZrodlo=3 / 1.5 odrzucone (t_zewn zostaje DS18B20)
+      [ OK ] t_zewn_2=95 poza zakresem DHT22 (-40..80) odrzucone
+    ZALICZONY: wszystkie sprawdzenia OK (18)
+[A2] to samo na Piec.html z repozytorium
+      [ OK ] status zewnZrodlo=1: kafelek t_zewn = DS18B20 3.5, oba surowe odczyty dostepne (3.5 / 4.2)
+      [ OK ] pola t_zewn, t_zewn_ds, t_zewn_2, zewnZrodlo oznaczone jako odebrane
+      [ OK ] naglowek arkusza: magistrala DS18B20
+      [ OK ] dwa przyciski, podswietlony Zew 1
+      [ OK ] przyciski pokazuja biezace odczyty obu czujnikow (3.5 / 4.2)
+      [ OK ] opis: "Aktywne: DS18B20 ..."
+      [ OK ] klikniecie Zew 2 wysyla "ustaw zewnZrodlo 2"
+      [ OK ] po ACK, ale przed nowym statusem: kafelek i podswietlenie bez zmian (zadnego stanu optymistycznego)
+      [ OK ] status zewnZrodlo=2: kafelek t_zewn = DHT22 4.2, DS18B20 nadal w t_zewn_ds
+      [ OK ] podswietlenie przeszlo na Zew 2 ze statusu
+      [ OK ] magistrala i opis: DHT22
+      [ OK ] zmiana z aplikacji (status zewnZrodlo=1): kafelek 3.5 i przycisk Zew 1 - bez zadnej komendy ze strony
+      [ OK ] zewnZrodlo=2 + t_zewn_2=null: kafelek BRAK DANYCH (t_zewn NaN), DS18B20 widoczny tylko jako Zew 1
+      [ OK ] opis i przycisk Zew 2: brak odczytu
+      [ OK ] symulacja zewn aktywna: t_zewn = wartosc wymuszona -12.0 mimo zewnZrodlo=2
+      [ OK ] firmware bez pola zewnZrodlo: t_zewn = DS18B20, opis "wybor niedostepny"
+      [ OK ] zewnZrodlo=3 / 1.5 odrzucone (t_zewn zostaje DS18B20)
+      [ OK ] t_zewn_2=95 poza zakresem DHT22 (-40..80) odrzucone
+    ZALICZONY: wszystkie sprawdzenia OK (18)
+[A3] kontrolnie 3.58.13 - nie ma sekcji wyboru zrodla (test ma zglosic brak)
+    [OK] 3.58.13 nie zalicza (brak ZEWN_ZRODLA)
+=== B. ZEWN-ZRODLO (C++): galaz ustawParametrPieca, NVS, JSON - g++ -Wall -Wextra -Werror ===
+      [ OK ] domyslnie zewnZrodlo = 1 (DS18B20) - zachowanie jak przed 3.58.14
+      [ OK ] ustaw zewnZrodlo 2 -> zmienna 2, NVS "zewnZrodlo"=2
+      [ OK ] ustaw zewnZrodlo 1 -> zmienna 1, NVS 1
+      [ OK ] ustaw zewnZrodlo 0 -> odrzucone z czytelnym bledem, zmienna bez zmian
+      [ OK ] ustaw zewnZrodlo 3 -> odrzucone
+      [ OK ] ustaw zewnZrodlo -1 -> odrzucone
+      [ OK ] odrzucone wartosci nie dotykaja NVS
+      [ OK ] inne pole nie trafia do tej galezi
+      [ OK ] start bez klucza w NVS -> 1
+      [ OK ] start z NVS 2 -> 2; z uszkodzonym NVS 7 -> 1
+      [ OK ] JSON: /piec/status+/api/lan/status, /api/status (LCD), /api/ustawienia-get niosa "zewnZrodlo":2
+      [ OK ] klucz NVS <= 15 znakow
+    ZALICZONY: 12 sprawdzen OK
+=== C. plik 3.58.14 = 3.58.13 + patch; wersja; skladnia JS; spojnosc ===
+    [OK] FIRMWARE_VERSION = "v3.58.14"
+    [OK] zmienna zewnZrodlo zadeklarowana raz, domyslnie 1
+    [OK] deklaracja przed ustawParametrPieca()
+    [OK] NVS: jeden zapis, jeden odczyt
+    [OK] pole "zewnZrodlo" w 3 JSON-ach (status pelny, /api/status, /api/ustawienia-get)
+    [OK] komenda "ustaw <pole> <w>" generyczna (bez bialej listy) -> dziala dla zewnZrodlo
+    [OK] znaczniki [v3.58.14 ...] (20)
+    [OK] JS: przycisk wysyla 'ustaw zewnZrodlo N'
+    [OK] JS: numericRules + integerKeys dla zewnZrodlo
+    [OK] JS: numericRules dla t_zewn_2
+    [OK] blok <script> 0: node --check (1653 znakow)
+    [OK] blok <script> 1: node --check (410064 znakow)
+    [OK] 3.58.13 + patch = ten plik (SHA eb763b1bb86404ed3d67eee0f82601622d9cbc51cbb868769f6de2738b0376e9)
+    patch: 21 hunkow, +134 / -4
+=== D. testy paczek 3.58.13 (A-B) i 3.58.11 (DYM-SYM) na tym pliku ===
+    [OK] SUWAK-PO-ACK 18/18
+    [OK] SYM-OD-RAZU 11/11
+    [OK] DYM-SYM 21/21
+
+WSZYSTKO OK

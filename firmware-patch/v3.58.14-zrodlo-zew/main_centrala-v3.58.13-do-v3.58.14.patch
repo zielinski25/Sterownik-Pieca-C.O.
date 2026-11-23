@@ -1,0 +1,289 @@
+--- v3.58.13-symulacja-od-razu/src/main_centrala.cpp	2026-11-23 11:34:43.840898553 +0000
++++ v3.58.14-zrodlo-zew/src/main_centrala.cpp	2026-11-23 11:46:52.448550064 +0000
+@@ -1,3 +1,39 @@
++// FIRMWARE_VERSION v3.58.13 -> v3.58.14 (2026-11-26) — WYBÓR ŹRÓDŁA TEMPERATURY ZEWNĘTRZNEJ (ZEW 1 / ZEW 2) WSPÓLNY DLA WWW, APLIKACJI I LCD.
++//
++// [v3.58.14 ZEWN-ZRODLO] — 2026-11-26
++// Życzenie użytkownika (23.11): w arkuszu „Temperatura zewnętrzna” na stronie ma
++// być wybór źródła (Zew 1 = DS18B20, Zew 2 = temperatura z czujnika wilgotności
++// DHT22) — i ma być WSPÓŁZALEŻNY: wybór w aplikacji zmienia kafelek na stronie
++// i odwrotnie. Czyli jedno ustawienie, trzymane w centrali.
++//
++// CO ROBI 3.58.14:
++// [1] byte zewnZrodlo (1|2), NVS "zewnZrodlo" (klucz 10 znaków, limit 15),
++//     domyślnie 1 = DS18B20 — czyli dokładnie dotychczasowe zachowanie.
++// [2] ustawParametrPieca("zewnZrodlo", 1|2): ta sama ścieżka co pozostałe
++//     ustawienia — komenda "ustaw zewnZrodlo N" z Firebase (/piec/cmd), z LAN
++//     (/api/lan/cmd) i ze starej strony (/api/ustawienia-set). Zero nowych tras.
++// [3] Pole "zewnZrodlo" w KAŻDYM statusie: zbudujJsonStatusPelny() (Firebase
++//     /piec/status + /api/lan/status — stąd czyta aplikacja i nowy panel),
++//     wifiZbudujJsonStatus() (/api/status — stąd czyta LCD i stara strona),
++//     /api/ustawienia-get; linia logu ustawień.
++// [4] Panel WWW (WIFI_LOCAL_PANEL_HTML i Piec.html): applyIncomingData() czyta
++//     t_zewn_2 (−40..80, null = brak) i zewnZrodlo; surowy DS18B20 zostaje w
++//     S.t_zewn_ds, a S.t_zewn (kafelek ZEWNĘTRZNA, arkusz, delta panel−zewn)
++//     to wybrane źródło. Wybór Zew 2 bez świeżego DHT22 = BRAK DANYCH (bez
++//     cichego podstawiania DS18B20). Symulacja „zewn” ma pierwszeństwo.
++//     Arkusz: sekcja „Źródło temperatury zewnętrznej” — dwa przyciski z
++//     bieżącymi odczytami obu czujników, wysyłają "ustaw zewnZrodlo N",
++//     podświetlenie wraca ze statusu (jak reszta ustawień). Nagłówek karty
++//     pokazuje magistralę wybranego źródła.
++// CZEGO CELOWO NIE ROBI: centrala NIE podmienia temperaturaNaZewnatrz.
++//     t_zewn w telemetrii/historii to nadal DS18B20, t_zewn_2 nadal DHT22 —
++//     wykresy „Zew 1 / Zew 2” w aplikacji dalej pozwalają je porównywać, a
++//     korekta wilgotności i automatyka nie zmieniają się ani o linię.
++//     Aplikacja Android i LCD: czytają już t_zewn_2; żeby kafelek u nich
++//     też podążał za ustawieniem, muszą uwzględnić pole zewnZrodlo (osobne
++//     poprawki: aplikacja — wymaga źródeł bieżącej wersji; LCD — v1.5.13).
++// Koszt: 1 B RAM; flash +~0,4 kB C++, HTML w PROGMEM +~2,6 kB.
++//
+ // FIRMWARE_VERSION v3.58.12 -> v3.58.13 (2026-11-26) — SYMULACJA WIDOCZNA OD RAZU; SUWAK NIE WRACA PO „ZASTOSUJ”.
+ //
+ // [v3.58.13 SYM-OD-RAZU + SUWAK-PO-ACK] — 2026-11-26
+@@ -1898,6 +1934,16 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.14] — 2026-11-26 — WYBOR ZRODLA TEMPERATURY ZEWNETRZNEJ (ZEW 1 / ZEW 2) WSPOLNY DLA WWW, APLIKACJI I LCD
++// Co: Nowe ustawienie zewnZrodlo (NVS, 1 = DS18B20 / 2 = DHT22) z komenda
++//     "ustaw zewnZrodlo N" (Firebase, LAN, /api/ustawienia-set) i polem "zewnZrodlo"
++//     w /piec/status, /api/lan/status, /api/status, /api/ustawienia-get. Panel WWW:
++//     w arkuszu "Temperatura zewnetrzna" wybor Zew 1 / Zew 2 z oboma odczytami;
++//     kafelek ZEWNETRZNA i wszystko z t_zewn pokazuje wybrane zrodlo.
++// Problem: aplikacja i strona pokazywaly rozne zrodla bez wspolnego ustawienia.
++// Bez zmian: t_zewn/t_zewn_2 w telemetrii i historii (obie serie zostaja), korekta
++//     wilgotnosci, automatyka. Naglowek [v3.58.14 ZEWN-ZRODLO].
++//
+ // [v3.58.13] — 2026-11-26 — SYMULACJA WIDOCZNA OD RAZU; SUWAK NIE WRACA PO ZASTOSUJ
+ // Co: Start symulacji czujnika przepisuje zadana wartosc do zmiennej odczytu
+ //     natychmiast (symulacjaUstawOdczytOdRazu(), obie drogi: komenda "symuluj"
+@@ -6667,7 +6713,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.13";
++static const char* FIRMWARE_VERSION = "v3.58.14";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -9813,6 +9859,11 @@
+ .sym-unit {
+   margin-top: 4px;
+ }
++/* [v3.58.14 ZEWN-ZRODLO] przyciski wyboru źródła: nazwa + bieżący odczyt */
++.zewn-zrodlo { margin-top: 12px; }
++.zewn-zrodlo .seg button { height: 58px; line-height: 1.3; }
++.zewn-zrodlo .seg button small { display: block; font-size: 10.5px; font-weight: 400; opacity: .85; font-family: var(--mono); }
++.zewn-zrodlo .sym-info { color: var(--text-dim); }
+ 
+ .sym-panel {
+   display: none;
+@@ -12329,6 +12380,7 @@
+     online: false, night: false,
+     t_zewn: NaN, t_ogrz: NaN, t_ogrz_sr: NaN, t_bojler: NaN, t_panel: NaN, t_pokoj: NaN,
+     t_powrot: NaN, t_trociny: NaN,
++    t_zewn_ds: NaN, t_zewn_2: NaN, zewnZrodlo: NaN,   // [v3.58.14 ZEWN-ZRODLO] surowy DS18B20, DHT22, wybrane źródło (1|2)
+     cisnienie: NaN, wilgotnosc: NaN, dym: NaN,
+     dym_wlaczony: false, dym_swiezy: false, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
+     pompa: false, mieszadlo: false, rozpalanie: false,
+@@ -13057,6 +13109,7 @@
+ 
+     const numericRules = {
+       t_ogrz: [10, 99], t_ogrz_sr: [10, 99], t_bojler: [10, 95], t_zewn: [-25, 45],
++      t_zewn_2: [-40, 80], zewnZrodlo: [1, 2],   // [v3.58.14 ZEWN-ZRODLO] Zew 2 (DHT22) i wybrane źródło
+       t_panel: [0, 140], t_pokoj: [8, 45], t_powrot: [10, 95], t_trociny: [0, 90],
+       cisnienie: [900, 1100], wilgotnosc: [10, 100], dym: [0, 4095],
+       tryb_serwa: [1, 3], klapa: [0, 180], syberka: [0, 90], wybor: [1, 3], czasOn: [1, 255], czasOff: [1, 255],
+@@ -13075,7 +13128,8 @@
+       'antystopDni', 'mieszadloCzasOn', 'mieszadloCzasOff', 'skokKlapy', 'skokSyberka',
+       'odchylTemp', 'mnoznik', 'progAlarmDym', 'dymCzasOn', 'dymCzasOff',
+       'dymCzasStabilizacji', 'dymTrybPracy', 'pompa_override_min', 'mieszadlo_override_min',
+-      'serwo_override_min', 'dzien', 'miesiac', 'rok', 'wifi_quality', 'ping_ms', 'rozpalanie_pozostalo_s'
++      'serwo_override_min', 'dzien', 'miesiac', 'rok', 'wifi_quality', 'ping_ms', 'rozpalanie_pozostalo_s',
++      'zewnZrodlo'   // [v3.58.14 ZEWN-ZRODLO]
+     ]);
+     const sensorPole = Object.fromEntries(Object.entries(SYM_POLA).map(([pole, key]) => [key, pole]));
+     sensorPole.t_ogrz_sr = 'ogrz';
+@@ -13117,6 +13171,21 @@
+       }
+     });
+ 
++    // [v3.58.14 ZEWN-ZRODLO] Jedno ustawienie w centrali (NVS "zewnZrodlo", komenda
++    // "ustaw zewnZrodlo 1|2", pole statusu "zewnZrodlo"): 1 = Zew 1 (DS18B20, t_zewn),
++    // 2 = Zew 2 (DHT22, t_zewn_2). Oba surowe odczyty zostają w S.t_zewn_ds / S.t_zewn_2
++    // (arkusz pokazuje oba); S.t_zewn — wszędzie w panelu „temperatura zewnętrzna”
++    // (kafelek, arkusz, delta panel−zewn, Telegram-podgląd) — to WYBRANE źródło.
++    // Symulacja „zewn” ma pierwszeństwo (sterownik wymusza t_zewn). Gdy wybrano
++    // Zew 2, a DHT22 nie ma świeżego odczytu (null) — BRAK DANYCH, bez cichego
++    // podstawiania DS18B20 (operator ma widzieć, że wybrane źródło milczy).
++    S.t_zewn_ds = S.t_zewn; real.t_zewn_ds = real.t_zewn;
++    if (receivedFields.has('t_zewn')) receivedFields.add('t_zewn_ds'); else receivedFields.delete('t_zewn_ds');
++    if (receivedFields.has('zewnZrodlo') && S.zewnZrodlo === 2 && !symAktywna('zewn')) {
++      if (receivedFields.has('t_zewn_2')) { S.t_zewn = S.t_zewn_2; real.t_zewn = real.t_zewn_2; receivedFields.add('t_zewn'); }
++      else { S.t_zewn = NaN; real.t_zewn = NaN; receivedFields.delete('t_zewn'); }
++    }
++
+     // trybSerwa i rssi są historycznymi aliasami pól w firmware.
+     if (!receivedFields.has('tryb_serwa')) {
+       const raw = d.trybSerwa;
+@@ -13414,6 +13483,7 @@
+       online: true, night: false,
+       t_zewn: 11.8, t_ogrz: 58.4, t_ogrz_sr: 57.1, t_bojler: 48.6, t_panel: 36.2, t_pokoj: 21.4,
+       t_powrot: 44.2, t_trociny: 31.0, cisnienie: 1009, wilgotnosc: 54, dym: 412,
++      t_zewn_ds: 11.8, t_zewn_2: 12.3, zewnZrodlo: 1,   // [v3.58.14 ZEWN-ZRODLO]
+       dym_wlaczony: true, dym_swiezy: true, dym_alarm: false, alarm_ogrzewanie: false, alarm_panel: false,
+       pompa: true, mieszadlo: false, rozpalanie: false,
+       rozpalanie_potwierdzone: false, rozpalanie_pozostalo_s: 0,
+@@ -13736,6 +13806,10 @@
+         const k = p[1], v = +p[2];
+         if (!(k in S) || typeof S[k] === 'object') return 'nieznane pole ' + k;
+         if (typeof S[k] === 'boolean') S[k] = v === 1; else S[k] = v;
++        if (k === 'zewnZrodlo') {   // [v3.58.14 ZEWN-ZRODLO] demo: kafelek podąża za wyborem
++          if (v !== 1 && v !== 2) return 'zewnZrodlo musi być 1 lub 2';
++          if (!symAktywna('zewn')) { S.t_zewn = v === 2 ? S.t_zewn_2 : S.t_zewn_ds; real.t_zewn = S.t_zewn; }
++        }
+         if (k === 'trybSerwa') {
+           S.tryb_serwa = v; S.trybSerwa = v;
+           if (v !== 2) S.serwo_override_min = 0;
+@@ -14184,6 +14258,39 @@
+     return status.startsWith('SYMULACJA') ? 'sim' : status === 'ODCZYT ODEBRANY' ? 'ok' : status === 'NIEAKTUALNE' ? 'err' : '';
+   }
+ 
++  // [v3.58.14 ZEWN-ZRODLO] Wybór źródła temperatury zewnętrznej w arkuszu „Temperatura
++  // zewnętrzna”. To samo ustawienie, które widzi aplikacja i wyświetlacz — zapisane
++  // w centrali (NVS), więc zmiana tutaj jest widoczna wszędzie i odwrotnie.
++  // Przycisk wysyła "ustaw zewnZrodlo N"; podświetlenie wraca wyłącznie ze statusu.
++  const ZEWN_ZRODLA = [
++    [1, 'Zew 1', 'DS18B20 · Magistrala 1-Wire', 't_zewn_ds'],
++    [2, 'Zew 2', 'DHT22 · czujnik wilgotności', 't_zewn_2']
++  ];
++  function zewnZrodloNr() { return hasData('zewnZrodlo') && (S.zewnZrodlo === 1 || S.zewnZrodlo === 2) ? S.zewnZrodlo : null; }
++  function zewnZrodloMagistrala(domyslna) { const z = ZEWN_ZRODLA.find(x => x[0] === zewnZrodloNr()); return z ? z[2] : domyslna; }
++  function zewnZrodloSekcjaHtml() {
++    const wrap = h('div', 'sym-unit');
++    wrap.innerHTML = '<div class="ust-sekcja"><b>Źródło temperatury zewnętrznej</b><i></i></div>' +
++      '<div class="row-desc" style="margin-bottom:8px">Wspólne dla strony, aplikacji i wyświetlacza — zapisane w centrali. ' +
++      'Kafelek ZEWNĘTRZNA i wszystko, co używa temperatury zewnętrznej, pokazuje wybrane źródło; wykresy mają obie serie.</div>';
++    const etykieta = z => {
++      const v = hasData(z[3]) ? S[z[3]] : NaN;
++      return z[1] + ' · ' + z[2].split(' · ')[0] + '<br><small>' + (Number.isFinite(v) ? fmt1(v) + ' °C' : 'brak odczytu') + '</small>';
++    };
++    wrap.appendChild(seg(ZEWN_ZRODLA.map(z => [z[0], etykieta(z)]), zewnZrodloNr, v => sendCommand('ustaw zewnZrodlo ' + v)));
++    const info = h('div', 'row-desc sym-info'); info.style.marginTop = '6px';
++    wrap.appendChild(info);
++    live$(wrap, el => {
++      $$('.seg button', el).forEach((btn, i) => { const t = etykieta(ZEWN_ZRODLA[i]); if (btn.innerHTML !== t) btn.innerHTML = t; });
++      const nr = zewnZrodloNr();
++      info.textContent = _isDemoMode ? 'TRYB DEMO — wybór nie jest wysyłany do sterownika.' :
++        nr === null ? 'Centrala nie zgłasza źródła (firmware starsze niż 3.58.14) — wybór niedostępny.' :
++        symAktywna('zewn') ? 'Aktywna symulacja „zewn” — sterownik wymusza temperaturę niezależnie od źródła.' :
++        'Aktywne: ' + zewnZrodloMagistrala('—') + (nr === 2 && !hasData('t_zewn_2') ? ' — brak świeżego odczytu DHT22, kafelek pokazuje BRAK DANYCH.' : '.');
++    });
++    return wrap;
++  }
++
+   function sensorModalContent(sen) {
+     const b = h('div');
+     if (!sen) return b;
+@@ -14200,7 +14307,7 @@
+           <div class="sf-ico">${sen.ico || '🌡️'}</div>
+           <div class="sf-meta">
+             <b>${sen.name}</b>
+-            <span>${sen.bus}</span>
++            <span id="sf-bus-${sen.id}">${sen.id === 'zewn' ? zewnZrodloMagistrala(sen.bus) : sen.bus}</span>
+           </div>
+         </div>
+         <div class="sf-r">
+@@ -14210,7 +14317,7 @@
+       </div>
+       <div style="font-size:10px; color:var(--text-dim); display:flex; justify-content:space-between; margin-top:8px; flex-wrap:wrap; gap:6px">
+         <span>Zakres roboczy: <b>${sen.min} do ${sen.max} ${sen.unit}</b></span>
+-        <span>Magistrala: <b>${sen.bus.split('·')[0].trim()}</b></span>
++        <span>Magistrala: <b id="sf-bus2-${sen.id}">${(sen.id === 'zewn' ? zewnZrodloMagistrala(sen.bus) : sen.bus).split('·')[0].trim()}</b></span>
+         <span>Odczyt: <b id="sf-readstatus-${sen.id}">${initialStatus}</b></span>
+       </div>
+     `;
+@@ -14228,9 +14335,16 @@
+         pillEl.textContent = status;
+       }
+       if (readEl) readEl.textContent = status;
++      if (sen.id === 'zewn') {   // [v3.58.14 ZEWN-ZRODLO] magistrala wg wybranego źródła
++        const bus = zewnZrodloMagistrala(sen.bus);
++        const b1 = $('#sf-bus-' + sen.id, el), b2 = $('#sf-bus2-' + sen.id, el);
++        if (b1) b1.textContent = bus;
++        if (b2) b2.textContent = bus.split('·')[0].trim();
++      }
+     });
+ 
+     b.appendChild(diagCard);
++    if (sen.id === 'zewn') b.appendChild(zewnZrodloSekcjaHtml());   // [v3.58.14 ZEWN-ZRODLO]
+ 
+     // 2. Sekcja symulacji (wzór 1:1 z ESP Centrala — zwijana pod przyciskiem Symulacja)
+     b.appendChild(symulacjaSekcjaHtml(sen.id, sen.name, sen.unit, sen.min, sen.max, sen.step, sen.key));
+@@ -24157,6 +24271,14 @@
+ // - deklaracja bez logiki nie zmienia zadnego zachowania.
+ bool antystopWlaczony = true;                       // wl./wyl. calej funkcji (domyslnie wlaczona)
+ byte antystopDni = 10;                               // 1-45 dni bez ruchu pompy -> wymuszony puls (gorny limit 45, bo millis() zawija sie po ~49.7 dnia)
++// [v3.58.14 ZEWN-ZRODLO] Ktory czujnik jest "temperatura zewnetrzna" dla
++// uzytkownika: 1 = Zew 1 (DS18B20, pole t_zewn), 2 = Zew 2 (DHT22, pole
++// t_zewn_2). Jedno ustawienie dla WWW, aplikacji i LCD: NVS "zewnZrodlo",
++// komenda "ustaw zewnZrodlo 1|2" (Firebase, LAN, /api/ustawienia-set), pole
++// "zewnZrodlo" w kazdym statusie. Centrala NIE podmienia temperaturaNaZewnatrz
++// (t_zewn zostaje DS18B20: historia, wykresy Zew 1/Zew 2 i korekta wilgotnosci
++// bez zmian) - o tym, co pokazac na kafelku, decyduje klient wg tego pola.
++byte zewnZrodlo = 1;
+ const unsigned long ANTYSTOP_CZAS_PULSU_MS = 45000;  // 45s, stala - NIE ustawienie w panelu
+ unsigned long antystopOstatniRuchMs = 0;             // znacznik czasu (millis()) ostatniego ruchu pompy
+ bool antystopWTrakcie = false;                       // czy aktualnie trwa wymuszony puls antystopu
+@@ -24486,6 +24608,10 @@
+     // gorny limit celowy: millis() zawija sie po ~49.7 dnia.
+     if (w < 1 || w > 45) { err = "antystopDni poza zakresem 1-45"; return false; }
+     antystopDni = w; config.putUChar("antystopDni", antystopDni);
++  } else if (pole == "zewnZrodlo") {
++    // [v3.58.14 ZEWN-ZRODLO] patrz komentarz przy deklaracji zmiennej.
++    if (w != 1 && w != 2) { err = "zewnZrodlo musi byc 1 (DS18B20) lub 2 (DHT22)"; return false; }
++    zewnZrodlo = w; config.putUChar("zewnZrodlo", zewnZrodlo);
+   } else if (pole == "mieszadloWlaczony") {
+     // [MIESZADLO-CYKL] Glowny wylacznik — jesli false, mieszadlo() nie
+     // zaladuje przekaznika niezaleznie od pozostalych warunkow.
+@@ -29648,6 +29774,7 @@
+   linia += " tempOff=" + String(Temp_OFF);
+   linia += " antystopWlaczony=" + String(antystopWlaczony ? 1 : 0);
+   linia += " antystopDni=" + String(antystopDni);
++  linia += " zewnZrodlo=" + String(zewnZrodlo);   // [v3.58.14]
+   linia += " mieszadloWlaczony=" + String(mieszadloWlaczony ? 1 : 0);
+   linia += " mieszadloCzasOn=" + String(mieszadloCzasOn);
+   linia += " mieszadloCzasOff=" + String(mieszadloCzasOff);
+@@ -31323,6 +31450,7 @@
+   j += F("\"fw\":\""); j += FIRMWARE_VERSION; j += F("\",");
+   j += F("\"t_zewn\":"); j += String(temperaturaNaZewnatrz, 1); j += F(",");
+   j += F("\"t_zewn_2\":"); j += jsonTempDiag(); j += F(",");
++  j += F("\"zewnZrodlo\":"); j += String(zewnZrodlo); j += F(",");   // [v3.58.14 ZEWN-ZRODLO] dla LCD i starej strony
+   j += F("\"t_bojler\":"); j += String(temperaturaBojlera, 1); j += F(",");
+   j += F("\"t_ogrz\":"); j += String(temperaturaOgrzewania, 1); j += F(",");
+   j += F("\"t_ogrz_sr\":"); j += String(temperaturaOgrzewaniaSrednia, 1); j += F(",");
+@@ -32742,6 +32870,7 @@
+     // [ANTYSTOP-POMPA, punkt 7/8 wg AUDYT_KOTLA_CO_WSPOLNY.md, CZESC 2]
+     json += ",\"antystopWlaczony\":" + String(antystopWlaczony ? "true" : "false");
+     json += ",\"antystopDni\":" + String(antystopDni);
++    json += ",\"zewnZrodlo\":" + String(zewnZrodlo);   // [v3.58.14 ZEWN-ZRODLO]
+     // [MIESZADLO-CYKL] "rozpalanie" celowo dolaczone tutaj mimo braku NVS —
+     // to biezacy stan przejsciowy, panel ma go pokazac tak samo jak reszte.
+     json += ",\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false");
+@@ -46007,6 +46136,7 @@
+   // [FB-USTAWIENIA] nad tym blokiem.
+   ja("\"antystopWlaczony\":" + String(antystopWlaczony ? "true" : "false") + ",");
+   ja("\"antystopDni\":" + String(antystopDni) + ",");
++  ja("\"zewnZrodlo\":" + String(zewnZrodlo) + ",");   // [v3.58.14 ZEWN-ZRODLO] 1=DS18B20 (t_zewn), 2=DHT22 (t_zewn_2)
+   ja("\"mieszadloWlaczony\":" + String(mieszadloWlaczony ? "true" : "false") + ",");
+   ja("\"mieszadloCzasOn\":" + String(mieszadloCzasOn) + ",");
+   ja("\"mieszadloCzasOff\":" + String(mieszadloCzasOff) + ",");
+@@ -50305,6 +50435,8 @@
+   // [ANTYSTOP-POMPA, punkt 6/8 wg AUDYT_KOTLA_CO_WSPOLNY.md, CZESC 2]
+   antystopWlaczony         = config.getBool("antystopWlacz", true);  // [FIX NVS-15] patrz PLAN_NAPRAWY_NVS_KLUCZE_15_ZNAKOW.md
+   antystopDni              = config.getUChar("antystopDni", 10);
++  zewnZrodlo               = config.getUChar("zewnZrodlo", 1);   // [v3.58.14 ZEWN-ZRODLO]
++  if (zewnZrodlo != 1 && zewnZrodlo != 2) zewnZrodlo = 1;
+   Czas_ON                  = config.getUChar("czasOn", 10);
+   Czas_OFF                 = config.getUChar("czasOff", 30);
+   TrybSerwa                = config.getUChar("trybSerwa", 1);
