@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.16
+# Panel LCD (wyświetlacz CO) — firmware v1.5.17
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,33 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.17
+
+Kafelek ZEWN wg kolejnego wyboru w projektancie `docs/symulator_kafelka_zewn.html`
+(23.11 wieczór: *ikony=kolor rozmiar=40 napis=rodzaj czas=pełny układ=E
+kolor=biały brak_czujnika=prognoza*) i uwagi „popraw napisy, bo się niektóre
+nie mieszczą” (na pasku z v1.5.14 „deszcz za 45 m…” wchodziło pod ikonę):
+
+- **układ E** — napis o pogodzie (biały, czcionka 14) **w miejscu tytułu „ZEWN”**,
+  temperatura czcionką 28 w zwykłym wierszu wartości jak sąsiednie kafelki;
+  niebieski pasek z v1.5.14 znika,
+- obok ikony 40 px jest tylko 62 px, więc napis ma **dwie linie: zjawisko / czas**
+  — „deszcz” / „za 45 min”, „śnieg” / „za 2 h”, „pada” / „30 min”, „sypie” /
+  „60 min”, „silny” / „wiatr”, a jednolinijkowe „mgła”, „mży”, „pada”. Linia
+  szersza niż 62 px dostaje odstęp liter −1 („za 45 min” 69 → 61 px); najszersza
+  („za 99 min”, 62 px) kończy się 1 px przed ikoną,
+- *napis=rodzaj*: bez opadu i zjawiska (słońce, chmury, noc) napisu nie ma —
+  wraca tytuł „ZEWN”, stan nieba pokazuje sama ikona,
+- *brak_czujnika=prognoza*: bez DS18B20 (`-1.0`) kafelek pokazuje temperaturę
+  z prognozy jako **„~3°C”** (tylda = w przybliżeniu, bez miejsca po przecinku).
+  Potrzebuje **centrali 3.58.17** (`firmware-patch/v3.58.17-pogoda-temp/`) z nowym
+  polem `pogoda_temp` w `/api/status` (Open-Meteo `temperature_2m`, `null` = brak).
+  Starsza centrala lub `null` → „--” jak dotąd.
+
+Test hosta `kafelki_szerokosc` (49 sprawdzeń) mierzy każdą linię napisu
+względem ikony; `sprawdz_pola_statusu.py` zna `pogoda_temp`. Projektant HTML ma
+domyślnie wybrany układ i prawdziwe dwuliniowe łamanie napisów.
 
 ## Co zmienia v1.5.16
 

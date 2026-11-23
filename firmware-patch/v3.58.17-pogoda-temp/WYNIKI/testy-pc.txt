@@ -1,0 +1,48 @@
+=== A. POGODA-TEMP: parsowanie Open-Meteo, pole /api/status, URL, wersja, WWW ===
+    [OK] nadciaga za 120 min (jak dotad)
+    [OK] [3.58.17] pogoda_temp=-3.5 (ujemna, z bloku current, nie current_units)
+    [OK] pogoda_kod=3 (teraz pochmurno)
+    [OK] pogoda_kod_opad=71 (w slocie opadu snieg)
+    [OK] dzien=1, porywy=25.2
+    [OK] pada, koniec za 45 min (jak dotad)
+    [OK] [3.58.17] pogoda_temp=7.2
+    [OK] pada -> pogoda_kod_opad = kod biezacy 63
+    [OK] noc, porywy 61.7
+    [OK] brak opadu (jak dotad)
+    [OK] [3.58.17] odpowiedz bez temperature_2m -> pogoda_temp = brak (-99), nie zostaje stara wartosc
+    [OK] pogoda_kod=0, pogoda_kod_opad=-1
+    [OK] bez weather_code: nadciaga za 30 min (jak dotad)
+    [OK] bez nowych pol: wszystkie -1
+    [OK] [3.58.17] bez nowych pol: pogoda_temp = brak
+    [OK] null w slocie opadu -> pogoda_kod_opad=-1, reszta OK
+    [OK] [3.58.17] pogoda_temp=0.0 (zero to nie brak)
+    [OK] [3.58.17] "temperature_2m":null -> brak
+ZALICZONY: parsowanie Open-Meteo OK (0 bledow)
+    [OK] FIRMWARE_VERSION = "v3.58.17"
+    [OK] /api/status ma pole "pogoda_temp"
+    [OK] pogoda_temp zaraz za wiatr_porywy
+    [OK] liczba z 1 miejscem po przecinku albo null (brak danych)
+    [OK] DESZCZ_URL: current=...,temperature_2m
+    [OK] DESZCZ_URL: reszta jak w 3.58.16
+    [OK] definicje pogodaTemp / POGODA_TEMP_BRAK
+    [OK] extern dla wifiZbudujJsonStatus()
+    [OK] odczyt temperature_2m w pobierzPrognozeDeszczu() i przypisanie
+    [OK] HTML strony WWW identyczny jak w 3.58.16
+    [OK] blok <script> 0: node --check (410064 znakow)
+=== B. plik 3.58.17 = 3.58.16 + patch ===
+    [OK] 3.58.16 + patch = ten plik (SHA 93dab586bf684dc0189bd18ab36ec29ee7dfef9f5a9018b201d303c5910f3dd6)
+=== C. testy paczki 3.58.16 (A-C) na tym pliku ===
+    ZALICZONY: parsowanie Open-Meteo OK (0 bledow)
+        BLAD: SHA po patchu f8d0c997682f6f68301d06913cec96b2f1a39c0d8240ae08479154630bca4bbd, plik d52026cb51833518c1d2a362bbc388267fb14bbfedff905719671af34f91f904
+            BLAD: C++ za HTML-em identyczne jak w 3.58.14
+            BLAD: SHA po patchu 8bfab4e5471370b4b11b0930eec3405cca79957e3c6df118dfba9226cdf8f0d7, plik 30c73d2c7dde40772e9e812cfeeea22f94f4d57a2b5591cdb4af252adcc8a9d9
+                ZALICZONY: wszystkie sprawdzenia OK (18)
+                ZALICZONY: wszystkie sprawdzenia OK (18)
+                ZALICZONY: 12 sprawdzen OK
+                BLAD: SHA po patchu eb763b1bb86404ed3d67eee0f82601622d9cbc51cbb868769f6de2738b0376e9, plik 98555e8e5d3528dace11a64f2cc3cbd69b891af16aa76e6b41acbac39be5cd93
+            BLEDOW: 1
+        BLEDOW: 2
+    BLEDOW: 1
+    [OK] testy 3.58.16/3.58.15/3.58.14 zaliczone (pominieto tylko porownania SHA z patchem, 'C++ identyczne z 3.58.14' i dokladny ciag URL z 3.58.16 - nie dotycza tego pliku)
+
+WSZYSTKO OK

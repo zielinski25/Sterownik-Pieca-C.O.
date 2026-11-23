@@ -168,7 +168,11 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
                                     // wiatr_porywy z /api/status centrali 3.58.16 (-1 = brak; starsza
                                     // centrala nie podaje -> kafelek ZEWN jak do v1.5.12)
                                     int pogodaKod = -1, int pogodaKodOpad = -1, int pogodaDzien = -1,
-                                    float wiatrPorywy = -1.0f);
+                                    float wiatrPorywy = -1.0f,
+                                    // [v1.5.17] pogoda_temp z centrali 3.58.17 (°C z prognozy, -99 =
+                                    // brak/null) - pokazywana jako "~3°C" tylko gdy czujnik DS18B20 nie
+                                    // dziala (tZewn == -1.0); inaczej "--" jak dotad
+                                    float pogodaTemp = -99.0f);
 
 // stan przekazany do callbacku: "auto" / "wl" / "wyl" - dokladnie takie
 // wartosci parametru `stan`, jakich oczekuje POST /api/pompa-manual na

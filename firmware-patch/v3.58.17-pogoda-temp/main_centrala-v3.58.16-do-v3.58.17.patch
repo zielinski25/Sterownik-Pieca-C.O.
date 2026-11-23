@@ -1,0 +1,119 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,18 @@
++// FIRMWARE_VERSION v3.58.16 -> v3.58.17 (2026-11-23) — TEMPERATURA Z PROGNOZY („pogoda_temp”) W /api/status DLA KAFELKA ZEWN NA LCD.
++//
++// [v3.58.17 POGODA-TEMP] — 2026-11-23
++// Życzenie użytkownika (23.11, projektant kafelka ZEWN: „brak_czujnika=prognoza”):
++// gdy czujnik temperatury zewnętrznej nie działa (t_zewn = -1.0), panel LCD ma
++// pokazać „~3°C” z prognozy zamiast „--”. Centrala dokłada do ISTNIEJĄCEGO
++// zapytania DESZCZ do Open-Meteo (pobierzPrognozeDeszczu(), co 15 min) pole
++// bieżące temperature_2m i wystawia w /api/status (zaraz za „wiatr_porywy”):
++//   "pogoda_temp" — temperatura powietrza 2 m z Open-Meteo, °C, jedno miejsce po
++//                   przecinku; null = brak danych (przed pierwszym pobraniem,
++//                   brak internetu, pole nieobecne w odpowiedzi).
++// Panel (LCD v1.5.17) używa jej TYLKO przy braku czujnika — z czujnikiem nic się
++// nie zmienia. Logika deszcz_stan/deszcz_min i pola 3.58.16 bez zmian. Odpowiedź
++// Open-Meteo rośnie o ~20 B. Bez wpływu na sterowanie, telemetrię i historię.
++//
+ // FIRMWARE_VERSION v3.58.15 -> v3.58.16 (2026-11-23) — KOD POGODY (WMO) I PORYWY WIATRU W /api/status DLA KAFELKA ZEWN NA LCD.
+ //
+ // [v3.58.16 POGODA-ZEWN] — 2026-11-23
+@@ -1969,6 +1984,13 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.17] — 2026-11-23 — TEMPERATURA Z PROGNOZY W /api/status (KAFELEK ZEWN BEZ CZUJNIKA)
++// Co: Zapytanie DESZCZ do Open-Meteo pobiera dodatkowo current.temperature_2m;
++//     /api/status dostaje pole pogoda_temp (°C, null = brak danych). Panel LCD
++//     v1.5.17 pokazuje "~3°C" z prognozy, gdy czujnik zewnetrzny nie dziala
++//     (t_zewn = -1.0) - zamiast "--".
++// Bez zmian: deszcz_stan/deszcz_min, pola 3.58.16, sterowanie, telemetria.
++//
+ // [v3.58.16] — 2026-11-23 — KOD POGODY WMO I PORYWY WIATRU W /api/status (KAFELEK ZEWN NA LCD)
+ // Co: Zapytanie DESZCZ do Open-Meteo pobiera dodatkowo current.weather_code,
+ //     current.is_day, current.wind_gusts_10m i minutely_15.weather_code;
+@@ -6765,7 +6787,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.16";
++static const char* FIRMWARE_VERSION = "v3.58.17";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -7498,6 +7520,8 @@
+ extern int pogodaKodOpad;   // [v3.58.16] kod WMO dla deszcz_stan/deszcz_min (-1 = brak)
+ extern int pogodaDzien;     // [v3.58.16] 1 dzien / 0 noc / -1 brak
+ extern float wiatrPorywy;   // [v3.58.16] porywy wiatru km/h (-1 = brak)
++extern float pogodaTemp;    // [v3.58.17] temperatura 2 m z Open-Meteo, °C (POGODA_TEMP_BRAK = brak)
++extern const float POGODA_TEMP_BRAK;
+ // [PROGNOZA-ETAP1] Ten sam powod/wzorzec co deszczStan/deszczMinuty wyzej -
+ // uzywane w handlerze /api/prognoza (blisko /api/status), definiowane
+ // dopiero w sekcji PROGNOZA (definicja nizej, przy pobierzPelnaPrognoze()).
+@@ -31644,6 +31668,12 @@
+     j += F(",\"pogoda_kod_opad\":"); j += String(pogodaKodOpad);
+     j += F(",\"pogoda_dzien\":"); j += String(pogodaDzien);
+     j += F(",\"wiatr_porywy\":"); j += String(wiatrPorywy, 1);
++    // [v3.58.17 POGODA-TEMP] Temperatura powietrza z prognozy - panel LCD
++    // v1.5.17 pokazuje ja ("~3°C") TYLKO gdy czujnik zewnetrzny nie dziala.
++    // null (nie liczba) gdy brak danych - temperatura moze byc ujemna, wiec
++    // -1 nie nadaje sie na znacznik braku jak w polach wyzej.
++    j += F(",\"pogoda_temp\":");
++    if (pogodaTemp > POGODA_TEMP_BRAK + 1.0f) j += String(pogodaTemp, 1); else j += F("null");
+   }
+   j += F("}");
+   return j;
+@@ -47368,7 +47398,9 @@
+   // [v3.58.16 POGODA-ZEWN] + weather_code/is_day/wind_gusts_10m (teraz) i
+   // minutely_15 weather_code (kod w slocie zapowiadanego opadu). Kolejnosc
+   // pol w odpowiedzi nie ma znaczenia - kazde szukane po nazwie.
+-  "&current=precipitation,weather_code,is_day,wind_gusts_10m"
++  // [v3.58.17 POGODA-TEMP] + temperature_2m (teraz) - "~3°C" na kafelku
++  // ZEWN, gdy czujnik nie dziala.
++  "&current=precipitation,weather_code,is_day,wind_gusts_10m,temperature_2m"
+   "&minutely_15=precipitation,weather_code&forecast_days=2"
+   "&timezone=Europe%2FWarsaw";
+ 
+@@ -47396,6 +47428,11 @@
+ int pogodaKodOpad = -1;
+ int pogodaDzien = -1;
+ float wiatrPorywy = -1.0f;
++// [v3.58.17 POGODA-TEMP] Temperatura powietrza 2 m z bloku "current" tego
++// samego zapytania. Znacznik braku POGODA_TEMP_BRAK (-99) zamiast -1, bo -1 °C
++// to prawidlowa temperatura; w /api/status brak = null.
++const float POGODA_TEMP_BRAK = -99.0f;
++float pogodaTemp = POGODA_TEMP_BRAK;
+ 
+ // [v3.58.16] Liczba po kluczu "klucz": w zakresie [od, do) surowego JSON-u
+ // (blok "current"). Zwraca false, gdy klucza nie ma w tym zakresie - wtedy
+@@ -47510,10 +47547,15 @@
+   }
+ 
+   // [v3.58.16 POGODA-ZEWN] Pola biezace - kazde niezaleznie, brak = -1.
+-  float fKod = -1.0f, fDzien = -1.0f, fPorywy = -1.0f;
++  float fKod = -1.0f, fDzien = -1.0f, fPorywy = -1.0f, fTemp = POGODA_TEMP_BRAK;
+   pogoda_json_liczba_w_bloku(body, pCur, pCurEnd, "weather_code", fKod);
+   pogoda_json_liczba_w_bloku(body, pCur, pCurEnd, "is_day", fDzien);
+   pogoda_json_liczba_w_bloku(body, pCur, pCurEnd, "wind_gusts_10m", fPorywy);
++  // [v3.58.17] temperature_2m: w bloku "current" (nie "current_units", bo
++  // tam po kluczu jest tekst "°C", a szukamy od "current":{).
++  bool tempJest = pogoda_json_liczba_w_bloku(body, pCur, pCurEnd, "temperature_2m", fTemp);
++  if (tempJest && (fTemp < -70.0f || fTemp > 60.0f)) tempJest = false;   // smieci / null
++  const float nowaTemp = tempJest ? fTemp : POGODA_TEMP_BRAK;
+   const int nowyPogodaKod = (fKod >= 0.0f && fKod <= 99.0f) ? (int)(fKod + 0.5f) : -1;
+   const int nowyPogodaDzien = (fDzien >= 0.0f) ? ((fDzien >= 0.5f) ? 1 : 0) : -1;
+   const float nowePorywy = (fPorywy >= 0.0f) ? fPorywy : -1.0f;
+@@ -47631,9 +47673,10 @@
+   pogodaKodOpad = nowyPogodaKodOpad;
+   pogodaDzien = nowyPogodaDzien;
+   wiatrPorywy = nowePorywy;
++  pogodaTemp = nowaTemp;              // [v3.58.17]
+ 
+-  DLOGF(DC_WEATHER, DL_DEBUG, "DESZCZ zdarzenie=stan indeks_teraz=%d opad_teraz_mm=%.2f stan=%d za_min=%d pogoda_kod=%d pogoda_kod_opad=%d dzien=%d porywy_kmh=%.1f",
+-                indeksTeraz, curOpad, deszczStan, deszczMinuty, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy);
++  DLOGF(DC_WEATHER, DL_DEBUG, "DESZCZ zdarzenie=stan indeks_teraz=%d opad_teraz_mm=%.2f stan=%d za_min=%d pogoda_kod=%d pogoda_kod_opad=%d dzien=%d porywy_kmh=%.1f pogoda_temp=%.1f",
++                indeksTeraz, curOpad, deszczStan, deszczMinuty, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy, pogodaTemp);
+ }
+ 
+ // ── [PROGNOZA-ETAP1, PLAN_PROGNOZA.md] Pelny ekran prognozy (LCD: 8 kart

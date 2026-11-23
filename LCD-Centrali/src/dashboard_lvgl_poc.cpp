@@ -299,16 +299,22 @@ static void ustawNapis(lv_obj_t *obj, const char *tekst) {
 // kafelka.
 static const int KAFELEK_WARTOSC_X = 8, KAFELEK_WARTOSC_Y = 52;
 static const int KAFELEK_WARTOSC_MAX_SZER = 114 - KAFELEK_WARTOSC_X - 6;
-// [v1.5.14 POGODA-ZEWN] Kafelek ZEWN z paskiem pogody - opis przy zewn_pogoda_odswiez().
-// Pasek: 18 px na dole karty (kh=90 -> y=71..89 wewnatrz ramki; czcionka 14 ma
-// 16 px wysokosci + 1 px marginesu). Temperatura (wiersz 30 px) nad nim:
-// y=40..70, czyli 12 px wyzej niz zwykle (KAFELEK_WARTOSC_Y=52). Ikona konczy
-// sie na y=46, ale zajmuje tylko x>=70, a cyfry czcionki 28 zaczynaja sie
-// ~5 px ponizej gory wiersza - realne nakladanie to najwyzej 1 px w rogu.
-static const int ZEWN_PASEK_H = 18;
-static const int ZEWN_PASEK_TEMP_Y = 40;
-#define KOL_ZEWN_PASEK_TLO   0x11CB   // #153a5e - ciemnoniebieskie tlo paska
-#define KOL_ZEWN_PASEK_TEKST 0x8E3F   // #8fc7ff - napis (niebieski, jak KOL_ZEWN_NEUTRALNY)
+// [v1.5.17 POGODA-ZEWN E] Kafelek ZEWN, uklad "E" z projektanta (wybor z
+// 23.11: "napis=rodzaj czas=pelny uklad=E kolor=bialy brak_czujnika=prognoza"):
+// napis o pogodzie ZAMIAST tytulu "ZEWN" (lewy gorny rog, czcionka 14, bialy),
+// temperatura czcionka 28 w zwyklym wierszu wartosci jak kazdy kafelek. Ikona
+// 40 px siedzi w prawym gornym rogu (wewnatrz ramki: x=68..107, y=6..45),
+// wiec na napis (od x=6) zostaje 62 px - za malo na "deszcz za 45 min"
+// (121 px) w jednej linii, dlatego napis ma DWIE linie: zjawisko / czas
+// ("deszcz" / "za 45 min").
+// Linie szersze niz 62 px dostaja odstep liter -1 ("za 45 min" 69 -> 61 px),
+// a gdy i to nie wystarcza, czas bez "za". Dwie linie 14 px (y=4..38) koncza
+// sie nad wierszem wartosci (y=52). Opis w zewn_pogoda_odswiez().
+static const int ZEWN_NAPIS_X = 6, ZEWN_NAPIS_Y = 4;
+static const int ZEWN_NAPIS_MAX_SZER = 62;
+// Temperatura z prognozy (centrala 3.58.17, pole pogoda_temp) - uzywana tylko
+// gdy czujnik nie dziala; -99 = brak (taki sam znacznik jak w centrali).
+static const float ZEWN_POGODA_TEMP_BRAK = -99.0f;
 static const lv_font_t* kafelekWartoscCzcionka(const char *tekst, int maxSzer) {
   static const lv_font_t* const FONTY[] = { &lv_font_pl_28, &lv_font_pl_20, &lv_font_pl_14 };
   for (const lv_font_t* f : FONTY)
@@ -585,21 +591,24 @@ static lv_obj_t *pompaTrybAutoBtn = nullptr;
 // Uchwyty do kafelkow ktore dostaja realne dane z lvgl_dashboard_poc_aktualizuj().
 static lv_obj_t *zewnValLabel = nullptr;
 static lv_obj_t *zewnIcon = nullptr;   // przelaczana bitmapa (mroz/neutralnie/cieplo) - patrz aktualizuj()
-// [v1.5.14 POGODA-ZEWN] Kafelek ZEWN wg wyboru uzytkownika (23.11, projektant
-// docs/symulator_kafelka_zewn.html: "ikony=kolor napis=zawsze uklad=F"):
+// [v1.5.14 POGODA-ZEWN] Kafelek ZEWN wg wyboru uzytkownika w projektancie
+// docs/symulator_kafelka_zewn.html:
 //  - ikona pogody z 1-2 warstw (zewnIcon = warstwa 1, zewnIcon2 = warstwa 2
 //    nakladana na nia; obie przelaczane w zewn_pogoda_odswiez()),
-//  - temperatura ZAWSZE czcionka 28 (przy napisie o pogodzie 12 px wyzej),
-//  - niebieski PASEK na dole kafelka (zewnPasek) z napisem czcionka 14:
-//    "deszcz za 45 min", "śnieg za 2 h", "pada 30 min", "sypie", "mgła",
-//    "silny wiatr", a bez opadu stan nieba "słonecznie" / "pochmurno".
-//    Pasek ukryty, gdy centrala nie ma prognozy (pogoda_kod = -1 i deszcz_stan = 0).
-// Do v1.5.12 napis o deszczu ZASTEPOWAL temperature (zdjecie z 23.11:
-// "niepotrzebnie ona znika"); v1.5.13 miala temperature czcionka 20 i napis
-// pod nia - zastapione tym ukladem po wyborze w projektancie.
+//  - temperatura ZAWSZE czcionka 28 w zwyklym wierszu wartosci,
+//  - [v1.5.17 uklad E] napis o pogodzie (zewnNapisLabel, bialy, czcionka 14,
+//    1-2 linie) W MIEJSCU tytulu "ZEWN" (zewnTytulLabel chowany): "deszcz /
+//    za 45 min", "śnieg / za 2 h", "pada / 30 min", "sypie", "mgła",
+//    "silny / wiatr". Bez opadu i bez zjawiska (slonce, chmury) napisu nie
+//    ma - tytul "ZEWN" wraca ("napis=rodzaj": tylko zjawiska, stan nieba
+//    pokazuje sama ikona).
+// Historia: do v1.5.12 napis o deszczu ZASTEPOWAL temperature; v1.5.13
+// temperatura 20 + napis pod nia; v1.5.14-16 uklad F (niebieski pasek na
+// dole) - zastapiony ukladem E po kolejnym wyborze w projektancie (23.11,
+// zrzut: na pasku "deszcz za 45 m..." bylo ucinane).
 static lv_obj_t *zewnIcon2 = nullptr;
-static lv_obj_t *zewnPasek = nullptr;
-static lv_obj_t *zewnPasekLabel = nullptr;
+static lv_obj_t *zewnTytulLabel = nullptr;
+static lv_obj_t *zewnNapisLabel = nullptr;
 static lv_obj_t *bojlerValLabel = nullptr;
 // [v1.5.11] Woda w ikonie BOJLER z poziomem wg temperatury (jak w aplikacji):
 // wnetrze = przycinajacy prostokat o rozmiarze wnetrza zbiornika, w nim lite
@@ -7853,24 +7862,18 @@ void lvgl_dashboard_poc_init() {
   lv_obj_set_style_img_recolor(zewnIcon2, rgb565(KOL_POG_KROPLA), 0);
   lv_obj_align(zewnIcon2, LV_ALIGN_TOP_RIGHT, -4, 6);
   lv_obj_add_flag(zewnIcon2, LV_OBJ_FLAG_HIDDEN);
-  // Pasek pogody na dole karty (wewnatrz ramki 1 px) z napisem czcionka 14.
-  zewnPasek = lv_obj_create(zewnCard);
-  lv_obj_remove_style_all(zewnPasek);
-  lv_obj_set_size(zewnPasek, kw - 2, ZEWN_PASEK_H);
-  lv_obj_align(zewnPasek, LV_ALIGN_BOTTOM_MID, 0, -1);
-  lv_obj_clear_flag(zewnPasek, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_set_style_bg_color(zewnPasek, rgb565(KOL_ZEWN_PASEK_TLO), 0);
-  lv_obj_set_style_bg_opa(zewnPasek, LV_OPA_COVER, 0);
-  lv_obj_set_style_radius(zewnPasek, 0, 0);
-  zewnPasekLabel = lv_label_create(zewnPasek);
-  lv_label_set_text(zewnPasekLabel, "");
-  lv_obj_set_style_text_color(zewnPasekLabel, rgb565(KOL_ZEWN_PASEK_TEKST), 0);
-  lv_obj_set_style_text_font(zewnPasekLabel, &lv_font_pl_14, 0);
-  lv_obj_align(zewnPasekLabel, LV_ALIGN_LEFT_MID, KAFELEK_WARTOSC_X - 1, 0);
-  lv_obj_add_flag(zewnPasek, LV_OBJ_FLAG_HIDDEN);
-  // Pasek jest prostokatem - zaokraglone dolne rogi karty wycinaja go
-  // (clip_corner), inaczej wystawalby poza luk ramki o 2-3 piksele.
-  lv_obj_set_style_clip_corner(zewnCard, true, 0);
+  // [v1.5.17 uklad E] Tytul "ZEWN" (pierwsze dziecko karty, tworzone w
+  // kafelek()) i napis o pogodzie w jego miejscu - widoczne na przemian.
+  zewnTytulLabel = lv_obj_get_child(zewnCard, 0);
+  zewnNapisLabel = lv_label_create(zewnCard);
+  lv_label_set_text(zewnNapisLabel, "");
+  lv_label_set_long_mode(zewnNapisLabel, LV_LABEL_LONG_CLIP);   // stala szerokosc, bez zawijania (linie lamiemy sami)
+  lv_obj_set_width(zewnNapisLabel, ZEWN_NAPIS_MAX_SZER);
+  lv_obj_set_style_text_color(zewnNapisLabel, rgb565(KOL_TEKST), 0);   // "kolor=bialy"
+  lv_obj_set_style_text_font(zewnNapisLabel, &lv_font_pl_14, 0);
+  lv_obj_set_style_text_line_space(zewnNapisLabel, 0, 0);
+  lv_obj_align(zewnNapisLabel, LV_ALIGN_TOP_LEFT, ZEWN_NAPIS_X, ZEWN_NAPIS_Y);
+  lv_obj_add_flag(zewnNapisLabel, LV_OBJ_FLAG_HIDDEN);
 
   // [FIX, ta sesja - "chce miec logo pokoju kolorowe"] Dwie warstwy zamiast
   // jednej jednokolorowej ikony - dach w KOL_POKOJ_DACH (braz/terakota),
@@ -8451,44 +8454,42 @@ static ZjawiskoPogody pogoda_zjawisko(int kod) {
 static const float POGODA_SILNY_WIATR_KMH = 55.0f;
 static const char* deszczCzasNapis(int minuty, char* bufor, size_t n);   // forward (definicja nizej)
 
-// Napis na pasku. Zwraca false, gdy pasek ma byc ukryty (brak prognozy).
-// `krotki` = wariant bez nazwy zjawiska ("za 45 min"), gdy pelny sie nie
-// miesci (szerokosc liczy wolajacy).
+// [v1.5.17 uklad E] Napis o pogodzie w DWOCH liniach: l1 = zjawisko, l2 = czas
+// ("" gdy nie ma). Zwraca false, gdy napisu nie ma (tytul "ZEWN" zostaje):
+// brak prognozy albo - "napis=rodzaj" - tylko stan nieba bez zjawiska
+// (slonecznie / pochmurno pokazuje sama ikona).
 static bool pogoda_napis(int deszczStan, int deszczMinuty, int pogodaKod, int pogodaKodOpad,
-                         int pogodaDzien, float wiatrPorywy, bool krotki, char* out, size_t n) {
+                         float wiatrPorywy, char* l1, size_t n1, char* l2, size_t n2) {
   char czas[12];
+  l2[0] = '\0';
   if (deszczStan == 1) {
+    // Nadciaga: "deszcz" / "za 45 min". Bez kodu (stara centrala) "opad".
     static const char* const NAZWA[] = { "opad", "mżawka", "deszcz", "śnieg", "burza", "grad", "opad" };
-    const ZjawiskoPogody z = pogoda_zjawisko(pogodaKodOpad);
-    if (krotki || z == ZJ_BRAK) snprintf(out, n, "za %s", deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
-    else snprintf(out, n, "%s za %s", NAZWA[z], deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
+    snprintf(l1, n1, "%s", NAZWA[pogoda_zjawisko(pogodaKodOpad)]);
+    snprintf(l2, n2, "za %s", deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
     return true;
   }
   if (deszczStan == 2) {
-    // "pada 30 min" = pada, koniec za ok. 30 min (jak v1.5.13). Snieg: "sypie",
-    // mzawka: "mży", burza/grad: nazwa - kazde z czasem do konca, gdy znany.
+    // Pada: "pada" / "30 min" = koniec za ok. 30 min (jak v1.5.13). Snieg:
+    // "sypie", mzawka: "mży", burza/grad: nazwa; bez czasu gdy koniec nieznany.
     static const char* const TRWA[] = { "pada", "mży", "pada", "sypie", "burza", "grad", "pada" };
-    const char* nazwa = TRWA[pogoda_zjawisko(pogodaKodOpad)];
-    if (deszczMinuty >= 0 && !krotki) snprintf(out, n, "%s %s", nazwa, deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
-    else snprintf(out, n, "%s", nazwa);
+    snprintf(l1, n1, "%s", TRWA[pogoda_zjawisko(pogodaKodOpad)]);
+    if (deszczMinuty >= 0) snprintf(l2, n2, "%s", deszczCzasNapis(deszczMinuty, czas, sizeof(czas)));
     return true;
   }
-  // Bez opadu w oknie: wiatr ma pierwszenstwo, potem stan nieba z kodu teraz.
-  if (wiatrPorywy >= POGODA_SILNY_WIATR_KMH) { snprintf(out, n, "silny wiatr"); return true; }
+  // Bez opadu w oknie: wiatr ma pierwszenstwo, potem zjawisko z kodu teraz.
+  if (wiatrPorywy >= POGODA_SILNY_WIATR_KMH) { snprintf(l1, n1, "silny"); snprintf(l2, n2, "wiatr"); return true; }
   if (pogodaKod < 0) return false;
   switch (pogoda_zjawisko(pogodaKod)) {
-    case ZJ_MGLA:   snprintf(out, n, "mgła"); return true;
-    case ZJ_MZAWKA: snprintf(out, n, "mżawka"); return true;
-    case ZJ_DESZCZ: snprintf(out, n, "deszcz"); return true;
-    case ZJ_SNIEG:  snprintf(out, n, "śnieg"); return true;
-    case ZJ_BURZA:  snprintf(out, n, "burza"); return true;
-    case ZJ_GRAD:   snprintf(out, n, "grad"); return true;
+    case ZJ_MGLA:   snprintf(l1, n1, "mgła"); return true;
+    case ZJ_MZAWKA: snprintf(l1, n1, "mżawka"); return true;
+    case ZJ_DESZCZ: snprintf(l1, n1, "deszcz"); return true;
+    case ZJ_SNIEG:  snprintf(l1, n1, "śnieg"); return true;
+    case ZJ_BURZA:  snprintf(l1, n1, "burza"); return true;
+    case ZJ_GRAD:   snprintf(l1, n1, "grad"); return true;
     default: break;
   }
-  if (pogodaKod <= 1) snprintf(out, n, pogodaDzien == 0 ? "pogodnie" : "słonecznie");
-  else if (pogodaKod == 2) snprintf(out, n, "przejaśnienia");
-  else snprintf(out, n, "pochmurno");
-  return true;
+  return false;   // stan nieba (0-3): bez napisu, zostaje tytul "ZEWN"
 }
 // Ktora ikona pogody. -1 = brak danych -> wolajacy uzywa starych ikon wg temperatury.
 static int pogoda_ikona(int deszczStan, int pogodaKod, int pogodaKodOpad, int pogodaDzien, float wiatrPorywy) {
@@ -8519,33 +8520,40 @@ static int pogoda_ikona(int deszczStan, int pogodaKod, int pogodaKodOpad, int po
 }
 static void zewn_ikona_odswiez(float tZewn, int deszczStan);   // forward (stare ikony wg temperatury)
 
-// [v1.5.14 POGODA-ZEWN] Caly kafelek ZEWN: temperatura (zawsze), pasek z
-// napisem o pogodzie i ikona pogody. Uklad "F" z projektanta: temperatura
-// czcionka 28 - bez paska w zwyklym wierszu wartosci (ustawNapisDopasuj,
-// jak kazdy kafelek), z paskiem 12 px wyzej (ZEWN_PASEK_TEMP_Y). Pasek
-// i warstwa 2 ikony chowane, gdy nie sa potrzebne.
+// Szerokosc linii czcionka 14 z danym odstepem liter.
+static int zewn_napis_szer(const char *t, lv_coord_t odstep) {
+  return (int)lv_txt_get_width(t, (uint32_t)strlen(t), &lv_font_pl_14, odstep, LV_TEXT_FLAG_NONE);
+}
+
+// [v1.5.14 POGODA-ZEWN / v1.5.17 uklad E] Caly kafelek ZEWN: temperatura
+// (zawsze, zwykly wiersz wartosci, ustawNapisDopasuj jak kazdy kafelek),
+// napis o pogodzie w miejscu tytulu (1-2 linie) i ikona pogody. Napis i
+// warstwa 2 ikony chowane, gdy nie sa potrzebne.
 static void zewn_pogoda_odswiez(const char *temperatura, float tZewn, int deszczStan, int deszczMinuty,
                                 int pogodaKod, int pogodaKodOpad, int pogodaDzien, float wiatrPorywy) {
   if (zewnValLabel == nullptr) return;
-  char napis[32];
-  bool jest = pogoda_napis(deszczStan, deszczMinuty, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy, false, napis, sizeof(napis));
-  if (jest && zewnPasekLabel != nullptr) {
-    // Pelny napis musi sie zmiescic na pasku (szerokosc karty minus ramka i
-    // marginesy) - inaczej wariant bez nazwy zjawiska ("za 45 min").
-    const int maks = 114 - 2 - (KAFELEK_WARTOSC_X - 1) - 4;
-    if (lv_txt_get_width(napis, (uint32_t)strlen(napis), &lv_font_pl_14, 0, LV_TEXT_FLAG_NONE) > maks)
-      pogoda_napis(deszczStan, deszczMinuty, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy, true, napis, sizeof(napis));
-  }
-  if (jest) {
-    if (lv_obj_get_style_text_font(zewnValLabel, LV_PART_MAIN) != &lv_font_pl_28) lv_obj_set_style_text_font(zewnValLabel, &lv_font_pl_28, 0);
-    if (lv_obj_get_style_y(zewnValLabel, LV_PART_MAIN) != ZEWN_PASEK_TEMP_Y) lv_obj_align(zewnValLabel, LV_ALIGN_TOP_LEFT, KAFELEK_WARTOSC_X, ZEWN_PASEK_TEMP_Y);
-    ustawNapis(zewnValLabel, temperatura);
-    ustawNapis(zewnPasekLabel, napis);
-    ustawUkrycie(zewnPasek, false);
+  ustawNapisDopasuj(zewnValLabel, temperatura);
+  char l1[20], l2[20];
+  const bool jest = pogoda_napis(deszczStan, deszczMinuty, pogodaKod, pogodaKodOpad, wiatrPorywy, l1, sizeof(l1), l2, sizeof(l2));
+  if (jest && zewnNapisLabel != nullptr) {
+    // Kazda linia musi zmiescic sie obok ikony (ZEWN_NAPIS_MAX_SZER): najpierw
+    // zwykly odstep liter, potem -1 ("za 45 min" 69 -> 61 px), na koniec czas
+    // bez "za" (nie powinno sie zdarzyc - "za 90 min" to 62 px przy -1).
+    lv_coord_t odstep = 0;
+    if (zewn_napis_szer(l1, 0) > ZEWN_NAPIS_MAX_SZER || zewn_napis_szer(l2, 0) > ZEWN_NAPIS_MAX_SZER) odstep = -1;
+    if (odstep == -1 && zewn_napis_szer(l2, -1) > ZEWN_NAPIS_MAX_SZER && strncmp(l2, "za ", 3) == 0) memmove(l2, l2 + 3, strlen(l2 + 3) + 1);
+    if (lv_obj_get_style_text_letter_space(zewnNapisLabel, LV_PART_MAIN) != odstep) lv_obj_set_style_text_letter_space(zewnNapisLabel, odstep, 0);
+    char napis[42];
+    if (l2[0] != '\0') snprintf(napis, sizeof(napis), "%s\n%s", l1, l2);
+    else snprintf(napis, sizeof(napis), "%s", l1);
+    ustawNapis(zewnNapisLabel, napis);
+    ustawUkrycie(zewnNapisLabel, false);
+    ustawUkrycie(zewnTytulLabel, true);
   } else {
-    ustawNapisDopasuj(zewnValLabel, temperatura);
-    ustawUkrycie(zewnPasek, true);
+    ustawUkrycie(zewnNapisLabel, true);
+    ustawUkrycie(zewnTytulLabel, false);
   }
+  (void)pogodaDzien;
   // Ikona: pogodowa (1-2 warstwy), a bez prognozy - stara wg temperatury.
   const int ik = pogoda_ikona(deszczStan, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy);
   if (ik >= 0 && ik < POG_IK_ILE && zewnIcon != nullptr) {
@@ -8822,7 +8830,8 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
                                     int rssi,
                                     bool internet,
                                     int deszczStan, int deszczMinuty,
-                                    int pogodaKod, int pogodaKodOpad, int pogodaDzien, float wiatrPorywy) {
+                                    int pogodaKod, int pogodaKodOpad, int pogodaDzien, float wiatrPorywy,
+                                    float pogodaTemp) {
   g_polaczono = polaczono;
   wifi_ikona_odswiez(polaczono, rssi); // [UI-WIFI-SYGNAL, ta sesja]
   internet_ikona_odswiez(internet); // [UI-INTERNET, ta sesja]
@@ -8865,8 +8874,9 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // powyzszej logiki pokaz/ukryj.
 
   if (!polaczono) {
-    ustawNapis(zewnValLabel, "--");
-    ustawUkrycie(zewnPasek, true);    // [v1.5.14] bez danych nie ma tez pogody
+    ustawNapisDopasuj(zewnValLabel, "--");
+    ustawUkrycie(zewnNapisLabel, true);   // [v1.5.14/17] bez danych nie ma tez pogody - wraca tytul "ZEWN"
+    ustawUkrycie(zewnTytulLabel, false);
     ustawUkrycie(zewnIcon2, true);
     ustawNapis(bojlerValLabel, "--");
     bojler_woda_odswiez(false, 0.0f);   // [v1.5.11] bez danych - pusty zbiornik
@@ -8948,8 +8958,17 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // "CIŚNIENIE", "POKÓJ" itd. w calym UI zamiast dawnych "WILGOTNOSC",
   // "CISNIENIE", "POKOJ". Scenariusz polskie_litery (testy_host) pilnuje,
   // ze kazdy znak kazdej etykiety ma glif.
-  if (fabsf(tZewn - (-1.0f)) < 0.01f) snprintf(bufor, sizeof(bufor), "--");
-  else snprintf(bufor, sizeof(bufor), "%.1f°C", tZewn);
+  // [v1.5.17] "brak_czujnika=prognoza": bez DS18B20 (-1.0) temperatura z
+  // prognozy centrali 3.58.17 (pogoda_temp) jako "~3°C" (tylda = w
+  // przyblizeniu, bez miejsca po przecinku - to prognoza, nie pomiar);
+  // bez niej (starsza centrala, brak internetu) "--" jak dotad.
+  if (fabsf(tZewn - (-1.0f)) < 0.01f) {
+    if (pogodaTemp > ZEWN_POGODA_TEMP_BRAK + 1.0f) {
+      long z = lroundf(pogodaTemp);
+      if (z == 0) z = 0;   // bez "-0"
+      snprintf(bufor, sizeof(bufor), "~%ld°C", z);
+    } else snprintf(bufor, sizeof(bufor), "--");
+  } else snprintf(bufor, sizeof(bufor), "%.1f°C", tZewn);
   zewn_pogoda_odswiez(bufor, tZewn, deszczStan, deszczMinuty, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy);
 
   // [Partia 4, ta sesja] User na zywym sprzecie: "temp boilera i pieca ma

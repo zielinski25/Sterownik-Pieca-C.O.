@@ -29,6 +29,7 @@
  .k .d14{position:absolute;left:8px;font-size:11px;line-height:17px;color:#4fa3ff;white-space:nowrap}
  .k .d14.pod{top:68px} .k .d14.rog{right:4px;left:auto;top:48px;text-align:right} .k .d14.dol{top:70px}
  .k .v28.przes{top:40px} .k .v28.male{font-size:17px} .k .v28.wyzej{top:36px}
+ .k .d14.e2{top:4px;left:6px;max-width:62px;line-height:16px;letter-spacing:-.2px;overflow:hidden}
  .k .d14.szary{color:var(--dim)} .k .d14.biala{color:#e8ebf0} .k .d14.zolty{color:#f6b73c}
  .k .pasek{position:absolute;left:0;right:0;bottom:0;height:16px;background:#153a5e;color:#8fc7ff;font-size:10px;line-height:16px;padding-left:8px;white-space:nowrap}
  .k .d20{position:absolute;left:8px;top:52px;font-size:16px;line-height:30px;color:#4fa3ff;white-space:nowrap}
@@ -84,17 +85,17 @@
   <div class="grp"><h3>Format czasu</h3><div class="btns" data-opt="czas">
    <button data-v="pelny" class="on">za 45 min / za 6 h</button><button data-v="godzina">od 14:30</button><button data-v="krotki">45m / 6h</button></div></div>
   <div class="grp"><h3>Układ</h3><div class="btns col" data-opt="uklad">
-   <button data-v="B" class="on">B – temp. mniejsza, napis pod nią <small>v1.5.13</small></button>
+   <button data-v="B">B – temp. mniejsza, napis pod nią <small>v1.5.13</small></button>
    <button data-v="C">C – temp. duża wyżej, napis pod nią</button>
    <button data-v="D">D – temp. duża; napis w prawym rogu pod ikoną</button>
-   <button data-v="E">E – temp. duża; napis zamiast tytułu „ZEWN”</button>
-   <button data-v="F">F – temp. duża; napis na pasku na dole</button>
+   <button data-v="E" class="on">E – temp. duża; napis zamiast tytułu „ZEWN” <small>v1.5.17 – napis w 2 liniach: zjawisko / czas</small></button>
+   <button data-v="F">F – temp. duża; napis na pasku na dole <small>v1.5.14–16</small></button>
    <button data-v="G">G – na przemian: 6 s temp., 2 s napis</button>
    <button data-v="A">A – napis ZAMIAST temp. (do v1.5.12)</button></div></div>
   <div class="grp"><h3>Kolor napisu</h3><div class="btns" data-opt="kolor">
-   <button data-v="nieb" class="on">niebieski</button><button data-v="szary">szary</button><button data-v="bialy">biały</button><button data-v="zolty">żółty</button></div></div>
+   <button data-v="nieb">niebieski</button><button data-v="szary">szary</button><button data-v="bialy" class="on">biały</button><button data-v="zolty">żółty</button></div></div>
   <div class="grp"><h3>Brak czujnika</h3><div class="btns" data-opt="brak">
-   <button data-v="kreski" class="on">„--”</button><button data-v="prognoza">„~3°C” z prognozy</button></div></div>
+   <button data-v="kreski">„--”</button><button data-v="prognoza" class="on">„~3°C” z prognozy<small>centrala 3.58.17: pole pogoda_temp</small></button></div></div>
  </div>
 </div>
 
@@ -192,7 +193,8 @@ const SYT = [
 ];
 const NAZWA = {deszcz:['deszcz','pada'], snieg:['śnieg','sypie'], burza:['burza','burza'], mgla:['mgła','mgła'], wiatr:['silny wiatr','silny wiatr'], mzawka:['mżawka','mży'], grad:['grad','grad']};
 // ───────── stan UI ─────────
-const opt = {rozm:'40', co:'rodzaj', czas:'pelny', uklad:'B', kolor:'nieb', brak:'kreski', zestaw:'kolor', syt:'d45'};
+// Domyslne = wybor z 23.11 (firmware panelu v1.5.17): uklad E, bialy napis, prognoza bez czujnika.
+const opt = {rozm:'40', co:'rodzaj', czas:'pelny', uklad:'E', kolor:'bialy', brak:'prognoza', zestaw:'kolor', syt:'d45'};
 const $ = s => document.querySelector(s);
 function sytAkt(){ const s = {...SYT.find(x => x.id===opt.syt)}; s.temp = +$('#temp').value; if (s.st!==0) s.min = (s.min===-1 && !$('#min').dataset.touched) ? -1 : +$('#min').value; if ($('#brakCz').checked) s.temp = null; s.noc = $('#noc').checked; return s; }
 function czasTxt(min){
@@ -233,7 +235,8 @@ function kaf(s){
  if (u==='B') h += `<div class="t">ZEWN</div>${ic}` + (t ? `<div class="v20">${temp}</div><div class="d14 pod ${kk}">${t}</div>` : `<div class="v28">${temp}</div>`);
  if (u==='C') h += `<div class="t">ZEWN</div>${ic}` + (t ? `<div class="v28 przes">${temp}</div><div class="d14 dol ${kk}">${t}</div>` : `<div class="v28">${temp}</div>`);
  if (u==='D') h += `<div class="t">ZEWN</div>${ic}<div class="v28">${temp}</div>` + (t ? `<div class="d14 rog ${kk}">${t}</div>` : '');
- if (u==='E') h += `<div class="t ${t?'d14 '+kk:''}" style="top:6px;left:8px">${t||'ZEWN'}</div>${ic}<div class="v28">${temp}</div>`;
+ // E jak w firmware v1.5.17: zjawisko w 1. linii, czas w 2., obok ikony (62 px); stan nieba bez napisu -> tytul ZEWN.
+ if (u==='E'){ const dwie = t ? t.replace(/^(\S+) (.+)$/, '$1<br>$2') : null; h += `<div class="t ${dwie?'d14 e2 '+kk:''}">${dwie||'ZEWN'}</div>${ic}<div class="v28">${temp}</div>`; }
  if (u==='F') h += `<div class="t">ZEWN</div>${ic}<div class="v28 ${t?'wyzej':''}">${temp}</div>` + (t ? `<div class="pasek">${t}</div>` : '');
  if (u==='G') h += `<div class="t">ZEWN</div>${ic}<div class="v28 g-temp">${temp}</div>` + (t ? `<div class="d20 g-zj ${kk}" style="display:none">${t}</div>` : '');
  return h + '</div>';
@@ -243,7 +246,8 @@ function render(){
  const s = sytAkt();
  $('#scena').innerHTML = kaf(s) + POKOJ;
  const t = napis(s);
- const ostrz = t && t.length > 11 && ['D','E'].includes(opt.uklad) ? ' <span class="uw">⚠ napis za długi na ten układ (114 px)</span>' : '';
+ const zaDlugi = t && (opt.uklad==='D' ? t.length > 11 : opt.uklad==='E' ? t.split(' ').some(w => w.length > 9) || t.replace(/^\S+ /, '').length > 9 : false);
+ const ostrz = zaDlugi ? ' <span class="uw">⚠ napis za długi na ten układ (E: linia > 62 px obok ikony)</span>' : '';
  $('#opis').innerHTML = `<b>${s.n}</b> · ikona: ${NAZWY_IKON[stanIkony(s)]} · napis: ${t ? '„'+t+'”' : 'brak'}${ostrz}`;
  $('#pasIkon').innerHTML = STANY_IKON.map(i => `<div title="${NAZWY_IKON[i]}">${ikonaSvg(i, opt.zestaw)}</div>`).join('');
  $('#siatka').innerHTML = SYT.map(x => { const y = {...x}; if (x.id===opt.syt) { y.temp = s.temp; y.min = s.min; } y.noc = s.noc; return `<div class="mini ${x.id===opt.syt?'on':''}" data-syt="${x.id}"><div class="n">${x.n}</div><div class="lcd" style="transform:none;padding:4px">${kaf(y)}</div></div>`; }).join('');
