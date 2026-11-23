@@ -7,3 +7,11 @@ Sterownik pieca C.O. (ESP) — repozytorium przebudowane od zera.
 - `firmware/` — firmware ESP (main_centrala.cpp)
 - `panel/` — panel lokalny (Piec.html)
 - `docs/` — dokumentacja i konfiguracja
+
+## Narzędzia (`narzedzia/`)
+
+- `nvs_odczyt.py` — odczyt całej partycji NVS ze zrzutu `esptool` (wszystkie
+  przestrzenie i klucze, także usunięte); instrukcja: `NVS_ODCZYT_JAK.md`
+- `ota_panelu_sprawdz.py` — sprawdzenie przed aktualizacją panelu LCD
+- `pamiec_centrali.py` — rachunek pamięci centrali z kodu
+- `analiza_pieca.py`, `analiza_zaawansowana.py` — analiza eksportu telemetrii
