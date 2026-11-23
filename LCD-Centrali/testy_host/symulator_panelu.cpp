@@ -304,6 +304,11 @@ struct Centrala {
   bool pompa = false, dymWlaczony = true, rtcOk = true;
   bool alarmOgrzewanie = false, alarmPanel = false, dymAlarm = false;
   int deszczStan = 0, deszczMinuty = -1;   // deszcz_stan / deszcz_min (0 = brak, 1 = nadciaga za N min, 2 = pada, koniec za N min / -1)
+  // [v1.5.14] pogoda_kod / pogoda_kod_opad / pogoda_dzien / wiatr_porywy (centrala 3.58.16; -1 = brak).
+  // pogodaPola=false: centrala do 3.58.15 - pol w JSON-ie w ogole nie ma.
+  bool pogodaPola = true;
+  int pogodaKod = -1, pogodaKodOpad = -1, pogodaDzien = -1;
+  double wiatrPorywy = -1.0;
   unsigned symulacja = 0;   // suma SYM_*: czujniki, ktore centrala podaje jako symulowane
   // liczniki zapytan, ktore do tej centrali dotarly
   int nStatus = 0, nUstawienia = 0, nPost = 0, nInne = 0;
@@ -433,6 +438,10 @@ std::string jsonStatus(const Centrala& c, bool zNan) {
     j += std::string(",\"symulacja_") + NAZWY_SYM[i] + "_min\":" + (aktywna ? "60" : "0");
   }
   j += ",\"serwo_override_min\":0,\"mieszadlo_override_min\":0,\"deszcz_stan\":" + std::to_string(c.deszczStan) + ",\"deszcz_min\":" + std::to_string(c.deszczMinuty);
+  if (c.pogodaPola) {   // [v1.5.14] jak centrala 3.58.16 (zaraz po deszcz_min)
+    char wp[16]; snprintf(wp, sizeof(wp), "%.1f", c.wiatrPorywy);
+    j += ",\"pogoda_kod\":" + std::to_string(c.pogodaKod) + ",\"pogoda_kod_opad\":" + std::to_string(c.pogodaKodOpad) + ",\"pogoda_dzien\":" + std::to_string(c.pogodaDzien) + ",\"wiatr_porywy\":" + wp;
+  }
   if (c.symulator) {
     j += ",\"symulator\":true,\"symulator_panel_fw\":\"?\",\"symulator_stacje\":1,";
     j += "\"symulator_heap\":200000,\"symulator_uptime_s\":1234";
@@ -1066,7 +1075,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.13"
+#define WERSJA_FW "v1.5.14"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -2010,7 +2019,8 @@ void scenariuszGolaPlytka() {
   biegnij(3000);
   sprawdz(!ekranMa("SYMULACJA: zewn, pokoj") && znajdzEtykiete(lv_scr_act(), "SYMULACJA") == nullptr, "znacznik znika z naglowka");
   sprawdz(logMa("tag=PANEL", "zdarzenie=symulacja_centrali", "czujniki=brak", od), "log: symulacja_centrali czujniki=brak");
-  sprawdz(ileNapisow("-1.0°C") == 2, "ZEWN i POKOJ wracaja do -1.0 (brak czujnika)");
+  // [v1.5.14] ZEWN bez czujnika pokazuje "--" (wybor "brak_czujnika=kreski"), POKOJ nadal -1.0.
+  sprawdz(ileNapisow("-1.0°C") == 1 && ileNapisow("--") >= 1, "POKOJ wraca do -1.0, ZEWN do \"--\" (brak czujnika)");
 
   // Najdluzszy mozliwy znacznik musi zmiescic sie miedzy wskaznikiem baterii
   // (konczy sie ok. x=75) a ikonami po prawej (zaczynaja sie ok. x=400).
@@ -5897,7 +5907,11 @@ bool kafelekPomiar(const char* prefiks, KafelekPomiar& w) {
   lv_obj_update_layout(lv_scr_act());
   lv_area_t a, k;
   lv_obj_get_coords(l, &a);
-  lv_obj_get_coords(lv_obj_get_parent(l), &k);
+  // [v1.5.14] napis na pasku pogody kafelka ZEWN: rodzic to pasek (18 px),
+  // a kafelek to rodzic paska - mierzymy wzgledem kafelka, jak inne napisy.
+  lv_obj_t* karta = lv_obj_get_parent(l);
+  if (lv_obj_get_height(karta) < 40 && lv_obj_get_parent(karta) != lv_scr_act()) karta = lv_obj_get_parent(karta);
+  lv_obj_get_coords(karta, &k);
   w.tekst = lv_label_get_text(l);
   w.czcionka = lv_obj_get_style_text_font(l, LV_PART_MAIN);
   w.x1 = a.x1; w.x2 = a.x2; w.y1 = a.y1; w.y2 = a.y2; w.kartaX2 = k.x2; w.kartaY2 = k.y2;
@@ -5941,19 +5955,20 @@ void scenariuszKafelkiSzerokosc() {
   }
 
   // Deszcz nadciaga za 105 min (to ze zdjecia): od 100 min w godzinach, do pol godziny.
-  // [v1.5.13] Temperatura ZOSTAJE (czcionka 20, wyzej), napis o deszczu to
-  // osobny wiersz czcionka 14 pod nia (zdjecie z 23.11: "niepotrzebnie znika").
-  ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 105; });
+  // [v1.5.14] Uklad "F" z projektanta: temperatura ZOSTAJE czcionka 28 (12 px
+  // wyzej), napis o pogodzie na niebieskim pasku u dolu kafelka, czcionka 14.
+  // Tu centrala bez pol pogody (3.58.15) - sam deszcz_stan: "za 2 h", "pada".
+  ustaw(0, [](Centrala& c) { c.pogodaPola = false; c.deszczStan = 1; c.deszczMinuty = 105; });
   biegnij(3000);
   zrzutEkranu("2_deszcz_za_105_min");
   sprawdz(!ekranMa("za 105m") && !ekranMa("za 105n"), "nie ma juz skrotu \"za 105m\"");
-  kafelekSprawdz("-25.5°C", "-25.5°C", &lv_font_pl_20, "ZEWN przy deszczu: temperatura -25.5°C nadal na kafelku, czcionka 20");
-  kafelekSprawdz("za 2 h", "za 2 h", &lv_font_pl_14, "ZEWN 105 min -> \"za 2 h\" - drugi wiersz czcionka 14, miesci sie");
+  kafelekSprawdz("-25.5°C", "-25.5°C", &lv_font_pl_28, "ZEWN przy deszczu: temperatura -25.5°C nadal na kafelku, czcionka 28");
+  kafelekSprawdz("za 2 h", "za 2 h", &lv_font_pl_14, "ZEWN 105 min (centrala bez pol pogody) -> \"za 2 h\" na pasku czcionka 14, miesci sie");
   {
     KafelekPomiar wT, wD;
     if (kafelekPomiar("-25.5°C", wT) && kafelekPomiar("za 2 h", wD)) {
-      info("ZEWN: temperatura y=%d..%d, deszcz y=%d..%d (karta do %d)", wT.y1, wT.y2, wD.y1, wD.y2, wD.kartaY2);
-      sprawdz(wD.y1 >= wT.y2 - 1 && wD.y2 <= wD.kartaY2 - 2, "napis o deszczu POD temperatura (nie na niej) i nad dolem karty");
+      info("ZEWN: temperatura y=%d..%d, pasek y=%d..%d (karta do %d)", wT.y1, wT.y2, wD.y1, wD.y2, wD.kartaY2);
+      sprawdz(wD.y1 >= wT.y2 - 1 && wD.y2 <= wD.kartaY2 - 2, "napis o pogodzie POD temperatura (nie na niej) i nad dolem karty");
     }
   }
   ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 100; });
@@ -5969,26 +5984,98 @@ void scenariuszKafelkiSzerokosc() {
   ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = 30; });
   biegnij(3000);
   zrzutEkranu("3_pada_jeszcze_30_min");
-  kafelekSprawdz("pada 30 min", "pada 30 min", &lv_font_pl_14, "ZEWN pada, koniec za 30 min -> \"pada 30 min\" w jednej linii czcionka 14 pod temperatura, miesci sie");
+  kafelekSprawdz("pada 30 min", "pada 30 min", &lv_font_pl_14, "ZEWN pada, koniec za 30 min -> \"pada 30 min\" na pasku czcionka 14, miesci sie");
   sprawdz(!ekranMa("jeszcze 30 min"), "nie ma \"jeszcze 30 min\" (105 px - nie miesci sie w kafelku)");
-  kafelekSprawdz("-25.5°C", "-25.5°C", &lv_font_pl_20, "ZEWN gdy pada: temperatura nadal widoczna");
+  kafelekSprawdz("-25.5°C", "-25.5°C", &lv_font_pl_28, "ZEWN gdy pada: temperatura nadal widoczna, czcionka 28");
   ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = 120; });
   biegnij(3000);
   kafelekSprawdz("pada 2 h", "pada 2 h", &lv_font_pl_14, "ZEWN \"pada 2 h\" w jednej linii, miesci sie");
   ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = -1; });
   biegnij(3000);
-  kafelekSprawdz("pada", "pada", &lv_font_pl_14, "ZEWN \"pada\" - drugi wiersz czcionka 14");
-  // Po deszczu wraca temperatura w duzej czcionce, na swoim miejscu, a wiersz o deszczu znika.
+  kafelekSprawdz("pada", "pada", &lv_font_pl_14, "ZEWN \"pada\" - pasek czcionka 14");
+  // Po deszczu (centrala bez pol pogody) pasek znika, temperatura wraca na swoje miejsce.
   ustaw(0, [](Centrala& c) { c.deszczStan = 0; c.deszczMinuty = -1; c.tZewn = 3.5; });
   biegnij(3000);
   {
     KafelekPomiar wZewn, wPokoj;
-    kafelekSprawdz("3.5°C", "3.5°C", &lv_font_pl_28, "po deszczu ZEWN 3.5°C - znow czcionka 28");
+    kafelekSprawdz("3.5°C", "3.5°C", &lv_font_pl_28, "po deszczu ZEWN 3.5°C - czcionka 28");
     if (kafelekPomiar("3.5°C", wZewn) && kafelekPomiar("-10.5°C", wPokoj))
       sprawdz(wZewn.y1 == wPokoj.y1 && wZewn.y2 == wPokoj.y2, "wartosc ZEWN wrocila na te sama wysokosc co POKÓJ");
-    sprawdz(!ekranMa("pada") && !ekranMa("pada 30 min"), "po deszczu wiersz o deszczu zniknal");
+    sprawdz(!ekranMa("pada") && !ekranMa("pada 30 min"), "po deszczu napis o deszczu zniknal");
   }
   zrzutEkranu("4_po_deszczu");
+
+  // [v1.5.14] Centrala 3.58.16 z polami pogody: pelne napisy ze zjawiskiem.
+  ustaw(0, [](Centrala& c) { c.pogodaPola = true; c.pogodaKod = 3; c.pogodaKodOpad = 71; c.pogodaDzien = 1; c.deszczStan = 1; c.deszczMinuty = 120; c.tZewn = -2.5; });
+  biegnij(3000);
+  zrzutEkranu("5_snieg_za_2_h");
+  kafelekSprawdz("śnieg za 2 h", "śnieg za 2 h", &lv_font_pl_14, "ZEWN: kod opadu 71 (snieg) za 120 min -> \"śnieg za 2 h\" na pasku");
+  kafelekSprawdz("-2.5°C", "-2.5°C", &lv_font_pl_28, "ZEWN: temperatura -2.5°C czcionka 28 nad paskiem");
+  ustaw(0, [](Centrala& c) { c.pogodaKodOpad = 61; c.deszczMinuty = 100; });
+  biegnij(3000);
+  kafelekSprawdz("deszcz za 1,5 h", "deszcz za 1,5 h", &lv_font_pl_14, "ZEWN: \"deszcz za 1,5 h\" (101 px) miesci sie na pasku - najdluzszy pelny napis");
+  ustaw(0, [](Centrala& c) { c.pogodaKodOpad = 61; c.deszczMinuty = 45; });
+  biegnij(3000);
+  kafelekSprawdz("za 45 min", "za 45 min", &lv_font_pl_14, "ZEWN: \"deszcz za 45 min\" (121 px) nie miesci sie -> \"za 45 min\" (rodzaj opadu pokazuje ikona)");
+  sprawdz(!ekranMa("deszcz za"), "nie ma obcietego \"deszcz za 45 min\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKodOpad = 95; c.deszczMinuty = 100; });
+  biegnij(3000);
+  kafelekSprawdz("burza za 1,5 h", "burza za 1,5 h", &lv_font_pl_14, "ZEWN: \"burza za 1,5 h\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKodOpad = 53; c.deszczMinuty = 99; });
+  biegnij(3000);
+  kafelekSprawdz("za 99 min", nullptr, &lv_font_pl_14, "ZEWN: \"mżawka za 99 min\" za dlugie -> wariant bez zjawiska \"za 99 min\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 73; c.pogodaKodOpad = 73; c.deszczStan = 2; c.deszczMinuty = 60; });
+  biegnij(3000);
+  zrzutEkranu("6_sypie");
+  kafelekSprawdz("sypie 60 min", "sypie 60 min", &lv_font_pl_14, "ZEWN: pada snieg (73), koniec za 60 min -> \"sypie 60 min\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 51; c.pogodaKodOpad = 51; c.deszczMinuty = -1; });
+  biegnij(3000);
+  kafelekSprawdz("mży", "mży", &lv_font_pl_14, "ZEWN: mzawka teraz (51), koniec nieznany -> \"mży\"");
+  // Bez opadu: stan nieba / mgla / wiatr - pasek ZOSTAJE (napis=zawsze).
+  ustaw(0, [](Centrala& c) { c.deszczStan = 0; c.deszczMinuty = -1; c.pogodaKodOpad = -1; c.pogodaKod = 0; c.pogodaDzien = 1; c.tZewn = 18.5; });
+  biegnij(3000);
+  zrzutEkranu("7_slonecznie");
+  kafelekSprawdz("słonecznie", "słonecznie", &lv_font_pl_14, "ZEWN bez opadu, kod 0 w dzien -> \"słonecznie\"");
+  kafelekSprawdz("18.5°C", "18.5°C", &lv_font_pl_28, "ZEWN: temperatura 18.5°C czcionka 28 nad paskiem");
+  ustaw(0, [](Centrala& c) { c.pogodaDzien = 0; });
+  biegnij(3000);
+  kafelekSprawdz("pogodnie", "pogodnie", &lv_font_pl_14, "ZEWN kod 0 w nocy -> \"pogodnie\" (ikona ksiezyca)");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 2; c.pogodaDzien = 1; });
+  biegnij(3000);
+  kafelekSprawdz("przejaśnienia", "przejaśnienia", &lv_font_pl_14, "ZEWN kod 2 -> \"przejaśnienia\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 3; });
+  biegnij(3000);
+  kafelekSprawdz("pochmurno", "pochmurno", &lv_font_pl_14, "ZEWN kod 3 -> \"pochmurno\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 45; });
+  biegnij(3000);
+  zrzutEkranu("8_mgla");
+  kafelekSprawdz("mgła", "mgła", &lv_font_pl_14, "ZEWN kod 45 -> \"mgła\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 3; c.wiatrPorywy = 62.4; });
+  biegnij(3000);
+  kafelekSprawdz("silny wiatr", "silny wiatr", &lv_font_pl_14, "ZEWN porywy 62 km/h -> \"silny wiatr\" (wazniejsze niz \"pochmurno\")");
+  ustaw(0, [](Centrala& c) { c.wiatrPorywy = 40.0; c.tZewn = -1.0; });
+  biegnij(3000);
+  zrzutEkranu("9_brak_czujnika");
+  kafelekSprawdz("pochmurno", "pochmurno", &lv_font_pl_14, "ZEWN porywy 40 km/h -> znow \"pochmurno\"");
+  {
+    // Etykieta "--" w obrebie kafelka ZEWN (pierwsza kolumna, x < 114, pod paskiem stanu).
+    std::function<bool(lv_obj_t*)> szukaj = [&](lv_obj_t* o) -> bool {
+      if (lv_obj_check_type(o, &lv_label_class) && std::string(lv_label_get_text(o)) == "--") {
+        lv_area_t a; lv_obj_get_coords(o, &a);
+        if (a.x1 < 114 && a.y1 > 20 && a.y1 < 120 && lv_obj_get_style_text_font(o, LV_PART_MAIN) == &lv_font_pl_28) return true;
+      }
+      for (uint32_t i = 0; i < lv_obj_get_child_cnt(o); i++) if (szukaj(lv_obj_get_child(o, i))) return true;
+      return false;
+    };
+    const bool zewnKreski = szukaj(lv_scr_act());
+    sprawdz(zewnKreski, "ZEWN: czujnik -1.0 (brak DS18B20) -> \"--\" zamiast \"-1.0°C\"");
+    sprawdz(!ekranMa("-1.0°C"), "nie ma \"-1.0°C\" na ekranie");
+  }
+  // Starsza centrala (bez pol pogody) i bez deszczu -> pasek znika, kafelek jak do v1.5.12.
+  ustaw(0, [](Centrala& c) { c.pogodaPola = false; c.tZewn = 3.5; });
+  biegnij(3000);
+  sprawdz(!ekranMa("pochmurno") && !ekranMa("silny wiatr"), "centrala bez pol pogody i bez deszczu: pasek pogody znika");
+  kafelekSprawdz("3.5°C", "3.5°C", &lv_font_pl_28, "ZEWN 3.5°C czcionka 28 w zwyklym wierszu");
 
   // DYM 9999 i SERWO "Klapa 100%" na tym samym pulpicie.
   {
@@ -6431,7 +6518,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"ota_ten_sam_plik", "OTA: centrala oferuje plik, z ktorego panel juz pracuje - nic nie jest wgrywane (v1.4.0)", scenariuszOtaTenSamPlik},
     {"ota_status_milczy", "OTA: centrala nie odpowiada na status, ale plik idzie - pobieranie nie jest przerywane (v1.4.0)", scenariuszOtaStatusMilczy},
     {"ota_bez_identyfikatora", "OTA: panel nie zna sumy wlasnego programu - aktualizacja przez centrale wylaczona (v1.4.0)", scenariuszOtaBezIdentyfikatora},
-    {"kafelki_szerokosc", "kafelki (v1.5.2/v1.5.13): najszersze wartosci mieszcza sie w kafelkach, czcionka 28/20/14 dobierana sama; przy deszczu ZEWN pokazuje temperature I napis o deszczu", scenariuszKafelkiSzerokosc},
+    {"kafelki_szerokosc", "kafelki (v1.5.2/v1.5.14): najszersze wartosci mieszcza sie w kafelkach, czcionka 28/20/14 dobierana sama; ZEWN: temperatura 28 + pasek pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba), \"--\" bez czujnika", scenariuszKafelkiSzerokosc},
     {"polskie_litery", "polskie litery na ekranie: czcionki lv_font_pl_14/20/28, glif dla kazdego znaku, napisy z ogonkami (v1.4.5)", scenariuszPolskieLitery},
     {"wersje_na_ekranie", "wersje panelu i centrali: ekran startowy, ekran WYSWIETLACZ, log tag=PANEL, kafelek WYSWIETLACZ bez obciecia (v1.4.6)", scenariuszWersjeNaEkranie},
     {"zasilanie", "ekran ZASILANIE: taktowanie 240/160/80 MHz i moc nadajnika 19,5/15/11/8,5 dBm - domyslnie bez zmian, zapis w NVS, odczyt, ostrzezenie przy slabym sygnale (v1.4.7)", scenariuszZasilanie},

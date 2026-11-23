@@ -24,6 +24,10 @@
 //   (lvgl_dashboard_poc_aktualizuj_centrale()) pokazuje tez, czego panelowi
 //   brakuje, gdy nie ma danych, i jest powtorzony na ekranie alarmu.
 //   Pelny opis: HISTORIA ZMIAN w main.cpp.
+// [2026-11-23] v1.5.14 Zmieniono: lvgl_dashboard_poc_aktualizuj() dostaje 4 nowe
+//   parametry z domyslnymi -1 (pogodaKod, pogodaKodOpad, pogodaDzien,
+//   wiatrPorywy) - kafelek ZEWN z paskiem pogody i ikonami wg kodu WMO
+//   ([v1.5.14 POGODA-ZEWN], zewn_pogoda_odswiez() w .cpp).
 // [2026-11-11] v1.2.0 Dodano: lvgl_dashboard_poc_aktualizuj_centrale() -
 //   znacznik "z ktora centrala rozmawia panel" na srodku naglowka
 //   ([v1.2.0 CENTRALA-ID]). Zmieniono: lvgl_dashboard_poc_aktualizuj_bateria()
@@ -159,7 +163,12 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
                                     bool rtcOk,
                                     int rssi,
                                     bool internet,
-                                    int deszczStan, int deszczMinuty);
+                                    int deszczStan, int deszczMinuty,
+                                    // [v1.5.14 POGODA-ZEWN] pogoda_kod / pogoda_kod_opad / pogoda_dzien /
+                                    // wiatr_porywy z /api/status centrali 3.58.16 (-1 = brak; starsza
+                                    // centrala nie podaje -> kafelek ZEWN jak do v1.5.12)
+                                    int pogodaKod = -1, int pogodaKodOpad = -1, int pogodaDzien = -1,
+                                    float wiatrPorywy = -1.0f);
 
 // stan przekazany do callbacku: "auto" / "wl" / "wyl" - dokladnie takie
 // wartosci parametru `stan`, jakich oczekuje POST /api/pompa-manual na

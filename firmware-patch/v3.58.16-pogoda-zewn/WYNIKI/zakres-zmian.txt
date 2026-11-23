@@ -1,0 +1,31 @@
+ZAKRES ZMIAN 3.58.16 wzgledem 3.58.15 (plik src/main_centrala.cpp, 51 223 linii, SHA-256 f8d0c997...)
+====================================================================================================
+Patch main_centrala-v3.58.15-do-v3.58.16.patch: 12 hunkow, +105 linii. Zmiana tylko w C++
+(prognoza deszczu i /api/status). HTML/JS strony WWW (R"PIECHTML() - bajt w bajt jak w 3.58.15
+(test A). Automatyka, Firebase, Telegram, trasy HTTP - zero zmian.
+
+   1-28        naglowek pliku [v3.58.16 POGODA-ZEWN]
+   1969-1984   HISTORIA WERSJI: wpis [v3.58.16]
+   6765        FIRMWARE_VERSION = "v3.58.16"
+   7494-7503   extern pogodaKod / pogodaKodOpad / pogodaDzien / wiatrPorywy (dla wifiZbudujJsonStatus)
+   31636-31649 wifiZbudujJsonStatus(): 4 nowe pola zaraz za "deszcz_min":
+                 "pogoda_kod", "pogoda_kod_opad", "pogoda_dzien", "wiatr_porywy" (zawsze, -1 = brak)
+   47365-47375 DESZCZ_URL: current=precipitation,weather_code,is_day,wind_gusts_10m
+                           minutely_15=precipitation,weather_code  (reszta URL bez zmian)
+   47387-47416 definicje 4 zmiennych + pomocnicza pogoda_json_liczba_w_bloku()
+   47509-47523 pobierzPrognozeDeszczu(): odczyt weather_code / is_day / wind_gusts_10m z bloku "current"
+   47564-47575 pozycja tablicy "weather_code":[ w bloku minutely_15
+   47581-47596 kod WMO w slocie, w ktorym zaczyna sie opad (deszcz_stan=1); null -> -1
+   47602-47608 stan 2 (pada): kod opadu = kod biezacy
+   47627-47639 przypisanie do zmiennych globalnych + rozszerzony DLOGF "DESZCZ zdarzenie=stan ..."
+
+Zasada: centrala podaje SUROWE liczby (kod WMO, 0/1, km/h). Co z nich zrobic (napis, ikona, prog
+"silny wiatr" 55 km/h) decyduje panel LCD v1.5.14 - zmiana progu albo tekstu nie wymaga
+wgrywania centrali.
+
+Kody WMO (Open-Meteo): 0 bezchmurnie, 1-2 czesciowe zachmurzenie, 3 pochmurno, 45/48 mgla,
+51-57 mzawka, 61-67 deszcz, 71-77 snieg, 80-82 przelotny deszcz, 85-86 przelotny snieg,
+95 burza, 96/99 burza z gradem.
+
+Bez zmian: deszcz_stan / deszcz_min (ten sam algorytm, prog 0,1 mm, 24 sloty, histereza 2 slotow),
+czestotliwosc pobierania (15 min), wspolrzedne, strona WWW, Piec.html, wszystko z 3.58.15 i starsze.

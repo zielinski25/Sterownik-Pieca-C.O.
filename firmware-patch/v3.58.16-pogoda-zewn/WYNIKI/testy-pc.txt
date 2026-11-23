@@ -1,0 +1,49 @@
+=== A. POGODA-ZEWN: parsowanie Open-Meteo, pola /api/status, URL, wersja, WWW ===
+    [OK] nadciaga za 120 min (jak dotad)
+    [OK] pogoda_kod=3 (teraz pochmurno)
+    [OK] pogoda_kod_opad=71 (w slocie opadu snieg)
+    [OK] dzien=1, porywy=25.2
+    [OK] pada, koniec za 45 min (jak dotad)
+    [OK] pada -> pogoda_kod_opad = kod biezacy 63
+    [OK] noc, porywy 61.7
+    [OK] brak opadu (jak dotad)
+    [OK] pogoda_kod=0, pogoda_kod_opad=-1
+    [OK] bez weather_code: nadciaga za 30 min (jak dotad)
+    [OK] bez nowych pol: wszystkie -1
+    [OK] null w slocie opadu -> pogoda_kod_opad=-1, reszta OK
+ZALICZONY: parsowanie Open-Meteo OK (0 bledow)
+    [OK] FIRMWARE_VERSION = "v3.58.16"
+    [OK] /api/status ma pole "pogoda_kod"
+    [OK] /api/status ma pole "pogoda_kod_opad"
+    [OK] /api/status ma pole "pogoda_dzien"
+    [OK] /api/status ma pole "wiatr_porywy"
+    [OK] pola pogody zaraz za deszcz_min (bez warunku - zawsze obecne)
+    [OK] DESZCZ_URL: current=precipitation,weather_code,is_day,wind_gusts_10m
+    [OK] DESZCZ_URL: minutely_15=precipitation,weather_code
+    [OK] DESZCZ_URL: wspolrzedne, strefa i 2 dni bez zmian
+    [OK] definicja: int pogodaKod = -1;
+    [OK] definicja: int pogodaKodOpad = -1;
+    [OK] definicja: int pogodaDzien = -1;
+    [OK] definicja: float wiatrPorywy = -1.0f;
+    [OK] extern dla wifiZbudujJsonStatus()
+    [OK] pomocnicza pogoda_json_liczba_w_bloku()
+    [OK] HTML strony WWW identyczny jak w 3.58.15
+    [OK] blok <script> 0: node --check (410064 znakow)
+=== B. plik 3.58.16 = 3.58.15 + patch ===
+    [OK] 3.58.15 + patch = ten plik (SHA f8d0c997682f6f68301d06913cec96b2f1a39c0d8240ae08479154630bca4bbd)
+=== C. testy paczki 3.58.15 (A-C) na tym pliku ===
+        BLAD: C++ za HTML-em identyczne jak w 3.58.14
+        BLAD: SHA po patchu 8bfab4e5471370b4b11b0930eec3405cca79957e3c6df118dfba9226cdf8f0d7, plik bd795d4be98e21651958bb6d05d85b9ead159aab71241ead1ffff45278f4c3e0
+            ZALICZONY: wszystkie sprawdzenia OK (18)
+            ZALICZONY: wszystkie sprawdzenia OK (18)
+            ZALICZONY: 12 sprawdzen OK
+            BLAD: SHA po patchu eb763b1bb86404ed3d67eee0f82601622d9cbc51cbb868769f6de2738b0376e9, plik 6a77f7b48fce1f3607c52d107475bef7f0c780f932da20feb1fc8c3c16267a70
+        === D. testy paczek 3.58.13 (A-B) i 3.58.11 (DYM-SYM) na tym pliku ===
+            [OK] SUWAK-PO-ACK 18/18
+            [OK] SYM-OD-RAZU 11/11
+            [OK] DYM-SYM 21/21
+        BLEDOW: 1
+    BLEDOW: 2
+    [OK] testy 3.58.15/3.58.14 zaliczone (pominieto tylko porownania SHA z patchem i 'C++ identyczne z 3.58.14' - nie dotycza tego pliku)
+
+WSZYSTKO OK

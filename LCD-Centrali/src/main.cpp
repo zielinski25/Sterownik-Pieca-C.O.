@@ -40,6 +40,30 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-23] v1.5.14 - ZEWN: POGODA (NIE TYLKO DESZCZ) - UKLAD WYBRANY W PROJEKTANCIE
+//   - Kafelek ZEWN wg wyboru uzytkownika w docs/symulator_kafelka_zewn.html
+//     ("ikony=kolor rozmiar=40 napis=zawsze czas=pelny uklad=F kolor=nieb
+//     brak_czujnika=kreski"): temperatura ZAWSZE czcionka 28, pod nia
+//     niebieski PASEK (18 px, tlo #153a5e, napis #8fc7ff czcionka 14) z
+//     pogoda: "deszcz za 45 min", "śnieg za 2 h", "burza za 1,5 h", "pada
+//     30 min", "sypie", "mży", a bez opadu "mgła", "silny wiatr" (porywy
+//     >= 55 km/h) albo stan nieba "słonecznie" / "pogodnie" (noc) /
+//     "przejaśnienia" / "pochmurno". Pasek znika tylko, gdy centrala nie
+//     ma prognozy. Przy napisie temperatura stoi 12 px wyzej (y=40).
+//   - 13 kolorowych ikon pogody 40x40 (src/ikony_pogoda.h, generator
+//     testy_host/prototypy/ikony_pogody.py): slonce, ksiezyc, slonce za
+//     chmura, chmura, deszcz, ulewa, mzawka, snieg, platek (sypie), burza,
+//     mgla, wiatr, grad. Dwukolorowe ikony to 2 warstwy 1-bit (druga
+//     lv_img nad pierwsza, kazda ze swoim recolor) - LVGL ALPHA_1BIT ma
+//     jeden kolor na obrazek. Bez prognozy stare ikony wg temperatury.
+//   - Nowe pola /api/status centrali 3.58.16: pogoda_kod (WMO teraz),
+//     pogoda_kod_opad (WMO w slocie poczatku opadu z deszcz_stan),
+//     pogoda_dzien (1/0), wiatr_porywy (km/h); -1 = brak. Starsza centrala
+//     bez tych pol -> kafelek jak w v1.5.13 bez pasku (sam deszcz_stan
+//     wciaz daje "za 2 h"/"pada" na pasku - pola sa niezalezne).
+//   - Czujnik zewn. -1.0 (brak DS18B20) -> "--" zamiast "-1.0°C".
+//   - Symulator: scenariusze zewn_pogoda_* (snieg za 2 h, burza, mgla, noc,
+//     pada, wiatr, brak czujnika); sprawdz_pola_statusu zna 4 nowe pola.
 // [2026-11-23] v1.5.13 - ZEWN: TEMPERATURA NIE ZNIKA PRZY DESZCZU
 //   - Kafelek ZEWN przy nadciagajacym/padajacym deszczu pokazywal "za 6 h" /
 //     "jeszcze 30 min" / "pada" ZAMIAST temperatury (zdjecie z 23.11:
@@ -1375,7 +1399,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.13"; // [2026-11-23] v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.14"; // [2026-11-23] v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -2032,6 +2056,12 @@ struct StanPieca {
   // co zwraca centrala, gdy jeszcze nie zdazyla policzyc pierwszej prognozy
   // (identyczny duch co reszta domyslnych wartosci w tej strukturze).
   int   deszczStan = 0, deszczMinuty = -1;
+  // [v1.5.14 POGODA-ZEWN] Z centrali 3.58.16: kod WMO pogody teraz, kod WMO
+  // w slocie, w ktorym zaczyna sie opad z deszczStan (zeby napisac "śnieg za
+  // 2 h" a nie "deszcz"), dzien/noc (1/0) i porywy wiatru w km/h. -1 = brak
+  // (starsza centrala, brak internetu) -> kafelek ZEWN jak dotad.
+  int   pogodaKod = -1, pogodaKodOpad = -1, pogodaDzien = -1;
+  float wiatrPorywy = -1.0f;
   // [LCD-SEZON] Z centrali (RTC sprzetowy tam, nie tutaj — wyswietlacz nie
   // ma wlasnego RTC z podtrzymaniem, dziala na baterii/deep sleep) — patrz
   // aktualizujSezon() nizej.
@@ -2714,7 +2744,8 @@ static void lvglPokazStan() {
                                  stan.rtcOk,
                                  stan.rssi,
                                  stan.internet,
-                                 stan.deszczStan, stan.deszczMinuty);
+                                 stan.deszczStan, stan.deszczMinuty,
+                                 stan.pogodaKod, stan.pogodaKodOpad, stan.pogodaDzien, stan.wiatrPorywy);   // [v1.5.14]
 }
 
 // Znacznik na srodku naglowka dashboardu - Z KTORA centrala rozmawia panel
@@ -3188,6 +3219,11 @@ void obslugaStatusFetch() {
   // stan.deszczStan/deszczMinuty (definicja struct wyzej).
   stan.deszczStan    = doc["deszcz_stan"].isNull() ? 0  : doc["deszcz_stan"].as<int>();
   stan.deszczMinuty  = doc["deszcz_min"].isNull()  ? -1 : doc["deszcz_min"].as<int>();
+  // [v1.5.14 POGODA-ZEWN] Centrala od 3.58.16 - patrz komentarz przy polach w struct.
+  stan.pogodaKod     = doc["pogoda_kod"].isNull()      ? -1 : doc["pogoda_kod"].as<int>();
+  stan.pogodaKodOpad = doc["pogoda_kod_opad"].isNull() ? -1 : doc["pogoda_kod_opad"].as<int>();
+  stan.pogodaDzien   = doc["pogoda_dzien"].isNull()    ? -1 : doc["pogoda_dzien"].as<int>();
+  stan.wiatrPorywy   = doc["wiatr_porywy"].isNull()    ? -1.0f : doc["wiatr_porywy"].as<float>();
   // [ROZSZERZENIE, ta sesja - BRZECZYK ALARMOWY] Swiezy stan wszystkich 3
   // alarmow jest juz znany - przelicz, ktory wzorzec (jesli ktorykolwiek)
   // powinien teraz grac. Tanie/idempotentne, bezpieczne przy kazdym udanym
@@ -3316,7 +3352,8 @@ void obslugaStatusFetch() {
                                  stan.rtcOk,
                                  stan.rssi,
                                  stan.internet,
-                                 stan.deszczStan, stan.deszczMinuty);
+                                 stan.deszczStan, stan.deszczMinuty,
+                                 stan.pogodaKod, stan.pogodaKodOpad, stan.pogodaDzien, stan.wiatrPorywy);   // [v1.5.14]
   panelLiczniki.ekranOdswiezen++;
   if (centralaZmieniona) lvglPokazZnacznikCentrali(); // [v1.2.0 CENTRALA-ID] "SYMULATOR" / "2 CENTRALE (..)" w naglowku
 }
@@ -5389,7 +5426,8 @@ void setup() {
                                  stan.rtcOk,
                                  stan.rssi,
                                  stan.internet,
-                                 stan.deszczStan, stan.deszczMinuty);
+                                 stan.deszczStan, stan.deszczMinuty,
+                                 stan.pogodaKod, stan.pogodaKodOpad, stan.pogodaDzien, stan.wiatrPorywy);   // [v1.5.14]
   // [v1.2.2 PAMIEC] Stan po starcie: WiFi dziala, pierwsze dane odebrane.
   // To jest liczba, ktora mowi, czy panel ma zapas (kilkadziesiat kB), czy
   // pracuje na styk (log z 2026-11-12: ok. 8 kB).

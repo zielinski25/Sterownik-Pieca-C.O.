@@ -1388,6 +1388,7 @@ static const char* const POLA_STATUSU_CZYTANE[] = {
   "t_zewn", "t_bojler", "t_ogrz", "t_ogrz_sr", "t_panel", "t_pokoj", "t_trociny", "t_powrot",
   "wilgotnosc", "cisnienie", "dym", "dym_alarm", "klapa", "syberka", "pompa", "pompa_override_min",
   "alarm_ogrzewanie", "alarm_panel", "deszcz_stan", "deszcz_min",
+  "pogoda_kod", "pogoda_kod_opad", "pogoda_dzien", "wiatr_porywy",   // [v1.5.14] pogoda kafelka ZEWN (centrala 3.58.16)
   "miesiac", "godzina", "minuta", "dzien", "rok", "rtc_ok",
   "panel_ota_dostepna", "panel_ota_wersja", "panel_ota_obraz", "panel_ota_nr",
   "symulator",

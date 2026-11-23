@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.13
+# Panel LCD (wyświetlacz CO) — firmware v1.5.14
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,34 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.14
+
+Kafelek ZEWN według wyboru z projektanta `docs/symulator_kafelka_zewn.html`
+(23.11: *ikony=kolor, rozmiar=40, napis=zawsze, czas=pełny, układ=F, kolor=nieb,
+brak_czujnika=kreski*):
+
+- **temperatura zawsze czcionką 28**; gdy jest napis o pogodzie — 12 px wyżej,
+- **niebieski pasek na dole** (18 px, tło `#153a5e`, napis `#8fc7ff`, czcionka 14):
+  „śnieg za 2 h”, „burza za 1,5 h”, „deszcz za 1,5 h”, „pada 30 min”, „sypie”,
+  „mży”, a bez opadu „mgła”, „silny wiatr” (porywy ≥ 55 km/h) albo stan nieba
+  „słonecznie” / „pogodnie” (noc) / „przejaśnienia” / „pochmurno”. Gdy pełny napis
+  nie mieści się w 101 px („deszcz za 45 min” ma 121 px), zostaje sam czas
+  „za 45 min” — rodzaj opadu pokazuje wtedy ikona. Pasek znika tylko, gdy
+  centrala nie ma prognozy,
+- **13 kolorowych ikon pogody** 40×40 (`src/ikony_pogoda.h`, generator
+  `testy_host/prototypy/ikony_pogody.py`): słońce, księżyc, słońce za chmurą,
+  chmura, deszcz, ulewa, mżawka, śnieg, płatek („sypie”), burza, mgła, wiatr,
+  grad. Ikony dwukolorowe to dwie warstwy 1-bit (druga `lv_img` nad pierwszą),
+- czujnik zewnętrzny `-1.0` (brak DS18B20) → „--” zamiast „-1.0°C”.
+
+Potrzebuje **centrali 3.58.16** (`firmware-patch/v3.58.16-pogoda-zewn/`), która
+w `/api/status` podaje `pogoda_kod` (WMO teraz), `pogoda_kod_opad` (WMO w slocie
+początku opadu), `pogoda_dzien`, `wiatr_porywy`. Ze starszą centralą kafelek
+wygląda jak w v1.5.13 bez drugiego wiersza — sam `deszcz_stan` nadal daje
+„za 2 h” / „pada” na pasku. Test hosta `kafelki_szerokosc` (46 sprawdzeń)
+przechodzi przez wszystkie napisy; `sprawdz_pola_statusu.py` pilnuje, że
+centrala 3.58.16 wysyła 4 nowe pola.
 
 ## Co zmienia v1.5.13
 

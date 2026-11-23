@@ -1,0 +1,197 @@
+--- ../v3.58.15-bez-historia-csv/src/main_centrala.cpp	2026-11-23 11:55:57.130856054 +0000
++++ src/main_centrala.cpp	2026-11-23 14:25:10.535274445 +0000
+@@ -1,3 +1,28 @@
++// FIRMWARE_VERSION v3.58.15 -> v3.58.16 (2026-11-23) — KOD POGODY (WMO) I PORYWY WIATRU W /api/status DLA KAFELKA ZEWN NA LCD.
++//
++// [v3.58.16 POGODA-ZEWN] — 2026-11-23
++// Życzenie użytkownika (23.11, projektant kafelka ZEWN: „napis=zawsze, ikony=kolor”):
++// kafelek ZEWN na panelu LCD ma pokazywać nie tylko „deszcz za 6 h”, ale każde
++// zjawisko — śnieg, mżawkę, burzę, grad, mgłę, silny wiatr, a bez opadu stan
++// nieba (słonecznie / przejaśnienia / pochmurno) — z ikoną dobraną do pogody.
++// Centrala dokłada do ISTNIEJĄCEGO zapytania DESZCZ do Open-Meteo (co 15 min,
++// pobierzPrognozeDeszczu()) trzy pola bieżące: weather_code, is_day,
++// wind_gusts_10m, oraz tablicę minutely_15 weather_code, i wystawia w
++// /api/status cztery nowe pola (zawsze obecne; -1 = brak danych):
++//   "pogoda_kod"      — kod WMO pogody TERAZ (0 bezchmurnie, 1–3 zachmurzenie,
++//                       45/48 mgła, 51–57 mżawka, 61–67 deszcz, 71–77 śnieg,
++//                       80–86 przelotne, 95–99 burza),
++//   "pogoda_kod_opad" — kod WMO w chwili, do której odnosi się deszcz_stan/
++//                       deszcz_min (nadciągający opad: kod z tego slotu 15-min;
++//                       pada teraz: kod bieżący) — mówi panelowi, CZY to deszcz,
++//                       śnieg, mżawka czy burza,
++//   "pogoda_dzien"    — 1 dzień / 0 noc (ikona słońca albo księżyca),
++//   "wiatr_porywy"    — porywy wiatru teraz, km/h (jedno miejsce po przecinku).
++// Interpretacja kodów (napisy, ikony, próg „silny wiatr”) jest po stronie panelu
++// (LCD v1.5.14) — centrala tylko przekazuje liczby. Logika deszcz_stan/deszcz_min
++// bez zmian. Odpowiedź Open-Meteo rośnie o ~1,2 kB (192 wartości weather_code
++// na 2 doby). Bez wpływu na sterowanie piecem; telemetria i historia bez zmian.
++//
+ // FIRMWARE_VERSION v3.58.14 -> v3.58.15 (2026-11-26) — USUNIĘTY PRZYCISK „HISTORIA CSV” ZE STRONY WWW.
+ //
+ // [v3.58.15 BEZ-HISTORIA-CSV] — 2026-11-26
+@@ -1944,6 +1969,16 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.16] — 2026-11-23 — KOD POGODY WMO I PORYWY WIATRU W /api/status (KAFELEK ZEWN NA LCD)
++// Co: Zapytanie DESZCZ do Open-Meteo pobiera dodatkowo current.weather_code,
++//     current.is_day, current.wind_gusts_10m i minutely_15.weather_code;
++//     /api/status dostaje pola pogoda_kod, pogoda_kod_opad, pogoda_dzien,
++//     wiatr_porywy (-1 = brak danych). Panel LCD v1.5.14 robi z tego napis
++//     ("snieg za 2 h", "mgla", "pochmurno") i ikone pogody na kafelku ZEWN.
++// Problem: kafelek ZEWN znal tylko "deszcz za N min" - kazdy opad wygladal
++//     jak deszcz, a bez opadu nie bylo zadnej informacji o pogodzie.
++// Bez zmian: deszcz_stan/deszcz_min, sterowanie, telemetria, historia.
++//
+ // [v3.58.15] — 2026-11-26 — USUNIETY PRZYCISK "HISTORIA CSV" ZE STRONY WWW
+ // Co: Z panelu WWW wbudowanego w plik zniknal staly przycisk w lewym dolnym
+ //     rogu ("HISTORIA CSV") z panelem "Pobierz historie: Krotka / Dluga" -
+@@ -6730,7 +6765,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.15";
++static const char* FIRMWARE_VERSION = "v3.58.16";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -7459,6 +7494,10 @@
+ bool ustawParametrPieca(const String& pole, long w, String& err); // [USTAWIENIA] wspolna walidacja/zapis jednego parametru — uzywana przez /api/ustawienia-set ORAZ komende Firebase "ustaw" — definicja nizej
+ extern int deszczStan;    // [DESZCZ-ETAP2] 0/1/2 - definicja nizej, przy pobierzPrognozeDeszczu()
+ extern int deszczMinuty;  // [DESZCZ-ETAP2] - definicja nizej, przy pobierzPrognozeDeszczu()
++extern int pogodaKod;       // [v3.58.16 POGODA-ZEWN] kod WMO teraz (-1 = brak), definicja przy pobierzPrognozeDeszczu()
++extern int pogodaKodOpad;   // [v3.58.16] kod WMO dla deszcz_stan/deszcz_min (-1 = brak)
++extern int pogodaDzien;     // [v3.58.16] 1 dzien / 0 noc / -1 brak
++extern float wiatrPorywy;   // [v3.58.16] porywy wiatru km/h (-1 = brak)
+ // [PROGNOZA-ETAP1] Ten sam powod/wzorzec co deszczStan/deszczMinuty wyzej -
+ // uzywane w handlerze /api/prognoza (blisko /api/status), definiowane
+ // dopiero w sekcji PROGNOZA (definicja nizej, przy pobierzPelnaPrognoze()).
+@@ -31597,6 +31636,14 @@
+     // 2=pada teraz (deszcz_min=za ile skonczy, -1=nieznane w oknie 6h).
+     j += F(",\"deszcz_stan\":"); j += String(deszczStan);
+     j += F(",\"deszcz_min\":"); j += String(deszczMinuty);
++    // [v3.58.16 POGODA-ZEWN] Kod pogody WMO (teraz i dla zapowiadanego/
++    // trwajacego opadu), dzien/noc i porywy wiatru - z tego samego zapytania
++    // Open-Meteo co deszcz_stan. -1 = jeszcze nie pobrano / brak w odpowiedzi.
++    // Interpretacja (napis, ikona) po stronie panelu LCD v1.5.14.
++    j += F(",\"pogoda_kod\":"); j += String(pogodaKod);
++    j += F(",\"pogoda_kod_opad\":"); j += String(pogodaKodOpad);
++    j += F(",\"pogoda_dzien\":"); j += String(pogodaDzien);
++    j += F(",\"wiatr_porywy\":"); j += String(wiatrPorywy, 1);
+   }
+   j += F("}");
+   return j;
+@@ -47318,7 +47365,11 @@
+ static const char* DESZCZ_URL =
+   "https://api.open-meteo.com/v1/forecast?latitude=" DESZCZ_LAT
+   "&longitude=" DESZCZ_LON
+-  "&current=precipitation&minutely_15=precipitation&forecast_days=2"
++  // [v3.58.16 POGODA-ZEWN] + weather_code/is_day/wind_gusts_10m (teraz) i
++  // minutely_15 weather_code (kod w slocie zapowiadanego opadu). Kolejnosc
++  // pol w odpowiedzi nie ma znaczenia - kazde szukane po nazwie.
++  "&current=precipitation,weather_code,is_day,wind_gusts_10m"
++  "&minutely_15=precipitation,weather_code&forecast_days=2"
+   "&timezone=Europe%2FWarsaw";
+ 
+ unsigned long owDeszczLastFetchMillis = 0;
+@@ -47336,6 +47387,30 @@
+ // skonczy, albo -1 gdy koniec nie miesci sie w widocznym oknie).
+ int deszczStan = 0;
+ int deszczMinuty = -1;
++// [v3.58.16 POGODA-ZEWN] Kod WMO pogody teraz, kod WMO w chwili opadu
++// (nadciaga: slot 15-min, w ktorym opad sie zaczyna; pada: teraz), dzien/noc,
++// porywy wiatru km/h. -1 = brak danych (przed pierwszym pobraniem, blad HTTP,
++// pole nieobecne w odpowiedzi). Wystawiane w /api/status, interpretowane
++// przez panel LCD (v1.5.14): napis i ikona kafelka ZEWN.
++int pogodaKod = -1;
++int pogodaKodOpad = -1;
++int pogodaDzien = -1;
++float wiatrPorywy = -1.0f;
++
++// [v3.58.16] Liczba po kluczu "klucz": w zakresie [od, do) surowego JSON-u
++// (blok "current"). Zwraca false, gdy klucza nie ma w tym zakresie - wtedy
++// wartosc zostaje nietknieta (wolajacy wpisuje -1 wczesniej).
++static bool pogoda_json_liczba_w_bloku(const String &body, int od, int do_, const char *klucz, float &wynik) {
++  String k = "\""; k += klucz; k += "\":";
++  int p = body.indexOf(k, od);
++  if (p < 0 || p >= do_) return false;
++  p += k.length();
++  int e = p;
++  while (e < (int)body.length() && (isDigit(body[e]) || body[e] == '.' || body[e] == '-')) e++;
++  if (e == p) return false;   // np. null
++  wynik = body.substring(p, e).toFloat();
++  return true;
++}
+ 
+ // [DESZCZ-ETAP2] Prog opadu uznawany za "pada" - ten sam prog, ktorego
+ // Open-Meteo uzywa do wlasnego pola precipitation_probability, wiec logika
+@@ -47434,6 +47509,15 @@
+     if (e > 0) curTime = body.substring(pT, e);
+   }
+ 
++  // [v3.58.16 POGODA-ZEWN] Pola biezace - kazde niezaleznie, brak = -1.
++  float fKod = -1.0f, fDzien = -1.0f, fPorywy = -1.0f;
++  pogoda_json_liczba_w_bloku(body, pCur, pCurEnd, "weather_code", fKod);
++  pogoda_json_liczba_w_bloku(body, pCur, pCurEnd, "is_day", fDzien);
++  pogoda_json_liczba_w_bloku(body, pCur, pCurEnd, "wind_gusts_10m", fPorywy);
++  const int nowyPogodaKod = (fKod >= 0.0f && fKod <= 99.0f) ? (int)(fKod + 0.5f) : -1;
++  const int nowyPogodaDzien = (fDzien >= 0.0f) ? ((fDzien >= 0.5f) ? 1 : 0) : -1;
++  const float nowePorywy = (fPorywy >= 0.0f) ? fPorywy : -1.0f;
++
+   float curOpad = -1.0;
+   int pP = body.indexOf("\"precipitation\":", pCur);
+   if (pP >= 0 && pP < pCurEnd) {
+@@ -47480,6 +47564,12 @@
+   bool terazPada = (curOpad >= DESZCZ_PROG_MM);
+   int nowyStan = 0;
+   int nowyMinuty = -1;
++  // [v3.58.16] Tablica minutely_15 weather_code - do odczytu kodu w slocie,
++  // w ktorym zaczyna sie zapowiadany opad. "weather_code":[ jest jednoznaczne
++  // (w "current" ten klucz ma po sobie liczbe, w "*_units" tekst).
++  int pKodArr = body.indexOf("\"weather_code\":[", pM);
++  const int startKodow = (pKodArr >= 0) ? (pKodArr + (int)strlen("\"weather_code\":[")) : -1;
++  int nowyPogodaKodOpad = -1;
+ 
+   if (!terazPada) {
+     // Szukamy PIERWSZEGO slotu do przodu, gdzie opad >= prog - to jest
+@@ -47491,6 +47581,16 @@
+       if (v >= DESZCZ_PROG_MM) {
+         nowyStan = 1;
+         nowyMinuty = i * 15;
++        // [v3.58.16] Kod WMO w tym slocie - mowi panelowi, czy to deszcz,
++        // snieg, mzawka czy burza. Brak tablicy/indeksu -> -1 (panel pokaze
++        // sam czas, jak dotad).
++        if (startKodow >= 0) {
++          int pk = deszcz_json_pozycja_k(body, startKodow, indeksTeraz + i);
++          if (pk >= 0 && isDigit(body[pk])) {   // "null" (poza zasiegiem modelu) -> zostaje -1
++            float k = deszcz_json_liczba(body, pk, nullptr);
++            if (k >= 0.0f && k <= 99.0f) nowyPogodaKodOpad = (int)(k + 0.5f);
++          }
++        }
+         break;
+       }
+       if (nastepny < 0) break;  // koniec tablicy
+@@ -47502,6 +47602,7 @@
+     // progu), ten sam rodzaj zabezpieczenia co debounce dotyku w
+     // lvgl_port.cpp po stronie panelu.
+     nowyStan = 2;
++    nowyPogodaKodOpad = nowyPogodaKod;   // [v3.58.16] pada teraz -> kod biezacy
+     int p = pos;
+     int suchychZRzedu = 0;
+     for (int i = 0; i < DESZCZ_OKNO_SLOTOW; i++) {
+@@ -47526,9 +47627,13 @@
+ 
+   deszczStan = nowyStan;
+   deszczMinuty = nowyMinuty;
++  pogodaKod = nowyPogodaKod;          // [v3.58.16]
++  pogodaKodOpad = nowyPogodaKodOpad;
++  pogodaDzien = nowyPogodaDzien;
++  wiatrPorywy = nowePorywy;
+ 
+-  DLOGF(DC_WEATHER, DL_DEBUG, "DESZCZ zdarzenie=stan indeks_teraz=%d opad_teraz_mm=%.2f stan=%d za_min=%d",
+-                indeksTeraz, curOpad, deszczStan, deszczMinuty);
++  DLOGF(DC_WEATHER, DL_DEBUG, "DESZCZ zdarzenie=stan indeks_teraz=%d opad_teraz_mm=%.2f stan=%d za_min=%d pogoda_kod=%d pogoda_kod_opad=%d dzien=%d porywy_kmh=%.1f",
++                indeksTeraz, curOpad, deszczStan, deszczMinuty, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy);
+ }
+ 
+ // ── [PROGNOZA-ETAP1, PLAN_PROGNOZA.md] Pelny ekran prognozy (LCD: 8 kart
