@@ -95,7 +95,7 @@
   <div class="grp"><h3>Kolor napisu</h3><div class="btns" data-opt="kolor">
    <button data-v="nieb">niebieski</button><button data-v="szary">szary</button><button data-v="bialy" class="on">biały</button><button data-v="zolty">żółty</button></div></div>
   <div class="grp"><h3>Brak czujnika</h3><div class="btns" data-opt="brak">
-   <button data-v="kreski">„--”</button><button data-v="prognoza" class="on">„~3°C” z prognozy<small>centrala 3.58.17: pole pogoda_temp</small></button></div></div>
+   <button data-v="kreski">„--”</button><button data-v="prognoza" class="on">„3.4°C” z prognozy<small>centrala 3.58.17: pole pogoda_temp (v1.5.18: bez tyldy)</small></button></div></div>
  </div>
 </div>
 
@@ -225,7 +225,7 @@ function stanIkony(s){
  if (s.niebo==='slonce' && s.noc) return 'noc';
  return s.niebo;
 }
-function tempTxt(s){ if (s.temp!==null) return s.temp.toFixed(1)+'°C'; return opt.brak==='kreski' ? '--' : `~3°C`; }
+function tempTxt(s){ if (s.temp!==null) return s.temp.toFixed(1)+'°C'; return opt.brak==='kreski' ? '--' : '3.4°C'; }
 function kolorKl(){ return {nieb:'',szary:'szary',bialy:'biala',zolty:'zolty'}[opt.kolor]; }
 function kaf(s){
  const t = napis(s), temp = tempTxt(s), u = opt.uklad, kk = kolorKl();

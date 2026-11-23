@@ -40,6 +40,16 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-24] v1.5.18 - KAFELEK ZEWN BEZ CZUJNIKA: "3.4°C" ZAMIAST "~3°C"
+//   - User (24.11): "Czemu jest znaczek tyldy i pogoda zaokraglona" -> wybor
+//     "3.4°C". Temperatura z prognozy (pogoda_temp z centrali 3.58.17, gdy
+//     DS18B20 daje -1.0) ma teraz ten sam format co pomiar z czujnika:
+//     "%.1f°C", bez tyldy i bez zaokraglania do calych stopni. Na ekranie nie
+//     widac wiec, czy liczba jest z czujnika, czy z prognozy (swiadoma
+//     decyzja usera). "-0.0" -> "0.0". Bez prognozy nadal "--".
+//   - Zmiana tylko w dashboard_lvgl_poc.cpp (jedna galaz w odswiezaniu
+//     kafelka ZEWN) + symulator (kafelki_szerokosc: "3.4°C", "-12.6°C" 96 px
+//     czcionka 28 miesci sie, "0.0°C" bez minusa) + projektant HTML.
 // [2026-11-23] v1.5.17 - KAFELEK ZEWN: UKLAD "E" Z PROJEKTANTA, NAPISY W 2 LINIACH
 //   - Wybor z projektanta docs/symulator_kafelka_zewn.html (23.11, wieczor):
 //     "ikony=kolor rozmiar=40 napis=rodzaj czas=pelny uklad=E kolor=bialy
@@ -1447,7 +1457,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.17"; // [2026-11-23] v1.5.17: kafelek ZEWN uklad "E" - napis o pogodzie (2 linie) zamiast tytulu, bez paska, bez czujnika temperatura z prognozy "~3°C" (pogoda_temp z centrali 3.58.17); opis w HISTORII ZMIAN. v1.5.16: tlo wykresu = tlo ekranu (bez jasniejszej karty do rogow); v1.5.15: ekran Wykres na caly ekran - legenda z trybem w jednym pasku u gory zamiast tytulu + 2 wierszy legendy, padding 4 px; opis w HISTORII ZMIAN. v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.18"; // [2026-11-24] v1.5.18: kafelek ZEWN bez czujnika - temperatura z prognozy jako "3.4°C" (jak pomiar: 1 miejsce po przecinku, bez tyldy i zaokraglania; w v1.5.17 "~3°C"); opis w HISTORII ZMIAN. [2026-11-23] v1.5.17: kafelek ZEWN uklad "E" - napis o pogodzie (2 linie) zamiast tytulu, bez paska, bez czujnika temperatura z prognozy "~3°C" (pogoda_temp z centrali 3.58.17); opis w HISTORII ZMIAN. v1.5.16: tlo wykresu = tlo ekranu (bez jasniejszej karty do rogow); v1.5.15: ekran Wykres na caly ekran - legenda z trybem w jednym pasku u gory zamiast tytulu + 2 wierszy legendy, padding 4 px; opis w HISTORII ZMIAN. v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez

@@ -1079,7 +1079,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.17"
+#define WERSJA_FW "v1.5.18"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -6113,19 +6113,22 @@ void scenariuszKafelkiSzerokosc() {
   ustaw(0, [](Centrala& c) { c.pogodaKod = 3; c.wiatrPorywy = 62.4; });
   biegnij(3000);
   zewnNapisSprawdz("silny\nwiatr", "ZEWN porywy 62 km/h -> \"silny\" / \"wiatr\" (wazniejsze niz chmury)");
-  // Brak czujnika (-1.0): temperatura z prognozy "~3°C" (pogoda_temp 3.4), a bez niej "--".
+  // Brak czujnika (-1.0): temperatura z prognozy jako "3.4°C" [v1.5.18: bylo "~3°C"], a bez niej "--".
   ustaw(0, [](Centrala& c) { c.wiatrPorywy = 40.0; c.tZewn = -1.0; c.pogodaTemp = 3.4; });
   biegnij(3000);
   zrzutEkranu("9_brak_czujnika_prognoza");
   sprawdz(ekranMa("ZEWN") && !ekranMa("pochmurno"), "ZEWN porywy 40 km/h -> znow bez napisu");
-  kafelekSprawdz("~3°C", "~3°C", &lv_font_pl_28, "ZEWN: czujnik -1.0 (brak DS18B20) + pogoda_temp 3.4 -> \"~3°C\" z prognozy, czcionka 28");
-  sprawdz(!ekranMa("-1.0°C") && !ekranMa("--"), "nie ma \"-1.0°C\" ani \"--\" na ekranie");
+  kafelekSprawdz("3.4°C", "3.4°C", &lv_font_pl_28, "ZEWN: czujnik -1.0 (brak DS18B20) + pogoda_temp 3.4 -> \"3.4°C\" z prognozy (v1.5.18: bez tyldy, 1 miejsce), czcionka 28");
+  sprawdz(!ekranMa("-1.0°C") && !ekranMa("--") && !ekranMa("~"), "nie ma \"-1.0°C\", \"--\" ani tyldy na ekranie");
   ustaw(0, [](Centrala& c) { c.pogodaTemp = -12.6; });
   biegnij(3000);
-  kafelekSprawdz("~-13°C", "~-13°C", &lv_font_pl_28, "ZEWN: pogoda_temp -12.6 -> \"~-13°C\" (84 px) czcionka 28 miesci sie");
+  kafelekSprawdz("-12.6°C", "-12.6°C", &lv_font_pl_28, "ZEWN: pogoda_temp -12.6 -> \"-12.6°C\" (najszersza realna wartosc) czcionka 28 miesci sie");
   ustaw(0, [](Centrala& c) { c.pogodaTemp = -0.3; });
   biegnij(3000);
-  kafelekSprawdz("~0°C", "~0°C", &lv_font_pl_28, "ZEWN: pogoda_temp -0.3 -> \"~0°C\" (bez \"-0\")");
+  kafelekSprawdz("-0.3°C", "-0.3°C", &lv_font_pl_28, "ZEWN: pogoda_temp -0.3 -> \"-0.3°C\" (bez zaokraglania)");
+  ustaw(0, [](Centrala& c) { c.pogodaTemp = -0.04; });
+  biegnij(3000);
+  kafelekSprawdz("0.0°C", "0.0°C", &lv_font_pl_28, "ZEWN: pogoda_temp -0.04 -> \"0.0°C\" (bez \"-0.0\")");
   ustaw(0, [](Centrala& c) { c.pogodaTemp = -99.0; });
   biegnij(3000);
   zrzutEkranu("9b_brak_czujnika_kreski");
@@ -6577,7 +6580,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"ota_ten_sam_plik", "OTA: centrala oferuje plik, z ktorego panel juz pracuje - nic nie jest wgrywane (v1.4.0)", scenariuszOtaTenSamPlik},
     {"ota_status_milczy", "OTA: centrala nie odpowiada na status, ale plik idzie - pobieranie nie jest przerywane (v1.4.0)", scenariuszOtaStatusMilczy},
     {"ota_bez_identyfikatora", "OTA: panel nie zna sumy wlasnego programu - aktualizacja przez centrale wylaczona (v1.4.0)", scenariuszOtaBezIdentyfikatora},
-    {"kafelki_szerokosc", "kafelki (v1.5.2/v1.5.17): najszersze wartosci mieszcza sie w kafelkach, czcionka 28/20/14 dobierana sama; ZEWN uklad E: napis o pogodzie (2 linie) zamiast tytulu, temperatura 28, \"~3°C\" z prognozy bez czujnika", scenariuszKafelkiSzerokosc},
+    {"kafelki_szerokosc", "kafelki (v1.5.2/v1.5.17): najszersze wartosci mieszcza sie w kafelkach, czcionka 28/20/14 dobierana sama; ZEWN uklad E: napis o pogodzie (2 linie) zamiast tytulu, temperatura 28, \"3.4°C\" z prognozy bez czujnika (v1.5.18: bez tyldy)", scenariuszKafelkiSzerokosc},
     {"polskie_litery", "polskie litery na ekranie: czcionki lv_font_pl_14/20/28, glif dla kazdego znaku, napisy z ogonkami (v1.4.5)", scenariuszPolskieLitery},
     {"wersje_na_ekranie", "wersje panelu i centrali: ekran startowy, ekran WYSWIETLACZ, log tag=PANEL, kafelek WYSWIETLACZ bez obciecia (v1.4.6)", scenariuszWersjeNaEkranie},
     {"zasilanie", "ekran ZASILANIE: taktowanie 240/160/80 MHz i moc nadajnika 19,5/15/11/8,5 dBm - domyslnie bez zmian, zapis w NVS, odczyt, ostrzezenie przy slabym sygnale (v1.4.7)", scenariuszZasilanie},

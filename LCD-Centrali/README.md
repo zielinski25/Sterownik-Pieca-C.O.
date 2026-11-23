@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.17
+# Panel LCD (wyświetlacz CO) — firmware v1.5.18
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,17 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.18
+
+Kafelek ZEWN bez czujnika DS18B20 (`-1.0`): temperatura z prognozy (`pogoda_temp`
+z centrali 3.58.17) pokazywana jest jako **„3.4°C”** — ten sam format co pomiar
+z czujnika (jedno miejsce po przecinku), **bez tyldy i bez zaokrąglania** do całych
+stopni (v1.5.17: „~3°C”). Wybór użytkownika z 24.11 („Czemu jest znaczek tyldy
+i pogoda zaokrąglona” → „3.4°C”); na ekranie nie widać więc, czy liczba pochodzi
+z czujnika, czy z prognozy. Bez prognozy nadal „--”. Zmiana tylko w
+`dashboard_lvgl_poc.cpp` (jedna gałąź) + test hosta `kafelki_szerokosc`
+(„-12.6°C” czcionką 28 mieści się) + projektant HTML.
 
 ## Co zmienia v1.5.17
 

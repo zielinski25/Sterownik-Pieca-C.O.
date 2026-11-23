@@ -8959,14 +8959,16 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
   // "CISNIENIE", "POKOJ". Scenariusz polskie_litery (testy_host) pilnuje,
   // ze kazdy znak kazdej etykiety ma glif.
   // [v1.5.17] "brak_czujnika=prognoza": bez DS18B20 (-1.0) temperatura z
-  // prognozy centrali 3.58.17 (pogoda_temp) jako "~3°C" (tylda = w
-  // przyblizeniu, bez miejsca po przecinku - to prognoza, nie pomiar);
-  // bez niej (starsza centrala, brak internetu) "--" jak dotad.
+  // prognozy centrali 3.58.17 (pogoda_temp); bez niej (starsza centrala,
+  // brak internetu) "--" jak dotad.
+  // [v1.5.18] User (24.11: "Czemu jest znaczek tyldy i pogoda zaokraglona"
+  // -> "3.4°C"): ten sam format co pomiar z czujnika, "%.1f°C", bez tyldy
+  // i bez zaokraglania do calych (w v1.5.17 bylo "~3°C"). "-0.0" -> "0.0".
   if (fabsf(tZewn - (-1.0f)) < 0.01f) {
     if (pogodaTemp > ZEWN_POGODA_TEMP_BRAK + 1.0f) {
-      long z = lroundf(pogodaTemp);
-      if (z == 0) z = 0;   // bez "-0"
-      snprintf(bufor, sizeof(bufor), "~%ld°C", z);
+      float t = pogodaTemp;
+      if (fabsf(t) < 0.05f) t = 0.0f;   // bez "-0.0°C"
+      snprintf(bufor, sizeof(bufor), "%.1f°C", t);
     } else snprintf(bufor, sizeof(bufor), "--");
   } else snprintf(bufor, sizeof(bufor), "%.1f°C", tZewn);
   zewn_pogoda_odswiez(bufor, tZewn, deszczStan, deszczMinuty, pogodaKod, pogodaKodOpad, pogodaDzien, wiatrPorywy);
