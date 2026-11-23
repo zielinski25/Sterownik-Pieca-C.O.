@@ -1,0 +1,50 @@
+=== A. PIERWSZA-PROGNOZA: bramka startu, wersja, zakres zmian, WWW ===
+    [OK] po pobraniu licznik = millis() (jak dotad)
+    [OK] ESP32 (unsigned long = 32 bity): kompilacja bez ostrzezen (-Wall -Wextra -Werror)
+        start millis()=0: DESZCZ pierwsze 60 s, drugie 960 s, razem 3 w 40 min; PROGNOZA pierwsze 120 s, razem 3
+    [OK] ESP32 (unsigned long = 32 bity): DESZCZ pierwszy raz dokladnie 60 s po starcie
+    [OK] ESP32 (unsigned long = 32 bity): DESZCZ drugi raz 15 min pozniej (interwal bez zmian)
+    [OK] ESP32 (unsigned long = 32 bity): PROGNOZA pierwszy raz dokladnie 120 s po starcie
+    [OK] ESP32 (unsigned long = 32 bity): w 40 min po 3 pobrania kazdego (60 s / 15 min / 30 min)
+        pobranie 5 min przed przepelnieniem: nastepne DESZCZ po 900 s, PROGNOZA po 900 s, razem 2 / 2 w 40 min
+    [OK] ESP32 (unsigned long = 32 bity): przepelnienie millis() - kolejne pobranie dokladnie 15 min po poprzednim
+    [OK] ESP32 (unsigned long = 32 bity): przez przepelnienie bez dodatkowych ani zgubionych pobran
+    [OK] PC 64-bit: kompilacja bez ostrzezen (-Wall -Wextra -Werror)
+        start millis()=0: DESZCZ pierwsze 60 s, drugie 960 s, razem 3 w 40 min; PROGNOZA pierwsze 120 s, razem 3
+    [OK] PC 64-bit: DESZCZ pierwszy raz dokladnie 60 s po starcie
+    [OK] PC 64-bit: DESZCZ drugi raz 15 min pozniej (interwal bez zmian)
+    [OK] PC 64-bit: PROGNOZA pierwszy raz dokladnie 120 s po starcie
+    [OK] PC 64-bit: w 40 min po 3 pobrania kazdego (60 s / 15 min / 30 min)
+ZALICZONY: bramka startu OK
+    [OK] FIRMWARE_VERSION = "v3.58.18"
+    [OK] owDeszczLastFetchMillis startuje cofniety o (15 min - 60 s)
+    [OK] owPrognozaLastFetchMillis startuje cofniety o (15 min - 120 s)
+    [OK] nie ma juz startu od zera (15 min zwloki)
+    [OK] OW_DESZCZ_FETCH_INTERVAL_MS zdefiniowana przed inicjalizacja licznika
+    [OK] OW_DESZCZ_PIERWSZE_PO_MS zdefiniowana przed inicjalizacja licznika
+    [OK] OW_PROGNOZA_FETCH_INTERVAL_MS zdefiniowana przed inicjalizacja licznika
+    [OK] OW_PROGNOZA_PIERWSZE_PO_MS zdefiniowana przed inicjalizacja licznika
+    [OK] interwal 15 min bez zmian
+    [OK] poza komentarzami i wersja zmienione tylko linie licznikow Open-Meteo (6 linii kodu)
+    [OK] HTML strony WWW identyczny jak w 3.58.17
+    [OK] blok <script> 0: node --check (410064 znakow)
+=== B. plik 3.58.18 = 3.58.17 + patch ===
+    [OK] 3.58.17 + patch = ten plik (SHA 27555cb097277d516f1a61d4887f0347372be00673e594181add8a6a20c6ae45)
+=== C. testy paczki 3.58.17 (A-C) na tym pliku ===
+    ZALICZONY: parsowanie Open-Meteo OK (0 bledow)
+        BLAD: SHA po patchu 93dab586bf684dc0189bd18ab36ec29ee7dfef9f5a9018b201d303c5910f3dd6, plik b8939473acd7c6d61c20a297f1c877e64097ba18e93c702249af8d454bfecf7e
+        ZALICZONY: parsowanie Open-Meteo OK (0 bledow)
+            BLAD: SHA po patchu f8d0c997682f6f68301d06913cec96b2f1a39c0d8240ae08479154630bca4bbd, plik 85992c74b55da520a5d9e2c3dc4d2f7b95d5dddc4d515a7256ab25808fc29616
+                BLAD: C++ za HTML-em identyczne jak w 3.58.14
+                BLAD: SHA po patchu 8bfab4e5471370b4b11b0930eec3405cca79957e3c6df118dfba9226cdf8f0d7, plik 4726b24ec739be56b12a21d63e3cc5c1ff87904cf1e1b951b407ea58c4738c4a
+                    ZALICZONY: wszystkie sprawdzenia OK (18)
+                    ZALICZONY: wszystkie sprawdzenia OK (18)
+                    ZALICZONY: 12 sprawdzen OK
+                    BLAD: SHA po patchu eb763b1bb86404ed3d67eee0f82601622d9cbc51cbb868769f6de2738b0376e9, plik 6b724a7b653df710099fe452afd2349b1cc38b519053b73dcffdbf208afce40a
+                BLEDOW: 1
+            BLEDOW: 2
+        BLEDOW: 1
+    BLEDOW: 1
+    [OK] testy 3.58.17/3.58.16/3.58.15/3.58.14 zaliczone (pominieto tylko porownania SHA z patchem, 'C++ identyczne z 3.58.14' i dokladny ciag URL z 3.58.16 - nie dotycza tego pliku)
+
+WSZYSTKO OK

@@ -1,0 +1,84 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,21 @@
++// FIRMWARE_VERSION v3.58.17 -> v3.58.18 (2026-11-23) — PIERWSZA PROGNOZA ~1 MIN PO STARCIE, NIE PO 15 MIN.
++//
++// [v3.58.18 PIERWSZA-PROGNOZA] — 2026-11-23
++// Zgłoszenie użytkownika (23.11, płytka bez czujników): po wgraniu 3.58.17 panel
++// LCD pokazywał na kafelku ZEWN „--” zamiast „~3°C” — /api/status miało
++// pogoda_kod=-1, pogoda_temp=null przy ~6 min od startu. Przyczyna: obie bramki
++// Open-Meteo (DESZCZ i pełna PROGNOZA) startowały z owXxxLastFetchMillis = 0 i
++// warunkiem millis() - last >= 15 min, więc PIERWSZE pobranie szło dopiero
++// 15 minut po włączeniu centrali (tak było od v2.13.0 — po każdym restarcie
++// kwadrans bez „deszcz za 6 h”, ikony pogody i prognozy na WWW/LCD).
++// Teraz licznik startuje „cofnięty”: DESZCZ pierwszy raz ~60 s po starcie,
++// PROGNOZA ~120 s (rozsunięte, żeby nie robić dwóch zapytań HTTPS w jednej
++// iteracji zadania TG). Dalej co 15 min jak dotąd — liczba zapytań do
++// Open-Meteo w ciągu doby bez zmian (+1 na restart). Warunek WiFi połączone
++// i budżet iteracji (TG_ITER_HAS_BUDGET) bez zmian: jeśli Wi-Fi wstanie
++// później niż po minucie, pobranie idzie zaraz po połączeniu.
++// Zero zmian w parsowaniu, /api/status, WWW, sterowaniu i telemetrii.
++//
+ // FIRMWARE_VERSION v3.58.16 -> v3.58.17 (2026-11-23) — TEMPERATURA Z PROGNOZY („pogoda_temp”) W /api/status DLA KAFELKA ZEWN NA LCD.
+ //
+ // [v3.58.17 POGODA-TEMP] — 2026-11-23
+@@ -1984,6 +2002,13 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.18] — 2026-11-23 — PIERWSZA PROGNOZA ~1 MIN PO STARCIE (BYLO: 15 MIN)
++// Co: owDeszczLastFetchMillis / owPrognozaLastFetchMillis startuja "cofniete"
++//     o interwal, wiec pierwsze pobranie z Open-Meteo idzie ~60 s (DESZCZ) i
++//     ~120 s (PROGNOZA) po starcie, a nie po 15 min. Po restarcie kafelek ZEWN
++//     na LCD, "deszcz za 6 h" i prognoza na WWW sa od razu, nie po kwadransie.
++// Bez zmian: interwal 15 min, parsowanie, /api/status, WWW, sterowanie.
++//
+ // [v3.58.17] — 2026-11-23 — TEMPERATURA Z PROGNOZY W /api/status (KAFELEK ZEWN BEZ CZUJNIKA)
+ // Co: Zapytanie DESZCZ do Open-Meteo pobiera dodatkowo current.temperature_2m;
+ //     /api/status dostaje pole pogoda_temp (°C, null = brak danych). Panel LCD
+@@ -6787,7 +6812,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.17";
++static const char* FIRMWARE_VERSION = "v3.58.18";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -47404,11 +47429,18 @@
+   "&minutely_15=precipitation,weather_code&forecast_days=2"
+   "&timezone=Europe%2FWarsaw";
+ 
+-unsigned long owDeszczLastFetchMillis = 0;
+ // 15 min - dane i tak maja ziarnistosc 15-minutowa (minutely_15), czestsze
+ // pytanie nie daje nic wiecej, a Open-Meteo prosi o rozsadne cache'owanie
+ // po stronie klienta (jak RainViewer).
+ static const unsigned long OW_DESZCZ_FETCH_INTERVAL_MS = 15UL * 60UL * 1000UL;
++// [v3.58.18 PIERWSZA-PROGNOZA] Pierwsze pobranie ~60 s po starcie, nie po
++// 15 min. Bramka w zadaniu TG liczy millis() - owDeszczLastFetchMillis >=
++// OW_DESZCZ_FETCH_INTERVAL_MS, wiec licznik startuje "cofniety" o
++// (interwal - 60 s). Arytmetyka unsigned: 0 - X zawija sie, a roznica
++// millis() - (0 - X) == millis() + X - dokladnie tak, jak ma byc (ten sam
++// mechanizm, na ktorym opiera sie kazda bramka millis() przy przepelnieniu).
++static const unsigned long OW_DESZCZ_PIERWSZE_PO_MS = 60UL * 1000UL;
++unsigned long owDeszczLastFetchMillis = 0UL - (OW_DESZCZ_FETCH_INTERVAL_MS - OW_DESZCZ_PIERWSZE_PO_MS);
+ 
+ // [DESZCZ-ETAP2] Wynik ostatniego udanego przeliczenia - czytane przez
+ // Etap 3 (dolozenie do /api/status). Na razie (Etap 2) TYLKO Serial -
+@@ -47745,11 +47777,15 @@
+   "shortwave_radiation_sum"
+   "&forecast_days=2&timezone=Europe%2FWarsaw";
+ 
+-unsigned long owPrognozaLastFetchMillis = 0;
+ // Ten sam interwal co DESZCZ (15 min) - hourly/daily i tak nie zmieniaja
+ // sie czesciej, a to niezalezny model aktualizowany przez Open-Meteo co
+ // kilka godzin, nie co minute.
+ static const unsigned long OW_PROGNOZA_FETCH_INTERVAL_MS = 15UL * 60UL * 1000UL;
++// [v3.58.18 PIERWSZA-PROGNOZA] Pierwsze pobranie ~120 s po starcie (minute
++// po DESZCZ, zeby dwa zapytania HTTPS nie trafily w te sama iteracje zadania
++// TG); mechanizm jak przy owDeszczLastFetchMillis.
++static const unsigned long OW_PROGNOZA_PIERWSZE_PO_MS = 120UL * 1000UL;
++unsigned long owPrognozaLastFetchMillis = 0UL - (OW_PROGNOZA_FETCH_INTERVAL_MS - OW_PROGNOZA_PIERWSZE_PO_MS);
+ 
+ // [PROGNOZA-ETAP1] Wynik ostatniego udanego pobrania - gotowy String JSON,
+ // serwowany 1:1 przez /api/prognoza (budowany RAZ na fetch, nie przy
