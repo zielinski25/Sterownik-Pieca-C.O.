@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.15
+# Panel LCD (wyświetlacz CO) — firmware v1.5.16
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,14 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.16
+
+Tło wykresu = tło ekranu. Po 1.5.15 jaśniejsza „karta” wykresu sięgała do
+krawędzi ekranu i w dolnych rogach (tam, gdzie wyświetlacz ma diody
+podświetlenia) było widać inny odcień niż w reszcie – na czerni podświetlenie
+nie przebija. Pole wykresu wyznaczają linie siatki; tło etykiet osi Y też
+w kolorze tła.
 
 ## Co zmienia v1.5.15
 

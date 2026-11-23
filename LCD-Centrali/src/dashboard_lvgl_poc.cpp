@@ -5932,7 +5932,7 @@ static lv_coord_t wykresy_os_szerokosc_etykiet(float minWartosc, float maxWartos
 // tlo w kolorze wykresu (linia przechodzaca pod liczba jest przygaszona,
 // liczba zostaje czytelna), 2 px paddingu po bokach i lekkie zaokraglenie.
 static void wykresy_os_etykieta_tlo(lv_obj_t *etykieta) {
-  lv_obj_set_style_bg_color(etykieta, rgb565(KOL_KARTA), 0);
+  lv_obj_set_style_bg_color(etykieta, rgb565(KOL_TLO), 0);   // [v1.5.16] jak tlo wykresu
   lv_obj_set_style_bg_opa(etykieta, LV_OPA_80, 0);
   lv_obj_set_style_radius(etykieta, 3, 0);
   lv_obj_set_style_pad_hor(etykieta, WYKRESY_OS_ETYKIETA_PAD, 0);
@@ -7152,10 +7152,17 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   // wykresy_chart_odswiez() bylo PRZESUNIECIEM od srodka, nie polozeniem -
   // wykres z lewa osia ladowal 36 px za daleko w prawo i wystawal za ekran.
   lv_obj_set_pos(wykresyChart, WYKRESY_CHART_X1, WYKRESY_CHART_Y);
-  lv_obj_set_style_bg_color(wykresyChart, rgb565(KOL_KARTA), 0);
+  // [v1.5.16] Tlo wykresu = tlo ekranu (KOL_TLO), bez zaokraglenia. Od kiedy
+  // wykres siega do krawedzi ekranu (v1.5.15), jasniejsza "karta" KOL_KARTA
+  // na calej szerokosci konczyla sie tuz nad pasem podpisow czasu i na
+  // wyswietlaczu TN dolne rogi (gdzie swieca diody podswietlenia) mialy
+  // widocznie inny odcien niz reszta (zdjecie 23.11, dwa zakreslone rogi).
+  // Na czerni podswietlenie nie przebija, a pole wykresu i tak wyznaczaja
+  // linie siatki.
+  lv_obj_set_style_bg_color(wykresyChart, rgb565(KOL_TLO), 0);
   lv_obj_set_style_bg_opa(wykresyChart, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(wykresyChart, 0, 0);
-  lv_obj_set_style_radius(wykresyChart, 6, 0);
+  lv_obj_set_style_radius(wykresyChart, 0, 0);
   lv_obj_set_style_pad_all(wykresyChart, WYKRESY_CHART_PAD, LV_PART_MAIN);   // [v1.5.15] motyw dawal ~10 px
   // [v1.5.15] Wykres na cala szerokosc ekranu (0..480): pole danych zaczyna
   // sie za marginesem obudowy (skrajne ~8 px ekranu sa pod ramka), zeby
