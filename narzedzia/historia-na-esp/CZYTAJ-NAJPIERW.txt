@@ -1,0 +1,82 @@
+HISTORIA WYKRESOW NA NOWA (GOLA) PLYTKE ESP32-S3 - w 4 krokach
+================================================================
+Cel: nowa plytka ESP32-S3 N16R8 ma od pierwszego startu pelne wykresy
+(bufor krotki 24 h + archiwum), a nie zaczynac od zera.
+Firmware trzyma historie w DWOCH plikach na partycji LittleFS:
+    /hist_short.csv   24 h co 60 s (1440 wierszy)
+    /hist_long.csv    archiwum (8000 wierszy)
+Pliki trafiaja na plytke poleceniem PlatformIO "uploadfs" (katalog data\
+projektu -> obraz LittleFS -> flash). Ustawienia (tempOn, zewnZrodlo itd.)
+sa w NVS, nie w tych plikach - nowa plytka startuje z domyslnymi.
+
+KROK 1 - ZBIERZ KOPIE HISTORII DO JEDNEGO KATALOGU
+--------------------------------------------------
+Zaloz np. C:\Users\Rafcio\Downloads\historia i wrzuc tam WSZYSTKIE kopie
+hist_short*.csv / hist_long*.csv, jakie masz (nazwy i numerki w nawiasach
+nie maja znaczenia - skrypt rozpoznaje wiersze po tresci i sam usuwa
+powtorzenia). Na Twoim Drive sa m.in.:
+   hist_long (4).csv   11.10   760 kB      hist_short (5).csv  11.10  270 kB
+   hist_long (5).csv   24.10  1,46 MB  <- najwieksze archiwum (od 13.09)
+   hist_long (6).csv   29.10   251 kB      hist_short (7).csv  28.10  107 kB
+   hist_long (7).csv   28.10   233 kB      hist_short (8).csv  29.10  170 kB
+   hist_long (7).csv   31.10   331 kB      hist_short (9).csv  31.10  153 kB
+Najswiezsze dane ze STAREJ centrali (jesli jeszcze dziala) - dwa sposoby:
+   a) Telegram: /historia  -> bot przysyla hist_short.csv + hist_long.csv
+   b) przegladarka: http://192.168.100.151/history/link?stream=long
+      -> dostaniesz 32-znakowy bilet -> http://192.168.100.151/history/long?k=<bilet>
+      (to samo z stream=short i /history?k=...). Bilet dziala raz, 5 min.
+Im wiecej kopii, tym pelniejsze archiwum - duplikaty nic nie psuja.
+
+KROK 2 - SCAL (PowerShell, w katalogu tej paczki)
+-------------------------------------------------
+    python .\scal_historie.py "C:\Users\Rafcio\Downloads\historia" -o data
+(gdy "python" nie jest znany: & "$env:USERPROFILE\.platformio\penv\Scripts\python.exe" .\scal_historie.py ...)
+Skrypt wypisze, ile wierszy wzial z kazdego pliku, ile duplikatow odrzucil,
+zakres dat i przerwy > 6 h w archiwum, i zapisze:
+    data\hist_short.csv   (1440 ostatnich wierszy)
+    data\hist_long.csv    (8000 ostatnich wierszy, ok. 1,2-1,4 MB)
+Na koncu ma byc "GOTOWE". Jesli "ZAKONCZONE Z BLEDAMI" - przyslij wydruk.
+
+KROK 3 - WGRAJ NA GOLA PLYTKE
+-----------------------------
+1. Skopiuj katalog data\ do katalogu projektu centrali (obok platformio.ini):
+    Copy-Item -Recurse -Force .\data "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\data"
+2. Sprawdz w platformio.ini centrali, ze jest linia (w [env:esp32-s3-n16r8]):
+    board_build.filesystem = littlefs
+   Select-String 'filesystem' "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\platformio.ini"
+   Jesli jej NIE MA - dopisz. Bez niej PlatformIO zrobi obraz SPIFFS, firmware
+   go nie zamontuje ("LittleFS niedostepny; automatyczne formatowanie
+   zabronione") i historia ani logi nie beda dzialac.
+3. Podlacz gola plytke kablem i w katalogu projektu:
+    pio run -e esp32-s3-n16r8 -t upload      (firmware 3.58.15, jak zwykle)
+    pio run -e esp32-s3-n16r8 -t uploadfs    (obraz LittleFS z data\)
+   Kolejnosc dowolna; uploadfs kasuje CALA partycje LittleFS i wgrywa tylko
+   to, co jest w data\ - na golej plytce nic nie tracisz. NA PRACUJACEJ
+   centrali uploadfs skasowalby logi, log_ustawien.txt, archiwum solarne i
+   panel_firmware.bin - tam tego nie rob bez potrzeby.
+   (Jesli data\ ma zostac w projekcie, dodaj ja do .gitignore - ok. 1,5 MB.)
+
+KROK 4 - SPRAWDZENIE
+--------------------
+Monitor szeregowy (pio device monitor) po starcie:
+    tag=LOGI-FS ... zdarzenie=gotowy ... histS=~100000B histL=~1300000B
+    HISTORIA-FS zdarzenie=wczytano_z_dysku probek=1440 ...
+    HISTORIA_DLUGA-FS zdarzenie=wczytano_z_dysku probek=8000 ...
+Telegram: "Centrala wystartowala: v3.58.15". Strona -> Wykresy -> 7 dni /
+30 dni pokazuja stare dane (do 31.10 lub do ostatniej kopii), a od teraz
+dopisuja sie nowe. Przerwa miedzy ostatnia kopia a dzisiaj bedzie widoczna
+jako dziura - to normalne.
+
+CO SKRYPT ROBI, A CZEGO NIE
+---------------------------
++ rozpoznaje wiersz po liczbie kolumn (14 = krotki, 35/36 = dlugi), tak jak
+  firmware (historiaWczytajZFS / historiaDlugaWczytajZFS)
++ odrzuca naglowki, urwane i uszkodzone wiersze, wiersze bez czasu (czas_unix
+  = 0, brak RTC), CRLF zamienia na LF
++ laczy wszystkie kopie po czas_unix, sortuje, zostawia 1440 / 8000 OSTATNICH
+  (dokladnie tyle trzyma firmware - reszta i tak by przepadla w pierscieniu)
+- NIE zmienia tresci wierszy (stare znaczniki czasu firmware sam normalizuje)
+- NIE wymaga zadnej zmiany w firmware
+Test: tests\test_scal_historie.py (16 sprawdzen na syntetycznych plikach
+odwzorowujacych prawdziwe: 35 i 36 kolumn, " 0" ze spacja, CRLF, naglowek,
+duplikaty z kilku kopii, urwany ostatni wiersz, smieci).
