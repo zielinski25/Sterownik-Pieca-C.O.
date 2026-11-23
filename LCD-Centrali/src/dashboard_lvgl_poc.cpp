@@ -1611,9 +1611,9 @@ static lv_obj_t *panel_przycisk_ikona(lv_obj_t *parent, const lv_img_dsc_t *ikon
 // kazdym panelu/ekranie) jedna wspolna funkcja - latwiej dalej dostosowac
 // wyglad w JEDNYM miejscu zamiast 12 razy z rzedu.
 static lv_obj_t *krzyzyk_zamkniecia_utworz(lv_obj_t *parent, lv_event_cb_t cb,
-                                            int16_t offX = -10, int16_t offY = 10) {
+                                            int16_t offX = -10, int16_t offY = 10, lv_coord_t rozmiar = 34) {
   lv_obj_t *kolko = lv_btn_create(parent);
-  lv_obj_set_size(kolko, 34, 34);
+  lv_obj_set_size(kolko, rozmiar, rozmiar);   // [v1.5.15] ekran Wykres: 26 px w pasku legendy
   lv_obj_set_style_radius(kolko, LV_RADIUS_CIRCLE, 0);
   lv_obj_clear_flag(kolko, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_style_border_color(kolko, rgb565(KOL_TEKST), 0);
@@ -5077,6 +5077,7 @@ static lv_obj_t *wykresyOsXEtyk[WYKRESY_OS_X_MAX] = {nullptr};
 // wykresy_legenda_odswiez()), stad brak osobnej tablicy na itemy: item
 // pobierany w razie potrzeby przez lv_obj_get_parent(kropka).
 static lv_obj_t *wykresyLegendaCont = nullptr;
+static lv_obj_t *wykresyLegendaTryb = nullptr;   // [v1.5.15] "[Dzienny]" jako pierwszy element legendy (zamiast osobnego tytulu)
 static lv_obj_t *wykresyLegendaKropka[WYKRESY_MAX_SLOTOW] = { nullptr };
 static lv_obj_t *wykresyLegendaTekst[WYKRESY_MAX_SLOTOW] = { nullptr };
 
@@ -5153,29 +5154,9 @@ static void wykresy_pokaz_selekcje() {
 static void wykresy_pokaz_wykres() {
   if (wykresySelekcjaCont) lv_obj_add_flag(wykresySelekcjaCont, LV_OBJ_FLAG_HIDDEN);
   if (wykresyWykresCont) lv_obj_clear_flag(wykresyWykresCont, LV_OBJ_FLAG_HIDDEN);
-  if (wykresyWykresTytul) {
-    // [PARTIA 8f, ta sesja - PORZADKI] Poprzednia wersja obslugiwala tylko
-    // 1 albo "pierwsza + druga" (zalozenie sprzed Partii 8, gdy limit byl
-    // sztywno 2) - przy >2 wybranych realnie pokazywalaby TYLKO pierwsze
-    // dwie z pominieciem reszty, a etykieta nie ma ustawionej szerokosci/
-    // long_mode (LV_LABEL_LONG_EXPAND domyslnie), wiec przy 8 dlugich
-    // nazwach fontem 20px prawdopodobnie wyjechalaby poza ekran. Legenda
-    // (Partia 8e) juz pokazuje pelna liste kolor+nazwa pod tytulem, wiec
-    // od >2 wybranych tytul moze byc po prostu zwiezlym licznikiem -
-    // krotki, zawsze miesci sie w jednej linii, zero ryzyka przepelnienia.
-    if (g_wykresyLiczbaWybranych == 1 && wykresy_wybrana_seria(0)->jednostka[0] == '\0') {
-      lv_label_set_text_fmt(wykresyWykresTytul, "[%s] %s", wykresy_tryb_nazwa(), wykresy_wybrana_seria(0)->nazwa);   // [v1.5.12] POMPA bez jednostki
-    } else if (g_wykresyLiczbaWybranych == 1) {
-      lv_label_set_text_fmt(wykresyWykresTytul, "[%s] %s (%s)", wykresy_tryb_nazwa(),
-                             wykresy_wybrana_seria(0)->nazwa, wykresy_wybrana_seria(0)->jednostka);
-    } else if (g_wykresyLiczbaWybranych == 2) {
-      lv_label_set_text_fmt(wykresyWykresTytul, "[%s] %s + %s", wykresy_tryb_nazwa(),
-                             wykresy_wybrana_seria(0)->nazwa, wykresy_wybrana_seria(1)->nazwa);
-    } else {
-      lv_label_set_text_fmt(wykresyWykresTytul, "[%s] %d serii", wykresy_tryb_nazwa(),
-                             g_wykresyLiczbaWybranych);
-    }
-  }
+  // [v1.5.15] Tytul "[Dzienny] 3 serii" zniknal - tryb stoi jako pierwszy
+  // element legendy (wykresyLegendaTryb), a serie widac po kropkach.
+  if (wykresyLegendaTryb) lv_label_set_text_fmt(wykresyLegendaTryb, "[%s]", wykresy_tryb_nazwa());
   // [PARTIA 5e, ta sesja] Kazde WEJSCIE na podstrone Wykres startuje swiezy
   // fetch pod aktualny tryb - prostsze niz cache'owanie/porownywanie z
   // poprzednim requestem, a ~60KB CSV raz na wejscie na ekran to nie jest
@@ -5775,18 +5756,31 @@ static lv_coord_t wykresy_chart_skaluj(float wartosc) {
 // tego, czy w danej chwili faktycznie potrzebuje 1 czy 2 - unika
 // przeliczania polozenia wykresu przy kazdym odswiezeniu, ten sam powod co
 // "pula, nie remove/create" gdzie indziej w tym module.
-static const lv_coord_t WYKRESY_LEGENDA_Y = 36;
-static const lv_coord_t WYKRESY_LEGENDA_H = 46;
-// [v1.5.8 OS CZASU] Dol wykresu podniesiony z 310 na 296: pod wykresem
-// jest teraz pas 303..320 na podpisy osi czasu (font 14 = 17px wiersza), a
-// dolne etykiety osi Y (288..304) juz w niego nie wchodza - podpisy czasu
-// moga stac dokladnie pod swoimi kreskami, takze przy samych krawedziach.
-static const lv_coord_t WYKRESY_CHART_DOL = 296;
-static const lv_coord_t WYKRESY_CHART_Y = WYKRESY_LEGENDA_Y + WYKRESY_LEGENDA_H + 2;
-static const lv_coord_t WYKRESY_CHART_H = WYKRESY_CHART_DOL - WYKRESY_CHART_Y;
-static const lv_coord_t WYKRESY_CHART_X1 = 4;     // lewa/prawa krawedz wykresu w wykresyWykresCont (480px)
-static const lv_coord_t WYKRESY_CHART_X2 = 476;
-static const lv_coord_t WYKRESY_OS_X_Y = WYKRESY_CHART_DOL + 7;   // gorna krawedz pasa podpisow osi czasu
+// [v1.5.15 WYKRES NA CALY EKRAN] Zdjecia z 23.11 ("marnowanie miejsca
+// wkolo, wykres ma byc po calosci"): osobny wiersz tytulu (36 px) i staly,
+// dwuwierszowy pas legendy (46 px) zabieraly 1/4 ekranu. Teraz:
+//  - jeden pasek u gory (y=0): strzalka wstecz, legenda ("[Dzienny]" + kropki
+//    z nazwami, czcionka 14) i krzyzyk - legenda ma 1 wiersz (20 px), drugi
+//    tylko gdy nazwy sie nie mieszcza (>4-5 serii),
+//  - wykres zaczyna sie 4 px pod legenda (g_wykresyChartY/H liczone przy
+//    kazdym odswiezeniu w wykresy_chart_odswiez()) i konczy na y=299,
+//  - pas podpisow osi czasu 302..319,
+//  - padding wnetrza wykresu 4 px zamiast motywowych ~10,
+//  - etykiety osi Y nadal OBOK wykresu (v1.5.12 - linie nie przecinaja
+//    liczb), ale 2+2 px od niego zamiast 3+4; bez prawej osi wykres siega
+//    do prawej krawedzi ekranu.
+// Pole danych: z 346x192 px (dwie osie, 2 wiersze legendy) na ~354x263 px.
+static const lv_coord_t WYKRESY_LEGENDA_Y = 0;
+static const lv_coord_t WYKRESY_LEGENDA_H_MIN = 24;              // 1 wiersz (20 px) + 4 px odstepu od wykresu
+static const lv_coord_t WYKRESY_CHART_DOL = 299;
+static lv_coord_t g_wykresyChartY = WYKRESY_LEGENDA_H_MIN;        // gorna krawedz wykresu - pod legenda
+static lv_coord_t g_wykresyChartH = WYKRESY_CHART_DOL - WYKRESY_LEGENDA_H_MIN;
+#define WYKRESY_CHART_Y g_wykresyChartY
+#define WYKRESY_CHART_H g_wykresyChartH
+static const lv_coord_t WYKRESY_CHART_X1 = 0;     // lewa/prawa krawedz wykresu w wykresyWykresCont (480px) bez osi po tej stronie
+static const lv_coord_t WYKRESY_CHART_X2 = 480;
+static const lv_coord_t WYKRESY_CHART_PAD = 4;    // padding wnetrza wykresu (motyw dawal ~10 px z kazdej strony)
+static const lv_coord_t WYKRESY_OS_X_Y = WYKRESY_CHART_DOL + 3;   // gorna krawedz pasa podpisow osi czasu (302..319)
 // [v1.5.9] Ile pikseli od lewej/prawej krawedzi ekranu zostawic pustych na
 // etykiety osi: wydrukowana obudowa zaslania skrajne ~6-8 px (zdjecia 22.11:
 // "198 °C" widoczne jako "'98 °C", "18:00" jako "18:0").
@@ -5798,9 +5792,11 @@ static void wykresy_chart_ukryj() {
   if (wykresyChart) lv_obj_add_flag(wykresyChart, LV_OBJ_FLAG_HIDDEN);
   if (wykresyPompaPas) lv_obj_add_flag(wykresyPompaPas, LV_OBJ_FLAG_HIDDEN);   // [v1.5.12]
   if (wykresyChartZakresLabel) lv_obj_add_flag(wykresyChartZakresLabel, LV_OBJ_FLAG_HIDDEN);
-  // [PARTIA 8e, ta sesja] Legenda nalezy wizualnie do wykresu (nad nim) -
-  // chowana/odslaniana razem z nim, tak jak zakresLabel wyzej.
-  if (wykresyLegendaCont) lv_obj_add_flag(wykresyLegendaCont, LV_OBJ_FLAG_HIDDEN);
+  // [PARTIA 8e] Legenda byla chowana razem z wykresem. [v1.5.15] Od kiedy
+  // legenda zastapila wiersz tytulu (niesie "[Dzienny]" i wybrane serie),
+  // zostaje widoczna takze przy komunikacie bledu/ladowania - user widzi,
+  // JAKI wykres sie nie udal, tak jak dotad widzial to w tytule.
+  if (wykresyLegendaCont) lv_obj_clear_flag(wykresyLegendaCont, LV_OBJ_FLAG_HIDDEN);
   // [FIX, ta sesja] Wlasne etykiety osi (wykresyEtykietyA/B) sa osobnymi
   // widzetami, dziecmi wykresyWykresCont, a NIE wykresyChart - ukrycie
   // samego wykresu ich nie chowa, wiec trzeba to zrobic jawnie, inaczej
@@ -5994,8 +5990,8 @@ static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float
   // [v1.5.12 OSIE] Lewa os: pole etykiety od marginesu obudowy do 4 px przed
   // wykresem, tekst dosuniety w PRAWO (liczby koncza sie rowno przy
   // wykresie). Prawa os: od 4 px za wykresem, tekst w lewo.
-  lv_coord_t etykietaSzer = szerTekstu + 3; // maly zapas, LONG_CLIP wiec bezpiecznie nie zawinie
-  lv_coord_t etykietaX = (os == LV_CHART_AXIS_PRIMARY_Y) ? (chartX1 - 4 - etykietaSzer) : (chartX2 + 4);
+  lv_coord_t etykietaSzer = szerTekstu + 2; // maly zapas, LONG_CLIP wiec bezpiecznie nie zawinie
+  lv_coord_t etykietaX = (os == LV_CHART_AXIS_PRIMARY_Y) ? (chartX1 - 2 - etykietaSzer) : (chartX2 + 2);
   lv_text_align_t wyrownanie = (os == LV_CHART_AXIS_PRIMARY_Y) ? LV_TEXT_ALIGN_RIGHT : LV_TEXT_ALIGN_LEFT;
 
   for (int i = 0; i < WYKRESY_OS_LICZBA_ETYKIET; i++) {
@@ -6173,7 +6169,9 @@ static bool wykresy_os_x_odswiez(int liczbaPunktow) {
 // modulu: pozycje < g_wykresyLiczbaWybranych dostaja realny kolor/tekst i
 // sa odslaniane, reszta (do WYKRESY_MAX_SLOTOW) jest chowana. Wolana z
 // wykresy_chart_odswiez() ponizej, przed nadpisaniem serii/etykiet osi.
+static void wykresy_geometria_pionowa_ustaw();   // forward
 static void wykresy_legenda_odswiez() {
+  if (wykresyLegendaTryb) lv_label_set_text_fmt(wykresyLegendaTryb, "[%s]", wykresy_tryb_nazwa());
   for (int p = 0; p < WYKRESY_MAX_SLOTOW; p++) {
     lv_obj_t *kropka = wykresyLegendaKropka[p];
     if (!kropka) continue;
@@ -6189,6 +6187,26 @@ static void wykresy_legenda_odswiez() {
       lv_obj_add_flag(item, LV_OBJ_FLAG_HIDDEN);
     }
   }
+  wykresy_geometria_pionowa_ustaw();
+}
+
+// [v1.5.15 WYKRES NA CALY EKRAN] Legenda ma wysokosc po zawartosci (1 albo
+// 2 wiersze); wykres zaczyna sie 4 px pod nia i konczy na WYKRESY_CHART_DOL.
+// Wolane po kazdym odswiezeniu legendy, PRZED rozstawieniem etykiet osi
+// (wykresy_chart_dopasuj_os) i kresek osi czasu (wykresy_os_x_odswiez),
+// ktore czytaja g_wykresyChartY/H.
+static void wykresy_geometria_pionowa_ustaw() {
+  if (!wykresyChart || !wykresyLegendaCont) return;
+  lv_obj_update_layout(wykresyLegendaCont);
+  lv_coord_t legendaH = lv_obj_get_height(wykresyLegendaCont) + 4;
+  if (legendaH < WYKRESY_LEGENDA_H_MIN) legendaH = WYKRESY_LEGENDA_H_MIN;
+  const lv_coord_t nowyY = WYKRESY_LEGENDA_Y + legendaH;
+  const lv_coord_t nowyH = WYKRESY_CHART_DOL - nowyY;
+  if (nowyY == g_wykresyChartY && nowyH == g_wykresyChartH && lv_obj_get_y(wykresyChart) == nowyY) return;
+  g_wykresyChartY = nowyY;
+  g_wykresyChartH = nowyH;
+  lv_obj_set_y(wykresyChart, g_wykresyChartY);
+  lv_obj_set_height(wykresyChart, g_wykresyChartH);
 }
 
 // [FIX crash wykresow, patrz RAPORT_NAPRAWA_CRASH_WYKRESY_LVGL.md] Cala
@@ -6249,8 +6267,11 @@ static void wykresy_chart_odswiez() {
     osAktywna[os] = wykresy_chart_zakres_osi(os, minOs[os], maxOs[os]);
     if (osAktywna[os]) szerOs[os] = wykresy_os_szerokosc_etykiet(minOs[os], maxOs[os], g_wykresyJednostkaOsi[os]);
   }
-  g_wykresyChartX1 = osAktywna[0] ? (lv_coord_t)(WYKRESY_MARGINES_OBUDOWY + szerOs[0] + 3 + 4) : WYKRESY_CHART_X1;
-  g_wykresyChartX2 = osAktywna[1] ? (lv_coord_t)(480 - WYKRESY_MARGINES_OBUDOWY - szerOs[1] - 3 - 4) : WYKRESY_CHART_X2;
+  // [v1.5.15] 2 px zapasu etykiety + 2 px do wykresu (bylo 3+4); bez osi po
+  // danej stronie wykres siega do krawedzi ekranu (obudowa zaslania ~8 px,
+  // ale pole danych i tak zaczyna sie za paddingiem 4 px).
+  g_wykresyChartX1 = osAktywna[0] ? (lv_coord_t)(WYKRESY_MARGINES_OBUDOWY + szerOs[0] + 2 + 2) : WYKRESY_CHART_X1;
+  g_wykresyChartX2 = osAktywna[1] ? (lv_coord_t)(480 - WYKRESY_MARGINES_OBUDOWY - szerOs[1] - 2 - 2) : WYKRESY_CHART_X2;
   lv_obj_set_x(wykresyChart, g_wykresyChartX1);
   lv_obj_set_width(wykresyChart, g_wykresyChartX2 - g_wykresyChartX1);
   for (int os = 0; os < 2; os++) {
@@ -7018,14 +7039,18 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   lv_img_set_src(wstecz, &lv_ikona_wstecz);
   lv_obj_set_style_img_recolor(wstecz, rgb565(KOL_TEKST_DIM), 0);
   lv_obj_set_style_img_recolor_opa(wstecz, LV_OPA_COVER, 0);
-  lv_obj_align(wstecz, LV_ALIGN_TOP_LEFT, 6, 8);
+  // [v1.5.15] Strzalka w pasku legendy (y=0..20): bitmapa 40x40 ma strzalke
+  // w srodku, wiec obiekt stoi czesciowo nad ekranem; ext_click_area, zeby
+  // dalo sie w nia trafic palcem.
+  lv_obj_align(wstecz, LV_ALIGN_TOP_LEFT, 4, -10);   // obudowa zaslania skrajne ~8 px
   lv_obj_add_flag(wstecz, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_ext_click_area(wstecz, 10);
   lv_obj_add_event_cb(wstecz, wykresy_wstecz_cb, LV_EVENT_CLICKED, nullptr);
 
-  wykresyWykresTytul = lv_label_create(wykresyWykresCont);
-  lv_obj_set_style_text_font(wykresyWykresTytul, &lv_font_pl_20, 0); // [FIX kompilacji] _18 nie jest wlaczony w lv_conf.h - patrz identyczny FIX wyzej przy pokazLbl; _20 juz uzywany gdzie indziej w tym pliku (11x), wiec na pewno wbudowany
-  lv_obj_set_style_text_color(wykresyWykresTytul, rgb565(KOL_TEKST), 0);
-  lv_obj_align(wykresyWykresTytul, LV_ALIGN_TOP_MID, 0, 14);
+  // [v1.5.15] Bez osobnego wiersza tytulu - tryb "[Dzienny]" jest pierwszym
+  // elementem legendy (wykresyLegendaTryb nizej). wykresyWykresTytul zostaje
+  // jako nullptr (sprawdzany przed uzyciem).
+  wykresyWykresTytul = nullptr;
 
   // [PARTIA 8e, ta sesja - LEGENDA] Rzad kropka+nazwa, do WYKRESY_MAX_SLOTOW
   // (8) pozycji, zawijany do 2 wierszy - ten sam mechanizm co chipy wyboru
@@ -7039,17 +7064,27 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   lv_obj_remove_style_all(wykresyLegendaCont);
   // [v1.5.12] 460 -> 400 px: przy 8 pozycjach ostatnia w pierwszym wierszu
   // ("POWROT") wchodzila pod krzyzyk zamkniecia w prawym gornym rogu.
-  lv_obj_set_size(wykresyLegendaCont, 400, WYKRESY_LEGENDA_H);
+  // [v1.5.15] Wysokosc po zawartosci (1 wiersz = 20 px, 2 = 40 px), miedzy
+  // strzalka (do x=40) a krzyzykiem (od x=440): 400 px.
+  lv_obj_set_size(wykresyLegendaCont, 400, LV_SIZE_CONTENT);
   lv_obj_align(wykresyLegendaCont, LV_ALIGN_TOP_MID, 0, WYKRESY_LEGENDA_Y);
+  lv_obj_set_style_pad_row(wykresyLegendaCont, 0, 0);
+  lv_obj_set_style_pad_column(wykresyLegendaCont, 0, 0);
   lv_obj_set_flex_flow(wykresyLegendaCont, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_flex_align(wykresyLegendaCont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_clear_flag(wykresyLegendaCont, LV_OBJ_FLAG_SCROLLABLE);
+  wykresyLegendaTryb = lv_label_create(wykresyLegendaCont);
+  lv_label_set_text(wykresyLegendaTryb, "");
+  lv_obj_set_style_text_font(wykresyLegendaTryb, &lv_font_pl_14, 0);
+  lv_obj_set_style_text_color(wykresyLegendaTryb, rgb565(KOL_TEKST_DIM), 0);
+  lv_obj_set_style_pad_hor(wykresyLegendaTryb, 4, 0);
+  lv_obj_set_style_pad_ver(wykresyLegendaTryb, 2, 0);
 
   for (int p = 0; p < WYKRESY_MAX_SLOTOW; p++) {
     lv_obj_t *item = lv_obj_create(wykresyLegendaCont);
     lv_obj_remove_style_all(item);
     lv_obj_set_size(item, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_hor(item, 6, 0);
+    lv_obj_set_style_pad_hor(item, 4, 0);   // [v1.5.15] 6 -> 4: ciasniej, mniej wierszy legendy
     lv_obj_set_style_pad_ver(item, 2, 0);
     lv_obj_set_flex_flow(item, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(item, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -7102,7 +7137,8 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   lv_obj_set_style_bg_color(wykresyChart, rgb565(KOL_KARTA), 0);
   lv_obj_set_style_bg_opa(wykresyChart, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(wykresyChart, 0, 0);
-  lv_obj_set_style_radius(wykresyChart, 10, 0);
+  lv_obj_set_style_radius(wykresyChart, 6, 0);
+  lv_obj_set_style_pad_all(wykresyChart, WYKRESY_CHART_PAD, LV_PART_MAIN);   // [v1.5.15] motyw dawal ~10 px
   lv_chart_set_type(wykresyChart, LV_CHART_TYPE_LINE);
   lv_chart_set_div_line_count(wykresyChart, 3, 5);
   lv_chart_set_update_mode(wykresyChart, LV_CHART_UPDATE_MODE_CIRCULAR);
@@ -7284,7 +7320,8 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   }
 
   // [FIX WYGLAD, ta sesja - Partia 2] Patrz krzyzyk_zamkniecia_utworz().
-  krzyzyk_zamkniecia_utworz(wykresyWykresCont, wykresy_panel_zamknij_cb);
+  // [v1.5.15] Mniejszy (26 px) i w pasku legendy (y=0..26) - obok, nie nad wykresem.
+  krzyzyk_zamkniecia_utworz(wykresyWykresCont, wykresy_panel_zamknij_cb, -12, 0, 26);
 }
 
 // Odswieza WYGLAD obu kafelkow SERWO (ramka, znaczek dloni) pod aktualne

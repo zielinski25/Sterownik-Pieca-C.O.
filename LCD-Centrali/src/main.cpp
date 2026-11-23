@@ -40,6 +40,20 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-23] v1.5.15 - WYKRESY: WYKRES NA CALY EKRAN
+//   - Zdjecia z 23.11 ("marnowanie miejsca wkolo, wykres ma byc po calosci"):
+//     osobny wiersz tytulu "[Dzienny] 6 serii" (36 px) i staly dwuwierszowy
+//     pas legendy (46 px) zabieraly 1/4 ekranu, wnetrze wykresu mialo jeszcze
+//     ~10 px paddingu z kazdej strony z motywu.
+//   - Teraz jeden pasek u gory: strzalka wstecz, legenda ("[Dzienny]" + kropki
+//     z nazwami serii, czcionka 14) i mniejszy krzyzyk (26 px). Legenda ma
+//     wysokosc po zawartosci - 1 wiersz do 4-5 serii, wiecej tylko gdy trzeba.
+//     Wykres zaczyna sie 4 px pod legenda i konczy na y=299, podpisy osi
+//     czasu 302..319, padding wnetrza 4 px, etykiety osi Y 2 px od wykresu
+//     (nadal OBOK niego - v1.5.12), bez prawej osi wykres do krawedzi ekranu.
+//     Pole danych: z ok. 346x192 px na ok. 354x263 px (+88 %).
+//   - Symulator: dotkniecie wykresu i sprawdzenia tytulu dostosowane
+//     (legenda zamiast tytulu); wszystkie scenariusze wykresy_* przechodza.
 // [2026-11-23] v1.5.14 - ZEWN: POGODA (NIE TYLKO DESZCZ) - UKLAD WYBRANY W PROJEKTANCIE
 //   - Kafelek ZEWN wg wyboru uzytkownika w docs/symulator_kafelka_zewn.html
 //     ("ikony=kolor rozmiar=40 napis=zawsze czas=pelny uklad=F kolor=nieb
@@ -1399,7 +1413,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.14"; // [2026-11-23] v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.15"; // [2026-11-23] v1.5.15: ekran Wykres na caly ekran - legenda z trybem w jednym pasku u gory zamiast tytulu + 2 wierszy legendy, padding 4 px; opis w HISTORII ZMIAN. v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez

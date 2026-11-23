@@ -1075,7 +1075,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.14"
+#define WERSJA_FW "v1.5.15"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -3034,7 +3034,11 @@ bool dotknijWykresu() {
   lv_obj_t* tytul = znajdzEtykiete(lv_scr_act(), "[");
   if (tytul == nullptr || znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") != nullptr) return false;
   LiczFirmware licz;
-  lv_event_send(lv_obj_get_parent(tytul), LV_EVENT_PRESSED, nullptr);
+  // [v1.5.15] "[Dzienny]" jest w kontenerze legendy - tlo podstrony Wykres to pierwszy przodek na caly ekran.
+  lv_obj_t* tlo = lv_obj_get_parent(tytul);
+  while (tlo != nullptr && lv_obj_get_width(tlo) < 480) tlo = lv_obj_get_parent(tlo);
+  if (tlo == nullptr) return false;
+  lv_event_send(tlo, LV_EVENT_PRESSED, nullptr);
   return true;
 }
 
@@ -3217,7 +3221,7 @@ void scenariuszWykresyCentralaLiczy() {
   sprawdz(osCzasuTo({"12.11 16:00", "20:00", "13.11", "04:00", "08:00", "12:00"}),
           "os czasu: 6 podpisow co 4 h pod kreskami siatki: 12.11 16:00, 20:00, 13.11, 04:00, 08:00, 12:00");
   sprawdz(!ekranMa("12.11 13:01  -  13.11 13:00"), "dawnego podpisu \"od - do\" na srodku juz nie ma");
-  sprawdz(ekranMa("[Dzienny] ZEWN + BOJLER"), "tytul: \"[Dzienny] ZEWN + BOJLER\"");
+  sprawdz(ekranMa("[Dzienny]") && ekranMa("ZEWN") && ekranMa("BOJLER") && !ekranMa("[Dzienny] ZEWN"), "legenda: \"[Dzienny]\" + ZEWN, BOJLER (v1.5.15: bez osobnego tytulu)");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440", "ucietych_linii=0", "", od),
           "log: zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440 ... ucietych_linii=0");
   info("%s", liniaLogu("tag=WYKRESY zdarzenie=pobrano", od).c_str());
@@ -3234,8 +3238,8 @@ void scenariuszWykresyCentralaLiczy() {
   sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(godz, 1), "ZEWN") && tesamePunkty(punktyWykresu(1), zWzorca(godz, 4), "BOJLER"),
           "ZEWN i BOJLER: 96 punktow z ostatniej godziny (stary sposob dawal 60 punktow na 62% szerokosci)");
   info("os czasu: %s", podpisyOsiTekst().c_str());
-  sprawdz(osCzasuTo({"12:15", "12:30", "12:45", "13:00"}) && ekranMa("[Godzinny] ZEWN + BOJLER"),
-          "os czasu co 15 min: 12:15, 12:30, 12:45, 13:00; tytul \"[Godzinny] ZEWN + BOJLER\"");
+  sprawdz(osCzasuTo({"12:15", "12:30", "12:45", "13:00"}) && ekranMa("[Godzinny]") && ekranMa("ZEWN") && ekranMa("BOJLER"),
+          "os czasu co 15 min: 12:15, 12:30, 12:45, 13:00; legenda \"[Godzinny]\" ZEWN BOJLER");
   zrzutEkranu("godzina");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=godz sposob=centrala punktow=96", "", "", od), "log: zdarzenie=pobrano tryb=godz sposob=centrala punktow=96");
 
@@ -3342,7 +3346,7 @@ void scenariuszWykresyPompaIOsie() {
           "przycisk \"POKAŻ WYKRES (2)\", podpowiedz \"Wybrano 2 z 8 · lewa oś °C\" (POMPA nie zajmuje osi)");
   sprawdz(kliknij("POKAŻ WYKRES"), "dotkniecie POKAZ WYKRES");
   biegnij(1000);
-  sprawdz(wykresWidoczny() && ekranMa("[Dzienny] ZEWN + POMPA"), "wykres na ekranie, tytul \"[Dzienny] ZEWN + POMPA\"");
+  sprawdz(wykresWidoczny() && ekranMa("[Dzienny]") && ekranMa("ZEWN") && ekranMa("POMPA"), "wykres na ekranie, legenda \"[Dzienny]\" ZEWN POMPA");
   sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "ZEWN: 96 punktow jak policzyla centrala");
   {
     std::vector<int> maByc;
@@ -3362,7 +3366,7 @@ void scenariuszWykresyPompaIOsie() {
     const bool poza = etykietyOsiPozaWykresem(lv_scr_act(), g, &ile);
     info("etykiet osi Y: %d", ile);
     sprawdz(ile == 5 && poza && g.x1 >= 50, "5 etykiet lewej osi stoi OBOK wykresu (zadna nie lezy na polu wykresu), wykres zaczyna sie za nimi");
-    sprawdz(g.x2 == 475, "bez prawej osi wykres siega do prawej krawedzi jak dotad (x=..475)");
+    sprawdz(g.x2 == 479, "bez prawej osi wykres siega do prawej krawedzi ekranu (x=..479, v1.5.15)");
   }
   zrzutEkranu("2_zewn_i_pompa");
 
@@ -3376,7 +3380,7 @@ void scenariuszWykresyPompaIOsie() {
     const bool poza = etykietyOsiPozaWykresem(lv_scr_act(), g, &ile);
     info("wykres x=%d..%d, etykiet osi: %d", g.x1, g.x2, ile);
     sprawdz(ile == 10 && poza && g.x1 >= 50 && g.x2 <= 430, "10 etykiet (5+5) poza polem wykresu, wykres zwezony z obu stron");
-    sprawdz(ekranMa("Wybrano 3 z 8") == false && ekranMa("[Dzienny] 3 serii"), "tytul \"[Dzienny] 3 serii\"");
+    sprawdz(ekranMa("Wybrano 3 z 8") == false && ekranMa("[Dzienny]") && !ekranMa("3 serii"), "legenda \"[Dzienny]\" (bez licznika \"3 serii\" - v1.5.15)");
   }
   zrzutEkranu("3_dwie_osie_i_pompa");
 
@@ -3386,7 +3390,7 @@ void scenariuszWykresyPompaIOsie() {
           "po WYCZYSC nic nie wybrane: licznik znika, POKAZ WYKRES nie otwiera wykresu");
   sprawdz(kliknij("POMPA") && ekranMa("Wybrano 1 z 8") && !ekranMa("lewa oś") && kliknij("POKAŻ WYKRES"), "sama POMPA: \"Wybrano 1 z 8\" bez osi");
   biegnij(1000);
-  sprawdz(wykresWidoczny() && ekranMa("[Dzienny] POMPA") && !ekranMa("[Dzienny] POMPA ("), "tytul \"[Dzienny] POMPA\" (bez pustych nawiasow)");
+  sprawdz(wykresWidoczny() && ekranMa("[Dzienny]") && ekranMa("POMPA") && !ekranMa("POMPA ("), "legenda \"[Dzienny]\" POMPA (bez pustych nawiasow)");
   {
     std::vector<lv_obj_t*> w; znajdzWykresy(lv_scr_act(), w);
     lv_area_t g{}; if (!w.empty()) lv_obj_get_coords(w[0], &g);
@@ -3406,8 +3410,8 @@ void scenariuszWykresyPompaIOsie() {
   {
     int zPunktami = 0;
     for (int slot = 0; slot < 8; slot++) if (ilePunktow(punktyWykresu(slot)) == 96) zPunktami++;
-    sprawdz(wykresWidoczny() && ekranMa("[Dzienny] 8 serii") && zPunktami == 7 && ilePunktow(punktyPasaPompy()) == 48,
-            "tytul \"[Dzienny] 8 serii\", 7 linii po 96 punktow na lewej osi, pas pompy z 48 odcinkami");
+    sprawdz(wykresWidoczny() && ekranMa("[Dzienny]") && zPunktami == 7 && ilePunktow(punktyPasaPompy()) == 48,
+            "legenda \"[Dzienny]\", 7 linii po 96 punktow na lewej osi, pas pompy z 48 odcinkami");
   }
   zrzutEkranu("5_osiem_serii");
 }

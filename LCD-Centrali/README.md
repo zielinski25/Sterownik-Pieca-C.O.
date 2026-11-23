@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.14
+# Panel LCD (wyświetlacz CO) — firmware v1.5.15
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,18 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.15
+
+Ekran **Wykres na cały ekran** (zdjęcia z 23.11: „marnowanie miejsca wkoło,
+wykres ma być po całości”). Osobny wiersz tytułu „[Dzienny] 6 serii” i stały
+dwuwierszowy pas legendy zabierały ¼ wysokości, a wnętrze wykresu miało
+jeszcze ~10 px paddingu z każdej strony. Teraz u góry jest jeden pasek:
+strzałka wstecz, legenda („[Dzienny]” + kropki z nazwami serii) i mniejszy
+krzyżyk; legenda ma wysokość po zawartości (1 wiersz do 4–5 serii). Wykres
+zaczyna się 4 px pod legendą i kończy na y=299, padding wnętrza 4 px, etykiety
+osi Y 2 px od wykresu (nadal obok niego, nie na nim), bez prawej osi wykres
+sięga do krawędzi ekranu. Pole danych urosło z ok. 346×192 px do ok. 354×263 px.
 
 ## Co zmienia v1.5.14
 
