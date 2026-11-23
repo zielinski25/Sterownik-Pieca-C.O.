@@ -111,6 +111,32 @@
     margin-bottom:9px;color:#f0d9ae;font-size:13.5px}
   .ostrzezenie.blad{background:#261416;border-color:#5a2226;color:#ffc9c9}
 
+  #zmiany{background:#1a2318;border:1px solid #2c4632;border-radius:12px;padding:12px 16px;margin-bottom:14px}
+  #zmiany .pasek{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+  #zmiany-lista div{font-family:var(--mono);font-size:12.5px;color:#c8e6c9;padding:2px 0}
+  #zmiany-lista b{color:#fff}
+  tr.zmieniony td{background:#182518 !important}
+  tr.zmieniony td.k{box-shadow:inset 3px 0 0 #3ecf8e}
+  .stara{color:#7f8b95;text-decoration:line-through;font-family:var(--mono);margin-right:8px}
+  button.mini{padding:2px 8px;font-size:12px;border-radius:6px}
+  td.v input{font:inherit;font-family:var(--mono);background:#0d1117;color:var(--txt);
+    border:1px solid #3a465c;border-radius:6px;padding:3px 7px;width:100%;max-width:280px}
+  #wgraj{margin-top:10px;padding-top:10px;border-top:1px solid #2c4632}
+  #wgraj code{display:block;font-family:var(--mono);font-size:12.5px;background:#0d1117;
+    padding:9px 11px;border-radius:8px;margin-top:6px;white-space:pre-wrap;color:#cfe3ff}
+  #wgraj .uwaga{color:#f0b95e;font-size:12.5px;margin-top:7px}
+  tr.dodany td{background:#12241b !important}
+  tr.usuniety td{background:#261416 !important}
+  .plus{color:#3ecf8e;font-weight:600}
+  .minus{color:#ff6b6b;font-weight:600}
+  tr.hex td{background:#0b0f16 !important;padding:0}
+  tr.hex pre{margin:0;padding:10px 12px;font-family:var(--mono);font-size:12.5px;
+    color:#b9c8e0;overflow-x:auto;line-height:1.55}
+  tr.hex pre .adr{color:#5c7599}
+  tr.hex pre .zazn{color:#3ecf8e}
+  tr.hex .tytul{color:#8fa6c4;padding:8px 12px 0;font-family:var(--mono);font-size:12px}
+  tr.klikalny td.k{cursor:pointer}
+  tr.klikalny td.k:hover{text-decoration:underline dotted}
   footer{color:var(--dim2);font-size:12px;text-align:center;padding:26px 20px 40px}
   footer a{color:var(--dim)}
   .ukryj{display:none !important}
@@ -126,8 +152,13 @@
     <input type="checkbox" id="maskuj" checked> maskuj sekrety
   </label>
   <button id="wybierz" class="primary">Wczytaj plik…</button>
+  <button id="csv" class="ukryj">Zapisz CSV</button>
   <button id="json" class="ukryj">Zapisz JSON</button>
+  <button id="raport" class="ukryj">Raport</button>
+  <button id="porownaj" class="ukryj">Porównaj…</button>
+  <button id="zapisz-bin" class="ukryj primary">Pobierz .bin</button>
   <input type="file" id="plik" accept=".bin,application/octet-stream" class="ukryj">
+  <input type="file" id="plik2" accept=".bin,application/octet-stream" class="ukryj">
 </header>
 
 <main>
@@ -144,20 +175,38 @@
       Jeśli nie wiesz, pod jakim adresem leży NVS: wrzuć zrzut całego flashu
       albo plik z tablicą partycji (<code style="font-family:var(--mono)">read-flash 0x8000 0xC00 tablica.bin</code>).
     </div>
+    <div class="pusty" style="text-align:center;max-width:640px;margin:0 auto;line-height:1.6">
+      Po wczytaniu możesz poprawić każdą wartość, porównać dwa zrzuty, wyeksportować
+      CSV/JSON/raport i pobrać nowy plik <code style="font-family:var(--mono)">.bin</code>
+      z gotowym poleceniem <code style="font-family:var(--mono)">write-flash</code>.
+      Wszystko dzieje się w przeglądarce — plik nigdzie nie jest wysyłany.
+    </div>
   </section>
 
   <section id="widok" class="ukryj">
     <div class="karty" id="karty"></div>
+    <div id="zmiany" class="ukryj">
+      <div id="zmiany-lista"></div>
+      <div class="pasek">
+        <span id="zmiany-ile"></span>
+        <span class="spacer"></span>
+        <button id="cofnij-zmiany">Cofnij wszystkie</button>
+        <button id="pobierz-zmieniony" class="primary">Pobierz .bin ze zmianami</button>
+      </div>
+      <div id="wgraj" class="ukryj"></div>
+    </div>
     <div class="tabs" id="tabs">
       <button data-tab="dane" class="on">Ustawienia</button>
       <button data-tab="strony">Strony <span class="badge" id="b-strony">0</span></button>
       <button data-tab="ostrzezenia">Ostrzeżenia <span class="badge" id="b-ostrzezenia">0</span></button>
       <button data-tab="tablica" class="ukryj" id="t-tablica">Tablica partycji</button>
+      <button data-tab="diff" class="ukryj" id="t-diff">Zmiany między zrzutami <span class="badge" id="b-diff">0</span></button>
     </div>
     <div id="tab-dane"></div>
     <div id="tab-strony" class="ukryj"></div>
     <div id="tab-ostrzezenia" class="ukryj"></div>
     <div id="tab-tablica" class="ukryj"></div>
+    <div id="tab-diff" class="ukryj"></div>
   </section>
 </main>
 
@@ -279,7 +328,7 @@ function parsujPartycje(bytes, opis, toleruj){
     throw new Error('rozmiar '+bytes.length+' B nie jest wielokrotnością strony 4096 B – '+
                     'to nie jest sama partycja NVS (podaj cały zrzut flashu)');
   var stron = bytes.length / PAGE_SIZE;
-  var p = {opis:opis||'', rozmiar:bytes.length, strony:[], wpisy:[], usuniete:[],
+  var p = {opis:opis||'', rozmiar:bytes.length, raw:bytes, strony:[], wpisy:[], usuniete:[],
            przestrzenie:{}, przestrzenieOdwrotnie:{}, dane:{}, ostrzezenia:[]};
 
   for (var n=0;n<stron;++n){
@@ -374,7 +423,7 @@ function parsujPartycje(bytes, opis, toleruj){
   });
 
   function wartosc(w){
-    var d = w.dane, out = {typ:w.typNazwa, strona:w.strona, indeks:w.indeks, span:w.span};
+    var d = w.dane, out = {typ:w.typNazwa, kod:w.typ, strona:w.strona, indeks:w.indeks, span:w.span};
     if (LICZBY[w.typ]){
       var info = LICZBY[w.typ], rozmiar = info[1], znak = info[2], val;
       if (rozmiar === 8){
@@ -386,7 +435,7 @@ function parsujPartycje(bytes, opis, toleruj){
       } else if (rozmiar===4) val = znak ? dv(d).getInt32(0,true) : dv(d).getUint32(0,true);
       else if (rozmiar===2) val = znak ? dv(d).getInt16(0,true) : dv(d).getUint16(0,true);
       else val = znak ? dv(d).getInt8(0) : dv(d).getUint8(0);
-      out.wartosc = val; out.typ = info[0]; out.rozmiar = rozmiar;
+      out.wartosc = val; out.typ = info[0]; out.rozmiar = rozmiar; out.kod = w.typ;
       return out;
     }
     if (w.typ===T_STR || w.typ===T_BLOB){
@@ -444,7 +493,8 @@ function parsujPartycje(bytes, opis, toleruj){
       p.ostrzezenia.push('blob "'+idx.klucz+'": indeks mówi o '+ileChunk+' chunkach, znaleziono '+czesci.length);
     if (!czesci.length)
       p.ostrzezenia.push('blob "'+idx.klucz+'": jest indeks, nie ma żadnego chunku – NVS zwróci błąd odczytu');
-    p.dane[idx.ns+'/'+idx.klucz] = {typ:'blob ('+czesci.length+' chunk.)', wartosc:all.subarray(0,rozmiar),
+    p.dane[idx.ns+'/'+idx.klucz] = {typ:'blob ('+czesci.length+' chunk.)', kod:T_BLOB,
+      wartosc:all.subarray(0,rozmiar),
       rozmiar:rozmiar, strona:idx.strona, indeks:idx.indeks, span:idx.span, chunki:czesci.length};
   });
 
@@ -710,6 +760,26 @@ function bajtyDemo(){
   return out;
 }
 
+// --- klucz w modelu danych p.dane to "indeksPrzestrzeni/klucz", a indeksy po
+// zapisie sa inne niz przed nim. Do porownan i testow: szukaj po nazwie. ----
+function danePoNazwie(p, nazwaNs, klucz){
+  var ns = null;
+  Object.keys(p.przestrzenie).forEach(function(k){ if (p.przestrzenie[k] === nazwaNs) ns = k; });
+  return ns === null ? undefined : p.dane[ns+'/'+klucz];
+}
+
+// --- listy blobow (potrzebne do zapisu: jeden blob = jeden wpis indeksu) ---
+function blobIdx(p){
+  return p.wpisy.filter(function(w){ return w.typ===T_BLOB_IDX; });
+}
+function chunkiBloba(p, idx){
+  var d = idx.dane, startCh = d[5], ile = Math.max(1, d[4]);
+  return p.wpisy.filter(function(w){
+    return w.typ===T_BLOB_DATA && w.ns===idx.ns && w.klucz===idx.klucz &&
+           w.chunk>=startCh && w.chunk<startCh+ile;
+  }).sort(function(a,b){ return a.chunk-b.chunk; });
+}
+
 // --- slownik kluczy tego projektu (z kodu, nie z dokumentacji) -------------
 var KAT = {
   'piec': {opis:'Ustawienia pieca – najważniejsza przestrzeń (Preferences „config”)',
@@ -843,6 +913,410 @@ function czySekret(klucz, opis){
   if (WZORCE_SEKRETOW.some(function(w){ return k.indexOf(w) >= 0; })) return true;
   return !!(opis && opis.uwaga && opis.uwaga.indexOf('sekret') >= 0);
 }
+
+// --- ZAPIS: budowa nowej partycji NVS -------------------------------------
+// Odtwarza to, co robi nvs_page.cpp / nvs_storage.cpp:
+//   * wpisy danego klucza ida od najnowszej strony do najstarszej; nowa wartosc
+//     trafia na pierwsza strone z miejscem, a stare wpisy zostaja nizej jako
+//     "usuniete" (dokladnie tak robi NVS), wiec stara wartosc jest wciaz
+//     mozliwa do odzyskania - dopoki strona nie zostanie przepisana,
+//   * teksty i bloby zapisujemy W RAZEM z koncowym NUL (tak robi
+//     nvs_set_str; obrazy z esp-idf-nvs-partition-gen maja bez - oba warianty
+//     czytamy poprawnie),
+//   * blob > 1984 B idzie jako chunki BLOB_DATA + wpis BLOB_IDX (v2),
+//   * na koncu: numer sekwencyjny strony, stan ACTIVE i CRC naglowka.
+var NVS_WERSJA = 0xFE;
+var STAN_AKTYWNA = 0xFFFFFFFE;      // wgrany obraz: wszystkie strony aktywne
+var ROZMIAR_CHUNKA = 64 * 32;       // 1984 B - tyle miesci sie w jednym wpisie span 64
+
+function crcKawalkow(kawalki){
+  var crc = 0;
+  for (var k=0;k<kawalki.length;k++){
+    var b = kawalki[k];
+    for (var i=0;i<b.length;i++) crc = _tab[(crc ^ b[i]) & 0xFF] ^ (crc>>>8);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function nowaStrona(sekwencja){
+  var s = new Uint8Array(PAGE_SIZE);
+  s.fill(0xFF);
+  var d = dv(s);
+  d.setUint32(0, 0xFFFFFFFF, true);      // stan: na razie "pusta"
+  d.setUint32(4, sekwencja, true);
+  s[8] = NVS_WERSJA;
+  // tablica wpisow: 126 wpisow po 2 bity, 3 = pusty
+  for (var i=0;i<ENTRY_COUNT;i++) d.setUint32(ENTRY_TABLE_OFF+4*Math.floor(i/16), 0xFFFFFFFF, true);
+  return s;
+}
+function ustawStanWpisu(strona, indeks, stan){
+  var off = ENTRY_TABLE_OFF + 4*Math.floor(indeks/16);
+  var slowo = dv(strona).getUint32(off, true);
+  slowo = (slowo & ~(3 << ((indeks%16)*2))) | (stan << ((indeks%16)*2));
+  dv(strona).setUint32(off, slowo >>> 0, true);
+}
+function stanWpisu(strona, indeks){
+  var slowo = dv(strona).getUint32(ENTRY_TABLE_OFF + 4*Math.floor(indeks/16), true);
+  return (slowo >>> ((indeks%16)*2)) & 3;
+}
+function znajdzMiejsce(stanWpisow, span){
+  var i = 0;
+  while (i <= ENTRY_COUNT - span){
+    var ok = true;
+    for (var k=0;k<span;k++) if (stanWpisow[i+k] !== 3){ ok = false; break; }
+    if (ok) return i;
+    // przeskocz zajety fragment (wpis + jego ciaglosc)
+    if (stanWpisow[i] !== 3) i++; else i += span;
+  }
+  return -1;
+}
+
+// Jedna komorka zapisu: "klucz" + gotowe wpisy (naglowek + ewentualne dane)
+function zapiszWpis(strona, indeks, ns, typ, klucz, dane8, rozmiarVar, crcVar, chunkNr){
+  var off = ENTRY_DATA_OFF + indeks*ENTRY_SIZE;
+  var e = new Uint8Array(ENTRY_SIZE);
+  e.fill(0xFF);
+  e[0] = ns; e[1] = typ; e[2] = 1;   // span: 1 wpis (dluzsze wartosci poprawiaja to nizej)
+  // Klucz: max 15 znakow + bajt 0 konczacy, reszta pola (do 16 B) wypelniona
+  // 0xFF - dokladnie tak jak robi to NVS (nvs_types.hpp: key[16], NUL-terminated)
+  var k = new TextEncoder().encode(klucz);
+  for (var i=0;i<k.length && i<15;i++) e[8+i] = k[i];
+  if (k.length < 16) e[8+k.length] = 0;
+  for (var j=0;j<8;j++) e[24+j] = dane8[j];
+  if (rozmiarVar !== undefined){
+    dv(e).setUint16(24, rozmiarVar, true);
+    dv(e).setUint16(26, 0xFFFF, true);
+    dv(e).setUint32(28, crcVar, true);
+  }
+  if (chunkNr !== undefined) e[3] = chunkNr;
+  // CRC wpisu = CRC z [0:4] + [8:32]
+  var doCrc = new Uint8Array(28);
+  doCrc.set(e.subarray(0,4), 0); doCrc.set(e.subarray(8,32), 4);
+  dv(e).setUint32(4, crcKawalkow([doCrc]), true);
+  strona.set(e, off);
+  return e;
+}
+
+function budujPartycje(model, ileStron, opcje){
+  opcje = opcje || {};
+  var strony = [];
+  for (var i=0;i<ileStron;i++) strony.push(nowaStrona(0));
+  var stany = [];
+  for (var j=0;j<ileStron;j++){
+    var st = [];
+    for (var q=0;q<ENTRY_COUNT;q++) st.push(3);
+    stany.push(st);
+  }
+  var biezaca = -1;   // -1 = jeszcze zadnej strony nie otwarto
+
+  function otworzStrone(){
+    // nowa strona idzie na KONIEC (najwyzszy numer = najnowsza), jak w NVS
+    for (var n=strony.length-1;n>=0;n--){
+      if (juzOtwarta[n]) continue;
+      var wszystkie = stany[n].every(function(x){ return x===3; });
+      if (wszystkie){ biezaca = n; juzOtwarta[n]=true; return n; }
+    }
+    return -1;
+  }
+  var juzOtwarta = {};
+
+  function rezerwuj(span){
+    if (biezaca < 0 || znajdzMiejsce(stany[biezaca], span) < 0){
+      var n = otworzStrone();
+      if (n < 0) return null;
+    }
+    var idx = znajdzMiejsce(stany[biezaca], span);
+    for (var k=0;k<span;k++){
+      stany[biezaca][idx+k] = 2;
+      // i to samo w tablicy stanow wewnatrz strony - bez tego NVS widzi
+      // dane, ale uwaza wpisy za puste (pusty obraz, ktory "nic nie ma")
+      ustawStanWpisu(strony[biezaca], idx+k, 2);
+    }
+    return {strona:biezaca, indeks:idx};
+  }
+
+  function zapiszProsty(ns, typ, klucz, dane8){
+    var m = rezerwuj(1);
+    if (!m) return false;
+    zapiszWpis(strony[m.strona], m.indeks, ns, typ, klucz, dane8);
+    return true;
+  }
+  function zapiszVar(ns, typ, klucz, bajty){
+    var span = 1 + Math.ceil(Math.max(0, bajty.length) / ENTRY_SIZE);
+    if (span > ENTRY_COUNT) return false;
+    var m = rezerwuj(span);
+    if (!m) return false;
+    var e = new Uint8Array(ENTRY_SIZE);
+    e.fill(0xFF);
+    var naglowek = zapiszWpis(strony[m.strona], m.indeks, ns, typ, klucz, e.subarray(24,32),
+                              bajty.length, crcKawalkow([bajty]));
+    naglowek[2] = span;
+    // span jest czescia CRC wpisu - policz jeszcze raz
+    var doCrc = new Uint8Array(28);
+    doCrc.set(naglowek.subarray(0,4), 0); doCrc.set(naglowek.subarray(8,32), 4);
+    dv(naglowek).setUint32(4, crcKawalkow([doCrc]), true);
+    strony[m.strona].set(naglowek, ENTRY_DATA_OFF + m.indeks*ENTRY_SIZE);
+    var off = ENTRY_DATA_OFF + (m.indeks+1)*ENTRY_SIZE;
+    var dane = new Uint8Array(span*ENTRY_SIZE);
+    dane.fill(0xFF);
+    dane.set(bajty, 0);
+    strony[m.strona].set(dane, off);
+    return true;
+  }
+  function zapiszBlob(ns, klucz, bajty){
+    if (bajty.length <= ROZMIAR_CHUNKA){
+      var span = 1 + Math.ceil(bajty.length/ENTRY_SIZE);
+      var m = rezerwuj(span);
+      if (!m) return false;
+      var e = new Uint8Array(ENTRY_SIZE); e.fill(0xFF);
+      var h = zapiszWpis(strony[m.strona], m.indeks, ns, T_BLOB, klucz, e.subarray(24,32),
+                         bajty.length, crcKawalkow([bajty]));
+      h[2] = span;
+      var doCrc = new Uint8Array(28);
+      doCrc.set(h.subarray(0,4), 0); doCrc.set(h.subarray(8,32), 4);
+      dv(h).setUint32(4, crcKawalkow([doCrc]), true);
+      strony[m.strona].set(h, ENTRY_DATA_OFF + m.indeks*ENTRY_SIZE);
+      var dane = new Uint8Array(span*ENTRY_SIZE); dane.fill(0xFF); dane.set(bajty, 0);
+      strony[m.strona].set(dane, ENTRY_DATA_OFF + (m.indeks+1)*ENTRY_SIZE);
+      return true;
+    }
+    // wielostronicowy: N chunkow BLOB_DATA + wpis BLOB_IDX
+    var ile = Math.ceil(bajty.length / ROZMIAR_CHUNKA), start = 0;
+    for (var c=0;c<ile;c++){
+      var kawalek = bajty.subarray(c*ROZMIAR_CHUNKA, Math.min((c+1)*ROZMIAR_CHUNKA, bajty.length));
+      var span2 = 1 + Math.ceil(kawalek.length/ENTRY_SIZE);
+      var m2 = rezerwuj(span2);
+      if (!m2) return false;
+      var e2 = new Uint8Array(ENTRY_SIZE); e2.fill(0xFF);
+      var h2 = zapiszWpis(strony[m2.strona], m2.indeks, ns, T_BLOB_DATA, klucz, e2.subarray(24,32),
+                          kawalek.length, crcKawalkow([kawalek]), c);
+      h2[2] = span2;
+      var doCrc2 = new Uint8Array(28);
+      doCrc2.set(h2.subarray(0,4), 0); doCrc2.set(h2.subarray(8,32), 4);
+      dv(h2).setUint32(4, crcKawalkow([doCrc2]), true);
+      strony[m2.strona].set(h2, ENTRY_DATA_OFF + m2.indeks*ENTRY_SIZE);
+      var d2 = new Uint8Array(span2*ENTRY_SIZE); d2.fill(0xFF); d2.set(kawalek, 0);
+      strony[m2.strona].set(d2, ENTRY_DATA_OFF + (m2.indeks+1)*ENTRY_SIZE);
+    }
+    var idxDane = new Uint8Array(8); idxDane.fill(0xFF);
+    dv(idxDane).setUint32(0, bajty.length, true);
+    idxDane[4] = ile; idxDane[5] = start;
+    return zapiszProsty(ns, T_BLOB_IDX, klucz, idxDane);
+  }
+
+  // przestrzenie nazw: wpis w ns 0, typ u8, wartosc = indeks
+  var nazwy = Object.keys(model).sort();
+  var indeksy = {};
+  for (var a=0;a<nazwy.length;a++){
+    var idxNs = a+1;
+    indeksy[nazwy[a]] = idxNs;
+    if (!zapiszProsty(0, T_U8, nazwy[a], new Uint8Array([idxNs,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF])))
+      throw new Error('nie zmiescilo sie nawet w przestrzeniach nazw - za malo stron');
+  }
+  // klucze: najpierw wszystkie stale, potem wymienione
+  for (var b=0;b<nazwy.length;b++){
+    var nsNazwa = nazwy[b], ns = indeksy[nsNazwa], klucze = model[nsNazwa];
+    var lista = Object.keys(klucze).sort();
+    for (var c2=0;c2<lista.length;c2++){
+      var kl = lista[c2], w = klucze[kl];
+      var ok = false;
+      if (LICZBY[w.kod]){
+        var info = LICZBY[w.kod], buf = new Uint8Array(8); buf.fill(0xFF);
+        var val = w.wartosc;
+        if (info[1]===8){
+          var big = BigInt(Math.trunc(val));
+          dv(buf).setUint32(0, Number(big & 0xFFFFFFFFn), true);
+          dv(buf).setUint32(4, Number((big >> 32n) & 0xFFFFFFFFn), true);
+        } else if (info[1]===4) dv(buf)[info[2]?'setInt32':'setUint32'](0, val, true);
+        else if (info[1]===2) dv(buf)[info[2]?'setInt16':'setUint16'](0, val, true);
+        else buf[0] = val & 0xFF;
+        ok = zapiszProsty(ns, w.kod, kl, buf);
+      } else if (w.kod===T_STR){
+        var tekst = String(w.wartosc);
+        var bajty = new TextEncoder().encode(tekst);
+        var zNul = new Uint8Array(bajty.length+1); zNul.set(bajty,0);
+        ok = zapiszVar(ns, T_STR, kl, zNul);
+      } else {
+        ok = zapiszBlob(ns, kl, w.wartosc);
+      }
+      if (!ok) throw new Error('brak miejsca na klucz "'+kl+'" w przestrzeni "'+nsNazwa+'" ' +
+        '- zwieksz liczbe stron (partycja jest pelna)');
+    }
+  }
+
+  // naglowki: sekwencja rosnaco, wszystkie strony aktywne, CRC na koncu
+  var wynik = new Uint8Array(strony.length * PAGE_SIZE);
+  for (var n2=0;n2<strony.length;n2++){
+    var str = strony[n2];
+    dv(str).setUint32(0, STAN_AKTYWNA, true);
+    dv(str).setUint32(4, n2+1, true);
+    dv(str).setUint32(28, crcKawalkow([str.subarray(4,28)]), true);
+    wynik.set(str, n2*PAGE_SIZE);
+  }
+  return wynik;
+}
+
+// Model do zapisu: co jest w partycji teraz, z mozliwoscia podmiany wartosci.
+function modelDoZapisu(p){
+  var model = {}, nazwy = {};
+  Object.keys(p.przestrzenie).forEach(function(ns){ nazwy[ns] = p.przestrzenie[ns]; });
+  Object.keys(p.dane).forEach(function(k){
+    var czesci = k.split('/'), nsNr = czesci[0], kl = czesci[1];
+    var nazwa = nazwy[nsNr] || ('ns'+nsNr);
+    var w = p.dane[k];
+    model[nazwa] = model[nazwa] || {};
+    model[nazwa][kl] = {kod:w.kod, wartosc:w.wartosc};
+  });
+  return model;
+}
+
+function parsujWartoscDoTypu(tekst, kod){
+  var t = String(tekst).trim();
+  if (LICZBY[kod]){
+    if (t === '' || !/^[-+]?\d+$/.test(t)) return {blad:'to ma być liczba całkowita'};
+    var v = BigInt(t), info = LICZBY[kod], bity = info[1]*8;
+    var min = info[2] ? -(1n << BigInt(bity-1)) : 0n;
+    var max = info[2] ? (1n << BigInt(bity-1)) - 1n : (1n << BigInt(bity)) - 1n;
+    if (v < min || v > max) return {blad:'poza zakresem '+min+'..'+max};
+    return {wartosc: Number(v)};
+  }
+  if (kod === T_STR) return {wartosc: String(tekst)};
+  return {blad:'tego typu nie edytuję (blob) - zmień go przez firmware'};
+}
+
+// CSV w formacie esp-idf-nvs-partition-gen (to samo, co --csv w nvs_odczyt.py)
+function csvEsc(x){ x = String(x); return /[",\n\r]/.test(x) ? '"'+x.replace(/"/g,'""')+'"' : x; }
+function budujCsv(p){
+  var linie = ['key,type,encoding,value'];
+  Object.keys(p.przestrzenie).sort(function(a,b){ return (+a)-(+b); }).forEach(function(ns){
+    var nazwa = p.przestrzenie[ns];
+    linie.push([csvEsc(nazwa),'namespace','',''].join(','));
+    Object.keys(p.dane).filter(function(k){ return k.split('/')[0]===ns; })
+      .map(function(k){ return k.split('/')[1]; }).sort().forEach(function(kl){
+        var w = p.dane[ns+'/'+kl];
+        if (typeof w.wartosc === 'string') linie.push([csvEsc(kl),'data','string',csvEsc(w.wartosc)].join(','));
+        else if (w.wartosc instanceof Uint8Array) linie.push([csvEsc(kl),'data','hex2bin',hex(w.wartosc) ].join(','));
+        else linie.push([csvEsc(kl),'data',w.typ,String(w.wartosc)].join(','));
+      });
+  });
+  return linie.join('\r\n')+'\r\n';
+}
+
+// suma kontrolna calego zrzutu - do porownania dwoch plikow "na oko"
+function sumaZrzutu(bytes){
+  var h1 = 0x811c9dc5, h2 = 0;
+  for (var i=0;i<bytes.length;i++){
+    h1 = ((h1 ^ bytes[i]) * 0x01000193) >>> 0;
+    h2 = (h2 + bytes[i]*(i%251+1)) >>> 0;
+  }
+  return ('00000000'+h1.toString(16)).slice(-8)+('00000000'+h2.toString(16)).slice(-8);
+}
+
+// --- porownanie dwoch zrzutow (np. przed wgraniem i po) -------------------
+function porownaj(pA, pB){
+  function mapa(p){
+    var m = {};
+    Object.keys(p.dane).forEach(function(k){
+      var czesci = k.split('/');
+      var nazwa = p.przestrzenie[czesci[0]] || ('ns'+czesci[0]);
+      var w = p.dane[k], v = w.wartosc;
+      m[nazwa+'/'+czesci[1]] = {typ:w.typ, kod:w.kod,
+        wartosc: (v instanceof Uint8Array) ? hex(v) : v,
+        bin: (v instanceof Uint8Array) ? v : null};
+    });
+    return m;
+  }
+  var a = mapa(pA), b = mapa(pB), out = [];
+  var wszystkie = {};
+  Object.keys(a).forEach(function(k){ wszystkie[k]=1; });
+  Object.keys(b).forEach(function(k){ wszystkie[k]=1; });
+  Object.keys(wszystkie).sort().forEach(function(k){
+    var wa = a[k], wb = b[k];
+    var va = wa ? (wa.bin ? hex(wa.bin) : String(wa.wartosc)) : null;
+    var vb = wb ? (wb.bin ? hex(wb.bin) : String(wb.wartosc)) : null;
+    if (va === null) out.push({klucz:k, rodzaj:'dodany', nowa:vb, typ:wb.typ});
+    else if (vb === null) out.push({klucz:k, rodzaj:'usuniety', stara:va, typ:wa.typ});
+    else if (va !== vb) out.push({klucz:k, rodzaj:'zmieniony', stara:va, nowa:vb, typ:wa.typ});
+  });
+  return out;
+}
+
+// --- raport tekstowy (do wklejenia w maila albo na forum) ------------------
+function raportTekst(p, tablica, zrodlo, plik){
+  var L = [];
+  L.push('RAPORT NVS - ' + plik);
+  L.push('Wygenerowano: ' + new Date().toISOString().slice(0,19).replace('T',' '));
+  L.push('Zrodlo: ' + (zrodlo || 'plik'));
+  L.push('Rozmiar: ' + p.rozmiar + ' B (' + odmiana(p.rozmiar/PAGE_SIZE,'strona','strony','stron') + ' po ' + PAGE_SIZE + ' B)');
+  L.push('Suma kontrolna zrzutu: ' + sumaZrzutu(p.raw || new Uint8Array(0)));
+  L.push('');
+  L.push('STRONY');
+  p.strony.forEach(function(s){
+    L.push('  ' + s.numer + '. ' + s.nazwaStanu + ', seq=' + s.sekwencja +
+           ', format=' + (s.wersja===0xFE?'v2':s.wersja===0xFF?'v1':'0x'+s.wersja.toString(16)) +
+           ', CRC ' + (s.crcOk ? 'ok' : 'ZLE'));
+  });
+  if (tablica){
+    L.push('');
+    L.push('TABLICA PARTYCJI');
+    tablica.forEach(function(x){
+      L.push('  ' + x.etykieta + ': ' + (x.typ===0?'app':'dane') + '/' + x.nazwaPodtypu +
+             ', offset 0x' + x.offset.toString(16) + ', rozmiar 0x' + x.rozmiar.toString(16));
+    });
+  }
+  L.push('');
+  L.push('PRZESTRZENIE I KLUCZE');
+  Object.keys(p.przestrzenie).sort(function(a,b){ return (+a)-(+b); }).forEach(function(ns){
+    var nazwa = p.przestrzenie[ns];
+    var klucze = Object.keys(p.dane).filter(function(k){ return k.split('/')[0]===ns; })
+      .map(function(k){ return k.split('/')[1]; }).sort();
+    L.push('');
+    L.push('  [' + nazwa + '] ' + klucze.length + ' kluczy');
+    klucze.forEach(function(kl){
+      var w = p.dane[ns+'/'+kl], o = opisKlucza(nazwa, kl);
+      var wart = wartoscRaportu(w, nazwa, kl);
+      L.push('    ' + (kl + '                ').slice(0,17) + (w.typ + '        ').slice(0,10) + '= ' + wart +
+             (o ? '   # ' + o.tytul : ''));
+    });
+  });
+  if (p.ostrzezenia.length){
+    L.push('');
+    L.push('OSTRZEZENIA');
+    p.ostrzezenia.forEach(function(o){ L.push('  ! ' + o); });
+  }
+  return L.join('\n') + '\n';
+}
+// w raporcie sekrety sa zawsze maskowane
+function wartoscRaportu(w, ns, kl){
+  var o = opisKlucza(ns, kl);
+  if (czySekret(kl, o) && !(w.wartosc instanceof Uint8Array)) return '*** (ukryte, ' + String(w.wartosc).length + ' znakow)';
+  if (w.wartosc instanceof Uint8Array) return '(blob ' + w.wartosc.length + ' B)';
+  return String(w.wartosc);
+}
+
+// --- hexdump: numer bajtu, hex, ascii - tak jak robi to xxd ----------------
+function hexdump(bajty, od, dlugosc, baza){
+  baza = baza || 0;
+  var L = [], naLinie = 16;
+  for (var i=0;i<dlugosc;i+=naLinie){
+    var czesc = bajty.subarray(od+i, Math.min(od+i+naLinie, od+dlugosc));
+    var hexCzesc = '', ascii = '';
+    for (var j=0;j<naLinie;j++){
+      if (j<czesc.length){
+        var h = czesc[j].toString(16).toUpperCase();
+        hexCzesc += (h.length<2?'0':'')+h+' ';
+      } else hexCzesc += '   ';
+      if (j===7) hexCzesc += ' ';
+      if (j<czesc.length) ascii += (czesc[j]>=32 && czesc[j]<127) ? String.fromCharCode(czesc[j]) : '.';
+      else ascii += ' ';
+    }
+    var adres = (baza+i).toString(16).toUpperCase();
+    while (adres.length < 5) adres = '0'+adres;
+    L.push(adres + '  ' + hexCzesc + ' |' + ascii + '|');
+  }
+  return L.join('\n');
+}
+
 // ===================== CORE END =====================
 
 // ===================== INTERFEJS =====================
@@ -851,7 +1325,9 @@ if (typeof document !== 'undefined') (function(){
   var drop = document.getElementById('drop');
   var start = document.getElementById('start');
   var widok = document.getElementById('widok');
-  var stan = {p:null, tablica:null, zrodlo:'', plik:'', maskuj:true, fraza:'', zakladka:'dane', json:''};
+  var stan = {p:null, tablica:null, zrodlo:'', plik:'', maskuj:true, fraza:'', zakladka:'dane',
+               json:'', zmiany:{}};   // zmiany: "przestrzen/klucz" -> nowa wartosc
+  function nazwaNs(p, nsNr){ return p.przestrzenie[nsNr] || ('ns'+nsNr); }
 
   function el(tag, cls, txt){
     var e = document.createElement(tag);
@@ -888,6 +1364,189 @@ if (typeof document !== 'undefined') (function(){
   document.getElementById('szukaj').addEventListener('input', function(e){
     stan.fraza = e.target.value.trim().toLowerCase(); rysujDane();
   });
+  document.getElementById('porownaj').addEventListener('click', function(){
+    document.getElementById('plik2').click();
+  });
+
+  document.getElementById('raport').addEventListener('click', function(){
+    if (!stan.p) return;
+    if (!stan.p.raw) {   // brak surowych bajtow (np. z automatycznego wykrycia)
+      try { stan.p.raw = budujPartycje(modelDoZapisu(stan.p), stan.p.rozmiar/PAGE_SIZE); } catch(e){}
+    }
+    var txt = raportTekst(stan.p, stan.tablica, stan.zrodlo, stan.plik);
+    pobierz(txt, (stan.plik||'nvs').replace(/\.bin.*$/i,'')+'-raport.txt', 'text/plain');
+  });
+
+  document.getElementById('csv').addEventListener('click', function(){
+    if (!stan.p) return;
+    pobierz(budujCsv(stan.p), (stan.plik||'nvs').replace(/\.bin$/i,'')+'.csv', 'text/csv');
+  });
+
+  // porownanie z drugim zrzutem (np. "przed" i "po" wgraniu)
+  var drugi = null;
+  document.getElementById('plik2').addEventListener('change', function(e){
+    if (!e.target.files[0] || !stan.p) return;
+    var fr = new FileReader();
+    fr.onload = function(){
+      try {
+        var bytes = new Uint8Array(fr.result);
+        var p2 = null;
+        if (wygladaNaPartycje(bytes)) p2 = parsujPartycje(bytes, e.target.files[0].name);
+        else {
+          var traf = znajdzNvs(bytes);
+          if (traf && traf.offset !== null)
+            p2 = parsujPartycje(bytes.subarray(traf.offset, traf.offset+traf.rozmiar), e.target.files[0].name);
+        }
+        if (!p2) throw new Error('w tym pliku nie ma partycji NVS');
+        drugi = {p:p2, nazwa:e.target.files[0].name};
+        var roznice = porownaj(stan.p, p2);
+        pokazDiff(roznice, e.target.files[0].name);
+      } catch(err){ alert('Nie udało się porównać: '+err.message); }
+    };
+    fr.readAsArrayBuffer(e.target.files[0]);
+  });
+
+  function pokazDiff(roznice, nazwaDrugiego){
+    pokaz(document.getElementById('t-diff'));
+    var kont = document.getElementById('tab-diff');
+    kont.innerHTML = '';
+    document.getElementById('b-diff').textContent = roznice.length;
+    var nagl = el('div','ostrzezenie');
+    nagl.style.background = '#141b29'; nagl.style.borderColor = '#2a3a52'; nagl.style.color = '#cfe3ff';
+    nagl.textContent = 'Porównanie: „' + stan.plik + '” (to, co widzisz) z „' + nazwaDrugiego +
+      '” – ' + (roznice.length
+        ? odmiana(roznice.length, 'różnica', 'różnice', 'różnic')
+        : 'brak różnic, zrzuty są identyczne w wartościach');
+    kont.appendChild(nagl);
+
+    if (roznice.length){
+      var box = el('div','ns');
+      var head = el('div','head');
+      head.appendChild(el('span','nazwa','różnice'));
+      head.appendChild(el('span','opis','klucz: wartość w pierwszym pliku → w drugim'));
+      box.appendChild(head);
+      var t = el('table');
+      var hr = el('tr');
+      ['klucz','co','wartość'].forEach(function(x){ hr.appendChild(el('th', null, x)); });
+      hr.style.color = 'var(--dim)';
+      t.appendChild(hr);
+      roznice.forEach(function(r){
+        var tr = el('tr');
+        tr.className = r.rodzaj === 'dodany' ? 'dodany' : (r.rodzaj === 'usuniety' ? 'usuniety' : '');
+        tr.appendChild(el('td','k', r.klucz));
+        var znak = r.rodzaj === 'dodany' ? '+' : (r.rodzaj === 'usuniety' ? '−' : '≠');
+        var td2 = el('td');
+        var sp = el('span', r.rodzaj === 'dodany' ? 'plus' : (r.rodzaj === 'usuniety' ? 'minus' : ''), znak+' '+r.rodzaj);
+        td2.appendChild(sp);
+        tr.appendChild(td2);
+        var td3 = el('td','v');
+        if (r.rodzaj === 'zmieniony') td3.textContent = r.stara + '  →  ' + r.nowa;
+        else td3.textContent = r.nowa !== undefined ? r.nowa : r.stara;
+        tr.appendChild(td3);
+        t.appendChild(tr);
+      });
+      box.appendChild(t);
+      kont.appendChild(box);
+    }
+    var btn = el('button', 'primary', 'Porównaj z innym plikiem…');
+    btn.style.marginTop = '6px';
+    btn.addEventListener('click', function(){ document.getElementById('plik2').click(); });
+    kont.appendChild(btn);
+    stan.zakladka = 'diff';
+    Array.prototype.forEach.call(document.querySelectorAll('#tabs button[data-tab]'), function(b){
+      b.classList.toggle('on', b.dataset.tab === 'diff');
+    });
+    ['dane','strony','ostrzezenia','tablica','diff'].forEach(function(t){
+      document.getElementById('tab-'+t).classList.toggle('ukryj', t !== 'diff');
+    });
+  }
+
+  document.getElementById('cofnij-zmiany').addEventListener('click', function(){
+    if (!Object.keys(stan.zmiany).length) return;
+    if (!confirm('Cofnąć wszystkie zmiany? Plik zostanie bez zmian.')) return;
+    stan.zmiany = {}; rysuj();
+    schowaj(document.getElementById('wgraj'));
+  });
+
+  document.getElementById('pobierz-zmieniony').addEventListener('click', function(){
+    if (!stan.p) return;
+    var ileStron = stan.p.rozmiar / PAGE_SIZE;
+    var out;
+    try { out = budujPartycje(modelZeZmiana(), ileStron); }
+    catch(e){ alert('Nie udało się zapisać: '+e.message); return; }
+    // sprawdzenie po zapisie: czy nowy plik czyta sie tak samo, jak powinien
+    var sprawdzenie;
+    try {
+      var p2 = parsujPartycje(out, 'po zapisie');
+      var brak = [], zle = [];
+      Object.keys(stan.zmiany).forEach(function(k){
+        var czesci = k.split('/');
+        var w = danePoNazwie(p2, czesci[0], czesci[1]);
+        if (!w) brak.push(k);
+        else if (String(w.wartosc) !== String(stan.zmiany[k])) zle.push(k+' ('+w.wartosc+')');
+      });
+      sprawdzenie = {ok: !brak.length && !zle.length && !p2.ostrzezenia.length,
+                     brak:brak, zle:zle, ostrzezenia:p2.ostrzezenia};
+    } catch(e){ sprawdzenie = {ok:false, blad:e.message}; }
+    var nazwa = (stan.plik||'nvs').replace(/\.bin.*$/i,'');
+    pobierz(out, nazwa+'-zmieniony.bin');
+    pokazWgrywanie(sprawdzenie, ileStron, out);
+  });
+
+  // "Pobierz .bin" bez zmian: przepisuje partycje od zera (przydatne, gdy plik
+  // ma porozrzucane wpisy po wielu stronach - po zapisie sa uporzadkowane)
+  document.getElementById('zapisz-bin').addEventListener('click', function(){
+    if (!stan.p) return;
+    if (!Object.keys(stan.zmiany).length && !confirm(
+        'Nie zmieniłeś żadnej wartości. Zapisać plik i tak?\n\n' +
+        'Powstanie nowa, uporządkowana kopia tej samej zawartości ' +
+        '(stare wpisy "usunięte" nie zostaną przeniesione).')) return;
+    document.getElementById('pobierz-zmieniony').click();
+  });
+
+  function pokazWgrywanie(spraw, ileStron, out){
+    var box = document.getElementById('wgraj');
+    pokaz(box);
+    box.innerHTML = '';
+    var ok = el('div','ostrzezenie');
+    ok.style.background = spraw.ok ? '#12241b' : '#261416';
+    ok.style.borderColor = spraw.ok ? '#1f4a35' : '#5a2226';
+    ok.style.color = spraw.ok ? '#a8e8c8' : '#ffc9c9';
+    if (spraw.ok){
+      ok.textContent = 'Gotowe: plik pobrany i sprawdzony – czytnik odczytuje z niego ' +
+        'dokładnie te wartości, które ustawiłeś, bez ostrzeżeń. Suma kontrolna zrzutu: ' +
+        sumaZrzutu(out) + '.';
+    } else {
+      ok.textContent = 'UWAGA: plik pobrany, ale kontrola po zapisie nie przeszła' +
+        (spraw.blad ? ' ('+spraw.blad+')' : '') +
+        (spraw.brak && spraw.brak.length ? '. Brakuje: '+spraw.brak.join(', ') : '') +
+        (spraw.zle && spraw.zle.length ? '. Nie zgadza się: '+spraw.zle.join(', ') : '') +
+        (spraw.ostrzezenia && spraw.ostrzezenia.length ? '. Ostrzeżenia: '+spraw.ostrzezenia.join('; ') : '') +
+        '. Nie wgrywaj tego pliku.';
+    }
+    box.appendChild(ok);
+
+    var k = el('div','lbl','Jak wgrać z powrotem');
+    k.style.color = 'var(--dim)'; k.style.fontSize = '11px';
+    k.style.textTransform = 'uppercase'; k.style.letterSpacing = '.6px';
+    box.appendChild(k);
+    var nvs = null;
+    if (stan.tablica) nvs = znajdzNvsWTablicy(stan.tablica);
+    var off = nvs ? '0x'+nvs.offset.toString(16) : '0x9000';
+    var pre = el('code');
+    pre.textContent =
+      'python -m esptool --port COM16 write-flash ' + off + ' ' +
+      (stan.plik||'nvs').replace(/\.bin.*$/i,'') + '-zmieniony.bin\n\n' +
+      'przed wgraniem zrób kopię tego, co jest teraz:\n' +
+      'python -m esptool --port COM16 read-flash ' + off + ' 0x' +
+      (stan.p.rozmiar).toString(16) + ' nvs-kopia.bin';
+    box.appendChild(pre);
+    var uw = el('div','uwaga');
+    uw.textContent = 'To zmienia zawartość pamięci pieca. Po wgraniu zrestartuj urządzenie. ' +
+      'Jeśli po restarcie ustawienia wrócą stare – wgraj kopię z powrotem.';
+    box.appendChild(uw);
+  }
+
   document.getElementById('json').addEventListener('click', function(){
     var nazwa = (stan.plik || 'nvs').replace(/\.bin$/i, '') + '.json';
     var blob = new Blob([stan.json], {type:'application/json'});
@@ -965,10 +1624,10 @@ if (typeof document !== 'undefined') (function(){
       tablica = parsujTablice(bytes, 0x8000);
     }
 
-    stan.p = p; stan.tablica = tablica; stan.zrodlo = zrodlo;
+    stan.p = p; stan.p.raw = p.raw || null; stan.tablica = tablica; stan.zrodlo = zrodlo; stan.zmiany = {};
     stan.json = JSON.stringify(eksport(p, tablica, zrodlo), null, 2);
     schowaj(start); schowaj(drop); pokaz(widok);
-    ['szukaj','json'].forEach(function(id){ pokaz(document.getElementById(id)); });
+    ['szukaj','json','csv','raport','porownaj','zapisz-bin'].forEach(function(id){ pokaz(document.getElementById(id)); });
     pokaz(document.getElementById('lab-maskuj'));
     document.getElementById('t-tablica').classList.toggle('ukryj', !tablica);
     rysuj();
@@ -980,6 +1639,8 @@ if (typeof document !== 'undefined') (function(){
     schowaj(start); schowaj(drop); pokaz(widok);
     ['szukaj','json','lab-maskuj'].forEach(function(id){ pokaz(document.getElementById(id)); });
     pokaz(document.getElementById('t-tablica'));
+    ['csv','raport','porownaj','zapisz-bin'].forEach(function(id){ schowaj(document.getElementById(id)); });
+    schowaj(document.getElementById('zmiany'));
     document.getElementById('karty').innerHTML = '';
     var k = el('div','karta');
     k.appendChild(el('div','lbl','Plik'));
@@ -1039,9 +1700,56 @@ if (typeof document !== 'undefined') (function(){
 
   function rysuj(){
     if (!stan.p) return;   // widok "tylko tablica partycji" rysuje sie osobno
-    rysujKarty(); rysujDane(); rysujStrony(); rysujOstrzezenia(); rysujTablice();
+    rysujKarty(); rysujZmiany(); rysujDane(); rysujStrony(); rysujOstrzezenia(); rysujTablice();
     document.getElementById('b-strony').textContent = stan.p.strony.length;
     document.getElementById('b-ostrzezenia').textContent = stan.p.ostrzezenia.length;
+  }
+
+  function modelZeZmiana(){
+    // model do zapisu: to, co jest w pliku, plus wartosci podmienione w UI
+    var model = modelDoZapisu(stan.p);
+    Object.keys(stan.zmiany).forEach(function(k){
+      var czesci = k.split('/');
+      model[czesci[0]] = model[czesci[0]] || {};
+      var stary = model[czesci[0]][czesci[1]];
+      if (!stary) return;
+      model[czesci[0]][czesci[1]] = {kod:stary.kod, wartosc:stan.zmiany[k]};
+    });
+    return model;
+  }
+
+  function rysujZmiany(){
+    var kont = document.getElementById('zmiany');
+    var ile = Object.keys(stan.zmiany).length;
+    if (!ile){ schowaj(kont); return; }
+    pokaz(kont);
+    var lista = document.getElementById('zmiany-lista');
+    lista.innerHTML = '';
+    Object.keys(stan.zmiany).sort().forEach(function(k){
+      var d = el('div');
+      var czesci = k.split('/');
+      var stary = stan.p.dane[(function(){
+        var nr = null;
+        Object.keys(stan.p.przestrzenie).forEach(function(n){ if (stan.p.przestrzenie[n]===czesci[0]) nr = n; });
+        return nr;
+      })()+'/'+czesci[1]];
+      d.appendChild(el('b', null, czesci[0]+' / '+czesci[1]));
+      d.appendChild(document.createTextNode(': '));
+      d.appendChild(el('span','stara', stary ? wartoscTekst(stary) : '?'));
+      d.appendChild(document.createTextNode('→ ' + stan.zmiany[k]));
+      lista.appendChild(d);
+    });
+    document.getElementById('zmiany-ile').textContent =
+      odmiana(ile, 'zmieniony klucz', 'zmienione klucze', 'zmienionych kluczy');
+  }
+
+  function pobierz(bajty, nazwa, typ){
+    var blob = new Blob([bajty], {type: typ || 'application/octet-stream'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = nazwa;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
   }
 
   function rysujKarty(){
@@ -1100,10 +1808,53 @@ if (typeof document !== 'undefined') (function(){
     return String(v);
   }
 
+  function wierszHex(w, nsNr, kl, kolumn){
+    var tr = el('tr','hex');
+    var td = el('td');
+    td.colSpan = kolumn;
+    var raw = stan.p.raw;
+    if (!raw){
+      td.appendChild(el('div','tytul','Brak surowych bajtów w pamięci (wczytaj plik jeszcze raz).'));
+      tr.appendChild(td); return tr;
+    }
+    var tytul = el('div','tytul');
+    var offWpisu = w.strona*PAGE_SIZE + ENTRY_DATA_OFF + w.indeks*ENTRY_SIZE;
+    tytul.textContent = 'wpis ' + w.indeks + ' na stronie ' + w.strona +
+      ' (0x' + offWpisu.toString(16) + '), typ ' + w.typ + ', span ' + w.span +
+      ' – ' + (w.span*ENTRY_SIZE) + ' B';
+    td.appendChild(tytul);
+
+    var pre = el('pre');
+    var czesci = [];
+    // naglowek wpisu: 32 B
+    czesci.push('NAGLOWEK WPISU (32 B):');
+    czesci.push(hexdump(raw, offWpisu, ENTRY_SIZE, offWpisu));
+    // dane wpisu (dla span > 1 leza w kolejnych wpisach)
+    if (w.span > 1){
+      var daneOff = offWpisu + ENTRY_SIZE;
+      var ile = (w.span-1)*ENTRY_SIZE;
+      czesci.push('');
+      czesci.push('DANE (' + ile + ' B w ' + (w.span-1) + ' wpisach):');
+      czesci.push(hexdump(raw, daneOff, Math.min(ile, 512), daneOff));
+      if (ile > 512) czesci.push('... (pokazano pierwsze 512 B z ' + ile + ')');
+    }
+    pre.textContent = czesci.join('\n');
+    td.appendChild(pre);
+    tr.appendChild(td);
+    return tr;
+  }
+
   function rysujDane(){
     var p = stan.p, kont = document.getElementById('tab-dane');
     kont.innerHTML = '';
     var fraza = stan.fraza;
+    // podpowiedz, zeby nikt nie musial zgadywac, co sie da kliknac
+    var podpowiedz = el('div','pusty');
+    podpowiedz.style.padding = '0 0 10px 2px';
+    podpowiedz.textContent = 'Kliknij nazwę klucza, żeby zobaczyć jego surowe bajty ' +
+      '(nagłówek wpisu + dane). Przycisk „zmień” pozwala poprawić wartość i pobrać ' +
+      'nowy plik .bin — bez zmiany wartości nic nie jest wysyłane ani zapisywane.';
+    if (!fraza) kont.appendChild(podpowiedz);
     var nsKeys = Object.keys(p.przestrzenie).sort(function(a,b){ return +a - +b; });
     // przestrzenie bez nazwy
     var bez = {};
@@ -1148,12 +1899,53 @@ if (typeof document !== 'undefined') (function(){
         var tdV = el('td','v');
         var sek = czySekret(kl, o);
         var tekst = wartoscTekst(w);
-        if (sek && stan.maskuj){
+        var czyZmieniony = (nazwa+'/'+kl) in stan.zmiany;
+        if (czyZmieniony) tr.classList.add('zmieniony');
+        var edytowalny = (LICZBY[w.kod] || w.kod === T_STR);
+        if (czyZmieniony){
+          var stara = el('span','stara', tekst);
+          tdV.appendChild(stara);
+          tdV.appendChild(el('span', null, String(stan.zmiany[nazwa+'/'+kl])));
+          if (edytowalny){
+            var b2 = el('button','mini','edytuj');
+            b2.style.marginLeft = '8px';
+            b2.addEventListener('click', function(ev){
+              ev.stopPropagation();
+              var nowa = prompt('Nowa wartość dla „'+kl+'” ('+w.typ+'):', String(stan.zmiany[nazwa+'/'+kl]));
+              if (nowa === null) return;
+              var spr2 = parsujWartoscDoTypu(nowa, w.kod);
+              if (spr2.blad){ alert('Nie zapiszę: '+spr2.blad); return; }
+              stan.zmiany[nazwa+'/'+kl] = spr2.wartosc; rysuj();
+            });
+            tdV.appendChild(b2);
+            var b3 = el('button','mini','cofnij');
+            b3.style.marginLeft = '4px';
+            b3.addEventListener('click', function(ev){
+              ev.stopPropagation(); delete stan.zmiany[nazwa+'/'+kl]; rysuj();
+            });
+            tdV.appendChild(b3);
+          }
+        } else if (sek && stan.maskuj){
           tdV.innerHTML = '';
           tdV.appendChild(el('span','zmask','•••••• (ukryte – '+ (w.rozmiar || tekst.length) +' B)'));
         } else {
           tdV.textContent = tekst;
           if (sek) tdV.classList.add('uw');
+        }
+        if (edytowalny && !(sek && stan.maskuj) && !czyZmieniony){
+          var bEd = el('button','mini','zmień');
+          bEd.style.marginLeft = '8px';
+          bEd.addEventListener('click', function(ev){
+            ev.stopPropagation();
+            var teraz = (w.wartosc instanceof Uint8Array) ? '' : String(w.wartosc);
+            var nowa = prompt('Nowa wartość dla „'+kl+'” ('+w.typ+'):', teraz);
+            if (nowa === null) return;
+            var spr2 = parsujWartoscDoTypu(nowa, w.kod);
+            if (spr2.blad){ alert('Nie zapiszę: '+spr2.blad); return; }
+            if (String(spr2.wartosc) === String(w.wartosc)) return;
+            stan.zmiany[nazwa+'/'+kl] = spr2.wartosc; rysuj();
+          });
+          tdV.appendChild(bEd);
         }
         tr.appendChild(tdV);
         var tdD = el('td','d');
@@ -1165,6 +1957,18 @@ if (typeof document !== 'undefined') (function(){
           tdD.appendChild(el('span','pusty','(klucz spoza tego projektu – pokazuję surowo)'));
         }
         tr.appendChild(tdD);
+        tr.classList.add('klikalny');
+        (function(trRef, wRef, nsRef, klRef){
+          var tdK = trRef.querySelector('td.k');
+          tdK.title = 'kliknij, żeby zobaczyć surowe bajty wpisu';
+          tdK.addEventListener('click', function(){
+            var nastepny = trRef.nextSibling;
+            if (nastepny && nastepny.classList && nastepny.classList.contains('hex')){
+              nastepny.parentNode.removeChild(nastepny); return;
+            }
+            trRef.parentNode.insertBefore(wierszHex(wRef, nsRef, klRef, 4), trRef.nextSibling);
+          });
+        })(tr, w, nsNr, kl);
         tabela.appendChild(tr);
       });
       box.appendChild(tabela);

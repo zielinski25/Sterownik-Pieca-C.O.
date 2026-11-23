@@ -403,7 +403,25 @@ Detale, które oszczędzają czas:
   (`narzedzia/nvs_demo.bin`, dane zmyślone), żeby zobaczyć interfejs bez
   podłączania pieca,
 - **„Zapisz JSON”** — eksport do pliku (działa też z `file://`, gdzie
-  schowek bywa zablokowany).
+  schowek bywa zablokowany),
+- **„Raport”** — gotowy raport tekstowy (`.txt`) do wklejenia w maila albo na
+  forum: strony z CRC, tablica partycji, wszystkie klucze z opisami; **sekrety
+  w raporcie są zawsze zamaskowane**, nawet gdy na ekranie je odsłonisz,
+- **„Porównaj…”** — drugi zrzut (np. „przed” i „po” wgraniu) i tabela różnic:
+  co dodane, co usunięte, co zmienione (`55 → 66`); przy tym samym pliku
+  napisze wprost „brak różnic”,
+- **„Edytuj wartość”** — przy każdym kluczu liczbowym i tekstowym przycisk
+  *zmień*: nowa wartość jest sprawdzana z typem (`u8` tylko 0–255, tekst
+  najwyżej tyle, ile mieści jeden wpis NVS), a zmiana ląduje w panelu na
+  górze z listą „co było → co będzie”,
+- **„Pobierz .bin”** — zapisuje **nową partycję NVS** z Twoimi zmianami.
+  Zanim odda plik, sama go odczytuje od zera i porównuje: jeśli któraś wartość
+  się nie zgadza albo pojawiło się ostrzeżenie, napisze o tym i każe **nie
+  wgrywać** pliku. Do tego podaje gotowe polecenie `write-flash` dla offsetu
+  z tablicy partycji i przypomina o kopii zapasowej,
+- **bajty wpisu** — kliknięcie nazwy klucza rozwija hexdump: 32-bajtowy
+  nagłówek wpisu (przestrzeń, typ, span, CRC, klucz, dane) i — przy dłuższych
+  wartościach — kolejne wpisy z danymi, z adresami w pamięci.
 
 Ta sama logika parsowania co w `nvs_odczyt.py` (CRC, wpisy, bloby, strony) —
 sprawdzone: na pięciu obrazach (w tym wygenerowanych przez Espressif)
@@ -422,6 +440,31 @@ obrazach z oficjalnego `esp-idf-nvs-partition-gen 0.3.0`:
   plikowi wejściowemu, złożony z 2 chunków leżących na dwóch stronach,
 - CRC wpisów, tekstów i blobów zgadza się bajt w bajt z tym, co liczy ESP-IDF
   (a nie tylko „nie zgłasza błędu”).
+
+### 4.2 Zapis z powrotem do NVS („Pobierz .bin”)
+
+Podglądarka umie też **złożyć partycję od nowa** z poprawionymi wartościami:
+`budujPartycje()` w tym samym pliku HTML. Układa wpisy po kolei na stronach,
+ustawia stany wpisów w tablicy strony (to nie jest kosmetyka — bez tego NVS
+uważa wpisy za puste), liczy CRC wpisów, tekstów i blobów oraz CRC nagłówka
+każdej strony. Duże bloby dzieli na chunki po 1 984 B i dopisuje wpis indeksu,
+tak jak robi to ESP-IDF.
+
+Jak to jest sprawdzone (wszystko w `node`, bez przeglądarki):
+
+| Test | Wynik |
+| --- | --- |
+| zrzut → zapis → odczyt tą samą podglądarką, 4 obrazy (demo, 48 kluczy, 13 kluczy, blob) | 23/23 przypadki, **wartości identyczne**, 0 ostrzeżeń |
+| to samo, czytane **naszym Pythonem** (`nvs_odczyt.py`) | 0 ostrzeżeń, wartości identyczne klucz w klucz |
+| CSV z podglądarki → oficjalny generator Espressifa → nasz czytnik | 25/25 kluczy zgodnych |
+| nasz zapis `.bin` vs plik wygenerowany przez Espressifa z tego samego CSV | **0 różnic w wartościach** |
+| plik pobrany z interfejsu (po edycji `tempOn` 55 → 66) czytany Pythonem | 41 wpisów, CRC ok, `tempOn = 66`, 0 ostrzeżeń |
+
+Czego zapis **nie** robi: nie zgaduje typu klucza przy zmianie tekstu na inny
+typ, nie przenosi starych wpisów „usuniętych” (nowy plik jest uporządkowany),
+nie obsługuje partycji, w której wpis przestrzeni leży poza zrzutem. Przy
+wgraniu nadpisujesz całą partycję NVS — dlatego najpierw kopia
+(`read-flash`), potem `write-flash`.
 
 **Uwaga o CRC.** NVS liczy `esp_rom_crc32_le(0xFFFFFFFF, …)`, a ta funkcja
 neguje wejście i wyjście — dlatego wynik to `zlib.crc32(dane, 0xFFFFFFFF)`,
