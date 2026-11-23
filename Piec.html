@@ -5587,10 +5587,18 @@ body.mode-phone-frame #phone {
       }
     });
 
+    // [v3.58.12 SUWAKI-SYM] Czy operator rusza suwakiem (patrz live$(wrap) niżej).
+    const symEdycja = { wartosc: false, czas: false };
+    ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(ev => {
+      inpVal.addEventListener(ev, () => { symEdycja.wartosc = true; }, { passive: true });
+      inpTime.addEventListener(ev, () => { symEdycja.czas = true; }, { passive: true });
+    });
     inpVal.oninput = () => {
+      symEdycja.wartosc = true;
       txtVal.textContent = f(+inpVal.value) + ' ' + jednostka;
     };
     inpTime.oninput = () => {
+      symEdycja.czas = true;
       txtTime.textContent = inpTime.value + ' min';
     };
 
@@ -5608,6 +5616,7 @@ body.mode-phone-frame #phone {
       const v = f(+inpVal.value);
       const m = parseInt(inpTime.value) || 60;
       const confirmed = await sendCommand('symuluj ' + pole + ' ' + v + ' ' + m);
+      symEdycja.wartosc = false; symEdycja.czas = false;   // [v3.58.12] od teraz suwaki znów pokazują stan sterownika
       if (confirmed) {
         symPokaz(true);
         info.textContent = symAktywna(pole)
@@ -5623,6 +5632,7 @@ body.mode-phone-frame #phone {
 
     btnStop.onclick = async () => {
       const confirmed = await sendCommand('symuluj_stop ' + pole);
+      symEdycja.wartosc = false; symEdycja.czas = false;   // [v3.58.12]
       if (confirmed) {
         const stillActive = symAktywna(pole);
         symPokaz(true);
@@ -5668,14 +5678,19 @@ body.mode-phone-frame #phone {
     live$(wrap, () => {
       // Gdy sterownik (albo jawne DEMO) zgłasza aktywną symulację, pokaż jej
       // aktualne parametry. Nie nadpisuj wartości, którą operator właśnie edytuje.
-      if (!symAktywna(pole)) return;
+      // [v3.58.12 SUWAKI-SYM] Suwak należy do operatora od pierwszego dotknięcia
+      // (symEdycja.*) aż do Zastosuj / Wyłącz teraz albo końca symulacji.
+      // Sam document.activeElement nie wystarczał: na telefonie <input type=range>
+      // nie dostaje fokusu po dotknięciu, więc refreshSheet() co 1 s cofał suwak
+      // do bieżącej wartości symulacji, zanim dało się nacisnąć Zastosuj.
+      if (!symAktywna(pole)) { symEdycja.wartosc = false; symEdycja.czas = false; return; }
       const current = val(pole, key);
-      if (Number.isFinite(current) && document.activeElement !== inpVal) {
+      if (Number.isFinite(current) && !symEdycja.wartosc && document.activeElement !== inpVal) {
         inpVal.value = Math.max(simMin, Math.min(simMax, current));
         txtVal.textContent = f(+inpVal.value) + ' ' + jednostka;
       }
       const remaining = Number(S.sym[pole]?.min);
-      if (Number.isFinite(remaining) && document.activeElement !== inpTime) {
+      if (Number.isFinite(remaining) && !symEdycja.czas && document.activeElement !== inpTime) {
         inpTime.value = Math.max(5, Math.min(180, remaining));
         txtTime.textContent = inpTime.value + ' min';
       }
