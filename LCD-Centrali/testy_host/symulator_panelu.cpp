@@ -1066,7 +1066,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.11"
+#define WERSJA_FW "v1.5.12"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -3217,7 +3217,7 @@ void scenariuszWykresyCentralaLiczy() {
   zrzutEkranu("dzien");
 
   printf("  powrot do wyboru i zakres GODZINNY:\n");
-  sprawdz(dotknijWykresu() && ekranMa("POKAŻ WYKRES"), "dotkniecie wykresu wraca do wyboru serii");
+  sprawdz(dotknijWykresu() && znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") != nullptr, "dotkniecie wykresu wraca do wyboru serii");
   od = pokazWykres("GODZINNY", 1000);
   c = stanC(0);
   sprawdz(c.nPanelHist == 2 && c.ostatniaPanelHistSciezka == "/api/history/panel?tryb=godz&pkt=96", "zapytanie: /api/history/panel?tryb=godz&pkt=96");
@@ -3245,9 +3245,9 @@ void scenariuszWykresyCentralaLiczy() {
   printf("  ostatnia kolumna wiersza (Syberek) - czy dlugie linie dochodza cale:\n");
   dotknijWykresu();
   kliknij("CIŚNIENIE");   // odznacz
-  sprawdz(kliknij("Syberek"), "CISNIENIE odznaczone, wybrany Syberek");
+  sprawdz(kliknij("SYBERKA"), "CISNIENIE odznaczone, wybrana SYBERKA");
   od = pokazWykres(nullptr, 1000);
-  sprawdz(tesamePunkty(punktyWykresu(7), zWzorca(tydz, 31), "Syberek"), "Syberek: 96 punktow (60,0, na koncu 100,0)");
+  sprawdz(tesamePunkty(punktyWykresu(7), zWzorca(tydz, 31), "SYBERKA"), "Syberek: 96 punktow (60,0, na koncu 100,0)");
 
   c = stanC(0);
   sprawdz(c.nPanelHist == 4 && c.nHistKrotka == 0 && c.nHistDluga == 0 && c.nHistWyslanych == 4 && c.nHistPorzuconych == 0,
@@ -3261,6 +3261,147 @@ void scenariuszWykresyCentralaLiczy() {
 // Panel 1.3.0 ze STARSZA centrala (<= 3.58.3), ktora nie zna
 // /api/history/panel: panel ma to rozpoznac i narysowac wykres po staremu -
 // dokladnie taki, jaki z tego samego CSV rysowal v1.2.2 (wzorce_v122/).
+// [v1.5.12] Wszystkie lv_chart na ekranie w kolejnosci drzewa: [0] = glowny
+// wykres, [1] = pas pracy pompy (osobny, 12-pikselowy lv_chart pod liniami).
+void znajdzWykresy(lv_obj_t* o, std::vector<lv_obj_t*>& w) {
+  if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return;
+  if (lv_obj_check_type(o, &lv_chart_class)) { w.push_back(o); return; }
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) znajdzWykresy(lv_obj_get_child(o, (int32_t)i), w);
+}
+std::vector<int> punktyPasaPompy() {
+  std::vector<int> wynik;
+  std::vector<lv_obj_t*> w;
+  znajdzWykresy(lv_scr_act(), w);
+  if (w.size() < 2) return wynik;
+  lv_chart_series_t* s = lv_chart_get_series_next(w[1], nullptr);
+  if (s == nullptr) return wynik;
+  const lv_coord_t* tab = lv_chart_get_y_array(w[1], s);
+  const uint16_t n = lv_chart_get_point_count(w[1]);
+  for (uint16_t i = 0; i < n; i++) wynik.push_back(tab[i] == LV_CHART_POINT_NONE ? BRAK : (int)tab[i]);
+  return wynik;
+}
+// Etykiety liczbowe osi Y (tekst zaczyna sie cyfra albo minusem, bez ':') -
+// czy wszystkie leza POZA polem glownego wykresu (lewa os konczy sie przed
+// jego lewa krawedzia, prawa zaczyna za prawa).
+bool etykietyOsiPozaWykresem(lv_obj_t* o, const lv_area_t& wykres, int* ile) {
+  if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return true;
+  if (lv_obj_check_type(o, &lv_label_class)) {
+    const char* t = lv_label_get_text(o);
+    if (t != nullptr && t[0] != '\0' && (isdigit((unsigned char)t[0]) || t[0] == '-') && strchr(t, ':') == nullptr && strchr(t, '.') != nullptr) {
+      lv_area_t a; lv_obj_get_coords(o, &a);
+      if (a.y2 < wykres.y1 || a.y1 > wykres.y2) return true;   // nie przy wykresie (os czasu pod nim, inna strona)
+      (*ile)++;
+      const bool poza = (a.x2 < wykres.x1) || (a.x1 > wykres.x2);
+      if (!poza) info("etykieta \"%s\" x=%d..%d lezy na wykresie x=%d..%d", t, a.x1, a.x2, wykres.x1, wykres.x2);
+      return poza;
+    }
+    return true;
+  }
+  bool ok = true;
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) ok = etykietyOsiPozaWykresem(lv_obj_get_child(o, (int32_t)i), wykres, ile) && ok;
+  return ok;
+}
+
+// --- [v1.5.12] -------------------------------------------------------------
+// Ekran WYKRESY po poprawkach ze zdjec 23.11: seria POMPA (pas pracy u dolu
+// wykresu, kolumna 35 odpowiedzi centrali), etykiety osi Y obok wykresu
+// (linia 3,5 C przecinala napis "3.5"), nazwy serii jak na pulpicie, chipy
+// bez lamania "WILGOTNOS/C", przycisk WYCZYSC i licznik wyboru.
+void scenariuszWykresyPompaIOsie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  const std::string dzien = wzorzec("dzien.txt"), godz = wzorzec("godz_ta_sama_doba.txt"), tydz = wzorzec("tydz_pelne_bufory.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = dzien; c.panelHist["godz"] = godz; c.panelHist["tydz"] = tydz; });
+  setup();
+  biegnij(3000);
+  sprawdz(otworzWykresy(), "drugi pulpit -> kafelek WYKRESY");
+  sprawdz(ekranMa("PIEC CO") && ekranMa("PIEC CO ŚR.") && ekranMa("POKÓJ") && ekranMa("SYBERKA") && ekranMa("POMPA"),
+          "chipy nazwane jak kafelki pulpitu: PIEC CO, PIEC CO ŚR., POKÓJ, SYBERKA, nowy POMPA");
+  sprawdz(!ekranMa("Wewnętrzna") && !ekranMa("Syberek") && !ekranMa("Temp. C.O"), "starych nazw (Wewnętrzna, Syberek, Temp. C.O) nie ma");
+  sprawdz(ekranMa("WYCZYŚĆ") && znajdzEtykiete(lv_scr_act(), "Dotknij serie") != nullptr, "przycisk WYCZYŚĆ i podpowiedz pod przyciskami");
+  {
+    lv_obj_t* w = znajdzEtykiete(lv_scr_act(), "WILGOTNOŚĆ");
+    lv_area_t a; if (w) lv_obj_get_coords(w, &a);
+    sprawdz(w != nullptr && (a.y2 - a.y1) < 24, "chip WILGOTNOŚĆ: etykieta w jednym wierszu (nie \"WILGOTNOŚ / Ć\")");
+  }
+  zrzutEkranu("1_wybor_serii");
+
+  sprawdz(kliknij("ZEWN") && kliknij("POMPA"), "wybrane: ZEWN i POMPA");
+  sprawdz(ekranMa("POKAŻ WYKRES (2)") && ekranMa("Wybrano 2 z 8  ·  lewa oś °C"),
+          "przycisk \"POKAŻ WYKRES (2)\", podpowiedz \"Wybrano 2 z 8 · lewa oś °C\" (POMPA nie zajmuje osi)");
+  sprawdz(kliknij("POKAŻ WYKRES"), "dotkniecie POKAZ WYKRES");
+  biegnij(1000);
+  sprawdz(wykresWidoczny() && ekranMa("[Dzienny] ZEWN + POMPA"), "wykres na ekranie, tytul \"[Dzienny] ZEWN + POMPA\"");
+  sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "ZEWN: 96 punktow jak policzyla centrala");
+  {
+    std::vector<int> maByc;
+    for (int v : zWzorca(dzien, 35)) maByc.push_back(v == 10 ? 1 : BRAK);
+    const std::vector<int> jest = punktyPasaPompy();
+    info("pas pompy: %d odcinkow pracy z %zu", ilePunktow(jest), jest.size());
+    sprawdz(tesamePunkty(jest, maByc, "POMPA"), "pas pompy: 48 odcinkow pracy dokladnie tam, gdzie centrala podala pompa=1 (kolumna 35)");
+  }
+  {
+    std::vector<lv_obj_t*> w; znajdzWykresy(lv_scr_act(), w);
+    lv_area_t g{}, pas{};
+    if (w.size() >= 2) { lv_obj_get_coords(w[0], &g); lv_obj_get_coords(w[1], &pas); }
+    info("glowny wykres x=%d..%d y=%d..%d, pas pompy x=%d..%d y=%d..%d", g.x1, g.x2, g.y1, g.y2, pas.x1, pas.x2, pas.y1, pas.y2);
+    sprawdz(w.size() == 2 && pas.y1 > g.y1 && pas.y2 <= g.y2 && pas.x1 >= g.x1 && pas.x2 <= g.x2 && (pas.y2 - pas.y1 + 1) == 12,
+            "pas pompy: 12 px wysokosci, wewnatrz pola wykresu przy jego dolnej krawedzi");
+    int ile = 0;
+    const bool poza = etykietyOsiPozaWykresem(lv_scr_act(), g, &ile);
+    info("etykiet osi Y: %d", ile);
+    sprawdz(ile == 5 && poza && g.x1 >= 50, "5 etykiet lewej osi stoi OBOK wykresu (zadna nie lezy na polu wykresu), wykres zaczyna sie za nimi");
+    sprawdz(g.x2 == 475, "bez prawej osi wykres siega do prawej krawedzi jak dotad (x=..475)");
+  }
+  zrzutEkranu("2_zewn_i_pompa");
+
+  printf("  dwie osie: etykiety po obu stronach poza wykresem:\n");
+  sprawdz(dotknijWykresu() && kliknij("WILGOTNOŚĆ") && kliknij("POKAŻ WYKRES"), "dobrana WILGOTNOSC (prawa os)");
+  biegnij(1000);
+  {
+    std::vector<lv_obj_t*> w; znajdzWykresy(lv_scr_act(), w);
+    lv_area_t g{}; if (!w.empty()) lv_obj_get_coords(w[0], &g);
+    int ile = 0;
+    const bool poza = etykietyOsiPozaWykresem(lv_scr_act(), g, &ile);
+    info("wykres x=%d..%d, etykiet osi: %d", g.x1, g.x2, ile);
+    sprawdz(ile == 10 && poza && g.x1 >= 50 && g.x2 <= 430, "10 etykiet (5+5) poza polem wykresu, wykres zwezony z obu stron");
+    sprawdz(ekranMa("Wybrano 3 z 8") == false && ekranMa("[Dzienny] 3 serii"), "tytul \"[Dzienny] 3 serii\"");
+  }
+  zrzutEkranu("3_dwie_osie_i_pompa");
+
+  printf("  sama POMPA i WYCZYSC:\n");
+  sprawdz(dotknijWykresu() && kliknij("WYCZYŚĆ"), "WYCZYSC");
+  sprawdz(znajdzEtykiete(lv_scr_act(), "Dotknij serie") != nullptr && ekranMa("POKAŻ WYKRES") && kliknij("POKAŻ WYKRES") && ekranMa("WYCZYŚĆ"),
+          "po WYCZYSC nic nie wybrane: licznik znika, POKAZ WYKRES nie otwiera wykresu");
+  sprawdz(kliknij("POMPA") && ekranMa("Wybrano 1 z 8") && !ekranMa("lewa oś") && kliknij("POKAŻ WYKRES"), "sama POMPA: \"Wybrano 1 z 8\" bez osi");
+  biegnij(1000);
+  sprawdz(wykresWidoczny() && ekranMa("[Dzienny] POMPA") && !ekranMa("[Dzienny] POMPA ("), "tytul \"[Dzienny] POMPA\" (bez pustych nawiasow)");
+  {
+    std::vector<lv_obj_t*> w; znajdzWykresy(lv_scr_act(), w);
+    lv_area_t g{}; if (!w.empty()) lv_obj_get_coords(w[0], &g);
+    int ile = 0; etykietyOsiPozaWykresem(lv_scr_act(), g, &ile);
+    sprawdz(w.size() == 2 && ile == 0 && ilePunktow(punktyPasaPompy()) == 48 && ilePunktow(punktyWykresu(0)) == 0,
+            "sama pompa: pas z 48 odcinkami, zadnej etykiety osi, zadnej linii");
+  }
+  zrzutEkranu("4_sama_pompa");
+
+  printf("  komplet: 7 linii + pas pompy (limit 8 serii):\n");
+  sprawdz(dotknijWykresu() && kliknij("WYCZYŚĆ") && kliknij("ZEWN") && kliknij("BOJLER") && kliknij("PIEC CO") && kliknij("PIEC CO ŚR.")
+          && kliknij("POWRÓT") && kliknij("PANEL") && kliknij("POKÓJ") && kliknij("POMPA") && ekranMa("POKAŻ WYKRES (8)"),
+          "7 temperatur + POMPA = \"POKAŻ WYKRES (8)\"");
+  sprawdz(kliknij("CIŚNIENIE") && ekranMa("POKAŻ WYKRES (8)"), "dziewiatej serii (CIŚNIENIE) nie da sie dobrac - zostaje 8");
+  sprawdz(kliknij("POKAŻ WYKRES"), "POKAZ WYKRES");
+  biegnij(1000);
+  {
+    int zPunktami = 0;
+    for (int slot = 0; slot < 8; slot++) if (ilePunktow(punktyWykresu(slot)) == 96) zPunktami++;
+    sprawdz(wykresWidoczny() && ekranMa("[Dzienny] 8 serii") && zPunktami == 7 && ilePunktow(punktyPasaPompy()) == 48,
+            "tytul \"[Dzienny] 8 serii\", 7 linii po 96 punktow na lewej osi, pas pompy z 48 odcinkami");
+  }
+  zrzutEkranu("5_osiem_serii");
+}
+
 void scenariuszWykresyStaraCentrala() {
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
   ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; });
@@ -3369,11 +3510,11 @@ void scenariuszWykresyPrzerwy() {
 
   printf("  godzina, w ktorej czujnik pokojowy przez pierwsze pol godziny nie dawal odczytu:\n");
   dotknijWykresu();
-  sprawdz(kliknij("Wewnętrzna"), "dobrana seria Wewnetrzna (pokoj)");
+  sprawdz(kliknij("POKÓJ"), "dobrana seria Wewnetrzna (pokoj)");
   od = pokazWykres("GODZINNY", 1000);
   const std::vector<int> zewn = punktyWykresu(0), pokoj = punktyWykresu(1);
   sprawdz(tesamePunkty(zewn, zWzorca(godz, 1), "ZEWN") && ilePunktow(zewn) == 96, "ZEWN: pelne 96 punktow (3,0)");
-  sprawdz(tesamePunkty(pokoj, zWzorca(godz, 19), "Wewnętrzna"), "Wewnetrzna: brak punktow tam, gdzie centrala podala \"nan\", potem 21,5");
+  sprawdz(tesamePunkty(pokoj, zWzorca(godz, 19), "POKÓJ"), "Wewnetrzna: brak punktow tam, gdzie centrala podala \"nan\", potem 21,5");
   sprawdz(pokoj.size() == 96 && pokoj[0] == BRAK && pokoj[40] == BRAK && pokoj[95] == 215 && ilePunktow(pokoj) > 40 && ilePunktow(pokoj) < 56,
           "linia czujnika zaczyna sie w polowie wykresu - nie jest dociagnieta do zera ani do poprzedniej wartosci");
   lv_obj_t* wykres = znajdzWykres(lv_scr_act());
@@ -3712,7 +3853,7 @@ void scenariuszWykresyWyjscieWTrakcie() {
   const std::string postep2 = napis ? lv_label_get_text(napis) : "";
   info("po 2 s: \"%s\", po 4 s: \"%s\"", postep1.substr(postep1.find('\n') + 1).c_str(), postep2.substr(postep2.find('\n') + 1).c_str());
   sprawdz(!postep1.empty() && !postep2.empty() && postep1 != postep2, "napis \"Ladowanie...\" pokazuje rosnaca liczbe wierszy i kB");
-  sprawdz(dotknijWykresu() && ekranMa("POKAŻ WYKRES"), "dotkniecie dziala od razu: powrot do wyboru serii");
+  sprawdz(dotknijWykresu() && znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") != nullptr, "dotkniecie dziala od razu: powrot do wyboru serii");
   biegnij(200);
   Centrala c = stanC(0);
   sprawdz(logMa("tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu tryb=tydz", "", "", od), "log: zdarzenie=przerwano powod=wyjscie_z_ekranu");
@@ -4027,7 +4168,7 @@ void wrocNaPulpit(lv_obj_t* pulpit) {
 // Ekran Wykresy otwarty na wyborze serii, z wybranymi 8 seriami (najwiecej,
 // ile pozwala panel: 7 temperatur i cisnienie). Wybor serii zostaje w panelu
 // po zamknieciu ekranu, wiec klikany jest tylko raz.
-const char* const OSIEM_SERII[8] = {"ZEWN", "BOJLER", "Temp. C.O", "Temp. C.O Śr.", "POWRÓT", "PANEL", "Wewnętrzna", "CIŚNIENIE"};
+const char* const OSIEM_SERII[8] = {"ZEWN", "BOJLER", "PIEC CO", "PIEC CO ŚR.", "POWRÓT", "PANEL", "POKÓJ", "CIŚNIENIE"};
 bool g_serieWybrane = false;
 bool wykresyGotowe() {
   if (znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") == nullptr) {
@@ -6253,6 +6394,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"brak_pamieci_odbior", "panel nie ma pamieci nawet na odebranie odpowiedzi: to nie jest \"zla odpowiedz\" (v1.2.2)", scenariuszBrakPamieciOdbior},
     {"brak_pamieci_lvgl", "LVGL nie dostaje pamieci w trakcie rysowania: restart od razu, z powodem (v1.2.2)", scenariuszBrakPamieciLvgl},
     {"wykresy_pamiec", "bufory ekranu Wykresy istnieja tylko wtedy, gdy ekran jest otwarty (v1.2.2)", scenariuszWykresyPamiec},
+    {"wykresy_pompa_i_osie", "seria POMPA jako pas pracy u dolu wykresu, etykiety osi Y obok wykresu, nazwy jak na pulpicie, WYCZYSC (v1.5.12)", scenariuszWykresyPompaIOsie},
     {"wykresy_centrala_liczy", "wykres z gotowych punktow centrali 3.58.4: GET /api/history/panel (v1.3.0)", scenariuszWykresyCentralaLiczy},
     {"wykresy_stara_centrala", "centrala <= 3.58.3 bez /api/history/panel: wykres po staremu, taki sam jak w v1.2.2 (v1.3.0)", scenariuszWykresyStaraCentrala},
     {"wykresy_przerwy", "przerwa w pracy centrali i czujnik bez odczytu: linia przerwana, nie dociagnieta (v1.3.0)", scenariuszWykresyPrzerwy},

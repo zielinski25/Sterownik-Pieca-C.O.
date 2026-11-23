@@ -40,6 +40,25 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-26] v1.5.12 - WYKRESY: PRACA POMPY I CZYTELNIEJSZY EKRAN
+//   - Nowa seria POMPA (kolumna 35 odpowiedzi /api/history/panel, kolumna
+//     8 starego CSV): nie linia, lecz 12-pikselowy PAS u dolu pola wykresu
+//     (niebieski odcinek = pompa pracowala w tym przedziale). Nie zajmuje
+//     zadnej osi Y, nie wlicza sie do limitu osi, liczy sie do 8 serii.
+//   - Etykiety osi Y stoja OBOK pola wykresu (lewa os: liczby dosuniete do
+//     wykresu, prawa: od wykresu), nie na nim - plaska linia juz nie
+//     przecina napisu. Pole wykresu zweza sie o szerokosc etykiet; bez
+//     prawej osi siega do prawej krawedzi jak dotad. Minimalny margines osi
+//     0,5 -> 1,0 jednostki (stala seria: rowne podzialki 44.0 .. 46.0).
+//   - Wybor serii: nazwy jak kafelki pulpitu (PIEC CO, PIEC CO SR., POKOJ,
+//     SYBERKA), 12 chipow 109x46 w siatce 460x154 (WILGOTNOSC w jednym
+//     wierszu), przyciski trybu 140x34, nowy WYCZYSC obok POKAZ WYKRES (N),
+//     pod nimi podpowiedz "Wybrano N z 8 - lewa os C - prawa os %".
+//   - Naprawa: lv_obj_set_x() na wykresie wyrownanym TOP_MID bylo
+//     przesunieciem od srodka, nie polozeniem (wykres z lewa osia wystawal
+//     36 px za ekran). Teraz set_pos.
+//   - Test hosta: wykresy_pompa_i_osie (5 zrzutow). RAM: +1 lv_chart (96 pkt
+//     x 2 B + obiekt, ok. 0,4 kB), flash ok. +1,5 kB.
 // [2026-11-25] v1.5.11 - IKONY BOJLER I PANEL JAK W APLIKACJI ANDROID
 //   - BOJLER: szary kontur (IKONA_BOJLER_KONTUR), w srodku woda rysowana
 //     prostokatem + bitmapa fali (IKONA_BOJLER_WODA przycieta do okienka
@@ -1344,7 +1363,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.11"; // [2026-11-25] v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.12"; // [2026-11-26] v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez

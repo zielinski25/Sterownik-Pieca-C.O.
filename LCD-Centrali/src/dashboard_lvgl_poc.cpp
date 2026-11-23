@@ -4502,6 +4502,11 @@ struct WykresySeriaDef {
   int kolKrotki;    // indeks kolumny (0=etykieta) w CSV bufora krotkiego
   int kolDlugiSr;   // indeks kolumny SREDNIEJ w CSV bufora dlugiego
   uint16_t kolor;   // RGB565 - patrz komentarz przy tablicy WYKRESY_SERIE nizej (Partia 5c)
+  // [v1.5.12 POMPA] true = stan 0/1 (praca pompy) rysowany jako PAS u dolu
+  // pola wykresu (wykresyPompaPas), bez osi Y i bez slotu lv_chart - patrz
+  // wykresy_chart_odswiez(). Kolumna krotka 8 to "0"/"1", dluga 35 to
+  // 0/1/-1 (-1 = centrala nie zna stanu - starszy plik historii).
+  bool pasek;
 };
 // [v1.5.7 PAMIEC] Kolumny min/max (kolDlugiSr+1, +2) nie sa juz czytane -
 // wykres rysuje tylko srednia; uklad kolumn CSV centrali bez zmian.
@@ -4544,18 +4549,23 @@ static const uint32_t WYKRESY_PROG_DZIURY_DLUGI_S  = 90UL * 60UL;  // 5400 s
 // rysuje (STATUS_PROJEKTU_LVGL.md, Partia 4: "sparsowane, ale jeszcze
 // nierysowane"), dostaly wlasne kolory dobrane recznie tak, zeby nie
 // kolidowaly odcieniem/jasnoscia z 7 powyzszych.
+// [v1.5.12] Nazwy jak na kafelkach pulpitu (PIEC CO, POKÓJ, SYBERKA) i
+// wszystkie wielkimi literami - do tej pory mieszanka ("Temp. C.O Śr.",
+// "Wewnętrzna", "Syberek"). POMPA (praca pompy C.O.) jako 12. pozycja -
+// pas u dolu wykresu, nie linia (pole pasek).
 static const WykresySeriaDef WYKRESY_SERIE[] = {
-  { "ZEWN",       "C",   1,  1, 0x06BE },
-  { "BOJLER",     "C",   2,  4, 0x4EF0 },
-  { "Temp. C.O",     "C",   3,  7, 0xFCE8 },
-  { "Temp. C.O Śr.", "C",   4, 10, 0xFE85 },
-  { "POWRÓT",        "C",   5, 13, 0xFA6D },
-  { "PANEL",         "C",   6, 16, 0xFD88 },
-  { "Wewnętrzna",    "C",   7, 19, 0xAABE },
-  { "CIŚNIENIE",     "hPa", 9, 22, 0x653F },
-  { "WILGOTNOŚĆ",    "%",  10, 25, 0x2EB7 },
-  { "KLAPA",         "%",  11, 28, 0xC43F },
-  { "Syberek",       "%",  12, 31, 0x8662 },
+  { "ZEWN",        "C",   1,  1, 0x06BE, false },
+  { "BOJLER",      "C",   2,  4, 0x4EF0, false },
+  { "PIEC CO",     "C",   3,  7, 0xFCE8, false },
+  { "PIEC CO ŚR.", "C",   4, 10, 0xFE85, false },
+  { "POWRÓT",      "C",   5, 13, 0xFA6D, false },
+  { "PANEL",       "C",   6, 16, 0xFD88, false },
+  { "POKÓJ",       "C",   7, 19, 0xAABE, false },
+  { "CIŚNIENIE",   "hPa", 9, 22, 0x653F, false },
+  { "WILGOTNOŚĆ",  "%",  10, 25, 0x2EB7, false },
+  { "KLAPA",       "%",  11, 28, 0xC43F, false },
+  { "SYBERKA",     "%",  12, 31, 0x8662, false },
+  { "POMPA",       "",    8, 35, 0x4C9F, true  },   // [v1.5.12] kolor jak ikona pompy (KOL_KROPLA)
 };
 static const int WYKRESY_LICZBA_SERII = sizeof(WYKRESY_SERIE) / sizeof(WYKRESY_SERIE[0]);
 
@@ -4963,6 +4973,8 @@ static const char *wykresy_tryb_nazwa();
 static bool wykresy_tryb_jest_dlugi(); // forward - zdefiniowana nizej razem z wykresy_tryb_nazwa(); potrzebna juz w wykresy_pokaz_wykres() ponizej (PARTIA 5e - fetch)
 static int wykresy_tryb_numer();       // forward - [v1.3.0] numer trybu dla main.cpp (LVGL_WYKRESY_TRYB_*)
 static bool wykresy_bufory_wybranych_sa(); // forward - [v1.3.0] czy sa bufory punktow dla wybranych serii
+static const char *wykresy_jednostka_wyswietlana(const char *jednostkaSurowa); // forward - [v1.5.12] uzywana juz w podpowiedzi Selekcji
+static void wykresy_chip_odswiez(int idx); // forward - [v1.5.12] WYCZYSC odswieza wszystkie chipy
 static void wykresy_chart_ukryj(); // forward - zdefiniowana nizej przy reszcie logiki lv_chart; potrzebna juz w wykresy_odswiez_wykres_fetch() ponizej (PARTIA 7)
 
 static lv_obj_t *wykresySelekcjaCont = nullptr;
@@ -4978,6 +4990,21 @@ static lv_obj_t *wykresyChart = nullptr;
 // slot (WYKRESY_MAX_SLOTOW). Tworzona raz w wykresy_panel_zbuduj() i nigdy
 // wiecej nie usuwana - patrz obszerny komentarz przy tworzeniu nizej.
 static lv_chart_series_t *wykresyChartSer[WYKRESY_MAX_SLOTOW] = { nullptr };
+// [v1.5.12 POMPA] Pas pracy pompy: osobny, 12-pikselowy lv_chart (typ LINE,
+// jedna seria, linia o grubosci 12 px, znaczniki 12x12 bez zaokraglenia)
+// nalozony na dol pola wykresu. Wartosc 1 = pompa pracowala w tym odcinku
+// (pas), LV_CHART_POINT_NONE = stala albo stan nieznany (pusto). Jeden
+// obiekt + 96 x 2 B zamiast puli prostokatow; punkty maja te same X co na
+// glownym wykresie (ta sama liczba punktow i szerokosc).
+static lv_obj_t *wykresyPompaPas = nullptr;
+static lv_chart_series_t *wykresyPompaSer = nullptr;
+static const lv_coord_t WYKRESY_POMPA_PAS_H = 12;
+static lv_coord_t g_wykresyChartPadDolBaza = 0;   // pad_bottom wykresu z motywu; z pasem pompy +WYKRESY_POMPA_PAS_H+4
+// [v1.5.12 OSIE] Biezace krawedzie pola wykresu (zalezne od szerokosci
+// etykiet osi Y - te stoja teraz OBOK wykresu, nie na nim). Ustawiane w
+// wykresy_chart_odswiez(), czytane przez wykresy_os_x_odswiez().
+static lv_coord_t g_wykresyChartX1 = 4;
+static lv_coord_t g_wykresyChartX2 = 476;
 static lv_obj_t *wykresyChartZakresLabel = nullptr; // "etykieta_pierwszy_punkt - etykieta_ostatni_punkt" pod wykresem
 // [FIX - etykiety osi ucinaly sie przy roznych skalach danych, ta sesja]
 // Czy dana os w tej chwili pokazuje 1 miejsce po przecinku, czy tylko liczby
@@ -5110,7 +5137,9 @@ static void wykresy_pokaz_wykres() {
     // (Partia 8e) juz pokazuje pelna liste kolor+nazwa pod tytulem, wiec
     // od >2 wybranych tytul moze byc po prostu zwiezlym licznikiem -
     // krotki, zawsze miesci sie w jednej linii, zero ryzyka przepelnienia.
-    if (g_wykresyLiczbaWybranych == 1) {
+    if (g_wykresyLiczbaWybranych == 1 && wykresy_wybrana_seria(0)->jednostka[0] == '\0') {
+      lv_label_set_text_fmt(wykresyWykresTytul, "[%s] %s", wykresy_tryb_nazwa(), wykresy_wybrana_seria(0)->nazwa);   // [v1.5.12] POMPA bez jednostki
+    } else if (g_wykresyLiczbaWybranych == 1) {
       lv_label_set_text_fmt(wykresyWykresTytul, "[%s] %s (%s)", wykresy_tryb_nazwa(),
                              wykresy_wybrana_seria(0)->nazwa, wykresy_wybrana_seria(0)->jednostka);
     } else if (g_wykresyLiczbaWybranych == 2) {
@@ -5176,7 +5205,13 @@ static void wykresy_pokaz_btn_odswiez() {
   bool aktywny = (g_wykresyLiczbaWybranych > 0);
   lv_obj_set_style_bg_color(wykresyPokazBtn, rgb565(aktywny ? KOL_OGIEN : KOL_KARTA), 0);
   lv_obj_t *lbl = lv_obj_get_child(wykresyPokazBtn, 0);
-  if (lbl) lv_obj_set_style_text_color(lbl, rgb565(aktywny ? KOL_TLO : KOL_TEKST_DIM), 0);
+  if (lbl) {
+    lv_obj_set_style_text_color(lbl, rgb565(aktywny ? KOL_TLO : KOL_TEKST_DIM), 0);
+    // [v1.5.12] Liczba wybranych serii na samym przycisku - widac ja bez
+    // liczenia podswietlonych chipow.
+    if (aktywny) lv_label_set_text_fmt(lbl, "POKAŻ WYKRES (%d)", g_wykresyLiczbaWybranych);
+    else lv_label_set_text(lbl, "POKAŻ WYKRES");
+  }
 }
 
 // [Do wykorzystania w Partii 5d] Zwraca wskaznik na definicje serii
@@ -5197,23 +5232,41 @@ static const WykresySeriaDef *wykresy_wybrana_seria(int pozycja) {
 // zanim legenda powstanie. Przy >2 seriach tekst moze byc dlugi - stad
 // LV_LABEL_LONG_DOT + stala szerokosc (ustawione przy tworzeniu
 // widgetu nizej w wykresy_panel_zbuduj()), zeby nie wyjechal poza ekran.
+// [v1.5.12] Krotka podpowiedz pod przyciskami Selekcji: ile wybrano i na
+// ktorej osi jaka jednostka ("Wybrano 3 z 8  ·  lewa oś °C  ·  prawa oś %").
+// Zastepuje dawna, dluga liste nazw (ta jest w legendzie nad wykresem).
 static void wykresy_status_label_odswiez() {
   if (!wykresyStatusLabel) return;
   if (g_wykresyLiczbaWybranych == 0) {
-    lv_label_set_text_fmt(wykresyStatusLabel, "[%s] Wybierz serie ponizej (max %d, %d+%d na os)",
-                           wykresy_tryb_nazwa(), WYKRESY_MAX_SLOTOW, WYKRESY_MAX_PRIMARY, WYKRESY_MAX_SECONDARY);
-  } else if (g_wykresyLiczbaWybranych == 1) {
-    lv_label_set_text_fmt(wykresyStatusLabel, "[%s] Wybrano: %s (%s)", wykresy_tryb_nazwa(),
-                           wykresy_wybrana_seria(0)->nazwa, wykresy_wybrana_seria(0)->jednostka);
-  } else {
-    char bufor[160];
-    int dl = snprintf(bufor, sizeof(bufor), "[%s] Wybrano: ", wykresy_tryb_nazwa());
-    for (int i = 0; i < g_wykresyLiczbaWybranych && dl < (int)sizeof(bufor); i++) {
-      const char *lacznik = (i == 0) ? "" : " + ";
-      dl += snprintf(bufor + dl, sizeof(bufor) - dl, "%s%s", lacznik, wykresy_wybrana_seria(i)->nazwa);
-    }
-    lv_label_set_text(wykresyStatusLabel, bufor);
+    lv_label_set_text_fmt(wykresyStatusLabel, "Dotknij serie (najwyżej %d), potem POKAŻ WYKRES", WYKRESY_MAX_SLOTOW);
+    return;
   }
+  char bufor[96];
+  int dl = snprintf(bufor, sizeof(bufor), "Wybrano %d z %d", g_wykresyLiczbaWybranych, WYKRESY_MAX_SLOTOW);
+  if (g_wykresyJednostkaOsi[0] && dl < (int)sizeof(bufor))
+    dl += snprintf(bufor + dl, sizeof(bufor) - dl, "  ·  lewa oś %s", wykresy_jednostka_wyswietlana(g_wykresyJednostkaOsi[0]));
+  if (g_wykresyJednostkaOsi[1] && dl < (int)sizeof(bufor))
+    dl += snprintf(bufor + dl, sizeof(bufor) - dl, "  ·  prawa oś %s", wykresy_jednostka_wyswietlana(g_wykresyJednostkaOsi[1]));
+  lv_label_set_text(wykresyStatusLabel, bufor);
+}
+
+// [v1.5.12] WYCZYSC - odznacza wszystkie serie jednym dotknieciem (dotad
+// trzeba bylo odklikiwac kazdy chip osobno).
+static void wykresy_wyczysc_wybor() {
+  for (int i = 0; i < WYKRESY_LICZBA_SERII; i++) g_wykresySerieWybrane[i] = false;
+  for (int i = 0; i < WYKRESY_MAX_SLOTOW; i++) { g_wykresyKolejnoscWyboru[i] = -1; g_wykresyOsWyboru[i] = -1; }
+  g_wykresyLiczbaWybranych = 0;
+  g_wykresyLiczbaNaOsi[0] = g_wykresyLiczbaNaOsi[1] = 0;
+  g_wykresyJednostkaOsi[0] = g_wykresyJednostkaOsi[1] = nullptr;
+  g_wykresyOstatniaOsDodania = 0;
+  for (int i = 0; i < WYKRESY_LICZBA_SERII; i++) wykresy_chip_odswiez(i);
+  wykresy_status_label_odswiez();
+  wykresy_pokaz_btn_odswiez();
+}
+static void wykresy_wyczysc_cb(lv_event_t *e) {
+  (void)e;
+  wykresy_panel_idle_resetuj();
+  wykresy_wyczysc_wybor();
 }
 
 // Odswieza wyglad JEDNEGO chipa wg aktualnego stanu wybrania - wolane po
@@ -5312,6 +5365,19 @@ static void wykresy_chip_klikniety_cb(lv_event_t *e) {
     const char *jednostka = WYKRESY_SERIE[idx].jednostka;
     int os = -1;
 
+    // [v1.5.12 POMPA] Pas pracy pompy nie potrzebuje osi Y ani slotu
+    // lv_chart - zajmuje tylko miejsce w kolejnosci wyboru (os = -1).
+    if (WYKRESY_SERIE[idx].pasek) {
+      g_wykresySerieWybrane[idx] = true;
+      g_wykresyKolejnoscWyboru[g_wykresyLiczbaWybranych] = idx;
+      g_wykresyOsWyboru[g_wykresyLiczbaWybranych] = -1;
+      g_wykresyLiczbaWybranych++;
+      wykresy_chip_odswiez(idx);
+      wykresy_status_label_odswiez();
+      wykresy_pokaz_btn_odswiez();
+      return;
+    }
+
     // 1) pasujaca jednostka na osi z wolnym slotem.
     for (int o = 0; o < 2; o++) {
       if (g_wykresyJednostkaOsi[o] != nullptr &&
@@ -5371,10 +5437,14 @@ static void wykresy_chipy_zbuduj(lv_obj_t *parent) {
   // (4*109 + 3*8 = 460). Wysokosc: 3 wiersze po 40px + 2 odstepy po 8px =
   // 136 - wieksze niz poprzednie 112 (patrz przesuniecie wykresyPokazBtn
   // nizej w wykresy_panel_zbuduj()), zgodnie z "zrob wieksze kafelki".
+  // [v1.5.12] Wiersze 40 -> 46 px (3*46 + 2*8 = 154), siatka od y=78:
+  // 12 serii (z POMPA) wypelnia ja dokladnie, a pod nia zostaje miejsce na
+  // WYCZYSC + POKAZ WYKRES (y=242) i podpowiedz (y=294). Do tej pory 50 px
+  // u dolu ekranu stalo puste.
   static lv_coord_t KOL_DSC[WYKRESY_CHIP_KOLUMNY + 1] = { 109, 109, 109, 109, LV_GRID_TEMPLATE_LAST };
-  static lv_coord_t WIERSZ_DSC[WYKRESY_CHIP_WIERSZE + 1] = { 40, 40, 40, LV_GRID_TEMPLATE_LAST };
-  lv_obj_set_size(rzad, 460, 136);
-  lv_obj_align(rzad, LV_ALIGN_TOP_MID, 0, 82);
+  static lv_coord_t WIERSZ_DSC[WYKRESY_CHIP_WIERSZE + 1] = { 46, 46, 46, LV_GRID_TEMPLATE_LAST };
+  lv_obj_set_size(rzad, 460, 154);
+  lv_obj_align(rzad, LV_ALIGN_TOP_MID, 0, 78);
   lv_obj_set_layout(rzad, LV_LAYOUT_GRID);
   lv_obj_set_grid_dsc_array(rzad, KOL_DSC, WIERSZ_DSC);
   lv_obj_set_style_pad_column(rzad, 8, 0);
@@ -5398,8 +5468,11 @@ static void wykresy_chipy_zbuduj(lv_obj_t *parent) {
     // chipa (109px - zapas na padding) + LONG_DOT, zeby najdluzsze nazwy
     // ("Temp. C.O Sr.") dostaly wielokropek zamiast wystawac poza chip.
     lv_obj_set_style_text_font(lbl, &lv_font_pl_14, 0);
-    lv_obj_set_width(lbl, 96);
-    lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+    // [v1.5.12] 96 -> 105 px: "WILGOTNOŚĆ" (ok. 98 px) lamalo sie na dwa
+    // wiersze ("WILGOTNOŚ" / "Ć" - zdjecie 23.11). Padding chipa 2 px.
+    lv_obj_set_style_pad_hor(chip, 2, 0);
+    lv_obj_set_width(lbl, 105);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(lbl);
 
@@ -5697,6 +5770,7 @@ static const lv_coord_t WYKRESY_MARGINES_OBUDOWY = 10;
 // odwrotnie. Te dwa obiekty nigdy nie sa widoczne jednoczesnie.
 static void wykresy_chart_ukryj() {
   if (wykresyChart) lv_obj_add_flag(wykresyChart, LV_OBJ_FLAG_HIDDEN);
+  if (wykresyPompaPas) lv_obj_add_flag(wykresyPompaPas, LV_OBJ_FLAG_HIDDEN);   // [v1.5.12]
   if (wykresyChartZakresLabel) lv_obj_add_flag(wykresyChartZakresLabel, LV_OBJ_FLAG_HIDDEN);
   // [PARTIA 8e, ta sesja] Legenda nalezy wizualnie do wykresu (nad nim) -
   // chowana/odslaniana razem z nim, tak jak zakresLabel wyzej.
@@ -5752,7 +5826,10 @@ static bool wykresy_chart_zakres_osi(int os, float &minWyjscie, float &maxWyjsci
   }
   if (!mamDane) return false;
   float margines = (maxWyjscie - minWyjscie) * 0.1f;
-  if (margines < 0.5f) margines = 0.5f;
+  // [v1.5.12] Minimalny margines 0,5 -> 1,0: stala seria (np. wilgotnosc
+  // 45 %) dawala os 44,5..45,5 z podzialka "44.8 / 45.3" - teraz 44..46 i
+  // rowne 44.0 / 44.5 / 45.0 / 45.5 / 46.0.
+  if (margines < 1.0f) margines = 1.0f;
   minWyjscie -= margines;
   maxWyjscie += margines;
   return true;
@@ -5813,10 +5890,30 @@ static const char *wykresy_jednostka_wyswietlana(const char *jednostkaSurowa) {
   return jednostkaSurowa;
 }
 
-static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float maxWartosc, lv_color_t kolorEtykiet, const char *jednostkaSurowa) {
+// [v1.5.12 OSIE] Szerokosc (px) najszerszej etykiety osi o takim zakresie -
+// najwyzsza etykieta ma jednostke, wiec to ona jest najgorszym przypadkiem.
+// Wywolujacy rezerwuje na nia miejsce OBOK pola wykresu.
+static lv_coord_t wykresy_os_szerokosc_etykiet(float minWartosc, float maxWartosc, const char *jednostkaSurowa) {
   float maxAbs = fabsf(minWartosc);
   if (fabsf(maxWartosc) > maxAbs) maxAbs = fabsf(maxWartosc);
-  bool ujemne = (minWartosc < 0.0f);
+  const bool ujemne = (minWartosc < 0.0f);
+  const bool dziesietne = (maxAbs < 100.0f);
+  const char *jednostka = wykresy_jednostka_wyswietlana(jednostkaSurowa);
+  char najgorszy[24];
+  if (dziesietne) lv_snprintf(najgorszy, sizeof(najgorszy), "%s%d.0 %s", ujemne ? "-" : "", (int)maxAbs, jednostka);
+  else            lv_snprintf(najgorszy, sizeof(najgorszy), "%s%d %s", ujemne ? "-" : "", (int)maxAbs, jednostka);
+  return lv_txt_get_width(najgorszy, strlen(najgorszy), &lv_font_pl_14, 0, LV_TEXT_FLAG_NONE);
+}
+
+// [v1.5.12 OSIE] Etykiety osi Y stoja OBOK pola wykresu (lewa os: liczby
+// dosuniete w prawo do krawedzi wykresu, prawa os: od krawedzi w lewo), a
+// nie na nim jak do v1.5.11 - zdjecie 23.11: plaska linia ZEWN 3,5 °C
+// przecinala napis "3.5", a WILGOTNOSC 0 % napis "0.0" po prawej. Pole
+// wykresu (g_wykresyChartX1..X2) ustawia wykresy_chart_odswiez() zanim tu
+// wejdzie; ta funkcja tylko rozstawia i wypelnia etykiety.
+static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float maxWartosc, lv_color_t kolorEtykiet, const char *jednostkaSurowa, lv_coord_t szerTekstu) {
+  float maxAbs = fabsf(minWartosc);
+  if (fabsf(maxWartosc) > maxAbs) maxAbs = fabsf(maxWartosc);
   bool dziesietne = (maxAbs < 100.0f);
 
   bool *dziesietneFlaga = (os == LV_CHART_AXIS_PRIMARY_Y) ? &g_wykresyOsADziesietne : &g_wykresyOsBDziesietne;
@@ -5832,27 +5929,8 @@ static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float
   // maja troche zapasu w swoim, nieco szerszym polu - bez wplywu na wyglad,
   // bo tekst jest LEWO wyrownany (LV_TEXT_ALIGN_LEFT).
   const char *jednostka = wykresy_jednostka_wyswietlana(jednostkaSurowa);
-
-  char najgorszy[24];
-  int calkowitaMax = (int)maxAbs;
-  if (dziesietne) {
-    lv_snprintf(najgorszy, sizeof(najgorszy), "%s%d.0 %s", ujemne ? "-" : "", calkowitaMax, jednostka);
-  } else {
-    lv_snprintf(najgorszy, sizeof(najgorszy), "%s%d %s", ujemne ? "-" : "", calkowitaMax, jednostka);
-  }
-  const lv_font_t *font = &lv_font_pl_14;
-  lv_coord_t szerTekstu = lv_txt_get_width(najgorszy, strlen(najgorszy), font, 0, LV_TEXT_FLAG_NONE);
-
-  // Wykres ma teraz STALA szerokosc niezalezna od dlugosci etykiet - caly
-  // kontener (480px, wewnatrz wykresyWykresCont) minus tylko 4px zapasu po
-  // kazdej stronie (zeby zaokraglony rog karty - radius 10 - nie wygladal
-  // ucieciety przy samej krawedzi). To samo ustawiamy przy KAZDYM wywolaniu
-  // (raz dla osi A, raz dla osi B) - tanie, wiec brak potrzeby pamietania
-  // stanu miedzy wywolaniami jak poprzednio (gutterA/gutterB).
-  const lv_coord_t chartX1 = WYKRESY_CHART_X1;
-  const lv_coord_t chartX2 = WYKRESY_CHART_X2;
-  lv_obj_set_x(wykresyChart, chartX1);
-  lv_obj_set_width(wykresyChart, chartX2 - chartX1);
+  const lv_coord_t chartX1 = g_wykresyChartX1;
+  const lv_coord_t chartX2 = g_wykresyChartX2;
 
   // Wysokosc contentu wykresu (do rozstawienia etykiet pionowo) - stala,
   // czytana z WYKRESY_CHART_H (patrz komentarz przy tej stalej wyzej w
@@ -5871,8 +5949,13 @@ static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float
   // nie z lewej i prawej strony) bez kolizji z etykietami osi, ktore siedza
   // przy lewej/prawej krawedzi - patrz nowa pozycja wykresyChartZakresLabel
   // przy jej tworzeniu, kilka linii pod tworzeniem samego wykresu.
-  const lv_coord_t chartY = WYKRESY_CHART_Y;
-  const lv_coord_t chartH = WYKRESY_CHART_H;
+  // [v1.5.12] Podzialki rozstawione po WNETRZU wykresu (bez paddingu) - z
+  // pasem pompy wykres ma u dolu dodatkowy pad_bottom i linie koncza sie
+  // nad pasem, wiec etykiety tez musza.
+  const lv_coord_t padT = lv_obj_get_style_pad_top(wykresyChart, LV_PART_MAIN);
+  const lv_coord_t padB = lv_obj_get_style_pad_bottom(wykresyChart, LV_PART_MAIN);
+  const lv_coord_t chartY = WYKRESY_CHART_Y + padT;
+  const lv_coord_t chartH = WYKRESY_CHART_H - padT - padB;
   const lv_coord_t etykietaWys = 16; // wysokosc jednej linii tekstu (font 14px + zapas)
 
   // Etykiety nakladaja sie na skrajne 2px wykresu z kazdej strony (zamiast
@@ -5882,11 +5965,12 @@ static void wykresy_chart_dopasuj_os(lv_chart_axis_t os, float minWartosc, float
   // prawej krawedzi - dokladnie tak jak bylo widac na zdjeciu z testu, tylko
   // teraz bez dodatkowego, pustego pasa miedzy liczbami a wykresem.
   lv_obj_t **etykiety = (os == LV_CHART_AXIS_PRIMARY_Y) ? wykresyEtykietyA : wykresyEtykietyB;
-  // [v1.5.9] +MARGINES_OBUDOWY zamiast 2 px od krawedzi - patrz WYKRESY_MARGINES_OBUDOWY.
-  lv_coord_t etykietaX = (os == LV_CHART_AXIS_PRIMARY_Y) ? (chartX1 + WYKRESY_MARGINES_OBUDOWY - 4)
-                                                         : (chartX2 - (WYKRESY_MARGINES_OBUDOWY - 4) - szerTekstu - 3);
+  // [v1.5.12 OSIE] Lewa os: pole etykiety od marginesu obudowy do 4 px przed
+  // wykresem, tekst dosuniety w PRAWO (liczby koncza sie rowno przy
+  // wykresie). Prawa os: od 4 px za wykresem, tekst w lewo.
   lv_coord_t etykietaSzer = szerTekstu + 3; // maly zapas, LONG_CLIP wiec bezpiecznie nie zawinie
-  lv_text_align_t wyrownanie = LV_TEXT_ALIGN_LEFT;
+  lv_coord_t etykietaX = (os == LV_CHART_AXIS_PRIMARY_Y) ? (chartX1 - 4 - etykietaSzer) : (chartX2 + 4);
+  lv_text_align_t wyrownanie = (os == LV_CHART_AXIS_PRIMARY_Y) ? LV_TEXT_ALIGN_RIGHT : LV_TEXT_ALIGN_LEFT;
 
   for (int i = 0; i < WYKRESY_OS_LICZBA_ETYKIET; i++) {
     if (!etykiety[i]) continue;
@@ -5999,8 +6083,8 @@ static bool wykresy_os_x_odswiez(int liczbaPunktow) {
   const lv_coord_t padR = lv_obj_get_style_pad_right(wykresyChart, LV_PART_MAIN);
   const lv_coord_t padT = lv_obj_get_style_pad_top(wykresyChart, LV_PART_MAIN);
   const lv_coord_t padB = lv_obj_get_style_pad_bottom(wykresyChart, LV_PART_MAIN);
-  const lv_coord_t x0 = WYKRESY_CHART_X1 + padL;
-  const lv_coord_t szer = (WYKRESY_CHART_X2 - WYKRESY_CHART_X1) - padL - padR;
+  const lv_coord_t x0 = g_wykresyChartX1 + padL;   // [v1.5.12] biezace krawedzie pola wykresu
+  const lv_coord_t szer = (g_wykresyChartX2 - g_wykresyChartX1) - padL - padR;
   const lv_coord_t liniaY = WYKRESY_CHART_Y + padT;
   const lv_coord_t liniaH = WYKRESY_CHART_H - padT - padB;
   const lv_font_t *font = &lv_font_pl_14;
@@ -6116,16 +6200,38 @@ static void wykresy_chart_odswiez() {
   if (n <= 0) return;
   if (n > WYKRESY_MAX_PUNKTOW) n = WYKRESY_MAX_PUNKTOW; // bezpiecznik, nie powinno sie zdarzyc
 
+  // [v1.5.12 POMPA] Czy wsrod wybranych jest pas pompy z danymi - wtedy
+  // wykres dostaje u dolu dodatkowy padding (linie i podzialki koncza sie
+  // nad pasem), a sam pas jest wypelniany nizej.
+  bool pompaJest = false;
+  for (int p = 0; p < g_wykresyLiczbaWybranych; p++) {
+    if (WYKRESY_SERIE[g_wykresyKolejnoscWyboru[p]].pasek && g_wykresyLiczbaPunktow[p] > 0 && g_wykresyPunkty[p]) pompaJest = true;
+  }
+  lv_obj_set_style_pad_bottom(wykresyChart, g_wykresyChartPadDolBaza + (pompaJest ? WYKRESY_POMPA_PAS_H + 4 : 0), LV_PART_MAIN);
+
   // Zakres + etykiety kazdej fizycznej osi (0=PRIMARY/A, 1=SECONDARY/B) -
   // liczony PO WSZYSTKICH aktywnych slotach danej osi naraz.
+  // [v1.5.12 OSIE] Najpierw zakresy i szerokosci etykiet obu osi, z nich
+  // krawedzie pola wykresu (etykiety stoja obok, nie na wykresie), dopiero
+  // potem rozstawienie etykiet. Bez prawej osi wykres siega do 476 jak dotad.
   lv_chart_axis_t osyLvgl[2] = { LV_CHART_AXIS_PRIMARY_Y, LV_CHART_AXIS_SECONDARY_Y };
   lv_obj_t **etykietyOsi[2] = { wykresyEtykietyA, wykresyEtykietyB };
+  bool osAktywna[2];
+  float minOs[2], maxOs[2];
+  lv_coord_t szerOs[2] = { 0, 0 };
   for (int os = 0; os < 2; os++) {
-    float minOs, maxOs;
-    if (wykresy_chart_zakres_osi(os, minOs, maxOs)) {
+    osAktywna[os] = wykresy_chart_zakres_osi(os, minOs[os], maxOs[os]);
+    if (osAktywna[os]) szerOs[os] = wykresy_os_szerokosc_etykiet(minOs[os], maxOs[os], g_wykresyJednostkaOsi[os]);
+  }
+  g_wykresyChartX1 = osAktywna[0] ? (lv_coord_t)(WYKRESY_MARGINES_OBUDOWY + szerOs[0] + 3 + 4) : WYKRESY_CHART_X1;
+  g_wykresyChartX2 = osAktywna[1] ? (lv_coord_t)(480 - WYKRESY_MARGINES_OBUDOWY - szerOs[1] - 3 - 4) : WYKRESY_CHART_X2;
+  lv_obj_set_x(wykresyChart, g_wykresyChartX1);
+  lv_obj_set_width(wykresyChart, g_wykresyChartX2 - g_wykresyChartX1);
+  for (int os = 0; os < 2; os++) {
+    if (osAktywna[os]) {
       lv_chart_set_range(wykresyChart, osyLvgl[os],
-                          wykresy_chart_skaluj(minOs), wykresy_chart_skaluj(maxOs));
-      wykresy_chart_dopasuj_os(osyLvgl[os], minOs, maxOs, wykresy_chart_kolor_etykiet_osi(os), g_wykresyJednostkaOsi[os]);
+                          wykresy_chart_skaluj(minOs[os]), wykresy_chart_skaluj(maxOs[os]));
+      wykresy_chart_dopasuj_os(osyLvgl[os], minOs[os], maxOs[os], wykresy_chart_kolor_etykiet_osi(os), g_wykresyJednostkaOsi[os], szerOs[os]);
       for (int i = 0; i < WYKRESY_OS_LICZBA_ETYKIET; i++) {
         if (etykietyOsi[os][i]) lv_obj_clear_flag(etykietyOsi[os][i], LV_OBJ_FLAG_HIDDEN);
       }
@@ -6161,6 +6267,7 @@ static void wykresy_chart_odswiez() {
   for (int p = 0; p < g_wykresyLiczbaWybranych; p++) {
     if (g_wykresyLiczbaPunktow[p] <= 0) continue;
     int os = g_wykresyOsWyboru[p];
+    if (os < 0) continue;   // [v1.5.12] pas pompy - rysowany osobno nizej
     int podslot = licznikOsi[os]++;
     if (podslot >= WYKRESY_MAX_NA_OSI[os]) continue; // bezpiecznik - nie powinno sie zdarzyc, limit juz wymuszony w Partii 8b
     // Podzial fizycznych slotow: 0..6 = PRIMARY (7), 7 = SECONDARY (1).
@@ -6203,6 +6310,34 @@ static void wykresy_chart_odswiez() {
   }
 
   lv_chart_refresh(wykresyChart);
+
+  // [v1.5.12 POMPA] Pas pracy pompy u dolu pola wykresu: 1 = pracowala w
+  // tym odcinku, NONE = stala / nieznane. Te same X co punkty glownego
+  // wykresu (ta sama szerokosc i liczba punktow).
+  if (wykresyPompaPas && wykresyPompaSer) {
+    lv_coord_t *tab = lv_chart_get_y_array(wykresyPompaPas, wykresyPompaSer);
+    for (int i = 0; i < WYKRESY_MAX_PUNKTOW; i++) tab[i] = LV_CHART_POINT_NONE;
+    for (int p = 0; p < g_wykresyLiczbaWybranych && pompaJest; p++) {
+      const int idxSerii = g_wykresyKolejnoscWyboru[p];
+      const int liczbaP = g_wykresyLiczbaPunktow[p];
+      if (!WYKRESY_SERIE[idxSerii].pasek || liczbaP <= 0 || !g_wykresyPunkty[p]) continue;
+      wykresyPompaSer->color = rgb565(WYKRESY_SERIE[idxSerii].kolor);
+      for (int i = 0; i < n; i++) {
+        const float w = g_wykresyPunkty[p][i < liczbaP ? i : liczbaP - 1].wartosc;
+        tab[i] = (!isnan(w) && w > 0.0f) ? 1 : LV_CHART_POINT_NONE;
+      }
+    }
+    if (pompaJest) {
+      const lv_coord_t padL = lv_obj_get_style_pad_left(wykresyChart, LV_PART_MAIN);
+      const lv_coord_t padR = lv_obj_get_style_pad_right(wykresyChart, LV_PART_MAIN);
+      lv_obj_set_pos(wykresyPompaPas, g_wykresyChartX1 + padL, WYKRESY_CHART_DOL - g_wykresyChartPadDolBaza - WYKRESY_POMPA_PAS_H - 2);
+      lv_obj_set_size(wykresyPompaPas, g_wykresyChartX2 - g_wykresyChartX1 - padL - padR, WYKRESY_POMPA_PAS_H);
+      lv_chart_refresh(wykresyPompaPas);
+      lv_obj_clear_flag(wykresyPompaPas, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(wykresyPompaPas, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
 
   // Podpis zakresu czasu pod wykresem - etykieta pierwszego i ostatniego
   // punktu (ta sama etykieta co przychodzi w CSV). Bierzemy pierwsza
@@ -6255,7 +6390,7 @@ static void wykresy_chart_odswiez() {
     for (int p = 0; p < g_wykresyLiczbaWybranych && !samotny; p++) {
       const WykresyPunkt *pk = g_wykresyPunkty[p];
       const int np = g_wykresyLiczbaPunktow[p];
-      if (!pk) continue;
+      if (!pk || g_wykresyOsWyboru[p] < 0) continue;   // [v1.5.12] pas pompy ma wlasne znaczniki
       for (int i = 0; i < np; i++) {
         if (isnan(pk[i].wartosc)) continue;
         const bool lewy = (i > 0) && !isnan(pk[i - 1].wartosc);
@@ -6421,6 +6556,18 @@ void lvgl_dashboard_poc_wykresy_strumien_linia(const char *linia) {
     const WykresySeriaDef &seria = WYKRESY_SERIE[idxSerii];
     const int kolSr = dlugi ? seria.kolDlugiSr : seria.kolKrotki;
     float wSr;
+    if (seria.pasek) {
+      // [v1.5.12 POMPA] Kolumna 8 (krotki CSV: "0"/"1") albo 35 (format dlugi
+      // i /api/history/panel: 0/1, -1 = stan nieznany). Do kubelka trafia
+      // 0 albo 1; srednia kubelka > 0 znaczy "pompa w tym odcinku pracowala".
+      if (!wykresy_csv_kolumna_float(linia, kolSr, wSr)) continue;
+      if (!g_wykresyStrumien.zredukowany && !wykresy_csv_kolumna_czytelna(linia, kolSr)) continue;
+      if (wSr < 0.0f) continue;
+      wierszMaWartosc = true;
+      g_wykresyStrumien.suma[s] += (wSr > 0.5f) ? 1.0f : 0.0f;
+      g_wykresyStrumien.licznik[s]++;
+      continue;
+    }
     if (g_wykresyStrumien.zredukowany) {
       // Punkt policzony przez centrale: "nan" = ta seria nie ma tu wartosci.
       if (!wykresy_csv_kolumna_liczba(linia, kolSr, wSr)) continue;
@@ -6678,8 +6825,10 @@ static void wykresy_tryb_zbuduj(lv_obj_t *parent) {
   // (300->340 / 92->104), zeby zmieszczic najdluzszy z poprawionych napisow
   // ("TYGODNIOWY", 10 znakow) bez wizualnego przycinania/nachodzenia na
   // sasiedni przycisk - patrz tez zmiana samych NAZWY[] ponizej.
-  lv_obj_set_size(rzad, 340, 34);
-  lv_obj_align(rzad, LV_ALIGN_TOP_MID, 0, 44);
+  // [v1.5.12] Przyciski trybu 104x30 -> 140x34 (zdjecie 23.11: "za male"),
+  // rzad 460 px jak siatka chipow pod nim, y 44 -> 40.
+  lv_obj_set_size(rzad, 460, 36);
+  lv_obj_align(rzad, LV_ALIGN_TOP_MID, 0, 39);
   lv_obj_set_flex_flow(rzad, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(rzad, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_clear_flag(rzad, LV_OBJ_FLAG_SCROLLABLE);
@@ -6692,7 +6841,7 @@ static void wykresy_tryb_zbuduj(lv_obj_t *parent) {
   static const char *NAZWY[3] = { "GODZINNY", "DZIENNY", "TYGODNIOWY" };
   for (int i = 0; i < 3; i++) {
     lv_obj_t *btn = lv_btn_create(rzad);
-    lv_obj_set_size(btn, 104, 30);
+    lv_obj_set_size(btn, 140, 34);
     lv_obj_set_style_radius(btn, 8, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
 
@@ -6752,7 +6901,7 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   lv_label_set_text(tytul, "WYKRESY");
   lv_obj_set_style_text_font(tytul, &lv_font_pl_28, 0);
   lv_obj_set_style_text_color(tytul, rgb565(KOL_TEKST), 0);
-  lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 10);
+  lv_obj_align(tytul, LV_ALIGN_TOP_MID, 0, 6);   // [v1.5.12] 10 -> 6: caly uklad podniesiony, patrz wykresy_chipy_zbuduj()
 
   // [PARTIA 5d, ta sesja] Pasek zakresu Godziny/Dzien/Tydzien nad chipami.
   wykresy_tryb_zbuduj(wykresySelekcjaCont);
@@ -6775,8 +6924,35 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   // podstrone Wykres. Martwy (przygaszony, klik nie reaguje - patrz
   // wykresy_pokaz_wykres_cb()) dopoki nie wybrano >=1 serii, dokladnie
   // jak trzeci chip przy limicie 2 w wykresy_chip_klikniety_cb().
+  // [v1.5.12] Obok POKAZ WYKRES przycisk WYCZYSC (odznacza wszystko), pod
+  // nimi jednowierszowa podpowiedz (ile wybrano, jednostki osi). Razem
+  // 110 + 10 + 230 = 350 px wysrodkowane: WYCZYSC x=65..175, POKAZ 185..415.
+  lv_obj_t *wyczyscBtn = lv_btn_create(wykresySelekcjaCont);
+  lv_obj_set_size(wyczyscBtn, 110, 42);
+  lv_obj_set_style_radius(wyczyscBtn, 10, 0);
+  lv_obj_set_style_shadow_width(wyczyscBtn, 0, 0);
+  lv_obj_set_style_bg_color(wyczyscBtn, rgb565(KOL_KARTA), 0);
+  lv_obj_set_style_border_width(wyczyscBtn, 1, 0);
+  lv_obj_set_style_border_color(wyczyscBtn, rgb565(KOL_TEKST_DIM), 0);
+  lv_obj_align(wyczyscBtn, LV_ALIGN_TOP_LEFT, 65, 242);
+  lv_obj_t *wyczyscLbl = lv_label_create(wyczyscBtn);
+  lv_label_set_text(wyczyscLbl, "WYCZYŚĆ");
+  lv_obj_set_style_text_font(wyczyscLbl, &lv_font_pl_14, 0);
+  lv_obj_set_style_text_color(wyczyscLbl, rgb565(KOL_TEKST), 0);
+  lv_obj_center(wyczyscLbl);
+  lv_obj_add_event_cb(wyczyscBtn, wykresy_wyczysc_cb, LV_EVENT_CLICKED, nullptr);
+
+  wykresyStatusLabel = lv_label_create(wykresySelekcjaCont);
+  lv_obj_set_style_text_font(wykresyStatusLabel, &lv_font_pl_14, 0);
+  lv_obj_set_style_text_color(wykresyStatusLabel, rgb565(KOL_TEKST_DIM), 0);
+  lv_obj_set_width(wykresyStatusLabel, 440);
+  lv_obj_set_style_text_align(wykresyStatusLabel, LV_TEXT_ALIGN_CENTER, 0);
+  lv_label_set_long_mode(wykresyStatusLabel, LV_LABEL_LONG_CLIP);
+  lv_obj_align(wykresyStatusLabel, LV_ALIGN_TOP_MID, 0, 294);
+  wykresy_status_label_odswiez();
+
   wykresyPokazBtn = lv_btn_create(wykresySelekcjaCont);
-  lv_obj_set_size(wykresyPokazBtn, 220, 42);
+  lv_obj_set_size(wykresyPokazBtn, 230, 42);
   lv_obj_set_style_radius(wykresyPokazBtn, 10, 0);
   lv_obj_set_style_shadow_width(wykresyPokazBtn, 0, 0);
   // [ZMIANA, ta sesja - SIATKA 4x3] 210->228 - chipy przeszly z rzedu
@@ -6784,7 +6960,7 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   // konczaca sie teraz na 82+136=218, wiec przycisk zsunieto nizej (218+10
   // marginesu = 228), zeby nie nachodzic na powiekszona siatke. Miesci sie
   // z zapasem do dolu ekranu (228+42=270 < 320).
-  lv_obj_align(wykresyPokazBtn, LV_ALIGN_TOP_MID, 0, 228);
+  lv_obj_align(wykresyPokazBtn, LV_ALIGN_TOP_LEFT, 185, 242);   // [v1.5.12] obok WYCZYSC, patrz wyzej
   lv_obj_t *pokazLbl = lv_label_create(wykresyPokazBtn);
   lv_label_set_text(pokazLbl, "POKAŻ WYKRES");
   lv_obj_set_style_text_font(pokazLbl, &lv_font_pl_14, 0); // [FIX kompilacji] _16 nie jest wlaczony w lv_conf.h (tylko 14/20/28 sa builtowane w tym projekcie) - patrz identyczny FIX nizej przy wykresyWykresTytul
@@ -6835,7 +7011,9 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   // aktualnego wyboru przy kazdym odswiezeniu wykresu.
   wykresyLegendaCont = lv_obj_create(wykresyWykresCont);
   lv_obj_remove_style_all(wykresyLegendaCont);
-  lv_obj_set_size(wykresyLegendaCont, 460, WYKRESY_LEGENDA_H);
+  // [v1.5.12] 460 -> 400 px: przy 8 pozycjach ostatnia w pierwszym wierszu
+  // ("POWROT") wchodzila pod krzyzyk zamkniecia w prawym gornym rogu.
+  lv_obj_set_size(wykresyLegendaCont, 400, WYKRESY_LEGENDA_H);
   lv_obj_align(wykresyLegendaCont, LV_ALIGN_TOP_MID, 0, WYKRESY_LEGENDA_Y);
   lv_obj_set_flex_flow(wykresyLegendaCont, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_flex_align(wykresyLegendaCont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -6890,8 +7068,11 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   // wykresy_chart_dopasuj_os() (patrz komentarz tam) - podana tu wartosc to
   // tylko bezpieczny stan startowy przed pierwszym odswiezeniem.
   wykresyChart = lv_chart_create(wykresyWykresCont);
-  lv_obj_set_size(wykresyChart, 440, WYKRESY_CHART_H);
-  lv_obj_align(wykresyChart, LV_ALIGN_TOP_MID, 0, WYKRESY_CHART_Y);
+  lv_obj_set_size(wykresyChart, WYKRESY_CHART_X2 - WYKRESY_CHART_X1, WYKRESY_CHART_H);
+  // [v1.5.12] set_pos zamiast align(TOP_MID): przy align lv_obj_set_x() w
+  // wykresy_chart_odswiez() bylo PRZESUNIECIEM od srodka, nie polozeniem -
+  // wykres z lewa osia ladowal 36 px za daleko w prawo i wystawal za ekran.
+  lv_obj_set_pos(wykresyChart, WYKRESY_CHART_X1, WYKRESY_CHART_Y);
   lv_obj_set_style_bg_color(wykresyChart, rgb565(KOL_KARTA), 0);
   lv_obj_set_style_bg_opa(wykresyChart, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(wykresyChart, 0, 0);
@@ -7008,6 +7189,31 @@ static void wykresy_panel_zbuduj(lv_obj_t *scr) {
   }
 
   lv_obj_add_flag(wykresyChart, LV_OBJ_FLAG_HIDDEN);
+  g_wykresyChartPadDolBaza = lv_obj_get_style_pad_bottom(wykresyChart, LV_PART_MAIN);
+
+  // [v1.5.12 POMPA] Pas pracy pompy - patrz komentarz przy wykresyPompaPas.
+  // Zakres 0..2 i wartosc 1: linia o grubosci WYKRESY_POMPA_PAS_H biegnie
+  // srodkiem 12-pikselowego obiektu, wiec wypelnia go w calosci. Znaczniki
+  // (LV_PART_INDICATOR) 12x12 bez zaokraglenia: pojedynczy odcinek pracy
+  // miedzy dwoma postojami tez jest widoczny (odcinek linii potrzebuje
+  // dwoch sasiednich punktow).
+  wykresyPompaPas = lv_chart_create(wykresyWykresCont);
+  lv_obj_remove_style_all(wykresyPompaPas);
+  lv_obj_set_size(wykresyPompaPas, 440, WYKRESY_POMPA_PAS_H);
+  lv_obj_set_pos(wykresyPompaPas, WYKRESY_CHART_X1, WYKRESY_CHART_DOL - WYKRESY_POMPA_PAS_H - 2);
+  lv_obj_clear_flag(wykresyPompaPas, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+  lv_chart_set_type(wykresyPompaPas, LV_CHART_TYPE_LINE);
+  lv_chart_set_div_line_count(wykresyPompaPas, 0, 0);
+  lv_chart_set_point_count(wykresyPompaPas, WYKRESY_MAX_PUNKTOW);
+  lv_chart_set_range(wykresyPompaPas, LV_CHART_AXIS_PRIMARY_Y, 0, 2);
+  lv_obj_set_style_line_width(wykresyPompaPas, WYKRESY_POMPA_PAS_H, LV_PART_ITEMS);
+  lv_obj_set_style_line_rounded(wykresyPompaPas, false, LV_PART_ITEMS);
+  lv_obj_set_style_line_opa(wykresyPompaPas, LV_OPA_COVER, LV_PART_ITEMS);
+  lv_obj_set_style_size(wykresyPompaPas, WYKRESY_POMPA_PAS_H, LV_PART_INDICATOR);
+  lv_obj_set_style_radius(wykresyPompaPas, 0, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_opa(wykresyPompaPas, LV_OPA_COVER, LV_PART_INDICATOR);
+  wykresyPompaSer = lv_chart_add_series(wykresyPompaPas, rgb565(0x4C9F), LV_CHART_AXIS_PRIMARY_Y);
+  lv_obj_add_flag(wykresyPompaPas, LV_OBJ_FLAG_HIDDEN);
 
   wykresyChartZakresLabel = lv_label_create(wykresyWykresCont);
   lv_label_set_text(wykresyChartZakresLabel, "");

@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.11
+# Panel LCD (wyświetlacz CO) — firmware v1.5.12
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,34 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.12
+
+Ekran WYKRESY po zdjęciach z płytki (23.11): praca pompy na wykresie i
+czytelniejszy układ obu ekranów. Centrala bez zmian (pompa jest w historii od
+3.58.4).
+
+- **Seria POMPA.** Dwunasty chip. Zamiast linii – 12‑pikselowy **pas u dołu
+  pola wykresu**: niebieski odcinek tam, gdzie w danym przedziale pompa
+  pracowała (kolumna 35 odpowiedzi `/api/history/panel`, kolumna 8 starego
+  CSV). Nie zajmuje osi Y, więc nie zabiera miejsca dwóm jednostkom; liczy się
+  do limitu 8 serii. Tytuł np. „[Dzienny] ZEWN + POMPA”.
+- **Etykiety osi Y obok wykresu, nie na nim.** Płaska linia (ZEWN 3,5 °C,
+  wilgotność 0 %) przecinała napis „3.5” / „0.0”. Teraz pole wykresu zwęża się
+  o szerokość etykiet: lewe liczby są dosunięte do wykresu, prawe zaczynają
+  się za nim. Bez prawej osi wykres sięga do prawej krawędzi jak dotąd.
+  Minimalny margines osi 0,5 → 1,0 jednostki – stała seria dostaje równe
+  podziałki (44.0 … 46.0 zamiast 44.5 / 44.8 / 45.3).
+- **Wybór serii.** Nazwy jak kafelki pulpitu (PIEC CO, PIEC CO ŚR., POKÓJ,
+  SYBERKA), 12 chipów 109×46 w siatce 460×154 („WILGOTNOŚĆ” w jednym
+  wierszu), przyciski trybu 140×34, nowy **WYCZYŚĆ** obok **POKAŻ WYKRES (N)**,
+  pod nimi podpowiedź „Wybrano N z 8 · lewa oś °C · prawa oś %”. Dotąd dolne
+  50 px ekranu stało puste.
+- **Naprawa.** `lv_obj_set_x()` na wykresie wyrównanym `TOP_MID` było
+  przesunięciem od środka, nie położeniem – wykres z lewą osią wystawał 36 px
+  za ekran.
+- Nowy test hosta `wykresy_pompa_i_osie` (zrzuty `1_wybor_serii` …
+  `5_osiem_serii`). Legenda zwężona do 400 px (nie wchodzi pod krzyżyk). RAM: +1 `lv_chart` na pas (ok. 0,4 kB).
 
 ## Co zmienia v1.5.11
 
