@@ -5989,6 +5989,42 @@ bool zewnNapisSprawdz(const char* dokladnie, const char* opis) {
 }
 }  // namespace
 
+// [v1.5.18] Przeglad 13 ikon pogody kafelka ZEWN (ikony_pogoda.h) - po jednym
+// zrzucie na ikone, zeby bylo widac na PC, co dokladnie rysuje LCD. Sprawdzenia
+// minimalne (ekran zyje, napis zgodny), sens scenariusza to zrzuty.
+void scenariuszIkonyPogody() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustaw(0, [](Centrala& c) { c.pogodaPola = true; c.tZewn = 3.4; c.pogodaDzien = 1; c.wiatrPorywy = 20.0; c.deszczStan = 0; c.deszczMinuty = -1; c.pogodaKod = 0; c.pogodaKodOpad = -1; });
+  setup();
+  biegnij(4000);
+  struct Krok { const char* nazwa; int kod; int kodOpad; int dzien; int stan; int minuty; double wiatr; const char* napis; };
+  const Krok kroki[] = {
+    {"01_slonce",    0,  -1, 1, 0, -1, 20.0, nullptr},
+    {"02_noc",       0,  -1, 0, 0, -1, 20.0, nullptr},
+    {"03_czesciowo", 2,  -1, 1, 0, -1, 20.0, nullptr},
+    {"04_pochmurno", 3,  -1, 1, 0, -1, 20.0, nullptr},
+    {"05_mgla",      45, -1, 1, 0, -1, 20.0, "mgła"},
+    {"06_mzawka",    3,  53, 1, 1, 45, 20.0, "mżawka\nza 45 min"},
+    {"07_deszcz",    3,  63, 1, 1, 45, 20.0, "deszcz\nza 45 min"},
+    {"08_ulewa",     63, 63, 1, 2, 30, 20.0, "pada\n30 min"},
+    {"09_snieg",     3,  71, 1, 1, 45, 20.0, "śnieg\nza 45 min"},
+    {"10_sypie",     71, 71, 1, 2, 30, 20.0, "sypie\n30 min"},
+    {"11_burza",     3,  95, 1, 1, 45, 20.0, "burza\nza 45 min"},
+    {"12_grad",      3,  96, 1, 1, 45, 20.0, "grad\nza 45 min"},
+    {"13_wiatr",     3,  -1, 1, 0, -1, 62.0, "silny\nwiatr"},
+  };
+  static const Krok* g_k = nullptr;   // ustaw() bierze wskaznik na funkcje, nie domkniecie
+  for (const Krok& k : kroki) {
+    g_k = &k;
+    ustaw(0, [](Centrala& c) { c.pogodaKod = g_k->kod; c.pogodaKodOpad = g_k->kodOpad; c.pogodaDzien = g_k->dzien; c.deszczStan = g_k->stan; c.deszczMinuty = g_k->minuty; c.wiatrPorywy = g_k->wiatr; });
+    biegnij(3000);
+    zrzutEkranu(k.nazwa);
+    if (k.napis) zewnNapisSprawdz(k.napis, (std::string("ikona ") + k.nazwa + ": napis").c_str());
+    else sprawdz(ekranMa("ZEWN"), (std::string("ikona ") + k.nazwa + ": bez napisu, tytul ZEWN").c_str());
+  }
+  sprawdz(ekranMa("3.4°C"), "temperatura 3.4°C przez caly przeglad");
+}
+
 void scenariuszKafelkiSzerokosc() {
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
   // Najszersze realne wartosci: ujemne z czescia dziesietna, trzycyfrowe, 100 %, 1013 hPa.
@@ -6580,6 +6616,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"ota_ten_sam_plik", "OTA: centrala oferuje plik, z ktorego panel juz pracuje - nic nie jest wgrywane (v1.4.0)", scenariuszOtaTenSamPlik},
     {"ota_status_milczy", "OTA: centrala nie odpowiada na status, ale plik idzie - pobieranie nie jest przerywane (v1.4.0)", scenariuszOtaStatusMilczy},
     {"ota_bez_identyfikatora", "OTA: panel nie zna sumy wlasnego programu - aktualizacja przez centrale wylaczona (v1.4.0)", scenariuszOtaBezIdentyfikatora},
+    {"ikony_pogody", "ikony pogody (v1.5.14/v1.5.18): 13 ikon kafelka ZEWN, po jednym zrzucie ekranu na ikone", scenariuszIkonyPogody},
     {"kafelki_szerokosc", "kafelki (v1.5.2/v1.5.17): najszersze wartosci mieszcza sie w kafelkach, czcionka 28/20/14 dobierana sama; ZEWN uklad E: napis o pogodzie (2 linie) zamiast tytulu, temperatura 28, \"3.4°C\" z prognozy bez czujnika (v1.5.18: bez tyldy)", scenariuszKafelkiSzerokosc},
     {"polskie_litery", "polskie litery na ekranie: czcionki lv_font_pl_14/20/28, glif dla kazdego znaku, napisy z ogonkami (v1.4.5)", scenariuszPolskieLitery},
     {"wersje_na_ekranie", "wersje panelu i centrali: ekran startowy, ekran WYSWIETLACZ, log tag=PANEL, kafelek WYSWIETLACZ bez obciecia (v1.4.6)", scenariuszWersjeNaEkranie},
