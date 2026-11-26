@@ -1,20 +1,22 @@
-ZAKRES ZMIAN 3.58.20 wzgledem 3.58.19 (plik src/main_centrala.cpp, 51 459 linii)
+ZAKRES ZMIAN 3.58.20 wzgledem 3.58.19 (plik src/main_centrala.cpp, 51 483 linii)
 ================================================================================
-Patch main_centrala-v3.58.19-do-v3.58.20.patch: 6 hunkow, 24 linie kodu (reszta komentarze
+Patch main_centrala-v3.58.19-do-v3.58.20.patch: 6 hunkow, ok. 36 linii kodu (reszta komentarze
 i historia). Zmiana tylko w C++ (blok ZEW2-FILTR + wilgotnosc()). HTML/JS strony WWW,
 /api/status, Firebase, telemetria minutowa, filtr skokow, wilgotnosc - bez zmian (test C).
 
-   1-27        naglowek pliku [v3.58.20 DHT22-UJEMNE]
-   2049-2056   HISTORIA WERSJI: wpis [v3.58.20]
-   6611-6624   blok ZEW2-FILTR: stale ZEW2_U2_BAZA_C (3276,8), ZEW2_U2_MIN_C (-3276,75),
-               ZEW2_U2_MAX_C (-3236,75) i funkcja zew2DekodujU2(float*):
-                 t poza przedzialem -> false, t bez zmian
-                 t w przedziale (obraz U2 zakresu -0,1..-40,0 C) -> t = -lround((t + 3276,8)*10)/10
-   6890        FIRMWARE_VERSION = "v3.58.20"
-   34585-34596 wilgotnosc(): zaraz po read_dht(), przy DHT_OK: zew2DekodujU2(&dhtTempPomijana);
-               pierwsze wykrycie -> WARN DC_SENSOR "DHT22 Zew2 zdarzenie=u2 surowa=-3276.7 t=-0.1
-               msg=..."; licznik static dhtU2
-   34637-34638 linia INFO "DHT22 diagnostyka ...": nowe pole u2=<licznik> (przed kod=)
+   1-32        naglowek pliku [v3.58.20 DHT22-UJEMNE]
+   2054-2062   HISTORIA WERSJI: wpis [v3.58.20]
+   6616-6647   blok ZEW2-FILTR: stale ZEW2_U2_BAZA_C (3276,8), ZEW2_U2_MIN_C (-3276,75),
+               ZEW2_U2_MAX_C (-3236,75), ZEW2_U2_12_BAZA_C (409,6), ZEW2_U2_12_MIN_C (369,55),
+               ZEW2_U2_12_MAX_C (409,55) i funkcja zew2DekodujU2(float*, uint8_t* wariant):
+                 t w -3276,75..-3236,75 (obraz U2 16-bit, -0,1..-40,0 C) -> t = -lround((t + 3276,8)*10)/10, wariant 16
+                 t w 369,55..409,55     (obraz U2 12-bit, -0,1..-40,0 C) -> t = -lround((409,6 - t)*10)/10, wariant 12
+                 inaczej -> false, t bez zmian
+   6913        FIRMWARE_VERSION = "v3.58.20"
+   34608-34620 wilgotnosc(): zaraz po read_dht(), przy DHT_OK: zew2DekodujU2(&dhtTempPomijana, &wariant);
+               pierwsze wykrycie -> WARN DC_SENSOR "DHT22 Zew2 zdarzenie=u2 wariant=16 surowa=-3276.7
+               t=-0.1 msg=..."; licznik static dhtU2
+   34661-34662 linia INFO "DHT22 diagnostyka ...": nowe pole u2=<licznik> (przed kod=)
 
 Dlaczego tak (eksport Firebase 26.11, 1271 probek co minute):
    - t_zewn_2 schodzi 0,8 -> 0,2 -> 0,0 i ZNIKA (null); przez caly dzien ani jednej wartosci
@@ -30,8 +32,16 @@ Dlaczego tak (eksport Firebase 26.11, 1271 probek co minute):
    do 3.58.19: "DHT22 Zew2 zdarzenie=zla_ramka t=-3276.x rh=8x.x"; od 3.58.20 raz:
    "DHT22 Zew2 zdarzenie=u2 surowa=-3276.x t=-0.x msg=...".
 
+Trzy kodowania ujemnych spotykane w DHT22 (przeglad zgloszen 2012-2026, szczegoly w README.md):
+   - znak-modul (karta katalogowa, oryginal Aosong/ASAIR): -0,1 = 0x8001 -> biblioteka OK
+   - U2 16-bit (najczestszy klon):                          -0,1 = 0xFFFF -> biblioteka -3276,7
+   - U2 12-bit (rzadszy klon, ESPHome #5322):              -0,1 = 0x0FFF -> biblioteka +409,5
+   Z danych Firebase nie da sie odroznic 16-bit od 12-bit (oba daja "zla ramke"), dlatego
+   dekoder obsluguje oba; linia WARN "zdarzenie=u2 wariant=16|12" powie, ktory to egzemplarz.
+
 Bezpieczenstwo zmiany:
-   - prawdziwy DHT22 (znak-modul) nigdy nie oddaje wartosci z -3276,75..-3236,75 (jego zakres
-     to -40..80), wiec dla niego dekoder jest przezroczysty (test A[15]: 400 wartosci).
+   - prawdziwy DHT22 (znak-modul) nigdy nie oddaje wartosci z -3276,75..-3236,75 ani 369,55..409,55
+     (jego zakres to -40..80), wiec dla niego dekoder jest przezroczysty (test A[15]: 3 x 400 wartosci
+     + 801 dodatnich 0,0..80,0).
    - U2 ponizej -40 C (nierealne) i smieci (-3276,8, +3276,7, RH > 100) odpadaja jak dotad.
    - odkodowana wartosc idzie przez ten sam filtr skokow (>3 C -> powtorka po 3 s).

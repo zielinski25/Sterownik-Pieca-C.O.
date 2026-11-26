@@ -2,8 +2,8 @@
 
 Data: 2026-11-27 · następna po **3.58.19** (`firmware-patch/v3.58.19-plynny-deszcz/`), zawiera wszystko, co ona.
 
-Zmienia się **jeden plik**: `src/main_centrala.cpp` (51 459 linii, SHA-256 w `SHA256SUMS.txt`).
-Patch względem 3.58.19: **6 hunków, 24 linie kodu** (reszta to komentarze i wpis w historii), wyłącznie C++
+Zmienia się **jeden plik**: `src/main_centrala.cpp` (51 483 linie, SHA-256 w `SHA256SUMS.txt`).
+Patch względem 3.58.19: **6 hunków, ok. 36 linii kodu** (reszta to komentarze i wpis w historii), wyłącznie C++
 w bloku `ZEW2-FILTR` i w `wilgotnosc()`. HTML/JS strony WWW, `/api/status`, Firebase, telemetria minutowa —
 bajt w bajt / pole w pole jak w 3.58.19 (sprawdzane testem). **Panel LCD bez zmian** (v1.5.18).
 
@@ -43,26 +43,57 @@ Dla ramki U2: −0,1 → **−3276,7**, −5,0 → −3271,8, −40,0 → −323
 `diag archive cat SENSOR on` → log `DHT22 Zew2 zdarzenie=zla_ramka t=-3276.x rh=8x.x` (3.58.19) albo
 `zdarzenie=u2 surowa=-3276.x t=-0.x` (3.58.20).
 
-## Zmiana
-`zew2DekodujU2(float*)` w bloku `ZEW2-FILTR` (testowalnym na PC): jeśli biblioteka zwróci `t` z przedziału
-**−3276,75..−3236,75** (obraz U2 zakresu −0,1..−40,0 °C — prawdziwy DHT22 nigdy nie oddaje takich wartości),
-to `t = −lround((t + 3276,8)·10)/10`. Wywołanie w `wilgotnosc()` zaraz po `read_dht()`, tylko przy `DHT_OK`,
-**przed** `zew2RamkaPoprawna()` (zakres −40..80 sprawdzany na przeliczonej wartości) i przed filtrem skoków
-(odkodowana wartość przechodzi tę samą weryfikację co każda inna). Pierwsze wykrycie: jedna linia WARN
-`DHT22 Zew2 zdarzenie=u2 surowa=… t=… msg="klon koduje ujemne w U2, przeliczam"`; w linii INFO
-`DHT22 diagnostyka` nowe pole `u2=<licznik>`.
+## Co mówią inni o tym problemie (przegląd zgłoszeń, 2012–2026)
+To znany, wielokrotnie opisany problem z klonami DHT22/AM2302 — ten sam objaw „−3276,x °C poniżej zera” zgłaszano
+w Tasmocie, ESPHome, ESPEasy, bibliotekach Adafruit (Arduino i CircuitPython), DHTNew Roba Tillaarta i na Arduino
+Forum (2012, 2017, 2024). Wnioski z tych zgłoszeń:
 
-Wartości dodatnie, prawdziwe ujemne ze znakiem w bicie 15, 0,0/−0,0, NaN, U2 poniżej −40 °C i śmieci
-(−3276,8, +3276,7, RH > 100) — bez zmian w zachowaniu. Skutek uboczny na plus: **wilgotność** z DHT22 przy
+| kodowanie ujemnych | przykład −0,1 °C (bajty 2–3) | co oddaje nasza biblioteka | kto tak robi |
+|---|---|---|---|
+| **znak-moduł** (karta katalogowa) | `80 01` | −0,1 ✔ | oryginalne Aosong/ASAIR — zrzut z prawdziwego czujnika w DHTNew #100: `80 02` = −0,2 |
+| **U2 16-bit** | `FF FF` | **−3276,7** ✘ | najczęstszy klon (AliExpress/eBay); Tasmota #14164, ESPHome #1744, Adafruit DHT #177/#221, DHTNew #100, Arduino Forum 1213646 |
+| **U2 12-bit** | `0F FF` | **+409,5** ✘ | rzadszy klon „świeżo z Chin”; ESPHome #5322 (log: `0F F8` → 408,8 °C zamiast −0,8), poprawione w ESPHome PR #6074 |
+
+Jak to rozwiązali inni:
+- **Tasmota** (`xsns_06_dht.ino`, 12.2021): bierze 16 bitów jako `int16_t` (U2), a znak-moduł rozpoznaje po górnej
+  ćwiartce bajtu `0x8_` → `-(0xFFF & raw)`.
+- **ESPHome** (`decode_dht22_temperature()`, 01.2024 + poprawka 11.2026): bit 15 = 1 i bit 14 = 0 → znak-moduł;
+  bit 15 = 1 i bit 14 = 1 → U2 16-bit; bit 15 = 0 i bit 11 = 1 → U2 12-bit (rozszerzenie znaku `| 0xF000`).
+- **DHTNew** (Tillaart, 0.4.22, 11.2024): bit 15 = 1 → jeśli bit 14 = 0 znak-moduł, inaczej `int16_t`.
+- **Adafruit DHT-sensor-library** #221 (12.2024): propozycja „zawsze `int16_t`” — ale to psuje oryginały
+  (−0,2 = `80 02` czytane jako −3276,6); nie wdrożono.
+- Dedykowane biblioteki: `Zapivara/DHT22_Clone_ESP32` (02.2026, RMT jak u nas, autodetekcja po `bajt2 == 0xFF`),
+  `DMohammed/DHT22_Universal`.
+- Proste obejścia użytkowników: `if (t < -50) t = -3276.8 - t;` (Arduino Forum 2024) — to w istocie nasza formuła.
+
+Nasza sytuacja: biblioteka `dhtESP32-rmt` zwraca już `float`, bez surowych bajtów, więc nie da się patrzeć na bity —
+ale obraz każdego z błędnych kodowań po stronie `float` jest jednoznaczny i leży daleko poza −40..80 °C, więc
+przeliczenie po wartości jest równoważne i równie bezpieczne. **Z danych Firebase nie da się odróżnić klona 16-bit
+od 12-bit** (oba dają „złą ramkę” i BRAK DANYCH), dlatego dekoder obsługuje oba, a log WARN mówi, który to był.
+
+## Zmiana
+`zew2DekodujU2(float*, uint8_t* wariant)` w bloku `ZEW2-FILTR` (testowalnym na PC):
+- `t` w **−3276,75..−3236,75** (obraz U2 16-bit dla −0,1..−40,0 °C) → `t = −lround((t + 3276,8)·10)/10`, wariant 16;
+- `t` w **369,55..409,55** (obraz U2 12-bit dla −0,1..−40,0 °C) → `t = −lround((409,6 − t)·10)/10`, wariant 12;
+- inaczej bez zmian. Prawdziwy DHT22 nigdy nie oddaje wartości z tych przedziałów (jego zakres to −40..80 °C).
+
+Wywołanie w `wilgotnosc()` zaraz po `read_dht()`, tylko przy `DHT_OK`, **przed** `zew2RamkaPoprawna()` (zakres −40..80
+sprawdzany na przeliczonej wartości) i przed filtrem skoków (odkodowana wartość przechodzi tę samą weryfikację co
+każda inna). Pierwsze wykrycie: jedna linia WARN `DHT22 Zew2 zdarzenie=u2 wariant=16 surowa=-3276.7 t=-0.1 msg="klon
+koduje ujemne w U2, przeliczam"`; w linii INFO `DHT22 diagnostyka` nowe pole `u2=<licznik>`.
+
+Wartości dodatnie 0..80, prawdziwe ujemne ze znakiem w bicie 15, 0,0/−0,0, NaN, U2 poniżej −40 °C i śmieci
+(−3276,8, +3276,7, +409,6, RH > 100) — bez zmian w zachowaniu. Skutek uboczny na plus: **wilgotność** z DHT22 przy
 mrozie przestaje zamierać (do 3.58.19 odpadała razem z temperaturą).
 
 ## Testy na PC (`tests/uruchom_testy.sh`, wynik w `WYNIKI/testy-pc.txt`)
-- **A** blok `ZEW2-FILTR` wycięty z pliku: 13 scenariuszy z 3.58.10 (regresja) + `[14]` dekoder na granicach,
-  `[15]` wszystkie 400 wartości −0,1..−40,0 °C w obu kodowaniach przez dokładną formułę biblioteki,
-  `[16]` scenariusz z 26.11 — **98 sprawdzeń, 0 błędów** (także ASan+UBSan).
-- **B** prawdziwa `wilgotnosc()` z atrapami: 9 scenariuszy z 3.58.10 + `[10]` klon U2 poniżej zera
-  (Zew 2 −0,1/−0,3/−1,2, RH ACCEPTED, WARN raz, `u2=3`, `jsonTempDiag() = "-0.1"`), `[11]` śmieci nadal INVALID —
-  **63 sprawdzenia, 0 błędów**.
+- **A** blok `ZEW2-FILTR` wycięty z pliku: 13 scenariuszy z 3.58.10 (regresja) + `[14]` dekoder na granicach obu
+  wariantów (w tym `0x0FCC` → −5,2 z testu ESPHome PR #22615), `[15]` wszystkie 400 wartości −0,1..−40,0 °C
+  w **trzech** kodowaniach przez dokładną formułę biblioteki + 801 dodatnich 0,0..80,0 nietkniętych,
+  `[16]` scenariusz z 26.11 — **109 sprawdzeń, 0 błędów** (także ASan+UBSan).
+- **B** prawdziwa `wilgotnosc()` z atrapami: 9 scenariuszy z 3.58.10 + `[10]` klon U2 16-bit poniżej zera
+  (Zew 2 −0,1/−0,3/−1,2, RH ACCEPTED, WARN raz z `wariant=16`, `jsonTempDiag() = "-0.1"`), `[11]` śmieci nadal
+  INVALID, `[12]` klon U2 12-bit (+408,8 → −0,8, +407,9 → −1,7, `u2=6`) — **66 sprawdzeń, 0 błędów**.
 - **C** znaczniki 3.58.20, kolejność `read_dht → zew2DekodujU2 → zew2RamkaPoprawna`, `zew2RamkaPoprawna()` bez zmian,
   plik = 3.58.19 + patch (SHA), HTML i kod poza blokiem/`wilgotnosc()` identyczny z 3.58.19.
 - **D** pełne testy paczki 3.58.19 (i przez nią 3.58.18…3.58.14) na tym pliku.

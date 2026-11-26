@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Testy na PC firmware'u centrali 3.58.20 (DHT22-UJEMNE).
 #   A. blok ZEW2-FILTR wyciety z pliku centrali (wytnij_zew2_filtr.py): 13 scenariuszy z 3.58.10
-#      (regresja) + [14] zew2DekodujU2() na granicach, [15] wszystkie 400 wartosci -0,1..-40,0 C
-#      w kodowaniu U2 (klon) i znak-modul (prawdziwy DHT22) przepuszczone przez dokladna formule
+#      (regresja) + [14] zew2DekodujU2() na granicach (U2 16-bit i 12-bit), [15] wszystkie 400 wartosci
+#      -0,1..-40,0 C w trzech kodowaniach (znak-modul, U2 16-bit, U2 12-bit) przez dokladna formule
 #      biblioteki dhtESP32-rmt, [16] scenariusz z 26.11 (0,3 -> 0,0 -> -0,1 -> -0,4 -> -1,2 -> -8,0).
 #   B. PRAWDZIWA funkcja wilgotnosc() z atrapami sprzetu (wytnij_wilgotnosc.py): 9 scenariuszy
 #      z 3.58.10 (regresja) + [10] ramki -3276.7/-3276.5/-3275.6 z biblioteki = -0,1/-0,3/-1,2 na
-#      Zew 2, wilgotnosc przyjeta, WARN raz, licznik u2=; [11] smieci nadal odpadaja.
+#      Zew 2, wilgotnosc przyjeta, WARN raz, licznik u2=; [11] smieci nadal odpadaja; [12] klon 12-bit (+408.8 = -0,8).
 #   C. znaczniki 3.58.20 w pliku; plik 3.58.20 = 3.58.19 + patch (SHA).
 #   D. testy paczki 3.58.19 (A-C, w tym 3.58.18/17/16/15/14) na tym pliku.
 #   ./uruchom_testy.sh              SANITIZER=1 dodaje ASan+UBSan do A i B
@@ -53,14 +53,15 @@ def spr(w, co):
 spr(s.count('static const char* FIRMWARE_VERSION = "v3.58.20";') == 1, 'FIRMWARE_VERSION = "v3.58.20"')
 p, k = s.index('// --- ZEW2-FILTR-POCZATEK ---'), s.index('// --- ZEW2-FILTR-KONIEC ---')
 blok = s[p:k]
-spr('static bool zew2DekodujU2(float *t) {' in blok, 'zew2DekodujU2() w bloku ZEW2-FILTR (testowalnym na PC)')
-spr('static const float ZEW2_U2_BAZA_C = 3276.8f;' in blok and 'ZEW2_U2_MIN_C  = -3276.75f;' in blok and 'ZEW2_U2_MAX_C  = -3236.75f;' in blok, 'stale U2: baza 3276,8, przedzial -3276,75..-3236,75')
+spr('static bool zew2DekodujU2(float *t, uint8_t *wariant = nullptr) {' in blok, 'zew2DekodujU2() w bloku ZEW2-FILTR (testowalnym na PC)')
+spr('ZEW2_U2_BAZA_C   = 3276.8f;' in blok and 'ZEW2_U2_MIN_C    = -3276.75f;' in blok and 'ZEW2_U2_MAX_C    = -3236.75f;' in blok, 'stale U2 16-bit: baza 3276,8, przedzial -3276,75..-3236,75')
+spr('ZEW2_U2_12_BAZA_C = 409.6f;' in blok and 'ZEW2_U2_12_MIN_C  = 369.55f;' in blok and 'ZEW2_U2_12_MAX_C  = 409.55f;' in blok, 'stale U2 12-bit: baza 409,6, przedzial 369,55..409,55')
 spr(blok.index('zew2DekodujU2') < blok.index('static bool zew2Podejrzany'), 'dekoder zdefiniowany przed filtrem')
 w = s[s.index('void wilgotnosc() {'):]; w = w[:w.index('\n}\n')]
-spr(w.count('zew2DekodujU2(&dhtTempPomijana)') == 1, 'wilgotnosc(): dekodowanie dokladnie raz, na odczycie z read_dht()')
-spr(w.index('read_dht(dhtTempPomijana') < w.index('zew2DekodujU2(&dhtTempPomijana)') < w.index('zew2RamkaPoprawna(dhtErr, dhtTempPomijana'), 'kolejnosc: read_dht -> zew2DekodujU2 -> zew2RamkaPoprawna (zakres -40..80 sprawdzany PO przeliczeniu)')
+spr(w.count('zew2DekodujU2(&dhtTempPomijana, &dhtU2Wariant)') == 1, 'wilgotnosc(): dekodowanie dokladnie raz, na odczycie z read_dht()')
+spr(w.index('read_dht(dhtTempPomijana') < w.index('zew2DekodujU2(&dhtTempPomijana, &dhtU2Wariant)') < w.index('zew2RamkaPoprawna(dhtErr, dhtTempPomijana'), 'kolejnosc: read_dht -> zew2DekodujU2 -> zew2RamkaPoprawna (zakres -40..80 sprawdzany PO przeliczeniu)')
 spr('dhtErr == DHT_OK && zew2DekodujU2' in w, 'dekodowanie tylko przy DHT_OK')
-spr('zdarzenie=u2 surowa=%.1f t=%.1f' in w and 'if (dhtU2++ == 0)' in w, 'WARN o klonie U2 tylko przy pierwszym wykryciu')
+spr('zdarzenie=u2 wariant=%u surowa=%.1f t=%.1f' in w and 'if (dhtU2++ == 0)' in w, 'WARN o klonie U2 (z wariantem 16/12) tylko przy pierwszym wykryciu')
 spr('zera_temp=%lu u2=%lu kod=%u' in w, 'licznik u2= w linii DHT22 diagnostyka')
 spr(s.count('zew2RamkaPoprawna(dhtErr, dhtTempPomijana, wilgotnoscOdczytanaLok)') == 1 and 't >= -40.0f && t <= 80.0f && rh >= 1.0f && rh <= 100.0f' in blok, 'zew2RamkaPoprawna() bez zmian (zakresy jak w 3.58.9)')
 spr('[v3.58.20] — 2026-11-27 — ZEW 2 (DHT22) PONIZEJ 0 C' in s and s.startswith('// FIRMWARE_VERSION v3.58.19 -> v3.58.20'), 'naglowek i historia zmian 3.58.20')

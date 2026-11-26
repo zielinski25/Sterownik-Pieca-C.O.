@@ -1,5 +1,5 @@
 // Test na PC PRAWDZIWEGO zadania wilgotnosc() z main_centrala.cpp v3.58.20
-// ([1]-[9] = testy z paczki 3.58.10 bez zmian - regresja; [10]-[11] = [v3.58.20] klon U2).
+// ([1]-[9] = testy z paczki 3.58.10 bez zmian - regresja; [10]-[12] = [v3.58.20] klony U2 16-bit i 12-bit).
 // (wycinek: wytnij_wilgotnosc.py -> wilgotnosc_wycinek.h) z atrapami sprzetu.
 // Sprawdza to, czego test_zew2_filtr.cpp nie widzi: wspolprace filtra z bramka
 // 120 s / 2 s w zadaniu (powtorka po ~3 s, [v3.58.10] ponowienie po bledzie po ~6 s),
@@ -240,7 +240,7 @@ int main() {
   { const int p = g_odczyty; while (g_odczyty == p) { g_ms += 3000; wilgotnosc(); } }   // -3276.7 -> -0.1
   SPRAWDZ(rowne(zew2(), -0.1f), "ramka -3276.7 z biblioteki = -0.1 C na Zew 2 (do 3.58.19: zla ramka, po 255 s null)");
   SPRAWDZ(rowne(wilgotnoscOdczytana, 90.3f) && g_telAccepted == acc10 + 1 && g_telInvalid == inv10, "wilgotnosc z tej ramki przyjeta (telemetria ACCEPTED, nie INVALID)");
-  SPRAWDZ(wLogu("zdarzenie=u2 surowa=-3276.7 t=-0.1"), "WARN o klonie U2 przy pierwszym wykryciu");
+  SPRAWDZ(wLogu("zdarzenie=u2 wariant=16 surowa=-3276.7 t=-0.1"), "WARN o klonie U2 (wariant 16) przy pierwszym wykryciu");
   SPRAWDZ(!wLogu("zdarzenie=zla_ramka"), "bez logu zla_ramka");
   SPRAWDZ(!g_zew2Filtr.ponowienie, "bez ponowienia (ramka dobra)");
   SPRAWDZ(zew2Json() == "-0.1", "jsonTempDiag() = -0.1 (/api/status, Firebase)");
@@ -265,6 +265,16 @@ int main() {
   SPRAWDZ(wilgotnoscOdczytana >= 1.0f && wilgotnoscOdczytana <= 100.0f, "RH nie wziela 3366.8 (zostaje bufor poprzedniej wartosci - logika jak dotad)");
   SPRAWDZ(wLogu("zla_ramka t=-3236.7") && wLogu("zla_ramka t=-3276.8") && wLogu("zla_ramka t=3276.7") && wLogu("zla_ramka t=-0.3 rh=3366.8"), "logi zla_ramka (ostatnia: temperatura odkodowana, ale RH dyskwalifikuje ramke)");
   SPRAWDZ(rowne(zew2(), -1.2f), "Zew 2 zostaje -1.2 (poprzednia dobra)");
+
+  std::puts("[12] [v3.58.20] klon U2 12-bit (ESPHome #5322): +408.8 z biblioteki = -0.8 C na Zew 2");
+  g_ramki.push_back({DHT_OK, 408.8f, 91.5f});   // -0.8 (-1.2 -> -0.8: roznica 0.4, bez powtorki)
+  g_ramki.push_back({DHT_OK, 407.9f, 91.6f});   // -1.7
+  g_logi.clear(); const int inv12 = g_telInvalid;
+  { const int p = g_odczyty; while (g_odczyty == p) { g_ms += 3000; wilgotnosc(); } }
+  SPRAWDZ(rowne(zew2(), -0.8f) && rowne(wilgotnoscOdczytana, 91.5f), "+408.8 -> -0.8, RH 91.5 przyjeta");
+  { const int p = g_odczyty; while (g_odczyty == p) { g_ms += 3000; wilgotnosc(); } }
+  SPRAWDZ(rowne(zew2(), -1.7f) && g_telInvalid == inv12, "+407.9 -> -1.7, nic INVALID");
+  SPRAWDZ(wLogu("u2=6 kod=0"), "licznik u2=6 (4 ramki 16-bit + 2 ramki 12-bit)");
 
   std::printf("\nWILGOTNOSC(): %d sprawdzen, %d bledow, %d odczytow DHT, %zu linii logu\n", sprawdzen, bledy, g_odczyty, g_logi.size());
   return bledy ? 1 : 0;

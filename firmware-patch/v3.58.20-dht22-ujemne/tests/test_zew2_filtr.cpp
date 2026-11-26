@@ -192,10 +192,21 @@ int main() {
     t = 80.0f;    SPRAWDZ(!zew2DekodujU2(&t) && rowne(t, 80.0f), "80.0 nietkniete");
     t = NAN;      SPRAWDZ(!zew2DekodujU2(&t) && std::isnan(t), "NaN zostaje NaN");
     t = -INFINITY; SPRAWDZ(!zew2DekodujU2(&t), "-inf zostaje");
+    uint8_t w16 = 0, w12 = 0;
+    t = -3276.7f; SPRAWDZ(zew2DekodujU2(&t, &w16) && w16 == 16, "wariant 16 zglaszany");
+    // U2 12-bit (ESPHome #5322): -0,1 = 0x0FFF -> biblioteka +409,5; -40,0 = 0x0E70 -> +369,6
+    t = 409.5f;  SPRAWDZ(zew2DekodujU2(&t, &w12) && rowne(t, -0.1f) && w12 == 12, "+409.5 -> -0.1 (U2 12-bit)");
+    t = 408.8f;  SPRAWDZ(zew2DekodujU2(&t) && rowne(t, -0.8f), "+408.8 -> -0.8 (log z ESPHome #5322)");
+    t = 404.4f;  SPRAWDZ(zew2DekodujU2(&t) && rowne(t, -5.2f), "+404.4 -> -5.2 (0x0FCC, test ESPHome PR #22615)");
+    t = 369.6f;  SPRAWDZ(zew2DekodujU2(&t) && rowne(t, -40.0f), "+369.6 -> -40.0 (granica)");
+    t = 369.5f;  SPRAWDZ(!zew2DekodujU2(&t) && rowne(t, 369.5f), "+369.5 (obraz -40.1) zostaje -> zla ramka");
+    t = 409.6f;  SPRAWDZ(!zew2DekodujU2(&t) && rowne(t, 409.6f), "+409.6 (0x1000, w 12-bit U2 to 0) zostaje -> zla ramka");
+    t = 300.0f;  SPRAWDZ(!zew2DekodujU2(&t), "+300.0 zostaje -> zla ramka");
+    t = 80.0f;   SPRAWDZ(!zew2DekodujU2(&t) && rowne(t, 80.0f), "+80.0 (gorna granica DHT22) nietkniete");
   }
 
-  std::puts("[15] [v3.58.20] wszystkie 400 wartosci -0,1..-40,0 C w obu kodowaniach przez biblioteke + dekoder");
-  { int zleU2 = 0, zleZM = 0, zleDod = 0;
+  std::puts("[15] [v3.58.20] wszystkie 400 wartosci -0,1..-40,0 C w trzech kodowaniach (znak-modul, U2 16-bit, U2 12-bit) przez biblioteke + dekoder");
+  { int zleU2 = 0, zleZM = 0, zleDod = 0, zleU2_12 = 0;
     for (int m = 1; m <= 400; ++m) {
       // klon: U2 (65536 - m) -> biblioteka daje -3276,8 + m/10 -> dekoder ma oddac -m/10
       float tu2 = biblioteka((uint16_t)(65536 - m));
@@ -207,7 +218,13 @@ int main() {
       // dodatnie m/10 (obie wersje tak samo) -> nietkniete
       float td = biblioteka((uint16_t)m);
       if (zew2DekodujU2(&td) || !rowne(td, m / 10.0f)) ++zleDod;
+      // klon 12-bit: U2 na 12 bitach (4096 - m) -> biblioteka daje 409,6 - m/10 -> dekoder ma oddac -m/10
+      float t12 = biblioteka((uint16_t)(4096 - m)); uint8_t w = 0;
+      if (!zew2DekodujU2(&t12, &w) || w != 12 || !rowne(t12, -m / 10.0f) || !zew2RamkaPoprawna(DHT_OK, t12, 90.0f)) ++zleU2_12;
     }
+    SPRAWDZ(zleU2_12 == 0, "U2 12-bit: kazda z 400 wartosci odkodowana co do 0,1 C i przechodzi zew2RamkaPoprawna()");
+    for (int m = 0; m <= 800; ++m) { float t = biblioteka((uint16_t)m); if (zew2DekodujU2(&t)) ++zleDod; }
+    SPRAWDZ(zleDod == 0, "dodatnie 0,0..80,0 (caly zakres DHT22): zadna nie jest ruszana");
     SPRAWDZ(zleU2 == 0, "U2: kazda z 400 wartosci odkodowana co do 0,1 C i przechodzi zew2RamkaPoprawna()");
     SPRAWDZ(zleZM == 0, "znak-modul: zadna z 400 wartosci nie jest ruszana");
     SPRAWDZ(zleDod == 0, "dodatnie: zadna z 400 wartosci nie jest ruszana");
