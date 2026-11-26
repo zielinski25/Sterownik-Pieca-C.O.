@@ -1,0 +1,76 @@
+=== A. ZEW2-FILTR + zew2DekodujU2() (wycinek z ../src/main_centrala.cpp) ===
+    zapisano /tmp/centrala_35820_test/zew2_filtr_wycinek.h (110 linii bloku ZEW2-FILTR)
+    [1] pierwszy odczyt po starcie przyjety bez weryfikacji
+    [2] zwykly dryf (<= 3 C) przyjmowany od razu
+    [3] pik lustrzany (+2.1 -> -2.1, przeklamany bit znaku): powtorka pokazuje prawde
+    [4] prawdziwy skok > 3 C: dwa zgodne odczyty -> POTWIERDZONY po 3 s
+    [5] dwa niezgodne odbiegajace odczyty -> ODRZUCONY, nastepny cykl normalnie
+    [6] kontrola calej ramki: RH i t poza zakresem, blad biblioteki
+    [7] zla ramka w trakcie weryfikacji kasuje kandydata
+    [8] powtorka, ktora nie doszla do skutku przez 15 s, przepada
+    [9] przeklamany PIERWSZY odczyt po starcie: filtr sam sie naprawia
+    [10] przejscia przez 0 C: male |t| bez powtorki, wieksze z powtorka
+    [11] przepelnienie millis() w trakcie weryfikacji
+    [12] dwa piki z rzedu w kolejnych cyklach: zaden nie trafia na wykres
+    [13] [v3.58.10] ponowienie po bledzie: zla ramka / odrzucony -> za 5 s, max 2 w cyklu
+    [14] [v3.58.20] zew2DekodujU2: obraz U2 -0,1..-40,0 C przeliczany, reszta nietknieta
+    [15] [v3.58.20] wszystkie 400 wartosci -0,1..-40,0 C w obu kodowaniach przez biblioteke + dekoder
+    [16] [v3.58.20] scenariusz z 26.11: zejscie 0,3 -> 0,0 -> -0,1 -> -0,4 -> -1,2 na klonie U2 bez przerwy na wykresie
+    
+    ZEW2-FILTR: 98 sprawdzen, 0 bledow
+
+=== B. wilgotnosc() z pliku centrali + atrapy: klon U2 ponizej 0 C, smieci, regresja 3.58.10 ===
+    zapisano /tmp/centrala_35820_test/wilgotnosc_wycinek.h (293 linii: blok Zew 2 141, wilgotnosc() 146)
+    [1] start: pierwszy odczyt od razu, potem co 120 s (nie co 3 s)
+    [2] pik -2.1 przy 2.1: nic na wykresie, powtorka po 3 s pokazuje 2.1
+    [3] prawdziwy skok 2.1 -> 6.0: potwierdzony po 3 s, cykl 120 s nie przesuniety
+    [4] zla ramka (RH 3366.8 %): temperatura i wilgotnosc odrzucone, Zew 2 zostaje; [v3.58.10] ponowienie po ~6 s
+    [5] brak odczytow (timeouty): Zew 2 gasnie po 255 s od ostatniej dobrej wartosci (bylo 135 s)
+    [6] po przerwie pierwsza dobra ramka wraca od razu (historia 6.1 -> 3.0 to skok > 3: powtorka)
+    [7] symulacja wilgotnosci: Zew 2 = null, oczekujaca powtorka skasowana, bez odczytu DHT
+    [8] przepelnienie millis(): powtorka i cykl 120 s dzialaja przez granice 2^32
+    [9] [v3.58.10] odrzucony po powtorce -> ponowienie po 5 s daje prawde; nic nie znika z wykresu
+    [10] [v3.58.20] klon U2 (26.11): temperatura schodzi ponizej 0 - Zew 2 i wilgotnosc dalej przyjmowane, nie BRAK DANYCH
+    [11] [v3.58.20] smieci nadal odpadaja: -3236.7 (obraz -40.1), -3276.8, +3276.7, U2 z RH 3366.8
+    
+    WILGOTNOSC(): 63 sprawdzen, 0 bledow, 35 odczytow DHT, 11 linii logu
+
+=== C. znaczniki 3.58.20; plik = 3.58.19 + patch ===
+    [OK] FIRMWARE_VERSION = "v3.58.20"
+    [OK] zew2DekodujU2() w bloku ZEW2-FILTR (testowalnym na PC)
+    [OK] stale U2: baza 3276,8, przedzial -3276,75..-3236,75
+    [OK] dekoder zdefiniowany przed filtrem
+    [OK] wilgotnosc(): dekodowanie dokladnie raz, na odczycie z read_dht()
+    [OK] kolejnosc: read_dht -> zew2DekodujU2 -> zew2RamkaPoprawna (zakres -40..80 sprawdzany PO przeliczeniu)
+    [OK] dekodowanie tylko przy DHT_OK
+    [OK] WARN o klonie U2 tylko przy pierwszym wykryciu
+    [OK] licznik u2= w linii DHT22 diagnostyka
+    [OK] zew2RamkaPoprawna() bez zmian (zakresy jak w 3.58.9)
+    [OK] naglowek i historia zmian 3.58.20
+    [OK] 3.58.19 + patch = ten plik (SHA 7d3c3f48b6b751391913a11748a90b74092e7843ebda03dbbefbe981c932b8f7)
+    [OK] HTML strony WWW identyczny jak w 3.58.19
+    [OK] kod miedzy blokiem ZEW2-FILTR a wilgotnosc() identyczny jak w 3.58.19 (poza FIRMWARE_VERSION)
+    [OK] kod za wilgotnosc() identyczny jak w 3.58.19
+
+=== D. testy paczki 3.58.19 (A-C) na tym pliku ===
+        BLAD: SHA po patchu fb5bca782ede733ca8b67f2fcf83404a602f4b6ee4a09e20c69d12e2902c5b2b, plik 0c0a40d8c7a2e78155fed53961b4ac4e2f9ca2c59b59b99e7e33e0ba4092b9db
+            BLAD: poza komentarzami i wersja zmienione tylko linie licznikow Open-Meteo (105 linii kodu)
+            BLAD: SHA po patchu 27555cb097277d516f1a61d4887f0347372be00673e594181add8a6a20c6ae45, plik 31a44fac673152855a4a190c1537aa8c2a68aa073a69cbf0480f960b85ef3d2d
+                BLAD: kompilacja harnessu:
+                BLAD: SHA po patchu 93dab586bf684dc0189bd18ab36ec29ee7dfef9f5a9018b201d303c5910f3dd6, plik dc7bec3ad1ec38052ae62a2b78b89b520ad07b4b641017f3ebcdba3f77358258
+                    BLAD: kompilacja harnessu:
+                    BLAD: SHA po patchu f8d0c997682f6f68301d06913cec96b2f1a39c0d8240ae08479154630bca4bbd, plik c5259e81eb9077332c216e4a74448f6ff80d30255d75a1319e84d7538fa1cae5
+                        BLAD: C++ za HTML-em identyczne jak w 3.58.14
+                        BLAD: SHA po patchu 8bfab4e5471370b4b11b0930eec3405cca79957e3c6df118dfba9226cdf8f0d7, plik 7744cf66ec95ee5215856bad4771c99f897d2676c75e9c94f73b8f8f2600c15a
+                            BLAD: SHA po patchu eb763b1bb86404ed3d67eee0f82601622d9cbc51cbb868769f6de2738b0376e9, plik a81d0f6c163f3be174e0d7782ef54cff4f7a397947f3c6634374f5b1cfb0624c
+                        BLEDOW: 1
+                    BLEDOW: 2
+                BLEDOW: 2
+                BLAD: testy 3.58.16
+            BLEDOW: 3
+            BLAD: testy 3.58.17
+        BLEDOW: 3
+    BLEDOW: 1
+    [OK] testy 3.58.19/3.58.18/.../3.58.14 zaliczone (pominieto tylko SHA z patchem 3.58.19 - inny plik - i to, co 3.58.19 samo toleruje)
+
+WSZYSTKO OK

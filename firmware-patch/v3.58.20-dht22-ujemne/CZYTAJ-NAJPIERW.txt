@@ -1,0 +1,70 @@
+FIRMWARE CENTRALI 3.58.20 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
+(platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.19 (plynne odliczanie deszczu) + ZEW 2 (DHT22) PONIZEJ 0 C.
+Patch wzgledem 3.58.19: 6 hunkow, 24 linie kodu. Strona WWW, /api/status, Firebase: bez zmian.
+Panel LCD: BEZ ZMIAN (v1.5.18 zostaje). Jesli 3.58.19 nie bylo wgrane - wgraj od razu te.
+
+PO CO (zgloszenie z 26.11: "Zew 2 BRAK DANYCH, Zew 1 pokazuje 1.9 C")
+-----------------------------------------------------------------------
+Z eksportu Firebase z 26.11 wynika, ze Zew 2 schodzi do 0,0 C i znika - nigdy nie pokazuje
+wartosci ujemnej, a w tych samych chwilach przestaje byc przyjmowana tez wilgotnosc z tej samej
+ramki. Czyli cala ramka odpada jako "zla" (poza -40..80 C). Ten egzemplarz DHT22 koduje
+temperature ujemna w kodzie U2 (-0,1 = 0xFFFF), a biblioteka dekoduje wg karty katalogowej
+(bit znaku + modul) i oddaje -3276,7. Od 3.58.20 taka wartosc (tylko z przedzialu -3276,7..-3236,8,
+czyli obraz -0,1..-40,0 C) jest przeliczana na prawdziwa temperature. Prawdziwy DHT22 ze znakiem
+w bicie 15 przechodzi bez zmian - poprawka dziala dla obu kodowan.
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.20"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od 7d3c3f48):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.19-do-v3.58.20.patch, -p1 z katalogu projektu, na plik 3.58.19
+(SHA fb5bca78...). Wynik musi miec SHA z SHA256SUMS.txt - inaczej wgraj caly plik z src\.
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+Select-String '^\[env:' platformio.ini      -> esp32-s3-n16r8 (NIE esp32dev)
+PlatformIO -> Build, potem Upload   (pio run -e esp32-s3-n16r8   i   -t upload)
+Spodziewane: 0 ostrzezen, Flash wiekszy o ok. 200-300 B, RAM +4 B. Release na GitHub: tag 3.58.20.
+
+KROK 3 - SPRAWDZENIE (http://192.168.100.151, Ctrl+F5)
+------------------------------------------------------
+0. /api/lan/status: "fw":"v3.58.20". Telegram: "Centrala wystartowala: v3.58.20".
+1. Gdy na dworze jest ponizej 0 C: /api/status -> "t_zewn_2": -1.3 (liczba ujemna, nie null)
+   najpozniej ~2 min po starcie. Na Androidzie / LCD kafelek Zew 2 pokazuje wartosc ujemna,
+   zblizona do Zew 1 (DHT22 chodzi u Ciebie ~2,5-3 C nizej niz DS18B20).
+2. Terminal (WWW) -> "diag archive cat SENSOR on" -> Logi albo /api/log-lines?lines=200:
+   przy pierwszej ujemnej ramce JEDNA linia WARN:
+     DHT22 Zew2 zdarzenie=u2 surowa=-3276.7 t=-0.1 msg="klon koduje ujemne w U2, przeliczam"
+   Jesli jej nie ma, a Zew 2 dalej null przy mrozie -> przyczyna jest inna (kod=5/6 w linii
+   "DHT22 diagnostyka ... kod=" = BAD_DATA/CHECKSUM, czyli timing RMT na zimnie) - daj znac.
+   Po poziomie INFO ("diag archive level INFO") w linii "DHT22 diagnostyka" jest licznik u2=N
+   (ile ramek przeliczono od startu).
+3. Powyzej 0 C wszystko jak w 3.58.19 (dekoder nie dotyka wartosci dodatnich).
+4. Wilgotnosc z DHT22 (kafelek wilgotnosci, wykres) przy mrozie nie zamiera - do 3.58.19 zamierala
+   razem z Zew 2 (ta sama ramka).
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa.
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\testy-pc.txt)
+----------------------------------------------
+Blok ZEW2-FILTR i CALA funkcja wilgotnosc() wyciete z tego pliku, skompilowane g++ (-Wall -Wextra
+-Werror, tez ASan+UBSan): 13 + 9 scenariuszy z paczki 3.58.10 bez zmian (regresja) oraz nowe:
+dekoder na granicach (-3276,7 -> -0,1; -3236,8 -> -40,0; -3236,7, -3276,8, +3276,7, 0,0, -0,0,
+-0,1, -5,0, 2,1, NaN nietkniete), wszystkie 400 wartosci -0,1..-40,0 C w obu kodowaniach przez
+dokladna formule biblioteki dhtESP32-rmt (U2 odkodowane co do 0,1 C, znak-modul i dodatnie
+nietkniete, U2 ponizej -40 odpada), scenariusz z 26.11 (0,3 -> 0,0 -> -0,1 -> -0,4 -> -1,2 ->
+skok -8,0 z powtorka), w wilgotnosc(): ramki -3276.7/-3276.5/-3275.6 z biblioteki daja -0,1/-0,3/
+-1,2 na Zew 2 i /api/status, wilgotnosc z tej ramki ACCEPTED, WARN raz, u2=3, smieci nadal
+INVALID. Plik = 3.58.19 + patch (SHA), HTML identyczny, kod poza blokiem/wilgotnosc() identyczny,
+pelne testy 3.58.19/3.58.18/.../3.58.14 na tym pliku.
+Caly plik NIE byl kompilowany w PlatformIO.

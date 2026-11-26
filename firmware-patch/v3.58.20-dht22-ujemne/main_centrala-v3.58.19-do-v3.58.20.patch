@@ -1,0 +1,105 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,27 @@
++// FIRMWARE_VERSION v3.58.19 -> v3.58.20 (2026-11-27) — ZEW 2 (DHT22) PONIŻEJ 0 °C: KLON KODUJE UJEMNE W U2.
++//
++// [v3.58.20 DHT22-UJEMNE] — 2026-11-27
++// Zgłoszenie użytkownika (26.11): przy pierwszych przymrozkach kafelek Zew 2
++// (DHT22) pokazuje BRAK DANYCH, a Zew 1 (DS18B20) ~2 °C. Eksport Firebase z 26.11
++// (1271 próbek co minutę): Zew 2 schodzi 0,8 → 0,2 → 0,0 i znika, nigdy nie ma
++// wartości ujemnej; wilgotność z tej samej ramki też przestaje być przyjmowana
++// (age rośnie do 6 h) — czyli odpada CAŁA RAMKA w zew2RamkaPoprawna(), nie filtr.
++// Przy temperaturze oscylującej wokół 0 ramki 0,0 przechodzą, a ramki −0,1
++// odpadają (naprzemiennie 0 / BRAK co 2 min), od −0,x na stałe BRAK.
++// Przyczyna: ten egzemplarz DHT22 (klon AM2302) koduje temperaturę ujemną w
++// kodzie uzupełnień do dwóch (U2, −0,1 = 0xFFFF), a nie — jak karta katalogowa —
++// znak-moduł (bit 15 = minus, −0,1 = 0x8001). Biblioteka dhtESP32-rmt dekoduje
++// wg karty: ((d2 & 0x7F)·256 + d3)/10 z minusem gdy bit 15 → −0,1 wychodzi jako
++// −3276,7, −5,0 jako −3271,8 (zawsze −3276,8 + |t|). To jest poza −40..80 →
++// zła ramka → odrzucona razem z wilgotnością → po 255 s Zew 2 = null.
++// Teraz: zew2DekodujU2() — jeśli biblioteka zwróci t w −3276,7..−3236,8 (dokładnie
++// obraz U2 zakresu −0,1..−40,0 °C), temperatura = −(t + 3276,8) zaokrąglona do
++// 0,1. Wartości z poprawnym znakiem (prawdziwy DHT22) przechodzą bez zmian, więc
++// poprawka jest bezpieczna dla obu kodowań. Odkodowana wartość idzie przez
++// dotychczasowy filtr ZEW2-FILTR (skok > 3 °C → powtórka). Pierwsze wykrycie
++// loguje WARN (DC_SENSOR), licznik u2= w linii „DHT22 diagnostyka”.
++// Bez zmian: wilgotność, /api/status, Firebase, panel LCD, strona WWW.
++//
+ // FIRMWARE_VERSION v3.58.18 -> v3.58.19 (2026-11-23) — deszcz_min LICZONE NA BIEŻĄCO (PŁYNNE ODLICZANIE NA LCD).
+ //
+ // [v3.58.19 PLYNNY-DESZCZ] — 2026-11-23
+@@ -2022,6 +2046,14 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.20] — 2026-11-27 — ZEW 2 (DHT22) PONIZEJ 0 C: KLON KODUJE UJEMNE W U2
++// Co: zew2DekodujU2() w bloku ZEW2-FILTR - temperatura DHT22 w -3276,7..-3236,8
++//     (obraz U2 zakresu -0,1..-40,0 C po dekodowaniu znak-modul z biblioteki)
++//     przeliczana na -(t + 3276,8). Dotad taka ramka byla "zla" (poza -40..80),
++//     odpadala razem z wilgotnoscia i po 255 s Zew 2 = BRAK DANYCH (26.11:
++//     Zew 2 znikala przy ~0 C, gdy Zew 1 pokazywala +2..+3 C).
++// Bez zmian: wilgotnosc, filtr skokow, /api/status, Firebase, panel LCD, WWW.
++//
+ // [v3.58.19] — 2026-11-23 — deszcz_min LICZONE NA BIEZACO (PLYNNE ODLICZANIE NA LCD)
+ // Co: pobierzPrognozeDeszczu() zapamietuje chwile (millis()) poczatku i konca
+ //     opadu z dokladnoscia do minuty (przesuniecie w slocie z zegara centrali),
+@@ -6576,6 +6608,21 @@
+          t >= -40.0f && t <= 80.0f && rh >= 1.0f && rh <= 100.0f;
+ }
+ 
++// [v3.58.20 DHT22-UJEMNE] Klon DHT22 kodujacy ujemne w U2: biblioteka (znak-modul
++// wg karty katalogowej) oddaje -0,1 C jako -3276,7, -40,0 C jako -3236,8 (zawsze
++// -3276,8 + |t|). Taki odczyt przeliczamy na prawdziwa temperature; prawdziwy
++// DHT22 (bit znaku) nigdy nie zwroci wartosci z tego przedzialu, a zwykly
++// zakres -40..80 przechodzi nietkniety. Zwraca true, gdy przeliczono.
++static const float ZEW2_U2_BAZA_C = 3276.8f;                  // 0x8000 / 10
++static const float ZEW2_U2_MIN_C  = -3276.75f;                // obraz -0,1 C (z zapasem na float)
++static const float ZEW2_U2_MAX_C  = -3236.75f;                // obraz -40,0 C
++static bool zew2DekodujU2(float *t) {
++  if (!isfinite(*t) || *t < ZEW2_U2_MIN_C || *t > ZEW2_U2_MAX_C) return false;
++  const long dziesiate = lroundf((*t + ZEW2_U2_BAZA_C) * 10.0f);   // |t| w 0,1 C: 1..400
++  *t = -(float)dziesiate / 10.0f;
++  return true;
++}
++
+ static bool zew2Podejrzany(float t, float ostatnia) {
+   if (!isfinite(ostatnia)) return false;                  // brak historii: przyjmij
+   if (fabsf(t - ostatnia) > ZEW2_PROG_SKOKU_C) return true; // skok > 3 C w 120 s
+@@ -6840,7 +6887,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.19";
++static const char* FIRMWARE_VERSION = "v3.58.20";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -34536,6 +34583,17 @@
+     dhtOstatniaProbaMs = millis();
+     dhtBylaProba = true;
+     uint8_t dhtErr = read_dht(dhtTempPomijana, wilgotnoscOdczytanaLok, DHT_PIN, DHT22);
++    // [v3.58.20 DHT22-UJEMNE] Klon kodujacy ujemne w U2: -0,1 C przychodzi jako
++    // -3276,7 i do 3.58.19 odpadalo jako zla ramka (razem z wilgotnoscia) -> po
++    // 255 s Zew 2 = BRAK DANYCH przy kazdym przymrozku. Tu przeliczenie na prawde.
++    static uint32_t dhtU2 = 0;
++    const float dhtTempSurowa = dhtTempPomijana;
++    if (dhtErr == DHT_OK && zew2DekodujU2(&dhtTempPomijana)) {
++      if (dhtU2++ == 0) {
++        DLOGF(DC_SENSOR, DL_WARN, "DHT22 Zew2 zdarzenie=u2 surowa=%.1f t=%.1f msg=\"klon koduje ujemne w U2, przeliczam\"",
++              (double)dhtTempSurowa, (double)dhtTempPomijana);
++      }
++    }
+     // [v3.58.9 ZEW2-FILTR] Bylo: zapiszTempDiag(t w zakresie ? t : NAN) - kazda
+     // ramka z dobra suma kontrolna szla prosto na wykres (piki do -2 C), a zla
+     // kasowala Zew 2. Teraz: kontrola calej ramki + powtorka podejrzanego
+@@ -34576,8 +34634,8 @@
+     ++dhtProby;
+     if (!ramkaOk) ++dhtBledy;
+     if (dhtErr == DHT_OK && isfinite(dhtTempPomijana) && dhtTempPomijana == 0.0f) ++dhtZeraC;
+-    DLOGF(DC_SENSOR, DL_INFO, "DHT22 diagnostyka proby=%lu bledy_rh=%lu zera_temp=%lu kod=%u zew2_przyjete=%lu zew2_potwierdzone=%lu zew2_odrzucone=%lu zew2_ponowienia=%lu",
+-          (unsigned long)dhtProby, (unsigned long)dhtBledy, (unsigned long)dhtZeraC, (unsigned)dhtErr,
++    DLOGF(DC_SENSOR, DL_INFO, "DHT22 diagnostyka proby=%lu bledy_rh=%lu zera_temp=%lu u2=%lu kod=%u zew2_przyjete=%lu zew2_potwierdzone=%lu zew2_odrzucone=%lu zew2_ponowienia=%lu",
++          (unsigned long)dhtProby, (unsigned long)dhtBledy, (unsigned long)dhtZeraC, (unsigned long)dhtU2, (unsigned)dhtErr,
+           (unsigned long)g_zew2Filtr.przyjete, (unsigned long)g_zew2Filtr.potwierdzone, (unsigned long)g_zew2Filtr.odrzucone,
+           (unsigned long)g_zew2Filtr.ponowienia);
+     // [v3.57.4] 0,0 % z DHT22 to odczyt smieciowy, nie pomiar - traktujemy go

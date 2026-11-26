@@ -1,0 +1,37 @@
+ZAKRES ZMIAN 3.58.20 wzgledem 3.58.19 (plik src/main_centrala.cpp, 51 459 linii)
+================================================================================
+Patch main_centrala-v3.58.19-do-v3.58.20.patch: 6 hunkow, 24 linie kodu (reszta komentarze
+i historia). Zmiana tylko w C++ (blok ZEW2-FILTR + wilgotnosc()). HTML/JS strony WWW,
+/api/status, Firebase, telemetria minutowa, filtr skokow, wilgotnosc - bez zmian (test C).
+
+   1-27        naglowek pliku [v3.58.20 DHT22-UJEMNE]
+   2049-2056   HISTORIA WERSJI: wpis [v3.58.20]
+   6611-6624   blok ZEW2-FILTR: stale ZEW2_U2_BAZA_C (3276,8), ZEW2_U2_MIN_C (-3276,75),
+               ZEW2_U2_MAX_C (-3236,75) i funkcja zew2DekodujU2(float*):
+                 t poza przedzialem -> false, t bez zmian
+                 t w przedziale (obraz U2 zakresu -0,1..-40,0 C) -> t = -lround((t + 3276,8)*10)/10
+   6890        FIRMWARE_VERSION = "v3.58.20"
+   34585-34596 wilgotnosc(): zaraz po read_dht(), przy DHT_OK: zew2DekodujU2(&dhtTempPomijana);
+               pierwsze wykrycie -> WARN DC_SENSOR "DHT22 Zew2 zdarzenie=u2 surowa=-3276.7 t=-0.1
+               msg=..."; licznik static dhtU2
+   34637-34638 linia INFO "DHT22 diagnostyka ...": nowe pole u2=<licznik> (przed kod=)
+
+Dlaczego tak (eksport Firebase 26.11, 1271 probek co minute):
+   - t_zewn_2 schodzi 0,8 -> 0,2 -> 0,0 i ZNIKA (null); przez caly dzien ani jednej wartosci
+     ujemnej, a Zew 1 (DS18B20) w tym czasie +2..+3 C (Zew 2 chodzi ~2,5-3 C nizej).
+   - wilgotnosc (a[8]) w tych samych chwilach przestaje byc przyjmowana (age[8] rosnie do
+     23 076 s = 6,4 h) -> odpada CALA ramka w zew2RamkaPoprawna(), nie temperatura w filtrze
+     (odrzucenie przez filtr zostawia RH jako ACCEPTED).
+   - przy temperaturze ok. 0 C ramki 0,0 przechodza, ramki -0,1 nie (03:05 0 / 03:07 BRAK /
+     03:09 0 / 03:11-03:33 BRAK / 03:34 0 ...), od 14:56 BRAK na stale.
+   - biblioteka dhtESP32-rmt dekoduje wg karty (znak-modul): ((d2&0x7F)*256+d3)/10, minus gdy
+     bit 15. Klon kodujacy w U2 wysyla -0,1 jako 0xFFFF -> biblioteka: -3276,7 -> poza -40..80.
+   Linia logu, ktora to potwierdzi na plytce (diag archive cat SENSOR on, poziom WARN wystarczy):
+   do 3.58.19: "DHT22 Zew2 zdarzenie=zla_ramka t=-3276.x rh=8x.x"; od 3.58.20 raz:
+   "DHT22 Zew2 zdarzenie=u2 surowa=-3276.x t=-0.x msg=...".
+
+Bezpieczenstwo zmiany:
+   - prawdziwy DHT22 (znak-modul) nigdy nie oddaje wartosci z -3276,75..-3236,75 (jego zakres
+     to -40..80), wiec dla niego dekoder jest przezroczysty (test A[15]: 400 wartosci).
+   - U2 ponizej -40 C (nierealne) i smieci (-3276,8, +3276,7, RH > 100) odpadaja jak dotad.
+   - odkodowana wartosc idzie przez ten sam filtr skokow (>3 C -> powtorka po 3 s).
