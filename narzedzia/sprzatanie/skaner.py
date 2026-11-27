@@ -212,7 +212,11 @@ class Skaner:
         odtwarzalne komenda, ale czesto po kilka GB. Próg 10 MB.
         """
         pozycje = []
-        for korzen in self.korzenie:
+        # v10: .platformio/.cargo sa w katalogu domowym, ktory NIE jest
+        # korzeniem skanowania (korzenie = Downloads, Documents...).
+        # Szukamy tez w self.home, tak jak cache() dla CACHE_W_HOME.
+        korzenie = [self.home] + [k for k in self.korzenie if k != self.home]
+        for korzen in korzenie:
             for wzorzec in R.CACHE_DEV_W_HOME:
                 p = korzen / wzorzec
                 if not p.exists() or chroniony(p) or self._zajeta(p):
@@ -339,7 +343,9 @@ class Skaner:
                 try:
                     if not p.is_dir() or chroniony(p) or self._zajeta(p):
                         continue
-                    if p.name.lower() in pomin:
+                    # v10: pomijamy tez katalogi ZAWIERAJACE sie w .pio/.git/
+                    # buildach (np. .pio/libdeps/.../bssl), nie tylko same.
+                    if any(czesc.lower() in pomin for czesc in p.parts):
                         continue
                     r, najnowszy = info_katalogu(p, limit_s=20)
                     if not najnowszy:
