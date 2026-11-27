@@ -134,6 +134,8 @@ def main():
                     help="cofnij ostatnia kwarantanne")
     ap.add_argument("--auto", action="store_true",
                     help="bez pytania o kazda grupe (tylko z --tylko-raport NIE)")
+    ap.add_argument("--wyklucz", action="append", default=None, metavar="KATEGORIA",
+                    help="pomin kategorie, np. --wyklucz duplikaty (mozna wiele razy)")
     a = ap.parse_args()
 
     if a.przywroc:
@@ -209,7 +211,13 @@ def main():
     # Domyslnie proponujemy wszystko, ale uzytkownik moze wykluczyc kategorie
     # numerem. "v" = pokaz pelna liste pozycji wybranej grupy (do przegladu).
     wybrane = [g["kategoria"] for g in do_przeniesienia]
-    if not a.auto:
+    if a.wyklucz:
+        wybrane = [k for k in wybrane if k not in set(a.wyklucz)]
+        print(f"\n  Pominiete (--wyklucz): {', '.join(a.wyklucz)}")
+        if not wybrane:
+            print("  Nic nie zostalo do przeniesienia. Anulowane.")
+            return
+    if not a.auto and not a.wyklucz:
         print("\n  Aby WYKLUCZYC kategorie, podaj jej numery (np. 2 3).")
         print("  Enter = wszystko. 'v 2' = pokaz pelna liste pozycji z grupy 2.")
         try:
