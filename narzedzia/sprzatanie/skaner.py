@@ -213,11 +213,7 @@ class Skaner:
         """
         pozycje = []
         for korzen in self.korzenie:
-            for wzorzec in R.CACHE_W_HOME:
-                if wzorzec in (".cache/pip", ".cache/uv", ".npm/_cacache",
-                               ".gradle/caches", ".m2/repository/.cache",
-                               ".vscode/extensions/.obsolete"):
-                    continue  # juz w cache_i_temp
+            for wzorzec in R.CACHE_DEV_W_HOME:
                 p = korzen / wzorzec
                 if not p.exists() or chroniony(p) or self._zajeta(p):
                     continue
@@ -332,6 +328,9 @@ class Skaner:
     # ------------------------------------------------- v8: stare katalogi
     def stare_katalogi(self):
         """Katalogi nieuzywane rok+ (tylko raport, ryzyko 3)."""
+        # v9: pomijamy katalogi builda i VCS - te obsluguje buildy(),
+        # a .pio/.git to wnetrze aktywnych projektow, nie "stare katalogi".
+        pomin = set(R.KATALOGI_BUILDA) | {".pio", ".git", ".hg", ".svn"}
         pozycje = []
         for korzen in self.korzenie:
             for p in korzen.rglob("*"):
@@ -339,6 +338,8 @@ class Skaner:
                     break
                 try:
                     if not p.is_dir() or chroniony(p) or self._zajeta(p):
+                        continue
+                    if p.name.lower() in pomin:
                         continue
                     r, najnowszy = info_katalogu(p, limit_s=20)
                     if not najnowszy:

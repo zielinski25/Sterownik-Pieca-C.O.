@@ -59,7 +59,7 @@ CACHE_W_LOCALAPPDATA = [
     "Temp/*_MEI*",              # rozpakowane bundly PyInstaller
 ]
 
-# Katalogi smieciowe wzgledem katalogu domowego.
+# Katalogi smieciowe wzgledem katalogu domowego (grupa cache_i_temp).
 CACHE_W_HOME = [
     ".cache/pip",
     ".cache/uv",
@@ -67,13 +67,17 @@ CACHE_W_HOME = [
     ".gradle/caches",
     ".m2/repository/.cache",
     ".vscode/extensions/.obsolete",
-    # v8: cache deweloperskie (pobierane artefakty, odtwarzalne komenda)
+]
+
+# v8/v9: cache deweloperskie - OSOBNA grupa (cache_deweloperskie), NIE
+# cache_i_temp. To pobrane artefakty (toolchainy, crate'y), czesto po kilka GB.
+# v9: wydzielone z CACHE_W_HOME, bo cache() lapal je do cache_i_temp.
+CACHE_DEV_W_HOME = [
     ".platformio",              # PlatformIO: toolchainy ESP32/Arduino (czesto GB)
     ".cargo/registry/cache",    # Cargo: pobrane crate'y (Rust)
     ".cargo/git",               # Cargo: zaleznosci git
     ".cache/pnpm",              # pnpm store
     ".cache/pre-commit",        # pre-commit: pobrane srodowiska
-    ".cache/uv",                # uv (duplikat wpisu wyzej, na wszelki wypadek)
     # CELOWO POMINIETE: .android (ma debug.keystore!), .ollama (modele AI),
     # .cache/huggingface (modele) - to NIE sa cache, to narzedzia uzytkownika.
 ]
