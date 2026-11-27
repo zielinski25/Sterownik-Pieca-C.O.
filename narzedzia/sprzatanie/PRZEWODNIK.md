@@ -31,23 +31,44 @@ Nic nie jest wysyłane do internetu — Ollama słucha tylko na `127.0.0.1`.
 ## 2. Pobranie kodu na laptopa (krok, który pominąłem w pierwszej wersji)
 
 Kod leży w repozytorium na GitHubie — na Twoim laptopie go jeszcze **nie ma**.
-Uruchom dokładnie to, w jednej linii, w dowolnym folderze (np. `C:\Users\Ty`):
+
+### Wariant A (pewny): pobierz w przeglądarce
+
+Kliknij albo wklej do Chrome/Edge:
+
+```
+https://github.com/zielinski25/Sterownik-Pieca-C.O./archive/refs/heads/arena/a6b30642-sterownik-pieca-c-o.zip
+```
+
+Zapisze się `Sterownik-Pieca-C.O.-arena-a6b30642-sterownik-pieca-c-o.zip`.
+Potem: **prawy klawisz → Extract All** (albo „Wyodrębnij wszystko") i jako
+miejsce wskaż Pulpit. Powstanie folder o tej samej nazwie.
+
+### Wariant B: PowerShell (jeśli wolisz terminal)
 
 ```powershell
 cd $HOME
-Invoke-WebRequest -Uri "https://codeload.github.com/zielinski25/Sterownik-Pieca-C.O./zip/refs/heads/arena/a6b30642-sterownik-pieca-c-o" -OutFile "$env:TEMP\sprzatanie.zip"
-Expand-Archive "$env:TEMP\sprzatanie.zip" -DestinationPath "$HOME\Sprzatanie" -Force
-cd "$HOME\Sprzatanie\Sterownik-Pieca-C.O.-arena-a6b30642-sterownik-pieca-c-o\narzedzia\sprzatanie"
+Invoke-WebRequest -Uri "https://github.com/zielinski25/Sterownik-Pieca-C.O./archive/refs/heads/arena/a6b30642-sterownik-pieca-c-o.zip" -OutFile "$HOME\Desktop\sprzatanie.zip" -UseBasicParsing
+Expand-Archive "$HOME\Desktop\sprzatanie.zip" -DestinationPath "$HOME\Desktop" -Force
+```
+
+> `codeload.github.com` u Ciebie zwrócił 404, choć z zewnątrz odpowiada 200.
+> Dlatego wariant B używa `github.com/.../archive/...` — inna ścieżka, ten sam plik.
+
+### Sprawdzenie, że masz dobre pliki
+
+```powershell
+cd "$HOME\Desktop\Sterownik-Pieca-C.O.-arena-a6b30642-sterownik-pieca-c-o\narzedzia\sprzatanie"
 Get-ChildItem
 ```
 
-Na końcu musisz zobaczyć 9 plików: `agent.py`, `reguly.py`, `skaner.py`,
+Musisz zobaczyć **9 plików**: `agent.py`, `reguly.py`, `skaner.py`,
 `wykonawca.py`, `ollama_klient.py`, `test_skaner.py`, `instaluj.ps1`,
 `sprzataj.ps1`, `PRZEWODNIK.md`. Jeśli ich nie widzisz — **nie idź dalej**.
 
 > Całe repo waży 13,7 MB, bo zawiera też dokumentację sterownika pieca.
-> Jeśli chcesz tylko to narzędzie, możesz pominąć `Piec.html` i `*.patch`
-> po rozpakowaniu — agencja ich nie potrzebuje.
+> Agencja potrzebuje tylko folderu `narzedzia\sprzatanie` — resztę możesz
+> zostawić albo skasować, na działanie nie ma wpływu.
 
 ---
 
