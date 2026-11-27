@@ -1,0 +1,88 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,22 @@
++// FIRMWARE_VERSION v3.58.21 -> v3.58.22 (2026-11-27) — DHT22: WYNIK KAŻDEGO ODCZYTU W ZWYKŁYM LOGU (BEZ „diag archive”).
++//
++// [v3.58.22 DHT22-LOG] — 2026-11-27
++// Po wgraniu 3.58.21 (27.11, 07:46) Zew 2 i wilgotność dalej BRAK (Firebase: RH
++// „nigdy”, q=INVALID), a w logu z Telegrama (/logi) nie ma ANI JEDNEJ linii DHT22 —
++// wszystkie linie DHT22 idą przez DLOGF(DC_SENSOR), a archiwum diag jest domyślnie
++// wyłączone (dArcMask=0; włącza się tylko z Terminala WWW). Użytkownik jest poza
++// domem — ma tylko Telegram. Ta wersja NIC nie zmienia w działaniu czujników,
++// dodaje tylko linię w zwykłym logu (zapiszLog, zawsze archiwowana, widoczna
++// przez /logi):
++//   tag=DHT22 lvl=INFO proba=N kod=K surowa=<float z biblioteki> t=<po przeliczeniu>
++//   rh=<RH> ramka=ok|zla decyzja=D u2=<licznik> ds=<DS18B20|nan>
++// Kiedy: pierwsze 30 prób po starcie, potem co 10. próba (~20 min) oraz przy
++// zmianie ok<->zla (najwyżej raz na 10 min). kod = kod biblioteki dhtESP32-rmt
++// (0 OK, 1 TOO_SOON, 2 DRIVER, 3 TIMEOUT, 4 NACK, 5 BAD_DATA, 6 CHECKSUM,
++// 7 UNDERFLOW, 8 OVERFLOW); surowa = wartość, którą oddała biblioteka PRZED
++// dekoderem klona — po niej widać, w jakim kodowaniu ten egzemplarz wysyła ujemne.
++// Bez zmian: filtr, dekoder, odniesienie DS, /api/status, Firebase, LCD, WWW.
++//
+ // FIRMWARE_VERSION v3.58.20 -> v3.58.21 (2026-11-27) — ZEW 2: ODNIESIENIE DO DS18B20 DLA PRZELICZONYCH RAMEK KLONA.
+ //
+ // [v3.58.21 ZEW2-ODNIESIENIE-DS] — 2026-11-27
+@@ -2069,6 +2088,12 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.22] — 2026-11-27 — DHT22: WYNIK KAZDEGO ODCZYTU W ZWYKLYM LOGU
++// Co: wilgotnosc() pisze przez zapiszLog() (zawsze w log_a/log_b, widoczne
++//     przez /logi w Telegramie) linie "tag=DHT22 ... kod= surowa= t= rh= ramka="
++//     - pierwsze 30 prob po starcie, potem co 10. i przy zmianie ok<->zla.
++//     Tylko diagnostyka; zachowanie czujnikow bez zmian.
++//
+ // [v3.58.21] — 2026-11-27 — ZEW 2: ODNIESIENIE DO DS18B20 DLA PRZELICZONYCH RAMEK KLONA
+ // Co: ramka DHT22 przeliczona z kodowania klona (v3.58.20) jest porownywana ze
+ //     swiezym, niesymulowanym DS18B20 (temperaturaNaZewnatrz): roznica > 8 C ->
+@@ -6947,7 +6972,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.21";
++static const char* FIRMWARE_VERSION = "v3.58.22";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -24074,6 +24099,10 @@
+ // nizej oraz blok "DHT22: retry+backoff" w setup()).
+ #define DHT_PIN 6
+ // Ostatnia PROBA dotyczy rowniez odczytow testowych z setup().
++// [v3.58.22 DHT22-LOG] rytm linii "tag=DHT22" w zwyklym logu (patrz wilgotnosc())
++static const uint32_t DHT_LOG_PIERWSZE = 30;            // pierwsze proby po starcie: kazda
++static const uint32_t DHT_LOG_CO_N = 10;                // potem co 10. proba (~20 min)
++static const unsigned long DHT_LOG_ZMIANA_MIN_MS = 600000UL; // zmiana ok<->zla: max raz na 10 min
+ static unsigned long dhtOstatniaProbaMs = 0;
+ static bool dhtBylaProba = false;
+ 
+@@ -34721,6 +34750,29 @@
+           (double)((dsOk && ramkaOk) ? (dsTemp - dhtTempPomijana) : NAN), (unsigned long)dhtDsOdbiega, (unsigned)dhtErr,
+           (unsigned long)g_zew2Filtr.przyjete, (unsigned long)g_zew2Filtr.potwierdzone, (unsigned long)g_zew2Filtr.odrzucone,
+           (unsigned long)g_zew2Filtr.ponowienia);
++    // [v3.58.22 DHT22-LOG] Ta sama informacja w ZWYKLYM logu (zapiszLog - zawsze
++    // archiwowana, dostepna przez /logi w Telegramie), bo linie DLOGF(DC_SENSOR)
++    // wyzej trafiaja do pliku tylko po "diag archive cat SENSOR on" z Terminala WWW.
++    // Pierwsze 30 prob po starcie, potem co 10. proba (~20 min) i przy zmianie
++    // ok<->zla (najwyzej raz na 10 min). "surowa" = float z biblioteki PRZED
++    // dekoderem klona, "kod" = kod biblioteki (0 OK, 3 TIMEOUT, 5 BAD_DATA, 6 CHECKSUM...).
++    {
++      static bool poprzedniaRamkaOk = false, bylaPoprzednia = false;
++      static unsigned long ostatniaZmianaLogMs = 0;
++      const bool zmiana = bylaPoprzednia && poprzedniaRamkaOk != ramkaOk &&
++                          (unsigned long)(czasBiezacy - ostatniaZmianaLogMs) >= DHT_LOG_ZMIANA_MIN_MS;
++      if (dhtProby <= DHT_LOG_PIERWSZE || dhtProby % DHT_LOG_CO_N == 0 || zmiana) {
++        if (zmiana) ostatniaZmianaLogMs = czasBiezacy;
++        char linia[200];
++        snprintf(linia, sizeof(linia),
++                 "tag=DHT22 lvl=INFO proba=%u kod=%u surowa=%.1f t=%.1f rh=%.1f ramka=%s decyzja=%u u2=%u ds=%.1f",
++                 (unsigned)dhtProby, (unsigned)dhtErr, (double)dhtTempSurowa, (double)dhtTempPomijana,
++                 (double)wilgotnoscOdczytanaLok, ramkaOk ? "ok" : "zla", (unsigned)zew2Dec,
++                 (unsigned)dhtU2, (double)(dsOk ? dsTemp : NAN));
++        zapiszLog(String(linia));
++      }
++      poprzedniaRamkaOk = ramkaOk; bylaPoprzednia = true;
++    }
+     // [v3.57.4] 0,0 % z DHT22 to odczyt smieciowy, nie pomiar - traktujemy go
+     // jak blad (zostaje poprzednia dobra wartosc). W kotlowni nie ma 0 %.
+     // [v3.58.9] To samo dla RH > 100 % i temperatury poza -40..80 C (cala ramka).

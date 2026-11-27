@@ -1,0 +1,51 @@
+FIRMWARE CENTRALI 3.58.22 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
+(platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.21 + LINIA DHT22 W ZWYKLYM LOGU. Patch wzgledem 3.58.21: 5 hunkow, ok. 30 linii.
+Tylko diagnostyka - dzialanie czujnikow, filtra, dekodera, WWW, /api/status, Firebase: BEZ ZMIAN.
+Panel LCD: BEZ ZMIAN (v1.5.18 zostaje).
+
+PO CO (27.11, po 3.58.21 Zew 2 dalej BRAK, a w logu z /logi nie ma linii DHT22)
+------------------------------------------------------------------------------
+Linie "DHT22 ..." z poprzednich wersji trafiaja do pliku logu TYLKO po wlaczeniu w Terminalu WWW
+"diag archive cat SENSOR on" - a z Telegrama tego nie da sie zrobic. Od 3.58.22 wynik odczytu DHT22
+jest pisany do zwyklego logu (tego, ktory przychodzi po /logi):
+    tag=DHT22 lvl=INFO proba=3 kod=0 surowa=-3275.3 t=-1.5 rh=84.2 ramka=ok decyzja=0 u2=3 ds=1.6
+Pierwsze 30 prob po starcie kazda (ok. 1 h), potem co 10. (~20 min) i przy kazdej zmianie
+ok <-> zla (max raz na 10 min).
+
+KROK 1 - WGRANIE
+----------------
+Jak 3.58.21 (kopia zapasowa, podmiana src\main_centrala.cpp, SHA z SHA256SUMS.txt zaczyna sie
+od 940e555c, Build + Upload / OTA, env esp32-s3-n16r8). Albo patch main_centrala-v3.58.21-do-v3.58.22.patch
+-p1 na plik 3.58.21 (SHA 7608707f...).
+
+KROK 2 - PO 10-15 MINUTACH: TELEGRAM
+------------------------------------
+  /version   -> "Obecna wersja: v3.58.22"
+  /logi      -> plik; szukaj linii "tag=DHT22". Co oznaczaja:
+     kod=0  surowa=-3276.x..-3236.x  t=-0.x  ramka=ok   dekoder klona dziala; Zew 2 powinno byc widoczne
+     kod=0  surowa=<inna liczba>             ramka=zla  ten egzemplarz koduje ujemne jeszcze inaczej -
+                                                        przyslij te linie, dopasuje dekoder
+     kod=5 albo 6 (BAD_DATA / CHECKSUM)                 czujnik na zimnie nie dogaduje sie z plytka
+                                                        (czasy impulsow) - to nie kodowanie, inna naprawa
+     kod=3 (TIMEOUT) / 4 (NACK) / 7 / 8                 brak odpowiedzi czujnika / zla ramka startowa /
+                                                        zla liczba impulsow - tez transmisja, nie kodowanie
+  Wklej mi 5-10 takich linii (albo caly plik na Dysk).
+
+KROK 3 - NIC WIECEJ
+-------------------
+Wszystko inne jak w 3.58.21. GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa.
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\testy-pc.txt)
+----------------------------------------------
+Blok ZEW2-FILTR (bez zmian) i CALA funkcja wilgotnosc() wyciete z tego pliku, skompilowane g++
+(-Wall -Wextra -Werror, tez ASan+UBSan): 18 + 14 scenariuszy z paczek 3.58.10/20/21 bez zmian
+(regresja) oraz nowe: proby 1 i 2 maja linie tag=DHT22 z kod=0 i surowa=; po 30. probie tylko co 10.;
+zmiana ok->zla (timeout) od razu z kod=2 ramka=zla; powtorne zle ramki bez spamu; powrot do ok
+w < 10 min bez linii; po 10 min linia z surowa=-3276.3 obok t=-0.5. Plik = 3.58.21 + patch (SHA),
+HTML, blok ZEW2-FILTR, kod przed i za wilgotnosc() identyczne z 3.58.21, pelne testy
+3.58.21/3.58.20/.../3.58.14 na tym pliku. Caly plik NIE byl kompilowany w PlatformIO.
