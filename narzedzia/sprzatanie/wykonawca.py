@@ -50,6 +50,21 @@ def _rozmiar(p: Path) -> int:
         return 0
 
 
+PREFIKS_DLUGIEJ_SCIEZKI = "\\\\?\\"   # Windows: \\?\  (limit ~32 tys. znakow)
+
+
+def _dluga_sciezka(p: Path) -> Path:
+    """Windows odmawia sciezkom >260 znakow (WinError 206).
+
+    Prefiks \\?\\ podnosi limit do ~32 tys. znakow. Tylko Windows i tylko
+    dlugie sciezki - krotkie zostaja bez zmian, wiec manifest jest czysty.
+    """
+    s = str(p)
+    if os.name == "nt" and len(s) > 240 and not s.startswith(PREFIKS_DLUGIEJ_SCIEZKI):
+        return Path(PREFIKS_DLUGIEJ_SCIEZKI + s)
+    return p
+
+
 def _przenies_plik(zrodlo: Path, cel: Path) -> tuple[int, str | None]:
     """Przenosi JEDEN plik. Zwraca (rozmiar, blad).
 
@@ -57,6 +72,8 @@ def _przenies_plik(zrodlo: Path, cel: Path) -> tuple[int, str | None]:
     w uzyciu, a sciezki potrafia przekroczyc 260 znakow (WinError 206).
     Dlatego idziemy plik po pliku - jeden zablokowany plik nie psuje reszty.
     """
+    zrodlo = _dluga_sciezka(zrodlo)
+    cel = _dluga_sciezka(cel)
     try:
         rozmiar = zrodlo.stat().st_size
     except OSError:
