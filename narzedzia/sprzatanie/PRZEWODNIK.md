@@ -95,6 +95,35 @@ Jeśli nie masz Pythona: `winget install Python.Python.3.12`.
 
 ---
 
+## 3a. Uwaga: nie uruchamiaj agenta z `C:\WINDOWS\system32`
+
+PowerShell domyślnie otwiera się **w katalogu systemowym Windows**. Komenda
+`python agent.py` szuka pliku *w katalogu, w którym jesteś* — tam go nie ma.
+Objaw: `can't open file 'C:\WINDOWS\system32\agent.py': [Errno 2]`.
+
+Nie oznacza to, że pliki się nie pobrały. Trzeba tylko wejść do właściwego folderu.
+
+**Najprościej — jedna linia, sama znajduje plik:**
+
+```powershell
+$d=(Get-ChildItem "$HOME\Downloads","$HOME\Pobrane","$HOME\Desktop" -Recurse -Filter agent.py -ErrorAction SilentlyContinue | Select-Object -First 1).DirectoryName; if(-not $d){Write-Host "Nie znalazlem agent.py - rozpakuj ZIP (prawy klawisz -> Wyodrebnij wszystko)" -ForegroundColor Red} else { Set-Location $d; Write-Host "Folder: $d" -ForegroundColor Green; python agent.py --tylko-raport }
+```
+
+**Albo ręcznie:**
+
+```powershell
+cd "$HOME\Downloads\sprzatanie"
+python agent.py --tylko-raport
+```
+
+Sprawdzenie, gdzie jesteś: `pwd`. Sprawdzenie, czy plik jest: `Get-ChildItem agent.py`.
+
+> Gdy kopiujesz `agent.py` z czatu i wkleja się jako `[agent.py](http://agent.py)`
+> — to automatyczne linkowanie w edytorze, nie Twój błąd. Wpisz nazwę ręcznie
+> albo użyj powyższej linii, która szuka pliku po nazwie, a nie po wpisanej ścieżce.
+
+---
+
 ## 4. Kolejność uruchomień — dokładnie tak
 
 **Krok 1. Tylko raport.** Nic nie rusza, pokazuje co leży i ile waży.
