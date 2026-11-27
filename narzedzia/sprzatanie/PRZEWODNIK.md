@@ -28,22 +28,53 @@ Nic nie jest wysyłane do internetu — Ollama słucha tylko na `127.0.0.1`.
 
 ---
 
-## 2. Instalacja (15 minut, większość to pobieranie modelu)
+## 2. Pobranie kodu na laptopa (krok, który pominąłem w pierwszej wersji)
 
-Otwórz **PowerShell** (nie cmd) w folderze `narzedzia\sprzatanie`:
+Kod leży w repozytorium na GitHubie — na Twoim laptopie go jeszcze **nie ma**.
+Uruchom dokładnie to, w jednej linii, w dowolnym folderze (np. `C:\Users\Ty`):
+
+```powershell
+cd $HOME
+Invoke-WebRequest -Uri "https://codeload.github.com/zielinski25/Sterownik-Pieca-C.O./zip/refs/heads/arena/a6b30642-sterownik-pieca-c-o" -OutFile "$env:TEMP\sprzatanie.zip"
+Expand-Archive "$env:TEMP\sprzatanie.zip" -DestinationPath "$HOME\Sprzatanie" -Force
+cd "$HOME\Sprzatanie\Sterownik-Pieca-C.O.-arena-a6b30642-sterownik-pieca-c-o\narzedzia\sprzatanie"
+Get-ChildItem
+```
+
+Na końcu musisz zobaczyć 9 plików: `agent.py`, `reguly.py`, `skaner.py`,
+`wykonawca.py`, `ollama_klient.py`, `test_skaner.py`, `instaluj.ps1`,
+`sprzataj.ps1`, `PRZEWODNIK.md`. Jeśli ich nie widzisz — **nie idź dalej**.
+
+> Całe repo waży 13,7 MB, bo zawiera też dokumentację sterownika pieca.
+> Jeśli chcesz tylko to narzędzie, możesz pominąć `Piec.html` i `*.patch`
+> po rozpakowaniu — agencja ich nie potrzebuje.
+
+---
+
+## 3. Instalacja (15 minut, większość to pobieranie modelu)
+
+Będąc w folderze `narzedzia\sprzatanie`:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\instaluj.ps1
 ```
 
+Gdy PowerShell zapyta *„Do you want to change the execution policy?"* — wciśnij
+**`Y`** i Enter. To zgoda **tylko na tę jedną sesję okna**, nie zmiana systemowa;
+po zamknięciu PowerShell wszystko wraca do stanu wyjściowego.
+
 Instalator sprawdzi RAM i miejsce, zainstaluje Ollamę przez winget, pobierze
 `qwen2.5:7b-instruct-q4_K_M` (~4,7 GB) i zrobi skrót na pulpicie.
 Jeśli nie masz Pythona: `winget install Python.Python.3.12`.
 
+> **Wklejaj komendy pojedynczo.** PowerShell wykonuje wklejony blok linia po
+> linii — gdy pierwsza się nie uda, reszta i tak idzie dalej i komunikaty
+> zaczynają się mieszać. Jedna komenda → Enter → patrz na wynik → następna.
+
 ---
 
-## 3. Kolejność uruchomień — dokładnie tak
+## 4. Kolejność uruchomień — dokładnie tak
 
 **Krok 1. Tylko raport.** Nic nie rusza, pokazuje co leży i ile waży.
 
@@ -80,7 +111,7 @@ python agent.py --przywroc
 
 ---
 
-## 4. Co jest bezpieczne, a co nie (Twoje 954 GB, 165 GB zajęte)
+## 5. Co jest bezpieczne, a co nie (Twoje 954 GB, 165 GB zajęte)
 
 | Grupa | Ryzyko | Akcja | Co to jest |
 |---|---|---|---|
@@ -106,7 +137,7 @@ Każda próba jest sprawdzana **dwa razy**: raz przy skanie, raz przy przenoszen
 
 ---
 
-## 5. Gdzie lądują pliki
+## 6. Gdzie lądują pliki
 
 ```
 %LOCALAPPDATA%\SprzatanieDysku\
@@ -128,7 +159,7 @@ Manifest zostaje, więc wiesz, co zostało usunięte.
 
 ---
 
-## 6. Model: co realnie działa na 4750U
+## 7. Model: co realnie działa na 4750U
 
 | Model | Rozmiar w RAM | Szybkość na tym CPU | Do czego |
 |---|---|---|---|
@@ -149,7 +180,7 @@ python agent.py --model qwen2.5:3b-instruct-q4_K_M
 
 ---
 
-## 7. „Chcę agenta, który robi więcej" — jak rozszerzać
+## 8. „Chcę agenta, który robi więcej" — jak rozszerzać
 
 `reguly.py` to zwykłe listy. Przykład: sprzątanie cache Visual Studio (często
 kilkanaście GB na laptopie programisty):
@@ -179,7 +210,7 @@ Testy działają na **atrapie dysku** w katalogu tymczasowym, nie na Twoich plik
 
 ---
 
-## 8. Bezpieczeństwo — co ten kod robi i czego nie robi
+## 9. Bezpieczeństwo — co ten kod robi i czego nie robi
 
 **Robi:**
 
@@ -202,7 +233,7 @@ najpierw skanuj z `--tylko-raport` i patrz na liczby.
 
 ---
 
-## 9. Co dalej (jeśli chcesz więcej niż sprzątanie)
+## 10. Co dalej (jeśli chcesz więcej niż sprzątanie)
 
 Ten sam stos (Ollama + skrypt w Pythonie) obsłuży kolejne zadania bez
 instalowania czegokolwiek nowego:
