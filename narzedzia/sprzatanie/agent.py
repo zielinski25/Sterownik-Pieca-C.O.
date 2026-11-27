@@ -218,19 +218,35 @@ def main():
             print("  Nic nie zostalo do przeniesienia. Anulowane.")
             return
     if not a.auto and not a.wyklucz:
-        print("\n  Aby WYKLUCZYC kategorie, podaj jej numery (np. 2 3).")
-        print("  Enter = wszystko. 'v 2' = pokaz pelna liste pozycji z grupy 2.")
+        # Podpowiedz budowana z AKTUALNEJ listy grup - kolejnosc zalezy od
+        # rozmiarow, wiec "v 2" raz znaczy duplikaty, a raz cache.
+        numery_przyklad = " ".join(str(i) for i in
+                                   range(2, min(len(do_przeniesienia), 3) + 1))
+        najwieksza = 1
+        print(f"\n  Aby POMINAC kategorie, podaj jej numery (np. {numery_przyklad or '2'}).")
+        print(f"  Enter = wszystko. 'v 1' = pelna lista pozycji grupy 1 "
+              f"({do_przeniesienia[0]['kategoria']}, najwieksza).")
         try:
             odp = input("  Twoj wybor: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             odp = ""
 
         if odp.startswith("v"):
+            czesci = odp.split()
+            if len(czesci) < 2:      # samo "v" -> przypomnij liste z numerami
+                print("\n  Grupy do wyboru:")
+                for i, g in enumerate(do_przeniesienia, 1):
+                    print(f"    {i}. {g['kategoria']:<20} "
+                          f"{g['rozmiar_MB']/1024:>6.2f} GB ({len(g['pozycje'])} poz.)")
+                print("  Wpisz np. 'v 1', aby zobaczyc pelna liste grupy 1.")
+                return
             try:
-                nr = int(odp.split()[1]) - 1
+                nr = int(czesci[1]) - 1
+                if nr < 0:
+                    raise IndexError
                 g = do_przeniesienia[nr]
             except (ValueError, IndexError):
-                print("  Zly numer grupy.")
+                print(f"  Zly numer. Dostepne grupy: 1-{len(do_przeniesienia)}.")
                 return
             naglowek(f"PELNA LISTA: {g['kategoria']} ({len(g['pozycje'])} poz.)")
             for p in g["pozycje"]:
