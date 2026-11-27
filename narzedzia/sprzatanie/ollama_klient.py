@@ -132,3 +132,50 @@ def ocen_sporne(sporne: list[dict], model: str) -> dict[str, dict]:
                 "powod": str(o.get("powod", "")),
             }
     return wynik
+
+
+# ------------------------------------------------------------------ czat
+# Ollama ma osobny endpoint /api/chat, ktory przyjmuje historie rozmowy
+# w formacie OpenAI: [{"role": "user"|"assistant"|"system", "content": "..."}].
+# Dla 7B na CPU trzymamy historie krotka (6 tur) - inaczej kazde pytanie
+# przetwarza od nowa coraz dluzszy prompt i robi sie wolno.
+
+def czat(wiadomosci: list[dict], model: str, narzedzia: list | None = None,
+         temperatura: float = 0.2, timeout: int = 300) -> dict | None:
+    """Jedna tura rozmowy. Zwraca {"tresc": str, "wywolania": [...]} albo None.
+
+    wywolania to lista {"nazwa": ..., "argumenty": {...}} - decyzje modelu,
+    ktore wykonuje kod, nie model. Model nigdy nie dotyka systemu plikow.
+    """
+    dane = {
+        "model": model,
+        "messages": wiadomosci,
+        "stream": False,
+        "options": {"temperature": temperatura, "num_ctx": 4096, "num_thread": 8},
+    }
+    if narzedzia:
+        dane["tools"] = narzedzia
+
+    try:
+        odp = _post("/api/chat", dane, timeout=timeout)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    if not odp:
+        return None
+
+    wiadomosc = (odp.get("message") or {})
+    wywolania = []
+    for w in (wiadomosc.get("tool_calls") or []):
+        funkcja = w.get("function") or {}
+        nazwa = funkcja.get("name")
+        argumenty = funkcja.get("arguments")
+        if isinstance(argumenty, str):      # czesc modeli zwraca JSON jako tekst
+            try:
+                argumenty = json.loads(argumenty)
+            except ValueError:
+                argumenty = {}
+        if nazwa:
+            wywolania.append({"nazwa": nazwa, "argumenty": argumenty or {}})
+
+    return {"tresc": (wiadomosc.get("content") or "").strip(),
+            "wywolania": wywolania}
