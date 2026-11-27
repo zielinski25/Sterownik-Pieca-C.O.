@@ -432,6 +432,8 @@ static AlarmWyciszCb    g_alarmWyciszCb    = nullptr;
 // identyczny, zmienia sie tylko implementacja poza tym plikiem.
 static WyswietlaczJasnoscCb     g_wyswietlaczJasnoscCb     = nullptr;
 static WyswietlaczUstawieniaCb  g_wyswietlaczUstawieniaCb  = nullptr;
+static TestDzwiekuCb            g_testDzwiekuCb            = nullptr;   // [v1.5.19 TEST-DZWIEKU]
+static lv_obj_t *wyswietlaczTestDzwiekuBtnLabel = nullptr;                 // [v1.5.19] napis na przycisku "Test dźwięku" / "2300 Hz"
 static WyswietlaczHarmonogramCb g_wyswietlaczHarmonogramCb = nullptr;
 // [v1.4.7 ZASILANIE] Ekran ZASILANIE - patrz zasilanie_* nizej i dashboard_lvgl_poc.h.
 static ZasilanieCb g_zasilanieCb = nullptr;
@@ -4103,6 +4105,13 @@ static void wyswietlacz_harmonogram_wyglad_odswiez() {
                              LV_PART_MAIN);
   lv_label_set_text(wyswietlaczHarmonogramBtnLabel, g_wyswietlaczHarmonogramWlaczony ? "WŁ." : "WYŁ.");
 }
+// [v1.5.19 TEST-DZWIEKU] Dotkniecie "Test dźwięku" - tylko sygnal do
+// main.cpp (tam jest brzeczyk i decyzja, czy akurat nie gra alarm).
+static void wyswietlacz_test_dzwieku_btn_cb(lv_event_t *e) {
+  (void)e;
+  if (g_testDzwiekuCb) g_testDzwiekuCb();
+  wyswietlacz_panel_idle_resetuj();
+}
 static void wyswietlacz_harmonogram_btn_cb(lv_event_t *e) {
   (void)e;
   g_wyswietlaczHarmonogramWlaczony = !g_wyswietlaczHarmonogramWlaczony;
@@ -4233,6 +4242,27 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
     lv_obj_set_style_text_font(wyswietlaczHarmonogramBtnLabel, &lv_font_pl_14, 0);
     lv_obj_set_style_text_color(wyswietlaczHarmonogramBtnLabel, rgb565(KOL_NAPIS_NA_WLACZONYM), 0);   // [v1.5.10]
     lv_obj_center(wyswietlaczHarmonogramBtnLabel);
+
+    // [v1.5.19 TEST-DZWIEKU] Przycisk "Test dźwięku" w wolnym srodku tego
+    // wiersza: etykieta "Automatyczny harmonogram" (czcionka 14) konczy sie
+    // ok. x=190, przycisk WL./WYL. zaczyna sie na x=356; 120 px przycisku na
+    // x=226..346 zostawia po ok. 10 px z obu stron. W trakcie przemiatania
+    // napis to "2300 Hz" (lvgl_dashboard_poc_test_dzwieku_pokaz()).
+    lv_obj_t *testBtn = lv_btn_create(wiersz);
+    lv_obj_set_size(testBtn, 120, 34);
+    lv_obj_align(testBtn, LV_ALIGN_RIGHT_MID, -94, 0);
+    lv_obj_set_style_radius(testBtn, 8, 0);
+    lv_obj_clear_flag(testBtn, LV_OBJ_FLAG_SCROLLABLE);
+    // KOL_KARTA jako kolor spoczynkowy takze dla press_flash (sasiednie
+    // przyciski dostaja KOL_BEZPIECZNA, ale zaraz nadpisuja tlo wg stanu;
+    // ten nie ma stanu - bez tego bylby na stale jasnozielony).
+    press_flash_zainstaluj(testBtn, KOL_KARTA, 5);
+    lv_obj_add_event_cb(testBtn, wyswietlacz_test_dzwieku_btn_cb, LV_EVENT_CLICKED, nullptr);
+    wyswietlaczTestDzwiekuBtnLabel = lv_label_create(testBtn);
+    lv_label_set_text(wyswietlaczTestDzwiekuBtnLabel, "Test dźwięku");
+    lv_obj_set_style_text_font(wyswietlaczTestDzwiekuBtnLabel, &lv_font_pl_14, 0);
+    lv_obj_set_style_text_color(wyswietlaczTestDzwiekuBtnLabel, rgb565(KOL_NAPIS_NA_WLACZONYM), 0);
+    lv_obj_center(wyswietlaczTestDzwiekuBtnLabel);
   }
 
   wyswietlacz_sen_wiersz_zbuduj(wyswietlaczPanel, startY + 3 * 36 + 2);   // [v1.5.1] y=266
@@ -8330,6 +8360,21 @@ void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_jasnosc(WyswietlaczJasnoscCb 
 }
 void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(WyswietlaczUstawieniaCb cb) {
   g_wyswietlaczUstawieniaCb = cb;
+}
+
+// [v1.5.19 TEST-DZWIEKU] Patrz naglowek.
+void lvgl_dashboard_poc_ustaw_callback_test_dzwieku(TestDzwiekuCb cb) {
+  g_testDzwiekuCb = cb;
+}
+void lvgl_dashboard_poc_test_dzwieku_pokaz(int hz) {
+  if (wyswietlaczTestDzwiekuBtnLabel == nullptr) return;
+  char bufor[20];
+  if (hz > 0) snprintf(bufor, sizeof(bufor), "%d Hz", hz);
+  else snprintf(bufor, sizeof(bufor), "Test dźwięku");
+  ustawNapis(wyswietlaczTestDzwiekuBtnLabel, bufor);
+  // Kolejny krok co 1,5 s - ekran ma zostac otwarty przez cale przemiatanie
+  // (bezczynnosc zamyka go po 13,5 s), zeby bylo widac, ktora czestotliwosc gra.
+  if (hz > 0 && g_wyswietlaczPanelIdleTimer != nullptr) wyswietlacz_panel_idle_resetuj();
 }
 void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_harmonogram(WyswietlaczHarmonogramCb cb) {
   g_wyswietlaczHarmonogramCb = cb;

@@ -32,33 +32,34 @@ Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 
 ## Co zmienia v1.5.19
 
-**Brzęczyk głośniej: stałe napięcie zamiast PWM** (uwaga z 27.11: „buzzer jest
-dość cichy”, oba alarmy). Z dokumentacji lutowania
-(`docs/schemat-zasilania/brzeczyk.html`, 20.11): moduł **BEEP V2.0**, IO
-zmostkowane z VCC na 5 V, masę przełącza C945 z D13; test „R5 do 3V3 → *ciągły*
-pisk” = brzęczyk **aktywny** (własny generator ~2,5 kHz). Firmware od początku
-zakładał pasywny i podawał na D13 **PWM 50 %** o 3000 Hz (pożar) / 1200–1600 Hz
-(ogrzewanie) — siekał zasilanie modułu kilka tysięcy razy na sekundę w poprzek
-jego generatora: połowa energii + dudnienie = cicho i „brudno”.
+**Brzęczyk: przycisk „Test dźwięku” — szukanie rezonansu** (uwaga z 27.11:
+„buzzer jest dość cichy”, oba alarmy). Zdjęcie modułu: brzęczyk **pasywny**
+(czarny walec bez naklejki, bez własnego generatora; na module wtórnik J3Y +
+101 + 510), IO+VCC na 5 V, masa przez C945 z D13 — dostaje falę prostokątną
+z `ledcWriteTone()`, kod jest dla niego właściwy. PWM 50 % to maksimum dla
+fali prostokątnej, więc jedyna dźwignia w sofcie to **częstotliwość**: pasywny
+brzęczyk gra głośno tylko w rezonansie (małe magnetyczne zwykle 2000–2700 Hz,
+często dokładnie 2048 albo 2731 Hz), a wzorce mają 3000 Hz (pożar) i
+1200/1600 Hz (ogrzewanie — prawie na pewno za nisko).
 
-- `BRZECZYK_AKTYWNY 1` (`main.cpp`, przy `BRZECZYK_PIN`): faza tonu = D13
-  **stale HIGH** (`ledcWrite(255)` na kanale 8-bit = pełne włączenie w rdzeniu
-  3.x), cisza = LOW, przez jedną funkcję `brzeczykTon()`; `ledcWriteTone()` nie
-  jest już wołane (przy okazji: przestawiało częstotliwość timera LEDC, który
-  może być wspólny z PWM podświetlenia).
-- **POŻAR**: rytm T3 bez zmian (3 × 0,5 s ton + 0,5 s cisza, potem 1,5 s ciszy).
-- **OGRZEWANIE / PANEL**: dwuton „hi-lo” nie jest na aktywnym możliwy — zamiast
-  niego **dwa krótkie piknięcia co sekundę** (120 ms / 120 / 120 / 640 ms),
-  wyraźnie inne niż długie, potrójne piknięcia pożaru.
-- Pasywny piezo (gdyby wrócił): `BRZECZYK_AKTYWNY 0` = dokładnie kod 1.5.18.
-- Symulator: atrapa `ledcWrite()` na pinie 13 zlicza włączenia jak dotąd tony;
-  `brzeczykGraPrzegrzanie()` sprawdza nowy rytm (piknięcia ≤ 130 ms, ≥ 2 na
-  1,2 s, tylko 0/255 — żadnego PWM). Wszystkie scenariusze zaliczone.
+- Ekran **WYŚWIETLACZ**, wiersz „Automatyczny harmonogram”, przycisk
+  **„Test dźwięku”**: przemiata 1000 / 1500 / 2000 / 2300 / 2500 / 2700 / 3000 /
+  3500 / 4000 Hz po 1,5 s, napis na przycisku = aktualna częstotliwość, ekran nie
+  zamyka się w trakcie, dotknięcie = stop, w czasie alarmu nic (alarm w trakcie
+  przerywa test). Log: `tag=BRZECZYK zdarzenie=test_dzwieku krok=i/9 hz=…`.
+  **Po teście podaj, która częstotliwość była najgłośniejsza** — wzorce dostaną
+  ją w v1.5.20 (pożar = rezonans, hi-lo = rezonans i ~15 % niżej).
+- Wzorce alarmów **bez zmian** (3000 / 1200–1600 Hz).
+- Porządek: jedna funkcja `brzeczykTon()` na pinie + opcja `BRZECZYK_AKTYWNY`
+  (**0** na tej płytce; 1 = moduł z własnym generatorem: stałe napięcie zamiast
+  PWM i podwójne piknięcie zamiast dwutonu — na pasywnym dałoby prawie ciszę).
+- Symulator: scenariusz `test_dzwieku` (20 sprawdzeń: układ przycisku, 9 kroków
+  co 1,5 s z napisem, stop dotknięciem, odmowa w alarmie, alarm przerywa),
+  atrapa `ledcWrite()` na pinie 13. Wszystkie scenariusze zaliczone.
+  Zrzut: `ekran_test_dzwieku.png`.
 
 Wgranie: `pio run -e esp32dev_wifi -t upload` (panel obudzony, komputer w sieci
-`PiecCO_AP`) albo przez centralę (`/update_panel`). Centrala bez zmian. **Po
-wgraniu**: ekran alarmu z centrali (np. symulacja przegrzania) → brzęczyk ma być
-wyraźnie głośniejszy, czysty ton, „pip-pip … pip-pip”; WYCISZ → cisza.
+`PiecCO_AP`) albo przez centralę (`/update_panel`). Centrala bez zmian.
 
 ## Co zmienia v1.5.18
 

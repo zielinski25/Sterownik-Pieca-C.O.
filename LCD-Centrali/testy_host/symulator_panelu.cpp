@@ -77,6 +77,7 @@
 // --- z firmware'u (src/main.cpp) ---
 void setup();
 void loop();
+void testDzwiekuPrzycisk();   // [v1.5.19] main.cpp: przycisk "Test dźwięku" (scenariusz test_dzwieku wola go wprost, gdy ekran WYSWIETLACZ jest zamkniety)
 // v1.2.1: pamiec, ktora na plytce przetrwa ESP.restart() (RTC_NOINIT). Starsze
 // zrodla (porownanie przez SRC=...) nie maja ani naglowka, ani zmiennej.
 #if __has_include("diagnostyka_panelu.h")
@@ -2663,22 +2664,17 @@ void scenariuszZlaOdpowiedzDlugo() {
 #endif
 }
 
-// Czy brzeczyk gra wzorzec alarmu OGRZEWANIA. [v1.5.19] Brzeczyk jest
-// aktywny (stale napiecie zamiast tonu), wzorzec to dwa krotkie pikniecia
-// co sekunde: 120 ms gra / 120 ms cisza / 120 ms gra / 640 ms cisza. Przez
-// 1,2 s probkowania co 10 ms: ton tylko 0 albo 255 (zadnego PWM/Hz), co
-// najmniej 2 pikniecia, zadne dluzsze niz 130 ms (T3 pozaru ma 500 ms).
+// Czy brzeczyk gra wzorzec alarmu: w ciagu 1,2 s czestotliwosc zmienia sie
+// i w kazdej chwili jest niezerowa (alarm przegrzania: 1200/1600 Hz bez przerw).
+// [v1.5.19] Brzeczyk na plytce jest pasywny (BRZECZYK_AKTYWNY 0) - wzorce bez zmian.
 bool brzeczykGraPrzegrzanie() {
-  int pikniec = 0, najdluzszeMs = 0, biezaceMs = 0;
-  bool tylkoStale = true;
-  for (int i = 0; i < 120; i++) {
-    biegnij(10);
-    const uint32_t t = g_atrapa.tonHz;
-    if (t != 0 && t != 255) tylkoStale = false;
-    if (t != 0) { if (biezaceMs == 0) pikniec++; biezaceMs += 10; if (biezaceMs > najdluzszeMs) najdluzszeMs = biezaceMs; }
-    else biezaceMs = 0;
+  const int przed = g_atrapa.zmianTonu;
+  bool caly_czas = true;
+  for (int i = 0; i < 12; i++) {
+    biegnij(100);
+    if (g_atrapa.tonHz != 1200 && g_atrapa.tonHz != 1600) caly_czas = false;
   }
-  return tylkoStale && pikniec >= 2 && najdluzszeMs <= 130;
+  return caly_czas && g_atrapa.zmianTonu > przed;
 }
 
 // --- 17a -------------------------------------------------------------------
@@ -2756,7 +2752,7 @@ void scenariuszAutorestartPrzyAlarmie() {
   sprawdz(znacznikNaglowka().rfind("SYMULACJA: ", 0) == 0 && znacznikNaglowka().find("piec") != std::string::npos,
           "ekran alarmu pokazuje, ze temperatura pieca jest symulowana (\"SYMULACJA: ... piec\")");
   zrzutEkranu("1_alarm_z_symulacja");
-  sprawdz(brzeczykGraPrzegrzanie(), "brzeczyk gra wzorzec przegrzania (podwojne krotkie pikniecie co 1 s, stale napiecie - aktywny)");
+  sprawdz(brzeczykGraPrzegrzanie(), "brzeczyk gra wzorzec przegrzania (1200/1600 Hz)");
   sprawdz(kliknij("WYCISZ"), "przycisk WYCISZ");
   biegnij(50);
   sprawdz(g_atrapa.tonHz == 0, "WYCISZ: cisza od razu (bez czekania na kolejny status)");
@@ -5858,6 +5854,79 @@ void scenariuszSenUstawieniaNigdy() {
   sprawdz(g_atrapa.usnal == 1 && g_atrapa.usnalMs - dotyk >= 119000 && g_atrapa.usnalMs - dotyk <= 123000, "sen 2 min po ostatnim dotyku, bez wczesniejszego przyciemnienia");
 }
 
+// [v1.5.19 TEST-DZWIEKU] Przycisk "Test dźwięku" na ekranie WYSWIETLACZ:
+// przemiatanie 9 czestotliwosci po 1,5 s z napisem na przycisku, stop
+// dotknieciem, ekran nie zamyka sie w trakcie, w alarmie odmowa, alarm przerywa.
+void scenariuszTestDzwieku() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  lv_obj_t* drugi = drugiPulpit();
+  sprawdz(drugi != nullptr, "drugi pulpit istnieje");
+  if (drugi == nullptr) return;
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  biegnij(300);
+  sprawdz(kliknij("WYŚWIETLACZ"), "dotkniecie kafelka WYŚWIETLACZ");
+  biegnij(300);
+  lv_obj_t* ekran = lv_scr_act();
+  sprawdz(ekranMa("Test dźwięku") && ekranMa("Automatyczny harmonogram"), "ekran WYSWIETLACZ: przycisk \"Test dźwięku\" w wierszu harmonogramu");
+  {
+    lv_obj_update_layout(ekran);
+    lv_obj_t* t = znajdzEtykiete(ekran, "Test dźwięku");
+    lv_obj_t* h = znajdzEtykiete(ekran, "Automatyczny harmonogram");
+    lv_obj_t* w = znajdzEtykiete(ekran, "WŁ.");
+    lv_area_t ta, ha, wa; lv_obj_get_coords(lv_obj_get_parent(t), &ta); lv_obj_get_coords(h, &ha); lv_obj_get_coords(lv_obj_get_parent(w), &wa);
+    info("etykieta harmonogramu x=%d..%d, przycisk testu x=%d..%d, WL./WYL. x=%d..%d", (int)ha.x1, (int)ha.x2, (int)ta.x1, (int)ta.x2, (int)wa.x1, (int)wa.x2);
+    sprawdz(ha.x2 + 6 <= ta.x1 && ta.x2 + 6 <= wa.x1, "przycisk testu nie nachodzi na etykiete ani na WL./WYL. (>= 6 px odstepu)");
+  }
+  zrzutEkranu("1_wyswietlacz_test_dzwieku");
+  sprawdz(g_atrapa.tonHz == 0, "przed testem cisza");
+
+  // --- pelne przemiatanie ---
+  size_t od = g_atrapa.serial.size();
+  sprawdz(senKliknijPrzycisk("Test dźwięku"), "dotkniecie \"Test dźwięku\"");
+  biegnij(50);
+  sprawdz(g_atrapa.tonHz == 1000 && senNapisPrzycisku("1000 Hz") == "1000 Hz", "od razu 1000 Hz, napis na przycisku \"1000 Hz\"");
+  const unsigned oczekiwane[] = { 1000, 1500, 2000, 2300, 2500, 2700, 3000, 3500, 4000 };
+  bool kolejnosc = true;
+  for (int i = 0; i < 9; i++) {
+    if (i > 0) biegnij(1500);
+    char napis[16]; snprintf(napis, sizeof(napis), "%u Hz", oczekiwane[i]);
+    if (g_atrapa.tonHz != oczekiwane[i] || senNapisPrzycisku(napis) != napis) { kolejnosc = false; info("krok %d: ton %u, oczekiwane %u", i + 1, (unsigned)g_atrapa.tonHz, oczekiwane[i]); }
+  }
+  sprawdz(kolejnosc, "9 krokow co 1,5 s: 1000/1500/2000/2300/2500/2700/3000/3500/4000 Hz, napis zgodny z tonem");
+  zrzutEkranu("2_test_dzwieku_4000hz");
+  sprawdz(lv_scr_act() == ekran, "ekran WYSWIETLACZ nie zamknal sie z bezczynnosci w trakcie testu (13,5 s)");
+  biegnij(1600);
+  sprawdz(g_atrapa.tonHz == 0 && senNapisPrzycisku("Test dźwięku") == "Test dźwięku", "po ostatnim kroku cisza i napis \"Test dźwięku\"");
+  sprawdz(ileLinii("tag=BRZECZYK zdarzenie=test_dzwieku krok=", "", "", od) == 9 && logMa("tag=BRZECZYK zdarzenie=test_dzwieku_koniec powod=koniec", "", "", od),
+          "log: 9 linii test_dzwieku krok=i/9 hz=... i test_dzwieku_koniec powod=koniec");
+
+  // --- stop dotknieciem ---
+  sprawdz(senKliknijPrzycisk("Test dźwięku"), "drugi start");
+  biegnij(1600);
+  sprawdz(g_atrapa.tonHz == 1500, "drugi krok 1500 Hz");
+  sprawdz(senKliknijPrzycisk("1500 Hz"), "dotkniecie w trakcie");
+  biegnij(50);
+  sprawdz(g_atrapa.tonHz == 0 && senNapisPrzycisku("Test dźwięku") == "Test dźwięku", "dotkniecie w trakcie = stop: cisza, napis wraca");
+
+  // --- alarm w trakcie przerywa; w alarmie odmowa ---
+  sprawdz(senKliknijPrzycisk("Test dźwięku"), "trzeci start");
+  biegnij(500);
+  od = g_atrapa.serial.size();
+  ustaw(0, [](Centrala& c) { c.alarmOgrzewanie = true; c.tOgrz = 135.0; });
+  biegnij(3000);
+  sprawdz(brzeczykGraPrzegrzanie() && logMa("tag=BRZECZYK zdarzenie=test_dzwieku_koniec powod=alarm", "", "", od), "alarm w trakcie testu: test przerwany (powod=alarm), gra wzorzec alarmu");
+  sprawdz(ekranMa("PRZEGRZANIE"), "ekran alarmu");
+  kliknij("ZAMKNIJ"); biegnij(300);
+  // po ZAMKNIJ panel wraca na pulpit; przycisk testu jest na ekranie WYSWIETLACZ - wolamy callback wprost
+  od = g_atrapa.serial.size();
+  testDzwiekuPrzycisk();
+  biegnij(50);
+  sprawdz(logMa("tag=BRZECZYK zdarzenie=test_dzwieku_odmowa powod=alarm", "", "", od) && brzeczykGraPrzegrzanie(), "w czasie alarmu: odmowa, alarm gra dalej");
+}
+
 void scenariuszSenUstawieniaNigdySen() {
   // Nieznany indeks z NVS (np. z przyszlej wersji) -> domyslne; sen "nigdy" -> panel nie usypia, ale przyciemnia.
   g_atrapa.nvs["wyswietlacz"]["senPrzyIdx"] = 77;
@@ -6640,6 +6709,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"sen_po_wybudzeniu_ladowarka", "sen (v1.5.1): wlozona ladowarka budzi tak samo - pulpit od razu, na ladowarce bez przyciemniania", scenariuszSenPoWybudzeniuLadowarka},
     {"sen_ustawienia", "sen (v1.5.1): ekran WYSWIETLACZ, wiersz Na baterii - przyciski Przyciemnij po / Uspij po, NVS, czasy od razu w uzyciu", scenariuszSenUstawienia},
     {"sen_ustawienia_nigdy", "sen (v1.5.1): z NVS przyciemnianie nigdy + sen po 2 min: bez przyciemnienia, sen po 2 min", scenariuszSenUstawieniaNigdy},
+    {"test_dzwieku", "brzeczyk (v1.5.19): przycisk Test dzwieku - przemiatanie 1000..4000 Hz po 1,5 s, stop dotknieciem, odmowa w alarmie, alarm przerywa", scenariuszTestDzwieku},
     {"sen_ustawienia_nigdy_sen", "sen (v1.5.1): nieznany indeks -> domyslne; sen nigdy -> tylko przyciemnienie; rozladowana bateria usypia mimo to", scenariuszSenUstawieniaNigdySen},
     {"pomiar_obciazenia", "ile panel rysuje, pyta centrale i prosi o pamiec, gdy nic sie nie zmienia (tylko pomiar_obciazenia.sh)", scenariuszPomiarObciazenia},
 #ifdef POMIAR_STERTY

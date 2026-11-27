@@ -487,6 +487,17 @@ void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_harmonogram(WyswietlaczHarmon
 typedef void (*WyswietlaczUstawieniaCb)(const char *pole, long wartosc);
 void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(WyswietlaczUstawieniaCb cb);
 
+// [v1.5.19 TEST-DZWIEKU] Przycisk "Test dźwięku" na ekranie WYSWIETLACZ
+// (wiersz harmonogramu, miedzy etykieta a WL./WYL.). Dotkniecie -> callback
+// do main.cpp (start przemiatania czestotliwosci brzeczyka; w czasie alarmu
+// nic). main.cpp odsyla aktualny krok przez lvgl_dashboard_poc_test_dzwieku_pokaz():
+// hz > 0 -> napis "2300 Hz" (i ekran nie zamyka sie z bezczynnosci w trakcie),
+// hz == 0 -> z powrotem "Test dźwięku". Po co: brzeczyk pasywny gra glosno
+// tylko w rezonansie, a ten trzeba uslyszec, nie zgadnac.
+typedef void (*TestDzwiekuCb)();
+void lvgl_dashboard_poc_ustaw_callback_test_dzwieku(TestDzwiekuCb cb);
+void lvgl_dashboard_poc_test_dzwieku_pokaz(int hz);
+
 // Zasila caly panel jednym wywolaniem - wolane raz w setup() main.cpp zaraz
 // po wczytaniu wartosci z NVS (wyswietlaczWczytajZPamieci()), zeby ekran
 // przy pierwszym otwarciu pokazywal PRAWDZIWE zapisane wartosci, nie
