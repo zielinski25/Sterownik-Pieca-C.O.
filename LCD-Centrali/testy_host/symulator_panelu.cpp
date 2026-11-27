@@ -1079,7 +1079,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.18"
+#define WERSJA_FW "v1.5.19"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -2663,16 +2663,22 @@ void scenariuszZlaOdpowiedzDlugo() {
 #endif
 }
 
-// Czy brzeczyk gra wzorzec alarmu: w ciagu 1,2 s czestotliwosc zmienia sie
-// i w kazdej chwili jest niezerowa (alarm przegrzania: 1200/1600 Hz bez przerw).
+// Czy brzeczyk gra wzorzec alarmu OGRZEWANIA. [v1.5.19] Brzeczyk jest
+// aktywny (stale napiecie zamiast tonu), wzorzec to dwa krotkie pikniecia
+// co sekunde: 120 ms gra / 120 ms cisza / 120 ms gra / 640 ms cisza. Przez
+// 1,2 s probkowania co 10 ms: ton tylko 0 albo 255 (zadnego PWM/Hz), co
+// najmniej 2 pikniecia, zadne dluzsze niz 130 ms (T3 pozaru ma 500 ms).
 bool brzeczykGraPrzegrzanie() {
-  const int przed = g_atrapa.zmianTonu;
-  bool caly_czas = true;
-  for (int i = 0; i < 12; i++) {
-    biegnij(100);
-    if (g_atrapa.tonHz != 1200 && g_atrapa.tonHz != 1600) caly_czas = false;
+  int pikniec = 0, najdluzszeMs = 0, biezaceMs = 0;
+  bool tylkoStale = true;
+  for (int i = 0; i < 120; i++) {
+    biegnij(10);
+    const uint32_t t = g_atrapa.tonHz;
+    if (t != 0 && t != 255) tylkoStale = false;
+    if (t != 0) { if (biezaceMs == 0) pikniec++; biezaceMs += 10; if (biezaceMs > najdluzszeMs) najdluzszeMs = biezaceMs; }
+    else biezaceMs = 0;
   }
-  return caly_czas && g_atrapa.zmianTonu > przed;
+  return tylkoStale && pikniec >= 2 && najdluzszeMs <= 130;
 }
 
 // --- 17a -------------------------------------------------------------------
@@ -2750,7 +2756,7 @@ void scenariuszAutorestartPrzyAlarmie() {
   sprawdz(znacznikNaglowka().rfind("SYMULACJA: ", 0) == 0 && znacznikNaglowka().find("piec") != std::string::npos,
           "ekran alarmu pokazuje, ze temperatura pieca jest symulowana (\"SYMULACJA: ... piec\")");
   zrzutEkranu("1_alarm_z_symulacja");
-  sprawdz(brzeczykGraPrzegrzanie(), "brzeczyk gra wzorzec przegrzania (1200/1600 Hz)");
+  sprawdz(brzeczykGraPrzegrzanie(), "brzeczyk gra wzorzec przegrzania (podwojne krotkie pikniecie co 1 s, stale napiecie - aktywny)");
   sprawdz(kliknij("WYCISZ"), "przycisk WYCISZ");
   biegnij(50);
   sprawdz(g_atrapa.tonHz == 0, "WYCISZ: cisza od razu (bez czekania na kolejny status)");

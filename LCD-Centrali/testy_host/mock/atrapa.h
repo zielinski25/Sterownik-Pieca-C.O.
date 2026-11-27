@@ -108,9 +108,9 @@ struct Atrapa {
   unsigned long podswietlenieZapisow = 0;  // ile razy firmware ustawil jasnosc podswietlenia (ledcWrite na pinie TFT_BL)
   long podswietlenieWypelnienie = -1;      // ostatnio ustawione wypelnienie PWM (0..255); -1 = jeszcze nie ustawiono
 
-  // --- brzeczyk (ledcWriteTone) ---
-  uint32_t tonHz = 0;          // ostatnio ustawiona czestotliwosc; 0 = cisza
-  int zmianTonu = 0;           // ile razy czestotliwosc sie zmienila (wzorzec alarmu "gra")
+  // --- brzeczyk (ledcWriteTone - pasywny; od v1.5.19 ledcWrite(13, 255|0) - aktywny) ---
+  uint32_t tonHz = 0;          // ostatnio ustawiony ton: 0 = cisza; pasywny: Hz; aktywny: 255 = gra
+  int zmianTonu = 0;           // ile razy ton sie zmienil (wzorzec alarmu "gra")
 
   // --- pamiec (esp_heap_caps.h): to, co firmware odczytuje jako wolny RAM ---
   // Zwykle testy ustawiaja te liczby recznie; pomiar_pamieci.sh podstawia

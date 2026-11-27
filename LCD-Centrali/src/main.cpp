@@ -40,6 +40,25 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-27] v1.5.19 - BRZECZYK: STALE NAPIECIE ZAMIAST PWM (MODUL JEST AKTYWNY)
+//   - User (27.11): "buzzer jest dosc cichy" (oba alarmy). Z dokumentacji
+//     lutowania (docs/schemat-zasilania/brzeczyk.html, 20.11): modul BEEP
+//     V2.0, IO+VCC na 5 V, masa przez C945 z D13; test "R5 do 3V3 -> ciagly
+//     pisk" = brzeczyk AKTYWNY (wlasny generator). Kod od poczatku zakladal
+//     pasywny: PWM 50 % o 3000 Hz (pozar) / 1200-1600 Hz (ogrzewanie) siekal
+//     zasilanie modulu w poprzek jego generatora - polowa energii + dudnienie
+//     = cicho. Teraz BRZECZYK_AKTYWNY=1: faza tonu = D13 stale HIGH
+//     (ledcWrite 255 na kanale 8-bit = pelne wlaczenie), cisza = LOW, przez
+//     jedna funkcje brzeczykTon(); ledcWriteTone() nie jest wolane.
+//   - Rytmy: POZAR T3 bez zmian (3 x 0,5 s / 1,5 s przerwy). OGRZEWANIE/PANEL
+//     nie moze byc dwutonem na aktywnym - zamiast tego dwa krotkie pikniecia
+//     co sekunde (120/120/120/640 ms), wyraznie inne niz dlugie potrojne T3.
+//   - Uboczna korzysc: ledcWriteTone() przestawialo czestotliwosc timera
+//     LEDC, ktory moze byc wspolny z PWM podswietlenia - tego juz nie ma.
+//   - Pasywny piezo (gdyby wrocil): BRZECZYK_AKTYWNY 0 = dokladnie kod 1.5.18.
+//   - Symulator: atrapa ledcWrite() na pinie 13 zlicza wlaczenia jak dotad
+//     tony; brzeczykGraPrzegrzanie() sprawdza nowy rytm (krotkie pikniecia
+//     <= 120 ms, >= 2 na sekunde), nie 1200/1600 Hz.
 // [2026-11-24] v1.5.18 - KAFELEK ZEWN BEZ CZUJNIKA: "3.4°C" ZAMIAST "~3°C"
 //   - User (24.11): "Czemu jest znaczek tyldy i pogoda zaokraglona" -> wybor
 //     "3.4°C". Temperatura z prognozy (pogoda_temp z centrali 3.58.17, gdy
@@ -1457,7 +1476,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.18"; // [2026-11-24] v1.5.18: kafelek ZEWN bez czujnika - temperatura z prognozy jako "3.4°C" (jak pomiar: 1 miejsce po przecinku, bez tyldy i zaokraglania; w v1.5.17 "~3°C"); opis w HISTORII ZMIAN. [2026-11-23] v1.5.17: kafelek ZEWN uklad "E" - napis o pogodzie (2 linie) zamiast tytulu, bez paska, bez czujnika temperatura z prognozy "~3°C" (pogoda_temp z centrali 3.58.17); opis w HISTORII ZMIAN. v1.5.16: tlo wykresu = tlo ekranu (bez jasniejszej karty do rogow); v1.5.15: ekran Wykres na caly ekran - legenda z trybem w jednym pasku u gory zamiast tytulu + 2 wierszy legendy, padding 4 px; opis w HISTORII ZMIAN. v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.19"; // [2026-11-27] v1.5.19: brzeczyk AKTYWNY (BEEP V2.0) - stale napiecie zamiast PWM 50 % (glosniej, czysty ton), OGRZEWANIE = podwojne krotkie pikniecie co 1 s zamiast dwutonu; opis w HISTORII ZMIAN. [2026-11-24] v1.5.18: kafelek ZEWN bez czujnika - temperatura z prognozy jako "3.4°C" (jak pomiar: 1 miejsce po przecinku, bez tyldy i zaokraglania; w v1.5.17 "~3°C"); opis w HISTORII ZMIAN. [2026-11-23] v1.5.17: kafelek ZEWN uklad "E" - napis o pogodzie (2 linie) zamiast tytulu, bez paska, bez czujnika temperatura z prognozy "~3°C" (pogoda_temp z centrali 3.58.17); opis w HISTORII ZMIAN. v1.5.16: tlo wykresu = tlo ekranu (bez jasniejszej karty do rogow); v1.5.15: ekran Wykres na caly ekran - legenda z trybem w jednym pasku u gory zamiast tytulu + 2 wierszy legendy, padding 4 px; opis w HISTORII ZMIAN. v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1927,12 +1946,23 @@ void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
 // dwa RZECZYWISCIE UZYWANE, rozpoznawalne wzorce alarmowe zamiast jednego
 // monotonnego piknia - research (na prosbe z tej sesji) ponizej.
 //
-// UWAGA SPRZETOWA: kod zaklada brzeczyk PASYWNY (bez wlasnego oscylatora -
-// gra dokladnie te czestotliwosc, ktora dostanie z ledcWriteTone()). Z
-// brzeczykiem AKTYWNYM (ma wlasny oscylator, ignoruje czestotliwosc, gra
-// zawsze swoim jednym stalym tonem) kod i tak zadziala - RYTM obu wzorcow
-// (patrz nizej) zostaje w pelni slyszalny, ginie tylko roznica WYSOKOSCI
-// dzwieku miedzy POZAREM a OGRZEWANIEM. Pasywny da pelny efekt.
+// [v1.5.19 BRZECZYK-AKTYWNY] SPRZET NA PLYTCE (docs/schemat-zasilania/
+// brzeczyk.html, zlutowane 20.11): modul BEEP V2.0 (GND-IO-VCC, J3Y + 101),
+// IO zmostkowane z VCC na 5 V z VIN, mase modulu przelacza Q1 C945 z D13
+// przez 1 kOhm. Test z 20.11 "R5 do 3V3 -> CIAGLY pisk" = brzeczyk AKTYWNY
+// (ma wlasny generator ok. 2,5 kHz; pasywny przy stalym napieciu tylko by
+// kliknal). Do v1.5.18 kod zakladal pasywny i podawal na D13 PWM 50 % o
+// 3000 Hz / 1200-1600 Hz - czyli siekal zasilanie modulu kilka tysiecy razy
+// na sekunde W POPRZEK jego wlasnego generatora: polowa energii + dudnienie
+// dwoch czestotliwosci = user (27.11): "buzzer jest dosc cichy". Aktywny
+// brzeczyk gra najglosniej na STALYM napieciu, a rytm robi sie wlaczaniem
+// i wylaczaniem co setki ms. Dlatego BRZECZYK_AKTYWNY = 1: faza "ton" =
+// D13 stale HIGH (ledcWrite 255 = pelne wlaczenie w rdzeniu 3.x), faza
+// "cisza" = LOW; ledcWriteTone() nie jest wolane wcale. Dwuton "hi-lo"
+// OGRZEWANIA nie jest na aktywnym mozliwy - zastapiony podwojnym krotkim
+// pikaniem (patrz WZORZEC_OGRZEWANIE), nadal wyraznie innym niz T3 pozaru.
+// Gdyby kiedys wrocil brzeczyk pasywny: BRZECZYK_AKTYWNY 0 przywraca
+// dawne tony (3000 Hz / 1200-1600 Hz) i ledcWriteTone().
 //
 // RESEARCH - skad te konkretne wzorce (nie wymyslone, dwa prawdziwe,
 // standaryzowane sygnaly alarmowe o swiadomie innym "charakterze"):
@@ -1956,15 +1986,46 @@ void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
 // Priorytet gdy kilka alarmow naraz: POZAR (dymAlarm) > OGRZEWANIE/PANEL >
 // cisza - patrz brzeczykOdswiezZAlarmow() nizej.
 #define BRZECZYK_PIN 13
+#define BRZECZYK_AKTYWNY 1   // [v1.5.19] 1 = modul z wlasnym generatorem (BEEP V2.0 na plytce): stale HIGH zamiast PWM; 0 = pasywny piezo, tony jak do v1.5.18
 
-struct BrzeczykFaza { uint16_t czestotliwoscHz; uint16_t czasMs; }; // czestotliwoscHz=0 -> cisza w tej fazie
+// czestotliwoscHz=0 -> cisza w tej fazie; przy BRZECZYK_AKTYWNY kazda
+// niezerowa wartosc znaczy tylko "gra" (stale napiecie), liczba jest bez znaczenia.
+struct BrzeczykFaza { uint16_t czestotliwoscHz; uint16_t czasMs; };
 
+#if BRZECZYK_AKTYWNY
+// POZAR: rytm T3 bez zmian (3 x 0,5 s ton + 0,5 s cisza, potem 1,5 s ciszy).
+static const BrzeczykFaza WZORZEC_POZAR[] = {
+  {1, 500}, {0, 500}, {1, 500}, {0, 500}, {1, 500}, {0, 1500},
+};
+// OGRZEWANIE/PANEL: zamiast dwutonu - DWA KROTKIE pikniecia co sekunde
+// ("pip-pip ... pip-pip"): 120 ms ton / 120 ms cisza / 120 ms ton / 640 ms
+// cisza, cykl 1,0 s. Krotkie i podwojne, wiec nie do pomylenia z dlugimi
+// (0,5 s), potrojnymi piknieciami T3 pozaru.
+static const BrzeczykFaza WZORZEC_OGRZEWANIE[] = {
+  {1, 120}, {0, 120}, {1, 120}, {0, 640},
+};
+#else
 static const BrzeczykFaza WZORZEC_POZAR[] = {
   {3000, 500}, {0, 500}, {3000, 500}, {0, 500}, {3000, 500}, {0, 1500},
 };
 static const BrzeczykFaza WZORZEC_OGRZEWANIE[] = {
   {1200, 500}, {1600, 500},
 };
+#endif
+
+// [v1.5.19] Jedyne miejsce, ktore dotyka pinu brzeczyka w czasie pracy.
+// Aktywny: ledcWrite() na kanale 8-bitowym z brzeczykZainicjuj() - 255 to w
+// rdzeniu arduino-esp32 3.x "wszystkie bity = pelne wlaczenie" (stale HIGH,
+// bez szpilki LOW), 0 = stale LOW. Celowo NIE ledcWriteTone(): ta funkcja
+// przestawia kanal na 10 bitow i 50 % wypelnienia, czyli dokladnie to, co
+// bylo za cicho. Pasywny: jak do v1.5.18.
+static void brzeczykTon(uint16_t hz) {
+#if BRZECZYK_AKTYWNY
+  ledcWrite(BRZECZYK_PIN, hz != 0 ? 255 : 0);
+#else
+  ledcWriteTone(BRZECZYK_PIN, hz);
+#endif
+}
 
 enum BrzeczykAlarmTyp { BRZECZYK_BRAK, BRZECZYK_POZAR, BRZECZYK_OGRZEWANIE };
 BrzeczykAlarmTyp brzeczykAktywnyTyp = BRZECZYK_BRAK;
@@ -1992,7 +2053,7 @@ const BrzeczykFaza *brzeczykWzorzec(BrzeczykAlarmTyp typ, int &liczbaFaz) {
 void brzeczykZastosujFaze() {
   int liczbaFaz;
   const BrzeczykFaza *wzorzec = brzeczykWzorzec(brzeczykAktywnyTyp, liczbaFaz);
-  ledcWriteTone(BRZECZYK_PIN, wzorzec[brzeczykFazaIdx].czestotliwoscHz);
+  brzeczykTon(wzorzec[brzeczykFazaIdx].czestotliwoscHz);
 }
 
 void brzeczykUstawTyp(BrzeczykAlarmTyp nowy) {
@@ -2000,7 +2061,7 @@ void brzeczykUstawTyp(BrzeczykAlarmTyp nowy) {
   brzeczykAktywnyTyp = nowy;
   brzeczykFazaIdx = 0;
   brzeczykFazaStartMs = millis();
-  if (brzeczykAktywnyTyp == BRZECZYK_BRAK) ledcWriteTone(BRZECZYK_PIN, 0);
+  if (brzeczykAktywnyTyp == BRZECZYK_BRAK) brzeczykTon(0);
   else brzeczykZastosujFaze(); // wejdz w faze 0 NATYCHMIAST, nie czekaj na 1. obrot obsluzBrzeczyk()
 }
 
@@ -2053,7 +2114,7 @@ void alarmWyciszObsluga() {
 }
 
 // Wolane co obrot loop() - awansuje
-// wzorzec do kolejnej fazy, gdy czas biezacej fazy uplynal. ledcWriteTone()
+// wzorzec do kolejnej fazy, gdy czas biezacej fazy uplynal. brzeczykTon()
 // wolane TYLKO przy realnej zmianie fazy, NIE w kazdym obrocie petli (patrz
 // arduino-esp32 issue #3617 - zbyt czeste wywolania ledcWriteTone() daja
 // niedokladny dzwiek).
@@ -2069,8 +2130,8 @@ void obsluzBrzeczyk() {
 }
 
 void brzeczykZainicjuj() {
-  ledcAttach(BRZECZYK_PIN, 3000, 8); // czestotliwosc startowa/rozdzielczosc - ledcWriteTone() i tak zmienia freq w locie
-  ledcWriteTone(BRZECZYK_PIN, 0);    // cisza na starcie
+  ledcAttach(BRZECZYK_PIN, 3000, 8); // 8 bitow: przy BRZECZYK_AKTYWNY ledcWrite(255) = stale HIGH (patrz brzeczykTon()); pasywny: ledcWriteTone() i tak zmienia freq w locie
+  brzeczykTon(0);                    // cisza na starcie
 }
 
 // Motyw kolorow — spojny z panelem WWW centrali (ciemne tlo, akcent ognisty)
@@ -4408,7 +4469,7 @@ void idzSpac(const char* powod) {
   // Brzeczyk: cisza i koniec PWM PRZED snem - ewentualny alarm sprzed chwili
   // nie ma juz do kogo grac, a pin musi byc zwyklym wyjsciem (nie LEDC),
   // zeby gpio_hold_en() nizej zamrozil stan niski.
-  ledcWriteTone(BRZECZYK_PIN, 0);
+  brzeczykTon(0);   // [v1.5.19] przez brzeczykTon(), nie ledcWriteTone() - patrz BRZECZYK_AKTYWNY
   ledcDetach(BRZECZYK_PIN);
   pinMode(BRZECZYK_PIN, OUTPUT);
   digitalWrite(BRZECZYK_PIN, LOW);
