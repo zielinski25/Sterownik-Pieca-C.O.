@@ -193,10 +193,11 @@ def main():
         return
 
     naglowek("DO PRZENIESIENIA DO KWARANTANNY")
-    for g in do_przeniesienia:
-        print(f"  {g['kategoria']:<22} {g['rozmiar_MB']/1024:>6.2f} GB "
+    for i, g in enumerate(do_przeniesienia, 1):
+        print(f"  {i}. {g['kategoria']:<20} {g['rozmiar_MB']/1024:>6.2f} GB "
               f"({len(g['pozycje'])} poz.)")
-    print(f"  {'RAZEM':<22} {sum(g['rozmiar_MB'] for g in do_przeniesienia)/1024:>6.2f} GB")
+    print(f"     {'RAZEM':<20} "
+          f"{sum(g['rozmiar_MB'] for g in do_przeniesienia)/1024:>6.2f} GB")
     print(f"\n  Kwarantanna: {R.katalog_kwarantanny(home)}")
     print("  Pliki da sie przywrocic: python agent.py --przywroc")
 
@@ -204,13 +205,54 @@ def main():
         print(f"\nTryb --tylko-raport: nic nie ruszam. Plan: {plik_planu}")
         return
 
-    if not a.auto and not zapytaj_tak(
-            f"\nPrzeniesc {sum(g['rozmiar_MB'] for g in do_przeniesienia)/1024:.2f} GB "
-            "do kwarantanny?"):
-        print(f"Anulowane. Nic nie zostalo zmienione. Plan: {plik_planu}")
-        return
+    # ------------------------------------------------- wybor kategorii
+    # Domyslnie proponujemy wszystko, ale uzytkownik moze wykluczyc kategorie
+    # numerem. "v" = pokaz pelna liste pozycji wybranej grupy (do przegladu).
+    wybrane = [g["kategoria"] for g in do_przeniesienia]
+    if not a.auto:
+        print("\n  Aby WYKLUCZYC kategorie, podaj jej numery (np. 2 3).")
+        print("  Enter = wszystko. 'v 2' = pokaz pelna liste pozycji z grupy 2.")
+        try:
+            odp = input("  Twoj wybor: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            odp = ""
 
-    wynik = wykonaj(plan, probne=False)
+        if odp.startswith("v"):
+            try:
+                nr = int(odp.split()[1]) - 1
+                g = do_przeniesienia[nr]
+            except (ValueError, IndexError):
+                print("  Zly numer grupy.")
+                return
+            naglowek(f"PELNA LISTA: {g['kategoria']} ({len(g['pozycje'])} poz.)")
+            for p in g["pozycje"]:
+                wiek = f"{p['wiek_dni']} dni" if p.get("wiek_dni") is not None else "?"
+                print(f"  {p['rozmiar_MB']:>8.1f} MB  {wiek:>8}  {p['sciezka']}")
+            print(f"\n  Nic nie przeniesione. Aby przeniesc, uruchom agenta ponownie.")
+            return
+
+        if odp:
+            try:
+                numery = [int(x) for x in odp.replace(",", " ").split()]
+            except ValueError:
+                print("  Rozumiem tylko numery grup. Anulowane.")
+                return
+            wykluczone = {do_przeniesienia[n - 1]["kategoria"]
+                          for n in numery if 0 < n <= len(do_przeniesienia)}
+            wybrane = [k for k in wybrane if k not in wykluczone]
+            if wykluczone:
+                print(f"\n  Wykluczone: {', '.join(sorted(wykluczone))}")
+            if not wybrane:
+                print("  Nic nie zostalo do przeniesienia. Anulowane.")
+                return
+
+        suma = sum(g["rozmiar_MB"] for g in do_przeniesienia
+                   if g["kategoria"] in wybrane) / 1024
+        if not zapytaj_tak(f"\nPrzeniesc {suma:.2f} GB do kwarantanny?"):
+            print(f"Anulowane. Nic nie zostalo zmienione. Plan: {plik_planu}")
+            return
+
+    wynik = wykonaj(plan, probne=False, potwierdzone_kategorie=wybrane)
     naglowek("WYNIK")
     print(f"  Przeniesiono:   {len(wynik['ruchy'])} pozycji")
     print(f"  Odzyskane:      {wynik['odzyskane_MB']/1024:.2f} GB")
