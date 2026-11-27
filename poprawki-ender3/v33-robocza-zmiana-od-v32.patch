@@ -1,0 +1,670 @@
+--- a/Marlin/src/sd/cardreader.cpp
++++ b/Marlin/src/sd/cardreader.cpp
+@@ -45,6 +45,11 @@
+ #include "../module/printcounter.h"
+ #include "../gcode/queue.h"
+ #include "../module/settings.h"
++#if ALL(AUTO_BED_LEVELING_UBL, HAS_HEATED_BED)
++  #include "../module/temperature.h"
++  #include "../module/motion.h"
++  #include "../module/probe.h"
++#endif
+ #include "../module/stepper/indirection.h"
+ 
+ #if ENABLED(EMERGENCY_PARSER)
+@@ -701,6 +706,77 @@
+   TERN_(NO_SD_DETECT, ui.refresh());
+ }
+ 
++#if ALL(AUTO_BED_LEVELING_UBL, HAS_HEATED_BED)
++  // Only the LCD SD-start path arms this sequence. Never infer success from a
++  // filled mesh: ProUI can interpolate missing points after a failed probe.
++  static bool auto_start_armed = false, auto_probe_ok = false;
++  static int16_t auto_bed_temp = 0;
++  static int auto_ix0, auto_ix1, auto_iy0, auto_iy1;
++  static uint8_t auto_grid_x, auto_grid_y;
++  static float auto_mesh_min_x, auto_mesh_max_x, auto_mesh_min_y, auto_mesh_max_y;
++  static bool auto_required(const int x, const int y) {
++    return x >= auto_ix0 && x <= auto_ix1 && y >= auto_iy0 && y <= auto_iy1;
++  }
++
++  void CardReader::auto_start_cancel() {
++    if (!auto_start_armed) return;
++    auto_start_armed = false;
++    queue.clear();
++    queue.injected_commands_P = nullptr;
++    queue.injected_commands[0] = '\0';
++    thermalManager.setTargetBed(0);
++    set_bed_leveling_enabled(false);
++    ui.set_status(F("Start anulowany: pomiar"), true);
++    SERIAL_ERROR_MSG("SD start cancelled: heating or probing failed");
++  }
++
++  void CardReader::auto_preheat() {
++    if (!auto_start_armed) return;
++    thermalManager.setTargetBed(auto_bed_temp);
++    ui.set_status(F("Nagrzewanie stolu"));
++    const bool finished = thermalManager.wait_for_bed(false);
++    if (!finished || thermalManager.degTargetBed() != auto_bed_temp ||
++        fabsf(thermalManager.degBed() - auto_bed_temp) > 3.0f)
++      auto_start_cancel();
++  }
++
++  void CardReader::auto_prepare_probe() {
++    if (!auto_start_armed) return;
++    if (axes_should_home() || auto_grid_x != GRID_MAX_POINTS_X || auto_grid_y != GRID_MAX_POINTS_Y ||
++        auto_mesh_min_x != MESH_MIN_X || auto_mesh_max_x != MESH_MAX_X ||
++        auto_mesh_min_y != MESH_MIN_Y || auto_mesh_max_y != MESH_MAX_Y ||
++        thermalManager.degTargetBed() != auto_bed_temp || fabsf(thermalManager.degBed() - auto_bed_temp) > 3.0f) {
++      auto_start_cancel(); return;
++    }
++    GRID_LOOP(x, y) {
++      if ((auto_required(x, y) && !probe.can_reach(bedlevel.get_mesh_x(x), bedlevel.get_mesh_y(y))) ||
++          (!auto_required(x, y) && (!isfinite(bedlevel.z_values[x][y]) || fabsf(bedlevel.z_values[x][y]) > 10.0f))) {
++        auto_start_cancel(); return;
++      }
++    }
++    set_bed_leveling_enabled(false); // before invalidating any mesh points
++    GRID_LOOP(x, y) if (auto_required(x, y)) bedlevel.z_values[x][y] = NAN;
++  }
++
++  void CardReader::auto_probe_result() {
++    if (!auto_start_armed) return;
++    bool ok = !axes_should_home() && auto_grid_x == GRID_MAX_POINTS_X && auto_grid_y == GRID_MAX_POINTS_Y;
++    GRID_LOOP(x, y) if (auto_required(x, y) && !isfinite(bedlevel.z_values[x][y])) ok = false;
++    auto_probe_ok = ok;
++  }
++
++  void CardReader::auto_start_check() {
++    if (!auto_start_armed) return;
++    if (!auto_probe_ok || !bedlevel.mesh_is_valid() || axes_should_home()) {
++      auto_start_cancel();
++      return;
++    }
++    set_bed_leveling_enabled(true);
++    if (!planner.leveling_active) { auto_start_cancel(); return; }
++    auto_start_armed = false;
++  }
++#endif
++
+ /**
+  * Open a G-code file and set Marlin to start processing it.
+  * Enqueues M23 and M24 commands to initiate a media print.
+@@ -722,351 +798,129 @@
+     }
+   #endif
+ 
+-  // v31: Wyznaczanie dokładnego obszaru modelu na stole:
+-  // 1) Natychmiastowo z fileprop ProUI (jeśli podgląd pliku już sparsował MINX..MAXY),
+-  // 2) Wieloliniowy, case-insensitive parser komentarzy nagłówka z pomijaniem miniaturek PNG/JPG,
+-  // 3) Szybki fallback po pierwszych warstwach G0/G1/G2/G3 (~0.2-0.3s, bufor 256B na stosie, 0 B .bss).
+-  float minX = 9999.0f, maxX = -9999.0f, minY = 9999.0f, maxY = -9999.0f;
+-  bool have_bbox = false;
+-
+-  #if PROUI_EX
+-    if (fileprop.maxx > fileprop.minx && fileprop.maxy > fileprop.miny &&
+-        fileprop.minx >= float(X_MIN_POS) - 10.0f && fileprop.maxx <= float(X_BED_SIZE) + 10.0f &&
+-        fileprop.miny >= float(Y_MIN_POS) - 10.0f && fileprop.maxy <= float(Y_BED_SIZE) + 10.0f) {
+-      minX = fileprop.minx; maxX = fileprop.maxx;
+-      minY = fileprop.miny; maxY = fileprop.maxy;
+-      have_bbox = true;
+-      SERIAL_ECHOLNPGM("SD print v31: bbox z ProUI X ", minX, " .. ", maxX, "  Y ", minY, " .. ", maxY);
+-    }
+-  #endif
+-
+-  if (!have_bbox) {
+-    MediaFile *diveDir = nullptr;
+-    const char * const scanFname = diveToFile(false, diveDir, name);
+-    if (scanFname && myfile.open(diveDir, scanFname, O_READ)) {
+-      myfile.seekSet(0);
+-
+-      auto ci_find = [](const char *hay, const char *needle) -> const char* {
+-        const size_t nlen = strlen(needle);
+-        if (!nlen) return hay;
+-        for (; *hay; ++hay) {
+-          size_t i = 0;
+-          for (; i < nlen; ++i) {
+-            char c1 = hay[i];
+-            if (!c1) return nullptr;
+-            if (c1 >= 'A' && c1 <= 'Z') c1 = char(c1 - 'A' + 'a');
+-            char c2 = needle[i];
+-            if (c2 >= 'A' && c2 <= 'Z') c2 = char(c2 - 'A' + 'a');
+-            if (c1 != c2) break;
++  #if ALL(AUTO_BED_LEVELING_UBL, HAS_HEATED_BED)
++    // Read only explicit first-layer and bed temperature tags supplied by
++    // the slicer. Missing or unparseable metadata must not start a print.
++    int16_t requested_bed_temp = 0;
++    float minX = 0, maxX = 0, minY = 0, maxY = 0;
++    bool found_temp = false, found_min = false, found_max = false, invalid = false;
++    MediaFile *temp_dir = nullptr;
++    const char * const temp_file = diveToFile(false, temp_dir, name);
++    if (temp_file && myfile.open(temp_dir, temp_file, O_READ)) {
++      char line[128]; uint8_t n = 0; bool overflow = false;
++      uint32_t bytes = 0;
++      auto read_pair = [](const char *p, float &x, float &y) -> bool {
++        char *end = nullptr;
++        x = strtof(p, &end);
++        if (end == p || !isfinite(x) || *end != ',') return false;
++        p = end + 1;
++        y = strtof(p, &end);
++        if (end == p || !isfinite(y)) return false;
++        while (*end == ' ' || *end == '\t') ++end;
++        return *end == '\0';
++      };
++      while (bytes++ < 4194304UL) {
++        const int c = myfile.read();
++        if (c < 0) break;
++        if (c == '\n' || c == '\r') {
++          if (n && !overflow) {
++            line[n] = '\0';
++            const char temp_tag[] = "; arena_bed_temp = ";
++            const char min_tag[] = "; first_layer_print_min = ";
++            const char max_tag[] = "; first_layer_print_max = ";
++            if (!strncmp(line, temp_tag, sizeof(temp_tag) - 1)) {
++              const char *v = line + sizeof(temp_tag) - 1;
++              char *end = nullptr;
++              const long value = strtol(v, &end, 10);
++              while (*end == ' ' || *end == '\t') ++end;
++              if (end == v || *end || value < 30 || value > BED_MAXTEMP - 15 || found_temp) invalid = true;
++              else { requested_bed_temp = int16_t(value); found_temp = true; }
++            }
++            else if (!strncmp(line, min_tag, sizeof(min_tag) - 1)) {
++              if (found_min || !read_pair(line + sizeof(min_tag) - 1, minX, minY)) invalid = true;
++              else found_min = true;
++            }
++            else if (!strncmp(line, max_tag, sizeof(max_tag) - 1)) {
++              if (found_max || !read_pair(line + sizeof(max_tag) - 1, maxX, maxY)) invalid = true;
++              else found_max = true;
++            }
++            if (invalid || (found_temp && found_min && found_max)) break;
+           }
+-          if (i == nlen) return hay;
++          n = 0; overflow = false;
+         }
+-        return nullptr;
+-      };
+-
+-      auto parse_tag = [&](const char *s, const char *key, float &out) -> bool {
+-        const size_t klen = strlen(key);
+-        const char *p = s;
+-        while ((p = ci_find(p, key)) != nullptr) {
+-          const bool prev_ok = (p == s) || !(
+-            (p[-1] >= 'a' && p[-1] <= 'z') ||
+-            (p[-1] >= 'A' && p[-1] <= 'Z') ||
+-            (p[-1] >= '0' && p[-1] <= '9') ||
+-            p[-1] == '_'
+-          );
+-          const char *v = p + klen;
+-          if (prev_ok && (*v == ':' || *v == '=' || *v == ' ' || *v == '\t')) {
+-            while (*v == ' ' || *v == '\t' || *v == ':' || *v == '=') ++v;
+-            if ((*v >= '0' && *v <= '9') || *v == '-' || *v == '+' || *v == '.') {
+-              out = strtof(v, nullptr);
+-              return true;
+-            }
+-          }
+-          p += klen;
+-        }
+-        return false;
+-      };
+-
+-      auto parse_pair = [&](const char *s, const char *key, float &ox, float &oy) -> bool {
+-        const char *p = ci_find(s, key);
+-        if (!p) return false;
+-        p += strlen(key);
+-        while (*p == ' ' || *p == '\t' || *p == ':' || *p == '=' || *p == '(' || *p == '[') ++p;
+-        char *end1 = nullptr;
+-        const float vx = strtof(p, &end1);
+-        if (!end1 || end1 == p) return false;
+-        p = end1;
+-        while (*p == ' ' || *p == '\t' || *p == ',' || *p == ';') ++p;
+-        char *end2 = nullptr;
+-        const float vy = strtof(p, &end2);
+-        if (!end2 || end2 == p) return false;
+-        ox = vx; oy = vy;
+-        return true;
+-      };
+-
+-      bool in_thumb = false;
+-      bool got_x1 = false, got_x2 = false, got_y1 = false, got_y2 = false;
+-      float hx1 = 0.0f, hx2 = 0.0f, hy1 = 0.0f, hy2 = 0.0f;
+-
+-      bool in_model = false, rel_e = false, have_cx = false, have_cy = false, done = false;
+-      float curX = 0.0f, curY = 0.0f, last_e = 0.0f;
+-      float raw_minX = 9999.0f, raw_maxX = -9999.0f, raw_minY = 9999.0f, raw_maxY = -9999.0f;
+-      uint16_t layer_changes = 0;
+-      uint32_t model_bytes = 0, non_thumb_bytes = 0;
+-
+-      auto record_pt = [&](const float x, const float y) {
+-        if (x < float(X_MIN_POS) || x > float(X_BED_SIZE) + 5.0f ||
+-            y < float(Y_MIN_POS) || y > float(Y_BED_SIZE) + 5.0f) return;
+-        // Pomijamy linię czyszczącą na lewej krawędzi (X <= 4 mm)
+-        if (x <= 4.0f) return;
+-        if (x < raw_minX) raw_minX = x;
+-        if (x > raw_maxX) raw_maxX = x;
+-        if (y < raw_minY) raw_minY = y;
+-        if (y > raw_maxY) raw_maxY = y;
+-        if (in_model) {
+-          if (x < minX) minX = x;
+-          if (x > maxX) maxX = x;
+-          if (y < minY) minY = y;
+-          if (y > maxY) maxY = y;
+-        }
+-      };
+-
+-      char block[256];
+-      char line[128];
+-      uint8_t idx = 0;
+-      bool line_overflow = false;
+-
+-      auto process_line = [&](char *ln, const uint8_t len) {
+-        char *p = ln;
+-        while (*p == ' ' || *p == '\t') ++p;
+-        if (!*p) return;
+-
+-        // 1. Obsługa bloków miniaturek (; thumbnail begin ... ; thumbnail end)
+-        if (in_thumb) {
+-          if (*p != ';') {
+-            in_thumb = false; // bezpiecznik gdyby brakowało znacznika końca
+-          } else {
+-            if (ci_find(p, "thumbnail end") || ci_find(p, "jpg end"))
+-              in_thumb = false;
+-            return;
+-          }
+-        }
+-
+-        // 2. Komentarze slicera (nagłówki MINX/MAXX/MINY/MAXY, warstwy, koniec druku)
+-        if (*p == ';' || *p == '(' || *p == '%') {
+-          if (ci_find(p, "thumbnail begin") || ci_find(p, "jpg begin")) {
+-            in_thumb = true;
+-            return;
+-          }
+-
+-          if (!got_x1 && (parse_tag(p, "minx", hx1) || parse_tag(p, "min_x", hx1) || parse_tag(p, "min x", hx1))) got_x1 = true;
+-          if (!got_x2 && (parse_tag(p, "maxx", hx2) || parse_tag(p, "max_x", hx2) || parse_tag(p, "max x", hx2))) got_x2 = true;
+-          if (!got_y1 && (parse_tag(p, "miny", hy1) || parse_tag(p, "min_y", hy1) || parse_tag(p, "min y", hy1))) got_y1 = true;
+-          if (!got_y2 && (parse_tag(p, "maxy", hy2) || parse_tag(p, "max_y", hy2) || parse_tag(p, "max y", hy2))) got_y2 = true;
+-
+-          if ((!got_x1 || !got_y1) && (parse_pair(p, "first_layer_print_min", hx1, hy1) || parse_pair(p, "print_bed_min", hx1, hy1))) {
+-            got_x1 = got_y1 = true;
+-          }
+-          if ((!got_x2 || !got_y2) && (parse_pair(p, "first_layer_print_max", hx2, hy2) || parse_pair(p, "print_bed_max", hx2, hy2))) {
+-            got_x2 = got_y2 = true;
+-          }
+-
+-          if (got_x1 && got_x2 && got_y1 && got_y2 && hx2 > hx1 && hy2 > hy1) {
+-            minX = hx1; maxX = hx2; minY = hy1; maxY = hy2;
+-            have_bbox = true;
+-            done = true;
+-            return;
+-          }
+-
+-          if (in_model && (ci_find(p, "end gcode") || ci_find(p, "end g-code") || ci_find(p, "end of gcode") || strstr(p, "EXECUTABLE_BLOCK_END"))) {
+-            done = true;
+-            return;
+-          }
+-
+-          if (strstr(p, "LAYER_CHANGE") || strstr(p, "LAYER:") || strstr(p, "LAYER: ")) {
+-            in_model = true;
+-            layer_changes++;
+-            // Pierwsze 3 warstwy na stole (skirt/brim/podpory/obrys modelu) wystarczą dla siatki UBL
+-            if (layer_changes >= 4 && minX < maxX && minY < maxY) {
+-              have_bbox = true;
+-              done = true;
+-            }
+-          } else if (!in_model && (strstr(p, "TYPE:") || strstr(p, "MESH:") || ci_find(p, "printing object") || strstr(p, "OBJECT_ID"))) {
+-            in_model = true;
+-          }
+-          return;
+-        }
+-
+-        // 3. Komendy G-code (fallback gdy slicer nie zapisał MINX/MAXX w nagłówku)
+-        non_thumb_bytes += len;
+-        if (in_model) model_bytes += len;
+-
+-        // Odetnij komentarz na końcu linii
+-        char *sc = strchr(p, ';');
+-        if (sc) *sc = '\0';
+-
+-        if (p[0] == 'M') {
+-          const int mcode = atoi(p + 1);
+-          if (mcode == 82) rel_e = false;
+-          else if (mcode == 83) rel_e = true;
+-          else if (mcode == 84 && in_model && minX < maxX) { done = true; return; }
+-        } else if (p[0] == 'G') {
+-          const int gcode_num = atoi(p + 1);
+-          if (gcode_num == 92) {
+-            for (const char *t = p + 3; *t; ++t) {
+-              if ((*t == 'E' || *t == 'e') && (t[-1] == ' ' || t[-1] == '\t')) {
+-                last_e = strtof(t + 1, nullptr);
+-                break;
+-              }
+-            }
+-          } else if (gcode_num >= 0 && gcode_num <= 3 && (p[2] == ' ' || p[2] == '\t')) {
+-            const float prevX = curX, prevY = curY;
+-            const bool had_prev = (have_cx && have_cy);
+-            bool seen_e = false, seen_ij = false;
+-            float e_val = 0.0f, arc_i = 0.0f, arc_j = 0.0f;
+-
+-            for (const char *t = p + 2; *t; ++t) {
+-              if (t[-1] != ' ' && t[-1] != '\t') continue;
+-              const char axis = (*t >= 'a' && *t <= 'z') ? char(*t - 'a' + 'A') : *t;
+-              const char nxt = t[1];
+-              if (!((nxt >= '0' && nxt <= '9') || nxt == '-' || nxt == '+' || nxt == '.')) continue;
+-              const float val = strtof(t + 1, nullptr);
+-              if (axis == 'X') { curX = val; have_cx = true; }
+-              else if (axis == 'Y') { curY = val; have_cy = true; }
+-              else if (axis == 'E') { e_val = val; seen_e = true; }
+-              else if (axis == 'I') { arc_i = val; seen_ij = true; }
+-              else if (axis == 'J') { arc_j = val; seen_ij = true; }
+-            }
+-
+-            bool extruding = false;
+-            if (seen_e) {
+-              extruding = rel_e ? (e_val > 0.0001f) : (e_val > last_e + 0.0001f);
+-              if (!rel_e) last_e = e_val;
+-            }
+-
+-            if (extruding && have_cx && have_cy) {
+-              if (had_prev) record_pt(prevX, prevY);
+-              record_pt(curX, curY);
+-              // Pełny okrąg G2/G3 (punkt początkowy == końcowy)
+-              if ((gcode_num == 2 || gcode_num == 3) && seen_ij && had_prev &&
+-                  fabsf(curX - prevX) < 0.05f && fabsf(curY - prevY) < 0.05f) {
+-                const float cx = prevX + arc_i, cy = prevY + arc_j;
+-                const float r = hypotf(arc_i, arc_j);
+-                record_pt(cx - r, cy - r);
+-                record_pt(cx + r, cy + r);
+-              }
+-            }
+-          }
+-        }
+-
+-        if (model_bytes > 262144UL && minX < maxX && minY < maxY) {
+-          have_bbox = true;
+-          done = true;
+-        } else if (non_thumb_bytes > 1048576UL) {
+-          done = true;
+-        }
+-      };
+-
+-      while (!done) {
+-        const int32_t n = myfile.read(block, sizeof(block));
+-        if (n <= 0) break;
+-        for (int32_t bi = 0; bi < n && !done; ++bi) {
+-          const char c = block[bi];
+-          if (c == '\n' || c == '\r') {
+-            if (idx > 0) {
+-              line[idx] = '\0';
+-              process_line(line, idx);
+-            }
+-            idx = 0;
+-            line_overflow = false;
+-          } else if (!line_overflow) {
+-            if (idx < sizeof(line) - 1) {
+-              line[idx++] = c;
+-            } else {
+-              // Długa linia (np. komentarz konfiguracyjny) - przetwórz pierwszą część, resztę pomiń do końca linii
+-              line[idx] = '\0';
+-              process_line(line, idx);
+-              idx = 0;
+-              line_overflow = true;
+-            }
+-          }
++        else if (!overflow) {
++          if (n < sizeof(line) - 1) line[n++] = char(c);
++          else overflow = true;
+         }
+       }
+-      if (!done && idx > 0 && !line_overflow) {
+-        line[idx] = '\0';
+-        process_line(line, idx);
++      myfile.close();
++    }
++    if (invalid || !found_temp || !found_min || !found_max || minX >= maxX || minY >= maxY) {
++      ui.set_status(F("Brak danych w pliku"), true);
++      SERIAL_ERROR_MSG("SD start: missing or invalid bed temperature / first-layer bounds");
++      return;
++    }
++  #endif
++
++  #if ALL(AUTO_BED_LEVELING_UBL, HAS_HEATED_BED)
++    // Require a pre-existing complete mesh outside the freshly probed area.
++    // Invalid/unknown points are never silently converted to zero.
++    if (bedlevel.storage_slot < 0) {
++      if (settings.calc_num_meshes() <= 0) {
++        ui.set_status(F("Brak siatki bazowej"), true);
++        SERIAL_ERROR_MSG("SD start: no mesh storage available");
++        return;
+       }
+-      myfile.close();
+-
+-      if (!have_bbox) {
+-        if (minX < maxX && minY < maxY) {
+-          have_bbox = true;
+-        } else if (raw_minX < raw_maxX && raw_minY < raw_maxY) {
+-          minX = raw_minX; maxX = raw_maxX;
+-          minY = raw_minY; maxY = raw_maxY;
+-          have_bbox = true;
+-        }
+-      }
+-
+-      if (have_bbox) {
+-        SERIAL_ECHOLNPGM("SD print v31: wykryty obszar X ", minX, " .. ", maxX, "  Y ", minY, " .. ", maxY);
+-      } else {
+-        SERIAL_ECHOLNPGM("SD print v31: brak zakresu X/Y - pelny pomiar siatki");
+-      }
+-    }
+-  }
+-
+-  #if ENABLED(AUTO_BED_LEVELING_UBL)
+-    // Wczytaj bazową siatkę z EEPROM (slot 0), jeśli jeszcze nie była aktywna w RAM
+-    if (bedlevel.storage_slot < 0 && settings.calc_num_meshes() > 0) {
+       settings.load_mesh(0);
+       bedlevel.storage_slot = 0;
+     }
+-
+-    bool partial = false;
+-    uint8_t marked = 0;
+-    if (have_bbox && minX < maxX && minY < maxY) {
+-      // Wyznacz dokładne komórki UBL pokrywające obszar modelu (+2 mm zapasu na obrys)
+-      const float pad = 2.0f;
+-      const float distX = (MESH_X_DIST) > 0.1f ? float(MESH_X_DIST) : 1.0f;
+-      const float distY = (MESH_Y_DIST) > 0.1f ? float(MESH_Y_DIST) : 1.0f;
+-      int ix0 = int(floorf(((minX - pad) - float(MESH_MIN_X)) / distX));
+-      int ix1 = int(ceilf (((maxX + pad) - float(MESH_MIN_X)) / distX));
+-      int iy0 = int(floorf(((minY - pad) - float(MESH_MIN_Y)) / distY));
+-      int iy1 = int(ceilf (((maxY + pad) - float(MESH_MIN_Y)) / distY));
+-
+-      const int max_ix = int(GRID_MAX_POINTS_X) - 1;
+-      const int max_iy = int(GRID_MAX_POINTS_Y) - 1;
+-      ix0 = constrain(ix0, 0, max_ix);
+-      ix1 = constrain(ix1, 0, max_ix);
+-      iy0 = constrain(iy0, 0, max_iy);
+-      iy1 = constrain(iy1, 0, max_iy);
+-
+-      for (int iy = 0; iy <= max_iy; ++iy) {
+-        for (int ix = 0; ix <= max_ix; ++ix) {
+-          if (ix >= ix0 && ix <= ix1 && iy >= iy0 && iy <= iy1) {
+-            bedlevel.z_values[ix][iy] = NAN;
+-            marked++;
+-          } else if (isnan(bedlevel.z_values[ix][iy])) {
+-            bedlevel.z_values[ix][iy] = 0.0f;
+-          }
+-        }
++    if (GRID_MAX_POINTS_X < 2 || GRID_MAX_POINTS_Y < 2 ||
++        !isfinite(float(MESH_X_DIST)) || !isfinite(float(MESH_Y_DIST)) ||
++        MESH_X_DIST <= 0 || MESH_Y_DIST <= 0) {
++      ui.set_status(F("Nieprawidlowa siatka"), true);
++      return;
++    }
++    const float pad = 2.0f;
++    if (minX - pad < float(MESH_MIN_X) || maxX + pad > float(MESH_MAX_X) ||
++        minY - pad < float(MESH_MIN_Y) || maxY + pad > float(MESH_MAX_Y)) {
++      ui.set_status(F("Obszar poza siatka"), true);
++      SERIAL_ERROR_MSG("SD start: print area missing or outside mesh");
++      return;
++    }
++    const int ix0 = int(floorf((minX - pad - float(MESH_MIN_X)) / float(MESH_X_DIST)));
++    const int ix1 = int(ceilf ((maxX + pad - float(MESH_MIN_X)) / float(MESH_X_DIST)));
++    const int iy0 = int(floorf((minY - pad - float(MESH_MIN_Y)) / float(MESH_Y_DIST)));
++    const int iy1 = int(ceilf ((maxY + pad - float(MESH_MIN_Y)) / float(MESH_Y_DIST)));
++    GRID_LOOP(x, y) {
++      const bool needed = x >= ix0 && x <= ix1 && y >= iy0 && y <= iy1;
++      if ((needed && !probe.can_reach(bedlevel.get_mesh_x(x), bedlevel.get_mesh_y(y))) ||
++          (!needed && (!isfinite(bedlevel.z_values[x][y]) || fabsf(bedlevel.z_values[x][y]) > 10.0f))) {
++        ui.set_status(F("Siatka wymaga kalibracji"), true);
++        SERIAL_ERROR_MSG("SD start: unreachable point or invalid base mesh");
++        return;
+       }
+-      partial = (marked > 0 && marked < uint8_t(GRID_MAX_POINTS));
+-    }
+-
+-    if (partial) {
+-      SERIAL_ECHOLNPGM("SD print v31: pomiar obszaru modelu - ", marked, " z ", int(GRID_MAX_POINTS), " pkt");
+-      queue.inject_P(PSTR("G28\nG29 P1 C\nG29 S0\nM420 S1\n"));
+-    } else {
+-      SERIAL_ECHOLNPGM("SD print v31: pelny pomiar siatki (", int(GRID_MAX_POINTS), " pkt)");
+-      queue.inject_P(PSTR("G28\nG29 P1\nG29 S0\nM420 S1\n"));
+-    }
++    }
++    // Reject overlong filenames rather than silently truncate the command.
++    char commands[sizeof(queue.injected_commands)];
++    const int command_length = snprintf(commands, sizeof(commands), "M1005\nG28\nM1007\nG29 P1 C\nM1006\nM23 %s\nM24", name);
++    if (command_length < 0 || size_t(command_length) >= sizeof(commands) || strchr(name, '\n') || strchr(name, '\r')) {
++      ui.set_status(F("Nie mozna uruchomic pliku"), true);
++      return;
++    }
++    char * const name_start = strstr(commands, "\nM23 ") + 5;
++    for (char *c = name_start; *c && *c != '\n'; ++c) *c = tolower(*c);
++    auto_ix0 = ix0; auto_ix1 = ix1; auto_iy0 = iy0; auto_iy1 = iy1;
++    auto_grid_x = GRID_MAX_POINTS_X; auto_grid_y = GRID_MAX_POINTS_Y;
++    auto_mesh_min_x = MESH_MIN_X; auto_mesh_max_x = MESH_MAX_X;
++    auto_mesh_min_y = MESH_MIN_Y; auto_mesh_max_y = MESH_MAX_Y;
++    auto_bed_temp = requested_bed_temp;
++    auto_probe_ok = false;
++    auto_start_armed = true;
++    queue.inject(commands);
+   #else
+     queue.inject_P(PSTR("G28\nM420 S1\n"));
+-  #endif
+-
+-  enqueuePrintCmd();
++    enqueuePrintCmd();
++  #endif
+ }
+ 
+ /**
+--- a/Marlin/src/sd/cardreader.h
++++ b/Marlin/src/sd/cardreader.h
+@@ -246,6 +246,13 @@
+   static void getAbsFilenameInCWD(char *dst);
+   static void printSelectedFilename();
+   static void openAndPrintFile(const char *name);   // (working directory or full path)
++  #if ALL(AUTO_BED_LEVELING_UBL, HAS_HEATED_BED)
++    static void auto_preheat();
++    static void auto_prepare_probe();
++    static void auto_probe_result();
++    static void auto_start_check();
++    static void auto_start_cancel();
++  #endif
+   static void startOrResumeFilePrinting();
+   static void endFilePrintNow(TERN_(SD_RESORT, const bool re_sort=false));
+   static void abortFilePrintNow(TERN_(SD_RESORT, const bool re_sort=false));
+--- a/Marlin/src/gcode/queue.cpp
++++ b/Marlin/src/gcode/queue.cpp
+@@ -89,7 +89,7 @@
+ /**
+  * Injected SRAM Commands
+  */
+-char GCodeQueue::injected_commands[64]; // = { 0 }
++char GCodeQueue::injected_commands[128]; // = { 0 }
+ 
+ /**
+  * Commit the accumulated G-code command to the ring buffer,
+@@ -175,6 +175,8 @@
+     injected_commands[i] = '\0';
+     parser.parse(injected_commands);
+     gcode.process_parsed_command();
++    // A handler may cancel the entire injected sequence during execution.
++    if (!injected_commands[0]) return true;
+   }
+ 
+   // Copy the next command into place
+--- a/Marlin/src/gcode/queue.h
++++ b/Marlin/src/gcode/queue.h
+@@ -121,7 +121,7 @@
+   /**
+    * Injected Commands (SRAM)
+    */
+-  static char injected_commands[64];
++  static char injected_commands[128];
+ 
+   /**
+    * Enqueue command(s) to run from PROGMEM. Drained by process_injected_command_P().
+--- a/Marlin/src/gcode/gcode.cpp
++++ b/Marlin/src/gcode/gcode.cpp
+@@ -35,6 +35,9 @@
+ #include "parser.h"
+ #include "queue.h"
+ #include "../module/motion.h"
++#if ALL(HAS_MEDIA, AUTO_BED_LEVELING_UBL, HAS_HEATED_BED)
++  #include "../sd/cardreader.h"
++#endif
+ 
+ #if ENABLED(PRINTCOUNTER)
+   #include "../module/printcounter.h"
+@@ -1182,6 +1185,12 @@
+         case 1004: M1004(); break;                                // M1004: UBL Mesh Wizard
+       #endif
+ 
++      #if ALL(HAS_MEDIA, AUTO_BED_LEVELING_UBL, HAS_HEATED_BED)
++        case 1005: card.auto_preheat(); break;      // Internal SD start: heat before probing
++        case 1006: card.auto_start_check(); break;  // Internal SD start: fail closed on incomplete probing
++        case 1007: card.auto_prepare_probe(); break; // Disable compensation, invalidate selected cells
++      #endif
++
+       #if ENABLED(MAX7219_GCODE)
+         case 7219: M7219(); break;                                // M7219: Set LEDs, columns, and rows
+       #endif
+--- a/Marlin/src/feature/bedlevel/ubl/ubl_G29.cpp
++++ b/Marlin/src/feature/bedlevel/ubl/ubl_G29.cpp
+@@ -35,6 +35,9 @@
+ #include "../../../module/probe.h"
+ #include "../../../gcode/gcode.h"
+ #include "../../../gcode/queue.h"
++#if ALL(HAS_MEDIA, HAS_HEATED_BED)
++  #include "../../../sd/cardreader.h"
++#endif
+ #include "../../../libs/least_squares_fit.h"
+ 
+ #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
+@@ -789,6 +792,9 @@
+         if (ui.button_pressed()) {
+           ui.quick_feedback(false); // Preserve button state for click-and-hold
+           SERIAL_ECHOLNPGM("\nMesh only partially populated.\n");
++          #if ALL(HAS_MEDIA, HAS_HEATED_BED)
++            card.auto_start_cancel();
++          #endif
+           ui.wait_for_release();
+           ui.quick_feedback();
+           ui.release();
+@@ -803,6 +809,9 @@
+ 
+       #if PROUI_EX
+         if (proUIEx.quitLeveling()) {
++          #if ALL(HAS_MEDIA, HAS_HEATED_BED)
++            card.auto_start_cancel();
++          #endif
+           queue.clear();
+           queue.injected_commands_P = nullptr;
+           queue.injected_commands[0] = '\0';
+@@ -832,6 +841,9 @@
+     } while (best.pos.x >= 0 && --count);
+ 
+     GRID_LOOP(x, y) if (z_values[x][y] == HUGE_VALF) z_values[x][y] = NAN; // Restore NAN for HUGE_VALF marks
++    #if ALL(HAS_MEDIA, HAS_HEATED_BED)
++      card.auto_probe_result(); // Before smart fill can hide failures
++    #endif
+ 
+     TERN_(EXTENSIBLE_UI, ExtUI::onMeshUpdate(best.pos, ExtUI::G29_FINISH));
+ 
