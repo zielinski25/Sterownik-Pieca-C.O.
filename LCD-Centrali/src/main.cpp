@@ -40,7 +40,12 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
-// [2026-11-27] v1.5.19 - BRZECZYK: PRZYCISK "TEST DZWIEKU" (SZUKANIE REZONANSU)
+// [2026-11-27] v1.5.20 - BRZECZYK: PRZYCISK "TEST DZWIEKU" (SZUKANIE REZONANSU)
+//   - NUMER: pierwsza proba tej poprawki (commit 89c2906) tez zglaszala sie
+//     jako v1.5.19, ale traktowala brzeczyk jako AKTYWNY (stale napiecie
+//     zamiast PWM) i NIE miala przycisku - zostala odrzucona (zdjecie modulu).
+//     Zeby na ekranie dalo sie odroznic obie kompilacje, ta wersja to v1.5.20;
+//     v1.5.19 nigdy nie poszla do uzytku jako wydanie.
 //   - User (27.11): "buzzer jest dosc cichy" (oba alarmy). Zdjecie modulu:
 //     brzeczyk PASYWNY (czarny walec bez naklejki, bez generatora; na module
 //     wtornik J3Y + 101 + 510), IO+VCC na 5 V, masa przez C945 z D13 -
@@ -54,7 +59,7 @@
 //     napis na przycisku = aktualna czestotliwosc, ekran nie zamyka sie w
 //     trakcie, dotkniecie = stop, w czasie alarmu nic (alarm w trakcie
 //     przerywa test). Log tag=BRZECZYK zdarzenie=test_dzwieku hz=...
-//     Po tescie user podaje najglosniejsza - wzorce dostana ja w v1.5.20.
+//     Po tescie user podaje najglosniejsza - wzorce dostana ja w v1.5.21.
 //   - Porzadek: jedna funkcja brzeczykTon() na pinie + opcja BRZECZYK_AKTYWNY
 //     (0 na tej plytce; 1 = modul z wlasnym generatorem: stale napiecie
 //     zamiast PWM i podwojne pikniecie zamiast dwutonu). Wzorce alarmow BEZ
@@ -1479,7 +1484,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.5.19"; // [2026-11-27] v1.5.19: przycisk "Test dźwięku" na ekranie WYSWIETLACZ - przemiatanie 1000..4000 Hz po 1,5 s, zeby znalezc rezonans pasywnego brzeczyka (cichy); brzeczykTon() + opcja BRZECZYK_AKTYWNY (0); opis w HISTORII ZMIAN. [2026-11-24] v1.5.18: kafelek ZEWN bez czujnika - temperatura z prognozy jako "3.4°C" (jak pomiar: 1 miejsce po przecinku, bez tyldy i zaokraglania; w v1.5.17 "~3°C"); opis w HISTORII ZMIAN. [2026-11-23] v1.5.17: kafelek ZEWN uklad "E" - napis o pogodzie (2 linie) zamiast tytulu, bez paska, bez czujnika temperatura z prognozy "~3°C" (pogoda_temp z centrali 3.58.17); opis w HISTORII ZMIAN. v1.5.16: tlo wykresu = tlo ekranu (bez jasniejszej karty do rogow); v1.5.15: ekran Wykres na caly ekran - legenda z trybem w jednym pasku u gory zamiast tytulu + 2 wierszy legendy, padding 4 px; opis w HISTORII ZMIAN. v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.20"; // [2026-11-27] v1.5.20: przycisk "Test dźwięku" na ekranie WYSWIETLACZ - przemiatanie 1000..4000 Hz po 1,5 s, zeby znalezc rezonans pasywnego brzeczyka (cichy); brzeczykTon() + opcja BRZECZYK_AKTYWNY (0); opis w HISTORII ZMIAN. [2026-11-24] v1.5.18: kafelek ZEWN bez czujnika - temperatura z prognozy jako "3.4°C" (jak pomiar: 1 miejsce po przecinku, bez tyldy i zaokraglania; w v1.5.17 "~3°C"); opis w HISTORII ZMIAN. [2026-11-23] v1.5.17: kafelek ZEWN uklad "E" - napis o pogodzie (2 linie) zamiast tytulu, bez paska, bez czujnika temperatura z prognozy "~3°C" (pogoda_temp z centrali 3.58.17); opis w HISTORII ZMIAN. v1.5.16: tlo wykresu = tlo ekranu (bez jasniejszej karty do rogow); v1.5.15: ekran Wykres na caly ekran - legenda z trybem w jednym pasku u gory zamiast tytulu + 2 wierszy legendy, padding 4 px; opis w HISTORII ZMIAN. v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1956,7 +1961,7 @@ void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
 // brzeczyk dostaje dokladnie te fale prostokatna, ktora ledcWriteTone()
 // wystawia na D13 - kod ponizej jest dla niego wlasciwy.
 //
-// [v1.5.19 TEST-DZWIEKU] User (27.11): "buzzer jest dosc cichy" (oba alarmy).
+// [v1.5.20 TEST-DZWIEKU] User (27.11): "buzzer jest dosc cichy" (oba alarmy).
 // PWM 50 % to maksimum dla fali prostokatnej - w sofcie nie ma "glosnosci",
 // jest tylko CZESTOTLIWOSC: pasywny brzeczyk gra glosno wylacznie w swoim
 // rezonansie (male magnetyczne zwykle 2000-2700 Hz, czesto dokladnie 2048
@@ -1995,7 +2000,7 @@ void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
 // Priorytet gdy kilka alarmow naraz: POZAR (dymAlarm) > OGRZEWANIE/PANEL >
 // cisza - patrz brzeczykOdswiezZAlarmow() nizej.
 #define BRZECZYK_PIN 13
-#define BRZECZYK_AKTYWNY 0   // [v1.5.19] 0 = brzeczyk PASYWNY (ten na plytce, zdjecie 27.11): fala prostokatna z ledcWriteTone(); 1 = modul z wlasnym generatorem: stale HIGH w fazie tonu (patrz wyzej)
+#define BRZECZYK_AKTYWNY 0   // [v1.5.20] 0 = brzeczyk PASYWNY (ten na plytce, zdjecie 27.11): fala prostokatna z ledcWriteTone(); 1 = modul z wlasnym generatorem: stale HIGH w fazie tonu (patrz wyzej)
 
 // czestotliwoscHz=0 -> cisza w tej fazie; przy BRZECZYK_AKTYWNY kazda
 // niezerowa wartosc znaczy tylko "gra" (stale napiecie), liczba jest bez znaczenia.
@@ -2025,7 +2030,7 @@ static const BrzeczykFaza WZORZEC_OGRZEWANIE[] = {
 };
 #endif
 
-// [v1.5.19] Jedyne miejsce, ktore dotyka pinu brzeczyka w czasie pracy
+// [v1.5.20] Jedyne miejsce, ktore dotyka pinu brzeczyka w czasie pracy
 // (wzorce alarmow i test dzwieku). Pasywny (ta plytka): ledcWriteTone() =
 // fala prostokatna 50 % o zadanej czestotliwosci, 0 = cisza - jak do v1.5.18.
 // Aktywny: ledcWrite() na kanale 8-bitowym z brzeczykZainicjuj() - 255 to w
@@ -2145,7 +2150,7 @@ void brzeczykZainicjuj() {
   brzeczykTon(0);                    // cisza na starcie
 }
 
-// [v1.5.19 TEST-DZWIEKU] Przemiatanie czestotliwosci z przycisku "Test
+// [v1.5.20 TEST-DZWIEKU] Przemiatanie czestotliwosci z przycisku "Test
 // dźwięku" (ekran WYSWIETLACZ): kazda wartosc z TEST_DZWIEKU_HZ[] przez
 // TEST_DZWIEKU_KROK_MS, napis na przycisku = aktualna czestotliwosc, na
 // koniec cisza i "Test dźwięku". Dotkniecie w trakcie = stop. W czasie
@@ -4525,7 +4530,7 @@ void idzSpac(const char* powod) {
   // Brzeczyk: cisza i koniec PWM PRZED snem - ewentualny alarm sprzed chwili
   // nie ma juz do kogo grac, a pin musi byc zwyklym wyjsciem (nie LEDC),
   // zeby gpio_hold_en() nizej zamrozil stan niski.
-  testDzwiekuKrokIdx = -1;   // [v1.5.19] ewentualny test dzwieku konczy sie razem ze snem
+  testDzwiekuKrokIdx = -1;   // [v1.5.20] ewentualny test dzwieku konczy sie razem ze snem
   brzeczykTon(0);
   ledcDetach(BRZECZYK_PIN);
   pinMode(BRZECZYK_PIN, OUTPUT);
@@ -5560,7 +5565,7 @@ void setup() {
   lvgl_dashboard_poc_ustaw_callback_wyswietlacz_jasnosc(wyswietlaczJasnoscWyslij);
   lvgl_dashboard_poc_ustaw_callback_wyswietlacz_harmonogram(wyswietlaczHarmonogramWyslij);
   lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(wyswietlaczUstawieniaWyslij);
-  lvgl_dashboard_poc_ustaw_callback_test_dzwieku(testDzwiekuPrzycisk);   // [v1.5.19] brzeczyk jest lokalny - jak jasnosc
+  lvgl_dashboard_poc_ustaw_callback_test_dzwieku(testDzwiekuPrzycisk);   // [v1.5.20] brzeczyk jest lokalny - jak jasnosc
   // [EKRAN ALARMOWY, ta sesja] Ten sam powod co WYSWIETLACZ powyzej - brzeczyk
   // jest lokalny (GPIO tej plytki), wiec dziala identycznie w obu galeziach.
   lvgl_dashboard_poc_ustaw_callback_alarm_wycisz(alarmWyciszObsluga);
@@ -5659,7 +5664,7 @@ void loop() {
   // podgalezi (SYMULACJA i realna), lokalne, niezalezne od centrali. Od
   // v1.5.0 w bateriaKrok() (pierwszy pomiar od razu, potem co 30 s).
   bateriaKrok();
-  testDzwiekuKrok();       // [v1.5.19] przemiatanie czestotliwosci brzeczyka z przycisku "Test dźwięku"
+  testDzwiekuKrok();       // [v1.5.20] przemiatanie czestotliwosci brzeczyka z przycisku "Test dźwięku"
   // [v1.5.0 SEN] Na baterii: przyciemnienie po 1 min, sen po 5 min bez dotyku,
   // sen od razu przy rozladowanym ogniwie. Na USB nic nie robi.
   senKrok();

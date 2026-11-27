@@ -101,7 +101,7 @@
 <h2>Jak to przetestować (DevKit na USB od komputera)</h2>
 <ol>
 <li>Zrób połączenia <b>2, 3, 4, 5</b>. Przewód nr 1 jeszcze <b>nie</b> do D13 – wolny koniec R5 trzymasz w ręce.</li>
-<li>Wolny koniec R5 dotknij do pinu <code>3V3</code> → przy dotknięciu i puszczeniu <b>cichy klik</b> (moduł jest <b>pasywny</b> — bez generatora, na stałym prądzie nie gra; „ciągły pisk” byłby tylko z modułem aktywnym — poprawka 27.11). Właściwy test dźwięku: po przylutowaniu do D13 — ekran alarmu z centrali albo przycisk <b>Test dźwięku</b> na ekranie WYŚWIETLACZ (panel ≥ v1.5.19).</li>
+<li>Wolny koniec R5 dotknij do pinu <code>3V3</code> → przy dotknięciu i puszczeniu <b>cichy klik</b> (moduł jest <b>pasywny</b> — bez generatora, na stałym prądzie nie gra; „ciągły pisk” byłby tylko z modułem aktywnym — poprawka 27.11). Właściwy test dźwięku: po przylutowaniu do D13 — ekran alarmu z centrali albo przycisk <b>Test dźwięku</b> na ekranie WYŚWIETLACZ (panel ≥ v1.5.20).</li>
 <li>Jeśli zamiast tego: <span class="warn">cisza cały czas</span> → sprawdź kolejność nóżek Q1 (C945: E‑C‑B, baza z prawej) i czy IO jest zwarte z VCC; <span class="warn">pisk cały czas</span> → zamienione E z C albo R5 nie trafia w bazę. Tak właśnie było 20.11 z BC547 wylutowanym ze złomu (E/C odwrotnie, być może uszkodzony) – po wymianie na C945 zadziałało od razu.</li>
 <li>Działa → wolny koniec R5 lutujesz do <code>D13</code>. Gotowe – dźwięk pojawi się przy alarmie z centrali (test: ekran alarmu → WYCISZ).</li>
 </ol>

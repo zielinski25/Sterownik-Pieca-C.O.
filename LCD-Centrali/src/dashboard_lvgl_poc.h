@@ -487,7 +487,7 @@ void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_harmonogram(WyswietlaczHarmon
 typedef void (*WyswietlaczUstawieniaCb)(const char *pole, long wartosc);
 void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(WyswietlaczUstawieniaCb cb);
 
-// [v1.5.19 TEST-DZWIEKU] Przycisk "Test dźwięku" na ekranie WYSWIETLACZ
+// [v1.5.20 TEST-DZWIEKU] Przycisk "Test dźwięku" na ekranie WYSWIETLACZ
 // (wiersz harmonogramu, miedzy etykieta a WL./WYL.). Dotkniecie -> callback
 // do main.cpp (start przemiatania czestotliwosci brzeczyka; w czasie alarmu
 // nic). main.cpp odsyla aktualny krok przez lvgl_dashboard_poc_test_dzwieku_pokaz():

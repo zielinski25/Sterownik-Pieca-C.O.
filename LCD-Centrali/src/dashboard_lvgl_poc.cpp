@@ -432,8 +432,8 @@ static AlarmWyciszCb    g_alarmWyciszCb    = nullptr;
 // identyczny, zmienia sie tylko implementacja poza tym plikiem.
 static WyswietlaczJasnoscCb     g_wyswietlaczJasnoscCb     = nullptr;
 static WyswietlaczUstawieniaCb  g_wyswietlaczUstawieniaCb  = nullptr;
-static TestDzwiekuCb            g_testDzwiekuCb            = nullptr;   // [v1.5.19 TEST-DZWIEKU]
-static lv_obj_t *wyswietlaczTestDzwiekuBtnLabel = nullptr;                 // [v1.5.19] napis na przycisku "Test dźwięku" / "2300 Hz"
+static TestDzwiekuCb            g_testDzwiekuCb            = nullptr;   // [v1.5.20 TEST-DZWIEKU]
+static lv_obj_t *wyswietlaczTestDzwiekuBtnLabel = nullptr;                 // [v1.5.20] napis na przycisku "Test dźwięku" / "2300 Hz"
 static WyswietlaczHarmonogramCb g_wyswietlaczHarmonogramCb = nullptr;
 // [v1.4.7 ZASILANIE] Ekran ZASILANIE - patrz zasilanie_* nizej i dashboard_lvgl_poc.h.
 static ZasilanieCb g_zasilanieCb = nullptr;
@@ -4105,7 +4105,7 @@ static void wyswietlacz_harmonogram_wyglad_odswiez() {
                              LV_PART_MAIN);
   lv_label_set_text(wyswietlaczHarmonogramBtnLabel, g_wyswietlaczHarmonogramWlaczony ? "WŁ." : "WYŁ.");
 }
-// [v1.5.19 TEST-DZWIEKU] Dotkniecie "Test dźwięku" - tylko sygnal do
+// [v1.5.20 TEST-DZWIEKU] Dotkniecie "Test dźwięku" - tylko sygnal do
 // main.cpp (tam jest brzeczyk i decyzja, czy akurat nie gra alarm).
 static void wyswietlacz_test_dzwieku_btn_cb(lv_event_t *e) {
   (void)e;
@@ -4243,7 +4243,7 @@ static void wyswietlacz_panel_zbuduj(lv_obj_t *scr) {
     lv_obj_set_style_text_color(wyswietlaczHarmonogramBtnLabel, rgb565(KOL_NAPIS_NA_WLACZONYM), 0);   // [v1.5.10]
     lv_obj_center(wyswietlaczHarmonogramBtnLabel);
 
-    // [v1.5.19 TEST-DZWIEKU] Przycisk "Test dźwięku" w wolnym srodku tego
+    // [v1.5.20 TEST-DZWIEKU] Przycisk "Test dźwięku" w wolnym srodku tego
     // wiersza: etykieta "Automatyczny harmonogram" (czcionka 14) konczy sie
     // ok. x=190, przycisk WL./WYL. zaczyna sie na x=356; 120 px przycisku na
     // x=226..346 zostawia po ok. 10 px z obu stron. W trakcie przemiatania
@@ -8362,7 +8362,7 @@ void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(WyswietlaczUstawie
   g_wyswietlaczUstawieniaCb = cb;
 }
 
-// [v1.5.19 TEST-DZWIEKU] Patrz naglowek.
+// [v1.5.20 TEST-DZWIEKU] Patrz naglowek.
 void lvgl_dashboard_poc_ustaw_callback_test_dzwieku(TestDzwiekuCb cb) {
   g_testDzwiekuCb = cb;
 }

@@ -77,7 +77,7 @@
 // --- z firmware'u (src/main.cpp) ---
 void setup();
 void loop();
-void testDzwiekuPrzycisk();   // [v1.5.19] main.cpp: przycisk "Test dźwięku" (scenariusz test_dzwieku wola go wprost, gdy ekran WYSWIETLACZ jest zamkniety)
+void testDzwiekuPrzycisk();   // [v1.5.20] main.cpp: przycisk "Test dźwięku" (scenariusz test_dzwieku wola go wprost, gdy ekran WYSWIETLACZ jest zamkniety)
 // v1.2.1: pamiec, ktora na plytce przetrwa ESP.restart() (RTC_NOINIT). Starsze
 // zrodla (porownanie przez SRC=...) nie maja ani naglowka, ani zmiennej.
 #if __has_include("diagnostyka_panelu.h")
@@ -1080,7 +1080,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.5.19"
+#define WERSJA_FW "v1.5.20"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -2666,7 +2666,7 @@ void scenariuszZlaOdpowiedzDlugo() {
 
 // Czy brzeczyk gra wzorzec alarmu: w ciagu 1,2 s czestotliwosc zmienia sie
 // i w kazdej chwili jest niezerowa (alarm przegrzania: 1200/1600 Hz bez przerw).
-// [v1.5.19] Brzeczyk na plytce jest pasywny (BRZECZYK_AKTYWNY 0) - wzorce bez zmian.
+// [v1.5.20] Brzeczyk na plytce jest pasywny (BRZECZYK_AKTYWNY 0) - wzorce bez zmian.
 bool brzeczykGraPrzegrzanie() {
   const int przed = g_atrapa.zmianTonu;
   bool caly_czas = true;
@@ -5854,7 +5854,7 @@ void scenariuszSenUstawieniaNigdy() {
   sprawdz(g_atrapa.usnal == 1 && g_atrapa.usnalMs - dotyk >= 119000 && g_atrapa.usnalMs - dotyk <= 123000, "sen 2 min po ostatnim dotyku, bez wczesniejszego przyciemnienia");
 }
 
-// [v1.5.19 TEST-DZWIEKU] Przycisk "Test dźwięku" na ekranie WYSWIETLACZ:
+// [v1.5.20 TEST-DZWIEKU] Przycisk "Test dźwięku" na ekranie WYSWIETLACZ:
 // przemiatanie 9 czestotliwosci po 1,5 s z napisem na przycisku, stop
 // dotknieciem, ekran nie zamyka sie w trakcie, w alarmie odmowa, alarm przerywa.
 void scenariuszTestDzwieku() {
@@ -6709,7 +6709,7 @@ const Scenariusz SCENARIUSZE[] = {
     {"sen_po_wybudzeniu_ladowarka", "sen (v1.5.1): wlozona ladowarka budzi tak samo - pulpit od razu, na ladowarce bez przyciemniania", scenariuszSenPoWybudzeniuLadowarka},
     {"sen_ustawienia", "sen (v1.5.1): ekran WYSWIETLACZ, wiersz Na baterii - przyciski Przyciemnij po / Uspij po, NVS, czasy od razu w uzyciu", scenariuszSenUstawienia},
     {"sen_ustawienia_nigdy", "sen (v1.5.1): z NVS przyciemnianie nigdy + sen po 2 min: bez przyciemnienia, sen po 2 min", scenariuszSenUstawieniaNigdy},
-    {"test_dzwieku", "brzeczyk (v1.5.19): przycisk Test dzwieku - przemiatanie 1000..4000 Hz po 1,5 s, stop dotknieciem, odmowa w alarmie, alarm przerywa", scenariuszTestDzwieku},
+    {"test_dzwieku", "brzeczyk (v1.5.20): przycisk Test dzwieku - przemiatanie 1000..4000 Hz po 1,5 s, stop dotknieciem, odmowa w alarmie, alarm przerywa", scenariuszTestDzwieku},
     {"sen_ustawienia_nigdy_sen", "sen (v1.5.1): nieznany indeks -> domyslne; sen nigdy -> tylko przyciemnienie; rozladowana bateria usypia mimo to", scenariuszSenUstawieniaNigdySen},
     {"pomiar_obciazenia", "ile panel rysuje, pyta centrale i prosi o pamiec, gdy nic sie nie zmienia (tylko pomiar_obciazenia.sh)", scenariuszPomiarObciazenia},
 #ifdef POMIAR_STERTY

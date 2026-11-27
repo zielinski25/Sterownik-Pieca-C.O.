@@ -33,7 +33,7 @@ Sprawdzone miernikiem i logiem:
 | dzielnik, ogniwo Cubot Note S 3,97 V | `procent=76` |
 | GPIO35 z ładowarką / bez | 0,317 V / 3,3 V |
 | brzęczyk przez C945 | ekran alarmu → gra; WYCISZ → cisza; +7 mA przy ciągłym dźwięku |
-| brzęczyk – rodzaj (zdjęcie 27.11) | moduł **pasywny** (czarny walec bez naklejki, bez generatora; wtórnik J3Y + 101 + 510) — firmware słusznie podaje PWM z `ledcWriteTone()`. Cichy, bo 3000 / 1200–1600 Hz są poza rezonansem: od panelu **v1.5.19** przycisk „Test dźwięku” (WYŚWIETLACZ) przemiata 1000–4000 Hz, żeby go znaleźć |
+| brzęczyk – rodzaj (zdjęcie 27.11) | moduł **pasywny** (czarny walec bez naklejki, bez generatora; wtórnik J3Y + 101 + 510) — firmware słusznie podaje PWM z `ledcWriteTone()`. Cichy, bo 3000 / 1200–1600 Hz są poza rezonansem: od panelu **v1.5.20** przycisk „Test dźwięku” (WYŚWIETLACZ) przemiata 1000–4000 Hz, żeby go znaleźć |
 | pobór z USB 5 V (bez ogniwa, WiFi) | ekran 100 %: 254/243/234 mA przy 240/160/80 MHz; ekran 5 %: 157 mA; szczyt startu < 260 mA |
 | **pobór z ogniwa** (24.11, multimetr szeregowo OUT+ TP4056 → VIN+ MT3608, WiFi, pulpit) | ekran 100 %: **110 mA** @ 80 MHz (skoki do 150), 117–126 mA @ 160 MHz (do 140), 130 mA @ 240 MHz (do 160); ekran 5 %: **45–55 mA**; **głęboki sen: 2 mA** (cel < 10 mA – spełniony). Skoki = nadajnik WiFi. Dalsze pomiary przy 80 MHz |
 | ogniwo docelowe (24.11) | jedno **5000–5500 mAh** Li-ion/LiPo 3,7 V (ogniwa z Cubota wymontowane); R_PROG 1,2 kΩ = 1 A = 0,2 C, ładowanie ok. 6 h; progi w programie bez zmian (tabela % jest napięciowa) |

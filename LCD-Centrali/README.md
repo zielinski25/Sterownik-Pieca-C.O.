@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.5.19
+# Panel LCD (wyświetlacz CO) — firmware v1.5.20
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -30,7 +30,12 @@ aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
 
-## Co zmienia v1.5.19
+## Co zmienia v1.5.20
+
+> Numer: pierwsza próba tej poprawki (commit `89c2906`) też zgłaszała się jako
+> „v1.5.19”, ale traktowała brzęczyk jako aktywny i **nie miała przycisku** —
+> odrzucona po zdjęciu modułu. Żeby obie kompilacje dało się odróżnić na
+> ekranie, właściwa wersja to **v1.5.20** (v1.5.19 pomijamy).
 
 **Brzęczyk: przycisk „Test dźwięku” — szukanie rezonansu** (uwaga z 27.11:
 „buzzer jest dość cichy”, oba alarmy). Zdjęcie modułu: brzęczyk **pasywny**
@@ -48,7 +53,7 @@ często dokładnie 2048 albo 2731 Hz), a wzorce mają 3000 Hz (pożar) i
   zamyka się w trakcie, dotknięcie = stop, w czasie alarmu nic (alarm w trakcie
   przerywa test). Log: `tag=BRZECZYK zdarzenie=test_dzwieku krok=i/9 hz=…`.
   **Po teście podaj, która częstotliwość była najgłośniejsza** — wzorce dostaną
-  ją w v1.5.20 (pożar = rezonans, hi-lo = rezonans i ~15 % niżej).
+  ją w v1.5.21 (pożar = rezonans, hi-lo = rezonans i ~15 % niżej).
 - Wzorce alarmów **bez zmian** (3000 / 1200–1600 Hz).
 - Porządek: jedna funkcja `brzeczykTon()` na pinie + opcja `BRZECZYK_AKTYWNY`
   (**0** na tej płytce; 1 = moduł z własnym generatorem: stałe napięcie zamiast
