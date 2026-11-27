@@ -1,0 +1,58 @@
+TEST PASOWANIA — WERSJA OSZCZĘDNA
+
+Zestaw powstał w oparciu o pomysł „Tolerance Tester” autorstwa eliobou:
+https://www.printables.com/model/794623-tolerance-tester
+Licencja: Creative Commons Uznanie autorstwa-Użycie niekomercyjne-Na tych samych warunkach 4.0 (CC BY-NC-SA 4.0):
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+To nowy projekt, nie oryginalny plik. Zmieniono m.in. układ i grubość płytki,
+wysokość wkładek oraz oznaczenia. Nie porównano druku z oryginałem.
+
+CO JEST W ŚRODKU
+• 01_plytka_kolo.stl i 02_wkladka_kolo.stl — test otworów okrągłych.
+• 01_plytka_kwadrat.stl i 02_wkladka_kwadrat.stl — test kwadratowych.
+• generuj_test_pasowania.py — edytowalne źródło projektu.
+
+Drukujesz tylko potrzebną parę albo wszystkie cztery elementy. Płytka ma
+85,2 × 33,2 × 2,4 mm, wkładki wysokość 4 mm. Każda płytka ma 11 otworów;
+nominalnie wkładka ma 10 mm, a otwory 10,00–10,50 mm co 0,05 mm.
+Oznaczenia 00, 05, 10, ... 50 oznaczają setne części milimetra różnicy
+wymiaru otworu i wkładki. Np. 05 = 0,05 mm, 20 = 0,20 mm, 50 = 0,50 mm.
+To całkowita różnica średnicy lub szerokości, a nie luz z jednej strony.
+Otwór jest pod oznaczeniem, nie nad nim. Gdy płytka leży napisami w górę:
+
+  30   35   40   45   50    [puste]
+   O    O    O    O    O
+
+  00   05   10   15   20     25
+   O    O    O    O    O      O
+
+Powyższy układ obowiązuje dla obu płytek. W kwadratowej zamiast O są kwadraty.
+
+JAK WYDRUKOWAĆ
+1. Rozpakuj ZIP i przeciągnij do Orca odpowiednią płytkę i wkładkę.
+   Połóż je płasko na stole z napisami na płytce do góry. Elementy muszą być
+   osobno, nie mogą się dotykać. NIE zmieniaj rozmiaru — skala 100%.
+2. Wybierz tę samą dyszę, filament i ustawienia, jakich używasz do prawdziwych
+   części. Jako punkt wyjścia dla dyszy 0,4 mm: warstwa 0,2 mm, 2 ścianki,
+   bez podpór i bez raftu. Bez obwódki, jeśli małe wkładki pewnie trzymają
+   się stołu; w przeciwnym razie dodaj obwódkę i ostrożnie usuń po wydruku.
+   Nie zmieniaj kompensacji wymiarów względem docelowego wydruku.
+3. Potnij model i obejrzyj podgląd: sprawdź, czy wszystkie otwory są drożne,
+   napisy czytelne i małe elementy nie nachodzą na siebie. Większa dysza może
+   nie odtworzyć małych napisów; wtedy użyj schematu powyżej. W podglądzie
+   Orca odczytasz przewidywany czas oraz ilość filamentu.
+4. Drukuj z bezpiecznym, sprawdzonym startem dla swojej drukarki i aktualnym
+   pomiarem stołu przed wydrukiem. Roboczy firmware v33 NIE jest gotowy do
+   instalacji ani druku. Nie używaj jego niesprawdzonego startu.
+5. Po ostygnięciu delikatnie usuń ewentualne zadziory i obwódkę, bez piłowania
+   powierzchni pomiarowych. Próbuj wkładać odpowiednią wkładkę w każdy otwór,
+   bez wciskania na siłę. Zapisz, przy którym numerze pasowanie Ci odpowiada.
+   Dla porównywalnych wyników próbuj za każdym razem tą samą stroną wkładki
+   i od tej samej strony płytki. Pierwsza warstwa może mieć zgrubienie, które
+   wpływa na wynik. Suwmiarka może pomóc to zauważyć.
+
+Wynik jest wskazówką dla danego filamentu, dyszy, kierunku druku i ustawień;
+nie gwarantuje identycznego pasowania dużych, głębokich lub inaczej drukowanych
+części. Ta płytka jest cienka, więc nie sprawdza pasowania na dużej głębokości.
+Model sprawdzono cyfrowo, ale nie sprawdzono jego cięcia w Orca ani wydruku.
+Nie ma potwierdzonego czasu, zużycia ani porównania z oryginałem.
