@@ -1,4 +1,4 @@
-// FIRMWARE_VERSION v3.58.21 -> v3.58.22 (2026-11-27) — DHT22: WYNIK KAŻDEGO ODCZYTU W ZWYKŁYM LOGU (BEZ „diag archive”).
+// FIRMWARE_VERSION v3.58.21 -> v3.58.22 (2026-11-27) — DHT22: KOD I SUROWA WARTOŚĆ W LOGU I W TELEMETRII (FIREBASE).
 //
 // [v3.58.22 DHT22-LOG] — 2026-11-27
 // Po wgraniu 3.58.21 (27.11, 07:46) Zew 2 i wilgotność dalej BRAK (Firebase: RH
@@ -15,7 +15,13 @@
 // (0 OK, 1 TOO_SOON, 2 DRIVER, 3 TIMEOUT, 4 NACK, 5 BAD_DATA, 6 CHECKSUM,
 // 7 UNDERFLOW, 8 OVERFLOW); surowa = wartość, którą oddała biblioteka PRZED
 // dekoderem klona — po niej widać, w jakim kodowaniu ten egzemplarz wysyła ujemne.
-// Bez zmian: filtr, dekoder, odniesienie DS, /api/status, Firebase, LCD, WWW.
+// To samo w telemetrii minutowej (Firebase, eksport RTDB): w każdym rekordzie
+// pola "dht_kod" (kod biblioteki z ostatniego odczytu) i "dht_surowa" (wartość
+// z biblioteki przed dekoderem, tylko gdy kod = 0). Niesione w dotychczas zerowym
+// tempDiagReserved (surowa ×10) i w wolnych bitach 11..15 simulatedBits (kod +
+// znacznik obecności); do JSON "sim" idzie nadal tylko maska kanałów 0..10, więc
+// aplikacja/WWW/stare rekordy niczego nie zauważą. ABI próbki 80 B bez zmian.
+// Bez zmian: filtr, dekoder, odniesienie DS, /api/status, format "a"/"age"/"q"/"sim", LCD, WWW.
 //
 // FIRMWARE_VERSION v3.58.20 -> v3.58.21 (2026-11-27) — ZEW 2: ODNIESIENIE DO DS18B20 DLA PRZELICZONYCH RAMEK KLONA.
 //
@@ -2088,11 +2094,13 @@
 // ============================================================================
 // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
 // ============================================================================
-// [v3.58.22] — 2026-11-27 — DHT22: WYNIK KAZDEGO ODCZYTU W ZWYKLYM LOGU
+// [v3.58.22] — 2026-11-27 — DHT22: KOD I SUROWA WARTOSC W ZWYKLYM LOGU I W TELEMETRII
 // Co: wilgotnosc() pisze przez zapiszLog() (zawsze w log_a/log_b, widoczne
 //     przez /logi w Telegramie) linie "tag=DHT22 ... kod= surowa= t= rh= ramka="
 //     - pierwsze 30 prob po starcie, potem co 10. i przy zmianie ok<->zla.
-//     Tylko diagnostyka; zachowanie czujnikow bez zmian.
+//     Telemetria minutowa (Firebase): nowe pola "dht_kod" i "dht_surowa"
+//     (ostatni odczyt; surowa = przed dekoderem klona). "sim" maskowane do
+//     kanalow 0..10, ABI probki 80 B bez zmian. Tylko diagnostyka.
 //
 // [v3.58.21] — 2026-11-27 — ZEW 2: ODNIESIENIE DO DS18B20 DLA PRZELICZONYCH RAMEK KLONA
 // Co: ramka DHT22 przeliczona z kodowania klona (v3.58.20) jest porownywana ze
@@ -23242,6 +23250,11 @@ struct TelemetrySample {
 static constexpr uint32_t TEMP_DIAG_MARK_MASK = 0xFFC00000UL;
 static constexpr uint32_t TEMP_DIAG_MARK = 0xD5C00000UL;
 static constexpr int16_t TEMP_DIAG_MISSING = -32768;
+// [v3.58.22 DHT22-LOG] simulatedBits: bity 0..10 = kanaly (do JSON "sim"), 11..14 = kod
+// ostatniego odczytu DHT22 (0 OK, 3 TIMEOUT, 5 BAD_DATA, 6 CHECKSUM...), 15 = dane DHT obecne.
+static constexpr uint16_t TELEMETRY_SIM_CH_MASK = 0x07FFU;
+static constexpr uint16_t TELEMETRY_SIM_DHT_PRESENT = 0x8000U;
+static constexpr uint8_t  TELEMETRY_SIM_DHT_KOD_SHIFT = 11;
 static bool telemetryHasTempDiag(const TelemetrySample &s) {
   return (s.qualityBits & TEMP_DIAG_MARK_MASK) == TEMP_DIAG_MARK;
 }
@@ -24103,6 +24116,13 @@ void wykonajZaplanowaneZadania() {
 static const uint32_t DHT_LOG_PIERWSZE = 30;            // pierwsze proby po starcie: kazda
 static const uint32_t DHT_LOG_CO_N = 10;                // potem co 10. proba (~20 min)
 static const unsigned long DHT_LOG_ZMIANA_MIN_MS = 600000UL; // zmiana ok<->zla: max raz na 10 min
+// [v3.58.22 DHT22-LOG] Ostatni odczyt DHT22 dla telemetrii minutowej (Firebase):
+// kod biblioteki i surowa wartosc x10 (float z read_dht() PRZED dekoderem klona;
+// zakres -3276.8..+3276.7 miesci sie w int16 co do 0,1). Pisane w wilgotnosc(),
+// czytane w telemetryBuildSnapshot() -> pola "dht_kod" / "dht_surowa" w rekordzie.
+static volatile uint8_t g_dhtOstatniKod = 0;
+static volatile int16_t g_dhtOstatniaSurowaX10 = 0;
+static volatile bool    g_dhtBylOdczyt = false;
 static unsigned long dhtOstatniaProbaMs = 0;
 static bool dhtBylaProba = false;
 
@@ -25717,6 +25737,15 @@ static bool telemetryBuildSnapshot(TelemetrySample &out, uint64_t monoNowMs64,
   }
   out.tDhtDiagX10 = encodeTempDiag(czytajTempDiag(), -40.0f, 80.0f);
   out.tempDiagReserved = 0;
+  // [v3.58.22 DHT22-LOG] Ostatni odczyt DHT22 w probce: surowa x10 w dotychczas
+  // zerowym tempDiagReserved, kod biblioteki w wolnych bitach 11..14 simulatedBits
+  // (kanaly zajmuja 0..10), bit 15 = "dane DHT obecne" (stare probki: 0 -> pola
+  // nie sa wysylane). Do JSON "sim" idzie tylko maska kanalow (TELEMETRY_SIM_CH_MASK).
+  if (g_dhtBylOdczyt) {
+    out.tempDiagReserved = g_dhtOstatniaSurowaX10;
+    out.simulatedBits |= (uint16_t)(TELEMETRY_SIM_DHT_PRESENT |
+                                    (((uint16_t)g_dhtOstatniKod & 0x0FU) << TELEMETRY_SIM_DHT_KOD_SHIFT));
+  }
   out.qualityBits |= TEMP_DIAG_MARK;
   return true;
 }
@@ -34757,6 +34786,10 @@ void wilgotnosc() {
     // ok<->zla (najwyzej raz na 10 min). "surowa" = float z biblioteki PRZED
     // dekoderem klona, "kod" = kod biblioteki (0 OK, 3 TIMEOUT, 5 BAD_DATA, 6 CHECKSUM...).
     {
+      g_dhtOstatniKod = dhtErr;
+      g_dhtOstatniaSurowaX10 = (dhtErr == DHT_OK && isfinite(dhtTempSurowa))
+          ? (int16_t)lroundf(fmaxf(-3276.7f, fminf(3276.7f, dhtTempSurowa)) * 10.0f) : (int16_t)0;
+      g_dhtBylOdczyt = true;
       static bool poprzedniaRamkaOk = false, bylaPoprzednia = false;
       static unsigned long ostatniaZmianaLogMs = 0;
       const bool zmiana = bylaPoprzednia && poprzedniaRamkaOk != ramkaOk &&
@@ -43830,7 +43863,7 @@ static bool telemetryAppendPathForSample(const TelemetrySample &s, char *buf, si
   telemetryJsonAppend(buf, cap, used, "\"state\":%u,\"q\":%lu,\"sim\":%u,",
                       (unsigned)s.stateBits,
                       (unsigned long)(telemetryHasTempDiag(s) ? (s.qualityBits & ~TEMP_DIAG_MARK_MASK) : s.qualityBits),
-                      (unsigned)s.simulatedBits);
+                      (unsigned)(s.simulatedBits & TELEMETRY_SIM_CH_MASK));   // [v3.58.22] bez bitow DHT
   if (telemetryHasTempDiag(s)) {
     // Liczby w stopniach C, bez uzycia float printf i z zachowaniem -0.1.
     auto dodajTemp = [&](const char *key, int16_t value, int16_t lo, int16_t hi) {
@@ -43841,6 +43874,13 @@ static bool telemetryAppendPathForSample(const TelemetrySample &s, char *buf, si
                           v < 0 ? "-" : "", mag / 10U, mag % 10U);
     };
     dodajTemp("t_zewn_2", s.tDhtDiagX10, -400, 800);
+    // [v3.58.22 DHT22-LOG] ostatni odczyt DHT22: kod biblioteki i surowa wartosc
+    // (przed dekoderem klona; przy kod != 0 surowej nie ma)
+    if (s.simulatedBits & TELEMETRY_SIM_DHT_PRESENT) {
+      const unsigned kod = (unsigned)((s.simulatedBits >> TELEMETRY_SIM_DHT_KOD_SHIFT) & 0x0FU);
+      telemetryJsonAppend(buf, cap, used, "\"dht_kod\":%u,", kod);
+      if (kod == 0) dodajTemp("dht_surowa", s.tempDiagReserved, -32767, 32767);
+    }
   }
   telemetryJsonAppend(buf, cap, used, "\"age\":[");
   for (uint8_t i = 0; i < TELEMETRY_CH_COUNT; ++i) {

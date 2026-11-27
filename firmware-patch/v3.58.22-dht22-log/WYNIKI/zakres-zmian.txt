@@ -1,17 +1,26 @@
-ZAKRES ZMIAN 3.58.22 wzgledem 3.58.21 (plik src/main_centrala.cpp, 51 594 linie)
+ZAKRES ZMIAN 3.58.22 wzgledem 3.58.21 (plik src/main_centrala.cpp, 51 634 linie)
 ================================================================================
-Patch main_centrala-v3.58.21-do-v3.58.22.patch: 5 hunkow, ok. 30 linii kodu (reszta komentarze
+Patch main_centrala-v3.58.21-do-v3.58.22.patch: 9 hunkow, ok. 45 linii kodu (reszta komentarze
 i historia). Tylko diagnostyka: NIC w dzialaniu czujnikow, filtra, dekodera klona, odniesienia DS,
-/api/status, Firebase, LCD, WWW sie nie zmienia (test C: blok ZEW2-FILTR, HTML, kod przed i za
-wilgotnosc() identyczne z 3.58.21).
+/api/status, dotychczasowych pol Firebase, LCD, WWW sie nie zmienia (test C: blok ZEW2-FILTR, HTML,
+kod przed i za wilgotnosc() po wycieciu 5 oznaczonych wstawek identyczne z 3.58.21).
 
-   1-19        naglowek pliku [v3.58.22 DHT22-LOG]
-   2091-2096   HISTORIA WERSJI: wpis [v3.58.22]
-   6975        FIRMWARE_VERSION = "v3.58.22"
-   24102-24105 stale przy DHT_PIN: DHT_LOG_PIERWSZE = 30 (pierwsze proby po starcie: kazda),
+   1-25        naglowek pliku [v3.58.22 DHT22-LOG]
+   2097-2103   HISTORIA WERSJI: wpis [v3.58.22]
+   6981        FIRMWARE_VERSION = "v3.58.22"
+   23253-23257 stale telemetrii przy TEMP_DIAG_MARK: TELEMETRY_SIM_CH_MASK = 0x07FF (bity kanalow
+               0..10 - tylko one ida do JSON "sim"), TELEMETRY_SIM_DHT_PRESENT = 0x8000 (bit 15:
+               dane DHT w probce), TELEMETRY_SIM_DHT_KOD_SHIFT = 11 (kod biblioteki w bitach 11..14)
+   24116-24125 stale przy DHT_PIN: DHT_LOG_PIERWSZE = 30 (pierwsze proby po starcie: kazda),
                DHT_LOG_CO_N = 10 (potem co 10. proba, ~20 min), DHT_LOG_ZMIANA_MIN_MS = 600000
-               (zmiana ok<->zla: najwyzej raz na 10 min)
-   34753-34775 wilgotnosc(): po zliczeniu proby (++dhtProby), przed decyzja o RH - linia w ZWYKLYM
+               (zmiana ok<->zla: najwyzej raz na 10 min); zmienne g_dhtOstatniKod,
+               g_dhtOstatniaSurowaX10, g_dhtBylOdczyt (ostatni odczyt dla telemetrii)
+   25740-25748 telemetryBuildSnapshot(): gdy byl juz odczyt DHT - surowa x10 do tempDiagReserved
+               (offset 78, dotad zawsze 0), kod do bitow 11..14 simulatedBits, bit 15 = obecne.
+               ABI probki 80 B i static_asserty BEZ ZMIAN (stare probki z ringu: bit 15 = 0).
+   34789-34792 wilgotnosc(): zapis ostatniego kodu i surowej (x10, tylko przy kod 0, ograniczona
+               do +-3276.7) dla telemetrii
+   34793-34808 wilgotnosc(): po zliczeniu proby (++dhtProby), przed decyzja o RH - linia w ZWYKLYM
                logu przez zapiszLog():
                tag=DHT22 lvl=INFO proba=N kod=K surowa=S t=T rh=R ramka=ok|zla decyzja=D u2=U ds=X
                  kod     = kod biblioteki dhtESP32-rmt: 0 OK, 1 TOO_SOON, 2 DRIVER, 3 TIMEOUT,
@@ -21,6 +30,12 @@ wilgotnosc() identyczne z 3.58.21).
                  ramka   = ok (DHT_OK, -40..80 C, 1..100 %) / zla
                  decyzja = 0 przyjety, 1 do weryfikacji, 2 potwierdzony, 3 odrzucony, 4 zla ramka
                  u2      = ile ramek przeliczono od startu; ds = DS18B20 (nan gdy niedostepny)
+   43866       telemetryAppendPathForSample(): "sim" = simulatedBits & TELEMETRY_SIM_CH_MASK
+               (bez bitow DHT - w JSON dokladnie to, co dotad)
+   43877-43883 telemetryAppendPathForSample(): po "t_zewn_2", gdy bit 15 ustawiony:
+               "dht_kod":K oraz (tylko przy K=0) "dht_surowa":S  (S = tempDiagReserved/10, z -0.1)
+               Przyklad rekordu: {...,"t_zewn_2":-1.5,"dht_kod":0,"dht_surowa":-3275.3,"age":[...]}
+               Odbiorcy (aplikacja RtdbClient.kt, Piec.html, skrypty) ignoruja nieznane klucze.
 
 Po co (27.11): po wgraniu 3.58.21 o 07:46 Zew 2 i wilgotnosc dalej BRAK (Firebase: RH "nigdy",
 q=INVALID), a log z Telegrama (/logi, 16 708 linii od 15.11) nie ma ANI JEDNEJ linii DHT22 -

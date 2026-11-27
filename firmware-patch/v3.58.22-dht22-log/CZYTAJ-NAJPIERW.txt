@@ -1,12 +1,13 @@
-FIRMWARE CENTRALI 3.58.22 - co zrobic w 3 krokach
+FIRMWARE CENTRALI 3.58.22 - co zrobic w 3 krokach (DHT22: kod i surowa w logu I w Firebase)
 =================================================
 Zmienia sie JEDEN plik: src/main_centrala.cpp
 Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
 (platformio.ini CENTRALI: env esp32-s3-n16r8!).
 
-Ta paczka = 3.58.21 + LINIA DHT22 W ZWYKLYM LOGU. Patch wzgledem 3.58.21: 5 hunkow, ok. 30 linii.
-Tylko diagnostyka - dzialanie czujnikow, filtra, dekodera, WWW, /api/status, Firebase: BEZ ZMIAN.
-Panel LCD: BEZ ZMIAN (v1.5.18 zostaje).
+Ta paczka = 3.58.21 + KOD BIBLIOTEKI I SUROWA WARTOSC DHT22 (a) w zwyklym logu (/logi) i (b) w kazdym
+rekordzie telemetrii minutowej w Firebase (pola "dht_kod" i "dht_surowa"). Patch wzgledem 3.58.21:
+9 hunkow, ok. 45 linii. Tylko diagnostyka - dzialanie czujnikow, filtra, dekodera, WWW, /api/status,
+dotychczasowe pola Firebase ("a", "age", "q", "sim", "t_zewn_2"): BEZ ZMIAN. Panel LCD: BEZ ZMIAN (v1.5.18).
 
 PO CO (27.11, po 3.58.21 Zew 2 dalej BRAK, a w logu z /logi nie ma linii DHT22)
 ------------------------------------------------------------------------------
@@ -17,10 +18,17 @@ jest pisany do zwyklego logu (tego, ktory przychodzi po /logi):
 Pierwsze 30 prob po starcie kazda (ok. 1 h), potem co 10. (~20 min) i przy kazdej zmianie
 ok <-> zla (max raz na 10 min).
 
+TO SAMO W FIREBASE (telemetria minutowa, ta z eksportu RTDB / wykresu w aplikacji): kazdy rekord
+dostaje "dht_kod" (kod biblioteki z OSTATNIEGO odczytu DHT22) i "dht_surowa" (wartosc z biblioteki
+PRZED dekoderem klona; tylko gdy dht_kod=0). Przyklad:
+    {"seq":4628,"ts":1795737656,...,"t_zewn_2":-1.5,"dht_kod":0,"dht_surowa":-3275.3,"age":[...]}
+Nie trzeba czekac na /logi - wystarczy eksport RTDB albo podglad /piec/telemetry w konsoli Firebase.
+Aplikacja, WWW i stare rekordy niczego nie zauwaza (nowe klucze sa ignorowane).
+
 KROK 1 - WGRANIE
 ----------------
 Jak 3.58.21 (kopia zapasowa, podmiana src\main_centrala.cpp, SHA z SHA256SUMS.txt zaczyna sie
-od 940e555c, Build + Upload / OTA, env esp32-s3-n16r8). Albo patch main_centrala-v3.58.21-do-v3.58.22.patch
+od d0e460fe, Build + Upload / OTA, env esp32-s3-n16r8). Albo patch main_centrala-v3.58.21-do-v3.58.22.patch
 -p1 na plik 3.58.21 (SHA 7608707f...).
 
 KROK 2 - PO 10-15 MINUTACH: TELEGRAM
@@ -34,7 +42,9 @@ KROK 2 - PO 10-15 MINUTACH: TELEGRAM
                                                         (czasy impulsow) - to nie kodowanie, inna naprawa
      kod=3 (TIMEOUT) / 4 (NACK) / 7 / 8                 brak odpowiedzi czujnika / zla ramka startowa /
                                                         zla liczba impulsow - tez transmisja, nie kodowanie
-  Wklej mi 5-10 takich linii (albo caly plik na Dysk).
+  Wklej mi 5-10 takich linii (albo caly plik na Dysk) - ALBO po prostu eksport RTDB jak dotad:
+  w rekordach po wgraniu beda "dht_kod" / "dht_surowa" (znaczenie jak kod= / surowa= wyzej;
+  dht_kod != 0 => brak dht_surowa, bo biblioteka nic nie oddala).
 
 KROK 3 - NIC WIECEJ
 -------------------
@@ -47,5 +57,9 @@ Blok ZEW2-FILTR (bez zmian) i CALA funkcja wilgotnosc() wyciete z tego pliku, sk
 (regresja) oraz nowe: proby 1 i 2 maja linie tag=DHT22 z kod=0 i surowa=; po 30. probie tylko co 10.;
 zmiana ok->zla (timeout) od razu z kod=2 ramka=zla; powtorne zle ramki bez spamu; powrot do ok
 w < 10 min bez linii; po 10 min linia z surowa=-3276.3 obok t=-0.5. Plik = 3.58.21 + patch (SHA),
-HTML, blok ZEW2-FILTR, kod przed i za wilgotnosc() identyczne z 3.58.21, pelne testy
-3.58.21/3.58.20/.../3.58.14 na tym pliku. Caly plik NIE byl kompilowany w PlatformIO.
+HTML, blok ZEW2-FILTR, kod przed i za wilgotnosc() (po wycieciu 5 oznaczonych wstawek) identyczne
+z 3.58.21, pelne testy 3.58.21/3.58.20/.../3.58.14 na tym pliku. Telemetria: prawdziwa
+telemetryAppendPathForSample() + fragment telemetryBuildSnapshot() wyciete z pliku: rekord bez
+odczytu DHT = bajt w bajt jak dotad; z odczytem: "dht_kod":0,"dht_surowa":-3275.3 obok t_zewn_2;
+kod 6 bez surowej; "sim" nie zawiera bitow DHT; granice -3276.7..3276.7; struktura 80 B, offsety
+bez zmian (25 sprawdzen, 0 bledow). Caly plik NIE byl kompilowany w PlatformIO.
