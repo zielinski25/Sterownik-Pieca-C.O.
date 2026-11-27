@@ -1,0 +1,47 @@
+FIRMWARE CENTRALI 3.58.23 - co zrobic w 3 krokach (DHT22: kodowanie U2 potwierdzone, kod docelowy)
+===================================================================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
+(platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.22 + PORZADKI PO POTWIERDZENIU, JAK CZUJNIK KODUJE UJEMNE. Patch wzgledem 3.58.22:
+8 hunkow, ok. 42 linii (z komentarzami). Dzialanie dla uzytkownika: TAKIE SAMO jak 3.58.22 (Zew 2,
+wilgotnosc, Firebase z dht_kod/dht_surowa, WWW, LCD) - zmienia sie tylko wnetrze dekodera, znika
+zgadywany wariant 12-bit i ostrzezenie o "klonie", a linia tag=DHT22 w /logi jest rzadsza.
+
+CO POTWIERDZIL EKSPORT 27.11 (3.58.22, 07:43-08:00 UTC)
+-------------------------------------------------------
+Kazdy rekord: dht_kod=0, dht_surowa=-3275,6..-3275,8, t_zewn_2=-1,2..-1,0 przy Zew 1 +1,3..+1,8.
+-3275,6 + 3276,8 = 1,2 -> czujnik wysyla ujemne w U2 16-bit (0xFFF4 = -12 = -1,2 C). Transmisja na
+zimnie czysta (zero kodow 3/5/6). Dekoder z 3.58.20 trafial - teraz jest napisany "na pewno":
+odtwarza slowo 16-bit i czyta je jako int16, dokladnie co do 0,1 C.
+
+KROK 1 - WGRANIE
+----------------
+Jak 3.58.22 (kopia zapasowa, podmiana src\main_centrala.cpp, SHA z SHA256SUMS.txt zaczyna sie
+od 16883587, Build + Upload / OTA, env esp32-s3-n16r8). Albo patch main_centrala-v3.58.22-do-v3.58.23.patch
+-p1 na plik 3.58.22 (SHA d0e460fe...).
+
+KROK 2 - PO 10 MINUTACH
+-----------------------
+  /version  -> "Obecna wersja: v3.58.23"
+  Firebase / aplikacja: Zew 2 i wilgotnosc jak dotad; w rekordach nadal dht_kod / dht_surowa.
+  /logi: po starcie 15 linii tag=DHT22 (po jednej na probe, ok. 30 min), potem tylko przy
+  zmianie ok<->zla. Jesli po jakims restarcie Zew 2 znow "milczy" kilkanascie minut (jak po
+  starcie 3.58.21 27.11 06:47-07:05 UTC), te 15 linii + dht_kod w Firebase pokaza dlaczego.
+
+KROK 3 - NIC WIECEJ
+-------------------
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa (3.58.22 dziala identycznie dla uzytkownika).
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\testy-pc.txt)
+----------------------------------------------
+A: blok ZEW2-FILTR z nowym dekoderem - 18 scenariuszy, 130 sprawdzen, 0 bledow: wszystkie 400 wartosci
+-0,1..-40,0 C w U2 16-bit odkodowane co do 0,1 C (w tym -3275,6 -> -1,2 z eksportu), znak-modul
+i dodatnie nietkniete, dawne 12-bit i smieci = zla ramka, -3276,8 (0x8000) odrzucone.
+B: prawdziwa wilgotnosc() - 15 scenariuszy, 87 sprawdzen, 0 bledow (bez WARN o klonie, +408.8 = zla
+ramka, rytm linii 15 + zmiany). B2: telemetria 25/0 (bez zmian). C: plik = 3.58.22 + patch (SHA),
+HTML / telemetria / reszta bloku / kod za wilgotnosc() identyczne, w wilgotnosc() dokladnie 3 miejsca.
+D: testy paczki 3.58.22 na tym pliku - 16 niezaliczen i KAZDE jest skutkiem celowej zmiany (12-bit,
+wariant, WARN u2, "co 10."); zadnej innej regresji. Takze ASan+UBSan. Caly plik NIE byl kompilowany
+w PlatformIO.

@@ -1,0 +1,167 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,25 @@
++// FIRMWARE_VERSION v3.58.22 -> v3.58.23 (2026-11-27) — DHT22: KODOWANIE U2 POTWIERDZONE, DEKODER DOCELOWY, PORZĄDKI.
++//
++// [v3.58.23 DHT22-U2] — 2026-11-27
++// Eksport Firebase z 3.58.22 (27.11 07:43–08:00 UTC, 18 rekordów): przy Zew 1 =
++// +1,3..1,8 °C każdy rekord ma dht_kod=0 i dht_surowa=−3275,6..−3275,8, a Zew 2 =
++// −1,2..−1,0 °C — czujnik koduje ujemne w U2 16-bit (0xFFF4 = −12 = −1,2 °C),
++// transmisja na zimnie bez błędów (zero kodów 3/5/6). Dekoder z 3.58.20 trafiał;
++// ta wersja robi z niego kod docelowy:
++//   - zew2DekodujU2(): odtwarza słowo 16-bit (bit 15 + |t|·10) i czyta je jako
++//     int16 — dokładnie co do 0,1 °C, bez arytmetyki na float; przeliczany jest
++//     wyłącznie obraz −0,1..−40,0 °C (−3276,7..−3236,8 z biblioteki);
++//   - usunięty zgadywany wariant 12-bit (+369,6..+409,5 → ujemne) — nigdy nie
++//     wystąpił; takie wartości są odtąd zwykłą złą ramką;
++//   - bez WARN „klon koduje ujemne w U2” (to normalne działanie tego egzemplarza);
++//     licznik u2= zostaje w diagnostyce;
++//   - linia tag=DHT22 w /logi: pierwsze 15 prób po starcie i zmiany ok↔zła
++//     (bez „co 10.” — stały podgląd jest w telemetrii: dht_kod / dht_surowa).
++// Bez zmian: filtr Zew 2 (skok/znak/powtórka/ponowienie), odniesienie DS18B20
++// (3.58.21), pola telemetrii dht_kod/dht_surowa (3.58.22), /api/status, WWW, LCD.
++// Otwarte: po starcie 3.58.21 (06:47 UTC) DHT milczał 18 min, po starcie 3.58.22
++// odpowiedział od razu — pierwsze 15 linii tag=DHT22 po każdym starcie ma to wyjaśnić.
++//
+ // FIRMWARE_VERSION v3.58.21 -> v3.58.22 (2026-11-27) — DHT22: KOD I SUROWA WARTOŚĆ W LOGU I W TELEMETRII (FIREBASE).
+ //
+ // [v3.58.22 DHT22-LOG] — 2026-11-27
+@@ -2094,6 +2116,14 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.23] — 2026-11-27 — DHT22: KODOWANIE U2 16-BIT POTWIERDZONE (TELEMETRIA 3.58.22), DEKODER DOCELOWY
++// Co: zew2DekodujU2() odtwarza slowo 16-bit i czyta je jako int16 (dokladnie,
++//     bez float); tylko obraz -0,1..-40,0 C. Usuniety zgadywany wariant 12-bit
++//     (nigdy nie wystapil) i WARN "klon koduje ujemne w U2". Linia tag=DHT22
++//     w /logi: pierwsze 15 prob po starcie + zmiany ok<->zla (bez "co 10.").
++// Bez zmian: filtr Zew 2, odniesienie DS18B20, telemetria dht_kod/dht_surowa,
++//     wilgotnosc, /api/status, Firebase, panel LCD, WWW.
++//
+ // [v3.58.22] — 2026-11-27 — DHT22: KOD I SUROWA WARTOSC W ZWYKLYM LOGU I W TELEMETRII
+ // Co: wilgotnosc() pisze przez zapiszLog() (zawsze w log_a/log_b, widoczne
+ //     przez /logi w Telegramie) linie "tag=DHT22 ... kod= surowa= t= rh= ramka="
+@@ -6672,35 +6702,27 @@
+          t >= -40.0f && t <= 80.0f && rh >= 1.0f && rh <= 100.0f;
+ }
+ 
+-// [v3.58.20 DHT22-UJEMNE] Klony DHT22 koduja ujemne inaczej niz karta katalogowa
+-// (znak-modul: bit 15 = minus, -0,1 = 0x8001), a biblioteka dekoduje wg karty:
+-//   (a) U2 16-bit (-0,1 = 0xFFFF): biblioteka oddaje -3276,8 + |t|, czyli -0,1 C
+-//       jako -3276,7, -40,0 C jako -3236,8  (Tasmota #14164, ESPHome #1744,
+-//       Adafruit DHT #221, DHTNew #100 - najczestszy wariant z AliExpress);
+-//   (b) U2 12-bit (-0,1 = 0x0FFF): biblioteka oddaje 409,6 - |t|, czyli -0,1 C
+-//       jako +409,5, -40,0 C jako +369,6  (ESPHome #5322, PR #6074).
+-// Oba przedzialy sa nieosiagalne dla prawdziwego DHT22 (-40..80 C), wiec
+-// przeliczenie jest bezpieczne dla kazdego egzemplarza; zwykle wartosci
+-// przechodza nietkniete. Zwraca true, gdy przeliczono (*wariant = 16 albo 12).
+-static const float ZEW2_U2_BAZA_C   = 3276.8f;                // 0x8000 / 10
+-static const float ZEW2_U2_MIN_C    = -3276.75f;              // obraz -0,1 C (z zapasem na float)
+-static const float ZEW2_U2_MAX_C    = -3236.75f;              // obraz -40,0 C
+-static const float ZEW2_U2_12_BAZA_C = 409.6f;                // 0x1000 / 10
+-static const float ZEW2_U2_12_MIN_C  = 369.55f;               // obraz -40,0 C
+-static const float ZEW2_U2_12_MAX_C  = 409.55f;               // obraz -0,1 C
+-static bool zew2DekodujU2(float *t, uint8_t *wariant = nullptr) {
+-  if (!isfinite(*t)) return false;
+-  long dziesiate;                                              // |t| w 0,1 C: 1..400
+-  if (*t >= ZEW2_U2_MIN_C && *t <= ZEW2_U2_MAX_C) {
+-    dziesiate = lroundf((*t + ZEW2_U2_BAZA_C) * 10.0f);
+-    if (wariant) *wariant = 16;
+-  } else if (*t >= ZEW2_U2_12_MIN_C && *t <= ZEW2_U2_12_MAX_C) {
+-    dziesiate = lroundf((ZEW2_U2_12_BAZA_C - *t) * 10.0f);
+-    if (wariant) *wariant = 12;
+-  } else {
+-    return false;
+-  }
+-  *t = -(float)dziesiate / 10.0f;
++// [v3.58.23 DHT22-U2] Ten egzemplarz DHT22 koduje ujemne temperatury w U2 na
++// 16 bitach (-0,1 C = 0xFFFF, -1,2 C = 0xFFF4), a nie znak-modulem z karty
++// katalogowej (-0,1 C = 0x8001). POTWIERDZONE 27.11 w telemetrii 3.58.22: przy
++// Zew 1 = +1,3..1,8 C biblioteka oddawala surowa -3275,6..-3275,8 (= 0xFFF4..0xFFF2),
++// czyli -1,2..-1,0 C, zawsze z kodem 0 (suma kontrolna dobra). Biblioteka
++// dhtESP32-rmt dekoduje wg karty: bit 15 = minus, reszta = |t|*10, wiec dla
++// slowa U2 oddaje -(3276,8 - |t|). Tu odtwarzamy slowo 16-bit (bit 15 + |t|*10)
++// i czytamy je jako int16 - dokladnie co do 0,1 C, bez arytmetyki na float.
++// Zakres przeliczany: tylko obraz -0,1..-40,0 C (0xFFFF..0xFE70, czyli
++// -3276,7..-3236,8 z biblioteki) - nieosiagalny dla prawdziwego DHT22, wiec
++// zwykle wartosci (w tym ujemne znak-modulem) przechodza nietkniete.
++// [v3.58.20 mial dodatkowo zgadywany wariant 12-bit (+369,6..+409,5); nigdy
++// nie wystapil, usuniety - takie wartosci sa teraz zla ramka jak kazde smieci.]
++static const float ZEW2_U2_MIN_C = -3276.75f;   // obraz -0,1 C (0xFFFF), z zapasem na float
++static const float ZEW2_U2_MAX_C = -3236.75f;   // obraz -40,0 C (0xFE70)
++static bool zew2DekodujU2(float *t) {
++  if (!isfinite(*t) || *t < ZEW2_U2_MIN_C || *t > ZEW2_U2_MAX_C) return false;
++  const uint16_t slowo = (uint16_t)(0x8000U | ((uint16_t)lroundf(-*t * 10.0f) & 0x7FFFU)); // jak w ramce czujnika
++  const int16_t u2 = (int16_t)slowo;                                                     // -400..-1
++  if (u2 < -400 || u2 > -1) return false;
++  *t = (float)u2 / 10.0f;
+   return true;
+ }
+ 
+@@ -6980,7 +7002,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.22";
++static const char* FIRMWARE_VERSION = "v3.58.23";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -24113,8 +24135,8 @@
+ #define DHT_PIN 6
+ // Ostatnia PROBA dotyczy rowniez odczytow testowych z setup().
+ // [v3.58.22 DHT22-LOG] rytm linii "tag=DHT22" w zwyklym logu (patrz wilgotnosc())
+-static const uint32_t DHT_LOG_PIERWSZE = 30;            // pierwsze proby po starcie: kazda
+-static const uint32_t DHT_LOG_CO_N = 10;                // potem co 10. proba (~20 min)
++// [v3.58.23] pierwsze 15 prob (bylo 30) i zmiany ok<->zla; bez "co 10." (bylo DHT_LOG_CO_N)
++static const uint32_t DHT_LOG_PIERWSZE = 15;            // pierwsze proby po starcie: kazda (~30 min)
+ static const unsigned long DHT_LOG_ZMIANA_MIN_MS = 600000UL; // zmiana ok<->zla: max raz na 10 min
+ // [v3.58.22 DHT22-LOG] Ostatni odczyt DHT22 dla telemetrii minutowej (Firebase):
+ // kod biblioteki i surowa wartosc x10 (float z read_dht() PRZED dekoderem klona;
+@@ -34713,17 +34735,15 @@
+     dhtOstatniaProbaMs = millis();
+     dhtBylaProba = true;
+     uint8_t dhtErr = read_dht(dhtTempPomijana, wilgotnoscOdczytanaLok, DHT_PIN, DHT22);
+-    // [v3.58.20 DHT22-UJEMNE] Klon kodujacy ujemne w U2: -0,1 C przychodzi jako
++    // [v3.58.20 DHT22-UJEMNE] Czujnik koduje ujemne w U2: -0,1 C przychodzi jako
+     // -3276,7 i do 3.58.19 odpadalo jako zla ramka (razem z wilgotnoscia) -> po
+     // 255 s Zew 2 = BRAK DANYCH przy kazdym przymrozku. Tu przeliczenie na prawde.
++    // [v3.58.23 DHT22-U2] To normalne dzialanie tego egzemplarza (potwierdzone 27.11),
++    // wiec bez ostrzezenia w logu; licznik u2= zostaje w linii diagnostyki i w /logi.
+     static uint32_t dhtU2 = 0, dhtDsOdbiega = 0;
+     const float dhtTempSurowa = dhtTempPomijana;
+-    uint8_t dhtU2Wariant = 0;
+-    const bool dhtPrzeliczona = (dhtErr == DHT_OK && zew2DekodujU2(&dhtTempPomijana, &dhtU2Wariant));
+-    if (dhtPrzeliczona && dhtU2++ == 0) {
+-      DLOGF(DC_SENSOR, DL_WARN, "DHT22 Zew2 zdarzenie=u2 wariant=%u surowa=%.1f t=%.1f msg=\"klon koduje ujemne w U2, przeliczam\"",
+-            (unsigned)dhtU2Wariant, (double)dhtTempSurowa, (double)dhtTempPomijana);
+-    }
++    const bool dhtPrzeliczona = (dhtErr == DHT_OK && zew2DekodujU2(&dhtTempPomijana));
++    if (dhtPrzeliczona) ++dhtU2;
+     // [v3.58.21 ZEW2-ODNIESIENIE-DS] Przeliczona ramka a swiezy DS18B20: roznica
+     // > 8 C -> nie przyjmuj od razu, poczekaj na powtorke (sciezka "podejrzany").
+     float dsTemp = NAN;
+@@ -34782,9 +34802,11 @@
+     // [v3.58.22 DHT22-LOG] Ta sama informacja w ZWYKLYM logu (zapiszLog - zawsze
+     // archiwowana, dostepna przez /logi w Telegramie), bo linie DLOGF(DC_SENSOR)
+     // wyzej trafiaja do pliku tylko po "diag archive cat SENSOR on" z Terminala WWW.
+-    // Pierwsze 30 prob po starcie, potem co 10. proba (~20 min) i przy zmianie
+-    // ok<->zla (najwyzej raz na 10 min). "surowa" = float z biblioteki PRZED
+-    // dekoderem klona, "kod" = kod biblioteki (0 OK, 3 TIMEOUT, 5 BAD_DATA, 6 CHECKSUM...).
++    // [v3.58.23] Rytm: pierwsze 15 prob po starcie (ok. 30 min - 27.11 po starcie
++    // 3.58.21 DHT milczal 18 min bez wyjasnienia, to ma to pokazac) i kazda zmiana
++    // ok<->zla (najwyzej raz na 10 min). Bez linii "co 10." - staly podglad jest
++    // w telemetrii (dht_kod/dht_surowa). "surowa" = float z biblioteki PRZED
++    // dekoderem U2, "kod" = kod biblioteki (0 OK, 3 TIMEOUT, 5 BAD_DATA, 6 CHECKSUM...).
+     {
+       g_dhtOstatniKod = dhtErr;
+       g_dhtOstatniaSurowaX10 = (dhtErr == DHT_OK && isfinite(dhtTempSurowa))
+@@ -34794,7 +34816,7 @@
+       static unsigned long ostatniaZmianaLogMs = 0;
+       const bool zmiana = bylaPoprzednia && poprzedniaRamkaOk != ramkaOk &&
+                           (unsigned long)(czasBiezacy - ostatniaZmianaLogMs) >= DHT_LOG_ZMIANA_MIN_MS;
+-      if (dhtProby <= DHT_LOG_PIERWSZE || dhtProby % DHT_LOG_CO_N == 0 || zmiana) {
++      if (dhtProby <= DHT_LOG_PIERWSZE || zmiana) {
+         if (zmiana) ostatniaZmianaLogMs = czasBiezacy;
+         char linia[200];
+         snprintf(linia, sizeof(linia),
