@@ -67,6 +67,15 @@ def pokaz_plan(plan: dict):
     print(f"\n  SUMA DO ODZYSKANIA (bez danych uzytkownika): "
           f"{plan['suma_do_odzyskania_MB']/1024:.2f} GB")
 
+    # v8: rekomendacje systemowe (komendy, ktorych skrypt NIE wykona)
+    rek = plan.get("rekomendacje_systemowe")
+    if rek:
+        naglowek("REKOMENDACJE SYSTEMOWE (recznie, jako Administrator)")
+        for r in rek:
+            print(f"\n  {r['nazwa']}  [{r['efekt']}]")
+            print(f"    Komenda: {r['komenda']}")
+            print(f"    {r['uwagi']}")
+
 
 def pokaz_oceny(oceny: dict):
     if not oceny:

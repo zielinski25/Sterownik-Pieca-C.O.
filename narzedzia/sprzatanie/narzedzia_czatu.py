@@ -19,6 +19,9 @@ from skaner import Skaner, chroniony, gb
 # poza lista - przy 305 zdjeciach decyzja musi byc reczna, nie "bot mi kazal".
 KATEGORIE_CZAT = {
     "cache_i_temp", "katalogi_builda", "stare_instalki", "stare_logi",
+    # v8: nowe kategorie bezpieczne do przenoszenia z czatu
+    "cache_deweloperskie", "puste_katalogi", "windows_old",
+    # CELOWO NIE: duplikaty, duze_pliki, stare_katalogi (ryzyko 3)
 }
 
 OPIS_NARZEDZI = [

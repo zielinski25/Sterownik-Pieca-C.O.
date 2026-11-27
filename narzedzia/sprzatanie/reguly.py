@@ -67,6 +67,15 @@ CACHE_W_HOME = [
     ".gradle/caches",
     ".m2/repository/.cache",
     ".vscode/extensions/.obsolete",
+    # v8: cache deweloperskie (pobierane artefakty, odtwarzalne komenda)
+    ".platformio",              # PlatformIO: toolchainy ESP32/Arduino (czesto GB)
+    ".cargo/registry/cache",    # Cargo: pobrane crate'y (Rust)
+    ".cargo/git",               # Cargo: zaleznosci git
+    ".cache/pnpm",              # pnpm store
+    ".cache/pre-commit",        # pre-commit: pobrane srodowiska
+    ".cache/uv",                # uv (duplikat wpisu wyzej, na wszelki wypadek)
+    # CELOWO POMINIETE: .android (ma debug.keystore!), .ollama (modele AI),
+    # .cache/huggingface (modele) - to NIE sa cache, to narzedzia uzytkownika.
 ]
 
 # Katalogi, ktore sa artefaktem builda - odtwarzalne komenda (npm i / cmake).
@@ -129,3 +138,59 @@ OLLAMA_URL = "http://127.0.0.1:11434"
 # 7b-q4 to ~4.7 GB w RAM i ok. 4-6 tok/s - wystarczy do oceny listy plikow.
 MODEL_DOMYSLNY = "qwen2.5:7b-instruct-q4_K_M"
 MODEL_SZYBKI = "qwen2.5:3b-instruct-q4_K_M"
+
+# ------------------------------------------------------- v8: nowe kategorie
+PROG_CACHE_DEV_MB = 10        # cache deweloperskie: tylko gdy >10 MB
+PROG_STARE_KATALOGI_DNI = 365  # katalogi nieuzywane rok+ (ryzyko 3, raport)
+PROG_OLD_WINDOWS_GB = 2       # Windows.old: tylko gdy >2 GB
+
+# v8: rekomendacje systemowe (komendy PowerShell, ktorych skrypt NIE wykona -
+# wymagaja admina / sa ryzykowne; agent je tylko pokazuje w raporcie).
+REKOMENDACJE_SYSTEMOWE = [
+    {
+        "nazwa": "Czyszczenie komponentow Windows (WinSxS)",
+        "komenda": "Dism /Online /Cleanup-Image /StartComponentCleanup",
+        "efekt": "zwykle 3-8 GB",
+        "uwagi": "Wymaga PowerShell jako Administrator. Trwa 10-30 min, "
+                 "nie przerywaj. Po tym nie da sie odinstalowac "
+                 "aktualizacji Windows.",
+    },
+    {
+        "nazwa": "Punkty przywracania (VSS)",
+        "komenda": "vssadmin list shadowstorage",
+        "efekt": "zwykle 5-15 GB",
+        "uwagi": "Sprawdz, ile miejsca zajmuja punkty przywracania. "
+                 "Zmniejsz limit w Ochrona systemu (Panel sterowania).",
+    },
+    {
+        "nazwa": "Hibernacja (hiberfil.sys)",
+        "komenda": "powercfg /h off",
+        "efekt": "ok. 16 GB (rozmiar RAM)",
+        "uwagi": "Wymaga admina. Wylacza hibernacje (szybki start tez). "
+                 "Jesli nie uzywasz hibernacji - czysty zysk.",
+    },
+    {
+        "nazwa": "Plik strony (pagefile.sys)",
+        "komenda": "System -> Zaawansowane -> Wydajnosc -> Ustawienia "
+                   "-> Zaawansowane -> Pamiec wirtualna",
+        "efekt": "zalezy od RAM (16-32 GB)",
+        "uwagi": "Przenies na inny dysk lub zmniejsz. NIE wylaczaj "
+                 "completely przy malej RAM.",
+    },
+    {
+        "nazwa": "Katalog Windows.old",
+        "komenda": "Narzędzie do czyszczenia dysku -> Poprzednie instalacje",
+        "efekt": "zwykle 10-30 GB",
+        "uwagi": "Agent sam wykryje Windows.old w raporcie (kategoria "
+                 "windows_old) i przeniesie do kwarantanny - ale najpierw "
+                 "sprawdz, czy nie potrzebujesz powrotu do starego Windowsa.",
+    },
+    {
+        "nazwa": "Katalog Windows/Temp",
+        "komenda": "Narzędzie do czyszczenia dysku (cleanmgr) -> "
+                   "Pliki tymczasowe Windows",
+        "efekt": "zwykle 0,5-3 GB",
+        "uwagi": "Agent nie wchodzi do C:/Windows (zabezpieczenie). "
+                 "cleanmgr to oficjalna droga.",
+    },
+]

@@ -184,6 +184,58 @@ class Skaner:
             "Zawartosc kosza. Oproznij recznie (PPM na Kosz -> Oproznij), "
             "bo skrypt nie ma praw do cudzych koszy.")
 
+    # ------------------------------------------------- v8: Windows.old
+    def windows_old(self):
+        """Katalog Windows.old (poprzednia instalacja Windowsa)."""
+        pozycje = []
+        if os.name == "nt":
+            for litera in "CDEFGH":
+                p = Path(f"{litera}:/Windows.old")
+                if p.is_dir():
+                    r, najnowszy = info_katalogu(p, limit_s=30)
+                    if r > R.PROG_OLD_WINDOWS_GB * 1024 * 1024 * 1024:
+                        pozycje.append(pozycja(p, "katalog", r,
+                                               "poprzednia instalacja Windows",
+                                               mtime_zamiast=najnowszy))
+        self.dodaj_grupe(
+            "windows_old", 2, "kwarantanna", pozycje,
+            "Windows.old = poprzedni Windows po aktualizacji. Mozesz go "
+            "usunac, jesli nie planujesz powrotu. Kwarantanna = cofniecie "
+            "mozliwe. UWAGA: przeniesienie Windows.old moze wymagac praw "
+            "administratora - agent zgłosi blad, nic nie zginie.")
+
+    # --------------------------------------------- v8: cache deweloperskie
+    def cache_dev(self):
+        """Cache deweloperskie (PlatformIO, Cargo, pnpm...).
+
+        Osobna grupa, bo to sa pobrane artefakty (toolchainy, crate'y),
+        odtwarzalne komenda, ale czesto po kilka GB. Próg 10 MB.
+        """
+        pozycje = []
+        for korzen in self.korzenie:
+            for wzorzec in R.CACHE_W_HOME:
+                if wzorzec in (".cache/pip", ".cache/uv", ".npm/_cacache",
+                               ".gradle/caches", ".m2/repository/.cache",
+                               ".vscode/extensions/.obsolete"):
+                    continue  # juz w cache_i_temp
+                p = korzen / wzorzec
+                if not p.exists() or chroniony(p) or self._zajeta(p):
+                    continue
+                try:
+                    r, najnowszy = info_katalogu(p, limit_s=20)
+                except (OSError, PermissionError):
+                    continue
+                if r > R.PROG_CACHE_DEV_MB * 1024 * 1024:
+                    pozycje.append(pozycja(p, "katalog", r,
+                                           f"cache deweloperskie ({p.name})",
+                                           mtime_zamiast=najnowszy))
+                    self._zaznacz(p)
+        self.dodaj_grupe(
+            "cache_deweloperskie", 2, "kwarantanna", pozycje,
+            "Pobrane artefakty deweloperskie (PlatformIO, Cargo, pnpm). "
+            "Odtworzysz komenda (pio run, cargo build, pnpm install). "
+            "NIE dotyka .android (debug.keystore) ani .ollama (modele AI).")
+
     # -------------------------------------------------------- katalogi builda
     def buildy(self):
         pozycje = []
@@ -251,6 +303,60 @@ class Skaner:
                          "czegos - dlatego domyslnie tylko raport.")
         self.dodaj_grupe("stare_logi", 1, "kwarantanna", logi,
                          "Pliki .log/.dmp/.bak po awariach. Nikomu nie sa potrzebne.")
+
+    # ------------------------------------------------- v8: puste katalogi
+    def puste_katalogi(self):
+        """Puste katalogi (0 B) - sprzatanie porzadku, nie miejsca."""
+        pozycje = []
+        for korzen in self.korzenie:
+            for p in korzen.rglob("*"):
+                if len(pozycje) > 5000:
+                    break
+                try:
+                    if not p.is_dir() or chroniony(p) or self._zajeta(p):
+                        continue
+                    # pusty = brak pozycji (pliki i podkatalogi)
+                    if any(p.iterdir()):
+                        continue
+                    pozycje.append(pozycja(p, "katalog", 0,
+                                           "pusty katalog",
+                                           mtime_zamiast=p.stat().st_mtime))
+                    self._zaznacz(p)
+                except (OSError, PermissionError):
+                    continue
+        self.dodaj_grupe(
+            "puste_katalogi", 1, "kwarantanna", pozycje,
+            "Puste katalogi (0 B). Nie zwalniaja miejsca, ale porzadkuja "
+            "drzewo. Kwarantanna = bezpieczne cofniecie.")
+
+    # ------------------------------------------------- v8: stare katalogi
+    def stare_katalogi(self):
+        """Katalogi nieuzywane rok+ (tylko raport, ryzyko 3)."""
+        pozycje = []
+        for korzen in self.korzenie:
+            for p in korzen.rglob("*"):
+                if len(pozycje) > 5000:
+                    break
+                try:
+                    if not p.is_dir() or chroniony(p) or self._zajeta(p):
+                        continue
+                    r, najnowszy = info_katalogu(p, limit_s=20)
+                    if not najnowszy:
+                        continue
+                    wiek = dni(najnowszy)
+                    if wiek < R.PROG_STARE_KATALOGI_DNI:
+                        continue
+                    if r > 1024 * 1024:  # >1 MB
+                        pozycje.append(pozycja(p, "katalog", r,
+                                               f"nieuzywany {wiek} dni",
+                                               mtime_zamiast=najnowszy))
+                        self._zaznacz(p)
+                except (OSError, PermissionError):
+                    continue
+        self.dodaj_grupe(
+            "stare_katalogi", 3, "raport", pozycje,
+            "Katalogi nieuzywane rok+. Tylko raport - agent NIE przenosi "
+            "automatycznie (ryzyko 3). Przejrzyj recznie.")
 
     # -------------------------------------------------------------- duplikaty
     def duplikaty(self):
@@ -343,6 +449,11 @@ class Skaner:
         print("Skanuje: Pobrane...", flush=True);      self.pobrane()
         print("Skanuje: artefakty builda...", flush=True); self.buildy()
         print("Skanuje: duze pliki...", flush=True);   self.duze_pliki()
+        # v8: nowe kategorie
+        print("Skanuje: cache deweloperskie...", flush=True); self.cache_dev()
+        print("Skanuje: Windows.old...", flush=True);  self.windows_old()
+        print("Skanuje: puste katalogi...", flush=True); self.puste_katalogi()
+        print("Skanuje: stare katalogi...", flush=True); self.stare_katalogi()
 
         total = shutil.disk_usage(self.home)
         plan = {
@@ -360,6 +471,8 @@ class Skaner:
         }
         plan["suma_do_odzyskania_MB"] = round(sum(
             g["rozmiar_MB"] for g in plan["grupy"] if g["ryzyko"] <= 2), 1)
+        # v8: rekomendacje systemowe (tylko raport, skrypt ich nie wykona)
+        plan["rekomendacje_systemowe"] = R.REKOMENDACJE_SYSTEMOWE
         return plan
 
 
