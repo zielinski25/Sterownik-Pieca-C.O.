@@ -264,8 +264,19 @@ def main():
     naglowek("WYNIK")
     print(f"  Przeniesiono:   {len(wynik['ruchy'])} pozycji")
     print(f"  Odzyskane:      {wynik['odzyskane_MB']/1024:.2f} GB")
-    print(f"  Bledy:          {len(wynik['bledy'])}")
-    for b in wynik["bledy"][:10]:
+    pominiete = wynik.get("pominiete", [])
+    print(f"  Bledy pozycji:  {len(wynik['bledy'])}")
+    print(f"  Plikow pomin.:  {len(pominiete)} (w uzyciu lub za dluga sciezka)")
+    # grupujemy po powodzie: 200 identycznych komunikatow to szum, nie informacja
+    if pominiete:
+        from collections import Counter
+        powody = Counter(b["blad"] for b in pominiete)
+        print("\n  Czego NIE udalo sie przeniesc (to zostalo na dysku, nic nie zginelo):")
+        for powod, ile in powody.most_common():
+            print(f"    {ile:>4}x  {powod}")
+        print("\n  Te pliki sa w uzyciu albo maja sciezke >260 znakow - Windows ich")
+        print("  nie ruszy. Zostaja na miejscu; mozna je usunac po restarcie.")
+    for b in wynik["bledy"][:5]:
         print(f"    - {b['sciezka']}: {b['blad']}")
     print(f"\n  Manifest:    {wynik['manifest']}")
     print(f"  Kwarantanna: {wynik['kwarantanna']}")
