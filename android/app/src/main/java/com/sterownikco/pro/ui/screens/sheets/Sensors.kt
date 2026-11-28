@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
+import com.sterownikco.pro.core.OutdoorSource
 import com.sterownikco.pro.core.PiecState
 import com.sterownikco.pro.core.SensorDef
 import com.sterownikco.pro.ui.screens.SolarMultiDayForecast
@@ -42,12 +43,14 @@ import com.sterownikco.pro.ui.screens.endOfDaySub
 import com.sterownikco.pro.core.Weather
 import com.sterownikco.pro.ui.components.ManualRow
 import com.sterownikco.pro.ui.components.Note
+import com.sterownikco.pro.ui.components.Pill
 import com.sterownikco.pro.ui.components.NumRow
 import com.sterownikco.pro.ui.components.SectionHeader
 import com.sterownikco.pro.ui.components.Seg
 import com.sterownikco.pro.ui.components.UstBtn
 import com.sterownikco.pro.ui.theme.Pal
 import com.sterownikco.pro.ui.theme.Txt
+import com.sterownikco.pro.ui.icons.AppIcon
 
 /* ══════════════════════════════════════════════════════════════════════════
    Arkusze czujników — port `sensorModalContent()` / `symulacjaSekcjaHtml()` /
@@ -239,20 +242,76 @@ fun SensorFullCard(m: AppModel, sen: SensorDef, listStyle: Boolean, onClickHeade
 fun SensorModal(m: AppModel, sen: SensorDef) {
     if (sen.id == "zewn") {
         SectionHeader("Źródło kafelka Zewnętrzna")
-        Seg(listOf(1 to "Zew 1 · DS18B20", 2 to "Zew 2 · DHT22"), current = m.outdoorTileSource) { source ->
-            m.chooseOutdoorTileSource(source)
-        }
-        Note("Wybór dotyczy kafelka i widżetu telefonu. Sterowanie i symulacja poniżej dotyczą Zew 1 (DS18B20).")
+        Seg(
+            listOf(
+                OutdoorSource.ZEW1 to "Zew 1 · DS18B20",
+                OutdoorSource.ZEW2 to "Zew 2 · DHT22",
+                OutdoorSource.POGODA to "Pogoda · Open-Meteo"
+            ),
+            current = m.outdoorTileSource,
+            columns = 2,
+            icons = mapOf(OutdoorSource.POGODA to "globe")
+        ) { source -> m.chooseOutdoorTileSource(source) }
+        Note("Wybór dotyczy kafelka i widżetu telefonu. Pogoda to temperatura bieżąca z prognozy Open-Meteo dla ustawionej lokalizacji (nie pomiar). Sterowanie i symulacja poniżej dotyczą Zew 1 (DS18B20).")
         SensorFullCard(m, sen.copy(name = "Zew 1 · DS18B20"), listStyle = false)
         SensorFullCard(m, sen.copy(
             id = "zewn_2", name = "Zew 2 · DHT22", bus = "DHT22 · temperatura",
             key = "t_zewn_2", min = -40.0, max = 80.0, step = 0.1
         ), listStyle = false)
+        ForecastSourceCard(m)
     } else {
         SensorFullCard(m, sen, listStyle = false)
     }
     if (sen.id == "panel") SolarMetricsCard(m)
     SymUnit(m, sen.id, sen.name, sen.unit, sen.min, sen.max, sen.step, sen.key)
+}
+
+/** [0.31.102] Karta trzeciego źródła: temperatura bieżąca Open-Meteo (prognoza, nie pomiar). */
+@Composable
+fun ForecastSourceCard(m: AppModel) {
+    val cur = m.weather?.current
+    val temp = cur?.temp ?: Double.NaN
+    val fetchedAt = m.weatherFetchedAtWall
+    val fresh = OutdoorSource.isForecastFresh(fetchedAt)
+    val pill = when {
+        m.weatherBusy -> "POBIERANIE…" to Pal.TextDim
+        !temp.isFinite() -> "BRAK PROGNOZY" to Pal.TextDim
+        !fresh -> "PROGNOZA NIEAKTUALNA" to Pal.Warn
+        else -> "PROGNOZA" to Pal.Live
+    }
+    fun f1(v: Double?) = if (v != null && v.isFinite()) String.format(java.util.Locale.US, "%.1f", v) else "—"
+    Column(
+        Modifier.fillMaxWidth().background(Pal.Surface2, RoundedCornerShape(14.dp))
+            .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(14.dp))
+            .padding(12.dp, 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppIcon("globe", size = 22.dp, tint = Pal.Cyan)
+                Column {
+                    Text("Pogoda · Open-Meteo", style = Txt.cardTitle)
+                    Text("prognoza · temperatura bieżąca (2 m)", style = Txt.rowDesc, color = Pal.TextDim)
+                }
+            }
+            Pill(pill.first, color = pill.second, bg = pill.second.copy(alpha = .14f))
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(f1(temp), style = Txt.diagVal, color = if (temp.isFinite()) Pal.Text else Pal.TextDim)
+            Text(" °C", style = Txt.rowDesc, color = Pal.TextDim)
+            Spacer(Modifier.weight(1f))
+            Text(
+                if (cur == null) "odczuwalna —" else "odczuwalna " + f1(cur.feelsLike) + " °C",
+                style = Txt.rowDesc, color = Pal.TextDim
+            )
+        }
+        Text(
+            if (fetchedAt > 0L) "Pobrano o " + OutdoorSource.clock(fetchedAt) + " · odświeżanie co ok. 30 min gdy aplikacja działa; widżet używa ostatniego pobrania."
+            else "Jeszcze nie pobrano prognozy — sprawdź łączność z internetem i lokalizację w Ustawieniach.",
+            style = Txt.tiny, color = if (fresh || fetchedAt <= 0L) Pal.TextDim else Pal.Warn
+        )
+        UstBtn("Odśwież prognozę", onClick = { m.refreshWeather(force = true, announce = true) }, enabled = !m.weatherBusy)
+    }
 }
 
 /** `MENUS.czujniki` — lista 10 czujników + podsumowanie magistral. */

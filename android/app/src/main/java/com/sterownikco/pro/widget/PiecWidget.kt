@@ -208,15 +208,21 @@ class PiecWidget : AppWidgetProvider() {
 
         private fun views(ctx: Context, d: JSONObject?, spec: WidgetSpec, appWidgetId: Int): RemoteViews {
             val v = RemoteViews(ctx.packageName, spec.layout)
+            val widgetPrefs = try { Prefs(ctx.applicationContext) } catch (e: Exception) { null }
             val outdoorSource = try {
-                Prefs(ctx.applicationContext).getInt(Prefs.K_OUTDOOR_TILE_SOURCE, 1)
+                widgetPrefs?.getInt(Prefs.K_OUTDOOR_TILE_SOURCE, 1) ?: 1
             } catch (e: Exception) { 1 }
+            // [0.31.102] Prognoza Open-Meteo zapisana przez aplikację (nie pochodzi ze snapshotu centrali).
+            val forecast = WidgetForecast.read(
+                rawTemp = try { widgetPrefs?.get(Prefs.K_POGODA_TEMP) } catch (e: Exception) { null },
+                savedAtMs = try { widgetPrefs?.getLong(Prefs.K_POGODA_TS, 0L) ?: 0L } catch (e: Exception) { 0L }
+            )
             fun resolved(sensor: WidgetSensor): WidgetSensor =
-                if (WidgetOutdoorSource.key(sensor.key, outdoorSource) == "t_zewn_2")
-                    sensor.copy(key = "t_zewn_2", label = "ZEWN. 2", shortLabel = "ZEW 2", channel = -1)
-                else if (sensor.key == "t_zewn")
-                    sensor.copy(label = "ZEWN. 1", shortLabel = "ZEW 1")
-                else sensor
+                when (WidgetOutdoorSource.key(sensor.key, outdoorSource)) {
+                    "t_zewn_2" -> sensor.copy(key = "t_zewn_2", label = "ZEWN. 2", shortLabel = "ZEW 2", channel = -1)
+                    WidgetOutdoorSource.FORECAST_KEY -> sensor.copy(key = WidgetOutdoorSource.FORECAST_KEY, label = "POGODA", shortLabel = "POGODA", channel = -1)
+                    else -> if (sensor.key == "t_zewn") sensor.copy(label = "ZEWN. 1", shortLabel = "ZEW 1") else sensor
+                }
 
             val simRaw = d?.opt("sim")
             val simMask = when (simRaw) {
@@ -255,6 +261,7 @@ class PiecWidget : AppWidgetProvider() {
                 simulated(sensor.channel) || controllerSimulation(sensor)
 
             fun value(sensor: WidgetSensor): Double? {
+                if (sensor.key == WidgetOutdoorSource.FORECAST_KEY) return forecast
                 val raw = if (d == null || !d.has(sensor.key) || d.isNull(sensor.key)) null else d.opt(sensor.key)
                 return WidgetTemperatureBounds.value(sensor.key, raw, controllerSimulation(sensor))
             }
@@ -351,8 +358,24 @@ class PiecWidget : AppWidgetProvider() {
 
 // Klucz zapisany w konfiguracji pozostaje ten sam; źródło rozstrzygamy przy renderowaniu.
 internal object WidgetOutdoorSource {
-    fun key(configuredKey: String, source: Int): String =
-        if (configuredKey == "t_zewn" && source == 2) "t_zewn_2" else configuredKey
+    /** Klucz wirtualny — nie występuje w statusie centrali; wartość daje `WidgetForecast`. */
+    const val FORECAST_KEY = "pogoda_temp"
+    fun key(configuredKey: String, source: Int): String = when {
+        configuredKey != "t_zewn" -> configuredKey
+        source == 2 -> "t_zewn_2"
+        source == 3 -> FORECAST_KEY
+        else -> configuredKey
+    }
+}
+
+/** [0.31.102] Temperatura z prognozy dla widżetu: tylko świeża (≤ 2 h) i w sensownym zakresie. */
+internal object WidgetForecast {
+    private const val FRESH_MS = 2L * 60L * 60_000L
+    fun read(rawTemp: String?, savedAtMs: Long, nowMs: Long = System.currentTimeMillis()): Double? {
+        if (savedAtMs <= 0L || nowMs - savedAtMs !in 0L..FRESH_MS) return null
+        val t = rawTemp?.trim()?.replace(',', '.')?.toDoubleOrNull() ?: return null
+        return t.takeIf { it.isFinite() && it >= -60.0 && it <= 60.0 }
+    }
 }
 
 // Tylko widżet; nie zmienia walidacji ani sterowania w centrali i aplikacji.
@@ -382,7 +405,7 @@ internal object WidgetTemperatureColors {
         val t = temperature?.takeIf { it.isFinite() } ?: return UNKNOWN
         return when (sensorKey) {
             // Komfort na zewnątrz: okolice 8–24°C są łagodne; mróz i upał są skrajne.
-            "t_zewn", "t_zewn_2" -> when {
+            "t_zewn", "t_zewn_2", "pogoda_temp" -> when {
                 t < 0.0 -> COLD
                 t < 8.0 -> COOL
                 t < 16.0 -> NORMAL

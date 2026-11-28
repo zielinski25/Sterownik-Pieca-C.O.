@@ -322,6 +322,9 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         const val K_CMD_TOKEN = "piec_cmd_token"
         const val K_DASH_WIDGETS = "piec_dashboard_widgets_v1"
         const val K_OUTDOOR_TILE_SOURCE = "piec_dashboard_outdoor_source_v1"
+        /** [0.31.102] Ostatnia temperatura z Open-Meteo dla kafelka/widżetu "Pogoda" (zapis przy każdym udanym pobraniu). */
+        const val K_POGODA_TEMP = "piec_pogoda_temp_v1"
+        const val K_POGODA_TS = "piec_pogoda_ts_v1"
         const val K_DASH_WIDGET_ORDER = "piec_dashboard_widget_order_v1"
         const val K_ID_TOKEN = "piec_fb_token"
         const val K_REF_TOKEN = "piec_fb_ref_token"

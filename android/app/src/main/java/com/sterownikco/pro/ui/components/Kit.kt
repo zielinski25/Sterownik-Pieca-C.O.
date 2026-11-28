@@ -102,12 +102,19 @@ fun Pill(text: String, color: Color = Pal.Cyan, bg: Color = Pal.rgba(0, 212, 245
 
 /** `.seg` — segmentowany wybór (44 px wys., aktywny = cyjan tło #00131F). */
 @Composable
-fun <T> Seg(options: List<Pair<T, String>>, current: T, columns: Int = options.size, onPick: (T) -> Unit) {
+fun <T> Seg(
+    options: List<Pair<T, String>>,
+    current: T,
+    columns: Int = options.size,
+    icons: Map<T, String> = emptyMap(),
+    onPick: (T) -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         options.chunked(columns).forEach { rowItems ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                 rowItems.forEach { (v, label) ->
                     val on = v == current
+                    val fg = if (on) Color(0xFF00131F) else Pal.TextDim
                     Box(
                         modifier = Modifier.weight(1f).height(36.dp)
                             .background(if (on) Pal.Cyan else Pal.Surface2, RoundedCornerShape(10.dp))
@@ -115,7 +122,15 @@ fun <T> Seg(options: List<Pair<T, String>>, current: T, columns: Int = options.s
                             .clickable { onPick(v) },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(label, style = Txt.seg, color = if (on) Color(0xFF00131F) else Pal.TextDim, textAlign = TextAlign.Center)
+                        val icon = icons[v]
+                        if (icon != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                AppIcon(icon, size = 15.dp, tint = fg)
+                                Text(label, style = Txt.seg, color = fg, textAlign = TextAlign.Center)
+                            }
+                        } else {
+                            Text(label, style = Txt.seg, color = fg, textAlign = TextAlign.Center)
+                        }
                     }
                 }
             }

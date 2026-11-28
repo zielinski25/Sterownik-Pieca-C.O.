@@ -113,23 +113,54 @@ internal fun reorderTileWithinSection(
     }
 }
 
-/** Kafelek diagnostyczny: wybór źródła nigdy nie modyfikuje stanu sterownika. */
+/** Źródła kafelka "Zewnętrzna" (ustawienie telefonu, nie centrali). */
+object OutdoorSource {
+    const val ZEW1 = 1
+    const val ZEW2 = 2
+    const val POGODA = 3
+    /** Prognoza starsza niż to = "PROGNOZA NIEAKTUALNA" (Open-Meteo odświeżane co ~30 min). */
+    const val FORECAST_FRESH_MS = 2L * 60L * 60_000L
+    fun isValid(source: Int) = source == ZEW1 || source == ZEW2 || source == POGODA
+    fun normalize(source: Int) = if (isValid(source)) source else ZEW1
+    fun isForecastFresh(fetchedAtMs: Long, nowMs: Long = System.currentTimeMillis()) =
+        fetchedAtMs > 0L && nowMs - fetchedAtMs in 0L..FORECAST_FRESH_MS
+    fun clock(fetchedAtMs: Long): String {
+        if (fetchedAtMs <= 0L) return "—"
+        val c = java.util.Calendar.getInstance().apply { timeInMillis = fetchedAtMs }
+        return String.format(java.util.Locale.US, "%02d:%02d", c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))
+    }
+}
+
+/**
+ * Kafelek diagnostyczny: wybór źródła nigdy nie modyfikuje stanu sterownika.
+ * `forecast` / `forecastAtMs` = temperatura bieżąca Open-Meteo i czas jej pobrania (źródło 3);
+ * prognoza nie zależy od łączności z centralą, więc `stale` jej nie dotyczy.
+ */
 internal fun outdoorTemperatureTile(
-    source: Int, ds: Double, dht: Double, dsSimulated: Boolean, dsSimMinutes: Int, stale: Boolean
+    source: Int, ds: Double, dht: Double, dsSimulated: Boolean, dsSimMinutes: Int, stale: Boolean,
+    forecast: Double = Double.NaN, forecastAtMs: Long = 0L, nowMs: Long = System.currentTimeMillis()
 ): TileSpec {
-    val useDht = source == 2
-    val value = if (useDht) dht else ds
-    val simulated = !useDht && dsSimulated
+    val useDht = source == OutdoorSource.ZEW2
+    val useForecast = source == OutdoorSource.POGODA
+    val value = if (useForecast) forecast else if (useDht) dht else ds
+    val simulated = !useDht && !useForecast && dsSimulated
     val readingText = if (value.isFinite()) String.format(java.util.Locale.US, "%.1f", value) else "—"
     val condition = if (!value.isFinite()) "oczekiwanie na odczyt" else if (value < 0) "mróz" else if (value > 25) "upał" else "odczyt stabilny"
-    val description = (if (useDht) "Zew 2" else "Zew 1") + " · " +
-        if (simulated) "symulacja ($dsSimMinutes min)" else condition
+    val forecastFresh = OutdoorSource.isForecastFresh(forecastAtMs, nowMs)
+    val description = when {
+        useForecast && !value.isFinite() -> "Pogoda · Open-Meteo · oczekiwanie na prognozę"
+        useForecast -> "Pogoda · Open-Meteo · z " + OutdoorSource.clock(forecastAtMs)
+        else -> (if (useDht) "Zew 2" else "Zew 1") + " · " + if (simulated) "symulacja ($dsSimMinutes min)" else condition
+    }
     val status = when {
         simulated -> ("SYMULACJA ${dsSimMinutes}M" to "sim")
         !value.isFinite() -> ("BRAK DANYCH" to "stale")
+        useForecast && !forecastFresh -> ("PROGNOZA NIEAKTUALNA" to "stale")
+        useForecast -> ("PROGNOZA" to "live")
         stale -> ("NIEAKTUALNE" to "stale")
         else -> ("LIVE" to "live")
     }
+    val tileStale = if (useForecast) !forecastFresh else stale
     val min = if (useDht) -40.0 else -25.0
     val max = if (useDht) 80.0 else 45.0
     val fraction = if (value.isFinite()) ((value - min) / (max - min)).coerceIn(0.0, 1.0) else 0.0
@@ -139,7 +170,7 @@ internal fun outdoorTemperatureTile(
         frac = fraction, desc = description,
         vcol = if (value < 0) "#7dd3fc" else if (value > 15) "#ffb86b" else "",
         badge = status.first, badgeCls = status.second,
-        sim = simulated, stale = stale, artKey = "zewn"
+        sim = simulated, stale = tileStale, artKey = if (useForecast) "pogoda" else "zewn"
     )
 }
 
@@ -169,7 +200,9 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
         dht = S.valOf("zewn_2", "t_zewn_2"),
         dsSimulated = S.symAktywna("zewn"),
         dsSimMinutes = S.sym["zewn"]?.min ?: 0,
-        stale = stale
+        stale = stale,
+        forecast = m.weather?.current?.temp ?: Double.NaN,
+        forecastAtMs = m.weatherFetchedAtWall
     ))
 
     // ── ogrz ────────────────────────────────────────────────────────────────

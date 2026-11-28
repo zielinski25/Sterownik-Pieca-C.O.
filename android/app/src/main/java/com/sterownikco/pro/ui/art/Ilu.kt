@@ -126,6 +126,17 @@ object Ilu {
         return svg1("<circle cx=\"12\" cy=\"12\" r=\"9.5\" fill=\"$glow\" opacity=\".4\"/>" + body)
     }
 
+    // ── 1b. POGODA (globus — temperatura z prognozy Open-Meteo) ────────────
+    fun pogoda(s: ArtState): String {
+        val glow = if (s.isDay) "url(#gl-sun)" else "url(#gl-ringcyan)"
+        val globe = "<circle cx=\"12\" cy=\"12\" r=\"8.2\" fill=\"#0b1a2b\" stroke=\"#00d4f5\" stroke-width=\"1.3\"/>" +
+            "<ellipse cx=\"12\" cy=\"12\" rx=\"3.4\" ry=\"8.2\" stroke=\"#38bdf8\" stroke-width=\".9\" fill=\"none\" opacity=\".85\"/>" +
+            "<line x1=\"3.8\" y1=\"12\" x2=\"20.2\" y2=\"12\" stroke=\"#38bdf8\" stroke-width=\".9\" opacity=\".85\"/>" +
+            "<path d=\"M5.2 8.2h13.6M5.2 15.8h13.6\" stroke=\"#38bdf8\" stroke-width=\".8\" opacity=\".6\"/>" +
+            "<path d=\"M8.6 6.4c1.1.9 2.6.7 3.1 1.9.4 1-.9 1.6-.4 2.6.5.9 2 .4 2.3 1.5.3 1-1 1.6-1.8 2.3\" stroke=\"#4ade80\" stroke-width=\"1.1\" stroke-linecap=\"round\" fill=\"none\" opacity=\".9\"/>"
+        return svg1("<circle cx=\"12\" cy=\"12\" r=\"9.6\" fill=\"$glow\" opacity=\".35\"/>" + globe)
+    }
+
     // ── 2. PIEC C.O. (kocioł z żywym ogniem i iskrami) ─────────────────────
     fun ogrz(s: ArtState): String {
         val t = s.tOgrz
@@ -360,6 +371,7 @@ object Ilu {
     /** Dispatcher — dobór ilustracji do kafelka (jak `ILU[id]` w panelu). */
     fun svgFor(id: String, s: ArtState): String? = when (id) {
         "zewn" -> zewn(s)
+        "pogoda" -> pogoda(s)
         "ogrz" -> ogrz(s)
         "bojler" -> bojler(s)
         "panel" -> panel(s)
@@ -379,6 +391,7 @@ object Ilu {
     /** Klucz treści (odpowiednik `ILU[id].key`) — do odświeżania obrazu. */
     fun keyFor(id: String, s: ArtState): String = when (id) {
         "zewn" -> "w_" + s.weatherCode + "_" + (if (s.night) "n" else "d")
+        "pogoda" -> "globe_" + (if (s.night) "n" else "d")
         "ogrz" -> if (!s.tOgrz.isFinite()) "ogrz_unknown" else "ogrz_" + (if (s.alarmOgrz) "a" else "o") + "_" + (if (s.tOgrz > 40) "hot" else "cold")
         "bojler" -> if (!s.tBojler.isFinite()) "boj_unknown" else "boj_" + Math.round(if (s.tBojler > 0f) s.tBojler / 5f else 10.0f)
         "panel" -> "sol_" + (if (s.night) "n" else "d") + (if (s.alarmPanel) "a" else "o")
