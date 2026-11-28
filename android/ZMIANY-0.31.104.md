@@ -1,6 +1,9 @@
-# SterownikCO Android 0.31.103 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
+# SterownikCO Android 0.31.104 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
 
-Baza: 0.31.102. `versionCode = 31103`, `versionName = "0.31.103"`. Zmiana tylko w aplikacji.
+Baza: 0.31.102. `versionCode = 31104`, `versionName = "0.31.104"`. Zmiana tylko w aplikacji.
+
+0.31.103 nie kompilowała się (kolizja sygnatur JVM `setNetFallback` = setter właściwości `netFallback`);
+w 0.31.104 metoda nazywa się `chooseNetFallback()` (jak `chooseOutdoorTileSource()`). Funkcjonalnie bez zmian.
 
 ## Co robi
 Gdy wybrany czujnik **nie daje odczytu** (BRAK DANYCH) albo **dane centrali są nieaktualne**
@@ -26,7 +29,7 @@ Arkusz **Temperatura zewnętrzna** oraz **Wilgotność** → sekcja **GDY CZUJNI
 
 ## Pliki
 - `core/TileSpecs.kt` — `TileSpec.net`, `OutdoorSource.shouldFallback()`, `outdoorTemperatureTile(... netFallback)`, nowe `humidityTile(...)`.
-- `core/AppModel.kt` — `netFallback` + `setNetFallback()`, zapis `K_POGODA_RH`, odświeżanie widżetu po każdym pobraniu prognozy.
+- `core/AppModel.kt` — `netFallback` + `chooseNetFallback()`, zapis `K_POGODA_RH`, odświeżanie widżetu po każdym pobraniu prognozy.
 - `core/Prefs.kt` — `K_NET_FALLBACK`, `K_POGODA_RH`.
 - `ui/components/Hmi.kt` — globus 11 dp przy wartości gdy `spec.net`.
 - `ui/screens/sheets/Sensors.kt` — `NetFallbackPicker`, notatka w arkuszu Wilgotność.

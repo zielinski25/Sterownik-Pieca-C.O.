@@ -182,7 +182,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var netFallback by mutableStateOf(prefs.getInt(Prefs.K_NET_FALLBACK, 1) != 0)
         private set
 
-    fun setNetFallback(on: Boolean) {
+    fun chooseNetFallback(on: Boolean) {
         netFallback = on
         prefs.setInt(Prefs.K_NET_FALLBACK, if (on) 1 else 0)
         if (on) refreshWeather(force = false)

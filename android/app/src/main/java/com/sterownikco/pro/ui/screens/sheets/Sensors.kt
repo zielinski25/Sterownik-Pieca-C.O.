@@ -286,7 +286,7 @@ fun NetFallbackPicker(m: AppModel) {
         listOf(true to "Auto · z internetu", false to "Pokaż brak danych"),
         current = m.netFallback,
         icons = mapOf(true to "globe")
-    ) { on -> m.setNetFallback(on) }
+    ) { on -> m.chooseNetFallback(on) }
     Note("Dotyczy temperatury zewnętrznej (Zew 1 / Zew 2) i wilgotności — na kafelku i w widżecie. Wartość zastępcza ma mały globus i plakietkę PROGNOZA; nie wpływa na sterowanie piecem.")
 }
 
