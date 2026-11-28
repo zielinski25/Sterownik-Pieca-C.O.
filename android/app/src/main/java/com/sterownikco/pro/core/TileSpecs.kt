@@ -151,7 +151,7 @@ object OutdoorSource {
 internal fun outdoorTemperatureTile(
     source: Int, ds: Double, dht: Double, dsSimulated: Boolean, dsSimMinutes: Int, stale: Boolean,
     forecast: Double = Double.NaN, forecastAtMs: Long = 0L, nowMs: Long = System.currentTimeMillis(),
-    netFallback: Boolean = false
+    netFallback: Boolean = false, feelsLike: Double = Double.NaN
 ): TileSpec {
     val useDht = source == OutdoorSource.ZEW2
     val simulated = !useDht && source != OutdoorSource.POGODA && dsSimulated
@@ -165,9 +165,13 @@ internal fun outdoorTemperatureTile(
     val condition = if (!value.isFinite()) "oczekiwanie na odczyt" else if (value < 0) "mróz" else if (value > 25) "upał" else "odczyt stabilny"
     val forecastFresh = OutdoorSource.isForecastFresh(forecastAtMs, nowMs)
     val sensorName = if (useDht) "Zew 2" else "Zew 1"
+    // [0.31.107] Przy wartości z internetu opis (mała czcionka) niesie temperaturę odczuwalną — jak w zakładce Pogoda.
+    val feels = if (useForecast && value.isFinite() && feelsLike.isFinite()) String.format(java.util.Locale.US, "%.1f", feelsLike) else null
     val description = when {
+        fallback && feels != null -> sensorName + (if (!sensorValue.isFinite()) " brak danych" else " nieaktualne") + " · odcz. " + feels + " °C"
         fallback -> sensorName + (if (!sensorValue.isFinite()) " brak danych" else " nieaktualne") + " · internet z " + OutdoorSource.clock(forecastAtMs)
         useForecast && !value.isFinite() -> "Pogoda · Open-Meteo · oczekiwanie na prognozę"
+        useForecast && feels != null -> "odczuwalna " + feels + " °C · z " + OutdoorSource.clock(forecastAtMs)
         useForecast -> "Pogoda · Open-Meteo · z " + OutdoorSource.clock(forecastAtMs)
         else -> sensorName + " · " + if (simulated) "symulacja ($dsSimMinutes min)" else condition
     }
@@ -262,7 +266,8 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
         stale = stale,
         forecast = m.weather?.current?.temp ?: Double.NaN,
         forecastAtMs = m.weatherFetchedAtWall,
-        netFallback = m.netFallback
+        netFallback = m.netFallback,
+        feelsLike = m.weather?.current?.feelsLike ?: Double.NaN
     ))
 
     // ── ogrz ────────────────────────────────────────────────────────────────

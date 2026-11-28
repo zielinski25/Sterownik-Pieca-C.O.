@@ -141,4 +141,19 @@ class OutdoorTileSourceTest {
         assertTrue(forecastTile(5.0, ageMs = 60_000L).net)
         assertFalse(forecastTile(Double.NaN, ageMs = -1).net)
     }
+
+    /** [0.31.107] Wartość z internetu → w opisie temperatura odczuwalna (mała czcionka), jak w zakładce Pogoda. */
+    @Test fun internetValueShowsFeelsLikeInDescription() {
+        val now = System.currentTimeMillis()
+        val p = outdoorTemperatureTile(OutdoorSource.POGODA, Double.NaN, Double.NaN, false, 0, false,
+            forecast = -3.7, forecastAtMs = now - 60_000L, nowMs = now, feelsLike = -8.2)
+        assertTrue(p.desc, p.desc.startsWith("odczuwalna -8.2 °C · z "))
+        val fb = outdoorTemperatureTile(OutdoorSource.ZEW2, 1.0, Double.NaN, false, 0, false,
+            forecast = -3.7, forecastAtMs = now - 60_000L, nowMs = now, netFallback = true, feelsLike = -8.2)
+        assertEquals("Zew 2 brak danych · odcz. -8.2 °C", fb.desc); assertTrue(fb.net)
+        // czujnik działa → odczuwalnej nie pokazujemy (to nie pomiar)
+        val ds = outdoorTemperatureTile(OutdoorSource.ZEW1, 2.5, Double.NaN, false, 0, false,
+            forecast = -3.7, forecastAtMs = now - 60_000L, nowMs = now, netFallback = true, feelsLike = -8.2)
+        assertFalse(ds.desc.contains("odcz"))
+    }
 }

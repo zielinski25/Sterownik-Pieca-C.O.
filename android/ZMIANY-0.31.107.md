@@ -1,6 +1,6 @@
-# SterownikCO Android 0.31.106 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
+# SterownikCO Android 0.31.107 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
 
-Baza: 0.31.102. `versionCode = 31106`, `versionName = "0.31.106"`. Zmiana tylko w aplikacji.
+Baza: 0.31.102. `versionCode = 31107`, `versionName = "0.31.107"`. Zmiana tylko w aplikacji.
 
 0.31.103 nie kompilowała się (kolizja sygnatur JVM `setNetFallback` = setter właściwości `netFallback`);
 w 0.31.104 metoda nazywa się `chooseNetFallback()` (jak `chooseOutdoorTileSource()`). Funkcjonalnie bez zmian.
@@ -36,6 +36,16 @@ Duża ilustracja kafelka przy źródle „Pogoda · Open-Meteo" (i przy auto-zas
 jak w zakładce Pogoda** (słońce / księżyc / chmury / deszcz / śnieg / burza / mgła wg kodu WMO i pory dnia),
 a nie globus. Globus zostaje wyłącznie jako mały znacznik obok wartości (= „z internetu"). Usunięto
 ilustrację-globus `Ilu.pogoda()`; `artKey` kafelka zawsze `zewn`.
+
+## 0.31.107 — słońce w kafelku i temperatura odczuwalna
+- **Animacja słońca w kafelku Zewnętrzna** była odwrotnie niż w zakładce Pogoda: tarcza i promienie obracały
+  się wokół osi kolektora słonecznego (19.5, 4.5 — wspólne klasy `sun-spin`/`sun-pulse`), więc słońce
+  „tańczyło" wokół promieni. Teraz własne klasy `zw-sun`/`zw-rays` z osią w środku (12, 12): tarcza pulsuje
+  w miejscu, promienie krążą wokół niej — identycznie jak hero w zakładce Pogoda.
+- **Odczuwalna** w kafelku: gdy wartość jest z internetu, opis (mała czcionka) pokazuje temperaturę
+  odczuwalną z Open-Meteo: `odczuwalna -8.2 °C · z 11:49` (źródło Pogoda) lub `Zew 2 brak danych · odcz. -8.2 °C`
+  (auto-zastąpienie). Przy działającym czujniku odczuwalnej nie ma (to nie jest pomiar).
+  Test: `OutdoorTileSourceTest.internetValueShowsFeelsLikeInDescription`.
 
 ## Przełącznik
 Arkusz **Temperatura zewnętrzna** oraz **Wilgotność** → sekcja **GDY CZUJNIK NIE DAJE ODCZYTU**:
