@@ -32,7 +32,9 @@ data class TileSpec(
     val vcol: String = "",
     val sim: Boolean = false,
     val stale: Boolean = false,
-    val artKey: String = ""
+    val artKey: String = "",
+    /** [0.31.103] Wartość pochodzi z internetu (Open-Meteo) — kafelek dostaje mały globus. */
+    val net: Boolean = false
 )
 
 internal fun buildServoPositionMeters(
@@ -124,6 +126,16 @@ object OutdoorSource {
     fun normalize(source: Int) = if (isValid(source)) source else ZEW1
     fun isForecastFresh(fetchedAtMs: Long, nowMs: Long = System.currentTimeMillis()) =
         fetchedAtMs > 0L && nowMs - fetchedAtMs in 0L..FORECAST_FRESH_MS
+    /**
+     * [0.31.103] Czy zastąpić odczyt czujnika prognozą: tylko gdy auto włączone, czujnik nie jest
+     * symulowany, odczytu brak lub jest nieaktualny, a prognoza jest świeża i ma liczbę.
+     */
+    fun shouldFallback(
+        enabled: Boolean, sensorValue: Double, sensorStale: Boolean, simulated: Boolean,
+        forecast: Double, forecastAtMs: Long, nowMs: Long = System.currentTimeMillis()
+    ): Boolean = enabled && !simulated && (!sensorValue.isFinite() || sensorStale) &&
+        forecast.isFinite() && isForecastFresh(forecastAtMs, nowMs)
+
     fun clock(fetchedAtMs: Long): String {
         if (fetchedAtMs <= 0L) return "—"
         val c = java.util.Calendar.getInstance().apply { timeInMillis = fetchedAtMs }
@@ -138,19 +150,26 @@ object OutdoorSource {
  */
 internal fun outdoorTemperatureTile(
     source: Int, ds: Double, dht: Double, dsSimulated: Boolean, dsSimMinutes: Int, stale: Boolean,
-    forecast: Double = Double.NaN, forecastAtMs: Long = 0L, nowMs: Long = System.currentTimeMillis()
+    forecast: Double = Double.NaN, forecastAtMs: Long = 0L, nowMs: Long = System.currentTimeMillis(),
+    netFallback: Boolean = false
 ): TileSpec {
     val useDht = source == OutdoorSource.ZEW2
-    val useForecast = source == OutdoorSource.POGODA
-    val value = if (useForecast) forecast else if (useDht) dht else ds
-    val simulated = !useDht && !useForecast && dsSimulated
+    val simulated = !useDht && source != OutdoorSource.POGODA && dsSimulated
+    val sensorValue = if (useDht) dht else ds
+    // [0.31.103] Brak/nieaktualny odczyt czujnika → automatycznie temperatura z internetu (z globusem).
+    val fallback = source != OutdoorSource.POGODA &&
+        OutdoorSource.shouldFallback(netFallback, sensorValue, stale, simulated, forecast, forecastAtMs, nowMs)
+    val useForecast = source == OutdoorSource.POGODA || fallback
+    val value = if (useForecast) forecast else sensorValue
     val readingText = if (value.isFinite()) String.format(java.util.Locale.US, "%.1f", value) else "—"
     val condition = if (!value.isFinite()) "oczekiwanie na odczyt" else if (value < 0) "mróz" else if (value > 25) "upał" else "odczyt stabilny"
     val forecastFresh = OutdoorSource.isForecastFresh(forecastAtMs, nowMs)
+    val sensorName = if (useDht) "Zew 2" else "Zew 1"
     val description = when {
+        fallback -> sensorName + (if (!sensorValue.isFinite()) " brak danych" else " nieaktualne") + " · internet z " + OutdoorSource.clock(forecastAtMs)
         useForecast && !value.isFinite() -> "Pogoda · Open-Meteo · oczekiwanie na prognozę"
         useForecast -> "Pogoda · Open-Meteo · z " + OutdoorSource.clock(forecastAtMs)
-        else -> (if (useDht) "Zew 2" else "Zew 1") + " · " + if (simulated) "symulacja ($dsSimMinutes min)" else condition
+        else -> sensorName + " · " + if (simulated) "symulacja ($dsSimMinutes min)" else condition
     }
     val status = when {
         simulated -> ("SYMULACJA ${dsSimMinutes}M" to "sim")
@@ -170,7 +189,39 @@ internal fun outdoorTemperatureTile(
         frac = fraction, desc = description,
         vcol = if (value < 0) "#7dd3fc" else if (value > 15) "#ffb86b" else "",
         badge = status.first, badgeCls = status.second,
-        sim = simulated, stale = tileStale, artKey = if (useForecast) "pogoda" else "zewn"
+        sim = simulated, stale = tileStale, artKey = if (source == OutdoorSource.POGODA) "pogoda" else "zewn",
+        net = useForecast && value.isFinite()
+    )
+}
+
+/** [0.31.103] Kafelek wilgotności: DHT22, a gdy brak/nieaktualny odczyt — wilgotność z Open-Meteo (globus). */
+internal fun humidityTile(
+    hu: Double, simulated: Boolean, simMinutes: Int, stale: Boolean,
+    forecastRh: Double = Double.NaN, forecastAtMs: Long = 0L, nowMs: Long = System.currentTimeMillis(),
+    netFallback: Boolean = false
+): TileSpec {
+    val fallback = OutdoorSource.shouldFallback(netFallback, hu, stale, simulated, forecastRh, forecastAtMs, nowMs)
+    val value = if (fallback) forecastRh else hu
+    val text = if (value.isFinite()) Math.round(value).toString() else "—"
+    val condition = if (!value.isFinite()) "oczekiwanie na odczyt" else if (value > 70) "podwyższona" else "w normie"
+    val desc = when {
+        fallback -> "DHT22 " + (if (!hu.isFinite()) "brak danych" else "nieaktualne") + " · internet z " + OutdoorSource.clock(forecastAtMs)
+        simulated -> "symulacja ($simMinutes min)"
+        else -> condition
+    }
+    val status = when {
+        simulated -> ("SYMULACJA ${simMinutes}M" to "sim")
+        fallback -> ("PROGNOZA" to "live")
+        !hu.isFinite() -> ("BRAK DANYCH" to "stale")
+        stale -> ("NIEAKTUALNE" to "stale")
+        else -> ("LIVE" to "live")
+    }
+    return TileSpec(
+        id = "wilgotnosc", title = "Wilgotność", grid = 1, value = text, unit = "%",
+        cls = if (value.isFinite()) "c-flame2" else "c-none",
+        frac = if (value.isFinite()) ((value - 10.0) / 90.0).coerceIn(0.0, 1.0) else 0.0,
+        desc = desc, badge = status.first, badgeCls = status.second,
+        sim = simulated, stale = if (fallback) false else stale, artKey = "wilgotnosc", net = fallback
     )
 }
 
@@ -202,7 +253,8 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
         dsSimMinutes = S.sym["zewn"]?.min ?: 0,
         stale = stale,
         forecast = m.weather?.current?.temp ?: Double.NaN,
-        forecastAtMs = m.weatherFetchedAtWall
+        forecastAtMs = m.weatherFetchedAtWall,
+        netFallback = m.netFallback
     ))
 
     // ── ogrz ────────────────────────────────────────────────────────────────
@@ -288,16 +340,15 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
     )
 
     // ── wilgotnosc ───────────────────────────────────────────────────────────
-    val hu = S.valOf("wilgotnosc", "wilgotnosc")
-    out.add(
-        TileSpec(
-            id = "wilgotnosc", title = "Wilgotność", grid = 1, value = rounded(hu), unit = "%",
-            cls = if (hu.isFinite()) "c-flame2" else "c-none", frac = norm(hu, 10.0, 100.0),
-            desc = symDesc("wilgotnosc", if (!hu.isFinite()) "oczekiwanie na odczyt" else if (hu > 70) "podwyższona" else "w normie"),
-            badge = badge("wilgotnosc")?.first ?: "LIVE", badgeCls = badge("wilgotnosc")?.second ?: "live",
-            sim = S.symAktywna("wilgotnosc"), stale = stale, artKey = "wilgotnosc"
-        )
-    )
+    out.add(humidityTile(
+        hu = S.valOf("wilgotnosc", "wilgotnosc"),
+        simulated = S.symAktywna("wilgotnosc"),
+        simMinutes = S.sym["wilgotnosc"]?.min ?: 0,
+        stale = stale,
+        forecastRh = m.weather?.current?.humidity ?: Double.NaN,
+        forecastAtMs = m.weatherFetchedAtWall,
+        netFallback = m.netFallback
+    ))
 
     // Dodatkowe kafelki do wyboru w ustawieniach pulpitu.
     val powrot = S.valOf("ogrz_powrot", "t_powrot")

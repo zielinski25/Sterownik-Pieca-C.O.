@@ -325,6 +325,9 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         /** [0.31.102] Ostatnia temperatura z Open-Meteo dla kafelka/widżetu "Pogoda" (zapis przy każdym udanym pobraniu). */
         const val K_POGODA_TEMP = "piec_pogoda_temp_v1"
         const val K_POGODA_TS = "piec_pogoda_ts_v1"
+        /** [0.31.103] Auto-zastępowanie braku odczytu czujnika (temp. zewn., wilgotność) prognozą z internetu: "1"/"0". */
+        const val K_NET_FALLBACK = "piec_net_fallback_v1"
+        const val K_POGODA_RH = "piec_pogoda_rh_v1"
         const val K_DASH_WIDGET_ORDER = "piec_dashboard_widget_order_v1"
         const val K_ID_TOKEN = "piec_fb_token"
         const val K_REF_TOKEN = "piec_fb_ref_token"

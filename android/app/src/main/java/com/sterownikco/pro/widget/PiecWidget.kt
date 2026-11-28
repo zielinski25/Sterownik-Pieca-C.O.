@@ -212,6 +212,10 @@ class PiecWidget : AppWidgetProvider() {
             val outdoorSource = try {
                 widgetPrefs?.getInt(Prefs.K_OUTDOOR_TILE_SOURCE, 1) ?: 1
             } catch (e: Exception) { 1 }
+            // [0.31.103] Brak odczytu zewnętrznego (lub stary snapshot) → temperatura z internetu z globusem.
+            val netFallback = try { (widgetPrefs?.getInt(Prefs.K_NET_FALLBACK, 1) ?: 1) != 0 } catch (e: Exception) { true }
+            val lastPush = try { widgetPrefs?.getLong(K_PUSH_TS, 0L) ?: 0L } catch (e: Exception) { 0L }
+            val stale = lastPush <= 0L || System.currentTimeMillis() - lastPush > 5L * 60_000L
             // [0.31.102] Prognoza Open-Meteo zapisana przez aplikację (nie pochodzi ze snapshotu centrali).
             val forecast = WidgetForecast.read(
                 rawTemp = try { widgetPrefs?.get(Prefs.K_POGODA_TEMP) } catch (e: Exception) { null },
@@ -275,9 +279,14 @@ class PiecWidget : AppWidgetProvider() {
                 val sensor = selected.getOrNull(index)
                 v.setViewVisibility(cellId, if (sensor == null) View.GONE else View.VISIBLE)
                 if (sensor != null) {
-                    val label = if (spec.useShortLabels) sensor.shortLabel else sensor.label
+                    val baseLabel = if (spec.useShortLabels) sensor.shortLabel else sensor.label
                     val labelColor = if (sensor.accent) Color.parseColor("#FFD32A") else Color.parseColor("#8EA6BA")
-                    val temperature = value(sensor)
+                    val picked = WidgetNetFallback.pick(
+                        key = sensor.key, sensorValue = value(sensor), sensorStale = stale,
+                        simulated = isSimulated(sensor), forecast = forecast, enabled = netFallback
+                    )
+                    val temperature = picked.first
+                    val label = if (picked.second) "$baseLabel 🌐" else baseLabel
                     val valueColor = Color.parseColor(WidgetTemperatureColors.colorHex(sensor.key, temperature))
                     v.setTextViewText(spec.slots.labelViews[index], label)
                     v.setTextViewText(spec.slots.valueViews[index], degrees(sensor, temperature))
@@ -323,8 +332,6 @@ class PiecWidget : AppWidgetProvider() {
             }
             val online = flag("online")
             val controllerOffline = online == false
-            val lastPush = try { Prefs(ctx.applicationContext).getLong(K_PUSH_TS, 0L) } catch (e: Exception) { 0L }
-            val stale = lastPush <= 0L || System.currentTimeMillis() - lastPush > 5L * 60_000L
             val oldAlarm = controllerOffline || stale
             val (statusText, statusColor) = when {
                 alarmActive && oldAlarm -> "⚠ STARY ALARM" to Color.parseColor("#FBBF24")
@@ -365,6 +372,18 @@ internal object WidgetOutdoorSource {
         source == 2 -> "t_zewn_2"
         source == 3 -> FORECAST_KEY
         else -> configuredKey
+    }
+}
+
+/** [0.31.103] Zastępowanie odczytu zewnętrznego prognozą w widżecie (czysta logika — do testów). */
+internal object WidgetNetFallback {
+    private val OUTDOOR_KEYS = setOf("t_zewn", "t_zewn_2")
+    /** @return wartość do pokazania + czy pochodzi z internetu (globus w etykiecie). */
+    fun pick(key: String, sensorValue: Double?, sensorStale: Boolean, simulated: Boolean, forecast: Double?, enabled: Boolean): Pair<Double?, Boolean> {
+        if (key == WidgetOutdoorSource.FORECAST_KEY) return sensorValue to (sensorValue != null)
+        if (!enabled || simulated || key !in OUTDOOR_KEYS || forecast == null) return sensorValue to false
+        if (sensorValue == null || sensorStale) return forecast to true
+        return sensorValue to false
     }
 }
 

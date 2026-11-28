@@ -172,6 +172,10 @@ fun Tile(
             if (spec.unit.isNotEmpty()) {
                 Text(" " + spec.unit, style = Txt.tileUnit, color = Pal.TextDim, modifier = Modifier.padding(bottom = 2.dp))
             }
+            // [0.31.103] Mały globus = wartość z internetu (Open-Meteo), nie z czujnika.
+            if (spec.net) {
+                AppIcon("globe", size = 11.dp, tint = Pal.Cyan, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+            }
         }
         if (spec.positionMeters.isEmpty()) {
             Text(

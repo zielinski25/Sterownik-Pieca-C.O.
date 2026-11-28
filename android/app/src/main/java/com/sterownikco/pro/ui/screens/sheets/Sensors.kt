@@ -253,17 +253,41 @@ fun SensorModal(m: AppModel, sen: SensorDef) {
             icons = mapOf(OutdoorSource.POGODA to "globe")
         ) { source -> m.chooseOutdoorTileSource(source) }
         Note("Wybór dotyczy kafelka i widżetu telefonu. Pogoda to temperatura bieżąca z prognozy Open-Meteo dla ustawionej lokalizacji (nie pomiar). Sterowanie i symulacja poniżej dotyczą Zew 1 (DS18B20).")
+        NetFallbackPicker(m)
         SensorFullCard(m, sen.copy(name = "Zew 1 · DS18B20"), listStyle = false)
         SensorFullCard(m, sen.copy(
             id = "zewn_2", name = "Zew 2 · DHT22", bus = "DHT22 · temperatura",
             key = "t_zewn_2", min = -40.0, max = 80.0, step = 0.1
         ), listStyle = false)
         ForecastSourceCard(m)
+    } else if (sen.id == "wilgotnosc") {
+        SensorFullCard(m, sen, listStyle = false)
+        NetFallbackPicker(m)
+        val rh = m.weather?.current?.humidity
+        val fresh = OutdoorSource.isForecastFresh(m.weatherFetchedAtWall)
+        Note(
+            if (rh != null && rh.isFinite() && fresh)
+                "Wilgotność z internetu (Open-Meteo): " + Math.round(rh) + " % · pobrano o " + OutdoorSource.clock(m.weatherFetchedAtWall) +
+                    ". Używana na kafelku tylko wtedy, gdy DHT22 nie daje odczytu lub dane centrali są nieaktualne."
+            else "Brak świeżej prognozy Open-Meteo — przy braku odczytu DHT22 kafelek pokaże BRAK DANYCH."
+        )
     } else {
         SensorFullCard(m, sen, listStyle = false)
     }
     if (sen.id == "panel") SolarMetricsCard(m)
     SymUnit(m, sen.id, sen.name, sen.unit, sen.min, sen.max, sen.step, sen.key)
+}
+
+/** [0.31.103] Wspólny przełącznik: brak odczytu czujnika → automatycznie wartość z internetu (z globusem). */
+@Composable
+fun NetFallbackPicker(m: AppModel) {
+    SectionHeader("Gdy czujnik nie daje odczytu")
+    Seg(
+        listOf(true to "Auto · z internetu", false to "Pokaż brak danych"),
+        current = m.netFallback,
+        icons = mapOf(true to "globe")
+    ) { on -> m.setNetFallback(on) }
+    Note("Dotyczy temperatury zewnętrznej (Zew 1 / Zew 2) i wilgotności — na kafelku i w widżecie. Wartość zastępcza ma mały globus i plakietkę PROGNOZA; nie wpływa na sterowanie piecem.")
 }
 
 /** [0.31.102] Karta trzeciego źródła: temperatura bieżąca Open-Meteo (prognoza, nie pomiar). */

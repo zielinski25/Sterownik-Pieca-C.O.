@@ -178,6 +178,17 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     var weatherFetchedAtWall by mutableLongStateOf(prefs.getLong(Prefs.K_POGODA_TS, 0L))
         private set
 
+    /** [0.31.103] Auto: brak odczytu czujnika (temp. zewn. / wilgotność) → wartość z internetu z globusem. */
+    var netFallback by mutableStateOf(prefs.getInt(Prefs.K_NET_FALLBACK, 1) != 0)
+        private set
+
+    fun setNetFallback(on: Boolean) {
+        netFallback = on
+        prefs.setInt(Prefs.K_NET_FALLBACK, if (on) 1 else 0)
+        if (on) refreshWeather(force = false)
+        PiecWidget.renderAll(ctx)
+    }
+
     fun chooseOutdoorTileSource(source: Int) {
         if (!OutdoorSource.isValid(source)) return
         outdoorTileSource = source
@@ -187,14 +198,16 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     /** Zapis temperatury prognozy dla widżetu (działa bez procesu aplikacji) i kafelka. */
-    private fun rememberForecastTemp(temp: Double, savedAtMs: Long) {
+    private fun rememberForecastTemp(temp: Double, savedAtMs: Long, rh: Double = Double.NaN) {
         if (!temp.isFinite()) return
         try {
             prefs.set(Prefs.K_POGODA_TEMP, String.format(java.util.Locale.US, "%.1f", temp))
             prefs.setLong(Prefs.K_POGODA_TS, savedAtMs)
+            if (rh.isFinite()) prefs.set(Prefs.K_POGODA_RH, Math.round(rh).toString())
         } catch (e: Exception) { /* brak zapisu nie blokuje pogody */ }
         weatherFetchedAtWall = savedAtMs
-        if (outdoorTileSource == OutdoorSource.POGODA) PiecWidget.renderAll(ctx)
+        // Widżet może właśnie zastępować brak odczytu prognozą — odśwież go po każdym pobraniu.
+        if (outdoorTileSource == OutdoorSource.POGODA || netFallback) PiecWidget.renderAll(ctx)
     }
     var authOpen by mutableStateOf(false)
     /** Okienko alarmu w aplikacji (gdy system nie odpali FSI na pierwszym planie). */
@@ -1287,7 +1300,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         weather = restored
         lastWeatherSuccessKey = key
         lastWeatherSuccessElapsed = SystemClock.elapsedRealtime() - (nowWall - entry.savedAtMs)
-        rememberForecastTemp(restored.current.temp, entry.savedAtMs)
+        rememberForecastTemp(restored.current.temp, entry.savedAtMs, restored.current.humidity)
     }
 
     fun refreshWeather(force: Boolean, announce: Boolean = false): Job {
@@ -1322,7 +1335,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                         try {
                             prefs.set(Prefs.K_WEATHER_CACHE, WeatherCache.encode(key, real.raw, System.currentTimeMillis()))
                         } catch (e: Exception) { /* brak cache nie blokuje odczytu */ }
-                        rememberForecastTemp(real.data.current.temp, System.currentTimeMillis())
+                        rememberForecastTemp(real.data.current.temp, System.currentTimeMillis(), real.data.current.humidity)
                         S.bump()
                         if (announce) showToast("Pogoda", "Dane pogodowe zaktualizowane", "ok")
                     } else if (announce) {

@@ -92,4 +92,52 @@ class OutdoorTileSourceTest {
         assertFalse(OutdoorSource.isForecastFresh(now + 60_000L, now)) // zegar cofnięty
         assertEquals("—", OutdoorSource.clock(0L))
     }
+
+    // ── [0.31.103] auto-zastępowanie braku odczytu czujnika prognozą ─────────
+    private fun fb(source: Int, sensor: Double, stale: Boolean = false, simulated: Boolean = false,
+                   forecast: Double = 4.2, ageMs: Long = 60_000L, enabled: Boolean = true) =
+        outdoorTemperatureTile(
+            source, ds = if (source == 1) sensor else 12.0, dht = if (source == 2) sensor else 8.5,
+            dsSimulated = simulated, dsSimMinutes = 5, stale = stale,
+            forecast = forecast, forecastAtMs = if (ageMs < 0) 0L else now - ageMs, nowMs = now, netFallback = enabled
+        )
+
+    @Test fun missingDhtReadingFallsBackToInternetWithGlobe() {
+        val t = fb(2, Double.NaN)
+        assertEquals("4.2", t.value)
+        assertEquals("PROGNOZA", t.badge)
+        assertTrue(t.net)
+        assertFalse(t.stale)
+        assertEquals("zewn", t.artKey)
+        assertTrue(t.desc.startsWith("Zew 2 brak danych · internet z "))
+    }
+
+    @Test fun staleControllerDataFallsBackButFreshReadingDoesNot() {
+        val stale = fb(1, 12.0, stale = true)
+        assertEquals("4.2", stale.value)
+        assertTrue(stale.net)
+        assertTrue(stale.desc.startsWith("Zew 1 nieaktualne · internet"))
+        val fresh = fb(2, -1.5)
+        assertEquals("-1.5", fresh.value)
+        assertEquals("LIVE", fresh.badge)
+        assertFalse(fresh.net)
+    }
+
+    @Test fun fallbackRespectsSwitchSimulationAndForecastFreshness() {
+        val off = fb(2, Double.NaN, enabled = false)
+        assertEquals("—", off.value); assertEquals("BRAK DANYCH", off.badge); assertFalse(off.net)
+        val sim = fb(1, 12.0, stale = true, simulated = true)
+        assertEquals("SYMULACJA 5M", sim.badge); assertFalse(sim.net)
+        val oldForecast = fb(2, Double.NaN, ageMs = 3 * 60 * 60_000L)
+        assertEquals("—", oldForecast.value); assertEquals("BRAK DANYCH", oldForecast.badge); assertFalse(oldForecast.net)
+        val noForecast = fb(2, Double.NaN, forecast = Double.NaN)
+        assertEquals("BRAK DANYCH", noForecast.badge); assertFalse(noForecast.net)
+        // Zero z czujnika to prawidłowy odczyt — bez zastępowania.
+        assertEquals("0.0", fb(2, 0.0).value); assertFalse(fb(2, 0.0).net)
+    }
+
+    @Test fun forecastSourceAlwaysCarriesGlobe() {
+        assertTrue(forecastTile(5.0, ageMs = 60_000L).net)
+        assertFalse(forecastTile(Double.NaN, ageMs = -1).net)
+    }
 }

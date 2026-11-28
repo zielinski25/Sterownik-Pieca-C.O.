@@ -37,4 +37,16 @@ class WidgetOutdoorSourceTest {
             WidgetTemperatureColors.colorHex("pogoda_temp", -2.5)
         )
     }
+
+    @Test fun widgetFallsBackToForecastOnlyForOutdoorAndOnlyWhenNeeded() {
+        assertEquals(4.2 to true, WidgetNetFallback.pick("t_zewn_2", null, false, false, 4.2, true))
+        assertEquals(4.2 to true, WidgetNetFallback.pick("t_zewn", 12.0, true, false, 4.2, true))
+        assertEquals(12.0 to false, WidgetNetFallback.pick("t_zewn", 12.0, false, false, 4.2, true))
+        assertEquals(null to false, WidgetNetFallback.pick("t_zewn_2", null, false, false, 4.2, false))
+        assertEquals(null to false, WidgetNetFallback.pick("t_zewn_2", null, false, false, null, true))
+        assertEquals(12.0 to false, WidgetNetFallback.pick("t_zewn", 12.0, true, true, 4.2, true))
+        assertEquals(null to false, WidgetNetFallback.pick("t_bojler", null, true, false, 4.2, true))
+        assertEquals(4.2 to true, WidgetNetFallback.pick("pogoda_temp", 4.2, true, false, 4.2, true))
+        assertEquals(null to false, WidgetNetFallback.pick("pogoda_temp", null, false, false, null, true))
+    }
 }

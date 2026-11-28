@@ -86,7 +86,7 @@ fun Dashboard(m: AppModel) {
         val reported = S.art(weatherCode, isDay, servoMode)
         flapPreview?.let { reported.copy(klapa = it.targetDegrees.toFloat(), klapaKnown = true) } ?: reported
     }
-    val tiles = remember(rev, servoMode, weatherCode, isDay, m.weather, m.weatherBusy, flapPreview, syberkaPreview, m.outdoorTileSource) {
+    val tiles = remember(rev, servoMode, weatherCode, isDay, m.weather, m.weatherBusy, flapPreview, syberkaPreview, m.outdoorTileSource, m.netFallback) {
         buildTiles(m, weatherCode, isDay)
     }
     val orderIndex = m.dashboardWidgetOrder.withIndex().associate { it.value to it.index }
