@@ -1,0 +1,3 @@
+471b61b4dcb53624f24caf182b96b279faa4a3a62f681266c24b53e27acbe957  src/main_centrala.cpp
+7869e41e0a6ea9e2ccb356208320512cec562d2be78b1f83fd559ca2b810cb88  main_centrala-v3.58.10-do-v3.58.11.patch
+0f5b70201688fc02ec16913cdcd23108872305addc8b11311acc4fd38f622d4f  v3.58.10-zew2-ponowienie/src/main_centrala.cpp

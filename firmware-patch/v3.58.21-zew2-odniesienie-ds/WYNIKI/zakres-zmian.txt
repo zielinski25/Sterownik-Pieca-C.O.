@@ -1,0 +1,46 @@
+ZAKRES ZMIAN 3.58.21 wzgledem 3.58.20 (plik src/main_centrala.cpp, 51 542 linie)
+================================================================================
+Patch main_centrala-v3.58.20-do-v3.58.21.patch: 10 hunkow, ok. 45 linii kodu (reszta komentarze
+i historia). Zmiana tylko w C++ (blok ZEW2-FILTR, nowa zew2OdczytDs() tuz przed wilgotnosc(),
+wilgotnosc()). HTML/JS strony WWW, /api/status, Firebase, telemetria minutowa, zewnZrodlo,
+wilgotnosc, zwykle (nieprzeliczane) ramki DHT22 - bez zmian (test C).
+
+   1-18        naglowek pliku [v3.58.21 ZEW2-ODNIESIENIE-DS]
+   2072-2078   HISTORIA WERSJI: wpis [v3.58.21]
+   6674-6683   blok ZEW2-FILTR: stala ZEW2_DS_PROG_C (8,0 C) i funkcja zew2DsOdbiega(tDht, tDs, dsOk):
+                 dsOk == false (brak/nieswiezy/symulowany DS) albo NaN -> false (nigdy nie odbiega)
+                 inaczej -> |tDht - tDs| > 8,0
+   6695-6707   zew2Filtruj(): nowy parametr wymusPodejrzany (domyslnie false);
+               podejrzany = wymusPodejrzany || zew2Podejrzany(t, ostatniaDobra). Nic wiecej w filtrze.
+   6950        FIRMWARE_VERSION = "v3.58.21"
+   34598-34609 nowa zew2OdczytDs(float*): DS18B20 (temperaturaNaZewnatrz) tylko gdy
+               telemetryQuality(TELEMETRY_CH_ZEWN) == 0 (swiezy, <= 135 s), nie symulowany
+               (lastGoodSimulated / trybSymulacji), skonczony. Inaczej false.
+   34661-34678 wilgotnosc(): po dekoderze klona: dsOk = zew2OdczytDs(&dsTemp);
+               dsOdbiega = dhtPrzeliczona && zew2DsOdbiega(t, dsTemp, dsOk) -> licznik dhtDsOdbiega
+               i WARN "DHT22 Zew2 zdarzenie=ds_odniesienie t=-0.3 ds=10.0 prog=8 msg=..."
+   34685        zew2Filtruj(..., &tZew2, dsOdbiega)  <- ramka idzie sciezka "podejrzany"
+   34719-34722 linia INFO "DHT22 diagnostyka ...": nowe pola ds_roznica=<DS - DHT, nan bez DS>
+               ds_odbiega=<licznik> (miedzy u2= a kod=)
+
+Dlaczego tak (eksport Firebase 26.11, 778 par Zew 1 / Zew 2):
+   - roznica Zew 1 (DS18B20) - Zew 2 (DHT22): srednia 3,16 C, mediana 3,1, min 2,2, max 4,5;
+     godzinami 2,8-3,9 (najwieksza 05-07 UTC). Czujniki wisza w roznych miejscach, roznica plywa
+     z nasloneczniem i wiatrem - dlatego DS NIE moze byc "sedzia" (prog 2-3 C odrzucalby
+     prawdziwe odczyty rano), tylko siatka bezpieczenstwa z szerokim progiem 8 C.
+   - prog dotyczy TYLKO ramek przeliczonych z kodowania klona (v3.58.20). Zwykle ramki ida
+     jak dotad przez filtr skokow - gdyby DS18B20 padl, DHT22 ma byc dalej samodzielnym zrodlem
+     (zewnZrodlo), wiec nie moze od niego zalezec.
+   - gdy DS niedostepny (brak czujnika, nieswiezy > 135 s, symulacja ZEWN, tryb symulacji)
+     zachowanie identyczne z 3.58.20.
+
+Co sie dzieje przy "odbiega" (przyklad: DS +10,0, ramka klona przeliczona na -0,3):
+   1. ramka nie trafia na wykres; filtr zapamietuje ja jako kandydata, WARN ds_odniesienie
+      i WARN podejrzany ("powtorka za 3 s") - jak przy skoku > 3 C.
+   2. powtorka po 3 s:
+      - zgodna z kandydatem (do 0,5 C) -> POTWIERDZONA i przyjeta (dwa zgodne odczyty = prawda,
+        nawet gdy DS dalej odbiega - DS to siatka, nie sedzia);
+      - inna, pasujaca do historii -> przyjeta, kandydat odrzucony;
+      - inna i tez odbiega od DS / od historii -> odrzucona.
+   Koszt falszywego alarmu: 3 s opoznienia jednej probki. Zysk: pojedyncza smieciowa ramka
+   z poprawna suma kontrolna, ktora trafila w przedzial klona, nie wchodzi na wykres.

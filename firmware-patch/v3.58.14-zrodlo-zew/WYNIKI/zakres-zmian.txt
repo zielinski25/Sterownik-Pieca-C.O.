@@ -1,0 +1,37 @@
+ZAKRES ZMIAN 3.58.14 wzgledem 3.58.13 (plik src/main_centrala.cpp, 51 142 linii, SHA-256 eb763b1b...)
+====================================================================================================
+Patch main_centrala-v3.58.13-do-v3.58.14.patch: 21 hunkow, +134 / -4 (z tego 3 hunki to
+naglowek, historia i numer wersji). C++: 1 zmienna, 1 galaz ustawien, 1 linia NVS, 3 linie
+JSON, 1 linia logu. Reszta: JavaScript/CSS strony WWW wbudowanej w plik (R"PIECHTML().
+
+C++
+   1-35        naglowek pliku [v3.58.14 ZEWN-ZRODLO] (zyczenie, zasada, czego nie robi, koszt)
+   1937-1947   HISTORIA WERSJI: wpis [v3.58.14]
+   6716        FIRMWARE_VERSION = "v3.58.14"
+   24273-24281 byte zewnZrodlo = 1; + komentarz (1 = DS18B20/t_zewn, 2 = DHT22/t_zewn_2)
+   24611-24614 ustawParametrPieca(): galaz "zewnZrodlo" - tylko 1 lub 2, zapis NVS "zewnZrodlo"
+               (dziala dla komendy "ustaw zewnZrodlo N" z Firebase/LAN i dla /api/ustawienia-set)
+   29777       linia logu ustawien: zewnZrodlo=N
+   31453       wifiZbudujJsonStatus() (/api/status - LCD, stara strona): "zewnZrodlo":N
+   32873       /api/ustawienia-get: "zewnZrodlo":N
+   46139       zbudujJsonStatusPelny() (Firebase /piec/status + /api/lan/status): "zewnZrodlo":N
+   50438-50439 setup(): zewnZrodlo = config.getUChar("zewnZrodlo", 1); spoza 1..2 -> 1
+
+JavaScript / CSS strony (to samo w Piec.html w repozytorium)
+   9862-9866   CSS .zewn-zrodlo (przyciski 58 px: nazwa + odczyt)
+   12383       stan S: t_zewn_ds, t_zewn_2, zewnZrodlo
+   13112,13132 applyIncomingData(): numericRules t_zewn_2 [-40,80], zewnZrodlo [1,2]; integerKeys
+   13174-13187 applyIncomingData(): S.t_zewn_ds = surowy DS18B20; gdy zewnZrodlo=2 i brak symulacji
+               zewn: S.t_zewn = t_zewn_2 (null -> NaN = BRAK DANYCH, bez podstawiania DS18B20)
+   13486       tryb demo: t_zewn_ds, t_zewn_2, zewnZrodlo
+   13809-13812 tryb demo, applyCommand("ustaw zewnZrodlo N"): walidacja 1|2, kafelek podaza
+   14261-14294 ZEWN_ZRODLA, zewnZrodloNr(), zewnZrodloMagistrala(), zewnZrodloSekcjaHtml():
+               seg() z dwoma przyciskami (odczyty na zywo), onPick -> sendCommand('ustaw zewnZrodlo N'),
+               podswietlenie wylacznie ze statusu; opis: aktywne zrodlo / brak odczytu / symulacja /
+               starsze firmware / demo
+   14310,14320 sensorModalContent(): naglowek i "Magistrala:" wg wybranego zrodla (id sf-bus-*, sf-bus2-*)
+   14338-14347 sensorModalContent(): odswiezanie magistrali w live$; sekcja wyboru pod karta czujnika zewn
+
+Bez zmian: temperaturaNaZewnatrz i jej uzycia (telemetria, historia, korekta wilgotnosci,
+LCD JSON t_zewn), automatyka, alarmy, serwa, Telegram, OTA, Firebase, SYM-OD-RAZU (3.58.13),
+SUWAKI-SYM (3.58.12), DYM-SYM (3.58.11), Zew 2 (3.58.9/10), aplikacja Android.

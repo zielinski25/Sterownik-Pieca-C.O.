@@ -1,0 +1,167 @@
+--- v3.58.12-suwaki-symulacji/src/main_centrala.cpp	2026-11-23 10:12:39.437641539 +0000
++++ v3.58.13-symulacja-od-razu/src/main_centrala.cpp	2026-11-23 11:34:43.840898553 +0000
+@@ -1,3 +1,35 @@
++// FIRMWARE_VERSION v3.58.12 -> v3.58.13 (2026-11-26) — SYMULACJA WIDOCZNA OD RAZU; SUWAK NIE WRACA PO „ZASTOSUJ”.
++//
++// [v3.58.13 SYM-OD-RAZU + SUWAK-PO-ACK] — 2026-11-26
++// Zgłoszenie użytkownika (23.11, po 3.58.12, panel WWW „Bojler C.W.U.”):
++// suwak da się już przesunąć i nacisnąć „Zastosuj”, ale PO naciśnięciu
++// wartość wraca suwakiem do tego, co było.
++//
++// PRZYCZYNA: komenda „symuluj” ustawia tylko symulowanaTemperatura* i flagę;
++// do zmiennej ODCZYTU (temperaturaBojlera itd.) wartość trafia dopiero przy
++// kolejnym odczycie czujnika z harmonogramu dsPlanInterval(): bojler/panel
++// co 60 s, zewn/pokój co 120 s (DHT 120 s, BMP280 180 s). Po ACK panel
++// czyta status: „symulacja aktywna” + STARA temperatura → 3.58.12 zwalniało
++// blokadę suwaka (symEdycja) i live$ ustawiało go na starą wartość; po
++// 1–2 min suwak i kafelek skakały na zadaną. To samo widać było na kafelku,
++// w aplikacji, na LCD i w Telegramie: „symulacja aktywna”, a odczyt stary.
++//
++// CO ROBI 3.58.13:
++// [1] C++ symulacjaUstawOdczytOdRazu(pole, wartosc): start symulacji (komenda
++//     „symuluj” z Firebase/LAN i POST /api/symulacja-czujnik ze starej strony)
++//     od razu przepisuje wartość do zmiennej odczytu — status, kafelki, LCD,
++//     Telegram i telemetria widzą symulację natychmiast. Kolejny odczyt
++//     z harmonogramu zwróci tę samą wartość (odczytajTemperature() przy
++//     symulacji nie dotyka filtra) — bez zmiany logiki regulacji/alarmów.
++//     „dym” bez zmian (pętla czujnika dymu przepisuje symulację co kilka s).
++// [2] JS symulacjaSekcjaHtml(): po potwierdzonym „Zastosuj” suwaki trzymają
++//     zadane parametry (symZadana), dopóki odczyt sterownika się nie zmieni
++//     (symulacja weszła w życie / ktoś zmienił ją z innego źródła) albo przez
++//     3 min — zabezpieczenie dla Piec.html otwartego przez Firebase ze
++//     starszym firmware. „Wyłącz teraz” i koniec symulacji zdejmują blokadę.
++// Bez zmian: automatyka, alarmy, serwa, Telegram, OTA, Firebase, panel LCD.
++// Koszt: ~0,3 kB flash (C++), HTML w PROGMEM +0,9 kB; 0 B RAM.
++//
+ // FIRMWARE_VERSION v3.58.11 -> v3.58.12 (2026-11-26) — SUWAKI SYMULACJI W WWW NIE COFAJĄ SIĘ POD PALCEM.
+ //
+ // [v3.58.12 SUWAKI-SYM] — 2026-11-26
+@@ -1866,6 +1898,15 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.13] — 2026-11-26 — SYMULACJA WIDOCZNA OD RAZU; SUWAK NIE WRACA PO ZASTOSUJ
++// Co: Start symulacji czujnika przepisuje zadana wartosc do zmiennej odczytu
++//     natychmiast (symulacjaUstawOdczytOdRazu(), obie drogi: komenda "symuluj"
++//     Firebase/LAN i /api/symulacja-czujnik). Panel WWW po potwierdzonym
++//     Zastosuj trzyma zadane parametry suwakow, az odczyt sterownika sie zmieni.
++// Problem: odczyt czujnika jest z harmonogramu (bojler 60 s, zewn 120 s), wiec
++//     status po ACK niosl stara temperature - suwak "wracal", kafelek tez.
++// Naprawa: naglowek [v3.58.13 SYM-OD-RAZU] (C++) i [v3.58.13 SUWAK-PO-ACK] (JS).
++//
+ // [v3.58.12] — 2026-11-26 — SUWAKI SYMULACJI W WWW NIE COFAJA SIE POD PALCEM
+ // Co: W arkuszu czujnika (nowy interfejs WWW) przy aktywnej symulacji suwak
+ //     "Wartosc"/"Czas trwania" ruszony przez operatora nie jest juz cofany przez
+@@ -6626,7 +6667,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.12";
++static const char* FIRMWARE_VERSION = "v3.58.13";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -13987,6 +14028,10 @@
+ 
+     // [v3.58.12 SUWAKI-SYM] Czy operator rusza suwakiem (patrz live$(wrap) niżej).
+     const symEdycja = { wartosc: false, czas: false };
++    // [v3.58.13 SUWAK-PO-ACK] Co wysłano ostatnim „Zastosuj” i jaki odczyt sterownik
++    // pokazywał w chwili ACK. Dopóki odczyt się nie zmieni (albo przez 3 min),
++    // suwaki trzymają zadane parametry — status może jeszcze nieść stary odczyt.
++    const symZadana = { wartosc: NaN, przedtem: NaN, doMs: 0 };
+     ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(ev => {
+       inpVal.addEventListener(ev, () => { symEdycja.wartosc = true; }, { passive: true });
+       inpTime.addEventListener(ev, () => { symEdycja.czas = true; }, { passive: true });
+@@ -14015,6 +14060,13 @@
+       const m = parseInt(inpTime.value) || 60;
+       const confirmed = await sendCommand('symuluj ' + pole + ' ' + v + ' ' + m);
+       symEdycja.wartosc = false; symEdycja.czas = false;   // [v3.58.12] od teraz suwaki znów pokazują stan sterownika
++      // [v3.58.13 SUWAK-PO-ACK] Sterownik potwierdził, ale jego status mógł jeszcze
++      // nieść STARY odczyt (starsze firmware przepisuje wartość symulacji do odczytu
++      // dopiero przy kolejnym odczycie czujnika: bojler/panel co 60 s, zewn/pokój
++      // co 120 s). Suwaki trzymają zadane parametry, aż odczyt się zmieni.
++      symZadana.wartosc = confirmed ? +v : NaN;
++      symZadana.przedtem = confirmed ? val(pole, key) : NaN;
++      symZadana.doMs = confirmed ? Date.now() + 180000 : 0;
+       if (confirmed) {
+         symPokaz(true);
+         info.textContent = symAktywna(pole)
+@@ -14031,6 +14083,7 @@
+     btnStop.onclick = async () => {
+       const confirmed = await sendCommand('symuluj_stop ' + pole);
+       symEdycja.wartosc = false; symEdycja.czas = false;   // [v3.58.12]
++      symZadana.doMs = 0;                                  // [v3.58.13]
+       if (confirmed) {
+         const stillActive = symAktywna(pole);
+         symPokaz(true);
+@@ -14081,14 +14134,20 @@
+       // Sam document.activeElement nie wystarczał: na telefonie <input type=range>
+       // nie dostaje fokusu po dotknięciu, więc refreshSheet() co 1 s cofał suwak
+       // do bieżącej wartości symulacji, zanim dało się nacisnąć Zastosuj.
+-      if (!symAktywna(pole)) { symEdycja.wartosc = false; symEdycja.czas = false; return; }
++      if (!symAktywna(pole)) { symEdycja.wartosc = false; symEdycja.czas = false; symZadana.doMs = 0; return; }
+       const current = val(pole, key);
+-      if (Number.isFinite(current) && !symEdycja.wartosc && document.activeElement !== inpVal) {
++      // [v3.58.13 SUWAK-PO-ACK] Sterownik pokazuje już zadaną wartość, odczyt zmienił
++      // się od chwili ACK (ktoś ustawił inną, np. z Telegrama) albo minęły 3 min
++      // → suwaki znów podążają za sterownikiem.
++      if (symZadana.doMs && (Date.now() > symZadana.doMs || (Number.isFinite(current) &&
++          (Math.abs(current - symZadana.wartosc) < 0.06 || current !== symZadana.przedtem)))) symZadana.doMs = 0;
++      const poAckTrzymaj = symZadana.doMs > 0;
++      if (Number.isFinite(current) && !symEdycja.wartosc && !poAckTrzymaj && document.activeElement !== inpVal) {
+         inpVal.value = Math.max(simMin, Math.min(simMax, current));
+         txtVal.textContent = f(+inpVal.value) + ' ' + jednostka;
+       }
+       const remaining = Number(S.sym[pole]?.min);
+-      if (Number.isFinite(remaining) && !symEdycja.czas && document.activeElement !== inpTime) {
++      if (Number.isFinite(remaining) && !symEdycja.czas && !poAckTrzymaj && document.activeElement !== inpTime) {
+         inpTime.value = Math.max(5, Math.min(180, remaining));
+         txtTime.textContent = inpTime.value + ' min';
+       }
+@@ -24747,6 +24806,30 @@
+ const int     SYMULACJA_CZAS_MIN_MINUT = 5;    // dolna granica suwaka czasu trwania
+ const int     SYMULACJA_CZAS_MAX_MINUT = 180;  // gorna granica suwaka czasu trwania
+ 
++// [v3.58.13 SYM-OD-RAZU] Po starcie symulacji ("symuluj <pole> ..." z Firebase/LAN
++// albo /api/symulacja-czujnik ze starej strony) wartosc trafia do zmiennej
++// ODCZYTU od razu, a nie dopiero przy kolejnym odczycie czujnika z harmonogramu
++// (dsPlanInterval: bojler/panel co 60 s, zewn/pokoj co 120 s; DHT 120 s;
++// BMP280 180 s). Dotad status (/api/lan/status, /piec/status, LCD, Telegram)
++// przez 1-3 min pokazywal STARY odczyt przy aktywnej symulacji, a suwak w
++// panelu WWW po "Zastosuj" wracal do starej wartosci. Nastepny odczyt z
++// harmonogramu zwroci te sama symulowana wartosc (odczytajTemperature() przy
++// aktywnej symulacji nie dotyka filtra) - wiec to tylko przyspieszenie, nie
++// zmiana logiki. Zapis pojedynczego float jest atomowy na ESP32 (zadanie
++// czujnikow i tak nadpisuje te zmienne bez blokady). "dym" pomijamy: petla
++// czujnika dymu sama przepisuje symulowanyCzujnikDymu co kilka sekund.
++static void symulacjaUstawOdczytOdRazu(const String& pole, float wartosc) {
++  if      (pole == "ogrz")         temperaturaOgrzewania = wartosc;
++  else if (pole == "panel")        temperaturaPaneluSlonecznego = wartosc;
++  else if (pole == "bojler")       temperaturaBojlera = wartosc;
++  else if (pole == "pokoj")        temperaturaPomieszczenia = wartosc;
++  else if (pole == "zewn")         temperaturaNaZewnatrz = wartosc;
++  else if (pole == "ogrz_powrot")  temperaturaOgrzewania_Powrot = wartosc;
++  else if (pole == "ogrz_trociny") temperaturaOgrzewania_Trociny = wartosc;
++  else if (pole == "cisnienie")    cisnienieOdczytane = wartosc;
++  else if (pole == "wilgotnosc")   wilgotnoscOdczytana = wartosc;
++}
++
+ // --- Element: mieszadlo (NOWE, analogicznie do pompaManualOverrideUntil/POMPA_OVERRIDE_MS) ---
+ unsigned long mieszadloManualOverrideUntil = 0;
+ 
+@@ -32985,6 +33068,7 @@
+       *wartoscSymulowana = wartosc;
+       *aktywna = true;
+       *doCzasu = doCzasuNowy;
++      symulacjaUstawOdczytOdRazu(pole, wartosc);   // [v3.58.13 SYM-OD-RAZU]
+     }
+ 
+     zapiszLog(String(F("tag=SYMULACJA lvl=INFO zdarzenie=start czujnik=")) + pole + " wartosc=" + String(wartosc, 2) + " czas_min=" + String(czasMin) + " zrodlo=www");
+@@ -46707,6 +46791,7 @@
+           *wartoscWskSym = wartoscSym;
+           *aktywnaSym = true;
+           *doCzasuSym = doCzasuNowySym;
++          symulacjaUstawOdczytOdRazu(poleSym, wartoscSym);   // [v3.58.13 SYM-OD-RAZU]
+         }
+         zapiszLog(String(F("tag=FB lvl=INFO akcja=symuluj czujnik=")) + poleSym + " wartosc=" + String(wartoscSym, 2) + " czas_min=" + String(czasMinSym));
+       }

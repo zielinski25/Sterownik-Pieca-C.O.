@@ -80,6 +80,10 @@ fun SettingsPage(m: AppModel) {
             "Zewnętrzna, Bojler, Pokój, Piec, Panel, Powrót, Podajnik, Ciśnienie, Wilgotność, Dym")
         MenuCard(m, "czas", "clock", Pal.TextDim, "Data i czas zegara RTC",
             "Synchronizacja zegara sterownika z czasem telefonu")
+        MenuCard(m, "bufor", "logs", Pal.Warn, "Bufor offline",
+            "Zapis próbek w pamięci centrali, gdy nie ma internetu · stan i liczniki")
+        MenuCard(m, "histfs", "logs", Pal.Warn, "Zapis historii na flash",
+            "hist_short.csv i hist_long.csv · włączanie, wyłączanie i czyszczenie plików")
     }
 }
 

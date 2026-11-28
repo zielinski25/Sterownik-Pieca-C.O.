@@ -257,14 +257,22 @@ inline bool ledcDetach(uint8_t) { return true; }
 #else
 #define ATRAPA_PIN_PODSWIETLENIA TFT_BL
 #endif
+// [v1.5.19] Brzeczyk aktywny: firmware wola ledcWrite(13, 255|0) zamiast
+// ledcWriteTone(). Atrapa odnotowuje to w tych samych polach co ton
+// (tonHz: 255 = gra na stalym napieciu, 0 = cisza), zeby scenariusze
+// alarmowe patrzyly na jedno miejsce niezaleznie od BRZECZYK_AKTYWNY.
+#define ATRAPA_PIN_BRZECZYKA 13
 inline bool ledcWrite(uint8_t pin, uint32_t wypelnienie) {
   if (pin == ATRAPA_PIN_PODSWIETLENIA) {
     g_atrapa.podswietlenieZapisow++;
     g_atrapa.podswietlenieWypelnienie = (long)wypelnienie;
+  } else if (pin == ATRAPA_PIN_BRZECZYKA) {
+    if (wypelnienie != g_atrapa.tonHz) g_atrapa.zmianTonu++;
+    g_atrapa.tonHz = wypelnienie;
   }
   return true;
 }
-// Brzeczyk: ostatnia czestotliwosc i liczba jej zmian (0 Hz = cisza).
+// Brzeczyk pasywny: ostatnia czestotliwosc i liczba jej zmian (0 Hz = cisza).
 inline uint32_t ledcWriteTone(uint8_t, uint32_t f) {
   if (f != g_atrapa.tonHz) g_atrapa.zmianTonu++;
   g_atrapa.tonHz = f;

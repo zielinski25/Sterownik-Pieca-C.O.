@@ -1,0 +1,20 @@
+ZAKRES ZMIAN 3.58.12 wzgledem 3.58.11 (plik src/main_centrala.cpp, 50 925 linii, SHA-256 fe6f0b20...)
+====================================================================================================
+Patch main_centrala-v3.58.11-do-v3.58.12.patch: 7 hunkow, +56 / -4 (z tego 3 hunki to
+komentarze i numer wersji). Zmiany TYLKO w JavaScripcie strony WWW wbudowanej w plik
+(WIFI_LOCAL_PANEL_HTML, funkcja symulacjaSekcjaHtml()). Kod C++ sterownika bez zmian.
+
+   1-31        naglowek pliku [v3.58.12 SUWAKI-SYM] (zgloszenie, przyczyna, zasada)
+   1869-1877   HISTORIA WERSJI: wpis [v3.58.12]
+   6629        FIRMWARE_VERSION = "v3.58.12"
+   13988-13993 symulacjaSekcjaHtml(): const symEdycja = {wartosc, czas}; nasluch pointerdown /
+               touchstart / mousedown / keydown na obu suwakach -> flaga true
+   13995,13999 inpVal.oninput / inpTime.oninput: flaga true
+   14017       btnApply.onclick: po sendCommand('symuluj ...') obie flagi false
+   14033       btnStop.onclick: po sendCommand('symuluj_stop ...') obie flagi false
+   14081-14094 live$(wrap): symulacja nieaktywna -> flagi false; suwak z flaga true nie jest
+               nadpisywany (dotychczasowy warunek document.activeElement zostaje)
+
+Bez zmian: /api/*, Telegram, Firebase, OTA, DYM-SYM (3.58.11), Zew 2 (3.58.9/10), panel LCD,
+stary interfejs (dp-*, symZaladujStan - laduje suwak tylko przy otwarciu, nie okresowo).
+Aplikacja Android (Sensors.kt) trzyma suwak w remember{} - tej wady nie ma.

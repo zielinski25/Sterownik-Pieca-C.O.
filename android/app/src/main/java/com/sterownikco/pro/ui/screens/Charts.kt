@@ -127,22 +127,22 @@ fun ChartsPage(m: AppModel) {
         verticalArrangement = Arrangement.spacedBy(Dimens.gap)
     ) {
         PageHead("WYKRESY TELEMETRII", "historia pomiarów · temperatury · serwa · pompa",
-            action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec) }) })
+            action = { IconBtn("refresh", "Odśwież historię", onClick = { m.loadRange(m.rangeSec, force = true) }) })
 
-        // `.chart-status-rail`
-        Row(
-            Modifier.fillMaxWidth().background(Pal.Surface, RoundedCornerShape(12.dp))
-                .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            AppIcon("clock", size = 16.dp, tint = Pal.Cyan)
-            Text(m.chartStatus, style = Txt.sect.copy(fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.sp, color = Pal.TextDim), modifier = Modifier.weight(1f))
-            Text(m.chartReality, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan,
-                modifier = Modifier.background(Pal.rgba(0, 212, 245, .12f), RoundedCornerShape(10.dp))
-                    .border(BorderStroke(1.dp, Pal.rgba(0, 212, 245, .35f)), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp))
+        // [0.31.42] Na prosbe uzytkownika (zrzut 02:54) zdjete z nad wykresu:
+        //   - pasek statusu "Załadowano 9944 próbek z RTDB ... · odcinki
+        //     symulowane są kreskowane" razem z plakietka "FIREBASE RTDB",
+        //   - trzy kafelki W CHMURZE / KOLEJKA / WYSYŁKA.
+        // Po pobraniu nad wykresem nie ma ZADNEGO tekstu — od razu karta DANE.
+        // Zostaje tylko cienka linijka na czas pobierania: bez niej nie widac,
+        // czy przycisk "Odśwież" cokolwiek robi (7 dni to kilka sekund).
+        if (m.chartLoading) {
+            Text(
+                m.chartStatus,
+                fontSize = 8.5.sp,
+                color = Pal.TextDim,
+                modifier = Modifier.fillMaxWidth().padding(start = 2.dp)
+            )
         }
         // `.chart-ctrl-card`
         Column(
@@ -578,6 +578,15 @@ private fun ChartLegendStroke(dashed: Boolean) {
     }
 }
 
+/** [v0.31.33 CLOUD-MARK] „3 min temu" zamiast liczby sekund. */
+private fun cloudAgeLabel(sec: Long): String = when {
+    sec < 0 -> "brak danych"
+    sec < 90 -> "teraz"
+    sec < 3600 -> "${(sec / 60).toInt()} min temu"
+    sec < 86_400 -> "${(sec / 3600).toInt()} h temu"
+    else -> "${(sec / 86_400).toInt()} dni temu"
+}
+
 /** Dymek nad wykresem: każda wartość używa koloru swojej serii, jak w Piec.html. */
 @Composable
 private fun ChartHoverTooltip(
@@ -596,6 +605,19 @@ private fun ChartHoverTooltip(
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Text(chartTimeLabel(m, row.ts), fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, color = Pal.Cyan)
+        // [v0.31.33 TIMELINE] Przerwa przed tą próbką — dotąd dziura była
+        // niewidoczna, bo oś liczyła numery próbek, nie czas.
+        val prev = view.rows.getOrNull(index - 1)
+        if (prev != null && row.ts - prev.ts > 360_000L) {
+            Text(
+                "⏸ przerwa w danych: " + ((row.ts - prev.ts) / 60_000L) + " min",
+                fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Pal.Accent
+            )
+        }
+        // Próbka, której nie ma w chmurze — pochodzi z lokalnego archiwum centrali.
+        if (row.seq < 0L && !row.isLive) {
+            Text("z archiwum centrali (brak w chmurze)", fontSize = 7.5.sp, color = Pal.TextDim)
+        }
         view.cat.forEach { s ->
             val x = view.values[s.id]?.getOrNull(index)
             val value = when {

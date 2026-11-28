@@ -1,0 +1,29 @@
+ZAKRES ZMIAN 3.58.17 wzgledem 3.58.16 (plik src/main_centrala.cpp, 51 266 linii, SHA-256 93dab586...)
+====================================================================================================
+Patch main_centrala-v3.58.16-do-v3.58.17.patch: 9 hunkow, +48/-5 linii. Zmiana tylko w C++
+(prognoza deszczu i /api/status). HTML/JS strony WWW (R"PIECHTML() - bajt w bajt jak w 3.58.16
+(test A). Automatyka, Firebase, Telegram, trasy HTTP - zero zmian.
+
+   1-18        naglowek pliku [v3.58.17 POGODA-TEMP]
+   1984-1996   HISTORIA WERSJI: wpis [v3.58.17]
+   6787        FIRMWARE_VERSION = "v3.58.17"
+   7520-7527   extern pogodaTemp / POGODA_TEMP_BRAK (dla wifiZbudujJsonStatus)
+   31668-31679 wifiZbudujJsonStatus(): nowe pole zaraz za "wiatr_porywy":
+                 "pogoda_temp": liczba z 1 miejscem po przecinku albo null (brak)
+   47398-47406 DESZCZ_URL: current=precipitation,weather_code,is_day,wind_gusts_10m,temperature_2m
+                           (reszta URL bez zmian)
+   47428-47438 definicje: const float POGODA_TEMP_BRAK = -99.0f; float pogodaTemp = POGODA_TEMP_BRAK;
+   47547-47561 pobierzPrognozeDeszczu(): odczyt temperature_2m z bloku "current",
+                 odrzucenie wartosci spoza -70..60 °C (smieci / null) -> brak
+   47673-47682 przypisanie pogodaTemp + rozszerzony DLOGF "DESZCZ zdarzenie=stan ... pogoda_temp=%.1f"
+
+Zasada: centrala podaje SUROWA liczbe (°C z prognozy). Co z nia zrobic (tylda "~3°C", zaokraglenie
+do pelnych stopni, pokazanie tylko bez czujnika) decyduje panel LCD v1.5.17 - zmiana sposobu
+wyswietlania nie wymaga wgrywania centrali.
+
+Dlaczego null, nie -1: pola z 3.58.16 (kod WMO, dzien, porywy) sa nieujemne, wiec -1 moglo byc
+znacznikiem braku. Temperatura bywa ujemna - -1.0 to normalny odczyt, stad null w JSON-ie
+i -99 wewnatrz programu.
+
+Bez zmian: deszcz_stan / deszcz_min, pogoda_kod / pogoda_kod_opad / pogoda_dzien / wiatr_porywy,
+czestotliwosc pobierania (15 min), wspolrzedne, strona WWW, Piec.html, wszystko z 3.58.16 i starsze.

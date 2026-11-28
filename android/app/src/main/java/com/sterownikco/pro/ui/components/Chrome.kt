@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sterownikco.pro.core.AppModel
@@ -69,10 +71,18 @@ import com.sterownikco.pro.ui.theme.Txt
 @Composable
 fun TopBar(m: AppModel) {
     Row(
-        modifier = Modifier.fillMaxWidth().height(Dimens.topBarH)
+        modifier = Modifier.fillMaxWidth()
+            // [0.31.73] KOLEJNOSC MODYFIKATOROW (bląd 0.31.72): w Compose padding
+            // dziala "na zewnatrz", wiec .statusBarsPadding().background() maluje
+            // tlo DOPIERO pod paskiem statusu — nad nim zostawaloby tło okna i
+            // gradient zaczynalby sie od nowa (widoczna linia pod paskiem).
+            // Dlatego: najpierw tlo (do samej gornej krawedzi), potem wciecie.
+            // [0.31.74] Obramowanie PRZED wcieciem paska statusu: postawione po
+            // wcieciu rysowalo pozioma linie pod paskiem statusu (widoczny szew).
             .background(Brush.linearGradient(listOf(Pal.Top, Pal.Top2)))
             .border(1.dp, Pal.TopBorder, RoundedCornerShape(0.dp))
             .statusBarsPadding()
+            .height(Dimens.topBarH)
             .padding(start = 14.dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -233,7 +243,12 @@ private fun HStat(lbl: String, value: String, color: Color, modifier: Modifier =
 
 /** `.qcard` — szybka karta 3-kolumnowa. */
 @Composable
-fun RowScope.QCard(title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit) {
+fun RowScope.QCard(
+    title: String, icon: String, value: String, sub: String, state: String, onClick: () -> Unit,
+    /** [0.31.68] Drobniejszy podpis — gdy musi zmieścić DWIE liczby
+     *  („klapa 100% · syberek 100%”) w karcie o szerokości 1/3 ekranu. */
+    subCompact: Boolean = false
+) {
     val bd = when (state) {
         "ok" -> Pal.rgba(74, 222, 128, .45f); "warn" -> Pal.rgba(251, 191, 36, .5f)
         "err" -> Pal.rgba(255, 95, 120, .55f); else -> Pal.Border
@@ -250,7 +265,8 @@ fun RowScope.QCard(title: String, icon: String, value: String, sub: String, stat
             AppIcon(icon, size = 15.dp, tint = Pal.Cyan)
         }
         Text(value, style = Txt.quickVal, color = vc, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(sub, style = Txt.quickSub, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(sub, style = if (subCompact) Txt.quickSub.copy(fontSize = 6.6.sp) else Txt.quickSub,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -347,6 +363,62 @@ fun NavBar(page: Int, onNav: (Int) -> Unit) {
     }
 }
 
+/**
+ * `.nav` w wariancie pionowym (0.31.69) — te same 5 zakładek co w [NavBar], ale
+ * ustawione w kolumnie po lewej stronie. Włączane przez [com.sterownikco.pro.core.ScreenLayout.useNavRail]
+ * wtedy, gdy okno jest niskie i szerokie (telefon w poziomie): dolny pasek zabrałby
+ * wtedy 74 dp z ~330 dp wysokości i wykres (220 dp) nie zmieściłby się na ekranie.
+ *
+ * Pozycje mają `weight(1f)`, więc przy bardzo niskim oknie równo się kurczą
+ * zamiast wychodzić poza ekran.
+ */
+@Composable
+/**
+ * Szyna nawigacji po lewej (telefon w poziomie).
+ *
+ * [0.31.71] `startInset` to szerokość wycięcia kamery po lewej stronie. Szyna
+ * sama je pochłania: tło (gradient) dochodzi do samej krawędzi ekranu, a ikony
+ * i podpisy zaczynają się dopiero za wycięciem. Wcześniej odsunięcie robił
+ * `displayCutoutPadding()` na całym wierszu, przez co przy krawędzi zostawał
+ * pas koloru tła (Pal.Bg) — widoczny szew między tłem a szyną.
+ */
+fun NavRail(page: Int, startInset: Dp = 0.dp, onNav: (Int) -> Unit) {
+    val items = listOf("dashboard" to "Dashboard", "chart" to "Wykresy", "weather" to "Pogoda", "settings" to "Ustawienia", "more" to "Więcej")
+    Column(
+        modifier = Modifier.width(Dimens.railW + startInset).fillMaxHeight()
+            // [0.31.73] Tlo PRZED wcieciem paska statusu — tak samo jak w TopBarze.
+            // Inaczej gorny rog ekranu mial kolor paska gornego zamiast koloru szyny.
+            // [0.31.74] Obramowanie przed wcieciem — inaczej pozioma linia na
+            // gorze szyny (to ja widac bylo jako szew pod paskiem statusu).
+            .background(Brush.linearGradient(listOf(Pal.Nav, Pal.Nav2)))
+            .border(1.dp, Pal.NavBorder, RoundedCornerShape(0.dp))
+            .statusBarsPadding()
+            // [0.31.74] 8 -> 6 dp: przy szynie 68 dp wewnatrz zostaje 56 dp,
+            // a najdluzsza etykieta (Ustawienia, 9 sp) ma ~44 dp.
+            .padding(start = 6.dp + startInset, end = 6.dp, top = 10.dp, bottom = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        items.forEachIndexed { i, (ico, label) ->
+            val on = i == page
+            Column(
+                modifier = Modifier.weight(1f).fillMaxWidth()
+                    .background(if (on) Pal.rgba(0, 212, 245, .1f) else Color.Transparent, RoundedCornerShape(16.dp))
+                    .border(1.dp, if (on) Pal.rgba(0, 212, 245, .25f) else Color.Transparent, RoundedCornerShape(16.dp))
+                    .clickable { onNav(i) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                    AppIcon(ico, size = 22.dp, tint = if (on) Pal.Cyan else Pal.TextDim2)
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(label, style = Txt.navLabel, color = if (on) Pal.Cyan else Pal.TextDim2, maxLines = 1)
+            }
+        }
+    }
+}
+
 /** `.sheet` — standardowo arkusz dolny 75%; wybrane okna mogą zajmować cały ekran. */
 @Composable
 fun Sheet(
@@ -365,6 +437,9 @@ fun Sheet(
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().fillMaxHeight(if (fullScreen) 1f else .75f)
+                // [0.31.72] edge-to-edge: dolny arkusz nie moze wchodzic pod pasek
+                // nawigacji Androida (tam nie da sie kliknac).
+                .navigationBarsPadding()
                 .background(Pal.Surface, sheetShape)
                 .border(1.dp, Pal.BorderStrong, sheetShape)
                 .clickable(enabled = false) {}

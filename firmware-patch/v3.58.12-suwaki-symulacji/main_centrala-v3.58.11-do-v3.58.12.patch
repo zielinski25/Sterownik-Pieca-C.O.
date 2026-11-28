@@ -1,0 +1,117 @@
+--- v3.58.11-alarm-dymu-po-symulacji/src/main_centrala.cpp	2026-11-23 09:19:06.003889960 +0000
++++ v3.58.12-suwaki-symulacji/src/main_centrala.cpp	2026-11-23 10:12:39.437641539 +0000
+@@ -1,3 +1,31 @@
++// FIRMWARE_VERSION v3.58.11 -> v3.58.12 (2026-11-26) — SUWAKI SYMULACJI W WWW NIE COFAJĄ SIĘ POD PALCEM.
++//
++// [v3.58.12 SUWAKI-SYM] — 2026-11-26
++// Zgłoszenie użytkownika (23.11, 11:07, panel WWW z adresu centrali na
++// telefonie, arkusz „Bojler C.W.U.”): przy WŁĄCZONEJ symulacji przesunięcie
++// suwaka „Wartość” na nową liczbę nie daje się zatwierdzić — zanim palec
++// trafi w „Zastosuj”, suwak sam wraca do poprzedniej wartości symulacji.
++//
++// PRZYCZYNA (tylko JavaScript strony, WIFI_LOCAL_PANEL_HTML): arkusz jest
++// odświeżany co 1 s (refreshSheet() → live$(wrap) w symulacjaSekcjaHtml()).
++// Gdy sterownik zgłasza aktywną symulację, ta funkcja ustawia suwak na
++// bieżącą wartość symulowaną, chyba że suwak ma fokus
++// (document.activeElement). Na telefonie <input type="range"> po dotknięciu
++// fokusu NIE dostaje, więc po sekundzie suwak wracał. Na PC z myszą działało.
++//
++// CO ROBI 3.58.12 (wyłącznie symulacjaSekcjaHtml() w HTML strony):
++// [1] Obiekt symEdycja {wartosc, czas}: ustawiany na true przy pointerdown /
++//     touchstart / mousedown / keydown / input na danym suwaku.
++// [2] live$(wrap) nie nadpisuje suwaka, którego symEdycja jest true (obok
++//     dotychczasowego warunku z fokusem). Drugi suwak dalej podąża za
++//     sterownikiem (np. „Czas trwania” odlicza minuty).
++// [3] Flagi gasną po „Zastosuj” i „Wyłącz teraz” (suwaki znów pokazują stan
++//     sterownika) oraz gdy symulacja przestaje być aktywna.
++// Bez zmian: cała logika sterownika, /api/*, Telegram, Firebase, OTA, panel
++//     LCD; stary interfejs (Piec.html „STARA WERSJA”, dp-*) nie miał tej wady,
++//     bo nie odświeża suwaków okresowo.
++// Koszt: 0 B RAM sterownika; HTML w PROGMEM +1,2 kB.
++//
+ // FIRMWARE_VERSION v3.58.10 -> v3.58.11 (2026-11-24) — ALARM DYMU Z SYMULACJI GASNIE RAZEM Z SYMULACJĄ.
+ //
+ // [v3.58.11 DYM-SYM] — 2026-11-24
+@@ -1838,6 +1866,15 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.12] — 2026-11-26 — SUWAKI SYMULACJI W WWW NIE COFAJA SIE POD PALCEM
++// Co: W arkuszu czujnika (nowy interfejs WWW) przy aktywnej symulacji suwak
++//     "Wartosc"/"Czas trwania" ruszony przez operatora nie jest juz cofany przez
++//     odswiezanie arkusza co 1 s; wraca do sledzenia sterownika po Zastosuj /
++//     Wylacz teraz albo po koncu symulacji. Tylko JavaScript strony.
++// Problem: na telefonie suwak range nie dostaje fokusu, a tylko fokus chronil go
++//     przed nadpisaniem - nie dalo sie ustawic nowej wartosci symulacji.
++// Naprawa: symEdycja.{wartosc,czas} w symulacjaSekcjaHtml(); naglowek [v3.58.12 SUWAKI-SYM].
++//
+ // [v3.58.11] — 2026-11-24 — ALARM DYMU Z SYMULACJI GASNIE RAZEM Z SYMULACJA
+ // Co: Alarm POZAR wywolany wylacznie symulacja dymu jest kasowany w <= 5 s
+ //     po zakonczeniu symulacji (WWW/Firebase/uplyw czasu); alarm z prawdziwego
+@@ -6589,7 +6626,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.11";
++static const char* FIRMWARE_VERSION = "v3.58.12";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -13948,10 +13985,18 @@
+       }
+     });
+ 
++    // [v3.58.12 SUWAKI-SYM] Czy operator rusza suwakiem (patrz live$(wrap) niżej).
++    const symEdycja = { wartosc: false, czas: false };
++    ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(ev => {
++      inpVal.addEventListener(ev, () => { symEdycja.wartosc = true; }, { passive: true });
++      inpTime.addEventListener(ev, () => { symEdycja.czas = true; }, { passive: true });
++    });
+     inpVal.oninput = () => {
++      symEdycja.wartosc = true;
+       txtVal.textContent = f(+inpVal.value) + ' ' + jednostka;
+     };
+     inpTime.oninput = () => {
++      symEdycja.czas = true;
+       txtTime.textContent = inpTime.value + ' min';
+     };
+ 
+@@ -13969,6 +14014,7 @@
+       const v = f(+inpVal.value);
+       const m = parseInt(inpTime.value) || 60;
+       const confirmed = await sendCommand('symuluj ' + pole + ' ' + v + ' ' + m);
++      symEdycja.wartosc = false; symEdycja.czas = false;   // [v3.58.12] od teraz suwaki znów pokazują stan sterownika
+       if (confirmed) {
+         symPokaz(true);
+         info.textContent = symAktywna(pole)
+@@ -13984,6 +14030,7 @@
+ 
+     btnStop.onclick = async () => {
+       const confirmed = await sendCommand('symuluj_stop ' + pole);
++      symEdycja.wartosc = false; symEdycja.czas = false;   // [v3.58.12]
+       if (confirmed) {
+         const stillActive = symAktywna(pole);
+         symPokaz(true);
+@@ -14029,14 +14076,19 @@
+     live$(wrap, () => {
+       // Gdy sterownik (albo jawne DEMO) zgłasza aktywną symulację, pokaż jej
+       // aktualne parametry. Nie nadpisuj wartości, którą operator właśnie edytuje.
+-      if (!symAktywna(pole)) return;
++      // [v3.58.12 SUWAKI-SYM] Suwak należy do operatora od pierwszego dotknięcia
++      // (symEdycja.*) aż do Zastosuj / Wyłącz teraz albo końca symulacji.
++      // Sam document.activeElement nie wystarczał: na telefonie <input type=range>
++      // nie dostaje fokusu po dotknięciu, więc refreshSheet() co 1 s cofał suwak
++      // do bieżącej wartości symulacji, zanim dało się nacisnąć Zastosuj.
++      if (!symAktywna(pole)) { symEdycja.wartosc = false; symEdycja.czas = false; return; }
+       const current = val(pole, key);
+-      if (Number.isFinite(current) && document.activeElement !== inpVal) {
++      if (Number.isFinite(current) && !symEdycja.wartosc && document.activeElement !== inpVal) {
+         inpVal.value = Math.max(simMin, Math.min(simMax, current));
+         txtVal.textContent = f(+inpVal.value) + ' ' + jednostka;
+       }
+       const remaining = Number(S.sym[pole]?.min);
+-      if (Number.isFinite(remaining) && document.activeElement !== inpTime) {
++      if (Number.isFinite(remaining) && !symEdycja.czas && document.activeElement !== inpTime) {
+         inpTime.value = Math.max(5, Math.min(180, remaining));
+         txtTime.textContent = inpTime.value + ' min';
+       }

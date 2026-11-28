@@ -31,6 +31,7 @@ struct AtrapaAp {              // jeden punkt dostepowy "w eterze"
 };
 
 struct AtrapaRestart {};       // rzucany przez ESP.restart() - patrz Arduino.h
+struct AtrapaSen {};           // [v1.5.0] rzucany przez esp_deep_sleep_start() - patrz esp_sleep.h
 
 // Pomiar pamieci (pomiar_pamieci.sh, pomiar_sterty.c): to, co atrapy same
 // odkladaja na sterycie (zapis Seriala, tablice NVS, wyniki skanu), nie jest
@@ -107,9 +108,9 @@ struct Atrapa {
   unsigned long podswietlenieZapisow = 0;  // ile razy firmware ustawil jasnosc podswietlenia (ledcWrite na pinie TFT_BL)
   long podswietlenieWypelnienie = -1;      // ostatnio ustawione wypelnienie PWM (0..255); -1 = jeszcze nie ustawiono
 
-  // --- brzeczyk (ledcWriteTone) ---
-  uint32_t tonHz = 0;          // ostatnio ustawiona czestotliwosc; 0 = cisza
-  int zmianTonu = 0;           // ile razy czestotliwosc sie zmienila (wzorzec alarmu "gra")
+  // --- brzeczyk (ledcWriteTone - pasywny; od v1.5.19 ledcWrite(13, 255|0) - aktywny) ---
+  uint32_t tonHz = 0;          // ostatnio ustawiony ton: 0 = cisza; pasywny: Hz; aktywny: 255 = gra
+  int zmianTonu = 0;           // ile razy ton sie zmienil (wzorzec alarmu "gra")
 
   // --- pamiec (esp_heap_caps.h): to, co firmware odczytuje jako wolny RAM ---
   // Zwykle testy ustawiaja te liczby recznie; pomiar_pamieci.sh podstawia
@@ -133,6 +134,15 @@ struct Atrapa {
   int cpuZleWartosci = 0;      // ...w tym z wartoscia spoza 240/160/80 (radio by padlo)
   int wifiTryb = 0;            // WiFi.mode(): 0 = WIFI_OFF (sterownik radia nie wystartowal), 1 = WIFI_STA
   int txMoc = 78;              // esp_wifi_set_max_tx_power(): cwiartki dBm, domyslnie 78 = 19,5 dBm
+  // [v1.5.0] gleboki sen (esp_sleep.h) i "hold" pinow (driver/gpio.h).
+  int usnal = 0;                       // ile razy firmware wolal esp_deep_sleep_start()
+  unsigned long usnalMs = 0;           // chwila ostatniego usniecia
+  int snuExt0Pin = -1;                 // esp_sleep_enable_ext0_wakeup(): pin (albo -1 = nie ustawiono)
+  int snuExt0Poziom = -1;              // ...i poziom budzacy
+  unsigned long long snuExt1Maska = 0; // esp_sleep_enable_ext1_wakeup(): maska pinow (0 = nie ustawiono)
+  int snuExt1Tryb = -1;                // ...i tryb (0 = ALL_LOW, 1 = ANY_HIGH)
+  bool pinTrzymany[64] = {false};      // gpio_hold_en()/gpio_hold_dis(): czy stan pinu jest "zamrozony"
+  int wybudzenie = 0;                  // esp_sleep_get_wakeup_cause(): 0 = zwykly start, 2 = EXT0 (przycisk), 3 = EXT1 (ladowarka)
   int txUstawien = 0;          // udane WiFi.setTxPower()
   int txPrzedStartem = 0;      // WiFi.setTxPower() PRZED WiFi.mode() - na plytce zwraca blad i nic nie ustawia
   unsigned stosZapasB = 5000;  // uxTaskGetStackHighWaterMark(NULL) [B]
@@ -175,6 +185,9 @@ struct Atrapa {
   int otaBeginWywolan = 0;            // ile razy firmware zaczynal zapis (Update.begin())
   int otaUruchomiono = 0;             // ile razy Update.end() ustawil nowy program jako startowy
   int otaPorzucono = 0;               // ile razy rozpoczety zapis zostal porzucony (abort albo blad)
+  int otaVscodeBegin = 0;             // [v1.5.4] ArduinoOTA.begin() - wgrywanie z PlatformIO przez WiFi
+  long otaVscodeHandle = 0;           // [v1.5.4] ArduinoOTA.handle() (kazdy obrot petli po begin())
+  unsigned long otaVscodeMsNaKawalek = 10;   // [v1.5.4] czas plytki na kazdy kawalek 1460 B (odbior + zapis do flash)
   bool nvsZapisOdmawia = false;       // Preferences::putBytes() zwraca 0 (NVS pelne albo uszkodzone)
   int nvsZapisowBinarnych = 0;        // udane putBytes()
 

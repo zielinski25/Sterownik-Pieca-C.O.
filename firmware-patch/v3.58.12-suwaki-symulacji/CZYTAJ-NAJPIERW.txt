@@ -1,0 +1,85 @@
+FIRMWARE CENTRALI 3.58.12 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN.
+
+Ta paczka = 3.58.11 + poprawka strony WWW (suwaki symulacji). Patch wzgledem
+3.58.11: 7 hunkow, +56/-4, wylacznie JavaScript strony wbudowanej w plik
+(funkcja symulacjaSekcjaHtml()) + naglowek, historia i numer wersji.
+Kod C++ sterownika (alarmy, serwa, Telegram, Firebase, OTA) nie zmienil sie
+ani o linie.
+
+
+PO CO (zgloszenie z 23.11 11:07: "pasek wraca do poprzedniej wartosci")
+-----------------------------------------------------------------------
+Strona z adresu centrali na telefonie, arkusz "Bojler C.W.U.", symulacja
+WLACZONA: przesuwasz suwak "Wartosc" i zanim nacisniesz "Zastosuj", suwak
+sam wraca do poprzedniej wartosci symulacji.
+
+Przyczyna: arkusz jest odswiezany co 1 s i przy aktywnej symulacji ustawia
+suwak na biezaca wartosc symulowana - chyba ze suwak ma fokus. Na telefonie
+suwak po dotknieciu fokusu NIE dostaje (na PC z myszka dostaje, dlatego tam
+dzialalo), wiec po sekundzie wracal.
+
+3.58.12:
+ 1. Suwak nalezy do Ciebie od pierwszego dotkniecia (symEdycja.*) - odswiezanie
+    go nie rusza. Drugi, nieruszany suwak dalej podaza za sterownikiem
+    (np. "Czas trwania" odlicza minuty).
+ 2. Po "Zastosuj" albo "Wylacz teraz" (i po koncu symulacji) suwaki znow
+    pokazuja stan sterownika - zmiana z Telegrama/aplikacji bedzie widoczna.
+ 3. Stary interfejs ("STARA WERSJA") tej wady nie mial - bez zmian.
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.12"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od fe6f0b20):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.11-do-v3.58.12.patch, -p1 z katalogu projektu,
+na plik 3.58.11 (SHA 471b61b4...). Wynik musi miec SHA fe6f0b20... - inaczej
+wgraj caly plik z src\.
+Jesli na plytce jest jeszcze 3.58.10: wgraj caly plik z src\ (zawiera 3.58.11).
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+PlatformIO -> Build, potem Upload   (pio run   i   pio run -t upload)
+Spodziewane: 0 ostrzezen, Flash +ok. 1,2 kB (HTML w PROGMEM), RAM bez zmian.
+Jesli blad: skopiuj linie z "error:" i przyslij; przywroc kopie zapasowa.
+Zmienione miejsca z numerami linii: WYNIKI\zakres-zmian.txt.
+
+Release na GitHub: FIRMWARE_VERSION = "v3.58.12" -> Build -> Release z tagiem
+3.58.12 (OTA z 3.58.11 przejdzie, 3.58.12 > 3.58.11).
+
+
+KROK 3 - SPRAWDZENIE (telefon -> http://192.168.100.151 -> Bojler C.W.U.)
+-------------------------------------------------------------------------
+0. Odswiez strone na telefonie (Chrome potrafi trzymac stara w pamieci:
+   przytrzymaj przycisk odswiezania albo otworz adres w nowej karcie).
+1. Po Upload na Telegram: "Centrala wystartowala: v3.58.12".
+2. Symulacja -> Wartosc np. 21,0 -> Zastosuj (jak dotad).
+3. Przesun suwak na 45,0 i NIE dotykaj go - odczekaj 5 s. Suwak ma zostac
+   na 45,0 (dotad wracal do 21,0). "Czas trwania" dalej odlicza.
+4. Zastosuj -> toast/potwierdzenie, kafelek BOJLER 45,0 C, a "Czas trwania"
+   odlicza od nowa.
+5. "Wylacz teraz" -> symulacja znika, suwak zostaje tam, gdzie go zostawiles.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa (3.58.11).
+
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\)
+----------------------------------
+- testy-pc.txt: funkcja symulacjaSekcjaHtml() wycieta z HTML w tym pliku
+  uruchomiona w jsdom (13 sprawdzen: suwak bez fokusu + 5 odswiezen arkusza,
+  Zastosuj wysyla "symuluj bojler 45.0 30", po Zastosuj/Wylacz suwaki znow
+  podazaja za sterownikiem); to samo na Piec.html z repozytorium; kontrolnie
+  3.58.11 - 5 z 13 sprawdzen BLAD (wada odtworzona). Plik = 3.58.11 + patch
+  (ta sama suma SHA); node --check obu blokow <script>; testy DYM-SYM
+  z paczki 3.58.11 (21 sprawdzen) na tym pliku - bez zmian.
+- Caly plik NIE byl kompilowany w PlatformIO (brak toolchainu ESP32 tutaj);
+  poza raw-stringiem HTML i komentarzami kod C++ jest bajt w bajt jak 3.58.11.

@@ -67,8 +67,15 @@ namespace SiecCfg {
     // HTTP_TIMEOUT_MS). 192.168.4.1 = domyslna brama Soft-AP ESP32 centrali.
     static const char*    HOST                 = "192.168.4.1";
     static const uint16_t PORT                 = 80;
-    static const uint32_t CONNECT_TIMEOUT_MS   = 400;   // limit fazy laczenia
-    static const uint32_t CALKOWITY_TIMEOUT_MS = 1500;  // caly GET/POST (connect+odpowiedz)
+    // [v1.5.6] 400/1500 -> 1000/3000 ms. Log z 24.11 16:14: serie "timeout
+    // laczenia" statusu co 2 s, a w srodku POST (limit 1000 ms) PRZESZEDL w
+    // 716 ms - centrala odpowiadala, tylko wolniej niz 400 ms (panel na
+    // baterii oszczedza radio, centrala bez routera skanuje jako STA i
+    // schodzi z kanalu AP). Zapytania sa nieblokujace, wiec dluzszy limit
+    // nic nie kosztuje poza pozniejszym "dane_nieaktualne" przy prawdziwej
+    // ciszy (i tak 10 s od ostatnich dobrych danych, nie od limitu).
+    static const uint32_t CONNECT_TIMEOUT_MS   = 1000;  // limit fazy laczenia
+    static const uint32_t CALKOWITY_TIMEOUT_MS = 3000;  // caly GET/POST (connect+odpowiedz)
     static const size_t   BUFOR_ROZMIAR        = 512;   // kawalek na jeden recv()
     // [v1.4.1 A4] Najwieksza odpowiedz (naglowki + tresc), jaka panel zbiera
     // w pamieci. Prawdziwy /api/status ma ok. 2 kB, /api/ustawienia-get mniej.
@@ -216,6 +223,14 @@ public:
         return startWewn(sciezka, "POST", body, "application/x-www-form-urlencoded");
     }
 
+    // [v1.5.5] Wlasne limity czasu tego kanalu (domyslnie SiecCfg). Kanal
+    // polecen dostaje dluzsze: dotkniecie przycisku nie ma przepasc na
+    // 400-ms czkawce AP, a statusy co 2 s moga dalej padac szybko.
+    void ustawLimity(uint32_t laczenieMs, uint32_t caloscMs) {
+        limitLaczeniaMs_ = laczenieMs;
+        limitCaloscMs_ = caloscMs;
+    }
+
     // Wywolywane w KAZDEJ iteracji loop(). Nigdy nie blokuje dluzej niz
     // pojedyncze mikrosekundy (select() z timeoutem {0,0}).
     void poll() {
@@ -224,13 +239,13 @@ public:
         }
 
         unsigned long teraz = millis();
-        if (teraz - calkowityStartMs_ > SiecCfg::CALKOWITY_TIMEOUT_MS) {
+        if (teraz - calkowityStartMs_ > limitCaloscMs_) {
             zamknijZBledem("timeout calkowity", 'c');
             return;
         }
 
         if (stan_ == SiecState::CONNECTING) {
-            if (teraz - krokStartMs_ > SiecCfg::CONNECT_TIMEOUT_MS) {
+            if (teraz - krokStartMs_ > limitLaczeniaMs_) {
                 zamknijZBledem("timeout laczenia", 'l');
                 return;
             }
@@ -502,6 +517,8 @@ private:
     int numerBledu_ = 0;
     unsigned long krokStartMs_ = 0;
     unsigned long calkowityStartMs_ = 0;
+    uint32_t limitLaczeniaMs_ = SiecCfg::CONNECT_TIMEOUT_MS;      // [v1.5.5] patrz ustawLimity()
+    uint32_t limitCaloscMs_   = SiecCfg::CALKOWITY_TIMEOUT_MS;
 };
 
 // [v1.2.2 PAMIEC] Odpowiedz zadania na czas jednej funkcji, bez kopiowania:

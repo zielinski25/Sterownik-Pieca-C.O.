@@ -1,4 +1,4 @@
-# Panel LCD (wyświetlacz CO) — firmware v1.4.7
+# Panel LCD (wyświetlacz CO) — firmware v1.5.20
 
 Źródła panelu dotykowego (ESP32 + ILI9488 + LVGL), cienkiego klienta HTTP
 centrali. Punkt wyjścia: v1.1.0 z `LCD Centrali.zip` (archiwum od 2026-11-18 poza repozytorium).
@@ -29,6 +29,576 @@ Najprościej podmienić cały katalog `src/` (zostawiając swoje `secrets.h`).
 aktualizacji przez centralę; nowy zaczyna działać dopiero od tej wersji.
 
 Katalog `testy_host/` nie jest częścią firmware'u — PlatformIO go pomija.
+
+## Co zmienia v1.5.20
+
+> Numer: pierwsza próba tej poprawki (commit `89c2906`) też zgłaszała się jako
+> „v1.5.19”, ale traktowała brzęczyk jako aktywny i **nie miała przycisku** —
+> odrzucona po zdjęciu modułu. Żeby obie kompilacje dało się odróżnić na
+> ekranie, właściwa wersja to **v1.5.20** (v1.5.19 pomijamy).
+
+**Brzęczyk: przycisk „Test dźwięku” — szukanie rezonansu** (uwaga z 27.11:
+„buzzer jest dość cichy”, oba alarmy). Zdjęcie modułu: brzęczyk **pasywny**
+(czarny walec bez naklejki, bez własnego generatora; na module wtórnik J3Y +
+101 + 510), IO+VCC na 5 V, masa przez C945 z D13 — dostaje falę prostokątną
+z `ledcWriteTone()`, kod jest dla niego właściwy. PWM 50 % to maksimum dla
+fali prostokątnej, więc jedyna dźwignia w sofcie to **częstotliwość**: pasywny
+brzęczyk gra głośno tylko w rezonansie (małe magnetyczne zwykle 2000–2700 Hz,
+często dokładnie 2048 albo 2731 Hz), a wzorce mają 3000 Hz (pożar) i
+1200/1600 Hz (ogrzewanie — prawie na pewno za nisko).
+
+- Ekran **WYŚWIETLACZ**, wiersz „Automatyczny harmonogram”, przycisk
+  **„Test dźwięku”**: przemiata 1000 / 1500 / 2000 / 2300 / 2500 / 2700 / 3000 /
+  3500 / 4000 Hz po 1,5 s, napis na przycisku = aktualna częstotliwość, ekran nie
+  zamyka się w trakcie, dotknięcie = stop, w czasie alarmu nic (alarm w trakcie
+  przerywa test). Log: `tag=BRZECZYK zdarzenie=test_dzwieku krok=i/9 hz=…`.
+  **Po teście podaj, która częstotliwość była najgłośniejsza** — wzorce dostaną
+  ją w v1.5.21 (pożar = rezonans, hi-lo = rezonans i ~15 % niżej).
+- Wzorce alarmów **bez zmian** (3000 / 1200–1600 Hz).
+- Porządek: jedna funkcja `brzeczykTon()` na pinie + opcja `BRZECZYK_AKTYWNY`
+  (**0** na tej płytce; 1 = moduł z własnym generatorem: stałe napięcie zamiast
+  PWM i podwójne piknięcie zamiast dwutonu — na pasywnym dałoby prawie ciszę).
+- Symulator: scenariusz `test_dzwieku` (20 sprawdzeń: układ przycisku, 9 kroków
+  co 1,5 s z napisem, stop dotknięciem, odmowa w alarmie, alarm przerywa),
+  atrapa `ledcWrite()` na pinie 13. Wszystkie scenariusze zaliczone.
+  Zrzut: `ekran_test_dzwieku.png`.
+
+Wgranie: `pio run -e esp32dev_wifi -t upload` (panel obudzony, komputer w sieci
+`PiecCO_AP`) albo przez centralę (`/update_panel`). Centrala bez zmian.
+
+## Co zmienia v1.5.18
+
+Kafelek ZEWN bez czujnika DS18B20 (`-1.0`): temperatura z prognozy (`pogoda_temp`
+z centrali 3.58.17) pokazywana jest jako **„3.4°C”** — ten sam format co pomiar
+z czujnika (jedno miejsce po przecinku), **bez tyldy i bez zaokrąglania** do całych
+stopni (v1.5.17: „~3°C”). Wybór użytkownika z 24.11 („Czemu jest znaczek tyldy
+i pogoda zaokrąglona” → „3.4°C”); na ekranie nie widać więc, czy liczba pochodzi
+z czujnika, czy z prognozy. Bez prognozy nadal „--”. Zmiana tylko w
+`dashboard_lvgl_poc.cpp` (jedna gałąź) + test hosta `kafelki_szerokosc`
+(„-12.6°C” czcionką 28 mieści się) + projektant HTML.
+
+## Co zmienia v1.5.17
+
+Kafelek ZEWN wg kolejnego wyboru w projektancie `docs/symulator_kafelka_zewn.html`
+(23.11 wieczór: *ikony=kolor rozmiar=40 napis=rodzaj czas=pełny układ=E
+kolor=biały brak_czujnika=prognoza*) i uwagi „popraw napisy, bo się niektóre
+nie mieszczą” (na pasku z v1.5.14 „deszcz za 45 m…” wchodziło pod ikonę):
+
+- **układ E** — napis o pogodzie (biały, czcionka 14) **w miejscu tytułu „ZEWN”**,
+  temperatura czcionką 28 w zwykłym wierszu wartości jak sąsiednie kafelki;
+  niebieski pasek z v1.5.14 znika,
+- obok ikony 40 px jest tylko 62 px, więc napis ma **dwie linie: zjawisko / czas**
+  — „deszcz” / „za 45 min”, „śnieg” / „za 2 h”, „pada” / „30 min”, „sypie” /
+  „60 min”, „silny” / „wiatr”, a jednolinijkowe „mgła”, „mży”, „pada”. Linia
+  szersza niż 62 px dostaje odstęp liter −1 („za 45 min” 69 → 61 px); najszersza
+  („za 99 min”, 62 px) kończy się 1 px przed ikoną,
+- *napis=rodzaj*: bez opadu i zjawiska (słońce, chmury, noc) napisu nie ma —
+  wraca tytuł „ZEWN”, stan nieba pokazuje sama ikona,
+- *brak_czujnika=prognoza*: bez DS18B20 (`-1.0`) kafelek pokazuje temperaturę
+  z prognozy jako **„~3°C”** (tylda = w przybliżeniu, bez miejsca po przecinku).
+  Potrzebuje **centrali 3.58.17** (`firmware-patch/v3.58.17-pogoda-temp/`) z nowym
+  polem `pogoda_temp` w `/api/status` (Open-Meteo `temperature_2m`, `null` = brak).
+  Starsza centrala lub `null` → „--” jak dotąd.
+
+Test hosta `kafelki_szerokosc` (49 sprawdzeń) mierzy każdą linię napisu
+względem ikony; `sprawdz_pola_statusu.py` zna `pogoda_temp`. Projektant HTML ma
+domyślnie wybrany układ i prawdziwe dwuliniowe łamanie napisów.
+
+## Co zmienia v1.5.16
+
+Tło wykresu = tło ekranu. Po 1.5.15 jaśniejsza „karta” wykresu sięgała do
+krawędzi ekranu i w dolnych rogach (tam, gdzie wyświetlacz ma diody
+podświetlenia) było widać inny odcień niż w reszcie – na czerni podświetlenie
+nie przebija. Pole wykresu wyznaczają linie siatki; tło etykiet osi Y też
+w kolorze tła.
+
+## Co zmienia v1.5.15
+
+Ekran **Wykres na cały ekran** (zdjęcia z 23.11: „marnowanie miejsca wkoło,
+wykres ma być po całości”). Osobny wiersz tytułu „[Dzienny] 6 serii” i stały
+dwuwierszowy pas legendy zabierały ¼ wysokości, a wnętrze wykresu miało
+jeszcze ~10 px paddingu z każdej strony. Teraz u góry jest jeden pasek:
+strzałka wstecz, legenda („[Dzienny]” + kropki z nazwami serii) i mniejszy
+krzyżyk; legenda ma wysokość po zawartości (1 wiersz do 4–5 serii). Wykres
+zaczyna się 4 px pod legendą i kończy na y=299, padding góra/dół 4 px.
+Wykres jest **zawsze na całą szerokość ekranu** – etykiety osi Y leżą na polu
+wykresu przy jego krawędziach (lewa oś od x=10, prawa do x=470), na
+półprzezroczystym tle w kolorze wykresu, więc linia przechodząca pod liczbą
+jest przygaszona, a liczba czytelna. Pole danych urosło z ok. 346×192 px do
+ok. 460×263 px (×1,8).
+
+## Co zmienia v1.5.14
+
+Kafelek ZEWN według wyboru z projektanta `docs/symulator_kafelka_zewn.html`
+(23.11: *ikony=kolor, rozmiar=40, napis=zawsze, czas=pełny, układ=F, kolor=nieb,
+brak_czujnika=kreski*):
+
+- **temperatura zawsze czcionką 28**; gdy jest napis o pogodzie — 12 px wyżej,
+- **niebieski pasek na dole** (18 px, tło `#153a5e`, napis `#8fc7ff`, czcionka 14):
+  „śnieg za 2 h”, „burza za 1,5 h”, „deszcz za 1,5 h”, „pada 30 min”, „sypie”,
+  „mży”, a bez opadu „mgła”, „silny wiatr” (porywy ≥ 55 km/h) albo stan nieba
+  „słonecznie” / „pogodnie” (noc) / „przejaśnienia” / „pochmurno”. Gdy pełny napis
+  nie mieści się w 101 px („deszcz za 45 min” ma 121 px), zostaje sam czas
+  „za 45 min” — rodzaj opadu pokazuje wtedy ikona. Pasek znika tylko, gdy
+  centrala nie ma prognozy,
+- **13 kolorowych ikon pogody** 40×40 (`src/ikony_pogoda.h`, generator
+  `testy_host/prototypy/ikony_pogody.py`): słońce, księżyc, słońce za chmurą,
+  chmura, deszcz, ulewa, mżawka, śnieg, płatek („sypie”), burza, mgła, wiatr,
+  grad. Ikony dwukolorowe to dwie warstwy 1-bit (druga `lv_img` nad pierwszą),
+- czujnik zewnętrzny `-1.0` (brak DS18B20) → „--” zamiast „-1.0°C”.
+
+Potrzebuje **centrali 3.58.16** (`firmware-patch/v3.58.16-pogoda-zewn/`), która
+w `/api/status` podaje `pogoda_kod` (WMO teraz), `pogoda_kod_opad` (WMO w slocie
+początku opadu), `pogoda_dzien`, `wiatr_porywy`. Ze starszą centralą kafelek
+wygląda jak w v1.5.13 bez drugiego wiersza — sam `deszcz_stan` nadal daje
+„za 2 h” / „pada” na pasku. Test hosta `kafelki_szerokosc` (46 sprawdzeń)
+przechodzi przez wszystkie napisy; `sprawdz_pola_statusu.py` pilnuje, że
+centrala 3.58.16 wysyła 4 nowe pola.
+
+## Co zmienia v1.5.13
+
+Kafelek ZEWN przy nadciągającym lub padającym deszczu pokazywał „za 6 h” /
+„jeszcze 30 min” / „pada” **zamiast** temperatury (zdjęcie z płytki, 23.11).
+Teraz temperatura zostaje (czcionka 20, tuż pod ikoną), a napis o deszczu to
+drugi, niebieski wiersz czcionką 14 pod nią: „za 2 h”, „pada 30 min” (pada,
+koniec za ok. 30 min — „jeszcze 30 min” nie mieści się w 114 px), „pada”.
+Bez deszczu kafelek wygląda jak dotąd. Centrala bez zmian. Test hosta `kafelki_szerokosc` sprawdza oba wiersze.
+
+## Co zmienia v1.5.12
+
+Ekran WYKRESY po zdjęciach z płytki (23.11): praca pompy na wykresie i
+czytelniejszy układ obu ekranów. Centrala bez zmian (pompa jest w historii od
+3.58.4).
+
+- **Seria POMPA.** Dwunasty chip. Zamiast linii – 12‑pikselowy **pas u dołu
+  pola wykresu**: niebieski odcinek tam, gdzie w danym przedziale pompa
+  pracowała (kolumna 35 odpowiedzi `/api/history/panel`, kolumna 8 starego
+  CSV). Nie zajmuje osi Y, więc nie zabiera miejsca dwóm jednostkom; liczy się
+  do limitu 8 serii. Tytuł np. „[Dzienny] ZEWN + POMPA”.
+- **Etykiety osi Y obok wykresu, nie na nim.** Płaska linia (ZEWN 3,5 °C,
+  wilgotność 0 %) przecinała napis „3.5” / „0.0”. Teraz pole wykresu zwęża się
+  o szerokość etykiet: lewe liczby są dosunięte do wykresu, prawe zaczynają
+  się za nim. Bez prawej osi wykres sięga do prawej krawędzi jak dotąd.
+  Minimalny margines osi 0,5 → 1,0 jednostki – stała seria dostaje równe
+  podziałki (44.0 … 46.0 zamiast 44.5 / 44.8 / 45.3).
+- **Wybór serii.** Nazwy jak kafelki pulpitu (PIEC CO, PIEC CO ŚR., POKÓJ,
+  SYBERKA), 12 chipów 109×46 w siatce 460×154 („WILGOTNOŚĆ” w jednym
+  wierszu), przyciski trybu 140×34, nowy **WYCZYŚĆ** obok **POKAŻ WYKRES (N)**,
+  pod nimi podpowiedź „Wybrano N z 8 · lewa oś °C · prawa oś %”. Dotąd dolne
+  50 px ekranu stało puste.
+- **Naprawa.** `lv_obj_set_x()` na wykresie wyrównanym `TOP_MID` było
+  przesunięciem od środka, nie położeniem – wykres z lewą osią wystawał 36 px
+  za ekran.
+- Nowy test hosta `wykresy_pompa_i_osie` (zrzuty `1_wybor_serii` …
+  `5_osiem_serii`). Legenda zwężona do 400 px (nie wchodzi pod krzyżyk). RAM: +1 `lv_chart` na pas (ok. 0,4 kB).
+
+## Co zmienia v1.5.11
+
+Ikony kafelków BOJLER i PANEL na pulpicie wyglądają jak w aplikacji Android
+(`Ilu.kt`). Centrala bez zmian.
+
+- **BOJLER – poziom i kolor wody wg temperatury.** Szary kontur zbiornika,
+  w środku woda: wysokość = `(t − 15) / 55` obcięte do 5…95 % (20 °C → prawie
+  pusty, 45 °C → połowa, ≥ 67 °C → pełny), kolor niebieski do 35 °C,
+  bursztynowy do 55 °C, pomarańczowy powyżej. Linia wody ma falę (wycinek
+  dotychczasowej bitmapy przycięty do okienka 18×27 px). Gdy kafelek pokazuje
+  `--`, woda znika – zostaje sam kontur.
+- **PANEL – kolektor słoneczny.** Nowa ikona z czterech warstw 40×40 px
+  (stojak, rury, zbiornik, słońce), każda w swoim kolorze. Alarm przegrzania
+  panelu barwi rury i zbiornik na czerwono (dotąd cała ikona), słońce i stojak
+  zostają. Generator warstw: `testy_host/prototypy/ikony_jak_w_aplikacji.py`.
+- **Pamięć.** Flash: +2 tablice 1‑bitowe 40×40 = +400 B (ok. 0,02 %
+  partycji OTA); RAM: 5 dodatkowych obiektów LVGL (ok. 0,5 kB) – przy ~49 kB
+  wolnego nie ma znaczenia. Wariant nocny (księżyc zamiast słońca) na razie
+  nie – panel nie czyta pola `night` z centrali.
+- Nowy test hosta `bojler_poziom_ikony` (zrzuty `1_bojler_20C` …
+  `4_bojler_bez_danych`).
+
+## Co zmienia v1.5.10
+
+Poprawki po zdjęciu ekranu WYŚWIETLACZ z płytki na v1.5.9. Centrala bez zmian.
+
+- **Suwaki jasności – gałki w całości.** Gałka (promień 12) wystaje 4 px nad
+  i pod 16‑px pasek, a pasek stał na samym dole wiersza, więc wiersz przycinał
+  dolne 4 px gałki („kółko” miało płaski spód). Pasek przesunięty 4 px wyżej;
+  test `sen_ustawienia` mierzy gałkę także w pionie.
+- **Zielone przyciski „włączone” czytelne.** `WŁ.` harmonogramu, „Przyciemnij
+  po: …”, „Uśpij po: …”, Antystop `WŁ.` i przyciski na ZASILANIE miały jasną
+  miętę z szarym napisem (kontrast ok. 1,5:1). Teraz ciemna zieleń
+  (`KOL_WLACZONE`) i biały napis (ok. 6,5:1). Mięta `KOL_BEZPIECZNA` zostaje
+  dla ikony BEZPIECZNA na SERWA, paska Antystop i wskaźnika ładowania.
+- Napis `Panel v…/Centrala v…` w lewym górnym rogu odsunięty od obudowy
+  (14 px zamiast 8 – na zdjęciu było `anel v1.5.9`).
+
+## Co zmienia v1.5.9
+
+Poprawki po zdjęciach z płytki na v1.5.8 (22.11, 18:03). Centrala bez zmian.
+
+- **Wykresy – margines od obudowy.** Wydrukowana obudowa zasłania skrajne
+  piksele ekranu, więc ostatni podpis osi czasu (`18:00`) przy prawej krawędzi
+  był ucięty do `18:0`, a lewa etykieta osi Y `198 °C` wyglądała jak `'98 °C`.
+  Podpisy osi czasu trzymają teraz 10 px od obu krawędzi ekranu, etykiety osi
+  Y są odsunięte o 6 px (było 2). Środek podpisu dalej stoi pod kreską — na
+  zrzutach z hosta środek podpisu = x kreski ± 1 px (na zdjęciu z ukosu
+  wygląda na przesunięty).
+- **Ekran SERWA – kółka.** Łuk pozycji obok `100%` był ustawiony 2 px nad
+  górnym brzegiem wiersza, a wiersz przycina dzieci – kółko miało ścięty
+  wierzchołek. Teraz łuk mieści się w wierszu.
+- **Ekran WYŚWIETLACZ – suwaki jasności.** Tak jak suwaki serw w v1.5.8: przy
+  `100%` gałka kończyła się 12 px za końcem paska. Teraz kończy się równo z
+  paskiem; etykieta `100%` nie wystaje nad wiersz.
+
+## Co zmienia v1.5.8
+
+**Oś czasu wykresów ma wartość przy każdej kresce.** Zdjęcia z płytki na v1.5.7
+(22.11): pod wykresem był jeden podpis na środku (`16:25 - 17:25`,
+`22.11 14:01 - 22.11 17:25`, `19.11 08:55 - 22.11 16:51`), a trzy pionowe
+kreski siatki stały co ¼ szerokości bez żadnej wartości. Teraz kreski stoją
+w **równych godzinach** i każda ma podpis w pasie pod wykresem:
+
+| zakres | krok siatki | przykład podpisów |
+|---|---|---|
+| godzinny | 15 min | `16:30  16:45  17:00  17:15` |
+| dzienny | 4 h (o północy data) | `22.11 20:00  23.11  04:00  08:00  12:00  16:00` |
+| tygodniowy | 1 dzień (każda północ) | `19.11  20.11 … 25.11` |
+
+Krok dobiera się do długości okna (najmniejszy, który daje ≤ 7 podpisów), więc
+krótsza historia — np. 3,5 h po restarcie centrali, jak na zdjęciu — dostaje
+podpisy co 30 min. Pierwszy podpis ma datę, gdy centrala ją podaje (dzień,
+tydzień). Panel liczy to wyłącznie z nagłówka `#panel-hist` (`od=`, `do=`,
+`od_etyk=`), który centrala 3.58.4+ i tak wysyła — **żadnej zmiany w centrali
+3.58.10**. Starsza centrala albo centrala bez zegara: zostaje dawny podpis
+„od – do” / „czas nieznany”. Dół wykresu 310 → 296 px, żeby pas podpisów nie
+wchodził w dolne etykiety osi Y.
+
+**Wykres tygodniowy przy rzadkich danych.** Na zdjęciu: 9 punktów + 87 przerw,
+na ekranie same „kropki” i pionowa zielona kreska przy prawej krawędzi. To
+prawdziwe dane: długi bufor centrali ma wpisy tylko z chwil, gdy pracowała
+(19–22.11 pracowała krótko), a „kreska” to dwa sąsiednie punkty (50 min obok
+siebie) o bardzo różnych wartościach — syberek 0 % → 90 % ok. 16:30. Problem
+był inny: LVGL nie rysuje punktu bez sąsiada, więc pojedyncze pomiary między
+przerwami były **niewidoczne**. Gdy któraś seria ma samotny punkt, panel
+włącza znaczniki punktów (4 px); przy ciągłych danych nadal sama linia.
+
+**Suwaki serw.** Przy 100 % gałka wystawała 12 px za koniec paska, pod łuk —
+wyglądała na obciętą. Pasek 16..344 z torem gałki zawężonym z prawej: przy
+100 % gałka kończy się równo z paskiem, 6 px przed łukiem. „113%” ze starszego
+zdjęcia to stopnie sprzed v1.5.6 — od v1.5.6 etykieta nie przekracza 100 %.
+
+Testy: podpisy osi czasu sprawdzane w `wykresy_centrala_liczy`,
+`wykresy_przerwy` (plus tydzień 9/87 → znaczniki) i
+`wykresy_po_restarcie_centrali`; `serwo_stopnie` otwiera ekran SERWA przy
+100 %. Razem 74 scenariusze, 842 sprawdzenia, 816 jednostkowych. Zmienione pliki: `src/main.cpp`, `src/dashboard_lvgl_poc.cpp`,
+`testy_host/`.
+
+## Co zmienia v1.5.7
+
+**Wykresy biorą 4× mniej RAM-u.** Log z płytki na v1.5.6 (22.11, 16:44–16:47):
+po starcie `ram=34752`, przy otwartych Wykresach `ram=7120 ram_min=1932
+alok_nieudane=42`, `malo_pamieci`. Model pamięci (`pomiar_pamieci.sh
+--przypadki`) pokazywał to samo: ekran Wykresy +18,6 kB, szczyt przy wykresie
++22,7 kB, na płytce zostawało ok. 3,8 kB. Punkt wykresu miał 24 B
+(etykieta 12 B + wartość + minimum + maksimum) — minimum i maksimum nikt nie
+rysował, a etykieta była ta sama dla wszystkich 8 serii. Teraz punkt to 4 B
+(sama wartość, NaN = przerwa) plus jedna wspólna tablica etykiet (96 × 12 B).
+
+| | Było (≤ v1.5.6) | Jest (v1.5.7) |
+|---|---|---|
+| bufory ekranu Wykresy | 8 × 96 × 24 B = 18 432 B | 8 × 96 × 4 B + 96 × 12 B = **4 224 B** |
+| model: ekran Wykresy otwarty | +18 632 B | **+4 440 B** |
+| model: szczyt przy wykresie | +22 744 B | **+8 552 B** |
+| model: próg bez odmów pamięci | 22 250 B wolnego | **8 000 B** |
+| model: na płytce w najgorszej chwili | ok. 3,8 kB | **ok. 18 kB** |
+
+Wygląd wykresów bez zmian — testy wzorcowe porównują te same punkty.
+
+**Panel nie zrywa WiFi, gdy centrala właśnie przysyła wykres.** W tym samym
+logu w środku pobierania wykresu (8 z 16 linii odebranych) panel wymusił
+ponowne połączenie WiFi (`wymuszam_polaczenie`), bo `/api/status` nie
+odpowiadał od 12 s — centrala była zajęta wysyłaniem historii. Pobieranie
+padło (`urwana … errno=113`), WiFi było zerwane na kilka sekund, a kolejne
+próby wykresu kończyły się `brak_wifi`. Teraz każdy nowy bajt historii i każda
+odpowiedź na polecenie zeruje licznik milczenia
+(`diag::Ratunek::centralaOdezwalaSie()`): dopóki centrala cokolwiek przysyła,
+panel nie zrywa z nią połączenia. Status nadal stary → kafelki `--` i
+`dane_nieaktualne` jak dotąd; drabina ratunkowa rusza 12 s po **ostatnim**
+znaku życia centrali, samoczynny restart po 45 s bez statusu bez zmian.
+
+Testy: nowy scenariusz `wykresy_centrala_zajeta` (status milczy, historia
+płynie 20 s → bez `wymuszam_polaczenie`, wykres jest; po końcu historii
+wymuszenie po 12 s; status wraca), przypadek 2d w `testRatunek()`. Razem
+74 scenariusze, 834 sprawdzenia, 816 jednostkowych. Zmienione pliki:
+`src/main.cpp`, `src/dashboard_lvgl_poc.cpp`, `src/diagnostyka_panelu.h`,
+`testy_host/`.
+
+## Co zmienia v1.5.6
+
+**Ikona WiFi nie „mruga” przy ciszy centrali.** Zgłoszenie z płytki na v1.5.5:
+„szukanie wifi mruga”. W logu WiFi było połączone cały czas (`wifi=1`, RSSI
+−68…−81 dBm), ale `/api/status` co jakiś czas nie mieścił się w limicie — po
+10 s `dane_nieaktualne`, po chwili `dane_wrocily`, i tak w kółko. Każde
+`dane_nieaktualne` zamieniało ikonę WiFi w nagłówku na X („brak WiFi”), a
+`dane_wrocily` z powrotem na kreski.
+
+| | Było (≤ v1.5.5) | Jest (v1.5.6) |
+|---|---|---|
+| WiFi jest, centrala milczy > 10 s | X „brak WiFi” | **kreski pomarańczowe** wg RSSI panelu, bez X (kafelki `--` i nagłówek CENTRALA MILCZY bez zmian) |
+| naprawdę brak WiFi | X | X (bez zmian) |
+| wykres: centrala nie przyjęła zapytania | napis od razu | **3 próby** co 500 ms, napis dopiero po ostatniej |
+| limity `/api/status` i ustawień (`SiecCfg`) | 400 / 1500 ms | **1000 / 3000 ms** — w tym samym logu POST z limitem 1000 ms przechodził w 716 ms między „timeout laczenia” statusów; centrala odpowiadała, tylko wolniej |
+
+**Pozycje serw 0–100 %, nie „113 %”.** `/api/status` centrali podaje `klapa`
+i `syberka` w **stopniach** (klapa 0…180, syberek 0…90 — „Wspólny kontrakt
+jednostek” w `main_centrala.cpp`), a panel pokazywał te liczby jako procenty.
+Teraz `diag::serwoStopnieNaProcent()`: 113° klapy = 63 %, 86° syberka = 96 %,
+nic powyżej 100 %. Suwaki na ekranie SERWA startują od tej samej przeliczonej
+wartości; POST `/api/servo-manual` dalej idzie w procentach (centrala sama
+przelicza na stopnie). Log `tag=PANEL` dalej podaje surowe stopnie.
+
+**Wykresy same ponawiają zapytanie po czkawce AP.** Zgłoszenie: „klikam
+wykres, pisze »Centrala nie przyjęła połączenia« i dopiero za którymś razem
+pojawiają się wykresy”. Zapytanie o historię, którego centrala **nie przyjęła**
+(limit łączenia 1,5 s, `connect()` odrzucony, gniazdo zamknięte bez bajtu
+odpowiedzi), idzie samo jeszcze raz po 500 ms, do 3 prób; na ekranie w tym
+czasie „Ładowanie danych z centrali… / Centrala nie odpowiedziała, próba 2 z 3”.
+Nie ponawiamy, gdy centrala zapytanie przyjęła (brak odpowiedzi przez 6 s,
+odpowiedź urwana, kod HTTP) ani przy braku pamięci. Wyjście z ekranu w
+odstępie przerywa. Log: `tag=WYKRESY zdarzenie=ponowienie proba=2/3
+powod=brak_polaczenia etap=…`, `zdarzenie=blad … prob=N`.
+
+Testy: nowe scenariusze `ikona_wifi_cisza` (cisza centrali → kreski
+pomarańczowe; dwie krótkie przerwy z rzędu → ani razu X; zanik AP → X),
+`serwo_stopnie` (113/86 → 63 %/96 %, 180/90 → 100 %, śmieci 255 → 100 %) i
+`wykresy_ponowienie` (2 odrzucone + 1 udane → wykres bez dotykania; 3 odrzucone
+→ napis; urwana / cisza po przyjęciu → bez ponowień; wyjście w odstępie),
+`testSerwoStopnie()` w `test_diagnostyka.cpp`. Razem 73 scenariusze,
+825 sprawdzeń, 813 jednostkowych. Zmienione pliki: `src/main.cpp`,
+`src/dashboard_lvgl_poc.cpp/.h`, `src/diagnostyka_panelu.h`,
+`src/siec_nieblokujaca_LCD.h`, `testy_host/`.
+
+## Co zmienia v1.5.5
+
+**Polecenia z dotyku ponawiane — do 3 prób zamiast jednej 400-ms.** Log z
+24.11 15:40: trzy dotknięcia WŁ pompy i WYŁ skończyły się paskiem „POLECENIE
+NIE DOSZŁO DO CENTRALI”, choć statusy co 2 s przechodziły bez błędu — padały
+na pojedynczych czkawkach AP (panel na baterii oszczędza radio; centrala bez
+routera co jakiś czas próbuje STA i zakłóca własny AP — opis w
+`main_centrala.cpp` 2.12.1.x). POST miał 400 ms na połączenie i **jedną** próbę.
+
+| | Było (≤ v1.5.4) | Jest (v1.5.5) |
+|---|---|---|
+| limit łączenia POST-a | 400 ms | **1000 ms** (statusy zostają przy 400 ms — mają padać szybko) |
+| limit całego POST-a | 1500 ms | **2000 ms** |
+| prób bez odpowiedzi centrali | 1 | **3**, odstęp 700 ms; pasek „NIE DOSZŁO” dopiero po ostatniej (najpóźniej po ~7,4 s) |
+| odrzucenie przez centralę (`{"ok":false}`) | pasek od razu | bez zmian — to jest odpowiedź, nie ponawiamy |
+| nowsza wartość tego samego pola w kolejce | — | unieważnia ponowienie starej |
+| log | `polecenie_nieudane` | `tag=KOMENDA zdarzenie=ponowienie pole=… proba=2/3 powod=timeout laczenia`, `polecenie_nieudane … prob=3` |
+
+Wszystkie polecenia panelu są idempotentne (ustaw wartość / stan), więc
+powtórzenie POST-a, który centrala już przyjęła, a odpowiedź zginęła, niczego
+nie zmienia.
+
+Testy: `test_diagnostyka.cpp` +15 (`KolejkaPolecen::ponow()`), scenariusze
+`nieudany_post` (3 próby przy milczącej centrali; czkawka — pierwsza pada,
+druga dochodzi, bez paska) i `polecenia_nie_gina` dostosowane. Razem 70
+scenariuszy, 786 sprawdzeń, 603 jednostkowe. Zmienione pliki: `src/main.cpp`,
+`src/diagnostyka_panelu.h`, `src/siec_nieblokujaca_LCD.h` (`ustawLimity()`),
+`testy_host/`.
+
+## Co zmienia v1.5.4
+
+**1. Wskaźnik „47% USB”** — najpierw procenty, potem źródło (uwaga po v1.5.3,
+gdzie było „USB 47%”). Reszta bez zmian: zielony z ładowarką, „47%” bez niej,
+„USB” bez ogniwa.
+
+**2. Wgrywanie z VSCode przez WiFi** (ArduinoOTA, jak w centrali). Do v1.5.3
+panel aktualizowało się tylko kablem albo przez centralę (`/update_panel`).
+
+| | |
+|---|---|
+| VSCode | pasek PlatformIO → środowisko **`esp32dev_wifi`** → **Upload** |
+| terminal | `pio run -e esp32dev_wifi -t upload` |
+| adres / port | `192.168.4.50` : `3232` (stałe IP panelu w sieci centrali) |
+| hasło | `SECRET_OTA_HASLO` z `src/secrets.h` — dopisuje je skrypt `narzedzia_pio/ota_haslo.py`, w `platformio.ini` hasła nie ma |
+| nazwa | `panelco` (mDNS wyłączony — wgrywanie po IP) |
+
+Warunki — wszystkie naraz:
+1. **komputer połączony z siecią centrali `PiecCO_AP`** (panel nie jest w sieci
+   domowej, tylko w sieci, którą nadaje centrala; z Internetu w tym czasie nie
+   skorzystasz);
+2. **panel obudzony i połączony** — na baterii po 5 min bez dotyku śpi i nie
+   odpowie: dotknij ekran albo włóż ładowarkę; w logu USB
+   `tag=OTA-VSCODE zdarzenie=gotowe ip=192.168.4.50 port=3232`;
+3. **pierwsze wgranie v1.5.4 kablem** (starszy program nie ma ArduinoOTA);
+4. zapora na komputerze: `espota.py` każe panelowi połączyć się **zwrotnie** z
+   komputerem na losowym porcie — Windows pyta o zgodę dla Pythona; gdy
+   wgrywanie kończy się „No response from the ESP”, zezwól Pythonowi w sieciach
+   prywatnych/publicznych albo dodaj w `upload_flags` stały
+   `--host_port=3233` i otwórz ten port.
+
+W trakcie: ekran `AKTUALIZACJA PANELU` / „Wgrywanie z komputera” z paskiem
+(na baterii przyciemniony panel rozjaśnia się sam), log
+`tag=OTA-VSCODE zdarzenie=start|postep|koniec|blad`. Po udanym wgraniu panel
+restartuje się sam; nowy program czeka na zatwierdzenie jak przy każdym OTA
+(jeśli nie wstanie, bootloader wraca do poprzedniego). Błąd (np. złe hasło:
+`opis=zle_haslo`) → pulpit wraca, panel pracuje dalej. Gdy panel akurat
+pobiera plik z centrali, wgranie z komputera kończy się `begin_failed` — nic
+się nie psuje, spróbuj po chwili.
+
+Testy: nowy scenariusz `ota_vscode` (9 sprawdzeń), `sen_usb_nie_usypia`
+dostosowany do „64% USB”. Razem 70 scenariuszy, 781 sprawdzeń, 588
+jednostkowych. Zmienione pliki: `src/main.cpp`, `src/dashboard_lvgl_poc.cpp`,
+`platformio.ini` (nowe `[env:esp32dev_wifi]`), nowy
+`narzedzia_pio/ota_haslo.py`, `testy_host/` (atrapa `mock/ArduinoOTA.h`).
+
+## Co zmienia v1.5.3
+
+**Wskaźnik zasilania mówi wprost „USB”** (zgłoszenie z 24.11: „LCD jest na
+baterii mimo podłączenia USB, nie pokazuje napisu USB”). Z ogniwem wskaźnik
+nigdy nie pisał „USB” — ładowarkę było widać tylko po zielonym kolorze
+procentów, a stan GPIO35 trafiał na ekran dopiero z pomiarem baterii co 30 s.
+
+| | Było | Jest (v1.5.3) |
+|---|---|---|
+| ogniwo + ładowarka w TP4056 | „47%” na zielono | **„USB 47%”** na zielono (od v1.5.4: „47% USB”) |
+| ogniwo, bez ładowarki | „47%” | „47%” (bez zmian) |
+| bez ogniwa | „USB” | „USB” (bez zmian) |
+| włożenie / wyjęcie ładowarki | widać po ≤ 30 s | **po ≤ 1 s** (`tag=ZASILANIE zdarzenie=usb_podlaczone\|usb_odlaczone napiecie=…`) |
+
+**Jeśli po wgraniu nadal nie ma „USB” z ładowarką w TP4056**, to GPIO35 nie
+jest ściągany do masy — sprawdź po kolei: (1) ładowarka jest w gnieździe
+**TP4056**, nie w gnieździe USB DevKita (z DevKita panel działa, ale TP4056
+nic nie widzi → „na baterii”); (2) multimetr na GPIO35: z ładowarką ok.
+0,3 V, bez — 3,3 V; (3) przewód z **obu** padów CHRG i STDBY (ładowanie →
+CHRG nisko; ogniwo pełne → tylko STDBY nisko — jeśli podłączony jest sam
+CHRG, pełne ogniwo da „na baterii”); (4) w logu co 30 s `tag=BATERIA …
+ladowanie=1`.
+
+Testy: scenariusz `sen_usb_nie_usypia` +3 sprawdzenia. Razem 69 scenariuszy,
+772 sprawdzenia, 588 jednostkowych. Zmienione pliki: `src/main.cpp`,
+`src/dashboard_lvgl_poc.cpp`, `testy_host/`.
+
+## Co zmienia v1.5.2
+
+**Ekran obrócony o 180° i napisy, które mieszczą się w kafelkach** (dwie
+uwagi z 22.11, zdjęcie panelu w obudowie z ogniwem). Centrala bez zmian.
+
+| Uwaga | Jest (v1.5.2) |
+|---|---|
+| obraz do góry nogami (panel w obudowie zamontowany złączem w lewo) | `EKRAN_OBROT 3` w `main.cpp` (było `setRotation(1)`). **Kalibracja dotyku z pamięci zostaje** — panel pamięta, w jakiej orientacji ją zrobiono (klucz NVS `dotyk/obrot`, brak = 1), i przy innym obrocie ekranu obraca dotknięcie o 180° (`tag=DOTYK zdarzenie=kalibracja_z_pamieci obrot_kalibracji=1 obrot_ekranu=3 odwrocony=1`). Nowa kalibracja zapisuje bieżący obrót. Gdyby inny egzemplarz stał „normalnie”, wystarczy `EKRAN_OBROT 1` |
+| „za 105m” w kafelku ZEWN ucięte („za 105n”) | **każda wartość kafelka dobiera sobie czcionkę** 28 → 20 → 14 do szerokości (a w ostateczności łamie na dwie linie); mniejsza czcionka siedzi na dole wiersza wartości, w jednej linii z sąsiadami. Napisy o deszczu pełnymi słowami: **„za 45 min”, „za 2 h”** (od 100 min w godzinach, do pół godziny), **„jeszcze 30 min”** (dwie linie), **„jeszcze 1,5 h”, „pada”**. Dotychczasowy ręczny wyjątek dla „1013 hPa” (czcionka 20) wychodzi z tej samej reguły |
+
+Sprawdzone najszersze wartości każdego kafelka: `-25.5°C`, `-10.5°C`,
+`100 %`, `1013 hPa`, `100°C`, `ŚR 100°C`, `9999`, `Klapa 100% / Syberka 100%`.
+
+**Testy na PC**: 9 sprawdzeń jednostkowych obrotu dotyku (`dotykTrzebaOdwrocic`,
+`dotykObroc180`) i scenariusz `kafelki_szerokosc` (18 sprawdzeń, zrzuty
+ekranu z każdym napisem o deszczu). Razem 69 scenariuszy, 769 sprawdzeń,
+588 jednostkowych.
+
+**Z v1.5.1 na v1.5.2** zmieniają się: `src/main.cpp`,
+`src/diagnostyka_panelu.h`, `src/dashboard_lvgl_poc.cpp`, `testy_host/`.
+**Po wgraniu sprawdź**: obraz prosto; dotknięcie kafelka POMPA otwiera POMPA
+(nie kafelek po przekątnej) — jeśli trafia w zły róg, w logu przy starcie
+jest linia `tag=DOTYK …`; gdyby jej nie było albo dotyk dalej był odbity,
+skasuj kalibrację (NVS `dotyk`) i zrób ją od nowa — zapisze się już z obrotem.
+
+## Co zmienia v1.5.1
+
+**Trzy poprawki snu na baterii po wgraniu v1.5.0 na płytkę** (uwagi z
+24.11). Centrala bez zmian.
+
+| Uwaga | Było (v1.5.0) | Jest (v1.5.1) |
+|---|---|---|
+| po wybudzeniu przyciskiem panel pokazywał ekran startowy z wersjami, „Laczenie z WiFi” i dopiero potem pulpit | ekran startowy jak przy zimnym starcie (bez pauzy 1,5 s) | **od razu pulpit LVGL** — kafelki z „--” pojawiają się na wyświetlaczu ok. 0,3 s po wybudzeniu (`tag=SEN zdarzenie=pulpit_po_wybudzeniu ms=…`), WiFi łączy się w tle tego widoku (BSSID i kanał centrali z pamięci RTC, bez skanu), dane wypełniają kafelki po 1–2 s. Ekran startowy z wersjami tylko przy starcie z zasilania/restarcie; linia `tag=PANEL zdarzenie=ekran_startowy` zostaje w logu zawsze |
+| dotknięcie przyciemnionego ekranu od razu „klikało” kafelek pod palcem (otwierał się wykres, ustawienie…) | dotyk rozjaśniał i działał jak zwykły dotyk | **pierwsze dotknięcie przyciemnionego ekranu tylko rozjaśnia** — filtr w `lvgl_touch_read()` (`diag::DotykFiltr`): jeśli ekran jest przyciemniony, pierwsze naciśnięcie (do puszczenia palca) nie trafia do LVGL; następne dotknięcia normalnie |
+| czasy 1 min / 5 min na sztywno | `SEN_PRZYCIEMNIJ_PO_MS`, `SEN_USPIJ_PO_MS` w `diagnostyka_panelu.h` | **ekran WYŚWIETLACZ, nowy wiersz „Na baterii”**: przycisk **„Przyciemnij po: 30 s / 1 min / 2 min / 5 min / 10 min / nigdy”** i **„Uśpij po: 2 min / 5 min / 10 min / 30 min / 1 godz. / nigdy”** — każde dotknięcie to następna wartość (lista zawija się), zielony przycisk = inaczej niż domyślnie. Zapis w NVS (`wyswietlacz/senPrzyIdx`, `senSpijIdx`), działa od razu (`tag=SEN zdarzenie=ustawienie przyciemnij_ms=… uspij_ms=…`). „Nigdy” dla snu nie wyłącza snu z powodu rozładowanego ogniwa (< 3,30 V) |
+
+Układ ekranu WYŚWIETLACZ jest ściśnięty, żeby zmieścić szósty wiersz na
+320 px (suwaki jasności i wiersze godzin ciaśniej; nic nie ubyło). Nieznany
+indeks w NVS (np. z przyszłej wersji) → wartość domyślna.
+
+**Testy na PC**: 28 nowych sprawdzeń jednostkowych (tabele opcji, „nigdy”,
+filtr dotyku `dotykPrzepusc()`) i 5 scenariuszy (`sen_po_wybudzeniu`,
+`sen_po_wybudzeniu_ladowarka`, `sen_ustawienia`, `sen_ustawienia_nigdy`,
+`sen_ustawienia_nigdy_sen`). Filtr pierwszego dotknięcia sprawdzany jest
+tylko jednostkowo — symulator „klika” kafelki zdarzeniem LVGL, z pominięciem
+sterownika dotyku. Razem 68 scenariuszy, 749 sprawdzeń, 579 jednostkowych.
+
+**Z v1.5.0 na v1.5.1** zmieniają się: `src/main.cpp`,
+`src/diagnostyka_panelu.h`, `src/lvgl_port.cpp`, `src/dashboard_lvgl_poc.cpp`,
+`src/dashboard_lvgl_poc.h`, `testy_host/`. Kablem albo przez centralę
+(`/update_panel`). **Po wgraniu sprawdź**: przycisk budzi panel prosto na
+pulpit (bez „WYSWIETLACZ CO”); dotknięcie przyciemnionego ekranu tylko
+rozjaśnia; na ekranie WYŚWIETLACZ wiersz „Na baterii” mieści się nad dolną
+krawędzią, a wybrany czas zostaje po restarcie.
+
+## Co zmienia v1.5.0
+
+**Praca na baterii: przyciemnienie po minucie, głęboki sen po pięciu,
+budzenie przyciskiem albo ładowarką** (krok 3 planu z
+`WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18.md`; tematy B1/B5 i 14). Sprzęt
+zasilania panelu jest zlutowany i sprawdzony (20.11: TP4056 + MT3608,
+dzielnik 100k/100k na GPIO34 — odczyt 3,32 V/1 % i 3,97 V/76 % zgodny z
+multimetrem, GPIO35 z 10k do 3V3, brzęczyk przez C945 na GPIO13, przycisk
+GPIO14 → 1 kΩ → GND; rysunki: `docs/schemat-zasilania/`). Kod snu
+(`idzSpac()`), który od v1.4.4 nikt nie wołał, jest wreszcie podpięty — pod
+LVGL.
+
+| Sytuacja | Było (v1.4.7) | Jest (v1.5.0) |
+|---|---|---|
+| **na baterii** (ogniwo na dzielniku, TP4056 bez USB), 1 min bez dotyku | nic | podświetlenie **5 %** (`tag=SEN zdarzenie=przyciemnienie`); panel pracuje dalej, dane i alarmy jak dotąd |
+| dotknięcie szyby albo **przycisk GPIO14** w czasie pracy | — | jasność wraca od razu (dzienna albo nocna wg harmonogramu), licznik od nowa (`tag=SEN zdarzenie=jasnosc powod=dotyk`) |
+| na baterii, 5 min bez dotyku | nic | **głęboki sen** (`tag=SEN zdarzenie=usypianie powod=bez_dotyku napiecie=3.90V bez_dotyku_s=300`): podświetlenie 0, ILI9488 Sleep IN, `gpio_hold_en` na GPIO21 (podświetlenie) **i GPIO13 (brzęczyk)** |
+| budzenie | przycisk GPIO14 (ext0) — kod był, nie działał | **przycisk GPIO14** (ext0, stan niski) **albo włożenie ładowarki** (ext1 na GPIO35: TP4056 ściąga CHRG/STDBY do masy). Log: `tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk\|usb`. Po wybudzeniu pełny start panelu (kilka sekund), bez pauzy ekranu startowego |
+| **na USB** (ładowarka w TP4056, z ogniwem albo bez) | nic | **nic** — dokładnie jak dotąd, żadnego przyciemniania ani snu |
+| alarm (centrala zgłasza albo brzęczyk gra) | — | sen i przyciemnienie wstrzymane, ekran alarmu jasny (`tag=SEN zdarzenie=sen_wstrzymany powod=alarm`, raz) |
+| aktualizacja panelu przez centralę | — | wstrzymane tak samo (`powod=ota`) |
+| ogniwo **poniżej 3,30 V** bez ładowarki | nic (ogniwo rozładowałoby się do odcięcia) | napis **„BATERIA ROZLADOWANA / Podlacz ladowarke. Panel usypia.”** przez 2,5 s i sen od razu, także zaraz po dotknięciu (`powod=bateria_rozladowana`). W alarmie panel czeka do **3,10 V** (`powod=bateria_krytyczna`) |
+| pierwszy pomiar baterii | 30 s po starcie (wskaźnik przez pół minuty „USB”) | **od razu po starcie**, potem co 30 s |
+
+Progi są w `src/diagnostyka_panelu.h`, sekcja `[v1.5.0 SEN]`
+(`SEN_PRZYCIEMNIJ_PO_MS`, `SEN_USPIJ_PO_MS`, `SEN_JASNOSC_PROC`,
+`SEN_NAPIECIE_MIN_V`, `SEN_NAPIECIE_KRYT_V`); decyzja to czysta funkcja
+`diag::senDecyzja()`, liczona co sekundę w `senKrok()` (`main.cpp`).
+Licznik bezczynności prowadzi LVGL (`lv_disp_get_inactive_time()`, ten sam,
+którego od v1.4.0 używa aktualizacja); liczy się od końca `setup()`.
+
+**Pomiary z ogniwa (24.11, multimetr szeregowo w OUT+ TP4056 → VIN+ MT3608,
+WiFi, pulpit):** ekran 100 % — **110 mA** przy 80 MHz (skoki do 150),
+**117–126 mA** przy 160 MHz (do 140), **130 mA** przy 240 MHz (do 160);
+ekran 5 % — **45–55 mA**; **głęboki sen — 2 mA** (cel był < 10 mA). Skoki to
+nadajnik WiFi. Docelowe ogniwo (24.11): jedno **5000–5500 mAh** (zamiast
+dwóch z Cubota), licząc ~4300 mAh do progu 3,30 V: jasny ekran **ok. 39 h**
+przy 80 MHz (ok. 33 h przy 240 MHz), przyciemniony **ok. 4 dni**, we śnie
+**ok. 3 miesiące**; ładowanie 1 A (R_PROG 1,2 kΩ = 0,2 C) ok. 6 h. Taktowanie z ogniwa
+robi większą różnicę niż na USB (−20 mA z ogniwa między 240 a 80 MHz);
+ustawia się je na ekranie ZASILANIE i zostaje w NVS; domyślne nadal 240 MHz.
+Dla porównania pomiar z 20.11 testerem USB przed TP4056 (5 V, bez ogniwa):
+ekran 100 % 254/243/234 mA przy 240/160/80 MHz, ekran 5 % 157 mA, brzęczyk
++7 mA — te liczby są 2–3× wyższe, niż wynika z pomiaru z ogniwa po
+przeliczeniu mocy, więc jeden z przyrządów zawyża albo zaniża; do
+rozstrzygnięcia jednym miernikiem po obu stronach.
+
+**Testy na PC** (`testy_host/uruchom_testy.sh`): 24 nowe sprawdzenia
+jednostkowe `senDecyzja()` i 6 scenariuszy `sen_*` (55 sprawdzeń): minuta →
+5 %, dotyk i przycisk przywracają, 5 min → `esp_deep_sleep_start()` z hold na
+GPIO21/13 i budzeniem ext0 (GPIO14) + ext1 (GPIO35); na USB (z ogniwem i
+bez) nigdy; wyjęcie i włożenie ładowarki; alarm i aktualizacja wstrzymują;
+3,25 V → napis i sen od razu; 3,25 V w alarmie — nie, 3,05 V — tak. Atrapy:
+`esp_deep_sleep_start()` (jak `ESP.restart()`: kończy pętlę), `ext1`,
+`gpio_hold_en/dis`. `pomiar_obciazenia.sh` mierzy stany A–F na USB (na
+baterii panel by usnął), a na końcu podaje, po ilu sekundach na baterii
+ekran przygasł i panel usnął. Razem 63 scenariusze, 710 sprawdzeń.
+
+**Z v1.4.7 na v1.5.0** zmieniają się: `src/main.cpp`,
+`src/diagnostyka_panelu.h`, `src/dashboard_lvgl_poc.cpp`,
+`src/dashboard_lvgl_poc.h`, `testy_host/`, `docs/schemat-zasilania/`. Można
+wgrać kablem albo przez centralę (`/update_panel`). Centrala bez zmian
+(3.58.10 zostaje). **Po wgraniu sprawdź** (szczegóły: `docs/schemat-zasilania/README.md`,
+„Sprawdzenie v1.5.0 / v1.5.1”): na baterii bez ładowarki po minucie ekran przygasa,
+po pięciu gaśnie; przycisk budzi; ładowarka budzi; na ładowarce nic z tego
+się nie dzieje.
 
 ## Co zmienia v1.4.7
 
@@ -156,6 +726,10 @@ pokazuje od 3.58.8.
 > Zaraz po niej **3.58.10** (`firmware-patch/v3.58.10-zew2-ponowienie/`): ponowienie
 > odczytu DHT22 po błędzie po 5 s i wygaszanie Zew 2 255 s zamiast 135 s — bez tego
 > każdy nieudany odczyt robił 2–4 min przerwy w Zew 2. Panel LCD bez zmian.
+> **3.58.11** (`firmware-patch/v3.58.11-alarm-dymu-po-symulacji/`): alarm dymu wywołany
+> wyłącznie symulacją gaśnie w ≤ 5 s po jej wyłączeniu (dotąd czekał 2,5–3 min na świeży
+> odczyt MQ); alarm z prawdziwego pomiaru bez zmian. Nowe pole `/api/status`
+> `dym_alarm_sym` — panel LCD go nie czyta, bez zmian w panelu.
 
 **Z v1.4.5 na v1.4.6** zmieniają się: `src/main.cpp`,
 `src/dashboard_lvgl_poc.cpp`, `src/dashboard_lvgl_poc.h`,

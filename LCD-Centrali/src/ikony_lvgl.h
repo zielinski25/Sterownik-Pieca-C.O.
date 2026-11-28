@@ -2,6 +2,8 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-22] v1.5.11 Zmieniono: PANEL - 4 warstwy lv_ikona_panel_slonce/
+//   _rury/_zbiornik/_stojak (ikona jak w aplikacji), bylo slonce+kolektor.
 // [2026-11-22] v1.4.7 Dodano: lv_ikona_blyskawica (kafelek ZASILANIE).
 // [2026-09-05] Dodano: lv_ikona_alarm_duza (opakowanie IKONA_ALARM_DUZA z
 //   ikony.h w lv_img_dsc_t) dla nowego EKRANU ALARMOWEGO - patrz
@@ -109,16 +111,14 @@ LVGL_IKONA_DSC(lv_ikona_pokoj_termometr, IKONA_POKOJ_TERMOMETR, IKONA_ROZMIAR)
 // pomiarow) - patrz obszerny komentarz przy danych w ikony.h.
 LVGL_IKONA_DSC(lv_ikona_wykresy, IKONA_WYKRESY, IKONA_ROZMIAR)
 
-// [UI-PANEL, ta sesja] Kolektor sloneczny (slonce nad przechylonym panelem
-// grzewczym 3-segmentowym) - patrz obszerny komentarz przy danych w
-// ikony.h co do tego, dlaczego PANEL przestal uzywac ikony plomienia.
-// [UI-PANEL-KOLOR, ta sesja] Rozbite na dwie rozlaczne warstwy (jak BOJLER
-// kontur+woda) zeby slonce moglo byc na stale zolte (KOL_SLONCE) niezaleznie
-// od koloru/alarmu kolektora (KOL_ZAR/KOL_ERR) - patrz obszerny komentarz
-// przy danych IKONA_PANEL_SLONCE/IKONA_PANEL_KOLEKTOR w ikony.h oraz
-// wywolanie kafelek() dla PANEL w dashboard_lvgl_poc.cpp.
+// [v1.5.11] Ikona PANEL jak w aplikacji - kolektor rurowy ze zbiornikiem,
+// CZTERY warstwy (kazda osobno przebarwiana), patrz obszerny komentarz przy
+// danych w ikony.h. Kolejnosc rysowania i kolory: kafelek_panel_ikona_zbuduj()
+// w dashboard_lvgl_poc.cpp. Zastepuje lv_ikona_panel_slonce/_kolektor z v1.4.x.
 LVGL_IKONA_DSC(lv_ikona_panel_slonce, IKONA_PANEL_SLONCE, IKONA_PANEL_ROZMIAR)
-LVGL_IKONA_DSC(lv_ikona_panel_kolektor, IKONA_PANEL_KOLEKTOR, IKONA_PANEL_ROZMIAR)
+LVGL_IKONA_DSC(lv_ikona_panel_rury, IKONA_PANEL_RURY, IKONA_PANEL_ROZMIAR)
+LVGL_IKONA_DSC(lv_ikona_panel_zbiornik, IKONA_PANEL_ZBIORNIK, IKONA_PANEL_ROZMIAR)
+LVGL_IKONA_DSC(lv_ikona_panel_stojak, IKONA_PANEL_STOJAK, IKONA_PANEL_ROZMIAR)
 
 // [UI-POMPA-PANEL, ta sesja] Ikony trybu w panelu wyboru POMPA - patrz
 // obszerny komentarz przy danych w ikony.h. AUTO ma 8 klatek (pelny obrot,

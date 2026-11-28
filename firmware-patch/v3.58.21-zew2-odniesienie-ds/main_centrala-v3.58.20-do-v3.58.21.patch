@@ -1,0 +1,154 @@
+--- a/src/main_centrala.cpp
++++ b/src/main_centrala.cpp
+@@ -1,3 +1,21 @@
++// FIRMWARE_VERSION v3.58.20 -> v3.58.21 (2026-11-27) — ZEW 2: ODNIESIENIE DO DS18B20 DLA PRZELICZONYCH RAMEK KLONA.
++//
++// [v3.58.21 ZEW2-ODNIESIENIE-DS] — 2026-11-27
++// Pomysł użytkownika (27.11): skoro DS18B20 (Zew 1) mierzy to samo z przesunięciem
++// (eksport 26.11: Zew 1 − Zew 2 = 2,2..4,5 °C, średnio 3,2), niech przeliczona
++// wartość z klona ma odniesienie. Siatka bezpieczeństwa, nie sędzia: tylko dla
++// ramek przeliczonych przez zew2DekodujU2() (v3.58.20) i tylko gdy DS18B20 jest
++// świeży (telemetryQuality(TELEMETRY_CH_ZEWN) == 0) i niesymulowany. Jeśli
++// |t_DHT − t_DS| > ZEW2_DS_PROG_C (8 °C), ramka idzie ścieżką „podejrzany”
++// (powtórka za 3 s, przyjęcie dopiero gdy dwa odczyty się zgadzają) zamiast być
++// przyjęta od razu; log WARN „zdarzenie=ds_odniesienie”. Próg 8 °C celowo szeroki:
++// normalna różnica to 2–4,5 °C i pływa z nasłonecznieniem; łapać ma tylko
++// bzdury (np. zakłócenie z poprawną sumą kontrolną trafiające w przedział klona
++// przy +10 °C na DS). Bez DS (brak czujnika, nieświeży, symulacja) — jak v3.58.20.
++// Diagnostyka: w linii „DHT22 diagnostyka” nowe pole ds_roznica=<DS − DHT> (nan,
++// gdy DS niedostępny) — widać z logu, czy przeliczanie jest sensowne.
++// Bez zmian: wilgotność, zwykłe ramki (nieprzeliczane), /api/status, Firebase, LCD, WWW.
++//
+ // FIRMWARE_VERSION v3.58.19 -> v3.58.20 (2026-11-27) — ZEW 2 (DHT22) PONIŻEJ 0 °C: KLON KODUJE UJEMNE W U2.
+ //
+ // [v3.58.20 DHT22-UJEMNE] — 2026-11-27
+@@ -2051,6 +2069,13 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.21] — 2026-11-27 — ZEW 2: ODNIESIENIE DO DS18B20 DLA PRZELICZONYCH RAMEK KLONA
++// Co: ramka DHT22 przeliczona z kodowania klona (v3.58.20) jest porownywana ze
++//     swiezym, niesymulowanym DS18B20 (temperaturaNaZewnatrz): roznica > 8 C ->
++//     sciezka "podejrzany" (powtorka za 3 s) zamiast przyjecia od razu + WARN.
++//     Pole ds_roznica= w linii "DHT22 diagnostyka". Bez DS - jak v3.58.20.
++// Bez zmian: zwykle ramki, wilgotnosc, /api/status, Firebase, panel LCD, WWW.
++//
+ // [v3.58.20] — 2026-11-27 — ZEW 2 (DHT22) PONIZEJ 0 C: KLON KODUJE UJEMNE W U2
+ // Co: zew2DekodujU2() w bloku ZEW2-FILTR - temperatura DHT22 w -3276,7..-3236,8
+ //     (obraz U2 16-bit zakresu -0,1..-40,0 C po dekodowaniu znak-modul z biblioteki)
+@@ -6646,6 +6671,16 @@
+   return true;
+ }
+ 
++// [v3.58.21 ZEW2-ODNIESIENIE-DS] Przeliczona ramka klona a swiezy DS18B20: czy
++// roznica jest tak duza, ze lepiej poczekac na powtorke? Normalna roznica
++// Zew 1 - Zew 2 u uzytkownika: 2,2..4,5 C (26.11), stad szeroki prog 8 C.
++// dsOk = false (brak/nieswiezy/symulowany DS) -> nigdy nie podejrzany.
++static const float ZEW2_DS_PROG_C = 8.0f;
++static bool zew2DsOdbiega(float tDht, float tDs, bool dsOk) {
++  if (!dsOk || !isfinite(tDht) || !isfinite(tDs)) return false;
++  return fabsf(tDht - tDs) > ZEW2_DS_PROG_C;
++}
++
+ static bool zew2Podejrzany(float t, float ostatnia) {
+   if (!isfinite(ostatnia)) return false;                  // brak historii: przyjmij
+   if (fabsf(t - ostatnia) > ZEW2_PROG_SKOKU_C) return true; // skok > 3 C w 120 s
+@@ -6657,7 +6692,9 @@
+ 
+ // Zwraca decyzje; *wynik = temperatura do zapisania (NAN = nic nie zapisuj,
+ // zostaje poprzednia wartosc - czytajTempDiag() wygasza ja po TEMP_DIAG_WYGASZANIE_S = 255 s).
+-static Zew2Decyzja zew2Filtruj(Zew2Filtr &f, bool ramkaOk, float t, unsigned long nowMs, float *wynik) {
++// [v3.58.21] wymusPodejrzany = true (odniesienie DS18B20 odbiega): ramka traktowana
++// jak podejrzana nawet bez skoku wzgledem historii - powtorka za 3 s.
++static Zew2Decyzja zew2Filtruj(Zew2Filtr &f, bool ramkaOk, float t, unsigned long nowMs, float *wynik, bool wymusPodejrzany = false) {
+   *wynik = NAN;
+   if (f.weryfikacja && (unsigned long)(nowMs - f.kandydatOdMs) > ZEW2_WERYFIKACJA_MAX_MS) {
+     f.weryfikacja = false; f.kandydat = NAN; ++f.odrzucone;  // powtorka nie doszla do skutku
+@@ -6667,7 +6704,7 @@
+     if (f.weryfikacja) { f.weryfikacja = false; f.kandydat = NAN; ++f.odrzucone; }
+     return ZEW2_ZLA_RAMKA;
+   }
+-  const bool podejrzany = zew2Podejrzany(t, f.ostatniaDobra);
++  const bool podejrzany = wymusPodejrzany || zew2Podejrzany(t, f.ostatniaDobra);
+   if (f.weryfikacja) {
+     f.weryfikacja = false;
+     const float kand = f.kandydat;
+@@ -6910,7 +6947,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.20";
++static const char* FIRMWARE_VERSION = "v3.58.21";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -34558,6 +34595,18 @@
+   return (2.1674 * cisnieniePary) / (temperaturaNaZewnatrz + 273.15);
+ }
+ 
++// [v3.58.21 ZEW2-ODNIESIENIE-DS] DS18B20 (Zew 1) jako odniesienie dla Zew 2:
++// tylko swiezy (<= 135 s), prawdziwy (niesymulowany) odczyt. W tescie na PC
++// (test_wilgotnosc.cpp) ta funkcja jest atrapa.
++static bool zew2OdczytDs(float *tDs) {
++  const TelemetrySourceMeta &m = g_telemetrySourceMeta[TELEMETRY_CH_ZEWN];
++  if (telemetryQuality(TELEMETRY_CH_ZEWN, telemetryMonotonicMs()) != 0) return false;
++  if (m.lastGoodSimulated || trybSymulacji) return false;
++  if (!isfinite(temperaturaNaZewnatrz)) return false;
++  *tDs = temperaturaNaZewnatrz;
++  return true;
++}
++
+ void wilgotnosc() {
+   static bool bylaProbaCykliczna = false;
+   static unsigned long ostatniaProbaCyklicznaMs = 0;
+@@ -34609,14 +34658,23 @@
+     // [v3.58.20 DHT22-UJEMNE] Klon kodujacy ujemne w U2: -0,1 C przychodzi jako
+     // -3276,7 i do 3.58.19 odpadalo jako zla ramka (razem z wilgotnoscia) -> po
+     // 255 s Zew 2 = BRAK DANYCH przy kazdym przymrozku. Tu przeliczenie na prawde.
+-    static uint32_t dhtU2 = 0;
++    static uint32_t dhtU2 = 0, dhtDsOdbiega = 0;
+     const float dhtTempSurowa = dhtTempPomijana;
+     uint8_t dhtU2Wariant = 0;
+-    if (dhtErr == DHT_OK && zew2DekodujU2(&dhtTempPomijana, &dhtU2Wariant)) {
+-      if (dhtU2++ == 0) {
+-        DLOGF(DC_SENSOR, DL_WARN, "DHT22 Zew2 zdarzenie=u2 wariant=%u surowa=%.1f t=%.1f msg=\"klon koduje ujemne w U2, przeliczam\"",
+-              (unsigned)dhtU2Wariant, (double)dhtTempSurowa, (double)dhtTempPomijana);
+-      }
++    const bool dhtPrzeliczona = (dhtErr == DHT_OK && zew2DekodujU2(&dhtTempPomijana, &dhtU2Wariant));
++    if (dhtPrzeliczona && dhtU2++ == 0) {
++      DLOGF(DC_SENSOR, DL_WARN, "DHT22 Zew2 zdarzenie=u2 wariant=%u surowa=%.1f t=%.1f msg=\"klon koduje ujemne w U2, przeliczam\"",
++            (unsigned)dhtU2Wariant, (double)dhtTempSurowa, (double)dhtTempPomijana);
++    }
++    // [v3.58.21 ZEW2-ODNIESIENIE-DS] Przeliczona ramka a swiezy DS18B20: roznica
++    // > 8 C -> nie przyjmuj od razu, poczekaj na powtorke (sciezka "podejrzany").
++    float dsTemp = NAN;
++    const bool dsOk = zew2OdczytDs(&dsTemp);
++    const bool dsOdbiega = dhtPrzeliczona && zew2DsOdbiega(dhtTempPomijana, dsTemp, dsOk);
++    if (dsOdbiega) {
++      ++dhtDsOdbiega;
++      DLOGF(DC_SENSOR, DL_WARN, "DHT22 Zew2 zdarzenie=ds_odniesienie t=%.1f ds=%.1f prog=%.0f msg=\"przeliczona ramka daleko od DS18B20, powtorka za 3 s\"",
++            (double)dhtTempPomijana, (double)dsTemp, (double)ZEW2_DS_PROG_C);
+     }
+     // [v3.58.9 ZEW2-FILTR] Bylo: zapiszTempDiag(t w zakresie ? t : NAN) - kazda
+     // ramka z dobra suma kontrolna szla prosto na wykres (piki do -2 C), a zla
+@@ -34624,7 +34682,7 @@
+     // odczytu po ~3 s; odrzucenie zostawia poprzednia wartosc.
+     const bool ramkaOk = zew2RamkaPoprawna(dhtErr, dhtTempPomijana, wilgotnoscOdczytanaLok);
+     float tZew2 = NAN;
+-    const Zew2Decyzja zew2Dec = zew2Filtruj(g_zew2Filtr, ramkaOk, dhtTempPomijana, czasBiezacy, &tZew2);
++    const Zew2Decyzja zew2Dec = zew2Filtruj(g_zew2Filtr, ramkaOk, dhtTempPomijana, czasBiezacy, &tZew2, dsOdbiega);
+     if (isfinite(tZew2)) zapiszTempDiag(tZew2);
+     switch (zew2Dec) {
+       case ZEW2_DO_WERYFIKACJI:
+@@ -34658,8 +34716,9 @@
+     ++dhtProby;
+     if (!ramkaOk) ++dhtBledy;
+     if (dhtErr == DHT_OK && isfinite(dhtTempPomijana) && dhtTempPomijana == 0.0f) ++dhtZeraC;
+-    DLOGF(DC_SENSOR, DL_INFO, "DHT22 diagnostyka proby=%lu bledy_rh=%lu zera_temp=%lu u2=%lu kod=%u zew2_przyjete=%lu zew2_potwierdzone=%lu zew2_odrzucone=%lu zew2_ponowienia=%lu",
+-          (unsigned long)dhtProby, (unsigned long)dhtBledy, (unsigned long)dhtZeraC, (unsigned long)dhtU2, (unsigned)dhtErr,
++    DLOGF(DC_SENSOR, DL_INFO, "DHT22 diagnostyka proby=%lu bledy_rh=%lu zera_temp=%lu u2=%lu ds_roznica=%.1f ds_odbiega=%lu kod=%u zew2_przyjete=%lu zew2_potwierdzone=%lu zew2_odrzucone=%lu zew2_ponowienia=%lu",
++          (unsigned long)dhtProby, (unsigned long)dhtBledy, (unsigned long)dhtZeraC, (unsigned long)dhtU2,
++          (double)((dsOk && ramkaOk) ? (dsTemp - dhtTempPomijana) : NAN), (unsigned long)dhtDsOdbiega, (unsigned)dhtErr,
+           (unsigned long)g_zew2Filtr.przyjete, (unsigned long)g_zew2Filtr.potwierdzone, (unsigned long)g_zew2Filtr.odrzucone,
+           (unsigned long)g_zew2Filtr.ponowienia);
+     // [v3.57.4] 0,0 % z DHT22 to odczyt smieciowy, nie pomiar - traktujemy go

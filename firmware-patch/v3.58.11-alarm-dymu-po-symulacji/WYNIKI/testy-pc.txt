@@ -1,0 +1,82 @@
+=== A. DYM-SYM: alarm POZAR z symulacji gasnie z koncem symulacji (wycinek z ../src/main_centrala.cpp) ===
+    wytnij_dym_sym.py: blok DYM-SYM 37 linii, fragment pozar() 45 linii -> /tmp/centrala_35811_test/dym_sym_wycinek.h
+      [1] symulacja 2202 ADC -> alarm z symulacji; 'Wylacz teraz' -> alarm gasnie w tym samym ticku
+        [ OK ] alarm aktywny, zrodlo = symulacja
+        [ OK ] log: aktywacja POZAR
+        [ OK ] symulacja trwa -> alarm trwa
+        [ OK ] koniec symulacji -> alarm skasowany bez czekania na swiezy odczyt
+        [ OK ] log: dezaktywacja ... powod=koniec_symulacji
+        [ OK ] buzzer wylaczony, faza dzwieku 0, wyciszenie skasowane
+        [ OK ] nadzor po skasowaniu wlaczony jak przy zwyklej dezaktywacji
+        [ OK ] pozniejszy prawdziwy odczyt 1 ADC: nic nowego (jedna dezaktywacja)
+      [2] prawdziwy dym 900 ADC -> alarm prawdziwy; symulacja wlaczona i wylaczona NIE kasuje alarmu
+        [ OK ] alarm aktywny, zrodlo = prawdziwy czujnik
+        [ OK ] po symulacji alarm nadal trwa (bez wpisu dezaktywacja)
+        [ OK ] 480 ADC (>= 470 = prog - histereza): alarm trwa
+        [ OK ] 469 ADC: zwykla dezaktywacja, dotychczasowa linia logu (bez powod=)
+      [3] alarm z symulacji; w chwili wylaczenia symulacji czujnik daje PRAWDZIWE 700 ADC
+        [ OK ] start: zrodlo = symulacja
+        [ OK ] alarm trwa, ale jest juz prawdziwy (zrodlo = czujnik)
+        [ OK ] log: dezaktywacja powod=koniec_symulacji, zaraz potem ponowna aktywacja z prawdziwego odczytu
+        [ OK ] kolejna symulacja i jej koniec nie kasuja prawdziwego alarmu
+        [ OK ] 100 ADC z czujnika: zwykla dezaktywacja
+      [4] symulacja PONIZEJ progu (100 ADC) i jej koniec -> nic sie nie dzieje
+        [ OK ] bez alarmu, bez wpisow w logu
+      [5] symulacja wygasa sama (symulacjaTrwa() -> false) -> to tez koniec symulacji
+        [ OK ] wygasniecie symulacji kasuje alarm z symulacji
+      [6] brak alarmu, symulacja wlaczona i wylaczona -> dymAlarmPoKoncuSymulacji() zwraca false
+        [ OK ] zwraca false, stan bez zmian
+        [ OK ] drugi tick bez symulacji: dalej false (koniec liczony raz)
+      RAZEM: 21 sprawdzen OK, 0 BLAD
+
+=== B. plik 3.58.11 = 3.58.10 + DYM-SYM ===
+[B1] znaczniki 3.58.11 w pliku, brak starych fragmentow
+    [OK] FIRMWARE_VERSION = "v3.58.11"                                                x1
+    [OK] // --- DYM-SYM-POCZATEK ---                                                  x1
+    [OK] // --- DYM-SYM-KONIEC ---                                                    x1
+    [OK] bool alarmDymuZSymulacji = false;                                            x1
+    [OK] extern bool alarmDymuZSymulacji;                                             x1
+    [OK] static void dymAlarmSkasuj(const char* powod)                                x1
+    [OK] static bool dymAlarmPoKoncuSymulacji(bool symDymTeraz)                       x1
+    [OK] dymAlarmPoKoncuSymulacji(symDymTeraz);                                       x1
+    [OK] alarmDymuZSymulacji = symDymTeraz;                                           x1
+    [OK] if (czyAlarmAktywny == 1 && !symDymTeraz) alarmDymuZSymulacji = false;       x1
+    [OK] dymAlarmSkasuj(nullptr);                                                     x1
+    [OK] dymAlarmSkasuj("koniec_symulacji");                                          x1
+    [OK] j += F("\"dym_alarm_sym\":");                                                x1
+    [OK] zapiszLogKrytyczny(F("tag=ALARM lvl=INFO zdarzenie=dezaktywacja typ=POZAR")) x1
+    [OK] zapiszLogKrytyczny(F("tag=ALARM lvl=CRIT zdarzenie=aktywacja typ=POZAR"));   x1
+    [OK] static const unsigned long ZEW2_PONOWIENIE_MS = 5000UL;                      x1
+    [OK] static const uint32_t TEMP_DIAG_WYGASZANIE_S = 255;                          x1
+    [OK] j += F("\"fw\":\""); j += FIRMWARE_VERSION; j += F("\",");                   x1
+    [OK] [v3.58.7 START-TG]                                                           x6
+    [OK] panelOtaKlejJson(                                                            x4
+    [OK] /api/history/panel                                                           x4
+    [OK] nie ma w kodzie: <<<<<<<                                                  x0
+    [OK] nie ma w kodzie: >>>>>>>                                                  x0
+    [OK] nie ma w kodzie: =======                                                  x0
+    [OK] nie ma w kodzie: FIRMWARE_VERSION = "v3.58.10"                            x0
+    [OK] nie ma w kodzie: FIRMWARE_VERSION = "v3.58.9"                             x0
+    [OK] w pozar() sprzatanie po alarmie nie jest zdublowane (x0, oczekiwane 0)
+[B2] patch 3.58.10 -> 3.58.11 na pliku 3.58.10 i skrypt zrob_35811.py daja ten sam plik
+    zrob_35811.py: OK, zapisano /tmp/centrala_35811_test/zrob.cpp
+    OK: 471b61b4dcb53624f24caf182b96b279faa4a3a62f681266c24b53e27acbe957
+    OK: suma zgodna z SHA256SUMS.txt
+
+=== C. pola /api/status a pola czytane przez panel LCD ===
+    centrala v3.58.11 (firmware-patch/v3.58.11-alarm-dymu-po-symulacji/src/main_centrala.cpp): /api/status = wifiZbudujJsonStatus + panelOtaKlejJson -> 82 pol
+    panel czyta 47 pol (POLA_STATUSU_CZYTANE + symulacja_*), wyjatki: symulator
+    zgodne: kazde pole czytane przez panel jest w /api/status centrali v3.58.11
+
+=== D. testy paczek 3.58.10 (Zew 2, wilgotnosc) i 3.58.7/3.58.6 na pliku 3.58.11 ===
+    zapisano /tmp/centrala_35811_test/zew2_filtr_wycinek.h (95 linii bloku ZEW2-FILTR)
+    [A 3.58.10] ZEW2-FILTR: 66 sprawdzen, 0 bledow
+    zapisano /tmp/centrala_35811_test/wilgotnosc_wycinek.h (267 linii: blok Zew 2 126, wilgotnosc() 135)
+    [B 3.58.10] WILGOTNOSC(): 47 sprawdzen, 0 bledow, 26 odczytow DHT, 6 linii logu
+        start_telegram: 40 sprawdzen OK, 0 nie przeszlo
+    WSZYSTKO OK: 166 sprawdzen, 0 bledow
+    WSZYSTKO OK: 2697 sprawdzen, 0 bledow
+        zgodne z ../../../LCD-Centrali/testy_host/wzorce_centrali (testy panelu uzywaja tych samych odpowiedzi)
+        zgodny: kod OTA panelu w 3.58.7 jest ten sam co w 3.58.6 (testy panelu LCD rozmawiaja z aktualnym kodem)
+
+WSZYSTKIE CZESCI ZAKONCZONE BEZ BLEDU

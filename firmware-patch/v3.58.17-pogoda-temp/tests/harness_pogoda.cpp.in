@@ -1,0 +1,93 @@
+
+#include <string>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
+struct String {
+  std::string v;
+  String(){} String(const char*c):v(c){} String(const std::string&x):v(x){}
+  int indexOf(const char*n,int from=0)const{ if(from<0||from>(int)v.size())return -1; size_t p=v.find(n,from); return p==std::string::npos?-1:(int)p;}
+  int indexOf(const String&n,int from=0)const{return indexOf(n.v.c_str(),from);}
+  int indexOf(char c,int from=0)const{ size_t p=v.find(c,from); return p==std::string::npos?-1:(int)p;}
+  String substring(int a,int b)const{ if(a<0)a=0; if(b>(int)v.size())b=v.size(); if(b<a)return String(""); return String(v.substr(a,b-a));}
+  unsigned length()const{return v.size();}
+  char operator[](int i)const{ return (i<0||i>=(int)v.size())?0:v[i]; }
+  float toFloat()const{return (float)atof(v.c_str());}
+  int toInt()const{return atoi(v.c_str());}
+  String& operator+=(const char*c){v+=c;return *this;} String& operator+=(const String&c){v+=c.v;return *this;} String& operator+=(char c){v+=c;return *this;}
+};
+static bool isDigit(char c){return c>='0'&&c<='9';}
+#define DLOG(a,b,c) do{}while(0)
+#define DLOGF(a,b,...) do{}while(0)
+#define F(x) x
+#define DC_WEATHER 0
+#define DL_ERR 0
+#define DL_DEBUG 0
+//@@POM@@
+static void parsuj(const String& body) {
+//@@CIALO@@
+}
+static int bledy=0;
+static void spr(bool ok,const char*co){ printf("    %s %s\n", ok?"[OK]":"BLAD:", co); if(!ok)bledy++; }
+// [3.58.17] temp: temperatura w bloku current (NAN = pole nieobecne); current_units ma "temperature_2m":"°C" jak prawdziwe API
+static std::string odp(const char*curTime,float curOpad,int kod,int dzien,float porywy,const char*opady,const char*kody,float temp=NAN){
+  char b[260]; char t[40]=""; if(!std::isnan(temp)) snprintf(t,sizeof t,",\"temperature_2m\":%.1f",temp);
+  snprintf(b,sizeof b,"\"current\":{\"time\":\"%s\",\"interval\":900,\"precipitation\":%.2f,\"weather_code\":%d,\"is_day\":%d,\"wind_gusts_10m\":%.1f%s}",curTime,curOpad,kod,dzien,porywy,t);
+  std::string s="{\"latitude\":51.06,\"longitude\":21.5,\"timezone\":\"Europe/Warsaw\",\"current_units\":{\"time\":\"iso8601\",\"precipitation\":\"mm\",\"weather_code\":\"wmo code\",\"is_day\":\"\",\"wind_gusts_10m\":\"km/h\",\"temperature_2m\":\"°C\"},";
+  s+=b; s+=",\"minutely_15_units\":{\"time\":\"iso8601\",\"precipitation\":\"mm\",\"weather_code\":\"wmo code\"},\"minutely_15\":{\"time\":[\"2026-11-23T00:00\",\"2026-11-23T00:15\"],\"precipitation\":[";
+  s+=opady; s+="],\"weather_code\":["; s+=kody; s+="]}}"; return s;
+}
+// 192 slotow: opady[] i kody[] budowane z funkcji
+static std::string tab(float(*f)(int),int n=192,bool calk=false){ std::string s; char b[32]; for(int i=0;i<n;i++){ if(i)s+=","; if(calk)snprintf(b,sizeof b,"%d",(int)f(i)); else snprintf(b,sizeof b,"%.2f",f(i)); s+=b;} return s; }
+int main(){
+  // 1. 13:45 (indeks 55), sucho teraz, kod 3 (pochmurno); opad 0.3 od slotu 55+8 (2 h), tam kod 71 (snieg)
+  { auto op=[](int i)->float{ return (i>=63&&i<70)?0.3f:0.0f; }; auto kd=[](int i)->float{ return (i>=63&&i<70)?71.0f:3.0f; };
+    parsuj(String(odp("2026-11-23T13:45",0.0f,3,1,25.2f,tab(op).c_str(),tab(kd,192,true).c_str(),-3.5f)));
+    spr(deszczStan==1 && deszczMinuty==120, "nadciaga za 120 min (jak dotad)");
+    spr(fabsf(pogodaTemp-(-3.5f))<0.01f, "[3.58.17] pogoda_temp=-3.5 (ujemna, z bloku current, nie current_units)");
+    spr(pogodaKod==3, "pogoda_kod=3 (teraz pochmurno)");
+    spr(pogodaKodOpad==71, "pogoda_kod_opad=71 (w slocie opadu snieg)");
+    spr(pogodaDzien==1 && fabsf(wiatrPorywy-25.2f)<0.01f, "dzien=1, porywy=25.2");
+  }
+  // 2. pada teraz (0.5 mm), kod 63, noc, porywy 61.7; koniec po 3 slotach
+  { auto op=[](int i)->float{ return (i>=0&&i<58)?0.5f:0.0f; }; auto kd=[](int i)->float{ return 63.0f; };
+    parsuj(String(odp("2026-11-23T13:45",0.5f,63,0,61.7f,tab(op).c_str(),tab(kd,192,true).c_str(),7.2f)));
+    spr(deszczStan==2 && deszczMinuty==45, "pada, koniec za 45 min (jak dotad)");
+    spr(fabsf(pogodaTemp-7.2f)<0.01f, "[3.58.17] pogoda_temp=7.2");
+    spr(pogodaKod==63 && pogodaKodOpad==63, "pada -> pogoda_kod_opad = kod biezacy 63");
+    spr(pogodaDzien==0 && fabsf(wiatrPorywy-61.7f)<0.01f, "noc, porywy 61.7");
+  }
+  // 3. bez opadu w oknie, kod 0 (bezchmurnie)
+  { auto op=[](int i)->float{ return 0.0f; }; auto kd=[](int i)->float{ return 0.0f; };
+    parsuj(String(odp("2026-11-23T06:00",0.0f,0,1,10.0f,tab(op).c_str(),tab(kd,192,true).c_str())));
+    spr(deszczStan==0 && deszczMinuty==-1, "brak opadu (jak dotad)");
+    spr(pogodaTemp<=POGODA_TEMP_BRAK, "[3.58.17] odpowiedz bez temperature_2m -> pogoda_temp = brak (-99), nie zostaje stara wartosc");
+    spr(pogodaKod==0 && pogodaKodOpad==-1, "pogoda_kod=0, pogoda_kod_opad=-1");
+  }
+  // 4. odpowiedz BEZ nowych pol (stara centrala / API bez weather_code) - deszcz dziala, nowe = -1
+  { std::string s="{\"current_units\":{\"time\":\"iso8601\",\"precipitation\":\"mm\"},\"current\":{\"time\":\"2026-11-23T13:45\",\"interval\":900,\"precipitation\":0.00},\"minutely_15_units\":{\"time\":\"iso8601\",\"precipitation\":\"mm\"},\"minutely_15\":{\"time\":[],\"precipitation\":[";
+    auto op=[](int i)->float{ return (i==57)?1.0f:0.0f; }; s+=tab(op); s+="]}}";
+    parsuj(String(s));
+    spr(deszczStan==1 && deszczMinuty==30, "bez weather_code: nadciaga za 30 min (jak dotad)");
+    spr(pogodaKod==-1 && pogodaKodOpad==-1 && pogodaDzien==-1 && wiatrPorywy<0, "bez nowych pol: wszystkie -1");
+    spr(pogodaTemp<=POGODA_TEMP_BRAK, "[3.58.17] bez nowych pol: pogoda_temp = brak");
+  }
+  // 5. null w weather_code (Open-Meteo zwraca null poza zasiegiem modelu)
+  { std::string s=odp("2026-11-23T13:45",0.0f,2,1,30.0f,tab([](int i)->float{return (i==60)?0.2f:0.0f;}).c_str(),"");
+    std::string kody; for(int i=0;i<192;i++){ if(i)kody+=","; kody+= (i==60)?"null":"2"; }
+    s=odp("2026-11-23T13:45",0.0f,2,1,30.0f,tab([](int i)->float{return (i==60)?0.2f:0.0f;}).c_str(),kody.c_str());
+    parsuj(String(s));
+    spr(deszczStan==1 && deszczMinuty==75 && pogodaKodOpad==-1 && pogodaKod==2, "null w slocie opadu -> pogoda_kod_opad=-1, reszta OK");
+  }
+  // 6. [3.58.17] temperatura 0.0 i "null" w current (poza zasiegiem) - 0.0 to prawidlowa wartosc, null = brak
+  { auto op=[](int i)->float{ return 0.0f; }; auto kd=[](int i)->float{ return 1.0f; };
+    parsuj(String(odp("2026-11-23T13:45",0.0f,1,1,12.0f,tab(op).c_str(),tab(kd,192,true).c_str(),0.0f)));
+    spr(fabsf(pogodaTemp)<0.01f, "[3.58.17] pogoda_temp=0.0 (zero to nie brak)");
+    std::string s=odp("2026-11-23T13:45",0.0f,1,1,12.0f,tab(op).c_str(),tab(kd,192,true).c_str());
+    size_t q=s.find("\"wind_gusts_10m\":12.0}"); s.insert(q+strlen("\"wind_gusts_10m\":12.0"),",\"temperature_2m\":null");
+    parsuj(String(s));
+    spr(pogodaTemp<=POGODA_TEMP_BRAK, "[3.58.17] \"temperature_2m\":null -> brak");
+  }
+  printf(bledy?"NIEZALICZONY: %d\n":"ZALICZONY: parsowanie Open-Meteo OK (%d bledow)\n",bledy); return bledy?1:0;
+}

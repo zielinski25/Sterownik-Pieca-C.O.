@@ -40,6 +40,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <climits>
 #include <cmath>
@@ -50,6 +51,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <new>
 #include <string>
 #include <thread>
@@ -59,6 +61,7 @@
 
 #include "Arduino.h"
 #include "WiFi.h"
+#include "ArduinoOTA.h"   // [v1.5.4] atrapa: ArduinoOTA.symulujWgranie() w scenariuszu ota_vscode
 #include "esp_core_dump.h"   // atrapa partycji zrzutu po awarii (scenariusz poprawki_v141)
 #include "atrapa_sha256.h"   // suma SHA-256 na koncu testowego "pliku firmware" (scenariusze ota_*)
 #include "secrets.h"         // SECRET_OTA_HASLO - to samo haslo, ktore dostaje firmware (atrapa hasel albo src/secrets.h)
@@ -74,6 +77,7 @@
 // --- z firmware'u (src/main.cpp) ---
 void setup();
 void loop();
+void testDzwiekuPrzycisk();   // [v1.5.20] main.cpp: przycisk "Test dźwięku" (scenariusz test_dzwieku wola go wprost, gdy ekran WYSWIETLACZ jest zamkniety)
 // v1.2.1: pamiec, ktora na plytce przetrwa ESP.restart() (RTC_NOINIT). Starsze
 // zrodla (porownanie przez SRC=...) nie maja ani naglowka, ani zmiennej.
 #if __has_include("diagnostyka_panelu.h")
@@ -158,9 +162,11 @@ int odmow = 0;                  // ile przydzialow dostalo odmowe
 // firmware'u (wFirmware > 0). Atrapy String to nie obejmuje (std::string).
 unsigned long long prosb = 0, prosbBajtow = 0, zwolnien = 0;
 thread_local int wFirmware = 0; // >0: wlasnie dziala kod firmware'u
-// Bufory punktow ekranu Wykresy: 8 x malloc(96 punktow x 24 B). Sledzone,
-// zeby scenariusz mogl sprawdzic, ze istnieja tylko przy otwartym ekranie.
-const size_t BUFOR_WYKRESU_B = 96 * 24;
+// Bufory punktow ekranu Wykresy: 8 x malloc(96 punktow x 4 B) (do v1.5.6:
+// x 24 B; v1.5.7 zostawila w punkcie sama wartosc, etykiety sa w jednej
+// wspolnej tablicy 96 x 12 B). Sledzone, zeby scenariusz mogl sprawdzic, ze
+// istnieja tylko przy otwartym ekranie.
+const size_t BUFOR_WYKRESU_B = 96 * 4;
 void* buforyWykresow[32];
 int zyweBuforyWykresow() {
   int n = 0;
@@ -232,6 +238,11 @@ void operator delete(void* p, size_t) noexcept { __real_free(p); }
 void operator delete[](void* p, size_t) noexcept { __real_free(p); }
 #endif
 
+// main.cpp, pamiec RTC (RTC_DATA_ATTR) - przetrwala gleboki sen; scenariusz
+// sen_po_wybudzeniu ustawia ja tak, jak zostawil ja panel przed snem.
+extern uint8_t rtcBssidCentrali[6];
+extern int32_t rtcKanalCentrali;
+extern bool    rtcBssidZnany;
 namespace {
 
 // Zakres, w ktorym dziala kod firmware'u (setup(), loop() i funkcje
@@ -293,6 +304,13 @@ struct Centrala {
   int dym = 120, klapa = 40, syberka = 60, godzina = 20, minuta = 5, dzien = 10, miesiac = 11, rok = 2026;
   bool pompa = false, dymWlaczony = true, rtcOk = true;
   bool alarmOgrzewanie = false, alarmPanel = false, dymAlarm = false;
+  int deszczStan = 0, deszczMinuty = -1;   // deszcz_stan / deszcz_min (0 = brak, 1 = nadciaga za N min, 2 = pada, koniec za N min / -1)
+  // [v1.5.14] pogoda_kod / pogoda_kod_opad / pogoda_dzien / wiatr_porywy (centrala 3.58.16; -1 = brak).
+  // pogodaPola=false: centrala do 3.58.15 - pol w JSON-ie w ogole nie ma.
+  bool pogodaPola = true;
+  int pogodaKod = -1, pogodaKodOpad = -1, pogodaDzien = -1;
+  double wiatrPorywy = -1.0;
+  double pogodaTemp = -99.0;   // [v1.5.17] pogoda_temp (centrala 3.58.17): <= -90 -> w JSON-ie null (brak)
   unsigned symulacja = 0;   // suma SYM_*: czujniki, ktore centrala podaje jako symulowane
   // liczniki zapytan, ktore do tej centrali dotarly
   int nStatus = 0, nUstawienia = 0, nPost = 0, nInne = 0;
@@ -353,6 +371,8 @@ struct Centrala {
   int nHistKrotka = 0, nHistDluga = 0;
   int nHistWyslanych = 0;            // odpowiedzi historii wyslane do konca
   int nHistPorzuconych = 0;          // polaczenia historii zamkniete przez PANEL, zanim centrala skonczyla
+  int histOdrzucRazy = 0;            // [v1.5.6] > 0: tyle kolejnych polaczen historii centrala zamyka bez bajtu odpowiedzi (czkawka AP)
+  int nHistOdrzuconych = 0;          // ile takich zamkniec bylo
   std::string ostatniaPanelHistSciezka;
 };
 
@@ -419,7 +439,14 @@ std::string jsonStatus(const Centrala& c, bool zNan) {
     j += std::string(",\"symulacja_") + NAZWY_SYM[i] + "\":" + tn(aktywna);
     j += std::string(",\"symulacja_") + NAZWY_SYM[i] + "_min\":" + (aktywna ? "60" : "0");
   }
-  j += ",\"serwo_override_min\":0,\"mieszadlo_override_min\":0,\"deszcz_stan\":0,\"deszcz_min\":-1";
+  j += ",\"serwo_override_min\":0,\"mieszadlo_override_min\":0,\"deszcz_stan\":" + std::to_string(c.deszczStan) + ",\"deszcz_min\":" + std::to_string(c.deszczMinuty);
+  if (c.pogodaPola) {   // [v1.5.14] jak centrala 3.58.16 (zaraz po deszcz_min)
+    char wp[16]; snprintf(wp, sizeof(wp), "%.1f", c.wiatrPorywy);
+    j += ",\"pogoda_kod\":" + std::to_string(c.pogodaKod) + ",\"pogoda_kod_opad\":" + std::to_string(c.pogodaKodOpad) + ",\"pogoda_dzien\":" + std::to_string(c.pogodaDzien) + ",\"wiatr_porywy\":" + wp;
+    // [v1.5.17] jak centrala 3.58.17: liczba z 1 miejscem albo null.
+    if (c.pogodaTemp > -90.0) { char pt[16]; snprintf(pt, sizeof(pt), "%.1f", c.pogodaTemp); j += std::string(",\"pogoda_temp\":") + pt; }
+    else j += ",\"pogoda_temp\":null";
+  }
   if (c.symulator) {
     j += ",\"symulator\":true,\"symulator_panel_fw\":\"?\",\"symulator_stacje\":1,";
     j += "\"symulator_heap\":200000,\"symulator_uptime_s\":1234";
@@ -827,6 +854,17 @@ void obsluzPolaczenie(int k, int idx) {
     return;
   }
   if (!post && sciezka.rfind("/api/history", 0) == 0) {
+    {
+      std::lock_guard<std::mutex> blokada(g_mutex);
+      Centrala& c = g_centrale[idx];
+      if (c.histOdrzucRazy > 0) {   // [v1.5.6] centrala "nie przyjela polaczenia"
+        c.histOdrzucRazy--;
+        c.nHistOdrzuconych++;
+        close(k);
+        g_wLocie--;
+        return;
+      }
+    }
     // Historia: odpowiedz bywa duza i idzie po kawalku - patrz Strumien.
     const int flagi = fcntl(k, F_GETFL, 0);
     fcntl(k, F_SETFL, flagi | O_NONBLOCK);
@@ -1042,7 +1080,7 @@ bool g_obserwacje = false;
 // Wersja, ktora firmware ma zglaszac (FIRMWARE_VERSION_PANEL w src/main.cpp).
 // Wpisana tu osobno celowo: zmiana wersji w firmware bez zmiany tutaj wywraca
 // cztery scenariusze - trudno zapomniec o podbiciu numeru po obu stronach.
-#define WERSJA_FW "v1.4.7"
+#define WERSJA_FW "v1.5.20"
 // Identyfikator programu, z ktorego "plytka" atrapy pracuje (mock/atrapa.cpp:
 // suma a1 a2 a3 ...). Firmware od v1.4.0 dokleja go do kazdego zapytania o status.
 #define OBRAZ_FW "a1a2a3a4a5a6a7a8"
@@ -1071,6 +1109,11 @@ void biegnij(unsigned long ms) {
       g_obrotowPetli++;
       if (millis() - przedObrotem > g_najdluzszyObrotMs) g_najdluzszyObrotMs = millis() - przedObrotem;
     } catch (const AtrapaRestart&) {
+      g_poRestarcie = true;
+    } catch (const AtrapaSen&) {
+      // [v1.5.0] esp_deep_sleep_start(): na plytce program konczy sie tutaj, a
+      // po wybudzeniu rusza od setup(). Dalej jak po restarcie: loop() nie jest
+      // wolane, zegar plynie.
       g_poRestarcie = true;
     }
   }
@@ -1116,6 +1159,42 @@ int ileNapisow(const std::string& tekst) {
   return n;
 }
 bool ekranMa(const std::string& tekst) { return ileNapisow(tekst) > 0; }
+
+// [v1.5.8] Podpisy osi czasu pod wykresem: widoczne etykiety, ktorych gorna
+// krawedz lezy w pasie pod wykresem (y >= 300 na ekranie 320px), od lewej
+// do prawej, jako "tekst@x" (x = srodek etykiety). Pusty wektor = brak osi
+// czasu (stary podpis "od - do" tez tu wpada - jest w tym samym pasie).
+static void zbierzPodpisyOsi(lv_obj_t* o, std::vector<std::pair<int, std::string>>& w) {
+  if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return;
+  if (lv_obj_check_type(o, &lv_label_class)) {
+    lv_obj_update_layout(o);
+    if (lv_obj_get_y(o) >= 300 && lv_obj_get_y(o) < 320) {
+      const char* t = lv_label_get_text(o);
+      if (t && t[0]) w.push_back({lv_obj_get_x(o) + lv_obj_get_width(o) / 2, t});
+    }
+  }
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) zbierzPodpisyOsi(lv_obj_get_child(o, (int32_t)i), w);
+}
+std::vector<std::string> podpisyOsiCzasu() {
+  std::vector<std::pair<int, std::string>> w;
+  zbierzPodpisyOsi(lv_scr_act(), w);
+  std::sort(w.begin(), w.end());
+  std::vector<std::string> wynik;
+  for (auto& p : w) wynik.push_back(p.second + "@" + std::to_string(p.first));
+  return wynik;
+}
+std::string podpisyOsiTekst() {
+  std::string s;
+  for (const std::string& p : podpisyOsiCzasu()) s += (s.empty() ? "" : " | ") + p;
+  return s;
+}
+// Czy podpisy osi czasu (bez pozycji) sa dokladnie takie, jak oczekiwane.
+bool osCzasuTo(const std::vector<std::string>& oczekiwane) {
+  std::vector<std::string> sa;
+  for (const std::string& p : podpisyOsiCzasu()) sa.push_back(p.substr(0, p.rfind('@')));
+  return sa == oczekiwane;
+}
 
 // Liczba linii logu Seriala zawierajacych wszystkie podane fragmenty,
 // liczona od pozycji `od` (w znakach) do konca.
@@ -1389,6 +1468,226 @@ void scenariuszZlaOdpowiedz() {
   zrzutEkranu("2_po_powrocie");
 }
 
+// --- [v1.5.6] ikona WiFi przy ciszy centrali ------------------------------
+// Zgloszenie z 24.11 (plytka na v1.5.5): "szukanie wifi mruga". W logu WiFi
+// jest polaczone przez caly czas (wifi=1, rssi -68..-81), ale /api/status co
+// jakis czas nie odpowiada w limicie - po 10 s dane_nieaktualne, po chwili
+// dane_wrocily, i tak w kolko. Kazde dane_nieaktualne zamienialo ikone WiFi
+// w naglowku na X ("brak WiFi"), a dane_wrocily z powrotem na kreski.
+// Teraz: X tylko gdy radio naprawde nie jest polaczone; przy ciszy centrali
+// kreski zostaja (pomaranczowe, wg RSSI panelu).
+static std::string opisIkonyWifi() {
+  bool ostrz = false;
+  const int st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  if (st < 0) return "X (brak WiFi)";
+  return std::to_string(st) + " kresek " + (ostrz ? "pomaranczowych (centrala milczy)" : "bialych");
+}
+void scenariuszIkonaWifiPrzyCiszy() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -60, 0));
+  setup();
+  biegnij(6000);
+  sprawdz(ekranMa("55°C"), "na starcie kafelki pokazuja dane");
+  bool ostrz = true;
+  int st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  info("ikona WiFi: %s", opisIkonyWifi().c_str());
+  sprawdz(st >= 4 && !ostrz, "ikona WiFi: biale kreski wg RSSI -60, bez X");
+  const int kresekNormalnie = st;
+
+  printf("  centrala przestaje odpowiadac (WiFi dalej polaczone):\n");
+  size_t od = g_atrapa.serial.size();
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+  // do wpisu dane_nieaktualne (10 s bez danych), ale przed wymuszonym
+  // polaczeniem (12 s) - wtedy WiFi jest wciaz polaczone i ikona ma to pokazac
+  int czekalMs = 0;
+  while (!logMa("zdarzenie=dane_nieaktualne", "", "", od) && czekalMs < 14000) { biegnij(250); czekalMs += 250; }
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=dane_nieaktualne", "wifi=1", od), "log: dane_nieaktualne z wifi=1");
+  sprawdz(ileNapisow("--") >= 8, "ekran: kafelki pokazuja \"--\" (to sie nie zmienia)");
+  st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  info("ikona WiFi po %d ms ciszy: %s", czekalMs, opisIkonyWifi().c_str());
+  sprawdz(st >= 1 && ostrz, "ikona WiFi: NIE ma X - kreski pomaranczowe (WiFi jest, centrala milczy)");
+  sprawdz(WiFi.status() == WL_CONNECTED, "radio jest w tym momencie polaczone");
+  zrzutEkranu("1_cisza_centrali_kreski_pomaranczowe");
+
+  printf("  centrala znow odpowiada:\n");
+  od = g_atrapa.serial.size();
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_OK; });
+  biegnij(12000);   // z zapasem na wymuszone polaczenie (12 s ciszy), gdyby wypadlo w miedzyczasie
+  sprawdz(logMa("tag=PANEL", "zdarzenie=dane_wrocily", "", od), "log: dane_wrocily");
+  st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  info("ikona WiFi: %s", opisIkonyWifi().c_str());
+  sprawdz(st == kresekNormalnie && !ostrz, "ikona WiFi: znow biale kreski, tyle co na starcie");
+
+  printf("  kilka krotkich przerw z rzedu (jak w logu z 24.11):\n");
+  // Cisza 11 s -> dane_nieaktualne -> powrot na 6 s -> znow cisza. Ikona przez
+  // caly czas bez X: to wlasnie bylo "mruganie".
+  od = g_atrapa.serial.size();
+  int razyX = 0, razyPomar = 0, probek = 0;
+  for (int cykl = 0; cykl < 2; cykl++) {
+    ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+    for (int i = 0; i < 44; i++) {   // 11 s po 250 ms
+      biegnij(250);
+      st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+      probek++;
+      if (st < 0) razyX++;
+      if (ostrz) razyPomar++;
+    }
+    ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_OK; });
+    for (int i = 0; i < 24; i++) {   // 6 s
+      biegnij(250);
+      st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+      probek++;
+      if (st < 0) razyX++;
+    }
+  }
+  info("probek %d, z X: %d, pomaranczowych: %d; dane_nieaktualne x%d, dane_wrocily x%d", probek, razyX, razyPomar,
+       ileLinii("zdarzenie=dane_nieaktualne", "", "", od), ileLinii("zdarzenie=dane_wrocily", "", "", od));
+  sprawdz(ileLinii("zdarzenie=dane_nieaktualne", "", "", od) == 2, "dwa razy dane_nieaktualne (kazda przerwa przekroczyla 10 s)");
+  sprawdz(razyX == 0, "ikona WiFi ANI RAZU nie pokazala X - WiFi bylo caly czas");
+  sprawdz(razyPomar > 0, "w trakcie przerw kreski byly pomaranczowe");
+  st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  sprawdz(st == kresekNormalnie && !ostrz, "po ostatnim powrocie: biale kreski");
+
+  printf("  centrala znika naprawde (AP gasnie):\n");
+  od = g_atrapa.serial.size();
+  g_atrapa.eter.clear();
+  biegnij(14000);
+  sprawdz(logMa("tag=WIFI lvl=WARN", "zdarzenie=utrata_polaczenia", "", od), "log: utrata_polaczenia");
+  st = lvgl_dashboard_poc_wifi_ikona_stan(&ostrz);
+  info("ikona WiFi: %s", opisIkonyWifi().c_str());
+  sprawdz(st < 0, "ikona WiFi: X - teraz naprawde nie ma WiFi");
+  zrzutEkranu("2_brak_wifi_x");
+}
+
+// --- [v1.5.6] serwa: stopnie z centrali, procenty na ekranie ----------------
+// Zdjecie z 24.11: ekran SERWA "KLAPA 113%", w logu klapa=113 syberka=86.
+// /api/status centrali podaje pozycje w STOPNIACH (klapa 0..180, syberek
+// 0..90), a panel pokazywal je jako procenty. 113 stopni klapy = 63 %,
+// 86 stopni syberka = 96 %.
+bool kliknij(const char* napis);   // definicja nizej
+
+// [v1.5.9] Pierwszy potomek (w glab) danej klasy LVGL - do sprawdzania
+// geometrii suwakow/lukow na ekranach SERWA i WYSWIETLACZ.
+static lv_obj_t* potomekKlasy(lv_obj_t* obj, const lv_obj_class_t* klasa) {
+  if (obj == nullptr) return nullptr;
+  if (lv_obj_get_class(obj) == klasa) return obj;
+  for (uint32_t i = 0; i < lv_obj_get_child_cnt(obj); ++i) {
+    lv_obj_t* z = potomekKlasy(lv_obj_get_child(obj, i), klasa);
+    if (z != nullptr) return z;
+  }
+  return nullptr;
+}
+// Wiersz (rodzic etykiety) o podanym tekscie: czy suwak w nim nie wystaje
+// poza wiersz (prawa krawedz galki przy 100 % = prawa krawedz paska), a luk
+// (jesli jest) miesci sie w pionie. Zwraca true, gdy wszystko w granicach.
+static bool wierszSuwakaWGranicach(const char* etykieta, bool zLukiem) {
+  lv_obj_t* l = znajdzEtykiete(lv_scr_act(), etykieta);
+  if (l == nullptr) { info("brak etykiety \"%s\"", etykieta); return false; }
+  lv_obj_t* wiersz = lv_obj_get_parent(l);
+  lv_obj_update_layout(wiersz);
+  lv_area_t w; lv_obj_get_coords(wiersz, &w);
+  lv_obj_t* slider = potomekKlasy(wiersz, &lv_slider_class);
+  if (slider == nullptr) { info("brak suwaka w wierszu \"%s\"", etykieta); return false; }
+  lv_area_t sa; lv_obj_get_coords(slider, &sa);
+  lv_area_t ind; lv_obj_get_coords(slider, &ind);
+  // Galka: srodek na koncu wskaznika, promien = polowa wysokosci paska + pad 4.
+  const int padP = lv_obj_get_style_pad_right(slider, LV_PART_MAIN);
+  const int galkaPromien = (sa.y2 - sa.y1 + 1) / 2 + 4;
+  const int torX2 = sa.x2 - padP;
+  const int galkaX2 = torX2 + galkaPromien;
+  info("wiersz \"%s\": x=%d..%d, pasek x=%d..%d, galka przy 100%% do x=%d", etykieta, (int)w.x1, (int)w.x2, (int)sa.x1, (int)sa.x2, galkaX2);
+  bool ok = galkaX2 <= w.x2 + 1 && sa.x1 >= w.x1;
+  // [v1.5.10] galka wystaje 4 px nad i pod pasek - tez musi zmiescic sie w wierszu (zdjecie: plaski spod kolka)
+  info("galka pionowo y=%d..%d (wiersz y=%d..%d)", (int)sa.y1 - 4, (int)sa.y2 + 4, (int)w.y1, (int)w.y2);
+  ok = ok && sa.y1 - 4 >= w.y1 && sa.y2 + 4 <= w.y2;
+  if (zLukiem) {
+    lv_obj_t* arc = potomekKlasy(wiersz, &lv_arc_class);
+    if (arc == nullptr) { info("brak luku w wierszu \"%s\"", etykieta); return false; }
+    lv_area_t aa; lv_obj_get_coords(arc, &aa);
+    info("luk: x=%d..%d y=%d..%d (wiersz y=%d..%d)", (int)aa.x1, (int)aa.x2, (int)aa.y1, (int)aa.y2, (int)w.y1, (int)w.y2);
+    ok = ok && aa.y1 >= w.y1 && aa.y2 <= w.y2 && aa.x2 <= w.x2 && aa.x2 <= 479 - 4;
+  }
+  (void)ind;
+  return ok;
+}
+
+// [v1.5.11] Ikony BOJLER i PANEL jak w aplikacji: poziom i kolor wody w
+// bojlerze wg temperatury (Ilu.kt: pct=(t-15)/55 obciete do 5..95 %, kolory
+// <=35 niebieski / <=55 bursztyn / >55 pomarancz), ikona PANEL z czterech
+// warstw, alarm przegrzania barwi rury i zbiornik na czerwono.
+void scenariuszBojlerPoziomIkony() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -60, 0));
+  ustaw(0, [](Centrala& c) { c.tBojler = 20.0; });
+  setup();
+  biegnij(6000);
+  uint16_t kolor = 0; int px = lvgl_dashboard_poc_bojler_woda(&kolor);
+  info("20 C: woda %d px, kolor 0x%04X", px, kolor);
+  sprawdz(px >= 1 && px <= 4 && kolor == 0x0438, "20 C: niski poziom (<=4 px z 26), woda niebieska");
+  zrzutEkranu("1_bojler_20C");
+
+  ustaw(0, [](Centrala& c) { c.tBojler = 45.0; });
+  biegnij(4500);
+  const int px45 = lvgl_dashboard_poc_bojler_woda(&kolor);
+  info("45 C: woda %d px, kolor 0x%04X", px45, kolor);
+  sprawdz(px45 >= 13 && px45 <= 15 && kolor == 0xF4E1, "45 C: okolo polowy (13-15 px), woda bursztynowa");
+  sprawdz(px45 > px, "45 C: wiecej wody niz przy 20 C");
+  zrzutEkranu("2_bojler_45C");
+
+  ustaw(0, [](Centrala& c) { c.tBojler = 70.0; c.alarmPanel = true; });
+  biegnij(4500);
+  const int px70 = lvgl_dashboard_poc_bojler_woda(&kolor);
+  info("70 C: woda %d px, kolor 0x%04X", px70, kolor);
+  sprawdz(px70 == 25 && kolor == 0xEAC1, "70 C: pelny (25 px = 95 % z 26), woda pomaranczowa");
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  zrzutEkranu("3_bojler_70C_alarm_panel");
+
+  ustaw(0, [](Centrala& c) { c.tBojler = 200.0; c.alarmPanel = false; });
+  biegnij(4500);
+  sprawdz(lvgl_dashboard_poc_bojler_woda(nullptr) == 25, "200 C: poziom obciety do 95 % (25 px)");
+  ustaw(0, [](Centrala& c) { c.tBojler = -1.0; });
+  biegnij(4500);
+  sprawdz(lvgl_dashboard_poc_bojler_woda(&kolor) == 1 && kolor == 0x0438, "-1 C (brak czujnika): minimum 5 % (1 px), niebieska");
+
+  // Centrala milczy: po 10 s kafelki pokazuja "--", woda znika razem z wartoscia.
+  ustaw(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+  int czekalMs = 0;
+  while (lvgl_dashboard_poc_bojler_woda(nullptr) != -1 && czekalMs < 20000) { biegnij(250); czekalMs += 250; }
+  sprawdz(lvgl_dashboard_poc_bojler_woda(nullptr) == -1 && ileNapisow("--") >= 8, "centrala milczy: kafelki \"--\", woda w ikonie ukryta");
+  zrzutEkranu("4_bojler_bez_danych");
+}
+
+void scenariuszSerwoStopnie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -60, 0));
+  ustaw(0, [](Centrala& c) { c.klapa = 113; c.syberka = 86; });
+  setup();
+  biegnij(6000);
+  sprawdz(ekranMa("55°C"), "na starcie kafelki pokazuja dane");
+  sprawdz(ekranMa("Klapa 63%\nSyberka 96%"), "kafelek SERWO: Klapa 63% / Syberka 96% (113 i 86 stopni)");
+  sprawdz(!ekranMa("Klapa 113%\nSyberka 86%") && ileNapisow("113%") == 0, "nigdzie nie ma 113%");
+  sprawdz(logMa("tag=PANEL fw=", "klapa=113", "syberka=86"), "log tag=PANEL pokazuje surowe stopnie z centrali (bez zmian)");
+
+  ustaw(0, [](Centrala& c) { c.klapa = 180; c.syberka = 90; });
+  biegnij(4500);
+  sprawdz(ekranMa("Klapa 100%\nSyberka 100%"), "skrajne 180 i 90 stopni = 100% / 100%");
+  ustaw(0, [](Centrala& c) { c.klapa = 255; c.syberka = 200; });   // smieci (NVS centrali: 255 = brak zapisu)
+  biegnij(4500);
+  sprawdz(ekranMa("Klapa 100%\nSyberka 100%"), "wartosci poza zakresem: najwyzej 100%");
+  ustaw(0, [](Centrala& c) { c.klapa = 0; c.syberka = 45; });
+  biegnij(4500);
+  sprawdz(ekranMa("Klapa 0%\nSyberka 50%"), "0 i 45 stopni = 0% / 50%");
+  zrzutEkranu("1_serwo_procenty");
+
+  printf("  ekran SERWA przy 100%% / 100%% (suwaki na prawym koncu):\n");
+  ustaw(0, [](Centrala& c) { c.klapa = 180; c.syberka = 90; });
+  biegnij(4500);
+  sprawdz(kliknij("SERWO"), "dotkniecie kafelka SERWO");
+  biegnij(500);
+  if (kliknij("RĘCZNY")) biegnij(500);
+  sprawdz(ekranMa("STEROWANIE SERWAMI") && ileNapisow("100%") == 2, "ekran SERWA: oba suwaki 100%");
+  sprawdz(wierszSuwakaWGranicach("KLAPA", true) && wierszSuwakaWGranicach("SYBERKA", true),
+          "galka przy 100% nie wystaje za pasek, luki (kolka) w calosci w wierszu - nie przyciete (v1.5.9)");
+  zrzutEkranu("2_serwa_100_procent");
+}
+
 // --- 3 ---------------------------------------------------------------------
 // Panel wlaczony, gdy centrali nie ma (wylaczona / poza zasiegiem).
 void scenariuszBrakCentraliNaStarcie() {
@@ -1475,12 +1774,35 @@ void scenariuszNieudanyPost() {
   ustaw(0, [](Centrala& c) { c.trybPost = TRYB_MILCZY; });
   const size_t od = g_atrapa.serial.size();
   pompaManualWyslij("wl");
-  biegnij(4000);
+  biegnij(10000);
   const int linii = ileLinii("[KOMENDA] POST nieudany", "", "", od);
-  info("linii \"[KOMENDA] POST nieudany\" w ciagu 4 s po jednym nieudanym POST: %d", linii);
-  sprawdz(kopia(0).nPost == 1, "centrala dostala dokladnie jedno polecenie");
-  sprawdz(linii == 1, "jeden nieudany POST = jedna linia w logu");
+  info("linii \"[KOMENDA] POST nieudany\" w ciagu 10 s po jednym dotknieciu przy milczacej centrali: %d; POST-ow: %d", linii, kopia(0).nPost);
+  // [v1.5.5] Bez odpowiedzi centrali polecenie idzie 3 razy (2 s + 0,7 s odstepu
+  // kazda proba), dopiero potem porazka - do v1.5.4 jedna proba i koniec.
+  sprawdz(kopia(0).nPost == 3, "centrala dostala polecenie 3 razy (3 proby)");
+  sprawdz(linii == 3, "kazda nieudana proba = jedna linia w logu (bez powtorzen w petli)");
+  sprawdz(logMa("tag=KOMENDA zdarzenie=ponowienie pole=stan", "proba=2/3", "powod=timeout calkowity", od) &&
+          logMa("tag=KOMENDA zdarzenie=ponowienie pole=stan", "proba=3/3", "", od) &&
+          ileLinii("zdarzenie=ponowienie", "", "", od) == 2,
+          "log: ponowienie proba=2/3 i 3/3 powod=timeout calkowity");
+  sprawdz(logMa("zdarzenie=polecenie_nieudane pole=stan", "powod=brak_odpowiedzi prob=3", "", od) && ileLinii("zdarzenie=polecenie_nieudane", "", "", od) == 1,
+          "log: jedna linia polecenie_nieudane prob=3 (po ostatniej probie)");
   sprawdz(ekranMa("55°C"), "odczyt statusu dziala dalej");
+
+  // [v1.5.5] Czkawka: pierwsza proba pada, druga przechodzi - uzytkownik nic
+  // nie widzi poza chwila zwloki, centrala ma polecenie, pasek bledu sie nie pokazuje.
+  biegnij(4000);
+  const size_t od2 = g_atrapa.serial.size();
+  const int postowPrzed = kopia(0).nPost;
+  pompaManualWyslij("wyl");
+  biegnij(2200);   // pierwsza proba (2 s) juz padla, druga jeszcze nie poszla (odstep 0,7 s)
+  ustaw(0, [](Centrala& c) { c.trybPost = TRYB_OK; });
+  biegnij(3000);
+  info("po czkawce: POST-ow %d, pasek bledu: \"%s\"", kopia(0).nPost - postowPrzed, lvgl_dashboard_poc_blad_polecenia_tekst());
+  sprawdz(kopia(0).nPost - postowPrzed == 2 && kopia(0).posty.back() == "stan=wyl", "czkawka: druga proba doszla z ta sama trescia (stan=wyl)");
+  sprawdz(logMa("zdarzenie=ponowienie pole=stan", "proba=2/3", "", od2) && !logMa("zdarzenie=polecenie_nieudane", "", "", od2) &&
+          std::string(lvgl_dashboard_poc_blad_polecenia_tekst()).empty(),
+          "czkawka: jedno ponowienie, bez polecenie_nieudane i bez paska bledu");
 }
 
 // --- 6 ---------------------------------------------------------------------
@@ -1702,7 +2024,8 @@ void scenariuszGolaPlytka() {
   biegnij(3000);
   sprawdz(!ekranMa("SYMULACJA: zewn, pokoj") && znajdzEtykiete(lv_scr_act(), "SYMULACJA") == nullptr, "znacznik znika z naglowka");
   sprawdz(logMa("tag=PANEL", "zdarzenie=symulacja_centrali", "czujniki=brak", od), "log: symulacja_centrali czujniki=brak");
-  sprawdz(ileNapisow("-1.0°C") == 2, "ZEWN i POKOJ wracaja do -1.0 (brak czujnika)");
+  // [v1.5.14/17] ZEWN bez czujnika i bez pogoda_temp (atrapa: null) pokazuje "--", POKOJ nadal -1.0.
+  sprawdz(ileNapisow("-1.0°C") == 1 && ileNapisow("--") >= 1, "POKOJ wraca do -1.0, ZEWN do \"--\" (brak czujnika, pogoda_temp null)");
 
   // Najdluzszy mozliwy znacznik musi zmiescic sie miedzy wskaznikiem baterii
   // (konczy sie ok. x=75) a ikonami po prawej (zaczynaja sie ok. x=400).
@@ -2148,13 +2471,16 @@ void scenariuszPoleceniaNieGina() {
   ustaw(0, [](Centrala& c) { c.postBlad.clear(); c.trybPost = TRYB_MILCZY; });
   { LiczFirmware licz; lv_event_send(plusOff, LV_EVENT_CLICKED, nullptr); }
   biegnij(3000);
+  sprawdz(std::string(lvgl_dashboard_poc_blad_polecenia_tekst()).empty() && logMa("zdarzenie=ponowienie", "pole=czasOff", "", od),
+          "[v1.5.5] po 3 s jeszcze bez paska - polecenie jest ponawiane");
+  biegnij(4600);   // 3 proby po 2 s + 2 odstepy 0,7 s = 7,4 s (ekran ustawien sam zamyka sie po 13,5 s bez dotyku - nie przeciagac)
   info("pasek bledu: \"%s\"", lvgl_dashboard_poc_blad_polecenia_tekst());
   sprawdz(std::string(lvgl_dashboard_poc_blad_polecenia_tekst()) == "POLECENIE NIE DOSZŁO DO CENTRALI", "ekran: pasek \"POLECENIE NIE DOSZLO DO CENTRALI\"");
-  sprawdz(logMa("zdarzenie=polecenie_nieudane", "pole=czasOff", "powod=brak_odpowiedzi", od) && ileLinii("[KOMENDA] POST nieudany", "", "", od) == 1,
-          "log: polecenie_nieudane powod=brak_odpowiedzi (jedna linia)");
+  sprawdz(logMa("zdarzenie=polecenie_nieudane", "pole=czasOff", "powod=brak_odpowiedzi prob=3", od) && ileLinii("[KOMENDA] POST nieudany", "", "", od) == 3,
+          "log: polecenie_nieudane powod=brak_odpowiedzi prob=3 (trzy linie POST nieudany)");
   zrzutEkranu("1_pasek_bledu");
   ustaw(0, [](Centrala& c) { c.trybPost = TRYB_OK; });
-  biegnij(4000);
+  biegnij(1000);
   { LiczFirmware licz; lv_scr_load(pulpit); }
   biegnij(3000);
   sprawdz(ekranMa("55°C"), "pulpit dziala dalej");
@@ -2340,6 +2666,7 @@ void scenariuszZlaOdpowiedzDlugo() {
 
 // Czy brzeczyk gra wzorzec alarmu: w ciagu 1,2 s czestotliwosc zmienia sie
 // i w kazdej chwili jest niezerowa (alarm przegrzania: 1200/1600 Hz bez przerw).
+// [v1.5.20] Brzeczyk na plytce jest pasywny (BRZECZYK_AKTYWNY 0) - wzorce bez zmian.
 bool brzeczykGraPrzegrzanie() {
   const int przed = g_atrapa.zmianTonu;
   bool caly_czas = true;
@@ -2625,7 +2952,7 @@ void scenariuszBrakPamieciLvgl() {
 }
 
 // --- 25 --------------------------------------------------------------------
-// Bufory punktow ekranu Wykresy (18,4 kB) istnieja tylko wtedy, gdy ten ekran
+// Bufory punktow ekranu Wykresy (do v1.5.6: 18,4 kB; od v1.5.7: 4,2 kB) istnieja tylko wtedy, gdy ten ekran
 // jest otwarty - niezaleznie od tego, jak zostal zamkniety.
 void scenariuszWykresyPamiec() {
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -33, 0));
@@ -2713,7 +3040,11 @@ bool dotknijWykresu() {
   lv_obj_t* tytul = znajdzEtykiete(lv_scr_act(), "[");
   if (tytul == nullptr || znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") != nullptr) return false;
   LiczFirmware licz;
-  lv_event_send(lv_obj_get_parent(tytul), LV_EVENT_PRESSED, nullptr);
+  // [v1.5.15] "[Dzienny]" jest w kontenerze legendy - tlo podstrony Wykres to pierwszy przodek na caly ekran.
+  lv_obj_t* tlo = lv_obj_get_parent(tytul);
+  while (tlo != nullptr && lv_obj_get_width(tlo) < 480) tlo = lv_obj_get_parent(tlo);
+  if (tlo == nullptr) return false;
+  lv_event_send(tlo, LV_EVENT_PRESSED, nullptr);
   return true;
 }
 
@@ -2889,8 +3220,14 @@ void scenariuszWykresyCentralaLiczy() {
   sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "ZEWN: wszystkie 96 punktow takie, jak policzyla centrala (od -4,9 do 9,3)");
   sprawdz(tesamePunkty(punktyWykresu(1), zWzorca(dzien, 4), "BOJLER"), "BOJLER: wszystkie 96 punktow (45,0)");
   sprawdz(ilePunktow(punktyWykresu(2)) == 0 && ilePunktow(punktyWykresu(7)) == 0, "pozostale serie puste");
-  sprawdz(ekranMa("12.11 13:01  -  13.11 13:00"), "podpis pod wykresem: \"12.11 13:01  -  13.11 13:00\" (zakres podany przez centrale, z data)");
-  sprawdz(ekranMa("[Dzienny] ZEWN + BOJLER"), "tytul: \"[Dzienny] ZEWN + BOJLER\"");
+  // [v1.5.8] Zamiast jednego podpisu "12.11 13:01 - 13.11 13:00" na srodku:
+  // kreska siatki co 4 h w ROWNYCH godzinach, kazda podpisana; o polnocy
+  // data zamiast "00:00", pierwszy podpis z data.
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"12.11 16:00", "20:00", "13.11", "04:00", "08:00", "12:00"}),
+          "os czasu: 6 podpisow co 4 h pod kreskami siatki: 12.11 16:00, 20:00, 13.11, 04:00, 08:00, 12:00");
+  sprawdz(!ekranMa("12.11 13:01  -  13.11 13:00"), "dawnego podpisu \"od - do\" na srodku juz nie ma");
+  sprawdz(ekranMa("[Dzienny]") && ekranMa("ZEWN") && ekranMa("BOJLER") && !ekranMa("[Dzienny] ZEWN"), "legenda: \"[Dzienny]\" + ZEWN, BOJLER (v1.5.15: bez osobnego tytulu)");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440", "ucietych_linii=0", "", od),
           "log: zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96 przerw=0 wierszy_centrali=1440 ... ucietych_linii=0");
   info("%s", liniaLogu("tag=WYKRESY zdarzenie=pobrano", od).c_str());
@@ -2900,13 +3237,16 @@ void scenariuszWykresyCentralaLiczy() {
   zrzutEkranu("dzien");
 
   printf("  powrot do wyboru i zakres GODZINNY:\n");
-  sprawdz(dotknijWykresu() && ekranMa("POKAŻ WYKRES"), "dotkniecie wykresu wraca do wyboru serii");
+  sprawdz(dotknijWykresu() && znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") != nullptr, "dotkniecie wykresu wraca do wyboru serii");
   od = pokazWykres("GODZINNY", 1000);
   c = stanC(0);
   sprawdz(c.nPanelHist == 2 && c.ostatniaPanelHistSciezka == "/api/history/panel?tryb=godz&pkt=96", "zapytanie: /api/history/panel?tryb=godz&pkt=96");
   sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(godz, 1), "ZEWN") && tesamePunkty(punktyWykresu(1), zWzorca(godz, 4), "BOJLER"),
           "ZEWN i BOJLER: 96 punktow z ostatniej godziny (stary sposob dawal 60 punktow na 62% szerokosci)");
-  sprawdz(ekranMa("12:00  -  13:00") && ekranMa("[Godzinny] ZEWN + BOJLER"), "podpis \"12:00  -  13:00\", tytul \"[Godzinny] ZEWN + BOJLER\"");
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"12:15", "12:30", "12:45", "13:00"}) && ekranMa("[Godzinny]") && ekranMa("ZEWN") && ekranMa("BOJLER"),
+          "os czasu co 15 min: 12:15, 12:30, 12:45, 13:00; legenda \"[Godzinny]\" ZEWN BOJLER");
+  zrzutEkranu("godzina");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=godz sposob=centrala punktow=96", "", "", od), "log: zdarzenie=pobrano tryb=godz sposob=centrala punktow=96");
 
   printf("  zakres TYGODNIOWY, pelne bufory centrali, najdluzsze liczby; do tego CISNIENIE na prawej osi:\n");
@@ -2925,9 +3265,9 @@ void scenariuszWykresyCentralaLiczy() {
   printf("  ostatnia kolumna wiersza (Syberek) - czy dlugie linie dochodza cale:\n");
   dotknijWykresu();
   kliknij("CIŚNIENIE");   // odznacz
-  sprawdz(kliknij("Syberek"), "CISNIENIE odznaczone, wybrany Syberek");
+  sprawdz(kliknij("SYBERKA"), "CISNIENIE odznaczone, wybrana SYBERKA");
   od = pokazWykres(nullptr, 1000);
-  sprawdz(tesamePunkty(punktyWykresu(7), zWzorca(tydz, 31), "Syberek"), "Syberek: 96 punktow (60,0, na koncu 100,0)");
+  sprawdz(tesamePunkty(punktyWykresu(7), zWzorca(tydz, 31), "SYBERKA"), "Syberek: 96 punktow (60,0, na koncu 100,0)");
 
   c = stanC(0);
   sprawdz(c.nPanelHist == 4 && c.nHistKrotka == 0 && c.nHistDluga == 0 && c.nHistWyslanych == 4 && c.nHistPorzuconych == 0,
@@ -2941,6 +3281,169 @@ void scenariuszWykresyCentralaLiczy() {
 // Panel 1.3.0 ze STARSZA centrala (<= 3.58.3), ktora nie zna
 // /api/history/panel: panel ma to rozpoznac i narysowac wykres po staremu -
 // dokladnie taki, jaki z tego samego CSV rysowal v1.2.2 (wzorce_v122/).
+// [v1.5.12] Wszystkie lv_chart na ekranie w kolejnosci drzewa: [0] = glowny
+// wykres, [1] = pas pracy pompy (osobny, 12-pikselowy lv_chart pod liniami).
+void znajdzWykresy(lv_obj_t* o, std::vector<lv_obj_t*>& w) {
+  if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return;
+  if (lv_obj_check_type(o, &lv_chart_class)) { w.push_back(o); return; }
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) znajdzWykresy(lv_obj_get_child(o, (int32_t)i), w);
+}
+std::vector<int> punktyPasaPompy() {
+  std::vector<int> wynik;
+  std::vector<lv_obj_t*> w;
+  znajdzWykresy(lv_scr_act(), w);
+  if (w.size() < 2) return wynik;
+  lv_chart_series_t* s = lv_chart_get_series_next(w[1], nullptr);
+  if (s == nullptr) return wynik;
+  const lv_coord_t* tab = lv_chart_get_y_array(w[1], s);
+  const uint16_t n = lv_chart_get_point_count(w[1]);
+  for (uint16_t i = 0; i < n; i++) wynik.push_back(tab[i] == LV_CHART_POINT_NONE ? BRAK : (int)tab[i]);
+  return wynik;
+}
+// Etykiety liczbowe osi Y (tekst zaczyna sie cyfra albo minusem, bez ':') -
+// czy wszystkie leza POZA polem glownego wykresu (lewa os konczy sie przed
+// jego lewa krawedzia, prawa zaczyna za prawa).
+// [v1.5.15] Odwrotnie: czy wszystkie etykiety osi Y leza WEWNATRZ pola
+// wykresu (wykres na cala szerokosc, liczby na nim przy krawedziach) i nie
+// wchodza pod obudowe (x >= 10 i x <= 469).
+bool etykietyOsiNaWykresie(lv_obj_t* o, const lv_area_t& wykres, int* ile) {
+  if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return true;
+  if (lv_obj_check_type(o, &lv_label_class)) {
+    const char* t = lv_label_get_text(o);
+    if (t != nullptr && t[0] != '\0' && (isdigit((unsigned char)t[0]) || t[0] == '-') && strchr(t, ':') == nullptr && strchr(t, '.') != nullptr) {
+      lv_area_t a; lv_obj_get_coords(o, &a);
+      if (a.y2 < wykres.y1 || a.y1 > wykres.y2) return true;
+      (*ile)++;
+      const bool ok = a.x1 >= wykres.x1 + 10 && a.x2 <= wykres.x2 - 10 && a.y1 >= wykres.y1 && a.y2 <= wykres.y2;
+      if (!ok) info("etykieta \"%s\" x=%d..%d y=%d..%d poza polem wykresu x=%d..%d y=%d..%d (lub pod obudowa)", t, a.x1, a.x2, a.y1, a.y2, wykres.x1, wykres.x2, wykres.y1, wykres.y2);
+      return ok;
+    }
+    return true;
+  }
+  bool ok = true;
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) ok = etykietyOsiNaWykresie(lv_obj_get_child(o, (int32_t)i), wykres, ile) && ok;
+  return ok;
+}
+bool etykietyOsiPozaWykresem(lv_obj_t* o, const lv_area_t& wykres, int* ile) {
+  if (o == nullptr || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN)) return true;
+  if (lv_obj_check_type(o, &lv_label_class)) {
+    const char* t = lv_label_get_text(o);
+    if (t != nullptr && t[0] != '\0' && (isdigit((unsigned char)t[0]) || t[0] == '-') && strchr(t, ':') == nullptr && strchr(t, '.') != nullptr) {
+      lv_area_t a; lv_obj_get_coords(o, &a);
+      if (a.y2 < wykres.y1 || a.y1 > wykres.y2) return true;   // nie przy wykresie (os czasu pod nim, inna strona)
+      (*ile)++;
+      const bool poza = (a.x2 < wykres.x1) || (a.x1 > wykres.x2);
+      if (!poza) info("etykieta \"%s\" x=%d..%d lezy na wykresie x=%d..%d", t, a.x1, a.x2, wykres.x1, wykres.x2);
+      return poza;
+    }
+    return true;
+  }
+  bool ok = true;
+  const uint32_t n = lv_obj_get_child_cnt(o);
+  for (uint32_t i = 0; i < n; i++) ok = etykietyOsiPozaWykresem(lv_obj_get_child(o, (int32_t)i), wykres, ile) && ok;
+  return ok;
+}
+
+// --- [v1.5.12] -------------------------------------------------------------
+// Ekran WYKRESY po poprawkach ze zdjec 23.11: seria POMPA (pas pracy u dolu
+// wykresu, kolumna 35 odpowiedzi centrali), etykiety osi Y obok wykresu
+// (linia 3,5 C przecinala napis "3.5"), nazwy serii jak na pulpicie, chipy
+// bez lamania "WILGOTNOS/C", przycisk WYCZYSC i licznik wyboru.
+void scenariuszWykresyPompaIOsie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  const std::string dzien = wzorzec("dzien.txt"), godz = wzorzec("godz_ta_sama_doba.txt"), tydz = wzorzec("tydz_pelne_bufory.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = dzien; c.panelHist["godz"] = godz; c.panelHist["tydz"] = tydz; });
+  setup();
+  biegnij(3000);
+  sprawdz(otworzWykresy(), "drugi pulpit -> kafelek WYKRESY");
+  sprawdz(ekranMa("PIEC CO") && ekranMa("PIEC CO ŚR.") && ekranMa("POKÓJ") && ekranMa("SYBERKA") && ekranMa("POMPA"),
+          "chipy nazwane jak kafelki pulpitu: PIEC CO, PIEC CO ŚR., POKÓJ, SYBERKA, nowy POMPA");
+  sprawdz(!ekranMa("Wewnętrzna") && !ekranMa("Syberek") && !ekranMa("Temp. C.O"), "starych nazw (Wewnętrzna, Syberek, Temp. C.O) nie ma");
+  sprawdz(ekranMa("WYCZYŚĆ") && znajdzEtykiete(lv_scr_act(), "Dotknij serie") != nullptr, "przycisk WYCZYŚĆ i podpowiedz pod przyciskami");
+  {
+    lv_obj_t* w = znajdzEtykiete(lv_scr_act(), "WILGOTNOŚĆ");
+    lv_area_t a; if (w) lv_obj_get_coords(w, &a);
+    sprawdz(w != nullptr && (a.y2 - a.y1) < 24, "chip WILGOTNOŚĆ: etykieta w jednym wierszu (nie \"WILGOTNOŚ / Ć\")");
+  }
+  zrzutEkranu("1_wybor_serii");
+
+  sprawdz(kliknij("ZEWN") && kliknij("POMPA"), "wybrane: ZEWN i POMPA");
+  sprawdz(ekranMa("POKAŻ WYKRES (2)") && ekranMa("Wybrano 2 z 8  ·  lewa oś °C"),
+          "przycisk \"POKAŻ WYKRES (2)\", podpowiedz \"Wybrano 2 z 8 · lewa oś °C\" (POMPA nie zajmuje osi)");
+  sprawdz(kliknij("POKAŻ WYKRES"), "dotkniecie POKAZ WYKRES");
+  biegnij(1000);
+  sprawdz(wykresWidoczny() && ekranMa("[Dzienny]") && ekranMa("ZEWN") && ekranMa("POMPA"), "wykres na ekranie, legenda \"[Dzienny]\" ZEWN POMPA");
+  sprawdz(tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "ZEWN: 96 punktow jak policzyla centrala");
+  {
+    std::vector<int> maByc;
+    for (int v : zWzorca(dzien, 35)) maByc.push_back(v == 10 ? 1 : BRAK);
+    const std::vector<int> jest = punktyPasaPompy();
+    info("pas pompy: %d odcinkow pracy z %zu", ilePunktow(jest), jest.size());
+    sprawdz(tesamePunkty(jest, maByc, "POMPA"), "pas pompy: 48 odcinkow pracy dokladnie tam, gdzie centrala podala pompa=1 (kolumna 35)");
+  }
+  {
+    std::vector<lv_obj_t*> w; znajdzWykresy(lv_scr_act(), w);
+    lv_area_t g{}, pas{};
+    if (w.size() >= 2) { lv_obj_get_coords(w[0], &g); lv_obj_get_coords(w[1], &pas); }
+    info("glowny wykres x=%d..%d y=%d..%d, pas pompy x=%d..%d y=%d..%d", g.x1, g.x2, g.y1, g.y2, pas.x1, pas.x2, pas.y1, pas.y2);
+    sprawdz(w.size() == 2 && pas.y1 > g.y1 && pas.y2 <= g.y2 && pas.x1 >= g.x1 && pas.x2 <= g.x2 && (pas.y2 - pas.y1 + 1) == 12,
+            "pas pompy: 12 px wysokosci, wewnatrz pola wykresu przy jego dolnej krawedzi");
+    int ile = 0;
+    const bool na = etykietyOsiNaWykresie(lv_scr_act(), g, &ile);
+    info("etykiet osi Y: %d", ile);
+    sprawdz(ile == 5 && na && g.x1 == 0, "5 etykiet lewej osi lezy NA polu wykresu przy lewej krawedzi, wykres od x=0 (v1.5.15)");
+    sprawdz(g.x2 == 479, "wykres siega do prawej krawedzi ekranu (x=..479, v1.5.15)");
+  }
+  zrzutEkranu("2_zewn_i_pompa");
+
+  printf("  dwie osie: etykiety po obu stronach na wykresie:\n");
+  sprawdz(dotknijWykresu() && kliknij("WILGOTNOŚĆ") && kliknij("POKAŻ WYKRES"), "dobrana WILGOTNOSC (prawa os)");
+  biegnij(1000);
+  {
+    std::vector<lv_obj_t*> w; znajdzWykresy(lv_scr_act(), w);
+    lv_area_t g{}; if (!w.empty()) lv_obj_get_coords(w[0], &g);
+    int ile = 0;
+    const bool na = etykietyOsiNaWykresie(lv_scr_act(), g, &ile);
+    info("wykres x=%d..%d, etykiet osi: %d", g.x1, g.x2, ile);
+    sprawdz(ile == 10 && na && g.x1 == 0 && g.x2 == 479, "10 etykiet (5+5) na polu wykresu przy obu krawedziach, wykres na cala szerokosc 0..479 (v1.5.15)");
+    sprawdz(ekranMa("Wybrano 3 z 8") == false && ekranMa("[Dzienny]") && !ekranMa("3 serii"), "legenda \"[Dzienny]\" (bez licznika \"3 serii\" - v1.5.15)");
+  }
+  zrzutEkranu("3_dwie_osie_i_pompa");
+
+  printf("  sama POMPA i WYCZYSC:\n");
+  sprawdz(dotknijWykresu() && kliknij("WYCZYŚĆ"), "WYCZYSC");
+  sprawdz(znajdzEtykiete(lv_scr_act(), "Dotknij serie") != nullptr && ekranMa("POKAŻ WYKRES") && kliknij("POKAŻ WYKRES") && ekranMa("WYCZYŚĆ"),
+          "po WYCZYSC nic nie wybrane: licznik znika, POKAZ WYKRES nie otwiera wykresu");
+  sprawdz(kliknij("POMPA") && ekranMa("Wybrano 1 z 8") && !ekranMa("lewa oś") && kliknij("POKAŻ WYKRES"), "sama POMPA: \"Wybrano 1 z 8\" bez osi");
+  biegnij(1000);
+  sprawdz(wykresWidoczny() && ekranMa("[Dzienny]") && ekranMa("POMPA") && !ekranMa("POMPA ("), "legenda \"[Dzienny]\" POMPA (bez pustych nawiasow)");
+  {
+    std::vector<lv_obj_t*> w; znajdzWykresy(lv_scr_act(), w);
+    lv_area_t g{}; if (!w.empty()) lv_obj_get_coords(w[0], &g);
+    int ile = 0; etykietyOsiPozaWykresem(lv_scr_act(), g, &ile);
+    sprawdz(w.size() == 2 && ile == 0 && ilePunktow(punktyPasaPompy()) == 48 && ilePunktow(punktyWykresu(0)) == 0,
+            "sama pompa: pas z 48 odcinkami, zadnej etykiety osi, zadnej linii");
+  }
+  zrzutEkranu("4_sama_pompa");
+
+  printf("  komplet: 7 linii + pas pompy (limit 8 serii):\n");
+  sprawdz(dotknijWykresu() && kliknij("WYCZYŚĆ") && kliknij("ZEWN") && kliknij("BOJLER") && kliknij("PIEC CO") && kliknij("PIEC CO ŚR.")
+          && kliknij("POWRÓT") && kliknij("PANEL") && kliknij("POKÓJ") && kliknij("POMPA") && ekranMa("POKAŻ WYKRES (8)"),
+          "7 temperatur + POMPA = \"POKAŻ WYKRES (8)\"");
+  sprawdz(kliknij("CIŚNIENIE") && ekranMa("POKAŻ WYKRES (8)"), "dziewiatej serii (CIŚNIENIE) nie da sie dobrac - zostaje 8");
+  sprawdz(kliknij("POKAŻ WYKRES"), "POKAZ WYKRES");
+  biegnij(1000);
+  {
+    int zPunktami = 0;
+    for (int slot = 0; slot < 8; slot++) if (ilePunktow(punktyWykresu(slot)) == 96) zPunktami++;
+    sprawdz(wykresWidoczny() && ekranMa("[Dzienny]") && zPunktami == 7 && ilePunktow(punktyPasaPompy()) == 48,
+            "legenda \"[Dzienny]\", 7 linii po 96 punktow na lewej osi, pas pompy z 48 odcinkami");
+  }
+  zrzutEkranu("5_osiem_serii");
+}
+
 void scenariuszWykresyStaraCentrala() {
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
   ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; });
@@ -3042,17 +3545,18 @@ void scenariuszWykresyPrzerwy() {
           "96 pozycji: 77 punktow i 19 przerw, dokladnie w miejscach podanych przez centrale");
   sprawdz(p.size() == 96 && p[41] != BRAK && p[42] == BRAK && p[60] == BRAK && p[61] != BRAK,
           "przerwa to 19 kolejnych pozycji (43. do 61. z 96) - os czasu jest rowna, 1,5 doby ma na niej swoja szerokosc");
-  sprawdz(ekranMa("06.11 13:00  -  13.11 13:00"), "podpis: \"06.11 13:00  -  13.11 13:00\" (pelne 7 dni)");
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"07.11", "08.11", "09.11", "10.11", "11.11", "12.11", "13.11"}), "os czasu: kreska o kazdej polnocy, podpisana data (07.11 ... 13.11)");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=77 przerw=19", "", "", od), "log: punktow=77 przerw=19");
   zrzutEkranu("tydzien_z_przerwa");
 
   printf("  godzina, w ktorej czujnik pokojowy przez pierwsze pol godziny nie dawal odczytu:\n");
   dotknijWykresu();
-  sprawdz(kliknij("Wewnętrzna"), "dobrana seria Wewnetrzna (pokoj)");
+  sprawdz(kliknij("POKÓJ"), "dobrana seria Wewnetrzna (pokoj)");
   od = pokazWykres("GODZINNY", 1000);
   const std::vector<int> zewn = punktyWykresu(0), pokoj = punktyWykresu(1);
   sprawdz(tesamePunkty(zewn, zWzorca(godz, 1), "ZEWN") && ilePunktow(zewn) == 96, "ZEWN: pelne 96 punktow (3,0)");
-  sprawdz(tesamePunkty(pokoj, zWzorca(godz, 19), "Wewnętrzna"), "Wewnetrzna: brak punktow tam, gdzie centrala podala \"nan\", potem 21,5");
+  sprawdz(tesamePunkty(pokoj, zWzorca(godz, 19), "POKÓJ"), "Wewnetrzna: brak punktow tam, gdzie centrala podala \"nan\", potem 21,5");
   sprawdz(pokoj.size() == 96 && pokoj[0] == BRAK && pokoj[40] == BRAK && pokoj[95] == 215 && ilePunktow(pokoj) > 40 && ilePunktow(pokoj) < 56,
           "linia czujnika zaczyna sie w polowie wykresu - nie jest dociagnieta do zera ani do poprzedniej wartosci");
   lv_obj_t* wykres = znajdzWykres(lv_scr_act());
@@ -3061,7 +3565,41 @@ void scenariuszWykresyPrzerwy() {
   sprawdz(wykres != nullptr && dane->ymin[0] >= 10 && dane->ymin[0] <= 13 && dane->ymax[0] >= 232 && dane->ymax[0] <= 235,
           "zakres osi policzony z prawdziwych wartosci (3,0..21,5 + margines), brak odczytu go nie psuje");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=godz sposob=centrala punktow=96 przerw=0", "", "", od), "log: punktow=96 przerw=0");
+  sprawdz(wykres != nullptr && lv_obj_get_style_width(wykres, LV_PART_INDICATOR) == 0, "ciagle dane: bez znacznikow punktow (sama linia)");
   zrzutEkranu("czujnik_bez_odczytu");
+
+  // [v1.5.8] Zdjecie z 22.11 (centrala 3.58.10, dlugi bufor zapelniony
+  // dopiero od 3 dni, z przerwami): 9 punktow + 87 przerw. LVGL nie rysuje
+  // punktu bez sasiada - na ekranie byly tylko "kropki" (pary punktow) i
+  // pionowa kreska przy prawej krawedzi (dwa sasiednie punkty o bardzo
+  // roznych wartosciach). Samotne punkty maja byc widoczne jako znaczniki.
+  printf("  tydzien jak na zdjeciu z 22.11: 9 punktow z danymi, 87 przerw, pojedyncze punkty miedzy przerwami:\n");
+  {
+    std::string rzadki;
+    size_t poz = 0; int nr = -1;   // nr = numer pozycji (0..95), -1 = naglowek
+    const std::set<int> zostaw = {20, 21, 38, 65, 66, 80, 93, 94, 95};   // pozycje 42..60 to i tak przerwa we wzorcu
+    while (poz < tydz.size()) {
+      size_t k = tydz.find('\n', poz);
+      if (k == std::string::npos) k = tydz.size();
+      std::string linia = tydz.substr(poz, k - poz);
+      poz = k + 1;
+      if (nr < 0 || linia.rfind("#koniec", 0) == 0) { rzadki += linia + "\n"; nr++; continue; }
+      if (zostaw.count(nr) && linia.rfind("#przerwa", 0) != 0) rzadki += linia + "\n"; else rzadki += "#przerwa\n";
+      nr++;
+    }
+    ustawC(0, [&](Centrala& c) { c.panelHist["tydz"] = rzadki; });
+  }
+  dotknijWykresu();
+  od = pokazWykres("TYGODNIOWY", 1000);
+  const std::vector<int> rz = punktyWykresu(0);
+  sprawdz(wykresWidoczny() && rz.size() == 96 && ilePunktow(rz) == 9 && rz[38] != BRAK && rz[37] == BRAK && rz[39] == BRAK,
+          "96 pozycji, 9 z danymi, m.in. samotny punkt nr 39 (sasiedzi to przerwy)");
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=9 przerw=87", "", "", od), "log: punktow=9 przerw=87");
+  wykres = znajdzWykres(lv_scr_act());
+  sprawdz(wykres != nullptr && lv_obj_get_style_width(wykres, LV_PART_INDICATOR) == 4, "sa samotne punkty -> znaczniki punktow 4px wlaczone (kazdy punkt widac)");
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"07.11", "08.11", "09.11", "10.11", "11.11", "12.11", "13.11"}), "os czasu bez zmian: daty o polnocy (przerwy maja swoje miejsce na osi)");
+  zrzutEkranu("tydzien_rzadkie_dane");
 }
 
 // --- 29 --------------------------------------------------------------------
@@ -3212,6 +3750,131 @@ void scenariuszWykresyBledySieci() {
   sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal w calym scenariuszu");
 }
 
+// --- [v1.5.6] wykres ponawiany po czkawce AP ---------------------------------
+// Zgloszenie z plytki (v1.5.5): "klikam wykres, pisze 'Centrala nie przyjela
+// polaczenia' i dopiero za ktoryms razem pojawiaja sie wykresy". Te same
+// czkawki AP co przy poleceniach (v1.5.5): zapytanie o historie nie dochodzi
+// do centrali. Panel ma sprobowac sam, do 3 razy, zanim pokaze napis.
+void scenariuszWykresyPonowienie() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  const std::string dzien = wzorzec("dzien.txt");
+  ustawC(0, [&](Centrala& c) { c.panelHist["dzien"] = dzien; });
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+
+  printf("  dwa pierwsze zapytania centrala zamyka bez odpowiedzi, trzecie przechodzi:\n");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 2; });
+  size_t od = pokazWykres(nullptr, 250);   // 1. proba pada od razu, 2. rusza po 500 ms
+  const lv_obj_t* nap = znajdzEtykiete(lv_scr_act(), "Ładowanie danych z centrali...\n");
+  info("napis po 0,25 s: \"%s\"", nap ? lv_label_get_text(nap) : "(brak)");
+  sprawdz(!wykresWidoczny() && nap != nullptr && std::string(lv_label_get_text(nap)).find("próba 2 z 3") != std::string::npos,
+          "w trakcie: \"Ladowanie danych z centrali... / Centrala nie odpowiedziala, proba 2 z 3\" - nie napis o bledzie");
+  biegnij(3000);
+  sprawdz(wykresWidoczny() && tesamePunkty(punktyWykresu(0), zWzorca(dzien, 1), "ZEWN"), "wykres jest, 96 punktow - bez dotykania ekranu drugi raz");
+  sprawdz(stanC(0).nHistOdrzuconych == 2 && stanC(0).nPanelHist == 1, "centrala: 2 zamkniete polaczenia + 1 obsluzone zapytanie");
+  sprawdz(ileLinii("tag=WYKRESY zdarzenie=ponowienie", "proba=2/3", "powod=brak_polaczenia", od) == 1 &&
+              ileLinii("tag=WYKRESY zdarzenie=ponowienie", "proba=3/3", "", od) == 1,
+          "log: ponowienie proba=2/3 i 3/3 (powod=brak_polaczenia)");
+  info("%s", liniaLogu("tag=WYKRESY zdarzenie=ponowienie", od).c_str());
+  sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=dzien sposob=centrala punktow=96", "", "", od), "log: pobrano punktow=96");
+  sprawdz(!logMa("tag=WYKRESY lvl=WARN zdarzenie=blad", "", "", od), "bez wpisu zdarzenie=blad");
+  zrzutEkranu("1_po_ponowieniu");
+
+  printf("  centrala nie przyjmuje zadnego z trzech zapytan:\n");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 10; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 3000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie przyjęła połączenia\nSpróbuj ponownie"), "po 3 probach napis \"Centrala nie przyjela polaczenia / Sprobuj ponownie\"");
+  sprawdz(ileLinii("tag=WYKRESY zdarzenie=ponowienie", "", "", od) == 2 &&
+              logMa("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=dzien sposob=centrala przyczyna=brak_polaczenia", "prob=3", "", od),
+          "log: dwa ponowienia, potem zdarzenie=blad przyczyna=brak_polaczenia prob=3");
+  info("%s", liniaLogu("tag=WYKRESY lvl=WARN zdarzenie=blad", od).c_str());
+  sprawdz(stanC(0).histOdrzucRazy == 7, "centrala dostala dokladnie 3 polaczenia - nie wiecej");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 0; });
+
+  printf("  odpowiedz urwana w polowie NIE jest ponawiana (centrala pracuje, to nie czkawka):\n");
+  ustawC(0, [](Centrala& c) { c.histUrwijPo = 9000; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 1500);
+  sprawdz(!wykresWidoczny() && ekranMa("Odpowiedź centrali urwała się w połowie\nSpróbuj ponownie") &&
+              ileLinii("tag=WYKRESY zdarzenie=ponowienie", "", "", od) == 0,
+          "napis o urwanej odpowiedzi od razu, bez ponowien");
+  ustawC(0, [](Centrala& c) { c.histUrwijPo = -1; });
+
+  printf("  zapytanie przyjete, ale bez odpowiedzi przez 6 s - tez bez ponowien (centrala pracuje, tylko wolno):\n");
+  ustawC(0, [](Centrala& c) { c.histZwlokaMs = 60000; });
+  dotknijWykresu();
+  od = pokazWykres(nullptr, 7000);
+  sprawdz(!wykresWidoczny() && ekranMa("Centrala nie odpowiedziała w czasie\nSpróbuj ponownie") &&
+              ileLinii("tag=WYKRESY zdarzenie=ponowienie", "", "", od) == 0,
+          "po 6 s napis \"Centrala nie odpowiedziala w czasie\", zero ponowien");
+  ustawC(0, [](Centrala& c) { c.histZwlokaMs = 0; });
+
+  printf("  wyjscie z ekranu w czasie odstepu przed ponowieniem:\n");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 10; });
+  dotknijWykresu();
+  const int przed = stanC(0).nHistOdrzuconych;
+  od = pokazWykres(nullptr, 200);
+  sprawdz(logMa("tag=WYKRESY zdarzenie=ponowienie", "proba=2/3", "", od), "pierwsza proba padla, panel czeka z druga");
+  dotknijWykresu();   // uzytkownik wraca do wyboru serii
+  biegnij(2000);
+  sprawdz(logMa("tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu", "", "", od), "log: przerwano powod=wyjscie_z_ekranu");
+  sprawdz(stanC(0).nHistOdrzuconych == przed + 1, "po wyjsciu z ekranu zadne kolejne zapytanie nie poszlo");
+  ustawC(0, [](Centrala& c) { c.histOdrzucRazy = 0; });
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal w calym scenariuszu");
+}
+
+// --- 30b -------------------------------------------------------------------
+// [v1.5.7] Centrala zajeta wysylaniem historii nie odpowiada na /api/status.
+// Log z plytki 22.11 (v1.5.6): w srodku pobierania wykresu (8 z 16 linii)
+// panel wymusil ponowne polaczenie WiFi, bo status milczal 12 s - pobieranie
+// padlo ("urwana ... errno=113"), WiFi na kilka sekund zerwane, kolejne proby
+// wykresu "brak_wifi". Teraz kazdy bajt historii (i kazda odpowiedz na
+// polecenie) zeruje licznik milczenia: dopoki centrala cokolwiek przysyla,
+// panel nie zrywa z nia polaczenia. Starsza centrala i wolne lacze, zeby
+// pobieranie trwalo dluzej niz prog 12 s.
+void scenariuszWykresyCentralaZajeta() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustawC(0, [](Centrala& c) { c.wersjaHistorii = HIST_302; c.histBajtowNaMs = 15.0; });   // 352 kB przy 15 kB/s: ok. 23 s (limit calosci 20 s)
+  setup();
+  biegnij(3000);
+  otworzWykresy();
+  kliknij("ZEWN");
+
+  printf("  status milczy, a historia plynie (centrala zajeta wysylaniem wykresu):\n");
+  ustawC(0, [](Centrala& c) { c.trybStatus = TRYB_MILCZY; });
+  const int rozlaczenPrzed = g_atrapa.liczbaDisconnect;
+  size_t od = pokazWykres("TYGODNIOWY", 15000);
+  sprawdz(logMa("tag=PANEL lvl=WARN", "zdarzenie=dane_nieaktualne", "przyczyna=milczy", od),
+          "po 10 s bez statusu kafelki \"--\" i log dane_nieaktualne (status NAPRAWDE jest stary)");
+  sprawdz(!logMa("zdarzenie=wymuszam_polaczenie", "", "", od) && g_atrapa.liczbaDisconnect == rozlaczenPrzed,
+          "po 15 s BEZ wymuszam_polaczenie: bajty historii dowodza, ze centrala zyje (v1.5.6 zrywalo WiFi w 12. sekundzie)");
+  sprawdz(!wykresWidoczny() && znajdzEtykiete(lv_scr_act(), "Ładowanie danych z centrali...\n") != nullptr,
+          "pobieranie nadal trwa - nie zostalo zerwane");
+  biegnij(6000);
+  sprawdz(wykresWidoczny(), "po 21 s jest wykres z tego, co doszlo (limit calosci 20 s)");
+  sprawdz(!logMa("tag=WYKRESY lvl=WARN zdarzenie=blad", "przyczyna=urwana", "", od) &&
+              !logMa("tag=WYKRESY lvl=WARN zdarzenie=blad", "przyczyna=brak_wifi", "", od) &&
+              !logMa("zdarzenie=wymuszam_polaczenie", "", "", od),
+          "bez bledow urwana/brak_wifi i nadal bez wymuszania polaczenia");
+  zrzutEkranu("1_wykres_mimo_ciszy_statusu");
+
+  printf("  historia skonczona, status dalej milczy - drabina ratunkowa liczy od OSTATNIEGO znaku zycia:\n");
+  od = g_atrapa.serial.size();
+  biegnij(14000);
+  info("%s", liniaLogu("zdarzenie=wymuszam_polaczenie", od).c_str());
+  sprawdz(logMa("tag=WIFI lvl=WARN", "zdarzenie=wymuszam_polaczenie", "nr=1 szukam=ten_sam_bssid", od),
+          "12 s po ostatnim bajcie historii: wymuszam_polaczenie nr=1 (teraz centrala naprawde milczy)");
+
+  printf("  status wraca:\n");
+  ustawC(0, [](Centrala& c) { c.trybStatus = TRYB_OK; });
+  biegnij(8000);
+  sprawdz(logMa("tag=PANEL zdarzenie=dane_wrocily", "", "", od), "log: dane_wrocily");
+  sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal w calym scenariuszu");
+}
+
 // --- 31 --------------------------------------------------------------------
 // Wyjscie z wykresu w trakcie pobierania i pobieranie, ktore nie miesci sie w
 // limicie czasu. Starsza centrala i wolne lacze, zeby pobieranie trwalo.
@@ -3232,7 +3895,7 @@ void scenariuszWykresyWyjscieWTrakcie() {
   const std::string postep2 = napis ? lv_label_get_text(napis) : "";
   info("po 2 s: \"%s\", po 4 s: \"%s\"", postep1.substr(postep1.find('\n') + 1).c_str(), postep2.substr(postep2.find('\n') + 1).c_str());
   sprawdz(!postep1.empty() && !postep2.empty() && postep1 != postep2, "napis \"Ladowanie...\" pokazuje rosnaca liczbe wierszy i kB");
-  sprawdz(dotknijWykresu() && ekranMa("POKAŻ WYKRES"), "dotkniecie dziala od razu: powrot do wyboru serii");
+  sprawdz(dotknijWykresu() && znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") != nullptr, "dotkniecie dziala od razu: powrot do wyboru serii");
   biegnij(200);
   Centrala c = stanC(0);
   sprawdz(logMa("tag=WYKRESY zdarzenie=przerwano powod=wyjscie_z_ekranu tryb=tydz", "", "", od), "log: zdarzenie=przerwano powod=wyjscie_z_ekranu");
@@ -3400,7 +4063,8 @@ void scenariuszWykresyPoRestarcieCentrali() {
           "96 pozycji: 55 punktow i 41 przerw, dokladnie w miejscach podanych przez centrale");
   sprawdz(p.size() == 96 && p[0] == 20 && p[54] == 40 && p[55] == BRAK && p[95] == BRAK,
           "linia konczy sie po 4 dniach (55. pozycja z 96); ostatnie 3 dni sa puste - nie dociagniete do prawej krawedzi");
-  sprawdz(ekranMa("06.11 13:00  -  13.11 13:00"), "podpis: \"06.11 13:00  -  13.11 13:00\" - os konczy sie TERAZ, nie na ostatnim starym pomiarze");
+  info("os czasu: %s", podpisyOsiTekst().c_str());
+  sprawdz(osCzasuTo({"07.11", "08.11", "09.11", "10.11", "11.11", "12.11", "13.11"}), "os czasu do 13.11 - konczy sie TERAZ, nie na ostatnim starym pomiarze");
   sprawdz(logMa("tag=WYKRESY zdarzenie=pobrano tryb=tydz sposob=centrala punktow=55 przerw=41", "", "", od), "log: punktow=55 przerw=41");
   sprawdz(g_atrapa.wdtZadzialal == 0, "watchdog nie zadzialal");
   zrzutEkranu("po_restarcie_tydzien");
@@ -3546,7 +4210,7 @@ void wrocNaPulpit(lv_obj_t* pulpit) {
 // Ekran Wykresy otwarty na wyborze serii, z wybranymi 8 seriami (najwiecej,
 // ile pozwala panel: 7 temperatur i cisnienie). Wybor serii zostaje w panelu
 // po zamknieciu ekranu, wiec klikany jest tylko raz.
-const char* const OSIEM_SERII[8] = {"ZEWN", "BOJLER", "Temp. C.O", "Temp. C.O Śr.", "POWRÓT", "PANEL", "Wewnętrzna", "CIŚNIENIE"};
+const char* const OSIEM_SERII[8] = {"ZEWN", "BOJLER", "PIEC CO", "PIEC CO ŚR.", "POWRÓT", "PANEL", "POKÓJ", "CIŚNIENIE"};
 bool g_serieWybrane = false;
 bool wykresyGotowe() {
   if (znajdzEtykiete(lv_scr_act(), "POKAŻ WYKRES") == nullptr) {
@@ -4696,8 +5360,11 @@ void obciazenieOkres(const char* stan, unsigned long ms) {
   obciazenieWiersz(stan, a, obciazenieTeraz());
 }
 void scenariuszPomiarObciazenia() {
-  // Plytka na samej baterii: USB odlaczone (GPIO35 wysoko), ogniwo 3,90 V.
-  g_atrapa.gpio[35] = HIGH;
+  // [v1.5.0] Stany A-F na ladowarce (GPIO35 nisko), ogniwo 3,90 V: od v1.5.0
+  // panel na samej baterii po minucie bez dotyku przygasza ekran, a po pieciu
+  // usypia - pomiar obciazenia "w spoczynku z jasnym ekranem" musi wiec isc na
+  // USB. Co panel robi na baterii bez dotyku, pokazuje osobny blok na koncu.
+  g_atrapa.gpio[35] = LOW;
   g_atrapa.adcMv[34] = 1950;
   g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
   setup();
@@ -4734,13 +5401,27 @@ void scenariuszPomiarObciazenia() {
   biegnij(70000);   // ekran POMPA sam wraca na pulpit po minucie bez dotyku
   obciazenieOkres("F pulpit po powrocie, dane bez zmian", 120000);
 
-  // Do tej chwili plytka pracowala na baterii bez jednego dotkniecia ekranu.
-  // Uspienie (esp_deep_sleep_start()) zakonczyloby ten program kodem 42 -
-  // skoro doszedl tutaj, panel nie usnal.
-  printf("OBCIAZENIE-INFO na baterii, bez dotyku przez %lu s: panel nie usnal; podswietlenie %ld/255, zmian jasnosci od konca startu: %lu; "
-         "ostatni dotyk wg LVGL: %lu s temu\n",
+  // Do tej chwili plytka pracowala na ladowarce bez jednego dotkniecia ekranu.
+  printf("OBCIAZENIE-INFO na USB, bez dotyku przez %lu s: podswietlenie %ld/255, zmian jasnosci od konca startu: %lu; "
+         "ostatni dotyk wg LVGL: %lu s temu; usniec: %d\n",
          (millis() - startMs) / 1000UL, g_atrapa.podswietlenieWypelnienie, g_atrapa.podswietlenieZapisow - podswietleniePoStarcie,
-         (unsigned long)(lv_disp_get_inactive_time(nullptr) / 1000UL));
+         (unsigned long)(lv_disp_get_inactive_time(nullptr) / 1000UL), g_atrapa.usnal);
+  // [v1.5.0] Ladowarka wyjeta, ktos dotyka raz i odchodzi: kiedy ekran
+  // przygasa, ile wtedy rysuje, kiedy panel usypia.
+  g_atrapa.gpio[35] = HIGH;
+  lv_disp_trig_activity(nullptr);
+  const unsigned long odDotyku = millis();
+  long przygaslPoS = -1, usnalPoS = -1;
+  {
+    const ObciazenieStan a = obciazenieTeraz();
+    while (millis() - odDotyku < 70000) { biegnij(1000); if (przygaslPoS < 0 && g_atrapa.podswietlenieWypelnienie <= 15) przygaslPoS = (long)((millis() - odDotyku) / 1000UL); }
+    obciazenieWiersz("G bateria, pierwsza minuta po dotyku (jasno, potem 5 %)", a, obciazenieTeraz());
+  }
+  obciazenieOkres("H bateria, ekran przyciemniony do 5 %, dane bez zmian", 120000);
+  while (millis() - odDotyku < 400000 && g_atrapa.usnal == 0) biegnij(1000);
+  if (g_atrapa.usnal > 0) usnalPoS = (long)((g_atrapa.usnalMs - odDotyku) / 1000UL);
+  printf("OBCIAZENIE-INFO na baterii po dotyku: ekran przygasl po %ld s, gleboki sen po %ld s (-1 = nie); podswietlenie na koncu %ld/255\n",
+         przygaslPoS, usnalPoS, g_atrapa.podswietlenieWypelnienie);
   printf("OBCIAZENIE-INFO ekran = 153600 px; 1 px = 3 bajty po SPI (ILI9488, kolor 18-bitowy); status co 2 s, ustawienia co 60 s w tle (co 5 s przy otwartym ekranie ustawien, od v1.4.3)\n");
   // Prototyp \"ustaw tylko wtedy, gdy wartosc sie zmienila\" (pomiar_obciazenia.sh --prototyp): ile wywolan pominal.
   if (obciazenie_prototyp_pominiete != nullptr && obciazenie_prototyp_wykonane != nullptr) {
@@ -4749,6 +5430,520 @@ void scenariuszPomiarObciazenia() {
       printf("OBCIAZENIE-INFO prototyp: %-28s wywolan z ta sama wartoscia (pominiete) %6lu, ze zmiana (wykonane) %6lu\n", NAZWY[i],
              obciazenie_prototyp_pominiete[i], obciazenie_prototyp_wykonane[i]);
   }
+}
+
+// --- sen (v1.5.0) ------------------------------------------------------------
+// Krok 3 planu: na baterii po minucie bez dotyku ekran przygasa do 5 %, po
+// pieciu minutach panel usypia; dotyk albo przycisk budzenia przywraca
+// jasnosc; na USB nic z tego sie nie dzieje; alarm i aktualizacja wstrzymuja
+// sen; rozladowane ogniwo usypia od razu z napisem.
+bool senOgniwoNaBaterii(int mvNaDzielniku = 1950) {   // 1950 mV x 2 = 3,90 V
+  g_atrapa.gpio[35] = HIGH;      // USB odlaczone (pull-up 10k wygrywa)
+  g_atrapa.adcMv[34] = mvNaDzielniku;
+  return true;
+}
+bool tftMa(const char* napis) { for (const std::string& t : g_atrapa.napisyTft) if (t == napis) return true; return false; }
+long senWypelnienie() { return g_atrapa.podswietlenieWypelnienie; }
+bool senJasno() { return senWypelnienie() >= 250; }               // 100 % = 255
+bool senPrzyciemnione() { return senWypelnienie() >= 10 && senWypelnienie() <= 15; }   // 5 % = 12
+
+void scenariuszSenNaBaterii() {
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  const unsigned long start = millis();
+  biegnij(3000);
+  info("%s", liniaLogu("tag=BATERIA").c_str());
+  sprawdz(logMa("tag=BATERIA napiecie=3.90V", "procent=", "ladowanie=0"), "pierwszy pomiar ogniwa od razu po starcie (nie po 30 s): 3,90 V, bez ladowania");
+  sprawdz(senJasno() && !logMa("tag=SEN"), "tuz po starcie: pelna jasnosc, zadnej linii tag=SEN");
+
+  // 59 s od startu nikt nie dotknal - jeszcze jasno; po minucie przyciemnienie.
+  biegnij(59000 - (millis() - start));
+  info("59 s po setup(): wypelnienie %ld/255, bez dotyku wg LVGL %lu ms", senWypelnienie(), (unsigned long)lv_disp_get_inactive_time(NULL));
+  sprawdz(senJasno(), "59 s bez dotyku: nadal pelna jasnosc");
+  biegnij(3000);
+  info("po 62 s: wypelnienie %ld/255; %s", senWypelnienie(), liniaLogu("tag=SEN zdarzenie=przyciemnienie").c_str());
+  sprawdz(senPrzyciemnione(), "62 s bez dotyku na baterii: podswietlenie 5 % (wypelnienie 12/255)");
+  sprawdz(logMa("tag=SEN zdarzenie=przyciemnienie powod=bez_dotyku", "napiecie=3.90V", "jasnosc=5%"), "log: tag=SEN zdarzenie=przyciemnienie powod=bez_dotyku napiecie=3.90V jasnosc=5%");
+  sprawdz(ekranMa("ZEWN") && kopia(0).nStatus > 20, "przyciemniony panel dalej pracuje: pulpit na ekranie, centrala odpytywana");
+
+  // Suwak harmonogramu / zmiana okna dzien-noc nie moze rozjasnic przyciemnionego ekranu.
+  const unsigned long zapisowPrzed = g_atrapa.podswietlenieZapisow;
+  biegnij(20000);
+  sprawdz(senPrzyciemnione(), "20 s pozniej wciaz 5 % (nic nie rozjasnilo po cichu)");
+  info("zapisow jasnosci w czasie przyciemnienia: %lu", g_atrapa.podswietlenieZapisow - zapisowPrzed);
+
+  // Dotkniecie szyby: jasnosc wraca natychmiast, licznik od nowa.
+  size_t od = g_atrapa.serial.size();
+  lv_disp_trig_activity(NULL);
+  biegnij(100);
+  sprawdz(senJasno(), "dotyk: pelna jasnosc wraca w ciagu 100 ms");
+  sprawdz(logMa("tag=SEN zdarzenie=jasnosc powod=dotyk", "", "", od), "log: tag=SEN zdarzenie=jasnosc powod=dotyk");
+  biegnij(55000);
+  sprawdz(senJasno(), "55 s po dotyku: nadal jasno (licznik liczony od dotyku)");
+  biegnij(7000);
+  sprawdz(senPrzyciemnione(), "62 s po dotyku: znow 5 %");
+
+  // Przycisk budzenia trzymany w czasie pracy = aktywnosc.
+  od = g_atrapa.serial.size();
+  g_atrapa.gpio[14] = LOW;
+  biegnij(200);
+  g_atrapa.gpio[14] = HIGH;
+  sprawdz(senJasno() && logMa("tag=SEN zdarzenie=jasnosc powod=dotyk", "", "", od), "przycisk GPIO14 wcisniety: jasnosc wraca jak po dotyku");
+
+  // 5 minut bez niczego: przyciemnienie po 1 min, sen po 5 min.
+  const unsigned long odPrzycisku = millis();
+  od = g_atrapa.serial.size();
+  biegnij(299000);
+  sprawdz(g_atrapa.usnal == 0 && senPrzyciemnione(), "4 min 59 s po przycisku: przyciemniony, ale jeszcze nie spi");
+  biegnij(3000);
+  info("usniecie %lu s po ostatniej aktywnosci; %s", (g_atrapa.usnalMs - odPrzycisku) / 1000UL, liniaLogu("tag=SEN zdarzenie=usypianie", od).c_str());
+  sprawdz(g_atrapa.usnal == 1, "5 min bez dotyku na baterii: esp_deep_sleep_start()");
+  sprawdz(g_atrapa.usnalMs - odPrzycisku >= 300000 && g_atrapa.usnalMs - odPrzycisku <= 302000, "sen dokladnie po 5 min (+-2 s) od ostatniej aktywnosci");
+  sprawdz(logMa("tag=SEN zdarzenie=usypianie powod=bez_dotyku", "napiecie=3.90V", "bez_dotyku_s=30", od), "log: tag=SEN zdarzenie=usypianie powod=bez_dotyku napiecie=3.90V bez_dotyku_s=300");
+  sprawdz(senWypelnienie() == 0, "przed snem podswietlenie 0");
+  sprawdz(g_atrapa.pinTrzymany[21] && g_atrapa.pinTrzymany[13], "przed snem gpio_hold_en na podswietleniu (GPIO21) i brzeczyku (GPIO13)");
+  sprawdz(g_atrapa.gpio[13] == LOW && g_atrapa.tonHz == 0, "brzeczyk przed snem: cisza, pin w stanie niskim");
+  sprawdz(g_atrapa.snuExt0Pin == 14 && g_atrapa.snuExt0Poziom == 0, "budzenie ext0: GPIO14, stan niski (przycisk)");
+  sprawdz(g_atrapa.snuExt1Maska == (1ULL << 35) && g_atrapa.snuExt1Tryb == 0, "budzenie ext1: GPIO35 ALL_LOW (wlozona ladowarka)");
+  sprawdz(!logMa("BATERIA ROZLADOWANA") && !tftMa("BATERIA ROZLADOWANA"), "zwykly sen z bezczynnosci: bez napisu o rozladowanej baterii");
+  sprawdz(g_atrapa.restarty == 0, "bez restartu");
+}
+
+void scenariuszSenUsbNieUsypia() {
+  // Ogniwo podlaczone I ladowarka w TP4056 (GPIO35 nisko) - zachowanie jak do v1.4.7.
+  g_atrapa.gpio[35] = LOW;
+  g_atrapa.adcMv[34] = 1950;
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  biegnij(400000);
+  sprawdz(g_atrapa.usnal == 0 && senJasno(), "na USB przez 6,5 min bez dotyku: pelna jasnosc, bez snu");
+  sprawdz(!logMa("tag=SEN"), "na USB: zadnej linii tag=SEN");
+  sprawdz(logMa("tag=BATERIA napiecie=3.90V", "ladowanie=1"), "wskaznik: ogniwo 3,90 V, laduje sie");
+  sprawdz(ekranMa("64% USB"), "[v1.5.3] wskaznik z ogniwem i ladowarka: \"64% USB\" (nie sam kolor)");
+  zrzutEkranu("1_usb_z_ogniwem");
+
+  // Ladowarka wyjeta w trakcie: od tej chwili liczy sie bezczynnosc wg LVGL
+  // (ostatni dotyk byl dawno) - przyciemnienie przy najblizszym sprawdzeniu, sen
+  // nie od razu? Nie: bez dotyku od startu minelo > 5 min, wiec decyzja to sen.
+  // Zeby nie zaskoczyc uzytkownika, ktory wlasnie wyjal wtyczke, dotyk zeruje licznik.
+  lv_disp_trig_activity(NULL);
+  size_t odWyjecia = g_atrapa.serial.size();
+  g_atrapa.gpio[35] = HIGH;
+  biegnij(2000);
+  sprawdz(g_atrapa.usnal == 0 && senJasno(), "ladowarka wyjeta tuz po dotyku: pracuje jasno");
+  sprawdz(ekranMa("64%") && !ekranMa("64% USB") && logMa("tag=ZASILANIE zdarzenie=usb_odlaczone napiecie=3.90V", "", "", odWyjecia),
+          "[v1.5.3] 2 s po wyjeciu ladowarki wskaznik juz bez \"USB\" (nie czeka na pomiar co 30 s), log usb_odlaczone");
+  biegnij(61000);
+  sprawdz(senPrzyciemnione(), "minute pozniej: przyciemnienie (panel juz na baterii)");
+
+  // Ladowarka z powrotem: jasnosc wraca sama (powod=usb).
+  size_t od = g_atrapa.serial.size();
+  g_atrapa.gpio[35] = LOW;
+  biegnij(1500);
+  sprawdz(senJasno() && logMa("tag=SEN zdarzenie=jasnosc powod=usb", "", "", od), "ladowarka wlozona: pelna jasnosc bez dotyku, log powod=usb");
+  sprawdz(ekranMa("64% USB") && logMa("tag=ZASILANIE zdarzenie=usb_podlaczone", "", "", od), "[v1.5.3] 1,5 s po wlozeniu: \"64% USB\", log usb_podlaczone");
+  biegnij(400000);
+  sprawdz(g_atrapa.usnal == 0, "dalej na USB: bez snu");
+
+  // Sam USB, bez ogniwa (jak na biurku): tez nigdy.
+  g_atrapa.adcMv[34] = 142;
+  biegnij(400000);
+  sprawdz(g_atrapa.usnal == 0 && senJasno() && ekranMa("USB"), "bez ogniwa (wskaznik USB): bez snu i przyciemniania");
+}
+
+void scenariuszSenAlarmIOta() {
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  // Alarm przegrzania od 10. sekundy, trwa 7 minut bez dotyku.
+  biegnij(10000);
+  ustaw(0, [](Centrala& c) { c.tOgrz = 135.0; c.alarmOgrzewanie = true; });
+  biegnij(5000);
+  sprawdz(ekranMa("PRZEGRZANIE"), "ekran alarmu");
+  sprawdz(logMa("tag=SEN zdarzenie=sen_wstrzymany powod=alarm"), "log: tag=SEN zdarzenie=sen_wstrzymany powod=alarm (raz)");
+  biegnij(420000);
+  sprawdz(g_atrapa.usnal == 0 && senJasno(), "7 min alarmu bez dotyku na baterii: jasno, bez snu");
+  sprawdz(ileLinii("tag=SEN zdarzenie=sen_wstrzymany") == 1, "linia sen_wstrzymany tylko raz, nie co sekunde");
+  // Alarm ustaje: licznik bezczynnosci jest stary (> 5 min) - panel przyciemnia i
+  // usypia dopiero po normalnych progach liczonych od... ostatniego dotyku. Nikt
+  // nie dotykal od startu, wiec sen przychodzi w ciagu sekundy. To zamierzone:
+  // alarm sie skonczyl, nikogo nie bylo przy panelu.
+  ustaw(0, [](Centrala& c) { c.tOgrz = 70.0; c.alarmOgrzewanie = false; });
+  biegnij(8000);
+  sprawdz(g_atrapa.usnal == 1 && logMa("tag=SEN zdarzenie=usypianie powod=bez_dotyku"), "alarm ustal, nikt nie dotykal od 7 min: sen");
+}
+
+#ifdef DIAG_MA_OTA
+void scenariuszSenOta() {
+  senOgniwoNaBaterii(2050);   // 4,10 V - duzo powyzej progu OTA_BATERIA_MIN_PROC (30 %)
+  ustaw(0, [](Centrala& c) { c.otaBajtowNaMs = 6; });   // wolne lacze: 1,2 MB idzie ok. 200 s
+  otaWlaczPanel(25000);       // po OTA_PO_STARCIE_MS, bez dotyku od startu
+  const std::string plik = programPanelu(OTA_ROZMIAR_PLIKU, 0x31);
+  otaCentralaWystawia(OTA_TAG_WYDANIA, plik);
+  const size_t od = g_atrapa.serial.size();
+  const long doStartu = otaCzekajNaLog("tag=OTA-PANEL zdarzenie=start ", "", od, 10000);
+  sprawdz(doStartu >= 0, "aktualizacja panelu ruszyla (na baterii 4,10 V)");
+  biegnij(5000);
+  sprawdz(ekranMa("AKTUALIZACJA PANELU"), "nakladka aktualizacji na ekranie");
+  // Od startu minelo > 1 min bez dotyku, trwa pobieranie: zadnego przyciemnienia ani snu.
+  biegnij(60000);
+  info("%s", liniaLogu("tag=SEN", od).c_str());
+  sprawdz(senJasno() && g_atrapa.usnal == 0, "w trakcie pobierania na baterii: jasno, bez snu (ponad 1,5 min bez dotyku)");
+  sprawdz(logMa("tag=SEN zdarzenie=sen_wstrzymany powod=ota", "", "", od), "log: tag=SEN zdarzenie=sen_wstrzymany powod=ota");
+  sprawdz(!logMa("tag=SEN zdarzenie=przyciemnienie", "", "", od), "bez przyciemnienia w trakcie pobierania");
+}
+#else
+void scenariuszSenOta() { sprawdz(false, "firmware ma aktualizacje OTA w postaci z v1.4.0 (diagnostyka_panelu.h: DIAG_MA_OTA)"); }
+#endif
+
+void scenariuszSenRozladowana() {
+  // Ogniwo 3,25 V (1625 mV na dzielniku): ponizej SEN_NAPIECIE_MIN_V.
+  senOgniwoNaBaterii(1625);
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  const unsigned long poSetup = millis();
+  lv_disp_trig_activity(NULL);   // ktos wlasnie dotknal - nie ma znaczenia
+  biegnij(6000);
+  info("%s", liniaLogu("tag=SEN zdarzenie=usypianie").c_str());
+  sprawdz(g_atrapa.usnal == 1, "ogniwo 3,25 V bez ladowarki: sen od razu po starcie, mimo dotyku");
+  sprawdz(logMa("tag=SEN zdarzenie=usypianie powod=bateria_rozladowana", "napiecie=3.25V"), "log: powod=bateria_rozladowana napiecie=3.25V");
+  sprawdz(tftMa("BATERIA ROZLADOWANA") && tftMa("Podlacz ladowarke. Panel usypia."), "napis \"BATERIA ROZLADOWANA / Podlacz ladowarke. Panel usypia.\" przed snem");
+  info("od konca setup() do snu: %lu ms (w tym napis %u ms)", g_atrapa.usnalMs - poSetup, (unsigned)diag::SEN_NAPIS_MS);
+  sprawdz(g_atrapa.usnalMs - poSetup >= diag::SEN_NAPIS_MS && g_atrapa.usnalMs - poSetup <= diag::SEN_NAPIS_MS + 1500, "napis stoi 2,5 s, potem sen");
+  sprawdz(g_atrapa.pinTrzymany[21] && g_atrapa.pinTrzymany[13] && senWypelnienie() == 0, "podswietlenie 0 i hold na GPIO21/GPIO13 jak przy zwyklym snie");
+}
+
+void scenariuszSenRozladowanaAlarm() {
+  // 3,25 V + alarm: alarm wazniejszy (ekran i brzeczyk zostaja). 3,05 V: sen mimo alarmu.
+  senOgniwoNaBaterii(1625);
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  ustaw(0, [](Centrala& c) { c.tOgrz = 135.0; c.alarmOgrzewanie = true; });
+  setup();
+  biegnij(30000);
+  sprawdz(g_atrapa.usnal == 0 && ekranMa("PRZEGRZANIE"), "3,25 V w alarmie: panel nie spi, ekran alarmu stoi");
+  g_atrapa.adcMv[34] = 1525;   // 3,05 V
+  biegnij(35000);              // nastepny pomiar baterii (co 30 s) + decyzja
+  sprawdz(g_atrapa.usnal == 1 && logMa("tag=SEN zdarzenie=usypianie powod=bateria_krytyczna", "napiecie=3.05V"), "3,05 V w alarmie: sen (powod=bateria_krytyczna), brzeczyk wyciszony");
+  sprawdz(g_atrapa.tonHz == 0 && g_atrapa.gpio[13] == LOW, "brzeczyk przed snem: cisza");
+}
+
+// --- sen (v1.5.1): trzy uwagi uzytkownika po wgraniu v1.5.0 ----------------
+// 1. Po wybudzeniu przyciskiem od razu pulpit (ekran startowy z wersja tylko
+//    przy starcie zasilania). 2. Pierwsze dotkniecie przyciemnionego ekranu
+//    tylko rozjasnia (filtr diag::dotykPrzepusc(), sprawdzany jednostkowo w
+//    test_diagnostyka.cpp - atrapa dotyku jest "skalibrowana na zero", wiec
+//    tutaj nie da sie dotknac prawdziwym palcem). 3. Czasy przyciemnienia i snu
+//    do wyboru na ekranie WYSWIETLACZ.
+void scenariuszSenPoWybudzeniu() {
+  senOgniwoNaBaterii();
+  g_atrapa.wybudzenie = 2;   // ESP_SLEEP_WAKEUP_EXT0 = przycisk GPIO14
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  // Pamiec RTC jak po prawdziwym snie: BSSID i kanal centrali znane, bez skanu.
+  memcpy(rtcBssidCentrali, BSSID_PIEC, 6);
+  rtcKanalCentrali = 6;
+  rtcBssidZnany = true;
+  ustaw(0, [](Centrala& c) { c.fw = "v3.58.10"; });
+  const unsigned long przed = millis();
+  const unsigned long long pikseliPrzed = g_atrapa.spiPikseli;
+  setup();
+  const unsigned long czasSetupMs = millis() - przed;
+  sprawdz(logMa("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk"), "log: wybudzenie zrodlo=przycisk");
+  sprawdz(!tftMa("WYSWIETLACZ CO") && !tftMa("Panel " WERSJA_FW) && !tftMa("Szukam centrali") && !tftMa("Laczenie z WiFi") && !tftMa("Centrala v3.58.10"),
+          "po wybudzeniu: ZADNEGO napisu ekranu startowego (ani tytulu, ani wersji, ani \"Laczenie z WiFi\")");
+  const size_t pulpit = g_atrapa.serial.find("tag=SEN zdarzenie=pulpit_po_wybudzeniu");
+  const size_t polaczono = g_atrapa.serial.find("zdarzenie=polaczono");
+  info("%s", liniaLogu("tag=SEN zdarzenie=pulpit_po_wybudzeniu").c_str());
+  sprawdz(pulpit != std::string::npos && polaczono != std::string::npos && pulpit < polaczono,
+          "pulpit LVGL wyslany do wyswietlacza PRZED polaczeniem z WiFi (log pulpit_po_wybudzeniu przed polaczono)");
+  sprawdz(g_atrapa.spiPikseli - pikseliPrzed >= 153600ULL, "w setup() poszedl do wyswietlacza co najmniej caly ekran pikseli (pulpit)");
+  info("setup() po wybudzeniu trwal %lu ms czasu plytki, pulpit na wyswietlaczu po %s (zimny start: >= 1500 ms samej pauzy na wersje)",
+       czasSetupMs, liniaLogu("tag=SEN zdarzenie=pulpit_po_wybudzeniu").c_str() + strlen("tag=SEN zdarzenie=pulpit_po_wybudzeniu "));
+  // Zimny start: 300 ms rozruchu + 400 ms laczenia + pierwsze dane + 1500 ms pauzy na wersje = ok. 3 s; po wybudzeniu bez tej pauzy.
+  sprawdz(czasSetupMs < 2000 && !tftMa("Szukam centrali") && !logMa("zdarzenie=skan_centrala"), "bez 1,5 s pauzy ekranu startowego (setup < 2 s) i bez skanu (BSSID z pamieci RTC)");
+  sprawdz(logMa("tag=PANEL zdarzenie=ekran_startowy", "panel=" WERSJA_FW, "centrala=v3.58.10"), "linia tag=PANEL zdarzenie=ekran_startowy zostaje w logu (wersje do diagnostyki)");
+  biegnij(3000);
+  sprawdz(ekranMa("BOJLER") && ekranMa("ZEWN") && drugiPulpit() != lv_scr_act(), "po 3 s: pulpit z kafelkami, dane z centrali");
+  sprawdz(senJasno(), "po wybudzeniu pelna jasnosc");
+  zrzutEkranu("1_po_wybudzeniu");
+
+  // Licznik bezczynnosci liczy sie od wybudzenia: 1 min -> 5 %, jak zwykle.
+  biegnij(60000);
+  sprawdz(senPrzyciemnione(), "minuta po wybudzeniu bez dotyku: znow 5 %");
+}
+
+// [v1.5.4] Wgrywanie z PlatformIO przez WiFi (ArduinoOTA): gotowe po polaczeniu,
+// ekran z paskiem w trakcie, blad -> pulpit i dalsza praca, sukces -> restart.
+void scenariuszOtaVscode() {
+  g_atrapa.gpio[35] = HIGH;      // na baterii - zeby sprawdzic tez przyciemnienie
+  g_atrapa.adcMv[34] = 1950;
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 1, -60, 0));
+  setup();
+  sprawdz(g_atrapa.otaVscodeBegin == 0, "przed polaczeniem z WiFi ArduinoOTA.begin() jeszcze nie bylo");
+  biegnij(15000);
+  sprawdz(g_atrapa.otaVscodeBegin == 1 && g_atrapa.otaVscodeHandle > 100,
+          "po polaczeniu: ArduinoOTA.begin() raz, handle() w kazdym obrocie petli");
+  info("%s", liniaLogu("tag=OTA-VSCODE zdarzenie=gotowe").c_str());
+  sprawdz(logMa("tag=OTA-VSCODE zdarzenie=gotowe", "port=3232"), "log: tag=OTA-VSCODE zdarzenie=gotowe ... port=3232");
+  sprawdz(ArduinoOTA.hostname == "panelco" && ArduinoOTA.haslo == SECRET_OTA_HASLO && !ArduinoOTA.mdns,
+          "nazwa panelco, haslo OTA takie jak centrali, mDNS wylaczony");
+
+  // Panel przyciemniony na baterii (1 min bez dotyku) - wgrywanie ma przywrocic jasnosc.
+  biegnij(62000);
+  sprawdz(senPrzyciemnione(), "na baterii po minucie: przyciemniony");
+
+  // Blad w polowie (zle haslo z komputera): pasek znika, panel pracuje dalej.
+  size_t od = g_atrapa.serial.size();
+  const int statusowPrzed = stanC(0).nStatus;
+  ArduinoOTA.naStart();
+  sprawdz(senJasno() && logMa("tag=SEN zdarzenie=jasnosc powod=ota_vscode", "", "", od), "start wgrywania: pelna jasnosc, log powod=ota_vscode");
+  atrapa_uplyw_czasu(50);   // jak na plytce: miedzy kawalkami plynie czas, LVGL ma co odswiezyc
+  ArduinoOTA.naPostep(600000, 1200000);
+  sprawdz(ekranMa("AKTUALIZACJA PANELU") && ekranMa("Wgrywanie z komputera") && ekranMa("50%"), "w trakcie: ekran AKTUALIZACJA PANELU, \"Wgrywanie z komputera\", 50%");
+  zrzutEkranu("1_wgrywanie_50");
+  ArduinoOTA.naBlad(OTA_AUTH_ERROR);
+  sprawdz(!lvgl_dashboard_poc_ota_widoczna() && logMa("tag=OTA-VSCODE lvl=ERR zdarzenie=blad kod=0 opis=zle_haslo", "", "", od),
+          "blad (zle haslo): pulpit z powrotem, log opis=zle_haslo");
+  biegnij(5000);
+  sprawdz(g_atrapa.usnal == 0 && g_atrapa.restarty == 0 && stanC(0).nStatus > statusowPrzed, "po bledzie panel pracuje dalej: pyta centrale, bez restartu");
+
+  // Udane wgranie 1,2 MB: start, postep co 10 %, koniec, restart z biblioteki.
+  od = g_atrapa.serial.size();
+  ArduinoOTA.symulujWgranie(1200000);
+  sprawdz(logMa("tag=OTA-VSCODE zdarzenie=start typ=firmware", "", "", od) &&
+          logMa("tag=OTA-VSCODE zdarzenie=postep procent=50", "", "", od) &&
+          logMa("tag=OTA-VSCODE zdarzenie=koniec", "", "", od),
+          "udane wgranie: log start, postep procent=50, koniec");
+  sprawdz(g_atrapa.restarty == 1 && g_atrapa.wdtZadzialal == 0, "po wgraniu restart z biblioteki, watchdog nie zadzialal (karmiony w onProgress)");
+}
+
+void scenariuszSenPoWybudzeniuLadowarka() {
+  // Wlozona ladowarka (ext1): to samo, tylko zrodlo=usb i bez przyciemniania.
+  g_atrapa.gpio[35] = LOW;
+  g_atrapa.adcMv[34] = 1950;
+  g_atrapa.wybudzenie = 3;   // ESP_SLEEP_WAKEUP_EXT1
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  sprawdz(logMa("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=usb"), "log: wybudzenie zrodlo=usb");
+  sprawdz(!tftMa("WYSWIETLACZ CO") && !tftMa("Laczenie z WiFi") && logMa("tag=SEN zdarzenie=pulpit_po_wybudzeniu"), "po wlozeniu ladowarki: pulpit od razu, bez ekranu startowego");
+  biegnij(90000);
+  sprawdz(senJasno() && !logMa("tag=SEN zdarzenie=przyciemnienie"), "na ladowarce po 90 s nadal jasno");
+}
+
+// Ekran WYSWIETLACZ, wiersz "Na baterii": dwa przyciski, kazde dotkniecie to
+// nastepna wartosc, zapis indeksu w NVS, czasy od razu w uzyciu.
+static lv_obj_t* senPrzyciskZPrefiksem(const char* prefiks) {
+  // Etykieta na przycisku zaczyna sie od "Przyciemnij po:" / "Uśpij po:".
+  std::function<lv_obj_t*(lv_obj_t*)> szukaj = [&](lv_obj_t* o) -> lv_obj_t* {
+    if (lv_obj_check_type(o, &lv_label_class)) {
+      const char* t = lv_label_get_text(o);
+      if (t != nullptr && strncmp(t, prefiks, strlen(prefiks)) == 0) return o;
+    }
+    for (uint32_t i = 0; i < lv_obj_get_child_cnt(o); i++) if (lv_obj_t* z = szukaj(lv_obj_get_child(o, i))) return z;
+    return nullptr;
+  };
+  return szukaj(lv_scr_act());
+}
+static std::string senNapisPrzycisku(const char* prefiks) {
+  lv_obj_t* l = senPrzyciskZPrefiksem(prefiks);
+  return l != nullptr ? lv_label_get_text(l) : "";
+}
+static bool senKliknijPrzycisk(const char* prefiks) {
+  lv_obj_t* l = senPrzyciskZPrefiksem(prefiks);
+  if (l == nullptr) return false;
+  LiczFirmware licz;
+  lv_event_send(lv_obj_get_parent(l), LV_EVENT_CLICKED, nullptr);
+  return true;
+}
+
+void scenariuszSenUstawienia() {
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  lv_obj_t* drugi = drugiPulpit();
+  sprawdz(drugi != nullptr, "drugi pulpit istnieje");
+  if (drugi == nullptr) return;
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  biegnij(300);
+  sprawdz(kliknij("WYŚWIETLACZ"), "dotkniecie kafelka WYŚWIETLACZ");
+  biegnij(300);
+  lv_obj_t* ekran = lv_scr_act();
+  sprawdz(ekranMa("Na baterii") && ekranMa("Jasność w dzień") && ekranMa("Automatyczny harmonogram"), "ekran WYSWIETLACZ: dotychczasowe wiersze + nowy wiersz \"Na baterii\"");
+  info("przyciski: \"%s\" / \"%s\"", senNapisPrzycisku("Przyciemnij po").c_str(), senNapisPrzycisku("Uśpij po").c_str());
+  sprawdz(senNapisPrzycisku("Przyciemnij po") == "Przyciemnij po: 1 min" && senNapisPrzycisku("Uśpij po") == "Uśpij po: 5 min",
+          "bez ustawien w NVS: \"Przyciemnij po: 1 min\" i \"Uśpij po: 5 min\" (= v1.5.0)");
+  {
+    // Caly uklad miesci sie na ekranie 320 px: ostatni wiersz konczy sie nad dolna krawedzia, a krzyzyk X nie nachodzi.
+    lv_obj_update_layout(ekran);
+    lv_obj_t* l = senPrzyciskZPrefiksem("Uśpij po");
+    lv_obj_t* btn = lv_obj_get_parent(l);
+    lv_area_t a; lv_obj_get_coords(btn, &a);
+    info("przycisk \"Uśpij po\": x=%d..%d y=%d..%d", (int)a.x1, (int)a.x2, (int)a.y1, (int)a.y2);
+    sprawdz(a.y2 <= 319 - 10 && a.x2 <= 479 - 10, "wiersz \"Na baterii\" miesci sie na ekranie (dol i prawa krawedz z marginesem)");
+    lv_obj_t* h = znajdzEtykiete(ekran, "Automatyczny harmonogram");
+    lv_area_t ha; lv_obj_get_coords(lv_obj_get_parent(h), &ha);
+    sprawdz(ha.y2 < a.y1, "wiersz harmonogramu konczy sie nad wierszem \"Na baterii\" (nie nachodza)");
+  }
+  sprawdz(ekranMa("100%"), "domyslna jasnosc w dzien = 100%");
+  sprawdz(wierszSuwakaWGranicach("Jasność w dzień", false) && wierszSuwakaWGranicach("Jasność w nocy", false),
+          "suwaki jasnosci: galka przy 100% nie wystaje za pasek ani za wiersz, takze w pionie (v1.5.9/v1.5.10)");
+  zrzutEkranu("1_wyswietlacz_domyslnie");
+
+  // --- przyciemnienie: 1 min -> 2 min ---
+  size_t od = g_atrapa.serial.size();
+  sprawdz(senKliknijPrzycisk("Przyciemnij po"), "dotkniecie przycisku \"Przyciemnij po\"");
+  biegnij(200);
+  sprawdz(senNapisPrzycisku("Przyciemnij po") == "Przyciemnij po: 2 min", "-> \"Przyciemnij po: 2 min\"");
+  sprawdz(g_atrapa.nvs["wyswietlacz"]["senPrzyIdx"] == 2, "NVS wyswietlacz/senPrzyIdx=2");
+  sprawdz(logMa("tag=SEN zdarzenie=ustawienie przyciemnij_ms=120000 uspij_ms=300000", "", "", od), "log: tag=SEN zdarzenie=ustawienie przyciemnij_ms=120000 uspij_ms=300000");
+  // --- sen: 5 -> 10 -> 30 min -> 1 godz. -> nigdy -> 2 min (zawija) ---
+  const char* kolejne[] = { "Uśpij po: 10 min", "Uśpij po: 30 min", "Uśpij po: 1 godz.", "Uśpij po: nigdy", "Uśpij po: 2 min", "Uśpij po: 5 min" };
+  bool ok = true;
+  for (const char* oczekiwany : kolejne) {
+    senKliknijPrzycisk("Uśpij po");
+    biegnij(100);
+    if (senNapisPrzycisku("Uśpij po") != oczekiwany) { info("po dotknieciu: \"%s\", oczekiwano \"%s\"", senNapisPrzycisku("Uśpij po").c_str(), oczekiwany); ok = false; }
+  }
+  sprawdz(ok, "\"Uśpij po\": 10 min -> 30 min -> 1 godz. -> nigdy -> 2 min -> 5 min (lista zawija sie)");
+  sprawdz(g_atrapa.nvs["wyswietlacz"]["senSpijIdx"] == 1, "NVS wyswietlacz/senSpijIdx=1 po pelnym okrazeniu");
+  zrzutEkranu("2_wyswietlacz_po_zmianie");
+  kliknij(LV_SYMBOL_CLOSE);
+  biegnij(300);
+
+  // --- czasy dzialaja od razu: 2 min do przyciemnienia ---
+  lv_disp_trig_activity(NULL);
+  const unsigned long dotyk = millis();
+  biegnij(65000);
+  sprawdz(senJasno(), "65 s po ostatnim dotyku: nadal jasno (ustawione 2 min, nie 1 min)");
+  biegnij(60000);
+  sprawdz(senPrzyciemnione(), "125 s po ostatnim dotyku: 5 %");
+  sprawdz(logMa("tag=SEN zdarzenie=przyciemnienie powod=bez_dotyku", "", "", od), "log: przyciemnienie");
+  while (millis() - dotyk < 330000 && g_atrapa.usnal == 0) biegnij(1000);
+  sprawdz(g_atrapa.usnal == 1, "5 min po ostatnim dotyku: sen (ustawienie snu wrocilo do 5 min)");
+}
+
+void scenariuszSenUstawieniaNigdy() {
+  // NVS z poprzedniego uzycia: przyciemnianie "nigdy" (5), sen po 2 min (0).
+  g_atrapa.nvs["wyswietlacz"]["senPrzyIdx"] = 5;
+  g_atrapa.nvs["wyswietlacz"]["senSpijIdx"] = 0;
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  lv_obj_t* drugi = drugiPulpit();
+  if (drugi != nullptr) {
+    { LiczFirmware licz; lv_scr_load(drugi); }
+    biegnij(300);
+    kliknij("WYŚWIETLACZ");
+    biegnij(300);
+    sprawdz(senNapisPrzycisku("Przyciemnij po") == "Przyciemnij po: nigdy" && senNapisPrzycisku("Uśpij po") == "Uśpij po: 2 min",
+            "po restarcie przyciski pokazuja zapisane: \"Przyciemnij po: nigdy\", \"Uśpij po: 2 min\"");
+    zrzutEkranu("1_wyswietlacz_z_nvs");
+    kliknij(LV_SYMBOL_CLOSE);
+    biegnij(300);
+  }
+  lv_disp_trig_activity(NULL);
+  const unsigned long dotyk = millis();
+  biegnij(100000);
+  sprawdz(senJasno() && !logMa("tag=SEN zdarzenie=przyciemnienie"), "100 s bez dotyku: jasno (przyciemnianie \"nigdy\")");
+  while (millis() - dotyk < 150000 && g_atrapa.usnal == 0) biegnij(1000);
+  info("sen %ld s po ostatnim dotyku", g_atrapa.usnal ? (long)((g_atrapa.usnalMs - dotyk) / 1000UL) : -1L);
+  sprawdz(g_atrapa.usnal == 1 && g_atrapa.usnalMs - dotyk >= 119000 && g_atrapa.usnalMs - dotyk <= 123000, "sen 2 min po ostatnim dotyku, bez wczesniejszego przyciemnienia");
+}
+
+// [v1.5.20 TEST-DZWIEKU] Przycisk "Test dźwięku" na ekranie WYSWIETLACZ:
+// przemiatanie 9 czestotliwosci po 1,5 s z napisem na przycisku, stop
+// dotknieciem, ekran nie zamyka sie w trakcie, w alarmie odmowa, alarm przerywa.
+void scenariuszTestDzwieku() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  lv_obj_t* drugi = drugiPulpit();
+  sprawdz(drugi != nullptr, "drugi pulpit istnieje");
+  if (drugi == nullptr) return;
+  { LiczFirmware licz; lv_scr_load(drugi); }
+  biegnij(300);
+  sprawdz(kliknij("WYŚWIETLACZ"), "dotkniecie kafelka WYŚWIETLACZ");
+  biegnij(300);
+  lv_obj_t* ekran = lv_scr_act();
+  sprawdz(ekranMa("Test dźwięku") && ekranMa("Automatyczny harmonogram"), "ekran WYSWIETLACZ: przycisk \"Test dźwięku\" w wierszu harmonogramu");
+  {
+    lv_obj_update_layout(ekran);
+    lv_obj_t* t = znajdzEtykiete(ekran, "Test dźwięku");
+    lv_obj_t* h = znajdzEtykiete(ekran, "Automatyczny harmonogram");
+    lv_obj_t* w = znajdzEtykiete(ekran, "WŁ.");
+    lv_area_t ta, ha, wa; lv_obj_get_coords(lv_obj_get_parent(t), &ta); lv_obj_get_coords(h, &ha); lv_obj_get_coords(lv_obj_get_parent(w), &wa);
+    info("etykieta harmonogramu x=%d..%d, przycisk testu x=%d..%d, WL./WYL. x=%d..%d", (int)ha.x1, (int)ha.x2, (int)ta.x1, (int)ta.x2, (int)wa.x1, (int)wa.x2);
+    sprawdz(ha.x2 + 6 <= ta.x1 && ta.x2 + 6 <= wa.x1, "przycisk testu nie nachodzi na etykiete ani na WL./WYL. (>= 6 px odstepu)");
+  }
+  zrzutEkranu("1_wyswietlacz_test_dzwieku");
+  sprawdz(g_atrapa.tonHz == 0, "przed testem cisza");
+
+  // --- pelne przemiatanie ---
+  size_t od = g_atrapa.serial.size();
+  sprawdz(senKliknijPrzycisk("Test dźwięku"), "dotkniecie \"Test dźwięku\"");
+  biegnij(50);
+  sprawdz(g_atrapa.tonHz == 1000 && senNapisPrzycisku("1000 Hz") == "1000 Hz", "od razu 1000 Hz, napis na przycisku \"1000 Hz\"");
+  const unsigned oczekiwane[] = { 1000, 1500, 2000, 2300, 2500, 2700, 3000, 3500, 4000 };
+  bool kolejnosc = true;
+  for (int i = 0; i < 9; i++) {
+    if (i > 0) biegnij(1500);
+    char napis[16]; snprintf(napis, sizeof(napis), "%u Hz", oczekiwane[i]);
+    if (g_atrapa.tonHz != oczekiwane[i] || senNapisPrzycisku(napis) != napis) { kolejnosc = false; info("krok %d: ton %u, oczekiwane %u", i + 1, (unsigned)g_atrapa.tonHz, oczekiwane[i]); }
+  }
+  sprawdz(kolejnosc, "9 krokow co 1,5 s: 1000/1500/2000/2300/2500/2700/3000/3500/4000 Hz, napis zgodny z tonem");
+  zrzutEkranu("2_test_dzwieku_4000hz");
+  sprawdz(lv_scr_act() == ekran, "ekran WYSWIETLACZ nie zamknal sie z bezczynnosci w trakcie testu (13,5 s)");
+  biegnij(1600);
+  sprawdz(g_atrapa.tonHz == 0 && senNapisPrzycisku("Test dźwięku") == "Test dźwięku", "po ostatnim kroku cisza i napis \"Test dźwięku\"");
+  sprawdz(ileLinii("tag=BRZECZYK zdarzenie=test_dzwieku krok=", "", "", od) == 9 && logMa("tag=BRZECZYK zdarzenie=test_dzwieku_koniec powod=koniec", "", "", od),
+          "log: 9 linii test_dzwieku krok=i/9 hz=... i test_dzwieku_koniec powod=koniec");
+
+  // --- stop dotknieciem ---
+  sprawdz(senKliknijPrzycisk("Test dźwięku"), "drugi start");
+  biegnij(1600);
+  sprawdz(g_atrapa.tonHz == 1500, "drugi krok 1500 Hz");
+  sprawdz(senKliknijPrzycisk("1500 Hz"), "dotkniecie w trakcie");
+  biegnij(50);
+  sprawdz(g_atrapa.tonHz == 0 && senNapisPrzycisku("Test dźwięku") == "Test dźwięku", "dotkniecie w trakcie = stop: cisza, napis wraca");
+
+  // --- alarm w trakcie przerywa; w alarmie odmowa ---
+  sprawdz(senKliknijPrzycisk("Test dźwięku"), "trzeci start");
+  biegnij(500);
+  od = g_atrapa.serial.size();
+  ustaw(0, [](Centrala& c) { c.alarmOgrzewanie = true; c.tOgrz = 135.0; });
+  biegnij(3000);
+  sprawdz(brzeczykGraPrzegrzanie() && logMa("tag=BRZECZYK zdarzenie=test_dzwieku_koniec powod=alarm", "", "", od), "alarm w trakcie testu: test przerwany (powod=alarm), gra wzorzec alarmu");
+  sprawdz(ekranMa("PRZEGRZANIE"), "ekran alarmu");
+  kliknij("ZAMKNIJ"); biegnij(300);
+  // po ZAMKNIJ panel wraca na pulpit; przycisk testu jest na ekranie WYSWIETLACZ - wolamy callback wprost
+  od = g_atrapa.serial.size();
+  testDzwiekuPrzycisk();
+  biegnij(50);
+  sprawdz(logMa("tag=BRZECZYK zdarzenie=test_dzwieku_odmowa powod=alarm", "", "", od) && brzeczykGraPrzegrzanie(), "w czasie alarmu: odmowa, alarm gra dalej");
+}
+
+void scenariuszSenUstawieniaNigdySen() {
+  // Nieznany indeks z NVS (np. z przyszlej wersji) -> domyslne; sen "nigdy" -> panel nie usypia, ale przyciemnia.
+  g_atrapa.nvs["wyswietlacz"]["senPrzyIdx"] = 77;
+  g_atrapa.nvs["wyswietlacz"]["senSpijIdx"] = 5;
+  senOgniwoNaBaterii();
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  setup();
+  biegnij(2000);
+  lv_disp_trig_activity(NULL);
+  biegnij(65000);
+  sprawdz(senPrzyciemnione(), "nieznany indeks przyciemnienia (77) -> domyslna minuta: po 65 s 5 %");
+  biegnij(15UL * 60UL * 1000UL);
+  sprawdz(g_atrapa.usnal == 0 && senPrzyciemnione(), "sen \"nigdy\": 16 min bez dotyku na baterii - przyciemniony, ale nie spi");
+  // Rozladowana bateria usypia mimo "nigdy".
+  g_atrapa.adcMv[34] = 1625;   // 3,25 V
+  biegnij(40000);
+  sprawdz(g_atrapa.usnal == 1 && logMa("tag=SEN zdarzenie=usypianie powod=bateria_rozladowana"), "3,25 V: sen mimo ustawienia \"nigdy\" (ochrona ogniwa)");
 }
 
 // --- polskie litery (v1.4.5) ------------------------------------------------
@@ -4802,6 +5997,270 @@ const char* nazwaCzcionki(const lv_font_t* f) {
   return f == &lv_font_pl_14 ? "lv_font_pl_14" : f == &lv_font_pl_20 ? "lv_font_pl_20" : f == &lv_font_pl_28 ? "lv_font_pl_28" : "inna";
 }
 }  // namespace
+
+// --- kafelki: kazdy napis miesci sie w kafelku (v1.5.2) ----------------------
+// Zdjecie z 22.11: ZEWN pokazywal "za 105n" - "za 105m" (deszcz za 105 min)
+// czcionka 28 nie miescil sie w kafelku 114 px. Od v1.5.2 ustawNapisDopasuj()
+// dobiera czcionke 28/20/14 do szerokosci, a napisy o deszczu to pelne
+// slowa. Tu: najgorsze wartosci kazdego kafelka i sprawdzenie, ze kazda
+// etykieta wartosci konczy sie wewnatrz swojego kafelka.
+namespace {
+struct KafelekPomiar { std::string tekst; const lv_font_t* czcionka; int x1, x2, y1, y2, kartaX2, kartaY2; bool miesci; };
+bool kafelekPomiar(const char* prefiks, KafelekPomiar& w) {
+  lv_obj_t* l = znajdzEtykiete(lv_scr_act(), prefiks);
+  if (l == nullptr) return false;
+  lv_obj_update_layout(lv_scr_act());
+  lv_area_t a, k;
+  lv_obj_get_coords(l, &a);
+  // [v1.5.14] napis na pasku pogody kafelka ZEWN: rodzic to pasek (18 px),
+  // a kafelek to rodzic paska - mierzymy wzgledem kafelka, jak inne napisy.
+  lv_obj_t* karta = lv_obj_get_parent(l);
+  if (lv_obj_get_height(karta) < 40 && lv_obj_get_parent(karta) != lv_scr_act()) karta = lv_obj_get_parent(karta);
+  lv_obj_get_coords(karta, &k);
+  w.tekst = lv_label_get_text(l);
+  w.czcionka = lv_obj_get_style_text_font(l, LV_PART_MAIN);
+  w.x1 = a.x1; w.x2 = a.x2; w.y1 = a.y1; w.y2 = a.y2; w.kartaX2 = k.x2; w.kartaY2 = k.y2;
+  // Prawy margines >= 4 px (jak lewy 8 px minus ramka), dol nad krawedzia karty.
+  w.miesci = (a.x2 <= k.x2 - 4) && (a.y2 <= k.y2 - 2) && (a.x1 >= k.x1 + 4);
+  return true;
+}
+bool kafelekSprawdz(const char* prefiks, const char* dokladnie, const lv_font_t* oczekiwana, const char* opis) {
+  KafelekPomiar w;
+  if (!kafelekPomiar(prefiks, w)) { info("brak etykiety \"%s\"", prefiks); sprawdz(false, opis); return false; }
+  info("\"%s\" %s x=%d..%d (karta do %d) y=%d..%d (karta do %d)", w.tekst.c_str(), nazwaCzcionki(w.czcionka), w.x1, w.x2, w.kartaX2, w.y1, w.y2, w.kartaY2);
+  const bool ok = w.miesci && (dokladnie == nullptr || w.tekst == dokladnie) && (oczekiwana == nullptr || w.czcionka == oczekiwana);
+  sprawdz(ok, opis);
+  return ok;
+}
+// [v1.5.17] Napis o pogodzie kafelka ZEWN (uklad E): dokladnie taki tekst
+// (linie rozdzielone '\n'), czcionka 14, kazda linia (z odstepem liter
+// etykiety) nie szersza niz miejsce obok ikony 40 px: ikona (TOP_RIGHT -4)
+// zaczyna sie 69 px od lewej krawedzi karty, napis 7 px (ramka 1 + 6) ->
+// 62 px. Dodatkowo lewa krawedz i gora jak tytul.
+bool zewnNapisSprawdz(const char* dokladnie, const char* opis) {
+  lv_obj_t* l = znajdzEtykiete(lv_scr_act(), dokladnie);
+  if (l == nullptr) { info("brak napisu \"%s\"", dokladnie); sprawdz(false, opis); return false; }
+  lv_obj_update_layout(lv_scr_act());
+  lv_area_t a, k;
+  lv_obj_get_coords(l, &a);
+  lv_obj_get_coords(lv_obj_get_parent(l), &k);
+  const std::string tekst = lv_label_get_text(l);
+  const lv_font_t* f = lv_obj_get_style_text_font(l, LV_PART_MAIN);
+  const lv_coord_t odstep = lv_obj_get_style_text_letter_space(l, LV_PART_MAIN);
+  int najszersza = 0;
+  size_t od = 0;
+  while (od <= tekst.size()) {
+    size_t koniec = tekst.find('\n', od);
+    if (koniec == std::string::npos) koniec = tekst.size();
+    const std::string linia = tekst.substr(od, koniec - od);
+    najszersza = std::max(najszersza, (int)lv_txt_get_width(linia.c_str(), (uint32_t)linia.size(), f, odstep, LV_TEXT_FLAG_NONE));
+    od = koniec + 1;
+  }
+  const int ikonaX = k.x1 + 69;
+  info("\"%s\" %s odstep=%d najszersza linia %d px, x=%d..%d (ikona od %d) y=%d..%d", tekst.c_str(), nazwaCzcionki(f), (int)odstep, najszersza, a.x1, a.x1 + najszersza - 1, ikonaX, a.y1, a.y2);
+  const bool ok = tekst == dokladnie && f == &lv_font_pl_14 && a.x1 + najszersza <= ikonaX && a.x1 == k.x1 + 7 && a.y1 <= k.y1 + 6 && odstep >= -1;
+  sprawdz(ok, opis);
+  return ok;
+}
+}  // namespace
+
+// [v1.5.18] Przeglad 13 ikon pogody kafelka ZEWN (ikony_pogoda.h) - po jednym
+// zrzucie na ikone, zeby bylo widac na PC, co dokladnie rysuje LCD. Sprawdzenia
+// minimalne (ekran zyje, napis zgodny), sens scenariusza to zrzuty.
+void scenariuszIkonyPogody() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  ustaw(0, [](Centrala& c) { c.pogodaPola = true; c.tZewn = 3.4; c.pogodaDzien = 1; c.wiatrPorywy = 20.0; c.deszczStan = 0; c.deszczMinuty = -1; c.pogodaKod = 0; c.pogodaKodOpad = -1; });
+  setup();
+  biegnij(4000);
+  struct Krok { const char* nazwa; int kod; int kodOpad; int dzien; int stan; int minuty; double wiatr; const char* napis; };
+  const Krok kroki[] = {
+    {"01_slonce",    0,  -1, 1, 0, -1, 20.0, nullptr},
+    {"02_noc",       0,  -1, 0, 0, -1, 20.0, nullptr},
+    {"03_czesciowo", 2,  -1, 1, 0, -1, 20.0, nullptr},
+    {"04_pochmurno", 3,  -1, 1, 0, -1, 20.0, nullptr},
+    {"05_mgla",      45, -1, 1, 0, -1, 20.0, "mgła"},
+    {"06_mzawka",    3,  53, 1, 1, 45, 20.0, "mżawka\nza 45 min"},
+    {"07_deszcz",    3,  63, 1, 1, 45, 20.0, "deszcz\nza 45 min"},
+    {"08_ulewa",     63, 63, 1, 2, 30, 20.0, "pada\n30 min"},
+    {"09_snieg",     3,  71, 1, 1, 45, 20.0, "śnieg\nza 45 min"},
+    {"10_sypie",     71, 71, 1, 2, 30, 20.0, "sypie\n30 min"},
+    {"11_burza",     3,  95, 1, 1, 45, 20.0, "burza\nza 45 min"},
+    {"12_grad",      3,  96, 1, 1, 45, 20.0, "grad\nza 45 min"},
+    {"13_wiatr",     3,  -1, 1, 0, -1, 62.0, "silny\nwiatr"},
+  };
+  static const Krok* g_k = nullptr;   // ustaw() bierze wskaznik na funkcje, nie domkniecie
+  for (const Krok& k : kroki) {
+    g_k = &k;
+    ustaw(0, [](Centrala& c) { c.pogodaKod = g_k->kod; c.pogodaKodOpad = g_k->kodOpad; c.pogodaDzien = g_k->dzien; c.deszczStan = g_k->stan; c.deszczMinuty = g_k->minuty; c.wiatrPorywy = g_k->wiatr; });
+    biegnij(3000);
+    zrzutEkranu(k.nazwa);
+    if (k.napis) zewnNapisSprawdz(k.napis, (std::string("ikona ") + k.nazwa + ": napis").c_str());
+    else sprawdz(ekranMa("ZEWN"), (std::string("ikona ") + k.nazwa + ": bez napisu, tytul ZEWN").c_str());
+  }
+  sprawdz(ekranMa("3.4°C"), "temperatura 3.4°C przez caly przeglad");
+}
+
+void scenariuszKafelkiSzerokosc() {
+  g_atrapa.eter.push_back(ap(BSSID_PIEC, 6, -45, 0));
+  // Najszersze realne wartosci: ujemne z czescia dziesietna, trzycyfrowe, 100 %, 1013 hPa.
+  ustaw(0, [](Centrala& c) {
+    c.tZewn = -25.5; c.tPokoj = -10.5; c.wilgotnosc = 100; c.cisnienie = 1013.2;
+    c.tBojler = 100; c.tPanel = 100; c.tOgrz = 100; c.tOgrzSr = 100; c.klapa = 180; c.syberka = 90; c.dym = 9999;   // [v1.5.6] stopnie: 180 i 90 = 100 %
+  });
+  setup();
+  biegnij(4000);
+  if (ekranMa("PRZEGRZANIE")) { kliknij("ZAMKNIJ"); biegnij(500); }
+  zrzutEkranu("1_najszersze_wartosci");
+  kafelekSprawdz("-25.5°C", "-25.5°C", nullptr, "ZEWN -25.5°C miesci sie w kafelku");
+  kafelekSprawdz("-10.5°C", "-10.5°C", nullptr, "POKÓJ -10.5°C miesci sie");
+  kafelekSprawdz("100 %", "100 %", &lv_font_pl_28, "WILGOTNOŚĆ 100 % - czcionka 28");
+  kafelekSprawdz("1013 hPa", "1013 hPa", &lv_font_pl_20, "CIŚNIENIE 1013 hPa - czcionka 20 (jak dotad), miesci sie");
+  kafelekSprawdz("100°C", "100°C", &lv_font_pl_28, "BOJLER 100°C - czcionka 28");
+  // Dolna krawedz tekstu w jednej linii: CISNIENIE (20) dosuniete do dolu wiersza wartosci, jak sasiedzi (28).
+  {
+    KafelekPomiar w28, w20;
+    if (kafelekPomiar("100 %", w28) && kafelekPomiar("1013 hPa", w20)) {
+      info("dol napisu: WILGOTNOŚĆ y2=%d, CIŚNIENIE y2=%d", w28.y2, w20.y2);
+      sprawdz(w20.y2 == w28.y2, "mniejsza czcionka dosunieta do dolu wiersza - ten sam dol co w sasiednim kafelku");
+    }
+  }
+
+  // [v1.5.17] Uklad "E" z projektanta: napis o pogodzie (bialy, czcionka 14,
+  // 1-2 linie) W MIEJSCU tytulu "ZEWN", temperatura czcionka 28 w zwyklym
+  // wierszu jak sasiedzi, bez niebieskiego paska. Obok ikony 40 px (x>=70
+  // w kafelku) na napis zostaje 63 px - kazda linia musi sie tam zmiescic.
+  // Tu centrala bez pol pogody (3.58.15) - sam deszcz_stan: "opad / za 2 h", "pada".
+  ustaw(0, [](Centrala& c) { c.pogodaPola = false; c.deszczStan = 1; c.deszczMinuty = 105; });
+  biegnij(3000);
+  zrzutEkranu("2_deszcz_za_105_min");
+  sprawdz(!ekranMa("za 105m") && !ekranMa("za 105n"), "nie ma juz skrotu \"za 105m\"");
+  kafelekSprawdz("-25.5°C", "-25.5°C", &lv_font_pl_28, "ZEWN przy deszczu: temperatura -25.5°C nadal na kafelku, czcionka 28");
+  zewnNapisSprawdz("opad\nza 2 h", "ZEWN 105 min (centrala bez pol pogody) -> \"opad\" / \"za 2 h\" w miejscu tytulu");
+  sprawdz(!ekranMa("ZEWN"), "tytul \"ZEWN\" schowany, gdy jest napis o pogodzie");
+  {
+    KafelekPomiar wT, wD, wP;
+    if (kafelekPomiar("-25.5°C", wT) && kafelekPomiar("opad\n", wD) && kafelekPomiar("-10.5°C", wP)) {
+      info("ZEWN: napis y=%d..%d, temperatura y=%d..%d (POKÓJ y=%d..%d, karta do %d)", wD.y1, wD.y2, wT.y1, wT.y2, wP.y1, wP.y2, wT.kartaY2);
+      sprawdz(wD.y2 < wT.y1, "napis o pogodzie (2 linie) konczy sie NAD temperatura");
+      sprawdz(wT.y1 == wP.y1 && wT.y2 == wP.y2, "temperatura ZEWN na tej samej wysokosci co POKÓJ (zwykly wiersz wartosci)");
+    }
+  }
+  ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 100; });
+  biegnij(3000);
+  zewnNapisSprawdz("opad\nza 1,5 h", "100 min -> \"za 1,5 h\"");
+  ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 99; });
+  biegnij(3000);
+  zewnNapisSprawdz("opad\nza 99 min", "99 min -> \"za 99 min\" (69 px -> odstep liter -1) miesci sie obok ikony");
+  ustaw(0, [](Centrala& c) { c.deszczStan = 1; c.deszczMinuty = 5; });
+  biegnij(3000);
+  zewnNapisSprawdz("opad\nza 5 min", "\"za 5 min\" miesci sie");
+  // Pada, koniec za 30 min / za 2 h / nie wiadomo.
+  ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = 30; });
+  biegnij(3000);
+  zrzutEkranu("3_pada_jeszcze_30_min");
+  zewnNapisSprawdz("pada\n30 min", "ZEWN pada, koniec za 30 min -> \"pada\" / \"30 min\"");
+  sprawdz(!ekranMa("jeszcze 30 min") && !ekranMa("pada 30 min"), "nie ma jednoliniowego \"pada 30 min\" (90 px - nie miesci sie obok ikony)");
+  kafelekSprawdz("-25.5°C", "-25.5°C", &lv_font_pl_28, "ZEWN gdy pada: temperatura nadal widoczna, czcionka 28");
+  ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = 120; });
+  biegnij(3000);
+  zewnNapisSprawdz("pada\n2 h", "ZEWN \"pada\" / \"2 h\"");
+  ustaw(0, [](Centrala& c) { c.deszczStan = 2; c.deszczMinuty = -1; });
+  biegnij(3000);
+  zewnNapisSprawdz("pada", "ZEWN \"pada\" - jedna linia");
+  // Po deszczu (centrala bez pol pogody) napis znika, tytul "ZEWN" wraca.
+  ustaw(0, [](Centrala& c) { c.deszczStan = 0; c.deszczMinuty = -1; c.tZewn = 3.5; });
+  biegnij(3000);
+  {
+    KafelekPomiar wZewn, wPokoj;
+    kafelekSprawdz("3.5°C", "3.5°C", &lv_font_pl_28, "po deszczu ZEWN 3.5°C - czcionka 28");
+    if (kafelekPomiar("3.5°C", wZewn) && kafelekPomiar("-10.5°C", wPokoj))
+      sprawdz(wZewn.y1 == wPokoj.y1 && wZewn.y2 == wPokoj.y2, "wartosc ZEWN na tej samej wysokosci co POKÓJ");
+    sprawdz(!ekranMa("pada") && ekranMa("ZEWN"), "po deszczu napis o deszczu zniknal, tytul \"ZEWN\" wrocil");
+  }
+  zrzutEkranu("4_po_deszczu");
+
+  // [v1.5.14] Centrala 3.58.16/17 z polami pogody: napisy ze zjawiskiem.
+  ustaw(0, [](Centrala& c) { c.pogodaPola = true; c.pogodaKod = 3; c.pogodaKodOpad = 71; c.pogodaDzien = 1; c.deszczStan = 1; c.deszczMinuty = 120; c.tZewn = -2.5; });
+  biegnij(3000);
+  zrzutEkranu("5_snieg_za_2_h");
+  zewnNapisSprawdz("śnieg\nza 2 h", "ZEWN: kod opadu 71 (snieg) za 120 min -> \"śnieg\" / \"za 2 h\"");
+  kafelekSprawdz("-2.5°C", "-2.5°C", &lv_font_pl_28, "ZEWN: temperatura -2.5°C czcionka 28");
+  ustaw(0, [](Centrala& c) { c.pogodaKodOpad = 61; c.deszczMinuty = 100; });
+  biegnij(3000);
+  zewnNapisSprawdz("deszcz\nza 1,5 h", "ZEWN: \"deszcz\" / \"za 1,5 h\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKodOpad = 61; c.deszczMinuty = 45; });
+  biegnij(3000);
+  zrzutEkranu("5b_deszcz_za_45_min");
+  zewnNapisSprawdz("deszcz\nza 45 min", "ZEWN: \"deszcz\" / \"za 45 min\" (to ze zrzutu z 23.11, ktore sie nie miescilo) - teraz w 2 liniach obok ikony");
+  ustaw(0, [](Centrala& c) { c.pogodaKodOpad = 95; c.deszczMinuty = 100; });
+  biegnij(3000);
+  zewnNapisSprawdz("burza\nza 1,5 h", "ZEWN: \"burza\" / \"za 1,5 h\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKodOpad = 53; c.deszczMinuty = 99; });
+  biegnij(3000);
+  zewnNapisSprawdz("mżawka\nza 99 min", "ZEWN: \"mżawka\" / \"za 99 min\" - najszersze obie linie, mieszcza sie");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 73; c.pogodaKodOpad = 73; c.deszczStan = 2; c.deszczMinuty = 60; });
+  biegnij(3000);
+  zrzutEkranu("6_sypie");
+  zewnNapisSprawdz("sypie\n60 min", "ZEWN: pada snieg (73), koniec za 60 min -> \"sypie\" / \"60 min\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 51; c.pogodaKodOpad = 51; c.deszczMinuty = -1; });
+  biegnij(3000);
+  zewnNapisSprawdz("mży", "ZEWN: mzawka teraz (51), koniec nieznany -> \"mży\"");
+  // Bez opadu: stan nieba pokazuje sama ikona ("napis=rodzaj") - tytul "ZEWN" zostaje; mgla / wiatr to zjawiska - napis.
+  ustaw(0, [](Centrala& c) { c.deszczStan = 0; c.deszczMinuty = -1; c.pogodaKodOpad = -1; c.pogodaKod = 0; c.pogodaDzien = 1; c.tZewn = 18.5; });
+  biegnij(3000);
+  zrzutEkranu("7_slonecznie");
+  sprawdz(ekranMa("ZEWN") && !ekranMa("słonecznie"), "ZEWN bez opadu, kod 0 w dzien -> bez napisu (ikona slonca), tytul \"ZEWN\"");
+  kafelekSprawdz("18.5°C", "18.5°C", &lv_font_pl_28, "ZEWN: temperatura 18.5°C czcionka 28");
+  ustaw(0, [](Centrala& c) { c.pogodaDzien = 0; });
+  biegnij(3000);
+  sprawdz(ekranMa("ZEWN") && !ekranMa("pogodnie"), "ZEWN kod 0 w nocy -> bez napisu (ikona ksiezyca)");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 3; c.pogodaDzien = 1; });
+  biegnij(3000);
+  sprawdz(ekranMa("ZEWN") && !ekranMa("pochmurno"), "ZEWN kod 3 -> bez napisu (ikona chmury)");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 45; });
+  biegnij(3000);
+  zrzutEkranu("8_mgla");
+  zewnNapisSprawdz("mgła", "ZEWN kod 45 -> \"mgła\"");
+  ustaw(0, [](Centrala& c) { c.pogodaKod = 3; c.wiatrPorywy = 62.4; });
+  biegnij(3000);
+  zewnNapisSprawdz("silny\nwiatr", "ZEWN porywy 62 km/h -> \"silny\" / \"wiatr\" (wazniejsze niz chmury)");
+  // Brak czujnika (-1.0): temperatura z prognozy jako "3.4°C" [v1.5.18: bylo "~3°C"], a bez niej "--".
+  ustaw(0, [](Centrala& c) { c.wiatrPorywy = 40.0; c.tZewn = -1.0; c.pogodaTemp = 3.4; });
+  biegnij(3000);
+  zrzutEkranu("9_brak_czujnika_prognoza");
+  sprawdz(ekranMa("ZEWN") && !ekranMa("pochmurno"), "ZEWN porywy 40 km/h -> znow bez napisu");
+  kafelekSprawdz("3.4°C", "3.4°C", &lv_font_pl_28, "ZEWN: czujnik -1.0 (brak DS18B20) + pogoda_temp 3.4 -> \"3.4°C\" z prognozy (v1.5.18: bez tyldy, 1 miejsce), czcionka 28");
+  sprawdz(!ekranMa("-1.0°C") && !ekranMa("--") && !ekranMa("~"), "nie ma \"-1.0°C\", \"--\" ani tyldy na ekranie");
+  ustaw(0, [](Centrala& c) { c.pogodaTemp = -12.6; });
+  biegnij(3000);
+  kafelekSprawdz("-12.6°C", "-12.6°C", &lv_font_pl_28, "ZEWN: pogoda_temp -12.6 -> \"-12.6°C\" (najszersza realna wartosc) czcionka 28 miesci sie");
+  ustaw(0, [](Centrala& c) { c.pogodaTemp = -0.3; });
+  biegnij(3000);
+  kafelekSprawdz("-0.3°C", "-0.3°C", &lv_font_pl_28, "ZEWN: pogoda_temp -0.3 -> \"-0.3°C\" (bez zaokraglania)");
+  ustaw(0, [](Centrala& c) { c.pogodaTemp = -0.04; });
+  biegnij(3000);
+  kafelekSprawdz("0.0°C", "0.0°C", &lv_font_pl_28, "ZEWN: pogoda_temp -0.04 -> \"0.0°C\" (bez \"-0.0\")");
+  ustaw(0, [](Centrala& c) { c.pogodaTemp = -99.0; });
+  biegnij(3000);
+  zrzutEkranu("9b_brak_czujnika_kreski");
+  kafelekSprawdz("--", "--", &lv_font_pl_28, "ZEWN: pogoda_temp null (centrala bez internetu) -> \"--\" jak dotad");
+  // Starsza centrala (bez pol pogody) i bez deszczu -> kafelek jak do v1.5.12.
+  ustaw(0, [](Centrala& c) { c.pogodaPola = false; c.tZewn = 3.5; });
+  biegnij(3000);
+  sprawdz(ekranMa("ZEWN") && !ekranMa("silny\nwiatr"), "centrala bez pol pogody i bez deszczu: tytul \"ZEWN\", bez napisu o pogodzie");
+  kafelekSprawdz("3.5°C", "3.5°C", &lv_font_pl_28, "ZEWN 3.5°C czcionka 28 w zwyklym wierszu");
+
+  // DYM 9999 i SERWO "Klapa 100%" na tym samym pulpicie.
+  {
+    KafelekPomiar w;
+    if (kafelekPomiar("9999", w)) { info("DYM \"%s\" %s x=%d..%d (karta do %d)", w.tekst.c_str(), nazwaCzcionki(w.czcionka), w.x1, w.x2, w.kartaX2); sprawdz(w.miesci, "DYM 9999 miesci sie"); }
+    else sprawdz(false, "DYM 9999 na pulpicie");
+    sprawdz(ekranMa("Klapa 100%\nSyberka 100%"), "SERWO: Klapa 100% / Syberka 100%");
+  }
+  // Log kalibracji dotyku z pamieci: panel sprzed v1.5.2 (bez klucza obrot) na ekranie obroconym o 180 stopni.
+  sprawdz(logMa("tag=DOTYK zdarzenie=kalibracja_z_pamieci obrot_kalibracji=1 obrot_ekranu=3 odwrocony=1"),
+          "log: kalibracja z pamieci z obrotu 1, ekran w obrocie 3 -> dotyk odwrocony");
+}
 
 void scenariuszPolskieLitery() {
   const lv_font_t* const CZCIONKI[3] = {&lv_font_pl_14, &lv_font_pl_20, &lv_font_pl_28};
@@ -5183,6 +6642,9 @@ const Scenariusz SCENARIUSZE[] = {
     {"bateria_i_log", "minuta zwyklej pracy: objetosc logu, wskaznik baterii", scenariuszBateriaILog},
     {"poprawki_v141", "male poprawki po audycie: limit odpowiedzi 8 kB, zapas stosu i odmowy pamieci w logu, zrzut po awarii, jasnosc min. 5 % (v1.4.1)", scenariuszPoprawkiV141},
     {"polecenia_nie_gina", "kolejka polecen: szybkie klikanie i przytrzymany przycisk, stara wartosc z GET-a, pasek bledu (v1.4.2)", scenariuszPoleceniaNieGina},
+    {"ikona_wifi_cisza", "ikona WiFi bez X, gdy WiFi jest, a centrala milczy - koniec mrugania (v1.5.6)", scenariuszIkonaWifiPrzyCiszy},
+    {"bojler_poziom_ikony", "ikony jak w aplikacji: poziom i kolor wody w BOJLER wg temperatury (5..95 %, progi 35/55 C), PANEL z 4 warstw, alarm barwi rury (v1.5.11)", scenariuszBojlerPoziomIkony},
+    {"serwo_stopnie", "pozycje serw: stopnie z centrali -> procenty 0-100 na ekranie, nie 113% (v1.5.6)", scenariuszSerwoStopnie},
     {"bez_centrali_dlugo", "centrala wylaczona na dlugo: bez restartu co 5 min, ponawianie polaczenia, naglowek w minutach (v1.4.2)", scenariuszBezCentraliDlugo},
     {"centrala_milczy_dlugo", "WiFi jest, centrala milczy dlugo: bez restartu co 5 min, wymuszone laczenie co 30 s (v1.4.2)", scenariuszCentralaMilczyDlugo},
     {"ustawienia_na_zadanie", "ustawienia w tle co 60 s, na ekranie ustawien co 5 s i od razu; tryb pompy/serwa ze statusu (v1.4.3)", scenariuszUstawieniaNaZadanie},
@@ -5205,11 +6667,14 @@ const Scenariusz SCENARIUSZE[] = {
     {"brak_pamieci_odbior", "panel nie ma pamieci nawet na odebranie odpowiedzi: to nie jest \"zla odpowiedz\" (v1.2.2)", scenariuszBrakPamieciOdbior},
     {"brak_pamieci_lvgl", "LVGL nie dostaje pamieci w trakcie rysowania: restart od razu, z powodem (v1.2.2)", scenariuszBrakPamieciLvgl},
     {"wykresy_pamiec", "bufory ekranu Wykresy istnieja tylko wtedy, gdy ekran jest otwarty (v1.2.2)", scenariuszWykresyPamiec},
+    {"wykresy_pompa_i_osie", "seria POMPA jako pas pracy u dolu wykresu, etykiety osi Y obok wykresu, nazwy jak na pulpicie, WYCZYSC (v1.5.12)", scenariuszWykresyPompaIOsie},
     {"wykresy_centrala_liczy", "wykres z gotowych punktow centrali 3.58.4: GET /api/history/panel (v1.3.0)", scenariuszWykresyCentralaLiczy},
     {"wykresy_stara_centrala", "centrala <= 3.58.3 bez /api/history/panel: wykres po staremu, taki sam jak w v1.2.2 (v1.3.0)", scenariuszWykresyStaraCentrala},
     {"wykresy_przerwy", "przerwa w pracy centrali i czujnik bez odczytu: linia przerwana, nie dociagnieta (v1.3.0)", scenariuszWykresyPrzerwy},
     {"wykresy_brak_danych", "centrala bez historii, jeden pomiar, bez zegara, brak pamieci centrali (v1.3.0)", scenariuszWykresyBrakDanych},
     {"wykresy_bledy_sieci", "odpowiedz urwana, cisza, brak odpowiedzi, nie-centrala, brak WiFi: napis z przyczyna (v1.3.0)", scenariuszWykresyBledySieci},
+    {"wykresy_ponowienie", "centrala nie przyjmuje zapytania o historie: do 3 prob, zanim pokaze sie napis (v1.5.6)", scenariuszWykresyPonowienie},
+    {"wykresy_centrala_zajeta", "status milczy, a historia plynie: panel nie zrywa WiFi w trakcie pobierania wykresu (v1.5.7)", scenariuszWykresyCentralaZajeta},
     {"wykresy_wyjscie_w_trakcie", "wyjscie z wykresu w trakcie pobierania; pobieranie dluzsze niz limit (v1.3.0)", scenariuszWykresyWyjscieWTrakcie},
     {"wykresy_alarm_w_trakcie", "alarm w trakcie pobierania danych do wykresu (v1.3.0)", scenariuszWykresyAlarmWTrakcie},
     {"wykresy_stary_csv", "stary CSV podany ekranowi wprost: te same punkty co w v1.2.2 (v1.3.0)", scenariuszWykresyStaryCsv},
@@ -5226,11 +6691,26 @@ const Scenariusz SCENARIUSZE[] = {
     {"ota_ten_sam_plik", "OTA: centrala oferuje plik, z ktorego panel juz pracuje - nic nie jest wgrywane (v1.4.0)", scenariuszOtaTenSamPlik},
     {"ota_status_milczy", "OTA: centrala nie odpowiada na status, ale plik idzie - pobieranie nie jest przerywane (v1.4.0)", scenariuszOtaStatusMilczy},
     {"ota_bez_identyfikatora", "OTA: panel nie zna sumy wlasnego programu - aktualizacja przez centrale wylaczona (v1.4.0)", scenariuszOtaBezIdentyfikatora},
+    {"ikony_pogody", "ikony pogody (v1.5.14/v1.5.18): 13 ikon kafelka ZEWN, po jednym zrzucie ekranu na ikone", scenariuszIkonyPogody},
+    {"kafelki_szerokosc", "kafelki (v1.5.2/v1.5.17): najszersze wartosci mieszcza sie w kafelkach, czcionka 28/20/14 dobierana sama; ZEWN uklad E: napis o pogodzie (2 linie) zamiast tytulu, temperatura 28, \"3.4°C\" z prognozy bez czujnika (v1.5.18: bez tyldy)", scenariuszKafelkiSzerokosc},
     {"polskie_litery", "polskie litery na ekranie: czcionki lv_font_pl_14/20/28, glif dla kazdego znaku, napisy z ogonkami (v1.4.5)", scenariuszPolskieLitery},
     {"wersje_na_ekranie", "wersje panelu i centrali: ekran startowy, ekran WYSWIETLACZ, log tag=PANEL, kafelek WYSWIETLACZ bez obciecia (v1.4.6)", scenariuszWersjeNaEkranie},
     {"zasilanie", "ekran ZASILANIE: taktowanie 240/160/80 MHz i moc nadajnika 19,5/15/11/8,5 dBm - domyslnie bez zmian, zapis w NVS, odczyt, ostrzezenie przy slabym sygnale (v1.4.7)", scenariuszZasilanie},
     {"zasilanie_po_restarcie", "ekran ZASILANIE: zapisane 80 MHz i 8,5 dBm wracaja po restarcie (v1.4.7)", scenariuszZasilaniePoRestarcie},
     {"zasilanie_zly_indeks", "ekran ZASILANIE: nieznany indeks w NVS spada na domyslne (v1.4.7)", scenariuszZasilanieZlyIndeks},
+    {"sen_na_baterii", "sen (v1.5.0): na baterii 1 min bez dotyku -> 5 % jasnosci, dotyk/przycisk przywraca, 5 min -> gleboki sen z hold na GPIO21/13 i budzeniem ext0/ext1", scenariuszSenNaBaterii},
+    {"ota_vscode", "OTA z VSCode (v1.5.4): ArduinoOTA gotowe po polaczeniu, pasek w trakcie, blad -> pulpit, sukces -> restart", scenariuszOtaVscode},
+    {"sen_usb_nie_usypia", "sen (v1.5.0): na USB (z ogniwem i bez) nigdy nie przyciemnia ani nie usypia; wyjecie/wlozenie ladowarki", scenariuszSenUsbNieUsypia},
+    {"sen_alarm", "sen (v1.5.0): alarm wstrzymuje przyciemnienie i sen; po ustaniu alarmu sen wg licznika", scenariuszSenAlarmIOta},
+    {"sen_ota", "sen (v1.5.0): aktualizacja panelu na baterii wstrzymuje przyciemnienie i sen", scenariuszSenOta},
+    {"sen_rozladowana", "sen (v1.5.0): ogniwo 3,25 V bez ladowarki - napis i sen od razu", scenariuszSenRozladowana},
+    {"sen_rozladowana_alarm", "sen (v1.5.0): 3,25 V w alarmie panel nie spi; 3,05 V - sen mimo alarmu", scenariuszSenRozladowanaAlarm},
+    {"sen_po_wybudzeniu", "sen (v1.5.1): po wybudzeniu przyciskiem od razu pulpit - bez ekranu startowego, pulpit na wyswietlaczu przed WiFi", scenariuszSenPoWybudzeniu},
+    {"sen_po_wybudzeniu_ladowarka", "sen (v1.5.1): wlozona ladowarka budzi tak samo - pulpit od razu, na ladowarce bez przyciemniania", scenariuszSenPoWybudzeniuLadowarka},
+    {"sen_ustawienia", "sen (v1.5.1): ekran WYSWIETLACZ, wiersz Na baterii - przyciski Przyciemnij po / Uspij po, NVS, czasy od razu w uzyciu", scenariuszSenUstawienia},
+    {"sen_ustawienia_nigdy", "sen (v1.5.1): z NVS przyciemnianie nigdy + sen po 2 min: bez przyciemnienia, sen po 2 min", scenariuszSenUstawieniaNigdy},
+    {"test_dzwieku", "brzeczyk (v1.5.20): przycisk Test dzwieku - przemiatanie 1000..4000 Hz po 1,5 s, stop dotknieciem, odmowa w alarmie, alarm przerywa", scenariuszTestDzwieku},
+    {"sen_ustawienia_nigdy_sen", "sen (v1.5.1): nieznany indeks -> domyslne; sen nigdy -> tylko przyciemnienie; rozladowana bateria usypia mimo to", scenariuszSenUstawieniaNigdySen},
     {"pomiar_obciazenia", "ile panel rysuje, pyta centrale i prosi o pamiec, gdy nic sie nie zmienia (tylko pomiar_obciazenia.sh)", scenariuszPomiarObciazenia},
 #ifdef POMIAR_STERTY
     {"pomiar_pamieci", "ile pamieci trzyma firmware i kto ja wzial (tylko pomiar_pamieci.sh)", scenariuszPomiarPamieci},
@@ -5247,7 +6727,7 @@ bool restartOczekiwany(const char* nazwa) {
   return n == "autorestart_centrala_milczy" || n == "autorestart_brak_wifi" || n == "autorestart_kolejny" || n == "zla_odpowiedz_dlugo" ||
          n == "autorestart_przy_alarmie" || n == "zla_odpowiedz_bez_konca" || n == "brak_pamieci_json" || n == "brak_pamieci_lvgl" ||
          n == "pomiar_malo_ramu" || n == "pomiar_ota" || n == "ota_w_trakcie_pracy" || n == "ota_stara_centrala" || n == "ota_alarm" ||
-         n == "ota_status_milczy";
+         n == "ota_status_milczy" || n == "ota_vscode";
 }
 
 }  // namespace
@@ -5347,6 +6827,8 @@ int main(int argc, char** argv) {
   } catch (const AtrapaRestart&) {
     // ESP.restart() wywolany poza loop() (np. z setup()) - scenariusz konczy sie tutaj.
     g_poRestarcie = true;
+  } catch (const AtrapaSen&) {
+    g_poRestarcie = true;   // [v1.5.0] usniecie poza biegnij() - jak wyzej
   }
   if (!restartOczekiwany(wybrany->nazwa)) sprawdz(g_atrapa.restarty == 0, "panel nie zrestartowal sie sam w tym scenariuszu");
   zapiszLog();

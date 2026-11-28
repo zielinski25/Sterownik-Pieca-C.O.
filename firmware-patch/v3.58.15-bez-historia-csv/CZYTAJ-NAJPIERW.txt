@@ -1,0 +1,54 @@
+FIRMWARE CENTRALI 3.58.15 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
+(platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.14 (wybor zrodla Zew 1 / Zew 2) + usuniety przycisk "HISTORIA CSV".
+Patch wzgledem 3.58.14: 4 hunki, wylacznie HTML strony + naglowek/historia/wersja.
+Jesli 3.58.14 nie bylo jeszcze wgrane - wgraj od razu te (zawiera wszystko).
+
+PO CO (zrzut ekranu z 23.11: "to nie jest potrzebne")
+-----------------------------------------------------
+Ze strony WWW centrali zniknal staly niebieski przycisk w lewym dolnym rogu
+("HISTORIA CSV") z okienkiem "Pobierz historie: Krotka (24 h) / Dluga (archiwum)".
+Usuniety jest tylko ten przycisk i jego skrypt. Trasy /history/link, /history,
+/history/long i /api/history* w centrali ZOSTAJA - zakladka Wykresy, Telegram i
+narzedzia dzialaja jak dotad. Gdyby plik CSV byl kiedys potrzebny: w przegladarce
+http://192.168.100.151/api/history (24 h) albo /api/history/long (archiwum).
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.15"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od 8bfab4e5):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.14-do-v3.58.15.patch, -p1 z katalogu projektu, na plik 3.58.14
+(SHA eb763b1b...). Wynik musi miec SHA 8bfab4e5... - inaczej wgraj caly plik z src\.
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+Select-String '^\[env:' platformio.ini      -> esp32-s3-n16r8 (NIE esp32dev)
+PlatformIO -> Build, potem Upload   (pio run -e esp32-s3-n16r8   i   -t upload)
+Spodziewane: 0 ostrzezen, Flash ok. -2,9 kB wzgledem 3.58.14 (+ok. 0,3 kB wzgledem 3.58.13),
+RAM +1 B wzgledem 3.58.13. Release na GitHub: tag 3.58.15.
+
+KROK 3 - SPRAWDZENIE (http://192.168.100.151, Ctrl+F5)
+------------------------------------------------------
+0. /api/lan/status: "fw":"v3.58.15". Telegram: "Centrala wystartowala: v3.58.15".
+1. Lewy dolny rog strony: brak niebieskiego przycisku ze strzalka / "HISTORIA CSV".
+2. Zakladka Wykresy dziala jak dotad (6h/24h/7d/30d).
+3. Reszta jak w CZYTAJ-NAJPIERW 3.58.14 (kafelek ZEWNETRZNA -> "Zrodlo temperatury
+   zewnetrznej", Zew 1 / Zew 2, wspolzaleznosc ze statusem).
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa.
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\testy-pc.txt)
+----------------------------------------------
+Brak elementow przycisku w HTML, trasy /history* w C++ zostaly, ubyl dokladnie 1 blok
+<script>, czesc pliku za HTML-em identyczna z 3.58.14, node --check, plik = 3.58.14 + patch
+(SHA), pelne testy 3.58.14 (ZEWN-ZRODLO 18+18+12, SUWAK-PO-ACK 18, SYM-OD-RAZU 11, DYM-SYM 21).
+Caly plik NIE byl kompilowany w PlatformIO.

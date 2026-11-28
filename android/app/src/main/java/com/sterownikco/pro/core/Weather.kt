@@ -42,6 +42,7 @@ data class WCurrent(
 )
 
 data class WeatherData(val current: WCurrent, val hourly: List<WHour>, val daily: List<WDay>)
+internal data class WeatherFetchResult(val data: WeatherData, val raw: String)
 
 object Weather {
 
@@ -85,12 +86,37 @@ object Weather {
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
 
+    /**
+     * [0.31.80] JEDNA reguła „czy do końca doby jest jeszcze słońce".
+     *
+     *  Wołający: karta „DO KOŃCA DNIA" (Weather.kt), arkusz Czujniki (Sensors.kt)
+     *  i prognoza 7-dniowa (SolarAnalytics.dailyForecast7). Do 0.31.79 reguła
+     *  mieszkała w pliku ekranu (solarSunLeft w Weather.kt), więc prognoza jej nie
+     *  znała i brała zysk szczytu także po zachodzie słońca.
+     *
+     *  Liczy się GTI (nasłonecznienie kolektora pod kątem), w braku — GHI.
+     *  Próg 20 W/m² odsiewa godziny bez realnego słońca.
+     */
+    fun sunLeftToday(hours: List<WHour>, fromTs: Long = startOfHour()): Boolean {
+        val end = Calendar.getInstance().apply {
+            timeInMillis = fromTs
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        return hours.any { h ->
+            h.time in fromTs..end &&
+                ((h.tiltedIrradiance ?: h.shortwaveRadiation ?: 0.0) > 20.0)
+        }
+    }
+
     /** Lista kafelków prognozy zaczyna się od bieżącej godziny, nie od północy. */
     fun forecastFromHour(hourly: List<WHour>, startMillis: Long, limit: Int = 48): List<WHour> =
         hourly.filter { it.time >= startMillis }.take(max(0, limit))
 
     /** `fetchRealOpenMeteo(days)` — te same parametry zapytania co w panelu. */
-    suspend fun fetch(client: okhttp3.OkHttpClient, lat: String, lon: String, days: Int): WeatherData? =
+    internal suspend fun fetch(client: okhttp3.OkHttpClient, lat: String, lon: String, days: Int): WeatherFetchResult? =
         withContext(Dispatchers.IO) {
             try {
                 val q = "latitude=" + enc(lat) + "&longitude=" + enc(lon) +
@@ -107,9 +133,12 @@ object Weather {
                 val call = client.newCall(req)
                 coroutineContext.job.invokeOnCompletion { try { call.cancel() } catch (e: Exception) { /* ignore */ } }
                 val body = call.execute().use { r -> if (r.isSuccessful) r.body?.string() else null } ?: return@withContext null
-                parse(JSONObject(body), days)
+                parse(JSONObject(body), days)?.let { WeatherFetchResult(it, body) }
             } catch (e: Exception) { null }
         }
+
+    internal fun parseCached(body: String, days: Int): WeatherData? =
+        try { parse(JSONObject(body), days) } catch (e: Exception) { null }
 
     private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
 

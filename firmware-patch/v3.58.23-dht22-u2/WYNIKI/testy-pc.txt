@@ -1,0 +1,105 @@
+# ./uruchom_testy.sh  (Linux, g++ 12, 2026-11-27 08:22 UTC)
+=== A. ZEW2-FILTR + zew2DekodujU2() [U2 16-bit] + zew2DsOdbiega() (wycinek z ../src/main_centrala.cpp) ===
+    zapisano /tmp/centrala_35823_test/zew2_filtr_wycinek.h (131 linii bloku ZEW2-FILTR)
+    [1] pierwszy odczyt po starcie przyjety bez weryfikacji
+    [2] zwykly dryf (<= 3 C) przyjmowany od razu
+    [3] pik lustrzany (+2.1 -> -2.1, przeklamany bit znaku): powtorka pokazuje prawde
+    [4] prawdziwy skok > 3 C: dwa zgodne odczyty -> POTWIERDZONY po 3 s
+    [5] dwa niezgodne odbiegajace odczyty -> ODRZUCONY, nastepny cykl normalnie
+    [6] kontrola calej ramki: RH i t poza zakresem, blad biblioteki
+    [7] zla ramka w trakcie weryfikacji kasuje kandydata
+    [8] powtorka, ktora nie doszla do skutku przez 15 s, przepada
+    [9] przeklamany PIERWSZY odczyt po starcie: filtr sam sie naprawia
+    [10] przejscia przez 0 C: male |t| bez powtorki, wieksze z powtorka
+    [11] przepelnienie millis() w trakcie weryfikacji
+    [12] dwa piki z rzedu w kolejnych cyklach: zaden nie trafia na wykres
+    [13] [v3.58.10] ponowienie po bledzie: zla ramka / odrzucony -> za 5 s, max 2 w cyklu
+    [14] [v3.58.20/23] zew2DekodujU2: obraz U2 16-bit -0,1..-40,0 C przeliczany, reszta nietknieta; [v3.58.23] dawny wariant 12-bit juz NIE
+    [15] [v3.58.20/23] wszystkie 400 wartosci -0,1..-40,0 C: U2 16-bit przeliczane co do 0,1 C, znak-modul i dodatnie nietkniete, dawne 12-bit = zla ramka
+    [16] [v3.58.20] scenariusz z 26.11: zejscie 0,3 -> 0,0 -> -0,1 -> -0,4 -> -1,2 na klonie U2 bez przerwy na wykresie
+    [17] [v3.58.21] zew2DsOdbiega: prog 8 C, bez DS nigdy, NaN nigdy
+    [18] [v3.58.21] zew2Filtruj z wymuszeniem: bez skoku wzgledem historii, ale DS odbiega -> powtorka
+    
+    ZEW2-FILTR: 130 sprawdzen, 0 bledow
+
+=== B. wilgotnosc() z pliku centrali + atrapy: dekoder U2, linia tag=DHT22, regresja 3.58.10/20/21/22 ===
+    zapisano /tmp/centrala_35823_test/wilgotnosc_wycinek.h (363 linii: blok Zew 2 162, wilgotnosc() 184)
+    [1] start: pierwszy odczyt od razu, potem co 120 s (nie co 3 s)
+    [2] pik -2.1 przy 2.1: nic na wykresie, powtorka po 3 s pokazuje 2.1
+    [3] prawdziwy skok 2.1 -> 6.0: potwierdzony po 3 s, cykl 120 s nie przesuniety
+    [4] zla ramka (RH 3366.8 %): temperatura i wilgotnosc odrzucone, Zew 2 zostaje; [v3.58.10] ponowienie po ~6 s
+    [5] brak odczytow (timeouty): Zew 2 gasnie po 255 s od ostatniej dobrej wartosci (bylo 135 s)
+    [6] po przerwie pierwsza dobra ramka wraca od razu (historia 6.1 -> 3.0 to skok > 3: powtorka)
+    [7] symulacja wilgotnosci: Zew 2 = null, oczekujaca powtorka skasowana, bez odczytu DHT
+    [8] przepelnienie millis(): powtorka i cykl 120 s dzialaja przez granice 2^32
+    [9] [v3.58.10] odrzucony po powtorce -> ponowienie po 5 s daje prawde; nic nie znika z wykresu
+    [10] [v3.58.20] klon U2 (26.11): temperatura schodzi ponizej 0 - Zew 2 i wilgotnosc dalej przyjmowane, nie BRAK DANYCH
+    [11] [v3.58.20] smieci nadal odpadaja: -3236.7 (obraz -40.1), -3276.8, +3276.7, U2 z RH 3366.8
+    [12] [v3.58.23] dawny 'klon 12-bit' (+408.8 / +407.9 z biblioteki): teraz zwykla zla ramka, Zew 2 zostaje -1.2
+    [13] [v3.58.21] DS18B20 swiezy: przeliczona ramka blisko DS przyjeta od razu, ds_roznica w logu; zwykla ramka nie jest sprawdzana
+    [14] [v3.58.21] DS18B20 +10, a ramka trafia w przedzial klona (-0.3): powtorka zamiast przyjecia; dwa zgodne odczyty i tak wygrywaja
+    [15] [v3.58.22/23] linia tag=DHT22 w zwyklym logu: surowa przed dekoderem, kod biblioteki, rytm (pierwsze 15 prob, potem tylko zmiana ok<->zla)
+    
+    WILGOTNOSC(): 87 sprawdzen, 0 bledow, 64 odczytow DHT, 2 linii logu
+
+=== B2. telemetria minutowa (Firebase) z pliku centrali: pola dht_kod / dht_surowa, maska sim, ABI 80 B ===
+    zapisano /tmp/centrala_35823_test/telemetria_wycinek.h (178 linii)
+    [1] stara probka (bez znacznika TEMP_DIAG / bez bitu DHT): JSON jak dotad, bez dht_*
+    [2] probka z 3.58.22: ramka klona (kod 0, surowa -3275.3) -> dht_kod=0, dht_surowa=-3275.3, t_zewn_2=-1.5
+    [3] blad biblioteki (kod 6 CHECKSUM): dht_kod=6, BEZ dht_surowa; symulowane kanaly w sim nietkniete
+    [4] granice surowej: +80.0, 0.0, -0.1 (znak-modul), +409.5 (klon 12-bit), -3276.7 (0xFFFF), kod 15
+    [5] przed pierwszym odczytem DHT po starcie (g_dhtBylOdczyt=false): bez pol, reserved=0
+    [6] ABI: 80 B, offsety bez zmian
+    
+    TELEMETRIA-DHT: 25 sprawdzen, 0 bledow
+
+=== C. znaczniki 3.58.23; plik = 3.58.22 + patch ===
+    [OK] FIRMWARE_VERSION = "v3.58.23"
+    [OK] zew2DekodujU2(float *t) - bez parametru wariant
+    [OK] dekoder: odtworzone slowo 16-bit -> int16 -> /10, tylko -400..-1 (-40,0..-0,1 C)
+    [OK] tylko obraz 16-bit (-3276,75..-3236,75); stale i kod wariantu 12-bit usuniete
+    [OK] wilgotnosc(): dekoder bez wariantu, bez WARN "klon koduje ujemne w U2", licznik u2 zostaje
+    [OK] stale: pierwsze 15 prob, zmiana max raz na 10 min; DHT_LOG_CO_N usuniete
+    [OK] warunek linii tag=DHT22: pierwsze 15 / zmiana ok<->zla (bez "co 10.")
+    [OK] format linii tag=DHT22 i zapis przez zapiszLog() bez zmian
+    [OK] filtr, odniesienie DS (3.58.21) i zapis kodu/surowej dla telemetrii (3.58.22) bez zmian
+    [OK] telemetria: pola dht_kod / dht_surowa bez zmian
+    [OK] naglowek i historia zmian 3.58.23
+    [OK] 3.58.22 + patch = ten plik (SHA 16883587884738df91768cf90b0d8e6caaf115782aadb15a5b423da7cfedf3a5)
+    [OK] HTML strony WWW identyczny jak w 3.58.22
+    [OK] blok ZEW2-FILTR poza zew2DekodujU2() identyczny jak w 3.58.22 (filtr, DS, ponowienia nietkniete)
+    [OK] kod od konca bloku ZEW2-FILTR do wilgotnosc() identyczny jak w 3.58.22 (poza FIRMWARE_VERSION i stalymi DHT_LOG_*)
+    [OK] stale DHT_LOG_*: 30 -> 15, bez DHT_LOG_CO_N (oznaczone [v3.58.23])
+    [OK] kod za wilgotnosc() identyczny jak w 3.58.22 (telemetria dht_kod/dht_surowa, Firebase, reszta)
+    [OK] wilgotnosc(): roznice wzgledem 3.58.22 tylko w 3 miejscach (dekoder bez wariantu + bez WARN, komentarz rytmu, warunek linii): -7/+3 linii kodu (jest -7/+3, 5 hunkow z komentarzami)
+
+=== D. testy paczki 3.58.22 (A, B, B2, C-znaczniki) na tym pliku ===
+          BLAD [test_zew2_filtr.cpp:196] wariant 16 zglaszany
+          BLAD [test_zew2_filtr.cpp:198] +409.5 -> -0.1 (U2 12-bit)
+          BLAD [test_zew2_filtr.cpp:199] +408.8 -> -0.8 (log z ESPHome #5322)
+          BLAD [test_zew2_filtr.cpp:200] +404.4 -> -5.2 (0x0FCC, test ESPHome PR #22615)
+          BLAD [test_zew2_filtr.cpp:201] +369.6 -> -40.0 (granica)
+          BLAD [test_zew2_filtr.cpp:225] U2 12-bit: kazda z 400 wartosci odkodowana co do 0,1 C i przechodzi zew2RamkaPoprawna()
+        ZEW2-FILTR: 125 sprawdzen, 6 bledow
+          BLAD [251] WARN o klonie U2 (wariant 16) przy pierwszym wykryciu
+          BLAD [282] +408.8 -> -0.8, RH 91.5 przyjeta
+          BLAD [284] +407.9 -> -1.7, nic INVALID
+          BLAD [285] licznik u2=6 (4 ramki 16-bit + 2 ramki 12-bit)
+          BLAD [346] 10 zwyklych ramek po 30. probie -> dokladnie 1 linia (proba podzielna przez 10)
+          BLAD [348] tresc linii: proba=<wielokrotnosc 10> kod=0 surowa=-0.5 t=-0.5 rh=90.0 ramka=ok decyzja=0
+        WILGOTNOSC(): 85 sprawdzen, 6 bledow, 63 odczytow DHT, 2 linii logu
+        TELEMETRIA-DHT: 25 sprawdzen, 0 bledow
+        BLAD: stale: pierwsze 30 prob, potem co 10., zmiana max raz na 10 min
+        BLAD: warunek: pierwsze 30 / co 10. / zmiana ok<->zla
+        BLAD: filtr, odniesienie DS i dekoder z 3.58.20/21 bez zmian
+        BLAD: naglowek i historia zmian 3.58.22
+    BLEDOW: 3
+    [OK] testy 3.58.22 (A/B/B2/C) na tym pliku: 16 niezaliczen i wszystkie sa skutkiem celowych zmian 3.58.23 (12-bit, wariant, WARN u2, rytm co 10.)
+
+WSZYSTKO OK
+
+# SANITIZER=1 ./uruchom_testy.sh (tylko podsumowania A/B/B2)
+    [ASan+UBSan] ZEW2-FILTR: 130 sprawdzen, 0 bledow
+    [ASan+UBSan] WILGOTNOSC(): 87 sprawdzen, 0 bledow, 64 odczytow DHT, 2 linii logu
+    [ASan+UBSan] TELEMETRIA-DHT: 25 sprawdzen, 0 bledow
+WSZYSTKO OK

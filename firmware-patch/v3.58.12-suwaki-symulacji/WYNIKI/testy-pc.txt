@@ -1,0 +1,75 @@
+=== A. SUWAKI-SYM: suwaki symulacji nie cofaja sie pod palcem (symulacjaSekcjaHtml() z ../src/main_centrala.cpp) ===
+      [ OK ] start: suwak 21.0 °C / 60 min (symulacja aktywna na sterowniku)
+      [ OK ] suwak nie ma fokusu (jak na telefonie)
+      [ OK ] napis obok suwaka: 45.0 °C
+      [ OK ] po 5 odswiezeniach arkusza suwak DALEJ na 45.0 (dotad wracal do 21.0)
+      [ OK ] czas trwania (nieruszany) nadal podaza za sterownikiem: 59 min
+      [ OK ] ruszony suwak czasu tez nie jest cofany (30 min)
+      [ OK ] Zastosuj wysyla to, co ustawil operator: "symuluj bojler 45.0 30"
+      [ OK ] po Zastosuj suwaki znow podazaja za sterownikiem (45.0 °C, 29 min)
+      [ OK ] zmiana z innego zrodla (np. Telegram) jest widoczna: 50.0 °C
+      [ OK ] edycja 70.0 nie jest cofana
+      [ OK ] Wylacz teraz: "symuluj_stop bojler"
+      [ OK ] po wylaczeniu suwak zostaje tam, gdzie go zostawil operator (symulacja nieaktywna - nic nie nadpisuje)
+      [ OK ] nowa symulacja z zewnatrz po wylaczeniu: suwaki pokazuja jej parametry (33.0 °C, 15 min)
+    ZALICZONY
+[A2] to samo na Piec.html z repozytorium
+      [ OK ] start: suwak 21.0 °C / 60 min (symulacja aktywna na sterowniku)
+      [ OK ] suwak nie ma fokusu (jak na telefonie)
+      [ OK ] napis obok suwaka: 45.0 °C
+      [ OK ] po 5 odswiezeniach arkusza suwak DALEJ na 45.0 (dotad wracal do 21.0)
+      [ OK ] czas trwania (nieruszany) nadal podaza za sterownikiem: 59 min
+      [ OK ] ruszony suwak czasu tez nie jest cofany (30 min)
+      [ OK ] Zastosuj wysyla to, co ustawil operator: "symuluj bojler 45.0 30"
+      [ OK ] po Zastosuj suwaki znow podazaja za sterownikiem (45.0 °C, 29 min)
+      [ OK ] zmiana z innego zrodla (np. Telegram) jest widoczna: 50.0 °C
+      [ OK ] edycja 70.0 nie jest cofana
+      [ OK ] Wylacz teraz: "symuluj_stop bojler"
+      [ OK ] po wylaczeniu suwak zostaje tam, gdzie go zostawil operator (symulacja nieaktywna - nic nie nadpisuje)
+      [ OK ] nowa symulacja z zewnatrz po wylaczeniu: suwaki pokazuja jej parametry (33.0 °C, 15 min)
+    ZALICZONY
+[A3] kontrolnie 3.58.11 - ma pokazac blad (suwak wraca do 21.0)
+    [OK] 3.58.11 nie zalicza: 5 z 13 sprawdzen BLAD (blad odtworzony)
+=== B. plik 3.58.12 = 3.58.11 + patch; skladnia JS ===
+    [OK] FIRMWARE_VERSION = "v3.58.12"
+    [OK] symEdycja zadeklarowane raz (jedna funkcja symulacjaSekcjaHtml)
+    [OK] znaczniki [v3.58.12 ...] (7)
+    [OK] blok <script> 0: node --check (1653 znakow)
+    [OK] blok <script> 1: node --check (403974 znakow)
+    [OK] 3.58.11 + patch = ten plik (SHA fe6f0b20afcd3b91621341f17c5f410b2b2653e06d92797209e9f1c7379b7ce7)
+    patch: 7 hunkow, +56 / -4
+=== C. testy paczki 3.58.11 czesc A (DYM-SYM) na tym pliku ===
+    === A. DYM-SYM: alarm POZAR z symulacji gasnie z koncem symulacji (wycinek z /tmp/jako_35811.cpp) ===
+        wytnij_dym_sym.py: blok DYM-SYM 37 linii, fragment pozar() 45 linii -> /tmp/centrala_35811_test/dym_sym_wycinek.h
+          [1] symulacja 2202 ADC -> alarm z symulacji; 'Wylacz teraz' -> alarm gasnie w tym samym ticku
+            [ OK ] alarm aktywny, zrodlo = symulacja
+            [ OK ] log: aktywacja POZAR
+            [ OK ] symulacja trwa -> alarm trwa
+            [ OK ] koniec symulacji -> alarm skasowany bez czekania na swiezy odczyt
+            [ OK ] log: dezaktywacja ... powod=koniec_symulacji
+            [ OK ] buzzer wylaczony, faza dzwieku 0, wyciszenie skasowane
+            [ OK ] nadzor po skasowaniu wlaczony jak przy zwyklej dezaktywacji
+            [ OK ] pozniejszy prawdziwy odczyt 1 ADC: nic nowego (jedna dezaktywacja)
+          [2] prawdziwy dym 900 ADC -> alarm prawdziwy; symulacja wlaczona i wylaczona NIE kasuje alarmu
+            [ OK ] alarm aktywny, zrodlo = prawdziwy czujnik
+            [ OK ] po symulacji alarm nadal trwa (bez wpisu dezaktywacja)
+            [ OK ] 480 ADC (>= 470 = prog - histereza): alarm trwa
+            [ OK ] 469 ADC: zwykla dezaktywacja, dotychczasowa linia logu (bez powod=)
+          [3] alarm z symulacji; w chwili wylaczenia symulacji czujnik daje PRAWDZIWE 700 ADC
+            [ OK ] start: zrodlo = symulacja
+            [ OK ] alarm trwa, ale jest juz prawdziwy (zrodlo = czujnik)
+            [ OK ] log: dezaktywacja powod=koniec_symulacji, zaraz potem ponowna aktywacja z prawdziwego odczytu
+            [ OK ] kolejna symulacja i jej koniec nie kasuja prawdziwego alarmu
+            [ OK ] 100 ADC z czujnika: zwykla dezaktywacja
+          [4] symulacja PONIZEJ progu (100 ADC) i jej koniec -> nic sie nie dzieje
+            [ OK ] bez alarmu, bez wpisow w logu
+          [5] symulacja wygasa sama (symulacjaTrwa() -> false) -> to tez koniec symulacji
+            [ OK ] wygasniecie symulacji kasuje alarm z symulacji
+          [6] brak alarmu, symulacja wlaczona i wylaczona -> dymAlarmPoKoncuSymulacji() zwraca false
+            [ OK ] zwraca false, stan bez zmian
+            [ OK ] drugi tick bez symulacji: dalej false (koniec liczony raz)
+          RAZEM: 21 sprawdzen OK, 0 BLAD
+    
+    [OK] DYM-SYM 21/21
+
+WSZYSTKO OK

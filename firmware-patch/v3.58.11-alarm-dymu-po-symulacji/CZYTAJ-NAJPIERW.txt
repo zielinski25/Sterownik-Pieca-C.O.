@@ -1,0 +1,84 @@
+FIRMWARE CENTRALI 3.58.11 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h (tam sa Twoje hasla).
+Biblioteki i platformio.ini: BEZ ZMIAN.
+
+Ta paczka = 3.58.10 (to, co masz na plytce) + alarm dymu z symulacji gasnie
+razem z symulacja. Patch wzgledem 3.58.10: 9 hunkow, +91/-10, tylko blok
+DYM-SYM przed pozar(), 4 linie w pozar(), 1 pole w /api/status.
+
+
+PO CO (zgloszenie z 22.11 18:25: "wylaczam symulacje, a alarm dalej jest")
+-------------------------------------------------------------------------
+Alarm POZAR jest zatrzaskowy i gasnie tylko na SWIEZYM, prawdziwym odczycie
+czujnika ponizej progu minus histereza (500-30 = 470). Czujnik MQ w trybie
+impulsowym (WL 130 s, WYL 60 s, stabilizacja 90 s) daje swiezy odczyt tylko
+w ostatnich 40 s okna WL, wiec po "Wylacz teraz" alarm potrafil swiecic
+jeszcze 2,5-3 min. Dla prawdziwego dymu to dobrze, dla testu - mylace.
+
+3.58.11:
+ 1. Przy wlaczeniu alarmu centrala zapamietuje, czy odczyt byl SYMULOWANY.
+ 2. Gdy symulacja dymu sie konczy ("Wylacz teraz" w WWW, "symuluj_stop"
+    z Telegrama/Firebase albo uplyw czasu), a alarm powstal WYLACZNIE
+    z symulacji - gasnie w najblizszym ticku pozar() (do 5 s), z tym samym
+    sprzataniem co zwykle (buzzer, wyciszenie, nadzor po skasowaniu).
+    Log: tag=ALARM lvl=INFO zdarzenie=dezaktywacja typ=POZAR powod=koniec_symulacji
+ 3. Alarm z PRAWDZIWEGO pomiaru - bez zmian: gasnie tylko prawdziwym
+    pomiarem. Jesli w chwili konca symulacji czujnik naprawde pokazuje dym,
+    alarm od razu wlacza sie ponownie, juz jako prawdziwy.
+ 4. /api/status ma nowe pole "dym_alarm_sym" (true = alarm z symulacji).
+Reszta (Zew 2, piec, serwa, Telegram, OTA, Firebase) bez zmian.
+
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.11"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od 471b61b4):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.10-do-v3.58.11.patch, -p1 z katalogu projektu,
+na plik 3.58.10 (SHA 0f5b7020...). Wynik musi miec SHA 471b61b4... - inaczej
+wgraj caly plik z src\.
+
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+PlatformIO -> Build, potem Upload   (pio run   i   pio run -t upload)
+Spodziewane: 0 ostrzezen, Flash/RAM jak w 3.58.10 (+ ok. 200 B kodu, 2 B RAM).
+Jesli blad: skopiuj linie z "error:" i przyslij; przywroc kopie zapasowa.
+Zmienione miejsca z numerami linii: WYNIKI\zakres-zmian.txt.
+
+Release na GitHub: FIRMWARE_VERSION = "v3.58.11" -> Build -> Release z tagiem
+3.58.11 (OTA z 3.58.10 przejdzie, 3.58.11 > 3.58.10).
+
+
+KROK 3 - SPRAWDZENIE (panel WWW -> Czujnik dymu i spalin -> Symulacja)
+----------------------------------------------------------------------
+1. Po Upload na Telegram: "Centrala wystartowala: v3.58.11".
+2. Symulacja: wartosc 2202, Zastosuj -> w kilka sekund ALARM (jak dotad).
+3. "Wylacz teraz" -> najdalej po 5 s kafelek CZUJNIK DYMU bez ALARM-u,
+   buzzer cichnie, w logu:
+   tag=ALARM lvl=INFO zdarzenie=dezaktywacja typ=POZAR powod=koniec_symulacji
+   Napis "Symulacja wylaczona; alarm sterownika nadal aktywny" moze mignac
+   na 1 odswiezenie (do 5 s) i znika.
+4. Test negatywny (opcjonalnie, z prawdziwym dymem przy czujniku): alarm
+   z czujnika NIE gasnie po wlaczeniu i wylaczeniu symulacji - gasnie
+   dopiero, gdy czujnik zmierzy < 470.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa (3.58.10).
+
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\)
+----------------------------------
+- testy-pc.txt: blok DYM-SYM + PRAWDZIWY fragment pozar() wyciety z pliku
+  (6 scenariuszy, 21 sprawdzen); plik = 3.58.10 + patch (ta sama suma SHA);
+  pola /api/status a panel LCD (zgodne); testy paczek 3.58.10 (66 + 47
+  sprawdzen) i 3.58.7/3.58.6 (40 + 166 + 2697) na tym pliku - bez zmian.
+- naglowki-esp32.txt: blok DYM-SYM + fragment pozar() skompilowany
+  prawdziwymi naglowkami arduino-esp32 3.3.8 (clang): bez bledow,
+  0 ostrzezen; bloki z 3.58.10/3.58.7/3.58.6 tak samo.
+- Caly plik NIE byl kompilowany w PlatformIO (brak toolchainu ESP32 tutaj).

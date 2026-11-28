@@ -467,6 +467,23 @@ static void testRatunek() {
       if (r.krok(t, false, progRestartuMs(3)) != Ratunek::NIC) wymuszen++;
     SPRAWDZ(wymuszen == 0);
   }
+  // 2d) [v1.5.7] Status milczy, ale centrala odzywa sie inaczej (bajty
+  //     historii do wykresu co sekunde przez 20 s): zadnego wymuszenia w tym
+  //     czasie; licznik milczenia rusza od ostatniego znaku zycia, a czas bez
+  //     danych (do restartu) biegnie caly czas.
+  {
+    Ratunek r;
+    uint32_t tWymuszenia = 0;
+    int wymuszen = 0;
+    for (uint32_t t = 0; t <= 44000; t += 5) {
+      const Ratunek::Akcja a = r.krok(t, true, 45000);
+      if (a != Ratunek::NIC) { wymuszen++; if (tWymuszenia == 0) tWymuszenia = t; }
+      if (t <= 20000 && t % 1000 == 0) r.centralaOdezwalaSie();
+    }
+    SPRAWDZ(wymuszen == 2);                                         // 32 s (z BSSID) i 44 s (bez) - nic w pierwszych 20 s
+    SPRAWDZ(tWymuszenia == 32000);                                  // 12 s po ostatnim znaku zycia (20 s)
+    SPRAWDZ(r.bezDanychMs == 44000);                                // status nadal stary - restart (45 s) liczy sie od 0 s
+  }
   // 7) Dluzszy prog (po wczesniejszym samoczynnym restarcie).
   {
     Ratunek r;
@@ -927,6 +944,25 @@ static void testOtaZapisIDecyzja() {
 }
 
 // [v1.4.2 C4] Kolejka polecen - patrz naglowek KolejkaPolecen w diagnostyka_panelu.h.
+// [v1.5.6] Pozycje serw: stopnie z centrali -> procenty na ekranie.
+static void testSerwoStopnie() {
+  using namespace diag;
+  SPRAWDZ(KLAPA_KAT_MAKS == 180 && SYBERKA_KAT_MAKS == 90);
+  SPRAWDZ(serwoStopnieNaProcent(0, 180) == 0 && serwoStopnieNaProcent(180, 180) == 100);
+  SPRAWDZ(serwoStopnieNaProcent(113, 180) == 63);     // log z 24.11: "113%" na ekranie = 113 stopni = 63 %
+  SPRAWDZ(serwoStopnieNaProcent(90, 180) == 50 && serwoStopnieNaProcent(1, 180) == 1 && serwoStopnieNaProcent(179, 180) == 99);
+  SPRAWDZ(serwoStopnieNaProcent(86, 90) == 96 && serwoStopnieNaProcent(16, 90) == 18 && serwoStopnieNaProcent(45, 90) == 50);
+  SPRAWDZ(serwoStopnieNaProcent(90, 90) == 100 && serwoStopnieNaProcent(0, 90) == 0);
+  SPRAWDZ(serwoStopnieNaProcent(-5, 180) == 0 && serwoStopnieNaProcent(200, 180) == 100 && serwoStopnieNaProcent(255, 90) == 100);   // smieci z NVS centrali
+  SPRAWDZ(serwoStopnieNaProcent(50, 0) == 0);
+  // tam i z powrotem jak centrala: procentNaKat(p, 0, maks) = map(p, 0, 100, 0, maks)
+  for (int p = 0; p <= 100; p++) {
+    const int katK = (int)((long)p * 180 / 100), katS = (int)((long)p * 90 / 100);
+    SPRAWDZ(serwoStopnieNaProcent(katK, 180) == p || serwoStopnieNaProcent(katK, 180) == p - 1);
+    SPRAWDZ(serwoStopnieNaProcent(katS, 90) == p || serwoStopnieNaProcent(katS, 90) == p - 1);
+  }
+}
+
 static void testKolejkaPolecen() {
   using namespace diag;
   // 1) Jedno dotkniecie przy wolnym kanale: idzie od razu, bez czekania na cisze.
@@ -1018,6 +1054,49 @@ static void testKolejkaPolecen() {
     SPRAWDZ(k.odrzuconych == 1 && k.n == KolejkaPolecen::MAKS);
     SPRAWDZ(k.dodaj("/api/ustawienia-set", "d", "pole=d&wartosc=2", 2, 3));
     SPRAWDZ(k.n == KolejkaPolecen::MAKS && k.scalonych == 1);
+  }
+  // 5b) [v1.5.5] Ponawianie bez odpowiedzi centrali: do 3 prob, odstep 700 ms,
+  //     nowsza wartosc tego samego pola wygrywa, odrzucenie nie jest ponawiane
+  //     (to decyzja wolajacego - ponow() wola tylko dla braku odpowiedzi).
+  {
+    KolejkaPolecen k;
+    k.dodaj("/api/pompa-manual", "stan", "stan=wl", 1, 0);
+    k.wystartuj();
+    SPRAWDZ(k.wLocie.proba == 0);
+    SPRAWDZ(k.ponow(2000));                       // 1. proba padla -> wraca na poczatek
+    SPRAWDZ(!k.lotTrwa && k.n == 1 && k.p[0].proba == 1 && k.ponowien == 1);
+    SPRAWDZ(!k.gotowa(2000) && !k.gotowa(2699) && k.gotowa(2700));   // ODSTEP_PONOWIENIA_MS
+    SPRAWDZ(k.poleZmieniane("stan", 1000));       // pole dalej "zmieniane" - GET sprzed niego ma stara wartosc
+    k.wystartuj();
+    SPRAWDZ(k.wLocie.proba == 1 && std::strcmp(k.wLocie.cialo, "stan=wl") == 0);
+    SPRAWDZ(k.ponow(5000) && k.p[0].proba == 2);  // 2. proba padla
+    k.wystartuj();
+    SPRAWDZ(!k.ponow(8000));                      // 3. proba padla -> koniec prob (PROB_MAKS = 3)
+    SPRAWDZ(!k.lotTrwa && k.pusta() && k.ponowien == 2);
+    SPRAWDZ(k.poleZmieniane("stan", 7000) && !k.poleZmieniane("stan", 8000));   // zakonczenie zapisane jak w zakoncz()
+  }
+  {
+    // Ponowienie ustawia sie PRZED innymi czekajacymi poleceniami, ale ustepuje
+    // nowszej wartosci tego samego pola.
+    KolejkaPolecen k;
+    k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=6", 2, 0);
+    k.wystartuj();
+    k.dodaj("/api/ustawienia-set", "czasOff", "pole=czasOff&wartosc=9", 2, 100);
+    SPRAWDZ(k.ponow(2000) && k.n == 2 && std::strcmp(k.p[0].klucz, "czasOn") == 0 && std::strcmp(k.p[1].klucz, "czasOff") == 0);
+    k.wystartuj();                                 // czasOn, 2. proba
+    k.dodaj("/api/ustawienia-set", "czasOn", "pole=czasOn&wartosc=7", 2, 2800);   // uzytkownik kliknal jeszcze raz
+    SPRAWDZ(!k.ponow(4800));                       // stara wartosc nie wraca - nowa juz czeka
+    SPRAWDZ(k.n == 2 && std::strcmp(k.p[1].cialo, "pole=czasOn&wartosc=7") == 0 && k.p[1].proba == 0);
+    SPRAWDZ(!k.ponow(4900));                       // bez lotu - nic
+  }
+  {
+    // Pelna kolejka: ponowienie przepada (porazka pokazana od razu).
+    KolejkaPolecen k;
+    k.dodaj("/api/ustawienia-set", "a", "x", 2, 0);
+    k.wystartuj();
+    const char* pola[] = {"b", "c", "d", "e", "f", "g"};
+    for (const char* pole : pola) k.dodaj("/api/ustawienia-set", pole, "x", 2, 1);
+    SPRAWDZ(!k.ponow(2000) && k.n == KolejkaPolecen::MAKS && !k.lotTrwa);
   }
   // 6) Pamiec zakonczen jest pierscieniem: po 8 innych poleceniach stare
   //    zakonczenie znika, ale to nie szkodzi - GET sprzed niego i tak nie
@@ -1133,9 +1212,142 @@ static void testFiltrStatusu() {
   SPRAWDZ(brakujacych == 0);
 }
 
+// ---------------------------------------------------------------------------
+// [v1.5.0 SEN] przyciemnienie i gleboki sen na baterii
+// ---------------------------------------------------------------------------
+static diag::SenWarunki senBateria(uint32_t bezDotykuMs, float napiecieV = 3.90f) {
+  diag::SenWarunki w;
+  w.bateriaJest = true;
+  w.zasilanieUsb = false;
+  w.napiecieV = napiecieV;
+  w.bezDotykuMs = bezDotykuMs;
+  w.alarm = false;
+  w.ota = false;
+  return w;
+}
+static bool senJest(const diag::SenDecyzja& d, diag::SenAkcja akcja, const char* powod) {
+  return d.akcja == akcja && std::strcmp(d.powod, powod) == 0;
+}
+
+static void testSen() {
+  using namespace diag;
+  // Progi takie, jak w opisie dla uzytkownika (README, plan krok 3).
+  SPRAWDZ(SEN_PRZYCIEMNIJ_PO_MS == 60000UL);
+  SPRAWDZ(SEN_USPIJ_PO_MS == 300000UL);
+  SPRAWDZ(SEN_JASNOSC_PROC == 5);
+  SPRAWDZ(SEN_NAPIECIE_KRYT_V < SEN_NAPIECIE_MIN_V);
+
+  // Na baterii, swiezo dotkniety: nic.
+  SPRAWDZ(senJest(senDecyzja(senBateria(0)), SEN_AKCJA_NIC, "aktywny"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(59999)), SEN_AKCJA_NIC, "aktywny"));
+  // Minuta bez dotyku: przyciemnij; 5 minut: spij.
+  SPRAWDZ(senJest(senDecyzja(senBateria(60000)), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(299999)), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(300000)), SEN_AKCJA_USPIJ, "bez_dotyku"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(3600000UL)), SEN_AKCJA_USPIJ, "bez_dotyku"));
+
+  // Na USB: nigdy, niezaleznie od czasu i napiecia (zachowanie do v1.4.7).
+  { SenWarunki w = senBateria(3600000UL, 3.0f); w.zasilanieUsb = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "usb")); }
+  // Bez ogniwa (sam USB przez TP4056, dzielnik widzi 0,28 V): nigdy.
+  { SenWarunki w = senBateria(3600000UL, 0.28f); w.bateriaJest = false; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "brak_ogniwa")); }
+  // Aktualizacja panelu: nie przyciemniaj i nie spij (takze przy slabej baterii).
+  { SenWarunki w = senBateria(3600000UL, 3.2f); w.ota = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "ota")); }
+  // Alarm: ekran alarmu zostaje jasny, zadnego snu...
+  { SenWarunki w = senBateria(3600000UL); w.alarm = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "alarm")); }
+  { SenWarunki w = senBateria(90000, 3.25f); w.alarm = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "alarm")); }
+  // ...chyba ze ogniwo jest na granicy odciecia.
+  { SenWarunki w = senBateria(0, 3.05f); w.alarm = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bateria_krytyczna")); }
+
+  // Rozladowana bateria: sen od razu, nawet gdy ktos wlasnie dotknal.
+  SPRAWDZ(senJest(senDecyzja(senBateria(0, 3.29f)), SEN_AKCJA_USPIJ, "bateria_rozladowana"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(0, 3.30f)), SEN_AKCJA_NIC, "aktywny"));
+  SPRAWDZ(senJest(senDecyzja(senBateria(0, 3.09f)), SEN_AKCJA_USPIJ, "bateria_krytyczna"));
+  // Napis przed snem tylko przy powodach "bateria_*".
+  SPRAWDZ(senZNapisem("bateria_rozladowana"));
+  SPRAWDZ(senZNapisem("bateria_krytyczna"));
+  SPRAWDZ(!senZNapisem("bez_dotyku"));
+  SPRAWDZ(!senZNapisem(nullptr));
+
+  // Kolejnosc: ota przed alarmem (wgrywanie nie moze byc przerwane), alarm
+  // przed zwykla rozladowana bateria, bateria krytyczna przed alarmem.
+  { SenWarunki w = senBateria(0, 3.0f); w.ota = true; w.alarm = true; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "ota")); }
+
+  // [v1.5.1] Czasy do wyboru na ekranie WYSWIETLACZ: domyslny indeks = czasy z v1.5.0.
+  SPRAWDZ(SEN_OPCJI == 6);
+  SPRAWDZ(senPrzyciemnijMs(SEN_PRZYCIEMNIJ_DOMYSLNY_IDX) == SEN_PRZYCIEMNIJ_PO_MS);
+  SPRAWDZ(senUspijMs(SEN_USPIJ_DOMYSLNY_IDX) == SEN_USPIJ_PO_MS);
+  SPRAWDZ(senPrzyciemnijMs(0) == 30000UL && senPrzyciemnijMs(4) == 600000UL && senPrzyciemnijMs(5) == 0);
+  SPRAWDZ(senUspijMs(0) == 120000UL && senUspijMs(4) == 3600000UL && senUspijMs(5) == 0);
+  // Nieznany indeks (z przyszlej wersji / uszkodzony NVS) = domyslny, nie smieci spoza tablicy.
+  SPRAWDZ(senPrzyciemnijMs(6) == SEN_PRZYCIEMNIJ_PO_MS && senPrzyciemnijMs(-1) == SEN_PRZYCIEMNIJ_PO_MS && senPrzyciemnijMs(255) == SEN_PRZYCIEMNIJ_PO_MS);
+  SPRAWDZ(senUspijMs(200) == SEN_USPIJ_PO_MS);
+  // SenWarunki bez ustawionych czasow = zachowanie v1.5.0 (sprawdzone wyzej); z czasami:
+  { SenWarunki w = senBateria(31000); w.przyciemnijPoMs = 30000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku")); }
+  { SenWarunki w = senBateria(599000); w.przyciemnijPoMs = 600000; w.uspijPoMs = 3600000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "aktywny")); }
+  { SenWarunki w = senBateria(3600000); w.przyciemnijPoMs = 600000; w.uspijPoMs = 3600000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bez_dotyku")); }
+  // "nigdy": 0 ms wylacza dany krok, drugi dziala dalej.
+  { SenWarunki w = senBateria(7200000); w.przyciemnijPoMs = 0; w.uspijPoMs = 0; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_NIC, "aktywny")); }
+  { SenWarunki w = senBateria(7200000); w.przyciemnijPoMs = 60000; w.uspijPoMs = 0; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku")); }
+  { SenWarunki w = senBateria(7200000); w.przyciemnijPoMs = 0; w.uspijPoMs = 300000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bez_dotyku")); }
+  // Sen krotszy niz przyciemnienie (2 min / 10 min): po 2 min od razu sen, bez przyciemnienia.
+  { SenWarunki w = senBateria(120000); w.przyciemnijPoMs = 600000; w.uspijPoMs = 120000; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bez_dotyku")); }
+  // "nigdy" nie wylacza snu z powodu rozladowanej baterii.
+  { SenWarunki w = senBateria(0, 3.25f); w.przyciemnijPoMs = 0; w.uspijPoMs = 0; SPRAWDZ(senJest(senDecyzja(w), SEN_AKCJA_USPIJ, "bateria_rozladowana")); }
+
+  // [v1.5.1] Filtr dotyku: pierwsze dotkniecie przyciemnionego ekranu tylko rozjasnia.
+  {
+    DotykFiltr f;
+    // Ekran jasny: kazdy odczyt idzie do LVGL (wcisniety, trzymany, puszczony).
+    SPRAWDZ(dotykPrzepusc(f, true, true, false, 2) && !f.pochlania);
+    SPRAWDZ(dotykPrzepusc(f, true, false, false, 2));
+    SPRAWDZ(dotykPrzepusc(f, false, false, false, 2));
+    // Ekran przyciemniony, palec dotyka: pochloniety od pierwszego odczytu...
+    SPRAWDZ(!dotykPrzepusc(f, true, true, true, 2) && f.pochlania);
+    // ...i dalej, takze gdy senKrok() zdazyl juz rozjasnic ekran (przyciemniony=false) -
+    // ten sam dotyk nie moze "wejsc w ikonke" w polowie trzymania.
+    SPRAWDZ(!dotykPrzepusc(f, true, false, false, 2) && f.pochlania);
+    SPRAWDZ(!dotykPrzepusc(f, true, false, false, 2));
+    // Jeden nieudany odczyt w srodku (szum panelu rezystancyjnego) nie konczy pochlaniania.
+    SPRAWDZ(!dotykPrzepusc(f, false, true, false, 2) && f.pochlania);
+    SPRAWDZ(!dotykPrzepusc(f, true, true, false, 2) && f.pochlania && f.nieudane == 0);
+    // Puszczenie: 2 kolejne odczyty bez palca (PROG_PUSZCZENIA) koncza pochlanianie.
+    SPRAWDZ(!dotykPrzepusc(f, false, true, false, 2) && f.pochlania);
+    SPRAWDZ(!dotykPrzepusc(f, false, true, false, 2) && !f.pochlania);
+    // Nastepne dotkniecie (ekran jasny) idzie normalnie.
+    SPRAWDZ(dotykPrzepusc(f, true, true, false, 2) && !f.pochlania);
+    // Dotyk trwajacy, gdy ekran sie przyciemnia (palec lezal na szybie, nowy=false): nie pochlaniamy w srodku.
+    SPRAWDZ(dotykPrzepusc(f, true, false, true, 2) && !f.pochlania);
+    // Brak dotyku na przyciemnionym ekranie: nic sie nie dzieje.
+    SPRAWDZ(dotykPrzepusc(f, false, true, true, 2) && !f.pochlania);
+  }
+}
+
+// [v1.5.2] Obrot ekranu (EKRAN_OBROT 3) a kalibracja dotyku z obrotu 1.
+static void testDotykObrot() {
+  using namespace diag;
+  SPRAWDZ(!dotykTrzebaOdwrocic(1, 1));
+  SPRAWDZ(dotykTrzebaOdwrocic(1, 3));
+  SPRAWDZ(!dotykTrzebaOdwrocic(3, 3));
+  SPRAWDZ(dotykTrzebaOdwrocic(3, 1));
+  long x = 0, y = 0;
+  dotykObroc180(x, y);
+  SPRAWDZ(x == 479 && y == 319);
+  x = 479; y = 319; dotykObroc180(x, y);
+  SPRAWDZ(x == 0 && y == 0);
+  x = 30; y = 30; dotykObroc180(x, y);
+  SPRAWDZ(x == 449 && y == 289);
+  x = 240; y = 160; dotykObroc180(x, y);
+  SPRAWDZ(x == 239 && y == 159);
+  x = 100; y = 200; dotykObroc180(x, y); dotykObroc180(x, y);
+  SPRAWDZ(x == 100 && y == 200);
+}
+
 int main() {
+  testDotykObrot();
+  testSen();
   testRytmUstawien();
   testFiltrStatusu();
+  testSerwoStopnie();
   testKolejkaPolecen();
   testOtaNarzedzia();
   testOtaZapisIDecyzja();

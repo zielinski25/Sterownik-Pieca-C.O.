@@ -1,0 +1,35 @@
+ZAKRES ZMIAN 3.58.19 wzgledem 3.58.18 (plik src/main_centrala.cpp, 51 401 linii)
+================================================================================
+Patch main_centrala-v3.58.18-do-v3.58.19.patch: 11 hunkow, ok. 59 linii kodu (reszta komentarze
+i historia). Zmiana tylko w C++. HTML/JS strony WWW (R"PIECHTML() - bajt w bajt jak w 3.58.18
+(test A). Zapytanie do Open-Meteo (DESZCZ_URL), czestotliwosc pobierania (co 15 min, pierwsze
+po 60 s), automatyka, Firebase, Telegram, trasy HTTP - zero zmian. Pola /api/status te same.
+
+   1-23        naglowek pliku [v3.58.19 PLYNNY-DESZCZ]
+   2025-2032   HISTORIA WERSJI: wpis [v3.58.19]
+   6843        FIRMWARE_VERSION = "v3.58.19"
+   7572        deklaracja void deszczStanTeraz(int&, int&) (obok extern deszczStan/deszczMinuty)
+   31711-31720 /api/status (wifiZbudujJsonStatus): deszcz_stan / deszcz_min z deszczStanTeraz()
+               zamiast zamrozonych deszczStan / deszczMinuty z ostatniego pobrania
+   47489-47513 nowe globalne: deszczStartMillis, deszczKoniecMillis, deszczKoniecZnany,
+               deszczKoniecMinuty + funkcja deszczStanTeraz():
+                 stan 1: minuty = ceil((deszczStartMillis - millis()) / 60 s); gdy <= 0 -> stan 2
+                 stan 2: koniec nieznany -> -1 ("pada" bez czasu); inaczej ceil do konca;
+                         po koncu -> stan 0 (do nastepnego pobrania)
+                 roznice millis() w unsigned long -> poprawne przy przepelnieniu (49,7 dnia)
+   47691-47700 pobierzPrognozeDeszczu(): przesMin = ile minut biezacego slotu 15-min juz minelo
+               wg zegara centrali (aktualnyCzasGodzina/Minuta), tylko gdy g_rtcGotowy lub
+               g_rtcNtpZsynchronizowany i 0 <= r < 15 (inaczej 0 = jak do 3.58.18)
+   47712        nowyKoniecMinuty (koniec opadu takze dla stanu 1)
+   47730-47745 stan 1: nowyMinuty = i*15 - przesMin (min 0) + szukanie konca zapowiadanego
+               opadu (2 suche sloty z rzedu, ta sama histereza co dla "pada")
+   47774-47781 stan 2: nowyMinuty = (i-1)*15 - przesMin; <= 0 -> -1 ("pada" bez czasu,
+               bylo "pada 0 min")
+   47795-47802 po pobraniu: zapis chwil millis() poczatku/konca
+   47810-47811 log DESZCZ zdarzenie=stan: + w_slocie_min=, koniec_za_min=
+
+Skutek na LCD (panel v1.5.17 bez zmian, odpytuje /api/status co kilka sekund):
+   "deszcz za 113 min" -> po minucie "za 112" ... "za 1" -> "pada 105 min" -> ... -> "pada 1 min"
+   -> ikona bez deszczu. Pobranie co 15 min tylko koryguje (nowa prognoza), nie powoduje skoku
+   o 15 minut, bo przesuniecie w slocie jest odejmowane juz przy pobraniu.
+Zmienne deszczStan / deszczMinuty (wartosci z chwili pobrania) zostaja - uzywa ich log i testy.

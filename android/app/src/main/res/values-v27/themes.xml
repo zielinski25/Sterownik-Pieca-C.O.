@@ -1,0 +1,25 @@
+<resources>
+    <!--
+      0.31.70: ten sam motyw co values/themes.xml, plus zezwolenie na rysowanie
+      w obszarze wyciecia ekranu (kamera w ekranie / notch).
+
+      Dlaczego: domyslny tryb (DEFAULT) pozwala rysowac pod wycieciem TYLKO
+      w pionie. W poziomie system rezerwuje na wyciecie pas i zamalowuje go
+      CZERNYM - dokladnie ten pasek widac po lewej stronie ekranu.
+      "shortEdges" pozwala rysowac pod wycieciem zarowno w pionie, jak i w
+      poziomie (wyciecie jest na krotkiej krawedzi), wiec czarny pas znika.
+
+      Trescia pod kamera zajmuje sie Compose: Modifier.displayCutoutPadding()
+      w SterownikApp.kt odsuwa interfejs od samej dziurki, wiec nic nie
+      chowa sie pod obiektywem.
+
+      Atrybut istnieje od API 27, dlatego ten plik jest w values-v27.
+    -->
+    <style name="Theme.SterownikCo" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/top</item>
+        <item name="android:navigationBarColor">@color/nav</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>

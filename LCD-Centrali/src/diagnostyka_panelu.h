@@ -1,4 +1,8 @@
 // diagnostyka_panelu.h
+// [v1.5.1] SEN: czasy przyciemnienia/snu do wyboru (SEN_*_OPCJE_MS, indeks w
+//   NVS), filtr "pierwsze dotkniecie przyciemnionego ekranu" (dotykPrzepusc()).
+// [v1.5.0] Dodano: sekcja "[v1.5.0 SEN]" na koncu - progi i decyzja
+//   przyciemnienia / glebokiego snu na baterii (senDecyzja()).
 // [v1.4.3] Dodano: RytmUstawien (B4, odczyt ustawien gdy potrzebny) i
 //   POLA_STATUSU_CZYTANE[] / poleStatusuCzytane() (A2, filtr JSON statusu).
 // ============================================================================
@@ -590,6 +594,19 @@ struct Ratunek {
     wymuszen = 0;
     restartZlecony = false;
   }
+
+  // [v1.5.7 RATUNEK] Centrala wlasnie sie odezwala INNYM kanalem niz
+  // /api/status: przyszly bajty historii do wykresu albo odpowiedz na
+  // polecenie. Polaczenie z nia dziala, wiec "WiFi polaczone, a centrala
+  // milczy" nie zachodzi - licznik milczenia od nowa. Status moze byc
+  // nadal stary (bezDanychMs biegnie, kafelki "--"), bo to on tylko sie
+  // spoznia; centrala obsluguje wtedy pobieranie historii i na status
+  // odpowiada wolniej. Log z plytki 22.11 (v1.5.6): panel w srodku
+  // pobierania wykresu (8 z 16 linii juz odebranych) wymusil ponowne
+  // polaczenie WiFi, bo status nie przyszedl od 12 s - pobieranie padlo
+  // ("urwana ... errno=113"), WiFi zerwane na kilka sekund, a potem 3 proby
+  // wykresu z rzedu bez WiFi.
+  void centralaOdezwalaSie() { milczyMs = 0; }
 
   // `polaczoneAleMilczy`: WiFi zglasza polaczenie, a ostatnia proba statusu
   // skonczyla sie brakiem odpowiedzi (nie: nieczytelna odpowiedzia - na to
@@ -1183,12 +1200,21 @@ struct Polecenie {
   uint8_t  po;            // co odswiezyc po zakonczeniu (PoKomendzie z main.cpp - tu tylko przenoszone)
   uint32_t zmienionoMs;   // ostatnia zmiana wartosci (do liczenia ciszy)
   bool     scalone;       // wartosc nadpisana zanim polecenie poszlo -> czekaj na cisze
+  uint8_t  proba;         // [v1.5.5] ktora to proba wyslania (0 = pierwsza); ponowienie czeka ODSTEP_PONOWIENIA_MS
 };
 
 struct KolejkaPolecen {
   static const uint8_t  MAKS = 6;          // rozne pola czekajace naraz - wiecej niz palcow na jednym ekranie
   static const uint32_t CISZA_MS = 200;    // dluzej niz odstep LV_EVENT_LONG_PRESSED_REPEAT (100 ms)
   static const uint8_t  ZAKONCZEN = 8;     // ile ostatnich zakonczonych polecen pamietamy (do poleZmieniane())
+  // [v1.5.5] Polecenie bez odpowiedzi centrali (SYN bez odpowiedzi, zerwane
+  // polaczenie) idzie jeszcze raz - do PROB_MAKS prob lacznie, z odstepem
+  // ODSTEP_PONOWIENIA_MS. Log z 24.11: trzy dotkniecia WL pompy padly na
+  // pojedynczych 400-ms czkawkach AP, gdy statusy co 2 s przechodzily - jedna
+  // proba to za malo, zwlaszcza na baterii (oszczedzanie radia). Odrzucenie
+  // przez centrale ({"ok":false}) NIE jest ponawiane - to odpowiedz.
+  static const uint8_t  PROB_MAKS = 3;
+  static const uint32_t ODSTEP_PONOWIENIA_MS = 700;
 
   Polecenie p[MAKS];
   uint8_t   n = 0;
@@ -1198,6 +1224,7 @@ struct KolejkaPolecen {
   Zakonczenie zak[ZAKONCZEN];
   uint8_t   zakNastepne = 0;
   uint32_t  dodanych = 0, scalonych = 0, odrzuconych = 0;   // liczniki do logu
+  uint32_t  ponowien = 0;                                     // [v1.5.5] ile razy polecenie poszlo jeszcze raz
 
   KolejkaPolecen() { memset(&wLocie, 0, sizeof(wLocie)); memset(zak, 0, sizeof(zak)); memset(p, 0, sizeof(p)); }
 
@@ -1223,7 +1250,33 @@ struct KolejkaPolecen {
     q.po = po;
     q.zmienionoMs = terazMs;
     q.scalone = false;
+    q.proba = 0;
     dodanych++;
+    return true;
+  }
+
+  // [v1.5.5] Polecenie w locie skonczylo sie bez odpowiedzi centrali. true =
+  // wraca na poczatek kolejki jako kolejna proba (pojdzie po
+  // ODSTEP_PONOWIENIA_MS); false = koniec prob, wolajacy pokazuje porazke:
+  // wyczerpane PROB_MAKS, kolejka pelna, albo uzytkownik zdazyl juz zadac
+  // nowej wartosci tego samego pola (ta nowsza i tak zaraz pojdzie).
+  // Zawsze zamyka lot jak zakoncz().
+  bool ponow(uint32_t terazMs) {
+    if (!lotTrwa) return false;
+    Polecenie znow = wLocie;
+    zakoncz(terazMs);
+    if (znow.proba + 1 >= PROB_MAKS) return false;
+    for (uint8_t i = 0; i < n; i++) {
+      if (strcmp(p[i].klucz, znow.klucz) == 0 && strcmp(p[i].sciezka, znow.sciezka) == 0) return false;
+    }
+    if (n >= MAKS) return false;
+    for (uint8_t i = n; i > 0; i--) p[i] = p[i - 1];
+    n++;
+    p[0] = znow;
+    p[0].proba++;
+    p[0].zmienionoMs = terazMs;
+    p[0].scalone = false;
+    ponowien++;
     return true;
   }
 
@@ -1234,6 +1287,7 @@ struct KolejkaPolecen {
   // kolejce, czeka na CISZA_MS od ostatniej zmiany - patrz naglowek.
   bool gotowa(uint32_t terazMs) const {
     if (n == 0) return false;
+    if (p[0].proba > 0 && (uint32_t)(terazMs - p[0].zmienionoMs) < ODSTEP_PONOWIENIA_MS) return false;   // [v1.5.5]
     if (!p[0].scalone) return true;
     return (uint32_t)(terazMs - p[0].zmienionoMs) >= CISZA_MS;
   }
@@ -1334,6 +1388,8 @@ static const char* const POLA_STATUSU_CZYTANE[] = {
   "t_zewn", "t_bojler", "t_ogrz", "t_ogrz_sr", "t_panel", "t_pokoj", "t_trociny", "t_powrot",
   "wilgotnosc", "cisnienie", "dym", "dym_alarm", "klapa", "syberka", "pompa", "pompa_override_min",
   "alarm_ogrzewanie", "alarm_panel", "deszcz_stan", "deszcz_min",
+  "pogoda_kod", "pogoda_kod_opad", "pogoda_dzien", "wiatr_porywy",   // [v1.5.14] pogoda kafelka ZEWN (centrala 3.58.16)
+  "pogoda_temp",   // [v1.5.17] temperatura z prognozy (centrala 3.58.17) - kafelek ZEWN bez czujnika
   "miesiac", "godzina", "minuta", "dzien", "rok", "rtc_ok",
   "panel_ota_dostepna", "panel_ota_wersja", "panel_ota_obraz", "panel_ota_nr",
   "symulator",
@@ -1348,5 +1404,151 @@ inline bool poleStatusuCzytane(const char* pole) {
   for (int i = 0; i < LICZBA_CZUJNIKOW_SYMULOWANYCH; i++) if (strcmp(CZUJNIKI_SYMULOWANE[i].pole, pole) == 0) return true;
   return false;
 }
+
+// ---------------------------------------------------------------------------
+// ============================================================================
+// [v1.5.6 SERWA] Pozycje serw: centrala podaje STOPNIE, panel pokazuje PROCENTY
+// ============================================================================
+// /api/status: "klapa" = pozycjaKlapa w stopniach 0..180, "syberka" =
+// pozycjaSyberek w stopniach 0..90 (main_centrala.cpp: "Wspolny kontrakt
+// jednostek dla pozycji serw", telemetryServoDegrees()). Panel do v1.5.5
+// pokazywal te liczby jako procenty ("113%" przy klapie 113 stopni). W druga
+// strone /api/servo-manual przyjmuje procent 0..100, ktory centrala
+// przelicza procentNaKat(procent, 0, maks) - stad przelicznik odwrotny tutaj,
+// z zaokragleniem do najblizszej calosci i obcieciem do 0..100.
+static const int KLAPA_KAT_MAKS   = 180;
+static const int SYBERKA_KAT_MAKS = 90;
+inline int serwoStopnieNaProcent(int stopnie, int katMaks) {
+  if (katMaks <= 0) return 0;
+  if (stopnie <= 0) return 0;
+  if (stopnie >= katMaks) return 100;
+  return (stopnie * 100 + katMaks / 2) / katMaks;
+}
+
+// [v1.5.0 SEN] Praca na baterii: przyciemnienie i gleboki sen (krok 3 planu z
+// WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18, rozdzial 2 i 4; tematy B1/B5, 14)
+// ---------------------------------------------------------------------------
+// Pomiary z plytki (2026-11-20, tester USB przed TP4056, 5 V, WiFi wlaczone):
+// ekran 100 % = 238 mA, ekran 5 % = 157 mA, gleboki sen wg starego pomiaru
+// 0,11 mA (bez przetwornicy). Na jednym ogniwie 2500 mAh to ok. 8 h pracy z
+// jasnym ekranem, ok. 12 h z przyciemnionym i kilka dni we snie - stad dwa
+// progi: najpierw przyciemnienie (tanie, odwracalne jednym dotknieciem),
+// potem sen (wybudzenie przyciskiem = pelny start panelu, kilka sekund).
+//
+// Na zasilaniu z USB panel NIGDY nie przyciemnia ani nie usypia - zachowanie
+// do v1.4.7 bez zmian. Decyzja jest czysta funkcja warunkow (jak otaDecyzja()
+// wyzej), zeby dalo sie ja sprawdzic na PC bez plytki.
+static const uint32_t SEN_PRZYCIEMNIJ_PO_MS = 60UL * 1000UL;        // domyslnie: 1 min bez dotyku -> podswietlenie na SEN_JASNOSC_PROC
+static const uint32_t SEN_USPIJ_PO_MS       = 5UL * 60UL * 1000UL;  // domyslnie: 5 min bez dotyku -> gleboki sen
+// [v1.5.1] Oba czasy do wyboru na ekranie WYSWIETLACZ (wiersz "Na baterii");
+// w NVS zapisywany jest INDEKS (wyswietlacz/senPrzyIdx, senSpijIdx), nie czas.
+// 0 ms = "nigdy". Napisy na przyciskach w tej samej kolejnosci:
+// dashboard_lvgl_poc.cpp, SEN_PRZYCIEMNIJ_NAZWY[] / SEN_USPIJ_NAZWY[].
+static constexpr uint32_t SEN_PRZYCIEMNIJ_OPCJE_MS[] = { 30000UL, 60000UL, 120000UL, 300000UL, 600000UL, 0UL };
+static constexpr uint32_t SEN_USPIJ_OPCJE_MS[]       = { 120000UL, 300000UL, 600000UL, 1800000UL, 3600000UL, 0UL };
+static const int      SEN_OPCJI = 6;
+static const uint8_t  SEN_PRZYCIEMNIJ_DOMYSLNY_IDX = 1;   // 1 min  (= SEN_PRZYCIEMNIJ_PO_MS)
+static const uint8_t  SEN_USPIJ_DOMYSLNY_IDX       = 1;   // 5 min  (= SEN_USPIJ_PO_MS)
+static_assert(sizeof(SEN_PRZYCIEMNIJ_OPCJE_MS) / sizeof(SEN_PRZYCIEMNIJ_OPCJE_MS[0]) == SEN_OPCJI, "SEN_PRZYCIEMNIJ_OPCJE_MS");
+static_assert(sizeof(SEN_USPIJ_OPCJE_MS) / sizeof(SEN_USPIJ_OPCJE_MS[0]) == SEN_OPCJI, "SEN_USPIJ_OPCJE_MS");
+static_assert(SEN_PRZYCIEMNIJ_OPCJE_MS[SEN_PRZYCIEMNIJ_DOMYSLNY_IDX] == SEN_PRZYCIEMNIJ_PO_MS, "domyslny indeks przyciemnienia");
+static_assert(SEN_USPIJ_OPCJE_MS[SEN_USPIJ_DOMYSLNY_IDX] == SEN_USPIJ_PO_MS, "domyslny indeks snu");
+
+// Indeks z NVS / z ekranu -> czas. Nieznany indeks (np. z przyszlej wersji
+// programu) = wartosc domyslna, jak zasilanieIdx w main.cpp.
+inline uint8_t senIndeksPoprawny(long idx, uint8_t domyslny) {
+  return (idx >= 0 && idx < SEN_OPCJI) ? (uint8_t)idx : domyslny;
+}
+inline uint32_t senPrzyciemnijMs(long idx) { return SEN_PRZYCIEMNIJ_OPCJE_MS[senIndeksPoprawny(idx, SEN_PRZYCIEMNIJ_DOMYSLNY_IDX)]; }
+inline uint32_t senUspijMs(long idx)       { return SEN_USPIJ_OPCJE_MS[senIndeksPoprawny(idx, SEN_USPIJ_DOMYSLNY_IDX)]; }
+static const uint8_t  SEN_JASNOSC_PROC      = 5;                    // jasnosc po przyciemnieniu (= JASNOSC_MIN_PROCENT w main.cpp)
+static const float    SEN_NAPIECIE_MIN_V    = 3.30f;                // ponizej: sen od razu (poza alarmem), z napisem na ekranie
+static const float    SEN_NAPIECIE_KRYT_V   = 3.10f;                // ponizej: sen od razu TAKZE w alarmie (ogniwo i tak zaraz sie odetnie)
+static const uint32_t SEN_SPRAWDZAJ_CO_MS   = 1000;                 // jak czesto main.cpp liczy decyzje
+static const uint32_t SEN_NAPIS_MS          = 2500;                 // ile stoi napis "Bateria rozladowana" przed snem
+
+enum SenAkcja : uint8_t {
+  SEN_AKCJA_NIC = 0,     // pelna jasnosc, panel pracuje
+  SEN_AKCJA_PRZYCIEMNIJ, // podswietlenie na SEN_JASNOSC_PROC, reszta pracuje
+  SEN_AKCJA_USPIJ        // gleboki sen (`powod` mowi dlaczego)
+};
+
+struct SenWarunki {
+  bool     bateriaJest;    // dzielnik widzi ogniwo (bateriaObecna())
+  bool     zasilanieUsb;   // TP4056 zasilany z USB (zasilanieUSB())
+  float    napiecieV;      // ostatni pomiar ogniwa
+  uint32_t bezDotykuMs;    // ile czasu nikt nie dotykal ekranu ani przycisku
+  bool     alarm;          // centrala zglasza alarm albo brzeczyk gra
+  bool     ota;            // trwa pobieranie / wgrywanie nowego programu panelu
+  // [v1.5.1] Czasy z ekranu WYSWIETLACZ (0 = nigdy). Domyslne = jak v1.5.0.
+  uint32_t przyciemnijPoMs = SEN_PRZYCIEMNIJ_PO_MS;
+  uint32_t uspijPoMs       = SEN_USPIJ_PO_MS;
+};
+
+struct SenDecyzja {
+  SenAkcja    akcja;
+  const char* powod;   // krotki tekst do logu
+};
+
+inline SenDecyzja senDecyzja(const SenWarunki& w) {
+  if (!w.bateriaJest)  return {SEN_AKCJA_NIC, "brak_ogniwa"};
+  if (w.zasilanieUsb)  return {SEN_AKCJA_NIC, "usb"};
+  if (w.ota)           return {SEN_AKCJA_NIC, "ota"};
+  // Ogniwo na granicy odciecia: alarm juz nie pomoze, a gleboko rozladowany
+  // LiPo traci pojemnosc - spac, zanim zrobi to uklad zabezpieczenia ogniwa.
+  if (w.napiecieV < SEN_NAPIECIE_KRYT_V) return {SEN_AKCJA_USPIJ, "bateria_krytyczna"};
+  if (w.alarm)         return {SEN_AKCJA_NIC, "alarm"};
+  if (w.napiecieV < SEN_NAPIECIE_MIN_V)  return {SEN_AKCJA_USPIJ, "bateria_rozladowana"};
+  if (w.uspijPoMs != 0 && w.bezDotykuMs >= w.uspijPoMs)             return {SEN_AKCJA_USPIJ, "bez_dotyku"};
+  if (w.przyciemnijPoMs != 0 && w.bezDotykuMs >= w.przyciemnijPoMs) return {SEN_AKCJA_PRZYCIEMNIJ, "bez_dotyku"};
+  return {SEN_AKCJA_NIC, "aktywny"};
+}
+
+// [v1.5.1] Pierwsze dotkniecie przyciemnionego ekranu ma TYLKO przywrocic
+// jasnosc - nie otwierac kafelka, w ktory akurat trafil palec (uzytkownik,
+// 20.11: "jak sie przyciemni, to pierwsze dotkniecie ma tylko przywrocic
+// rozjasnienie, a nie wchodzic w ikonke"). Filtr siedzi miedzy odczytem
+// dotyku a LVGL (lvgl_port.cpp, lvgl_touch_read()): dotyk, ktory ZACZAL sie
+// na przyciemnionym ekranie, jest pochlaniany w calosci, az do puszczenia
+// palca - LVGL widzi przez caly czas "brak dotyku", a licznik bezczynnosci
+// LVGL jest zerowany recznie (lv_disp_trig_activity), zeby senKrok() w
+// main.cpp rozjasnil ekran tak jak dotad. Nastepne dotkniecie (ekran juz
+// jasny) idzie normalnie.
+struct DotykFiltr {
+  bool    pochlania = false;   // trwa pochlanianie biezacego dotyku
+  uint8_t nieudane  = 0;       // kolejne odczyty "brak dotyku" w trakcie pochlaniania (histereza jak w lvgl_touch_read)
+};
+
+// Zwraca true = ten odczyt wolno przekazac LVGL; false = pochloniety (zglos
+// LVGL "brak dotyku"). `jest` = czujnik widzi palec, `nowy` = w poprzednim
+// odczycie LVGL nie widzialo dotyku (poczatek dotkniecia), `przyciemniony` =
+// ekran jest teraz przyciemniony przez senKrok(). `progPuszczenia` = ile
+// kolejnych odczytow bez palca konczy pochlanianie (ta sama liczba, co
+// PROG_PUSZCZENIA w lvgl_touch_read()).
+inline bool dotykPrzepusc(DotykFiltr& f, bool jest, bool nowy, bool przyciemniony, uint8_t progPuszczenia) {
+  if (!f.pochlania) {
+    if (jest && nowy && przyciemniony) { f.pochlania = true; f.nieudane = 0; return false; }
+    return true;
+  }
+  if (jest) { f.nieudane = 0; return false; }
+  if (++f.nieudane >= progPuszczenia) { f.pochlania = false; f.nieudane = 0; }
+  return false;
+}
+
+// Czy przed snem pokazac napis o rozladowanej baterii (powod z senDecyzja()).
+inline bool senZNapisem(const char* powod) {
+  return powod != nullptr && strncmp(powod, "bateria_", 8) == 0;
+}
+
+// --- [v1.5.2] Obrot ekranu a kalibracja dotyku -------------------------------
+// Ekran jest poziomy (480x320) w obrocie TFT_eSPI 1 albo 3 (ten sam uklad
+// obrocony o 180 stopni; EKRAN_OBROT w main.cpp). Kalibracja dotyku w NVS
+// pochodzi z orientacji, w ktorej rysowano znaczniki (klucz dotyk/obrot;
+// panele sprzed v1.5.2 nie maja klucza = obrot 1). Gdy obrot ekranu jest
+// inny niz obrot kalibracji, piksel z kalibracji trzeba obrocic o 180 stopni
+// - obie osie - zamiast kazac kalibrowac od nowa.
+static constexpr int EKRAN_SZER = 480, EKRAN_WYS = 320;
+inline bool dotykTrzebaOdwrocic(int obrotKalibracji, int obrotEkranu) { return obrotKalibracji != obrotEkranu; }
+inline void dotykObroc180(long& x, long& y) { x = EKRAN_SZER - 1 - x; y = EKRAN_WYS - 1 - y; }
 
 }  // namespace diag

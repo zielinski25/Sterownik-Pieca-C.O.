@@ -1,0 +1,61 @@
+FIRMWARE CENTRALI 3.58.18 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
+(platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.17 (pogoda_temp dla kafelka ZEWN) + PIERWSZA PROGNOZA ~1 MIN PO STARCIE.
+Patch wzgledem 3.58.17: 5 hunkow, 6 linii kodu. Strona WWW bajt w bajt jak w 3.58.17.
+Jesli 3.58.17 nie bylo wgrane - wgraj od razu te (zawiera wszystko).
+
+PO CO (zgloszenie z 23.11: po wgraniu 3.58.17 kafelek ZEWN dalej "--")
+--------------------------------------------------------------------
+/api/status mialo pogoda_kod=-1 i pogoda_temp=null przy ~6 min od startu - bo centrala pytala
+Open-Meteo PIERWSZY RAZ dopiero 15 minut po wlaczeniu (licznik bramki startowal od zera, a
+warunek to "minelo 15 min od ostatniego pobrania"). Tak bylo od zawsze - po kazdym restarcie
+kwadrans bez "deszcz za 6 h", bez ikony pogody i bez prognozy na WWW/LCD.
+Teraz: DESZCZ (deszcz_*, pogoda_*, pogoda_temp) ~60 s po starcie, pelna PROGNOZA ~120 s po
+starcie, dalej co 15 min jak dotad. Nic wiecej sie nie zmienia.
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.18"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od 27555cb0):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.17-do-v3.58.18.patch, -p1 z katalogu projektu, na plik 3.58.17
+(SHA 93dab586...). Wynik musi miec SHA 27555cb0... - inaczej wgraj caly plik z src\.
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+Select-String '^\[env:' platformio.ini      -> esp32-s3-n16r8 (NIE esp32dev)
+PlatformIO -> Build, potem Upload   (pio run -e esp32-s3-n16r8   i   -t upload)
+Spodziewane: 0 ostrzezen, Flash i RAM jak w 3.58.17 (zmienily sie tylko wartosci poczatkowe
+dwoch zmiennych). Release na GitHub: tag 3.58.18.
+
+KROK 3 - SPRAWDZENIE (http://192.168.100.151, Ctrl+F5)
+------------------------------------------------------
+0. /api/lan/status: "fw":"v3.58.18". Telegram: "Centrala wystartowala: v3.58.18".
+1. Po ok. 1,5 minuty od startu http://192.168.100.151/api/status: "pogoda_kod" juz nie -1,
+   "wiatr_porywy" liczba, "pogoda_temp" liczba (np. 3.4). Przedtem (3.58.17) trzeba bylo
+   czekac 15 minut.
+2. Panel LCD v1.5.17 na plytce bez czujnika: kafelek ZEWN po ~1,5 min pokazuje "~3°C" i
+   kolorowa ikone pogody (bez restartu panelu - sam odswieza status).
+3. Log (jesli wlaczony DC_WEATHER): pierwszy wpis "DESZCZ zdarzenie=stan ..." ok. 60 s po starcie.
+4. Strona WWW i reszta - jak w 3.58.17.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa.
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\testy-pc.txt)
+----------------------------------------------
+Prawdziwe definicje licznikow i stalych oraz prawdziwy warunek bramki z zadania TG wyciete
+z tego pliku, skompilowane g++ (-Wall -Wextra -Werror) z 32-bitowym unsigned long jak na ESP32
+i natywnie 64-bit, przepuszczone przez symulowane 40 minut od startu: DESZCZ 60 s / 15 min /
+30 min, PROGNOZA 120 s / 17 min / 32 min; przez przepelnienie millis() (49,7 dnia) kolejne
+pobranie dokladnie 15 min po poprzednim. Poza komentarzami i wersja zmienionych 6 linii kodu
+(test porownuje z 3.58.17). HTML identyczny z 3.58.17, node --check, plik = 3.58.17 + patch
+(SHA), pelne testy 3.58.17/3.58.16/3.58.15/3.58.14.
+Caly plik NIE byl kompilowany w PlatformIO.

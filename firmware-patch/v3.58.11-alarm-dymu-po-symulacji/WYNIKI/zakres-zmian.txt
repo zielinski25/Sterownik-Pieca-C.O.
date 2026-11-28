@@ -1,0 +1,21 @@
+ZAKRES ZMIAN 3.58.11 wzgledem 3.58.10 (plik src/main_centrala.cpp, 50 873 linie, SHA-256 471b61b4...)
+======================================================================================================
+Patch main_centrala-v3.58.10-do-v3.58.11.patch: 9 hunkow, +91 / -10 (z tego 2 hunki to
+komentarze: naglowek pliku i historia wersji). Zmiany TYLKO wokol alarmu POZAR.
+
+   3-34        naglowek pliku [v3.58.11 DYM-SYM] (zgloszenie, przyczyna, zasada)
+   1841-1850   HISTORIA WERSJI: wpis [v3.58.11]
+   6191        extern bool alarmDymuZSymulacji; (deklaracja przed /api/status)
+   6592        FIRMWARE_VERSION = "v3.58.11"
+   31211-31213 wifiZbudujJsonStatus(): nowe pole "dym_alarm_sym" (po "dym_alarm")
+   35147-35184 blok // --- DYM-SYM-POCZATEK/KONIEC ---:
+               alarmDymuZSymulacji, dymSymulacjaBylaAktywna,
+               dymAlarmSkasuj(powod) - wspolne sprzatanie po alarmie (dotad wpisane w pozar()),
+               dymAlarmPoKoncuSymulacji(symDymTeraz) - kasuje alarm z symulacji przy jej koncu
+   35194-35195 pozar(): wywolanie dymAlarmPoKoncuSymulacji() zaraz po symulacjaTrwa()
+   35375-35377 pozar(): prawdziwy odczyt nad progiem w trakcie alarmu z symulacji -> alarm prawdziwy
+   35409       pozar(): przy aktywacji alarmDymuZSymulacji = symDymTeraz
+   35413-35415 pozar(): dezaktywacja przez dymAlarmSkasuj(nullptr) - ta sama linia logu co dotad
+
+Bez zmian: prog (progAlarmowyDymu), HISTEREZA_DYMU 30, tryby czujnika (impulsowy/ciagly),
+bramka temperaturowa, ruch serw przy alarmie, Telegram, OTA, telemetria, Zew 2.

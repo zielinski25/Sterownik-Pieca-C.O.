@@ -1,0 +1,3 @@
+fe6f0b20afcd3b91621341f17c5f410b2b2653e06d92797209e9f1c7379b7ce7  src/main_centrala.cpp
+41c30cb80d0ae5392d4315a31476f2b011000c153f2b2c04798297f2a060b1ee  main_centrala-v3.58.11-do-v3.58.12.patch
+471b61b4dcb53624f24caf182b96b279faa4a3a62f681266c24b53e27acbe957  v3.58.11-alarm-dymu-po-symulacji/src/main_centrala.cpp

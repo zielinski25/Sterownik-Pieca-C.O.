@@ -1,0 +1,61 @@
+FIRMWARE CENTRALI 3.58.17 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
+(platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.16 (pogoda dla kafelka ZEWN) + TEMPERATURA Z PROGNOZY w /api/status.
+Patch wzgledem 3.58.16: 9 hunkow, tylko C++ (prognoza deszczu + /api/status). Strona WWW
+bajt w bajt jak w 3.58.16. Jesli 3.58.16 nie bylo wgrane - wgraj od razu te (zawiera wszystko).
+
+PO CO (projektant kafelka ZEWN, wybor z 23.11 wieczor: "uklad=E, brak_czujnika=prognoza")
+------------------------------------------------------------------------------------------
+Panel LCD v1.5.17, gdy czujnik zewnetrzny DS18B20 nie dziala (centrala podaje -1.0), pokazuje
+na kafelku ZEWN przyblizona temperature z prognozy: "~3°C" zamiast "--". Do tego potrzebuje
+z centrali biezacej temperatury. Centrala doklada do ISTNIEJACEGO zapytania do Open-Meteo
+(co 15 min, to samo, ktore daje "deszcz za 6 h") pole temperature_2m i wystawia w /api/status
+JEDNO nowe pole, zaraz za "wiatr_porywy":
+    "pogoda_temp"     temperatura powietrza 2 m, °C, 1 miejsce po przecinku, np. 3.4 albo -2.5
+                      null = brak danych (przed pierwszym pobraniem, brak internetu)
+Brak to null, NIE -1 (jak w polach z 3.58.16) - bo -1 °C to prawidlowa temperatura.
+Panel starszy niz v1.5.17 pole ignoruje; panel v1.5.17 z centrala bez tego pola pokazuje "--".
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.17"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od 93dab586):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.16-do-v3.58.17.patch, -p1 z katalogu projektu, na plik 3.58.16
+(SHA f8d0c997...). Wynik musi miec SHA 93dab586... - inaczej wgraj caly plik z src\.
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+Select-String '^\[env:' platformio.ini      -> esp32-s3-n16r8 (NIE esp32dev)
+PlatformIO -> Build, potem Upload   (pio run -e esp32-s3-n16r8   i   -t upload)
+Spodziewane: 0 ostrzezen, Flash ok. +0,3 kB wzgledem 3.58.16, RAM +4 B (1 zmienna globalna).
+Release na GitHub: tag 3.58.17.
+
+KROK 3 - SPRAWDZENIE (http://192.168.100.151, Ctrl+F5)
+------------------------------------------------------
+0. /api/lan/status: "fw":"v3.58.17". Telegram: "Centrala wystartowala: v3.58.17".
+1. http://192.168.100.151/api/status - w JSON-ie za "wiatr_porywy" jest "pogoda_temp":3.4
+   (albo "pogoda_temp":null przez pierwsze minuty po starcie, do pobrania z Open-Meteo).
+2. Log (jesli wlaczony DC_WEATHER): "DESZCZ zdarzenie=stan ... porywy_kmh=22.3 pogoda_temp=3.4".
+3. Panel LCD v1.5.17: po odlaczeniu czujnika zewnetrznego (albo gdy centrala podaje -1.0)
+   kafelek ZEWN pokazuje "~3°C" zamiast "--". Z dzialajacym czujnikiem - nic sie nie zmienia.
+4. Strona WWW i reszta - jak w 3.58.16.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa.
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\testy-pc.txt)
+----------------------------------------------
+Prawdziwy kod parsowania odpowiedzi Open-Meteo z tego pliku skompilowany g++ i puszczony na
+6 odpowiedziach (temperatura -3,5 / 7,2 / 0,0, odpowiedz BEZ pola temperature_2m, null, oraz
+przypadki z 3.58.16) - deszcz_stan/deszcz_min i pola z 3.58.16 jak dotad, pogoda_temp poprawne.
+Pole w /api/status (liczba albo null), URL, wersja, HTML identyczny z 3.58.16, node --check,
+plik = 3.58.16 + patch (SHA), pelne testy 3.58.16/3.58.15/3.58.14/3.58.13/3.58.11.
+Caly plik NIE byl kompilowany w PlatformIO.

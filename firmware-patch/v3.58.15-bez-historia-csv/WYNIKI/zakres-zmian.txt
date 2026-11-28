@@ -1,0 +1,17 @@
+ZAKRES ZMIAN 3.58.15 wzgledem 3.58.14 (plik src/main_centrala.cpp, 51 118 linii, SHA-256 8bfab4e5...)
+====================================================================================================
+Patch main_centrala-v3.58.14-do-v3.58.15.patch: 4 hunki. Zmiana tylko w HTML strony WWW
+wbudowanej w plik (R"PIECHTML() + naglowek, historia, numer wersji. C++ (automatyka, trasy
+HTTP, Firebase, Telegram) - zero zmian; test A sprawdza, ze czesc pliku za HTML-em jest
+bajt w bajt taka sama jak w 3.58.14.
+
+   1-10        naglowek pliku [v3.58.15 BEZ-HISTORIA-CSV]
+   1947-1953   HISTORIA WERSJI: wpis [v3.58.15]
+   6730        FIRMWARE_VERSION = "v3.58.15"
+   11790-11794 w miejscu bloku [v3.56.1 HISTORIA-POBRANIE] (staly przycisk w lewym dolnym rogu
+               + okienko "Pobierz historie: Krotka (24 h) / Dluga (archiwum)" + jego <script>,
+               razem 34 linie / ~2,9 kB) zostal 5-liniowy komentarz HTML
+
+Bez zmian: trasy /history/link, /history, /history/long, /api/history, /api/history/long,
+/api/history/panel, /api/history/clear; zakladka Wykresy; ZEWN-ZRODLO (3.58.14) i wszystko
+wczesniejsze; Piec.html (tam tego przycisku nigdy nie bylo).

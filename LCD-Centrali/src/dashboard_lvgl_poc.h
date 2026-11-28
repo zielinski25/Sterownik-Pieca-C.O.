@@ -24,6 +24,10 @@
 //   (lvgl_dashboard_poc_aktualizuj_centrale()) pokazuje tez, czego panelowi
 //   brakuje, gdy nie ma danych, i jest powtorzony na ekranie alarmu.
 //   Pelny opis: HISTORIA ZMIAN w main.cpp.
+// [2026-11-23] v1.5.14 Zmieniono: lvgl_dashboard_poc_aktualizuj() dostaje 4 nowe
+//   parametry z domyslnymi -1 (pogodaKod, pogodaKodOpad, pogodaDzien,
+//   wiatrPorywy) - kafelek ZEWN z paskiem pogody i ikonami wg kodu WMO
+//   ([v1.5.14 POGODA-ZEWN], zewn_pogoda_odswiez() w .cpp).
 // [2026-11-11] v1.2.0 Dodano: lvgl_dashboard_poc_aktualizuj_centrale() -
 //   znacznik "z ktora centrala rozmawia panel" na srodku naglowka
 //   ([v1.2.0 CENTRALA-ID]). Zmieniono: lvgl_dashboard_poc_aktualizuj_bateria()
@@ -159,7 +163,16 @@ void lvgl_dashboard_poc_aktualizuj(bool polaczono, float tZewn, float tBojler,
                                     bool rtcOk,
                                     int rssi,
                                     bool internet,
-                                    int deszczStan, int deszczMinuty);
+                                    int deszczStan, int deszczMinuty,
+                                    // [v1.5.14 POGODA-ZEWN] pogoda_kod / pogoda_kod_opad / pogoda_dzien /
+                                    // wiatr_porywy z /api/status centrali 3.58.16 (-1 = brak; starsza
+                                    // centrala nie podaje -> kafelek ZEWN jak do v1.5.12)
+                                    int pogodaKod = -1, int pogodaKodOpad = -1, int pogodaDzien = -1,
+                                    float wiatrPorywy = -1.0f,
+                                    // [v1.5.17] pogoda_temp z centrali 3.58.17 (°C z prognozy, -99 =
+                                    // brak/null) - pokazywana jako "~3°C" tylko gdy czujnik DS18B20 nie
+                                    // dziala (tZewn == -1.0); inaczej "--" jak dotad
+                                    float pogodaTemp = -99.0f);
 
 // stan przekazany do callbacku: "auto" / "wl" / "wyl" - dokladnie takie
 // wartosci parametru `stan`, jakich oczekuje POST /api/pompa-manual na
@@ -315,6 +328,13 @@ void lvgl_dashboard_poc_aktualizuj_centrale(const char *znacznik);
 void lvgl_dashboard_poc_pokaz_blad_polecenia(const char *tekst);
 // Aktualnie pokazywany tekst paska ("" = ukryty) - do testow na PC.
 const char *lvgl_dashboard_poc_blad_polecenia_tekst();
+// [v1.5.6] Stan ikony WiFi w naglowku - do testow na PC. Zwraca -1, gdy
+// widac X (brak WiFi), inaczej liczbe zapalonych kresek (0..7);
+// *ostrzezenie = kreski pomaranczowe (WiFi jest, centrala milczy).
+int lvgl_dashboard_poc_wifi_ikona_stan(bool *ostrzezenie);
+// [v1.5.11] Woda w ikonie BOJLER - do testow na PC: wysokosc wody w px
+// (1..25; -1 = ukryta, brak danych); *kolor = RGB565 wody.
+int lvgl_dashboard_poc_bojler_woda(uint16_t *kolor);
 
 // [v1.2.1 RATUNEK] Alarm ma przetrwac samoczynny restart panelu (main.cpp,
 // panelAutorestart()): panel restartuje sie, gdy NIE MA danych z centrali, a
@@ -345,6 +365,10 @@ bool lvgl_dashboard_poc_ota_widoczna();
 // [v1.4.0 OTA] Ile milisekund temu ktos ostatnio dotknal ekranu (panel nie
 // zaczyna aktualizacji, gdy ktos wlasnie go uzywa).
 uint32_t lvgl_dashboard_poc_bez_dotyku_ms();
+// [v1.5.0 SEN] Zglos aktywnosc spoza ekranu (przycisk budzenia na GPIO14
+// wcisniety w czasie pracy) - zeruje licznik lvgl_dashboard_poc_bez_dotyku_ms(),
+// tak jakby ktos dotknal szyby. Tani (jedno przypisanie w LVGL).
+void lvgl_dashboard_poc_zglos_aktywnosc();
 // [v1.4.3 B4] true = na ekranie jest ktorys z ekranow pokazujacych wartosci z
 // /api/ustawienia-get (ustawienia serwa, pompy, dymu, prog przegrzania).
 // main.cpp pyta wtedy centrale o ustawienia co 5 s, poza tym co 60 s
@@ -463,6 +487,17 @@ void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_harmonogram(WyswietlaczHarmon
 typedef void (*WyswietlaczUstawieniaCb)(const char *pole, long wartosc);
 void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(WyswietlaczUstawieniaCb cb);
 
+// [v1.5.20 TEST-DZWIEKU] Przycisk "Test dźwięku" na ekranie WYSWIETLACZ
+// (wiersz harmonogramu, miedzy etykieta a WL./WYL.). Dotkniecie -> callback
+// do main.cpp (start przemiatania czestotliwosci brzeczyka; w czasie alarmu
+// nic). main.cpp odsyla aktualny krok przez lvgl_dashboard_poc_test_dzwieku_pokaz():
+// hz > 0 -> napis "2300 Hz" (i ekran nie zamyka sie z bezczynnosci w trakcie),
+// hz == 0 -> z powrotem "Test dźwięku". Po co: brzeczyk pasywny gra glosno
+// tylko w rezonansie, a ten trzeba uslyszec, nie zgadnac.
+typedef void (*TestDzwiekuCb)();
+void lvgl_dashboard_poc_ustaw_callback_test_dzwieku(TestDzwiekuCb cb);
+void lvgl_dashboard_poc_test_dzwieku_pokaz(int hz);
+
 // Zasila caly panel jednym wywolaniem - wolane raz w setup() main.cpp zaraz
 // po wczytaniu wartosci z NVS (wyswietlaczWczytajZPamieci()), zeby ekran
 // przy pierwszym otwarciu pokazywal PRAWDZIWE zapisane wartosci, nie
@@ -477,6 +512,17 @@ void lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(WyswietlaczUstawie
 void lvgl_dashboard_poc_aktualizuj_ustawienia_wyswietlacza(int jasnoscDzien, int jasnoscNoc,
                                                             int godzinaStart, int godzinaKoniec,
                                                             bool harmonogramWlaczony);
+
+// [v1.5.1 SEN] Wiersz "Na baterii" na dole ekranu WYSWIETLACZ: dwa przyciski,
+// "Przyciemnij po: 1 min" i "Uśpij po: 5 min", kazde dotkniecie przelacza
+// NASTEPNA wartosc z listy (jak przyciski ekranu ZASILANIE). Tabela czasow jest
+// w diagnostyka_panelu.h (diag::SEN_PRZYCIEMNIJ_OPCJE_MS[] / SEN_USPIJ_OPCJE_MS[],
+// ostatnia pozycja = nigdy); tutaj tylko napisy w tej samej kolejnosci.
+// Callback: ten sam WyswietlaczUstawieniaCb, `pole` = "senPrzyciemnij" albo
+// "senUspij", `wartosc` = indeks 0..LVGL_SEN_OPCJI-1. main.cpp zasila
+// zapisane indeksy raz w setup() (..._aktualizuj_sen()).
+#define LVGL_SEN_OPCJI 6
+void lvgl_dashboard_poc_aktualizuj_sen(int przyciemnijIndeks, int uspijIndeks);
 
 // [v1.4.6 WERSJE] Wersja programu panelu i centrali, pokazywane na stale w
 // lewym gornym rogu ekranu WYSWIETLACZ ("Panel v1.4.6" / "Centrala v3.58.6").
@@ -574,6 +620,9 @@ bool lvgl_dashboard_poc_wykresy_strumien_zredukowany();
 bool lvgl_dashboard_poc_wykresy_czeka_na_dane();
 // Postep pobierania do pokazania pod napisem "Ladowanie danych...".
 void lvgl_dashboard_poc_wykresy_postep(uint32_t linii, uint32_t bajtow);
+// [v1.5.6] Centrala nie przyjela zapytania, main.cpp zaraz sprobuje znowu:
+// pod "Ladowanie danych z centrali..." dopisek "próba N z M". Ekran dalej czeka.
+void lvgl_dashboard_poc_wykresy_ponowienie(int proba, int prob);
 
 // Liczby z ostatniego pobrania - do linii "tag=WYKRESY" w logu.
 struct LvglWykresyStatystyka {

@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -142,6 +144,13 @@ fun WeatherPage(m: AppModel) {
                 }
             }
             IconBtn("refresh", "Odśwież dane meteo", onClick = { m.refreshWeather(true, true) })
+        }
+
+        if (m.weatherBusy) {
+            Text("Aktualizowanie pogody…", fontSize = 11.sp, color = Pal.TextDim)
+        } else if (m.weatherRefreshFailed) {
+            Text(if (w == null) "Nie udało się pobrać pogody. Sprawdź połączenie." else "Nie udało się odświeżyć pogody — pokazuję ostatnie dane.",
+                fontSize = 11.sp, color = Color(0xFFFFB454))
         }
 
         // `.weather-hero`: gradient hero, subtle cyan glow, weather art and min/max pill.
@@ -323,7 +332,7 @@ fun WeatherPage(m: AppModel) {
             val sol = m.solar
             // [0.31.30] Czy do końca doby zostało jeszcze słońce zdolne cokolwiek podgrzać.
             // Liczone z tych samych godzin prognozy, z których liczy model — GTI, potem GHI.
-            val sunLeftToday = solarSunLeft(hours, currentHourStart)
+            val sunLeftToday = Weather.sunLeftToday(hours, currentHourStart)
             val realSolarTemps = m.S.hasAllData("t_panel", "t_zewn") &&
                 !m.S.symAktywna("panel") && !m.S.symAktywna("zewn")
             val dT = if (realSolarTemps) m.S.t_panel - m.S.t_zewn else Double.NaN
@@ -351,8 +360,13 @@ fun WeatherPage(m: AppModel) {
                             "", if (sol.todayHasData && sol.todayGain < -ZERO_EPS_C) Pal.Cyan else SolarY),
                         MCard("🌡️ PANEL − POWIETRZE", if (dT.isFinite()) (if (dT >= 0) "+" else "") + fmt1(dT) + "°C" else "—",
                             "", if (dT.isFinite() && dT > 10) SolarY else Pal.Cyan),
-                        MCard("🚰 POBRANIA DZIŚ", if (sol.todayDrawCount > 0) sol.todayDrawCount.toString() + " razy" else "—",
-                            if (sol.todayDrawCount > 0) "−" + fmt1(sol.todayDrawDrop) + "°C" else "", Pal.Live),
+                        // [0.31.77] Kafelek „POBRANIA DZIŚ" USUNIĘTY. Nie ma sygnału
+                        // zaworu w telemetrii, więc „pobranie" było zgadywane ze spadku
+                        // temperatury: 2026-11-04 pokazało 5 pobrań i −23,3 °C przy
+                        // całkowitym spadku doby −15,8 °C, czyli więcej ciepła, niż
+                        // zbiornik stracił. Zostają 3 karty: zmierzony zysk, różnica
+                        // panel−powietrze i prognoza do końca dnia.
+                        // Uzasadnienie: narzedzia/uklad-2026-11-01/POBRANIA-usuniecie-analiza.md
                         // [0.31.30] Nazwa mówi wprost, że to horyzont „od teraz do północy”, a nie
                         // cała doba. Wcześniej obok siebie stały dwa różne „DZIŚ”: +0,0 °C po
                         // zachodzie i +16,0 °C za cały dzień. Po zachodzie pokazujemy „—”, bo
@@ -374,6 +388,11 @@ fun WeatherPage(m: AppModel) {
                         // CSS repeat(auto-fit, minmax(110px, 1fr)) with 6px gap.
                         val columns = ((maxWidth.value + 6f) / 116f).toInt().coerceAtLeast(1)
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // [0.31.48] Jedna prognoza dla wszystkich kart: model fizyczny,
+                            // dzień po dniu. Ten sam, który liczy kartę „DO KOŃCA DNIA”.
+                            val dayDeltas = sol.dailyForecast7(
+                                (0 until minOf(7, dailies.size)).map { i -> hours.drop(i * 24).take(24) }
+                            )
                             dailies.take(7).chunked(columns).forEach { row ->
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     row.forEach { d ->
@@ -382,7 +401,8 @@ fun WeatherPage(m: AppModel) {
                                             dayLabelSolar(idx, d.date),
                                             hours.drop(idx * 24).take(24),
                                             idx == 0,
-                                            Modifier.weight(1f)
+                                            Modifier.weight(1f),
+                                            dayDeltas.getOrNull(idx)
                                         )
                                     }
                                     repeat(columns - row.size) { Box(Modifier.weight(1f)) }
@@ -434,7 +454,7 @@ fun WeatherPage(m: AppModel) {
 /** Karta dnia prognozy solarnej — dokladny port petli z updateSunArcAndSolarMultiDay. */
 @Composable
 // [0.31.28] Bez parametru `m` — karta nie czyta już stanu aplikacji, tylko dostaje godziny.
-private fun SolarDayCard(dayLabel: String, dayHours: List<WHour>, today: Boolean, modifier: Modifier = Modifier) {
+private fun SolarDayCard(dayLabel: String, dayHours: List<WHour>, today: Boolean, modifier: Modifier = Modifier, deltaC: Double? = null) {
     val avgCloud = if (dayHours.isNotEmpty()) Math.round(dayHours.sumOf { it.cloud } / dayHours.size).toInt() else 30
     val peakFallback = Math.round(maxOf(150.0, (100 - avgCloud * .7) * 8.8)).toInt()
     // [0.31.30] Pik z GTI — płaszczyzny KOLEKTORA — a nie z GHI (płaszczyzna pozioma).
@@ -443,10 +463,16 @@ private fun SolarDayCard(dayLabel: String, dayHours: List<WHour>, today: Boolean
     val estRadPeak = (dayHours.mapNotNull { it.tiltedIrradiance }.maxOrNull()
         ?: dayHours.mapNotNull { it.shortwaveRadiation }.maxOrNull())?.roundToInt() ?: peakFallback
     // Jeden model dla wszystkich dni — ten sam, co w „PROGNOZIE ZYSKU”.
-    // [0.31.32] `dayDeltaC` zamiast `gainFromKwhM2` — wartość ZE ZNAKIEM.
-    // Poniżej progu równowagi (1,26 kWh/m²) woda się wychładza i karta ma to pokazać,
-    // a nie udawać „+0,0 °C” (= „bez zmian”).
-    val modelGain = Math.round(SolarAnalytics.dayDeltaC(SolarAnalytics.dayKwhM2(dayHours)) * 10) / 10.0
+    // [0.31.48] `deltaC` przychodzi z zewnątrz i jest wynikiem modelu FIZYCZNEGO
+    // (SolarThermalModel, ten sam co karta „DO KOŃCA DNIA”), liczonym dzień po dniu.
+    // Do 0.31.47 stał tu wzór liniowy `4,43 × GTI − 5,57`, który nie znał temperatury
+    // wody ani powietrza i dawał −2,4 °C tam, gdzie model dawał +2,5 °C.
+    // Wzór zostaje tylko jako zapas, gdy model nie ma danych dla tej doby.
+    // [0.31.32] Wartość ZE ZNAKIEM — poniżej progu równowagi woda się wychładza.
+    val modelGain = if (deltaC != null && deltaC.isFinite())
+        Math.round(deltaC * 10) / 10.0
+    else
+        Math.round(SolarAnalytics.dayDeltaC(SolarAnalytics.dayKwhM2(dayHours)) * 10) / 10.0
     // [0.31.28] Wszystkie karty tej sekcji to PROGNOZA — także DZIŚ. Zmierzony zysk
     // jest osobno w „BILANSIE SOLARNYM" jako „Zysk dziś · zmierzone".
     // Mieszanie pomiaru i prognozy w jednej siatce myliło, który dzień jest który.
@@ -474,11 +500,19 @@ fun SolarMultiDayForecast(m: AppModel) {
     val weather = m.weather
     val dailies = weather?.daily?.take(7).orEmpty()
     val hours = weather?.hourly.orEmpty()
+    // [0.31.48] Model fizyczny dzień po dniu — ten sam, co karta „DO KOŃCA DNIA”.
+    val dayDeltas = m.solar.dailyForecast7(
+        (0 until minOf(7, dailies.size)).map { i -> hours.drop(i * 24).take(24) }
+    )
     Column(
         Modifier.fillMaxWidth().padding(top = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO · 7 DNI", fontSize = 9.5.sp,
+        // [0.31.79] COFNIĘTE. W 0.31.78 podzieliłem ten nagłówek na trzy linie,
+        // twierdząc, że był ucięty. Nie był: na zrzucie z 23:57 widać go w całości
+        // („PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI", karta ~308 dp, tekst ~266 dp).
+        // To była zmiana wyglądu bez powodu, a nie naprawa błędu. Wraca wersja 1:1.
+        Text("📅 PROGNOZA POTENCJAŁU SOLARNEGO NA 7 DNI", fontSize = 9.5.sp,
             fontWeight = FontWeight.ExtraBold, color = SolarY, letterSpacing = 0.4.sp, lineHeight = 12.sp)
         Text("potencjał całej doby, nie od teraz · minus = woda się wychładza · szacunek, nie pomiar",
             fontSize = 7.5.sp, color = Pal.TextDim2, lineHeight = 10.sp)
@@ -497,7 +531,8 @@ fun SolarMultiDayForecast(m: AppModel) {
                                     dayLabelSolar(index, day.date),
                                     hours.drop(index * 24).take(24),
                                     index == 0,
-                                    Modifier.weight(1f)
+                                    Modifier.weight(1f),
+                                    dayDeltas.getOrNull(index)
                                 )
                             }
                             repeat(columns - row.size) { Box(Modifier.weight(1f)) }
@@ -516,10 +551,18 @@ private fun MetricGrid(items: List<MCard>) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // CSS .metric-grid: three equal columns; four solar metrics therefore flow 3 + 1.
         items.chunked(3).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // [0.31.81] RÓWNA WYSOKOŚĆ kafelków w jednym rzędzie. Kafel „DO KOŃCA
+            // DNIA" ma podpis w dwóch liniach („bez słońca · ociepla się"), więc
+            // rósł o ~10 dp ponad sąsiadów i dolna krawędź nie była w jednej linii.
+            // IntrinsicSize.Min liczy wysokość rzędu z najwyższego kafelka,
+            // a fillMaxHeight rozciąga pozostałe do tej samej wysokości.
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 row.forEach { item ->
                     Column(
-                        Modifier.weight(1f).background(Pal.Surface, RoundedCornerShape(14.dp))
+                        Modifier.weight(1f).fillMaxHeight().background(Pal.Surface, RoundedCornerShape(14.dp))
                             .border(BorderStroke(1.dp, Pal.Border), RoundedCornerShape(14.dp)).padding(10.dp)
                     ) {
                         Text(item.lbl, style = Txt.mcardLbl)
@@ -552,12 +595,20 @@ private fun WCard(
         Row(Modifier.fillMaxWidth().padding(bottom = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (stackSub) {
                 Column(Modifier.weight(1f)) {
+                    // [0.31.78] BYŁO: maxLines = 1 + softWrap = false + overflow = Clip.
+                    // Długi tytuł („BILANS & ZYSK KOLEKTORA SŁONECZNEGO") kończył się
+                    // w połowie słowa, przy samej krawędzi przycisku CSV — bez wielokropka,
+                    // więc wyglądało to jak ucięty ekran, a nie jak skrócony tekst.
+                    // Teraz: zawija się do dwóch linii, a gdy nie mieści się i tak —
+                    // kończy się wielokropkiem, który widać.
                     Text(title, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = titleColor,
                         letterSpacing = 0.6.sp, lineHeight = 13.sp,
-                        maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                        maxLines = 2, softWrap = true, overflow = TextOverflow.Ellipsis)
                     if (sub.isNotEmpty()) {
+                        // [0.31.78] Podtytuł też z wielokropkiem — obcięcie w połowie
+                        // słowa bez znacznika wyglądało jak usterka rysowania.
                         Text(sub, style = Txt.cardDesc.copy(fontSize = 8.5.sp, lineHeight = 10.sp),
-                            maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+                            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                     }
                 }
             } else {
@@ -699,20 +750,28 @@ private fun SunArcCard(m: AppModel) {
                 append("☀️ Promieniowanie: ")
                 withStyle(SpanStyle(color = SolarY, fontWeight = FontWeight.Bold)) { append(rad) }
             }, fontSize = 8.5.sp, color = Pal.TextDim,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(buildAnnotatedString {
-                append("📐 Elewacja słońca: ")
-                withStyle(SpanStyle(color = Pal.Cyan, fontWeight = FontWeight.Bold)) { append(elevTxt) }
-            }, fontSize = 8.5.sp, color = Pal.TextDim,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.weight(1.2f))
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.15f))
             Text(buildAnnotatedString {
                 append("⏳ Długość dnia: ")
                 withStyle(SpanStyle(color = Color.White, fontWeight = FontWeight.Bold)) {
                     append("${dl / 3600000}h ${(dl % 3600000) / 60000}m")
                 }
             }, fontSize = 8.5.sp, color = Pal.TextDim,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, modifier = Modifier.weight(0.8f))
+                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End,
+                modifier = Modifier.weight(0.85f))
         }
+        // [0.31.55 ELEWACJA-OSOBNY-WIERSZ] Bylo: trzy wartosci w jednym Row
+        // (wagi 1 / 1,2 / 0,8). Przy szerokosci ~360 dp kazda dostawala 80-130 dp,
+        // a same etykiety sa szersze — efekt: „Promieniowanie: 2…",
+        // „Elewacja slonca: ≈47° (…", „Dlugosc dnia: …" — trzy liczby, zadnej
+        // nie dalo sie odczytac. Teraz dwie wartosci w wierszu, trzecia pod spodem:
+        // najdluzsza etykieta dostaje cale 332 dp i miesci sie w calosci.
+        Text(buildAnnotatedString {
+            append("📐 Elewacja słońca: ")
+            withStyle(SpanStyle(color = Pal.Cyan, fontWeight = FontWeight.Bold)) { append(elevTxt) }
+        }, fontSize = 8.5.sp, color = Pal.TextDim,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp))
     }
 }
 
@@ -864,25 +923,51 @@ private fun todayGainLabel(sol: SolarAnalytics): String =
 
 /** Czy do końca doby jest jeszcze słońce dające >20 W/m² w płaszczyźnie kolektora.
  *  Poniżej tego progu model i tak nic nie ugrzeje, a „+0,0 °C” czyta się jak awaria. */
-internal fun solarSunLeft(hours: List<WHour>, fromTs: Long): Boolean {
-    val end = calOf(fromTs).apply {
-        set(java.util.Calendar.HOUR_OF_DAY, 23)
-        set(java.util.Calendar.MINUTE, 59)
-        set(java.util.Calendar.SECOND, 59)
-    }.timeInMillis
-    return hours.any { h ->
-        h.time in fromTs..end && ((h.tiltedIrradiance ?: h.shortwaveRadiation ?: 0.0) > 20.0)
-    }
-}
+// [0.31.80] Reguła „czy jest jeszcze słońce" przeniesiona do core
+// (Weather.sunLeftToday) — do 0.31.79 stała tutaj, w pliku ekranu, więc
+// prognoza 7-dniowa (SolarAnalytics.dailyForecast7) nie mogła jej użyć.
 
 /** Wartość karty „DO KOŃCA DNIA”. */
-private fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String =
-    if (sunLeft && sol.forecastGain.isFinite()) "+" + fmt1(sol.forecastGain) + "°C" else "—"
+/** [0.31.79] Wartość karty „DO KOŃCA DNIA". Publiczna, bo ten sam napis pokazuje
+ *  arkusz Czujniki (wiersz „Do końca dnia · szacunek") — do 0.31.78 arkusz nie
+ *  pokazywał tam liczby wcale, tylko „bez słońca do końca dnia", więc użytkownik
+ *  widział na karcie +0,1 °C i nie miał z czym tego porównać.
+ *
+ *  Liczba pochodzi z [SolarAnalytics.restOfDayDeltaC] — tego samego źródła, z
+ *  którego liczy się pierwszy dzień prognozy 7-dniowej. */
+fun endOfDayGain(sol: SolarAnalytics, sunLeft: Boolean): String {
+    val d = sol.restOfDayDeltaC(sunLeft)
+    if (!d.isFinite()) return "—"
+    // Dzień z realnym szczytem: pokazujemy zysk szczytu, jak dotąd (z plusem).
+    if (sunLeft && sol.forecastPeakReal) return "+" + fmt1(d) + "°C"
+    return signedC(d)
+}
 
 /** Podpis karty: godzina szczytu i energia, które model liczył, ale nigdzie nie pokazywał. */
-private fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
-    !sunLeft -> "bez słońca do końca dnia"
-    !sol.forecastGain.isFinite() -> "brak prognozy"
+/** [0.31.79] Podpis karty „DO KOŃCA DNIA" — zależny od ZNAKU, nie od pory dnia.
+ *
+ *  Do 0.31.78 po zachodzie stało na sztywno „woda stygnie do północy", także gdy
+ *  model liczył wzrost (04.11.2026: woda 0,5 °C, powietrze 6,5 °C, model +0,1 °C).
+ *  Kafelek pokazywał wtedy +0,1 °C z podpisem „stygnie" — sprzeczność na jednym
+ *  kafelku. Teraz opis wynika z tej samej liczby co wartość. */
+fun endOfDaySub(sol: SolarAnalytics, sunLeft: Boolean): String = when {
+    !sunLeft -> {
+        val d = sol.restOfDayDeltaC(sunLeft)
+        // [0.31.80] Krótkie opisy. Zmierzone (DejaVu Sans 7,5 sp, ekran 360 dp):
+        // na tekst w kafelku zostaje 85,3 dp, a „bez słońca · woda się jeszcze
+        // ociepla do północy" to 190 dp (Roboto) — trzy linie w kafelku i ucięcie
+        // wielokropkiem w wierszu arkusza (miejsca 308 dp, potrzebne 459 dp).
+        // Twarda spacja trzyma „ociepla się" razem, żeby nie zostało samo „się".
+        when {
+            !d.isFinite() -> "bez słońca"
+            d < -ZERO_EPS_C -> "bez słońca · stygnie"
+            d > ZERO_EPS_C -> "bez słońca · ociepla\u00A0się"
+            else -> "bez słońca · bez\u00A0zmian"
+        }
+    }
+    // [0.31.38] Rozdzielone: brak próbki wody vs brak pogody.
+    !sol.hasSamples -> "brak próbki wody z czujnika"
+    !sol.restOfDayDeltaC(sunLeft).isFinite() -> "brak prognozy"
     // [0.31.31] Słońce jeszcze jest, ale model policzył samo wychładzanie —
     // woda nie dogrzeje się ponad straty. Wcześniej w tym miejscu stała
     // godzina szczytu 0.0, czyli „08:00”, wzięta znikąd.

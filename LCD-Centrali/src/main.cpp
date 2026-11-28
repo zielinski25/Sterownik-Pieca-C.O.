@@ -40,6 +40,414 @@
 // ============================================================================
 // HISTORIA ZMIAN (ten plik) — najnowsze na gorze, kategorie jak w CHANGELOG.md
 // ============================================================================
+// [2026-11-27] v1.5.20 - BRZECZYK: PRZYCISK "TEST DZWIEKU" (SZUKANIE REZONANSU)
+//   - NUMER: pierwsza proba tej poprawki (commit 89c2906) tez zglaszala sie
+//     jako v1.5.19, ale traktowala brzeczyk jako AKTYWNY (stale napiecie
+//     zamiast PWM) i NIE miala przycisku - zostala odrzucona (zdjecie modulu).
+//     Zeby na ekranie dalo sie odroznic obie kompilacje, ta wersja to v1.5.20;
+//     v1.5.19 nigdy nie poszla do uzytku jako wydanie.
+//   - User (27.11): "buzzer jest dosc cichy" (oba alarmy). Zdjecie modulu:
+//     brzeczyk PASYWNY (czarny walec bez naklejki, bez generatora; na module
+//     wtornik J3Y + 101 + 510), IO+VCC na 5 V, masa przez C945 z D13 -
+//     dostaje fale prostokatna z ledcWriteTone(), kod jest dla niego wlasciwy.
+//     PWM 50 % to maksimum, wiec jedyna dzwignia w sofcie to CZESTOTLIWOSC:
+//     pasywny gra glosno tylko w rezonansie (zwykle 2000-2700 Hz), a wzorce
+//     maja 3000 Hz (pozar) i 1200/1600 Hz (ogrzewanie - prawie na pewno za
+//     nisko).
+//   - Na ekranie WYSWIETLACZ, w wierszu harmonogramu, przycisk "Test dźwięku":
+//     przemiata 1000/1500/2000/2300/2500/2700/3000/3500/4000 Hz po 1,5 s,
+//     napis na przycisku = aktualna czestotliwosc, ekran nie zamyka sie w
+//     trakcie, dotkniecie = stop, w czasie alarmu nic (alarm w trakcie
+//     przerywa test). Log tag=BRZECZYK zdarzenie=test_dzwieku hz=...
+//     Po tescie user podaje najglosniejsza - wzorce dostana ja w v1.5.21.
+//   - Porzadek: jedna funkcja brzeczykTon() na pinie + opcja BRZECZYK_AKTYWNY
+//     (0 na tej plytce; 1 = modul z wlasnym generatorem: stale napiecie
+//     zamiast PWM i podwojne pikniecie zamiast dwutonu). Wzorce alarmow BEZ
+//     ZMIAN (3000 / 1200-1600 Hz).
+//   - Symulator: atrapa ledcWrite() na pinie 13 (dla trybu aktywnego),
+//     scenariusz test_dzwieku (przycisk -> 9 krokow co 1,5 s -> cisza; stop
+//     dotknieciem; odmowa w alarmie; alarm przerywa).
+// [2026-11-24] v1.5.18 - KAFELEK ZEWN BEZ CZUJNIKA: "3.4°C" ZAMIAST "~3°C"
+//   - User (24.11): "Czemu jest znaczek tyldy i pogoda zaokraglona" -> wybor
+//     "3.4°C". Temperatura z prognozy (pogoda_temp z centrali 3.58.17, gdy
+//     DS18B20 daje -1.0) ma teraz ten sam format co pomiar z czujnika:
+//     "%.1f°C", bez tyldy i bez zaokraglania do calych stopni. Na ekranie nie
+//     widac wiec, czy liczba jest z czujnika, czy z prognozy (swiadoma
+//     decyzja usera). "-0.0" -> "0.0". Bez prognozy nadal "--".
+//   - Zmiana tylko w dashboard_lvgl_poc.cpp (jedna galaz w odswiezaniu
+//     kafelka ZEWN) + symulator (kafelki_szerokosc: "3.4°C", "-12.6°C" 96 px
+//     czcionka 28 miesci sie, "0.0°C" bez minusa) + projektant HTML.
+// [2026-11-23] v1.5.17 - KAFELEK ZEWN: UKLAD "E" Z PROJEKTANTA, NAPISY W 2 LINIACH
+//   - Wybor z projektanta docs/symulator_kafelka_zewn.html (23.11, wieczor):
+//     "ikony=kolor rozmiar=40 napis=rodzaj czas=pelny uklad=E kolor=bialy
+//     brak_czujnika=prognoza" + "popraw napisy bo sie niektore nie mieszcza"
+//     (zrzut: na niebieskim pasku "deszcz za 45 m..." wchodzilo pod ikone).
+//   - Uklad E: napis o pogodzie (bialy, czcionka 14) W MIEJSCU tytulu "ZEWN",
+//     temperatura czcionka 28 w zwyklym wierszu wartosci jak inne kafelki,
+//     niebieski pasek z v1.5.14 ZNIKA. Obok ikony 40 px jest 63 px na napis,
+//     wiec napis ma 2 linie: zjawisko / czas ("deszcz" / "za 45 min",
+//     "śnieg" / "za 2 h", "pada" / "30 min", "silny" / "wiatr"); linia
+//     szersza niz 63 px dostaje odstep liter -1 ("za 45 min" 69 -> 61 px).
+//     "napis=rodzaj": bez opadu/zjawiska (slonce, chmury) napisu nie ma -
+//     tytul "ZEWN" wraca, stan nieba pokazuje sama ikona.
+//   - "brak_czujnika=prognoza": bez DS18B20 (-1.0) temperatura z prognozy
+//     centrali 3.58.17 (nowe pole pogoda_temp, Open-Meteo temperature_2m)
+//     jako "~3°C"; starsza centrala / null -> "--" jak dotad.
+//   - Symulator: scenariusz kafelki_szerokosc na nowy uklad (2 linie, ~3°C),
+//     sprawdz_pola_statusu zna pogoda_temp; projektant HTML ma domyslnie
+//     wybrany uklad i prawdziwe 2-liniowe lamanie.
+// [2026-11-23] v1.5.16 - WYKRESY: TLO WYKRESU JAK TLO EKRANU
+//   - Zdjecie z 23.11 (dwa zakreslone dolne rogi): od kiedy wykres siega do
+//     krawedzi ekranu (1.5.15), jasniejsza "karta" KOL_KARTA (0x10A3) na
+//     calej szerokosci konczyla sie tuz nad czarnym pasem podpisow czasu i w
+//     dolnych rogach - tam, gdzie wyswietlacz TN ma diody podswietlenia -
+//     bylo widac inny odcien. Teraz tlo wykresu = tlo ekranu (KOL_TLO),
+//     bez zaokraglenia rogow; tlo etykiet osi Y tez KOL_TLO. Pole wykresu
+//     wyznaczaja linie siatki.
+// [2026-11-23] v1.5.15 - WYKRESY: WYKRES NA CALY EKRAN
+//   - Zdjecia z 23.11 ("marnowanie miejsca wkolo, wykres ma byc po calosci"):
+//     osobny wiersz tytulu "[Dzienny] 6 serii" (36 px) i staly dwuwierszowy
+//     pas legendy (46 px) zabieraly 1/4 ekranu, wnetrze wykresu mialo jeszcze
+//     ~10 px paddingu z kazdej strony z motywu.
+//   - Teraz jeden pasek u gory: strzalka wstecz, legenda ("[Dzienny]" + kropki
+//     z nazwami serii, czcionka 14) i mniejszy krzyzyk (26 px). Legenda ma
+//     wysokosc po zawartosci - 1 wiersz do 4-5 serii, wiecej tylko gdy trzeba.
+//     Wykres zaczyna sie 4 px pod legenda i konczy na y=299, podpisy osi
+//     czasu 302..319, padding gora/dol 4 px.
+//   - Wykres ZAWSZE na cala szerokosc ekranu (0..480; drugie zdjecie z
+//     zaznaczonymi pustymi pasami po bokach). Etykiety osi Y leza NA polu
+//     wykresu przy krawedziach (lewa os od x=10, prawa do x=470), na
+//     polprzezroczystym tle w kolorze wykresu (linia pod liczba jest
+//     przygaszona, liczba czytelna); skrajne etykiety trzymane wewnatrz
+//     pola. v1.5.12 wystawiala je obok wykresu, co kosztowalo 50-70 px z
+//     kazdej strony. Pole danych od marginesu obudowy (10 px) do 470 px,
+//     zeby najnowszy pomiar (prawa krawedz) nie chowal sie pod ramka.
+//     Pole danych: z ok. 346x192 px na ok. 460x263 px (x1,8).
+//   - Symulator: dotkniecie wykresu i sprawdzenia tytulu dostosowane
+//     (legenda zamiast tytulu); wszystkie scenariusze wykresy_* przechodza.
+// [2026-11-23] v1.5.14 - ZEWN: POGODA (NIE TYLKO DESZCZ) - UKLAD WYBRANY W PROJEKTANCIE
+//   - Kafelek ZEWN wg wyboru uzytkownika w docs/symulator_kafelka_zewn.html
+//     ("ikony=kolor rozmiar=40 napis=zawsze czas=pelny uklad=F kolor=nieb
+//     brak_czujnika=kreski"): temperatura ZAWSZE czcionka 28, pod nia
+//     niebieski PASEK (18 px, tlo #153a5e, napis #8fc7ff czcionka 14) z
+//     pogoda: "deszcz za 45 min", "śnieg za 2 h", "burza za 1,5 h", "pada
+//     30 min", "sypie", "mży", a bez opadu "mgła", "silny wiatr" (porywy
+//     >= 55 km/h) albo stan nieba "słonecznie" / "pogodnie" (noc) /
+//     "przejaśnienia" / "pochmurno". Pasek znika tylko, gdy centrala nie
+//     ma prognozy. Przy napisie temperatura stoi 12 px wyzej (y=40).
+//   - 13 kolorowych ikon pogody 40x40 (src/ikony_pogoda.h, generator
+//     testy_host/prototypy/ikony_pogody.py): slonce, ksiezyc, slonce za
+//     chmura, chmura, deszcz, ulewa, mzawka, snieg, platek (sypie), burza,
+//     mgla, wiatr, grad. Dwukolorowe ikony to 2 warstwy 1-bit (druga
+//     lv_img nad pierwsza, kazda ze swoim recolor) - LVGL ALPHA_1BIT ma
+//     jeden kolor na obrazek. Bez prognozy stare ikony wg temperatury.
+//   - Nowe pola /api/status centrali 3.58.16: pogoda_kod (WMO teraz),
+//     pogoda_kod_opad (WMO w slocie poczatku opadu z deszcz_stan),
+//     pogoda_dzien (1/0), wiatr_porywy (km/h); -1 = brak. Starsza centrala
+//     bez tych pol -> kafelek jak w v1.5.13 bez pasku (sam deszcz_stan
+//     wciaz daje "za 2 h"/"pada" na pasku - pola sa niezalezne).
+//   - Czujnik zewn. -1.0 (brak DS18B20) -> "--" zamiast "-1.0°C".
+//   - Symulator: scenariusze zewn_pogoda_* (snieg za 2 h, burza, mgla, noc,
+//     pada, wiatr, brak czujnika); sprawdz_pola_statusu zna 4 nowe pola.
+// [2026-11-23] v1.5.13 - ZEWN: TEMPERATURA NIE ZNIKA PRZY DESZCZU
+//   - Kafelek ZEWN przy nadciagajacym/padajacym deszczu pokazywal "za 6 h" /
+//     "jeszcze 30 min" / "pada" ZAMIAST temperatury (zdjecie z 23.11:
+//     "niepotrzebnie ona znika"). Teraz temperatura zostaje (czcionka 20,
+//     tuz pod ikona), a napis o deszczu to drugi, niebieski wiersz czcionka
+//     14 pod nia: "za 2 h", "pada 30 min" (= pada, koniec za ok. 30 min;
+//     "jeszcze 30 min" nie miesci sie w 114 px), "pada"
+//     (zewn_deszcz_odswiez() w dashboard_lvgl_poc.cpp). Bez
+//     deszczu kafelek wyglada dokladnie jak dotad (czcionka 28).
+//   - Test hosta: kafelki_szerokosc sprawdza oba wiersze (tresc, czcionki,
+//     ze napis o deszczu jest pod temperatura i nad dolem karty, i ze znika
+//     po deszczu). RAM: +1 etykieta LVGL (~100 B).
+// [2026-11-26] v1.5.12 - WYKRESY: PRACA POMPY I CZYTELNIEJSZY EKRAN
+//   - Nowa seria POMPA (kolumna 35 odpowiedzi /api/history/panel, kolumna
+//     8 starego CSV): nie linia, lecz 12-pikselowy PAS u dolu pola wykresu
+//     (niebieski odcinek = pompa pracowala w tym przedziale). Nie zajmuje
+//     zadnej osi Y, nie wlicza sie do limitu osi, liczy sie do 8 serii.
+//   - Etykiety osi Y stoja OBOK pola wykresu (lewa os: liczby dosuniete do
+//     wykresu, prawa: od wykresu), nie na nim - plaska linia juz nie
+//     przecina napisu. Pole wykresu zweza sie o szerokosc etykiet; bez
+//     prawej osi siega do prawej krawedzi jak dotad. Minimalny margines osi
+//     0,5 -> 1,0 jednostki (stala seria: rowne podzialki 44.0 .. 46.0).
+//   - Wybor serii: nazwy jak kafelki pulpitu (PIEC CO, PIEC CO SR., POKOJ,
+//     SYBERKA), 12 chipow 109x46 w siatce 460x154 (WILGOTNOSC w jednym
+//     wierszu), przyciski trybu 140x34, nowy WYCZYSC obok POKAZ WYKRES (N),
+//     pod nimi podpowiedz "Wybrano N z 8 - lewa os C - prawa os %".
+//   - Naprawa: lv_obj_set_x() na wykresie wyrownanym TOP_MID bylo
+//     przesunieciem od srodka, nie polozeniem (wykres z lewa osia wystawal
+//     36 px za ekran). Teraz set_pos.
+//   - Test hosta: wykresy_pompa_i_osie (5 zrzutow). RAM: +1 lv_chart (96 pkt
+//     x 2 B + obiekt, ok. 0,4 kB), flash ok. +1,5 kB.
+// [2026-11-25] v1.5.11 - IKONY BOJLER I PANEL JAK W APLIKACJI ANDROID
+//   - BOJLER: szary kontur (IKONA_BOJLER_KONTUR), w srodku woda rysowana
+//     prostokatem + bitmapa fali (IKONA_BOJLER_WODA przycieta do okienka
+//     18x27 px). Poziom = (t-15)/55 obciete do 5..95 % jak w Ilu.kt
+//     aplikacji; kolor: <=35 C niebieski, <=55 C bursztyn, >55 C pomarancz.
+//     Bez danych z centrali ("--") woda znika. Zero nowych bitmap - pelna
+//     ikona z v1.4.x zostaje tylko jako zrodlo fali.
+//   - PANEL: ikona z czterech warstw 40x40 (stojak, rury, zbiornik, slonce)
+//     - kolektor sloneczny jak w aplikacji; alarm przegrzania barwi rury
+//     i zbiornik na czerwono (KOL_ERR), slonce i stojak bez zmian. Stare
+//     IKONA_PANEL_SLONCE/KOLEKTOR (2 tablice) -> 4 tablice: +400 B flash.
+//   - Nowy test hosta bojler_poziom_ikony (poziom/kolor dla 20/45/70/200/-1 C,
+//     ukrycie przy "--", alarm panelu); dostep testowy
+//     lvgl_dashboard_poc_bojler_woda(). Centrala bez zmian.
+// [2026-11-24] v1.5.10 - GALKI SUWAKOW JASNOSCI W CALOSCI WIDOCZNE; CZYTELNE ZIELONE PRZYCISKI
+//   - Zdjecie z plytki na v1.5.9 (ekran WYSWIETLACZ): galka suwaka jasnosci
+//     (promien 12) wystaje 4 px pod 16-px pasek, a pasek stal na samym dole
+//     wiersza - dolne 4 px galki przycinal wiersz ("kolka przyciete").
+//     Pasek 4 px wyzej (y 30..46 w wierszu 0..50), galka 26..50 w calosci.
+//     Test sen_ustawienia mierzy teraz galke tez w pionie.
+//   - Zielone przyciski "wlaczone" (WL. harmonogramu, "Przyciemnij po: 30 s",
+//     "Uspij po: 2 min", Antystop WL., taktowanie/moc na ZASILANIE): jasna
+//     mieta KOL_BEZPIECZNA z szarym napisem miala kontrast ok. 1,5:1 - na LCD
+//     nieczytelne. Nowe KOL_WLACZONE (ciemna zielen) + bialy napis: ok. 6,5:1.
+//     KOL_BEZPIECZNA zostaje dla ikony BEZPIECZNA na SERWA, paska Antystop i
+//     wskaznika ladowania.
+//   - Centrala: bez zmian.
+// [2026-11-24] v1.5.9 - MARGINES OD OBUDOWY NA WYKRESACH; LUKI SERW I SUWAKI JASNOSCI BEZ PRZYCIECIA
+//   - Zdjecia z plytki na v1.5.8 (22.11, 18:03): wydrukowana obudowa zaslania
+//     skrajne piksele ekranu, wiec ostatni podpis osi czasu ("18:00") przy
+//     prawej krawedzi byl uciety do "18:0", a lewa etykieta osi Y "198 °C"
+//     widoczna jako "'98 °C". Podpisy osi X trzymaja teraz 10 px od obu
+//     krawedzi ekranu (WYKRESY_MARGINES_OBUDOWY), etykiety osi Y odsuniete
+//     od krawedzi o 6 px (bylo 2). Srodek podpisu dalej pod kreska - jak
+//     w v1.5.8 (na zdjeciu z ukosu wyglada na przesuniety, pomiar na
+//     zrzutach z hosta: srodek podpisu = x kreski +-1 px).
+//   - Ekran SERWA: luk pozycji ("kolko" obok 100%) byl ustawiony 2 px nad
+//     gornym brzegiem wiersza, a wiersz przycina dzieci - kolko mialo sciety
+//     wierzcholek. Teraz luk 0..28 px wewnatrz wiersza, etykieta procentow
+//     wysrodkowana do niego.
+//   - Ekran WYSWIETLACZ: suwaki jasnosci jak suwaki serw w v1.5.8 - przy 100%
+//     galka konczyla sie 12 px za koncem paska. Pasek 16..340 px wiersza,
+//     tor galki zawezony z prawej (pad_right 12): przy 100% galka rowno z
+//     koncem paska. Etykieta "100%" nie wystaje juz 2 px nad wiersz.
+//   - Centrala: bez zmian (3.58.10). Testy hosta: serwo_stopnie i
+//     sen_ustawienia mierza geometrie (galka, luk w granicach wiersza).
+// [2026-11-24] v1.5.8 - OS CZASU WYKRESOW PODPISANA PRZY KAZDEJ KRESCE; SAMOTNE PUNKTY WIDAC; SUWAKI SERW
+//   - Zdjecia z plytki na v1.5.7 (22.11): pod wykresem jeden podpis na
+//     srodku ("16:25 - 17:25", "22.11 14:01 - 22.11 17:25", "19.11 08:55 -
+//     22.11 16:51"), a 3 pionowe kreski siatki co 1/4 szerokosci bez zadnej
+//     wartosci. Teraz kreski stoja w ROWNYCH godzinach i kazda ma podpis
+//     w pasie pod wykresem: godzina -> co 15 min ("16:30 ... 17:15"), doba
+//     -> co 4 h (o polnocy data "23.11" zamiast "00:00"), tydzien -> kazda
+//     polnoc z data ("19.11 ... 25.11"). Krok dobierany do dlugosci okna
+//     (najmniejszy, ktory daje <= 7 podpisow), wiec krotsza historia (np.
+//     3,5 h po restarcie centrali) dostaje co 30 min. Pierwszy podpis ma
+//     date, gdy centrala ja podaje (dzien/tydz). Panel liczy to z naglowka
+//     #panel-hist (od=, do=, od_etyk=) - zadnej zmiany w centrali 3.58.10;
+//     stara centrala / brak zegara: dawny podpis "od - do" / "czas
+//     nieznany" zostaje. Dol wykresu 310 -> 296 px, zeby pas podpisow
+//     (303..320) nie wchodzil w dolne etykiety osi Y.
+//   - Wykres tygodniowy na zdjeciu: 9 punktow + 87 przerw = same "kropki" i
+//     pionowa kreska przy prawej krawedzi. To prawdziwe dane (dlugi bufor
+//     centrali ma wpisy tylko z chwil, gdy pracowala; kreska = dwa sasiednie
+//     punkty, 50 min obok siebie, o bardzo roznych wartosciach), ale LVGL
+//     nie rysuje punktu bez sasiada - pojedyncze pomiary miedzy przerwami
+//     byly niewidoczne. Gdy ktoras seria ma samotny punkt, panel wlacza
+//     znaczniki punktow (4 px); przy ciaglych danych nadal sama linia.
+//   - Ekran STEROWANIE SERWAMI: przy 100 % galka suwaka wystawala 12 px za
+//     koniec paska, pod luk - wygladala na obcieta. Pasek 16..344 z torem
+//     galki zawezonym z prawej (pad_right 12): przy 100 % galka konczy sie
+//     rowno z paskiem, 6 px przed lukiem. "113%" ze starszego zdjecia to
+//     stopnie sprzed v1.5.6 - od v1.5.6 etykieta nie przekracza 100 %.
+//   - Testy: podpisy osi czasu w wykresy_centrala_liczy (doba co 4 h, godzina
+//     co 15 min), wykresy_przerwy (tydzien: 7 dat; tydzien jak na zdjeciu:
+//     9 punktow/87 przerw -> znaczniki wlaczone), wykresy_po_restarcie_
+//     centrali; serwo_stopnie otwiera ekran SERWA przy 100 % (zrzut).
+// [2026-11-24] v1.5.7 - WYKRESY 4x MNIEJ RAM-U; PANEL NIE ZRYWA WIFI, GDY CENTRALA PRZYSYLA WYKRES
+//   - Log z plytki na v1.5.6 (22.11 16:44-16:47): po starcie ram=34752, przy
+//     otwartych Wykresach ram=7120, ram_min=1932, alok_nieudane=42,
+//     malo_pamieci. Model pamieci (pomiar_pamieci.sh --przypadki) dawal to
+//     samo: ekran Wykresy +18,6 kB, szczyt przy wykresie +22,7 kB, na plytce
+//     zostawalo ok. 3,8 kB.
+//   - Punkt wykresu (WykresyPunkt, dashboard_lvgl_poc.cpp) mial 24 B:
+//     etykieta[12] + wartosc + minimum + maksimum. Minimum i maksimum nikt
+//     nie rysowal (jedna linia na serie), a etykieta byla ta sama dla
+//     wszystkich 8 serii i czytana tylko dla pierwszego i ostatniego punktu
+//     (podpis zakresu przy centrali < 3.58.4). Teraz punkt to 4 B (sama
+//     wartosc, NaN = przerwa) + jedna wspolna tablica etykiet 96 x 12 B
+//     (g_wykresyEtykiety). Bufory ekranu Wykresy: 18 432 B -> 4 224 B.
+//     Model: ekran Wykresy +4,4 kB (bylo +18,6), szczyt +8,6 kB (bylo
+//     +22,7); prog bez odmow pamieci 8 000 B wolnego RAM-u (bylo 22 250);
+//     na plytce w najgorszej chwili ok. 18 kB (bylo 3,8 kB). Wyglad wykresow
+//     bez zmian (te same punkty w testach wzorcowych).
+//   - W tym samym logu: w srodku pobierania wykresu (8 z 16 linii odebranych)
+//     panel wymusil ponowne polaczenie WiFi (wymuszam_polaczenie), bo
+//     /api/status nie odpowiadal od 12 s - centrala byla zajeta wysylaniem
+//     historii. Pobieranie padlo ("urwana ... errno=113"), WiFi zerwane na
+//     kilka sekund, kolejne proby wykresu "brak_wifi". Teraz kazdy nowy bajt
+//     historii i kazda odpowiedz na polecenie zeruje licznik milczenia
+//     (diag::Ratunek::centralaOdezwalaSie()): dopoki centrala cokolwiek
+//     przysyla, panel nie zrywa z nia polaczenia. Status nadal stary ->
+//     kafelki "--" i dane_nieaktualne jak dotad; drabina ratunkowa rusza
+//     12 s po OSTATNIM znaku zycia centrali, restart po 45 s bez statusu
+//     bez zmian.
+//   - Testy: wykresy_centrala_zajeta (status milczy, historia plynie 20 s:
+//     bez wymuszam_polaczenie, wykres jest; po koncu historii wymuszenie po
+//     12 s; status wraca), przypadek 2d w testRatunek(). Scenariusz
+//     wykresy_pamiec liczy bufory po 384 B.
+// [2026-11-24] v1.5.6 - IKONA WIFI NIE MRUGA PRZY CISZY CENTRALI; SERWA 0-100 %
+//   - Zgloszenie z plytki na v1.5.5: "szukanie wifi mruga". Log: WiFi
+//     polaczone caly czas (wifi=1, rssi -68..-81), ale /api/status co jakis
+//     czas nie odpowiada w limicie -> po 10 s dane_nieaktualne, po chwili
+//     dane_wrocily. Kazde dane_nieaktualne zamienialo ikone WiFi w naglowku
+//     na X ("brak WiFi"), dane_wrocily z powrotem na kreski = mruganie.
+//   - wifi_ikona_odswiez(): polaczono=false to "brak danych z centrali", nie
+//     "brak WiFi". Gdy radio jest polaczone (pomiar co 2 s, ten sam co dla
+//     ekranu ZASILANIE), a centrala milczy: kreski wg RSSI panelu na
+//     POMARANCZOWO, bez X. X tylko gdy WiFi.status() != WL_CONNECTED.
+//     Kafelki "--" i naglowek CENTRALA MILCZY bez zmian.
+//   - Limity statusu (SiecCfg) 400/1500 -> 1000/3000 ms: w tym samym logu
+//     POST z limitem 1000 ms przechodzil w 716 ms miedzy "timeout laczenia"
+//     statusow z limitem 400 ms - centrala odpowiadala, tylko wolniej.
+//     Mniej falszywych cisz; prog dane_nieaktualne (10 s) bez zmian.
+//   - Zdjecie ekranu SERWA: "KLAPA 113%". /api/status podaje pozycje serw w
+//     STOPNIACH (klapa 0..180, syberek 0..90 - main_centrala.cpp "Wspolny
+//     kontrakt jednostek"), panel pokazywal je jako procenty. Teraz
+//     diag::serwoStopnieNaProcent(): 113 st. klapy = 63 %, 86 st. syberka =
+//     96 %, nic powyzej 100 %. Suwaki na ekranie SERWA startuja od tej
+//     samej, przeliczonej wartosci; POST /api/servo-manual dalej w
+//     procentach (centrala sama przelicza na stopnie). Log tag=PANEL dalej
+//     podaje surowe stopnie. Opis trybu BEZPIECZNY: "syberek 100% (otwarty)".
+//   - Wykresy: "klikam, pisze 'Centrala nie przyjela polaczenia', dopiero za
+//     ktoryms razem sa wykresy" - te same czkawki AP. Zapytanie o historie,
+//     ktorego centrala NIE PRZYJELA (limit laczenia, connect() odrzucony,
+//     gniazdo zamkniete bez bajtu odpowiedzi), idzie samo jeszcze raz po
+//     500 ms, do 3 prob (WYKRESY_PROB_MAKS, wykresyMoznaPonowic()); ekran w
+//     tym czasie: "Ladowanie danych z centrali... / Centrala nie
+//     odpowiedziala, proba 2 z 3". Nie ponawiamy: zapytanie przyjete bez
+//     odpowiedzi przez 6 s, odpowiedz urwana, limit calosci, brak pamieci,
+//     kod HTTP. Wyjscie z ekranu w odstepie przerywa. Log: tag=WYKRESY
+//     zdarzenie=ponowienie proba=2/3 powod=brak_polaczenia etap=..;
+//     zdarzenie=blad ma prob=N. Etap z (zamkniete przed naglowkami) to
+//     teraz "nie przyjela polaczenia", nie "zla odpowiedz".
+//   - Testy: ikona_wifi_cisza, serwo_stopnie, wykresy_ponowienie;
+//     testSerwoStopnie() w test_diagnostyka.cpp.
+// [2026-11-24] v1.5.5 - POLECENIA Z DOTYKU PONAWIANE (3 PROBY), NIE 1 x 400 MS
+//   - Log z 24.11 15:40: trzy dotkniecia WL pompy i WYL skonczyly sie
+//     "POLECENIE NIE DOSZLO DO CENTRALI", choc statusy co 2 s przechodzily
+//     (status_blad=0) - padaly na pojedynczych czkawkach AP: POST mial 400 ms
+//     na polaczenie i JEDNA probe. Na baterii (oszczedzanie radia) i przy
+//     centrali probujacej STA (zaklocenia wlasnego AP, patrz main_centrala
+//     2.12.1.x) to za malo.
+//   - Kanal polecen (komendaFetch) ma wlasne limity: 1000 ms laczenie,
+//     2000 ms calosc (NonBlockingHttp::ustawLimity(); statusy zostaja przy
+//     400/1500 ms z SiecCfg - maja padac szybko, ida co 2 s).
+//   - Polecenie bez odpowiedzi centrali wraca na poczatek kolejki i idzie
+//     jeszcze raz po 700 ms, do 3 prob (diag::KolejkaPolecen::ponow(),
+//     PROB_MAKS, ODSTEP_PONOWIENIA_MS). Pasek "NIE DOSZLO" dopiero po
+//     ostatniej (najpozniej po ok. 7,4 s). Odrzucenie przez centrale
+//     ({"ok":false}) nie jest ponawiane. Nowsza wartosc tego samego pola
+//     uniewaznia ponowienie starej. Log: tag=KOMENDA zdarzenie=ponowienie
+//     pole=... proba=2/3 powod=...; polecenie_nieudane ma teraz prob=N.
+//   - Wszystkie polecenia panelu sa idempotentne (ustaw wartosc / stan), wiec
+//     powtorzenie POST-a, ktory centrala przyjela, a odpowiedz zginela, nic
+//     nie zmienia.
+// [2026-11-24] v1.5.4 - WSKAZNIK "47% USB" + WGRYWANIE Z VSCODE PRZEZ WIFI
+//   - Wskaznik z ogniwem i ladowarka: "47% USB" zamiast "USB 47%" (najpierw
+//     procenty, potem zrodlo - uwaga uzytkownika po v1.5.3).
+//   - Do v1.5.3 panel dalo sie zaktualizowac tylko kablem albo przez centrale
+//     (/update_panel, plik w wydaniu na GitHubie). Teraz tak jak centrala:
+//     ArduinoOTA na porcie 3232, haslo OTA_HASLO_PANEL (to samo co centrali),
+//     nazwa "panelco". W platformio.ini srodowisko [env:esp32dev_wifi]
+//     (upload_protocol = espota, upload_port = 192.168.4.50; haslo dopisuje
+//     skrypt narzedzia_pio/ota_haslo.py z src/secrets.h - nie lezy w ini).
+//   - Komputer musi byc w sieci centrali (PiecCO_AP), panel obudzony (na
+//     baterii po 5 min bez dotyku spi - wtedy nie odpowie) i polaczony z WiFi.
+//     ArduinoOTA.begin() dopiero po pierwszym polaczeniu (otaVscodeKrok()),
+//     mDNS wylaczony (wgrywanie po IP, bez dodatkowego zadania i RAM-u).
+//   - W trakcie wgrywania: ekran AKTUALIZACJA PANELU z paskiem (ten sam co
+//     przy aktualizacji z centrali), watchdog karmiony w onStart/onProgress
+//     (jak w centrali, [WDT-OTA-ESPOTA]). Po udanym wgraniu biblioteka sama
+//     restartuje panel; nowy program czeka na zatwierdzenie jak kazdy OTA
+//     (potwierdzPartycjeJesliCzeka() na koncu setup(), inaczej bootloader
+//     wraca do poprzedniego). Log: tag=OTA-VSCODE zdarzenie=gotowe|start|
+//     postep|koniec|blad.
+//   - Jesli w tym samym czasie panel pobiera plik z centrali, Update.begin()
+//     w ArduinoOTA sie nie uda (blad begin_failed) - nic sie nie psuje.
+// [2026-11-24] v1.5.3 - WSKAZNIK ZASILANIA: "USB 47%" I OD RAZU
+//   - Uzytkownik: "lcd jest na baterii mimo podlaczenia usb, nie pokazuje
+//     napisu usb". Z ogniwem wskaznik nigdy nie pisal "USB" - ladowanie
+//     bylo widac tylko po zielonym kolorze procentow. Teraz z ladowarka napis
+//     to "USB 47%" (zielony), bez ladowarki "47%"; bez ogniwa dalej "USB".
+//   - Stan GPIO35 trafia na wskaznik od razu po zmianie (senKrok(), co
+//     sekunde; log tag=ZASILANIE zdarzenie=usb_podlaczone|usb_odlaczone),
+//     a nie dopiero z pomiarem baterii co 30 s.
+//   - Jesli mimo to po wpieciu ladowarki do TP4056 nie ma "USB": GPIO35 nie
+//     jest sciagany do masy - sprawdzic przewod z padow CHRG/STDBY (oba!)
+//     i czy ladowarka jest w TP4056, a nie w gniezdzie USB DevKita.
+// [2026-11-24] v1.5.2 - EKRAN OBROCONY O 180 STOPNI + NAPISY W KAFELKACH
+//   - EKRAN_OBROT 3 (bylo setRotation(1)): panel w obudowie z ogniwem jest
+//     zamontowany zlaczem w lewo - obraz byl do gory nogami (zdjecie z 22.11).
+//     Kalibracja dotyku z NVS zostaje: klucz dotyk/obrot mowi, w jakiej
+//     orientacji ja robiono (brak klucza = 1, panele sprzed v1.5.2);
+//     przy innym obrocie ekranu dotykOdczytaj() obraca piksel o 180 stopni
+//     (diag::dotykObroc180). Nowa kalibracja zapisuje obrot=EKRAN_OBROT.
+//     Log: tag=DOTYK zdarzenie=kalibracja_z_pamieci obrot_kalibracji=1
+//     obrot_ekranu=3 odwrocony=1.
+//   - KAFELKI (dashboard_lvgl_poc.cpp): "za 105m" (deszcz za 105 min) nie
+//     miescil sie w kafelku ZEWN. ustawNapisDopasuj() dobiera czcionke
+//     28/20/14 do szerokosci kazdej wartosci kafelka (a w ostatecznosci
+//     lamie na dwie linie), mniejsza czcionka siedzi na dole wiersza
+//     wartosci. Napisy o deszczu pelnymi slowami: "za 45 min", "za 2 h"
+//     (od 100 min do pol godziny), "jeszcze 30 min", "jeszcze 1,5 h", "pada".
+//     Scenariusz kafelki_szerokosc sprawdza najszersze wartosci kazdego
+//     kafelka (-25.5°C, 1013 hPa, 100 %, 9999, Klapa 100%).
+// [2026-11-24] v1.5.1 - SEN: TRZY UWAGI Z PLYTKI (uzytkownik, po wgraniu v1.5.0)
+//   - PO WYBUDZENIU PRZYCISKIEM OD RAZU KAFELKI: ekran startowy ("WYSWIETLACZ
+//     CO / Panel vX / Laczenie z WiFi / Centrala vY") tylko przy starcie
+//     zasilania i po resecie. Po wybudzeniu z glebokiego snu (ext0/ext1)
+//     pulpit LVGL jest rysowany PRZED laczeniem z WiFi (startPoSnie w
+//     polaczWifi(): jeden lvgl_port_tick() zamiast napisow TFT_eSPI), dane
+//     dochodza do kafelkow w tle; ekranStartowyWersje() tylko loguje.
+//     Log: tag=SEN zdarzenie=pulpit_po_wybudzeniu ms=<od startu>.
+//   - PIERWSZE DOTKNIECIE PRZYCIEMNIONEGO EKRANU TYLKO ROZJASNIA, nie otwiera
+//     kafelka: filtr diag::dotykPrzepusc() w lvgl_touch_read() (lvgl_port.cpp)
+//     pochlania caly dotyk, ktory zaczal sie przy przyciemnionym ekranie
+//     (senEkranPrzyciemniony() nizej), i zeruje licznik bezczynnosci LVGL.
+//   - CZASY DO WYBORU NA EKRANIE WYSWIETLACZ, wiersz "Na baterii": przyciemnij
+//     po 30 s / 1 / 2 / 5 / 10 min / nigdy, uspij po 2 / 5 / 10 / 30 min /
+//     1 godz. / nigdy (diag::SEN_*_OPCJE_MS). W NVS indeksy wyswietlacz/
+//     senPrzyIdx i senSpijIdx (domyslnie 1 min / 5 min = jak v1.5.0);
+//     wyswietlaczUstawieniaWyslij("senPrzyciemnij"/"senUspij", indeks).
+//     Log przy zmianie: tag=SEN zdarzenie=ustawienie przyciemnij_ms=.. uspij_ms=..
+// [2026-11-24] v1.5.0 - PRACA NA BATERII: PRZYCIEMNIENIE I GLEBOKI SEN (krok 3
+//   planu z WYNIKI_SZUKANIA_PANEL_LCD_2026-11-18; tematy B1/B5 i 14). Sprzet
+//   panelu jest juz zlutowany i sprawdzony (2026-11-20: TP4056 + MT3608, dzielnik
+//   100k/100k na GPIO34 - odczyt 3,32 V/1 % i 3,97 V/76 % zgadza sie z
+//   multimetrem; GPIO35 z 10k do 3V3; brzeczyk przez C945 na GPIO13; przycisk
+//   GPIO14 -> 1k -> GND). Kod snu z [ETAP 3b] (idzSpac(), nigdy nie wolany od
+//   v1.4.4) jest wreszcie podpiety - pod LVGL, nie pod stary dashboard.
+//   - NA BATERII (ogniwo na dzielniku, TP4056 bez USB): 1 min bez dotyku ->
+//     podswietlenie 5 % (diag::SEN_PRZYCIEMNIJ_PO_MS); 5 min bez dotyku ->
+//     gleboki sen (diag::SEN_USPIJ_PO_MS). Dotkniecie szyby albo przycisku
+//     budzenia przywraca jasnosc i zeruje licznik. Decyzja: diag::senDecyzja()
+//     (diagnostyka_panelu.h, sekcja [v1.5.0 SEN]), liczona co sekunde w senKrok().
+//   - NA USB: nic sie nie zmienia wzgledem v1.4.7 (zadnego przyciemniania ani snu).
+//   - NIE USYPIA i nie przyciemnia: w czasie alarmu (centrala zglasza alarm albo
+//     brzeczyk gra), w czasie aktualizacji panelu (otaKrok()/nakladka).
+//   - ROZLADOWANA BATERIA: ponizej 3,30 V (poza alarmem) - napis "Bateria
+//     rozladowana / Podlacz ladowarke" na 2,5 s i sen od razu; ponizej 3,10 V
+//     sen takze w alarmie (ogniwo i tak zaraz odetnie uklad zabezpieczenia).
+//   - BUDZENIE: przycisk GPIO14 (ext0, stan niski) jak dotad ORAZ wlozenie
+//     ladowarki (ext1 na GPIO35: TP4056 sciaga CHRG/STDBY do masy). Log przy
+//     starcie: tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk|usb.
+//   - PRZED SNEM dodatkowo: brzeczyk (GPIO13) na stale w stanie niskim przez
+//     gpio_hold_en() - tak jak podswietlenie; inaczej tranzystor C945 moglby
+//     dostac szum na bazie i modul by cicho pobieral prad. Po wybudzeniu
+//     gpio_hold_dis() na obu pinach przed pierwszym pinMode()/ledcAttach().
+//   - POMIAR BATERII: pierwszy odczyt od razu po starcie (do v1.4.7 dopiero po
+//     30 s - wskaznik przez pol minuty pokazywal "USB"), potem co 30 s jak
+//     dotad. Ostatni odczyt jest pamietany (bateriaOstatnieV) dla senKrok().
+//   - LOG: tag=SEN zdarzenie=przyciemnienie|jasnosc|usypianie powod=... - tylko
+//     przy ZMIANIE stanu, nie co sekunde.
+//   Usunieto: ACTIVITY_TIMEOUT_MS, ostatniaAktywnosc, zarejestrujAktywnosc()
+//   (licznik bezczynnosci prowadzi LVGL: lvgl_dashboard_poc_bez_dotyku_ms()).
+//   Testy: testy_host (test_diagnostyka.cpp: senDecyzja(); symulator: scenariusze
+//   sen_*). Centrala bez zmian.
 // [2026-11-22] v1.4.7 - EKRAN ZASILANIE: TAKTOWANIE PROCESORA I MOC NADAJNIKA
 //   WIFI (audyt 2026-11-18, tematy 11 i 18 / plan krok 6, B3 i B7). Nikt nie
 //   zmierzyl jeszcze poboru pradu tego panelu ani nie znal RSSI przy centrali,
@@ -806,6 +1214,7 @@
 // bez zatrzymywania petli) i oddaje go do Update.write(). HTTPClient.h i
 // HTTPUpdate.h nie sa juz uzywane nigdzie w tym pliku.
 #include <Update.h>
+#include <ArduinoOTA.h>   // [v1.5.4 OTA-VSCODE] wgrywanie z PlatformIO przez WiFi (espota, port 3232) - patrz otaVscodeKrok()
 #include <esp_ota_ops.h>
 #include <esp_partition.h>   // [v1.4.0 OTA] esp_partition_get_sha256() - identyfikator wlasnego programu
 #include <esp_task_wdt.h>
@@ -903,6 +1312,8 @@ static const uint32_t STATUS_INTERWAL_MS     = 2000;   // jak czesto GET /api/st
 NonBlockingHttp statusFetch;
 NonBlockingHttp ustawieniaFetch;
 NonBlockingHttp komendaFetch;
+static const uint32_t KOMENDA_LACZENIE_MS = 1000;   // [v1.5.5] limit laczenia POST-a polecenia (statusy: SiecCfg, od v1.5.6 tez 1000 ms)
+static const uint32_t KOMENDA_CALOSC_MS   = 2000;   // [v1.5.5] limit calego POST-a (statusy: 1500 ms, od v1.5.6 3000 ms)
 StrumienHttpGet wykresyFetch;   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy, linia po linii (patrz obslugaWykresyFetch())
 StrumienHttpGet otaFetch;       // [v1.4.0 OTA] nowy firmware panelu z centrali (/panel-ota.bin), tresc binarna (patrz otaKrok())
 WskaznikSwiezosci swiezoscStatusu;
@@ -1073,7 +1484,7 @@ bool ustawieniaGetPonow = false;
 // moze sam nic potwierdzic Telegramowi). PODNIES RECZNIE przy kazdym
 // Release'u firmware_panel.bin — bez tego centrala nigdy nie zobaczy
 // potwierdzenia udanej aktualizacji (patrz TG_UPDATE_PANEL w main_centrala.cpp).
-static const char* FIRMWARE_VERSION_PANEL = "v1.4.7"; // [2026-11-22] v1.4.7: ekran ZASILANIE - taktowanie procesora i moc nadajnika WiFi do wyboru, pamietane w NVS; opis w HISTORII ZMIAN
+static const char* FIRMWARE_VERSION_PANEL = "v1.5.20"; // [2026-11-27] v1.5.20: przycisk "Test dźwięku" na ekranie WYSWIETLACZ - przemiatanie 1000..4000 Hz po 1,5 s, zeby znalezc rezonans pasywnego brzeczyka (cichy); brzeczykTon() + opcja BRZECZYK_AKTYWNY (0); opis w HISTORII ZMIAN. [2026-11-24] v1.5.18: kafelek ZEWN bez czujnika - temperatura z prognozy jako "3.4°C" (jak pomiar: 1 miejsce po przecinku, bez tyldy i zaokraglania; w v1.5.17 "~3°C"); opis w HISTORII ZMIAN. [2026-11-23] v1.5.17: kafelek ZEWN uklad "E" - napis o pogodzie (2 linie) zamiast tytulu, bez paska, bez czujnika temperatura z prognozy "~3°C" (pogoda_temp z centrali 3.58.17); opis w HISTORII ZMIAN. v1.5.16: tlo wykresu = tlo ekranu (bez jasniejszej karty do rogow); v1.5.15: ekran Wykres na caly ekran - legenda z trybem w jednym pasku u gory zamiast tytulu + 2 wierszy legendy, padding 4 px; opis w HISTORII ZMIAN. v1.5.14: kafelek ZEWN z paskiem pogody (deszcz/snieg/burza/mgla/wiatr/stan nieba) i 13 kolorowymi ikonami wg kodu WMO z centrali 3.58.16; opis w HISTORII ZMIAN. v1.5.13: kafelek ZEWN przy deszczu pokazuje temperature I napis o deszczu (drugi wiersz), nie zamiast niej; opis w HISTORII ZMIAN. v1.5.12: wykresy - seria POMPA jako pas pracy, etykiety osi obok wykresu, nazwy serii jak na pulpicie, WYCZYSC; opis w HISTORII ZMIAN. v1.5.11: ikony BOJLER (poziom i kolor wody wg temperatury) i PANEL (kolektor z 4 warstw) jak w aplikacji Android; opis w HISTORII ZMIAN. v1.5.10: galki suwakow jasnosci w calosci widoczne, zielone przyciski "wlaczone" ciemniejsze z bialym napisem; opis w HISTORII ZMIAN. v1.5.9: margines od obudowy na podpisach wykresow, luki serw i suwaki jasnosci bez przyciecia; opis w HISTORII ZMIAN. v1.5.8: os czasu wykresow podpisana przy kazdej kresce (rowne godziny), samotne punkty jako znaczniki, suwaki serw nie wchodza pod luk; opis w HISTORII ZMIAN
 // [OTA-PANEL, ta sesja] MUSI byc identyczne z OTA_HASLO w main_centrala.cpp
 // (patrz endpoint GET /panel-ota.bin) — celowo zdublowane jako stala tekstowa
 // zamiast wspolnego naglowka, bo to dwa osobne projekty PlatformIO bez
@@ -1122,6 +1533,16 @@ Preferences kalibracja;   // NVS namespace "dotyk" — kalibracja XPT2046
 #define TOUCH_SWAP_XY   0
 #define TOUCH_INVERT_X  0
 #define TOUCH_INVERT_Y  0
+
+// [v1.5.2] Orientacja ekranu (TFT_eSPI setRotation): 1 = pozioma 480x320 ze
+// zlaczem po prawej (tak byl kalibrowany kazdy dotychczasowy panel), 3 = ta
+// sama pozioma obrocona o 180 stopni. Panel w obudowie z ogniwem (24.11) ma
+// zlacze po lewej, wiec 3. Kalibracja dotyku z NVS jest z orientacji, w
+// ktorej ja zrobiono (klucz dotyk/obrot; brak klucza = 1) - przy innej
+// orientacji ekranu dotykOdczytaj() odwraca obie osie, zeby nie trzeba
+// bylo kalibrowac od nowa po samej zmianie tej stalej.
+#define EKRAN_OBROT 3
+static bool dotykOdwrocony = false;   // kalibracja z obrotu 1, ekran w obrocie 3 (albo odwrotnie)
 
 struct KalibracjaDotyku {
   uint16_t rawXA, rawYA;  // surowy odczyt w punkcie A (gorny-lewy znacznik)
@@ -1242,6 +1663,7 @@ bool dotykOdczytaj(int16_t &px, int16_t &py) {
 
   if (TOUCH_INVERT_X) x = 480 - x;
   if (TOUCH_INVERT_Y) y = 320 - y;
+  if (dotykOdwrocony) diag::dotykObroc180(x, y);   // [v1.5.2] ekran obrocony o 180 stopni wzgledem kalibracji
 
   px = constrain(x, 0, 479);
   py = constrain(y, 0, 319);
@@ -1251,8 +1673,24 @@ bool dotykOdczytaj(int16_t &px, int16_t &py) {
 // Podswietlenie (LED) na pinie TFT_BL (GPIO21, patrz platformio.ini) — PRZEZ
 // REZYSTOR ~100-220R w szeregu miedzy GPIO a pinem LED na module, nie na styk.
 // Sterowane PWM zamiast na sztywno do 3.3V, wiec mozna przygasic jesli za jasno.
+// [v1.5.0 SEN] true = panel na baterii przyciemnil ekran po minucie bez dotyku
+// (senKrok() nizej). Dopoki trwa, KAZDE ustawienie jasnosci z innych miejsc
+// (harmonogram dzien/noc, suwak) jest przycinane do diag::SEN_JASNOSC_PROC -
+// inaczej zmiana okna dzien/noc w srodku nocy rozjasnialaby uspiony ekran.
+static bool senPrzyciemnione = false;
+bool senEkranPrzyciemniony() { return senPrzyciemnione; }   // [v1.5.1] dla filtru dotyku w lvgl_port.cpp
+// [v1.5.1] Indeksy w diag::SEN_PRZYCIEMNIJ_OPCJE_MS[] / SEN_USPIJ_OPCJE_MS[]
+// (ekran WYSWIETLACZ, wiersz "Na baterii"); NVS wyswietlacz/senPrzyIdx, senSpijIdx.
+static uint8_t senPrzyciemnijIdx = diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX;
+static uint8_t senUspijIdx       = diag::SEN_USPIJ_DOMYSLNY_IDX;
+static_assert(diag::SEN_OPCJI == LVGL_SEN_OPCJI, "napisy na przyciskach \"Na baterii\" (dashboard_lvgl_poc.cpp) musza odpowiadac diag::SEN_*_OPCJE_MS[]");
+// [v1.5.1] true = ten start to wybudzenie z glebokiego snu (ext0 przycisk /
+// ext1 ladowarka): bez ekranu startowego, pulpit od razu (patrz polaczWifi()).
+static bool startPoSnie = false;
+
 void ustawJasnoscPodswietlenia(uint8_t procent) {
   procent = constrain(procent, (uint8_t)0, (uint8_t)100);
+  if (senPrzyciemnione && procent > diag::SEN_JASNOSC_PROC) procent = diag::SEN_JASNOSC_PROC;
   ledcWrite(TFT_BL, map(procent, 0, 100, 0, 255));
 }
 
@@ -1398,6 +1836,9 @@ void wyswietlaczWczytajZPamieci() {
   zasilanieTxIdx  = ustawieniaWyswietlacza.getUChar("txIdx", 0);
   if (zasilanieCpuIdx >= ZASILANIE_CPU_N) zasilanieCpuIdx = 0;
   if (zasilanieTxIdx  >= ZASILANIE_TX_N)  zasilanieTxIdx  = 0;
+  // [v1.5.1 SEN] Tak samo indeksy, nie czasy; nieznany indeks = domyslny (1 min / 5 min).
+  senPrzyciemnijIdx = diag::senIndeksPoprawny(ustawieniaWyswietlacza.getUChar("senPrzyIdx", diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX), diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX);
+  senUspijIdx       = diag::senIndeksPoprawny(ustawieniaWyswietlacza.getUChar("senSpijIdx", diag::SEN_USPIJ_DOMYSLNY_IDX), diag::SEN_USPIJ_DOMYSLNY_IDX);
   // Bezpieczne klipsy na wypadek uszkodzonych/przedawnionych danych w NVS -
   // te same zakresy co suwaki/spinboxy w dashboard_lvgl_poc.cpp.
   // [v1.4.1 C9] Dolna granica JASNOSC_MIN_PROCENT: wartosc 0 % zapisana przez
@@ -1490,6 +1931,18 @@ void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
   } else if (strcmp(pole, "godzKoniec") == 0) {
     godzinaKoniecPrzyciemnienia = godz;
     ustawieniaWyswietlacza.putUChar("godzKoniec", godz);
+  } else if (strcmp(pole, "senPrzyciemnij") == 0 || strcmp(pole, "senUspij") == 0) {
+    // [v1.5.1 SEN] Wiersz "Na baterii" - indeks w diag::SEN_*_OPCJE_MS[].
+    if (pole[3] == 'P') {
+      senPrzyciemnijIdx = diag::senIndeksPoprawny(wartosc, diag::SEN_PRZYCIEMNIJ_DOMYSLNY_IDX);
+      ustawieniaWyswietlacza.putUChar("senPrzyIdx", senPrzyciemnijIdx);
+    } else {
+      senUspijIdx = diag::senIndeksPoprawny(wartosc, diag::SEN_USPIJ_DOMYSLNY_IDX);
+      ustawieniaWyswietlacza.putUChar("senSpijIdx", senUspijIdx);
+    }
+    Serial.printf("tag=SEN zdarzenie=ustawienie przyciemnij_ms=%lu uspij_ms=%lu\n",
+                  (unsigned long)diag::senPrzyciemnijMs(senPrzyciemnijIdx), (unsigned long)diag::senUspijMs(senUspijIdx));
+    return;   // harmonogramu dzien/noc to nie dotyczy
   }
   wyswietlaczHarmonogramOdswiez(); // granice okna sie zmienily - przelicz i zastosuj od razu
 }
@@ -1501,12 +1954,29 @@ void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
 // dwa RZECZYWISCIE UZYWANE, rozpoznawalne wzorce alarmowe zamiast jednego
 // monotonnego piknia - research (na prosbe z tej sesji) ponizej.
 //
-// UWAGA SPRZETOWA: kod zaklada brzeczyk PASYWNY (bez wlasnego oscylatora -
-// gra dokladnie te czestotliwosc, ktora dostanie z ledcWriteTone()). Z
-// brzeczykiem AKTYWNYM (ma wlasny oscylator, ignoruje czestotliwosc, gra
-// zawsze swoim jednym stalym tonem) kod i tak zadziala - RYTM obu wzorcow
-// (patrz nizej) zostaje w pelni slyszalny, ginie tylko roznica WYSOKOSCI
-// dzwieku miedzy POZAREM a OGRZEWANIEM. Pasywny da pelny efekt.
+// SPRZET NA PLYTCE (docs/schemat-zasilania/brzeczyk.html, zlutowane 20.11,
+// zdjecie 27.11): modul brzeczyka PASYWNEGO (czarny walec bez naklejki, bez
+// wlasnego generatora; na plytce wtornik J3Y + 101 + 510), IO zmostkowane z
+// VCC na 5 V z VIN, mase modulu przelacza Q1 C945 z D13 przez 1 kOhm. Czyli
+// brzeczyk dostaje dokladnie te fale prostokatna, ktora ledcWriteTone()
+// wystawia na D13 - kod ponizej jest dla niego wlasciwy.
+//
+// [v1.5.20 TEST-DZWIEKU] User (27.11): "buzzer jest dosc cichy" (oba alarmy).
+// PWM 50 % to maksimum dla fali prostokatnej - w sofcie nie ma "glosnosci",
+// jest tylko CZESTOTLIWOSC: pasywny brzeczyk gra glosno wylacznie w swoim
+// rezonansie (male magnetyczne zwykle 2000-2700 Hz, czesto dokladnie 2048
+// albo 2731 Hz), kilkaset Hz obok potrafi byc kilka razy cichszy. 1200/1600 Hz
+// (OGRZEWANIE) sa prawie na pewno ponizej, 3000 Hz (POZAR) moze byc obok.
+// Zamiast zgadywac: przycisk "Test dźwięku" na ekranie WYSWIETLACZ przemiata
+// TEST_DZWIEKU_HZ[] po 1,5 s (napis na przycisku = aktualna czestotliwosc),
+// user mowi, ktora byla najglosniejsza, i wzorce ponizej dostaja te wartosc
+// (pozar = rezonans, hi-lo = rezonans i ok. 15 % nizej). Patrz testDzwieku*().
+//
+// BRZECZYK_AKTYWNY (0 na tej plytce): gdyby kiedys trafil sie modul z
+// wlasnym generatorem, ustawienie 1 daje stale napiecie w fazie tonu zamiast
+// PWM (na aktywnym PWM w poprzek jego generatora = cicho i dudnienie) i
+// podwojne krotkie pikniecie zamiast dwutonu OGRZEWANIA. Na pasywnym 1 dalby
+// prawie cisze (same klikniecia) - NIE wlaczac.
 //
 // RESEARCH - skad te konkretne wzorce (nie wymyslone, dwa prawdziwe,
 // standaryzowane sygnaly alarmowe o swiadomie innym "charakterze"):
@@ -1530,15 +2000,48 @@ void wyswietlaczUstawieniaWyslij(const char *pole, long wartosc) {
 // Priorytet gdy kilka alarmow naraz: POZAR (dymAlarm) > OGRZEWANIE/PANEL >
 // cisza - patrz brzeczykOdswiezZAlarmow() nizej.
 #define BRZECZYK_PIN 13
+#define BRZECZYK_AKTYWNY 0   // [v1.5.20] 0 = brzeczyk PASYWNY (ten na plytce, zdjecie 27.11): fala prostokatna z ledcWriteTone(); 1 = modul z wlasnym generatorem: stale HIGH w fazie tonu (patrz wyzej)
 
-struct BrzeczykFaza { uint16_t czestotliwoscHz; uint16_t czasMs; }; // czestotliwoscHz=0 -> cisza w tej fazie
+// czestotliwoscHz=0 -> cisza w tej fazie; przy BRZECZYK_AKTYWNY kazda
+// niezerowa wartosc znaczy tylko "gra" (stale napiecie), liczba jest bez znaczenia.
+struct BrzeczykFaza { uint16_t czestotliwoscHz; uint16_t czasMs; };
 
+#if BRZECZYK_AKTYWNY
+// (nieuzywane na tej plytce - patrz BRZECZYK_AKTYWNY wyzej)
+// POZAR: rytm T3 (3 x 0,5 s ton + 0,5 s cisza, potem 1,5 s ciszy).
+static const BrzeczykFaza WZORZEC_POZAR[] = {
+  {1, 500}, {0, 500}, {1, 500}, {0, 500}, {1, 500}, {0, 1500},
+};
+// OGRZEWANIE/PANEL: zamiast dwutonu - DWA KROTKIE pikniecia co sekunde
+// ("pip-pip ... pip-pip"): 120 ms ton / 120 ms cisza / 120 ms ton / 640 ms
+// cisza, cykl 1,0 s. Krotkie i podwojne, wiec nie do pomylenia z dlugimi
+// (0,5 s), potrojnymi piknieciami T3 pozaru.
+static const BrzeczykFaza WZORZEC_OGRZEWANIE[] = {
+  {1, 120}, {0, 120}, {1, 120}, {0, 640},
+};
+#else
+// Brzeczyk pasywny (ten na plytce). Czestotliwosci do ustawienia po tescie
+// dzwieku (patrz wyzej) - na razie jak od poczatku (v1.1.0).
 static const BrzeczykFaza WZORZEC_POZAR[] = {
   {3000, 500}, {0, 500}, {3000, 500}, {0, 500}, {3000, 500}, {0, 1500},
 };
 static const BrzeczykFaza WZORZEC_OGRZEWANIE[] = {
   {1200, 500}, {1600, 500},
 };
+#endif
+
+// [v1.5.20] Jedyne miejsce, ktore dotyka pinu brzeczyka w czasie pracy
+// (wzorce alarmow i test dzwieku). Pasywny (ta plytka): ledcWriteTone() =
+// fala prostokatna 50 % o zadanej czestotliwosci, 0 = cisza - jak do v1.5.18.
+// Aktywny: ledcWrite() na kanale 8-bitowym z brzeczykZainicjuj() - 255 to w
+// rdzeniu arduino-esp32 3.x "wszystkie bity = pelne wlaczenie" (stale HIGH).
+static void brzeczykTon(uint16_t hz) {
+#if BRZECZYK_AKTYWNY
+  ledcWrite(BRZECZYK_PIN, hz != 0 ? 255 : 0);
+#else
+  ledcWriteTone(BRZECZYK_PIN, hz);
+#endif
+}
 
 enum BrzeczykAlarmTyp { BRZECZYK_BRAK, BRZECZYK_POZAR, BRZECZYK_OGRZEWANIE };
 BrzeczykAlarmTyp brzeczykAktywnyTyp = BRZECZYK_BRAK;
@@ -1566,7 +2069,7 @@ const BrzeczykFaza *brzeczykWzorzec(BrzeczykAlarmTyp typ, int &liczbaFaz) {
 void brzeczykZastosujFaze() {
   int liczbaFaz;
   const BrzeczykFaza *wzorzec = brzeczykWzorzec(brzeczykAktywnyTyp, liczbaFaz);
-  ledcWriteTone(BRZECZYK_PIN, wzorzec[brzeczykFazaIdx].czestotliwoscHz);
+  brzeczykTon(wzorzec[brzeczykFazaIdx].czestotliwoscHz);
 }
 
 void brzeczykUstawTyp(BrzeczykAlarmTyp nowy) {
@@ -1574,7 +2077,7 @@ void brzeczykUstawTyp(BrzeczykAlarmTyp nowy) {
   brzeczykAktywnyTyp = nowy;
   brzeczykFazaIdx = 0;
   brzeczykFazaStartMs = millis();
-  if (brzeczykAktywnyTyp == BRZECZYK_BRAK) ledcWriteTone(BRZECZYK_PIN, 0);
+  if (brzeczykAktywnyTyp == BRZECZYK_BRAK) brzeczykTon(0);
   else brzeczykZastosujFaze(); // wejdz w faze 0 NATYCHMIAST, nie czekaj na 1. obrot obsluzBrzeczyk()
 }
 
@@ -1627,7 +2130,7 @@ void alarmWyciszObsluga() {
 }
 
 // Wolane co obrot loop() - awansuje
-// wzorzec do kolejnej fazy, gdy czas biezacej fazy uplynal. ledcWriteTone()
+// wzorzec do kolejnej fazy, gdy czas biezacej fazy uplynal. brzeczykTon()
 // wolane TYLKO przy realnej zmianie fazy, NIE w kazdym obrocie petli (patrz
 // arduino-esp32 issue #3617 - zbyt czeste wywolania ledcWriteTone() daja
 // niedokladny dzwiek).
@@ -1643,8 +2146,53 @@ void obsluzBrzeczyk() {
 }
 
 void brzeczykZainicjuj() {
-  ledcAttach(BRZECZYK_PIN, 3000, 8); // czestotliwosc startowa/rozdzielczosc - ledcWriteTone() i tak zmienia freq w locie
-  ledcWriteTone(BRZECZYK_PIN, 0);    // cisza na starcie
+  ledcAttach(BRZECZYK_PIN, 3000, 8); // 8 bitow: przy BRZECZYK_AKTYWNY ledcWrite(255) = stale HIGH (patrz brzeczykTon()); pasywny: ledcWriteTone() i tak zmienia freq w locie
+  brzeczykTon(0);                    // cisza na starcie
+}
+
+// [v1.5.20 TEST-DZWIEKU] Przemiatanie czestotliwosci z przycisku "Test
+// dźwięku" (ekran WYSWIETLACZ): kazda wartosc z TEST_DZWIEKU_HZ[] przez
+// TEST_DZWIEKU_KROK_MS, napis na przycisku = aktualna czestotliwosc, na
+// koniec cisza i "Test dźwięku". Dotkniecie w trakcie = stop. W czasie
+// alarmu przycisk nic nie robi, a alarm, ktory zacznie sie w trakcie,
+// przerywa test (brzeczykUstawTyp() bierze pin dla siebie - patrz
+// testDzwiekuKrok()). Log: tag=BRZECZYK zdarzenie=test_dzwieku hz=...
+static const uint16_t TEST_DZWIEKU_HZ[] = { 1000, 1500, 2000, 2300, 2500, 2700, 3000, 3500, 4000 };
+static const int TEST_DZWIEKU_KROKOW = (int)(sizeof(TEST_DZWIEKU_HZ) / sizeof(TEST_DZWIEKU_HZ[0]));
+static const unsigned long TEST_DZWIEKU_KROK_MS = 1500;
+static int testDzwiekuKrokIdx = -1;             // -1 = test nie trwa
+static unsigned long testDzwiekuKrokStartMs = 0;
+
+static void testDzwiekuZastosuj() {
+  brzeczykTon(TEST_DZWIEKU_HZ[testDzwiekuKrokIdx]);
+  lvgl_dashboard_poc_test_dzwieku_pokaz(TEST_DZWIEKU_HZ[testDzwiekuKrokIdx]);
+  Serial.printf("tag=BRZECZYK zdarzenie=test_dzwieku krok=%d/%d hz=%u\n",
+                testDzwiekuKrokIdx + 1, TEST_DZWIEKU_KROKOW, (unsigned)TEST_DZWIEKU_HZ[testDzwiekuKrokIdx]);
+}
+static void testDzwiekuStop(const char *powod) {
+  if (testDzwiekuKrokIdx < 0) return;
+  testDzwiekuKrokIdx = -1;
+  if (brzeczykAktywnyTyp == BRZECZYK_BRAK) brzeczykTon(0);   // alarm, ktory przerwal test, gra dalej swoje
+  lvgl_dashboard_poc_test_dzwieku_pokaz(0);
+  Serial.printf("tag=BRZECZYK zdarzenie=test_dzwieku_koniec powod=%s\n", powod);
+}
+void testDzwiekuPrzycisk() {
+  if (testDzwiekuKrokIdx >= 0) { testDzwiekuStop("dotyk"); return; }
+  if (brzeczykAktywnyTyp != BRZECZYK_BRAK) {
+    Serial.println(F("tag=BRZECZYK zdarzenie=test_dzwieku_odmowa powod=alarm"));
+    return;
+  }
+  testDzwiekuKrokIdx = 0;
+  testDzwiekuKrokStartMs = millis();
+  testDzwiekuZastosuj();
+}
+void testDzwiekuKrok() {
+  if (testDzwiekuKrokIdx < 0) return;
+  if (brzeczykAktywnyTyp != BRZECZYK_BRAK) { testDzwiekuStop("alarm"); return; }
+  if (millis() - testDzwiekuKrokStartMs < TEST_DZWIEKU_KROK_MS) return;
+  testDzwiekuKrokStartMs = millis();
+  if (++testDzwiekuKrokIdx >= TEST_DZWIEKU_KROKOW) { testDzwiekuStop("koniec"); return; }
+  testDzwiekuZastosuj();
 }
 
 // Motyw kolorow — spojny z panelem WWW centrali (ciemne tlo, akcent ognisty)
@@ -1688,6 +2236,13 @@ struct StanPieca {
   // co zwraca centrala, gdy jeszcze nie zdazyla policzyc pierwszej prognozy
   // (identyczny duch co reszta domyslnych wartosci w tej strukturze).
   int   deszczStan = 0, deszczMinuty = -1;
+  // [v1.5.14 POGODA-ZEWN] Z centrali 3.58.16: kod WMO pogody teraz, kod WMO
+  // w slocie, w ktorym zaczyna sie opad z deszczStan (zeby napisac "śnieg za
+  // 2 h" a nie "deszcz"), dzien/noc (1/0) i porywy wiatru w km/h. -1 = brak
+  // (starsza centrala, brak internetu) -> kafelek ZEWN jak dotad.
+  int   pogodaKod = -1, pogodaKodOpad = -1, pogodaDzien = -1;
+  float wiatrPorywy = -1.0f;
+  float pogodaTemp = -99.0f;   // [v1.5.17] pogoda_temp z centrali 3.58.17 (°C prognozy), -99 = brak
   // [LCD-SEZON] Z centrali (RTC sprzetowy tam, nie tutaj — wyswietlacz nie
   // ma wlasnego RTC z podtrzymaniem, dziala na baterii/deep sleep) — patrz
   // aktualizujSezon() nizej.
@@ -1955,8 +2510,22 @@ struct WykresyPobieranie {
   int kodNowego = 0;             // kod HTTP odpowiedzi na /api/history/panel (do logu)
   unsigned long startMs = 0;
   unsigned long postepMs = 0;
+  // [v1.5.6] Ponawianie, gdy centrala w ogole nie przyjela zapytania (patrz
+  // wykresyMoznaPonowic()). Zgloszenie z plytki: "klikam wykres, pisze
+  // 'Centrala nie przyjela polaczenia', dopiero za ktoryms razem sie
+  // pojawia" - to te same czkawki AP co przy poleceniach (v1.5.5).
+  uint8_t proba = 1;             // numer biezacej proby 1..WYKRESY_PROB_MAKS
+  unsigned long ponowOdMs = 0;   // != 0: czekamy z kolejna proba do tej chwili millis()
+  int ostatniWynik = 0;          // przyczyna poprzedniej proby (do logu ponowienia)
 };
 static WykresyPobieranie wykresyPob;
+static const uint8_t  WYKRESY_PROB_MAKS = 3;
+static const uint32_t WYKRESY_ODSTEP_PONOWIENIA_MS = 500;
+static const char* wykresySciezka(bool nowySposob, bool dlugi, char* bufor, size_t n) {
+  if (nowySposob) snprintf(bufor, n, "/api/history/panel?tryb=%s&pkt=%d", WYKRESY_TRYB_ADRES[wykresyPob.tryb], LVGL_WYKRESY_PUNKTOW);
+  else            snprintf(bufor, n, "%s", dlugi ? "/api/history/long" : "/api/history");
+  return bufor;
+}
 
 static void wykresyLinia(const char* linia) { lvgl_dashboard_poc_wykresy_strumien_linia(linia); }
 
@@ -1964,8 +2533,26 @@ static void wykresyLinia(const char* linia) { lvgl_dashboard_poc_wykresy_strumie
 // logu, zwalnia gniazdo. `wynik` to to, co wie warstwa sieci; ekran moze go
 // jeszcze zmienic (np. odpowiedz poprawna, ale bez danych) - do logu idzie
 // to, co faktycznie widac na ekranie.
+static bool wykresyMoznaPonowic(int wynik);   // nizej
 static void wykresyZakoncz(int wynik, int szczegol) {
   const bool dlugi = (wykresyPob.tryb == LVGL_WYKRESY_TRYB_TYDZIEN);
+  if (wykresyMoznaPonowic(wynik)) {
+    // [v1.5.6] Centrala nic nie odpowiedziala - jeszcze raz za chwile, ekran
+    // dalej czeka ("Ladowanie..."), log jedna linia. Faktyczny start w
+    // obslugaWykresyFetch(), gdy minie odstep.
+    logBezPamieci("tag=WYKRESY zdarzenie=ponowienie tryb=%s sposob=%s proba=%u/%u powod=%s etap=%c po_ms=%lu blad=\"%s\"\n",
+                  WYKRESY_TRYB_ADRES[wykresyPob.tryb], wykresyPob.nowySposob ? "centrala" : "panel",
+                  (unsigned)(wykresyPob.proba + 1), (unsigned)WYKRESY_PROB_MAKS,
+                  lvgl_dashboard_poc_wykresy_wynik_nazwa(wynik), wykresyFetch.etapBledu(),
+                  (unsigned long)(millis() - wykresyPob.startMs), wykresyFetch.ostatniBlad());
+    wykresyFetch.skwituj();
+    wykresyPob.proba++;
+    wykresyPob.ostatniWynik = wynik;
+    wykresyPob.ponowOdMs = millis() + WYKRESY_ODSTEP_PONOWIENIA_MS;
+    if (wykresyPob.ponowOdMs == 0) wykresyPob.ponowOdMs = 1;
+    lvgl_dashboard_poc_wykresy_ponowienie(wykresyPob.proba, WYKRESY_PROB_MAKS);
+    return;
+  }
   const int naEkranie = lvgl_dashboard_poc_wykresy_strumien_koniec(dlugi, wykresyFetch.liniiCiala(), wynik, szczegol);
   LvglWykresyStatystyka st;
   lvgl_dashboard_poc_wykresy_statystyka(&st);
@@ -1993,14 +2580,29 @@ static void wykresyZakoncz(int wynik, int szczegol) {
                   WYKRESY_TRYB_ADRES[wykresyPob.tryb], sposob, lvgl_dashboard_poc_wykresy_wynik_nazwa(naEkranie), st.punktow,
                   st.wierszyZrodla, (unsigned long)wykresyFetch.liniiCiala(), (unsigned long)wykresyFetch.bajtowCiala(), ms);
   } else {
-    logBezPamieci("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=%s sposob=%s przyczyna=%s kod=%d etap=%c errno=%d punktow=%d linii=%lu bajtow=%lu ms=%lu ram=%lu ram_blok=%lu msg=\"%s\"\n",
+    logBezPamieci("tag=WYKRESY lvl=WARN zdarzenie=blad tryb=%s sposob=%s przyczyna=%s kod=%d etap=%c errno=%d prob=%u punktow=%d linii=%lu bajtow=%lu ms=%lu ram=%lu ram_blok=%lu msg=\"%s\"\n",
                   WYKRESY_TRYB_ADRES[wykresyPob.tryb], sposob, lvgl_dashboard_poc_wykresy_wynik_nazwa(naEkranie),
-                  wykresyFetch.kodHttp(), wykresyFetch.etapBledu(), wykresyFetch.numerBledu(), st.punktow,
+                  wykresyFetch.kodHttp(), wykresyFetch.etapBledu(), wykresyFetch.numerBledu(), (unsigned)wykresyPob.proba, st.punktow,
                   (unsigned long)wykresyFetch.liniiCiala(), (unsigned long)wykresyFetch.bajtowCiala(), ms,
                   (unsigned long)ramWolny(), (unsigned long)ramBlok(), wykresyFetch.ostatniBlad());
   }
   wykresyFetch.skwituj();
   wykresyPob.aktywne = false;
+  wykresyPob.ponowOdMs = 0;
+}
+
+// [v1.5.6] Czy po tym bledzie warto zapytac jeszcze raz: tak, gdy centrala
+// NIE PRZYJELA polaczenia (limit laczenia 1,5 s, connect() odrzucony,
+// gniazdo zamkniete bez bajtu odpowiedzi) - to czkawka AP, nie stan
+// centrali; na plytce konczy sie najczesciej w 1,5 s. Nie ponawiamy:
+// zapytanie przyjete, ale bez odpowiedzi przez 6 s (etap h - centrala
+// pracuje, tylko wolno; kolejne 6 s x2 nic nie da), odpowiedz urwana w
+// trakcie, limit calosci, brak pamieci panelu (nie pomoze), kod HTTP (to
+// jest odpowiedz).
+static bool wykresyMoznaPonowic(int wynik) {
+  if (wykresyPob.proba >= WYKRESY_PROB_MAKS) return false;
+  if (wynik != LVGL_WYKRESY_BRAK_POLACZENIA) return false;
+  return wykresyFetch.kodHttp() == 0 && wykresyFetch.bajtowCiala() == 0;
 }
 
 // Blad warstwy sieci -> przyczyna dla ekranu i logu.
@@ -2008,7 +2610,8 @@ static int wykresyWynikZBledu() {
   if (diag::bladGniazdaToBrakPamieci(wykresyFetch.numerBledu())) return LVGL_WYKRESY_BRAK_PAMIECI;
   switch (wykresyFetch.etapBledu()) {
     case 'c': case 'h': case 'p': return LVGL_WYKRESY_LIMIT_CZASU;       // centrala nie zdazyla
-    case 'z': case 'k':           return LVGL_WYKRESY_ZLA_ODPOWIEDZ;     // to nie byla odpowiedz HTTP
+    case 'z':                     return LVGL_WYKRESY_BRAK_POLACZENIA;   // [v1.5.6] zamkniete bez bajtu odpowiedzi = centrala nie przyjela (dotad "zla odpowiedz")
+    case 'k':                     return LVGL_WYKRESY_ZLA_ODPOWIEDZ;     // to nie byla odpowiedz HTTP
     case 'r':                     return (wykresyFetch.bajtowCiala() > 0) ? LVGL_WYKRESY_URWANA : LVGL_WYKRESY_BRAK_POLACZENIA;
     default:                      return LVGL_WYKRESY_BRAK_POLACZENIA;   // g n l a s: nie udalo sie polaczyc / wyslac
   }
@@ -2043,6 +2646,9 @@ void wykresyFetchStart(int tryb) {
   wykresyPob.kodNowego = 0;
   wykresyPob.startMs = millis();
   wykresyPob.postepMs = wykresyPob.startMs;
+  wykresyPob.proba = 1;          // [v1.5.6]
+  wykresyPob.ponowOdMs = 0;
+  wykresyPob.ostatniWynik = 0;
   const bool dlugi = (tryb == LVGL_WYKRESY_TRYB_TYDZIEN);
   // Przed kazda mozliwoscia wczesnego wyjscia: ekran czeka na _koniec().
   lvgl_dashboard_poc_wykresy_strumien_start(dlugi);
@@ -2072,10 +2678,35 @@ void obslugaWykresyFetch() {
                   (unsigned long)wykresyFetch.liniiCiala());
     wykresyFetch.przerwij();
     wykresyPob.aktywne = false;
+    wykresyPob.ponowOdMs = 0;
     return;
   }
 
+  // [v1.5.6] Czekamy z kolejna proba (po czkawce AP); gdy minie odstep -
+  // to samo zapytanie, tym samym sposobem. WiFi mogl w miedzyczasie pasc.
+  if (wykresyPob.ponowOdMs != 0) {
+    if ((long)(millis() - wykresyPob.ponowOdMs) < 0) return;
+    wykresyPob.ponowOdMs = 0;
+    if (WiFi.status() != WL_CONNECTED) {
+      wykresyZakoncz(LVGL_WYKRESY_BRAK_WIFI, 0);
+      return;
+    }
+    const bool dlugi = (wykresyPob.tryb == LVGL_WYKRESY_TRYB_TYDZIEN);
+    char sciezka[56];
+    wykresySciezka(wykresyPob.nowySposob, dlugi, sciezka, sizeof(sciezka));
+    lvgl_dashboard_poc_wykresy_strumien_start(dlugi);   // od nowa - z poprzedniej proby nic nie przyszlo
+    if (!wykresyFetch.start(sciezka, wykresyLinia)) {
+      wykresyZakoncz(wykresyWynikZBledu(), 0);
+    }
+    return;
+  }
+
+  const uint32_t bajtowPrzed = wykresyFetch.bajtowCiala();
   wykresyFetch.poll();
+  // [v1.5.7 RATUNEK] Przyszly nowe bajty historii: centrala zyje, nie
+  // wymuszaj ponownego polaczenia WiFi tylko dlatego, ze status sie spoznia
+  // (patrz diag::Ratunek::centralaOdezwalaSie()).
+  if (wykresyFetch.bajtowCiala() != bajtowPrzed) panelRatunek.centralaOdezwalaSie();
 
   if (wykresyFetch.wTrakcie()) {
     if (wykresyPob.nowySposob) {
@@ -2287,14 +2918,16 @@ static void lvglPokazStan() {
                                  stan.pompa, stan.pompaOverrideMin,
                                  stan.dym, stan.dymAlarm,
                                  stan.tPokoj, stan.wilgotnosc, stan.cisnienie,
-                                 stan.klapa, stan.syberka, (int)trybWyboru,
+                                 diag::serwoStopnieNaProcent(stan.klapa, diag::KLAPA_KAT_MAKS), diag::serwoStopnieNaProcent(stan.syberka, diag::SYBERKA_KAT_MAKS), (int)trybWyboru,   // [v1.5.6] centrala podaje stopnie
                                  (int)trybSerwaWartosc,
                                  stan.alarmOgrzewanie, stan.alarmPanel,
                                  stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
                                  stan.rtcOk,
                                  stan.rssi,
                                  stan.internet,
-                                 stan.deszczStan, stan.deszczMinuty);
+                                 stan.deszczStan, stan.deszczMinuty,
+                                 stan.pogodaKod, stan.pogodaKodOpad, stan.pogodaDzien, stan.wiatrPorywy,   // [v1.5.14]
+                                 stan.pogodaTemp);   // [v1.5.17]
 }
 
 // Znacznik na srodku naglowka dashboardu - Z KTORA centrala rozmawia panel
@@ -2768,6 +3401,14 @@ void obslugaStatusFetch() {
   // stan.deszczStan/deszczMinuty (definicja struct wyzej).
   stan.deszczStan    = doc["deszcz_stan"].isNull() ? 0  : doc["deszcz_stan"].as<int>();
   stan.deszczMinuty  = doc["deszcz_min"].isNull()  ? -1 : doc["deszcz_min"].as<int>();
+  // [v1.5.14 POGODA-ZEWN] Centrala od 3.58.16 - patrz komentarz przy polach w struct.
+  stan.pogodaKod     = doc["pogoda_kod"].isNull()      ? -1 : doc["pogoda_kod"].as<int>();
+  stan.pogodaKodOpad = doc["pogoda_kod_opad"].isNull() ? -1 : doc["pogoda_kod_opad"].as<int>();
+  stan.pogodaDzien   = doc["pogoda_dzien"].isNull()    ? -1 : doc["pogoda_dzien"].as<int>();
+  stan.wiatrPorywy   = doc["wiatr_porywy"].isNull()    ? -1.0f : doc["wiatr_porywy"].as<float>();
+  // [v1.5.17] pogoda_temp (centrala 3.58.17): liczba albo null/brak pola -> -99 (brak).
+  // Nie -1: -1 °C to prawidlowa temperatura.
+  stan.pogodaTemp    = doc["pogoda_temp"].isNull()     ? -99.0f : doc["pogoda_temp"].as<float>();
   // [ROZSZERZENIE, ta sesja - BRZECZYK ALARMOWY] Swiezy stan wszystkich 3
   // alarmow jest juz znany - przelicz, ktory wzorzec (jesli ktorykolwiek)
   // powinien teraz grac. Tanie/idempotentne, bezpieczne przy kazdym udanym
@@ -2889,14 +3530,16 @@ void obslugaStatusFetch() {
                                  stan.pompa, stan.pompaOverrideMin,
                                  stan.dym, stan.dymAlarm,
                                  stan.tPokoj, stan.wilgotnosc, stan.cisnienie,
-                                 stan.klapa, stan.syberka, (int)trybWyboru,
+                                 diag::serwoStopnieNaProcent(stan.klapa, diag::KLAPA_KAT_MAKS), diag::serwoStopnieNaProcent(stan.syberka, diag::SYBERKA_KAT_MAKS), (int)trybWyboru,   // [v1.5.6] centrala podaje stopnie
                                  (int)trybSerwaWartosc,
                                  stan.alarmOgrzewanie, stan.alarmPanel,
                                  stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
                                  stan.rtcOk,
                                  stan.rssi,
                                  stan.internet,
-                                 stan.deszczStan, stan.deszczMinuty);
+                                 stan.deszczStan, stan.deszczMinuty,
+                                 stan.pogodaKod, stan.pogodaKodOpad, stan.pogodaDzien, stan.wiatrPorywy,   // [v1.5.14]
+                                 stan.pogodaTemp);   // [v1.5.17]
   panelLiczniki.ekranOdswiezen++;
   if (centralaZmieniona) lvglPokazZnacznikCentrali(); // [v1.2.0 CENTRALA-ID] "SYMULATOR" / "2 CENTRALE (..)" w naglowku
 }
@@ -3115,6 +3758,8 @@ void obslugaKomendaFetch() {
   const bool odpowiedziala = komendaFetch.bylSukces();   // [v1.4.2 C4] zanim pobierzOdpowiedz()/skwitujBlad() wyzeruja stan
   char powodOdrzucenia[40] = "";
   if (odpowiedziala) {
+    panelRatunek.centralaOdezwalaSie();   // [v1.5.7 RATUNEK] odpowiedz na polecenie = centrala zyje
+
     // centrala odpowiada {"ok":true,...} albo {"ok":false,"error":"..."} -
     // dokladnie ten sam kontrakt, ktory dawny httpPost() sprawdzal.
     String odp = NonBlockingHttp::wyodrebnijCialo(komendaFetch.pobierzOdpowiedz());
@@ -3147,13 +3792,21 @@ void obslugaKomendaFetch() {
   // GET ustawien, ktory wystartowal wczesniej, nie nadpisze tego pola stara
   // wartoscia (kolejkaPolecen.poleZmieniane() w obslugaUstawieniaFetch()).
   const diag::Polecenie zakonczone = kolejkaPolecen.wLocie;
+  // [v1.5.5] Bez odpowiedzi centrali (nie: odrzucone) - jeszcze raz, do
+  // PROB_MAKS prob; porazke pokazujemy dopiero po ostatniej.
+  if (!odpowiedziala && kolejkaPolecen.ponow(millis())) {
+    Serial.printf("tag=KOMENDA zdarzenie=ponowienie pole=%s cialo=\"%s\" proba=%u/%u powod=%s\n",
+                  zakonczone.klucz, zakonczone.cialo, (unsigned)(zakonczone.proba + 2), (unsigned)diag::KolejkaPolecen::PROB_MAKS,
+                  komendaFetch.ostatniBlad().c_str());
+    return;   // pendingPoKomendzie zostaje - GET-y pojda po ostatniej probie
+  }
   kolejkaPolecen.zakoncz(millis());
   if (!centralaOk) {
     // Uzytkownik musi to zobaczyc: ekran pokazuje wartosc, ktorej centrala
     // nie ma. Do v1.4.1 porazka szla tylko do logu, a ekran "cofal" liczbe
     // przy nastepnym GET bez slowa wyjasnienia.
-    Serial.printf("tag=KOMENDA lvl=WARN zdarzenie=polecenie_nieudane pole=%s cialo=\"%s\" powod=%s\n",
-                  zakonczone.klucz, zakonczone.cialo, odpowiedziala ? "odrzucone" : "brak_odpowiedzi");
+    Serial.printf("tag=KOMENDA lvl=WARN zdarzenie=polecenie_nieudane pole=%s cialo=\"%s\" powod=%s prob=%u\n",
+                  zakonczone.klucz, zakonczone.cialo, odpowiedziala ? "odrzucone" : "brak_odpowiedzi", (unsigned)(zakonczone.proba + 1));
     char komunikat[56];
     if (!odpowiedziala)                 snprintf(komunikat, sizeof(komunikat), "POLECENIE NIE DOSZŁO DO CENTRALI");
     else if (powodOdrzucenia[0] != '\0') snprintf(komunikat, sizeof(komunikat), "ODRZUCONE: %s", powodOdrzucenia);
@@ -3224,6 +3877,12 @@ void kalibrujDotykJesliTrzeba() {
     kalDotyku.rawYA = kalibracja.getUShort("rawYA", 0);
     kalDotyku.rawXB = kalibracja.getUShort("rawXB", 0);
     kalDotyku.rawYB = kalibracja.getUShort("rawYB", 0);
+    // [v1.5.2] Orientacja, w ktorej zrobiono te kalibracje (panele sprzed
+    // v1.5.2 nie maja klucza - byly kalibrowane w obrocie 1).
+    const uint8_t obrotKalibracji = kalibracja.getUChar("obrot", 1);
+    dotykOdwrocony = diag::dotykTrzebaOdwrocic(obrotKalibracji, EKRAN_OBROT);
+    Serial.printf("tag=DOTYK zdarzenie=kalibracja_z_pamieci obrot_kalibracji=%u obrot_ekranu=%d odwrocony=%d\n",
+                  obrotKalibracji, EKRAN_OBROT, dotykOdwrocony ? 1 : 0);
   } else {
     tft.fillScreen(KOL_TLO);
     tft.setTextDatum(MC_DATUM);
@@ -3302,6 +3961,8 @@ void kalibrujDotykJesliTrzeba() {
     kalibracja.putUShort("rawYA", kalDotyku.rawYA);
     kalibracja.putUShort("rawXB", kalDotyku.rawXB);
     kalibracja.putUShort("rawYB", kalDotyku.rawYB);
+    kalibracja.putUChar("obrot", EKRAN_OBROT);   // [v1.5.2] znaczniki byly rysowane w tej orientacji
+    dotykOdwrocony = false;
   }
   kalibracja.end();
 }
@@ -3495,7 +4156,8 @@ static const int EKRAN_START_Y_PANEL    = 124;
 static const int EKRAN_START_Y_CENTRALA = 182;
 // Ile ekran startowy stoi po dopisaniu wersji centrali, zeby dalo sie ja
 // przeczytac. Tylko przy zimnym starcie - po wybudzeniu z deep sleep
-// (przycisk) liczy sie czas do pulpitu, nie napis.
+// (przycisk / ladowarka) ekranu startowego w ogole nie ma (v1.5.1,
+// startPoSnie): pulpit LVGL idzie na wyswietlacz jeszcze przed WiFi.
 static const uint32_t EKRAN_START_POKAZ_MS = 1500;
 
 static void ekranStartowyNaglowek() {
@@ -3515,6 +4177,9 @@ static void ekranStartowyNaglowek() {
 // w PIERWSZA_PROBKA_TIMEOUT_MS, napis mowi to wprost i nie ma dodatkowej
 // pauzy - panel juz czekal 2,5 s, a pulpit i tak pokaze "--".
 static void ekranStartowyWersje() {
+  Serial.printf("tag=PANEL zdarzenie=ekran_startowy panel=%s centrala=%s\n",
+                FIRMWARE_VERSION_PANEL, stan.centralaFw[0] != '\0' ? stan.centralaFw : "-");
+  if (startPoSnie) return;   // [v1.5.1] po wybudzeniu na ekranie jest pulpit LVGL, nie ekran startowy - tylko log
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(KOL_TEKST, KOL_TLO);
   tft.setTextFont(2);
@@ -3524,10 +4189,7 @@ static void ekranStartowyWersje() {
   else if (swiezoscStatusu.byloKiedykolwiek) snprintf(linia, sizeof(linia), "Centrala: wersja nieznana");
   else snprintf(linia, sizeof(linia), "Centrala: brak odpowiedzi");
   tft.drawString(linia, 240, EKRAN_START_Y_CENTRALA);
-  Serial.printf("tag=PANEL zdarzenie=ekran_startowy panel=%s centrala=%s\n",
-                FIRMWARE_VERSION_PANEL, stan.centralaFw[0] != '\0' ? stan.centralaFw : "-");
   if (!swiezoscStatusu.byloKiedykolwiek) return;
-  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) return;
   const unsigned long start = millis();
   while (millis() - start < EKRAN_START_POKAZ_MS) {
     esp_task_wdt_reset();   // watchdog petli (15 s) juz dziala - jak w polaczWifi()
@@ -3553,16 +4215,30 @@ void polaczWifi() {
   // szybkosci (patrz komentarz przy definicji WIFI_IP_STATYCZNE wyzej).
   WiFi.config(WIFI_IP_STATYCZNE, WIFI_GATEWAY, WIFI_MASKA);
 
-  tft.fillScreen(KOL_TLO);
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(KOL_TEKST, KOL_TLO);
-  ekranStartowyNaglowek();   // [v1.4.6] "WYSWIETLACZ CO" + "Panel v1.4.6" nad napisami o laczeniu
-  tft.setTextFont(2);
+  if (startPoSnie) {
+    // [v1.5.1] Po wybudzeniu z glebokiego snu (przycisk / ladowarka) nikt nie
+    // chce czytac wersji - ma byc pulpit. LVGL ma juz zbudowane ekrany
+    // (lvgl_dashboard_poc_init() w setup() przed ta funkcja), ale rysuje
+    // dopiero przy pierwszym lv_timer_handler() - zwykle w loop(), czyli po
+    // WiFi (do 20 s) i po pierwszych danych (do 2,5 s). Jeden obrot tutaj
+    // wysyla caly pulpit (kafelki z "--", naglowek bez WiFi) do wyswietlacza
+    // OD RAZU; dane i ikona WiFi dochodza w tle, jak przy kazdej utracie
+    // polaczenia. Zegar LVGL stal przez caly setup() - pierwszy tick nadrabia
+    // go skokiem, to nieszkodliwe (animacji jeszcze nie ma).
+    lvgl_port_tick();
+    Serial.printf("tag=SEN zdarzenie=pulpit_po_wybudzeniu ms=%lu\n", (unsigned long)millis());
+  } else {
+    tft.fillScreen(KOL_TLO);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(KOL_TEKST, KOL_TLO);
+    ekranStartowyNaglowek();   // [v1.4.6] "WYSWIETLACZ CO" + "Panel v1.4.6" nad napisami o laczeniu
+    tft.setTextFont(2);
+  }
 
   if (!rtcBssidZnany) {
     // [v1.2.0 WIFI-WYBOR] Zimny start (pamiec RTC pusta): wlasny skan, wybor
     // najsilniejszej centrali i polaczenie z NIA po BSSID.
-    tft.drawString("Szukam centrali", 240, 150);
+    if (!startPoSnie) tft.drawString("Szukam centrali", 240, 150);   // [v1.5.1] po snie pulpit juz jest na ekranie
     diag::KandydatAp ap;
     wifiCentralPrzyStarcie = wifiSkanujCentrale(ap);
     if (wifiCentralPrzyStarcie > 0) {
@@ -3573,7 +4249,7 @@ void polaczWifi() {
     // Napis jest wysrodkowany na y=150 (MC_DATUM, font 16 px -> zajmuje
     // y=142..158), a petla ponizej czysci tylko y=150..170 - bez tego spod
     // "Laczenie z WiFi" wystawalyby resztki "Szukam centrali".
-    tft.fillRect(0, 138, 480, 24, KOL_TLO);
+    if (!startPoSnie) tft.fillRect(0, 138, 480, 24, KOL_TLO);
   }
 
   wifiRozpocznijLaczenie();
@@ -3586,8 +4262,10 @@ void polaczWifi() {
     // restartowalby sie co ok. 15 s w kolko, nie dochodzac do ekranu
     // (wniosek z kodu i z testu na PC - nie zaobserwowane na plytce).
     esp_task_wdt_reset();
-    tft.fillRect(0, 150, 480, 20, KOL_TLO);
-    tft.drawString("Laczenie z WiFi" , 240, 150);
+    if (!startPoSnie) {   // [v1.5.1] po wybudzeniu na ekranie jest juz pulpit LVGL - nie mazac po nim
+      tft.fillRect(0, 150, 480, 20, KOL_TLO);
+      tft.drawString("Laczenie z WiFi" , 240, 150);
+    }
     // [v1.2.1] Jak w petli skanu wyzej: alarm sprzed samoczynnego restartu
     // gra dalej. 8 x 50 ms zamiast jednego delay(400), bo fazy wzorca trwaja
     // po 500 ms; bez alarmu obsluzBrzeczyk() wraca od razu.
@@ -3691,18 +4369,23 @@ void wifiReconnectNonBlocking() {
 // ----------------------------------------------------------------------------
 // [ETAP 3b] ZASILANIE — deep sleep + wybudzanie przyciskiem
 // ----------------------------------------------------------------------------
-// [v1.4.4 C1] UWAGA: zarejestrujAktywnosc() i idzSpac() nie sa obecnie przez
-// nikogo wolane (usypianie po nieaktywnosci bylo podpiete tylko pod stary
-// dashboard TFT, usuniety w v1.4.4). Zostawione CELOWO - to gotowy, sprawdzony
-// na plytce kod pod krok 3 (B1/B5 z audytu: usypianie + bateria), ktory
-// czeka na podlaczenie przycisku/baterii. Nie usuwac jako "martwy".
-// Przycisk: GPIO14 -> GND (wewnetrzny pull-up, wybudzenie na stanie LOW).
+// [v1.5.0 SEN] Od tej wersji idzSpac() jest NAPRAWDE wolane - z senKrok()
+// (nizej), ktore co sekunde liczy diag::senDecyzja() z warunkow plytki.
+// Do v1.4.7 ten kod czekal (od v1.4.4 nikt go nie wolal - usypianie bylo
+// podpiete tylko pod stary dashboard TFT). Sprzet jest juz zlutowany
+// (2026-11-20): przycisk GPIO14 -> 1 kOhm -> tact -> GND (R4 chroni pin, pull-up
+// wewnetrzny), ladowarka TP4056 na GPIO35 (patrz USB_DETECT_PIN), ogniwo na
+// dzielniku GPIO34 (patrz BATERIA_ADC_PIN).
 // GPIO14 wybrany w poprzedniej sesji: wolny (nie koliduje z TFT/dotykiem —
 // patrz platformio.ini + TOUCH_* wyzej), w domenie RTC (wymog ext0), i NIE
 // jest pinem strapping (w odroznieniu od 0/2/12/15) — bezpieczny wybor.
 #define WAKE_BTN_PIN GPIO_NUM_14
-static const uint32_t ACTIVITY_TIMEOUT_MS = 5UL * 60UL * 1000UL; // 5 minut
-unsigned long ostatniaAktywnosc = 0;
+// [v1.5.0 SEN] Drugie zrodlo wybudzenia: wlozenie ladowarki. TP4056 sciaga
+// wtedy CHRG/STDBY (GPIO35, zewnetrzne 10k do 3V3) do masy - ext1 w trybie
+// ALL_LOW na jednym pinie to dokladnie "obudz, gdy pin spadnie do 0". GPIO35
+// jest w domenie RTC (RTC_GPIO5), wiec ext1 na nim dziala; ext0 i ext1 moga
+// byc wlaczone rownoczesnie (ESP32 classic).
+#define WAKE_USB_PIN_MASK (1ULL << 35)
 
 // [ETAP 3b, detekcja USB — ZDECYDOWANE: TP4056 CHRG+STDBY, nie dzielnik na
 // VIN] Pierwotny plan (dzielnik napiecia z VIN/5V) zalezal od zalozenia o
@@ -3808,33 +4491,74 @@ int bateriaNapiecieNaProcent(float v) {
   return 0;
 }
 
-// Do wywolania przy KAZDYM wykrytym dotyku (do v1.4.3: stary obsluzDotyk();
-// docelowo lvgl_touch_read() w kroku 3) — resetuje timer nieaktywnosci.
-void zarejestrujAktywnosc() {
-  ostatniaAktywnosc = millis();
-}
+// [v1.5.0 SEN] Ostatni pomiar ogniwa - wspolny dla wskaznika (bateriaKrok())
+// i decyzji o snie (senKrok()); senKrok() nie mierzy sam, zeby ADC nie byl
+// odpytywany co sekunde bez potrzeby.
+static float bateriaOstatnieV   = 0.0f;
+static bool  bateriaOstatnioJest = false;   // diag::bateriaObecna(bateriaOstatnieV)
+static int8_t bateriaUsbPokazane = -1;      // [v1.5.3] stan USB na wskazniku (-1 = jeszcze nic); senKrok() odswieza wskaznik od razu po zmianie
+static bool  bateriaZmierzona   = false;    // false do pierwszego pomiaru (od v1.5.0: od razu po starcie)
 
 // [research, ta sesja] Znany bug/pulapka Espressif: jesli pin wybudzajacy
 // jest WCIAZ wcisniety w momencie wywolania esp_deep_sleep_start(), ESP32
 // natychmiast wybudza sie z powrotem — petla usypiania. Dlatego czekamy na
 // PUSZCZENIE przycisku + krotki debounce TUZ PRZED wlasciwym usnieciem,
 // nie tylko przy samym wybudzeniu.
-void idzSpac() {
+//
+// [v1.5.0 SEN] `powod` to tekst z diag::senDecyzja() (do logu); gdy zaczyna
+// sie od "bateria_", przed snem stoi przez diag::SEN_NAPIS_MS napis dla
+// uzytkownika - inaczej panel "sam zgasl" bez slowa i wygladaloby to na awarie.
+// Napis idzie prosto przez TFT_eSPI (ASCII, bez polskich liter - jak ekran
+// startowy): LVGL nie jest juz potrzebne, za chwile twardy reset.
+void idzSpac(const char* powod) {
   // [OTA-PANEL, ta sesja, prompt #8] Nigdy nie usypiaj w trakcie pobierania/
   // flashowania firmware'u — przerwany zapis do flash moze zostawic panel
   // w zlym stanie (patrz BAGNO 5.1 w OTA_PANEL_CALOSC.md). Flaga jest
   // czyszczona po KAZDEJ probie pobierania (otaSprzatnijPoProbie(), [v1.4.0
   // OTA]) - udanej konczy sie restartem - wiec to tylko chwilowe opoznienie
-  // usniecia, nie trwala blokada.
+  // usniecia, nie trwala blokada. (senDecyzja() tez to sprawdza - to drugi
+  // bezpiecznik, na wypadek wolania idzSpac() z innego miejsca.)
   if (trwaAktualizacjaOtaPanelu) {
     Serial.println(F("tag=OTA-PANEL zdarzenie=usypianie_zablokowane"));
     return;
   }
 
-  Serial.println(F("=== USYPIANIE (timeout nieaktywnosci) ==="));
+  Serial.printf("tag=SEN zdarzenie=usypianie powod=%s napiecie=%.2fV bez_dotyku_s=%lu\n",
+                powod != nullptr ? powod : "-", (double)bateriaOstatnieV,
+                (unsigned long)(lvgl_dashboard_poc_bez_dotyku_ms() / 1000UL));
+
+  // Brzeczyk: cisza i koniec PWM PRZED snem - ewentualny alarm sprzed chwili
+  // nie ma juz do kogo grac, a pin musi byc zwyklym wyjsciem (nie LEDC),
+  // zeby gpio_hold_en() nizej zamrozil stan niski.
+  testDzwiekuKrokIdx = -1;   // [v1.5.20] ewentualny test dzwieku konczy sie razem ze snem
+  brzeczykTon(0);
+  ledcDetach(BRZECZYK_PIN);
+  pinMode(BRZECZYK_PIN, OUTPUT);
+  digitalWrite(BRZECZYK_PIN, LOW);
+
+  if (diag::senZNapisem(powod)) {
+    // Napis na pelnej jasnosci (ekran mogl byc przyciemniony) - ma byc widoczny.
+    senPrzyciemnione = false;
+    ustawJasnoscPodswietlenia(jasnoscDziennaWartosc);
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_RED, TFT_BLACK);
+    tft.setTextFont(4);
+    tft.drawString("BATERIA ROZLADOWANA", 240, 120);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.setTextFont(2);
+    tft.drawString("Podlacz ladowarke. Panel usypia.", 240, 170);
+    tft.drawString("Przycisk albo ladowarka budzi panel.", 240, 195);
+    const unsigned long start = millis();
+    while (millis() - start < diag::SEN_NAPIS_MS) {
+      esp_task_wdt_reset();
+      delay(50);
+    }
+  }
 
   // Wygaszenie ekranu przed snem — nie ma sensu trzymac podswietlenia
   // wlaczonego, skoro i tak zaraz nastapi twardy reset przy wybudzeniu.
+  senPrzyciemnione = false;
   ustawJasnoscPodswietlenia(0);
   tft.fillScreen(TFT_BLACK);
 
@@ -3860,6 +4584,10 @@ void idzSpac() {
   // uniwersalny mechanizm gpio_hold_en + globalny gpio_deep_sleep_hold_en —
   // BEZ potrzeby uzywania rtc_gpio_hold_en().
   gpio_hold_en((gpio_num_t)TFT_BL);   // zamraza biezacy stan pinu (LOW) na czas snu
+  // [v1.5.0 SEN] To samo dla brzeczyka: GPIO13 nie jest pinem RTC, wiec bez
+  // "hold" plywalby przez caly sen; przez R5 (1k) idzie na baze C945 -
+  // szum moglby cicho zalaczac modul i zjadac baterie. Stan niski = cisza.
+  gpio_hold_en((gpio_num_t)BRZECZYK_PIN);
   gpio_deep_sleep_hold_en();          // globalny wlacznik "trzymania" cyfrowych pinow w deep sleep
 
   // Czekaj na puszczenie przycisku, zeby uniknac natychmiastowego wybudzenia.
@@ -3876,8 +4604,120 @@ void idzSpac() {
   rtc_gpio_pulldown_dis(WAKE_BTN_PIN);
 
   esp_sleep_enable_ext0_wakeup(WAKE_BTN_PIN, 0); // 0 = wybudzenie na stanie LOW
+  // [v1.5.0 SEN] Drugie zrodlo: ladowarka (GPIO35 spada do 0, gdy TP4056
+  // dostaje USB). Pin ma zewnetrzne 10k do 3V3, wiec we snie nie plywa.
+  esp_sleep_enable_ext1_wakeup(WAKE_USB_PIN_MASK, ESP_EXT1_WAKEUP_ALL_LOW);
   esp_deep_sleep_start();
   // (nic dalej sie nie wykona — po wybudzeniu ESP32 startuje od nowa od setup())
+}
+
+// [v1.5.0 SEN] Pomiar ogniwa + wskaznik baterii. Do v1.4.7 ten kod byl w
+// loop(); wyniesiony tutaj, bo odczyt jest teraz pamietany dla senKrok().
+// Pierwszy pomiar od razu po starcie (wskaznik nie pokazuje przez 30 s "USB"
+// przy ogniwie, a panel wybudzony z rozladowana bateria nie czeka pol minuty
+// na decyzje o powrocie do snu), potem co BATERIA_INTERWAL_MS.
+static const uint32_t BATERIA_INTERWAL_MS = 30000;
+void bateriaKrok() {
+  static unsigned long ostatniaBateria = 0;
+  const unsigned long teraz = millis();
+  if (bateriaZmierzona && teraz - ostatniaBateria < BATERIA_INTERWAL_MS) return;
+  ostatniaBateria = teraz;
+  bateriaZmierzona = true;
+  const float napiecieBat = bateriaOdczytajNapiecie();
+  // [v1.2.0 BATERIA-BRAK] Ponizej diag::BATERIA_PROG_OBECNOSCI_V (2,5 V) na
+  // dzielniku nie ma ogniwa - panel pracuje z samego USB. v1.1.0 pokazywal
+  // wtedy "0%" w kolorze "laduje sie" (log z 2026-11-10:
+  // "napiecie=0.28V procent=0 ladowanie=1" co 30 s). Teraz: napis "USB" na
+  // wskazniku, a w logu jedna linia przy zmianie stanu zamiast co 30 s.
+  static int8_t poprzednioBateriaJest = -1;   // -1 = jeszcze nie mierzono
+  const bool bateriaJest = diag::bateriaObecna(napiecieBat);
+  bateriaOstatnieV = napiecieBat;
+  bateriaOstatnioJest = bateriaJest;
+  if (bateriaJest) {
+    const int procentBat = bateriaNapiecieNaProcent(napiecieBat);
+    const bool usb = zasilanieUSB();
+    Serial.printf("tag=BATERIA napiecie=%.2fV procent=%d ladowanie=%d\n", napiecieBat, procentBat, (int)usb);
+    lvgl_dashboard_poc_aktualizuj_bateria(procentBat, usb);
+    bateriaUsbPokazane = usb ? 1 : 0;
+  } else {
+    if (poprzednioBateriaJest != 0) {
+      Serial.printf("tag=BATERIA zdarzenie=brak_ogniwa napiecie=%.2fV prog=%.1fV msg=\"zasilanie z USB, wskaznik pokazuje USB\"\n",
+                    napiecieBat, diag::BATERIA_PROG_OBECNOSCI_V);
+    }
+    lvgl_dashboard_poc_aktualizuj_bateria(-1, false);
+  }
+  poprzednioBateriaJest = bateriaJest ? 1 : 0;
+}
+
+// [v1.5.0 SEN] Przyciemnienie i sen na baterii - wolane co obrot loop().
+//  - co obrot (tanio): przycisk budzenia wcisniety w czasie pracy = aktywnosc;
+//    jesli ekran jest przyciemniony, a ktos wlasnie dotknal - jasnosc wraca
+//    NATYCHMIAST (nie dopiero przy nastepnym liczeniu decyzji za sekunde);
+//  - co diag::SEN_SPRAWDZAJ_CO_MS: pelna decyzja diag::senDecyzja().
+// Jasnosc po powrocie z przyciemnienia = ta, ktora wynika z harmonogramu
+// dzien/noc (wyswietlaczPrzyciemnionyTeraz), nie zawsze dzienna.
+static void senPrzywrocJasnosc(const char* powod) {
+  if (!senPrzyciemnione) return;
+  senPrzyciemnione = false;
+  ustawJasnoscPodswietlenia(wyswietlaczPrzyciemnionyTeraz ? jasnoscNocnaWartosc : jasnoscDziennaWartosc);
+  Serial.printf("tag=SEN zdarzenie=jasnosc powod=%s\n", powod);
+}
+
+void senKrok() {
+  if (digitalRead(WAKE_BTN_PIN) == LOW) lvgl_dashboard_poc_zglos_aktywnosc();
+  if (senPrzyciemnione && lvgl_dashboard_poc_bez_dotyku_ms() < diag::senPrzyciemnijMs(senPrzyciemnijIdx)) senPrzywrocJasnosc("dotyk");
+
+  static unsigned long ostatnieSprawdzenie = 0;
+  static const char* poprzedniPowod = "";
+  const unsigned long teraz = millis();
+  if (teraz - ostatnieSprawdzenie < diag::SEN_SPRAWDZAJ_CO_MS) return;
+  ostatnieSprawdzenie = teraz;
+  if (!bateriaZmierzona) return;   // jeszcze przed pierwszym pomiarem (tylko pierwsze ms po starcie)
+
+  diag::SenWarunki w;
+  w.bateriaJest  = bateriaOstatnioJest;
+  w.zasilanieUsb = zasilanieUSB();
+  w.napiecieV    = bateriaOstatnieV;
+  // [v1.5.3] Wlozenie/wyjecie ladowarki widac na wskazniku od razu (co
+  // sekunde), nie dopiero przy nastepnym pomiarze baterii za <= 30 s.
+  if (w.bateriaJest && bateriaUsbPokazane >= 0 && (bateriaUsbPokazane != 0) != w.zasilanieUsb) {
+    bateriaUsbPokazane = w.zasilanieUsb ? 1 : 0;
+    Serial.printf("tag=ZASILANIE zdarzenie=%s napiecie=%.2fV\n", w.zasilanieUsb ? "usb_podlaczone" : "usb_odlaczone", (double)bateriaOstatnieV);
+    lvgl_dashboard_poc_aktualizuj_bateria(bateriaNapiecieNaProcent(bateriaOstatnieV), w.zasilanieUsb);
+  }
+  w.bezDotykuMs  = lvgl_dashboard_poc_bez_dotyku_ms();
+  w.alarm        = stan.dymAlarm || stan.alarmOgrzewanie || stan.alarmPanel || brzeczykAktywnyTyp != BRZECZYK_BRAK;
+  w.ota          = trwaAktualizacjaOtaPanelu || lvgl_dashboard_poc_ota_widoczna();
+  w.przyciemnijPoMs = diag::senPrzyciemnijMs(senPrzyciemnijIdx);   // [v1.5.1] z ekranu WYSWIETLACZ (0 = nigdy)
+  w.uspijPoMs       = diag::senUspijMs(senUspijIdx);
+  const diag::SenDecyzja d = diag::senDecyzja(w);
+
+  switch (d.akcja) {
+    case diag::SEN_AKCJA_USPIJ:
+      idzSpac(d.powod);   // nie wraca (poza blokada OTA - wtedy za sekunde jeszcze raz)
+      break;
+    case diag::SEN_AKCJA_PRZYCIEMNIJ:
+      if (!senPrzyciemnione) {
+        senPrzyciemnione = true;
+        ustawJasnoscPodswietlenia(diag::SEN_JASNOSC_PROC);
+        Serial.printf("tag=SEN zdarzenie=przyciemnienie powod=%s napiecie=%.2fV jasnosc=%u%%\n",
+                      d.powod, (double)bateriaOstatnieV, (unsigned)diag::SEN_JASNOSC_PROC);
+      }
+      break;
+    default:
+      // Powod inny niz "aktywny"/"dotyk" (usb podlaczone, alarm, ota) tez
+      // konczy przyciemnienie - np. alarm w nocy ma byc widoczny.
+      senPrzywrocJasnosc(d.powod);
+      break;
+  }
+  // Jedna linia logu przy zmianie powodu "dlaczego panel nie spi" - tylko
+  // dla powodow blokujacych (alarm/ota), zeby log nie pisal "aktywny"/"usb" w kolko.
+  if (strcmp(d.powod, poprzedniPowod) != 0) {
+    if (strcmp(d.powod, "alarm") == 0 || strcmp(d.powod, "ota") == 0) {
+      Serial.printf("tag=SEN zdarzenie=sen_wstrzymany powod=%s\n", d.powod);
+    }
+    poprzedniPowod = d.powod;
+  }
 }
 
 // [OTA-ROLLBACK] Potwierdza biezaca partycje jako VALID, jesli zostala
@@ -4310,6 +5150,65 @@ static void otaKrokDecyzji(unsigned long teraz) {
 }
 
 // Wolane w kazdym obrocie loop() (galaz LVGL z centrala).
+// ============================================================================
+// [v1.5.4 OTA-VSCODE] WGRYWANIE Z PLATFORMIO PRZEZ WIFI (ArduinoOTA, port 3232)
+// ============================================================================
+// Komputer w sieci centrali (PiecCO_AP): `pio run -e esp32dev_wifi -t upload`
+// (VSCode: PlatformIO -> esp32dev_wifi -> Upload). Panel musi byc obudzony i
+// polaczony. Biblioteka blokuje petle na czas odbioru (kilkanascie sekund) -
+// LVGL stoi, wiec pasek rysujemy sami z onProgress() przez lvgl_port_tick().
+static bool otaVscodeGotowe = false;
+static int  otaVscodeProcentNaEkranie = -1;
+
+static void otaVscodeKrok() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (!otaVscodeGotowe) {
+    ArduinoOTA.setHostname("panelco");
+    ArduinoOTA.setPassword(OTA_HASLO_PANEL);
+    ArduinoOTA.setMdnsEnabled(false);   // wgrywanie po IP (192.168.4.50); mDNS to osobne zadanie i ~10 kB RAM
+    ArduinoOTA.onStart([]() {
+      esp_task_wdt_reset();
+      trwaAktualizacjaOtaPanelu = true;   // jak przy aktualizacji z centrali: bez snu, bez ratunkowego restartu
+      otaVscodeProcentNaEkranie = -1;
+      if (senPrzyciemnione) senPrzywrocJasnosc("ota_vscode");   // na baterii po przyciemnieniu: pasek ma byc widoczny
+      Serial.printf("tag=OTA-VSCODE zdarzenie=start typ=%s napiecie=%.2fV\n",
+                    ArduinoOTA.getCommand() == U_FLASH ? "firmware" : "filesystem", (double)bateriaOstatnieV);
+      lvgl_dashboard_poc_ota(0, "Wgrywanie z komputera");
+      lvgl_port_tick();
+    });
+    ArduinoOTA.onProgress([](unsigned int postep, unsigned int razem) {
+      esp_task_wdt_reset();
+      const int procent = razem > 0 ? (int)((uint64_t)postep * 100 / razem) : 0;
+      if (procent == otaVscodeProcentNaEkranie) return;
+      otaVscodeProcentNaEkranie = procent;
+      if (procent % 10 == 0) Serial.printf("tag=OTA-VSCODE zdarzenie=postep procent=%d bajtow=%u\n", procent, postep);
+      lvgl_dashboard_poc_ota(procent, "Wgrywanie z komputera");
+      lvgl_port_tick();
+    });
+    ArduinoOTA.onEnd([]() {
+      esp_task_wdt_reset();
+      Serial.println(F("tag=OTA-VSCODE zdarzenie=koniec msg=\"restart, nowy program czeka na zatwierdzenie\""));
+      lvgl_dashboard_poc_ota(100, "Gotowe - restart panelu");
+      lvgl_port_tick();
+    });
+    ArduinoOTA.onError([](ota_error_t blad) {
+      const char* opis = "nieznany";
+      if (blad == OTA_AUTH_ERROR) opis = "zle_haslo";
+      else if (blad == OTA_BEGIN_ERROR) opis = "begin_failed";
+      else if (blad == OTA_CONNECT_ERROR) opis = "connect_failed";
+      else if (blad == OTA_RECEIVE_ERROR) opis = "receive_failed";
+      else if (blad == OTA_END_ERROR) opis = "end_failed";
+      Serial.printf("tag=OTA-VSCODE lvl=ERR zdarzenie=blad kod=%d opis=%s\n", (int)blad, opis);
+      trwaAktualizacjaOtaPanelu = false;
+      lvgl_dashboard_poc_ota(-1, nullptr);   // z powrotem pulpit, panel pracuje dalej
+    });
+    ArduinoOTA.begin();
+    otaVscodeGotowe = true;
+    Serial.printf("tag=OTA-VSCODE zdarzenie=gotowe ip=%s port=3232 msg=\"pio run -e esp32dev_wifi -t upload\"\n", WiFi.localIP().toString().c_str());
+  }
+  ArduinoOTA.handle();
+}
+
 void otaKrok() {
   if (otaP.trwa) {
     otaKrokPobierania();
@@ -4483,6 +5382,10 @@ void alarmPrzywrocPoAutorestarcie() {
 }
 
 void setup() {
+  // [v1.5.5] Kanal polecen: 1000 ms na polaczenie i 2000 ms na calosc (statusy
+  // zostaja przy 400/1500 ms z SiecCfg) + do 3 prob w poleceniaKrok(). Patrz
+  // diag::KolejkaPolecen::PROB_MAKS i HISTORIA ZMIAN v1.5.5.
+  komendaFetch.ustawLimity(KOMENDA_LACZENIE_MS, KOMENDA_CALOSC_MS);
   // [FIX, ta sesja - PISKNIECIE BRZECZYKA PRZY WLACZENIU ZASILANIA] Dopoki
   // pin nie zostanie jawnie skonfigurowany, jest floating (Hi-Z) - dziala
   // jak antena na szum elektryczny (rozruch WiFi/TFT/LVGL/reszty sprzetu),
@@ -4500,6 +5403,12 @@ void setup() {
   // slyszy (bedzie duzo krotszy), jedyny dalszy krok to zewnetrzny
   // rezystor podciagajacy w dol (10-100k, pin->GND) na linii IO buzzera,
   // fizycznie trzymajacy ja na LOW nawet zanim jakikolwiek kod wystartuje.
+  // [v1.5.0 SEN] Po wybudzeniu z glebokiego snu pin brzeczyka ma wlaczony
+  // "hold" z idzSpac() (gpio_hold_en) - bez zdjecia go pinMode()/ledcAttach()
+  // nizej nic by nie zmienily i alarm bylby niemy az do odlaczenia zasilania.
+  // Przy zwyklym starcie (hold nigdy nie byl wlaczony) to no-op. Dla TFT_BL to
+  // samo robi gpio_hold_dis() przed ledcAttach() dalej w setup().
+  gpio_hold_dis((gpio_num_t)BRZECZYK_PIN);
   pinMode(BRZECZYK_PIN, OUTPUT);
   digitalWrite(BRZECZYK_PIN, LOW);
 
@@ -4556,8 +5465,11 @@ void setup() {
   // [ETAP 3b] Log powodu startu — odroznia normalny start (USB/reset) od
   // wybudzenia przyciskiem po deep sleep, przydatne przy diagnostyce.
   esp_sleep_wakeup_cause_t powod = esp_sleep_get_wakeup_cause();
+  startPoSnie = (powod == ESP_SLEEP_WAKEUP_EXT0 || powod == ESP_SLEEP_WAKEUP_EXT1);   // [v1.5.1] pulpit zamiast ekranu startowego
   if (powod == ESP_SLEEP_WAKEUP_EXT0) {
     Serial.println(F("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=przycisk"));
+  } else if (powod == ESP_SLEEP_WAKEUP_EXT1) {
+    Serial.println(F("tag=ZASILANIE zdarzenie=wybudzenie zrodlo=usb"));   // [v1.5.0 SEN] wlozona ladowarka (GPIO35)
   } else {
     Serial.println(F("tag=ZASILANIE zdarzenie=start zrodlo=reset_lub_usb"));
   }
@@ -4579,7 +5491,7 @@ void setup() {
 
   touchInicjalizujPiny();
   tft.init();
-  tft.setRotation(1);   // 1 = landscape 480x320 (podmien na 3 jesli obraz odwrocony)
+  tft.setRotation(EKRAN_OBROT);   // [v1.5.2] 3 = pozioma 480x320 obrocona o 180 stopni (zlacze po lewej); bylo 1
   tft.fillScreen(KOL_TLO);
 
   // [FIX-TFT-BL-HOLD, ta sesja] Odblokuj pin TFT_BL PRZED ledcAttach() -
@@ -4653,6 +5565,7 @@ void setup() {
   lvgl_dashboard_poc_ustaw_callback_wyswietlacz_jasnosc(wyswietlaczJasnoscWyslij);
   lvgl_dashboard_poc_ustaw_callback_wyswietlacz_harmonogram(wyswietlaczHarmonogramWyslij);
   lvgl_dashboard_poc_ustaw_callback_wyswietlacz_ustawienia(wyswietlaczUstawieniaWyslij);
+  lvgl_dashboard_poc_ustaw_callback_test_dzwieku(testDzwiekuPrzycisk);   // [v1.5.20] brzeczyk jest lokalny - jak jasnosc
   // [EKRAN ALARMOWY, ta sesja] Ten sam powod co WYSWIETLACZ powyzej - brzeczyk
   // jest lokalny (GPIO tej plytki), wiec dziala identycznie w obu galeziach.
   lvgl_dashboard_poc_ustaw_callback_alarm_wycisz(alarmWyciszObsluga);
@@ -4662,6 +5575,7 @@ void setup() {
   // [v1.4.7 ZASILANIE] Lokalne jak podswietlenie (NVS + sprzet tej plytki) - callback i zapisane indeksy.
   lvgl_dashboard_poc_ustaw_callback_zasilanie(zasilanieWyslij);
   lvgl_dashboard_poc_aktualizuj_zasilanie(zasilanieCpuIdx, zasilanieTxIdx);
+  lvgl_dashboard_poc_aktualizuj_sen(senPrzyciemnijIdx, senUspijIdx);   // [v1.5.1] wiersz "Na baterii" na ekranie WYSWIETLACZ
   // [v1.2.1 RATUNEK] Po samoczynnym restarcie w trakcie alarmu: ekran alarmu
   // (albo dzwonek w naglowku, jesli byl zamkniety) i czerwone ramki kafelkow
   // wracaja, zanim przyjda pierwsze dane.
@@ -4693,14 +5607,16 @@ void setup() {
                                  stan.pompa, stan.pompaOverrideMin,
                                  stan.dym, stan.dymAlarm,
                                  stan.tPokoj, stan.wilgotnosc, stan.cisnienie,
-                                 stan.klapa, stan.syberka, (int)trybWyboru,
+                                 diag::serwoStopnieNaProcent(stan.klapa, diag::KLAPA_KAT_MAKS), diag::serwoStopnieNaProcent(stan.syberka, diag::SYBERKA_KAT_MAKS), (int)trybWyboru,   // [v1.5.6] centrala podaje stopnie
                                  (int)trybSerwaWartosc,
                                  stan.alarmOgrzewanie, stan.alarmPanel,
                                  stan.godzina, stan.minuta, stan.dzien, stan.miesiac, stan.rok,
                                  stan.rtcOk,
                                  stan.rssi,
                                  stan.internet,
-                                 stan.deszczStan, stan.deszczMinuty);
+                                 stan.deszczStan, stan.deszczMinuty,
+                                 stan.pogodaKod, stan.pogodaKodOpad, stan.pogodaDzien, stan.wiatrPorywy,   // [v1.5.14]
+                                 stan.pogodaTemp);   // [v1.5.17]
   // [v1.2.2 PAMIEC] Stan po starcie: WiFi dziala, pierwsze dane odebrane.
   // To jest liczba, ktora mowi, czy panel ma zapas (kilkadziesiat kB), czy
   // pracuje na styk (log z 2026-11-12: ok. 8 kB).
@@ -4712,6 +5628,14 @@ void setup() {
   // zwalniaja. Odczyt na ekran ZASILANIE od razu, nie dopiero za 2 s.
   zasilanieZastosujCpu("start");
   zasilaniePomiarNaEkran();
+  // [v1.5.0 SEN] Licznik bezczynnosci liczy sie od TEJ chwili (panel gotowy,
+  // ekran narysowany), nie od lv_init() kilka sekund wczesniej - inaczej
+  // pierwsze przyciemnienie na baterii przyszloby o te kilka sekund za wczesnie.
+  // Najpierw lvgl_port_tick(): zegar LVGL (lv_tick_inc w lvgl_port_tick()) stoi
+  // przez caly setup() i nadrabia caly ten czas jednym skokiem przy pierwszym
+  // wywolaniu - bez tego "dotyk" zglaszany tutaj bylby od razu kilka sekund stary.
+  lvgl_port_tick();
+  lvgl_dashboard_poc_zglos_aktywnosc();
   ostatniStatus = millis();
   // [OTA-ROLLBACK] Tutaj, nie wczesniej: ekran juz narysowany (obie galezie
   // SYMULACJA=0/1 zbiegaja sie w tym miejscu), a w galezi SYMULACJA=0
@@ -4736,45 +5660,16 @@ void loop() {
   // loop() liczy animacje LVGL.
   lvgl_port_tick();
 
-  // [BATERIA-POMIAR, ta sesja] Wspolne miejsce dla obu podgalezi
-  // (SYMULACJA i realna, patrz #if nizej) - pomiar baterii jest lokalny,
-  // niezalezny od tego czy dane z centrali sa symulowane czy prawdziwe.
-  // Wlasny, wolniejszy interwal (% nie zmienia sie tak szybko jak status
-  // co STATUS_INTERWAL_MS). Kolor "laduje sie" bierze wprost z
-  // zasilanieUSB() - dziala niezaleznie od tego, ze reszta logiki snu
-  // (idzSpac()/ACTIVITY_TIMEOUT) nie jest jeszcze wpieta w ta galaz LVGL
-  // (patrz PLAN_BATERIA.md, sekcja 3 - osobna, juz istniejaca luka, nie
-  // zwiazana z tym pomiarem).
-  static const uint32_t BATERIA_INTERWAL_MS = 30000;
-  static unsigned long ostatniaBateria = 0;
-  unsigned long terazBat = millis();
-  if (terazBat - ostatniaBateria >= BATERIA_INTERWAL_MS) {
-    ostatniaBateria = terazBat;
-    float napiecieBat = bateriaOdczytajNapiecie();
-    // [v1.2.0 BATERIA-BRAK] Ponizej diag::BATERIA_PROG_OBECNOSCI_V (2,5 V) na
-    // dzielniku nie ma ogniwa - panel pracuje z samego USB. v1.1.0 pokazywal
-    // wtedy "0%" w kolorze "laduje sie" (log z 2026-11-10:
-    // "napiecie=0.28V procent=0 ladowanie=1" co 30 s). Teraz: napis "USB" na
-    // wskazniku, a w logu jedna linia przy zmianie stanu zamiast co 30 s.
-    static int8_t poprzednioBateriaJest = -1;   // -1 = jeszcze nie mierzono
-    const bool bateriaJest = diag::bateriaObecna(napiecieBat);
-    if (bateriaJest) {
-      int procentBat = bateriaNapiecieNaProcent(napiecieBat);
-      Serial.printf("tag=BATERIA napiecie=%.2fV procent=%d ladowanie=%d\n",
-                    napiecieBat, procentBat, (int)zasilanieUSB());
-      lvgl_dashboard_poc_aktualizuj_bateria(procentBat, zasilanieUSB());
-    } else {
-      if (poprzednioBateriaJest != 0) {
-        Serial.printf("tag=BATERIA zdarzenie=brak_ogniwa napiecie=%.2fV prog=%.1fV msg=\"zasilanie z USB, wskaznik pokazuje USB\"\n",
-                      napiecieBat, diag::BATERIA_PROG_OBECNOSCI_V);
-      }
-      lvgl_dashboard_poc_aktualizuj_bateria(-1, false);
-    }
-    poprzednioBateriaJest = bateriaJest ? 1 : 0;
-  }
+  // [BATERIA-POMIAR] Pomiar ogniwa i wskaznik baterii - wspolne dla obu
+  // podgalezi (SYMULACJA i realna), lokalne, niezalezne od centrali. Od
+  // v1.5.0 w bateriaKrok() (pierwszy pomiar od razu, potem co 30 s).
+  bateriaKrok();
+  testDzwiekuKrok();       // [v1.5.20] przemiatanie czestotliwosci brzeczyka z przycisku "Test dźwięku"
+  // [v1.5.0 SEN] Na baterii: przyciemnienie po 1 min, sen po 5 min bez dotyku,
+  // sen od razu przy rozladowanym ogniwie. Na USB nic nie robi.
+  senKrok();
 
   // Pilnuje WiFi + co STATUS_INTERWAL_MS odswieza dane z centrali.
-  // (Usypianie po nieaktywnosci - idzSpac() - celowo niepodpiete: krok 3.)
   wifiReconnectNonBlocking();
 
   // [SIEC-NIEBLOKUJACA, ta sesja] Musza isc CO ITERACJE (nie tylko co
@@ -4789,6 +5684,7 @@ void loop() {
   poleceniaKrok();         // [v1.4.2 C4] polecenie czekajace na cisze po przytrzymanym przycisku
   obslugaWykresyFetch();   // [v1.3.0 WYKRESY] historia dla ekranu Wykresy - po kawalku na obrot, bez blokowania
   otaKrok();               // [v1.4.0 OTA] aktualizacja przez centrale: decyzja raz na sekunde, pobieranie po kawalku na obrot
+  otaVscodeKrok();         // [v1.5.4 OTA-VSCODE] wgrywanie z PlatformIO przez WiFi (ArduinoOTA.handle())
 
   // [v1.2.0 DANE-NIEAKTUALNE] Brak poprawnie odczytanego /api/status przez
   // PROG_NIEAKTUALNYCH_DANYCH_MS -> kafelki na "--" (raz na kazdy zanik).

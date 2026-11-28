@@ -73,8 +73,9 @@ object Ilu {
     private fun tempLabel(v: Float): String = if (v.isFinite()) String.format(Locale.US, "%.1f", v) else "—"
 
     // ── 1. ZEWNĘTRZNA (dynamiczna pogoda meteo w kafelku) ──────────────────
-    private const val SUN24 = "<circle cx=\"12\" cy=\"12\" r=\"4.2\" fill=\"#ffd166\" class=\"sun-pulse\"/>" +
-        "<g class=\"sun-spin\" stroke=\"#ffd166\" stroke-width=\"1.2\" stroke-linecap=\"round\">" +
+    // [0.31.107] klasy zw-sun/zw-rays: oś obrotu 12,12 (sun-spin/sun-pulse mają oś kolektora 19.5,4.5 — słońce „tańczyło")
+    private const val SUN24 = "<circle cx=\"12\" cy=\"12\" r=\"4.2\" fill=\"#ffd166\" class=\"zw-sun\"/>" +
+        "<g class=\"zw-rays\" stroke=\"#ffd166\" stroke-width=\"1.2\" stroke-linecap=\"round\">" +
         "<line x1=\"12\" y1=\"3.5\" x2=\"12\" y2=\"5.5\"/><line x1=\"12\" y1=\"18.5\" x2=\"12\" y2=\"20.5\"/>" +
         "<line x1=\"3.5\" y1=\"12\" x2=\"5.5\" y2=\"12\"/><line x1=\"18.5\" y1=\"12\" x2=\"20.5\" y2=\"12\"/>" +
         "<line x1=\"6\" y1=\"6\" x2=\"7.5\" y2=\"7.5\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"18\" y2=\"18\"/>" +
@@ -519,6 +520,9 @@ object Ilu {
         m["sun-pulse"] = Anim(sx = 1f + .12f * pulse(cyc(t, 2.8)), sy = 1f + .12f * pulse(cyc(t, 2.8)), pivotX = 19.5f, pivotY = 4.5f)
         m["w-sun"] = Anim(sx = 1f + .12f * pulse(cyc(t, 3.0)), sy = 1f + .12f * pulse(cyc(t, 3.0)), pivotX = 34f, pivotY = 34f)
         m["w-rays"] = Anim(rotDeg = 360f * (t / 18f) % 360f, pivotX = 34f, pivotY = 34f)
+        // [0.31.107] słońce kafelka Zewnętrzna: jak w zakładce Pogoda — tarcza pulsuje w miejscu, promienie krążą wokół niej
+        m["zw-sun"] = Anim(sx = 1f + .12f * pulse(cyc(t, 3.0)), sy = 1f + .12f * pulse(cyc(t, 3.0)), pivotX = 12f, pivotY = 12f)
+        m["zw-rays"] = Anim(rotDeg = 360f * (t / 18f) % 360f, pivotX = 12f, pivotY = 12f)
         m["star"] = Anim(alpha = lerp(.35f, 1f, pulse(cyc(t, 2.3))))
         m["zs1"] = m.getValue("star")
         m["st1"] = Anim(alpha = lerp(.35f, 1f, pulse(cyc(t, 2.1))))

@@ -1,0 +1,3 @@
+8bfab4e5471370b4b11b0930eec3405cca79957e3c6df118dfba9226cdf8f0d7  src/main_centrala.cpp
+20202ee20c963f62f5da0009e1645db2cc511cd563bafa2e6855dbf78cf41b4a  main_centrala-v3.58.14-do-v3.58.15.patch
+a810705015341b7ac090904a29fb92eb931f28b1ec721ad697029576e5f8e0fb  tests/uruchom_testy.sh

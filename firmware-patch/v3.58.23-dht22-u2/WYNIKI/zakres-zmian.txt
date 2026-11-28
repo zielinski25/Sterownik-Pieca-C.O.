@@ -1,0 +1,39 @@
+ZAKRES ZMIAN 3.58.23 wzgledem 3.58.22 (plik src/main_centrala.cpp, 51 656 linii)
+================================================================================
+Patch main_centrala-v3.58.22-do-v3.58.23.patch: 8 hunkow, ok. 42 linii (w tym komentarze); kodu
+wykonywalnego: dekoder (~8 linii), 3 miejsca w wilgotnosc() (-7/+3 linii), stale DHT_LOG_*.
+Test C: HTML, telemetria, kod za wilgotnosc(), blok ZEW2-FILTR poza zew2DekodujU2() - 1:1 jak 3.58.22.
+
+   1-22        naglowek pliku [v3.58.23 DHT22-U2]
+   2119-2126   HISTORIA WERSJI: wpis [v3.58.23]
+   6705-6727   blok ZEW2-FILTR: zew2DekodujU2(float *t) - DEKODER DOCELOWY
+               - odtwarza slowo 16-bit tak, jak przyszlo z czujnika: 0x8000 | (|t|*10), czyta je
+                 jako int16 (U2) i dzieli przez 10; przyjmuje tylko wynik -400..-1 (-40,0..-0,1 C)
+               - na wejsciu tylko obraz -3276,75..-3236,75 (to, co biblioteka oddaje dla 0xFFFF..0xFE70)
+               - USUNIETE: zgadywany wariant 12-bit (+369,6..+409,5 -> ujemne) ze stalymi
+                 ZEW2_U2_12_*; parametr "wariant"; ZEW2_U2_BAZA_C (float)
+   7005        FIRMWARE_VERSION = "v3.58.23"
+   24137-24140 stale przy DHT_PIN: DHT_LOG_PIERWSZE 30 -> 15; DHT_LOG_CO_N usuniete;
+               DHT_LOG_ZMIANA_MIN_MS bez zmian (600000)
+   34737-34746 wilgotnosc(): zew2DekodujU2(&dhtTempPomijana) bez wariantu; licznik u2 zostaje
+               (if (dhtPrzeliczona) ++dhtU2;); USUNIETY jednorazowy WARN
+               "DHT22 Zew2 zdarzenie=u2 ... klon koduje ujemne w U2, przeliczam"
+   34802-34809 wilgotnosc(): komentarz rytmu linii tag=DHT22
+   34819        wilgotnosc(): warunek linii: if (dhtProby <= DHT_LOG_PIERWSZE || zmiana)
+               (bylo: || dhtProby % DHT_LOG_CO_N == 0)
+
+Dlaczego teraz: eksport Firebase z 3.58.22 (27.11 07:43-08:00 UTC, sesja 2DBD4474..., 18 rekordow):
+   Zew 1 (DS18B20)   +1,3..+1,8 C
+   dht_kod            0 we WSZYSTKICH rekordach (suma kontrolna dobra, zero 3/5/6)
+   dht_surowa        -3275,6 / -3275,7 / -3275,8  (= 0xFFF4 / 0xFFF3 / 0xFFF2 w ramce)
+   t_zewn_2          -1,2 / -1,1 / -1,0           (= dht_surowa + 3276,8)
+   -> czujnik koduje ujemne w U2 16-bit; dekoder 3.58.20 trafial; wariant 12-bit nie wystapil.
+   Zew 1 - Zew 2 = 2,6..3,0 C = historyczny offset (26.11: 2,2..4,5).
+
+Bez zmian (celowo): filtr Zew 2 (skok 3 C / znak / powtorka 3 s / ponowienie 5 s x2) - chroni przed
+przeklamanym bitem znaku (piki +2,1 -> -2,1 z 3.58.9, to nie jest efekt U2); odniesienie DS18B20
+(3.58.21, prog 8 C); telemetria dht_kod/dht_surowa (3.58.22) - staly podglad; /api/status; WWW; LCD.
+
+Otwarte: po starcie 3.58.21 (06:47 UTC) DHT nie dal zadnej ramki przez 18 min (do 07:05), po
+starcie 3.58.22 (07:42) odpowiedzial od razu. Pierwsze 15 linii tag=DHT22 po kazdym starcie
+(w /logi) i dht_kod w telemetrii maja to wyjasnic, jesli sie powtorzy.

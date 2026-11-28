@@ -1,0 +1,67 @@
+FIRMWARE CENTRALI 3.58.16 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
+(platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.15 (bez przycisku HISTORIA CSV) + POGODA dla kafelka ZEWN na panelu LCD.
+Patch wzgledem 3.58.15: 12 hunkow, tylko C++ (prognoza deszczu + /api/status). Strona WWW
+bajt w bajt jak w 3.58.15. Jesli 3.58.15 nie bylo wgrane - wgraj od razu te (zawiera wszystko).
+
+PO CO (projektant kafelka ZEWN, wybor z 23.11: "ikony=kolor, napis=zawsze, uklad=F")
+-----------------------------------------------------------------------------------
+Panel LCD v1.5.14 pokazuje na kafelku ZEWN pasek z pogoda: "śnieg za 2 h", "burza za 1,5 h",
+"pada 30 min", "sypie", "mgła", "silny wiatr", a bez opadu "słonecznie"/"pochmurno" - i ikone
+dobrana do pogody. Do tego potrzebuje z centrali kodu pogody. Centrala dokłada do ISTNIEJACEGO
+zapytania do Open-Meteo (co 15 min, to samo, ktore daje "deszcz za 6 h") pola weather_code,
+is_day i wind_gusts_10m i wystawia w /api/status 4 nowe pola:
+    "pogoda_kod"      kod WMO pogody teraz (0 bezchmurnie ... 3 pochmurno, 45 mgla, 61 deszcz,
+                      71 snieg, 95 burza, 96/99 grad)
+    "pogoda_kod_opad" kod WMO w chwili, do ktorej odnosi sie deszcz_stan/deszcz_min
+                      (zeby napisac "śnieg za 2 h", a nie "deszcz")
+    "pogoda_dzien"    1 dzien / 0 noc (slonce albo ksiezyc na ikonie)
+    "wiatr_porywy"    porywy wiatru teraz, km/h
+-1 = brak danych (przed pierwszym pobraniem, brak internetu). Panel bez tych pol (centrala
+starsza) albo centrala bez panelu v1.5.14 - wszystko dziala jak dotad.
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.16"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od f8d0c997):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.15-do-v3.58.16.patch, -p1 z katalogu projektu, na plik 3.58.15
+(SHA 8bfab4e5...). Wynik musi miec SHA f8d0c997... - inaczej wgraj caly plik z src\.
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+Select-String '^\[env:' platformio.ini      -> esp32-s3-n16r8 (NIE esp32dev)
+PlatformIO -> Build, potem Upload   (pio run -e esp32-s3-n16r8   i   -t upload)
+Spodziewane: 0 ostrzezen, Flash ok. +1,5 kB wzgledem 3.58.15, RAM +16 B (4 zmienne globalne).
+Release na GitHub: tag 3.58.16.
+
+KROK 3 - SPRAWDZENIE (http://192.168.100.151, Ctrl+F5)
+------------------------------------------------------
+0. /api/lan/status: "fw":"v3.58.16". Telegram: "Centrala wystartowala: v3.58.16".
+1. http://192.168.100.151/api/status - w JSON-ie za "deszcz_min" sa: "pogoda_kod":N,
+   "pogoda_kod_opad":N, "pogoda_dzien":1 albo 0, "wiatr_porywy":NN.N. Przez pierwsze minuty
+   po starcie (do pierwszego pobrania z Open-Meteo) wszystkie -1 - to normalne.
+2. Log (jesli wlaczony DC_WEATHER): "DESZCZ zdarzenie=stan ... pogoda_kod=3 pogoda_kod_opad=-1
+   dzien=1 porywy_kmh=22.3".
+3. Panel LCD v1.5.14: kafelek ZEWN ma na dole niebieski pasek z napisem (np. "pochmurno")
+   i kolorowa ikone. Bez panelu v1.5.14 - nic sie na LCD nie zmienia.
+4. Strona WWW i reszta - jak w 3.58.15.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa.
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\testy-pc.txt)
+----------------------------------------------
+Prawdziwy kod parsowania odpowiedzi Open-Meteo z tego pliku skompilowany g++ i puszczony na
+5 odpowiedziach (snieg za 2 h w dzien, pada w nocy z porywami 61,7 km/h, bezchmurnie, odpowiedz
+BEZ nowych pol = stara centrala, null w slocie opadu) - deszcz_stan/deszcz_min jak dotad, nowe
+pola poprawne. Pola w /api/status, URL, wersja, HTML identyczny z 3.58.15, node --check,
+plik = 3.58.15 + patch (SHA), pelne testy 3.58.15/3.58.14/3.58.13/3.58.11.
+Caly plik NIE byl kompilowany w PlatformIO.

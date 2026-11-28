@@ -313,7 +313,7 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         // poświadczenia wbudowane w firmware (main_centrala.cpp) — jak w Piec.html
         const val DEFAULT_FB_API_KEY = "AIzaSyDcheuRNcNo4mzNpaTzn-19Ntw62djkfVU"
         const val DEFAULT_FB_EMAIL = "piec_co_boot@akwarium.local"
-        const val DEFAULT_CMD_TOKEN = ""
+        const val DEFAULT_CMD_TOKEN = "sterownikco-cmd-2026"
 
         const val K_API_KEY = "piec_fb_api_key"
         const val K_EMAIL = "piec_fb_email"
@@ -321,12 +321,24 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         const val K_REMEMBER_CREDS = "piec_fb_remember_credentials"
         const val K_CMD_TOKEN = "piec_cmd_token"
         const val K_DASH_WIDGETS = "piec_dashboard_widgets_v1"
+        const val K_OUTDOOR_TILE_SOURCE = "piec_dashboard_outdoor_source_v1"
+        /** [0.31.102] Ostatnia temperatura z Open-Meteo dla kafelka/widżetu "Pogoda" (zapis przy każdym udanym pobraniu). */
+        const val K_POGODA_TEMP = "piec_pogoda_temp_v1"
+        const val K_POGODA_TS = "piec_pogoda_ts_v1"
+        /** [0.31.103] Auto-zastępowanie braku odczytu czujnika (temp. zewn., wilgotność) prognozą z internetu: "1"/"0". */
+        const val K_NET_FALLBACK = "piec_net_fallback_v1"
+        const val K_POGODA_RH = "piec_pogoda_rh_v1"
+        /** [0.31.109] Temperatura odczuwalna z Open-Meteo (°C, "%.1f") — widżet pokazuje ją małą czcionką przy PROGNOZA. */
+        const val K_POGODA_FEELS = "piec_pogoda_feels_v1"
         const val K_DASH_WIDGET_ORDER = "piec_dashboard_widget_order_v1"
         const val K_ID_TOKEN = "piec_fb_token"
         const val K_REF_TOKEN = "piec_fb_ref_token"
         const val K_TG_TOKEN = "piec_tg_token"
         const val K_TG_CHAT = "piec_tg_chat_id"
         const val K_CHART_PREFS = "piec_chart_prefs_v2"
+        /** [0.31.62] Ostatnia zakładka — po powrocie do aplikacji nie wracamy na pulpit. */
+        const val K_LAST_PAGE = "piec_last_page"
+        const val K_WEATHER_CACHE = "piec_weather_cache_v1"
         const val K_LAT = "piec_weather_lat"
         const val K_LON = "piec_weather_lon"
         const val K_SOLAR_ARCHIVE = "solar_archive_data" // legacy/unverified; never loaded as real telemetry

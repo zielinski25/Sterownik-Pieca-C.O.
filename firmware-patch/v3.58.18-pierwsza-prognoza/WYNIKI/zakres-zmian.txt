@@ -1,0 +1,27 @@
+ZAKRES ZMIAN 3.58.18 wzgledem 3.58.17 (plik src/main_centrala.cpp, 51 302 linii, SHA-256 27555cb0...)
+====================================================================================================
+Patch main_centrala-v3.58.17-do-v3.58.18.patch: 5 hunkow, 6 linii kodu (reszta komentarze i
+historia). Zmiana tylko w C++ (wartosci poczatkowe dwoch licznikow bramek Open-Meteo).
+HTML/JS strony WWW (R"PIECHTML() - bajt w bajt jak w 3.58.17 (test A). Automatyka, Firebase,
+Telegram, trasy HTTP, parsowanie, /api/status - zero zmian.
+
+   1-21        naglowek pliku [v3.58.18 PIERWSZA-PROGNOZA]
+   2005-2011   HISTORIA WERSJI: wpis [v3.58.18]
+   6815        FIRMWARE_VERSION = "v3.58.18"
+   47431-47443 DESZCZ: stala OW_DESZCZ_FETCH_INTERVAL_MS przeniesiona PRZED licznik (bez zmiany
+               wartosci), nowa OW_DESZCZ_PIERWSZE_PO_MS = 60 s,
+               owDeszczLastFetchMillis = 0UL - (interwal - 60 s)      (bylo: = 0)
+   47779-47788 PROGNOZA: analogicznie, OW_PROGNOZA_PIERWSZE_PO_MS = 120 s,
+               owPrognozaLastFetchMillis = 0UL - (interwal - 120 s)   (bylo: = 0)
+
+Bramki w zadaniu TG (ok. linii 49035 i 49045) NIE sa ruszane: nadal
+   WiFi.status() == WL_CONNECTED && millis() - owXxxLastFetchMillis >= OW_XXX_FETCH_INTERVAL_MS
+   && TG_ITER_HAS_BUDGET(...)
+Skutek: pierwsze pobranie 60 s (DESZCZ) / 120 s (PROGNOZA) po starcie zamiast 15 min, potem co
+15 min jak dotad. Przepelnienie millis() po 49,7 dnia dziala jak dotad (arytmetyka unsigned,
+test z 32-bitowym unsigned long).
+
+Dlaczego tak, a nie "pobierz w setup()": pobieranie siedzi w zadaniu TG z budzetem iteracji
+i watchdogiem (serwisujTWDTJesliZarejestrowany w srodku) - wolanie HTTPS z setup() przed
+startem tego zadania omijaloby te zabezpieczenia. Cofniecie licznika uzywa istniejacej bramki
+bez zadnej nowej sciezki kodu.

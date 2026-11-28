@@ -1,0 +1,66 @@
+FIRMWARE CENTRALI 3.58.21 - co zrobic w 3 krokach
+=================================================
+Zmienia sie JEDEN plik: src/main_centrala.cpp
+Plikow .h NIE ruszaj. NIE nadpisuj src\secrets.h. Biblioteki i platformio.ini: BEZ ZMIAN
+(platformio.ini CENTRALI: env esp32-s3-n16r8!).
+
+Ta paczka = 3.58.20 (Zew 2 ponizej 0 C) + ODNIESIENIE DO DS18B20 dla przeliczonych ramek.
+Patch wzgledem 3.58.20: 10 hunkow, ok. 45 linii kodu. Strona WWW, /api/status, Firebase: bez zmian.
+Panel LCD: BEZ ZMIAN (v1.5.18 zostaje). Jesli 3.58.20 nie bylo wgrane - wgraj od razu te
+(zawiera wszystko z 3.58.20).
+
+PO CO (Twoj pomysl z 27.11: "Zew 1 i Zew 2 sa podobne z przesunieciem")
+-----------------------------------------------------------------------
+3.58.20 przelicza ramki DHT22 z kodowania klona (np. -3276,7 -> -0,1 C). Teraz taka PRZELICZONA
+wartosc jest dodatkowo porownywana z DS18B20 (Zew 1). Z eksportu z 26.11: Zew 1 jest wyzej od
+Zew 2 o 2,2..4,5 C (srednio 3,2). Jesli przeliczona wartosc rozni sie od Zew 1 o WIECEJ niz 8 C,
+centrala jej nie przyjmuje od razu, tylko czeka 3 s na powtorke (ta sama sciezka, co przy skoku
+> 3 C). Dwa zgodne odczyty z rzedu i tak wygrywaja - DS18B20 jest siatka bezpieczenstwa, nie
+sedzia. Zwykle ramki (nieprzeliczane) nie sa z DS porownywane - gdyby DS padl, Zew 2 ma dzialac
+samodzielnie jak dotad. Bez swiezego DS (brak, > 135 s, symulacja) wszystko jak w 3.58.20.
+
+KROK 1 - KOPIA ZAPASOWA I PODMIANA PLIKU (PowerShell)
+-----------------------------------------------------
+Copy-Item -LiteralPath "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp.bak-przed-3.58.21"
+
+Copy-Item -LiteralPath "TU\SCIEZKA\DO\ROZPAKOWANEJ\PACZKI\src\main_centrala.cpp" -Destination "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp" -Force
+
+Weryfikacja SHA-256 (pierwsza linia SHA256SUMS.txt, zaczyna sie od 7608707f):
+    Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Documents\PlatformIO\sterownik-co-esp32\src\main_centrala.cpp"
+
+Albo patch: main_centrala-v3.58.20-do-v3.58.21.patch, -p1 z katalogu projektu, na plik 3.58.20
+(SHA edce6b50...). Wynik musi miec SHA z SHA256SUMS.txt - inaczej wgraj caly plik z src\.
+
+KROK 2 - KOMPILACJA I WGRANIE
+-----------------------------
+Select-String '^\[env:' platformio.ini      -> esp32-s3-n16r8 (NIE esp32dev)
+PlatformIO -> Build, potem Upload   (pio run -e esp32-s3-n16r8   i   -t upload)
+Spodziewane: 0 ostrzezen, Flash wiekszy o ok. 300-400 B, RAM +4 B. Release na GitHub: tag 3.58.21.
+
+KROK 3 - SPRAWDZENIE (http://192.168.100.151, Ctrl+F5)
+------------------------------------------------------
+0. /api/lan/status: "fw":"v3.58.21". Telegram: "Centrala wystartowala: v3.58.21".
+1. Przy mrozie: /api/status -> "t_zewn_2" ujemne (jak w 3.58.20), ok. 2-4 C ponizej "t_zewn".
+2. Terminal (WWW) -> "diag archive cat SENSOR on", "diag archive level INFO" -> Logi:
+   w linii "DHT22 diagnostyka ..." (co kilka minut) nowe pola:
+     ds_roznica=3.1    <- Zew 1 minus Zew 2 w tej chwili (nan, gdy DS niedostepny)
+     ds_odbiega=0      <- ile razy od startu przeliczona ramka odbiegla od DS o > 8 C
+   Normalnie ds_roznica pokazuje 2-4,5 i ds_odbiega=0. Jesli ds_odbiega rosnie, w logu sa linie
+   WARN "DHT22 Zew2 zdarzenie=ds_odniesienie t=... ds=... prog=8" - daj znac, to ciekawy przypadek
+   (albo DS18B20 klamie, albo DHT22 wysyla smieci z poprawna suma kontrolna).
+3. Powyzej 0 C i bez DS18B20 wszystko jak w 3.58.20.
+
+GDYBY COS BYLO NIE TAK: wgraj kopie zapasowa.
+
+CO BYLO SPRAWDZONE NA PC (WYNIKI\testy-pc.txt)
+----------------------------------------------
+Blok ZEW2-FILTR i CALA funkcja wilgotnosc() wyciete z tego pliku, skompilowane g++ (-Wall -Wextra
+-Werror, tez ASan+UBSan): 16 + 12 scenariuszy z paczek 3.58.10/3.58.20 bez zmian (regresja) oraz
+nowe: zew2DsOdbiega() na progu (3,1 / 4,5 / 8,0 nie odbiega; 8,1 / 10,3 / -9 odbiega; bez DS i NaN
+nigdy), zew2Filtruj() z wymuszeniem (powtorka, dwa zgodne odczyty wygrywaja, domyslnie jak 3.58.20),
+w wilgotnosc(): DS 2,6 + ramka klona -0,5 -> przyjeta od razu, ds_roznica=3.1; zwykla ramka 12,0
+przy DS 2,6 NIE jest porownywana z DS (tylko filtr skokow); DS +10 + ramka klona -0,3 -> powtorka,
+WARN ds_odniesienie, ds_odbiega=1, RH z ramki przyjeta; dwa zgodne -0,3/-0,4 -> potwierdzone mimo
+DS; bez DS -> jak 3.58.20. Plik = 3.58.20 + patch (SHA), HTML identyczny, kod poza blokiem/
+zew2OdczytDs()/wilgotnosc() identyczny, pelne testy 3.58.20/3.58.19/.../3.58.14 na tym pliku.
+Caly plik NIE byl kompilowany w PlatformIO.

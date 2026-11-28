@@ -1,0 +1,28 @@
+TESTY NA PC - paczka 3.58.13 (tests/uruchom_testy.sh, 23.11.2026)
+=================================================================
+Srodowisko: node v22 + jsdom 24, g++ 13 (-std=c++17 -Wall -Wextra -Werror), python3, patch.
+Caly plik main_centrala.cpp NIE byl kompilowany w PlatformIO (brak toolchainu ESP32-S3 tutaj).
+
+A. SUWAK-PO-ACK (tests/test_suwaki_symulacji.js) - symulacjaSekcjaHtml() wycieta z HTML pliku
+   centrali, uruchomiona w jsdom z atrapami jak na stronie. 18 sprawdzen - ZALICZONY:
+   - 13 sprawdzen z 3.58.12 (suwak bez fokusu + odswiezanie, Zastosuj, Wylacz, Telegram) - OK
+   - NOWE: po Zastosuj (ACK) status przez 8 odswiezen niesie STARY odczyt 21.0 -> suwak
+     ZOSTAJE na 45.0 (w 3.58.12 wracal do 21.0), czas trwania zostaje na 30 min
+   - sterownik zglosil 45.0 -> suwaki znow podazaja za sterownikiem (45.0 / 29 min)
+   - firmware z odczytem od razu (3.58.13): po ACK status od razu 60.0 -> blokada zwolniona
+     natychmiast, "Czas trwania" odlicza (19 min), zmiana z Telegrama (70.0) widoczna
+   A2: to samo na Piec.html z repozytorium - 18/18 ZALICZONY
+   A3: kontrolnie 3.58.12 - 1 z 18 BLAD ("po Zastosuj ... suwak ZOSTAJE na 45.0") - wada odtworzona
+
+B. SYM-OD-RAZU (tests/test_sym_od_razu.cpp) - symulacjaUstawOdczytOdRazu() wycieta z pliku
+   (wytnij_sym_od_razu.py), skompilowana z atrapami 9 zmiennych; 11 sprawdzen - ZALICZONY:
+   kazde z 9 pol zmienia TYLKO swoja zmienna; "dym" i nieznane pole nie zmieniaja nic.
+
+C. Spojnosc pliku - OK: FIRMWARE_VERSION "v3.58.13"; helper zdefiniowany raz, PRZED oboma
+   wywolaniami; 5 zmiennych odczytu zadeklarowanych przed helperem; symZadana raz;
+   11 znacznikow [v3.58.13 ...]; node --check obu blokow <script> (1 653 i 405 380 znakow);
+   3.58.12 + patch = ten plik (SHA 9118629e...); patch 10 hunkow, +88/-4.
+
+D. Testy paczki 3.58.11 (DYM-SYM, 21 sprawdzen) na tym pliku - 21/21 OK.
+
+WYNIK: WSZYSTKO OK (A 18 + A2 18 + B 11 + C 16 + D 21).

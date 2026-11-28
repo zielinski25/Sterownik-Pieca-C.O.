@@ -28,4 +28,10 @@ class WidgetTemperatureColorsTest {
         assertEquals("#7F93A3", WidgetTemperatureColors.colorHex("t_zewn", Double.NaN))
         assertEquals("#7F93A3", WidgetTemperatureColors.colorHex("unknown", 42.0))
     }
+    @Test fun bothOutdoorSourcesUseTheSameColors() {
+        for (t in listOf(-25.0, 0.0, 9.0, 20.0, 35.0, 80.0)) {
+            assertEquals(WidgetTemperatureColors.colorHex("t_zewn", t), WidgetTemperatureColors.colorHex("t_zewn_2", t))
+        }
+    }
+
 }

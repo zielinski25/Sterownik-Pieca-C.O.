@@ -59,14 +59,14 @@
   <!-- Q1 -->
   <g transform="translate(640,300)">
     <text x="60" y="-30" text-anchor="middle" font-size="22" font-weight="700">Q1 – tranzystor NPN</text>
-    <text x="60" y="-8" text-anchor="middle" font-size="15" fill="#ddd">BC547 / 2N2222 / S8050 …</text>
+    <text x="60" y="-8" text-anchor="middle" font-size="15" fill="#ddd">użyty: C945 (2SC945) – nóżki E‑C‑B</text>
     <path d="M 0 90 V 50 A 60 60 0 0 1 120 50 V 90 Z" fill="#111" stroke="#777" stroke-width="2"/>
     <text x="60" y="70" text-anchor="middle" font-size="14" fill="#aaa">płaska strona</text>
     <line x1="25" y1="90" x2="25" y2="150" stroke="#ccc" stroke-width="5"/><line x1="60" y1="90" x2="60" y2="150" stroke="#ccc" stroke-width="5"/><line x1="95" y1="90" x2="95" y2="150" stroke="#ccc" stroke-width="5"/>
-    <text x="25" y="180" text-anchor="middle" font-size="22" font-weight="700">E</text><text x="60" y="180" text-anchor="middle" font-size="22" font-weight="700">B</text><text x="95" y="180" text-anchor="middle" font-size="22" font-weight="700">C</text>
-    <text x="25" y="202" text-anchor="middle" font-size="13" fill="#ddd">emiter</text><text x="60" y="202" text-anchor="middle" font-size="13" fill="#ddd">baza</text><text x="95" y="202" text-anchor="middle" font-size="13" fill="#ddd">kolektor</text>
-    <text x="60" y="240" text-anchor="middle" font-size="14" fill="#ffcc80">kolejność nóżek sprawdź w nocie swojego tranzystora!</text>
-    <text x="60" y="260" text-anchor="middle" font-size="14" fill="#ffcc80">BC547/BC337: C‑B‑E   ·   2N2222/2N3904/S8050: E‑B‑C</text>
+    <text x="25" y="180" text-anchor="middle" font-size="22" font-weight="700">E</text><text x="60" y="180" text-anchor="middle" font-size="22" font-weight="700">C</text><text x="95" y="180" text-anchor="middle" font-size="22" font-weight="700">B</text>
+    <text x="25" y="202" text-anchor="middle" font-size="13" fill="#ddd">emiter</text><text x="60" y="202" text-anchor="middle" font-size="13" fill="#ddd">kolektor</text><text x="95" y="202" text-anchor="middle" font-size="13" fill="#ddd">baza</text>
+    <text x="60" y="240" text-anchor="middle" font-size="14" fill="#ffcc80">C945 płaską stroną do siebie: E · C · B (baza z PRAWEJ). Inny tranzystor – sprawdź notę!</text>
+    <text x="60" y="260" text-anchor="middle" font-size="14" fill="#ffcc80">C945/S9014: E‑C‑B · BC547/BC337: C‑B‑E · 2N2222/2N3904/S8050: E‑B‑C</text>
   </g>
 
   <!-- moduł BEEP -->
@@ -101,8 +101,8 @@
 <h2>Jak to przetestować (DevKit na USB od komputera)</h2>
 <ol>
 <li>Zrób połączenia <b>2, 3, 4, 5</b>. Przewód nr 1 jeszcze <b>nie</b> do D13 – wolny koniec R5 trzymasz w ręce.</li>
-<li>Wolny koniec R5 dotknij do pinu <code>3V3</code> → <b>ciągły pisk</b>. Puść → <b>cisza</b>.</li>
-<li>Jeśli zamiast tego: <span class="warn">cisza cały czas</span> → sprawdź kolejność nóżek Q1 (E/B/C) i czy IO jest zwarte z VCC; <span class="warn">pisk cały czas</span> → zamienione E z C albo R5 nie trafia w bazę.</li>
+<li>Wolny koniec R5 dotknij do pinu <code>3V3</code> → przy dotknięciu i puszczeniu <b>cichy klik</b> (moduł jest <b>pasywny</b> — bez generatora, na stałym prądzie nie gra; „ciągły pisk” byłby tylko z modułem aktywnym — poprawka 27.11). Właściwy test dźwięku: po przylutowaniu do D13 — ekran alarmu z centrali albo przycisk <b>Test dźwięku</b> na ekranie WYŚWIETLACZ (panel ≥ v1.5.20).</li>
+<li>Jeśli zamiast tego: <span class="warn">cisza cały czas</span> → sprawdź kolejność nóżek Q1 (C945: E‑C‑B, baza z prawej) i czy IO jest zwarte z VCC; <span class="warn">pisk cały czas</span> → zamienione E z C albo R5 nie trafia w bazę. Tak właśnie było 20.11 z BC547 wylutowanym ze złomu (E/C odwrotnie, być może uszkodzony) – po wymianie na C945 zadziałało od razu.</li>
 <li>Działa → wolny koniec R5 lutujesz do <code>D13</code>. Gotowe – dźwięk pojawi się przy alarmie z centrali (test: ekran alarmu → WYCISZ).</li>
 </ol>
 <p class="warn">Konwertera poziomów nie używamy. VCC modułu z VIN (5 V), nie z 3V3.</p>
@@ -112,7 +112,7 @@
 (()=>{
   const NS='http://www.w3.org/2000/svg', svg=document.querySelector('svg');
   const el=(n,a,p)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e;};
-  const P={D13:[41,181],GND:[41,421],VIN:[41,501],R5a:[430,180],R5b:[590,180],E:[665,450],B:[700,450],C:[735,450],mGND:[972,420],mIO:[1030,420],mVCC:[1088,420]};
+  const P={D13:[41,181],GND:[41,421],VIN:[41,501],R5a:[430,180],R5b:[590,180],E:[665,450],C:[700,450],B:[735,450],mGND:[972,420],mIO:[1030,420],mVCC:[1088,420]};
   const W=[
     ['#bdbdbd',`M ${P.D13} C 200 181 300 180 ${P.R5a}`],
     ['#bdbdbd',`M ${P.R5b} C 640 180 700 300 ${P.B}`],

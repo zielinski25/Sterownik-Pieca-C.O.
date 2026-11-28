@@ -1,0 +1,97 @@
+--- v3.58.14-zrodlo-zew/src/main_centrala.cpp	2026-11-23 11:46:52.448550064 +0000
++++ v3.58.15-bez-historia-csv/src/main_centrala.cpp	2026-11-23 11:55:57.130856054 +0000
+@@ -1,3 +1,13 @@
++// FIRMWARE_VERSION v3.58.14 -> v3.58.15 (2026-11-26) — USUNIĘTY PRZYCISK „HISTORIA CSV” ZE STRONY WWW.
++//
++// [v3.58.15 BEZ-HISTORIA-CSV] — 2026-11-26
++// Zgłoszenie użytkownika (23.11, zrzut ekranu): stały przycisk „⬇ HISTORIA CSV”
++// w lewym dolnym rogu panelu WWW z okienkiem „Pobierz historię: Krótka (24 h) /
++// Długa (archiwum)” — „to nie jest potrzebne”. Usunięty HTML (histBtn,
++// histPanel) i jego skrypt [v3.56.1 HISTORIA-POBRANIE]. Nic poza tym: trasy
++// /history/link, /history, /history/long, /api/history* zostają (zakładka
++// Wykresy i narzędzia dalej z nich korzystają). Koszt: flash −~2,7 kB (HTML).
++//
+ // FIRMWARE_VERSION v3.58.13 -> v3.58.14 (2026-11-26) — WYBÓR ŹRÓDŁA TEMPERATURY ZEWNĘTRZNEJ (ZEW 1 / ZEW 2) WSPÓLNY DLA WWW, APLIKACJI I LCD.
+ //
+ // [v3.58.14 ZEWN-ZRODLO] — 2026-11-26
+@@ -1934,6 +1944,13 @@
+ // ============================================================================
+ // HISTORIA WERSJI (CHANGELOG) — main.cpp / Piec (sterownik CO, ESP32-S3)
+ // ============================================================================
++// [v3.58.15] — 2026-11-26 — USUNIETY PRZYCISK "HISTORIA CSV" ZE STRONY WWW
++// Co: Z panelu WWW wbudowanego w plik zniknal staly przycisk w lewym dolnym
++//     rogu ("HISTORIA CSV") z panelem "Pobierz historie: Krotka / Dluga" -
++//     zyczenie uzytkownika z 23.11 ("to nie jest potrzebne"). Usuniety tylko
++//     HTML + skrypt tego przycisku; trasy /history/link, /history,
++//     /history/long i /api/history* w centrali bez zmian.
++//
+ // [v3.58.14] — 2026-11-26 — WYBOR ZRODLA TEMPERATURY ZEWNETRZNEJ (ZEW 1 / ZEW 2) WSPOLNY DLA WWW, APLIKACJI I LCD
+ // Co: Nowe ustawienie zewnZrodlo (NVS, 1 = DS18B20 / 2 = DHT22) z komenda
+ //     "ustaw zewnZrodlo N" (Firebase, LAN, /api/ustawienia-set) i polem "zewnZrodlo"
+@@ -6713,7 +6730,7 @@
+ // falszywie; tutaj celowo stala kompilacyjna, zeby tego uniknac).
+ // v1.1.0: system logow FS (log_krytyczny.txt, logCircularTrimA, priorytet
+ // log_a/log_b) + interlock AUTO — pelny opis w CHANGELOG na samej gorze pliku.
+-static const char* FIRMWARE_VERSION = "v3.58.14";
++static const char* FIRMWARE_VERSION = "v3.58.15";
+ 
+ // ════════════════════════════════════════════════════════
+ // [PUNKT 6 — Telegram] Bot statusu/sterowania, wzorowany na architekturze
+@@ -11770,52 +11787,11 @@
+   <div id="demoBody"></div>
+ </aside>
+ 
+-<!-- [v3.56.1 HISTORIA-POBRANIE] Pobranie plikow historii (CSV) na komputer/telefon.
+-     Staly token z secrets.h NIE jest tu wklejony: przycisk prosi centrale o
+-     jednorazowy bilet (GET /history/link), a potem otwiera trase
+-     swojego strumienia: /history?k=<bilet> (krotka) albo
+-     /history/long?k=<bilet> (dluga).
+-     Bilet wygasa po 5 minutach i dziala tylko raz. -->
+-<button id="histBtn" type="button" style="position:fixed;left:12px;bottom:12px;z-index:60;padding:10px 16px;border:0;border-radius:999px;background:#1f6feb;color:#fff;font-weight:700;font-size:14px;box-shadow:0 6px 18px rgba(0,0,0,.35);cursor:pointer">&#11015; HISTORIA CSV</button>
+-<div id="histPanel" style="display:none;position:fixed;left:12px;bottom:66px;z-index:60;width:290px;background:#111827;color:#e5e7eb;border:1px solid #374151;border-radius:14px;padding:14px;box-shadow:0 12px 32px rgba(0,0,0,.5)">
+-  <div style="font-weight:700;margin-bottom:10px">Pobierz historię</div>
+-  <button id="histShort" type="button" style="display:block;width:100%;margin-bottom:8px;padding:10px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer">Krótka (24 h)</button>
+-  <button id="histLong" type="button" style="display:block;width:100%;padding:10px;border:0;border-radius:10px;background:#374151;color:#fff;font-weight:600;cursor:pointer">Długa (archiwum)</button>
+-  <div id="histInfo" role="status" style="margin-top:10px;font-size:12px;line-height:1.35;opacity:.85">Link jest jednorazowy i wygasa po 5 minutach. Jeśli pobieranie się nie zacznie, kliknij jeszcze raz.</div>
+-</div>
+-<script>
+-/* [v3.56.1 HISTORIA-POBRANIE] Obsluga przycisku pobrania. Celowo bez zaleznosci
+-   od reszty panelu: jesli ktorys element nie istnieje, nic sie nie dzieje. */
+-(function () {
+-  var przycisk = document.getElementById('histBtn');
+-  var panel = document.getElementById('histPanel');
+-  var info = document.getElementById('histInfo');
+-  if (!przycisk || !panel) return;
+-  function komunikat(t) { if (info) info.textContent = t; }
+-  function pobierz(strumien) {
+-    komunikat('Przygotowuję link…');
+-    fetch('/history/link?stream=' + strumien, { cache: 'no-store' })
+-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+-      .then(function (bilet) {
+-        bilet = (bilet || '').trim();
+-        if (bilet.length !== 32) throw new Error('centrala nie dała biletu');
+-        // [v3.56.3] Trasa musi byc ta sama, dla ktorej wydano bilet:
+-        // /history podaje ZAWSZE krotka, /history/long - dluga. Bilet
+-        // na dluga na trasie krotkiej nie pasuje i dawal 401.
+-        var trasa = (strumien === 'long') ? '/history/long' : '/history';
+-        window.location.href = trasa + '?k=' + encodeURIComponent(bilet);
+-      })
+-      .catch(function (e) { komunikat('Nie udało się: ' + e.message); });
+-  }
+-  przycisk.addEventListener('click', function () {
+-    panel.style.display = (panel.style.display === 'none' ? 'block' : 'none');
+-  });
+-  var krotka = document.getElementById('histShort');
+-  var dluga = document.getElementById('histLong');
+-  if (krotka) krotka.addEventListener('click', function () { pobierz('short'); });
+-  if (dluga) dluga.addEventListener('click', function () { pobierz('long'); });
+-})();
+-</script>
++<!-- [v3.58.15 BEZ-HISTORIA-CSV] Usunieto staly przycisk pobierania historii CSV
++     (lewy dolny rog) wraz z okienkiem wyboru strumienia krotkiego/dlugiego
++     [v3.56.1 HISTORIA-POBRANIE] - zgloszenie z 23.11: "to nie jest potrzebne".
++     Trasy /history/link, /history, /history/long w centrali ZOSTAJA (zakladka
++     Wykresy, Telegram i narzedzia nadal moga z nich korzystac). -->
+ 
+ <script>
+ /* ═══════════════════════════════════════════════════════════════════════════
