@@ -24,7 +24,10 @@ import com.sterownikco.pro.core.AlarmMonitorPhase
 import com.sterownikco.pro.core.AlarmMonitorStartGate
 import com.sterownikco.pro.core.AlarmNotify
 import com.sterownikco.pro.core.AlarmSnapshotCoordinator
+import com.sterownikco.pro.core.AlarmSoundSync
+import com.sterownikco.pro.core.AppRuntime
 import com.sterownikco.pro.core.Prefs
+import com.sterownikco.pro.core.TelemPoint
 import com.sterownikco.pro.core.Rtdb
 import com.sterownikco.pro.core.controllerAlarmMuteStatus
 import com.sterownikco.pro.core.parseAlarmFlag
@@ -63,6 +66,10 @@ class AlarmMonitorService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var alarmPlayer: MediaPlayer? = null
     private var alarmSoundId: String? = null
+    /** [0.31.89] Ostatnie dociagniecie historii do pamieci (elapsedRealtime). */
+    private var lastHistoryPrefetchMs = 0L
+    /** [0.31.89] Ostatni zapis pamieci historii na dysk (elapsedRealtime). */
+    private var lastHistoryDiskFlushMs = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -303,10 +310,57 @@ class AlarmMonitorService : Service() {
                 Log.w(TAG, "Błąd minutowego GET /piec/status", e)
             }
 
+            // [0.31.89] Historia telemetrii do pamieci telefonu - takze gdy aplikacja
+            // jest w tle.
+            try {
+                prefetchHistoryIfDue()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Historia w tle: blad pobierania", e)
+            }
+
             val elapsedMs = SystemClock.elapsedRealtime() - cycleStartedAt
             val waitMs = (BACKGROUND_STATUS_POLL_MS - elapsedMs).coerceAtLeast(1_000L)
             delay(waitMs)
         }
+    }
+
+    /**
+     * [0.31.89 HISTORIA-W-TLE] Dociaga BRAKUJACY kawalek historii do pamieci telefonu,
+     * gdy aplikacja jest w tle. Probki laduja w RAM - wykres po wejsciu jest pelny.
+     * Plik na dysku zapisujemy najwyzej raz na godzine.
+     */
+    private suspend fun prefetchHistoryIfDue() {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        if (lastHistoryPrefetchMs > 0L &&
+            nowElapsed - lastHistoryPrefetchMs < HISTORY_PREFETCH_INTERVAL_MS
+        ) return
+        lastHistoryPrefetchMs = nowElapsed
+        if (Rtdb.refreshToken.isBlank()) return
+        val cache = AppRuntime.telemetryCache(applicationContext)
+        val nowMs = System.currentTimeMillis()
+        val plan = cache.plan(nowMs - HISTORY_PREFETCH_WINDOW_MS, nowMs)
+        if (plan.missing.isEmpty()) return
+        val fetched = ArrayList<TelemPoint>()
+        val emptyParts = ArrayList<LongRange>()
+        for (seg in plan.missing) {
+            val res = try {
+                Rtdb.fetchWindow(seg.first / 1000L, seg.last / 1000L)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            } ?: continue
+            fetched.addAll(res.points)
+            if (res.complete) emptyParts.addAll(cache.emptyParts(seg, res.points))
+        }
+        if (fetched.isEmpty() && emptyParts.isEmpty()) return
+        val flush = lastHistoryDiskFlushMs == 0L ||
+            nowElapsed - lastHistoryDiskFlushMs >= HISTORY_DISK_FLUSH_MS
+        cache.store(fetched, emptyParts, persist = flush)
+        if (flush) lastHistoryDiskFlushMs = nowElapsed
+        Log.i(TAG, "Historia w tle: " + fetched.size + " probek, zapis na dysk: " + (if (flush) "tak" else "nie"))
     }
 
     private fun onSnapshot(d: JSONObject) {
@@ -316,6 +370,7 @@ class AlarmMonitorService : Service() {
                 val overheat = alarmFlag(d, "alarm_ogrzewanie")
                 val complete = smoke != null && overheat != null
                 val prefs = Prefs(applicationContext)
+                AlarmSoundSync.applyStatus(prefs, d, SystemClock.elapsedRealtime())
                 val activeSignature = AlarmMuteCommands.signature(
                     smoke, overheat, prefs.get(AlarmCenter.K_LAST_SIG).orEmpty()
                 )
@@ -394,6 +449,12 @@ class AlarmMonitorService : Service() {
         const val EXTRA_MUTE_SECONDS = "alarm_mute_seconds"
         private const val NO_MUTE_SECONDS = Int.MIN_VALUE
         const val BACKGROUND_STATUS_POLL_MS = 60_000L
+        /** [0.31.89] Co ile dociagamy historie telemetrii w tle. */
+        private const val HISTORY_PREFETCH_INTERVAL_MS = 15L * 60_000L
+        /** [0.31.89] Co ile przepisujemy pamiec historii na dysk (plik = cala historia). */
+        private const val HISTORY_DISK_FLUSH_MS = 60L * 60_000L
+        /** [0.31.89] Ile historii wstecz trzymamy swiezej w pamieci telefonu. */
+        private const val HISTORY_PREFETCH_WINDOW_MS = 24L * 3_600_000L
         private const val ALARM_LOOP_RESTART_MS = 250L
         private const val ALARM_LOOP_RETRY_MS = 5_000L
         private const val TAG = "AlarmMonitorService"

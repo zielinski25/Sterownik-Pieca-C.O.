@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -137,19 +138,21 @@ fun Tile(
                 animFor = { t -> Ilu.anim(t, art) }
             )
         }
-        // Plakietka stanu — przesuwanie jest dostępne z całej karty, bez dodatkowego uchwytu.
-        val (bfg, bbg) = badgeColors(if (spec.sim) "sim" else spec.badgeCls)
-        Row(
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)
-                .height(18.dp)
-                .background(bbg, RoundedCornerShape(9.dp))
-                .border(1.dp, bfg.copy(alpha = .3f), RoundedCornerShape(9.dp))
-                .padding(horizontal = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Box(Modifier.size(4.dp).background(bfg, RoundedCornerShape(50)))
-            Text(spec.badge, style = Txt.badge, color = bfg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // Plakietka stanu — pusta plakietka jest pomijana (np. Serwo ma pozycje niżej).
+        if (spec.badge.isNotBlank()) {
+            val (bfg, bbg) = badgeColors(if (spec.sim) "sim" else spec.badgeCls)
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp)
+                    .height(18.dp)
+                    .background(bbg, RoundedCornerShape(9.dp))
+                    .border(1.dp, bfg.copy(alpha = .3f), RoundedCornerShape(9.dp))
+                    .padding(horizontal = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Box(Modifier.size(4.dp).background(bfg, RoundedCornerShape(50)))
+                Text(spec.badge, style = Txt.badge, color = bfg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         // tytuł / wartość / opis
         Text(
@@ -170,21 +173,74 @@ fun Tile(
                 Text(" " + spec.unit, style = Txt.tileUnit, color = Pal.TextDim, modifier = Modifier.padding(bottom = 2.dp))
             }
         }
-        Text(
-            spec.desc, style = Txt.tileDesc,
-            modifier = Modifier.align(Alignment.TopStart).padding(top = 98.dp, start = 10.dp, end = 10.dp),
-            maxLines = 1, overflow = TextOverflow.Ellipsis
-        )
-        // pasek postępu
-        Box(
-            modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, end = 10.dp, bottom = 4.dp)
-                .fillMaxWidth().height(2.5.dp).background(Pal.rgba(48, 71, 93, .2f), RoundedCornerShape(2.dp))
-        ) {
-            Box(
-                modifier = Modifier.fillMaxWidth(spec.frac.coerceIn(0.0, 1.0).toFloat())
-                    .height(2.5.dp)
-                    .background(if (spec.cls == "c-none") Pal.TextDim2 else accent, RoundedCornerShape(2.dp))
+        if (spec.positionMeters.isEmpty()) {
+            Text(
+                spec.desc, style = Txt.tileDesc,
+                modifier = Modifier.align(Alignment.TopStart).padding(top = 98.dp, start = 10.dp, end = 10.dp),
+                maxLines = 1, overflow = TextOverflow.Ellipsis
             )
+            // W pozostałych kafelkach pojedynczy pasek ogólnego postępu.
+            Box(
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, end = 10.dp, bottom = 4.dp)
+                    .fillMaxWidth().height(2.5.dp).background(Pal.rgba(48, 71, 93, .2f), RoundedCornerShape(2.dp))
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(spec.frac.coerceIn(0.0, 1.0).toFloat())
+                        .height(2.5.dp)
+                        .background(if (spec.cls == "c-none") Pal.TextDim2 else accent, RoundedCornerShape(2.dp))
+                )
+            }
+        } else {
+            // Procent jest na pierwszym planie; kąt pozostaje mniejszą informacją pomocniczą.
+            val meterLabelStyle = Txt.tileDesc.copy(fontSize = 6.5.sp, lineHeight = 8.sp)
+            val meterAngleStyle = Txt.tileDesc.copy(fontSize = 6.sp, lineHeight = 7.sp)
+            val meterPercentStyle = Txt.tileDesc.copy(
+                fontSize = 9.sp, lineHeight = 10.sp, fontWeight = FontWeight.ExtraBold
+            )
+            Column(
+                modifier = Modifier.align(Alignment.BottomStart)
+                    .padding(start = 10.dp, end = 10.dp, bottom = 3.dp)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
+                spec.positionMeters.take(2).forEachIndexed { index, meter ->
+                    val meterColor = when {
+                        meter.pendingTarget -> Pal.Warn
+                        index == 0 -> accent
+                        else -> Pal.Accent
+                    }
+                    val fraction = meter.fraction?.coerceIn(0.0, 1.0)?.toFloat() ?: 0f
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            meter.label, style = meterLabelStyle.copy(fontWeight = FontWeight.Bold),
+                            color = meterColor, modifier = Modifier.width(35.dp), maxLines = 1,
+                            overflow = TextOverflow.Clip
+                        )
+                        Text(
+                            meter.percentageText, style = meterPercentStyle, color = meterColor,
+                            modifier = Modifier.width(30.dp), maxLines = 1, textAlign = TextAlign.Start
+                        )
+                        Text(
+                            meter.angleText, style = meterAngleStyle, color = Pal.TextDim,
+                            modifier = Modifier.width(20.dp), maxLines = 1
+                        )
+                        Box(
+                            modifier = Modifier.weight(1f).height(3.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Pal.rgba(48, 71, 93, .55f))
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(fraction).height(3.dp)
+                                    .background(meterColor, RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

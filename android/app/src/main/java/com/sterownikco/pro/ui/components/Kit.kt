@@ -29,6 +29,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +48,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import com.sterownikco.pro.ui.icons.AppIcon
 import com.sterownikco.pro.ui.theme.Dimens
 import com.sterownikco.pro.ui.theme.Pal
@@ -242,6 +244,52 @@ fun CheckRow(
             if (known && checked) AppIcon("check", size = 15.dp, tint = Color(0xFF00131F))
             else if (!known) Text("?", style = Txt.rowDesc, color = Pal.TextDim)
         }
+    }
+}
+
+/**
+ * [0.31.23] CheckRow dla stanu, który mieszka w CENTRALI, a nie w aplikacji.
+ *
+ * Problem, który to naprawia: klik w CheckRow wysyła komendę i dostaje ACK
+ * w ~0,3–2 s, ale sam kwadracik czyta wyłącznie status, który przychodzi
+ * co 8 s. Efekt: toast „Potwierdzone przez sterownik", a kwadracik pusty
+ * jeszcze przez kilka sekund — wygląda jak zepsuty.
+ *
+ * Rozwiązanie: po kliknięciu kwadracik pokazuje stan DOCELOWY (echo), podpis
+ * mówi „Wysyłanie…". Gdy przyjdzie świeży status zgodny z echem — echo znika
+ * i zostaje prawda z centrali. Jeśli w 12 s nic nie przyjdzie, echo znika samo
+ * i UI wraca do stanu z centrali (czyli uczciwie pokazuje, że się nie udało).
+ */
+@Composable
+fun CheckRowEcho(
+    name: String,
+    desc: String?,
+    device: Boolean,
+    known: Boolean = true,
+    pendingText: String = "Wysyłanie… czekam na potwierdzenie centrali",
+    onSend: (Boolean) -> Unit
+) {
+    var pending by remember { mutableStateOf<Boolean?>(null) }
+
+    // Status dogonił echo — zdejmij echo, dalej pokazujemy prawdę z centrali.
+    LaunchedEffect(pending, device) {
+        if (pending != null && device == pending) pending = null
+    }
+    // Brak potwierdzenia w 12 s — zdejmij echo (UI wroci do stanu z centrali).
+    LaunchedEffect(pending) {
+        val cel = pending ?: return@LaunchedEffect
+        delay(12_000)
+        if (pending == cel) pending = null
+    }
+
+    CheckRow(
+        name = name,
+        desc = if (pending != null) pendingText else desc,
+        checked = pending ?: device,
+        known = known
+    ) { v ->
+        pending = v
+        onSend(v)
     }
 }
 

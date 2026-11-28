@@ -52,7 +52,7 @@ class PiecWidget : AppWidgetProvider() {
                 "dym", "ogrz", "bojler", "panel", "pokoj", "zewn", "ogrz_powrot", "ogrz_trociny", "cisnienie", "wilgotnosc"
             ).flatMap { pole -> listOf("symulacja_$pole", "symulacja_${pole}_min") }
             val sig = (listOf(
-                "t_ogrz", "t_bojler", "t_panel", "t_zewn", "dym_alarm", "alarm_ogrzewanie", "alarm_panel", "online",
+                "t_ogrz", "t_bojler", "t_panel", "t_zewn", "t_zewn_2", "dym_alarm", "alarm_ogrzewanie", "alarm_panel", "online",
                 "sim", "is_sim", "simulated"
             ) + simulationFields).joinToString("|") { k ->
                 val value: Any? = d.opt(k)
@@ -160,10 +160,10 @@ class PiecWidget : AppWidgetProvider() {
         }
 
         private val SENSOR_OPTIONS = listOf(
-            WidgetSensor("t_ogrz", "PIEC C.O.", "Temperatura obiegu grzewczego", "PIEC", 2, 10.0, 99.0),
-            WidgetSensor("t_bojler", "BOJLER C.W.U.", "Temperatura zasobnika ciepłej wody", "BOJLER", 1, 10.0, 95.0),
-            WidgetSensor("t_panel", "PANEL SŁONECZNY", "Temperatura kolektora słonecznego", "PANEL", 5, 0.0, 140.0, accent = true),
-            WidgetSensor("t_zewn", "ZEWNĘTRZNA", "Temperatura zewnętrzna", "ZEWN.", 0, -25.0, 45.0)
+            WidgetSensor("t_ogrz", "PIEC C.O.", "Temperatura obiegu grzewczego", "PIEC", 2),
+            WidgetSensor("t_bojler", "BOJLER C.W.U.", "Temperatura zasobnika ciepłej wody", "BOJLER", 1),
+            WidgetSensor("t_panel", "PANEL SŁONECZNY", "Temperatura kolektora słonecznego", "PANEL", 5, accent = true),
+            WidgetSensor("t_zewn", "ZEWNĘTRZNA", "Temperatura zewnętrzna", "ZEWN.", 0)
         )
 
         private val WIDGETS = listOf(
@@ -208,6 +208,15 @@ class PiecWidget : AppWidgetProvider() {
 
         private fun views(ctx: Context, d: JSONObject?, spec: WidgetSpec, appWidgetId: Int): RemoteViews {
             val v = RemoteViews(ctx.packageName, spec.layout)
+            val outdoorSource = try {
+                Prefs(ctx.applicationContext).getInt(Prefs.K_OUTDOOR_TILE_SOURCE, 1)
+            } catch (e: Exception) { 1 }
+            fun resolved(sensor: WidgetSensor): WidgetSensor =
+                if (WidgetOutdoorSource.key(sensor.key, outdoorSource) == "t_zewn_2")
+                    sensor.copy(key = "t_zewn_2", label = "ZEWN. 2", shortLabel = "ZEW 2", channel = -1)
+                else if (sensor.key == "t_zewn")
+                    sensor.copy(label = "ZEWN. 1", shortLabel = "ZEW 1")
+                else sensor
 
             val simRaw = d?.opt("sim")
             val simMask = when (simRaw) {
@@ -245,33 +254,16 @@ class PiecWidget : AppWidgetProvider() {
             fun isSimulated(sensor: WidgetSensor): Boolean =
                 simulated(sensor.channel) || controllerSimulation(sensor)
 
-            val simulatedBounds = mapOf(
-                "t_ogrz" to (0.0..160.0), "t_bojler" to (0.0..160.0),
-                "t_panel" to (-30.0..160.0), "t_zewn" to (-30.0..50.0)
-            )
-
-            fun numeric(key: String): Double? {
-                val raw = if (d == null || !d.has(key) || d.isNull(key)) null else d.opt(key)
-                return (raw as? Number)?.toDouble()?.takeIf { it.isFinite() }
-            }
-
             fun value(sensor: WidgetSensor): Double? {
-                val range = if (controllerSimulation(sensor)) {
-                    simulatedBounds[sensor.key] ?: (sensor.min..sensor.max)
-                } else {
-                    sensor.min..sensor.max
-                }
-                return numeric(sensor.key)?.takeIf { it in range }
+                val raw = if (d == null || !d.has(sensor.key) || d.isNull(sensor.key)) null else d.opt(sensor.key)
+                return WidgetTemperatureBounds.value(sensor.key, raw, controllerSimulation(sensor))
             }
 
-            fun degrees(sensor: WidgetSensor, x: Double?): String {
-                if (x == null) return "—"
-                val text = "${Math.round(x)}°"
-                return if (isSimulated(sensor)) "~$text" else text
-            }
+            fun degrees(sensor: WidgetSensor, x: Double?): String =
+                WidgetTemperatureFormat.degrees(sensor.key, x, isSimulated(sensor))
 
             val selected = selectedSensors(ctx, appWidgetId, spec)
-                .mapNotNull { key -> SENSOR_OPTIONS.firstOrNull { it.key == key } }
+                .mapNotNull { key -> SENSOR_OPTIONS.firstOrNull { it.key == key }?.let(::resolved) }
             spec.slots.cellViews.forEachIndexed { index, cellId ->
                 val sensor = selected.getOrNull(index)
                 v.setViewVisibility(cellId, if (sensor == null) View.GONE else View.VISIBLE)
@@ -313,8 +305,9 @@ class PiecWidget : AppWidgetProvider() {
             val panel = if (alarmTrusted) flag("alarm_panel") else null
             val alarmKnown = dym != null && ogrz != null && panel != null
             val alarmActive = dym == true || ogrz == true || panel == true
-            val hasAnyReading = SENSOR_OPTIONS.any { sensor -> value(sensor) != null }
-            val hasRealReading = SENSOR_OPTIONS.any { sensor -> value(sensor) != null && !isSimulated(sensor) }
+            val activeOptions = SENSOR_OPTIONS.map(::resolved)
+            val hasAnyReading = activeOptions.any { sensor -> value(sensor) != null }
+            val hasRealReading = activeOptions.any { sensor -> value(sensor) != null && !isSimulated(sensor) }
             val controllerSimulationActive = listOf(
                 "dym", "ogrz", "bojler", "panel", "pokoj", "zewn", "ogrz_powrot", "ogrz_trociny", "cisnienie", "wilgotnosc"
             ).any { pole ->
@@ -356,6 +349,24 @@ class PiecWidget : AppWidgetProvider() {
     }
 }
 
+// Klucz zapisany w konfiguracji pozostaje ten sam; źródło rozstrzygamy przy renderowaniu.
+internal object WidgetOutdoorSource {
+    fun key(configuredKey: String, source: Int): String =
+        if (configuredKey == "t_zewn" && source == 2) "t_zewn_2" else configuredKey
+}
+
+// Tylko widżet; nie zmienia walidacji ani sterowania w centrali i aplikacji.
+internal object WidgetTemperatureBounds {
+    private const val MIN = -25.0
+    private val normalMax = mapOf("t_ogrz" to 99.0, "t_bojler" to 95.0, "t_panel" to 140.0, "t_zewn" to 45.0, "t_zewn_2" to 80.0)
+    private val simulatedMax = mapOf("t_ogrz" to 160.0, "t_bojler" to 160.0, "t_panel" to 160.0, "t_zewn" to 50.0, "t_zewn_2" to 80.0)
+
+    fun value(key: String, raw: Any?, controllerSimulated: Boolean): Double? {
+        val max = (if (controllerSimulated) simulatedMax else normalMax)[key] ?: return null
+        return (raw as? Number)?.toDouble()?.takeIf { it.isFinite() && it >= MIN && it <= max }
+    }
+}
+
 /** Kolor temperatury jest oceniany według urządzenia, nie wspólnej skali °C. */
 internal object WidgetTemperatureColors {
     private const val UNKNOWN = "#7F93A3"
@@ -371,7 +382,7 @@ internal object WidgetTemperatureColors {
         val t = temperature?.takeIf { it.isFinite() } ?: return UNKNOWN
         return when (sensorKey) {
             // Komfort na zewnątrz: okolice 8–24°C są łagodne; mróz i upał są skrajne.
-            "t_zewn" -> when {
+            "t_zewn", "t_zewn_2" -> when {
                 t < 0.0 -> COLD
                 t < 8.0 -> COOL
                 t < 16.0 -> NORMAL
@@ -454,8 +465,6 @@ private data class WidgetSensor(
     val description: String,
     val shortLabel: String,
     val channel: Int,
-    val min: Double,
-    val max: Double,
     val accent: Boolean = false
 )
 

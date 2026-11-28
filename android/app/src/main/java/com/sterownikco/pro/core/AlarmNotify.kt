@@ -177,7 +177,7 @@ object AlarmNotify {
                 .putExtra(EXTRA_ALARM_MESSAGE, info.msg).putExtra(EXTRA_ALARM_SIGNATURE, info.sig)
                 .putExtra(EXTRA_ALARM_OPEN_NONCE, openNonce)
                 .setData(Uri.parse("sterownikco://alarm-fullscreen/$openNonce"))
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val open = PendingIntent.getActivity(
@@ -189,7 +189,7 @@ object AlarmNotify {
                 .putExtra(EXTRA_ALARM_SIGNATURE, info.sig)
                 .putExtra(EXTRA_ALARM_OPEN_NONCE, openNonce)
                 .setData(Uri.parse("sterownikco://alarm-panel/$openNonce"))
-                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val visibleTitle = "🚨 ${info.title}"
@@ -248,7 +248,7 @@ object AlarmNotify {
         ensureChannels(ctx)
         val open = PendingIntent.getActivity(
             ctx, 12,
-            Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(ctx, CH_SVC)
