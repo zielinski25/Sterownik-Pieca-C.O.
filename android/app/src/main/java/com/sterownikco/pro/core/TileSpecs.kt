@@ -189,7 +189,8 @@ internal fun outdoorTemperatureTile(
         frac = fraction, desc = description,
         vcol = if (value < 0) "#7dd3fc" else if (value > 15) "#ffb86b" else "",
         badge = status.first, badgeCls = status.second,
-        sim = simulated, stale = tileStale, artKey = if (source == OutdoorSource.POGODA) "pogoda" else "zewn",
+        // [0.31.106] Ilustracja zawsze pogodowa (słońce/chmury/deszcz — jak w zakładce Pogoda); globus tylko przy wartości.
+        sim = simulated, stale = tileStale, artKey = "zewn",
         net = useForecast && value.isFinite()
     )
 }

@@ -56,7 +56,8 @@ class OutdoorTileSourceTest {
         assertEquals("PROGNOZA", t.badge)
         assertEquals("live", t.badgeCls)
         assertTrue(t.desc.startsWith("Pogoda · Open-Meteo · z "))
-        assertEquals("pogoda", t.artKey)
+        assertEquals("zewn", t.artKey) // [0.31.106] ikona pogody jak w zakładce Pogoda, nie globus
+        assertTrue(t.net)
         assertFalse(t.stale)
     }
 
