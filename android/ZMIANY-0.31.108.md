@@ -1,6 +1,9 @@
-# SterownikCO Android 0.31.107 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
+# SterownikCO Android 0.31.108 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
 
-Baza: 0.31.102. `versionCode = 31107`, `versionName = "0.31.107"`. Zmiana tylko w aplikacji.
+Baza: 0.31.102. `versionCode = 31108`, `versionName = "0.31.108"`
+
+0.31.108 = 0.31.107 + poprawiony test (`internetValueShowsFeelsLikeInDescription` sprawdzał `contains("odcz")`,
+a opis „odczyt stabilny" też to zawiera). Kod aplikacji bez zmian.. Zmiana tylko w aplikacji.
 
 0.31.103 nie kompilowała się (kolizja sygnatur JVM `setNetFallback` = setter właściwości `netFallback`);
 w 0.31.104 metoda nazywa się `chooseNetFallback()` (jak `chooseOutdoorTileSource()`). Funkcjonalnie bez zmian.

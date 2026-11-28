@@ -154,6 +154,7 @@ class OutdoorTileSourceTest {
         // czujnik działa → odczuwalnej nie pokazujemy (to nie pomiar)
         val ds = outdoorTemperatureTile(OutdoorSource.ZEW1, 2.5, Double.NaN, false, 0, false,
             forecast = -3.7, forecastAtMs = now - 60_000L, nowMs = now, netFallback = true, feelsLike = -8.2)
-        assertFalse(ds.desc.contains("odcz"))
+        assertEquals("Zew 1 · odczyt stabilny", ds.desc) // bez "odczuwalna"/"odcz. "
+        assertFalse(ds.desc.contains("odczuwalna") || ds.desc.contains("odcz. "))
     }
 }
