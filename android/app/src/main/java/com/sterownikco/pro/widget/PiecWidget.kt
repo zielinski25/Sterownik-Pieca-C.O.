@@ -174,7 +174,8 @@ class PiecWidget : AppWidgetProvider() {
                     cellViews = listOf(R.id.w_cell_1, R.id.w_cell_2, R.id.w_cell_3, R.id.w_cell_4),
                     labelViews = listOf(R.id.w_l_1, R.id.w_l_2, R.id.w_l_3, R.id.w_l_4),
                     valueViews = listOf(R.id.w_v_1, R.id.w_v_2, R.id.w_v_3, R.id.w_v_4),
-                    rowViews = listOf(R.id.w_row_top, R.id.w_row_bottom)
+                    rowViews = listOf(R.id.w_row_top, R.id.w_row_bottom),
+                    feelsViews = listOf(R.id.w_f_1, R.id.w_f_2, R.id.w_f_3, R.id.w_f_4)
                 ),
                 defaultSensorKeys = listOf("t_ogrz", "t_bojler", "t_panel", "t_zewn"),
                 useShortLabels = false,
@@ -186,7 +187,8 @@ class PiecWidget : AppWidgetProvider() {
                 slots = WidgetSlotIds(
                     cellViews = listOf(R.id.w_cell_1, R.id.w_cell_2),
                     labelViews = listOf(R.id.w_l_1, R.id.w_l_2),
-                    valueViews = listOf(R.id.w_v_1, R.id.w_v_2)
+                    valueViews = listOf(R.id.w_v_1, R.id.w_v_2),
+                    feelsViews = listOf(R.id.w_f_1, R.id.w_f_2)
                 ),
                 defaultSensorKeys = listOf("t_bojler", "t_panel"),
                 useShortLabels = true,
@@ -198,7 +200,8 @@ class PiecWidget : AppWidgetProvider() {
                 slots = WidgetSlotIds(
                     cellViews = listOf(R.id.w_cell_1, R.id.w_cell_2, R.id.w_cell_3, R.id.w_cell_4),
                     labelViews = listOf(R.id.w_l_1, R.id.w_l_2, R.id.w_l_3, R.id.w_l_4),
-                    valueViews = listOf(R.id.w_v_1, R.id.w_v_2, R.id.w_v_3, R.id.w_v_4)
+                    valueViews = listOf(R.id.w_v_1, R.id.w_v_2, R.id.w_v_3, R.id.w_v_4),
+                    feelsViews = listOf(R.id.w_f_1, R.id.w_f_2, R.id.w_f_3, R.id.w_f_4)
                 ),
                 defaultSensorKeys = listOf("t_ogrz", "t_bojler", "t_panel", "t_zewn"),
                 useShortLabels = true,
@@ -221,11 +224,17 @@ class PiecWidget : AppWidgetProvider() {
                 rawTemp = try { widgetPrefs?.get(Prefs.K_POGODA_TEMP) } catch (e: Exception) { null },
                 savedAtMs = try { widgetPrefs?.getLong(Prefs.K_POGODA_TS, 0L) ?: 0L } catch (e: Exception) { 0L }
             )
+            // [0.31.109] Odczuwalna z tej samej prognozy (pokazywana tylko, gdy wartość na widżecie jest z internetu).
+            val forecastFeels = if (forecast == null) null else WidgetForecast.read(
+                rawTemp = try { widgetPrefs?.get(Prefs.K_POGODA_FEELS) } catch (e: Exception) { null },
+                savedAtMs = try { widgetPrefs?.getLong(Prefs.K_POGODA_TS, 0L) ?: 0L } catch (e: Exception) { 0L }
+            )
             fun resolved(sensor: WidgetSensor): WidgetSensor =
                 when (WidgetOutdoorSource.key(sensor.key, outdoorSource)) {
-                    "t_zewn_2" -> sensor.copy(key = "t_zewn_2", label = "ZEWN. 2", shortLabel = "ZEW 2", channel = -1)
-                    WidgetOutdoorSource.FORECAST_KEY -> sensor.copy(key = WidgetOutdoorSource.FORECAST_KEY, label = "POGODA", shortLabel = "POGODA", channel = -1)
-                    else -> if (sensor.key == "t_zewn") sensor.copy(label = "ZEWN. 1", shortLabel = "ZEW 1") else sensor
+                    // [0.31.109] Etykieta jak dawniej: ZEWNĘTRZNA / ZEWN. — a gdy wartość jest z internetu: PROGNOZA.
+                    "t_zewn_2" -> sensor.copy(key = "t_zewn_2", channel = -1)
+                    WidgetOutdoorSource.FORECAST_KEY -> sensor.copy(key = WidgetOutdoorSource.FORECAST_KEY, channel = -1)
+                    else -> sensor
                 }
 
             val simRaw = d?.opt("sim")
@@ -286,12 +295,17 @@ class PiecWidget : AppWidgetProvider() {
                         simulated = isSimulated(sensor), forecast = forecast, enabled = netFallback
                     )
                     val temperature = picked.first
-                    val label = if (picked.second) "$baseLabel 🌐" else baseLabel
+                    val label = WidgetNetFallback.label(baseLabel, picked.second)
                     val valueColor = Color.parseColor(WidgetTemperatureColors.colorHex(sensor.key, temperature))
                     v.setTextViewText(spec.slots.labelViews[index], label)
                     v.setTextViewText(spec.slots.valueViews[index], degrees(sensor, temperature))
                     v.setTextColor(spec.slots.labelViews[index], labelColor)
                     v.setTextColor(spec.slots.valueViews[index], valueColor)
+                    spec.slots.feelsViews.getOrNull(index)?.let { feelsId ->
+                        val feelsText = WidgetNetFallback.feelsText(picked.second, forecastFeels)
+                        v.setViewVisibility(feelsId, if (feelsText == null) View.GONE else View.VISIBLE)
+                        if (feelsText != null) v.setTextViewText(feelsId, feelsText)
+                    }
                 }
             }
             spec.slots.rowViews.forEachIndexed { rowIndex, rowId ->
@@ -385,6 +399,14 @@ internal object WidgetNetFallback {
         if (sensorValue == null || sensorStale) return forecast to true
         return sensorValue to false
     }
+
+    /** [0.31.109] Etykieta pola: z internetu → PROGNOZA, z czujnika → jak dawniej (ZEWNĘTRZNA / ZEWN.). */
+    fun label(baseLabel: String, fromInternet: Boolean): String = if (fromInternet) "PROGNOZA" else baseLabel
+
+    /** [0.31.109] Mała linijka pod wartością: „odcz. −8,2°" — tylko gdy wartość jest z internetu i odczuwalna jest znana. */
+    fun feelsText(fromInternet: Boolean, feels: Double?): String? =
+        if (!fromInternet || feels == null) null
+        else "odcz. " + String.format(java.util.Locale.US, "%.1f", feels).replace('.', ',') + "°"
 }
 
 /** [0.31.102] Temperatura z prognozy dla widżetu: tylko świeża (≤ 2 h) i w sensownym zakresie. */
@@ -514,7 +536,9 @@ private data class WidgetSlotIds(
     val cellViews: List<Int>,
     val labelViews: List<Int>,
     val valueViews: List<Int>,
-    val rowViews: List<Int> = emptyList()
+    val rowViews: List<Int> = emptyList(),
+    /** [0.31.109] mała linijka „odcz. −8,2°" pod wartością (tylko gdy wartość z internetu). */
+    val feelsViews: List<Int> = emptyList()
 )
 
 private data class WidgetSpec(

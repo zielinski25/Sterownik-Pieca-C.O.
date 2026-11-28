@@ -328,6 +328,8 @@ class Prefs(ctx: Context) : AlarmPrefsStore {
         /** [0.31.103] Auto-zastępowanie braku odczytu czujnika (temp. zewn., wilgotność) prognozą z internetu: "1"/"0". */
         const val K_NET_FALLBACK = "piec_net_fallback_v1"
         const val K_POGODA_RH = "piec_pogoda_rh_v1"
+        /** [0.31.109] Temperatura odczuwalna z Open-Meteo (°C, "%.1f") — widżet pokazuje ją małą czcionką przy PROGNOZA. */
+        const val K_POGODA_FEELS = "piec_pogoda_feels_v1"
         const val K_DASH_WIDGET_ORDER = "piec_dashboard_widget_order_v1"
         const val K_ID_TOKEN = "piec_fb_token"
         const val K_REF_TOKEN = "piec_fb_ref_token"

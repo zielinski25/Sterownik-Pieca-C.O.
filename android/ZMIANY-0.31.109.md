@@ -1,6 +1,6 @@
-# SterownikCO Android 0.31.108 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
+# SterownikCO Android 0.31.109 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
 
-Baza: 0.31.102. `versionCode = 31108`, `versionName = "0.31.108"`
+Baza: 0.31.102. `versionCode = 31109`, `versionName = "0.31.109"`
 
 0.31.108 = 0.31.107 + poprawiony test (`internetValueShowsFeelsLikeInDescription` sprawdzał `contains("odcz")`,
 a opis „odczyt stabilny" też to zawiera). Kod aplikacji bez zmian.. Zmiana tylko w aplikacji.
@@ -16,7 +16,7 @@ Gdy wybrany czujnik **nie daje odczytu** (BRAK DANYCH) albo **dane centrali są 
 |---|---|---|---|
 | Zewnętrzna (Zew 1 · DS18B20 lub Zew 2 · DHT22) | `t_zewn` / `t_zewn_2` | temperatura bieżąca (2 m) | mały **globus** obok wartości, plakietka **PROGNOZA**, opis `Zew 2 brak danych · internet z 12:45` |
 | Wilgotność (DHT22) | `wilgotnosc` | wilgotność względna | mały **globus**, plakietka **PROGNOZA**, opis `DHT22 brak danych · internet z 12:45` |
-| widżet — pole ZEWN. | jw. | temperatura bieżąca | etykieta `ZEW 2 🌐` |
+| widżet — pole ZEWN. | jw. | temperatura bieżąca | etykieta **PROGNOZA** + mała linijka `odcz. -8,2°` (0.31.109) |
 
 Zasady (identyczne dla kafelka i widżetu, pokryte testami):
 - zastępowanie tylko gdy prognoza jest świeża (pobranie ≤ 2 h) i ma liczbę — inaczej dalej BRAK DANYCH / NIEAKTUALNE;
@@ -49,6 +49,15 @@ ilustrację-globus `Ilu.pogoda()`; `artKey` kafelka zawsze `zewn`.
   odczuwalną z Open-Meteo: `odczuwalna -8.2 °C · z 11:49` (źródło Pogoda) lub `Zew 2 brak danych · odcz. -8.2 °C`
   (auto-zastąpienie). Przy działającym czujniku odczuwalnej nie ma (to nie jest pomiar).
   Test: `OutdoorTileSourceTest.internetValueShowsFeelsLikeInDescription`.
+
+## 0.31.109 — widżet: PROGNOZA i odczuwalna
+- Etykieta pola zewnętrznego na widżecie: z czujnika → jak dawniej **ZEWNĘTRZNA** (pełny) / **ZEWN.** (kompaktowy,
+  szeroki) — bez dopisków „1/2"; gdy wartość jest z internetu (źródło Pogoda albo auto-zastąpienie) → **PROGNOZA**.
+  Globus 🌐 w etykiecie usunięty.
+- Pod wartością z internetu mała linijka (6,5–7,5 sp) **`odcz. -8,2°`** — temperatura odczuwalna z tej samej
+  prognozy; przy wartości z czujnika linijka ukryta (`w_f_N`, `android:visibility="gone"`).
+- Aplikacja zapisuje odczuwalną do `piec_pogoda_feels_v1` przy każdym pobraniu prognozy.
+- Test: `WidgetOutdoorSourceTest.labelAndFeelsLikeFollowTheSource`.
 
 ## Przełącznik
 Arkusz **Temperatura zewnętrzna** oraz **Wilgotność** → sekcja **GDY CZUJNIK NIE DAJE ODCZYTU**:

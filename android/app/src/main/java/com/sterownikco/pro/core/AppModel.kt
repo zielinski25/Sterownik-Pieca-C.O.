@@ -198,12 +198,13 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
     }
 
     /** Zapis temperatury prognozy dla widżetu (działa bez procesu aplikacji) i kafelka. */
-    private fun rememberForecastTemp(temp: Double, savedAtMs: Long, rh: Double = Double.NaN) {
+    private fun rememberForecastTemp(temp: Double, savedAtMs: Long, rh: Double = Double.NaN, feels: Double = Double.NaN) {
         if (!temp.isFinite()) return
         try {
             prefs.set(Prefs.K_POGODA_TEMP, String.format(java.util.Locale.US, "%.1f", temp))
             prefs.setLong(Prefs.K_POGODA_TS, savedAtMs)
             if (rh.isFinite()) prefs.set(Prefs.K_POGODA_RH, Math.round(rh).toString())
+            prefs.set(Prefs.K_POGODA_FEELS, if (feels.isFinite()) String.format(java.util.Locale.US, "%.1f", feels) else "")
         } catch (e: Exception) { /* brak zapisu nie blokuje pogody */ }
         weatherFetchedAtWall = savedAtMs
         // Widżet może właśnie zastępować brak odczytu prognozą — odśwież go po każdym pobraniu.
@@ -1300,7 +1301,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
         weather = restored
         lastWeatherSuccessKey = key
         lastWeatherSuccessElapsed = SystemClock.elapsedRealtime() - (nowWall - entry.savedAtMs)
-        rememberForecastTemp(restored.current.temp, entry.savedAtMs, restored.current.humidity)
+        rememberForecastTemp(restored.current.temp, entry.savedAtMs, restored.current.humidity, restored.current.feelsLike)
     }
 
     fun refreshWeather(force: Boolean, announce: Boolean = false): Job {
@@ -1335,7 +1336,7 @@ class AppModel(val ctx: Context, val scope: CoroutineScope) {
                         try {
                             prefs.set(Prefs.K_WEATHER_CACHE, WeatherCache.encode(key, real.raw, System.currentTimeMillis()))
                         } catch (e: Exception) { /* brak cache nie blokuje odczytu */ }
-                        rememberForecastTemp(real.data.current.temp, System.currentTimeMillis(), real.data.current.humidity)
+                        rememberForecastTemp(real.data.current.temp, System.currentTimeMillis(), real.data.current.humidity, real.data.current.feelsLike)
                         S.bump()
                         if (announce) showToast("Pogoda", "Dane pogodowe zaktualizowane", "ok")
                     } else if (announce) {

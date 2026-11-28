@@ -7,7 +7,7 @@ Jedno miejsce z wszystkim, co potrzebne do odtworzenia każdego elementu systemu
 
 | element | wersja | gdzie w repo | gdzie w ZIP-ie KOMPLET | stan na sprzęcie |
 |---|---|---|---|---|
-| Aplikacja Android | **0.31.108** (`com.sterownikco.pro`) | `android/` | `android-0.31.108/` | 0.31.102 zbudowana 28.11 na PC; zbuduj i zainstaluj 0.31.108 (auto-🌐 przy braku odczytu) |
+| Aplikacja Android | **0.31.109** (`com.sterownikco.pro`) | `android/` | `android-0.31.109/` | 0.31.102 zbudowana 28.11 na PC; zbuduj i zainstaluj 0.31.109 (auto-🌐 przy braku odczytu) |
 | Centrala ESP32-S3 | **v3.58.23** (`main_centrala.cpp`) | `firmware-patch/v3.58.23-dht22-u2/` | `centrala-3.58.23/` | wgrana **3.58.22**; 3.58.23 dostarczona, nie wgrana |
 | Centrala — poprzednia | v3.58.22 | `firmware-patch/v3.58.22-dht22-log/` | `centrala-3.58.22-WGRANA/` | **wgrana** |
 | Panel LCD (ESP32 + ILI9341) | **v1.5.20** | `LCD-Centrali/` (pełny projekt PlatformIO) | `panel-lcd-1.5.20/` | wgrana v1.5.20 (test dźwięku — czeka na raport) |
@@ -35,7 +35,7 @@ wersja aplikacji = pełny projekt w `android/` + pełny ZIP na Drive. Żadnych �
 
 ## Linki Google Drive (folder projektu `12mi44TeZFlcVOc8qw1NPBOH5nSP0mHgz`)
 - `01-Aktualne/SterownikCO-KOMPLET-2026-11-28.zip` — ten komplet
-- `03-Android/SterownikCO-Android-0.31.108-PELNY-PROJEKT.zip` — (link w rozmowie / folder 03-Android)
+- `03-Android/SterownikCO-Android-0.31.109-PELNY-PROJEKT.zip` — (link w rozmowie / folder 03-Android)
 - `03-Android/SterownikCO-Android-0.31.102-PELNY-PROJEKT.zip` — https://drive.google.com/file/d/1toCtj8TsqSIhhdWGdGDoX10EPc6WA0jx/view
 - `03-Android/SterownikCO-Android-0.31.101-PELNY-PROJEKT.zip` — https://drive.google.com/file/d/1FJFGy05z8NHuWZuLoMSlTaio84GXphAa/view
 - centrala 3.58.23 — https://drive.google.com/file/d/17O3jMP5VaUH4AiLQzUrD38VnGd9MsJjK/view

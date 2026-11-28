@@ -49,4 +49,14 @@ class WidgetOutdoorSourceTest {
         assertEquals(4.2 to true, WidgetNetFallback.pick("pogoda_temp", 4.2, true, false, 4.2, true))
         assertEquals(null to false, WidgetNetFallback.pick("pogoda_temp", null, false, false, null, true))
     }
+
+    /** [0.31.109] PROGNOZA tylko przy wartości z internetu; odczuwalna małą czcionką tylko wtedy. */
+    @Test fun labelAndFeelsLikeFollowTheSource() {
+        assertEquals("PROGNOZA", WidgetNetFallback.label("ZEWNĘTRZNA", true))
+        assertEquals("PROGNOZA", WidgetNetFallback.label("ZEWN.", true))
+        assertEquals("ZEWNĘTRZNA", WidgetNetFallback.label("ZEWNĘTRZNA", false))
+        assertEquals("odcz. -8,2°", WidgetNetFallback.feelsText(true, -8.2))
+        assertNull(WidgetNetFallback.feelsText(false, -8.2))
+        assertNull(WidgetNetFallback.feelsText(true, null))
+    }
 }
