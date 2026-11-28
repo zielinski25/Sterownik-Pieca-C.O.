@@ -194,26 +194,33 @@ internal fun outdoorTemperatureTile(
     )
 }
 
-/** [0.31.103] Kafelek wilgotności: DHT22, a gdy brak/nieaktualny odczyt — wilgotność z Open-Meteo (globus). */
+/** [0.31.103] Kafelek wilgotności: DHT22, a gdy brak/nieaktualny odczyt (lub DHT22 nie odpowiada — [0.31.105]) — wilgotność z Open-Meteo (globus). */
 internal fun humidityTile(
     hu: Double, simulated: Boolean, simMinutes: Int, stale: Boolean,
     forecastRh: Double = Double.NaN, forecastAtMs: Long = 0L, nowMs: Long = System.currentTimeMillis(),
-    netFallback: Boolean = false
+    netFallback: Boolean = false, dhtAlive: Boolean = true
 ): TileSpec {
-    val fallback = OutdoorSource.shouldFallback(netFallback, hu, stale, simulated, forecastRh, forecastAtMs, nowMs)
+    // [0.31.105] Centrala przy padzie DHT22 TRZYMA ostatnią wilgotność (poprzedniaWilgotnosc) i dalej ją
+    // wysyła, ale t_zewn_2 (ta sama ramka DHT22) wygasza po 135 s → null. Gdy więc Zew 2 nie ma odczytu,
+    // wilgotność z centrali też jest martwa — traktujemy ją jak brak danych i bierzemy z internetu.
+    val dead = !simulated && !dhtAlive
+    val sensorRh = if (dead) Double.NaN else hu
+    val fallback = OutdoorSource.shouldFallback(netFallback, sensorRh, stale, simulated, forecastRh, forecastAtMs, nowMs)
     val value = if (fallback) forecastRh else hu
     val text = if (value.isFinite()) Math.round(value).toString() else "—"
     val condition = if (!value.isFinite()) "oczekiwanie na odczyt" else if (value > 70) "podwyższona" else "w normie"
     val desc = when {
-        fallback -> "DHT22 " + (if (!hu.isFinite()) "brak danych" else "nieaktualne") + " · internet z " + OutdoorSource.clock(forecastAtMs)
+        fallback -> "DHT22 " + (if (dead) "nie odpowiada" else if (!hu.isFinite()) "brak danych" else "nieaktualne") +
+            " · internet z " + OutdoorSource.clock(forecastAtMs)
         simulated -> "symulacja ($simMinutes min)"
+        dead && hu.isFinite() -> "DHT22 nie odpowiada · ostatnia wartość"
         else -> condition
     }
     val status = when {
         simulated -> ("SYMULACJA ${simMinutes}M" to "sim")
         fallback -> ("PROGNOZA" to "live")
         !hu.isFinite() -> ("BRAK DANYCH" to "stale")
-        stale -> ("NIEAKTUALNE" to "stale")
+        stale || dead -> ("NIEAKTUALNE" to "stale")
         else -> ("LIVE" to "live")
     }
     return TileSpec(
@@ -221,7 +228,7 @@ internal fun humidityTile(
         cls = if (value.isFinite()) "c-flame2" else "c-none",
         frac = if (value.isFinite()) ((value - 10.0) / 90.0).coerceIn(0.0, 1.0) else 0.0,
         desc = desc, badge = status.first, badgeCls = status.second,
-        sim = simulated, stale = if (fallback) false else stale, artKey = "wilgotnosc", net = fallback
+        sim = simulated, stale = if (fallback) false else (stale || dead), artKey = "wilgotnosc", net = fallback
     )
 }
 
@@ -347,7 +354,8 @@ fun buildTiles(m: AppModel, weatherCode: Int, isDay: Boolean): List<TileSpec> {
         stale = stale,
         forecastRh = m.weather?.current?.humidity ?: Double.NaN,
         forecastAtMs = m.weatherFetchedAtWall,
-        netFallback = m.netFallback
+        netFallback = m.netFallback,
+        dhtAlive = S.symAktywna("zewn_2") || (S.hasData("t_zewn_2") && S.t_zewn_2.isFinite())
     ))
 
     // Dodatkowe kafelki do wyboru w ustawieniach pulpitu.

@@ -1,6 +1,6 @@
-# SterownikCO Android 0.31.104 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
+# SterownikCO Android 0.31.105 — brak odczytu czujnika → automatycznie wartość z internetu (🌐)
 
-Baza: 0.31.102. `versionCode = 31104`, `versionName = "0.31.104"`. Zmiana tylko w aplikacji.
+Baza: 0.31.102. `versionCode = 31105`, `versionName = "0.31.105"`. Zmiana tylko w aplikacji.
 
 0.31.103 nie kompilowała się (kolizja sygnatur JVM `setNetFallback` = setter właściwości `netFallback`);
 w 0.31.104 metoda nazywa się `chooseNetFallback()` (jak `chooseOutdoorTileSource()`). Funkcjonalnie bez zmian.
@@ -21,6 +21,15 @@ Zasady (identyczne dla kafelka i widżetu, pokryte testami):
 - prawidłowy odczyt (także `0.0`) nigdy nie jest zastępowany;
 - źródło „Pogoda · Open-Meteo" (3) zawsze ma globus — globus = „to jest z internetu, nie pomiar";
 - nic z tego nie wpływa na sterowanie piecem ani na dane zapisywane do wykresów.
+
+## 0.31.105 — wilgotność „81 % LIVE" mimo martwego DHT22
+Centrala po padzie DHT22 **trzyma ostatnią wilgotność** (`poprzedniaWilgotnosc`) i wysyła ją dalej jako zwykłą
+liczbę, więc 0.31.104 pokazywała `81 % LIVE` bez globusa. Temperatura z tej samej ramki (`t_zewn_2`) jest
+przez centralę wygaszana po 135 s → `null`. Aplikacja używa tego jako sygnału: **Zew 2 bez odczytu = DHT22
+nie odpowiada = wilgotność z centrali martwa** → kafelek Wilgotność bierze wartość z internetu (globus,
+PROGNOZA, opis `DHT22 nie odpowiada · internet z HH:mm`). Przy wyłączonym Auto: ostatnia wartość, ale
+plakietka NIEAKTUALNE i opis `DHT22 nie odpowiada · ostatnia wartość`. Symulacja wilgotności nie zależy od DHT22.
+Test: `HumidityTileTest.heldHumidityAfterDhtDeathUsesInternet`.
 
 ## Przełącznik
 Arkusz **Temperatura zewnętrzna** oraz **Wilgotność** → sekcja **GDY CZUJNIK NIE DAJE ODCZYTU**:
